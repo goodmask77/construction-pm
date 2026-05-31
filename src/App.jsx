@@ -327,6 +327,9 @@ export default function App() {
   const [showLogin, setShowLogin] = useState(false);
   const [knownUsers, setKnownUsers] = useState([]);
   const [worklog, setWorklog] = useState([]);
+  const [events, setEvents] = useState([]);
+  const [journal, setJournal] = useState([]);
+  const [plans, setPlans] = useState([]);
   const { confirm, Dialog: ConfirmDialog } = useConfirm();
 
   // 工作日誌：寫入 state 並存進共享後端
@@ -366,6 +369,9 @@ export default function App() {
         const wl = await window.storage.get("pm_worklog", true);
         if (wl && wl.value) setWorklog(JSON.parse(wl.value));
       } catch(_){}
+      try { const ev = await window.storage.get("pm_events", true); if (ev&&ev.value) setEvents(JSON.parse(ev.value)); } catch(_){}
+      try { const jn = await window.storage.get("pm_journal", true); if (jn&&jn.value) setJournal(JSON.parse(jn.value)); } catch(_){}
+      try { const pl = await window.storage.get("pm_plans", true); if (pl&&pl.value) setPlans(JSON.parse(pl.value)); } catch(_){}
     })();
   }, []);
 
@@ -467,7 +473,7 @@ export default function App() {
       {/* MAIN */}
       <div style={{ padding: "0 16px 80px" }}>
         {view === "owner" && settings && (
-          <OwnerDashboard cats={cats} setCats={setCatsLogged} settings={settings} stalledItems={stalledItems} activityLog={activityLog} logActivity={logActivity} userName={userName} />
+          <OwnerDashboard cats={cats} setCats={setCatsLogged} settings={settings} stalledItems={stalledItems} activityLog={activityLog} logActivity={logActivity} userName={userName} journal={journal} events={events} plans={plans} />
         )}
         {view === "overview" && (
           <OverviewTable cats={cats} setCats={guardedSetCats} confirm={confirm} />
@@ -952,7 +958,7 @@ function LoginModal({ onLogin, knownUsers, onClose }) {
 }
 
 // ── OWNER DASHBOARD ───────────────────────────────────────────────────────────
-function OwnerDashboard({ cats, setCats, settings, stalledItems, activityLog, logActivity, userName }) {
+function OwnerDashboard({ cats, setCats, settings, stalledItems, activityLog, logActivity, userName, journal, events, plans }) {
   const [reportLoading, setReportLoading] = useState(false);
   const [report, setReport] = useState("");
   const [showReport, setShowReport] = useState(false);
@@ -1182,9 +1188,6 @@ function ActivityLogPanel({ activityLog, onClose }) {
           ))}
         </div>
       </div>
-      {exportToast && (
-        <div style={{ position:"fixed", bottom:24, left:"50%", transform:"translateX(-50%)", background:"#111827", color:"#ffffff", padding:"10px 22px", borderRadius:24, fontSize:13, fontWeight:600, zIndex:1100, boxShadow:"0 8px 24px rgba(0,0,0,0.2)" }}>{exportToast}</div>
-      )}
     </div>
   );
 }
