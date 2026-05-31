@@ -916,7 +916,7 @@ function LoginModal({ onLogin, knownUsers, onClose }) {
         )}
         <input
           value={name} onChange={e=>setName(e.target.value)}
-          onKeyDown={e=>e.key==="Enter"&&name.trim()&&onLogin(name.trim())}
+          onKeyDown={e=>e.key==="Enter"&&!e.nativeEvent.isComposing&&name.trim()&&onLogin(name.trim())}
           placeholder="輸入你的名字…"
           autoFocus
           style={{ width:"100%", padding:"11px 14px", border:"2px solid #e4e6ef", borderRadius:10, fontSize:15, outline:"none", fontFamily:"'Noto Sans TC',sans-serif", boxSizing:"border-box", marginBottom:14 }}
@@ -1995,7 +1995,7 @@ function AdvisorSettingsView({ settings, setSettings, cats, aiLog, setAiLog, act
             <div style={{ fontSize:12, color:"#6b7280", marginBottom:8 }}>自由提問 / 指令</div>
             <div style={{ display:"flex", gap:8 }}>
               <textarea value={chatInput} onChange={e=>setChatInput(e.target.value)}
-                onKeyDown={e=>{ if(e.key==="Enter"&&!e.shiftKey){e.preventDefault(); if(chatInput.trim()&&!loading){const t=chatInput.trim();setChatInput("");setActiveTab("log");runAI(t);}}}}
+                onKeyDown={e=>{ if(e.key==="Enter"&&!e.shiftKey&&!e.nativeEvent.isComposing){e.preventDefault(); if(chatInput.trim()&&!loading){const t=chatInput.trim();setChatInput("");setActiveTab("log");runAI(t);}}}}
                 placeholder="問任何問題，或描述你的狀況讓AI幫你分析…（Enter送出）"
                 style={{ ...fieldStyle, flex:1, height:52, resize:"none", background:"#f9fafb" }}
               />
@@ -2135,7 +2135,7 @@ function AdvisorSettingsView({ settings, setSettings, cats, aiLog, setAiLog, act
           </div>
           <div style={{ display:"flex", gap:8 }}>
             <textarea value={chatInput} onChange={e=>setChatInput(e.target.value)}
-              onKeyDown={e=>{ if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();if(chatInput.trim()&&!loading){const t=chatInput.trim();setChatInput("");runAI(t);}}}}
+              onKeyDown={e=>{ if(e.key==="Enter"&&!e.shiftKey&&!e.nativeEvent.isComposing){e.preventDefault();if(chatInput.trim()&&!loading){const t=chatInput.trim();setChatInput("");runAI(t);}}}}
               placeholder="繼續對話，或提出新問題…（Enter送出，Shift+Enter換行）"
               style={{ flex:1, padding:"10px 12px", border:"1px solid #e4e6ef", borderRadius:10, fontSize:13, outline:"none", fontFamily:"'Noto Sans TC',sans-serif", height:52, resize:"none", background:"#f9fafb" }}
             />
@@ -2489,7 +2489,7 @@ function ItemChat({ cat, item, setCats }) {
         <div ref={endRef} />
       </div>
       <div style={{ display: "flex", gap: 8 }}>
-        <input value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => e.key === "Enter" && !e.shiftKey && send()} placeholder="詢問AI顧問或記錄討論…" style={{ ...inputStyle, flex: 1, margin: 0 }} />
+        <input value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); send(); } }} placeholder="詢問AI顧問或記錄討論…" style={{ ...inputStyle, flex: 1, margin: 0 }} />
         <button onClick={send} disabled={aiLoading || !input.trim()} style={{ background: ACCENT, border: "none", borderRadius: 8, padding: "0 14px", color: "#1a1d2e", fontWeight: 700, cursor: aiLoading ? "not-allowed" : "pointer", fontSize: 13, opacity: aiLoading ? 0.6 : 1 }}>送出</button>
       </div>
     </div>
@@ -2725,7 +2725,7 @@ function GlobalAIPanel({ chat, setChat, onClose, cats, setCats, canEdit, confirm
           ))}
         </div>
         <div style={{ padding: "0 14px 14px", display: "flex", gap: 8 }}>
-          <input id="global-input" value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => e.key === "Enter" && !e.shiftKey && send()} placeholder="詢問工程問題或記錄決策…" style={{ ...inputStyle, flex: 1, margin: 0 }} />
+          <input id="global-input" value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); send(); } }} placeholder="詢問工程問題或記錄決策…" style={{ ...inputStyle, flex: 1, margin: 0 }} />
           <button onClick={send} disabled={loading || !input.trim()} style={{ background: ACCENT, border: "none", borderRadius: 8, padding: "0 16px", color: "#1a1d2e", fontWeight: 700, cursor: loading ? "not-allowed" : "pointer", fontSize: 14, opacity: loading ? 0.6 : 1 }}>送</button>
         </div>
       </div>
