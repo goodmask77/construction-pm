@@ -330,6 +330,7 @@ export default function App() {
   const [worklog, setWorklog] = useState([]);
   const [photos, setPhotos] = useState([]);
   const [accounts, setAccounts] = useState([]);
+  const [customCols, setCustomCols] = useState([]);
   const [events, setEvents] = useState([]);
   const [journal, setJournal] = useState([]);
   const [plans, setPlans] = useState([]);
@@ -348,6 +349,10 @@ export default function App() {
   const commitAccounts = (list) => {
     setAccounts(list);
     window.storage.set("pm_accounts", JSON.stringify(list), true).catch(()=>{});
+  };
+  const commitCustomCols = (list) => {
+    setCustomCols(list);
+    window.storage.set("pm_columns", JSON.stringify(list), true).catch(()=>{});
   };
 
   // load
@@ -388,6 +393,19 @@ export default function App() {
       try {
         const ac = await window.storage.get("pm_accounts", true);
         if (ac && ac.value) setAccounts(JSON.parse(ac.value));
+      } catch(_){}
+      try {
+        const cc = await window.storage.get("pm_columns", true);
+        if (cc && cc.value) setCustomCols(JSON.parse(cc.value));
+        else { // 預設欄位：含稅總價 / 已付款 / 未付款
+          const def = [
+            { id:"paid",    label:"已付款",   type:"money",   w:110 },
+            { id:"taxincl", label:"含稅總價", type:"formula", formula:"estTotal*1.05", w:110 },
+            { id:"unpaid",  label:"未付款",   type:"formula", formula:"taxincl - paid", w:110 },
+          ];
+          setCustomCols(def);
+          window.storage.set("pm_columns", JSON.stringify(def), true).catch(()=>{});
+        }
       } catch(_){}
       try { const ev = await window.storage.get("pm_events", true); if (ev&&ev.value) setEvents(JSON.parse(ev.value)); } catch(_){}
       try { const jn = await window.storage.get("pm_journal", true); if (jn&&jn.value) setJournal(JSON.parse(jn.value)); } catch(_){}
@@ -508,7 +526,7 @@ export default function App() {
           <OwnerDashboard cats={cats} setCats={setCatsLogged} settings={settings} stalledItems={stalledItems} activityLog={activityLog} logActivity={logActivity} userName={userName} journal={journal} events={events} plans={plans} />
         )}
         {view === "overview" && (
-          <OverviewTable cats={cats} setCats={guardedSetCats} confirm={confirm} />
+          <OverviewTable cats={cats} setCats={guardedSetCats} confirm={confirm} customCols={customCols} setCustomCols={canEditData ? commitCustomCols : null} />
         )}
         {view === "kanban" && (
           <KanbanView cats={cats} setCats={guardedSetCats} onSelect={(cat) => { setSelectedCat(cat); setSelectedItem(null); }} dragging={dragging} dragOver={dragOver} onDragStart={onDragStart} onDragOver={onDragOver} onDrop={onDrop} confirm={confirm} />
@@ -691,7 +709,34 @@ const COLS = [
 ];
 
 const MONEY_FIELDS = new Set(["estUnitPrice","actUnitPrice","actDailyWage"]); // 只有這些 number 欄要加 NT$
-function OverviewTable({ cats, setCats, confirm }) {
+// 安全地計算公式（變數來自 ctx；錯誤回傳空）
+function evalFormula(expr, ctx) {
+  if (!expr) return 0;
+  try {
+    const keys = Object.keys(ctx);
+    const fn = new Function(...keys, `"use strict"; try { return (${expr}); } catch(e){ return null; }`);
+    const v = fn(...keys.map(k => ctx[k]));
+    return (typeof v === "number" && isFinite(v)) ? v : (v ?? "");
+  } catch (_) { return ""; }
+}
+function CustomInput({ value, type, onCommit }) {
+  const [editing, setEditing] = useState(false);
+  const [local, setLocal] = useState(value ?? "");
+  useEffect(() => { setLocal(value ?? ""); }, [value]);
+  const isNum = type === "number" || type === "money";
+  const display = (type === "money" && value !== undefined && value !== "" && value !== null) ? fmt(Number(value)||0) : (value ?? "");
+  if (editing) {
+    return <input autoFocus value={local} onChange={e=>setLocal(e.target.value)}
+      onBlur={()=>{ onCommit(isNum ? (parseFloat(local)||0) : local); setEditing(false); }}
+      onKeyDown={e=>{ if(e.key==="Enter"||e.key==="Escape") e.target.blur(); }}
+      style={{ width:"100%", border:"none", outline:"2px solid "+ACCENT, borderRadius:4, padding:"2px 4px", fontSize:12.5, fontFamily:"'Noto Sans TC',sans-serif", background:"#fffbf0" }} />;
+  }
+  return <div onClick={()=>{ setLocal(value ?? ""); setEditing(true); }} style={{ width:"100%", cursor:"text", minHeight:22, color: (value!==undefined&&value!=="")?"#111827":"#c0c4d0", padding:"2px 2px" }}>{display || "—"}</div>;
+}
+function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols }) {
+  const [newColLabel, setNewColLabel] = useState("");
+  const [newColType, setNewColType] = useState("money");
+  const [newColFormula, setNewColFormula] = useState("");
   const [dragRowId, setDragRowId] = useState(null);
   const [dragOverId, setDragOverId] = useState(null);
   const [hiddenCols, setHiddenCols] = useState(new Set());
@@ -750,7 +795,35 @@ function OverviewTable({ cats, setCats, confirm }) {
   };
 
   const visibleCols = COLS.filter(c => !hiddenCols.has(c.id));
-  const totalW = visibleCols.reduce((s,c) => s + c.w, 0) + 48; // +48 for drag handle + delete
+  const visibleCustomCols = (customCols || []).filter(c => !hiddenCols.has(c.id));
+  const totalW = visibleCols.reduce((s,c) => s + c.w, 0) + visibleCustomCols.reduce((s,c)=>s+(c.w||110),0) + 48;
+
+  // 自訂欄位：每列的公式計算 context
+  const buildCtx = (item) => {
+    const ctx = {
+      estQty: Number(item.estQty ?? item.qty ?? 0),
+      estUnitPrice: Number(item.estUnitPrice ?? item.unitPrice ?? 0),
+      estTotal: calcEstimated(item),
+      actQty: Number(item.actQty ?? 0),
+      actUnitPrice: Number(item.actUnitPrice ?? 0),
+      actWorkers: Number(item.actWorkers ?? 0),
+      actDailyWage: Number(item.actDailyWage ?? 0),
+      actLaborDays: Number(item.actLaborDays ?? 0),
+      actTotal: calcActual(item),
+    };
+    (customCols||[]).filter(c => c.type !== "formula").forEach(c => { ctx[c.id] = c.type === "text" ? (item.cust?.[c.id] || "") : (Number(item.cust?.[c.id]) || 0); });
+    (customCols||[]).filter(c => c.type === "formula").forEach(c => { ctx[c.id] = evalFormula(c.formula, ctx); });
+    return ctx;
+  };
+  const updateCustom = (catId, itemId, colId, val) => setCats(prev => prev.map(c => c.id===catId ? { ...c, items: c.items.map(it => it.id===itemId ? { ...it, cust: { ...(it.cust||{}), [colId]: val } } : it) } : c) );
+  const addCustomCol = () => {
+    if (!setCustomCols) return;
+    const label = newColLabel.trim(); if (!label) return;
+    const id = "cc-" + Math.random().toString(36).slice(2,6);
+    setCustomCols([...(customCols||[]), { id, label, type:newColType, formula: newColType==="formula"?newColFormula.trim():undefined, w:110 }]);
+    setNewColLabel(""); setNewColFormula("");
+  };
+  const delCustomCol = (id) => setCustomCols && setCustomCols((customCols||[]).filter(c => c.id !== id));
 
   const cellStyle = (col) => ({
     minWidth: col.w, maxWidth: col.w, width: col.w,
@@ -818,7 +891,7 @@ function OverviewTable({ cats, setCats, confirm }) {
         <div style={{ position: "relative" }}>
           <button onClick={() => setShowColMenu(s => !s)} style={{ padding: "4px 10px", borderRadius: 6, border: "1px solid #e4e6ef", fontSize: 11, cursor: "pointer", background: "#f7f8fa", color: "#6b7280" }}>欄位 ⚙</button>
           {showColMenu && (
-            <div style={{ position: "absolute", right: 0, top: 30, background: "#ffffff", border: "1px solid #e4e6ef", borderRadius: 10, padding: "10px 14px", zIndex: 300, minWidth: 180, boxShadow: "0 4px 20px rgba(0,0,0,0.1)" }}>
+            <div style={{ position: "absolute", right: 0, top: 30, background: "#ffffff", border: "1px solid #e4e6ef", borderRadius: 10, padding: "10px 14px", zIndex: 300, minWidth: 230, maxHeight: "72vh", overflowY: "auto", boxShadow: "0 4px 20px rgba(0,0,0,0.1)" }}>
               <div style={{ fontSize: 11, color: "#6b7280", marginBottom: 8 }}>顯示/隱藏欄位</div>
               {COLS.filter(c => !c.fixed).map(col => (
                 <label key={col.id} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6, cursor: "pointer", fontSize: 12 }}>
@@ -828,6 +901,27 @@ function OverviewTable({ cats, setCats, confirm }) {
                   {col.label}
                 </label>
               ))}
+              <div style={{ borderTop:"1px solid #eee", margin:"8px 0", paddingTop:8, fontSize:11, color:"#6b7280", fontWeight:700 }}>自訂欄位</div>
+              {(customCols||[]).map(c => (
+                <div key={c.id} style={{ display:"flex", alignItems:"center", gap:6, marginBottom:6, fontSize:12 }}>
+                  <label style={{ display:"flex", alignItems:"center", gap:6, flex:1, cursor:"pointer" }}>
+                    <input type="checkbox" checked={!hiddenCols.has(c.id)} onChange={e=>{ setHiddenCols(prev=>{ const s=new Set(prev); e.target.checked?s.delete(c.id):s.add(c.id); return s; }); }} />
+                    {c.label}{c.type==="formula" && <span style={{ color:"#8a6d3b" }}> ƒ</span>}
+                  </label>
+                  {setCustomCols && <button onClick={()=>delCustomCol(c.id)} title="刪除欄位" style={{ color:"#dc2626", background:"none", border:"none", cursor:"pointer", fontSize:14, lineHeight:1 }}>×</button>}
+                </div>
+              ))}
+              {setCustomCols ? (
+                <div style={{ display:"flex", flexDirection:"column", gap:6, marginTop:8, borderTop:"1px dashed #eee", paddingTop:8 }}>
+                  <input value={newColLabel} onChange={e=>setNewColLabel(e.target.value)} placeholder="新欄位名稱" style={{ ...inputStyle, padding:"5px 8px", fontSize:12 }} />
+                  <select value={newColType} onChange={e=>setNewColType(e.target.value)} style={{ ...inputStyle, padding:"5px 8px", fontSize:12 }}>
+                    <option value="money">金額</option><option value="number">數字</option><option value="text">文字</option><option value="formula">公式</option>
+                  </select>
+                  {newColType==="formula" && <input value={newColFormula} onChange={e=>setNewColFormula(e.target.value)} placeholder="例：estTotal*1.05 - paid" style={{ ...inputStyle, padding:"5px 8px", fontSize:12 }} />}
+                  <button onClick={addCustomCol} disabled={!newColLabel.trim()} style={{ background:newColLabel.trim()?ACCENT:"#e4e6ef", color:newColLabel.trim()?"#1a1d2e":"#9ca3af", border:"none", borderRadius:6, padding:"6px 0", fontWeight:700, cursor:newColLabel.trim()?"pointer":"not-allowed", fontSize:12 }}>＋ 新增欄位</button>
+                  {newColType==="formula" && <div style={{ fontSize:10, color:"#9ca3af", lineHeight:1.5 }}>可用變數：estTotal(預估總價) actTotal(實際總價) paid(已付款) taxincl(含稅) estQty estUnitPrice…，支援 + − * / ( )</div>}
+                </div>
+              ) : <div style={{ fontSize:11, color:"#9ca3af", marginTop:6 }}>需編輯權限才能管理欄位</div>}
             </div>
           )}
         </div>
@@ -842,6 +936,11 @@ function OverviewTable({ cats, setCats, confirm }) {
             {visibleCols.map(col => (
               <div key={col.id} style={{ ...cellStyle(col), fontWeight: 700, fontSize: 11, color: "#6b7280", letterSpacing: 0.5, background: "#f7f8fa" }}>
                 {col.label}
+              </div>
+            ))}
+            {visibleCustomCols.map(col => (
+              <div key={col.id} style={{ ...cellStyle({ w: col.w||110 }), fontWeight: 700, fontSize: 11, color: col.type==="formula"?"#8a6d3b":"#6b7280", letterSpacing: 0.5, background: "#f7f8fa" }}>
+                {col.label}{col.type==="formula" && <span style={{ fontSize:9, marginLeft:3 }}>ƒ</span>}
               </div>
             ))}
             <div style={{ width: 32, flexShrink: 0 }} />
@@ -924,6 +1023,15 @@ function OverviewTable({ cats, setCats, confirm }) {
                         );
                         if (col.id === "notes") return <div key={col.id} style={cs}><EditableCell catId={catId} itemId={item.id} field="notes" value={item.notes} placeholder="備註..." /></div>;
                         return <div key={col.id} style={cs} />;
+                      })}
+
+                      {visibleCustomCols.map(col => {
+                        const cs2 = cellStyle({ w: col.w||110 });
+                        if (col.type === "formula") {
+                          const v = buildCtx(item)[col.id];
+                          return <div key={col.id} style={{ ...cs2, fontFamily:"monospace", fontSize:12, color:"#8a6d3b" }}>{typeof v === "number" ? fmt(v) : (v || "—")}</div>;
+                        }
+                        return <div key={col.id} style={cs2}><CustomInput value={item.cust?.[col.id]} type={col.type} onCommit={(val)=>updateCustom(catId, item.id, col.id, val)} /></div>;
                       })}
 
                       {/* delete */}
