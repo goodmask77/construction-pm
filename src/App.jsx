@@ -326,7 +326,14 @@ export default function App() {
   const [activityLog, setActivityLog] = useState([]);
   const [showLogin, setShowLogin] = useState(false);
   const [knownUsers, setKnownUsers] = useState([]);
+  const [worklog, setWorklog] = useState([]);
   const { confirm, Dialog: ConfirmDialog } = useConfirm();
+
+  // 工作日誌：寫入 state 並存進共享後端
+  const commitWorklog = (list) => {
+    setWorklog(list);
+    window.storage.set("pm_worklog", JSON.stringify(list), true).catch(()=>{});
+  };
 
   // load
   useEffect(() => {
@@ -355,6 +362,10 @@ export default function App() {
       } catch(_){ setKnownUsers([]); }
       const alog = await loadActivityLog();
       setActivityLog(alog);
+      try {
+        const wl = await window.storage.get("pm_worklog", true);
+        if (wl && wl.value) setWorklog(JSON.parse(wl.value));
+      } catch(_){}
     })();
   }, []);
 
@@ -470,6 +481,9 @@ export default function App() {
         {view === "gantt" && (
           <GanttView cats={cats} setCats={guardedSetCats} />
         )}
+        {view === "worklog" && (
+          <WorklogView worklog={worklog} setWorklog={commitWorklog} canEdit={canEdit} userName={userName} requireLogin={requireLogin} confirm={confirm} />
+        )}
         {view === "advisor" && settings && (
           <AdvisorSettingsView settings={settings} setSettings={guardedSetSettings} cats={cats} aiLog={aiLog} setAiLog={l => { setAiLog(l); saveAILog(l); }} journal={journal} events={events} plans={plans} activityLog={activityLog} logActivity={logActivity} userName={userName} />
         )}
@@ -505,7 +519,7 @@ export default function App() {
       )}
       {/* GLOBAL AI */}
       {showGlobalAI && (
-        <GlobalAIPanel chat={globalChat} setChat={setGlobalChat} onClose={() => setShowGlobalAI(false)} cats={cats} setCats={guardedSetCats} canEdit={canEdit} confirm={confirm} settings={settings} setSettings={guardedSetSettings} />
+        <GlobalAIPanel chat={globalChat} setChat={setGlobalChat} onClose={() => setShowGlobalAI(false)} cats={cats} setCats={guardedSetCats} canEdit={canEdit} confirm={confirm} settings={settings} setSettings={guardedSetSettings} worklog={worklog} setWorklog={commitWorklog} />
       )}
     </div>
   );
@@ -600,7 +614,7 @@ function TopNav({ view, setView, saving, totalEstimated, totalActual, doneCount,
       </div>
       {/* view tabs */}
       <div style={{ display: "flex", gap: 6 }}>
-        {[["owner","業主視角"],["overview","總覽"],["kanban","看板"],["list","明細"],["gantt","工序"],["advisor","AI設定"]].map(([v,l]) => (
+        {[["owner","業主視角"],["overview","總覽"],["kanban","看板"],["list","明細"],["gantt","工序"],["worklog","工作日誌"],["advisor","AI設定"]].map(([v,l]) => (
           <button key={v} onClick={() => setView(v)} style={{ padding: "5px 14px", borderRadius: 6, border: "none", cursor: "pointer", fontSize: 12, fontWeight: 600, background: view === v ? ACCENT : "#d8dae3", color: view === v ? "#f4f5f7" : "#6b7280" }}>{l}</button>
         ))}
       </div>
@@ -2497,6 +2511,70 @@ function ItemChat({ cat, item, setCats }) {
 }
 
 // ── GLOBAL AI PANEL ────────────────────────────────────────────────────────────
+// ── 工作日誌 ─────────────────────────────────────────────────────────────────
+const wlMiniBtn = { background:"#f7f8fa", border:"1px solid #e4e6ef", borderRadius:6, padding:"4px 10px", fontSize:12, cursor:"pointer", color:"#374151" };
+function WorklogView({ worklog, setWorklog, canEdit, userName, requireLogin, confirm }) {
+  const [draft, setDraft] = useState("");
+  const [draftDate, setDraftDate] = useState(new Date().toISOString().slice(0,10));
+  const [editId, setEditId] = useState(null);
+  const [editText, setEditText] = useState("");
+
+  const add = () => {
+    if (!canEdit) { requireLogin && requireLogin(); return; }
+    const c = draft.trim(); if (!c) return;
+    const entry = { id: "wl-"+Math.random().toString(36).slice(2,8), date: draftDate || new Date().toISOString().slice(0,10), content: c, author: userName || "—", ts: new Date().toISOString() };
+    setWorklog([entry, ...worklog]);
+    setDraft("");
+  };
+  const saveEdit = (id) => { setWorklog(worklog.map(w => w.id === id ? { ...w, content: editText } : w)); setEditId(null); };
+  const del = async (id) => { if (confirm && !(await confirm("確定刪除這筆工作日誌？"))) return; setWorklog(worklog.filter(w => w.id !== id)); };
+  const sorted = [...worklog].sort((a,b) => (b.date||"").localeCompare(a.date||"") || (b.ts||"").localeCompare(a.ts||""));
+
+  return (
+    <div style={{ maxWidth: 760, margin: "16px auto", padding: "0 4px" }}>
+      <div style={{ fontSize: 18, fontWeight: 900, color: "#111827", marginBottom: 12 }}>📓 工作日誌</div>
+      {canEdit ? (
+        <div style={{ background:"#fff", border:"1px solid #e4e6ef", borderRadius:12, padding:16, marginBottom:16 }}>
+          <input type="date" value={draftDate} onChange={e=>setDraftDate(e.target.value)} style={{ ...inputStyle, width:170, marginBottom:8 }} />
+          <textarea value={draft} onChange={e=>setDraft(e.target.value)} placeholder="記錄今天的工程狀況、決策、問題…（也可在「AI顧問」對話框口述，請它幫你建立日誌）"
+            style={{ ...inputStyle, width:"100%", minHeight:80, resize:"vertical", boxSizing:"border-box" }} />
+          <div style={{ textAlign:"right", marginTop:8 }}>
+            <button onClick={add} disabled={!draft.trim()} style={{ background: draft.trim()?ACCENT:"#e4e6ef", color: draft.trim()?"#1a1d2e":"#9ca3af", border:"none", borderRadius:8, padding:"8px 18px", fontWeight:700, cursor: draft.trim()?"pointer":"not-allowed" }}>新增日誌</button>
+          </div>
+        </div>
+      ) : (
+        <div style={{ background:"#fff7e6", border:"1px solid #ffe2a8", borderRadius:10, padding:"10px 14px", marginBottom:16, fontSize:13, color:"#8a6d3b" }}>🔒 唯讀模式：登入後可新增 / 編輯工作日誌。</div>
+      )}
+      {sorted.length === 0 ? (
+        <div style={{ textAlign:"center", color:"#9ca3af", padding:40 }}>尚無工作日誌</div>
+      ) : sorted.map(w => (
+        <div key={w.id} style={{ background:"#fff", border:"1px solid #e4e6ef", borderRadius:12, padding:14, marginBottom:10 }}>
+          <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:6 }}>
+            <span style={{ fontSize:12, fontWeight:700, color:ACCENT, fontFamily:"monospace" }}>{w.date}</span>
+            <span style={{ fontSize:11, color:"#9ca3af" }}>by {w.author||"—"}</span>
+            <div style={{ flex:1 }} />
+            {canEdit && editId !== w.id && (<>
+              <button onClick={()=>{ setEditId(w.id); setEditText(w.content); }} style={wlMiniBtn}>編輯</button>
+              <button onClick={()=>del(w.id)} style={{ ...wlMiniBtn, color:"#dc2626" }}>刪除</button>
+            </>)}
+          </div>
+          {editId === w.id ? (
+            <div>
+              <textarea value={editText} onChange={e=>setEditText(e.target.value)} style={{ ...inputStyle, width:"100%", minHeight:70, boxSizing:"border-box" }} />
+              <div style={{ textAlign:"right", marginTop:6 }}>
+                <button onClick={()=>setEditId(null)} style={{ ...wlMiniBtn, marginRight:6 }}>取消</button>
+                <button onClick={()=>saveEdit(w.id)} style={{ background:ACCENT, color:"#1a1d2e", border:"none", borderRadius:6, padding:"5px 14px", fontWeight:700, cursor:"pointer" }}>儲存</button>
+              </div>
+            </div>
+          ) : (
+            <div style={{ fontSize:14, color:"#1a1d2e", whiteSpace:"pre-wrap", lineHeight:1.7 }}>{w.content}</div>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 // ── AI 代理：可執行操作的指令引擎 ───────────────────────────────────────────────
 const STATUS_ALIASES = {
   "待開工":"pending","未開工":"pending","pending":"pending",
@@ -2528,9 +2606,10 @@ function parseActions(text) {
 }
 
 // 套用指令到 cats / settings，回傳 { cats, settings, results }
-function applyActions(actions, cats, settings) {
+function applyActions(actions, cats, settings, worklog) {
   let next = JSON.parse(JSON.stringify(cats));
   let nextSettings = settings ? { ...settings } : settings;
+  let nextWorklog = Array.isArray(worklog) ? [...worklog] : [];
   const results = [];
   for (const a of actions) {
     const t = a.type;
@@ -2587,6 +2666,10 @@ function applyActions(actions, cats, settings) {
         } else results.push(`⚠️ 找不到細項「${a.item}」`);
       } else if (t === "set_setting") {
         if (nextSettings && a.field) { nextSettings[a.field] = a.value; results.push(`⚙️ 設定「${a.field}」已更新`); }
+      } else if (t === "add_log") {
+        const entry = { id: genId("wl"), date: a.date || new Date().toISOString().slice(0,10), content: a.content || "", author: a.author || "AI", ts: new Date().toISOString() };
+        nextWorklog = [entry, ...nextWorklog];
+        results.push(`📓 工作日誌新增（${entry.date}）：${(a.content||"").slice(0,30)}`);
       } else {
         results.push(`⚠️ 不支援的指令：${t}`);
       }
@@ -2594,7 +2677,7 @@ function applyActions(actions, cats, settings) {
       results.push(`⚠️ 執行「${t}」失敗`);
     }
   }
-  return { cats: next, settings: nextSettings, results };
+  return { cats: next, settings: nextSettings, worklog: nextWorklog, results };
 }
 
 const AGENT_GUIDE = `
@@ -2615,6 +2698,7 @@ const AGENT_GUIDE = `
 - {"type":"add_item","category":"空調工程","name":"大金VRV主機","qty":1,"unit":"式","unitPrice":310000}
 - {"type":"set_item","category":"空調工程","item":"主機","qty":2,"unitPrice":150000,"status":"進行中","assignee":"王師傅"}
 - {"type":"delete_item","category":"空調工程","item":"主機"}
+- {"type":"add_log","content":"今天拆除工程完成80%，廢料清運2車，明天接續隔間","date":"2026-05-31"}  // 工作日誌；date 可省略(預設今天)
 
 規則：
 1. category/item 用名稱比對（可部分名稱）。
@@ -2623,7 +2707,7 @@ const AGENT_GUIDE = `
 4. 只有在使用者「要求執行操作」時才附 json；單純問問題就正常回答、不要附 json。
 5. 破壞性操作（清空、刪除）也照樣附指令，系統會再跟使用者確認。`;
 
-function GlobalAIPanel({ chat, setChat, onClose, cats, setCats, canEdit, confirm, settings, setSettings }) {
+function GlobalAIPanel({ chat, setChat, onClose, cats, setCats, canEdit, confirm, settings, setSettings, worklog, setWorklog }) {
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const endRef = useRef(null);
@@ -2672,9 +2756,10 @@ function GlobalAIPanel({ chat, setChat, onClose, cats, setCats, canEdit, confirm
         let ok = true;
         if (destructive && confirm) ok = await confirm("AI 將執行包含「清空 / 刪除」的操作，確定執行嗎？");
         if (ok) {
-          const { cats: newCats, settings: newSettings, results } = applyActions(actions, cats, settings);
-          setCats(newCats);
+          const { cats: newCats, settings: newSettings, worklog: newWorklog, results } = applyActions(actions, cats, settings, worklog);
+          if (actions.some(a => ["clear_all","add_category","delete_category","set_category_budget","set_category_status","set_gantt","add_item","set_item","delete_item"].includes(a.type))) setCats(newCats);
           if (newSettings && setSettings && actions.some(a => a.type === "set_setting")) setSettings(newSettings);
+          if (setWorklog && actions.some(a => a.type === "add_log")) setWorklog(newWorklog);
           addMsg("assistant", "✅ 已執行：\n" + results.map(r => "・" + r).join("\n"));
         } else {
           addMsg("assistant", "已取消操作。");
