@@ -2538,19 +2538,57 @@ const wlMiniBtn = { background:"#f7f8fa", border:"1px solid #e4e6ef", borderRadi
 function WorklogView({ worklog, setWorklog, canEdit, userName, requireLogin, confirm }) {
   const [draft, setDraft] = useState("");
   const [draftDate, setDraftDate] = useState(new Date().toISOString().slice(0,10));
+  const [draftPhotos, setDraftPhotos] = useState([]);
   const [editId, setEditId] = useState(null);
   const [editText, setEditText] = useState("");
+  const [uploading, setUploading] = useState(false);
+  const [lightbox, setLightbox] = useState(null);
+  const fileRef = useRef(null);
+
+  const uploadAll = async (files) => {
+    const arr = Array.from(files||[]);
+    const out = [];
+    setUploading(true);
+    for (const f of arr) {
+      try { const { url, path } = await uploadPhoto(f); out.push({ id:"wp-"+Math.random().toString(36).slice(2,8), url, path, name:f.name||"檔案", isImage:/^image\//.test(f.type) }); }
+      catch (e) { alert("上傳失敗：" + (e?.message || e)); }
+    }
+    setUploading(false);
+    return out;
+  };
+  const addPhotosToDraft = async (files) => { if (!canEdit) { requireLogin&&requireLogin(); return; } const ph = await uploadAll(files); if (ph.length) setDraftPhotos(prev => [...prev, ...ph]); };
+  const addPhotosToEntry = async (id, files) => { const ph = await uploadAll(files); if (ph.length) setWorklog(worklog.map(w => w.id===id ? { ...w, photos:[...(w.photos||[]), ...ph] } : w)); };
+
+  // 在工作日誌頁時，貼上截圖 → 加到草稿
+  const draftRef = useRef(null); draftRef.current = addPhotosToDraft;
+  useEffect(() => {
+    const handler = (e) => {
+      const items = e.clipboardData?.items || []; const imgs = [];
+      for (const it of items) if (it.type && it.type.startsWith("image/")) { const f = it.getAsFile(); if (f) imgs.push(f); }
+      if (imgs.length) { e.preventDefault(); draftRef.current && draftRef.current(imgs); }
+    };
+    document.addEventListener("paste", handler);
+    return () => document.removeEventListener("paste", handler);
+  }, []);
 
   const add = () => {
     if (!canEdit) { requireLogin && requireLogin(); return; }
-    const c = draft.trim(); if (!c) return;
-    const entry = { id: "wl-"+Math.random().toString(36).slice(2,8), date: draftDate || new Date().toISOString().slice(0,10), content: c, author: userName || "—", ts: new Date().toISOString() };
+    const c = draft.trim(); if (!c && draftPhotos.length === 0) return;
+    const entry = { id: "wl-"+Math.random().toString(36).slice(2,8), date: draftDate || new Date().toISOString().slice(0,10), content: c, photos: draftPhotos, author: userName || "—", ts: new Date().toISOString() };
     setWorklog([entry, ...worklog]);
-    setDraft("");
+    setDraft(""); setDraftPhotos([]);
   };
   const saveEdit = (id) => { setWorklog(worklog.map(w => w.id === id ? { ...w, content: editText } : w)); setEditId(null); };
   const del = async (id) => { if (confirm && !(await confirm("確定刪除這筆工作日誌？"))) return; setWorklog(worklog.filter(w => w.id !== id)); };
+  const removeEntryPhoto = (id, pid) => setWorklog(worklog.map(w => w.id===id ? { ...w, photos:(w.photos||[]).filter(p=>p.id!==pid) } : w));
   const sorted = [...worklog].sort((a,b) => (b.date||"").localeCompare(a.date||"") || (b.ts||"").localeCompare(a.ts||""));
+  const thumb = (p, onRemove) => (
+    <div key={p.id} style={{ position:"relative", width:60, height:60, borderRadius:8, overflow:"hidden", border:"1px solid #e4e6ef", background:"#f7f8fa", display:"flex", alignItems:"center", justifyContent:"center" }}>
+      {p.isImage!==false ? <img src={p.url} alt="" onClick={()=>setLightbox(p)} style={{ width:"100%", height:"100%", objectFit:"cover", cursor:"zoom-in" }} />
+        : <a href={p.url} target="_blank" rel="noreferrer" style={{ fontSize:20, textDecoration:"none" }}>📄</a>}
+      {onRemove && <button onClick={()=>onRemove(p.id)} style={{ position:"absolute", top:-6, right:-6, width:18, height:18, borderRadius:"50%", background:"#111827", color:"#fff", border:"none", fontSize:11, cursor:"pointer", lineHeight:1 }}>×</button>}
+    </div>
+  );
 
   return (
     <div style={{ maxWidth: 760, margin: "16px auto", padding: "0 4px" }}>
@@ -2560,8 +2598,17 @@ function WorklogView({ worklog, setWorklog, canEdit, userName, requireLogin, con
           <input type="date" value={draftDate} onChange={e=>setDraftDate(e.target.value)} style={{ ...inputStyle, width:170, marginBottom:8 }} />
           <textarea value={draft} onChange={e=>setDraft(e.target.value)} placeholder="記錄今天的工程狀況、決策、問題…（也可在「AI顧問」對話框口述，請它幫你建立日誌）"
             style={{ ...inputStyle, width:"100%", minHeight:80, resize:"vertical", boxSizing:"border-box" }} />
-          <div style={{ textAlign:"right", marginTop:8 }}>
-            <button onClick={add} disabled={!draft.trim()} style={{ background: draft.trim()?ACCENT:"#e4e6ef", color: draft.trim()?"#1a1d2e":"#9ca3af", border:"none", borderRadius:8, padding:"8px 18px", fontWeight:700, cursor: draft.trim()?"pointer":"not-allowed" }}>新增日誌</button>
+          {draftPhotos.length > 0 && (
+            <div style={{ display:"flex", gap:6, flexWrap:"wrap", marginTop:8 }}>
+              {draftPhotos.map(p => thumb(p, (pid)=>setDraftPhotos(prev=>prev.filter(x=>x.id!==pid))))}
+            </div>
+          )}
+          <input ref={fileRef} type="file" accept="image/*" multiple style={{ display:"none" }} onChange={e=>{ addPhotosToDraft(e.target.files); e.target.value=""; }} />
+          <div style={{ display:"flex", alignItems:"center", gap:8, marginTop:8 }}>
+            <button onClick={()=>fileRef.current?.click()} disabled={uploading} style={{ background:"#f0f1f4", border:"1px solid #e4e6ef", borderRadius:8, padding:"7px 12px", cursor:"pointer", fontSize:13, color:"#374151" }}>{uploading?"上傳中…":"📷 附現場照片"}</button>
+            <span style={{ fontSize:11, color:"#9ca3af" }}>可貼上截圖</span>
+            <div style={{ flex:1 }} />
+            <button onClick={add} disabled={!draft.trim() && draftPhotos.length===0} style={{ background: (draft.trim()||draftPhotos.length)?ACCENT:"#e4e6ef", color: (draft.trim()||draftPhotos.length)?"#1a1d2e":"#9ca3af", border:"none", borderRadius:8, padding:"8px 18px", fontWeight:700, cursor: (draft.trim()||draftPhotos.length)?"pointer":"not-allowed" }}>新增日誌</button>
           </div>
         </div>
       ) : (
@@ -2589,10 +2636,26 @@ function WorklogView({ worklog, setWorklog, canEdit, userName, requireLogin, con
               </div>
             </div>
           ) : (
-            <div style={{ fontSize:14, color:"#1a1d2e", whiteSpace:"pre-wrap", lineHeight:1.7 }}>{w.content}</div>
+            <>
+              {w.content && <div style={{ fontSize:14, color:"#1a1d2e", whiteSpace:"pre-wrap", lineHeight:1.7 }}>{w.content}</div>}
+              {((w.photos||[]).length > 0 || canEdit) && (
+                <div style={{ display:"flex", gap:6, flexWrap:"wrap", marginTop:8, alignItems:"center" }}>
+                  {(w.photos||[]).map(p => thumb(p, canEdit ? (pid)=>removeEntryPhoto(w.id, pid) : null))}
+                  {canEdit && (<>
+                    <input id={"wlf-"+w.id} type="file" accept="image/*" multiple style={{ display:"none" }} onChange={e=>{ addPhotosToEntry(w.id, e.target.files); e.target.value=""; }} />
+                    <button onClick={()=>document.getElementById("wlf-"+w.id)?.click()} style={{ width:60, height:60, borderRadius:8, border:"1px dashed #d8dae3", background:"#fafbfc", color:"#9ca3af", fontSize:20, cursor:"pointer" }}>＋</button>
+                  </>)}
+                </div>
+              )}
+            </>
           )}
         </div>
       ))}
+      {lightbox && (
+        <div onClick={()=>setLightbox(null)} style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.85)", zIndex:9999, display:"flex", alignItems:"center", justifyContent:"center", padding:20, cursor:"zoom-out" }}>
+          <img src={lightbox.url} alt="" style={{ maxWidth:"95%", maxHeight:"95%", objectFit:"contain", borderRadius:8 }} />
+        </div>
+      )}
     </div>
   );
 }
@@ -2612,6 +2675,7 @@ function PhotoLibraryView({ photos, setPhotos, cats, canEdit, userName, requireL
   const [lightbox, setLightbox] = useState(null);
   const [editId, setEditId] = useState(null);
   const [ef, setEf] = useState({});
+  const [groupBy, setGroupBy] = useState("none"); // none | cat | date
   const fileRef = useRef(null);
   const sortedCats = [...cats].sort((a,b)=>a.order-b.order);
 
@@ -2658,6 +2722,67 @@ function PhotoLibraryView({ photos, setPhotos, cats, canEdit, userName, requireL
   const pendingInvoices = photos.filter(p => p.kind==="invoice" && !p.invoiceReceived).length;
 
   const selStyle = { ...inputStyle, width:"auto", padding:"6px 10px" };
+
+  const groups = (() => {
+    if (groupBy === "cat") {
+      const order = [...sortedCats.map(c=>c.name), "（未指定工程）"];
+      const m = {};
+      filtered.forEach(p => { const k = p.catName || "（未指定工程）"; (m[k]=m[k]||[]).push(p); });
+      return order.filter(k=>m[k]).map(k => ({ label: k, items: m[k] }));
+    }
+    if (groupBy === "date") {
+      const m = {};
+      filtered.forEach(p => { const k = p.date || "（無日期）"; (m[k]=m[k]||[]).push(p); });
+      return Object.keys(m).sort((a,b)=>b.localeCompare(a)).map(k => ({ label: k, items: m[k] }));
+    }
+    return [{ label: null, items: filtered }];
+  })();
+
+  const renderCard = (p) => (
+    <div key={p.id} style={{ background:"#fff", border:"1px solid #e4e6ef", borderRadius:12, overflow:"hidden", display:"flex", flexDirection:"column" }}>
+      <div style={{ position:"relative", aspectRatio:"4/3", background:"#f0f2f5", cursor: p.isImage!==false?"zoom-in":"default", display:"flex", alignItems:"center", justifyContent:"center" }} onClick={()=>{ if (p.isImage!==false) setLightbox(p); }}>
+        {p.isImage !== false
+          ? <img src={p.url} alt={p.name} style={{ width:"100%", height:"100%", objectFit:"cover" }} />
+          : <a href={p.url} target="_blank" rel="noreferrer" onClick={e=>e.stopPropagation()} style={{ textAlign:"center", textDecoration:"none", color:"#6b7280", padding:"0 10px" }}>
+              <div style={{ fontSize:40 }}>📄</div>
+              <div style={{ fontSize:11, marginTop:4, wordBreak:"break-all", maxHeight:32, overflow:"hidden" }}>{p.name}</div>
+            </a>}
+        <span style={{ position:"absolute", top:6, left:6, fontSize:10, fontWeight:700, color:"#fff", background:photoKindColor[p.kind]||"#9ca3af", borderRadius:6, padding:"2px 7px" }}>{photoKindLabel(p.kind)}</span>
+      </div>
+      <div style={{ padding:"8px 10px", fontSize:12 }}>
+        {editId === p.id ? (
+          <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
+            <select value={ef.kind} onChange={e=>setEf({...ef, kind:e.target.value})} style={{ ...inputStyle, padding:"5px 8px", fontSize:12 }}>{PHOTO_KINDS.map(([k,l])=><option key={k} value={k}>{l}</option>)}</select>
+            <select value={ef.catId} onChange={e=>setEf({...ef, catId:e.target.value})} style={{ ...inputStyle, padding:"5px 8px", fontSize:12 }}><option value="">（不指定工程）</option>{sortedCats.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select>
+            <input type="date" value={ef.date} onChange={e=>setEf({...ef, date:e.target.value})} style={{ ...inputStyle, padding:"5px 8px", fontSize:12 }} />
+            <input value={ef.note} onChange={e=>setEf({...ef, note:e.target.value})} placeholder="備註" style={{ ...inputStyle, padding:"5px 8px", fontSize:12 }} />
+            <div style={{ display:"flex", gap:8, justifyContent:"flex-end" }}>
+              <button onClick={()=>setEditId(null)} style={{ fontSize:11, color:"#6b7280", background:"none", border:"none", cursor:"pointer" }}>取消</button>
+              <button onClick={saveEdit} style={{ fontSize:11, fontWeight:700, color:"#1a1d2e", background:ACCENT, border:"none", borderRadius:6, padding:"4px 12px", cursor:"pointer" }}>儲存</button>
+            </div>
+          </div>
+        ) : (
+          <>
+            <div style={{ color:"#374151", fontWeight:600 }}>{p.catName || "（未指定工程）"}</div>
+            <div style={{ color:"#9ca3af", fontSize:11, marginTop:2 }}>{p.date} · {p.by}</div>
+            {p.note && <div style={{ color:"#6b7280", fontSize:11, marginTop:3, whiteSpace:"pre-wrap" }}>{p.note}</div>}
+            {p.kind === "invoice" && (
+              <label style={{ display:"flex", alignItems:"center", gap:5, marginTop:6, fontSize:12, color:p.invoiceReceived?"#16a34a":"#dc2626", fontWeight:700, cursor:canEdit?"pointer":"default" }}>
+                <input type="checkbox" checked={!!p.invoiceReceived} disabled={!canEdit} onChange={()=>canEdit&&toggleReceived(p.id)} style={{ accentColor:"#16a34a" }} />
+                {p.invoiceReceived ? "✅ 發票已收到" : "⚠️ 發票未收到"}
+              </label>
+            )}
+            <div style={{ display:"flex", gap:8, marginTop:8 }}>
+              <a href={p.url} target="_blank" rel="noreferrer" style={{ fontSize:11, color:"#3b82f6", textDecoration:"none" }}>⬇ 下載</a>
+              {canEdit && <button onClick={()=>startEdit(p)} style={{ fontSize:11, color:"#374151", background:"none", border:"none", cursor:"pointer", padding:0 }}>編輯</button>}
+              {canEdit && <button onClick={()=>del(p)} style={{ fontSize:11, color:"#dc2626", background:"none", border:"none", cursor:"pointer", padding:0 }}>刪除</button>}
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+
   return (
     <div style={{ maxWidth: 980, margin: "16px auto", padding: "0 4px" }}>
       <div style={{ fontSize:18, fontWeight:900, color:"#111827", marginBottom:12 }}>📁 檔案庫 / 相簿</div>
@@ -2691,59 +2816,30 @@ function PhotoLibraryView({ photos, setPhotos, cats, canEdit, userName, requireL
         <select value={fCat} onChange={e=>setFCat(e.target.value)} style={{ ...selStyle, fontSize:12, padding:"4px 8px" }}>
           <option value="all">全部工程</option>{sortedCats.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}
         </select>
-        <div style={{ flex:1 }} /><span style={{ fontSize:12, color:"#9ca3af" }}>共 {filtered.length} 張</span>
+        <div style={{ flex:1 }} />
+        <span style={{ fontSize:11, color:"#9ca3af" }}>分組</span>
+        {[["none","不分組"],["cat","按工程"],["date","按日期"]].map(([k,l])=>(
+          <button key={k} onClick={()=>setGroupBy(k)} style={{ padding:"3px 10px", borderRadius:20, border:"1px solid #e4e6ef", fontSize:11, cursor:"pointer", background:groupBy===k?ACCENT:"#f7f8fa", color:groupBy===k?"#1a1d2e":"#6b7280", fontWeight:groupBy===k?700:400 }}>{l}</button>
+        ))}
+        <span style={{ fontSize:12, color:"#9ca3af", marginLeft:6 }}>共 {filtered.length} 張</span>
       </div>
 
       {filtered.length === 0 ? (
-        <div style={{ textAlign:"center", color:"#9ca3af", padding:40 }}>尚無圖片{canEdit?"，用上方按鈕上傳":""}</div>
-      ) : (
-        <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill, minmax(180px,1fr))", gap:12 }}>
-          {filtered.map(p => (
-            <div key={p.id} style={{ background:"#fff", border:"1px solid #e4e6ef", borderRadius:12, overflow:"hidden", display:"flex", flexDirection:"column" }}>
-              <div style={{ position:"relative", aspectRatio:"4/3", background:"#f0f2f5", cursor: p.isImage!==false?"zoom-in":"default", display:"flex", alignItems:"center", justifyContent:"center" }} onClick={()=>{ if (p.isImage!==false) setLightbox(p); }}>
-                {p.isImage !== false
-                  ? <img src={p.url} alt={p.name} style={{ width:"100%", height:"100%", objectFit:"cover" }} />
-                  : <a href={p.url} target="_blank" rel="noreferrer" onClick={e=>e.stopPropagation()} style={{ textAlign:"center", textDecoration:"none", color:"#6b7280", padding:"0 10px" }}>
-                      <div style={{ fontSize:40 }}>📄</div>
-                      <div style={{ fontSize:11, marginTop:4, wordBreak:"break-all", maxHeight:32, overflow:"hidden" }}>{p.name}</div>
-                    </a>}
-                <span style={{ position:"absolute", top:6, left:6, fontSize:10, fontWeight:700, color:"#fff", background:photoKindColor[p.kind]||"#9ca3af", borderRadius:6, padding:"2px 7px" }}>{photoKindLabel(p.kind)}</span>
-              </div>
-              <div style={{ padding:"8px 10px", fontSize:12 }}>
-                {editId === p.id ? (
-                  <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
-                    <select value={ef.kind} onChange={e=>setEf({...ef, kind:e.target.value})} style={{ ...inputStyle, padding:"5px 8px", fontSize:12 }}>{PHOTO_KINDS.map(([k,l])=><option key={k} value={k}>{l}</option>)}</select>
-                    <select value={ef.catId} onChange={e=>setEf({...ef, catId:e.target.value})} style={{ ...inputStyle, padding:"5px 8px", fontSize:12 }}><option value="">（不指定工程）</option>{sortedCats.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select>
-                    <input type="date" value={ef.date} onChange={e=>setEf({...ef, date:e.target.value})} style={{ ...inputStyle, padding:"5px 8px", fontSize:12 }} />
-                    <input value={ef.note} onChange={e=>setEf({...ef, note:e.target.value})} placeholder="備註" style={{ ...inputStyle, padding:"5px 8px", fontSize:12 }} />
-                    <div style={{ display:"flex", gap:8, justifyContent:"flex-end" }}>
-                      <button onClick={()=>setEditId(null)} style={{ fontSize:11, color:"#6b7280", background:"none", border:"none", cursor:"pointer" }}>取消</button>
-                      <button onClick={saveEdit} style={{ fontSize:11, fontWeight:700, color:"#1a1d2e", background:ACCENT, border:"none", borderRadius:6, padding:"4px 12px", cursor:"pointer" }}>儲存</button>
-                    </div>
-                  </div>
-                ) : (
-                  <>
-                    <div style={{ color:"#374151", fontWeight:600 }}>{p.catName || "（未指定工程）"}</div>
-                    <div style={{ color:"#9ca3af", fontSize:11, marginTop:2 }}>{p.date} · {p.by}</div>
-                    {p.note && <div style={{ color:"#6b7280", fontSize:11, marginTop:3, whiteSpace:"pre-wrap" }}>{p.note}</div>}
-                    {p.kind === "invoice" && (
-                      <label style={{ display:"flex", alignItems:"center", gap:5, marginTop:6, fontSize:12, color:p.invoiceReceived?"#16a34a":"#dc2626", fontWeight:700, cursor:canEdit?"pointer":"default" }}>
-                        <input type="checkbox" checked={!!p.invoiceReceived} disabled={!canEdit} onChange={()=>canEdit&&toggleReceived(p.id)} style={{ accentColor:"#16a34a" }} />
-                        {p.invoiceReceived ? "✅ 發票已收到" : "⚠️ 發票未收到"}
-                      </label>
-                    )}
-                    <div style={{ display:"flex", gap:8, marginTop:8 }}>
-                      <a href={p.url} target="_blank" rel="noreferrer" style={{ fontSize:11, color:"#3b82f6", textDecoration:"none" }}>⬇ 下載</a>
-                      {canEdit && <button onClick={()=>startEdit(p)} style={{ fontSize:11, color:"#374151", background:"none", border:"none", cursor:"pointer", padding:0 }}>編輯</button>}
-                      {canEdit && <button onClick={()=>del(p)} style={{ fontSize:11, color:"#dc2626", background:"none", border:"none", cursor:"pointer", padding:0 }}>刪除</button>}
-                    </div>
-                  </>
-                )}
-              </div>
+        <div style={{ textAlign:"center", color:"#9ca3af", padding:40 }}>尚無檔案{canEdit?"，用上方按鈕上傳或貼上截圖":""}</div>
+      ) : groups.map(g => (
+        <div key={g.label || "all"} style={{ marginBottom: g.label ? 18 : 0 }}>
+          {g.label && (
+            <div style={{ fontSize:13, fontWeight:700, color:"#374151", margin:"6px 0 8px", display:"flex", alignItems:"center", gap:8 }}>
+              {groupBy==="date" ? "📅" : "🏗️"} {g.label}
+              <span style={{ fontSize:11, color:"#9ca3af", fontWeight:400 }}>（{g.items.length}）</span>
+              <div style={{ height:1, flex:1, background:"#e4e6ef" }} />
             </div>
-          ))}
+          )}
+          <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill, minmax(180px,1fr))", gap:12 }}>
+            {g.items.map(renderCard)}
+          </div>
         </div>
-      )}
+      ))}
 
       {lightbox && (
         <div onClick={()=>setLightbox(null)} style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.85)", zIndex:9999, display:"flex", alignItems:"center", justifyContent:"center", padding:20, cursor:"zoom-out" }}>
