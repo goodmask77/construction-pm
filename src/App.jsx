@@ -652,6 +652,7 @@ const COLS = [
   { id:"notes",    label:"備註",   w:180 },
 ];
 
+const MONEY_FIELDS = new Set(["estUnitPrice","actUnitPrice","actDailyWage"]); // 只有這些 number 欄要加 NT$
 function OverviewTable({ cats, setCats, confirm }) {
   const [dragRowId, setDragRowId] = useState(null);
   const [dragOverId, setDragOverId] = useState(null);
@@ -748,7 +749,7 @@ function OverviewTable({ cats, setCats, confirm }) {
         onMouseEnter={e => e.currentTarget.style.background="#f0f7ff"}
         onMouseLeave={e => e.currentTarget.style.background="transparent"}
       >
-        {type === "number" && value ? fmt(value) : (value || placeholder || "—")}
+        {type === "number" && value ? (MONEY_FIELDS.has(field) ? fmt(value) : value) : (value || placeholder || "—")}
       </div>
     );
   };
@@ -791,7 +792,7 @@ function OverviewTable({ cats, setCats, confirm }) {
       </div>
 
       {/* table */}
-      <div style={{ overflowX: "auto", borderRadius: 12, border: "1px solid #e4e6ef", background: "#ffffff" }}>
+      <div style={{ overflow: "auto", maxHeight: "calc(100vh - 215px)", borderRadius: 12, border: "1px solid #e4e6ef", background: "#ffffff" }}>
         <div style={{ minWidth: totalW }}>
           {/* header */}
           <div style={{ display: "flex", background: "#f7f8fa", borderBottom: "2px solid #e4e6ef", position: "sticky", top: 0, zIndex: 10 }}>
