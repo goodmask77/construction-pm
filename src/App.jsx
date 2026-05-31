@@ -2602,15 +2602,24 @@ const findItem = (cat, q) => {
   return cat.items.find(i => i.name === q) || cat.items.find(i => i.name.includes(q) || q.includes(i.name));
 };
 
-// 解析 AI 回覆中的 ```json {actions:[...]} ``` 區塊
+// 解析 AI 回覆中的指令。容錯：抓所有 ```json 區塊，接受 {actions:[]} / 裸{type} / 陣列三種格式
 function parseActions(text) {
   if (!text) return [];
-  const m = text.match(/```json\s*([\s\S]*?)```/i) || text.match(/\{[\s\S]*"actions"[\s\S]*\}/);
-  if (!m) return [];
-  try {
-    const obj = JSON.parse(m[1] || m[0]);
-    return Array.isArray(obj.actions) ? obj.actions : [];
-  } catch (_) { return []; }
+  const blocks = [...text.matchAll(/```json\s*([\s\S]*?)```/gi)].map(m => m[1]);
+  if (blocks.length === 0) {
+    const m = text.match(/\{[\s\S]*"actions"[\s\S]*\}/);
+    if (m) blocks.push(m[0]);
+  }
+  const actions = [];
+  for (const b of blocks) {
+    try {
+      const obj = JSON.parse(b);
+      if (Array.isArray(obj)) actions.push(...obj);
+      else if (Array.isArray(obj.actions)) actions.push(...obj.actions);
+      else if (obj && obj.type) actions.push(obj);
+    } catch (_) {}
+  }
+  return actions;
 }
 
 // 套用指令到 cats / settings，回傳 { cats, settings, results }
