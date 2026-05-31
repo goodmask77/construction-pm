@@ -5,7 +5,7 @@ const ACCENT = "#E8B84B";
 const API_URL = "https://api.anthropic.com/v1/messages";
 const MODEL = "claude-sonnet-4-20250514";
 
-// ── INITIAL DATA from JOEL FAST CASUAL quote ──────────────────────────────────
+// ── INITIAL DATA from GROUN:D quote ──────────────────────────────────
 const INITIAL_CATEGORIES = [
   {
     id: "cat-1", order: 0, name: "假設工程", budget: 364450, status: "pending",
@@ -180,7 +180,7 @@ async function callAI(messages, systemPrompt) {
   }
 }
 
-const SYSTEM_GLOBAL = `你是一位專業餐廳裝修工程顧問，熟悉台灣室內裝修市場行情與法規。你正在協助一個餐廳裝修專案管理系統，專案為「宏匯 JOEL FAST CASUAL」位於台北市內湖區瑞光路337號，總預算含稅約1166萬元。
+const SYSTEM_GLOBAL = `你是一位專業餐廳裝修工程顧問，熟悉台灣室內裝修市場行情與法規。你正在協助一個餐廳裝修專案管理系統，專案為「宏匯 GROUN:D」位於台北市內湖區瑞光路337號，總預算含稅約1166萬元。
 你的職責：
 1. 主動提醒潛在問題（如「沒詳圖」風險、業主自理項目預算缺口）
 2. 提供市場行情建議與議價策略
@@ -365,7 +365,7 @@ function TopNav({ view, setView, saving, collabPing, totalEstimated, totalActual
     <div style={{ background: "#ffffff", borderBottom: "1px solid #2a2f40", padding: "12px 16px", position: "sticky", top: 0, zIndex: 100 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 10 }}>
         <div>
-          <div style={{ fontSize: 11, color: ACCENT, letterSpacing: 2, textTransform: "uppercase", fontFamily: "monospace" }}>宏匯 JOEL FAST CASUAL</div>
+          <div style={{ fontSize: 11, color: ACCENT, letterSpacing: 2, textTransform: "uppercase", fontFamily: "monospace" }}>宏匯 GROUN:D</div>
           <div style={{ fontSize: 18, fontWeight: 900, color: "#111827", lineHeight: 1.2 }}>工程管理系統</div>
         </div>
         <div style={{ flex: 1 }} />
@@ -869,7 +869,7 @@ function GlobalAIPanel({ chat, setChat, onClose, cats }) {
   // auto greeting
   useEffect(() => {
     if (chat.length === 0) {
-      addMsg("assistant", `你好！我是宏匯 JOEL FAST CASUAL 工程AI顧問。\n\n目前專案包含 ${cats.length} 個工程大項，有以下幾點需要特別注意：\n\n🔴 8處「沒詳圖」項目（牆面工程含服務台）需簽約前補齊\n🔴 監督管理費 10% 偏高，建議壓至 7~8%\n🟡 弱電、招牌、家具等業主自理項目預估額外需 135~420萬\n🟡 燈具工程 $22萬為暫估，需確認上限\n\n請問有什麼我可以協助的？`);
+      addMsg("assistant", `你好！我是宏匯 GROUN:D 工程AI顧問。\n\n目前專案包含 ${cats.length} 個工程大項，有以下幾點需要特別注意：\n\n🔴 8處「沒詳圖」項目（牆面工程含服務台）需簽約前補齊\n🔴 監督管理費 10% 偏高，建議壓至 7~8%\n🟡 弱電、招牌、家具等業主自理項目預估額外需 135~420萬\n🟡 燈具工程 $22萬為暫估，需確認上限\n\n請問有什麼我可以協助的？`);
     }
   }, []);
 
@@ -898,7 +898,7 @@ function GlobalAIPanel({ chat, setChat, onClose, cats }) {
           <div style={{ width: 36, height: 36, borderRadius: "50%", background: "#fff3cc", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18, border: `1px solid ${ACCENT}44` }}>🤖</div>
           <div>
             <div style={{ fontSize: 14, fontWeight: 700, color: "#1a1d2e" }}>工程AI顧問</div>
-            <div style={{ fontSize: 11, color: "#6b7280" }}>JOEL FAST CASUAL 專案</div>
+            <div style={{ fontSize: 11, color: "#6b7280" }}>GROUN:D 專案</div>
           </div>
           <div style={{ flex: 1 }} />
           <button onClick={onClose} style={{ background: "none", border: "none", color: "#374151", cursor: "pointer", fontSize: 20, lineHeight: 1 }}>×</button>
