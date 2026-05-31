@@ -755,6 +755,10 @@ function OverviewTable({ cats, setCats, confirm }) {
   };
 
   const catGroups = {};
+  // 「全部」檢視時，先列出所有大項（含 0 細項的空大項），確保與其他頁同步
+  if (filterStatus === "all") {
+    [...cats].sort((a,b) => a.order - b.order).forEach(c => { catGroups[c.id] = { name: c.name, rows: [] }; });
+  }
   rows.forEach(r => {
     if (!catGroups[r.catId]) catGroups[r.catId] = { name: r.catName, rows: [] };
     catGroups[r.catId].rows.push(r);
@@ -2621,6 +2625,14 @@ function applyActions(actions, cats, settings, worklog) {
       if (t === "clear_all") {
         next = [];
         results.push("🗑️ 已清空所有工程資料");
+      } else if (t === "clear_items") {
+        const n = next.reduce((s,c)=>s+c.items.length,0);
+        next = next.map(c => ({ ...c, items: [] }));
+        results.push(`🧹 已清空所有大項的細項（共 ${n} 筆，保留 ${next.length} 個大項）`);
+      } else if (t === "clear_category_items") {
+        const c = findCat(next, a.category);
+        if (c) { const n = c.items.length; c.items = []; results.push(`🧹 已清空「${c.name}」的 ${n} 筆細項`); }
+        else results.push(`⚠️ 找不到大項「${a.category}」`);
       } else if (t === "add_category") {
         const cat = { id: genId("cat"), order: next.length, name: a.name || "新工程大項", budget: Number(a.budget)||0, status: "pending", items: [] };
         next.push(cat);
@@ -2693,7 +2705,9 @@ const AGENT_GUIDE = `
 \`\`\`
 
 可用指令（type 與參數）：
-- {"type":"clear_all"} 清空全部工程資料
+- {"type":"clear_all"} 清空全部工程資料（含大項）
+- {"type":"clear_items"} 清空所有大項的細項但「保留大項結構」（要重新上資料時用這個）
+- {"type":"clear_category_items","category":"假設工程"} 只清空某大項的細項
 - {"type":"add_category","name":"空調工程","budget":310000}
 - {"type":"delete_category","category":"空調工程"}
 - {"type":"set_category_budget","category":"空調工程","amount":310000}
@@ -2709,7 +2723,8 @@ const AGENT_GUIDE = `
 2. 一次可放多個 action。
 3. 先用一兩句白話說明你要做什麼，再附 json 區塊。
 4. 只有在使用者「要求執行操作」時才附 json；單純問問題就正常回答、不要附 json。
-5. 破壞性操作（清空、刪除）也照樣附指令，系統會再跟使用者確認。`;
+5. 破壞性操作（清空、刪除）也照樣附指令，系統會再跟使用者確認。
+6. 要「清空所有細項重新上資料」時，務必用單一 clear_items 指令，絕對不要產生大量 delete_item 逐筆刪除（會超過長度限制）。`;
 
 const VISION_GUIDE = `
 
@@ -2813,12 +2828,12 @@ function GlobalAIPanel({ chat, setChat, onClose, cats, setCats, canEdit, confirm
       if (actions.length > 0 && !canEdit) {
         addMsg("assistant", "🔒 需以管理員登入才能執行操作（目前為唯讀）。");
       } else if (actions.length > 0 && canEdit) {
-        const destructive = actions.some(a => ["clear_all","delete_category","delete_item"].includes(a.type));
+        const destructive = actions.some(a => ["clear_all","clear_items","clear_category_items","delete_category","delete_item"].includes(a.type));
         let ok = true;
         if (destructive && confirm) ok = await confirm("AI 將執行包含「清空 / 刪除」的操作，確定執行嗎？");
         if (ok) {
           const { cats: newCats, settings: newSettings, worklog: newWorklog, results } = applyActions(actions, cats, settings, worklog);
-          if (actions.some(a => ["clear_all","add_category","delete_category","set_category_budget","set_category_status","set_gantt","add_item","set_item","delete_item"].includes(a.type))) setCats(newCats);
+          if (actions.some(a => ["clear_all","clear_items","clear_category_items","add_category","delete_category","set_category_budget","set_category_status","set_gantt","add_item","set_item","delete_item"].includes(a.type))) setCats(newCats);
           if (newSettings && setSettings && actions.some(a => a.type === "set_setting")) setSettings(newSettings);
           if (setWorklog && actions.some(a => a.type === "add_log")) setWorklog(newWorklog);
           addMsg("assistant", "✅ 已執行：\n" + results.map(r => "・" + r).join("\n"));
