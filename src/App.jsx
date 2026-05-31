@@ -329,6 +329,7 @@ export default function App() {
   const [knownUsers, setKnownUsers] = useState([]);
   const [worklog, setWorklog] = useState([]);
   const [photos, setPhotos] = useState([]);
+  const [accounts, setAccounts] = useState([]);
   const [events, setEvents] = useState([]);
   const [journal, setJournal] = useState([]);
   const [plans, setPlans] = useState([]);
@@ -343,6 +344,10 @@ export default function App() {
   const commitPhotos = (list) => {
     setPhotos(list);
     window.storage.set("pm_photos", JSON.stringify(list), true).catch(()=>{});
+  };
+  const commitAccounts = (list) => {
+    setAccounts(list);
+    window.storage.set("pm_accounts", JSON.stringify(list), true).catch(()=>{});
   };
 
   // load
@@ -380,6 +385,10 @@ export default function App() {
         const ph = await window.storage.get("pm_photos", true);
         if (ph && ph.value) setPhotos(JSON.parse(ph.value));
       } catch(_){}
+      try {
+        const ac = await window.storage.get("pm_accounts", true);
+        if (ac && ac.value) setAccounts(JSON.parse(ac.value));
+      } catch(_){}
       try { const ev = await window.storage.get("pm_events", true); if (ev&&ev.value) setEvents(JSON.parse(ev.value)); } catch(_){}
       try { const jn = await window.storage.get("pm_journal", true); if (jn&&jn.value) setJournal(JSON.parse(jn.value)); } catch(_){}
       try { const pl = await window.storage.get("pm_plans", true); if (pl&&pl.value) setPlans(JSON.parse(pl.value)); } catch(_){}
@@ -402,20 +411,32 @@ export default function App() {
     setActivityLog(prev => { const next = [entry, ...prev].slice(0,200); saveActivityLog(next); return next; });
   };
 
-  // ── 權限：僅管理員可編輯，其餘（含未登入/其他帳號）唯讀 ──
-  const canEdit = userName === ADMIN_USER;
+  // ── 帳號 / 逐頁權限 ──
+  // 內建管理員 goodmask77 恆為 admin；其餘帳號由管理員建立並逐頁開放編輯權限。
+  const account = (userName === ADMIN_USER)
+    ? { name: ADMIN_USER, role: "admin", pages: [] }
+    : (accounts.find(a => a.name === userName) || (userName ? { name: userName, role: "viewer", pages: [] } : null));
+  const isAdmin = account?.role === "admin";
+  const can = (page) => isAdmin || !!account?.pages?.includes(page);
+  const canEditData = can("data");
+  const canEditWorklog = can("worklog");
+  const canEditFiles = can("files");
+  const canEditAdvisor = can("advisor");
+  const canEdit = canEditData; // 相容：工程資料編輯
+
   const requireLogin = () => setShowLogin(true);
+  const denyEdit = () => { if (!userName) setShowLogin(true); else alert("此帳號沒有編輯此頁面的權限，請聯絡管理員開放。"); };
   const guardedSetCats = (updater) => {
-    if (!canEdit) { requireLogin(); return; }
+    if (!canEditData) { denyEdit(); return; }
     setCats(prev => typeof updater === "function" ? updater(prev) : updater);
   };
   const guardedSetSettings = (s) => {
-    if (!canEdit) { requireLogin(); return; }
+    if (!canEditAdvisor) { denyEdit(); return; }
     setSettings(s); saveSettings(s);
   };
 
   const setCatsLogged = (updater) => {
-    if (!canEdit) { requireLogin(); return; }
+    if (!canEditData) { denyEdit(); return; }
     setCats(prev => typeof updater === "function" ? updater(prev) : updater);
   };
   const setEventsLogged = (updater) => {
@@ -457,7 +478,7 @@ export default function App() {
   const onDragStart = (id) => setDragging(id);
   const onDragOver = (id) => { if (id !== dragging) setDragOver(id); };
   const onDrop = (targetId) => {
-    if (!canEdit) { requireLogin(); setDragging(null); setDragOver(null); return; }
+    if (!canEditData) { denyEdit(); setDragging(null); setDragOver(null); return; }
     if (!dragging || dragging === targetId) { setDragging(null); setDragOver(null); return; }
     setCats(prev => {
       const arr = [...prev];
@@ -479,7 +500,7 @@ export default function App() {
   return (
     <div style={{ minHeight: "100vh", background: "#f0f2f5", color: "#1a1d2e", fontFamily: "'Noto Sans TC', sans-serif", fontSize: 14 }}>
       {/* TOP NAV */}
-      <TopNav view={view} setView={setView} saving={saving} totalEstimated={totalEstimated} totalActual={totalActual} doneCount={doneCount} catCount={cats.length} onAI={() => setShowGlobalAI(true)} userName={userName} stalledCount={stalledItems.length} onRoleClick={() => setShowLogin(true)} onActivityLog={() => setShowActivityLog(true)} activityCount={activityLog.length} />
+      <TopNav view={view} setView={setView} saving={saving} totalEstimated={totalEstimated} totalActual={totalActual} doneCount={doneCount} catCount={cats.length} onAI={() => setShowGlobalAI(true)} userName={userName} isAdmin={isAdmin} stalledCount={stalledItems.length} onRoleClick={() => setShowLogin(true)} onActivityLog={() => setShowActivityLog(true)} activityCount={activityLog.length} />
 
       {/* MAIN */}
       <div style={{ padding: "0 16px 80px" }}>
@@ -499,10 +520,13 @@ export default function App() {
           <GanttView cats={cats} setCats={guardedSetCats} />
         )}
         {view === "worklog" && (
-          <WorklogView worklog={worklog} setWorklog={commitWorklog} canEdit={canEdit} userName={userName} requireLogin={requireLogin} confirm={confirm} />
+          <WorklogView worklog={worklog} setWorklog={commitWorklog} canEdit={canEditWorklog} userName={userName} requireLogin={denyEdit} confirm={confirm} />
         )}
         {view === "files" && (
-          <PhotoLibraryView photos={photos} setPhotos={commitPhotos} cats={cats} canEdit={canEdit} userName={userName} requireLogin={requireLogin} confirm={confirm} />
+          <PhotoLibraryView photos={photos} setPhotos={commitPhotos} cats={cats} canEdit={canEditFiles} userName={userName} requireLogin={denyEdit} confirm={confirm} />
+        )}
+        {view === "accounts" && isAdmin && (
+          <AccountManager accounts={accounts} setAccounts={commitAccounts} confirm={confirm} />
         )}
         {view === "advisor" && settings && (
           <AdvisorSettingsView settings={settings} setSettings={guardedSetSettings} cats={cats} aiLog={aiLog} setAiLog={l => { setAiLog(l); saveAILog(l); }} journal={journal} events={events} plans={plans} activityLog={activityLog} logActivity={logActivity} userName={userName} />
@@ -588,7 +612,7 @@ function KPICard({ label, val, color, tip }) {
 }
 
 // ── TOP NAV ───────────────────────────────────────────────────────────────────
-function TopNav({ view, setView, saving, totalEstimated, totalActual, doneCount, catCount, onAI, userName, stalledCount, onRoleClick, onActivityLog, activityCount }) {
+function TopNav({ view, setView, saving, totalEstimated, totalActual, doneCount, catCount, onAI, userName, isAdmin, stalledCount, onRoleClick, onActivityLog, activityCount }) {
   const diff = totalActual - totalEstimated;
   return (
     <div style={{ background: "#ffffff", borderBottom: "1px solid #2a2f40", padding: "12px 16px", position: "sticky", top: 0, zIndex: 100 }}>
@@ -634,7 +658,7 @@ function TopNav({ view, setView, saving, totalEstimated, totalActual, doneCount,
       </div>
       {/* view tabs */}
       <div style={{ display: "flex", gap: 6 }}>
-        {[["owner","業主視角"],["overview","總覽"],["kanban","看板"],["list","明細"],["gantt","工序"],["worklog","工作日誌"],["files","檔案庫"],["advisor","AI設定"]].map(([v,l]) => (
+        {[["owner","業主視角"],["overview","總覽"],["kanban","看板"],["list","明細"],["gantt","工序"],["worklog","工作日誌"],["files","檔案庫"],["advisor","AI設定"],...(isAdmin?[["accounts","帳號"]]:[])].map(([v,l]) => (
           <button key={v} onClick={() => setView(v)} style={{ padding: "5px 14px", borderRadius: 6, border: "none", cursor: "pointer", fontSize: 12, fontWeight: 600, background: view === v ? ACCENT : "#d8dae3", color: view === v ? "#f4f5f7" : "#6b7280" }}>{l}</button>
         ))}
       </div>
@@ -939,7 +963,7 @@ function LoginModal({ onLogin, knownUsers, onClose }) {
     <div onClick={onClose} style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.55)", zIndex:9999, display:"flex", alignItems:"center", justifyContent:"center", padding:16 }}>
       <div onClick={e=>e.stopPropagation()} style={{ background:"#ffffff", borderRadius:16, padding:28, maxWidth:380, width:"100%", boxShadow:"0 20px 60px rgba(0,0,0,0.2)" }}>
         <div style={{ fontSize:22, fontWeight:900, color:"#111827", marginBottom:6 }}>登入以編輯</div>
-        <div style={{ fontSize:13, color:"#6b7280", marginBottom:20 }}>登入後才能新增/修改/刪除，未登入僅能唯讀瀏覽。</div>
+        <div style={{ fontSize:13, color:"#6b7280", marginBottom:20 }}>未登入只能檢視。登入後預設仍是唯讀，編輯權限由管理員逐頁開放。</div>
         {knownUsers.length > 0 && (
           <div style={{ marginBottom:16 }}>
             <div style={{ fontSize:11, color:"#9ca3af", marginBottom:8 }}>最近登入過的成員</div>
@@ -2846,6 +2870,73 @@ function PhotoLibraryView({ photos, setPhotos, cats, canEdit, userName, requireL
           <img src={lightbox.url} alt={lightbox.name} style={{ maxWidth:"95%", maxHeight:"95%", objectFit:"contain", borderRadius:8 }} />
         </div>
       )}
+    </div>
+  );
+}
+
+// ── 帳號管理 ─────────────────────────────────────────────────────────────────
+const ACCT_PAGES = [["data","工程資料"],["worklog","工作日誌"],["files","檔案庫"],["advisor","AI設定"]];
+function AccountManager({ accounts, setAccounts, confirm }) {
+  const [name, setName] = useState("");
+  const [asAdmin, setAsAdmin] = useState(false);
+  const add = () => {
+    const n = name.trim(); if (!n) return;
+    if (n === "goodmask77" || accounts.some(a=>a.name===n)) { alert("帳號已存在"); return; }
+    setAccounts([...accounts, { name:n, role: asAdmin?"admin":"normal", pages: [] }]);
+    setName(""); setAsAdmin(false);
+  };
+  const toggleRole = (n) => setAccounts(accounts.map(a => a.name===n ? { ...a, role: a.role==="admin"?"normal":"admin" } : a));
+  const togglePage = (n, pg) => setAccounts(accounts.map(a => a.name===n ? { ...a, pages: (a.pages||[]).includes(pg) ? a.pages.filter(x=>x!==pg) : [...(a.pages||[]), pg] } : a));
+  const del = async (n) => { if (confirm && !(await confirm(`刪除帳號「${n}」？`))) return; setAccounts(accounts.filter(a=>a.name!==n)); };
+  const chip = (active, label, onClick) => (
+    <button onClick={onClick} style={{ padding:"4px 12px", borderRadius:8, border:"1px solid "+(active?ACCENT:"#e4e6ef"), background: active?"#fff7e6":"#f7f8fa", color: active?"#8a6d3b":"#9ca3af", fontSize:12, fontWeight: active?700:400, cursor:"pointer" }}>{label}</button>
+  );
+
+  return (
+    <div style={{ maxWidth: 1100, margin: "16px auto", padding: "0 4px" }}>
+      <div style={{ fontSize:18, fontWeight:900, color:"#111827", marginBottom:6 }}>👤 帳號管理（僅管理員）</div>
+      <div style={{ background:"#faf6ee", border:"1px solid #e4ddc9", borderRadius:10, padding:"10px 14px", marginBottom:16, fontSize:13, color:"#6b6450", lineHeight:1.7 }}>
+        沒有帳號的人只能<b style={{color:"#b45309"}}>檢視</b>。登入後預設仍是唯讀，需由管理員在下方<b style={{color:"#b45309"}}>逐頁開放編輯權限</b>。<b>管理員</b>恆可編輯全部頁面並管理帳號。新帳號預設<b style={{color:"#b45309"}}>無任何編輯權限</b>。
+      </div>
+
+      <div style={{ display:"flex", gap:10, alignItems:"center", marginBottom:16, flexWrap:"wrap" }}>
+        <input value={name} onChange={e=>setName(e.target.value)} onKeyDown={e=>e.key==="Enter"&&!e.nativeEvent.isComposing&&add()} placeholder="新帳號名稱" style={{ ...inputStyle, width:240 }} />
+        <label style={{ display:"flex", alignItems:"center", gap:6, fontSize:13, color:"#374151", cursor:"pointer" }}>
+          <input type="checkbox" checked={asAdmin} onChange={e=>setAsAdmin(e.target.checked)} /> 設為管理員
+        </label>
+        <button onClick={add} disabled={!name.trim()} style={{ background:name.trim()?"#b5512b":"#e4e6ef", color:name.trim()?"#fff":"#9ca3af", border:"none", borderRadius:8, padding:"9px 18px", fontWeight:700, cursor:name.trim()?"pointer":"not-allowed" }}>＋ 新增帳號</button>
+      </div>
+
+      <div style={{ background:"#fff", border:"1px solid #e4e6ef", borderRadius:12, overflow:"hidden" }}>
+        <div style={{ display:"grid", gridTemplateColumns:"1.2fr 1fr 2.4fr 40px", gap:8, padding:"10px 14px", borderBottom:"2px solid #e4e6ef", fontSize:12, fontWeight:700, color:"#6b7280", background:"#f7f8fa" }}>
+          <div>帳號</div><div>角色（點擊切換）</div><div>可編輯頁面（點擊開關）</div><div />
+        </div>
+        {/* 內建管理員 */}
+        <div style={{ display:"grid", gridTemplateColumns:"1.2fr 1fr 2.4fr 40px", gap:8, padding:"12px 14px", borderBottom:"1px solid #f0f1f4", alignItems:"center" }}>
+          <div style={{ fontWeight:700, color:"#111827" }}>goodmask77 <span style={{ fontSize:10, background:"#374151", color:"#fff", borderRadius:5, padding:"1px 6px", marginLeft:4 }}>內建</span></div>
+          <div style={{ fontSize:13, color:"#374151" }}>管理員</div>
+          <div style={{ fontSize:13, color:"#9ca3af" }}>全部（內建管理員）</div>
+          <div />
+        </div>
+        {accounts.length === 0 && <div style={{ padding:20, textAlign:"center", color:"#9ca3af", fontSize:13 }}>尚無其他帳號</div>}
+        {accounts.map(a => (
+          <div key={a.name} style={{ display:"grid", gridTemplateColumns:"1.2fr 1fr 2.4fr 40px", gap:8, padding:"12px 14px", borderBottom:"1px solid #f0f1f4", alignItems:"center" }}>
+            <div style={{ fontWeight:700, color:"#111827" }}>{a.name}</div>
+            <div>
+              <button onClick={()=>toggleRole(a.name)} style={{ background:"#f7f8fa", border:"1px solid #e4e6ef", borderRadius:8, padding:"4px 12px", fontSize:13, cursor:"pointer", color:a.role==="admin"?"#b5512b":"#374151", fontWeight:a.role==="admin"?700:400 }}>
+                {a.role==="admin"?"管理員":"一般"} ⇄
+              </button>
+            </div>
+            <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
+              {a.role==="admin"
+                ? <span style={{ fontSize:13, color:"#9ca3af" }}>全部（管理員）</span>
+                : ACCT_PAGES.map(([k,l]) => chip((a.pages||[]).includes(k), l, ()=>togglePage(a.name, k)))}
+            </div>
+            <button onClick={()=>del(a.name)} title="刪除帳號" style={{ background:"none", border:"none", color:"#d1d5db", cursor:"pointer", fontSize:18 }}
+              onMouseEnter={e=>e.currentTarget.style.color="#e85c4b"} onMouseLeave={e=>e.currentTarget.style.color="#d1d5db"}>×</button>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
