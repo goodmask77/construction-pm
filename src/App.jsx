@@ -2610,8 +2610,16 @@ function PhotoLibraryView({ photos, setPhotos, cats, canEdit, userName, requireL
   const [fKind, setFKind] = useState("all");
   const [fCat, setFCat] = useState("all");
   const [lightbox, setLightbox] = useState(null);
+  const [editId, setEditId] = useState(null);
+  const [ef, setEf] = useState({});
   const fileRef = useRef(null);
   const sortedCats = [...cats].sort((a,b)=>a.order-b.order);
+
+  const startEdit = (p) => { if (!canEdit) { requireLogin&&requireLogin(); return; } setEditId(p.id); setEf({ kind:p.kind, catId:p.catId||"", date:p.date||"", note:p.note||"" }); };
+  const saveEdit = () => {
+    setPhotos(photos.map(p => p.id===editId ? { ...p, kind:ef.kind, catId:ef.catId, catName:(cats.find(c=>c.id===ef.catId)?.name)||"", date:ef.date, note:ef.note } : p));
+    setEditId(null);
+  };
 
   const onPick = async (files) => {
     if (!canEdit) { requireLogin && requireLogin(); return; }
@@ -2702,19 +2710,35 @@ function PhotoLibraryView({ photos, setPhotos, cats, canEdit, userName, requireL
                 <span style={{ position:"absolute", top:6, left:6, fontSize:10, fontWeight:700, color:"#fff", background:photoKindColor[p.kind]||"#9ca3af", borderRadius:6, padding:"2px 7px" }}>{photoKindLabel(p.kind)}</span>
               </div>
               <div style={{ padding:"8px 10px", fontSize:12 }}>
-                <div style={{ color:"#374151", fontWeight:600 }}>{p.catName || "（未指定工程）"}</div>
-                <div style={{ color:"#9ca3af", fontSize:11, marginTop:2 }}>{p.date} · {p.by}</div>
-                {p.note && <div style={{ color:"#6b7280", fontSize:11, marginTop:3, whiteSpace:"pre-wrap" }}>{p.note}</div>}
-                {p.kind === "invoice" && (
-                  <label style={{ display:"flex", alignItems:"center", gap:5, marginTop:6, fontSize:12, color:p.invoiceReceived?"#16a34a":"#dc2626", fontWeight:700, cursor:canEdit?"pointer":"default" }}>
-                    <input type="checkbox" checked={!!p.invoiceReceived} disabled={!canEdit} onChange={()=>canEdit&&toggleReceived(p.id)} style={{ accentColor:"#16a34a" }} />
-                    {p.invoiceReceived ? "✅ 發票已收到" : "⚠️ 發票未收到"}
-                  </label>
+                {editId === p.id ? (
+                  <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
+                    <select value={ef.kind} onChange={e=>setEf({...ef, kind:e.target.value})} style={{ ...inputStyle, padding:"5px 8px", fontSize:12 }}>{PHOTO_KINDS.map(([k,l])=><option key={k} value={k}>{l}</option>)}</select>
+                    <select value={ef.catId} onChange={e=>setEf({...ef, catId:e.target.value})} style={{ ...inputStyle, padding:"5px 8px", fontSize:12 }}><option value="">（不指定工程）</option>{sortedCats.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select>
+                    <input type="date" value={ef.date} onChange={e=>setEf({...ef, date:e.target.value})} style={{ ...inputStyle, padding:"5px 8px", fontSize:12 }} />
+                    <input value={ef.note} onChange={e=>setEf({...ef, note:e.target.value})} placeholder="備註" style={{ ...inputStyle, padding:"5px 8px", fontSize:12 }} />
+                    <div style={{ display:"flex", gap:8, justifyContent:"flex-end" }}>
+                      <button onClick={()=>setEditId(null)} style={{ fontSize:11, color:"#6b7280", background:"none", border:"none", cursor:"pointer" }}>取消</button>
+                      <button onClick={saveEdit} style={{ fontSize:11, fontWeight:700, color:"#1a1d2e", background:ACCENT, border:"none", borderRadius:6, padding:"4px 12px", cursor:"pointer" }}>儲存</button>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    <div style={{ color:"#374151", fontWeight:600 }}>{p.catName || "（未指定工程）"}</div>
+                    <div style={{ color:"#9ca3af", fontSize:11, marginTop:2 }}>{p.date} · {p.by}</div>
+                    {p.note && <div style={{ color:"#6b7280", fontSize:11, marginTop:3, whiteSpace:"pre-wrap" }}>{p.note}</div>}
+                    {p.kind === "invoice" && (
+                      <label style={{ display:"flex", alignItems:"center", gap:5, marginTop:6, fontSize:12, color:p.invoiceReceived?"#16a34a":"#dc2626", fontWeight:700, cursor:canEdit?"pointer":"default" }}>
+                        <input type="checkbox" checked={!!p.invoiceReceived} disabled={!canEdit} onChange={()=>canEdit&&toggleReceived(p.id)} style={{ accentColor:"#16a34a" }} />
+                        {p.invoiceReceived ? "✅ 發票已收到" : "⚠️ 發票未收到"}
+                      </label>
+                    )}
+                    <div style={{ display:"flex", gap:8, marginTop:8 }}>
+                      <a href={p.url} target="_blank" rel="noreferrer" style={{ fontSize:11, color:"#3b82f6", textDecoration:"none" }}>⬇ 下載</a>
+                      {canEdit && <button onClick={()=>startEdit(p)} style={{ fontSize:11, color:"#374151", background:"none", border:"none", cursor:"pointer", padding:0 }}>編輯</button>}
+                      {canEdit && <button onClick={()=>del(p)} style={{ fontSize:11, color:"#dc2626", background:"none", border:"none", cursor:"pointer", padding:0 }}>刪除</button>}
+                    </div>
+                  </>
                 )}
-                <div style={{ display:"flex", gap:8, marginTop:8 }}>
-                  <a href={p.url} target="_blank" rel="noreferrer" style={{ fontSize:11, color:"#3b82f6", textDecoration:"none" }}>⬇ 下載</a>
-                  {canEdit && <button onClick={()=>del(p)} style={{ fontSize:11, color:"#dc2626", background:"none", border:"none", cursor:"pointer", padding:0 }}>刪除</button>}
-                </div>
               </div>
             </div>
           ))}
