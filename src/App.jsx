@@ -866,15 +866,16 @@ function OverviewTable({ cats, setCats, confirm }) {
                   const isDragOver = dragOverId === rowKey;
                   return (
                     <div key={item.id}
-                      draggable
-                      onDragStart={() => onRowDragStart(rowKey)}
                       onDragOver={e => { e.preventDefault(); setDragOverId(rowKey); }}
                       onDrop={() => onRowDrop(rowKey)}
-                      onDragEnd={() => { setDragRowId(null); setDragOverId(null); }}
                       style={{ display: "flex", alignItems: "center", borderBottom: "1px solid #f0f1f4", background: isDragOver ? "#fffbf0" : item.done ? "#f0fdf4" : "#ffffff", borderLeft: item.done ? "3px solid #22c55e" : "3px solid transparent", transition: "background 0.15s" }}
                     >
-                      {/* drag handle */}
-                      <div style={{ width: 24, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", cursor: "grab", color: "#d1d5db", fontSize: 14, borderRight: "1px solid #f0f1f4", height: 38 }}>⠿</div>
+                      {/* drag handle（僅此處可拖曳） */}
+                      <div
+                        draggable
+                        onDragStart={() => onRowDragStart(rowKey)}
+                        onDragEnd={() => { setDragRowId(null); setDragOverId(null); }}
+                        style={{ width: 24, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", cursor: "grab", color: "#d1d5db", fontSize: 14, borderRight: "1px solid #f0f1f4", height: 38 }}>⠿</div>
 
                       {visibleCols.map(col => {
                         const cs = { ...cellStyle(col) };
