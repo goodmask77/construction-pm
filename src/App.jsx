@@ -2615,7 +2615,7 @@ function PhotoLibraryView({ photos, setPhotos, cats, canEdit, userName, requireL
 
   const onPick = async (files) => {
     if (!canEdit) { requireLogin && requireLogin(); return; }
-    const arr = Array.from(files||[]).filter(f => /^image\//.test(f.type));
+    const arr = Array.from(files||[]);
     if (!arr.length) return;
     setUploading(true);
     const added = [];
@@ -2623,12 +2623,25 @@ function PhotoLibraryView({ photos, setPhotos, cats, canEdit, userName, requireL
       try {
         const { url, path } = await uploadPhoto(f);
         const cat = cats.find(c => c.id === catId);
-        added.push({ id: "ph-"+Math.random().toString(36).slice(2,8), url, path, name: f.name, kind, catId: catId||"", catName: cat?cat.name:"", date, note, invoiceReceived: false, by: userName||"—", ts: new Date().toISOString() });
+        added.push({ id: "ph-"+Math.random().toString(36).slice(2,8), url, path, name: f.name || "檔案", mime: f.type||"", isImage: /^image\//.test(f.type), kind, catId: catId||"", catName: cat?cat.name:"", date, note, invoiceReceived: false, by: userName||"—", ts: new Date().toISOString() });
       } catch (e) { alert("上傳失敗：" + (e?.message || e)); }
     }
     if (added.length) setPhotos([...added, ...photos]);
     setNote(""); setUploading(false);
   };
+  // 截圖貼上：監聽 paste，把剪貼簿圖片直接上傳
+  const onPickRef = useRef(null);
+  onPickRef.current = onPick;
+  useEffect(() => {
+    const handler = (e) => {
+      const items = e.clipboardData?.items || [];
+      const imgs = [];
+      for (const it of items) { if (it.type && it.type.startsWith("image/")) { const f = it.getAsFile(); if (f) imgs.push(f); } }
+      if (imgs.length) { e.preventDefault(); onPickRef.current && onPickRef.current(imgs); }
+    };
+    document.addEventListener("paste", handler);
+    return () => document.removeEventListener("paste", handler);
+  }, []);
   const toggleReceived = (id) => setPhotos(photos.map(p => p.id===id ? {...p, invoiceReceived: !p.invoiceReceived} : p));
   const del = async (p) => { if (confirm && !(await confirm("刪除這張圖片？"))) return; await deletePhotoFile(p.path); setPhotos(photos.filter(x => x.id !== p.id)); };
 
@@ -2653,8 +2666,9 @@ function PhotoLibraryView({ photos, setPhotos, cats, canEdit, userName, requireL
           <select value={catId} onChange={e=>setCatId(e.target.value)} style={selStyle}><option value="">（不指定工程）</option>{sortedCats.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select>
           <input type="date" value={date} onChange={e=>setDate(e.target.value)} style={selStyle} />
           <input value={note} onChange={e=>setNote(e.target.value)} placeholder="備註（選填）" style={{ ...inputStyle, flex:1, minWidth:120, padding:"6px 10px" }} />
-          <input ref={fileRef} type="file" accept="image/*" multiple style={{ display:"none" }} onChange={e=>{ onPick(e.target.files); e.target.value=""; }} />
-          <button onClick={()=>fileRef.current?.click()} disabled={uploading} style={{ background:ACCENT, color:"#1a1d2e", border:"none", borderRadius:8, padding:"8px 16px", fontWeight:700, cursor: uploading?"wait":"pointer" }}>{uploading?"上傳中…":"📷 上傳圖片"}</button>
+          <input ref={fileRef} type="file" multiple style={{ display:"none" }} onChange={e=>{ onPick(e.target.files); e.target.value=""; }} />
+          <button onClick={()=>fileRef.current?.click()} disabled={uploading} style={{ background:ACCENT, color:"#1a1d2e", border:"none", borderRadius:8, padding:"8px 16px", fontWeight:700, cursor: uploading?"wait":"pointer" }}>{uploading?"上傳中…":"📎 上傳照片 / 檔案"}</button>
+          <span style={{ fontSize:11, color:"#9ca3af", width:"100%" }}>支援照片、PDF、Excel 等檔案；也可直接 Ctrl/⌘+V 貼上截圖</span>
         </div>
       ) : (
         <div style={{ background:"#fff7e6", border:"1px solid #ffe2a8", borderRadius:10, padding:"10px 14px", marginBottom:14, fontSize:13, color:"#8a6d3b" }}>🔒 唯讀模式：登入後可上傳 / 管理圖片。</div>
@@ -2678,8 +2692,13 @@ function PhotoLibraryView({ photos, setPhotos, cats, canEdit, userName, requireL
         <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill, minmax(180px,1fr))", gap:12 }}>
           {filtered.map(p => (
             <div key={p.id} style={{ background:"#fff", border:"1px solid #e4e6ef", borderRadius:12, overflow:"hidden", display:"flex", flexDirection:"column" }}>
-              <div style={{ position:"relative", aspectRatio:"4/3", background:"#f0f2f5", cursor:"zoom-in" }} onClick={()=>setLightbox(p)}>
-                <img src={p.url} alt={p.name} style={{ width:"100%", height:"100%", objectFit:"cover" }} />
+              <div style={{ position:"relative", aspectRatio:"4/3", background:"#f0f2f5", cursor: p.isImage!==false?"zoom-in":"default", display:"flex", alignItems:"center", justifyContent:"center" }} onClick={()=>{ if (p.isImage!==false) setLightbox(p); }}>
+                {p.isImage !== false
+                  ? <img src={p.url} alt={p.name} style={{ width:"100%", height:"100%", objectFit:"cover" }} />
+                  : <a href={p.url} target="_blank" rel="noreferrer" onClick={e=>e.stopPropagation()} style={{ textAlign:"center", textDecoration:"none", color:"#6b7280", padding:"0 10px" }}>
+                      <div style={{ fontSize:40 }}>📄</div>
+                      <div style={{ fontSize:11, marginTop:4, wordBreak:"break-all", maxHeight:32, overflow:"hidden" }}>{p.name}</div>
+                    </a>}
                 <span style={{ position:"absolute", top:6, left:6, fontSize:10, fontWeight:700, color:"#fff", background:photoKindColor[p.kind]||"#9ca3af", borderRadius:6, padding:"2px 7px" }}>{photoKindLabel(p.kind)}</span>
               </div>
               <div style={{ padding:"8px 10px", fontSize:12 }}>
