@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 
 const ACCENT = "#E8B84B";
+const ADMIN_USER = "goodmask77"; // 僅此帳號可編輯（不顯示於介面）
 const API_URL = "https://api.anthropic.com/v1/messages";
 const MODEL = "claude-sonnet-4-20250514";
 
@@ -344,12 +345,14 @@ export default function App() {
       try {
         const ku = await window.storage.get("pm_known_users", true);
         if (ku && ku.value) {
-          const arr = JSON.parse(ku.value);
-          setKnownUsers(arr.includes("goodmask77") ? arr : ["goodmask77", ...arr]);
+          const arr = JSON.parse(ku.value).filter(u => u !== ADMIN_USER);
+          setKnownUsers(arr);
+          // 清掉共享儲存中殘留的管理員帳號，避免顯示
+          window.storage.set("pm_known_users", JSON.stringify(arr), true).catch(()=>{});
         } else {
-          setKnownUsers(["goodmask77"]); // 預設管理員帳號
+          setKnownUsers([]);
         }
-      } catch(_){ setKnownUsers(["goodmask77"]); }
+      } catch(_){ setKnownUsers([]); }
       const alog = await loadActivityLog();
       setActivityLog(alog);
     })();
@@ -371,8 +374,8 @@ export default function App() {
     setActivityLog(prev => { const next = [entry, ...prev].slice(0,200); saveActivityLog(next); return next; });
   };
 
-  // ── 權限：登入才能編輯，未登入唯讀 ──
-  const canEdit = !!userName;
+  // ── 權限：僅管理員可編輯，其餘（含未登入/其他帳號）唯讀 ──
+  const canEdit = userName === ADMIN_USER;
   const requireLogin = () => setShowLogin(true);
   const guardedSetCats = (updater) => {
     if (!canEdit) { requireLogin(); return; }
@@ -489,12 +492,14 @@ export default function App() {
           setUserName(name);
           saveRole(name);
           setShowLogin(false);
-          // Save to known users list
-          try {
-            const updated = [name, ...knownUsers.filter(u=>u!==name)].slice(0,8);
-            setKnownUsers(updated);
-            await window.storage.set("pm_known_users", JSON.stringify(updated), true);
-          } catch(_){}
+          // Save to known users list（管理員不記錄、不顯示）
+          if (name !== ADMIN_USER) {
+            try {
+              const updated = [name, ...knownUsers.filter(u=>u!==name)].slice(0,8);
+              setKnownUsers(updated);
+              await window.storage.set("pm_known_users", JSON.stringify(updated), true);
+            } catch(_){}
+          }
           logActivity("登入", name + " 登入系統");
         }} />
       )}
@@ -895,7 +900,7 @@ function LoginModal({ onLogin, knownUsers, onClose }) {
     <div onClick={onClose} style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.55)", zIndex:9999, display:"flex", alignItems:"center", justifyContent:"center", padding:16 }}>
       <div onClick={e=>e.stopPropagation()} style={{ background:"#ffffff", borderRadius:16, padding:28, maxWidth:380, width:"100%", boxShadow:"0 20px 60px rgba(0,0,0,0.2)" }}>
         <div style={{ fontSize:22, fontWeight:900, color:"#111827", marginBottom:6 }}>登入以編輯</div>
-        <div style={{ fontSize:13, color:"#6b7280", marginBottom:20 }}>登入後才能新增/修改/刪除，未登入僅能唯讀瀏覽。預設管理員帳號：<b>goodmask77</b></div>
+        <div style={{ fontSize:13, color:"#6b7280", marginBottom:20 }}>登入後才能新增/修改/刪除，未登入僅能唯讀瀏覽。</div>
         {knownUsers.length > 0 && (
           <div style={{ marginBottom:16 }}>
             <div style={{ fontSize:11, color:"#9ca3af", marginBottom:8 }}>最近登入過的成員</div>
