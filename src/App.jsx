@@ -2711,10 +2711,55 @@ const AGENT_GUIDE = `
 4. 只有在使用者「要求執行操作」時才附 json；單純問問題就正常回答、不要附 json。
 5. 破壞性操作（清空、刪除）也照樣附指令，系統會再跟使用者確認。`;
 
+const VISION_GUIDE = `
+
+【判讀附件】若使用者提供圖片或檔案（估價單、報價單、收據、規格表、現場照片等），請仔細判讀，擷取工程項目、數量、單位、單價等資訊，並判斷對應到目前專案的哪個工程大項與細項：
+- 能確定時 → 直接用 add_item / set_item / set_category_budget 等指令把資料填入，並條列你做了什麼。一張估價單可用多個 add_item 一次擷取多筆。
+- 不確定對應哪個大項/細項、或數字不清楚時 → 「主動反問」使用者澄清（例如：這張估價單屬於哪個工程大項？單價是含稅嗎？），不要亂猜或填錯。
+- 使用者若已用文字說明屬於哪個工程，請以使用者說明為準。`;
+
 function GlobalAIPanel({ chat, setChat, onClose, cats, setCats, canEdit, confirm, settings, setSettings, worklog, setWorklog }) {
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
+  const [attachments, setAttachments] = useState([]);
   const endRef = useRef(null);
+  const fileRef = useRef(null);
+
+  const addFiles = (files) => {
+    Array.from(files || []).slice(0, 5).forEach(f => {
+      const isImg = /^image\//.test(f.type);
+      const isPdf = f.type === "application/pdf";
+      if (!isImg && !isPdf) return;
+      const newId = () => Math.random().toString(36).slice(2);
+      if (isPdf) {
+        if (f.size > 4 * 1024 * 1024) { alert(`${f.name} 超過 4MB，無法上傳`); return; }
+        const reader = new FileReader();
+        reader.onload = () => { const d = String(reader.result); setAttachments(prev => [...prev, { id: newId(), kind: "pdf", media_type: "application/pdf", data: d.split(",")[1], name: f.name, preview: d }]); };
+        reader.readAsDataURL(f);
+        return;
+      }
+      // 圖片：縮放到最長邊 1568px、JPEG 0.85，避免超過上傳上限
+      const img = new Image();
+      img.onload = () => {
+        const max = 1568;
+        let { width, height } = img;
+        if (width > max || height > max) { const r = Math.min(max / width, max / height); width = Math.round(width * r); height = Math.round(height * r); }
+        const canvas = document.createElement("canvas");
+        canvas.width = width; canvas.height = height;
+        canvas.getContext("2d").drawImage(img, 0, 0, width, height);
+        const dataUrl = canvas.toDataURL("image/jpeg", 0.85);
+        setAttachments(prev => [...prev, { id: newId(), kind: "image", media_type: "image/jpeg", data: dataUrl.split(",")[1], name: f.name, preview: dataUrl }]);
+        URL.revokeObjectURL(img.src);
+      };
+      img.src = URL.createObjectURL(f);
+    });
+  };
+  const onPaste = (e) => {
+    const items = e.clipboardData?.items || [];
+    const imgs = [];
+    for (const it of items) { if (it.type && it.type.startsWith("image/")) { const f = it.getAsFile(); if (f) imgs.push(f); } }
+    if (imgs.length) { e.preventDefault(); addFiles(imgs); }
+  };
 
   useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth" }); }, [chat]);
 
@@ -2735,17 +2780,29 @@ function GlobalAIPanel({ chat, setChat, onClose, cats, setCats, canEdit, confirm
 
   const send = async () => {
     const t = input.trim();
-    if (!t) return;
+    if (!t && attachments.length === 0) return;
     setInput("");
-    addMsg("user", t);
+    const atts = attachments;
+    setAttachments([]);
+    addMsg("user", (t || "") + (atts.length ? `${t ? "\n" : ""}📎 已附上 ${atts.length} 個附件` : ""));
     setLoading(true);
     try {
       // 把完整專案結構給 AI，方便精準比對名稱與執行操作
       const structure = cats.map(c => `【${c.name}】預算${fmt(c.budget)} 狀態${c.status} 排程第${(c.ganttStart??0)+1}週起${c.ganttDur?` ${c.ganttDur}週`:""}；細項：${c.items.map(i=>`${i.name}(${i.qty}${i.unit}×${fmt(i.unitPrice)})`).join("、")||"無"}`).join("\n");
-      const ctx = `目前專案結構：\n${structure}\n\n使用者訊息：${t}`;
+      const textBlock = `目前專案結構：\n${structure}\n\n使用者訊息：${t || "（請判讀附件內容）"}`;
       const history = chat.slice(-12).map(m => ({ role: m.role === "user" ? "user" : "assistant", content: m.text }));
-      history.push({ role: "user", content: ctx });
-      const reply = await callAI(history, SYSTEM_GLOBAL + (canEdit ? AGENT_GUIDE : ""));
+      let content;
+      if (atts.length) {
+        content = [{ type: "text", text: textBlock }];
+        atts.forEach(a => {
+          if (a.kind === "image") content.push({ type: "image", source: { type: "base64", media_type: a.media_type, data: a.data } });
+          else content.push({ type: "document", source: { type: "base64", media_type: "application/pdf", data: a.data } });
+        });
+      } else {
+        content = textBlock;
+      }
+      history.push({ role: "user", content });
+      const reply = await callAI(history, SYSTEM_GLOBAL + (canEdit ? (AGENT_GUIDE + VISION_GUIDE) : ""));
 
       // 顯示去掉 json 指令區塊後的乾淨文字
       const cleanText = reply.replace(/```json[\s\S]*?```/gi, "").trim();
@@ -2813,9 +2870,25 @@ function GlobalAIPanel({ chat, setChat, onClose, cats, setCats, canEdit, confirm
             <button key={q} onClick={() => { setInput(q); setTimeout(() => document.getElementById("global-input")?.focus(),0); }} style={{ whiteSpace: "nowrap", background: "#f0f1f4", border: "1px solid #2a2f40", color: "#6b7280", borderRadius: 20, padding: "4px 10px", fontSize: 11, cursor: "pointer" }}>{q}</button>
           ))}
         </div>
-        <div style={{ padding: "0 14px 14px", display: "flex", gap: 8 }}>
-          <input id="global-input" value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); send(); } }} placeholder="詢問工程問題或記錄決策…" style={{ ...inputStyle, flex: 1, margin: 0 }} />
-          <button onClick={send} disabled={loading || !input.trim()} style={{ background: ACCENT, border: "none", borderRadius: 8, padding: "0 16px", color: "#1a1d2e", fontWeight: 700, cursor: loading ? "not-allowed" : "pointer", fontSize: 14, opacity: loading ? 0.6 : 1 }}>送</button>
+        <div style={{ padding: "0 14px 14px" }}>
+          {attachments.length > 0 && (
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 8 }}>
+              {attachments.map(a => (
+                <div key={a.id} style={{ position: "relative", width: 54, height: 54, borderRadius: 8, overflow: "hidden", border: "1px solid #e4e6ef", background: "#f7f8fa", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                  {a.kind === "image"
+                    ? <img src={a.preview} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                    : <span style={{ fontSize: 10, color: "#6b7280", textAlign: "center" }}>📄<br/>PDF</span>}
+                  <button onClick={() => setAttachments(prev => prev.filter(x => x.id !== a.id))} style={{ position: "absolute", top: -6, right: -6, width: 18, height: 18, borderRadius: "50%", background: "#111827", color: "#fff", border: "none", fontSize: 11, cursor: "pointer", lineHeight: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>×</button>
+                </div>
+              ))}
+            </div>
+          )}
+          <div style={{ display: "flex", gap: 8 }}>
+            <input ref={fileRef} type="file" accept="image/*,application/pdf" multiple style={{ display: "none" }} onChange={e => { addFiles(e.target.files); e.target.value = ""; }} />
+            <button onClick={() => fileRef.current?.click()} title="上傳圖片 / 估價單 / PDF" style={{ background: "#f0f1f4", border: "1px solid #e4e6ef", borderRadius: 8, padding: "0 12px", cursor: "pointer", fontSize: 16, color: "#374151" }}>📎</button>
+            <input id="global-input" value={input} onChange={e => setInput(e.target.value)} onPaste={onPaste} onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); send(); } }} placeholder="輸入、貼上截圖，或上傳估價單…" style={{ ...inputStyle, flex: 1, margin: 0 }} />
+            <button onClick={send} disabled={loading || (!input.trim() && attachments.length === 0)} style={{ background: ACCENT, border: "none", borderRadius: 8, padding: "0 16px", color: "#1a1d2e", fontWeight: 700, cursor: loading ? "not-allowed" : "pointer", fontSize: 14, opacity: loading ? 0.6 : 1 }}>送</button>
+          </div>
         </div>
       </div>
     </div>
