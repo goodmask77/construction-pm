@@ -1818,11 +1818,11 @@ function ListView({ cats, setCats, onSelectItem, confirm }) {
             {isExp && (
               <div style={{ borderTop: "1px solid #2a2f40" }}>
                 {/* item table header */}
-                <div style={{ display: "grid", gridTemplateColumns: "2fr 60px 60px 70px 70px 80px 80px 100px 80px", gap: 4, padding: "6px 16px", background: "#f0f1f4", fontSize: 10, color: "#6b7280", borderBottom: "1px solid #2a2f40" }}>
-                  <div>項目名稱</div><div>預估數量</div><div>單位</div><div>預估單價</div><div>預估複價</div><div>實際複價</div><div>差異</div><div>負責人</div><div>狀態</div>
+                <div style={{ display: "grid", gridTemplateColumns: "2fr 60px 60px 70px 70px 80px 80px 100px 80px 30px", gap: 4, padding: "6px 16px", background: "#f0f1f4", fontSize: 10, color: "#6b7280", borderBottom: "1px solid #2a2f40" }}>
+                  <div>項目名稱</div><div>預估數量</div><div>單位</div><div>預估單價</div><div>預估複價</div><div>實際複價</div><div>差異</div><div>負責人</div><div>狀態</div><div />
                 </div>
                 {cat.items.map(item => (
-                  <div key={item.id} onClick={() => onSelectItem(cat, item)} style={{ display: "grid", gridTemplateColumns: "2fr 60px 60px 70px 70px 80px 80px 100px 80px", gap: 4, padding: "8px 16px", borderBottom: "1px solid #2a2f4044", cursor: "pointer", alignItems: "center", transition: "background 0.15s" }}
+                  <div key={item.id} onClick={() => onSelectItem(cat, item)} style={{ display: "grid", gridTemplateColumns: "2fr 60px 60px 70px 70px 80px 80px 100px 80px 30px", gap: 4, padding: "8px 16px", borderBottom: "1px solid #2a2f4044", cursor: "pointer", alignItems: "center", transition: "background 0.15s" }}
                     onMouseEnter={e => e.currentTarget.style.background="#f0f1f4"}
                     onMouseLeave={e => e.currentTarget.style.background="transparent"}
                   >
