@@ -505,7 +505,7 @@ export default function App() {
       )}
       {/* GLOBAL AI */}
       {showGlobalAI && (
-        <GlobalAIPanel chat={globalChat} setChat={setGlobalChat} onClose={() => setShowGlobalAI(false)} cats={cats} />
+        <GlobalAIPanel chat={globalChat} setChat={setGlobalChat} onClose={() => setShowGlobalAI(false)} cats={cats} setCats={guardedSetCats} canEdit={canEdit} confirm={confirm} settings={settings} setSettings={guardedSetSettings} />
       )}
     </div>
   );
@@ -2497,7 +2497,133 @@ function ItemChat({ cat, item, setCats }) {
 }
 
 // ── GLOBAL AI PANEL ────────────────────────────────────────────────────────────
-function GlobalAIPanel({ chat, setChat, onClose, cats }) {
+// ── AI 代理：可執行操作的指令引擎 ───────────────────────────────────────────────
+const STATUS_ALIASES = {
+  "待開工":"pending","未開工":"pending","pending":"pending",
+  "進行中":"inprogress","施工中":"inprogress","inprogress":"inprogress","in_progress":"inprogress",
+  "完工":"done","完成":"done","已完成":"done","done":"done",
+  "有問題":"issue","問題":"issue","issue":"issue",
+  "暫停":"paused","paused":"paused",
+};
+const normStatus = (s) => STATUS_ALIASES[String(s||"").trim()] || null;
+const genId = (p) => p + "-" + Math.random().toString(36).slice(2,8);
+const findCat = (cats, q) => {
+  if (!q) return null;
+  return cats.find(c => c.name === q) || cats.find(c => c.name.includes(q) || q.includes(c.name));
+};
+const findItem = (cat, q) => {
+  if (!cat || !q) return null;
+  return cat.items.find(i => i.name === q) || cat.items.find(i => i.name.includes(q) || q.includes(i.name));
+};
+
+// 解析 AI 回覆中的 ```json {actions:[...]} ``` 區塊
+function parseActions(text) {
+  if (!text) return [];
+  const m = text.match(/```json\s*([\s\S]*?)```/i) || text.match(/\{[\s\S]*"actions"[\s\S]*\}/);
+  if (!m) return [];
+  try {
+    const obj = JSON.parse(m[1] || m[0]);
+    return Array.isArray(obj.actions) ? obj.actions : [];
+  } catch (_) { return []; }
+}
+
+// 套用指令到 cats / settings，回傳 { cats, settings, results }
+function applyActions(actions, cats, settings) {
+  let next = JSON.parse(JSON.stringify(cats));
+  let nextSettings = settings ? { ...settings } : settings;
+  const results = [];
+  for (const a of actions) {
+    const t = a.type;
+    try {
+      if (t === "clear_all") {
+        next = [];
+        results.push("🗑️ 已清空所有工程資料");
+      } else if (t === "add_category") {
+        const cat = { id: genId("cat"), order: next.length, name: a.name || "新工程大項", budget: Number(a.budget)||0, status: "pending", items: [] };
+        next.push(cat);
+        results.push(`➕ 新增大項「${cat.name}」`);
+      } else if (t === "delete_category") {
+        const c = findCat(next, a.category);
+        if (c) { next = next.filter(x => x.id !== c.id); results.push(`🗑️ 刪除大項「${c.name}」`); }
+        else results.push(`⚠️ 找不到大項「${a.category}」`);
+      } else if (t === "set_category_budget") {
+        const c = findCat(next, a.category);
+        if (c) { c.budget = Number(a.amount)||0; results.push(`💰 「${c.name}」預算設為 ${fmt(c.budget)}`); }
+        else results.push(`⚠️ 找不到大項「${a.category}」`);
+      } else if (t === "set_category_status") {
+        const c = findCat(next, a.category); const s = normStatus(a.status);
+        if (c && s) { c.status = s; results.push(`🔖 「${c.name}」狀態設為 ${a.status}`); }
+        else results.push(`⚠️ 無法設定「${a.category}」狀態`);
+      } else if (t === "set_gantt") {
+        const c = findCat(next, a.category);
+        if (c) {
+          if (a.startWeek != null) c.ganttStart = Math.max(0, Number(a.startWeek) - 1); // 使用者 1-based
+          if (a.durationWeeks != null) c.ganttDur = Math.max(1, Number(a.durationWeeks));
+          results.push(`📅 「${c.name}」排程：第${(c.ganttStart??0)+1}週起、${c.ganttDur??1}週`);
+        } else results.push(`⚠️ 找不到大項「${a.category}」`);
+      } else if (t === "add_item") {
+        const c = findCat(next, a.category);
+        if (c) {
+          const it = { id: genId("i"), name: a.name||"新細項", qty: Number(a.qty)||1, unit: a.unit||"式", unitPrice: Number(a.unitPrice)||0, labor:0, laborDays:0, dailyWage:0, assignee: a.assignee||"", status: normStatus(a.status)||"pending", receipts:[], notes: a.notes||"", chat:[] };
+          c.items.push(it);
+          results.push(`➕ 「${c.name}」新增細項「${it.name}」（${fmt(it.qty*it.unitPrice)}）`);
+        } else results.push(`⚠️ 找不到大項「${a.category}」`);
+      } else if (t === "delete_item") {
+        const c = findCat(next, a.category); const it = c && findItem(c, a.item);
+        if (c && it) { c.items = c.items.filter(x => x.id !== it.id); results.push(`🗑️ 刪除「${c.name}」的「${it.name}」`); }
+        else results.push(`⚠️ 找不到細項「${a.item}」`);
+      } else if (t === "set_item") {
+        const c = findCat(next, a.category); const it = c && findItem(c, a.item);
+        if (c && it) {
+          const chg = [];
+          if (a.qty != null) { it.qty = Number(a.qty); chg.push(`數量${it.qty}`); }
+          if (a.unit != null) { it.unit = a.unit; chg.push(`單位${it.unit}`); }
+          if (a.unitPrice != null) { it.unitPrice = Number(a.unitPrice); chg.push(`單價${fmt(it.unitPrice)}`); }
+          if (a.assignee != null) { it.assignee = a.assignee; chg.push(`負責人${it.assignee}`); }
+          if (a.notes != null) { it.notes = a.notes; chg.push("備註"); }
+          if (a.status != null) { const s=normStatus(a.status); if (s) { it.status = s; chg.push(`狀態${a.status}`); } }
+          it.lastUpdated = new Date().toISOString();
+          results.push(`✏️ 「${c.name}/${it.name}」更新：${chg.join("、")||"（無變更）"}`);
+        } else results.push(`⚠️ 找不到細項「${a.item}」`);
+      } else if (t === "set_setting") {
+        if (nextSettings && a.field) { nextSettings[a.field] = a.value; results.push(`⚙️ 設定「${a.field}」已更新`); }
+      } else {
+        results.push(`⚠️ 不支援的指令：${t}`);
+      }
+    } catch (e) {
+      results.push(`⚠️ 執行「${t}」失敗`);
+    }
+  }
+  return { cats: next, settings: nextSettings, results };
+}
+
+const AGENT_GUIDE = `
+
+你不只是顧問，你還能「直接操作」這個工程管理系統。當使用者要求你執行操作（新增/修改/刪除/清空/排程/設定金額等），請在回覆中附上一段可執行指令，格式為 markdown 的 json 區塊：
+
+\`\`\`json
+{"actions":[ ... ]}
+\`\`\`
+
+可用指令（type 與參數）：
+- {"type":"clear_all"} 清空全部工程資料
+- {"type":"add_category","name":"空調工程","budget":310000}
+- {"type":"delete_category","category":"空調工程"}
+- {"type":"set_category_budget","category":"空調工程","amount":310000}
+- {"type":"set_category_status","category":"拆除工程","status":"進行中"}  // 狀態：待開工/進行中/完工/有問題/暫停
+- {"type":"set_gantt","category":"地坪工程","startWeek":4,"durationWeeks":3}  // 第幾週開始(1起算)、持續幾週
+- {"type":"add_item","category":"空調工程","name":"大金VRV主機","qty":1,"unit":"式","unitPrice":310000}
+- {"type":"set_item","category":"空調工程","item":"主機","qty":2,"unitPrice":150000,"status":"進行中","assignee":"王師傅"}
+- {"type":"delete_item","category":"空調工程","item":"主機"}
+
+規則：
+1. category/item 用名稱比對（可部分名稱）。
+2. 一次可放多個 action。
+3. 先用一兩句白話說明你要做什麼，再附 json 區塊。
+4. 只有在使用者「要求執行操作」時才附 json；單純問問題就正常回答、不要附 json。
+5. 破壞性操作（清空、刪除）也照樣附指令，系統會再跟使用者確認。`;
+
+function GlobalAIPanel({ chat, setChat, onClose, cats, setCats, canEdit, confirm, settings, setSettings }) {
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const endRef = useRef(null);
@@ -2526,11 +2652,34 @@ function GlobalAIPanel({ chat, setChat, onClose, cats }) {
     addMsg("user", t);
     setLoading(true);
     try {
-      const projectSummary = `目前專案狀態：共${cats.length}個工程大項，估價總額${fmt(cats.reduce((s,c)=>s+c.budget,0))}，完工項目${cats.filter(c=>c.status==="done").length}個。`;
-      const history = chat.map(m => ({ role: m.role === "user" ? "user" : "assistant", content: m.text }));
-      history.push({ role: "user", content: `[${projectSummary}] ${t}` });
-      const reply = await callAI(history, SYSTEM_GLOBAL);
-      addMsg("assistant", reply);
+      // 把完整專案結構給 AI，方便精準比對名稱與執行操作
+      const structure = cats.map(c => `【${c.name}】預算${fmt(c.budget)} 狀態${c.status} 排程第${(c.ganttStart??0)+1}週起${c.ganttDur?` ${c.ganttDur}週`:""}；細項：${c.items.map(i=>`${i.name}(${i.qty}${i.unit}×${fmt(i.unitPrice)})`).join("、")||"無"}`).join("\n");
+      const ctx = `目前專案結構：\n${structure}\n\n使用者訊息：${t}`;
+      const history = chat.slice(-12).map(m => ({ role: m.role === "user" ? "user" : "assistant", content: m.text }));
+      history.push({ role: "user", content: ctx });
+      const reply = await callAI(history, SYSTEM_GLOBAL + (canEdit ? AGENT_GUIDE : ""));
+
+      // 顯示去掉 json 指令區塊後的乾淨文字
+      const cleanText = reply.replace(/```json[\s\S]*?```/gi, "").trim();
+      addMsg("assistant", cleanText || reply);
+
+      // 解析並執行操作（僅管理員）
+      const actions = parseActions(reply);
+      if (actions.length > 0 && !canEdit) {
+        addMsg("assistant", "🔒 需以管理員登入才能執行操作（目前為唯讀）。");
+      } else if (actions.length > 0 && canEdit) {
+        const destructive = actions.some(a => ["clear_all","delete_category","delete_item"].includes(a.type));
+        let ok = true;
+        if (destructive && confirm) ok = await confirm("AI 將執行包含「清空 / 刪除」的操作，確定執行嗎？");
+        if (ok) {
+          const { cats: newCats, settings: newSettings, results } = applyActions(actions, cats, settings);
+          setCats(newCats);
+          if (newSettings && setSettings && actions.some(a => a.type === "set_setting")) setSettings(newSettings);
+          addMsg("assistant", "✅ 已執行：\n" + results.map(r => "・" + r).join("\n"));
+        } else {
+          addMsg("assistant", "已取消操作。");
+        }
+      }
     } catch (_) {
       addMsg("assistant", "⚠️ AI連線失敗，請稍後再試。");
     }
