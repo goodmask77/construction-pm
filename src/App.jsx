@@ -340,11 +340,16 @@ export default function App() {
       setAiLog(log);
       const savedName = await loadRole();
       if (savedName) { setUserName(savedName); }
-      else { setShowLogin(true); }
+      // 未登入 → 訪客唯讀瀏覽（不強制登入）
       try {
         const ku = await window.storage.get("pm_known_users", true);
-        if (ku && ku.value) setKnownUsers(JSON.parse(ku.value));
-      } catch(_){}
+        if (ku && ku.value) {
+          const arr = JSON.parse(ku.value);
+          setKnownUsers(arr.includes("goodmask77") ? arr : ["goodmask77", ...arr]);
+        } else {
+          setKnownUsers(["goodmask77"]); // 預設管理員帳號
+        }
+      } catch(_){ setKnownUsers(["goodmask77"]); }
       const alog = await loadActivityLog();
       setActivityLog(alog);
     })();
@@ -366,7 +371,20 @@ export default function App() {
     setActivityLog(prev => { const next = [entry, ...prev].slice(0,200); saveActivityLog(next); return next; });
   };
 
+  // ── 權限：登入才能編輯，未登入唯讀 ──
+  const canEdit = !!userName;
+  const requireLogin = () => setShowLogin(true);
+  const guardedSetCats = (updater) => {
+    if (!canEdit) { requireLogin(); return; }
+    setCats(prev => typeof updater === "function" ? updater(prev) : updater);
+  };
+  const guardedSetSettings = (s) => {
+    if (!canEdit) { requireLogin(); return; }
+    setSettings(s); saveSettings(s);
+  };
+
   const setCatsLogged = (updater) => {
+    if (!canEdit) { requireLogin(); return; }
     setCats(prev => typeof updater === "function" ? updater(prev) : updater);
   };
   const setEventsLogged = (updater) => {
@@ -408,6 +426,7 @@ export default function App() {
   const onDragStart = (id) => setDragging(id);
   const onDragOver = (id) => { if (id !== dragging) setDragOver(id); };
   const onDrop = (targetId) => {
+    if (!canEdit) { requireLogin(); setDragging(null); setDragOver(null); return; }
     if (!dragging || dragging === targetId) { setDragging(null); setDragOver(null); return; }
     setCats(prev => {
       const arr = [...prev];
@@ -437,36 +456,36 @@ export default function App() {
           <OwnerDashboard cats={cats} setCats={setCatsLogged} settings={settings} stalledItems={stalledItems} activityLog={activityLog} logActivity={logActivity} userName={userName} />
         )}
         {view === "overview" && (
-          <OverviewTable cats={cats} setCats={setCats} confirm={confirm} />
+          <OverviewTable cats={cats} setCats={guardedSetCats} confirm={confirm} />
         )}
         {view === "kanban" && (
-          <KanbanView cats={cats} setCats={setCats} onSelect={(cat) => { setSelectedCat(cat); setSelectedItem(null); }} dragging={dragging} dragOver={dragOver} onDragStart={onDragStart} onDragOver={onDragOver} onDrop={onDrop} confirm={confirm} />
+          <KanbanView cats={cats} setCats={guardedSetCats} onSelect={(cat) => { setSelectedCat(cat); setSelectedItem(null); }} dragging={dragging} dragOver={dragOver} onDragStart={onDragStart} onDragOver={onDragOver} onDrop={onDrop} confirm={confirm} />
         )}
         {view === "list" && (
-          <ListView cats={cats} setCats={setCats} onSelectItem={(cat, item) => { setSelectedCat(cat); setSelectedItem(item); }} confirm={confirm} />
+          <ListView cats={cats} setCats={guardedSetCats} onSelectItem={(cat, item) => { setSelectedCat(cat); setSelectedItem(item); }} confirm={confirm} />
         )}
         {view === "gantt" && (
-          <GanttView cats={cats} setCats={setCats} />
+          <GanttView cats={cats} setCats={guardedSetCats} />
         )}
         {view === "advisor" && settings && (
-          <AdvisorSettingsView settings={settings} setSettings={s => { setSettings(s); saveSettings(s); }} cats={cats} aiLog={aiLog} setAiLog={l => { setAiLog(l); saveAILog(l); }} journal={journal} events={events} plans={plans} activityLog={activityLog} logActivity={logActivity} userName={userName} />
+          <AdvisorSettingsView settings={settings} setSettings={guardedSetSettings} cats={cats} aiLog={aiLog} setAiLog={l => { setAiLog(l); saveAILog(l); }} journal={journal} events={events} plans={plans} activityLog={activityLog} logActivity={logActivity} userName={userName} />
         )}
       </div>
 
       {/* CATEGORY DETAIL PANEL */}
       {selectedCat && !selectedItem && (
-        <CatPanel cat={selectedCat} cats={cats} setCats={setCats} onClose={() => setSelectedCat(null)} onSelectItem={(item) => setSelectedItem(item)} confirm={confirm} />
+        <CatPanel cat={selectedCat} cats={cats} setCats={guardedSetCats} onClose={() => setSelectedCat(null)} onSelectItem={(item) => setSelectedItem(item)} confirm={confirm} />
       )}
 
       {/* ITEM DETAIL PANEL */}
       {selectedCat && selectedItem && (
-        <ItemPanel cat={selectedCat} item={selectedItem} cats={cats} setCats={setCats} onClose={() => setSelectedItem(null)} confirm={confirm} />
+        <ItemPanel cat={selectedCat} item={selectedItem} cats={cats} setCats={guardedSetCats} onClose={() => setSelectedItem(null)} confirm={confirm} />
       )}
 
       {showActivityLog && <ActivityLogPanel activityLog={activityLog} onClose={() => setShowActivityLog(false)} />}
       {ConfirmDialog}
       {showLogin && (
-        <LoginModal knownUsers={knownUsers} onLogin={async (name) => {
+        <LoginModal knownUsers={knownUsers} onClose={() => setShowLogin(false)} onLogin={async (name) => {
           setUserName(name);
           saveRole(name);
           setShowLogin(false);
@@ -546,11 +565,15 @@ function TopNav({ view, setView, saving, totalEstimated, totalActual, doneCount,
             ⏰ {stalledCount} 項卡關超過3天
           </div>
         )}
-        {userName && (
-          <div onClick={onRoleClick} style={{ display: "flex", alignItems: "center", gap: 6, background: "#f7f8fa", border: "1px solid #e4e6ef", borderRadius: 20, padding: "4px 12px", cursor: "pointer" }}>
+        {userName ? (
+          <div onClick={onRoleClick} title="點擊可切換帳號 / 登出" style={{ display: "flex", alignItems: "center", gap: 6, background: "#f7f8fa", border: "1px solid #e4e6ef", borderRadius: 20, padding: "4px 12px", cursor: "pointer" }}>
             <span style={{ fontSize: 14 }}>👤</span>
             <span style={{ fontSize: 12, color: "#374151", fontWeight: 600 }}>{userName}</span>
           </div>
+        ) : (
+          <button onClick={onRoleClick} style={{ display: "flex", alignItems: "center", gap: 6, background: "#111827", border: "none", borderRadius: 20, padding: "6px 14px", cursor: "pointer", color: "#fff", fontSize: 12, fontWeight: 700 }}>
+            🔒 登入以編輯
+          </button>
         )}
         <button onClick={onActivityLog} title="活動記錄" style={{ background: "#f7f8fa", border: "1px solid #e4e6ef", color: "#374151", borderRadius: 8, padding: "7px 12px", cursor: "pointer", fontSize: 12, display:"flex", alignItems:"center", gap:4 }}>
           📋{activityCount > 0 ? <span style={{fontSize:10,background:"#374151",color:"#fff",borderRadius:10,padding:"0 5px"}}>{activityCount}</span> : ""}
@@ -866,13 +889,13 @@ function OverviewTable({ cats, setCats, confirm }) {
 
 
 // ── SIMPLE LOGIN ─────────────────────────────────────────────────────────────
-function LoginModal({ onLogin, knownUsers }) {
+function LoginModal({ onLogin, knownUsers, onClose }) {
   const [name, setName] = useState("");
   return (
-    <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.55)", zIndex:9999, display:"flex", alignItems:"center", justifyContent:"center", padding:16 }}>
-      <div style={{ background:"#ffffff", borderRadius:16, padding:28, maxWidth:380, width:"100%", boxShadow:"0 20px 60px rgba(0,0,0,0.2)" }}>
-        <div style={{ fontSize:22, fontWeight:900, color:"#111827", marginBottom:6 }}>你是誰？</div>
-        <div style={{ fontSize:13, color:"#6b7280", marginBottom:20 }}>輸入你的名字，你的所有操作將會被記錄</div>
+    <div onClick={onClose} style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.55)", zIndex:9999, display:"flex", alignItems:"center", justifyContent:"center", padding:16 }}>
+      <div onClick={e=>e.stopPropagation()} style={{ background:"#ffffff", borderRadius:16, padding:28, maxWidth:380, width:"100%", boxShadow:"0 20px 60px rgba(0,0,0,0.2)" }}>
+        <div style={{ fontSize:22, fontWeight:900, color:"#111827", marginBottom:6 }}>登入以編輯</div>
+        <div style={{ fontSize:13, color:"#6b7280", marginBottom:20 }}>登入後才能新增/修改/刪除，未登入僅能唯讀瀏覽。預設管理員帳號：<b>goodmask77</b></div>
         {knownUsers.length > 0 && (
           <div style={{ marginBottom:16 }}>
             <div style={{ fontSize:11, color:"#9ca3af", marginBottom:8 }}>最近登入過的成員</div>
@@ -898,6 +921,12 @@ function LoginModal({ onLogin, knownUsers }) {
           style={{ width:"100%", padding:"12px 0", background:name.trim()?"#111827":"#e4e6ef", border:"none", borderRadius:10, color:name.trim()?"#ffffff":"#9ca3af", fontSize:15, fontWeight:700, cursor:name.trim()?"pointer":"not-allowed" }}>
           進入
         </button>
+        {onClose && (
+          <button onClick={onClose}
+            style={{ width:"100%", padding:"10px 0", marginTop:10, background:"transparent", border:"none", color:"#6b7280", fontSize:13, cursor:"pointer" }}>
+            以訪客身分瀏覽（唯讀）
+          </button>
+        )}
       </div>
     </div>
   );
