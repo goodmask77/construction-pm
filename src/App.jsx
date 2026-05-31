@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
+import { uploadPhoto, deletePhotoFile } from "./supa.js";
 
 const ACCENT = "#E8B84B";
 const ADMIN_USER = "goodmask77"; // 僅此帳號可編輯（不顯示於介面）
@@ -327,6 +328,7 @@ export default function App() {
   const [showLogin, setShowLogin] = useState(false);
   const [knownUsers, setKnownUsers] = useState([]);
   const [worklog, setWorklog] = useState([]);
+  const [photos, setPhotos] = useState([]);
   const [events, setEvents] = useState([]);
   const [journal, setJournal] = useState([]);
   const [plans, setPlans] = useState([]);
@@ -336,6 +338,11 @@ export default function App() {
   const commitWorklog = (list) => {
     setWorklog(list);
     window.storage.set("pm_worklog", JSON.stringify(list), true).catch(()=>{});
+  };
+  // 檔案庫照片：metadata 存共享後端（圖片本體在 Supabase Storage）
+  const commitPhotos = (list) => {
+    setPhotos(list);
+    window.storage.set("pm_photos", JSON.stringify(list), true).catch(()=>{});
   };
 
   // load
@@ -368,6 +375,10 @@ export default function App() {
       try {
         const wl = await window.storage.get("pm_worklog", true);
         if (wl && wl.value) setWorklog(JSON.parse(wl.value));
+      } catch(_){}
+      try {
+        const ph = await window.storage.get("pm_photos", true);
+        if (ph && ph.value) setPhotos(JSON.parse(ph.value));
       } catch(_){}
       try { const ev = await window.storage.get("pm_events", true); if (ev&&ev.value) setEvents(JSON.parse(ev.value)); } catch(_){}
       try { const jn = await window.storage.get("pm_journal", true); if (jn&&jn.value) setJournal(JSON.parse(jn.value)); } catch(_){}
@@ -489,6 +500,9 @@ export default function App() {
         )}
         {view === "worklog" && (
           <WorklogView worklog={worklog} setWorklog={commitWorklog} canEdit={canEdit} userName={userName} requireLogin={requireLogin} confirm={confirm} />
+        )}
+        {view === "files" && (
+          <PhotoLibraryView photos={photos} setPhotos={commitPhotos} cats={cats} canEdit={canEdit} userName={userName} requireLogin={requireLogin} confirm={confirm} />
         )}
         {view === "advisor" && settings && (
           <AdvisorSettingsView settings={settings} setSettings={guardedSetSettings} cats={cats} aiLog={aiLog} setAiLog={l => { setAiLog(l); saveAILog(l); }} journal={journal} events={events} plans={plans} activityLog={activityLog} logActivity={logActivity} userName={userName} />
@@ -620,7 +634,7 @@ function TopNav({ view, setView, saving, totalEstimated, totalActual, doneCount,
       </div>
       {/* view tabs */}
       <div style={{ display: "flex", gap: 6 }}>
-        {[["owner","業主視角"],["overview","總覽"],["kanban","看板"],["list","明細"],["gantt","工序"],["worklog","工作日誌"],["advisor","AI設定"]].map(([v,l]) => (
+        {[["owner","業主視角"],["overview","總覽"],["kanban","看板"],["list","明細"],["gantt","工序"],["worklog","工作日誌"],["files","檔案庫"],["advisor","AI設定"]].map(([v,l]) => (
           <button key={v} onClick={() => setView(v)} style={{ padding: "5px 14px", borderRadius: 6, border: "none", cursor: "pointer", fontSize: 12, fontWeight: 600, background: view === v ? ACCENT : "#d8dae3", color: view === v ? "#f4f5f7" : "#6b7280" }}>{l}</button>
         ))}
       </div>
@@ -2579,6 +2593,120 @@ function WorklogView({ worklog, setWorklog, canEdit, userName, requireLogin, con
           )}
         </div>
       ))}
+    </div>
+  );
+}
+
+// ── 檔案庫 / 相簿 ─────────────────────────────────────────────────────────────
+const PHOTO_KINDS = [["quote","估價單"],["site","現場照"],["invoice","發票"],["other","其他"]];
+const photoKindLabel = (k) => (PHOTO_KINDS.find(x=>x[0]===k)||[,"其他"])[1];
+const photoKindColor = { quote:"#3b82f6", site:"#22c55e", invoice:"#e85c4b", other:"#9ca3af" };
+function PhotoLibraryView({ photos, setPhotos, cats, canEdit, userName, requireLogin, confirm }) {
+  const [kind, setKind] = useState("site");
+  const [catId, setCatId] = useState("");
+  const [date, setDate] = useState(new Date().toISOString().slice(0,10));
+  const [note, setNote] = useState("");
+  const [uploading, setUploading] = useState(false);
+  const [fKind, setFKind] = useState("all");
+  const [fCat, setFCat] = useState("all");
+  const [lightbox, setLightbox] = useState(null);
+  const fileRef = useRef(null);
+  const sortedCats = [...cats].sort((a,b)=>a.order-b.order);
+
+  const onPick = async (files) => {
+    if (!canEdit) { requireLogin && requireLogin(); return; }
+    const arr = Array.from(files||[]).filter(f => /^image\//.test(f.type));
+    if (!arr.length) return;
+    setUploading(true);
+    const added = [];
+    for (const f of arr) {
+      try {
+        const { url, path } = await uploadPhoto(f);
+        const cat = cats.find(c => c.id === catId);
+        added.push({ id: "ph-"+Math.random().toString(36).slice(2,8), url, path, name: f.name, kind, catId: catId||"", catName: cat?cat.name:"", date, note, invoiceReceived: false, by: userName||"—", ts: new Date().toISOString() });
+      } catch (e) { alert("上傳失敗：" + (e?.message || e)); }
+    }
+    if (added.length) setPhotos([...added, ...photos]);
+    setNote(""); setUploading(false);
+  };
+  const toggleReceived = (id) => setPhotos(photos.map(p => p.id===id ? {...p, invoiceReceived: !p.invoiceReceived} : p));
+  const del = async (p) => { if (confirm && !(await confirm("刪除這張圖片？"))) return; await deletePhotoFile(p.path); setPhotos(photos.filter(x => x.id !== p.id)); };
+
+  const filtered = photos.filter(p => (fKind==="all"||p.kind===fKind) && (fCat==="all"||p.catId===fCat))
+    .sort((a,b)=>(b.date||"").localeCompare(a.date||"")||(b.ts||"").localeCompare(a.ts||""));
+  const pendingInvoices = photos.filter(p => p.kind==="invoice" && !p.invoiceReceived).length;
+
+  const selStyle = { ...inputStyle, width:"auto", padding:"6px 10px" };
+  return (
+    <div style={{ maxWidth: 980, margin: "16px auto", padding: "0 4px" }}>
+      <div style={{ fontSize:18, fontWeight:900, color:"#111827", marginBottom:12 }}>📁 檔案庫 / 相簿</div>
+
+      {pendingInvoices > 0 && (
+        <div style={{ background:"#fff0ee", border:"1px solid #fca5a5", borderRadius:10, padding:"8px 14px", marginBottom:12, fontSize:13, color:"#dc2626", fontWeight:600 }}>
+          🧾 有 {pendingInvoices} 張發票尚未確認收到（請在發票卡片勾選「已收到」）
+        </div>
+      )}
+
+      {canEdit ? (
+        <div style={{ background:"#fff", border:"1px solid #e4e6ef", borderRadius:12, padding:14, marginBottom:14, display:"flex", gap:8, flexWrap:"wrap", alignItems:"center" }}>
+          <select value={kind} onChange={e=>setKind(e.target.value)} style={selStyle}>{PHOTO_KINDS.map(([k,l])=><option key={k} value={k}>{l}</option>)}</select>
+          <select value={catId} onChange={e=>setCatId(e.target.value)} style={selStyle}><option value="">（不指定工程）</option>{sortedCats.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select>
+          <input type="date" value={date} onChange={e=>setDate(e.target.value)} style={selStyle} />
+          <input value={note} onChange={e=>setNote(e.target.value)} placeholder="備註（選填）" style={{ ...inputStyle, flex:1, minWidth:120, padding:"6px 10px" }} />
+          <input ref={fileRef} type="file" accept="image/*" multiple style={{ display:"none" }} onChange={e=>{ onPick(e.target.files); e.target.value=""; }} />
+          <button onClick={()=>fileRef.current?.click()} disabled={uploading} style={{ background:ACCENT, color:"#1a1d2e", border:"none", borderRadius:8, padding:"8px 16px", fontWeight:700, cursor: uploading?"wait":"pointer" }}>{uploading?"上傳中…":"📷 上傳圖片"}</button>
+        </div>
+      ) : (
+        <div style={{ background:"#fff7e6", border:"1px solid #ffe2a8", borderRadius:10, padding:"10px 14px", marginBottom:14, fontSize:13, color:"#8a6d3b" }}>🔒 唯讀模式：登入後可上傳 / 管理圖片。</div>
+      )}
+
+      <div style={{ display:"flex", gap:6, flexWrap:"wrap", marginBottom:12, alignItems:"center" }}>
+        <span style={{ fontSize:11, color:"#9ca3af" }}>類別</span>
+        {[["all","全部"],...PHOTO_KINDS].map(([k,l])=>(
+          <button key={k} onClick={()=>setFKind(k)} style={{ padding:"3px 10px", borderRadius:20, border:"1px solid #e4e6ef", fontSize:11, cursor:"pointer", background:fKind===k?ACCENT:"#f7f8fa", color:fKind===k?"#1a1d2e":"#6b7280", fontWeight:fKind===k?700:400 }}>{l}</button>
+        ))}
+        <span style={{ fontSize:11, color:"#9ca3af", marginLeft:8 }}>工程</span>
+        <select value={fCat} onChange={e=>setFCat(e.target.value)} style={{ ...selStyle, fontSize:12, padding:"4px 8px" }}>
+          <option value="all">全部工程</option>{sortedCats.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}
+        </select>
+        <div style={{ flex:1 }} /><span style={{ fontSize:12, color:"#9ca3af" }}>共 {filtered.length} 張</span>
+      </div>
+
+      {filtered.length === 0 ? (
+        <div style={{ textAlign:"center", color:"#9ca3af", padding:40 }}>尚無圖片{canEdit?"，用上方按鈕上傳":""}</div>
+      ) : (
+        <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill, minmax(180px,1fr))", gap:12 }}>
+          {filtered.map(p => (
+            <div key={p.id} style={{ background:"#fff", border:"1px solid #e4e6ef", borderRadius:12, overflow:"hidden", display:"flex", flexDirection:"column" }}>
+              <div style={{ position:"relative", aspectRatio:"4/3", background:"#f0f2f5", cursor:"zoom-in" }} onClick={()=>setLightbox(p)}>
+                <img src={p.url} alt={p.name} style={{ width:"100%", height:"100%", objectFit:"cover" }} />
+                <span style={{ position:"absolute", top:6, left:6, fontSize:10, fontWeight:700, color:"#fff", background:photoKindColor[p.kind]||"#9ca3af", borderRadius:6, padding:"2px 7px" }}>{photoKindLabel(p.kind)}</span>
+              </div>
+              <div style={{ padding:"8px 10px", fontSize:12 }}>
+                <div style={{ color:"#374151", fontWeight:600 }}>{p.catName || "（未指定工程）"}</div>
+                <div style={{ color:"#9ca3af", fontSize:11, marginTop:2 }}>{p.date} · {p.by}</div>
+                {p.note && <div style={{ color:"#6b7280", fontSize:11, marginTop:3, whiteSpace:"pre-wrap" }}>{p.note}</div>}
+                {p.kind === "invoice" && (
+                  <label style={{ display:"flex", alignItems:"center", gap:5, marginTop:6, fontSize:12, color:p.invoiceReceived?"#16a34a":"#dc2626", fontWeight:700, cursor:canEdit?"pointer":"default" }}>
+                    <input type="checkbox" checked={!!p.invoiceReceived} disabled={!canEdit} onChange={()=>canEdit&&toggleReceived(p.id)} style={{ accentColor:"#16a34a" }} />
+                    {p.invoiceReceived ? "✅ 發票已收到" : "⚠️ 發票未收到"}
+                  </label>
+                )}
+                <div style={{ display:"flex", gap:8, marginTop:8 }}>
+                  <a href={p.url} target="_blank" rel="noreferrer" style={{ fontSize:11, color:"#3b82f6", textDecoration:"none" }}>⬇ 下載</a>
+                  {canEdit && <button onClick={()=>del(p)} style={{ fontSize:11, color:"#dc2626", background:"none", border:"none", cursor:"pointer", padding:0 }}>刪除</button>}
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {lightbox && (
+        <div onClick={()=>setLightbox(null)} style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.85)", zIndex:9999, display:"flex", alignItems:"center", justifyContent:"center", padding:20, cursor:"zoom-out" }}>
+          <img src={lightbox.url} alt={lightbox.name} style={{ maxWidth:"95%", maxHeight:"95%", objectFit:"contain", borderRadius:8 }} />
+        </div>
+      )}
     </div>
   );
 }

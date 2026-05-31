@@ -45,6 +45,22 @@ function setLocal(k, value) {
   try { localStorage.setItem(k, value) } catch (_) {}
 }
 
+// ── 圖片儲存（Supabase Storage，bucket: photos）──────────────────────────────
+const PHOTO_BUCKET = 'photos';
+export async function uploadPhoto(file) {
+  if (!supabase) throw new Error('Supabase 未設定');
+  const ext = (file.name?.split('.').pop() || 'jpg').toLowerCase().replace(/[^a-z0-9]/g, '') || 'jpg';
+  const path = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
+  const { error } = await supabase.storage.from(PHOTO_BUCKET).upload(path, file, { contentType: file.type || 'image/jpeg', upsert: false });
+  if (error) throw error;
+  const { data } = supabase.storage.from(PHOTO_BUCKET).getPublicUrl(path);
+  return { url: data.publicUrl, path };
+}
+export async function deletePhotoFile(path) {
+  if (!supabase || !path) return;
+  try { await supabase.storage.from(PHOTO_BUCKET).remove([path]); } catch (_) {}
+}
+
 // 安裝 window.storage 墊片（在 App 掛載前呼叫）
 export function installStorageShim() {
   if (typeof window === 'undefined') return
