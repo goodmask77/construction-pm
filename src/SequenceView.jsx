@@ -121,7 +121,7 @@ export default function SequenceView({
                 return (
                   <div key={w} style={{ position: "absolute", left: X(w * 7), top: 0, bottom: 0, borderLeft: `1px solid ${C.line}`, paddingLeft: 5, display: "flex", flexDirection: "column", justifyContent: "center", lineHeight: 1.25 }}>
                     <span style={{ fontSize: 11, fontWeight: 700, color: C.text }}>W{w + 1}</span>
-                    <span style={{ fontSize: 10, color: C.faint, whiteSpace: "nowrap" }}>{d.getMonth() + 1}/{d.getDate()}</span>
+                    {zoom === "week" && <span style={{ fontSize: 10, color: C.faint, whiteSpace: "nowrap" }}>{d.getMonth() + 1}/{d.getDate()}</span>}
                   </div>
                 );
               })}
