@@ -129,7 +129,7 @@ export default function SequenceView({
         {Object.values(WS).map((s) => <span key={s.label} style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 12, color: C.sub }}><span style={{ width: 9, height: 9, borderRadius: 3, background: s.bar }} />{s.label}</span>)}
       </div>
 
-      <div ref={ref} style={{ overflow: "auto", maxHeight: "calc(100vh - 240px)", border: `1px solid ${C.line}`, borderRadius: 12, background: "#fff", position: "relative" }}>
+      <div ref={ref} style={{ overflow: "auto", maxHeight: "calc(100vh - 195px)", border: `1px solid ${C.line}`, borderRadius: 12, background: "#fff", position: "relative" }}>
         <div style={{ minWidth: labelW + trackW }}>
           <div style={{ display: "flex", position: "sticky", top: 0, zIndex: 3, background: "#fff", borderBottom: `1px solid ${C.line}` }}>
             <div style={{ width: labelW, flexShrink: 0, position: "sticky", left: 0, zIndex: 4, background: "#fff", padding: "8px 12px", fontSize: 13, fontWeight: 600, color: C.sub, borderRight: `1px solid ${C.line}` }}>

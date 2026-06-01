@@ -683,16 +683,16 @@ function KPICard({ label, val, color, tip }) {
   const [show, setShow] = useState(false);
   return (
     <div
-      style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: 10, padding: "12px 14px", position: "relative", cursor: "help" }}
+      style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: 9, padding: "6px 11px", position: "relative", cursor: "help" }}
       onMouseEnter={() => setShow(true)}
       onMouseLeave={() => setShow(false)}
       onClick={() => setShow(s => !s)}
     >
-      <div style={{ fontSize: 12, color: SUB, marginBottom: 5, display: "flex", alignItems: "center", gap: 4, fontWeight: 500 }}>
+      <div style={{ fontSize: 11, color: SUB, marginBottom: 2, display: "flex", alignItems: "center", gap: 4, fontWeight: 500 }}>
         {label}
-        <span style={{ fontSize: 9, color: "#CDC3AC", border: "1px solid #CDC3AC", borderRadius: "50%", width: 12, height: 12, display: "inline-flex", alignItems: "center", justifyContent: "center", lineHeight: 1 }}>?</span>
+        <span style={{ fontSize: 8, color: "#CDC3AC", border: "1px solid #CDC3AC", borderRadius: "50%", width: 11, height: 11, display: "inline-flex", alignItems: "center", justifyContent: "center", lineHeight: 1 }}>?</span>
       </div>
-      <div style={{ fontVariantNumeric: "tabular-nums", fontSize: 18, fontWeight: 600, color, letterSpacing: -0.3 }}>{val}</div>
+      <div style={{ fontVariantNumeric: "tabular-nums", fontSize: 16, fontWeight: 600, color, letterSpacing: -0.3 }}>{val}</div>
       {show && (
         <div style={{ position: "absolute", top: "100%", left: 0, marginTop: 6, background: PRIMARY, border: "none", borderRadius: 8, padding: "9px 11px", fontSize: 12, color: "#D8CFBB", zIndex: 300, whiteSpace: "normal", width: 240, lineHeight: 1.6, boxShadow: "0 8px 24px rgba(15,23,42,0.18)" }}>
           {tip}
@@ -707,49 +707,48 @@ function TopNav({ view, setView, saving, totalEstimated, totalActual, doneCount,
   const diff = totalActual - totalEstimated;
   return (
     <div style={{ background: BG, borderBottom: `1px solid ${BORDER}`, padding: "16px 22px 0", position: "sticky", top: 0, zIndex: 100 }}>
-      <div style={{ display: "flex", alignItems: "flex-start", gap: 12, marginBottom: 16 }}>
-        <div>
-          <div style={{ fontSize: 30, fontWeight: 800, color: ACCENT, lineHeight: 1, letterSpacing: -1 }}>GROUN:D</div>
-          <div style={{ fontSize: 10, color: SUB, letterSpacing: 3, textTransform: "uppercase", marginTop: 6, fontWeight: 600 }}>Construction Project Tracker</div>
-          <div style={{ fontSize: 11.5, color: "#3C8C3C", marginTop: 5, display: "flex", alignItems: "center", gap: 6, fontWeight: 500 }}><span style={{ width: 7, height: 7, borderRadius: 4, background: "#3C8C3C" }} />雲端協作中</div>
+      <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 12, flexWrap: "wrap" }}>
+        <div style={{ flexShrink: 0 }}>
+          <div style={{ fontSize: 26, fontWeight: 800, color: ACCENT, lineHeight: 1, letterSpacing: -1 }}>GROUN:D</div>
+          <div style={{ fontSize: 9.5, color: SUB, letterSpacing: 2.5, textTransform: "uppercase", marginTop: 4, fontWeight: 600 }}>Construction Project Tracker</div>
         </div>
-        <div style={{ flex: 1 }} />
-        {saving && <div style={{ fontSize: 11, color: SUB }}>同步中…</div>}
-        {stalledCount > 0 && (
-          <div style={{ background: "#FEF2F2", border: "1px solid #FECACA", borderRadius: 7, padding: "4px 10px", fontSize: 12, color: "#DC2626", fontWeight: 500, cursor: "pointer", display: "flex", alignItems: "center", gap: 5 }} onClick={() => setView && setView("overview")}>
-            <span style={{ width: 6, height: 6, borderRadius: 3, background: "#DC2626" }} />{stalledCount} 項卡關超過3天
-          </div>
-        )}
-        {userName ? (
-          <div onClick={onRoleClick} title="點擊可切換帳號 / 登出" style={{ display: "flex", alignItems: "center", gap: 7, background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: 8, padding: "5px 12px", cursor: "pointer" }}>
-            <span style={{ width: 22, height: 22, borderRadius: 11, background: ACCENT_SOFT, color: ACCENT, fontSize: 11, fontWeight: 600, display: "flex", alignItems: "center", justifyContent: "center" }}>{(userName[0] || "?").toUpperCase()}</span>
-            <span style={{ fontSize: 13, color: TEXT, fontWeight: 500 }}>{userName}</span>
-          </div>
-        ) : (
-          <button onClick={onRoleClick} style={{ display: "flex", alignItems: "center", gap: 6, background: PRIMARY, border: "none", borderRadius: 8, padding: "8px 16px", cursor: "pointer", color: "#fff", fontSize: 13, fontWeight: 500 }}>
-            登入以編輯
+        {/* KPI cards inline */}
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(4,minmax(110px,1fr))", gap: 8, flex: 1, minWidth: 360 }}>
+          {[
+            { label: "預估總額", val: fmt(totalEstimated), color: TEXT, tip: "各細項「預估數量×預估單價＋預估人工」加總，來自估價單" },
+            { label: "實際記錄", val: totalActual > 0 ? fmt(totalActual) : "尚未填入", color: totalActual > 0 ? TEXT : SUB, tip: "各細項「實際數量×實際單價＋人數×日薪×天數」加總，施工中逐筆填入" },
+            { label: "差異", val: totalActual > 0 ? (diff >= 0 ? "+" : "") + fmt(diff) : "—", color: totalActual > 0 ? (diff > 0 ? "#DC2626" : "#3C8C3C") : SUB, tip: totalActual > 0 ? (diff > 0 ? "實際超出預估 " + fmt(Math.abs(diff)) : "尚有餘額 " + fmt(Math.abs(diff))) : "實際金額填入後自動計算" },
+            { label: "完工項目", val: `${doneCount} / ${catCount}`, color: ACCENT, tip: "狀態標示為「完工」的大項數" },
+          ].map(k => <KPICard key={k.label} label={k.label} val={k.val} color={k.color} tip={k.tip} />)}
+        </div>
+        {/* actions */}
+        <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
+          {saving && <div style={{ fontSize: 11, color: SUB }}>同步中…</div>}
+          {stalledCount > 0 && (
+            <div style={{ background: "#FEF2F2", border: "1px solid #FECACA", borderRadius: 7, padding: "4px 10px", fontSize: 12, color: "#DC2626", fontWeight: 500, cursor: "pointer", display: "flex", alignItems: "center", gap: 5 }} onClick={() => setView && setView("overview")}>
+              <span style={{ width: 6, height: 6, borderRadius: 3, background: "#DC2626" }} />{stalledCount}
+            </div>
+          )}
+          {userName ? (
+            <div onClick={onRoleClick} title="點擊可切換帳號 / 登出" style={{ display: "flex", alignItems: "center", gap: 7, background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: 8, padding: "5px 12px", cursor: "pointer" }}>
+              <span style={{ width: 22, height: 22, borderRadius: 11, background: ACCENT_SOFT, color: ACCENT, fontSize: 11, fontWeight: 600, display: "flex", alignItems: "center", justifyContent: "center" }}>{(userName[0] || "?").toUpperCase()}</span>
+              <span style={{ fontSize: 13, color: TEXT, fontWeight: 500 }}>{userName}</span>
+            </div>
+          ) : (
+            <button onClick={onRoleClick} style={{ display: "flex", alignItems: "center", gap: 6, background: PRIMARY, border: "none", borderRadius: 8, padding: "8px 16px", cursor: "pointer", color: "#fff", fontSize: 13, fontWeight: 500 }}>
+              登入以編輯
+            </button>
+          )}
+          <button onClick={onActivityLog} title="活動記錄" style={{ background: SURFACE, border: `1px solid ${BORDER}`, color: TEXT, borderRadius: 8, padding: "7px 12px", cursor: "pointer", fontSize: 13, display:"flex", alignItems:"center", gap:5 }}>
+            活動{activityCount > 0 ? <span style={{fontSize:10,background:ACCENT_SOFT,color:ACCENT,fontWeight:600,borderRadius:10,padding:"1px 6px"}}>{activityCount}</span> : ""}
           </button>
-        )}
-        <button onClick={onActivityLog} title="活動記錄" style={{ background: SURFACE, border: `1px solid ${BORDER}`, color: TEXT, borderRadius: 8, padding: "7px 12px", cursor: "pointer", fontSize: 13, display:"flex", alignItems:"center", gap:5 }}>
-          活動{activityCount > 0 ? <span style={{fontSize:10,background:ACCENT_SOFT,color:ACCENT,fontWeight:600,borderRadius:10,padding:"1px 6px"}}>{activityCount}</span> : ""}
-        </button>
-        <button onClick={onAI} style={{ background: ACCENT, border: "none", color: "#fff", borderRadius: 8, padding: "8px 16px", cursor: "pointer", fontSize: 13, fontWeight: 600 }}>
-          AI 顧問
-        </button>
-      </div>
-      {/* KPI row */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 10, marginBottom: 14 }}>
-        {[
-          { label: "預估總額", val: fmt(totalEstimated), color: TEXT, tip: "各細項「預估數量×預估單價＋預估人工」加總，來自估價單" },
-          { label: "實際記錄", val: totalActual > 0 ? fmt(totalActual) : "尚未填入", color: totalActual > 0 ? TEXT : SUB, tip: "各細項「實際數量×實際單價＋人數×日薪×天數」加總，施工中逐筆填入" },
-          { label: "差異", val: totalActual > 0 ? (diff >= 0 ? "+" : "") + fmt(diff) : "—", color: totalActual > 0 ? (diff > 0 ? "#DC2626" : "#3C8C3C") : SUB, tip: totalActual > 0 ? (diff > 0 ? "實際超出預估 " + fmt(Math.abs(diff)) : "尚有餘額 " + fmt(Math.abs(diff))) : "實際金額填入後自動計算" },
-          { label: "完工項目", val: `${doneCount} / ${catCount}`, color: ACCENT, tip: "狀態標示為「完工」的大項數" },
-        ].map(k => (
-          <KPICard key={k.label} label={k.label} val={k.val} color={k.color} tip={k.tip} />
-        ))}
+          <button onClick={onAI} style={{ background: ACCENT, border: "none", color: "#fff", borderRadius: 8, padding: "8px 16px", cursor: "pointer", fontSize: 13, fontWeight: 600 }}>
+            AI 顧問
+          </button>
+        </div>
       </div>
       {/* view tabs — boxed editorial */}
-      <div style={{ display: "flex", gap: 8, paddingBottom: 14, flexWrap: "wrap" }}>
+      <div style={{ display: "flex", gap: 8, paddingBottom: 12, flexWrap: "wrap" }}>
         {[["owner","業主視角"],["overview","總覽"],["kanban","看板"],["list","明細"],["gantt","工序"],["files","檔案庫"],["advisor","AI設定"],...(isAdmin?[["accounts","帳號"]]:[])].map(([v,l]) => (
           <button key={v} onClick={() => setView(v)} style={{ padding: "8px 16px", borderRadius: 7, border: `1px solid ${view === v ? PRIMARY : BORDER}`, cursor: "pointer", fontSize: 14, fontWeight: 500, background: view === v ? PRIMARY : "transparent", color: view === v ? "#fff" : TEXT, transition: "all .12s" }}>{l}</button>
         ))}
@@ -928,7 +927,7 @@ function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols 
     minWidth: col.w, maxWidth: col.w, width: col.w,
     padding: "0 8px", borderRight: "1px solid #D8CFBB",
     fontSize: 12.5, overflow: "hidden", whiteSpace: "nowrap",
-    textOverflow: "ellipsis", height: 38, display: "flex", alignItems: "center",
+    textOverflow: "ellipsis", height: 30, display: "flex", alignItems: "center",
     flexShrink: 0,
   });
 
@@ -998,7 +997,7 @@ function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols 
       </div>
 
       {/* table */}
-      <div style={{ overflow: "auto", maxHeight: "calc(100vh - 215px)", borderRadius: 12, border: `1px solid ${BORDER}`, background: SURFACE }}>
+      <div style={{ overflow: "auto", maxHeight: "calc(100vh - 168px)", borderRadius: 12, border: `1px solid ${BORDER}`, background: SURFACE }}>
         <div style={{ minWidth: totalW }}>
           {/* header */}
           <div style={{ display: "flex", background: BG, borderBottom: `1px solid ${BORDER}`, position: "sticky", top: 0, zIndex: 10 }}>
@@ -1020,7 +1019,7 @@ function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols 
             return (
               <div key={catId}>
                 {/* cat group header */}
-                <div style={{ display: "flex", alignItems: "center", background: BG, borderBottom: `1px solid ${BORDER}`, borderLeft: `2px solid ${ACCENT}`, padding: "0 10px", height: 36, gap: 12, position: "sticky", top: 40, zIndex: 9 }}>
+                <div style={{ display: "flex", alignItems: "center", background: BG, borderBottom: `1px solid ${BORDER}`, borderLeft: `2px solid ${ACCENT}`, padding: "0 10px", height: 28, gap: 12, position: "sticky", top: 40, zIndex: 9 }}>
                   <div style={{ fontSize: 13.5, fontWeight: 600, color: PRIMARY, flex: 1, letterSpacing: -0.1 }}>{group.name}</div>
                   <div style={{ fontSize: 12, color: SUB }}>預估 <span style={{ color: TEXT, fontVariantNumeric: "tabular-nums", fontWeight: 500 }}>{fmt(groupEst)}</span></div>
                   {groupAct > 0 && <div style={{ fontSize: 12, color: SUB }}>實際 <span style={{ color: groupAct > groupEst ? "#DC2626" : "#3C8C3C", fontVariantNumeric: "tabular-nums", fontWeight: 500 }}>{fmt(groupAct)}</span></div>}
@@ -1110,7 +1109,7 @@ function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols 
                 <div onClick={() => {
                   const newItem = { id: `i-${catId}-${Date.now()}`, name: "新細項", qty: 1, unit: "式", unitPrice: 0, labor: 0, laborDays: 0, dailyWage: 0, assignee: "", status: "pending", receipts: [], notes: "", chat: [], done: false };
                   setCats(prev => prev.map(c => c.id === catId ? { ...c, items: [...c.items, newItem] } : c));
-                }} style={{ display: "flex", alignItems: "center", gap: 6, padding: "6px 32px", color: "#A99F88", fontSize: 12, cursor: "pointer", borderBottom: "1px solid #EFE7D6", transition: "background 0.1s" }}
+                }} style={{ display: "flex", alignItems: "center", gap: 6, padding: "3px 32px", color: "#A99F88", fontSize: 12, cursor: "pointer", borderBottom: "1px solid #EFE7D6", transition: "background 0.1s" }}
                   onMouseEnter={e => e.currentTarget.style.background="#ECE6D7"}
                   onMouseLeave={e => e.currentTarget.style.background="transparent"}
                 >
@@ -1120,7 +1119,7 @@ function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols 
             );
           })}
           {/* 總計列：數字欄位自動加總 */}
-          <div style={{ display: "flex", borderTop: "2px solid #cdd3df", background: "#ECE6D7", position: "sticky", bottom: 0, zIndex: 5, fontWeight: 600 }}>
+          <div style={{ display: "flex", borderTop: `2px solid ${BORDER}`, background: "#ECE6D7", position: "sticky", bottom: 0, zIndex: 5, fontWeight: 600 }}>
             <div style={{ width: 24, flexShrink: 0, borderRight: "1px solid #D8CFBB" }} />
             {orderedCols.map(col => {
               const cs = { ...cellStyle(col) };
