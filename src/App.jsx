@@ -597,13 +597,8 @@ export default function App() {
           <OwnerDashboard cats={cats} setCats={setCatsLogged} settings={settings} stalledItems={stalledItems} activityLog={activityLog} logActivity={logActivity} userName={userName} journal={journal} events={events} plans={plans} />
         )}
         {view === "overview" && (
-          <OverviewTable cats={cats} setCats={guardedSetCats} confirm={confirm} customCols={customCols} setCustomCols={canEditData ? commitCustomCols : null} />
-        )}
-        {view === "kanban" && (
-          <KanbanView cats={cats} setCats={guardedSetCats} onSelect={(cat) => { setSelectedCat(cat); setSelectedItem(null); }} dragging={dragging} dragOver={dragOver} onDragStart={onDragStart} onDragOver={onDragOver} onDrop={onDrop} confirm={confirm} />
-        )}
-        {view === "list" && (
-          <ListView cats={cats} setCats={guardedSetCats} onSelectItem={(cat, item) => { setSelectedCat(cat); setSelectedItem(item); }} confirm={confirm} />
+          <OverviewTable cats={cats} setCats={guardedSetCats} confirm={confirm} customCols={customCols} setCustomCols={canEditData ? commitCustomCols : null}
+            onSelect={(cat) => { setSelectedCat(cat); setSelectedItem(null); }} dragging={dragging} dragOver={dragOver} onDragStart={onDragStart} onDragOver={onDragOver} onDrop={onDrop} />
         )}
         {view === "gantt" && (
           <SequenceView
@@ -749,7 +744,7 @@ function TopNav({ view, setView, saving, totalEstimated, totalActual, doneCount,
       </div>
       {/* view tabs — boxed editorial */}
       <div style={{ display: "flex", gap: 8, paddingBottom: 12, flexWrap: "wrap" }}>
-        {[["owner","業主視角"],["overview","總覽"],["kanban","看板"],["list","明細"],["gantt","工序"],["files","檔案庫"],["advisor","AI設定"],...(isAdmin?[["accounts","帳號"]]:[])].map(([v,l]) => (
+        {[["owner","業主視角"],["overview","總覽"],["gantt","工序"],["files","檔案庫"],["advisor","AI設定"],...(isAdmin?[["accounts","帳號"]]:[])].map(([v,l]) => (
           <button key={v} onClick={() => setView(v)} style={{ padding: "8px 16px", borderRadius: 7, border: `1px solid ${view === v ? PRIMARY : BORDER}`, cursor: "pointer", fontSize: 14, fontWeight: 500, background: view === v ? PRIMARY : "transparent", color: view === v ? "#fff" : TEXT, transition: "all .12s" }}>{l}</button>
         ))}
       </div>
@@ -806,7 +801,7 @@ function CustomInput({ value, type, onCommit }) {
   }
   return <div onClick={()=>{ setLocal(value ?? ""); setEditing(true); }} style={{ width:"100%", cursor:"text", minHeight:22, color: (value!==undefined&&value!=="")?"#211C15":"#CDC3AC", padding:"2px 2px" }}>{display || "—"}</div>;
 }
-function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols }) {
+function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols, onSelect, dragging, dragOver, onDragStart, onDragOver, onDrop }) {
   const [newColLabel, setNewColLabel] = useState("");
   const [newColType, setNewColType] = useState("money");
   const [newColFormula, setNewColFormula] = useState("");
@@ -816,6 +811,11 @@ function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols 
   const [showColMenu, setShowColMenu] = useState(false);
   const [editCell, setEditCell] = useState(null); // {rowId, col}
   const [filterStatus, setFilterStatus] = useState("all");
+  const [viewMode, setViewMode] = useState("table"); // table | card（卡片＝原看板）
+  const [collapsed, setCollapsed] = useState(new Set()); // 收合的大項 id
+  const toggleCollapse = (catId) => setCollapsed(s => { const n = new Set(s); n.has(catId) ? n.delete(catId) : n.add(catId); return n; });
+  const allCollapsed = cats.length > 0 && cats.every(c => collapsed.has(c.id));
+  const toggleAll = () => setCollapsed(allCollapsed ? new Set() : new Set(cats.map(c => c.id)));
 
   // Flatten all items into rows with cat info
   const allRows = [];
@@ -990,13 +990,25 @@ function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols 
   return (
     <div style={{ paddingTop: 12 }}>
       {/* toolbar */}
-      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10, flexWrap: "wrap" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10, flexWrap: "wrap" }}>
         <div style={{ fontSize: 16, fontWeight: 600, color: TEXT, letterSpacing: -0.2 }}>總覽</div>
-        <div style={{ fontSize: 12.5, color: SUB }}>成本費用明細</div>
+        <div style={{ fontSize: 12.5, color: SUB }}>{viewMode === "card" ? "工程大項一覽" : "成本費用明細"}</div>
         <div style={{ flex: 1 }} />
+        {viewMode === "table" && (
+          <button onClick={toggleAll} style={{ padding: "6px 12px", borderRadius: 7, border: `1px solid ${BORDER}`, fontSize: 12.5, cursor: "pointer", background: SURFACE, color: SUB, fontWeight: 500 }}>{allCollapsed ? "全部展開" : "全部收合"}</button>
+        )}
+        {/* 表格 / 卡片 切換 */}
+        <div style={{ display: "inline-flex", background: "#EFE7D6", borderRadius: 8, padding: 3 }}>
+          {[["table","表格"],["card","卡片"]].map(([k,l]) => (
+            <button key={k} onClick={() => setViewMode(k)} style={{ border: "none", cursor: "pointer", padding: "5px 16px", borderRadius: 6, fontSize: 13, fontWeight: 500, background: viewMode === k ? SURFACE : "transparent", color: viewMode === k ? TEXT : SUB, boxShadow: viewMode === k ? "0 1px 2px rgba(0,0,0,.1)" : "none" }}>{l}</button>
+          ))}
+        </div>
       </div>
 
-      {/* table */}
+      {viewMode === "card" ? (
+        <KanbanView cats={cats} setCats={setCats} onSelect={onSelect} dragging={dragging} dragOver={dragOver} onDragStart={onDragStart} onDragOver={onDragOver} onDrop={onDrop} confirm={confirm} />
+      ) : (
+      /* table */
       <div style={{ overflow: "auto", maxHeight: "calc(100vh - 168px)", borderRadius: 12, border: `1px solid ${BORDER}`, background: SURFACE }}>
         <div style={{ minWidth: totalW }}>
           {/* header */}
@@ -1016,16 +1028,37 @@ function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols 
             const cat = cats.find(c => c.id === catId);
             const groupEst = group.rows.reduce((s,r) => s + calcEstimated(r.item), 0);
             const groupAct = group.rows.reduce((s,r) => s + calcActual(r.item), 0);
+            const itemCount = cat ? cat.items.length : group.rows.length;
+            const doneCount = cat ? cat.items.filter(i => i.status === "done").length : 0;
+            const pct = itemCount ? Math.round(doneCount / itemCount * 100) : 0;
+            const isCollapsed = collapsed.has(catId);
+            const isCatDragOver = dragOver === catId;
             return (
               <div key={catId}>
-                {/* cat group header */}
-                <div style={{ display: "flex", alignItems: "center", background: BG, borderBottom: `1px solid ${BORDER}`, borderLeft: `2px solid ${ACCENT}`, padding: "0 10px", height: 28, gap: 12, position: "sticky", top: 40, zIndex: 9 }}>
-                  <div style={{ fontSize: 13.5, fontWeight: 600, color: PRIMARY, flex: 1, letterSpacing: -0.1 }}>{group.name}</div>
+                {/* cat group header — 可收合 / 拖曳排序 / 狀態 / 進度 */}
+                <div
+                  draggable={!!onDragStart}
+                  onDragStart={() => onDragStart && onDragStart(catId)}
+                  onDragOver={e => { if (onDragOver) { e.preventDefault(); onDragOver(catId); } }}
+                  onDrop={() => onDrop && onDrop(catId)}
+                  onDragEnd={() => onDragOver && onDragOver(null)}
+                  style={{ display: "flex", alignItems: "center", background: isCatDragOver ? "#F3E4DE" : BG, borderBottom: `1px solid ${BORDER}`, borderLeft: `2px solid ${ACCENT}`, padding: "0 10px", height: 32, gap: 10, position: "sticky", top: 40, zIndex: 9 }}>
+                  <span title="拖曳排序大項" style={{ cursor: "grab", color: "#C8BCA0", fontSize: 13, flexShrink: 0 }}>⠿</span>
+                  <button onClick={() => toggleCollapse(catId)} style={{ border: "none", background: "none", cursor: "pointer", color: SUB, fontSize: 11, width: 14, flexShrink: 0, transform: isCollapsed ? "none" : "rotate(90deg)", transition: "transform .15s" }}>▸</button>
+                  <div onClick={() => toggleCollapse(catId)} style={{ fontSize: 14, fontWeight: 600, color: PRIMARY, letterSpacing: -0.1, cursor: "pointer", flexShrink: 0 }}>{group.name}</div>
+                  <div style={{ flexShrink: 0 }}><StatusBadge status={cat?.status || "pending"} setCats={setCats} catId={catId} /></div>
+                  {itemCount > 0 && (
+                    <div style={{ display: "flex", alignItems: "center", gap: 7, flexShrink: 0 }}>
+                      <div style={{ width: 64, height: 5, background: "#E3DAC6", borderRadius: 3, overflow: "hidden" }}><div style={{ width: pct + "%", height: "100%", background: pct === 100 ? "#3C8C3C" : "#3E72A8" }} /></div>
+                      <span style={{ fontSize: 11, color: SUB }}>{doneCount}/{itemCount}</span>
+                    </div>
+                  )}
+                  <div style={{ flex: 1 }} />
                   <div style={{ fontSize: 12, color: SUB }}>預估 <span style={{ color: TEXT, fontVariantNumeric: "tabular-nums", fontWeight: 500 }}>{fmt(groupEst)}</span></div>
                   {groupAct > 0 && <div style={{ fontSize: 12, color: SUB }}>實際 <span style={{ color: groupAct > groupEst ? "#DC2626" : "#3C8C3C", fontVariantNumeric: "tabular-nums", fontWeight: 500 }}>{fmt(groupAct)}</span></div>}
                 </div>
-                {/* item rows */}
-                {group.rows.map(({ item }) => {
+                {/* item rows（收合時隱藏） */}
+                {!isCollapsed && group.rows.map(({ item }) => {
                   const rowKey = `${catId}||${item.id}`;
                   const isDragOver = dragOverId === rowKey;
                   return (
@@ -1105,7 +1138,8 @@ function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols 
                     </div>
                   );
                 })}
-                {/* add row in this group */}
+                {/* add row in this group（收合時隱藏） */}
+                {!isCollapsed && (
                 <div onClick={() => {
                   const newItem = { id: `i-${catId}-${Date.now()}`, name: "新細項", qty: 1, unit: "式", unitPrice: 0, labor: 0, laborDays: 0, dailyWage: 0, assignee: "", status: "pending", receipts: [], notes: "", chat: [], done: false };
                   setCats(prev => prev.map(c => c.id === catId ? { ...c, items: [...c.items, newItem] } : c));
@@ -1115,9 +1149,21 @@ function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols 
                 >
                   <span style={{ fontSize: 16, color: ACCENT }}>+</span> 新增細項至「{group.name}」
                 </div>
+                )}
+                {/* 新增工程大項（最後一組之後不顯示在這） */}
               </div>
             );
           })}
+          {/* 新增工程大項 */}
+          <div onClick={() => {
+            const id = "cat-" + Date.now();
+            setCats(prev => [...prev, { id, order: prev.length, name: "新工程大項", budget: 0, status: "pending", items: [] }]);
+          }} style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 12px", color: ACCENT, fontSize: 13, fontWeight: 500, cursor: "pointer", borderBottom: `1px solid ${BORDER}`, background: SURFACE }}
+            onMouseEnter={e => e.currentTarget.style.background="#F4EFE3"}
+            onMouseLeave={e => e.currentTarget.style.background=SURFACE}
+          >
+            <span style={{ fontSize: 16 }}>＋</span> 新增工程大項
+          </div>
           {/* 總計列：數字欄位自動加總 */}
           <div style={{ display: "flex", borderTop: `2px solid ${BORDER}`, background: "#ECE6D7", position: "sticky", bottom: 0, zIndex: 5, fontWeight: 600 }}>
             <div style={{ width: 24, flexShrink: 0, borderRight: "1px solid #D8CFBB" }} />
@@ -1134,6 +1180,7 @@ function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols 
           </div>
         </div>
       </div>
+      )}
     </div>
   );
 }
