@@ -12,7 +12,7 @@ const TOTAL_WEEKS = 16, TOTAL_DAYS = TOTAL_WEEKS * 7;
 const LABEL_W = 168, DAY_PXD = 44, WEEK_PXD = 12;
 const ROW_H = 40, ROW_H_OPEN = 116, CARD_W = 150, MAX_OPEN = 3;
 // v2 胖格子日視圖
-const DAY_W = 150, WIN = 14, ROW_FAT = 108, ROW_THIN = 34;
+const DAY_W = 150, ROW_FAT = 108, ROW_THIN = 34;
 const ACTIVE = ["doing", "wait", "issue"]; // 置頂組（正在動的工序）
 
 const WS = {
@@ -49,7 +49,6 @@ export default function SequenceView({
   };
   const [onlyIssue, setOnlyIssue] = useState(false);
   const [showDone, setShowDone] = useState(true); // 顯示/隱藏 完成‧待開工
-  const [winStart, setWinStart] = useState(0);     // 日視圖 14 天視窗起點
   const [quick, setQuick] = useState(null); // 行事曆式快速記錄 popover
   const [viewImg, setViewImg] = useState(null); // 點格子照片直接放大
   const [schedItem, setSchedItem] = useState(null);
@@ -66,11 +65,11 @@ export default function SequenceView({
   const TODAY_IDX = idxOf(TODAY);
   const dotFill = (log) => idxOf(log.date) > TODAY_IDX ? ACCENT : log.issue ? RED : "#ffffff";
 
-  // 週視圖＝連續座標；日視圖＝14 天視窗座標
+  // 週視圖／日視圖皆為連續座標（原生橫向捲動，不限視窗）
   const ppd = WEEK_PXD;
   const X = (i) => i * ppd, trackW = TOTAL_DAYS * ppd;
-  const dayX = (i) => (i - winStart) * DAY_W;        // 日視圖：相對視窗
-  const dayTrackW = WIN * DAY_W;
+  const dayX = (i) => i * DAY_W;                      // 日視圖：絕對座標
+  const dayTrackW = TOTAL_DAYS * DAY_W;
 
   // 每個工序的區段（day index 範圍）
   const segIdxOf = (it) => (it.segments || []).map(s => [idxOf(s.start), idxOf(s.end)]).filter(([a,b]) => Number.isFinite(a) && Number.isFinite(b) && b >= a);
@@ -108,11 +107,11 @@ export default function SequenceView({
       return (origIdx[a.id] ?? 0) - (origIdx[b.id] ?? 0);
     });
   }
-  // 日視窗的 14 天 index 陣列
-  const winDays = Array.from({ length: WIN }, (_, i) => winStart + i).filter(i => i >= 0 && i < TOTAL_DAYS);
+  // 日視圖顯示完整工期（0…TOTAL_DAYS-1），靠原生捲動一路往右滑
+  const winDays = Array.from({ length: TOTAL_DAYS }, (_, i) => i);
 
-  useEffect(() => { if (zoom === "week" && ref.current) ref.current.scrollLeft = X(TODAY_IDX) - 220; if (zoom === "day") setWinStart(Math.max(0, Math.min(TOTAL_DAYS - WIN, TODAY_IDX - 4))); }, [zoom]); // eslint-disable-line
-  useEffect(() => { if (scrollTo != null && ref.current) { ref.current.scrollLeft = X(scrollTo) - 120; setScrollTo(null); } }, [scrollTo]); // eslint-disable-line
+  useEffect(() => { if (!ref.current) return; ref.current.scrollLeft = zoom === "week" ? X(TODAY_IDX) - 220 : dayX(TODAY_IDX) - DAY_W; }, [zoom]); // eslint-disable-line
+  useEffect(() => { if (scrollTo != null && ref.current) { ref.current.scrollLeft = (zoom === "day" ? dayX(scrollTo) - DAY_W : X(scrollTo) - 120); setScrollTo(null); } }, [scrollTo]); // eslint-disable-line
 
   const toggle = (it) => {
     if (hasSubs(it)) { setExpandedParents(s => { const n = new Set(s); n.has(it.id) ? n.delete(it.id) : n.add(it.id); return n; }); return; }
@@ -181,12 +180,11 @@ export default function SequenceView({
         </div>
         {zoom === "day" && (
           <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-            <button onClick={() => setWinStart(s => Math.max(0, s - 7))} style={navBtn}>‹</button>
-            <span style={{ fontSize: 12.5, color: C.sub, minWidth: 104, textAlign: "center" }}>{dayKey(winStart).slice(5).replace("-", "/")} – {dayKey(Math.min(TOTAL_DAYS - 1, winStart + WIN - 1)).slice(5).replace("-", "/")}</span>
-            <button onClick={() => setWinStart(s => Math.min(TOTAL_DAYS - WIN, s + 7))} style={navBtn}>›</button>
+            <button onClick={() => { if (ref.current) ref.current.scrollLeft -= DAY_W * 7; }} title="往前一週" style={navBtn}>‹</button>
+            <button onClick={() => { if (ref.current) ref.current.scrollLeft += DAY_W * 7; }} title="往後一週" style={navBtn}>›</button>
           </div>
         )}
-        <button onClick={() => { if (zoom === "day") setWinStart(Math.max(0, Math.min(TOTAL_DAYS - WIN, TODAY_IDX - 4))); else setScrollTo(TODAY_IDX); }} style={{ ...navBtn, width: "auto", padding: "0 12px", fontSize: 13, fontWeight: 600, color: ACCENT }}>今天</button>
+        <button onClick={() => { if (zoom === "day") { if (ref.current) ref.current.scrollLeft = dayX(TODAY_IDX) - DAY_W; } else setScrollTo(TODAY_IDX); }} style={{ ...navBtn, width: "auto", padding: "0 12px", fontSize: 13, fontWeight: 600, color: ACCENT }}>今天</button>
         <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, color: C.sub, cursor: "pointer" }}>
           <input type="checkbox" checked={onlyIssue} onChange={(e) => setOnlyIssue(e.target.checked)} />只看異常
         </label>
