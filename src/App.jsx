@@ -185,6 +185,51 @@ function useIsMobile(bp = MOBILE_BP) {
   }, [bp]);
   return m;
 }
+
+// ── LINE 推播通知 ───────────────────────────────────────────────────────────
+const LINE_PUSH_URL = "https://ground-pm-webhook.vercel.app/api/push";
+const LINE_API_KEY = "ground-pm-2026-secret-abc123"; // 先寫死，之後再改後端代理/加密
+const DEFAULT_LINE_GROUP = "Cf7940efc6517b0c084ad2ad496b45f30";
+// 通知開關清單（key 同時供 webhook server 排程使用）
+const LINE_EVENTS = [
+  ["issue",   "細項狀態變為「有問題」時通知"],
+  ["done",    "細項狀態變為「完工」時通知"],
+  ["stalled", "卡關超過 3 天提醒"],
+  ["weekly",  "AI 週報每週五自動推送"],
+  ["due",     "排程任務截止日提醒"],
+  ["journal", "新工作日誌建立時通知"],
+];
+async function _lineSettings() {
+  try { const r = await window.storage.get("pm_settings", true); return r && r.value ? JSON.parse(r.value) : {}; } catch { return {}; }
+}
+async function _linePush(body) {
+  try {
+    const res = await fetch(LINE_PUSH_URL, { method: "POST", headers: { "Content-Type": "application/json", "X-API-Key": LINE_API_KEY }, body: JSON.stringify(body) });
+    return await res.json().catch(() => ({ ok: res.ok }));
+  } catch (e) { return { ok: false, error: String(e) }; }
+}
+// 共用：直接推送一段文字（讀 storage 群組 ID；無設定則用預設群組）
+async function sendLineNotify(text) {
+  const s = await _lineSettings();
+  const to = s.lineGroupId || DEFAULT_LINE_GROUP;
+  if (!to) return { ok: false, reason: "no-group" };
+  return _linePush({ to, message: text });
+}
+// 共用：推送 LINE Flex 訊息
+async function sendLineFlex(flex) {
+  const s = await _lineSettings();
+  const to = s.lineGroupId || DEFAULT_LINE_GROUP;
+  if (!to) return { ok: false, reason: "no-group" };
+  return _linePush({ to, flex });
+}
+// 事件型通知：依「通知開關」決定是否推送
+async function notifyLineEvent(type, text) {
+  const s = await _lineSettings();
+  if (!((s.lineNotify || {})[type])) return { ok: false, reason: "disabled" };
+  const to = s.lineGroupId || DEFAULT_LINE_GROUP;
+  if (!to) return { ok: false, reason: "no-group" };
+  return _linePush({ to, message: text });
+}
 const calcItemTotal = (it) => calcEstimated(it);
 
 // ── STORAGE HELPERS ───────────────────────────────────────────────────────────
@@ -396,7 +441,7 @@ export default function App() {
       const gc = await loadGlobalChat();
       setGlobalChat(gc);
       const sv = await loadSettings();
-      setSettings(sv || { projectName:"宏匯 GROUN:D", projectAddress:"台北市內湖區瑞光路337號", ownerName:"", contractorName:"碩藝室內裝修有限公司", targetDate:"", notes:"", priorities:[], dailyCheckEnabled:false });
+      setSettings(sv || { projectName:"宏匯 GROUN:D", projectAddress:"台北市內湖區瑞光路337號", ownerName:"", contractorName:"碩藝室內裝修有限公司", targetDate:"", notes:"", priorities:[], dailyCheckEnabled:false, lineGroupId: DEFAULT_LINE_GROUP, lineNotify: {} });
       const log = await loadAILog();
       setAiLog(log);
       const savedName = await loadRole();
@@ -469,6 +514,22 @@ export default function App() {
     }, 1200);
     return () => clearTimeout(t);
   }, [cats]);
+
+  // LINE：偵測細項狀態變更為「有問題 / 完工」→ 即時推播（依開關）
+  const prevCatsRef = useRef(null);
+  useEffect(() => {
+    const prev = prevCatsRef.current;
+    prevCatsRef.current = cats;
+    if (!cats || !prev) return; // 首次載入不通知
+    for (const nc of cats) {
+      const pc = prev.find(c => c.id === nc.id); if (!pc) continue;
+      for (const ni of (nc.items || [])) {
+        const pi = (pc.items || []).find(i => i.id === ni.id); if (!pi || pi.status === ni.status) continue;
+        if (ni.status === "issue") notifyLineEvent("issue", `🚨【${nc.name}】「${ni.name}」狀態變更為「有問題」\n更新者：${userName || "未具名"}`);
+        else if (ni.status === "done") notifyLineEvent("done", `✅【${nc.name}】「${ni.name}」完工\n更新者：${userName || "未具名"}`);
+      }
+    }
+  }, [cats]); // eslint-disable-line
 
   const logActivity = (action, detail) => {
     const entry = { ts: new Date().toISOString(), user: userName||"系統", action, detail };
@@ -1774,6 +1835,7 @@ function JournalView({ journal, setJournal, cats, userName }) {
       createdAt: new Date().toISOString(),
     };
     setJournal(prev => [entry, ...prev]);
+    notifyLineEvent("journal", `📓 ${entry.author || "有人"} 新增日誌：「${entry.title || "(無標題)"}」\n${(entry.content || "").slice(0, 80)}${(entry.content || "").length > 80 ? "..." : ""}`);
     setShowNew(false);
     setDraft({ title:"", content:"", catId:"", weather:"", date:new Date().toISOString().slice(0,10), workers:"", issues:"" });
   };
@@ -2133,6 +2195,64 @@ function StatusBadge({ status, setCats, catId, itemId }) {
   );
 }
 
+// ── LINE 通知設定區塊（AI設定 → 專案設定）────────────────────────────────────
+function LineNotifySettings({ settings, upd, cats, journal, events, plans }) {
+  const [busy, setBusy] = useState(false);
+  const [wbusy, setWbusy] = useState(false);
+  const [msg, setMsg] = useState("");
+  const groupId = settings.lineGroupId ?? DEFAULT_LINE_GROUP;
+  const notify = settings.lineNotify || {};
+  const flash = (t) => { setMsg(t); setTimeout(() => setMsg(""), 4500); };
+  const toggle = (k) => upd("lineNotify", { ...notify, [k]: !notify[k] });
+
+  const test = async () => {
+    setBusy(true);
+    const r = await sendLineNotify(`🔔 GROUN:D 工程管理 — LINE 通知測試\n專案：${settings.projectName || "（未命名）"}\n時間：${new Date().toLocaleString("zh-TW")}`);
+    setBusy(false);
+    flash(r && r.ok ? "✅ 已送出，請查看 LINE 群組" : `⚠️ 發送失敗：${r?.error || r?.reason || "請確認群組 ID 與 webhook"}`);
+  };
+  const pushWeekly = async () => {
+    setWbusy(true);
+    flash("🤖 AI 產生週報中…");
+    try {
+      const system = buildAdvisorSystem(settings, cats, journal || [], events || [], plans || []);
+      const text = await callAI([{ role: "user", content: "請為業主產生一份精簡的本週工程進度週報（約 300 字內，含：整體狀況一句話、各大項進度、本週重點、待決問題、下週預計、整體評估🟢/🟡/🔴）。用業主能懂的口吻，純文字、適合在 LINE 閱讀。" }], system);
+      const r = await sendLineNotify("📋 本週工程進度週報\n\n" + text);
+      flash(r && r.ok ? "✅ 週報已推送到 LINE 群組" : `⚠️ 推送失敗：${r?.error || r?.reason || "請確認群組 ID"}`);
+    } catch (e) { flash("⚠️ 產生失敗：" + e.message); }
+    setWbusy(false);
+  };
+
+  return (
+    <div style={{ background: "#ffffff", border: "1px solid #D8CFBB", borderRadius: 12, padding: "20px" }}>
+      <div style={{ fontSize: 14, fontWeight: 600, color: "#211C15", marginBottom: 4 }}>💬 LINE 通知</div>
+      <div style={{ fontSize: 12, color: "#6F6656", marginBottom: 14 }}>設定推播群組與各類事件通知（設定儲存於共用空間，供伺服器排程使用）</div>
+
+      <div style={{ fontSize: 12.5, color: "#4A4234", fontWeight: 600, marginBottom: 6 }}>LINE 群組 ID</div>
+      <div style={{ display: "flex", gap: 8, marginBottom: 6, flexWrap: "wrap" }}>
+        <input value={groupId} onChange={e => upd("lineGroupId", e.target.value)} placeholder="群組 ID" style={{ flex: 1, minWidth: 200, border: "1px solid #D8CFBB", borderRadius: 8, padding: "10px 12px", fontSize: 14, fontFamily: "monospace" }} />
+        <button onClick={test} disabled={busy} style={{ border: "none", background: "#06C755", color: "#fff", borderRadius: 8, padding: "10px 18px", fontSize: 13, fontWeight: 600, cursor: busy ? "wait" : "pointer", whiteSpace: "nowrap" }}>{busy ? "傳送中…" : "測試推送"}</button>
+      </div>
+      {msg && <div style={{ fontSize: 12.5, color: msg.startsWith("✅") ? "#3C8C3C" : msg.startsWith("⚠️") ? "#C0392B" : "#6F6656", marginBottom: 10 }}>{msg}</div>}
+
+      <div style={{ fontSize: 12.5, color: "#4A4234", fontWeight: 600, margin: "14px 0 6px" }}>通知開關</div>
+      <div style={{ display: "flex", flexDirection: "column" }}>
+        {LINE_EVENTS.map(([k, label]) => (
+          <label key={k} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 4px", cursor: "pointer", fontSize: 13.5, color: "#211C15", borderBottom: "1px solid #F4EFE3" }}>
+            <input type="checkbox" checked={!!notify[k]} onChange={() => toggle(k)} style={{ width: 18, height: 18, accentColor: ACCENT, flexShrink: 0 }} />
+            {label}
+          </label>
+        ))}
+      </div>
+      <div style={{ fontSize: 11, color: "#A99F88", marginTop: 8, lineHeight: 1.6 }}>※「有問題 / 完工 / 新日誌」由系統即時推播；「卡關 / 週五週報 / 截止日」為時間排程，由 webhook 伺服器依此設定推播。</div>
+
+      <div style={{ marginTop: 16, paddingTop: 16, borderTop: "1px solid #EFE7D6" }}>
+        <button onClick={pushWeekly} disabled={wbusy} style={{ border: "none", background: "#211C15", color: "#fff", borderRadius: 9, padding: "11px 18px", fontSize: 13.5, fontWeight: 600, cursor: wbusy ? "wait" : "pointer", display: "flex", alignItems: "center", gap: 8 }}>{wbusy ? "產生中…" : "📋 立即推送業主週報到 LINE"}</button>
+      </div>
+    </div>
+  );
+}
+
 // ── ADVISOR SETTINGS VIEW ────────────────────────────────────────────────────
 function AdvisorSettingsView({ settings, setSettings, cats, aiLog, setAiLog, activityLog, logActivity, userName, journal, events, plans }) {
   const [activeTab, setActiveTab] = useState("command"); // command | upload | settings | log
@@ -2423,6 +2543,7 @@ function AdvisorSettingsView({ settings, setSettings, cats, aiLog, setAiLog, act
               </div>
             ))}
           </div>
+          <LineNotifySettings settings={settings} upd={upd} cats={cats} journal={journal} events={events} plans={plans} />
         </div>
       )}
 
