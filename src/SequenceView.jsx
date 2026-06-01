@@ -51,6 +51,7 @@ export default function SequenceView({
   const [showDone, setShowDone] = useState(true); // 顯示/隱藏 完成‧待開工
   const [winStart, setWinStart] = useState(0);     // 日視圖 14 天視窗起點
   const [quick, setQuick] = useState(null); // 行事曆式快速記錄 popover
+  const [viewImg, setViewImg] = useState(null); // 點格子照片直接放大
   const [schedItem, setSchedItem] = useState(null);
   const [tip, setTip] = useState(null);
   const [scrollTo, setScrollTo] = useState(null);
@@ -132,7 +133,8 @@ export default function SequenceView({
     if (a === b) { openCell(s.itemId, dayKey(a), s.x, s.y); }
     else if (canEdit && onSetSchedule) { onSetSchedule(s.itemId, [{ start: dayKey(a), end: dayKey(b) }]); }
   };
-  useEffect(() => { const up = () => commitSel(); document.addEventListener("mouseup", up); return () => document.removeEventListener("mouseup", up); }, []); // eslint-disable-line
+  const commitRef = useRef(commitSel); commitRef.current = commitSel; // 永遠用最新的 closure（修正權限/狀態 stale）
+  useEffect(() => { const up = () => commitRef.current && commitRef.current(); document.addEventListener("mouseup", up); return () => document.removeEventListener("mouseup", up); }, []); // eslint-disable-line
   const doWeekly = async () => {
     if (!aiWeekly) return;
     setWeeklyOut("…產生中");
@@ -164,7 +166,7 @@ export default function SequenceView({
 
   return (
     <div style={{ fontFamily: "-apple-system,'PingFang TC','Noto Sans TC',system-ui,'Segoe UI',Roboto,sans-serif", color: C.text, letterSpacing: 0.1 }}>
-      <style>{`.seq-row .seq-actions{opacity:0;transition:opacity .12s} .seq-row:hover .seq-actions{opacity:1} .seq-row:hover{background:#F4EFE3}`}</style>
+      <style>{`.seq-row .seq-actions{opacity:0;transition:opacity .12s} .seq-row:hover .seq-actions{opacity:1} .seq-row:hover{background:#F4EFE3} .thin-add{opacity:0;transition:opacity .12s} .seq-row:hover .thin-add{opacity:.5}`}</style>
       <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12, flexWrap: "wrap" }}>
         <div style={{ display: "inline-flex", background: "#EFE7D6", borderRadius: 10, padding: 3 }}>
           {[["week", "週"], ["day", "日"]].map(([k, l]) => (
@@ -336,7 +338,7 @@ export default function SequenceView({
                             )}
                             <div style={{ fontSize: 12, lineHeight: 1.45, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{planned ? log.next : log.done}</div>
                             {log.issue && <div style={{ fontSize: 11, color: RED, display: "-webkit-box", WebkitLineClamp: 1, WebkitBoxOrient: "vertical", overflow: "hidden" }}>⚠ {log.issue}</div>}
-                            {(log.photos?.length > 0) && <div style={{ display: "flex", gap: 4, marginTop: "auto" }}>{log.photos.slice(0, 2).map((p, k) => <img key={k} src={p} alt="" onClick={(e) => { e.stopPropagation(); setQuick({ itemId: log.itemId, date: log.date, x: e.clientX, y: e.clientY }); }} style={{ width: 38, height: 38, borderRadius: 5, objectFit: "cover", cursor: "pointer" }} />)}{log.photos.length > 2 && <span style={{ fontSize: 11, color: C.faint, alignSelf: "flex-end" }}>+{log.photos.length - 2}</span>}</div>}
+                            {(log.photos?.length > 0) && <div style={{ display: "flex", gap: 4, marginTop: "auto" }}>{log.photos.slice(0, 2).map((p, k) => <img key={k} src={p} alt="" title="點擊放大" onMouseDown={(e) => e.stopPropagation()} onClick={(e) => { e.stopPropagation(); setViewImg(p); }} style={{ width: 38, height: 38, borderRadius: 5, objectFit: "cover", cursor: "zoom-in" }} />)}{log.photos.length > 2 && <span style={{ fontSize: 11, color: C.faint, alignSelf: "flex-end" }}>+{log.photos.length - 2}</span>}</div>}
                           </div>
                         ) : canEdit ? (
                           <div className="ce" style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: planned ? ACCENT : C.faint, fontSize: 12, border: planned ? `1px dashed ${ACCENT}66` : "none", borderRadius: 6 }}>{planned ? "點此預排" : "＋ 記錄"}</div>
@@ -348,7 +350,8 @@ export default function SequenceView({
                   /* 細條列：可點(記錄)/拖曳(設工期)；工期顯示為一條乾淨色塊、可清除 */
                   <div style={{ position: "relative", display: "flex", flex: "0 0 auto" }}>
                     {winDays.map((i) => { const t = i === TODAY_IDX, log = logMap[`${it.id}|${dayKey(i)}`]; return (
-                      <div key={i} onMouseDown={(e) => canEdit && setSel({ itemId: it.id, a: i, b: i, x: e.clientX, y: e.clientY })} onMouseEnter={() => canEdit && setSel(s => s && s.itemId === it.id ? { ...s, b: i } : s)} style={{ width: DAY_W, flexShrink: 0, borderLeft: `1px solid ${C.line}`, cursor: canEdit ? "pointer" : "default", userSelect: "none", background: inSel(it.id, i) ? "#F3E4DE" : t ? "#FFFBEF" : "transparent", position: "relative" }}>
+                      <div key={i} onMouseDown={(e) => canEdit && setSel({ itemId: it.id, a: i, b: i, x: e.clientX, y: e.clientY })} onMouseEnter={() => canEdit && setSel(s => s && s.itemId === it.id ? { ...s, b: i } : s)} style={{ width: DAY_W, flexShrink: 0, borderLeft: `1px solid ${C.line}`, cursor: canEdit ? "pointer" : "default", userSelect: "none", background: inSel(it.id, i) ? "#F3E4DE" : t ? "#FFFBEF" : "transparent", position: "relative", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                        {canEdit && !log && <span className="thin-add" style={{ fontSize: 11, color: C.faint }}>＋ 記錄</span>}
                         {log && <span onClick={(e) => { e.stopPropagation(); setQuick({ itemId: log.itemId, date: log.date, x: e.clientX, y: e.clientY }); }} onMouseEnter={(e) => setTip({ l: log, x: e.clientX, y: e.clientY, item: it.name })} onMouseLeave={() => setTip(null)} style={{ position: "absolute", left: DAY_W / 2 - 4, top: ROW_THIN / 2 - 4, width: 8, height: 8, borderRadius: 4, background: dotFill(log), boxShadow: "0 0 0 1px rgba(0,0,0,.4)", cursor: "pointer", zIndex: 3 }} />}
                       </div>); })}
                     {segIdxOf(it).map(([a, b], si) => { const l = Math.max(0, dayX(a)), r = Math.min(dayTrackW, dayX(b + 1)); if (r <= 0 || l >= dayTrackW) return null; return (
@@ -398,6 +401,7 @@ export default function SequenceView({
 
 
       {quick && <QuickLog q={quick} log={logMap[`${quick.itemId}|${quick.date}`]} item={items.find((i) => i.id === quick.itemId)} planned={quick.date > TODAY} onSave={saveLog} onDelete={delLog} onClose={() => setQuick(null)} uploadPhotos={uploadPhotos} />}
+      {viewImg && <div onClick={() => setViewImg(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.88)", zIndex: 1200, display: "flex", alignItems: "center", justifyContent: "center", padding: 20, cursor: "zoom-out" }}><img src={viewImg} alt="" style={{ maxWidth: "95%", maxHeight: "95%", objectFit: "contain", borderRadius: 8 }} /></div>}
     </div>
   );
 }
