@@ -410,14 +410,23 @@ export default function App() {
         if (sl && sl.value) setSeqLogs(JSON.parse(sl.value));
       } catch(_){}
       try {
+        // 統一欄位設定：內建欄位(非固定) + 自訂欄位，皆可排序/改名/刪除
+        const builtins = COLS.map(c => ({ id:c.id, label:c.label, builtin:true, fixed: !!c.fixed, w:c.w }));
+        const customDefaults = [
+          { id:"paid",    label:"已付款",   type:"money",   w:110, builtin:false },
+          { id:"taxincl", label:"含稅總價", type:"formula", formula:"estTotal*1.05", w:110, builtin:false },
+          { id:"unpaid",  label:"未付款",   type:"formula", formula:"taxincl - paid", w:110, builtin:false },
+        ];
         const cc = await window.storage.get("pm_columns", true);
-        if (cc && cc.value) setCustomCols(JSON.parse(cc.value));
-        else { // 預設欄位：含稅總價 / 已付款 / 未付款
-          const def = [
-            { id:"paid",    label:"已付款",   type:"money",   w:110 },
-            { id:"taxincl", label:"含稅總價", type:"formula", formula:"estTotal*1.05", w:110 },
-            { id:"unpaid",  label:"未付款",   type:"formula", formula:"taxincl - paid", w:110 },
-          ];
+        if (cc && cc.value) {
+          let arr = JSON.parse(cc.value);
+          if (!arr.some(c => c.builtin)) { // 舊資料只有自訂欄位 → 補上內建欄位
+            arr = [...builtins, ...arr.map(c => ({ ...c, builtin:false }))];
+            window.storage.set("pm_columns", JSON.stringify(arr), true).catch(()=>{});
+          }
+          setCustomCols(arr);
+        } else {
+          const def = [...builtins, ...customDefaults];
           setCustomCols(def);
           window.storage.set("pm_columns", JSON.stringify(def), true).catch(()=>{});
         }
@@ -848,11 +857,20 @@ function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols 
     setDragRowId(null); setDragOverId(null);
   };
 
-  const visibleCols = COLS.filter(c => !hiddenCols.has(c.id));
-  const visibleCustomCols = (customCols || []).filter(c => !hiddenCols.has(c.id));
-  const totalW = visibleCols.reduce((s,c) => s + c.w, 0) + visibleCustomCols.reduce((s,c)=>s+(c.w||110),0) + 48;
+  // ── 統一欄位（內建+自訂，皆可排序/改名/刪除/調寬）──
+  const builtinMap = Object.fromEntries(COLS.map(c => [c.id, c]));
+  const cols = (customCols && customCols.length) ? customCols : COLS.map(c => ({ id:c.id, label:c.label, builtin:true, fixed:!!c.fixed, w:c.w }));
+  const resolve = (e) => e.builtin ? { ...builtinMap[e.id], label: e.label ?? builtinMap[e.id]?.label, w: e.w ?? builtinMap[e.id]?.w, builtin:true, fixed: e.fixed ?? builtinMap[e.id]?.fixed } : e;
+  const orderedCols = cols.map(resolve).filter(c => c && c.id);
+  const totalW = orderedCols.reduce((s,c) => s + (c.w || 110), 0) + 48;
 
-  // 自訂欄位：每列的公式計算 context
+  const NUM_BUILTIN = new Set(["estQty","estUnitPrice","estTotal","actQty","actUnitPrice","actWorkers","actDailyWage","actLaborDays","actTotal"]);
+  const MONEY_TOTAL = new Set(["estTotal","actTotal"]); // 內建總計顯示為金額
+  const NO_SUM = new Set(["estUnitPrice","actUnitPrice","actDailyWage","done"]); // 單價/日薪不加總
+  const isNumCol = (col) => col.builtin ? NUM_BUILTIN.has(col.id) : (col.type === "money" || col.type === "number" || col.type === "formula");
+  const isMoneyCol = (col) => col.builtin ? (MONEY_TOTAL.has(col.id) || ["estUnitPrice","actUnitPrice","actDailyWage"].includes(col.id)) : (col.type === "money" || col.type === "formula");
+  const summable = (col) => isNumCol(col) && !NO_SUM.has(col.id);
+
   const buildCtx = (item) => {
     const ctx = {
       estQty: Number(item.estQty ?? item.qty ?? 0),
@@ -865,19 +883,35 @@ function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols 
       actLaborDays: Number(item.actLaborDays ?? 0),
       actTotal: calcActual(item),
     };
-    (customCols||[]).filter(c => c.type !== "formula").forEach(c => { ctx[c.id] = c.type === "text" ? (item.cust?.[c.id] || "") : (Number(item.cust?.[c.id]) || 0); });
-    (customCols||[]).filter(c => c.type === "formula").forEach(c => { ctx[c.id] = evalFormula(c.formula, ctx); });
+    cols.filter(c => c.builtin === false && c.type !== "formula").forEach(c => { ctx[c.id] = c.type === "text" ? (item.cust?.[c.id] || "") : (Number(item.cust?.[c.id]) || 0); });
+    cols.filter(c => c.builtin === false && c.type === "formula").forEach(c => { ctx[c.id] = evalFormula(c.formula, ctx); });
     return ctx;
   };
+  const numVal = (col, item) => {
+    if (col.builtin) {
+      if (col.id === "estTotal") return calcEstimated(item);
+      if (col.id === "actTotal") return calcActual(item);
+      const m = { estQty:item.estQty??item.qty, estUnitPrice:item.estUnitPrice??item.unitPrice, actQty:item.actQty, actUnitPrice:item.actUnitPrice, actWorkers:item.actWorkers, actDailyWage:item.actDailyWage, actLaborDays:item.actLaborDays };
+      return Number(m[col.id]) || 0;
+    }
+    return Number(buildCtx(item)[col.id]) || 0;
+  };
+
   const updateCustom = (catId, itemId, colId, val) => setCats(prev => prev.map(c => c.id===catId ? { ...c, items: c.items.map(it => it.id===itemId ? { ...it, cust: { ...(it.cust||{}), [colId]: val } } : it) } : c) );
   const addCustomCol = () => {
     if (!setCustomCols) return;
     const label = newColLabel.trim(); if (!label) return;
     const id = "cc-" + Math.random().toString(36).slice(2,6);
-    setCustomCols([...(customCols||[]), { id, label, type:newColType, formula: newColType==="formula"?newColFormula.trim():undefined, w:110 }]);
+    setCustomCols([...cols, { id, label, type:newColType, formula: newColType==="formula"?newColFormula.trim():undefined, w:110, builtin:false }]);
     setNewColLabel(""); setNewColFormula("");
   };
-  const delCustomCol = (id) => setCustomCols && setCustomCols((customCols||[]).filter(c => c.id !== id));
+  const delCol = (id) => { if (!setCustomCols) return; const c = cols.find(x=>x.id===id); if (c?.fixed) return; setCustomCols(cols.filter(x => x.id !== id)); };
+  const renameCol = (id, label) => setCustomCols && setCustomCols(cols.map(c => c.id===id ? { ...c, label } : c));
+  const setColW = (id, w) => setCustomCols && setCustomCols(cols.map(c => c.id===id ? { ...c, w: Math.max(50, Math.round(w)) } : c));
+  const reAddBuiltin = (id) => { if (!setCustomCols) return; const def = builtinMap[id]; if (!def) return; setCustomCols([...cols, { id, label:def.label, builtin:true, fixed:false, w:def.w }]); };
+  const moveCol = (dragId, targetId) => { if (!setCustomCols || dragId===targetId) return; const arr=[...cols]; const fi=arr.findIndex(c=>c.id===dragId), ti=arr.findIndex(c=>c.id===targetId); if (fi<0||ti<0||arr[fi].fixed||arr[ti].fixed) return; const [m]=arr.splice(fi,1); arr.splice(ti,0,m); setCustomCols(arr); };
+  const startColResize = (id, e) => { e.preventDefault(); e.stopPropagation(); const startX=e.clientX; const startW = (cols.find(c=>c.id===id)?.w) || builtinMap[id]?.w || 110; const move=(ev)=>setColW(id, startW + ev.clientX - startX); const up=()=>{ document.removeEventListener("mousemove",move); document.removeEventListener("mouseup",up); }; document.addEventListener("mousemove",move); document.addEventListener("mouseup",up); };
+  const [colDrag, setColDrag] = useState(null);
 
   const cellStyle = (col) => ({
     minWidth: col.w, maxWidth: col.w, width: col.w,
@@ -946,34 +980,42 @@ function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols 
           <button onClick={() => setShowColMenu(s => !s)} style={{ padding: "4px 10px", borderRadius: 6, border: "1px solid #e4e6ef", fontSize: 11, cursor: "pointer", background: "#f7f8fa", color: "#6b7280" }}>欄位 ⚙</button>
           {showColMenu && (
             <div style={{ position: "absolute", right: 0, top: 30, background: "#ffffff", border: "1px solid #e4e6ef", borderRadius: 10, padding: "10px 14px", zIndex: 300, minWidth: 230, maxHeight: "72vh", overflowY: "auto", boxShadow: "0 4px 20px rgba(0,0,0,0.1)" }}>
-              <div style={{ fontSize: 11, color: "#6b7280", marginBottom: 8 }}>顯示/隱藏欄位</div>
-              {COLS.filter(c => !c.fixed).map(col => (
-                <label key={col.id} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6, cursor: "pointer", fontSize: 12 }}>
-                  <input type="checkbox" checked={!hiddenCols.has(col.id)} onChange={e => {
-                    setHiddenCols(prev => { const s = new Set(prev); e.target.checked ? s.delete(col.id) : s.add(col.id); return s; });
-                  }} />
-                  {col.label}
-                </label>
-              ))}
-              <div style={{ borderTop:"1px solid #eee", margin:"8px 0", paddingTop:8, fontSize:11, color:"#6b7280", fontWeight:700 }}>自訂欄位</div>
-              {(customCols||[]).map(c => (
-                <div key={c.id} style={{ display:"flex", alignItems:"center", gap:6, marginBottom:6, fontSize:12 }}>
-                  <label style={{ display:"flex", alignItems:"center", gap:6, flex:1, cursor:"pointer" }}>
-                    <input type="checkbox" checked={!hiddenCols.has(c.id)} onChange={e=>{ setHiddenCols(prev=>{ const s=new Set(prev); e.target.checked?s.delete(c.id):s.add(c.id); return s; }); }} />
-                    {c.label}{c.type==="formula" && <span style={{ color:"#8a6d3b" }}> ƒ</span>}
-                  </label>
-                  {setCustomCols && <button onClick={()=>delCustomCol(c.id)} title="刪除欄位" style={{ color:"#dc2626", background:"none", border:"none", cursor:"pointer", fontSize:14, lineHeight:1 }}>×</button>}
-                </div>
-              ))}
+              <div style={{ fontSize: 11, color: "#6b7280", marginBottom: 8 }}>欄位（拖曳 ⠿ 排序 · 點名稱改名 · × 刪除）</div>
+              {cols.map(c => {
+                const isFixed = c.fixed;
+                return (
+                  <div key={c.id} draggable={!isFixed && !!setCustomCols}
+                    onDragStart={()=>!isFixed && setColDrag(c.id)}
+                    onDragOver={e=>{ if(!isFixed && colDrag && colDrag!==c.id){ e.preventDefault(); } }}
+                    onDrop={()=>{ if(!isFixed && colDrag) moveCol(colDrag, c.id); setColDrag(null); }}
+                    onDragEnd={()=>setColDrag(null)}
+                    style={{ display:"flex", alignItems:"center", gap:6, marginBottom:5, fontSize:12, padding:"3px 2px", borderRadius:6, background: colDrag===c.id?"#fff7e0":"transparent" }}>
+                    <span style={{ color: isFixed?"#e4e6ef":"#cbd0d8", cursor: isFixed?"default":"grab", fontSize:13, flexShrink:0 }}>⠿</span>
+                    {setCustomCols
+                      ? <input value={c.label} onChange={e=>renameCol(c.id, e.target.value)} style={{ flex:1, border:"1px solid transparent", borderRadius:5, padding:"3px 6px", fontSize:12, fontFamily:"'Noto Sans TC',sans-serif", background:"transparent" }} onFocus={e=>e.target.style.border="1px solid #e4e6ef"} onBlur={e=>e.target.style.border="1px solid transparent"} />
+                      : <span style={{ flex:1, padding:"3px 6px" }}>{c.label}</span>}
+                    {c.type==="formula" && <span style={{ color:"#8a6d3b", flexShrink:0 }}>ƒ</span>}
+                    {isFixed ? <span style={{ fontSize:10, color:"#c0c4d0", flexShrink:0 }}>固定</span>
+                      : (setCustomCols && <button onClick={()=>delCol(c.id)} title="刪除欄位" style={{ color:"#dc2626", background:"none", border:"none", cursor:"pointer", fontSize:14, lineHeight:1, flexShrink:0 }}>×</button>)}
+                  </div>
+                );
+              })}
               {setCustomCols ? (
                 <div style={{ display:"flex", flexDirection:"column", gap:6, marginTop:8, borderTop:"1px dashed #eee", paddingTop:8 }}>
+                  {COLS.filter(c => !c.fixed && !cols.some(e=>e.id===c.id)).length > 0 && (
+                    <select value="" onChange={e=>{ if(e.target.value) reAddBuiltin(e.target.value); }} style={{ ...inputStyle, padding:"5px 8px", fontSize:12 }}>
+                      <option value="">＋ 加回內建欄位…</option>
+                      {COLS.filter(c => !c.fixed && !cols.some(e=>e.id===c.id)).map(c => <option key={c.id} value={c.id}>{c.label}</option>)}
+                    </select>
+                  )}
+                  <div style={{ fontSize:11, color:"#6b7280", fontWeight:700, marginTop:4 }}>新增自訂欄位</div>
                   <input value={newColLabel} onChange={e=>setNewColLabel(e.target.value)} placeholder="新欄位名稱" style={{ ...inputStyle, padding:"5px 8px", fontSize:12 }} />
                   <select value={newColType} onChange={e=>setNewColType(e.target.value)} style={{ ...inputStyle, padding:"5px 8px", fontSize:12 }}>
                     <option value="money">金額</option><option value="number">數字</option><option value="text">文字</option><option value="formula">公式</option>
                   </select>
                   {newColType==="formula" && <input value={newColFormula} onChange={e=>setNewColFormula(e.target.value)} placeholder="例：estTotal*1.05 - paid" style={{ ...inputStyle, padding:"5px 8px", fontSize:12 }} />}
                   <button onClick={addCustomCol} disabled={!newColLabel.trim()} style={{ background:newColLabel.trim()?ACCENT:"#e4e6ef", color:newColLabel.trim()?"#1a1d2e":"#9ca3af", border:"none", borderRadius:6, padding:"6px 0", fontWeight:700, cursor:newColLabel.trim()?"pointer":"not-allowed", fontSize:12 }}>＋ 新增欄位</button>
-                  {newColType==="formula" && <div style={{ fontSize:10, color:"#9ca3af", lineHeight:1.5 }}>可用變數：estTotal(預估總價) actTotal(實際總價) paid(已付款) taxincl(含稅) estQty estUnitPrice…，支援 + − * / ( )</div>}
+                  {newColType==="formula" && <div style={{ fontSize:10, color:"#9ca3af", lineHeight:1.5 }}>可用變數：estTotal actTotal paid taxincl estQty estUnitPrice…，支援 + − * / ( )</div>}
                 </div>
               ) : <div style={{ fontSize:11, color:"#9ca3af", marginTop:6 }}>需編輯權限才能管理欄位</div>}
             </div>
@@ -987,14 +1029,10 @@ function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols 
           {/* header */}
           <div style={{ display: "flex", background: "#f7f8fa", borderBottom: "2px solid #e4e6ef", position: "sticky", top: 0, zIndex: 10 }}>
             <div style={{ width: 24, flexShrink: 0, borderRight: "1px solid #e4e6ef" }} />
-            {visibleCols.map(col => (
-              <div key={col.id} style={{ ...cellStyle(col), fontWeight: 700, fontSize: 11, color: "#6b7280", letterSpacing: 0.5, background: "#f7f8fa" }}>
-                {col.label}
-              </div>
-            ))}
-            {visibleCustomCols.map(col => (
-              <div key={col.id} style={{ ...cellStyle({ w: col.w||110 }), fontWeight: 700, fontSize: 11, color: col.type==="formula"?"#8a6d3b":"#6b7280", letterSpacing: 0.5, background: "#f7f8fa" }}>
-                {col.label}{col.type==="formula" && <span style={{ fontSize:9, marginLeft:3 }}>ƒ</span>}
+            {orderedCols.map(col => (
+              <div key={col.id} style={{ ...cellStyle(col), position: "relative", fontWeight: 700, fontSize: 11, color: col.type==="formula"?"#8a6d3b":"#6b7280", letterSpacing: 0.5, background: "#f7f8fa" }}>
+                <span style={{ overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{col.label}{col.type==="formula" && <span style={{ fontSize:9, marginLeft:3 }}>ƒ</span>}</span>
+                {setCustomCols && <div onMouseDown={e=>startColResize(col.id, e)} title="拖曳調整欄寬" style={{ position:"absolute", right:-3, top:0, bottom:0, width:7, cursor:"col-resize", zIndex:2 }} />}
               </div>
             ))}
             <div style={{ width: 32, flexShrink: 0 }} />
@@ -1030,8 +1068,12 @@ function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols 
                         onDragEnd={() => { setDragRowId(null); setDragOverId(null); }}
                         style={{ width: 24, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", cursor: "grab", color: "#d1d5db", fontSize: 14, borderRight: "1px solid #f0f1f4", height: 38 }}>⠿</div>
 
-                      {visibleCols.map(col => {
+                      {orderedCols.map(col => {
                         const cs = { ...cellStyle(col) };
+                        if (col.builtin === false) {
+                          if (col.type === "formula") { const v = buildCtx(item)[col.id]; return <div key={col.id} style={{ ...cs, fontFamily:"monospace", fontSize:12, color:"#8a6d3b" }}>{typeof v === "number" ? fmt(v) : (v || "—")}</div>; }
+                          return <div key={col.id} style={cs}><CustomInput value={item.cust?.[col.id]} type={col.type} onCommit={(val)=>updateCustom(catId, item.id, col.id, val)} /></div>;
+                        }
                         if (col.id === "cat") return <div key={col.id} style={{ ...cs, fontSize: 11, color: "#9ca3af" }}>{group.name}</div>;
                         if (col.id === "name") return <div key={col.id} style={{ ...cs, color: "#111827", fontWeight: 500 }}><EditableCell catId={catId} itemId={item.id} field="name" value={item.name} /></div>;
                         if (col.id === "done") return (
@@ -1079,15 +1121,6 @@ function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols 
                         return <div key={col.id} style={cs} />;
                       })}
 
-                      {visibleCustomCols.map(col => {
-                        const cs2 = cellStyle({ w: col.w||110 });
-                        if (col.type === "formula") {
-                          const v = buildCtx(item)[col.id];
-                          return <div key={col.id} style={{ ...cs2, fontFamily:"monospace", fontSize:12, color:"#8a6d3b" }}>{typeof v === "number" ? fmt(v) : (v || "—")}</div>;
-                        }
-                        return <div key={col.id} style={cs2}><CustomInput value={item.cust?.[col.id]} type={col.type} onCommit={(val)=>updateCustom(catId, item.id, col.id, val)} /></div>;
-                      })}
-
                       {/* delete */}
                       <div style={{ width: 32, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
                         <button onClick={() => deleteItem(catId, item.id, item.name)}
@@ -1112,6 +1145,20 @@ function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols 
               </div>
             );
           })}
+          {/* 總計列：數字欄位自動加總 */}
+          <div style={{ display: "flex", borderTop: "2px solid #cdd3df", background: "#f3f4f7", position: "sticky", bottom: 0, zIndex: 5, fontWeight: 700 }}>
+            <div style={{ width: 24, flexShrink: 0, borderRight: "1px solid #e4e6ef" }} />
+            {orderedCols.map(col => {
+              const cs = { ...cellStyle(col) };
+              if (col.id === "name") return <div key={col.id} style={{ ...cs, fontWeight: 800, color: "#111827" }}>總計（{rows.length} 筆）</div>;
+              if (summable(col)) {
+                const sum = rows.reduce((s, r) => s + numVal(col, r.item), 0);
+                return <div key={col.id} style={{ ...cs, fontFamily: "monospace", color: isMoneyCol(col) ? ACCENT : "#374151" }}>{isMoneyCol(col) ? fmt(sum) : (Math.round(sum * 100) / 100)}</div>;
+              }
+              return <div key={col.id} style={cs} />;
+            })}
+            <div style={{ width: 32, flexShrink: 0 }} />
+          </div>
         </div>
       </div>
     </div>
