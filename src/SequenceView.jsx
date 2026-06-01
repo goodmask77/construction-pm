@@ -11,6 +11,9 @@ const C = { text: "#211C15", sub: "#6F6656", faint: "#A99F88", line: "#D8CFBB", 
 const TOTAL_WEEKS = 16, TOTAL_DAYS = TOTAL_WEEKS * 7;
 const LABEL_W = 168, DAY_PXD = 44, WEEK_PXD = 12;
 const ROW_H = 40, ROW_H_OPEN = 116, CARD_W = 150, MAX_OPEN = 3;
+// v2 胖格子日視圖
+const DAY_W = 156, WIN = 14, ROW_FAT = 124, ROW_THIN = 44;
+const ACTIVE = ["doing", "wait", "issue"]; // 置頂組（正在動的工序）
 
 const WS = {
   pending: { label: "待開工",   color: "#6F6656", bar: "#CDC3AC", tint: "#EFE7D6" },
@@ -30,7 +33,7 @@ export default function SequenceView({
   onSaveLog, onDelLog, onSetStatus, onSetSchedule, onSetProjectStart, uploadPhotos, aiTidy, aiWeekly,
   onReorder, onAddSub, onDelSub,
 }) {
-  const [zoom, setZoom] = useState("week");
+  const [zoom, setZoom] = useState("day");
   const [labelW, setLabelW] = useState(220);
   const [dragId, setDragId] = useState(null);
   const [dragOverId, setDragOverId] = useState(null);
@@ -45,6 +48,8 @@ export default function SequenceView({
     document.addEventListener("mousemove", move); document.addEventListener("mouseup", up);
   };
   const [onlyIssue, setOnlyIssue] = useState(false);
+  const [showDone, setShowDone] = useState(true); // 顯示/隱藏 完成‧待開工
+  const [winStart, setWinStart] = useState(0);     // 日視圖 14 天視窗起點
   const [drawer, setDrawer] = useState(null);
   const [schedItem, setSchedItem] = useState(null);
   const [tip, setTip] = useState(null);
@@ -60,8 +65,11 @@ export default function SequenceView({
   const TODAY_IDX = idxOf(TODAY);
   const dotFill = (log) => idxOf(log.date) > TODAY_IDX ? ACCENT : log.issue ? RED : "#ffffff";
 
-  const ppd = zoom === "day" ? DAY_PXD : WEEK_PXD;
+  // 週視圖＝連續座標；日視圖＝14 天視窗座標
+  const ppd = WEEK_PXD;
   const X = (i) => i * ppd, trackW = TOTAL_DAYS * ppd;
+  const dayX = (i) => (i - winStart) * DAY_W;        // 日視圖：相對視窗
+  const dayTrackW = WIN * DAY_W;
 
   // 每個工序的區段（day index 範圍）
   const segIdxOf = (it) => (it.segments || []).map(s => [idxOf(s.start), idxOf(s.end)]).filter(([a,b]) => Number.isFinite(a) && Number.isFinite(b) && b >= a);
@@ -70,6 +78,8 @@ export default function SequenceView({
 
   const logsByItem = useMemo(() => { const m = {}; logs.forEach((l) => (m[l.itemId] ||= []).push(l)); return m; }, [logs]);
   const logMap = useMemo(() => { const m = {}; logs.forEach((l) => (m[`${l.itemId}|${l.date}`] = l)); return m; }, [logs]);
+  const lastLog = (id) => { const ls = logsByItem[id] || []; return ls.length ? Math.max(...ls.map((l) => idxOf(l.date))) : -1; };
+  const origIdx = useMemo(() => Object.fromEntries(items.map((it, i) => [it.id, i])), [items]);
 
   const warnSet = useMemo(() => {
     const s = new Set();
@@ -84,9 +94,22 @@ export default function SequenceView({
   const hasSubs = (it) => it.isParent && items.some(x => x.parentId === it.id);
   const subCount = (it) => items.filter(x => x.parentId === it.id).length;
   const base = onlyIssue ? items.filter((it) => it.status === "issue" || warnSet.has(it.id)) : items;
-  const visItems = base.filter(it => !it.isSub || expandedParents.has(it.parentId)); // 子項目預設收合
+  let visItems = base.filter(it => !it.isSub || expandedParents.has(it.parentId)); // 子項目預設收合
+  if (zoom === "day") {
+    if (!showDone) visItems = visItems.filter(it => ACTIVE.includes(it.status)); // 取消「顯示完成/待開工」→ 只剩正在動的
+    // 依狀態分組排序：置頂組(施工中/等待/問題) → 完成 → 待開工；置頂組內依「最近有紀錄」由新到舊
+    visItems = [...visItems].sort((a, b) => {
+      const ra = ACTIVE.includes(a.status) ? 0 : a.status === "done" ? 1 : 2;
+      const rb = ACTIVE.includes(b.status) ? 0 : b.status === "done" ? 1 : 2;
+      if (ra !== rb) return ra - rb;
+      if (ra === 0) return lastLog(b.id) - lastLog(a.id);
+      return (origIdx[a.id] ?? 0) - (origIdx[b.id] ?? 0);
+    });
+  }
+  // 日視窗的 14 天 index 陣列
+  const winDays = Array.from({ length: WIN }, (_, i) => winStart + i).filter(i => i >= 0 && i < TOTAL_DAYS);
 
-  useEffect(() => { if (ref.current) ref.current.scrollLeft = X(TODAY_IDX) - 220; }, [zoom]); // eslint-disable-line
+  useEffect(() => { if (zoom === "week" && ref.current) ref.current.scrollLeft = X(TODAY_IDX) - 220; if (zoom === "day") setWinStart(Math.max(0, Math.min(TOTAL_DAYS - WIN, TODAY_IDX - 4))); }, [zoom]); // eslint-disable-line
   useEffect(() => { if (scrollTo != null && ref.current) { ref.current.scrollLeft = X(scrollTo) - 120; setScrollTo(null); } }, [scrollTo]); // eslint-disable-line
 
   const toggle = (it) => {
@@ -106,6 +129,29 @@ export default function SequenceView({
     try { setWeeklyOut(await aiWeekly(wk, items)); } catch { setWeeklyOut("AI 連線失敗"); }
   };
 
+  // 左側工程欄（凍結）— 週/日共用
+  const renderLabel = (it, minH) => {
+    const w = WS[it.status] || WS.pending;
+    const isContainer = hasSubs(it);
+    const subsOpen = isContainer && expandedParents.has(it.id);
+    return (
+      <div style={{ width: labelW, flexShrink: 0, position: "sticky", left: 0, zIndex: 2, background: dragOverId === it.id ? ACCENT_SOFT : (it.isSub ? "#FCFDFE" : "#fff"), borderRight: `1px solid ${C.line}`, borderLeft: it.isSub ? "3px solid transparent" : `3px solid ${w.bar}`, padding: "0 8px", paddingLeft: it.isSub ? 18 : 6, display: "flex", alignItems: "center", gap: 6, minHeight: minH }}>
+        {it.isParent && canEdit && <span className="seq-actions" draggable onDragStart={() => setDragId(it.id)} onDragEnd={() => { setDragId(null); setDragOverId(null); }} title="拖曳排序大項" style={{ cursor: "grab", color: "#CDC3AC", fontSize: 13, flexShrink: 0 }}>⠿</span>}
+        {it.isSub && <span style={{ color: "#CDC3AC", fontSize: 12, flexShrink: 0, lineHeight: 1 }}>└</span>}
+        {isContainer && <button onClick={() => toggle(it)} style={{ border: "none", background: "none", cursor: "pointer", color: subsOpen ? ACCENT : C.faint, fontSize: 12, width: 12, flexShrink: 0, transform: subsOpen ? "rotate(90deg)" : "none", transition: "transform .15s" }}>▸</button>}
+        <span onClick={(e) => { e.stopPropagation(); if (canEdit) setStatusPick({ id: it.id, x: e.clientX, y: e.clientY }); }} title={canEdit ? `${w.label}（點擊設定狀態）` : w.label} style={{ width: 10, height: 10, borderRadius: 5, background: w.bar, flexShrink: 0, cursor: canEdit ? "pointer" : "default" }} />
+        <span title={`${it.name}（${w.label}）`} style={{ fontSize: it.isSub ? 14 : 16, fontWeight: it.isSub ? 500 : 600, color: it.isSub ? C.sub : PRIMARY, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1, letterSpacing: -0.1 }}>{it.name}</span>
+        {isContainer && !subsOpen && <span style={{ fontSize: 11, fontWeight: 500, color: SUB, background: "#EFE7D6", borderRadius: 10, padding: "1px 7px", flexShrink: 0, lineHeight: 1.5 }}>{subCount(it)}</span>}
+        {warnSet.has(it.id) && <span title={`連續 ${warnDays} 天無紀錄`} style={{ color: RED, fontSize: 13, flexShrink: 0 }}>⚠</span>}
+        {canEdit && <div className="seq-actions" style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 3, flexShrink: 0 }}>
+          <button onClick={() => setSchedItem(it)} title="設定排程（日期/區段）" style={{ border: "none", background: "none", cursor: "pointer", color: C.faint, fontSize: 12 }}>📅</button>
+          {it.isParent && <button onClick={() => { const n = prompt(`在「${it.name}」下新增工程子項目：`); if (n && n.trim()) onAddSub && onAddSub(it.id, n.trim()); }} title="新增子項目" style={{ border: "none", background: "none", cursor: "pointer", color: ACCENT, fontSize: 15, fontWeight: 500 }}>＋</button>}
+          {it.isSub && <button onClick={() => { if (window.confirm(`刪除子項目「${it.name}」？`)) onDelSub && onDelSub(it.id); }} title="刪除子項目" style={{ border: "none", background: "none", cursor: "pointer", color: "#DC2626", fontSize: 13 }}>×</button>}
+        </div>}
+      </div>
+    );
+  };
+
   return (
     <div style={{ fontFamily: "-apple-system,'PingFang TC','Noto Sans TC',system-ui,'Segoe UI',Roboto,sans-serif", color: C.text, letterSpacing: 0.1 }}>
       <style>{`.seq-row .seq-actions{opacity:0;transition:opacity .12s} .seq-row:hover .seq-actions{opacity:1} .seq-row:hover{background:#F4EFE3}`}</style>
@@ -115,21 +161,34 @@ export default function SequenceView({
             <button key={k} onClick={() => { setZoom(k); if (k === "week") setOpenIds([]); }} style={{ border: "none", cursor: "pointer", padding: "6px 20px", borderRadius: 8, fontSize: 14, fontWeight: 600, background: zoom === k ? "#fff" : "transparent", color: zoom === k ? C.text : C.sub, boxShadow: zoom === k ? "0 1px 3px rgba(0,0,0,.12)" : "none" }}>{l}</button>
           ))}
         </div>
-        <button onClick={() => setScrollTo(TODAY_IDX)} style={{ ...navBtn, width: "auto", padding: "0 12px", fontSize: 13, fontWeight: 600, color: ACCENT }}>今天</button>
+        {zoom === "day" && (
+          <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+            <button onClick={() => setWinStart(s => Math.max(0, s - 7))} style={navBtn}>‹</button>
+            <span style={{ fontSize: 12.5, color: C.sub, minWidth: 104, textAlign: "center" }}>{dayKey(winStart).slice(5).replace("-", "/")} – {dayKey(Math.min(TOTAL_DAYS - 1, winStart + WIN - 1)).slice(5).replace("-", "/")}</span>
+            <button onClick={() => setWinStart(s => Math.min(TOTAL_DAYS - WIN, s + 7))} style={navBtn}>›</button>
+          </div>
+        )}
+        <button onClick={() => { if (zoom === "day") setWinStart(Math.max(0, Math.min(TOTAL_DAYS - WIN, TODAY_IDX - 4))); else setScrollTo(TODAY_IDX); }} style={{ ...navBtn, width: "auto", padding: "0 12px", fontSize: 13, fontWeight: 600, color: ACCENT }}>今天</button>
         <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, color: C.sub, cursor: "pointer" }}>
           <input type="checkbox" checked={onlyIssue} onChange={(e) => setOnlyIssue(e.target.checked)} />只看異常
         </label>
+        {zoom === "day" && (
+          <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, color: C.sub, cursor: "pointer" }}>
+            <input type="checkbox" checked={showDone} onChange={(e) => setShowDone(e.target.checked)} />顯示完成/待開工
+          </label>
+        )}
         <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: C.sub }}>
           專案起始
           <input type="date" value={projectStart} disabled={!canEdit} onChange={e => onSetProjectStart && onSetProjectStart(e.target.value)} style={{ border: `1px solid ${C.line}`, borderRadius: 7, padding: "4px 6px", fontSize: 12 }} />
         </label>
         <button onClick={doWeekly} style={{ border: `1px solid ${ACCENT}`, background: "#F3E4DE", color: "#3E72A8", borderRadius: 8, padding: "6px 12px", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>✨ AI 週報</button>
-        <span style={{ fontSize: 13, color: C.faint }}>{zoom === "week" ? "點工序 ▸ 展開每日紀錄" : `點 ▸ 展開(最多${MAX_OPEN}) · 點空白新增 · 點卡片看詳細`}</span>
+        <span style={{ fontSize: 13, color: C.faint }}>{zoom === "week" ? "點工序條切日視圖" : "正在動的工序置頂 · 點格子記錄/預排"}</span>
         <div style={{ flex: 1 }} />
         {Object.values(WS).map((s) => <span key={s.label} style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 12, color: C.sub }}><span style={{ width: 9, height: 9, borderRadius: 3, background: s.bar }} />{s.label}</span>)}
       </div>
 
       <div ref={ref} style={{ overflow: "auto", maxHeight: "calc(100vh - 195px)", border: `1px solid ${C.line}`, borderRadius: 12, background: "#fff", position: "relative" }}>
+        {zoom === "week" ? (
         <div style={{ minWidth: labelW + trackW }}>
           <div style={{ display: "flex", position: "sticky", top: 0, zIndex: 3, background: "#fff", borderBottom: `1px solid ${C.line}` }}>
             <div style={{ width: labelW, flexShrink: 0, position: "sticky", left: 0, zIndex: 4, background: "#fff", padding: "8px 12px", fontSize: 13, fontWeight: 600, color: C.sub, borderRight: `1px solid ${C.line}` }}>
@@ -151,7 +210,7 @@ export default function SequenceView({
             </div>
           </div>
 
-          {visItems.length === 0 && <div style={{ padding: 30, textAlign: "center", color: C.faint, fontSize: 13 }}>尚無工序（請到「總覽 / 看板」新增工程大項，或設定排程）</div>}
+          {visItems.length === 0 && <div style={{ padding: 30, textAlign: "center", color: C.faint, fontSize: 13 }}>尚無工序（請到「總覽」新增工程大項，或設定排程）</div>}
           {visItems.map((it) => {
             const isContainer = hasSubs(it);
             const subsOpen = isContainer && expandedParents.has(it.id);
@@ -226,6 +285,64 @@ export default function SequenceView({
             );
           })}
         </div>
+        ) : (
+        /* ───────── 日視圖：14 天視窗胖格子 ───────── */
+        <div style={{ minWidth: labelW + dayTrackW }}>
+          <div style={{ display: "flex", position: "sticky", top: 0, zIndex: 3, background: "#fff", borderBottom: `1px solid ${C.line}` }}>
+            <div style={{ width: labelW, flexShrink: 0, position: "sticky", left: 0, zIndex: 4, background: "#fff", padding: "8px 12px", fontSize: 13, fontWeight: 600, color: C.sub, borderRight: `1px solid ${C.line}` }}>
+              工程項目
+              <div onMouseDown={startResize} title="拖曳調整欄寬" style={{ position: "absolute", right: -3, top: 0, bottom: 0, width: 7, cursor: "col-resize", zIndex: 6 }} />
+            </div>
+            {winDays.map((i) => { const d = new Date(START_D); d.setDate(d.getDate() + i); const t = i === TODAY_IDX, wk = d.getDay() % 6 === 0; return (
+              <div key={i} style={{ width: DAY_W, flexShrink: 0, textAlign: "center", padding: "7px 0", borderLeft: `1px solid ${C.line}`, background: t ? "#FFFBEF" : "#fff" }}>
+                <div style={{ fontSize: 13, fontWeight: t ? 700 : 600, color: t ? ACCENT : wk ? "#c0507a" : C.text }}>{d.getMonth() + 1}/{d.getDate()}</div>
+                <div style={{ fontSize: 11, color: t ? ACCENT : C.faint }}>{WD[d.getDay()]}{t ? "·今天" : ""}</div>
+              </div>); })}
+          </div>
+          {visItems.length === 0 && <div style={{ padding: 30, textAlign: "center", color: C.faint, fontSize: 13 }}>尚無工序（請到「總覽」新增工程大項，或設定排程）</div>}
+          {visItems.map((it) => {
+            const w = WS[it.status] || WS.pending;
+            const fat = ACTIVE.includes(it.status);
+            const itemLogs = logsByItem[it.id] || [];
+            const segs = segIdxOf(it);
+            return (
+              <div key={it.id} className="seq-row" style={{ display: "flex", borderBottom: `1px solid ${C.line}`, minHeight: fat ? ROW_FAT : ROW_THIN, background: it.isSub ? "#FCFDFE" : "#fff" }}>
+                {renderLabel(it, fat ? ROW_FAT : ROW_THIN)}
+                {fat ? (
+                  winDays.map((i) => {
+                    const inSpan = inRange(it, i), key = dayKey(i), log = logMap[`${it.id}|${key}`], planned = i > TODAY_IDX, t = i === TODAY_IDX;
+                    return (
+                      <div key={i} onClick={() => inSpan && canEdit && openCell(it.id, key)} style={{ width: DAY_W, flexShrink: 0, minHeight: ROW_FAT, borderLeft: `1px solid ${C.line}`, padding: 7, cursor: inSpan && canEdit ? "pointer" : "default", background: !inSpan ? C.soft : t ? "#FFFBEF" : "#fff", borderTop: inSpan ? `3px solid ${w.bar}` : "3px solid transparent", position: "relative" }}>
+                        {log ? (
+                          <div style={{ height: "100%", display: "flex", flexDirection: "column", gap: 5, opacity: planned ? .72 : 1 }}>
+                            {planned && <span style={{ fontSize: 10, fontWeight: 600, color: ACCENT }}>預排</span>}
+                            {!planned && log.prog > 0 && (
+                              <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+                                <div style={{ flex: 1, height: 4, background: "#EFE7D6", borderRadius: 2, overflow: "hidden" }}><div style={{ width: `${log.prog}%`, height: "100%", background: w.bar }} /></div>
+                                <span style={{ fontSize: 10, color: C.sub, fontWeight: 600 }}>{log.prog}%</span>
+                              </div>
+                            )}
+                            <div style={{ fontSize: 12, lineHeight: 1.45, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{planned ? log.next : log.done}</div>
+                            {log.issue && <div style={{ fontSize: 11, color: RED, display: "-webkit-box", WebkitLineClamp: 1, WebkitBoxOrient: "vertical", overflow: "hidden" }}>⚠ {log.issue}</div>}
+                            {(log.photos?.length > 0) && <div style={{ display: "flex", gap: 4, marginTop: "auto" }}>{log.photos.slice(0, 2).map((p, k) => <img key={k} src={p} alt="" onClick={(e) => { e.stopPropagation(); setDrawer({ ...log }); }} style={{ width: 38, height: 38, borderRadius: 5, objectFit: "cover", cursor: "pointer" }} />)}{log.photos.length > 2 && <span style={{ fontSize: 11, color: C.faint, alignSelf: "flex-end" }}>+{log.photos.length - 2}</span>}</div>}
+                          </div>
+                        ) : inSpan ? (
+                          <div className="ce" style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: planned ? ACCENT : C.faint, fontSize: 12, border: planned ? `1px dashed ${ACCENT}66` : "none", borderRadius: 6 }}>{canEdit ? (planned ? "點此預排" : "＋ 記錄") : ""}</div>
+                        ) : null}
+                      </div>
+                    );
+                  })
+                ) : (
+                  <div style={{ position: "relative", width: dayTrackW }}>
+                    {segs.map(([a, b], si) => { const l = Math.max(0, dayX(a)), r = Math.min(dayTrackW, dayX(b + 1)); if (r <= 0 || l >= dayTrackW) return null; return <div key={si} style={{ position: "absolute", left: l, top: ROW_THIN / 2 - 4, width: r - l, height: 8, background: w.bar, borderRadius: 4, opacity: .55 }} />; })}
+                    {itemLogs.map((l) => { const dx = dayX(idxOf(l.date)) + DAY_W / 2; if (dx < 0 || dx > dayTrackW) return null; return <span key={l.id} onMouseEnter={(e) => setTip({ l, x: e.clientX, y: e.clientY, item: it.name })} onMouseLeave={() => setTip(null)} onClick={() => setDrawer({ ...l })} style={{ position: "absolute", left: dx - 4, top: ROW_THIN / 2 - 4, width: 8, height: 8, borderRadius: 4, background: dotFill(l), boxShadow: "0 0 0 1px rgba(0,0,0,.4)", cursor: "pointer" }} />; })}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+        )}
       </div>
 
       {tip && (

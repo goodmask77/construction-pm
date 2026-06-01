@@ -322,7 +322,7 @@ const SYSTEM_ITEM = (catName, itemName) => `你是一位專業餐廳裝修工程
 // ── MAIN APP ──────────────────────────────────────────────────────────────────
 export default function App() {
   const [cats, setCats] = useState(null);
-  const [view, setView] = useState("kanban"); // kanban | list | gantt
+  const [view, setView] = useState("gantt"); // 預設工序頁
   const [selectedCat, setSelectedCat] = useState(null);
   const [selectedItem, setSelectedItem] = useState(null);
   const [globalChat, setGlobalChat] = useState([]);
