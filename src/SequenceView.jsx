@@ -12,7 +12,7 @@ const TOTAL_WEEKS = 16, TOTAL_DAYS = TOTAL_WEEKS * 7;
 const LABEL_W = 168, DAY_PXD = 44, WEEK_PXD = 12;
 const ROW_H = 40, ROW_H_OPEN = 116, CARD_W = 150, MAX_OPEN = 3;
 // v2 胖格子日視圖
-const DAY_W = 156, WIN = 14, ROW_FAT = 124, ROW_THIN = 44;
+const DAY_W = 150, WIN = 14, ROW_FAT = 108, ROW_THIN = 34;
 const ACTIVE = ["doing", "wait", "issue"]; // 置頂組（正在動的工序）
 
 const WS = {
@@ -155,7 +155,7 @@ export default function SequenceView({
         {isContainer && <span style={{ color: subsOpen ? ACCENT : C.faint, fontSize: 12, width: 12, flexShrink: 0, transform: subsOpen ? "rotate(90deg)" : "none", transition: "transform .15s", textAlign: "center" }}>▸</span>}
         <span onClick={(e) => { e.stopPropagation(); if (canEdit) setStatusPick({ id: it.id, x: e.clientX, y: e.clientY }); }} title={canEdit ? `${w.label}（點擊設定狀態）` : w.label} style={{ width: 10, height: 10, borderRadius: 5, background: w.bar, flexShrink: 0, cursor: canEdit ? "pointer" : "default" }} />
         {it.urgent && <span className="seq-fire" onClick={(e) => { e.stopPropagation(); canEdit && onSetUrgent && onSetUrgent(it.id, false); }} title="超急件（點擊取消）" style={{ fontSize: 13, flexShrink: 0, cursor: canEdit ? "pointer" : "default" }}>🔥</span>}
-        <span title={`${it.name}（${w.label}）`} style={{ fontSize: it.isSub ? 14 : 16, fontWeight: it.urgent ? 600 : (it.isSub ? 500 : 600), color: it.urgent ? "#B3261E" : (it.isSub ? C.sub : PRIMARY), overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1, letterSpacing: -0.1 }}>{it.name}</span>
+        <span title={`${it.name}（${w.label}）`} style={{ fontSize: it.isSub ? 13 : 14, fontWeight: it.urgent ? 600 : (it.isSub ? 500 : 600), color: it.urgent ? "#B3261E" : (it.isSub ? C.sub : PRIMARY), overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1, letterSpacing: -0.1 }}>{it.name}</span>
         {isContainer && !subsOpen && <span style={{ fontSize: 11, fontWeight: 500, color: SUB, background: "#EFE7D6", borderRadius: 10, padding: "1px 7px", flexShrink: 0, lineHeight: 1.5 }}>{subCount(it)}</span>}
         {warnSet.has(it.id) && <span title={`連續 ${warnDays} 天無紀錄`} style={{ color: RED, fontSize: 13, flexShrink: 0 }}>⚠</span>}
         {canEdit && <div className="seq-actions" style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 3, flexShrink: 0 }}>
@@ -174,10 +174,10 @@ export default function SequenceView({
         @keyframes seqUrgentPulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.45;transform:scale(.86)}}
         .seq-urgent-cell{animation:seqUrgentBg 1.15s ease-in-out infinite !important}
         .seq-fire{animation:seqUrgentPulse .9s ease-in-out infinite;display:inline-flex}`}</style>
-      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12, flexWrap: "wrap" }}>
-        <div style={{ display: "inline-flex", background: "#EFE7D6", borderRadius: 10, padding: 3 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10, flexWrap: "wrap" }}>
+        <div style={{ display: "inline-flex", background: "#EFE7D6", borderRadius: 8, padding: 2 }}>
           {[["week", "週"], ["day", "日"]].map(([k, l]) => (
-            <button key={k} onClick={() => { setZoom(k); if (k === "week") setOpenIds([]); }} style={{ border: "none", cursor: "pointer", padding: "6px 20px", borderRadius: 8, fontSize: 14, fontWeight: 600, background: zoom === k ? "#fff" : "transparent", color: zoom === k ? C.text : C.sub, boxShadow: zoom === k ? "0 1px 3px rgba(0,0,0,.12)" : "none" }}>{l}</button>
+            <button key={k} onClick={() => { setZoom(k); if (k === "week") setOpenIds([]); }} style={{ border: "none", cursor: "pointer", padding: "5px 15px", borderRadius: 6, fontSize: 13, fontWeight: 500, background: zoom === k ? "#fff" : "transparent", color: zoom === k ? C.text : C.sub, boxShadow: zoom === k ? "0 1px 2px rgba(0,0,0,.1)" : "none" }}>{l}</button>
           ))}
         </div>
         {zoom === "day" && (
@@ -250,7 +250,7 @@ export default function SequenceView({
                   {it.isSub && <span style={{ color: "#CDC3AC", fontSize: 12, flexShrink: 0, lineHeight: 1 }}>└</span>}
                   <span style={{ color: caretOpen ? ACCENT : C.faint, fontSize: it.isSub ? 10 : 12, width: 12, flexShrink: 0, transform: caretOpen ? "rotate(90deg)" : "none", transition: "transform .15s", textAlign: "center" }}>▸</span>
                   <span onClick={(e) => { e.stopPropagation(); if (canEdit) setStatusPick({ id: it.id, x: e.clientX, y: e.clientY }); }} title={canEdit ? `${w.label}（點擊設定狀態）` : w.label} style={{ width: 8, height: 8, borderRadius: 4, background: w.bar, flexShrink: 0, cursor: canEdit ? "pointer" : "default" }} />
-                  <span title={`${it.name}（${w.label}）`} style={{ fontSize: it.isSub ? 14 : 16, fontWeight: it.isSub ? 500 : 600, color: it.isSub ? C.sub : PRIMARY, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1, letterSpacing: -0.1 }}>{it.name}</span>
+                  <span title={`${it.name}（${w.label}）`} style={{ fontSize: it.isSub ? 13 : 14, fontWeight: it.isSub ? 500 : 600, color: it.isSub ? C.sub : PRIMARY, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1, letterSpacing: -0.1 }}>{it.name}</span>
                   {isContainer && !subsOpen && <span style={{ fontSize: 11, fontWeight: 500, color: SUB, background: "#EFE7D6", borderRadius: 10, padding: "1px 7px", flexShrink: 0, lineHeight: 1.5 }}>{subCount(it)}</span>}
                   {warnSet.has(it.id) && <span title={`連續 ${warnDays} 天無紀錄`} style={{ fontSize: 10.5, fontWeight: 500, color: "#DC2626", background: "#FEF2F2", borderRadius: 6, padding: "1px 6px", flexShrink: 0, lineHeight: 1.5 }}>逾期</span>}
                   {canEdit && <div className="seq-actions" style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 3, flexShrink: 0 }}>
@@ -312,10 +312,10 @@ export default function SequenceView({
               <div onMouseDown={startResize} title="拖曳調整欄寬" style={{ position: "absolute", right: -3, top: 0, bottom: 0, width: 7, cursor: "col-resize", zIndex: 6 }} />
             </div>
             {winDays.map((i) => { const d = new Date(START_D); d.setDate(d.getDate() + i); const t = i === TODAY_IDX, wk = d.getDay() % 6 === 0; return (
-              <div key={i} style={{ width: DAY_W, flexShrink: 0, textAlign: "center", padding: "6px 0 7px", borderLeft: `1px solid ${C.line}`, background: t ? "#FFFBEF" : "#fff" }}>
-                <div style={{ fontSize: 11, fontWeight: 500, color: wk ? "#c0507a" : C.sub }}>週{WD[d.getDay()]}</div>
-                <div style={{ marginTop: 3, display: "flex", justifyContent: "center" }}>
-                  <span style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", height: 22, padding: "0 9px", borderRadius: 11, fontSize: 13, fontWeight: 600, background: t ? ACCENT : "transparent", color: t ? "#fff" : wk ? "#c0507a" : C.text }}>{d.getMonth() + 1}/{d.getDate()}</span>
+              <div key={i} style={{ width: DAY_W, flexShrink: 0, textAlign: "center", padding: "5px 0 6px", borderLeft: `1px solid ${C.line}`, background: t ? "#FFFBEF" : "#fff" }}>
+                <div style={{ fontSize: 10.5, fontWeight: 500, color: wk ? "#c0507a" : C.sub }}>週{WD[d.getDay()]}</div>
+                <div style={{ marginTop: 2, display: "flex", justifyContent: "center" }}>
+                  <span style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", height: 20, padding: "0 8px", borderRadius: 10, fontSize: 12.5, fontWeight: 600, background: t ? ACCENT : "transparent", color: t ? "#fff" : wk ? "#c0507a" : C.text }}>{d.getMonth() + 1}/{d.getDate()}</span>
                 </div>
               </div>); })}
           </div>
