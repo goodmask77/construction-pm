@@ -50,7 +50,7 @@ export default function SequenceView({
   const [onlyIssue, setOnlyIssue] = useState(false);
   const [showDone, setShowDone] = useState(true); // 顯示/隱藏 完成‧待開工
   const [winStart, setWinStart] = useState(0);     // 日視圖 14 天視窗起點
-  const [drawer, setDrawer] = useState(null);
+  const [quick, setQuick] = useState(null); // 行事曆式快速記錄 popover
   const [schedItem, setSchedItem] = useState(null);
   const [tip, setTip] = useState(null);
   const [scrollTo, setScrollTo] = useState(null);
@@ -118,10 +118,9 @@ export default function SequenceView({
     setOpenIds((o) => o.includes(it.id) ? o.filter((x) => x !== it.id) : [...o, it.id].slice(-MAX_OPEN));
   };
   const requireEdit = () => { if (!canEdit) { alert("此帳號沒有編輯工程資料的權限，請聯絡管理員開放。"); return false; } return true; };
-  const saveLog = (l) => { if (!requireEdit()) return; onSaveLog && onSaveLog(l); setDrawer(null); };
-  const delLog = (id) => { if (!requireEdit()) return; onDelLog && onDelLog(id); setDrawer(null); };
-  const openCell = (itemId, date) => { if (!requireEdit()) return; const ex = logMap[`${itemId}|${date}`]; setDrawer(ex ? { ...ex } : { itemId, date, done: "", issue: "", next: "", prog: 0, photos: [] }); };
-  const copyYesterday = (f) => { const p = logMap[`${f.itemId}|${dayKey(idxOf(f.date) - 1)}`]; if (p) setDrawer({ ...f, done: p.done, issue: p.issue, next: p.next, prog: p.prog }); };
+  const saveLog = (l) => { if (!requireEdit()) return; onSaveLog && onSaveLog(l); setQuick(null); };
+  const delLog = (id) => { if (!requireEdit()) return; onDelLog && onDelLog(id); setQuick(null); };
+  const openCell = (itemId, date, x, y) => { if (!requireEdit()) return; setQuick({ itemId, date, x: x ?? (window.innerWidth / 2), y: y ?? 120 }); };
 
   // 拖曳設定工期（取代甘特排程）：點一格＝記錄；拖多格＝設工期
   const [sel, setSel] = useState(null); // { itemId, a, b }
@@ -130,7 +129,7 @@ export default function SequenceView({
   const commitSel = () => {
     const s = selRef.current; if (!s) return; setSel(null);
     const a = Math.min(s.a, s.b), b = Math.max(s.a, s.b);
-    if (a === b) { openCell(s.itemId, dayKey(a)); }
+    if (a === b) { openCell(s.itemId, dayKey(a), s.x, s.y); }
     else if (canEdit && onSetSchedule) { onSetSchedule(s.itemId, [{ start: dayKey(a), end: dayKey(b) }]); }
   };
   useEffect(() => { const up = () => commitSel(); document.addEventListener("mouseup", up); return () => document.removeEventListener("mouseup", up); }, []); // eslint-disable-line
@@ -265,14 +264,14 @@ export default function SequenceView({
                     return <span key={l.id}
                       onMouseEnter={(e) => setTip({ l, x: e.clientX, y: e.clientY, item: it.name })}
                       onMouseLeave={() => setTip(null)}
-                      onClick={(e) => { e.stopPropagation(); setDrawer({ ...l }); }}
+                      onClick={(e) => { e.stopPropagation(); setQuick({ itemId: l.itemId, date: l.date, x: e.clientX, y: e.clientY }); }}
                       style={{ position: "absolute", left: dx - 4, top: (ROW_H - 22) / 2 + 12, width: 8, height: 8, borderRadius: 4, background: dotFill(l), boxShadow: "0 0 0 1px rgba(0,0,0,.4)", cursor: "pointer", zIndex: 2 }} />;
                   })}
                   {/* 展開：事件卡 */}
                   {cards.map(({ l, left }) => {
                     const planned = idxOf(l.date) > TODAY_IDX;
                     return (
-                      <div key={l.id} onClick={(e) => { e.stopPropagation(); setDrawer({ ...l }); }}
+                      <div key={l.id} onClick={(e) => { e.stopPropagation(); setQuick({ itemId: l.itemId, date: l.date, x: e.clientX, y: e.clientY }); }}
                         style={{ position: "absolute", left, top: 40, width: CARD_W, background: "#fff", border: `1px solid ${C.line}`, borderLeft: `3px solid ${planned ? ACCENT : l.issue ? RED : w.bar}`, borderRadius: 8, padding: 7, cursor: "pointer", boxShadow: "0 1px 5px rgba(0,0,0,.09)", opacity: planned ? .82 : 1 }}>
                         <div style={{ display: "flex", gap: 7 }}>
                           {l.photos?.[0] && <img src={l.photos[0]} alt="" style={{ width: 40, height: 40, borderRadius: 5, objectFit: "cover", flexShrink: 0 }} />}
@@ -314,7 +313,8 @@ export default function SequenceView({
           {visItems.length === 0 && <div style={{ padding: 30, textAlign: "center", color: C.faint, fontSize: 13 }}>尚無工序（請到「總覽」新增工程大項，或設定排程）</div>}
           {visItems.map((it) => {
             const w = WS[it.status] || WS.pending;
-            const fat = ACTIVE.includes(it.status);
+            const hasContentInWin = winDays.some(i => logMap[`${it.id}|${dayKey(i)}`]);
+            const fat = ACTIVE.includes(it.status) || hasContentInWin; // 有當前視窗內的紀錄 → 直接顯示內容(不必 hover)
             const itemLogs = logsByItem[it.id] || [];
             const segs = segIdxOf(it);
             return (
@@ -324,7 +324,7 @@ export default function SequenceView({
                   winDays.map((i) => {
                     const inSpan = inRange(it, i), key = dayKey(i), log = logMap[`${it.id}|${key}`], planned = i > TODAY_IDX, t = i === TODAY_IDX;
                     return (
-                      <div key={i} onMouseDown={() => canEdit && setSel({ itemId: it.id, a: i, b: i })} onMouseEnter={() => canEdit && setSel(s => s && s.itemId === it.id ? { ...s, b: i } : s)} style={{ width: DAY_W, flexShrink: 0, minHeight: ROW_FAT, borderLeft: `1px solid ${C.line}`, padding: 7, cursor: canEdit ? "pointer" : "default", userSelect: "none", background: inSel(it.id, i) ? "#F3E4DE" : t ? "#FFFBEF" : "#fff", borderTop: inSpan ? `3px solid ${w.bar}` : "3px solid transparent", position: "relative" }}>
+                      <div key={i} onMouseDown={(e) => canEdit && setSel({ itemId: it.id, a: i, b: i, x: e.clientX, y: e.clientY })} onMouseEnter={() => canEdit && setSel(s => s && s.itemId === it.id ? { ...s, b: i } : s)} style={{ width: DAY_W, flexShrink: 0, minHeight: ROW_FAT, borderLeft: `1px solid ${C.line}`, padding: 7, cursor: canEdit ? "pointer" : "default", userSelect: "none", background: inSel(it.id, i) ? "#F3E4DE" : t ? "#FFFBEF" : "#fff", borderTop: inSpan ? `3px solid ${w.bar}` : "3px solid transparent", position: "relative" }}>
                         {log ? (
                           <div style={{ height: "100%", display: "flex", flexDirection: "column", gap: 5, opacity: planned ? .72 : 1 }}>
                             {planned && <span style={{ fontSize: 10, fontWeight: 600, color: ACCENT }}>預排</span>}
@@ -336,7 +336,7 @@ export default function SequenceView({
                             )}
                             <div style={{ fontSize: 12, lineHeight: 1.45, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{planned ? log.next : log.done}</div>
                             {log.issue && <div style={{ fontSize: 11, color: RED, display: "-webkit-box", WebkitLineClamp: 1, WebkitBoxOrient: "vertical", overflow: "hidden" }}>⚠ {log.issue}</div>}
-                            {(log.photos?.length > 0) && <div style={{ display: "flex", gap: 4, marginTop: "auto" }}>{log.photos.slice(0, 2).map((p, k) => <img key={k} src={p} alt="" onClick={(e) => { e.stopPropagation(); setDrawer({ ...log }); }} style={{ width: 38, height: 38, borderRadius: 5, objectFit: "cover", cursor: "pointer" }} />)}{log.photos.length > 2 && <span style={{ fontSize: 11, color: C.faint, alignSelf: "flex-end" }}>+{log.photos.length - 2}</span>}</div>}
+                            {(log.photos?.length > 0) && <div style={{ display: "flex", gap: 4, marginTop: "auto" }}>{log.photos.slice(0, 2).map((p, k) => <img key={k} src={p} alt="" onClick={(e) => { e.stopPropagation(); setQuick({ itemId: log.itemId, date: log.date, x: e.clientX, y: e.clientY }); }} style={{ width: 38, height: 38, borderRadius: 5, objectFit: "cover", cursor: "pointer" }} />)}{log.photos.length > 2 && <span style={{ fontSize: 11, color: C.faint, alignSelf: "flex-end" }}>+{log.photos.length - 2}</span>}</div>}
                           </div>
                         ) : canEdit ? (
                           <div className="ce" style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: planned ? ACCENT : C.faint, fontSize: 12, border: planned ? `1px dashed ${ACCENT}66` : "none", borderRadius: 6 }}>{planned ? "點此預排" : "＋ 記錄"}</div>
@@ -348,8 +348,8 @@ export default function SequenceView({
                   /* 細條列：可點(記錄)/拖曳(設工期)；工期顯示為一條乾淨色塊、可清除 */
                   <div style={{ position: "relative", display: "flex", flex: "0 0 auto" }}>
                     {winDays.map((i) => { const t = i === TODAY_IDX, log = logMap[`${it.id}|${dayKey(i)}`]; return (
-                      <div key={i} onMouseDown={() => canEdit && setSel({ itemId: it.id, a: i, b: i })} onMouseEnter={() => canEdit && setSel(s => s && s.itemId === it.id ? { ...s, b: i } : s)} style={{ width: DAY_W, flexShrink: 0, borderLeft: `1px solid ${C.line}`, cursor: canEdit ? "pointer" : "default", userSelect: "none", background: inSel(it.id, i) ? "#F3E4DE" : t ? "#FFFBEF" : "transparent", position: "relative" }}>
-                        {log && <span onClick={(e) => { e.stopPropagation(); setDrawer({ ...log }); }} onMouseEnter={(e) => setTip({ l: log, x: e.clientX, y: e.clientY, item: it.name })} onMouseLeave={() => setTip(null)} style={{ position: "absolute", left: DAY_W / 2 - 4, top: ROW_THIN / 2 - 4, width: 8, height: 8, borderRadius: 4, background: dotFill(log), boxShadow: "0 0 0 1px rgba(0,0,0,.4)", cursor: "pointer", zIndex: 3 }} />}
+                      <div key={i} onMouseDown={(e) => canEdit && setSel({ itemId: it.id, a: i, b: i, x: e.clientX, y: e.clientY })} onMouseEnter={() => canEdit && setSel(s => s && s.itemId === it.id ? { ...s, b: i } : s)} style={{ width: DAY_W, flexShrink: 0, borderLeft: `1px solid ${C.line}`, cursor: canEdit ? "pointer" : "default", userSelect: "none", background: inSel(it.id, i) ? "#F3E4DE" : t ? "#FFFBEF" : "transparent", position: "relative" }}>
+                        {log && <span onClick={(e) => { e.stopPropagation(); setQuick({ itemId: log.itemId, date: log.date, x: e.clientX, y: e.clientY }); }} onMouseEnter={(e) => setTip({ l: log, x: e.clientX, y: e.clientY, item: it.name })} onMouseLeave={() => setTip(null)} style={{ position: "absolute", left: DAY_W / 2 - 4, top: ROW_THIN / 2 - 4, width: 8, height: 8, borderRadius: 4, background: dotFill(log), boxShadow: "0 0 0 1px rgba(0,0,0,.4)", cursor: "pointer", zIndex: 3 }} />}
                       </div>); })}
                     {segIdxOf(it).map(([a, b], si) => { const l = Math.max(0, dayX(a)), r = Math.min(dayTrackW, dayX(b + 1)); if (r <= 0 || l >= dayTrackW) return null; return (
                       <div key={si} title="此工序的工期" style={{ position: "absolute", left: l + 3, top: ROW_THIN / 2 - 7, width: r - l - 6, height: 14, background: w.bar, borderRadius: 5, display: "flex", alignItems: "center", justifyContent: "flex-end", paddingRight: 4, pointerEvents: "none", zIndex: 2 }}>
@@ -397,7 +397,55 @@ export default function SequenceView({
       )}
 
 
-      {drawer && <Drawer data={drawer} item={items.find((i) => i.id === drawer.itemId)} TODAY={TODAY} onSetStatus={onSetStatus} onSave={saveLog} onDelete={delLog} onClose={() => setDrawer(null)} onCopy={copyYesterday} uploadPhotos={uploadPhotos} aiTidy={aiTidy} canEdit={canEdit} />}
+      {quick && <QuickLog q={quick} log={logMap[`${quick.itemId}|${quick.date}`]} item={items.find((i) => i.id === quick.itemId)} planned={quick.date > TODAY} onSave={saveLog} onDelete={delLog} onClose={() => setQuick(null)} uploadPhotos={uploadPhotos} />}
+    </div>
+  );
+}
+
+/* ── 行事曆式快速記錄 popover（點格子直接打字＋上傳照片） ── */
+function QuickLog({ q, log, item, planned, onSave, onDelete, onClose, uploadPhotos }) {
+  const [text, setText] = useState(log ? (planned ? (log.next || "") : (log.done || "")) : "");
+  const [photos, setPhotos] = useState(log?.photos || []);
+  const [busy, setBusy] = useState(false);
+  const [viewImg, setViewImg] = useState(null);
+  const taRef = useRef(null);
+  const fileRef = useRef(null);
+  useEffect(() => { taRef.current?.focus(); }, []);
+  const addPhotos = async (files) => {
+    const imgs = Array.from(files).filter((x) => x.type.startsWith("image/"));
+    if (!imgs.length || !uploadPhotos) return;
+    setBusy(true);
+    try { const urls = await uploadPhotos(imgs); setPhotos((p) => [...p, ...urls]); } catch (e) { alert("上傳失敗：" + (e?.message || e)); }
+    setBusy(false);
+  };
+  const save = () => {
+    const base = log ? { ...log } : { itemId: q.itemId, date: q.date, done: "", issue: "", next: "", prog: 0, photos: [] };
+    onSave({ ...base, [planned ? "next" : "done"]: text.trim(), photos });
+  };
+  // 視窗內定位（靠近點擊位置、避免超出邊界）
+  const W = 320, left = Math.max(12, Math.min((q.x || 200) - W / 2, window.innerWidth - W - 12)), top = Math.min((q.y || 120) + 14, window.innerHeight - 320);
+  return (
+    <div onMouseDown={onClose} style={{ position: "fixed", inset: 0, zIndex: 1000 }}>
+      <div onMouseDown={(e) => e.stopPropagation()} onPaste={(e) => e.clipboardData?.files?.length && addPhotos(e.clipboardData.files)} style={{ position: "fixed", left, top, width: W, background: "#fff", border: `1px solid ${C.line}`, borderRadius: 14, boxShadow: "0 12px 40px rgba(20,24,33,.22)", padding: 14 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+          <span style={{ width: 9, height: 9, borderRadius: 5, background: (WS[item?.status] || WS.pending).bar, flexShrink: 0 }} />
+          <div style={{ fontSize: 14, fontWeight: 600, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{item?.name}</div>
+          <span style={{ fontSize: 12, color: C.sub }}>{q.date.slice(5).replace("-", "/")}{planned ? " 預排" : ""}</span>
+          <button onClick={onClose} style={{ border: "none", background: "none", fontSize: 20, color: C.faint, cursor: "pointer", lineHeight: 1 }}>×</button>
+        </div>
+        <textarea ref={taRef} rows={3} value={text} onChange={(e) => setText(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) save(); }} placeholder={planned ? "預計做什麼…（可貼上截圖）" : "今天做了什麼…（可貼上截圖）"} style={{ width: "100%", boxSizing: "border-box", border: `1px solid ${C.line}`, borderRadius: 9, fontSize: 14, padding: 9, resize: "vertical", outline: "none", fontFamily: "inherit" }} />
+        <div style={{ display: "flex", gap: 7, flexWrap: "wrap", margin: "10px 0" }}>
+          {photos.map((p, i) => <div key={i} style={{ position: "relative" }}><img src={p} alt="" onClick={() => setViewImg(p)} style={{ width: 52, height: 52, objectFit: "cover", borderRadius: 7, border: `1px solid ${C.line}`, cursor: "zoom-in" }} /><button onClick={() => setPhotos(photos.filter((_, x) => x !== i))} style={{ position: "absolute", top: -6, right: -6, width: 17, height: 17, borderRadius: 9, border: "none", background: "#e11d48", color: "#fff", fontSize: 11, cursor: "pointer" }}>×</button></div>)}
+          <button onClick={() => fileRef.current?.click()} title="上傳照片" style={{ width: 52, height: 52, borderRadius: 7, border: `1px dashed ${C.line}`, background: C.soft, fontSize: 20, color: C.faint, cursor: "pointer" }}>＋</button>
+          <input ref={fileRef} type="file" accept="image/*" multiple style={{ display: "none" }} onChange={(e) => addPhotos(e.target.files)} />
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          {log?.id && <button onClick={() => onDelete(log.id)} style={{ border: "none", background: "none", color: "#e11d48", fontSize: 13, cursor: "pointer" }}>刪除</button>}
+          <div style={{ flex: 1, fontSize: 11, color: C.faint }}>{busy ? "上傳中…" : "⌘+Enter 儲存"}</div>
+          <button onClick={save} disabled={busy} style={{ border: "none", background: ACCENT, color: "#fff", borderRadius: 9, padding: "8px 20px", fontSize: 14, fontWeight: 600, cursor: busy ? "wait" : "pointer" }}>儲存</button>
+        </div>
+      </div>
+      {viewImg && <div onClick={(e) => { e.stopPropagation(); setViewImg(null); }} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.88)", zIndex: 1200, display: "flex", alignItems: "center", justifyContent: "center", padding: 20, cursor: "zoom-out" }}><img src={viewImg} alt="" style={{ maxWidth: "95%", maxHeight: "95%", objectFit: "contain", borderRadius: 8 }} /></div>}
     </div>
   );
 }
