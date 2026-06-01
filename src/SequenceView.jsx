@@ -19,7 +19,7 @@ const TOTAL_WEEKS = 16, TOTAL_DAYS = TOTAL_WEEKS * 7;
 const LABEL_W = 168, DAY_PXD = 44, WEEK_PXD = 12;
 const ROW_H = 40, ROW_H_OPEN = 116, CARD_W = 150, MAX_OPEN = 3;
 // v2 胖格子日視圖
-const DAY_W = 150, ROW_FAT = 44, ROW_THIN = 34;  // ROW_FAT＝有紀錄列的「最小」高度；照片/多行會自然把該列撐高
+const DAY_W = 150, ROW_FAT = 34, ROW_THIN = 34;  // 有紀錄列最小高度＝細列(一致)；照片/多行才自然撐高
 const ACTIVE = ["doing", "wait", "issue"]; // 置頂組（正在動的工序）
 
 const WS = {
@@ -289,7 +289,7 @@ export default function SequenceView({
                     <div style={{ paddingLeft: 17 }}>
                       {planned && <span style={{ fontSize: 11, fontWeight: 600, color: ACCENT, marginRight: 6 }}>預排</span>}
                       {!planned && log.prog > 0 && <span style={{ fontSize: 11, color: C.sub, marginRight: 6, fontWeight: 600 }}>{log.prog}%</span>}
-                      <span style={{ fontSize: 13, color: C.text, lineHeight: 1.5 }}>{planned ? log.next : log.done}</span>
+                      <span style={{ fontSize: 13, color: C.text, lineHeight: 1.5 }}>{planned ? (log.next || log.done) : (log.done || log.next)}</span>
                       {log.issue && <div style={{ fontSize: 12, color: RED, marginTop: 3 }}>⚠ {log.issue}</div>}
                       {log.photos?.length > 0 && <div style={{ display: "flex", gap: 5, marginTop: 6, flexWrap: "wrap" }}>{log.photos.slice(0, 4).map((p, k) => <img key={k} src={p} alt="" onClick={(e) => { e.stopPropagation(); setViewImg(p); }} style={{ width: 54, height: 54, borderRadius: 6, objectFit: "cover" }} />)}</div>}
                     </div>
@@ -385,7 +385,7 @@ export default function SequenceView({
                           {l.photos?.[0] && <img src={l.photos[0]} alt="" style={{ width: 40, height: 40, borderRadius: 5, objectFit: "cover", flexShrink: 0 }} />}
                           <div style={{ minWidth: 0 }}>
                             <div style={{ fontSize: 11, color: planned ? ACCENT : C.sub, fontWeight: 600 }}>{l.date.slice(5).replace("-", "/")}{planned ? " 預排" : ""}</div>
-                            <div style={{ fontSize: 12, fontWeight: 600, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden", lineHeight: 1.35 }}>{planned ? l.next : l.done}</div>
+                            <div style={{ fontSize: 12, fontWeight: 600, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden", lineHeight: 1.35 }}>{planned ? (l.next || l.done) : (l.done || l.next)}</div>
                           </div>
                         </div>
                         {(l.issue || (l.photos?.length || 0) > 1) && (
@@ -440,7 +440,7 @@ export default function SequenceView({
                                 <span style={{ fontSize: 10, color: C.sub, fontWeight: 600 }}>{log.prog}%</span>
                               </div>
                             )}
-                            <div style={{ fontSize: 12, lineHeight: 1.45, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{planned ? log.next : log.done}</div>
+                            <div style={{ fontSize: 12, lineHeight: 1.45, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{planned ? (log.next || log.done) : (log.done || log.next)}</div>
                             {log.issue && <div style={{ fontSize: 11, color: RED, display: "-webkit-box", WebkitLineClamp: 1, WebkitBoxOrient: "vertical", overflow: "hidden" }}>⚠ {log.issue}</div>}
                             {(log.photos?.length > 0) && <div style={{ display: "flex", gap: 4, marginTop: "auto" }}>{log.photos.slice(0, 2).map((p, k) => <img key={k} src={p} alt="" title="點擊放大" onMouseDown={(e) => e.stopPropagation()} onClick={(e) => { e.stopPropagation(); setViewImg(p); }} style={{ width: 38, height: 38, borderRadius: 5, objectFit: "cover", cursor: "zoom-in" }} />)}{log.photos.length > 2 && <span style={{ fontSize: 11, color: C.faint, alignSelf: "flex-end" }}>+{log.photos.length - 2}</span>}</div>}
                           </div>
@@ -539,7 +539,7 @@ export default function SequenceView({
 
 /* ── 行事曆式快速記錄 popover（點格子直接打字＋上傳照片） ── */
 function QuickLog({ q, log, item, planned, onSave, onDelete, onClose, uploadPhotos }) {
-  const [text, setText] = useState(log ? (planned ? (log.next || "") : (log.done || "")) : "");
+  const [text, setText] = useState(log ? (planned ? (log.next || log.done || "") : (log.done || log.next || "")) : "");
   const [photos, setPhotos] = useState(log?.photos || []);
   const [busy, setBusy] = useState(false);
   const [viewImg, setViewImg] = useState(null);
