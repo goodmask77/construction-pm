@@ -2,7 +2,16 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { uploadPhoto, deletePhotoFile } from "./supa.js";
 import SequenceView from "./SequenceView.jsx";
 
-const ACCENT = "#E8B84B";
+// ── DESIGN TOKENS (Linear/Jira-premium 科技感) ──────────────────────────
+const ACCENT  = "#2563EB"; // 科技藍 — 全系統互動主色
+const PRIMARY = "#1E293B"; // 深藍灰 — 強調/實心按鈕
+const BG      = "#F8FAFC"; // 背景
+const SURFACE = "#FFFFFF"; // 卡片/表面
+const BORDER  = "#E2E8F0"; // 邊框
+const TEXT    = "#0F172A"; // 主文字
+const SUB     = "#64748B"; // 次文字
+const ACCENT_SOFT = "#EFF4FF"; // 科技藍淡底
+const GOLD    = "#E8B84B"; // 僅 GROUN:D Logo 使用
 const ADMIN_USER = "goodmask77"; // 僅此帳號可編輯（不顯示於介面）
 const API_URL = "https://api.anthropic.com/v1/messages";
 const MODEL = "claude-sonnet-4-20250514";
@@ -153,10 +162,10 @@ const INITIAL_CATEGORIES = [
 ];
 
 const STATUS_MAP = {
-  pending:     { label: "待開工", color: "#6b7280" },
+  pending:     { label: "待開工", color: "#64748B" },
   inprogress:  { label: "進行中", color: "#4b9fe8" },
-  done:        { label: "完工",   color: "#4be87a" },
-  issue:       { label: "有問題", color: "#e85c4b" },
+  done:        { label: "完工",   color: "#16A34A" },
+  issue:       { label: "有問題", color: "#DC2626" },
   hold:        { label: "暫停",   color: "#e8954b" },
 };
 
@@ -571,13 +580,13 @@ export default function App() {
   };
 
   if (!cats) return (
-    <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100vh", background: "#f4f5f7", color: "#e8b84b", fontFamily: "'Noto Sans TC', sans-serif", fontSize: 16 }}>
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100vh", background: BG, color: SUB, fontFamily: "-apple-system,'PingFang TC','Noto Sans TC',system-ui,sans-serif", fontSize: 15 }}>
       載入中…
     </div>
   );
 
   return (
-    <div style={{ minHeight: "100vh", background: "#f0f2f5", color: "#1a1d2e", fontFamily: "'Noto Sans TC', sans-serif", fontSize: 14 }}>
+    <div style={{ minHeight: "100vh", background: BG, color: TEXT, fontFamily: "-apple-system,'PingFang TC','Noto Sans TC',system-ui,'Segoe UI',sans-serif", fontSize: 14, letterSpacing: 0.1 }}>
       {/* TOP NAV */}
       <TopNav view={view} setView={setView} saving={saving} totalEstimated={totalEstimated} totalActual={totalActual} doneCount={doneCount} catCount={cats.length} onAI={() => setShowGlobalAI(true)} userName={userName} isAdmin={isAdmin} stalledCount={stalledItems.length} onRoleClick={() => setShowLogin(true)} onActivityLog={() => setShowActivityLog(true)} activityCount={activityLog.length} />
 
@@ -656,11 +665,11 @@ function useConfirm() {
   const confirm = (msg) => new Promise(resolve => setState({ msg, resolve }));
   const Dialog = state ? (
     <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center" }}>
-      <div style={{ background: "#f0f1f4", border: "1px solid #2a2f40", borderRadius: 14, padding: "24px 22px", maxWidth: 320, width: "90%", textAlign: "center" }}>
-        <div style={{ fontSize: 15, color: "#111827", marginBottom: 20, lineHeight: 1.6 }}>{state.msg}</div>
+      <div style={{ background: "#F1F5F9", border: "1px solid #E2E8F0", borderRadius: 14, padding: "24px 22px", maxWidth: 320, width: "90%", textAlign: "center" }}>
+        <div style={{ fontSize: 15, color: "#0F172A", marginBottom: 20, lineHeight: 1.6 }}>{state.msg}</div>
         <div style={{ display: "flex", gap: 10, justifyContent: "center" }}>
-          <button onClick={() => { state.resolve(false); setState(null); }} style={{ flex: 1, padding: "9px 0", background: "#d8dae3", border: "1px solid #3a3f50", borderRadius: 8, color: "#6b7280", cursor: "pointer", fontSize: 14 }}>取消</button>
-          <button onClick={() => { state.resolve(true); setState(null); }} style={{ flex: 1, padding: "9px 0", background: "#fff0ee", border: "1px solid rgba(232,92,75,0.4)", borderRadius: 8, color: "#e85c4b", cursor: "pointer", fontSize: 14, fontWeight: 700 }}>確定刪除</button>
+          <button onClick={() => { state.resolve(false); setState(null); }} style={{ flex: 1, padding: "9px 0", background: "#E2E8F0", border: "1px solid #E2E8F0", borderRadius: 8, color: "#64748B", cursor: "pointer", fontSize: 14 }}>取消</button>
+          <button onClick={() => { state.resolve(true); setState(null); }} style={{ flex: 1, padding: "9px 0", background: "#fff0ee", border: "1px solid rgba(232,92,75,0.4)", borderRadius: 8, color: "#DC2626", cursor: "pointer", fontSize: 14, fontWeight: 600 }}>確定刪除</button>
         </div>
       </div>
     </div>
@@ -673,18 +682,18 @@ function KPICard({ label, val, color, tip }) {
   const [show, setShow] = useState(false);
   return (
     <div
-      style={{ background: "#f7f8fa", border: "1px solid #e4e6ef", borderRadius: 8, padding: "8px 10px", position: "relative", cursor: "help" }}
+      style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: 10, padding: "12px 14px", position: "relative", cursor: "help" }}
       onMouseEnter={() => setShow(true)}
       onMouseLeave={() => setShow(false)}
       onClick={() => setShow(s => !s)}
     >
-      <div style={{ fontSize: 10, color: "#6b7280", marginBottom: 2, display: "flex", alignItems: "center", gap: 3 }}>
+      <div style={{ fontSize: 12, color: SUB, marginBottom: 5, display: "flex", alignItems: "center", gap: 4, fontWeight: 500 }}>
         {label}
-        <span style={{ fontSize: 9, color: "#9ca3af", border: "1px solid #4a5070", borderRadius: "50%", width: 11, height: 11, display: "inline-flex", alignItems: "center", justifyContent: "center", lineHeight: 1 }}>?</span>
+        <span style={{ fontSize: 9, color: "#CBD5E1", border: "1px solid #CBD5E1", borderRadius: "50%", width: 12, height: 12, display: "inline-flex", alignItems: "center", justifyContent: "center", lineHeight: 1 }}>?</span>
       </div>
-      <div style={{ fontFamily: "monospace", fontSize: 13, fontWeight: 700, color }}>{val}</div>
+      <div style={{ fontVariantNumeric: "tabular-nums", fontSize: 18, fontWeight: 600, color, letterSpacing: -0.3 }}>{val}</div>
       {show && (
-        <div style={{ position: "absolute", top: "100%", left: 0, marginTop: 4, background: "#f4f5f7", border: "1px solid #2a2f40", borderRadius: 8, padding: "8px 10px", fontSize: 11, color: "#1a1d2e", zIndex: 300, whiteSpace: "nowrap", maxWidth: 240, lineHeight: 1.6, boxShadow: "0 4px 16px rgba(0,0,0,0.5)" }}>
+        <div style={{ position: "absolute", top: "100%", left: 0, marginTop: 6, background: PRIMARY, border: "none", borderRadius: 8, padding: "9px 11px", fontSize: 12, color: "#E2E8F0", zIndex: 300, whiteSpace: "normal", width: 240, lineHeight: 1.6, boxShadow: "0 8px 24px rgba(15,23,42,0.18)" }}>
           {tip}
         </div>
       )}
@@ -696,51 +705,51 @@ function KPICard({ label, val, color, tip }) {
 function TopNav({ view, setView, saving, totalEstimated, totalActual, doneCount, catCount, onAI, userName, isAdmin, stalledCount, onRoleClick, onActivityLog, activityCount }) {
   const diff = totalActual - totalEstimated;
   return (
-    <div style={{ background: "#ffffff", borderBottom: "1px solid #2a2f40", padding: "12px 16px", position: "sticky", top: 0, zIndex: 100 }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 10 }}>
+    <div style={{ background: SURFACE, borderBottom: `1px solid ${BORDER}`, padding: "14px 20px 0", position: "sticky", top: 0, zIndex: 100 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 14 }}>
         <div>
-          <div style={{ fontSize: 11, color: ACCENT, letterSpacing: 2, textTransform: "uppercase", fontFamily: "monospace" }}>宏匯 GROUN:D</div>
-          <div style={{ fontSize: 18, fontWeight: 900, color: "#111827", lineHeight: 1.2 }}>工程管理系統</div>
+          <div style={{ fontSize: 11, color: GOLD, letterSpacing: 2.5, textTransform: "uppercase", fontWeight: 600, fontFamily: "'SF Mono',ui-monospace,monospace" }}>宏匯 GROUN:D</div>
+          <div style={{ fontSize: 17, fontWeight: 600, color: TEXT, lineHeight: 1.25, letterSpacing: -0.2 }}>工程管理系統</div>
         </div>
         <div style={{ flex: 1 }} />
-        {saving && <div style={{ fontSize: 11, color: "#6b7280", fontFamily: "monospace" }}>同步中…</div>}
+        {saving && <div style={{ fontSize: 11, color: SUB }}>同步中…</div>}
         {stalledCount > 0 && (
-          <div style={{ background: "#fff0ee", border: "1px solid #fca5a5", borderRadius: 20, padding: "4px 10px", fontSize: 11, color: "#dc2626", fontWeight: 700, cursor: "pointer" }} onClick={() => setView && setView("overview")}>
-            ⏰ {stalledCount} 項卡關超過3天
+          <div style={{ background: "#FEF2F2", border: "1px solid #FECACA", borderRadius: 7, padding: "4px 10px", fontSize: 12, color: "#DC2626", fontWeight: 500, cursor: "pointer", display: "flex", alignItems: "center", gap: 5 }} onClick={() => setView && setView("overview")}>
+            <span style={{ width: 6, height: 6, borderRadius: 3, background: "#DC2626" }} />{stalledCount} 項卡關超過3天
           </div>
         )}
         {userName ? (
-          <div onClick={onRoleClick} title="點擊可切換帳號 / 登出" style={{ display: "flex", alignItems: "center", gap: 6, background: "#f7f8fa", border: "1px solid #e4e6ef", borderRadius: 20, padding: "4px 12px", cursor: "pointer" }}>
-            <span style={{ fontSize: 14 }}>👤</span>
-            <span style={{ fontSize: 12, color: "#374151", fontWeight: 600 }}>{userName}</span>
+          <div onClick={onRoleClick} title="點擊可切換帳號 / 登出" style={{ display: "flex", alignItems: "center", gap: 7, background: BG, border: `1px solid ${BORDER}`, borderRadius: 8, padding: "5px 12px", cursor: "pointer" }}>
+            <span style={{ width: 22, height: 22, borderRadius: 11, background: ACCENT_SOFT, color: ACCENT, fontSize: 11, fontWeight: 600, display: "flex", alignItems: "center", justifyContent: "center" }}>{(userName[0] || "?").toUpperCase()}</span>
+            <span style={{ fontSize: 13, color: PRIMARY, fontWeight: 500 }}>{userName}</span>
           </div>
         ) : (
-          <button onClick={onRoleClick} style={{ display: "flex", alignItems: "center", gap: 6, background: "#111827", border: "none", borderRadius: 20, padding: "6px 14px", cursor: "pointer", color: "#fff", fontSize: 12, fontWeight: 700 }}>
-            🔒 登入以編輯
+          <button onClick={onRoleClick} style={{ display: "flex", alignItems: "center", gap: 6, background: PRIMARY, border: "none", borderRadius: 8, padding: "7px 14px", cursor: "pointer", color: "#fff", fontSize: 13, fontWeight: 500 }}>
+            登入以編輯
           </button>
         )}
-        <button onClick={onActivityLog} title="活動記錄" style={{ background: "#f7f8fa", border: "1px solid #e4e6ef", color: "#374151", borderRadius: 8, padding: "7px 12px", cursor: "pointer", fontSize: 12, display:"flex", alignItems:"center", gap:4 }}>
-          📋{activityCount > 0 ? <span style={{fontSize:10,background:"#374151",color:"#fff",borderRadius:10,padding:"0 5px"}}>{activityCount}</span> : ""}
+        <button onClick={onActivityLog} title="活動記錄" style={{ background: SURFACE, border: `1px solid ${BORDER}`, color: SUB, borderRadius: 8, padding: "7px 11px", cursor: "pointer", fontSize: 13, display:"flex", alignItems:"center", gap:5 }}>
+          活動{activityCount > 0 ? <span style={{fontSize:10,background:ACCENT_SOFT,color:ACCENT,fontWeight:600,borderRadius:10,padding:"1px 6px"}}>{activityCount}</span> : ""}
         </button>
-        <button onClick={onAI} style={{ background: "#fff3cc", border: "1px solid rgba(232,184,75,0.4)", color: "#1a1d2e", borderRadius: 8, padding: "7px 14px", cursor: "pointer", fontSize: 13, fontWeight: 700 }}>
-          🤖 AI顧問
+        <button onClick={onAI} style={{ background: ACCENT, border: "none", color: "#fff", borderRadius: 8, padding: "7px 16px", cursor: "pointer", fontSize: 13, fontWeight: 500 }}>
+          AI 顧問
         </button>
       </div>
       {/* KPI row */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 8, marginBottom: 10 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 10, marginBottom: 14 }}>
         {[
-          { label: "預估總額", val: fmt(totalEstimated), color: ACCENT, tip: "各細項「預估數量×預估單價＋預估人工」加總，來自估價單" },
-          { label: "實際記錄", val: totalActual > 0 ? fmt(totalActual) : "尚未填入", color: totalActual > 0 ? (diff > 0 ? "#e85c4b" : "#4be87a") : "#6b7280", tip: "各細項「實際數量×實際單價＋人數×日薪×天數」加總，施工中逐筆填入" },
-          { label: "差異", val: totalActual > 0 ? (diff >= 0 ? "+" : "") + fmt(diff) : "-", color: diff > 0 ? "#e85c4b" : "#4be87a", tip: totalActual > 0 ? (diff > 0 ? "⚠️ 實際超出預估 " + fmt(Math.abs(diff)) : "✅ 尚有餘額 " + fmt(Math.abs(diff))) : "實際金額填入後自動計算" },
-          { label: "完工項目", val: `${doneCount} / ${catCount}`, color: "#4b9fe8", tip: "狀態標示為「完工」的大項數" },
+          { label: "預估總額", val: fmt(totalEstimated), color: TEXT, tip: "各細項「預估數量×預估單價＋預估人工」加總，來自估價單" },
+          { label: "實際記錄", val: totalActual > 0 ? fmt(totalActual) : "尚未填入", color: totalActual > 0 ? TEXT : SUB, tip: "各細項「實際數量×實際單價＋人數×日薪×天數」加總，施工中逐筆填入" },
+          { label: "差異", val: totalActual > 0 ? (diff >= 0 ? "+" : "") + fmt(diff) : "—", color: totalActual > 0 ? (diff > 0 ? "#DC2626" : "#16A34A") : SUB, tip: totalActual > 0 ? (diff > 0 ? "實際超出預估 " + fmt(Math.abs(diff)) : "尚有餘額 " + fmt(Math.abs(diff))) : "實際金額填入後自動計算" },
+          { label: "完工項目", val: `${doneCount} / ${catCount}`, color: ACCENT, tip: "狀態標示為「完工」的大項數" },
         ].map(k => (
           <KPICard key={k.label} label={k.label} val={k.val} color={k.color} tip={k.tip} />
         ))}
       </div>
       {/* view tabs */}
-      <div style={{ display: "flex", gap: 6 }}>
+      <div style={{ display: "flex", gap: 2 }}>
         {[["owner","業主視角"],["overview","總覽"],["kanban","看板"],["list","明細"],["gantt","工序"],["files","檔案庫"],["advisor","AI設定"],...(isAdmin?[["accounts","帳號"]]:[])].map(([v,l]) => (
-          <button key={v} onClick={() => setView(v)} style={{ padding: "5px 14px", borderRadius: 6, border: "none", cursor: "pointer", fontSize: 12, fontWeight: 600, background: view === v ? ACCENT : "#d8dae3", color: view === v ? "#f4f5f7" : "#6b7280" }}>{l}</button>
+          <button key={v} onClick={() => setView(v)} style={{ padding: "9px 16px", border: "none", borderBottom: view === v ? `2px solid ${ACCENT}` : "2px solid transparent", marginBottom: -1, cursor: "pointer", fontSize: 14, fontWeight: view === v ? 600 : 500, background: "transparent", color: view === v ? ACCENT : SUB, transition: "color .15s" }}>{l}</button>
         ))}
       </div>
     </div>
@@ -792,9 +801,9 @@ function CustomInput({ value, type, onCommit }) {
     return <input autoFocus value={local} onChange={e=>setLocal(e.target.value)}
       onBlur={()=>{ onCommit(isNum ? (parseFloat(local)||0) : local); setEditing(false); }}
       onKeyDown={e=>{ if(e.key==="Enter"||e.key==="Escape") e.target.blur(); }}
-      style={{ width:"100%", border:"none", outline:"2px solid "+ACCENT, borderRadius:4, padding:"2px 4px", fontSize:12.5, fontFamily:"'Noto Sans TC',sans-serif", background:"#fffbf0" }} />;
+      style={{ width:"100%", border:"none", outline:"2px solid "+ACCENT, borderRadius:4, padding:"2px 4px", fontSize:12.5, fontFamily:"'Noto Sans TC',sans-serif", background:"#EFF4FF" }} />;
   }
-  return <div onClick={()=>{ setLocal(value ?? ""); setEditing(true); }} style={{ width:"100%", cursor:"text", minHeight:22, color: (value!==undefined&&value!=="")?"#111827":"#c0c4d0", padding:"2px 2px" }}>{display || "—"}</div>;
+  return <div onClick={()=>{ setLocal(value ?? ""); setEditing(true); }} style={{ width:"100%", cursor:"text", minHeight:22, color: (value!==undefined&&value!=="")?"#0F172A":"#CBD5E1", padding:"2px 2px" }}>{display || "—"}</div>;
 }
 function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols }) {
   const [newColLabel, setNewColLabel] = useState("");
@@ -915,7 +924,7 @@ function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols 
 
   const cellStyle = (col) => ({
     minWidth: col.w, maxWidth: col.w, width: col.w,
-    padding: "0 8px", borderRight: "1px solid #e4e6ef",
+    padding: "0 8px", borderRight: "1px solid #E2E8F0",
     fontSize: 12.5, overflow: "hidden", whiteSpace: "nowrap",
     textOverflow: "ellipsis", height: 38, display: "flex", alignItems: "center",
     flexShrink: 0,
@@ -936,7 +945,7 @@ function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols 
           onChange={e => updateItem(catId, itemId, field, e.target.value)}
           onClick={openPicker}
           onFocus={openPicker}
-          style={{ width: "100%", border: "none", outline: "none", background: "transparent", cursor: "pointer", fontSize: 12.5, fontFamily: "'Noto Sans TC', sans-serif", color: iso ? "#111827" : "#c0c4d0", padding: "2px 2px", colorScheme: "light" }}
+          style={{ width: "100%", border: "none", outline: "none", background: "transparent", cursor: "pointer", fontSize: 12.5, fontFamily: "'Noto Sans TC', sans-serif", color: iso ? "#0F172A" : "#CBD5E1", padding: "2px 2px", colorScheme: "light" }}
         />
       );
     }
@@ -952,13 +961,13 @@ function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols 
             setEditCell(null);
           }}
           onKeyDown={e => { if (e.key === "Enter" || e.key === "Escape") e.target.blur(); }}
-          style={{ width: "100%", border: "none", outline: "2px solid " + ACCENT, borderRadius: 4, padding: "2px 4px", fontSize: 12.5, fontFamily: "'Noto Sans TC', sans-serif", background: "#fffbf0" }}
+          style={{ width: "100%", border: "none", outline: "2px solid " + ACCENT, borderRadius: 4, padding: "2px 4px", fontSize: 12.5, fontFamily: "'Noto Sans TC', sans-serif", background: "#EFF4FF" }}
         />
       );
     }
     return (
       <div onClick={() => { setLocal(String(value ?? "")); setEditCell(key); }}
-        style={{ width: "100%", cursor: "text", minHeight: 22, color: value ? "#111827" : "#c0c4d0", padding: "2px 2px", borderRadius: 3, transition: "background 0.1s" }}
+        style={{ width: "100%", cursor: "text", minHeight: 22, color: value ? "#0F172A" : "#CBD5E1", padding: "2px 2px", borderRadius: 3, transition: "background 0.1s" }}
         onMouseEnter={e => e.currentTarget.style.background="#f0f7ff"}
         onMouseLeave={e => e.currentTarget.style.background="transparent"}
       >
@@ -981,20 +990,20 @@ function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols 
     <div style={{ paddingTop: 12 }}>
       {/* toolbar */}
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10, flexWrap: "wrap" }}>
-        <div style={{ fontSize: 13, fontWeight: 700, color: "#111827" }}>總覽</div>
+        <div style={{ fontSize: 16, fontWeight: 600, color: TEXT, letterSpacing: -0.2 }}>總覽</div>
         <div style={{ flex: 1 }} />
         {/* filter */}
-        <div style={{ display: "flex", gap: 4 }}>
+        <div style={{ display: "flex", gap: 2 }}>
           {[["all","全部"], ...Object.entries(STATUS_MAP).map(([k,v]) => [k, v.label])].map(([k,l]) => (
-            <button key={k} onClick={() => setFilterStatus(k)} style={{ padding: "3px 10px", borderRadius: 20, border: "1px solid #e4e6ef", fontSize: 11, cursor: "pointer", background: filterStatus === k ? ACCENT : "#f7f8fa", color: filterStatus === k ? "#1a1d2e" : "#6b7280", fontWeight: filterStatus === k ? 700 : 400 }}>{l}</button>
+            <button key={k} onClick={() => setFilterStatus(k)} style={{ padding: "5px 11px", borderRadius: 7, border: "1px solid transparent", fontSize: 12.5, cursor: "pointer", background: filterStatus === k ? ACCENT_SOFT : "transparent", color: filterStatus === k ? ACCENT : SUB, fontWeight: filterStatus === k ? 600 : 500 }}>{l}</button>
           ))}
         </div>
         {/* col toggle */}
         <div style={{ position: "relative" }}>
-          <button onClick={() => setShowColMenu(s => !s)} style={{ padding: "4px 10px", borderRadius: 6, border: "1px solid #e4e6ef", fontSize: 11, cursor: "pointer", background: "#f7f8fa", color: "#6b7280" }}>欄位 ⚙</button>
+          <button onClick={() => setShowColMenu(s => !s)} style={{ padding: "6px 12px", borderRadius: 7, border: `1px solid ${BORDER}`, fontSize: 12.5, cursor: "pointer", background: SURFACE, color: SUB, fontWeight: 500 }}>欄位</button>
           {showColMenu && (
-            <div style={{ position: "absolute", right: 0, top: 30, background: "#ffffff", border: "1px solid #e4e6ef", borderRadius: 10, padding: "10px 14px", zIndex: 300, minWidth: 230, maxHeight: "72vh", overflowY: "auto", boxShadow: "0 4px 20px rgba(0,0,0,0.1)" }}>
-              <div style={{ fontSize: 11, color: "#6b7280", marginBottom: 8 }}>欄位（拖曳 ⠿ 排序 · 點名稱改名 · × 刪除）</div>
+            <div style={{ position: "absolute", right: 0, top: 30, background: "#ffffff", border: "1px solid #E2E8F0", borderRadius: 10, padding: "10px 14px", zIndex: 300, minWidth: 230, maxHeight: "72vh", overflowY: "auto", boxShadow: "0 4px 20px rgba(0,0,0,0.1)" }}>
+              <div style={{ fontSize: 11, color: "#64748B", marginBottom: 8 }}>欄位（拖曳 ⠿ 排序 · 點名稱改名 · × 刪除）</div>
               {cols.map(c => {
                 const isFixed = c.fixed;
                 return (
@@ -1003,13 +1012,13 @@ function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols 
                     onDragOver={e=>{ if(!isFixed && colDrag && colDrag!==c.id){ e.preventDefault(); } }}
                     onDrop={()=>{ if(!isFixed && colDrag) moveCol(colDrag, c.id); setColDrag(null); }}
                     onDragEnd={()=>setColDrag(null)}
-                    style={{ display:"flex", alignItems:"center", gap:6, marginBottom:5, fontSize:12, padding:"3px 2px", borderRadius:6, background: colDrag===c.id?"#fff7e0":"transparent" }}>
-                    <span style={{ color: isFixed?"#e4e6ef":"#cbd0d8", cursor: isFixed?"default":"grab", fontSize:13, flexShrink:0 }}>⠿</span>
+                    style={{ display:"flex", alignItems:"center", gap:6, marginBottom:5, fontSize:12, padding:"3px 2px", borderRadius:6, background: colDrag===c.id?"#EFF4FF":"transparent" }}>
+                    <span style={{ color: isFixed?"#E2E8F0":"#CBD5E1", cursor: isFixed?"default":"grab", fontSize:13, flexShrink:0 }}>⠿</span>
                     {setCustomCols
-                      ? <input value={c.label} onChange={e=>renameCol(c.id, e.target.value)} style={{ flex:1, border:"1px solid transparent", borderRadius:5, padding:"3px 6px", fontSize:12, fontFamily:"'Noto Sans TC',sans-serif", background:"transparent" }} onFocus={e=>e.target.style.border="1px solid #e4e6ef"} onBlur={e=>e.target.style.border="1px solid transparent"} />
+                      ? <input value={c.label} onChange={e=>renameCol(c.id, e.target.value)} style={{ flex:1, border:"1px solid transparent", borderRadius:5, padding:"3px 6px", fontSize:12, fontFamily:"'Noto Sans TC',sans-serif", background:"transparent" }} onFocus={e=>e.target.style.border="1px solid #E2E8F0"} onBlur={e=>e.target.style.border="1px solid transparent"} />
                       : <span style={{ flex:1, padding:"3px 6px" }}>{c.label}</span>}
-                    {c.type==="formula" && <span style={{ color:"#8a6d3b", flexShrink:0 }}>ƒ</span>}
-                    {isFixed ? <span style={{ fontSize:10, color:"#c0c4d0", flexShrink:0 }}>固定</span>
+                    {c.type==="formula" && <span style={{ color:"#64748B", flexShrink:0 }}>ƒ</span>}
+                    {isFixed ? <span style={{ fontSize:10, color:"#CBD5E1", flexShrink:0 }}>固定</span>
                       : (setCustomCols && <button onClick={()=>delCol(c.id)} title="刪除欄位" style={{ color:"#dc2626", background:"none", border:"none", cursor:"pointer", fontSize:14, lineHeight:1, flexShrink:0 }}>×</button>)}
                   </div>
                 );
@@ -1022,29 +1031,29 @@ function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols 
                       {COLS.filter(c => !c.fixed && !cols.some(e=>e.id===c.id)).map(c => <option key={c.id} value={c.id}>{c.label}</option>)}
                     </select>
                   )}
-                  <div style={{ fontSize:11, color:"#6b7280", fontWeight:700, marginTop:4 }}>新增自訂欄位</div>
+                  <div style={{ fontSize:11, color:"#64748B", fontWeight: 600, marginTop:4 }}>新增自訂欄位</div>
                   <input value={newColLabel} onChange={e=>setNewColLabel(e.target.value)} placeholder="新欄位名稱" style={{ ...inputStyle, padding:"5px 8px", fontSize:12 }} />
                   <select value={newColType} onChange={e=>setNewColType(e.target.value)} style={{ ...inputStyle, padding:"5px 8px", fontSize:12 }}>
                     <option value="money">金額</option><option value="number">數字</option><option value="text">文字</option><option value="formula">公式</option>
                   </select>
                   {newColType==="formula" && <input value={newColFormula} onChange={e=>setNewColFormula(e.target.value)} placeholder="例：estTotal*1.05 - paid" style={{ ...inputStyle, padding:"5px 8px", fontSize:12 }} />}
-                  <button onClick={addCustomCol} disabled={!newColLabel.trim()} style={{ background:newColLabel.trim()?ACCENT:"#e4e6ef", color:newColLabel.trim()?"#1a1d2e":"#9ca3af", border:"none", borderRadius:6, padding:"6px 0", fontWeight:700, cursor:newColLabel.trim()?"pointer":"not-allowed", fontSize:12 }}>＋ 新增欄位</button>
-                  {newColType==="formula" && <div style={{ fontSize:10, color:"#9ca3af", lineHeight:1.5 }}>可用變數：estTotal actTotal paid taxincl estQty estUnitPrice…，支援 + − * / ( )</div>}
+                  <button onClick={addCustomCol} disabled={!newColLabel.trim()} style={{ background:newColLabel.trim()?ACCENT:"#E2E8F0", color:newColLabel.trim()?"#ffffff":"#94A3B8", border:"none", borderRadius:6, padding:"6px 0", fontWeight: 600, cursor:newColLabel.trim()?"pointer":"not-allowed", fontSize:12 }}>＋ 新增欄位</button>
+                  {newColType==="formula" && <div style={{ fontSize:10, color:"#94A3B8", lineHeight:1.5 }}>可用變數：estTotal actTotal paid taxincl estQty estUnitPrice…，支援 + − * / ( )</div>}
                 </div>
-              ) : <div style={{ fontSize:11, color:"#9ca3af", marginTop:6 }}>需編輯權限才能管理欄位</div>}
+              ) : <div style={{ fontSize:11, color:"#94A3B8", marginTop:6 }}>需編輯權限才能管理欄位</div>}
             </div>
           )}
         </div>
       </div>
 
       {/* table */}
-      <div style={{ overflow: "auto", maxHeight: "calc(100vh - 215px)", borderRadius: 12, border: "1px solid #e4e6ef", background: "#ffffff" }}>
+      <div style={{ overflow: "auto", maxHeight: "calc(100vh - 215px)", borderRadius: 12, border: `1px solid ${BORDER}`, background: SURFACE }}>
         <div style={{ minWidth: totalW }}>
           {/* header */}
-          <div style={{ display: "flex", background: "#f7f8fa", borderBottom: "2px solid #e4e6ef", position: "sticky", top: 0, zIndex: 10 }}>
-            <div style={{ width: 24, flexShrink: 0, borderRight: "1px solid #e4e6ef" }} />
+          <div style={{ display: "flex", background: BG, borderBottom: `1px solid ${BORDER}`, position: "sticky", top: 0, zIndex: 10 }}>
+            <div style={{ width: 24, flexShrink: 0, borderRight: `1px solid ${BORDER}` }} />
             {orderedCols.map(col => (
-              <div key={col.id} style={{ ...cellStyle(col), position: "relative", fontWeight: 700, fontSize: 11, color: col.type==="formula"?"#8a6d3b":"#6b7280", letterSpacing: 0.5, background: "#f7f8fa" }}>
+              <div key={col.id} style={{ ...cellStyle(col), position: "relative", fontWeight: 500, fontSize: 12, color: SUB, letterSpacing: 0.2, background: BG }}>
                 <span style={{ overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{col.label}{col.type==="formula" && <span style={{ fontSize:9, marginLeft:3 }}>ƒ</span>}</span>
                 {setCustomCols && <div onMouseDown={e=>startColResize(col.id, e)} title="拖曳調整欄寬" style={{ position:"absolute", right:-3, top:0, bottom:0, width:7, cursor:"col-resize", zIndex:2 }} />}
               </div>
@@ -1060,10 +1069,10 @@ function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols 
             return (
               <div key={catId}>
                 {/* cat group header */}
-                <div style={{ display: "flex", alignItems: "center", background: "#f0f2f5", borderBottom: "1px solid #e4e6ef", padding: "0 8px", height: 32, gap: 10, position: "sticky", top: 40, zIndex: 9 }}>
-                  <div style={{ fontSize: 12, fontWeight: 700, color: "#374151", flex: 1 }}>{group.name}</div>
-                  <div style={{ fontSize: 11, color: "#6b7280" }}>預估 <span style={{ color: ACCENT, fontFamily: "monospace" }}>{fmt(groupEst)}</span></div>
-                  {groupAct > 0 && <div style={{ fontSize: 11, color: "#6b7280" }}>實際 <span style={{ color: groupAct > groupEst ? "#e85c4b" : "#22c55e", fontFamily: "monospace" }}>{fmt(groupAct)}</span></div>}
+                <div style={{ display: "flex", alignItems: "center", background: BG, borderBottom: `1px solid ${BORDER}`, borderLeft: `2px solid ${ACCENT}`, padding: "0 10px", height: 36, gap: 12, position: "sticky", top: 40, zIndex: 9 }}>
+                  <div style={{ fontSize: 13.5, fontWeight: 600, color: PRIMARY, flex: 1, letterSpacing: -0.1 }}>{group.name}</div>
+                  <div style={{ fontSize: 12, color: SUB }}>預估 <span style={{ color: TEXT, fontVariantNumeric: "tabular-nums", fontWeight: 500 }}>{fmt(groupEst)}</span></div>
+                  {groupAct > 0 && <div style={{ fontSize: 12, color: SUB }}>實際 <span style={{ color: groupAct > groupEst ? "#DC2626" : "#16A34A", fontVariantNumeric: "tabular-nums", fontWeight: 500 }}>{fmt(groupAct)}</span></div>}
                 </div>
                 {/* item rows */}
                 {group.rows.map(({ item }) => {
@@ -1073,33 +1082,33 @@ function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols 
                     <div key={item.id}
                       onDragOver={e => { e.preventDefault(); setDragOverId(rowKey); }}
                       onDrop={() => onRowDrop(rowKey)}
-                      style={{ display: "flex", alignItems: "center", borderBottom: "1px solid #f0f1f4", background: isDragOver ? "#fffbf0" : item.done ? "#f0fdf4" : "#ffffff", borderLeft: item.done ? "3px solid #22c55e" : "3px solid transparent", transition: "background 0.15s" }}
+                      style={{ display: "flex", alignItems: "center", borderBottom: "1px solid #F1F5F9", background: isDragOver ? "#EFF4FF" : item.done ? "#f0fdf4" : "#ffffff", borderLeft: item.done ? "3px solid #16A34A" : "3px solid transparent", transition: "background 0.15s" }}
                     >
                       {/* drag handle（僅此處可拖曳） */}
                       <div
                         draggable
                         onDragStart={() => onRowDragStart(rowKey)}
                         onDragEnd={() => { setDragRowId(null); setDragOverId(null); }}
-                        style={{ width: 24, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", cursor: "grab", color: "#d1d5db", fontSize: 14, borderRight: "1px solid #f0f1f4", height: 38 }}>⠿</div>
+                        style={{ width: 24, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", cursor: "grab", color: "#d1d5db", fontSize: 14, borderRight: "1px solid #F1F5F9", height: 38 }}>⠿</div>
 
                       {orderedCols.map(col => {
                         const cs = { ...cellStyle(col) };
                         if (col.builtin === false) {
-                          if (col.type === "formula") { const v = buildCtx(item)[col.id]; return <div key={col.id} style={{ ...cs, fontFamily:"monospace", fontSize:12, color:"#8a6d3b" }}>{typeof v === "number" ? fmt(v) : (v || "—")}</div>; }
+                          if (col.type === "formula") { const v = buildCtx(item)[col.id]; return <div key={col.id} style={{ ...cs, fontFamily:"monospace", fontSize:12, color:"#64748B" }}>{typeof v === "number" ? fmt(v) : (v || "—")}</div>; }
                           return <div key={col.id} style={cs}><CustomInput value={item.cust?.[col.id]} type={col.type} onCommit={(val)=>updateCustom(catId, item.id, col.id, val)} /></div>;
                         }
-                        if (col.id === "cat") return <div key={col.id} style={{ ...cs, fontSize: 11, color: "#9ca3af" }}>{group.name}</div>;
-                        if (col.id === "name") return <div key={col.id} style={{ ...cs, color: "#111827", fontWeight: 500 }}><EditableCell catId={catId} itemId={item.id} field="name" value={item.name} /></div>;
+                        if (col.id === "cat") return <div key={col.id} style={{ ...cs, fontSize: 11, color: "#94A3B8" }}>{group.name}</div>;
+                        if (col.id === "name") return <div key={col.id} style={{ ...cs, color: "#0F172A", fontWeight: 500 }}><EditableCell catId={catId} itemId={item.id} field="name" value={item.name} /></div>;
                         if (col.id === "done") return (
                           <div key={col.id} style={{ ...cs, justifyContent: "center" }}>
                             <input type="checkbox" checked={!!item.done} onChange={e => updateItem(catId, item.id, "done", e.target.checked)}
-                              style={{ width: 16, height: 16, cursor: "pointer", accentColor: "#22c55e" }} />
+                              style={{ width: 16, height: 16, cursor: "pointer", accentColor: "#16A34A" }} />
                           </div>
                         );
                         if (col.id === "status") return (
                           <div key={col.id} style={cs}>
                             <select value={item.status} onChange={e => updateItem(catId, item.id, "status", e.target.value)}
-                              style={{ border: "none", background: "transparent", fontSize: 12, cursor: "pointer", color: STATUS_MAP[item.status]?.color || "#6b7280", fontFamily: "'Noto Sans TC', sans-serif", width: "100%", outline: "none" }}>
+                              style={{ border: "none", background: "transparent", fontSize: 12, cursor: "pointer", color: STATUS_MAP[item.status]?.color || "#64748B", fontFamily: "'Noto Sans TC', sans-serif", width: "100%", outline: "none" }}>
                               {Object.entries(STATUS_MAP).map(([k,v]) => <option key={k} value={k}>{v.label}</option>)}
                             </select>
                           </div>
@@ -1118,17 +1127,17 @@ function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols 
                         if (col.id === "actTotal") {
                           const act = calcActual(item);
                           const est = calcEstimated(item);
-                          return <div key={col.id} style={{ ...cs, color: act > 0 ? (act > est ? "#e85c4b" : "#22c55e") : "#c0c4d0", fontFamily: "monospace", fontWeight: act > 0 ? 600 : 400 }}>{act > 0 ? fmt(act) : "—"}</div>;
+                          return <div key={col.id} style={{ ...cs, color: act > 0 ? (act > est ? "#DC2626" : "#16A34A") : "#CBD5E1", fontFamily: "monospace", fontWeight: act > 0 ? 600 : 400 }}>{act > 0 ? fmt(act) : "—"}</div>;
                         }
                         if (col.id === "payAccount") return <div key={col.id} style={cs}><EditableCell catId={catId} itemId={item.id} field="payAccount" value={item.payAccount} placeholder="銀行/帳號" /></div>;
                         if (col.id === "receipts") return (
                           <div key={col.id} style={{ ...cs, gap: 4 }}>
-                            {(item.receipts?.length > 0) && <span style={{ fontSize: 10, background: "#fff3cc", color: "#92400e", borderRadius: 10, padding: "1px 6px", fontWeight: 600 }}>📎 {item.receipts.length}</span>}
+                            {(item.receipts?.length > 0) && <span style={{ fontSize: 10, background: "#EFF4FF", color: "#92400e", borderRadius: 10, padding: "1px 6px", fontWeight: 600 }}>📎 {item.receipts.length}</span>}
                             <button onClick={() => {
                               const name = prompt("憑證名稱："); if (!name) return;
                               const amt = parseFloat(prompt("金額：") || "0");
                               updateItem(catId, item.id, "receipts", [...(item.receipts||[]), { name, amount: amt, date: new Date().toLocaleDateString("zh-TW") }]);
-                            }} style={{ fontSize: 10, background: "none", border: "1px dashed #d8dae3", borderRadius: 4, padding: "1px 5px", cursor: "pointer", color: "#9ca3af" }}>+</button>
+                            }} style={{ fontSize: 10, background: "none", border: "1px dashed #E2E8F0", borderRadius: 4, padding: "1px 5px", cursor: "pointer", color: "#94A3B8" }}>+</button>
                           </div>
                         );
                         if (col.id === "notes") return <div key={col.id} style={cs}><EditableCell catId={catId} itemId={item.id} field="notes" value={item.notes} placeholder="備註..." /></div>;
@@ -1139,7 +1148,7 @@ function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols 
                       <div style={{ width: 32, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
                         <button onClick={() => deleteItem(catId, item.id, item.name)}
                           style={{ width: 20, height: 20, borderRadius: "50%", background: "none", border: "none", color: "#d1d5db", cursor: "pointer", fontSize: 14, display: "flex", alignItems: "center", justifyContent: "center", padding: 0, transition: "color 0.15s" }}
-                          onMouseEnter={e => e.currentTarget.style.color="#e85c4b"}
+                          onMouseEnter={e => e.currentTarget.style.color="#DC2626"}
                           onMouseLeave={e => e.currentTarget.style.color="#d1d5db"}
                         >×</button>
                       </div>
@@ -1150,8 +1159,8 @@ function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols 
                 <div onClick={() => {
                   const newItem = { id: `i-${catId}-${Date.now()}`, name: "新細項", qty: 1, unit: "式", unitPrice: 0, labor: 0, laborDays: 0, dailyWage: 0, assignee: "", status: "pending", receipts: [], notes: "", chat: [], done: false };
                   setCats(prev => prev.map(c => c.id === catId ? { ...c, items: [...c.items, newItem] } : c));
-                }} style={{ display: "flex", alignItems: "center", gap: 6, padding: "6px 32px", color: "#9ca3af", fontSize: 12, cursor: "pointer", borderBottom: "1px solid #f0f1f4", transition: "background 0.1s" }}
-                  onMouseEnter={e => e.currentTarget.style.background="#f7f8fa"}
+                }} style={{ display: "flex", alignItems: "center", gap: 6, padding: "6px 32px", color: "#94A3B8", fontSize: 12, cursor: "pointer", borderBottom: "1px solid #F1F5F9", transition: "background 0.1s" }}
+                  onMouseEnter={e => e.currentTarget.style.background="#F8FAFC"}
                   onMouseLeave={e => e.currentTarget.style.background="transparent"}
                 >
                   <span style={{ fontSize: 16, color: ACCENT }}>+</span> 新增細項至「{group.name}」
@@ -1160,14 +1169,14 @@ function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols 
             );
           })}
           {/* 總計列：數字欄位自動加總 */}
-          <div style={{ display: "flex", borderTop: "2px solid #cdd3df", background: "#f3f4f7", position: "sticky", bottom: 0, zIndex: 5, fontWeight: 700 }}>
-            <div style={{ width: 24, flexShrink: 0, borderRight: "1px solid #e4e6ef" }} />
+          <div style={{ display: "flex", borderTop: "2px solid #cdd3df", background: "#F8FAFC", position: "sticky", bottom: 0, zIndex: 5, fontWeight: 600 }}>
+            <div style={{ width: 24, flexShrink: 0, borderRight: "1px solid #E2E8F0" }} />
             {orderedCols.map(col => {
               const cs = { ...cellStyle(col) };
-              if (col.id === "name") return <div key={col.id} style={{ ...cs, fontWeight: 800, color: "#111827" }}>總計（{rows.length} 筆）</div>;
+              if (col.id === "name") return <div key={col.id} style={{ ...cs, fontWeight: 600, color: "#0F172A" }}>總計（{rows.length} 筆）</div>;
               if (summable(col)) {
                 const sum = rows.reduce((s, r) => s + numVal(col, r.item), 0);
-                return <div key={col.id} style={{ ...cs, fontFamily: "monospace", color: isMoneyCol(col) ? ACCENT : "#374151" }}>{isMoneyCol(col) ? fmt(sum) : (Math.round(sum * 100) / 100)}</div>;
+                return <div key={col.id} style={{ ...cs, fontFamily: "monospace", color: isMoneyCol(col) ? ACCENT : "#334155" }}>{isMoneyCol(col) ? fmt(sum) : (Math.round(sum * 100) / 100)}</div>;
               }
               return <div key={col.id} style={cs} />;
             })}
@@ -1186,15 +1195,15 @@ function LoginModal({ onLogin, knownUsers, onClose }) {
   return (
     <div onClick={onClose} style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.55)", zIndex:9999, display:"flex", alignItems:"center", justifyContent:"center", padding:16 }}>
       <div onClick={e=>e.stopPropagation()} style={{ background:"#ffffff", borderRadius:16, padding:28, maxWidth:380, width:"100%", boxShadow:"0 20px 60px rgba(0,0,0,0.2)" }}>
-        <div style={{ fontSize:22, fontWeight:900, color:"#111827", marginBottom:6 }}>登入以編輯</div>
-        <div style={{ fontSize:13, color:"#6b7280", marginBottom:20 }}>未登入只能檢視。登入後預設仍是唯讀，編輯權限由管理員逐頁開放。</div>
+        <div style={{ fontSize:22, fontWeight: 600, color:"#0F172A", marginBottom:6 }}>登入以編輯</div>
+        <div style={{ fontSize:13, color:"#64748B", marginBottom:20 }}>未登入只能檢視。登入後預設仍是唯讀，編輯權限由管理員逐頁開放。</div>
         {knownUsers.length > 0 && (
           <div style={{ marginBottom:16 }}>
-            <div style={{ fontSize:11, color:"#9ca3af", marginBottom:8 }}>最近登入過的成員</div>
+            <div style={{ fontSize:11, color:"#94A3B8", marginBottom:8 }}>最近登入過的成員</div>
             <div style={{ display:"flex", flexWrap:"wrap", gap:6 }}>
               {knownUsers.map(u => (
                 <button key={u} onClick={() => onLogin(u)}
-                  style={{ padding:"6px 14px", background:"#f7f8fa", border:"1px solid #e4e6ef", borderRadius:20, fontSize:13, cursor:"pointer", color:"#374151", fontWeight:600 }}>
+                  style={{ padding:"6px 14px", background:"#F8FAFC", border:"1px solid #E2E8F0", borderRadius:20, fontSize:13, cursor:"pointer", color:"#334155", fontWeight:600 }}>
                   {u}
                 </button>
               ))}
@@ -1206,16 +1215,16 @@ function LoginModal({ onLogin, knownUsers, onClose }) {
           onKeyDown={e=>e.key==="Enter"&&!e.nativeEvent.isComposing&&name.trim()&&onLogin(name.trim())}
           placeholder="輸入你的名字…"
           autoFocus
-          style={{ width:"100%", padding:"11px 14px", border:"2px solid #e4e6ef", borderRadius:10, fontSize:15, outline:"none", fontFamily:"'Noto Sans TC',sans-serif", boxSizing:"border-box", marginBottom:14 }}
+          style={{ width:"100%", padding:"11px 14px", border:"2px solid #E2E8F0", borderRadius:10, fontSize:15, outline:"none", fontFamily:"'Noto Sans TC',sans-serif", boxSizing:"border-box", marginBottom:14 }}
         />
         <button onClick={() => name.trim() && onLogin(name.trim())}
           disabled={!name.trim()}
-          style={{ width:"100%", padding:"12px 0", background:name.trim()?"#111827":"#e4e6ef", border:"none", borderRadius:10, color:name.trim()?"#ffffff":"#9ca3af", fontSize:15, fontWeight:700, cursor:name.trim()?"pointer":"not-allowed" }}>
+          style={{ width:"100%", padding:"12px 0", background:name.trim()?"#0F172A":"#E2E8F0", border:"none", borderRadius:10, color:name.trim()?"#ffffff":"#94A3B8", fontSize:15, fontWeight: 600, cursor:name.trim()?"pointer":"not-allowed" }}>
           進入
         </button>
         {onClose && (
           <button onClick={onClose}
-            style={{ width:"100%", padding:"10px 0", marginTop:10, background:"transparent", border:"none", color:"#6b7280", fontSize:13, cursor:"pointer" }}>
+            style={{ width:"100%", padding:"10px 0", marginTop:10, background:"transparent", border:"none", color:"#64748B", fontSize:13, cursor:"pointer" }}>
             以訪客身分瀏覽（唯讀）
           </button>
         )}
@@ -1257,13 +1266,13 @@ function OwnerDashboard({ cats, setCats, settings, stalledItems, activityLog, lo
     setReportLoading(false);
   };
 
-  const ProgressRing = ({ pct, size=80, stroke=8, color="#22c55e" }) => {
+  const ProgressRing = ({ pct, size=80, stroke=8, color="#16A34A" }) => {
     const r = (size-stroke)/2;
     const circ = 2*Math.PI*r;
     const offset = circ - (pct/100)*circ;
     return (
       <svg width={size} height={size} style={{ transform:"rotate(-90deg)" }}>
-        <circle cx={size/2} cy={size/2} r={r} fill="none" stroke="#f0f1f4" strokeWidth={stroke} />
+        <circle cx={size/2} cy={size/2} r={r} fill="none" stroke="#F1F5F9" strokeWidth={stroke} />
         <circle cx={size/2} cy={size/2} r={r} fill="none" stroke={color} strokeWidth={stroke}
           strokeDasharray={circ} strokeDashoffset={offset} strokeLinecap="round" style={{ transition:"stroke-dashoffset 0.8s ease" }} />
       </svg>
@@ -1275,10 +1284,10 @@ function OwnerDashboard({ cats, setCats, settings, stalledItems, activityLog, lo
       {/* Header */}
       <div style={{ display:"flex", alignItems:"flex-start", justifyContent:"space-between", marginBottom:20, flexWrap:"wrap", gap:10 }}>
         <div>
-          <div style={{ fontSize:22, fontWeight:900, color:"#111827" }}>{settings?.projectName || "工程進度"}</div>
-          <div style={{ fontSize:13, color:"#6b7280", marginTop:2 }}>{settings?.projectAddress} · 今日 {today}</div>
+          <div style={{ fontSize:22, fontWeight: 600, color:"#0F172A" }}>{settings?.projectName || "工程進度"}</div>
+          <div style={{ fontSize:13, color:"#64748B", marginTop:2 }}>{settings?.projectAddress} · 今日 {today}</div>
         </div>
-        <button onClick={generateReport} style={{ padding:"10px 20px", background:"#111827", border:"none", borderRadius:10, color:"#ffffff", fontSize:13, fontWeight:700, cursor:"pointer", display:"flex", alignItems:"center", gap:6 }}>
+        <button onClick={generateReport} style={{ padding:"10px 20px", background:"#0F172A", border:"none", borderRadius:10, color:"#ffffff", fontSize:13, fontWeight: 600, cursor:"pointer", display:"flex", alignItems:"center", gap:6 }}>
           📄 產生業主週報
         </button>
       </div>
@@ -1286,33 +1295,33 @@ function OwnerDashboard({ cats, setCats, settings, stalledItems, activityLog, lo
       {/* Main KPIs */}
       <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:14, marginBottom:20 }}>
         {/* Progress ring */}
-        <div style={{ background:"#ffffff", border:"1px solid #e4e6ef", borderRadius:16, padding:20, display:"flex", alignItems:"center", gap:16 }}>
+        <div style={{ background:"#ffffff", border:"1px solid #E2E8F0", borderRadius:16, padding:20, display:"flex", alignItems:"center", gap:16 }}>
           <div style={{ position:"relative", flexShrink:0 }}>
-            <ProgressRing pct={pct} size={80} color={pct>75?"#22c55e":pct>40?"#f59e0b":"#e85c4b"} />
-            <div style={{ position:"absolute", inset:0, display:"flex", alignItems:"center", justifyContent:"center", fontSize:16, fontWeight:800, color:"#111827" }}>{pct}%</div>
+            <ProgressRing pct={pct} size={80} color={pct>75?"#16A34A":pct>40?"#f59e0b":"#DC2626"} />
+            <div style={{ position:"absolute", inset:0, display:"flex", alignItems:"center", justifyContent:"center", fontSize:16, fontWeight: 600, color:"#0F172A" }}>{pct}%</div>
           </div>
           <div>
-            <div style={{ fontSize:12, color:"#6b7280", marginBottom:2 }}>整體完成度</div>
-            <div style={{ fontSize:15, fontWeight:700, color:"#111827" }}>{doneItems} / {totalItems} 項</div>
-            {daysLeft !== null && <div style={{ fontSize:12, color:daysLeft<14?"#dc2626":daysLeft<30?"#f59e0b":"#22c55e", marginTop:2, fontWeight:600 }}>距完工 {daysLeft} 天</div>}
+            <div style={{ fontSize:12, color:"#64748B", marginBottom:2 }}>整體完成度</div>
+            <div style={{ fontSize:15, fontWeight: 600, color:"#0F172A" }}>{doneItems} / {totalItems} 項</div>
+            {daysLeft !== null && <div style={{ fontSize:12, color:daysLeft<14?"#dc2626":daysLeft<30?"#f59e0b":"#16A34A", marginTop:2, fontWeight:600 }}>距完工 {daysLeft} 天</div>}
           </div>
         </div>
 
         {/* Budget */}
-        <div style={{ background:"#ffffff", border:"1px solid #e4e6ef", borderRadius:16, padding:20 }}>
-          <div style={{ fontSize:12, color:"#6b7280", marginBottom:8 }}>預算使用狀況</div>
-          <div style={{ fontSize:13, color:"#374151", marginBottom:4 }}>預估 <span style={{ fontFamily:"monospace", fontWeight:700, color:ACCENT }}>{fmt(totalEst)}</span></div>
-          <div style={{ fontSize:13, color:"#374151", marginBottom:8 }}>實際 <span style={{ fontFamily:"monospace", fontWeight:700, color:totalAct>totalEst?"#dc2626":"#22c55e" }}>{totalAct>0?fmt(totalAct):"尚未記錄"}</span></div>
-          <div style={{ background:"#f0f1f4", borderRadius:20, height:6, overflow:"hidden" }}>
+        <div style={{ background:"#ffffff", border:"1px solid #E2E8F0", borderRadius:16, padding:20 }}>
+          <div style={{ fontSize:12, color:"#64748B", marginBottom:8 }}>預算使用狀況</div>
+          <div style={{ fontSize:13, color:"#334155", marginBottom:4 }}>預估 <span style={{ fontFamily:"monospace", fontWeight: 600, color:ACCENT }}>{fmt(totalEst)}</span></div>
+          <div style={{ fontSize:13, color:"#334155", marginBottom:8 }}>實際 <span style={{ fontFamily:"monospace", fontWeight: 600, color:totalAct>totalEst?"#dc2626":"#16A34A" }}>{totalAct>0?fmt(totalAct):"尚未記錄"}</span></div>
+          <div style={{ background:"#F1F5F9", borderRadius:20, height:6, overflow:"hidden" }}>
             <div style={{ background:totalAct>totalEst?"#dc2626":ACCENT, height:"100%", width:Math.min(100,totalEst>0?totalAct/totalEst*100:0)+"%", borderRadius:20, transition:"width 0.8s" }} />
           </div>
         </div>
 
         {/* Alerts */}
-        <div style={{ background:"#ffffff", border:"1px solid #e4e6ef", borderRadius:16, padding:20 }}>
-          <div style={{ fontSize:12, color:"#6b7280", marginBottom:8 }}>需要注意</div>
+        <div style={{ background:"#ffffff", border:"1px solid #E2E8F0", borderRadius:16, padding:20 }}>
+          <div style={{ fontSize:12, color:"#64748B", marginBottom:8 }}>需要注意</div>
           {stalledItems.length===0 && issueItems.length===0 ? (
-            <div style={{ display:"flex", alignItems:"center", gap:8, color:"#22c55e" }}>
+            <div style={{ display:"flex", alignItems:"center", gap:8, color:"#16A34A" }}>
               <span style={{ fontSize:20 }}>✅</span>
               <span style={{ fontSize:13, fontWeight:600 }}>目前一切正常</span>
             </div>
@@ -1322,13 +1331,13 @@ function OwnerDashboard({ cats, setCats, settings, stalledItems, activityLog, lo
               {stalledItems.length>0 && <div style={{ fontSize:12, color:"#d97706", background:"#fffbeb", borderRadius:8, padding:"6px 10px" }}>⏰ 卡關 {stalledItems.length} 項超過3天</div>}
             </div>
           )}
-          <div style={{ marginTop:8, fontSize:12, color:"#6b7280" }}>進行中 {inProgressItems.length} 項</div>
+          <div style={{ marginTop:8, fontSize:12, color:"#64748B" }}>進行中 {inProgressItems.length} 項</div>
         </div>
       </div>
 
       {/* Category progress bars */}
-      <div style={{ background:"#ffffff", border:"1px solid #e4e6ef", borderRadius:16, padding:20, marginBottom:20 }}>
-        <div style={{ fontSize:14, fontWeight:700, color:"#111827", marginBottom:14 }}>各工程進度</div>
+      <div style={{ background:"#ffffff", border:"1px solid #E2E8F0", borderRadius:16, padding:20, marginBottom:20 }}>
+        <div style={{ fontSize:14, fontWeight: 600, color:"#0F172A", marginBottom:14 }}>各工程進度</div>
         {[...cats].sort((a,b)=>a.order-b.order).map(cat => {
           const total = cat.items.length;
           const done = cat.items.filter(i=>i.done||i.status==="done").length;
@@ -1340,17 +1349,17 @@ function OwnerDashboard({ cats, setCats, settings, stalledItems, activityLog, lo
             <div key={cat.id} style={{ marginBottom:12 }}>
               <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:4 }}>
                 <div style={{ display:"flex", alignItems:"center", gap:8 }}>
-                  <span style={{ fontSize:13, fontWeight:600, color:"#374151" }}>{cat.name}</span>
-                  {hasIssue && <span style={{ fontSize:10, background:"#fff0ee", color:"#dc2626", borderRadius:10, padding:"1px 7px", fontWeight:700 }}>問題</span>}
-                  {hasStall && <span style={{ fontSize:10, background:"#fffbeb", color:"#d97706", borderRadius:10, padding:"1px 7px", fontWeight:700 }}>卡關</span>}
+                  <span style={{ fontSize:13, fontWeight:600, color:"#334155" }}>{cat.name}</span>
+                  {hasIssue && <span style={{ fontSize:10, background:"#fff0ee", color:"#dc2626", borderRadius:10, padding:"1px 7px", fontWeight: 600 }}>問題</span>}
+                  {hasStall && <span style={{ fontSize:10, background:"#fffbeb", color:"#d97706", borderRadius:10, padding:"1px 7px", fontWeight: 600 }}>卡關</span>}
                 </div>
                 <div style={{ display:"flex", alignItems:"center", gap:8 }}>
-                  <span style={{ fontSize:11, color:"#9ca3af" }}>{done}/{total}</span>
-                  <span style={{ fontSize:11, color:st.color, background:st.color+"18", borderRadius:20, padding:"1px 8px", fontWeight:700 }}>{st.label}</span>
+                  <span style={{ fontSize:11, color:"#94A3B8" }}>{done}/{total}</span>
+                  <span style={{ fontSize:11, color:st.color, background:st.color+"18", borderRadius:20, padding:"1px 8px", fontWeight: 600 }}>{st.label}</span>
                 </div>
               </div>
-              <div style={{ background:"#f0f1f4", borderRadius:20, height:8, overflow:"hidden" }}>
-                <div style={{ background:pct===100?"#22c55e":hasIssue?"#dc2626":"#3b82f6", height:"100%", width:pct+"%", borderRadius:20, transition:"width 0.8s" }} />
+              <div style={{ background:"#F1F5F9", borderRadius:20, height:8, overflow:"hidden" }}>
+                <div style={{ background:pct===100?"#16A34A":hasIssue?"#dc2626":"#3b82f6", height:"100%", width:pct+"%", borderRadius:20, transition:"width 0.8s" }} />
               </div>
             </div>
           );
@@ -1358,16 +1367,16 @@ function OwnerDashboard({ cats, setCats, settings, stalledItems, activityLog, lo
       </div>
 
       {/* Today's activity */}
-      <div style={{ background:"#ffffff", border:"1px solid #e4e6ef", borderRadius:16, padding:20, marginBottom:20 }}>
-        <div style={{ fontSize:14, fontWeight:700, color:"#111827", marginBottom:12 }}>今日動態 {todayActivity.length>0&&<span style={{ fontSize:12, color:"#6b7280", fontWeight:400 }}>（{todayActivity.length} 筆）</span>}</div>
+      <div style={{ background:"#ffffff", border:"1px solid #E2E8F0", borderRadius:16, padding:20, marginBottom:20 }}>
+        <div style={{ fontSize:14, fontWeight: 600, color:"#0F172A", marginBottom:12 }}>今日動態 {todayActivity.length>0&&<span style={{ fontSize:12, color:"#64748B", fontWeight:400 }}>（{todayActivity.length} 筆）</span>}</div>
         {todayActivity.length === 0 ? (
-          <div style={{ fontSize:13, color:"#9ca3af", textAlign:"center", padding:"20px 0" }}>今日尚無更新記錄</div>
+          <div style={{ fontSize:13, color:"#94A3B8", textAlign:"center", padding:"20px 0" }}>今日尚無更新記錄</div>
         ) : (
           <div style={{ maxHeight:200, overflowY:"auto" }}>
             {todayActivity.slice(0,20).map((a,i) => (
-              <div key={i} style={{ display:"flex", gap:10, alignItems:"flex-start", paddingBottom:10, marginBottom:10, borderBottom:i<todayActivity.length-1?"1px solid #f0f1f4":"none" }}>
-                <div style={{ fontSize:11, color:"#9ca3af", whiteSpace:"nowrap", marginTop:2 }}>{new Date(a.ts).toLocaleTimeString("zh-TW",{hour:"2-digit",minute:"2-digit"})}</div>
-                <div style={{ fontSize:12, color:"#374151" }}><span style={{ fontWeight:600, color:"#111827" }}>{a.user}</span> {a.action}：{a.detail}</div>
+              <div key={i} style={{ display:"flex", gap:10, alignItems:"flex-start", paddingBottom:10, marginBottom:10, borderBottom:i<todayActivity.length-1?"1px solid #F1F5F9":"none" }}>
+                <div style={{ fontSize:11, color:"#94A3B8", whiteSpace:"nowrap", marginTop:2 }}>{new Date(a.ts).toLocaleTimeString("zh-TW",{hour:"2-digit",minute:"2-digit"})}</div>
+                <div style={{ fontSize:12, color:"#334155" }}><span style={{ fontWeight:600, color:"#0F172A" }}>{a.user}</span> {a.action}：{a.detail}</div>
               </div>
             ))}
           </div>
@@ -1377,7 +1386,7 @@ function OwnerDashboard({ cats, setCats, settings, stalledItems, activityLog, lo
       {/* Stalled items detail */}
       {stalledItems.length > 0 && (
         <div style={{ background:"#fffbeb", border:"1px solid #fcd34d", borderRadius:16, padding:20, marginBottom:20 }}>
-          <div style={{ fontSize:14, fontWeight:700, color:"#92400e", marginBottom:12 }}>⏰ 卡關項目（超過3天未更新）</div>
+          <div style={{ fontSize:14, fontWeight: 600, color:"#92400e", marginBottom:12 }}>⏰ 卡關項目（超過3天未更新）</div>
           {stalledItems.map(item => {
             const cat = cats.find(c=>c.items.find(i=>i.id===item.id));
             const days = item.lastUpdated ? Math.floor((Date.now()-new Date(item.lastUpdated))/(1000*60*60*24)) : null;
@@ -1387,7 +1396,7 @@ function OwnerDashboard({ cats, setCats, settings, stalledItems, activityLog, lo
                   <div style={{ fontSize:13, fontWeight:600, color:"#92400e" }}>{item.name}</div>
                   <div style={{ fontSize:11, color:"#b45309" }}>{cat?.name} · {item.assignee||"未指派"}</div>
                 </div>
-                {days && <div style={{ fontSize:12, color:"#dc2626", fontWeight:700 }}>卡關 {days} 天</div>}
+                {days && <div style={{ fontSize:12, color:"#dc2626", fontWeight: 600 }}>卡關 {days} 天</div>}
               </div>
             );
           })}
@@ -1399,13 +1408,13 @@ function OwnerDashboard({ cats, setCats, settings, stalledItems, activityLog, lo
         <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.5)", zIndex:500, display:"flex", alignItems:"center", justifyContent:"center", padding:16 }} onClick={e=>e.target===e.currentTarget&&setShowReport(false)}>
           <div style={{ background:"#ffffff", borderRadius:16, padding:24, maxWidth:620, width:"100%", maxHeight:"80vh", overflow:"auto" }}>
             <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:16 }}>
-              <div style={{ fontSize:16, fontWeight:800, color:"#111827" }}>📄 業主週報</div>
-              <button onClick={()=>setShowReport(false)} style={{ background:"none", border:"none", fontSize:20, cursor:"pointer", color:"#6b7280" }}>×</button>
+              <div style={{ fontSize:16, fontWeight: 600, color:"#0F172A" }}>📄 業主週報</div>
+              <button onClick={()=>setShowReport(false)} style={{ background:"none", border:"none", fontSize:20, cursor:"pointer", color:"#64748B" }}>×</button>
             </div>
             {reportLoading ? (
               <div style={{ textAlign:"center", padding:"40px", color:ACCENT }}>🤖 AI 生成中…</div>
             ) : (
-              <div style={{ fontSize:13, lineHeight:1.9, color:"#374151", whiteSpace:"pre-wrap", background:"#f9fafb", borderRadius:10, padding:"16px 18px" }}>{report}</div>
+              <div style={{ fontSize:13, lineHeight:1.9, color:"#334155", whiteSpace:"pre-wrap", background:"#f9fafb", borderRadius:10, padding:"16px 18px" }}>{report}</div>
             )}
           </div>
         </div>
@@ -1425,29 +1434,29 @@ function ActivityLogPanel({ activityLog, onClose }) {
   });
   return (
     <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.4)", zIndex:400, display:"flex", justifyContent:"flex-end" }} onClick={e=>e.target===e.currentTarget&&onClose()}>
-      <div style={{ width:"min(420px,100vw)", background:"#ffffff", height:"100vh", overflowY:"auto", borderLeft:"1px solid #e4e6ef" }}>
-        <div style={{ padding:"14px 16px", borderBottom:"1px solid #e4e6ef", display:"flex", justifyContent:"space-between", alignItems:"center", position:"sticky", top:0, background:"#ffffff" }}>
-          <div style={{ fontSize:15, fontWeight:700, color:"#111827" }}>活動記錄</div>
-          <button onClick={onClose} style={{ background:"none", border:"none", fontSize:22, cursor:"pointer", color:"#6b7280" }}>×</button>
+      <div style={{ width:"min(420px,100vw)", background:"#ffffff", height:"100vh", overflowY:"auto", borderLeft:"1px solid #E2E8F0" }}>
+        <div style={{ padding:"14px 16px", borderBottom:"1px solid #E2E8F0", display:"flex", justifyContent:"space-between", alignItems:"center", position:"sticky", top:0, background:"#ffffff" }}>
+          <div style={{ fontSize:15, fontWeight: 600, color:"#0F172A" }}>活動記錄</div>
+          <button onClick={onClose} style={{ background:"none", border:"none", fontSize:22, cursor:"pointer", color:"#64748B" }}>×</button>
         </div>
         <div style={{ padding:16 }}>
-          {Object.keys(grouped).length === 0 && <div style={{ textAlign:"center", color:"#9ca3af", padding:"40px 0" }}>尚無記錄</div>}
+          {Object.keys(grouped).length === 0 && <div style={{ textAlign:"center", color:"#94A3B8", padding:"40px 0" }}>尚無記錄</div>}
           {Object.entries(grouped).map(([date, entries]) => (
             <div key={date} style={{ marginBottom:20 }}>
-              <div style={{ fontSize:12, color:"#6b7280", fontWeight:700, marginBottom:8, display:"flex", alignItems:"center", gap:6 }}>
-                <div style={{ height:1, flex:1, background:"#e4e6ef" }} />
+              <div style={{ fontSize:12, color:"#64748B", fontWeight: 600, marginBottom:8, display:"flex", alignItems:"center", gap:6 }}>
+                <div style={{ height:1, flex:1, background:"#E2E8F0" }} />
                 {date === today ? "今天" : date}
-                <div style={{ height:1, flex:1, background:"#e4e6ef" }} />
+                <div style={{ height:1, flex:1, background:"#E2E8F0" }} />
               </div>
               {entries.map((a, i) => (
                 <div key={i} style={{ display:"flex", gap:10, marginBottom:10, alignItems:"flex-start" }}>
-                  <div style={{ width:36, height:36, borderRadius:"50%", background:"#f0f2f5", display:"flex", alignItems:"center", justifyContent:"center", fontSize:14, flexShrink:0 }}>
+                  <div style={{ width:36, height:36, borderRadius:"50%", background:"#F1F5F9", display:"flex", alignItems:"center", justifyContent:"center", fontSize:14, flexShrink:0 }}>
                     {"👤"}
                   </div>
                   <div style={{ flex:1 }}>
-                    <div style={{ fontSize:12, color:"#111827" }}><span style={{ fontWeight:700 }}>{a.user}</span> {a.action}</div>
-                    <div style={{ fontSize:11, color:"#6b7280" }}>{a.detail}</div>
-                    <div style={{ fontSize:10, color:"#9ca3af", marginTop:2 }}>{new Date(a.ts).toLocaleTimeString("zh-TW",{hour:"2-digit",minute:"2-digit"})}</div>
+                    <div style={{ fontSize:12, color:"#0F172A" }}><span style={{ fontWeight: 600 }}>{a.user}</span> {a.action}</div>
+                    <div style={{ fontSize:11, color:"#64748B" }}>{a.detail}</div>
+                    <div style={{ fontSize:10, color:"#94A3B8", marginTop:2 }}>{new Date(a.ts).toLocaleTimeString("zh-TW",{hour:"2-digit",minute:"2-digit"})}</div>
                   </div>
                 </div>
               ))}
@@ -1524,18 +1533,18 @@ function CalendarView({ cats, setCats, settings, events, setEvents, userName }) 
     <div style={{ paddingTop:16, maxWidth:1000, margin:"0 auto" }}>
       {/* header */}
       <div style={{ display:"flex", alignItems:"center", gap:12, marginBottom:16 }}>
-        <div style={{ fontSize:20, fontWeight:900, color:"#111827" }}>📅 行事曆</div>
+        <div style={{ fontSize:20, fontWeight: 600, color:"#0F172A" }}>📅 行事曆</div>
         <div style={{ flex:1 }} />
-        <button onClick={()=>setCursor(new Date(year, month-1, 1))} style={{ padding:"6px 10px", background:"#f7f8fa", border:"1px solid #e4e6ef", borderRadius:8, cursor:"pointer", fontSize:13 }}>←</button>
-        <div style={{ fontSize:15, fontWeight:700, color:"#111827", minWidth:120, textAlign:"center" }}>{year}年 {month+1}月</div>
-        <button onClick={()=>setCursor(new Date(year, month+1, 1))} style={{ padding:"6px 10px", background:"#f7f8fa", border:"1px solid #e4e6ef", borderRadius:8, cursor:"pointer", fontSize:13 }}>→</button>
-        <button onClick={()=>setCursor(new Date())} style={{ padding:"6px 14px", background:ACCENT, border:"none", borderRadius:8, cursor:"pointer", fontSize:12, color:"#1a1d2e", fontWeight:700 }}>今天</button>
+        <button onClick={()=>setCursor(new Date(year, month-1, 1))} style={{ padding:"6px 10px", background:"#F8FAFC", border:"1px solid #E2E8F0", borderRadius:8, cursor:"pointer", fontSize:13 }}>←</button>
+        <div style={{ fontSize:15, fontWeight: 600, color:"#0F172A", minWidth:120, textAlign:"center" }}>{year}年 {month+1}月</div>
+        <button onClick={()=>setCursor(new Date(year, month+1, 1))} style={{ padding:"6px 10px", background:"#F8FAFC", border:"1px solid #E2E8F0", borderRadius:8, cursor:"pointer", fontSize:13 }}>→</button>
+        <button onClick={()=>setCursor(new Date())} style={{ padding:"6px 14px", background:ACCENT, border:"none", borderRadius:8, cursor:"pointer", fontSize:12, color:"#1a1d2e", fontWeight: 600 }}>今天</button>
       </div>
 
       {/* weekday headers */}
       <div style={{ display:"grid", gridTemplateColumns:"repeat(7,1fr)", gap:2, marginBottom:4 }}>
         {WEEK.map((w,i) => (
-          <div key={w} style={{ padding:"6px 0", textAlign:"center", fontSize:11, fontWeight:700, color: i===0||i===6?"#dc2626":"#6b7280" }}>{w}</div>
+          <div key={w} style={{ padding:"6px 0", textAlign:"center", fontSize:11, fontWeight: 600, color: i===0||i===6?"#dc2626":"#64748B" }}>{w}</div>
         ))}
       </div>
 
@@ -1550,16 +1559,16 @@ function CalendarView({ cats, setCats, settings, events, setEvents, userName }) 
           const miles = milestonesForDay(d);
           return (
             <div key={i} onClick={()=>addEvent(ds)}
-              style={{ minHeight:96, background:"#ffffff", border:`1px solid ${isToday?ACCENT:"#e4e6ef"}`, borderWidth:isToday?2:1, borderRadius:8, padding:6, cursor:"pointer", transition:"background 0.15s", display:"flex", flexDirection:"column", gap:3 }}
+              style={{ minHeight:96, background:"#ffffff", border:`1px solid ${isToday?ACCENT:"#E2E8F0"}`, borderWidth:isToday?2:1, borderRadius:8, padding:6, cursor:"pointer", transition:"background 0.15s", display:"flex", flexDirection:"column", gap:3 }}
               onMouseEnter={e=>e.currentTarget.style.background="#fafbfc"}
               onMouseLeave={e=>e.currentTarget.style.background="#ffffff"}
             >
               <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
-                <div style={{ fontSize:13, fontWeight:isToday?900:600, color: isToday?ACCENT:isWeekend?"#dc2626":"#374151" }}>{d.getDate()}</div>
-                {evs.length>0 && <div style={{ fontSize:10, background:"#fff3cc", color:"#92400e", borderRadius:10, padding:"0 6px", fontWeight:700 }}>{evs.length}</div>}
+                <div style={{ fontSize:13, fontWeight:isToday?900:600, color: isToday?ACCENT:isWeekend?"#dc2626":"#334155" }}>{d.getDate()}</div>
+                {evs.length>0 && <div style={{ fontSize:10, background:"#EFF4FF", color:"#92400e", borderRadius:10, padding:"0 6px", fontWeight: 600 }}>{evs.length}</div>}
               </div>
               {miles.map((m,mi) => (
-                <div key={mi} style={{ fontSize:10, background:m.color+"20", color:m.color, borderRadius:4, padding:"1px 4px", fontWeight:700 }}>{m.label}</div>
+                <div key={mi} style={{ fontSize:10, background:m.color+"20", color:m.color, borderRadius:4, padding:"1px 4px", fontWeight: 600 }}>{m.label}</div>
               ))}
               {evs.slice(0,3).map((e,ei) => (
                 <div key={ei} onClick={ev=>{ev.stopPropagation(); setEditingEvent(e); setShowEventModal(true);}}
@@ -1567,14 +1576,14 @@ function CalendarView({ cats, setCats, settings, events, setEvents, userName }) 
                   {e.title || "(未命名)"}
                 </div>
               ))}
-              {evs.length>3 && <div style={{ fontSize:9, color:"#9ca3af" }}>+{evs.length-3} 更多</div>}
+              {evs.length>3 && <div style={{ fontSize:9, color:"#94A3B8" }}>+{evs.length-3} 更多</div>}
             </div>
           );
         })}
       </div>
 
       {/* legend */}
-      <div style={{ marginTop:12, display:"flex", gap:14, fontSize:11, color:"#6b7280" }}>
+      <div style={{ marginTop:12, display:"flex", gap:14, fontSize:11, color:"#64748B" }}>
         <div><span style={{ display:"inline-block", width:10, height:10, background:ACCENT, borderRadius:2, marginRight:4, verticalAlign:"middle" }} />今天</div>
         <div>🎯 目標完工日</div>
         <div>點擊日期可新增事件，點擊事件可編輯</div>
@@ -1592,42 +1601,42 @@ function EventEditModal({ event, setEvent, cats, onSave, onDelete, onClose }) {
   return (
     <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.45)", zIndex:1000, display:"flex", alignItems:"center", justifyContent:"center", padding:16 }} onClick={e=>e.target===e.currentTarget&&onClose()}>
       <div style={{ background:"#ffffff", borderRadius:14, padding:22, maxWidth:420, width:"100%", boxShadow:"0 10px 40px rgba(0,0,0,0.15)" }}>
-        <div style={{ fontSize:16, fontWeight:800, color:"#111827", marginBottom:14 }}>📅 {event.title?"編輯":"新增"}事件</div>
+        <div style={{ fontSize:16, fontWeight: 600, color:"#0F172A", marginBottom:14 }}>📅 {event.title?"編輯":"新增"}事件</div>
         <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
           <div>
-            <div style={{ fontSize:11, color:"#6b7280", marginBottom:4, fontWeight:600 }}>日期</div>
+            <div style={{ fontSize:11, color:"#64748B", marginBottom:4, fontWeight:600 }}>日期</div>
             <input type="date" value={event.date||""} onChange={e=>setEvent({...event, date:e.target.value})}
-              style={{ width:"100%", padding:"8px 10px", border:"1px solid #e4e6ef", borderRadius:8, fontSize:13, outline:"none", boxSizing:"border-box" }} />
+              style={{ width:"100%", padding:"8px 10px", border:"1px solid #E2E8F0", borderRadius:8, fontSize:13, outline:"none", boxSizing:"border-box" }} />
           </div>
           <div>
-            <div style={{ fontSize:11, color:"#6b7280", marginBottom:4, fontWeight:600 }}>事件標題 *</div>
+            <div style={{ fontSize:11, color:"#64748B", marginBottom:4, fontWeight:600 }}>事件標題 *</div>
             <input value={event.title||""} onChange={e=>setEvent({...event, title:e.target.value})}
               placeholder="例如：磁磚到貨、業主驗收、停工..."
-              style={{ width:"100%", padding:"9px 12px", border:"1px solid #e4e6ef", borderRadius:8, fontSize:14, outline:"none", boxSizing:"border-box" }} autoFocus />
+              style={{ width:"100%", padding:"9px 12px", border:"1px solid #E2E8F0", borderRadius:8, fontSize:14, outline:"none", boxSizing:"border-box" }} autoFocus />
           </div>
           <div>
-            <div style={{ fontSize:11, color:"#6b7280", marginBottom:4, fontWeight:600 }}>關聯工程（選填）</div>
+            <div style={{ fontSize:11, color:"#64748B", marginBottom:4, fontWeight:600 }}>關聯工程（選填）</div>
             <select value={event.catId||""} onChange={e=>{
               const cat = cats.find(c=>c.id===e.target.value);
               setEvent({...event, catId:e.target.value, catName:cat?.name||""});
             }}
-              style={{ width:"100%", padding:"8px 10px", border:"1px solid #e4e6ef", borderRadius:8, fontSize:13, outline:"none", boxSizing:"border-box", background:"#ffffff" }}>
+              style={{ width:"100%", padding:"8px 10px", border:"1px solid #E2E8F0", borderRadius:8, fontSize:13, outline:"none", boxSizing:"border-box", background:"#ffffff" }}>
               <option value="">— 未關聯 —</option>
               {cats.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
             </select>
           </div>
           <div>
-            <div style={{ fontSize:11, color:"#6b7280", marginBottom:4, fontWeight:600 }}>備註</div>
+            <div style={{ fontSize:11, color:"#64748B", marginBottom:4, fontWeight:600 }}>備註</div>
             <textarea value={event.note||""} onChange={e=>setEvent({...event, note:e.target.value})}
               placeholder="備註..."
-              style={{ width:"100%", padding:"8px 12px", border:"1px solid #e4e6ef", borderRadius:8, fontSize:13, outline:"none", boxSizing:"border-box", height:70, resize:"vertical", fontFamily:"'Noto Sans TC',sans-serif" }} />
+              style={{ width:"100%", padding:"8px 12px", border:"1px solid #E2E8F0", borderRadius:8, fontSize:13, outline:"none", boxSizing:"border-box", height:70, resize:"vertical", fontFamily:"'Noto Sans TC',sans-serif" }} />
           </div>
         </div>
         <div style={{ display:"flex", gap:8, marginTop:18 }}>
           {event.createdBy && <button onClick={()=>onDelete(event.id)} style={{ padding:"10px 14px", background:"#fff0ee", border:"1px solid #fca5a5", borderRadius:8, color:"#dc2626", fontSize:13, cursor:"pointer", fontWeight:600 }}>刪除</button>}
           <div style={{ flex:1 }} />
-          <button onClick={onClose} style={{ padding:"10px 16px", background:"#f7f8fa", border:"1px solid #e4e6ef", borderRadius:8, color:"#6b7280", fontSize:13, cursor:"pointer" }}>取消</button>
-          <button onClick={()=>event.title&&onSave(event)} disabled={!event.title} style={{ padding:"10px 20px", background:event.title?"#111827":"#e4e6ef", border:"none", borderRadius:8, color:"#ffffff", fontSize:13, fontWeight:700, cursor:event.title?"pointer":"not-allowed" }}>儲存</button>
+          <button onClick={onClose} style={{ padding:"10px 16px", background:"#F8FAFC", border:"1px solid #E2E8F0", borderRadius:8, color:"#64748B", fontSize:13, cursor:"pointer" }}>取消</button>
+          <button onClick={()=>event.title&&onSave(event)} disabled={!event.title} style={{ padding:"10px 20px", background:event.title?"#0F172A":"#E2E8F0", border:"none", borderRadius:8, color:"#ffffff", fontSize:13, fontWeight: 600, cursor:event.title?"pointer":"not-allowed" }}>儲存</button>
         </div>
       </div>
     </div>
@@ -1668,30 +1677,30 @@ function JournalView({ journal, setJournal, cats, userName }) {
   return (
     <div style={{ paddingTop:16, maxWidth:880, margin:"0 auto" }}>
       <div style={{ display:"flex", alignItems:"center", gap:12, marginBottom:16, flexWrap:"wrap" }}>
-        <div style={{ fontSize:20, fontWeight:900, color:"#111827" }}>📓 工作日誌</div>
-        <div style={{ fontSize:12, color:"#6b7280" }}>共 {journal.length} 筆記錄</div>
+        <div style={{ fontSize:20, fontWeight: 600, color:"#0F172A" }}>📓 工作日誌</div>
+        <div style={{ fontSize:12, color:"#64748B" }}>共 {journal.length} 筆記錄</div>
         <div style={{ flex:1 }} />
         <input value={filter} onChange={e=>setFilter(e.target.value)} placeholder="搜尋…"
-          style={{ padding:"7px 12px", border:"1px solid #e4e6ef", borderRadius:8, fontSize:13, outline:"none", width:180, fontFamily:"'Noto Sans TC',sans-serif" }} />
-        <button onClick={()=>setShowNew(true)} style={{ padding:"8px 16px", background:"#111827", border:"none", borderRadius:8, color:"#ffffff", fontSize:13, fontWeight:700, cursor:"pointer" }}>+ 新增日誌</button>
+          style={{ padding:"7px 12px", border:"1px solid #E2E8F0", borderRadius:8, fontSize:13, outline:"none", width:180, fontFamily:"'Noto Sans TC',sans-serif" }} />
+        <button onClick={()=>setShowNew(true)} style={{ padding:"8px 16px", background:"#0F172A", border:"none", borderRadius:8, color:"#ffffff", fontSize:13, fontWeight: 600, cursor:"pointer" }}>+ 新增日誌</button>
       </div>
 
       {filtered.length === 0 && (
-        <div style={{ background:"#ffffff", border:"1px dashed #e4e6ef", borderRadius:14, padding:"60px 20px", textAlign:"center", color:"#9ca3af" }}>
+        <div style={{ background:"#ffffff", border:"1px dashed #E2E8F0", borderRadius:14, padding:"60px 20px", textAlign:"center", color:"#94A3B8" }}>
           <div style={{ fontSize:40, marginBottom:10 }}>📓</div>
           <div style={{ fontSize:14 }}>尚無日誌記錄，點擊右上「+ 新增日誌」開始記錄</div>
         </div>
       )}
 
       {filtered.map(j => (
-        <div key={j.id} style={{ background:"#ffffff", border:"1px solid #e4e6ef", borderRadius:14, padding:18, marginBottom:12 }}>
+        <div key={j.id} style={{ background:"#ffffff", border:"1px solid #E2E8F0", borderRadius:14, padding:18, marginBottom:12 }}>
           <div style={{ display:"flex", alignItems:"flex-start", gap:10, marginBottom:8 }}>
             <div style={{ flex:1 }}>
               <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:4 }}>
-                <div style={{ fontSize:15, fontWeight:700, color:"#111827" }}>{j.title||"(無標題)"}</div>
-                {j.catName && <span style={{ fontSize:10, background:"#fff3cc", color:"#92400e", borderRadius:10, padding:"1px 8px", fontWeight:700 }}>{j.catName}</span>}
+                <div style={{ fontSize:15, fontWeight: 600, color:"#0F172A" }}>{j.title||"(無標題)"}</div>
+                {j.catName && <span style={{ fontSize:10, background:"#EFF4FF", color:"#92400e", borderRadius:10, padding:"1px 8px", fontWeight: 600 }}>{j.catName}</span>}
               </div>
-              <div style={{ fontSize:11, color:"#9ca3af", display:"flex", gap:10, flexWrap:"wrap" }}>
+              <div style={{ fontSize:11, color:"#94A3B8", display:"flex", gap:10, flexWrap:"wrap" }}>
                 <span>📅 {j.date}</span>
                 {j.author && <span>✍️ {j.author}</span>}
                 {j.weather && <span>🌤 {j.weather}</span>}
@@ -1700,7 +1709,7 @@ function JournalView({ journal, setJournal, cats, userName }) {
             </div>
             <button onClick={()=>remove(j.id)} style={{ background:"none", border:"none", color:"#d1d5db", cursor:"pointer", fontSize:16, padding:0 }}>×</button>
           </div>
-          {j.content && <div style={{ fontSize:13, lineHeight:1.8, color:"#374151", whiteSpace:"pre-wrap", marginTop:10 }}>{j.content}</div>}
+          {j.content && <div style={{ fontSize:13, lineHeight:1.8, color:"#334155", whiteSpace:"pre-wrap", marginTop:10 }}>{j.content}</div>}
           {j.issues && (
             <div style={{ marginTop:10, padding:"8px 12px", background:"#fff0ee", border:"1px solid #fca5a5", borderRadius:8, fontSize:12, color:"#991b1b" }}>
               <strong>⚠️ 問題/待處理：</strong> {j.issues}
@@ -1713,53 +1722,53 @@ function JournalView({ journal, setJournal, cats, userName }) {
       {showNew && (
         <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.45)", zIndex:1000, display:"flex", alignItems:"center", justifyContent:"center", padding:16 }} onClick={e=>e.target===e.currentTarget&&setShowNew(false)}>
           <div style={{ background:"#ffffff", borderRadius:14, padding:22, maxWidth:520, width:"100%", maxHeight:"88vh", overflow:"auto" }}>
-            <div style={{ fontSize:16, fontWeight:800, color:"#111827", marginBottom:14 }}>📓 新增工作日誌</div>
+            <div style={{ fontSize:16, fontWeight: 600, color:"#0F172A", marginBottom:14 }}>📓 新增工作日誌</div>
             <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10, marginBottom:10 }}>
               <div>
-                <div style={{ fontSize:11, color:"#6b7280", marginBottom:4, fontWeight:600 }}>日期</div>
+                <div style={{ fontSize:11, color:"#64748B", marginBottom:4, fontWeight:600 }}>日期</div>
                 <input type="date" value={draft.date} onChange={e=>setDraft({...draft, date:e.target.value})}
-                  style={{ width:"100%", padding:"8px 10px", border:"1px solid #e4e6ef", borderRadius:8, fontSize:13, outline:"none", boxSizing:"border-box" }} />
+                  style={{ width:"100%", padding:"8px 10px", border:"1px solid #E2E8F0", borderRadius:8, fontSize:13, outline:"none", boxSizing:"border-box" }} />
               </div>
               <div>
-                <div style={{ fontSize:11, color:"#6b7280", marginBottom:4, fontWeight:600 }}>天氣</div>
+                <div style={{ fontSize:11, color:"#64748B", marginBottom:4, fontWeight:600 }}>天氣</div>
                 <input value={draft.weather} onChange={e=>setDraft({...draft, weather:e.target.value})} placeholder="晴 / 雨 / 陰"
-                  style={{ width:"100%", padding:"8px 10px", border:"1px solid #e4e6ef", borderRadius:8, fontSize:13, outline:"none", boxSizing:"border-box" }} />
+                  style={{ width:"100%", padding:"8px 10px", border:"1px solid #E2E8F0", borderRadius:8, fontSize:13, outline:"none", boxSizing:"border-box" }} />
               </div>
             </div>
             <div style={{ marginBottom:10 }}>
-              <div style={{ fontSize:11, color:"#6b7280", marginBottom:4, fontWeight:600 }}>標題</div>
+              <div style={{ fontSize:11, color:"#64748B", marginBottom:4, fontWeight:600 }}>標題</div>
               <input value={draft.title} onChange={e=>setDraft({...draft, title:e.target.value})} placeholder="例如：廚房地坪灌漿完成..."
-                style={{ width:"100%", padding:"9px 12px", border:"1px solid #e4e6ef", borderRadius:8, fontSize:14, outline:"none", boxSizing:"border-box" }} autoFocus />
+                style={{ width:"100%", padding:"9px 12px", border:"1px solid #E2E8F0", borderRadius:8, fontSize:14, outline:"none", boxSizing:"border-box" }} autoFocus />
             </div>
             <div style={{ marginBottom:10 }}>
-              <div style={{ fontSize:11, color:"#6b7280", marginBottom:4, fontWeight:600 }}>關聯工程</div>
+              <div style={{ fontSize:11, color:"#64748B", marginBottom:4, fontWeight:600 }}>關聯工程</div>
               <select value={draft.catId} onChange={e=>setDraft({...draft, catId:e.target.value})}
-                style={{ width:"100%", padding:"8px 10px", border:"1px solid #e4e6ef", borderRadius:8, fontSize:13, outline:"none", boxSizing:"border-box", background:"#ffffff" }}>
+                style={{ width:"100%", padding:"8px 10px", border:"1px solid #E2E8F0", borderRadius:8, fontSize:13, outline:"none", boxSizing:"border-box", background:"#ffffff" }}>
                 <option value="">— 未指定 —</option>
                 {cats.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
               </select>
             </div>
             <div style={{ marginBottom:10 }}>
-              <div style={{ fontSize:11, color:"#6b7280", marginBottom:4, fontWeight:600 }}>現場人員</div>
+              <div style={{ fontSize:11, color:"#64748B", marginBottom:4, fontWeight:600 }}>現場人員</div>
               <input value={draft.workers} onChange={e=>setDraft({...draft, workers:e.target.value})} placeholder="例如：水電2人、泥作3人"
-                style={{ width:"100%", padding:"8px 12px", border:"1px solid #e4e6ef", borderRadius:8, fontSize:13, outline:"none", boxSizing:"border-box" }} />
+                style={{ width:"100%", padding:"8px 12px", border:"1px solid #E2E8F0", borderRadius:8, fontSize:13, outline:"none", boxSizing:"border-box" }} />
             </div>
             <div style={{ marginBottom:10 }}>
-              <div style={{ fontSize:11, color:"#6b7280", marginBottom:4, fontWeight:600 }}>內容</div>
+              <div style={{ fontSize:11, color:"#64748B", marginBottom:4, fontWeight:600 }}>內容</div>
               <textarea value={draft.content} onChange={e=>setDraft({...draft, content:e.target.value})}
                 placeholder="今日完成什麼？遇到什麼？&#10;可記錄：進度、用料、人員、照片說明、重要決策..."
-                style={{ width:"100%", padding:"10px 12px", border:"1px solid #e4e6ef", borderRadius:8, fontSize:13, outline:"none", boxSizing:"border-box", height:120, resize:"vertical", fontFamily:"'Noto Sans TC',sans-serif", lineHeight:1.7 }} />
+                style={{ width:"100%", padding:"10px 12px", border:"1px solid #E2E8F0", borderRadius:8, fontSize:13, outline:"none", boxSizing:"border-box", height:120, resize:"vertical", fontFamily:"'Noto Sans TC',sans-serif", lineHeight:1.7 }} />
             </div>
             <div style={{ marginBottom:14 }}>
-              <div style={{ fontSize:11, color:"#6b7280", marginBottom:4, fontWeight:600 }}>⚠️ 問題/待處理</div>
+              <div style={{ fontSize:11, color:"#64748B", marginBottom:4, fontWeight:600 }}>⚠️ 問題/待處理</div>
               <textarea value={draft.issues} onChange={e=>setDraft({...draft, issues:e.target.value})}
                 placeholder="需要上級決策、材料短缺、工序卡關..."
-                style={{ width:"100%", padding:"10px 12px", border:"1px solid #e4e6ef", borderRadius:8, fontSize:13, outline:"none", boxSizing:"border-box", height:60, resize:"vertical", fontFamily:"'Noto Sans TC',sans-serif" }} />
+                style={{ width:"100%", padding:"10px 12px", border:"1px solid #E2E8F0", borderRadius:8, fontSize:13, outline:"none", boxSizing:"border-box", height:60, resize:"vertical", fontFamily:"'Noto Sans TC',sans-serif" }} />
             </div>
             <div style={{ display:"flex", gap:8 }}>
               <div style={{ flex:1 }} />
-              <button onClick={()=>setShowNew(false)} style={{ padding:"10px 16px", background:"#f7f8fa", border:"1px solid #e4e6ef", borderRadius:8, color:"#6b7280", fontSize:13, cursor:"pointer" }}>取消</button>
-              <button onClick={save} style={{ padding:"10px 22px", background:"#111827", border:"none", borderRadius:8, color:"#ffffff", fontSize:13, fontWeight:700, cursor:"pointer" }}>儲存日誌</button>
+              <button onClick={()=>setShowNew(false)} style={{ padding:"10px 16px", background:"#F8FAFC", border:"1px solid #E2E8F0", borderRadius:8, color:"#64748B", fontSize:13, cursor:"pointer" }}>取消</button>
+              <button onClick={save} style={{ padding:"10px 22px", background:"#0F172A", border:"none", borderRadius:8, color:"#ffffff", fontSize:13, fontWeight: 600, cursor:"pointer" }}>儲存日誌</button>
             </div>
           </div>
         </div>
@@ -1813,31 +1822,31 @@ function PlanView({ cats, setCats, plans, setPlans, settings, userName }) {
   const overdueCount = plans.filter(p => !p.done && p.dueDate && p.dueDate < todayStr).length;
   const highCount = plans.filter(p => !p.done && p.priority === "高").length;
 
-  const priorityColor = { "高":"#dc2626", "中":"#f59e0b", "低":"#6b7280" };
+  const priorityColor = { "高":"#dc2626", "中":"#f59e0b", "低":"#64748B" };
 
   return (
     <div style={{ paddingTop:16, maxWidth:900, margin:"0 auto" }}>
       <div style={{ display:"flex", alignItems:"center", gap:12, marginBottom:14, flexWrap:"wrap" }}>
-        <div style={{ fontSize:20, fontWeight:900, color:"#111827" }}>🗓 排程規劃</div>
-        <div style={{ fontSize:12, color:"#6b7280" }}>待處理 {plans.filter(p=>!p.done).length} · 已完成 {plans.filter(p=>p.done).length}</div>
+        <div style={{ fontSize:20, fontWeight: 600, color:"#0F172A" }}>🗓 排程規劃</div>
+        <div style={{ fontSize:12, color:"#64748B" }}>待處理 {plans.filter(p=>!p.done).length} · 已完成 {plans.filter(p=>p.done).length}</div>
         <div style={{ flex:1 }} />
-        <button onClick={()=>setShowNew(true)} style={{ padding:"8px 16px", background:"#111827", border:"none", borderRadius:8, color:"#ffffff", fontSize:13, fontWeight:700, cursor:"pointer" }}>+ 新增任務</button>
+        <button onClick={()=>setShowNew(true)} style={{ padding:"8px 16px", background:"#0F172A", border:"none", borderRadius:8, color:"#ffffff", fontSize:13, fontWeight: 600, cursor:"pointer" }}>+ 新增任務</button>
       </div>
 
       {/* summary */}
       <div style={{ display:"flex", gap:10, marginBottom:16, flexWrap:"wrap" }}>
-        {overdueCount>0 && <div style={{ background:"#fff0ee", border:"1px solid #fca5a5", borderRadius:20, padding:"5px 14px", fontSize:12, color:"#dc2626", fontWeight:700 }}>⏰ 逾期 {overdueCount} 項</div>}
-        {highCount>0 && <div style={{ background:"#fef3c7", border:"1px solid #fcd34d", borderRadius:20, padding:"5px 14px", fontSize:12, color:"#92400e", fontWeight:700 }}>🔥 高優先 {highCount} 項</div>}
+        {overdueCount>0 && <div style={{ background:"#fff0ee", border:"1px solid #fca5a5", borderRadius:20, padding:"5px 14px", fontSize:12, color:"#dc2626", fontWeight: 600 }}>⏰ 逾期 {overdueCount} 項</div>}
+        {highCount>0 && <div style={{ background:"#fef3c7", border:"1px solid #fcd34d", borderRadius:20, padding:"5px 14px", fontSize:12, color:"#92400e", fontWeight: 600 }}>🔥 高優先 {highCount} 項</div>}
         <div style={{ flex:1 }} />
         <div style={{ display:"flex", gap:4 }}>
           {[["pending","待處理"],["done","已完成"],["all","全部"]].map(([k,l]) => (
-            <button key={k} onClick={()=>setFilter(k)} style={{ padding:"5px 12px", borderRadius:20, fontSize:12, border:"1px solid #e4e6ef", cursor:"pointer", background:filter===k?ACCENT:"#f7f8fa", color:filter===k?"#1a1d2e":"#6b7280", fontWeight:filter===k?700:400 }}>{l}</button>
+            <button key={k} onClick={()=>setFilter(k)} style={{ padding:"5px 12px", borderRadius:20, fontSize:12, border:"1px solid #E2E8F0", cursor:"pointer", background:filter===k?ACCENT:"#F8FAFC", color:filter===k?"#ffffff":"#64748B", fontWeight:filter===k?700:400 }}>{l}</button>
           ))}
         </div>
       </div>
 
       {filtered.length === 0 && (
-        <div style={{ background:"#ffffff", border:"1px dashed #e4e6ef", borderRadius:14, padding:"50px 20px", textAlign:"center", color:"#9ca3af" }}>
+        <div style={{ background:"#ffffff", border:"1px dashed #E2E8F0", borderRadius:14, padding:"50px 20px", textAlign:"center", color:"#94A3B8" }}>
           <div style={{ fontSize:40, marginBottom:10 }}>🗓</div>
           <div style={{ fontSize:14 }}>{filter==="done"?"尚無已完成任務":filter==="pending"?"沒有待處理任務，太棒了！":"尚無任務"}</div>
         </div>
@@ -1846,18 +1855,18 @@ function PlanView({ cats, setCats, plans, setPlans, settings, userName }) {
       {filtered.map(p => {
         const isOverdue = !p.done && p.dueDate && p.dueDate < todayStr;
         return (
-          <div key={p.id} style={{ background:"#ffffff", border:`1px solid ${isOverdue?"#fca5a5":"#e4e6ef"}`, borderLeft:`4px solid ${p.done?"#22c55e":priorityColor[p.priority]||"#6b7280"}`, borderRadius:12, padding:"12px 16px", marginBottom:10, display:"flex", alignItems:"flex-start", gap:12, opacity:p.done?0.6:1 }}>
+          <div key={p.id} style={{ background:"#ffffff", border:`1px solid ${isOverdue?"#fca5a5":"#E2E8F0"}`, borderLeft:`4px solid ${p.done?"#16A34A":priorityColor[p.priority]||"#64748B"}`, borderRadius:12, padding:"12px 16px", marginBottom:10, display:"flex", alignItems:"flex-start", gap:12, opacity:p.done?0.6:1 }}>
             <input type="checkbox" checked={!!p.done} onChange={()=>toggleDone(p.id)}
-              style={{ width:18, height:18, marginTop:3, cursor:"pointer", accentColor:"#22c55e", flexShrink:0 }} />
+              style={{ width:18, height:18, marginTop:3, cursor:"pointer", accentColor:"#16A34A", flexShrink:0 }} />
             <div style={{ flex:1 }}>
               <div style={{ display:"flex", alignItems:"center", gap:8, flexWrap:"wrap", marginBottom:4 }}>
-                <div style={{ fontSize:14, fontWeight:700, color:p.done?"#9ca3af":"#111827", textDecoration:p.done?"line-through":"none" }}>{p.title}</div>
-                <span style={{ fontSize:10, background:priorityColor[p.priority]+"22", color:priorityColor[p.priority], borderRadius:10, padding:"1px 8px", fontWeight:700 }}>{p.priority}</span>
+                <div style={{ fontSize:14, fontWeight: 600, color:p.done?"#94A3B8":"#0F172A", textDecoration:p.done?"line-through":"none" }}>{p.title}</div>
+                <span style={{ fontSize:10, background:priorityColor[p.priority]+"22", color:priorityColor[p.priority], borderRadius:10, padding:"1px 8px", fontWeight: 600 }}>{p.priority}</span>
                 {p.catName && <span style={{ fontSize:10, background:"#eff6ff", color:"#1e40af", borderRadius:10, padding:"1px 8px" }}>{p.catName}</span>}
-                {isOverdue && <span style={{ fontSize:10, background:"#fff0ee", color:"#dc2626", borderRadius:10, padding:"1px 8px", fontWeight:700 }}>⏰ 逾期</span>}
+                {isOverdue && <span style={{ fontSize:10, background:"#fff0ee", color:"#dc2626", borderRadius:10, padding:"1px 8px", fontWeight: 600 }}>⏰ 逾期</span>}
               </div>
-              {p.description && <div style={{ fontSize:12, color:"#6b7280", lineHeight:1.7, marginBottom:4 }}>{p.description}</div>}
-              <div style={{ fontSize:11, color:"#9ca3af", display:"flex", gap:12, flexWrap:"wrap" }}>
+              {p.description && <div style={{ fontSize:12, color:"#64748B", lineHeight:1.7, marginBottom:4 }}>{p.description}</div>}
+              <div style={{ fontSize:11, color:"#94A3B8", display:"flex", gap:12, flexWrap:"wrap" }}>
                 {p.dueDate && <span>📅 {p.dueDate}</span>}
                 {p.assignee && <span>👤 {p.assignee}</span>}
                 {p.createdBy && <span>✍️ {p.createdBy}</span>}
@@ -1872,49 +1881,49 @@ function PlanView({ cats, setCats, plans, setPlans, settings, userName }) {
       {showNew && (
         <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.45)", zIndex:1000, display:"flex", alignItems:"center", justifyContent:"center", padding:16 }} onClick={e=>e.target===e.currentTarget&&setShowNew(false)}>
           <div style={{ background:"#ffffff", borderRadius:14, padding:22, maxWidth:460, width:"100%", maxHeight:"88vh", overflow:"auto" }}>
-            <div style={{ fontSize:16, fontWeight:800, color:"#111827", marginBottom:14 }}>🗓 新增排程任務</div>
+            <div style={{ fontSize:16, fontWeight: 600, color:"#0F172A", marginBottom:14 }}>🗓 新增排程任務</div>
             <div style={{ marginBottom:10 }}>
-              <div style={{ fontSize:11, color:"#6b7280", marginBottom:4, fontWeight:600 }}>任務標題 *</div>
+              <div style={{ fontSize:11, color:"#64748B", marginBottom:4, fontWeight:600 }}>任務標題 *</div>
               <input value={draft.title} onChange={e=>setDraft({...draft, title:e.target.value})} placeholder="例如：下週前確認磁磚廠商..." autoFocus
-                style={{ width:"100%", padding:"9px 12px", border:"1px solid #e4e6ef", borderRadius:8, fontSize:14, outline:"none", boxSizing:"border-box" }} />
+                style={{ width:"100%", padding:"9px 12px", border:"1px solid #E2E8F0", borderRadius:8, fontSize:14, outline:"none", boxSizing:"border-box" }} />
             </div>
             <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10, marginBottom:10 }}>
               <div>
-                <div style={{ fontSize:11, color:"#6b7280", marginBottom:4, fontWeight:600 }}>優先度</div>
+                <div style={{ fontSize:11, color:"#64748B", marginBottom:4, fontWeight:600 }}>優先度</div>
                 <select value={draft.priority} onChange={e=>setDraft({...draft, priority:e.target.value})}
-                  style={{ width:"100%", padding:"8px 10px", border:"1px solid #e4e6ef", borderRadius:8, fontSize:13, outline:"none", boxSizing:"border-box", background:"#ffffff" }}>
+                  style={{ width:"100%", padding:"8px 10px", border:"1px solid #E2E8F0", borderRadius:8, fontSize:13, outline:"none", boxSizing:"border-box", background:"#ffffff" }}>
                   <option>高</option><option>中</option><option>低</option>
                 </select>
               </div>
               <div>
-                <div style={{ fontSize:11, color:"#6b7280", marginBottom:4, fontWeight:600 }}>截止日</div>
+                <div style={{ fontSize:11, color:"#64748B", marginBottom:4, fontWeight:600 }}>截止日</div>
                 <input type="date" value={draft.dueDate} onChange={e=>setDraft({...draft, dueDate:e.target.value})}
-                  style={{ width:"100%", padding:"8px 10px", border:"1px solid #e4e6ef", borderRadius:8, fontSize:13, outline:"none", boxSizing:"border-box" }} />
+                  style={{ width:"100%", padding:"8px 10px", border:"1px solid #E2E8F0", borderRadius:8, fontSize:13, outline:"none", boxSizing:"border-box" }} />
               </div>
             </div>
             <div style={{ marginBottom:10 }}>
-              <div style={{ fontSize:11, color:"#6b7280", marginBottom:4, fontWeight:600 }}>關聯工程</div>
+              <div style={{ fontSize:11, color:"#64748B", marginBottom:4, fontWeight:600 }}>關聯工程</div>
               <select value={draft.catId} onChange={e=>setDraft({...draft, catId:e.target.value})}
-                style={{ width:"100%", padding:"8px 10px", border:"1px solid #e4e6ef", borderRadius:8, fontSize:13, outline:"none", boxSizing:"border-box", background:"#ffffff" }}>
+                style={{ width:"100%", padding:"8px 10px", border:"1px solid #E2E8F0", borderRadius:8, fontSize:13, outline:"none", boxSizing:"border-box", background:"#ffffff" }}>
                 <option value="">— 未指定 —</option>
                 {cats.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
               </select>
             </div>
             <div style={{ marginBottom:10 }}>
-              <div style={{ fontSize:11, color:"#6b7280", marginBottom:4, fontWeight:600 }}>負責人</div>
+              <div style={{ fontSize:11, color:"#64748B", marginBottom:4, fontWeight:600 }}>負責人</div>
               <input value={draft.assignee} onChange={e=>setDraft({...draft, assignee:e.target.value})} placeholder="誰要做？"
-                style={{ width:"100%", padding:"8px 12px", border:"1px solid #e4e6ef", borderRadius:8, fontSize:13, outline:"none", boxSizing:"border-box" }} />
+                style={{ width:"100%", padding:"8px 12px", border:"1px solid #E2E8F0", borderRadius:8, fontSize:13, outline:"none", boxSizing:"border-box" }} />
             </div>
             <div style={{ marginBottom:14 }}>
-              <div style={{ fontSize:11, color:"#6b7280", marginBottom:4, fontWeight:600 }}>描述</div>
+              <div style={{ fontSize:11, color:"#64748B", marginBottom:4, fontWeight:600 }}>描述</div>
               <textarea value={draft.description} onChange={e=>setDraft({...draft, description:e.target.value})}
                 placeholder="詳細說明..."
-                style={{ width:"100%", padding:"10px 12px", border:"1px solid #e4e6ef", borderRadius:8, fontSize:13, outline:"none", boxSizing:"border-box", height:70, resize:"vertical", fontFamily:"'Noto Sans TC',sans-serif" }} />
+                style={{ width:"100%", padding:"10px 12px", border:"1px solid #E2E8F0", borderRadius:8, fontSize:13, outline:"none", boxSizing:"border-box", height:70, resize:"vertical", fontFamily:"'Noto Sans TC',sans-serif" }} />
             </div>
             <div style={{ display:"flex", gap:8 }}>
               <div style={{ flex:1 }} />
-              <button onClick={()=>setShowNew(false)} style={{ padding:"10px 16px", background:"#f7f8fa", border:"1px solid #e4e6ef", borderRadius:8, color:"#6b7280", fontSize:13, cursor:"pointer" }}>取消</button>
-              <button onClick={save} style={{ padding:"10px 22px", background:"#111827", border:"none", borderRadius:8, color:"#ffffff", fontSize:13, fontWeight:700, cursor:"pointer" }}>建立任務</button>
+              <button onClick={()=>setShowNew(false)} style={{ padding:"10px 16px", background:"#F8FAFC", border:"1px solid #E2E8F0", borderRadius:8, color:"#64748B", fontSize:13, cursor:"pointer" }}>取消</button>
+              <button onClick={save} style={{ padding:"10px 22px", background:"#0F172A", border:"none", borderRadius:8, color:"#ffffff", fontSize:13, fontWeight: 600, cursor:"pointer" }}>建立任務</button>
             </div>
           </div>
         </div>
@@ -1927,7 +1936,7 @@ function PlanView({ cats, setCats, plans, setPlans, settings, userName }) {
 function KanbanView({ cats, setCats, onSelect, dragging, dragOver, onDragStart, onDragOver, onDrop, confirm }) {
   return (
     <div style={{ paddingTop: 16 }}>
-      <div style={{ fontSize: 11, color: "#6b7280", marginBottom: 12 }}>拖曳卡片可調整工序順序</div>
+      <div style={{ fontSize: 11, color: "#64748B", marginBottom: 12 }}>拖曳卡片可調整工序順序</div>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px,1fr))", gap: 12 }}>
         {[...cats].sort((a,b) => a.order - b.order).map(cat => {
           const done = cat.items.filter(i => i.status === "done").length;
@@ -1942,25 +1951,25 @@ function KanbanView({ cats, setCats, onSelect, dragging, dragOver, onDragStart, 
               onDragOver={(e) => { e.preventDefault(); onDragOver(cat.id); }}
               onDrop={() => onDrop(cat.id)}
               onClick={() => onSelect(cat)}
-              style={{ background: isDragOver ? "#e8edf8" : "#ffffff", border: `1px solid ${isDragOver ? ACCENT : "#d8dae3"}`, borderRadius: 12, padding: 14, cursor: "grab", transition: "border-color 0.2s, transform 0.15s", transform: dragging === cat.id ? "scale(0.97) rotate(-1deg)" : "none", userSelect: "none", position: "relative" }}
+              style={{ background: isDragOver ? "#e8edf8" : "#ffffff", border: `1px solid ${isDragOver ? ACCENT : "#E2E8F0"}`, borderRadius: 12, padding: 14, cursor: "grab", transition: "border-color 0.2s, transform 0.15s", transform: dragging === cat.id ? "scale(0.97) rotate(-1deg)" : "none", userSelect: "none", position: "relative" }}
             >
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 8 }}>
                 <input
                   value={cat.name}
                   onChange={e => { e.stopPropagation(); setCats(prev => prev.map(c => c.id === cat.id ? {...c, name: e.target.value} : c)); }}
                   onClick={e => e.stopPropagation()}
-                  style={{ fontSize: 14, fontWeight: 700, color: "#1a1d2e", flex: 1, background: "transparent", border: "none", outline: "none", fontFamily: "'Noto Sans TC', sans-serif", cursor: "text", minWidth: 0 }}
+                  style={{ fontSize: 14, fontWeight: 600, color: "#1a1d2e", flex: 1, background: "transparent", border: "none", outline: "none", fontFamily: "'Noto Sans TC', sans-serif", cursor: "text", minWidth: 0 }}
                 />
                 <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
                   <StatusBadge status={cat.status} setCats={setCats} catId={cat.id} />
-                  <button onMouseDown={e => { e.stopPropagation(); e.preventDefault(); }} onClick={e => { e.stopPropagation(); e.preventDefault(); confirm(`確定刪除「${cat.name}」？\n此操作無法復原。`).then(ok => { if (ok) setCats(prev => prev.filter(c => c.id !== cat.id)); }); }} style={{ width: 22, height: 22, borderRadius: "50%", background: "#fff0ee", border: "1px solid rgba(232,92,75,0.3)", color: "#e85c4b", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, cursor: "pointer", lineHeight: 1, flexShrink: 0, padding: 0 }} title="刪除此工程">×</button>
+                  <button onMouseDown={e => { e.stopPropagation(); e.preventDefault(); }} onClick={e => { e.stopPropagation(); e.preventDefault(); confirm(`確定刪除「${cat.name}」？\n此操作無法復原。`).then(ok => { if (ok) setCats(prev => prev.filter(c => c.id !== cat.id)); }); }} style={{ width: 22, height: 22, borderRadius: "50%", background: "#fff0ee", border: "1px solid rgba(232,92,75,0.3)", color: "#DC2626", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, cursor: "pointer", lineHeight: 1, flexShrink: 0, padding: 0 }} title="刪除此工程">×</button>
                 </div>
               </div>
               <div style={{ fontFamily: "monospace", fontSize: 13, color: ACCENT, marginBottom: 8 }}>{fmt(cat.items.reduce((s,it) => s + calcEstimated(it), 0))}</div>
               <div style={{ background: "#e2e4ec", borderRadius: 4, height: 5, marginBottom: 6, overflow: "hidden" }}>
-                <div style={{ background: pct === 100 ? "#4be87a" : "#4b9fe8", width: pct + "%", height: "100%", transition: "width 0.4s" }} />
+                <div style={{ background: pct === 100 ? "#16A34A" : "#4b9fe8", width: pct + "%", height: "100%", transition: "width 0.4s" }} />
               </div>
-              <div style={{ fontSize: 11, color: "#6b7280" }}>{done}/{cat.items.length} 細項完成 · {pct}%</div>
+              <div style={{ fontSize: 11, color: "#64748B" }}>{done}/{cat.items.length} 細項完成 · {pct}%</div>
               <div style={{ marginTop: 6, display: "flex", flexWrap: "wrap", gap: 4 }}>
                 {Object.entries(STATUS_MAP).map(([k, v]) => {
                   const cnt = cat.items.filter(i => i.status === k).length;
@@ -1986,7 +1995,7 @@ function KanbanView({ cats, setCats, onSelect, dragging, dragOver, onDragStart, 
           onMouseLeave={e => e.currentTarget.style.borderColor="rgba(232,184,75,0.35)"}
         >
           <div style={{ width: 36, height: 36, borderRadius: "50%", background: "#fff8e6", border: "1px solid rgba(232,184,75,0.3)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22, color: ACCENT }}>+</div>
-          <div style={{ fontSize: 13, color: "#6b7280" }}>新增工程大項</div>
+          <div style={{ fontSize: 13, color: "#64748B" }}>新增工程大項</div>
         </div>
       </div>
     </div>
@@ -1998,9 +2007,9 @@ function StatusBadge({ status, setCats, catId, itemId }) {
   const st = STATUS_MAP[status] || STATUS_MAP.pending;
   return (
     <div style={{ position: "relative" }}>
-      <div onClick={(e) => { e.stopPropagation(); setOpen(!open); }} style={{ background: st.color + "22", border: `1px solid ${st.color}55`, color: st.color, borderRadius: 20, padding: "2px 8px", fontSize: 11, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap" }}>{st.label}</div>
+      <div onClick={(e) => { e.stopPropagation(); setOpen(!open); }} style={{ background: st.color + "22", border: `1px solid ${st.color}55`, color: st.color, borderRadius: 20, padding: "2px 8px", fontSize: 11, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" }}>{st.label}</div>
       {open && (
-        <div style={{ position: "absolute", right: 0, top: 26, background: "#f0f1f4", border: "1px solid #2a2f40", borderRadius: 8, zIndex: 200, minWidth: 100, overflow: "hidden" }}>
+        <div style={{ position: "absolute", right: 0, top: 26, background: "#F1F5F9", border: "1px solid #E2E8F0", borderRadius: 8, zIndex: 200, minWidth: 100, overflow: "hidden" }}>
           {Object.entries(STATUS_MAP).map(([k, v]) => (
             <div key={k} onClick={(e) => { e.stopPropagation(); setCats(prev => prev.map(c => {
               if (catId && c.id === catId) {
@@ -2008,7 +2017,7 @@ function StatusBadge({ status, setCats, catId, itemId }) {
                 return { ...c, status: k };
               }
               return c;
-            })); setOpen(false); }} style={{ padding: "7px 12px", cursor: "pointer", color: v.color, fontSize: 12, borderBottom: "1px solid #2a2f4044" }}>{v.label}</div>
+            })); setOpen(false); }} style={{ padding: "7px 12px", cursor: "pointer", color: v.color, fontSize: 12, borderBottom: "1px solid #E2E8F044" }}>{v.label}</div>
           ))}
         </div>
       )}
@@ -2025,29 +2034,29 @@ function ListView({ cats, setCats, onSelectItem, confirm }) {
         const isExp = expanded[cat.id];
         const catTotal = cat.items.reduce((s, it) => s + calcItemTotal(it), 0);
         return (
-          <div key={cat.id} style={{ background: "#ffffff", border: "1px solid #2a2f40", borderRadius: 12, marginBottom: 10, overflow: "hidden" }}>
+          <div key={cat.id} style={{ background: "#ffffff", border: "1px solid #E2E8F0", borderRadius: 12, marginBottom: 10, overflow: "hidden" }}>
             <div onClick={() => setExpanded(e => ({...e, [cat.id]: !e[cat.id]}))} style={{ display: "flex", alignItems: "center", padding: "12px 16px", cursor: "pointer", gap: 12 }}>
-              <div style={{ fontSize: 16, color: isExp ? ACCENT : "#6b7280", transition: "transform 0.2s", transform: isExp ? "rotate(90deg)" : "none" }}>▶</div>
+              <div style={{ fontSize: 16, color: isExp ? ACCENT : "#64748B", transition: "transform 0.2s", transform: isExp ? "rotate(90deg)" : "none" }}>▶</div>
               <input
                 value={cat.name}
                 onChange={e => { e.stopPropagation(); setCats(prev => prev.map(c => c.id === cat.id ? {...c, name: e.target.value} : c)); }}
                 onClick={e => e.stopPropagation()}
-                style={{ flex: 1, fontWeight: 700, fontSize: 14, color: "#1a1d2e", background: "transparent", border: "none", outline: "none", fontFamily: "'Noto Sans TC', sans-serif", cursor: "text" }}
+                style={{ flex: 1, fontWeight: 600, fontSize: 14, color: "#1a1d2e", background: "transparent", border: "none", outline: "none", fontFamily: "'Noto Sans TC', sans-serif", cursor: "text" }}
               />
               <div style={{ fontFamily: "monospace", fontSize: 12, color: ACCENT }}>{fmt(cat.items.reduce((s,it) => s + calcEstimated(it), 0))}</div>
-              {catTotal > 0 && <div style={{ fontFamily: "monospace", fontSize: 12, color: catTotal > cat.items.reduce((s,it) => s + calcEstimated(it), 0) ? "#e85c4b" : "#4be87a" }}>實記 {fmt(catTotal)}</div>}
+              {catTotal > 0 && <div style={{ fontFamily: "monospace", fontSize: 12, color: catTotal > cat.items.reduce((s,it) => s + calcEstimated(it), 0) ? "#DC2626" : "#16A34A" }}>實記 {fmt(catTotal)}</div>}
               <StatusBadge status={cat.status} setCats={setCats} catId={cat.id} />
-              <button onMouseDown={e => e.stopPropagation()} onClick={e => { e.stopPropagation(); confirm(`確定刪除「${cat.name}」？`).then(ok => { if (ok) setCats(prev => prev.filter(c => c.id !== cat.id)); }); }} style={{ width: 24, height: 24, borderRadius: "50%", background: "#fff0ee", border: "1px solid rgba(232,92,75,0.25)", color: "#e85c4b", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 15, cursor: "pointer", flexShrink: 0, padding: 0 }} title="刪除">×</button>
+              <button onMouseDown={e => e.stopPropagation()} onClick={e => { e.stopPropagation(); confirm(`確定刪除「${cat.name}」？`).then(ok => { if (ok) setCats(prev => prev.filter(c => c.id !== cat.id)); }); }} style={{ width: 24, height: 24, borderRadius: "50%", background: "#fff0ee", border: "1px solid rgba(232,92,75,0.25)", color: "#DC2626", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 15, cursor: "pointer", flexShrink: 0, padding: 0 }} title="刪除">×</button>
             </div>
             {isExp && (
-              <div style={{ borderTop: "1px solid #2a2f40" }}>
+              <div style={{ borderTop: "1px solid #E2E8F0" }}>
                 {/* item table header */}
-                <div style={{ display: "grid", gridTemplateColumns: "2fr 60px 60px 70px 70px 80px 80px 100px 80px 30px", gap: 4, padding: "6px 16px", background: "#f0f1f4", fontSize: 10, color: "#6b7280", borderBottom: "1px solid #2a2f40" }}>
+                <div style={{ display: "grid", gridTemplateColumns: "2fr 60px 60px 70px 70px 80px 80px 100px 80px 30px", gap: 4, padding: "6px 16px", background: "#F1F5F9", fontSize: 10, color: "#64748B", borderBottom: "1px solid #E2E8F0" }}>
                   <div>項目名稱</div><div>預估數量</div><div>單位</div><div>預估單價</div><div>預估複價</div><div>實際複價</div><div>差異</div><div>負責人</div><div>狀態</div><div />
                 </div>
                 {cat.items.map(item => (
-                  <div key={item.id} onClick={() => onSelectItem(cat, item)} style={{ display: "grid", gridTemplateColumns: "2fr 60px 60px 70px 70px 80px 80px 100px 80px 30px", gap: 4, padding: "8px 16px", borderBottom: "1px solid #2a2f4044", cursor: "pointer", alignItems: "center", transition: "background 0.15s" }}
-                    onMouseEnter={e => e.currentTarget.style.background="#f0f1f4"}
+                  <div key={item.id} onClick={() => onSelectItem(cat, item)} style={{ display: "grid", gridTemplateColumns: "2fr 60px 60px 70px 70px 80px 80px 100px 80px 30px", gap: 4, padding: "8px 16px", borderBottom: "1px solid #E2E8F044", cursor: "pointer", alignItems: "center", transition: "background 0.15s" }}
+                    onMouseEnter={e => e.currentTarget.style.background="#F1F5F9"}
                     onMouseLeave={e => e.currentTarget.style.background="transparent"}
                   >
                     <input
@@ -2056,15 +2065,15 @@ function ListView({ cats, setCats, onSelectItem, confirm }) {
                       onClick={e => e.stopPropagation()}
                       style={{ fontSize: 13, color: item.notes?.includes("⚠️") ? "#e8954b" : "#1a1d2e", background: "transparent", border: "none", outline: "none", fontFamily: "'Noto Sans TC', sans-serif", width: "100%", cursor: "text" }}
                     />
-                    <div style={{ fontFamily: "monospace", fontSize: 12, color: "#6b7280" }}>{item.estQty ?? item.qty}</div>
-                    <div style={{ fontSize: 11, color: "#6b7280" }}>{item.unit}</div>
+                    <div style={{ fontFamily: "monospace", fontSize: 12, color: "#64748B" }}>{item.estQty ?? item.qty}</div>
+                    <div style={{ fontSize: 11, color: "#64748B" }}>{item.unit}</div>
                     <div style={{ fontFamily: "monospace", fontSize: 12 }}>{fmt(item.estUnitPrice ?? item.unitPrice ?? 0)}</div>
                     <div style={{ fontFamily: "monospace", fontSize: 12, color: ACCENT }}>{fmt(calcEstimated(item))}</div>
                     <div style={{ fontFamily: "monospace", fontSize: 12, color: "#4b9fe8" }}>{calcActual(item) > 0 ? fmt(calcActual(item)) : "-"}</div>
-                    <div style={{ fontFamily: "monospace", fontSize: 12, fontWeight: 700, color: calcActual(item) > calcEstimated(item) ? "#e85c4b" : calcActual(item) > 0 ? "#4be87a" : "#6b7280" }}>{calcActual(item) > 0 ? (calcActual(item) > calcEstimated(item) ? "+" : "") + fmt(calcActual(item) - calcEstimated(item)) : "-"}</div>
-                    <div style={{ fontSize: 12, color: item.assignee ? "#111827" : "#c0c4d0" }}>{item.assignee || "未指派"}</div>
+                    <div style={{ fontFamily: "monospace", fontSize: 12, fontWeight: 600, color: calcActual(item) > calcEstimated(item) ? "#DC2626" : calcActual(item) > 0 ? "#16A34A" : "#64748B" }}>{calcActual(item) > 0 ? (calcActual(item) > calcEstimated(item) ? "+" : "") + fmt(calcActual(item) - calcEstimated(item)) : "-"}</div>
+                    <div style={{ fontSize: 12, color: item.assignee ? "#0F172A" : "#CBD5E1" }}>{item.assignee || "未指派"}</div>
                     <StatusBadge status={item.status} setCats={setCats} catId={cat.id} itemId={item.id} />
-                    <button onMouseDown={e => e.stopPropagation()} onClick={e => { e.stopPropagation(); confirm(`刪除「${item.name}」？`).then(ok => { if (ok) setCats(prev => prev.map(c => c.id === cat.id ? {...c, items: c.items.filter(it => it.id !== item.id)} : c)); }); }} style={{ width: 20, height: 20, borderRadius: "50%", background: "#fff0ee", border: "1px solid rgba(232,92,75,0.2)", color: "#e85c4b", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, cursor: "pointer", padding: 0, flexShrink: 0 }}>×</button>
+                    <button onMouseDown={e => e.stopPropagation()} onClick={e => { e.stopPropagation(); confirm(`刪除「${item.name}」？`).then(ok => { if (ok) setCats(prev => prev.map(c => c.id === cat.id ? {...c, items: c.items.filter(it => it.id !== item.id)} : c)); }); }} style={{ width: 20, height: 20, borderRadius: "50%", background: "#fff0ee", border: "1px solid rgba(232,92,75,0.2)", color: "#DC2626", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, cursor: "pointer", padding: 0, flexShrink: 0 }}>×</button>
                   </div>
                 ))}
                 {/* add item */}
@@ -2073,7 +2082,7 @@ function ListView({ cats, setCats, onSelectItem, confirm }) {
                   if (!name) return;
                   const newItem = { id: `i-${cat.id}-${Date.now()}`, name, qty: 1, unit: "式", unitPrice: 0, labor: 0, laborDays: 0, dailyWage: 0, assignee: "", status: "pending", receipts: [], notes: "", chat: [] };
                   setCats(prev => prev.map(c => c.id === cat.id ? { ...c, items: [...c.items, newItem] } : c));
-                }} style={{ padding: "8px 16px", color: "#6b7280", fontSize: 12, cursor: "pointer", borderTop: "1px solid #2a2f4044", display: "flex", alignItems: "center", gap: 6 }}>
+                }} style={{ padding: "8px 16px", color: "#64748B", fontSize: 12, cursor: "pointer", borderTop: "1px solid #E2E8F044", display: "flex", alignItems: "center", gap: 6 }}>
                   <span style={{ fontSize: 16, color: ACCENT }}>+</span> 新增細項
                 </div>
               </div>
@@ -2087,7 +2096,7 @@ function ListView({ cats, setCats, onSelectItem, confirm }) {
           setCats(prev => [...prev, { id, order: prev.length, name: "新工程大項", budget: 0, status: "pending", items: [] }]);
           setExpanded(e => ({ ...e, [id]: true }));
         }}
-        style={{ background: "#fafbfc", border: "1px dashed rgba(180,140,30,0.4)", borderRadius: 12, padding: "12px 16px", cursor: "pointer", display: "flex", alignItems: "center", gap: 10, color: "#6b7280", fontSize: 13, transition: "border-color 0.2s" }}
+        style={{ background: "#fafbfc", border: "1px dashed rgba(180,140,30,0.4)", borderRadius: 12, padding: "12px 16px", cursor: "pointer", display: "flex", alignItems: "center", gap: 10, color: "#64748B", fontSize: 13, transition: "border-color 0.2s" }}
         onMouseEnter={e => e.currentTarget.style.borderColor=ACCENT}
         onMouseLeave={e => e.currentTarget.style.borderColor="rgba(232,184,75,0.35)"}
       >
@@ -2223,33 +2232,33 @@ function AdvisorSettingsView({ settings, setSettings, cats, aiLog, setAiLog, act
   };
 
   const upd = (field, val) => setSettings({ ...settings, [field]: val });
-  const fieldStyle = { width:"100%", padding:"9px 12px", border:"1px solid #e4e6ef", borderRadius:8, fontSize:13, color:"#111827", outline:"none", fontFamily:"'Noto Sans TC',sans-serif", boxSizing:"border-box", background:"#f9fafb" };
+  const fieldStyle = { width:"100%", padding:"9px 12px", border:"1px solid #E2E8F0", borderRadius:8, fontSize:13, color:"#0F172A", outline:"none", fontFamily:"'Noto Sans TC',sans-serif", boxSizing:"border-box", background:"#f9fafb" };
 
   return (
     <div style={{ paddingTop:12, maxWidth:900, margin:"0 auto" }}>
       {/* Header */}
-      <div style={{ display:"flex", alignItems:"center", gap:12, marginBottom:16, background:"#ffffff", border:"1px solid #e4e6ef", borderRadius:14, padding:"14px 18px" }}>
-        <div style={{ width:44, height:44, borderRadius:12, background:"#111827", display:"flex", alignItems:"center", justifyContent:"center", fontSize:22, flexShrink:0 }}>🤖</div>
+      <div style={{ display:"flex", alignItems:"center", gap:12, marginBottom:16, background:"#ffffff", border:"1px solid #E2E8F0", borderRadius:14, padding:"14px 18px" }}>
+        <div style={{ width:44, height:44, borderRadius:12, background:"#0F172A", display:"flex", alignItems:"center", justifyContent:"center", fontSize:22, flexShrink:0 }}>🤖</div>
         <div style={{ flex:1 }}>
-          <div style={{ fontSize:16, fontWeight:800, color:"#111827" }}>AI 工程特助</div>
-          <div style={{ fontSize:12, color:"#6b7280" }}>
+          <div style={{ fontSize:16, fontWeight: 600, color:"#0F172A" }}>AI 工程特助</div>
+          <div style={{ fontSize:12, color:"#64748B" }}>
             {today} · 完成 {doneItems}/{totalItems} 項
-            {daysLeft!==null && <span style={{ color:daysLeft<14?"#dc2626":daysLeft<30?"#f59e0b":"#22c55e", fontWeight:700 }}> · 距完工 {daysLeft} 天</span>}
-            {stalledItems.length>0 && <span style={{ color:"#dc2626", fontWeight:700 }}> · ⏰ {stalledItems.length} 項卡關</span>}
-            {issueItems.length>0 && <span style={{ color:"#dc2626", fontWeight:700 }}> · 🚨 {issueItems.length} 項有問題</span>}
+            {daysLeft!==null && <span style={{ color:daysLeft<14?"#dc2626":daysLeft<30?"#f59e0b":"#16A34A", fontWeight: 600 }}> · 距完工 {daysLeft} 天</span>}
+            {stalledItems.length>0 && <span style={{ color:"#dc2626", fontWeight: 600 }}> · ⏰ {stalledItems.length} 項卡關</span>}
+            {issueItems.length>0 && <span style={{ color:"#dc2626", fontWeight: 600 }}> · 🚨 {issueItems.length} 項有問題</span>}
           </div>
         </div>
         {/* Status chips */}
         <div style={{ display:"flex", gap:6, flexWrap:"wrap" }}>
           {unassigned.length>0 && <span style={{ fontSize:11, background:"#fff7ed", color:"#c2410c", borderRadius:20, padding:"3px 10px", fontWeight:600 }}>未指派 {unassigned.length}</span>}
-          {noDate.length>0 && <span style={{ fontSize:11, background:"#fefce8", color:"#854d0e", borderRadius:20, padding:"3px 10px", fontWeight:600 }}>未設日期 {noDate.length}</span>}
+          {noDate.length>0 && <span style={{ fontSize:11, background:"#EFF4FF", color:"#64748B", borderRadius:20, padding:"3px 10px", fontWeight:600 }}>未設日期 {noDate.length}</span>}
         </div>
       </div>
 
       {/* Sub tabs */}
       <div style={{ display:"flex", gap:4, marginBottom:14 }}>
         {[["command","⚡ 指令中心"],["upload","📎 上傳資料"],["settings","⚙ 專案設定"],["log","💬 對話記錄"]].map(([t,l]) => (
-          <button key={t} onClick={()=>setActiveTab(t)} style={{ padding:"7px 16px", borderRadius:8, border:"1px solid #e4e6ef", fontSize:13, cursor:"pointer", background:activeTab===t?"#111827":"#f7f8fa", color:activeTab===t?"#ffffff":"#6b7280", fontWeight:activeTab===t?700:400, transition:"all 0.15s" }}>{l}</button>
+          <button key={t} onClick={()=>setActiveTab(t)} style={{ padding:"7px 16px", borderRadius:8, border:"1px solid #E2E8F0", fontSize:13, cursor:"pointer", background:activeTab===t?"#0F172A":"#F8FAFC", color:activeTab===t?"#ffffff":"#64748B", fontWeight:activeTab===t?700:400, transition:"all 0.15s" }}>{l}</button>
         ))}
       </div>
 
@@ -2261,12 +2270,12 @@ function AdvisorSettingsView({ settings, setSettings, cats, aiLog, setAiLog, act
             {COMMANDS.map(cmd => (
               <button key={cmd.label} onClick={() => { setActiveTab("log"); runAI(cmd.prompt, null, cmd.icon + " " + cmd.label); }}
                 disabled={loading}
-                style={{ padding:"14px 16px", background:"#ffffff", border:"1px solid #e4e6ef", borderRadius:12, cursor:loading?"not-allowed":"pointer", textAlign:"left", transition:"all 0.15s", opacity:loading?0.6:1 }}
-                onMouseEnter={e=>!loading&&(e.currentTarget.style.borderColor=ACCENT,e.currentTarget.style.background="#fffbf0")}
-                onMouseLeave={e=>(e.currentTarget.style.borderColor="#e4e6ef",e.currentTarget.style.background="#ffffff")}
+                style={{ padding:"14px 16px", background:"#ffffff", border:"1px solid #E2E8F0", borderRadius:12, cursor:loading?"not-allowed":"pointer", textAlign:"left", transition:"all 0.15s", opacity:loading?0.6:1 }}
+                onMouseEnter={e=>!loading&&(e.currentTarget.style.borderColor=ACCENT,e.currentTarget.style.background="#EFF4FF")}
+                onMouseLeave={e=>(e.currentTarget.style.borderColor="#E2E8F0",e.currentTarget.style.background="#ffffff")}
               >
                 <div style={{ fontSize:22, marginBottom:6 }}>{cmd.icon}</div>
-                <div style={{ fontSize:13, fontWeight:700, color:"#111827" }}>{cmd.label}</div>
+                <div style={{ fontSize:13, fontWeight: 600, color:"#0F172A" }}>{cmd.label}</div>
               </button>
             ))}
           </div>
@@ -2275,8 +2284,8 @@ function AdvisorSettingsView({ settings, setSettings, cats, aiLog, setAiLog, act
           <DependencyWarnings cats={cats} setCats={setCats => {}} />
 
           {/* Free input */}
-          <div style={{ background:"#ffffff", border:"1px solid #e4e6ef", borderRadius:12, padding:16 }}>
-            <div style={{ fontSize:12, color:"#6b7280", marginBottom:8 }}>自由提問 / 指令</div>
+          <div style={{ background:"#ffffff", border:"1px solid #E2E8F0", borderRadius:12, padding:16 }}>
+            <div style={{ fontSize:12, color:"#64748B", marginBottom:8 }}>自由提問 / 指令</div>
             <div style={{ display:"flex", gap:8 }}>
               <textarea value={chatInput} onChange={e=>setChatInput(e.target.value)}
                 onKeyDown={e=>{ if(e.key==="Enter"&&!e.shiftKey&&!e.nativeEvent.isComposing){e.preventDefault(); if(chatInput.trim()&&!loading){const t=chatInput.trim();setChatInput("");setActiveTab("log");runAI(t);}}}}
@@ -2285,7 +2294,7 @@ function AdvisorSettingsView({ settings, setSettings, cats, aiLog, setAiLog, act
               />
               <button onClick={()=>{if(chatInput.trim()&&!loading){const t=chatInput.trim();setChatInput("");setActiveTab("log");runAI(t);}}}
                 disabled={loading||!chatInput.trim()}
-                style={{ padding:"0 20px", background:"#111827", border:"none", borderRadius:10, color:"#fff", fontWeight:700, cursor:loading||!chatInput.trim()?"not-allowed":"pointer", opacity:loading||!chatInput.trim()?0.5:1, fontSize:14, minWidth:64 }}>
+                style={{ padding:"0 20px", background:"#0F172A", border:"none", borderRadius:10, color:"#fff", fontWeight: 600, cursor:loading||!chatInput.trim()?"not-allowed":"pointer", opacity:loading||!chatInput.trim()?0.5:1, fontSize:14, minWidth:64 }}>
                 送出
               </button>
             </div>
@@ -2296,11 +2305,11 @@ function AdvisorSettingsView({ settings, setSettings, cats, aiLog, setAiLog, act
       {/* ── UPLOAD TAB ── */}
       {activeTab === "upload" && (
         <div>
-          <div style={{ background:"#ffffff", border:"2px dashed #e4e6ef", borderRadius:14, padding:"30px 20px", textAlign:"center", marginBottom:16 }}>
+          <div style={{ background:"#ffffff", border:"2px dashed #E2E8F0", borderRadius:14, padding:"30px 20px", textAlign:"center", marginBottom:16 }}>
             <div style={{ fontSize:40, marginBottom:10 }}>📎</div>
-            <div style={{ fontSize:15, fontWeight:700, color:"#111827", marginBottom:6 }}>上傳工程文件</div>
-            <div style={{ fontSize:13, color:"#6b7280", marginBottom:20 }}>估價單、合約、施工圖、照片、會議記錄…AI會分析並歸檔</div>
-            <label style={{ display:"inline-block", padding:"10px 28px", background:"#111827", color:"#fff", borderRadius:10, fontSize:14, fontWeight:700, cursor:"pointer" }}>
+            <div style={{ fontSize:15, fontWeight: 600, color:"#0F172A", marginBottom:6 }}>上傳工程文件</div>
+            <div style={{ fontSize:13, color:"#64748B", marginBottom:20 }}>估價單、合約、施工圖、照片、會議記錄…AI會分析並歸檔</div>
+            <label style={{ display:"inline-block", padding:"10px 28px", background:"#0F172A", color:"#fff", borderRadius:10, fontSize:14, fontWeight: 600, cursor:"pointer" }}>
               選擇檔案
               <input type="file" accept="image/*,.pdf,.jpg,.jpeg,.png,.gif,.webp" multiple style={{ display:"none" }} onChange={handleFileUpload} />
             </label>
@@ -2308,29 +2317,29 @@ function AdvisorSettingsView({ settings, setSettings, cats, aiLog, setAiLog, act
 
           {pendingUpload && (
             <div style={{ background:"#f0fdf4", border:"1px solid #86efac", borderRadius:12, padding:16, marginBottom:16 }}>
-              <div style={{ fontSize:13, fontWeight:700, color:"#166534", marginBottom:6 }}>✅ 準備分析：{pendingUpload.name}</div>
+              <div style={{ fontSize:13, fontWeight: 600, color:"#166534", marginBottom:6 }}>✅ 準備分析：{pendingUpload.name}</div>
               <div style={{ fontSize:12, color:"#4ade80", marginBottom:12 }}>{Math.round(pendingUpload.size/1024)}KB · {pendingUpload.type}</div>
               {pendingUpload.type.startsWith("image/") && (
                 <img src={pendingUpload.data} alt="preview" style={{ maxWidth:"100%", maxHeight:200, borderRadius:8, marginBottom:12, objectFit:"contain" }} />
               )}
               <div style={{ display:"flex", gap:8 }}>
-                <button onClick={sendFileToAI} disabled={loading} style={{ flex:1, padding:"10px 0", background:"#111827", border:"none", borderRadius:8, color:"#fff", fontWeight:700, cursor:loading?"not-allowed":"pointer", fontSize:14 }}>
+                <button onClick={sendFileToAI} disabled={loading} style={{ flex:1, padding:"10px 0", background:"#0F172A", border:"none", borderRadius:8, color:"#fff", fontWeight: 600, cursor:loading?"not-allowed":"pointer", fontSize:14 }}>
                   {loading?"分析中…":"🤖 讓AI分析這份文件"}
                 </button>
-                <button onClick={()=>setPendingUpload(null)} style={{ padding:"10px 16px", background:"none", border:"1px solid #e4e6ef", borderRadius:8, cursor:"pointer", fontSize:13, color:"#6b7280" }}>取消</button>
+                <button onClick={()=>setPendingUpload(null)} style={{ padding:"10px 16px", background:"none", border:"1px solid #E2E8F0", borderRadius:8, cursor:"pointer", fontSize:13, color:"#64748B" }}>取消</button>
               </div>
             </div>
           )}
 
           {uploadedFiles.length > 0 && (
-            <div style={{ background:"#ffffff", border:"1px solid #e4e6ef", borderRadius:12, padding:16 }}>
-              <div style={{ fontSize:13, fontWeight:700, color:"#111827", marginBottom:12 }}>已分析的文件（{uploadedFiles.length}）</div>
+            <div style={{ background:"#ffffff", border:"1px solid #E2E8F0", borderRadius:12, padding:16 }}>
+              <div style={{ fontSize:13, fontWeight: 600, color:"#0F172A", marginBottom:12 }}>已分析的文件（{uploadedFiles.length}）</div>
               {uploadedFiles.map((f,i) => (
-                <div key={i} style={{ display:"flex", alignItems:"center", gap:10, padding:"8px 0", borderBottom:i<uploadedFiles.length-1?"1px solid #f0f1f4":"none" }}>
+                <div key={i} style={{ display:"flex", alignItems:"center", gap:10, padding:"8px 0", borderBottom:i<uploadedFiles.length-1?"1px solid #F1F5F9":"none" }}>
                   <span style={{ fontSize:20 }}>{f.type.startsWith("image/")?"🖼️":"📄"}</span>
                   <div style={{ flex:1 }}>
-                    <div style={{ fontSize:13, color:"#111827", fontWeight:500 }}>{f.name}</div>
-                    <div style={{ fontSize:11, color:"#9ca3af" }}>{new Date(f.ts).toLocaleString("zh-TW")}</div>
+                    <div style={{ fontSize:13, color:"#0F172A", fontWeight:500 }}>{f.name}</div>
+                    <div style={{ fontSize:11, color:"#94A3B8" }}>{new Date(f.ts).toLocaleString("zh-TW")}</div>
                   </div>
                 </div>
               ))}
@@ -2342,43 +2351,43 @@ function AdvisorSettingsView({ settings, setSettings, cats, aiLog, setAiLog, act
       {/* ── SETTINGS TAB ── */}
       {activeTab === "settings" && (
         <div>
-          <div style={{ background:"#ffffff", border:"1px solid #e4e6ef", borderRadius:12, padding:"20px", marginBottom:14 }}>
-            <div style={{ fontSize:14, fontWeight:700, color:"#111827", marginBottom:14 }}>專案基本資訊</div>
+          <div style={{ background:"#ffffff", border:"1px solid #E2E8F0", borderRadius:12, padding:"20px", marginBottom:14 }}>
+            <div style={{ fontSize:14, fontWeight: 600, color:"#0F172A", marginBottom:14 }}>專案基本資訊</div>
             <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12 }}>
               {[["projectName","專案名稱"],["projectAddress","地址"],["ownerName","業主"],["contractorName","承包商"]].map(([f,l]) => (
                 <div key={f}>
-                  <div style={{ fontSize:11, color:"#6b7280", marginBottom:5, fontWeight:600 }}>{l}</div>
+                  <div style={{ fontSize:11, color:"#64748B", marginBottom:5, fontWeight:600 }}>{l}</div>
                   <input value={settings[f]||""} onChange={e=>upd(f,e.target.value)} style={fieldStyle} />
                 </div>
               ))}
               <div>
-                <div style={{ fontSize:11, color:"#6b7280", marginBottom:5, fontWeight:600 }}>目標完工日</div>
+                <div style={{ fontSize:11, color:"#64748B", marginBottom:5, fontWeight:600 }}>目標完工日</div>
                 <input type="date" value={settings.targetDate||""} onChange={e=>upd("targetDate",e.target.value)} style={fieldStyle} />
               </div>
               <div>
-                <div style={{ fontSize:11, color:"#6b7280", marginBottom:5, fontWeight:600 }}>總預算上限</div>
+                <div style={{ fontSize:11, color:"#64748B", marginBottom:5, fontWeight:600 }}>總預算上限</div>
                 <input type="number" value={settings.budget||""} onChange={e=>upd("budget",e.target.value)} style={fieldStyle} placeholder="NT$" />
               </div>
             </div>
           </div>
-          <div style={{ background:"#ffffff", border:"1px solid #e4e6ef", borderRadius:12, padding:"20px", marginBottom:14 }}>
-            <div style={{ fontSize:14, fontWeight:700, color:"#111827", marginBottom:8 }}>給AI的特別指示</div>
-            <div style={{ fontSize:12, color:"#6b7280", marginBottom:8 }}>告訴AI需要特別注意的事：假日不得施工、業主偏好、付款方式、特殊限制等</div>
+          <div style={{ background:"#ffffff", border:"1px solid #E2E8F0", borderRadius:12, padding:"20px", marginBottom:14 }}>
+            <div style={{ fontSize:14, fontWeight: 600, color:"#0F172A", marginBottom:8 }}>給AI的特別指示</div>
+            <div style={{ fontSize:12, color:"#64748B", marginBottom:8 }}>告訴AI需要特別注意的事：假日不得施工、業主偏好、付款方式、特殊限制等</div>
             <textarea value={settings.notes||""} onChange={e=>upd("notes",e.target.value)} style={{ ...fieldStyle, height:120, resize:"vertical" }}
               placeholder="例如：週六日不得施工、業主要每週五收到進度報告、磁磚需業主現場確認才能下單、廠商付款需30天票期…" />
           </div>
-          <div style={{ background:"#ffffff", border:"1px solid #e4e6ef", borderRadius:12, padding:"20px" }}>
-            <div style={{ fontSize:14, fontWeight:700, color:"#111827", marginBottom:8 }}>⭐ 優先追蹤項目</div>
-            <div style={{ fontSize:12, color:"#6b7280", marginBottom:12 }}>標記需要AI特別關注的細項</div>
+          <div style={{ background:"#ffffff", border:"1px solid #E2E8F0", borderRadius:12, padding:"20px" }}>
+            <div style={{ fontSize:14, fontWeight: 600, color:"#0F172A", marginBottom:8 }}>⭐ 優先追蹤項目</div>
+            <div style={{ fontSize:12, color:"#64748B", marginBottom:12 }}>標記需要AI特別關注的細項</div>
             {cats.map(cat => (
               <div key={cat.id} style={{ marginBottom:12 }}>
-                <div style={{ fontSize:12, color:"#374151", fontWeight:700, marginBottom:6 }}>{cat.name}</div>
+                <div style={{ fontSize:12, color:"#334155", fontWeight: 600, marginBottom:6 }}>{cat.name}</div>
                 <div style={{ display:"flex", flexWrap:"wrap", gap:6 }}>
                   {cat.items.map(item => {
                     const isPri = (settings.priorities||[]).includes(item.id);
                     return (
                       <button key={item.id} onClick={()=>{ const p=settings.priorities||[]; upd("priorities",isPri?p.filter(x=>x!==item.id):[...p,item.id]); }}
-                        style={{ fontSize:11, padding:"4px 12px", borderRadius:20, border:"1px solid "+(isPri?ACCENT:"#e4e6ef"), background:isPri?"#fffbf0":"#f7f8fa", color:isPri?"#92400e":"#6b7280", cursor:"pointer" }}>
+                        style={{ fontSize:11, padding:"4px 12px", borderRadius:20, border:"1px solid "+(isPri?ACCENT:"#E2E8F0"), background:isPri?"#EFF4FF":"#F8FAFC", color:isPri?"#92400e":"#64748B", cursor:"pointer" }}>
                         {isPri?"⭐ ":""}{item.name.slice(0,22)}{item.name.length>22?"…":""}
                       </button>
                     );
@@ -2393,24 +2402,24 @@ function AdvisorSettingsView({ settings, setSettings, cats, aiLog, setAiLog, act
       {/* ── CHAT LOG TAB ── */}
       {activeTab === "log" && (
         <div>
-          <div style={{ background:"#ffffff", border:"1px solid #e4e6ef", borderRadius:12, padding:16, maxHeight:560, overflowY:"auto", marginBottom:12 }}>
-            {aiLog.length===0 && <div style={{ textAlign:"center", color:"#9ca3af", padding:"40px 0", fontSize:13 }}>點擊左側指令開始，或直接輸入問題</div>}
+          <div style={{ background:"#ffffff", border:"1px solid #E2E8F0", borderRadius:12, padding:16, maxHeight:560, overflowY:"auto", marginBottom:12 }}>
+            {aiLog.length===0 && <div style={{ textAlign:"center", color:"#94A3B8", padding:"40px 0", fontSize:13 }}>點擊左側指令開始，或直接輸入問題</div>}
             {aiLog.map((m,i) => (
               <div key={i} style={{ marginBottom:16, display:"flex", gap:10, flexDirection:m.role==="user"?"row-reverse":"row" }}>
-                <div style={{ width:34, height:34, borderRadius:"50%", background:m.role==="user"?"#dbeafe":"#111827", display:"flex", alignItems:"center", justifyContent:"center", fontSize:16, flexShrink:0 }}>
+                <div style={{ width:34, height:34, borderRadius:"50%", background:m.role==="user"?"#dbeafe":"#0F172A", display:"flex", alignItems:"center", justifyContent:"center", fontSize:16, flexShrink:0 }}>
                   {m.role==="user"?"👤":"🤖"}
                 </div>
-                <div style={{ maxWidth:"82%", background:m.role==="user"?"#eff6ff":"#f9fafb", border:m.role==="user"?"1px solid #bfdbfe":"1px solid #e4e6ef", borderRadius:12, padding:"10px 14px" }}>
-                  {m.meta?.file && <div style={{ fontSize:11, color:"#6b7280", marginBottom:4 }}>📎 {m.meta.file}</div>}
+                <div style={{ maxWidth:"82%", background:m.role==="user"?"#eff6ff":"#f9fafb", border:m.role==="user"?"1px solid #bfdbfe":"1px solid #E2E8F0", borderRadius:12, padding:"10px 14px" }}>
+                  {m.meta?.file && <div style={{ fontSize:11, color:"#64748B", marginBottom:4 }}>📎 {m.meta.file}</div>}
                   <div style={{ fontSize:13, lineHeight:1.85, color:"#1e293b", whiteSpace:"pre-wrap" }}>{m.text}</div>
-                  <div style={{ fontSize:10, color:"#9ca3af", marginTop:5 }}>{m.ts}</div>
+                  <div style={{ fontSize:10, color:"#94A3B8", marginTop:5 }}>{m.ts}</div>
                 </div>
               </div>
             ))}
             {loading && (
               <div style={{ display:"flex", gap:10 }}>
-                <div style={{ width:34, height:34, borderRadius:"50%", background:"#111827", display:"flex", alignItems:"center", justifyContent:"center", fontSize:16 }}>🤖</div>
-                <div style={{ padding:"12px 16px", color:"#6b7280", fontSize:13, background:"#f9fafb", border:"1px solid #e4e6ef", borderRadius:12 }}>
+                <div style={{ width:34, height:34, borderRadius:"50%", background:"#0F172A", display:"flex", alignItems:"center", justifyContent:"center", fontSize:16 }}>🤖</div>
+                <div style={{ padding:"12px 16px", color:"#64748B", fontSize:13, background:"#f9fafb", border:"1px solid #E2E8F0", borderRadius:12 }}>
                   <span style={{ animation:"pulse 1s infinite" }}>AI 特助分析中…</span>
                 </div>
               </div>
@@ -2421,13 +2430,13 @@ function AdvisorSettingsView({ settings, setSettings, cats, aiLog, setAiLog, act
             <textarea value={chatInput} onChange={e=>setChatInput(e.target.value)}
               onKeyDown={e=>{ if(e.key==="Enter"&&!e.shiftKey&&!e.nativeEvent.isComposing){e.preventDefault();if(chatInput.trim()&&!loading){const t=chatInput.trim();setChatInput("");runAI(t);}}}}
               placeholder="繼續對話，或提出新問題…（Enter送出，Shift+Enter換行）"
-              style={{ flex:1, padding:"10px 12px", border:"1px solid #e4e6ef", borderRadius:10, fontSize:13, outline:"none", fontFamily:"'Noto Sans TC',sans-serif", height:52, resize:"none", background:"#f9fafb" }}
+              style={{ flex:1, padding:"10px 12px", border:"1px solid #E2E8F0", borderRadius:10, fontSize:13, outline:"none", fontFamily:"'Noto Sans TC',sans-serif", height:52, resize:"none", background:"#f9fafb" }}
             />
             <button onClick={()=>{if(chatInput.trim()&&!loading){const t=chatInput.trim();setChatInput("");runAI(t);}}} disabled={loading||!chatInput.trim()}
-              style={{ padding:"0 20px", background:"#111827", border:"none", borderRadius:10, color:"#fff", fontWeight:700, cursor:loading||!chatInput.trim()?"not-allowed":"pointer", opacity:loading||!chatInput.trim()?0.5:1, fontSize:14, minWidth:64 }}>送出</button>
+              style={{ padding:"0 20px", background:"#0F172A", border:"none", borderRadius:10, color:"#fff", fontWeight: 600, cursor:loading||!chatInput.trim()?"not-allowed":"pointer", opacity:loading||!chatInput.trim()?0.5:1, fontSize:14, minWidth:64 }}>送出</button>
           </div>
           <div style={{ marginTop:8, textAlign:"right" }}>
-            <button onClick={()=>setAiLog([])} style={{ fontSize:11, color:"#9ca3af", background:"none", border:"none", cursor:"pointer" }}>清除記錄</button>
+            <button onClick={()=>setAiLog([])} style={{ fontSize:11, color:"#94A3B8", background:"none", border:"none", cursor:"pointer" }}>清除記錄</button>
           </div>
         </div>
       )}
@@ -2465,10 +2474,10 @@ function DependencyWarnings({ cats }) {
 
   return (
     <div style={{ background:"#fffbeb", border:"1px solid #fcd34d", borderRadius:12, padding:14, marginBottom:14 }}>
-      <div style={{ fontSize:13, fontWeight:700, color:"#92400e", marginBottom:8 }}>⚠️ 工序相依提醒（{warnings.length}）</div>
+      <div style={{ fontSize:13, fontWeight: 600, color:"#92400e", marginBottom:8 }}>⚠️ 工序相依提醒（{warnings.length}）</div>
       {warnings.map((w,i) => (
         <div key={i} style={{ fontSize:12, color:"#78350f", padding:"5px 0", borderBottom:i<warnings.length-1?"1px solid #fde68a":"none" }}>
-          <span style={{ fontWeight:700 }}>{w.toName}</span> 已開始，但 <span style={{ fontWeight:700 }}>{w.fromName}</span> 尚未完成 — {w.reason}
+          <span style={{ fontWeight: 600 }}>{w.toName}</span> 已開始，但 <span style={{ fontWeight: 600 }}>{w.fromName}</span> 尚未完成 — {w.reason}
         </div>
       ))}
     </div>
@@ -2483,10 +2492,10 @@ function GanttView({ cats, setCats }) {
       <div style={{ minWidth: 800 }}>
         {/* header */}
         <div style={{ display: "flex", marginBottom: 4 }}>
-          <div style={{ width: 200, flexShrink: 0, fontSize: 11, color: "#6b7280", padding: "4px 8px" }}>工程項目</div>
+          <div style={{ width: 200, flexShrink: 0, fontSize: 11, color: "#64748B", padding: "4px 8px" }}>工程項目</div>
           <div style={{ flex: 1, display: "grid", gridTemplateColumns: `repeat(${weeks},1fr)` }}>
             {Array.from({length: weeks}, (_,i) => (
-              <div key={i} style={{ fontSize: 10, color: "#6b7280", textAlign: "center", borderLeft: "1px solid #2a2f4033" }}>W{i+1}</div>
+              <div key={i} style={{ fontSize: 10, color: "#64748B", textAlign: "center", borderLeft: "1px solid #E2E8F033" }}>W{i+1}</div>
             ))}
           </div>
         </div>
@@ -2497,7 +2506,7 @@ function GanttView({ cats, setCats }) {
           return (
             <div key={cat.id} style={{ display: "flex", marginBottom: 6, alignItems: "center" }}>
               <div style={{ width: 200, flexShrink: 0, fontSize: 12, color: "#1a1d2e", padding: "4px 8px", fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{cat.name}</div>
-              <div style={{ flex: 1, display: "grid", gridTemplateColumns: `repeat(${weeks},1fr)`, height: 28, background: "#f0f2f5", borderRadius: 4, overflow: "hidden", cursor: "pointer" }}
+              <div style={{ flex: 1, display: "grid", gridTemplateColumns: `repeat(${weeks},1fr)`, height: 28, background: "#F1F5F9", borderRadius: 4, overflow: "hidden", cursor: "pointer" }}
                 onClick={() => {
                   const s = parseInt(prompt(`「${cat.name}」開始週 (1-${weeks}):`, start+1)) - 1;
                   const d = parseInt(prompt("持續週數:", dur));
@@ -2507,8 +2516,8 @@ function GanttView({ cats, setCats }) {
                 {Array.from({length: weeks}, (_,i) => {
                   const inBar = i >= start && i < start + dur;
                   return (
-                    <div key={i} style={{ borderLeft: "1px solid #2a2f4033", height: "100%", background: inBar ? st.color + "cc" : "transparent", position: "relative" }}>
-                      {inBar && i === start && <div style={{ position: "absolute", left: 4, top: "50%", transform: "translateY(-50%)", fontSize: 10, color: "#f4f5f7", fontWeight: 700, whiteSpace: "nowrap", overflow: "hidden" }}>{cat.name.slice(0,6)}</div>}
+                    <div key={i} style={{ borderLeft: "1px solid #E2E8F033", height: "100%", background: inBar ? st.color + "cc" : "transparent", position: "relative" }}>
+                      {inBar && i === start && <div style={{ position: "absolute", left: 4, top: "50%", transform: "translateY(-50%)", fontSize: 10, color: "#f4f5f7", fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden" }}>{cat.name.slice(0,6)}</div>}
                     </div>
                   );
                 })}
@@ -2516,7 +2525,7 @@ function GanttView({ cats, setCats }) {
             </div>
           );
         })}
-        <div style={{ fontSize: 11, color: "#6b7280", marginTop: 8, padding: "0 8px" }}>點擊工序列可調整開始週與持續時間</div>
+        <div style={{ fontSize: 11, color: "#64748B", marginTop: 8, padding: "0 8px" }}>點擊工序列可調整開始週與持續時間</div>
       </div>
     </div>
   );
@@ -2529,25 +2538,25 @@ function CatPanel({ cat: catProp, cats, setCats, onClose, onSelectItem, confirm 
   return (
     <SidePanel onClose={onClose}>
       <div style={{ marginBottom: 14 }}>
-        <div style={{ fontSize: 11, color: "#6b7280", marginBottom: 4 }}>工程大項名稱</div>
+        <div style={{ fontSize: 11, color: "#64748B", marginBottom: 4 }}>工程大項名稱</div>
         <input
           value={cat.name}
           onChange={e => updateCat("name", e.target.value)}
-          style={{ ...inputStyle, fontSize: 16, fontWeight: 700, color: "#111827" }}
+          style={{ ...inputStyle, fontSize: 16, fontWeight: 600, color: "#0F172A" }}
         />
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 12 }}>
-        <div style={{ background: "#fffbf0", border: "1px solid rgba(232,184,75,0.2)", borderRadius: 8, padding: "8px 12px" }}>
-          <div style={{ fontSize: 10, color: "#6b7280", marginBottom: 2 }}>預估總額（細項加總）</div>
-          <div style={{ fontFamily: "monospace", fontSize: 15, fontWeight: 700, color: ACCENT }}>{fmt(cat.items.reduce((s,it) => s + calcEstimated(it), 0))}</div>
+        <div style={{ background: "#EFF4FF", border: "1px solid rgba(232,184,75,0.2)", borderRadius: 8, padding: "8px 12px" }}>
+          <div style={{ fontSize: 10, color: "#64748B", marginBottom: 2 }}>預估總額（細項加總）</div>
+          <div style={{ fontFamily: "monospace", fontSize: 15, fontWeight: 600, color: ACCENT }}>{fmt(cat.items.reduce((s,it) => s + calcEstimated(it), 0))}</div>
         </div>
         <div style={{ background: "#f0f7ff", border: "1px solid rgba(75,159,232,0.2)", borderRadius: 8, padding: "8px 12px" }}>
-          <div style={{ fontSize: 10, color: "#6b7280", marginBottom: 2 }}>實際總額（細項加總）</div>
-          <div style={{ fontFamily: "monospace", fontSize: 15, fontWeight: 700, color: "#4b9fe8" }}>{cat.items.reduce((s,it) => s + calcActual(it), 0) > 0 ? fmt(cat.items.reduce((s,it) => s + calcActual(it), 0)) : "尚未填入"}</div>
+          <div style={{ fontSize: 10, color: "#64748B", marginBottom: 2 }}>實際總額（細項加總）</div>
+          <div style={{ fontFamily: "monospace", fontSize: 15, fontWeight: 600, color: "#4b9fe8" }}>{cat.items.reduce((s,it) => s + calcActual(it), 0) > 0 ? fmt(cat.items.reduce((s,it) => s + calcActual(it), 0)) : "尚未填入"}</div>
         </div>
       </div>
       <div style={{ marginBottom: 12 }}>
-        <div style={{ fontSize: 11, color: "#6b7280", marginBottom: 4 }}>狀態</div>
+        <div style={{ fontSize: 11, color: "#64748B", marginBottom: 4 }}>狀態</div>
         <StatusBadge status={cat.status} setCats={setCats} catId={cat.id} />
       </div>
       <input
@@ -2556,19 +2565,19 @@ function CatPanel({ cat: catProp, cats, setCats, onClose, onSelectItem, confirm 
         onChange={e => updateCat("vendor", e.target.value)}
         style={{ ...inputStyle, marginBottom: 14 }}
       />
-      <div style={{ fontSize: 12, color: "#6b7280", marginBottom: 6 }}>細項列表</div>
+      <div style={{ fontSize: 12, color: "#64748B", marginBottom: 6 }}>細項列表</div>
       {cat.items.map(item => (
-        <div key={item.id} onClick={() => onSelectItem(item)} style={{ background: "#f0f1f4", borderRadius: 8, padding: "10px 12px", marginBottom: 6, cursor: "pointer", border: "1px solid #2a2f40", transition: "border-color 0.15s" }}
+        <div key={item.id} onClick={() => onSelectItem(item)} style={{ background: "#F1F5F9", borderRadius: 8, padding: "10px 12px", marginBottom: 6, cursor: "pointer", border: "1px solid #E2E8F0", transition: "border-color 0.15s" }}
           onMouseEnter={e => e.currentTarget.style.borderColor=ACCENT}
-          onMouseLeave={e => e.currentTarget.style.borderColor="#d8dae3"}
+          onMouseLeave={e => e.currentTarget.style.borderColor="#E2E8F0"}
         >
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 6 }}>
             <div style={{ fontSize: 13, color: item.notes?.includes("⚠️") ? "#e8954b" : "#1a1d2e", flex: 1 }}>{item.name}</div>
             <div style={{ fontFamily: "monospace", fontSize: 12, color: ACCENT }}>{fmt(calcItemTotal(item))}</div>
-            <button onMouseDown={e => e.stopPropagation()} onClick={e => { e.stopPropagation(); confirm(`刪除「${item.name}」？`).then(ok => { if (ok) setCats(prev => prev.map(c => c.id === cat.id ? {...c, items: c.items.filter(it => it.id !== item.id)} : c)); }); }} style={{ width: 20, height: 20, borderRadius: "50%", background: "#fff0ee", border: "1px solid rgba(232,92,75,0.25)", color: "#e85c4b", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, cursor: "pointer", flexShrink: 0, padding: 0 }}>×</button>
+            <button onMouseDown={e => e.stopPropagation()} onClick={e => { e.stopPropagation(); confirm(`刪除「${item.name}」？`).then(ok => { if (ok) setCats(prev => prev.map(c => c.id === cat.id ? {...c, items: c.items.filter(it => it.id !== item.id)} : c)); }); }} style={{ width: 20, height: 20, borderRadius: "50%", background: "#fff0ee", border: "1px solid rgba(232,92,75,0.25)", color: "#DC2626", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, cursor: "pointer", flexShrink: 0, padding: 0 }}>×</button>
           </div>
-          <div style={{ fontSize: 11, color: "#6b7280", marginTop: 2 }}>
-            {item.qty} {item.unit} · {item.assignee || "未指派"} · <span style={{ color: STATUS_MAP[item.status]?.color || "#6b7280" }}>{STATUS_MAP[item.status]?.label}</span>
+          <div style={{ fontSize: 11, color: "#64748B", marginTop: 2 }}>
+            {item.qty} {item.unit} · {item.assignee || "未指派"} · <span style={{ color: STATUS_MAP[item.status]?.color || "#64748B" }}>{STATUS_MAP[item.status]?.label}</span>
             {item.chat?.length > 0 && " · 💬" + item.chat.length}
           </div>
         </div>
@@ -2593,51 +2602,51 @@ function ItemPanel({ cat, item, cats, setCats, onClose, confirm }) {
   return (
     <SidePanel onClose={onClose} wide>
       <div style={{ marginBottom: 14 }}>
-        <div style={{ fontSize: 11, color: "#6b7280", marginBottom: 2 }}>{cat.name}</div>
+        <div style={{ fontSize: 11, color: "#64748B", marginBottom: 2 }}>{cat.name}</div>
         <input
           value={currentItem.name}
           onChange={e => updateItem("name", e.target.value)}
-          style={{ ...inputStyle, fontSize: 15, fontWeight: 700, color: "#111827" }}
+          style={{ ...inputStyle, fontSize: 15, fontWeight: 600, color: "#0F172A" }}
           placeholder="細項名稱"
         />
-        <button onClick={() => confirm(`確定刪除細項「${currentItem.name}」？`).then(ok => { if (ok) { setCats(prev => prev.map(c => c.id === cat.id ? {...c, items: c.items.filter(it => it.id !== item.id)} : c)); onClose(); } })} style={{ marginTop: 6, background: "#fff0ee", border: "1px solid rgba(232,92,75,0.25)", borderRadius: 7, color: "#e85c4b", fontSize: 12, padding: "5px 12px", cursor: "pointer", alignSelf: "flex-start" }}>🗑 刪除此細項</button>
+        <button onClick={() => confirm(`確定刪除細項「${currentItem.name}」？`).then(ok => { if (ok) { setCats(prev => prev.map(c => c.id === cat.id ? {...c, items: c.items.filter(it => it.id !== item.id)} : c)); onClose(); } })} style={{ marginTop: 6, background: "#fff0ee", border: "1px solid rgba(232,92,75,0.25)", borderRadius: 7, color: "#DC2626", fontSize: 12, padding: "5px 12px", cursor: "pointer", alignSelf: "flex-start" }}>🗑 刪除此細項</button>
       </div>
       {/* ── 預估 vs 實際 兩欄 ── */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 0, marginBottom: 14, border: "1px solid #2a2f40", borderRadius: 10, overflow: "hidden" }}>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 0, marginBottom: 14, border: "1px solid #E2E8F0", borderRadius: 10, overflow: "hidden" }}>
         {/* headers */}
-        <div style={{ background: "#fffbf0", borderBottom: "1px solid #2a2f40", borderRight: "1px solid #2a2f40", padding: "7px 12px", fontSize: 11, fontWeight: 700, color: ACCENT, letterSpacing: 1 }}>📋 預估（估價單）</div>
-        <div style={{ background: "#e8f3ff", borderBottom: "1px solid #2a2f40", padding: "7px 12px", fontSize: 11, fontWeight: 700, color: "#4b9fe8", letterSpacing: 1 }}>🔨 實際（施工記錄）</div>
+        <div style={{ background: "#EFF4FF", borderBottom: "1px solid #E2E8F0", borderRight: "1px solid #E2E8F0", padding: "7px 12px", fontSize: 11, fontWeight: 600, color: ACCENT, letterSpacing: 1 }}>📋 預估（估價單）</div>
+        <div style={{ background: "#e8f3ff", borderBottom: "1px solid #E2E8F0", padding: "7px 12px", fontSize: 11, fontWeight: 600, color: "#4b9fe8", letterSpacing: 1 }}>🔨 實際（施工記錄）</div>
         {/* qty */}
-        <div style={{ borderRight: "1px solid #2a2f40", borderBottom: "1px solid #2a2f4055", padding: "8px 12px" }}>
-          <div style={{ fontSize: 10, color: "#6b7280", marginBottom: 3 }}>數量</div>
+        <div style={{ borderRight: "1px solid #E2E8F0", borderBottom: "1px solid #E2E8F055", padding: "8px 12px" }}>
+          <div style={{ fontSize: 10, color: "#64748B", marginBottom: 3 }}>數量</div>
           <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
             <NumInput value={currentItem.estQty ?? currentItem.qty ?? 0} onChange={v => updateItem("estQty", v)} style={{ ...inputStyle, flex: 1, fontSize: 13 }} />
             <input value={currentItem.unit} onChange={e => updateItem("unit", e.target.value)} style={{ ...inputStyle, width: 56, fontSize: 12 }} />
           </div>
         </div>
-        <div style={{ borderBottom: "1px solid #2a2f4055", padding: "8px 12px" }}>
-          <div style={{ fontSize: 10, color: "#6b7280", marginBottom: 3 }}>數量</div>
+        <div style={{ borderBottom: "1px solid #E2E8F055", padding: "8px 12px" }}>
+          <div style={{ fontSize: 10, color: "#64748B", marginBottom: 3 }}>數量</div>
           <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
             <NumInput value={currentItem.actQty ?? 0} onChange={v => updateItem("actQty", v)} style={{ ...inputStyle, flex: 1, fontSize: 13 }} />
-            <span style={{ fontSize: 11, color: "#6b7280", whiteSpace: "nowrap" }}>{currentItem.unit}</span>
+            <span style={{ fontSize: 11, color: "#64748B", whiteSpace: "nowrap" }}>{currentItem.unit}</span>
           </div>
         </div>
         {/* unit price */}
-        <div style={{ borderRight: "1px solid #2a2f40", borderBottom: "1px solid #2a2f4055", padding: "8px 12px" }}>
-          <div style={{ fontSize: 10, color: "#6b7280", marginBottom: 3 }}>單價</div>
-          <div style={{ display: "flex", alignItems: "center", gap: 4 }}><span style={{ fontSize: 10, color: "#6b7280" }}>NT$</span><NumInput value={currentItem.estUnitPrice ?? currentItem.unitPrice ?? 0} onChange={v => updateItem("estUnitPrice", v)} style={{ ...inputStyle, flex: 1, fontSize: 13 }} /></div>
+        <div style={{ borderRight: "1px solid #E2E8F0", borderBottom: "1px solid #E2E8F055", padding: "8px 12px" }}>
+          <div style={{ fontSize: 10, color: "#64748B", marginBottom: 3 }}>單價</div>
+          <div style={{ display: "flex", alignItems: "center", gap: 4 }}><span style={{ fontSize: 10, color: "#64748B" }}>NT$</span><NumInput value={currentItem.estUnitPrice ?? currentItem.unitPrice ?? 0} onChange={v => updateItem("estUnitPrice", v)} style={{ ...inputStyle, flex: 1, fontSize: 13 }} /></div>
         </div>
-        <div style={{ borderBottom: "1px solid #2a2f4055", padding: "8px 12px" }}>
-          <div style={{ fontSize: 10, color: "#6b7280", marginBottom: 3 }}>單價</div>
-          <div style={{ display: "flex", alignItems: "center", gap: 4 }}><span style={{ fontSize: 10, color: "#6b7280" }}>NT$</span><NumInput value={currentItem.actUnitPrice ?? 0} onChange={v => updateItem("actUnitPrice", v)} style={{ ...inputStyle, flex: 1, fontSize: 13 }} /></div>
+        <div style={{ borderBottom: "1px solid #E2E8F055", padding: "8px 12px" }}>
+          <div style={{ fontSize: 10, color: "#64748B", marginBottom: 3 }}>單價</div>
+          <div style={{ display: "flex", alignItems: "center", gap: 4 }}><span style={{ fontSize: 10, color: "#64748B" }}>NT$</span><NumInput value={currentItem.actUnitPrice ?? 0} onChange={v => updateItem("actUnitPrice", v)} style={{ ...inputStyle, flex: 1, fontSize: 13 }} /></div>
         </div>
         {/* labor */}
-        <div style={{ borderRight: "1px solid #2a2f40", borderBottom: "1px solid #2a2f4055", padding: "8px 12px" }}>
-          <div style={{ fontSize: 10, color: "#6b7280", marginBottom: 3 }}>人工費（整筆估）</div>
-          <div style={{ display: "flex", alignItems: "center", gap: 4 }}><span style={{ fontSize: 10, color: "#6b7280" }}>NT$</span><NumInput value={currentItem.estLabor ?? currentItem.labor ?? 0} onChange={v => updateItem("estLabor", v)} style={{ ...inputStyle, flex: 1, fontSize: 13 }} /></div>
+        <div style={{ borderRight: "1px solid #E2E8F0", borderBottom: "1px solid #E2E8F055", padding: "8px 12px" }}>
+          <div style={{ fontSize: 10, color: "#64748B", marginBottom: 3 }}>人工費（整筆估）</div>
+          <div style={{ display: "flex", alignItems: "center", gap: 4 }}><span style={{ fontSize: 10, color: "#64748B" }}>NT$</span><NumInput value={currentItem.estLabor ?? currentItem.labor ?? 0} onChange={v => updateItem("estLabor", v)} style={{ ...inputStyle, flex: 1, fontSize: 13 }} /></div>
         </div>
-        <div style={{ borderBottom: "1px solid #2a2f4055", padding: "8px 12px" }}>
-          <div style={{ fontSize: 10, color: "#6b7280", marginBottom: 3 }}>人數 / 日薪 / 天數</div>
+        <div style={{ borderBottom: "1px solid #E2E8F055", padding: "8px 12px" }}>
+          <div style={{ fontSize: 10, color: "#64748B", marginBottom: 3 }}>人數 / 日薪 / 天數</div>
           <div style={{ display: "flex", gap: 4 }}>
             <NumInput value={currentItem.actWorkers ?? 0} onChange={v => updateItem("actWorkers", v)} style={{ ...inputStyle, flex: 1, fontSize: 12 }} placeholder="人" />
             <NumInput value={currentItem.actDailyWage ?? 0} onChange={v => updateItem("actDailyWage", v)} style={{ ...inputStyle, flex: 1, fontSize: 12 }} placeholder="日薪" />
@@ -2645,13 +2654,13 @@ function ItemPanel({ cat, item, cats, setCats, onClose, confirm }) {
           </div>
         </div>
         {/* totals */}
-        <div style={{ borderRight: "1px solid #2a2f40", padding: "8px 12px", background: "#fffdf7" }}>
-          <div style={{ fontSize: 10, color: "#6b7280", marginBottom: 2 }}>預估複價</div>
-          <div style={{ fontFamily: "monospace", fontSize: 15, fontWeight: 700, color: ACCENT }}>{fmt(calcEstimated(currentItem))}</div>
+        <div style={{ borderRight: "1px solid #E2E8F0", padding: "8px 12px", background: "#F8FAFC" }}>
+          <div style={{ fontSize: 10, color: "#64748B", marginBottom: 2 }}>預估複價</div>
+          <div style={{ fontFamily: "monospace", fontSize: 15, fontWeight: 600, color: ACCENT }}>{fmt(calcEstimated(currentItem))}</div>
         </div>
         <div style={{ padding: "8px 12px", background: "#f5faff" }}>
-          <div style={{ fontSize: 10, color: "#6b7280", marginBottom: 2 }}>實際複價</div>
-          <div style={{ fontFamily: "monospace", fontSize: 15, fontWeight: 700, color: calcActual(currentItem) > calcEstimated(currentItem) ? "#e85c4b" : "#4b9fe8" }}>
+          <div style={{ fontSize: 10, color: "#64748B", marginBottom: 2 }}>實際複價</div>
+          <div style={{ fontFamily: "monospace", fontSize: 15, fontWeight: 600, color: calcActual(currentItem) > calcEstimated(currentItem) ? "#DC2626" : "#4b9fe8" }}>
             {calcActual(currentItem) > 0 ? fmt(calcActual(currentItem)) : "尚未填入"}
           </div>
         </div>
@@ -2659,7 +2668,7 @@ function ItemPanel({ cat, item, cats, setCats, onClose, confirm }) {
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 12 }}>
         <Field label="負責人/廠商" value={currentItem.assignee} onChange={v => updateItem("assignee", v)} />
         <div>
-          <div style={{ fontSize: 11, color: "#6b7280", marginBottom: 4 }}>狀態</div>
+          <div style={{ fontSize: 11, color: "#64748B", marginBottom: 4 }}>狀態</div>
           <StatusBadge status={currentItem.status} setCats={setCats} catId={cat.id} itemId={currentItem.id} />
         </div>
       </div>
@@ -2668,9 +2677,9 @@ function ItemPanel({ cat, item, cats, setCats, onClose, confirm }) {
       </div>
       {/* Receipts */}
       <div style={{ marginBottom: 16 }}>
-        <div style={{ fontSize: 12, color: "#6b7280", marginBottom: 6 }}>憑證紀錄 ({currentItem.receipts?.length || 0})</div>
+        <div style={{ fontSize: 12, color: "#64748B", marginBottom: 6 }}>憑證紀錄 ({currentItem.receipts?.length || 0})</div>
         {currentItem.receipts?.map((r, ri) => (
-          <div key={ri} style={{ background: "#f0f1f4", borderRadius: 6, padding: "6px 10px", marginBottom: 4, fontSize: 12, display: "flex", justifyContent: "space-between" }}>
+          <div key={ri} style={{ background: "#F1F5F9", borderRadius: 6, padding: "6px 10px", marginBottom: 4, fontSize: 12, display: "flex", justifyContent: "space-between" }}>
             <span>{r.name}</span>
             <span style={{ color: ACCENT, fontFamily: "monospace" }}>{fmt(r.amount)}</span>
           </div>
@@ -2680,22 +2689,22 @@ function ItemPanel({ cat, item, cats, setCats, onClose, confirm }) {
           if (!name) return;
           const amt = parseFloat(prompt("金額：") || "0");
           updateItem("receipts", [...(currentItem.receipts || []), { name, amount: amt, date: new Date().toLocaleDateString("zh-TW") }]);
-        }} style={{ fontSize: 12, background: "none", border: "1px dashed #2a2f40", color: "#6b7280", borderRadius: 6, padding: "5px 12px", cursor: "pointer" }}>
+        }} style={{ fontSize: 12, background: "none", border: "1px dashed #E2E8F0", color: "#64748B", borderRadius: 6, padding: "5px 12px", cursor: "pointer" }}>
           + 新增憑證
         </button>
       </div>
       {/* Photo uploads */}
       <div style={{ marginBottom: 16 }}>
-        <div style={{ fontSize: 12, color: "#6b7280", marginBottom: 6 }}>📷 施工照片 ({currentItem.photos?.length || 0})</div>
+        <div style={{ fontSize: 12, color: "#64748B", marginBottom: 6 }}>📷 施工照片 ({currentItem.photos?.length || 0})</div>
         <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 8 }}>
           {currentItem.photos?.map((p, pi) => (
             <div key={pi} style={{ position: "relative" }}>
-              <img src={p.data} alt={p.name} style={{ width: 80, height: 80, objectFit: "cover", borderRadius: 8, border: "1px solid #e4e6ef" }} />
+              <img src={p.data} alt={p.name} style={{ width: 80, height: 80, objectFit: "cover", borderRadius: 8, border: "1px solid #E2E8F0" }} />
               <button onClick={() => updateItem("photos", currentItem.photos.filter((_,i2)=>i2!==pi))}
                 style={{ position:"absolute", top:-6, right:-6, width:20, height:20, borderRadius:"50%", background:"#dc2626", border:"none", color:"#fff", fontSize:12, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", padding:0 }}>×</button>
             </div>
           ))}
-          <label style={{ width:80, height:80, border:"2px dashed #d8dae3", borderRadius:8, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", cursor:"pointer", color:"#9ca3af", fontSize:11, gap:4 }}>
+          <label style={{ width:80, height:80, border:"2px dashed #E2E8F0", borderRadius:8, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", cursor:"pointer", color:"#94A3B8", fontSize:11, gap:4 }}>
             <span style={{ fontSize:24 }}>+</span>
             <span>照片</span>
             <input type="file" accept="image/*" multiple style={{ display:"none" }} onChange={e => {
@@ -2748,19 +2757,19 @@ function ItemChat({ cat, item, setCats }) {
 
   return (
     <div>
-      <div style={{ fontSize: 12, color: "#6b7280", marginBottom: 8 }}>💬 項目討論室 & AI顧問</div>
-      <div style={{ background: "#f4f5f7", borderRadius: 8, border: "1px solid #2a2f40", maxHeight: 280, overflowY: "auto", padding: 10, marginBottom: 8 }}>
+      <div style={{ fontSize: 12, color: "#64748B", marginBottom: 8 }}>💬 項目討論室 & AI顧問</div>
+      <div style={{ background: "#f4f5f7", borderRadius: 8, border: "1px solid #E2E8F0", maxHeight: 280, overflowY: "auto", padding: 10, marginBottom: 8 }}>
         {(!item.chat || item.chat.length === 0) && (
-          <div style={{ fontSize: 12, color: "#d8dae3", textAlign: "center", padding: "20px 0" }}>輸入問題詢問AI工程顧問，或記錄討論內容</div>
+          <div style={{ fontSize: 12, color: "#E2E8F0", textAlign: "center", padding: "20px 0" }}>輸入問題詢問AI工程顧問，或記錄討論內容</div>
         )}
         {item.chat?.map((m, i) => (
           <div key={i} style={{ marginBottom: 10, display: "flex", gap: 8, flexDirection: m.role === "user" ? "row-reverse" : "row" }}>
             <div style={{ width: 28, height: 28, borderRadius: "50%", background: m.role === "user" ? "#4b9fe8" : "#ffeea0", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, flexShrink: 0, border: m.role !== "user" ? `1px solid ${ACCENT}44` : "none" }}>
               {m.role === "user" ? "👤" : "🤖"}
             </div>
-            <div style={{ background: m.role === "user" ? "#e8f0fe" : "#fffbf0", border: m.role === "user" ? "1px solid #2a2f40" : `1px solid ${ACCENT}22`, borderRadius: 8, padding: "7px 10px", maxWidth: "85%", fontSize: 12.5, lineHeight: 1.6, color: m.role === "user" ? "#1a1d2e" : "#7a5c00", whiteSpace: "pre-wrap" }}>
+            <div style={{ background: m.role === "user" ? ACCENT : "#F1F5F9", border: "none", borderRadius: 10, padding: "8px 11px", maxWidth: "85%", fontSize: 12.5, lineHeight: 1.6, color: m.role === "user" ? "#ffffff" : "#0F172A", whiteSpace: "pre-wrap" }}>
               {m.text}
-              <div style={{ fontSize: 10, color: "#6b7280", marginTop: 3 }}>{m.ts}</div>
+              <div style={{ fontSize: 10, color: "#64748B", marginTop: 3 }}>{m.ts}</div>
             </div>
           </div>
         ))}
@@ -2774,7 +2783,7 @@ function ItemChat({ cat, item, setCats }) {
       </div>
       <div style={{ display: "flex", gap: 8 }}>
         <input value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); send(); } }} placeholder="詢問AI顧問或記錄討論…" style={{ ...inputStyle, flex: 1, margin: 0 }} />
-        <button onClick={send} disabled={aiLoading || !input.trim()} style={{ background: ACCENT, border: "none", borderRadius: 8, padding: "0 14px", color: "#1a1d2e", fontWeight: 700, cursor: aiLoading ? "not-allowed" : "pointer", fontSize: 13, opacity: aiLoading ? 0.6 : 1 }}>送出</button>
+        <button onClick={send} disabled={aiLoading || !input.trim()} style={{ background: ACCENT, border: "none", borderRadius: 8, padding: "0 14px", color: "#ffffff", fontWeight: 600, cursor: aiLoading ? "not-allowed" : "pointer", fontSize: 13, opacity: aiLoading ? 0.6 : 1 }}>送出</button>
       </div>
     </div>
   );
@@ -2782,7 +2791,7 @@ function ItemChat({ cat, item, setCats }) {
 
 // ── GLOBAL AI PANEL ────────────────────────────────────────────────────────────
 // ── 工作日誌 ─────────────────────────────────────────────────────────────────
-const wlMiniBtn = { background:"#f7f8fa", border:"1px solid #e4e6ef", borderRadius:6, padding:"4px 10px", fontSize:12, cursor:"pointer", color:"#374151" };
+const wlMiniBtn = { background:"#F8FAFC", border:"1px solid #E2E8F0", borderRadius:6, padding:"4px 10px", fontSize:12, cursor:"pointer", color:"#334155" };
 function WorklogView({ worklog, setWorklog, canEdit, userName, requireLogin, confirm }) {
   const [draft, setDraft] = useState("");
   const [draftDate, setDraftDate] = useState(new Date().toISOString().slice(0,10));
@@ -2831,18 +2840,18 @@ function WorklogView({ worklog, setWorklog, canEdit, userName, requireLogin, con
   const removeEntryPhoto = (id, pid) => setWorklog(worklog.map(w => w.id===id ? { ...w, photos:(w.photos||[]).filter(p=>p.id!==pid) } : w));
   const sorted = [...worklog].sort((a,b) => (b.date||"").localeCompare(a.date||"") || (b.ts||"").localeCompare(a.ts||""));
   const thumb = (p, onRemove) => (
-    <div key={p.id} style={{ position:"relative", width:60, height:60, borderRadius:8, overflow:"hidden", border:"1px solid #e4e6ef", background:"#f7f8fa", display:"flex", alignItems:"center", justifyContent:"center" }}>
+    <div key={p.id} style={{ position:"relative", width:60, height:60, borderRadius:8, overflow:"hidden", border:"1px solid #E2E8F0", background:"#F8FAFC", display:"flex", alignItems:"center", justifyContent:"center" }}>
       {p.isImage!==false ? <img src={p.url} alt="" onClick={()=>setLightbox(p)} style={{ width:"100%", height:"100%", objectFit:"cover", cursor:"zoom-in" }} />
         : <a href={p.url} target="_blank" rel="noreferrer" style={{ fontSize:20, textDecoration:"none" }}>📄</a>}
-      {onRemove && <button onClick={()=>onRemove(p.id)} style={{ position:"absolute", top:-6, right:-6, width:18, height:18, borderRadius:"50%", background:"#111827", color:"#fff", border:"none", fontSize:11, cursor:"pointer", lineHeight:1 }}>×</button>}
+      {onRemove && <button onClick={()=>onRemove(p.id)} style={{ position:"absolute", top:-6, right:-6, width:18, height:18, borderRadius:"50%", background:"#0F172A", color:"#fff", border:"none", fontSize:11, cursor:"pointer", lineHeight:1 }}>×</button>}
     </div>
   );
 
   return (
     <div style={{ maxWidth: 760, margin: "16px auto", padding: "0 4px" }}>
-      <div style={{ fontSize: 18, fontWeight: 900, color: "#111827", marginBottom: 12 }}>📓 工作日誌</div>
+      <div style={{ fontSize: 18, fontWeight: 600, color: "#0F172A", marginBottom: 12 }}>📓 工作日誌</div>
       {canEdit ? (
-        <div style={{ background:"#fff", border:"1px solid #e4e6ef", borderRadius:12, padding:16, marginBottom:16 }}>
+        <div style={{ background:"#fff", border:"1px solid #E2E8F0", borderRadius:12, padding:16, marginBottom:16 }}>
           <input type="date" value={draftDate} onChange={e=>setDraftDate(e.target.value)} style={{ ...inputStyle, width:170, marginBottom:8 }} />
           <textarea value={draft} onChange={e=>setDraft(e.target.value)} placeholder="記錄今天的工程狀況、決策、問題…（也可在「AI顧問」對話框口述，請它幫你建立日誌）"
             style={{ ...inputStyle, width:"100%", minHeight:80, resize:"vertical", boxSizing:"border-box" }} />
@@ -2853,22 +2862,22 @@ function WorklogView({ worklog, setWorklog, canEdit, userName, requireLogin, con
           )}
           <input ref={fileRef} type="file" accept="image/*" multiple style={{ display:"none" }} onChange={e=>{ addPhotosToDraft(e.target.files); e.target.value=""; }} />
           <div style={{ display:"flex", alignItems:"center", gap:8, marginTop:8 }}>
-            <button onClick={()=>fileRef.current?.click()} disabled={uploading} style={{ background:"#f0f1f4", border:"1px solid #e4e6ef", borderRadius:8, padding:"7px 12px", cursor:"pointer", fontSize:13, color:"#374151" }}>{uploading?"上傳中…":"📷 附現場照片"}</button>
-            <span style={{ fontSize:11, color:"#9ca3af" }}>可貼上截圖</span>
+            <button onClick={()=>fileRef.current?.click()} disabled={uploading} style={{ background:"#F1F5F9", border:"1px solid #E2E8F0", borderRadius:8, padding:"7px 12px", cursor:"pointer", fontSize:13, color:"#334155" }}>{uploading?"上傳中…":"📷 附現場照片"}</button>
+            <span style={{ fontSize:11, color:"#94A3B8" }}>可貼上截圖</span>
             <div style={{ flex:1 }} />
-            <button onClick={add} disabled={!draft.trim() && draftPhotos.length===0} style={{ background: (draft.trim()||draftPhotos.length)?ACCENT:"#e4e6ef", color: (draft.trim()||draftPhotos.length)?"#1a1d2e":"#9ca3af", border:"none", borderRadius:8, padding:"8px 18px", fontWeight:700, cursor: (draft.trim()||draftPhotos.length)?"pointer":"not-allowed" }}>新增日誌</button>
+            <button onClick={add} disabled={!draft.trim() && draftPhotos.length===0} style={{ background: (draft.trim()||draftPhotos.length)?ACCENT:"#E2E8F0", color: (draft.trim()||draftPhotos.length)?"#ffffff":"#94A3B8", border:"none", borderRadius:8, padding:"8px 18px", fontWeight: 600, cursor: (draft.trim()||draftPhotos.length)?"pointer":"not-allowed" }}>新增日誌</button>
           </div>
         </div>
       ) : (
-        <div style={{ background:"#fff7e6", border:"1px solid #ffe2a8", borderRadius:10, padding:"10px 14px", marginBottom:16, fontSize:13, color:"#8a6d3b" }}>🔒 唯讀模式：登入後可新增 / 編輯工作日誌。</div>
+        <div style={{ background:"#fff7e6", border:"1px solid #ffe2a8", borderRadius:10, padding:"10px 14px", marginBottom:16, fontSize:13, color:"#64748B" }}>🔒 唯讀模式：登入後可新增 / 編輯工作日誌。</div>
       )}
       {sorted.length === 0 ? (
-        <div style={{ textAlign:"center", color:"#9ca3af", padding:40 }}>尚無工作日誌</div>
+        <div style={{ textAlign:"center", color:"#94A3B8", padding:40 }}>尚無工作日誌</div>
       ) : sorted.map(w => (
-        <div key={w.id} style={{ background:"#fff", border:"1px solid #e4e6ef", borderRadius:12, padding:14, marginBottom:10 }}>
+        <div key={w.id} style={{ background:"#fff", border:"1px solid #E2E8F0", borderRadius:12, padding:14, marginBottom:10 }}>
           <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:6 }}>
-            <span style={{ fontSize:12, fontWeight:700, color:ACCENT, fontFamily:"monospace" }}>{w.date}</span>
-            <span style={{ fontSize:11, color:"#9ca3af" }}>by {w.author||"—"}</span>
+            <span style={{ fontSize:12, fontWeight: 600, color:ACCENT, fontFamily:"monospace" }}>{w.date}</span>
+            <span style={{ fontSize:11, color:"#94A3B8" }}>by {w.author||"—"}</span>
             <div style={{ flex:1 }} />
             {canEdit && editId !== w.id && (<>
               <button onClick={()=>{ setEditId(w.id); setEditText(w.content); }} style={wlMiniBtn}>編輯</button>
@@ -2880,7 +2889,7 @@ function WorklogView({ worklog, setWorklog, canEdit, userName, requireLogin, con
               <textarea value={editText} onChange={e=>setEditText(e.target.value)} style={{ ...inputStyle, width:"100%", minHeight:70, boxSizing:"border-box" }} />
               <div style={{ textAlign:"right", marginTop:6 }}>
                 <button onClick={()=>setEditId(null)} style={{ ...wlMiniBtn, marginRight:6 }}>取消</button>
-                <button onClick={()=>saveEdit(w.id)} style={{ background:ACCENT, color:"#1a1d2e", border:"none", borderRadius:6, padding:"5px 14px", fontWeight:700, cursor:"pointer" }}>儲存</button>
+                <button onClick={()=>saveEdit(w.id)} style={{ background:ACCENT, color:"#ffffff", border:"none", borderRadius:6, padding:"5px 14px", fontWeight: 600, cursor:"pointer" }}>儲存</button>
               </div>
             </div>
           ) : (
@@ -2891,7 +2900,7 @@ function WorklogView({ worklog, setWorklog, canEdit, userName, requireLogin, con
                   {(w.photos||[]).map(p => thumb(p, canEdit ? (pid)=>removeEntryPhoto(w.id, pid) : null))}
                   {canEdit && (<>
                     <input id={"wlf-"+w.id} type="file" accept="image/*" multiple style={{ display:"none" }} onChange={e=>{ addPhotosToEntry(w.id, e.target.files); e.target.value=""; }} />
-                    <button onClick={()=>document.getElementById("wlf-"+w.id)?.click()} style={{ width:60, height:60, borderRadius:8, border:"1px dashed #d8dae3", background:"#fafbfc", color:"#9ca3af", fontSize:20, cursor:"pointer" }}>＋</button>
+                    <button onClick={()=>document.getElementById("wlf-"+w.id)?.click()} style={{ width:60, height:60, borderRadius:8, border:"1px dashed #E2E8F0", background:"#fafbfc", color:"#94A3B8", fontSize:20, cursor:"pointer" }}>＋</button>
                   </>)}
                 </div>
               )}
@@ -2911,7 +2920,7 @@ function WorklogView({ worklog, setWorklog, canEdit, userName, requireLogin, con
 // ── 檔案庫 / 相簿 ─────────────────────────────────────────────────────────────
 const PHOTO_KINDS = [["quote","估價單"],["site","現場照"],["invoice","發票"],["other","其他"]];
 const photoKindLabel = (k) => (PHOTO_KINDS.find(x=>x[0]===k)||[,"其他"])[1];
-const photoKindColor = { quote:"#3b82f6", site:"#22c55e", invoice:"#e85c4b", other:"#9ca3af" };
+const photoKindColor = { quote:"#3b82f6", site:"#16A34A", invoice:"#DC2626", other:"#94A3B8" };
 function PhotoLibraryView({ photos, setPhotos, cats, canEdit, userName, requireLogin, confirm }) {
   const [kind, setKind] = useState("site");
   const [catId, setCatId] = useState("");
@@ -2987,15 +2996,15 @@ function PhotoLibraryView({ photos, setPhotos, cats, canEdit, userName, requireL
   })();
 
   const renderCard = (p) => (
-    <div key={p.id} style={{ background:"#fff", border:"1px solid #e4e6ef", borderRadius:12, overflow:"hidden", display:"flex", flexDirection:"column" }}>
-      <div style={{ position:"relative", aspectRatio:"4/3", background:"#f0f2f5", cursor: p.isImage!==false?"zoom-in":"default", display:"flex", alignItems:"center", justifyContent:"center" }} onClick={()=>{ if (p.isImage!==false) setLightbox(p); }}>
+    <div key={p.id} style={{ background:"#fff", border:"1px solid #E2E8F0", borderRadius:12, overflow:"hidden", display:"flex", flexDirection:"column" }}>
+      <div style={{ position:"relative", aspectRatio:"4/3", background:"#F1F5F9", cursor: p.isImage!==false?"zoom-in":"default", display:"flex", alignItems:"center", justifyContent:"center" }} onClick={()=>{ if (p.isImage!==false) setLightbox(p); }}>
         {p.isImage !== false
           ? <img src={p.url} alt={p.name} style={{ width:"100%", height:"100%", objectFit:"cover" }} />
-          : <a href={p.url} target="_blank" rel="noreferrer" onClick={e=>e.stopPropagation()} style={{ textAlign:"center", textDecoration:"none", color:"#6b7280", padding:"0 10px" }}>
+          : <a href={p.url} target="_blank" rel="noreferrer" onClick={e=>e.stopPropagation()} style={{ textAlign:"center", textDecoration:"none", color:"#64748B", padding:"0 10px" }}>
               <div style={{ fontSize:40 }}>📄</div>
               <div style={{ fontSize:11, marginTop:4, wordBreak:"break-all", maxHeight:32, overflow:"hidden" }}>{p.name}</div>
             </a>}
-        <span style={{ position:"absolute", top:6, left:6, fontSize:10, fontWeight:700, color:"#fff", background:photoKindColor[p.kind]||"#9ca3af", borderRadius:6, padding:"2px 7px" }}>{photoKindLabel(p.kind)}</span>
+        <span style={{ position:"absolute", top:6, left:6, fontSize:10, fontWeight: 600, color:"#fff", background:photoKindColor[p.kind]||"#94A3B8", borderRadius:6, padding:"2px 7px" }}>{photoKindLabel(p.kind)}</span>
       </div>
       <div style={{ padding:"8px 10px", fontSize:12 }}>
         {editId === p.id ? (
@@ -3005,24 +3014,24 @@ function PhotoLibraryView({ photos, setPhotos, cats, canEdit, userName, requireL
             <input type="date" value={ef.date} onChange={e=>setEf({...ef, date:e.target.value})} style={{ ...inputStyle, padding:"5px 8px", fontSize:12 }} />
             <input value={ef.note} onChange={e=>setEf({...ef, note:e.target.value})} placeholder="備註" style={{ ...inputStyle, padding:"5px 8px", fontSize:12 }} />
             <div style={{ display:"flex", gap:8, justifyContent:"flex-end" }}>
-              <button onClick={()=>setEditId(null)} style={{ fontSize:11, color:"#6b7280", background:"none", border:"none", cursor:"pointer" }}>取消</button>
-              <button onClick={saveEdit} style={{ fontSize:11, fontWeight:700, color:"#1a1d2e", background:ACCENT, border:"none", borderRadius:6, padding:"4px 12px", cursor:"pointer" }}>儲存</button>
+              <button onClick={()=>setEditId(null)} style={{ fontSize:11, color:"#64748B", background:"none", border:"none", cursor:"pointer" }}>取消</button>
+              <button onClick={saveEdit} style={{ fontSize:11, fontWeight: 600, color:"#1a1d2e", background:ACCENT, border:"none", borderRadius:6, padding:"4px 12px", cursor:"pointer" }}>儲存</button>
             </div>
           </div>
         ) : (
           <>
-            <div style={{ color:"#374151", fontWeight:600 }}>{p.catName || "（未指定工程）"}</div>
-            <div style={{ color:"#9ca3af", fontSize:11, marginTop:2 }}>{p.date} · {p.by}</div>
-            {p.note && <div style={{ color:"#6b7280", fontSize:11, marginTop:3, whiteSpace:"pre-wrap" }}>{p.note}</div>}
+            <div style={{ color:"#334155", fontWeight:600 }}>{p.catName || "（未指定工程）"}</div>
+            <div style={{ color:"#94A3B8", fontSize:11, marginTop:2 }}>{p.date} · {p.by}</div>
+            {p.note && <div style={{ color:"#64748B", fontSize:11, marginTop:3, whiteSpace:"pre-wrap" }}>{p.note}</div>}
             {p.kind === "invoice" && (
-              <label style={{ display:"flex", alignItems:"center", gap:5, marginTop:6, fontSize:12, color:p.invoiceReceived?"#16a34a":"#dc2626", fontWeight:700, cursor:canEdit?"pointer":"default" }}>
+              <label style={{ display:"flex", alignItems:"center", gap:5, marginTop:6, fontSize:12, color:p.invoiceReceived?"#16a34a":"#dc2626", fontWeight: 600, cursor:canEdit?"pointer":"default" }}>
                 <input type="checkbox" checked={!!p.invoiceReceived} disabled={!canEdit} onChange={()=>canEdit&&toggleReceived(p.id)} style={{ accentColor:"#16a34a" }} />
                 {p.invoiceReceived ? "✅ 發票已收到" : "⚠️ 發票未收到"}
               </label>
             )}
             <div style={{ display:"flex", gap:8, marginTop:8 }}>
               <a href={p.url} target="_blank" rel="noreferrer" style={{ fontSize:11, color:"#3b82f6", textDecoration:"none" }}>⬇ 下載</a>
-              {canEdit && <button onClick={()=>startEdit(p)} style={{ fontSize:11, color:"#374151", background:"none", border:"none", cursor:"pointer", padding:0 }}>編輯</button>}
+              {canEdit && <button onClick={()=>startEdit(p)} style={{ fontSize:11, color:"#334155", background:"none", border:"none", cursor:"pointer", padding:0 }}>編輯</button>}
               {canEdit && <button onClick={()=>del(p)} style={{ fontSize:11, color:"#dc2626", background:"none", border:"none", cursor:"pointer", padding:0 }}>刪除</button>}
             </div>
           </>
@@ -3033,7 +3042,7 @@ function PhotoLibraryView({ photos, setPhotos, cats, canEdit, userName, requireL
 
   return (
     <div style={{ maxWidth: 980, margin: "16px auto", padding: "0 4px" }}>
-      <div style={{ fontSize:18, fontWeight:900, color:"#111827", marginBottom:12 }}>📁 檔案庫 / 相簿</div>
+      <div style={{ fontSize:18, fontWeight: 600, color:"#0F172A", marginBottom:12 }}>📁 檔案庫 / 相簿</div>
 
       {pendingInvoices > 0 && (
         <div style={{ background:"#fff0ee", border:"1px solid #fca5a5", borderRadius:10, padding:"8px 14px", marginBottom:12, fontSize:13, color:"#dc2626", fontWeight:600 }}>
@@ -3042,45 +3051,45 @@ function PhotoLibraryView({ photos, setPhotos, cats, canEdit, userName, requireL
       )}
 
       {canEdit ? (
-        <div style={{ background:"#fff", border:"1px solid #e4e6ef", borderRadius:12, padding:14, marginBottom:14, display:"flex", gap:8, flexWrap:"wrap", alignItems:"center" }}>
+        <div style={{ background:"#fff", border:"1px solid #E2E8F0", borderRadius:12, padding:14, marginBottom:14, display:"flex", gap:8, flexWrap:"wrap", alignItems:"center" }}>
           <select value={kind} onChange={e=>setKind(e.target.value)} style={selStyle}>{PHOTO_KINDS.map(([k,l])=><option key={k} value={k}>{l}</option>)}</select>
           <select value={catId} onChange={e=>setCatId(e.target.value)} style={selStyle}><option value="">（不指定工程）</option>{sortedCats.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select>
           <input type="date" value={date} onChange={e=>setDate(e.target.value)} style={selStyle} />
           <input value={note} onChange={e=>setNote(e.target.value)} placeholder="備註（選填）" style={{ ...inputStyle, flex:1, minWidth:120, padding:"6px 10px" }} />
           <input ref={fileRef} type="file" multiple style={{ display:"none" }} onChange={e=>{ onPick(e.target.files); e.target.value=""; }} />
-          <button onClick={()=>fileRef.current?.click()} disabled={uploading} style={{ background:ACCENT, color:"#1a1d2e", border:"none", borderRadius:8, padding:"8px 16px", fontWeight:700, cursor: uploading?"wait":"pointer" }}>{uploading?"上傳中…":"📎 上傳照片 / 檔案"}</button>
-          <span style={{ fontSize:11, color:"#9ca3af", width:"100%" }}>支援照片、PDF、Excel 等檔案；也可直接 Ctrl/⌘+V 貼上截圖</span>
+          <button onClick={()=>fileRef.current?.click()} disabled={uploading} style={{ background:ACCENT, color:"#ffffff", border:"none", borderRadius:8, padding:"8px 16px", fontWeight: 600, cursor: uploading?"wait":"pointer" }}>{uploading?"上傳中…":"📎 上傳照片 / 檔案"}</button>
+          <span style={{ fontSize:11, color:"#94A3B8", width:"100%" }}>支援照片、PDF、Excel 等檔案；也可直接 Ctrl/⌘+V 貼上截圖</span>
         </div>
       ) : (
-        <div style={{ background:"#fff7e6", border:"1px solid #ffe2a8", borderRadius:10, padding:"10px 14px", marginBottom:14, fontSize:13, color:"#8a6d3b" }}>🔒 唯讀模式：登入後可上傳 / 管理圖片。</div>
+        <div style={{ background:"#fff7e6", border:"1px solid #ffe2a8", borderRadius:10, padding:"10px 14px", marginBottom:14, fontSize:13, color:"#64748B" }}>🔒 唯讀模式：登入後可上傳 / 管理圖片。</div>
       )}
 
       <div style={{ display:"flex", gap:6, flexWrap:"wrap", marginBottom:12, alignItems:"center" }}>
-        <span style={{ fontSize:11, color:"#9ca3af" }}>類別</span>
+        <span style={{ fontSize:11, color:"#94A3B8" }}>類別</span>
         {[["all","全部"],...PHOTO_KINDS].map(([k,l])=>(
-          <button key={k} onClick={()=>setFKind(k)} style={{ padding:"3px 10px", borderRadius:20, border:"1px solid #e4e6ef", fontSize:11, cursor:"pointer", background:fKind===k?ACCENT:"#f7f8fa", color:fKind===k?"#1a1d2e":"#6b7280", fontWeight:fKind===k?700:400 }}>{l}</button>
+          <button key={k} onClick={()=>setFKind(k)} style={{ padding:"3px 10px", borderRadius:20, border:"1px solid #E2E8F0", fontSize:11, cursor:"pointer", background:fKind===k?ACCENT:"#F8FAFC", color:fKind===k?"#ffffff":"#64748B", fontWeight:fKind===k?700:400 }}>{l}</button>
         ))}
-        <span style={{ fontSize:11, color:"#9ca3af", marginLeft:8 }}>工程</span>
+        <span style={{ fontSize:11, color:"#94A3B8", marginLeft:8 }}>工程</span>
         <select value={fCat} onChange={e=>setFCat(e.target.value)} style={{ ...selStyle, fontSize:12, padding:"4px 8px" }}>
           <option value="all">全部工程</option>{sortedCats.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}
         </select>
         <div style={{ flex:1 }} />
-        <span style={{ fontSize:11, color:"#9ca3af" }}>分組</span>
+        <span style={{ fontSize:11, color:"#94A3B8" }}>分組</span>
         {[["none","不分組"],["cat","按工程"],["date","按日期"]].map(([k,l])=>(
-          <button key={k} onClick={()=>setGroupBy(k)} style={{ padding:"3px 10px", borderRadius:20, border:"1px solid #e4e6ef", fontSize:11, cursor:"pointer", background:groupBy===k?ACCENT:"#f7f8fa", color:groupBy===k?"#1a1d2e":"#6b7280", fontWeight:groupBy===k?700:400 }}>{l}</button>
+          <button key={k} onClick={()=>setGroupBy(k)} style={{ padding:"3px 10px", borderRadius:20, border:"1px solid #E2E8F0", fontSize:11, cursor:"pointer", background:groupBy===k?ACCENT:"#F8FAFC", color:groupBy===k?"#ffffff":"#64748B", fontWeight:groupBy===k?700:400 }}>{l}</button>
         ))}
-        <span style={{ fontSize:12, color:"#9ca3af", marginLeft:6 }}>共 {filtered.length} 張</span>
+        <span style={{ fontSize:12, color:"#94A3B8", marginLeft:6 }}>共 {filtered.length} 張</span>
       </div>
 
       {filtered.length === 0 ? (
-        <div style={{ textAlign:"center", color:"#9ca3af", padding:40 }}>尚無檔案{canEdit?"，用上方按鈕上傳或貼上截圖":""}</div>
+        <div style={{ textAlign:"center", color:"#94A3B8", padding:40 }}>尚無檔案{canEdit?"，用上方按鈕上傳或貼上截圖":""}</div>
       ) : groups.map(g => (
         <div key={g.label || "all"} style={{ marginBottom: g.label ? 18 : 0 }}>
           {g.label && (
-            <div style={{ fontSize:13, fontWeight:700, color:"#374151", margin:"6px 0 8px", display:"flex", alignItems:"center", gap:8 }}>
+            <div style={{ fontSize:13, fontWeight: 600, color:"#334155", margin:"6px 0 8px", display:"flex", alignItems:"center", gap:8 }}>
               {groupBy==="date" ? "📅" : "🏗️"} {g.label}
-              <span style={{ fontSize:11, color:"#9ca3af", fontWeight:400 }}>（{g.items.length}）</span>
-              <div style={{ height:1, flex:1, background:"#e4e6ef" }} />
+              <span style={{ fontSize:11, color:"#94A3B8", fontWeight:400 }}>（{g.items.length}）</span>
+              <div style={{ height:1, flex:1, background:"#E2E8F0" }} />
             </div>
           )}
           <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill, minmax(180px,1fr))", gap:12 }}>
@@ -3113,51 +3122,51 @@ function AccountManager({ accounts, setAccounts, confirm }) {
   const togglePage = (n, pg) => setAccounts(accounts.map(a => a.name===n ? { ...a, pages: (a.pages||[]).includes(pg) ? a.pages.filter(x=>x!==pg) : [...(a.pages||[]), pg] } : a));
   const del = async (n) => { if (confirm && !(await confirm(`刪除帳號「${n}」？`))) return; setAccounts(accounts.filter(a=>a.name!==n)); };
   const chip = (active, label, onClick) => (
-    <button onClick={onClick} style={{ padding:"4px 12px", borderRadius:8, border:"1px solid "+(active?ACCENT:"#e4e6ef"), background: active?"#fff7e6":"#f7f8fa", color: active?"#8a6d3b":"#9ca3af", fontSize:12, fontWeight: active?700:400, cursor:"pointer" }}>{label}</button>
+    <button onClick={onClick} style={{ padding:"4px 12px", borderRadius:8, border:"1px solid "+(active?ACCENT:"#E2E8F0"), background: active?"#fff7e6":"#F8FAFC", color: active?"#64748B":"#94A3B8", fontSize:12, fontWeight: active?700:400, cursor:"pointer" }}>{label}</button>
   );
 
   return (
     <div style={{ maxWidth: 1100, margin: "16px auto", padding: "0 4px" }}>
-      <div style={{ fontSize:18, fontWeight:900, color:"#111827", marginBottom:6 }}>👤 帳號管理（僅管理員）</div>
+      <div style={{ fontSize:18, fontWeight: 600, color:"#0F172A", marginBottom:6 }}>👤 帳號管理（僅管理員）</div>
       <div style={{ background:"#faf6ee", border:"1px solid #e4ddc9", borderRadius:10, padding:"10px 14px", marginBottom:16, fontSize:13, color:"#6b6450", lineHeight:1.7 }}>
         沒有帳號的人只能<b style={{color:"#b45309"}}>檢視</b>。登入後預設仍是唯讀，需由管理員在下方<b style={{color:"#b45309"}}>逐頁開放編輯權限</b>。<b>管理員</b>恆可編輯全部頁面並管理帳號。新帳號預設<b style={{color:"#b45309"}}>無任何編輯權限</b>。
       </div>
 
       <div style={{ display:"flex", gap:10, alignItems:"center", marginBottom:16, flexWrap:"wrap" }}>
         <input value={name} onChange={e=>setName(e.target.value)} onKeyDown={e=>e.key==="Enter"&&!e.nativeEvent.isComposing&&add()} placeholder="新帳號名稱" style={{ ...inputStyle, width:240 }} />
-        <label style={{ display:"flex", alignItems:"center", gap:6, fontSize:13, color:"#374151", cursor:"pointer" }}>
+        <label style={{ display:"flex", alignItems:"center", gap:6, fontSize:13, color:"#334155", cursor:"pointer" }}>
           <input type="checkbox" checked={asAdmin} onChange={e=>setAsAdmin(e.target.checked)} /> 設為管理員
         </label>
-        <button onClick={add} disabled={!name.trim()} style={{ background:name.trim()?"#b5512b":"#e4e6ef", color:name.trim()?"#fff":"#9ca3af", border:"none", borderRadius:8, padding:"9px 18px", fontWeight:700, cursor:name.trim()?"pointer":"not-allowed" }}>＋ 新增帳號</button>
+        <button onClick={add} disabled={!name.trim()} style={{ background:name.trim()?"#b5512b":"#E2E8F0", color:name.trim()?"#fff":"#94A3B8", border:"none", borderRadius:8, padding:"9px 18px", fontWeight: 600, cursor:name.trim()?"pointer":"not-allowed" }}>＋ 新增帳號</button>
       </div>
 
-      <div style={{ background:"#fff", border:"1px solid #e4e6ef", borderRadius:12, overflow:"hidden" }}>
-        <div style={{ display:"grid", gridTemplateColumns:"1.2fr 1fr 2.4fr 40px", gap:8, padding:"10px 14px", borderBottom:"2px solid #e4e6ef", fontSize:12, fontWeight:700, color:"#6b7280", background:"#f7f8fa" }}>
+      <div style={{ background:"#fff", border:"1px solid #E2E8F0", borderRadius:12, overflow:"hidden" }}>
+        <div style={{ display:"grid", gridTemplateColumns:"1.2fr 1fr 2.4fr 40px", gap:8, padding:"10px 14px", borderBottom:"2px solid #E2E8F0", fontSize:12, fontWeight: 600, color:"#64748B", background:"#F8FAFC" }}>
           <div>帳號</div><div>角色（點擊切換）</div><div>可編輯頁面（點擊開關）</div><div />
         </div>
         {/* 內建管理員 */}
-        <div style={{ display:"grid", gridTemplateColumns:"1.2fr 1fr 2.4fr 40px", gap:8, padding:"12px 14px", borderBottom:"1px solid #f0f1f4", alignItems:"center" }}>
-          <div style={{ fontWeight:700, color:"#111827" }}>goodmask77 <span style={{ fontSize:10, background:"#374151", color:"#fff", borderRadius:5, padding:"1px 6px", marginLeft:4 }}>內建</span></div>
-          <div style={{ fontSize:13, color:"#374151" }}>管理員</div>
-          <div style={{ fontSize:13, color:"#9ca3af" }}>全部（內建管理員）</div>
+        <div style={{ display:"grid", gridTemplateColumns:"1.2fr 1fr 2.4fr 40px", gap:8, padding:"12px 14px", borderBottom:"1px solid #F1F5F9", alignItems:"center" }}>
+          <div style={{ fontWeight: 600, color:"#0F172A" }}>goodmask77 <span style={{ fontSize:10, background:"#334155", color:"#fff", borderRadius:5, padding:"1px 6px", marginLeft:4 }}>內建</span></div>
+          <div style={{ fontSize:13, color:"#334155" }}>管理員</div>
+          <div style={{ fontSize:13, color:"#94A3B8" }}>全部（內建管理員）</div>
           <div />
         </div>
-        {accounts.length === 0 && <div style={{ padding:20, textAlign:"center", color:"#9ca3af", fontSize:13 }}>尚無其他帳號</div>}
+        {accounts.length === 0 && <div style={{ padding:20, textAlign:"center", color:"#94A3B8", fontSize:13 }}>尚無其他帳號</div>}
         {accounts.map(a => (
-          <div key={a.name} style={{ display:"grid", gridTemplateColumns:"1.2fr 1fr 2.4fr 40px", gap:8, padding:"12px 14px", borderBottom:"1px solid #f0f1f4", alignItems:"center" }}>
-            <div style={{ fontWeight:700, color:"#111827" }}>{a.name}</div>
+          <div key={a.name} style={{ display:"grid", gridTemplateColumns:"1.2fr 1fr 2.4fr 40px", gap:8, padding:"12px 14px", borderBottom:"1px solid #F1F5F9", alignItems:"center" }}>
+            <div style={{ fontWeight: 600, color:"#0F172A" }}>{a.name}</div>
             <div>
-              <button onClick={()=>toggleRole(a.name)} style={{ background:"#f7f8fa", border:"1px solid #e4e6ef", borderRadius:8, padding:"4px 12px", fontSize:13, cursor:"pointer", color:a.role==="admin"?"#b5512b":"#374151", fontWeight:a.role==="admin"?700:400 }}>
+              <button onClick={()=>toggleRole(a.name)} style={{ background:"#F8FAFC", border:"1px solid #E2E8F0", borderRadius:8, padding:"4px 12px", fontSize:13, cursor:"pointer", color:a.role==="admin"?"#b5512b":"#334155", fontWeight:a.role==="admin"?700:400 }}>
                 {a.role==="admin"?"管理員":"一般"} ⇄
               </button>
             </div>
             <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
               {a.role==="admin"
-                ? <span style={{ fontSize:13, color:"#9ca3af" }}>全部（管理員）</span>
+                ? <span style={{ fontSize:13, color:"#94A3B8" }}>全部（管理員）</span>
                 : ACCT_PAGES.map(([k,l]) => chip((a.pages||[]).includes(k), l, ()=>togglePage(a.name, k)))}
             </div>
             <button onClick={()=>del(a.name)} title="刪除帳號" style={{ background:"none", border:"none", color:"#d1d5db", cursor:"pointer", fontSize:18 }}
-              onMouseEnter={e=>e.currentTarget.style.color="#e85c4b"} onMouseLeave={e=>e.currentTarget.style.color="#d1d5db"}>×</button>
+              onMouseEnter={e=>e.currentTarget.style.color="#DC2626"} onMouseLeave={e=>e.currentTarget.style.color="#d1d5db"}>×</button>
           </div>
         ))}
       </div>
@@ -3440,31 +3449,31 @@ function GlobalAIPanel({ chat, setChat, onClose, cats, setCats, canEdit, confirm
 
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", zIndex: 500, display: "flex", alignItems: "flex-end", justifyContent: "flex-end" }} onClick={e => e.target === e.currentTarget && onClose()}>
-      <div style={{ width: "min(480px,100vw)", height: "min(680px,90vh)", background: "#ffffff", borderRadius: "16px 0 0 16px", display: "flex", flexDirection: "column", border: "1px solid #2a2f40", borderRight: "none" }}>
-        <div style={{ padding: "14px 16px", borderBottom: "1px solid #2a2f40", display: "flex", alignItems: "center", gap: 10 }}>
-          <div style={{ width: 36, height: 36, borderRadius: "50%", background: "#fff3cc", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18, border: `1px solid ${ACCENT}44` }}>🤖</div>
+      <div style={{ width: "min(480px,100vw)", height: "min(680px,90vh)", background: "#ffffff", borderRadius: "16px 0 0 16px", display: "flex", flexDirection: "column", border: "1px solid #E2E8F0", borderRight: "none" }}>
+        <div style={{ padding: "14px 16px", borderBottom: "1px solid #E2E8F0", display: "flex", alignItems: "center", gap: 10 }}>
+          <div style={{ width: 36, height: 36, borderRadius: "50%", background: "#EFF4FF", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18, border: `1px solid ${ACCENT}44` }}>🤖</div>
           <div>
-            <div style={{ fontSize: 14, fontWeight: 700, color: "#1a1d2e" }}>工程AI顧問</div>
-            <div style={{ fontSize: 11, color: "#6b7280" }}>GROUN:D 專案</div>
+            <div style={{ fontSize: 14, fontWeight: 600, color: "#1a1d2e" }}>工程AI顧問</div>
+            <div style={{ fontSize: 11, color: "#64748B" }}>GROUN:D 專案</div>
           </div>
           <div style={{ flex: 1 }} />
-          <button onClick={onClose} style={{ background: "none", border: "none", color: "#374151", cursor: "pointer", fontSize: 20, lineHeight: 1 }}>×</button>
+          <button onClick={onClose} style={{ background: "none", border: "none", color: "#334155", cursor: "pointer", fontSize: 20, lineHeight: 1 }}>×</button>
         </div>
         <div style={{ flex: 1, overflowY: "auto", padding: 14 }}>
           {chat.map((m, i) => (
             <div key={i} style={{ marginBottom: 12, display: "flex", gap: 8, flexDirection: m.role === "user" ? "row-reverse" : "row" }}>
-              <div style={{ width: 30, height: 30, borderRadius: "50%", background: m.role === "user" ? "#4b9fe8" : "#fff3cc", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, flexShrink: 0 }}>
+              <div style={{ width: 30, height: 30, borderRadius: "50%", background: m.role === "user" ? "#4b9fe8" : "#EFF4FF", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, flexShrink: 0 }}>
                 {m.role === "user" ? "👤" : "🤖"}
               </div>
-              <div style={{ background: m.role === "user" ? "#e8f0fe" : "#fffbf0", border: m.role === "user" ? "1px solid #2a2f40" : `1px solid ${ACCENT}22`, borderRadius: 10, padding: "9px 12px", maxWidth: "85%", fontSize: 13, lineHeight: 1.7, color: m.role === "user" ? "#1a1d2e" : "#7a5c00", whiteSpace: "pre-wrap" }}>
+              <div style={{ background: m.role === "user" ? ACCENT : "#F1F5F9", border: "none", borderRadius: 12, padding: "10px 13px", maxWidth: "85%", fontSize: 13, lineHeight: 1.7, color: m.role === "user" ? "#ffffff" : "#0F172A", whiteSpace: "pre-wrap" }}>
                 {m.text}
-                <div style={{ fontSize: 10, color: "#6b7280", marginTop: 4 }}>{m.ts}</div>
+                <div style={{ fontSize: 10, color: "#64748B", marginTop: 4 }}>{m.ts}</div>
               </div>
             </div>
           ))}
           {loading && (
             <div style={{ display: "flex", gap: 8 }}>
-              <div style={{ width: 30, height: 30, borderRadius: "50%", background: "#fff3cc", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14 }}>🤖</div>
+              <div style={{ width: 30, height: 30, borderRadius: "50%", background: "#EFF4FF", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14 }}>🤖</div>
               <div style={{ fontSize: 13, color: ACCENT, padding: "9px 12px" }}>顧問分析中…</div>
             </div>
           )}
@@ -3473,27 +3482,27 @@ function GlobalAIPanel({ chat, setChat, onClose, cats, setCats, canEdit, confirm
         {/* quick prompts */}
         <div style={{ padding: "0 14px 8px", display: "flex", gap: 6, overflowX: "auto" }}>
           {["⚠️ 當前風險摘要","📋 未完成待辦","💰 預算差異分析","📅 建議工序安排"].map(q => (
-            <button key={q} onClick={() => { setInput(q); setTimeout(() => document.getElementById("global-input")?.focus(),0); }} style={{ whiteSpace: "nowrap", background: "#f0f1f4", border: "1px solid #2a2f40", color: "#6b7280", borderRadius: 20, padding: "4px 10px", fontSize: 11, cursor: "pointer" }}>{q}</button>
+            <button key={q} onClick={() => { setInput(q); setTimeout(() => document.getElementById("global-input")?.focus(),0); }} style={{ whiteSpace: "nowrap", background: "#F1F5F9", border: "1px solid #E2E8F0", color: "#64748B", borderRadius: 20, padding: "4px 10px", fontSize: 11, cursor: "pointer" }}>{q}</button>
           ))}
         </div>
         <div style={{ padding: "0 14px 14px" }}>
           {attachments.length > 0 && (
             <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 8 }}>
               {attachments.map(a => (
-                <div key={a.id} style={{ position: "relative", width: 54, height: 54, borderRadius: 8, overflow: "hidden", border: "1px solid #e4e6ef", background: "#f7f8fa", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                <div key={a.id} style={{ position: "relative", width: 54, height: 54, borderRadius: 8, overflow: "hidden", border: "1px solid #E2E8F0", background: "#F8FAFC", display: "flex", alignItems: "center", justifyContent: "center" }}>
                   {a.kind === "image"
                     ? <img src={a.preview} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                    : <span style={{ fontSize: 10, color: "#6b7280", textAlign: "center" }}>📄<br/>PDF</span>}
-                  <button onClick={() => setAttachments(prev => prev.filter(x => x.id !== a.id))} style={{ position: "absolute", top: -6, right: -6, width: 18, height: 18, borderRadius: "50%", background: "#111827", color: "#fff", border: "none", fontSize: 11, cursor: "pointer", lineHeight: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>×</button>
+                    : <span style={{ fontSize: 10, color: "#64748B", textAlign: "center" }}>📄<br/>PDF</span>}
+                  <button onClick={() => setAttachments(prev => prev.filter(x => x.id !== a.id))} style={{ position: "absolute", top: -6, right: -6, width: 18, height: 18, borderRadius: "50%", background: "#0F172A", color: "#fff", border: "none", fontSize: 11, cursor: "pointer", lineHeight: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>×</button>
                 </div>
               ))}
             </div>
           )}
           <div style={{ display: "flex", gap: 8 }}>
             <input ref={fileRef} type="file" accept="image/*,application/pdf" multiple style={{ display: "none" }} onChange={e => { addFiles(e.target.files); e.target.value = ""; }} />
-            <button onClick={() => fileRef.current?.click()} title="上傳圖片 / 估價單 / PDF" style={{ background: "#f0f1f4", border: "1px solid #e4e6ef", borderRadius: 8, padding: "0 12px", cursor: "pointer", fontSize: 16, color: "#374151" }}>📎</button>
+            <button onClick={() => fileRef.current?.click()} title="上傳圖片 / 估價單 / PDF" style={{ background: "#F1F5F9", border: "1px solid #E2E8F0", borderRadius: 8, padding: "0 12px", cursor: "pointer", fontSize: 16, color: "#334155" }}>📎</button>
             <input id="global-input" value={input} onChange={e => setInput(e.target.value)} onPaste={onPaste} onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); send(); } }} placeholder="輸入、貼上截圖，或上傳估價單…" style={{ ...inputStyle, flex: 1, margin: 0 }} />
-            <button onClick={send} disabled={loading || (!input.trim() && attachments.length === 0)} style={{ background: ACCENT, border: "none", borderRadius: 8, padding: "0 16px", color: "#1a1d2e", fontWeight: 700, cursor: loading ? "not-allowed" : "pointer", fontSize: 14, opacity: loading ? 0.6 : 1 }}>送</button>
+            <button onClick={send} disabled={loading || (!input.trim() && attachments.length === 0)} style={{ background: ACCENT, border: "none", borderRadius: 8, padding: "0 16px", color: "#ffffff", fontWeight: 600, cursor: loading ? "not-allowed" : "pointer", fontSize: 14, opacity: loading ? 0.6 : 1 }}>送</button>
           </div>
         </div>
       </div>
@@ -3505,9 +3514,9 @@ function GlobalAIPanel({ chat, setChat, onClose, cats, setCats, canEdit, confirm
 function SidePanel({ onClose, children, wide }) {
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.35)", zIndex: 400, display: "flex", justifyContent: "flex-end" }} onClick={e => e.target === e.currentTarget && onClose()}>
-      <div style={{ width: wide ? "min(600px,100vw)" : "min(440px,100vw)", background: "#ffffff", height: "100vh", overflowY: "auto", borderLeft: "1px solid #2a2f40", display: "flex", flexDirection: "column" }}>
-        <div style={{ padding: "8px 16px", borderBottom: "1px solid #2a2f40", display: "flex", alignItems: "center", justifyContent: "flex-end", position: "sticky", top: 0, background: "#ffffff", zIndex: 10 }}>
-          <button onClick={onClose} style={{ background: "none", border: "none", color: "#374151", cursor: "pointer", fontSize: 22, lineHeight: 1 }}>×</button>
+      <div style={{ width: wide ? "min(600px,100vw)" : "min(440px,100vw)", background: "#ffffff", height: "100vh", overflowY: "auto", borderLeft: "1px solid #E2E8F0", display: "flex", flexDirection: "column" }}>
+        <div style={{ padding: "8px 16px", borderBottom: "1px solid #E2E8F0", display: "flex", alignItems: "center", justifyContent: "flex-end", position: "sticky", top: 0, background: "#ffffff", zIndex: 10 }}>
+          <button onClick={onClose} style={{ background: "none", border: "none", color: "#334155", cursor: "pointer", fontSize: 22, lineHeight: 1 }}>×</button>
         </div>
         <div style={{ padding: 16, flex: 1 }}>{children}</div>
       </div>
@@ -3548,14 +3557,14 @@ function Field({ label, value, onChange, type, readOnly, accent, prefix, suffix,
   }, [value, isNum]);
   return (
     <div>
-      <div style={{ fontSize: 11, color: "#6b7280", marginBottom: 4 }}>{label}</div>
+      <div style={{ fontSize: 11, color: "#64748B", marginBottom: 4 }}>{label}</div>
       {readOnly ? (
-        <div style={{ fontFamily: "monospace", fontSize: 14, fontWeight: 700, color: accent ? ACCENT : "#1a1d2e", padding: "6px 0" }}>{value}</div>
+        <div style={{ fontFamily: "monospace", fontSize: 14, fontWeight: 600, color: accent ? ACCENT : "#1a1d2e", padding: "6px 0" }}>{value}</div>
       ) : multiline ? (
         <textarea value={value} onChange={e => onChange(e.target.value)} style={{ ...inputStyle, height: 72, resize: "vertical" }} />
       ) : isNum ? (
         <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-          {prefix && <span style={{ fontSize: 11, color: "#6b7280" }}>{prefix}</span>}
+          {prefix && <span style={{ fontSize: 11, color: "#64748B" }}>{prefix}</span>}
           <input
             type="text"
             inputMode="decimal"
@@ -3565,13 +3574,13 @@ function Field({ label, value, onChange, type, readOnly, accent, prefix, suffix,
             onFocus={e => e.target.select()}
             style={{ ...inputStyle, flex: 1 }}
           />
-          {suffix && <span style={{ fontSize: 11, color: "#6b7280" }}>{suffix}</span>}
+          {suffix && <span style={{ fontSize: 11, color: "#64748B" }}>{suffix}</span>}
         </div>
       ) : (
         <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-          {prefix && <span style={{ fontSize: 11, color: "#6b7280" }}>{prefix}</span>}
+          {prefix && <span style={{ fontSize: 11, color: "#64748B" }}>{prefix}</span>}
           <input type="text" value={value} onChange={e => onChange(e.target.value)} style={{ ...inputStyle, flex: 1 }} />
-          {suffix && <span style={{ fontSize: 11, color: "#6b7280" }}>{suffix}</span>}
+          {suffix && <span style={{ fontSize: 11, color: "#64748B" }}>{suffix}</span>}
         </div>
       )}
     </div>
@@ -3579,8 +3588,8 @@ function Field({ label, value, onChange, type, readOnly, accent, prefix, suffix,
 }
 
 const inputStyle = {
-  background: "#f0f1f4",
-  border: "1px solid #d8dae3",
+  background: "#F1F5F9",
+  border: "1px solid #E2E8F0",
   borderRadius: 8,
   color: "#1a1d2e",
   padding: "7px 10px",
