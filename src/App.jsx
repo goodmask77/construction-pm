@@ -749,7 +749,7 @@ function TopNav({ view, setView, saving, totalEstimated, totalActual, doneCount,
       </div>
       {/* view tabs — boxed editorial */}
       <div style={{ display: "flex", gap: 8, paddingBottom: 12, flexWrap: "wrap" }}>
-        {[["owner","業主視角"],["overview","總覽"],["gantt","工序"],["files","檔案庫"],["advisor","AI設定"],...(isAdmin?[["accounts","帳號"]]:[])].map(([v,l]) => (
+        {[["owner","儀表板"],["overview","總覽"],["gantt","工序"],["files","檔案庫"],["advisor","AI設定"],...(isAdmin?[["accounts","帳號"]]:[])].map(([v,l]) => (
           <button key={v} onClick={() => setView(v)} style={{ padding: "8px 16px", borderRadius: 7, border: `1px solid ${view === v ? PRIMARY : BORDER}`, cursor: "pointer", fontSize: 14, fontWeight: 500, background: view === v ? PRIMARY : "transparent", color: view === v ? "#fff" : TEXT, transition: "all .12s" }}>{l}</button>
         ))}
       </div>
@@ -1302,66 +1302,111 @@ function OwnerDashboard({ cats, setCats, settings, stalledItems, activityLog, lo
     );
   };
 
+  const card = { background:"#ffffff", border:"1px solid #D8CFBB", borderRadius:16, padding:18 };
+  const kLabel = { fontSize:12, color:"#6F6656", fontWeight:600 };
+  const Stat = ({ n, label, color }) => (
+    <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between" }}>
+      <span style={{ fontSize:12.5, color:"#4A4234" }}>{label}</span>
+      <span style={{ fontSize:14, fontWeight:700, color:n>0?color:"#C9BFA8" }}>{n}</span>
+    </div>
+  );
+
   return (
-    <div style={{ paddingTop:16, maxWidth:900, margin:"0 auto" }}>
+    <div style={{ paddingTop:16, maxWidth:1040, margin:"0 auto" }}>
       {/* Header */}
       <div style={{ display:"flex", alignItems:"flex-start", justifyContent:"space-between", marginBottom:20, flexWrap:"wrap", gap:10 }}>
         <div>
           <div style={{ fontSize:22, fontWeight: 600, color:"#211C15" }}>{settings?.projectName || "工程進度"}</div>
-          <div style={{ fontSize:13, color:"#6F6656", marginTop:2 }}>{settings?.projectAddress} · 今日 {today}</div>
+          <div style={{ fontSize:13, color:"#6F6656", marginTop:2 }}>{settings?.projectAddress}{settings?.contractorName ? ` · ${settings.contractorName}` : ""} · 今日 {today}</div>
         </div>
         <button onClick={generateReport} style={{ padding:"10px 20px", background:"#211C15", border:"none", borderRadius:10, color:"#ffffff", fontSize:13, fontWeight: 600, cursor:"pointer", display:"flex", alignItems:"center", gap:6 }}>
           📄 產生業主週報
         </button>
       </div>
 
+      {/* 健康燈號橫幅 */}
+      <div style={{ display:"flex", alignItems:"center", gap:12, background:hh.bg, border:`1px solid ${hh.c}33`, borderRadius:14, padding:"12px 18px", marginBottom:16, flexWrap:"wrap" }}>
+        <span style={{ fontSize:20 }}>{hh.dot}</span>
+        <div style={{ fontSize:15, fontWeight:700, color:hh.c }}>{hh.txt}</div>
+        <div style={{ flex:1 }} />
+        <div style={{ display:"flex", gap:14, fontSize:12.5, color:"#6F6656", flexWrap:"wrap" }}>
+          {issueItems.length>0 && <span style={{ color:"#C0392B", fontWeight:600 }}>🚨 問題 {issueItems.length}</span>}
+          {stalledItems.length>0 && <span style={{ color:"#C2872E", fontWeight:600 }}>⏰ 卡關 {stalledItems.length}</span>}
+          {timePct!=null && behind>=5 && <span style={{ color:"#C0392B", fontWeight:600 }}>📉 落後時程 {behind}%</span>}
+          {health==="green" && <span>各項進度皆在掌握中</span>}
+        </div>
+      </div>
+
       {/* Main KPIs */}
-      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:14, marginBottom:20 }}>
-        {/* Progress ring */}
-        <div style={{ background:"#ffffff", border:"1px solid #D8CFBB", borderRadius:16, padding:20, display:"flex", alignItems:"center", gap:16 }}>
-          <div style={{ position:"relative", flexShrink:0 }}>
-            <ProgressRing pct={pct} size={80} color={pct>75?"#3C8C3C":pct>40?"#f59e0b":"#DC2626"} />
-            <div style={{ position:"absolute", inset:0, display:"flex", alignItems:"center", justifyContent:"center", fontSize:16, fontWeight: 600, color:"#211C15" }}>{pct}%</div>
-          </div>
-          <div>
-            <div style={{ fontSize:12, color:"#6F6656", marginBottom:2 }}>整體完成度</div>
-            <div style={{ fontSize:15, fontWeight: 600, color:"#211C15" }}>{doneItems} / {totalItems} 項</div>
-            {daysLeft !== null && <div style={{ fontSize:12, color:daysLeft<14?"#dc2626":daysLeft<30?"#f59e0b":"#3C8C3C", marginTop:2, fontWeight:600 }}>距完工 {daysLeft} 天</div>}
+      <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit, minmax(190px, 1fr))", gap:14, marginBottom:20 }}>
+        {/* 完成度 */}
+        <div style={card}>
+          <div style={kLabel}>整體完成度</div>
+          <div style={{ display:"flex", alignItems:"center", gap:14, marginTop:8 }}>
+            <div style={{ position:"relative", flexShrink:0 }}>
+              <ProgressRing pct={pct} size={70} color={pct>75?"#3C8C3C":pct>40?"#C2872E":"#C0392B"} />
+              <div style={{ position:"absolute", inset:0, display:"flex", alignItems:"center", justifyContent:"center", fontSize:15, fontWeight:700, color:"#211C15" }}>{pct}%</div>
+            </div>
+            <div>
+              <div style={{ fontSize:18, fontWeight:700, color:"#211C15" }}>{doneItems}<span style={{ fontSize:13, color:"#A99F88", fontWeight:400 }}> / {totalItems} 項</span></div>
+              <div style={{ fontSize:12, color:"#3E72A8", marginTop:3, fontWeight:600 }}>進行中 {inProgressItems.length} 項</div>
+            </div>
           </div>
         </div>
 
-        {/* Budget */}
-        <div style={{ background:"#ffffff", border:"1px solid #D8CFBB", borderRadius:16, padding:20 }}>
-          <div style={{ fontSize:12, color:"#6F6656", marginBottom:8 }}>預算使用狀況</div>
-          <div style={{ fontSize:13, color:"#4A4234", marginBottom:4 }}>預估 <span style={{ fontFamily:"monospace", fontWeight: 600, color:ACCENT }}>{fmt(totalEst)}</span></div>
-          <div style={{ fontSize:13, color:"#4A4234", marginBottom:8 }}>實際 <span style={{ fontFamily:"monospace", fontWeight: 600, color:totalAct>totalEst?"#dc2626":"#3C8C3C" }}>{totalAct>0?fmt(totalAct):"尚未記錄"}</span></div>
-          <div style={{ background:"#EFE7D6", borderRadius:20, height:6, overflow:"hidden" }}>
-            <div style={{ background:totalAct>totalEst?"#dc2626":ACCENT, height:"100%", width:Math.min(100,totalEst>0?totalAct/totalEst*100:0)+"%", borderRadius:20, transition:"width 0.8s" }} />
-          </div>
+        {/* 時程 */}
+        <div style={card}>
+          <div style={kLabel}>距完工</div>
+          {daysLeft !== null ? (
+            <>
+              <div style={{ fontSize:26, fontWeight:700, color:daysLeft<14?"#C0392B":daysLeft<30?"#C2872E":"#211C15", marginTop:4 }}>{daysLeft}<span style={{ fontSize:13, fontWeight:400, color:"#A99F88" }}> 天</span></div>
+              {timePct!=null ? (
+                <div style={{ marginTop:8 }}>
+                  <div style={{ fontSize:11, color:"#6F6656", marginBottom:4 }}>時程已過 {timePct}%・完成 {pct}%</div>
+                  <div style={{ position:"relative", background:"#EFE7D6", borderRadius:20, height:7 }}>
+                    <div style={{ position:"absolute", left:0, top:0, bottom:0, width:pct+"%", background:behind>=10?"#C0392B":"#3C8C3C", borderRadius:20, transition:"width .8s" }} />
+                    <div style={{ position:"absolute", left:`calc(${timePct}% - 1px)`, top:-2, bottom:-2, width:2, background:"#211C15" }} title="今日時程基準" />
+                  </div>
+                  <div style={{ fontSize:11.5, fontWeight:700, marginTop:5, color: behind>=10?"#C0392B":behind>=5?"#C2872E":"#3C8C3C" }}>{behind>=5?`進度落後 ${behind}%`:behind<=-5?`進度超前 ${-behind}%`:"進度符合時程"}</div>
+                </div>
+              ) : <div style={{ fontSize:12, color:"#A99F88", marginTop:8 }}>完工日 {td}</div>}
+            </>
+          ) : <div style={{ fontSize:13, color:"#A99F88", marginTop:12 }}>尚未設定完工日</div>}
         </div>
 
-        {/* Alerts */}
-        <div style={{ background:"#ffffff", border:"1px solid #D8CFBB", borderRadius:16, padding:20 }}>
-          <div style={{ fontSize:12, color:"#6F6656", marginBottom:8 }}>需要注意</div>
-          {stalledItems.length===0 && issueItems.length===0 ? (
-            <div style={{ display:"flex", alignItems:"center", gap:8, color:"#3C8C3C" }}>
-              <span style={{ fontSize:20 }}>✅</span>
-              <span style={{ fontSize:13, fontWeight:600 }}>目前一切正常</span>
-            </div>
-          ) : (
-            <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
-              {issueItems.length>0 && <div style={{ fontSize:12, color:"#dc2626", background:"#F3E4DE", borderRadius:8, padding:"6px 10px" }}>🚨 有問題 {issueItems.length} 項需處理</div>}
-              {stalledItems.length>0 && <div style={{ fontSize:12, color:"#d97706", background:"#fffbeb", borderRadius:8, padding:"6px 10px" }}>⏰ 卡關 {stalledItems.length} 項超過3天</div>}
-            </div>
-          )}
-          <div style={{ marginTop:8, fontSize:12, color:"#6F6656" }}>進行中 {inProgressItems.length} 項</div>
+        {/* 預算 */}
+        <div style={card}>
+          <div style={kLabel}>預算使用</div>
+          <div style={{ fontSize:19, fontWeight:700, color:overBudget?"#C0392B":"#211C15", marginTop:4, fontFamily:"ui-monospace, monospace" }}>{totalAct>0?fmt(totalAct):"—"}</div>
+          <div style={{ fontSize:11.5, color:"#6F6656", marginTop:2 }}>預估 <span style={{ fontFamily:"ui-monospace, monospace" }}>{fmt(totalEst)}</span></div>
+          <div style={{ background:"#EFE7D6", borderRadius:20, height:7, overflow:"hidden", marginTop:9 }}>
+            <div style={{ background:overBudget?"#C0392B":ACCENT, height:"100%", width:Math.min(100,budgetPct)+"%", borderRadius:20, transition:"width .8s" }} />
+          </div>
+          <div style={{ fontSize:11.5, fontWeight:700, marginTop:5, color:overBudget?"#C0392B":"#6F6656" }}>{totalAct>0?`已使用 ${budgetPct}%${overBudget?"（超支）":""}`:"尚未記錄支出"}</div>
+        </div>
+
+        {/* 狀態總覽 */}
+        <div style={card}>
+          <div style={kLabel}>狀態總覽</div>
+          <div style={{ display:"flex", flexDirection:"column", gap:7, marginTop:9 }}>
+            <Stat n={issueItems.length} label="🚨 有問題" color="#C0392B" />
+            <Stat n={stalledItems.length} label="⏰ 卡關 >3天" color="#C2872E" />
+            <Stat n={holdItems.length} label="⏸ 暫停" color="#C2872E" />
+            <Stat n={cnt("pending")} label="○ 待開工" color="#6F6656" />
+          </div>
         </div>
       </div>
 
       {/* Category progress bars */}
       <div style={{ background:"#ffffff", border:"1px solid #D8CFBB", borderRadius:16, padding:20, marginBottom:20 }}>
-        <div style={{ fontSize:14, fontWeight: 600, color:"#211C15", marginBottom:14 }}>各工程進度</div>
-        {[...cats].sort((a,b)=>a.order-b.order).map(cat => {
+        <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:14, flexWrap:"wrap", gap:8 }}>
+          <div style={{ fontSize:14, fontWeight: 600, color:"#211C15" }}>各工程進度</div>
+          <div style={{ fontSize:12, color:"#6F6656" }}>{cats.length} 大項 · 完工 {cats.filter(c=>c.status==="done").length} · 進行中 {cats.filter(c=>c.status==="inprogress").length} · 待開工 {cats.filter(c=>c.status==="pending").length}</div>
+        </div>
+        {[...cats].sort((a,b)=>{
+          const rank = s => s==="issue"?0 : s==="inprogress"?1 : s==="hold"?2 : s==="done"?4 : 3;
+          const r = rank(a.status)-rank(b.status); return r!==0 ? r : (a.order-b.order);
+        }).map(cat => {
           const total = cat.items.length;
           const done = cat.items.filter(i=>i.done||i.status==="done").length;
           const pct = total ? Math.round(done/total*100) : 0;
@@ -1372,17 +1417,19 @@ function OwnerDashboard({ cats, setCats, settings, stalledItems, activityLog, lo
             <div key={cat.id} style={{ marginBottom:12 }}>
               <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:4 }}>
                 <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+                  <span style={{ width:8, height:8, borderRadius:4, background:st.color, flexShrink:0 }} />
                   <span style={{ fontSize:13, fontWeight:600, color:"#4A4234" }}>{cat.name}</span>
                   {hasIssue && <span style={{ fontSize:10, background:"#F3E4DE", color:"#dc2626", borderRadius:10, padding:"1px 7px", fontWeight: 600 }}>問題</span>}
                   {hasStall && <span style={{ fontSize:10, background:"#fffbeb", color:"#d97706", borderRadius:10, padding:"1px 7px", fontWeight: 600 }}>卡關</span>}
                 </div>
                 <div style={{ display:"flex", alignItems:"center", gap:8 }}>
                   <span style={{ fontSize:11, color:"#A99F88" }}>{done}/{total}</span>
+                  <span style={{ fontSize:12, fontWeight:700, color:"#211C15", minWidth:34, textAlign:"right" }}>{pct}%</span>
                   <span style={{ fontSize:11, color:st.color, background:st.color+"18", borderRadius:20, padding:"1px 8px", fontWeight: 600 }}>{st.label}</span>
                 </div>
               </div>
               <div style={{ background:"#EFE7D6", borderRadius:20, height:8, overflow:"hidden" }}>
-                <div style={{ background:pct===100?"#3C8C3C":hasIssue?"#dc2626":"#3b82f6", height:"100%", width:pct+"%", borderRadius:20, transition:"width 0.8s" }} />
+                <div style={{ background:pct===100?"#3C8C3C":hasIssue?"#C0392B":"#3E72A8", height:"100%", width:pct+"%", borderRadius:20, transition:"width 0.8s" }} />
               </div>
             </div>
           );
