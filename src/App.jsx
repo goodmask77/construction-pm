@@ -1255,6 +1255,23 @@ function OwnerDashboard({ cats, setCats, settings, stalledItems, activityLog, lo
   const daysLeft = settings?.targetDate ? Math.ceil((new Date(settings.targetDate)-new Date())/(1000*60*60*24)) : null;
   const today = new Date().toLocaleDateString("zh-TW");
 
+  // 狀態項目數
+  const allItems = cats.flatMap(c=>c.items);
+  const cnt = (s)=>allItems.filter(i=>i.status===s).length;
+  const holdItems = allItems.filter(i=>i.status==="hold");
+  // 進度 vs 時程（開工日→完工日，時間已過 % 對比完成 %）
+  const ps = settings?.projectStart, td = settings?.targetDate;
+  let timePct = null, behind = 0;
+  if (ps && td) {
+    const total = new Date(td) - new Date(ps), elapsed = new Date() - new Date(ps);
+    if (total > 0) { timePct = Math.max(0, Math.min(100, Math.round(elapsed/total*100))); behind = timePct - pct; }
+  }
+  const budgetPct = totalEst>0 ? Math.round(totalAct/totalEst*100) : 0;
+  const overBudget = totalAct > totalEst && totalEst>0;
+  // 整體健康燈號
+  const health = (issueItems.length>0 || behind>=15) ? "red" : (stalledItems.length>0 || holdItems.length>0 || behind>=5) ? "amber" : "green";
+  const hh = { green:{c:"#3C8C3C",bg:"#F0FDF4",dot:"🟢",txt:"進度正常"}, amber:{c:"#C2872E",bg:"#FFFBEB",dot:"🟡",txt:"需要注意"}, red:{c:"#C0392B",bg:"#FEF2F2",dot:"🔴",txt:"需立即處理"} }[health];
+
   const todayActivity = activityLog.filter(a => {
     const d = new Date(a.ts).toLocaleDateString("zh-TW");
     return d === today;

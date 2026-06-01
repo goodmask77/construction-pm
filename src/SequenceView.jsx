@@ -12,7 +12,7 @@ const TOTAL_WEEKS = 16, TOTAL_DAYS = TOTAL_WEEKS * 7;
 const LABEL_W = 168, DAY_PXD = 44, WEEK_PXD = 12;
 const ROW_H = 40, ROW_H_OPEN = 116, CARD_W = 150, MAX_OPEN = 3;
 // v2 胖格子日視圖
-const DAY_W = 150, ROW_FAT = 108, ROW_THIN = 34;
+const DAY_W = 150, ROW_FAT = 44, ROW_THIN = 34;  // ROW_FAT＝有紀錄列的「最小」高度；照片/多行會自然把該列撐高
 const ACTIVE = ["doing", "wait", "issue"]; // 置頂組（正在動的工序）
 
 const WS = {
