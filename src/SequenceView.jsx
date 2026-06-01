@@ -293,10 +293,12 @@ export default function SequenceView({
               工程項目
               <div onMouseDown={startResize} title="拖曳調整欄寬" style={{ position: "absolute", right: -3, top: 0, bottom: 0, width: 7, cursor: "col-resize", zIndex: 6 }} />
             </div>
-            {winDays.map((i) => { const d = new Date(START_D); d.setDate(d.getDate() + i); const t = i === TODAY_IDX, wk = d.getDay() % 6 === 0; return (
-              <div key={i} style={{ width: DAY_W, flexShrink: 0, textAlign: "center", padding: "7px 0", borderLeft: `1px solid ${C.line}`, background: t ? "#FFFBEF" : "#fff" }}>
-                <div style={{ fontSize: 13, fontWeight: t ? 700 : 600, color: t ? ACCENT : wk ? "#c0507a" : C.text }}>{d.getMonth() + 1}/{d.getDate()}</div>
-                <div style={{ fontSize: 11, color: t ? ACCENT : C.faint }}>{WD[d.getDay()]}{t ? "·今天" : ""}</div>
+            {winDays.map((i) => { const d = new Date(START_D); d.setDate(d.getDate() + i); const t = i === TODAY_IDX, wk = d.getDay() % 6 === 0; const first = d.getDate() === 1 || i === winDays[0]; return (
+              <div key={i} style={{ width: DAY_W, flexShrink: 0, textAlign: "center", padding: "6px 0 7px", borderLeft: `1px solid ${C.line}`, background: t ? "#FFFBEF" : "#fff" }}>
+                <div style={{ fontSize: 11, fontWeight: 500, color: wk ? "#c0507a" : C.sub }}>週{WD[d.getDay()]}</div>
+                <div style={{ marginTop: 3, display: "flex", justifyContent: "center" }}>
+                  <span style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", minWidth: 24, height: 24, padding: "0 7px", borderRadius: 12, fontSize: 13.5, fontWeight: 600, background: t ? ACCENT : "transparent", color: t ? "#fff" : wk ? "#c0507a" : C.text }}>{first ? `${d.getMonth() + 1}/${d.getDate()}` : d.getDate()}</span>
+                </div>
               </div>); })}
           </div>
           {visItems.length === 0 && <div style={{ padding: 30, textAlign: "center", color: C.faint, fontSize: 13 }}>尚無工序（請到「總覽」新增工程大項，或設定排程）</div>}
