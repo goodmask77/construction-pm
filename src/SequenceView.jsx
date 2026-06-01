@@ -35,6 +35,7 @@ export default function SequenceView({
   const [dragId, setDragId] = useState(null);
   const [dragOverId, setDragOverId] = useState(null);
   const [openIds, setOpenIds] = useState([]);
+  const [expandedParents, setExpandedParents] = useState(new Set()); // 子項目預設收合
   const startResize = (e) => {
     e.preventDefault(); e.stopPropagation();
     const startX = e.clientX, startW = labelW;
@@ -79,12 +80,16 @@ export default function SequenceView({
     return s;
   }, [items, logsByItem]);
 
-  const visItems = onlyIssue ? items.filter((it) => it.status === "issue" || warnSet.has(it.id)) : items;
+  const hasSubs = (it) => it.isParent && items.some(x => x.parentId === it.id);
+  const subCount = (it) => items.filter(x => x.parentId === it.id).length;
+  const base = onlyIssue ? items.filter((it) => it.status === "issue" || warnSet.has(it.id)) : items;
+  const visItems = base.filter(it => !it.isSub || expandedParents.has(it.parentId)); // 子項目預設收合
 
   useEffect(() => { if (ref.current) ref.current.scrollLeft = X(TODAY_IDX) - 220; }, [zoom]); // eslint-disable-line
   useEffect(() => { if (scrollTo != null && ref.current) { ref.current.scrollLeft = X(scrollTo) - 120; setScrollTo(null); } }, [scrollTo]); // eslint-disable-line
 
   const toggle = (it) => {
+    if (hasSubs(it)) { setExpandedParents(s => { const n = new Set(s); n.has(it.id) ? n.delete(it.id) : n.add(it.id); return n; }); return; }
     if (zoom === "week") { setZoom("day"); setOpenIds([it.id]); setScrollTo(spanOf(it)[0]); return; }
     setOpenIds((o) => o.includes(it.id) ? o.filter((x) => x !== it.id) : [...o, it.id].slice(-MAX_OPEN));
   };
@@ -122,7 +127,7 @@ export default function SequenceView({
         {Object.values(WS).map((s) => <span key={s.label} style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 12, color: C.sub }}><span style={{ width: 9, height: 9, borderRadius: 3, background: s.bar }} />{s.label}</span>)}
       </div>
 
-      <div ref={ref} style={{ overflowX: "auto", border: `1px solid ${C.line}`, borderRadius: 12, background: "#fff", position: "relative" }}>
+      <div ref={ref} style={{ overflow: "auto", maxHeight: "calc(100vh - 240px)", border: `1px solid ${C.line}`, borderRadius: 12, background: "#fff", position: "relative" }}>
         <div style={{ minWidth: labelW + trackW }}>
           <div style={{ display: "flex", position: "sticky", top: 0, zIndex: 3, background: "#fff", borderBottom: `1px solid ${C.line}` }}>
             <div style={{ width: labelW, flexShrink: 0, position: "sticky", left: 0, zIndex: 4, background: "#fff", padding: "8px 12px", fontSize: 13, fontWeight: 700, color: C.sub, borderRight: `1px solid ${C.line}` }}>
@@ -146,7 +151,11 @@ export default function SequenceView({
 
           {visItems.length === 0 && <div style={{ padding: 30, textAlign: "center", color: C.faint, fontSize: 13 }}>尚無工序（請到「總覽 / 看板」新增工程大項，或設定排程）</div>}
           {visItems.map((it) => {
-            const open = openIds.includes(it.id), w = WS[it.status] || WS.pending;
+            const isContainer = hasSubs(it);
+            const subsOpen = isContainer && expandedParents.has(it.id);
+            const open = !isContainer && openIds.includes(it.id); // 日誌展開（高列+卡片）
+            const caretOpen = isContainer ? subsOpen : open;
+            const w = WS[it.status] || WS.pending;
             const segs = segIdxOf(it);
             const itemLogs = logsByItem[it.id] || [];
             let cursor = -1;
@@ -158,9 +167,10 @@ export default function SequenceView({
                 style={{ display: "flex", borderBottom: `1px solid ${C.line}`, minHeight: open ? ROW_H_OPEN : ROW_H, background: dragOverId === it.id ? "#fff5db" : (open ? "#fffdf7" : (it.isSub ? "#fcfcfd" : "#fff")) }}>
                 <div style={{ width: labelW, flexShrink: 0, position: "sticky", left: 0, zIndex: 2, background: dragOverId === it.id ? "#fff5db" : (open ? "#fffdf7" : w.tint), borderRight: `1px solid ${C.line}`, borderLeft: `4px solid ${w.bar}`, padding: "0 6px", paddingLeft: it.isSub ? 20 : 4, display: "flex", alignItems: "center", gap: 4 }}>
                   {it.isParent && canEdit && <span draggable onDragStart={() => setDragId(it.id)} onDragEnd={() => { setDragId(null); setDragOverId(null); }} title="拖曳排序大項" style={{ cursor: "grab", color: "#cfd3db", fontSize: 13, flexShrink: 0 }}>⠿</span>}
-                  <button onClick={() => toggle(it)} style={{ border: "none", background: "none", cursor: "pointer", color: open ? ACCENT : C.faint, fontSize: 13, width: 12, flexShrink: 0, transform: open ? "rotate(90deg)" : "none", transition: "transform .15s" }}>▸</button>
+                  <button onClick={() => toggle(it)} style={{ border: "none", background: "none", cursor: "pointer", color: caretOpen ? ACCENT : C.faint, fontSize: 13, width: 12, flexShrink: 0, transform: caretOpen ? "rotate(90deg)" : "none", transition: "transform .15s" }}>▸</button>
                   <span title={w.label} style={{ width: 9, height: 9, borderRadius: 3, background: w.bar, flexShrink: 0 }} />
                   <span onClick={() => toggle(it)} title={`${it.name}（${w.label}）`} style={{ fontSize: it.isSub ? 12 : 13, fontWeight: it.isSub ? 500 : 600, color: it.isSub ? C.sub : C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", cursor: "pointer", flex: 1 }}>{it.name}</span>
+                  {isContainer && !subsOpen && <span style={{ fontSize: 10, color: C.faint, flexShrink: 0 }}>({subCount(it)})</span>}
                   {warnSet.has(it.id) && <span title={`連續 ${warnDays} 天無紀錄`} style={{ color: RED, fontSize: 13, flexShrink: 0 }}>⚠</span>}
                   {canEdit && <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 1, flexShrink: 0 }}>
                     <button onClick={() => setSchedItem(it)} title="設定排程（日期/區段）" style={{ border: "none", background: "none", cursor: "pointer", color: C.faint, fontSize: 13 }}>📅</button>
@@ -240,24 +250,28 @@ export default function SequenceView({
   );
 }
 
-/* ── 排程編輯（實際日期 + 非連續多區段） ── */
+/* ── 排程編輯（起始日 + 天數，一次設定；可加多區段） ── */
 function ScheduleEditor({ item, onClose, onSave }) {
-  const [segs, setSegs] = useState((item.segments && item.segments.length) ? item.segments.map(s => ({ ...s })) : [{ start: "", end: "" }]);
+  const dBetween = (a, b) => Math.max(1, Math.round((new Date(b + "T00:00:00") - new Date(a + "T00:00:00")) / 86400000) + 1);
+  const addD = (s, n) => { const d = new Date(s + "T00:00:00"); d.setDate(d.getDate() + (Number(n) - 1)); return toKey(d); };
+  const init = (item.segments && item.segments.length) ? item.segments.map(s => ({ start: s.start, days: (s.start && s.end) ? dBetween(s.start, s.end) : 1 })) : [{ start: "", days: 1 }];
+  const [segs, setSegs] = useState(init);
   const upd = (i, k, v) => setSegs(s => s.map((x, j) => j === i ? { ...x, [k]: v } : x));
-  const add = () => setSegs(s => [...s, { start: "", end: "" }]);
+  const add = () => setSegs(s => [...s, { start: "", days: 1 }]);
   const del = (i) => setSegs(s => s.filter((_, j) => j !== i));
-  const valid = segs.filter(s => s.start && s.end && s.end >= s.start);
+  const valid = segs.filter(s => s.start && Number(s.days) >= 1).map(s => ({ start: s.start, end: addD(s.start, s.days) }));
   return (
     <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(20,24,33,.35)", zIndex: 1001, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
-      <div onClick={e => e.stopPropagation()} style={{ background: "#fff", borderRadius: 12, padding: 22, maxWidth: 440, width: "100%" }}>
+      <div onClick={e => e.stopPropagation()} style={{ background: "#fff", borderRadius: 12, padding: 22, maxWidth: 460, width: "100%" }}>
         <div style={{ display: "flex", alignItems: "center", marginBottom: 4 }}><div style={{ fontSize: 16, fontWeight: 800 }}>📅 {item.name} 排程</div><div style={{ flex: 1 }} /><button onClick={onClose} style={{ border: "none", background: "none", fontSize: 22, color: C.faint, cursor: "pointer" }}>×</button></div>
-        <div style={{ fontSize: 12, color: C.sub, marginBottom: 14 }}>用實際日期設定工期；工不連續可加多個區段。</div>
+        <div style={{ fontSize: 12, color: C.sub, marginBottom: 14 }}>選起始日 + 填工期天數即可；工不連續可加多個區段。</div>
         {segs.map((s, i) => (
-          <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+          <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8, flexWrap: "wrap" }}>
             <input type="date" value={s.start} onChange={e => upd(i, "start", e.target.value)} style={{ border: `1px solid ${C.line}`, borderRadius: 8, padding: "6px 8px", fontSize: 13 }} />
-            <span style={{ color: C.faint }}>→</span>
-            <input type="date" value={s.end} onChange={e => upd(i, "end", e.target.value)} style={{ border: `1px solid ${C.line}`, borderRadius: 8, padding: "6px 8px", fontSize: 13 }} />
-            {segs.length > 1 && <button onClick={() => del(i)} style={{ border: "none", background: "none", color: "#e11d48", fontSize: 16, cursor: "pointer" }}>×</button>}
+            <input type="number" min="1" value={s.days} onChange={e => upd(i, "days", e.target.value)} style={{ width: 64, border: `1px solid ${C.line}`, borderRadius: 8, padding: "6px 8px", fontSize: 13 }} />
+            <span style={{ fontSize: 13, color: C.sub }}>天</span>
+            {s.start && Number(s.days) >= 1 && <span style={{ fontSize: 12, color: C.faint }}>→ 至 {addD(s.start, s.days).slice(5).replace("-", "/")}</span>}
+            {segs.length > 1 && <button onClick={() => del(i)} style={{ marginLeft: "auto", border: "none", background: "none", color: "#e11d48", fontSize: 16, cursor: "pointer" }}>×</button>}
           </div>
         ))}
         <button onClick={add} style={{ border: `1px dashed ${C.line}`, background: C.soft, borderRadius: 8, padding: "6px 12px", fontSize: 13, color: C.sub, cursor: "pointer", marginBottom: 16 }}>＋ 新增區段</button>
