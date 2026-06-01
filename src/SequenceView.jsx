@@ -122,6 +122,18 @@ export default function SequenceView({
   const delLog = (id) => { if (!requireEdit()) return; onDelLog && onDelLog(id); setDrawer(null); };
   const openCell = (itemId, date) => { if (!requireEdit()) return; const ex = logMap[`${itemId}|${date}`]; setDrawer(ex ? { ...ex } : { itemId, date, done: "", issue: "", next: "", prog: 0, photos: [] }); };
   const copyYesterday = (f) => { const p = logMap[`${f.itemId}|${dayKey(idxOf(f.date) - 1)}`]; if (p) setDrawer({ ...f, done: p.done, issue: p.issue, next: p.next, prog: p.prog }); };
+
+  // 拖曳設定工期（取代甘特排程）：點一格＝記錄；拖多格＝設工期
+  const [sel, setSel] = useState(null); // { itemId, a, b }
+  const selRef = useRef(null); selRef.current = sel;
+  const inSel = (id, i) => sel && sel.itemId === id && i >= Math.min(sel.a, sel.b) && i <= Math.max(sel.a, sel.b);
+  const commitSel = () => {
+    const s = selRef.current; if (!s) return; setSel(null);
+    const a = Math.min(s.a, s.b), b = Math.max(s.a, s.b);
+    if (a === b) { openCell(s.itemId, dayKey(a)); }
+    else if (canEdit && onSetSchedule) { onSetSchedule(s.itemId, [{ start: dayKey(a), end: dayKey(b) }]); }
+  };
+  useEffect(() => { const up = () => commitSel(); document.addEventListener("mouseup", up); return () => document.removeEventListener("mouseup", up); }, []); // eslint-disable-line
   const doWeekly = async () => {
     if (!aiWeekly) return;
     setWeeklyOut("…產生中");
@@ -144,7 +156,6 @@ export default function SequenceView({
         {isContainer && !subsOpen && <span style={{ fontSize: 11, fontWeight: 500, color: SUB, background: "#EFE7D6", borderRadius: 10, padding: "1px 7px", flexShrink: 0, lineHeight: 1.5 }}>{subCount(it)}</span>}
         {warnSet.has(it.id) && <span title={`連續 ${warnDays} 天無紀錄`} style={{ color: RED, fontSize: 13, flexShrink: 0 }}>⚠</span>}
         {canEdit && <div className="seq-actions" style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 3, flexShrink: 0 }}>
-          <button onClick={() => setSchedItem(it)} title="設定排程（日期/區段）" style={{ border: "none", background: "none", cursor: "pointer", color: C.faint, fontSize: 12 }}>📅</button>
           {it.isParent && <button onClick={() => { const n = prompt(`在「${it.name}」下新增工程子項目：`); if (n && n.trim()) onAddSub && onAddSub(it.id, n.trim()); }} title="新增子項目" style={{ border: "none", background: "none", cursor: "pointer", color: ACCENT, fontSize: 15, fontWeight: 500 }}>＋</button>}
           {it.isSub && <button onClick={() => { if (window.confirm(`刪除子項目「${it.name}」？`)) onDelSub && onDelSub(it.id); }} title="刪除子項目" style={{ border: "none", background: "none", cursor: "pointer", color: "#DC2626", fontSize: 13 }}>×</button>}
         </div>}
@@ -182,7 +193,7 @@ export default function SequenceView({
           <input type="date" value={projectStart} disabled={!canEdit} onChange={e => onSetProjectStart && onSetProjectStart(e.target.value)} style={{ border: `1px solid ${C.line}`, borderRadius: 7, padding: "4px 6px", fontSize: 12 }} />
         </label>
         <button onClick={doWeekly} style={{ border: `1px solid ${ACCENT}`, background: "#F3E4DE", color: "#3E72A8", borderRadius: 8, padding: "6px 12px", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>✨ AI 週報</button>
-        <span style={{ fontSize: 13, color: C.faint }}>{zoom === "week" ? "點工序條切日視圖" : "正在動的工序置頂 · 點格子記錄/預排"}</span>
+        <span style={{ fontSize: 13, color: C.faint }}>{zoom === "week" ? "點工序條切日視圖" : "點格子＝記錄 · 橫向拖曳＝設工期"}</span>
         <div style={{ flex: 1 }} />
         {Object.values(WS).map((s) => <span key={s.label} style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 12, color: C.sub }}><span style={{ width: 9, height: 9, borderRadius: 3, background: s.bar }} />{s.label}</span>)}
       </div>
@@ -235,7 +246,6 @@ export default function SequenceView({
                   {isContainer && !subsOpen && <span style={{ fontSize: 11, fontWeight: 500, color: SUB, background: "#EFE7D6", borderRadius: 10, padding: "1px 7px", flexShrink: 0, lineHeight: 1.5 }}>{subCount(it)}</span>}
                   {warnSet.has(it.id) && <span title={`連續 ${warnDays} 天無紀錄`} style={{ fontSize: 10.5, fontWeight: 500, color: "#DC2626", background: "#FEF2F2", borderRadius: 6, padding: "1px 6px", flexShrink: 0, lineHeight: 1.5 }}>逾期</span>}
                   {canEdit && <div className="seq-actions" style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 3, flexShrink: 0 }}>
-                    <button onClick={() => setSchedItem(it)} title="設定排程（日期/區段）" style={{ border: "none", background: "none", cursor: "pointer", color: C.faint, fontSize: 12 }}>📅</button>
                     {it.isParent && <button onClick={() => { const n = prompt(`在「${it.name}」下新增工程子項目：`); if (n && n.trim()) onAddSub && onAddSub(it.id, n.trim()); }} title="新增子項目" style={{ border: "none", background: "none", cursor: "pointer", color: ACCENT, fontSize: 15, fontWeight: 500 }}>＋</button>}
                     {it.isSub && <button onClick={() => { if (window.confirm(`刪除子項目「${it.name}」？`)) onDelSub && onDelSub(it.id); }} title="刪除子項目" style={{ border: "none", background: "none", cursor: "pointer", color: "#DC2626", fontSize: 13 }}>×</button>}
                   </div>}
@@ -293,11 +303,11 @@ export default function SequenceView({
               工程項目
               <div onMouseDown={startResize} title="拖曳調整欄寬" style={{ position: "absolute", right: -3, top: 0, bottom: 0, width: 7, cursor: "col-resize", zIndex: 6 }} />
             </div>
-            {winDays.map((i) => { const d = new Date(START_D); d.setDate(d.getDate() + i); const t = i === TODAY_IDX, wk = d.getDay() % 6 === 0; const first = d.getDate() === 1 || i === winDays[0]; return (
+            {winDays.map((i) => { const d = new Date(START_D); d.setDate(d.getDate() + i); const t = i === TODAY_IDX, wk = d.getDay() % 6 === 0; return (
               <div key={i} style={{ width: DAY_W, flexShrink: 0, textAlign: "center", padding: "6px 0 7px", borderLeft: `1px solid ${C.line}`, background: t ? "#FFFBEF" : "#fff" }}>
                 <div style={{ fontSize: 11, fontWeight: 500, color: wk ? "#c0507a" : C.sub }}>週{WD[d.getDay()]}</div>
                 <div style={{ marginTop: 3, display: "flex", justifyContent: "center" }}>
-                  <span style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", minWidth: 24, height: 24, padding: "0 7px", borderRadius: 12, fontSize: 13.5, fontWeight: 600, background: t ? ACCENT : "transparent", color: t ? "#fff" : wk ? "#c0507a" : C.text }}>{first ? `${d.getMonth() + 1}/${d.getDate()}` : d.getDate()}</span>
+                  <span style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", height: 22, padding: "0 9px", borderRadius: 11, fontSize: 13, fontWeight: 600, background: t ? ACCENT : "transparent", color: t ? "#fff" : wk ? "#c0507a" : C.text }}>{d.getMonth() + 1}/{d.getDate()}</span>
                 </div>
               </div>); })}
           </div>
@@ -314,7 +324,7 @@ export default function SequenceView({
                   winDays.map((i) => {
                     const inSpan = inRange(it, i), key = dayKey(i), log = logMap[`${it.id}|${key}`], planned = i > TODAY_IDX, t = i === TODAY_IDX;
                     return (
-                      <div key={i} onClick={() => canEdit && openCell(it.id, key)} style={{ width: DAY_W, flexShrink: 0, minHeight: ROW_FAT, borderLeft: `1px solid ${C.line}`, padding: 7, cursor: canEdit ? "pointer" : "default", background: t ? "#FFFBEF" : "#fff", borderTop: inSpan ? `3px solid ${w.bar}` : "3px solid transparent", position: "relative" }}>
+                      <div key={i} onMouseDown={() => canEdit && setSel({ itemId: it.id, a: i, b: i })} onMouseEnter={() => canEdit && setSel(s => s && s.itemId === it.id ? { ...s, b: i } : s)} style={{ width: DAY_W, flexShrink: 0, minHeight: ROW_FAT, borderLeft: `1px solid ${C.line}`, padding: 7, cursor: canEdit ? "pointer" : "default", userSelect: "none", background: inSel(it.id, i) ? "#F3E4DE" : t ? "#FFFBEF" : "#fff", borderTop: inSpan ? `3px solid ${w.bar}` : "3px solid transparent", position: "relative" }}>
                         {log ? (
                           <div style={{ height: "100%", display: "flex", flexDirection: "column", gap: 5, opacity: planned ? .72 : 1 }}>
                             {planned && <span style={{ fontSize: 10, fontWeight: 600, color: ACCENT }}>預排</span>}
@@ -335,11 +345,12 @@ export default function SequenceView({
                     );
                   })
                 ) : (
-                  <div title={canEdit ? "點任一天新增紀錄" : ""} onClick={(e) => { if (!canEdit) return; const r = e.currentTarget.getBoundingClientRect(); const di = winStart + Math.floor((e.clientX - r.left) / DAY_W); if (di >= 0 && di < TOTAL_DAYS) openCell(it.id, dayKey(di)); }} style={{ position: "relative", width: dayTrackW, cursor: canEdit ? "copy" : "default", alignSelf: "stretch" }}>
-                    {winDays.map((i) => i === TODAY_IDX && <div key="t" style={{ position: "absolute", left: dayX(i), top: 0, bottom: 0, width: DAY_W, background: "#FFFBEF" }} />)}
-                    {segs.map(([a, b], si) => { const l = Math.max(0, dayX(a)), r = Math.min(dayTrackW, dayX(b + 1)); if (r <= 0 || l >= dayTrackW) return null; return <div key={si} style={{ position: "absolute", left: l, top: ROW_THIN / 2 - 4, width: r - l, height: 8, background: w.bar, borderRadius: 4, opacity: .55 }} />; })}
-                    {itemLogs.map((l) => { const dx = dayX(idxOf(l.date)) + DAY_W / 2; if (dx < 0 || dx > dayTrackW) return null; return <span key={l.id} onMouseEnter={(e) => setTip({ l, x: e.clientX, y: e.clientY, item: it.name })} onMouseLeave={() => setTip(null)} onClick={() => setDrawer({ ...l })} style={{ position: "absolute", left: dx - 4, top: ROW_THIN / 2 - 4, width: 8, height: 8, borderRadius: 4, background: dotFill(l), boxShadow: "0 0 0 1px rgba(0,0,0,.4)", cursor: "pointer" }} />; })}
-                  </div>
+                  /* 細條列：同樣可點(記錄)/拖曳(設工期) */
+                  winDays.map((i) => { const inSpan = inRange(it, i), t = i === TODAY_IDX; return (
+                    <div key={i} onMouseDown={() => canEdit && setSel({ itemId: it.id, a: i, b: i })} onMouseEnter={() => canEdit && setSel(s => s && s.itemId === it.id ? { ...s, b: i } : s)} style={{ width: DAY_W, flexShrink: 0, borderLeft: `1px solid ${C.line}`, cursor: canEdit ? "pointer" : "default", userSelect: "none", background: inSel(it.id, i) ? "#F3E4DE" : t ? "#FFFBEF" : "transparent", position: "relative" }}>
+                      {inSpan && <div style={{ position: "absolute", left: 0, right: 0, top: ROW_THIN / 2 - 4, height: 8, background: w.bar, opacity: .55 }} />}
+                      {logMap[`${it.id}|${dayKey(i)}`] && <span onClick={(e) => { e.stopPropagation(); setDrawer({ ...logMap[`${it.id}|${dayKey(i)}`] }); }} onMouseEnter={(e) => setTip({ l: logMap[`${it.id}|${dayKey(i)}`], x: e.clientX, y: e.clientY, item: it.name })} onMouseLeave={() => setTip(null)} style={{ position: "absolute", left: DAY_W / 2 - 4, top: ROW_THIN / 2 - 4, width: 8, height: 8, borderRadius: 4, background: dotFill(logMap[`${it.id}|${dayKey(i)}`]), boxShadow: "0 0 0 1px rgba(0,0,0,.4)", cursor: "pointer", zIndex: 2 }} />}
+                    </div>); })
                 )}
               </div>
             );
@@ -380,7 +391,6 @@ export default function SequenceView({
         </div>
       )}
 
-      {schedItem && <ScheduleEditor item={schedItem} onClose={() => setSchedItem(null)} onSave={(segs) => { onSetSchedule && onSetSchedule(schedItem.id, segs); setSchedItem(null); }} dayKey={dayKey} />}
 
       {drawer && <Drawer data={drawer} item={items.find((i) => i.id === drawer.itemId)} TODAY={TODAY} onSetStatus={onSetStatus} onSave={saveLog} onDelete={delLog} onClose={() => setDrawer(null)} onCopy={copyYesterday} uploadPhotos={uploadPhotos} aiTidy={aiTidy} canEdit={canEdit} />}
     </div>
