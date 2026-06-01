@@ -926,6 +926,20 @@ function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols 
     const isEditing = editCell === key;
     const [local, setLocal] = useState(String(value ?? ""));
     useEffect(() => { setLocal(String(value ?? "")); }, [value]);
+    if (type === "date") {
+      const iso = String(value ?? "").replace(/\//g, "-").slice(0, 10);
+      const openPicker = (e) => { try { e.currentTarget.showPicker(); } catch {} };
+      return (
+        <input
+          type="date"
+          value={iso}
+          onChange={e => updateItem(catId, itemId, field, e.target.value)}
+          onClick={openPicker}
+          onFocus={openPicker}
+          style={{ width: "100%", border: "none", outline: "none", background: "transparent", cursor: "pointer", fontSize: 12.5, fontFamily: "'Noto Sans TC', sans-serif", color: iso ? "#111827" : "#c0c4d0", padding: "2px 2px", colorScheme: "light" }}
+        />
+      );
+    }
     if (isEditing) {
       return (
         <input
@@ -1091,7 +1105,7 @@ function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols 
                           </div>
                         );
                         if (col.id === "assignee") return <div key={col.id} style={cs}><EditableCell catId={catId} itemId={item.id} field="assignee" value={item.assignee} placeholder="指派..." /></div>;
-                        if (col.id === "date") return <div key={col.id} style={cs}><EditableCell catId={catId} itemId={item.id} field="date" value={item.date} placeholder="yyyy/mm/dd" /></div>;
+                        if (col.id === "date") return <div key={col.id} style={cs}><EditableCell catId={catId} itemId={item.id} field="date" value={item.date} type="date" placeholder="選擇日期" /></div>;
                         if (col.id === "estQty") return <div key={col.id} style={cs}><EditableCell catId={catId} itemId={item.id} field="estQty" value={item.estQty ?? item.qty ?? 0} type="number" /></div>;
                         if (col.id === "unit") return <div key={col.id} style={cs}><EditableCell catId={catId} itemId={item.id} field="unit" value={item.unit} /></div>;
                         if (col.id === "estUnitPrice") return <div key={col.id} style={cs}><EditableCell catId={catId} itemId={item.id} field="estUnitPrice" value={item.estUnitPrice ?? item.unitPrice ?? 0} type="number" /></div>;

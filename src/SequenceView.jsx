@@ -107,7 +107,7 @@ export default function SequenceView({
   };
 
   return (
-    <div style={{ fontFamily: "system-ui,-apple-system,'Noto Sans TC',sans-serif", color: C.text }}>
+    <div style={{ fontFamily: "-apple-system,'PingFang TC','Noto Sans TC',system-ui,'Segoe UI',Roboto,sans-serif", color: C.text, letterSpacing: 0.1 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12, flexWrap: "wrap" }}>
         <div style={{ display: "inline-flex", background: "#e9ebef", borderRadius: 10, padding: 3 }}>
           {[["week", "週"], ["day", "日"]].map(([k, l]) => (
@@ -168,11 +168,11 @@ export default function SequenceView({
                 style={{ display: "flex", borderBottom: `1px solid ${C.line}`, minHeight: open ? ROW_H_OPEN : ROW_H, background: dragOverId === it.id ? "#fff5db" : (open ? "#fffdf7" : (it.isSub ? "#fcfcfd" : "#fff")) }}>
                 <div style={{ width: labelW, flexShrink: 0, position: "sticky", left: 0, zIndex: 2, background: dragOverId === it.id ? "#fff5db" : (open ? "#fffdf7" : (it.isSub ? "#ffffff" : w.tint)), borderRight: `1px solid ${C.line}`, borderLeft: it.isSub ? "3px solid transparent" : `4px solid ${w.bar}`, padding: "0 6px", paddingLeft: it.isSub ? 12 : 4, display: "flex", alignItems: "center", gap: 4 }}>
                   {it.isParent && canEdit && <span draggable onDragStart={() => setDragId(it.id)} onDragEnd={() => { setDragId(null); setDragOverId(null); }} title="拖曳排序大項" style={{ cursor: "grab", color: "#cfd3db", fontSize: 13, flexShrink: 0 }}>⠿</span>}
-                  {it.isSub && <span style={{ color: "#c7ccd6", fontSize: 15, flexShrink: 0, marginRight: 1, lineHeight: 1 }}>└</span>}
+                  {it.isSub && <span style={{ color: "#cdd2db", fontSize: 13, flexShrink: 0, marginRight: 1, lineHeight: 1 }}>└</span>}
                   <button onClick={() => toggle(it)} style={{ border: "none", background: "none", cursor: "pointer", color: caretOpen ? ACCENT : C.faint, fontSize: it.isSub ? 11 : 13, width: 12, flexShrink: 0, transform: caretOpen ? "rotate(90deg)" : "none", transition: "transform .15s" }}>▸</button>
                   <span onClick={(e) => { e.stopPropagation(); if (canEdit) setStatusPick({ id: it.id, x: e.clientX, y: e.clientY }); }} title={canEdit ? `${w.label}（點擊設定狀態）` : w.label} style={{ width: it.isSub ? 8 : 12, height: it.isSub ? 8 : 12, borderRadius: 3, background: w.bar, flexShrink: 0, cursor: canEdit ? "pointer" : "default", boxShadow: "0 0 0 1px rgba(0,0,0,.12)" }} />
-                  <span onClick={() => toggle(it)} title={`${it.name}（${w.label}）`} style={{ fontSize: it.isSub ? 12 : 14.5, fontWeight: it.isSub ? 400 : 800, color: it.isSub ? C.sub : "#111827", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", cursor: "pointer", flex: 1 }}>{it.name}</span>
-                  {isContainer && !subsOpen && <span style={{ fontSize: 10, color: C.faint, flexShrink: 0 }}>({subCount(it)})</span>}
+                  <span onClick={() => toggle(it)} title={`${it.name}（${w.label}）`} style={{ fontSize: it.isSub ? 13 : 14.5, fontWeight: it.isSub ? 500 : 700, color: it.isSub ? "#525a68" : "#222631", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", cursor: "pointer", flex: 1, letterSpacing: it.isSub ? 0.1 : 0.3 }}>{it.name}</span>
+                  {isContainer && !subsOpen && <span style={{ fontSize: 10.5, fontWeight: 600, color: "#8b909c", background: "#eef0f3", borderRadius: 9, padding: "1px 6px", flexShrink: 0, lineHeight: 1.5 }}>{subCount(it)}</span>}
                   {warnSet.has(it.id) && <span title={`連續 ${warnDays} 天無紀錄`} style={{ color: RED, fontSize: 13, flexShrink: 0 }}>⚠</span>}
                   {canEdit && <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 1, flexShrink: 0 }}>
                     <button onClick={() => setSchedItem(it)} title="設定排程（日期/區段）" style={{ border: "none", background: "none", cursor: "pointer", color: C.faint, fontSize: 13 }}>📅</button>
