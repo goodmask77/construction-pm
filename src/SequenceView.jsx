@@ -67,6 +67,7 @@ export default function SequenceView({
   const isMobile = useIsMobile();
   const [mobView, setMobView] = useState("day");    // 手機：day(單日清單) / week(橫向時間軸)
   const [mobDayIdx, setMobDayIdx] = useState(null);  // 手機單日視圖選定日(null=今天)
+  const [mobPick, setMobPick] = useState(false);     // 手機：新增日誌→選工程項目 的彈窗
   const ref = useRef(null);
 
   // 日期數學（以 projectStart 為 W1 週一錨點）
@@ -502,6 +503,36 @@ export default function SequenceView({
 
       {quick && <QuickLog q={quick} log={logMap[`${quick.itemId}|${quick.date}`]} item={items.find((i) => i.id === quick.itemId)} planned={quick.date > TODAY} onSave={saveLog} onDelete={delLog} onClose={() => setQuick(null)} uploadPhotos={uploadPhotos} />}
       {viewImg && <div onClick={() => setViewImg(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.88)", zIndex: 1200, display: "flex", alignItems: "center", justifyContent: "center", padding: 20, cursor: "zoom-out" }}><img src={viewImg} alt="" style={{ maxWidth: "95%", maxHeight: "95%", objectFit: "contain", borderRadius: 8 }} /></div>}
+
+      {/* 手機：浮動「＋ 新增施工日誌」按鈕 */}
+      {isMobile && canEdit && (
+        <button onClick={() => setMobPick(true)} title="新增施工日誌" style={{ position: "fixed", right: 16, bottom: 76, width: 56, height: 56, borderRadius: 28, background: ACCENT, color: "#fff", border: "none", boxShadow: "0 4px 16px rgba(193,58,34,.45)", fontSize: 28, lineHeight: 1, cursor: "pointer", zIndex: 360, display: "flex", alignItems: "center", justifyContent: "center" }}>＋</button>
+      )}
+
+      {/* 手機：選擇工程項目 → 開啟記錄（文字＋照片）*/}
+      {mobPick && (
+        <div onClick={(e) => e.target === e.currentTarget && setMobPick(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.4)", zIndex: 1000, display: "flex", alignItems: "flex-end" }}>
+          <div style={{ width: "100%", maxHeight: "82vh", background: "#fff", borderTopLeftRadius: 18, borderTopRightRadius: 18, overflowY: "auto", animation: "sheetUp .22s ease", paddingBottom: "env(safe-area-inset-bottom)", boxShadow: "0 -8px 30px rgba(0,0,0,.25)" }}>
+            <div style={{ padding: "14px 16px 10px", position: "sticky", top: 0, background: "#fff", borderBottom: `1px solid ${C.line}` }}>
+              <div style={{ display: "flex", alignItems: "center" }}>
+                <div style={{ fontSize: 16, fontWeight: 700, color: C.text, flex: 1 }}>新增施工日誌</div>
+                <button onClick={() => setMobPick(false)} style={{ border: "none", background: "none", fontSize: 22, color: C.faint, cursor: "pointer", lineHeight: 1 }}>×</button>
+              </div>
+              <div style={{ fontSize: 12.5, color: C.sub, marginTop: 2 }}>選擇工程項目 · 記錄日期 {(() => { const d = new Date(START_D); d.setDate(d.getDate() + curDay); return `${d.getMonth() + 1}/${d.getDate()}`; })()}</div>
+            </div>
+            {items.length === 0 && <div style={{ padding: 30, textAlign: "center", color: C.faint, fontSize: 13 }}>尚無工程項目</div>}
+            {items.map(it => { const w = WS[it.status] || WS.pending; return (
+              <div key={it.id} onClick={() => { setMobPick(false); setQuick({ itemId: it.id, date: dayKey(curDay), x: window.innerWidth / 2, y: 90 }); }}
+                style={{ display: "flex", alignItems: "center", gap: 10, padding: "14px 16px", paddingLeft: it.isSub ? 30 : 16, borderBottom: `1px solid ${C.line}`, cursor: "pointer", minHeight: 52 }}>
+                {it.isSub && <span style={{ color: "#CDC3AC", fontSize: 12, flexShrink: 0 }}>└</span>}
+                <span style={{ width: 10, height: 10, borderRadius: 5, background: w.bar, flexShrink: 0 }} />
+                <span style={{ fontSize: 14.5, fontWeight: 600, color: it.isSub ? C.sub : C.text, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{it.urgent ? "🔥 " : ""}{it.name}</span>
+                <span style={{ fontSize: 11, color: w.color, background: w.tint, borderRadius: 10, padding: "2px 9px", fontWeight: 600, flexShrink: 0 }}>{w.label}</span>
+              </div>
+            ); })}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
