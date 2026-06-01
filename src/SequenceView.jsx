@@ -36,6 +36,7 @@ export default function SequenceView({
   const [dragOverId, setDragOverId] = useState(null);
   const [openIds, setOpenIds] = useState([]);
   const [expandedParents, setExpandedParents] = useState(new Set()); // 子項目預設收合
+  const [statusPick, setStatusPick] = useState(null); // {id, x, y}
   const startResize = (e) => {
     e.preventDefault(); e.stopPropagation();
     const startX = e.clientX, startW = labelW;
@@ -168,7 +169,7 @@ export default function SequenceView({
                 <div style={{ width: labelW, flexShrink: 0, position: "sticky", left: 0, zIndex: 2, background: dragOverId === it.id ? "#fff5db" : (open ? "#fffdf7" : w.tint), borderRight: `1px solid ${C.line}`, borderLeft: `4px solid ${w.bar}`, padding: "0 6px", paddingLeft: it.isSub ? 20 : 4, display: "flex", alignItems: "center", gap: 4 }}>
                   {it.isParent && canEdit && <span draggable onDragStart={() => setDragId(it.id)} onDragEnd={() => { setDragId(null); setDragOverId(null); }} title="拖曳排序大項" style={{ cursor: "grab", color: "#cfd3db", fontSize: 13, flexShrink: 0 }}>⠿</span>}
                   <button onClick={() => toggle(it)} style={{ border: "none", background: "none", cursor: "pointer", color: caretOpen ? ACCENT : C.faint, fontSize: 13, width: 12, flexShrink: 0, transform: caretOpen ? "rotate(90deg)" : "none", transition: "transform .15s" }}>▸</button>
-                  <span title={w.label} style={{ width: 9, height: 9, borderRadius: 3, background: w.bar, flexShrink: 0 }} />
+                  <span onClick={(e) => { e.stopPropagation(); if (canEdit) setStatusPick({ id: it.id, x: e.clientX, y: e.clientY }); }} title={canEdit ? `${w.label}（點擊設定狀態）` : w.label} style={{ width: 12, height: 12, borderRadius: 3, background: w.bar, flexShrink: 0, cursor: canEdit ? "pointer" : "default", boxShadow: "0 0 0 1px rgba(0,0,0,.12)" }} />
                   <span onClick={() => toggle(it)} title={`${it.name}（${w.label}）`} style={{ fontSize: it.isSub ? 12 : 13, fontWeight: it.isSub ? 500 : 600, color: it.isSub ? C.sub : C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", cursor: "pointer", flex: 1 }}>{it.name}</span>
                   {isContainer && !subsOpen && <span style={{ fontSize: 10, color: C.faint, flexShrink: 0 }}>({subCount(it)})</span>}
                   {warnSet.has(it.id) && <span title={`連續 ${warnDays} 天無紀錄`} style={{ color: RED, fontSize: 13, flexShrink: 0 }}>⚠</span>}
@@ -239,6 +240,20 @@ export default function SequenceView({
           <div onClick={e => e.stopPropagation()} style={{ background: "#fff", borderRadius: 12, padding: 22, maxWidth: 560, width: "100%", maxHeight: "80vh", overflowY: "auto" }}>
             <div style={{ display: "flex", alignItems: "center", marginBottom: 10 }}><div style={{ fontSize: 16, fontWeight: 800 }}>✨ 本週施工週報</div><div style={{ flex: 1 }} /><button onClick={() => setWeeklyOut(null)} style={{ border: "none", background: "none", fontSize: 22, color: C.faint, cursor: "pointer" }}>×</button></div>
             <div style={{ whiteSpace: "pre-wrap", fontSize: 14, lineHeight: 1.7, color: C.text }}>{weeklyOut}</div>
+          </div>
+        </div>
+      )}
+
+      {statusPick && (
+        <div onClick={() => setStatusPick(null)} style={{ position: "fixed", inset: 0, zIndex: 1100 }}>
+          <div onClick={e => e.stopPropagation()} style={{ position: "fixed", left: Math.min(statusPick.x, window.innerWidth - 150), top: Math.min(statusPick.y + 6, window.innerHeight - 220), background: "#fff", border: `1px solid ${C.line}`, borderRadius: 10, padding: 6, boxShadow: "0 8px 24px rgba(0,0,0,.18)", minWidth: 130 }}>
+            <div style={{ fontSize: 11, color: C.faint, padding: "2px 8px 6px" }}>設定工序狀態</div>
+            {Object.entries(WS).map(([k, v]) => (
+              <button key={k} onClick={() => { onSetStatus && onSetStatus(statusPick.id, k); setStatusPick(null); }} style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", border: "none", background: "none", padding: "7px 8px", borderRadius: 6, cursor: "pointer", fontSize: 13, color: C.text, textAlign: "left" }}
+                onMouseEnter={e => e.currentTarget.style.background = "#f3f4f6"} onMouseLeave={e => e.currentTarget.style.background = "none"}>
+                <span style={{ width: 11, height: 11, borderRadius: 3, background: v.bar }} />{v.label}
+              </button>
+            ))}
           </div>
         </div>
       )}
