@@ -31,9 +31,17 @@ export default function SequenceView({
   onReorder, onAddSub, onDelSub,
 }) {
   const [zoom, setZoom] = useState("week");
+  const [labelW, setLabelW] = useState(220);
   const [dragId, setDragId] = useState(null);
   const [dragOverId, setDragOverId] = useState(null);
   const [openIds, setOpenIds] = useState([]);
+  const startResize = (e) => {
+    e.preventDefault(); e.stopPropagation();
+    const startX = e.clientX, startW = labelW;
+    const move = (ev) => setLabelW(Math.max(120, Math.min(520, startW + ev.clientX - startX)));
+    const up = () => { document.removeEventListener("mousemove", move); document.removeEventListener("mouseup", up); };
+    document.addEventListener("mousemove", move); document.addEventListener("mouseup", up);
+  };
   const [onlyIssue, setOnlyIssue] = useState(false);
   const [drawer, setDrawer] = useState(null);
   const [schedItem, setSchedItem] = useState(null);
@@ -115,9 +123,12 @@ export default function SequenceView({
       </div>
 
       <div ref={ref} style={{ overflowX: "auto", border: `1px solid ${C.line}`, borderRadius: 12, background: "#fff", position: "relative" }}>
-        <div style={{ minWidth: LABEL_W + trackW }}>
+        <div style={{ minWidth: labelW + trackW }}>
           <div style={{ display: "flex", position: "sticky", top: 0, zIndex: 3, background: "#fff", borderBottom: `1px solid ${C.line}` }}>
-            <div style={{ width: LABEL_W, flexShrink: 0, position: "sticky", left: 0, zIndex: 4, background: "#fff", padding: "8px 12px", fontSize: 13, fontWeight: 700, color: C.sub, borderRight: `1px solid ${C.line}` }}>工程項目</div>
+            <div style={{ width: labelW, flexShrink: 0, position: "sticky", left: 0, zIndex: 4, background: "#fff", padding: "8px 12px", fontSize: 13, fontWeight: 700, color: C.sub, borderRight: `1px solid ${C.line}` }}>
+              工程項目
+              <div onMouseDown={startResize} title="拖曳調整欄寬" style={{ position: "absolute", right: -3, top: 0, bottom: 0, width: 7, cursor: "col-resize", zIndex: 6 }} />
+            </div>
             <div style={{ position: "relative", width: trackW, height: 42 }}>
               {Array.from({ length: TOTAL_WEEKS }, (_, w) => {
                 const d = new Date(START_D); d.setDate(d.getDate() + w * 7);
@@ -145,12 +156,12 @@ export default function SequenceView({
                 onDragOver={(e) => { if (it.isParent && dragId && dragId !== it.id) { e.preventDefault(); setDragOverId(it.id); } }}
                 onDrop={() => { if (it.isParent && dragId && dragId !== it.id) onReorder && onReorder(dragId, it.id); setDragId(null); setDragOverId(null); }}
                 style={{ display: "flex", borderBottom: `1px solid ${C.line}`, minHeight: open ? ROW_H_OPEN : ROW_H, background: dragOverId === it.id ? "#fff5db" : (open ? "#fffdf7" : (it.isSub ? "#fcfcfd" : "#fff")) }}>
-                <div style={{ width: LABEL_W, flexShrink: 0, position: "sticky", left: 0, zIndex: 2, background: dragOverId === it.id ? "#fff5db" : (open ? "#fffdf7" : (it.isSub ? "#fcfcfd" : "#fff")), borderRight: `1px solid ${C.line}`, padding: "0 6px", paddingLeft: it.isSub ? 22 : 6, display: "flex", alignItems: "center", gap: 4 }}>
+                <div style={{ width: labelW, flexShrink: 0, position: "sticky", left: 0, zIndex: 2, background: dragOverId === it.id ? "#fff5db" : (open ? "#fffdf7" : w.tint), borderRight: `1px solid ${C.line}`, borderLeft: `4px solid ${w.bar}`, padding: "0 6px", paddingLeft: it.isSub ? 20 : 4, display: "flex", alignItems: "center", gap: 4 }}>
                   {it.isParent && canEdit && <span draggable onDragStart={() => setDragId(it.id)} onDragEnd={() => { setDragId(null); setDragOverId(null); }} title="拖曳排序大項" style={{ cursor: "grab", color: "#cfd3db", fontSize: 13, flexShrink: 0 }}>⠿</span>}
                   <button onClick={() => toggle(it)} style={{ border: "none", background: "none", cursor: "pointer", color: open ? ACCENT : C.faint, fontSize: 13, width: 12, flexShrink: 0, transform: open ? "rotate(90deg)" : "none", transition: "transform .15s" }}>▸</button>
-                  <span onClick={() => toggle(it)} title="展開/收合" style={{ fontSize: it.isSub ? 12 : 13, fontWeight: it.isSub ? 500 : 600, color: it.isSub ? C.sub : C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", cursor: "pointer" }}>{it.name}</span>
-                  <span style={{ fontSize: 10, fontWeight: 700, color: w.color, background: w.tint, borderRadius: 5, padding: "1px 5px", flexShrink: 0 }}>{w.label}</span>
-                  {warnSet.has(it.id) && <span title={`連續 ${warnDays} 天無紀錄`} style={{ color: RED, fontSize: 13 }}>⚠</span>}
+                  <span title={w.label} style={{ width: 9, height: 9, borderRadius: 3, background: w.bar, flexShrink: 0 }} />
+                  <span onClick={() => toggle(it)} title={`${it.name}（${w.label}）`} style={{ fontSize: it.isSub ? 12 : 13, fontWeight: it.isSub ? 500 : 600, color: it.isSub ? C.sub : C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", cursor: "pointer", flex: 1 }}>{it.name}</span>
+                  {warnSet.has(it.id) && <span title={`連續 ${warnDays} 天無紀錄`} style={{ color: RED, fontSize: 13, flexShrink: 0 }}>⚠</span>}
                   {canEdit && <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 1, flexShrink: 0 }}>
                     <button onClick={() => setSchedItem(it)} title="設定排程（日期/區段）" style={{ border: "none", background: "none", cursor: "pointer", color: C.faint, fontSize: 13 }}>📅</button>
                     {it.isParent && <button onClick={() => { const n = prompt(`在「${it.name}」下新增工程子項目：`); if (n && n.trim()) onAddSub && onAddSub(it.id, n.trim()); }} title="新增子項目" style={{ border: "none", background: "none", cursor: "pointer", color: ACCENT, fontSize: 15, fontWeight: 700 }}>＋</button>}

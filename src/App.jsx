@@ -332,6 +332,7 @@ export default function App() {
   const [photos, setPhotos] = useState([]);
   const [accounts, setAccounts] = useState([]);
   const [customCols, setCustomCols] = useState([]);
+  const [colOrder, setColOrder] = useState([]);
   const [seqLogs, setSeqLogs] = useState([]);
   const [events, setEvents] = useState([]);
   const [journal, setJournal] = useState([]);
@@ -355,6 +356,10 @@ export default function App() {
   const commitCustomCols = (list) => {
     setCustomCols(list);
     window.storage.set("pm_columns", JSON.stringify(list), true).catch(()=>{});
+  };
+  const commitColOrder = (list) => {
+    setColOrder(list);
+    window.storage.set("pm_colorder", JSON.stringify(list), true).catch(()=>{});
   };
   const commitSeqLogs = (list) => {
     setSeqLogs(list);
