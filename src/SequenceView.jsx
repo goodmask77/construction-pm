@@ -1,5 +1,12 @@
 import { useState, useRef, useEffect, useMemo } from "react";
 
+const MOBILE_BP = 768;
+function useIsMobile(bp = MOBILE_BP) {
+  const [m, setM] = useState(typeof window !== "undefined" && window.innerWidth < bp);
+  useEffect(() => { const on = () => setM(window.innerWidth < bp); window.addEventListener("resize", on); return () => window.removeEventListener("resize", on); }, [bp]);
+  return m;
+}
+
 /* ════════════════════════════════════════════════════════════════════════
  *  SequenceView ── 工序 × 施工日誌（接 ground-pm cats / pm_seqlogs）
  *  工序 = 工程大項(cats)；日誌 = 工序時間軸上的事件(pm_seqlogs)。
@@ -57,6 +64,9 @@ export default function SequenceView({
   const [scrollTo, setScrollTo] = useState(null);
   const [scrollX, setScrollX] = useState(0);       // 目前橫向捲動量（給最左欄「跳到有紀錄格子」箭頭判斷可見範圍）
   const [weeklyOut, setWeeklyOut] = useState(null);
+  const isMobile = useIsMobile();
+  const [mobView, setMobView] = useState("day");    // 手機：day(單日清單) / week(橫向時間軸)
+  const [mobDayIdx, setMobDayIdx] = useState(null);  // 手機單日視圖選定日(null=今天)
   const ref = useRef(null);
 
   // 日期數學（以 projectStart 為 W1 週一錨點）
@@ -111,6 +121,7 @@ export default function SequenceView({
   }
   // 日視圖顯示完整工期（0…TOTAL_DAYS-1），靠原生捲動一路往右滑
   const winDays = Array.from({ length: TOTAL_DAYS }, (_, i) => i);
+  const curDay = mobDayIdx == null ? TODAY_IDX : mobDayIdx;  // 手機單日視圖目前日
 
   useEffect(() => { if (!ref.current) return; ref.current.scrollLeft = zoom === "week" ? X(TODAY_IDX) - 220 : dayX(TODAY_IDX) - DAY_W; }, [zoom]); // eslint-disable-line
   useEffect(() => { if (scrollTo != null && ref.current) { ref.current.scrollLeft = (zoom === "day" ? dayX(scrollTo) - DAY_W : X(scrollTo) - 120); setScrollTo(null); } }, [scrollTo]); // eslint-disable-line
@@ -192,6 +203,7 @@ export default function SequenceView({
         @keyframes seqUrgentPulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.45;transform:scale(.86)}}
         .seq-urgent-cell{animation:seqUrgentBg 1.15s ease-in-out infinite !important}
         .seq-fire{animation:seqUrgentPulse .9s ease-in-out infinite;display:inline-flex}`}</style>
+      {!isMobile && (
       <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10, flexWrap: "wrap" }}>
         <div style={{ display: "inline-flex", background: "#EFE7D6", borderRadius: 8, padding: 2 }}>
           {[["week", "週"], ["day", "日"]].map(([k, l]) => (
@@ -222,7 +234,77 @@ export default function SequenceView({
         <div style={{ flex: 1 }} />
         {Object.values(WS).map((s) => <span key={s.label} style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 12, color: C.sub }}><span style={{ width: 9, height: 9, borderRadius: 3, background: s.bar }} />{s.label}</span>)}
       </div>
+      )}
 
+      {/* ───────── 手機工具列：日/週切換 + 日期切換器 ───────── */}
+      {isMobile && (
+        <div style={{ marginBottom: 10 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+            <div style={{ display: "inline-flex", background: "#EFE7D6", borderRadius: 8, padding: 2 }}>
+              {[["day", "日"], ["week", "週"]].map(([k, l]) => (
+                <button key={k} onClick={() => setMobView(k)} style={{ border: "none", cursor: "pointer", padding: "8px 18px", borderRadius: 6, fontSize: 13, fontWeight: 600, minHeight: 40, background: mobView === k ? "#fff" : "transparent", color: mobView === k ? C.text : C.sub, boxShadow: mobView === k ? "0 1px 2px rgba(0,0,0,.1)" : "none" }}>{l}</button>
+              ))}
+            </div>
+            <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, color: C.sub }}>
+              <input type="checkbox" checked={onlyIssue} onChange={(e) => setOnlyIssue(e.target.checked)} style={{ width: 18, height: 18 }} />只看異常
+            </label>
+            <div style={{ flex: 1 }} />
+            <button onClick={doWeekly} title="AI 週報" style={{ border: `1px solid ${ACCENT}`, background: "#F3E4DE", color: "#3E72A8", borderRadius: 8, padding: "0 12px", height: 40, fontSize: 13, fontWeight: 600, cursor: "pointer" }}>✨週報</button>
+          </div>
+          {mobView === "day" && (
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <button onClick={() => setMobDayIdx(Math.max(0, curDay - 1))} style={{ ...navBtn, width: 44, height: 44, fontSize: 20, flexShrink: 0 }}>‹</button>
+              <button onClick={() => setMobDayIdx(TODAY_IDX)} title="點此回到今天" style={{ flex: 1, minWidth: 0, height: 44, textAlign: "center", fontSize: 15, fontWeight: 700, color: curDay === TODAY_IDX ? ACCENT : C.text, background: "none", border: "none", cursor: "pointer" }}>
+                {(() => { const d = new Date(START_D); d.setDate(d.getDate() + curDay); return `週${WD[d.getDay()]} ${d.getMonth() + 1}/${d.getDate()}`; })()}
+                {curDay === TODAY_IDX ? " · 今天" : ""}
+              </button>
+              <button onClick={() => setMobDayIdx(Math.min(TOTAL_DAYS - 1, curDay + 1))} style={{ ...navBtn, width: 44, height: 44, fontSize: 20, flexShrink: 0 }}>›</button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ───────── 手機單日清單 ───────── */}
+      {isMobile && mobView === "day" && (
+        <div style={{ border: `1px solid ${C.line}`, borderRadius: 12, background: "#fff", overflow: "hidden" }}>
+          {(() => {
+            const key = dayKey(curDay);
+            const rows = visItems.filter(it => logMap[`${it.id}|${key}`] || inRange(it, curDay) || ACTIVE.includes(it.status));
+            if (!rows.length) return <div style={{ padding: 30, textAlign: "center", color: C.faint, fontSize: 13 }}>本日無排程或施工中的工序</div>;
+            const planned = curDay > TODAY_IDX;
+            return rows.map(it => {
+              const w = WS[it.status] || WS.pending;
+              const log = logMap[`${it.id}|${key}`];
+              const sched = inRange(it, curDay);
+              return (
+                <div key={it.id} onClick={() => { if (log) setQuick({ itemId: it.id, date: key, x: window.innerWidth / 2, y: 120 }); else if (canEdit) openCell(it.id, key, window.innerWidth / 2, 120); }}
+                  style={{ borderBottom: `1px solid ${C.line}`, borderLeft: `4px solid ${w.bar}`, padding: "12px 14px", display: "flex", flexDirection: "column", gap: 6, cursor: (log || canEdit) ? "pointer" : "default", background: it.urgent ? "#FCEDE8" : "#fff" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <span style={{ width: 9, height: 9, borderRadius: 5, background: w.bar, flexShrink: 0 }} />
+                    <span style={{ fontSize: 14.5, fontWeight: 600, color: it.isSub ? C.sub : C.text, flex: 1 }}>{it.urgent ? "🔥 " : ""}{it.name}</span>
+                    <span style={{ fontSize: 11, color: w.color, background: w.tint, borderRadius: 10, padding: "2px 9px", fontWeight: 600, whiteSpace: "nowrap" }}>{w.label}</span>
+                  </div>
+                  {log ? (
+                    <div style={{ paddingLeft: 17 }}>
+                      {planned && <span style={{ fontSize: 11, fontWeight: 600, color: ACCENT, marginRight: 6 }}>預排</span>}
+                      {!planned && log.prog > 0 && <span style={{ fontSize: 11, color: C.sub, marginRight: 6, fontWeight: 600 }}>{log.prog}%</span>}
+                      <span style={{ fontSize: 13, color: C.text, lineHeight: 1.5 }}>{planned ? log.next : log.done}</span>
+                      {log.issue && <div style={{ fontSize: 12, color: RED, marginTop: 3 }}>⚠ {log.issue}</div>}
+                      {log.photos?.length > 0 && <div style={{ display: "flex", gap: 5, marginTop: 6, flexWrap: "wrap" }}>{log.photos.slice(0, 4).map((p, k) => <img key={k} src={p} alt="" onClick={(e) => { e.stopPropagation(); setViewImg(p); }} style={{ width: 54, height: 54, borderRadius: 6, objectFit: "cover" }} />)}</div>}
+                    </div>
+                  ) : (
+                    <div style={{ paddingLeft: 17, fontSize: 12.5, color: sched ? ACCENT : C.faint }}>
+                      {sched ? "● 今日排程中" : ""}{canEdit ? <span style={{ color: C.faint }}>{sched ? " · " : ""}＋ 點此{planned ? "預排" : "記錄"}</span> : (sched ? "" : "—")}
+                    </div>
+                  )}
+                </div>
+              );
+            });
+          })()}
+        </div>
+      )}
+
+      {(!isMobile || mobView === "week") && (
       <div ref={ref} style={{ overflow: "auto", maxHeight: "calc(100vh - 195px)", border: `1px solid ${C.line}`, borderRadius: 12, background: "#fff", position: "relative" }}>
         {zoom === "week" ? (
         <div style={{ minWidth: labelW + trackW }}>
@@ -383,6 +465,7 @@ export default function SequenceView({
         </div>
         )}
       </div>
+      )}
 
       {tip && (
         <div style={{ position: "fixed", left: tip.x + 12, top: tip.y + 12, zIndex: 1100, background: "#1f2430", color: "#fff", borderRadius: 8, padding: "8px 10px", maxWidth: 220, fontSize: 12, pointerEvents: "none", boxShadow: "0 6px 18px rgba(0,0,0,.3)" }}>

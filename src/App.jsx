@@ -173,6 +173,18 @@ const STATUS_MAP = {
 const fmt = (n) => "NT$" + Math.round(n || 0).toLocaleString();
 const calcEstimated = (it) => (it.estQty || it.qty || 0) * (it.estUnitPrice || it.unitPrice || 0) + (it.estLabor || 0);
 const calcActual = (it) => (it.actQty || 0) * (it.actUnitPrice || 0) + (it.actWorkers || 0) * (it.actDailyWage || 0) * (it.actLaborDays || 0);
+
+// ── RWD：偵測手機寬度（< 768px）──────────────────────────────────────────────
+const MOBILE_BP = 768;
+function useIsMobile(bp = MOBILE_BP) {
+  const [m, setM] = useState(typeof window !== "undefined" && window.innerWidth < bp);
+  useEffect(() => {
+    const on = () => setM(window.innerWidth < bp);
+    window.addEventListener("resize", on);
+    return () => window.removeEventListener("resize", on);
+  }, [bp]);
+  return m;
+}
 const calcItemTotal = (it) => calcEstimated(it);
 
 // ── STORAGE HELPERS ───────────────────────────────────────────────────────────
@@ -585,6 +597,8 @@ export default function App() {
     return await callAI([{ role:"user", content:`以下是本週各工序施工日誌，請產生給業主看的本週進度週報（繁體中文，淺顯，含：本週完成、進行中、問題/待決、下週預計、整體評估🟢/🟡/🔴）：\n${lines}` }], "你是餐廳裝修工程顧問，為業主寫週報。");
   };
 
+  const isMobile = useIsMobile();
+
   if (!cats) return (
     <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100vh", background: BG, color: SUB, fontFamily: "-apple-system,'PingFang TC','Noto Sans TC',system-ui,sans-serif", fontSize: 15 }}>
       載入中…
@@ -594,10 +608,10 @@ export default function App() {
   return (
     <div style={{ minHeight: "100vh", background: BG, color: TEXT, fontFamily: "-apple-system,'PingFang TC','Noto Sans TC',system-ui,'Segoe UI',sans-serif", fontSize: 14, letterSpacing: 0.1 }}>
       {/* TOP NAV */}
-      <TopNav view={view} setView={setView} saving={saving} totalEstimated={totalEstimated} totalActual={totalActual} doneCount={doneCount} catCount={cats.length} onAI={() => setShowGlobalAI(true)} userName={userName} isAdmin={isAdmin} stalledCount={stalledItems.length} onRoleClick={() => setShowLogin(true)} onActivityLog={() => setShowActivityLog(true)} activityCount={activityLog.length} />
+      <TopNav view={view} setView={setView} saving={saving} totalEstimated={totalEstimated} totalActual={totalActual} doneCount={doneCount} catCount={cats.length} onAI={() => setShowGlobalAI(true)} userName={userName} isAdmin={isAdmin} stalledCount={stalledItems.length} onRoleClick={() => setShowLogin(true)} onActivityLog={() => setShowActivityLog(true)} activityCount={activityLog.length} isMobile={isMobile} />
 
       {/* MAIN */}
-      <div style={{ padding: "0 16px 80px" }}>
+      <div style={{ padding: isMobile ? "0 12px 84px" : "0 16px 80px" }}>
         {view === "owner" && settings && (
           <OwnerDashboard cats={cats} setCats={setCatsLogged} settings={settings} stalledItems={stalledItems} activityLog={activityLog} logActivity={logActivity} userName={userName} journal={journal} events={events} plans={plans} />
         )}
@@ -656,6 +670,27 @@ export default function App() {
       {showGlobalAI && (
         <GlobalAIPanel chat={globalChat} setChat={setGlobalChat} onClose={() => setShowGlobalAI(false)} cats={cats} setCats={guardedSetCats} canEdit={canEdit} confirm={confirm} settings={settings} setSettings={guardedSetSettings} worklog={worklog} setWorklog={commitWorklog} />
       )}
+
+      {/* 手機底部固定導覽 */}
+      {isMobile && <BottomNav view={view} setView={setView} />}
+    </div>
+  );
+}
+
+// ── BOTTOM NAV (手機) ───────────────────────────────────────────────────────
+function BottomNav({ view, setView }) {
+  const tabs = [["owner", "儀表板", "📊"], ["overview", "總覽", "📋"], ["gantt", "工序", "📅"], ["files", "檔案庫", "📁"], ["advisor", "AI設定", "🤖"]];
+  return (
+    <div style={{ position: "fixed", left: 0, right: 0, bottom: 0, height: 60, background: "rgba(255,255,255,0.96)", backdropFilter: "blur(10px)", WebkitBackdropFilter: "blur(10px)", borderTop: `1px solid ${BORDER}`, boxShadow: "0 -2px 14px rgba(0,0,0,0.08)", display: "flex", zIndex: 350, paddingBottom: "env(safe-area-inset-bottom)" }}>
+      {tabs.map(([v, l, icon]) => {
+        const on = view === v;
+        return (
+          <button key={v} onClick={() => setView(v)} title={l} style={{ flex: 1, minHeight: 44, border: "none", background: "none", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 3, cursor: "pointer", color: on ? ACCENT : SUB, fontWeight: on ? 700 : 500, padding: 0 }}>
+            <span style={{ fontSize: 19, lineHeight: 1, filter: on ? "none" : "grayscale(0.4) opacity(0.85)" }}>{icon}</span>
+            <span style={{ fontSize: 10.5 }}>{l}</span>
+          </button>
+        );
+      })}
     </div>
   );
 }
@@ -703,17 +738,17 @@ function KPICard({ label, val, color, tip }) {
 }
 
 // ── TOP NAV ───────────────────────────────────────────────────────────────────
-function TopNav({ view, setView, saving, totalEstimated, totalActual, doneCount, catCount, onAI, userName, isAdmin, stalledCount, onRoleClick, onActivityLog, activityCount }) {
+function TopNav({ view, setView, saving, totalEstimated, totalActual, doneCount, catCount, onAI, userName, isAdmin, stalledCount, onRoleClick, onActivityLog, activityCount, isMobile }) {
   const diff = totalActual - totalEstimated;
   return (
-    <div style={{ background: BG, borderBottom: `1px solid ${BORDER}`, padding: "16px 22px 0", position: "sticky", top: 0, zIndex: 100 }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 12, flexWrap: "wrap" }}>
-        <div style={{ flexShrink: 0 }}>
-          <div style={{ fontSize: 26, fontWeight: 800, color: ACCENT, lineHeight: 1, letterSpacing: -1 }}>GROUN:D</div>
-          <div style={{ fontSize: 9.5, color: SUB, letterSpacing: 2.5, textTransform: "uppercase", marginTop: 4, fontWeight: 600 }}>Construction Project Tracker</div>
+    <div style={{ background: BG, borderBottom: `1px solid ${BORDER}`, padding: isMobile ? "10px 14px 0" : "16px 22px 0", position: "sticky", top: 0, zIndex: 100 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: isMobile ? 10 : 16, marginBottom: isMobile ? 10 : 12, flexWrap: "wrap" }}>
+        <div style={{ flexShrink: 0, order: 0 }}>
+          <div style={{ fontSize: isMobile ? 20 : 26, fontWeight: 800, color: ACCENT, lineHeight: 1, letterSpacing: -1 }}>GROUN:D</div>
+          {!isMobile && <div style={{ fontSize: 9.5, color: SUB, letterSpacing: 2.5, textTransform: "uppercase", marginTop: 4, fontWeight: 600 }}>Construction Project Tracker</div>}
         </div>
-        {/* KPI cards inline */}
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(4,minmax(110px,1fr))", gap: 8, flex: 1, minWidth: 360 }}>
+        {/* KPI cards inline（手機改 2×2、整列獨佔一行）*/}
+        <div style={{ display: "grid", gridTemplateColumns: isMobile ? "repeat(2,1fr)" : "repeat(4,minmax(110px,1fr))", gap: 8, flex: isMobile ? "1 1 100%" : 1, minWidth: isMobile ? 0 : 360, order: isMobile ? 2 : 0 }}>
           {[
             { label: "預估總額", val: fmt(totalEstimated), color: TEXT, tip: "各細項「預估數量×預估單價＋預估人工」加總，來自估價單" },
             { label: "實際記錄", val: totalActual > 0 ? fmt(totalActual) : "尚未填入", color: totalActual > 0 ? TEXT : SUB, tip: "各細項「實際數量×實際單價＋人數×日薪×天數」加總，施工中逐筆填入" },
@@ -721,38 +756,41 @@ function TopNav({ view, setView, saving, totalEstimated, totalActual, doneCount,
             { label: "完工項目", val: `${doneCount} / ${catCount}`, color: ACCENT, tip: "狀態標示為「完工」的大項數" },
           ].map(k => <KPICard key={k.label} label={k.label} val={k.val} color={k.color} tip={k.tip} />)}
         </div>
-        {/* actions */}
-        <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
+        {/* actions（手機改 icon-only，保留 title 提示）*/}
+        <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0, order: isMobile ? 1 : 0, marginLeft: isMobile ? "auto" : 0 }}>
           {saving && <div style={{ fontSize: 11, color: SUB }}>同步中…</div>}
           {stalledCount > 0 && (
-            <div style={{ background: "#FEF2F2", border: "1px solid #FECACA", borderRadius: 7, padding: "4px 10px", fontSize: 12, color: "#DC2626", fontWeight: 500, cursor: "pointer", display: "flex", alignItems: "center", gap: 5 }} onClick={() => setView && setView("overview")}>
+            <div title={`${stalledCount} 項卡關`} style={{ background: "#FEF2F2", border: "1px solid #FECACA", borderRadius: 7, padding: "4px 10px", fontSize: 12, color: "#DC2626", fontWeight: 500, cursor: "pointer", display: "flex", alignItems: "center", gap: 5 }} onClick={() => setView && setView("overview")}>
               <span style={{ width: 6, height: 6, borderRadius: 3, background: "#DC2626" }} />{stalledCount}
             </div>
           )}
           {userName ? (
-            <div onClick={onRoleClick} title="點擊可切換帳號 / 登出" style={{ display: "flex", alignItems: "center", gap: 7, background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: 8, padding: "5px 12px", cursor: "pointer" }}>
-              <span style={{ width: 22, height: 22, borderRadius: 11, background: ACCENT_SOFT, color: ACCENT, fontSize: 11, fontWeight: 600, display: "flex", alignItems: "center", justifyContent: "center" }}>{(userName[0] || "?").toUpperCase()}</span>
-              <span style={{ fontSize: 13, color: TEXT, fontWeight: 500 }}>{userName}</span>
+            <div onClick={onRoleClick} title={`${userName}（點擊可切換帳號 / 登出）`} style={{ display: "flex", alignItems: "center", gap: 7, background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: 8, padding: isMobile ? "6px" : "5px 12px", minHeight: 40, cursor: "pointer" }}>
+              <span style={{ width: 26, height: 26, borderRadius: 13, background: ACCENT_SOFT, color: ACCENT, fontSize: 12, fontWeight: 600, display: "flex", alignItems: "center", justifyContent: "center" }}>{(userName[0] || "?").toUpperCase()}</span>
+              {!isMobile && <span style={{ fontSize: 13, color: TEXT, fontWeight: 500 }}>{userName}</span>}
             </div>
           ) : (
-            <button onClick={onRoleClick} style={{ display: "flex", alignItems: "center", gap: 6, background: PRIMARY, border: "none", borderRadius: 8, padding: "8px 16px", cursor: "pointer", color: "#fff", fontSize: 13, fontWeight: 500 }}>
-              登入以編輯
+            <button onClick={onRoleClick} title="登入以編輯" style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 6, background: PRIMARY, border: "none", borderRadius: 8, padding: isMobile ? 0 : "8px 16px", width: isMobile ? 40 : "auto", height: isMobile ? 40 : "auto", minHeight: 40, cursor: "pointer", color: "#fff", fontSize: isMobile ? 17 : 13, fontWeight: 500 }}>
+              {isMobile ? "🔑" : "登入以編輯"}
             </button>
           )}
-          <button onClick={onActivityLog} title="活動記錄" style={{ background: SURFACE, border: `1px solid ${BORDER}`, color: TEXT, borderRadius: 8, padding: "7px 12px", cursor: "pointer", fontSize: 13, display:"flex", alignItems:"center", gap:5 }}>
-            活動{activityCount > 0 ? <span style={{fontSize:10,background:ACCENT_SOFT,color:ACCENT,fontWeight:600,borderRadius:10,padding:"1px 6px"}}>{activityCount}</span> : ""}
+          <button onClick={onActivityLog} title="活動記錄" style={{ background: SURFACE, border: `1px solid ${BORDER}`, color: TEXT, borderRadius: 8, padding: isMobile ? 0 : "7px 12px", width: isMobile ? 40 : "auto", height: isMobile ? 40 : "auto", minHeight: 40, cursor: "pointer", fontSize: isMobile ? 17 : 13, display: "flex", alignItems: "center", justifyContent: "center", gap: 5, position: "relative" }}>
+            {isMobile ? "🔔" : <>活動{activityCount > 0 ? <span style={{ fontSize: 10, background: ACCENT_SOFT, color: ACCENT, fontWeight: 600, borderRadius: 10, padding: "1px 6px" }}>{activityCount}</span> : ""}</>}
+            {isMobile && activityCount > 0 && <span style={{ position: "absolute", top: -3, right: -3, minWidth: 15, height: 15, padding: "0 3px", background: ACCENT, color: "#fff", fontSize: 9, fontWeight: 700, borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center" }}>{activityCount > 99 ? "99+" : activityCount}</span>}
           </button>
-          <button onClick={onAI} style={{ background: ACCENT, border: "none", color: "#fff", borderRadius: 8, padding: "8px 16px", cursor: "pointer", fontSize: 13, fontWeight: 600 }}>
-            AI 顧問
+          <button onClick={onAI} title="AI 顧問" style={{ background: ACCENT, border: "none", color: "#fff", borderRadius: 8, padding: isMobile ? 0 : "8px 16px", width: isMobile ? 40 : "auto", height: isMobile ? 40 : "auto", minHeight: 40, cursor: "pointer", fontSize: isMobile ? 17 : 13, fontWeight: 600, display: "flex", alignItems: "center", justifyContent: "center" }}>
+            {isMobile ? "🤖" : "AI 顧問"}
           </button>
         </div>
       </div>
-      {/* view tabs — boxed editorial */}
+      {/* view tabs — boxed editorial（手機隱藏，改用底部導覽）*/}
+      {!isMobile && (
       <div style={{ display: "flex", gap: 8, paddingBottom: 12, flexWrap: "wrap" }}>
         {[["owner","儀表板"],["overview","總覽"],["gantt","工序"],["files","檔案庫"],["advisor","AI設定"],...(isAdmin?[["accounts","帳號"]]:[])].map(([v,l]) => (
           <button key={v} onClick={() => setView(v)} style={{ padding: "8px 16px", borderRadius: 7, border: `1px solid ${view === v ? PRIMARY : BORDER}`, cursor: "pointer", fontSize: 14, fontWeight: 500, background: view === v ? PRIMARY : "transparent", color: view === v ? "#fff" : TEXT, transition: "all .12s" }}>{l}</button>
         ))}
       </div>
+      )}
     </div>
   );
 }
@@ -816,7 +854,7 @@ function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols,
   const [showColMenu, setShowColMenu] = useState(false);
   const [editCell, setEditCell] = useState(null); // {rowId, col}
   const [filterStatus, setFilterStatus] = useState("all");
-  const [viewMode, setViewMode] = useState("table"); // table | card（卡片＝原看板）
+  const [viewMode, setViewMode] = useState(() => (typeof window !== "undefined" && window.innerWidth < MOBILE_BP) ? "card" : "table"); // 手機預設卡片；table | card（卡片＝原看板）
   const [collapsed, setCollapsed] = useState(new Set()); // 收合的大項 id
   const toggleCollapse = (catId) => setCollapsed(s => { const n = new Set(s); n.has(catId) ? n.delete(catId) : n.add(catId); return n; });
   const allCollapsed = cats.length > 0 && cats.every(c => collapsed.has(c.id));
@@ -2007,7 +2045,7 @@ function KanbanView({ cats, setCats, onSelect, dragging, dragOver, onDragStart, 
   return (
     <div style={{ paddingTop: 16 }}>
       <div style={{ fontSize: 11, color: "#6F6656", marginBottom: 12 }}>拖曳卡片可調整工序順序</div>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px,1fr))", gap: 12 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(min(260px,100%),1fr))", gap: 12 }}>
         {[...cats].sort((a,b) => a.order - b.order).map(cat => {
           const done = cat.items.filter(i => i.status === "done").length;
           const pct = cat.items.length ? Math.round(done / cat.items.length * 100) : 0;
@@ -3501,6 +3539,27 @@ function GlobalAIPanel({ chat, setChat, onClose, cats, setCats, canEdit, confirm
 
 // ── SIDE PANEL ─────────────────────────────────────────────────────────────────
 function SidePanel({ onClose, children, wide }) {
+  const isMobile = useIsMobile();
+  const [dragY, setDragY] = useState(0);
+  const startY = useRef(null);
+
+  // 手機：從底部彈出的 bottom sheet（拖曳柄可下拉關閉）
+  if (isMobile) {
+    const onTouchStart = (e) => { startY.current = e.touches[0].clientY; };
+    const onTouchMove = (e) => { if (startY.current != null) { const dy = e.touches[0].clientY - startY.current; if (dy > 0) setDragY(dy); } };
+    const onTouchEnd = () => { if (dragY > 90) onClose(); else setDragY(0); startY.current = null; };
+    return (
+      <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", zIndex: 400, display: "flex", alignItems: "flex-end" }} onClick={e => e.target === e.currentTarget && onClose()}>
+        <div style={{ width: "100%", maxHeight: "90vh", background: "#fff", borderTopLeftRadius: 18, borderTopRightRadius: 18, overflowY: "auto", display: "flex", flexDirection: "column", animation: "sheetUp .22s ease", transform: dragY ? `translateY(${dragY}px)` : "none", transition: dragY ? "none" : "transform .2s", paddingBottom: "env(safe-area-inset-bottom)", boxShadow: "0 -8px 30px rgba(0,0,0,0.25)" }}>
+          <div onClick={onClose} onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd} title="下拉或點此關閉" style={{ padding: "11px 0 7px", display: "flex", justifyContent: "center", cursor: "pointer", position: "sticky", top: 0, background: "#fff", zIndex: 10, touchAction: "none", borderTopLeftRadius: 18, borderTopRightRadius: 18 }}>
+            <div style={{ width: 42, height: 5, borderRadius: 3, background: "#D8CFBB" }} />
+          </div>
+          <div style={{ padding: "2px 16px 20px", flex: 1 }}>{children}</div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.35)", zIndex: 400, display: "flex", justifyContent: "flex-end" }} onClick={e => e.target === e.currentTarget && onClose()}>
       <div style={{ width: wide ? "min(600px,100vw)" : "min(440px,100vw)", background: "#ffffff", height: "100vh", overflowY: "auto", borderLeft: "1px solid #D8CFBB", display: "flex", flexDirection: "column" }}>

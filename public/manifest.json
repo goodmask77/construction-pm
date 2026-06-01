@@ -1,0 +1,15 @@
+{
+  "name": "GROUN:D 工程管理",
+  "short_name": "GROUN:D",
+  "description": "GROUN:D 工程專案管理系統 — 估價、總覽、工序與施工日誌",
+  "lang": "zh-Hant",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#F5F0E6",
+  "theme_color": "#E53935",
+  "icons": [
+    { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}

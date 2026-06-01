@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <rect width="512" height="512" rx="96" fill="#E53935"/>
+  <text x="50%" y="52%" dominant-baseline="middle" text-anchor="middle"
+        font-family="-apple-system, 'Segoe UI', sans-serif" font-size="150" font-weight="800"
+        fill="#ffffff" letter-spacing="-6">G:D</text>
+  <text x="50%" y="74%" dominant-baseline="middle" text-anchor="middle"
+        font-family="-apple-system, 'Segoe UI', sans-serif" font-size="40" font-weight="600"
+        fill="#ffffff" opacity="0.85" letter-spacing="4">GROUN:D</text>
+</svg>
