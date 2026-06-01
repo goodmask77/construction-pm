@@ -28,8 +28,11 @@ const Label = ({ children }) => <div style={{ fontSize: 12, fontWeight: 700, col
 export default function SequenceView({
   items = [], logs = [], projectStart = "2026-03-30", warnDays = 3, canEdit = false,
   onSaveLog, onDelLog, onSetStatus, onSetSchedule, onSetProjectStart, uploadPhotos, aiTidy, aiWeekly,
+  onReorder, onAddSub, onDelSub,
 }) {
   const [zoom, setZoom] = useState("week");
+  const [dragId, setDragId] = useState(null);
+  const [dragOverId, setDragOverId] = useState(null);
   const [openIds, setOpenIds] = useState([]);
   const [onlyIssue, setOnlyIssue] = useState(false);
   const [drawer, setDrawer] = useState(null);
@@ -138,13 +141,21 @@ export default function SequenceView({
             let cursor = -1;
             const cards = open ? [...itemLogs].sort((a, b) => a.date.localeCompare(b.date)).map((l) => { const left = Math.max(X(idxOf(l.date)), cursor + 8); cursor = left + CARD_W; return { l, left }; }) : [];
             return (
-              <div key={it.id} style={{ display: "flex", borderBottom: `1px solid ${C.line}`, minHeight: open ? ROW_H_OPEN : ROW_H, background: open ? "#fffdf7" : "#fff" }}>
-                <div style={{ width: LABEL_W, flexShrink: 0, position: "sticky", left: 0, zIndex: 2, background: open ? "#fffdf7" : "#fff", borderRight: `1px solid ${C.line}`, padding: "0 8px", display: "flex", alignItems: "center", gap: 5 }}>
-                  <button onClick={() => toggle(it)} style={{ border: "none", background: "none", cursor: "pointer", color: open ? ACCENT : C.faint, fontSize: 13, width: 14, transform: open ? "rotate(90deg)" : "none", transition: "transform .15s" }}>▸</button>
-                  <span style={{ fontSize: 13, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{it.name}</span>
-                  <span style={{ fontSize: 10, fontWeight: 700, color: w.color, background: w.tint, borderRadius: 5, padding: "1px 6px", flexShrink: 0 }}>{w.label}</span>
+              <div key={it.id}
+                onDragOver={(e) => { if (it.isParent && dragId && dragId !== it.id) { e.preventDefault(); setDragOverId(it.id); } }}
+                onDrop={() => { if (it.isParent && dragId && dragId !== it.id) onReorder && onReorder(dragId, it.id); setDragId(null); setDragOverId(null); }}
+                style={{ display: "flex", borderBottom: `1px solid ${C.line}`, minHeight: open ? ROW_H_OPEN : ROW_H, background: dragOverId === it.id ? "#fff5db" : (open ? "#fffdf7" : (it.isSub ? "#fcfcfd" : "#fff")) }}>
+                <div style={{ width: LABEL_W, flexShrink: 0, position: "sticky", left: 0, zIndex: 2, background: dragOverId === it.id ? "#fff5db" : (open ? "#fffdf7" : (it.isSub ? "#fcfcfd" : "#fff")), borderRight: `1px solid ${C.line}`, padding: "0 6px", paddingLeft: it.isSub ? 22 : 6, display: "flex", alignItems: "center", gap: 4 }}>
+                  {it.isParent && canEdit && <span draggable onDragStart={() => setDragId(it.id)} onDragEnd={() => { setDragId(null); setDragOverId(null); }} title="拖曳排序大項" style={{ cursor: "grab", color: "#cfd3db", fontSize: 13, flexShrink: 0 }}>⠿</span>}
+                  <button onClick={() => toggle(it)} style={{ border: "none", background: "none", cursor: "pointer", color: open ? ACCENT : C.faint, fontSize: 13, width: 12, flexShrink: 0, transform: open ? "rotate(90deg)" : "none", transition: "transform .15s" }}>▸</button>
+                  <span onClick={() => toggle(it)} title="展開/收合" style={{ fontSize: it.isSub ? 12 : 13, fontWeight: it.isSub ? 500 : 600, color: it.isSub ? C.sub : C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", cursor: "pointer" }}>{it.name}</span>
+                  <span style={{ fontSize: 10, fontWeight: 700, color: w.color, background: w.tint, borderRadius: 5, padding: "1px 5px", flexShrink: 0 }}>{w.label}</span>
                   {warnSet.has(it.id) && <span title={`連續 ${warnDays} 天無紀錄`} style={{ color: RED, fontSize: 13 }}>⚠</span>}
-                  {canEdit && <button onClick={() => setSchedItem(it)} title="設定排程（日期/區段）" style={{ marginLeft: "auto", border: "none", background: "none", cursor: "pointer", color: C.faint, fontSize: 13, flexShrink: 0 }}>📅</button>}
+                  {canEdit && <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 1, flexShrink: 0 }}>
+                    <button onClick={() => setSchedItem(it)} title="設定排程（日期/區段）" style={{ border: "none", background: "none", cursor: "pointer", color: C.faint, fontSize: 13 }}>📅</button>
+                    {it.isParent && <button onClick={() => { const n = prompt(`在「${it.name}」下新增工程子項目：`); if (n && n.trim()) onAddSub && onAddSub(it.id, n.trim()); }} title="新增子項目" style={{ border: "none", background: "none", cursor: "pointer", color: ACCENT, fontSize: 15, fontWeight: 700 }}>＋</button>}
+                    {it.isSub && <button onClick={() => { if (window.confirm(`刪除子項目「${it.name}」？`)) onDelSub && onDelSub(it.id); }} title="刪除子項目" style={{ border: "none", background: "none", cursor: "pointer", color: "#dc2626", fontSize: 13 }}>×</button>}
+                  </div>}
                 </div>
                 <div onClick={(e) => { if (!open) return; const r = e.currentTarget.getBoundingClientRect(); const i = Math.floor((e.clientX - r.left) / ppd); if (inRange(it, i)) openCell(it.id, dayKey(i)); }}
                   style={{ position: "relative", width: trackW, cursor: open ? "copy" : "default" }}>

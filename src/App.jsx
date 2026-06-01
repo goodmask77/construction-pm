@@ -526,18 +526,24 @@ export default function App() {
   const _pad = (n)=>String(n).padStart(2,"0");
   const _toKey = (d)=>`${d.getFullYear()}-${_pad(d.getMonth()+1)}-${_pad(d.getDate())}`;
   const _weekDate = (w0, off) => { const d=new Date(projectStart+"T00:00:00"); d.setDate(d.getDate()+w0*7+off); return _toKey(d); };
-  const seqItems = (cats || []).slice().sort((a,b)=>(a.order??0)-(b.order??0)).map(c => {
-    let segments = Array.isArray(c.segments) && c.segments.length ? c.segments.filter(s=>s.start&&s.end)
-      : (c.ganttStart != null ? [{ start:_weekDate(c.ganttStart,0), end:_weekDate(c.ganttStart+(c.ganttDur||1),-1) }] : []);
-    return { id:c.id, name:c.name, status: CAT2WS[c.status] || "pending", segments };
+  const _segOf = (o) => Array.isArray(o.segments) && o.segments.length ? o.segments.filter(s=>s.start&&s.end)
+    : (o.ganttStart != null ? [{ start:_weekDate(o.ganttStart,0), end:_weekDate(o.ganttStart+(o.ganttDur||1),-1) }] : []);
+  const seqItems = [];
+  (cats || []).slice().sort((a,b)=>(a.order??0)-(b.order??0)).forEach(c => {
+    seqItems.push({ id:c.id, name:c.name, status: CAT2WS[c.status] || "pending", segments: _segOf(c), isParent:true });
+    (c.seqSubs || []).forEach(sub => seqItems.push({ id:`${c.id}::${sub.id}`, name:sub.name, status: CAT2WS[sub.status] || "pending", segments: _segOf(sub), isSub:true, parentId:c.id }));
   });
   const seqSaveLog = (l) => {
     if (l.id) commitSeqLogs(seqLogs.map(x => x.id===l.id ? { ...l, updated_at:new Date().toISOString() } : x));
     else commitSeqLogs([...seqLogs, { ...l, id: "sl-"+Math.random().toString(36).slice(2,8), author: userName||"—", created_at:new Date().toISOString() }]);
   };
   const seqDelLog = (id) => commitSeqLogs(seqLogs.filter(x => x.id !== id));
-  const seqSetStatus = (itemId, wsKey) => { if (!canEditData) { denyEdit(); return; } setCats(prev => prev.map(c => c.id===itemId ? { ...c, status: WS2CAT[wsKey]||"pending" } : c)); };
-  const seqSetSchedule = (itemId, segs) => { if (!canEditData) { denyEdit(); return; } setCats(prev => prev.map(c => c.id===itemId ? { ...c, segments: segs } : c)); };
+  const _updSub = (itemId, patch) => { const [cid,sid] = itemId.split("::"); setCats(prev => prev.map(c => c.id===cid ? { ...c, seqSubs:(c.seqSubs||[]).map(s => s.id===sid ? { ...s, ...patch } : s) } : c)); };
+  const seqSetStatus = (itemId, wsKey) => { if (!canEditData) { denyEdit(); return; } const st = WS2CAT[wsKey]||"pending"; if (itemId.includes("::")) _updSub(itemId, { status: st }); else setCats(prev => prev.map(c => c.id===itemId ? { ...c, status: st } : c)); };
+  const seqSetSchedule = (itemId, segs) => { if (!canEditData) { denyEdit(); return; } if (itemId.includes("::")) _updSub(itemId, { segments: segs }); else setCats(prev => prev.map(c => c.id===itemId ? { ...c, segments: segs } : c)); };
+  const seqReorder = (fromId, toId) => { if (!canEditData) { denyEdit(); return; } setCats(prev => { const arr = [...prev].sort((a,b)=>(a.order??0)-(b.order??0)); const fi = arr.findIndex(c=>c.id===fromId), ti = arr.findIndex(c=>c.id===toId); if (fi<0||ti<0||fi===ti) return prev; const [m] = arr.splice(fi,1); arr.splice(ti,0,m); return arr.map((c,i)=>({ ...c, order:i })); }); };
+  const seqAddSub = (catId, name) => { if (!canEditData) { denyEdit(); return; } const n=(name||"").trim(); if(!n) return; setCats(prev => prev.map(c => c.id===catId ? { ...c, seqSubs:[...(c.seqSubs||[]), { id:"ss-"+Math.random().toString(36).slice(2,7), name:n, status:"pending", segments:[] }] } : c)); };
+  const seqDelSub = (itemId) => { if (!canEditData) { denyEdit(); return; } const [cid,sid] = itemId.split("::"); setCats(prev => prev.map(c => c.id===cid ? { ...c, seqSubs:(c.seqSubs||[]).filter(s=>s.id!==sid) } : c)); };
   const seqSetProjectStart = (v) => { if (!canEditData) { denyEdit(); return; } const s = { ...(settings||{}), projectStart: v }; setSettings(s); saveSettings(s); };
   const seqUploadPhotos = async (files) => { const out=[]; for (const f of files) { try { const { url } = await uploadPhoto(f); out.push(url); } catch(_){} } return out; };
   const seqAiTidy = async (f) => {
@@ -580,6 +586,7 @@ export default function App() {
             items={seqItems} logs={seqLogs} projectStart={projectStart} warnDays={3} canEdit={canEditData}
             onSaveLog={seqSaveLog} onDelLog={seqDelLog} onSetStatus={seqSetStatus} onSetSchedule={seqSetSchedule}
             onSetProjectStart={seqSetProjectStart} uploadPhotos={seqUploadPhotos} aiTidy={seqAiTidy} aiWeekly={seqAiWeekly}
+            onReorder={seqReorder} onAddSub={seqAddSub} onDelSub={seqDelSub}
           />
         )}
         {view === "files" && (
