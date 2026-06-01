@@ -171,8 +171,14 @@ const STATUS_MAP = {
 };
 
 const fmt = (n) => "NT$" + Math.round(n || 0).toLocaleString();
-const calcEstimated = (it) => (it.estQty || it.qty || 0) * (it.estUnitPrice || it.unitPrice || 0) + (it.estLabor || 0);
-const calcActual = (it) => (it.actQty || 0) * (it.actUnitPrice || 0) + (it.actWorkers || 0) * (it.actDailyWage || 0) * (it.actLaborDays || 0);
+// ── 成本金額模型：base=數量×單價，依稅別算稅額與含稅預估；付款=已付/未付（整數 NT$）──
+const baseAmount = (it) => (Number(it.estQty ?? it.qty) || 0) * (Number(it.estUnitPrice ?? it.unitPrice) || 0);
+const taxOf = (it) => { const b = baseAmount(it); const t = it.taxType || "未稅"; if (t === "免稅") return 0; if (t === "含稅") return b - Math.round(b / 1.05); return Math.round(b * 0.05); };
+const estAmount = (it) => { const b = baseAmount(it); return (it.taxType || "未稅") === "未稅" ? b + Math.round(b * 0.05) : b; }; // 含稅/免稅=base；未稅=base+稅額
+const paidOf = (it) => Number(it.paid ?? it.cust?.paid) || 0;
+const unpaidOf = (it) => estAmount(it) - paidOf(it);
+const calcEstimated = (it) => estAmount(it); // 預估金額（含稅）＝真正預算數字
+const calcActual = (it) => (it.actQty || 0) * (it.actUnitPrice || 0) + (it.actWorkers || 0) * (it.actDailyWage || 0) * (it.actLaborDays || 0); // 舊「施工記錄」沿用於細項詳情
 
 // ── RWD：偵測手機寬度（< 768px）──────────────────────────────────────────────
 const MOBILE_BP = 768;
@@ -321,8 +327,8 @@ const buildAdvisorSystem = (settings, cats, journal, events, plans) => {
   journal = journal || [];
   events = events || [];
   plans = plans || [];
-  const totalEst = cats.reduce((s,c) => s+c.items.reduce((ss,it)=>ss+calcEstimated(it),0),0);
-  const totalAct = cats.reduce((s,c) => s+c.items.reduce((ss,it)=>ss+calcActual(it),0),0);
+  const totalEst = cats.reduce((s,c) => s+c.items.reduce((ss,it)=>ss+estAmount(it),0),0);
+  const totalAct = cats.reduce((s,c) => s+c.items.reduce((ss,it)=>ss+paidOf(it),0),0); // 已付總額
   const doneItems = cats.flatMap(c=>c.items).filter(i=>i.done||i.status==="done").length;
   const totalItems = cats.reduce((s,c)=>s+c.items.length,0);
   const issueItems = cats.flatMap(c=>c.items).filter(i=>i.status==="issue");
@@ -336,10 +342,10 @@ const buildAdvisorSystem = (settings, cats, journal, events, plans) => {
   const notes = settings?.notes || "";
 
   const catLines = cats.map(c => {
-    const est = c.items.reduce((s,it)=>s+calcEstimated(it),0);
-    const act = c.items.reduce((s,it)=>s+calcActual(it),0);
+    const est = c.items.reduce((s,it)=>s+estAmount(it),0);
+    const act = c.items.reduce((s,it)=>s+paidOf(it),0);
     const done = c.items.filter(i=>i.done||i.status==="done").length;
-    return "  • " + c.name + "（" + c.status + "）：預估" + Math.round(est/10000) + "萬，實際" + (act>0?Math.round(act/10000)+"萬":"未填") + "，" + done + "/" + c.items.length + "細項完成";
+    return "  • " + c.name + "（" + c.status + "）：預估" + Math.round(est/10000) + "萬，已付" + (act>0?Math.round(act/10000)+"萬":"未付") + "，" + done + "/" + c.items.length + "細項完成";
   }).join("\n");
 
   const priorityItems = cats.flatMap(c=>c.items).filter(i=>(settings?.priorities||[]).includes(i.id)).map(i=>i.name).join("、");
@@ -354,9 +360,9 @@ const buildAdvisorSystem = (settings, cats, journal, events, plans) => {
     "- 今日日期：" + today + "\n" +
     (notes ? "- 備註："+notes+"\n" : "") +
     "\n【財務狀況】\n" +
-    "- 預估總額：NT$" + Math.round(totalEst).toLocaleString() + "\n" +
-    "- 實際記錄：" + (totalAct>0?"NT$"+Math.round(totalAct).toLocaleString():"尚未填入") + "\n" +
-    "- 差異：" + (totalAct>0?(totalAct>totalEst?"超支 NT$"+Math.round(totalAct-totalEst).toLocaleString():"節餘 NT$"+Math.round(totalEst-totalAct).toLocaleString()):"待記錄") + "\n" +
+    "- 預估總額（含稅）：NT$" + Math.round(totalEst).toLocaleString() + "\n" +
+    "- 已付總額：" + (totalAct>0?"NT$"+Math.round(totalAct).toLocaleString():"尚未付款") + "\n" +
+    "- 未付總額：NT$" + Math.round(totalEst-totalAct).toLocaleString() + (totalAct>totalEst?"（溢付）":"") + "\n" +
     "\n【工程進度】\n" +
     "- 完成細項：" + doneItems + " / " + totalItems + "（" + Math.round(doneItems/Math.max(totalItems,1)*100) + "%）\n" +
     (issueItems.length>0?"- ⚠️ 有問題項目："+issueItems.map(i=>i.name).join("、")+"\n":"") +
@@ -477,26 +483,21 @@ export default function App() {
         if (sl && sl.value) setSeqLogs(JSON.parse(sl.value));
       } catch(_){}
       try {
-        // 統一欄位設定：內建欄位(非固定) + 自訂欄位，皆可排序/改名/刪除
+        // 統一欄位設定：內建欄位(成本費用明細新版) + 使用者自訂欄位
         const builtins = COLS.map(c => ({ id:c.id, label:c.label, builtin:true, fixed: !!c.fixed, w:c.w }));
-        const customDefaults = [
-          { id:"paid",    label:"已付款",   type:"money",   w:110, builtin:false },
-          { id:"taxincl", label:"含稅總價", type:"formula", formula:"estTotal*1.05", w:110, builtin:false },
-          { id:"unpaid",  label:"未付款",   type:"formula", formula:"taxincl - paid", w:110, builtin:false },
-        ];
+        const builtinIds = new Set(COLS.map(c => c.id));
         const cc = await window.storage.get("pm_columns", true);
+        let customs = [];
         if (cc && cc.value) {
-          let arr = JSON.parse(cc.value);
-          if (!arr.some(c => c.builtin)) { // 舊資料只有自訂欄位 → 補上內建欄位
-            arr = [...builtins, ...arr.map(c => ({ ...c, builtin:false }))];
-            window.storage.set("pm_columns", JSON.stringify(arr), true).catch(()=>{});
-          }
-          setCustomCols(arr);
-        } else {
-          const def = [...builtins, ...customDefaults];
-          setCustomCols(def);
-          window.storage.set("pm_columns", JSON.stringify(def), true).catch(()=>{});
+          try {
+            // 只保留「真正的使用者自訂欄」：非內建、id 不與新內建衝突、且不是重複的「稅金」公式欄
+            customs = JSON.parse(cc.value).filter(c => c.builtin === false && !builtinIds.has(c.id) && c.label !== "稅金");
+          } catch(_) {}
         }
+        // 一律以新版內建欄位重建（移除舊的 實際/重複稅金 欄；遷移到 預估→已付→未付 模型）
+        const merged = [...builtins, ...customs];
+        setCustomCols(merged);
+        window.storage.set("pm_columns", JSON.stringify(merged), true).catch(()=>{});
       } catch(_){}
       try { const ev = await window.storage.get("pm_events", true); if (ev&&ev.value) setEvents(JSON.parse(ev.value)); } catch(_){}
       try { const jn = await window.storage.get("pm_journal", true); if (jn&&jn.value) setJournal(JSON.parse(jn.value)); } catch(_){}
@@ -594,8 +595,8 @@ export default function App() {
     return days > 3;
   })) : [];
 
-  const totalEstimated = cats ? cats.reduce((s, c) => s + c.items.reduce((ss, it) => ss + calcEstimated(it), 0), 0) : 0;
-  const totalActual = cats ? cats.reduce((s, c) => s + c.items.reduce((ss, it) => ss + calcActual(it), 0), 0) : 0;
+  const totalEstimated = cats ? cats.reduce((s, c) => s + c.items.reduce((ss, it) => ss + estAmount(it), 0), 0) : 0;
+  const totalPaid = cats ? cats.reduce((s, c) => s + c.items.reduce((ss, it) => ss + paidOf(it), 0), 0) : 0;
   const doneCount = cats ? cats.filter(c => c.status === "done").length : 0;
 
 
@@ -669,7 +670,7 @@ export default function App() {
   return (
     <div style={{ minHeight: "100vh", background: BG, color: TEXT, fontFamily: "-apple-system,'PingFang TC','Noto Sans TC',system-ui,'Segoe UI',sans-serif", fontSize: 14, letterSpacing: 0.1 }}>
       {/* TOP NAV */}
-      <TopNav view={view} setView={setView} saving={saving} totalEstimated={totalEstimated} totalActual={totalActual} doneCount={doneCount} catCount={cats.length} onAI={() => setShowGlobalAI(true)} userName={userName} isAdmin={isAdmin} stalledCount={stalledItems.length} onRoleClick={() => setShowLogin(true)} onActivityLog={() => setShowActivityLog(true)} activityCount={activityLog.length} isMobile={isMobile} />
+      <TopNav view={view} setView={setView} saving={saving} totalEstimated={totalEstimated} totalPaid={totalPaid} doneCount={doneCount} catCount={cats.length} onAI={() => setShowGlobalAI(true)} userName={userName} isAdmin={isAdmin} stalledCount={stalledItems.length} onRoleClick={() => setShowLogin(true)} onActivityLog={() => setShowActivityLog(true)} activityCount={activityLog.length} isMobile={isMobile} />
 
       {/* MAIN */}
       <div style={{ padding: isMobile ? "0 12px 84px" : "0 16px 80px" }}>
@@ -799,8 +800,9 @@ function KPICard({ label, val, color, tip }) {
 }
 
 // ── TOP NAV ───────────────────────────────────────────────────────────────────
-function TopNav({ view, setView, saving, totalEstimated, totalActual, doneCount, catCount, onAI, userName, isAdmin, stalledCount, onRoleClick, onActivityLog, activityCount, isMobile }) {
-  const diff = totalActual - totalEstimated;
+function TopNav({ view, setView, saving, totalEstimated, totalPaid, doneCount, catCount, onAI, userName, isAdmin, stalledCount, onRoleClick, onActivityLog, activityCount, isMobile }) {
+  const totalUnpaid = totalEstimated - totalPaid;
+  const payPct = totalEstimated > 0 ? Math.round(totalPaid / totalEstimated * 100) : 0;
   return (
     <div style={{ background: BG, borderBottom: `1px solid ${BORDER}`, padding: isMobile ? "10px 14px 0" : "16px 22px 0", position: "sticky", top: 0, zIndex: 100 }}>
       <div style={{ display: "flex", alignItems: "center", gap: isMobile ? 10 : 16, marginBottom: isMobile ? 10 : 12, flexWrap: "wrap" }}>
@@ -811,9 +813,9 @@ function TopNav({ view, setView, saving, totalEstimated, totalActual, doneCount,
         {/* KPI cards inline（手機改 2×2、整列獨佔一行）*/}
         <div style={{ display: "grid", gridTemplateColumns: isMobile ? "repeat(2,1fr)" : "repeat(4,minmax(110px,1fr))", gap: 8, flex: isMobile ? "1 1 100%" : 1, minWidth: isMobile ? 0 : 360, order: isMobile ? 2 : 0 }}>
           {[
-            { label: "預估總額", val: fmt(totalEstimated), color: TEXT, tip: "各細項「預估數量×預估單價＋預估人工」加總，來自估價單" },
-            { label: "實際記錄", val: totalActual > 0 ? fmt(totalActual) : "尚未填入", color: totalActual > 0 ? TEXT : SUB, tip: "各細項「實際數量×實際單價＋人數×日薪×天數」加總，施工中逐筆填入" },
-            { label: "差異", val: totalActual > 0 ? (diff >= 0 ? "+" : "") + fmt(diff) : "—", color: totalActual > 0 ? (diff > 0 ? "#DC2626" : "#3C8C3C") : SUB, tip: totalActual > 0 ? (diff > 0 ? "實際超出預估 " + fmt(Math.abs(diff)) : "尚有餘額 " + fmt(Math.abs(diff))) : "實際金額填入後自動計算" },
+            { label: "預估總額（含稅）", val: fmt(totalEstimated), color: TEXT, tip: "各細項「數量×單價」依稅別換算含稅後加總＝總預算" },
+            { label: "已付總額", val: totalPaid > 0 ? fmt(totalPaid) : "尚未付款", color: totalPaid > 0 ? "#3C8C3C" : SUB, tip: `各細項「已付金額」加總。付款進度 ${payPct}%` },
+            { label: "未付總額", val: fmt(totalUnpaid), color: totalUnpaid < 0 ? "#DC2626" : "#C2872E", tip: totalUnpaid < 0 ? "已付超過預估（溢付）" : "預估總額 − 已付總額＝尚需支付" },
             { label: "完工項目", val: `${doneCount} / ${catCount}`, color: ACCENT, tip: "狀態標示為「完工」的大項數" },
           ].map(k => <KPICard key={k.label} label={k.label} val={k.val} color={k.color} tip={k.tip} />)}
         </div>
@@ -859,28 +861,29 @@ function TopNav({ view, setView, saving, totalEstimated, totalActual, doneCount,
 
 // ── OVERVIEW TABLE (Notion-style) ────────────────────────────────────────────
 const COLS = [
+  // 識別區
   { id:"cat",      label:"大項",   w:110, fixed:true },
   { id:"name",     label:"細項名稱", w:200, fixed:true },
   { id:"status",   label:"狀態",   w:90 },
-  { id:"done",     label:"✓",      w:44 },
   { id:"assignee", label:"負責人",  w:100 },
-  { id:"date",     label:"日期",   w:110 },
-  { id:"estQty",   label:"預估數量", w:80 },
-  { id:"unit",     label:"單位",   w:60 },
-  { id:"estUnitPrice", label:"預估單價", w:100 },
-  { id:"estTotal", label:"預估總價", w:110 },
-  { id:"actQty",   label:"實際數量", w:80 },
-  { id:"actUnitPrice", label:"實際單價", w:100 },
-  { id:"actWorkers",  label:"人數",  w:60 },
-  { id:"actDailyWage",label:"日薪",  w:90 },
-  { id:"actLaborDays",label:"天數",  w:60 },
-  { id:"actTotal", label:"實際總價", w:110 },
-  { id:"payAccount",  label:"付款帳號", w:140 },
+  // 金額區
+  { id:"estQty",   label:"數量",   w:70 },
+  { id:"unit",     label:"單位",   w:56 },
+  { id:"estUnitPrice", label:"單價", w:100 },
+  { id:"taxType",  label:"稅別",   w:84 },
+  { id:"taxAmount",label:"稅額",   w:90 },
+  { id:"estTotal", label:"預估金額", w:120 },
+  // 付款區
+  { id:"paid",     label:"已付金額", w:110 },
+  { id:"unpaid",   label:"未付金額", w:110 },
+  { id:"payAccount",  label:"付款帳號", w:130 },
+  { id:"payDate",  label:"付款日",  w:120 },
   { id:"receipts", label:"憑證",   w:80 },
+  // 其他
   { id:"notes",    label:"備註",   w:180 },
 ];
 
-const MONEY_FIELDS = new Set(["estUnitPrice","actUnitPrice","actDailyWage"]); // 只有這些 number 欄要加 NT$
+const MONEY_FIELDS = new Set(["estUnitPrice"]); // 只有這些 number 欄要加 NT$
 // 安全地計算公式（變數來自 ctx；錯誤回傳空）
 function evalFormula(expr, ctx) {
   if (!expr) return 0;
@@ -978,24 +981,21 @@ function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols,
   const orderedCols = cols.map(resolve).filter(c => c && c.id);
   const totalW = orderedCols.reduce((s,c) => s + (c.w || 110), 0) + 48;
 
-  const NUM_BUILTIN = new Set(["estQty","estUnitPrice","estTotal","actQty","actUnitPrice","actWorkers","actDailyWage","actLaborDays","actTotal"]);
-  const MONEY_TOTAL = new Set(["estTotal","actTotal"]); // 內建總計顯示為金額
-  const NO_SUM = new Set(["estUnitPrice","actUnitPrice","actDailyWage","done"]); // 單價/日薪不加總
+  const NUM_BUILTIN = new Set(["estQty","estUnitPrice","taxAmount","estTotal","paid","unpaid"]);
+  const MONEY_TOTAL = new Set(["taxAmount","estTotal","paid","unpaid"]); // 內建總計顯示為金額
+  const NO_SUM = new Set(["estUnitPrice"]); // 單價不加總
   const isNumCol = (col) => col.builtin ? NUM_BUILTIN.has(col.id) : (col.type === "money" || col.type === "number" || col.type === "formula");
-  const isMoneyCol = (col) => col.builtin ? (MONEY_TOTAL.has(col.id) || ["estUnitPrice","actUnitPrice","actDailyWage"].includes(col.id)) : (col.type === "money" || col.type === "formula");
+  const isMoneyCol = (col) => col.builtin ? (MONEY_TOTAL.has(col.id) || ["estUnitPrice"].includes(col.id)) : (col.type === "money" || col.type === "formula");
   const summable = (col) => isNumCol(col) && !NO_SUM.has(col.id);
 
   const buildCtx = (item) => {
     const ctx = {
       estQty: Number(item.estQty ?? item.qty ?? 0),
       estUnitPrice: Number(item.estUnitPrice ?? item.unitPrice ?? 0),
-      estTotal: calcEstimated(item),
-      actQty: Number(item.actQty ?? 0),
-      actUnitPrice: Number(item.actUnitPrice ?? 0),
-      actWorkers: Number(item.actWorkers ?? 0),
-      actDailyWage: Number(item.actDailyWage ?? 0),
-      actLaborDays: Number(item.actLaborDays ?? 0),
-      actTotal: calcActual(item),
+      taxAmount: taxOf(item),
+      estTotal: estAmount(item),
+      paid: paidOf(item),
+      unpaid: unpaidOf(item),
     };
     cols.filter(c => c.builtin === false && c.type !== "formula").forEach(c => { ctx[c.id] = c.type === "text" ? (item.cust?.[c.id] || "") : (Number(item.cust?.[c.id]) || 0); });
     cols.filter(c => c.builtin === false && c.type === "formula").forEach(c => { ctx[c.id] = evalFormula(c.formula, ctx); });
@@ -1003,9 +1003,11 @@ function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols,
   };
   const numVal = (col, item) => {
     if (col.builtin) {
-      if (col.id === "estTotal") return calcEstimated(item);
-      if (col.id === "actTotal") return calcActual(item);
-      const m = { estQty:item.estQty??item.qty, estUnitPrice:item.estUnitPrice??item.unitPrice, actQty:item.actQty, actUnitPrice:item.actUnitPrice, actWorkers:item.actWorkers, actDailyWage:item.actDailyWage, actLaborDays:item.actLaborDays };
+      if (col.id === "estTotal") return estAmount(item);
+      if (col.id === "taxAmount") return taxOf(item);
+      if (col.id === "paid") return paidOf(item);
+      if (col.id === "unpaid") return unpaidOf(item);
+      const m = { estQty:item.estQty??item.qty, estUnitPrice:item.estUnitPrice??item.unitPrice };
       return Number(m[col.id]) || 0;
     }
     return Number(buildCtx(item)[col.id]) || 0;
@@ -1130,8 +1132,9 @@ function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols,
           {/* rows grouped by cat */}
           {Object.entries(catGroups).map(([catId, group]) => {
             const cat = cats.find(c => c.id === catId);
-            const groupEst = group.rows.reduce((s,r) => s + calcEstimated(r.item), 0);
-            const groupAct = group.rows.reduce((s,r) => s + calcActual(r.item), 0);
+            const groupEst = group.rows.reduce((s,r) => s + estAmount(r.item), 0);
+            const groupPaid = group.rows.reduce((s,r) => s + paidOf(r.item), 0);
+            const groupUnpaid = groupEst - groupPaid;
             const itemCount = cat ? cat.items.length : group.rows.length;
             const doneCount = cat ? cat.items.filter(i => i.status === "done").length : 0;
             const pct = itemCount ? Math.round(doneCount / itemCount * 100) : 0;
@@ -1159,7 +1162,8 @@ function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols,
                   )}
                   <div style={{ flex: 1 }} />
                   <div style={{ fontSize: 12, color: SUB }}>預估 <span style={{ color: TEXT, fontVariantNumeric: "tabular-nums", fontWeight: 500 }}>{fmt(groupEst)}</span></div>
-                  {groupAct > 0 && <div style={{ fontSize: 12, color: SUB }}>實際 <span style={{ color: groupAct > groupEst ? "#DC2626" : "#3C8C3C", fontVariantNumeric: "tabular-nums", fontWeight: 500 }}>{fmt(groupAct)}</span></div>}
+                  <div style={{ fontSize: 12, color: SUB }}>已付 <span style={{ color: "#3C8C3C", fontVariantNumeric: "tabular-nums", fontWeight: 500 }}>{fmt(groupPaid)}</span></div>
+                  <div style={{ fontSize: 12, color: SUB }}>未付 <span style={{ color: groupUnpaid < 0 ? "#DC2626" : "#C2872E", fontVariantNumeric: "tabular-nums", fontWeight: 500 }}>{groupUnpaid < 0 ? `溢付 ${fmt(-groupUnpaid)}` : fmt(groupUnpaid)}</span></div>
                   <button onClick={() => confirm(`確定刪除工程大項「${group.name}」？\n（含其下 ${itemCount} 筆細項，無法復原）`).then(ok => { if (ok) setCats(prev => prev.filter(c => c.id !== catId)); })} title="刪除此工程大項" style={{ flexShrink: 0, marginLeft: 4, width: 22, height: 22, borderRadius: "50%", background: "transparent", border: "none", color: "#C8BCA0", cursor: "pointer", fontSize: 15, lineHeight: 1, display: "flex", alignItems: "center", justifyContent: "center", padding: 0 }} onMouseEnter={e => { e.currentTarget.style.background = "#F3E4DE"; e.currentTarget.style.color = "#DC2626"; }} onMouseLeave={e => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = "#C8BCA0"; }}>×</button>
                 </div>
                 {/* item rows（收合時隱藏） */}
@@ -1209,17 +1213,19 @@ function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols,
                         if (col.id === "estQty") return <div key={col.id} style={cs}><EditableCell catId={catId} itemId={item.id} field="estQty" value={item.estQty ?? item.qty ?? 0} type="number" /></div>;
                         if (col.id === "unit") return <div key={col.id} style={cs}><EditableCell catId={catId} itemId={item.id} field="unit" value={item.unit} /></div>;
                         if (col.id === "estUnitPrice") return <div key={col.id} style={cs}><EditableCell catId={catId} itemId={item.id} field="estUnitPrice" value={item.estUnitPrice ?? item.unitPrice ?? 0} type="number" /></div>;
-                        if (col.id === "estTotal") return <div key={col.id} style={{ ...cs, color: ACCENT, fontFamily: "monospace", fontWeight: 600 }}>{fmt(calcEstimated(item))}</div>;
-                        if (col.id === "actQty") return <div key={col.id} style={cs}><EditableCell catId={catId} itemId={item.id} field="actQty" value={item.actQty ?? 0} type="number" /></div>;
-                        if (col.id === "actUnitPrice") return <div key={col.id} style={cs}><EditableCell catId={catId} itemId={item.id} field="actUnitPrice" value={item.actUnitPrice ?? 0} type="number" /></div>;
-                        if (col.id === "actWorkers") return <div key={col.id} style={cs}><EditableCell catId={catId} itemId={item.id} field="actWorkers" value={item.actWorkers ?? 0} type="number" /></div>;
-                        if (col.id === "actDailyWage") return <div key={col.id} style={cs}><EditableCell catId={catId} itemId={item.id} field="actDailyWage" value={item.actDailyWage ?? 0} type="number" /></div>;
-                        if (col.id === "actLaborDays") return <div key={col.id} style={cs}><EditableCell catId={catId} itemId={item.id} field="actLaborDays" value={item.actLaborDays ?? 0} type="number" /></div>;
-                        if (col.id === "actTotal") {
-                          const act = calcActual(item);
-                          const est = calcEstimated(item);
-                          return <div key={col.id} style={{ ...cs, color: act > 0 ? (act > est ? "#DC2626" : "#3C8C3C") : "#CDC3AC", fontFamily: "monospace", fontWeight: act > 0 ? 600 : 400 }}>{act > 0 ? fmt(act) : "—"}</div>;
-                        }
+                        if (col.id === "taxType") return (
+                          <div key={col.id} style={cs}>
+                            <select value={item.taxType || "未稅"} onChange={e => updateItem(catId, item.id, "taxType", e.target.value)}
+                              style={{ border: "none", background: "transparent", fontSize: 12, cursor: "pointer", color: "#4A4234", fontFamily: "'Noto Sans TC', sans-serif", width: "100%", outline: "none" }}>
+                              {["未稅","含稅","免稅"].map(t => <option key={t} value={t}>{t}</option>)}
+                            </select>
+                          </div>
+                        );
+                        if (col.id === "taxAmount") return <div key={col.id} style={{ ...cs, color: "#A99F88", fontFamily: "monospace", fontSize: 12 }}>{fmt(taxOf(item))}</div>;
+                        if (col.id === "estTotal") return <div key={col.id} style={{ ...cs, color: ACCENT, fontFamily: "monospace", fontWeight: 600 }} title="預估金額（含稅，自動計算）">{fmt(estAmount(item))}</div>;
+                        if (col.id === "paid") return <div key={col.id} style={{ ...cs, color: "#3C8C3C" }}><EditableCell catId={catId} itemId={item.id} field="paid" value={item.paid ?? item.cust?.paid ?? 0} type="number" /></div>;
+                        if (col.id === "unpaid") { const u = unpaidOf(item); return <div key={col.id} style={{ ...cs, color: u < 0 ? "#DC2626" : u > 0 ? "#C2872E" : "#3C8C3C", fontFamily: "monospace", fontWeight: 600 }} title={u < 0 ? "溢付（已付超過預估）" : "未付金額（自動）"}>{u < 0 ? `溢付 ${fmt(-u)}` : fmt(u)}</div>; }
+                        if (col.id === "payDate") return <div key={col.id} style={cs}><EditableCell catId={catId} itemId={item.id} field="payDate" value={item.payDate} type="date" placeholder="付款日" /></div>;
                         if (col.id === "payAccount") return <div key={col.id} style={cs}><EditableCell catId={catId} itemId={item.id} field="payAccount" value={item.payAccount} placeholder="銀行/帳號" /></div>;
                         if (col.id === "receipts") return (
                           <div key={col.id} style={{ ...cs, gap: 4 }}>
@@ -1349,8 +1355,8 @@ function OwnerDashboard({ cats, setCats, settings, stalledItems, activityLog, lo
   const inProgressItems = cats.flatMap(c=>c.items).filter(i=>i.status==="inprogress");
   const issueItems = cats.flatMap(c=>c.items).filter(i=>i.status==="issue");
   const pct = totalItems ? Math.round(doneItems/totalItems*100) : 0;
-  const totalEst = cats.reduce((s,c)=>s+c.items.reduce((ss,it)=>ss+calcEstimated(it),0),0);
-  const totalAct = cats.reduce((s,c)=>s+c.items.reduce((ss,it)=>ss+calcActual(it),0),0);
+  const totalEst = cats.reduce((s,c)=>s+c.items.reduce((ss,it)=>ss+estAmount(it),0),0);
+  const totalAct = cats.reduce((s,c)=>s+c.items.reduce((ss,it)=>ss+paidOf(it),0),0); // 已付總額
   const daysLeft = settings?.targetDate ? Math.ceil((new Date(settings.targetDate)-new Date())/(1000*60*60*24)) : null;
   const today = new Date().toLocaleDateString("zh-TW");
 
@@ -1475,13 +1481,13 @@ function OwnerDashboard({ cats, setCats, settings, stalledItems, activityLog, lo
 
         {/* 預算 */}
         <div style={card}>
-          <div style={kLabel}>預算使用</div>
-          <div style={{ fontSize:19, fontWeight:700, color:overBudget?"#C0392B":"#211C15", marginTop:4, fontFamily:"ui-monospace, monospace" }}>{totalAct>0?fmt(totalAct):"—"}</div>
-          <div style={{ fontSize:11.5, color:"#6F6656", marginTop:2 }}>預估 <span style={{ fontFamily:"ui-monospace, monospace" }}>{fmt(totalEst)}</span></div>
+          <div style={kLabel}>付款進度（已付／預估）</div>
+          <div style={{ fontSize:19, fontWeight:700, color:overBudget?"#C0392B":"#3C8C3C", marginTop:4, fontFamily:"ui-monospace, monospace" }}>{totalAct>0?fmt(totalAct):"—"}</div>
+          <div style={{ fontSize:11.5, color:"#6F6656", marginTop:2 }}>預估 <span style={{ fontFamily:"ui-monospace, monospace" }}>{fmt(totalEst)}</span>・未付 <span style={{ fontFamily:"ui-monospace, monospace", color:"#C2872E" }}>{fmt(totalEst-totalAct)}</span></div>
           <div style={{ background:"#EFE7D6", borderRadius:20, height:7, overflow:"hidden", marginTop:9 }}>
-            <div style={{ background:overBudget?"#C0392B":ACCENT, height:"100%", width:Math.min(100,budgetPct)+"%", borderRadius:20, transition:"width .8s" }} />
+            <div style={{ background:overBudget?"#C0392B":"#3C8C3C", height:"100%", width:Math.min(100,budgetPct)+"%", borderRadius:20, transition:"width .8s" }} />
           </div>
-          <div style={{ fontSize:11.5, fontWeight:700, marginTop:5, color:overBudget?"#C0392B":"#6F6656" }}>{totalAct>0?`已使用 ${budgetPct}%${overBudget?"（超支）":""}`:"尚未記錄支出"}</div>
+          <div style={{ fontSize:11.5, fontWeight:700, marginTop:5, color:overBudget?"#C0392B":"#6F6656" }}>{totalAct>0?`已付 ${budgetPct}%${overBudget?"（溢付）":""}`:"尚未付款"}</div>
         </div>
 
         {/* 狀態總覽 */}
@@ -2693,16 +2699,22 @@ function CatPanel({ cat: catProp, cats, setCats, onClose, onSelectItem, confirm 
           style={{ ...inputStyle, fontSize: 16, fontWeight: 600, color: "#211C15" }}
         />
       </div>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 12 }}>
-        <div style={{ background: "#F3E4DE", border: "1px solid rgba(193,58,34,0.3)", borderRadius: 8, padding: "8px 12px" }}>
-          <div style={{ fontSize: 10, color: "#6F6656", marginBottom: 2 }}>預估總額（細項加總）</div>
-          <div style={{ fontFamily: "monospace", fontSize: 15, fontWeight: 600, color: ACCENT }}>{fmt(cat.items.reduce((s,it) => s + calcEstimated(it), 0))}</div>
+      {(() => { const e = cat.items.reduce((s,it)=>s+estAmount(it),0), p = cat.items.reduce((s,it)=>s+paidOf(it),0), u = e - p; return (
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: 12 }}>
+        <div style={{ background: "#F3E4DE", border: "1px solid rgba(193,58,34,0.3)", borderRadius: 8, padding: "8px 10px" }}>
+          <div style={{ fontSize: 10, color: "#6F6656", marginBottom: 2 }}>預估（含稅）</div>
+          <div style={{ fontFamily: "monospace", fontSize: 14, fontWeight: 600, color: ACCENT }}>{fmt(e)}</div>
         </div>
-        <div style={{ background: "#f0f7ff", border: "1px solid rgba(75,159,232,0.2)", borderRadius: 8, padding: "8px 12px" }}>
-          <div style={{ fontSize: 10, color: "#6F6656", marginBottom: 2 }}>實際總額（細項加總）</div>
-          <div style={{ fontFamily: "monospace", fontSize: 15, fontWeight: 600, color: "#3E72A8" }}>{cat.items.reduce((s,it) => s + calcActual(it), 0) > 0 ? fmt(cat.items.reduce((s,it) => s + calcActual(it), 0)) : "尚未填入"}</div>
+        <div style={{ background: "#F0FDF4", border: "1px solid rgba(60,140,60,0.25)", borderRadius: 8, padding: "8px 10px" }}>
+          <div style={{ fontSize: 10, color: "#6F6656", marginBottom: 2 }}>已付</div>
+          <div style={{ fontFamily: "monospace", fontSize: 14, fontWeight: 600, color: "#3C8C3C" }}>{fmt(p)}</div>
+        </div>
+        <div style={{ background: "#FFFBEB", border: "1px solid rgba(194,135,46,0.25)", borderRadius: 8, padding: "8px 10px" }}>
+          <div style={{ fontSize: 10, color: "#6F6656", marginBottom: 2 }}>未付</div>
+          <div style={{ fontFamily: "monospace", fontSize: 14, fontWeight: 600, color: u < 0 ? "#DC2626" : "#C2872E" }}>{u < 0 ? `溢付${fmt(-u)}` : fmt(u)}</div>
         </div>
       </div>
+      ); })()}
       <div style={{ marginBottom: 12 }}>
         <div style={{ fontSize: 11, color: "#6F6656", marginBottom: 4 }}>狀態</div>
         <StatusBadge status={cat.status} setCats={setCats} catId={cat.id} />
