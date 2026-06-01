@@ -813,7 +813,7 @@ function TopNav({ view, setView, saving, totalEstimated, totalPaid, doneCount, c
         {/* KPI cards inline（手機改 2×2、整列獨佔一行）*/}
         <div style={{ display: "grid", gridTemplateColumns: isMobile ? "repeat(2,1fr)" : "repeat(4,minmax(110px,1fr))", gap: 8, flex: isMobile ? "1 1 100%" : 1, minWidth: isMobile ? 0 : 360, order: isMobile ? 2 : 0 }}>
           {[
-            { label: "預估總額（含稅）", val: fmt(totalEstimated), color: TEXT, tip: "各細項「數量×單價」依稅別換算含稅後加總＝總預算" },
+            { label: "預估總額", val: fmt(totalEstimated), color: TEXT, tip: "各細項「數量×單價」依稅別換算含稅後加總＝總預算" },
             { label: "已付總額", val: totalPaid > 0 ? fmt(totalPaid) : "尚未付款", color: totalPaid > 0 ? "#3C8C3C" : SUB, tip: `各細項「已付金額」加總。付款進度 ${payPct}%` },
             { label: "未付總額", val: fmt(totalUnpaid), color: totalUnpaid < 0 ? "#DC2626" : "#C2872E", tip: totalUnpaid < 0 ? "已付超過預估（溢付）" : "預估總額 − 已付總額＝尚需支付" },
             { label: "完工項目", val: `${doneCount} / ${catCount}`, color: ACCENT, tip: "狀態標示為「完工」的大項數" },
@@ -1164,6 +1164,9 @@ function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols,
                   <div style={{ fontSize: 12, color: SUB }}>預估 <span style={{ color: TEXT, fontVariantNumeric: "tabular-nums", fontWeight: 500 }}>{fmt(groupEst)}</span></div>
                   <div style={{ fontSize: 12, color: SUB }}>已付 <span style={{ color: "#3C8C3C", fontVariantNumeric: "tabular-nums", fontWeight: 500 }}>{fmt(groupPaid)}</span></div>
                   <div style={{ fontSize: 12, color: SUB }}>未付 <span style={{ color: groupUnpaid < 0 ? "#DC2626" : "#C2872E", fontVariantNumeric: "tabular-nums", fontWeight: 500 }}>{groupUnpaid < 0 ? `溢付 ${fmt(-groupUnpaid)}` : fmt(groupUnpaid)}</span></div>
+                  {itemCount > 0 && (() => { const allFull = group.rows.every(r => { const e = estAmount(r.item); return e <= 0 || paidOf(r.item) >= e; }); return (
+                    <button onClick={() => setCats(prev => prev.map(c => c.id === catId ? { ...c, items: c.items.map(it => ({ ...it, paid: allFull ? 0 : estAmount(it) })) } : c))} title={allFull ? "清除本大項所有已付金額" : "本大項全部一鍵付清（已付＝預估）"} style={{ flexShrink: 0, border: `1px solid ${allFull ? "#C2872E" : "#3C8C3C"}`, background: allFull ? "#FFFBEB" : "#F0FDF4", color: allFull ? "#C2872E" : "#3C8C3C", borderRadius: 6, padding: "2px 9px", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>{allFull ? "清除付款" : "✓ 全部付清"}</button>
+                  ); })()}
                   <button onClick={() => confirm(`確定刪除工程大項「${group.name}」？\n（含其下 ${itemCount} 筆細項，無法復原）`).then(ok => { if (ok) setCats(prev => prev.filter(c => c.id !== catId)); })} title="刪除此工程大項" style={{ flexShrink: 0, marginLeft: 4, width: 22, height: 22, borderRadius: "50%", background: "transparent", border: "none", color: "#C8BCA0", cursor: "pointer", fontSize: 15, lineHeight: 1, display: "flex", alignItems: "center", justifyContent: "center", padding: 0 }} onMouseEnter={e => { e.currentTarget.style.background = "#F3E4DE"; e.currentTarget.style.color = "#DC2626"; }} onMouseLeave={e => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = "#C8BCA0"; }}>×</button>
                 </div>
                 {/* item rows（收合時隱藏） */}
@@ -1223,7 +1226,13 @@ function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols,
                         );
                         if (col.id === "taxAmount") return <div key={col.id} style={{ ...cs, color: "#A99F88", fontFamily: "monospace", fontSize: 12 }}>{fmt(taxOf(item))}</div>;
                         if (col.id === "estTotal") return <div key={col.id} style={{ ...cs, color: ACCENT, fontFamily: "monospace", fontWeight: 600 }} title="預估金額（含稅，自動計算）">{fmt(estAmount(item))}</div>;
-                        if (col.id === "paid") return <div key={col.id} style={{ ...cs, color: "#3C8C3C" }}><EditableCell catId={catId} itemId={item.id} field="paid" value={item.paid ?? item.cust?.paid ?? 0} type="number" /></div>;
+                        if (col.id === "paid") {
+                          const estA = estAmount(item), p = paidOf(item), full = estA > 0 && p >= estA;
+                          return <div key={col.id} style={{ ...cs, gap: 6 }}>
+                            <input type="checkbox" checked={full} title={full ? "已全額付清（點擊清除）" : "一鍵填入全額"} onChange={() => updateItem(catId, item.id, "paid", full ? 0 : estA)} style={{ width: 16, height: 16, flexShrink: 0, cursor: "pointer", accentColor: "#3C8C3C" }} />
+                            <div style={{ flex: 1, minWidth: 0, color: p > 0 ? "#3C8C3C" : "#CDC3AC" }}><EditableCell catId={catId} itemId={item.id} field="paid" value={item.paid ?? item.cust?.paid ?? 0} type="number" /></div>
+                          </div>;
+                        }
                         if (col.id === "unpaid") { const u = unpaidOf(item); return <div key={col.id} style={{ ...cs, color: u < 0 ? "#DC2626" : u > 0 ? "#C2872E" : "#3C8C3C", fontFamily: "monospace", fontWeight: 600 }} title={u < 0 ? "溢付（已付超過預估）" : "未付金額（自動）"}>{u < 0 ? `溢付 ${fmt(-u)}` : fmt(u)}</div>; }
                         if (col.id === "payDate") return <div key={col.id} style={cs}><EditableCell catId={catId} itemId={item.id} field="payDate" value={item.payDate} type="date" placeholder="付款日" /></div>;
                         if (col.id === "payAccount") return <div key={col.id} style={cs}><EditableCell catId={catId} itemId={item.id} field="payAccount" value={item.payAccount} placeholder="銀行/帳號" /></div>;
