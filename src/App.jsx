@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { uploadPhoto, deletePhotoFile } from "./supa.js";
+import SequenceView from "./SequenceView.jsx";
 
 const ACCENT = "#E8B84B";
 const ADMIN_USER = "goodmask77"; // 僅此帳號可編輯（不顯示於介面）
@@ -331,6 +332,7 @@ export default function App() {
   const [photos, setPhotos] = useState([]);
   const [accounts, setAccounts] = useState([]);
   const [customCols, setCustomCols] = useState([]);
+  const [seqLogs, setSeqLogs] = useState([]);
   const [events, setEvents] = useState([]);
   const [journal, setJournal] = useState([]);
   const [plans, setPlans] = useState([]);
@@ -353,6 +355,10 @@ export default function App() {
   const commitCustomCols = (list) => {
     setCustomCols(list);
     window.storage.set("pm_columns", JSON.stringify(list), true).catch(()=>{});
+  };
+  const commitSeqLogs = (list) => {
+    setSeqLogs(list);
+    window.storage.set("pm_seqlogs", JSON.stringify(list), true).catch(()=>{});
   };
 
   // load
@@ -393,6 +399,10 @@ export default function App() {
       try {
         const ac = await window.storage.get("pm_accounts", true);
         if (ac && ac.value) setAccounts(JSON.parse(ac.value));
+      } catch(_){}
+      try {
+        const sl = await window.storage.get("pm_seqlogs", true);
+        if (sl && sl.value) setSeqLogs(JSON.parse(sl.value));
       } catch(_){}
       try {
         const cc = await window.storage.get("pm_columns", true);
@@ -509,6 +519,37 @@ export default function App() {
     setDragging(null); setDragOver(null);
   };
 
+  // ── 工序頁（SequenceView）接線：工序=cats、日誌=pm_seqlogs ──
+  const projectStart = settings?.projectStart || "2026-03-30";
+  const CAT2WS = { pending:"pending", inprogress:"doing", done:"done", issue:"issue", hold:"wait" };
+  const WS2CAT = { pending:"pending", doing:"inprogress", done:"done", issue:"issue", wait:"hold" };
+  const _pad = (n)=>String(n).padStart(2,"0");
+  const _toKey = (d)=>`${d.getFullYear()}-${_pad(d.getMonth()+1)}-${_pad(d.getDate())}`;
+  const _weekDate = (w0, off) => { const d=new Date(projectStart+"T00:00:00"); d.setDate(d.getDate()+w0*7+off); return _toKey(d); };
+  const seqItems = (cats || []).slice().sort((a,b)=>(a.order??0)-(b.order??0)).map(c => {
+    let segments = Array.isArray(c.segments) && c.segments.length ? c.segments.filter(s=>s.start&&s.end)
+      : (c.ganttStart != null ? [{ start:_weekDate(c.ganttStart,0), end:_weekDate(c.ganttStart+(c.ganttDur||1),-1) }] : []);
+    return { id:c.id, name:c.name, status: CAT2WS[c.status] || "pending", segments };
+  });
+  const seqSaveLog = (l) => {
+    if (l.id) commitSeqLogs(seqLogs.map(x => x.id===l.id ? { ...l, updated_at:new Date().toISOString() } : x));
+    else commitSeqLogs([...seqLogs, { ...l, id: "sl-"+Math.random().toString(36).slice(2,8), author: userName||"—", created_at:new Date().toISOString() }]);
+  };
+  const seqDelLog = (id) => commitSeqLogs(seqLogs.filter(x => x.id !== id));
+  const seqSetStatus = (itemId, wsKey) => { if (!canEditData) { denyEdit(); return; } setCats(prev => prev.map(c => c.id===itemId ? { ...c, status: WS2CAT[wsKey]||"pending" } : c)); };
+  const seqSetSchedule = (itemId, segs) => { if (!canEditData) { denyEdit(); return; } setCats(prev => prev.map(c => c.id===itemId ? { ...c, segments: segs } : c)); };
+  const seqSetProjectStart = (v) => { if (!canEditData) { denyEdit(); return; } const s = { ...(settings||{}), projectStart: v }; setSettings(s); saveSettings(s); };
+  const seqUploadPhotos = async (files) => { const out=[]; for (const f of files) { try { const { url } = await uploadPhoto(f); out.push(url); } catch(_){} } return out; };
+  const seqAiTidy = async (f) => {
+    const draft = [f.done && `已完成：${f.done}`, f.issue && `問題：${f.issue}`, f.next && `明日：${f.next}`].filter(Boolean).join("\n") || "（無草稿）";
+    const reply = await callAI([{ role:"user", content:`請把以下工地日誌草稿整理成一段精簡通順的施工紀錄（繁體中文、一段話、不要條列、不要開場白）：\n${draft}` }], "你是工程現場記錄助理。");
+    return (reply||"").replace(/```[\s\S]*?```/g,"").trim();
+  };
+  const seqAiWeekly = async (weekLogs) => {
+    const lines = weekLogs.map(l => `${l.date} ${seqItems.find(i=>i.id===l.itemId)?.name||""}：${l.done||l.next||""}${l.issue?`（問題：${l.issue}）`:""}`).join("\n") || "（本週無紀錄）";
+    return await callAI([{ role:"user", content:`以下是本週各工序施工日誌，請產生給業主看的本週進度週報（繁體中文，淺顯，含：本週完成、進行中、問題/待決、下週預計、整體評估🟢/🟡/🔴）：\n${lines}` }], "你是餐廳裝修工程顧問，為業主寫週報。");
+  };
+
   if (!cats) return (
     <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100vh", background: "#f4f5f7", color: "#e8b84b", fontFamily: "'Noto Sans TC', sans-serif", fontSize: 16 }}>
       載入中…
@@ -535,10 +576,11 @@ export default function App() {
           <ListView cats={cats} setCats={guardedSetCats} onSelectItem={(cat, item) => { setSelectedCat(cat); setSelectedItem(item); }} confirm={confirm} />
         )}
         {view === "gantt" && (
-          <GanttView cats={cats} setCats={guardedSetCats} />
-        )}
-        {view === "worklog" && (
-          <WorklogView worklog={worklog} setWorklog={commitWorklog} canEdit={canEditWorklog} userName={userName} requireLogin={denyEdit} confirm={confirm} />
+          <SequenceView
+            items={seqItems} logs={seqLogs} projectStart={projectStart} warnDays={3} canEdit={canEditData}
+            onSaveLog={seqSaveLog} onDelLog={seqDelLog} onSetStatus={seqSetStatus} onSetSchedule={seqSetSchedule}
+            onSetProjectStart={seqSetProjectStart} uploadPhotos={seqUploadPhotos} aiTidy={seqAiTidy} aiWeekly={seqAiWeekly}
+          />
         )}
         {view === "files" && (
           <PhotoLibraryView photos={photos} setPhotos={commitPhotos} cats={cats} canEdit={canEditFiles} userName={userName} requireLogin={denyEdit} confirm={confirm} />
@@ -676,7 +718,7 @@ function TopNav({ view, setView, saving, totalEstimated, totalActual, doneCount,
       </div>
       {/* view tabs */}
       <div style={{ display: "flex", gap: 6 }}>
-        {[["owner","業主視角"],["overview","總覽"],["kanban","看板"],["list","明細"],["gantt","工序"],["worklog","工作日誌"],["files","檔案庫"],["advisor","AI設定"],...(isAdmin?[["accounts","帳號"]]:[])].map(([v,l]) => (
+        {[["owner","業主視角"],["overview","總覽"],["kanban","看板"],["list","明細"],["gantt","工序"],["files","檔案庫"],["advisor","AI設定"],...(isAdmin?[["accounts","帳號"]]:[])].map(([v,l]) => (
           <button key={v} onClick={() => setView(v)} style={{ padding: "5px 14px", borderRadius: 6, border: "none", cursor: "pointer", fontSize: 12, fontWeight: 600, background: view === v ? ACCENT : "#d8dae3", color: view === v ? "#f4f5f7" : "#6b7280" }}>{l}</button>
         ))}
       </div>
@@ -2984,7 +3026,7 @@ function PhotoLibraryView({ photos, setPhotos, cats, canEdit, userName, requireL
 }
 
 // ── 帳號管理 ─────────────────────────────────────────────────────────────────
-const ACCT_PAGES = [["data","工程資料"],["worklog","工作日誌"],["files","檔案庫"],["advisor","AI設定"]];
+const ACCT_PAGES = [["data","工程資料"],["files","檔案庫"],["advisor","AI設定"]];
 function AccountManager({ accounts, setAccounts, confirm }) {
   const [name, setName] = useState("");
   const [asAdmin, setAsAdmin] = useState(false);
