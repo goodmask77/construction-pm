@@ -993,59 +993,8 @@ function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols 
       {/* toolbar */}
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10, flexWrap: "wrap" }}>
         <div style={{ fontSize: 16, fontWeight: 600, color: TEXT, letterSpacing: -0.2 }}>總覽</div>
+        <div style={{ fontSize: 12.5, color: SUB }}>成本費用明細</div>
         <div style={{ flex: 1 }} />
-        {/* filter */}
-        <div style={{ display: "flex", gap: 2 }}>
-          {[["all","全部"], ...Object.entries(STATUS_MAP).map(([k,v]) => [k, v.label])].map(([k,l]) => (
-            <button key={k} onClick={() => setFilterStatus(k)} style={{ padding: "5px 11px", borderRadius: 7, border: "1px solid transparent", fontSize: 12.5, cursor: "pointer", background: filterStatus === k ? ACCENT_SOFT : "transparent", color: filterStatus === k ? ACCENT : SUB, fontWeight: filterStatus === k ? 600 : 500 }}>{l}</button>
-          ))}
-        </div>
-        {/* col toggle */}
-        <div style={{ position: "relative" }}>
-          <button onClick={() => setShowColMenu(s => !s)} style={{ padding: "6px 12px", borderRadius: 7, border: `1px solid ${BORDER}`, fontSize: 12.5, cursor: "pointer", background: SURFACE, color: SUB, fontWeight: 500 }}>欄位</button>
-          {showColMenu && (
-            <div style={{ position: "absolute", right: 0, top: 30, background: "#ffffff", border: "1px solid #D8CFBB", borderRadius: 10, padding: "10px 14px", zIndex: 300, minWidth: 230, maxHeight: "72vh", overflowY: "auto", boxShadow: "0 4px 20px rgba(0,0,0,0.1)" }}>
-              <div style={{ fontSize: 11, color: "#6F6656", marginBottom: 8 }}>欄位（拖曳 ⠿ 排序 · 點名稱改名 · × 刪除）</div>
-              {cols.map(c => {
-                const isFixed = c.fixed;
-                return (
-                  <div key={c.id} draggable={!isFixed && !!setCustomCols}
-                    onDragStart={()=>!isFixed && setColDrag(c.id)}
-                    onDragOver={e=>{ if(!isFixed && colDrag && colDrag!==c.id){ e.preventDefault(); } }}
-                    onDrop={()=>{ if(!isFixed && colDrag) moveCol(colDrag, c.id); setColDrag(null); }}
-                    onDragEnd={()=>setColDrag(null)}
-                    style={{ display:"flex", alignItems:"center", gap:6, marginBottom:5, fontSize:12, padding:"3px 2px", borderRadius:6, background: colDrag===c.id?"#F3E4DE":"transparent" }}>
-                    <span style={{ color: isFixed?"#D8CFBB":"#CDC3AC", cursor: isFixed?"default":"grab", fontSize:13, flexShrink:0 }}>⠿</span>
-                    {setCustomCols
-                      ? <input value={c.label} onChange={e=>renameCol(c.id, e.target.value)} style={{ flex:1, border:"1px solid transparent", borderRadius:5, padding:"3px 6px", fontSize:12, fontFamily:"'Noto Sans TC',sans-serif", background:"transparent" }} onFocus={e=>e.target.style.border="1px solid #D8CFBB"} onBlur={e=>e.target.style.border="1px solid transparent"} />
-                      : <span style={{ flex:1, padding:"3px 6px" }}>{c.label}</span>}
-                    {c.type==="formula" && <span style={{ color:"#6F6656", flexShrink:0 }}>ƒ</span>}
-                    {isFixed ? <span style={{ fontSize:10, color:"#CDC3AC", flexShrink:0 }}>固定</span>
-                      : (setCustomCols && <button onClick={()=>delCol(c.id)} title="刪除欄位" style={{ color:"#dc2626", background:"none", border:"none", cursor:"pointer", fontSize:14, lineHeight:1, flexShrink:0 }}>×</button>)}
-                  </div>
-                );
-              })}
-              {setCustomCols ? (
-                <div style={{ display:"flex", flexDirection:"column", gap:6, marginTop:8, borderTop:"1px dashed #eee", paddingTop:8 }}>
-                  {COLS.filter(c => !c.fixed && !cols.some(e=>e.id===c.id)).length > 0 && (
-                    <select value="" onChange={e=>{ if(e.target.value) reAddBuiltin(e.target.value); }} style={{ ...inputStyle, padding:"5px 8px", fontSize:12 }}>
-                      <option value="">＋ 加回內建欄位…</option>
-                      {COLS.filter(c => !c.fixed && !cols.some(e=>e.id===c.id)).map(c => <option key={c.id} value={c.id}>{c.label}</option>)}
-                    </select>
-                  )}
-                  <div style={{ fontSize:11, color:"#6F6656", fontWeight: 600, marginTop:4 }}>新增自訂欄位</div>
-                  <input value={newColLabel} onChange={e=>setNewColLabel(e.target.value)} placeholder="新欄位名稱" style={{ ...inputStyle, padding:"5px 8px", fontSize:12 }} />
-                  <select value={newColType} onChange={e=>setNewColType(e.target.value)} style={{ ...inputStyle, padding:"5px 8px", fontSize:12 }}>
-                    <option value="money">金額</option><option value="number">數字</option><option value="text">文字</option><option value="formula">公式</option>
-                  </select>
-                  {newColType==="formula" && <input value={newColFormula} onChange={e=>setNewColFormula(e.target.value)} placeholder="例：estTotal*1.05 - paid" style={{ ...inputStyle, padding:"5px 8px", fontSize:12 }} />}
-                  <button onClick={addCustomCol} disabled={!newColLabel.trim()} style={{ background:newColLabel.trim()?ACCENT:"#D8CFBB", color:newColLabel.trim()?"#ffffff":"#A99F88", border:"none", borderRadius:6, padding:"6px 0", fontWeight: 600, cursor:newColLabel.trim()?"pointer":"not-allowed", fontSize:12 }}>＋ 新增欄位</button>
-                  {newColType==="formula" && <div style={{ fontSize:10, color:"#A99F88", lineHeight:1.5 }}>可用變數：estTotal actTotal paid taxincl estQty estUnitPrice…，支援 + − * / ( )</div>}
-                </div>
-              ) : <div style={{ fontSize:11, color:"#A99F88", marginTop:6 }}>需編輯權限才能管理欄位</div>}
-            </div>
-          )}
-        </div>
       </div>
 
       {/* table */}
