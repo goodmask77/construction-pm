@@ -345,12 +345,17 @@ export default function SequenceView({
                     );
                   })
                 ) : (
-                  /* 細條列：同樣可點(記錄)/拖曳(設工期) */
-                  winDays.map((i) => { const inSpan = inRange(it, i), t = i === TODAY_IDX; return (
-                    <div key={i} onMouseDown={() => canEdit && setSel({ itemId: it.id, a: i, b: i })} onMouseEnter={() => canEdit && setSel(s => s && s.itemId === it.id ? { ...s, b: i } : s)} style={{ width: DAY_W, flexShrink: 0, borderLeft: `1px solid ${C.line}`, cursor: canEdit ? "pointer" : "default", userSelect: "none", background: inSel(it.id, i) ? "#F3E4DE" : t ? "#FFFBEF" : "transparent", position: "relative" }}>
-                      {inSpan && <div style={{ position: "absolute", left: 0, right: 0, top: ROW_THIN / 2 - 4, height: 8, background: w.bar, opacity: .55 }} />}
-                      {logMap[`${it.id}|${dayKey(i)}`] && <span onClick={(e) => { e.stopPropagation(); setDrawer({ ...logMap[`${it.id}|${dayKey(i)}`] }); }} onMouseEnter={(e) => setTip({ l: logMap[`${it.id}|${dayKey(i)}`], x: e.clientX, y: e.clientY, item: it.name })} onMouseLeave={() => setTip(null)} style={{ position: "absolute", left: DAY_W / 2 - 4, top: ROW_THIN / 2 - 4, width: 8, height: 8, borderRadius: 4, background: dotFill(logMap[`${it.id}|${dayKey(i)}`]), boxShadow: "0 0 0 1px rgba(0,0,0,.4)", cursor: "pointer", zIndex: 2 }} />}
-                    </div>); })
+                  /* 細條列：可點(記錄)/拖曳(設工期)；工期顯示為一條乾淨色塊、可清除 */
+                  <div style={{ position: "relative", display: "flex", flex: "0 0 auto" }}>
+                    {winDays.map((i) => { const t = i === TODAY_IDX, log = logMap[`${it.id}|${dayKey(i)}`]; return (
+                      <div key={i} onMouseDown={() => canEdit && setSel({ itemId: it.id, a: i, b: i })} onMouseEnter={() => canEdit && setSel(s => s && s.itemId === it.id ? { ...s, b: i } : s)} style={{ width: DAY_W, flexShrink: 0, borderLeft: `1px solid ${C.line}`, cursor: canEdit ? "pointer" : "default", userSelect: "none", background: inSel(it.id, i) ? "#F3E4DE" : t ? "#FFFBEF" : "transparent", position: "relative" }}>
+                        {log && <span onClick={(e) => { e.stopPropagation(); setDrawer({ ...log }); }} onMouseEnter={(e) => setTip({ l: log, x: e.clientX, y: e.clientY, item: it.name })} onMouseLeave={() => setTip(null)} style={{ position: "absolute", left: DAY_W / 2 - 4, top: ROW_THIN / 2 - 4, width: 8, height: 8, borderRadius: 4, background: dotFill(log), boxShadow: "0 0 0 1px rgba(0,0,0,.4)", cursor: "pointer", zIndex: 3 }} />}
+                      </div>); })}
+                    {segIdxOf(it).map(([a, b], si) => { const l = Math.max(0, dayX(a)), r = Math.min(dayTrackW, dayX(b + 1)); if (r <= 0 || l >= dayTrackW) return null; return (
+                      <div key={si} title="此工序的工期" style={{ position: "absolute", left: l + 3, top: ROW_THIN / 2 - 7, width: r - l - 6, height: 14, background: w.bar, borderRadius: 5, display: "flex", alignItems: "center", justifyContent: "flex-end", paddingRight: 4, pointerEvents: "none", zIndex: 2 }}>
+                        {canEdit && <span title="清除此工期" onClick={(e) => { e.stopPropagation(); onSetSchedule && onSetSchedule(it.id, []); }} style={{ pointerEvents: "auto", cursor: "pointer", color: "#fff", fontSize: 11, fontWeight: 700, lineHeight: 1, width: 15, height: 15, borderRadius: 8, background: "rgba(0,0,0,.28)", display: "flex", alignItems: "center", justifyContent: "center" }}>×</span>}
+                      </div>); })}
+                  </div>
                 )}
               </div>
             );
