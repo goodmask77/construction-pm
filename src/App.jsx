@@ -1173,11 +1173,13 @@ function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols,
                 {!isCollapsed && group.rows.map(({ item }) => {
                   const rowKey = `${catId}||${item.id}`;
                   const isDragOver = dragOverId === rowKey;
+                  const stColor = STATUS_MAP[item.status]?.color || "#6F6656";
+                  const tinted = !!item.status && item.status !== "pending"; // 由「狀態」決定整行顏色（待開工=白底）
                   return (
                     <div key={item.id}
                       onDragOver={e => { e.preventDefault(); setDragOverId(rowKey); }}
                       onDrop={() => onRowDrop(rowKey)}
-                      style={{ display: "flex", alignItems: "center", borderBottom: "1px solid #EFE7D6", background: isDragOver ? "#F3E4DE" : item.done ? "#f0fdf4" : "#ffffff", borderLeft: item.done ? "3px solid #3C8C3C" : "3px solid transparent", transition: "background 0.15s" }}
+                      style={{ display: "flex", alignItems: "center", borderBottom: "1px solid #EFE7D6", background: isDragOver ? "#F3E4DE" : tinted ? stColor + "1A" : "#ffffff", borderLeft: tinted ? `3px solid ${stColor}` : "3px solid transparent", transition: "background 0.15s" }}
                     >
                       {/* drag handle（僅此處可拖曳） */}
                       <div
