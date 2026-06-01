@@ -115,9 +115,17 @@ export default function SequenceView({
         <div style={{ minWidth: LABEL_W + trackW }}>
           <div style={{ display: "flex", position: "sticky", top: 0, zIndex: 3, background: "#fff", borderBottom: `1px solid ${C.line}` }}>
             <div style={{ width: LABEL_W, flexShrink: 0, position: "sticky", left: 0, zIndex: 4, background: "#fff", padding: "8px 12px", fontSize: 13, fontWeight: 700, color: C.sub, borderRight: `1px solid ${C.line}` }}>工程項目</div>
-            <div style={{ position: "relative", width: trackW, height: 32 }}>
-              {Array.from({ length: TOTAL_WEEKS }, (_, w) => <div key={w} style={{ position: "absolute", left: X(w * 7), top: 0, bottom: 0, borderLeft: `1px solid ${C.line}`, paddingLeft: 5, fontSize: 12, color: C.sub, display: "flex", alignItems: "center" }}>W{w + 1}</div>)}
-              {zoom === "day" && Array.from({ length: TOTAL_DAYS }, (_, i) => { const d = new Date(START_D); d.setDate(d.getDate() + i); return <div key={i} style={{ position: "absolute", left: X(i), top: 16, width: ppd, textAlign: "center", fontSize: 10, color: d.getDay() % 6 === 0 ? "#c0507a" : C.faint }}>{d.getDate()}</div>; })}
+            <div style={{ position: "relative", width: trackW, height: 42 }}>
+              {Array.from({ length: TOTAL_WEEKS }, (_, w) => {
+                const d = new Date(START_D); d.setDate(d.getDate() + w * 7);
+                return (
+                  <div key={w} style={{ position: "absolute", left: X(w * 7), top: 0, bottom: 0, borderLeft: `1px solid ${C.line}`, paddingLeft: 5, display: "flex", flexDirection: "column", justifyContent: "center", lineHeight: 1.25 }}>
+                    <span style={{ fontSize: 11, fontWeight: 700, color: C.text }}>W{w + 1}</span>
+                    <span style={{ fontSize: 10, color: C.faint, whiteSpace: "nowrap" }}>{d.getMonth() + 1}/{d.getDate()}</span>
+                  </div>
+                );
+              })}
+              {zoom === "day" && Array.from({ length: TOTAL_DAYS }, (_, i) => { const d = new Date(START_D); d.setDate(d.getDate() + i); const we = d.getDay() % 6 === 0; const showM = i % 7 === 0 || d.getDate() === 1; return <div key={i} style={{ position: "absolute", left: X(i), top: 27, width: ppd, textAlign: "center", fontSize: 10, color: we ? "#c0507a" : C.faint }}>{showM ? `${d.getMonth() + 1}/${d.getDate()}` : d.getDate()}</div>; })}
               <div style={{ position: "absolute", left: X(TODAY_IDX) + ppd / 2, top: 0, bottom: 0, width: 2, background: ACCENT }} />
             </div>
           </div>
