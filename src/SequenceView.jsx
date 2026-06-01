@@ -304,6 +304,7 @@ function ScheduleEditor({ item, onClose, onSave }) {
 function Drawer({ data, item, TODAY, onSetStatus, onSave, onDelete, onClose, onCopy, uploadPhotos, aiTidy, canEdit }) {
   const [f, setF] = useState({ ...data, photos: data.photos || [] });
   const [busy, setBusy] = useState(false);
+  const [viewImg, setViewImg] = useState(null);
   const fileRef = useRef(null);
   const upd = (k, v) => setF((s) => ({ ...s, [k]: v }));
   const addPhotos = async (files) => {
@@ -337,7 +338,7 @@ function Drawer({ data, item, TODAY, onSetStatus, onSave, onDelete, onClose, onC
         </>}
         <Label>照片牆（可貼上截圖）</Label>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
-          {(f.photos || []).map((p, i) => <div key={i} style={{ position: "relative" }}><img src={p} alt="" style={{ width: 66, height: 66, objectFit: "cover", borderRadius: 8, border: `1px solid ${C.line}` }} /><button onClick={() => upd("photos", f.photos.filter((_, x) => x !== i))} style={{ position: "absolute", top: -6, right: -6, width: 18, height: 18, borderRadius: 9, border: "none", background: "#e11d48", color: "#fff", fontSize: 11, cursor: "pointer" }}>×</button></div>)}
+          {(f.photos || []).map((p, i) => <div key={i} style={{ position: "relative" }}><img src={p} alt="" onClick={() => setViewImg(p)} title="點擊放大" style={{ width: 66, height: 66, objectFit: "cover", borderRadius: 8, border: `1px solid ${C.line}`, cursor: "zoom-in" }} /><button onClick={() => upd("photos", f.photos.filter((_, x) => x !== i))} style={{ position: "absolute", top: -6, right: -6, width: 18, height: 18, borderRadius: 9, border: "none", background: "#e11d48", color: "#fff", fontSize: 11, cursor: "pointer" }}>×</button></div>)}
           <button onClick={() => fileRef.current?.click()} style={{ width: 66, height: 66, borderRadius: 8, border: `1px dashed ${C.line}`, background: C.soft, fontSize: 22, color: C.faint, cursor: "pointer" }}>＋</button>
           <input ref={fileRef} type="file" accept="image/*" multiple style={{ display: "none" }} onChange={(e) => addPhotos(e.target.files)} />
         </div>
@@ -348,6 +349,11 @@ function Drawer({ data, item, TODAY, onSetStatus, onSave, onDelete, onClose, onC
           <button onClick={() => onSave(f)} disabled={busy} style={{ border: "none", background: ACCENT, color: "#3a2c00", borderRadius: 9, padding: "9px 24px", fontSize: 14, fontWeight: 800, cursor: busy ? "wait" : "pointer" }}>{f.id ? "更新" : "儲存"}</button>
         </div>
       </div>
+      {viewImg && (
+        <div onClick={(e) => { e.stopPropagation(); setViewImg(null); }} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.88)", zIndex: 1200, display: "flex", alignItems: "center", justifyContent: "center", padding: 20, cursor: "zoom-out" }}>
+          <img src={viewImg} alt="" style={{ maxWidth: "95%", maxHeight: "95%", objectFit: "contain", borderRadius: 8 }} />
+        </div>
+      )}
     </div>
   );
 }
