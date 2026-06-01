@@ -26,6 +26,7 @@ const pad = (n) => String(n).padStart(2, "0");
 const toKey = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 const WD = ["日", "一", "二", "三", "四", "五", "六"];
 const navBtn = { border: `1px solid ${C.line}`, background: "#fff", borderRadius: 8, width: 32, height: 32, fontSize: 17, cursor: "pointer", color: C.text };
+const jumpBtn = { border: `1px solid ${C.line}`, background: "#fff", borderRadius: 6, width: 19, height: 19, fontSize: 13, lineHeight: 1, padding: 0, cursor: "pointer", color: C.sub, display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 };
 const Label = ({ children }) => <div style={{ fontSize: 12, fontWeight: 600, color: C.sub, marginBottom: 6 }}>{children}</div>;
 
 export default function SequenceView({
@@ -54,6 +55,7 @@ export default function SequenceView({
   const [schedItem, setSchedItem] = useState(null);
   const [tip, setTip] = useState(null);
   const [scrollTo, setScrollTo] = useState(null);
+  const [scrollX, setScrollX] = useState(0);       // 目前橫向捲動量（給最左欄「跳到有紀錄格子」箭頭判斷可見範圍）
   const [weeklyOut, setWeeklyOut] = useState(null);
   const ref = useRef(null);
 
@@ -112,6 +114,7 @@ export default function SequenceView({
 
   useEffect(() => { if (!ref.current) return; ref.current.scrollLeft = zoom === "week" ? X(TODAY_IDX) - 220 : dayX(TODAY_IDX) - DAY_W; }, [zoom]); // eslint-disable-line
   useEffect(() => { if (scrollTo != null && ref.current) { ref.current.scrollLeft = (zoom === "day" ? dayX(scrollTo) - DAY_W : X(scrollTo) - 120); setScrollTo(null); } }, [scrollTo]); // eslint-disable-line
+  useEffect(() => { const el = ref.current; if (!el) return; const on = () => setScrollX(el.scrollLeft); on(); el.addEventListener("scroll", on, { passive: true }); return () => el.removeEventListener("scroll", on); }, [zoom]); // eslint-disable-line
 
   const toggle = (it) => {
     if (hasSubs(it)) { setExpandedParents(s => { const n = new Set(s); n.has(it.id) ? n.delete(it.id) : n.add(it.id); return n; }); return; }
@@ -130,8 +133,12 @@ export default function SequenceView({
   const commitSel = () => {
     const s = selRef.current; if (!s) return; setSel(null);
     const a = Math.min(s.a, s.b), b = Math.max(s.a, s.b);
-    if (a === b) { openCell(s.itemId, dayKey(a), s.x, s.y); }
-    else if (canEdit && onSetSchedule) { onSetSchedule(s.itemId, [{ start: dayKey(a), end: dayKey(b) }]); }
+    if (a === b) { openCell(s.itemId, dayKey(a), s.x, s.y); return; }
+    if (!canEdit || !onSetSchedule) return;
+    const cur = segIdxOf(items.find(x => x.id === s.itemId));
+    // 再次框選「完全相同的範圍」＝取消該段（清除整格上色）；否則設定為此工序的施工範圍
+    if (cur.length === 1 && cur[0][0] === a && cur[0][1] === b) onSetSchedule(s.itemId, []);
+    else onSetSchedule(s.itemId, [{ start: dayKey(a), end: dayKey(b) }]);
   };
   const commitRef = useRef(commitSel); commitRef.current = commitSel; // 永遠用最新的 closure（修正權限/狀態 stale）
   useEffect(() => { const up = () => commitRef.current && commitRef.current(); document.addEventListener("mouseup", up); return () => document.removeEventListener("mouseup", up); }, []); // eslint-disable-line
@@ -147,8 +154,15 @@ export default function SequenceView({
     const w = WS[it.status] || WS.pending;
     const isContainer = hasSubs(it);
     const subsOpen = isContainer && expandedParents.has(it.id);
+    // 「跳到有紀錄的格子」：找目前可見範圍前/後最近一筆有施工紀錄的日期；前後都沒有就不顯示箭頭
+    const logIdxs = (logsByItem[it.id] || []).map(l => idxOf(l.date)).sort((a, b) => a - b);
+    const visCols = ref.current ? Math.max(1, Math.floor((ref.current.clientWidth - labelW) / DAY_W)) : 5;
+    const vL = scrollX / DAY_W, vR = vL + visCols;
+    const jPrev = [...logIdxs].reverse().find(i => i < vL - 0.01);
+    const jNext = logIdxs.find(i => i > vR - 1 + 0.01);
+    const jumpTo = (i) => { if (ref.current) ref.current.scrollLeft = dayX(i) - DAY_W; };
     return (
-      <div onClick={() => isContainer && toggle(it)} className={it.urgent ? "seq-urgent-cell" : undefined} title={isContainer ? (subsOpen ? "收合子項目" : "展開子項目") : undefined} style={{ width: labelW, flexShrink: 0, position: "sticky", left: 0, zIndex: 2, background: dragOverId === it.id ? ACCENT_SOFT : (it.isSub ? "#FCFDFE" : "#fff"), borderRight: `1px solid ${C.line}`, borderLeft: it.urgent ? `3px solid ${RED}` : (it.isSub ? "3px solid transparent" : `3px solid ${w.bar}`), padding: "0 8px", paddingLeft: it.isSub ? 18 : 6, display: "flex", alignItems: "center", gap: 6, minHeight: minH, cursor: isContainer ? "pointer" : "default" }}>
+      <div onClick={() => isContainer && toggle(it)} className={it.urgent ? "seq-urgent-cell" : undefined} title={isContainer ? (subsOpen ? "收合子項目" : "展開子項目") : undefined} style={{ width: labelW, flexShrink: 0, boxSizing: "border-box", position: "sticky", left: 0, zIndex: 2, background: dragOverId === it.id ? ACCENT_SOFT : (it.isSub ? "#FCFDFE" : "#fff"), borderRight: `1px solid ${C.line}`, borderLeft: it.urgent ? `3px solid ${RED}` : (it.isSub ? "3px solid transparent" : `3px solid ${w.bar}`), padding: "0 8px", paddingLeft: it.isSub ? 18 : 6, display: "flex", alignItems: "center", gap: 6, minHeight: minH, cursor: isContainer ? "pointer" : "default" }}>
         {it.isParent && canEdit && <span className="seq-actions" draggable onClick={(e) => e.stopPropagation()} onDragStart={() => setDragId(it.id)} onDragEnd={() => { setDragId(null); setDragOverId(null); }} title="拖曳排序大項" style={{ cursor: "grab", color: "#CDC3AC", fontSize: 13, flexShrink: 0 }}>⠿</span>}
         {it.isSub && <span style={{ color: "#CDC3AC", fontSize: 12, flexShrink: 0, lineHeight: 1 }}>└</span>}
         <span onClick={(e) => { e.stopPropagation(); if (canEdit) setStatusPick({ id: it.id, x: e.clientX, y: e.clientY }); }} title={canEdit ? `${w.label}（點擊設定狀態）` : w.label} style={{ width: 10, height: 10, borderRadius: 5, background: w.bar, flexShrink: 0, cursor: canEdit ? "pointer" : "default" }} />
@@ -156,6 +170,12 @@ export default function SequenceView({
         <span title={`${it.name}（${w.label}）`} style={{ fontSize: it.isSub ? 13 : 14, fontWeight: it.urgent ? 600 : (it.isSub ? 500 : 600), color: it.urgent ? "#B3261E" : (it.isSub ? C.sub : PRIMARY), overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1, letterSpacing: -0.1 }}>{it.name}</span>
         {isContainer && !subsOpen && <span style={{ fontSize: 11, fontWeight: 500, color: SUB, background: "#EFE7D6", borderRadius: 10, padding: "1px 7px", flexShrink: 0, lineHeight: 1.5 }}>{subCount(it)}</span>}
         {warnSet.has(it.id) && <span title={`連續 ${warnDays} 天無紀錄`} style={{ color: RED, fontSize: 13, flexShrink: 0 }}>⚠</span>}
+        {(jPrev != null || jNext != null) && (
+          <span onClick={(e) => e.stopPropagation()} style={{ display: "inline-flex", alignItems: "center", gap: 2, flexShrink: 0 }} title="跳到此工序有施工紀錄的日期">
+            {jPrev != null && <button onClick={(e) => { e.stopPropagation(); jumpTo(jPrev); }} title="往前找最近一筆有紀錄的格子" style={jumpBtn}>‹</button>}
+            {jNext != null && <button onClick={(e) => { e.stopPropagation(); jumpTo(jNext); }} title="往後找最近一筆有紀錄的格子" style={jumpBtn}>›</button>}
+          </span>
+        )}
         {canEdit && <div className="seq-actions" style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 3, flexShrink: 0 }}>
           {!it.urgent && <button onClick={(e) => { e.stopPropagation(); onSetUrgent && onSetUrgent(it.id, true); }} title="標記超急件（置頂＋閃爍提醒）" style={{ border: "none", background: "none", cursor: "pointer", fontSize: 13, filter: "grayscale(1)", opacity: .7 }}>🔥</button>}
           {it.isParent && <button onClick={(e) => { e.stopPropagation(); const n = prompt(`在「${it.name}」下新增工程子項目：`); if (n && n.trim()) onAddSub && onAddSub(it.id, n.trim()); }} title="新增子項目" style={{ border: "none", background: "none", cursor: "pointer", color: ACCENT, fontSize: 15, fontWeight: 500 }}>＋</button>}
@@ -207,7 +227,7 @@ export default function SequenceView({
         {zoom === "week" ? (
         <div style={{ minWidth: labelW + trackW }}>
           <div style={{ display: "flex", position: "sticky", top: 0, zIndex: 3, background: "#fff", borderBottom: `1px solid ${C.line}` }}>
-            <div style={{ width: labelW, flexShrink: 0, position: "sticky", left: 0, zIndex: 4, background: "#fff", padding: "8px 12px", fontSize: 13, fontWeight: 600, color: C.sub, borderRight: `1px solid ${C.line}` }}>
+            <div style={{ width: labelW, flexShrink: 0, boxSizing: "border-box", position: "sticky", left: 0, zIndex: 4, background: "#fff", padding: "8px 12px", fontSize: 13, fontWeight: 600, color: C.sub, borderRight: `1px solid ${C.line}` }}>
               工程項目
               <div onMouseDown={startResize} title="拖曳調整欄寬" style={{ position: "absolute", right: -3, top: 0, bottom: 0, width: 7, cursor: "col-resize", zIndex: 6 }} />
             </div>
@@ -242,7 +262,7 @@ export default function SequenceView({
                 onDragOver={(e) => { if (it.isParent && dragId && dragId !== it.id) { e.preventDefault(); setDragOverId(it.id); } }}
                 onDrop={() => { if (it.isParent && dragId && dragId !== it.id) onReorder && onReorder(dragId, it.id); setDragId(null); setDragOverId(null); }}
                 style={{ display: "flex", borderBottom: `1px solid ${C.line}`, minHeight: open ? ROW_H_OPEN : (it.isSub ? 38 : 46), background: dragOverId === it.id ? ACCENT_SOFT : (open ? "#ECE6D7" : (it.isSub ? "#FCFDFE" : "#fff")) }}>
-                <div onClick={() => toggle(it)} style={{ width: labelW, flexShrink: 0, position: "sticky", left: 0, zIndex: 2, background: dragOverId === it.id ? ACCENT_SOFT : (open ? "#ECE6D7" : (it.isSub ? "#FCFDFE" : "#fff")), borderRight: `1px solid ${C.line}`, borderLeft: it.isSub ? "3px solid transparent" : `3px solid ${w.bar}`, padding: "0 8px", paddingLeft: it.isSub ? 18 : 6, display: "flex", alignItems: "center", gap: 6, cursor: "pointer" }}>
+                <div onClick={() => toggle(it)} style={{ width: labelW, flexShrink: 0, boxSizing: "border-box", position: "sticky", left: 0, zIndex: 2, background: dragOverId === it.id ? ACCENT_SOFT : (open ? "#ECE6D7" : (it.isSub ? "#FCFDFE" : "#fff")), borderRight: `1px solid ${C.line}`, borderLeft: it.isSub ? "3px solid transparent" : `3px solid ${w.bar}`, padding: "0 8px", paddingLeft: it.isSub ? 18 : 6, display: "flex", alignItems: "center", gap: 6, cursor: "pointer" }}>
                   {it.isParent && canEdit && <span className="seq-actions" draggable onClick={(e) => e.stopPropagation()} onDragStart={() => setDragId(it.id)} onDragEnd={() => { setDragId(null); setDragOverId(null); }} title="拖曳排序大項" style={{ cursor: "grab", color: "#CDC3AC", fontSize: 13, flexShrink: 0 }}>⠿</span>}
                   {it.isSub && <span style={{ color: "#CDC3AC", fontSize: 12, flexShrink: 0, lineHeight: 1 }}>└</span>}
                   <span onClick={(e) => { e.stopPropagation(); if (canEdit) setStatusPick({ id: it.id, x: e.clientX, y: e.clientY }); }} title={canEdit ? `${w.label}（點擊設定狀態）` : w.label} style={{ width: 8, height: 8, borderRadius: 4, background: w.bar, flexShrink: 0, cursor: canEdit ? "pointer" : "default" }} />
@@ -303,12 +323,12 @@ export default function SequenceView({
         /* ───────── 日視圖：14 天視窗胖格子 ───────── */
         <div style={{ minWidth: labelW + dayTrackW }}>
           <div style={{ display: "flex", position: "sticky", top: 0, zIndex: 3, background: "#fff", borderBottom: `1px solid ${C.line}` }}>
-            <div style={{ width: labelW, flexShrink: 0, position: "sticky", left: 0, zIndex: 4, background: "#fff", padding: "8px 12px", fontSize: 13, fontWeight: 600, color: C.sub, borderRight: `1px solid ${C.line}` }}>
+            <div style={{ width: labelW, flexShrink: 0, boxSizing: "border-box", position: "sticky", left: 0, zIndex: 4, background: "#fff", padding: "8px 12px", fontSize: 13, fontWeight: 600, color: C.sub, borderRight: `1px solid ${C.line}` }}>
               工程項目
               <div onMouseDown={startResize} title="拖曳調整欄寬" style={{ position: "absolute", right: -3, top: 0, bottom: 0, width: 7, cursor: "col-resize", zIndex: 6 }} />
             </div>
             {winDays.map((i) => { const d = new Date(START_D); d.setDate(d.getDate() + i); const t = i === TODAY_IDX, wk = d.getDay() % 6 === 0; return (
-              <div key={i} style={{ width: DAY_W, flexShrink: 0, textAlign: "center", padding: "5px 0 6px", borderLeft: `1px solid ${C.line}`, background: t ? "#FFFBEF" : "#fff" }}>
+              <div key={i} style={{ width: DAY_W, flexShrink: 0, boxSizing: "border-box", textAlign: "center", padding: "5px 0 6px", borderLeft: `1px solid ${C.line}`, background: t ? "#FFFBEF" : "#fff" }}>
                 <div style={{ fontSize: 10.5, fontWeight: 500, color: wk ? "#c0507a" : C.sub }}>週{WD[d.getDay()]}</div>
                 <div style={{ marginTop: 2, display: "flex", justifyContent: "center" }}>
                   <span style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", height: 20, padding: "0 8px", borderRadius: 10, fontSize: 12.5, fontWeight: 600, background: t ? ACCENT : "transparent", color: t ? "#fff" : wk ? "#c0507a" : C.text }}>{d.getMonth() + 1}/{d.getDate()}</span>
@@ -319,9 +339,7 @@ export default function SequenceView({
           {visItems.map((it) => {
             const w = WS[it.status] || WS.pending;
             const hasContentInWin = winDays.some(i => logMap[`${it.id}|${dayKey(i)}`]);
-            const fat = hasContentInWin; // 只有「視窗內真的有紀錄」才展開成胖格子；其餘一律細列(省空間、整齊一致)
-            const itemLogs = logsByItem[it.id] || [];
-            const segs = segIdxOf(it);
+            const fat = hasContentInWin; // 該工序只要有任一筆紀錄就展開成胖格子；其餘一律細列(省空間、整齊一致)
             return (
               <div key={it.id} className="seq-row" style={{ display: "flex", borderBottom: `1px solid ${C.line}`, minHeight: fat ? ROW_FAT : ROW_THIN, background: it.isSub ? "#FCFDFE" : "#fff" }}>
                 {renderLabel(it, fat ? ROW_FAT : ROW_THIN)}
@@ -329,7 +347,7 @@ export default function SequenceView({
                   winDays.map((i) => {
                     const inSpan = inRange(it, i), key = dayKey(i), log = logMap[`${it.id}|${key}`], planned = i > TODAY_IDX, t = i === TODAY_IDX;
                     return (
-                      <div key={i} onMouseDown={(e) => canEdit && setSel({ itemId: it.id, a: i, b: i, x: e.clientX, y: e.clientY })} onMouseEnter={() => canEdit && setSel(s => s && s.itemId === it.id ? { ...s, b: i } : s)} style={{ width: DAY_W, flexShrink: 0, minHeight: ROW_FAT, borderLeft: `1px solid ${C.line}`, padding: 7, cursor: canEdit ? "pointer" : "default", userSelect: "none", background: inSel(it.id, i) ? "#F3E4DE" : t ? "#FFFBEF" : "#fff", borderTop: inSpan ? `3px solid ${w.bar}` : "3px solid transparent", position: "relative" }}>
+                      <div key={i} onMouseDown={(e) => canEdit && setSel({ itemId: it.id, a: i, b: i, x: e.clientX, y: e.clientY })} onMouseEnter={() => canEdit && setSel(s => s && s.itemId === it.id ? { ...s, b: i } : s)} style={{ width: DAY_W, flexShrink: 0, boxSizing: "border-box", minHeight: ROW_FAT, borderLeft: `1px solid ${C.line}`, padding: 7, cursor: canEdit ? "pointer" : "default", userSelect: "none", background: inSel(it.id, i) ? ACCENT_SOFT : inSpan ? w.tint : t ? "#FFFBEF" : "#fff", position: "relative" }}>
                         {log ? (
                           <div style={{ height: "100%", display: "flex", flexDirection: "column", gap: 5, opacity: planned ? .72 : 1 }}>
                             {planned && <span style={{ fontSize: 10, fontWeight: 600, color: ACCENT }}>預排</span>}
@@ -350,16 +368,12 @@ export default function SequenceView({
                     );
                   })
                 ) : (
-                  /* 細條列：可點(記錄)/拖曳(設工期)；工期顯示為一條乾淨色塊、可清除 */
+                  /* 細條列：可點(記錄)/拖曳(設工期)；施工範圍＝整格上狀態色，再框相同範圍可取消 */
                   <div style={{ position: "relative", display: "flex", flex: "0 0 auto" }}>
-                    {winDays.map((i) => { const t = i === TODAY_IDX, log = logMap[`${it.id}|${dayKey(i)}`]; return (
-                      <div key={i} onMouseDown={(e) => canEdit && setSel({ itemId: it.id, a: i, b: i, x: e.clientX, y: e.clientY })} onMouseEnter={() => canEdit && setSel(s => s && s.itemId === it.id ? { ...s, b: i } : s)} style={{ width: DAY_W, flexShrink: 0, borderLeft: `1px solid ${C.line}`, cursor: canEdit ? "pointer" : "default", userSelect: "none", background: inSel(it.id, i) ? "#F3E4DE" : t ? "#FFFBEF" : "transparent", position: "relative", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                    {winDays.map((i) => { const t = i === TODAY_IDX, inSpan = inRange(it, i), log = logMap[`${it.id}|${dayKey(i)}`]; return (
+                      <div key={i} onMouseDown={(e) => canEdit && setSel({ itemId: it.id, a: i, b: i, x: e.clientX, y: e.clientY })} onMouseEnter={() => canEdit && setSel(s => s && s.itemId === it.id ? { ...s, b: i } : s)} style={{ width: DAY_W, flexShrink: 0, boxSizing: "border-box", borderLeft: `1px solid ${C.line}`, cursor: canEdit ? "pointer" : "default", userSelect: "none", background: inSel(it.id, i) ? ACCENT_SOFT : inSpan ? w.tint : t ? "#FFFBEF" : "transparent", position: "relative", display: "flex", alignItems: "center", justifyContent: "center" }}>
                         {canEdit && !log && <span className="thin-add" style={{ fontSize: 11, color: C.faint }}>＋ 記錄</span>}
                         {log && <span onClick={(e) => { e.stopPropagation(); setQuick({ itemId: log.itemId, date: log.date, x: e.clientX, y: e.clientY }); }} onMouseEnter={(e) => setTip({ l: log, x: e.clientX, y: e.clientY, item: it.name })} onMouseLeave={() => setTip(null)} style={{ position: "absolute", left: DAY_W / 2 - 4, top: ROW_THIN / 2 - 4, width: 8, height: 8, borderRadius: 4, background: dotFill(log), boxShadow: "0 0 0 1px rgba(0,0,0,.4)", cursor: "pointer", zIndex: 3 }} />}
-                      </div>); })}
-                    {segIdxOf(it).map(([a, b], si) => { const l = Math.max(0, dayX(a)), r = Math.min(dayTrackW, dayX(b + 1)); if (r <= 0 || l >= dayTrackW) return null; return (
-                      <div key={si} title="此工序的工期" style={{ position: "absolute", left: l + 3, top: ROW_THIN / 2 - 7, width: r - l - 6, height: 14, background: w.bar, borderRadius: 5, display: "flex", alignItems: "center", justifyContent: "flex-end", paddingRight: 4, pointerEvents: "none", zIndex: 1 }}>
-                        {canEdit && <span title="清除此工期" onClick={(e) => { e.stopPropagation(); onSetSchedule && onSetSchedule(it.id, []); }} style={{ pointerEvents: "auto", cursor: "pointer", color: "#fff", fontSize: 11, fontWeight: 700, lineHeight: 1, width: 15, height: 15, borderRadius: 8, background: "rgba(0,0,0,.28)", display: "flex", alignItems: "center", justifyContent: "center" }}>×</span>}
                       </div>); })}
                   </div>
                 )}
