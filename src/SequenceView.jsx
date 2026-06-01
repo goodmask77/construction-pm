@@ -194,7 +194,7 @@ export default function SequenceView({
       </div>
 
       {tip && (
-        <div style={{ position: "fixed", left: tip.x + 12, top: tip.y + 12, zIndex: 60, background: "#1f2430", color: "#fff", borderRadius: 8, padding: "8px 10px", maxWidth: 220, fontSize: 12, pointerEvents: "none", boxShadow: "0 6px 18px rgba(0,0,0,.3)" }}>
+        <div style={{ position: "fixed", left: tip.x + 12, top: tip.y + 12, zIndex: 1100, background: "#1f2430", color: "#fff", borderRadius: 8, padding: "8px 10px", maxWidth: 220, fontSize: 12, pointerEvents: "none", boxShadow: "0 6px 18px rgba(0,0,0,.3)" }}>
           <div style={{ color: ACCENT, fontWeight: 700, marginBottom: 2 }}>{tip.item} · {tip.l.date.slice(5).replace("-", "/")}</div>
           <div style={{ lineHeight: 1.4 }}>{tip.l.done || tip.l.next}</div>
           {tip.l.issue && <div style={{ color: "#ff9a8f", marginTop: 2 }}>⚠ {tip.l.issue}</div>}
@@ -203,7 +203,7 @@ export default function SequenceView({
       )}
 
       {weeklyOut !== null && (
-        <div onClick={() => setWeeklyOut(null)} style={{ position: "fixed", inset: 0, background: "rgba(20,24,33,.35)", zIndex: 55, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
+        <div onClick={() => setWeeklyOut(null)} style={{ position: "fixed", inset: 0, background: "rgba(20,24,33,.35)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
           <div onClick={e => e.stopPropagation()} style={{ background: "#fff", borderRadius: 12, padding: 22, maxWidth: 560, width: "100%", maxHeight: "80vh", overflowY: "auto" }}>
             <div style={{ display: "flex", alignItems: "center", marginBottom: 10 }}><div style={{ fontSize: 16, fontWeight: 800 }}>✨ 本週施工週報</div><div style={{ flex: 1 }} /><button onClick={() => setWeeklyOut(null)} style={{ border: "none", background: "none", fontSize: 22, color: C.faint, cursor: "pointer" }}>×</button></div>
             <div style={{ whiteSpace: "pre-wrap", fontSize: 14, lineHeight: 1.7, color: C.text }}>{weeklyOut}</div>
@@ -226,7 +226,7 @@ function ScheduleEditor({ item, onClose, onSave }) {
   const del = (i) => setSegs(s => s.filter((_, j) => j !== i));
   const valid = segs.filter(s => s.start && s.end && s.end >= s.start);
   return (
-    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(20,24,33,.35)", zIndex: 58, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(20,24,33,.35)", zIndex: 1001, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
       <div onClick={e => e.stopPropagation()} style={{ background: "#fff", borderRadius: 12, padding: 22, maxWidth: 440, width: "100%" }}>
         <div style={{ display: "flex", alignItems: "center", marginBottom: 4 }}><div style={{ fontSize: 16, fontWeight: 800 }}>📅 {item.name} 排程</div><div style={{ flex: 1 }} /><button onClick={onClose} style={{ border: "none", background: "none", fontSize: 22, color: C.faint, cursor: "pointer" }}>×</button></div>
         <div style={{ fontSize: 12, color: C.sub, marginBottom: 14 }}>用實際日期設定工期；工不連續可加多個區段。</div>
@@ -265,7 +265,7 @@ function Drawer({ data, item, TODAY, onSetStatus, onSave, onDelete, onClose, onC
   const planned = f.date > TODAY;
   const ta = { width: "100%", boxSizing: "border-box", border: `1px solid ${C.line}`, borderRadius: 9, fontSize: 14, padding: 9, resize: "vertical", outline: "none", fontFamily: "inherit" };
   return (
-    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(20,24,33,.35)", zIndex: 50, display: "flex", justifyContent: "flex-end" }}>
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(20,24,33,.35)", zIndex: 1000, display: "flex", justifyContent: "flex-end" }}>
       <div onClick={(e) => e.stopPropagation()} onPaste={(e) => e.clipboardData?.files?.length && addPhotos(e.clipboardData.files)} style={{ width: "100%", maxWidth: 420, height: "100%", background: "#fff", boxShadow: "-8px 0 30px rgba(0,0,0,.18)", padding: 22, overflowY: "auto" }}>
         <div style={{ display: "flex", alignItems: "flex-start", marginBottom: 16 }}>
           <div><div style={{ fontSize: 18, fontWeight: 800 }}>{item?.name}</div><div style={{ fontSize: 13, color: C.sub }}>{f.date.replaceAll("-", "/")}{planned ? "（預排）" : ""}{busy ? " · 處理中…" : ""}</div></div>
