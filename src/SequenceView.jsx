@@ -312,7 +312,7 @@ export default function SequenceView({
                   winDays.map((i) => {
                     const inSpan = inRange(it, i), key = dayKey(i), log = logMap[`${it.id}|${key}`], planned = i > TODAY_IDX, t = i === TODAY_IDX;
                     return (
-                      <div key={i} onClick={() => inSpan && canEdit && openCell(it.id, key)} style={{ width: DAY_W, flexShrink: 0, minHeight: ROW_FAT, borderLeft: `1px solid ${C.line}`, padding: 7, cursor: inSpan && canEdit ? "pointer" : "default", background: !inSpan ? C.soft : t ? "#FFFBEF" : "#fff", borderTop: inSpan ? `3px solid ${w.bar}` : "3px solid transparent", position: "relative" }}>
+                      <div key={i} onClick={() => canEdit && openCell(it.id, key)} style={{ width: DAY_W, flexShrink: 0, minHeight: ROW_FAT, borderLeft: `1px solid ${C.line}`, padding: 7, cursor: canEdit ? "pointer" : "default", background: t ? "#FFFBEF" : "#fff", borderTop: inSpan ? `3px solid ${w.bar}` : "3px solid transparent", position: "relative" }}>
                         {log ? (
                           <div style={{ height: "100%", display: "flex", flexDirection: "column", gap: 5, opacity: planned ? .72 : 1 }}>
                             {planned && <span style={{ fontSize: 10, fontWeight: 600, color: ACCENT }}>預排</span>}
@@ -326,14 +326,15 @@ export default function SequenceView({
                             {log.issue && <div style={{ fontSize: 11, color: RED, display: "-webkit-box", WebkitLineClamp: 1, WebkitBoxOrient: "vertical", overflow: "hidden" }}>⚠ {log.issue}</div>}
                             {(log.photos?.length > 0) && <div style={{ display: "flex", gap: 4, marginTop: "auto" }}>{log.photos.slice(0, 2).map((p, k) => <img key={k} src={p} alt="" onClick={(e) => { e.stopPropagation(); setDrawer({ ...log }); }} style={{ width: 38, height: 38, borderRadius: 5, objectFit: "cover", cursor: "pointer" }} />)}{log.photos.length > 2 && <span style={{ fontSize: 11, color: C.faint, alignSelf: "flex-end" }}>+{log.photos.length - 2}</span>}</div>}
                           </div>
-                        ) : inSpan ? (
-                          <div className="ce" style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: planned ? ACCENT : C.faint, fontSize: 12, border: planned ? `1px dashed ${ACCENT}66` : "none", borderRadius: 6 }}>{canEdit ? (planned ? "點此預排" : "＋ 記錄") : ""}</div>
+                        ) : canEdit ? (
+                          <div className="ce" style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: planned ? ACCENT : C.faint, fontSize: 12, border: planned ? `1px dashed ${ACCENT}66` : "none", borderRadius: 6 }}>{planned ? "點此預排" : "＋ 記錄"}</div>
                         ) : null}
                       </div>
                     );
                   })
                 ) : (
-                  <div style={{ position: "relative", width: dayTrackW }}>
+                  <div title={canEdit ? "點任一天新增紀錄" : ""} onClick={(e) => { if (!canEdit) return; const r = e.currentTarget.getBoundingClientRect(); const di = winStart + Math.floor((e.clientX - r.left) / DAY_W); if (di >= 0 && di < TOTAL_DAYS) openCell(it.id, dayKey(di)); }} style={{ position: "relative", width: dayTrackW, cursor: canEdit ? "copy" : "default", alignSelf: "stretch" }}>
+                    {winDays.map((i) => i === TODAY_IDX && <div key="t" style={{ position: "absolute", left: dayX(i), top: 0, bottom: 0, width: DAY_W, background: "#FFFBEF" }} />)}
                     {segs.map(([a, b], si) => { const l = Math.max(0, dayX(a)), r = Math.min(dayTrackW, dayX(b + 1)); if (r <= 0 || l >= dayTrackW) return null; return <div key={si} style={{ position: "absolute", left: l, top: ROW_THIN / 2 - 4, width: r - l, height: 8, background: w.bar, borderRadius: 4, opacity: .55 }} />; })}
                     {itemLogs.map((l) => { const dx = dayX(idxOf(l.date)) + DAY_W / 2; if (dx < 0 || dx > dayTrackW) return null; return <span key={l.id} onMouseEnter={(e) => setTip({ l, x: e.clientX, y: e.clientY, item: it.name })} onMouseLeave={() => setTip(null)} onClick={() => setDrawer({ ...l })} style={{ position: "absolute", left: dx - 4, top: ROW_THIN / 2 - 4, width: 8, height: 8, borderRadius: 4, background: dotFill(l), boxShadow: "0 0 0 1px rgba(0,0,0,.4)", cursor: "pointer" }} />; })}
                   </div>
