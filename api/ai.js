@@ -36,7 +36,7 @@ export default async function handler(req, res) {
       })
       const data = await r.json()
       if (r.ok) {
-        return res.status(200).json({ content: data.content, model, stop_reason: data.stop_reason })
+        return res.status(200).json({ content: data.content, model, stop_reason: data.stop_reason, usage: data.usage })
       }
       lastErr = data?.error?.message || lastErr
       // 只有「模型相關」錯誤才換下一個；其他錯誤（金鑰/額度）直接回報

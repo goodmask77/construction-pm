@@ -358,6 +358,34 @@ async function saveAILog(log) {
 }
 
 // ── AI CALL ───────────────────────────────────────────────────────────────────
+// ── AI 用量／估算花費 ───────────────────────────────────────────────────────
+// 模型單價（USD / 每百萬 tokens，[輸入, 輸出]）；找不到對應就用 default。可日後微調。
+const MODEL_PRICES = [
+  [/opus/i,            [15, 75]],
+  [/haiku/i,           [1, 5]],
+  [/sonnet/i,          [3, 15]],
+  [/claude-3-5-sonnet/i, [3, 15]],
+];
+const PRICE_DEFAULT = [3, 15];
+const USD_TWD = 32.5; // 估算匯率（USD→TWD，可日後調整）
+const priceFor = (model) => (MODEL_PRICES.find(([re]) => re.test(model || ""))?.[1]) || PRICE_DEFAULT;
+async function recordAIUsage(model, usage, kind = "chat") {
+  if (!usage) return;
+  const inTok = Number(usage.input_tokens) || 0;
+  const outTok = Number(usage.output_tokens) || 0;
+  if (inTok + outTok === 0) return;
+  const [pin, pout] = priceFor(model);
+  const usd = inTok / 1e6 * pin + outTok / 1e6 * pout;
+  try {
+    const r = await window.storage.get("pm_ai_usage", true);
+    let log = [];
+    if (r && r.value) { try { log = JSON.parse(r.value); } catch (_) {} }
+    log.push({ ts: new Date().toISOString(), model: model || "?", kind, inTok, outTok, usd });
+    if (log.length > 2000) log = log.slice(-2000);
+    await window.storage.set("pm_ai_usage", JSON.stringify(log), true);
+  } catch (_) {}
+}
+
 async function callAI(messages, systemPrompt) {
   try {
     const res = await fetch("/api/ai", {
@@ -367,6 +395,7 @@ async function callAI(messages, systemPrompt) {
     });
     const data = await res.json();
     if (!res.ok) return data.error || "（AI 顧問尚未設定，請於 Vercel 加入 ANTHROPIC_API_KEY）";
+    if (data.usage) recordAIUsage(data.model, data.usage); // 記錄用量（不阻塞回覆）
     return data.content?.map(b => b.text || "").join("") || "（AI無回應）";
   } catch (e) {
     return "（AI 連線失敗，請稍後再試）";
@@ -2951,6 +2980,78 @@ function LineNotifySettings({ settings, upd, cats, journal, events, plans }) {
 }
 
 // ── ADVISOR SETTINGS VIEW ────────────────────────────────────────────────────
+// ── AI 用量 / 估算花費面板 ───────────────────────────────────────────────────
+function AIUsagePanel() {
+  const [log, setLog] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const load = async () => {
+    setLoading(true);
+    try { const r = await window.storage.get("pm_ai_usage", true); setLog(r && r.value ? JSON.parse(r.value) : []); }
+    catch (_) { setLog([]); }
+    setLoading(false);
+  };
+  useEffect(() => { load(); }, []);
+
+  const totUsd = log.reduce((s, e) => s + (Number(e.usd) || 0), 0);
+  const totIn = log.reduce((s, e) => s + (Number(e.inTok) || 0), 0);
+  const totOut = log.reduce((s, e) => s + (Number(e.outTok) || 0), 0);
+  const calls = log.length;
+  const twd = totUsd * USD_TWD;
+  // 依模型細分
+  const byModel = {};
+  for (const e of log) {
+    const k = (e.model || "?").replace(/-\d{6,}$/, "");
+    if (!byModel[k]) byModel[k] = { calls: 0, inTok: 0, outTok: 0, usd: 0 };
+    byModel[k].calls++; byModel[k].inTok += Number(e.inTok) || 0; byModel[k].outTok += Number(e.outTok) || 0; byModel[k].usd += Number(e.usd) || 0;
+  }
+  const models = Object.entries(byModel).sort((a, b) => b[1].usd - a[1].usd);
+
+  const card = (label, val, sub) => (
+    <div style={{ flex: 1, minWidth: 130, background: "#FBF7EE", border: "1px solid #E3DAC6", borderRadius: 10, padding: "12px 14px" }}>
+      <div style={{ fontSize: 22, fontWeight: 800, color: "#211C15", letterSpacing: -0.5, fontVariantNumeric: "tabular-nums" }}>{val}</div>
+      <div style={{ fontSize: 11, color: "#6F6656", marginTop: 2 }}>{label}{sub && <span style={{ color: "#A99F88" }}> {sub}</span>}</div>
+    </div>
+  );
+
+  return (
+    <div style={{ background: "#ffffff", border: "1px solid #D8CFBB", borderRadius: 12, padding: 20, marginBottom: 14 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
+        <span style={{ background: ACCENT, color: "#fff", fontSize: 11, fontWeight: 700, borderRadius: 5, padding: "2px 7px" }}>AI</span>
+        <div style={{ fontSize: 15, fontWeight: 700, color: "#211C15" }}>AI 用量 / 估算花費</div>
+        <div style={{ flex: 1 }} />
+        <button onClick={load} style={{ fontSize: 12, border: "1px solid #D8CFBB", background: "#ECE6D7", color: "#6F6656", borderRadius: 7, padding: "5px 12px", cursor: "pointer" }}>↻ 重新整理</button>
+      </div>
+      <div style={{ background: "#F4EFE3", borderRadius: 8, padding: "8px 12px", fontSize: 12, color: "#6F6656", marginBottom: 14 }}>
+        本 App「AI 顧問／PDF 匯入」呼叫 Anthropic <b>API</b> 的累計用量與<b style={{ color: ACCENT }}>估算</b>花費（依模型 token 單價）。Claude 訂閱／Claude Code 屬另一套帳，這裡看不到。
+      </div>
+      <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 14 }}>
+        {card("估算總花費（USD）", "$" + totUsd.toFixed(3))}
+        {card("估算總花費（TWD）", "NT$" + Math.round(twd).toLocaleString(), `@${USD_TWD}`)}
+        {card("AI 呼叫次數", calls.toLocaleString())}
+        {card("總 tokens（in+out）", (totIn + totOut).toLocaleString())}
+      </div>
+      {models.length > 0 && (
+        <div style={{ border: "1px solid #E3DAC6", borderRadius: 8, overflow: "hidden" }}>
+          <div style={{ display: "flex", background: "#F4EFE3", fontSize: 11, color: "#6F6656", fontWeight: 600, padding: "6px 12px" }}>
+            <div style={{ flex: 2 }}>模型</div><div style={{ flex: 1, textAlign: "right" }}>次數</div><div style={{ flex: 1.4, textAlign: "right" }}>tokens</div><div style={{ flex: 1.2, textAlign: "right" }}>USD</div><div style={{ flex: 1.2, textAlign: "right" }}>TWD</div>
+          </div>
+          {models.map(([m, v]) => (
+            <div key={m} style={{ display: "flex", fontSize: 12, color: "#211C15", padding: "6px 12px", borderTop: "1px solid #EFE7D6", fontVariantNumeric: "tabular-nums" }}>
+              <div style={{ flex: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{m}</div>
+              <div style={{ flex: 1, textAlign: "right" }}>{v.calls}</div>
+              <div style={{ flex: 1.4, textAlign: "right" }}>{(v.inTok + v.outTok).toLocaleString()}</div>
+              <div style={{ flex: 1.2, textAlign: "right", fontFamily: "monospace" }}>${v.usd.toFixed(3)}</div>
+              <div style={{ flex: 1.2, textAlign: "right", fontFamily: "monospace", color: ACCENT }}>{Math.round(v.usd * USD_TWD).toLocaleString()}</div>
+            </div>
+          ))}
+        </div>
+      )}
+      {!loading && calls === 0 && <div style={{ fontSize: 12, color: "#A99F88", textAlign: "center", padding: "12px 0" }}>尚無 AI 呼叫紀錄（用過 AI 顧問或匯入後會自動累計）</div>}
+      <div style={{ fontSize: 11, color: "#A99F88", marginTop: 10 }}>⚠ 為前端估算值，精確帳務請以 platform.claude.com → Usage 為準。</div>
+    </div>
+  );
+}
+
 function AdvisorSettingsView({ settings, setSettings, cats, aiLog, setAiLog, activityLog, logActivity, userName, journal, events, plans }) {
   const [activeTab, setActiveTab] = useState("command"); // command | upload | settings | log
   const [loading, setLoading] = useState(false);
@@ -3195,6 +3296,7 @@ function AdvisorSettingsView({ settings, setSettings, cats, aiLog, setAiLog, act
       {/* ── SETTINGS TAB ── */}
       {activeTab === "settings" && (
         <div>
+          <AIUsagePanel />
           <div style={{ background:"#ffffff", border:"1px solid #D8CFBB", borderRadius:12, padding:"20px", marginBottom:14 }}>
             <div style={{ fontSize:14, fontWeight: 600, color:"#211C15", marginBottom:14 }}>專案基本資訊</div>
             <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12 }}>
