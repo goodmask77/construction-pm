@@ -904,12 +904,43 @@ function _fileToB64(f) {
 function CompareView({ canEdit, requireLogin }) {
   const [ests, setEsts] = useState(null);
   const [busy, setBusy] = useState("");
+  const [analysis, setAnalysis] = useState(null);
+  const [analyzing, setAnalyzing] = useState(false);
   const fileRef = useRef(null);
 
   useEffect(() => {
-    (async () => { try { const r = await window.storage.get("pm_estimates", true); setEsts(r && r.value ? JSON.parse(r.value) : []); } catch { setEsts([]); } })();
+    (async () => {
+      try { const r = await window.storage.get("pm_estimates", true); setEsts(r && r.value ? JSON.parse(r.value) : []); } catch { setEsts([]); }
+      try { const a = await window.storage.get("pm_estimates_an", true); const v = a && a.value ? JSON.parse(a.value) : null; setAnalysis(v && v.rows ? v : null); } catch (_) {}
+    })();
   }, []);
-  const save = async (list) => { setEsts(list); try { await window.storage.set("pm_estimates", JSON.stringify(list), true); } catch (_) {} };
+  // 估價單一變動就清掉舊分析（避免對不上）
+  const save = async (list) => {
+    setEsts(list); setAnalysis(null);
+    try { await window.storage.set("pm_estimates", JSON.stringify(list), true); await window.storage.set("pm_estimates_an", "null", true); } catch (_) {}
+  };
+
+  const runAnalysis = async () => {
+    if (!canEdit) { requireLogin && requireLogin(); return; }
+    setAnalyzing(true);
+    try {
+      const forAI = ests.map(e => ({ vendor: e.vendor, total: e.total, items: (e.items || []).map(i => ({ name: i.name, qty: i.qty, unit: i.unit, unitPrice: i.unitPrice })) }));
+      const prompt = `你是專業的工程採購／標單比價分析師。以下是 ${ests.length} 份估價單的解析結果：\n${JSON.stringify(forAI)}\n\n請做專業比價分析，只回 JSON、不要其他文字：\n{\n "rows":[{"item":"標準化品項名稱","prices":{"<廠商名>":單價數字或null},"note":"差異備註(可空)"}],\n "missing":[{"vendor":"廠商名","items":["這家沒列、但別家有的品項"]}],\n "gapReason":"一句話：總價差的主因（例：晟弘多含結構支架與設備、發霸未含安裝）",\n "summary":"2-4 句：各家範圍／品質／優劣差異與風險",\n "recommend":"建議選哪家＋理由＋簽約前要向廠商確認／追問的重點"\n}\n規則：rows 要把語意相同的品項對齊在同一列（例「戶外P2.5 LED」與「LED螢幕」視為同一項），各家對應單價填入、沒有就 null；prices 的 key 用上面給的廠商名稱原文；金額只放數字。繁體中文，務實精準。`;
+      const reply = await callAI([{ role: "user", content: prompt }], "你是專業工程標單比價分析師，只輸出 JSON。");
+      const clean = reply.replace(/```json|```/gi, "").trim();
+      let a = null;
+      try { a = JSON.parse(clean.slice(clean.indexOf("{"), clean.lastIndexOf("}") + 1)); } catch (_) {}
+      if (a && a.rows) { setAnalysis(a); try { await window.storage.set("pm_estimates_an", JSON.stringify(a), true); } catch (_) {} }
+      else setAnalysis({ rows: [], summary: "（分析失敗，請重試）", recommend: "" });
+    } catch (e) { setAnalysis({ rows: [], summary: "（分析失敗：" + (e?.message || e) + "）", recommend: "" }); }
+    setAnalyzing(false);
+  };
+  const getP = (row, vendor) => {
+    if (!row.prices) return null;
+    if (row.prices[vendor] != null) return row.prices[vendor];
+    const k = Object.keys(row.prices).find(k => _normName(k) === _normName(vendor));
+    return k ? row.prices[k] : null;
+  };
 
   const onPick = async (files) => {
     if (!canEdit) { requireLogin && requireLogin(); return; }
@@ -943,7 +974,6 @@ function CompareView({ canEdit, requireLogin }) {
   const sorted = [...ests].sort((a, b) => (a.total || 0) - (b.total || 0));
   const lowest = sorted.length ? (sorted.find(e => e.total > 0)?.total || 0) : 0;
   const highest = sorted.length ? Math.max(...ests.map(e => e.total || 0)) : 0;
-  const rows = _buildCompareRows(ests);
 
   return (
     <div>
@@ -989,35 +1019,71 @@ function CompareView({ canEdit, requireLogin }) {
             )}
           </div>
 
-          {/* 逐項單價對比 */}
-          {rows.length > 0 && (
-            <div style={{ background: "#fff", border: `1px solid ${BORDER}`, borderRadius: 12, padding: 16, overflowX: "auto" }}>
-              <div style={{ fontSize: 13.5, fontWeight: 700, color: TEXT, marginBottom: 10 }}>📦 逐項單價對比</div>
-              <table style={{ borderCollapse: "collapse", width: "100%", fontSize: 12.5, minWidth: 360 }}>
-                <thead>
-                  <tr>
-                    <th style={{ textAlign: "left", padding: "6px 8px", color: SUB, borderBottom: `1px solid ${BORDER}`, whiteSpace: "nowrap" }}>品項</th>
-                    {ests.map(e => <th key={e.id} style={{ textAlign: "right", padding: "6px 8px", color: SUB, borderBottom: `1px solid ${BORDER}`, whiteSpace: "nowrap", maxWidth: 90, overflow: "hidden", textOverflow: "ellipsis" }}>{e.vendor}</th>)}
-                  </tr>
-                </thead>
-                <tbody>
-                  {rows.map((r, ri) => {
-                    const vals = ests.map(e => r.prices[e.id]).filter(v => v > 0);
-                    const min = vals.length ? Math.min(...vals) : 0;
-                    return (
-                      <tr key={ri}>
-                        <td style={{ padding: "6px 8px", color: TEXT, borderBottom: `1px solid #F4EFE3` }}>{r.label}</td>
-                        {ests.map(e => {
-                          const v = r.prices[e.id];
-                          const isMin = v > 0 && v === min;
-                          return <td key={e.id} style={{ textAlign: "right", padding: "6px 8px", fontFamily: "monospace", borderBottom: `1px solid #F4EFE3`, color: isMin ? "#3C8C3C" : TEXT, fontWeight: isMin ? 700 : 400, background: isMin ? "#EAF6EA" : "transparent" }}>{v != null ? fmt(v) : "—"}</td>;
-                        })}
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-              <div style={{ fontSize: 11, color: SUB, marginTop: 8 }}>※ 僅列出各家「名稱相同」的品項；命名不同會抓不全，金額以原估價單為準。</div>
+          {/* AI 專業比價分析 */}
+          {ests.length >= 2 && (
+            <div style={{ marginBottom: 14 }}>
+              {!analysis ? (
+                <button onClick={runAnalysis} disabled={analyzing} style={{ width: "100%", background: PRIMARY, border: "none", color: "#fff", borderRadius: 10, padding: "12px 0", fontSize: 14, fontWeight: 700, cursor: analyzing ? "wait" : "pointer" }}>
+                  {analyzing ? "🔍 AI 分析中…（對齊品項、解釋價差、給建議）" : "🔍 產生 AI 比價分析"}
+                </button>
+              ) : (
+                <>
+                  {analysis.gapReason && (
+                    <div style={{ background: "#FFF7ED", border: "1px solid #FDE6C8", borderRadius: 10, padding: "12px 14px", marginBottom: 10, fontSize: 13.5, color: "#9A5B12", lineHeight: 1.6 }}>
+                      <b>💡 價差主因：</b>{analysis.gapReason}
+                    </div>
+                  )}
+                  {analysis.summary && (
+                    <div style={{ background: "#fff", border: `1px solid ${BORDER}`, borderRadius: 10, padding: "12px 14px", marginBottom: 10, fontSize: 13.5, color: TEXT, lineHeight: 1.7 }}>
+                      <b style={{ color: ACCENT }}>📋 分析：</b>{analysis.summary}
+                    </div>
+                  )}
+                  {analysis.recommend && (
+                    <div style={{ background: "#EAF6EA", border: "1px solid #BFE3BF", borderRadius: 10, padding: "12px 14px", marginBottom: 10, fontSize: 13.5, color: "#235C23", lineHeight: 1.7 }}>
+                      <b>✅ 建議：</b>{analysis.recommend}
+                    </div>
+                  )}
+                  {Array.isArray(analysis.missing) && analysis.missing.some(m => (m.items || []).length) && (
+                    <div style={{ background: "#FEF2F2", border: "1px solid #FECACA", borderRadius: 10, padding: "12px 14px", marginBottom: 10, fontSize: 12.5, color: "#B43838", lineHeight: 1.7 }}>
+                      <b>⚠️ 各家未列項目（可能漏報或不含）：</b>
+                      {analysis.missing.filter(m => (m.items || []).length).map((m, i) => <div key={i}>・<b>{m.vendor}</b>：{m.items.join("、")}</div>)}
+                    </div>
+                  )}
+                  {Array.isArray(analysis.rows) && analysis.rows.length > 0 && (
+                    <div style={{ background: "#fff", border: `1px solid ${BORDER}`, borderRadius: 12, padding: 16, overflowX: "auto" }}>
+                      <div style={{ fontSize: 13.5, fontWeight: 700, color: TEXT, marginBottom: 10 }}>📦 逐項單價對比（AI 對齊）</div>
+                      <table style={{ borderCollapse: "collapse", width: "100%", fontSize: 12.5, minWidth: 360 }}>
+                        <thead>
+                          <tr>
+                            <th style={{ textAlign: "left", padding: "6px 8px", color: SUB, borderBottom: `1px solid ${BORDER}`, whiteSpace: "nowrap" }}>品項</th>
+                            {ests.map(e => <th key={e.id} style={{ textAlign: "right", padding: "6px 8px", color: SUB, borderBottom: `1px solid ${BORDER}`, whiteSpace: "nowrap", maxWidth: 100, overflow: "hidden", textOverflow: "ellipsis" }}>{e.vendor}</th>)}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {analysis.rows.map((r, ri) => {
+                            const vals = ests.map(e => getP(r, e.vendor)).filter(v => v > 0);
+                            const min = vals.length ? Math.min(...vals) : 0;
+                            return (
+                              <tr key={ri}>
+                                <td style={{ padding: "6px 8px", color: TEXT, borderBottom: `1px solid #F4EFE3` }}>{r.item}{r.note ? <span style={{ color: SUB, fontSize: 11 }}> · {r.note}</span> : ""}</td>
+                                {ests.map(e => {
+                                  const v = getP(r, e.vendor);
+                                  const isMin = v > 0 && v === min && vals.length > 1;
+                                  return <td key={e.id} style={{ textAlign: "right", padding: "6px 8px", fontFamily: "monospace", borderBottom: `1px solid #F4EFE3`, color: isMin ? "#3C8C3C" : (v == null ? "#C0392B" : TEXT), fontWeight: isMin ? 700 : 400, background: isMin ? "#EAF6EA" : "transparent" }}>{v != null ? fmt(v) : "未列"}</td>;
+                                })}
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                      <div style={{ fontSize: 11, color: SUB, marginTop: 8, display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
+                        <span>※ 由 AI 對齊各家品項；金額以原估價單為準，重要數字請再核對。</span>
+                        <button onClick={runAnalysis} disabled={analyzing} style={{ border: "none", background: "none", color: ACCENT, cursor: "pointer", fontSize: 11.5, fontWeight: 600 }}>{analyzing ? "分析中…" : "↻ 重新分析"}</button>
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
             </div>
           )}
         </>
