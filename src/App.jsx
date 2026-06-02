@@ -216,6 +216,25 @@ const catItemEstAfter = (cat) => {
   if (last) map[last.id] += (target - acc);
   return map;
 };
+// ── 大項（廠商）層級付款紀錄：已付＝該大項所有付款紀錄金額加總 ──────────────────
+const PAY_CATEGORIES = ["訂金", "期中款", "尾款", "其他"];
+const catPaid = (cat) => (cat?.payments || []).reduce((s, p) => s + (Number(p.amount) || 0), 0);
+const catUnpaidAfter = (cat) => catEstAfter(cat) - catPaid(cat);
+// 一次性遷移：沒有 payments 的大項，把舊的逐項已付總和轉成一筆「既有付款」紀錄（已付總額不變）
+function migratePayments(cats) {
+  if (!Array.isArray(cats)) return cats;
+  let changed = false;
+  const out = cats.map(c => {
+    if (Array.isArray(c.payments)) return c;
+    changed = true;
+    const sumPaid = (c.items || []).reduce((s, it) => s + (Number(it.paid ?? it.cust?.paid) || 0), 0);
+    const payments = sumPaid > 0
+      ? [{ id: "pay-legacy-" + c.id, date: "", amount: sumPaid, category: "其他", note: "既有付款（系統轉入）", receipts: [] }]
+      : [];
+    return { ...c, payments };
+  });
+  return changed ? out : cats;
+}
 
 // ── RWD：偵測手機寬度（< 768px）──────────────────────────────────────────────
 const MOBILE_BP = 768;
@@ -366,7 +385,7 @@ const buildAdvisorSystem = (settings, cats, journal, events, plans) => {
   events = events || [];
   plans = plans || [];
   const totalEst = cats.reduce((s,c) => s+catEstAfter(c),0); // 議價後含稅總額
-  const totalAct = cats.reduce((s,c) => s+c.items.reduce((ss,it)=>ss+paidOf(it),0),0); // 已付總額
+  const totalAct = cats.reduce((s,c) => s+catPaid(c),0); // 已付總額（大項付款紀錄）
   const doneItems = cats.flatMap(c=>c.items).filter(i=>i.done||i.status==="done").length;
   const totalItems = cats.reduce((s,c)=>s+c.items.length,0);
   const issueItems = cats.flatMap(c=>c.items).filter(i=>i.status==="issue");
@@ -382,7 +401,7 @@ const buildAdvisorSystem = (settings, cats, journal, events, plans) => {
   const catLines = cats.map(c => {
     const est = catEstAfter(c); // 議價後
     const raw = catRawEst(c);
-    const act = c.items.reduce((s,it)=>s+paidOf(it),0);
+    const act = catPaid(c);
     const done = c.items.filter(i=>i.done||i.status==="done").length;
     const dInfo = (raw > est) ? "（原報價" + Math.round(raw/10000) + "萬，議價省" + Math.round((raw-est)/10000) + "萬）" : "";
     return "  • " + c.name + "（" + c.status + "）：預估" + Math.round(est/10000) + "萬" + dInfo + "，已付" + (act>0?Math.round(act/10000)+"萬":"未付") + "，" + done + "/" + c.items.length + "細項完成";
@@ -483,7 +502,10 @@ export default function App() {
   useEffect(() => {
     (async () => {
       const d = await loadData();
-      setCats(d || INITIAL_CATEGORIES);
+      const migrated = migratePayments(d || INITIAL_CATEGORIES);
+      setCats(migrated);
+      if (migrated !== (d || INITIAL_CATEGORIES)) saveData(migrated); // 遷移後持久化
+
       const gc = await loadGlobalChat();
       setGlobalChat(gc);
       const sv = await loadSettings();
@@ -636,7 +658,7 @@ export default function App() {
   })) : [];
 
   const totalEstimated = cats ? cats.reduce((s, c) => s + catEstAfter(c), 0) : 0; // 議價後含稅總額
-  const totalPaid = cats ? cats.reduce((s, c) => s + c.items.reduce((ss, it) => ss + paidOf(it), 0), 0) : 0;
+  const totalPaid = cats ? cats.reduce((s, c) => s + catPaid(c), 0) : 0; // 已付總額（大項付款紀錄）
   const doneCount = cats ? cats.filter(c => c.status === "done").length : 0;
 
 
@@ -913,9 +935,7 @@ const COLS = [
   { id:"taxType",  label:"稅別",   w:84 },
   { id:"taxAmount",label:"稅額",   w:90 },
   { id:"estTotal", label:"預估金額", w:120 },
-  // 付款區
-  { id:"paid",     label:"已付金額", w:110 },
-  { id:"unpaid",   label:"未付金額", w:110 },
+  // 付款區（已付/未付改由「大項付款紀錄」管理，移除逐項已付欄避免重複計算）
   { id:"payAccount",  label:"付款帳號", w:130 },
   { id:"payDate",  label:"付款日",  w:120 },
   { id:"receipts", label:"憑證",   w:104 },
@@ -965,6 +985,7 @@ function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols,
   const toggleAll = () => setCollapsed(allCollapsed ? new Set() : new Set(cats.map(c => c.id)));
   const [lightbox, setLightbox] = useState(null); // 憑證放大檢視
   const [rcpBusy, setRcpBusy] = useState(null);    // 正在上傳憑證的 itemId
+  const [payCatId, setPayCatId] = useState(null);  // 開啟付款紀錄面板的大項 id
 
   // Flatten all items into rows with cat info
   const allRows = [];
@@ -1201,7 +1222,8 @@ function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols,
             const disc = cat ? catDiscount(cat) : { hasDiscount: false, factor: 1, pct: 0, sub: 0 };
             const groupEst = cat ? catEstAfter(cat) : groupRaw; // 議價後含稅
             const groupSaved = groupRaw - groupEst;
-            const groupPaid = group.rows.reduce((s,r) => s + paidOf(r.item), 0);
+            const groupPaid = cat ? catPaid(cat) : 0; // 已付＝大項付款紀錄加總
+            const payCount = cat ? (cat.payments?.length || 0) : 0;
             const groupUnpaid = groupEst - groupPaid;
             const itemCount = cat ? cat.items.length : group.rows.length;
             const doneCount = cat ? cat.items.filter(i => i.status === "done").length : 0;
@@ -1248,14 +1270,11 @@ function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols,
                   </>) : (
                     <div style={{ fontSize: 12, color: SUB }}>預估 <span style={{ color: TEXT, fontVariantNumeric: "tabular-nums", fontWeight: 500 }}>{fmt(groupEst)}</span></div>
                   )}
-                  <div style={{ fontSize: 12, color: SUB }}>已付 <span style={{ color: "#3C8C3C", fontVariantNumeric: "tabular-nums", fontWeight: 500 }}>{fmt(groupPaid)}</span></div>
+                  <button onClick={() => cat && setPayCatId(catId)} title="檢視／新增付款紀錄" style={{ fontSize: 12, color: SUB, background: "none", border: "none", cursor: "pointer", padding: 0 }}>已付 <span style={{ color: "#3C8C3C", fontVariantNumeric: "tabular-nums", fontWeight: 500 }}>{fmt(groupPaid)}</span>{payCount > 0 && <span style={{ fontSize: 10, color: "#3C8C3C", marginLeft: 2 }}>·{payCount}筆</span>}</button>
                   <div style={{ fontSize: 12, color: SUB }}>未付 <span style={{ color: groupUnpaid < 0 ? "#DC2626" : "#C2872E", fontVariantNumeric: "tabular-nums", fontWeight: 500 }}>{groupUnpaid < 0 ? `溢付 ${fmt(-groupUnpaid)}` : fmt(groupUnpaid)}</span></div>
-                  {itemCount > 0 && (() => {
-                    const allFull = group.rows.every(r => { const e = estAfterOf(r.item); return e <= 0 || paidOf(r.item) >= e; });
-                    return (
-                      <button onClick={() => setCats(prev => prev.map(c => c.id === catId ? { ...c, items: c.items.map(it => ({ ...it, paid: allFull ? 0 : estAfterOf(it) })) } : c))} title={allFull ? "清除本大項所有已付金額" : "本大項全部一鍵付清（已付＝議價後金額）"} style={{ flexShrink: 0, border: `1px solid ${allFull ? "#C2872E" : "#3C8C3C"}`, background: allFull ? "#FFFBEB" : "#F0FDF4", color: allFull ? "#C2872E" : "#3C8C3C", borderRadius: 6, padding: "2px 9px", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>{allFull ? "清除付款" : "✓ 全部付清"}</button>
-                    );
-                  })()}
+                  {cat && (
+                    <button onClick={() => setPayCatId(catId)} title="新增付款紀錄" style={{ flexShrink: 0, border: `1px solid #3C8C3C`, background: "#F0FDF4", color: "#3C8C3C", borderRadius: 6, padding: "2px 9px", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>＋ 新增付款</button>
+                  )}
                   <button onClick={() => confirm(`確定刪除工程大項「${group.name}」？\n（含其下 ${itemCount} 筆細項，無法復原）`).then(ok => { if (ok) setCats(prev => prev.filter(c => c.id !== catId)); })} title="刪除此工程大項" style={{ flexShrink: 0, marginLeft: 4, width: 22, height: 22, borderRadius: "50%", background: "transparent", border: "none", color: "#C8BCA0", cursor: "pointer", fontSize: 15, lineHeight: 1, display: "flex", alignItems: "center", justifyContent: "center", padding: 0 }} onMouseEnter={e => { e.currentTarget.style.background = "#F3E4DE"; e.currentTarget.style.color = "#DC2626"; }} onMouseLeave={e => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = "#C8BCA0"; }}>×</button>
                 </div>
                 {/* item rows（收合時隱藏） */}
@@ -1428,10 +1447,138 @@ function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols,
           <img src={lightbox.url} alt={lightbox.name} style={{ maxWidth: "95%", maxHeight: "95%", objectFit: "contain", borderRadius: 8 }} />
         </div>
       )}
+      {payCatId && (() => { const c = cats.find(x => x.id === payCatId); return c ? (
+        <PaymentsPanel cat={c} setCats={setCats} onClose={() => setPayCatId(null)} confirm={confirm} />
+      ) : null; })()}
     </div>
   );
 }
 
+
+// ── 大項（廠商）付款紀錄面板 ─────────────────────────────────────────────────
+function PaymentsPanel({ cat, setCats, onClose, confirm }) {
+  const payments = cat.payments || [];
+  const est = catEstAfter(cat), paid = catPaid(cat), unpaid = est - paid;
+  const [lightbox, setLightbox] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const blankDraft = () => ({ date: new Date().toISOString().slice(0, 10), amount: "", category: "訂金", note: "", receipts: [] });
+  const [draft, setDraft] = useState(blankDraft);
+
+  const update = (next) => setCats(prev => prev.map(c => c.id === cat.id ? { ...c, payments: next } : c));
+  const editPay = (id, field, val) => update(payments.map(p => p.id === id ? { ...p, [field]: val } : p));
+
+  const uploadRcp = async (files) => {
+    if (!files || !files.length) return [];
+    setBusy(true);
+    const out = [];
+    for (const f of files) { try { const { url, path } = await uploadPhoto(f); out.push({ id: "rc-" + Math.random().toString(36).slice(2, 8), url, path, name: f.name || "憑證", isImage: /^image\//.test(f.type) }); } catch (_) {} }
+    setBusy(false);
+    return out;
+  };
+
+  const addPayment = () => {
+    const amt = Number(draft.amount) || 0;
+    if (amt <= 0) return;
+    update([...payments, { id: "pay-" + Math.random().toString(36).slice(2, 8), date: draft.date, amount: amt, category: draft.category, note: draft.note, receipts: draft.receipts }]);
+    setDraft(blankDraft());
+  };
+  const delPayment = async (id) => {
+    if (confirm && !(await confirm("刪除這筆付款紀錄？"))) return;
+    const p = payments.find(x => x.id === id);
+    for (const r of (p?.receipts || [])) { if (r.path) { try { await deletePhotoFile(r.path); } catch (_) {} } }
+    update(payments.filter(x => x.id !== id));
+  };
+  const removeRcp = async (payId, ri) => {
+    const p = payments.find(x => x.id === payId); const r = p?.receipts?.[ri];
+    if (r?.path) { try { await deletePhotoFile(r.path); } catch (_) {} }
+    editPay(payId, "receipts", (p.receipts || []).filter((_, i) => i !== ri));
+  };
+
+  const thumbs = (recs, onDel) => (
+    <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+      {(recs || []).map((r, ri) => (
+        <div key={ri} style={{ position: "relative", width: 44, height: 44 }}>
+          {r.isImage !== false
+            ? <img src={r.url} alt={r.name} title={r.name} onClick={() => setLightbox(r)} style={{ width: 44, height: 44, objectFit: "cover", borderRadius: 6, border: "1px solid #D8CFBB", cursor: "zoom-in" }} />
+            : <a href={r.url} target="_blank" rel="noreferrer" title={r.name} style={{ width: 44, height: 44, borderRadius: 6, border: "1px solid #D8CFBB", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18, textDecoration: "none", background: "#F3E4DE" }}>📄</a>}
+          {onDel && <button onClick={() => onDel(ri)} style={{ position: "absolute", top: -6, right: -6, width: 16, height: 16, borderRadius: "50%", background: "#DC2626", color: "#fff", border: "none", fontSize: 10, lineHeight: 1, cursor: "pointer" }}>×</button>}
+        </div>
+      ))}
+    </div>
+  );
+
+  return (
+    <SidePanel onClose={onClose} wide>
+      <div style={{ fontSize: 11, color: "#6F6656", marginBottom: 2 }}>付款紀錄</div>
+      <div style={{ fontSize: 16, fontWeight: 600, color: "#211C15", marginBottom: 12 }}>{cat.name}</div>
+
+      {/* 三個數字 */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: 14 }}>
+        <div style={{ background: "#F3E4DE", border: "1px solid rgba(193,58,34,0.25)", borderRadius: 8, padding: "8px 10px" }}>
+          <div style={{ fontSize: 10, color: "#6F6656" }}>議價後</div>
+          <div style={{ fontFamily: "monospace", fontSize: 14, fontWeight: 600, color: ACCENT }}>{fmt(est)}</div>
+        </div>
+        <div style={{ background: "#F0FDF4", border: "1px solid rgba(60,140,60,0.25)", borderRadius: 8, padding: "8px 10px" }}>
+          <div style={{ fontSize: 10, color: "#6F6656" }}>已付</div>
+          <div style={{ fontFamily: "monospace", fontSize: 14, fontWeight: 600, color: "#3C8C3C" }}>{fmt(paid)}</div>
+        </div>
+        <div style={{ background: "#FFFBEB", border: "1px solid rgba(194,135,46,0.3)", borderRadius: 8, padding: "8px 10px" }}>
+          <div style={{ fontSize: 10, color: "#6F6656" }}>未付</div>
+          <div style={{ fontFamily: "monospace", fontSize: 14, fontWeight: 600, color: unpaid < 0 ? "#DC2626" : "#C2872E" }}>{unpaid < 0 ? `溢付 ${fmt(-unpaid)}` : fmt(unpaid)}</div>
+        </div>
+      </div>
+
+      {/* 新增付款表單 */}
+      <div style={{ border: "1px solid #D8CFBB", borderRadius: 10, padding: 12, marginBottom: 16, background: "#FBF7EE" }}>
+        <div style={{ fontSize: 12, fontWeight: 600, color: "#211C15", marginBottom: 8 }}>＋ 新增付款</div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 8 }}>
+          <div><div style={{ fontSize: 10, color: "#6F6656", marginBottom: 2 }}>日期</div><input type="date" value={draft.date} onChange={e => setDraft({ ...draft, date: e.target.value })} style={inputStyle} /></div>
+          <div><div style={{ fontSize: 10, color: "#6F6656", marginBottom: 2 }}>類別</div><select value={draft.category} onChange={e => setDraft({ ...draft, category: e.target.value })} style={inputStyle}>{PAY_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}</select></div>
+          <div><div style={{ fontSize: 10, color: "#6F6656", marginBottom: 2 }}>金額 NT$</div><input type="number" min={0} value={draft.amount} placeholder="0" onChange={e => setDraft({ ...draft, amount: e.target.value })} style={{ ...inputStyle, fontVariantNumeric: "tabular-nums" }} /></div>
+          <div><div style={{ fontSize: 10, color: "#6F6656", marginBottom: 2 }}>備註</div><input value={draft.note} placeholder="選填" onChange={e => setDraft({ ...draft, note: e.target.value })} style={inputStyle} /></div>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+          {thumbs(draft.receipts, (ri) => setDraft({ ...draft, receipts: draft.receipts.filter((_, i) => i !== ri) }))}
+          <label style={{ fontSize: 12, border: "1px dashed #D8CFBB", borderRadius: 6, padding: "6px 12px", cursor: "pointer", color: "#6F6656" }}>
+            {busy ? "上傳中…" : "📎 上傳憑證"}
+            <input type="file" accept="image/*,application/pdf" multiple style={{ display: "none" }} onChange={async e => { const f = e.target.files; e.target.value = ""; const up = await uploadRcp(f); if (up.length) setDraft(d => ({ ...d, receipts: [...d.receipts, ...up] })); }} />
+          </label>
+          <div style={{ flex: 1 }} />
+          <button onClick={addPayment} disabled={!(Number(draft.amount) > 0)} style={{ background: Number(draft.amount) > 0 ? "#3C8C3C" : "#C8BCA0", color: "#fff", border: "none", borderRadius: 8, padding: "8px 18px", fontSize: 13, fontWeight: 600, cursor: Number(draft.amount) > 0 ? "pointer" : "default" }}>新增</button>
+        </div>
+      </div>
+
+      {/* 付款紀錄列表 */}
+      <div style={{ fontSize: 12, color: "#6F6656", marginBottom: 6 }}>已付紀錄（{payments.length} 筆）</div>
+      {payments.length === 0 && <div style={{ fontSize: 12, color: "#A99F88", padding: "12px 0" }}>尚無付款紀錄</div>}
+      {payments.map(p => (
+        <div key={p.id} style={{ border: "1px solid #E3DAC6", borderRadius: 8, padding: 10, marginBottom: 8, background: "#fff" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+            <span style={{ fontSize: 10, background: "#F3E4DE", color: "#92400e", borderRadius: 10, padding: "1px 8px", fontWeight: 600, flexShrink: 0 }}>{p.category || "其他"}</span>
+            <input type="date" value={p.date || ""} onChange={e => editPay(p.id, "date", e.target.value)} style={{ ...inputStyle, width: 140, padding: "4px 8px", fontSize: 12 }} />
+            <input type="number" min={0} value={p.amount} onChange={e => editPay(p.id, "amount", Number(e.target.value) || 0)} style={{ ...inputStyle, width: 120, padding: "4px 8px", fontSize: 13, fontFamily: "monospace", fontWeight: 600, color: "#3C8C3C" }} />
+            <div style={{ flex: 1 }} />
+            <button onClick={() => delPayment(p.id)} title="刪除這筆" style={{ width: 24, height: 24, borderRadius: "50%", background: "#F3E4DE", border: "1px solid rgba(193,58,34,0.25)", color: "#DC2626", cursor: "pointer", fontSize: 13, flexShrink: 0 }}>×</button>
+          </div>
+          <input value={p.note || ""} placeholder="備註" onChange={e => editPay(p.id, "note", e.target.value)} style={{ ...inputStyle, padding: "4px 8px", fontSize: 12, marginBottom: (p.receipts?.length || 0) ? 8 : 0 }} />
+          <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 8, flexWrap: "wrap" }}>
+            {thumbs(p.receipts, (ri) => removeRcp(p.id, ri))}
+            <label style={{ fontSize: 11, border: "1px dashed #D8CFBB", borderRadius: 6, padding: "4px 10px", cursor: "pointer", color: "#6F6656" }}>
+              {busy ? "上傳中…" : "📎 加憑證"}
+              <input type="file" accept="image/*,application/pdf" multiple style={{ display: "none" }} onChange={async e => { const f = e.target.files; e.target.value = ""; const up = await uploadRcp(f); if (up.length) editPay(p.id, "receipts", [...(p.receipts || []), ...up]); }} />
+            </label>
+          </div>
+        </div>
+      ))}
+
+      {lightbox && (
+        <div onClick={() => setLightbox(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.85)", zIndex: 10000, display: "flex", alignItems: "center", justifyContent: "center", padding: 20, cursor: "zoom-out" }}>
+          <img src={lightbox.url} alt={lightbox.name} style={{ maxWidth: "95%", maxHeight: "95%", objectFit: "contain", borderRadius: 8 }} />
+        </div>
+      )}
+    </SidePanel>
+  );
+}
 
 // ── SIMPLE LOGIN ─────────────────────────────────────────────────────────────
 function LoginModal({ onLogin, knownUsers, onClose }) {
@@ -1489,7 +1636,7 @@ function OwnerDashboard({ cats, setCats, settings, stalledItems, activityLog, lo
   const issueItems = cats.flatMap(c=>c.items).filter(i=>i.status==="issue");
   const pct = totalItems ? Math.round(doneItems/totalItems*100) : 0;
   const totalEst = cats.reduce((s,c)=>s+catEstAfter(c),0); // 議價後含稅總額
-  const totalAct = cats.reduce((s,c)=>s+c.items.reduce((ss,it)=>ss+paidOf(it),0),0); // 已付總額
+  const totalAct = cats.reduce((s,c)=>s+catPaid(c),0); // 已付總額（大項付款紀錄）
   const daysLeft = settings?.targetDate ? Math.ceil((new Date(settings.targetDate)-new Date())/(1000*60*60*24)) : null;
   const today = new Date().toLocaleDateString("zh-TW");
 
@@ -2832,7 +2979,7 @@ function CatPanel({ cat: catProp, cats, setCats, onClose, onSelectItem, confirm 
           style={{ ...inputStyle, fontSize: 16, fontWeight: 600, color: "#211C15" }}
         />
       </div>
-      {(() => { const e = cat.items.reduce((s,it)=>s+estAmount(it),0), p = cat.items.reduce((s,it)=>s+paidOf(it),0), u = e - p; return (
+      {(() => { const e = catEstAfter(cat), p = catPaid(cat), u = e - p; return (
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: 12 }}>
         <div style={{ background: "#F3E4DE", border: "1px solid rgba(193,58,34,0.3)", borderRadius: 8, padding: "8px 10px" }}>
           <div style={{ fontSize: 10, color: "#6F6656", marginBottom: 2 }}>預估（含稅）</div>
