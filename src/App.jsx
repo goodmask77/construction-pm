@@ -878,7 +878,7 @@ const COLS = [
   { id:"unpaid",   label:"未付金額", w:110 },
   { id:"payAccount",  label:"付款帳號", w:130 },
   { id:"payDate",  label:"付款日",  w:120 },
-  { id:"receipts", label:"憑證",   w:80 },
+  { id:"receipts", label:"憑證",   w:104 },
   // 其他
   { id:"notes",    label:"備註",   w:180 },
 ];
@@ -923,6 +923,8 @@ function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols,
   const toggleCollapse = (catId) => setCollapsed(s => { const n = new Set(s); n.has(catId) ? n.delete(catId) : n.add(catId); return n; });
   const allCollapsed = cats.length > 0 && cats.every(c => collapsed.has(c.id));
   const toggleAll = () => setCollapsed(allCollapsed ? new Set() : new Set(cats.map(c => c.id)));
+  const [lightbox, setLightbox] = useState(null); // 憑證放大檢視
+  const [rcpBusy, setRcpBusy] = useState(null);    // 正在上傳憑證的 itemId
 
   // Flatten all items into rows with cat info
   const allRows = [];
@@ -939,6 +941,23 @@ function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols,
       ? { ...c, items: c.items.map(it => it.id === itemId ? { ...it, [field]: val } : it) }
       : c
     ));
+  };
+
+  const addReceipts = async (catId, item, files) => {
+    if (!files || !files.length) return;
+    setRcpBusy(item.id);
+    const out = [];
+    for (const f of files) {
+      try { const { url, path } = await uploadPhoto(f); out.push({ id: "rc-" + Math.random().toString(36).slice(2, 8), url, path, name: f.name || "憑證", isImage: /^image\//.test(f.type) }); }
+      catch (_) {}
+    }
+    setRcpBusy(null);
+    if (out.length) updateItem(catId, item.id, "receipts", [...(item.receipts || []), ...out]);
+  };
+  const removeReceipt = async (catId, item, rid, ri) => {
+    const r = (item.receipts || [])[ri];
+    if (r?.path) { try { await deletePhotoFile(r.path); } catch (_) {} }
+    updateItem(catId, item.id, "receipts", (item.receipts || []).filter((_, i) => i !== ri));
   };
 
   const deleteItem = (catId, itemId, name) => {
@@ -1238,16 +1257,32 @@ function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols,
                         if (col.id === "unpaid") { const u = unpaidOf(item); return <div key={col.id} style={{ ...cs, color: u < 0 ? "#DC2626" : u > 0 ? "#C2872E" : "#3C8C3C", fontFamily: "monospace", fontWeight: 600 }} title={u < 0 ? "溢付（已付超過預估）" : "未付金額（自動）"}>{u < 0 ? `溢付 ${fmt(-u)}` : fmt(u)}</div>; }
                         if (col.id === "payDate") return <div key={col.id} style={cs}><EditableCell catId={catId} itemId={item.id} field="payDate" value={item.payDate} type="date" placeholder="付款日" /></div>;
                         if (col.id === "payAccount") return <div key={col.id} style={cs}><EditableCell catId={catId} itemId={item.id} field="payAccount" value={item.payAccount} placeholder="銀行/帳號" /></div>;
-                        if (col.id === "receipts") return (
-                          <div key={col.id} style={{ ...cs, gap: 4 }}>
-                            {(item.receipts?.length > 0) && <span style={{ fontSize: 10, background: "#F3E4DE", color: "#92400e", borderRadius: 10, padding: "1px 6px", fontWeight: 600 }}>📎 {item.receipts.length}</span>}
-                            <button onClick={() => {
-                              const name = prompt("憑證名稱："); if (!name) return;
-                              const amt = parseFloat(prompt("金額：") || "0");
-                              updateItem(catId, item.id, "receipts", [...(item.receipts||[]), { name, amount: amt, date: new Date().toLocaleDateString("zh-TW") }]);
-                            }} style={{ fontSize: 10, background: "none", border: "1px dashed #D8CFBB", borderRadius: 4, padding: "1px 5px", cursor: "pointer", color: "#A99F88" }}>+</button>
-                          </div>
-                        );
+                        if (col.id === "receipts") {
+                          const recs = item.receipts || [];
+                          return (
+                            <div key={col.id} style={{ ...cs, gap: 3, flexWrap: "wrap", overflow: "visible" }}>
+                              {recs.map((r, ri) => {
+                                // 新格式：上傳的照片/檔案（有 url）
+                                if (r.url) return (
+                                  <div key={ri} style={{ position: "relative", width: 28, height: 28, flexShrink: 0 }}
+                                    onMouseEnter={e => { const b = e.currentTarget.querySelector("button"); if (b) b.style.display = "flex"; }}
+                                    onMouseLeave={e => { const b = e.currentTarget.querySelector("button"); if (b) b.style.display = "none"; }}>
+                                    {r.isImage !== false
+                                      ? <img src={r.url} alt={r.name} title={r.name} onClick={() => setLightbox(r)} style={{ width: 28, height: 28, objectFit: "cover", borderRadius: 4, border: "1px solid #D8CFBB", cursor: "zoom-in" }} />
+                                      : <a href={r.url} target="_blank" rel="noreferrer" title={r.name} style={{ width: 28, height: 28, borderRadius: 4, border: "1px solid #D8CFBB", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, textDecoration: "none", background: "#F3E4DE" }}>📄</a>}
+                                    <button onClick={() => removeReceipt(catId, item, r.id, ri)} title="刪除" style={{ display: "none", position: "absolute", top: -6, right: -6, width: 15, height: 15, borderRadius: "50%", background: "#DC2626", color: "#fff", border: "none", fontSize: 10, lineHeight: 1, cursor: "pointer", alignItems: "center", justifyContent: "center", padding: 0 }}>×</button>
+                                  </div>
+                                );
+                                // 舊格式：純文字名稱＋金額（點一下可刪除）
+                                return <span key={ri} title={r.amount ? `${r.name}　$${r.amount}（點擊刪除）` : `${r.name}（點擊刪除）`} onClick={() => removeReceipt(catId, item, r.id, ri)} style={{ fontSize: 10, background: "#F3E4DE", color: "#92400e", borderRadius: 10, padding: "1px 6px", fontWeight: 600, cursor: "pointer", flexShrink: 0 }}>📎 {r.name}</span>;
+                              })}
+                              <label title="上傳發票／憑證照片" style={{ fontSize: 12, background: "none", border: "1px dashed #D8CFBB", borderRadius: 4, padding: rcpBusy === item.id ? "0 6px" : "1px 6px", cursor: "pointer", color: "#A99F88", flexShrink: 0, display: "flex", alignItems: "center", height: 26 }}>
+                                {rcpBusy === item.id ? "…" : "＋"}
+                                <input type="file" accept="image/*,application/pdf" multiple style={{ display: "none" }} onChange={e => { addReceipts(catId, item, e.target.files); e.target.value = ""; }} />
+                              </label>
+                            </div>
+                          );
+                        }
                         if (col.id === "notes") return <div key={col.id} style={cs}><EditableCell catId={catId} itemId={item.id} field="notes" value={item.notes} placeholder="備註..." /></div>;
                         return <div key={col.id} style={cs} />;
                       })}
@@ -1305,6 +1340,11 @@ function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols,
           </div>
         </div>
       </div>
+      )}
+      {lightbox && (
+        <div onClick={() => setLightbox(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.85)", zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center", padding: 20, cursor: "zoom-out" }}>
+          <img src={lightbox.url} alt={lightbox.name} style={{ maxWidth: "95%", maxHeight: "95%", objectFit: "contain", borderRadius: 8 }} />
+        </div>
       )}
     </div>
   );
@@ -2769,6 +2809,24 @@ function ItemPanel({ cat, item, cats, setCats, onClose, confirm }) {
     setCats(prev => prev.map(c => c.id === cat.id ? { ...c, items: c.items.map(it => it.id === item.id ? {...it, [field]: val} : it) } : c));
   };
   const currentItem = cats.find(c => c.id === cat.id)?.items.find(i => i.id === item.id) || item;
+  const [lightbox, setLightbox] = useState(null);
+  const [rcpBusy, setRcpBusy] = useState(false);
+  const addReceipts = async (files) => {
+    if (!files || !files.length) return;
+    setRcpBusy(true);
+    const out = [];
+    for (const f of files) {
+      try { const { url, path } = await uploadPhoto(f); out.push({ id: "rc-" + Math.random().toString(36).slice(2, 8), url, path, name: f.name || "憑證", isImage: /^image\//.test(f.type) }); }
+      catch (_) {}
+    }
+    setRcpBusy(false);
+    if (out.length) updateItem("receipts", [...(currentItem.receipts || []), ...out]);
+  };
+  const removeReceipt = async (ri) => {
+    const r = (currentItem.receipts || [])[ri];
+    if (r?.path) { try { await deletePhotoFile(r.path); } catch (_) {} }
+    updateItem("receipts", (currentItem.receipts || []).filter((_, i) => i !== ri));
+  };
 
   return (
     <SidePanel onClose={onClose} wide>
@@ -2846,23 +2904,29 @@ function ItemPanel({ cat, item, cats, setCats, onClose, confirm }) {
       <div style={{ marginBottom: 12 }}>
         <Field label="備註" value={currentItem.notes} onChange={v => updateItem("notes", v)} multiline />
       </div>
-      {/* Receipts */}
+      {/* Receipts：發票／憑證照片（點擊放大） */}
       <div style={{ marginBottom: 16 }}>
-        <div style={{ fontSize: 12, color: "#6F6656", marginBottom: 6 }}>憑證紀錄 ({currentItem.receipts?.length || 0})</div>
-        {currentItem.receipts?.map((r, ri) => (
-          <div key={ri} style={{ background: "#EFE7D6", borderRadius: 6, padding: "6px 10px", marginBottom: 4, fontSize: 12, display: "flex", justifyContent: "space-between" }}>
-            <span>{r.name}</span>
-            <span style={{ color: ACCENT, fontFamily: "monospace" }}>{fmt(r.amount)}</span>
-          </div>
-        ))}
-        <button onClick={() => {
-          const name = prompt("憑證名稱：");
-          if (!name) return;
-          const amt = parseFloat(prompt("金額：") || "0");
-          updateItem("receipts", [...(currentItem.receipts || []), { name, amount: amt, date: new Date().toLocaleDateString("zh-TW") }]);
-        }} style={{ fontSize: 12, background: "none", border: "1px dashed #D8CFBB", color: "#6F6656", borderRadius: 6, padding: "5px 12px", cursor: "pointer" }}>
-          + 新增憑證
-        </button>
+        <div style={{ fontSize: 12, color: "#6F6656", marginBottom: 6 }}>🧾 發票／憑證 ({currentItem.receipts?.length || 0})</div>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 8 }}>
+          {currentItem.receipts?.map((r, ri) => (
+            r.url ? (
+              <div key={ri} style={{ position: "relative" }}>
+                {r.isImage !== false
+                  ? <img src={r.url} alt={r.name} title={r.name} onClick={() => setLightbox(r)} style={{ width: 80, height: 80, objectFit: "cover", borderRadius: 8, border: "1px solid #D8CFBB", cursor: "zoom-in" }} />
+                  : <a href={r.url} target="_blank" rel="noreferrer" title={r.name} style={{ width: 80, height: 80, borderRadius: 8, border: "1px solid #D8CFBB", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 28, textDecoration: "none", background: "#F3E4DE" }}>📄</a>}
+                <button onClick={() => removeReceipt(ri)} style={{ position: "absolute", top: -7, right: -7, width: 18, height: 18, borderRadius: "50%", background: "#DC2626", color: "#fff", border: "none", fontSize: 11, lineHeight: 1, cursor: "pointer" }}>×</button>
+              </div>
+            ) : (
+              <div key={ri} title="點擊刪除" onClick={() => removeReceipt(ri)} style={{ background: "#EFE7D6", borderRadius: 6, padding: "6px 10px", fontSize: 12, display: "flex", gap: 8, alignItems: "center", cursor: "pointer" }}>
+                <span>📎 {r.name}</span>{r.amount ? <span style={{ color: ACCENT, fontFamily: "monospace" }}>{fmt(r.amount)}</span> : null}
+              </div>
+            )
+          ))}
+          <label style={{ width: 80, height: 80, borderRadius: 8, border: "1px dashed #D8CFBB", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 4, cursor: "pointer", color: "#A99F88", fontSize: 12 }}>
+            <span style={{ fontSize: 22 }}>{rcpBusy ? "…" : "＋"}</span>{rcpBusy ? "上傳中" : "上傳"}
+            <input type="file" accept="image/*,application/pdf" multiple style={{ display: "none" }} onChange={e => { addReceipts(e.target.files); e.target.value = ""; }} />
+          </label>
+        </div>
       </div>
       {/* Photo uploads */}
       <div style={{ marginBottom: 16 }}>
@@ -2891,6 +2955,11 @@ function ItemPanel({ cat, item, cats, setCats, onClose, confirm }) {
       </div>
       {/* Item Chat + AI */}
       <ItemChat cat={cat} item={currentItem} setCats={setCats} />
+      {lightbox && (
+        <div onClick={() => setLightbox(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.85)", zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center", padding: 20, cursor: "zoom-out" }}>
+          <img src={lightbox.url} alt={lightbox.name} style={{ maxWidth: "95%", maxHeight: "95%", objectFit: "contain", borderRadius: 8 }} />
+        </div>
+      )}
     </SidePanel>
   );
 }
