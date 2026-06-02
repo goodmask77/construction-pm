@@ -180,6 +180,32 @@ const unpaidOf = (it) => estAmount(it) - paidOf(it);
 const calcEstimated = (it) => estAmount(it); // 預估金額（含稅）＝真正預算數字
 const calcActual = (it) => (it.actQty || 0) * (it.actUnitPrice || 0) + (it.actWorkers || 0) * (it.actDailyWage || 0) * (it.actLaborDays || 0); // 舊「施工記錄」沿用於細項詳情
 
+// ── 大項層級議價折扣：折扣套在「未稅」層、稅金重算（細項原報價不動）──────────────
+const pretaxOf = (it) => { const b = baseAmount(it); return (it.taxType || "未稅") === "含稅" ? Math.round(b / 1.05) : b; }; // 未稅基底
+const isTaxable = (it) => (it.taxType || "未稅") !== "免稅";
+const catRawEst = (cat) => (cat?.items || []).reduce((s, it) => s + estAmount(it), 0); // 原報價含稅
+const catPretaxSub = (cat) => (cat?.items || []).reduce((s, it) => s + pretaxOf(it), 0); // 未稅小計
+const catDiscount = (cat) => {
+  const sub = catPretaxSub(cat);
+  const mode = cat?.discountMode === "amt" ? "amt" : "pct";
+  const v = Number(cat?.discountValue) || 0;
+  if (v <= 0 || sub <= 0) return { hasDiscount: false, factor: 1, pct: 0, amt: 0, mode, value: v, sub };
+  let factor = 1, pct = 0, amt = 0;
+  if (mode === "amt") { amt = Math.min(Math.max(v, 0), sub); factor = (sub - amt) / sub; pct = amt / sub * 100; }
+  else { pct = Math.min(Math.max(v, 0), 100); factor = 1 - pct / 100; amt = sub * pct / 100; }
+  return { hasDiscount: factor < 1, factor, pct, amt, mode, value: v, sub };
+};
+const catEstAfter = (cat) => { // 議價後含稅（大項預估金額＝headline 預算）
+  const { factor } = catDiscount(cat);
+  if (factor === 1) return catRawEst(cat);
+  return (cat?.items || []).reduce((s, it) => {
+    const pre = pretaxOf(it) * factor;
+    const tax = isTaxable(it) ? pre * 0.05 : 0;
+    return s + Math.round(pre + tax);
+  }, 0);
+};
+const catSaved = (cat) => catRawEst(cat) - catEstAfter(cat);
+
 // ── RWD：偵測手機寬度（< 768px）──────────────────────────────────────────────
 const MOBILE_BP = 768;
 function useIsMobile(bp = MOBILE_BP) {
@@ -327,7 +353,7 @@ const buildAdvisorSystem = (settings, cats, journal, events, plans) => {
   journal = journal || [];
   events = events || [];
   plans = plans || [];
-  const totalEst = cats.reduce((s,c) => s+c.items.reduce((ss,it)=>ss+estAmount(it),0),0);
+  const totalEst = cats.reduce((s,c) => s+catEstAfter(c),0); // 議價後含稅總額
   const totalAct = cats.reduce((s,c) => s+c.items.reduce((ss,it)=>ss+paidOf(it),0),0); // 已付總額
   const doneItems = cats.flatMap(c=>c.items).filter(i=>i.done||i.status==="done").length;
   const totalItems = cats.reduce((s,c)=>s+c.items.length,0);
@@ -342,10 +368,12 @@ const buildAdvisorSystem = (settings, cats, journal, events, plans) => {
   const notes = settings?.notes || "";
 
   const catLines = cats.map(c => {
-    const est = c.items.reduce((s,it)=>s+estAmount(it),0);
+    const est = catEstAfter(c); // 議價後
+    const raw = catRawEst(c);
     const act = c.items.reduce((s,it)=>s+paidOf(it),0);
     const done = c.items.filter(i=>i.done||i.status==="done").length;
-    return "  • " + c.name + "（" + c.status + "）：預估" + Math.round(est/10000) + "萬，已付" + (act>0?Math.round(act/10000)+"萬":"未付") + "，" + done + "/" + c.items.length + "細項完成";
+    const dInfo = (raw > est) ? "（原報價" + Math.round(raw/10000) + "萬，議價省" + Math.round((raw-est)/10000) + "萬）" : "";
+    return "  • " + c.name + "（" + c.status + "）：預估" + Math.round(est/10000) + "萬" + dInfo + "，已付" + (act>0?Math.round(act/10000)+"萬":"未付") + "，" + done + "/" + c.items.length + "細項完成";
   }).join("\n");
 
   const priorityItems = cats.flatMap(c=>c.items).filter(i=>(settings?.priorities||[]).includes(i.id)).map(i=>i.name).join("、");
@@ -595,7 +623,7 @@ export default function App() {
     return days > 3;
   })) : [];
 
-  const totalEstimated = cats ? cats.reduce((s, c) => s + c.items.reduce((ss, it) => ss + estAmount(it), 0), 0) : 0;
+  const totalEstimated = cats ? cats.reduce((s, c) => s + catEstAfter(c), 0) : 0; // 議價後含稅總額
   const totalPaid = cats ? cats.reduce((s, c) => s + c.items.reduce((ss, it) => ss + paidOf(it), 0), 0) : 0;
   const doneCount = cats ? cats.filter(c => c.status === "done").length : 0;
 
@@ -1151,7 +1179,10 @@ function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols,
           {/* rows grouped by cat */}
           {Object.entries(catGroups).map(([catId, group]) => {
             const cat = cats.find(c => c.id === catId);
-            const groupEst = group.rows.reduce((s,r) => s + estAmount(r.item), 0);
+            const groupRaw = cat ? catRawEst(cat) : group.rows.reduce((s,r) => s + estAmount(r.item), 0); // 原報價（未折）
+            const disc = cat ? catDiscount(cat) : { hasDiscount: false, factor: 1, pct: 0, sub: 0 };
+            const groupEst = cat ? catEstAfter(cat) : groupRaw; // 議價後含稅
+            const groupSaved = groupRaw - groupEst;
             const groupPaid = group.rows.reduce((s,r) => s + paidOf(r.item), 0);
             const groupUnpaid = groupEst - groupPaid;
             const itemCount = cat ? cat.items.length : group.rows.length;
@@ -1180,12 +1211,34 @@ function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols,
                     </div>
                   )}
                   <div style={{ flex: 1 }} />
-                  <div style={{ fontSize: 12, color: SUB }}>預估 <span style={{ color: TEXT, fontVariantNumeric: "tabular-nums", fontWeight: 500 }}>{fmt(groupEst)}</span></div>
+                  {/* 議價折扣（套用在未稅層、稅金重算；細項原報價不動）*/}
+                  {itemCount > 0 && (
+                    <div style={{ display: "flex", alignItems: "center", gap: 3, flexShrink: 0 }} title="大項議價折扣：套用在未稅小計、稅金重算">
+                      <button onClick={() => setCats(prev => prev.map(c => c.id === catId ? { ...c, discountMode: (disc.mode === "amt" ? "pct" : "amt"), discountValue: 0 } : c))}
+                        title={disc.mode === "amt" ? "目前：折讓金額（點擊改為折 %）" : "目前：折 %（點擊改為折讓金額）"}
+                        style={{ border: `1px solid ${BORDER}`, background: SURFACE, color: ACCENT, borderRadius: 5, width: 22, height: 20, fontSize: 12, fontWeight: 700, cursor: "pointer", padding: 0, flexShrink: 0 }}>{disc.mode === "amt" ? "$" : "%"}</button>
+                      <input type="number" min={0} max={disc.mode === "amt" ? Math.round(disc.sub) : 100} value={cat?.discountValue || ""} placeholder="議價"
+                        onChange={e => { const max = disc.mode === "amt" ? catPretaxSub(cat) : 100; let v = Math.min(Math.max(Number(e.target.value) || 0, 0), max); setCats(prev => prev.map(c => c.id === catId ? { ...c, discountMode: disc.mode, discountValue: v } : c)); }}
+                        style={{ width: 54, height: 20, border: `1px solid ${BORDER}`, borderRadius: 5, padding: "0 5px", fontSize: 11, fontVariantNumeric: "tabular-nums", background: "#fff", color: TEXT }} />
+                    </div>
+                  )}
+                  {disc.hasDiscount ? (<>
+                    <div style={{ fontSize: 12, color: SUB }}>原報價 <span style={{ color: "#A99F88", textDecoration: "line-through", fontVariantNumeric: "tabular-nums" }}>{fmt(groupRaw)}</span></div>
+                    <div style={{ fontSize: 12, color: SUB }}>議價後 <span style={{ color: TEXT, fontVariantNumeric: "tabular-nums", fontWeight: 600 }}>{fmt(groupEst)}</span></div>
+                    <div style={{ fontSize: 12, color: "#C0392B", fontWeight: 600, fontVariantNumeric: "tabular-nums" }} title={`折讓 ${fmt(disc.amt)}（未稅）`}>省 {fmt(groupSaved)}（-{Math.round(disc.pct * 10) / 10}%）</div>
+                  </>) : (
+                    <div style={{ fontSize: 12, color: SUB }}>預估 <span style={{ color: TEXT, fontVariantNumeric: "tabular-nums", fontWeight: 500 }}>{fmt(groupEst)}</span></div>
+                  )}
                   <div style={{ fontSize: 12, color: SUB }}>已付 <span style={{ color: "#3C8C3C", fontVariantNumeric: "tabular-nums", fontWeight: 500 }}>{fmt(groupPaid)}</span></div>
                   <div style={{ fontSize: 12, color: SUB }}>未付 <span style={{ color: groupUnpaid < 0 ? "#DC2626" : "#C2872E", fontVariantNumeric: "tabular-nums", fontWeight: 500 }}>{groupUnpaid < 0 ? `溢付 ${fmt(-groupUnpaid)}` : fmt(groupUnpaid)}</span></div>
-                  {itemCount > 0 && (() => { const allFull = group.rows.every(r => { const e = estAmount(r.item); return e <= 0 || paidOf(r.item) >= e; }); return (
-                    <button onClick={() => setCats(prev => prev.map(c => c.id === catId ? { ...c, items: c.items.map(it => ({ ...it, paid: allFull ? 0 : estAmount(it) })) } : c))} title={allFull ? "清除本大項所有已付金額" : "本大項全部一鍵付清（已付＝預估）"} style={{ flexShrink: 0, border: `1px solid ${allFull ? "#C2872E" : "#3C8C3C"}`, background: allFull ? "#FFFBEB" : "#F0FDF4", color: allFull ? "#C2872E" : "#3C8C3C", borderRadius: 6, padding: "2px 9px", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>{allFull ? "清除付款" : "✓ 全部付清"}</button>
-                  ); })()}
+                  {itemCount > 0 && (() => {
+                    const f = disc.factor;
+                    const payTarget = (it) => f === 1 ? estAmount(it) : (() => { const pre = pretaxOf(it) * f; const tax = isTaxable(it) ? pre * 0.05 : 0; return Math.round(pre + tax); })();
+                    const allFull = group.rows.every(r => { const e = payTarget(r.item); return e <= 0 || paidOf(r.item) >= e; });
+                    return (
+                      <button onClick={() => setCats(prev => prev.map(c => c.id === catId ? { ...c, items: c.items.map(it => ({ ...it, paid: allFull ? 0 : payTarget(it) })) } : c))} title={allFull ? "清除本大項所有已付金額" : "本大項全部一鍵付清（已付＝議價後金額）"} style={{ flexShrink: 0, border: `1px solid ${allFull ? "#C2872E" : "#3C8C3C"}`, background: allFull ? "#FFFBEB" : "#F0FDF4", color: allFull ? "#C2872E" : "#3C8C3C", borderRadius: 6, padding: "2px 9px", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>{allFull ? "清除付款" : "✓ 全部付清"}</button>
+                    );
+                  })()}
                   <button onClick={() => confirm(`確定刪除工程大項「${group.name}」？\n（含其下 ${itemCount} 筆細項，無法復原）`).then(ok => { if (ok) setCats(prev => prev.filter(c => c.id !== catId)); })} title="刪除此工程大項" style={{ flexShrink: 0, marginLeft: 4, width: 22, height: 22, borderRadius: "50%", background: "transparent", border: "none", color: "#C8BCA0", cursor: "pointer", fontSize: 15, lineHeight: 1, display: "flex", alignItems: "center", justifyContent: "center", padding: 0 }} onMouseEnter={e => { e.currentTarget.style.background = "#F3E4DE"; e.currentTarget.style.color = "#DC2626"; }} onMouseLeave={e => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = "#C8BCA0"; }}>×</button>
                 </div>
                 {/* item rows（收合時隱藏） */}
@@ -1327,15 +1380,20 @@ function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols,
           {/* 總計列：數字欄位自動加總 */}
           <div style={{ display: "flex", borderTop: `2px solid ${BORDER}`, background: "#ECE6D7", position: "sticky", bottom: 0, zIndex: 5, fontWeight: 600 }}>
             <div style={{ width: 24, flexShrink: 0, borderRight: "1px solid #D8CFBB" }} />
-            {orderedCols.map(col => {
+            {(() => { const anyDisc = cats.some(c => catDiscount(c).hasDiscount); const afterTotal = cats.reduce((s, c) => s + catEstAfter(c), 0); return
+            orderedCols.map(col => {
               const cs = { ...cellStyle(col) };
-              if (col.id === "name") return <div key={col.id} style={{ ...cs, fontWeight: 600, color: "#211C15" }}>總計（{rows.length} 筆）</div>;
+              if (col.id === "name") return <div key={col.id} style={{ ...cs, fontWeight: 600, color: "#211C15" }}>總計（{rows.length} 筆）{anyDisc && <span style={{ fontWeight: 400, color: SUB, fontSize: 11 }}>　原報價，議價後見各大項</span>}</div>;
+              if (col.id === "estTotal" && anyDisc) {
+                const sum = rows.reduce((s, r) => s + numVal(col, r.item), 0);
+                return <div key={col.id} style={{ ...cs, flexDirection: "column", alignItems: "flex-start", justifyContent: "center", gap: 0, lineHeight: 1.2 }} title="上：原報價總計　下：議價後總計"><span style={{ fontFamily: "monospace", color: "#A99F88", textDecoration: "line-through", fontSize: 11 }}>{fmt(sum)}</span><span style={{ fontFamily: "monospace", color: ACCENT, fontWeight: 700 }}>{fmt(afterTotal)}</span></div>;
+              }
               if (summable(col)) {
                 const sum = rows.reduce((s, r) => s + numVal(col, r.item), 0);
                 return <div key={col.id} style={{ ...cs, fontFamily: "monospace", color: isMoneyCol(col) ? ACCENT : "#4A4234" }}>{isMoneyCol(col) ? fmt(sum) : (Math.round(sum * 100) / 100)}</div>;
               }
               return <div key={col.id} style={cs} />;
-            })}
+            }); })()}
             <div style={{ width: 32, flexShrink: 0 }} />
           </div>
         </div>
@@ -1406,7 +1464,7 @@ function OwnerDashboard({ cats, setCats, settings, stalledItems, activityLog, lo
   const inProgressItems = cats.flatMap(c=>c.items).filter(i=>i.status==="inprogress");
   const issueItems = cats.flatMap(c=>c.items).filter(i=>i.status==="issue");
   const pct = totalItems ? Math.round(doneItems/totalItems*100) : 0;
-  const totalEst = cats.reduce((s,c)=>s+c.items.reduce((ss,it)=>ss+estAmount(it),0),0);
+  const totalEst = cats.reduce((s,c)=>s+catEstAfter(c),0); // 議價後含稅總額
   const totalAct = cats.reduce((s,c)=>s+c.items.reduce((ss,it)=>ss+paidOf(it),0),0); // 已付總額
   const daysLeft = settings?.targetDate ? Math.ceil((new Date(settings.targetDate)-new Date())/(1000*60*60*24)) : null;
   const today = new Date().toLocaleDateString("zh-TW");
