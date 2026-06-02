@@ -186,7 +186,8 @@ const isTaxable = (it) => (it.taxType || "未稅") !== "免稅";
 const catRawEst = (cat) => (cat?.items || []).reduce((s, it) => s + estAmount(it), 0); // 原報價含稅
 const catPretaxSub = (cat) => (cat?.items || []).reduce((s, it) => s + pretaxOf(it), 0); // 未稅小計
 const catDiscount = (cat) => {
-  const sub = catPretaxSub(cat);
+  // 折% 套在未稅層；固定折讓＝直接從含稅原報價扣（省＝你輸入的金額），上限為含稅原報價
+  const sub = catRawEst(cat); // 折讓上限／百分比換算的基準改用含稅原報價
   const mode = cat?.discountMode === "amt" ? "amt" : "pct";
   const v = Number(cat?.discountValue) || 0;
   if (v <= 0 || sub <= 0) return { hasDiscount: false, factor: 1, pct: 0, amt: 0, mode, value: v, sub };
@@ -1549,7 +1550,7 @@ function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols,
                         title={disc.mode === "amt" ? "目前：折讓金額（點擊改為折 %）" : "目前：折 %（點擊改為折讓金額）"}
                         style={{ border: `1px solid ${BORDER}`, background: SURFACE, color: ACCENT, borderRadius: 5, width: 22, height: 20, fontSize: 12, fontWeight: 700, cursor: "pointer", padding: 0, flexShrink: 0 }}>{disc.mode === "amt" ? "$" : "%"}</button>
                       <input type="number" min={0} max={disc.mode === "amt" ? Math.round(disc.sub) : 100} value={cat?.discountValue || ""} placeholder={disc.mode === "amt" ? "折讓$" : "折%"}
-                        onChange={e => { const max = disc.mode === "amt" ? catPretaxSub(cat) : 100; let v = Math.min(Math.max(Number(e.target.value) || 0, 0), max); setCats(prev => prev.map(c => c.id === catId ? { ...c, discountMode: disc.mode, discountValue: v } : c)); }}
+                        onChange={e => { const max = disc.mode === "amt" ? catRawEst(cat) : 100; let v = Math.min(Math.max(Number(e.target.value) || 0, 0), max); setCats(prev => prev.map(c => c.id === catId ? { ...c, discountMode: disc.mode, discountValue: v } : c)); }}
                         style={{ width: 56, height: 20, border: `1px solid ${disc.hasDiscount ? "#C0392B" : BORDER}`, borderRadius: 5, padding: "0 5px", fontSize: 11, fontVariantNumeric: "tabular-nums", background: "#fff", color: TEXT }} />
                     </div>
                   )}
@@ -1557,7 +1558,7 @@ function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols,
                   {disc.hasDiscount ? (<>
                     <div style={{ fontSize: 12, color: SUB }}>原報價 <span style={{ color: "#A99F88", textDecoration: "line-through", fontVariantNumeric: "tabular-nums" }}>{fmt(groupRaw)}</span></div>
                     <div style={{ fontSize: 12, color: SUB }}>議價後 <span style={{ color: TEXT, fontVariantNumeric: "tabular-nums", fontWeight: 600 }}>{fmt(groupEst)}</span></div>
-                    <div style={{ fontSize: 12, color: "#C0392B", fontWeight: 600, fontVariantNumeric: "tabular-nums" }} title={`折讓 ${fmt(disc.amt)}（未稅）`}>省 {fmt(groupSaved)}（-{Math.round(disc.pct * 10) / 10}%）</div>
+                    <div style={{ fontSize: 12, color: "#C0392B", fontWeight: 600, fontVariantNumeric: "tabular-nums" }} title={disc.mode === "amt" ? `固定折讓 ${fmt(disc.amt)}（直接從含稅總價扣）` : `折 ${Math.round(disc.pct * 10) / 10}%`}>省 {fmt(groupSaved)}（-{Math.round(disc.pct * 10) / 10}%）</div>
                   </>) : (
                     <div style={{ fontSize: 12, color: SUB }}>預估 <span style={{ color: TEXT, fontVariantNumeric: "tabular-nums", fontWeight: 500 }}>{fmt(groupEst)}</span></div>
                   )}
