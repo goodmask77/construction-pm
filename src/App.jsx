@@ -1210,18 +1210,19 @@ function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols,
                       <span style={{ fontSize: 11, color: SUB }}>{doneCount}/{itemCount}</span>
                     </div>
                   )}
-                  <div style={{ flex: 1 }} />
-                  {/* 議價折扣（套用在未稅層、稅金重算；細項原報價不動）*/}
+                  {/* 議價折扣（放在大項名稱旁，不用捲動就看得到；套用在未稅層、稅金重算，細項原報價不動）*/}
                   {itemCount > 0 && (
-                    <div style={{ display: "flex", alignItems: "center", gap: 3, flexShrink: 0 }} title="大項議價折扣：套用在未稅小計、稅金重算">
+                    <div style={{ display: "flex", alignItems: "center", gap: 3, flexShrink: 0, marginLeft: 4 }} title="大項議價折扣：套用在未稅小計、稅金重算">
+                      <span style={{ fontSize: 11, color: SUB, flexShrink: 0 }}>議價</span>
                       <button onClick={() => setCats(prev => prev.map(c => c.id === catId ? { ...c, discountMode: (disc.mode === "amt" ? "pct" : "amt"), discountValue: 0 } : c))}
                         title={disc.mode === "amt" ? "目前：折讓金額（點擊改為折 %）" : "目前：折 %（點擊改為折讓金額）"}
                         style={{ border: `1px solid ${BORDER}`, background: SURFACE, color: ACCENT, borderRadius: 5, width: 22, height: 20, fontSize: 12, fontWeight: 700, cursor: "pointer", padding: 0, flexShrink: 0 }}>{disc.mode === "amt" ? "$" : "%"}</button>
-                      <input type="number" min={0} max={disc.mode === "amt" ? Math.round(disc.sub) : 100} value={cat?.discountValue || ""} placeholder="議價"
+                      <input type="number" min={0} max={disc.mode === "amt" ? Math.round(disc.sub) : 100} value={cat?.discountValue || ""} placeholder={disc.mode === "amt" ? "折讓$" : "折%"}
                         onChange={e => { const max = disc.mode === "amt" ? catPretaxSub(cat) : 100; let v = Math.min(Math.max(Number(e.target.value) || 0, 0), max); setCats(prev => prev.map(c => c.id === catId ? { ...c, discountMode: disc.mode, discountValue: v } : c)); }}
-                        style={{ width: 54, height: 20, border: `1px solid ${BORDER}`, borderRadius: 5, padding: "0 5px", fontSize: 11, fontVariantNumeric: "tabular-nums", background: "#fff", color: TEXT }} />
+                        style={{ width: 56, height: 20, border: `1px solid ${disc.hasDiscount ? "#C0392B" : BORDER}`, borderRadius: 5, padding: "0 5px", fontSize: 11, fontVariantNumeric: "tabular-nums", background: "#fff", color: TEXT }} />
                     </div>
                   )}
+                  <div style={{ flex: 1 }} />
                   {disc.hasDiscount ? (<>
                     <div style={{ fontSize: 12, color: SUB }}>原報價 <span style={{ color: "#A99F88", textDecoration: "line-through", fontVariantNumeric: "tabular-nums" }}>{fmt(groupRaw)}</span></div>
                     <div style={{ fontSize: 12, color: SUB }}>議價後 <span style={{ color: TEXT, fontVariantNumeric: "tabular-nums", fontWeight: 600 }}>{fmt(groupEst)}</span></div>
