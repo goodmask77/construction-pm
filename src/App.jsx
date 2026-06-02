@@ -764,6 +764,9 @@ export default function App() {
         {view === "accounts" && isAdmin && (
           <AccountManager accounts={accounts} setAccounts={commitAccounts} confirm={confirm} />
         )}
+        {view === "groups" && isAdmin && (
+          <GroupsView cats={cats} canEdit={canEditData} requireLogin={denyEdit} />
+        )}
         {view === "advisor" && settings && (
           <AdvisorSettingsView settings={settings} setSettings={guardedSetSettings} cats={cats} aiLog={aiLog} setAiLog={l => { setAiLog(l); saveAILog(l); }} journal={journal} events={events} plans={plans} activityLog={activityLog} logActivity={logActivity} userName={userName} />
         )}
@@ -803,7 +806,7 @@ export default function App() {
       )}
 
       {/* 手機底部固定導覽 */}
-      {isMobile && <BottomNav view={view} setView={setView} />}
+      {isMobile && <BottomNav view={view} setView={setView} isAdmin={isAdmin} />}
     </div>
   );
 }
@@ -875,6 +878,102 @@ function IssuesView({ canEdit, requireLogin, confirm }) {
       {lightbox && (
         <div onClick={() => setLightbox(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.85)", zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center", cursor: "zoom-out" }}>
           <img src={lightbox} alt="" style={{ maxWidth: "92%", maxHeight: "92%", objectFit: "contain" }} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── LINE 群組管理（D哥所在的所有群：設權限 + 每日彙報開關）────────────────────
+// pm_group_seen：D哥自動登記的群清單（名稱/最近活躍/則數，由 bot 寫）
+// pm_bot_groups：每個群的設定（mode/綁定工程/彙報開關，由這頁寫）
+function GroupsView({ cats, canEdit, requireLogin }) {
+  const [seen, setSeen] = useState(null);
+  const [cfg, setCfg] = useState({});
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const s = await window.storage.get("pm_group_seen", true);
+        const c = await window.storage.get("pm_bot_groups", true);
+        setSeen(s && s.value ? JSON.parse(s.value) : {});
+        setCfg(c && c.value ? JSON.parse(c.value) : {});
+      } catch { setSeen({}); setCfg({}); }
+    })();
+  }, []);
+
+  const guard = () => { if (!canEdit) { requireLogin && requireLogin(); return false; } return true; };
+  const persist = async (next) => {
+    setCfg(next); setSaving(true);
+    try { await window.storage.set("pm_bot_groups", JSON.stringify(next), true); } catch (_) {}
+    setSaving(false);
+  };
+  const effMode = (gid) => { const c = cfg[gid] || {}; return c.mode || (gid === DEFAULT_LINE_GROUP ? "internal" : (c.catId ? "vendor" : "locked")); };
+  const effDigest = (gid) => (cfg[gid]?.digest !== false);
+  const setMode = (gid, mode) => { if (!guard()) return; const c = { ...(cfg[gid] || {}) }; c.mode = mode; if (mode !== "vendor") { delete c.catId; delete c.catName; } persist({ ...cfg, [gid]: c }); };
+  const setVendorCat = (gid, catId) => { if (!guard()) return; const cat = (cats || []).find(x => x.id === catId); persist({ ...cfg, [gid]: { ...(cfg[gid] || {}), mode: "vendor", catId, catName: cat ? cat.name : "" } }); };
+  const toggleDigest = (gid) => { if (!guard()) return; persist({ ...cfg, [gid]: { ...(cfg[gid] || {}), digest: !effDigest(gid) } }); };
+
+  if (seen === null) return <div style={{ padding: 40, color: SUB, fontSize: 14 }}>載入中…</div>;
+
+  const ids = Array.from(new Set([...Object.keys(seen), ...Object.keys(cfg)]));
+  ids.sort((a, b) => {
+    const am = effMode(a) === "internal" ? 0 : 1, bm = effMode(b) === "internal" ? 0 : 1;
+    if (am !== bm) return am - bm;
+    return (seen[b]?.lastSeen || "").localeCompare(seen[a]?.lastSeen || "");
+  });
+  const MODE_LABEL = { internal: "內部群", vendor: "廠商群", locked: "鎖定" };
+  const fmtWhen = (iso) => { if (!iso) return "—"; const days = Math.floor((Date.now() - new Date(iso).getTime()) / 86400000); if (days <= 0) return "今天"; if (days === 1) return "昨天"; return `${days} 天前`; };
+
+  return (
+    <div>
+      <div style={{ display: "flex", alignItems: "center", gap: 12, margin: "8px 0 6px", flexWrap: "wrap" }}>
+        <div style={{ fontSize: 17, fontWeight: 700, color: TEXT }}>💬 LINE 群組</div>
+        <div style={{ fontSize: 12.5, color: SUB }}>D哥所在 {ids.length} 個群{saving ? " · 儲存中…" : ""}</div>
+      </div>
+      <div style={{ fontSize: 12.5, color: SUB, marginBottom: 16, lineHeight: 1.6 }}>
+        <b style={{ color: TEXT }}>內部群</b>＝自己人，可查預算、金額、全部工程；<b style={{ color: TEXT }}>廠商群</b>＝只回它負責那項工程的進度，<b style={{ color: ACCENT }}>絕不洩漏金額</b>；<b style={{ color: TEXT }}>鎖定</b>＝只閒聊、不給工地資料。外群一律「叫名字才回話」。
+      </div>
+
+      {ids.length === 0 ? (
+        <div style={{ padding: 40, textAlign: "center", color: SUB, fontSize: 14, background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: 12 }}>
+          還沒有群組。把 D哥 加進 LINE 群後，這裡會自動列出來。
+        </div>
+      ) : (
+        <div style={{ display: "grid", gap: 12 }}>
+          {ids.map(gid => {
+            const s = seen[gid] || {}; const mode = effMode(gid);
+            const name = (cfg[gid]?.name) || s.name || gid;
+            const dg = effDigest(gid);
+            return (
+              <div key={gid} style={{ background: "#fff", border: `1px solid ${mode === "internal" ? ACCENT : BORDER}`, borderRadius: 12, padding: 14 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                  <div style={{ fontSize: 15, fontWeight: 700, color: TEXT }}>{name}</div>
+                  <span style={{ fontSize: 11, color: SUB }}>· 最近 {fmtWhen(s.lastSeen)} · {s.count || 0} 則</span>
+                </div>
+                <div style={{ display: "flex", gap: 6, marginTop: 10, flexWrap: "wrap" }}>
+                  {["internal", "vendor", "locked"].map(mv => (
+                    <button key={mv} onClick={() => setMode(gid, mv)} style={{ padding: "5px 14px", borderRadius: 7, border: `1px solid ${mode === mv ? PRIMARY : BORDER}`, cursor: "pointer", fontSize: 12.5, fontWeight: mode === mv ? 700 : 500, background: mode === mv ? PRIMARY : "transparent", color: mode === mv ? "#fff" : SUB }}>{MODE_LABEL[mv]}</button>
+                  ))}
+                </div>
+                {mode === "vendor" && (
+                  <div style={{ marginTop: 10, fontSize: 13, color: TEXT }}>
+                    綁定工程：
+                    <select value={cfg[gid]?.catId || ""} onChange={e => setVendorCat(gid, e.target.value)} style={{ marginLeft: 8, padding: "5px 8px", borderRadius: 6, border: `1px solid ${BORDER}`, fontSize: 13, background: SURFACE, color: TEXT }}>
+                      <option value="">— 請選擇 —</option>
+                      {(cats || []).map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                    </select>
+                    {!cfg[gid]?.catId && <span style={{ color: ACCENT, fontSize: 12, marginLeft: 8 }}>⚠️ 還沒綁，D哥會暫當鎖定群</span>}
+                  </div>
+                )}
+                <div style={{ marginTop: 10, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                  <button onClick={() => toggleDigest(gid)} style={{ padding: "4px 14px", borderRadius: 20, border: `1px solid ${dg ? "#3C8C3C" : BORDER}`, cursor: "pointer", fontSize: 12.5, fontWeight: 600, background: dg ? "#EAF6EA" : "transparent", color: dg ? "#3C8C3C" : SUB }}>{dg ? "✅ 納入每日彙報" : "🔕 不彙報"}</button>
+                  <span style={{ fontSize: 11.5, color: SUB }}>每晚 8:00 整理重點私訊給你</span>
+                </div>
+              </div>
+            );
+          })}
         </div>
       )}
     </div>
@@ -1094,8 +1193,8 @@ function CompareView({ canEdit, requireLogin }) {
 }
 
 // ── BOTTOM NAV (手機) ───────────────────────────────────────────────────────
-function BottomNav({ view, setView }) {
-  const tabs = [["owner", "儀表板", "📊"], ["overview", "總覽", "📋"], ["gantt", "工序", "📅"], ["files", "檔案庫", "📁"], ["issues", "問題", "⚠️"], ["compare", "比價", "⚖️"], ["advisor", "AI設定", "🤖"]];
+function BottomNav({ view, setView, isAdmin }) {
+  const tabs = [["owner", "儀表板", "📊"], ["overview", "總覽", "📋"], ["gantt", "工序", "📅"], ["files", "檔案庫", "📁"], ["issues", "問題", "⚠️"], ["compare", "比價", "⚖️"], ...(isAdmin ? [["groups", "群組", "💬"]] : []), ["advisor", "AI設定", "🤖"]];
   return (
     <div style={{ position: "fixed", left: 0, right: 0, bottom: 0, height: 60, background: "rgba(255,255,255,0.96)", backdropFilter: "blur(10px)", WebkitBackdropFilter: "blur(10px)", borderTop: `1px solid ${BORDER}`, boxShadow: "0 -2px 14px rgba(0,0,0,0.08)", display: "flex", zIndex: 350, paddingBottom: "env(safe-area-inset-bottom)" }}>
       {tabs.map(([v, l, icon]) => {
@@ -1203,7 +1302,7 @@ function TopNav({ view, setView, saving, totalEstimated, totalPaid, doneCount, c
       {/* view tabs — boxed editorial（手機隱藏，改用底部導覽）*/}
       {!isMobile && (
       <div style={{ display: "flex", gap: 8, paddingBottom: 12, flexWrap: "wrap" }}>
-        {[["owner","儀表板"],["overview","總覽"],["gantt","工序"],["files","檔案庫"],["issues","問題集"],["compare","比價"],["advisor","AI設定"],...(isAdmin?[["accounts","帳號"]]:[])].map(([v,l]) => (
+        {[["owner","儀表板"],["overview","總覽"],["gantt","工序"],["files","檔案庫"],["issues","問題集"],["compare","比價"],["advisor","AI設定"],...(isAdmin?[["groups","群組"],["accounts","帳號"]]:[])].map(([v,l]) => (
           <button key={v} onClick={() => setView(v)} style={{ padding: "8px 16px", borderRadius: 7, border: `1px solid ${view === v ? PRIMARY : BORDER}`, cursor: "pointer", fontSize: 14, fontWeight: 500, background: view === v ? PRIMARY : "transparent", color: view === v ? "#fff" : TEXT, transition: "all .12s" }}>{l}</button>
         ))}
       </div>
