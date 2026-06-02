@@ -757,6 +757,9 @@ export default function App() {
         {view === "issues" && (
           <IssuesView canEdit={canEditData} requireLogin={denyEdit} confirm={confirm} />
         )}
+        {view === "compare" && (
+          <CompareView canEdit={canEditFiles} requireLogin={denyEdit} />
+        )}
         {view === "accounts" && isAdmin && (
           <AccountManager accounts={accounts} setAccounts={commitAccounts} confirm={confirm} />
         )}
@@ -877,9 +880,155 @@ function IssuesView({ canEdit, requireLogin, confirm }) {
   );
 }
 
+// ── 估價單比價（在 App 上傳多份 PDF/圖 → callAI 解析 → 對比表）─────────────────
+const _normName = (s) => String(s || "").replace(/[\s（）()【】\[\].·、，,。-]/g, "").toLowerCase();
+function _buildCompareRows(ests) {
+  const map = new Map(); // 正規化名稱相同才視為同品項（保守，不亂配對）
+  ests.forEach(e => (e.items || []).forEach(it => {
+    const key = _normName(it.name);
+    if (!key) return;
+    if (!map.has(key)) map.set(key, { label: it.name, prices: {} });
+    map.get(key).prices[e.id] = Number(it.unitPrice) || 0;
+  }));
+  return [...map.values()].filter(r => Object.keys(r.prices).length >= 2);
+}
+function _fileToB64(f) {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(String(r.result).split(",")[1]);
+    r.onerror = reject;
+    r.readAsDataURL(f);
+  });
+}
+
+function CompareView({ canEdit, requireLogin }) {
+  const [ests, setEsts] = useState(null);
+  const [busy, setBusy] = useState("");
+  const fileRef = useRef(null);
+
+  useEffect(() => {
+    (async () => { try { const r = await window.storage.get("pm_estimates", true); setEsts(r && r.value ? JSON.parse(r.value) : []); } catch { setEsts([]); } })();
+  }, []);
+  const save = async (list) => { setEsts(list); try { await window.storage.set("pm_estimates", JSON.stringify(list), true); } catch (_) {} };
+
+  const onPick = async (files) => {
+    if (!canEdit) { requireLogin && requireLogin(); return; }
+    const arr = Array.from(files || []); if (!arr.length) return;
+    const added = [];
+    for (const f of arr) {
+      setBusy(`解析中：${f.name}…`);
+      try {
+        const b64 = await _fileToB64(f);
+        const isPdf = /pdf/i.test(f.type) || /\.pdf$/i.test(f.name);
+        const block = isPdf
+          ? { type: "document", source: { type: "base64", media_type: "application/pdf", data: b64 } }
+          : { type: "image", source: { type: "base64", media_type: f.type || "image/jpeg", data: b64 } };
+        const prompt = `這是一份工程估價單／報價單。抽出資訊，只回 JSON、不要其他文字：{"vendor":"廠商名稱","total":總額數字,"items":[{"name":"品項","qty":數量,"unit":"單位","unitPrice":單價數字}]}。看不到的：文字留空字串、數字留0；金額只放數字。`;
+        const reply = await callAI([{ role: "user", content: [block, { type: "text", text: prompt }] }], "你是工程估價單解析助理，只輸出 JSON。");
+        const clean = reply.replace(/```json|```/gi, "").trim();
+        let parsed = { vendor: "", total: 0, items: [] };
+        try { parsed = JSON.parse(clean.slice(clean.indexOf("{"), clean.lastIndexOf("}") + 1)); } catch (_) {}
+        added.push({ id: "es-" + Math.random().toString(36).slice(2, 8), file: f.name, vendor: parsed.vendor || f.name, total: Number(parsed.total) || 0, items: Array.isArray(parsed.items) ? parsed.items : [], ts: new Date().toISOString() });
+      } catch (e) {
+        added.push({ id: "es-" + Math.random().toString(36).slice(2, 8), file: f.name, vendor: f.name, total: 0, items: [], error: String(e?.message || e) });
+      }
+    }
+    setBusy("");
+    save([...(ests || []), ...added]);
+  };
+
+  const remove = (id) => { if (!canEdit) { requireLogin && requireLogin(); return; } save(ests.filter(e => e.id !== id)); };
+
+  if (ests === null) return <div style={{ padding: 40, color: SUB, fontSize: 14 }}>載入中…</div>;
+  const sorted = [...ests].sort((a, b) => (a.total || 0) - (b.total || 0));
+  const lowest = sorted.length ? (sorted.find(e => e.total > 0)?.total || 0) : 0;
+  const highest = sorted.length ? Math.max(...ests.map(e => e.total || 0)) : 0;
+  const rows = _buildCompareRows(ests);
+
+  return (
+    <div>
+      <div style={{ display: "flex", alignItems: "center", gap: 12, margin: "8px 0 16px", flexWrap: "wrap" }}>
+        <div style={{ fontSize: 17, fontWeight: 700, color: TEXT }}>📊 估價單比價</div>
+        <div style={{ fontSize: 12.5, color: SUB }}>{ests.length} 份</div>
+        <div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
+          <input ref={fileRef} type="file" accept="image/*,application/pdf" multiple style={{ display: "none" }} onChange={e => { onPick(e.target.files); e.target.value = ""; }} />
+          <button onClick={() => fileRef.current?.click()} disabled={!!busy} style={{ background: ACCENT, border: "none", color: "#fff", borderRadius: 8, padding: "8px 16px", fontSize: 13, fontWeight: 600, cursor: busy ? "wait" : "pointer" }}>{busy ? busy : "＋ 上傳估價單"}</button>
+        </div>
+      </div>
+
+      {ests.length === 0 ? (
+        <div style={{ padding: 40, textAlign: "center", color: SUB, fontSize: 14, background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: 12 }}>
+          上傳 2 份以上估價單（PDF／圖片）開始比價
+          <div style={{ fontSize: 12, marginTop: 8 }}>D哥 會解析每份的廠商／總額／品項，自動排序並對比</div>
+        </div>
+      ) : (
+        <>
+          {/* 總額對比 */}
+          <div style={{ background: "#fff", border: `1px solid ${BORDER}`, borderRadius: 12, padding: 16, marginBottom: 14 }}>
+            <div style={{ fontSize: 13.5, fontWeight: 700, color: TEXT, marginBottom: 10 }}>💰 總額對比（低→高）</div>
+            {sorted.map((e, idx) => {
+              const diff = (e.total || 0) - lowest;
+              const pct = lowest > 0 ? Math.round(diff / lowest * 100) : 0;
+              return (
+                <div key={e.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 0", borderBottom: idx < sorted.length - 1 ? `1px solid #F4EFE3` : "none" }}>
+                  <span style={{ fontSize: 15 }}>{idx === 0 && e.total > 0 ? "🥇" : idx === 1 ? "🥈" : idx === 2 ? "🥉" : "・"}</span>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 14, color: TEXT, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{e.vendor}</div>
+                    <div style={{ fontSize: 10.5, color: SUB, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{e.file}{e.error ? " ⚠️ 解析失敗" : ""}</div>
+                  </div>
+                  <div style={{ textAlign: "right" }}>
+                    <div style={{ fontSize: 14, fontWeight: 700, fontFamily: "monospace", color: idx === 0 && e.total > 0 ? "#3C8C3C" : TEXT }}>{fmt(e.total)}</div>
+                    {diff > 0 && <div style={{ fontSize: 10.5, color: "#C2872E" }}>+{fmt(diff)}（+{pct}%）</div>}
+                  </div>
+                  <button onClick={() => remove(e.id)} title="移除" style={{ border: "none", background: "none", color: SUB, cursor: "pointer", fontSize: 15 }}>✕</button>
+                </div>
+              );
+            })}
+            {highest > lowest && lowest > 0 && (
+              <div style={{ fontSize: 12.5, color: "#3C8C3C", marginTop: 10, fontWeight: 600 }}>💡 選最低（{sorted[0].vendor}）比最高省 {fmt(highest - lowest)}</div>
+            )}
+          </div>
+
+          {/* 逐項單價對比 */}
+          {rows.length > 0 && (
+            <div style={{ background: "#fff", border: `1px solid ${BORDER}`, borderRadius: 12, padding: 16, overflowX: "auto" }}>
+              <div style={{ fontSize: 13.5, fontWeight: 700, color: TEXT, marginBottom: 10 }}>📦 逐項單價對比</div>
+              <table style={{ borderCollapse: "collapse", width: "100%", fontSize: 12.5, minWidth: 360 }}>
+                <thead>
+                  <tr>
+                    <th style={{ textAlign: "left", padding: "6px 8px", color: SUB, borderBottom: `1px solid ${BORDER}`, whiteSpace: "nowrap" }}>品項</th>
+                    {ests.map(e => <th key={e.id} style={{ textAlign: "right", padding: "6px 8px", color: SUB, borderBottom: `1px solid ${BORDER}`, whiteSpace: "nowrap", maxWidth: 90, overflow: "hidden", textOverflow: "ellipsis" }}>{e.vendor}</th>)}
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.map((r, ri) => {
+                    const vals = ests.map(e => r.prices[e.id]).filter(v => v > 0);
+                    const min = vals.length ? Math.min(...vals) : 0;
+                    return (
+                      <tr key={ri}>
+                        <td style={{ padding: "6px 8px", color: TEXT, borderBottom: `1px solid #F4EFE3` }}>{r.label}</td>
+                        {ests.map(e => {
+                          const v = r.prices[e.id];
+                          const isMin = v > 0 && v === min;
+                          return <td key={e.id} style={{ textAlign: "right", padding: "6px 8px", fontFamily: "monospace", borderBottom: `1px solid #F4EFE3`, color: isMin ? "#3C8C3C" : TEXT, fontWeight: isMin ? 700 : 400, background: isMin ? "#EAF6EA" : "transparent" }}>{v != null ? fmt(v) : "—"}</td>;
+                        })}
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+              <div style={{ fontSize: 11, color: SUB, marginTop: 8 }}>※ 僅列出各家「名稱相同」的品項；命名不同會抓不全，金額以原估價單為準。</div>
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
 // ── BOTTOM NAV (手機) ───────────────────────────────────────────────────────
 function BottomNav({ view, setView }) {
-  const tabs = [["owner", "儀表板", "📊"], ["overview", "總覽", "📋"], ["gantt", "工序", "📅"], ["files", "檔案庫", "📁"], ["issues", "問題", "⚠️"], ["advisor", "AI設定", "🤖"]];
+  const tabs = [["owner", "儀表板", "📊"], ["overview", "總覽", "📋"], ["gantt", "工序", "📅"], ["files", "檔案庫", "📁"], ["issues", "問題", "⚠️"], ["compare", "比價", "⚖️"], ["advisor", "AI設定", "🤖"]];
   return (
     <div style={{ position: "fixed", left: 0, right: 0, bottom: 0, height: 60, background: "rgba(255,255,255,0.96)", backdropFilter: "blur(10px)", WebkitBackdropFilter: "blur(10px)", borderTop: `1px solid ${BORDER}`, boxShadow: "0 -2px 14px rgba(0,0,0,0.08)", display: "flex", zIndex: 350, paddingBottom: "env(safe-area-inset-bottom)" }}>
       {tabs.map(([v, l, icon]) => {
@@ -987,7 +1136,7 @@ function TopNav({ view, setView, saving, totalEstimated, totalPaid, doneCount, c
       {/* view tabs — boxed editorial（手機隱藏，改用底部導覽）*/}
       {!isMobile && (
       <div style={{ display: "flex", gap: 8, paddingBottom: 12, flexWrap: "wrap" }}>
-        {[["owner","儀表板"],["overview","總覽"],["gantt","工序"],["files","檔案庫"],["issues","問題集"],["advisor","AI設定"],...(isAdmin?[["accounts","帳號"]]:[])].map(([v,l]) => (
+        {[["owner","儀表板"],["overview","總覽"],["gantt","工序"],["files","檔案庫"],["issues","問題集"],["compare","比價"],["advisor","AI設定"],...(isAdmin?[["accounts","帳號"]]:[])].map(([v,l]) => (
           <button key={v} onClick={() => setView(v)} style={{ padding: "8px 16px", borderRadius: 7, border: `1px solid ${view === v ? PRIMARY : BORDER}`, cursor: "pointer", fontSize: 14, fontWeight: 500, background: view === v ? PRIMARY : "transparent", color: view === v ? "#fff" : TEXT, transition: "all .12s" }}>{l}</button>
         ))}
       </div>
