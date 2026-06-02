@@ -235,6 +235,7 @@ const LINE_API_KEY = "ground-pm-2026-secret-abc123"; // 先寫死，之後再改
 const DEFAULT_LINE_GROUP = "Cf7940efc6517b0c084ad2ad496b45f30";
 // 通知開關清單（key 同時供 webhook server 排程使用）
 const LINE_EVENTS = [
+  ["daily",   "每日工地速報（早上 8:00 推送）"],
   ["issue",   "細項狀態變為「有問題」時通知"],
   ["done",    "細項狀態變為「完工」時通知"],
   ["stalled", "卡關超過 3 天提醒"],
