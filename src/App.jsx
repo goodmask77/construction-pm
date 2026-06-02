@@ -195,16 +195,27 @@ const catDiscount = (cat) => {
   else { pct = Math.min(Math.max(v, 0), 100); factor = 1 - pct / 100; amt = sub * pct / 100; }
   return { hasDiscount: factor < 1, factor, pct, amt, mode, value: v, sub };
 };
-const catEstAfter = (cat) => { // 議價後含稅（大項預估金額＝headline 預算）
+// 議價後含稅＝原報價含稅 × factor（百分比折扣與未稅層折扣在數學上等價，直接乘可避免逐筆進位誤差，
+// 讓「省 = 原報價 × 折%」跟計算機一致；factor 已含固定折讓換算）
+const catEstAfter = (cat) => {
   const { factor } = catDiscount(cat);
   if (factor === 1) return catRawEst(cat);
-  return (cat?.items || []).reduce((s, it) => {
-    const pre = pretaxOf(it) * factor;
-    const tax = isTaxable(it) ? pre * 0.05 : 0;
-    return s + Math.round(pre + tax);
-  }, 0);
+  return Math.round(catRawEst(cat) * factor);
 };
 const catSaved = (cat) => catRawEst(cat) - catEstAfter(cat);
+// 逐筆「議價後預估金額」：各細項按 factor 打折，進位殘差塞給最後一筆 → Σ 細項 = 大項議價後
+const catItemEstAfter = (cat) => {
+  const map = {};
+  const d = catDiscount(cat);
+  const items = cat?.items || [];
+  if (!d.hasDiscount) { items.forEach(it => { map[it.id] = estAmount(it); }); return map; }
+  const target = catEstAfter(cat);
+  let acc = 0;
+  items.forEach(it => { const v = Math.round(estAmount(it) * d.factor); map[it.id] = v; acc += v; });
+  const last = items[items.length - 1];
+  if (last) map[last.id] += (target - acc);
+  return map;
+};
 
 // ── RWD：偵測手機寬度（< 768px）──────────────────────────────────────────────
 const MOBILE_BP = 768;
@@ -1040,20 +1051,26 @@ function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols,
       estQty: Number(item.estQty ?? item.qty ?? 0),
       estUnitPrice: Number(item.estUnitPrice ?? item.unitPrice ?? 0),
       taxAmount: taxOf(item),
-      estTotal: estAmount(item),
+      estTotal: estAfterOf(item),
       paid: paidOf(item),
-      unpaid: unpaidOf(item),
+      unpaid: unpaidAfterOf(item),
     };
     cols.filter(c => c.builtin === false && c.type !== "formula").forEach(c => { ctx[c.id] = c.type === "text" ? (item.cust?.[c.id] || "") : (Number(item.cust?.[c.id]) || 0); });
     cols.filter(c => c.builtin === false && c.type === "formula").forEach(c => { ctx[c.id] = evalFormula(c.formula, ctx); });
     return ctx;
   };
+  // 逐筆議價後預估金額（跨所有大項合併成一張對照表）
+  const estAfterMap = {};
+  for (const c of cats) Object.assign(estAfterMap, catItemEstAfter(c));
+  const estAfterOf = (it) => (it.id in estAfterMap) ? estAfterMap[it.id] : estAmount(it);
+  const unpaidAfterOf = (it) => estAfterOf(it) - paidOf(it);
+
   const numVal = (col, item) => {
     if (col.builtin) {
-      if (col.id === "estTotal") return estAmount(item);
+      if (col.id === "estTotal") return estAfterOf(item);
       if (col.id === "taxAmount") return taxOf(item);
       if (col.id === "paid") return paidOf(item);
-      if (col.id === "unpaid") return unpaidOf(item);
+      if (col.id === "unpaid") return unpaidAfterOf(item);
       const m = { estQty:item.estQty??item.qty, estUnitPrice:item.estUnitPrice??item.unitPrice };
       return Number(m[col.id]) || 0;
     }
@@ -1233,11 +1250,9 @@ function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols,
                   <div style={{ fontSize: 12, color: SUB }}>已付 <span style={{ color: "#3C8C3C", fontVariantNumeric: "tabular-nums", fontWeight: 500 }}>{fmt(groupPaid)}</span></div>
                   <div style={{ fontSize: 12, color: SUB }}>未付 <span style={{ color: groupUnpaid < 0 ? "#DC2626" : "#C2872E", fontVariantNumeric: "tabular-nums", fontWeight: 500 }}>{groupUnpaid < 0 ? `溢付 ${fmt(-groupUnpaid)}` : fmt(groupUnpaid)}</span></div>
                   {itemCount > 0 && (() => {
-                    const f = disc.factor;
-                    const payTarget = (it) => f === 1 ? estAmount(it) : (() => { const pre = pretaxOf(it) * f; const tax = isTaxable(it) ? pre * 0.05 : 0; return Math.round(pre + tax); })();
-                    const allFull = group.rows.every(r => { const e = payTarget(r.item); return e <= 0 || paidOf(r.item) >= e; });
+                    const allFull = group.rows.every(r => { const e = estAfterOf(r.item); return e <= 0 || paidOf(r.item) >= e; });
                     return (
-                      <button onClick={() => setCats(prev => prev.map(c => c.id === catId ? { ...c, items: c.items.map(it => ({ ...it, paid: allFull ? 0 : payTarget(it) })) } : c))} title={allFull ? "清除本大項所有已付金額" : "本大項全部一鍵付清（已付＝議價後金額）"} style={{ flexShrink: 0, border: `1px solid ${allFull ? "#C2872E" : "#3C8C3C"}`, background: allFull ? "#FFFBEB" : "#F0FDF4", color: allFull ? "#C2872E" : "#3C8C3C", borderRadius: 6, padding: "2px 9px", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>{allFull ? "清除付款" : "✓ 全部付清"}</button>
+                      <button onClick={() => setCats(prev => prev.map(c => c.id === catId ? { ...c, items: c.items.map(it => ({ ...it, paid: allFull ? 0 : estAfterOf(it) })) } : c))} title={allFull ? "清除本大項所有已付金額" : "本大項全部一鍵付清（已付＝議價後金額）"} style={{ flexShrink: 0, border: `1px solid ${allFull ? "#C2872E" : "#3C8C3C"}`, background: allFull ? "#FFFBEB" : "#F0FDF4", color: allFull ? "#C2872E" : "#3C8C3C", borderRadius: 6, padding: "2px 9px", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>{allFull ? "清除付款" : "✓ 全部付清"}</button>
                     );
                   })()}
                   <button onClick={() => confirm(`確定刪除工程大項「${group.name}」？\n（含其下 ${itemCount} 筆細項，無法復原）`).then(ok => { if (ok) setCats(prev => prev.filter(c => c.id !== catId)); })} title="刪除此工程大項" style={{ flexShrink: 0, marginLeft: 4, width: 22, height: 22, borderRadius: "50%", background: "transparent", border: "none", color: "#C8BCA0", cursor: "pointer", fontSize: 15, lineHeight: 1, display: "flex", alignItems: "center", justifyContent: "center", padding: 0 }} onMouseEnter={e => { e.currentTarget.style.background = "#F3E4DE"; e.currentTarget.style.color = "#DC2626"; }} onMouseLeave={e => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = "#C8BCA0"; }}>×</button>
@@ -1300,15 +1315,21 @@ function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols,
                           </div>
                         );
                         if (col.id === "taxAmount") return <div key={col.id} style={{ ...cs, color: "#A99F88", fontFamily: "monospace", fontSize: 12 }}>{fmt(taxOf(item))}</div>;
-                        if (col.id === "estTotal") return <div key={col.id} style={{ ...cs, color: ACCENT, fontFamily: "monospace", fontWeight: 600 }} title="預估金額（含稅，自動計算）">{fmt(estAmount(item))}</div>;
+                        if (col.id === "estTotal") {
+                          const after = estAfterOf(item), raw = estAmount(item), discd = disc.hasDiscount && after !== raw;
+                          return <div key={col.id} style={{ ...cs, color: ACCENT, fontFamily: "monospace", fontWeight: 600, gap: 4 }} title={discd ? `原報價 ${fmt(raw)} → 大項議價後 ${fmt(after)}` : "預估金額（含稅，自動計算）"}>
+                            {discd && <span style={{ color: "#A99F88", textDecoration: "line-through", fontWeight: 400, fontSize: 11 }}>{fmt(raw)}</span>}
+                            <span>{fmt(after)}</span>
+                          </div>;
+                        }
                         if (col.id === "paid") {
-                          const estA = estAmount(item), p = paidOf(item), full = estA > 0 && p >= estA;
+                          const estA = estAfterOf(item), p = paidOf(item), full = estA > 0 && p >= estA;
                           return <div key={col.id} style={{ ...cs, gap: 6 }}>
-                            <input type="checkbox" checked={full} title={full ? "已全額付清（點擊清除）" : "一鍵填入全額"} onChange={() => updateItem(catId, item.id, "paid", full ? 0 : estA)} style={{ width: 16, height: 16, flexShrink: 0, cursor: "pointer", accentColor: "#3C8C3C" }} />
+                            <input type="checkbox" checked={full} title={full ? "已全額付清（點擊清除）" : "一鍵填入議價後金額"} onChange={() => updateItem(catId, item.id, "paid", full ? 0 : estA)} style={{ width: 16, height: 16, flexShrink: 0, cursor: "pointer", accentColor: "#3C8C3C" }} />
                             <div style={{ flex: 1, minWidth: 0, color: p > 0 ? "#3C8C3C" : "#CDC3AC" }}><EditableCell catId={catId} itemId={item.id} field="paid" value={item.paid ?? item.cust?.paid ?? 0} type="number" /></div>
                           </div>;
                         }
-                        if (col.id === "unpaid") { const u = unpaidOf(item); return <div key={col.id} style={{ ...cs, color: u < 0 ? "#DC2626" : u > 0 ? "#C2872E" : "#3C8C3C", fontFamily: "monospace", fontWeight: 600 }} title={u < 0 ? "溢付（已付超過預估）" : "未付金額（自動）"}>{u < 0 ? `溢付 ${fmt(-u)}` : fmt(u)}</div>; }
+                        if (col.id === "unpaid") { const u = unpaidAfterOf(item); return <div key={col.id} style={{ ...cs, color: u < 0 ? "#DC2626" : u > 0 ? "#C2872E" : "#3C8C3C", fontFamily: "monospace", fontWeight: 600 }} title={u < 0 ? "溢付（已付超過議價後金額）" : "未付金額（議價後 − 已付，自動）"}>{u < 0 ? `溢付 ${fmt(-u)}` : fmt(u)}</div>; }
                         if (col.id === "payDate") return <div key={col.id} style={cs}><EditableCell catId={catId} itemId={item.id} field="payDate" value={item.payDate} type="date" placeholder="付款日" /></div>;
                         if (col.id === "payAccount") return <div key={col.id} style={cs}><EditableCell catId={catId} itemId={item.id} field="payAccount" value={item.payAccount} placeholder="銀行/帳號" /></div>;
                         if (col.id === "receipts") {
@@ -1381,13 +1402,14 @@ function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols,
           {/* 總計列：數字欄位自動加總 */}
           <div style={{ display: "flex", borderTop: `2px solid ${BORDER}`, background: "#ECE6D7", position: "sticky", bottom: 0, zIndex: 5, fontWeight: 600 }}>
             <div style={{ width: 24, flexShrink: 0, borderRight: "1px solid #D8CFBB" }} />
-            {(() => { const anyDisc = cats.some(c => catDiscount(c).hasDiscount); const afterTotal = cats.reduce((s, c) => s + catEstAfter(c), 0); return
+            {(() => { const anyDisc = cats.some(c => catDiscount(c).hasDiscount); return
             orderedCols.map(col => {
               const cs = { ...cellStyle(col) };
-              if (col.id === "name") return <div key={col.id} style={{ ...cs, fontWeight: 600, color: "#211C15" }}>總計（{rows.length} 筆）{anyDisc && <span style={{ fontWeight: 400, color: SUB, fontSize: 11 }}>　原報價，議價後見各大項</span>}</div>;
+              if (col.id === "name") return <div key={col.id} style={{ ...cs, fontWeight: 600, color: "#211C15" }}>總計（{rows.length} 筆）{anyDisc && <span style={{ fontWeight: 400, color: SUB, fontSize: 11 }}>　已含議價折扣</span>}</div>;
               if (col.id === "estTotal" && anyDisc) {
-                const sum = rows.reduce((s, r) => s + numVal(col, r.item), 0);
-                return <div key={col.id} style={{ ...cs, flexDirection: "column", alignItems: "flex-start", justifyContent: "center", gap: 0, lineHeight: 1.2 }} title="上：原報價總計　下：議價後總計"><span style={{ fontFamily: "monospace", color: "#A99F88", textDecoration: "line-through", fontSize: 11 }}>{fmt(sum)}</span><span style={{ fontFamily: "monospace", color: ACCENT, fontWeight: 700 }}>{fmt(afterTotal)}</span></div>;
+                const rawSum = rows.reduce((s, r) => s + estAmount(r.item), 0);
+                const afterSum = rows.reduce((s, r) => s + estAfterOf(r.item), 0);
+                return <div key={col.id} style={{ ...cs, flexDirection: "column", alignItems: "flex-start", justifyContent: "center", gap: 0, lineHeight: 1.2 }} title="上：原報價總計　下：議價後總計"><span style={{ fontFamily: "monospace", color: "#A99F88", textDecoration: "line-through", fontSize: 11 }}>{fmt(rawSum)}</span><span style={{ fontFamily: "monospace", color: ACCENT, fontWeight: 700 }}>{fmt(afterSum)}</span></div>;
               }
               if (summable(col)) {
                 const sum = rows.reduce((s, r) => s + numVal(col, r.item), 0);
