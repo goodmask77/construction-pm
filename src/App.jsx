@@ -3364,7 +3364,21 @@ const findItem = (cat, q) => {
   return cat.items.find(i => i.name === q) || cat.items.find(i => i.name.includes(q) || q.includes(i.name));
 };
 
-// 解析 AI 回覆中的指令。容錯：抓所有 ```json 區塊，接受 {actions:[]} / 裸{type} / 陣列三種格式
+// 從字串中掃出所有「括號平衡」的 {...} 物件（含被截斷的外層也能撿出內層完整物件）
+function extractBalancedObjects(s) {
+  const out = []; const stack = []; let inStr = false, esc = false;
+  for (let i = 0; i < s.length; i++) {
+    const ch = s[i];
+    if (inStr) { if (esc) esc = false; else if (ch === "\\") esc = true; else if (ch === '"') inStr = false; continue; }
+    if (ch === '"') { inStr = true; continue; }
+    if (ch === "{") stack.push(i);
+    else if (ch === "}") { const st = stack.pop(); if (st != null) out.push(s.slice(st, i + 1)); }
+  }
+  return out;
+}
+
+// 解析 AI 回覆中的指令。容錯：抓 ```json 區塊；接受 {actions:[]} / 裸{type} / 陣列；
+// 並對「回覆被截斷」(沒結尾 ``` / JSON 不完整) 做搶救：逐一撿出已完整的 {type:...} 物件。
 function parseActions(text) {
   if (!text) return [];
   const blocks = [...text.matchAll(/```json\s*([\s\S]*?)```/gi)].map(m => m[1]);
@@ -3372,14 +3386,21 @@ function parseActions(text) {
     const m = text.match(/\{[\s\S]*"actions"[\s\S]*\}/);
     if (m) blocks.push(m[0]);
   }
+  if (blocks.length === 0) blocks.push(text); // 連 ```json 圍欄都被截掉時，直接掃整段文字
   const actions = [];
   for (const b of blocks) {
+    let ok = false;
     try {
       const obj = JSON.parse(b);
-      if (Array.isArray(obj)) actions.push(...obj);
-      else if (Array.isArray(obj.actions)) actions.push(...obj.actions);
-      else if (obj && obj.type) actions.push(obj);
+      if (Array.isArray(obj)) { actions.push(...obj); ok = true; }
+      else if (Array.isArray(obj.actions)) { actions.push(...obj.actions); ok = true; }
+      else if (obj && obj.type) { actions.push(obj); ok = true; }
     } catch (_) {}
+    if (!ok) { // 截斷搶救：撿出每個完整的 {...}，保留帶 type 的當作指令
+      for (const objStr of extractBalancedObjects(b)) {
+        try { const o = JSON.parse(objStr); if (o && o.type) actions.push(o); } catch (_) {}
+      }
+    }
   }
   return actions;
 }

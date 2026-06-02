@@ -32,11 +32,11 @@ export default async function handler(req, res) {
           'x-api-key': key,
           'anthropic-version': '2023-06-01',
         },
-        body: JSON.stringify({ model, max_tokens: 2048, system, messages }),
+        body: JSON.stringify({ model, max_tokens: 8192, system, messages }),
       })
       const data = await r.json()
       if (r.ok) {
-        return res.status(200).json({ content: data.content, model })
+        return res.status(200).json({ content: data.content, model, stop_reason: data.stop_reason })
       }
       lastErr = data?.error?.message || lastErr
       // 只有「模型相關」錯誤才換下一個；其他錯誤（金鑰/額度）直接回報
