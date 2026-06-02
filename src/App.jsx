@@ -221,18 +221,27 @@ const catItemEstAfter = (cat) => {
 const PAY_CATEGORIES = ["訂金", "期中款", "尾款", "其他"];
 const catPaid = (cat) => (cat?.payments || []).reduce((s, p) => s + (Number(p.amount) || 0), 0);
 const catUnpaidAfter = (cat) => catEstAfter(cat) - catPaid(cat);
-// 一次性遷移：沒有 payments 的大項，把舊的逐項已付總和轉成一筆「既有付款」紀錄（已付總額不變）
+// 一次性遷移：
+// 1) 沒有 payments 的大項，把舊的逐項已付總和轉成一筆「既有付款」紀錄（已付總額不變）
+// 2) 清掉第一版殘留的 cat.budget（App 已改用議價後即時值，此欄不再使用，留著會讓 AI/bot 報出空殼金額）
 function migratePayments(cats) {
   if (!Array.isArray(cats)) return cats;
   let changed = false;
   const out = cats.map(c => {
-    if (Array.isArray(c.payments)) return c;
-    changed = true;
-    const sumPaid = (c.items || []).reduce((s, it) => s + (Number(it.paid ?? it.cust?.paid) || 0), 0);
-    const payments = sumPaid > 0
-      ? [{ id: "pay-legacy-" + c.id, date: "", amount: sumPaid, category: "其他", note: "既有付款（系統轉入）", receipts: [] }]
-      : [];
-    return { ...c, payments };
+    let next = c;
+    if (!Array.isArray(c.payments)) {
+      const sumPaid = (c.items || []).reduce((s, it) => s + (Number(it.paid ?? it.cust?.paid) || 0), 0);
+      const payments = sumPaid > 0
+        ? [{ id: "pay-legacy-" + c.id, date: "", amount: sumPaid, category: "其他", note: "既有付款（系統轉入）", receipts: [] }]
+        : [];
+      next = { ...next, payments };
+      changed = true;
+    }
+    if (next.budget) { // 非 0 的舊 budget → 清成 0
+      next = { ...next, budget: 0 };
+      changed = true;
+    }
+    return next;
   });
   return changed ? out : cats;
 }
@@ -3448,7 +3457,7 @@ function GanttView({ cats, setCats }) {
         </div>
         {[...cats].sort((a,b) => a.order - b.order).map((cat, ci) => {
           const start = cat.ganttStart ?? ci;
-          const dur = cat.ganttDur ?? Math.max(1, Math.round(cat.budget / 200000));
+          const dur = cat.ganttDur ?? Math.max(1, Math.round(catEstAfter(cat) / 200000));
           const st = STATUS_MAP[cat.status] || STATUS_MAP.pending;
           return (
             <div key={cat.id} style={{ display: "flex", marginBottom: 6, alignItems: "center" }}>
@@ -4406,7 +4415,7 @@ function GlobalAIPanel({ chat, setChat, onClose, cats, setCats, canEdit, confirm
     setLoading(true);
     try {
       // 把完整專案結構給 AI，方便精準比對名稱與執行操作
-      const structure = cats.map(c => `【${c.name}】預算${fmt(c.budget)} 狀態${c.status} 排程第${(c.ganttStart??0)+1}週起${c.ganttDur?` ${c.ganttDur}週`:""}；細項：${c.items.map(i=>`${i.name}(${i.qty}${i.unit}×${fmt(i.unitPrice)})`).join("、")||"無"}`).join("\n");
+      const structure = cats.map(c => `【${c.name}】議價後${fmt(catEstAfter(c))} 已付${fmt(catPaid(c))} 狀態${c.status} 排程第${(c.ganttStart??0)+1}週起${c.ganttDur?` ${c.ganttDur}週`:""}；細項：${c.items.map(i=>`${i.name}(${i.qty}${i.unit}×${fmt(i.unitPrice)})`).join("、")||"無"}`).join("\n");
       const textBlock = `目前專案結構：\n${structure}\n\n使用者訊息：${t || "（請判讀附件內容）"}`;
       const history = chat.slice(-12).map(m => ({ role: m.role === "user" ? "user" : "assistant", content: m.text }));
       let content;
