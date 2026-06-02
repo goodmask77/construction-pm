@@ -917,14 +917,18 @@ function GroupsView({ cats, canEdit, requireLogin }) {
 
   if (seen === null) return <div style={{ padding: 40, color: SUB, fontSize: 14 }}>載入中…</div>;
 
-  const ids = Array.from(new Set([...Object.keys(seen), ...Object.keys(cfg)]));
+  // 永遠把內部群放進清單（即使還沒有新訊息）
+  const ids = Array.from(new Set([DEFAULT_LINE_GROUP, ...Object.keys(seen), ...Object.keys(cfg)]));
   ids.sort((a, b) => {
     const am = effMode(a) === "internal" ? 0 : 1, bm = effMode(b) === "internal" ? 0 : 1;
     if (am !== bm) return am - bm;
     return (seen[b]?.lastSeen || "").localeCompare(seen[a]?.lastSeen || "");
   });
-  const MODE_LABEL = { internal: "內部群", vendor: "廠商群", locked: "鎖定" };
-  const fmtWhen = (iso) => { if (!iso) return "—"; const days = Math.floor((Date.now() - new Date(iso).getTime()) / 86400000); if (days <= 0) return "今天"; if (days === 1) return "昨天"; return `${days} 天前`; };
+  const MODE_COLOR = { internal: ACCENT, vendor: "#2E6FB0", locked: SUB };
+  const fmtWhen = (iso) => { if (!iso) return "—"; const days = Math.floor((Date.now() - new Date(iso).getTime()) / 86400000); if (days <= 0) return "今天"; if (days === 1) return "昨天"; return `${days}天前`; };
+  const th = { textAlign: "left", padding: "8px 10px", fontSize: 12, fontWeight: 700, color: SUB, borderBottom: `1.5px solid ${BORDER}`, whiteSpace: "nowrap" };
+  const td = { padding: "8px 10px", fontSize: 13, color: TEXT, borderBottom: `1px solid ${BORDER}`, verticalAlign: "middle" };
+  const selStyle = { padding: "4px 6px", borderRadius: 6, border: `1px solid ${BORDER}`, fontSize: 12.5, background: SURFACE, color: TEXT, cursor: "pointer" };
 
   return (
     <div>
@@ -932,50 +936,66 @@ function GroupsView({ cats, canEdit, requireLogin }) {
         <div style={{ fontSize: 17, fontWeight: 700, color: TEXT }}>💬 LINE 群組</div>
         <div style={{ fontSize: 12.5, color: SUB }}>D哥所在 {ids.length} 個群{saving ? " · 儲存中…" : ""}</div>
       </div>
-      <div style={{ fontSize: 12.5, color: SUB, marginBottom: 16, lineHeight: 1.6 }}>
-        <b style={{ color: TEXT }}>內部群</b>＝自己人，可查預算、金額、全部工程；<b style={{ color: TEXT }}>廠商群</b>＝只回它負責那項工程的進度，<b style={{ color: ACCENT }}>絕不洩漏金額</b>；<b style={{ color: TEXT }}>鎖定</b>＝只閒聊、不給工地資料。外群一律「叫名字才回話」。
+      <div style={{ fontSize: 12, color: SUB, marginBottom: 14, lineHeight: 1.6 }}>
+        <b style={{ color: ACCENT }}>內部群</b>＝自己人，可查預算金額全部工程；<b style={{ color: "#2E6FB0" }}>廠商群</b>＝只回它那項工程進度，<b style={{ color: ACCENT }}>絕不洩漏金額</b>（要選綁定工程）；<b style={{ color: SUB }}>鎖定</b>＝只閒聊。外群一律「叫名字才回話」。
       </div>
 
-      {ids.length === 0 ? (
-        <div style={{ padding: 40, textAlign: "center", color: SUB, fontSize: 14, background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: 12 }}>
-          還沒有群組。把 D哥 加進 LINE 群後，這裡會自動列出來。
-        </div>
-      ) : (
-        <div style={{ display: "grid", gap: 12 }}>
-          {ids.map(gid => {
-            const s = seen[gid] || {}; const mode = effMode(gid);
-            const name = (cfg[gid]?.name) || s.name || gid;
-            const dg = effDigest(gid);
-            return (
-              <div key={gid} style={{ background: "#fff", border: `1px solid ${mode === "internal" ? ACCENT : BORDER}`, borderRadius: 12, padding: 14 }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                  <div style={{ fontSize: 15, fontWeight: 700, color: TEXT }}>{name}</div>
-                  <span style={{ fontSize: 11, color: SUB }}>· 最近 {fmtWhen(s.lastSeen)} · {s.count || 0} 則</span>
-                </div>
-                <div style={{ display: "flex", gap: 6, marginTop: 10, flexWrap: "wrap" }}>
-                  {["internal", "vendor", "locked"].map(mv => (
-                    <button key={mv} onClick={() => setMode(gid, mv)} style={{ padding: "5px 14px", borderRadius: 7, border: `1px solid ${mode === mv ? PRIMARY : BORDER}`, cursor: "pointer", fontSize: 12.5, fontWeight: mode === mv ? 700 : 500, background: mode === mv ? PRIMARY : "transparent", color: mode === mv ? "#fff" : SUB }}>{MODE_LABEL[mv]}</button>
-                  ))}
-                </div>
-                {mode === "vendor" && (
-                  <div style={{ marginTop: 10, fontSize: 13, color: TEXT }}>
-                    綁定工程：
-                    <select value={cfg[gid]?.catId || ""} onChange={e => setVendorCat(gid, e.target.value)} style={{ marginLeft: 8, padding: "5px 8px", borderRadius: 6, border: `1px solid ${BORDER}`, fontSize: 13, background: SURFACE, color: TEXT }}>
-                      <option value="">— 請選擇 —</option>
-                      {(cats || []).map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+      <div style={{ overflowX: "auto", border: `1px solid ${BORDER}`, borderRadius: 12, background: "#fff" }}>
+        <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 620 }}>
+          <thead>
+            <tr style={{ background: SURFACE }}>
+              <th style={th}>群組</th>
+              <th style={th}>類型</th>
+              <th style={th}>綁定工程</th>
+              <th style={{ ...th, textAlign: "center" }}>每日彙報</th>
+              <th style={{ ...th, textAlign: "right" }}>最近 · 則數</th>
+            </tr>
+          </thead>
+          <tbody>
+            {ids.map(gid => {
+              const s = seen[gid] || {}; const mode = effMode(gid);
+              const isDefault = gid === DEFAULT_LINE_GROUP;
+              const name = (cfg[gid]?.name) || s.name || (isDefault ? "瑞光路337（內部群）" : gid);
+              const dg = effDigest(gid);
+              return (
+                <tr key={gid}>
+                  <td style={td}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                      <span style={{ width: 8, height: 8, borderRadius: "50%", background: MODE_COLOR[mode], flexShrink: 0 }} />
+                      <span style={{ fontWeight: 600 }}>{name}</span>
+                    </div>
+                  </td>
+                  <td style={td}>
+                    <select value={mode} onChange={e => setMode(gid, e.target.value)} style={{ ...selStyle, fontWeight: 600, color: MODE_COLOR[mode] }}>
+                      <option value="internal">內部群</option>
+                      <option value="vendor">廠商群</option>
+                      <option value="locked">鎖定</option>
                     </select>
-                    {!cfg[gid]?.catId && <span style={{ color: ACCENT, fontSize: 12, marginLeft: 8 }}>⚠️ 還沒綁，D哥會暫當鎖定群</span>}
-                  </div>
-                )}
-                <div style={{ marginTop: 10, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                  <button onClick={() => toggleDigest(gid)} style={{ padding: "4px 14px", borderRadius: 20, border: `1px solid ${dg ? "#3C8C3C" : BORDER}`, cursor: "pointer", fontSize: 12.5, fontWeight: 600, background: dg ? "#EAF6EA" : "transparent", color: dg ? "#3C8C3C" : SUB }}>{dg ? "✅ 納入每日彙報" : "🔕 不彙報"}</button>
-                  <span style={{ fontSize: 11.5, color: SUB }}>每晚 8:00 整理重點私訊給你</span>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
+                  </td>
+                  <td style={td}>
+                    {mode === "vendor" ? (
+                      <span>
+                        <select value={cfg[gid]?.catId || ""} onChange={e => setVendorCat(gid, e.target.value)} style={{ ...selStyle, borderColor: cfg[gid]?.catId ? BORDER : ACCENT }}>
+                          <option value="">— 請選 —</option>
+                          {(cats || []).map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                        </select>
+                        {!cfg[gid]?.catId && <span style={{ color: ACCENT, fontSize: 11, marginLeft: 6 }}>⚠️未綁</span>}
+                      </span>
+                    ) : <span style={{ color: SUB }}>—</span>}
+                  </td>
+                  <td style={{ ...td, textAlign: "center" }}>
+                    <button onClick={() => toggleDigest(gid)} title="每晚 8:00 整理重點私訊給你" style={{ width: 26, height: 26, borderRadius: 7, border: `1.5px solid ${dg ? "#3C8C3C" : BORDER}`, cursor: "pointer", background: dg ? "#3C8C3C" : "transparent", color: "#fff", fontSize: 14, lineHeight: 1, fontWeight: 700 }}>{dg ? "✓" : ""}</button>
+                  </td>
+                  <td style={{ ...td, textAlign: "right", color: SUB, fontSize: 12, whiteSpace: "nowrap" }}>{fmtWhen(s.lastSeen)} · {s.count || 0}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+      <div style={{ fontSize: 11.5, color: SUB, marginTop: 10, lineHeight: 1.6 }}>
+        新群只要 D哥 在裡面、有人講話或貼圖，就會自動列進來。設定即時生效。
+      </div>
     </div>
   );
 }
