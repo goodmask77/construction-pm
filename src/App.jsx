@@ -754,6 +754,9 @@ export default function App() {
         {view === "files" && (
           <PhotoLibraryView photos={photos} setPhotos={commitPhotos} cats={cats} canEdit={canEditFiles} userName={userName} requireLogin={denyEdit} confirm={confirm} />
         )}
+        {view === "issues" && (
+          <IssuesView canEdit={canEditData} requireLogin={denyEdit} confirm={confirm} />
+        )}
         {view === "accounts" && isAdmin && (
           <AccountManager accounts={accounts} setAccounts={commitAccounts} confirm={confirm} />
         )}
@@ -801,9 +804,82 @@ export default function App() {
   );
 }
 
+// ── 問題集 / 待辦（資料來自 LINE Bot 寫入的 pm_issues）────────────────────────
+function IssuesView({ canEdit, requireLogin, confirm }) {
+  const [issues, setIssues] = useState(null);
+  const [filter, setFilter] = useState("open");
+  const [lightbox, setLightbox] = useState(null);
+
+  useEffect(() => {
+    (async () => {
+      try { const r = await window.storage.get("pm_issues", true); setIssues(r && r.value ? JSON.parse(r.value) : []); }
+      catch { setIssues([]); }
+    })();
+  }, []);
+
+  const save = async (list) => {
+    setIssues(list);
+    try { await window.storage.set("pm_issues", JSON.stringify(list), true); } catch (_) {}
+  };
+  const guard = () => { if (!canEdit) { requireLogin && requireLogin(); return false; } return true; };
+  const toggleDone = (id) => { if (!guard()) return; save(issues.map(i => i.id === id ? { ...i, status: i.status === "done" ? "open" : "done" } : i)); };
+  const del = async (id) => { if (!guard()) return; if (await confirm("刪除這筆問題？")) save(issues.filter(i => i.id !== id)); };
+
+  if (issues === null) return <div style={{ padding: 40, color: SUB, fontSize: 14 }}>載入中…</div>;
+  const open = issues.filter(i => i.status !== "done");
+  const shown = filter === "open" ? open : issues;
+
+  return (
+    <div>
+      <div style={{ display: "flex", alignItems: "center", gap: 12, margin: "8px 0 16px", flexWrap: "wrap" }}>
+        <div style={{ fontSize: 17, fontWeight: 700, color: TEXT }}>⚠️ 問題集 / 待辦</div>
+        <div style={{ fontSize: 12.5, color: SUB }}>{open.length} 項待處理</div>
+        <div style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
+          {[["open", "待處理"], ["all", "全部"]].map(([k, l]) => (
+            <button key={k} onClick={() => setFilter(k)} style={{ padding: "5px 14px", borderRadius: 20, border: `1px solid ${BORDER}`, fontSize: 12.5, cursor: "pointer", background: filter === k ? ACCENT : "transparent", color: filter === k ? "#fff" : SUB, fontWeight: filter === k ? 700 : 500 }}>{l}</button>
+          ))}
+        </div>
+      </div>
+
+      {shown.length === 0 ? (
+        <div style={{ padding: 40, textAlign: "center", color: SUB, fontSize: 14, background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: 12 }}>
+          {filter === "open" ? "🎉 目前沒有待處理的問題" : "尚無問題記錄"}
+          <div style={{ fontSize: 12, marginTop: 8 }}>在 LINE 拍照說「檢查這張」或打字報問題，D哥 會幫你記進來</div>
+        </div>
+      ) : (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(280px,1fr))", gap: 12 }}>
+          {shown.map(it => (
+            <div key={it.id} style={{ background: "#fff", border: `1px solid ${BORDER}`, borderRadius: 12, overflow: "hidden", opacity: it.status === "done" ? 0.6 : 1 }}>
+              {it.photoUrl && <img src={it.photoUrl} alt="" onClick={() => setLightbox(it.photoUrl)} style={{ width: "100%", height: 150, objectFit: "cover", cursor: "zoom-in", display: "block" }} />}
+              <div style={{ padding: 12 }}>
+                <div style={{ fontSize: 14, color: TEXT, lineHeight: 1.5, fontWeight: 500, textDecoration: it.status === "done" ? "line-through" : "none" }}>{it.desc}</div>
+                <div style={{ display: "flex", gap: 6, flexWrap: "wrap", margin: "8px 0", alignItems: "center" }}>
+                  {it.catName && <span style={{ fontSize: 11, background: ACCENT_SOFT, color: ACCENT, borderRadius: 6, padding: "2px 8px", fontWeight: 600 }}>{it.catName}</span>}
+                  <span style={{ fontSize: 11, color: it.status === "done" ? "#3C8C3C" : "#C2872E", fontWeight: 600 }}>{it.status === "done" ? "✅ 已解決" : "🔴 待處理"}</span>
+                  <span style={{ fontSize: 10.5, color: SUB }}>{(it.ts || "").slice(0, 10)} · {it.by || ""}</span>
+                </div>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <button onClick={() => toggleDone(it.id)} style={{ flex: 1, padding: "6px 0", borderRadius: 7, border: `1px solid ${BORDER}`, background: it.status === "done" ? "transparent" : "#EAF6EA", color: it.status === "done" ? SUB : "#3C8C3C", fontSize: 12.5, fontWeight: 600, cursor: "pointer" }}>{it.status === "done" ? "↩ 重開" : "✅ 標記已解決"}</button>
+                  <button onClick={() => del(it.id)} style={{ padding: "6px 12px", borderRadius: 7, border: `1px solid ${BORDER}`, background: "transparent", color: "#DC2626", fontSize: 12.5, cursor: "pointer" }}>刪除</button>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {lightbox && (
+        <div onClick={() => setLightbox(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.85)", zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center", cursor: "zoom-out" }}>
+          <img src={lightbox} alt="" style={{ maxWidth: "92%", maxHeight: "92%", objectFit: "contain" }} />
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── BOTTOM NAV (手機) ───────────────────────────────────────────────────────
 function BottomNav({ view, setView }) {
-  const tabs = [["owner", "儀表板", "📊"], ["overview", "總覽", "📋"], ["gantt", "工序", "📅"], ["files", "檔案庫", "📁"], ["advisor", "AI設定", "🤖"]];
+  const tabs = [["owner", "儀表板", "📊"], ["overview", "總覽", "📋"], ["gantt", "工序", "📅"], ["files", "檔案庫", "📁"], ["issues", "問題", "⚠️"], ["advisor", "AI設定", "🤖"]];
   return (
     <div style={{ position: "fixed", left: 0, right: 0, bottom: 0, height: 60, background: "rgba(255,255,255,0.96)", backdropFilter: "blur(10px)", WebkitBackdropFilter: "blur(10px)", borderTop: `1px solid ${BORDER}`, boxShadow: "0 -2px 14px rgba(0,0,0,0.08)", display: "flex", zIndex: 350, paddingBottom: "env(safe-area-inset-bottom)" }}>
       {tabs.map(([v, l, icon]) => {
@@ -911,7 +987,7 @@ function TopNav({ view, setView, saving, totalEstimated, totalPaid, doneCount, c
       {/* view tabs — boxed editorial（手機隱藏，改用底部導覽）*/}
       {!isMobile && (
       <div style={{ display: "flex", gap: 8, paddingBottom: 12, flexWrap: "wrap" }}>
-        {[["owner","儀表板"],["overview","總覽"],["gantt","工序"],["files","檔案庫"],["advisor","AI設定"],...(isAdmin?[["accounts","帳號"]]:[])].map(([v,l]) => (
+        {[["owner","儀表板"],["overview","總覽"],["gantt","工序"],["files","檔案庫"],["issues","問題集"],["advisor","AI設定"],...(isAdmin?[["accounts","帳號"]]:[])].map(([v,l]) => (
           <button key={v} onClick={() => setView(v)} style={{ padding: "8px 16px", borderRadius: 7, border: `1px solid ${view === v ? PRIMARY : BORDER}`, cursor: "pointer", fontSize: 14, fontWeight: 500, background: view === v ? PRIMARY : "transparent", color: view === v ? "#fff" : TEXT, transition: "all .12s" }}>{l}</button>
         ))}
       </div>
