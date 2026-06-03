@@ -45,14 +45,17 @@ function PhotoViewer({ viewer, setViewer }) {
   if (!viewer || !viewer.list?.length) return null;
   const { list, i } = viewer;
   const nav = (d) => (e) => { e.stopPropagation(); setViewer((v) => v ? { ...v, i: (v.i + d + v.list.length) % v.list.length } : v); };
-  const navBtn = { position: "absolute", top: "50%", transform: "translateY(-50%)", width: 50, height: 50, borderRadius: "50%", background: "rgba(255,255,255,0.16)", color: "#fff", border: "none", fontSize: 26, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", lineHeight: 1, zIndex: 2 };
+  const navBtn = { position: "absolute", top: "50%", transform: "translateY(-50%)", width: 44, height: 44, borderRadius: "50%", background: "rgba(0,0,0,0.45)", color: "#fff", border: "1px solid rgba(255,255,255,0.35)", fontSize: 24, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", lineHeight: 1, zIndex: 2 };
   return (
     <div onMouseDown={(e) => e.stopPropagation()} onClick={() => setViewer(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.92)", zIndex: 1300, display: "flex", alignItems: "center", justifyContent: "center", padding: 20, cursor: "zoom-out" }}>
-      {list.length > 1 && <button onMouseDown={(e) => e.stopPropagation()} onClick={nav(-1)} title="上一張 (←)" style={{ ...navBtn, left: 16 }}>‹</button>}
-      <img src={attUrl(list[i])} alt="" onClick={(e) => e.stopPropagation()} style={{ maxWidth: "92%", maxHeight: "92%", objectFit: "contain", borderRadius: 8, cursor: "default" }} />
-      {list.length > 1 && <button onMouseDown={(e) => e.stopPropagation()} onClick={nav(1)} title="下一張 (→)" style={{ ...navBtn, right: 16 }}>›</button>}
-      {list.length > 1 && <div style={{ position: "absolute", bottom: 22, left: "50%", transform: "translateX(-50%)", background: "rgba(0,0,0,0.55)", color: "#fff", borderRadius: 20, padding: "4px 14px", fontSize: 13, fontVariantNumeric: "tabular-nums" }}>{i + 1} / {list.length}</div>}
-      <button onClick={(e) => { e.stopPropagation(); setViewer(null); }} title="關閉 (Esc)" style={{ position: "absolute", top: 14, right: 20, background: "none", border: "none", color: "#fff", fontSize: 32, cursor: "pointer", lineHeight: 1 }}>×</button>
+      {/* 圖片＋箭頭包在一起，箭頭貼著圖片左右邊緣 */}
+      <div onClick={(e) => e.stopPropagation()} style={{ position: "relative", lineHeight: 0, cursor: "default" }}>
+        <img src={attUrl(list[i])} alt="" style={{ maxWidth: "92vw", maxHeight: "90vh", objectFit: "contain", borderRadius: 8, display: "block" }} />
+        {list.length > 1 && <button onMouseDown={(e) => e.stopPropagation()} onClick={nav(-1)} title="上一張 (←)" style={{ ...navBtn, left: 8 }}>‹</button>}
+        {list.length > 1 && <button onMouseDown={(e) => e.stopPropagation()} onClick={nav(1)} title="下一張 (→)" style={{ ...navBtn, right: 8 }}>›</button>}
+        {list.length > 1 && <div style={{ position: "absolute", bottom: 10, left: "50%", transform: "translateX(-50%)", background: "rgba(0,0,0,0.55)", color: "#fff", borderRadius: 20, padding: "3px 12px", fontSize: 12, fontVariantNumeric: "tabular-nums", lineHeight: 1.4 }}>{i + 1} / {list.length}</div>}
+      </div>
+      <button onMouseDown={(e) => e.stopPropagation()} onClick={(e) => { e.stopPropagation(); setViewer(null); }} title="關閉 (Esc)" style={{ position: "absolute", top: 14, right: 20, background: "none", border: "none", color: "#fff", fontSize: 32, cursor: "pointer", lineHeight: 1 }}>×</button>
     </div>
   );
 }
