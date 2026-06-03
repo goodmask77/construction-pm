@@ -142,6 +142,15 @@ export default function SequenceView({
   };
   const requireEdit = () => { if (!canEdit) { alert("此帳號沒有編輯工程資料的權限，請聯絡管理員開放。"); return false; } return true; };
   const saveLog = (l) => { if (!requireEdit()) return; onSaveLog && onSaveLog(l); setQuick(null); };
+  // 拖曳搬移紀錄到其他日期／工序（填錯格、改日期用）
+  const [dragKey, setDragKey] = useState(null); // 正在拖的紀錄 key
+  const [dropKey, setDropKey] = useState(null);  // 拖曳目標格 key
+  const moveLog = (srcLog, newItemId, newDate) => {
+    if (!srcLog || !requireEdit()) return;
+    if (srcLog.itemId === newItemId && srcLog.date === newDate) return;
+    if (logMap[`${newItemId}|${newDate}`]) { alert("該格已有紀錄，請先拖到空白格。"); return; }
+    onSaveLog && onSaveLog({ ...srcLog, itemId: newItemId, date: newDate });
+  };
   const delLog = (id) => { if (!requireEdit()) return; onDelLog && onDelLog(id); setQuick(null); };
   const openCell = (itemId, date, x, y) => { if (!requireEdit()) return; setQuick({ itemId, date, x: x ?? (window.innerWidth / 2), y: y ?? 120 }); };
 
@@ -238,7 +247,7 @@ export default function SequenceView({
           <input type="date" value={projectStart} disabled={!canEdit} onChange={e => onSetProjectStart && onSetProjectStart(e.target.value)} style={{ border: `1px solid ${C.line}`, borderRadius: 7, padding: "4px 6px", fontSize: 12 }} />
         </label>
         <button onClick={doWeekly} style={{ border: `1px solid ${ACCENT}`, background: "#F3E4DE", color: "#3E72A8", borderRadius: 8, padding: "6px 12px", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>✨ AI 週報</button>
-        <span style={{ fontSize: 13, color: C.faint }}>{zoom === "week" ? "點工序條切日視圖" : "點格子＝記錄 · 橫向拖曳＝設工期"}</span>
+        <span style={{ fontSize: 13, color: C.faint }}>{zoom === "week" ? "點工序條切日視圖" : "點格子＝記錄 · 橫向拖曳空格＝設工期 · 拖紀錄到別格＝改日期/工序"}</span>
         <div style={{ flex: 1 }} />
         {Object.values(WS).map((s) => <span key={s.label} style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 12, color: C.sub }}><span style={{ width: 9, height: 9, borderRadius: 3, background: s.bar }} />{s.label}</span>)}
       </div>
@@ -439,9 +448,9 @@ export default function SequenceView({
                   winDays.map((i) => {
                     const inSpan = inRange(it, i), key = dayKey(i), log = logMap[`${it.id}|${key}`], planned = i > TODAY_IDX, t = i === TODAY_IDX;
                     return (
-                      <div key={i} onMouseDown={(e) => canEdit && setSel({ itemId: it.id, a: i, b: i, x: e.clientX, y: e.clientY })} onMouseEnter={() => canEdit && setSel(s => s && s.itemId === it.id ? { ...s, b: i } : s)} style={{ width: DAY_W, flexShrink: 0, boxSizing: "border-box", minHeight: ROW_FAT, borderLeft: `1px solid ${C.line}`, padding: 7, cursor: canEdit ? "pointer" : "default", userSelect: "none", background: inSel(it.id, i) ? ACCENT_SOFT : inSpan ? w.tint : t ? "#FFFBEF" : "#fff", position: "relative" }}>
+                      <div key={i} onMouseDown={(e) => canEdit && setSel({ itemId: it.id, a: i, b: i, x: e.clientX, y: e.clientY })} onMouseEnter={() => canEdit && setSel(s => s && s.itemId === it.id ? { ...s, b: i } : s)} onDragOver={(e) => { if (dragKey && !log) { e.preventDefault(); setDropKey(`${it.id}|${key}`); } }} onDragLeave={() => setDropKey(d => d === `${it.id}|${key}` ? null : d)} onDrop={(e) => { e.preventDefault(); moveLog(logMap[dragKey], it.id, key); setDragKey(null); setDropKey(null); }} style={{ width: DAY_W, flexShrink: 0, boxSizing: "border-box", minHeight: ROW_FAT, borderLeft: `1px solid ${C.line}`, padding: 7, cursor: canEdit ? "pointer" : "default", userSelect: "none", background: dropKey === `${it.id}|${key}` ? "#E6F0E0" : inSel(it.id, i) ? ACCENT_SOFT : inSpan ? w.tint : t ? "#FFFBEF" : "#fff", boxShadow: dropKey === `${it.id}|${key}` ? `inset 0 0 0 2px ${ACCENT}` : "none", position: "relative" }}>
                         {log ? (
-                          <div style={{ height: "100%", display: "flex", flexDirection: "column", gap: 5, opacity: planned ? .72 : 1 }}>
+                          <div draggable={canEdit} onDragStart={(e) => { e.stopPropagation(); setDragKey(`${it.id}|${key}`); e.dataTransfer.effectAllowed = "move"; try { e.dataTransfer.setData("text/plain", "log"); } catch (_) {} }} onDragEnd={() => { setDragKey(null); setDropKey(null); }} onMouseDown={(e) => e.stopPropagation()} onClick={(e) => { e.stopPropagation(); setQuick({ itemId: it.id, date: key, x: e.clientX, y: e.clientY }); }} title="點擊查看／拖曳可移到其他日期或工序" style={{ height: "100%", display: "flex", flexDirection: "column", gap: 5, opacity: planned ? .72 : 1, cursor: canEdit ? "grab" : "pointer" }}>
                             {planned && <span style={{ fontSize: 10, fontWeight: 600, color: ACCENT }}>預排</span>}
                             {!planned && log.prog > 0 && (
                               <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
@@ -452,8 +461,8 @@ export default function SequenceView({
                             <div style={{ fontSize: 12, lineHeight: 1.45, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{planned ? (log.next || log.done) : (log.done || log.next)}</div>
                             {log.issue && <div style={{ fontSize: 11, color: RED, display: "-webkit-box", WebkitLineClamp: 1, WebkitBoxOrient: "vertical", overflow: "hidden" }}>⚠ {log.issue}</div>}
                             {(log.photos?.length > 0) && <div style={{ display: "flex", gap: 4, marginTop: "auto" }}>{log.photos.slice(0, 2).map((p, k) => attIsImg(p)
-                              ? <img key={k} src={attUrl(p)} alt="" title={attName(p) || "點擊放大"} onMouseDown={(e) => e.stopPropagation()} onClick={(e) => { e.stopPropagation(); openAtt(p, setViewImg); }} style={{ width: 38, height: 38, borderRadius: 5, objectFit: "cover", cursor: "zoom-in" }} />
-                              : <div key={k} title={attName(p)} onMouseDown={(e) => e.stopPropagation()} onClick={(e) => { e.stopPropagation(); openAtt(p, setViewImg); }} style={{ width: 38, height: 38, borderRadius: 5, background: C.soft, border: `1px solid ${C.line}`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, cursor: "pointer" }}>{attIcon(p)}</div>)}{log.photos.length > 2 && <span style={{ fontSize: 11, color: C.faint, alignSelf: "flex-end" }}>+{log.photos.length - 2}</span>}</div>}
+                              ? <img key={k} draggable={false} src={attUrl(p)} alt="" title={attName(p) || "點擊放大"} onMouseDown={(e) => e.stopPropagation()} onClick={(e) => { e.stopPropagation(); openAtt(p, setViewImg); }} style={{ width: 38, height: 38, borderRadius: 5, objectFit: "cover", cursor: "zoom-in" }} />
+                              : <div key={k} draggable={false} title={attName(p)} onMouseDown={(e) => e.stopPropagation()} onClick={(e) => { e.stopPropagation(); openAtt(p, setViewImg); }} style={{ width: 38, height: 38, borderRadius: 5, background: C.soft, border: `1px solid ${C.line}`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, cursor: "pointer" }}>{attIcon(p)}</div>)}{log.photos.length > 2 && <span style={{ fontSize: 11, color: C.faint, alignSelf: "flex-end" }}>+{log.photos.length - 2}</span>}</div>}
                           </div>
                         ) : canEdit ? (
                           <div className="thin-add" style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: planned ? ACCENT : C.faint, fontSize: 12, border: planned ? `1px dashed ${ACCENT}66` : "none", borderRadius: 6 }}>{planned ? "點此預排" : "＋ 記錄"}</div>
@@ -465,9 +474,9 @@ export default function SequenceView({
                   /* 細條列：可點(記錄)/拖曳(設工期)；施工範圍＝整格上狀態色，再框相同範圍可取消 */
                   <div style={{ position: "relative", display: "flex", flex: "0 0 auto" }}>
                     {winDays.map((i) => { const t = i === TODAY_IDX, inSpan = inRange(it, i), log = logMap[`${it.id}|${dayKey(i)}`], planned = i > TODAY_IDX; return (
-                      <div key={i} onMouseDown={(e) => canEdit && setSel({ itemId: it.id, a: i, b: i, x: e.clientX, y: e.clientY })} onMouseEnter={() => canEdit && setSel(s => s && s.itemId === it.id ? { ...s, b: i } : s)} style={{ width: DAY_W, flexShrink: 0, boxSizing: "border-box", borderLeft: `1px solid ${C.line}`, cursor: canEdit ? "pointer" : "default", userSelect: "none", background: inSel(it.id, i) ? ACCENT_SOFT : inSpan ? w.tint : t ? "#FFFBEF" : "transparent", position: "relative", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                      <div key={i} onMouseDown={(e) => canEdit && setSel({ itemId: it.id, a: i, b: i, x: e.clientX, y: e.clientY })} onMouseEnter={() => canEdit && setSel(s => s && s.itemId === it.id ? { ...s, b: i } : s)} onDragOver={(e) => { if (dragKey && !log) { e.preventDefault(); setDropKey(`${it.id}|${dayKey(i)}`); } }} onDragLeave={() => setDropKey(d => d === `${it.id}|${dayKey(i)}` ? null : d)} onDrop={(e) => { e.preventDefault(); moveLog(logMap[dragKey], it.id, dayKey(i)); setDragKey(null); setDropKey(null); }} style={{ width: DAY_W, flexShrink: 0, boxSizing: "border-box", borderLeft: `1px solid ${C.line}`, cursor: canEdit ? "pointer" : "default", userSelect: "none", background: dropKey === `${it.id}|${dayKey(i)}` ? "#E6F0E0" : inSel(it.id, i) ? ACCENT_SOFT : inSpan ? w.tint : t ? "#FFFBEF" : "transparent", boxShadow: dropKey === `${it.id}|${dayKey(i)}` ? `inset 0 0 0 2px ${ACCENT}` : "none", position: "relative", display: "flex", alignItems: "center", justifyContent: "center" }}>
                         {canEdit && !log && <span className="thin-add" style={{ fontSize: 11, color: planned ? ACCENT : C.faint }}>{planned ? "點此預排" : "＋ 記錄"}</span>}
-                        {log && <span onClick={(e) => { e.stopPropagation(); setQuick({ itemId: log.itemId, date: log.date, x: e.clientX, y: e.clientY }); }} onMouseEnter={(e) => setTip({ l: log, x: e.clientX, y: e.clientY, item: it.name })} onMouseLeave={() => setTip(null)} style={{ position: "absolute", left: DAY_W / 2 - 4, top: ROW_THIN / 2 - 4, width: 8, height: 8, borderRadius: 4, background: dotFill(log), boxShadow: "0 0 0 1px rgba(0,0,0,.4)", cursor: "pointer", zIndex: 3 }} />}
+                        {log && <span draggable={canEdit} onDragStart={(e) => { e.stopPropagation(); setDragKey(`${it.id}|${dayKey(i)}`); e.dataTransfer.effectAllowed = "move"; try { e.dataTransfer.setData("text/plain", "log"); } catch (_) {} }} onDragEnd={() => { setDragKey(null); setDropKey(null); }} onMouseDown={(e) => e.stopPropagation()} onClick={(e) => { e.stopPropagation(); setQuick({ itemId: log.itemId, date: log.date, x: e.clientX, y: e.clientY }); }} onMouseEnter={(e) => setTip({ l: log, x: e.clientX, y: e.clientY, item: it.name })} onMouseLeave={() => setTip(null)} title="點擊查看／拖曳可移到其他格" style={{ position: "absolute", left: DAY_W / 2 - 5, top: ROW_THIN / 2 - 5, width: 10, height: 10, borderRadius: 5, background: dotFill(log), boxShadow: "0 0 0 1px rgba(0,0,0,.4)", cursor: canEdit ? "grab" : "pointer", zIndex: 3 }} />}
                       </div>); })}
                   </div>
                 )}
@@ -485,6 +494,7 @@ export default function SequenceView({
           <div style={{ lineHeight: 1.4 }}>{tip.l.done || tip.l.next}</div>
           {tip.l.issue && <div style={{ color: "#ff9a8f", marginTop: 2 }}>⚠ {tip.l.issue}</div>}
           {(tip.l.photos?.length || 0) > 0 && <div style={{ color: "#aab", marginTop: 3 }}>附件 {tip.l.photos.length} 個</div>}
+          {tip.l.author && <div style={{ color: "#8a93a5", marginTop: 3 }}>✍ {tip.l.author}{tip.l.updated_by && tip.l.updated_by !== tip.l.author ? ` · 改:${tip.l.updated_by}` : ""}</div>}
         </div>
       )}
 
@@ -597,6 +607,12 @@ function QuickLog({ q, log, item, planned, onSave, onDelete, onClose, uploadPhot
           <span style={{ fontSize: 12, color: C.sub }}>{q.date.slice(5).replace("-", "/")}{planned ? " 預排" : ""}</span>
           <button onClick={onClose} style={{ border: "none", background: "none", fontSize: 20, color: C.faint, cursor: "pointer", lineHeight: 1 }}>×</button>
         </div>
+        {log && (log.author || log.updated_by) && (
+          <div style={{ fontSize: 11, color: C.faint, marginBottom: 8, display: "flex", gap: 8, flexWrap: "wrap" }}>
+            {log.author && <span>✍ 記錄：{log.author}{log.created_at ? ` · ${new Date(log.created_at).toLocaleDateString("zh-TW")}` : ""}</span>}
+            {log.updated_by && log.updated_by !== log.author && <span>· 修改：{log.updated_by}</span>}
+          </div>
+        )}
 
         {editing ? (
           <>
