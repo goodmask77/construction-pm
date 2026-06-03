@@ -655,7 +655,7 @@ function QuickLog({ q, log, item, planned, onSave, onDelete, onClose, uploadPhot
   );
 
   return (
-    <div onMouseDown={onClose} style={{ position: "fixed", inset: 0, zIndex: 1000 }}>
+    <div onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }} style={{ position: "fixed", inset: 0, zIndex: 1000 }}>
       <div onMouseDown={(e) => e.stopPropagation()} style={{ position: "fixed", left, top, width: W, maxHeight: "82vh", overflowY: "auto", background: "#fff", border: `1px solid ${C.line}`, borderRadius: 14, boxShadow: "0 12px 40px rgba(20,24,33,.22)", padding: 14 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
           <span style={{ width: 9, height: 9, borderRadius: 5, background: (WS[item?.status] || WS.pending).bar, flexShrink: 0 }} />
