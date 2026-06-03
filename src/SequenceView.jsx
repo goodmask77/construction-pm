@@ -501,6 +501,7 @@ export default function SequenceView({
                                 <span style={{ fontSize: 10, color: C.sub, fontWeight: 600 }}>{log.prog}%</span>
                               </div>
                             )}
+                            {(log.entries?.length > 1) && <span style={{ fontSize: 10, fontWeight: 700, color: ACCENT, background: ACCENT_SOFT, borderRadius: 8, padding: "0 6px", alignSelf: "flex-start" }}>{log.entries.length} 件</span>}
                             <div style={{ fontSize: 12, lineHeight: 1.45, whiteSpace: (log.photos?.length > 0) ? "normal" : "pre-wrap", wordBreak: "break-word", display: "-webkit-box", WebkitLineClamp: (log.photos?.length > 0) ? 2 : 10, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{planned ? (log.next || log.done) : (log.done || log.next)}</div>
                             {log.issue && <div style={{ fontSize: 11, color: RED, display: "-webkit-box", WebkitLineClamp: 1, WebkitBoxOrient: "vertical", overflow: "hidden" }}>⚠ {log.issue}</div>}
                             {(log.photos?.length > 0) && <div style={{ display: "flex", gap: 4, marginTop: "auto" }}>{log.photos.slice(0, 2).map((p, k) => attIsImg(p)
@@ -601,49 +602,61 @@ export default function SequenceView({
   );
 }
 
-/* ── 行事曆式快速記錄 popover（點格子直接打字＋上傳照片） ── */
+/* ── 把舊 log 正規化成「分條」：相容舊資料(單筆 done/next + photos) ── */
+function logToEntries(log, planned) {
+  if (log?.entries?.length) return log.entries.map((e) => ({ text: e.text || "", photos: e.photos || [] }));
+  const t = planned ? (log?.next || log?.done || "") : (log?.done || log?.next || "");
+  const ph = log?.photos || [];
+  return (t || ph.length) ? [{ text: t, photos: ph }] : [];
+}
+
+/* ── 行事曆式快速記錄 popover（一格可分多「條」，每條各自文字＋照片） ── */
 function QuickLog({ q, log, item, planned, onSave, onDelete, onClose, uploadPhotos }) {
-  const initText = log ? (planned ? (log.next || log.done || "") : (log.done || log.next || "")) : "";
-  const initPhotos = log?.photos || [];
-  const hasData = !!(initText || initPhotos.length); // 有文字或附件＝有資料
-  const [text, setText] = useState(initText);
-  const [photos, setPhotos] = useState(initPhotos);
-  const [editing, setEditing] = useState(!hasData); // 有資料先看，新增則直接編輯
+  const init = logToEntries(log, planned);
+  const hasData = init.some((e) => e.text || e.photos.length);
+  const [entries, setEntries] = useState(init.length ? init : [{ text: "", photos: [] }]);
+  const [editing, setEditing] = useState(!hasData);
   const [busy, setBusy] = useState(false);
   const [viewer, setViewer] = useState(null);
   const taRef = useRef(null);
-  const fileRef = useRef(null);
   useEffect(() => { if (editing) taRef.current?.focus(); }, [editing]);
-  const addFiles = async (files) => {
-    const arr = Array.from(files || []);
-    if (!arr.length || !uploadPhotos) return;
+
+  const updEntry = (i, patch) => setEntries((es) => es.map((e, j) => j === i ? { ...e, ...patch } : e));
+  const addEntry = () => setEntries((es) => [...es, { text: "", photos: [] }]);
+  const delEntry = (i) => setEntries((es) => es.length <= 1 ? [{ text: "", photos: [] }] : es.filter((_, j) => j !== i));
+  const addFilesTo = async (i, files) => {
+    const arr = Array.from(files || []); if (!arr.length || !uploadPhotos) return;
     setBusy(true);
-    try { const ups = await uploadPhotos(arr); setPhotos((p) => [...p, ...ups]); } catch (e) { alert("上傳失敗：" + (e?.message || e)); }
+    try { const ups = await uploadPhotos(arr); setEntries((es) => es.map((e, j) => j === i ? { ...e, photos: [...e.photos, ...ups] } : e)); }
+    catch (e) { alert("上傳失敗：" + (e?.message || e)); }
     setBusy(false);
   };
   const save = () => {
+    const clean = entries.map((e) => ({ text: (e.text || "").trim(), photos: e.photos || [] })).filter((e) => e.text || e.photos.length);
+    const flatText = clean.map((e) => e.text).filter(Boolean).join("\n");
+    const flatPhotos = clean.flatMap((e) => e.photos);
     const base = log ? { ...log } : { itemId: q.itemId, date: q.date, done: "", issue: "", next: "", prog: 0, photos: [] };
-    onSave({ ...base, [planned ? "next" : "done"]: text.trim(), photos });
+    onSave({ ...base, [planned ? "next" : "done"]: flatText, photos: flatPhotos, entries: clean });
   };
-  // 視窗內定位（靠近點擊位置、避免超出邊界）
-  const W = 340, left = Math.max(12, Math.min((q.x || 200) - W / 2, window.innerWidth - W - 12)), top = Math.min((q.y || 120) + 14, window.innerHeight - 360);
+  const W = 360, left = Math.max(12, Math.min((q.x || 200) - W / 2, window.innerWidth - W - 12)), top = Math.min((q.y || 120) + 14, window.innerHeight - 380);
+  const multi = entries.length > 1;
 
-  // 附件縮圖（圖片可放大、其他檔案開新分頁；編輯模式可刪）
-  const attTile = (p, i) => (
-    <div key={i} style={{ position: "relative" }}>
+  // 某一條的附件縮圖（圖片放大用該條的圖片清單翻頁；編輯模式可刪）
+  const tile = (entry, ei) => (p, k) => (
+    <div key={k} style={{ position: "relative" }}>
       {attIsImg(p)
-        ? <img src={attUrl(p)} alt={attName(p)} title={attName(p) || "點擊放大"} onClick={() => openAtt2(photos, p, setViewer)} style={{ width: 56, height: 56, objectFit: "cover", borderRadius: 7, border: `1px solid ${C.line}`, cursor: "zoom-in" }} />
-        : <div onClick={() => openAtt2(photos, p, setViewer)} title={attName(p) + "（點擊開啟）"} style={{ width: 56, height: 56, borderRadius: 7, border: `1px solid ${C.line}`, background: C.soft, cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 2, padding: 3, boxSizing: "border-box" }}>
-            <span style={{ fontSize: 20, lineHeight: 1 }}>{attIcon(p)}</span>
+        ? <img src={attUrl(p)} alt={attName(p)} title={attName(p) || "點擊放大"} onClick={() => openAtt2(entry.photos, p, setViewer)} style={{ width: 54, height: 54, objectFit: "cover", borderRadius: 7, border: `1px solid ${C.line}`, cursor: "zoom-in" }} />
+        : <div onClick={() => openAtt2(entry.photos, p, setViewer)} title={attName(p) + "（點擊開啟）"} style={{ width: 54, height: 54, borderRadius: 7, border: `1px solid ${C.line}`, background: C.soft, cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 2, padding: 3, boxSizing: "border-box" }}>
+            <span style={{ fontSize: 19, lineHeight: 1 }}>{attIcon(p)}</span>
             <span style={{ fontSize: 8, color: C.sub, width: "100%", textAlign: "center", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{attName(p) || "檔案"}</span>
           </div>}
-      {editing && <button onClick={() => setPhotos(photos.filter((_, x) => x !== i))} style={{ position: "absolute", top: -6, right: -6, width: 17, height: 17, borderRadius: 9, border: "none", background: "#e11d48", color: "#fff", fontSize: 11, cursor: "pointer" }}>×</button>}
+      {editing && <button onClick={() => updEntry(ei, { photos: entry.photos.filter((_, x) => x !== k) })} style={{ position: "absolute", top: -6, right: -6, width: 17, height: 17, borderRadius: 9, border: "none", background: "#e11d48", color: "#fff", fontSize: 11, cursor: "pointer" }}>×</button>}
     </div>
   );
 
   return (
     <div onMouseDown={onClose} style={{ position: "fixed", inset: 0, zIndex: 1000 }}>
-      <div onMouseDown={(e) => e.stopPropagation()} onPaste={(e) => editing && e.clipboardData?.files?.length && addFiles(e.clipboardData.files)} style={{ position: "fixed", left, top, width: W, background: "#fff", border: `1px solid ${C.line}`, borderRadius: 14, boxShadow: "0 12px 40px rgba(20,24,33,.22)", padding: 14 }}>
+      <div onMouseDown={(e) => e.stopPropagation()} style={{ position: "fixed", left, top, width: W, maxHeight: "82vh", overflowY: "auto", background: "#fff", border: `1px solid ${C.line}`, borderRadius: 14, boxShadow: "0 12px 40px rgba(20,24,33,.22)", padding: 14 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
           <span style={{ width: 9, height: 9, borderRadius: 5, background: (WS[item?.status] || WS.pending).bar, flexShrink: 0 }} />
           <div style={{ fontSize: 14, fontWeight: 600, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{item?.name}</div>
@@ -659,25 +672,38 @@ function QuickLog({ q, log, item, planned, onSave, onDelete, onClose, uploadPhot
 
         {editing ? (
           <>
-            <textarea ref={taRef} rows={4} value={text} onChange={(e) => setText(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) save(); }} placeholder={planned ? "預計做什麼…（可貼上截圖／檔案）" : "今天做了什麼…（可貼上截圖／檔案）"} style={{ width: "100%", boxSizing: "border-box", border: `1px solid ${C.line}`, borderRadius: 9, fontSize: 14, padding: 9, resize: "vertical", outline: "none", fontFamily: "inherit" }} />
-            <div style={{ display: "flex", gap: 7, flexWrap: "wrap", margin: "10px 0" }}>
-              {photos.map(attTile)}
-              <button onClick={() => fileRef.current?.click()} title="上傳任意檔案（照片／PDF／Excel…）" style={{ width: 56, height: 56, borderRadius: 7, border: `1px dashed ${C.line}`, background: C.soft, fontSize: 20, color: C.faint, cursor: "pointer" }}>＋</button>
-              <input ref={fileRef} type="file" multiple style={{ display: "none" }} onChange={(e) => { addFiles(e.target.files); e.target.value = ""; }} />
-            </div>
+            {entries.map((entry, ei) => (
+              <div key={ei} style={{ border: multi ? `1px solid ${C.line}` : "none", borderRadius: 10, padding: multi ? 10 : 0, marginBottom: 10, background: multi ? "#FCFBF8" : "transparent" }}>
+                {multi && <div style={{ display: "flex", alignItems: "center", marginBottom: 6 }}><span style={{ fontSize: 11, fontWeight: 700, color: ACCENT }}>第 {ei + 1} 條</span><div style={{ flex: 1 }} /><button onClick={() => delEntry(ei)} title="刪除此條" style={{ border: "none", background: "none", color: "#e11d48", fontSize: 12, cursor: "pointer" }}>刪除此條</button></div>}
+                <textarea ref={ei === 0 ? taRef : null} rows={multi ? 2 : 4} value={entry.text} onChange={(e) => updEntry(ei, { text: e.target.value })} onPaste={(e) => e.clipboardData?.files?.length && addFilesTo(ei, e.clipboardData.files)} onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) save(); }} placeholder={planned ? "預計做什麼…（可貼上截圖／檔案）" : "做了什麼…（可貼上截圖／檔案）"} style={{ width: "100%", boxSizing: "border-box", border: `1px solid ${C.line}`, borderRadius: 9, fontSize: 14, padding: 9, resize: "vertical", outline: "none", fontFamily: "inherit" }} />
+                <div style={{ display: "flex", gap: 7, flexWrap: "wrap", marginTop: 8 }}>
+                  {entry.photos.map(tile(entry, ei))}
+                  <label title="上傳任意檔案（照片／PDF／Excel…）" style={{ width: 54, height: 54, borderRadius: 7, border: `1px dashed ${C.line}`, background: C.soft, fontSize: 18, color: C.faint, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>＋
+                    <input type="file" multiple style={{ display: "none" }} onChange={(e) => { addFilesTo(ei, e.target.files); e.target.value = ""; }} />
+                  </label>
+                </div>
+              </div>
+            ))}
+            <button onClick={addEntry} style={{ width: "100%", border: `1px dashed ${C.line}`, background: "#fff", color: ACCENT, borderRadius: 9, padding: "8px", fontSize: 13, fontWeight: 600, cursor: "pointer", marginBottom: 10 }}>＋ 再加一條</button>
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              {log?.id && <button onClick={() => onDelete(log.id)} style={{ border: "none", background: "none", color: "#e11d48", fontSize: 13, cursor: "pointer" }}>刪除</button>}
+              {log?.id && <button onClick={() => onDelete(log.id)} style={{ border: "none", background: "none", color: "#e11d48", fontSize: 13, cursor: "pointer" }}>刪除整筆</button>}
               <div style={{ flex: 1, fontSize: 11, color: C.faint }}>{busy ? "上傳中…" : "⌘+Enter 儲存"}</div>
               <button onClick={save} disabled={busy} style={{ border: "none", background: ACCENT, color: "#fff", borderRadius: 9, padding: "8px 20px", fontSize: 14, fontWeight: 600, cursor: busy ? "wait" : "pointer" }}>儲存</button>
             </div>
           </>
         ) : (
           <>
-            {text ? <div style={{ whiteSpace: "pre-wrap", wordBreak: "break-word", fontSize: 14, lineHeight: 1.55, color: C.text, maxHeight: 240, overflowY: "auto", padding: "2px 1px" }}>{text}</div>
-                  : <div style={{ fontSize: 13, color: C.faint, padding: "4px 0" }}>（無文字內容）</div>}
-            {photos.length > 0 && <div style={{ display: "flex", gap: 7, flexWrap: "wrap", margin: "12px 0 2px" }}>{photos.map(attTile)}</div>}
-            <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 12 }}>
-              {log?.id && <button onClick={() => onDelete(log.id)} style={{ border: "none", background: "none", color: "#e11d48", fontSize: 13, cursor: "pointer" }}>刪除</button>}
+            {entries.map((entry, ei) => (
+              <div key={ei} style={{ marginBottom: 12, paddingBottom: multi ? 10 : 0, borderBottom: multi && ei < entries.length - 1 ? `1px solid ${C.line}` : "none" }}>
+                <div style={{ display: "flex", gap: 7, alignItems: "flex-start" }}>
+                  {multi && <span style={{ fontSize: 12, fontWeight: 700, color: ACCENT, lineHeight: 1.6, flexShrink: 0 }}>{ei + 1}.</span>}
+                  <div style={{ whiteSpace: "pre-wrap", wordBreak: "break-word", fontSize: 14, lineHeight: 1.55, color: C.text, flex: 1 }}>{entry.text || <span style={{ color: C.faint }}>（無文字）</span>}</div>
+                </div>
+                {entry.photos.length > 0 && <div style={{ display: "flex", gap: 7, flexWrap: "wrap", marginTop: 8, paddingLeft: multi ? 18 : 0 }}>{entry.photos.map(tile(entry, ei))}</div>}
+              </div>
+            ))}
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 4 }}>
+              {log?.id && <button onClick={() => onDelete(log.id)} style={{ border: "none", background: "none", color: "#e11d48", fontSize: 13, cursor: "pointer" }}>刪除整筆</button>}
               <div style={{ flex: 1 }} />
               <button onClick={() => setEditing(true)} style={{ border: `1px solid ${C.line}`, background: "#fff", color: C.text, borderRadius: 9, padding: "8px 20px", fontSize: 14, fontWeight: 600, cursor: "pointer" }}>✎ 編輯</button>
             </div>
