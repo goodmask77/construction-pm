@@ -313,6 +313,24 @@ const SPACES = [
   { id: "construction", name: "工程專案", icon: "🏗" },
   { id: "team",         name: "團隊工作", icon: "👥" },
 ];
+// 每個空間的外觀客製（顯示成本與否、隱藏分頁、名詞、AI 角色）
+const SPACE_CONF = {
+  construction: {
+    showCost: true,
+    hideTabs: [],
+    labels: { cat: "工程大項", item: "細項", overview: "總覽", gantt: "工序", subtitle: "成本費用明細" },
+    aiRole: null, // 用原本的工程顧問提示
+  },
+  team: {
+    showCost: false,
+    hideTabs: ["compare"], // 團隊不需要比價
+    labels: { cat: "專案/群組", item: "任務", overview: "任務板", gantt: "進度", subtitle: "團隊任務追蹤" },
+    aiRole: "你是團隊專案協作助理，協助追蹤每個人的任務進度、彙整待辦與提醒、整理會議與決策。請用繁體中文、簡潔專業，必要時條列重點。",
+  },
+};
+const conf = () => SPACE_CONF[CURRENT_SPACE] || SPACE_CONF.construction;
+const L = (key) => conf().labels[key] || SPACE_CONF.construction.labels[key];
+const COST_COL_IDS = new Set(["estQty", "unit", "estUnitPrice", "taxType", "taxAmount", "estTotal", "payAccount", "payDate"]);
 const GLOBAL_KEYS = new Set(["pm_role", "pm_known_users", "pm_current_space"]);
 let CURRENT_SPACE = "construction";
 try { CURRENT_SPACE = localStorage.getItem("pm_current_space") || "construction"; } catch (_) {}
@@ -463,7 +481,7 @@ const buildAdvisorSystem = (settings, cats, journal, events, plans) => {
 
   const priorityItems = cats.flatMap(c=>c.items).filter(i=>(settings?.priorities||[]).includes(i.id)).map(i=>i.name).join("、");
 
-  return "你是專屬於「" + projectName + "」的AI工程總顧問，以下是今日（" + today + "）的完整專案狀態，請根據此資料進行分析與回應。\n\n" +
+  return (conf().aiRole ? conf().aiRole + "\n\n" : "") + "你是專屬於「" + projectName + "」的" + (conf().aiRole ? "助理" : "AI工程總顧問") + "，以下是今日（" + today + "）的完整狀態，請根據此資料進行分析與回應。\n\n" +
     "【專案基本資訊】\n" +
     "- 專案名稱：" + projectName + "\n" +
     "- 地址：" + projectAddr + "\n" +
@@ -1464,7 +1482,7 @@ function CompareView({ canEdit, requireLogin }) {
 
 // ── BOTTOM NAV (手機) ───────────────────────────────────────────────────────
 function BottomNav({ view, setView, isAdmin }) {
-  const tabs = [["owner", "儀表板", "📊"], ["overview", "總覽", "📋"], ["gantt", "工序", "📅"], ["files", "檔案庫", "📁"], ["issues", "ToDo", "📝"], ["compare", "比價", "⚖️"], ...(isAdmin ? [["groups", "群組", "💬"]] : []), ["advisor", "AI設定", "🤖"]];
+  const tabs = [["owner", "儀表板", "📊"], ["overview", L("overview"), "📋"], ["gantt", L("gantt"), "📅"], ["files", "檔案庫", "📁"], ["issues", "ToDo", "📝"], ["compare", "比價", "⚖️"], ...(isAdmin ? [["groups", "群組", "💬"]] : []), ["advisor", "AI設定", "🤖"]].filter(([v]) => !conf().hideTabs.includes(v));
   return (
     <div style={{ position: "fixed", left: 0, right: 0, bottom: 0, height: 60, background: "rgba(255,255,255,0.96)", backdropFilter: "blur(10px)", WebkitBackdropFilter: "blur(10px)", borderTop: `1px solid ${BORDER}`, boxShadow: "0 -2px 14px rgba(0,0,0,0.08)", display: "flex", zIndex: 350, paddingBottom: "env(safe-area-inset-bottom)" }}>
       {tabs.map(([v, l, icon]) => {
@@ -1541,14 +1559,22 @@ function TopNav({ view, setView, saving, totalEstimated, totalPaid, doneCount, c
           </select>
         </div>
         {/* KPI cards inline（手機改 2×2、整列獨佔一行）*/}
-        <div style={{ display: "grid", gridTemplateColumns: isMobile ? "repeat(2,1fr)" : "repeat(4,minmax(110px,1fr))", gap: 8, flex: isMobile ? "1 1 100%" : 1, minWidth: isMobile ? 0 : 360, order: isMobile ? 2 : 0 }}>
-          {[
+        {(() => {
+          const kpis = conf().showCost ? [
             { label: "預估總額", val: fmt(totalEstimated), color: TEXT, tip: "各細項「數量×單價」依稅別換算含稅後加總＝總預算" },
             { label: "已付總額", val: totalPaid > 0 ? fmt(totalPaid) : "尚未付款", color: totalPaid > 0 ? "#3C8C3C" : SUB, tip: `各細項「已付金額」加總。付款進度 ${payPct}%` },
             { label: "未付總額", val: fmt(totalUnpaid), color: totalUnpaid < 0 ? "#DC2626" : "#C2872E", tip: totalUnpaid < 0 ? "已付超過預估（溢付）" : "預估總額 − 已付總額＝尚需支付" },
             { label: "完工項目", val: `${doneCount} / ${catCount}`, color: ACCENT, tip: "狀態標示為「完工」的大項數" },
-          ].map(k => <KPICard key={k.label} label={k.label} val={k.val} color={k.color} tip={k.tip} />)}
-        </div>
+          ] : [
+            { label: `${L("cat")}數`, val: String(catCount), color: TEXT, tip: `目前空間的${L("cat")}數` },
+            { label: "完工", val: `${doneCount} / ${catCount}`, color: ACCENT, tip: `狀態為「完工」的${L("cat")}` },
+          ];
+          return (
+          <div style={{ display: "grid", gridTemplateColumns: isMobile ? `repeat(${Math.min(kpis.length,2)},1fr)` : `repeat(${kpis.length},minmax(110px,1fr))`, gap: 8, flex: isMobile ? "1 1 100%" : (conf().showCost ? 1 : "0 1 auto"), minWidth: isMobile ? 0 : (conf().showCost ? 360 : 0), order: isMobile ? 2 : 0 }}>
+            {kpis.map(k => <KPICard key={k.label} label={k.label} val={k.val} color={k.color} tip={k.tip} />)}
+          </div>
+          );
+        })()}
         {/* actions（手機改 icon-only，保留 title 提示）*/}
         <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0, order: isMobile ? 1 : 0, marginLeft: isMobile ? "auto" : 0 }}>
           {saving && <div style={{ fontSize: 11, color: SUB }}>同步中…</div>}
@@ -1579,7 +1605,7 @@ function TopNav({ view, setView, saving, totalEstimated, totalPaid, doneCount, c
       {/* view tabs — boxed editorial（手機隱藏，改用底部導覽）*/}
       {!isMobile && (
       <div style={{ display: "flex", gap: 8, paddingBottom: 12, flexWrap: "wrap" }}>
-        {[["owner","儀表板"],["overview","總覽"],["gantt","工序"],["files","檔案庫"],["issues","📝 ToDo"],["compare","比價"],["advisor","AI設定"],...(isAdmin?[["groups","群組"],["accounts","帳號"]]:[])].map(([v,l]) => (
+        {[["owner","儀表板"],["overview",L("overview")],["gantt",L("gantt")],["files","檔案庫"],["issues","📝 ToDo"],["compare","比價"],["advisor","AI設定"],...(isAdmin?[["groups","群組"],["accounts","帳號"]]:[])].filter(([v]) => !conf().hideTabs.includes(v)).map(([v,l]) => (
           <button key={v} onClick={() => setView(v)} className={v === "issues" && view !== v ? "todo-glow" : undefined} style={{ padding: "8px 16px", borderRadius: 7, border: `1px solid ${view === v ? PRIMARY : (v === "issues" ? "#F59E0B" : BORDER)}`, cursor: "pointer", fontSize: 14, fontWeight: v === "issues" ? 700 : 500, background: view === v ? PRIMARY : (v === "issues" ? "#FEF3C7" : "transparent"), color: view === v ? "#fff" : (v === "issues" ? "#B45309" : TEXT), transition: "all .12s" }}>{l}</button>
         ))}
       </div>
@@ -1726,7 +1752,8 @@ function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols,
   const builtinMap = Object.fromEntries(COLS.map(c => [c.id, c]));
   const cols = (customCols && customCols.length) ? customCols : COLS.map(c => ({ id:c.id, label:c.label, builtin:true, fixed:!!c.fixed, w:c.w }));
   const resolve = (e) => e.builtin ? { ...builtinMap[e.id], label: e.label ?? builtinMap[e.id]?.label, w: e.w ?? builtinMap[e.id]?.w, builtin:true, fixed: e.fixed ?? builtinMap[e.id]?.fixed } : e;
-  const orderedCols = cols.map(resolve).filter(c => c && c.id);
+  const relabel = (c) => c.id === "cat" ? { ...c, label: L("cat") } : c.id === "name" ? { ...c, label: L("item") + "名稱" } : c;
+  const orderedCols = cols.map(resolve).filter(c => c && c.id).filter(c => conf().showCost || !COST_COL_IDS.has(c.id)).map(relabel);
   const totalW = orderedCols.reduce((s,c) => s + (c.w || 110), 0) + 48;
 
   const NUM_BUILTIN = new Set(["estQty","estUnitPrice","taxAmount","estTotal","paid","unpaid"]);
@@ -1852,7 +1879,7 @@ function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols,
       {/* toolbar */}
       <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10, flexWrap: "wrap" }}>
         <div style={{ fontSize: 16, fontWeight: 600, color: TEXT, letterSpacing: -0.2 }}>總覽</div>
-        <div style={{ fontSize: 12.5, color: SUB }}>{viewMode === "card" ? "工程大項一覽" : "成本費用明細"}</div>
+        <div style={{ fontSize: 12.5, color: SUB }}>{viewMode === "card" ? L("cat") + "一覽" : L("subtitle")}</div>
         <div style={{ flex: 1 }} />
         {viewMode === "table" && (
           <button onClick={toggleAll} style={{ padding: "6px 12px", borderRadius: 7, border: `1px solid ${BORDER}`, fontSize: 12.5, cursor: "pointer", background: SURFACE, color: SUB, fontWeight: 500 }}>{allCollapsed ? "全部展開" : "全部收合"}</button>
@@ -1918,6 +1945,8 @@ function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols,
                       <span style={{ fontSize: 11, color: SUB }}>{doneCount}/{itemCount}</span>
                     </div>
                   )}
+                  {!conf().showCost && <div style={{ flex: 1 }} />}
+                  {conf().showCost && <>
                   {/* 議價折扣（放在大項名稱旁，不用捲動就看得到；套用在未稅層、稅金重算，細項原報價不動）*/}
                   {itemCount > 0 && (
                     <div style={{ display: "flex", alignItems: "center", gap: 3, flexShrink: 0, marginLeft: 4 }} title="大項議價折扣：套用在未稅小計、稅金重算">
@@ -1943,7 +1972,8 @@ function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols,
                   {cat && (
                     <button onClick={() => setPayCatId(catId)} title="新增付款紀錄" style={{ flexShrink: 0, border: `1px solid #3C8C3C`, background: "#F0FDF4", color: "#3C8C3C", borderRadius: 6, padding: "2px 9px", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>＋ 新增付款</button>
                   )}
-                  <button onClick={() => confirm(`確定刪除工程大項「${group.name}」？\n（含其下 ${itemCount} 筆細項，無法復原）`).then(ok => { if (ok) setCats(prev => prev.filter(c => c.id !== catId)); })} title="刪除此工程大項" style={{ flexShrink: 0, marginLeft: 4, width: 22, height: 22, borderRadius: "50%", background: "transparent", border: "none", color: "#C8BCA0", cursor: "pointer", fontSize: 15, lineHeight: 1, display: "flex", alignItems: "center", justifyContent: "center", padding: 0 }} onMouseEnter={e => { e.currentTarget.style.background = "#F3E4DE"; e.currentTarget.style.color = "#DC2626"; }} onMouseLeave={e => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = "#C8BCA0"; }}>×</button>
+                  </>}
+                  <button onClick={() => confirm(`確定刪除${L("cat")}「${group.name}」？\n（含其下 ${itemCount} 筆${L("item")}，無法復原）`).then(ok => { if (ok) setCats(prev => prev.filter(c => c.id !== catId)); })} title={`刪除此${L("cat")}`} style={{ flexShrink: 0, marginLeft: 4, width: 22, height: 22, borderRadius: "50%", background: "transparent", border: "none", color: "#C8BCA0", cursor: "pointer", fontSize: 15, lineHeight: 1, display: "flex", alignItems: "center", justifyContent: "center", padding: 0 }} onMouseEnter={e => { e.currentTarget.style.background = "#F3E4DE"; e.currentTarget.style.color = "#DC2626"; }} onMouseLeave={e => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = "#C8BCA0"; }}>×</button>
                 </div>
                 {/* item rows（收合時隱藏） */}
                 {!isCollapsed && group.rows.map(({ item }) => {
@@ -2070,7 +2100,7 @@ function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols,
                   onMouseEnter={e => e.currentTarget.style.background="#ECE6D7"}
                   onMouseLeave={e => e.currentTarget.style.background="transparent"}
                 >
-                  <span style={{ fontSize: 16, color: ACCENT }}>+</span> 新增細項至「{group.name}」
+                  <span style={{ fontSize: 16, color: ACCENT }}>+</span> 新增{L("item")}至「{group.name}」
                 </div>
                 )}
                 {/* 新增工程大項（最後一組之後不顯示在這） */}
@@ -2080,12 +2110,12 @@ function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols,
           {/* 新增工程大項 */}
           <div onClick={() => {
             const id = "cat-" + Date.now();
-            setCats(prev => [...prev, { id, order: prev.length, name: "新工程大項", budget: 0, status: "pending", items: [] }]);
+            setCats(prev => [...prev, { id, order: prev.length, name: "新"+L("cat"), budget: 0, status: "pending", items: [] }]);
           }} style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 12px", color: ACCENT, fontSize: 13, fontWeight: 500, cursor: "pointer", borderBottom: `1px solid ${BORDER}`, background: SURFACE }}
             onMouseEnter={e => e.currentTarget.style.background="#F4EFE3"}
             onMouseLeave={e => e.currentTarget.style.background=SURFACE}
           >
-            <span style={{ fontSize: 16 }}>＋</span> 新增工程大項
+            <span style={{ fontSize: 16 }}>＋</span> 新增{L("cat")}
           </div>
           {/* 總計列：數字欄位自動加總 */}
           <div style={{ display: "flex", borderTop: `2px solid ${BORDER}`, background: "#ECE6D7", position: "sticky", bottom: 0, zIndex: 5, fontWeight: 600 }}>
@@ -3111,7 +3141,7 @@ function KanbanView({ cats, setCats, onSelect, dragging, dragOver, onDragStart, 
         <div
           onClick={() => {
             const id = "cat-" + Date.now();
-            const newCat = { id, order: cats.length, name: "新工程大項", budget: 0, status: "pending", items: [] };
+            const newCat = { id, order: cats.length, name: "新"+L("cat"), budget: 0, status: "pending", items: [] };
             setCats(prev => [...prev, newCat]);
           }}
           style={{ background: "#FCFAF4", border: "1px dashed rgba(193,58,34,0.3)", borderRadius: 12, padding: 14, cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", minHeight: 120, gap: 8, transition: "border-color 0.2s" }}
@@ -3119,7 +3149,7 @@ function KanbanView({ cats, setCats, onSelect, dragging, dragOver, onDragStart, 
           onMouseLeave={e => e.currentTarget.style.borderColor="rgba(193,58,34,0.3)"}
         >
           <div style={{ width: 36, height: 36, borderRadius: "50%", background: "#fff8e6", border: "1px solid rgba(193,58,34,0.3)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22, color: ACCENT }}>+</div>
-          <div style={{ fontSize: 13, color: "#6F6656" }}>新增工程大項</div>
+          <div style={{ fontSize: 13, color: "#6F6656" }}>新增{L("cat")}</div>
         </div>
       </div>
     </div>
@@ -4648,7 +4678,7 @@ function GlobalAIPanel({ chat, setChat, onClose, cats, setCats, canEdit, confirm
         content = textBlock;
       }
       history.push({ role: "user", content });
-      const reply = await callAI(history, SYSTEM_GLOBAL + (canEdit ? (AGENT_GUIDE + VISION_GUIDE) : ""));
+      const reply = await callAI(history, (conf().aiRole || SYSTEM_GLOBAL) + (canEdit ? (AGENT_GUIDE + VISION_GUIDE) : ""));
 
       // 顯示去掉 json 指令區塊後的乾淨文字
       const cleanText = reply.replace(/```json[\s\S]*?```/gi, "").trim();
