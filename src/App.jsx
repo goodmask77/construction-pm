@@ -312,8 +312,9 @@ const calcItemTotal = (it) => calcEstimated(it);
 const SPACES = [
   { id: "construction", name: "工程專案", icon: "🏗" },
   { id: "team",         name: "團隊工作", icon: "👥" },
+  { id: "crew",         name: "夥伴中心", icon: "🤝" },
 ];
-// 每個空間的外觀客製（顯示成本與否、隱藏分頁、名詞、AI 角色）
+// 每個空間的外觀客製（顯示成本與否、隱藏分頁、名詞、AI 角色、專屬分頁）
 const SPACE_CONF = {
   construction: {
     showCost: true,
@@ -326,6 +327,15 @@ const SPACE_CONF = {
     hideTabs: ["compare"], // 團隊不需要比價
     labels: { cat: "專案/群組", item: "任務", overview: "任務板", gantt: "進度", subtitle: "團隊任務追蹤" },
     aiRole: "你是團隊專案協作助理，協助追蹤每個人的任務進度、彙整待辦與提醒、整理會議與決策。請用繁體中文、簡潔專業，必要時條列重點。",
+  },
+  crew: {
+    showCost: false,
+    hideTabs: [],
+    tabs: [["kb", "資料庫", "📚"]], // 夥伴中心專屬分頁（之後加 360評鑑/闖關…）
+    defaultView: "kb",
+    hideKpi: true, // 夥伴中心頂部不顯示工程 KPI
+    labels: { cat: "項目", item: "項目", overview: "資料庫", gantt: "進度", subtitle: "夥伴中心" },
+    aiRole: "你是餐飲團隊的夥伴中心助理，協助夥伴查找內外場 SOP/手冊/教學等資料、解答工作問題。請用繁體中文、親切清楚。",
   },
 };
 const conf = () => SPACE_CONF[CURRENT_SPACE] || SPACE_CONF.construction;
@@ -518,7 +528,7 @@ const SYSTEM_ITEM = (catName, itemName) => `你是一位專業餐廳裝修工程
 // ── MAIN APP ──────────────────────────────────────────────────────────────────
 export default function App() {
   const [cats, setCats] = useState(null);
-  const [view, setView] = useState("gantt"); // 預設工序頁
+  const [view, setView] = useState(conf().defaultView || "gantt"); // 預設工序頁（夥伴中心預設資料庫）
   const [selectedCat, setSelectedCat] = useState(null);
   const [selectedItem, setSelectedItem] = useState(null);
   const [globalChat, setGlobalChat] = useState([]);
@@ -814,6 +824,9 @@ export default function App() {
 
       {/* MAIN */}
       <div style={{ padding: isMobile ? "0 12px 84px" : "0 16px 80px" }}>
+        {view === "kb" && (
+          <KnowledgeBaseView canEdit={canEditData} requireLogin={denyEdit} confirm={confirm} userName={userName} />
+        )}
         {view === "owner" && settings && (
           <OwnerDashboard cats={cats} setCats={setCatsLogged} settings={settings} stalledItems={stalledItems} activityLog={activityLog} logActivity={logActivity} userName={userName} journal={journal} events={events} plans={plans} />
         )}
@@ -884,6 +897,133 @@ export default function App() {
 
       {/* 手機底部固定導覽 */}
       {isMobile && <BottomNav view={view} setView={setView} isAdmin={isAdmin} />}
+    </div>
+  );
+}
+
+// ── 夥伴中心：資料庫 / 知識庫（內外場 SOP、手冊、教學…）─────────────────────────
+const KB_DEFAULT_CATS = ["內場", "外場", "通用", "教育訓練"];
+const kbIcon = (d) => d.kind === "link" ? "🔗" : d.kind === "text" ? "📝" : (d.isImage ? "🖼️" : (/\.pdf$/i.test(d.name || "") ? "📕" : /\.(xls|xlsx|csv)$/i.test(d.name || "") ? "📊" : "📄"));
+function KnowledgeBaseView({ canEdit, requireLogin, confirm, userName }) {
+  const [docs, setDocs] = useState(null);
+  const [q, setQ] = useState("");
+  const [catFilter, setCatFilter] = useState("全部");
+  const [edit, setEdit] = useState(null); // 正在編輯/新增的 doc
+  const [busy, setBusy] = useState(false);
+  const fileRef = useRef(null);
+
+  useEffect(() => {
+    const safety = setTimeout(() => setDocs(prev => prev === null ? [] : prev), 8000);
+    (async () => {
+      try { const r = await window.storage.get(K("kb_docs"), true); setDocs(r && r.value ? JSON.parse(r.value) : []); }
+      catch (_) { setDocs([]); }
+    })().finally(() => clearTimeout(safety));
+    return () => clearTimeout(safety);
+  }, []);
+
+  const persist = async (list) => { setDocs(list); try { await window.storage.set(K("kb_docs"), JSON.stringify(list), true); } catch (_) {} };
+  const guard = () => { if (!canEdit) { requireLogin && requireLogin(); return false; } return true; };
+  const cats = [...new Set([...KB_DEFAULT_CATS, ...(docs || []).map(d => d.category).filter(Boolean)])];
+
+  const blank = () => ({ id: "", category: KB_DEFAULT_CATS[0], title: "", kind: "link", url: "", name: "", content: "", tags: "", pinned: false });
+  const openNew = () => { if (!guard()) return; setEdit(blank()); };
+  const openEdit = (d) => { if (!guard()) return; setEdit({ ...d, tags: (d.tags || []).join(", ") }); };
+  const saveDoc = () => {
+    const e = edit; if (!e.title.trim()) { alert("請填標題"); return; }
+    const doc = { id: e.id || "kb-" + Math.random().toString(36).slice(2, 8), category: e.category, title: e.title.trim(), kind: e.kind, url: e.url || "", name: e.name || "", isImage: !!e.isImage, content: e.content || "", tags: (e.tags || "").split(/[,，]/).map(t => t.trim()).filter(Boolean), pinned: !!e.pinned, updatedBy: userName || "—", updatedAt: new Date().toISOString() };
+    const list = e.id ? (docs || []).map(d => d.id === e.id ? doc : d) : [doc, ...(docs || [])];
+    persist(list); setEdit(null);
+  };
+  const delDoc = async (d) => { if (!guard()) return; if (await confirm(`刪除「${d.title}」？`)) persist((docs || []).filter(x => x.id !== d.id)); };
+  const togglePin = (d) => { if (!guard()) return; persist((docs || []).map(x => x.id === d.id ? { ...x, pinned: !x.pinned } : x)); };
+  const uploadFile = async (files) => {
+    const f = (files || [])[0]; if (!f) return;
+    setBusy(true);
+    try { const { url } = await uploadPhoto(f); setEdit(e => ({ ...e, kind: "file", url, name: f.name, isImage: !!(f.type || "").startsWith("image/") })); }
+    catch (er) { alert("上傳失敗：" + (er?.message || er)); }
+    setBusy(false);
+  };
+
+  const filtered = (docs || [])
+    .filter(d => catFilter === "全部" || d.category === catFilter)
+    .filter(d => { if (!q.trim()) return true; const s = (d.title + " " + (d.tags || []).join(" ") + " " + (d.content || "")).toLowerCase(); return s.includes(q.trim().toLowerCase()); })
+    .sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0) || (b.updatedAt || "").localeCompare(a.updatedAt || ""));
+
+  if (docs === null) return <div style={{ padding: 40, color: SUB, fontSize: 14 }}>載入中…</div>;
+  const inputS = { width: "100%", boxSizing: "border-box", border: `1px solid ${BORDER}`, borderRadius: 8, padding: "8px 10px", fontSize: 14, outline: "none", background: "#fff", color: TEXT };
+
+  return (
+    <div>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "6px 0 12px", flexWrap: "wrap" }}>
+        <div style={{ fontSize: 18, fontWeight: 700, color: TEXT }}>📚 資料庫</div>
+        <div style={{ fontSize: 12.5, color: SUB }}>內外場 SOP・手冊・教學（{docs.length}）</div>
+        <div style={{ flex: 1 }} />
+        <input value={q} onChange={e => setQ(e.target.value)} placeholder="🔍 搜尋標題／標籤…" style={{ ...inputS, width: 220, maxWidth: "50vw" }} />
+        {canEdit && <button onClick={openNew} style={{ border: "none", background: ACCENT, color: "#fff", borderRadius: 8, padding: "8px 16px", fontSize: 13.5, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" }}>＋ 新增</button>}
+      </div>
+      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 14 }}>
+        {["全部", ...cats].map(c => (
+          <button key={c} onClick={() => setCatFilter(c)} style={{ border: `1px solid ${catFilter === c ? PRIMARY : BORDER}`, background: catFilter === c ? PRIMARY : "transparent", color: catFilter === c ? "#fff" : TEXT, borderRadius: 16, padding: "4px 12px", fontSize: 12.5, fontWeight: 500, cursor: "pointer" }}>{c}</button>
+        ))}
+      </div>
+      {filtered.length === 0 && <div style={{ textAlign: "center", color: "#A99F88", padding: "50px 0", fontSize: 14 }}>{docs.length === 0 ? "還沒有資料，點「＋ 新增」開始建立。" : "沒有符合的資料。"}</div>}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: 12 }}>
+        {filtered.map(d => (
+          <div key={d.id} style={{ background: "#fff", border: `1px solid ${BORDER}`, borderRadius: 12, padding: 14, display: "flex", flexDirection: "column", gap: 6, position: "relative" }}>
+            <div style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
+              <span style={{ fontSize: 22, lineHeight: 1 }}>{kbIcon(d)}</span>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 14.5, fontWeight: 600, color: TEXT, wordBreak: "break-word" }}>{d.pinned && "📌 "}{d.title}</div>
+                <div style={{ fontSize: 11, color: SUB, marginTop: 2 }}><span style={{ background: "#F3E4DE", color: "#92400e", borderRadius: 8, padding: "1px 7px" }}>{d.category}</span>{d.tags?.length > 0 && <span style={{ marginLeft: 6 }}>{d.tags.map(t => "#" + t).join(" ")}</span>}</div>
+              </div>
+            </div>
+            {d.kind === "text" && d.content && <div style={{ fontSize: 13, color: "#4A4234", whiteSpace: "pre-wrap", wordBreak: "break-word", maxHeight: 140, overflowY: "auto", background: "#FBF7EE", borderRadius: 8, padding: "8px 10px" }}>{d.content}</div>}
+            {(d.kind === "link" || d.kind === "file") && d.url && <a href={d.url} target="_blank" rel="noreferrer" style={{ fontSize: 13, color: "#2E6FB0", textDecoration: "none", wordBreak: "break-all" }}>{d.kind === "file" ? `📎 ${d.name || "開啟檔案"}` : "🔗 開啟連結"}</a>}
+            {canEdit && <div style={{ display: "flex", gap: 10, marginTop: 4, fontSize: 12 }}>
+              <button onClick={() => togglePin(d)} style={{ border: "none", background: "none", color: d.pinned ? ACCENT : SUB, cursor: "pointer", padding: 0 }}>{d.pinned ? "取消置頂" : "置頂"}</button>
+              <button onClick={() => openEdit(d)} style={{ border: "none", background: "none", color: SUB, cursor: "pointer", padding: 0 }}>編輯</button>
+              <button onClick={() => delDoc(d)} style={{ border: "none", background: "none", color: "#DC2626", cursor: "pointer", padding: 0 }}>刪除</button>
+              <div style={{ flex: 1 }} /><span style={{ color: "#C8BCA0" }}>{d.updatedBy}</span>
+            </div>}
+          </div>
+        ))}
+      </div>
+
+      {edit && (
+        <div onClick={e => e.target === e.currentTarget && setEdit(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 500, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+          <div style={{ background: "#fff", borderRadius: 14, padding: 20, width: 460, maxWidth: "100%", maxHeight: "88vh", overflowY: "auto" }}>
+            <div style={{ fontSize: 16, fontWeight: 700, color: TEXT, marginBottom: 14 }}>{edit.id ? "編輯資料" : "新增資料"}</div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              <div><div style={{ fontSize: 11, color: SUB, marginBottom: 4 }}>標題</div><input value={edit.title} onChange={e => setEdit({ ...edit, title: e.target.value })} style={inputS} placeholder="例：外場點餐 SOP" /></div>
+              <div style={{ display: "flex", gap: 10 }}>
+                <div style={{ flex: 1 }}><div style={{ fontSize: 11, color: SUB, marginBottom: 4 }}>分類</div>
+                  <input list="kb-cats" value={edit.category} onChange={e => setEdit({ ...edit, category: e.target.value })} style={inputS} />
+                  <datalist id="kb-cats">{cats.map(c => <option key={c} value={c} />)}</datalist>
+                </div>
+                <div style={{ flex: 1 }}><div style={{ fontSize: 11, color: SUB, marginBottom: 4 }}>類型</div>
+                  <select value={edit.kind} onChange={e => setEdit({ ...edit, kind: e.target.value })} style={inputS}>
+                    <option value="link">🔗 連結</option><option value="file">📎 檔案</option><option value="text">📝 純文字</option>
+                  </select>
+                </div>
+              </div>
+              {edit.kind === "link" && <div><div style={{ fontSize: 11, color: SUB, marginBottom: 4 }}>連結網址</div><input value={edit.url} onChange={e => setEdit({ ...edit, url: e.target.value })} style={inputS} placeholder="https://…" /></div>}
+              {edit.kind === "file" && <div><div style={{ fontSize: 11, color: SUB, marginBottom: 4 }}>檔案</div>
+                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  <button onClick={() => fileRef.current?.click()} style={{ border: `1px dashed ${BORDER}`, background: SURFACE, color: SUB, borderRadius: 8, padding: "8px 14px", fontSize: 13, cursor: "pointer" }}>{busy ? "上傳中…" : "選擇檔案"}</button>
+                  {edit.name && <span style={{ fontSize: 12, color: TEXT }}>📎 {edit.name}</span>}
+                  <input ref={fileRef} type="file" style={{ display: "none" }} onChange={e => { uploadFile(e.target.files); e.target.value = ""; }} />
+                </div></div>}
+              {edit.kind === "text" && <div><div style={{ fontSize: 11, color: SUB, marginBottom: 4 }}>內容</div><textarea value={edit.content} onChange={e => setEdit({ ...edit, content: e.target.value })} style={{ ...inputS, height: 140, resize: "vertical", fontFamily: "inherit" }} placeholder="直接輸入內容…" /></div>}
+              <div><div style={{ fontSize: 11, color: SUB, marginBottom: 4 }}>標籤（逗號分隔）</div><input value={edit.tags} onChange={e => setEdit({ ...edit, tags: e.target.value })} style={inputS} placeholder="例：點餐, 新人必讀" /></div>
+              <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: TEXT, cursor: "pointer" }}><input type="checkbox" checked={edit.pinned} onChange={e => setEdit({ ...edit, pinned: e.target.checked })} />📌 置頂</label>
+            </div>
+            <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 16 }}>
+              <button onClick={() => setEdit(null)} style={{ border: `1px solid ${BORDER}`, background: "#fff", color: SUB, borderRadius: 8, padding: "8px 16px", fontSize: 13, cursor: "pointer" }}>取消</button>
+              <button onClick={saveDoc} disabled={busy} style={{ border: "none", background: ACCENT, color: "#fff", borderRadius: 8, padding: "8px 20px", fontSize: 13.5, fontWeight: 600, cursor: "pointer" }}>儲存</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -1513,7 +1653,7 @@ function CompareView({ canEdit, requireLogin }) {
 
 // ── BOTTOM NAV (手機) ───────────────────────────────────────────────────────
 function BottomNav({ view, setView, isAdmin }) {
-  const tabs = [["owner", "儀表板", "📊"], ["overview", L("overview"), "📋"], ["gantt", L("gantt"), "📅"], ["files", "檔案庫", "📁"], ["issues", "ToDo", "📝"], ["compare", "比價", "⚖️"], ...(isAdmin ? [["groups", "群組", "💬"]] : []), ["advisor", "AI設定", "🤖"]].filter(([v]) => !conf().hideTabs.includes(v));
+  const tabs = (conf().tabs || [["owner", "儀表板", "📊"], ["overview", L("overview"), "📋"], ["gantt", L("gantt"), "📅"], ["files", "檔案庫", "📁"], ["issues", "ToDo", "📝"], ["compare", "比價", "⚖️"], ...(isAdmin ? [["groups", "群組", "💬"]] : []), ["advisor", "AI設定", "🤖"]]).filter(([v]) => !conf().hideTabs.includes(v));
   return (
     <div style={{ position: "fixed", left: 0, right: 0, bottom: 0, height: 60, background: "rgba(255,255,255,0.96)", backdropFilter: "blur(10px)", WebkitBackdropFilter: "blur(10px)", borderTop: `1px solid ${BORDER}`, boxShadow: "0 -2px 14px rgba(0,0,0,0.08)", display: "flex", zIndex: 350, paddingBottom: "env(safe-area-inset-bottom)" }}>
       {tabs.map(([v, l, icon]) => {
@@ -1589,8 +1729,8 @@ function TopNav({ view, setView, saving, totalEstimated, totalPaid, doneCount, c
             {SPACES.map(s => <option key={s.id} value={s.id}>{s.icon} {s.name}</option>)}
           </select>
         </div>
-        {/* KPI cards inline（手機改 2×2、整列獨佔一行）*/}
-        {(() => {
+        {/* KPI cards inline（手機改 2×2、整列獨佔一行；夥伴中心等空間隱藏）*/}
+        {!conf().hideKpi && (() => {
           const kpis = conf().showCost ? [
             { label: "預估總額", val: fmt(totalEstimated), color: TEXT, tip: "各細項「數量×單價」依稅別換算含稅後加總＝總預算" },
             { label: "已付總額", val: totalPaid > 0 ? fmt(totalPaid) : "尚未付款", color: totalPaid > 0 ? "#3C8C3C" : SUB, tip: `各細項「已付金額」加總。付款進度 ${payPct}%` },
@@ -1636,7 +1776,7 @@ function TopNav({ view, setView, saving, totalEstimated, totalPaid, doneCount, c
       {/* view tabs — boxed editorial（手機隱藏，改用底部導覽）*/}
       {!isMobile && (
       <div style={{ display: "flex", gap: 8, paddingBottom: 12, flexWrap: "wrap" }}>
-        {[["owner","儀表板"],["overview",L("overview")],["gantt",L("gantt")],["files","檔案庫"],["issues","📝 ToDo"],["compare","比價"],["advisor","AI設定"],...(isAdmin?[["groups","群組"],["accounts","帳號"]]:[])].filter(([v]) => !conf().hideTabs.includes(v)).map(([v,l]) => (
+        {(conf().tabs || [["owner","儀表板"],["overview",L("overview")],["gantt",L("gantt")],["files","檔案庫"],["issues","📝 ToDo"],["compare","比價"],["advisor","AI設定"],...(isAdmin?[["groups","群組"],["accounts","帳號"]]:[])]).filter(([v]) => !conf().hideTabs.includes(v)).map(([v,l]) => (
           <button key={v} onClick={() => setView(v)} className={v === "issues" && view !== v ? "todo-glow" : undefined} style={{ padding: "8px 16px", borderRadius: 7, border: `1px solid ${view === v ? PRIMARY : (v === "issues" ? "#F59E0B" : BORDER)}`, cursor: "pointer", fontSize: 14, fontWeight: v === "issues" ? 700 : 500, background: view === v ? PRIMARY : (v === "issues" ? "#FEF3C7" : "transparent"), color: view === v ? "#fff" : (v === "issues" ? "#B45309" : TEXT), transition: "all .12s" }}>{l}</button>
         ))}
       </div>
