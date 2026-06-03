@@ -38,6 +38,15 @@ const WS = {
 };
 const pad = (n) => String(n).padStart(2, "0");
 const toKey = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+// 記錄時間：日期 + 24 小時制到分鐘（台北時區）
+const fmtLogTime = (iso) => {
+  try {
+    const d = new Date(iso);
+    const date = d.toLocaleDateString("zh-TW", { timeZone: "Asia/Taipei", year: "numeric", month: "numeric", day: "numeric" });
+    const time = d.toLocaleTimeString("zh-TW", { timeZone: "Asia/Taipei", hour: "2-digit", minute: "2-digit", hour12: false });
+    return `${date} ${time}`;
+  } catch { return ""; }
+};
 const WD = ["日", "一", "二", "三", "四", "五", "六"];
 const navBtn = { border: `1px solid ${C.line}`, background: "#fff", borderRadius: 8, width: 32, height: 32, fontSize: 17, cursor: "pointer", color: C.text };
 const jumpBtn = { border: `1px solid ${C.line}`, background: "#fff", borderRadius: 6, width: 19, height: 19, fontSize: 13, lineHeight: 1, padding: 0, cursor: "pointer", color: C.sub, display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 };
@@ -609,7 +618,7 @@ function QuickLog({ q, log, item, planned, onSave, onDelete, onClose, uploadPhot
         </div>
         {log && (log.author || log.updated_by) && (
           <div style={{ fontSize: 11, color: C.faint, marginBottom: 8, display: "flex", gap: 8, flexWrap: "wrap" }}>
-            {log.author && <span>✍ 記錄：{log.author}{log.created_at ? ` · ${new Date(log.created_at).toLocaleDateString("zh-TW")}` : ""}</span>}
+            {log.author && <span>✍ 記錄：{log.author}{log.created_at ? ` · ${fmtLogTime(log.created_at)}` : ""}</span>}
             {log.updated_by && log.updated_by !== log.author && <span>· 修改：{log.updated_by}</span>}
           </div>
         )}
