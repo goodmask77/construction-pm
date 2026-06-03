@@ -15,6 +15,13 @@ function useIsMobile(bp = MOBILE_BP) {
 
 const ACCENT = "#C13A22", RED = "#C0392B", ACCENT_SOFT = "#F3E4DE", PRIMARY = "#1A1A1A", SUB = "#6F6656";
 const C = { text: "#211C15", sub: "#6F6656", faint: "#A99F88", line: "#D8CFBB", soft: "#ECE6D7" };
+// 附件相容：舊資料是 url 字串(圖片)，新資料是 {url,name,isImage}
+const attUrl = (p) => (typeof p === "string" ? p : (p && p.url) || "");
+const attName = (p) => (typeof p === "string" ? "" : (p && p.name) || "");
+const attIsImg = (p) => (typeof p === "string" ? true : !!(p && p.isImage));
+const attIcon = (p) => { const n = (attName(p) || "").toLowerCase(); if (/\.pdf$/.test(n)) return "📕"; if (/\.(xls|xlsx|csv|numbers)$/.test(n)) return "📊"; if (/\.(doc|docx|pages)$/.test(n)) return "📄"; if (/\.(ppt|pptx|key)$/.test(n)) return "📈"; if (/\.(zip|rar|7z)$/.test(n)) return "🗜️"; return "📎"; };
+// 點附件：圖片放大、其餘開新分頁
+const openAtt = (p, setViewImg) => { if (attIsImg(p)) setViewImg(attUrl(p)); else window.open(attUrl(p), "_blank"); };
 const TOTAL_WEEKS = 16, TOTAL_DAYS = TOTAL_WEEKS * 7;
 const LABEL_W = 168, DAY_PXD = 44, WEEK_PXD = 12;
 const ROW_H = 40, ROW_H_OPEN = 116, CARD_W = 150, MAX_OPEN = 3;
@@ -291,7 +298,9 @@ export default function SequenceView({
                       {!planned && log.prog > 0 && <span style={{ fontSize: 11, color: C.sub, marginRight: 6, fontWeight: 600 }}>{log.prog}%</span>}
                       <span style={{ fontSize: 13, color: C.text, lineHeight: 1.5 }}>{planned ? (log.next || log.done) : (log.done || log.next)}</span>
                       {log.issue && <div style={{ fontSize: 12, color: RED, marginTop: 3 }}>⚠ {log.issue}</div>}
-                      {log.photos?.length > 0 && <div style={{ display: "flex", gap: 5, marginTop: 6, flexWrap: "wrap" }}>{log.photos.slice(0, 4).map((p, k) => <img key={k} src={p} alt="" onClick={(e) => { e.stopPropagation(); setViewImg(p); }} style={{ width: 54, height: 54, borderRadius: 6, objectFit: "cover" }} />)}</div>}
+                      {log.photos?.length > 0 && <div style={{ display: "flex", gap: 5, marginTop: 6, flexWrap: "wrap" }}>{log.photos.slice(0, 4).map((p, k) => attIsImg(p)
+                        ? <img key={k} src={attUrl(p)} alt="" onClick={(e) => { e.stopPropagation(); openAtt(p, setViewImg); }} style={{ width: 54, height: 54, borderRadius: 6, objectFit: "cover", cursor: "zoom-in" }} />
+                        : <div key={k} onClick={(e) => { e.stopPropagation(); openAtt(p, setViewImg); }} title={attName(p)} style={{ width: 54, height: 54, borderRadius: 6, background: C.soft, border: `1px solid ${C.line}`, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", cursor: "pointer", overflow: "hidden", padding: 2, boxSizing: "border-box" }}><span style={{ fontSize: 18 }}>{attIcon(p)}</span><span style={{ fontSize: 7, color: C.sub, width: "100%", textAlign: "center", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{attName(p)}</span></div>)}</div>}
                     </div>
                   ) : (
                     <div style={{ paddingLeft: 17, fontSize: 12.5, color: sched ? ACCENT : C.faint }}>
@@ -382,7 +391,7 @@ export default function SequenceView({
                       <div key={l.id} onClick={(e) => { e.stopPropagation(); setQuick({ itemId: l.itemId, date: l.date, x: e.clientX, y: e.clientY }); }}
                         style={{ position: "absolute", left, top: 40, width: CARD_W, background: "#fff", border: `1px solid ${C.line}`, borderLeft: `3px solid ${planned ? ACCENT : l.issue ? RED : w.bar}`, borderRadius: 8, padding: 7, cursor: "pointer", boxShadow: "0 1px 5px rgba(0,0,0,.09)", opacity: planned ? .82 : 1 }}>
                         <div style={{ display: "flex", gap: 7 }}>
-                          {l.photos?.[0] && <img src={l.photos[0]} alt="" style={{ width: 40, height: 40, borderRadius: 5, objectFit: "cover", flexShrink: 0 }} />}
+                          {(() => { const fi = (l.photos || []).find(attIsImg); return fi ? <img src={attUrl(fi)} alt="" style={{ width: 40, height: 40, borderRadius: 5, objectFit: "cover", flexShrink: 0 }} /> : (l.photos?.length ? <div style={{ width: 40, height: 40, borderRadius: 5, background: C.soft, border: `1px solid ${C.line}`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18, flexShrink: 0 }}>{attIcon(l.photos[0])}</div> : null); })()}
                           <div style={{ minWidth: 0 }}>
                             <div style={{ fontSize: 11, color: planned ? ACCENT : C.sub, fontWeight: 600 }}>{l.date.slice(5).replace("-", "/")}{planned ? " 預排" : ""}</div>
                             <div style={{ fontSize: 12, fontWeight: 600, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden", lineHeight: 1.35 }}>{planned ? (l.next || l.done) : (l.done || l.next)}</div>
@@ -391,7 +400,7 @@ export default function SequenceView({
                         {(l.issue || (l.photos?.length || 0) > 1) && (
                           <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 4 }}>
                             {l.issue && <span style={{ fontSize: 10, color: RED }}>⚠ 問題</span>}
-                            {(l.photos?.length || 0) > 1 && <span style={{ fontSize: 10, color: C.faint }}>📷×{l.photos.length}</span>}
+                            {(l.photos?.length || 0) > 1 && <span style={{ fontSize: 10, color: C.faint }}>📎×{l.photos.length}</span>}
                           </div>
                         )}
                       </div>
@@ -442,7 +451,9 @@ export default function SequenceView({
                             )}
                             <div style={{ fontSize: 12, lineHeight: 1.45, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{planned ? (log.next || log.done) : (log.done || log.next)}</div>
                             {log.issue && <div style={{ fontSize: 11, color: RED, display: "-webkit-box", WebkitLineClamp: 1, WebkitBoxOrient: "vertical", overflow: "hidden" }}>⚠ {log.issue}</div>}
-                            {(log.photos?.length > 0) && <div style={{ display: "flex", gap: 4, marginTop: "auto" }}>{log.photos.slice(0, 2).map((p, k) => <img key={k} src={p} alt="" title="點擊放大" onMouseDown={(e) => e.stopPropagation()} onClick={(e) => { e.stopPropagation(); setViewImg(p); }} style={{ width: 38, height: 38, borderRadius: 5, objectFit: "cover", cursor: "zoom-in" }} />)}{log.photos.length > 2 && <span style={{ fontSize: 11, color: C.faint, alignSelf: "flex-end" }}>+{log.photos.length - 2}</span>}</div>}
+                            {(log.photos?.length > 0) && <div style={{ display: "flex", gap: 4, marginTop: "auto" }}>{log.photos.slice(0, 2).map((p, k) => attIsImg(p)
+                              ? <img key={k} src={attUrl(p)} alt="" title={attName(p) || "點擊放大"} onMouseDown={(e) => e.stopPropagation()} onClick={(e) => { e.stopPropagation(); openAtt(p, setViewImg); }} style={{ width: 38, height: 38, borderRadius: 5, objectFit: "cover", cursor: "zoom-in" }} />
+                              : <div key={k} title={attName(p)} onMouseDown={(e) => e.stopPropagation()} onClick={(e) => { e.stopPropagation(); openAtt(p, setViewImg); }} style={{ width: 38, height: 38, borderRadius: 5, background: C.soft, border: `1px solid ${C.line}`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, cursor: "pointer" }}>{attIcon(p)}</div>)}{log.photos.length > 2 && <span style={{ fontSize: 11, color: C.faint, alignSelf: "flex-end" }}>+{log.photos.length - 2}</span>}</div>}
                           </div>
                         ) : canEdit ? (
                           <div className="thin-add" style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: planned ? ACCENT : C.faint, fontSize: 12, border: planned ? `1px dashed ${ACCENT}66` : "none", borderRadius: 6 }}>{planned ? "點此預排" : "＋ 記錄"}</div>
@@ -473,7 +484,7 @@ export default function SequenceView({
           <div style={{ color: ACCENT, fontWeight: 600, marginBottom: 2 }}>{tip.item} · {tip.l.date.slice(5).replace("-", "/")}</div>
           <div style={{ lineHeight: 1.4 }}>{tip.l.done || tip.l.next}</div>
           {tip.l.issue && <div style={{ color: "#ff9a8f", marginTop: 2 }}>⚠ {tip.l.issue}</div>}
-          {(tip.l.photos?.length || 0) > 0 && <div style={{ color: "#aab", marginTop: 3 }}>照片 {tip.l.photos.length} 張</div>}
+          {(tip.l.photos?.length || 0) > 0 && <div style={{ color: "#aab", marginTop: 3 }}>附件 {tip.l.photos.length} 個</div>}
         </div>
       )}
 
@@ -539,18 +550,22 @@ export default function SequenceView({
 
 /* ── 行事曆式快速記錄 popover（點格子直接打字＋上傳照片） ── */
 function QuickLog({ q, log, item, planned, onSave, onDelete, onClose, uploadPhotos }) {
-  const [text, setText] = useState(log ? (planned ? (log.next || log.done || "") : (log.done || log.next || "")) : "");
-  const [photos, setPhotos] = useState(log?.photos || []);
+  const initText = log ? (planned ? (log.next || log.done || "") : (log.done || log.next || "")) : "";
+  const initPhotos = log?.photos || [];
+  const hasData = !!(initText || initPhotos.length); // 有文字或附件＝有資料
+  const [text, setText] = useState(initText);
+  const [photos, setPhotos] = useState(initPhotos);
+  const [editing, setEditing] = useState(!hasData); // 有資料先看，新增則直接編輯
   const [busy, setBusy] = useState(false);
   const [viewImg, setViewImg] = useState(null);
   const taRef = useRef(null);
   const fileRef = useRef(null);
-  useEffect(() => { taRef.current?.focus(); }, []);
-  const addPhotos = async (files) => {
-    const imgs = Array.from(files).filter((x) => x.type.startsWith("image/"));
-    if (!imgs.length || !uploadPhotos) return;
+  useEffect(() => { if (editing) taRef.current?.focus(); }, [editing]);
+  const addFiles = async (files) => {
+    const arr = Array.from(files || []);
+    if (!arr.length || !uploadPhotos) return;
     setBusy(true);
-    try { const urls = await uploadPhotos(imgs); setPhotos((p) => [...p, ...urls]); } catch (e) { alert("上傳失敗：" + (e?.message || e)); }
+    try { const ups = await uploadPhotos(arr); setPhotos((p) => [...p, ...ups]); } catch (e) { alert("上傳失敗：" + (e?.message || e)); }
     setBusy(false);
   };
   const save = () => {
@@ -558,27 +573,57 @@ function QuickLog({ q, log, item, planned, onSave, onDelete, onClose, uploadPhot
     onSave({ ...base, [planned ? "next" : "done"]: text.trim(), photos });
   };
   // 視窗內定位（靠近點擊位置、避免超出邊界）
-  const W = 320, left = Math.max(12, Math.min((q.x || 200) - W / 2, window.innerWidth - W - 12)), top = Math.min((q.y || 120) + 14, window.innerHeight - 320);
+  const W = 340, left = Math.max(12, Math.min((q.x || 200) - W / 2, window.innerWidth - W - 12)), top = Math.min((q.y || 120) + 14, window.innerHeight - 360);
+
+  // 附件縮圖（圖片可放大、其他檔案開新分頁；編輯模式可刪）
+  const attTile = (p, i) => (
+    <div key={i} style={{ position: "relative" }}>
+      {attIsImg(p)
+        ? <img src={attUrl(p)} alt={attName(p)} title={attName(p) || "點擊放大"} onClick={() => openAtt(p, setViewImg)} style={{ width: 56, height: 56, objectFit: "cover", borderRadius: 7, border: `1px solid ${C.line}`, cursor: "zoom-in" }} />
+        : <div onClick={() => openAtt(p, setViewImg)} title={attName(p) + "（點擊開啟）"} style={{ width: 56, height: 56, borderRadius: 7, border: `1px solid ${C.line}`, background: C.soft, cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 2, padding: 3, boxSizing: "border-box" }}>
+            <span style={{ fontSize: 20, lineHeight: 1 }}>{attIcon(p)}</span>
+            <span style={{ fontSize: 8, color: C.sub, width: "100%", textAlign: "center", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{attName(p) || "檔案"}</span>
+          </div>}
+      {editing && <button onClick={() => setPhotos(photos.filter((_, x) => x !== i))} style={{ position: "absolute", top: -6, right: -6, width: 17, height: 17, borderRadius: 9, border: "none", background: "#e11d48", color: "#fff", fontSize: 11, cursor: "pointer" }}>×</button>}
+    </div>
+  );
+
   return (
     <div onMouseDown={onClose} style={{ position: "fixed", inset: 0, zIndex: 1000 }}>
-      <div onMouseDown={(e) => e.stopPropagation()} onPaste={(e) => e.clipboardData?.files?.length && addPhotos(e.clipboardData.files)} style={{ position: "fixed", left, top, width: W, background: "#fff", border: `1px solid ${C.line}`, borderRadius: 14, boxShadow: "0 12px 40px rgba(20,24,33,.22)", padding: 14 }}>
+      <div onMouseDown={(e) => e.stopPropagation()} onPaste={(e) => editing && e.clipboardData?.files?.length && addFiles(e.clipboardData.files)} style={{ position: "fixed", left, top, width: W, background: "#fff", border: `1px solid ${C.line}`, borderRadius: 14, boxShadow: "0 12px 40px rgba(20,24,33,.22)", padding: 14 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
           <span style={{ width: 9, height: 9, borderRadius: 5, background: (WS[item?.status] || WS.pending).bar, flexShrink: 0 }} />
           <div style={{ fontSize: 14, fontWeight: 600, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{item?.name}</div>
           <span style={{ fontSize: 12, color: C.sub }}>{q.date.slice(5).replace("-", "/")}{planned ? " 預排" : ""}</span>
           <button onClick={onClose} style={{ border: "none", background: "none", fontSize: 20, color: C.faint, cursor: "pointer", lineHeight: 1 }}>×</button>
         </div>
-        <textarea ref={taRef} rows={3} value={text} onChange={(e) => setText(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) save(); }} placeholder={planned ? "預計做什麼…（可貼上截圖）" : "今天做了什麼…（可貼上截圖）"} style={{ width: "100%", boxSizing: "border-box", border: `1px solid ${C.line}`, borderRadius: 9, fontSize: 14, padding: 9, resize: "vertical", outline: "none", fontFamily: "inherit" }} />
-        <div style={{ display: "flex", gap: 7, flexWrap: "wrap", margin: "10px 0" }}>
-          {photos.map((p, i) => <div key={i} style={{ position: "relative" }}><img src={p} alt="" onClick={() => setViewImg(p)} style={{ width: 52, height: 52, objectFit: "cover", borderRadius: 7, border: `1px solid ${C.line}`, cursor: "zoom-in" }} /><button onClick={() => setPhotos(photos.filter((_, x) => x !== i))} style={{ position: "absolute", top: -6, right: -6, width: 17, height: 17, borderRadius: 9, border: "none", background: "#e11d48", color: "#fff", fontSize: 11, cursor: "pointer" }}>×</button></div>)}
-          <button onClick={() => fileRef.current?.click()} title="上傳照片" style={{ width: 52, height: 52, borderRadius: 7, border: `1px dashed ${C.line}`, background: C.soft, fontSize: 20, color: C.faint, cursor: "pointer" }}>＋</button>
-          <input ref={fileRef} type="file" accept="image/*" multiple style={{ display: "none" }} onChange={(e) => addPhotos(e.target.files)} />
-        </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          {log?.id && <button onClick={() => onDelete(log.id)} style={{ border: "none", background: "none", color: "#e11d48", fontSize: 13, cursor: "pointer" }}>刪除</button>}
-          <div style={{ flex: 1, fontSize: 11, color: C.faint }}>{busy ? "上傳中…" : "⌘+Enter 儲存"}</div>
-          <button onClick={save} disabled={busy} style={{ border: "none", background: ACCENT, color: "#fff", borderRadius: 9, padding: "8px 20px", fontSize: 14, fontWeight: 600, cursor: busy ? "wait" : "pointer" }}>儲存</button>
-        </div>
+
+        {editing ? (
+          <>
+            <textarea ref={taRef} rows={4} value={text} onChange={(e) => setText(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) save(); }} placeholder={planned ? "預計做什麼…（可貼上截圖／檔案）" : "今天做了什麼…（可貼上截圖／檔案）"} style={{ width: "100%", boxSizing: "border-box", border: `1px solid ${C.line}`, borderRadius: 9, fontSize: 14, padding: 9, resize: "vertical", outline: "none", fontFamily: "inherit" }} />
+            <div style={{ display: "flex", gap: 7, flexWrap: "wrap", margin: "10px 0" }}>
+              {photos.map(attTile)}
+              <button onClick={() => fileRef.current?.click()} title="上傳任意檔案（照片／PDF／Excel…）" style={{ width: 56, height: 56, borderRadius: 7, border: `1px dashed ${C.line}`, background: C.soft, fontSize: 20, color: C.faint, cursor: "pointer" }}>＋</button>
+              <input ref={fileRef} type="file" multiple style={{ display: "none" }} onChange={(e) => { addFiles(e.target.files); e.target.value = ""; }} />
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              {log?.id && <button onClick={() => onDelete(log.id)} style={{ border: "none", background: "none", color: "#e11d48", fontSize: 13, cursor: "pointer" }}>刪除</button>}
+              <div style={{ flex: 1, fontSize: 11, color: C.faint }}>{busy ? "上傳中…" : "⌘+Enter 儲存"}</div>
+              <button onClick={save} disabled={busy} style={{ border: "none", background: ACCENT, color: "#fff", borderRadius: 9, padding: "8px 20px", fontSize: 14, fontWeight: 600, cursor: busy ? "wait" : "pointer" }}>儲存</button>
+            </div>
+          </>
+        ) : (
+          <>
+            {text ? <div style={{ whiteSpace: "pre-wrap", wordBreak: "break-word", fontSize: 14, lineHeight: 1.55, color: C.text, maxHeight: 240, overflowY: "auto", padding: "2px 1px" }}>{text}</div>
+                  : <div style={{ fontSize: 13, color: C.faint, padding: "4px 0" }}>（無文字內容）</div>}
+            {photos.length > 0 && <div style={{ display: "flex", gap: 7, flexWrap: "wrap", margin: "12px 0 2px" }}>{photos.map(attTile)}</div>}
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 12 }}>
+              {log?.id && <button onClick={() => onDelete(log.id)} style={{ border: "none", background: "none", color: "#e11d48", fontSize: 13, cursor: "pointer" }}>刪除</button>}
+              <div style={{ flex: 1 }} />
+              <button onClick={() => setEditing(true)} style={{ border: `1px solid ${C.line}`, background: "#fff", color: C.text, borderRadius: 9, padding: "8px 20px", fontSize: 14, fontWeight: 600, cursor: "pointer" }}>✎ 編輯</button>
+            </div>
+          </>
+        )}
       </div>
       {viewImg && <div onClick={(e) => { e.stopPropagation(); setViewImg(null); }} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.88)", zIndex: 1200, display: "flex", alignItems: "center", justifyContent: "center", padding: 20, cursor: "zoom-out" }}><img src={viewImg} alt="" style={{ maxWidth: "95%", maxHeight: "95%", objectFit: "contain", borderRadius: 8 }} /></div>}
     </div>
@@ -627,10 +672,10 @@ function Drawer({ data, item, TODAY, onSetStatus, onSave, onDelete, onClose, onC
   const fileRef = useRef(null);
   const upd = (k, v) => setF((s) => ({ ...s, [k]: v }));
   const addPhotos = async (files) => {
-    const imgs = Array.from(files).filter((x) => x.type.startsWith("image/"));
-    if (!imgs.length || !uploadPhotos) return;
+    const arr = Array.from(files || []);
+    if (!arr.length || !uploadPhotos) return;
     setBusy(true);
-    try { const urls = await uploadPhotos(imgs); setF((s) => ({ ...s, photos: [...(s.photos || []), ...urls] })); } catch (e) { alert("上傳失敗：" + (e?.message || e)); }
+    try { const ups = await uploadPhotos(arr); setF((s) => ({ ...s, photos: [...(s.photos || []), ...ups] })); } catch (e) { alert("上傳失敗：" + (e?.message || e)); }
     setBusy(false);
   };
   const doTidy = async () => { if (!aiTidy) return; setBusy(true); try { const t = await aiTidy(f); if (t) upd(f.date > TODAY ? "next" : "done", t); } catch {} setBusy(false); };
@@ -655,11 +700,16 @@ function Drawer({ data, item, TODAY, onSetStatus, onSave, onDelete, onClose, onC
           <Label>明日計畫</Label>
           <textarea rows={2} value={f.next} onChange={(e) => upd("next", e.target.value)} placeholder="明天接著做什麼…" style={{ ...ta, marginBottom: 14 }} />
         </>}
-        <Label>照片牆（可貼上截圖）</Label>
+        <Label>附件（照片／PDF／Excel…，可貼上截圖）</Label>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
-          {(f.photos || []).map((p, i) => <div key={i} style={{ position: "relative" }}><img src={p} alt="" onClick={() => setViewImg(p)} title="點擊放大" style={{ width: 66, height: 66, objectFit: "cover", borderRadius: 8, border: `1px solid ${C.line}`, cursor: "zoom-in" }} /><button onClick={() => upd("photos", f.photos.filter((_, x) => x !== i))} style={{ position: "absolute", top: -6, right: -6, width: 18, height: 18, borderRadius: 9, border: "none", background: "#e11d48", color: "#fff", fontSize: 11, cursor: "pointer" }}>×</button></div>)}
-          <button onClick={() => fileRef.current?.click()} style={{ width: 66, height: 66, borderRadius: 8, border: `1px dashed ${C.line}`, background: C.soft, fontSize: 22, color: C.faint, cursor: "pointer" }}>＋</button>
-          <input ref={fileRef} type="file" accept="image/*" multiple style={{ display: "none" }} onChange={(e) => addPhotos(e.target.files)} />
+          {(f.photos || []).map((p, i) => <div key={i} style={{ position: "relative" }}>
+            {attIsImg(p)
+              ? <img src={attUrl(p)} alt={attName(p)} onClick={() => openAtt(p, setViewImg)} title={attName(p) || "點擊放大"} style={{ width: 66, height: 66, objectFit: "cover", borderRadius: 8, border: `1px solid ${C.line}`, cursor: "zoom-in" }} />
+              : <div onClick={() => openAtt(p, setViewImg)} title={attName(p) + "（點擊開啟）"} style={{ width: 66, height: 66, borderRadius: 8, border: `1px solid ${C.line}`, background: C.soft, cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 3, padding: 4, boxSizing: "border-box" }}><span style={{ fontSize: 24 }}>{attIcon(p)}</span><span style={{ fontSize: 8, color: C.sub, width: "100%", textAlign: "center", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{attName(p)}</span></div>}
+            <button onClick={() => upd("photos", f.photos.filter((_, x) => x !== i))} style={{ position: "absolute", top: -6, right: -6, width: 18, height: 18, borderRadius: 9, border: "none", background: "#e11d48", color: "#fff", fontSize: 11, cursor: "pointer" }}>×</button>
+          </div>)}
+          <button onClick={() => fileRef.current?.click()} title="上傳任意檔案" style={{ width: 66, height: 66, borderRadius: 8, border: `1px dashed ${C.line}`, background: C.soft, fontSize: 22, color: C.faint, cursor: "pointer" }}>＋</button>
+          <input ref={fileRef} type="file" multiple style={{ display: "none" }} onChange={(e) => { addPhotos(e.target.files); e.target.value = ""; }} />
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 18, paddingTop: 16, borderTop: `1px solid ${C.line}` }}>
           <button onClick={() => onCopy(f)} style={{ border: `1px solid ${C.line}`, background: C.soft, borderRadius: 9, padding: "8px 12px", fontSize: 13, cursor: "pointer", color: C.text }}>複製昨日</button>
