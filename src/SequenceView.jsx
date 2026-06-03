@@ -305,7 +305,7 @@ export default function SequenceView({
                     <div style={{ paddingLeft: 17 }}>
                       {planned && <span style={{ fontSize: 11, fontWeight: 600, color: ACCENT, marginRight: 6 }}>預排</span>}
                       {!planned && log.prog > 0 && <span style={{ fontSize: 11, color: C.sub, marginRight: 6, fontWeight: 600 }}>{log.prog}%</span>}
-                      <span style={{ fontSize: 13, color: C.text, lineHeight: 1.5 }}>{planned ? (log.next || log.done) : (log.done || log.next)}</span>
+                      <span style={{ fontSize: 13, color: C.text, lineHeight: 1.5, whiteSpace: "pre-wrap" }}>{planned ? (log.next || log.done) : (log.done || log.next)}</span>
                       {log.issue && <div style={{ fontSize: 12, color: RED, marginTop: 3 }}>⚠ {log.issue}</div>}
                       {log.photos?.length > 0 && <div style={{ display: "flex", gap: 5, marginTop: 6, flexWrap: "wrap" }}>{log.photos.slice(0, 4).map((p, k) => attIsImg(p)
                         ? <img key={k} src={attUrl(p)} alt="" onClick={(e) => { e.stopPropagation(); openAtt(p, setViewImg); }} style={{ width: 54, height: 54, borderRadius: 6, objectFit: "cover", cursor: "zoom-in" }} />
@@ -458,7 +458,7 @@ export default function SequenceView({
                                 <span style={{ fontSize: 10, color: C.sub, fontWeight: 600 }}>{log.prog}%</span>
                               </div>
                             )}
-                            <div style={{ fontSize: 12, lineHeight: 1.45, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{planned ? (log.next || log.done) : (log.done || log.next)}</div>
+                            <div style={{ fontSize: 12, lineHeight: 1.45, whiteSpace: (log.photos?.length > 0) ? "normal" : "pre-wrap", wordBreak: "break-word", display: "-webkit-box", WebkitLineClamp: (log.photos?.length > 0) ? 2 : 10, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{planned ? (log.next || log.done) : (log.done || log.next)}</div>
                             {log.issue && <div style={{ fontSize: 11, color: RED, display: "-webkit-box", WebkitLineClamp: 1, WebkitBoxOrient: "vertical", overflow: "hidden" }}>⚠ {log.issue}</div>}
                             {(log.photos?.length > 0) && <div style={{ display: "flex", gap: 4, marginTop: "auto" }}>{log.photos.slice(0, 2).map((p, k) => attIsImg(p)
                               ? <img key={k} draggable={false} src={attUrl(p)} alt="" title={attName(p) || "點擊放大"} onMouseDown={(e) => e.stopPropagation()} onClick={(e) => { e.stopPropagation(); openAtt(p, setViewImg); }} style={{ width: 38, height: 38, borderRadius: 5, objectFit: "cover", cursor: "zoom-in" }} />
