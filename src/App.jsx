@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, Fragment } from "react";
 import { uploadPhoto, deletePhotoFile } from "./supa.js";
 import SequenceView from "./SequenceView.jsx";
 
@@ -951,41 +951,64 @@ function IssuesView({ canEdit, requireLogin, confirm }) {
           <div style={{ fontSize: 12, marginTop: 8 }}>在 LINE 跟 D哥 說「幫我記…」「追一下…」，或按上面「＋ 新增事項」</div>
         </div>
       ) : (
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(290px,1fr))", gap: 12 }}>
-          {shown.map(it => {
-            const cat = catOf(it); const di = it.status !== "done" ? dueInfo(it.due) : null; const editing = editId === it.id;
-            return (
-              <div key={it.id} style={{ background: "#fff", border: `1px solid ${di && di.bold ? di.color : BORDER}`, borderRadius: 12, overflow: "hidden", opacity: it.status === "done" ? 0.6 : 1 }}>
-                {it.photoUrl && <img src={it.photoUrl} alt="" onClick={() => setLightbox(it.photoUrl)} style={{ width: "100%", height: 150, objectFit: "cover", cursor: "zoom-in", display: "block" }} />}
-                <div style={{ padding: 12 }}>
-                  <div style={{ fontSize: 14, color: TEXT, lineHeight: 1.5, fontWeight: 500, textDecoration: it.status === "done" ? "line-through" : "none" }}>{it.desc}</div>
-                  {it.answer && <div style={{ fontSize: 12, color: "#3C8C3C", marginTop: 4 }}>✔ 答案：{it.answer}</div>}
-                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap", margin: "8px 0", alignItems: "center" }}>
-                    <span style={{ fontSize: 11, background: CAT_COLOR[cat] + "22", color: CAT_COLOR[cat], borderRadius: 6, padding: "2px 8px", fontWeight: 700 }}>{cat}</span>
-                    {it.catName && <span style={{ fontSize: 11, background: ACCENT_SOFT, color: ACCENT, borderRadius: 6, padding: "2px 8px", fontWeight: 600 }}>{it.catName}</span>}
-                    {di && <span style={{ fontSize: 11, color: di.color, fontWeight: di.bold ? 700 : 500 }}>📅 {di.txt}</span>}
-                    {it.status !== "done" && it.track && <span style={{ fontSize: 11, color: "#C2872E", fontWeight: 600 }}>🔔追蹤{it.nudges ? `·已提醒${it.nudges}次` : ""}</span>}
-                    <span style={{ fontSize: 11, color: it.status === "done" ? "#3C8C3C" : "#C2872E", fontWeight: 600 }}>{it.status === "done" ? "✅ 已解決" : "🔴 待處理"}</span>
-                  </div>
-
-                  {editing && (
-                    <div style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: 8, padding: 10, margin: "6px 0", display: "flex", flexDirection: "column", gap: 8 }}>
-                      <label style={{ fontSize: 12, color: SUB, display: "flex", justifyContent: "space-between", alignItems: "center" }}>分類 <select value={cat} onChange={e => patch(it.id, { category: e.target.value })} style={inp}>{TODO_CATS.map(c => <option key={c} value={c}>{c}</option>)}</select></label>
-                      <label style={{ fontSize: 12, color: SUB, display: "flex", justifyContent: "space-between", alignItems: "center" }}>交期 <input type="date" value={it.due || ""} onChange={e => patch(it.id, { due: e.target.value })} style={inp} /></label>
-                      <label style={{ fontSize: 12, color: SUB, display: "flex", justifyContent: "space-between", alignItems: "center" }}>提醒終止日 <input type="date" value={it.remindEnd || ""} onChange={e => patch(it.id, { remindEnd: e.target.value })} style={inp} /></label>
-                      <label style={{ fontSize: 12, color: SUB, display: "flex", alignItems: "center", gap: 6, cursor: "pointer" }}><input type="checkbox" checked={it.track !== false} onChange={e => patch(it.id, { track: e.target.checked })} />🔔 主動追到我回（越近期限越密集提醒）</label>
-                    </div>
-                  )}
-
-                  <div style={{ display: "flex", gap: 8 }}>
-                    <button onClick={() => toggleDone(it)} style={{ flex: 1, padding: "6px 0", borderRadius: 7, border: `1px solid ${BORDER}`, background: it.status === "done" ? "transparent" : "#EAF6EA", color: it.status === "done" ? SUB : "#3C8C3C", fontSize: 12.5, fontWeight: 600, cursor: "pointer" }}>{it.status === "done" ? "↩ 重開" : "✅ 完成/給答案"}</button>
-                    <button onClick={() => setEditId(editing ? null : it.id)} style={{ padding: "6px 10px", borderRadius: 7, border: `1px solid ${editing ? ACCENT : BORDER}`, background: editing ? ACCENT : "transparent", color: editing ? "#fff" : SUB, fontSize: 12.5, cursor: "pointer" }}>⚙️</button>
-                    <button onClick={() => del(it.id)} style={{ padding: "6px 10px", borderRadius: 7, border: `1px solid ${BORDER}`, background: "transparent", color: "#DC2626", fontSize: 12.5, cursor: "pointer" }}>刪</button>
-                  </div>
-                </div>
-              </div>
-            );
-          })}
+        <div style={{ overflowX: "auto", border: `1px solid ${BORDER}`, borderRadius: 12, background: "#fff" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 720 }}>
+            <thead>
+              <tr style={{ background: SURFACE }}>
+                {["事項", "分類", "交期", "狀態", "操作"].map((h, i) => (
+                  <th key={h} style={{ textAlign: i >= 3 ? "center" : "left", padding: "8px 10px", fontSize: 12, fontWeight: 700, color: SUB, borderBottom: `1.5px solid ${BORDER}`, whiteSpace: "nowrap" }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {shown.map(it => {
+                const cat = catOf(it); const di = it.status !== "done" ? dueInfo(it.due) : null; const editing = editId === it.id;
+                const tdS = { padding: "9px 10px", fontSize: 13, color: TEXT, borderBottom: `1px solid ${BORDER}`, verticalAlign: "top" };
+                const done = it.status === "done";
+                return (
+                  <Fragment key={it.id}>
+                    <tr style={{ opacity: done ? 0.55 : 1 }}>
+                      <td style={tdS}>
+                        <div style={{ display: "flex", gap: 8 }}>
+                          {it.photoUrl && <img src={it.photoUrl} alt="" onClick={() => setLightbox(it.photoUrl)} style={{ width: 40, height: 40, objectFit: "cover", borderRadius: 6, cursor: "zoom-in", flexShrink: 0 }} />}
+                          <div>
+                            <div style={{ fontWeight: 500, lineHeight: 1.45, textDecoration: done ? "line-through" : "none" }}>{it.desc}</div>
+                            {it.answer && <div style={{ fontSize: 12, color: "#3C8C3C", marginTop: 3 }}>✔ {it.answer}</div>}
+                            {it.catName && <span style={{ fontSize: 10.5, background: ACCENT_SOFT, color: ACCENT, borderRadius: 5, padding: "1px 6px", fontWeight: 600, display: "inline-block", marginTop: 4 }}>{it.catName}</span>}
+                          </div>
+                        </div>
+                      </td>
+                      <td style={tdS}><span style={{ fontSize: 11.5, background: CAT_COLOR[cat] + "22", color: CAT_COLOR[cat], borderRadius: 6, padding: "2px 8px", fontWeight: 700, whiteSpace: "nowrap" }}>{cat}</span></td>
+                      <td style={tdS}>{it.due ? <span style={{ fontSize: 12.5, color: di ? di.color : SUB, fontWeight: di && di.bold ? 700 : 500, whiteSpace: "nowrap" }}>{it.due}{di && di.txt !== it.due ? ` · ${di.txt}` : ""}</span> : <span style={{ color: SUB }}>—</span>}</td>
+                      <td style={{ ...tdS, textAlign: "center", whiteSpace: "nowrap" }}>
+                        <div style={{ fontSize: 12, color: done ? "#3C8C3C" : "#C2872E", fontWeight: 600 }}>{done ? "✅ 已解決" : "🔴 待處理"}</div>
+                        {!done && it.track && <div style={{ fontSize: 11, color: "#C2872E", marginTop: 2 }}>🔔{it.nudges ? `已提醒${it.nudges}次` : "追蹤中"}</div>}
+                      </td>
+                      <td style={{ ...tdS, textAlign: "center", whiteSpace: "nowrap" }}>
+                        <div style={{ display: "inline-flex", gap: 5 }}>
+                          <button onClick={() => toggleDone(it)} title={done ? "重開" : "完成/給答案"} style={{ padding: "5px 8px", borderRadius: 7, border: `1px solid ${BORDER}`, background: done ? "transparent" : "#EAF6EA", color: done ? SUB : "#3C8C3C", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>{done ? "↩" : "✅"}</button>
+                          <button onClick={() => setEditId(editing ? null : it.id)} title="編輯" style={{ padding: "5px 8px", borderRadius: 7, border: `1px solid ${editing ? ACCENT : BORDER}`, background: editing ? ACCENT : "transparent", color: editing ? "#fff" : SUB, fontSize: 12, cursor: "pointer" }}>⚙️</button>
+                          <button onClick={() => del(it.id)} title="刪除" style={{ padding: "5px 8px", borderRadius: 7, border: `1px solid ${BORDER}`, background: "transparent", color: "#DC2626", fontSize: 12, cursor: "pointer" }}>🗑</button>
+                        </div>
+                      </td>
+                    </tr>
+                    {editing && (
+                      <tr>
+                        <td colSpan={5} style={{ padding: "10px 14px", background: SURFACE, borderBottom: `1px solid ${BORDER}` }}>
+                          <div style={{ display: "flex", gap: 16, flexWrap: "wrap", alignItems: "center" }}>
+                            <label style={{ fontSize: 12.5, color: SUB, display: "flex", alignItems: "center", gap: 6 }}>分類 <select value={cat} onChange={e => patch(it.id, { category: e.target.value })} style={inp}>{TODO_CATS.map(c => <option key={c} value={c}>{c}</option>)}</select></label>
+                            <label style={{ fontSize: 12.5, color: SUB, display: "flex", alignItems: "center", gap: 6 }}>交期 <input type="date" value={it.due || ""} onChange={e => patch(it.id, { due: e.target.value })} style={inp} /></label>
+                            <label style={{ fontSize: 12.5, color: SUB, display: "flex", alignItems: "center", gap: 6 }}>提醒終止日 <input type="date" value={it.remindEnd || ""} onChange={e => patch(it.id, { remindEnd: e.target.value })} style={inp} /></label>
+                            <label style={{ fontSize: 12.5, color: SUB, display: "flex", alignItems: "center", gap: 6, cursor: "pointer" }}><input type="checkbox" checked={it.track !== false} onChange={e => patch(it.id, { track: e.target.checked })} />🔔 主動追到我回（越近期限越密集）</label>
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
+                );
+              })}
+            </tbody>
+          </table>
         </div>
       )}
 
