@@ -2912,7 +2912,9 @@ function OwnerDashboard({ cats, setCats, settings, stalledItems, activityLog, lo
         </div>
       )}
 
-      {/* AI 用量 / 估算花費（從 AI設定 移來）*/}
+      {/* D哥(LINE bot) 用量 — 主要花費在這 */}
+      <div style={{ marginTop: 16 }}><BotUsagePanel /></div>
+      {/* AI 用量 / 估算花費（App 自己的，較小）*/}
       <div style={{ marginTop: 16 }}><AIUsagePanel /></div>
 
       {/* Weekly Report Modal */}
@@ -3597,6 +3599,65 @@ function LineNotifySettings({ settings, upd, cats, journal, events, plans }) {
 }
 
 // ── ADVISOR SETTINGS VIEW ────────────────────────────────────────────────────
+// ── D哥(LINE bot) 用量 / 估算花費 ────────────────────────────────────────────
+const BOT_MODEL_PRICE = { "claude-opus-4-8": [5, 25], "claude-sonnet-4-6": [3, 15], "claude-sonnet-4-5": [3, 15], "claude-haiku-4-5": [1, 5] };
+const botPriceFor = (m) => { const k = String(m || "").replace(/-\d{6,}$/, ""); for (const key in BOT_MODEL_PRICE) if (k.startsWith(key)) return BOT_MODEL_PRICE[key]; return [3, 15]; };
+const botUsdOf = (m, inTok, outTok) => { const [pi, po] = botPriceFor(m); return (Number(inTok) || 0) / 1e6 * pi + (Number(outTok) || 0) / 1e6 * po; };
+function BotUsagePanel() {
+  const [data, setData] = useState(null);
+  const load = async () => { try { const r = await window.storage.get(K("pm_bot_aiusage"), true); setData(r && r.value ? JSON.parse(r.value) : {}); } catch (_) { setData({}); } };
+  useEffect(() => { load(); }, []);
+  if (data === null) return null;
+  const total = data.total || { calls: 0, inTok: 0, outTok: 0 };
+  const rows = Object.entries(data.byModel || {}).map(([m, v]) => ({ m: m.replace(/-\d{6,}$/, ""), calls: v.calls || 0, inTok: v.inTok || 0, outTok: v.outTok || 0, usd: botUsdOf(m, v.inTok, v.outTok) })).sort((a, b) => b.usd - a.usd);
+  const totUsd = rows.reduce((s, r) => s + r.usd, 0);
+  const twd = totUsd * USD_TWD;
+  const card = (label, val, sub) => (
+    <div style={{ flex: 1, minWidth: 130, background: "#FBF0EC", border: "1px solid #E6C9BE", borderRadius: 10, padding: "12px 14px" }}>
+      <div style={{ fontSize: 22, fontWeight: 800, color: "#211C15", letterSpacing: -0.5, fontVariantNumeric: "tabular-nums" }}>{val}</div>
+      <div style={{ fontSize: 11, color: "#6F6656", marginTop: 2 }}>{label}{sub && <span style={{ color: "#A99F88" }}> {sub}</span>}</div>
+    </div>
+  );
+  return (
+    <div style={{ background: "#ffffff", border: `1px solid ${ACCENT}`, borderRadius: 12, padding: 20 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
+        <span style={{ background: "#1A1A1A", color: "#fff", fontSize: 12, fontWeight: 800, borderRadius: 6, padding: "3px 8px" }}>:D</span>
+        <div style={{ fontSize: 15, fontWeight: 700, color: "#211C15" }}>D哥（LINE bot）用量 / 估算花費</div>
+        <div style={{ flex: 1 }} />
+        <button onClick={load} style={{ fontSize: 12, border: "1px solid #D8CFBB", background: "#ECE6D7", color: "#6F6656", borderRadius: 7, padding: "5px 12px", cursor: "pointer" }}>↻ 重新整理</button>
+      </div>
+      <div style={{ background: "#FBF0EC", borderRadius: 8, padding: "8px 12px", fontSize: 12, color: "#6F6656", marginBottom: 14 }}>
+        D哥 在 LINE（守門 + 思考 + 彙報 + 監控）累計呼叫 Anthropic API 的<b style={{ color: ACCENT }}>估算</b>花費。<b>這是主要花費。</b>精確帳以 platform.claude.com → Usage（篩 ground-bot key）為準。
+      </div>
+      <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 14 }}>
+        {card("估算總花費（USD）", "$" + totUsd.toFixed(3))}
+        {card("估算總花費（TWD）", "NT$" + Math.round(twd).toLocaleString(), `@${USD_TWD}`)}
+        {card("AI 呼叫次數", (total.calls || 0).toLocaleString())}
+        {card("總 tokens（in+out）", ((total.inTok || 0) + (total.outTok || 0)).toLocaleString())}
+      </div>
+      {rows.length > 0 ? (
+        <div style={{ border: "1px solid #E3DAC6", borderRadius: 8, overflow: "hidden" }}>
+          <div style={{ display: "flex", background: "#F4EFE3", fontSize: 11, color: "#6F6656", fontWeight: 600, padding: "6px 12px" }}>
+            <div style={{ flex: 2 }}>模型（錢花在哪）</div><div style={{ flex: 1, textAlign: "right" }}>次數</div><div style={{ flex: 1.4, textAlign: "right" }}>tokens</div><div style={{ flex: 1.2, textAlign: "right" }}>USD</div><div style={{ flex: 1.2, textAlign: "right" }}>TWD</div>
+          </div>
+          {rows.map((r) => (
+            <div key={r.m} style={{ display: "flex", fontSize: 12, color: "#211C15", padding: "6px 12px", borderTop: "1px solid #EFE7D6", fontVariantNumeric: "tabular-nums" }}>
+              <div style={{ flex: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.m}{/haiku/.test(r.m) ? "（守門/監控）" : /sonnet/.test(r.m) ? "（主力思考）" : ""}</div>
+              <div style={{ flex: 1, textAlign: "right" }}>{r.calls}</div>
+              <div style={{ flex: 1.4, textAlign: "right" }}>{(r.inTok + r.outTok).toLocaleString()}</div>
+              <div style={{ flex: 1.2, textAlign: "right", fontFamily: "monospace" }}>${r.usd.toFixed(3)}</div>
+              <div style={{ flex: 1.2, textAlign: "right", fontFamily: "monospace", color: ACCENT }}>{Math.round(r.usd * USD_TWD).toLocaleString()}</div>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div style={{ fontSize: 12, color: "#A99F88", textAlign: "center", padding: "12px 0" }}>尚無紀錄（從 v7.5 起累計；D哥 之後每次在 LINE 動作就會記）</div>
+      )}
+      <div style={{ fontSize: 11, color: "#A99F88", marginTop: 10 }}>{data.since ? `自 ${String(data.since).slice(0, 10)} 起累計` : ""}　⚠ 估算值，精確帳以 Console（ground-bot key）為準。</div>
+    </div>
+  );
+}
+
 // ── AI 用量 / 估算花費面板 ───────────────────────────────────────────────────
 function AIUsagePanel() {
   const [log, setLog] = useState([]);
