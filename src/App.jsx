@@ -1130,6 +1130,13 @@ function GroupsView({ cats, canEdit, requireLogin }) {
   const effMonitor = (gid) => (cfg[gid]?.monitor === true);
   const toggleMonitor = (gid) => { if (!guard()) return; persist({ ...cfg, [gid]: { ...(cfg[gid] || {}), monitor: !effMonitor(gid) } }); };
   const renameGroup = (gid, cur) => { if (!guard()) return; const n = window.prompt("這個群的顯示名稱（D哥抓不到名字時可手動命名）", cur || ""); if (n === null) return; persist({ ...cfg, [gid]: { ...(cfg[gid] || {}), name: n.trim() || undefined } }); };
+  const removeGroup = (gid) => {
+    if (!guard()) return;
+    if (!window.confirm("從清單移除這個群？\n（若 D哥 還在群裡，下次有人講話會再自動出現；只有「已被移出/解散」的死群才會真正消失）")) return;
+    const ns = { ...seen }; delete ns[gid]; setSeen(ns);
+    try { window.storage.set("pm_group_seen", JSON.stringify(ns), true); } catch (_) {}
+    const nc = { ...cfg }; delete nc[gid]; persist(nc);
+  };
 
   if (seen === null) return <div style={{ padding: 40, color: SUB, fontSize: 14 }}>載入中…</div>;
 
@@ -1183,6 +1190,7 @@ function GroupsView({ cats, canEdit, requireLogin }) {
                       <span style={{ width: 8, height: 8, borderRadius: "50%", background: MODE_COLOR[mode], flexShrink: 0 }} />
                       <span style={{ fontWeight: 600, color: isRawId ? SUB : TEXT, maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={isRawId ? "D哥抓不到群名，點 ✎ 手動命名" : name}>{isRawId ? "（未命名群）" : name}</span>
                       <button onClick={() => renameGroup(gid, isRawId ? "" : name)} title="改顯示名稱" style={{ border: "none", background: "none", cursor: "pointer", color: isRawId ? ACCENT : SUB, fontSize: 12, padding: 0 }}>✎</button>
+                      {!isDefault && <button onClick={() => removeGroup(gid)} title="從清單移除（死群清理）" style={{ border: "none", background: "none", cursor: "pointer", color: isRawId ? "#DC2626" : SUB, fontSize: 12, padding: 0 }}>🗑</button>}
                     </div>
                   </td>
                   <td style={td}>
