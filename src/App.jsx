@@ -331,7 +331,7 @@ const SPACE_CONF = {
   crew: {
     showCost: false,
     hideTabs: [],
-    tabs: [["kb", "資料庫", "📚"]], // 夥伴中心專屬分頁（之後加 360評鑑/闖關…）
+    tabs: [["kb", "資料庫", "📚"], ["r360", "360評鑑", "⭐"]], // 夥伴中心專屬分頁（之後加 闖關/投票…）
     defaultView: "kb",
     hideKpi: true, // 夥伴中心頂部不顯示工程 KPI
     labels: { cat: "項目", item: "項目", overview: "資料庫", gantt: "進度", subtitle: "夥伴中心" },
@@ -827,6 +827,9 @@ export default function App() {
         {view === "kb" && (
           <KnowledgeBaseView canEdit={canEditData} requireLogin={denyEdit} confirm={confirm} userName={userName} />
         )}
+        {view === "r360" && (
+          <Review360View canEdit={canEditData} requireLogin={denyEdit} confirm={confirm} isAdmin={isAdmin} />
+        )}
         {view === "owner" && settings && (
           <OwnerDashboard cats={cats} setCats={setCatsLogged} settings={settings} stalledItems={stalledItems} activityLog={activityLog} logActivity={logActivity} userName={userName} journal={journal} events={events} plans={plans} />
         )}
@@ -1024,6 +1027,187 @@ function KnowledgeBaseView({ canEdit, requireLogin, confirm, userName }) {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+// ── 夥伴中心：360 評鑑（設計原型；正式版接 Auth+正規表+權限/匿名）─────────────────
+const R360_DEFAULT_DIMS = ["工作態度", "團隊合作", "專業技能", "服務品質", "責任感", "學習成長"];
+function Review360View({ canEdit, requireLogin, confirm, isAdmin }) {
+  const [data, setData] = useState(null); // {dimensions, people, reviews}
+  const [tab, setTab] = useState("fill"); // fill | result | setup
+  const [me, setMe] = useState("");
+  const [rate, setRate] = useState(null); // 正在評的對象 {revieweeId, scores, comment}
+  const [resultId, setResultId] = useState("");
+
+  useEffect(() => {
+    const safety = setTimeout(() => setData(prev => prev || emptyR360()), 8000);
+    (async () => {
+      try { const r = await window.storage.get(K("kb_360"), true); const d = r && r.value ? JSON.parse(r.value) : null; setData(normR360(d)); }
+      catch (_) { setData(emptyR360()); }
+    })().finally(() => clearTimeout(safety));
+    return () => clearTimeout(safety);
+  }, []);
+  function emptyR360() { return { dimensions: R360_DEFAULT_DIMS.map((l, i) => ({ id: "d" + i, label: l })), people: [], reviews: [] }; }
+  function normR360(d) { if (!d) return emptyR360(); return { dimensions: d.dimensions?.length ? d.dimensions : emptyR360().dimensions, people: d.people || [], reviews: d.reviews || [] }; }
+  const persist = async (next) => { setData(next); try { await window.storage.set(K("kb_360"), JSON.stringify(next), true); } catch (_) {} };
+  const guard = () => { if (!canEdit) { requireLogin && requireLogin(); return false; } return true; };
+
+  if (data === null) return <div style={{ padding: 40, color: SUB, fontSize: 14 }}>載入中…</div>;
+  const { dimensions, people, reviews } = data;
+  const nameOf = (id) => people.find(p => p.id === id)?.name || "—";
+
+  // 儲存一筆評鑑（同一人評同一人＝覆蓋）
+  const submitRate = () => {
+    if (!me) { alert("請先在上方選「我是誰」"); return; }
+    const r = rate;
+    const review = { id: "rv-" + me + "-" + r.revieweeId, reviewerId: me, revieweeId: r.revieweeId, scores: r.scores, comment: (r.comment || "").trim(), ts: new Date().toISOString() };
+    const others = reviews.filter(x => !(x.reviewerId === me && x.revieweeId === r.revieweeId));
+    persist({ ...data, reviews: [...others, review] });
+    setRate(null);
+  };
+  const myReviewOf = (revId) => reviews.find(x => x.reviewerId === me && x.revieweeId === revId);
+
+  // 結果彙整
+  const agg = (revieweeId) => {
+    const others = reviews.filter(x => x.revieweeId === revieweeId && x.reviewerId !== revieweeId);
+    const self = reviews.find(x => x.reviewerId === revieweeId && x.revieweeId === revieweeId);
+    const perDim = dimensions.map(dim => {
+      const vals = others.map(r => Number(r.scores?.[dim.id])).filter(v => v > 0);
+      const avg = vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : null;
+      return { dim, avg, selfV: self ? Number(self.scores?.[dim.id]) || null : null, n: vals.length };
+    });
+    const allVals = others.flatMap(r => dimensions.map(d => Number(r.scores?.[d.id])).filter(v => v > 0));
+    const overall = allVals.length ? allVals.reduce((a, b) => a + b, 0) / allVals.length : null;
+    const comments = others.map(r => r.comment).filter(Boolean);
+    return { perDim, overall, comments, count: others.length, hasSelf: !!self };
+  };
+
+  const card = { background: "#fff", border: `1px solid ${BORDER}`, borderRadius: 12, padding: 16, marginBottom: 12 };
+  const subTab = (t, label) => <button key={t} onClick={() => setTab(t)} style={{ border: `1px solid ${tab === t ? PRIMARY : BORDER}`, background: tab === t ? PRIMARY : "transparent", color: tab === t ? "#fff" : TEXT, borderRadius: 8, padding: "7px 16px", fontSize: 13.5, fontWeight: 600, cursor: "pointer" }}>{label}</button>;
+
+  return (
+    <div>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "6px 0 4px", flexWrap: "wrap" }}>
+        <div style={{ fontSize: 18, fontWeight: 700, color: TEXT }}>⭐ 360 評鑑</div>
+        <span style={{ fontSize: 11, background: "#FEF3C7", color: "#92400e", borderRadius: 8, padding: "2px 8px", fontWeight: 600 }}>設計原型</span>
+      </div>
+      <div style={{ fontSize: 12, color: SUB, marginBottom: 12 }}>這是預覽版：用下方「我是誰」模擬身分、資料先存本機。正式版會接真帳號＋權限＋匿名保護。</div>
+
+      <div style={{ display: "flex", gap: 8, marginBottom: 14, flexWrap: "wrap" }}>
+        {subTab("fill", "📝 我要評")}{subTab("result", "📊 看結果")}{isAdmin && subTab("setup", "⚙ 設定")}
+      </div>
+
+      {tab === "fill" && (<>
+        <div style={{ ...card, display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+          <span style={{ fontSize: 13, color: SUB }}>我是：</span>
+          <select value={me} onChange={e => setMe(e.target.value)} style={{ border: `1px solid ${BORDER}`, borderRadius: 8, padding: "7px 10px", fontSize: 14, background: "#fff", color: TEXT, minWidth: 140 }}>
+            <option value="">— 選擇你自己 —</option>
+            {people.map(p => <option key={p.id} value={p.id}>{p.name}{p.dept ? `（${p.dept}）` : ""}</option>)}
+          </select>
+          {people.length === 0 && <span style={{ fontSize: 12, color: "#C2872E" }}>請先到「設定」加入夥伴名單</span>}
+        </div>
+        {me && <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: 10 }}>
+          {people.map(p => { const done = !!myReviewOf(p.id); const isSelf = p.id === me; return (
+            <button key={p.id} onClick={() => setRate({ revieweeId: p.id, scores: myReviewOf(p.id)?.scores || {}, comment: myReviewOf(p.id)?.comment || "" })}
+              style={{ textAlign: "left", background: "#fff", border: `1px solid ${done ? "#3C8C3C" : BORDER}`, borderRadius: 10, padding: "12px 14px", cursor: "pointer", display: "flex", alignItems: "center", gap: 10 }}>
+              <span style={{ width: 34, height: 34, borderRadius: "50%", background: "#F3E4DE", color: ACCENT, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, flexShrink: 0 }}>{p.name?.[0] || "?"}</span>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 14, fontWeight: 600, color: TEXT }}>{p.name}{isSelf && <span style={{ fontSize: 11, color: SUB }}> · 自評</span>}</div>
+                <div style={{ fontSize: 11, color: SUB }}>{p.dept || "—"}</div>
+              </div>
+              <span style={{ fontSize: 12, color: done ? "#3C8C3C" : "#C8BCA0", fontWeight: 600 }}>{done ? "✓ 已評" : "待評"}</span>
+            </button>
+          ); })}
+        </div>}
+      </>)}
+
+      {tab === "result" && (<>
+        <div style={{ ...card, display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+          <span style={{ fontSize: 13, color: SUB }}>看誰的結果：</span>
+          <select value={resultId} onChange={e => setResultId(e.target.value)} style={{ border: `1px solid ${BORDER}`, borderRadius: 8, padding: "7px 10px", fontSize: 14, background: "#fff", color: TEXT, minWidth: 140 }}>
+            <option value="">— 選擇夥伴 —</option>
+            {people.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+          </select>
+        </div>
+        {resultId && (() => { const a = agg(resultId); return (
+          <div style={card}>
+            <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 14 }}>
+              <div style={{ fontSize: 16, fontWeight: 700, color: TEXT }}>{nameOf(resultId)}</div>
+              <div style={{ fontSize: 13, color: SUB }}>他評 {a.count} 人{a.hasSelf ? " · 含自評" : ""}</div>
+              <div style={{ flex: 1 }} />
+              {a.overall != null && <div style={{ fontSize: 22, fontWeight: 800, color: ACCENT, fontVariantNumeric: "tabular-nums" }}>{a.overall.toFixed(1)}<span style={{ fontSize: 12, color: SUB, fontWeight: 400 }}> /5</span></div>}
+            </div>
+            {a.count === 0 && <div style={{ fontSize: 13, color: "#A99F88", padding: "10px 0" }}>還沒有人評過這位夥伴。</div>}
+            {a.perDim.map(({ dim, avg, selfV, n }) => (
+              <div key={dim.id} style={{ marginBottom: 12 }}>
+                <div style={{ display: "flex", fontSize: 13, marginBottom: 4 }}><span style={{ color: TEXT, fontWeight: 600 }}>{dim.label}</span><div style={{ flex: 1 }} /><span style={{ color: ACCENT, fontFamily: "monospace", fontWeight: 700 }}>{avg != null ? avg.toFixed(1) : "—"}</span>{selfV != null && <span style={{ color: "#2E6FB0", marginLeft: 8, fontSize: 12 }}>自評 {selfV}</span>}</div>
+                <div style={{ position: "relative", height: 8, background: "#EFE7D6", borderRadius: 4 }}>
+                  <div style={{ width: `${(avg || 0) / 5 * 100}%`, height: "100%", background: ACCENT, borderRadius: 4, transition: "width .2s" }} />
+                  {selfV != null && <div title="自評" style={{ position: "absolute", top: -2, left: `calc(${selfV / 5 * 100}% - 1px)`, width: 2, height: 12, background: "#2E6FB0" }} />}
+                </div>
+              </div>
+            ))}
+            {a.comments.length > 0 && <div style={{ marginTop: 16 }}>
+              <div style={{ fontSize: 13, fontWeight: 600, color: TEXT, marginBottom: 8 }}>💬 匿名評語</div>
+              {a.comments.map((c, i) => <div key={i} style={{ fontSize: 13, color: "#4A4234", background: "#FBF7EE", borderRadius: 8, padding: "8px 12px", marginBottom: 6, whiteSpace: "pre-wrap" }}>{c}</div>)}
+            </div>}
+            <div style={{ fontSize: 11, color: "#A99F88", marginTop: 12 }}>※ 正式版：評語匿名、評鑑者身分隱藏；少於設定人數不顯示結果以保護匿名。</div>
+          </div>
+        ); })()}
+      </>)}
+
+      {tab === "setup" && isAdmin && (<>
+        <div style={card}>
+          <div style={{ fontSize: 14, fontWeight: 700, color: TEXT, marginBottom: 10 }}>評分面向</div>
+          {dimensions.map(d => (
+            <div key={d.id} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+              <input value={d.label} onChange={e => persist({ ...data, dimensions: dimensions.map(x => x.id === d.id ? { ...x, label: e.target.value } : x) })} style={{ flex: 1, border: `1px solid ${BORDER}`, borderRadius: 8, padding: "6px 10px", fontSize: 13, background: "#fff", color: TEXT }} />
+              <button onClick={() => { if (!guard()) return; persist({ ...data, dimensions: dimensions.filter(x => x.id !== d.id) }); }} style={{ border: "none", background: "none", color: "#DC2626", cursor: "pointer", fontSize: 16 }}>×</button>
+            </div>
+          ))}
+          <button onClick={() => { if (!guard()) return; persist({ ...data, dimensions: [...dimensions, { id: "d" + Date.now(), label: "新面向" }] }); }} style={{ border: `1px dashed ${BORDER}`, background: SURFACE, color: SUB, borderRadius: 8, padding: "6px 14px", fontSize: 13, cursor: "pointer", marginTop: 4 }}>＋ 新增面向</button>
+        </div>
+        <div style={card}>
+          <div style={{ fontSize: 14, fontWeight: 700, color: TEXT, marginBottom: 10 }}>夥伴名單（{people.length}）</div>
+          {people.map(p => (
+            <div key={p.id} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+              <input value={p.name} onChange={e => persist({ ...data, people: people.map(x => x.id === p.id ? { ...x, name: e.target.value } : x) })} placeholder="姓名" style={{ flex: 1, border: `1px solid ${BORDER}`, borderRadius: 8, padding: "6px 10px", fontSize: 13, background: "#fff", color: TEXT }} />
+              <input value={p.dept || ""} onChange={e => persist({ ...data, people: people.map(x => x.id === p.id ? { ...x, dept: e.target.value } : x) })} placeholder="部門" style={{ width: 90, border: `1px solid ${BORDER}`, borderRadius: 8, padding: "6px 10px", fontSize: 13, background: "#fff", color: TEXT }} />
+              <button onClick={() => { if (!guard()) return; confirm(`移除「${p.name}」？`).then(ok => ok && persist({ ...data, people: people.filter(x => x.id !== p.id) })); }} style={{ border: "none", background: "none", color: "#DC2626", cursor: "pointer", fontSize: 16 }}>×</button>
+            </div>
+          ))}
+          <button onClick={() => { if (!guard()) return; persist({ ...data, people: [...people, { id: "p" + Date.now(), name: "", dept: "" }] }); }} style={{ border: `1px dashed ${BORDER}`, background: SURFACE, color: SUB, borderRadius: 8, padding: "6px 14px", fontSize: 13, cursor: "pointer", marginTop: 4 }}>＋ 新增夥伴</button>
+        </div>
+      </>)}
+
+      {/* 評分彈窗 */}
+      {rate && (() => { const p = people.find(x => x.id === rate.revieweeId); return (
+        <div onClick={e => e.target === e.currentTarget && setRate(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 500, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+          <div style={{ background: "#fff", borderRadius: 14, padding: 20, width: 420, maxWidth: "100%", maxHeight: "88vh", overflowY: "auto" }}>
+            <div style={{ fontSize: 16, fontWeight: 700, color: TEXT, marginBottom: 2 }}>評鑑：{p?.name}{p?.id === me ? "（自評）" : ""}</div>
+            <div style={{ fontSize: 12, color: SUB, marginBottom: 14 }}>每個面向給 1–5 分</div>
+            {dimensions.map(dim => (
+              <div key={dim.id} style={{ marginBottom: 12 }}>
+                <div style={{ fontSize: 13, fontWeight: 600, color: TEXT, marginBottom: 6 }}>{dim.label}</div>
+                <div style={{ display: "flex", gap: 6 }}>
+                  {[1, 2, 3, 4, 5].map(n => { const on = rate.scores[dim.id] === n; return (
+                    <button key={n} onClick={() => setRate({ ...rate, scores: { ...rate.scores, [dim.id]: n } })} style={{ flex: 1, height: 38, borderRadius: 8, border: `1px solid ${on ? ACCENT : BORDER}`, background: on ? ACCENT : "#fff", color: on ? "#fff" : TEXT, fontSize: 15, fontWeight: 700, cursor: "pointer" }}>{n}</button>
+                  ); })}
+                </div>
+              </div>
+            ))}
+            <div style={{ marginBottom: 14 }}>
+              <div style={{ fontSize: 13, fontWeight: 600, color: TEXT, marginBottom: 6 }}>評語（可留空）</div>
+              <textarea value={rate.comment} onChange={e => setRate({ ...rate, comment: e.target.value })} style={{ width: "100%", boxSizing: "border-box", border: `1px solid ${BORDER}`, borderRadius: 8, padding: 9, fontSize: 14, height: 80, resize: "vertical", outline: "none", fontFamily: "inherit" }} placeholder="具體的觀察與建議…" />
+            </div>
+            <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+              <button onClick={() => setRate(null)} style={{ border: `1px solid ${BORDER}`, background: "#fff", color: SUB, borderRadius: 8, padding: "8px 16px", fontSize: 13, cursor: "pointer" }}>取消</button>
+              <button onClick={submitRate} style={{ border: "none", background: ACCENT, color: "#fff", borderRadius: 8, padding: "8px 22px", fontSize: 13.5, fontWeight: 600, cursor: "pointer" }}>送出評鑑</button>
+            </div>
+          </div>
+        </div>
+      ); })()}
     </div>
   );
 }
