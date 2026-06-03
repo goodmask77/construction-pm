@@ -932,9 +932,17 @@ function IssuesView({ canEdit, requireLogin, confirm }) {
 
   useEffect(() => {
     (async () => {
-      try { const r = await window.storage.get(K("pm_issues"), true); setIssues(r && r.value ? JSON.parse(r.value) : []); }
-      catch { setIssues([]); }
-      try { const c = await window.storage.get(K("pm_todo_cats"), true); const arr = c && c.value ? JSON.parse(c.value) : null; if (Array.isArray(arr) && arr.length) setCats(arr); } catch (_) {}
+      let iss = [];
+      try { const r = await window.storage.get(K("pm_issues"), true); iss = r && r.value ? JSON.parse(r.value) : []; } catch (_) {}
+      setIssues(iss);
+      let list = null;
+      try { const c = await window.storage.get(K("pm_todo_cats"), true); const arr = c && c.value ? JSON.parse(c.value) : null; if (Array.isArray(arr) && arr.length) list = arr; } catch (_) {}
+      const base = list || DEFAULT_TODO_CATS;
+      // 自我修復：項目用到、但分類清單沒有的分類（例如 D哥 從 LINE 新增的「未來想法」）→ 自動補進清單
+      const orphans = [...new Set(iss.map(i => i.category).filter(c => c && !base.includes(c)))];
+      const merged = orphans.length ? [...base, ...orphans] : base;
+      setCats(merged);
+      if (orphans.length) { try { await window.storage.set(K("pm_todo_cats"), JSON.stringify(merged), true); } catch (_) {} }
     })();
   }, []);
 
