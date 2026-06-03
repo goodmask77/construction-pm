@@ -610,6 +610,9 @@ function logToEntries(log, planned) {
   if (log?.entries?.length) return log.entries.map((e) => ({ text: e.text || "", photos: e.photos || [] }));
   const t = planned ? (log?.next || log?.done || "") : (log?.done || log?.next || "");
   const ph = log?.photos || [];
+  // 一筆文字若含多件事（用「；」或換行分隔，例 D哥 同日併記的多筆）→ 拆成多條分行顯示
+  const parts = String(t || "").split(/[；;\n]+/).map((s) => s.trim()).filter(Boolean);
+  if (parts.length > 1) return parts.map((text, i) => ({ text, photos: i === 0 ? ph : [] }));
   return (t || ph.length) ? [{ text: t, photos: ph }] : [];
 }
 
@@ -641,7 +644,10 @@ function QuickLog({ q, log, item, planned, onSave, onDelete, onClose, uploadPhot
     const base = log ? { ...log } : { itemId: q.itemId, date: q.date, done: "", issue: "", next: "", prog: 0, photos: [] };
     onSave({ ...base, [planned ? "next" : "done"]: flatText, photos: flatPhotos, entries: clean });
   };
-  const W = 360, left = Math.max(12, Math.min((q.x || 200) - W / 2, window.innerWidth - W - 12)), top = Math.min((q.y || 120) + 14, window.innerHeight - 380);
+  const W = 360, left = Math.max(12, Math.min((q.x || 200) - W / 2, window.innerWidth - W - 12));
+  // 彈窗起點壓在畫面上方 28% 內，高度填到底部留 16px → 內容可捲動、儲存鈕一定看得到
+  const top = Math.max(12, Math.min((q.y || 120) + 14, Math.round(window.innerHeight * 0.28)));
+  const maxH = window.innerHeight - top - 16;
   const multi = entries.length > 1;
 
   // 某一條的附件縮圖（圖片放大用該條的圖片清單翻頁；編輯模式可刪）
@@ -659,7 +665,7 @@ function QuickLog({ q, log, item, planned, onSave, onDelete, onClose, uploadPhot
 
   return (
     <div onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }} style={{ position: "fixed", inset: 0, zIndex: 1000 }}>
-      <div onMouseDown={(e) => e.stopPropagation()} style={{ position: "fixed", left, top, width: W, maxHeight: "82vh", overflowY: "auto", background: "#fff", border: `1px solid ${C.line}`, borderRadius: 14, boxShadow: "0 12px 40px rgba(20,24,33,.22)", padding: 14 }}>
+      <div onMouseDown={(e) => e.stopPropagation()} style={{ position: "fixed", left, top, width: W, maxHeight: maxH, overflowY: "auto", background: "#fff", border: `1px solid ${C.line}`, borderRadius: 14, boxShadow: "0 12px 40px rgba(20,24,33,.22)", padding: 14 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
           <span style={{ width: 9, height: 9, borderRadius: 5, background: (WS[item?.status] || WS.pending).bar, flexShrink: 0 }} />
           <div style={{ fontSize: 14, fontWeight: 600, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{item?.name}</div>
@@ -688,7 +694,7 @@ function QuickLog({ q, log, item, planned, onSave, onDelete, onClose, uploadPhot
               </div>
             ))}
             <button onClick={addEntry} style={{ width: "100%", border: `1px dashed ${C.line}`, background: "#fff", color: ACCENT, borderRadius: 9, padding: "8px", fontSize: 13, fontWeight: 600, cursor: "pointer", marginBottom: 10 }}>＋ 再加一條</button>
-            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, position: "sticky", bottom: -14, background: "#fff", paddingTop: 8, paddingBottom: 2, marginBottom: -2, borderTop: `1px solid ${C.line}` }}>
               {log?.id && <button onClick={() => onDelete(log.id)} style={{ border: "none", background: "none", color: "#e11d48", fontSize: 13, cursor: "pointer" }}>刪除整筆</button>}
               <div style={{ flex: 1, fontSize: 11, color: C.faint }}>{busy ? "上傳中…" : "⌘+Enter 儲存"}</div>
               <button onClick={save} disabled={busy} style={{ border: "none", background: ACCENT, color: "#fff", borderRadius: 9, padding: "8px 20px", fontSize: 14, fontWeight: 600, cursor: busy ? "wait" : "pointer" }}>儲存</button>
