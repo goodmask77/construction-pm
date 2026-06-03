@@ -331,7 +331,7 @@ const SPACE_CONF = {
   crew: {
     showCost: false,
     hideTabs: [],
-    tabs: [["kb", "資料庫", "📚"], ["r360", "360評鑑", "⭐"]], // 夥伴中心專屬分頁（之後加 闖關/投票…）
+    tabs: [["kb", "資料庫", "📚"], ["r360", "360評鑑", "⭐"], ["fb", "回饋", "💬"], ["rank", "排行榜", "🏆"]], // 夥伴中心專屬分頁（之後加 闖關/投票/商城…）
     defaultView: "kb",
     hideKpi: true, // 夥伴中心頂部不顯示工程 KPI
     labels: { cat: "項目", item: "項目", overview: "資料庫", gantt: "進度", subtitle: "夥伴中心" },
@@ -830,6 +830,12 @@ export default function App() {
         {view === "r360" && (
           <Review360View canEdit={canEditData} requireLogin={denyEdit} confirm={confirm} isAdmin={isAdmin} />
         )}
+        {view === "fb" && (
+          <FeedbackView canEdit={canEditData} requireLogin={denyEdit} />
+        )}
+        {view === "rank" && (
+          <CrewRankView />
+        )}
         {view === "owner" && settings && (
           <OwnerDashboard cats={cats} setCats={setCatsLogged} settings={settings} stalledItems={stalledItems} activityLog={activityLog} logActivity={logActivity} userName={userName} journal={journal} events={events} plans={plans} />
         )}
@@ -1208,6 +1214,176 @@ function Review360View({ canEdit, requireLogin, confirm, isAdmin }) {
           </div>
         </div>
       ); })()}
+    </div>
+  );
+}
+
+// ── 夥伴中心：回饋制度 + 積分 + 排行榜（設計原型）─────────────────────────────
+const FB_POS_TAGS = ["服務暖心", "救火英雄", "執行力強", "細心可靠", "思慮周全", "帶人有耐心", "正能量", "神隊友", "出餐快又準", "臨危不亂"];
+const FB_CON_TAGS = ["可多主動溝通", "記得多確認細節", "建議提早備料", "開會多分享想法"];
+// 積分：給回饋+2、收到回饋+1、你給的回饋被按「幫到我」+5
+function crewPointStats(items, people) {
+  const m = {};
+  people.forEach(p => { m[p.id] = { id: p.id, name: p.name, dept: p.dept, given: 0, received: 0, helpfulGot: 0, points: 0 }; });
+  items.forEach(it => {
+    if (m[it.fromId]) { m[it.fromId].given++; m[it.fromId].helpfulGot += (it.helpful?.length || 0); }
+    if (m[it.toId]) m[it.toId].received++;
+  });
+  Object.values(m).forEach(s => { s.points = s.given * 2 + s.received * 1 + s.helpfulGot * 5; });
+  return m;
+}
+async function loadCrewRoster() {
+  try { const r = await window.storage.get(K("kb_360"), true); const d = r && r.value ? JSON.parse(r.value) : null; return d?.people || []; } catch (_) { return []; }
+}
+
+function FeedbackView({ canEdit, requireLogin }) {
+  const [people, setPeople] = useState([]);
+  const [items, setItems] = useState(null);
+  const [me, setMe] = useState("");
+  const [tab, setTab] = useState("give");
+  const [draft, setDraft] = useState({ toId: "", tags: [], text: "", anon: false });
+
+  useEffect(() => {
+    const safety = setTimeout(() => setItems(prev => prev || []), 8000);
+    (async () => {
+      setPeople(await loadCrewRoster());
+      try { const r = await window.storage.get(K("kb_feedback"), true); setItems(r && r.value ? JSON.parse(r.value).items || [] : []); } catch (_) { setItems([]); }
+    })().finally(() => clearTimeout(safety));
+    return () => clearTimeout(safety);
+  }, []);
+  const persist = async (list) => { setItems(list); try { await window.storage.set(K("kb_feedback"), JSON.stringify({ items: list }), true); } catch (_) {} };
+  const nameOf = (id) => people.find(p => p.id === id)?.name || "—";
+  if (items === null) return <div style={{ padding: 40, color: SUB, fontSize: 14 }}>載入中…</div>;
+
+  const toggleTag = (t) => setDraft(d => ({ ...d, tags: d.tags.includes(t) ? d.tags.filter(x => x !== t) : [...d.tags, t] }));
+  const submit = () => {
+    if (!canEdit) { requireLogin && requireLogin(); return; }
+    if (!me) { alert("請先選「我是誰」"); return; }
+    if (!draft.toId) { alert("請選回饋對象"); return; }
+    if (!draft.tags.length && !draft.text.trim()) { alert("至少選一個標籤或寫幾個字"); return; }
+    const it = { id: "fb-" + Math.random().toString(36).slice(2, 8), fromId: me, toId: draft.toId, tags: draft.tags, text: draft.text.trim(), anon: draft.anon, ts: new Date().toISOString(), helpful: [] };
+    persist([it, ...items]);
+    setDraft({ toId: "", tags: [], text: "", anon: false });
+    setTab("wall");
+  };
+  const toggleHelpful = (it) => {
+    if (!me) { alert("請先選「我是誰」才能標記"); return; }
+    const has = (it.helpful || []).includes(me);
+    persist(items.map(x => x.id === it.id ? { ...x, helpful: has ? x.helpful.filter(h => h !== me) : [...(x.helpful || []), me] } : x));
+  };
+
+  const meSelect = (
+    <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+      <span style={{ fontSize: 13, color: SUB }}>我是：</span>
+      <select value={me} onChange={e => setMe(e.target.value)} style={{ border: `1px solid ${BORDER}`, borderRadius: 8, padding: "7px 10px", fontSize: 14, background: "#fff", color: TEXT, minWidth: 130 }}>
+        <option value="">— 選擇你自己 —</option>
+        {people.map(p => <option key={p.id} value={p.id}>{p.name}{p.dept ? `（${p.dept}）` : ""}</option>)}
+      </select>
+    </div>
+  );
+  const card = { background: "#fff", border: `1px solid ${BORDER}`, borderRadius: 12, padding: 16, marginBottom: 12 };
+  const subTab = (t, l) => <button key={t} onClick={() => setTab(t)} style={{ border: `1px solid ${tab === t ? PRIMARY : BORDER}`, background: tab === t ? PRIMARY : "transparent", color: tab === t ? "#fff" : TEXT, borderRadius: 8, padding: "7px 16px", fontSize: 13.5, fontWeight: 600, cursor: "pointer" }}>{l}</button>;
+  const tagChip = (t, on, onClick) => <button key={t} onClick={onClick} style={{ border: `1px solid ${on ? ACCENT : BORDER}`, background: on ? ACCENT : "#fff", color: on ? "#fff" : TEXT, borderRadius: 16, padding: "5px 12px", fontSize: 12.5, cursor: "pointer" }}>{t}</button>;
+
+  return (
+    <div>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "6px 0 4px", flexWrap: "wrap" }}>
+        <div style={{ fontSize: 18, fontWeight: 700, color: TEXT }}>💬 回饋</div>
+        <span style={{ fontSize: 11, background: "#FEF3C7", color: "#92400e", borderRadius: 8, padding: "2px 8px", fontWeight: 600 }}>設計原型</span>
+      </div>
+      <div style={{ fontSize: 12, color: SUB, marginBottom: 12 }}>讓正向、有建設性的回饋變習慣——給回饋得分、被按「幫到我」更高分，累積成回饋王。</div>
+      <div style={{ display: "flex", gap: 8, marginBottom: 14, flexWrap: "wrap" }}>{subTab("give", "✍ 給回饋")}{subTab("wall", "🧱 回饋牆")}</div>
+
+      {tab === "give" && (
+        <div style={card}>
+          <div style={{ marginBottom: 12 }}>{meSelect}</div>
+          <div style={{ fontSize: 12, color: SUB, marginBottom: 4 }}>給誰</div>
+          <select value={draft.toId} onChange={e => setDraft({ ...draft, toId: e.target.value })} style={{ width: "100%", boxSizing: "border-box", border: `1px solid ${BORDER}`, borderRadius: 8, padding: "8px 10px", fontSize: 14, background: "#fff", color: TEXT, marginBottom: 12 }}>
+            <option value="">— 選擇夥伴 —</option>
+            {people.filter(p => p.id !== me).map(p => <option key={p.id} value={p.id}>{p.name}{p.dept ? `（${p.dept}）` : ""}</option>)}
+          </select>
+          <div style={{ fontSize: 12, color: SUB, marginBottom: 6 }}>👍 正向標籤</div>
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 12 }}>{FB_POS_TAGS.map(t => tagChip(t, draft.tags.includes(t), () => toggleTag(t)))}</div>
+          <div style={{ fontSize: 12, color: SUB, marginBottom: 6 }}>💡 建設性建議</div>
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 12 }}>{FB_CON_TAGS.map(t => tagChip(t, draft.tags.includes(t), () => toggleTag(t)))}</div>
+          <textarea value={draft.text} onChange={e => setDraft({ ...draft, text: e.target.value })} placeholder="具體說說（可留空，例：那天尖峰你主動幫忙收尾，真的很救火）" style={{ width: "100%", boxSizing: "border-box", border: `1px solid ${BORDER}`, borderRadius: 8, padding: 9, fontSize: 14, height: 70, resize: "vertical", outline: "none", fontFamily: "inherit", marginBottom: 10 }} />
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, color: TEXT, cursor: "pointer" }}><input type="checkbox" checked={draft.anon} onChange={e => setDraft({ ...draft, anon: e.target.checked })} />匿名給</label>
+            <div style={{ flex: 1 }} />
+            <button onClick={submit} style={{ border: "none", background: ACCENT, color: "#fff", borderRadius: 8, padding: "9px 22px", fontSize: 14, fontWeight: 600, cursor: "pointer" }}>送出回饋 ＋2分</button>
+          </div>
+        </div>
+      )}
+
+      {tab === "wall" && (<>
+        <div style={{ ...card, padding: "10px 14px" }}>{meSelect}</div>
+        {items.length === 0 && <div style={{ textAlign: "center", color: "#A99F88", padding: "40px 0", fontSize: 14 }}>還沒有回饋，去「給回饋」開始吧。</div>}
+        {items.map(it => { const helped = (it.helpful || []).includes(me); const mine = it.toId === me; return (
+          <div key={it.id} style={card}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6, fontSize: 13 }}>
+              <span style={{ fontWeight: 600, color: TEXT }}>{it.anon ? "匿名夥伴" : nameOf(it.fromId)}</span>
+              <span style={{ color: SUB }}>→</span>
+              <span style={{ fontWeight: 600, color: ACCENT }}>{nameOf(it.toId)}</span>
+              <div style={{ flex: 1 }} />
+              <span style={{ fontSize: 11, color: "#C8BCA0" }}>{new Date(it.ts).toLocaleDateString("zh-TW")}</span>
+            </div>
+            {it.tags?.length > 0 && <div style={{ display: "flex", gap: 5, flexWrap: "wrap", marginBottom: it.text ? 8 : 0 }}>{it.tags.map(t => <span key={t} style={{ fontSize: 12, background: FB_CON_TAGS.includes(t) ? "#FFF7ED" : "#F0FDF4", color: FB_CON_TAGS.includes(t) ? "#9A5B12" : "#2E7D32", border: `1px solid ${FB_CON_TAGS.includes(t) ? "#FDE6C8" : "#C8E6C9"}`, borderRadius: 12, padding: "2px 9px" }}>{t}</span>)}</div>}
+            {it.text && <div style={{ fontSize: 14, color: "#4A4234", whiteSpace: "pre-wrap", lineHeight: 1.55 }}>{it.text}</div>}
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8 }}>
+              <button onClick={() => toggleHelpful(it)} disabled={!mine} title={mine ? "" : "只有收到回饋的本人能標記（選對應的『我是誰』）"} style={{ border: `1px solid ${helped ? "#3C8C3C" : BORDER}`, background: helped ? "#F0FDF4" : "#fff", color: helped ? "#3C8C3C" : (mine ? TEXT : "#C8BCA0"), borderRadius: 16, padding: "4px 12px", fontSize: 12.5, fontWeight: 600, cursor: mine ? "pointer" : "default" }}>👍 幫到我{(it.helpful?.length || 0) > 0 ? ` · ${it.helpful.length}` : ""}</button>
+              {(it.helpful?.length || 0) > 0 && <span style={{ fontSize: 11, color: "#3C8C3C" }}>給予者 +{it.helpful.length * 5} 分</span>}
+            </div>
+          </div>
+        ); })}
+      </>)}
+    </div>
+  );
+}
+
+function CrewRankView() {
+  const [people, setPeople] = useState([]);
+  const [items, setItems] = useState(null);
+  useEffect(() => {
+    const safety = setTimeout(() => setItems(prev => prev || []), 8000);
+    (async () => {
+      setPeople(await loadCrewRoster());
+      try { const r = await window.storage.get(K("kb_feedback"), true); setItems(r && r.value ? JSON.parse(r.value).items || [] : []); } catch (_) { setItems([]); }
+    })().finally(() => clearTimeout(safety));
+    return () => clearTimeout(safety);
+  }, []);
+  if (items === null) return <div style={{ padding: 40, color: SUB, fontSize: 14 }}>載入中…</div>;
+  const stats = Object.values(crewPointStats(items, people));
+  const board = (title, sub, key, unit, color) => {
+    const sorted = [...stats].sort((a, b) => b[key] - a[key]).filter(s => s[key] > 0).slice(0, 8);
+    const medal = ["🥇", "🥈", "🥉"];
+    return (
+      <div style={{ background: "#fff", border: `1px solid ${BORDER}`, borderRadius: 12, padding: 16 }}>
+        <div style={{ fontSize: 15, fontWeight: 700, color: TEXT }}>{title}</div>
+        <div style={{ fontSize: 11.5, color: SUB, marginBottom: 10 }}>{sub}</div>
+        {sorted.length === 0 && <div style={{ fontSize: 13, color: "#A99F88", padding: "8px 0" }}>尚無資料</div>}
+        {sorted.map((s, i) => (
+          <div key={s.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "7px 0", borderTop: i ? "1px solid #F4EFE3" : "none" }}>
+            <span style={{ width: 24, textAlign: "center", fontSize: i < 3 ? 16 : 13, color: SUB, fontWeight: 700 }}>{medal[i] || i + 1}</span>
+            <span style={{ width: 30, height: 30, borderRadius: "50%", background: "#F3E4DE", color: ACCENT, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: 13, flexShrink: 0 }}>{s.name?.[0] || "?"}</span>
+            <div style={{ flex: 1, minWidth: 0 }}><div style={{ fontSize: 13.5, fontWeight: 600, color: TEXT }}>{s.name}</div><div style={{ fontSize: 11, color: SUB }}>{s.dept}</div></div>
+            <span style={{ fontSize: 16, fontWeight: 800, color, fontVariantNumeric: "tabular-nums" }}>{s[key]}<span style={{ fontSize: 11, color: SUB, fontWeight: 400 }}> {unit}</span></span>
+          </div>
+        ))}
+      </div>
+    );
+  };
+  return (
+    <div>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "6px 0 4px", flexWrap: "wrap" }}>
+        <div style={{ fontSize: 18, fontWeight: 700, color: TEXT }}>🏆 排行榜</div>
+        <span style={{ fontSize: 11, background: "#FEF3C7", color: "#92400e", borderRadius: 8, padding: "2px 8px", fontWeight: 600 }}>設計原型</span>
+      </div>
+      <div style={{ fontSize: 12, color: SUB, marginBottom: 14 }}>積分＝給回饋×2 ＋ 收到×1 ＋ 你的回饋被按「幫到我」×5。</div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 12 }}>
+        {board("🏅 積分王", "綜合積分排名", "points", "分", ACCENT)}
+        {board("💬 回饋王", "給出最多被肯定（幫到我）的回饋", "helpfulGot", "讚", "#3C8C3C")}
+        {board("🌟 人氣王", "收到最多回饋", "received", "則", "#2E6FB0")}
+      </div>
     </div>
   );
 }
