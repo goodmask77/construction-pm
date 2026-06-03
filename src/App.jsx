@@ -1127,6 +1127,9 @@ function GroupsView({ cats, canEdit, requireLogin }) {
   const setMode = (gid, mode) => { if (!guard()) return; const c = { ...(cfg[gid] || {}) }; c.mode = mode; if (mode !== "vendor") { delete c.catId; delete c.catName; } persist({ ...cfg, [gid]: c }); };
   const setVendorCat = (gid, catId) => { if (!guard()) return; const cat = (cats || []).find(x => x.id === catId); persist({ ...cfg, [gid]: { ...(cfg[gid] || {}), mode: "vendor", catId, catName: cat ? cat.name : "" } }); };
   const toggleDigest = (gid) => { if (!guard()) return; persist({ ...cfg, [gid]: { ...(cfg[gid] || {}), digest: !effDigest(gid) } }); };
+  const effMonitor = (gid) => (cfg[gid]?.monitor === true);
+  const toggleMonitor = (gid) => { if (!guard()) return; persist({ ...cfg, [gid]: { ...(cfg[gid] || {}), monitor: !effMonitor(gid) } }); };
+  const renameGroup = (gid, cur) => { if (!guard()) return; const n = window.prompt("這個群的顯示名稱（D哥抓不到名字時可手動命名）", cur || ""); if (n === null) return; persist({ ...cfg, [gid]: { ...(cfg[gid] || {}), name: n.trim() || undefined } }); };
 
   if (seen === null) return <div style={{ padding: 40, color: SUB, fontSize: 14 }}>載入中…</div>;
 
@@ -1150,7 +1153,8 @@ function GroupsView({ cats, canEdit, requireLogin }) {
         <div style={{ fontSize: 12.5, color: SUB }}>D哥所在 {ids.length} 個群{saving ? " · 儲存中…" : ""}</div>
       </div>
       <div style={{ fontSize: 12, color: SUB, marginBottom: 14, lineHeight: 1.6 }}>
-        <b style={{ color: ACCENT }}>內部群</b>＝自己人，可查預算金額全部工程；<b style={{ color: "#2E6FB0" }}>廠商群</b>＝只回它那項工程進度，<b style={{ color: ACCENT }}>絕不洩漏金額</b>（要選綁定工程）；<b style={{ color: SUB }}>鎖定</b>＝只閒聊。外群一律「叫名字才回話」。
+        <b style={{ color: ACCENT }}>內部群</b>＝自己人，可查預算金額全部工程；<b style={{ color: "#2E6FB0" }}>廠商群</b>＝只回它那項工程進度，<b style={{ color: ACCENT }}>絕不洩漏金額</b>（要選綁定工程）；<b style={{ color: SUB }}>鎖定</b>＝只閒聊。外群一律「叫名字才回話」。<br />
+        <b style={{ color: "#B45309" }}>每日彙報</b>＝每晚 8:00 把重點整理私訊你（一天一次）；<b style={{ color: "#DC2626" }}>即時監控</b>＝有重要訊息（變更／缺失／金額／交期／安全…）<b>當下就私訊你</b>。名字抓不到時，點群名旁 ✎ 可手動命名。
       </div>
 
       <div style={{ overflowX: "auto", border: `1px solid ${BORDER}`, borderRadius: 12, background: "#fff" }}>
@@ -1161,6 +1165,7 @@ function GroupsView({ cats, canEdit, requireLogin }) {
               <th style={th}>類型</th>
               <th style={th}>綁定工程</th>
               <th style={{ ...th, textAlign: "center" }}>每日彙報</th>
+              <th style={{ ...th, textAlign: "center" }}>即時監控</th>
               <th style={{ ...th, textAlign: "right" }}>最近 · 則數</th>
             </tr>
           </thead>
@@ -1169,13 +1174,15 @@ function GroupsView({ cats, canEdit, requireLogin }) {
               const s = seen[gid] || {}; const mode = effMode(gid);
               const isDefault = gid === DEFAULT_LINE_GROUP;
               const name = (cfg[gid]?.name) || s.name || (isDefault ? "瑞光路337（內部群）" : gid);
-              const dg = effDigest(gid);
+              const isRawId = /^[CRU][0-9a-f]{32}$/.test(name);
+              const dg = effDigest(gid); const mon = effMonitor(gid);
               return (
                 <tr key={gid}>
                   <td style={td}>
                     <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                       <span style={{ width: 8, height: 8, borderRadius: "50%", background: MODE_COLOR[mode], flexShrink: 0 }} />
-                      <span style={{ fontWeight: 600 }}>{name}</span>
+                      <span style={{ fontWeight: 600, color: isRawId ? SUB : TEXT, maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={isRawId ? "D哥抓不到群名，點 ✎ 手動命名" : name}>{isRawId ? "（未命名群）" : name}</span>
+                      <button onClick={() => renameGroup(gid, isRawId ? "" : name)} title="改顯示名稱" style={{ border: "none", background: "none", cursor: "pointer", color: isRawId ? ACCENT : SUB, fontSize: 12, padding: 0 }}>✎</button>
                     </div>
                   </td>
                   <td style={td}>
@@ -1198,6 +1205,9 @@ function GroupsView({ cats, canEdit, requireLogin }) {
                   </td>
                   <td style={{ ...td, textAlign: "center" }}>
                     <button onClick={() => toggleDigest(gid)} title="每晚 8:00 整理重點私訊給你" style={{ width: 26, height: 26, borderRadius: 7, border: `1.5px solid ${dg ? "#3C8C3C" : BORDER}`, cursor: "pointer", background: dg ? "#3C8C3C" : "transparent", color: "#fff", fontSize: 14, lineHeight: 1, fontWeight: 700 }}>{dg ? "✓" : ""}</button>
+                  </td>
+                  <td style={{ ...td, textAlign: "center" }}>
+                    <button onClick={() => toggleMonitor(gid)} title="有重要訊息(變更/缺失/金額/交期/安全…)當下就私訊你" style={{ width: 26, height: 26, borderRadius: 7, border: `1.5px solid ${mon ? "#DC2626" : BORDER}`, cursor: "pointer", background: mon ? "#DC2626" : "transparent", color: "#fff", fontSize: 13, lineHeight: 1, fontWeight: 700 }}>{mon ? "🔔" : ""}</button>
                   </td>
                   <td style={{ ...td, textAlign: "right", color: SUB, fontSize: 12, whiteSpace: "nowrap" }}>{fmtWhen(s.lastSeen)} · {s.count || 0}</td>
                 </tr>
