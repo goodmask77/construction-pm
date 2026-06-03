@@ -22,6 +22,40 @@ const attIsImg = (p) => (typeof p === "string" ? true : !!(p && p.isImage));
 const attIcon = (p) => { const n = (attName(p) || "").toLowerCase(); if (/\.pdf$/.test(n)) return "📕"; if (/\.(xls|xlsx|csv|numbers)$/.test(n)) return "📊"; if (/\.(doc|docx|pages)$/.test(n)) return "📄"; if (/\.(ppt|pptx|key)$/.test(n)) return "📈"; if (/\.(zip|rar|7z)$/.test(n)) return "🗜️"; return "📎"; };
 // 點附件：圖片放大、其餘開新分頁
 const openAtt = (p, setViewImg) => { if (attIsImg(p)) setViewImg(attUrl(p)); else window.open(attUrl(p), "_blank"); };
+// 開圖片燈箱（可左右翻頁）：圖片→燈箱(帶整組圖片+索引)；非圖檔→開新分頁
+const openImg = (photos, p, setViewer) => {
+  const imgs = (photos || []).filter(attIsImg);
+  if (!imgs.length) { window.open(attUrl(p), "_blank"); return; }
+  const i = Math.max(0, imgs.findIndex((x) => attUrl(x) === attUrl(p)));
+  setViewer({ list: imgs, i });
+};
+const openAtt2 = (photos, p, setViewer) => { if (attIsImg(p)) openImg(photos, p, setViewer); else window.open(attUrl(p), "_blank"); };
+// 全螢幕圖片檢視器：‹ › 翻頁、← → Esc 鍵盤、底部頁碼
+function PhotoViewer({ viewer, setViewer }) {
+  useEffect(() => {
+    if (!viewer) return;
+    const onKey = (e) => {
+      if (e.key === "Escape") setViewer(null);
+      else if (e.key === "ArrowRight") setViewer((v) => v ? { ...v, i: (v.i + 1) % v.list.length } : v);
+      else if (e.key === "ArrowLeft") setViewer((v) => v ? { ...v, i: (v.i - 1 + v.list.length) % v.list.length } : v);
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [viewer, setViewer]);
+  if (!viewer || !viewer.list?.length) return null;
+  const { list, i } = viewer;
+  const nav = (d) => (e) => { e.stopPropagation(); setViewer((v) => v ? { ...v, i: (v.i + d + v.list.length) % v.list.length } : v); };
+  const navBtn = { position: "absolute", top: "50%", transform: "translateY(-50%)", width: 50, height: 50, borderRadius: "50%", background: "rgba(255,255,255,0.16)", color: "#fff", border: "none", fontSize: 26, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", lineHeight: 1, zIndex: 2 };
+  return (
+    <div onClick={() => setViewer(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.92)", zIndex: 1300, display: "flex", alignItems: "center", justifyContent: "center", padding: 20, cursor: "zoom-out" }}>
+      {list.length > 1 && <button onClick={nav(-1)} title="上一張 (←)" style={{ ...navBtn, left: 16 }}>‹</button>}
+      <img src={attUrl(list[i])} alt="" onClick={(e) => e.stopPropagation()} style={{ maxWidth: "92%", maxHeight: "92%", objectFit: "contain", borderRadius: 8, cursor: "default" }} />
+      {list.length > 1 && <button onClick={nav(1)} title="下一張 (→)" style={{ ...navBtn, right: 16 }}>›</button>}
+      {list.length > 1 && <div style={{ position: "absolute", bottom: 22, left: "50%", transform: "translateX(-50%)", background: "rgba(0,0,0,0.55)", color: "#fff", borderRadius: 20, padding: "4px 14px", fontSize: 13, fontVariantNumeric: "tabular-nums" }}>{i + 1} / {list.length}</div>}
+      <button onClick={(e) => { e.stopPropagation(); setViewer(null); }} title="關閉 (Esc)" style={{ position: "absolute", top: 14, right: 20, background: "none", border: "none", color: "#fff", fontSize: 32, cursor: "pointer", lineHeight: 1 }}>×</button>
+    </div>
+  );
+}
 const TOTAL_WEEKS = 16, TOTAL_DAYS = TOTAL_WEEKS * 7;
 const LABEL_W = 168, DAY_PXD = 44, WEEK_PXD = 12;
 const ROW_H = 40, ROW_H_OPEN = 116, CARD_W = 150, MAX_OPEN = 3;
@@ -74,7 +108,7 @@ export default function SequenceView({
   const [onlyIssue, setOnlyIssue] = useState(false);
   const [showDone, setShowDone] = useState(true); // 顯示/隱藏 完成‧待開工
   const [quick, setQuick] = useState(null); // 行事曆式快速記錄 popover
-  const [viewImg, setViewImg] = useState(null); // 點格子照片直接放大
+  const [viewer, setViewer] = useState(null); // 點格子照片直接放大
   const [schedItem, setSchedItem] = useState(null);
   const [tip, setTip] = useState(null);
   const [scrollTo, setScrollTo] = useState(null);
@@ -317,8 +351,8 @@ export default function SequenceView({
                       <span style={{ fontSize: 13, color: C.text, lineHeight: 1.5, whiteSpace: "pre-wrap" }}>{planned ? (log.next || log.done) : (log.done || log.next)}</span>
                       {log.issue && <div style={{ fontSize: 12, color: RED, marginTop: 3 }}>⚠ {log.issue}</div>}
                       {log.photos?.length > 0 && <div style={{ display: "flex", gap: 5, marginTop: 6, flexWrap: "wrap" }}>{log.photos.slice(0, 4).map((p, k) => attIsImg(p)
-                        ? <img key={k} src={attUrl(p)} alt="" onClick={(e) => { e.stopPropagation(); openAtt(p, setViewImg); }} style={{ width: 54, height: 54, borderRadius: 6, objectFit: "cover", cursor: "zoom-in" }} />
-                        : <div key={k} onClick={(e) => { e.stopPropagation(); openAtt(p, setViewImg); }} title={attName(p)} style={{ width: 54, height: 54, borderRadius: 6, background: C.soft, border: `1px solid ${C.line}`, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", cursor: "pointer", overflow: "hidden", padding: 2, boxSizing: "border-box" }}><span style={{ fontSize: 18 }}>{attIcon(p)}</span><span style={{ fontSize: 7, color: C.sub, width: "100%", textAlign: "center", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{attName(p)}</span></div>)}</div>}
+                        ? <img key={k} src={attUrl(p)} alt="" onClick={(e) => { e.stopPropagation(); openAtt2(log.photos, p, setViewer); }} style={{ width: 54, height: 54, borderRadius: 6, objectFit: "cover", cursor: "zoom-in" }} />
+                        : <div key={k} onClick={(e) => { e.stopPropagation(); openAtt2(log.photos, p, setViewer); }} title={attName(p)} style={{ width: 54, height: 54, borderRadius: 6, background: C.soft, border: `1px solid ${C.line}`, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", cursor: "pointer", overflow: "hidden", padding: 2, boxSizing: "border-box" }}><span style={{ fontSize: 18 }}>{attIcon(p)}</span><span style={{ fontSize: 7, color: C.sub, width: "100%", textAlign: "center", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{attName(p)}</span></div>)}</div>}
                     </div>
                   ) : (
                     <div style={{ paddingLeft: 17, fontSize: 12.5, color: sched ? ACCENT : C.faint }}>
@@ -470,8 +504,8 @@ export default function SequenceView({
                             <div style={{ fontSize: 12, lineHeight: 1.45, whiteSpace: (log.photos?.length > 0) ? "normal" : "pre-wrap", wordBreak: "break-word", display: "-webkit-box", WebkitLineClamp: (log.photos?.length > 0) ? 2 : 10, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{planned ? (log.next || log.done) : (log.done || log.next)}</div>
                             {log.issue && <div style={{ fontSize: 11, color: RED, display: "-webkit-box", WebkitLineClamp: 1, WebkitBoxOrient: "vertical", overflow: "hidden" }}>⚠ {log.issue}</div>}
                             {(log.photos?.length > 0) && <div style={{ display: "flex", gap: 4, marginTop: "auto" }}>{log.photos.slice(0, 2).map((p, k) => attIsImg(p)
-                              ? <img key={k} draggable={false} src={attUrl(p)} alt="" title={attName(p) || "點擊放大"} onMouseDown={(e) => e.stopPropagation()} onClick={(e) => { e.stopPropagation(); openAtt(p, setViewImg); }} style={{ width: 38, height: 38, borderRadius: 5, objectFit: "cover", cursor: "zoom-in" }} />
-                              : <div key={k} draggable={false} title={attName(p)} onMouseDown={(e) => e.stopPropagation()} onClick={(e) => { e.stopPropagation(); openAtt(p, setViewImg); }} style={{ width: 38, height: 38, borderRadius: 5, background: C.soft, border: `1px solid ${C.line}`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, cursor: "pointer" }}>{attIcon(p)}</div>)}{log.photos.length > 2 && <span style={{ fontSize: 11, color: C.faint, alignSelf: "flex-end" }}>+{log.photos.length - 2}</span>}</div>}
+                              ? <img key={k} draggable={false} src={attUrl(p)} alt="" title={attName(p) || "點擊放大"} onMouseDown={(e) => e.stopPropagation()} onClick={(e) => { e.stopPropagation(); openAtt2(log.photos, p, setViewer); }} style={{ width: 38, height: 38, borderRadius: 5, objectFit: "cover", cursor: "zoom-in" }} />
+                              : <div key={k} draggable={false} title={attName(p)} onMouseDown={(e) => e.stopPropagation()} onClick={(e) => { e.stopPropagation(); openAtt2(log.photos, p, setViewer); }} style={{ width: 38, height: 38, borderRadius: 5, background: C.soft, border: `1px solid ${C.line}`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, cursor: "pointer" }}>{attIcon(p)}</div>)}{log.photos.length > 2 && <span style={{ fontSize: 11, color: C.faint, alignSelf: "flex-end" }}>+{log.photos.length - 2}</span>}</div>}
                           </div>
                         ) : canEdit ? (
                           <div className="thin-add" style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: planned ? ACCENT : C.faint, fontSize: 12, border: planned ? `1px dashed ${ACCENT}66` : "none", borderRadius: 6 }}>{planned ? "點此預排" : "＋ 記錄"}</div>
@@ -532,7 +566,7 @@ export default function SequenceView({
 
 
       {quick && <QuickLog q={quick} log={logMap[`${quick.itemId}|${quick.date}`]} item={items.find((i) => i.id === quick.itemId)} planned={quick.date > TODAY} onSave={saveLog} onDelete={delLog} onClose={() => setQuick(null)} uploadPhotos={uploadPhotos} />}
-      {viewImg && <div onClick={() => setViewImg(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.88)", zIndex: 1200, display: "flex", alignItems: "center", justifyContent: "center", padding: 20, cursor: "zoom-out" }}><img src={viewImg} alt="" style={{ maxWidth: "95%", maxHeight: "95%", objectFit: "contain", borderRadius: 8 }} /></div>}
+      <PhotoViewer viewer={viewer} setViewer={setViewer} />
 
       {/* 手機：浮動「＋ 新增施工日誌」按鈕 */}
       {isMobile && canEdit && (
@@ -576,7 +610,7 @@ function QuickLog({ q, log, item, planned, onSave, onDelete, onClose, uploadPhot
   const [photos, setPhotos] = useState(initPhotos);
   const [editing, setEditing] = useState(!hasData); // 有資料先看，新增則直接編輯
   const [busy, setBusy] = useState(false);
-  const [viewImg, setViewImg] = useState(null);
+  const [viewer, setViewer] = useState(null);
   const taRef = useRef(null);
   const fileRef = useRef(null);
   useEffect(() => { if (editing) taRef.current?.focus(); }, [editing]);
@@ -598,8 +632,8 @@ function QuickLog({ q, log, item, planned, onSave, onDelete, onClose, uploadPhot
   const attTile = (p, i) => (
     <div key={i} style={{ position: "relative" }}>
       {attIsImg(p)
-        ? <img src={attUrl(p)} alt={attName(p)} title={attName(p) || "點擊放大"} onClick={() => openAtt(p, setViewImg)} style={{ width: 56, height: 56, objectFit: "cover", borderRadius: 7, border: `1px solid ${C.line}`, cursor: "zoom-in" }} />
-        : <div onClick={() => openAtt(p, setViewImg)} title={attName(p) + "（點擊開啟）"} style={{ width: 56, height: 56, borderRadius: 7, border: `1px solid ${C.line}`, background: C.soft, cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 2, padding: 3, boxSizing: "border-box" }}>
+        ? <img src={attUrl(p)} alt={attName(p)} title={attName(p) || "點擊放大"} onClick={() => openAtt2(photos, p, setViewer)} style={{ width: 56, height: 56, objectFit: "cover", borderRadius: 7, border: `1px solid ${C.line}`, cursor: "zoom-in" }} />
+        : <div onClick={() => openAtt2(photos, p, setViewer)} title={attName(p) + "（點擊開啟）"} style={{ width: 56, height: 56, borderRadius: 7, border: `1px solid ${C.line}`, background: C.soft, cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 2, padding: 3, boxSizing: "border-box" }}>
             <span style={{ fontSize: 20, lineHeight: 1 }}>{attIcon(p)}</span>
             <span style={{ fontSize: 8, color: C.sub, width: "100%", textAlign: "center", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{attName(p) || "檔案"}</span>
           </div>}
@@ -650,7 +684,7 @@ function QuickLog({ q, log, item, planned, onSave, onDelete, onClose, uploadPhot
           </>
         )}
       </div>
-      {viewImg && <div onClick={(e) => { e.stopPropagation(); setViewImg(null); }} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.88)", zIndex: 1200, display: "flex", alignItems: "center", justifyContent: "center", padding: 20, cursor: "zoom-out" }}><img src={viewImg} alt="" style={{ maxWidth: "95%", maxHeight: "95%", objectFit: "contain", borderRadius: 8 }} /></div>}
+      <PhotoViewer viewer={viewer} setViewer={setViewer} />
     </div>
   );
 }
@@ -693,7 +727,7 @@ function ScheduleEditor({ item, onClose, onSave }) {
 function Drawer({ data, item, TODAY, onSetStatus, onSave, onDelete, onClose, onCopy, uploadPhotos, aiTidy, canEdit }) {
   const [f, setF] = useState({ ...data, photos: data.photos || [] });
   const [busy, setBusy] = useState(false);
-  const [viewImg, setViewImg] = useState(null);
+  const [viewer, setViewer] = useState(null);
   const fileRef = useRef(null);
   const upd = (k, v) => setF((s) => ({ ...s, [k]: v }));
   const addPhotos = async (files) => {
@@ -729,8 +763,8 @@ function Drawer({ data, item, TODAY, onSetStatus, onSave, onDelete, onClose, onC
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
           {(f.photos || []).map((p, i) => <div key={i} style={{ position: "relative" }}>
             {attIsImg(p)
-              ? <img src={attUrl(p)} alt={attName(p)} onClick={() => openAtt(p, setViewImg)} title={attName(p) || "點擊放大"} style={{ width: 66, height: 66, objectFit: "cover", borderRadius: 8, border: `1px solid ${C.line}`, cursor: "zoom-in" }} />
-              : <div onClick={() => openAtt(p, setViewImg)} title={attName(p) + "（點擊開啟）"} style={{ width: 66, height: 66, borderRadius: 8, border: `1px solid ${C.line}`, background: C.soft, cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 3, padding: 4, boxSizing: "border-box" }}><span style={{ fontSize: 24 }}>{attIcon(p)}</span><span style={{ fontSize: 8, color: C.sub, width: "100%", textAlign: "center", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{attName(p)}</span></div>}
+              ? <img src={attUrl(p)} alt={attName(p)} onClick={() => openAtt2(f.photos, p, setViewer)} title={attName(p) || "點擊放大"} style={{ width: 66, height: 66, objectFit: "cover", borderRadius: 8, border: `1px solid ${C.line}`, cursor: "zoom-in" }} />
+              : <div onClick={() => openAtt2(f.photos, p, setViewer)} title={attName(p) + "（點擊開啟）"} style={{ width: 66, height: 66, borderRadius: 8, border: `1px solid ${C.line}`, background: C.soft, cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 3, padding: 4, boxSizing: "border-box" }}><span style={{ fontSize: 24 }}>{attIcon(p)}</span><span style={{ fontSize: 8, color: C.sub, width: "100%", textAlign: "center", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{attName(p)}</span></div>}
             <button onClick={() => upd("photos", f.photos.filter((_, x) => x !== i))} style={{ position: "absolute", top: -6, right: -6, width: 18, height: 18, borderRadius: 9, border: "none", background: "#e11d48", color: "#fff", fontSize: 11, cursor: "pointer" }}>×</button>
           </div>)}
           <button onClick={() => fileRef.current?.click()} title="上傳任意檔案" style={{ width: 66, height: 66, borderRadius: 8, border: `1px dashed ${C.line}`, background: C.soft, fontSize: 22, color: C.faint, cursor: "pointer" }}>＋</button>
@@ -743,11 +777,7 @@ function Drawer({ data, item, TODAY, onSetStatus, onSave, onDelete, onClose, onC
           <button onClick={() => onSave(f)} disabled={busy} style={{ border: "none", background: ACCENT, color: "#ffffff", borderRadius: 9, padding: "9px 24px", fontSize: 14, fontWeight: 600, cursor: busy ? "wait" : "pointer" }}>{f.id ? "更新" : "儲存"}</button>
         </div>
       </div>
-      {viewImg && (
-        <div onClick={(e) => { e.stopPropagation(); setViewImg(null); }} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.88)", zIndex: 1200, display: "flex", alignItems: "center", justifyContent: "center", padding: 20, cursor: "zoom-out" }}>
-          <img src={viewImg} alt="" style={{ maxWidth: "95%", maxHeight: "95%", objectFit: "contain", borderRadius: 8 }} />
-        </div>
-      )}
+      <PhotoViewer viewer={viewer} setViewer={setViewer} />
     </div>
   );
 }
