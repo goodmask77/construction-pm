@@ -850,9 +850,24 @@ export default function App() {
 }
 
 // ── 問題集 / 待辦（資料來自 LINE Bot 寫入的 pm_issues）────────────────────────
-const TODO_CATS = ["工地問題", "採購交期", "待定案", "其他"];
-const CAT_COLOR = { "工地問題": "#C2872E", "採購交期": "#2E6FB0", "待定案": "#8B5CF6", "其他": SUB };
+const DEFAULT_TODO_CATS = ["工地問題", "採購交期", "待定案", "其他"];
+const CAT_PALETTE = ["#C2872E", "#2E6FB0", "#8B5CF6", "#0E9F6E", "#DC2626", "#D97706", "#0891B2", "#6F6656"];
+const colorForCat = (name, cats = []) => {
+  const i = cats.indexOf(name);
+  if (i >= 0) return CAT_PALETTE[i % CAT_PALETTE.length];
+  let h = 0; for (const ch of String(name)) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  return CAT_PALETTE[h % CAT_PALETTE.length];
+};
 const catOf = (it) => it.category || (it.source === "todo" ? "其他" : "工地問題");
+const FREQ_PRESETS = [["自動", 0], ["每天1次", 24], ["一天2次", 12], ["每2天", 48], ["每3天", 72]];
+// ToDo 分頁的暖光閃動樣式（注入一次）
+if (typeof document !== "undefined" && !document.getElementById("todo-glow-style")) {
+  const s = document.createElement("style");
+  s.id = "todo-glow-style";
+  s.textContent = "@keyframes todoGlow{0%,100%{box-shadow:0 0 2px rgba(245,158,11,.35)}50%{box-shadow:0 0 14px 2px rgba(245,158,11,.85)}}.todo-glow{animation:todoGlow 1.5s ease-in-out infinite;border-color:#F59E0B !important;}";
+  document.head.appendChild(s);
+}
+const freqLabel = (h) => { if (!h) return "自動（越近越密）"; const p = FREQ_PRESETS.find(([, v]) => v === h); if (p) return p[0]; if (h % 24 === 0) return `每${h / 24}天1次`; return `每${h}小時`; };
 const twDateStr = () => new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Taipei" });
 const dueInfo = (due) => {
   if (!due) return null;
@@ -866,17 +881,23 @@ const dueInfo = (due) => {
 
 function IssuesView({ canEdit, requireLogin, confirm }) {
   const [issues, setIssues] = useState(null);
+  const [cats, setCats] = useState(DEFAULT_TODO_CATS);
   const [filter, setFilter] = useState("open");
   const [catFilter, setCatFilter] = useState("全部");
   const [lightbox, setLightbox] = useState(null);
   const [editId, setEditId] = useState(null);
   const [showAdd, setShowAdd] = useState(false);
+  const [showCatMgr, setShowCatMgr] = useState(false);
+  const [newCat, setNewCat] = useState("");
+  const [cfd, setCfd] = useState(1); // 自訂頻率：每 cfd 天
+  const [cft, setCft] = useState(1); // …提醒 cft 次
   const [nd, setNd] = useState({ desc: "", category: "其他", due: "", track: true });
 
   useEffect(() => {
     (async () => {
       try { const r = await window.storage.get("pm_issues", true); setIssues(r && r.value ? JSON.parse(r.value) : []); }
       catch { setIssues([]); }
+      try { const c = await window.storage.get("pm_todo_cats", true); const arr = c && c.value ? JSON.parse(c.value) : null; if (Array.isArray(arr) && arr.length) setCats(arr); } catch (_) {}
     })();
   }, []);
 
@@ -884,22 +905,31 @@ function IssuesView({ canEdit, requireLogin, confirm }) {
     setIssues(list);
     try { await window.storage.set("pm_issues", JSON.stringify(list), true); } catch (_) {}
   };
+  const saveCats = async (list) => {
+    setCats(list);
+    try { await window.storage.set("pm_todo_cats", JSON.stringify(list), true); } catch (_) {}
+  };
   const guard = () => { if (!canEdit) { requireLogin && requireLogin(); return false; } return true; };
   const patch = (id, fields) => { if (!guard()) return; save(issues.map(i => i.id === id ? { ...i, ...fields } : i)); };
   const toggleDone = async (it) => {
     if (!guard()) return;
     if (it.status === "done") { patch(it.id, { status: "open" }); return; }
-    const ans = it.track ? (window.prompt("這件的結論／答案是？（可留空，直接標完成）", it.answer || "") ?? "") : "";
-    patch(it.id, { status: "done", track: false, answer: ans || it.answer || "" });
+    const ans = window.prompt("這件的結論／答案是？（可留空，直接標完成；按取消則不完成）", it.answer || "");
+    if (ans === null) return; // 取消 → 不標完成
+    patch(it.id, { status: "done", track: false, answer: ans.trim() || it.answer || "" });
   };
   const del = async (id) => { if (!guard()) return; if (await confirm("刪除這筆事項？")) save(issues.filter(i => i.id !== id)); };
   const addNew = () => {
     if (!guard()) return;
     const desc = nd.desc.trim(); if (!desc) return;
-    const entry = { id: "is-" + Math.random().toString(36).slice(2, 8), desc, category: nd.category, due: nd.due, remindEnd: "", track: !!nd.track, status: "open", source: "todo", by: "App", ts: new Date().toISOString(), nudges: 0, answer: "", catName: "", catId: "", photoUrl: "" };
+    const entry = { id: "is-" + Math.random().toString(36).slice(2, 8), desc, category: nd.category, due: nd.due, remindEnd: "", track: !!nd.track, remindEvery: 0, status: "open", source: "todo", by: "App", ts: new Date().toISOString(), nudges: 0, answer: "", catName: "", catId: "", photoUrl: "" };
     save([entry, ...issues]);
-    setNd({ desc: "", category: "其他", due: "", track: true }); setShowAdd(false);
+    setNd({ desc: "", category: cats[0] || "其他", due: "", track: true }); setShowAdd(false);
   };
+  // 分類管理
+  const addCat = () => { if (!guard()) return; const n = newCat.trim(); if (!n || cats.includes(n)) { setNewCat(""); return; } saveCats([...cats, n]); setNewCat(""); };
+  const renameCat = (old, val) => { const n = val.trim(); if (!n || (cats.includes(n) && n !== old)) return; saveCats(cats.map(c => c === old ? n : c)); save(issues.map(i => catOf(i) === old ? { ...i, category: n } : i)); };
+  const delCat = async (c) => { if (!guard()) return; const used = issues.filter(i => catOf(i) === c).length; if (used && !(await confirm(`「${c}」還有 ${used} 筆事項，刪除分類後它們會歸到「其他」。確定刪除？`))) return; saveCats(cats.filter(x => x !== c)); if (used) save(issues.map(i => catOf(i) === c ? { ...i, category: "其他" } : i)); if (catFilter === c) setCatFilter("全部"); };
 
   if (issues === null) return <div style={{ padding: 40, color: SUB, fontSize: 14 }}>載入中…</div>;
   const open = issues.filter(i => i.status !== "done");
@@ -928,17 +958,40 @@ function IssuesView({ canEdit, requireLogin, confirm }) {
       </div>
 
       {/* 分類篩選 */}
-      <div style={{ display: "flex", gap: 6, marginBottom: 14, flexWrap: "wrap" }}>
-        {["全部", ...TODO_CATS].map(c => (
-          <button key={c} onClick={() => setCatFilter(c)} style={{ padding: "4px 12px", borderRadius: 20, border: `1px solid ${catFilter === c ? (c === "全部" ? TEXT : CAT_COLOR[c]) : BORDER}`, fontSize: 12, cursor: "pointer", background: catFilter === c ? (c === "全部" ? TEXT : CAT_COLOR[c]) : "transparent", color: catFilter === c ? "#fff" : SUB, fontWeight: catFilter === c ? 700 : 500 }}>{c}</button>
-        ))}
+      <div style={{ display: "flex", gap: 6, marginBottom: 14, flexWrap: "wrap", alignItems: "center" }}>
+        {["全部", ...cats].map(c => {
+          const on = catFilter === c; const col = c === "全部" ? TEXT : colorForCat(c, cats);
+          return <button key={c} onClick={() => setCatFilter(c)} style={{ padding: "4px 12px", borderRadius: 20, border: `1px solid ${on ? col : BORDER}`, fontSize: 12, cursor: "pointer", background: on ? col : "transparent", color: on ? "#fff" : SUB, fontWeight: on ? 700 : 500 }}>{c}</button>;
+        })}
+        <button onClick={() => setShowCatMgr(s => !s)} title="編輯分類" style={{ padding: "4px 10px", borderRadius: 20, border: `1px dashed ${BORDER}`, fontSize: 12, cursor: "pointer", background: showCatMgr ? SURFACE : "transparent", color: SUB }}>✎ 分類</button>
       </div>
+
+      {/* 分類管理 */}
+      {showCatMgr && (
+        <div style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: 12, padding: 14, marginBottom: 14 }}>
+          <div style={{ fontSize: 12.5, color: SUB, marginBottom: 10 }}>編輯分類：改名直接打字、按 🗑 刪除（底下可新增）。改名/刪除會同步更新已記事項。</div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {cats.map(c => (
+              <div key={c} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <span style={{ width: 12, height: 12, borderRadius: "50%", background: colorForCat(c, cats), flexShrink: 0 }} />
+                <input defaultValue={c} onBlur={e => renameCat(c, e.target.value)} style={{ ...inp, flex: "0 1 220px" }} />
+                <span style={{ fontSize: 11.5, color: SUB }}>{issues.filter(i => catOf(i) === c).length} 筆</span>
+                <button onClick={() => delCat(c)} style={{ padding: "4px 9px", borderRadius: 7, border: `1px solid ${BORDER}`, background: "transparent", color: "#DC2626", fontSize: 12, cursor: "pointer" }}>🗑</button>
+              </div>
+            ))}
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 4 }}>
+              <input value={newCat} onChange={e => setNewCat(e.target.value)} onKeyDown={e => e.key === "Enter" && addCat()} placeholder="新增分類名稱…" style={{ ...inp, flex: "0 1 220px" }} />
+              <button onClick={addCat} style={{ padding: "5px 14px", borderRadius: 7, border: "none", background: ACCENT, color: "#fff", fontSize: 12.5, fontWeight: 700, cursor: "pointer" }}>＋ 新增分類</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* 新增表單 */}
       {showAdd && (
         <div style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: 12, padding: 14, marginBottom: 14, display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
           <input value={nd.desc} onChange={e => setNd({ ...nd, desc: e.target.value })} placeholder="要記什麼？例：訂製家具交期確認" style={{ ...inp, flex: "1 1 260px" }} />
-          <select value={nd.category} onChange={e => setNd({ ...nd, category: e.target.value })} style={inp}>{TODO_CATS.map(c => <option key={c} value={c}>{c}</option>)}</select>
+          <select value={nd.category} onChange={e => setNd({ ...nd, category: e.target.value })} style={inp}>{cats.map(c => <option key={c} value={c}>{c}</option>)}</select>
           <label style={{ fontSize: 12.5, color: SUB }}>交期 <input type="date" value={nd.due} onChange={e => setNd({ ...nd, due: e.target.value })} style={inp} /></label>
           <label style={{ fontSize: 12.5, color: SUB, display: "flex", alignItems: "center", gap: 4, cursor: "pointer" }}><input type="checkbox" checked={nd.track} onChange={e => setNd({ ...nd, track: e.target.checked })} />🔔 盯到我回</label>
           <button onClick={addNew} style={{ padding: "7px 18px", borderRadius: 7, border: "none", background: ACCENT, color: "#fff", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>記下</button>
@@ -978,7 +1031,7 @@ function IssuesView({ canEdit, requireLogin, confirm }) {
                           </div>
                         </div>
                       </td>
-                      <td style={tdS}><span style={{ fontSize: 11.5, background: CAT_COLOR[cat] + "22", color: CAT_COLOR[cat], borderRadius: 6, padding: "2px 8px", fontWeight: 700, whiteSpace: "nowrap" }}>{cat}</span></td>
+                      <td style={tdS}>{(() => { const col = colorForCat(cat, cats); return <span style={{ fontSize: 11.5, background: col + "22", color: col, borderRadius: 6, padding: "2px 8px", fontWeight: 700, whiteSpace: "nowrap" }}>{cat}</span>; })()}</td>
                       <td style={tdS}>{it.due ? <span style={{ fontSize: 12.5, color: di ? di.color : SUB, fontWeight: di && di.bold ? 700 : 500, whiteSpace: "nowrap" }}>{it.due}{di && di.txt !== it.due ? ` · ${di.txt}` : ""}</span> : <span style={{ color: SUB }}>—</span>}</td>
                       <td style={{ ...tdS, textAlign: "center", whiteSpace: "nowrap" }}>
                         <div style={{ fontSize: 12, color: done ? "#3C8C3C" : "#C2872E", fontWeight: 600 }}>{done ? "✅ 已解決" : "🔴 待處理"}</div>
@@ -994,12 +1047,35 @@ function IssuesView({ canEdit, requireLogin, confirm }) {
                     </tr>
                     {editing && (
                       <tr>
-                        <td colSpan={5} style={{ padding: "10px 14px", background: SURFACE, borderBottom: `1px solid ${BORDER}` }}>
+                        <td colSpan={5} style={{ padding: "12px 14px", background: SURFACE, borderBottom: `1px solid ${BORDER}` }}>
+                          {/* 內容可編輯 */}
+                          <div style={{ marginBottom: 10 }}>
+                            <div style={{ fontSize: 11.5, color: SUB, marginBottom: 4 }}>內容</div>
+                            <textarea defaultValue={it.desc} onBlur={e => { const v = e.target.value.trim(); if (v && v !== it.desc) patch(it.id, { desc: v }); }} rows={2} style={{ ...inp, width: "100%", resize: "vertical", lineHeight: 1.5 }} />
+                          </div>
                           <div style={{ display: "flex", gap: 16, flexWrap: "wrap", alignItems: "center" }}>
-                            <label style={{ fontSize: 12.5, color: SUB, display: "flex", alignItems: "center", gap: 6 }}>分類 <select value={cat} onChange={e => patch(it.id, { category: e.target.value })} style={inp}>{TODO_CATS.map(c => <option key={c} value={c}>{c}</option>)}</select></label>
+                            <label style={{ fontSize: 12.5, color: SUB, display: "flex", alignItems: "center", gap: 6 }}>分類 <select value={cats.includes(cat) ? cat : ""} onChange={e => patch(it.id, { category: e.target.value })} style={inp}>{!cats.includes(cat) && <option value="">{cat}</option>}{cats.map(c => <option key={c} value={c}>{c}</option>)}</select></label>
                             <label style={{ fontSize: 12.5, color: SUB, display: "flex", alignItems: "center", gap: 6 }}>交期 <input type="date" value={it.due || ""} onChange={e => patch(it.id, { due: e.target.value })} style={inp} /></label>
                             <label style={{ fontSize: 12.5, color: SUB, display: "flex", alignItems: "center", gap: 6 }}>提醒終止日 <input type="date" value={it.remindEnd || ""} onChange={e => patch(it.id, { remindEnd: e.target.value })} style={inp} /></label>
-                            <label style={{ fontSize: 12.5, color: SUB, display: "flex", alignItems: "center", gap: 6, cursor: "pointer" }}><input type="checkbox" checked={it.track !== false} onChange={e => patch(it.id, { track: e.target.checked })} />🔔 主動追到我回（越近期限越密集）</label>
+                            <label style={{ fontSize: 12.5, color: SUB, display: "flex", alignItems: "center", gap: 6, cursor: "pointer" }}><input type="checkbox" checked={it.track !== false} onChange={e => patch(it.id, { track: e.target.checked })} />🔔 主動追蹤</label>
+                          </div>
+                          {/* 提醒頻率視覺化 */}
+                          <div style={{ marginTop: 12, paddingTop: 10, borderTop: `1px dashed ${BORDER}` }}>
+                            <div style={{ fontSize: 11.5, color: SUB, marginBottom: 6 }}>提醒頻率　<span style={{ color: TEXT, fontWeight: 600 }}>目前：{freqLabel(it.remindEvery || 0)}</span></div>
+                            <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+                              {FREQ_PRESETS.map(([label, h]) => {
+                                const on = (it.remindEvery || 0) === h;
+                                return <button key={label} onClick={() => patch(it.id, { remindEvery: h })} style={{ padding: "5px 12px", borderRadius: 20, border: `1px solid ${on ? ACCENT : BORDER}`, fontSize: 12, cursor: "pointer", background: on ? ACCENT : "#fff", color: on ? "#fff" : SUB, fontWeight: on ? 700 : 500 }}>{label}</button>;
+                              })}
+                              <span style={{ width: 1, height: 18, background: BORDER, margin: "0 2px" }} />
+                              <span style={{ fontSize: 12, color: SUB }}>自訂：每</span>
+                              <input type="number" min={1} value={cfd} onChange={e => setCfd(Math.max(1, +e.target.value || 1))} style={{ ...inp, width: 52 }} />
+                              <span style={{ fontSize: 12, color: SUB }}>天</span>
+                              <input type="number" min={1} value={cft} onChange={e => setCft(Math.max(1, +e.target.value || 1))} style={{ ...inp, width: 52 }} />
+                              <span style={{ fontSize: 12, color: SUB }}>次</span>
+                              <button onClick={() => patch(it.id, { remindEvery: Math.max(1, Math.round((cfd * 24) / cft)) })} style={{ padding: "5px 12px", borderRadius: 7, border: "none", background: TEXT, color: "#fff", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>套用</button>
+                            </div>
+                            <div style={{ fontSize: 11, color: SUB, marginTop: 6 }}>「自動」＝越接近交期提醒越密集、時間不固定（不易被忽略）；自訂則照你設定的頻率準時提醒。需開啟「🔔 主動追蹤」或設定交期才會提醒。</div>
                           </div>
                         </td>
                       </tr>
@@ -1351,13 +1427,13 @@ function CompareView({ canEdit, requireLogin }) {
 
 // ── BOTTOM NAV (手機) ───────────────────────────────────────────────────────
 function BottomNav({ view, setView, isAdmin }) {
-  const tabs = [["owner", "儀表板", "📊"], ["overview", "總覽", "📋"], ["gantt", "工序", "📅"], ["files", "檔案庫", "📁"], ["issues", "問題", "⚠️"], ["compare", "比價", "⚖️"], ...(isAdmin ? [["groups", "群組", "💬"]] : []), ["advisor", "AI設定", "🤖"]];
+  const tabs = [["owner", "儀表板", "📊"], ["overview", "總覽", "📋"], ["gantt", "工序", "📅"], ["files", "檔案庫", "📁"], ["issues", "ToDo", "📝"], ["compare", "比價", "⚖️"], ...(isAdmin ? [["groups", "群組", "💬"]] : []), ["advisor", "AI設定", "🤖"]];
   return (
     <div style={{ position: "fixed", left: 0, right: 0, bottom: 0, height: 60, background: "rgba(255,255,255,0.96)", backdropFilter: "blur(10px)", WebkitBackdropFilter: "blur(10px)", borderTop: `1px solid ${BORDER}`, boxShadow: "0 -2px 14px rgba(0,0,0,0.08)", display: "flex", zIndex: 350, paddingBottom: "env(safe-area-inset-bottom)" }}>
       {tabs.map(([v, l, icon]) => {
         const on = view === v;
         return (
-          <button key={v} onClick={() => setView(v)} title={l} style={{ flex: 1, minHeight: 44, border: "none", background: "none", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 3, cursor: "pointer", color: on ? ACCENT : SUB, fontWeight: on ? 700 : 500, padding: 0 }}>
+          <button key={v} onClick={() => setView(v)} title={l} className={v === "issues" && !on ? "todo-glow" : undefined} style={{ flex: 1, minHeight: 44, border: "none", borderRadius: v === "issues" ? 10 : 0, background: "none", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 3, cursor: "pointer", color: on ? ACCENT : (v === "issues" ? "#D97706" : SUB), fontWeight: on ? 700 : (v === "issues" ? 700 : 500), padding: 0 }}>
             <span style={{ fontSize: 19, lineHeight: 1, filter: on ? "none" : "grayscale(0.4) opacity(0.85)" }}>{icon}</span>
             <span style={{ fontSize: 10.5 }}>{l}</span>
           </button>
@@ -1459,8 +1535,8 @@ function TopNav({ view, setView, saving, totalEstimated, totalPaid, doneCount, c
       {/* view tabs — boxed editorial（手機隱藏，改用底部導覽）*/}
       {!isMobile && (
       <div style={{ display: "flex", gap: 8, paddingBottom: 12, flexWrap: "wrap" }}>
-        {[["owner","儀表板"],["overview","總覽"],["gantt","工序"],["files","檔案庫"],["issues","問題集"],["compare","比價"],["advisor","AI設定"],...(isAdmin?[["groups","群組"],["accounts","帳號"]]:[])].map(([v,l]) => (
-          <button key={v} onClick={() => setView(v)} style={{ padding: "8px 16px", borderRadius: 7, border: `1px solid ${view === v ? PRIMARY : BORDER}`, cursor: "pointer", fontSize: 14, fontWeight: 500, background: view === v ? PRIMARY : "transparent", color: view === v ? "#fff" : TEXT, transition: "all .12s" }}>{l}</button>
+        {[["owner","儀表板"],["overview","總覽"],["gantt","工序"],["files","檔案庫"],["issues","📝 ToDo"],["compare","比價"],["advisor","AI設定"],...(isAdmin?[["groups","群組"],["accounts","帳號"]]:[])].map(([v,l]) => (
+          <button key={v} onClick={() => setView(v)} className={v === "issues" && view !== v ? "todo-glow" : undefined} style={{ padding: "8px 16px", borderRadius: 7, border: `1px solid ${view === v ? PRIMARY : (v === "issues" ? "#F59E0B" : BORDER)}`, cursor: "pointer", fontSize: 14, fontWeight: v === "issues" ? 700 : 500, background: view === v ? PRIMARY : (v === "issues" ? "#FEF3C7" : "transparent"), color: view === v ? "#fff" : (v === "issues" ? "#B45309" : TEXT), transition: "all .12s" }}>{l}</button>
         ))}
       </div>
       )}
