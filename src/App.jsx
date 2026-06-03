@@ -428,7 +428,7 @@ async function recordAIUsage(model, usage, kind = "chat") {
   } catch (_) {}
 }
 
-async function callAI(messages, systemPrompt) {
+async function callAI(messages, systemPrompt, kind = "chat") {
   try {
     const res = await fetch("/api/ai", {
       method: "POST",
@@ -437,12 +437,13 @@ async function callAI(messages, systemPrompt) {
     });
     const data = await res.json();
     if (!res.ok) return data.error || "（AI 顧問尚未設定，請於 Vercel 加入 ANTHROPIC_API_KEY）";
-    if (data.usage) recordAIUsage(data.model, data.usage); // 記錄用量（不阻塞回覆）
+    if (data.usage) recordAIUsage(data.model, data.usage, kind); // 記錄用量＋用途（不阻塞回覆）
     return data.content?.map(b => b.text || "").join("") || "（AI無回應）";
   } catch (e) {
     return "（AI 連線失敗，請稍後再試）";
   }
 }
+const KIND_LABEL = { chat: "AI 顧問對話", import: "PDF/估價單匯入", weekly: "AI 週報", compare: "估價單比價", tidy: "日誌整理" };
 
 const SYSTEM_GLOBAL = `你是一位專業餐廳裝修工程顧問，熟悉台灣室內裝修市場行情與法規。你正在協助一個餐廳裝修專案管理系統，專案為「宏匯 GROUN:D」位於台北市內湖區瑞光路337號，總預算含稅約1166萬元。
 你的職責：
@@ -479,7 +480,7 @@ const buildAdvisorSystem = (settings, cats, journal, events, plans) => {
     return "  • " + c.name + "（" + c.status + "）：預估" + Math.round(est/10000) + "萬" + dInfo + "，已付" + (act>0?Math.round(act/10000)+"萬":"未付") + "，" + done + "/" + c.items.length + "細項完成";
   }).join("\n");
 
-  const priorityItems = cats.flatMap(c=>c.items).filter(i=>(settings?.priorities||[]).includes(i.id)).map(i=>i.name).join("、");
+  const priorityItems = cats.flatMap(c=>c.items).filter(i=>i.priority || (settings?.priorities||[]).includes(i.id)).map(i=>i.name).join("、");
 
   return (conf().aiRole ? conf().aiRole + "\n\n" : "") + "你是專屬於「" + projectName + "」的" + (conf().aiRole ? "助理" : "AI工程總顧問") + "，以下是今日（" + today + "）的完整狀態，請根據此資料進行分析與回應。\n\n" +
     "【專案基本資訊】\n" +
@@ -489,7 +490,8 @@ const buildAdvisorSystem = (settings, cats, journal, events, plans) => {
     "- 承包商：" + contractor + "\n" +
     "- 目標完工日：" + targetDate + (daysLeft !== null ? "（距今 "+daysLeft+" 天）" : "") + "\n" +
     "- 今日日期：" + today + "\n" +
-    (notes ? "- 備註："+notes+"\n" : "") +
+    (notes ? "- 特別指示："+notes+"\n" : "") +
+    ((settings?.aiDocs||[]).length ? "- 知識庫參考檔："+(settings.aiDocs||[]).map(d=>d.name).join("、")+"\n" : "") +
     "\n【財務狀況】\n" +
     "- 預估總額（含稅）：NT$" + Math.round(totalEst).toLocaleString() + "\n" +
     "- 已付總額：" + (totalAct>0?"NT$"+Math.round(totalAct).toLocaleString():"尚未付款") + "\n" +
@@ -789,12 +791,12 @@ export default function App() {
   const seqUploadPhotos = async (files) => { const out=[]; for (const f of files) { try { const { url } = await uploadPhoto(f); out.push({ url, name: f.name || "檔案", isImage: !!(f.type || "").startsWith("image/") }); } catch(_){} } return out; };
   const seqAiTidy = async (f) => {
     const draft = [f.done && `已完成：${f.done}`, f.issue && `問題：${f.issue}`, f.next && `明日：${f.next}`].filter(Boolean).join("\n") || "（無草稿）";
-    const reply = await callAI([{ role:"user", content:`請把以下工地日誌草稿整理成一段精簡通順的施工紀錄（繁體中文、一段話、不要條列、不要開場白）：\n${draft}` }], "你是工程現場記錄助理。");
+    const reply = await callAI([{ role:"user", content:`請把以下工地日誌草稿整理成一段精簡通順的施工紀錄（繁體中文、一段話、不要條列、不要開場白）：\n${draft}` }], "你是工程現場記錄助理。", "tidy");
     return (reply||"").replace(/```[\s\S]*?```/g,"").trim();
   };
   const seqAiWeekly = async (weekLogs) => {
     const lines = weekLogs.map(l => `${l.date} ${seqItems.find(i=>i.id===l.itemId)?.name||""}：${l.done||l.next||""}${l.issue?`（問題：${l.issue}）`:""}`).join("\n") || "（本週無紀錄）";
-    return await callAI([{ role:"user", content:`以下是本週各工序施工日誌，請產生給業主看的本週進度週報（繁體中文，淺顯，含：本週完成、進行中、問題/待決、下週預計、整體評估🟢/🟡/🔴）：\n${lines}` }], "你是餐廳裝修工程顧問，為業主寫週報。");
+    return await callAI([{ role:"user", content:`以下是本週各工序施工日誌，請產生給業主看的本週進度週報（繁體中文，淺顯，含：本週完成、進行中、問題/待決、下週預計、整體評估🟢/🟡/🔴）：\n${lines}` }], "你是餐廳裝修工程顧問，為業主寫週報。", "weekly");
   };
 
   const isMobile = useIsMobile();
@@ -840,7 +842,7 @@ export default function App() {
           <AccountManager accounts={accounts} setAccounts={commitAccounts} confirm={confirm} />
         )}
         {view === "groups" && isAdmin && (
-          <GroupsView cats={cats} canEdit={canEditData} requireLogin={denyEdit} />
+          <GroupsView cats={cats} canEdit={canEditData} requireLogin={denyEdit} settings={settings} setSettings={guardedSetSettings} journal={journal} events={events} plans={plans} />
         )}
         {view === "advisor" && settings && (
           <AdvisorSettingsView settings={settings} setSettings={guardedSetSettings} cats={cats} aiLog={aiLog} setAiLog={l => { setAiLog(l); saveAILog(l); }} journal={journal} events={events} plans={plans} activityLog={activityLog} logActivity={logActivity} userName={userName} />
@@ -1145,10 +1147,11 @@ function IssuesView({ canEdit, requireLogin, confirm }) {
 // ── LINE 群組管理（D哥所在的所有群：設權限 + 每日彙報開關）────────────────────
 // pm_group_seen：D哥自動登記的群清單（名稱/最近活躍/則數，由 bot 寫）
 // pm_bot_groups：每個群的設定（mode/綁定工程/彙報開關，由這頁寫）
-function GroupsView({ cats, canEdit, requireLogin }) {
+function GroupsView({ cats, canEdit, requireLogin, settings, setSettings, journal, events, plans }) {
   const [seen, setSeen] = useState(null);
   const [cfg, setCfg] = useState({});
   const [saving, setSaving] = useState(false);
+  const updSettings = (k, v) => setSettings && setSettings({ ...(settings || {}), [k]: v });
 
   useEffect(() => {
     (async () => {
@@ -1282,6 +1285,12 @@ function GroupsView({ cats, canEdit, requireLogin }) {
       <div style={{ fontSize: 11.5, color: SUB, marginTop: 10, lineHeight: 1.6 }}>
         新群只要 D哥 在裡面、有人講話或貼圖，就會自動列進來。設定即時生效。
       </div>
+      {/* LINE 通知設定（從 AI設定 整合過來）*/}
+      {settings && (
+        <div style={{ marginTop: 22 }}>
+          <LineNotifySettings settings={settings} upd={updSettings} cats={cats} journal={journal} events={events} plans={plans} />
+        </div>
+      )}
     </div>
   );
 }
@@ -1332,7 +1341,7 @@ function CompareView({ canEdit, requireLogin }) {
     try {
       const forAI = ests.map(e => ({ vendor: e.vendor, total: e.total, items: (e.items || []).map(i => ({ name: i.name, qty: i.qty, unit: i.unit, unitPrice: i.unitPrice })) }));
       const prompt = `你是專業的工程採購／標單比價分析師。以下是 ${ests.length} 份估價單的解析結果：\n${JSON.stringify(forAI)}\n\n請做專業比價分析，只回 JSON、不要其他文字：\n{\n "rows":[{"item":"標準化品項名稱","prices":{"<廠商名>":單價數字或null},"note":"差異備註(可空)"}],\n "missing":[{"vendor":"廠商名","items":["這家沒列、但別家有的品項"]}],\n "gapReason":"一句話：總價差的主因（例：晟弘多含結構支架與設備、發霸未含安裝）",\n "summary":"2-4 句：各家範圍／品質／優劣差異與風險",\n "recommend":"建議選哪家＋理由＋簽約前要向廠商確認／追問的重點"\n}\n規則：rows 要把語意相同的品項對齊在同一列（例「戶外P2.5 LED」與「LED螢幕」視為同一項），各家對應單價填入、沒有就 null；prices 的 key 用上面給的廠商名稱原文；金額只放數字。繁體中文，務實精準。`;
-      const reply = await callAI([{ role: "user", content: prompt }], "你是專業工程標單比價分析師，只輸出 JSON。");
+      const reply = await callAI([{ role: "user", content: prompt }], "你是專業工程標單比價分析師，只輸出 JSON。", "compare");
       const clean = reply.replace(/```json|```/gi, "").trim();
       let a = null;
       try { a = JSON.parse(clean.slice(clean.indexOf("{"), clean.lastIndexOf("}") + 1)); } catch (_) {}
@@ -1361,7 +1370,7 @@ function CompareView({ canEdit, requireLogin }) {
           ? { type: "document", source: { type: "base64", media_type: "application/pdf", data: b64 } }
           : { type: "image", source: { type: "base64", media_type: f.type || "image/jpeg", data: b64 } };
         const prompt = `這是一份工程估價單／報價單。抽出資訊，只回 JSON、不要其他文字：{"vendor":"廠商名稱","total":總額數字,"items":[{"name":"品項","qty":數量,"unit":"單位","unitPrice":單價數字}]}。看不到的：文字留空字串、數字留0；金額只放數字。`;
-        const reply = await callAI([{ role: "user", content: [block, { type: "text", text: prompt }] }], "你是工程估價單解析助理，只輸出 JSON。");
+        const reply = await callAI([{ role: "user", content: [block, { type: "text", text: prompt }] }], "你是工程估價單解析助理，只輸出 JSON。", "import");
         const clean = reply.replace(/```json|```/gi, "").trim();
         let parsed = { vendor: "", total: 0, items: [] };
         try { parsed = JSON.parse(clean.slice(clean.indexOf("{"), clean.lastIndexOf("}") + 1)); } catch (_) {}
@@ -2020,6 +2029,7 @@ function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols,
                         }
                         if (col.id === "cat") return <div key={col.id} style={{ ...cs, fontSize: 11, color: "#A99F88" }}>{group.name}</div>;
                         if (col.id === "name") return <div key={col.id} style={{ ...cs, color: "#211C15", fontWeight: 500, gap: 6 }}>
+                          <button onClick={(e) => { e.stopPropagation(); updateItem(catId, item.id, "priority", !item.priority); }} title={item.priority ? "優先追蹤中（點擊取消）" : "標為優先追蹤（AI 會特別關注）"} style={{ flexShrink: 0, width: 20, height: 20, borderRadius: 6, border: "none", background: "transparent", color: item.priority ? "#E8A317" : "#D8CFBB", fontSize: 14, cursor: "pointer", lineHeight: 1, padding: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>{item.priority ? "★" : "☆"}</button>
                           <button onClick={(e) => { e.stopPropagation(); updateItem(catId, item.id, "inSeq", !item.inSeq); }} title={item.inSeq ? "已排入工序（點擊取消同步）" : "排入工序（同步成工序子項目）"} style={{ flexShrink: 0, width: 20, height: 20, borderRadius: 6, border: item.inSeq ? "none" : `1px solid ${BORDER}`, background: item.inSeq ? ACCENT : "transparent", color: item.inSeq ? "#fff" : SUB, fontSize: 10, fontWeight: 600, cursor: "pointer", lineHeight: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>序</button>
                           <EditableCell catId={catId} itemId={item.id} field="name" value={item.name} />
                         </div>;
@@ -2573,6 +2583,9 @@ function OwnerDashboard({ cats, setCats, settings, stalledItems, activityLog, lo
           })}
         </div>
       )}
+
+      {/* AI 用量 / 估算花費（從 AI設定 移來）*/}
+      <div style={{ marginTop: 16 }}><AIUsagePanel /></div>
 
       {/* Weekly Report Modal */}
       {showReport && (
@@ -3218,7 +3231,7 @@ function LineNotifySettings({ settings, upd, cats, journal, events, plans }) {
     flash("🤖 AI 產生週報中…");
     try {
       const system = buildAdvisorSystem(settings, cats, journal || [], events || [], plans || []);
-      const text = await callAI([{ role: "user", content: "請為業主產生一份精簡的本週工程進度週報（約 300 字內，含：整體狀況一句話、各大項進度、本週重點、待決問題、下週預計、整體評估🟢/🟡/🔴）。用業主能懂的口吻，純文字、適合在 LINE 閱讀。" }], system);
+      const text = await callAI([{ role: "user", content: "請為業主產生一份精簡的本週工程進度週報（約 300 字內，含：整體狀況一句話、各大項進度、本週重點、待決問題、下週預計、整體評估🟢/🟡/🔴）。用業主能懂的口吻，純文字、適合在 LINE 閱讀。" }], system, "weekly");
       const r = await sendLineNotify("📋 本週工程進度週報\n\n" + text);
       flash(r && r.ok ? "✅ 週報已推送到 LINE 群組" : `⚠️ 推送失敗：${r?.error || r?.reason || "請確認群組 ID"}`);
     } catch (e) { flash("⚠️ 產生失敗：" + e.message); }
@@ -3281,6 +3294,14 @@ function AIUsagePanel() {
     byModel[k].calls++; byModel[k].inTok += Number(e.inTok) || 0; byModel[k].outTok += Number(e.outTok) || 0; byModel[k].usd += Number(e.usd) || 0;
   }
   const models = Object.entries(byModel).sort((a, b) => b[1].usd - a[1].usd);
+  // 依用途細分（AI顧問對話/PDF匯入/週報/比價/日誌整理）
+  const byKind = {};
+  for (const e of log) {
+    const k = e.kind || "chat";
+    if (!byKind[k]) byKind[k] = { calls: 0, tok: 0, usd: 0 };
+    byKind[k].calls++; byKind[k].tok += (Number(e.inTok) || 0) + (Number(e.outTok) || 0); byKind[k].usd += Number(e.usd) || 0;
+  }
+  const kinds = Object.entries(byKind).sort((a, b) => b[1].usd - a[1].usd);
 
   const card = (label, val, sub) => (
     <div style={{ flex: 1, minWidth: 130, background: "#FBF7EE", border: "1px solid #E3DAC6", borderRadius: 10, padding: "12px 14px" }}>
@@ -3298,7 +3319,7 @@ function AIUsagePanel() {
         <button onClick={load} style={{ fontSize: 12, border: "1px solid #D8CFBB", background: "#ECE6D7", color: "#6F6656", borderRadius: 7, padding: "5px 12px", cursor: "pointer" }}>↻ 重新整理</button>
       </div>
       <div style={{ background: "#F4EFE3", borderRadius: 8, padding: "8px 12px", fontSize: 12, color: "#6F6656", marginBottom: 14 }}>
-        本 App「AI 顧問／PDF 匯入」呼叫 Anthropic <b>API</b> 的累計用量與<b style={{ color: ACCENT }}>估算</b>花費（依模型 token 單價）。Claude 訂閱／Claude Code 屬另一套帳，這裡看不到。
+        本 App 自己呼叫 Anthropic <b>API</b>（非群組）的累計用量與<b style={{ color: ACCENT }}>估算</b>花費。LINE 群組產生的花費屬 bot 端帳，這裡看不到；Claude 訂閱／Claude Code 也是另一套帳。
       </div>
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 14 }}>
         {card("估算總花費（USD）", "$" + totUsd.toFixed(3))}
@@ -3306,6 +3327,23 @@ function AIUsagePanel() {
         {card("AI 呼叫次數", calls.toLocaleString())}
         {card("總 tokens（in+out）", (totIn + totOut).toLocaleString())}
       </div>
+      {kinds.length > 0 && (
+        <div style={{ border: "1px solid #E3DAC6", borderRadius: 8, overflow: "hidden", marginBottom: 12 }}>
+          <div style={{ display: "flex", background: "#F4EFE3", fontSize: 11, color: "#6F6656", fontWeight: 600, padding: "6px 12px" }}>
+            <div style={{ flex: 2 }}>用途（錢主要花在哪）</div><div style={{ flex: 1, textAlign: "right" }}>次數</div><div style={{ flex: 1.4, textAlign: "right" }}>tokens</div><div style={{ flex: 1.2, textAlign: "right" }}>USD</div><div style={{ flex: 1.2, textAlign: "right" }}>TWD</div><div style={{ flex: 1, textAlign: "right" }}>占比</div>
+          </div>
+          {kinds.map(([k, v]) => (
+            <div key={k} style={{ display: "flex", fontSize: 12, color: "#211C15", padding: "6px 12px", borderTop: "1px solid #EFE7D6", fontVariantNumeric: "tabular-nums" }}>
+              <div style={{ flex: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontWeight: 600 }}>{KIND_LABEL[k] || k}</div>
+              <div style={{ flex: 1, textAlign: "right" }}>{v.calls}</div>
+              <div style={{ flex: 1.4, textAlign: "right" }}>{v.tok.toLocaleString()}</div>
+              <div style={{ flex: 1.2, textAlign: "right", fontFamily: "monospace" }}>${v.usd.toFixed(3)}</div>
+              <div style={{ flex: 1.2, textAlign: "right", fontFamily: "monospace", color: ACCENT }}>{Math.round(v.usd * USD_TWD).toLocaleString()}</div>
+              <div style={{ flex: 1, textAlign: "right", color: "#6F6656" }}>{totUsd > 0 ? Math.round(v.usd / totUsd * 100) : 0}%</div>
+            </div>
+          ))}
+        </div>
+      )}
       {models.length > 0 && (
         <div style={{ border: "1px solid #E3DAC6", borderRadius: 8, overflow: "hidden" }}>
           <div style={{ display: "flex", background: "#F4EFE3", fontSize: 11, color: "#6F6656", fontWeight: 600, padding: "6px 12px" }}>
@@ -3329,340 +3367,54 @@ function AIUsagePanel() {
 }
 
 function AdvisorSettingsView({ settings, setSettings, cats, aiLog, setAiLog, activityLog, logActivity, userName, journal, events, plans }) {
-  const [activeTab, setActiveTab] = useState("command"); // command | upload | settings | log
-  const [loading, setLoading] = useState(false);
-  const [chatInput, setChatInput] = useState("");
-  const [uploadedFiles, setUploadedFiles] = useState([]);
-  const [pendingUpload, setPendingUpload] = useState(null);
-  const endRef = useRef(null);
-
-  useEffect(() => { endRef.current?.scrollIntoView({ behavior:"smooth" }); }, [aiLog]);
-
-  const totalItems = cats.reduce((s,c)=>s+c.items.length,0);
-  const doneItems = cats.flatMap(c=>c.items).filter(i=>i.done||i.status==="done").length;
-  const issueItems = cats.flatMap(c=>c.items).filter(i=>i.status==="issue");
-  const unassigned = cats.flatMap(c=>c.items).filter(i=>!i.assignee);
-  const noDate = cats.flatMap(c=>c.items).filter(i=>!i.date&&i.status!=="done");
-  const stalledItems = cats.flatMap(c=>c.items).filter(it=>{
-    if(it.status==="done"||it.done) return false;
-    if(!it.lastUpdated) return false;
-    return (Date.now()-new Date(it.lastUpdated))/(1000*60*60*24)>3;
-  });
-  const today = new Date().toLocaleDateString("zh-TW");
-  const daysLeft = settings?.targetDate ? Math.ceil((new Date(settings.targetDate)-new Date())/(1000*60*60*24)) : null;
-
-  const addMsg = (role, text, meta) => {
-    const entry = { role, text, ts: new Date().toLocaleString("zh-TW"), meta };
-    setAiLog(prev => [...prev, entry]);
-    return entry;
-  };
-
-  const runAI = async (userMsg, systemOverride, displayMsg) => {
-    if(displayMsg) addMsg("user", displayMsg||userMsg);
-    else addMsg("user", userMsg);
-    setLoading(true);
-    try {
-      const system = systemOverride || buildAdvisorSystem(settings, cats, journal||[], events||[], plans||[]);
-      const history = aiLog.slice(-16).map(m=>({ role:m.role==="user"?"user":"assistant", content:m.text }));
-      history.push({ role:"user", content:userMsg });
-      const reply = await callAI(history, system);
-      addMsg("assistant", reply);
-    } catch(e) { addMsg("assistant", "⚠️ AI連線失敗：" + e.message); }
-    setLoading(false);
-  };
-
-  // ── QUICK COMMAND PROMPTS ──────────────────────────────────────────────────
-  const COMMANDS = [
-    {
-      icon:"📋", label:"今日執行計劃",
-      prompt: "請根據目前所有工程資料，給我今天的具體執行計劃。格式：\n1. 今日必須完成的3件最重要的事（說明理由）\n2. 今日需要推進的工程（每項給出具體行動）\n3. 今日需要確認或決策的事項\n4. 需要提前準備以免明後天卡關的事\n請給非常具體可執行的指令，不要空泛建議。"
-    },
-    {
-      icon:"🔍", label:"完整衝突檢查",
-      prompt: "請執行全面的工程衝突與矛盾檢查：\n1. 工序衝突：哪些工程的施工順序有問題？（列出具體衝突對）\n2. 時間衝突：哪些工程同時進行會產生場地或人力問題？\n3. 預算風險：哪些項目的預估金額明顯偏低或偏高？給出市場行情比較\n4. 資料缺漏：列出所有缺少關鍵資訊的項目（負責人、日期、金額）\n5. 施工工法問題：根據你的專業判斷，有哪些工法、材料或做法值得質疑或優化？\n\n如果以上都沒有問題，請直接給出完整的施工執行順序清單。"
-    },
-    {
-      icon:"⚠️", label:"風險評估",
-      prompt: "請從專業工程顧問角度，對這個專案進行風險評估：\n1. 進度風險：根據目前完成率和剩餘天數，能否如期完工？給出百分比信心度\n2. 預算風險：哪些項目最可能超支？超支可能原因是什麼？\n3. 品質風險：哪些工序最容易出現品質問題？預防措施是什麼？\n4. 法規風險：這個專案有哪些需要特別注意的法規或申請事項？\n5. 廠商風險：目前哪些項目的廠商安排最令人擔憂？\n請給出優先級和具體建議。"
-    },
-    {
-      icon:"💰", label:"成本優化建議",
-      prompt: "請從成本角度分析這個工程：\n1. 哪些項目的單價明顯高於市場行情？（請給出台灣市場參考價格）\n2. 哪些工序可以整合施工降低成本？\n3. 目前哪些「業主自理」項目應該盡快詢價？預估金額是多少？\n4. 有哪些項目可以優化材料選擇但不影響品質？\n5. 監督管理費是否合理？如何議價？\n請給出具體的省錢建議和預估節省金額。"
-    },
-    {
-      icon:"📅", label:"工序排程建議",
-      prompt: "請根據專業施工知識，為這個餐廳裝修工程排出最優化的施工順序：\n1. 列出所有大項工程的建議施工順序（1到最後）\n2. 哪些工程可以同時進行（並行作業）？\n3. 哪些工程有嚴格的先後順序要求（說明原因）？\n4. 每個大項建議的施工週數是多少？\n5. 關鍵路徑是什麼（最不能延誤的工程鏈）？\n請給出具體的甘特圖文字版本。"
-    },
-    {
-      icon:"📊", label:"週報（給業主）",
-      prompt: "請產生一份本週工程進度報告，格式要求：\n- 語言淺顯易懂（業主不是工程師）\n- 開頭一句話總結本週狀況\n- 完成了什麼（條列，用業主能理解的語言）\n- 目前進行中的工程\n- 需要業主知道或決策的事\n- 下週預計完成的工作\n- 整體評估（🟢順利 / 🟡需注意 / 🔴有問題）\n報告要讓業主看了放心或知道該問什麼。"
-    },
-    {
-      icon:"🔔", label:"資料缺漏提醒",
-      prompt: "請幫我找出所有資料不完整的地方，並告訴我為什麼這些資料缺漏會影響工程管理：\n1. 哪些細項沒有負責人？（沒有負責人意味著什麼風險？）\n2. 哪些細項沒有日期？（缺少日期對進度管理的影響？）\n3. 哪些細項的預估金額是0或不合理？\n4. 哪些重要工程文件可能還沒上傳？（如：施工圖、合約、估價單明細）\n5. 哪些項目的「備註」欄有⚠️警告但還沒處理？\n請按照緊迫程度排列，告訴我最優先要補充的資料是什麼。"
-    },
-    {
-      icon:"🏗️", label:"工法專業審查",
-      prompt: "請以資深工程顧問的身份，審查這個餐廳裝修工程的技術面：\n1. 地坪工程：輕質灌漿+EPS保麗龍的做法是否恰當？有無風險？\n2. 空調工程：大金VRV系統的配置（室外機×3、廚房四方吹×3）是否適合這個空間？\n3. 消防工程：R型總機費用$87,500是否合理？需要注意什麼？\n4. 機電工程：380V系統配置是否完整？有無遺漏的迴路？\n5. 整體：這個工程在工法或材料上有哪些你認為需要特別確認或質疑的地方？\n請給出具體的專業意見，必要時引用相關規範。"
-    },
-  ];
-
-  // ── FILE UPLOAD HANDLER ────────────────────────────────────────────────────
-  const handleFileUpload = (e) => {
-    const files = Array.from(e.target.files);
-    files.forEach(file => {
-      const reader = new FileReader();
-      reader.onload = ev => {
-        const fileData = { name: file.name, type: file.type, size: file.size, data: ev.target.result, ts: new Date().toISOString() };
-        setPendingUpload(fileData);
-      };
-      reader.readAsDataURL(file);
-    });
-    e.target.value = "";
-  };
-
-  const sendFileToAI = async () => {
-    if (!pendingUpload) return;
-    setLoading(true);
-    setActiveTab("command");
-    addMsg("user", "📎 上傳檔案：" + pendingUpload.name);
-    try {
-      let prompt = "";
-      let messages = [];
-      if (pendingUpload.type.startsWith("image/")) {
-        prompt = "這是我上傳的工程相關圖片：" + pendingUpload.name + "。請分析這張圖片的內容，如果是施工圖、估價單、合約或現場照片，請：1.描述你看到的內容 2.指出任何需要注意的問題 3.提供相關專業建議。";
-        messages = [{
-          role: "user",
-          content: [
-            { type: "image", source: { type: "base64", media_type: pendingUpload.type, data: pendingUpload.data.split(",")[1] } },
-            { type: "text", text: prompt }
-          ]
-        }];
-      } else {
-        prompt = "我上傳了一份文件：「" + pendingUpload.name + "」（" + Math.round(pendingUpload.size/1024) + "KB）。這是一份工程相關文件，請根據文件名稱和類型，告訴我：1.你判斷這是什麼類型的文件 2.我應該從這份文件中確認哪些關鍵資訊 3.這份文件和目前的工程管理有什麼關聯？";
-        messages = [{ role:"user", content: prompt }];
-      }
-      const system = buildAdvisorSystem(settings, cats, journal||[], events||[], plans||[]);
-      const reply = await callAI(messages, system);
-      addMsg("assistant", reply, { file: pendingUpload.name });
-      setUploadedFiles(prev => [...prev, { name: pendingUpload.name, ts: pendingUpload.ts, type: pendingUpload.type }]);
-      logActivity("上傳文件", pendingUpload.name);
-    } catch(e) { addMsg("assistant", "⚠️ 分析失敗：" + e.message); }
-    setPendingUpload(null);
-    setLoading(false);
-  };
-
+  const [busy, setBusy] = useState(false);
+  const fileRef = useRef(null);
   const upd = (field, val) => setSettings({ ...settings, [field]: val });
   const fieldStyle = { width:"100%", padding:"9px 12px", border:"1px solid #D8CFBB", borderRadius:8, fontSize:13, color:"#211C15", outline:"none", fontFamily:"'Noto Sans TC',sans-serif", boxSizing:"border-box", background:"#f9fafb" };
-
+  const docs = settings.aiDocs || [];
+  const addDocs = async (files) => {
+    const arr = Array.from(files || []); if (!arr.length) return;
+    setBusy(true);
+    const out = [];
+    for (const f of arr) { try { const { url, path } = await uploadPhoto(f); out.push({ id:"doc-"+Math.random().toString(36).slice(2,8), url, path, name:f.name||"檔案", isImage:!!(f.type||"").startsWith("image/") }); } catch(_){} }
+    setBusy(false);
+    if (out.length) upd("aiDocs", [...docs, ...out]);
+  };
+  const delDoc = async (i) => { const d = docs[i]; if (d?.path) { try { await deletePhotoFile(d.path); } catch(_){} } upd("aiDocs", docs.filter((_,x)=>x!==i)); };
+  const card = { background:"#ffffff", border:"1px solid #D8CFBB", borderRadius:12, padding:20, marginBottom:14 };
   return (
-    <div style={{ paddingTop:12, maxWidth:900, margin:"0 auto" }}>
-      {/* Header */}
-      <div style={{ display:"flex", alignItems:"center", gap:12, marginBottom:16, background:"#ffffff", border:"1px solid #D8CFBB", borderRadius:14, padding:"14px 18px" }}>
-        <div style={{ width:44, height:44, borderRadius:12, background:"#211C15", display:"flex", alignItems:"center", justifyContent:"center", fontSize:22, flexShrink:0 }}>🤖</div>
-        <div style={{ flex:1 }}>
-          <div style={{ fontSize:16, fontWeight: 600, color:"#211C15" }}>AI 工程特助</div>
-          <div style={{ fontSize:12, color:"#6F6656" }}>
-            {today} · 完成 {doneItems}/{totalItems} 項
-            {daysLeft!==null && <span style={{ color:daysLeft<14?"#dc2626":daysLeft<30?"#f59e0b":"#3C8C3C", fontWeight: 600 }}> · 距完工 {daysLeft} 天</span>}
-            {stalledItems.length>0 && <span style={{ color:"#dc2626", fontWeight: 600 }}> · ⏰ {stalledItems.length} 項卡關</span>}
-            {issueItems.length>0 && <span style={{ color:"#dc2626", fontWeight: 600 }}> · 🚨 {issueItems.length} 項有問題</span>}
-          </div>
-        </div>
-        {/* Status chips */}
-        <div style={{ display:"flex", gap:6, flexWrap:"wrap" }}>
-          {unassigned.length>0 && <span style={{ fontSize:11, background:"#fff7ed", color:"#c2410c", borderRadius:20, padding:"3px 10px", fontWeight:600 }}>未指派 {unassigned.length}</span>}
-          {noDate.length>0 && <span style={{ fontSize:11, background:"#F3E4DE", color:"#6F6656", borderRadius:20, padding:"3px 10px", fontWeight:600 }}>未設日期 {noDate.length}</span>}
-        </div>
+    <div>
+      <div style={{ display:"flex", alignItems:"center", gap:10, margin:"6px 0 14px" }}>
+        <span style={{ background:ACCENT, color:"#fff", fontSize:11, fontWeight:700, borderRadius:5, padding:"2px 7px" }}>AI</span>
+        <div style={{ fontSize:17, fontWeight:700, color:TEXT }}>AI 知識庫 / 指示</div>
       </div>
-
-      {/* Sub tabs */}
-      <div style={{ display:"flex", gap:4, marginBottom:14 }}>
-        {[["command","⚡ 指令中心"],["upload","📎 上傳資料"],["settings","⚙ 專案設定"],["log","💬 對話記錄"]].map(([t,l]) => (
-          <button key={t} onClick={()=>setActiveTab(t)} style={{ padding:"7px 16px", borderRadius:8, border:"1px solid #D8CFBB", fontSize:13, cursor:"pointer", background:activeTab===t?"#211C15":"#ECE6D7", color:activeTab===t?"#ffffff":"#6F6656", fontWeight:activeTab===t?700:400, transition:"all 0.15s" }}>{l}</button>
-        ))}
+      <div style={card}>
+        <div style={{ fontSize:14, fontWeight:600, color:"#211C15", marginBottom:8 }}>📌 給 AI 的指示</div>
+        <div style={{ fontSize:12, color:"#6F6656", marginBottom:8 }}>告訴 AI 要特別注意的事：假日不得施工、業主偏好、付款方式、特殊限制…（AI 顧問與週報都會參考）</div>
+        <textarea value={settings.notes||""} onChange={e=>upd("notes",e.target.value)} style={{ ...fieldStyle, height:130, resize:"vertical" }} placeholder="例如：週六日不得施工、磁磚需業主現場確認才下單、廠商付款 30 天票期…" />
       </div>
-
-      {/* ── COMMAND CENTER ── */}
-      {activeTab === "command" && (
-        <div>
-          {/* Quick commands grid */}
-          <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(200px,1fr))", gap:10, marginBottom:16 }}>
-            {COMMANDS.map(cmd => (
-              <button key={cmd.label} onClick={() => { setActiveTab("log"); runAI(cmd.prompt, null, cmd.icon + " " + cmd.label); }}
-                disabled={loading}
-                style={{ padding:"14px 16px", background:"#ffffff", border:"1px solid #D8CFBB", borderRadius:12, cursor:loading?"not-allowed":"pointer", textAlign:"left", transition:"all 0.15s", opacity:loading?0.6:1 }}
-                onMouseEnter={e=>!loading&&(e.currentTarget.style.borderColor=ACCENT,e.currentTarget.style.background="#F3E4DE")}
-                onMouseLeave={e=>(e.currentTarget.style.borderColor="#D8CFBB",e.currentTarget.style.background="#ffffff")}
-              >
-                <div style={{ fontSize:22, marginBottom:6 }}>{cmd.icon}</div>
-                <div style={{ fontSize:13, fontWeight: 600, color:"#211C15" }}>{cmd.label}</div>
-              </button>
-            ))}
-          </div>
-
-          {/* Dependency warnings */}
-          <DependencyWarnings cats={cats} setCats={setCats => {}} />
-
-          {/* Free input */}
-          <div style={{ background:"#ffffff", border:"1px solid #D8CFBB", borderRadius:12, padding:16 }}>
-            <div style={{ fontSize:12, color:"#6F6656", marginBottom:8 }}>自由提問 / 指令</div>
-            <div style={{ display:"flex", gap:8 }}>
-              <textarea value={chatInput} onChange={e=>setChatInput(e.target.value)}
-                onKeyDown={e=>{ if(e.key==="Enter"&&!e.shiftKey&&!e.nativeEvent.isComposing){e.preventDefault(); if(chatInput.trim()&&!loading){const t=chatInput.trim();setChatInput("");setActiveTab("log");runAI(t);}}}}
-                placeholder="問任何問題，或描述你的狀況讓AI幫你分析…（Enter送出）"
-                style={{ ...fieldStyle, flex:1, height:52, resize:"none", background:"#f9fafb" }}
-              />
-              <button onClick={()=>{if(chatInput.trim()&&!loading){const t=chatInput.trim();setChatInput("");setActiveTab("log");runAI(t);}}}
-                disabled={loading||!chatInput.trim()}
-                style={{ padding:"0 20px", background:"#211C15", border:"none", borderRadius:10, color:"#fff", fontWeight: 600, cursor:loading||!chatInput.trim()?"not-allowed":"pointer", opacity:loading||!chatInput.trim()?0.5:1, fontSize:14, minWidth:64 }}>
-                送出
-              </button>
+      <div style={card}>
+        <div style={{ fontSize:14, fontWeight:600, color:"#211C15", marginBottom:8 }}>📎 參考檔案（知識庫）</div>
+        <div style={{ fontSize:12, color:"#6F6656", marginBottom:10 }}>上傳施工手冊、規範、合約等，作為 AI 提醒與回答的依據。也可從 LINE 直接把檔案丟給 D 哥。</div>
+        <div style={{ display:"flex", flexWrap:"wrap", gap:10, marginBottom:6 }}>
+          {docs.map((d,i)=>(
+            <div key={i} style={{ position:"relative" }}>
+              {d.isImage
+                ? <img src={d.url} alt={d.name} title={d.name} onClick={()=>window.open(d.url,"_blank")} style={{ width:80,height:80,objectFit:"cover",borderRadius:8,border:"1px solid #D8CFBB",cursor:"pointer" }} />
+                : <div onClick={()=>window.open(d.url,"_blank")} title={d.name+"（點擊開啟）"} style={{ width:80,height:80,borderRadius:8,border:"1px solid #D8CFBB",background:"#F3E4DE",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:4,padding:4,boxSizing:"border-box" }}><span style={{ fontSize:26 }}>📄</span><span style={{ fontSize:8,color:"#6F6656",width:"100%",textAlign:"center",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap" }}>{d.name}</span></div>}
+              <button onClick={()=>delDoc(i)} style={{ position:"absolute",top:-7,right:-7,width:18,height:18,borderRadius:"50%",background:"#DC2626",color:"#fff",border:"none",fontSize:11,cursor:"pointer" }}>×</button>
             </div>
-          </div>
+          ))}
+          <label style={{ width:80,height:80,borderRadius:8,border:"1px dashed #D8CFBB",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:4,cursor:"pointer",color:"#A99F88",fontSize:12 }}>
+            <span style={{ fontSize:22 }}>{busy?"…":"＋"}</span>{busy?"上傳中":"上傳"}
+            <input ref={fileRef} type="file" multiple style={{ display:"none" }} onChange={e=>{ addDocs(e.target.files); e.target.value=""; }} />
+          </label>
         </div>
-      )}
-
-      {/* ── UPLOAD TAB ── */}
-      {activeTab === "upload" && (
-        <div>
-          <div style={{ background:"#ffffff", border:"2px dashed #D8CFBB", borderRadius:14, padding:"30px 20px", textAlign:"center", marginBottom:16 }}>
-            <div style={{ fontSize:40, marginBottom:10 }}>📎</div>
-            <div style={{ fontSize:15, fontWeight: 600, color:"#211C15", marginBottom:6 }}>上傳工程文件</div>
-            <div style={{ fontSize:13, color:"#6F6656", marginBottom:20 }}>估價單、合約、施工圖、照片、會議記錄…AI會分析並歸檔</div>
-            <label style={{ display:"inline-block", padding:"10px 28px", background:"#211C15", color:"#fff", borderRadius:10, fontSize:14, fontWeight: 600, cursor:"pointer" }}>
-              選擇檔案
-              <input type="file" accept="image/*,.pdf,.jpg,.jpeg,.png,.gif,.webp" multiple style={{ display:"none" }} onChange={handleFileUpload} />
-            </label>
-          </div>
-
-          {pendingUpload && (
-            <div style={{ background:"#f0fdf4", border:"1px solid #86efac", borderRadius:12, padding:16, marginBottom:16 }}>
-              <div style={{ fontSize:13, fontWeight: 600, color:"#166534", marginBottom:6 }}>✅ 準備分析：{pendingUpload.name}</div>
-              <div style={{ fontSize:12, color:"#4ade80", marginBottom:12 }}>{Math.round(pendingUpload.size/1024)}KB · {pendingUpload.type}</div>
-              {pendingUpload.type.startsWith("image/") && (
-                <img src={pendingUpload.data} alt="preview" style={{ maxWidth:"100%", maxHeight:200, borderRadius:8, marginBottom:12, objectFit:"contain" }} />
-              )}
-              <div style={{ display:"flex", gap:8 }}>
-                <button onClick={sendFileToAI} disabled={loading} style={{ flex:1, padding:"10px 0", background:"#211C15", border:"none", borderRadius:8, color:"#fff", fontWeight: 600, cursor:loading?"not-allowed":"pointer", fontSize:14 }}>
-                  {loading?"分析中…":"🤖 讓AI分析這份文件"}
-                </button>
-                <button onClick={()=>setPendingUpload(null)} style={{ padding:"10px 16px", background:"none", border:"1px solid #D8CFBB", borderRadius:8, cursor:"pointer", fontSize:13, color:"#6F6656" }}>取消</button>
-              </div>
-            </div>
-          )}
-
-          {uploadedFiles.length > 0 && (
-            <div style={{ background:"#ffffff", border:"1px solid #D8CFBB", borderRadius:12, padding:16 }}>
-              <div style={{ fontSize:13, fontWeight: 600, color:"#211C15", marginBottom:12 }}>已分析的文件（{uploadedFiles.length}）</div>
-              {uploadedFiles.map((f,i) => (
-                <div key={i} style={{ display:"flex", alignItems:"center", gap:10, padding:"8px 0", borderBottom:i<uploadedFiles.length-1?"1px solid #EFE7D6":"none" }}>
-                  <span style={{ fontSize:20 }}>{f.type.startsWith("image/")?"🖼️":"📄"}</span>
-                  <div style={{ flex:1 }}>
-                    <div style={{ fontSize:13, color:"#211C15", fontWeight:500 }}>{f.name}</div>
-                    <div style={{ fontSize:11, color:"#A99F88" }}>{new Date(f.ts).toLocaleString("zh-TW")}</div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* ── SETTINGS TAB ── */}
-      {activeTab === "settings" && (
-        <div>
-          <AIUsagePanel />
-          <div style={{ background:"#ffffff", border:"1px solid #D8CFBB", borderRadius:12, padding:"20px", marginBottom:14 }}>
-            <div style={{ fontSize:14, fontWeight: 600, color:"#211C15", marginBottom:14 }}>專案基本資訊</div>
-            <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12 }}>
-              {[["projectName","專案名稱"],["projectAddress","地址"],["ownerName","業主"],["contractorName","承包商"]].map(([f,l]) => (
-                <div key={f}>
-                  <div style={{ fontSize:11, color:"#6F6656", marginBottom:5, fontWeight:600 }}>{l}</div>
-                  <input value={settings[f]||""} onChange={e=>upd(f,e.target.value)} style={fieldStyle} />
-                </div>
-              ))}
-              <div>
-                <div style={{ fontSize:11, color:"#6F6656", marginBottom:5, fontWeight:600 }}>目標完工日</div>
-                <input type="date" value={settings.targetDate||""} onChange={e=>upd("targetDate",e.target.value)} style={fieldStyle} />
-              </div>
-              <div>
-                <div style={{ fontSize:11, color:"#6F6656", marginBottom:5, fontWeight:600 }}>總預算上限</div>
-                <input type="number" value={settings.budget||""} onChange={e=>upd("budget",e.target.value)} style={fieldStyle} placeholder="NT$" />
-              </div>
-            </div>
-          </div>
-          <div style={{ background:"#ffffff", border:"1px solid #D8CFBB", borderRadius:12, padding:"20px", marginBottom:14 }}>
-            <div style={{ fontSize:14, fontWeight: 600, color:"#211C15", marginBottom:8 }}>給AI的特別指示</div>
-            <div style={{ fontSize:12, color:"#6F6656", marginBottom:8 }}>告訴AI需要特別注意的事：假日不得施工、業主偏好、付款方式、特殊限制等</div>
-            <textarea value={settings.notes||""} onChange={e=>upd("notes",e.target.value)} style={{ ...fieldStyle, height:120, resize:"vertical" }}
-              placeholder="例如：週六日不得施工、業主要每週五收到進度報告、磁磚需業主現場確認才能下單、廠商付款需30天票期…" />
-          </div>
-          <div style={{ background:"#ffffff", border:"1px solid #D8CFBB", borderRadius:12, padding:"20px" }}>
-            <div style={{ fontSize:14, fontWeight: 600, color:"#211C15", marginBottom:8 }}>⭐ 優先追蹤項目</div>
-            <div style={{ fontSize:12, color:"#6F6656", marginBottom:12 }}>標記需要AI特別關注的細項</div>
-            {cats.map(cat => (
-              <div key={cat.id} style={{ marginBottom:12 }}>
-                <div style={{ fontSize:12, color:"#4A4234", fontWeight: 600, marginBottom:6 }}>{cat.name}</div>
-                <div style={{ display:"flex", flexWrap:"wrap", gap:6 }}>
-                  {cat.items.map(item => {
-                    const isPri = (settings.priorities||[]).includes(item.id);
-                    return (
-                      <button key={item.id} onClick={()=>{ const p=settings.priorities||[]; upd("priorities",isPri?p.filter(x=>x!==item.id):[...p,item.id]); }}
-                        style={{ fontSize:11, padding:"4px 12px", borderRadius:20, border:"1px solid "+(isPri?ACCENT:"#D8CFBB"), background:isPri?"#F3E4DE":"#ECE6D7", color:isPri?"#92400e":"#6F6656", cursor:"pointer" }}>
-                        {isPri?"⭐ ":""}{item.name.slice(0,22)}{item.name.length>22?"…":""}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            ))}
-          </div>
-          <LineNotifySettings settings={settings} upd={upd} cats={cats} journal={journal} events={events} plans={plans} />
-        </div>
-      )}
-
-      {/* ── CHAT LOG TAB ── */}
-      {activeTab === "log" && (
-        <div>
-          <div style={{ background:"#ffffff", border:"1px solid #D8CFBB", borderRadius:12, padding:16, maxHeight:560, overflowY:"auto", marginBottom:12 }}>
-            {aiLog.length===0 && <div style={{ textAlign:"center", color:"#A99F88", padding:"40px 0", fontSize:13 }}>點擊左側指令開始，或直接輸入問題</div>}
-            {aiLog.map((m,i) => (
-              <div key={i} style={{ marginBottom:16, display:"flex", gap:10, flexDirection:m.role==="user"?"row-reverse":"row" }}>
-                <div style={{ width:34, height:34, borderRadius:"50%", background:m.role==="user"?"#dbeafe":"#211C15", display:"flex", alignItems:"center", justifyContent:"center", fontSize:16, flexShrink:0 }}>
-                  {m.role==="user"?"👤":"🤖"}
-                </div>
-                <div style={{ maxWidth:"82%", background:m.role==="user"?"#eff6ff":"#f9fafb", border:m.role==="user"?"1px solid #bfdbfe":"1px solid #D8CFBB", borderRadius:12, padding:"10px 14px" }}>
-                  {m.meta?.file && <div style={{ fontSize:11, color:"#6F6656", marginBottom:4 }}>📎 {m.meta.file}</div>}
-                  <div style={{ fontSize:13, lineHeight:1.85, color:"#1e293b", whiteSpace:"pre-wrap" }}>{m.text}</div>
-                  <div style={{ fontSize:10, color:"#A99F88", marginTop:5 }}>{m.ts}</div>
-                </div>
-              </div>
-            ))}
-            {loading && (
-              <div style={{ display:"flex", gap:10 }}>
-                <div style={{ width:34, height:34, borderRadius:"50%", background:"#211C15", display:"flex", alignItems:"center", justifyContent:"center", fontSize:16 }}>🤖</div>
-                <div style={{ padding:"12px 16px", color:"#6F6656", fontSize:13, background:"#f9fafb", border:"1px solid #D8CFBB", borderRadius:12 }}>
-                  <span style={{ animation:"pulse 1s infinite" }}>AI 特助分析中…</span>
-                </div>
-              </div>
-            )}
-            <div ref={endRef} />
-          </div>
-          <div style={{ display:"flex", gap:8 }}>
-            <textarea value={chatInput} onChange={e=>setChatInput(e.target.value)}
-              onKeyDown={e=>{ if(e.key==="Enter"&&!e.shiftKey&&!e.nativeEvent.isComposing){e.preventDefault();if(chatInput.trim()&&!loading){const t=chatInput.trim();setChatInput("");runAI(t);}}}}
-              placeholder="繼續對話，或提出新問題…（Enter送出，Shift+Enter換行）"
-              style={{ flex:1, padding:"10px 12px", border:"1px solid #D8CFBB", borderRadius:10, fontSize:13, outline:"none", fontFamily:"'Noto Sans TC',sans-serif", height:52, resize:"none", background:"#f9fafb" }}
-            />
-            <button onClick={()=>{if(chatInput.trim()&&!loading){const t=chatInput.trim();setChatInput("");runAI(t);}}} disabled={loading||!chatInput.trim()}
-              style={{ padding:"0 20px", background:"#211C15", border:"none", borderRadius:10, color:"#fff", fontWeight: 600, cursor:loading||!chatInput.trim()?"not-allowed":"pointer", opacity:loading||!chatInput.trim()?0.5:1, fontSize:14, minWidth:64 }}>送出</button>
-          </div>
-          <div style={{ marginTop:8, textAlign:"right" }}>
-            <button onClick={()=>setAiLog([])} style={{ fontSize:11, color:"#A99F88", background:"none", border:"none", cursor:"pointer" }}>清除記錄</button>
-          </div>
-        </div>
-      )}
+        <div style={{ fontSize:11, color:"#A99F88", marginTop:8 }}>※ 目前 AI 會知道有哪些參考檔；「自動解析檔案內容做工種提醒」為進階功能，將逐步開放。</div>
+      </div>
+      <div style={{ ...card, marginBottom:0, background:"#FBF7EE" }}>
+        <div style={{ fontSize:13, color:"#6F6656", lineHeight:1.8 }}>💡 <b>AI 用量 / 估算花費</b> 已移到「儀表板」。｜ AI 顧問對話請點右上角「AI 顧問」。｜ LINE 通知設定已整合到「群組」分頁。｜ 優先追蹤改在項目上點 ☆。</div>
+      </div>
     </div>
   );
 }
