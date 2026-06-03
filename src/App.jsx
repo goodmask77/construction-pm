@@ -273,7 +273,7 @@ const LINE_EVENTS = [
   ["journal", "新工作日誌建立時通知"],
 ];
 async function _lineSettings() {
-  try { const r = await window.storage.get("pm_settings", true); return r && r.value ? JSON.parse(r.value) : {}; } catch { return {}; }
+  try { const r = await window.storage.get(K("pm_settings"), true); return r && r.value ? JSON.parse(r.value) : {}; } catch { return {}; }
 }
 async function _linePush(body) {
   try {
@@ -306,64 +306,79 @@ async function notifyLineEvent(type, text) {
 const calcItemTotal = (it) => calcEstimated(it);
 
 // ── STORAGE HELPERS ───────────────────────────────────────────────────────────
+// ── 工作空間（多空間隔離）──────────────────────────────────────────────────
+// 預設空間＝construction，沿用原本的 key（零遷移）；其他空間一律加前綴 sp_<id>_
+// 全域 key（跨空間共用）：使用者身分、空間設定本身
+const SPACES = [
+  { id: "construction", name: "工程專案", icon: "🏗" },
+  { id: "team",         name: "團隊工作", icon: "👥" },
+];
+const GLOBAL_KEYS = new Set(["pm_role", "pm_known_users", "pm_current_space"]);
+let CURRENT_SPACE = "construction";
+try { CURRENT_SPACE = localStorage.getItem("pm_current_space") || "construction"; } catch (_) {}
+if (!SPACES.some(s => s.id === CURRENT_SPACE)) CURRENT_SPACE = "construction";
+// 邏輯 key → 實體 key（依目前空間）
+const K = (key) => (CURRENT_SPACE === "construction" || GLOBAL_KEYS.has(key)) ? key : `sp_${CURRENT_SPACE}_${key}`;
+const switchSpace = (id) => { try { localStorage.setItem("pm_current_space", id); } catch (_) {} window.location.reload(); };
+
 async function loadData() {
   try {
-    const r = await window.storage.get("pm_data", true);
+    const r = await window.storage.get(K("pm_data"), true);
     if (r && r.value) return JSON.parse(r.value);
   } catch (_) {}
   return null;
 }
 async function saveData(cats) {
   try {
-    await window.storage.set("pm_data", JSON.stringify(cats), true);
+    await window.storage.set(K("pm_data"), JSON.stringify(cats), true);
   } catch (_) {}
 }
 async function loadGlobalChat() {
   try {
-    const r = await window.storage.get("pm_global_chat", true);
+    const r = await window.storage.get(K("pm_global_chat"), true);
     if (r && r.value) return JSON.parse(r.value);
   } catch (_) {}
   return [];
 }
 async function saveGlobalChat(msgs) {
   try {
-    await window.storage.set("pm_global_chat", JSON.stringify(msgs), true);
+    await window.storage.set(K("pm_global_chat"), JSON.stringify(msgs), true);
   } catch (_) {}
 }
 
 async function loadSettings() {
   try {
-    const r = await window.storage.get("pm_settings", true);
+    const r = await window.storage.get(K("pm_settings"), true);
     if (r && r.value) return JSON.parse(r.value);
   } catch (_) {}
   return null;
 }
 async function saveSettings(s) {
-  try { await window.storage.set("pm_settings", JSON.stringify(s), true); } catch (_) {}
+  try { await window.storage.set(K("pm_settings"), JSON.stringify(s), true); } catch (_) {}
 }
 async function loadRole() {
-  try { const r = await window.storage.get("pm_role", false); if (r&&r.value) return r.value; } catch(_){}
+  try { const r = await window.storage.get(K("pm_role"), false); if (r&&r.value) return r.value; } catch(_){}
   return null;
 }
 async function saveRole(role) {
-  try { await window.storage.set("pm_role", role, false); } catch(_){}
+  try { await window.storage.set(K("pm_role"), role, false); } catch(_){}
 }
 async function loadActivityLog() {
-  try { const r = await window.storage.get("pm_activity", true); if (r&&r.value) return JSON.parse(r.value); } catch(_){}
+  try { const r = await window.storage.get(K("pm_activity"), true); if (r&&r.value) return JSON.parse(r.value); } catch(_){}
   return [];
 }
 async function saveActivityLog(log) {
-  try { await window.storage.set("pm_activity", JSON.stringify(log.slice(-200)), true); } catch(_){}
+  try { await window.storage.set(K("pm_activity"), JSON.stringify(log.slice(-200)), true); } catch(_){}
 }
 async function loadAILog() {
   try {
-    const r = await window.storage.get("pm_ai_log", true);
+    const r = await window.storage.get(K("pm_ai_log"), true);
     if (r && r.value) return JSON.parse(r.value);
   } catch (_) {}
   return [];
 }
 async function saveAILog(log) {
-  try { await window.storage.set("pm_ai_log", JSON.stringify(log), true); } catch (_) {}
+  try { await window.storage.set(K("pm_ai_log"), JSON.stringify(log), true); } catch (_) {}
 }
 
 // ── AI CALL ───────────────────────────────────────────────────────────────────
@@ -386,12 +401,12 @@ async function recordAIUsage(model, usage, kind = "chat") {
   const [pin, pout] = priceFor(model);
   const usd = inTok / 1e6 * pin + outTok / 1e6 * pout;
   try {
-    const r = await window.storage.get("pm_ai_usage", true);
+    const r = await window.storage.get(K("pm_ai_usage"), true);
     let log = [];
     if (r && r.value) { try { log = JSON.parse(r.value); } catch (_) {} }
     log.push({ ts: new Date().toISOString(), model: model || "?", kind, inTok, outTok, usd });
     if (log.length > 2000) log = log.slice(-2000);
-    await window.storage.set("pm_ai_usage", JSON.stringify(log), true);
+    await window.storage.set(K("pm_ai_usage"), JSON.stringify(log), true);
   } catch (_) {}
 }
 
@@ -513,54 +528,58 @@ export default function App() {
   // 工作日誌：寫入 state 並存進共享後端
   const commitWorklog = (list) => {
     setWorklog(list);
-    window.storage.set("pm_worklog", JSON.stringify(list), true).catch(()=>{});
+    window.storage.set(K("pm_worklog"), JSON.stringify(list), true).catch(()=>{});
   };
   // 檔案庫照片：metadata 存共享後端（圖片本體在 Supabase Storage）
   const commitPhotos = (list) => {
     setPhotos(list);
-    window.storage.set("pm_photos", JSON.stringify(list), true).catch(()=>{});
+    window.storage.set(K("pm_photos"), JSON.stringify(list), true).catch(()=>{});
   };
   const commitAccounts = (list) => {
     setAccounts(list);
-    window.storage.set("pm_accounts", JSON.stringify(list), true).catch(()=>{});
+    window.storage.set(K("pm_accounts"), JSON.stringify(list), true).catch(()=>{});
   };
   const commitCustomCols = (list) => {
     setCustomCols(list);
-    window.storage.set("pm_columns", JSON.stringify(list), true).catch(()=>{});
+    window.storage.set(K("pm_columns"), JSON.stringify(list), true).catch(()=>{});
   };
   const commitColOrder = (list) => {
     setColOrder(list);
-    window.storage.set("pm_colorder", JSON.stringify(list), true).catch(()=>{});
+    window.storage.set(K("pm_colorder"), JSON.stringify(list), true).catch(()=>{});
   };
   const commitSeqLogs = (list) => {
     setSeqLogs(list);
-    window.storage.set("pm_seqlogs", JSON.stringify(list), true).catch(()=>{});
+    window.storage.set(K("pm_seqlogs"), JSON.stringify(list), true).catch(()=>{});
   };
 
   // load
   useEffect(() => {
     (async () => {
       const d = await loadData();
-      const migrated = migratePayments(d || INITIAL_CATEGORIES);
+      const seed = CURRENT_SPACE === "construction" ? INITIAL_CATEGORIES : []; // 非工程空間從空白開始
+      const migrated = migratePayments(d || seed);
       setCats(migrated);
-      if (migrated !== (d || INITIAL_CATEGORIES)) saveData(migrated); // 遷移後持久化
+      if (migrated !== (d || seed)) saveData(migrated); // 遷移後持久化
 
       const gc = await loadGlobalChat();
       setGlobalChat(gc);
       const sv = await loadSettings();
-      setSettings(sv || { projectName:"宏匯 GROUN:D", projectAddress:"台北市內湖區瑞光路337號", ownerName:"", contractorName:"碩藝室內裝修有限公司", targetDate:"", notes:"", priorities:[], dailyCheckEnabled:false, lineGroupId: DEFAULT_LINE_GROUP, lineNotify: {} });
+      const defSettings = CURRENT_SPACE === "construction"
+        ? { projectName:"宏匯 GROUN:D", projectAddress:"台北市內湖區瑞光路337號", ownerName:"", contractorName:"碩藝室內裝修有限公司", targetDate:"", notes:"", priorities:[], dailyCheckEnabled:false, lineGroupId: DEFAULT_LINE_GROUP, lineNotify: {} }
+        : { projectName: SPACES.find(s=>s.id===CURRENT_SPACE)?.name || "工作空間", projectAddress:"", ownerName:"", contractorName:"", targetDate:"", notes:"", priorities:[], dailyCheckEnabled:false, lineGroupId:"", lineNotify: {} };
+      setSettings(sv && Object.keys(sv).length ? sv : defSettings);
       const log = await loadAILog();
       setAiLog(log);
       const savedName = await loadRole();
       if (savedName) { setUserName(savedName); }
       // 未登入 → 訪客唯讀瀏覽（不強制登入）
       try {
-        const ku = await window.storage.get("pm_known_users", true);
+        const ku = await window.storage.get(K("pm_known_users"), true);
         if (ku && ku.value) {
           const arr = JSON.parse(ku.value).filter(u => u !== ADMIN_USER);
           setKnownUsers(arr);
           // 清掉共享儲存中殘留的管理員帳號，避免顯示
-          window.storage.set("pm_known_users", JSON.stringify(arr), true).catch(()=>{});
+          window.storage.set(K("pm_known_users"), JSON.stringify(arr), true).catch(()=>{});
         } else {
           setKnownUsers([]);
         }
@@ -568,26 +587,26 @@ export default function App() {
       const alog = await loadActivityLog();
       setActivityLog(alog);
       try {
-        const wl = await window.storage.get("pm_worklog", true);
+        const wl = await window.storage.get(K("pm_worklog"), true);
         if (wl && wl.value) setWorklog(JSON.parse(wl.value));
       } catch(_){}
       try {
-        const ph = await window.storage.get("pm_photos", true);
+        const ph = await window.storage.get(K("pm_photos"), true);
         if (ph && ph.value) setPhotos(JSON.parse(ph.value));
       } catch(_){}
       try {
-        const ac = await window.storage.get("pm_accounts", true);
+        const ac = await window.storage.get(K("pm_accounts"), true);
         if (ac && ac.value) setAccounts(JSON.parse(ac.value));
       } catch(_){}
       try {
-        const sl = await window.storage.get("pm_seqlogs", true);
+        const sl = await window.storage.get(K("pm_seqlogs"), true);
         if (sl && sl.value) setSeqLogs(JSON.parse(sl.value));
       } catch(_){}
       try {
         // 統一欄位設定：內建欄位(成本費用明細新版) + 使用者自訂欄位
         const builtins = COLS.map(c => ({ id:c.id, label:c.label, builtin:true, fixed: !!c.fixed, w:c.w }));
         const builtinIds = new Set(COLS.map(c => c.id));
-        const cc = await window.storage.get("pm_columns", true);
+        const cc = await window.storage.get(K("pm_columns"), true);
         let customs = [];
         if (cc && cc.value) {
           try {
@@ -598,11 +617,11 @@ export default function App() {
         // 一律以新版內建欄位重建（移除舊的 實際/重複稅金 欄；遷移到 預估→已付→未付 模型）
         const merged = [...builtins, ...customs];
         setCustomCols(merged);
-        window.storage.set("pm_columns", JSON.stringify(merged), true).catch(()=>{});
+        window.storage.set(K("pm_columns"), JSON.stringify(merged), true).catch(()=>{});
       } catch(_){}
-      try { const ev = await window.storage.get("pm_events", true); if (ev&&ev.value) setEvents(JSON.parse(ev.value)); } catch(_){}
-      try { const jn = await window.storage.get("pm_journal", true); if (jn&&jn.value) setJournal(JSON.parse(jn.value)); } catch(_){}
-      try { const pl = await window.storage.get("pm_plans", true); if (pl&&pl.value) setPlans(JSON.parse(pl.value)); } catch(_){}
+      try { const ev = await window.storage.get(K("pm_events"), true); if (ev&&ev.value) setEvents(JSON.parse(ev.value)); } catch(_){}
+      try { const jn = await window.storage.get(K("pm_journal"), true); if (jn&&jn.value) setJournal(JSON.parse(jn.value)); } catch(_){}
+      try { const pl = await window.storage.get(K("pm_plans"), true); if (pl&&pl.value) setPlans(JSON.parse(pl.value)); } catch(_){}
     })();
   }, []);
 
@@ -669,21 +688,21 @@ export default function App() {
   const setEventsLogged = (updater) => {
     setEvents(prev => {
       const next = typeof updater === "function" ? updater(prev) : updater;
-      window.storage.set("pm_events", JSON.stringify(next), true).catch(()=>{});
+      window.storage.set(K("pm_events"), JSON.stringify(next), true).catch(()=>{});
       return next;
     });
   };
   const setJournalLogged = (updater) => {
     setJournal(prev => {
       const next = typeof updater === "function" ? updater(prev) : updater;
-      window.storage.set("pm_journal", JSON.stringify(next.slice(0,500)), true).catch(()=>{});
+      window.storage.set(K("pm_journal"), JSON.stringify(next.slice(0,500)), true).catch(()=>{});
       return next;
     });
   };
   const setPlansLogged = (updater) => {
     setPlans(prev => {
       const next = typeof updater === "function" ? updater(prev) : updater;
-      window.storage.set("pm_plans", JSON.stringify(next), true).catch(()=>{});
+      window.storage.set(K("pm_plans"), JSON.stringify(next), true).catch(()=>{});
       return next;
     });
   };
@@ -832,7 +851,7 @@ export default function App() {
             try {
               const updated = [name, ...knownUsers.filter(u=>u!==name)].slice(0,8);
               setKnownUsers(updated);
-              await window.storage.set("pm_known_users", JSON.stringify(updated), true);
+              await window.storage.set(K("pm_known_users"), JSON.stringify(updated), true);
             } catch(_){}
           }
           logActivity("登入", name + " 登入系統");
@@ -895,19 +914,19 @@ function IssuesView({ canEdit, requireLogin, confirm }) {
 
   useEffect(() => {
     (async () => {
-      try { const r = await window.storage.get("pm_issues", true); setIssues(r && r.value ? JSON.parse(r.value) : []); }
+      try { const r = await window.storage.get(K("pm_issues"), true); setIssues(r && r.value ? JSON.parse(r.value) : []); }
       catch { setIssues([]); }
-      try { const c = await window.storage.get("pm_todo_cats", true); const arr = c && c.value ? JSON.parse(c.value) : null; if (Array.isArray(arr) && arr.length) setCats(arr); } catch (_) {}
+      try { const c = await window.storage.get(K("pm_todo_cats"), true); const arr = c && c.value ? JSON.parse(c.value) : null; if (Array.isArray(arr) && arr.length) setCats(arr); } catch (_) {}
     })();
   }, []);
 
   const save = async (list) => {
     setIssues(list);
-    try { await window.storage.set("pm_issues", JSON.stringify(list), true); } catch (_) {}
+    try { await window.storage.set(K("pm_issues"), JSON.stringify(list), true); } catch (_) {}
   };
   const saveCats = async (list) => {
     setCats(list);
-    try { await window.storage.set("pm_todo_cats", JSON.stringify(list), true); } catch (_) {}
+    try { await window.storage.set(K("pm_todo_cats"), JSON.stringify(list), true); } catch (_) {}
   };
   const guard = () => { if (!canEdit) { requireLogin && requireLogin(); return false; } return true; };
   const patch = (id, fields) => { if (!guard()) return; save(issues.map(i => i.id === id ? { ...i, ...fields } : i)); };
@@ -1108,8 +1127,8 @@ function GroupsView({ cats, canEdit, requireLogin }) {
   useEffect(() => {
     (async () => {
       try {
-        const s = await window.storage.get("pm_group_seen", true);
-        const c = await window.storage.get("pm_bot_groups", true);
+        const s = await window.storage.get(K("pm_group_seen"), true);
+        const c = await window.storage.get(K("pm_bot_groups"), true);
         setSeen(s && s.value ? JSON.parse(s.value) : {});
         setCfg(c && c.value ? JSON.parse(c.value) : {});
       } catch { setSeen({}); setCfg({}); }
@@ -1119,7 +1138,7 @@ function GroupsView({ cats, canEdit, requireLogin }) {
   const guard = () => { if (!canEdit) { requireLogin && requireLogin(); return false; } return true; };
   const persist = async (next) => {
     setCfg(next); setSaving(true);
-    try { await window.storage.set("pm_bot_groups", JSON.stringify(next), true); } catch (_) {}
+    try { await window.storage.set(K("pm_bot_groups"), JSON.stringify(next), true); } catch (_) {}
     setSaving(false);
   };
   const effMode = (gid) => { const c = cfg[gid] || {}; return c.mode || (gid === DEFAULT_LINE_GROUP ? "internal" : (c.catId ? "vendor" : "locked")); };
@@ -1134,7 +1153,7 @@ function GroupsView({ cats, canEdit, requireLogin }) {
     if (!guard()) return;
     if (!window.confirm("從清單移除這個群？\n（若 D哥 還在群裡，下次有人講話會再自動出現；只有「已被移出/解散」的死群才會真正消失）")) return;
     const ns = { ...seen }; delete ns[gid]; setSeen(ns);
-    try { window.storage.set("pm_group_seen", JSON.stringify(ns), true); } catch (_) {}
+    try { window.storage.set(K("pm_group_seen"), JSON.stringify(ns), true); } catch (_) {}
     const nc = { ...cfg }; delete nc[gid]; persist(nc);
   };
 
@@ -1261,14 +1280,14 @@ function CompareView({ canEdit, requireLogin }) {
 
   useEffect(() => {
     (async () => {
-      try { const r = await window.storage.get("pm_estimates", true); setEsts(r && r.value ? JSON.parse(r.value) : []); } catch { setEsts([]); }
-      try { const a = await window.storage.get("pm_estimates_an", true); const v = a && a.value ? JSON.parse(a.value) : null; setAnalysis(v && v.rows ? v : null); } catch (_) {}
+      try { const r = await window.storage.get(K("pm_estimates"), true); setEsts(r && r.value ? JSON.parse(r.value) : []); } catch { setEsts([]); }
+      try { const a = await window.storage.get(K("pm_estimates_an"), true); const v = a && a.value ? JSON.parse(a.value) : null; setAnalysis(v && v.rows ? v : null); } catch (_) {}
     })();
   }, []);
   // 估價單一變動就清掉舊分析（避免對不上）
   const save = async (list) => {
     setEsts(list); setAnalysis(null);
-    try { await window.storage.set("pm_estimates", JSON.stringify(list), true); await window.storage.set("pm_estimates_an", "null", true); } catch (_) {}
+    try { await window.storage.set(K("pm_estimates"), JSON.stringify(list), true); await window.storage.set(K("pm_estimates_an"), "null", true); } catch (_) {}
   };
 
   const runAnalysis = async () => {
@@ -1281,7 +1300,7 @@ function CompareView({ canEdit, requireLogin }) {
       const clean = reply.replace(/```json|```/gi, "").trim();
       let a = null;
       try { a = JSON.parse(clean.slice(clean.indexOf("{"), clean.lastIndexOf("}") + 1)); } catch (_) {}
-      if (a && a.rows) { setAnalysis(a); try { await window.storage.set("pm_estimates_an", JSON.stringify(a), true); } catch (_) {} }
+      if (a && a.rows) { setAnalysis(a); try { await window.storage.set(K("pm_estimates_an"), JSON.stringify(a), true); } catch (_) {} }
       else setAnalysis({ rows: [], summary: "（分析失敗，請重試）", recommend: "" });
     } catch (e) { setAnalysis({ rows: [], summary: "（分析失敗：" + (e?.message || e) + "）", recommend: "" }); }
     setAnalyzing(false);
@@ -1513,6 +1532,13 @@ function TopNav({ view, setView, saving, totalEstimated, totalPaid, doneCount, c
         <div style={{ flexShrink: 0, order: 0 }}>
           <div style={{ fontSize: isMobile ? 20 : 26, fontWeight: 800, color: ACCENT, lineHeight: 1, letterSpacing: -1 }}>GROUN:D</div>
           {!isMobile && <div style={{ fontSize: 9.5, color: SUB, letterSpacing: 2.5, textTransform: "uppercase", marginTop: 4, fontWeight: 600 }}>Construction Project Tracker</div>}
+        </div>
+        {/* 工作空間切換 */}
+        <div style={{ flexShrink: 0, order: isMobile ? 1 : 0 }}>
+          <select value={CURRENT_SPACE} onChange={(e) => switchSpace(e.target.value)} title="切換工作空間（各空間資料獨立）"
+            style={{ border: `1px solid ${BORDER}`, background: SURFACE, color: TEXT, borderRadius: 8, padding: isMobile ? "5px 8px" : "7px 10px", fontSize: 13, fontWeight: 600, cursor: "pointer", outline: "none" }}>
+            {SPACES.map(s => <option key={s.id} value={s.id}>{s.icon} {s.name}</option>)}
+          </select>
         </div>
         {/* KPI cards inline（手機改 2×2、整列獨佔一行）*/}
         <div style={{ display: "grid", gridTemplateColumns: isMobile ? "repeat(2,1fr)" : "repeat(4,minmax(110px,1fr))", gap: 8, flex: isMobile ? "1 1 100%" : 1, minWidth: isMobile ? 0 : 360, order: isMobile ? 2 : 0 }}>
@@ -3188,7 +3214,7 @@ function AIUsagePanel() {
   const [loading, setLoading] = useState(true);
   const load = async () => {
     setLoading(true);
-    try { const r = await window.storage.get("pm_ai_usage", true); setLog(r && r.value ? JSON.parse(r.value) : []); }
+    try { const r = await window.storage.get(K("pm_ai_usage"), true); setLog(r && r.value ? JSON.parse(r.value) : []); }
     catch (_) { setLog([]); }
     setLoading(false);
   };
