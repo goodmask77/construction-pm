@@ -453,9 +453,9 @@ export default function SequenceView({
                 ) : (
                   /* 細條列：可點(記錄)/拖曳(設工期)；施工範圍＝整格上狀態色，再框相同範圍可取消 */
                   <div style={{ position: "relative", display: "flex", flex: "0 0 auto" }}>
-                    {winDays.map((i) => { const t = i === TODAY_IDX, inSpan = inRange(it, i), log = logMap[`${it.id}|${dayKey(i)}`]; return (
+                    {winDays.map((i) => { const t = i === TODAY_IDX, inSpan = inRange(it, i), log = logMap[`${it.id}|${dayKey(i)}`], planned = i > TODAY_IDX; return (
                       <div key={i} onMouseDown={(e) => canEdit && setSel({ itemId: it.id, a: i, b: i, x: e.clientX, y: e.clientY })} onMouseEnter={() => canEdit && setSel(s => s && s.itemId === it.id ? { ...s, b: i } : s)} style={{ width: DAY_W, flexShrink: 0, boxSizing: "border-box", borderLeft: `1px solid ${C.line}`, cursor: canEdit ? "pointer" : "default", userSelect: "none", background: inSel(it.id, i) ? ACCENT_SOFT : inSpan ? w.tint : t ? "#FFFBEF" : "transparent", position: "relative", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                        {canEdit && !log && <span className="thin-add" style={{ fontSize: 11, color: C.faint }}>＋ 記錄</span>}
+                        {canEdit && !log && <span className="thin-add" style={{ fontSize: 11, color: planned ? ACCENT : C.faint }}>{planned ? "點此預排" : "＋ 記錄"}</span>}
                         {log && <span onClick={(e) => { e.stopPropagation(); setQuick({ itemId: log.itemId, date: log.date, x: e.clientX, y: e.clientY }); }} onMouseEnter={(e) => setTip({ l: log, x: e.clientX, y: e.clientY, item: it.name })} onMouseLeave={() => setTip(null)} style={{ position: "absolute", left: DAY_W / 2 - 4, top: ROW_THIN / 2 - 4, width: 8, height: 8, borderRadius: 4, background: dotFill(log), boxShadow: "0 0 0 1px rgba(0,0,0,.4)", cursor: "pointer", zIndex: 3 }} />}
                       </div>); })}
                   </div>
