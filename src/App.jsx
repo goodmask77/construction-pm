@@ -933,19 +933,23 @@ function IssuesView({ canEdit, requireLogin, confirm }) {
   const [nd, setNd] = useState({ desc: "", category: "其他", due: "", track: true });
 
   useEffect(() => {
+    // 保險：避免 Supabase 讀取卡住造成永久「載入中…」，最多 8 秒就先顯示空清單
+    const safety = setTimeout(() => setIssues(prev => prev === null ? [] : prev), 8000);
+    const withTimeout = (p, ms = 7000) => Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error("timeout")), ms))]);
     (async () => {
       let iss = [];
-      try { const r = await window.storage.get(K("pm_issues"), true); iss = r && r.value ? JSON.parse(r.value) : []; } catch (_) {}
+      try { const r = await withTimeout(window.storage.get(K("pm_issues"), true)); iss = r && r.value ? JSON.parse(r.value) : []; } catch (_) {}
       setIssues(iss);
       let list = null;
-      try { const c = await window.storage.get(K("pm_todo_cats"), true); const arr = c && c.value ? JSON.parse(c.value) : null; if (Array.isArray(arr) && arr.length) list = arr; } catch (_) {}
+      try { const c = await withTimeout(window.storage.get(K("pm_todo_cats"), true)); const arr = c && c.value ? JSON.parse(c.value) : null; if (Array.isArray(arr) && arr.length) list = arr; } catch (_) {}
       const base = list || DEFAULT_TODO_CATS;
       // 自我修復：項目用到、但分類清單沒有的分類（例如 D哥 從 LINE 新增的「未來想法」）→ 自動補進清單
       const orphans = [...new Set(iss.map(i => i.category).filter(c => c && !base.includes(c)))];
       const merged = orphans.length ? [...base, ...orphans] : base;
       setCats(merged);
       if (orphans.length) { try { await window.storage.set(K("pm_todo_cats"), JSON.stringify(merged), true); } catch (_) {} }
-    })();
+    })().finally(() => clearTimeout(safety));
+    return () => clearTimeout(safety);
   }, []);
 
   const save = async (list) => {
