@@ -850,10 +850,28 @@ export default function App() {
 }
 
 // ── 問題集 / 待辦（資料來自 LINE Bot 寫入的 pm_issues）────────────────────────
+const TODO_CATS = ["工地問題", "採購交期", "待定案", "其他"];
+const CAT_COLOR = { "工地問題": "#C2872E", "採購交期": "#2E6FB0", "待定案": "#8B5CF6", "其他": SUB };
+const catOf = (it) => it.category || (it.source === "todo" ? "其他" : "工地問題");
+const twDateStr = () => new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Taipei" });
+const dueInfo = (due) => {
+  if (!due) return null;
+  const today = twDateStr();
+  const d = Math.round((Date.parse(due + "T00:00:00Z") - Date.parse(today + "T00:00:00Z")) / 86400000);
+  if (d < 0) return { txt: `逾期 ${-d} 天`, color: "#DC2626", bold: true };
+  if (d === 0) return { txt: "今天到期", color: "#DC2626", bold: true };
+  if (d <= 3) return { txt: `剩 ${d} 天`, color: "#C2872E", bold: true };
+  return { txt: `${due}`, color: SUB, bold: false };
+};
+
 function IssuesView({ canEdit, requireLogin, confirm }) {
   const [issues, setIssues] = useState(null);
   const [filter, setFilter] = useState("open");
+  const [catFilter, setCatFilter] = useState("全部");
   const [lightbox, setLightbox] = useState(null);
+  const [editId, setEditId] = useState(null);
+  const [showAdd, setShowAdd] = useState(false);
+  const [nd, setNd] = useState({ desc: "", category: "其他", due: "", track: true });
 
   useEffect(() => {
     (async () => {
@@ -867,18 +885,41 @@ function IssuesView({ canEdit, requireLogin, confirm }) {
     try { await window.storage.set("pm_issues", JSON.stringify(list), true); } catch (_) {}
   };
   const guard = () => { if (!canEdit) { requireLogin && requireLogin(); return false; } return true; };
-  const toggleDone = (id) => { if (!guard()) return; save(issues.map(i => i.id === id ? { ...i, status: i.status === "done" ? "open" : "done" } : i)); };
-  const del = async (id) => { if (!guard()) return; if (await confirm("刪除這筆問題？")) save(issues.filter(i => i.id !== id)); };
+  const patch = (id, fields) => { if (!guard()) return; save(issues.map(i => i.id === id ? { ...i, ...fields } : i)); };
+  const toggleDone = async (it) => {
+    if (!guard()) return;
+    if (it.status === "done") { patch(it.id, { status: "open" }); return; }
+    const ans = it.track ? (window.prompt("這件的結論／答案是？（可留空，直接標完成）", it.answer || "") ?? "") : "";
+    patch(it.id, { status: "done", track: false, answer: ans || it.answer || "" });
+  };
+  const del = async (id) => { if (!guard()) return; if (await confirm("刪除這筆事項？")) save(issues.filter(i => i.id !== id)); };
+  const addNew = () => {
+    if (!guard()) return;
+    const desc = nd.desc.trim(); if (!desc) return;
+    const entry = { id: "is-" + Math.random().toString(36).slice(2, 8), desc, category: nd.category, due: nd.due, remindEnd: "", track: !!nd.track, status: "open", source: "todo", by: "App", ts: new Date().toISOString(), nudges: 0, answer: "", catName: "", catId: "", photoUrl: "" };
+    save([entry, ...issues]);
+    setNd({ desc: "", category: "其他", due: "", track: true }); setShowAdd(false);
+  };
 
   if (issues === null) return <div style={{ padding: 40, color: SUB, fontSize: 14 }}>載入中…</div>;
   const open = issues.filter(i => i.status !== "done");
-  const shown = filter === "open" ? open : issues;
+  let shown = filter === "open" ? open : issues;
+  if (catFilter !== "全部") shown = shown.filter(i => catOf(i) === catFilter);
+  // 待處理：依交期排序（有交期且早的在前）
+  shown = [...shown].sort((a, b) => {
+    if (a.status === "done" && b.status !== "done") return 1;
+    if (b.status === "done" && a.status !== "done") return -1;
+    const ad = a.due || "9999", bd = b.due || "9999";
+    return ad.localeCompare(bd);
+  });
+  const inp = { padding: "6px 8px", borderRadius: 7, border: `1px solid ${BORDER}`, fontSize: 13, background: "#fff", color: TEXT };
 
   return (
     <div>
-      <div style={{ display: "flex", alignItems: "center", gap: 12, margin: "8px 0 16px", flexWrap: "wrap" }}>
-        <div style={{ fontSize: 17, fontWeight: 700, color: TEXT }}>⚠️ 問題集 / 待辦</div>
+      <div style={{ display: "flex", alignItems: "center", gap: 12, margin: "8px 0 12px", flexWrap: "wrap" }}>
+        <div style={{ fontSize: 17, fontWeight: 700, color: TEXT }}>⚠️ 事項 / 待辦 / 問題</div>
         <div style={{ fontSize: 12.5, color: SUB }}>{open.length} 項待處理</div>
+        <button onClick={() => setShowAdd(s => !s)} style={{ padding: "5px 14px", borderRadius: 20, border: `1px solid ${ACCENT}`, fontSize: 12.5, cursor: "pointer", background: showAdd ? ACCENT : "transparent", color: showAdd ? "#fff" : ACCENT, fontWeight: 600 }}>＋ 新增事項</button>
         <div style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
           {[["open", "待處理"], ["all", "全部"]].map(([k, l]) => (
             <button key={k} onClick={() => setFilter(k)} style={{ padding: "5px 14px", borderRadius: 20, border: `1px solid ${BORDER}`, fontSize: 12.5, cursor: "pointer", background: filter === k ? ACCENT : "transparent", color: filter === k ? "#fff" : SUB, fontWeight: filter === k ? 700 : 500 }}>{l}</button>
@@ -886,30 +927,65 @@ function IssuesView({ canEdit, requireLogin, confirm }) {
         </div>
       </div>
 
+      {/* 分類篩選 */}
+      <div style={{ display: "flex", gap: 6, marginBottom: 14, flexWrap: "wrap" }}>
+        {["全部", ...TODO_CATS].map(c => (
+          <button key={c} onClick={() => setCatFilter(c)} style={{ padding: "4px 12px", borderRadius: 20, border: `1px solid ${catFilter === c ? (c === "全部" ? TEXT : CAT_COLOR[c]) : BORDER}`, fontSize: 12, cursor: "pointer", background: catFilter === c ? (c === "全部" ? TEXT : CAT_COLOR[c]) : "transparent", color: catFilter === c ? "#fff" : SUB, fontWeight: catFilter === c ? 700 : 500 }}>{c}</button>
+        ))}
+      </div>
+
+      {/* 新增表單 */}
+      {showAdd && (
+        <div style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: 12, padding: 14, marginBottom: 14, display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+          <input value={nd.desc} onChange={e => setNd({ ...nd, desc: e.target.value })} placeholder="要記什麼？例：訂製家具交期確認" style={{ ...inp, flex: "1 1 260px" }} />
+          <select value={nd.category} onChange={e => setNd({ ...nd, category: e.target.value })} style={inp}>{TODO_CATS.map(c => <option key={c} value={c}>{c}</option>)}</select>
+          <label style={{ fontSize: 12.5, color: SUB }}>交期 <input type="date" value={nd.due} onChange={e => setNd({ ...nd, due: e.target.value })} style={inp} /></label>
+          <label style={{ fontSize: 12.5, color: SUB, display: "flex", alignItems: "center", gap: 4, cursor: "pointer" }}><input type="checkbox" checked={nd.track} onChange={e => setNd({ ...nd, track: e.target.checked })} />🔔 盯到我回</label>
+          <button onClick={addNew} style={{ padding: "7px 18px", borderRadius: 7, border: "none", background: ACCENT, color: "#fff", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>記下</button>
+        </div>
+      )}
+
       {shown.length === 0 ? (
         <div style={{ padding: 40, textAlign: "center", color: SUB, fontSize: 14, background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: 12 }}>
-          {filter === "open" ? "🎉 目前沒有待處理的問題" : "尚無問題記錄"}
-          <div style={{ fontSize: 12, marginTop: 8 }}>在 LINE 拍照說「檢查這張」或打字報問題，D哥 會幫你記進來</div>
+          {filter === "open" ? "🎉 目前沒有待處理的事項" : "尚無記錄"}
+          <div style={{ fontSize: 12, marginTop: 8 }}>在 LINE 跟 D哥 說「幫我記…」「追一下…」，或按上面「＋ 新增事項」</div>
         </div>
       ) : (
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(280px,1fr))", gap: 12 }}>
-          {shown.map(it => (
-            <div key={it.id} style={{ background: "#fff", border: `1px solid ${BORDER}`, borderRadius: 12, overflow: "hidden", opacity: it.status === "done" ? 0.6 : 1 }}>
-              {it.photoUrl && <img src={it.photoUrl} alt="" onClick={() => setLightbox(it.photoUrl)} style={{ width: "100%", height: 150, objectFit: "cover", cursor: "zoom-in", display: "block" }} />}
-              <div style={{ padding: 12 }}>
-                <div style={{ fontSize: 14, color: TEXT, lineHeight: 1.5, fontWeight: 500, textDecoration: it.status === "done" ? "line-through" : "none" }}>{it.desc}</div>
-                <div style={{ display: "flex", gap: 6, flexWrap: "wrap", margin: "8px 0", alignItems: "center" }}>
-                  {it.catName && <span style={{ fontSize: 11, background: ACCENT_SOFT, color: ACCENT, borderRadius: 6, padding: "2px 8px", fontWeight: 600 }}>{it.catName}</span>}
-                  <span style={{ fontSize: 11, color: it.status === "done" ? "#3C8C3C" : "#C2872E", fontWeight: 600 }}>{it.status === "done" ? "✅ 已解決" : "🔴 待處理"}</span>
-                  <span style={{ fontSize: 10.5, color: SUB }}>{(it.ts || "").slice(0, 10)} · {it.by || ""}</span>
-                </div>
-                <div style={{ display: "flex", gap: 8 }}>
-                  <button onClick={() => toggleDone(it.id)} style={{ flex: 1, padding: "6px 0", borderRadius: 7, border: `1px solid ${BORDER}`, background: it.status === "done" ? "transparent" : "#EAF6EA", color: it.status === "done" ? SUB : "#3C8C3C", fontSize: 12.5, fontWeight: 600, cursor: "pointer" }}>{it.status === "done" ? "↩ 重開" : "✅ 標記已解決"}</button>
-                  <button onClick={() => del(it.id)} style={{ padding: "6px 12px", borderRadius: 7, border: `1px solid ${BORDER}`, background: "transparent", color: "#DC2626", fontSize: 12.5, cursor: "pointer" }}>刪除</button>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(290px,1fr))", gap: 12 }}>
+          {shown.map(it => {
+            const cat = catOf(it); const di = it.status !== "done" ? dueInfo(it.due) : null; const editing = editId === it.id;
+            return (
+              <div key={it.id} style={{ background: "#fff", border: `1px solid ${di && di.bold ? di.color : BORDER}`, borderRadius: 12, overflow: "hidden", opacity: it.status === "done" ? 0.6 : 1 }}>
+                {it.photoUrl && <img src={it.photoUrl} alt="" onClick={() => setLightbox(it.photoUrl)} style={{ width: "100%", height: 150, objectFit: "cover", cursor: "zoom-in", display: "block" }} />}
+                <div style={{ padding: 12 }}>
+                  <div style={{ fontSize: 14, color: TEXT, lineHeight: 1.5, fontWeight: 500, textDecoration: it.status === "done" ? "line-through" : "none" }}>{it.desc}</div>
+                  {it.answer && <div style={{ fontSize: 12, color: "#3C8C3C", marginTop: 4 }}>✔ 答案：{it.answer}</div>}
+                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap", margin: "8px 0", alignItems: "center" }}>
+                    <span style={{ fontSize: 11, background: CAT_COLOR[cat] + "22", color: CAT_COLOR[cat], borderRadius: 6, padding: "2px 8px", fontWeight: 700 }}>{cat}</span>
+                    {it.catName && <span style={{ fontSize: 11, background: ACCENT_SOFT, color: ACCENT, borderRadius: 6, padding: "2px 8px", fontWeight: 600 }}>{it.catName}</span>}
+                    {di && <span style={{ fontSize: 11, color: di.color, fontWeight: di.bold ? 700 : 500 }}>📅 {di.txt}</span>}
+                    {it.status !== "done" && it.track && <span style={{ fontSize: 11, color: "#C2872E", fontWeight: 600 }}>🔔追蹤{it.nudges ? `·已提醒${it.nudges}次` : ""}</span>}
+                    <span style={{ fontSize: 11, color: it.status === "done" ? "#3C8C3C" : "#C2872E", fontWeight: 600 }}>{it.status === "done" ? "✅ 已解決" : "🔴 待處理"}</span>
+                  </div>
+
+                  {editing && (
+                    <div style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: 8, padding: 10, margin: "6px 0", display: "flex", flexDirection: "column", gap: 8 }}>
+                      <label style={{ fontSize: 12, color: SUB, display: "flex", justifyContent: "space-between", alignItems: "center" }}>分類 <select value={cat} onChange={e => patch(it.id, { category: e.target.value })} style={inp}>{TODO_CATS.map(c => <option key={c} value={c}>{c}</option>)}</select></label>
+                      <label style={{ fontSize: 12, color: SUB, display: "flex", justifyContent: "space-between", alignItems: "center" }}>交期 <input type="date" value={it.due || ""} onChange={e => patch(it.id, { due: e.target.value })} style={inp} /></label>
+                      <label style={{ fontSize: 12, color: SUB, display: "flex", justifyContent: "space-between", alignItems: "center" }}>提醒終止日 <input type="date" value={it.remindEnd || ""} onChange={e => patch(it.id, { remindEnd: e.target.value })} style={inp} /></label>
+                      <label style={{ fontSize: 12, color: SUB, display: "flex", alignItems: "center", gap: 6, cursor: "pointer" }}><input type="checkbox" checked={it.track !== false} onChange={e => patch(it.id, { track: e.target.checked })} />🔔 主動追到我回（越近期限越密集提醒）</label>
+                    </div>
+                  )}
+
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <button onClick={() => toggleDone(it)} style={{ flex: 1, padding: "6px 0", borderRadius: 7, border: `1px solid ${BORDER}`, background: it.status === "done" ? "transparent" : "#EAF6EA", color: it.status === "done" ? SUB : "#3C8C3C", fontSize: 12.5, fontWeight: 600, cursor: "pointer" }}>{it.status === "done" ? "↩ 重開" : "✅ 完成/給答案"}</button>
+                    <button onClick={() => setEditId(editing ? null : it.id)} style={{ padding: "6px 10px", borderRadius: 7, border: `1px solid ${editing ? ACCENT : BORDER}`, background: editing ? ACCENT : "transparent", color: editing ? "#fff" : SUB, fontSize: 12.5, cursor: "pointer" }}>⚙️</button>
+                    <button onClick={() => del(it.id)} style={{ padding: "6px 10px", borderRadius: 7, border: `1px solid ${BORDER}`, background: "transparent", color: "#DC2626", fontSize: 12.5, cursor: "pointer" }}>刪</button>
+                  </div>
                 </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
 
