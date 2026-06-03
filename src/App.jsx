@@ -1166,6 +1166,8 @@ function GroupsView({ cats, canEdit, requireLogin }) {
   const toggleDigest = (gid) => { if (!guard()) return; persist({ ...cfg, [gid]: { ...(cfg[gid] || {}), digest: !effDigest(gid) } }); };
   const effMonitor = (gid) => (cfg[gid]?.monitor === true);
   const toggleMonitor = (gid) => { if (!guard()) return; persist({ ...cfg, [gid]: { ...(cfg[gid] || {}), monitor: !effMonitor(gid) } }); };
+  const effChat = (gid) => cfg[gid]?.chat || (effMode(gid) === "internal" ? "normal" : "quiet");
+  const setChat = (gid, val) => { if (!guard()) return; persist({ ...cfg, [gid]: { ...(cfg[gid] || {}), chat: val } }); };
   const renameGroup = (gid, cur) => { if (!guard()) return; const n = window.prompt("這個群的顯示名稱（D哥抓不到名字時可手動命名）", cur || ""); if (n === null) return; persist({ ...cfg, [gid]: { ...(cfg[gid] || {}), name: n.trim() || undefined } }); };
   const removeGroup = (gid) => {
     if (!guard()) return;
@@ -1207,6 +1209,7 @@ function GroupsView({ cats, canEdit, requireLogin }) {
             <tr style={{ background: SURFACE }}>
               <th style={th}>群組</th>
               <th style={th}>類型</th>
+              <th style={th}>回覆程度</th>
               <th style={th}>綁定工程</th>
               <th style={{ ...th, textAlign: "center" }}>每日彙報</th>
               <th style={{ ...th, textAlign: "center" }}>即時監控</th>
@@ -1235,6 +1238,13 @@ function GroupsView({ cats, canEdit, requireLogin }) {
                       <option value="internal">內部群</option>
                       <option value="vendor">廠商群</option>
                       <option value="locked">鎖定</option>
+                    </select>
+                  </td>
+                  <td style={td}>
+                    <select value={effChat(gid)} onChange={e => setChat(gid, e.target.value)} title="安靜=只有叫它才回；正常=有正事才回、不亂聊；活潑=正事會回＋偶爾俏皮接話" style={selStyle}>
+                      <option value="quiet">🤫 安靜</option>
+                      <option value="normal">🙂 正常</option>
+                      <option value="lively">😄 活潑</option>
                     </select>
                   </td>
                   <td style={td}>
