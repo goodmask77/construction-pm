@@ -2648,6 +2648,7 @@ function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols,
             const groupRaw = cat ? catRawEst(cat) : group.rows.reduce((s,r) => s + estAmount(r.item), 0); // 原報價（未折）
             const disc = cat ? catDiscount(cat) : { hasDiscount: false, factor: 1, pct: 0, sub: 0 };
             const groupEst = cat ? catEstAfter(cat) : groupRaw; // 議價後含稅
+            const groupPretax = cat ? catPretaxSub(cat) : 0; // 未稅小計（對應報價單未稅總價）
             const groupSaved = groupRaw - groupEst;
             const groupPaid = cat ? catPaid(cat) : 0; // 已付＝大項付款紀錄加總
             const payCount = cat ? (cat.payments?.length || 0) : 0;
@@ -2692,12 +2693,13 @@ function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols,
                     </div>
                   )}
                   <div style={{ flex: 1 }} />
+                  <div style={{ fontSize: 12, color: SUB }} title="未稅小計＝Σ數量×單價，對應報價單的未稅總價">未稅 <span style={{ color: TEXT, fontVariantNumeric: "tabular-nums", fontWeight: 500 }}>{fmt(groupPretax)}</span></div>
                   {disc.hasDiscount ? (<>
                     <div style={{ fontSize: 12, color: SUB }}>原報價 <span style={{ color: "#A99F88", textDecoration: "line-through", fontVariantNumeric: "tabular-nums" }}>{fmt(groupRaw)}</span></div>
                     <div style={{ fontSize: 12, color: SUB }}>議價後 <span style={{ color: TEXT, fontVariantNumeric: "tabular-nums", fontWeight: 600 }}>{fmt(groupEst)}</span></div>
                     <div style={{ fontSize: 12, color: "#C0392B", fontWeight: 600, fontVariantNumeric: "tabular-nums" }} title={disc.mode === "amt" ? `固定折讓 ${fmt(disc.amt)}（直接從含稅總價扣）` : `折 ${Math.round(disc.pct * 10) / 10}%`}>省 {fmt(groupSaved)}（-{Math.round(disc.pct * 10) / 10}%）</div>
                   </>) : (
-                    <div style={{ fontSize: 12, color: SUB }}>預估 <span style={{ color: TEXT, fontVariantNumeric: "tabular-nums", fontWeight: 500 }}>{fmt(groupEst)}</span></div>
+                    <div style={{ fontSize: 12, color: SUB }} title="含稅總計">含稅 <span style={{ color: TEXT, fontVariantNumeric: "tabular-nums", fontWeight: 600 }}>{fmt(groupEst)}</span></div>
                   )}
                   <button onClick={() => cat && setPayCatId(catId)} title="檢視／新增付款紀錄" style={{ fontSize: 12, color: SUB, background: "none", border: "none", cursor: "pointer", padding: 0 }}>已付 <span style={{ color: "#3C8C3C", fontVariantNumeric: "tabular-nums", fontWeight: 500 }}>{fmt(groupPaid)}</span>{payCount > 0 && <span style={{ fontSize: 10, color: "#3C8C3C", marginLeft: 2 }}>·{payCount}筆</span>}</button>
                   <div style={{ fontSize: 12, color: SUB }}>未付 <span style={{ color: groupUnpaid < 0 ? "#DC2626" : "#C2872E", fontVariantNumeric: "tabular-nums", fontWeight: 500 }}>{groupUnpaid < 0 ? `溢付 ${fmt(-groupUnpaid)}` : fmt(groupUnpaid)}</span></div>
@@ -2856,7 +2858,7 @@ function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols,
             {(() => { const anyDisc = cats.some(c => catDiscount(c).hasDiscount); return
             orderedCols.map(col => {
               const cs = { ...cellStyle(col) };
-              if (col.id === "name") return <div key={col.id} style={{ ...cs, fontWeight: 600, color: "#211C15" }}>總計（{rows.length} 筆）{anyDisc && <span style={{ fontWeight: 400, color: SUB, fontSize: 11 }}>　已含議價折扣</span>}</div>;
+              if (col.id === "name") { const preSum = rows.reduce((s, r) => s + pretaxOf(r.item), 0); return <div key={col.id} style={{ ...cs, fontWeight: 600, color: "#211C15", gap: 8, flexWrap: "wrap" }}>總計（{rows.length} 筆）<span style={{ fontWeight: 500, color: SUB, fontSize: 12, fontVariantNumeric: "tabular-nums" }}>未稅小計 {fmt(preSum)}</span>{anyDisc && <span style={{ fontWeight: 400, color: SUB, fontSize: 11 }}>· 已含議價折扣</span>}</div>; }
               if (col.id === "estTotal" && anyDisc) {
                 const rawSum = rows.reduce((s, r) => s + estAmount(r.item), 0);
                 const afterSum = rows.reduce((s, r) => s + estAfterOf(r.item), 0);
