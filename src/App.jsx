@@ -582,77 +582,58 @@ export default function App() {
     window.storage.set(K("pm_seqlogs"), JSON.stringify(list), true).catch(()=>{});
   };
 
-  // load
+  // load — 全部 key 平行載入（不再一個一個排隊），大幅縮短開啟時間
   useEffect(() => {
+    let cancelled = false;
     (async () => {
-      const d = await loadData();
-      const seed = CURRENT_SPACE === "construction" ? INITIAL_CATEGORIES : []; // 非工程空間從空白開始
+      const getV = (k) => window.storage.get(K(k), true).then(r => (r && r.value) ? r.value : null).catch(() => null);
+      const parse = (v, def) => { if (!v) return def; try { return JSON.parse(v); } catch (_) { return def; } };
+      const [d, gc, sv, log, savedName, kuV, alog, wlV, phV, acV, slV, ccV, evV, jnV, plV] = await Promise.all([
+        loadData(), loadGlobalChat(), loadSettings(), loadAILog(), loadRole(),
+        getV("pm_known_users"), loadActivityLog(),
+        getV("pm_worklog"), getV("pm_photos"), getV("pm_accounts"), getV("pm_seqlogs"),
+        getV("pm_columns"), getV("pm_events"), getV("pm_journal"), getV("pm_plans"),
+      ]);
+      if (cancelled) return;
+
+      const seed = CURRENT_SPACE === "construction" ? INITIAL_CATEGORIES : [];
       const migrated = migratePayments(d || seed);
       setCats(migrated);
-      if (migrated !== (d || seed)) saveData(migrated); // 遷移後持久化
+      if (migrated !== (d || seed)) saveData(migrated);
 
-      const gc = await loadGlobalChat();
       setGlobalChat(gc);
-      const sv = await loadSettings();
       const defSettings = CURRENT_SPACE === "construction"
         ? { projectName:"宏匯 GROUN:D", projectAddress:"台北市內湖區瑞光路337號", ownerName:"", contractorName:"碩藝室內裝修有限公司", targetDate:"", notes:"", priorities:[], dailyCheckEnabled:false, lineGroupId: DEFAULT_LINE_GROUP, lineNotify: {} }
         : { projectName: SPACES.find(s=>s.id===CURRENT_SPACE)?.name || "工作空間", projectAddress:"", ownerName:"", contractorName:"", targetDate:"", notes:"", priorities:[], dailyCheckEnabled:false, lineGroupId:"", lineNotify: {} };
       setSettings(sv && Object.keys(sv).length ? sv : defSettings);
-      const log = await loadAILog();
       setAiLog(log);
-      const savedName = await loadRole();
-      if (savedName) { setUserName(savedName); }
+      if (savedName) setUserName(savedName);
+
       // 未登入 → 訪客唯讀瀏覽（不強制登入）
-      try {
-        const ku = await window.storage.get(K("pm_known_users"), true);
-        if (ku && ku.value) {
-          const arr = JSON.parse(ku.value).filter(u => u !== ADMIN_USER);
-          setKnownUsers(arr);
-          // 清掉共享儲存中殘留的管理員帳號，避免顯示
-          window.storage.set(K("pm_known_users"), JSON.stringify(arr), true).catch(()=>{});
-        } else {
-          setKnownUsers([]);
-        }
-      } catch(_){ setKnownUsers([]); }
-      const alog = await loadActivityLog();
+      const kuArr = parse(kuV, null);
+      if (Array.isArray(kuArr)) { const arr = kuArr.filter(u => u !== ADMIN_USER); setKnownUsers(arr); window.storage.set(K("pm_known_users"), JSON.stringify(arr), true).catch(()=>{}); }
+      else setKnownUsers([]);
+
       setActivityLog(alog);
+      if (wlV) setWorklog(parse(wlV, []));
+      if (phV) setPhotos(parse(phV, []));
+      if (acV) setAccounts(parse(acV, []));
+      if (slV) setSeqLogs(parse(slV, []));
+      if (evV) setEvents(parse(evV, []));
+      if (jnV) setJournal(parse(jnV, []));
+      if (plV) setPlans(parse(plV, []));
+
+      // 統一欄位：以新版內建欄重建 + 保留真正的自訂欄
       try {
-        const wl = await window.storage.get(K("pm_worklog"), true);
-        if (wl && wl.value) setWorklog(JSON.parse(wl.value));
-      } catch(_){}
-      try {
-        const ph = await window.storage.get(K("pm_photos"), true);
-        if (ph && ph.value) setPhotos(JSON.parse(ph.value));
-      } catch(_){}
-      try {
-        const ac = await window.storage.get(K("pm_accounts"), true);
-        if (ac && ac.value) setAccounts(JSON.parse(ac.value));
-      } catch(_){}
-      try {
-        const sl = await window.storage.get(K("pm_seqlogs"), true);
-        if (sl && sl.value) setSeqLogs(JSON.parse(sl.value));
-      } catch(_){}
-      try {
-        // 統一欄位設定：內建欄位(成本費用明細新版) + 使用者自訂欄位
         const builtins = COLS.map(c => ({ id:c.id, label:c.label, builtin:true, fixed: !!c.fixed, w:c.w }));
         const builtinIds = new Set(COLS.map(c => c.id));
-        const cc = await window.storage.get(K("pm_columns"), true);
-        let customs = [];
-        if (cc && cc.value) {
-          try {
-            // 只保留「真正的使用者自訂欄」：非內建、id 不與新內建衝突、且不是重複的「稅金」公式欄
-            customs = JSON.parse(cc.value).filter(c => c.builtin === false && !builtinIds.has(c.id) && c.label !== "稅金");
-          } catch(_) {}
-        }
-        // 一律以新版內建欄位重建（移除舊的 實際/重複稅金 欄；遷移到 預估→已付→未付 模型）
+        const customs = parse(ccV, []).filter(c => c.builtin === false && !builtinIds.has(c.id) && c.label !== "稅金");
         const merged = [...builtins, ...customs];
         setCustomCols(merged);
         window.storage.set(K("pm_columns"), JSON.stringify(merged), true).catch(()=>{});
       } catch(_){}
-      try { const ev = await window.storage.get(K("pm_events"), true); if (ev&&ev.value) setEvents(JSON.parse(ev.value)); } catch(_){}
-      try { const jn = await window.storage.get(K("pm_journal"), true); if (jn&&jn.value) setJournal(JSON.parse(jn.value)); } catch(_){}
-      try { const pl = await window.storage.get(K("pm_plans"), true); if (pl&&pl.value) setPlans(JSON.parse(pl.value)); } catch(_){}
     })();
+    return () => { cancelled = true; };
   }, []);
 
   // auto-save
@@ -1115,11 +1096,7 @@ function Review360View({ canEdit, requireLogin, confirm, isAdmin, userName }) {
 
       {tab === "fill" && (<>
         <div style={{ ...card, display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-          <span style={{ fontSize: 13, color: SUB }}>我是：</span>
-          <select value={me} onChange={e => setMe(e.target.value)} style={{ border: `1px solid ${BORDER}`, borderRadius: 8, padding: "7px 10px", fontSize: 14, background: "#fff", color: TEXT, minWidth: 140 }}>
-            <option value="">— 選擇你自己 —</option>
-            {people.map(p => <option key={p.id} value={p.id}>{p.name}{p.dept ? `（${p.dept}）` : ""}</option>)}
-          </select>
+          <CrewMe people={people} me={me} />
           {people.length === 0 && <span style={{ fontSize: 12, color: "#C2872E" }}>請先到「設定」加入夥伴名單</span>}
         </div>
         {me && <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: 10 }}>
@@ -1370,20 +1347,15 @@ const CREW_ROLES = [["staff", "基層"], ["lead", "組長"], ["manager", "主管
 const roleLabel = (r) => (CREW_ROLES.find(x => x[0] === r) || ["staff", "基層"])[1];
 const canManageRole = (r) => r === "manager" || r === "admin";
 const meFromRoster = (people, userName) => (people.find(p => p.account && p.account === userName) || {}).id || "";
-// 目前身分（登入後即本人；admin 可切換測試其他人）
-const CrewMe = ({ people, me, setMe, isAdmin }) => {
+// 目前身分＝登入帳號對應的人（固定、不可切換，避免冒名頂替）
+const CrewMe = ({ people, me }) => {
   const cur = people.find(p => p.id === me);
+  if (!cur) return <div style={{ fontSize: 12.5, color: "#C2872E" }}>⚠ 你的登入帳號尚未綁定夥伴身分（到 360評鑑 → 設定，把你的「登入帳號」填到對應的人）。</div>;
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-      <span style={{ fontSize: 13, color: SUB }}>目前身分</span>
-      {isAdmin ? (
-        <select value={me} onChange={e => setMe(e.target.value)} title="登入後即你本人；管理員可切換測試其他人" style={{ border: `1px solid ${BORDER}`, borderRadius: 8, padding: "7px 10px", fontSize: 14, background: "#fff", color: TEXT, minWidth: 130 }}>
-          <option value="">—</option>{people.map(p => <option key={p.id} value={p.id}>{p.name}（{roleLabel(p.role)}）</option>)}
-        </select>
-      ) : (
-        <span style={{ fontSize: 14, fontWeight: 700, color: TEXT }}>{cur?.name || "—"}</span>
-      )}
-      {cur && <span style={{ fontSize: 11, background: canManageRole(cur.role) ? "#FEF3C7" : "#EFE7D6", color: canManageRole(cur.role) ? "#92400e" : SUB, borderRadius: 8, padding: "2px 8px", fontWeight: 600 }}>{roleLabel(cur.role)}</span>}
+      <span style={{ fontSize: 13, color: SUB }}>身分</span>
+      <span style={{ fontSize: 14, fontWeight: 700, color: TEXT }}>{cur.name}{cur.dept ? `（${cur.dept}）` : ""}</span>
+      <span style={{ fontSize: 11, background: canManageRole(cur.role) ? "#FEF3C7" : "#EFE7D6", color: canManageRole(cur.role) ? "#92400e" : SUB, borderRadius: 8, padding: "2px 8px", fontWeight: 600 }}>{roleLabel(cur.role)}</span>
     </div>
   );
 };
