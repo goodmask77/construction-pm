@@ -4506,7 +4506,8 @@ function ItemChat({ cat, item, setCats }) {
   const [aiLoading, setAiLoading] = useState(false);
   const endRef = useRef(null);
 
-  useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth" }); }, [item.chat]);
+  const didScrollItem = useRef(false);
+  useEffect(() => { endRef.current?.scrollIntoView({ behavior: didScrollItem.current ? "smooth" : "auto" }); didScrollItem.current = true; }, [item.chat]);
 
   const addMsg = (role, text) => {
     setCats(prev => prev.map(c => c.id === cat.id ? {
@@ -5173,7 +5174,8 @@ function GlobalAIPanel({ chat, setChat, onClose, cats, setCats, canEdit, confirm
     if (imgs.length) { e.preventDefault(); addFiles(imgs); }
   };
 
-  useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth" }); }, [chat]);
+  const didScroll = useRef(false);
+  useEffect(() => { endRef.current?.scrollIntoView({ behavior: didScroll.current ? "smooth" : "auto" }); didScroll.current = true; }, [chat]);
 
   const addMsg = (role, text) => {
     setChat(prev => {
