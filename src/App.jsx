@@ -5227,17 +5227,19 @@ function GlobalAIPanel({ chat, setChat, onClose, cats, setCats, canEdit, confirm
       if (actions.length > 0 && !canEdit) {
         addMsg("assistant", "🔒 需以管理員登入才能執行操作（目前為唯讀）。");
       } else if (actions.length > 0 && canEdit) {
-        const destructive = actions.some(a => ["clear_all","clear_items","clear_category_items","delete_category","delete_item"].includes(a.type));
+        // 任何「會改資料」的動作都先算出結果、跳確認讓你核對（避免建錯大項／清錯東西）
+        const { cats: newCats, settings: newSettings, worklog: newWorklog, results } = applyActions(actions, cats, settings, worklog);
+        const WRITE = ["clear_all","clear_items","clear_category_items","add_category","delete_category","set_category_budget","set_category_status","set_gantt","add_item","set_item","delete_item","set_setting","add_log"];
+        const willWrite = actions.some(a => WRITE.includes(a.type));
         let ok = true;
-        if (destructive && confirm) ok = await confirm("AI 將執行包含「清空 / 刪除」的操作，確定執行嗎？");
+        if (willWrite && confirm) ok = await confirm(`AI 要做這些變更，請先核對是不是對的：\n\n${results.map(r => "・" + r).join("\n")}\n\n確定執行嗎？`);
         if (ok) {
-          const { cats: newCats, settings: newSettings, worklog: newWorklog, results } = applyActions(actions, cats, settings, worklog);
           if (actions.some(a => ["clear_all","clear_items","clear_category_items","add_category","delete_category","set_category_budget","set_category_status","set_gantt","add_item","set_item","delete_item"].includes(a.type))) setCats(newCats);
           if (newSettings && setSettings && actions.some(a => a.type === "set_setting")) setSettings(newSettings);
           if (setWorklog && actions.some(a => a.type === "add_log")) setWorklog(newWorklog);
           addMsg("assistant", "✅ 已執行：\n" + results.map(r => "・" + r).join("\n"));
         } else {
-          addMsg("assistant", "已取消操作。");
+          addMsg("assistant", "好，已取消，沒有改動任何資料。");
         }
       }
     } catch (_) {
