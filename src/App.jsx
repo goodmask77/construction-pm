@@ -1251,6 +1251,7 @@ function FeedbackView({ canEdit, requireLogin }) {
   const [me, setMe] = useState("");
   const [tab, setTab] = useState("give");
   const [draft, setDraft] = useState({ toId: "", tags: [], text: "", anon: false });
+  const [wallFilter, setWallFilter] = useState("all"); // all | tome | byme
 
   useEffect(() => {
     const safety = setTimeout(() => setItems(prev => prev || []), 8000);
@@ -1325,9 +1326,17 @@ function FeedbackView({ canEdit, requireLogin }) {
       )}
 
       {tab === "wall" && (<>
-        <div style={{ ...card, padding: "10px 14px" }}>{meSelect}</div>
-        {items.length === 0 && <div style={{ textAlign: "center", color: "#A99F88", padding: "40px 0", fontSize: 14 }}>還沒有回饋，去「給回饋」開始吧。</div>}
-        {items.map(it => { const helped = (it.helpful || []).includes(me); const mine = it.toId === me; return (
+        <div style={{ ...card, padding: "10px 14px", display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+          {meSelect}
+          {me && <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+            {[["all", "全部"], ["tome", `給我的${items.filter(x => x.toId === me).length ? "·" + items.filter(x => x.toId === me).length : ""}`], ["byme", "我給的"]].map(([k, l]) =>
+              <button key={k} onClick={() => setWallFilter(k)} style={{ border: `1px solid ${wallFilter === k ? PRIMARY : BORDER}`, background: wallFilter === k ? PRIMARY : "transparent", color: wallFilter === k ? "#fff" : TEXT, borderRadius: 14, padding: "4px 12px", fontSize: 12.5, cursor: "pointer" }}>{l}</button>)}
+          </div>}
+        </div>
+        {me && wallFilter === "tome" && <div style={{ fontSize: 12, color: SUB, margin: "-4px 2px 10px" }}>👇 別人給你的回饋，覺得有幫助就按「幫到我」，給予者會加分。</div>}
+        {(() => { const list = items.filter(it => wallFilter === "all" || !me ? true : wallFilter === "tome" ? it.toId === me : it.fromId === me); return (<>
+        {list.length === 0 && <div style={{ textAlign: "center", color: "#A99F88", padding: "40px 0", fontSize: 14 }}>{items.length === 0 ? "還沒有回饋，去「給回饋」開始吧。" : "這個篩選沒有回饋。"}</div>}
+        {list.map(it => { const helped = (it.helpful || []).includes(me); const mine = it.toId === me; return (
           <div key={it.id} style={card}>
             <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6, fontSize: 13 }}>
               <span style={{ fontWeight: 600, color: TEXT }}>{it.anon ? "匿名夥伴" : nameOf(it.fromId)}</span>
@@ -1344,6 +1353,7 @@ function FeedbackView({ canEdit, requireLogin }) {
             </div>
           </div>
         ); })}
+        </>); })()}
       </>)}
     </div>
   );
@@ -1512,6 +1522,7 @@ function CrewRankView() {
   const [items, setItems] = useState(null);
   const [quests, setQuests] = useState({ quests: [], progress: [] });
   const [shop, setShop] = useState({ rewards: [], redemptions: [] });
+  const [polls, setPolls] = useState({ polls: [], votes: [] });
   useEffect(() => {
     const safety = setTimeout(() => setItems(prev => prev || []), 8000);
     (async () => {
@@ -1519,6 +1530,7 @@ function CrewRankView() {
       const f = await loadCrewJSON("kb_feedback", { items: [] }); setItems(f.items || []);
       setQuests(await loadCrewJSON("kb_quests", { quests: [], progress: [] }));
       setShop(await loadCrewJSON("kb_shop", { rewards: [], redemptions: [] }));
+      setPolls(await loadCrewJSON("kb_polls", { polls: [], votes: [] }));
     })().finally(() => clearTimeout(safety));
     return () => clearTimeout(safety);
   }, []);
@@ -1556,6 +1568,38 @@ function CrewRankView() {
         {board("💬 回饋王", "給出最多被肯定（幫到我）的回饋", "helpfulGot", "讚", "#3C8C3C")}
         {board("🌟 人氣王", "收到最多回饋", "received", "則", "#2E6FB0")}
       </div>
+      {/* 各項投票王（人物類投票同步進排行榜）*/}
+      {(() => {
+        const pp = (polls.polls || []).filter(p => p.peoplePoll);
+        if (!pp.length) return null;
+        const medal = ["🥇", "🥈", "🥉"];
+        return (
+          <div style={{ marginTop: 14 }}>
+            <div style={{ fontSize: 15, fontWeight: 700, color: TEXT, marginBottom: 10 }}>👑 各項投票王</div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 12 }}>
+              {pp.map(poll => {
+                const c = {}; poll.options.forEach(o => c[o.id] = 0);
+                (polls.votes || []).filter(v => v.pollId === poll.id).forEach(v => { if (c[v.choiceId] != null) c[v.choiceId]++; });
+                const ranked = poll.options.map(o => ({ id: o.id, name: people.find(p => p.id === o.id)?.name || o.label, dept: people.find(p => p.id === o.id)?.dept || "", votes: c[o.id] })).filter(x => x.votes > 0).sort((a, b) => b.votes - a.votes).slice(0, 6);
+                return (
+                  <div key={poll.id} style={{ background: "#fff", border: `1px solid ${BORDER}`, borderRadius: 12, padding: 16 }}>
+                    <div style={{ fontSize: 15, fontWeight: 700, color: TEXT, marginBottom: 10 }}>{poll.title}</div>
+                    {ranked.length === 0 && <div style={{ fontSize: 13, color: "#A99F88" }}>尚無投票</div>}
+                    {ranked.map((s, i) => (
+                      <div key={s.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "7px 0", borderTop: i ? "1px solid #F4EFE3" : "none" }}>
+                        <span style={{ width: 24, textAlign: "center", fontSize: i < 3 ? 16 : 13, color: SUB, fontWeight: 700 }}>{medal[i] || i + 1}</span>
+                        <span style={{ width: 30, height: 30, borderRadius: "50%", background: "#F3E4DE", color: ACCENT, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: 13, flexShrink: 0 }}>{s.name?.[0] || "?"}</span>
+                        <div style={{ flex: 1, minWidth: 0 }}><div style={{ fontSize: 13.5, fontWeight: 600, color: TEXT }}>{s.name}</div><div style={{ fontSize: 11, color: SUB }}>{s.dept}</div></div>
+                        <span style={{ fontSize: 16, fontWeight: 800, color: "#B8860B", fontVariantNumeric: "tabular-nums" }}>{s.votes}<span style={{ fontSize: 11, color: SUB, fontWeight: 400 }}> 票</span></span>
+                      </div>
+                    ))}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }
