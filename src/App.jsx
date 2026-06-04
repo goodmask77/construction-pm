@@ -828,19 +828,19 @@ export default function App() {
           <KnowledgeBaseView canEdit={canEditData} requireLogin={denyEdit} confirm={confirm} userName={userName} />
         )}
         {view === "r360" && (
-          <Review360View canEdit={canEditData} requireLogin={denyEdit} confirm={confirm} isAdmin={isAdmin} />
+          <Review360View canEdit={canEditData} requireLogin={denyEdit} confirm={confirm} isAdmin={isAdmin} userName={userName} />
         )}
         {view === "fb" && (
-          <FeedbackView canEdit={canEditData} requireLogin={denyEdit} />
+          <FeedbackView canEdit={canEditData} requireLogin={denyEdit} isAdmin={isAdmin} userName={userName} />
         )}
         {view === "quest" && (
-          <QuestView canEdit={canEditData} requireLogin={denyEdit} confirm={confirm} isAdmin={isAdmin} />
+          <QuestView canEdit={canEditData} requireLogin={denyEdit} confirm={confirm} isAdmin={isAdmin} userName={userName} />
         )}
         {view === "poll" && (
-          <PollView canEdit={canEditData} requireLogin={denyEdit} confirm={confirm} isAdmin={isAdmin} />
+          <PollView canEdit={canEditData} requireLogin={denyEdit} confirm={confirm} isAdmin={isAdmin} userName={userName} />
         )}
         {view === "shop" && (
-          <ShopView canEdit={canEditData} requireLogin={denyEdit} confirm={confirm} isAdmin={isAdmin} />
+          <ShopView canEdit={canEditData} requireLogin={denyEdit} confirm={confirm} isAdmin={isAdmin} userName={userName} />
         )}
         {view === "rank" && (
           <CrewRankView />
@@ -1048,7 +1048,7 @@ function KnowledgeBaseView({ canEdit, requireLogin, confirm, userName }) {
 
 // ── 夥伴中心：360 評鑑（設計原型；正式版接 Auth+正規表+權限/匿名）─────────────────
 const R360_DEFAULT_DIMS = ["工作態度", "團隊合作", "專業技能", "服務品質", "責任感", "學習成長"];
-function Review360View({ canEdit, requireLogin, confirm, isAdmin }) {
+function Review360View({ canEdit, requireLogin, confirm, isAdmin, userName }) {
   const [data, setData] = useState(null); // {dimensions, people, reviews}
   const [tab, setTab] = useState("fill"); // fill | result | setup
   const [me, setMe] = useState("");
@@ -1058,7 +1058,7 @@ function Review360View({ canEdit, requireLogin, confirm, isAdmin }) {
   useEffect(() => {
     const safety = setTimeout(() => setData(prev => prev || emptyR360()), 8000);
     (async () => {
-      try { const r = await window.storage.get(K("kb_360"), true); const d = r && r.value ? JSON.parse(r.value) : null; setData(normR360(d)); }
+      try { const r = await window.storage.get(K("kb_360"), true); const d = r && r.value ? JSON.parse(r.value) : null; const nd = normR360(d); setData(nd); setMe(meFromRoster(nd.people, userName)); }
       catch (_) { setData(emptyR360()); }
     })().finally(() => clearTimeout(safety));
     return () => clearTimeout(safety);
@@ -1185,14 +1185,18 @@ function Review360View({ canEdit, requireLogin, confirm, isAdmin }) {
         </div>
         <div style={card}>
           <div style={{ fontSize: 14, fontWeight: 700, color: TEXT, marginBottom: 10 }}>夥伴名單（{people.length}）</div>
-          {people.map(p => (
-            <div key={p.id} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
-              <input value={p.name} onChange={e => persist({ ...data, people: people.map(x => x.id === p.id ? { ...x, name: e.target.value } : x) })} placeholder="姓名" style={{ flex: 1, border: `1px solid ${BORDER}`, borderRadius: 8, padding: "6px 10px", fontSize: 13, background: "#fff", color: TEXT }} />
-              <input value={p.dept || ""} onChange={e => persist({ ...data, people: people.map(x => x.id === p.id ? { ...x, dept: e.target.value } : x) })} placeholder="部門" style={{ width: 90, border: `1px solid ${BORDER}`, borderRadius: 8, padding: "6px 10px", fontSize: 13, background: "#fff", color: TEXT }} />
+          <div style={{ display: "flex", gap: 8, fontSize: 10, color: SUB, marginBottom: 4, padding: "0 2px" }}><span style={{ flex: 1 }}>姓名</span><span style={{ width: 80 }}>部門</span><span style={{ width: 90 }}>層級</span><span style={{ width: 110 }}>登入帳號</span><span style={{ width: 20 }} /></div>
+          {people.map(p => { const up = (k, v) => persist({ ...data, people: people.map(x => x.id === p.id ? { ...x, [k]: v } : x) }); return (
+            <div key={p.id} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6, flexWrap: "wrap" }}>
+              <input value={p.name} onChange={e => up("name", e.target.value)} placeholder="姓名" style={{ flex: 1, minWidth: 90, border: `1px solid ${BORDER}`, borderRadius: 8, padding: "6px 10px", fontSize: 13, background: "#fff", color: TEXT }} />
+              <input value={p.dept || ""} onChange={e => up("dept", e.target.value)} placeholder="部門" style={{ width: 80, border: `1px solid ${BORDER}`, borderRadius: 8, padding: "6px 8px", fontSize: 13, background: "#fff", color: TEXT }} />
+              <select value={p.role || "staff"} onChange={e => up("role", e.target.value)} title="層級＝權限：主管/管理員可管理" style={{ width: 90, border: `1px solid ${canManageRole(p.role) ? "#C2872E" : BORDER}`, borderRadius: 8, padding: "6px 6px", fontSize: 13, background: "#fff", color: TEXT }}>{CREW_ROLES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select>
+              <input value={p.account || ""} onChange={e => up("account", e.target.value)} placeholder="登入帳號" title="對應登入身分（例：goodmask77）" style={{ width: 110, border: `1px solid ${BORDER}`, borderRadius: 8, padding: "6px 8px", fontSize: 13, background: "#fff", color: TEXT }} />
               <button onClick={() => { if (!guard()) return; confirm(`移除「${p.name}」？`).then(ok => ok && persist({ ...data, people: people.filter(x => x.id !== p.id) })); }} style={{ border: "none", background: "none", color: "#DC2626", cursor: "pointer", fontSize: 16 }}>×</button>
             </div>
-          ))}
-          <button onClick={() => { if (!guard()) return; persist({ ...data, people: [...people, { id: "p" + Date.now(), name: "", dept: "" }] }); }} style={{ border: `1px dashed ${BORDER}`, background: SURFACE, color: SUB, borderRadius: 8, padding: "6px 14px", fontSize: 13, cursor: "pointer", marginTop: 4 }}>＋ 新增夥伴</button>
+          ); })}
+          <button onClick={() => { if (!guard()) return; persist({ ...data, people: [...people, { id: "p" + Date.now(), name: "", dept: "", role: "staff", account: "" }] }); }} style={{ border: `1px dashed ${BORDER}`, background: SURFACE, color: SUB, borderRadius: 8, padding: "6px 14px", fontSize: 13, cursor: "pointer", marginTop: 4 }}>＋ 新增夥伴</button>
+          <div style={{ fontSize: 11, color: "#A99F88", marginTop: 8 }}>※ 層級＝權限：主管/管理員可新增關卡、發起投票、上架獎勵。登入帳號＝這個人登入後自動對應的身分（正式版接 Auth 後就不用選身分了）。</div>
         </div>
       </>)}
 
@@ -1245,7 +1249,7 @@ async function loadCrewRoster() {
   try { const r = await window.storage.get(K("kb_360"), true); const d = r && r.value ? JSON.parse(r.value) : null; return d?.people || []; } catch (_) { return []; }
 }
 
-function FeedbackView({ canEdit, requireLogin }) {
+function FeedbackView({ canEdit, requireLogin, isAdmin, userName }) {
   const [people, setPeople] = useState([]);
   const [items, setItems] = useState(null);
   const [me, setMe] = useState("");
@@ -1256,8 +1260,8 @@ function FeedbackView({ canEdit, requireLogin }) {
   useEffect(() => {
     const safety = setTimeout(() => setItems(prev => prev || []), 8000);
     (async () => {
-      setPeople(await loadCrewRoster());
-      try { const r = await window.storage.get(K("kb_feedback"), true); setItems(r && r.value ? JSON.parse(r.value).items || [] : []); } catch (_) { setItems([]); }
+      const r = await loadCrewRoster(); setPeople(r); setMe(meFromRoster(r, userName));
+      try { const rr = await window.storage.get(K("kb_feedback"), true); setItems(rr && rr.value ? JSON.parse(rr.value).items || [] : []); } catch (_) { setItems([]); }
     })().finally(() => clearTimeout(safety));
     return () => clearTimeout(safety);
   }, []);
@@ -1282,15 +1286,7 @@ function FeedbackView({ canEdit, requireLogin }) {
     persist(items.map(x => x.id === it.id ? { ...x, helpful: has ? x.helpful.filter(h => h !== me) : [...(x.helpful || []), me] } : x));
   };
 
-  const meSelect = (
-    <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-      <span style={{ fontSize: 13, color: SUB }}>我是：</span>
-      <select value={me} onChange={e => setMe(e.target.value)} style={{ border: `1px solid ${BORDER}`, borderRadius: 8, padding: "7px 10px", fontSize: 14, background: "#fff", color: TEXT, minWidth: 130 }}>
-        <option value="">— 選擇你自己 —</option>
-        {people.map(p => <option key={p.id} value={p.id}>{p.name}{p.dept ? `（${p.dept}）` : ""}</option>)}
-      </select>
-    </div>
-  );
+  const meSelect = <CrewMe people={people} me={me} setMe={setMe} isAdmin={isAdmin} />;
   const card = { background: "#fff", border: `1px solid ${BORDER}`, borderRadius: 12, padding: 16, marginBottom: 12 };
   const subTab = (t, l) => <button key={t} onClick={() => setTab(t)} style={{ border: `1px solid ${tab === t ? PRIMARY : BORDER}`, background: tab === t ? PRIMARY : "transparent", color: tab === t ? "#fff" : TEXT, borderRadius: 8, padding: "7px 16px", fontSize: 13.5, fontWeight: 600, cursor: "pointer" }}>{l}</button>;
   const tagChip = (t, on, onClick) => <button key={t} onClick={onClick} style={{ border: `1px solid ${on ? ACCENT : BORDER}`, background: on ? ACCENT : "#fff", color: on ? "#fff" : TEXT, borderRadius: 16, padding: "5px 12px", fontSize: 12.5, cursor: "pointer" }}>{t}</button>;
@@ -1369,40 +1365,55 @@ function crewFullBalance(people, fbItems, questsData, shopData) {
   (shopData?.redemptions || []).forEach(rd => { if (rd.status !== "rejected" && m[rd.userId] != null) m[rd.userId] -= (rd.cost || 0); });
   return m;
 }
-const CrewMe = ({ people, me, setMe }) => (
-  <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-    <span style={{ fontSize: 13, color: SUB }}>我是：</span>
-    <select value={me} onChange={e => setMe(e.target.value)} style={{ border: `1px solid ${BORDER}`, borderRadius: 8, padding: "7px 10px", fontSize: 14, background: "#fff", color: TEXT, minWidth: 130 }}>
-      <option value="">— 選擇你自己 —</option>{people.map(p => <option key={p.id} value={p.id}>{p.name}{p.dept ? `（${p.dept}）` : ""}</option>)}
-    </select>
-  </div>
-);
+// 夥伴中心層級／權限
+const CREW_ROLES = [["staff", "基層"], ["lead", "組長"], ["manager", "主管"], ["admin", "管理員"]];
+const roleLabel = (r) => (CREW_ROLES.find(x => x[0] === r) || ["staff", "基層"])[1];
+const canManageRole = (r) => r === "manager" || r === "admin";
+const meFromRoster = (people, userName) => (people.find(p => p.account && p.account === userName) || {}).id || "";
+// 目前身分（登入後即本人；admin 可切換測試其他人）
+const CrewMe = ({ people, me, setMe, isAdmin }) => {
+  const cur = people.find(p => p.id === me);
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+      <span style={{ fontSize: 13, color: SUB }}>目前身分</span>
+      {isAdmin ? (
+        <select value={me} onChange={e => setMe(e.target.value)} title="登入後即你本人；管理員可切換測試其他人" style={{ border: `1px solid ${BORDER}`, borderRadius: 8, padding: "7px 10px", fontSize: 14, background: "#fff", color: TEXT, minWidth: 130 }}>
+          <option value="">—</option>{people.map(p => <option key={p.id} value={p.id}>{p.name}（{roleLabel(p.role)}）</option>)}
+        </select>
+      ) : (
+        <span style={{ fontSize: 14, fontWeight: 700, color: TEXT }}>{cur?.name || "—"}</span>
+      )}
+      {cur && <span style={{ fontSize: 11, background: canManageRole(cur.role) ? "#FEF3C7" : "#EFE7D6", color: canManageRole(cur.role) ? "#92400e" : SUB, borderRadius: 8, padding: "2px 8px", fontWeight: 600 }}>{roleLabel(cur.role)}</span>}
+    </div>
+  );
+};
 const crewCard = { background: "#fff", border: `1px solid ${BORDER}`, borderRadius: 12, padding: 16, marginBottom: 12 };
 const crewProtoTitle = (emoji, t, sub) => (<><div style={{ display: "flex", alignItems: "center", gap: 10, margin: "6px 0 4px", flexWrap: "wrap" }}><div style={{ fontSize: 18, fontWeight: 700, color: TEXT }}>{emoji} {t}</div><span style={{ fontSize: 11, background: "#FEF3C7", color: "#92400e", borderRadius: 8, padding: "2px 8px", fontWeight: 600 }}>設計原型</span></div>{sub && <div style={{ fontSize: 12, color: SUB, marginBottom: 12 }}>{sub}</div>}</>);
 
 // ── 闖關任務 ─────────────────────────────────────────────────────────────────
-function QuestView({ canEdit, requireLogin, confirm, isAdmin }) {
+function QuestView({ canEdit, requireLogin, confirm, isAdmin, userName }) {
   const [people, setPeople] = useState([]); const [data, setData] = useState(null); const [me, setMe] = useState(""); const [ed, setEd] = useState(null);
   useEffect(() => { const s = setTimeout(() => setData(p => p || { quests: [], progress: [] }), 8000);
-    (async () => { setPeople(await loadCrewRoster()); setData(await loadCrewJSON("kb_quests", { quests: [], progress: [] })); })().finally(() => clearTimeout(s)); return () => clearTimeout(s); }, []);
+    (async () => { const r = await loadCrewRoster(); setPeople(r); setMe(meFromRoster(r, userName)); setData(await loadCrewJSON("kb_quests", { quests: [], progress: [] })); })().finally(() => clearTimeout(s)); return () => clearTimeout(s); }, []);
   const persist = (n) => { setData(n); saveCrewJSON("kb_quests", n); };
   const guard = () => { if (!canEdit) { requireLogin && requireLogin(); return false; } return true; };
   if (data === null) return <div style={{ padding: 40, color: SUB, fontSize: 14 }}>載入中…</div>;
+  const canManage = canManageRole((people.find(p => p.id === me) || {}).role);
   const done = (qid) => (data.progress || []).some(p => p.questId === qid && p.userId === me && p.status === "completed");
   const countDone = (qid) => (data.progress || []).filter(p => p.questId === qid && p.status === "completed").length;
-  const complete = (q) => { if (!me) { alert("請先選「我是誰」"); return; } if (done(q.id)) return; persist({ ...data, progress: [...(data.progress || []), { questId: q.id, userId: me, status: "completed", ts: new Date().toISOString() }] }); };
+  const complete = (q) => { if (!me) { alert("尚未對應到名單身分"); return; } if (done(q.id)) return; persist({ ...data, progress: [...(data.progress || []), { questId: q.id, userId: me, status: "completed", ts: new Date().toISOString() }] }); };
   const saveQuest = () => { if (!ed.title.trim()) { alert("請填關卡名稱"); return; } const q = { id: ed.id || "q-" + Math.random().toString(36).slice(2, 7), title: ed.title.trim(), desc: ed.desc || "", points: Number(ed.points) || 0, active: ed.active !== false }; persist({ ...data, quests: ed.id ? data.quests.map(x => x.id === ed.id ? q : x) : [...data.quests, q] }); setEd(null); };
   return (
     <div>
       {crewProtoTitle("🎮", "闖關任務", "完成關卡得積分（正式版完成需組長核可、防自核）。")}
-      <div style={{ ...crewCard, padding: "10px 14px", display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}><CrewMe people={people} me={me} setMe={setMe} /><div style={{ flex: 1 }} />{isAdmin && <button onClick={() => guard() && setEd({ title: "", desc: "", points: 50, active: true })} style={{ border: "none", background: ACCENT, color: "#fff", borderRadius: 8, padding: "7px 14px", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>＋ 新增關卡</button>}</div>
+      <div style={{ ...crewCard, padding: "10px 14px", display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}><CrewMe people={people} me={me} setMe={setMe} isAdmin={isAdmin} /><div style={{ flex: 1 }} />{canManage && <button onClick={() => guard() && setEd({ title: "", desc: "", points: 50, active: true })} style={{ border: "none", background: ACCENT, color: "#fff", borderRadius: 8, padding: "7px 14px", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>＋ 新增關卡</button>}</div>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: 12 }}>
-        {data.quests.filter(q => q.active !== false || isAdmin).map(q => { const d = done(q.id); return (
+        {data.quests.filter(q => q.active !== false || canManage).map(q => { const d = done(q.id); return (
           <div key={q.id} style={{ ...crewCard, marginBottom: 0, opacity: q.active === false ? 0.55 : 1 }}>
             <div style={{ display: "flex", alignItems: "flex-start", gap: 8 }}><span style={{ fontSize: 22 }}>{d ? "✅" : "🎯"}</span><div style={{ flex: 1 }}><div style={{ fontSize: 15, fontWeight: 700, color: TEXT }}>{q.title}</div><div style={{ fontSize: 12.5, color: SUB, marginTop: 2 }}>{q.desc}</div></div><span style={{ fontSize: 13, fontWeight: 700, color: ACCENT, whiteSpace: "nowrap" }}>+{q.points}</span></div>
             <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 12 }}>
               <span style={{ fontSize: 11, color: SUB }}>已完成 {countDone(q.id)} 人</span><div style={{ flex: 1 }} />
-              {isAdmin && <button onClick={() => guard() && setEd({ ...q })} style={{ border: "none", background: "none", color: SUB, fontSize: 12, cursor: "pointer" }}>編輯</button>}
+              {canManage && <button onClick={() => guard() && setEd({ ...q })} style={{ border: "none", background: "none", color: SUB, fontSize: 12, cursor: "pointer" }}>編輯</button>}
               <button onClick={() => complete(q)} disabled={d} style={{ border: `1px solid ${d ? "#3C8C3C" : ACCENT}`, background: d ? "#F0FDF4" : ACCENT, color: d ? "#3C8C3C" : "#fff", borderRadius: 8, padding: "6px 16px", fontSize: 13, fontWeight: 600, cursor: d ? "default" : "pointer" }}>{d ? "✓ 已完成" : "完成挑戰"}</button>
             </div>
           </div>); })}
@@ -1424,23 +1435,24 @@ function QuestView({ canEdit, requireLogin, confirm, isAdmin }) {
 }
 
 // ── 投票（含各項投票王）──────────────────────────────────────────────────────
-function PollView({ canEdit, requireLogin, confirm, isAdmin }) {
+function PollView({ canEdit, requireLogin, confirm, isAdmin, userName }) {
   const [people, setPeople] = useState([]); const [data, setData] = useState(null); const [me, setMe] = useState(""); const [ed, setEd] = useState(null);
   useEffect(() => { const s = setTimeout(() => setData(p => p || { polls: [], votes: [] }), 8000);
-    (async () => { setPeople(await loadCrewRoster()); setData(await loadCrewJSON("kb_polls", { polls: [], votes: [] })); })().finally(() => clearTimeout(s)); return () => clearTimeout(s); }, []);
+    (async () => { const r = await loadCrewRoster(); setPeople(r); setMe(meFromRoster(r, userName)); setData(await loadCrewJSON("kb_polls", { polls: [], votes: [] })); })().finally(() => clearTimeout(s)); return () => clearTimeout(s); }, []);
   const persist = (n) => { setData(n); saveCrewJSON("kb_polls", n); };
   const guard = () => { if (!canEdit) { requireLogin && requireLogin(); return false; } return true; };
   if (data === null) return <div style={{ padding: 40, color: SUB, fontSize: 14 }}>載入中…</div>;
+  const canManage = canManageRole((people.find(p => p.id === me) || {}).role);
   const nameOf = (id) => people.find(p => p.id === id)?.name || id;
   const myVote = (pid) => (data.votes || []).find(v => v.pollId === pid && v.voterId === me);
-  const vote = (poll, optId) => { if (!me) { alert("請先選「我是誰」"); return; } if (myVote(poll.id)) return; persist({ ...data, votes: [...(data.votes || []), { pollId: poll.id, voterId: me, choiceId: optId, ts: new Date().toISOString() }] }); };
+  const vote = (poll, optId) => { if (!me) { alert("尚未對應到名單身分"); return; } if (myVote(poll.id)) return; persist({ ...data, votes: [...(data.votes || []), { pollId: poll.id, voterId: me, choiceId: optId, ts: new Date().toISOString() }] }); };
   const tally = (poll) => { const c = {}; poll.options.forEach(o => c[o.id] = 0); (data.votes || []).filter(v => v.pollId === poll.id).forEach(v => { if (c[v.choiceId] != null) c[v.choiceId]++; }); const total = Object.values(c).reduce((a, b) => a + b, 0); const win = poll.options.slice().sort((a, b) => c[b.id] - c[a.id])[0]; return { c, total, win: total > 0 ? win : null }; };
   const savePoll = () => { if (!ed.title.trim()) { alert("請填主題"); return; } let opts = ed.usePeople ? people.map(p => ({ id: p.id, label: p.name })) : (ed.optText || "").split("\n").map(s => s.trim()).filter(Boolean).map((l, i) => ({ id: "o" + i, label: l })); if (opts.length < 2) { alert("至少要 2 個選項"); return; } const poll = { id: ed.id || "poll-" + Math.random().toString(36).slice(2, 7), title: ed.title.trim(), options: opts, anon: !!ed.anon, peoplePoll: !!ed.usePeople }; persist({ ...data, polls: ed.id ? data.polls.map(x => x.id === ed.id ? poll : x) : [...data.polls, poll] }); setEd(null); };
   const optLabel = (poll, oid) => poll.peoplePoll ? nameOf(oid) : (poll.options.find(o => o.id === oid)?.label || oid);
   return (
     <div>
       {crewProtoTitle("🗳", "投票", "一人一票（防灌票）；人物類投票會選出「投票王」。")}
-      <div style={{ ...crewCard, padding: "10px 14px", display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}><CrewMe people={people} me={me} setMe={setMe} /><div style={{ flex: 1 }} />{isAdmin && <button onClick={() => guard() && setEd({ title: "", optText: "", usePeople: false, anon: true })} style={{ border: "none", background: ACCENT, color: "#fff", borderRadius: 8, padding: "7px 14px", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>＋ 發起投票</button>}</div>
+      <div style={{ ...crewCard, padding: "10px 14px", display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}><CrewMe people={people} me={me} setMe={setMe} isAdmin={isAdmin} /><div style={{ flex: 1 }} />{canManage && <button onClick={() => guard() && setEd({ title: "", optText: "", usePeople: false, anon: true })} style={{ border: "none", background: ACCENT, color: "#fff", borderRadius: 8, padding: "7px 14px", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>＋ 發起投票</button>}</div>
       {data.polls.length === 0 && <div style={{ color: "#A99F88", fontSize: 14, padding: "30px 0" }}>還沒有投票{isAdmin ? "，點「＋ 發起投票」" : ""}。</div>}
       {data.polls.map(poll => { const t = tally(poll); const voted = myVote(poll.id); return (
         <div key={poll.id} style={crewCard}>
@@ -1451,7 +1463,7 @@ function PollView({ canEdit, requireLogin, confirm, isAdmin }) {
               {voted && <div style={{ position: "absolute", inset: 0, width: pct + "%", background: mine ? "#F3E4DE" : "#F4EFE3", zIndex: 0 }} />}
               <div style={{ position: "relative", zIndex: 1, display: "flex", alignItems: "center" }}><span style={{ fontSize: 14, color: TEXT, fontWeight: mine ? 700 : 500 }}>{optLabel(poll, o.id)}{mine && " ✓"}</span><div style={{ flex: 1 }} />{voted && <span style={{ fontSize: 13, color: SUB, fontVariantNumeric: "tabular-nums" }}>{n}（{pct}%）</span>}</div>
             </div>); })}
-          <div style={{ display: "flex", gap: 10, marginTop: 6 }}>{!voted && <span style={{ fontSize: 12, color: ACCENT }}>點選項投票</span>}{voted && <span style={{ fontSize: 12, color: "#3C8C3C" }}>✓ 已投</span>}<div style={{ flex: 1 }} />{isAdmin && <button onClick={() => guard() && confirm("刪除這個投票？").then(ok => ok && persist({ ...data, polls: data.polls.filter(x => x.id !== poll.id), votes: (data.votes || []).filter(v => v.pollId !== poll.id) }))} style={{ border: "none", background: "none", color: "#DC2626", fontSize: 12, cursor: "pointer" }}>刪除</button>}</div>
+          <div style={{ display: "flex", gap: 10, marginTop: 6 }}>{!voted && <span style={{ fontSize: 12, color: ACCENT }}>點選項投票</span>}{voted && <span style={{ fontSize: 12, color: "#3C8C3C" }}>✓ 已投</span>}<div style={{ flex: 1 }} />{canManage && <button onClick={() => guard() && confirm("刪除這個投票？").then(ok => ok && persist({ ...data, polls: data.polls.filter(x => x.id !== poll.id), votes: (data.votes || []).filter(v => v.pollId !== poll.id) }))} style={{ border: "none", background: "none", color: "#DC2626", fontSize: 12, cursor: "pointer" }}>刪除</button>}</div>
         </div>); })}
       {ed && (
         <div onClick={e => e.target === e.currentTarget && setEd(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 500, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
@@ -1470,33 +1482,34 @@ function PollView({ canEdit, requireLogin, confirm, isAdmin }) {
 }
 
 // ── 兌換商城 + 錢包 ───────────────────────────────────────────────────────────
-function ShopView({ canEdit, requireLogin, confirm, isAdmin }) {
+function ShopView({ canEdit, requireLogin, confirm, isAdmin, userName }) {
   const [people, setPeople] = useState([]); const [fb, setFb] = useState([]); const [quests, setQuests] = useState({ quests: [], progress: [] }); const [shop, setShop] = useState(null); const [me, setMe] = useState(""); const [ed, setEd] = useState(null);
-  const reload = async () => { setPeople(await loadCrewRoster()); const f = await loadCrewJSON("kb_feedback", { items: [] }); setFb(f.items || []); setQuests(await loadCrewJSON("kb_quests", { quests: [], progress: [] })); setShop(await loadCrewJSON("kb_shop", { rewards: [], redemptions: [] })); };
+  const reload = async () => { const r = await loadCrewRoster(); setPeople(r); setMe(meFromRoster(r, userName)); const f = await loadCrewJSON("kb_feedback", { items: [] }); setFb(f.items || []); setQuests(await loadCrewJSON("kb_quests", { quests: [], progress: [] })); setShop(await loadCrewJSON("kb_shop", { rewards: [], redemptions: [] })); };
   useEffect(() => { const s = setTimeout(() => setShop(p => p || { rewards: [], redemptions: [] }), 8000); reload().finally(() => clearTimeout(s)); return () => clearTimeout(s); }, []);
   const persist = (n) => { setShop(n); saveCrewJSON("kb_shop", n); };
   const guard = () => { if (!canEdit) { requireLogin && requireLogin(); return false; } return true; };
   if (shop === null) return <div style={{ padding: 40, color: SUB, fontSize: 14 }}>載入中…</div>;
+  const canManage = canManageRole((people.find(p => p.id === me) || {}).role);
   const balances = crewFullBalance(people, fb, quests, shop);
   const myBal = me ? (balances[me] || 0) : null;
-  const redeem = (r) => { if (!me) { alert("請先選「我是誰」"); return; } if ((balances[me] || 0) < r.cost) { alert("積分不足"); return; } if ((r.stock ?? 99) <= 0) { alert("已兌完"); return; } confirm(`用 ${r.cost} 分兌換「${r.name}」？`).then(ok => { if (!ok) return; persist({ ...shop, rewards: shop.rewards.map(x => x.id === r.id ? { ...x, stock: (x.stock ?? 99) - 1 } : x), redemptions: [...(shop.redemptions || []), { id: "rd-" + Math.random().toString(36).slice(2, 7), userId: me, rewardId: r.id, cost: r.cost, name: r.name, status: "requested", ts: new Date().toISOString() }] }); }); };
+  const redeem = (r) => { if (!me) { alert("尚未對應到名單身分"); return; } if ((balances[me] || 0) < r.cost) { alert("積分不足"); return; } if ((r.stock ?? 99) <= 0) { alert("已兌完"); return; } confirm(`用 ${r.cost} 分兌換「${r.name}」？`).then(ok => { if (!ok) return; persist({ ...shop, rewards: shop.rewards.map(x => x.id === r.id ? { ...x, stock: (x.stock ?? 99) - 1 } : x), redemptions: [...(shop.redemptions || []), { id: "rd-" + Math.random().toString(36).slice(2, 7), userId: me, rewardId: r.id, cost: r.cost, name: r.name, status: "requested", ts: new Date().toISOString() }] }); }); };
   const saveReward = () => { if (!ed.name.trim()) { alert("請填名稱"); return; } const r = { id: ed.id || "rw-" + Math.random().toString(36).slice(2, 7), name: ed.name.trim(), desc: ed.desc || "", cost: Number(ed.cost) || 0, stock: ed.stock === "" ? 99 : Number(ed.stock), active: ed.active !== false }; persist({ ...shop, rewards: ed.id ? shop.rewards.map(x => x.id === ed.id ? r : x) : [...shop.rewards, r] }); setEd(null); };
   const myRedemptions = (shop.redemptions || []).filter(r => r.userId === me);
   return (
     <div>
       {crewProtoTitle("🎁", "獎勵商城", "用累積的積分兌換獎勵（正式版兌換＝原子扣點、可稽核）。")}
       <div style={{ ...crewCard, display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
-        <CrewMe people={people} me={me} setMe={setMe} />
+        <CrewMe people={people} me={me} setMe={setMe} isAdmin={isAdmin} />
         {me && <div style={{ display: "flex", alignItems: "center", gap: 8 }}><span style={{ fontSize: 13, color: SUB }}>我的積分</span><span style={{ fontSize: 24, fontWeight: 800, color: ACCENT, fontVariantNumeric: "tabular-nums" }}>{myBal}</span><span style={{ fontSize: 12, color: SUB }}>分</span></div>}
-        <div style={{ flex: 1 }} />{isAdmin && <button onClick={() => guard() && setEd({ name: "", desc: "", cost: 100, stock: "", active: true })} style={{ border: "none", background: ACCENT, color: "#fff", borderRadius: 8, padding: "7px 14px", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>＋ 新增獎勵</button>}
+        <div style={{ flex: 1 }} />{canManage && <button onClick={() => guard() && setEd({ name: "", desc: "", cost: 100, stock: "", active: true })} style={{ border: "none", background: ACCENT, color: "#fff", borderRadius: 8, padding: "7px 14px", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>＋ 新增獎勵</button>}
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 12 }}>
-        {shop.rewards.filter(r => r.active !== false || isAdmin).map(r => { const afford = me && (balances[me] || 0) >= r.cost; const out = (r.stock ?? 99) <= 0; return (
+        {shop.rewards.filter(r => r.active !== false || canManage).map(r => { const afford = me && (balances[me] || 0) >= r.cost; const out = (r.stock ?? 99) <= 0; return (
           <div key={r.id} style={{ ...crewCard, marginBottom: 0, opacity: r.active === false ? 0.55 : 1 }}>
             <div style={{ fontSize: 30, marginBottom: 4 }}>🎁</div>
             <div style={{ fontSize: 15, fontWeight: 700, color: TEXT }}>{r.name}</div>
             <div style={{ fontSize: 12.5, color: SUB, marginBottom: 8, minHeight: 18 }}>{r.desc}</div>
-            <div style={{ display: "flex", alignItems: "center", gap: 8 }}><span style={{ fontSize: 16, fontWeight: 800, color: ACCENT }}>{r.cost}<span style={{ fontSize: 11, color: SUB, fontWeight: 400 }}> 分</span></span><span style={{ fontSize: 11, color: SUB }}>{(r.stock ?? 99) >= 99 ? "" : `剩 ${r.stock}`}</span><div style={{ flex: 1 }} />{isAdmin && <button onClick={() => guard() && setEd({ ...r, stock: r.stock ?? "" })} style={{ border: "none", background: "none", color: SUB, fontSize: 12, cursor: "pointer" }}>編輯</button>}</div>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}><span style={{ fontSize: 16, fontWeight: 800, color: ACCENT }}>{r.cost}<span style={{ fontSize: 11, color: SUB, fontWeight: 400 }}> 分</span></span><span style={{ fontSize: 11, color: SUB }}>{(r.stock ?? 99) >= 99 ? "" : `剩 ${r.stock}`}</span><div style={{ flex: 1 }} />{canManage && <button onClick={() => guard() && setEd({ ...r, stock: r.stock ?? "" })} style={{ border: "none", background: "none", color: SUB, fontSize: 12, cursor: "pointer" }}>編輯</button>}</div>
             <button onClick={() => redeem(r)} disabled={!afford || out} style={{ marginTop: 10, width: "100%", border: "none", background: out ? "#C8BCA0" : afford ? "#3C8C3C" : "#C8BCA0", color: "#fff", borderRadius: 8, padding: "8px", fontSize: 13.5, fontWeight: 600, cursor: afford && !out ? "pointer" : "default" }}>{out ? "已兌完" : afford ? "兌換" : "積分不足"}</button>
           </div>); })}
         {shop.rewards.length === 0 && <div style={{ color: "#A99F88", fontSize: 14, padding: "30px 0" }}>還沒有獎勵{isAdmin ? "，點「＋ 新增獎勵」" : ""}。</div>}
