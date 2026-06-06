@@ -2412,6 +2412,10 @@ function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols,
   const [lightbox, setLightbox] = useState(null); // 憑證放大檢視
   const [rcpBusy, setRcpBusy] = useState(null);    // 正在上傳憑證的 itemId
   const [payCatId, setPayCatId] = useState(null);  // 開啟付款紀錄面板的大項 id
+  const [groupEditId, setGroupEditId] = useState(null); // 正在編輯費用群組標籤的大項
+  const [groupsOpen, setGroupsOpen] = useState(true);   // 費用群組合計面板展開
+  const allGroups = [...new Set(cats.map(c => c.group).filter(Boolean))];
+  const setCatGroup = (catId, g) => setCats(prev => prev.map(c => c.id === catId ? { ...c, group: g || "" } : c));
 
   // Flatten all items into rows with cat info
   const allRows = [];
@@ -2608,6 +2612,7 @@ function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols,
 
   return (
     <div style={{ paddingTop: 12 }}>
+      <datalist id="cat-group-list">{allGroups.map(g => <option key={g} value={g} />)}</datalist>
       {/* toolbar */}
       <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10, flexWrap: "wrap" }}>
         <div style={{ fontSize: 16, fontWeight: 600, color: TEXT, letterSpacing: -0.2 }}>總覽</div>
@@ -2623,6 +2628,35 @@ function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols,
           ))}
         </div>
       </div>
+
+      {/* 費用群組合計（自訂分群，例：廣告機螢幕群）*/}
+      {viewMode === "table" && conf().showCost && allGroups.length > 0 && (() => {
+        const g = {};
+        allGroups.forEach(name => { g[name] = { name, n: 0, pretax: 0, est: 0, paid: 0 }; });
+        cats.forEach(c => { if (c.group && g[c.group]) { const gg = g[c.group]; gg.n++; gg.pretax += catPretaxSub(c); gg.est += catEstAfter(c); gg.paid += catPaid(c); } });
+        const list = Object.values(g).sort((a, b) => b.est - a.est);
+        return (
+          <div style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: 12, padding: "12px 14px", marginBottom: 12 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: groupsOpen ? 10 : 0 }}>
+              <button onClick={() => setGroupsOpen(o => !o)} style={{ border: "none", background: "none", cursor: "pointer", color: SUB, fontSize: 11, transform: groupsOpen ? "rotate(90deg)" : "none", transition: "transform .15s" }}>▸</button>
+              <div style={{ fontSize: 14, fontWeight: 600, color: TEXT }}>🏷 費用群組合計</div>
+              <span style={{ fontSize: 12, color: SUB }}>{list.length} 群</span>
+            </div>
+            {groupsOpen && <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 10 }}>
+              {list.map(x => { const unpaid = x.est - x.paid; return (
+                <div key={x.name} style={{ background: "#fff", border: `1px solid ${BORDER}`, borderRadius: 10, padding: "10px 12px" }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: TEXT, marginBottom: 6 }}>{x.name} <span style={{ fontSize: 11, color: SUB, fontWeight: 400 }}>· {x.n} 項</span></div>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: "2px 12px", fontSize: 12, fontVariantNumeric: "tabular-nums" }}>
+                    <span style={{ color: SUB }}>未稅 <b style={{ color: TEXT }}>{fmt(x.pretax)}</b></span>
+                    <span style={{ color: SUB }}>含稅 <b style={{ color: ACCENT }}>{fmt(x.est)}</b></span>
+                    <span style={{ color: SUB }}>已付 <b style={{ color: "#3C8C3C" }}>{fmt(x.paid)}</b></span>
+                    <span style={{ color: SUB }}>未付 <b style={{ color: unpaid > 0 ? "#C2872E" : "#3C8C3C" }}>{fmt(unpaid)}</b></span>
+                  </div>
+                </div>); })}
+            </div>}
+          </div>
+        );
+      })()}
 
       {viewMode === "card" ? (
         <KanbanView cats={cats} setCats={setCats} onSelect={onSelect} dragging={dragging} dragOver={dragOver} onDragStart={onDragStart} onDragOver={onDragOver} onDrop={onDrop} confirm={confirm} />
@@ -2672,6 +2706,9 @@ function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols,
                   <button onClick={() => toggleCollapse(catId)} style={{ border: "none", background: "none", cursor: "pointer", color: SUB, fontSize: 11, width: 14, flexShrink: 0, transform: isCollapsed ? "none" : "rotate(90deg)", transition: "transform .15s" }}>▸</button>
                   <div onClick={() => toggleCollapse(catId)} style={{ fontSize: 14, fontWeight: 600, color: PRIMARY, letterSpacing: -0.1, cursor: "pointer", flexShrink: 0 }}>{group.name}</div>
                   <div style={{ flexShrink: 0 }}><StatusBadge status={cat?.status || "pending"} setCats={setCats} catId={catId} /></div>
+                  {conf().showCost && (groupEditId === catId
+                    ? <input list="cat-group-list" autoFocus defaultValue={cat?.group || ""} onBlur={e => { setCatGroup(catId, e.target.value.trim()); setGroupEditId(null); }} onKeyDown={e => { if (e.key === "Enter") { setCatGroup(catId, e.target.value.trim()); setGroupEditId(null); } if (e.key === "Escape") setGroupEditId(null); }} placeholder="費用群組…" style={{ width: 110, flexShrink: 0, border: `1px solid ${ACCENT}`, borderRadius: 12, padding: "2px 8px", fontSize: 11, background: "#fff", color: TEXT, outline: "none" }} />
+                    : <button onClick={() => setGroupEditId(catId)} title="設定費用群組（多大項可歸成一群看合計）" style={{ flexShrink: 0, border: cat?.group ? "1px solid #C8BCA0" : `1px dashed ${BORDER}`, background: cat?.group ? "#F3E4DE" : "transparent", color: cat?.group ? "#92400e" : "#C8BCA0", borderRadius: 12, padding: "2px 9px", fontSize: 11, fontWeight: cat?.group ? 600 : 400, cursor: "pointer" }}>{cat?.group ? `🏷 ${cat.group}` : "＋群組"}</button>)}
                   {itemCount > 0 && (
                     <div style={{ display: "flex", alignItems: "center", gap: 7, flexShrink: 0 }}>
                       <div style={{ width: 64, height: 5, background: "#E3DAC6", borderRadius: 3, overflow: "hidden" }}><div style={{ width: pct + "%", height: "100%", background: pct === 100 ? "#3C8C3C" : "#3E72A8" }} /></div>
