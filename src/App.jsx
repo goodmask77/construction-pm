@@ -2812,6 +2812,11 @@ function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols,
                   {(() => {
                     const isEmpty = groupEst === 0 && groupPaid === 0;
                     if (isEmpty) return <span style={{ fontSize: 12, color: "#C8BCA0" }}>尚未建立明細</span>;
+                    // 沒細項(議價後0)卻有付款＝孤兒付款(通常是細項被移走/刪除)→ 明確提示+一鍵清除
+                    if (groupEst === 0 && groupPaid > 0) return <>
+                      <span style={{ fontSize: 12, color: "#C2410C" }}>⚠ 已無細項，但仍有 {fmt(groupPaid)} 付款紀錄</span>
+                      <button onClick={() => confirm(`「${group.name}」已沒有細項，清除殘留的 ${fmt(groupPaid)} 付款紀錄？`, { confirmLabel: "確定清除" }).then(ok => { if (ok) setCats(prev => prev.map(c => c.id === catId ? { ...c, payments: [] } : c)); })} style={{ flexShrink: 0, border: "1px solid #C2872E", background: "#FFFBEB", color: "#C2872E", borderRadius: 6, padding: "2px 10px", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>清除付款</button>
+                    </>;
                     const pct = groupEst > 0 ? Math.round(groupPaid / groupEst * 100) : 0;
                     const full = groupEst > 0 && groupUnpaid <= 0;
                     const none = groupPaid === 0;
@@ -5365,12 +5370,16 @@ function GlobalAIPanel({ chat, setChat, onClose, cats, setCats, canEdit, confirm
     img.src = URL.createObjectURL(f);
   });
 
-  // 報價單結構化解析 → 預覽表
+  // 報價單結構化解析 → 預覽表（可吃 File 或已處理的附件物件）
   const startImport = async (files) => {
     const arr = Array.from(files || []); if (!arr.length) return;
+    const atts = (await Promise.all(arr.map(fileToAtt))).filter(Boolean);
+    runImport(atts);
+  };
+  const runImport = async (atts) => {
+    if (!atts || !atts.length) return;
     setImp({ busy: true, rows: [], targetCatId: cats[0]?.id || "" });
     try {
-      const atts = (await Promise.all(arr.map(fileToAtt))).filter(Boolean);
       const catNames = cats.map(c => c.name).join("、");
       const sys = `你是估價單解析器。只輸出一個 markdown json 區塊，不要任何其他文字。格式：
 \`\`\`json
@@ -5551,15 +5560,18 @@ function GlobalAIPanel({ chat, setChat, onClose, cats, setCats, canEdit, confirm
         </div>
         <div style={{ padding: "0 14px 14px" }}>
           {attachments.length > 0 && (
-            <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 8 }}>
-              {attachments.map(a => (
-                <div key={a.id} style={{ position: "relative", width: 54, height: 54, borderRadius: 8, overflow: "hidden", border: "1px solid #D8CFBB", background: "#ECE6D7", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                  {a.kind === "image"
-                    ? <img src={a.preview} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                    : <span style={{ fontSize: 10, color: "#6F6656", textAlign: "center" }}>📄<br/>PDF</span>}
-                  <button onClick={() => setAttachments(prev => prev.filter(x => x.id !== a.id))} style={{ position: "absolute", top: -6, right: -6, width: 18, height: 18, borderRadius: "50%", background: "#211C15", color: "#fff", border: "none", fontSize: 11, cursor: "pointer", lineHeight: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>×</button>
-                </div>
-              ))}
+            <div style={{ marginBottom: 8 }}>
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 6 }}>
+                {attachments.map(a => (
+                  <div key={a.id} style={{ position: "relative", width: 54, height: 54, borderRadius: 8, overflow: "hidden", border: "1px solid #D8CFBB", background: "#ECE6D7", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                    {a.kind === "image"
+                      ? <img src={a.preview} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                      : <span style={{ fontSize: 10, color: "#6F6656", textAlign: "center" }}>📄<br/>PDF</span>}
+                    <button onClick={() => setAttachments(prev => prev.filter(x => x.id !== a.id))} style={{ position: "absolute", top: -6, right: -6, width: 18, height: 18, borderRadius: "50%", background: "#211C15", color: "#fff", border: "none", fontSize: 11, cursor: "pointer", lineHeight: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>×</button>
+                  </div>
+                ))}
+              </div>
+              {canEdit && <button onClick={() => { const a = attachments; setAttachments([]); runImport(a); }} style={{ width: "100%", background: "#F0FDF4", border: "1px solid #3C8C3C", color: "#3C8C3C", borderRadius: 8, padding: "8px", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>📋 用以上附件做「報價單結構化匯入」（解析→預覽→確認）</button>}
             </div>
           )}
           <div style={{ display: "flex", gap: 8, alignItems: "flex-end" }}>
