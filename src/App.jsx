@@ -5418,7 +5418,7 @@ function GlobalAIPanel({ chat, setChat, onClose, cats, setCats, canEdit, confirm
     try {
       // 把完整專案結構給 AI，方便精準比對名稱與執行操作
       const structure = cats.map(c => `【${c.name}】議價後${fmt(catEstAfter(c))} 已付${fmt(catPaid(c))} 狀態${c.status} 排程第${(c.ganttStart??0)+1}週起${c.ganttDur?` ${c.ganttDur}週`:""}；細項：${c.items.map(i=>`${i.name}(${i.qty}${i.unit}×${fmt(i.unitPrice)})`).join("、")||"無"}`).join("\n");
-      const textBlock = `目前專案結構：\n${structure}\n\n使用者訊息：${t || "（請判讀附件內容）"}`;
+      const textBlock = `【目前專案結構（系統即時現況，唯一真實依據）】\n${structure}\n\n⚠️ 以上是現在系統的真實狀態。若與先前對話內容不符（例如你之前說建檔完成、但這裡顯示「細項：無」），一律以這份現況為準——代表使用者已手動清空或刪除，請依使用者最新訊息重新處理，不要說「資料已在系統中」。\n\n使用者訊息：${t || "（請判讀附件內容）"}`;
       const history = chat.slice(-12).map(m => ({ role: m.role === "user" ? "user" : "assistant", content: m.text }));
       let content;
       if (atts.length) {
