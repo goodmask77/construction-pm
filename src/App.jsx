@@ -2989,7 +2989,7 @@ function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols,
                           </div>;
                         }
                         if (col.id === "unpaid") { const u = unpaidAfterOf(item); return <div key={col.id} style={{ ...cs, color: u < 0 ? "#DC2626" : u > 0 ? "#C2872E" : "#3C8C3C", fontFamily: "monospace", fontWeight: 600 }} title={u < 0 ? "溢付（已付超過議價後金額）" : "未付金額（議價後 − 已付，自動）"}>{u < 0 ? `溢付 ${fmt(-u)}` : fmt(u)}</div>; }
-                        if (col.id === "payDate") return <div key={col.id} style={cs}><EditableCell catId={catId} itemId={item.id} field="payDate" value={item.payDate} type="date" placeholder="付款日" /></div>;
+                        if (col.id === "payDate") { const iso = String(item.payDate ?? "").replace(/\//g, "-").slice(0, 10); return <div key={col.id} style={cs}><input type="date" value={iso} onChange={e => updateItem(catId, item.id, "payDate", e.target.value)} style={{ width: "100%", border: "none", outline: "none", background: "transparent", cursor: "pointer", fontSize: 12.5, fontFamily: "'Noto Sans TC', sans-serif", color: iso ? "#211C15" : "#CDC3AC", padding: "2px 2px", colorScheme: "light" }} /></div>; }
                         if (col.id === "payAccount") return <div key={col.id} style={cs}><EditableCell catId={catId} itemId={item.id} field="payAccount" value={item.payAccount} placeholder="銀行/帳號" /></div>;
                         if (col.id === "receipts") {
                           const recs = item.receipts || [];
