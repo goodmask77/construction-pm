@@ -2233,14 +2233,24 @@ function BottomNav({ view, setView, isAdmin }) {
 // ── CONFIRM DIALOG ────────────────────────────────────────────────────────────
 function useConfirm() {
   const [state, setState] = useState(null);
-  const confirm = (msg) => new Promise(resolve => setState({ msg, resolve }));
+  // confirm(msg) 或 confirm(msg, { title, confirmLabel, danger, lines })
+  const confirm = (msg, opts = {}) => new Promise(resolve => setState({ msg, resolve, ...opts }));
+  const danger = state ? (state.danger !== false) : true; // 預設危險(刪除)；批次變更等傳 danger:false
+  const label = state ? (state.confirmLabel || (danger ? "確定刪除" : "確定執行")) : "";
+  // 若傳 lines 陣列 → 條列；否則把 msg 依換行拆行顯示
+  const lines = state ? (state.lines || String(state.msg).split("\n")) : [];
   const Dialog = state ? (
-    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center" }}>
-      <div style={{ background: "#EFE7D6", border: "1px solid #D8CFBB", borderRadius: 14, padding: "24px 22px", maxWidth: 320, width: "90%", textAlign: "center" }}>
-        <div style={{ fontSize: 15, color: "#211C15", marginBottom: 20, lineHeight: 1.6 }}>{state.msg}</div>
-        <div style={{ display: "flex", gap: 10, justifyContent: "center" }}>
-          <button onClick={() => { state.resolve(false); setState(null); }} style={{ flex: 1, padding: "9px 0", background: "#D8CFBB", border: "1px solid #D8CFBB", borderRadius: 8, color: "#6F6656", cursor: "pointer", fontSize: 14 }}>取消</button>
-          <button onClick={() => { state.resolve(true); setState(null); }} style={{ flex: 1, padding: "9px 0", background: "#F3E4DE", border: "1px solid rgba(193,58,34,0.25)", borderRadius: 8, color: "#DC2626", cursor: "pointer", fontSize: 14, fontWeight: 600 }}>確定刪除</button>
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }} onMouseDown={e => { if (e.target === e.currentTarget) { state.resolve(false); setState(null); } }}>
+      <div style={{ background: "#FBF7EE", border: "1px solid #D8CFBB", borderRadius: 14, padding: "20px 20px 16px", maxWidth: 460, width: "100%", maxHeight: "82vh", display: "flex", flexDirection: "column" }}>
+        {state.title && <div style={{ fontSize: 15, fontWeight: 700, color: "#211C15", marginBottom: 10 }}>{state.title}</div>}
+        <div style={{ fontSize: 14, color: "#211C15", lineHeight: 1.7, overflowY: "auto", marginBottom: 18 }}>
+          {lines.length > 1
+            ? lines.map((ln, i) => <div key={i} style={ln.trim() === "" ? { height: 6 } : { padding: "1px 0", display: "flex", gap: 6, alignItems: "flex-start" }}>{ln.trim() && <><span style={{ color: "#A99F88", flexShrink: 0 }}>·</span><span style={{ wordBreak: "break-word" }}>{ln.replace(/^[・·]\s*/, "")}</span></>}</div>)
+            : <div style={{ textAlign: "center" }}>{state.msg}</div>}
+        </div>
+        <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+          <button onClick={() => { state.resolve(false); setState(null); }} style={{ padding: "9px 18px", background: "#D8CFBB", border: "1px solid #D8CFBB", borderRadius: 8, color: "#4A4234", cursor: "pointer", fontSize: 14 }}>取消</button>
+          <button onClick={() => { state.resolve(true); setState(null); }} style={{ padding: "9px 22px", background: danger ? "#F3E4DE" : "#3C8C3C", border: danger ? "1px solid rgba(193,58,34,0.25)" : "none", borderRadius: 8, color: danger ? "#DC2626" : "#fff", cursor: "pointer", fontSize: 14, fontWeight: 600 }}>{label}</button>
         </div>
       </div>
     </div>
@@ -5196,9 +5206,10 @@ function applyActions(actions, cats, settings, worklog) {
       } else if (t === "add_item") {
         const c = findCat(next, a.category);
         if (c) {
-          const it = { id: genId("i"), name: a.name||"新細項", qty: Number(a.qty)||1, unit: a.unit||"式", unitPrice: Number(a.unitPrice)||0, labor:0, laborDays:0, dailyWage:0, assignee: a.assignee||"", status: normStatus(a.status)||"pending", receipts:[], notes: a.notes||"", chat:[] };
+          const tax = ["未稅","含稅","免稅"].includes(a.taxType) ? a.taxType : "未稅";
+          const it = { id: genId("i"), name: a.name||"新細項", qty: Number(a.qty)||1, unit: a.unit||"式", unitPrice: Number(a.unitPrice)||0, taxType: tax, labor:0, laborDays:0, dailyWage:0, assignee: a.assignee||"", status: normStatus(a.status)||"pending", receipts:[], notes: a.notes||"", chat:[] };
           c.items.push(it);
-          results.push(`➕ 「${c.name}」新增細項「${it.name}」（${fmt(it.qty*it.unitPrice)}）`);
+          results.push(`➕ 「${c.name}」新增細項「${it.name}」（${tax}${fmt(it.qty*it.unitPrice)}）`);
         } else results.push(`⚠️ 找不到大項「${a.category}」`);
       } else if (t === "delete_item") {
         const c = findCat(next, a.category); const it = c && findItem(c, a.item);
@@ -5211,6 +5222,7 @@ function applyActions(actions, cats, settings, worklog) {
           if (a.qty != null) { it.qty = Number(a.qty); chg.push(`數量${it.qty}`); }
           if (a.unit != null) { it.unit = a.unit; chg.push(`單位${it.unit}`); }
           if (a.unitPrice != null) { it.unitPrice = Number(a.unitPrice); chg.push(`單價${fmt(it.unitPrice)}`); }
+          if (["未稅","含稅","免稅"].includes(a.taxType)) { it.taxType = a.taxType; chg.push(`稅別${a.taxType}`); }
           if (a.assignee != null) { it.assignee = a.assignee; chg.push(`負責人${it.assignee}`); }
           if (a.notes != null) { it.notes = a.notes; chg.push("備註"); }
           if (a.status != null) { const s=normStatus(a.status); if (s) { it.status = s; chg.push(`狀態${a.status}`); } }
@@ -5250,8 +5262,8 @@ const AGENT_GUIDE = `
 - {"type":"set_category_budget","category":"空調工程","amount":310000}
 - {"type":"set_category_status","category":"拆除工程","status":"進行中"}  // 狀態：待開工/進行中/完工/有問題/暫停
 - {"type":"set_gantt","category":"地坪工程","startWeek":4,"durationWeeks":3}  // 第幾週開始(1起算)、持續幾週
-- {"type":"add_item","category":"空調工程","name":"大金VRV主機","qty":1,"unit":"式","unitPrice":310000}
-- {"type":"set_item","category":"空調工程","item":"主機","qty":2,"unitPrice":150000,"status":"進行中","assignee":"王師傅"}
+- {"type":"add_item","category":"空調工程","name":"大金VRV主機","qty":1,"unit":"式","unitPrice":310000,"taxType":"未稅"}  // taxType：未稅/含稅/免稅，預設未稅
+- {"type":"set_item","category":"空調工程","item":"主機","qty":2,"unitPrice":150000,"taxType":"含稅","status":"進行中","assignee":"王師傅"}
 - {"type":"delete_item","category":"空調工程","item":"主機"}
 - {"type":"add_log","content":"今天拆除工程完成80%，廢料清運2車，明天接續隔間","date":"2026-05-31"}  // 工作日誌；date 可省略(預設今天)
 
@@ -5261,7 +5273,8 @@ const AGENT_GUIDE = `
 3. 先用一兩句白話說明你要做什麼，再附 json 區塊。
 4. 只有在使用者「要求執行操作」時才附 json；單純問問題就正常回答、不要附 json。
 5. 破壞性操作（清空、刪除）也照樣附指令，系統會再跟使用者確認。
-6. 要「清空所有細項重新上資料」時，務必用單一 clear_items 指令，絕對不要產生大量 delete_item 逐筆刪除（會超過長度限制）。`;
+6. 要「清空所有細項重新上資料」時，務必用單一 clear_items 指令，絕對不要產生大量 delete_item 逐筆刪除（會超過長度限制）。
+7. 【稅別很重要】unitPrice 一律填「單價本身」(數量×單價=金額)。若使用者說數字是「含稅」就帶 "taxType":"含稅"；說未稅或沒講就用 "未稅"；免稅就 "免稅"。不要自己把含稅金額換算成未稅再填，直接填原數字＋對應 taxType 即可。`;
 
 const VISION_GUIDE = `
 
@@ -5371,7 +5384,7 @@ function GlobalAIPanel({ chat, setChat, onClose, cats, setCats, canEdit, confirm
         const WRITE = ["clear_all","clear_items","clear_category_items","add_category","delete_category","set_category_budget","set_category_status","set_gantt","add_item","set_item","delete_item","set_setting","add_log"];
         const willWrite = actions.some(a => WRITE.includes(a.type));
         let ok = true;
-        if (willWrite && confirm) ok = await confirm(`AI 要做這些變更，請先核對是不是對的：\n\n${results.map(r => "・" + r).join("\n")}\n\n確定執行嗎？`);
+        if (willWrite && confirm) ok = await confirm("", { title: "AI 要做這些變更，請先核對：", lines: results, confirmLabel: "✓ 確定執行", danger: false });
         if (ok) {
           if (actions.some(a => ["clear_all","clear_items","clear_category_items","add_category","delete_category","set_category_budget","set_category_status","set_gantt","add_item","set_item","delete_item"].includes(a.type))) setCats(newCats);
           if (newSettings && setSettings && actions.some(a => a.type === "set_setting")) setSettings(newSettings);
