@@ -229,10 +229,15 @@ const catItemPaidMap = (cat) => {
   items.forEach(it => { out[it.id] = 0; linked[it.id] = 0; });
   let pool = 0; // 整批/未指定品項的付款，待分攤
   (cat?.payments || []).forEach(p => { const amt = Number(p.amount) || 0; if (p.itemId && linked[p.itemId] != null) { linked[p.itemId] += amt; out[p.itemId] += amt; } else pool += amt; });
+  // 整批/未指定付款：依品項順序「填滿」(先把前面的補到付清)，而非平均攤成奇怪的 %
   if (pool > 0) {
-    const rem = items.map(it => ({ id: it.id, r: Math.max(0, (estMap[it.id] ?? estAmount(it)) - (linked[it.id] || 0)) }));
-    const totalRem = rem.reduce((s, x) => s + x.r, 0);
-    if (totalRem > 0) rem.forEach(x => { if (x.r <= 0) return; const share = pool >= totalRem ? x.r : Math.round(pool * x.r / totalRem); out[x.id] += Math.min(x.r, share); });
+    for (const it of items) {
+      if (pool <= 0) break;
+      const rem = Math.max(0, (estMap[it.id] ?? estAmount(it)) - (out[it.id] || 0));
+      if (rem <= 0) continue;
+      const give = Math.min(rem, pool);
+      out[it.id] += give; pool -= give;
+    }
   }
   return out;
 };
@@ -2808,7 +2813,8 @@ function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols,
             const quoteKeyOf = (it) => `${it.payDate || ""}¦${it.assignee || ""}`;
             const quoteOrder = []; const quoteInfo = {};
             group.rows.forEach(({ item }) => { const k = quoteKeyOf(item); if (!quoteInfo[k]) { quoteInfo[k] = { idx: quoteOrder.length, sum: 0, n: 0, date: item.payDate || "", vendor: item.assignee || "" }; quoteOrder.push(k); } quoteInfo[k].sum += estAfterOf(item); quoteInfo[k].n++; });
-            const multiQuote = conf().showCost && quoteOrder.filter(k => quoteInfo[k].date || quoteInfo[k].vendor).length >= 2;
+            const qualifies = (k) => !!(quoteInfo[k].date || quoteInfo[k].vendor); // 有日期或廠商＝可視為一張報價單
+            const multiQuote = conf().showCost && quoteOrder.some(qualifies) && quoteOrder.length >= 2;
             return (
               <div key={catId}>
                 {/* cat group header — 可收合 / 拖曳排序 / 狀態 / 進度 */}
@@ -2897,8 +2903,8 @@ function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols,
                   const isDragOver = dragOverId === rowKey;
                   const stColor = STATUS_MAP[item.status]?.color || "#6F6656";
                   const tinted = !!item.status && item.status !== "pending"; // 由「狀態」決定整行顏色（待開工=白底）
-                  const qk = quoteKeyOf(item); const qi = quoteInfo[qk]; const qTint = QUOTE_TINTS[qi.idx % QUOTE_TINTS.length];
-                  const newQuote = multiQuote && (rIdx === 0 || quoteKeyOf(group.rows[rIdx - 1].item) !== qk);
+                  const qk = quoteKeyOf(item); const qi = quoteInfo[qk]; const isQuote = multiQuote && qualifies(qk); const qTint = isQuote ? QUOTE_TINTS[qi.idx % QUOTE_TINTS.length] : null;
+                  const newQuote = isQuote && (rIdx === 0 || quoteKeyOf(group.rows[rIdx - 1].item) !== qk);
                   return (
                     <Fragment key={item.id}>
                     {newQuote && (
@@ -2913,7 +2919,7 @@ function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols,
                     <div
                       onDragOver={e => { e.preventDefault(); setDragOverId(rowKey); }}
                       onDrop={() => onRowDrop(rowKey)}
-                      style={{ display: "flex", alignItems: "center", borderBottom: "1px solid #EFE7D6", background: isDragOver ? "#F3E4DE" : multiQuote ? qTint : tinted ? stColor + "1A" : "#ffffff", borderLeft: tinted ? `3px solid ${stColor}` : "3px solid transparent", transition: "background 0.15s" }}
+                      style={{ display: "flex", alignItems: "center", borderBottom: "1px solid #EFE7D6", background: isDragOver ? "#F3E4DE" : qTint ? qTint : tinted ? stColor + "1A" : "#ffffff", borderLeft: tinted ? `3px solid ${stColor}` : "3px solid transparent", transition: "background 0.15s" }}
                     >
                       {/* drag handle（僅此處可拖曳） */}
                       <div
