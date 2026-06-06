@@ -2404,6 +2404,8 @@ function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols,
   const [showColMenu, setShowColMenu] = useState(false);
   const [editCell, setEditCell] = useState(null); // {rowId, col}
   const [filterStatus, setFilterStatus] = useState("all");
+  const [search, setSearch] = useState("");
+  const q = search.trim().toLowerCase();
   const [viewMode, setViewMode] = useState(() => (typeof window !== "undefined" && window.innerWidth < MOBILE_BP) ? "card" : "table"); // 手機預設卡片；table | card（卡片＝原看板）
   const [collapsed, setCollapsed] = useState(new Set()); // 收合的大項 id
   const toggleCollapse = (catId) => setCollapsed(s => { const n = new Set(s); n.has(catId) ? n.delete(catId) : n.add(catId); return n; });
@@ -2427,7 +2429,8 @@ function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols,
     });
   });
 
-  const rows = filterStatus === "all" ? allRows : allRows.filter(r => r.item.status === filterStatus);
+  const matchRow = (r) => { if (!q) return true; const it = r.item; return [it.name, it.assignee, it.notes, r.catName, it.unit].filter(Boolean).join(" ").toLowerCase().includes(q); };
+  const rows = allRows.filter(r => (filterStatus === "all" || r.item.status === filterStatus) && matchRow(r));
 
   const updateItem = (catId, itemId, field, val) => {
     setCats(prev => prev.map(c => c.id === catId
@@ -2603,8 +2606,8 @@ function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols,
   };
 
   const catGroups = {};
-  // 「全部」檢視時，先列出所有大項（含 0 細項的空大項），確保與其他頁同步
-  if (filterStatus === "all") {
+  // 「全部」檢視且未搜尋時，先列出所有大項（含 0 細項的空大項）；搜尋時只顯示有命中細項的大項
+  if (filterStatus === "all" && !q) {
     [...cats].sort((a,b) => a.order - b.order).forEach(c => { catGroups[c.id] = { name: c.name, rows: [] }; });
   }
   rows.forEach(r => {
@@ -2619,6 +2622,11 @@ function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols,
       <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10, flexWrap: "wrap" }}>
         <div style={{ fontSize: 16, fontWeight: 600, color: TEXT, letterSpacing: -0.2 }}>總覽</div>
         <div style={{ fontSize: 12.5, color: SUB }}>{viewMode === "card" ? L("cat") + "一覽" : L("subtitle")}</div>
+        <div style={{ position: "relative", flex: "1 1 200px", maxWidth: 360 }}>
+          <span style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", fontSize: 13, color: "#A99F88", pointerEvents: "none" }}>🔍</span>
+          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="搜尋細項／負責人／備註…" style={{ width: "100%", boxSizing: "border-box", border: `1px solid ${search ? ACCENT : BORDER}`, borderRadius: 8, padding: "6px 28px 6px 30px", fontSize: 13, background: "#fff", color: TEXT, outline: "none" }} />
+          {search && <button onClick={() => setSearch("")} style={{ position: "absolute", right: 6, top: "50%", transform: "translateY(-50%)", border: "none", background: "none", color: SUB, cursor: "pointer", fontSize: 14 }}>×</button>}
+        </div>
         <div style={{ flex: 1 }} />
         {viewMode === "table" && conf().showCost && (
           <button onClick={() => setGroupMode(m => !m)} title="分類模式：設定每個大項的費用群組與是否計入工程" style={{ padding: "6px 12px", borderRadius: 7, border: `1px solid ${groupMode ? ACCENT : BORDER}`, fontSize: 12.5, cursor: "pointer", background: groupMode ? "#F3E4DE" : SURFACE, color: groupMode ? ACCENT : SUB, fontWeight: 500 }}>🏷 分類{groupMode ? "中" : ""}</button>
@@ -2715,7 +2723,7 @@ function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols,
             const itemCount = cat ? cat.items.length : group.rows.length;
             const doneCount = cat ? cat.items.filter(i => i.status === "done").length : 0;
             const pct = itemCount ? Math.round(doneCount / itemCount * 100) : 0;
-            const isCollapsed = collapsed.has(catId);
+            const isCollapsed = !q && collapsed.has(catId); // 搜尋時一律展開
             const isCatDragOver = dragOver === catId;
             return (
               <div key={catId}>
