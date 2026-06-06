@@ -2802,6 +2802,12 @@ function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols,
             const pct = itemCount ? Math.round(doneCount / itemCount * 100) : 0;
             const isCollapsed = !q && collapsed.has(catId); // 搜尋時一律展開
             const isCatDragOver = dragOver === catId;
+            // 依「付款日＋廠商」把同一張報價單的細項分組 → 淡色背景區分 + 小計
+            const QUOTE_TINTS = ["#F6F2E8", "#EDF3F6", "#F4EEF4", "#EDF5EE", "#FBF0EA"];
+            const quoteKeyOf = (it) => `${it.payDate || ""}¦${it.assignee || ""}`;
+            const quoteOrder = []; const quoteInfo = {};
+            group.rows.forEach(({ item }) => { const k = quoteKeyOf(item); if (!quoteInfo[k]) { quoteInfo[k] = { idx: quoteOrder.length, sum: 0, n: 0, date: item.payDate || "", vendor: item.assignee || "" }; quoteOrder.push(k); } quoteInfo[k].sum += estAfterOf(item); quoteInfo[k].n++; });
+            const multiQuote = conf().showCost && quoteOrder.filter(k => quoteInfo[k].date || quoteInfo[k].vendor).length >= 2;
             return (
               <div key={catId}>
                 {/* cat group header — 可收合 / 拖曳排序 / 狀態 / 進度 */}
@@ -2885,16 +2891,28 @@ function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols,
                   <button onClick={() => confirm(`確定刪除${L("cat")}「${group.name}」？\n（含其下 ${itemCount} 筆${L("item")}，無法復原）`).then(ok => { if (ok) setCats(prev => prev.filter(c => c.id !== catId)); })} title={`刪除此${L("cat")}`} style={{ flexShrink: 0, marginLeft: 4, width: 22, height: 22, borderRadius: "50%", background: "transparent", border: "none", color: "#C8BCA0", cursor: "pointer", fontSize: 15, lineHeight: 1, display: "flex", alignItems: "center", justifyContent: "center", padding: 0 }} onMouseEnter={e => { e.currentTarget.style.background = "#F3E4DE"; e.currentTarget.style.color = "#DC2626"; }} onMouseLeave={e => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = "#C8BCA0"; }}>×</button>
                 </div>
                 {/* item rows（收合時隱藏） */}
-                {!isCollapsed && group.rows.map(({ item }) => {
+                {!isCollapsed && group.rows.map(({ item }, rIdx) => {
                   const rowKey = `${catId}||${item.id}`;
                   const isDragOver = dragOverId === rowKey;
                   const stColor = STATUS_MAP[item.status]?.color || "#6F6656";
                   const tinted = !!item.status && item.status !== "pending"; // 由「狀態」決定整行顏色（待開工=白底）
+                  const qk = quoteKeyOf(item); const qi = quoteInfo[qk]; const qTint = QUOTE_TINTS[qi.idx % QUOTE_TINTS.length];
+                  const newQuote = multiQuote && (rIdx === 0 || quoteKeyOf(group.rows[rIdx - 1].item) !== qk);
                   return (
-                    <div key={item.id}
+                    <Fragment key={item.id}>
+                    {newQuote && (
+                      <div style={{ display: "flex", alignItems: "center", gap: 8, background: qTint, borderTop: `1px solid ${BORDER}`, borderLeft: `3px solid ${ACCENT}99`, padding: "3px 10px 3px 34px", fontSize: 11.5, color: "#7A6F58" }}>
+                        <span style={{ fontWeight: 700 }}>📋 報價單</span>
+                        {qi.date && <span>{qi.date.replace(/-/g, "/")}</span>}
+                        {qi.vendor && <span>· {qi.vendor}</span>}
+                        <span style={{ flex: 1 }} />
+                        <span>{qi.n} 筆 · 小計 <b style={{ color: ACCENT, fontVariantNumeric: "tabular-nums" }}>{fmt(qi.sum)}</b></span>
+                      </div>
+                    )}
+                    <div
                       onDragOver={e => { e.preventDefault(); setDragOverId(rowKey); }}
                       onDrop={() => onRowDrop(rowKey)}
-                      style={{ display: "flex", alignItems: "center", borderBottom: "1px solid #EFE7D6", background: isDragOver ? "#F3E4DE" : tinted ? stColor + "1A" : "#ffffff", borderLeft: tinted ? `3px solid ${stColor}` : "3px solid transparent", transition: "background 0.15s" }}
+                      style={{ display: "flex", alignItems: "center", borderBottom: "1px solid #EFE7D6", background: isDragOver ? "#F3E4DE" : multiQuote ? qTint : tinted ? stColor + "1A" : "#ffffff", borderLeft: tinted ? `3px solid ${stColor}` : "3px solid transparent", transition: "background 0.15s" }}
                     >
                       {/* drag handle（僅此處可拖曳） */}
                       <div
@@ -3009,6 +3027,7 @@ function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols,
                         >×</button>
                       </div>
                     </div>
+                    </Fragment>
                   );
                 })}
                 {/* add row in this group（收合時隱藏） */}
