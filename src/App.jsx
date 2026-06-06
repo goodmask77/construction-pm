@@ -2844,42 +2844,47 @@ function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols,
                   style={{ display: "flex", alignItems: "center", background: isCatDragOver ? "#F3E4DE" : BG, borderBottom: `1px solid ${BORDER}`, borderLeft: `2px solid ${ACCENT}`, padding: "0 10px", height: 32, gap: 10, position: "sticky", top: 40, zIndex: 9 }}>
                   <span title="拖曳排序大項" style={{ cursor: "grab", color: "#C8BCA0", fontSize: 13, flexShrink: 0 }}>⠿</span>
                   <button onClick={() => toggleCollapse(catId)} style={{ border: "none", background: "none", cursor: "pointer", color: SUB, fontSize: 11, width: 14, flexShrink: 0, transform: isCollapsed ? "none" : "rotate(90deg)", transition: "transform .15s" }}>▸</button>
+                  {/* 狀態徽章固定在最左（每列同一起點，不歪） */}
+                  <div style={{ flexShrink: 0, width: 60 }}><StatusBadge status={cat?.status || "pending"} setCats={setCats} catId={catId} /></div>
+                  {/* 大項名稱（固定寬；非工程＝名稱反黃底，不另外冒出徽章） */}
                   {catNameEdit === catId
                     ? <input autoFocus defaultValue={group.name} onClick={e => e.stopPropagation()} onBlur={e => { const v = e.target.value.trim(); if (v && v !== group.name) setCats(prev => prev.map(c => c.id === catId ? { ...c, name: v } : c)); setCatNameEdit(null); }} onKeyDown={e => { if (e.key === "Enter") e.target.blur(); if (e.key === "Escape") setCatNameEdit(null); }} style={{ fontSize: 14, fontWeight: 600, color: PRIMARY, border: `1px solid ${ACCENT}`, borderRadius: 6, padding: "2px 6px", width: Math.max(120, group.name.length * 15), flexShrink: 0, outline: "none" }} />
-                    : <div style={{ display: "flex", alignItems: "center", gap: 4, width: 180, flexShrink: 0 }}>
-                        <div onClick={() => toggleCollapse(catId)} onDoubleClick={e => { e.stopPropagation(); setCatNameEdit(catId); }} title={group.name + "（雙擊可改名）"} style={{ fontSize: 14, fontWeight: 600, color: PRIMARY, letterSpacing: -0.1, cursor: "pointer", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{group.name}</div>
+                    : <div style={{ display: "flex", alignItems: "center", gap: 4, width: 184, flexShrink: 0, background: cat?.nonProject ? "#FCEFC0" : "transparent", borderRadius: 6, padding: "1px 6px" }} title={cat?.nonProject ? group.name + "（非工程／業主自理；雙擊可改名）" : group.name + "（雙擊可改名）"}>
+                        <div onClick={() => toggleCollapse(catId)} onDoubleClick={e => { e.stopPropagation(); setCatNameEdit(catId); }} style={{ fontSize: 14, fontWeight: 600, color: cat?.nonProject ? "#92400e" : PRIMARY, letterSpacing: -0.1, cursor: "pointer", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{group.name}</div>
                         <button onClick={e => { e.stopPropagation(); setCatNameEdit(catId); }} title="改名" style={{ border: "none", background: "none", cursor: "pointer", color: "#C8BCA0", fontSize: 12, padding: 0, flexShrink: 0 }} onMouseEnter={e => e.currentTarget.style.color = ACCENT} onMouseLeave={e => e.currentTarget.style.color = "#C8BCA0"}>✎</button>
                       </div>}
-                  <div style={{ flexShrink: 0, width: 64 }}><StatusBadge status={cat?.status || "pending"} setCats={setCats} catId={catId} /></div>
+                  {/* 進度（固定寬，空大項也保留位置 → 議價那欄才會對齊） */}
+                  <div style={{ width: 82, flexShrink: 0, display: "flex", alignItems: "center", gap: 7 }}>
+                    {itemCount > 0 && <>
+                      <div style={{ width: 56, height: 5, background: "#E3DAC6", borderRadius: 3, overflow: "hidden" }}><div style={{ width: pct + "%", height: "100%", background: pct === 100 ? "#3C8C3C" : "#3E72A8" }} /></div>
+                      <span style={{ fontSize: 11, color: SUB }}>{doneCount}/{itemCount}</span>
+                    </>}
+                  </div>
+                  {/* 議價折扣（固定寬欄位 → 每列對齊；套在未稅層、稅金重算，細項原報價不動） */}
+                  {conf().showCost && (
+                    <div style={{ width: 92, flexShrink: 0, display: "flex", alignItems: "center", gap: 3 }} title="大項議價折扣：套用在未稅小計、稅金重算">
+                      {itemCount > 0 && <>
+                        <span style={{ fontSize: 11, color: SUB, flexShrink: 0 }}>議價</span>
+                        <button onClick={() => setCats(prev => prev.map(c => c.id === catId ? { ...c, discountMode: (disc.mode === "amt" ? "pct" : "amt"), discountValue: 0 } : c))}
+                          title={disc.mode === "amt" ? "目前：折讓金額（點擊改為折 %）" : "目前：折 %（點擊改為折讓金額）"}
+                          style={{ border: `1px solid ${BORDER}`, background: SURFACE, color: ACCENT, borderRadius: 5, width: 22, height: 20, fontSize: 12, fontWeight: 700, cursor: "pointer", padding: 0, flexShrink: 0 }}>{disc.mode === "amt" ? "$" : "%"}</button>
+                        <input type="number" min={0} max={disc.mode === "amt" ? Math.round(disc.sub) : 100} value={cat?.discountValue || ""} placeholder={disc.mode === "amt" ? "折讓$" : "折%"}
+                          onChange={e => { const max = disc.mode === "amt" ? catRawEst(cat) : 100; let v = Math.min(Math.max(Number(e.target.value) || 0, 0), max); setCats(prev => prev.map(c => c.id === catId ? { ...c, discountMode: disc.mode, discountValue: v } : c)); }}
+                          style={{ width: 48, height: 20, border: `1px solid ${disc.hasDiscount ? "#C0392B" : BORDER}`, borderRadius: 5, padding: "0 5px", fontSize: 11, fontVariantNumeric: "tabular-nums", background: "#fff", color: TEXT }} />
+                      </>}
+                    </div>
+                  )}
+                  {/* 費用群組設定／徽章（放在彈性區，不影響左側欄位對齊） */}
                   {conf().showCost && (groupMode || groupEditId === catId ? (
-                    <div style={{ display: "flex", alignItems: "center", gap: 4, flexShrink: 0 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 4, flexShrink: 0, marginLeft: 6 }}>
                       <input list="cat-group-list" autoFocus={groupEditId === catId} defaultValue={cat?.group || ""} key={cat?.group || ""} onBlur={e => { setCatGroup(catId, e.target.value.trim()); setGroupEditId(null); }} onKeyDown={e => { if (e.key === "Enter") { setCatGroup(catId, e.target.value.trim()); setGroupEditId(null); } if (e.key === "Escape") setGroupEditId(null); }} placeholder="費用群組…" style={{ width: 100, border: `1px solid ${ACCENT}`, borderRadius: 12, padding: "2px 8px", fontSize: 11, background: "#fff", color: TEXT, outline: "none" }} />
                       <button onClick={() => setCatNonProj(catId, !cat?.nonProject)} title="是否計入工程費用" style={{ border: `1px solid ${cat?.nonProject ? "#C2872E" : BORDER}`, background: cat?.nonProject ? "#FFFBEB" : "transparent", color: cat?.nonProject ? "#C2872E" : SUB, borderRadius: 12, padding: "2px 8px", fontSize: 11, cursor: "pointer" }}>{cat?.nonProject ? "非工程" : "計入工程"}</button>
                     </div>
-                  ) : (<>
-                    {cat?.group && <button onClick={() => setGroupEditId(catId)} title="點擊改費用群組" style={{ flexShrink: 0, border: "1px solid #C8BCA0", background: "#F3E4DE", color: "#92400e", borderRadius: 12, padding: "2px 9px", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>🏷 {cat.group}</button>}
-                    {cat?.nonProject && <span style={{ flexShrink: 0, border: "1px solid #FDE6C8", background: "#FFFBEB", color: "#C2872E", borderRadius: 12, padding: "2px 8px", fontSize: 11, fontWeight: 600 }}>非工程</span>}
-                  </>))}
-                  {itemCount > 0 && (
-                    <div style={{ display: "flex", alignItems: "center", gap: 7, flexShrink: 0 }}>
-                      <div style={{ width: 64, height: 5, background: "#E3DAC6", borderRadius: 3, overflow: "hidden" }}><div style={{ width: pct + "%", height: "100%", background: pct === 100 ? "#3C8C3C" : "#3E72A8" }} /></div>
-                      <span style={{ fontSize: 11, color: SUB }}>{doneCount}/{itemCount}</span>
-                    </div>
-                  )}
+                  ) : (
+                    cat?.group && <button onClick={() => setGroupEditId(catId)} title="點擊改費用群組" style={{ flexShrink: 0, marginLeft: 6, border: "1px solid #C8BCA0", background: "#F3E4DE", color: "#92400e", borderRadius: 12, padding: "2px 9px", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>🏷 {cat.group}</button>
+                  ))}
                   {!conf().showCost && <div style={{ flex: 1 }} />}
                   {conf().showCost && <>
-                  {/* 議價折扣（放在大項名稱旁，不用捲動就看得到；套用在未稅層、稅金重算，細項原報價不動）*/}
-                  {itemCount > 0 && (
-                    <div style={{ display: "flex", alignItems: "center", gap: 3, flexShrink: 0, marginLeft: 4 }} title="大項議價折扣：套用在未稅小計、稅金重算">
-                      <span style={{ fontSize: 11, color: SUB, flexShrink: 0 }}>議價</span>
-                      <button onClick={() => setCats(prev => prev.map(c => c.id === catId ? { ...c, discountMode: (disc.mode === "amt" ? "pct" : "amt"), discountValue: 0 } : c))}
-                        title={disc.mode === "amt" ? "目前：折讓金額（點擊改為折 %）" : "目前：折 %（點擊改為折讓金額）"}
-                        style={{ border: `1px solid ${BORDER}`, background: SURFACE, color: ACCENT, borderRadius: 5, width: 22, height: 20, fontSize: 12, fontWeight: 700, cursor: "pointer", padding: 0, flexShrink: 0 }}>{disc.mode === "amt" ? "$" : "%"}</button>
-                      <input type="number" min={0} max={disc.mode === "amt" ? Math.round(disc.sub) : 100} value={cat?.discountValue || ""} placeholder={disc.mode === "amt" ? "折讓$" : "折%"}
-                        onChange={e => { const max = disc.mode === "amt" ? catRawEst(cat) : 100; let v = Math.min(Math.max(Number(e.target.value) || 0, 0), max); setCats(prev => prev.map(c => c.id === catId ? { ...c, discountMode: disc.mode, discountValue: v } : c)); }}
-                        style={{ width: 56, height: 20, border: `1px solid ${disc.hasDiscount ? "#C0392B" : BORDER}`, borderRadius: 5, padding: "0 5px", fontSize: 11, fontVariantNumeric: "tabular-nums", background: "#fff", color: TEXT }} />
-                    </div>
-                  )}
                   <div style={{ flex: 1 }} />
                   <div onClick={() => toggleCollapse(catId)} title={group.name} style={{ width: 130, textAlign: "right", flexShrink: 0, fontSize: 12.5, fontWeight: 600, color: "#A99F88", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", cursor: "pointer" }}>{group.name}</div>
                   {(() => {
