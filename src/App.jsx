@@ -2414,8 +2414,10 @@ function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols,
   const [payCatId, setPayCatId] = useState(null);  // 開啟付款紀錄面板的大項 id
   const [groupEditId, setGroupEditId] = useState(null); // 正在編輯費用群組標籤的大項
   const [groupsOpen, setGroupsOpen] = useState(true);   // 費用群組合計面板展開
+  const [groupMode, setGroupMode] = useState(false);    // 分類模式：每列顯示群組/非工程編輯
   const allGroups = [...new Set(cats.map(c => c.group).filter(Boolean))];
   const setCatGroup = (catId, g) => setCats(prev => prev.map(c => c.id === catId ? { ...c, group: g || "" } : c));
+  const setCatNonProj = (catId, v) => setCats(prev => prev.map(c => c.id === catId ? { ...c, nonProject: v } : c));
 
   // Flatten all items into rows with cat info
   const allRows = [];
@@ -2618,6 +2620,9 @@ function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols,
         <div style={{ fontSize: 16, fontWeight: 600, color: TEXT, letterSpacing: -0.2 }}>總覽</div>
         <div style={{ fontSize: 12.5, color: SUB }}>{viewMode === "card" ? L("cat") + "一覽" : L("subtitle")}</div>
         <div style={{ flex: 1 }} />
+        {viewMode === "table" && conf().showCost && (
+          <button onClick={() => setGroupMode(m => !m)} title="分類模式：設定每個大項的費用群組與是否計入工程" style={{ padding: "6px 12px", borderRadius: 7, border: `1px solid ${groupMode ? ACCENT : BORDER}`, fontSize: 12.5, cursor: "pointer", background: groupMode ? "#F3E4DE" : SURFACE, color: groupMode ? ACCENT : SUB, fontWeight: 500 }}>🏷 分類{groupMode ? "中" : ""}</button>
+        )}
         {viewMode === "table" && (
           <button onClick={toggleAll} style={{ padding: "6px 12px", borderRadius: 7, border: `1px solid ${BORDER}`, fontSize: 12.5, cursor: "pointer", background: SURFACE, color: SUB, fontWeight: 500 }}>{allCollapsed ? "全部展開" : "全部收合"}</button>
         )}
@@ -2628,6 +2633,26 @@ function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols,
           ))}
         </div>
       </div>
+
+      {/* 工程／非工程／全部 三分類合計 */}
+      {viewMode === "table" && conf().showCost && (() => {
+        let pe = 0, pp = 0, ne = 0, np = 0; // 工程est/paid, 非工程est/paid
+        cats.forEach(c => { const e = catEstAfter(c), pd = catPaid(c); if (c.nonProject) { ne += e; np += pd; } else { pe += e; pp += pd; } });
+        const card = (label, est, paid, color, bg) => (
+          <div style={{ flex: 1, minWidth: 200, background: bg, border: `1px solid ${BORDER}`, borderRadius: 12, padding: "12px 16px" }}>
+            <div style={{ fontSize: 12, color: SUB, marginBottom: 2 }}>{label}</div>
+            <div style={{ fontSize: 22, fontWeight: 800, color, letterSpacing: -0.5, fontVariantNumeric: "tabular-nums" }}>{fmt(est)}</div>
+            <div style={{ fontSize: 11.5, color: SUB, marginTop: 2, fontVariantNumeric: "tabular-nums" }}>已付 <b style={{ color: "#3C8C3C" }}>{fmt(paid)}</b> · 未付 <b style={{ color: (est - paid) > 0 ? "#C2872E" : "#3C8C3C" }}>{fmt(est - paid)}</b></div>
+          </div>
+        );
+        return (
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 12 }}>
+            {card("🏗 工程費用合計", pe, pp, "#2E7D32", "#EAF3EA")}
+            {card("● 非工程（業主自理等）", ne, np, ACCENT, SURFACE)}
+            {card("全部合計", pe + ne, pp + np, TEXT, SURFACE)}
+          </div>
+        );
+      })()}
 
       {/* 費用群組合計（自訂分群，例：廣告機螢幕群）*/}
       {viewMode === "table" && conf().showCost && allGroups.length > 0 && (() => {
@@ -2706,9 +2731,15 @@ function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols,
                   <button onClick={() => toggleCollapse(catId)} style={{ border: "none", background: "none", cursor: "pointer", color: SUB, fontSize: 11, width: 14, flexShrink: 0, transform: isCollapsed ? "none" : "rotate(90deg)", transition: "transform .15s" }}>▸</button>
                   <div onClick={() => toggleCollapse(catId)} style={{ fontSize: 14, fontWeight: 600, color: PRIMARY, letterSpacing: -0.1, cursor: "pointer", flexShrink: 0 }}>{group.name}</div>
                   <div style={{ flexShrink: 0 }}><StatusBadge status={cat?.status || "pending"} setCats={setCats} catId={catId} /></div>
-                  {conf().showCost && (groupEditId === catId
-                    ? <input list="cat-group-list" autoFocus defaultValue={cat?.group || ""} onBlur={e => { setCatGroup(catId, e.target.value.trim()); setGroupEditId(null); }} onKeyDown={e => { if (e.key === "Enter") { setCatGroup(catId, e.target.value.trim()); setGroupEditId(null); } if (e.key === "Escape") setGroupEditId(null); }} placeholder="費用群組…" style={{ width: 110, flexShrink: 0, border: `1px solid ${ACCENT}`, borderRadius: 12, padding: "2px 8px", fontSize: 11, background: "#fff", color: TEXT, outline: "none" }} />
-                    : <button onClick={() => setGroupEditId(catId)} title="設定費用群組（多大項可歸成一群看合計）" style={{ flexShrink: 0, border: cat?.group ? "1px solid #C8BCA0" : `1px dashed ${BORDER}`, background: cat?.group ? "#F3E4DE" : "transparent", color: cat?.group ? "#92400e" : "#C8BCA0", borderRadius: 12, padding: "2px 9px", fontSize: 11, fontWeight: cat?.group ? 600 : 400, cursor: "pointer" }}>{cat?.group ? `🏷 ${cat.group}` : "＋群組"}</button>)}
+                  {conf().showCost && (groupMode || groupEditId === catId ? (
+                    <div style={{ display: "flex", alignItems: "center", gap: 4, flexShrink: 0 }}>
+                      <input list="cat-group-list" autoFocus={groupEditId === catId} defaultValue={cat?.group || ""} key={cat?.group || ""} onBlur={e => { setCatGroup(catId, e.target.value.trim()); setGroupEditId(null); }} onKeyDown={e => { if (e.key === "Enter") { setCatGroup(catId, e.target.value.trim()); setGroupEditId(null); } if (e.key === "Escape") setGroupEditId(null); }} placeholder="費用群組…" style={{ width: 100, border: `1px solid ${ACCENT}`, borderRadius: 12, padding: "2px 8px", fontSize: 11, background: "#fff", color: TEXT, outline: "none" }} />
+                      <button onClick={() => setCatNonProj(catId, !cat?.nonProject)} title="是否計入工程費用" style={{ border: `1px solid ${cat?.nonProject ? "#C2872E" : BORDER}`, background: cat?.nonProject ? "#FFFBEB" : "transparent", color: cat?.nonProject ? "#C2872E" : SUB, borderRadius: 12, padding: "2px 8px", fontSize: 11, cursor: "pointer" }}>{cat?.nonProject ? "非工程" : "計入工程"}</button>
+                    </div>
+                  ) : (<>
+                    {cat?.group && <button onClick={() => setGroupEditId(catId)} title="點擊改費用群組" style={{ flexShrink: 0, border: "1px solid #C8BCA0", background: "#F3E4DE", color: "#92400e", borderRadius: 12, padding: "2px 9px", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>🏷 {cat.group}</button>}
+                    {cat?.nonProject && <span style={{ flexShrink: 0, border: "1px solid #FDE6C8", background: "#FFFBEB", color: "#C2872E", borderRadius: 12, padding: "2px 8px", fontSize: 11, fontWeight: 600 }}>非工程</span>}
+                  </>))}
                   {itemCount > 0 && (
                     <div style={{ display: "flex", alignItems: "center", gap: 7, flexShrink: 0 }}>
                       <div style={{ width: 64, height: 5, background: "#E3DAC6", borderRadius: 3, overflow: "hidden" }}><div style={{ width: pct + "%", height: "100%", background: pct === 100 ? "#3C8C3C" : "#3E72A8" }} /></div>
