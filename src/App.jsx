@@ -3226,22 +3226,32 @@ function PaymentsPanel({ cat, setCats, onClose, confirm }) {
         </div>
       </div>
 
-      {/* 一鍵付款：整體精確比例（無尾差）/ 清除 */}
-      <div style={{ marginBottom: 12 }}>
-        {unpaid > 0
-          ? <>
-            <button onClick={() => update([...payments, { id: "pay-" + Math.random().toString(36).slice(2, 8), date: new Date().toISOString().slice(0, 10), amount: unpaid, category: paid > 0 ? "尾款" : "其他", note: "一鍵全部付清", itemId: null, receipts: [] }])} style={{ width: "100%", background: "#3C8C3C", color: "#fff", border: "none", borderRadius: 10, padding: "11px", fontSize: 14, fontWeight: 700, cursor: "pointer" }}>✓ 一鍵全部付清（補 {fmt(unpaid)}）</button>
+      {/* 一鍵付款：設定到整體比例（保留各品項已綁付款，整批換成單一筆，重複按不堆疊）*/}
+      {(() => {
+        const linkedPays = payments.filter(p => p.itemId);
+        const linkedSum = linkedPays.reduce((s, p) => s + (Number(p.amount) || 0), 0);
+        const setRatio = (r, label) => {
+          const target = Math.round(est * r);
+          const lump = Math.max(0, target - linkedSum);
+          update([...linkedPays, ...(lump > 0 ? [{ id: "pay-" + Math.random().toString(36).slice(2, 8), date: new Date().toISOString().slice(0, 10), amount: lump, category: r >= 1 ? "尾款" : "訂金", note: label, itemId: null, receipts: [] }] : [])]);
+        };
+        const curPct = est > 0 ? Math.round(paid / est * 100) : 0;
+        return (
+          <div style={{ marginBottom: 12 }}>
+            {unpaid > 0
+              ? <button onClick={() => setRatio(1, "全部付清")} style={{ width: "100%", background: "#3C8C3C", color: "#fff", border: "none", borderRadius: 10, padding: "11px", fontSize: 14, fontWeight: 700, cursor: "pointer" }}>✓ 一鍵全部付清（補 {fmt(unpaid)}）</button>
+              : <div style={{ display: "flex", alignItems: "center", gap: 10, background: "#E7F5E7", borderRadius: 10, padding: "10px 14px" }}>
+                  <span style={{ fontSize: 14, fontWeight: 700, color: "#3C8C3C" }}>✓ 此大項已全部付清</span><div style={{ flex: 1 }} />
+                  <button onClick={async () => { if (confirm && !(await confirm("清除這個大項的所有付款紀錄？", { confirmLabel: "確定清除" }))) return; update([]); }} style={{ border: "1px solid #C2872E", background: "#FFFBEB", color: "#C2872E", borderRadius: 8, padding: "5px 12px", fontSize: 12, cursor: "pointer" }}>清除付款</button>
+                </div>}
             <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
-              {[["訂金 50%", 0.5], ["付到 30%", 0.3], ["付到 70%", 0.7]].map(([label, r]) => { const target = Math.round(est * r); const delta = target - paid; return (
-                <button key={label} disabled={delta === 0} onClick={() => update([...payments, { id: "pay-" + Math.random().toString(36).slice(2, 8), date: new Date().toISOString().slice(0, 10), amount: delta, category: "訂金", note: `${label}（整體精確）`, itemId: null, receipts: [] }])} title={`整體付到 ${fmt(target)}（補 ${fmt(delta)}）`} style={{ flex: 1, border: "1px solid #C2872E", background: delta === 0 ? "#EFE7D6" : "#FFFBEB", color: "#C2872E", borderRadius: 8, padding: "7px", fontSize: 12.5, fontWeight: 600, cursor: delta === 0 ? "default" : "pointer" }}>{label}</button>
+              {[0.3, 0.5, 0.7].map(r => { const active = curPct === Math.round(r * 100); return (
+                <button key={r} onClick={() => setRatio(r, `付到 ${Math.round(r * 100)}%`)} title={`整體付到 ${fmt(Math.round(est * r))}`} style={{ flex: 1, border: `1px solid ${active ? "#3C8C3C" : "#C2872E"}`, background: active ? "#EAF5EA" : "#FFFBEB", color: active ? "#3C8C3C" : "#C2872E", borderRadius: 8, padding: "7px", fontSize: 12.5, fontWeight: 600, cursor: "pointer" }}>付到 {Math.round(r * 100)}%{active ? " ✓" : ""}</button>
               ); })}
             </div>
-          </>
-          : <div style={{ display: "flex", alignItems: "center", gap: 10, background: "#E7F5E7", borderRadius: 10, padding: "10px 14px" }}>
-              <span style={{ fontSize: 14, fontWeight: 700, color: "#3C8C3C" }}>✓ 此大項已全部付清</span><div style={{ flex: 1 }} />
-              <button onClick={async () => { if (confirm && !(await confirm("清除這個大項的所有付款紀錄？", { confirmLabel: "確定清除" }))) return; update([]); }} style={{ border: "1px solid #C2872E", background: "#FFFBEB", color: "#C2872E", borderRadius: 8, padding: "5px 12px", fontSize: 12, cursor: "pointer" }}>清除付款</button>
-            </div>}
-      </div>
+          </div>
+        );
+      })()}
 
       {/* 新增付款表單 */}
       <div style={{ border: "1px solid #D8CFBB", borderRadius: 10, padding: 12, marginBottom: 16, background: "#FBF7EE" }}>
@@ -3296,7 +3306,7 @@ function PaymentsPanel({ cat, setCats, onClose, confirm }) {
       })()}
 
       {/* 付款紀錄列表 */}
-      <div style={{ fontSize: 12, color: "#6F6656", marginBottom: 6 }}>已付紀錄（{payments.length} 筆）</div>
+      <div style={{ fontSize: 12, color: "#6F6656", marginBottom: 6, display: "flex", alignItems: "center" }}>已付紀錄（{payments.length} 筆）<div style={{ flex: 1 }} />{payments.length > 0 && <button onClick={async () => { if (confirm && !(await confirm(`清除全部 ${payments.length} 筆付款紀錄？`, { confirmLabel: "確定清除" }))) return; update([]); }} style={{ border: "1px solid #DC2626", background: "#fff", color: "#DC2626", borderRadius: 6, padding: "3px 10px", fontSize: 11.5, cursor: "pointer" }}>一鍵清除</button>}</div>
       {payments.length === 0 && <div style={{ fontSize: 12, color: "#A99F88", padding: "12px 0" }}>尚無付款紀錄</div>}
       {payments.map(p => (
         <div key={p.id} style={{ border: "1px solid #E3DAC6", borderRadius: 8, padding: 10, marginBottom: 8, background: "#fff" }}>
