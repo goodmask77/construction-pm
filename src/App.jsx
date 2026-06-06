@@ -340,7 +340,7 @@ const SPACE_CONF = {
 };
 const conf = () => SPACE_CONF[CURRENT_SPACE] || SPACE_CONF.construction;
 const L = (key) => conf().labels[key] || SPACE_CONF.construction.labels[key];
-const COST_COL_IDS = new Set(["estQty", "unit", "estUnitPrice", "taxType", "taxAmount", "estTotal", "payAccount", "payDate"]);
+const COST_COL_IDS = new Set(["estQty", "unit", "estUnitPrice", "taxType", "taxAmount", "estTotal", "itemPaid", "payAccount", "payDate"]);
 const GLOBAL_KEYS = new Set(["pm_role", "pm_known_users", "pm_current_space"]);
 let CURRENT_SPACE = "construction";
 try { CURRENT_SPACE = localStorage.getItem("pm_current_space") || "construction"; } catch (_) {}
@@ -2360,10 +2360,10 @@ function TopNav({ view, setView, saving, totalEstimated, totalPaid, doneCount, c
 // ── OVERVIEW TABLE (Notion-style) ────────────────────────────────────────────
 const COLS = [
   // 識別區
-  { id:"cat",      label:"大項",   w:110, fixed:true },
+  { id:"cat",      label:"大項",   w:120, fixed:true }, // 可下拉移動細項到其他大項
   { id:"name",     label:"細項名稱", w:200, fixed:true },
+  { id:"payDate",  label:"付款日",  w:120 }, // 付款日移到名稱旁
   { id:"status",   label:"狀態",   w:90 },
-  { id:"assignee", label:"負責人",  w:100 },
   // 金額區
   { id:"estQty",   label:"數量",   w:70 },
   { id:"unit",     label:"單位",   w:56 },
@@ -2371,9 +2371,10 @@ const COLS = [
   { id:"taxType",  label:"稅別",   w:84 },
   { id:"taxAmount",label:"稅額",   w:90 },
   { id:"estTotal", label:"預估金額", w:120 },
-  // 付款區（已付/未付改由「大項付款紀錄」管理，移除逐項已付欄避免重複計算）
+  // 付款區
+  { id:"itemPaid", label:"已付/未付", w:130 }, // 逐項付款狀態（從大項付款紀錄依品項加總）
   { id:"payAccount",  label:"付款帳號", w:130 },
-  { id:"payDate",  label:"付款日",  w:120 },
+  { id:"assignee", label:"負責人",  w:100 }, // 負責人移到付款帳號後
   { id:"receipts", label:"憑證",   w:104 },
   // 其他
   { id:"notes",    label:"備註",   w:180 },
@@ -2448,6 +2449,20 @@ function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols,
       : c
     ));
   };
+  // 移動細項到其他大項（連同對應的付款紀錄一起搬）
+  const moveItemToCat = (fromCatId, itemId, toCatId) => {
+    if (fromCatId === toCatId) return;
+    setCats(prev => {
+      const from = prev.find(c => c.id === fromCatId); if (!from) return prev;
+      const it = (from.items || []).find(x => x.id === itemId); if (!it) return prev;
+      const movedPays = (from.payments || []).filter(p => p.itemId === itemId);
+      return prev.map(c => {
+        if (c.id === fromCatId) return { ...c, items: c.items.filter(x => x.id !== itemId), payments: (c.payments || []).filter(p => p.itemId !== itemId) };
+        if (c.id === toCatId) return { ...c, items: [...(c.items || []), it], payments: [...(c.payments || []), ...movedPays] };
+        return c;
+      });
+    });
+  };
 
   const addReceipts = async (catId, item, files) => {
     if (!files || !files.length) return;
@@ -2507,8 +2522,8 @@ function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols,
   const orderedCols = cols.map(resolve).filter(c => c && c.id).filter(c => conf().showCost || !COST_COL_IDS.has(c.id)).map(relabel);
   const totalW = orderedCols.reduce((s,c) => s + (c.w || 110), 0) + 48;
 
-  const NUM_BUILTIN = new Set(["estQty","estUnitPrice","taxAmount","estTotal","paid","unpaid"]);
-  const MONEY_TOTAL = new Set(["taxAmount","estTotal","paid","unpaid"]); // 內建總計顯示為金額
+  const NUM_BUILTIN = new Set(["estQty","estUnitPrice","taxAmount","estTotal","itemPaid","paid","unpaid"]);
+  const MONEY_TOTAL = new Set(["taxAmount","estTotal","itemPaid","paid","unpaid"]); // 內建總計顯示為金額
   const NO_SUM = new Set(["estUnitPrice"]); // 單價不加總
   const isNumCol = (col) => col.builtin ? NUM_BUILTIN.has(col.id) : (col.type === "money" || col.type === "number" || col.type === "formula");
   const isMoneyCol = (col) => col.builtin ? (MONEY_TOTAL.has(col.id) || ["estUnitPrice"].includes(col.id)) : (col.type === "money" || col.type === "formula");
@@ -2532,11 +2547,16 @@ function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols,
   for (const c of cats) Object.assign(estAfterMap, catItemEstAfter(c));
   const estAfterOf = (it) => (it.id in estAfterMap) ? estAfterMap[it.id] : estAmount(it);
   const unpaidAfterOf = (it) => estAfterOf(it) - paidOf(it);
+  // 逐項已付（從各大項付款紀錄依 itemId 加總）
+  const itemPaidMap = {};
+  for (const c of cats) for (const p of (c.payments || [])) if (p.itemId) itemPaidMap[p.itemId] = (itemPaidMap[p.itemId] || 0) + (Number(p.amount) || 0);
+  const itemPaidOf = (it) => itemPaidMap[it.id] || 0;
 
   const numVal = (col, item) => {
     if (col.builtin) {
       if (col.id === "estTotal") return estAfterOf(item);
       if (col.id === "taxAmount") return taxOf(item);
+      if (col.id === "itemPaid") return itemPaidOf(item);
       if (col.id === "paid") return paidOf(item);
       if (col.id === "unpaid") return unpaidAfterOf(item);
       const m = { estQty:item.estQty??item.qty, estUnitPrice:item.estUnitPrice??item.unitPrice };
@@ -2836,7 +2856,11 @@ function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols,
                           if (col.type === "formula") { const v = buildCtx(item)[col.id]; return <div key={col.id} style={{ ...cs, fontFamily:"monospace", fontSize:12, color:"#6F6656" }}>{typeof v === "number" ? fmt(v) : (v || "—")}</div>; }
                           return <div key={col.id} style={cs}><CustomInput value={item.cust?.[col.id]} type={col.type} onCommit={(val)=>updateCustom(catId, item.id, col.id, val)} /></div>;
                         }
-                        if (col.id === "cat") return <div key={col.id} style={{ ...cs, fontSize: 11, color: "#A99F88" }}>{group.name}</div>;
+                        if (col.id === "cat") return <div key={col.id} style={{ ...cs, padding: "0 4px" }}>
+                          <select value={catId} onChange={e => moveItemToCat(catId, item.id, e.target.value)} title="移動此細項到其他大項" style={{ width: "100%", border: "1px solid transparent", borderRadius: 6, padding: "3px 4px", fontSize: 11, color: "#A99F88", background: "transparent", cursor: "pointer" }} onMouseEnter={e => { e.currentTarget.style.border = `1px solid ${BORDER}`; e.currentTarget.style.background = "#fff"; }} onMouseLeave={e => { e.currentTarget.style.border = "1px solid transparent"; e.currentTarget.style.background = "transparent"; }}>
+                            {[...cats].sort((a,b)=>a.order-b.order).map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                          </select>
+                        </div>;
                         if (col.id === "name") return <div key={col.id} style={{ ...cs, color: "#211C15", fontWeight: 500, gap: 6 }}>
                           <button onClick={(e) => { e.stopPropagation(); updateItem(catId, item.id, "priority", !item.priority); }} title={item.priority ? "優先追蹤中（點擊取消）" : "標為優先追蹤（AI 會特別關注）"} style={{ flexShrink: 0, width: 20, height: 20, borderRadius: 6, border: "none", background: "transparent", color: item.priority ? "#E8A317" : "#D8CFBB", fontSize: 14, cursor: "pointer", lineHeight: 1, padding: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>{item.priority ? "★" : "☆"}</button>
                           <button onClick={(e) => { e.stopPropagation(); updateItem(catId, item.id, "inSeq", !item.inSeq); }} title={item.inSeq ? "已排入工序（點擊取消同步）" : "排入工序（同步成工序子項目）"} style={{ flexShrink: 0, width: 20, height: 20, borderRadius: 6, border: item.inSeq ? "none" : `1px solid ${BORDER}`, background: item.inSeq ? ACCENT : "transparent", color: item.inSeq ? "#fff" : SUB, fontSize: 10, fontWeight: 600, cursor: "pointer", lineHeight: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>序</button>
@@ -2875,6 +2899,15 @@ function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols,
                           return <div key={col.id} style={{ ...cs, color: ACCENT, fontFamily: "monospace", fontWeight: 600, gap: 4 }} title={discd ? `原報價 ${fmt(raw)} → 大項議價後 ${fmt(after)}` : "預估金額（含稅，自動計算）"}>
                             {discd && <span style={{ color: "#A99F88", textDecoration: "line-through", fontWeight: 400, fontSize: 11 }}>{fmt(raw)}</span>}
                             <span>{fmt(after)}</span>
+                          </div>;
+                        }
+                        if (col.id === "itemPaid") {
+                          const tgt = estAfterOf(item), ip = itemPaidOf(item), up = tgt - ip;
+                          const full = tgt > 0 && up <= 0;
+                          return <div key={col.id} style={{ ...cs }} title="此細項已付／未付（來自大項付款紀錄）">
+                            {ip === 0 ? <span style={{ fontSize: 11.5, color: "#C2410C" }}>● 未付</span>
+                              : full ? <span style={{ fontSize: 11.5, fontWeight: 700, color: "#3C8C3C", background: "#E7F5E7", borderRadius: 10, padding: "2px 8px" }}>✓ 付清</span>
+                                : <span style={{ fontSize: 11.5, fontVariantNumeric: "tabular-nums" }}><span style={{ color: "#3C8C3C", fontWeight: 600 }}>{fmt(ip)}</span><span style={{ color: "#A99F88" }}> / {tgt > 0 ? Math.round(ip / tgt * 100) : 0}%</span></span>}
                           </div>;
                         }
                         if (col.id === "paid") {
