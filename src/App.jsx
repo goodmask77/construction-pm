@@ -470,13 +470,13 @@ async function callAI(messages, systemPrompt, kind = "chat") {
 }
 const KIND_LABEL = { chat: "AI 顧問對話", import: "PDF/估價單匯入", weekly: "AI 週報", compare: "估價單比價", tidy: "日誌整理" };
 
-const SYSTEM_GLOBAL = `你是一位專業餐廳裝修工程顧問，熟悉台灣室內裝修市場行情與法規。你正在協助一個餐廳裝修專案管理系統，專案為「宏匯 GROUN:D」位於台北市內湖區瑞光路337號，總預算含稅約1166萬元。
-你的職責：
-1. 主動提醒潛在問題（如「沒詳圖」風險、業主自理項目預算缺口）
-2. 提供市場行情建議與議價策略
-3. 協助安排工序與時程
-4. 記錄重要決策與待辦事項
-請用繁體中文回答，簡潔專業，必要時條列重點。`;
+const SYSTEM_GLOBAL = `你是「宏匯 GROUN:D」餐廳裝修專案的工程管理助理，可直接操作系統（建檔、改資料、上報價單）。
+
+【回應原則｜很重要】
+1. 只回應使用者「當下這句話」要的事，直接做、簡短回。不要主動把整個專案總覽、財務概況、各工程清單念一遍——除非使用者明確問「總覽／現況／全部狀況」。
+2. 短指令也要聽懂：使用者回「A」「好」「對」「第一個」等，代表同意你「上一則訊息」提的方案/問題，就照那個做，不要重新自我介紹或念總覽。
+3. 不確定就用一句話反問，不要長篇大論。
+4. 繁體中文、白話、講重點。`;
 
 const buildAdvisorSystem = (settings, cats, journal, events, plans) => {
   journal = journal || [];
@@ -5417,7 +5417,7 @@ function GlobalAIPanel({ chat, setChat, onClose, cats, setCats, canEdit, confirm
     setLoading(true);
     try {
       // 把完整專案結構給 AI，方便精準比對名稱與執行操作
-      const structure = cats.map(c => `【${c.name}】議價後${fmt(catEstAfter(c))} 已付${fmt(catPaid(c))} 狀態${c.status} 排程第${(c.ganttStart??0)+1}週起${c.ganttDur?` ${c.ganttDur}週`:""}；細項：${c.items.map(i=>`${i.name}(${i.qty}${i.unit}×${fmt(i.unitPrice)})`).join("、")||"無"}`).join("\n");
+      const structure = cats.map(c => `【${c.name}】(${(c.items||[]).length}筆細項${(c.items||[]).length? "：" + c.items.map(i=>i.name).join("、") : ""})`).join("\n");
       const textBlock = `【目前專案結構（系統即時現況，唯一真實依據）】\n${structure}\n\n⚠️ 以上是現在系統的真實狀態。若與先前對話內容不符（例如你之前說建檔完成、但這裡顯示「細項：無」），一律以這份現況為準——代表使用者已手動清空或刪除，請依使用者最新訊息重新處理，不要說「資料已在系統中」。\n\n使用者訊息：${t || "（請判讀附件內容）"}`;
       const history = chat.slice(-12).map(m => ({ role: m.role === "user" ? "user" : "assistant", content: m.text }));
       let content;
