@@ -2654,14 +2654,11 @@ function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols,
     useEffect(() => { setLocal(String(value ?? "")); }, [value]);
     if (type === "date") {
       const iso = String(value ?? "").replace(/\//g, "-").slice(0, 10);
-      const openPicker = (e) => { try { e.currentTarget.showPicker(); } catch {} };
       return (
         <input
           type="date"
           value={iso}
           onChange={e => updateItem(catId, itemId, field, e.target.value)}
-          onClick={openPicker}
-          onFocus={openPicker}
           style={{ width: "100%", border: "none", outline: "none", background: "transparent", cursor: "pointer", fontSize: 12.5, fontFamily: "'Noto Sans TC', sans-serif", color: iso ? "#211C15" : "#CDC3AC", padding: "2px 2px", colorScheme: "light" }}
         />
       );
