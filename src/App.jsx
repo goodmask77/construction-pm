@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback, Fragment } from "react";
+import { createPortal } from "react-dom";
 import { uploadPhoto, deletePhotoFile } from "./supa.js";
 import SequenceView from "./SequenceView.jsx";
 
@@ -4224,14 +4225,14 @@ function StatusBadge({ status, setCats, catId, itemId }) {
   return (
     <>
       <div onClick={openMenu} style={{ background: st.color + "22", border: `1px solid ${st.color}55`, color: st.color, borderRadius: 20, padding: "2px 8px", fontSize: 11, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" }}>{st.label}</div>
-      {pos && (
+      {pos && createPortal(
         <div onClick={(e) => { e.stopPropagation(); setPos(null); }} onMouseDown={(e) => e.stopPropagation()} style={{ position: "fixed", inset: 0, zIndex: 10000 }}>
           <div style={{ position: "fixed", left: Math.min(pos.x, window.innerWidth - 130), top: Math.min(pos.y, window.innerHeight - 220), background: "#fff", border: "1px solid #D8CFBB", borderRadius: 8, boxShadow: "0 6px 24px rgba(0,0,0,.18)", minWidth: 110, overflow: "hidden" }}>
             {Object.entries(STATUS_MAP).map(([k, v]) => (
               <div key={k} onClick={(e) => { e.stopPropagation(); pick(k); }} style={{ padding: "8px 14px", cursor: "pointer", color: v.color, fontSize: 13, fontWeight: 600, borderBottom: "1px solid #EFE7D6" }} onMouseEnter={e => e.currentTarget.style.background = "#F4EFE3"} onMouseLeave={e => e.currentTarget.style.background = "#fff"}>{v.label}</div>
             ))}
           </div>
-        </div>
+        </div>, document.body
       )}
     </>
   );
