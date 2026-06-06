@@ -2692,7 +2692,7 @@ function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols,
                         style={{ width: 56, height: 20, border: `1px solid ${disc.hasDiscount ? "#C0392B" : BORDER}`, borderRadius: 5, padding: "0 5px", fontSize: 11, fontVariantNumeric: "tabular-nums", background: "#fff", color: TEXT }} />
                     </div>
                   )}
-                  <div style={{ flex: 1 }} />
+                  <div style={{ width: 18 }} />
                   {(() => {
                     const isEmpty = groupEst === 0 && groupPaid === 0;
                     if (isEmpty) return <span style={{ fontSize: 12, color: "#C8BCA0" }}>尚未建立明細</span>;
@@ -2700,13 +2700,13 @@ function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols,
                     const full = groupEst > 0 && groupUnpaid <= 0;
                     const none = groupPaid === 0;
                     return (<>
-                      <div style={{ fontSize: 12, color: SUB }} title="未稅小計＝Σ數量×單價，對應報價單的未稅總價">未稅 <span style={{ color: TEXT, fontVariantNumeric: "tabular-nums", fontWeight: 500 }}>{fmt(groupPretax)}</span></div>
+                      <div style={{ fontSize: 13, color: SUB }} title="未稅小計＝Σ數量×單價，對應報價單的未稅總價">未稅 <span style={{ color: TEXT, fontVariantNumeric: "tabular-nums", fontWeight: 500 }}>{fmt(groupPretax)}</span></div>
                       {disc.hasDiscount ? (<>
                         <div style={{ fontSize: 12, color: SUB }}>原報價 <span style={{ color: "#A99F88", textDecoration: "line-through", fontVariantNumeric: "tabular-nums" }}>{fmt(groupRaw)}</span></div>
                         <div style={{ fontSize: 12, color: SUB }}>議價後 <span style={{ color: TEXT, fontVariantNumeric: "tabular-nums", fontWeight: 600 }}>{fmt(groupEst)}</span></div>
                         <div style={{ fontSize: 12, color: "#C0392B", fontWeight: 600, fontVariantNumeric: "tabular-nums" }} title={disc.mode === "amt" ? `固定折讓 ${fmt(disc.amt)}（直接從含稅總價扣）` : `折 ${Math.round(disc.pct * 10) / 10}%`}>省 {fmt(groupSaved)}（-{Math.round(disc.pct * 10) / 10}%）</div>
                       </>) : (
-                        <div style={{ fontSize: 12, color: SUB }} title="含稅總計">含稅 <span style={{ color: TEXT, fontVariantNumeric: "tabular-nums", fontWeight: 600 }}>{fmt(groupEst)}</span></div>
+                        <div style={{ fontSize: 13, color: SUB }} title="含稅總計">含稅 <span style={{ color: TEXT, fontVariantNumeric: "tabular-nums", fontWeight: 600 }}>{fmt(groupEst)}</span></div>
                       )}
                       {/* 付款狀態（一眼辨識：綠=付清、橘=未付、進度條=部分）*/}
                       <button onClick={() => setPayCatId(catId)} title="檢視／新增付款紀錄" style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer", border: "none", background: "none", padding: 0 }}>
@@ -2721,6 +2721,7 @@ function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols,
                       <button onClick={(e) => { e.stopPropagation(); setPayCatId(catId); }} title="新增付款紀錄" style={{ flexShrink: 0, border: `1px solid #3C8C3C`, background: "#F0FDF4", color: "#3C8C3C", borderRadius: 6, padding: "2px 9px", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>＋ 新增付款</button>
                     </>);
                   })()}
+                  <div style={{ flex: 1 }} />
                   </>}
                   <button onClick={() => confirm(`確定刪除${L("cat")}「${group.name}」？\n（含其下 ${itemCount} 筆${L("item")}，無法復原）`).then(ok => { if (ok) setCats(prev => prev.filter(c => c.id !== catId)); })} title={`刪除此${L("cat")}`} style={{ flexShrink: 0, marginLeft: 4, width: 22, height: 22, borderRadius: "50%", background: "transparent", border: "none", color: "#C8BCA0", cursor: "pointer", fontSize: 15, lineHeight: 1, display: "flex", alignItems: "center", justifyContent: "center", padding: 0 }} onMouseEnter={e => { e.currentTarget.style.background = "#F3E4DE"; e.currentTarget.style.color = "#DC2626"; }} onMouseLeave={e => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = "#C8BCA0"; }}>×</button>
                 </div>
@@ -2907,13 +2908,25 @@ function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols,
 function PaymentsPanel({ cat, setCats, onClose, confirm }) {
   const payments = cat.payments || [];
   const est = catEstAfter(cat), paid = catPaid(cat), unpaid = est - paid;
+  const items = cat.items || [];
+  const itemEstMap = catItemEstAfter(cat); // 各品項議價後金額
+  const itemPaidOf = (id) => payments.filter(p => p.itemId === id).reduce((s, p) => s + (Number(p.amount) || 0), 0);
   const [lightbox, setLightbox] = useState(null);
   const [busy, setBusy] = useState(false);
-  const blankDraft = () => ({ date: new Date().toISOString().slice(0, 10), amount: "", category: "訂金", note: "", receipts: [] });
+  const blankDraft = () => ({ date: new Date().toISOString().slice(0, 10), amount: "", category: "訂金", note: "", itemId: "", receipts: [] });
   const [draft, setDraft] = useState(blankDraft);
 
   const update = (next) => setCats(prev => prev.map(c => c.id === cat.id ? { ...c, payments: next } : c));
   const editPay = (id, field, val) => update(payments.map(p => p.id === id ? { ...p, [field]: val } : p));
+  const nameOfItem = (id) => items.find(i => i.id === id)?.name || "";
+  // 對某品項快速付款：ratio=0.5 訂金一半；full=true 補到付清
+  const quickPayItem = (item, { ratio, full, label }) => {
+    const target = itemEstMap[item.id] ?? estAmount(item);
+    const already = itemPaidOf(item.id);
+    const amt = full ? Math.max(0, target - already) : Math.round(target * (ratio || 0));
+    if (amt <= 0) return;
+    update([...payments, { id: "pay-" + Math.random().toString(36).slice(2, 8), date: new Date().toISOString().slice(0, 10), amount: amt, category: full ? (already > 0 ? "尾款" : "其他") : "訂金", note: label || "", itemId: item.id, receipts: [] }]);
+  };
 
   const uploadRcp = async (files) => {
     if (!files || !files.length) return [];
@@ -2927,7 +2940,7 @@ function PaymentsPanel({ cat, setCats, onClose, confirm }) {
   const addPayment = () => {
     const amt = Number(draft.amount) || 0;
     if (amt <= 0) return;
-    update([...payments, { id: "pay-" + Math.random().toString(36).slice(2, 8), date: draft.date, amount: amt, category: draft.category, note: draft.note, receipts: draft.receipts }]);
+    update([...payments, { id: "pay-" + Math.random().toString(36).slice(2, 8), date: draft.date, amount: amt, category: draft.category, note: draft.note, itemId: draft.itemId || null, receipts: draft.receipts }]);
     setDraft(blankDraft());
   };
   const delPayment = async (id) => {
@@ -2985,6 +2998,7 @@ function PaymentsPanel({ cat, setCats, onClose, confirm }) {
           <div><div style={{ fontSize: 10, color: "#6F6656", marginBottom: 2 }}>金額 NT$</div><input type="number" min={0} value={draft.amount} placeholder="0" onChange={e => setDraft({ ...draft, amount: e.target.value })} style={{ ...inputStyle, fontVariantNumeric: "tabular-nums" }} /></div>
           <div><div style={{ fontSize: 10, color: "#6F6656", marginBottom: 2 }}>備註</div><input value={draft.note} placeholder="選填" onChange={e => setDraft({ ...draft, note: e.target.value })} style={inputStyle} /></div>
         </div>
+        {items.length > 0 && <div style={{ marginBottom: 8 }}><div style={{ fontSize: 10, color: "#6F6656", marginBottom: 2 }}>對應品項／廠商（選填，多廠商整合用）</div><select value={draft.itemId} onChange={e => setDraft({ ...draft, itemId: e.target.value })} style={inputStyle}><option value="">整批／不指定</option>{items.map(it => <option key={it.id} value={it.id}>{it.name}</option>)}</select></div>}
         <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
           {thumbs(draft.receipts, (ri) => setDraft({ ...draft, receipts: draft.receipts.filter((_, i) => i !== ri) }))}
           <label style={{ fontSize: 12, border: "1px dashed #D8CFBB", borderRadius: 6, padding: "6px 12px", cursor: "pointer", color: "#6F6656" }}>
@@ -2996,6 +3010,37 @@ function PaymentsPanel({ cat, setCats, onClose, confirm }) {
         </div>
       </div>
 
+      {/* 各品項付款進度（同大項整合多廠商，每個品項各自付清/訂金%）*/}
+      {items.length > 0 && (() => {
+        const withTarget = items.filter(it => (itemEstMap[it.id] ?? estAmount(it)) > 0);
+        if (!withTarget.length) return null;
+        return (
+          <div style={{ marginBottom: 16 }}>
+            <div style={{ fontSize: 12, color: "#6F6656", marginBottom: 6 }}>各品項付款進度（多廠商整合）</div>
+            {withTarget.map(it => {
+              const target = itemEstMap[it.id] ?? estAmount(it);
+              const ip = itemPaidOf(it.id);
+              const pct = target > 0 ? Math.min(100, Math.round(ip / target * 100)) : 0;
+              const full = ip >= target;
+              return (
+                <div key={it.id} style={{ border: "1px solid #E3DAC6", borderRadius: 8, padding: "8px 10px", marginBottom: 6, background: "#fff" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <div style={{ flex: 1, minWidth: 0 }}><div style={{ fontSize: 13, fontWeight: 600, color: "#211C15", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{it.name}</div><div style={{ fontSize: 11, color: "#6F6656", fontVariantNumeric: "tabular-nums" }}>{fmt(target)}</div></div>
+                    {full ? <span style={{ fontSize: 11.5, fontWeight: 700, color: "#3C8C3C", background: "#E7F5E7", borderRadius: 12, padding: "3px 10px" }}>✓ 已付清</span>
+                      : <span style={{ fontSize: 11.5, color: ip > 0 ? "#C2872E" : "#A99F88", fontVariantNumeric: "tabular-nums" }}>{ip > 0 ? `已付 ${fmt(ip)}（${pct}%）` : "未付"}</span>}
+                  </div>
+                  <div style={{ height: 6, background: "#EFE7D6", borderRadius: 3, overflow: "hidden", margin: "6px 0" }}><div style={{ width: pct + "%", height: "100%", background: "#3C8C3C" }} /></div>
+                  {!full && <div style={{ display: "flex", gap: 6 }}>
+                    <button onClick={() => quickPayItem(it, { ratio: 0.5, label: "訂金50%" })} style={{ fontSize: 11.5, border: "1px solid #C2872E", background: "#FFFBEB", color: "#C2872E", borderRadius: 6, padding: "3px 10px", cursor: "pointer" }}>訂金 50%</button>
+                    <button onClick={() => quickPayItem(it, { full: true, label: ip > 0 ? "補尾款" : "全額付清" })} style={{ fontSize: 11.5, border: "1px solid #3C8C3C", background: "#F0FDF4", color: "#3C8C3C", borderRadius: 6, padding: "3px 10px", cursor: "pointer" }}>{ip > 0 ? "補尾款付清" : "全額付清"}</button>
+                  </div>}
+                </div>
+              );
+            })}
+          </div>
+        );
+      })()}
+
       {/* 付款紀錄列表 */}
       <div style={{ fontSize: 12, color: "#6F6656", marginBottom: 6 }}>已付紀錄（{payments.length} 筆）</div>
       {payments.length === 0 && <div style={{ fontSize: 12, color: "#A99F88", padding: "12px 0" }}>尚無付款紀錄</div>}
@@ -3003,6 +3048,7 @@ function PaymentsPanel({ cat, setCats, onClose, confirm }) {
         <div key={p.id} style={{ border: "1px solid #E3DAC6", borderRadius: 8, padding: 10, marginBottom: 8, background: "#fff" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
             <span style={{ fontSize: 10, background: "#F3E4DE", color: "#92400e", borderRadius: 10, padding: "1px 8px", fontWeight: 600, flexShrink: 0 }}>{p.category || "其他"}</span>
+            {p.itemId && <span style={{ fontSize: 10, background: "#E8F0FB", color: "#2E6FB0", borderRadius: 10, padding: "1px 8px", fontWeight: 600, flexShrink: 0, maxWidth: 120, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={nameOfItem(p.itemId)}>{nameOfItem(p.itemId)}</span>}
             <input type="date" value={p.date || ""} onChange={e => editPay(p.id, "date", e.target.value)} style={{ ...inputStyle, width: 140, padding: "4px 8px", fontSize: 12 }} />
             <input type="number" min={0} value={p.amount} onChange={e => editPay(p.id, "amount", Number(e.target.value) || 0)} style={{ ...inputStyle, width: 120, padding: "4px 8px", fontSize: 13, fontFamily: "monospace", fontWeight: 600, color: "#3C8C3C" }} />
             <div style={{ flex: 1 }} />
