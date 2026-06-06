@@ -5352,6 +5352,53 @@ function GlobalAIPanel({ chat, setChat, onClose, cats, setCats, canEdit, confirm
   const [attachments, setAttachments] = useState([]);
   const endRef = useRef(null);
   const fileRef = useRef(null);
+  const importFileRef = useRef(null);
+  const [imp, setImp] = useState(null); // 報價單匯入：null | {busy, rows, targetCatId, raw}
+
+  // 把上傳檔轉成 base64（圖縮放）
+  const fileToAtt = (f) => new Promise((resolve) => {
+    const isImg = /^image\//.test(f.type), isPdf = f.type === "application/pdf";
+    if (!isImg && !isPdf) return resolve(null);
+    if (isPdf) { const r = new FileReader(); r.onload = () => resolve({ kind: "pdf", media_type: "application/pdf", data: String(r.result).split(",")[1] }); r.readAsDataURL(f); return; }
+    const img = new Image();
+    img.onload = () => { const max = 1568; let { width, height } = img; if (width > max || height > max) { const rr = Math.min(max / width, max / height); width = Math.round(width * rr); height = Math.round(height * rr); } const cv = document.createElement("canvas"); cv.width = width; cv.height = height; cv.getContext("2d").drawImage(img, 0, 0, width, height); resolve({ kind: "image", media_type: "image/jpeg", data: cv.toDataURL("image/jpeg", 0.85).split(",")[1] }); };
+    img.src = URL.createObjectURL(f);
+  });
+
+  // 報價單結構化解析 → 預覽表
+  const startImport = async (files) => {
+    const arr = Array.from(files || []); if (!arr.length) return;
+    setImp({ busy: true, rows: [], targetCatId: cats[0]?.id || "" });
+    try {
+      const atts = (await Promise.all(arr.map(fileToAtt))).filter(Boolean);
+      const catNames = cats.map(c => c.name).join("、");
+      const sys = `你是估價單解析器。只輸出一個 markdown json 區塊，不要任何其他文字。格式：
+\`\`\`json
+{"suggest":"最可能對應的工程大項名稱","items":[{"name":"品項名(不含廠商)","qty":1,"unit":"式","unitPrice":88200,"taxType":"含稅","vendor":"廠商或人名"}]}
+\`\`\`
+規則：1) unitPrice 填單據上的數字本身，絕不做任何除法或加減稅。2) taxType 照單據：含稅/未稅/免稅，沒寫就「未稅」。3) 括號或另一欄的廠商/人名放 vendor，name 只放品項本身。4) 數量沒寫填1、單位沒寫填「式」。5) 現有工程大項：${catNames}。suggest 從中挑最接近的。`;
+      const content = [{ type: "text", text: "解析這份估價單／報價單的所有品項。" }];
+      atts.forEach(a => content.push(a.kind === "image" ? { type: "image", source: { type: "base64", media_type: a.media_type, data: a.data } } : { type: "document", source: { type: "base64", media_type: "application/pdf", data: a.data } }));
+      const reply = await callAI([{ role: "user", content }], sys, "import");
+      let obj = null;
+      const m = reply.match(/```json\s*([\s\S]*?)```/i);
+      try { obj = JSON.parse(m ? m[1] : reply); } catch (_) {}
+      const items = (obj?.items || []).map(it => ({ pick: true, name: String(it.name || "").trim(), qty: Number(it.qty) || 1, unit: it.unit || "式", unitPrice: Math.round(Number(it.unitPrice) || 0), taxType: ["未稅","含稅","免稅"].includes(it.taxType) ? it.taxType : "未稅", vendor: String(it.vendor || "").trim() }));
+      const sugCat = cats.find(c => c.name === obj?.suggest) || cats.find(c => obj?.suggest && c.name.includes(obj.suggest));
+      if (!items.length) { setImp(null); alert("沒有解析到品項，請改用對話框上傳，或確認圖片清晰。"); return; }
+      setImp({ busy: false, rows: items, targetCatId: sugCat?.id || cats[0]?.id || "" });
+    } catch (_) { setImp(null); alert("解析失敗，請稍後再試。"); }
+  };
+  const confirmImport = () => {
+    if (!imp) return;
+    const cat = cats.find(c => c.id === imp.targetCatId); if (!cat) { alert("請選擇要匯入的工程大項"); return; }
+    const picked = imp.rows.filter(r => r.pick && r.name);
+    if (!picked.length) { setImp(null); return; }
+    const newItems = picked.map(r => ({ id: "i-" + cat.id + "-" + Math.random().toString(36).slice(2, 7), name: r.name, qty: r.qty, unit: r.unit, unitPrice: Math.round(r.unitPrice), taxType: r.taxType, labor: 0, laborDays: 0, dailyWage: 0, assignee: r.vendor, status: "pending", receipts: [], notes: "", chat: [] }));
+    setCats(prev => prev.map(c => c.id === cat.id ? { ...c, items: [...(c.items || []), ...newItems] } : c));
+    addMsg("assistant", `✅ 已匯入 ${newItems.length} 筆到「${cat.name}」。`);
+    setImp(null);
+  };
 
   const addFiles = (files) => {
     Array.from(files || []).slice(0, 5).forEach(f => {
@@ -5403,7 +5450,7 @@ function GlobalAIPanel({ chat, setChat, onClose, cats, setCats, canEdit, confirm
   // auto greeting
   useEffect(() => {
     if (chat.length === 0) {
-      addMsg("assistant", `你好！我是宏匯 GROUN:D 工程AI顧問。\n\n目前專案包含 ${cats.length} 個工程大項，有以下幾點需要特別注意：\n\n🔴 8處「沒詳圖」項目（牆面工程含服務台）需簽約前補齊\n🔴 監督管理費 10% 偏高，建議壓至 7~8%\n🟡 弱電、招牌、家具等業主自理項目預估額外需 135~420萬\n🟡 燈具工程 $22萬為暫估，需確認上限\n\n請問有什麼我可以協助的？`);
+      addMsg("assistant", `你好！我是工程管理助理 🤖\n\n我可以幫你：\n・📋 報價單匯入（點下方「報價單」鈕→解析→預覽→確認，最準）\n・改資料、設定金額、排程\n・查詢某工程明細、預算差異、風險摘要\n\n直接告訴我要做什麼就好。`);
     }
   }, []);
 
@@ -5517,12 +5564,67 @@ function GlobalAIPanel({ chat, setChat, onClose, cats, setCats, canEdit, confirm
           )}
           <div style={{ display: "flex", gap: 8, alignItems: "flex-end" }}>
             <input ref={fileRef} type="file" accept="image/*,application/pdf" multiple style={{ display: "none" }} onChange={e => { addFiles(e.target.files); e.target.value = ""; }} />
-            <button onClick={() => fileRef.current?.click()} title="上傳圖片 / 估價單 / PDF" style={{ background: "#EFE7D6", border: "1px solid #D8CFBB", borderRadius: 8, padding: "0 12px", height: 40, cursor: "pointer", fontSize: 16, color: "#4A4234", flexShrink: 0 }}>📎</button>
+            <input ref={importFileRef} type="file" accept="image/*,application/pdf" multiple style={{ display: "none" }} onChange={e => { startImport(e.target.files); e.target.value = ""; }} />
+            <button onClick={() => fileRef.current?.click()} title="一般上傳（對話用）" style={{ background: "#EFE7D6", border: "1px solid #D8CFBB", borderRadius: 8, padding: "0 12px", height: 40, cursor: "pointer", fontSize: 16, color: "#4A4234", flexShrink: 0 }}>📎</button>
+            {canEdit && <button onClick={() => importFileRef.current?.click()} title="報價單結構化匯入（解析→預覽→確認）" style={{ background: "#F0FDF4", border: "1px solid #3C8C3C", borderRadius: 8, padding: "0 10px", height: 40, cursor: "pointer", fontSize: 12.5, fontWeight: 600, color: "#3C8C3C", flexShrink: 0, whiteSpace: "nowrap" }}>📋 報價單</button>}
             <textarea id="global-input" value={input} onChange={e => setInput(e.target.value)} onPaste={onPaste} rows={2} onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); send(); } }} placeholder="輸入、貼上截圖，或上傳估價單…（Enter 送出 · Shift+Enter 換行）" style={{ ...inputStyle, flex: 1, margin: 0, resize: "vertical", height: "auto", maxHeight: 160, overflowY: "auto", lineHeight: 1.5, fontFamily: "inherit" }} />
             <button onClick={send} disabled={loading || (!input.trim() && attachments.length === 0)} style={{ background: ACCENT, border: "none", borderRadius: 8, padding: "0 16px", height: 40, color: "#ffffff", fontWeight: 600, cursor: loading ? "not-allowed" : "pointer", fontSize: 14, opacity: loading ? 0.6 : 1, flexShrink: 0 }}>送</button>
           </div>
         </div>
       </div>
+
+      {/* 報價單結構化匯入：預覽表 → 勾選/編輯 → 確認寫入 */}
+      {imp && (
+        <div onClick={e => e.target === e.currentTarget && !imp.busy && setImp(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 600, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+          <div style={{ background: "#fff", borderRadius: 14, width: "min(820px,96vw)", maxHeight: "88vh", display: "flex", flexDirection: "column", overflow: "hidden" }}>
+            <div style={{ padding: "14px 18px", borderBottom: `1px solid ${BORDER}`, display: "flex", alignItems: "center", gap: 10 }}>
+              <div style={{ fontSize: 15, fontWeight: 700, color: TEXT }}>📋 報價單匯入預覽</div>
+              <div style={{ flex: 1 }} />
+              {!imp.busy && <button onClick={() => setImp(null)} style={{ border: "none", background: "none", fontSize: 20, color: SUB, cursor: "pointer" }}>×</button>}
+            </div>
+            {imp.busy ? (
+              <div style={{ padding: 50, textAlign: "center", color: ACCENT, fontSize: 14 }}>🤖 解析報價單中…</div>
+            ) : (<>
+              <div style={{ padding: "12px 18px", borderBottom: `1px solid ${BORDER}`, display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                <span style={{ fontSize: 13, color: SUB }}>匯入到大項：</span>
+                <select value={imp.targetCatId} onChange={e => setImp({ ...imp, targetCatId: e.target.value })} style={{ border: `1px solid ${BORDER}`, borderRadius: 8, padding: "6px 10px", fontSize: 14, background: "#fff", color: TEXT }}>
+                  {[...cats].sort((a,b)=>a.order-b.order).map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                </select>
+                <span style={{ fontSize: 12, color: SUB }}>共 {imp.rows.length} 筆，勾選 {imp.rows.filter(r=>r.pick).length} 筆</span>
+                <div style={{ fontSize: 11, color: "#A99F88" }}>※ 數字照單據原值、不換算；可直接修改</div>
+              </div>
+              <div style={{ flex: 1, overflow: "auto", padding: "8px 12px" }}>
+                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+                  <thead><tr style={{ color: SUB, fontSize: 11 }}>
+                    <th style={{ padding: 6 }}><input type="checkbox" checked={imp.rows.every(r=>r.pick)} onChange={e => setImp({ ...imp, rows: imp.rows.map(r=>({ ...r, pick: e.target.checked })) })} /></th>
+                    <th style={{ padding: 6, textAlign: "left" }}>品項</th><th style={{ padding: 6 }}>數量</th><th style={{ padding: 6 }}>單位</th><th style={{ padding: 6, textAlign: "right" }}>單價</th><th style={{ padding: 6 }}>稅別</th><th style={{ padding: 6, textAlign: "left" }}>廠商/負責人</th><th style={{ padding: 6, textAlign: "right" }}>金額</th>
+                  </tr></thead>
+                  <tbody>
+                    {imp.rows.map((r, i) => { const upd = (k,v) => setImp({ ...imp, rows: imp.rows.map((x,j)=>j===i?{...x,[k]:v}:x) }); const amt = (r.taxType === "未稅") ? Math.round(r.qty*r.unitPrice*1.05) : Math.round(r.qty*r.unitPrice); const cellI = { width: "100%", boxSizing: "border-box", border: `1px solid ${BORDER}`, borderRadius: 6, padding: "4px 6px", fontSize: 13, background: "#fff", color: TEXT }; return (
+                      <tr key={i} style={{ borderTop: `1px solid ${BORDER}`, opacity: r.pick ? 1 : 0.45 }}>
+                        <td style={{ padding: 4, textAlign: "center" }}><input type="checkbox" checked={r.pick} onChange={e => upd("pick", e.target.checked)} /></td>
+                        <td style={{ padding: 4 }}><input value={r.name} onChange={e => upd("name", e.target.value)} style={cellI} /></td>
+                        <td style={{ padding: 4, width: 56 }}><input type="number" value={r.qty} onChange={e => upd("qty", Number(e.target.value)||0)} style={{ ...cellI, textAlign: "center" }} /></td>
+                        <td style={{ padding: 4, width: 50 }}><input value={r.unit} onChange={e => upd("unit", e.target.value)} style={{ ...cellI, textAlign: "center" }} /></td>
+                        <td style={{ padding: 4, width: 90 }}><input type="number" value={r.unitPrice} onChange={e => upd("unitPrice", Number(e.target.value)||0)} style={{ ...cellI, textAlign: "right" }} /></td>
+                        <td style={{ padding: 4, width: 72 }}><select value={r.taxType} onChange={e => upd("taxType", e.target.value)} style={cellI}>{["未稅","含稅","免稅"].map(t=><option key={t} value={t}>{t}</option>)}</select></td>
+                        <td style={{ padding: 4 }}><input value={r.vendor} onChange={e => upd("vendor", e.target.value)} placeholder="—" style={cellI} /></td>
+                        <td style={{ padding: 4, textAlign: "right", fontFamily: "monospace", color: ACCENT, whiteSpace: "nowrap" }}>{fmt(amt)}</td>
+                      </tr>
+                    ); })}
+                  </tbody>
+                </table>
+              </div>
+              <div style={{ padding: "12px 18px", borderTop: `1px solid ${BORDER}`, display: "flex", alignItems: "center", gap: 10 }}>
+                <span style={{ fontSize: 13, color: SUB }}>合計（勾選）：<b style={{ color: ACCENT, fontFamily: "monospace" }}>{fmt(imp.rows.filter(r=>r.pick).reduce((s,r)=> s + ((r.taxType==="未稅")?Math.round(r.qty*r.unitPrice*1.05):Math.round(r.qty*r.unitPrice)), 0))}</b></span>
+                <div style={{ flex: 1 }} />
+                <button onClick={() => setImp(null)} style={{ border: `1px solid ${BORDER}`, background: "#fff", color: SUB, borderRadius: 8, padding: "8px 16px", fontSize: 13, cursor: "pointer" }}>取消</button>
+                <button onClick={confirmImport} style={{ border: "none", background: "#3C8C3C", color: "#fff", borderRadius: 8, padding: "8px 22px", fontSize: 14, fontWeight: 700, cursor: "pointer" }}>✓ 確認匯入 {imp.rows.filter(r=>r.pick).length} 筆</button>
+              </div>
+            </>)}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
