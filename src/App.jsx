@@ -3232,14 +3232,18 @@ function PaymentsPanel({ cat, setCats, onClose, confirm }) {
         </div>
       </div>
 
-      {/* 一鍵付款：設定到整體比例（保留各品項已綁付款，整批換成單一筆，重複按不堆疊）*/}
+      {/* 一鍵付款：把「每個品項」都設到 X%（最後一筆吸收進位差→整體精確）；重複按只替換、不堆疊 */}
       {(() => {
-        const linkedPays = payments.filter(p => p.itemId);
-        const linkedSum = linkedPays.reduce((s, p) => s + (Number(p.amount) || 0), 0);
         const setRatio = (r, label) => {
           const target = Math.round(est * r);
-          const lump = Math.max(0, target - linkedSum);
-          update([...linkedPays, ...(lump > 0 ? [{ id: "pay-" + Math.random().toString(36).slice(2, 8), date: new Date().toISOString().slice(0, 10), amount: lump, category: r >= 1 ? "尾款" : "訂金", note: label, itemId: null, receipts: [] }] : [])]);
+          const list = items;
+          let acc = 0; const newPays = [];
+          list.forEach((it, i) => {
+            let amt = (i === list.length - 1) ? (target - acc) : Math.round((itemEstMap[it.id] ?? estAmount(it)) * r);
+            amt = Math.max(0, amt); acc += (i === list.length - 1 ? 0 : amt);
+            if (amt > 0) newPays.push({ id: "pay-" + Math.random().toString(36).slice(2, 8), date: new Date().toISOString().slice(0, 10), amount: amt, category: r >= 1 ? "尾款" : "訂金", note: label, itemId: it.id, receipts: [] });
+          });
+          update(newPays);
         };
         const curPct = est > 0 ? Math.round(paid / est * 100) : 0;
         return (
