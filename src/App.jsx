@@ -565,6 +565,7 @@ export default function App() {
   const [customCols, setCustomCols] = useState([]);
   const [colOrder, setColOrder] = useState([]);
   const [seqLogs, setSeqLogs] = useState([]);
+  const [trash, setTrash] = useState([]); // 垃圾桶：刪除的細項，可還原
   const [events, setEvents] = useState([]);
   const [journal, setJournal] = useState([]);
   const [plans, setPlans] = useState([]);
@@ -596,6 +597,25 @@ export default function App() {
     setSeqLogs(list);
     window.storage.set(K("pm_seqlogs"), JSON.stringify(list), true).catch(()=>{});
   };
+  const commitTrash = (list) => {
+    const trimmed = list.slice(0, 200); // 最多留 200 筆
+    setTrash(trimmed);
+    window.storage.set(K("pm_trash"), JSON.stringify(trimmed), true).catch(()=>{});
+  };
+  // 刪細項時呼叫：把細項丟進垃圾桶（記住來源大項）
+  const trashItems = (catId, catName, items) => {
+    const entries = (items || []).map(it => ({ tid: "tr-" + Math.random().toString(36).slice(2, 8), catId, catName, item: it, deletedAt: new Date().toISOString(), deletedBy: userName || "—" }));
+    commitTrash([...entries, ...trash]);
+  };
+  const restoreTrash = (tid) => {
+    const e = trash.find(x => x.tid === tid); if (!e) return;
+    setCats(prev => {
+      let target = prev.find(c => c.id === e.catId) || prev.find(c => c.name === e.catName);
+      if (!target) return prev; // 來源大項已不存在
+      return prev.map(c => c.id === target.id ? { ...c, items: [...(c.items || []), e.item] } : c);
+    });
+    commitTrash(trash.filter(x => x.tid !== tid));
+  };
 
   // load — 全部 key 平行載入（不再一個一個排隊），大幅縮短開啟時間
   useEffect(() => {
@@ -603,11 +623,11 @@ export default function App() {
     (async () => {
       const getV = (k) => window.storage.get(K(k), true).then(r => (r && r.value) ? r.value : null).catch(() => null);
       const parse = (v, def) => { if (!v) return def; try { return JSON.parse(v); } catch (_) { return def; } };
-      const [d, gc, sv, log, savedName, kuV, alog, wlV, phV, acV, slV, ccV, evV, jnV, plV] = await Promise.all([
+      const [d, gc, sv, log, savedName, kuV, alog, wlV, phV, acV, slV, ccV, evV, jnV, plV, trV] = await Promise.all([
         loadData(), loadGlobalChat(), loadSettings(), loadAILog(), loadRole(),
         getV("pm_known_users"), loadActivityLog(),
         getV("pm_worklog"), getV("pm_photos"), getV("pm_accounts"), getV("pm_seqlogs"),
-        getV("pm_columns"), getV("pm_events"), getV("pm_journal"), getV("pm_plans"),
+        getV("pm_columns"), getV("pm_events"), getV("pm_journal"), getV("pm_plans"), getV("pm_trash"),
       ]);
       if (cancelled) return;
 
@@ -634,6 +654,7 @@ export default function App() {
       if (phV) setPhotos(parse(phV, []));
       if (acV) setAccounts(parse(acV, []));
       if (slV) setSeqLogs(parse(slV, []));
+      if (trV) setTrash(parse(trV, []));
       if (evV) setEvents(parse(evV, []));
       if (jnV) setJournal(parse(jnV, []));
       if (plV) setPlans(parse(plV, []));
@@ -846,7 +867,8 @@ export default function App() {
         )}
         {view === "overview" && (
           <OverviewTable cats={cats} setCats={guardedSetCats} confirm={confirm} customCols={customCols} setCustomCols={canEditData ? commitCustomCols : null}
-            onSelect={(cat) => { setSelectedCat(cat); setSelectedItem(null); }} dragging={dragging} dragOver={dragOver} onDragStart={onDragStart} onDragOver={onDragOver} onDrop={onDrop} />
+            onSelect={(cat) => { setSelectedCat(cat); setSelectedItem(null); }} dragging={dragging} dragOver={dragOver} onDragStart={onDragStart} onDragOver={onDragOver} onDrop={onDrop}
+            trash={trash} trashItems={trashItems} restoreTrash={restoreTrash} commitTrash={commitTrash} />
         )}
         {view === "gantt" && (
           <SequenceView
@@ -2419,7 +2441,8 @@ function CustomInput({ value, type, onCommit }) {
   }
   return <div onClick={()=>{ setLocal(value ?? ""); setEditing(true); }} style={{ width:"100%", cursor:"text", minHeight:22, color: (value!==undefined&&value!=="")?"#211C15":"#CDC3AC", padding:"2px 2px" }}>{display || "—"}</div>;
 }
-function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols, onSelect, dragging, dragOver, onDragStart, onDragOver, onDrop }) {
+function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols, onSelect, dragging, dragOver, onDragStart, onDragOver, onDrop, trash = [], trashItems, restoreTrash, commitTrash }) {
+  const [showTrash, setShowTrash] = useState(false);
   const [newColLabel, setNewColLabel] = useState("");
   const [newColType, setNewColType] = useState("money");
   const [newColFormula, setNewColFormula] = useState("");
@@ -2517,11 +2540,11 @@ function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols,
   };
 
   const deleteItem = (catId, itemId, name) => {
-    confirm(`刪除「${name}」？`).then(ok => {
-      if (ok) setCats(prev => prev.map(c => c.id === catId
-        ? { ...c, items: c.items.filter(it => it.id !== itemId) }
-        : c
-      ));
+    confirm(`刪除「${name}」？（可到垃圾桶還原）`).then(ok => {
+      if (!ok) return;
+      const c = cats.find(x => x.id === catId); const it = c?.items.find(x => x.id === itemId);
+      if (it && trashItems) trashItems(catId, c.name, [it]);
+      setCats(prev => prev.map(c => c.id === catId ? { ...c, items: c.items.filter(it => it.id !== itemId) } : c));
     });
   };
 
@@ -2697,6 +2720,7 @@ function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols,
           <button onClick={() => setGroupMode(m => !m)} title="分類模式：設定每個大項的費用群組與是否計入工程" style={{ padding: "6px 12px", borderRadius: 7, border: `1px solid ${groupMode ? ACCENT : BORDER}`, fontSize: 12.5, cursor: "pointer", background: groupMode ? "#F3E4DE" : SURFACE, color: groupMode ? ACCENT : SUB, fontWeight: 500 }}>🏷 分類{groupMode ? "中" : ""}</button>
         )}
         <button onClick={toggleAll} style={{ padding: "6px 12px", borderRadius: 7, border: `1px solid ${BORDER}`, fontSize: 12.5, cursor: "pointer", background: SURFACE, color: SUB, fontWeight: 500 }}>{allCollapsed ? "全部展開" : "全部收合"}</button>
+        <button onClick={() => setShowTrash(true)} title="垃圾桶（刪除的細項可還原）" style={{ padding: "6px 12px", borderRadius: 7, border: `1px solid ${BORDER}`, fontSize: 12.5, cursor: "pointer", background: SURFACE, color: SUB, fontWeight: 500 }}>🗑 垃圾桶{trash.length ? ` ${trash.length}` : ""}</button>
       </div>
 
       {/* 工程／非工程／全部 三分類合計 */}
@@ -2859,7 +2883,7 @@ function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols,
                   })()}
                   <div style={{ flex: 1 }} />
                   </>}
-                  {itemCount > 0 && <button onClick={() => confirm(`清空「${group.name}」的全部 ${itemCount} 筆${L("item")}？\n（保留大項本身，付款紀錄一併清除，無法復原）`, { confirmLabel: "確定清空" }).then(ok => { if (ok) setCats(prev => prev.map(c => c.id === catId ? { ...c, items: [], payments: [] } : c)); })} title="清空此大項的所有細項" style={{ flexShrink: 0, marginLeft: 4, border: "1px solid #D8CFBB", background: "transparent", color: SUB, cursor: "pointer", fontSize: 11, borderRadius: 6, padding: "2px 9px" }} onMouseEnter={e => { e.currentTarget.style.borderColor = "#DC2626"; e.currentTarget.style.color = "#DC2626"; }} onMouseLeave={e => { e.currentTarget.style.borderColor = "#D8CFBB"; e.currentTarget.style.color = SUB; }}>清空細項</button>}
+                  {itemCount > 0 && <button onClick={() => confirm(`清空「${group.name}」的全部 ${itemCount} 筆${L("item")}？\n（細項可到垃圾桶還原；付款紀錄一併清除）`, { confirmLabel: "確定清空" }).then(ok => { if (ok) { const c = cats.find(x => x.id === catId); if (c?.items?.length && trashItems) trashItems(catId, c.name, c.items); setCats(prev => prev.map(c => c.id === catId ? { ...c, items: [], payments: [] } : c)); } })} title="清空此大項的所有細項" style={{ flexShrink: 0, marginLeft: 4, border: "1px solid #D8CFBB", background: "transparent", color: SUB, cursor: "pointer", fontSize: 11, borderRadius: 6, padding: "2px 9px" }} onMouseEnter={e => { e.currentTarget.style.borderColor = "#DC2626"; e.currentTarget.style.color = "#DC2626"; }} onMouseLeave={e => { e.currentTarget.style.borderColor = "#D8CFBB"; e.currentTarget.style.color = SUB; }}>清空細項</button>}
                   <button onClick={() => confirm(`確定刪除${L("cat")}「${group.name}」？\n（含其下 ${itemCount} 筆${L("item")}，無法復原）`).then(ok => { if (ok) setCats(prev => prev.filter(c => c.id !== catId)); })} title={`刪除此${L("cat")}`} style={{ flexShrink: 0, marginLeft: 4, width: 22, height: 22, borderRadius: "50%", background: "transparent", border: "none", color: "#C8BCA0", cursor: "pointer", fontSize: 15, lineHeight: 1, display: "flex", alignItems: "center", justifyContent: "center", padding: 0 }} onMouseEnter={e => { e.currentTarget.style.background = "#F3E4DE"; e.currentTarget.style.color = "#DC2626"; }} onMouseLeave={e => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = "#C8BCA0"; }}>×</button>
                 </div>
                 {/* item rows（收合時隱藏） */}
@@ -3049,6 +3073,34 @@ function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols,
       {payCatId && (() => { const c = cats.find(x => x.id === payCatId); return c ? (
         <PaymentsPanel cat={c} setCats={setCats} onClose={() => setPayCatId(null)} confirm={confirm} />
       ) : null; })()}
+
+      {/* 垃圾桶 */}
+      {showTrash && (
+        <div onClick={e => e.target === e.currentTarget && setShowTrash(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 600, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+          <div style={{ background: "#fff", borderRadius: 14, width: "min(620px,96vw)", maxHeight: "85vh", display: "flex", flexDirection: "column", overflow: "hidden" }}>
+            <div style={{ padding: "14px 18px", borderBottom: `1px solid ${BORDER}`, display: "flex", alignItems: "center", gap: 10 }}>
+              <div style={{ fontSize: 15, fontWeight: 700, color: TEXT }}>🗑 垃圾桶</div>
+              <span style={{ fontSize: 12, color: SUB }}>{trash.length} 筆 · 刪除的細項可還原</span>
+              <div style={{ flex: 1 }} />
+              {trash.length > 0 && <button onClick={() => confirm(`清空垃圾桶（永久刪除全部 ${trash.length} 筆，無法復原）？`, { confirmLabel: "永久清空" }).then(ok => ok && commitTrash([]))} style={{ border: "1px solid #DC2626", background: "#fff", color: "#DC2626", borderRadius: 7, padding: "5px 10px", fontSize: 12, cursor: "pointer" }}>清空垃圾桶</button>}
+              <button onClick={() => setShowTrash(false)} style={{ border: "none", background: "none", fontSize: 20, color: SUB, cursor: "pointer" }}>×</button>
+            </div>
+            <div style={{ flex: 1, overflowY: "auto", padding: 12 }}>
+              {trash.length === 0 && <div style={{ textAlign: "center", color: "#A99F88", padding: "40px 0", fontSize: 14 }}>垃圾桶是空的</div>}
+              {trash.map(e => { const it = e.item || {}; const amt = estAmount(it); return (
+                <div key={e.tid} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", border: `1px solid ${BORDER}`, borderRadius: 10, marginBottom: 8, background: "#FBF7EE" }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 14, fontWeight: 600, color: TEXT }}>{it.name || "（未命名）"} <span style={{ fontSize: 12, color: ACCENT, fontFamily: "monospace", fontWeight: 400 }}>{fmt(amt)}</span></div>
+                    <div style={{ fontSize: 11, color: SUB, marginTop: 2 }}>原屬：{e.catName}　·　{e.deletedBy} 刪於 {new Date(e.deletedAt).toLocaleString("zh-TW")}</div>
+                  </div>
+                  <button onClick={() => restoreTrash(e.tid)} style={{ border: "1px solid #3C8C3C", background: "#F0FDF4", color: "#3C8C3C", borderRadius: 7, padding: "6px 14px", fontSize: 13, fontWeight: 600, cursor: "pointer", flexShrink: 0 }}>↩ 還原</button>
+                  <button onClick={() => confirm(`永久刪除「${it.name}」？`, { confirmLabel: "永久刪除" }).then(ok => ok && commitTrash(trash.filter(x => x.tid !== e.tid)))} title="永久刪除" style={{ border: "none", background: "none", color: "#C8BCA0", fontSize: 16, cursor: "pointer", flexShrink: 0 }}>×</button>
+                </div>
+              ); })}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
