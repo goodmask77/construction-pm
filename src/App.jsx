@@ -172,7 +172,7 @@ const STATUS_MAP = {
 
 const fmt = (n) => "NT$" + Math.round(n || 0).toLocaleString();
 // ── 成本金額模型：base=數量×單價，依稅別算稅額與含稅預估；付款=已付/未付（整數 NT$）──
-const baseAmount = (it) => (Number(it.estQty ?? it.qty) || 0) * (Number(it.estUnitPrice ?? it.unitPrice) || 0);
+const baseAmount = (it) => Math.round((Number(it.estQty ?? it.qty) || 0) * (Number(it.estUnitPrice ?? it.unitPrice) || 0)); // 一律整數，避免小數累加尾差
 const taxOf = (it) => { const b = baseAmount(it); const t = it.taxType || "未稅"; if (t === "免稅") return 0; if (t === "含稅") return b - Math.round(b / 1.05); return Math.round(b * 0.05); };
 const estAmount = (it) => { const b = baseAmount(it); return (it.taxType || "未稅") === "未稅" ? b + Math.round(b * 0.05) : b; }; // 含稅/免稅=base；未稅=base+稅額
 const paidOf = (it) => Number(it.paid ?? it.cust?.paid) || 0;
