@@ -5461,17 +5461,31 @@ function GlobalAIPanel({ chat, setChat, onClose, cats, setCats, canEdit, confirm
       const sugCat = cats.find(c => c.name === obj?.suggest) || cats.find(c => obj?.suggest && c.name.includes(obj.suggest));
       if (!items.length) { setImp(null); alert("沒有解析到品項，請改用對話框上傳，或確認圖片清晰。"); return; }
       const dt = /^\d{4}-\d{2}-\d{2}$/.test(obj?.date || "") ? obj.date : "";
-      setImp({ busy: false, rows: items, targetCatId: sugCat?.id || cats[0]?.id || "", date: dt });
+      setImp({ busy: false, rows: items, targetCatId: sugCat?.id || cats[0]?.id || "", date: dt, atts, attachReceipt: true });
     } catch (_) { setImp(null); alert("解析失敗，請稍後再試。"); }
   };
-  const confirmImport = () => {
+  const confirmImport = async () => {
     if (!imp) return;
     const cat = cats.find(c => c.id === imp.targetCatId); if (!cat) { alert("請選擇要匯入的工程大項"); return; }
     const picked = imp.rows.filter(r => r.pick && r.name);
     if (!picked.length) { setImp(null); return; }
-    const newItems = picked.map(r => ({ id: "i-" + cat.id + "-" + Math.random().toString(36).slice(2, 7), name: r.name, qty: r.qty, unit: r.unit, unitPrice: Math.round(r.unitPrice), taxType: r.taxType, payDate: imp.date || "", labor: 0, laborDays: 0, dailyWage: 0, assignee: r.vendor, status: "pending", receipts: [], notes: "", chat: [] }));
+    // 把上傳的報價單自動存成這批細項的憑證
+    let receipts = [];
+    if (imp.attachReceipt && imp.atts?.length) {
+      setImp({ ...imp, busy: true });
+      for (let k = 0; k < imp.atts.length; k++) {
+        const a = imp.atts[k];
+        try {
+          const bin = atob(a.data); const u8 = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
+          const file = new File([u8], `報價單_${cat.name}_${k + 1}.${a.kind === "pdf" ? "pdf" : "jpg"}`, { type: a.media_type });
+          const { url, path } = await uploadPhoto(file);
+          receipts.push({ id: "rc-" + Math.random().toString(36).slice(2, 8), url, path, name: `報價單${imp.atts.length > 1 ? "-" + (k + 1) : ""}`, isImage: a.kind !== "pdf" });
+        } catch (_) {}
+      }
+    }
+    const newItems = picked.map(r => ({ id: "i-" + cat.id + "-" + Math.random().toString(36).slice(2, 7), name: r.name, qty: r.qty, unit: r.unit, unitPrice: Math.round(r.unitPrice), taxType: r.taxType, payDate: imp.date || "", labor: 0, laborDays: 0, dailyWage: 0, assignee: r.vendor, status: "pending", receipts: receipts.slice(), notes: "", chat: [] }));
     setCats(prev => prev.map(c => c.id === cat.id ? { ...c, items: [...(c.items || []), ...newItems] } : c));
-    addMsg("assistant", `✅ 已匯入 ${newItems.length} 筆到「${cat.name}」。`);
+    addMsg("assistant", `✅ 已匯入 ${newItems.length} 筆到「${cat.name}」${receipts.length ? "，並自動掛上報價單憑證" : ""}。`);
     setImp(null);
   };
 
@@ -5697,6 +5711,7 @@ function GlobalAIPanel({ chat, setChat, onClose, cats, setCats, canEdit, confirm
               </div>
               <div style={{ padding: "12px 18px", borderTop: `1px solid ${BORDER}`, display: "flex", alignItems: "center", gap: 10 }}>
                 <span style={{ fontSize: 13, color: SUB }}>合計（勾選）：<b style={{ color: ACCENT, fontFamily: "monospace" }}>{fmt(imp.rows.filter(r=>r.pick).reduce((s,r)=> s + ((r.taxType==="未稅")?Math.round(r.qty*r.unitPrice*1.05):Math.round(r.qty*r.unitPrice)), 0))}</b></span>
+                {imp.atts?.length > 0 && <label style={{ fontSize: 12.5, color: SUB, display: "flex", alignItems: "center", gap: 5, cursor: "pointer" }}><input type="checkbox" checked={!!imp.attachReceipt} onChange={e => setImp({ ...imp, attachReceipt: e.target.checked })} />把報價單掛成憑證</label>}
                 <div style={{ flex: 1 }} />
                 <button onClick={() => setImp(null)} style={{ border: `1px solid ${BORDER}`, background: "#fff", color: SUB, borderRadius: 8, padding: "8px 16px", fontSize: 13, cursor: "pointer" }}>取消</button>
                 <button onClick={confirmImport} style={{ border: "none", background: "#3C8C3C", color: "#fff", borderRadius: 8, padding: "8px 22px", fontSize: 14, fontWeight: 700, cursor: "pointer" }}>✓ 確認匯入 {imp.rows.filter(r=>r.pick).length} 筆</button>
