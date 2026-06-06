@@ -5332,7 +5332,11 @@ const AGENT_GUIDE = `
 4. 只有在使用者「要求執行操作」時才附 json；單純問問題就正常回答、不要附 json。
 5. 破壞性操作（清空、刪除）也照樣附指令，系統會再跟使用者確認。
 6. 要「清空所有細項重新上資料」時，務必用單一 clear_items 指令，絕對不要產生大量 delete_item 逐筆刪除（會超過長度限制）。
-7. 【稅別很重要】unitPrice 一律填「單價本身」(數量×單價=金額)。若使用者說數字是「含稅」就帶 "taxType":"含稅"；說未稅或沒講就用 "未稅"；免稅就 "免稅"。不要自己把含稅金額換算成未稅再填，直接填原數字＋對應 taxType 即可。`;
+7. 【稅別／單價】單價欄一律填「未稅單價」、taxType 一律用 "未稅"（系統會自動加 5% 稅算出含稅金額）：
+   - 使用者說數字是「含稅」→ 把含稅金額除以 1.05 換算成未稅，再除數量得未稅單價填入，taxType:"未稅"。例：含稅 49,896、數量1 → unitPrice 47,520。
+   - 使用者說「未稅」或沒講 → 直接當未稅單價填入，taxType:"未稅"。
+   - 只有真正免稅（如保險、規費）才用 taxType:"免稅"。
+8. 【廠商→負責人】品項名稱裡括號或另一欄的「廠商／人名」(例：泥作工程材料(昇龍建材行)、莊志豪) 要填到 "assignee"(負責人) 欄，不要併進 name。name 只放品項本身(例：泥作工程材料)。`;
 
 const VISION_GUIDE = `
 
@@ -5426,7 +5430,8 @@ function GlobalAIPanel({ chat, setChat, onClose, cats, setCats, canEdit, confirm
         content = textBlock;
       }
       history.push({ role: "user", content });
-      const reply = await callAI(history, (conf().aiRole || SYSTEM_GLOBAL) + (canEdit ? (AGENT_GUIDE + VISION_GUIDE) : ""));
+      const userRules = (settings?.notes || "").trim() ? `\n\n【使用者的自訂指示（最高優先，務必遵守）】\n${settings.notes.trim()}` : "";
+      const reply = await callAI(history, (conf().aiRole || SYSTEM_GLOBAL) + (canEdit ? (AGENT_GUIDE + VISION_GUIDE) : "") + userRules);
 
       // 顯示去掉 json 指令區塊後的乾淨文字
       const cleanText = reply.replace(/```json[\s\S]*?```/gi, "").trim();
