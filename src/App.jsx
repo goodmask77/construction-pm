@@ -220,6 +220,21 @@ const catItemEstAfter = (cat) => {
 // ── 大項（廠商）層級付款紀錄：已付＝該大項所有付款紀錄金額加總 ──────────────────
 const PAY_CATEGORIES = ["訂金", "期中款", "尾款", "其他"];
 const catPaid = (cat) => (cat?.payments || []).reduce((s, p) => s + (Number(p.amount) || 0), 0);
+// 逐項已付（含「整批/不指定」付款自動分攤到各品項，依未付餘額比例分配）
+const catItemPaidMap = (cat) => {
+  const estMap = catItemEstAfter(cat);
+  const items = cat?.items || [];
+  const out = {}; const linked = {};
+  items.forEach(it => { out[it.id] = 0; linked[it.id] = 0; });
+  let pool = 0; // 整批/未指定品項的付款，待分攤
+  (cat?.payments || []).forEach(p => { const amt = Number(p.amount) || 0; if (p.itemId && linked[p.itemId] != null) { linked[p.itemId] += amt; out[p.itemId] += amt; } else pool += amt; });
+  if (pool > 0) {
+    const rem = items.map(it => ({ id: it.id, r: Math.max(0, (estMap[it.id] ?? estAmount(it)) - (linked[it.id] || 0)) }));
+    const totalRem = rem.reduce((s, x) => s + x.r, 0);
+    if (totalRem > 0) rem.forEach(x => { if (x.r <= 0) return; const share = pool >= totalRem ? x.r : Math.round(pool * x.r / totalRem); out[x.id] += Math.min(x.r, share); });
+  }
+  return out;
+};
 const catUnpaidAfter = (cat) => catEstAfter(cat) - catPaid(cat);
 // 一次性遷移：
 // 1) 沒有 payments 的大項，把舊的逐項已付總和轉成一筆「既有付款」紀錄（已付總額不變）
@@ -2547,9 +2562,9 @@ function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols,
   for (const c of cats) Object.assign(estAfterMap, catItemEstAfter(c));
   const estAfterOf = (it) => (it.id in estAfterMap) ? estAfterMap[it.id] : estAmount(it);
   const unpaidAfterOf = (it) => estAfterOf(it) - paidOf(it);
-  // 逐項已付（從各大項付款紀錄依 itemId 加總）
+  // 逐項已付（含整批付款自動分攤）
   const itemPaidMap = {};
-  for (const c of cats) for (const p of (c.payments || [])) if (p.itemId) itemPaidMap[p.itemId] = (itemPaidMap[p.itemId] || 0) + (Number(p.amount) || 0);
+  for (const c of cats) Object.assign(itemPaidMap, catItemPaidMap(c));
   const itemPaidOf = (it) => itemPaidMap[it.id] || 0;
 
   const numVal = (col, item) => {
@@ -3029,7 +3044,8 @@ function PaymentsPanel({ cat, setCats, onClose, confirm }) {
   const est = catEstAfter(cat), paid = catPaid(cat), unpaid = est - paid;
   const items = cat.items || [];
   const itemEstMap = catItemEstAfter(cat); // 各品項議價後金額
-  const itemPaidOf = (id) => payments.filter(p => p.itemId === id).reduce((s, p) => s + (Number(p.amount) || 0), 0);
+  const itemPaidDistMap = catItemPaidMap(cat); // 各品項已付（含整批分攤）
+  const itemPaidOf = (id) => itemPaidDistMap[id] || 0;
   const [lightbox, setLightbox] = useState(null);
   const [busy, setBusy] = useState(false);
   const blankDraft = () => ({ date: new Date().toISOString().slice(0, 10), amount: "", category: "訂金", note: "", itemId: "", receipts: [] });
@@ -3108,9 +3124,19 @@ function PaymentsPanel({ cat, setCats, onClose, confirm }) {
         </div>
       </div>
 
+      {/* 一鍵全部付清 / 清除 */}
+      <div style={{ marginBottom: 12 }}>
+        {unpaid > 0
+          ? <button onClick={() => update([...payments, { id: "pay-" + Math.random().toString(36).slice(2, 8), date: new Date().toISOString().slice(0, 10), amount: unpaid, category: paid > 0 ? "尾款" : "其他", note: "一鍵全部付清", itemId: null, receipts: [] }])} style={{ width: "100%", background: "#3C8C3C", color: "#fff", border: "none", borderRadius: 10, padding: "11px", fontSize: 14, fontWeight: 700, cursor: "pointer" }}>✓ 一鍵全部付清（補 {fmt(unpaid)}）</button>
+          : <div style={{ display: "flex", alignItems: "center", gap: 10, background: "#E7F5E7", borderRadius: 10, padding: "10px 14px" }}>
+              <span style={{ fontSize: 14, fontWeight: 700, color: "#3C8C3C" }}>✓ 此大項已全部付清</span><div style={{ flex: 1 }} />
+              <button onClick={async () => { if (confirm && !(await confirm("清除這個大項的所有付款紀錄？", { confirmLabel: "確定清除" }))) return; update([]); }} style={{ border: "1px solid #C2872E", background: "#FFFBEB", color: "#C2872E", borderRadius: 8, padding: "5px 12px", fontSize: 12, cursor: "pointer" }}>清除付款</button>
+            </div>}
+      </div>
+
       {/* 新增付款表單 */}
       <div style={{ border: "1px solid #D8CFBB", borderRadius: 10, padding: 12, marginBottom: 16, background: "#FBF7EE" }}>
-        <div style={{ fontSize: 12, fontWeight: 600, color: "#211C15", marginBottom: 8 }}>＋ 新增付款</div>
+        <div style={{ fontSize: 12, fontWeight: 600, color: "#211C15", marginBottom: 8 }}>＋ 新增付款（單筆／指定品項）</div>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 8 }}>
           <div><div style={{ fontSize: 10, color: "#6F6656", marginBottom: 2 }}>日期</div><input type="date" value={draft.date} onChange={e => setDraft({ ...draft, date: e.target.value })} style={inputStyle} /></div>
           <div><div style={{ fontSize: 10, color: "#6F6656", marginBottom: 2 }}>類別</div><select value={draft.category} onChange={e => setDraft({ ...draft, category: e.target.value })} style={inputStyle}>{PAY_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}</select></div>
