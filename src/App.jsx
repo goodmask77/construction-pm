@@ -2888,21 +2888,15 @@ function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols,
                     const full = groupEst > 0 && groupUnpaid <= 0;
                     const none = groupPaid === 0;
                     const colNum = (label, val, opts = {}) => <div style={{ width: 150, textAlign: "right", flexShrink: 0, fontSize: 12.5, color: SUB }} title={opts.title}>{label} <span style={{ color: opts.color || TEXT, fontVariantNumeric: "tabular-nums", fontWeight: opts.fw || 500 }}>{val}</span></div>;
+                    const over = groupUnpaid < 0;
                     return (<>
                       {colNum("未稅", fmt(groupPretax), { title: "未稅小計＝Σ數量×單價，對應報價單未稅總價" })}
                       {disc.hasDiscount
                         ? colNum("議價後", fmt(groupEst), { fw: 600, color: "#C0392B", title: `原報價 ${fmt(groupRaw)} → 議價後 ${fmt(groupEst)}，省 ${fmt(groupSaved)}（-${Math.round(disc.pct * 10) / 10}%）` })
                         : colNum("含稅", fmt(groupEst), { fw: 600, title: "含稅總計" })}
-                      {/* 已付/未付（固定寬、靠右）*/}
-                      <button onClick={() => setPayCatId(catId)} title="檢視／新增付款紀錄" style={{ width: 210, display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 6, cursor: "pointer", border: "none", background: "none", padding: 0, flexShrink: 0 }}>
-                        {full ? <span style={{ fontSize: 11.5, fontWeight: 700, color: "#3C8C3C", background: "#E7F5E7", borderRadius: 12, padding: "3px 10px" }}>✓ 已付清{groupUnpaid < 0 ? `（溢付 ${fmt(-groupUnpaid)}）` : ""}</span>
-                          : none ? <span style={{ fontSize: 11.5, fontWeight: 700, color: "#C2410C", background: "#FFF1E6", borderRadius: 12, padding: "3px 10px" }}>● 未付 {fmt(groupUnpaid)}</span>
-                            : <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                                <span style={{ width: 36, height: 6, background: "#EFE7D6", borderRadius: 3, overflow: "hidden", flexShrink: 0 }}><span style={{ display: "block", width: pct + "%", height: "100%", background: "#3C8C3C" }} /></span>
-                                <span style={{ fontSize: 11.5, fontVariantNumeric: "tabular-nums" }}><span style={{ color: "#3C8C3C", fontWeight: 600 }}>{fmt(groupPaid)}</span><span style={{ color: "#C2872E" }}> / {fmt(groupUnpaid)}</span></span>
-                              </span>}
-                        {payCount > 0 && <span style={{ fontSize: 10, color: "#3C8C3C" }}>·{payCount}筆</span>}
-                      </button>
+                      {/* 已付金額 / 未付金額：固定兩欄、靠右對齊 */}
+                      <button onClick={() => setPayCatId(catId)} title={`檢視／新增付款紀錄${payCount ? `（${payCount} 筆）` : ""}`} style={{ width: 150, textAlign: "right", flexShrink: 0, fontSize: 12.5, color: SUB, border: "none", background: "none", cursor: "pointer", padding: 0 }}>已付 <span style={{ color: groupPaid > 0 ? "#3C8C3C" : "#A99F88", fontVariantNumeric: "tabular-nums", fontWeight: 600 }}>{fmt(groupPaid)}</span></button>
+                      <button onClick={() => setPayCatId(catId)} title="未付金額＝含稅 − 已付" style={{ width: 150, textAlign: "right", flexShrink: 0, fontSize: 12.5, color: SUB, border: "none", background: "none", cursor: "pointer", padding: 0 }}>未付 <span style={{ color: over ? "#DC2626" : groupUnpaid > 0 ? "#C2410C" : "#3C8C3C", fontVariantNumeric: "tabular-nums", fontWeight: 600 }}>{over ? `溢付 ${fmt(-groupUnpaid)}` : fmt(groupUnpaid)}</span></button>
                       <button onClick={(e) => { e.stopPropagation(); setPayCatId(catId); }} title="新增付款紀錄" style={{ flexShrink: 0, border: `1px solid #3C8C3C`, background: "#F0FDF4", color: "#3C8C3C", borderRadius: 6, padding: "2px 9px", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>＋ 新增付款</button>
                     </>);
                   })()}
