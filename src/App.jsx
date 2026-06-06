@@ -4098,25 +4098,29 @@ function KanbanView({ cats, setCats, onSelect, dragging, dragOver, onDragStart, 
 }
 
 function StatusBadge({ status, setCats, catId, itemId }) {
-  const [open, setOpen] = useState(false);
+  const [pos, setPos] = useState(null); // {x,y} 開啟時的浮層座標；null=關閉
   const st = STATUS_MAP[status] || STATUS_MAP.pending;
+  const openMenu = (e) => { e.stopPropagation(); const r = e.currentTarget.getBoundingClientRect(); setPos({ x: r.left, y: r.bottom + 4 }); };
+  const pick = (k) => { setCats(prev => prev.map(c => {
+    if (catId && c.id === catId) {
+      if (itemId) return { ...c, items: c.items.map(it => it.id === itemId ? { ...it, status: k, lastUpdated: new Date().toISOString() } : it) };
+      return { ...c, status: k };
+    }
+    return c;
+  })); setPos(null); };
   return (
-    <div style={{ position: "relative" }}>
-      <div onClick={(e) => { e.stopPropagation(); setOpen(!open); }} style={{ background: st.color + "22", border: `1px solid ${st.color}55`, color: st.color, borderRadius: 20, padding: "2px 8px", fontSize: 11, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" }}>{st.label}</div>
-      {open && (
-        <div style={{ position: "absolute", right: 0, top: 26, background: "#EFE7D6", border: "1px solid #D8CFBB", borderRadius: 8, zIndex: 200, minWidth: 100, overflow: "hidden" }}>
-          {Object.entries(STATUS_MAP).map(([k, v]) => (
-            <div key={k} onClick={(e) => { e.stopPropagation(); setCats(prev => prev.map(c => {
-              if (catId && c.id === catId) {
-                if (itemId) return { ...c, items: c.items.map(it => it.id === itemId ? { ...it, status: k, lastUpdated: new Date().toISOString() } : it) };
-                return { ...c, status: k };
-              }
-              return c;
-            })); setOpen(false); }} style={{ padding: "7px 12px", cursor: "pointer", color: v.color, fontSize: 12, borderBottom: "1px solid #D8CFBB44" }}>{v.label}</div>
-          ))}
+    <>
+      <div onClick={openMenu} style={{ background: st.color + "22", border: `1px solid ${st.color}55`, color: st.color, borderRadius: 20, padding: "2px 8px", fontSize: 11, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" }}>{st.label}</div>
+      {pos && (
+        <div onClick={(e) => { e.stopPropagation(); setPos(null); }} onMouseDown={(e) => e.stopPropagation()} style={{ position: "fixed", inset: 0, zIndex: 10000 }}>
+          <div style={{ position: "fixed", left: Math.min(pos.x, window.innerWidth - 130), top: Math.min(pos.y, window.innerHeight - 220), background: "#fff", border: "1px solid #D8CFBB", borderRadius: 8, boxShadow: "0 6px 24px rgba(0,0,0,.18)", minWidth: 110, overflow: "hidden" }}>
+            {Object.entries(STATUS_MAP).map(([k, v]) => (
+              <div key={k} onClick={(e) => { e.stopPropagation(); pick(k); }} style={{ padding: "8px 14px", cursor: "pointer", color: v.color, fontSize: 13, fontWeight: 600, borderBottom: "1px solid #EFE7D6" }} onMouseEnter={e => e.currentTarget.style.background = "#F4EFE3"} onMouseLeave={e => e.currentTarget.style.background = "#fff"}>{v.label}</div>
+            ))}
+          </div>
         </div>
       )}
-    </div>
+    </>
   );
 }
 
