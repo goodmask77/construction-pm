@@ -2846,11 +2846,11 @@ function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols,
                   <button onClick={() => toggleCollapse(catId)} style={{ border: "none", background: "none", cursor: "pointer", color: SUB, fontSize: 11, width: 14, flexShrink: 0, transform: isCollapsed ? "none" : "rotate(90deg)", transition: "transform .15s" }}>▸</button>
                   {catNameEdit === catId
                     ? <input autoFocus defaultValue={group.name} onClick={e => e.stopPropagation()} onBlur={e => { const v = e.target.value.trim(); if (v && v !== group.name) setCats(prev => prev.map(c => c.id === catId ? { ...c, name: v } : c)); setCatNameEdit(null); }} onKeyDown={e => { if (e.key === "Enter") e.target.blur(); if (e.key === "Escape") setCatNameEdit(null); }} style={{ fontSize: 14, fontWeight: 600, color: PRIMARY, border: `1px solid ${ACCENT}`, borderRadius: 6, padding: "2px 6px", width: Math.max(120, group.name.length * 15), flexShrink: 0, outline: "none" }} />
-                    : <div style={{ display: "flex", alignItems: "center", gap: 4, flexShrink: 0 }}>
-                        <div onClick={() => toggleCollapse(catId)} onDoubleClick={e => { e.stopPropagation(); setCatNameEdit(catId); }} title="雙擊可改名" style={{ fontSize: 14, fontWeight: 600, color: PRIMARY, letterSpacing: -0.1, cursor: "pointer" }}>{group.name}</div>
-                        <button onClick={e => { e.stopPropagation(); setCatNameEdit(catId); }} title="改名" style={{ border: "none", background: "none", cursor: "pointer", color: "#C8BCA0", fontSize: 12, padding: 0 }} onMouseEnter={e => e.currentTarget.style.color = ACCENT} onMouseLeave={e => e.currentTarget.style.color = "#C8BCA0"}>✎</button>
+                    : <div style={{ display: "flex", alignItems: "center", gap: 4, width: 180, flexShrink: 0 }}>
+                        <div onClick={() => toggleCollapse(catId)} onDoubleClick={e => { e.stopPropagation(); setCatNameEdit(catId); }} title={group.name + "（雙擊可改名）"} style={{ fontSize: 14, fontWeight: 600, color: PRIMARY, letterSpacing: -0.1, cursor: "pointer", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{group.name}</div>
+                        <button onClick={e => { e.stopPropagation(); setCatNameEdit(catId); }} title="改名" style={{ border: "none", background: "none", cursor: "pointer", color: "#C8BCA0", fontSize: 12, padding: 0, flexShrink: 0 }} onMouseEnter={e => e.currentTarget.style.color = ACCENT} onMouseLeave={e => e.currentTarget.style.color = "#C8BCA0"}>✎</button>
                       </div>}
-                  <div style={{ flexShrink: 0 }}><StatusBadge status={cat?.status || "pending"} setCats={setCats} catId={catId} /></div>
+                  <div style={{ flexShrink: 0, width: 64 }}><StatusBadge status={cat?.status || "pending"} setCats={setCats} catId={catId} /></div>
                   {conf().showCost && (groupMode || groupEditId === catId ? (
                     <div style={{ display: "flex", alignItems: "center", gap: 4, flexShrink: 0 }}>
                       <input list="cat-group-list" autoFocus={groupEditId === catId} defaultValue={cat?.group || ""} key={cat?.group || ""} onBlur={e => { setCatGroup(catId, e.target.value.trim()); setGroupEditId(null); }} onKeyDown={e => { if (e.key === "Enter") { setCatGroup(catId, e.target.value.trim()); setGroupEditId(null); } if (e.key === "Escape") setGroupEditId(null); }} placeholder="費用群組…" style={{ width: 100, border: `1px solid ${ACCENT}`, borderRadius: 12, padding: "2px 8px", fontSize: 11, background: "#fff", color: TEXT, outline: "none" }} />
@@ -2881,6 +2881,7 @@ function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols,
                     </div>
                   )}
                   <div style={{ flex: 1 }} />
+                  <div onClick={() => toggleCollapse(catId)} title={group.name} style={{ width: 130, textAlign: "right", flexShrink: 0, fontSize: 12.5, fontWeight: 600, color: "#A99F88", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", cursor: "pointer" }}>{group.name}</div>
                   {(() => {
                     const isEmpty = groupEst === 0 && groupPaid === 0;
                     if (isEmpty) return <span style={{ fontSize: 12, color: "#C8BCA0", width: 520, textAlign: "right", flexShrink: 0 }}>尚未建立明細</span>;
