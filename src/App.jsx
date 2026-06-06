@@ -2431,7 +2431,7 @@ function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols,
   const [filterStatus, setFilterStatus] = useState("all");
   const [search, setSearch] = useState("");
   const q = search.trim().toLowerCase();
-  const [viewMode, setViewMode] = useState(() => (typeof window !== "undefined" && window.innerWidth < MOBILE_BP) ? "card" : "table"); // 手機預設卡片；table | card（卡片＝原看板）
+  const [viewMode, setViewMode] = useState("table"); // 已移除卡片檢視，固定表格
   const [collapsed, setCollapsed] = useState(new Set()); // 收合的大項 id
   const toggleCollapse = (catId) => setCollapsed(s => { const n = new Set(s); n.has(catId) ? n.delete(catId) : n.add(catId); return n; });
   const allCollapsed = cats.length > 0 && cats.every(c => collapsed.has(c.id));
@@ -2440,6 +2440,7 @@ function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols,
   const [rcpBusy, setRcpBusy] = useState(null);    // 正在上傳憑證的 itemId
   const [payCatId, setPayCatId] = useState(null);  // 開啟付款紀錄面板的大項 id
   const [groupEditId, setGroupEditId] = useState(null); // 正在編輯費用群組標籤的大項
+  const [catNameEdit, setCatNameEdit] = useState(null);  // 正在改名的大項
   const [groupsOpen, setGroupsOpen] = useState(true);   // 費用群組合計面板展開
   const [groupMode, setGroupMode] = useState(false);    // 分類模式：每列顯示群組/非工程編輯
   const allGroups = [...new Set(cats.map(c => c.group).filter(Boolean))];
@@ -2665,7 +2666,7 @@ function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols,
       {/* toolbar */}
       <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10, flexWrap: "wrap" }}>
         <div style={{ fontSize: 16, fontWeight: 600, color: TEXT, letterSpacing: -0.2 }}>總覽</div>
-        <div style={{ fontSize: 12.5, color: SUB }}>{viewMode === "card" ? L("cat") + "一覽" : L("subtitle")}</div>
+        <div style={{ fontSize: 12.5, color: SUB }}>{L("subtitle")}</div>
         <div style={{ position: "relative", flex: "1 1 200px", maxWidth: 360 }}>
           <span style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", fontSize: 13, color: "#A99F88", pointerEvents: "none" }}>🔍</span>
           <input value={search} onChange={e => setSearch(e.target.value)} placeholder="搜尋細項／負責人／備註…" style={{ width: "100%", boxSizing: "border-box", border: `1px solid ${search ? ACCENT : BORDER}`, borderRadius: 8, padding: "6px 28px 6px 30px", fontSize: 13, background: "#fff", color: TEXT, outline: "none" }} />
@@ -2675,15 +2676,7 @@ function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols,
         {viewMode === "table" && conf().showCost && (
           <button onClick={() => setGroupMode(m => !m)} title="分類模式：設定每個大項的費用群組與是否計入工程" style={{ padding: "6px 12px", borderRadius: 7, border: `1px solid ${groupMode ? ACCENT : BORDER}`, fontSize: 12.5, cursor: "pointer", background: groupMode ? "#F3E4DE" : SURFACE, color: groupMode ? ACCENT : SUB, fontWeight: 500 }}>🏷 分類{groupMode ? "中" : ""}</button>
         )}
-        {viewMode === "table" && (
-          <button onClick={toggleAll} style={{ padding: "6px 12px", borderRadius: 7, border: `1px solid ${BORDER}`, fontSize: 12.5, cursor: "pointer", background: SURFACE, color: SUB, fontWeight: 500 }}>{allCollapsed ? "全部展開" : "全部收合"}</button>
-        )}
-        {/* 表格 / 卡片 切換 */}
-        <div style={{ display: "inline-flex", background: "#EFE7D6", borderRadius: 8, padding: 3 }}>
-          {[["table","表格"],["card","卡片"]].map(([k,l]) => (
-            <button key={k} onClick={() => setViewMode(k)} style={{ border: "none", cursor: "pointer", padding: "5px 16px", borderRadius: 6, fontSize: 13, fontWeight: 500, background: viewMode === k ? SURFACE : "transparent", color: viewMode === k ? TEXT : SUB, boxShadow: viewMode === k ? "0 1px 2px rgba(0,0,0,.1)" : "none" }}>{l}</button>
-          ))}
-        </div>
+        <button onClick={toggleAll} style={{ padding: "6px 12px", borderRadius: 7, border: `1px solid ${BORDER}`, fontSize: 12.5, cursor: "pointer", background: SURFACE, color: SUB, fontWeight: 500 }}>{allCollapsed ? "全部展開" : "全部收合"}</button>
       </div>
 
       {/* 工程／非工程／全部 三分類合計 */}
@@ -2735,9 +2728,7 @@ function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols,
         );
       })()}
 
-      {viewMode === "card" ? (
-        <KanbanView cats={cats} setCats={setCats} onSelect={onSelect} dragging={dragging} dragOver={dragOver} onDragStart={onDragStart} onDragOver={onDragOver} onDrop={onDrop} confirm={confirm} />
-      ) : (
+      {(
       /* table */
       <div style={{ overflow: "auto", maxHeight: "calc(100vh - 168px)", borderRadius: 12, border: `1px solid ${BORDER}`, background: SURFACE }}>
         <div style={{ minWidth: totalW }}>
@@ -2781,7 +2772,12 @@ function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols,
                   style={{ display: "flex", alignItems: "center", background: isCatDragOver ? "#F3E4DE" : BG, borderBottom: `1px solid ${BORDER}`, borderLeft: `2px solid ${ACCENT}`, padding: "0 10px", height: 32, gap: 10, position: "sticky", top: 40, zIndex: 9 }}>
                   <span title="拖曳排序大項" style={{ cursor: "grab", color: "#C8BCA0", fontSize: 13, flexShrink: 0 }}>⠿</span>
                   <button onClick={() => toggleCollapse(catId)} style={{ border: "none", background: "none", cursor: "pointer", color: SUB, fontSize: 11, width: 14, flexShrink: 0, transform: isCollapsed ? "none" : "rotate(90deg)", transition: "transform .15s" }}>▸</button>
-                  <div onClick={() => toggleCollapse(catId)} style={{ fontSize: 14, fontWeight: 600, color: PRIMARY, letterSpacing: -0.1, cursor: "pointer", flexShrink: 0 }}>{group.name}</div>
+                  {catNameEdit === catId
+                    ? <input autoFocus defaultValue={group.name} onClick={e => e.stopPropagation()} onBlur={e => { const v = e.target.value.trim(); if (v && v !== group.name) setCats(prev => prev.map(c => c.id === catId ? { ...c, name: v } : c)); setCatNameEdit(null); }} onKeyDown={e => { if (e.key === "Enter") e.target.blur(); if (e.key === "Escape") setCatNameEdit(null); }} style={{ fontSize: 14, fontWeight: 600, color: PRIMARY, border: `1px solid ${ACCENT}`, borderRadius: 6, padding: "2px 6px", width: Math.max(120, group.name.length * 15), flexShrink: 0, outline: "none" }} />
+                    : <div style={{ display: "flex", alignItems: "center", gap: 4, flexShrink: 0 }}>
+                        <div onClick={() => toggleCollapse(catId)} onDoubleClick={e => { e.stopPropagation(); setCatNameEdit(catId); }} title="雙擊可改名" style={{ fontSize: 14, fontWeight: 600, color: PRIMARY, letterSpacing: -0.1, cursor: "pointer" }}>{group.name}</div>
+                        <button onClick={e => { e.stopPropagation(); setCatNameEdit(catId); }} title="改名" style={{ border: "none", background: "none", cursor: "pointer", color: "#C8BCA0", fontSize: 12, padding: 0 }} onMouseEnter={e => e.currentTarget.style.color = ACCENT} onMouseLeave={e => e.currentTarget.style.color = "#C8BCA0"}>✎</button>
+                      </div>}
                   <div style={{ flexShrink: 0 }}><StatusBadge status={cat?.status || "pending"} setCats={setCats} catId={catId} /></div>
                   {conf().showCost && (groupMode || groupEditId === catId ? (
                     <div style={{ display: "flex", alignItems: "center", gap: 4, flexShrink: 0 }}>
