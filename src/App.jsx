@@ -5486,14 +5486,14 @@ function GlobalAIPanel({ chat, setChat, onClose, cats, setCats, canEdit, confirm
 \`\`\`json
 {"suggest":"最可能對應的工程大項名稱","date":"2026-04-25","items":[{"name":"品項名(不含廠商)","qty":1,"unit":"式","unitPrice":88200,"taxType":"含稅","vendor":"廠商或人名"}]}
 \`\`\`
-規則：1) unitPrice 填單據上的數字本身，絕不做任何除法或加減稅。2) taxType 照單據：含稅/未稅/免稅，沒寫就「未稅」。3) 括號或另一欄的廠商/人名放 vendor，name 只放品項本身。4) 數量沒寫填1、單位沒寫填「式」。5) date 抓單據上的日期(年-月-日)，沒有就留空。6) 現有工程大項：${catNames}。suggest 從中挑最接近的。`;
+規則：1) unitPrice 填單據上的數字本身，絕不做任何除法或加減稅。2) taxType 照單據：含稅/未稅/免稅，沒寫就「未稅」。3) 括號或另一欄的廠商/人名放 vendor，name 只放品項本身。4) 數量沒寫填1、單位沒寫填「式」。5) date 抓單據上的日期(年-月-日)，沒有就留空。6) 現有工程大項：${catNames}。suggest 從中挑最接近的。7) 折扣/折讓/優惠等負金額項：qty 一律用正數(通常1)、unitPrice 用負數(例 折讓3萬 → qty:1, unitPrice:-30000)；絕不可把 qty 也設成負數(負負得正會變正金額)。`;
       const content = [{ type: "text", text: "解析這份估價單／報價單的所有品項。" }];
       atts.forEach(a => content.push(a.kind === "image" ? { type: "image", source: { type: "base64", media_type: a.media_type, data: a.data } } : { type: "document", source: { type: "base64", media_type: "application/pdf", data: a.data } }));
       const reply = await callAI([{ role: "user", content }], sys, "import");
       let obj = null;
       const m = reply.match(/```json\s*([\s\S]*?)```/i);
       try { obj = JSON.parse(m ? m[1] : reply); } catch (_) {}
-      const items = (obj?.items || []).map(it => ({ pick: true, name: String(it.name || "").trim(), qty: Number(it.qty) || 1, unit: it.unit || "式", unitPrice: Math.round(Number(it.unitPrice) || 0), taxType: ["未稅","含稅","免稅"].includes(it.taxType) ? it.taxType : "未稅", vendor: String(it.vendor || "").trim() }));
+      const items = (obj?.items || []).map(it => { let qty = Number(it.qty) || 1; let up = Math.round(Number(it.unitPrice) || 0); if (qty < 0 && up < 0) qty = Math.abs(qty); return { pick: true, name: String(it.name || "").trim(), qty, unit: it.unit || "式", unitPrice: up, taxType: ["未稅","含稅","免稅"].includes(it.taxType) ? it.taxType : "未稅", vendor: String(it.vendor || "").trim() }; });
       const sugCat = cats.find(c => c.name === obj?.suggest) || cats.find(c => obj?.suggest && c.name.includes(obj.suggest));
       if (!items.length) { setImp(null); alert("沒有解析到品項，請改用對話框上傳，或確認圖片清晰。"); return; }
       const dt = /^\d{4}-\d{2}-\d{2}$/.test(obj?.date || "") ? obj.date : "";
