@@ -2880,36 +2880,32 @@ function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols,
                         style={{ width: 56, height: 20, border: `1px solid ${disc.hasDiscount ? "#C0392B" : BORDER}`, borderRadius: 5, padding: "0 5px", fontSize: 11, fontVariantNumeric: "tabular-nums", background: "#fff", color: TEXT }} />
                     </div>
                   )}
-                  <div style={{ width: 18 }} />
+                  <div style={{ flex: 1 }} />
                   {(() => {
                     const isEmpty = groupEst === 0 && groupPaid === 0;
-                    if (isEmpty) return <span style={{ fontSize: 12, color: "#C8BCA0" }}>尚未建立明細</span>;
+                    if (isEmpty) return <span style={{ fontSize: 12, color: "#C8BCA0", width: 520, textAlign: "right", flexShrink: 0 }}>尚未建立明細</span>;
                     const pct = groupEst > 0 ? Math.round(groupPaid / groupEst * 100) : 0;
                     const full = groupEst > 0 && groupUnpaid <= 0;
                     const none = groupPaid === 0;
+                    const colNum = (label, val, opts = {}) => <div style={{ width: 150, textAlign: "right", flexShrink: 0, fontSize: 12.5, color: SUB }} title={opts.title}>{label} <span style={{ color: opts.color || TEXT, fontVariantNumeric: "tabular-nums", fontWeight: opts.fw || 500 }}>{val}</span></div>;
                     return (<>
-                      <div style={{ fontSize: 13, color: SUB }} title="未稅小計＝Σ數量×單價，對應報價單的未稅總價">未稅 <span style={{ color: TEXT, fontVariantNumeric: "tabular-nums", fontWeight: 500 }}>{fmt(groupPretax)}</span></div>
-                      {disc.hasDiscount ? (<>
-                        <div style={{ fontSize: 12, color: SUB }}>原報價 <span style={{ color: "#A99F88", textDecoration: "line-through", fontVariantNumeric: "tabular-nums" }}>{fmt(groupRaw)}</span></div>
-                        <div style={{ fontSize: 12, color: SUB }}>議價後 <span style={{ color: TEXT, fontVariantNumeric: "tabular-nums", fontWeight: 600 }}>{fmt(groupEst)}</span></div>
-                        <div style={{ fontSize: 12, color: "#C0392B", fontWeight: 600, fontVariantNumeric: "tabular-nums" }} title={disc.mode === "amt" ? `固定折讓 ${fmt(disc.amt)}（直接從含稅總價扣）` : `折 ${Math.round(disc.pct * 10) / 10}%`}>省 {fmt(groupSaved)}（-{Math.round(disc.pct * 10) / 10}%）</div>
-                      </>) : (
-                        <div style={{ fontSize: 13, color: SUB }} title="含稅總計">含稅 <span style={{ color: TEXT, fontVariantNumeric: "tabular-nums", fontWeight: 600 }}>{fmt(groupEst)}</span></div>
-                      )}
-                      {/* 付款狀態（一眼辨識：綠=付清、橘=未付、進度條=部分）*/}
-                      <button onClick={() => setPayCatId(catId)} title="檢視／新增付款紀錄" style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer", border: "none", background: "none", padding: 0 }}>
+                      {colNum("未稅", fmt(groupPretax), { title: "未稅小計＝Σ數量×單價，對應報價單未稅總價" })}
+                      {disc.hasDiscount
+                        ? colNum("議價後", fmt(groupEst), { fw: 600, color: "#C0392B", title: `原報價 ${fmt(groupRaw)} → 議價後 ${fmt(groupEst)}，省 ${fmt(groupSaved)}（-${Math.round(disc.pct * 10) / 10}%）` })
+                        : colNum("含稅", fmt(groupEst), { fw: 600, title: "含稅總計" })}
+                      {/* 已付/未付（固定寬、靠右）*/}
+                      <button onClick={() => setPayCatId(catId)} title="檢視／新增付款紀錄" style={{ width: 210, display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 6, cursor: "pointer", border: "none", background: "none", padding: 0, flexShrink: 0 }}>
                         {full ? <span style={{ fontSize: 11.5, fontWeight: 700, color: "#3C8C3C", background: "#E7F5E7", borderRadius: 12, padding: "3px 10px" }}>✓ 已付清{groupUnpaid < 0 ? `（溢付 ${fmt(-groupUnpaid)}）` : ""}</span>
                           : none ? <span style={{ fontSize: 11.5, fontWeight: 700, color: "#C2410C", background: "#FFF1E6", borderRadius: 12, padding: "3px 10px" }}>● 未付 {fmt(groupUnpaid)}</span>
                             : <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                                <span style={{ width: 44, height: 6, background: "#EFE7D6", borderRadius: 3, overflow: "hidden", flexShrink: 0 }}><span style={{ display: "block", width: pct + "%", height: "100%", background: "#3C8C3C" }} /></span>
-                                <span style={{ fontSize: 11.5, fontVariantNumeric: "tabular-nums" }}><span style={{ color: "#3C8C3C", fontWeight: 600 }}>已付 {fmt(groupPaid)}</span> <span style={{ color: "#C2872E" }}>/ 未付 {fmt(groupUnpaid)}</span></span>
+                                <span style={{ width: 36, height: 6, background: "#EFE7D6", borderRadius: 3, overflow: "hidden", flexShrink: 0 }}><span style={{ display: "block", width: pct + "%", height: "100%", background: "#3C8C3C" }} /></span>
+                                <span style={{ fontSize: 11.5, fontVariantNumeric: "tabular-nums" }}><span style={{ color: "#3C8C3C", fontWeight: 600 }}>{fmt(groupPaid)}</span><span style={{ color: "#C2872E" }}> / {fmt(groupUnpaid)}</span></span>
                               </span>}
                         {payCount > 0 && <span style={{ fontSize: 10, color: "#3C8C3C" }}>·{payCount}筆</span>}
                       </button>
                       <button onClick={(e) => { e.stopPropagation(); setPayCatId(catId); }} title="新增付款紀錄" style={{ flexShrink: 0, border: `1px solid #3C8C3C`, background: "#F0FDF4", color: "#3C8C3C", borderRadius: 6, padding: "2px 9px", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>＋ 新增付款</button>
                     </>);
                   })()}
-                  <div style={{ flex: 1 }} />
                   </>}
                   {itemCount > 0 && <button onClick={() => confirm(`清空「${group.name}」的全部 ${itemCount} 筆${L("item")}？\n（細項可到垃圾桶還原；付款紀錄一併清除）`, { confirmLabel: "確定清空" }).then(ok => { if (ok) { const c = cats.find(x => x.id === catId); if (c?.items?.length && trashItems) trashItems(catId, c.name, c.items); setCats(prev => prev.map(c => c.id === catId ? { ...c, items: [], payments: [] } : c)); } })} title="清空此大項的所有細項" style={{ flexShrink: 0, marginLeft: 4, border: "1px solid #D8CFBB", background: "transparent", color: SUB, cursor: "pointer", fontSize: 11, borderRadius: 6, padding: "2px 9px" }} onMouseEnter={e => { e.currentTarget.style.borderColor = "#DC2626"; e.currentTarget.style.color = "#DC2626"; }} onMouseLeave={e => { e.currentTarget.style.borderColor = "#D8CFBB"; e.currentTarget.style.color = SUB; }}>清空細項</button>}
                   <button onClick={() => confirm(`確定刪除${L("cat")}「${group.name}」？\n（含其下 ${itemCount} 筆${L("item")}，無法復原）`).then(ok => { if (ok) setCats(prev => prev.filter(c => c.id !== catId)); })} title={`刪除此${L("cat")}`} style={{ flexShrink: 0, marginLeft: 4, width: 22, height: 22, borderRadius: "50%", background: "transparent", border: "none", color: "#C8BCA0", cursor: "pointer", fontSize: 15, lineHeight: 1, display: "flex", alignItems: "center", justifyContent: "center", padding: 0 }} onMouseEnter={e => { e.currentTarget.style.background = "#F3E4DE"; e.currentTarget.style.color = "#DC2626"; }} onMouseLeave={e => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = "#C8BCA0"; }}>×</button>
