@@ -2374,10 +2374,8 @@ function TopNav({ view, setView, saving, totalEstimated, totalPaid, doneCount, c
 
 // ── OVERVIEW TABLE (Notion-style) ────────────────────────────────────────────
 const COLS = [
-  // 識別區
-  { id:"cat",      label:"大項",   w:120, fixed:true }, // 可下拉移動細項到其他大項
+  { id:"payDate",  label:"付款日",  w:120 }, // 付款日移到最左
   { id:"name",     label:"細項名稱", w:200, fixed:true },
-  { id:"payDate",  label:"付款日",  w:120 }, // 付款日移到名稱旁
   { id:"status",   label:"狀態",   w:90 },
   // 金額區
   { id:"estQty",   label:"數量",   w:70 },
@@ -2388,8 +2386,9 @@ const COLS = [
   { id:"estTotal", label:"預估金額", w:120 },
   // 付款區
   { id:"itemPaid", label:"已付/未付", w:130 }, // 逐項付款狀態（從大項付款紀錄依品項加總）
+  { id:"cat",      label:"大項",   w:120 }, // 可下拉移動細項到其他大項（移到付款帳號左邊）
   { id:"payAccount",  label:"付款帳號", w:130 },
-  { id:"assignee", label:"負責人",  w:100 }, // 負責人移到付款帳號後
+  { id:"assignee", label:"負責人",  w:100 },
   { id:"receipts", label:"憑證",   w:104 },
   // 其他
   { id:"notes",    label:"備註",   w:180 },
