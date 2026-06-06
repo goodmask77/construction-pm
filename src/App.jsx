@@ -2778,7 +2778,7 @@ function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols,
 
       {(
       /* table */
-      <div style={{ overflow: "auto", maxHeight: "calc(100vh - 168px)", borderRadius: 12, border: `1px solid ${BORDER}`, background: SURFACE }}>
+      <div style={{ overflow: "auto", overscrollBehavior: "contain", maxHeight: "calc(100vh - 150px)", borderRadius: 12, border: `1px solid ${BORDER}`, background: SURFACE }}>
         <div style={{ minWidth: totalW }}>
           {/* header */}
           <div style={{ display: "flex", background: BG, borderBottom: `1px solid ${BORDER}`, position: "sticky", top: 0, zIndex: 10 }}>
