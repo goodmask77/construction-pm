@@ -2464,16 +2464,36 @@ function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols,
       : c
     ));
   };
-  // 移動細項到其他大項（連同對應的付款紀錄一起搬）
+  // 移動細項到其他大項：把「此細項的已付」一起帶走（含分攤到它的整批付款），來源不留殘渣、金額守恆
   const moveItemToCat = (fromCatId, itemId, toCatId) => {
     if (fromCatId === toCatId) return;
     setCats(prev => {
       const from = prev.find(c => c.id === fromCatId); if (!from) return prev;
       const it = (from.items || []).find(x => x.id === itemId); if (!it) return prev;
-      const movedPays = (from.payments || []).filter(p => p.itemId === itemId);
+      const pays = from.payments || [];
+      const linked = pays.filter(p => p.itemId === itemId);            // 已綁此細項的付款 → 整筆跟著走
+      const linkedSum = linked.reduce((s, p) => s + (Number(p.amount) || 0), 0);
+      const itemPaidTotal = catItemPaidMap(from)[itemId] || 0;          // 此細項實際已付（含整批分攤）
+      let lumpShare = Math.max(0, itemPaidTotal - linkedSum);           // 來自「整批/未指定」付款、該分給此細項的部分
+
+      // 從來源的「未指定」付款扣掉 lumpShare（依序扣、扣完即止）
+      let remain = lumpShare;
+      const fromPays = [];
+      for (const p of pays) {
+        if (p.itemId === itemId) continue;                             // linked 已搬走
+        if (!p.itemId && remain > 0) {                                  // 未指定付款 → 扣抵
+          const amt = Number(p.amount) || 0;
+          if (amt <= remain) { remain -= amt; continue; }              // 整筆被扣掉
+          fromPays.push({ ...p, amount: amt - remain }); remain = 0;    // 部分扣抵
+        } else fromPays.push(p);
+      }
+      // 目的地：linked 付款 + 一筆代表分攤過來的已付（綁定此細項）
+      const toAdd = [...linked];
+      if (lumpShare > 0) toAdd.push({ id: "pay-" + Math.random().toString(36).slice(2, 8), date: new Date().toISOString().slice(0, 10), amount: lumpShare, category: "其他", note: `隨「${it.name}」自${from.name}移轉`, itemId, receipts: [] });
+
       return prev.map(c => {
-        if (c.id === fromCatId) return { ...c, items: c.items.filter(x => x.id !== itemId), payments: (c.payments || []).filter(p => p.itemId !== itemId) };
-        if (c.id === toCatId) return { ...c, items: [...(c.items || []), it], payments: [...(c.payments || []), ...movedPays] };
+        if (c.id === fromCatId) return { ...c, items: c.items.filter(x => x.id !== itemId), payments: fromPays };
+        if (c.id === toCatId) return { ...c, items: [...(c.items || []), it], payments: [...(c.payments || []), ...toAdd] };
         return c;
       });
     });
@@ -2812,11 +2832,6 @@ function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols,
                   {(() => {
                     const isEmpty = groupEst === 0 && groupPaid === 0;
                     if (isEmpty) return <span style={{ fontSize: 12, color: "#C8BCA0" }}>尚未建立明細</span>;
-                    // 沒細項(議價後0)卻有付款＝孤兒付款(通常是細項被移走/刪除)→ 明確提示+一鍵清除
-                    if (groupEst === 0 && groupPaid > 0) return <>
-                      <span style={{ fontSize: 12, color: "#C2410C" }}>⚠ 已無細項，但仍有 {fmt(groupPaid)} 付款紀錄</span>
-                      <button onClick={() => confirm(`「${group.name}」已沒有細項，清除殘留的 ${fmt(groupPaid)} 付款紀錄？`, { confirmLabel: "確定清除" }).then(ok => { if (ok) setCats(prev => prev.map(c => c.id === catId ? { ...c, payments: [] } : c)); })} style={{ flexShrink: 0, border: "1px solid #C2872E", background: "#FFFBEB", color: "#C2872E", borderRadius: 6, padding: "2px 10px", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>清除付款</button>
-                    </>;
                     const pct = groupEst > 0 ? Math.round(groupPaid / groupEst * 100) : 0;
                     const full = groupEst > 0 && groupUnpaid <= 0;
                     const none = groupPaid === 0;
