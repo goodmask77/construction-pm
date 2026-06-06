@@ -5265,7 +5265,7 @@ function applyActions(actions, cats, settings, worklog) {
         const c = findCat(next, a.category);
         if (c) {
           const tax = ["未稅","含稅","免稅"].includes(a.taxType) ? a.taxType : "未稅";
-          const it = { id: genId("i"), name: a.name||"新細項", qty: Number(a.qty)||1, unit: a.unit||"式", unitPrice: Number(a.unitPrice)||0, taxType: tax, labor:0, laborDays:0, dailyWage:0, assignee: a.assignee||"", status: normStatus(a.status)||"pending", receipts:[], notes: a.notes||"", chat:[] };
+          const it = { id: genId("i"), name: a.name||"新細項", qty: Number(a.qty)||1, unit: a.unit||"式", unitPrice: Math.round(Number(a.unitPrice)||0), taxType: tax, labor:0, laborDays:0, dailyWage:0, assignee: a.assignee||"", status: normStatus(a.status)||"pending", receipts:[], notes: a.notes||"", chat:[] };
           c.items.push(it);
           results.push(`➕ 「${c.name}」新增細項「${it.name}」（${tax}${fmt(it.qty*it.unitPrice)}）`);
         } else results.push(`⚠️ 找不到大項「${a.category}」`);
@@ -5279,7 +5279,7 @@ function applyActions(actions, cats, settings, worklog) {
           const chg = [];
           if (a.qty != null) { it.qty = Number(a.qty); chg.push(`數量${it.qty}`); }
           if (a.unit != null) { it.unit = a.unit; chg.push(`單位${it.unit}`); }
-          if (a.unitPrice != null) { it.unitPrice = Number(a.unitPrice); chg.push(`單價${fmt(it.unitPrice)}`); }
+          if (a.unitPrice != null) { it.unitPrice = Math.round(Number(a.unitPrice)); chg.push(`單價${fmt(it.unitPrice)}`); }
           if (["未稅","含稅","免稅"].includes(a.taxType)) { it.taxType = a.taxType; chg.push(`稅別${a.taxType}`); }
           if (a.assignee != null) { it.assignee = a.assignee; chg.push(`負責人${it.assignee}`); }
           if (a.notes != null) { it.notes = a.notes; chg.push("備註"); }
