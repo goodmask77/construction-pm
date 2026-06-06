@@ -5451,9 +5451,9 @@ function GlobalAIPanel({ chat, setChat, onClose, cats, setCats, canEdit, confirm
       const catNames = cats.map(c => c.name).join("、");
       const sys = `你是估價單解析器。只輸出一個 markdown json 區塊，不要任何其他文字。格式：
 \`\`\`json
-{"suggest":"最可能對應的工程大項名稱","items":[{"name":"品項名(不含廠商)","qty":1,"unit":"式","unitPrice":88200,"taxType":"含稅","vendor":"廠商或人名"}]}
+{"suggest":"最可能對應的工程大項名稱","date":"2026-04-25","items":[{"name":"品項名(不含廠商)","qty":1,"unit":"式","unitPrice":88200,"taxType":"含稅","vendor":"廠商或人名"}]}
 \`\`\`
-規則：1) unitPrice 填單據上的數字本身，絕不做任何除法或加減稅。2) taxType 照單據：含稅/未稅/免稅，沒寫就「未稅」。3) 括號或另一欄的廠商/人名放 vendor，name 只放品項本身。4) 數量沒寫填1、單位沒寫填「式」。5) 現有工程大項：${catNames}。suggest 從中挑最接近的。`;
+規則：1) unitPrice 填單據上的數字本身，絕不做任何除法或加減稅。2) taxType 照單據：含稅/未稅/免稅，沒寫就「未稅」。3) 括號或另一欄的廠商/人名放 vendor，name 只放品項本身。4) 數量沒寫填1、單位沒寫填「式」。5) date 抓單據上的日期(年-月-日)，沒有就留空。6) 現有工程大項：${catNames}。suggest 從中挑最接近的。`;
       const content = [{ type: "text", text: "解析這份估價單／報價單的所有品項。" }];
       atts.forEach(a => content.push(a.kind === "image" ? { type: "image", source: { type: "base64", media_type: a.media_type, data: a.data } } : { type: "document", source: { type: "base64", media_type: "application/pdf", data: a.data } }));
       const reply = await callAI([{ role: "user", content }], sys, "import");
@@ -5463,7 +5463,8 @@ function GlobalAIPanel({ chat, setChat, onClose, cats, setCats, canEdit, confirm
       const items = (obj?.items || []).map(it => ({ pick: true, name: String(it.name || "").trim(), qty: Number(it.qty) || 1, unit: it.unit || "式", unitPrice: Math.round(Number(it.unitPrice) || 0), taxType: ["未稅","含稅","免稅"].includes(it.taxType) ? it.taxType : "未稅", vendor: String(it.vendor || "").trim() }));
       const sugCat = cats.find(c => c.name === obj?.suggest) || cats.find(c => obj?.suggest && c.name.includes(obj.suggest));
       if (!items.length) { setImp(null); alert("沒有解析到品項，請改用對話框上傳，或確認圖片清晰。"); return; }
-      setImp({ busy: false, rows: items, targetCatId: sugCat?.id || cats[0]?.id || "" });
+      const dt = /^\d{4}-\d{2}-\d{2}$/.test(obj?.date || "") ? obj.date : "";
+      setImp({ busy: false, rows: items, targetCatId: sugCat?.id || cats[0]?.id || "", date: dt });
     } catch (_) { setImp(null); alert("解析失敗，請稍後再試。"); }
   };
   const confirmImport = () => {
@@ -5471,7 +5472,7 @@ function GlobalAIPanel({ chat, setChat, onClose, cats, setCats, canEdit, confirm
     const cat = cats.find(c => c.id === imp.targetCatId); if (!cat) { alert("請選擇要匯入的工程大項"); return; }
     const picked = imp.rows.filter(r => r.pick && r.name);
     if (!picked.length) { setImp(null); return; }
-    const newItems = picked.map(r => ({ id: "i-" + cat.id + "-" + Math.random().toString(36).slice(2, 7), name: r.name, qty: r.qty, unit: r.unit, unitPrice: Math.round(r.unitPrice), taxType: r.taxType, labor: 0, laborDays: 0, dailyWage: 0, assignee: r.vendor, status: "pending", receipts: [], notes: "", chat: [] }));
+    const newItems = picked.map(r => ({ id: "i-" + cat.id + "-" + Math.random().toString(36).slice(2, 7), name: r.name, qty: r.qty, unit: r.unit, unitPrice: Math.round(r.unitPrice), taxType: r.taxType, payDate: imp.date || "", labor: 0, laborDays: 0, dailyWage: 0, assignee: r.vendor, status: "pending", receipts: [], notes: "", chat: [] }));
     setCats(prev => prev.map(c => c.id === cat.id ? { ...c, items: [...(c.items || []), ...newItems] } : c));
     addMsg("assistant", `✅ 已匯入 ${newItems.length} 筆到「${cat.name}」。`);
     setImp(null);
@@ -5670,6 +5671,8 @@ function GlobalAIPanel({ chat, setChat, onClose, cats, setCats, canEdit, confirm
                 <select value={imp.targetCatId} onChange={e => setImp({ ...imp, targetCatId: e.target.value })} style={{ border: `1px solid ${BORDER}`, borderRadius: 8, padding: "6px 10px", fontSize: 14, background: "#fff", color: TEXT }}>
                   {[...cats].sort((a,b)=>a.order-b.order).map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                 </select>
+                <span style={{ fontSize: 13, color: SUB }}>單據日期：</span>
+                <input type="date" value={imp.date || ""} onChange={e => setImp({ ...imp, date: e.target.value })} title="會填到各細項的付款日（可改）" style={{ border: `1px solid ${imp.date ? BORDER : "#C2872E"}`, borderRadius: 8, padding: "5px 8px", fontSize: 13, background: "#fff", color: TEXT }} />
                 <span style={{ fontSize: 12, color: SUB }}>共 {imp.rows.length} 筆，勾選 {imp.rows.filter(r=>r.pick).length} 筆</span>
                 <div style={{ fontSize: 11, color: "#A99F88" }}>※ 數字照單據原值、不換算；可直接修改</div>
               </div>
