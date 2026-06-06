@@ -2461,6 +2461,7 @@ function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols,
   const toggleAll = () => setCollapsed(allCollapsed ? new Set() : new Set(cats.map(c => c.id)));
   const [lightbox, setLightbox] = useState(null); // 憑證放大檢視
   const [rcpBusy, setRcpBusy] = useState(null);    // 正在上傳憑證的 itemId
+  const [rcpAdd, setRcpAdd] = useState(null);      // 憑證上傳小彈窗：{catId,item,x,y}
   const [payCatId, setPayCatId] = useState(null);  // 開啟付款紀錄面板的大項 id
   const [groupEditId, setGroupEditId] = useState(null); // 正在編輯費用群組標籤的大項
   const [catNameEdit, setCatNameEdit] = useState(null);  // 正在改名的大項
@@ -2991,10 +2992,7 @@ function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols,
                                 // 舊格式：純文字名稱＋金額（點一下可刪除）
                                 return <span key={ri} title={r.amount ? `${r.name}　$${r.amount}（點擊刪除）` : `${r.name}（點擊刪除）`} onClick={() => removeReceipt(catId, item, r.id, ri)} style={{ fontSize: 10, background: "#F3E4DE", color: "#92400e", borderRadius: 10, padding: "1px 6px", fontWeight: 600, cursor: "pointer", flexShrink: 0 }}>📎 {r.name}</span>;
                               })}
-                              <label title="上傳發票／憑證照片" style={{ fontSize: 12, background: "none", border: "1px dashed #D8CFBB", borderRadius: 4, padding: rcpBusy === item.id ? "0 6px" : "1px 6px", cursor: "pointer", color: "#A99F88", flexShrink: 0, display: "flex", alignItems: "center", height: 26 }}>
-                                {rcpBusy === item.id ? "…" : "＋"}
-                                <input type="file" accept="image/*,application/pdf" multiple style={{ display: "none" }} onChange={e => { addReceipts(catId, item, e.target.files); e.target.value = ""; }} />
-                              </label>
+                              <button title="新增憑證（選檔或貼上截圖）" onClick={e => { const r = e.currentTarget.getBoundingClientRect(); setRcpAdd({ catId, item, x: r.left, y: r.bottom + 4 }); }} style={{ fontSize: 12, background: "none", border: "1px dashed #D8CFBB", borderRadius: 4, padding: rcpBusy === item.id ? "0 6px" : "1px 6px", cursor: "pointer", color: "#A99F88", flexShrink: 0, display: "flex", alignItems: "center", height: 26 }}>{rcpBusy === item.id ? "…" : "＋"}</button>
                             </div>
                           );
                         }
@@ -3070,6 +3068,25 @@ function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols,
       {payCatId && (() => { const c = cats.find(x => x.id === payCatId); return c ? (
         <PaymentsPanel cat={c} setCats={setCats} onClose={() => setPayCatId(null)} confirm={confirm} />
       ) : null; })()}
+
+      {/* 憑證上傳小彈窗：選檔 或 Cmd+V 貼上 */}
+      {rcpAdd && (
+        <div onMouseDown={e => { if (e.target === e.currentTarget) setRcpAdd(null); }} style={{ position: "fixed", inset: 0, zIndex: 700 }}>
+          <div onPaste={e => { const fs = Array.from(e.clipboardData?.files || []).filter(f => /^image\//.test(f.type) || f.type === "application/pdf"); if (fs.length) { e.preventDefault(); addReceipts(rcpAdd.catId, cats.find(c=>c.id===rcpAdd.catId)?.items.find(i=>i.id===rcpAdd.item.id) || rcpAdd.item, fs); setRcpAdd(null); } }}
+            tabIndex={0} autoFocus ref={el => el && el.focus()}
+            style={{ position: "fixed", left: Math.min(rcpAdd.x, window.innerWidth - 280), top: Math.min(rcpAdd.y, window.innerHeight - 160), width: 260, background: "#fff", border: `1px solid ${BORDER}`, borderRadius: 12, boxShadow: "0 8px 30px rgba(0,0,0,.18)", padding: 14, outline: "none" }}>
+            <div style={{ fontSize: 13, fontWeight: 700, color: TEXT, marginBottom: 4 }}>新增憑證</div>
+            <div style={{ fontSize: 12, color: SUB, marginBottom: 10 }}>{rcpAdd.item.name}</div>
+            <div style={{ border: `2px dashed ${BORDER}`, borderRadius: 10, padding: "18px 10px", textAlign: "center", fontSize: 13, color: "#A99F88", marginBottom: 10, background: "#FBF7EE" }}>📋 在此按 <b style={{ color: ACCENT }}>Cmd+V</b> 貼上截圖</div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <label style={{ flex: 1, textAlign: "center", border: `1px solid ${BORDER}`, borderRadius: 8, padding: "8px", fontSize: 13, cursor: "pointer", color: TEXT, background: SURFACE }}>📎 選擇檔案
+                <input type="file" accept="image/*,application/pdf" multiple style={{ display: "none" }} onChange={e => { const fs = e.target.files; e.target.value = ""; addReceipts(rcpAdd.catId, cats.find(c=>c.id===rcpAdd.catId)?.items.find(i=>i.id===rcpAdd.item.id) || rcpAdd.item, fs); setRcpAdd(null); }} />
+              </label>
+              <button onClick={() => setRcpAdd(null)} style={{ border: `1px solid ${BORDER}`, background: "#fff", color: SUB, borderRadius: 8, padding: "8px 12px", fontSize: 13, cursor: "pointer" }}>取消</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* 垃圾桶 */}
       {showTrash && (
