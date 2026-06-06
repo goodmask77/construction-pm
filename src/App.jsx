@@ -2528,6 +2528,23 @@ function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols,
       });
     });
   };
+  // 整張報價單付到 X%：該組各品項各付 X%、最後一筆吸收進位差→整組精確
+  const payReport = (catId, itemIds, ratio) => {
+    setCats(prev => prev.map(c => {
+      if (c.id !== catId) return c;
+      const estMap = catItemEstAfter(c);
+      const estOf = (id) => estMap[id] ?? estAmount(c.items.find(x => x.id === id) || {});
+      const target = Math.round(itemIds.reduce((s, id) => s + estOf(id), 0) * ratio);
+      const pays = (c.payments || []).filter(p => !itemIds.includes(p.itemId)); // 移除這些品項的舊付款
+      let acc = 0;
+      itemIds.forEach((id, i) => {
+        let amt = (i === itemIds.length - 1) ? Math.max(0, target - acc) : Math.round(estOf(id) * ratio);
+        if (i < itemIds.length - 1) acc += amt;
+        if (amt > 0) pays.push({ id: "pay-" + Math.random().toString(36).slice(2, 8), date: new Date().toISOString().slice(0, 10), amount: amt, category: ratio >= 1 ? "尾款" : "訂金", note: `報價單付到 ${Math.round(ratio * 100)}%`, itemId: id, receipts: [] });
+      });
+      return { ...c, payments: pays };
+    }));
+  };
 
   const addReceipts = async (catId, item, files) => {
     if (!files || !files.length) return;
@@ -2907,15 +2924,19 @@ function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols,
                   const newQuote = isQuote && (rIdx === 0 || quoteKeyOf(group.rows[rIdx - 1].item) !== qk);
                   return (
                     <Fragment key={item.id}>
-                    {newQuote && (
+                    {newQuote && (() => { const qItemIds = group.rows.filter(r => quoteKeyOf(r.item) === qk).map(r => r.item.id); return (
                       <div style={{ display: "flex", alignItems: "center", gap: 8, background: qTint, borderTop: `1px solid ${BORDER}`, borderLeft: `3px solid ${ACCENT}99`, padding: "3px 10px 3px 34px", fontSize: 11.5, color: "#7A6F58" }}>
                         <span style={{ fontWeight: 700 }}>📋 報價單</span>
                         {qi.date && <span>{qi.date.replace(/-/g, "/")}</span>}
                         {qi.vendor && <span>· {qi.vendor}</span>}
-                        <span style={{ flex: 1 }} />
                         <span>{qi.n} 筆 · 小計 <b style={{ color: ACCENT, fontVariantNumeric: "tabular-nums" }}>{fmt(qi.sum)}</b></span>
+                        <span style={{ flex: 1 }} />
+                        <span style={{ color: "#A99F88" }}>整張付款：</span>
+                        {[["50%", 0.5], ["30%", 0.3], ["全付清", 1]].map(([lb, r]) => (
+                          <button key={lb} onClick={() => payReport(catId, qItemIds, r)} title={`此報價單付到 ${typeof r === "number" && r < 1 ? Math.round(r * 100) + "%" : "全額"}（整組精確）`} style={{ border: `1px solid ${r >= 1 ? "#3C8C3C" : "#C2872E"}`, background: r >= 1 ? "#F0FDF4" : "#FFFBEB", color: r >= 1 ? "#3C8C3C" : "#C2872E", borderRadius: 6, padding: "1px 9px", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>{lb}</button>
+                        ))}
                       </div>
-                    )}
+                    ); })()}
                     <div
                       onDragOver={e => { e.preventDefault(); setDragOverId(rowKey); }}
                       onDrop={() => onRowDrop(rowKey)}
