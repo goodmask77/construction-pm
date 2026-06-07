@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback, Fragment } from "react";
 import { createPortal } from "react-dom";
-import { uploadPhoto, deletePhotoFile } from "./supa.js";
+import { uploadPhoto, deletePhotoFile, supabase } from "./supa.js";
 import SequenceView from "./SequenceView.jsx";
 
 // ── DESIGN TOKENS (Warm editorial — 米色紙感 + 磚紅 + 黑) ──────────────────
@@ -563,7 +563,8 @@ export default function App() {
   const [aiLog, setAiLog] = useState([]);
   const [showAdvisor, setShowAdvisor] = useState(false);
   const [showActivityLog, setShowActivityLog] = useState(false);
-  const [userName, setUserName] = useState(null); // null=not logged in
+  const [userName, setUserName] = useState(null); // null=not logged in（顯示名稱，來自登入 session）
+  const [profile, setProfile] = useState(null);   // 登入者的 profiles 資料（角色/部門/看金額）
   const [activityLog, setActivityLog] = useState([]);
   const [showLogin, setShowLogin] = useState(false);
   const [knownUsers, setKnownUsers] = useState([]);
@@ -650,7 +651,7 @@ export default function App() {
         : { projectName: SPACES.find(s=>s.id===CURRENT_SPACE)?.name || "工作空間", projectAddress:"", ownerName:"", contractorName:"", targetDate:"", notes:"", priorities:[], dailyCheckEnabled:false, lineGroupId:"", lineNotify: {} };
       setSettings(sv && Object.keys(sv).length ? sv : defSettings);
       setAiLog(log);
-      if (savedName) setUserName(savedName);
+      // 身分改由 Supabase 登入 session 決定（見下方 useEffect），不再用舊的「記住名字」
 
       // 未登入 → 訪客唯讀瀏覽（不強制登入）
       const kuArr = parse(kuV, null);
@@ -678,6 +679,25 @@ export default function App() {
       } catch(_){}
     })();
     return () => { cancelled = true; };
+  }, []);
+
+  // ── 真登入（Supabase Auth）：身分一律由登入 session 決定，無法冒名 ──
+  useEffect(() => {
+    if (!supabase) return;
+    let active = true;
+    const applySession = async (session) => {
+      if (!active) return;
+      if (!session?.user) { setProfile(null); setUserName(null); return; }
+      try {
+        const { data: prof } = await supabase.from("profiles").select("*").eq("id", session.user.id).maybeSingle();
+        if (!active) return;
+        setProfile(prof || null);
+        setUserName(prof?.display_name || null);
+      } catch (_) { setProfile(null); setUserName(null); }
+    };
+    supabase.auth.getSession().then(({ data }) => applySession(data.session));
+    const { data: sub } = supabase.auth.onAuthStateChange((_e, session) => applySession(session));
+    return () => { active = false; sub?.subscription?.unsubscribe?.(); };
   }, []);
 
   // auto-save
@@ -712,13 +732,12 @@ export default function App() {
     setActivityLog(prev => { const next = [entry, ...prev].slice(0,200); saveActivityLog(next); return next; });
   };
 
-  // ── 帳號 / 逐頁權限 ──
-  // 內建管理員 goodmask77 恆為 admin；其餘帳號由管理員建立並逐頁開放編輯權限。
-  const account = (userName === ADMIN_USER)
-    ? { name: ADMIN_USER, role: "admin", pages: [] }
-    : (accounts.find(a => a.name === userName) || (userName ? { name: userName, role: "viewer", pages: [] } : null));
+  // ── 帳號 / 逐頁權限（一律來自登入 session 的 profile，無法冒名）──
+  const account = profile ? { name: profile.display_name, role: profile.role, pages: profile.pages || [] } : null;
   const isAdmin = account?.role === "admin";
-  const can = (page) => isAdmin || !!account?.pages?.includes(page);
+  const isManager = account?.role === "manager";
+  const canViewMoney = isAdmin || isManager || !!profile?.can_view_money; // 給金額隱藏用（階段4接上）
+  const can = (page) => isAdmin || isManager || !!account?.pages?.includes(page);
   const canEditData = can("data");
   const canEditWorklog = can("worklog");
   const canEditFiles = can("files");
@@ -845,7 +864,7 @@ export default function App() {
   return (
     <div style={{ minHeight: "100vh", background: BG, color: TEXT, fontFamily: "-apple-system,'PingFang TC','Noto Sans TC',system-ui,'Segoe UI',sans-serif", fontSize: 14, letterSpacing: 0.1 }}>
       {/* TOP NAV */}
-      <TopNav view={view} setView={setView} saving={saving} totalEstimated={totalEstimated} totalPaid={totalPaid} doneCount={doneCount} catCount={cats.length} onAI={() => setShowGlobalAI(true)} userName={userName} isAdmin={isAdmin} stalledCount={stalledItems.length} onRoleClick={() => setShowLogin(true)} onActivityLog={() => setShowActivityLog(true)} activityCount={activityLog.length} isMobile={isMobile} />
+      <TopNav view={view} setView={setView} saving={saving} totalEstimated={totalEstimated} totalPaid={totalPaid} doneCount={doneCount} catCount={cats.length} onAI={() => setShowGlobalAI(true)} userName={userName} isAdmin={isAdmin} stalledCount={stalledItems.length} onRoleClick={async () => { if (userName) { const ok = await confirm(`登出「${userName}」？`, { confirmLabel: "登出" }); if (ok) { try { await supabase?.auth.signOut(); } catch(_){} setProfile(null); setUserName(null); } } else { setShowLogin(true); } }} onActivityLog={() => setShowActivityLog(true)} activityCount={activityLog.length} isMobile={isMobile} />
 
       {/* MAIN */}
       <div style={{ padding: isMobile ? "0 12px 84px" : "0 16px 80px" }}>
@@ -919,19 +938,15 @@ export default function App() {
       {showActivityLog && <ActivityLogPanel activityLog={activityLog} onClose={() => setShowActivityLog(false)} />}
       {ConfirmDialog}
       {showLogin && (
-        <LoginModal knownUsers={knownUsers} onClose={() => setShowLogin(false)} onLogin={async (name) => {
-          setUserName(name);
-          saveRole(name);
+        <LoginModal onClose={() => setShowLogin(false)} onLogin={async (username, password) => {
+          if (!supabase) return { error: "系統未設定登入服務，請聯絡管理員。" };
+          const email = username.includes("@") ? username : `${username}@ground.local`;
+          const { error } = await supabase.auth.signInWithPassword({ email, password });
+          if (error) return { error: "帳號或密碼錯誤，請再試一次。" };
+          // 身分由 onAuthStateChange 自動帶入（profile/userName）
           setShowLogin(false);
-          // Save to known users list（管理員不記錄、不顯示）
-          if (name !== ADMIN_USER) {
-            try {
-              const updated = [name, ...knownUsers.filter(u=>u!==name)].slice(0,8);
-              setKnownUsers(updated);
-              await window.storage.set(K("pm_known_users"), JSON.stringify(updated), true);
-            } catch(_){}
-          }
           logActivity("登入", "登入系統");
+          return {};
         }} />
       )}
       {/* GLOBAL AI */}
@@ -3384,37 +3399,41 @@ function PaymentsPanel({ cat, setCats, onClose, confirm }) {
 }
 
 // ── SIMPLE LOGIN ─────────────────────────────────────────────────────────────
-function LoginModal({ onLogin, knownUsers, onClose }) {
+function LoginModal({ onLogin, onClose }) {
   const [name, setName] = useState("");
+  const [pw, setPw] = useState("");
+  const [err, setErr] = useState("");
+  const [busy, setBusy] = useState(false);
+  const submit = async () => {
+    if (!name.trim() || !pw || busy) return;
+    setBusy(true); setErr("");
+    const res = await onLogin(name.trim(), pw);
+    setBusy(false);
+    if (res?.error) setErr(res.error);
+  };
   return (
     <div onClick={onClose} style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.55)", zIndex:9999, display:"flex", alignItems:"center", justifyContent:"center", padding:16 }}>
       <div onClick={e=>e.stopPropagation()} style={{ background:"#ffffff", borderRadius:16, padding:28, maxWidth:380, width:"100%", boxShadow:"0 20px 60px rgba(0,0,0,0.2)" }}>
-        <div style={{ fontSize:22, fontWeight: 600, color:"#211C15", marginBottom:6 }}>登入以編輯</div>
-        <div style={{ fontSize:13, color:"#6F6656", marginBottom:20 }}>未登入只能檢視。登入後預設仍是唯讀，編輯權限由管理員逐頁開放。</div>
-        {knownUsers.length > 0 && (
-          <div style={{ marginBottom:16 }}>
-            <div style={{ fontSize:11, color:"#A99F88", marginBottom:8 }}>最近登入過的成員</div>
-            <div style={{ display:"flex", flexWrap:"wrap", gap:6 }}>
-              {knownUsers.map(u => (
-                <button key={u} onClick={() => onLogin(u)}
-                  style={{ padding:"6px 14px", background:"#ECE6D7", border:"1px solid #D8CFBB", borderRadius:20, fontSize:13, cursor:"pointer", color:"#4A4234", fontWeight:600 }}>
-                  {u}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
+        <div style={{ fontSize:22, fontWeight: 600, color:"#211C15", marginBottom:6 }}>登入</div>
+        <div style={{ fontSize:13, color:"#6F6656", marginBottom:20 }}>未登入只能檢視。輸入你的帳號與密碼登入；忘記密碼請找管理員重設。</div>
         <input
           value={name} onChange={e=>setName(e.target.value)}
-          onKeyDown={e=>e.key==="Enter"&&!e.nativeEvent.isComposing&&name.trim()&&onLogin(name.trim())}
-          placeholder="輸入你的名字…"
-          autoFocus
-          style={{ width:"100%", padding:"11px 14px", border:"2px solid #D8CFBB", borderRadius:10, fontSize:15, outline:"none", fontFamily:"'Noto Sans TC',sans-serif", boxSizing:"border-box", marginBottom:14 }}
+          onKeyDown={e=>{ if(e.key==="Enter"&&!e.nativeEvent.isComposing) submit(); }}
+          placeholder="帳號（例：zhang）"
+          autoFocus autoCapitalize="off" autoCorrect="off"
+          style={{ width:"100%", padding:"11px 14px", border:"2px solid #D8CFBB", borderRadius:10, fontSize:15, outline:"none", fontFamily:"'Noto Sans TC',sans-serif", boxSizing:"border-box", marginBottom:10 }}
         />
-        <button onClick={() => name.trim() && onLogin(name.trim())}
-          disabled={!name.trim()}
-          style={{ width:"100%", padding:"12px 0", background:name.trim()?"#211C15":"#D8CFBB", border:"none", borderRadius:10, color:name.trim()?"#ffffff":"#A99F88", fontSize:15, fontWeight: 600, cursor:name.trim()?"pointer":"not-allowed" }}>
-          進入
+        <input
+          type="password" value={pw} onChange={e=>setPw(e.target.value)}
+          onKeyDown={e=>{ if(e.key==="Enter"&&!e.nativeEvent.isComposing) submit(); }}
+          placeholder="密碼"
+          style={{ width:"100%", padding:"11px 14px", border:"2px solid #D8CFBB", borderRadius:10, fontSize:15, outline:"none", fontFamily:"'Noto Sans TC',sans-serif", boxSizing:"border-box", marginBottom:err?8:14 }}
+        />
+        {err && <div style={{ fontSize:12.5, color:"#DC2626", marginBottom:12 }}>{err}</div>}
+        <button onClick={submit}
+          disabled={!name.trim()||!pw||busy}
+          style={{ width:"100%", padding:"12px 0", background:(name.trim()&&pw&&!busy)?"#211C15":"#D8CFBB", border:"none", borderRadius:10, color:(name.trim()&&pw&&!busy)?"#ffffff":"#A99F88", fontSize:15, fontWeight: 600, cursor:(name.trim()&&pw&&!busy)?"pointer":"not-allowed" }}>
+          {busy?"登入中…":"登入"}
         </button>
         {onClose && (
           <button onClick={onClose}
