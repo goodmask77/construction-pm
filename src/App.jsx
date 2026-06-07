@@ -571,6 +571,7 @@ export default function App() {
   const [profile, setProfile] = useState(null);   // 登入者的 profiles 資料（角色/部門/看金額）
   const [activityLog, setActivityLog] = useState([]);
   const [showLogin, setShowLogin] = useState(false);
+  const [showAcctMenu, setShowAcctMenu] = useState(false);
   const [knownUsers, setKnownUsers] = useState([]);
   const [worklog, setWorklog] = useState([]);
   const [photos, setPhotos] = useState([]);
@@ -873,7 +874,7 @@ export default function App() {
   return (
     <div style={{ minHeight: "100vh", background: BG, color: TEXT, fontFamily: "-apple-system,'PingFang TC','Noto Sans TC',system-ui,'Segoe UI',sans-serif", fontSize: 14, letterSpacing: 0.1 }}>
       {/* TOP NAV */}
-      <TopNav view={view} setView={setView} saving={saving} totalEstimated={totalEstimated} totalPaid={totalPaid} doneCount={doneCount} catCount={cats.length} onAI={() => setShowGlobalAI(true)} userName={userName} isAdmin={isAdmin} stalledCount={stalledItems.length} onRoleClick={async () => { if (userName) { const ok = await confirm(`登出「${userName}」？`, { confirmLabel: "登出" }); if (ok) { try { await supabase?.auth.signOut(); } catch(_){} setProfile(null); setUserName(null); } } else { setShowLogin(true); } }} onActivityLog={() => setShowActivityLog(true)} activityCount={activityLog.length} isMobile={isMobile} allowedSpaces={allowedSpaces} allowedViewPages={allowedViewPages} />
+      <TopNav view={view} setView={setView} saving={saving} totalEstimated={totalEstimated} totalPaid={totalPaid} doneCount={doneCount} catCount={cats.length} onAI={() => setShowGlobalAI(true)} userName={userName} isAdmin={isAdmin} stalledCount={stalledItems.length} onRoleClick={() => userName ? setShowAcctMenu(true) : setShowLogin(true)} onActivityLog={() => setShowActivityLog(true)} activityCount={activityLog.length} isMobile={isMobile} allowedSpaces={allowedSpaces} allowedViewPages={allowedViewPages} />
 
       {/* MAIN */}
       <div style={{ padding: isMobile ? "0 12px 84px" : "0 16px 80px" }}>
@@ -957,6 +958,20 @@ export default function App() {
           logActivity("登入", "登入系統");
           return {};
         }} />
+      )}
+      {showAcctMenu && (
+        <AccountMenu userName={userName} onClose={() => setShowAcctMenu(false)}
+          onChangePassword={async () => {
+            const np = window.prompt("輸入新密碼（至少 6 碼）：");
+            if (np == null) return;
+            if (np.length < 6) { alert("密碼至少 6 碼"); return; }
+            const { error } = await supabase.auth.updateUser({ password: np });
+            if (error) { alert("修改失敗：" + error.message); return; }
+            alert("密碼已更新，下次登入請用新密碼。");
+            setShowAcctMenu(false);
+          }}
+          onLogout={async () => { try { await supabase?.auth.signOut(); } catch(_){} setProfile(null); setUserName(null); setShowAcctMenu(false); }}
+        />
       )}
       {/* GLOBAL AI */}
       {showGlobalAI && (
@@ -3411,6 +3426,20 @@ function PaymentsPanel({ cat, setCats, onClose, confirm }) {
 }
 
 // ── SIMPLE LOGIN ─────────────────────────────────────────────────────────────
+function AccountMenu({ userName, onClose, onChangePassword, onLogout }) {
+  const btn = { width:"100%", padding:"12px 0", borderRadius:10, fontSize:15, fontWeight:600, cursor:"pointer", marginBottom:10 };
+  return (
+    <div onClick={onClose} style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.55)", zIndex:9999, display:"flex", alignItems:"center", justifyContent:"center", padding:16 }}>
+      <div onClick={e=>e.stopPropagation()} style={{ background:"#fff", borderRadius:16, padding:24, maxWidth:340, width:"100%", boxShadow:"0 20px 60px rgba(0,0,0,0.2)" }}>
+        <div style={{ fontSize:18, fontWeight:600, color:"#211C15", marginBottom:4 }}>{userName}</div>
+        <div style={{ fontSize:13, color:"#6F6656", marginBottom:18 }}>帳號設定</div>
+        <button onClick={onChangePassword} style={{ ...btn, background:"#211C15", color:"#fff", border:"none" }}>修改我的密碼</button>
+        <button onClick={onLogout} style={{ ...btn, background:"#fff", color:"#DC2626", border:"1px solid #FCA5A5" }}>登出</button>
+        <button onClick={onClose} style={{ ...btn, background:"transparent", color:"#6F6656", border:"none", marginBottom:0 }}>取消</button>
+      </div>
+    </div>
+  );
+}
 function LoginModal({ onLogin, onClose }) {
   const [name, setName] = useState("");
   const [pw, setPw] = useState("");
