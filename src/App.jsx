@@ -5341,8 +5341,13 @@ function AccountManager({ confirm, myId }) {
   useEffect(() => { load(); }, []);
   const authToken = async () => (await supabase.auth.getSession()).data.session?.access_token;
   const api = async (body) => {
-    const r = await fetch("/api/admin-users", { method:"POST", headers:{ "content-type":"application/json", authorization:`Bearer ${await authToken()}` }, body: JSON.stringify(body) });
-    const d = await r.json().catch(()=>({})); if (!r.ok) throw new Error(d.error || "操作失敗"); return d;
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 25000);
+    try {
+      const r = await fetch("/api/admin-users", { method:"POST", headers:{ "content-type":"application/json", authorization:`Bearer ${await authToken()}` }, body: JSON.stringify(body), signal: ctrl.signal });
+      const d = await r.json().catch(()=>({})); if (!r.ok) throw new Error(d.error || "操作失敗"); return d;
+    } catch(e) { throw new Error(e.name === "AbortError" ? "連線逾時，請重新整理頁面後再試一次" : (e.message || "操作失敗")); }
+    finally { clearTimeout(timer); }
   };
 
   const patch = async (id, changes) => {
@@ -5359,7 +5364,8 @@ function AccountManager({ confirm, myId }) {
     if (!nUser.trim() || !nPw || busy) return;
     setBusy(true); setErr("");
     try { await api({ action:"create", username:nUser.trim(), password:nPw, displayName:nName.trim()||nUser.trim(), role:nAdmin?"admin":"staff" });
-      setNName(""); setNUser(""); setNPw(""); setNAdmin(false); await load();
+      setNName(""); setNUser(""); setNPw(""); setNAdmin(false); setBusy(false); load(); // 建好即放開按鈕，清單在背景刷新（不卡住）
+      return;
     } catch(e){ setErr(e.message); }
     setBusy(false);
   };
