@@ -648,7 +648,8 @@ export default function App() {
       const seed = CURRENT_SPACE === "construction" ? INITIAL_CATEGORIES : [];
       const migrated = migratePayments(d || seed);
       setCats(migrated);
-      if (migrated !== (d || seed)) saveData(migrated);
+      // 只有「真的有讀到資料」且需要遷移時才回寫；絕不把 seed 自動存回去（避免讀取失敗時蓋掉真資料）
+      if (d && migrated !== d) saveData(migrated);
 
       setGlobalChat(gc);
       const defSettings = CURRENT_SPACE === "construction"
@@ -705,9 +706,11 @@ export default function App() {
     return () => { active = false; sub?.subscription?.unsubscribe?.(); };
   }, []);
 
-  // auto-save
+  // auto-save（防呆：略過「初始載入」造成的第一次寫入，避免載入失敗時把範例資料存回去蓋掉真資料）
+  const initialLoadDone = useRef(false);
   useEffect(() => {
     if (!cats) return;
+    if (!initialLoadDone.current) { initialLoadDone.current = true; return; }
     setSaving(true);
     const t = setTimeout(async () => {
       await saveData(cats);

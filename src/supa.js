@@ -6,13 +6,20 @@ import { createClient } from '@supabase/supabase-js'
 const url = import.meta.env.VITE_SUPABASE_URL
 const key = import.meta.env.VITE_SUPABASE_ANON_KEY
 
-// auth.lock 設成「不跨分頁等待」：避免某個卡住的分頁佔住 Web Lock，害其他分頁登入/載入一起卡死。
+// auth.lock：用「同分頁內排隊」的記憶體鎖，取代瀏覽器跨分頁 Web Lock。
+// 好處：① 同一分頁的權杖刷新會排隊、不會同時搶著刷新而打架 ② 不跨分頁，所以某個卡住的分頁不會鎖死其他分頁。
+let _authChain = Promise.resolve()
+const inTabLock = (_name, _acquireTimeout, fn) => {
+  const run = _authChain.then(() => fn(), () => fn())
+  _authChain = run.then(() => {}, () => {})
+  return run
+}
 export const supabase = url && key ? createClient(url, key, {
   auth: {
     persistSession: true,
     autoRefreshToken: true,
     detectSessionInUrl: false,
-    lock: async (_name, _acquireTimeout, fn) => await fn(),
+    lock: inTabLock,
   },
 }) : null
 
