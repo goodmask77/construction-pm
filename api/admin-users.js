@@ -1,51 +1,70 @@
-// 後端：管理員專用的帳號建立/刪除/重設密碼（使用 service-role 金鑰，只在後端）。
-// 前端帶上登入者的 access token；這裡先驗證「呼叫者是 admin」才執行。
-import { createClient } from '@supabase/supabase-js'
+// 後端：管理員專用的帳號建立/刪除/重設密碼。用 service-role 金鑰，純 fetch 呼叫 Supabase Auth Admin API
+// （不 import @supabase/supabase-js，避免 serverless 載入失敗）。前端帶上登入者 access token，先驗證是 admin。
+const URL_ = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL
+const SERVICE = process.env.SUPABASE_SERVICE_ROLE_KEY
 
-const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL
-const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+const svcHeaders = {
+  'content-type': 'application/json',
+  apikey: SERVICE,
+  Authorization: `Bearer ${SERVICE}`,
+}
 
 export default async function handler(req, res) {
-  if (req.method !== 'POST') return res.status(405).json({ error: '僅支援 POST' })
-  if (!url || !serviceKey) return res.status(400).json({ error: '後端未設定 SUPABASE_SERVICE_ROLE_KEY，請在 Vercel 環境變數加入後重新部署。' })
-
-  const admin = createClient(url, serviceKey, { auth: { persistSession: false, autoRefreshToken: false } })
-
-  // 1) 驗證呼叫者身分
-  const token = (req.headers.authorization || '').replace(/^Bearer\s+/i, '')
-  if (!token) return res.status(401).json({ error: '未登入' })
-  const { data: who, error: whoErr } = await admin.auth.getUser(token)
-  if (whoErr || !who?.user) return res.status(401).json({ error: '登入無效，請重新登入' })
-  const { data: me } = await admin.from('profiles').select('role').eq('id', who.user.id).maybeSingle()
-  if (me?.role !== 'admin') return res.status(403).json({ error: '只有管理員可以管理帳號' })
-
-  const { action, username, password, displayName, role, id } = req.body || {}
   try {
+    if (req.method !== 'POST') return res.status(405).json({ error: '僅支援 POST' })
+    if (!URL_ || !SERVICE) return res.status(400).json({ error: '後端未設定 SUPABASE_SERVICE_ROLE_KEY / SUPABASE_URL，請在 Vercel 環境變數加入後重新部署。' })
+
+    // 1) 驗證呼叫者
+    const token = (req.headers.authorization || '').replace(/^Bearer\s+/i, '')
+    if (!token) return res.status(401).json({ error: '未登入' })
+    const meRes = await fetch(`${URL_}/auth/v1/user`, { headers: { apikey: SERVICE, Authorization: `Bearer ${token}` } })
+    if (!meRes.ok) return res.status(401).json({ error: '登入無效，請重新登入' })
+    const meUser = await meRes.json()
+    const meId = meUser?.id
+    if (!meId) return res.status(401).json({ error: '登入無效' })
+    const roleRes = await fetch(`${URL_}/rest/v1/profiles?id=eq.${meId}&select=role`, { headers: svcHeaders })
+    const roleArr = roleRes.ok ? await roleRes.json() : []
+    if (roleArr?.[0]?.role !== 'admin') return res.status(403).json({ error: '只有管理員可以管理帳號' })
+
+    const { action, username, password, displayName, role, id } = req.body || {}
+
     if (action === 'create') {
       if (!username || !password) return res.status(400).json({ error: '帳號與密碼必填' })
       const email = String(username).includes('@') ? String(username) : `${username}@ground.local`
-      const { data, error } = await admin.auth.admin.createUser({ email, password, email_confirm: true })
-      if (error) return res.status(400).json({ error: /already/i.test(error.message) ? '此帳號已存在' : error.message })
-      await admin.from('profiles').upsert({
-        id: data.user.id, email,
-        display_name: displayName || username,
-        role: role || 'staff',
+      const cRes = await fetch(`${URL_}/auth/v1/admin/users`, {
+        method: 'POST', headers: svcHeaders,
+        body: JSON.stringify({ email, password, email_confirm: true }),
       })
-      return res.status(200).json({ ok: true, id: data.user.id })
+      const cData = await cRes.json().catch(() => ({}))
+      if (!cRes.ok) {
+        const msg = cData?.msg || cData?.error_description || cData?.error || cData?.message || '建立失敗'
+        return res.status(400).json({ error: /already|exists|registered/i.test(JSON.stringify(cData)) ? '此帳號已存在' : msg })
+      }
+      const newId = cData?.id || cData?.user?.id
+      await fetch(`${URL_}/rest/v1/profiles`, {
+        method: 'POST', headers: { ...svcHeaders, Prefer: 'resolution=merge-duplicates' },
+        body: JSON.stringify({ id: newId, email, display_name: displayName || username, role: role || 'staff' }),
+      })
+      return res.status(200).json({ ok: true, id: newId })
     }
+
     if (action === 'delete') {
       if (!id) return res.status(400).json({ error: '缺少帳號 id' })
-      if (id === who.user.id) return res.status(400).json({ error: '不能刪除自己' })
-      const { error } = await admin.auth.admin.deleteUser(id)
-      if (error) return res.status(400).json({ error: error.message })
+      if (id === meId) return res.status(400).json({ error: '不能刪除自己' })
+      const dRes = await fetch(`${URL_}/auth/v1/admin/users/${id}`, { method: 'DELETE', headers: svcHeaders })
+      if (!dRes.ok) { const d = await dRes.json().catch(() => ({})); return res.status(400).json({ error: d?.msg || '刪除失敗' }) }
       return res.status(200).json({ ok: true })
     }
+
     if (action === 'resetPassword') {
       if (!id || !password) return res.status(400).json({ error: '缺少 id 或新密碼' })
-      const { error } = await admin.auth.admin.updateUserById(id, { password })
-      if (error) return res.status(400).json({ error: error.message })
+      const uRes = await fetch(`${URL_}/auth/v1/admin/users/${id}`, {
+        method: 'PUT', headers: svcHeaders, body: JSON.stringify({ password }),
+      })
+      if (!uRes.ok) { const d = await uRes.json().catch(() => ({})); return res.status(400).json({ error: d?.msg || '重設失敗' }) }
       return res.status(200).json({ ok: true })
     }
+
     return res.status(400).json({ error: '未知動作' })
   } catch (e) {
     return res.status(500).json({ error: e?.message || '伺服器錯誤' })
