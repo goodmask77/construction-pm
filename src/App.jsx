@@ -363,6 +363,10 @@ const SPACE_CONF = {
 };
 const conf = () => SPACE_CONF[CURRENT_SPACE] || SPACE_CONF.construction;
 const L = (key) => conf().labels[key] || SPACE_CONF.construction.labels[key];
+// 金額顯示開關：依登入者 profile 的「看金額」設定（未登入訪客＝可看，維持原行為）。
+// 由 App 在每次 render 同步（見 App 內 CAN_VIEW_MONEY 指派）。
+let CAN_VIEW_MONEY = true;
+const showMoney = () => conf().showCost && CAN_VIEW_MONEY;
 const COST_COL_IDS = new Set(["estQty", "unit", "estUnitPrice", "taxType", "taxAmount", "estTotal", "itemPaid", "payAccount", "payDate"]);
 const GLOBAL_KEYS = new Set(["pm_role", "pm_known_users", "pm_current_space"]);
 let CURRENT_SPACE = "construction";
@@ -736,8 +740,12 @@ export default function App() {
   const account = profile ? { name: profile.display_name, role: profile.role, pages: profile.pages || [] } : null;
   const isAdmin = account?.role === "admin";
   const isManager = account?.role === "manager";
-  const canViewMoney = isAdmin || isManager || !!profile?.can_view_money; // 給金額隱藏用（階段4接上）
+  const canViewMoney = isAdmin || isManager || !profile || !!profile?.can_view_money; // 未登入訪客＝可看；登入者依開關
+  CAN_VIEW_MONEY = canViewMoney; // 同步給 showMoney()（金額欄位/KPI 顯示與否）
   const can = (page) => isAdmin || isManager || !!account?.pages?.includes(page);
+  // 可見空間 / 可見頁面（admin 全開；未設＝全開，由 admin 逐一限縮）
+  const allowedSpaces = isAdmin ? SPACES.map(s => s.id) : (profile?.spaces?.length ? profile.spaces : SPACES.map(s => s.id));
+  const allowedViewPages = isAdmin ? null : (profile?.view_pages?.length ? profile.view_pages : null);
   const canEditData = can("data");
   const canEditWorklog = can("worklog");
   const canEditFiles = can("files");
@@ -864,7 +872,7 @@ export default function App() {
   return (
     <div style={{ minHeight: "100vh", background: BG, color: TEXT, fontFamily: "-apple-system,'PingFang TC','Noto Sans TC',system-ui,'Segoe UI',sans-serif", fontSize: 14, letterSpacing: 0.1 }}>
       {/* TOP NAV */}
-      <TopNav view={view} setView={setView} saving={saving} totalEstimated={totalEstimated} totalPaid={totalPaid} doneCount={doneCount} catCount={cats.length} onAI={() => setShowGlobalAI(true)} userName={userName} isAdmin={isAdmin} stalledCount={stalledItems.length} onRoleClick={async () => { if (userName) { const ok = await confirm(`登出「${userName}」？`, { confirmLabel: "登出" }); if (ok) { try { await supabase?.auth.signOut(); } catch(_){} setProfile(null); setUserName(null); } } else { setShowLogin(true); } }} onActivityLog={() => setShowActivityLog(true)} activityCount={activityLog.length} isMobile={isMobile} />
+      <TopNav view={view} setView={setView} saving={saving} totalEstimated={totalEstimated} totalPaid={totalPaid} doneCount={doneCount} catCount={cats.length} onAI={() => setShowGlobalAI(true)} userName={userName} isAdmin={isAdmin} stalledCount={stalledItems.length} onRoleClick={async () => { if (userName) { const ok = await confirm(`登出「${userName}」？`, { confirmLabel: "登出" }); if (ok) { try { await supabase?.auth.signOut(); } catch(_){} setProfile(null); setUserName(null); } } else { setShowLogin(true); } }} onActivityLog={() => setShowActivityLog(true)} activityCount={activityLog.length} isMobile={isMobile} allowedSpaces={allowedSpaces} allowedViewPages={allowedViewPages} />
 
       {/* MAIN */}
       <div style={{ padding: isMobile ? "0 12px 84px" : "0 16px 80px" }}>
@@ -915,7 +923,7 @@ export default function App() {
           <CompareView canEdit={canEditFiles} requireLogin={denyEdit} />
         )}
         {view === "accounts" && isAdmin && (
-          <AccountManager accounts={accounts} setAccounts={commitAccounts} confirm={confirm} />
+          <AccountManager confirm={confirm} myId={profile?.id} />
         )}
         {view === "groups" && isAdmin && (
           <GroupsView cats={cats} canEdit={canEditData} requireLogin={denyEdit} settings={settings} setSettings={guardedSetSettings} journal={journal} events={events} plans={plans} />
@@ -955,7 +963,7 @@ export default function App() {
       )}
 
       {/* 手機底部固定導覽 */}
-      {isMobile && <BottomNav view={view} setView={setView} isAdmin={isAdmin} />}
+      {isMobile && <BottomNav view={view} setView={setView} isAdmin={isAdmin} allowedViewPages={allowedViewPages} />}
     </div>
   );
 }
@@ -2273,8 +2281,9 @@ function CompareView({ canEdit, requireLogin }) {
 }
 
 // ── BOTTOM NAV (手機) ───────────────────────────────────────────────────────
-function BottomNav({ view, setView, isAdmin }) {
-  const tabs = (conf().tabs || [["owner", "儀表板", "📊"], ["overview", L("overview"), "📋"], ["gantt", L("gantt"), "📅"], ["files", "檔案庫", "📁"], ["issues", "ToDo", "📝"], ["compare", "比價", "⚖️"], ["advisor", "AI設定", "🤖"], ...(isAdmin ? [["groups", "群組", "💬"], ["accounts", "帳號", "👤"]] : [])]).filter(([v]) => !conf().hideTabs.includes(v));
+function BottomNav({ view, setView, isAdmin, allowedViewPages }) {
+  const pageVisible = (v) => !allowedViewPages || allowedViewPages.includes(v) || v === "owner";
+  const tabs = (conf().tabs || [["owner", "儀表板", "📊"], ["overview", L("overview"), "📋"], ["gantt", L("gantt"), "📅"], ["files", "檔案庫", "📁"], ["issues", "ToDo", "📝"], ["compare", "比價", "⚖️"], ["advisor", "AI設定", "🤖"], ...(isAdmin ? [["groups", "群組", "💬"], ["accounts", "帳號", "👤"]] : [])]).filter(([v]) => !conf().hideTabs.includes(v) && pageVisible(v));
   return (
     <div style={{ position: "fixed", left: 0, right: 0, bottom: 0, height: 60, background: "rgba(255,255,255,0.96)", backdropFilter: "blur(10px)", WebkitBackdropFilter: "blur(10px)", borderTop: `1px solid ${BORDER}`, boxShadow: "0 -2px 14px rgba(0,0,0,0.08)", display: "flex", zIndex: 350, paddingBottom: "env(safe-area-inset-bottom)" }}>
       {tabs.map(([v, l, icon]) => {
@@ -2343,9 +2352,11 @@ function KPICard({ label, val, color, tip }) {
 }
 
 // ── TOP NAV ───────────────────────────────────────────────────────────────────
-function TopNav({ view, setView, saving, totalEstimated, totalPaid, doneCount, catCount, onAI, userName, isAdmin, stalledCount, onRoleClick, onActivityLog, activityCount, isMobile }) {
+function TopNav({ view, setView, saving, totalEstimated, totalPaid, doneCount, catCount, onAI, userName, isAdmin, stalledCount, onRoleClick, onActivityLog, activityCount, isMobile, allowedSpaces, allowedViewPages }) {
   const totalUnpaid = totalEstimated - totalPaid;
   const payPct = totalEstimated > 0 ? Math.round(totalPaid / totalEstimated * 100) : 0;
+  const spaceVisible = (id) => !allowedSpaces || allowedSpaces.includes(id);
+  const pageVisible = (v) => !allowedViewPages || allowedViewPages.includes(v) || v === "owner"; // 儀表板一律可見
   return (
     <div style={{ background: BG, borderBottom: `1px solid ${BORDER}`, padding: isMobile ? "10px 14px 0" : "16px 22px 0", position: "sticky", top: 0, zIndex: 100 }}>
       <div style={{ display: "flex", alignItems: "center", gap: isMobile ? 10 : 16, marginBottom: isMobile ? 10 : 12, flexWrap: "wrap" }}>
@@ -2357,12 +2368,12 @@ function TopNav({ view, setView, saving, totalEstimated, totalPaid, doneCount, c
         <div style={{ flexShrink: 0, order: isMobile ? 1 : 0 }}>
           <select value={CURRENT_SPACE} onChange={(e) => switchSpace(e.target.value)} title="切換工作空間（各空間資料獨立）"
             style={{ border: `1px solid ${BORDER}`, background: SURFACE, color: TEXT, borderRadius: 8, padding: isMobile ? "5px 8px" : "7px 10px", fontSize: 13, fontWeight: 600, cursor: "pointer", outline: "none" }}>
-            {SPACES.map(s => <option key={s.id} value={s.id}>{s.icon} {s.name}</option>)}
+            {SPACES.filter(s => spaceVisible(s.id)).map(s => <option key={s.id} value={s.id}>{s.icon} {s.name}</option>)}
           </select>
         </div>
         {/* KPI cards inline（手機改 2×2、整列獨佔一行；夥伴中心等空間隱藏）*/}
         {!conf().hideKpi && (() => {
-          const kpis = conf().showCost ? [
+          const kpis = showMoney() ? [
             { label: "預估總額", val: fmt(totalEstimated), color: TEXT, tip: "各細項「數量×單價」依稅別換算含稅後加總＝總預算" },
             { label: "已付總額", val: totalPaid > 0 ? fmt(totalPaid) : "尚未付款", color: totalPaid > 0 ? "#3C8C3C" : SUB, tip: `各細項「已付金額」加總。付款進度 ${payPct}%` },
             { label: "未付總額", val: fmt(totalUnpaid), color: totalUnpaid < 0 ? "#DC2626" : "#C2872E", tip: totalUnpaid < 0 ? "已付超過預估（溢付）" : "預估總額 − 已付總額＝尚需支付" },
@@ -2372,7 +2383,7 @@ function TopNav({ view, setView, saving, totalEstimated, totalPaid, doneCount, c
             { label: "完工", val: `${doneCount} / ${catCount}`, color: ACCENT, tip: `狀態為「完工」的${L("cat")}` },
           ];
           return (
-          <div style={{ display: "grid", gridTemplateColumns: isMobile ? `repeat(${Math.min(kpis.length,2)},1fr)` : `repeat(${kpis.length},minmax(110px,1fr))`, gap: 8, flex: isMobile ? "1 1 100%" : (conf().showCost ? 1 : "0 1 auto"), minWidth: isMobile ? 0 : (conf().showCost ? 360 : 0), order: isMobile ? 2 : 0 }}>
+          <div style={{ display: "grid", gridTemplateColumns: isMobile ? `repeat(${Math.min(kpis.length,2)},1fr)` : `repeat(${kpis.length},minmax(110px,1fr))`, gap: 8, flex: isMobile ? "1 1 100%" : (showMoney() ? 1 : "0 1 auto"), minWidth: isMobile ? 0 : (showMoney() ? 360 : 0), order: isMobile ? 2 : 0 }}>
             {kpis.map(k => <KPICard key={k.label} label={k.label} val={k.val} color={k.color} tip={k.tip} />)}
           </div>
           );
@@ -2407,7 +2418,7 @@ function TopNav({ view, setView, saving, totalEstimated, totalPaid, doneCount, c
       {/* view tabs — boxed editorial（手機隱藏，改用底部導覽）*/}
       {!isMobile && (
       <div style={{ display: "flex", gap: 8, paddingBottom: 12, flexWrap: "wrap" }}>
-        {(conf().tabs || [["owner","儀表板"],["overview",L("overview")],["gantt",L("gantt")],["files","檔案庫"],["issues","📝 ToDo"],["compare","比價"],["advisor","AI設定"],...(isAdmin?[["groups","群組"],["accounts","帳號"]]:[])]).filter(([v]) => !conf().hideTabs.includes(v)).map(([v,l]) => (
+        {(conf().tabs || [["owner","儀表板"],["overview",L("overview")],["gantt",L("gantt")],["files","檔案庫"],["issues","📝 ToDo"],["compare","比價"],["advisor","AI設定"],...(isAdmin?[["groups","群組"],["accounts","帳號"]]:[])]).filter(([v]) => !conf().hideTabs.includes(v) && pageVisible(v)).map(([v,l]) => (
           <button key={v} onClick={() => setView(v)} className={v === "issues" && view !== v ? "todo-glow" : undefined} style={{ padding: "8px 16px", borderRadius: 7, border: `1px solid ${view === v ? PRIMARY : (v === "issues" ? "#F59E0B" : BORDER)}`, cursor: "pointer", fontSize: 14, fontWeight: v === "issues" ? 700 : 500, background: view === v ? PRIMARY : (v === "issues" ? "#FEF3C7" : "transparent"), color: view === v ? "#fff" : (v === "issues" ? "#B45309" : TEXT), transition: "all .12s" }}>{l}</button>
         ))}
       </div>
@@ -2618,7 +2629,7 @@ function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols,
   const cols = (customCols && customCols.length) ? customCols : COLS.map(c => ({ id:c.id, label:c.label, builtin:true, fixed:!!c.fixed, w:c.w }));
   const resolve = (e) => e.builtin ? { ...builtinMap[e.id], label: e.label ?? builtinMap[e.id]?.label, w: e.w ?? builtinMap[e.id]?.w, builtin:true, fixed: e.fixed ?? builtinMap[e.id]?.fixed } : e;
   const relabel = (c) => c.id === "cat" ? { ...c, label: L("cat") } : c.id === "name" ? { ...c, label: L("item") + "名稱" } : c;
-  const orderedCols = cols.map(resolve).filter(c => c && c.id).filter(c => conf().showCost || !COST_COL_IDS.has(c.id)).map(relabel);
+  const orderedCols = cols.map(resolve).filter(c => c && c.id).filter(c => showMoney() || !COST_COL_IDS.has(c.id)).map(relabel);
   const totalW = orderedCols.reduce((s,c) => s + (c.w || 110), 0) + 48;
 
   const NUM_BUILTIN = new Set(["estQty","estUnitPrice","taxAmount","estTotal","itemPaid","paid","unpaid"]);
@@ -2762,14 +2773,14 @@ function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols,
           <span style={{ fontSize: 24, fontWeight: 900 }}>{allCollapsed ? "⊕" : "⊖"}</span>{allCollapsed ? "全部展開" : "全部收合"}
         </button>
         <div style={{ flex: 1 }} />
-        {viewMode === "table" && conf().showCost && (
+        {viewMode === "table" && showMoney() && (
           <button onClick={() => setGroupMode(m => !m)} title="分類模式：設定每個大項的費用群組與是否計入工程" style={{ padding: "6px 12px", borderRadius: 7, border: `1px solid ${groupMode ? ACCENT : BORDER}`, fontSize: 12.5, cursor: "pointer", background: groupMode ? "#F3E4DE" : SURFACE, color: groupMode ? ACCENT : SUB, fontWeight: 500 }}>🏷 分類{groupMode ? "中" : ""}</button>
         )}
         <button onClick={() => setShowTrash(true)} title="垃圾桶（刪除的細項可還原）" style={{ padding: "6px 12px", borderRadius: 7, border: `1px solid ${BORDER}`, fontSize: 12.5, cursor: "pointer", background: SURFACE, color: SUB, fontWeight: 500 }}>🗑 垃圾桶{trash.length ? ` ${trash.length}` : ""}</button>
       </div>
 
       {/* 工程／非工程／全部 三分類合計 */}
-      {viewMode === "table" && conf().showCost && (() => {
+      {viewMode === "table" && showMoney() && (() => {
         let pe = 0, pp = 0, ne = 0, np = 0; // 工程est/paid, 非工程est/paid
         cats.forEach(c => { const e = catEstAfter(c), pd = catPaid(c); if (c.nonProject) { ne += e; np += pd; } else { pe += e; pp += pd; } });
         const card = (label, est, paid, color, bg) => (
@@ -2789,7 +2800,7 @@ function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols,
       })()}
 
       {/* 費用群組合計（自訂分群，例：廣告機螢幕群）*/}
-      {viewMode === "table" && conf().showCost && allGroups.length > 0 && (() => {
+      {viewMode === "table" && showMoney() && allGroups.length > 0 && (() => {
         const g = {};
         allGroups.forEach(name => { g[name] = { name, n: 0, pretax: 0, est: 0, paid: 0 }; });
         cats.forEach(c => { if (c.group && g[c.group]) { const gg = g[c.group]; gg.n++; gg.pretax += catPretaxSub(c); gg.est += catEstAfter(c); gg.paid += catPaid(c); } });
@@ -2855,7 +2866,7 @@ function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols,
             const quoteOrder = []; const quoteInfo = {};
             group.rows.forEach(({ item }) => { const k = quoteKeyOf(item); if (!quoteInfo[k]) { quoteInfo[k] = { idx: quoteOrder.length, sum: 0, n: 0, date: item.payDate || "", vendor: item.assignee || "" }; quoteOrder.push(k); } quoteInfo[k].sum += estAfterOf(item); quoteInfo[k].n++; });
             const qualifies = (k) => !!(quoteInfo[k].date || quoteInfo[k].vendor); // 有日期或廠商＝可視為一張報價單
-            const multiQuote = conf().showCost && quoteOrder.some(qualifies) && quoteOrder.length >= 2;
+            const multiQuote = showMoney() && quoteOrder.some(qualifies) && quoteOrder.length >= 2;
             // 有標籤的大項整行反底色：預估群組→藍、非工程→黃、其他費用群組→淡褐
             const isEstimate = !!(cat?.group && /預估/.test(cat.group));
             const tagTint = isEstimate ? "#E4EDF7" : cat?.nonProject ? "#FBF1CF" : cat?.group ? "#F1ECDD" : null;
@@ -2889,7 +2900,7 @@ function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols,
                     </>}
                   </div>
                   {/* 議價折扣（固定寬欄位 → 每列對齊；套在未稅層、稅金重算，細項原報價不動） */}
-                  {conf().showCost && (
+                  {showMoney() && (
                     <div style={{ width: 92, flexShrink: 0, display: "flex", alignItems: "center", gap: 3 }} title="大項議價折扣：套用在未稅小計、稅金重算">
                       {itemCount > 0 && <>
                         <span style={{ fontSize: 11, color: SUB, flexShrink: 0 }}>議價</span>
@@ -2903,7 +2914,7 @@ function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols,
                     </div>
                   )}
                   {/* 費用群組設定／徽章（放在彈性區，不影響左側欄位對齊） */}
-                  {conf().showCost && (groupMode || groupEditId === catId ? (
+                  {showMoney() && (groupMode || groupEditId === catId ? (
                     <div style={{ display: "flex", alignItems: "center", gap: 4, flexShrink: 0, marginLeft: 6 }}>
                       <input list="cat-group-list" autoFocus={groupEditId === catId} defaultValue={cat?.group || ""} key={cat?.group || ""} onBlur={e => { setCatGroup(catId, e.target.value.trim()); setGroupEditId(null); }} onKeyDown={e => { if (e.key === "Enter") { setCatGroup(catId, e.target.value.trim()); setGroupEditId(null); } if (e.key === "Escape") setGroupEditId(null); }} placeholder="費用群組…" style={{ width: 100, border: `1px solid ${ACCENT}`, borderRadius: 12, padding: "2px 8px", fontSize: 11, background: "#fff", color: TEXT, outline: "none" }} />
                       <button onClick={() => setCatNonProj(catId, !cat?.nonProject)} title="是否計入工程費用" style={{ border: `1px solid ${cat?.nonProject ? "#C2872E" : BORDER}`, background: cat?.nonProject ? "#FFFBEB" : "transparent", color: cat?.nonProject ? "#C2872E" : SUB, borderRadius: 12, padding: "2px 8px", fontSize: 11, cursor: "pointer" }}>{cat?.nonProject ? "非工程" : "計入工程"}</button>
@@ -2911,8 +2922,8 @@ function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols,
                   ) : (
                     cat?.group && <button onClick={() => setGroupEditId(catId)} title="點擊改費用群組" style={{ flexShrink: 0, marginLeft: 6, border: `1px solid ${isEstimate ? "#9DBCE0" : "#C8BCA0"}`, background: isEstimate ? "#DCE8F5" : "#F3E4DE", color: isEstimate ? "#2C5A8C" : "#92400e", borderRadius: 12, padding: "2px 9px", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>🏷 {cat.group}</button>
                   ))}
-                  {!conf().showCost && <div style={{ flex: 1 }} />}
-                  {conf().showCost && <>
+                  {!showMoney() && <div style={{ flex: 1 }} />}
+                  {showMoney() && <>
                   <div style={{ flex: 1 }} />
                   {(() => {
                     const isEmpty = groupEst === 0 && groupPaid === 0;
@@ -5282,67 +5293,122 @@ function PhotoLibraryView({ photos, setPhotos, cats, canEdit, userName, requireL
 }
 
 // ── 帳號管理 ─────────────────────────────────────────────────────────────────
-const ACCT_PAGES = [["data","工程資料"],["files","檔案庫"],["advisor","AI設定"]];
-function AccountManager({ accounts, setAccounts, confirm }) {
-  const [name, setName] = useState("");
-  const [asAdmin, setAsAdmin] = useState(false);
-  const add = () => {
-    const n = name.trim(); if (!n) return;
-    if (n === "goodmask77" || accounts.some(a=>a.name===n)) { alert("帳號已存在"); return; }
-    setAccounts([...accounts, { name:n, role: asAdmin?"admin":"normal", pages: [] }]);
-    setName(""); setAsAdmin(false);
+const ACCT_SPACES = [["construction","🏗 工程專案"],["team","👥 團隊工作"],["crew","🤝 夥伴中心"]];
+const ACCT_VIEW_PAGES = [["owner","儀表板"],["overview","總覽"],["gantt","工序"],["files","檔案庫"],["issues","ToDo"],["compare","比價"],["advisor","AI設定"]];
+const ACCT_EDIT_PAGES = [["data","總覽/工程資料"],["worklog","工序日誌"],["files","檔案庫"],["advisor","AI設定"]];
+function AccountManager({ confirm, myId }) {
+  const [list, setList] = useState(null); // null=loading
+  const [err, setErr] = useState("");
+  const [nName, setNName] = useState(""); const [nUser, setNUser] = useState(""); const [nPw, setNPw] = useState(""); const [nAdmin, setNAdmin] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  const load = async () => {
+    if (!supabase) { setErr("系統未設定登入服務"); setList([]); return; }
+    const { data, error } = await supabase.from("profiles").select("*").order("role").order("display_name");
+    if (error) { setErr("讀取帳號失敗：" + error.message); setList([]); return; }
+    setErr(""); setList(data || []);
   };
-  const toggleRole = (n) => setAccounts(accounts.map(a => a.name===n ? { ...a, role: a.role==="admin"?"normal":"admin" } : a));
-  const togglePage = (n, pg) => setAccounts(accounts.map(a => a.name===n ? { ...a, pages: (a.pages||[]).includes(pg) ? a.pages.filter(x=>x!==pg) : [...(a.pages||[]), pg] } : a));
-  const del = async (n) => { if (confirm && !(await confirm(`刪除帳號「${n}」？`))) return; setAccounts(accounts.filter(a=>a.name!==n)); };
-  const chip = (active, label, onClick) => (
-    <button onClick={onClick} style={{ padding:"4px 12px", borderRadius:8, border:"1px solid "+(active?ACCENT:"#D8CFBB"), background: active?"#F4EFE3":"#ECE6D7", color: active?"#6F6656":"#A99F88", fontSize:12, fontWeight: active?700:400, cursor:"pointer" }}>{label}</button>
+  useEffect(() => { load(); }, []);
+  const authToken = async () => (await supabase.auth.getSession()).data.session?.access_token;
+  const api = async (body) => {
+    const r = await fetch("/api/admin-users", { method:"POST", headers:{ "content-type":"application/json", authorization:`Bearer ${await authToken()}` }, body: JSON.stringify(body) });
+    const d = await r.json().catch(()=>({})); if (!r.ok) throw new Error(d.error || "操作失敗"); return d;
+  };
+
+  const patch = async (id, changes) => {
+    setList(prev => prev.map(p => p.id===id ? { ...p, ...changes } : p));
+    const { error } = await supabase.from("profiles").update(changes).eq("id", id);
+    if (error) { setErr("儲存失敗：" + error.message); load(); }
+  };
+  const toggleArr = (p, field, key) => {
+    const arr = p[field] || []; const next = arr.includes(key) ? arr.filter(x=>x!==key) : [...arr, key];
+    patch(p.id, { [field]: next });
+  };
+
+  const addAcct = async () => {
+    if (!nUser.trim() || !nPw || busy) return;
+    setBusy(true); setErr("");
+    try { await api({ action:"create", username:nUser.trim(), password:nPw, displayName:nName.trim()||nUser.trim(), role:nAdmin?"admin":"staff" });
+      setNName(""); setNUser(""); setNPw(""); setNAdmin(false); await load();
+    } catch(e){ setErr(e.message); }
+    setBusy(false);
+  };
+  const delAcct = async (p) => {
+    if (!(await confirm(`刪除帳號「${p.display_name}」？刪除後此人將無法再登入。`, { confirmLabel:"刪除" }))) return;
+    setErr(""); try { await api({ action:"delete", id:p.id }); load(); } catch(e){ setErr(e.message); }
+  };
+  const resetPw = async (p) => {
+    const np = window.prompt(`輸入「${p.display_name}」的新密碼（至少 6 碼）：`); if (!np) return;
+    setErr(""); try { await api({ action:"resetPassword", id:p.id, password:np }); alert("已重設密碼"); } catch(e){ setErr(e.message); }
+  };
+
+  const chip = (active, label, onClick, color) => (
+    <button onClick={onClick} style={{ padding:"4px 11px", borderRadius:8, border:"1px solid "+(active?(color||ACCENT):"#D8CFBB"), background: active?(color?color+"18":"#F4EFE3"):"#ECE6D7", color: active?(color||"#6F6656"):"#A99F88", fontSize:12, fontWeight: active?700:400, cursor:"pointer" }}>{label}</button>
   );
 
   return (
     <div style={{ maxWidth: 1100, margin: "16px auto", padding: "0 4px" }}>
       <div style={{ fontSize:18, fontWeight: 600, color:"#211C15", marginBottom:6 }}>👤 帳號管理（僅管理員）</div>
       <div style={{ background:"#faf6ee", border:"1px solid #e4ddc9", borderRadius:10, padding:"10px 14px", marginBottom:16, fontSize:13, color:"#6b6450", lineHeight:1.7 }}>
-        沒有帳號的人只能<b style={{color:"#b45309"}}>檢視</b>。登入後預設仍是唯讀，需由管理員在下方<b style={{color:"#b45309"}}>逐頁開放編輯權限</b>。<b>管理員</b>恆可編輯全部頁面並管理帳號。新帳號預設<b style={{color:"#b45309"}}>無任何編輯權限</b>。
+        在這裡建立夥伴帳號、設定<b style={{color:"#b45309"}}>可見空間、可見頁面、可編輯頁面、是否看金額</b>。沒登入的人只能檢視。<b>管理員</b>恆有全部權限。新帳號預設只能看、不能改。
       </div>
 
-      <div style={{ display:"flex", gap:10, alignItems:"center", marginBottom:16, flexWrap:"wrap" }}>
-        <input value={name} onChange={e=>setName(e.target.value)} onKeyDown={e=>e.key==="Enter"&&!e.nativeEvent.isComposing&&add()} placeholder="新帳號名稱" style={{ ...inputStyle, width:240 }} />
+      {err && <div style={{ background:"#FEF2F2", border:"1px solid #FCA5A5", color:"#DC2626", borderRadius:8, padding:"8px 12px", marginBottom:12, fontSize:13 }}>{err}</div>}
+
+      {/* 新增帳號 */}
+      <div style={{ display:"flex", gap:10, alignItems:"center", marginBottom:18, flexWrap:"wrap", background:"#fff", border:"1px solid #D8CFBB", borderRadius:12, padding:14 }}>
+        <input value={nName} onChange={e=>setNName(e.target.value)} placeholder="顯示名稱（例：阿明）" style={{ ...inputStyle, width:170 }} />
+        <input value={nUser} onChange={e=>setNUser(e.target.value)} placeholder="登入帳號（例：aming）" autoCapitalize="off" autoCorrect="off" style={{ ...inputStyle, width:170 }} />
+        <input value={nPw} onChange={e=>setNPw(e.target.value)} type="text" placeholder="密碼（至少6碼）" style={{ ...inputStyle, width:150 }} />
         <label style={{ display:"flex", alignItems:"center", gap:6, fontSize:13, color:"#4A4234", cursor:"pointer" }}>
-          <input type="checkbox" checked={asAdmin} onChange={e=>setAsAdmin(e.target.checked)} /> 設為管理員
+          <input type="checkbox" checked={nAdmin} onChange={e=>setNAdmin(e.target.checked)} /> 設為管理員
         </label>
-        <button onClick={add} disabled={!name.trim()} style={{ background:name.trim()?"#b5512b":"#D8CFBB", color:name.trim()?"#fff":"#A99F88", border:"none", borderRadius:8, padding:"9px 18px", fontWeight: 600, cursor:name.trim()?"pointer":"not-allowed" }}>＋ 新增帳號</button>
+        <button onClick={addAcct} disabled={!nUser.trim()||!nPw||busy} style={{ background:(nUser.trim()&&nPw&&!busy)?"#b5512b":"#D8CFBB", color:(nUser.trim()&&nPw&&!busy)?"#fff":"#A99F88", border:"none", borderRadius:8, padding:"9px 18px", fontWeight: 600, cursor:(nUser.trim()&&nPw&&!busy)?"pointer":"not-allowed" }}>{busy?"建立中…":"＋ 新增帳號"}</button>
       </div>
 
-      <div style={{ background:"#fff", border:"1px solid #D8CFBB", borderRadius:12, overflow:"hidden" }}>
-        <div style={{ display:"grid", gridTemplateColumns:"1.2fr 1fr 2.4fr 40px", gap:8, padding:"10px 14px", borderBottom:"2px solid #D8CFBB", fontSize:12, fontWeight: 600, color:"#6F6656", background:"#ECE6D7" }}>
-          <div>帳號</div><div>角色（點擊切換）</div><div>可編輯頁面（點擊開關）</div><div />
-        </div>
-        {/* 內建管理員 */}
-        <div style={{ display:"grid", gridTemplateColumns:"1.2fr 1fr 2.4fr 40px", gap:8, padding:"12px 14px", borderBottom:"1px solid #EFE7D6", alignItems:"center" }}>
-          <div style={{ fontWeight: 600, color:"#211C15" }}>goodmask77 <span style={{ fontSize:10, background:"#4A4234", color:"#fff", borderRadius:5, padding:"1px 6px", marginLeft:4 }}>內建</span></div>
-          <div style={{ fontSize:13, color:"#4A4234" }}>管理員</div>
-          <div style={{ fontSize:13, color:"#A99F88" }}>全部（內建管理員）</div>
-          <div />
-        </div>
-        {accounts.length === 0 && <div style={{ padding:20, textAlign:"center", color:"#A99F88", fontSize:13 }}>尚無其他帳號</div>}
-        {accounts.map(a => (
-          <div key={a.name} style={{ display:"grid", gridTemplateColumns:"1.2fr 1fr 2.4fr 40px", gap:8, padding:"12px 14px", borderBottom:"1px solid #EFE7D6", alignItems:"center" }}>
-            <div style={{ fontWeight: 600, color:"#211C15" }}>{a.name}</div>
-            <div>
-              <button onClick={()=>toggleRole(a.name)} style={{ background:"#ECE6D7", border:"1px solid #D8CFBB", borderRadius:8, padding:"4px 12px", fontSize:13, cursor:"pointer", color:a.role==="admin"?"#b5512b":"#4A4234", fontWeight:a.role==="admin"?700:400 }}>
-                {a.role==="admin"?"管理員":"一般"} ⇄
+      {/* 帳號清單（卡片） */}
+      {list === null ? <div style={{ padding:30, textAlign:"center", color:"#A99F88" }}>載入中…</div>
+       : list.length === 0 ? <div style={{ padding:30, textAlign:"center", color:"#A99F88", fontSize:13 }}>尚無帳號</div>
+       : list.map(p => {
+        const isAdm = p.role === "admin";
+        return (
+        <div key={p.id} style={{ background:"#fff", border:"1px solid #D8CFBB", borderRadius:12, padding:16, marginBottom:12 }}>
+          <div style={{ display:"flex", alignItems:"center", gap:10, flexWrap:"wrap", marginBottom:isAdm?0:12 }}>
+            <div style={{ fontSize:15, fontWeight:700, color:"#211C15" }}>{p.display_name}</div>
+            <div style={{ fontSize:12, color:"#A99F88" }}>{(p.email||"").split("@")[0]}</div>
+            <button onClick={()=>!isAdm||list.filter(x=>x.role==="admin").length>1 ? patch(p.id, { role: isAdm?"staff":"admin" }) : alert("至少要保留一位管理員")} style={{ background:"#ECE6D7", border:"1px solid #D8CFBB", borderRadius:8, padding:"3px 11px", fontSize:12.5, cursor:"pointer", color:isAdm?"#b5512b":"#4A4234", fontWeight:isAdm?700:400 }}>{isAdm?"管理員":"一般"} ⇄</button>
+            <div style={{ flex:1 }} />
+            <button onClick={()=>resetPw(p)} style={{ background:"none", border:"1px solid #D8CFBB", borderRadius:8, padding:"3px 10px", fontSize:12, color:"#6F6656", cursor:"pointer" }}>重設密碼</button>
+            {p.id !== myId && <button onClick={()=>delAcct(p)} title="刪除帳號" style={{ background:"none", border:"none", color:"#C8BCA0", cursor:"pointer", fontSize:18 }} onMouseEnter={e=>e.currentTarget.style.color="#DC2626"} onMouseLeave={e=>e.currentTarget.style.color="#C8BCA0"}>×</button>}
+          </div>
+          {isAdm ? <div style={{ fontSize:13, color:"#A99F88", marginTop:6 }}>管理員：全部空間／全部頁面／可編輯全部／可看金額</div> : (
+          <div style={{ display:"grid", gap:10 }}>
+            <div style={{ display:"flex", gap:8, alignItems:"flex-start", flexWrap:"wrap" }}>
+              <span style={{ fontSize:12, color:"#6F6656", width:80, paddingTop:5, flexShrink:0 }}>可見空間</span>
+              <div style={{ display:"flex", gap:6, flexWrap:"wrap" }}>{ACCT_SPACES.map(([k,l]) => chip((p.spaces||[]).includes(k), l, ()=>toggleArr(p,"spaces",k)))}</div>
+            </div>
+            <div style={{ display:"flex", gap:8, alignItems:"flex-start", flexWrap:"wrap" }}>
+              <span style={{ fontSize:12, color:"#6F6656", width:80, paddingTop:5, flexShrink:0 }}>可見頁面</span>
+              <div style={{ display:"flex", gap:6, flexWrap:"wrap" }}>{ACCT_VIEW_PAGES.map(([k,l]) => chip((p.view_pages||[]).includes(k), l, ()=>toggleArr(p,"view_pages",k)))}</div>
+            </div>
+            <div style={{ display:"flex", gap:8, alignItems:"flex-start", flexWrap:"wrap" }}>
+              <span style={{ fontSize:12, color:"#6F6656", width:80, paddingTop:5, flexShrink:0 }}>可編輯</span>
+              <div style={{ display:"flex", gap:6, flexWrap:"wrap" }}>{ACCT_EDIT_PAGES.map(([k,l]) => chip((p.pages||[]).includes(k), l, ()=>toggleArr(p,"pages",k), "#b5512b"))}</div>
+            </div>
+            <div style={{ display:"flex", gap:8, alignItems:"center", flexWrap:"wrap" }}>
+              <span style={{ fontSize:12, color:"#6F6656", width:80, flexShrink:0 }}>看金額</span>
+              <button onClick={()=>patch(p.id, { can_view_money: !p.can_view_money })} style={{ display:"flex", alignItems:"center", gap:8, background:"none", border:"none", cursor:"pointer", padding:0 }}>
+                <span style={{ width:40, height:22, borderRadius:11, background:p.can_view_money?"#3C8C3C":"#D8CFBB", position:"relative", transition:"background .15s" }}>
+                  <span style={{ position:"absolute", top:2, left:p.can_view_money?20:2, width:18, height:18, borderRadius:9, background:"#fff", transition:"left .15s" }} />
+                </span>
+                <span style={{ fontSize:13, color:p.can_view_money?"#3C8C3C":"#A99F88", fontWeight:600 }}>{p.can_view_money?"可看金額":"看不到金額"}</span>
               </button>
             </div>
-            <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
-              {a.role==="admin"
-                ? <span style={{ fontSize:13, color:"#A99F88" }}>全部（管理員）</span>
-                : ACCT_PAGES.map(([k,l]) => chip((a.pages||[]).includes(k), l, ()=>togglePage(a.name, k)))}
-            </div>
-            <button onClick={()=>del(a.name)} title="刪除帳號" style={{ background:"none", border:"none", color:"#d1d5db", cursor:"pointer", fontSize:18 }}
-              onMouseEnter={e=>e.currentTarget.style.color="#DC2626"} onMouseLeave={e=>e.currentTarget.style.color="#d1d5db"}>×</button>
-          </div>
-        ))}
+          </div>)}
+        </div>);
+       })}
+      <div style={{ fontSize:11.5, color:"#A99F88", marginTop:8, lineHeight:1.7 }}>
+        提示：「可見頁面／可見空間」沒勾任何項＝預設全部可見（由你逐一限縮）。金額開關目前是介面隱藏；若要連資料庫都鎖死，再告訴我做 RLS。
       </div>
     </div>
   );
