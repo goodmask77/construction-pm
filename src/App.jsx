@@ -3419,7 +3419,7 @@ function LoginModal({ onLogin, onClose }) {
         <input
           value={name} onChange={e=>setName(e.target.value)}
           onKeyDown={e=>{ if(e.key==="Enter"&&!e.nativeEvent.isComposing) submit(); }}
-          placeholder="帳號（例：zhang）"
+          placeholder="帳號"
           autoFocus autoCapitalize="off" autoCorrect="off"
           style={{ width:"100%", padding:"11px 14px", border:"2px solid #D8CFBB", borderRadius:10, fontSize:15, outline:"none", fontFamily:"'Noto Sans TC',sans-serif", boxSizing:"border-box", marginBottom:10 }}
         />
