@@ -2739,10 +2739,10 @@ function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols,
         <div style={{ flex: 1 }} />
         {/* 全部收合／展開：置中、放大、黑白高對比，吸引點擊 */}
         <button onClick={toggleAll} title="一鍵收合或展開所有工程大項"
-          style={{ padding: "9px 28px", borderRadius: 10, border: "2px solid #111", fontSize: 14, fontWeight: 800, letterSpacing: 3, cursor: "pointer", background: allCollapsed ? "#fff" : "#111", color: allCollapsed ? "#111" : "#fff", boxShadow: "0 2px 10px rgba(0,0,0,0.20)", transition: "all .15s", display: "flex", alignItems: "center", gap: 9 }}
-          onMouseEnter={e => { e.currentTarget.style.background = allCollapsed ? "#111" : "#fff"; e.currentTarget.style.color = allCollapsed ? "#fff" : "#111"; e.currentTarget.style.transform = "translateY(-1px)"; e.currentTarget.style.boxShadow = "0 4px 14px rgba(0,0,0,0.28)"; }}
-          onMouseLeave={e => { e.currentTarget.style.background = allCollapsed ? "#fff" : "#111"; e.currentTarget.style.color = allCollapsed ? "#111" : "#fff"; e.currentTarget.style.transform = "none"; e.currentTarget.style.boxShadow = "0 2px 10px rgba(0,0,0,0.20)"; }}>
-          <span style={{ fontSize: 15, fontWeight: 900 }}>{allCollapsed ? "⊕" : "⊖"}</span>{allCollapsed ? "全部展開" : "全部收合"}
+          style={{ padding: "16px 64px", borderRadius: 16, border: "3px solid #111", fontSize: 22, fontWeight: 900, letterSpacing: 5, cursor: "pointer", background: allCollapsed ? "#fff" : "#111", color: allCollapsed ? "#111" : "#fff", boxShadow: "0 4px 16px rgba(0,0,0,0.22)", transition: "all .15s", display: "flex", alignItems: "center", gap: 14 }}
+          onMouseEnter={e => { e.currentTarget.style.background = allCollapsed ? "#111" : "#fff"; e.currentTarget.style.color = allCollapsed ? "#fff" : "#111"; e.currentTarget.style.transform = "translateY(-2px)"; e.currentTarget.style.boxShadow = "0 8px 24px rgba(0,0,0,0.30)"; }}
+          onMouseLeave={e => { e.currentTarget.style.background = allCollapsed ? "#fff" : "#111"; e.currentTarget.style.color = allCollapsed ? "#111" : "#fff"; e.currentTarget.style.transform = "none"; e.currentTarget.style.boxShadow = "0 4px 16px rgba(0,0,0,0.22)"; }}>
+          <span style={{ fontSize: 24, fontWeight: 900 }}>{allCollapsed ? "⊕" : "⊖"}</span>{allCollapsed ? "全部展開" : "全部收合"}
         </button>
         <div style={{ flex: 1 }} />
         {viewMode === "table" && conf().showCost && (
