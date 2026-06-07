@@ -2737,10 +2737,17 @@ function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols,
           {search && <button onClick={() => setSearch("")} style={{ position: "absolute", right: 6, top: "50%", transform: "translateY(-50%)", border: "none", background: "none", color: SUB, cursor: "pointer", fontSize: 14 }}>×</button>}
         </div>
         <div style={{ flex: 1 }} />
+        {/* 全部收合／展開：置中、放大、黑白高對比，吸引點擊 */}
+        <button onClick={toggleAll} title="一鍵收合或展開所有工程大項"
+          style={{ padding: "9px 28px", borderRadius: 10, border: "2px solid #111", fontSize: 14, fontWeight: 800, letterSpacing: 3, cursor: "pointer", background: allCollapsed ? "#fff" : "#111", color: allCollapsed ? "#111" : "#fff", boxShadow: "0 2px 10px rgba(0,0,0,0.20)", transition: "all .15s", display: "flex", alignItems: "center", gap: 9 }}
+          onMouseEnter={e => { e.currentTarget.style.background = allCollapsed ? "#111" : "#fff"; e.currentTarget.style.color = allCollapsed ? "#fff" : "#111"; e.currentTarget.style.transform = "translateY(-1px)"; e.currentTarget.style.boxShadow = "0 4px 14px rgba(0,0,0,0.28)"; }}
+          onMouseLeave={e => { e.currentTarget.style.background = allCollapsed ? "#fff" : "#111"; e.currentTarget.style.color = allCollapsed ? "#111" : "#fff"; e.currentTarget.style.transform = "none"; e.currentTarget.style.boxShadow = "0 2px 10px rgba(0,0,0,0.20)"; }}>
+          <span style={{ fontSize: 15, fontWeight: 900 }}>{allCollapsed ? "⊕" : "⊖"}</span>{allCollapsed ? "全部展開" : "全部收合"}
+        </button>
+        <div style={{ flex: 1 }} />
         {viewMode === "table" && conf().showCost && (
           <button onClick={() => setGroupMode(m => !m)} title="分類模式：設定每個大項的費用群組與是否計入工程" style={{ padding: "6px 12px", borderRadius: 7, border: `1px solid ${groupMode ? ACCENT : BORDER}`, fontSize: 12.5, cursor: "pointer", background: groupMode ? "#F3E4DE" : SURFACE, color: groupMode ? ACCENT : SUB, fontWeight: 500 }}>🏷 分類{groupMode ? "中" : ""}</button>
         )}
-        <button onClick={toggleAll} style={{ padding: "6px 12px", borderRadius: 7, border: `1px solid ${BORDER}`, fontSize: 12.5, cursor: "pointer", background: SURFACE, color: SUB, fontWeight: 500 }}>{allCollapsed ? "全部展開" : "全部收合"}</button>
         <button onClick={() => setShowTrash(true)} title="垃圾桶（刪除的細項可還原）" style={{ padding: "6px 12px", borderRadius: 7, border: `1px solid ${BORDER}`, fontSize: 12.5, cursor: "pointer", background: SURFACE, color: SUB, fontWeight: 500 }}>🗑 垃圾桶{trash.length ? ` ${trash.length}` : ""}</button>
       </div>
 
