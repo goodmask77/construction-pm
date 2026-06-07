@@ -2832,6 +2832,10 @@ function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols,
             group.rows.forEach(({ item }) => { const k = quoteKeyOf(item); if (!quoteInfo[k]) { quoteInfo[k] = { idx: quoteOrder.length, sum: 0, n: 0, date: item.payDate || "", vendor: item.assignee || "" }; quoteOrder.push(k); } quoteInfo[k].sum += estAfterOf(item); quoteInfo[k].n++; });
             const qualifies = (k) => !!(quoteInfo[k].date || quoteInfo[k].vendor); // 有日期或廠商＝可視為一張報價單
             const multiQuote = conf().showCost && quoteOrder.some(qualifies) && quoteOrder.length >= 2;
+            // 有標籤的大項整行反底色：預估群組→藍、非工程→黃、其他費用群組→淡褐
+            const isEstimate = !!(cat?.group && /預估/.test(cat.group));
+            const tagTint = isEstimate ? "#E4EDF7" : cat?.nonProject ? "#FBF1CF" : cat?.group ? "#F1ECDD" : null;
+            const tagAccent = isEstimate ? "#3E72A8" : cat?.nonProject ? "#C2872E" : ACCENT;
             return (
               <div key={catId}>
                 {/* cat group header — 可收合 / 拖曳排序 / 狀態 / 進度 */}
@@ -2841,7 +2845,7 @@ function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols,
                   onDragOver={e => { if (onDragOver) { e.preventDefault(); onDragOver(catId); } }}
                   onDrop={() => onDrop && onDrop(catId)}
                   onDragEnd={() => onDragOver && onDragOver(null)}
-                  style={{ display: "flex", alignItems: "center", background: isCatDragOver ? "#F3E4DE" : BG, borderBottom: `1px solid ${BORDER}`, borderLeft: `2px solid ${ACCENT}`, padding: "0 10px", height: 32, gap: 10, position: "sticky", top: 40, zIndex: 9 }}>
+                  style={{ display: "flex", alignItems: "center", background: isCatDragOver ? "#F3E4DE" : (tagTint || BG), borderBottom: `1px solid ${BORDER}`, borderLeft: `2px solid ${tagAccent}`, padding: "0 10px", height: 32, gap: 10, position: "sticky", top: 40, zIndex: 9 }}>
                   <span title="拖曳排序大項" style={{ cursor: "grab", color: "#C8BCA0", fontSize: 13, flexShrink: 0 }}>⠿</span>
                   <button onClick={() => toggleCollapse(catId)} style={{ border: "none", background: "none", cursor: "pointer", color: SUB, fontSize: 11, width: 14, flexShrink: 0, transform: isCollapsed ? "none" : "rotate(90deg)", transition: "transform .15s" }}>▸</button>
                   {/* 狀態徽章固定在最左（每列同一起點，不歪） */}
@@ -2849,8 +2853,8 @@ function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols,
                   {/* 大項名稱（固定寬；非工程＝名稱反黃底，不另外冒出徽章） */}
                   {catNameEdit === catId
                     ? <input autoFocus defaultValue={group.name} onClick={e => e.stopPropagation()} onBlur={e => { const v = e.target.value.trim(); if (v && v !== group.name) setCats(prev => prev.map(c => c.id === catId ? { ...c, name: v } : c)); setCatNameEdit(null); }} onKeyDown={e => { if (e.key === "Enter") e.target.blur(); if (e.key === "Escape") setCatNameEdit(null); }} style={{ fontSize: 14, fontWeight: 600, color: PRIMARY, border: `1px solid ${ACCENT}`, borderRadius: 6, padding: "2px 6px", width: Math.max(120, group.name.length * 15), flexShrink: 0, outline: "none" }} />
-                    : <div style={{ display: "flex", alignItems: "center", gap: 4, width: 184, flexShrink: 0, background: cat?.nonProject ? "#FCEFC0" : "transparent", borderRadius: 6, padding: "1px 6px" }} title={cat?.nonProject ? group.name + "（非工程／業主自理；雙擊可改名）" : group.name + "（雙擊可改名）"}>
-                        <div onClick={() => toggleCollapse(catId)} onDoubleClick={e => { e.stopPropagation(); setCatNameEdit(catId); }} style={{ fontSize: 14, fontWeight: 600, color: cat?.nonProject ? "#92400e" : PRIMARY, letterSpacing: -0.1, cursor: "pointer", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{group.name}</div>
+                    : <div style={{ display: "flex", alignItems: "center", gap: 4, width: 184, flexShrink: 0, padding: "1px 6px" }} title={isEstimate ? group.name + "（預估／報價；雙擊可改名）" : cat?.nonProject ? group.name + "（非工程／業主自理；雙擊可改名）" : group.name + "（雙擊可改名）"}>
+                        <div onClick={() => toggleCollapse(catId)} onDoubleClick={e => { e.stopPropagation(); setCatNameEdit(catId); }} style={{ fontSize: 14, fontWeight: 600, color: isEstimate ? "#2C5A8C" : cat?.nonProject ? "#92400e" : PRIMARY, letterSpacing: -0.1, cursor: "pointer", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{group.name}</div>
                         <button onClick={e => { e.stopPropagation(); setCatNameEdit(catId); }} title="改名" style={{ border: "none", background: "none", cursor: "pointer", color: "#C8BCA0", fontSize: 12, padding: 0, flexShrink: 0 }} onMouseEnter={e => e.currentTarget.style.color = ACCENT} onMouseLeave={e => e.currentTarget.style.color = "#C8BCA0"}>✎</button>
                       </div>}
                   {/* 進度（固定寬，空大項也保留位置 → 議價那欄才會對齊） */}
@@ -2881,7 +2885,7 @@ function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols,
                       <button onClick={() => setCatNonProj(catId, !cat?.nonProject)} title="是否計入工程費用" style={{ border: `1px solid ${cat?.nonProject ? "#C2872E" : BORDER}`, background: cat?.nonProject ? "#FFFBEB" : "transparent", color: cat?.nonProject ? "#C2872E" : SUB, borderRadius: 12, padding: "2px 8px", fontSize: 11, cursor: "pointer" }}>{cat?.nonProject ? "非工程" : "計入工程"}</button>
                     </div>
                   ) : (
-                    cat?.group && <button onClick={() => setGroupEditId(catId)} title="點擊改費用群組" style={{ flexShrink: 0, marginLeft: 6, border: "1px solid #C8BCA0", background: "#F3E4DE", color: "#92400e", borderRadius: 12, padding: "2px 9px", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>🏷 {cat.group}</button>
+                    cat?.group && <button onClick={() => setGroupEditId(catId)} title="點擊改費用群組" style={{ flexShrink: 0, marginLeft: 6, border: `1px solid ${isEstimate ? "#9DBCE0" : "#C8BCA0"}`, background: isEstimate ? "#DCE8F5" : "#F3E4DE", color: isEstimate ? "#2C5A8C" : "#92400e", borderRadius: 12, padding: "2px 9px", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>🏷 {cat.group}</button>
                   ))}
                   {!conf().showCost && <div style={{ flex: 1 }} />}
                   {conf().showCost && <>
