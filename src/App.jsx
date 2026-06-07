@@ -15,6 +15,8 @@ const ACCENT_SOFT = "#F3E4DE"; // 磚紅淡底
 const DARKCHIP = "#33281E"; // 深棕 chip（分類標籤）
 const GOLD    = "#C13A22"; // Logo 用磚紅
 const ADMIN_USER = "goodmask77"; // 僅此帳號可編輯（不顯示於介面）
+// 介面顯示用：絕不顯示登入帳號字串（避免外洩）。管理員一律顯示「管理員」。
+const maskAccount = (u) => !u ? "—" : (u === ADMIN_USER ? "管理員" : u);
 const API_URL = "https://api.anthropic.com/v1/messages";
 const MODEL = "claude-sonnet-4-20250514";
 
@@ -869,7 +871,7 @@ export default function App() {
           <CrewRankView />
         )}
         {view === "owner" && settings && (
-          <OwnerDashboard cats={cats} setCats={setCatsLogged} settings={settings} stalledItems={stalledItems} activityLog={activityLog} logActivity={logActivity} userName={userName} journal={journal} events={events} plans={plans} />
+          <OwnerDashboard cats={cats} setCats={setCatsLogged} settings={settings} stalledItems={stalledItems} activityLog={activityLog} logActivity={logActivity} userName={userName} isAdmin={isAdmin} journal={journal} events={events} plans={plans} />
         )}
         {view === "overview" && (
           <OverviewTable cats={cats} setCats={guardedSetCats} confirm={confirm} customCols={customCols} setCustomCols={canEditData ? commitCustomCols : null}
@@ -929,7 +931,7 @@ export default function App() {
               await window.storage.set(K("pm_known_users"), JSON.stringify(updated), true);
             } catch(_){}
           }
-          logActivity("登入", name + " 登入系統");
+          logActivity("登入", "登入系統");
         }} />
       )}
       {/* GLOBAL AI */}
@@ -3426,7 +3428,7 @@ function LoginModal({ onLogin, knownUsers, onClose }) {
 }
 
 // ── OWNER DASHBOARD ───────────────────────────────────────────────────────────
-function OwnerDashboard({ cats, setCats, settings, stalledItems, activityLog, logActivity, userName, journal, events, plans }) {
+function OwnerDashboard({ cats, setCats, settings, stalledItems, activityLog, logActivity, userName, isAdmin, journal, events, plans }) {
   const [reportLoading, setReportLoading] = useState(false);
   const [report, setReport] = useState("");
   const [showReport, setShowReport] = useState(false);
@@ -3460,7 +3462,9 @@ function OwnerDashboard({ cats, setCats, settings, stalledItems, activityLog, lo
 
   const todayActivity = activityLog.filter(a => {
     const d = new Date(a.ts).toLocaleDateString("zh-TW");
-    return d === today;
+    if (d !== today) return false;
+    if (a.action === "登入" && !isAdmin) return false; // 登入紀錄只給管理員看，避免帳號外洩
+    return true;
   });
 
   const generateReport = async () => {
@@ -3632,7 +3636,7 @@ function OwnerDashboard({ cats, setCats, settings, stalledItems, activityLog, lo
             {todayActivity.slice(0,20).map((a,i) => (
               <div key={i} style={{ display:"flex", gap:10, alignItems:"flex-start", paddingBottom:10, marginBottom:10, borderBottom:i<todayActivity.length-1?"1px solid #EFE7D6":"none" }}>
                 <div style={{ fontSize:11, color:"#A99F88", whiteSpace:"nowrap", marginTop:2 }}>{new Date(a.ts).toLocaleTimeString("zh-TW",{hour:"2-digit",minute:"2-digit"})}</div>
-                <div style={{ fontSize:12, color:"#4A4234" }}><span style={{ fontWeight:600, color:"#211C15" }}>{a.user}</span> {a.action}：{a.detail}</div>
+                <div style={{ fontSize:12, color:"#4A4234" }}><span style={{ fontWeight:600, color:"#211C15" }}>{maskAccount(a.user)}</span> {a.action}：{a.detail}</div>
               </div>
             ))}
           </div>
@@ -3715,7 +3719,7 @@ function ActivityLogPanel({ activityLog, onClose }) {
                     {"👤"}
                   </div>
                   <div style={{ flex:1 }}>
-                    <div style={{ fontSize:12, color:"#211C15" }}><span style={{ fontWeight: 600 }}>{a.user}</span> {a.action}</div>
+                    <div style={{ fontSize:12, color:"#211C15" }}><span style={{ fontWeight: 600 }}>{maskAccount(a.user)}</span> {a.action}</div>
                     <div style={{ fontSize:11, color:"#6F6656" }}>{a.detail}</div>
                     <div style={{ fontSize:10, color:"#A99F88", marginTop:2 }}>{new Date(a.ts).toLocaleTimeString("zh-TW",{hour:"2-digit",minute:"2-digit"})}</div>
                   </div>
