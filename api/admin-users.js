@@ -1,7 +1,9 @@
 // 後端：管理員專用的帳號建立/刪除/重設密碼。用 service-role 金鑰，純 fetch 呼叫 Supabase Auth Admin API
 // （不 import @supabase/supabase-js，避免 serverless 載入失敗）。前端帶上登入者 access token，先驗證是 admin。
-const URL_ = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL
-const SERVICE = process.env.SUPABASE_SERVICE_ROLE_KEY
+// 容錯：有時環境變數的值會不小心連名稱一起貼進去（例 "NEXT_PUBLIC_SUPABASE_URL=https://..."）或多了結尾斜線/引號，這裡清乾淨。
+const clean = (v) => (v || '').trim().replace(/^["']|["']$/g, '').replace(/^[A-Za-z0-9_]+=/, '').trim().replace(/\/+$/, '')
+const URL_ = clean(process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL)
+const SERVICE = (process.env.SUPABASE_SERVICE_ROLE_KEY || '').trim().replace(/^["']|["']$/g, '').replace(/^[A-Za-z0-9_]+=/, '').trim()
 
 const svcHeaders = {
   'content-type': 'application/json',
