@@ -6,7 +6,15 @@ import { createClient } from '@supabase/supabase-js'
 const url = import.meta.env.VITE_SUPABASE_URL
 const key = import.meta.env.VITE_SUPABASE_ANON_KEY
 
-export const supabase = url && key ? createClient(url, key) : null
+// auth.lock 設成「不跨分頁等待」：避免某個卡住的分頁佔住 Web Lock，害其他分頁登入/載入一起卡死。
+export const supabase = url && key ? createClient(url, key, {
+  auth: {
+    persistSession: true,
+    autoRefreshToken: true,
+    detectSessionInUrl: false,
+    lock: async (_name, _acquireTimeout, fn) => await fn(),
+  },
+}) : null
 
 export const CLIENT_ID =
   Math.random().toString(36).slice(2) + Date.now().toString(36)

@@ -633,8 +633,6 @@ export default function App() {
   // load — 全部 key 平行載入（不再一個一個排隊），大幅縮短開啟時間
   useEffect(() => {
     let cancelled = false;
-    // 保險：萬一某個雲端請求卡住（網路/部署瞬間），12 秒後先讓畫面進得去，避免永遠卡在「載入中」
-    const failsafe = setTimeout(() => { if (!cancelled) setCats(prev => prev || (CURRENT_SPACE === "construction" ? INITIAL_CATEGORIES : [])); }, 12000);
     (async () => {
       const getV = (k) => window.storage.get(K(k), true).then(r => (r && r.value) ? r.value : null).catch(() => null);
       const parse = (v, def) => { if (!v) return def; try { return JSON.parse(v); } catch (_) { return def; } };
@@ -683,8 +681,8 @@ export default function App() {
         setCustomCols(merged);
         window.storage.set(K("pm_columns"), JSON.stringify(merged), true).catch(()=>{});
       } catch(_){}
-    })().finally(() => clearTimeout(failsafe));
-    return () => { cancelled = true; clearTimeout(failsafe); };
+    })();
+    return () => { cancelled = true; };
   }, []);
 
   // ── 真登入（Supabase Auth）：身分一律由登入 session 決定，無法冒名 ──
