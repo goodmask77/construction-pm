@@ -367,6 +367,8 @@ const L = (key) => conf().labels[key] || SPACE_CONF.construction.labels[key];
 // 由 App 在每次 render 同步（見 App 內 CAN_VIEW_MONEY 指派）。
 let CAN_VIEW_MONEY = true;
 const showMoney = () => conf().showCost && CAN_VIEW_MONEY;
+// 撥款帳（零用金）：只是公司撥現金給工地，不是工程成本 → 從成本總額排除（實際花費改記在「零用金」分頁，依工種併入）
+const isFundingCat = (c) => /零用金/.test(c?.name || "");
 const COST_COL_IDS = new Set(["estQty", "unit", "estUnitPrice", "taxType", "taxAmount", "estTotal", "itemPaid", "payAccount", "payDate"]);
 const GLOBAL_KEYS = new Set(["pm_role", "pm_known_users", "pm_current_space"]);
 let CURRENT_SPACE = "construction";
@@ -500,8 +502,8 @@ const buildAdvisorSystem = (settings, cats, journal, events, plans) => {
   journal = journal || [];
   events = events || [];
   plans = plans || [];
-  const totalEst = cats.reduce((s,c) => s+catEstAfter(c),0); // 議價後含稅總額
-  const totalAct = cats.reduce((s,c) => s+catPaid(c),0); // 已付總額（大項付款紀錄）
+  const totalEst = cats.filter(c=>!isFundingCat(c)).reduce((s,c) => s+catEstAfter(c),0); // 議價後含稅總額（排除撥款帳）
+  const totalAct = cats.filter(c=>!isFundingCat(c)).reduce((s,c) => s+catPaid(c),0); // 已付總額（排除撥款帳）
   const doneItems = cats.flatMap(c=>c.items).filter(i=>i.done||i.status==="done").length;
   const totalItems = cats.reduce((s,c)=>s+c.items.length,0);
   const issueItems = cats.flatMap(c=>c.items).filter(i=>i.status==="issue");
@@ -589,7 +591,12 @@ export default function App() {
   const [events, setEvents] = useState([]);
   const [journal, setJournal] = useState([]);
   const [plans, setPlans] = useState([]);
+  const [petty, setPetty] = useState({ advances: [], spends: [] }); // 零用金帳本：撥款 / 花費
   const { confirm, Dialog: ConfirmDialog } = useConfirm();
+  const commitPetty = (next) => {
+    setPetty(next);
+    window.storage.set(K("pm_petty"), JSON.stringify(next), true).catch(() => {});
+  };
 
   // 工作日誌：寫入 state 並存進共享後端
   const commitWorklog = (list) => {
@@ -643,11 +650,12 @@ export default function App() {
     (async () => {
       const getV = (k) => window.storage.get(K(k), true).then(r => (r && r.value) ? r.value : null).catch(() => null);
       const parse = (v, def) => { if (!v) return def; try { return JSON.parse(v); } catch (_) { return def; } };
-      const [d, gc, sv, log, savedName, kuV, alog, wlV, phV, acV, slV, ccV, evV, jnV, plV, trV] = await Promise.all([
+      const [d, gc, sv, log, savedName, kuV, alog, wlV, phV, acV, slV, ccV, evV, jnV, plV, trV, ptV] = await Promise.all([
         loadData(), loadGlobalChat(), loadSettings(), loadAILog(), loadRole(),
         getV("pm_known_users"), loadActivityLog(),
         getV("pm_worklog"), getV("pm_photos"), getV("pm_accounts"), getV("pm_seqlogs"),
         getV("pm_columns"), getV("pm_events"), getV("pm_journal"), getV("pm_plans"), getV("pm_trash"),
+        getV("pm_petty"),
       ]);
       if (cancelled) return;
 
@@ -679,6 +687,7 @@ export default function App() {
       if (evV) setEvents(parse(evV, []));
       if (jnV) setJournal(parse(jnV, []));
       if (plV) setPlans(parse(plV, []));
+      if (ptV) { const p = parse(ptV, null); if (p) setPetty({ advances: p.advances || [], spends: p.spends || [] }); }
 
       // 統一欄位：以新版內建欄重建 + 保留真正的自訂欄
       try {
@@ -807,8 +816,8 @@ export default function App() {
     return days > 3;
   })) : [];
 
-  const totalEstimated = cats ? cats.reduce((s, c) => s + catEstAfter(c), 0) : 0; // 議價後含稅總額
-  const totalPaid = cats ? cats.reduce((s, c) => s + catPaid(c), 0) : 0; // 已付總額（大項付款紀錄）
+  const totalEstimated = cats ? cats.filter(c => !isFundingCat(c)).reduce((s, c) => s + catEstAfter(c), 0) : 0; // 議價後含稅總額（排除撥款帳）
+  const totalPaid = cats ? cats.filter(c => !isFundingCat(c)).reduce((s, c) => s + catPaid(c), 0) : 0; // 已付總額（排除撥款帳）
   const doneCount = cats ? cats.filter(c => c.status === "done").length : 0;
 
 
@@ -935,6 +944,9 @@ export default function App() {
         )}
         {view === "accounts" && isAdmin && (
           <AccountManager confirm={confirm} myId={profile?.id} />
+        )}
+        {view === "petty" && showMoney() && (
+          <PettyCashView petty={petty} setPetty={commitPetty} cats={cats} setCats={guardedSetCats} canEdit={canEditData} confirm={confirm} />
         )}
         {view === "groups" && isAdmin && (
           <GroupsView cats={cats} canEdit={canEditData} requireLogin={denyEdit} settings={settings} setSettings={guardedSetSettings} journal={journal} events={events} plans={plans} />
@@ -2308,7 +2320,7 @@ function CompareView({ canEdit, requireLogin }) {
 // ── BOTTOM NAV (手機) ───────────────────────────────────────────────────────
 function BottomNav({ view, setView, isAdmin, allowedViewPages }) {
   const pageVisible = (v) => !allowedViewPages || allowedViewPages.includes(v) || v === "owner";
-  const tabs = (conf().tabs || [["owner", "儀表板", "📊"], ["overview", L("overview"), "📋"], ["gantt", L("gantt"), "📅"], ["files", "檔案庫", "📁"], ["issues", "ToDo", "📝"], ["compare", "比價", "⚖️"], ["advisor", "AI設定", "🤖"], ...(isAdmin ? [["groups", "群組", "💬"], ["accounts", "帳號", "👤"]] : [])]).filter(([v]) => !conf().hideTabs.includes(v) && pageVisible(v));
+  const tabs = (conf().tabs || [["owner", "儀表板", "📊"], ["overview", L("overview"), "📋"], ["gantt", L("gantt"), "📅"], ["files", "檔案庫", "📁"], ...(conf().showCost ? [["petty", "零用金", "💵"]] : []), ["issues", "ToDo", "📝"], ["compare", "比價", "⚖️"], ["advisor", "AI設定", "🤖"], ...(isAdmin ? [["groups", "群組", "💬"], ["accounts", "帳號", "👤"]] : [])]).filter(([v]) => !conf().hideTabs.includes(v) && pageVisible(v));
   return (
     <div style={{ position: "fixed", left: 0, right: 0, bottom: 0, height: 60, background: "rgba(255,255,255,0.96)", backdropFilter: "blur(10px)", WebkitBackdropFilter: "blur(10px)", borderTop: `1px solid ${BORDER}`, boxShadow: "0 -2px 14px rgba(0,0,0,0.08)", display: "flex", zIndex: 350, paddingBottom: "env(safe-area-inset-bottom)" }}>
       {tabs.map(([v, l, icon]) => {
@@ -2443,7 +2455,7 @@ function TopNav({ view, setView, saving, totalEstimated, totalPaid, doneCount, c
       {/* view tabs — boxed editorial（手機隱藏，改用底部導覽）*/}
       {!isMobile && (
       <div style={{ display: "flex", gap: 8, paddingBottom: 12, flexWrap: "wrap" }}>
-        {(conf().tabs || [["owner","儀表板"],["overview",L("overview")],["gantt",L("gantt")],["files","檔案庫"],["issues","📝 ToDo"],["compare","比價"],["advisor","AI設定"],...(isAdmin?[["groups","群組"],["accounts","帳號"]]:[])]).filter(([v]) => !conf().hideTabs.includes(v) && pageVisible(v)).map(([v,l]) => (
+        {(conf().tabs || [["owner","儀表板"],["overview",L("overview")],["gantt",L("gantt")],["files","檔案庫"],...(conf().showCost?[["petty","零用金"]]:[]),["issues","📝 ToDo"],["compare","比價"],["advisor","AI設定"],...(isAdmin?[["groups","群組"],["accounts","帳號"]]:[])]).filter(([v]) => !conf().hideTabs.includes(v) && pageVisible(v)).map(([v,l]) => (
           <button key={v} onClick={() => setView(v)} className={v === "issues" && view !== v ? "todo-glow" : undefined} style={{ padding: "8px 16px", borderRadius: 7, border: `1px solid ${view === v ? PRIMARY : (v === "issues" ? "#F59E0B" : BORDER)}`, cursor: "pointer", fontSize: 14, fontWeight: v === "issues" ? 700 : 500, background: view === v ? PRIMARY : (v === "issues" ? "#FEF3C7" : "transparent"), color: view === v ? "#fff" : (v === "issues" ? "#B45309" : TEXT), transition: "all .12s" }}>{l}</button>
         ))}
       </div>
@@ -2810,7 +2822,7 @@ function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols,
       {/* 工程／非工程／全部 三分類合計 */}
       {viewMode === "table" && showMoney() && (() => {
         let pe = 0, pp = 0, ne = 0, np = 0; // 工程est/paid, 非工程est/paid
-        cats.forEach(c => { const e = catEstAfter(c), pd = catPaid(c); if (c.nonProject) { ne += e; np += pd; } else { pe += e; pp += pd; } });
+        cats.forEach(c => { if (isFundingCat(c)) return; const e = catEstAfter(c), pd = catPaid(c); if (c.nonProject) { ne += e; np += pd; } else { pe += e; pp += pd; } });
         const card = (label, est, paid, color, bg) => (
           <div style={{ flex: 1, minWidth: 200, background: bg, border: `1px solid ${BORDER}`, borderRadius: 12, padding: "12px 16px" }}>
             <div style={{ fontSize: 12, color: SUB, marginBottom: 2 }}>{label}</div>
@@ -3510,8 +3522,8 @@ function OwnerDashboard({ cats, setCats, settings, stalledItems, activityLog, lo
   const inProgressItems = cats.flatMap(c=>c.items).filter(i=>i.status==="inprogress");
   const issueItems = cats.flatMap(c=>c.items).filter(i=>i.status==="issue");
   const pct = totalItems ? Math.round(doneItems/totalItems*100) : 0;
-  const totalEst = cats.reduce((s,c)=>s+catEstAfter(c),0); // 議價後含稅總額
-  const totalAct = cats.reduce((s,c)=>s+catPaid(c),0); // 已付總額（大項付款紀錄）
+  const totalEst = cats.filter(c=>!isFundingCat(c)).reduce((s,c)=>s+catEstAfter(c),0); // 議價後含稅總額（排除撥款帳）
+  const totalAct = cats.filter(c=>!isFundingCat(c)).reduce((s,c)=>s+catPaid(c),0); // 已付總額（排除撥款帳）
   const daysLeft = settings?.targetDate ? Math.ceil((new Date(settings.targetDate)-new Date())/(1000*60*60*24)) : null;
   const today = new Date().toLocaleDateString("zh-TW");
 
@@ -5336,7 +5348,7 @@ function PhotoLibraryView({ photos, setPhotos, cats, canEdit, userName, requireL
 
 // ── 帳號管理 ─────────────────────────────────────────────────────────────────
 const ACCT_SPACES = [["construction","🏗 工程專案"],["team","👥 團隊工作"],["crew","🤝 夥伴中心"]];
-const ACCT_VIEW_PAGES = [["owner","儀表板"],["overview","總覽"],["gantt","工序"],["files","檔案庫"],["issues","ToDo"],["compare","比價"],["advisor","AI設定"]];
+const ACCT_VIEW_PAGES = [["owner","儀表板"],["overview","總覽"],["gantt","工序"],["files","檔案庫"],["petty","零用金"],["issues","ToDo"],["compare","比價"],["advisor","AI設定"]];
 const ACCT_EDIT_PAGES = [["data","總覽/工程資料"],["worklog","工序日誌"],["files","檔案庫"],["advisor","AI設定"]];
 function AccountManager({ confirm, myId }) {
   const [list, setList] = useState(null); // null=loading
@@ -5655,6 +5667,186 @@ function ImportElapsed({ startedAt }) {
   useEffect(() => { const t = setInterval(() => tick(n => n + 1), 1000); return () => clearInterval(t); }, []);
   const s = startedAt ? Math.floor((Date.now() - startedAt) / 1000) : 0;
   return <span style={{ fontWeight: 400, color: "#A99F88" }}>（{s} 秒）</span>;
+}
+// ── 零用金帳本（獨立分頁）：撥款／花費／餘額＋工種歸屬＋文字貼上匯入 ──────────────
+const PETTY_MISC = "__misc__";
+function PettyCashView({ petty, setPetty, cats, setCats, canEdit, confirm }) {
+  const advances = petty?.advances || [];
+  const spends = petty?.spends || [];
+  const advTotal = advances.reduce((s, a) => s + (Number(a.amount) || 0), 0);
+  const spendTotal = spends.reduce((s, a) => s + (Number(a.amount) || 0), 0);
+  const balance = advTotal - spendTotal;
+  const catName = (id) => id === PETTY_MISC ? "工程雜支" : (cats.find(c => c.id === id)?.name || "未歸類");
+  const catColor = (id) => { const palette = ["#C0392B","#3E72A8","#3C8C3C","#7A6F58","#8E7CC3","#C2872E","#2A9D8F","#A0522D"]; if (id === PETTY_MISC) return "#9A8F78"; const i = cats.findIndex(c => c.id === id); return palette[(i < 0 ? 0 : i) % palette.length]; };
+  const byCat = {}; spends.forEach(s => { const k = s.catId || PETTY_MISC; byCat[k] = (byCat[k] || 0) + (Number(s.amount) || 0); });
+  const catRows = Object.entries(byCat).sort((a, b) => b[1] - a[1]);
+  const maxCat = Math.max(1, ...catRows.map(r => r[1]));
+
+  const guard = () => { if (!canEdit) { alert("沒有編輯權限，請聯絡管理員開放「總覽/工程資料」。"); return false; } return true; };
+  const upd = (next) => setPetty(next);
+  const addAdv = () => guard() && upd({ ...petty, advances: [...advances, { id: "a" + Date.now(), date: "", amount: 0, note: "" }] });
+  const setAdv = (id, k, v) => upd({ ...petty, advances: advances.map(a => a.id === id ? { ...a, [k]: v } : a) });
+  const delAdv = (id) => upd({ ...petty, advances: advances.filter(a => a.id !== id) });
+  const addSpend = () => guard() && upd({ ...petty, spends: [...spends, { id: "s" + Date.now(), date: "", content: "", amount: 0, catId: PETTY_MISC }] });
+  const setSpend = (id, k, v) => upd({ ...petty, spends: spends.map(s => s.id === id ? { ...s, [k]: v } : s) });
+  const delSpend = (id) => upd({ ...petty, spends: spends.filter(s => s.id !== id) });
+
+  const [imp, setImp] = useState(null);
+  const [paste, setPaste] = useState("");
+  const [showPaste, setShowPaste] = useState(false);
+  const ctrlRef = useRef(null);
+  const mapCat = (cat) => { if (!cat) return PETTY_MISC; const f = cats.find(c => c.name === cat || c.name.includes(cat) || cat.includes(c.name)); return f ? f.id : PETTY_MISC; };
+  const runParse = async () => {
+    const text = paste.trim(); if (!text || !guard()) return;
+    const ctrl = new AbortController(); ctrlRef.current = ctrl;
+    setImp({ busy: true, startedAt: Date.now() });
+    const catList = cats.map(c => c.name).join("、");
+    const sys = `你是零用金帳本解析器。把貼上的表格/文字解析成 JSON，只輸出一個 json 區塊、不要其他文字：
+\`\`\`json
+{"advances":[{"date":"2026-04-02","amount":20000}],"spends":[{"date":"2026-04-01","content":"工人便當","amount":390,"category":"生活支出"}]}
+\`\`\`
+規則：1)「請款/預支/撥款/零用金」這種公司撥錢給人的項目(常是負數或大額整數)→放 advances，amount 用正數。2)其餘實際花費→放 spends。3)category 用原本分類詞(生活支出/油漆工程/電工水材廠商/雜項...)。4)金額一律正整數、去逗號。5)沒日期留空字串。6)現有工程大項：${catList}。`;
+    const reply = await callAI([{ role: "user", content: `解析這份零用金明細：\n${text}` }], sys, "import", ctrl.signal);
+    if (ctrlRef.current !== ctrl) return;
+    let obj = null; const m = reply.match(/```json\s*([\s\S]*?)```/i); try { obj = JSON.parse(m ? m[1] : reply); } catch (_) {}
+    if (!obj || (!obj.spends?.length && !obj.advances?.length)) { setImp(null); alert(/^（AI/.test(reply) ? reply.replace(/[（）]/g, "") : "沒解析到資料，請確認貼上的內容是否完整。"); return; }
+    const rows = (obj.spends || []).map(s => ({ pick: true, date: s.date || "", content: String(s.content || "").trim(), amount: Math.abs(Math.round(Number(s.amount) || 0)), catId: mapCat(s.category), category: s.category || "" }));
+    const advs = (obj.advances || []).map(a => ({ date: a.date || "", amount: Math.abs(Math.round(Number(a.amount) || 0)) }));
+    setImp({ rows, advs });
+  };
+  const cancelParse = () => { try { ctrlRef.current?.abort(); } catch (_) {} ctrlRef.current = null; setImp(null); };
+  const confirmParse = () => {
+    const newSpends = (imp.rows || []).filter(r => r.pick && r.content).map(r => ({ id: "s" + Math.random().toString(36).slice(2, 8), date: r.date, content: r.content, amount: r.amount, catId: r.catId }));
+    const newAdvs = (imp.advs || []).map(a => ({ id: "a" + Math.random().toString(36).slice(2, 8), date: a.date, amount: a.amount, note: "請款" }));
+    upd({ advances: [...advances, ...newAdvs], spends: [...spends, ...newSpends] });
+    setImp(null); setPaste(""); setShowPaste(false);
+  };
+
+  const kpi = (label, val, color) => <div style={{ flex: 1, minWidth: 150, background: "#fff", border: `1px solid ${BORDER}`, borderRadius: 12, padding: "14px 16px" }}><div style={{ fontSize: 12.5, color: SUB }}>{label}</div><div style={{ fontSize: 22, fontWeight: 700, color, marginTop: 4, fontVariantNumeric: "tabular-nums" }}>{fmt(val)}</div></div>;
+  const cellInput = (val, onCh, opts = {}) => <input value={val} onChange={e => onCh(e.target.value)} placeholder={opts.ph} style={{ width: opts.w || "100%", boxSizing: "border-box", border: `1px solid ${BORDER}`, borderRadius: 6, padding: "5px 7px", fontSize: 13, background: "#fff", color: TEXT, ...(opts.style || {}) }} />;
+
+  return (
+    <div style={{ maxWidth: 1100, margin: "16px auto", padding: "0 4px" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4, flexWrap: "wrap" }}>
+        <div style={{ fontSize: 18, fontWeight: 700, color: "#211C15" }}>💵 零用金帳本</div>
+        <div style={{ fontSize: 12.5, color: SUB }}>撥款給工地的現金，與實際花費分開記；花費依工種歸屬，併入工程實際成本。</div>
+      </div>
+
+      {/* KPIs */}
+      <div style={{ display: "flex", gap: 10, flexWrap: "wrap", margin: "12px 0" }}>
+        {kpi("撥款合計（請款）", advTotal, "#C2410C")}
+        {kpi("花費合計（實支）", spendTotal, "#3C8C3C")}
+        {kpi("餘額（撥款−花費）", balance, balance < 0 ? "#DC2626" : "#211C15")}
+      </div>
+
+      {/* 各工種花費 */}
+      {catRows.length > 0 && (
+        <div style={{ background: "#fff", border: `1px solid ${BORDER}`, borderRadius: 12, padding: 16, marginBottom: 12 }}>
+          <div style={{ fontSize: 13.5, fontWeight: 600, color: TEXT, marginBottom: 12 }}>各工種零用金花費（已併入該工種實際成本）</div>
+          {catRows.map(([id, amt]) => (
+            <div key={id} style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
+              <div style={{ width: 130, fontSize: 12.5, color: TEXT, flexShrink: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{catName(id)}</div>
+              <div style={{ flex: 1, height: 14, background: "#EFE7D6", borderRadius: 7, overflow: "hidden" }}><div style={{ width: (amt / maxCat * 100) + "%", height: "100%", background: catColor(id), borderRadius: 7 }} /></div>
+              <div style={{ width: 90, textAlign: "right", fontSize: 13, fontWeight: 600, color: TEXT, fontVariantNumeric: "tabular-nums" }}>{fmt(amt)}</div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* 貼上匯入 */}
+      <div style={{ marginBottom: 14 }}>
+        {!showPaste ? (
+          <button onClick={() => { if (guard()) setShowPaste(true); }} style={{ border: `1px solid ${ACCENT}`, background: "#FBF0EA", color: ACCENT, borderRadius: 8, padding: "9px 16px", fontSize: 13.5, fontWeight: 600, cursor: "pointer" }}>📋 貼上整批花費明細 → AI 解析匯入（建議用文字，最快最準）</button>
+        ) : (
+          <div style={{ background: "#fff", border: `1px solid ${BORDER}`, borderRadius: 12, padding: 14 }}>
+            <div style={{ fontSize: 13, color: SUB, marginBottom: 8 }}>把你整理好的明細（日期 / 內容 / 金額 / 分類）整段貼進來，一次帶入：</div>
+            <textarea value={paste} onChange={e => setPaste(e.target.value)} rows={6} placeholder={"例：\n4/1 工人便當 390 生活支出\n4/26 油漆一進 11508 油漆工程\n4/2 請款2萬零用金 -20000 零用金"} style={{ width: "100%", boxSizing: "border-box", border: `1px solid ${BORDER}`, borderRadius: 8, padding: 10, fontSize: 13, fontFamily: "inherit", resize: "vertical" }} />
+            <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+              <button onClick={runParse} disabled={!paste.trim()} style={{ border: "none", background: paste.trim() ? ACCENT : "#D8CFBB", color: "#fff", borderRadius: 8, padding: "8px 18px", fontSize: 13.5, fontWeight: 600, cursor: paste.trim() ? "pointer" : "not-allowed" }}>解析</button>
+              <button onClick={() => { setShowPaste(false); setPaste(""); }} style={{ border: `1px solid ${BORDER}`, background: SURFACE, color: SUB, borderRadius: 8, padding: "8px 16px", fontSize: 13.5, cursor: "pointer" }}>收起</button>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* 撥款紀錄 */}
+      <div style={{ background: "#fff", border: `1px solid ${BORDER}`, borderRadius: 12, overflow: "hidden", marginBottom: 14 }}>
+        <div style={{ display: "flex", alignItems: "center", padding: "10px 14px", background: "#ECE6D7", borderBottom: `1px solid ${BORDER}` }}>
+          <div style={{ fontSize: 13.5, fontWeight: 600, color: TEXT, flex: 1 }}>撥款紀錄（請款）· {advances.length} 筆</div>
+          <button onClick={addAdv} style={{ border: `1px solid ${BORDER}`, background: "#fff", color: TEXT, borderRadius: 7, padding: "4px 12px", fontSize: 12.5, cursor: "pointer" }}>＋ 新增撥款</button>
+        </div>
+        {advances.length === 0 ? <div style={{ padding: 16, textAlign: "center", color: "#A99F88", fontSize: 13 }}>尚無撥款紀錄</div> : advances.map(a => (
+          <div key={a.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 14px", borderBottom: `1px solid #EFE7D6` }}>
+            {cellInput(a.date || "", v => setAdv(a.id, "date", v), { w: 120, ph: "日期 2026-04-02" })}
+            {cellInput(a.note || "", v => setAdv(a.id, "note", v), { ph: "說明（請款）" })}
+            <input type="number" value={a.amount || ""} onChange={e => setAdv(a.id, "amount", Math.abs(Math.round(Number(e.target.value) || 0)))} style={{ width: 120, textAlign: "right", border: `1px solid ${BORDER}`, borderRadius: 6, padding: "5px 7px", fontSize: 13, fontVariantNumeric: "tabular-nums" }} />
+            <button onClick={() => delAdv(a.id)} style={{ border: "none", background: "none", color: "#C8BCA0", cursor: "pointer", fontSize: 16 }} onMouseEnter={e => e.currentTarget.style.color = "#DC2626"} onMouseLeave={e => e.currentTarget.style.color = "#C8BCA0"}>×</button>
+          </div>
+        ))}
+      </div>
+
+      {/* 花費明細 */}
+      <div style={{ background: "#fff", border: `1px solid ${BORDER}`, borderRadius: 12, overflow: "hidden" }}>
+        <div style={{ display: "flex", alignItems: "center", padding: "10px 14px", background: "#ECE6D7", borderBottom: `1px solid ${BORDER}` }}>
+          <div style={{ fontSize: 13.5, fontWeight: 600, color: TEXT, flex: 1 }}>花費明細 · {spends.length} 筆 · 合計 {fmt(spendTotal)}</div>
+          <button onClick={addSpend} style={{ border: `1px solid ${BORDER}`, background: "#fff", color: TEXT, borderRadius: 7, padding: "4px 12px", fontSize: 12.5, cursor: "pointer" }}>＋ 新增花費</button>
+        </div>
+        <div style={{ display: "flex", gap: 8, padding: "6px 14px", fontSize: 11.5, color: SUB, background: "#F4EFE3", borderBottom: `1px solid #EFE7D6` }}>
+          <div style={{ width: 120 }}>日期</div><div style={{ flex: 1 }}>內容</div><div style={{ width: 120, textAlign: "right" }}>金額</div><div style={{ width: 150 }}>工種（歸屬）</div><div style={{ width: 24 }} />
+        </div>
+        {spends.length === 0 ? <div style={{ padding: 16, textAlign: "center", color: "#A99F88", fontSize: 13 }}>尚無花費；可用上方「貼上整批花費明細」一次帶入。</div> : spends.map(s => (
+          <div key={s.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "7px 14px", borderBottom: `1px solid #EFE7D6` }}>
+            {cellInput(s.date || "", v => setSpend(s.id, "date", v), { w: 120, ph: "日期" })}
+            {cellInput(s.content || "", v => setSpend(s.id, "content", v), { ph: "花費內容" })}
+            <input type="number" value={s.amount || ""} onChange={e => setSpend(s.id, "amount", Math.abs(Math.round(Number(e.target.value) || 0)))} style={{ width: 120, textAlign: "right", border: `1px solid ${BORDER}`, borderRadius: 6, padding: "5px 7px", fontSize: 13, fontVariantNumeric: "tabular-nums" }} />
+            <select value={s.catId || PETTY_MISC} onChange={e => setSpend(s.id, "catId", e.target.value)} style={{ width: 150, border: `1px solid ${BORDER}`, borderRadius: 6, padding: "5px 6px", fontSize: 12.5, background: "#fff", color: TEXT }}>
+              {cats.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+              <option value={PETTY_MISC}>工程雜支</option>
+            </select>
+            <button onClick={() => delSpend(s.id)} style={{ width: 24, border: "none", background: "none", color: "#C8BCA0", cursor: "pointer", fontSize: 16 }} onMouseEnter={e => e.currentTarget.style.color = "#DC2626"} onMouseLeave={e => e.currentTarget.style.color = "#C8BCA0"}>×</button>
+          </div>
+        ))}
+      </div>
+
+      <div style={{ fontSize: 11.5, color: "#A99F88", marginTop: 10, lineHeight: 1.7 }}>※ 請款（撥款）只是公司把錢給工地，不算工程成本；真正成本是「花費」，已依工種併入各大項的實際成本。便當/計程車等無特定工種者歸「工程雜支」。</div>
+
+      {/* 匯入預覽 */}
+      {imp && (
+        <div onClick={e => e.target === e.currentTarget && !imp.busy && setImp(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 600, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+          <div style={{ background: "#fff", borderRadius: 14, width: "min(760px,96vw)", maxHeight: "88vh", display: "flex", flexDirection: "column", overflow: "hidden" }}>
+            <div style={{ padding: "14px 18px", borderBottom: `1px solid ${BORDER}`, fontSize: 15, fontWeight: 700, color: TEXT }}>📋 零用金匯入預覽</div>
+            {imp.busy ? (
+              <div style={{ padding: "44px 24px", textAlign: "center" }}>
+                <div style={{ color: ACCENT, fontSize: 15, fontWeight: 600 }}>🤖 解析中…<ImportElapsed startedAt={imp.startedAt} /></div>
+                <div style={{ fontSize: 12.5, color: SUB, marginTop: 8 }}>文字解析通常 5–20 秒。太久可按「取消」。</div>
+                <button onClick={cancelParse} style={{ marginTop: 16, border: `1px solid ${BORDER}`, background: SURFACE, color: TEXT, borderRadius: 8, padding: "8px 22px", fontSize: 14, cursor: "pointer" }}>取消</button>
+              </div>
+            ) : (<>
+              <div style={{ padding: "10px 18px", borderBottom: `1px solid ${BORDER}`, fontSize: 12.5, color: SUB }}>撥款 {(imp.advs || []).length} 筆、花費 {(imp.rows || []).length} 筆。可調整工種後再匯入。</div>
+              <div style={{ flex: 1, overflowY: "auto", padding: "4px 18px" }}>
+                {(imp.rows || []).map((r, i) => (
+                  <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 0", borderBottom: "1px solid #F2ECDD" }}>
+                    <input type="checkbox" checked={r.pick} onChange={e => setImp({ ...imp, rows: imp.rows.map((x, j) => j === i ? { ...x, pick: e.target.checked } : x) })} />
+                    <span style={{ width: 80, fontSize: 12, color: SUB }}>{r.date || "—"}</span>
+                    <span style={{ flex: 1, fontSize: 13, color: TEXT }}>{r.content}</span>
+                    <span style={{ width: 80, textAlign: "right", fontSize: 13, fontVariantNumeric: "tabular-nums" }}>{fmt(r.amount)}</span>
+                    <select value={r.catId} onChange={e => setImp({ ...imp, rows: imp.rows.map((x, j) => j === i ? { ...x, catId: e.target.value } : x) })} style={{ width: 140, border: `1px solid ${BORDER}`, borderRadius: 6, padding: "4px 6px", fontSize: 12, background: "#fff" }}>
+                      {cats.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                      <option value={PETTY_MISC}>工程雜支</option>
+                    </select>
+                  </div>
+                ))}
+              </div>
+              <div style={{ padding: "12px 18px", borderTop: `1px solid ${BORDER}`, display: "flex", gap: 10, justifyContent: "flex-end" }}>
+                <button onClick={() => setImp(null)} style={{ border: `1px solid ${BORDER}`, background: SURFACE, color: SUB, borderRadius: 8, padding: "8px 18px", fontSize: 14, cursor: "pointer" }}>取消</button>
+                <button onClick={confirmParse} style={{ border: "none", background: ACCENT, color: "#fff", borderRadius: 8, padding: "8px 22px", fontSize: 14, fontWeight: 600, cursor: "pointer" }}>確認匯入</button>
+              </div>
+            </>)}
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }
 function GlobalAIPanel({ chat, setChat, onClose, cats, setCats, canEdit, confirm, settings, setSettings, worklog, setWorklog }) {
   const [input, setInput] = useState("");
