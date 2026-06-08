@@ -929,7 +929,7 @@ export default function App() {
           <CrewRankView />
         )}
         {view === "owner" && settings && (
-          <OwnerDashboard cats={cats} setCats={setCatsLogged} settings={settings} stalledItems={stalledItems} activityLog={activityLog} logActivity={logActivity} userName={userName} isAdmin={isAdmin} journal={journal} events={events} plans={plans} />
+          <OwnerDashboard cats={cats} setCats={setCatsLogged} settings={settings} stalledItems={stalledItems} activityLog={activityLog} logActivity={logActivity} userName={userName} isAdmin={isAdmin} journal={journal} events={events} plans={plans} petty={petty} totalPaid={totalPaid} />
         )}
         {view === "overview" && (
           <OverviewTable cats={cats} setCats={guardedSetCats} confirm={confirm} customCols={customCols} setCustomCols={canEditData ? commitCustomCols : null}
@@ -3537,7 +3537,15 @@ function LoginModal({ onLogin, onClose }) {
 }
 
 // ── OWNER DASHBOARD ───────────────────────────────────────────────────────────
-function OwnerDashboard({ cats, setCats, settings, stalledItems, activityLog, logActivity, userName, isAdmin, journal, events, plans }) {
+function OwnerDashboard({ cats, setCats, settings, stalledItems, activityLog, logActivity, userName, isAdmin, journal, events, plans, petty, totalPaid }) {
+  // 零用金實支（來自「零用金」帳戶）依工種彙整 → 併入工程實際成本
+  const pettySpends = petty?.spends || [];
+  const pettyTotal = pettySpends.reduce((s, x) => s + (Number(x.amount) || 0), 0);
+  const pettyByCat = {};
+  pettySpends.forEach(s => { const k = s.catId || "__misc__"; pettyByCat[k] = (pettyByCat[k] || 0) + (Number(s.amount) || 0); });
+  const pettyCatRows = Object.entries(pettyByCat).sort((a, b) => b[1] - a[1]);
+  const pettyCatName = (id) => id === "__misc__" ? "（未歸類）" : (cats.find(c => c.id === id)?.name || "（未歸類）");
+  const actualTotal = (Number(totalPaid) || 0) + pettyTotal; // 工程實際總成本 = 報價單已付 + 零用金實支
   const [reportLoading, setReportLoading] = useState(false);
   const [report, setReport] = useState("");
   const [showReport, setShowReport] = useState(false);
@@ -3635,6 +3643,33 @@ function OwnerDashboard({ cats, setCats, settings, stalledItems, activityLog, lo
           {health==="green" && <span>各項進度皆在掌握中</span>}
         </div>
       </div>
+
+      {/* 工程實際成本（含零用金實支）— 甲：零用金帶帳戶併進總覽 */}
+      {showMoney() && (pettyTotal > 0 || actualTotal > 0) && (
+        <div style={{ background:"#fff", border:"1px solid #D8CFBB", borderRadius:16, padding:18, marginBottom:16 }}>
+          <div style={{ display:"flex", alignItems:"baseline", gap:10, flexWrap:"wrap", marginBottom:12 }}>
+            <div style={{ fontSize:14, fontWeight:700, color:"#211C15" }}>💰 工程實際成本（含零用金）</div>
+            <span style={{ fontSize:11.5, color:"#A99F88" }}>＝ 報價單已付 ＋ 零用金實支</span>
+          </div>
+          <div style={{ display:"flex", gap:18, flexWrap:"wrap", alignItems:"flex-end" }}>
+            <div><div style={{ fontSize:12, color:"#6F6656" }}>報價單已付<span style={{ color:"#A99F88" }}>（公司/銀行帳戶）</span></div><div style={{ fontSize:18, fontWeight:700, color:"#3C8C3C", fontVariantNumeric:"tabular-nums" }}>{fmt(Number(totalPaid)||0)}</div></div>
+            <div style={{ fontSize:18, color:"#C8BCA0", paddingBottom:2 }}>＋</div>
+            <div><div style={{ fontSize:12, color:"#6F6656" }}>零用金實支<span style={{ color:"#C2410C" }}>（零用金帳戶）</span></div><div style={{ fontSize:18, fontWeight:700, color:"#C2410C", fontVariantNumeric:"tabular-nums" }}>{fmt(pettyTotal)}</div></div>
+            <div style={{ fontSize:18, color:"#C8BCA0", paddingBottom:2 }}>＝</div>
+            <div><div style={{ fontSize:12, color:"#6F6656" }}>工程實際總成本</div><div style={{ fontSize:22, fontWeight:800, color:"#211C15", fontVariantNumeric:"tabular-nums" }}>{fmt(actualTotal)}</div></div>
+          </div>
+          {pettyCatRows.length > 0 && (
+            <div style={{ marginTop:14, borderTop:"1px solid #EFE7D6", paddingTop:12 }}>
+              <div style={{ fontSize:12, color:"#6F6656", marginBottom:8 }}>零用金實支依工種（已併入各大項實際成本，來源：零用金帳戶）</div>
+              <div style={{ display:"flex", flexWrap:"wrap", gap:8 }}>
+                {pettyCatRows.map(([id, amt]) => (
+                  <span key={id} style={{ fontSize:12, background:"#F4EFE3", border:"1px solid #E3DAC6", borderRadius:10, padding:"3px 10px", color:"#4A4234" }}>{pettyCatName(id)} <b style={{ fontVariantNumeric:"tabular-nums" }}>{fmt(amt)}</b></span>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Main KPIs */}
       <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit, minmax(190px, 1fr))", gap:14, marginBottom:20 }}>
