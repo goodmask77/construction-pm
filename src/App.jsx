@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback, Fragment } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo, Fragment } from "react";
 import { createPortal } from "react-dom";
 import { uploadPhoto, deletePhotoFile, supabase, getSharedMany } from "./supa.js";
 import SequenceView from "./SequenceView.jsx";
