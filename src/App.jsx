@@ -5743,10 +5743,10 @@ function PettyCashView({ petty, setPetty, cats, setCats, canEdit, confirm }) {
   const upd = (next) => setPetty(next);
   const addAdv = () => guard() && upd({ ...petty, advances: [...advances, { id: "a" + Date.now(), date: "", amount: 0, note: "" }] });
   const setAdv = (id, k, v) => upd({ ...petty, advances: advances.map(a => a.id === id ? { ...a, [k]: v } : a) });
-  const delAdv = (id) => upd({ ...petty, advances: advances.filter(a => a.id !== id) });
+  const delAdv = async (id) => { if (!guard()) return; const a = advances.find(x => x.id === id); if (!(await confirm(`刪除這筆撥款紀錄（${fmt(a?.amount || 0)}）？`, { confirmLabel: "刪除" }))) return; upd({ ...petty, advances: advances.filter(a => a.id !== id) }); };
   const addSpend = () => guard() && upd({ ...petty, spends: [...spends, { id: "s" + Date.now(), date: "", content: "", amount: 0, catId: PETTY_MISC }] });
   const setSpend = (id, k, v) => upd({ ...petty, spends: spends.map(s => s.id === id ? { ...s, [k]: v } : s) });
-  const delSpend = (id) => upd({ ...petty, spends: spends.filter(s => s.id !== id) });
+  const delSpend = async (id) => { if (!guard()) return; const s = spends.find(x => x.id === id); if (!(await confirm(`刪除這筆花費「${s?.content || "（無內容）"}」（${fmt(s?.amount || 0)}）？`, { confirmLabel: "刪除" }))) return; upd({ ...petty, spends: spends.filter(s => s.id !== id) }); };
 
   const [imp, setImp] = useState(null);
   const [paste, setPaste] = useState("");
