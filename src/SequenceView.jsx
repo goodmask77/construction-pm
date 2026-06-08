@@ -144,9 +144,13 @@ export default function SequenceView({
 
   const logsByItem = useMemo(() => { const m = {}; logs.forEach((l) => (m[l.itemId] ||= []).push(l)); return m; }, [logs]);
   const logMap = useMemo(() => { const m = {}; logs.forEach((l) => (m[`${l.itemId}|${l.date}`] = l)); return m; }, [logs]);
-  // 未歸位日誌：itemId 空白或對不到任何工序 → 不會顯示在格子上，撈出來讓使用者指定回去（資料其實沒丟）
+  // 未歸位/被遮蔽日誌：① itemId 空白或對不到工序 ② 同一格已有別筆紀錄把它蓋住 → 都不會顯示，撈出來讓使用者處理（資料其實沒丟）
   const itemIdSet = useMemo(() => new Set(items.map((i) => i.id)), [items]);
-  const orphanLogs = useMemo(() => logs.filter((l) => !l.itemId || !itemIdSet.has(l.itemId)), [logs, itemIdSet]);
+  const orphanLogs = useMemo(() => logs.filter((l) => {
+    if (!l.itemId || !itemIdSet.has(l.itemId)) return true;          // 沒對應工序
+    const winner = logMap[`${l.itemId}|${l.date}`];                   // 同格只會顯示一筆
+    return winner && winner.id !== l.id;                              // 被同格別筆蓋住
+  }), [logs, itemIdSet, logMap]);
   const logPreview = (l) => l.text || l.done || (l.entries || []).map((e) => e.text).filter(Boolean).join(" / ") || "（只有照片）";
   const logPhotoCount = (l) => (l.entries || []).reduce((s, e) => s + ((e.photos || []).length), 0) + (l.photos || []).length;
   const lastLog = (id) => { const ls = logsByItem[id] || []; return ls.length ? Math.max(...ls.map((l) => idxOf(l.date))) : -1; };
@@ -277,9 +281,9 @@ export default function SequenceView({
           <div style={{ fontSize: 13.5, fontWeight: 700, color: "#92400e", marginBottom: 8 }}>⚠️ 有 {orphanLogs.length} 筆日誌沒有對應工序（沒顯示在格子上，但資料還在）— 請指定回正確工序</div>
           {orphanLogs.map((l) => (
             <div key={l.id} style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", padding: "6px 0", borderTop: "1px solid #FDE9B0" }}>
-              <span style={{ fontSize: 12, color: "#B45309", whiteSpace: "nowrap" }}>{l.date || "無日期"}</span>
+              <input type="date" defaultValue={String(l.date ?? "").replace(/\//g, "-").slice(0, 10)} disabled={!canEdit} onChange={(e) => { if (e.target.value && e.target.value !== l.date) onSaveLog && onSaveLog({ ...l, date: e.target.value }); }} title="可改日期" style={{ border: `1px solid ${C.line}`, borderRadius: 7, padding: "5px 6px", fontSize: 12, colorScheme: "light" }} />
               <span style={{ fontSize: 13, color: C.text, flex: 1, minWidth: 120 }}>{logPreview(l)}{logPhotoCount(l) > 0 ? `　📷×${logPhotoCount(l)}` : ""}</span>
-              <select defaultValue="" disabled={!canEdit} onChange={(e) => { if (e.target.value) onSaveLog && onSaveLog({ ...l, itemId: e.target.value }); }} style={{ border: `1px solid ${C.line}`, borderRadius: 8, padding: "6px 8px", fontSize: 12.5, background: "#fff", color: C.text }}>
+              <select value="" disabled={!canEdit} onChange={(e) => { const id = e.target.value; if (!id) return; if (logMap[`${id}|${l.date}`] && logMap[`${id}|${l.date}`].id !== l.id) { alert("該工序的這一天已有紀錄，會被蓋住。請先改左邊日期，或指定到別的工序。"); return; } onSaveLog && onSaveLog({ ...l, itemId: id }); }} style={{ border: `1px solid ${C.line}`, borderRadius: 8, padding: "6px 8px", fontSize: 12.5, background: "#fff", color: C.text }}>
                 <option value="">指定回工序…</option>
                 {items.map((it) => <option key={it.id} value={it.id}>{it.name}</option>)}
               </select>
