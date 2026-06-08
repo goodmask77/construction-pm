@@ -560,7 +560,7 @@ const SYSTEM_ITEM = (catName, itemName) => `你是一位專業餐廳裝修工程
 // ── MAIN APP ──────────────────────────────────────────────────────────────────
 export default function App() {
   const [cats, setCats] = useState(null);
-  const [view, setView] = useState(conf().defaultView || "gantt"); // 預設工序頁（夥伴中心預設資料庫）
+  const [view, setView] = useState(conf().defaultView || "overview"); // 預設總覽頁（夥伴中心預設資料庫）
   const [selectedCat, setSelectedCat] = useState(null);
   const [selectedItem, setSelectedItem] = useState(null);
   const [globalChat, setGlobalChat] = useState([]);
@@ -2514,6 +2514,9 @@ function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols,
   const q = search.trim().toLowerCase();
   const [viewMode, setViewMode] = useState("table"); // 已移除卡片檢視，固定表格
   const [collapsed, setCollapsed] = useState(new Set()); // 收合的大項 id
+  // 預設全部收合（只做一次；之後使用者展開/收合自行決定）
+  const didInitCollapse = useRef(false);
+  useEffect(() => { if (!didInitCollapse.current && cats.length) { setCollapsed(new Set(cats.map(c => c.id))); didInitCollapse.current = true; } }, [cats]);
   const toggleCollapse = (catId) => setCollapsed(s => { const n = new Set(s); n.has(catId) ? n.delete(catId) : n.add(catId); return n; });
   const allCollapsed = cats.length > 0 && cats.every(c => collapsed.has(c.id));
   const toggleAll = () => setCollapsed(allCollapsed ? new Set() : new Set(cats.map(c => c.id)));
