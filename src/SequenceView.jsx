@@ -144,6 +144,11 @@ export default function SequenceView({
 
   const logsByItem = useMemo(() => { const m = {}; logs.forEach((l) => (m[l.itemId] ||= []).push(l)); return m; }, [logs]);
   const logMap = useMemo(() => { const m = {}; logs.forEach((l) => (m[`${l.itemId}|${l.date}`] = l)); return m; }, [logs]);
+  // 未歸位日誌：itemId 空白或對不到任何工序 → 不會顯示在格子上，撈出來讓使用者指定回去（資料其實沒丟）
+  const itemIdSet = useMemo(() => new Set(items.map((i) => i.id)), [items]);
+  const orphanLogs = useMemo(() => logs.filter((l) => !l.itemId || !itemIdSet.has(l.itemId)), [logs, itemIdSet]);
+  const logPreview = (l) => l.text || l.done || (l.entries || []).map((e) => e.text).filter(Boolean).join(" / ") || "（只有照片）";
+  const logPhotoCount = (l) => (l.entries || []).reduce((s, e) => s + ((e.photos || []).length), 0) + (l.photos || []).length;
   const lastLog = (id) => { const ls = logsByItem[id] || []; return ls.length ? Math.max(...ls.map((l) => idxOf(l.date))) : -1; };
   const origIdx = useMemo(() => Object.fromEntries(items.map((it, i) => [it.id, i])), [items]);
 
@@ -187,12 +192,13 @@ export default function SequenceView({
     setOpenIds((o) => o.includes(it.id) ? o.filter((x) => x !== it.id) : [...o, it.id].slice(-MAX_OPEN));
   };
   const requireEdit = () => { if (!canEdit) { alert("此帳號沒有編輯工程資料的權限，請聯絡管理員開放。"); return false; } return true; };
-  const saveLog = (l) => { if (!requireEdit()) return; onSaveLog && onSaveLog(l); setQuick(null); };
+  const saveLog = (l) => { if (!requireEdit()) return; if (!l.itemId) { alert("此日誌沒有對應的工序，請重開該工序的格子再記錄。"); return; } onSaveLog && onSaveLog(l); setQuick(null); };
   // 拖曳搬移紀錄到其他日期／工序（填錯格、改日期用）
   const [dragKey, setDragKey] = useState(null); // 正在拖的紀錄 key
   const [dropKey, setDropKey] = useState(null);  // 拖曳目標格 key
   const moveLog = (srcLog, newItemId, newDate) => {
     if (!srcLog || !requireEdit()) return;
+    if (!newItemId || !newDate) return; // 防止拖到無效目標把歸屬清空（日誌會消失）
     if (srcLog.itemId === newItemId && srcLog.date === newDate) return;
     if (logMap[`${newItemId}|${newDate}`]) { alert("該格已有紀錄，請先拖到空白格。"); return; }
     onSaveLog && onSaveLog({ ...srcLog, itemId: newItemId, date: newDate });
@@ -266,6 +272,22 @@ export default function SequenceView({
         @keyframes seqUrgentPulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.45;transform:scale(.86)}}
         .seq-urgent-cell{animation:seqUrgentBg 1.15s ease-in-out infinite !important}
         .seq-fire{animation:seqUrgentPulse .9s ease-in-out infinite;display:inline-flex}`}</style>
+      {orphanLogs.length > 0 && (
+        <div style={{ background: "#FFFBEB", border: "1px solid #FCD34D", borderRadius: 12, padding: "12px 14px", marginBottom: 12 }}>
+          <div style={{ fontSize: 13.5, fontWeight: 700, color: "#92400e", marginBottom: 8 }}>⚠️ 有 {orphanLogs.length} 筆日誌沒有對應工序（沒顯示在格子上，但資料還在）— 請指定回正確工序</div>
+          {orphanLogs.map((l) => (
+            <div key={l.id} style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", padding: "6px 0", borderTop: "1px solid #FDE9B0" }}>
+              <span style={{ fontSize: 12, color: "#B45309", whiteSpace: "nowrap" }}>{l.date || "無日期"}</span>
+              <span style={{ fontSize: 13, color: C.text, flex: 1, minWidth: 120 }}>{logPreview(l)}{logPhotoCount(l) > 0 ? `　📷×${logPhotoCount(l)}` : ""}</span>
+              <select defaultValue="" disabled={!canEdit} onChange={(e) => { if (e.target.value) onSaveLog && onSaveLog({ ...l, itemId: e.target.value }); }} style={{ border: `1px solid ${C.line}`, borderRadius: 8, padding: "6px 8px", fontSize: 12.5, background: "#fff", color: C.text }}>
+                <option value="">指定回工序…</option>
+                {items.map((it) => <option key={it.id} value={it.id}>{it.name}</option>)}
+              </select>
+              <button onClick={() => onDelLog && onDelLog(l)} disabled={!canEdit} title="刪除此日誌" style={{ border: "1px solid #FCA5A5", background: "#fff", color: "#DC2626", borderRadius: 8, padding: "5px 10px", fontSize: 12, cursor: "pointer" }}>刪除</button>
+            </div>
+          ))}
+        </div>
+      )}
       {!isMobile && (
       <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10, flexWrap: "wrap" }}>
         <div style={{ display: "inline-flex", background: "#EFE7D6", borderRadius: 8, padding: 2 }}>
