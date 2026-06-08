@@ -5846,17 +5846,25 @@ function PettyCashView({ petty, setPetty, cats, setCats, canEdit, confirm }) {
         {kpi("餘額（撥款−花費）", balance, balance < 0 ? "#DC2626" : "#211C15")}
       </div>
 
-      {/* 各工種花費 */}
+      {/* 各工種花費（點分類＝只看該類明細，像分類抽屜）*/}
       {catRows.length > 0 && (
         <div style={{ background: "#fff", border: `1px solid ${BORDER}`, borderRadius: 12, padding: 16, marginBottom: 12 }}>
-          <div style={{ fontSize: 13.5, fontWeight: 600, color: TEXT, marginBottom: 12 }}>各工種零用金花費（已併入該工種實際成本）</div>
-          {catRows.map(([id, amt]) => (
-            <div key={id} style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
-              <div style={{ width: 130, fontSize: 12.5, color: TEXT, flexShrink: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{catName(id)}</div>
-              <div style={{ flex: 1, height: 14, background: "#EFE7D6", borderRadius: 7, overflow: "hidden" }}><div style={{ width: (amt / maxCat * 100) + "%", height: "100%", background: catColor(id), borderRadius: 7 }} /></div>
-              <div style={{ width: 90, textAlign: "right", fontSize: 13, fontWeight: 600, color: TEXT, fontVariantNumeric: "tabular-nums" }}>{fmt(amt)}</div>
-            </div>
-          ))}
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
+            <div style={{ fontSize: 13.5, fontWeight: 600, color: TEXT }}>各工種零用金花費</div>
+            <span style={{ fontSize: 11.5, color: "#A99F88" }}>· 共 {catRows.length} 類 · 點分類只看該類明細 · 已併入該工種實際成本</span>
+            {fCat !== "all" && <button onClick={() => setFCat("all")} style={{ marginLeft: "auto", border: `1px solid ${BORDER}`, background: SURFACE, color: SUB, borderRadius: 12, padding: "2px 10px", fontSize: 11.5, cursor: "pointer" }}>✕ 清除分類篩選</button>}
+          </div>
+          {catRows.map(([id, amt]) => {
+            const cnt = spends.filter(s => (s.catId || PETTY_MISC) === id).length;
+            const active = fCat === id;
+            return (
+              <div key={id} onClick={() => setFCat(active ? "all" : id)} title="點一下：下方明細只看這一類（再點取消）" style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6, cursor: "pointer", background: active ? "#F4EFE3" : "transparent", borderRadius: 8, padding: "3px 6px", border: `1px solid ${active ? "#E0D6BE" : "transparent"}` }}>
+                <div style={{ width: 150, flexShrink: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: 12.5, color: active ? ACCENT : TEXT, fontWeight: active ? 700 : 500 }}>{catName(id)} <span style={{ color: "#A99F88", fontWeight: 400 }}>· {cnt}筆</span></div>
+                <div style={{ flex: 1, height: 14, background: "#EFE7D6", borderRadius: 7, overflow: "hidden" }}><div style={{ width: (amt / maxCat * 100) + "%", height: "100%", background: catColor(id), borderRadius: 7 }} /></div>
+                <div style={{ width: 90, textAlign: "right", fontSize: 13, fontWeight: 600, color: TEXT, fontVariantNumeric: "tabular-nums" }}>{fmt(amt)}</div>
+              </div>
+            );
+          })}
         </div>
       )}
 
@@ -5898,6 +5906,7 @@ function PettyCashView({ petty, setPetty, cats, setCats, canEdit, confirm }) {
             <button onClick={() => delAdv(a.id)} style={{ border: "none", background: "none", color: "#C8BCA0", cursor: "pointer", fontSize: 16, flexShrink: 0 }} onMouseEnter={e => e.currentTarget.style.color = "#DC2626"} onMouseLeave={e => e.currentTarget.style.color = "#C8BCA0"}>×</button>
           </div>
         ))}
+        {advances.length > 0 && <button onClick={addAdv} style={{ width: "100%", textAlign: "left", padding: "10px 14px", border: "none", borderTop: `1px dashed ${BORDER}`, background: "#FBF7EE", color: ACCENT, fontSize: 12.5, fontWeight: 600, cursor: "pointer" }}>＋ 在這裡新增一筆撥款</button>}
       </div>
 
       {/* 花費明細（專業表格：搜尋/篩選/排序/拖曳/憑證上傳） */}
@@ -5974,6 +5983,7 @@ function PettyCashView({ petty, setPetty, cats, setCats, canEdit, confirm }) {
                   <td style={{ textAlign: "center" }}><button onClick={() => delSpend(s.id)} title="刪除" style={{ border: "none", background: "none", color: "#C8BCA0", cursor: "pointer", fontSize: 15 }} onMouseEnter={e => e.currentTarget.style.color = "#DC2626"} onMouseLeave={e => e.currentTarget.style.color = "#C8BCA0"}>×</button></td>
                 </tr>
               ))}
+              <tr><td colSpan={12} style={{ padding: 0 }}><button onClick={addSpend} style={{ width: "100%", textAlign: "left", padding: "11px 16px", border: "none", borderTop: `1px dashed ${BORDER}`, background: "#FBF7EE", color: ACCENT, fontSize: 13, fontWeight: 600, cursor: "pointer" }}>＋ 在這裡新增一筆花費</button></td></tr>
             </tbody>
           </table>
         </div>
