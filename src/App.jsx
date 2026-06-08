@@ -5856,7 +5856,7 @@ function PettyCashView({ petty, setPetty, cats, setCats, canEdit, confirm }) {
         </div>
         {advances.length === 0 ? <div style={{ padding: 16, textAlign: "center", color: "#A99F88", fontSize: 13 }}>尚無撥款紀錄</div> : advances.map(a => (
           <div key={a.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 14px", borderBottom: `1px solid #EFE7D6` }}>
-            {cellInput(a.date || "", v => setAdv(a.id, "date", v), { w: 120, ph: "日期 2026-04-02" })}
+            <input type="date" value={String(a.date ?? "").replace(/\//g, "-").slice(0, 10)} onChange={e => setAdv(a.id, "date", e.target.value)} style={{ width: 140, border: `1px solid ${BORDER}`, borderRadius: 6, padding: "5px 7px", fontSize: 13, fontFamily: "'Noto Sans TC', sans-serif", colorScheme: "light", cursor: "pointer" }} />
             {cellInput(a.note || "", v => setAdv(a.id, "note", v), { ph: "說明（請款）" })}
             <input type="number" value={a.amount || ""} onChange={e => setAdv(a.id, "amount", Math.abs(Math.round(Number(e.target.value) || 0)))} style={{ width: 120, textAlign: "right", border: `1px solid ${BORDER}`, borderRadius: 6, padding: "5px 7px", fontSize: 13, fontVariantNumeric: "tabular-nums" }} />
             <button onClick={() => delAdv(a.id)} style={{ border: "none", background: "none", color: "#C8BCA0", cursor: "pointer", fontSize: 16 }} onMouseEnter={e => e.currentTarget.style.color = "#DC2626"} onMouseLeave={e => e.currentTarget.style.color = "#C8BCA0"}>×</button>
@@ -5918,7 +5918,7 @@ function PettyCashView({ petty, setPetty, cats, setCats, canEdit, confirm }) {
                   onDragEnd={() => { setDragId(null); setDragOverId(null); }}
                   style={{ borderBottom: "1px solid #EFE7D6", background: dragOverId === s.id ? "#F3E4DE" : "transparent" }}>
                   <td style={{ textAlign: "center", color: "#C8BCA0", cursor: manualOrder ? "grab" : "default", fontSize: 13 }} title={manualOrder ? "拖曳排序" : "清除搜尋/篩選/排序後才能拖曳"}>{manualOrder ? "⠿" : ""}</td>
-                  <td style={{ padding: 3 }}><input value={s.date || ""} onChange={e => setSpend(s.id, "date", e.target.value)} placeholder="日期" style={{ width: 92, border: `1px solid ${BORDER}`, borderRadius: 5, padding: "5px 6px", fontSize: 12.5 }} /></td>
+                  <td style={{ padding: 3 }}><input type="date" value={String(s.date ?? "").replace(/\//g, "-").slice(0, 10)} onChange={e => setSpend(s.id, "date", e.target.value)} style={{ width: 132, border: `1px solid ${BORDER}`, borderRadius: 5, padding: "5px 6px", fontSize: 12.5, fontFamily: "'Noto Sans TC', sans-serif", colorScheme: "light", cursor: "pointer" }} /></td>
                   <td style={{ padding: 3 }}>
                     <select value={s.catId || PETTY_MISC} onChange={e => setSpend(s.id, "catId", e.target.value)} style={{ minWidth: 110, border: `1px solid ${catColor(s.catId || PETTY_MISC)}`, color: catColor(s.catId || PETTY_MISC), fontWeight: 600, borderRadius: 12, padding: "4px 6px", fontSize: 12, background: catColor(s.catId || PETTY_MISC) + "14" }}>
                       {cats.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}<option value={PETTY_MISC}>工程雜支</option>
