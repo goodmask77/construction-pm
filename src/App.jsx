@@ -2992,6 +2992,8 @@ function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols,
                     const isEmpty = groupEst === 0 && groupPaid === 0;
                     const over = groupUnpaid < 0;
                     const colNum = (label, val, opts = {}) => <div style={{ width: 150, textAlign: "right", flexShrink: 0, fontSize: 12.5, color: SUB }} title={opts.title}>{label} <span style={{ color: opts.color || TEXT, fontVariantNumeric: "tabular-nums", fontWeight: opts.fw || 500 }}>{val}</span></div>;
+                    // 主數字（含稅/議價後）＝這個大項到底多少錢，做成明顯藥丸，不再埋在裡面
+                    const colMain = (label, val, opts = {}) => <div style={{ width: 150, textAlign: "right", flexShrink: 0 }} title={opts.title}><span style={{ fontSize: 10.5, color: "#A99F88", marginRight: 5 }}>{label}</span><span style={{ fontSize: 14.5, fontWeight: 800, color: opts.color || "#1A1A1A", fontVariantNumeric: "tabular-nums", background: opts.bg || "#E6DDC9", borderRadius: 6, padding: "2px 8px", letterSpacing: -0.2 }}>{val}</span></div>;
                     // 大項名稱（灰）放在「未付」與「＋新增付款」中間 → 右側數字好對焦；空大項保留同寬位置才不會跑掉
                     const nameCol = <div onClick={() => toggleCollapse(catId)} title={group.name} style={{ width: 130, textAlign: "right", flexShrink: 0, fontSize: 12.5, fontWeight: 600, color: "#A99F88", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", cursor: "pointer" }}>{group.name}</div>;
                     if (isEmpty) return (<>
@@ -3002,8 +3004,8 @@ function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols,
                     return (<>
                       {colNum("未稅", fmt(groupPretax), { title: "未稅小計＝Σ數量×單價，對應報價單未稅總價" })}
                       {disc.hasDiscount
-                        ? colNum("議價後", fmt(groupEst), { fw: 600, color: "#C0392B", title: `原報價 ${fmt(groupRaw)} → 議價後 ${fmt(groupEst)}，省 ${fmt(groupSaved)}（-${Math.round(disc.pct * 10) / 10}%）` })
-                        : colNum("含稅", fmt(groupEst), { fw: 600, title: "含稅總計" })}
+                        ? colMain("議價後", fmt(groupEst), { color: "#C0392B", bg: "#FBEAE7", title: `原報價 ${fmt(groupRaw)} → 議價後 ${fmt(groupEst)}，省 ${fmt(groupSaved)}（-${Math.round(disc.pct * 10) / 10}%）` })
+                        : colMain("含稅", fmt(groupEst), { title: "含稅總計（這個大項的總金額）" })}
                       {/* 已付金額 / 未付金額：固定兩欄、靠右對齊 */}
                       <button onClick={() => setPayCatId(catId)} title={`檢視／新增付款紀錄${payCount ? `（${payCount} 筆）` : ""}`} style={{ width: 150, textAlign: "right", flexShrink: 0, fontSize: 12.5, color: SUB, border: "none", background: "none", cursor: "pointer", padding: 0 }}>已付 <span style={{ color: groupPaid > 0 ? "#3C8C3C" : "#A99F88", fontVariantNumeric: "tabular-nums", fontWeight: 600 }}>{fmt(groupPaid)}</span></button>
                       <button onClick={() => setPayCatId(catId)} title="未付金額＝含稅 − 已付" style={{ width: 150, textAlign: "right", flexShrink: 0, fontSize: 12.5, color: SUB, border: "none", background: "none", cursor: "pointer", padding: 0 }}>未付 <span style={{ color: over ? "#DC2626" : groupUnpaid > 0 ? "#C2410C" : "#3C8C3C", fontVariantNumeric: "tabular-nums", fontWeight: 600 }}>{over ? `溢付 ${fmt(-groupUnpaid)}` : fmt(groupUnpaid)}</span></button>
