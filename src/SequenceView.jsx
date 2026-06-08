@@ -173,7 +173,8 @@ export default function SequenceView({
   if (zoom === "day") {
     if (!showDone) visItems = visItems.filter(it => ACTIVE.includes(it.status) || it.urgent); // 取消「顯示完成/待開工」→ 只剩正在動的(超急件保留)
     // 超急件置頂；其餘依狀態分組：置頂組(施工中/等待/問題) → 完成 → 待開工；置頂組內依「最近有紀錄」由新到舊
-    visItems = [...visItems].sort((a, b) => {
+    // 只排「大項（父層）」，子項目排序後再歸回各自父層下面（否則子項目會依自己的狀態飄到別的大項底下）
+    const sortedParents = visItems.filter(it => !it.isSub).sort((a, b) => {
       if (!!a.urgent !== !!b.urgent) return a.urgent ? -1 : 1;
       const ra = ACTIVE.includes(a.status) ? 0 : a.status === "done" ? 1 : 2;
       const rb = ACTIVE.includes(b.status) ? 0 : b.status === "done" ? 1 : 2;
@@ -181,6 +182,13 @@ export default function SequenceView({
       if (ra === 0) return lastLog(b.id) - lastLog(a.id);
       return (origIdx[a.id] ?? 0) - (origIdx[b.id] ?? 0);
     });
+    const subsByParent = {};
+    visItems.filter(it => it.isSub).forEach(s => (subsByParent[s.parentId] ||= []).push(s));
+    const regrouped = [];
+    sortedParents.forEach(p => { regrouped.push(p); (subsByParent[p.id] || []).forEach(s => regrouped.push(s)); });
+    // 父層被過濾掉的孤兒子項目（理論上不會有）補在最後，避免漏顯示
+    visItems.filter(it => it.isSub && !sortedParents.some(p => p.id === it.parentId)).forEach(s => regrouped.push(s));
+    visItems = regrouped;
   }
   // 日視圖顯示完整工期（0…TOTAL_DAYS-1），靠原生捲動一路往右滑
   const winDays = Array.from({ length: TOTAL_DAYS }, (_, i) => i);
