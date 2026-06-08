@@ -2765,8 +2765,10 @@ function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols,
   const EditableCell = ({ catId, itemId, field, value, type="text", placeholder="" }) => {
     const key = `${itemId}||${field}`;
     const isEditing = editCell === key;
-    const [local, setLocal] = useState(String(value ?? ""));
-    useEffect(() => { setLocal(String(value ?? "")); }, [value]);
+    // 數字欄位：值為 0 時編輯框顯示空白，可直接打數字（不用先刪掉 0）
+    const toLocal = (v) => (type === "number" && (v === 0 || v === "0" || v == null)) ? "" : String(v ?? "");
+    const [local, setLocal] = useState(toLocal(value));
+    useEffect(() => { setLocal(toLocal(value)); }, [value]);
     if (type === "date") {
       const iso = String(value ?? "").replace(/\//g, "-").slice(0, 10);
       return (
