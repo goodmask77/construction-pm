@@ -3039,16 +3039,27 @@ function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols,
                 </div>
                 {/* item rows（收合時隱藏） */}
                 {!isCollapsed && group.rows.map(({ item }, rIdx) => {
-                  // 零用金細項：唯讀顯示（編輯入口在零用金頁），不參與報價單分組/拖曳/付款 — 先攔截，避免碰到報價單分組邏輯
+                  // 零用金細項：唯讀、同欄位對齊（日期/金額對齊正常細項），前面用 🪙 標示；編輯入口在零用金頁
                   if (item.fromPetty) return (
-                    <div key={item.id} style={{ display: "flex", alignItems: "center", gap: 8, borderBottom: "1px solid #EFE7D6", background: "#FBF7EE", padding: "6px 12px 6px 34px", fontSize: 12.5, color: "#4A4234" }}>
-                      <span style={{ flexShrink: 0, fontSize: 10.5, fontWeight: 700, color: "#C2410C", background: "#FBEFE7", border: "1px solid #F0CFB8", borderRadius: 8, padding: "1px 7px" }}>🪙 零用金</span>
-                      <span style={{ flexShrink: 0, color: "#A99F88", fontSize: 11.5, width: 74 }}>{(item.payDate || "").replace(/-/g, "/") || "—"}</span>
-                      <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{item.name}</span>
-                      {item.notes && <span style={{ flexShrink: 0, color: "#A99F88", fontSize: 11 }}>{item.notes}</span>}
-                      <span style={{ flexShrink: 0, fontVariantNumeric: "tabular-nums", color: "#211C15", fontWeight: 600, width: 90, textAlign: "right" }}>{fmt(item.amount)}</span>
-                      <span style={{ flexShrink: 0, fontSize: 11, color: "#3C8C3C", width: 36, textAlign: "right" }}>已付</span>
-                      <span title="此筆來自零用金帳戶，請到「零用金」頁編輯" style={{ flexShrink: 0, color: "#C8BCA0", fontSize: 12 }}>🔒</span>
+                    <div key={item.id} style={{ display: "flex", alignItems: "center", borderBottom: "1px solid #EFE7D6", background: "#FBF7EE" }}>
+                      <div title="來自零用金帳戶（在零用金頁編輯）" style={{ width: 24, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, borderRight: "1px solid #EFE7D6", height: 38 }}>🪙</div>
+                      {orderedCols.map(col => {
+                        const cs = { ...cellStyle(col) };
+                        const ro = { ...cs, color: "#6F6656", fontSize: 12.5 };
+                        if (col.id === "payDate") return <div key={col.id} style={ro}>{(item.payDate || "").replace(/-/g, "/") || "—"}</div>;
+                        if (col.id === "name") return <div key={col.id} style={{ ...cs, color: "#211C15", fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{item.name}</div>;
+                        if (col.id === "estQty") return <div key={col.id} style={ro}>1</div>;
+                        if (col.id === "unit") return <div key={col.id} style={ro}>{item.unit || "式"}</div>;
+                        if (col.id === "estUnitPrice") return <div key={col.id} style={{ ...ro, fontFamily: "monospace" }}>{fmt(item.amount)}</div>;
+                        if (col.id === "taxType") return <div key={col.id} style={ro}>免稅</div>;
+                        if (col.id === "estTotal") return <div key={col.id} style={{ ...cs, fontFamily: "monospace", color: ACCENT, fontWeight: 600 }}>{fmt(item.amount)}</div>;
+                        if (col.id === "itemPaid") return <div key={col.id} style={{ ...cs, color: "#3C8C3C", fontSize: 12 }}>✓ 已付</div>;
+                        if (col.id === "cat") return <div key={col.id} style={ro}>{group.name}</div>;
+                        if (col.id === "assignee") return <div key={col.id} style={ro}>零用金</div>;
+                        if (col.id === "receipts") return <div key={col.id} style={{ ...cs, gap: 3 }}>{(item.receipts || []).filter(r => r.isImage).slice(0, 3).map(r => <img key={r.id} src={r.url} alt="" onClick={() => setLightbox(r)} style={{ width: 22, height: 22, objectFit: "cover", borderRadius: 3, border: `1px solid ${BORDER}`, cursor: "zoom-in" }} />)}</div>;
+                        if (col.id === "notes") return <div key={col.id} style={{ ...ro, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{item.notes || ""}</div>;
+                        return <div key={col.id} style={ro} />;
+                      })}
                     </div>
                   );
                   const rowKey = `${catId}||${item.id}`;
