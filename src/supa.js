@@ -47,6 +47,19 @@ async function getShared(k) {
   return null
 }
 
+// 一次抓多個 key（用 id in (...)）→ 把開啟時十幾個請求合併成「一個」請求，大幅減少往返與伺服器負擔。
+export async function getSharedMany(keys) {
+  if (!dataClient) {
+    const out = {}; keys.forEach(k => { const v = localStorage.getItem(k); if (v != null) out[k] = v; }); return out;
+  }
+  try {
+    const { data } = await dataClient.from('pm_documents').select('id,data').in('id', keys);
+    const out = {};
+    (data || []).forEach(row => { if (row && row.data && typeof row.data.v === 'string') out[row.id] = row.data.v; });
+    return out;
+  } catch (_) { return {}; }
+}
+
 async function setShared(k, value) {
   if (!dataClient) { try { localStorage.setItem(k, value) } catch (_) {} ; return }
   try {

@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback, Fragment } from "react";
 import { createPortal } from "react-dom";
-import { uploadPhoto, deletePhotoFile, supabase } from "./supa.js";
+import { uploadPhoto, deletePhotoFile, supabase, getSharedMany } from "./supa.js";
 import SequenceView from "./SequenceView.jsx";
 
 // ── DESIGN TOKENS (Warm editorial — 米色紙感 + 磚紅 + 黑) ──────────────────
@@ -648,16 +648,18 @@ export default function App() {
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const getV = (k) => window.storage.get(K(k), true).then(r => (r && r.value) ? r.value : null).catch(() => null);
       const parse = (v, def) => { if (!v) return def; try { return JSON.parse(v); } catch (_) { return def; } };
-      const [d, gc, sv, log, savedName, kuV, alog, wlV, phV, acV, slV, ccV, evV, jnV, plV, trV, ptV] = await Promise.all([
-        loadData(), loadGlobalChat(), loadSettings(), loadAILog(), loadRole(),
-        getV("pm_known_users"), loadActivityLog(),
-        getV("pm_worklog"), getV("pm_photos"), getV("pm_accounts"), getV("pm_seqlogs"),
-        getV("pm_columns"), getV("pm_events"), getV("pm_journal"), getV("pm_plans"), getV("pm_trash"),
-        getV("pm_petty"),
-      ]);
+      // 一次抓所有共用資料（合併成單一請求）+ 本機的角色，避免開啟時打十幾次 API
+      const SHARED_KEYS = ["pm_data", "pm_global_chat", "pm_settings", "pm_ai_log", "pm_activity", "pm_known_users", "pm_worklog", "pm_photos", "pm_accounts", "pm_seqlogs", "pm_columns", "pm_events", "pm_journal", "pm_plans", "pm_trash", "pm_petty"];
+      const [batch, savedName] = await Promise.all([getSharedMany(SHARED_KEYS.map(K)), loadRole()]);
       if (cancelled) return;
+      const raw = (k) => batch[K(k)] || null;
+      const d = parse(raw("pm_data"), null);
+      const gc = parse(raw("pm_global_chat"), []);
+      const sv = parse(raw("pm_settings"), null);
+      const log = parse(raw("pm_ai_log"), []);
+      const alog = parse(raw("pm_activity"), []);
+      const kuV = raw("pm_known_users"), wlV = raw("pm_worklog"), phV = raw("pm_photos"), acV = raw("pm_accounts"), slV = raw("pm_seqlogs"), ccV = raw("pm_columns"), evV = raw("pm_events"), jnV = raw("pm_journal"), plV = raw("pm_plans"), trV = raw("pm_trash"), ptV = raw("pm_petty");
 
       const seed = CURRENT_SPACE === "construction" ? INITIAL_CATEGORIES : [];
       const migrated = migratePayments(d || seed);
@@ -706,9 +708,12 @@ export default function App() {
   useEffect(() => {
     if (!supabase) return;
     let active = true;
+    let lastUid = null;
     const applySession = async (session) => {
       if (!active) return;
-      if (!session?.user) { setProfile(null); setUserName(null); return; }
+      if (!session?.user) { lastUid = null; setProfile(null); setUserName(null); return; }
+      if (session.user.id === lastUid) return; // 避免同一使用者重複抓 profile（getSession + INITIAL_SESSION 會重複）
+      lastUid = session.user.id;
       try {
         const { data: prof } = await supabase.from("profiles").select("*").eq("id", session.user.id).maybeSingle();
         if (!active) return;
@@ -716,7 +721,7 @@ export default function App() {
         setUserName(prof?.display_name || null);
       } catch (_) { setProfile(null); setUserName(null); }
     };
-    supabase.auth.getSession().then(({ data }) => applySession(data.session));
+    // 只用 onAuthStateChange（訂閱時會立即發 INITIAL_SESSION 帶入目前登入狀態），不另外再呼叫 getSession，少一次往返
     const { data: sub } = supabase.auth.onAuthStateChange((_e, session) => applySession(session));
     return () => { active = false; sub?.subscription?.unsubscribe?.(); };
   }, []);
