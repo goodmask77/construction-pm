@@ -5801,7 +5801,38 @@ function PettyCashView({ petty, setPetty, cats, setCats, canEdit, confirm }) {
   const [dragOverId, setDragOverId] = useState(null);
   const [advDragId, setAdvDragId] = useState(null);
   const [advDragOverId, setAdvDragOverId] = useState(null);
+  const [selected, setSelected] = useState(new Set()); // 勾選的花費 id（批次操作）
   const reorderAdv = (fromId, toId) => { if (fromId === toId) return; const arr = [...advances]; const fi = arr.findIndex(a => a.id === fromId), ti = arr.findIndex(a => a.id === toId); if (fi < 0 || ti < 0) return; const [m] = arr.splice(fi, 1); arr.splice(ti, 0, m); upd({ ...petty, advances: arr }); };
+  const toggleSel = (id, on) => setSelected(prev => { const n = new Set(prev); on ? n.add(id) : n.delete(id); return n; });
+  const bulkSetField = (field, val) => { upd({ ...petty, spends: spends.map(s => selected.has(s.id) ? { ...s, [field]: val } : s) }); };
+  const bulkDelete = async () => { if (!(await confirm(`刪除選取的 ${selected.size} 筆花費？`, { confirmLabel: "刪除" }))) return; upd({ ...petty, spends: spends.filter(s => !selected.has(s.id)) }); setSelected(new Set()); };
+  // ── AI 智慧歸類：依花費內容自動建議工種 → 預覽確認（無法辨識/錯誤可改下拉）→ 套用 ──
+  const [classify, setClassify] = useState(null); // null | {busy,startedAt} | {rows:[{id,content,amount,old,sug}]}
+  const classifyCtrlRef = useRef(null);
+  const autoClassify = async () => {
+    if (!guard()) return;
+    const targets = spends.filter(s => s.content);
+    if (!targets.length) { alert("沒有可歸類的花費"); return; }
+    const ctrl = new AbortController(); classifyCtrlRef.current = ctrl;
+    setClassify({ busy: true, startedAt: Date.now() });
+    const catList = cats.map(c => c.name).join("、");
+    const sys = `你是工程費用歸類助理。把每筆零用金花費依「內容」歸到最合適的工程大項。只輸出一個 json 區塊、不要其他文字：
+\`\`\`json
+{"map":[{"id":"s_xxx","cat":"油漆防水工程"}]}
+\`\`\`
+歸類原則：油漆/批土/防水/打樣→油漆相關大項；水電/電線/開關/插座/排水/水管→機電或消防相關；燈具/軌道燈→燈具相關；木皮/木作/角材/櫃→木工相關；磁磚/地坪→地坪相關；清潔/打掃/拖把→清潔相關（若無則工程雜支）；便當/飲料/餐費/計程車/停車/運費/搬運工/小工/雜工/影印 這種「沒有特定工種」的雜支→一律「工程雜支」。對不到任何大項就用「工程雜支」。現有工程大項：${catList}。`;
+    const input = targets.map(s => ({ id: s.id, 內容: s.content })).slice(0, 250);
+    const reply = await callAI([{ role: "user", content: `歸類這些花費，回每筆的 id 與最合適的工程大項名稱：\n${JSON.stringify(input)}` }], sys, "import", ctrl.signal);
+    if (classifyCtrlRef.current !== ctrl) return;
+    let obj = null; const m = reply.match(/```json\s*([\s\S]*?)```/i); try { obj = JSON.parse(m ? m[1] : reply); } catch (_) {}
+    if (!obj?.map?.length) { setClassify(null); alert(/^（AI/.test(reply) ? reply.replace(/[（）]/g, "") : "AI 沒有回傳歸類結果，請再試一次。"); return; }
+    const byId = {}; obj.map.forEach(x => { byId[x.id] = x.cat; });
+    const rows = targets.map(s => ({ id: s.id, content: s.content, amount: s.amount, old: s.catId || PETTY_MISC, sug: mapCat(byId[s.id]) }));
+    setClassify({ rows });
+  };
+  const cancelClassify = () => { try { classifyCtrlRef.current?.abort(); } catch (_) {} classifyCtrlRef.current = null; setClassify(null); };
+  const setClassifyRow = (id, catId) => setClassify(c => ({ ...c, rows: c.rows.map(r => r.id === id ? { ...r, sug: catId } : r) }));
+  const applyClassify = () => { const map = {}; classify.rows.forEach(r => { map[r.id] = r.sug; }); upd({ ...petty, spends: spends.map(s => map[s.id] != null ? { ...s, catId: map[s.id] } : s) }); setClassify(null); };
 
   const VOUCHER_OPTS = [["", "—", "#9A8F78"], ["發票", "發票", "#7A3E1D"], ["收據", "收據", "#C0392B"], ["免用收據", "免用收據", "#2E7D32"], ["支出單", "支出單", "#6B6450"], ["其他", "其他", "#8E7CC3"]];
   const voucherColor = (v) => (VOUCHER_OPTS.find(o => o[0] === (v || "")) || VOUCHER_OPTS[0])[2];
@@ -5929,14 +5960,33 @@ function PettyCashView({ petty, setPetty, cats, setCats, canEdit, confirm }) {
           <select value={fClaimed} onChange={e => setFClaimed(e.target.value)} title="篩選請款狀態" style={{ border: `1px solid ${fClaimed !== "all" ? ACCENT : BORDER}`, borderRadius: 7, padding: "6px 6px", fontSize: 12, background: "#fff", color: TEXT }}>
             <option value="all">請款：全部</option><option value="yes">已請款</option><option value="no">未請款</option>
           </select>
+          <button onClick={autoClassify} title="AI 依花費內容自動建議工種，再讓你確認/調整" style={{ border: `1px solid ${ACCENT}`, background: "#FBF0EA", color: ACCENT, borderRadius: 7, padding: "6px 10px", fontSize: 12.5, fontWeight: 600, cursor: "pointer" }}>🤖 AI 自動歸類</button>
           <button onClick={addSpend} style={{ border: "none", background: ACCENT, color: "#fff", borderRadius: 7, padding: "6px 12px", fontSize: 12.5, fontWeight: 600, cursor: "pointer" }}>＋ 新增</button>
         </div>
+        {/* 批次操作列（勾選後出現）*/}
+        {selected.size > 0 && (
+          <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 12px", background: "#FFF7E6", borderBottom: `1px solid #F0D98C`, flexWrap: "wrap" }}>
+            <span style={{ fontSize: 13, fontWeight: 700, color: "#92400e" }}>已選 {selected.size} 筆</span>
+            <span style={{ fontSize: 12.5, color: "#92400e" }}>批次改工種：</span>
+            <select defaultValue="" onChange={e => { if (e.target.value) { bulkSetField("catId", e.target.value); e.target.value = ""; } }} style={{ border: `1px solid #C2872E`, borderRadius: 7, padding: "5px 8px", fontSize: 12.5, background: "#fff", color: TEXT }}>
+              <option value="">選工種…</option>{cats.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}<option value={PETTY_MISC}>工程雜支</option>
+            </select>
+            <span style={{ fontSize: 12.5, color: "#92400e" }}>憑證：</span>
+            <select defaultValue="" onChange={e => { bulkSetField("voucher", e.target.value === "__none" ? "" : e.target.value); e.target.value = ""; }} style={{ border: `1px solid #C2872E`, borderRadius: 7, padding: "5px 8px", fontSize: 12.5, background: "#fff", color: TEXT }}>
+              <option value="">選憑證…</option>{VOUCHER_OPTS.slice(1).map(o => <option key={o[0]} value={o[0]}>{o[1]}</option>)}<option value="__none">清空</option>
+            </select>
+            <button onClick={() => bulkSetField("claimed", true)} style={{ border: `1px solid ${BORDER}`, background: "#fff", color: TEXT, borderRadius: 7, padding: "5px 10px", fontSize: 12, cursor: "pointer" }}>標記已請款</button>
+            <button onClick={bulkDelete} style={{ border: "1px solid #FCA5A5", background: "#fff", color: "#DC2626", borderRadius: 7, padding: "5px 10px", fontSize: 12, cursor: "pointer" }}>刪除</button>
+            <div style={{ flex: 1 }} />
+            <button onClick={() => setSelected(new Set())} style={{ border: "none", background: "none", color: SUB, fontSize: 12.5, cursor: "pointer" }}>取消選取</button>
+          </div>
+        )}
         {/* 表格 */}
         <div style={{ overflowX: "auto" }}>
           <table style={{ borderCollapse: "collapse", width: "100%", minWidth: 1000 }}>
             <thead>
               <tr style={{ background: "#F4EFE3", borderBottom: `1px solid #E3DAC6` }}>
-                <th style={{ ...thStyle(), width: 24 }} />
+                <th style={{ ...thStyle(), width: 38, textAlign: "center" }}><input type="checkbox" title="全選/取消（目前顯示的）" checked={viewSpends.length > 0 && viewSpends.every(s => selected.has(s.id))} onChange={e => { const n = new Set(selected); viewSpends.forEach(s => e.target.checked ? n.add(s.id) : n.delete(s.id)); setSelected(n); }} style={{ cursor: "pointer" }} /></th>
                 <th style={thStyle("date")} onClick={() => toggleSort("date")}>日期{sortArrow("date")}</th>
                 <th style={thStyle()}>工種</th>
                 <th style={thStyle()}>內容</th>
@@ -5952,7 +6002,7 @@ function PettyCashView({ petty, setPetty, cats, setCats, canEdit, confirm }) {
             </thead>
             <tbody>
               {viewSpends.length === 0 ? (
-                <tr><td colSpan={12} style={{ padding: 20, textAlign: "center", color: "#A99F88", fontSize: 13 }}>{spends.length ? "沒有符合條件的資料" : "尚無花費；可用上方「貼上整批花費明細」一次帶入，或按「＋ 新增」。"}</td></tr>
+                <tr><td colSpan={13} style={{ padding: 20, textAlign: "center", color: "#A99F88", fontSize: 13 }}>{spends.length ? "沒有符合條件的資料" : "尚無花費；可用上方「貼上整批花費明細」一次帶入，或按「＋ 新增」。"}</td></tr>
               ) : viewSpends.map(s => (
                 <tr key={s.id}
                   draggable={manualOrder}
@@ -5960,8 +6010,8 @@ function PettyCashView({ petty, setPetty, cats, setCats, canEdit, confirm }) {
                   onDragOver={e => { if (manualOrder && dragId) { e.preventDefault(); setDragOverId(s.id); } }}
                   onDrop={() => { if (manualOrder && dragId) { reorderSpend(dragId, s.id); setDragId(null); setDragOverId(null); } }}
                   onDragEnd={() => { setDragId(null); setDragOverId(null); }}
-                  style={{ borderBottom: "1px solid #EFE7D6", background: dragOverId === s.id ? "#F3E4DE" : "transparent" }}>
-                  <td style={{ textAlign: "center", color: "#C8BCA0", cursor: manualOrder ? "grab" : "default", fontSize: 13 }} title={manualOrder ? "拖曳排序" : "清除搜尋/篩選/排序後才能拖曳"}>{manualOrder ? "⠿" : ""}</td>
+                  style={{ borderBottom: "1px solid #EFE7D6", background: selected.has(s.id) ? "#FFF7E6" : (dragOverId === s.id ? "#F3E4DE" : "transparent") }}>
+                  <td style={{ textAlign: "center", whiteSpace: "nowrap" }}><input type="checkbox" checked={selected.has(s.id)} onChange={e => toggleSel(s.id, e.target.checked)} style={{ cursor: "pointer", verticalAlign: "middle" }} />{manualOrder && <span title="拖曳排序" style={{ color: "#C8BCA0", cursor: "grab", fontSize: 12, marginLeft: 3 }}>⠿</span>}</td>
                   <td style={{ padding: 3 }}><DateField value={s.date} onChange={v => setSpend(s.id, "date", v)} style={{ width: 134, padding: "5px 6px", fontSize: 12.5 }} /></td>
                   <td style={{ padding: 3 }}>
                     <select value={s.catId || PETTY_MISC} onChange={e => setSpend(s.id, "catId", e.target.value)} style={{ minWidth: 110, border: `1px solid ${catColor(s.catId || PETTY_MISC)}`, color: catColor(s.catId || PETTY_MISC), fontWeight: 600, borderRadius: 12, padding: "4px 6px", fontSize: 12, background: catColor(s.catId || PETTY_MISC) + "14" }}>
@@ -5983,13 +6033,54 @@ function PettyCashView({ petty, setPetty, cats, setCats, canEdit, confirm }) {
                   <td style={{ textAlign: "center" }}><button onClick={() => delSpend(s.id)} title="刪除" style={{ border: "none", background: "none", color: "#C8BCA0", cursor: "pointer", fontSize: 15 }} onMouseEnter={e => e.currentTarget.style.color = "#DC2626"} onMouseLeave={e => e.currentTarget.style.color = "#C8BCA0"}>×</button></td>
                 </tr>
               ))}
-              <tr><td colSpan={12} style={{ padding: 0 }}><button onClick={addSpend} style={{ width: "100%", textAlign: "left", padding: "11px 16px", border: "none", borderTop: `1px dashed ${BORDER}`, background: "#FBF7EE", color: ACCENT, fontSize: 13, fontWeight: 600, cursor: "pointer" }}>＋ 在這裡新增一筆花費</button></td></tr>
+              <tr><td colSpan={13} style={{ padding: 0 }}><button onClick={addSpend} style={{ width: "100%", textAlign: "left", padding: "11px 16px", border: "none", borderTop: `1px dashed ${BORDER}`, background: "#FBF7EE", color: ACCENT, fontSize: 13, fontWeight: 600, cursor: "pointer" }}>＋ 在這裡新增一筆花費</button></td></tr>
             </tbody>
           </table>
         </div>
       </div>
 
       <div style={{ fontSize: 11.5, color: "#A99F88", marginTop: 10, lineHeight: 1.7 }}>※ 點欄位標題（日期／金額）可排序；清空搜尋/篩選後可拖曳 ⠿ 排序。憑證檔可按「＋」上傳，或在該格直接貼上截圖。請款（撥款）不算工程成本；花費已依工種併入各大項實際成本。</div>
+
+      {/* AI 歸類預覽：自動建議工種 → 確認/調整 → 套用 */}
+      {classify && (
+        <div onClick={e => e.target === e.currentTarget && !classify.busy && setClassify(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 600, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+          <div style={{ background: "#fff", borderRadius: 14, width: "min(820px,96vw)", maxHeight: "88vh", display: "flex", flexDirection: "column", overflow: "hidden" }}>
+            <div style={{ padding: "14px 18px", borderBottom: `1px solid ${BORDER}`, fontSize: 15, fontWeight: 700, color: TEXT }}>🤖 AI 自動歸類工種（確認後套用）</div>
+            {classify.busy ? (
+              <div style={{ padding: "44px 24px", textAlign: "center" }}>
+                <div style={{ color: ACCENT, fontSize: 15, fontWeight: 600 }}>🤖 AI 分析中…<ImportElapsed startedAt={classify.startedAt} /></div>
+                <div style={{ fontSize: 12.5, color: SUB, marginTop: 8 }}>依每筆內容判斷工種，通常 10–30 秒。</div>
+                <button onClick={cancelClassify} style={{ marginTop: 16, border: `1px solid ${BORDER}`, background: SURFACE, color: TEXT, borderRadius: 8, padding: "8px 22px", fontSize: 14, cursor: "pointer" }}>取消</button>
+              </div>
+            ) : (() => {
+              const changed = classify.rows.filter(r => r.sug !== r.old).length;
+              return (<>
+                <div style={{ padding: "10px 18px", borderBottom: `1px solid ${BORDER}`, fontSize: 12.5, color: SUB }}>共 {classify.rows.length} 筆，AI 建議調整 <b style={{ color: ACCENT }}>{changed}</b> 筆。<span style={{ color: "#A99F88" }}>不對的用右邊下拉改，確認後一次套用。</span></div>
+                <div style={{ flex: 1, overflowY: "auto", padding: "4px 18px" }}>
+                  {classify.rows.map(r => {
+                    const isChanged = r.sug !== r.old;
+                    return (
+                      <div key={r.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 0", borderBottom: "1px solid #F2ECDD", background: isChanged ? "#FBF7EE" : "transparent" }}>
+                        <span style={{ flex: 1, fontSize: 13, color: TEXT, minWidth: 100 }}>{r.content}</span>
+                        <span style={{ width: 70, textAlign: "right", fontSize: 12.5, color: SUB, fontVariantNumeric: "tabular-nums" }}>{fmt(r.amount)}</span>
+                        <span style={{ width: 92, fontSize: 11.5, color: "#A99F88", textAlign: "right", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{catName(r.old)}</span>
+                        <span style={{ color: isChanged ? ACCENT : "#C8BCA0", fontSize: 13 }}>→</span>
+                        <select value={r.sug} onChange={e => setClassifyRow(r.id, e.target.value)} style={{ width: 150, border: `1px solid ${isChanged ? ACCENT : BORDER}`, borderRadius: 7, padding: "5px 6px", fontSize: 12.5, background: "#fff", color: isChanged ? ACCENT : TEXT, fontWeight: isChanged ? 700 : 400 }}>
+                          {cats.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}<option value={PETTY_MISC}>工程雜支</option>
+                        </select>
+                      </div>
+                    );
+                  })}
+                </div>
+                <div style={{ padding: "12px 18px", borderTop: `1px solid ${BORDER}`, display: "flex", gap: 10, justifyContent: "flex-end" }}>
+                  <button onClick={() => setClassify(null)} style={{ border: `1px solid ${BORDER}`, background: SURFACE, color: SUB, borderRadius: 8, padding: "8px 18px", fontSize: 14, cursor: "pointer" }}>取消</button>
+                  <button onClick={applyClassify} style={{ border: "none", background: ACCENT, color: "#fff", borderRadius: 8, padding: "8px 22px", fontSize: 14, fontWeight: 600, cursor: "pointer" }}>套用歸類（{classify.rows.length} 筆）</button>
+                </div>
+              </>);
+            })()}
+          </div>
+        </div>
+      )}
 
       {/* 匯入預覽 */}
       {imp && (
