@@ -3644,32 +3644,44 @@ function OwnerDashboard({ cats, setCats, settings, stalledItems, activityLog, lo
         </div>
       </div>
 
-      {/* 工程實際成本（含零用金實支）— 甲：零用金帶帳戶併進總覽 */}
-      {showMoney() && (pettyTotal > 0 || actualTotal > 0) && (
+      {/* 工程財務總覽（甲：零用金帶帳戶併進）：預算 vs 付款 vs 實際成本，未付醒目 */}
+      {showMoney() && (() => {
+        const unpaid = totalEst - totalAct;
+        const payPct = totalEst > 0 ? Math.round(totalAct / totalEst * 100) : 0;
+        const big = (label, val, color, sub) => <div style={{ flex:"1 1 180px", minWidth:160 }}><div style={{ fontSize:12.5, color:"#6F6656" }}>{label}{sub && <span style={{ color:"#A99F88", fontSize:11 }}> {sub}</span>}</div><div style={{ fontSize:24, fontWeight:800, color, fontVariantNumeric:"tabular-nums", letterSpacing:-0.5, marginTop:2 }}>{fmt(val)}</div></div>;
+        return (
         <div style={{ background:"#fff", border:"1px solid #D8CFBB", borderRadius:16, padding:18, marginBottom:16 }}>
-          <div style={{ display:"flex", alignItems:"baseline", gap:10, flexWrap:"wrap", marginBottom:12 }}>
-            <div style={{ fontSize:14, fontWeight:700, color:"#211C15" }}>💰 工程實際成本（含零用金）</div>
-            <span style={{ fontSize:11.5, color:"#A99F88" }}>＝ 報價單已付 ＋ 零用金實支</span>
+          <div style={{ fontSize:14, fontWeight:700, color:"#211C15", marginBottom:14 }}>💰 工程財務總覽</div>
+          {/* 預算 / 已付 / 未付（重點，大字）*/}
+          <div style={{ display:"flex", gap:18, flexWrap:"wrap", marginBottom:14 }}>
+            {big("預估總額", totalEst, "#211C15", "（議價後含稅）")}
+            {big("已付總額", totalAct, "#3C8C3C")}
+            {big("未付（尚需支付）", unpaid, unpaid < 0 ? "#DC2626" : "#C2410C")}
           </div>
-          <div style={{ display:"flex", gap:18, flexWrap:"wrap", alignItems:"flex-end" }}>
-            <div><div style={{ fontSize:12, color:"#6F6656" }}>報價單已付<span style={{ color:"#A99F88" }}>（公司/銀行帳戶）</span></div><div style={{ fontSize:18, fontWeight:700, color:"#3C8C3C", fontVariantNumeric:"tabular-nums" }}>{fmt(Number(totalPaid)||0)}</div></div>
-            <div style={{ fontSize:18, color:"#C8BCA0", paddingBottom:2 }}>＋</div>
-            <div><div style={{ fontSize:12, color:"#6F6656" }}>零用金實支<span style={{ color:"#C2410C" }}>（零用金帳戶）</span></div><div style={{ fontSize:18, fontWeight:700, color:"#C2410C", fontVariantNumeric:"tabular-nums" }}>{fmt(pettyTotal)}</div></div>
-            <div style={{ fontSize:18, color:"#C8BCA0", paddingBottom:2 }}>＝</div>
-            <div><div style={{ fontSize:12, color:"#6F6656" }}>工程實際總成本</div><div style={{ fontSize:22, fontWeight:800, color:"#211C15", fontVariantNumeric:"tabular-nums" }}>{fmt(actualTotal)}</div></div>
-          </div>
-          {pettyCatRows.length > 0 && (
-            <div style={{ marginTop:14, borderTop:"1px solid #EFE7D6", paddingTop:12 }}>
-              <div style={{ fontSize:12, color:"#6F6656", marginBottom:8 }}>零用金實支依工種（已併入各大項實際成本，來源：零用金帳戶）</div>
-              <div style={{ display:"flex", flexWrap:"wrap", gap:8 }}>
-                {pettyCatRows.map(([id, amt]) => (
-                  <span key={id} style={{ fontSize:12, background:"#F4EFE3", border:"1px solid #E3DAC6", borderRadius:10, padding:"3px 10px", color:"#4A4234" }}>{pettyCatName(id)} <b style={{ fontVariantNumeric:"tabular-nums" }}>{fmt(amt)}</b></span>
-                ))}
-              </div>
+          <div style={{ height:9, background:"#EFE7D6", borderRadius:6, overflow:"hidden", marginBottom:4 }}><div style={{ width:payPct+"%", height:"100%", background:"#3C8C3C", borderRadius:6 }} /></div>
+          <div style={{ fontSize:12, color:"#6F6656", marginBottom:16 }}>付款進度 {payPct}%</div>
+          {/* 實際成本（含零用金）*/}
+          <div style={{ borderTop:"1px solid #EFE7D6", paddingTop:14 }}>
+            <div style={{ display:"flex", gap:16, flexWrap:"wrap", alignItems:"flex-end" }}>
+              <div><div style={{ fontSize:12, color:"#6F6656" }}>報價單已付<span style={{ color:"#A99F88" }}>（公司/銀行帳戶）</span></div><div style={{ fontSize:17, fontWeight:700, color:"#3C8C3C", fontVariantNumeric:"tabular-nums" }}>{fmt(totalAct)}</div></div>
+              <div style={{ fontSize:17, color:"#C8BCA0", paddingBottom:2 }}>＋</div>
+              <div><div style={{ fontSize:12, color:"#6F6656" }}>零用金實支<span style={{ color:"#C2410C" }}>（零用金帳戶）</span></div><div style={{ fontSize:17, fontWeight:700, color:"#C2410C", fontVariantNumeric:"tabular-nums" }}>{fmt(pettyTotal)}</div></div>
+              <div style={{ fontSize:17, color:"#C8BCA0", paddingBottom:2 }}>＝</div>
+              <div><div style={{ fontSize:12, color:"#6F6656" }}>工程實際總成本</div><div style={{ fontSize:21, fontWeight:800, color:"#211C15", fontVariantNumeric:"tabular-nums" }}>{fmt(actualTotal)}</div></div>
             </div>
-          )}
-        </div>
-      )}
+            {pettyCatRows.length > 0 && (
+              <div style={{ marginTop:12 }}>
+                <div style={{ fontSize:11.5, color:"#A99F88", marginBottom:6 }}>零用金實支依工種（來源：零用金帳戶）</div>
+                <div style={{ display:"flex", flexWrap:"wrap", gap:7 }}>
+                  {pettyCatRows.map(([id, amt]) => (
+                    <span key={id} style={{ fontSize:12, background:"#F4EFE3", border:"1px solid #E3DAC6", borderRadius:10, padding:"3px 10px", color:"#4A4234" }}>{pettyCatName(id)} <b style={{ fontVariantNumeric:"tabular-nums" }}>{fmt(amt)}</b></span>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>);
+      })()}
 
       {/* Main KPIs */}
       <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit, minmax(190px, 1fr))", gap:14, marginBottom:20 }}>
