@@ -5731,8 +5731,7 @@ function ReceiptUploader({ receipts = [], onChange, size = 26 }) {
           <button onClick={() => onChange((receipts || []).filter(x => x.id !== r.id))} title="移除" style={{ position: "absolute", top: -5, right: -5, width: 14, height: 14, borderRadius: 7, border: "none", background: "#DC2626", color: "#fff", fontSize: 9, lineHeight: "14px", cursor: "pointer", padding: 0 }}>×</button>
         </span>
       ))}
-      <button onClick={() => inputRef.current?.click()} title="選檔案上傳" style={{ border: `1px dashed ${BORDER}`, background: "#fff", color: SUB, borderRadius: 5, width: size, height: size, fontSize: 13, cursor: "pointer" }}>{busy ? "…" : "＋"}</button>
-      <button onClick={pasteFromClipboard} title="貼上剪貼簿的截圖" style={{ border: `1px dashed ${BORDER}`, background: "#fff", color: SUB, borderRadius: 5, width: size, height: size, fontSize: 12, cursor: "pointer" }}>📋</button>
+      <button onClick={() => inputRef.current?.click()} onContextMenu={(e) => { e.preventDefault(); pasteFromClipboard(); }} title="點一下選檔上傳；要貼截圖：在這格按 Cmd+V，或在此鈕按右鍵" style={{ border: `1px dashed ${BORDER}`, background: "#fff", color: SUB, borderRadius: 5, width: size, height: size, fontSize: 13, cursor: "pointer" }}>{busy ? "…" : "＋"}</button>
       {lb && <div onClick={() => setLb(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.85)", zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center", padding: 20, cursor: "zoom-out" }}><img src={lb.url} alt={lb.name} style={{ maxWidth: "95%", maxHeight: "95%", objectFit: "contain", borderRadius: 8 }} /></div>}
     </div>
   );
