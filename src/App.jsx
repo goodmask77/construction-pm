@@ -5726,27 +5726,83 @@ function PettyCashView({ petty, setPetty, cats, setCats, canEdit, confirm }) {
     const catList = cats.map(c => c.name).join("、");
     const sys = `你是零用金帳本解析器。把貼上的表格/文字解析成 JSON，只輸出一個 json 區塊、不要其他文字：
 \`\`\`json
-{"advances":[{"date":"2026-04-02","amount":20000}],"spends":[{"date":"2026-04-01","content":"工人便當","amount":390,"category":"生活支出"}]}
+{"advances":[{"date":"2026-04-02","amount":20000}],"spends":[{"date":"2026-04-01","content":"工人便當","amount":390,"category":"生活支出","voucher":"發票","invoiceNo":"AB-12345678"}]}
 \`\`\`
-規則：1)「請款/預支/撥款/零用金」這種公司撥錢給人的項目(常是負數或大額整數)→放 advances，amount 用正數。2)其餘實際花費→放 spends。3)category 用原本分類詞(生活支出/油漆工程/電工水材廠商/雜項...)。4)金額一律正整數、去逗號。5)沒日期留空字串。6)現有工程大項：${catList}。`;
+規則：1)「請款/預支/撥款/零用金」這種公司撥錢給人的項目(常是負數或大額整數)→放 advances，amount 用正數。2)其餘實際花費→放 spends。3)category 用原本分類詞(生活支出/油漆工程/電工水材廠商/雜項...)。4)金額一律正整數、去逗號。5)沒日期留空字串。6)voucher 用憑證欄的值，限：發票/收據/免用收據/支出單，沒有就空字串。7)invoiceNo 抓發票編號欄，沒有就空字串。8)現有工程大項：${catList}。`;
     const reply = await callAI([{ role: "user", content: `解析這份零用金明細：\n${text}` }], sys, "import", ctrl.signal);
     if (ctrlRef.current !== ctrl) return;
     let obj = null; const m = reply.match(/```json\s*([\s\S]*?)```/i); try { obj = JSON.parse(m ? m[1] : reply); } catch (_) {}
     if (!obj || (!obj.spends?.length && !obj.advances?.length)) { setImp(null); alert(/^（AI/.test(reply) ? reply.replace(/[（）]/g, "") : "沒解析到資料，請確認貼上的內容是否完整。"); return; }
-    const rows = (obj.spends || []).map(s => ({ pick: true, date: s.date || "", content: String(s.content || "").trim(), amount: Math.abs(Math.round(Number(s.amount) || 0)), catId: mapCat(s.category), category: s.category || "" }));
+    const VOK = ["發票", "收據", "免用收據", "支出單"];
+    const rows = (obj.spends || []).map(s => ({ pick: true, date: s.date || "", content: String(s.content || "").trim(), amount: Math.abs(Math.round(Number(s.amount) || 0)), catId: mapCat(s.category), category: s.category || "", voucher: VOK.includes(s.voucher) ? s.voucher : "", invoiceNo: String(s.invoiceNo || "").trim() }));
     const advs = (obj.advances || []).map(a => ({ date: a.date || "", amount: Math.abs(Math.round(Number(a.amount) || 0)) }));
     setImp({ rows, advs });
   };
   const cancelParse = () => { try { ctrlRef.current?.abort(); } catch (_) {} ctrlRef.current = null; setImp(null); };
   const confirmParse = () => {
-    const newSpends = (imp.rows || []).filter(r => r.pick && r.content).map(r => ({ id: "s" + Math.random().toString(36).slice(2, 8), date: r.date, content: r.content, amount: r.amount, catId: r.catId }));
+    const newSpends = (imp.rows || []).filter(r => r.pick && r.content).map(r => ({ id: "s" + Math.random().toString(36).slice(2, 8), date: r.date, content: r.content, amount: r.amount, catId: r.catId, voucher: r.voucher || "", invoiceNo: r.invoiceNo || "", handed: false, claimed: false, receipts: [], note: "" }));
     const newAdvs = (imp.advs || []).map(a => ({ id: "a" + Math.random().toString(36).slice(2, 8), date: a.date, amount: a.amount, note: "請款" }));
     upd({ advances: [...advances, ...newAdvs], spends: [...spends, ...newSpends] });
     setImp(null); setPaste(""); setShowPaste(false);
   };
 
+  // ── 花費明細表：搜尋／篩選／排序／拖曳／上傳憑證 ──
+  const [search, setSearch] = useState("");
+  const [fCat, setFCat] = useState("all");
+  const [fVoucher, setFVoucher] = useState("all");
+  const [fClaimed, setFClaimed] = useState("all");
+  const [sortKey, setSortKey] = useState(null); // "date" | "amount" | null(手動)
+  const [sortDir, setSortDir] = useState("asc");
+  const [dragId, setDragId] = useState(null);
+  const [dragOverId, setDragOverId] = useState(null);
+  const [uploadingId, setUploadingId] = useState(null);
+  const fileInputRef = useRef(null);
+  const uploadForRef = useRef(null);
+  const [lightbox, setLightbox] = useState(null);
+
+  const VOUCHER_OPTS = [["", "—", "#9A8F78"], ["發票", "發票", "#7A3E1D"], ["收據", "收據", "#C0392B"], ["免用收據", "免用收據", "#2E7D32"], ["支出單", "支出單", "#6B6450"], ["其他", "其他", "#8E7CC3"]];
+  const voucherColor = (v) => (VOUCHER_OPTS.find(o => o[0] === (v || "")) || VOUCHER_OPTS[0])[2];
+
+  const reorderSpend = (fromId, toId) => {
+    if (fromId === toId) return;
+    const arr = [...spends]; const fi = arr.findIndex(s => s.id === fromId), ti = arr.findIndex(s => s.id === toId);
+    if (fi < 0 || ti < 0) return; const [m] = arr.splice(fi, 1); arr.splice(ti, 0, m); upd({ ...petty, spends: arr });
+  };
+  const toggleSort = (k) => { if (sortKey === k) { if (sortDir === "asc") setSortDir("desc"); else { setSortKey(null); } } else { setSortKey(k); setSortDir("asc"); } };
+  const manualOrder = !sortKey && !search.trim() && fCat === "all" && fVoucher === "all" && fClaimed === "all";
+
+  const triggerUpload = (id) => { if (!guard()) return; uploadForRef.current = id; fileInputRef.current?.click(); };
+  const doUpload = async (id, fileList) => {
+    const arr = Array.from(fileList || []); if (!arr.length || !id) return;
+    setUploadingId(id); const out = [];
+    for (const f of arr) { try { const { url, path } = await uploadPhoto(f); out.push({ id: "rc" + Math.random().toString(36).slice(2, 7), url, path, name: f.name || "檔案", isImage: /^image\//.test(f.type) }); } catch (_) {} }
+    setUploadingId(null);
+    if (out.length) { const cur = spends.find(s => s.id === id)?.receipts || []; setSpend(id, "receipts", [...cur, ...out]); }
+  };
+  const pasteUpload = async (id, e) => {
+    const items = e.clipboardData?.items; if (!items) return;
+    const files = []; for (const it of items) { if (it.type?.startsWith("image/")) { const f = it.getAsFile(); if (f) files.push(f); } }
+    if (files.length) { e.preventDefault(); await doUpload(id, files); }
+  };
+  const rmReceipt = (id, rid) => { const cur = (spends.find(s => s.id === id)?.receipts || []).filter(r => r.id !== rid); setSpend(id, "receipts", cur); };
+
+  // 套用搜尋/篩選/排序
+  let viewSpends = spends.filter(s => {
+    const q = search.trim().toLowerCase();
+    if (q && !(`${s.content || ""} ${s.invoiceNo || ""} ${s.note || ""}`.toLowerCase().includes(q))) return false;
+    if (fCat !== "all" && (s.catId || PETTY_MISC) !== fCat) return false;
+    if (fVoucher !== "all" && (s.voucher || "") !== fVoucher) return false;
+    if (fClaimed === "yes" && !s.claimed) return false;
+    if (fClaimed === "no" && s.claimed) return false;
+    return true;
+  });
+  if (sortKey) viewSpends = [...viewSpends].sort((a, b) => { const av = sortKey === "amount" ? (Number(a.amount) || 0) : (a.date || ""); const bv = sortKey === "amount" ? (Number(b.amount) || 0) : (b.date || ""); const r = av < bv ? -1 : av > bv ? 1 : 0; return sortDir === "asc" ? r : -r; });
+  const viewTotal = viewSpends.reduce((s, x) => s + (Number(x.amount) || 0), 0);
+
   const kpi = (label, val, color) => <div style={{ flex: 1, minWidth: 150, background: "#fff", border: `1px solid ${BORDER}`, borderRadius: 12, padding: "14px 16px" }}><div style={{ fontSize: 12.5, color: SUB }}>{label}</div><div style={{ fontSize: 22, fontWeight: 700, color, marginTop: 4, fontVariantNumeric: "tabular-nums" }}>{fmt(val)}</div></div>;
   const cellInput = (val, onCh, opts = {}) => <input value={val} onChange={e => onCh(e.target.value)} placeholder={opts.ph} style={{ width: opts.w || "100%", boxSizing: "border-box", border: `1px solid ${BORDER}`, borderRadius: 6, padding: "5px 7px", fontSize: 13, background: "#fff", color: TEXT, ...(opts.style || {}) }} />;
+  const thStyle = (k) => ({ padding: "8px 6px", fontSize: 11.5, fontWeight: 600, color: SUB, whiteSpace: "nowrap", textAlign: "left", cursor: k ? "pointer" : "default", userSelect: "none" });
+  const sortArrow = (k) => sortKey === k ? (sortDir === "asc" ? " ▲" : " ▼") : "";
 
   return (
     <div style={{ maxWidth: 1100, margin: "16px auto", padding: "0 4px" }}>
@@ -5808,30 +5864,105 @@ function PettyCashView({ petty, setPetty, cats, setCats, canEdit, confirm }) {
         ))}
       </div>
 
-      {/* 花費明細 */}
+      {/* 花費明細（專業表格：搜尋/篩選/排序/拖曳/憑證上傳） */}
+      <input ref={fileInputRef} type="file" accept="image/*,application/pdf" multiple style={{ display: "none" }} onChange={e => { doUpload(uploadForRef.current, e.target.files); e.target.value = ""; }} />
       <div style={{ background: "#fff", border: `1px solid ${BORDER}`, borderRadius: 12, overflow: "hidden" }}>
-        <div style={{ display: "flex", alignItems: "center", padding: "10px 14px", background: "#ECE6D7", borderBottom: `1px solid ${BORDER}` }}>
-          <div style={{ fontSize: 13.5, fontWeight: 600, color: TEXT, flex: 1 }}>花費明細 · {spends.length} 筆 · 合計 {fmt(spendTotal)}</div>
-          <button onClick={addSpend} style={{ border: `1px solid ${BORDER}`, background: "#fff", color: TEXT, borderRadius: 7, padding: "4px 12px", fontSize: 12.5, cursor: "pointer" }}>＋ 新增花費</button>
-        </div>
-        <div style={{ display: "flex", gap: 8, padding: "6px 14px", fontSize: 11.5, color: SUB, background: "#F4EFE3", borderBottom: `1px solid #EFE7D6` }}>
-          <div style={{ width: 120 }}>日期</div><div style={{ flex: 1 }}>內容</div><div style={{ width: 120, textAlign: "right" }}>金額</div><div style={{ width: 150 }}>工種（歸屬）</div><div style={{ width: 24 }} />
-        </div>
-        {spends.length === 0 ? <div style={{ padding: 16, textAlign: "center", color: "#A99F88", fontSize: 13 }}>尚無花費；可用上方「貼上整批花費明細」一次帶入。</div> : spends.map(s => (
-          <div key={s.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "7px 14px", borderBottom: `1px solid #EFE7D6` }}>
-            {cellInput(s.date || "", v => setSpend(s.id, "date", v), { w: 120, ph: "日期" })}
-            {cellInput(s.content || "", v => setSpend(s.id, "content", v), { ph: "花費內容" })}
-            <input type="number" value={s.amount || ""} onChange={e => setSpend(s.id, "amount", Math.abs(Math.round(Number(e.target.value) || 0)))} style={{ width: 120, textAlign: "right", border: `1px solid ${BORDER}`, borderRadius: 6, padding: "5px 7px", fontSize: 13, fontVariantNumeric: "tabular-nums" }} />
-            <select value={s.catId || PETTY_MISC} onChange={e => setSpend(s.id, "catId", e.target.value)} style={{ width: 150, border: `1px solid ${BORDER}`, borderRadius: 6, padding: "5px 6px", fontSize: 12.5, background: "#fff", color: TEXT }}>
-              {cats.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-              <option value={PETTY_MISC}>工程雜支</option>
-            </select>
-            <button onClick={() => delSpend(s.id)} style={{ width: 24, border: "none", background: "none", color: "#C8BCA0", cursor: "pointer", fontSize: 16 }} onMouseEnter={e => e.currentTarget.style.color = "#DC2626"} onMouseLeave={e => e.currentTarget.style.color = "#C8BCA0"}>×</button>
+        {/* 工具列 */}
+        <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 12px", background: "#ECE6D7", borderBottom: `1px solid ${BORDER}`, flexWrap: "wrap" }}>
+          <div style={{ fontSize: 13.5, fontWeight: 700, color: TEXT }}>花費明細</div>
+          <span style={{ fontSize: 12, color: SUB }}>{viewSpends.length}/{spends.length} 筆 · 合計 {fmt(viewTotal)}</span>
+          <div style={{ flex: 1 }} />
+          <div style={{ position: "relative" }}>
+            <span style={{ position: "absolute", left: 8, top: "50%", transform: "translateY(-50%)", fontSize: 12, color: "#A99F88" }}>🔍</span>
+            <input value={search} onChange={e => setSearch(e.target.value)} placeholder="搜尋內容/發票號/備註" style={{ width: 180, border: `1px solid ${BORDER}`, borderRadius: 7, padding: "6px 8px 6px 26px", fontSize: 12.5, background: "#fff" }} />
           </div>
-        ))}
+          <select value={fCat} onChange={e => setFCat(e.target.value)} title="篩選工種" style={{ border: `1px solid ${fCat !== "all" ? ACCENT : BORDER}`, borderRadius: 7, padding: "6px 6px", fontSize: 12, background: "#fff", color: TEXT }}>
+            <option value="all">全部工種</option>{cats.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}<option value={PETTY_MISC}>工程雜支</option>
+          </select>
+          <select value={fVoucher} onChange={e => setFVoucher(e.target.value)} title="篩選憑證" style={{ border: `1px solid ${fVoucher !== "all" ? ACCENT : BORDER}`, borderRadius: 7, padding: "6px 6px", fontSize: 12, background: "#fff", color: TEXT }}>
+            <option value="all">全部憑證</option>{VOUCHER_OPTS.slice(1).map(o => <option key={o[0]} value={o[0]}>{o[1]}</option>)}<option value="">未填</option>
+          </select>
+          <select value={fClaimed} onChange={e => setFClaimed(e.target.value)} title="篩選請款狀態" style={{ border: `1px solid ${fClaimed !== "all" ? ACCENT : BORDER}`, borderRadius: 7, padding: "6px 6px", fontSize: 12, background: "#fff", color: TEXT }}>
+            <option value="all">請款：全部</option><option value="yes">已請款</option><option value="no">未請款</option>
+          </select>
+          <button onClick={addSpend} style={{ border: "none", background: ACCENT, color: "#fff", borderRadius: 7, padding: "6px 12px", fontSize: 12.5, fontWeight: 600, cursor: "pointer" }}>＋ 新增</button>
+        </div>
+        {/* 表格 */}
+        <div style={{ overflowX: "auto" }}>
+          <table style={{ borderCollapse: "collapse", width: "100%", minWidth: 1000 }}>
+            <thead>
+              <tr style={{ background: "#F4EFE3", borderBottom: `1px solid #E3DAC6` }}>
+                <th style={{ ...thStyle(), width: 24 }} />
+                <th style={thStyle("date")} onClick={() => toggleSort("date")}>日期{sortArrow("date")}</th>
+                <th style={thStyle()}>工種</th>
+                <th style={thStyle()}>內容</th>
+                <th style={{ ...thStyle("amount"), textAlign: "right" }} onClick={() => toggleSort("amount")}>金額{sortArrow("amount")}</th>
+                <th style={thStyle()}>憑證</th>
+                <th style={thStyle()}>發票編號</th>
+                <th style={{ ...thStyle(), textAlign: "center" }}>已交</th>
+                <th style={{ ...thStyle(), textAlign: "center" }}>已請款</th>
+                <th style={thStyle()}>憑證檔</th>
+                <th style={thStyle()}>備註</th>
+                <th style={{ ...thStyle(), width: 24 }} />
+              </tr>
+            </thead>
+            <tbody>
+              {viewSpends.length === 0 ? (
+                <tr><td colSpan={12} style={{ padding: 20, textAlign: "center", color: "#A99F88", fontSize: 13 }}>{spends.length ? "沒有符合條件的資料" : "尚無花費；可用上方「貼上整批花費明細」一次帶入，或按「＋ 新增」。"}</td></tr>
+              ) : viewSpends.map(s => (
+                <tr key={s.id}
+                  draggable={manualOrder}
+                  onDragStart={() => manualOrder && setDragId(s.id)}
+                  onDragOver={e => { if (manualOrder && dragId) { e.preventDefault(); setDragOverId(s.id); } }}
+                  onDrop={() => { if (manualOrder && dragId) { reorderSpend(dragId, s.id); setDragId(null); setDragOverId(null); } }}
+                  onDragEnd={() => { setDragId(null); setDragOverId(null); }}
+                  style={{ borderBottom: "1px solid #EFE7D6", background: dragOverId === s.id ? "#F3E4DE" : "transparent" }}>
+                  <td style={{ textAlign: "center", color: "#C8BCA0", cursor: manualOrder ? "grab" : "default", fontSize: 13 }} title={manualOrder ? "拖曳排序" : "清除搜尋/篩選/排序後才能拖曳"}>{manualOrder ? "⠿" : ""}</td>
+                  <td style={{ padding: 3 }}><input value={s.date || ""} onChange={e => setSpend(s.id, "date", e.target.value)} placeholder="日期" style={{ width: 92, border: `1px solid ${BORDER}`, borderRadius: 5, padding: "5px 6px", fontSize: 12.5 }} /></td>
+                  <td style={{ padding: 3 }}>
+                    <select value={s.catId || PETTY_MISC} onChange={e => setSpend(s.id, "catId", e.target.value)} style={{ minWidth: 110, border: `1px solid ${catColor(s.catId || PETTY_MISC)}`, color: catColor(s.catId || PETTY_MISC), fontWeight: 600, borderRadius: 12, padding: "4px 6px", fontSize: 12, background: catColor(s.catId || PETTY_MISC) + "14" }}>
+                      {cats.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}<option value={PETTY_MISC}>工程雜支</option>
+                    </select>
+                  </td>
+                  <td style={{ padding: 3, minWidth: 200 }}><input value={s.content || ""} onChange={e => setSpend(s.id, "content", e.target.value)} placeholder="花費內容" style={{ width: "100%", boxSizing: "border-box", border: `1px solid ${BORDER}`, borderRadius: 5, padding: "5px 7px", fontSize: 13 }} /></td>
+                  <td style={{ padding: 3 }}><input type="number" value={s.amount || ""} onChange={e => setSpend(s.id, "amount", Math.abs(Math.round(Number(e.target.value) || 0)))} style={{ width: 88, textAlign: "right", border: `1px solid ${BORDER}`, borderRadius: 5, padding: "5px 7px", fontSize: 13, fontVariantNumeric: "tabular-nums" }} /></td>
+                  <td style={{ padding: 3 }}>
+                    <select value={s.voucher || ""} onChange={e => setSpend(s.id, "voucher", e.target.value)} style={{ border: `1px solid ${voucherColor(s.voucher)}`, color: s.voucher ? "#fff" : "#A99F88", fontWeight: 600, borderRadius: 8, padding: "4px 6px", fontSize: 12, background: s.voucher ? voucherColor(s.voucher) : "#fff" }}>
+                      {VOUCHER_OPTS.map(o => <option key={o[0]} value={o[0]} style={{ color: "#000", background: "#fff" }}>{o[1]}</option>)}
+                    </select>
+                  </td>
+                  <td style={{ padding: 3 }}><input value={s.invoiceNo || ""} onChange={e => setSpend(s.id, "invoiceNo", e.target.value)} placeholder="—" style={{ width: 110, border: `1px solid ${BORDER}`, borderRadius: 5, padding: "5px 6px", fontSize: 12 }} /></td>
+                  <td style={{ textAlign: "center" }}><input type="checkbox" checked={!!s.handed} onChange={e => setSpend(s.id, "handed", e.target.checked)} style={{ width: 16, height: 16, cursor: "pointer", accentColor: "#3C8C3C" }} /></td>
+                  <td style={{ textAlign: "center" }}><input type="checkbox" checked={!!s.claimed} onChange={e => setSpend(s.id, "claimed", e.target.checked)} style={{ width: 16, height: 16, cursor: "pointer", accentColor: "#3E72A8" }} /></td>
+                  <td style={{ padding: 3 }} onPaste={e => pasteUpload(s.id, e)}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 4, flexWrap: "wrap" }}>
+                      {(s.receipts || []).map(r => (
+                        <span key={r.id} style={{ position: "relative", display: "inline-flex" }}>
+                          {r.isImage
+                            ? <img src={r.url} alt="" onClick={() => setLightbox(r)} style={{ width: 26, height: 26, objectFit: "cover", borderRadius: 4, border: `1px solid ${BORDER}`, cursor: "zoom-in" }} />
+                            : <a href={r.url} target="_blank" rel="noreferrer" style={{ fontSize: 16, textDecoration: "none" }} title={r.name}>📄</a>}
+                          <button onClick={() => rmReceipt(s.id, r.id)} title="移除" style={{ position: "absolute", top: -5, right: -5, width: 14, height: 14, borderRadius: 7, border: "none", background: "#DC2626", color: "#fff", fontSize: 9, lineHeight: "14px", cursor: "pointer", padding: 0 }}>×</button>
+                        </span>
+                      ))}
+                      <button onClick={() => triggerUpload(s.id)} title="上傳/截圖（也可在此格貼上截圖）" style={{ border: `1px dashed ${BORDER}`, background: "#fff", color: SUB, borderRadius: 5, width: 26, height: 26, fontSize: 13, cursor: "pointer" }}>{uploadingId === s.id ? "…" : "＋"}</button>
+                    </div>
+                  </td>
+                  <td style={{ padding: 3, minWidth: 120 }}><input value={s.note || ""} onChange={e => setSpend(s.id, "note", e.target.value)} placeholder="—" style={{ width: "100%", boxSizing: "border-box", border: `1px solid ${BORDER}`, borderRadius: 5, padding: "5px 6px", fontSize: 12.5 }} /></td>
+                  <td style={{ textAlign: "center" }}><button onClick={() => delSpend(s.id)} title="刪除" style={{ border: "none", background: "none", color: "#C8BCA0", cursor: "pointer", fontSize: 15 }} onMouseEnter={e => e.currentTarget.style.color = "#DC2626"} onMouseLeave={e => e.currentTarget.style.color = "#C8BCA0"}>×</button></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </div>
 
-      <div style={{ fontSize: 11.5, color: "#A99F88", marginTop: 10, lineHeight: 1.7 }}>※ 請款（撥款）只是公司把錢給工地，不算工程成本；真正成本是「花費」，已依工種併入各大項的實際成本。便當/計程車等無特定工種者歸「工程雜支」。</div>
+      <div style={{ fontSize: 11.5, color: "#A99F88", marginTop: 10, lineHeight: 1.7 }}>※ 點欄位標題（日期／金額）可排序；清空搜尋/篩選後可拖曳 ⠿ 排序。憑證檔可按「＋」上傳，或在該格直接貼上截圖。請款（撥款）不算工程成本；花費已依工種併入各大項實際成本。</div>
+
+      {lightbox && (
+        <div onClick={() => setLightbox(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.85)", zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center", padding: 20, cursor: "zoom-out" }}>
+          <img src={lightbox.url} alt={lightbox.name} style={{ maxWidth: "95%", maxHeight: "95%", objectFit: "contain", borderRadius: 8 }} />
+        </div>
+      )}
 
       {/* 匯入預覽 */}
       {imp && (
