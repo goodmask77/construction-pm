@@ -32,7 +32,7 @@ export default async function handler(req, res) {
           'x-api-key': key,
           'anthropic-version': '2023-06-01',
         },
-        body: JSON.stringify({ model, max_tokens: 8192, system, messages }),
+        body: JSON.stringify({ model, max_tokens: 16000, system, messages }),
       })
       const data = await r.json()
       if (r.ok) {

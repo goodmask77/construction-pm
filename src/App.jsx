@@ -465,9 +465,10 @@ async function recordAIUsage(model, usage, kind = "chat") {
   } catch (_) {}
 }
 
-async function callAI(messages, systemPrompt, kind = "chat") {
+async function callAI(messages, systemPrompt, kind = "chat", extSignal) {
   const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), 75000); // 逾時保護：避免大圖/PDF 解析永遠卡住
+  const timer = setTimeout(() => ctrl.abort(), 90000); // 逾時保護：避免大圖/PDF 解析永遠卡住
+  if (extSignal) { if (extSignal.aborted) ctrl.abort(); else extSignal.addEventListener("abort", () => ctrl.abort()); } // 外部「取消」也能中斷
   try {
     const res = await fetch("/api/ai", {
       method: "POST",
@@ -5649,6 +5650,12 @@ const VISION_GUIDE = `
 - 不確定對應哪個大項/細項、或數字不清楚時 → 「主動反問」使用者澄清（例如：這張估價單屬於哪個工程大項？單價是含稅嗎？），不要亂猜或填錯。
 - 使用者若已用文字說明屬於哪個工程，請以使用者說明為準。`;
 
+function ImportElapsed({ startedAt }) {
+  const [, tick] = useState(0);
+  useEffect(() => { const t = setInterval(() => tick(n => n + 1), 1000); return () => clearInterval(t); }, []);
+  const s = startedAt ? Math.floor((Date.now() - startedAt) / 1000) : 0;
+  return <span style={{ fontWeight: 400, color: "#A99F88" }}>（{s} 秒）</span>;
+}
 function GlobalAIPanel({ chat, setChat, onClose, cats, setCats, canEdit, confirm, settings, setSettings, worklog, setWorklog }) {
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
@@ -5657,6 +5664,7 @@ function GlobalAIPanel({ chat, setChat, onClose, cats, setCats, canEdit, confirm
   const fileRef = useRef(null);
   const importFileRef = useRef(null);
   const [imp, setImp] = useState(null); // 報價單匯入：null | {busy, rows, targetCatId, raw}
+  const importCtrlRef = useRef(null); // 解析中可中斷的 AbortController
 
   // 把上傳檔轉成 base64（圖縮放）
   const fileToAtt = (f) => new Promise((resolve) => {
@@ -5676,7 +5684,9 @@ function GlobalAIPanel({ chat, setChat, onClose, cats, setCats, canEdit, confirm
   };
   const runImport = async (atts) => {
     if (!atts || !atts.length) return;
-    setImp({ busy: true, rows: [], targetCatId: cats[0]?.id || "" });
+    const ctrl = new AbortController();
+    importCtrlRef.current = ctrl;
+    setImp({ busy: true, rows: [], targetCatId: cats[0]?.id || "", startedAt: Date.now() });
     try {
       const catNames = cats.map(c => c.name).join("、");
       const sys = `你是估價單解析器。只輸出一個 markdown json 區塊，不要任何其他文字。格式：
@@ -5686,7 +5696,8 @@ function GlobalAIPanel({ chat, setChat, onClose, cats, setCats, canEdit, confirm
 規則：1) unitPrice 填單據上的數字本身，絕不做任何除法或加減稅。2) taxType 照單據：含稅/未稅/免稅，沒寫就「未稅」。3) 括號或另一欄的廠商/人名放 vendor，name 只放品項本身。4) 數量沒寫填1、單位沒寫填「式」。5) date 抓單據上的日期(年-月-日)，沒有就留空。6) 現有工程大項：${catNames}。suggest 從中挑最接近的。7) 折扣/折讓/優惠等負金額項：qty 一律用正數(通常1)、unitPrice 用負數(例 折讓3萬 → qty:1, unitPrice:-30000)；絕不可把 qty 也設成負數(負負得正會變正金額)。`;
       const content = [{ type: "text", text: "解析這份估價單／報價單的所有品項。" }];
       atts.forEach(a => content.push(a.kind === "image" ? { type: "image", source: { type: "base64", media_type: a.media_type, data: a.data } } : { type: "document", source: { type: "base64", media_type: "application/pdf", data: a.data } }));
-      const reply = await callAI([{ role: "user", content }], sys, "import");
+      const reply = await callAI([{ role: "user", content }], sys, "import", ctrl.signal);
+      if (importCtrlRef.current !== ctrl) return; // 已被取消／被新的一次取代
       let obj = null;
       const m = reply.match(/```json\s*([\s\S]*?)```/i);
       try { obj = JSON.parse(m ? m[1] : reply); } catch (_) {}
@@ -5695,8 +5706,9 @@ function GlobalAIPanel({ chat, setChat, onClose, cats, setCats, canEdit, confirm
       if (!items.length) { setImp(null); alert(/^（AI/.test(reply) ? reply.replace(/[（）]/g, "") : "沒有解析到品項，請改用對話框上傳，或確認圖片清晰。"); return; }
       const dt = /^\d{4}-\d{2}-\d{2}$/.test(obj?.date || "") ? obj.date : "";
       setImp({ busy: false, rows: items, targetCatId: sugCat?.id || cats[0]?.id || "", date: dt, atts, attachReceipt: true });
-    } catch (_) { setImp(null); alert("解析失敗，請稍後再試。"); }
+    } catch (e) { if (importCtrlRef.current === ctrl) { setImp(null); if (e?.name !== "AbortError") alert("解析失敗，請稍後再試。"); } }
   };
+  const cancelImport = () => { try { importCtrlRef.current?.abort(); } catch (_) {} importCtrlRef.current = null; setImp(null); };
   const confirmImport = async () => {
     if (!imp) return;
     const cat = cats.find(c => c.id === imp.targetCatId); if (!cat) { alert("請選擇要匯入的工程大項"); return; }
@@ -5908,7 +5920,11 @@ function GlobalAIPanel({ chat, setChat, onClose, cats, setCats, canEdit, confirm
               {!imp.busy && <button onClick={() => setImp(null)} style={{ border: "none", background: "none", fontSize: 20, color: SUB, cursor: "pointer" }}>×</button>}
             </div>
             {imp.busy ? (
-              <div style={{ padding: 50, textAlign: "center", color: ACCENT, fontSize: 14 }}>🤖 解析報價單中…</div>
+              <div style={{ padding: "44px 24px", textAlign: "center" }}>
+                <div style={{ color: ACCENT, fontSize: 15, fontWeight: 600 }}>🤖 解析報價單中…<ImportElapsed startedAt={imp.startedAt} /></div>
+                <div style={{ fontSize: 12.5, color: SUB, marginTop: 8, lineHeight: 1.7 }}>一般 10–40 秒；筆數很多的大表格可能要 1 分鐘。<br/>太久或卡住可以按「取消」重來。</div>
+                <button onClick={cancelImport} style={{ marginTop: 18, border: `1px solid ${BORDER}`, background: SURFACE, color: TEXT, borderRadius: 8, padding: "8px 22px", fontSize: 14, cursor: "pointer" }}>取消</button>
+              </div>
             ) : (<>
               <div style={{ padding: "12px 18px", borderBottom: `1px solid ${BORDER}`, display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
                 <span style={{ fontSize: 13, color: SUB }}>匯入到大項：</span>
