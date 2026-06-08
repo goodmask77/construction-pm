@@ -466,18 +466,23 @@ async function recordAIUsage(model, usage, kind = "chat") {
 }
 
 async function callAI(messages, systemPrompt, kind = "chat") {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 75000); // 逾時保護：避免大圖/PDF 解析永遠卡住
   try {
     const res = await fetch("/api/ai", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ messages, system: systemPrompt }),
+      signal: ctrl.signal,
     });
     const data = await res.json();
     if (!res.ok) return data.error || "（AI 顧問尚未設定，請於 Vercel 加入 ANTHROPIC_API_KEY）";
     if (data.usage) recordAIUsage(data.model, data.usage, kind); // 記錄用量＋用途（不阻塞回覆）
     return data.content?.map(b => b.text || "").join("") || "（AI無回應）";
   } catch (e) {
-    return "（AI 連線失敗，請稍後再試）";
+    return e?.name === "AbortError" ? "（AI 解析逾時，請改用較清晰或較小的檔案再試）" : "（AI 連線失敗，請稍後再試）";
+  } finally {
+    clearTimeout(timer);
   }
 }
 const KIND_LABEL = { chat: "AI 顧問對話", import: "PDF/估價單匯入", weekly: "AI 週報", compare: "估價單比價", tidy: "日誌整理" };
@@ -5684,7 +5689,7 @@ function GlobalAIPanel({ chat, setChat, onClose, cats, setCats, canEdit, confirm
       try { obj = JSON.parse(m ? m[1] : reply); } catch (_) {}
       const items = (obj?.items || []).map(it => { let qty = Number(it.qty) || 1; let up = Math.round(Number(it.unitPrice) || 0); if (qty < 0 && up < 0) qty = Math.abs(qty); return { pick: true, name: String(it.name || "").trim(), qty, unit: it.unit || "式", unitPrice: up, taxType: ["未稅","含稅","免稅"].includes(it.taxType) ? it.taxType : "未稅", vendor: String(it.vendor || "").trim() }; });
       const sugCat = cats.find(c => c.name === obj?.suggest) || cats.find(c => obj?.suggest && c.name.includes(obj.suggest));
-      if (!items.length) { setImp(null); alert("沒有解析到品項，請改用對話框上傳，或確認圖片清晰。"); return; }
+      if (!items.length) { setImp(null); alert(/^（AI/.test(reply) ? reply.replace(/[（）]/g, "") : "沒有解析到品項，請改用對話框上傳，或確認圖片清晰。"); return; }
       const dt = /^\d{4}-\d{2}-\d{2}$/.test(obj?.date || "") ? obj.date : "";
       setImp({ busy: false, rows: items, targetCatId: sugCat?.id || cats[0]?.id || "", date: dt, atts, attachReceipt: true });
     } catch (_) { setImp(null); alert("解析失敗，請稍後再試。"); }
