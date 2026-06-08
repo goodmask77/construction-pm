@@ -5743,7 +5743,7 @@ function PettyCashView({ petty, setPetty, cats, setCats, canEdit, confirm }) {
   const advTotal = advances.reduce((s, a) => s + (Number(a.amount) || 0), 0);
   const spendTotal = spends.reduce((s, a) => s + (Number(a.amount) || 0), 0);
   const balance = advTotal - spendTotal;
-  const catName = (id) => id === PETTY_MISC ? "工程雜支" : (cats.find(c => c.id === id)?.name || "未歸類");
+  const catName = (id) => id === PETTY_MISC ? "（未歸類）" : (cats.find(c => c.id === id)?.name || "（未歸類）");
   const catColor = (id) => { const palette = ["#C0392B","#3E72A8","#3C8C3C","#7A6F58","#8E7CC3","#C2872E","#2A9D8F","#A0522D"]; if (id === PETTY_MISC) return "#9A8F78"; const i = cats.findIndex(c => c.id === id); return palette[(i < 0 ? 0 : i) % palette.length]; };
   const byCat = {}; spends.forEach(s => { const k = s.catId || PETTY_MISC; byCat[k] = (byCat[k] || 0) + (Number(s.amount) || 0); });
   const catRows = Object.entries(byCat).sort((a, b) => b[1] - a[1]);
@@ -5820,7 +5820,7 @@ function PettyCashView({ petty, setPetty, cats, setCats, canEdit, confirm }) {
 \`\`\`json
 {"map":[{"id":"s_xxx","cat":"油漆防水工程"}]}
 \`\`\`
-歸類原則：油漆/批土/防水/打樣→油漆相關大項；水電/電線/開關/插座/排水/水管→機電或消防相關；燈具/軌道燈→燈具相關；木皮/木作/角材/櫃→木工相關；磁磚/地坪→地坪相關；清潔/打掃/拖把→清潔相關（若無則工程雜支）；便當/飲料/餐費/計程車/停車/運費/搬運工/小工/雜工/影印 這種「沒有特定工種」的雜支→一律「工程雜支」。對不到任何大項就用「工程雜支」。現有工程大項：${catList}。`;
+歸類原則：油漆/批土/防水/打樣→油漆相關大項；水電/電線/開關/插座/排水/水管→機電或消防相關；燈具/軌道燈→燈具相關；木皮/木作/角材/櫃→木工相關；磁磚/地坪→地坪相關；清潔/打掃/拖把→清潔相關大項；便當/飲料/餐費/計程車/停車/運費/搬運工/小工/雜工/影印 這種交通餐費雜支→歸到清單裡名稱含「雜支」或「交通餐費」的大項（清單裡有就用它）。一定要從清單挑最接近的大項名稱，真的完全對不到才回「未歸類」。現有工程大項：${catList}。`;
     const input = targets.map(s => ({ id: s.id, 內容: s.content })).slice(0, 250);
     const reply = await callAI([{ role: "user", content: `歸類這些花費，回每筆的 id 與最合適的工程大項名稱：\n${JSON.stringify(input)}` }], sys, "import", ctrl.signal);
     if (classifyCtrlRef.current !== ctrl) return;
@@ -5927,7 +5927,7 @@ function PettyCashView({ petty, setPetty, cats, setCats, canEdit, confirm }) {
             <input value={search} onChange={e => setSearch(e.target.value)} placeholder="搜尋內容/發票號/備註" style={{ width: 180, border: `1px solid ${BORDER}`, borderRadius: 7, padding: "6px 8px 6px 26px", fontSize: 12.5, background: "#fff" }} />
           </div>
           <select value={fCat} onChange={e => setFCat(e.target.value)} title="篩選工種" style={{ border: `1px solid ${fCat !== "all" ? ACCENT : BORDER}`, borderRadius: 7, padding: "6px 6px", fontSize: 12, background: "#fff", color: TEXT }}>
-            <option value="all">全部工種</option>{cats.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}<option value={PETTY_MISC}>工程雜支</option>
+            <option value="all">全部工種</option>{cats.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}<option value={PETTY_MISC}>（未歸類）</option>
           </select>
           <select value={fVoucher} onChange={e => setFVoucher(e.target.value)} title="篩選憑證" style={{ border: `1px solid ${fVoucher !== "all" ? ACCENT : BORDER}`, borderRadius: 7, padding: "6px 6px", fontSize: 12, background: "#fff", color: TEXT }}>
             <option value="all">全部憑證</option>{VOUCHER_OPTS.slice(1).map(o => <option key={o[0]} value={o[0]}>{o[1]}</option>)}<option value="">未填</option>
@@ -5944,7 +5944,7 @@ function PettyCashView({ petty, setPetty, cats, setCats, canEdit, confirm }) {
             <span style={{ fontSize: 13, fontWeight: 700, color: "#92400e" }}>已選 {selected.size} 筆</span>
             <span style={{ fontSize: 12.5, color: "#92400e" }}>批次改工種：</span>
             <select defaultValue="" onChange={e => { if (e.target.value) { bulkSetField("catId", e.target.value); e.target.value = ""; } }} style={{ border: `1px solid #C2872E`, borderRadius: 7, padding: "5px 8px", fontSize: 12.5, background: "#fff", color: TEXT }}>
-              <option value="">選工種…</option>{cats.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}<option value={PETTY_MISC}>工程雜支</option>
+              <option value="">選工種…</option>{cats.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}<option value={PETTY_MISC}>（未歸類）</option>
             </select>
             <span style={{ fontSize: 12.5, color: "#92400e" }}>憑證：</span>
             <select defaultValue="" onChange={e => { bulkSetField("voucher", e.target.value === "__none" ? "" : e.target.value); e.target.value = ""; }} style={{ border: `1px solid #C2872E`, borderRadius: 7, padding: "5px 8px", fontSize: 12.5, background: "#fff", color: TEXT }}>
@@ -5990,7 +5990,7 @@ function PettyCashView({ petty, setPetty, cats, setCats, canEdit, confirm }) {
                   <td style={{ padding: 3 }}><DateField value={s.date} onChange={v => setSpend(s.id, "date", v)} style={{ width: 134, padding: "5px 6px", fontSize: 12.5 }} /></td>
                   <td style={{ padding: 3 }}>
                     <select value={s.catId || PETTY_MISC} onChange={e => setSpend(s.id, "catId", e.target.value)} style={{ minWidth: 110, border: `1px solid ${catColor(s.catId || PETTY_MISC)}`, color: catColor(s.catId || PETTY_MISC), fontWeight: 600, borderRadius: 12, padding: "4px 6px", fontSize: 12, background: catColor(s.catId || PETTY_MISC) + "14" }}>
-                      {cats.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}<option value={PETTY_MISC}>工程雜支</option>
+                      {cats.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}<option value={PETTY_MISC}>（未歸類）</option>
                     </select>
                   </td>
                   <td style={{ padding: 3, minWidth: 200 }}><input value={s.content || ""} onChange={e => setSpend(s.id, "content", e.target.value)} placeholder="花費內容" style={{ width: "100%", boxSizing: "border-box", border: `1px solid ${BORDER}`, borderRadius: 5, padding: "5px 7px", fontSize: 13 }} /></td>
@@ -6066,7 +6066,7 @@ function PettyCashView({ petty, setPetty, cats, setCats, canEdit, confirm }) {
                         <span style={{ width: 92, fontSize: 11.5, color: "#A99F88", textAlign: "right", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{catName(r.old)}</span>
                         <span style={{ color: isChanged ? ACCENT : "#C8BCA0", fontSize: 13 }}>→</span>
                         <select value={r.sug} onChange={e => setClassifyRow(r.id, e.target.value)} style={{ width: 150, border: `1px solid ${isChanged ? ACCENT : BORDER}`, borderRadius: 7, padding: "5px 6px", fontSize: 12.5, background: "#fff", color: isChanged ? ACCENT : TEXT, fontWeight: isChanged ? 700 : 400 }}>
-                          {cats.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}<option value={PETTY_MISC}>工程雜支</option>
+                          {cats.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}<option value={PETTY_MISC}>（未歸類）</option>
                         </select>
                       </div>
                     );
@@ -6104,7 +6104,7 @@ function PettyCashView({ petty, setPetty, cats, setCats, canEdit, confirm }) {
                     <span style={{ width: 80, textAlign: "right", fontSize: 13, fontVariantNumeric: "tabular-nums" }}>{fmt(r.amount)}</span>
                     <select value={r.catId} onChange={e => setImp({ ...imp, rows: imp.rows.map((x, j) => j === i ? { ...x, catId: e.target.value } : x) })} style={{ width: 140, border: `1px solid ${BORDER}`, borderRadius: 6, padding: "4px 6px", fontSize: 12, background: "#fff" }}>
                       {cats.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                      <option value={PETTY_MISC}>工程雜支</option>
+                      <option value={PETTY_MISC}>（未歸類）</option>
                     </select>
                   </div>
                 ))}
