@@ -2930,8 +2930,9 @@ function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols,
             const multiQuote = showMoney() && quoteOrder.some(qualifies) && quoteOrder.length >= 2;
             // 有標籤的大項整行反底色：預估群組→藍、非工程→黃、其他費用群組→淡褐
             const isEstimate = !!(cat?.group && /預估/.test(cat.group));
-            const tagTint = isEstimate ? "#E4EDF7" : cat?.nonProject ? "#FBF1CF" : cat?.group ? "#F1ECDD" : null;
-            const tagAccent = isEstimate ? "#3E72A8" : cat?.nonProject ? "#C2872E" : ACCENT;
+            const isFunding = !!(cat && /零用金/.test(cat.name || "")); // 撥款帳：不計入工程成本
+            const tagTint = isFunding ? "#EDEAE3" : isEstimate ? "#E4EDF7" : cat?.nonProject ? "#FBF1CF" : cat?.group ? "#F1ECDD" : null;
+            const tagAccent = isFunding ? "#9A8F78" : isEstimate ? "#3E72A8" : cat?.nonProject ? "#C2872E" : ACCENT;
             return (
               <div key={catId}>
                 {/* cat group header — 可收合 / 拖曳排序 / 狀態 / 進度 */}
@@ -2953,6 +2954,7 @@ function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols,
                         <div onClick={() => toggleCollapse(catId)} onDoubleClick={e => { e.stopPropagation(); setCatNameEdit(catId); }} style={{ fontSize: 14, fontWeight: 600, color: isEstimate ? "#2C5A8C" : cat?.nonProject ? "#92400e" : PRIMARY, letterSpacing: -0.1, cursor: "pointer", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{group.name}</div>
                         <button onClick={e => { e.stopPropagation(); setCatNameEdit(catId); }} title="改名" style={{ border: "none", background: "none", cursor: "pointer", color: "#C8BCA0", fontSize: 12, padding: 0, flexShrink: 0 }} onMouseEnter={e => e.currentTarget.style.color = ACCENT} onMouseLeave={e => e.currentTarget.style.color = "#C8BCA0"}>✎</button>
                       </div>}
+                  {isFunding && <span title="撥款帳：公司撥現金給工地，不計入工程成本（實際花費請看「零用金」分頁）" style={{ flexShrink: 0, fontSize: 10.5, fontWeight: 600, color: "#6F6656", background: "#E3DDD0", border: "1px solid #CFC6B4", borderRadius: 10, padding: "1px 8px", whiteSpace: "nowrap" }}>撥款·不計成本</span>}
                   {/* 進度（固定寬，空大項也保留位置 → 議價那欄才會對齊） */}
                   <div style={{ width: 82, flexShrink: 0, display: "flex", alignItems: "center", gap: 7 }}>
                     {itemCount > 0 && <>
