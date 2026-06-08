@@ -228,7 +228,9 @@ const catItemEstAfter = (cat) => {
 };
 // ── 大項（廠商）層級付款紀錄：已付＝該大項所有付款紀錄金額加總 ──────────────────
 const PAY_CATEGORIES = ["訂金", "期中款", "尾款", "其他"];
-const catPaid = (cat) => (cat?.payments || []).reduce((s, p) => s + (Number(p.amount) || 0), 0);
+// 已付＝大項付款紀錄加總 ＋ 注入的零用金細項(fromPetty，本身即已付)。零用金實支已是花掉的錢，要算進已付，否則大項會把它顯示成未付。
+const catPaid = (cat) => (cat?.payments || []).reduce((s, p) => s + (Number(p.amount) || 0), 0)
+  + (cat?.items || []).reduce((s, it) => s + (it.fromPetty ? (Number(it.paid) || 0) : 0), 0);
 // 逐項已付（含「整批/不指定」付款自動分攤到各品項，依未付餘額比例分配）
 const catItemPaidMap = (cat) => {
   const estMap = catItemEstAfter(cat);
