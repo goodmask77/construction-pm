@@ -1691,7 +1691,7 @@ const FREQ_PRESETS = [["自動", 0], ["每天1次", 24], ["一天2次", 12], ["�
 if (typeof document !== "undefined" && !document.getElementById("todo-glow-style")) {
   const s = document.createElement("style");
   s.id = "todo-glow-style";
-  s.textContent = "@keyframes todoGlow{0%,100%{box-shadow:0 0 2px rgba(245,158,11,.35)}50%{box-shadow:0 0 14px 2px rgba(245,158,11,.85)}}.todo-glow{animation:todoGlow 1.5s ease-in-out infinite;border-color:#F59E0B !important;}";
+  s.textContent = "@keyframes todoGlow{0%,100%{box-shadow:0 0 2px rgba(245,158,11,.35)}50%{box-shadow:0 0 14px 2px rgba(245,158,11,.85)}}.todo-glow{animation:todoGlow 1.5s ease-in-out infinite;border-color:#F59E0B !important;}@keyframes blackGlow{0%,100%{box-shadow:0 0 3px rgba(17,17,17,.45)}50%{box-shadow:0 0 16px 3px rgba(17,17,17,.9)}}.black-glow{animation:blackGlow 1.6s ease-in-out infinite;}";
   document.head.appendChild(s);
 }
 const freqLabel = (h) => { if (!h) return "自動（越近越密）"; const p = FREQ_PRESETS.find(([, v]) => v === h); if (p) return p[0]; if (h % 24 === 0) return `每${h / 24}天1次`; return `每${h}小時`; };
@@ -2784,12 +2784,12 @@ function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols,
           {search && <button onClick={() => setSearch("")} style={{ position: "absolute", right: 6, top: "50%", transform: "translateY(-50%)", border: "none", background: "none", color: SUB, cursor: "pointer", fontSize: 14 }}>×</button>}
         </div>
         <div style={{ flex: 1 }} />
-        {/* 全部收合／展開：置中、放大、黑白高對比，吸引點擊 */}
-        <button onClick={toggleAll} title="一鍵收合或展開所有工程大項"
-          style={{ padding: "7px 140px", borderRadius: 11, border: "3px solid #111", fontSize: 22, fontWeight: 900, letterSpacing: 5, cursor: "pointer", background: allCollapsed ? "#fff" : "#111", color: allCollapsed ? "#111" : "#fff", boxShadow: "0 4px 16px rgba(0,0,0,0.22)", transition: "all .15s", display: "flex", alignItems: "center", justifyContent: "center", gap: 14, whiteSpace: "nowrap" }}
-          onMouseEnter={e => { e.currentTarget.style.background = allCollapsed ? "#111" : "#fff"; e.currentTarget.style.color = allCollapsed ? "#fff" : "#111"; e.currentTarget.style.transform = "translateY(-2px)"; e.currentTarget.style.boxShadow = "0 8px 24px rgba(0,0,0,0.30)"; }}
-          onMouseLeave={e => { e.currentTarget.style.background = allCollapsed ? "#fff" : "#111"; e.currentTarget.style.color = allCollapsed ? "#111" : "#fff"; e.currentTarget.style.transform = "none"; e.currentTarget.style.boxShadow = "0 4px 16px rgba(0,0,0,0.22)"; }}>
-          <span style={{ fontSize: 24, fontWeight: 900 }}>{allCollapsed ? "⊕" : "⊖"}</span>{allCollapsed ? "全部展開" : "全部收合"}
+        {/* 全部收合／展開：原本大小、置中、發光黑框 */}
+        <button onClick={toggleAll} title="一鍵收合或展開所有工程大項" className="black-glow"
+          style={{ padding: "7px 16px", borderRadius: 8, border: "2px solid #111", fontSize: 13, fontWeight: 700, letterSpacing: 1, cursor: "pointer", background: "#fff", color: "#111", transition: "all .15s", display: "flex", alignItems: "center", gap: 6, whiteSpace: "nowrap" }}
+          onMouseEnter={e => { e.currentTarget.style.background = "#111"; e.currentTarget.style.color = "#fff"; }}
+          onMouseLeave={e => { e.currentTarget.style.background = "#fff"; e.currentTarget.style.color = "#111"; }}>
+          <span style={{ fontSize: 14, fontWeight: 900 }}>{allCollapsed ? "⊕" : "⊖"}</span>{allCollapsed ? "全部展開" : "全部收合"}
         </button>
         <div style={{ flex: 1 }} />
         {viewMode === "table" && showMoney() && (
