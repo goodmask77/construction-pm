@@ -175,7 +175,13 @@ const STATUS_MAP = {
 
 const fmt = (n) => "NT$" + Math.round(n || 0).toLocaleString();
 // ── 成本金額模型：base=數量×單價，依稅別算稅額與含稅預估；付款=已付/未付（整數 NT$）──
-const baseAmount = (it) => Math.round((Number(it.estQty ?? it.qty) || 0) * (Number(it.estUnitPrice ?? it.unitPrice) || 0)); // 一律整數，避免小數累加尾差
+// 金額基底：有「單據小計（amount）」就用單據的權威數字（避免 數量×單價 的進位尾差，例如發票 2×2086 印 4171 而非 4172）；
+// 沒有就回到 數量×單價。使用者一改數量/單價，amount 會同步重算（見 updateItem）。
+const baseAmount = (it) => {
+  const a = it?.amount;
+  if (a != null && a !== "" && !isNaN(Number(a))) return Math.round(Number(a));
+  return Math.round((Number(it.estQty ?? it.qty) || 0) * (Number(it.estUnitPrice ?? it.unitPrice) || 0));
+};
 const taxOf = (it) => { const b = baseAmount(it); const t = it.taxType || "未稅"; if (t === "免稅") return 0; if (t === "含稅") return b - Math.round(b / 1.05); return Math.round(b * 0.05); };
 const estAmount = (it) => { const b = baseAmount(it); return (it.taxType || "未稅") === "未稅" ? b + Math.round(b * 0.05) : b; }; // 含稅/免稅=base；未稅=base+稅額
 const paidOf = (it) => Number(it.paid ?? it.cust?.paid) || 0;
@@ -2563,7 +2569,17 @@ function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols,
 
   const updateItem = (catId, itemId, field, val) => {
     setCats(prev => prev.map(c => c.id === catId
-      ? { ...c, items: c.items.map(it => it.id === itemId ? { ...it, [field]: val } : it) }
+      ? { ...c, items: c.items.map(it => {
+          if (it.id !== itemId) return it;
+          const next = { ...it, [field]: val };
+          // 改數量或單價 → 金額回到「數量×單價」（解除匯入時鎖定的單據小計），避免新舊不一致
+          if (["estQty", "qty", "estUnitPrice", "unitPrice"].includes(field)) {
+            const q = Number(next.estQty ?? next.qty) || 0;
+            const u = Number(next.estUnitPrice ?? next.unitPrice) || 0;
+            next.amount = Math.round(q * u);
+          }
+          return next;
+        }) }
       : c
     ));
   };
@@ -5888,9 +5904,9 @@ function GlobalAIPanel({ chat, setChat, onClose, cats, setCats, canEdit, confirm
       const catNames = cats.map(c => c.name).join("、");
       const sys = `你是估價單解析器。只輸出一個 markdown json 區塊，不要任何其他文字。格式：
 \`\`\`json
-{"suggest":"最可能對應的工程大項名稱","date":"2026-04-25","items":[{"name":"品項名(不含廠商)","qty":1,"unit":"式","unitPrice":88200,"taxType":"含稅","vendor":"廠商或人名"}]}
+{"suggest":"最可能對應的工程大項名稱","date":"2026-04-25","items":[{"name":"品項名(不含廠商)","qty":1,"unit":"式","unitPrice":88200,"amount":88200,"taxType":"含稅","vendor":"廠商或人名"}]}
 \`\`\`
-規則：1) unitPrice 填單據上的數字本身，絕不做任何除法或加減稅。2) taxType 照單據：含稅/未稅/免稅，沒寫就「未稅」。3) 括號或另一欄的廠商/人名放 vendor，name 只放品項本身。4) 數量沒寫填1、單位沒寫填「式」。5) date 抓單據上的日期(年-月-日)，沒有就留空。6) 現有工程大項：${catNames}。suggest 從中挑最接近的。7) 折扣/折讓/優惠等負金額項：qty 一律用正數(通常1)、unitPrice 用負數(例 折讓3萬 → qty:1, unitPrice:-30000)；絕不可把 qty 也設成負數(負負得正會變正金額)。`;
+規則：1) unitPrice 填單據上的數字本身，絕不做任何除法或加減稅。2) **amount 填該列單據上印的「小計/金額」原值**（最重要，這是權威數字，常與 數量×單價 差 1 元，例如 2×2086 印 4171）；單據沒有小計欄才留空。amount 的稅別跟著 taxType（未稅列就填未稅小計、含稅列就填含稅小計）。3) taxType 照單據：含稅/未稅/免稅，沒寫就「未稅」。4) 括號或另一欄的廠商/人名放 vendor，name 只放品項本身。5) 數量沒寫填1、單位沒寫填「式」。6) date 抓單據上的日期(年-月-日)，沒有就留空。7) 現有工程大項：${catNames}。suggest 從中挑最接近的。8) 折扣/折讓/優惠等負金額項：qty 用正數(通常1)、unitPrice 與 amount 用負數；絕不可把 qty 設成負數。`;
       const content = [{ type: "text", text: "解析這份估價單／報價單的所有品項。" }];
       atts.forEach(a => content.push(a.kind === "image" ? { type: "image", source: { type: "base64", media_type: a.media_type, data: a.data } } : { type: "document", source: { type: "base64", media_type: "application/pdf", data: a.data } }));
       const reply = await callAI([{ role: "user", content }], sys, "import", ctrl.signal);
@@ -5898,7 +5914,7 @@ function GlobalAIPanel({ chat, setChat, onClose, cats, setCats, canEdit, confirm
       let obj = null;
       const m = reply.match(/```json\s*([\s\S]*?)```/i);
       try { obj = JSON.parse(m ? m[1] : reply); } catch (_) {}
-      const items = (obj?.items || []).map(it => { let qty = Number(it.qty) || 1; let up = Math.round(Number(it.unitPrice) || 0); if (qty < 0 && up < 0) qty = Math.abs(qty); return { pick: true, name: String(it.name || "").trim(), qty, unit: it.unit || "式", unitPrice: up, taxType: ["未稅","含稅","免稅"].includes(it.taxType) ? it.taxType : "未稅", vendor: String(it.vendor || "").trim() }; });
+      const items = (obj?.items || []).map(it => { let qty = Number(it.qty) || 1; let up = Math.round(Number(it.unitPrice) || 0); if (qty < 0 && up < 0) qty = Math.abs(qty); const amt = (it.amount != null && it.amount !== "" && !isNaN(Number(it.amount))) ? Math.round(Number(it.amount)) : Math.round(qty * up); return { pick: true, name: String(it.name || "").trim(), qty, unit: it.unit || "式", unitPrice: up, amount: amt, taxType: ["未稅","含稅","免稅"].includes(it.taxType) ? it.taxType : "未稅", vendor: String(it.vendor || "").trim() }; });
       const sugCat = cats.find(c => c.name === obj?.suggest) || cats.find(c => obj?.suggest && c.name.includes(obj.suggest));
       if (!items.length) { setImp(null); alert(/^（AI/.test(reply) ? reply.replace(/[（）]/g, "") : "沒有解析到品項，請改用對話框上傳，或確認圖片清晰。"); return; }
       const dt = /^\d{4}-\d{2}-\d{2}$/.test(obj?.date || "") ? obj.date : "";
@@ -5925,7 +5941,7 @@ function GlobalAIPanel({ chat, setChat, onClose, cats, setCats, canEdit, confirm
         } catch (_) {}
       }
     }
-    const newItems = picked.map(r => ({ id: "i-" + cat.id + "-" + Math.random().toString(36).slice(2, 7), name: r.name, qty: r.qty, unit: r.unit, unitPrice: Math.round(r.unitPrice), taxType: r.taxType, payDate: imp.date || "", labor: 0, laborDays: 0, dailyWage: 0, assignee: r.vendor, status: "pending", receipts: receipts.slice(), notes: "", chat: [] }));
+    const newItems = picked.map(r => ({ id: "i-" + cat.id + "-" + Math.random().toString(36).slice(2, 7), name: r.name, qty: r.qty, unit: r.unit, unitPrice: Math.round(r.unitPrice), amount: (r.amount != null && !isNaN(Number(r.amount))) ? Math.round(Number(r.amount)) : Math.round((Number(r.qty) || 0) * (Number(r.unitPrice) || 0)), taxType: r.taxType, payDate: imp.date || "", labor: 0, laborDays: 0, dailyWage: 0, assignee: r.vendor, status: "pending", receipts: receipts.slice(), notes: "", chat: [] }));
     setCats(prev => prev.map(c => c.id === cat.id ? { ...c, items: [...(c.items || []), ...newItems] } : c));
     addMsg("assistant", `✅ 已匯入 ${newItems.length} 筆到「${cat.name}」${receipts.length ? "，並自動掛上報價單憑證" : ""}。`);
     setImp(null);
@@ -6140,7 +6156,7 @@ function GlobalAIPanel({ chat, setChat, onClose, cats, setCats, canEdit, confirm
                     <th style={{ padding: 6, textAlign: "left" }}>品項</th><th style={{ padding: 6 }}>數量</th><th style={{ padding: 6 }}>單位</th><th style={{ padding: 6, textAlign: "right" }}>單價</th><th style={{ padding: 6 }}>稅別</th><th style={{ padding: 6, textAlign: "left" }}>廠商/負責人</th><th style={{ padding: 6, textAlign: "right" }}>金額</th>
                   </tr></thead>
                   <tbody>
-                    {imp.rows.map((r, i) => { const upd = (k,v) => setImp({ ...imp, rows: imp.rows.map((x,j)=>j===i?{...x,[k]:v}:x) }); const amt = (r.taxType === "未稅") ? Math.round(r.qty*r.unitPrice*1.05) : Math.round(r.qty*r.unitPrice); const cellI = { width: "100%", boxSizing: "border-box", border: `1px solid ${BORDER}`, borderRadius: 6, padding: "4px 6px", fontSize: 13, background: "#fff", color: TEXT }; return (
+                    {imp.rows.map((r, i) => { const upd = (k,v) => setImp({ ...imp, rows: imp.rows.map((x,j)=>{ if(j!==i) return x; const nx={...x,[k]:v}; if(k==="qty"||k==="unitPrice") nx.amount = Math.round((Number(nx.qty)||0)*(Number(nx.unitPrice)||0)); return nx; }) }); const base = (r.amount != null && r.amount !== "" && !isNaN(Number(r.amount))) ? Math.round(Number(r.amount)) : Math.round((Number(r.qty)||0)*(Number(r.unitPrice)||0)); const amt = (r.taxType === "未稅") ? base + Math.round(base*0.05) : base; const cellI = { width: "100%", boxSizing: "border-box", border: `1px solid ${BORDER}`, borderRadius: 6, padding: "4px 6px", fontSize: 13, background: "#fff", color: TEXT }; return (
                       <tr key={i} style={{ borderTop: `1px solid ${BORDER}`, opacity: r.pick ? 1 : 0.45 }}>
                         <td style={{ padding: 4, textAlign: "center" }}><input type="checkbox" checked={r.pick} onChange={e => upd("pick", e.target.checked)} /></td>
                         <td style={{ padding: 4 }}><input value={r.name} onChange={e => upd("name", e.target.value)} style={cellI} /></td>
@@ -6156,7 +6172,7 @@ function GlobalAIPanel({ chat, setChat, onClose, cats, setCats, canEdit, confirm
                 </table>
               </div>
               <div style={{ padding: "12px 18px", borderTop: `1px solid ${BORDER}`, display: "flex", alignItems: "center", gap: 10 }}>
-                <span style={{ fontSize: 13, color: SUB }}>合計（勾選）：<b style={{ color: ACCENT, fontFamily: "monospace" }}>{fmt(imp.rows.filter(r=>r.pick).reduce((s,r)=> s + ((r.taxType==="未稅")?Math.round(r.qty*r.unitPrice*1.05):Math.round(r.qty*r.unitPrice)), 0))}</b></span>
+                <span style={{ fontSize: 13, color: SUB }}>合計（勾選）：<b style={{ color: ACCENT, fontFamily: "monospace" }}>{fmt(imp.rows.filter(r=>r.pick).reduce((s,r)=>{ const base=(r.amount!=null&&r.amount!==""&&!isNaN(Number(r.amount)))?Math.round(Number(r.amount)):Math.round((Number(r.qty)||0)*(Number(r.unitPrice)||0)); return s + ((r.taxType==="未稅")? base+Math.round(base*0.05) : base); }, 0))}</b></span>
                 {imp.atts?.length > 0 && <label style={{ fontSize: 12.5, color: SUB, display: "flex", alignItems: "center", gap: 5, cursor: "pointer" }}><input type="checkbox" checked={!!imp.attachReceipt} onChange={e => setImp({ ...imp, attachReceipt: e.target.checked })} />把報價單掛成憑證</label>}
                 <div style={{ flex: 1 }} />
                 <button onClick={() => setImp(null)} style={{ border: `1px solid ${BORDER}`, background: "#fff", color: SUB, borderRadius: 8, padding: "8px 16px", fontSize: 13, cursor: "pointer" }}>取消</button>
