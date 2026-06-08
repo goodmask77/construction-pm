@@ -5712,6 +5712,14 @@ function ReceiptUploader({ receipts = [], onChange, size = 26 }) {
     setBusy(false); if (out.length) onChange([...(receipts || []), ...out]);
   };
   const onPaste = (e) => { const items = e.clipboardData?.items; if (!items) return; const fs = []; for (const it of items) { if (it.type?.startsWith("image/")) { const f = it.getAsFile(); if (f) fs.push(f); } } if (fs.length) { e.preventDefault(); add(fs); } };
+  const pasteFromClipboard = async () => {
+    try {
+      const ctxItems = await navigator.clipboard.read();
+      const fs = [];
+      for (const it of ctxItems) { for (const type of it.types) { if (type.startsWith("image/")) { const blob = await it.getType(type); fs.push(new File([blob], `貼上.${type.split("/")[1] || "png"}`, { type })); } } }
+      if (fs.length) await add(fs); else alert("剪貼簿沒有圖片，請先截圖（Cmd+Shift+4 等）再按貼上。");
+    } catch (_) { alert("瀏覽器擋住讀取剪貼簿。請改按「＋」選檔，或在此格按 Cmd+V 貼上。"); }
+  };
   return (
     <div onPaste={onPaste} style={{ display: "flex", alignItems: "center", gap: 4, flexWrap: "wrap" }}>
       <input ref={inputRef} type="file" accept="image/*,application/pdf" multiple style={{ display: "none" }} onChange={e => { add(e.target.files); e.target.value = ""; }} />
@@ -5723,7 +5731,8 @@ function ReceiptUploader({ receipts = [], onChange, size = 26 }) {
           <button onClick={() => onChange((receipts || []).filter(x => x.id !== r.id))} title="移除" style={{ position: "absolute", top: -5, right: -5, width: 14, height: 14, borderRadius: 7, border: "none", background: "#DC2626", color: "#fff", fontSize: 9, lineHeight: "14px", cursor: "pointer", padding: 0 }}>×</button>
         </span>
       ))}
-      <button onClick={() => inputRef.current?.click()} title="上傳檔案/截圖（也可在此格直接貼上截圖）" style={{ border: `1px dashed ${BORDER}`, background: "#fff", color: SUB, borderRadius: 5, width: size, height: size, fontSize: 13, cursor: "pointer" }}>{busy ? "…" : "＋"}</button>
+      <button onClick={() => inputRef.current?.click()} title="選檔案上傳" style={{ border: `1px dashed ${BORDER}`, background: "#fff", color: SUB, borderRadius: 5, width: size, height: size, fontSize: 13, cursor: "pointer" }}>{busy ? "…" : "＋"}</button>
+      <button onClick={pasteFromClipboard} title="貼上剪貼簿的截圖" style={{ border: `1px dashed ${BORDER}`, background: "#fff", color: SUB, borderRadius: 5, width: size, height: size, fontSize: 12, cursor: "pointer" }}>📋</button>
       {lb && <div onClick={() => setLb(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.85)", zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center", padding: 20, cursor: "zoom-out" }}><img src={lb.url} alt={lb.name} style={{ maxWidth: "95%", maxHeight: "95%", objectFit: "contain", borderRadius: 8 }} /></div>}
     </div>
   );
@@ -5791,6 +5800,9 @@ function PettyCashView({ petty, setPetty, cats, setCats, canEdit, confirm }) {
   const [sortDir, setSortDir] = useState("asc");
   const [dragId, setDragId] = useState(null);
   const [dragOverId, setDragOverId] = useState(null);
+  const [advDragId, setAdvDragId] = useState(null);
+  const [advDragOverId, setAdvDragOverId] = useState(null);
+  const reorderAdv = (fromId, toId) => { if (fromId === toId) return; const arr = [...advances]; const fi = arr.findIndex(a => a.id === fromId), ti = arr.findIndex(a => a.id === toId); if (fi < 0 || ti < 0) return; const [m] = arr.splice(fi, 1); arr.splice(ti, 0, m); upd({ ...petty, advances: arr }); };
 
   const VOUCHER_OPTS = [["", "—", "#9A8F78"], ["發票", "發票", "#7A3E1D"], ["收據", "收據", "#C0392B"], ["免用收據", "免用收據", "#2E7D32"], ["支出單", "支出單", "#6B6450"], ["其他", "其他", "#8E7CC3"]];
   const voucherColor = (v) => (VOUCHER_OPTS.find(o => o[0] === (v || "")) || VOUCHER_OPTS[0])[2];
@@ -5872,11 +5884,19 @@ function PettyCashView({ petty, setPetty, cats, setCats, canEdit, confirm }) {
           <button onClick={addAdv} style={{ border: `1px solid ${BORDER}`, background: "#fff", color: TEXT, borderRadius: 7, padding: "4px 12px", fontSize: 12.5, cursor: "pointer" }}>＋ 新增撥款</button>
         </div>
         {advances.length === 0 ? <div style={{ padding: 16, textAlign: "center", color: "#A99F88", fontSize: 13 }}>尚無撥款紀錄</div> : advances.map(a => (
-          <div key={a.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 14px", borderBottom: `1px solid #EFE7D6` }}>
+          <div key={a.id}
+            draggable
+            onDragStart={() => setAdvDragId(a.id)}
+            onDragOver={e => { if (advDragId) { e.preventDefault(); setAdvDragOverId(a.id); } }}
+            onDrop={() => { if (advDragId) { reorderAdv(advDragId, a.id); setAdvDragId(null); setAdvDragOverId(null); } }}
+            onDragEnd={() => { setAdvDragId(null); setAdvDragOverId(null); }}
+            style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 14px", borderBottom: `1px solid #EFE7D6`, background: advDragOverId === a.id ? "#F3E4DE" : "transparent" }}>
+            <span title="拖曳排序" style={{ color: "#C8BCA0", cursor: "grab", fontSize: 13, flexShrink: 0 }}>⠿</span>
             <DateField value={a.date} onChange={v => setAdv(a.id, "date", v)} style={{ width: 140 }} />
             {cellInput(a.note || "", v => setAdv(a.id, "note", v), { ph: "說明（請款）" })}
             <input type="number" value={a.amount || ""} onChange={e => setAdv(a.id, "amount", Math.abs(Math.round(Number(e.target.value) || 0)))} style={{ width: 120, textAlign: "right", border: `1px solid ${BORDER}`, borderRadius: 6, padding: "5px 7px", fontSize: 13, fontVariantNumeric: "tabular-nums" }} />
-            <button onClick={() => delAdv(a.id)} style={{ border: "none", background: "none", color: "#C8BCA0", cursor: "pointer", fontSize: 16 }} onMouseEnter={e => e.currentTarget.style.color = "#DC2626"} onMouseLeave={e => e.currentTarget.style.color = "#C8BCA0"}>×</button>
+            <div style={{ flexShrink: 0 }} title="請款單憑證（可貼截圖）"><ReceiptUploader receipts={a.receipts || []} onChange={list => setAdv(a.id, "receipts", list)} /></div>
+            <button onClick={() => delAdv(a.id)} style={{ border: "none", background: "none", color: "#C8BCA0", cursor: "pointer", fontSize: 16, flexShrink: 0 }} onMouseEnter={e => e.currentTarget.style.color = "#DC2626"} onMouseLeave={e => e.currentTarget.style.color = "#C8BCA0"}>×</button>
           </div>
         ))}
       </div>
