@@ -5692,6 +5692,40 @@ function ImportElapsed({ startedAt }) {
   return <span style={{ fontWeight: 400, color: "#A99F88" }}>（{s} 秒）</span>;
 }
 // ── 零用金帳本（獨立分頁）：撥款／花費／餘額＋工種歸屬＋文字貼上匯入 ──────────────
+// ── 共用元件：日期欄（全 App 同一套；不會跳的原生選擇器）──────────────────────
+function DateField({ value, onChange, style, title }) {
+  const iso = String(value ?? "").replace(/\//g, "-").slice(0, 10);
+  return <input type="date" value={iso} title={title} onChange={e => onChange(e.target.value)}
+    style={{ border: `1px solid ${BORDER}`, borderRadius: 6, padding: "5px 7px", fontSize: 13, fontFamily: "'Noto Sans TC', sans-serif", colorScheme: "light", cursor: "pointer", background: "#fff", color: iso ? "#211C15" : "#9A8F78", ...(style || {}) }} />;
+}
+// ── 共用元件：憑證/附件上傳（全 App 同一套；可選檔＋貼截圖＋縮圖放大＋移除）─────────
+function ReceiptUploader({ receipts = [], onChange, size = 26 }) {
+  const [busy, setBusy] = useState(false);
+  const [lb, setLb] = useState(null);
+  const inputRef = useRef(null);
+  const add = async (fileList) => {
+    const arr = Array.from(fileList || []); if (!arr.length) return;
+    setBusy(true); const out = [];
+    for (const f of arr) { try { const { url, path } = await uploadPhoto(f); out.push({ id: "rc" + Math.random().toString(36).slice(2, 7), url, path, name: f.name || "檔案", isImage: /^image\//.test(f.type) }); } catch (_) {} }
+    setBusy(false); if (out.length) onChange([...(receipts || []), ...out]);
+  };
+  const onPaste = (e) => { const items = e.clipboardData?.items; if (!items) return; const fs = []; for (const it of items) { if (it.type?.startsWith("image/")) { const f = it.getAsFile(); if (f) fs.push(f); } } if (fs.length) { e.preventDefault(); add(fs); } };
+  return (
+    <div onPaste={onPaste} style={{ display: "flex", alignItems: "center", gap: 4, flexWrap: "wrap" }}>
+      <input ref={inputRef} type="file" accept="image/*,application/pdf" multiple style={{ display: "none" }} onChange={e => { add(e.target.files); e.target.value = ""; }} />
+      {(receipts || []).map(r => (
+        <span key={r.id} style={{ position: "relative", display: "inline-flex" }}>
+          {r.isImage
+            ? <img src={r.url} alt="" onClick={() => setLb(r)} style={{ width: size, height: size, objectFit: "cover", borderRadius: 4, border: `1px solid ${BORDER}`, cursor: "zoom-in" }} />
+            : <a href={r.url} target="_blank" rel="noreferrer" style={{ fontSize: size * 0.6, textDecoration: "none" }} title={r.name}>📄</a>}
+          <button onClick={() => onChange((receipts || []).filter(x => x.id !== r.id))} title="移除" style={{ position: "absolute", top: -5, right: -5, width: 14, height: 14, borderRadius: 7, border: "none", background: "#DC2626", color: "#fff", fontSize: 9, lineHeight: "14px", cursor: "pointer", padding: 0 }}>×</button>
+        </span>
+      ))}
+      <button onClick={() => inputRef.current?.click()} title="上傳檔案/截圖（也可在此格直接貼上截圖）" style={{ border: `1px dashed ${BORDER}`, background: "#fff", color: SUB, borderRadius: 5, width: size, height: size, fontSize: 13, cursor: "pointer" }}>{busy ? "…" : "＋"}</button>
+      {lb && <div onClick={() => setLb(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.85)", zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center", padding: 20, cursor: "zoom-out" }}><img src={lb.url} alt={lb.name} style={{ maxWidth: "95%", maxHeight: "95%", objectFit: "contain", borderRadius: 8 }} /></div>}
+    </div>
+  );
+}
 const PETTY_MISC = "__misc__";
 function PettyCashView({ petty, setPetty, cats, setCats, canEdit, confirm }) {
   const advances = petty?.advances || [];
@@ -5755,10 +5789,6 @@ function PettyCashView({ petty, setPetty, cats, setCats, canEdit, confirm }) {
   const [sortDir, setSortDir] = useState("asc");
   const [dragId, setDragId] = useState(null);
   const [dragOverId, setDragOverId] = useState(null);
-  const [uploadingId, setUploadingId] = useState(null);
-  const fileInputRef = useRef(null);
-  const uploadForRef = useRef(null);
-  const [lightbox, setLightbox] = useState(null);
 
   const VOUCHER_OPTS = [["", "—", "#9A8F78"], ["發票", "發票", "#7A3E1D"], ["收據", "收據", "#C0392B"], ["免用收據", "免用收據", "#2E7D32"], ["支出單", "支出單", "#6B6450"], ["其他", "其他", "#8E7CC3"]];
   const voucherColor = (v) => (VOUCHER_OPTS.find(o => o[0] === (v || "")) || VOUCHER_OPTS[0])[2];
@@ -5770,21 +5800,6 @@ function PettyCashView({ petty, setPetty, cats, setCats, canEdit, confirm }) {
   };
   const toggleSort = (k) => { if (sortKey === k) { if (sortDir === "asc") setSortDir("desc"); else { setSortKey(null); } } else { setSortKey(k); setSortDir("asc"); } };
   const manualOrder = !sortKey && !search.trim() && fCat === "all" && fVoucher === "all" && fClaimed === "all";
-
-  const triggerUpload = (id) => { if (!guard()) return; uploadForRef.current = id; fileInputRef.current?.click(); };
-  const doUpload = async (id, fileList) => {
-    const arr = Array.from(fileList || []); if (!arr.length || !id) return;
-    setUploadingId(id); const out = [];
-    for (const f of arr) { try { const { url, path } = await uploadPhoto(f); out.push({ id: "rc" + Math.random().toString(36).slice(2, 7), url, path, name: f.name || "檔案", isImage: /^image\//.test(f.type) }); } catch (_) {} }
-    setUploadingId(null);
-    if (out.length) { const cur = spends.find(s => s.id === id)?.receipts || []; setSpend(id, "receipts", [...cur, ...out]); }
-  };
-  const pasteUpload = async (id, e) => {
-    const items = e.clipboardData?.items; if (!items) return;
-    const files = []; for (const it of items) { if (it.type?.startsWith("image/")) { const f = it.getAsFile(); if (f) files.push(f); } }
-    if (files.length) { e.preventDefault(); await doUpload(id, files); }
-  };
-  const rmReceipt = (id, rid) => { const cur = (spends.find(s => s.id === id)?.receipts || []).filter(r => r.id !== rid); setSpend(id, "receipts", cur); };
 
   // 套用搜尋/篩選/排序
   let viewSpends = spends.filter(s => {
@@ -5856,7 +5871,7 @@ function PettyCashView({ petty, setPetty, cats, setCats, canEdit, confirm }) {
         </div>
         {advances.length === 0 ? <div style={{ padding: 16, textAlign: "center", color: "#A99F88", fontSize: 13 }}>尚無撥款紀錄</div> : advances.map(a => (
           <div key={a.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 14px", borderBottom: `1px solid #EFE7D6` }}>
-            <input type="date" value={String(a.date ?? "").replace(/\//g, "-").slice(0, 10)} onChange={e => setAdv(a.id, "date", e.target.value)} style={{ width: 140, border: `1px solid ${BORDER}`, borderRadius: 6, padding: "5px 7px", fontSize: 13, fontFamily: "'Noto Sans TC', sans-serif", colorScheme: "light", cursor: "pointer" }} />
+            <DateField value={a.date} onChange={v => setAdv(a.id, "date", v)} style={{ width: 140 }} />
             {cellInput(a.note || "", v => setAdv(a.id, "note", v), { ph: "說明（請款）" })}
             <input type="number" value={a.amount || ""} onChange={e => setAdv(a.id, "amount", Math.abs(Math.round(Number(e.target.value) || 0)))} style={{ width: 120, textAlign: "right", border: `1px solid ${BORDER}`, borderRadius: 6, padding: "5px 7px", fontSize: 13, fontVariantNumeric: "tabular-nums" }} />
             <button onClick={() => delAdv(a.id)} style={{ border: "none", background: "none", color: "#C8BCA0", cursor: "pointer", fontSize: 16 }} onMouseEnter={e => e.currentTarget.style.color = "#DC2626"} onMouseLeave={e => e.currentTarget.style.color = "#C8BCA0"}>×</button>
@@ -5865,7 +5880,6 @@ function PettyCashView({ petty, setPetty, cats, setCats, canEdit, confirm }) {
       </div>
 
       {/* 花費明細（專業表格：搜尋/篩選/排序/拖曳/憑證上傳） */}
-      <input ref={fileInputRef} type="file" accept="image/*,application/pdf" multiple style={{ display: "none" }} onChange={e => { doUpload(uploadForRef.current, e.target.files); e.target.value = ""; }} />
       <div style={{ background: "#fff", border: `1px solid ${BORDER}`, borderRadius: 12, overflow: "hidden" }}>
         {/* 工具列 */}
         <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 12px", background: "#ECE6D7", borderBottom: `1px solid ${BORDER}`, flexWrap: "wrap" }}>
@@ -5918,7 +5932,7 @@ function PettyCashView({ petty, setPetty, cats, setCats, canEdit, confirm }) {
                   onDragEnd={() => { setDragId(null); setDragOverId(null); }}
                   style={{ borderBottom: "1px solid #EFE7D6", background: dragOverId === s.id ? "#F3E4DE" : "transparent" }}>
                   <td style={{ textAlign: "center", color: "#C8BCA0", cursor: manualOrder ? "grab" : "default", fontSize: 13 }} title={manualOrder ? "拖曳排序" : "清除搜尋/篩選/排序後才能拖曳"}>{manualOrder ? "⠿" : ""}</td>
-                  <td style={{ padding: 3 }}><input type="date" value={String(s.date ?? "").replace(/\//g, "-").slice(0, 10)} onChange={e => setSpend(s.id, "date", e.target.value)} style={{ width: 132, border: `1px solid ${BORDER}`, borderRadius: 5, padding: "5px 6px", fontSize: 12.5, fontFamily: "'Noto Sans TC', sans-serif", colorScheme: "light", cursor: "pointer" }} /></td>
+                  <td style={{ padding: 3 }}><DateField value={s.date} onChange={v => setSpend(s.id, "date", v)} style={{ width: 134, padding: "5px 6px", fontSize: 12.5 }} /></td>
                   <td style={{ padding: 3 }}>
                     <select value={s.catId || PETTY_MISC} onChange={e => setSpend(s.id, "catId", e.target.value)} style={{ minWidth: 110, border: `1px solid ${catColor(s.catId || PETTY_MISC)}`, color: catColor(s.catId || PETTY_MISC), fontWeight: 600, borderRadius: 12, padding: "4px 6px", fontSize: 12, background: catColor(s.catId || PETTY_MISC) + "14" }}>
                       {cats.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}<option value={PETTY_MISC}>工程雜支</option>
@@ -5934,19 +5948,7 @@ function PettyCashView({ petty, setPetty, cats, setCats, canEdit, confirm }) {
                   <td style={{ padding: 3 }}><input value={s.invoiceNo || ""} onChange={e => setSpend(s.id, "invoiceNo", e.target.value)} placeholder="—" style={{ width: 110, border: `1px solid ${BORDER}`, borderRadius: 5, padding: "5px 6px", fontSize: 12 }} /></td>
                   <td style={{ textAlign: "center" }}><input type="checkbox" checked={!!s.handed} onChange={e => setSpend(s.id, "handed", e.target.checked)} style={{ width: 16, height: 16, cursor: "pointer", accentColor: "#3C8C3C" }} /></td>
                   <td style={{ textAlign: "center" }}><input type="checkbox" checked={!!s.claimed} onChange={e => setSpend(s.id, "claimed", e.target.checked)} style={{ width: 16, height: 16, cursor: "pointer", accentColor: "#3E72A8" }} /></td>
-                  <td style={{ padding: 3 }} onPaste={e => pasteUpload(s.id, e)}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 4, flexWrap: "wrap" }}>
-                      {(s.receipts || []).map(r => (
-                        <span key={r.id} style={{ position: "relative", display: "inline-flex" }}>
-                          {r.isImage
-                            ? <img src={r.url} alt="" onClick={() => setLightbox(r)} style={{ width: 26, height: 26, objectFit: "cover", borderRadius: 4, border: `1px solid ${BORDER}`, cursor: "zoom-in" }} />
-                            : <a href={r.url} target="_blank" rel="noreferrer" style={{ fontSize: 16, textDecoration: "none" }} title={r.name}>📄</a>}
-                          <button onClick={() => rmReceipt(s.id, r.id)} title="移除" style={{ position: "absolute", top: -5, right: -5, width: 14, height: 14, borderRadius: 7, border: "none", background: "#DC2626", color: "#fff", fontSize: 9, lineHeight: "14px", cursor: "pointer", padding: 0 }}>×</button>
-                        </span>
-                      ))}
-                      <button onClick={() => triggerUpload(s.id)} title="上傳/截圖（也可在此格貼上截圖）" style={{ border: `1px dashed ${BORDER}`, background: "#fff", color: SUB, borderRadius: 5, width: 26, height: 26, fontSize: 13, cursor: "pointer" }}>{uploadingId === s.id ? "…" : "＋"}</button>
-                    </div>
-                  </td>
+                  <td style={{ padding: 3 }}><ReceiptUploader receipts={s.receipts || []} onChange={list => setSpend(s.id, "receipts", list)} /></td>
                   <td style={{ padding: 3, minWidth: 120 }}><input value={s.note || ""} onChange={e => setSpend(s.id, "note", e.target.value)} placeholder="—" style={{ width: "100%", boxSizing: "border-box", border: `1px solid ${BORDER}`, borderRadius: 5, padding: "5px 6px", fontSize: 12.5 }} /></td>
                   <td style={{ textAlign: "center" }}><button onClick={() => delSpend(s.id)} title="刪除" style={{ border: "none", background: "none", color: "#C8BCA0", cursor: "pointer", fontSize: 15 }} onMouseEnter={e => e.currentTarget.style.color = "#DC2626"} onMouseLeave={e => e.currentTarget.style.color = "#C8BCA0"}>×</button></td>
                 </tr>
@@ -5957,12 +5959,6 @@ function PettyCashView({ petty, setPetty, cats, setCats, canEdit, confirm }) {
       </div>
 
       <div style={{ fontSize: 11.5, color: "#A99F88", marginTop: 10, lineHeight: 1.7 }}>※ 點欄位標題（日期／金額）可排序；清空搜尋/篩選後可拖曳 ⠿ 排序。憑證檔可按「＋」上傳，或在該格直接貼上截圖。請款（撥款）不算工程成本；花費已依工種併入各大項實際成本。</div>
-
-      {lightbox && (
-        <div onClick={() => setLightbox(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.85)", zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center", padding: 20, cursor: "zoom-out" }}>
-          <img src={lightbox.url} alt={lightbox.name} style={{ maxWidth: "95%", maxHeight: "95%", objectFit: "contain", borderRadius: 8 }} />
-        </div>
-      )}
 
       {/* 匯入預覽 */}
       {imp && (
