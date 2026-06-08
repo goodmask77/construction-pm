@@ -375,6 +375,17 @@ let CAN_VIEW_MONEY = true;
 const showMoney = () => conf().showCost && CAN_VIEW_MONEY;
 // 撥款帳（零用金）：只是公司撥現金給工地，不是工程成本 → 從成本總額排除（實際花費改記在「零用金」分頁，依工種併入）
 const isFundingCat = (c) => /零用金/.test(c?.name || "");
+// 把零用金花費轉成「顯示用」的虛擬細項，注入對應工種大項：總覽/總額會自然含它、也列出明細。
+// 注意：這是顯示用副本，真實儲存的 cats 不含這些（不會被存回、不會重複計算；編輯入口仍在零用金頁）。
+const pettyItemOf = (s) => { const amt = Math.round(Number(s.amount) || 0); return { id: "petty::" + s.id, name: s.content || "零用金支出", estQty: 1, qty: 1, estUnitPrice: amt, unitPrice: amt, amount: amt, unit: "式", taxType: "免稅", paid: amt, payDate: s.date || "", assignee: "零用金", status: "done", done: true, receipts: s.receipts || [], notes: s.note || (s.voucher ? `憑證:${s.voucher}${s.invoiceNo ? " " + s.invoiceNo : ""}` : ""), fromPetty: true, _readonly: true, pettyId: s.id }; };
+const withPettyItems = (cats, petty) => {
+  const spends = (petty && petty.spends) || [];
+  if (!spends.length || !cats) return cats;
+  const byCat = {};
+  spends.forEach(s => { if (s.catId) (byCat[s.catId] = byCat[s.catId] || []).push(pettyItemOf(s)); });
+  if (!Object.keys(byCat).length) return cats;
+  return cats.map(c => byCat[c.id] ? { ...c, items: [...(c.items || []), ...byCat[c.id]] } : c);
+};
 const COST_COL_IDS = new Set(["estQty", "unit", "estUnitPrice", "taxType", "taxAmount", "estTotal", "itemPaid", "payAccount", "payDate"]);
 const GLOBAL_KEYS = new Set(["pm_role", "pm_known_users", "pm_current_space"]);
 let CURRENT_SPACE = "construction";
@@ -827,8 +838,10 @@ export default function App() {
     return days > 3;
   })) : [];
 
-  const totalEstimated = cats ? cats.filter(c => !isFundingCat(c)).reduce((s, c) => s + catEstAfter(c), 0) : 0; // 議價後含稅總額（排除撥款帳）
-  const totalPaid = cats ? cats.filter(c => !isFundingCat(c)).reduce((s, c) => s + catPaid(c), 0) : 0; // 已付總額（排除撥款帳）
+  // 顯示用：把零用金花費當成各工種大項的細項注入（總額/總覽會含它；真實 cats 不變）
+  const displayCats = useMemo(() => withPettyItems(cats, petty), [cats, petty]);
+  const totalEstimated = displayCats ? displayCats.filter(c => !isFundingCat(c)).reduce((s, c) => s + catEstAfter(c), 0) : 0; // 議價後含稅總額（含零用金、排除撥款帳）
+  const totalPaid = displayCats ? displayCats.filter(c => !isFundingCat(c)).reduce((s, c) => s + catPaid(c), 0) : 0; // 已付總額（含零用金、排除撥款帳）
   const doneCount = cats ? cats.filter(c => c.status === "done").length : 0;
 
 
@@ -929,10 +942,10 @@ export default function App() {
           <CrewRankView />
         )}
         {view === "owner" && settings && (
-          <OwnerDashboard cats={cats} setCats={setCatsLogged} settings={settings} stalledItems={stalledItems} activityLog={activityLog} logActivity={logActivity} userName={userName} isAdmin={isAdmin} journal={journal} events={events} plans={plans} petty={petty} totalPaid={totalPaid} />
+          <OwnerDashboard cats={displayCats} setCats={setCatsLogged} settings={settings} stalledItems={stalledItems} activityLog={activityLog} logActivity={logActivity} userName={userName} isAdmin={isAdmin} journal={journal} events={events} plans={plans} petty={petty} totalPaid={totalPaid} pettyInCats={true} />
         )}
         {view === "overview" && (
-          <OverviewTable cats={cats} setCats={guardedSetCats} confirm={confirm} customCols={customCols} setCustomCols={canEditData ? commitCustomCols : null}
+          <OverviewTable cats={displayCats} setCats={guardedSetCats} confirm={confirm} customCols={customCols} setCustomCols={canEditData ? commitCustomCols : null}
             onSelect={(cat) => { setSelectedCat(cat); setSelectedItem(null); }} dragging={dragging} dragOver={dragOver} onDragStart={onDragStart} onDragOver={onDragOver} onDrop={onDrop}
             trash={trash} trashItems={trashItems} restoreTrash={restoreTrash} commitTrash={commitTrash} petty={petty} setView={setView} />
         )}
@@ -2929,7 +2942,7 @@ function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols,
             const QUOTE_TINTS = ["#F6F2E8", "#EDF3F6", "#F4EEF4", "#EDF5EE", "#FBF0EA"];
             const quoteKeyOf = (it) => `${it.payDate || ""}¦${it.assignee || ""}`;
             const quoteOrder = []; const quoteInfo = {};
-            group.rows.forEach(({ item }) => { const k = quoteKeyOf(item); if (!quoteInfo[k]) { quoteInfo[k] = { idx: quoteOrder.length, sum: 0, n: 0, date: item.payDate || "", vendor: item.assignee || "" }; quoteOrder.push(k); } quoteInfo[k].sum += estAfterOf(item); quoteInfo[k].n++; });
+            group.rows.forEach(({ item }) => { if (item.fromPetty) return; const k = quoteKeyOf(item); if (!quoteInfo[k]) { quoteInfo[k] = { idx: quoteOrder.length, sum: 0, n: 0, date: item.payDate || "", vendor: item.assignee || "" }; quoteOrder.push(k); } quoteInfo[k].sum += estAfterOf(item); quoteInfo[k].n++; });
             const qualifies = (k) => !!(quoteInfo[k].date || quoteInfo[k].vendor); // 有日期或廠商＝可視為一張報價單
             const multiQuote = showMoney() && quoteOrder.some(qualifies) && quoteOrder.length >= 2;
             // 有標籤的大項整行反底色：預估群組→藍、非工程→黃、其他費用群組→淡褐
@@ -2989,7 +3002,7 @@ function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols,
                   ) : (
                     cat?.group && <button onClick={() => setGroupEditId(catId)} title="點擊改費用群組" style={{ flexShrink: 0, marginLeft: 6, border: `1px solid ${isEstimate ? "#9DBCE0" : "#C8BCA0"}`, background: isEstimate ? "#DCE8F5" : "#F3E4DE", color: isEstimate ? "#2C5A8C" : "#92400e", borderRadius: 12, padding: "2px 9px", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>🏷 {cat.group}</button>
                   ))}
-                  {showMoney() && pettyByCat[catId] > 0 && <span onClick={() => setView && setView("petty")} title={`此工種的零用金實支 ${fmt(pettyByCat[catId])}（已併入工程實際成本，來源：零用金帳戶）— 點擊看零用金頁`} style={{ flexShrink: 0, marginLeft: 6, fontSize: 11, fontWeight: 600, color: "#C2410C", background: "#FBEFE7", border: "1px solid #F0CFB8", borderRadius: 12, padding: "2px 8px", cursor: "pointer", whiteSpace: "nowrap" }}>🪙 零用金 +{fmt(pettyByCat[catId])}</span>}
+                  {showMoney() && isCollapsed && pettyByCat[catId] > 0 && <span onClick={() => setView && setView("petty")} title={`此工種的零用金實支 ${fmt(pettyByCat[catId])}（已併入工程實際成本，來源：零用金帳戶）— 點擊看零用金頁`} style={{ flexShrink: 0, marginLeft: 6, fontSize: 11, fontWeight: 600, color: "#C2410C", background: "#FBEFE7", border: "1px solid #F0CFB8", borderRadius: 12, padding: "2px 8px", cursor: "pointer", whiteSpace: "nowrap" }}>🪙 零用金 +{fmt(pettyByCat[catId])}</span>}
                   {!showMoney() && <div style={{ flex: 1 }} />}
                   {showMoney() && <>
                   <div style={{ flex: 1 }} />
@@ -3032,6 +3045,18 @@ function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols,
                   const tinted = !!item.status && item.status !== "pending"; // 由「狀態」決定整行顏色（待開工=白底）
                   const qk = quoteKeyOf(item); const qi = quoteInfo[qk]; const isQuote = multiQuote && qualifies(qk); const qTint = isQuote ? QUOTE_TINTS[qi.idx % QUOTE_TINTS.length] : null;
                   const newQuote = isQuote && (rIdx === 0 || quoteKeyOf(group.rows[rIdx - 1].item) !== qk);
+                  // 零用金細項：唯讀顯示（編輯入口在零用金頁），不參與報價單分組/拖曳/付款
+                  if (item.fromPetty) return (
+                    <div key={item.id} style={{ display: "flex", alignItems: "center", gap: 8, borderBottom: "1px solid #EFE7D6", background: "#FBF7EE", padding: "6px 12px 6px 34px", fontSize: 12.5, color: "#4A4234" }}>
+                      <span style={{ flexShrink: 0, fontSize: 10.5, fontWeight: 700, color: "#C2410C", background: "#FBEFE7", border: "1px solid #F0CFB8", borderRadius: 8, padding: "1px 7px" }}>🪙 零用金</span>
+                      <span style={{ flexShrink: 0, color: "#A99F88", fontSize: 11.5, width: 74 }}>{(item.payDate || "").replace(/-/g, "/") || "—"}</span>
+                      <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{item.name}</span>
+                      {item.notes && <span style={{ flexShrink: 0, color: "#A99F88", fontSize: 11 }}>{item.notes}</span>}
+                      <span style={{ flexShrink: 0, fontVariantNumeric: "tabular-nums", color: "#211C15", fontWeight: 600, width: 90, textAlign: "right" }}>{fmt(item.amount)}</span>
+                      <span style={{ flexShrink: 0, fontSize: 11, color: "#3C8C3C", width: 36, textAlign: "right" }}>已付</span>
+                      <span title="此筆來自零用金帳戶，請到「零用金」頁編輯" style={{ flexShrink: 0, color: "#C8BCA0", fontSize: 12 }}>🔒</span>
+                    </div>
+                  );
                   return (
                     <Fragment key={item.id}>
                     {newQuote && (() => { const qItemIds = group.rows.filter(r => quoteKeyOf(r.item) === qk).map(r => r.item.id); return (
@@ -3542,15 +3567,16 @@ function LoginModal({ onLogin, onClose }) {
 }
 
 // ── OWNER DASHBOARD ───────────────────────────────────────────────────────────
-function OwnerDashboard({ cats, setCats, settings, stalledItems, activityLog, logActivity, userName, isAdmin, journal, events, plans, petty, totalPaid }) {
-  // 零用金實支（來自「零用金」帳戶）依工種彙整 → 併入工程實際成本
+function OwnerDashboard({ cats, setCats, settings, stalledItems, activityLog, logActivity, userName, isAdmin, journal, events, plans, petty, totalPaid, pettyInCats }) {
+  // 零用金實支：已歸類的已注入各大項（含在下方 totalEst/totalAct）；未歸類的另外提示
   const pettySpends = petty?.spends || [];
   const pettyTotal = pettySpends.reduce((s, x) => s + (Number(x.amount) || 0), 0);
+  const pettyUncat = pettySpends.filter(s => !s.catId || !cats.some(c => c.id === s.catId)).reduce((s, x) => s + (Number(x.amount) || 0), 0);
+  const pettyCategorized = pettyTotal - pettyUncat;
   const pettyByCat = {};
-  pettySpends.forEach(s => { const k = s.catId || "__misc__"; pettyByCat[k] = (pettyByCat[k] || 0) + (Number(s.amount) || 0); });
+  pettySpends.forEach(s => { if (s.catId && cats.some(c => c.id === s.catId)) pettyByCat[s.catId] = (pettyByCat[s.catId] || 0) + (Number(s.amount) || 0); });
   const pettyCatRows = Object.entries(pettyByCat).sort((a, b) => b[1] - a[1]);
-  const pettyCatName = (id) => id === "__misc__" ? "（未歸類）" : (cats.find(c => c.id === id)?.name || "（未歸類）");
-  const actualTotal = (Number(totalPaid) || 0) + pettyTotal; // 工程實際總成本 = 報價單已付 + 零用金實支
+  const pettyCatName = (id) => cats.find(c => c.id === id)?.name || "";
   const [reportLoading, setReportLoading] = useState(false);
   const [report, setReport] = useState("");
   const [showReport, setShowReport] = useState(false);
@@ -3664,27 +3690,23 @@ function OwnerDashboard({ cats, setCats, settings, stalledItems, activityLog, lo
             {big("未付（尚需支付）", unpaid, unpaid < 0 ? "#DC2626" : "#C2410C")}
           </div>
           <div style={{ height:9, background:"#EFE7D6", borderRadius:6, overflow:"hidden", marginBottom:4 }}><div style={{ width:payPct+"%", height:"100%", background:"#3C8C3C", borderRadius:6 }} /></div>
-          <div style={{ fontSize:12, color:"#6F6656", marginBottom:16 }}>付款進度 {payPct}%</div>
-          {/* 實際成本（含零用金）*/}
-          <div style={{ borderTop:"1px solid #EFE7D6", paddingTop:14 }}>
-            <div style={{ display:"flex", gap:16, flexWrap:"wrap", alignItems:"flex-end" }}>
-              <div><div style={{ fontSize:12, color:"#6F6656" }}>報價單已付<span style={{ color:"#A99F88" }}>（公司/銀行帳戶）</span></div><div style={{ fontSize:17, fontWeight:700, color:"#3C8C3C", fontVariantNumeric:"tabular-nums" }}>{fmt(totalAct)}</div></div>
-              <div style={{ fontSize:17, color:"#C8BCA0", paddingBottom:2 }}>＋</div>
-              <div><div style={{ fontSize:12, color:"#6F6656" }}>零用金實支<span style={{ color:"#C2410C" }}>（零用金帳戶）</span></div><div style={{ fontSize:17, fontWeight:700, color:"#C2410C", fontVariantNumeric:"tabular-nums" }}>{fmt(pettyTotal)}</div></div>
-              <div style={{ fontSize:17, color:"#C8BCA0", paddingBottom:2 }}>＝</div>
-              <div><div style={{ fontSize:12, color:"#6F6656" }}>工程實際總成本</div><div style={{ fontSize:21, fontWeight:800, color:"#211C15", fontVariantNumeric:"tabular-nums" }}>{fmt(actualTotal)}</div></div>
-            </div>
-            {pettyCatRows.length > 0 && (
-              <div style={{ marginTop:12 }}>
-                <div style={{ fontSize:11.5, color:"#A99F88", marginBottom:6 }}>零用金實支依工種（來源：零用金帳戶）</div>
+          <div style={{ fontSize:12, color:"#6F6656", marginBottom:14 }}>付款進度 {payPct}%</div>
+          {/* 零用金實支（已併入上方各大項成本）*/}
+          {pettyTotal > 0 && (
+            <div style={{ borderTop:"1px solid #EFE7D6", paddingTop:12 }}>
+              <div style={{ fontSize:12, color:"#6F6656", marginBottom:8 }}>
+                🪙 其中<b style={{ color:"#C2410C" }}> 零用金實支 {fmt(pettyCategorized)}</b>（來自零用金帳戶，已併入上方各工種成本）
+                {pettyUncat > 0 && <span style={{ color:"#C2872E" }}>　· 另有未歸類 {fmt(pettyUncat)}（請到零用金頁歸到工種才會併入）</span>}
+              </div>
+              {pettyCatRows.length > 0 && (
                 <div style={{ display:"flex", flexWrap:"wrap", gap:7 }}>
                   {pettyCatRows.map(([id, amt]) => (
                     <span key={id} style={{ fontSize:12, background:"#F4EFE3", border:"1px solid #E3DAC6", borderRadius:10, padding:"3px 10px", color:"#4A4234" }}>{pettyCatName(id)} <b style={{ fontVariantNumeric:"tabular-nums" }}>{fmt(amt)}</b></span>
                   ))}
                 </div>
-              </div>
-            )}
-          </div>
+              )}
+            </div>
+          )}
         </div>);
       })()}
 
