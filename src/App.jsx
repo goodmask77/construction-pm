@@ -369,6 +369,42 @@ const SPACE_CONF = {
     aiRole: "你是餐飲團隊的夥伴中心助理，協助夥伴查找內外場 SOP/手冊/教學等資料、解答工作問題。請用繁體中文、親切清楚。",
   },
 };
+// ── 權限矩陣：每個空間有哪些頁面、各頁是否有「可編輯」「看金額」維度（帳號權限二合一矩陣用）──
+const PERM_MATRIX = {
+  construction: [
+    ["owner", "儀表板", { money: 1 }],
+    ["overview", "總覽", { edit: 1, money: 1 }],
+    ["gantt", "工序", { edit: 1 }],
+    ["petty", "零用金", { edit: 1, money: 1 }],
+    ["files", "檔案庫", { edit: 1 }],
+    ["issues", "ToDo", { edit: 1 }],
+    ["compare", "比價", { edit: 1, money: 1 }],
+    ["advisor", "AI設定", { edit: 1 }],
+  ],
+  team: [
+    ["owner", "儀表板", {}],
+    ["overview", "任務板", { edit: 1 }],
+    ["gantt", "進度", { edit: 1 }],
+    ["files", "檔案庫", { edit: 1 }],
+    ["issues", "ToDo", { edit: 1 }],
+    ["advisor", "AI設定", { edit: 1 }],
+  ],
+  crew: [
+    ["kb", "資料庫", { edit: 1 }],
+    ["r360", "360評鑑", { edit: 1 }],
+    ["fb", "回饋", { edit: 1 }],
+    ["quest", "闖關", { edit: 1 }],
+    ["poll", "投票", { edit: 1 }],
+    ["shop", "商城", { edit: 1 }],
+    ["rank", "排行榜", {}],
+  ],
+};
+// 舊資料相容：以前的可編輯權限只有 data/files/advisor 三類，對應到各頁
+const LEGACY_EDIT = { overview: "data", gantt: "data", petty: "data", issues: "data", owner: "data", groups: "data", kb: "data", r360: "data", fb: "data", quest: "data", poll: "data", shop: "data", rank: "data", files: "files", compare: "files", advisor: "advisor" };
+const ALL_VIEW_KEYS = Object.entries(PERM_MATRIX).flatMap(([sp, rows]) => rows.map(([pg]) => `${sp}:${pg}`));
+const ALL_EDIT_KEYS = Object.entries(PERM_MATRIX).flatMap(([sp, rows]) => rows.filter(r => r[2].edit).map(([pg]) => `${sp}:${pg}`));
+const ALL_MONEY_KEYS = Object.entries(PERM_MATRIX).filter(([sp]) => SPACE_CONF[sp]?.showCost).flatMap(([sp, rows]) => rows.filter(r => r[2].money).map(([pg]) => `${sp}:${pg}`));
+
 const conf = () => SPACE_CONF[CURRENT_SPACE] || SPACE_CONF.construction;
 const L = (key) => conf().labels[key] || SPACE_CONF.construction.labels[key];
 // 金額顯示開關：依登入者 profile 的「看金額」設定（未登入訪客＝可看，維持原行為）。
@@ -783,17 +819,38 @@ export default function App() {
   const account = profile ? { name: profile.display_name, role: profile.role, pages: profile.pages || [] } : null;
   const isAdmin = account?.role === "admin";
   const isManager = account?.role === "manager";
-  const canViewMoney = isAdmin || isManager || !profile || !!profile?.can_view_money; // 未登入訪客＝可看；登入者依開關
-  CAN_VIEW_MONEY = canViewMoney; // 同步給 showMoney()（金額欄位/KPI 顯示與否）
+  // ── 帳號權限二合一矩陣解析：每空間×每頁的「可見/可編輯/看金額」。admin/manager/未登入訪客＝全開；
+  //    一般帳號：可見預設全部(由admin逐頁限縮)、可編輯預設無、看金額預設無。只有目前這一頁的元件會 render，
+  //    所以可編輯/看金額直接依「目前頁面 view」判定，不必到處改編輯邏輯（降低風險）。
+  const _vp = profile?.view_pages || [];
+  const _ep = profile?.pages || [];
+  const _mp = profile?.money_pages || [];
+  const viewOK = (sp, pg) => {
+    if (isAdmin) return true;
+    if (!_vp.length) return true;                                   // 未設＝全可見
+    return _vp.includes(`${sp}:${pg}`) || _vp.includes(pg);         // 後者＝舊裸key相容
+  };
+  const editOK = (sp, pg) => {
+    if (isAdmin || isManager) return true;
+    if (_ep.includes(`${sp}:${pg}`)) return true;
+    const lg = LEGACY_EDIT[pg]; return !!(lg && _ep.includes(lg));  // 舊資料相容
+  };
+  const moneyOK = (sp, pg) => {
+    if (isAdmin || isManager || !profile) return true;             // 訪客可看（維持原行為）
+    if (_mp.length) return _mp.includes(`${sp}:${pg}`);
+    return !!profile?.can_view_money;                              // 舊：全域開關相容
+  };
+  const canViewMoney = moneyOK(CURRENT_SPACE, view);
+  CAN_VIEW_MONEY = canViewMoney; // 同步給 showMoney()（依「目前頁面」決定金額欄位/KPI 顯示與否）
   const can = (page) => isAdmin || isManager || !!account?.pages?.includes(page);
-  // 可見空間 / 可見頁面（admin 全開；未設＝全開，由 admin 逐一限縮）
+  // 可見空間（admin 全開；未設＝全開）；可見頁面＝目前空間中通過 viewOK 的頁面清單
   const allowedSpaces = isAdmin ? SPACES.map(s => s.id) : (profile?.spaces?.length ? profile.spaces : SPACES.map(s => s.id));
-  const allowedViewPages = isAdmin ? null : (profile?.view_pages?.length ? profile.view_pages : null);
-  const canEditData = can("data");
-  const canEditWorklog = can("worklog");
-  const canEditFiles = can("files");
-  const canEditAdvisor = can("advisor");
-  const canEdit = canEditData; // 相容：工程資料編輯
+  const allowedViewPages = isAdmin ? null : (!_vp.length ? null : (PERM_MATRIX[CURRENT_SPACE] || []).map(r => r[0]).filter(pg => viewOK(CURRENT_SPACE, pg)));
+  const canEditData = editOK(CURRENT_SPACE, view);   // 目前頁面是否可編輯（內容）
+  const canEditWorklog = canEditData;
+  const canEditFiles = canEditData;                  // files/compare 各為獨立 view，editOK(view) 已正確
+  const canEditAdvisor = canEditData;
+  const canEdit = canEditData;
 
   const requireLogin = () => setShowLogin(true);
   const denyEdit = () => { if (!userName) setShowLogin(true); else alert("此帳號沒有編輯此頁面的權限，請聯絡管理員開放。"); };
@@ -5491,9 +5548,35 @@ function AccountManager({ confirm, myId }) {
     const { error } = await supabase.from("profiles").update(changes).eq("id", id);
     if (error) { setErr("儲存失敗：" + error.message); load(); }
   };
-  const toggleArr = (p, field, key) => {
-    const arr = p[field] || []; const next = arr.includes(key) ? arr.filter(x=>x!==key) : [...arr, key];
-    patch(p.id, { [field]: next });
+  // ── 矩陣勾選邏輯（含舊資料具體化：第一次動手就把「預設全可見/全域金額」攤成明確清單）──
+  const viewChecked = (p, sid, pg) => { const vp = p.view_pages || []; if (!vp.length) return true; return vp.includes(`${sid}:${pg}`) || vp.includes(pg); };
+  const editChecked = (p, sid, pg) => { const ep = p.pages || []; return ep.includes(`${sid}:${pg}`) || ep.includes(LEGACY_EDIT[pg]); };
+  const moneyChecked = (p, sid, pg) => { const mp = p.money_pages || []; if (mp.length) return mp.includes(`${sid}:${pg}`); return !!p.can_view_money; };
+  const spaceChecked = (p, sid) => { const sp = p.spaces || []; return !sp.length || sp.includes(sid); };
+
+  const toggleView = (p, sid, pg) => {
+    const key = `${sid}:${pg}`; const vp = p.view_pages || [];
+    let base = !vp.length ? [...ALL_VIEW_KEYS] : ALL_VIEW_KEYS.filter(k => { const [s, g] = k.split(":"); return vp.includes(k) || vp.includes(g); });
+    base = base.includes(key) ? base.filter(k => k !== key) : [...base, key];
+    patch(p.id, { view_pages: base.length === ALL_VIEW_KEYS.length ? [] : base }); // 全選＝回到預設空陣列
+  };
+  const toggleEdit = (p, sid, pg) => {
+    const key = `${sid}:${pg}`; const ep = p.pages || [];
+    let base = ALL_EDIT_KEYS.filter(k => { const [s, g] = k.split(":"); return ep.includes(k) || ep.includes(LEGACY_EDIT[g]); });
+    base = base.includes(key) ? base.filter(k => k !== key) : [...base, key];
+    patch(p.id, { pages: base });
+  };
+  const toggleMoney = (p, sid, pg) => {
+    const key = `${sid}:${pg}`; const mp = p.money_pages || [];
+    let base = mp.length ? [...mp] : (p.can_view_money ? [...ALL_MONEY_KEYS] : []);
+    base = base.includes(key) ? base.filter(k => k !== key) : [...base, key];
+    patch(p.id, { money_pages: base, can_view_money: base.length > 0 }); // 同步舊欄位供相容
+  };
+  const toggleSpace = (p, sid) => {
+    const sp = p.spaces || [];
+    let base = sp.length ? [...sp] : SPACES.map(s => s.id);
+    base = base.includes(sid) ? base.filter(x => x !== sid) : [...base, sid];
+    patch(p.id, { spaces: base.length === SPACES.length ? [] : base });
   };
 
   const addAcct = async () => {
@@ -5514,8 +5597,11 @@ function AccountManager({ confirm, myId }) {
     setErr(""); try { await api({ action:"resetPassword", id:p.id, password:np }); alert("已重設密碼"); } catch(e){ setErr(e.message); }
   };
 
-  const chip = (active, label, onClick, color) => (
-    <button onClick={onClick} style={{ padding:"4px 11px", borderRadius:8, border:"1px solid "+(active?(color||ACCENT):"#D8CFBB"), background: active?(color?color+"18":"#F4EFE3"):"#ECE6D7", color: active?(color||"#6F6656"):"#A99F88", fontSize:12, fontWeight: active?700:400, cursor:"pointer" }}>{label}</button>
+  const cbox = (on, onClick, color = "#3C8C3C") => (
+    <button onClick={onClick} title={on ? "已開啟，點擊關閉" : "已關閉，點擊開啟"} style={{ width: 22, height: 22, borderRadius: 6, border: `1.5px solid ${on ? color : "#CFC6B0"}`, background: on ? color : "#fff", color: "#fff", cursor: "pointer", fontSize: 13, lineHeight: 1, display: "inline-flex", alignItems: "center", justifyContent: "center", padding: 0 }}>{on ? "✓" : ""}</button>
+  );
+  const pill = (on, label, onClick) => (
+    <button onClick={onClick} style={{ padding: "4px 12px", borderRadius: 999, border: `1px solid ${on ? "#3C8C3C" : "#D8CFBB"}`, background: on ? "#EAF3EA" : "#ECE6D7", color: on ? "#2E7D32" : "#A99F88", fontSize: 12.5, fontWeight: 700, cursor: "pointer" }}>{on ? "✓ " : ""}{label}</button>
   );
 
   return (
@@ -5554,28 +5640,42 @@ function AccountManager({ confirm, myId }) {
             {p.id !== myId && <button onClick={()=>delAcct(p)} title="刪除帳號" style={{ background:"none", border:"none", color:"#C8BCA0", cursor:"pointer", fontSize:18 }} onMouseEnter={e=>e.currentTarget.style.color="#DC2626"} onMouseLeave={e=>e.currentTarget.style.color="#C8BCA0"}>×</button>}
           </div>
           {isAdm ? <div style={{ fontSize:13, color:"#A99F88", marginTop:6 }}>管理員：全部空間／全部頁面／可編輯全部／可看金額</div> : (
-          <div style={{ display:"grid", gap:10 }}>
-            <div style={{ display:"flex", gap:8, alignItems:"flex-start", flexWrap:"wrap" }}>
-              <span style={{ fontSize:12, color:"#6F6656", width:80, paddingTop:5, flexShrink:0 }}>可見空間</span>
-              <div style={{ display:"flex", gap:6, flexWrap:"wrap" }}>{ACCT_SPACES.map(([k,l]) => chip((p.spaces||[]).includes(k), l, ()=>toggleArr(p,"spaces",k)))}</div>
-            </div>
-            <div style={{ display:"flex", gap:8, alignItems:"flex-start", flexWrap:"wrap" }}>
-              <span style={{ fontSize:12, color:"#6F6656", width:80, paddingTop:5, flexShrink:0 }}>可見頁面</span>
-              <div style={{ display:"flex", gap:6, flexWrap:"wrap" }}>{ACCT_VIEW_PAGES.map(([k,l]) => chip((p.view_pages||[]).includes(k), l, ()=>toggleArr(p,"view_pages",k)))}</div>
-            </div>
-            <div style={{ display:"flex", gap:8, alignItems:"flex-start", flexWrap:"wrap" }}>
-              <span style={{ fontSize:12, color:"#6F6656", width:80, paddingTop:5, flexShrink:0 }}>可編輯</span>
-              <div style={{ display:"flex", gap:6, flexWrap:"wrap" }}>{ACCT_EDIT_PAGES.map(([k,l]) => chip((p.pages||[]).includes(k), l, ()=>toggleArr(p,"pages",k), "#b5512b"))}</div>
-            </div>
-            <div style={{ display:"flex", gap:8, alignItems:"center", flexWrap:"wrap" }}>
-              <span style={{ fontSize:12, color:"#6F6656", width:80, flexShrink:0 }}>看金額</span>
-              <button onClick={()=>patch(p.id, { can_view_money: !p.can_view_money })} style={{ display:"flex", alignItems:"center", gap:8, background:"none", border:"none", cursor:"pointer", padding:0 }}>
-                <span style={{ width:40, height:22, borderRadius:11, background:p.can_view_money?"#3C8C3C":"#D8CFBB", position:"relative", transition:"background .15s" }}>
-                  <span style={{ position:"absolute", top:2, left:p.can_view_money?20:2, width:18, height:18, borderRadius:9, background:"#fff", transition:"left .15s" }} />
-                </span>
-                <span style={{ fontSize:13, color:p.can_view_money?"#3C8C3C":"#A99F88", fontWeight:600 }}>{p.can_view_money?"可看金額":"看不到金額"}</span>
-              </button>
-            </div>
+          <div style={{ display:"grid", gap:12 }}>
+            {ACCT_SPACES.map(([sid, slabel]) => {
+              const rows = PERM_MATRIX[sid] || [];
+              const on = spaceChecked(p, sid);
+              const hasMoney = !!SPACE_CONF[sid]?.showCost;
+              return (
+                <div key={sid} style={{ border:"1px solid #E7DFCC", borderRadius:10, overflow:"hidden" }}>
+                  <div style={{ display:"flex", alignItems:"center", gap:10, background:"#F7F2E7", padding:"8px 12px" }}>
+                    <div style={{ fontSize:13.5, fontWeight:700, color:"#211C15" }}>{slabel}</div>
+                    <div style={{ flex:1 }} />
+                    {pill(on, "可進入", () => toggleSpace(p, sid))}
+                  </div>
+                  {on && (
+                    <div>
+                      <div style={{ display:"flex", alignItems:"center", padding:"5px 12px", fontSize:11, color:"#A99F88", background:"#FCFAF4", borderBottom:"1px solid #F0E9D8" }}>
+                        <div style={{ flex:1 }}>頁面</div>
+                        <div style={{ width:56, textAlign:"center" }}>可見</div>
+                        <div style={{ width:56, textAlign:"center" }}>可編輯</div>
+                        {hasMoney && <div style={{ width:56, textAlign:"center" }}>看金額</div>}
+                      </div>
+                      {rows.map(([pg, plabel, caps]) => {
+                        const vis = viewChecked(p, sid, pg);
+                        return (
+                          <div key={pg} style={{ display:"flex", alignItems:"center", padding:"6px 12px", borderTop:"1px solid #F6F1E5" }}>
+                            <div style={{ flex:1, fontSize:13, color: vis ? "#4A4234" : "#BDB39A" }}>{plabel}</div>
+                            <div style={{ width:56, textAlign:"center" }}>{cbox(vis, () => toggleView(p, sid, pg), "#3C8C3C")}</div>
+                            <div style={{ width:56, textAlign:"center" }}>{caps.edit ? cbox(editChecked(p, sid, pg), () => toggleEdit(p, sid, pg), "#b5512b") : <span style={{ color:"#DDD4BE" }}>—</span>}</div>
+                            {hasMoney && <div style={{ width:56, textAlign:"center" }}>{caps.money ? cbox(moneyChecked(p, sid, pg), () => toggleMoney(p, sid, pg), "#2E7D32") : <span style={{ color:"#DDD4BE" }}>—</span>}</div>}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>)}
         </div>);
        })}
@@ -5815,7 +5915,7 @@ function ReceiptUploader({ receipts = [], onChange, size = 26 }) {
           {r.isImage
             ? <img src={r.url} alt="" onClick={() => setLb(r)} style={{ width: size, height: size, objectFit: "cover", borderRadius: 4, border: `1px solid ${BORDER}`, cursor: "zoom-in" }} />
             : <a href={r.url} target="_blank" rel="noreferrer" style={{ fontSize: size * 0.6, textDecoration: "none" }} title={r.name}>📄</a>}
-          <button onClick={() => onChange((receipts || []).filter(x => x.id !== r.id))} title="移除" style={{ position: "absolute", top: -5, right: -5, width: 14, height: 14, borderRadius: 7, border: "none", background: "#DC2626", color: "#fff", fontSize: 9, lineHeight: "14px", cursor: "pointer", padding: 0 }}>×</button>
+          <button onClick={() => { if (window.confirm("移除這張憑證？此動作無法復原。")) onChange((receipts || []).filter(x => x.id !== r.id)); }} title="移除（會先詢問）" style={{ position: "absolute", top: -6, right: -6, width: 17, height: 17, borderRadius: 9, border: "1.5px solid #fff", background: "#DC2626", color: "#fff", fontSize: 11, lineHeight: "14px", cursor: "pointer", padding: 0, boxShadow: "0 1px 2px rgba(0,0,0,.25)" }}>×</button>
         </span>
       ))}
       <button onClick={() => inputRef.current?.click()} onContextMenu={(e) => { e.preventDefault(); pasteFromClipboard(); }} title="點一下選檔上傳；要貼截圖：在這格按 Cmd+V，或在此鈕按右鍵" style={{ border: `1px dashed ${BORDER}`, background: "#fff", color: SUB, borderRadius: 5, width: size, height: size, fontSize: 13, cursor: "pointer" }}>{busy ? "…" : "＋"}</button>
