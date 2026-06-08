@@ -2943,7 +2943,7 @@ function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols,
             const quoteKeyOf = (it) => `${it.payDate || ""}¦${it.assignee || ""}`;
             const quoteOrder = []; const quoteInfo = {};
             group.rows.forEach(({ item }) => { if (item.fromPetty) return; const k = quoteKeyOf(item); if (!quoteInfo[k]) { quoteInfo[k] = { idx: quoteOrder.length, sum: 0, n: 0, date: item.payDate || "", vendor: item.assignee || "" }; quoteOrder.push(k); } quoteInfo[k].sum += estAfterOf(item); quoteInfo[k].n++; });
-            const qualifies = (k) => !!(quoteInfo[k].date || quoteInfo[k].vendor); // 有日期或廠商＝可視為一張報價單
+            const qualifies = (k) => { const q = quoteInfo[k]; return !!(q && (q.date || q.vendor)); }; // 有日期或廠商＝可視為一張報價單（零用金細項不在表內→null-safe）
             const multiQuote = showMoney() && quoteOrder.some(qualifies) && quoteOrder.length >= 2;
             // 有標籤的大項整行反底色：預估群組→藍、非工程→黃、其他費用群組→淡褐
             const isEstimate = !!(cat?.group && /預估/.test(cat.group));
@@ -3039,13 +3039,7 @@ function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols,
                 </div>
                 {/* item rows（收合時隱藏） */}
                 {!isCollapsed && group.rows.map(({ item }, rIdx) => {
-                  const rowKey = `${catId}||${item.id}`;
-                  const isDragOver = dragOverId === rowKey;
-                  const stColor = STATUS_MAP[item.status]?.color || "#6F6656";
-                  const tinted = !!item.status && item.status !== "pending"; // 由「狀態」決定整行顏色（待開工=白底）
-                  const qk = quoteKeyOf(item); const qi = quoteInfo[qk]; const isQuote = multiQuote && qualifies(qk); const qTint = isQuote ? QUOTE_TINTS[qi.idx % QUOTE_TINTS.length] : null;
-                  const newQuote = isQuote && (rIdx === 0 || quoteKeyOf(group.rows[rIdx - 1].item) !== qk);
-                  // 零用金細項：唯讀顯示（編輯入口在零用金頁），不參與報價單分組/拖曳/付款
+                  // 零用金細項：唯讀顯示（編輯入口在零用金頁），不參與報價單分組/拖曳/付款 — 先攔截，避免碰到報價單分組邏輯
                   if (item.fromPetty) return (
                     <div key={item.id} style={{ display: "flex", alignItems: "center", gap: 8, borderBottom: "1px solid #EFE7D6", background: "#FBF7EE", padding: "6px 12px 6px 34px", fontSize: 12.5, color: "#4A4234" }}>
                       <span style={{ flexShrink: 0, fontSize: 10.5, fontWeight: 700, color: "#C2410C", background: "#FBEFE7", border: "1px solid #F0CFB8", borderRadius: 8, padding: "1px 7px" }}>🪙 零用金</span>
@@ -3057,6 +3051,12 @@ function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols,
                       <span title="此筆來自零用金帳戶，請到「零用金」頁編輯" style={{ flexShrink: 0, color: "#C8BCA0", fontSize: 12 }}>🔒</span>
                     </div>
                   );
+                  const rowKey = `${catId}||${item.id}`;
+                  const isDragOver = dragOverId === rowKey;
+                  const stColor = STATUS_MAP[item.status]?.color || "#6F6656";
+                  const tinted = !!item.status && item.status !== "pending"; // 由「狀態」決定整行顏色（待開工=白底）
+                  const qk = quoteKeyOf(item); const qi = quoteInfo[qk]; const isQuote = multiQuote && qualifies(qk); const qTint = isQuote ? QUOTE_TINTS[qi.idx % QUOTE_TINTS.length] : null;
+                  const newQuote = isQuote && (rIdx === 0 || quoteKeyOf(group.rows[rIdx - 1].item) !== qk);
                   return (
                     <Fragment key={item.id}>
                     {newQuote && (() => { const qItemIds = group.rows.filter(r => quoteKeyOf(r.item) === qk).map(r => r.item.id); return (
