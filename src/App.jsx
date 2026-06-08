@@ -5915,31 +5915,6 @@ function PettyCashView({ petty, setPetty, cats, setCats, canEdit, confirm }) {
         )}
       </div>
 
-      {/* 撥款紀錄 */}
-      <div style={{ background: "#fff", border: `1px solid ${BORDER}`, borderRadius: 12, overflow: "hidden", marginBottom: 14 }}>
-        <div style={{ display: "flex", alignItems: "center", padding: "10px 14px", background: "#ECE6D7", borderBottom: `1px solid ${BORDER}` }}>
-          <div style={{ fontSize: 13.5, fontWeight: 600, color: TEXT, flex: 1 }}>撥款紀錄（請款）· {advances.length} 筆</div>
-          <button onClick={addAdv} style={{ border: `1px solid ${BORDER}`, background: "#fff", color: TEXT, borderRadius: 7, padding: "4px 12px", fontSize: 12.5, cursor: "pointer" }}>＋ 新增撥款</button>
-        </div>
-        {advances.length === 0 ? <div style={{ padding: 16, textAlign: "center", color: "#A99F88", fontSize: 13 }}>尚無撥款紀錄</div> : advances.map(a => (
-          <div key={a.id}
-            draggable
-            onDragStart={() => setAdvDragId(a.id)}
-            onDragOver={e => { if (advDragId) { e.preventDefault(); setAdvDragOverId(a.id); } }}
-            onDrop={() => { if (advDragId) { reorderAdv(advDragId, a.id); setAdvDragId(null); setAdvDragOverId(null); } }}
-            onDragEnd={() => { setAdvDragId(null); setAdvDragOverId(null); }}
-            style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 14px", borderBottom: `1px solid #EFE7D6`, background: advDragOverId === a.id ? "#F3E4DE" : "transparent" }}>
-            <span title="拖曳排序" style={{ color: "#C8BCA0", cursor: "grab", fontSize: 13, flexShrink: 0 }}>⠿</span>
-            <DateField value={a.date} onChange={v => setAdv(a.id, "date", v)} style={{ width: 140 }} />
-            {cellInput(a.note || "", v => setAdv(a.id, "note", v), { ph: "說明（請款）" })}
-            <input type="number" value={a.amount || ""} onChange={e => setAdv(a.id, "amount", Math.abs(Math.round(Number(e.target.value) || 0)))} style={{ width: 120, textAlign: "right", border: `1px solid ${BORDER}`, borderRadius: 6, padding: "5px 7px", fontSize: 13, fontVariantNumeric: "tabular-nums" }} />
-            <div style={{ flexShrink: 0 }} title="請款單憑證（可貼截圖）"><ReceiptUploader receipts={a.receipts || []} onChange={list => setAdv(a.id, "receipts", list)} /></div>
-            <button onClick={() => delAdv(a.id)} style={{ border: "none", background: "none", color: "#C8BCA0", cursor: "pointer", fontSize: 16, flexShrink: 0 }} onMouseEnter={e => e.currentTarget.style.color = "#DC2626"} onMouseLeave={e => e.currentTarget.style.color = "#C8BCA0"}>×</button>
-          </div>
-        ))}
-        {advances.length > 0 && <button onClick={addAdv} style={{ width: "100%", textAlign: "left", padding: "10px 14px", border: "none", borderTop: `1px dashed ${BORDER}`, background: "#FBF7EE", color: ACCENT, fontSize: 12.5, fontWeight: 600, cursor: "pointer" }}>＋ 在這裡新增一筆撥款</button>}
-      </div>
-
       {/* 花費明細（專業表格：搜尋/篩選/排序/拖曳/憑證上傳） */}
       <div style={{ background: "#fff", border: `1px solid ${BORDER}`, borderRadius: 12, overflow: "hidden" }}>
         {/* 工具列 */}
@@ -6037,6 +6012,31 @@ function PettyCashView({ petty, setPetty, cats, setCats, canEdit, confirm }) {
             </tbody>
           </table>
         </div>
+      </div>
+
+      {/* 撥款紀錄（移到最下面，不再夾在花費圖表與明細中間）*/}
+      <div style={{ background: "#fff", border: `1px solid ${BORDER}`, borderRadius: 12, overflow: "hidden", marginTop: 14 }}>
+        <div style={{ display: "flex", alignItems: "center", padding: "10px 14px", background: "#ECE6D7", borderBottom: `1px solid ${BORDER}` }}>
+          <div style={{ fontSize: 13.5, fontWeight: 600, color: TEXT, flex: 1 }}>撥款紀錄（請款）· {advances.length} 筆<span style={{ fontSize: 11.5, color: "#A99F88", fontWeight: 400 }}>　公司撥現金給工地（不計工程成本）</span></div>
+          <button onClick={addAdv} style={{ border: `1px solid ${BORDER}`, background: "#fff", color: TEXT, borderRadius: 7, padding: "4px 12px", fontSize: 12.5, cursor: "pointer" }}>＋ 新增撥款</button>
+        </div>
+        {advances.length === 0 ? <div style={{ padding: 16, textAlign: "center", color: "#A99F88", fontSize: 13 }}>尚無撥款紀錄</div> : advances.map(a => (
+          <div key={a.id}
+            draggable
+            onDragStart={() => setAdvDragId(a.id)}
+            onDragOver={e => { if (advDragId) { e.preventDefault(); setAdvDragOverId(a.id); } }}
+            onDrop={() => { if (advDragId) { reorderAdv(advDragId, a.id); setAdvDragId(null); setAdvDragOverId(null); } }}
+            onDragEnd={() => { setAdvDragId(null); setAdvDragOverId(null); }}
+            style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 14px", borderBottom: `1px solid #EFE7D6`, background: advDragOverId === a.id ? "#F3E4DE" : "transparent" }}>
+            <span title="拖曳排序" style={{ color: "#C8BCA0", cursor: "grab", fontSize: 13, flexShrink: 0 }}>⠿</span>
+            <DateField value={a.date} onChange={v => setAdv(a.id, "date", v)} style={{ width: 140 }} />
+            {cellInput(a.note || "", v => setAdv(a.id, "note", v), { ph: "說明（請款）" })}
+            <input type="number" value={a.amount || ""} onChange={e => setAdv(a.id, "amount", Math.abs(Math.round(Number(e.target.value) || 0)))} style={{ width: 120, textAlign: "right", border: `1px solid ${BORDER}`, borderRadius: 6, padding: "5px 7px", fontSize: 13, fontVariantNumeric: "tabular-nums" }} />
+            <div style={{ flexShrink: 0 }} title="請款單憑證（可貼截圖）"><ReceiptUploader receipts={a.receipts || []} onChange={list => setAdv(a.id, "receipts", list)} /></div>
+            <button onClick={() => delAdv(a.id)} style={{ border: "none", background: "none", color: "#C8BCA0", cursor: "pointer", fontSize: 16, flexShrink: 0 }} onMouseEnter={e => e.currentTarget.style.color = "#DC2626"} onMouseLeave={e => e.currentTarget.style.color = "#C8BCA0"}>×</button>
+          </div>
+        ))}
+        {advances.length > 0 && <button onClick={addAdv} style={{ width: "100%", textAlign: "left", padding: "10px 14px", border: "none", borderTop: `1px dashed ${BORDER}`, background: "#FBF7EE", color: ACCENT, fontSize: 12.5, fontWeight: 600, cursor: "pointer" }}>＋ 在這裡新增一筆撥款</button>}
       </div>
 
       <div style={{ fontSize: 11.5, color: "#A99F88", marginTop: 10, lineHeight: 1.7 }}>※ 點欄位標題（日期／金額）可排序；清空搜尋/篩選後可拖曳 ⠿ 排序。憑證檔可按「＋」上傳，或在該格直接貼上截圖。請款（撥款）不算工程成本；花費已依工種併入各大項實際成本。</div>
