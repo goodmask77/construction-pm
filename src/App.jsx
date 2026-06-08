@@ -934,7 +934,7 @@ export default function App() {
         {view === "overview" && (
           <OverviewTable cats={cats} setCats={guardedSetCats} confirm={confirm} customCols={customCols} setCustomCols={canEditData ? commitCustomCols : null}
             onSelect={(cat) => { setSelectedCat(cat); setSelectedItem(null); }} dragging={dragging} dragOver={dragOver} onDragStart={onDragStart} onDragOver={onDragOver} onDrop={onDrop}
-            trash={trash} trashItems={trashItems} restoreTrash={restoreTrash} commitTrash={commitTrash} />
+            trash={trash} trashItems={trashItems} restoreTrash={restoreTrash} commitTrash={commitTrash} petty={petty} setView={setView} />
         )}
         {view === "gantt" && (
           <SequenceView
@@ -2523,7 +2523,9 @@ function CustomInput({ value, type, onCommit }) {
   }
   return <div onClick={()=>{ setLocal(value ?? ""); setEditing(true); }} style={{ width:"100%", cursor:"text", minHeight:22, color: (value!==undefined&&value!=="")?"#211C15":"#CDC3AC", padding:"2px 2px" }}>{display || "—"}</div>;
 }
-function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols, onSelect, dragging, dragOver, onDragStart, onDragOver, onDrop, trash = [], trashItems, restoreTrash, commitTrash }) {
+function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols, onSelect, dragging, dragOver, onDragStart, onDragOver, onDrop, trash = [], trashItems, restoreTrash, commitTrash, petty, setView }) {
+  // 零用金實支依工種（在總覽各大項旁顯示「🪙零用金 +$X」）
+  const pettyByCat = useMemo(() => { const m = {}; (petty?.spends || []).forEach(s => { if (s.catId) m[s.catId] = (m[s.catId] || 0) + (Number(s.amount) || 0); }); return m; }, [petty]);
   const [showTrash, setShowTrash] = useState(false);
   const [newColLabel, setNewColLabel] = useState("");
   const [newColType, setNewColType] = useState("money");
@@ -2985,6 +2987,7 @@ function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols,
                   ) : (
                     cat?.group && <button onClick={() => setGroupEditId(catId)} title="點擊改費用群組" style={{ flexShrink: 0, marginLeft: 6, border: `1px solid ${isEstimate ? "#9DBCE0" : "#C8BCA0"}`, background: isEstimate ? "#DCE8F5" : "#F3E4DE", color: isEstimate ? "#2C5A8C" : "#92400e", borderRadius: 12, padding: "2px 9px", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>🏷 {cat.group}</button>
                   ))}
+                  {showMoney() && pettyByCat[catId] > 0 && <span onClick={() => setView && setView("petty")} title={`此工種的零用金實支 ${fmt(pettyByCat[catId])}（已併入工程實際成本，來源：零用金帳戶）— 點擊看零用金頁`} style={{ flexShrink: 0, marginLeft: 6, fontSize: 11, fontWeight: 600, color: "#C2410C", background: "#FBEFE7", border: "1px solid #F0CFB8", borderRadius: 12, padding: "2px 8px", cursor: "pointer", whiteSpace: "nowrap" }}>🪙 零用金 +{fmt(pettyByCat[catId])}</span>}
                   {!showMoney() && <div style={{ flex: 1 }} />}
                   {showMoney() && <>
                   <div style={{ flex: 1 }} />
