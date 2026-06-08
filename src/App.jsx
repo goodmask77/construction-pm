@@ -5524,6 +5524,9 @@ function AccountManager({ confirm, myId }) {
   const [err, setErr] = useState("");
   const [nName, setNName] = useState(""); const [nUser, setNUser] = useState(""); const [nPw, setNPw] = useState(""); const [nAdmin, setNAdmin] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [openSp, setOpenSp] = useState(() => new Set()); // 展開中的「帳號:空間」key（預設全部收合，清爽）
+  const [openAcct, setOpenAcct] = useState(() => new Set()); // 展開中的帳號id
+  const toggleSet = (setter, key) => setter(prev => { const n = new Set(prev); n.has(key) ? n.delete(key) : n.add(key); return n; });
 
   const load = async () => {
     if (!supabase) { setErr("系統未設定登入服務"); setList([]); return; }
@@ -5608,7 +5611,7 @@ function AccountManager({ confirm, myId }) {
     <div style={{ maxWidth: 1100, margin: "16px auto", padding: "0 4px" }}>
       <div style={{ fontSize:18, fontWeight: 600, color:"#211C15", marginBottom:6 }}>👤 帳號管理（僅管理員）</div>
       <div style={{ background:"#faf6ee", border:"1px solid #e4ddc9", borderRadius:10, padding:"10px 14px", marginBottom:16, fontSize:13, color:"#6b6450", lineHeight:1.7 }}>
-        在這裡建立夥伴帳號、設定<b style={{color:"#b45309"}}>可見空間、可見頁面、可編輯頁面、是否看金額</b>。沒登入的人只能檢視。<b>管理員</b>恆有全部權限。新帳號預設只能看、不能改。
+        建立夥伴帳號後，按該帳號右邊的<b style={{color:"#b45309"}}>「設定權限」</b>展開矩陣，逐個空間／頁面勾選<b>可見、可編輯、看金額</b>（點空間標題列可展開該空間的細項）。沒登入的人只能檢視；<b>管理員</b>恆有全部權限；新帳號預設只能看、不能改。
       </div>
 
       {err && <div style={{ background:"#FEF2F2", border:"1px solid #FCA5A5", color:"#DC2626", borderRadius:8, padding:"8px 12px", marginBottom:12, fontSize:13 }}>{err}</div>}
@@ -5629,30 +5632,42 @@ function AccountManager({ confirm, myId }) {
        : list.length === 0 ? <div style={{ padding:30, textAlign:"center", color:"#A99F88", fontSize:13 }}>尚無帳號</div>
        : list.map(p => {
         const isAdm = p.role === "admin";
+        const acctOpen = openAcct.has(p.id);
+        const spacesIn = ACCT_SPACES.filter(([sid]) => spaceChecked(p, sid)).length;
+        const moneyPages = ALL_MONEY_KEYS.filter(k => { const [s, g] = k.split(":"); return moneyChecked(p, s, g); }).length;
         return (
-        <div key={p.id} style={{ background:"#fff", border:"1px solid #D8CFBB", borderRadius:12, padding:16, marginBottom:12 }}>
-          <div style={{ display:"flex", alignItems:"center", gap:10, flexWrap:"wrap", marginBottom:isAdm?0:12 }}>
+        <div key={p.id} style={{ background:"#fff", border:"1px solid #D8CFBB", borderRadius:12, padding:"12px 16px", marginBottom:10 }}>
+          <div style={{ display:"flex", alignItems:"center", gap:10, flexWrap:"wrap" }}>
             <div style={{ fontSize:15, fontWeight:700, color:"#211C15" }}>{p.display_name}</div>
             <div style={{ fontSize:12, color:"#A99F88" }}>{(p.email||"").split("@")[0]}</div>
             <button onClick={()=>!isAdm||list.filter(x=>x.role==="admin").length>1 ? patch(p.id, { role: isAdm?"staff":"admin" }) : alert("至少要保留一位管理員")} style={{ background:"#ECE6D7", border:"1px solid #D8CFBB", borderRadius:8, padding:"3px 11px", fontSize:12.5, cursor:"pointer", color:isAdm?"#b5512b":"#4A4234", fontWeight:isAdm?700:400 }}>{isAdm?"管理員":"一般"} ⇄</button>
+            {!isAdm && <span style={{ fontSize:12, color:"#A99F88" }}>可進入 {spacesIn} 空間{moneyPages?`・看金額 ${moneyPages} 頁`:""}</span>}
             <div style={{ flex:1 }} />
+            {!isAdm && <button onClick={()=>toggleSet(setOpenAcct, p.id)} style={{ background: acctOpen?"#b5512b":"#fff", color: acctOpen?"#fff":"#b5512b", border:"1px solid #b5512b", borderRadius:8, padding:"4px 12px", fontSize:12.5, fontWeight:600, cursor:"pointer" }}>{acctOpen?"收合權限 ▴":"設定權限 ▾"}</button>}
             <button onClick={()=>resetPw(p)} style={{ background:"none", border:"1px solid #D8CFBB", borderRadius:8, padding:"3px 10px", fontSize:12, color:"#6F6656", cursor:"pointer" }}>重設密碼</button>
             {p.id !== myId && <button onClick={()=>delAcct(p)} title="刪除帳號" style={{ background:"none", border:"none", color:"#C8BCA0", cursor:"pointer", fontSize:18 }} onMouseEnter={e=>e.currentTarget.style.color="#DC2626"} onMouseLeave={e=>e.currentTarget.style.color="#C8BCA0"}>×</button>}
           </div>
-          {isAdm ? <div style={{ fontSize:13, color:"#A99F88", marginTop:6 }}>管理員：全部空間／全部頁面／可編輯全部／可看金額</div> : (
-          <div style={{ display:"grid", gap:12 }}>
+          {isAdm ? <div style={{ fontSize:13, color:"#A99F88", marginTop:6 }}>管理員：全部空間／全部頁面／可編輯全部／可看金額</div> : (acctOpen &&
+          <div style={{ display:"grid", gap:10, marginTop:12 }}>
             {ACCT_SPACES.map(([sid, slabel]) => {
               const rows = PERM_MATRIX[sid] || [];
               const on = spaceChecked(p, sid);
               const hasMoney = !!SPACE_CONF[sid]?.showCost;
+              const spKey = p.id + ":" + sid;
+              const spOpen = openSp.has(spKey);
+              const visN = rows.filter(([pg]) => viewChecked(p, sid, pg)).length;
+              const editN = rows.filter(([pg,, c]) => c.edit && editChecked(p, sid, pg)).length;
+              const moneyN = hasMoney ? rows.filter(([pg,, c]) => c.money && moneyChecked(p, sid, pg)).length : 0;
               return (
-                <div key={sid} style={{ border:"1px solid #E7DFCC", borderRadius:10, overflow:"hidden" }}>
-                  <div style={{ display:"flex", alignItems:"center", gap:10, background:"#F7F2E7", padding:"8px 12px" }}>
+                <div key={sid} style={{ border:"1px solid #E7DFCC", borderRadius:10, overflow:"hidden", opacity:on?1:0.6 }}>
+                  <div onClick={() => on && toggleSet(setOpenSp, spKey)} style={{ display:"flex", alignItems:"center", gap:8, background:"#F7F2E7", padding:"8px 12px", cursor:on?"pointer":"default" }}>
+                    <span style={{ fontSize:11, color:"#A99F88", width:10, display:"inline-block", transform:spOpen?"rotate(90deg)":"none", transition:"transform .15s" }}>{on?"▸":""}</span>
                     <div style={{ fontSize:13.5, fontWeight:700, color:"#211C15" }}>{slabel}</div>
+                    {on && !spOpen && <span style={{ fontSize:11.5, color:"#A99F88" }}>可見 {visN}/{rows.length}・可編輯 {editN}{hasMoney?`・看金額 ${moneyN}`:""}</span>}
                     <div style={{ flex:1 }} />
-                    {pill(on, "可進入", () => toggleSpace(p, sid))}
+                    {pill(on, "可進入", (e) => { e.stopPropagation(); toggleSpace(p, sid); })}
                   </div>
-                  {on && (
+                  {on && spOpen && (
                     <div>
                       <div style={{ display:"flex", alignItems:"center", padding:"5px 12px", fontSize:11, color:"#A99F88", background:"#FCFAF4", borderBottom:"1px solid #F0E9D8" }}>
                         <div style={{ flex:1 }}>頁面</div>
@@ -5680,7 +5695,7 @@ function AccountManager({ confirm, myId }) {
         </div>);
        })}
       <div style={{ fontSize:11.5, color:"#A99F88", marginTop:8, lineHeight:1.7 }}>
-        提示：「可見頁面／可見空間」沒勾任何項＝預設全部可見（由你逐一限縮）。金額開關目前是介面隱藏；若要連資料庫都鎖死，再告訴我做 RLS。
+        提示：可見頁面預設全部勾選（綠），你把不想給看的取消勾即可；可編輯、看金額預設不勾，要開放才勾。「看金額」需先在 Supabase 加 money_pages 欄位才會記住。
       </div>
     </div>
   );
