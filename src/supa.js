@@ -14,6 +14,7 @@ const inTabLock = (_name, _acquireTimeout, fn) => {
   _authChain = run.then(() => {}, () => {})
   return run
 }
+// 登入用 client（帶 session / 權杖，給帳號/權限）
 export const supabase = url && key ? createClient(url, key, {
   auth: {
     persistSession: true,
@@ -23,17 +24,23 @@ export const supabase = url && key ? createClient(url, key, {
   },
 }) : null
 
+// 資料讀寫用 client：不帶 session、不刷新權杖、不過 auth 鎖 → 17 個請求可真正並發，載入快。
+// （pm_documents 沒有 RLS，用公鑰即可讀寫；登入相關仍走上面的 supabase。）
+const dataClient = url && key ? createClient(url, key, {
+  auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
+}) : null
+
 export const CLIENT_ID =
   Math.random().toString(36).slice(2) + Date.now().toString(36)
 
 // shared=true → 全體協作者共用（Supabase）；shared=false → 本機個人（localStorage）
 async function getShared(k) {
-  if (!supabase) {
+  if (!dataClient) {
     const v = localStorage.getItem(k)
     return v != null ? { value: v } : null
   }
   try {
-    const { data } = await supabase
+    const { data } = await dataClient
       .from('pm_documents').select('data').eq('id', k).maybeSingle()
     if (data && data.data && typeof data.data.v === 'string') return { value: data.data.v }
   } catch (_) {}
@@ -41,9 +48,9 @@ async function getShared(k) {
 }
 
 async function setShared(k, value) {
-  if (!supabase) { try { localStorage.setItem(k, value) } catch (_) {} ; return }
+  if (!dataClient) { try { localStorage.setItem(k, value) } catch (_) {} ; return }
   try {
-    await supabase.from('pm_documents').upsert({
+    await dataClient.from('pm_documents').upsert({
       id: k,
       data: { v: value },
       editor: CLIENT_ID,
@@ -63,17 +70,17 @@ function setLocal(k, value) {
 // ── 圖片儲存（Supabase Storage，bucket: photos）──────────────────────────────
 const PHOTO_BUCKET = 'photos';
 export async function uploadPhoto(file) {
-  if (!supabase) throw new Error('Supabase 未設定');
+  if (!dataClient) throw new Error('Supabase 未設定');
   const ext = (file.name?.split('.').pop() || 'jpg').toLowerCase().replace(/[^a-z0-9]/g, '') || 'jpg';
   const path = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
-  const { error } = await supabase.storage.from(PHOTO_BUCKET).upload(path, file, { contentType: file.type || 'image/jpeg', upsert: false });
+  const { error } = await dataClient.storage.from(PHOTO_BUCKET).upload(path, file, { contentType: file.type || 'image/jpeg', upsert: false });
   if (error) throw error;
-  const { data } = supabase.storage.from(PHOTO_BUCKET).getPublicUrl(path);
+  const { data } = dataClient.storage.from(PHOTO_BUCKET).getPublicUrl(path);
   return { url: data.publicUrl, path };
 }
 export async function deletePhotoFile(path) {
-  if (!supabase || !path) return;
-  try { await supabase.storage.from(PHOTO_BUCKET).remove([path]); } catch (_) {}
+  if (!dataClient || !path) return;
+  try { await dataClient.storage.from(PHOTO_BUCKET).remove([path]); } catch (_) {}
 }
 
 // 安裝 window.storage 墊片（在 App 掛載前呼叫）
@@ -88,8 +95,8 @@ export function installStorageShim() {
       else setLocal(key, value)
     },
     async delete(key, shared = true) {
-      if (shared && supabase) {
-        try { await supabase.from('pm_documents').delete().eq('id', key) } catch (_) {}
+      if (shared && dataClient) {
+        try { await dataClient.from('pm_documents').delete().eq('id', key) } catch (_) {}
       } else { try { localStorage.removeItem(key) } catch (_) {} }
     },
   }
