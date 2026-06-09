@@ -401,6 +401,7 @@ const PERM_MATRIX = {
 };
 // 舊資料相容：以前的可編輯權限只有 data/files/advisor 三類，對應到各頁
 const LEGACY_EDIT = { overview: "data", gantt: "data", petty: "data", issues: "data", owner: "data", groups: "data", kb: "data", r360: "data", fb: "data", quest: "data", poll: "data", shop: "data", rank: "data", files: "files", compare: "files", advisor: "advisor" };
+const PERM_NONE = "__none__"; // 哨兵：陣列＝[PERM_NONE] 代表「明確全關」(與空陣列＝預設全開 區分)
 const ALL_VIEW_KEYS = Object.entries(PERM_MATRIX).flatMap(([sp, rows]) => rows.map(([pg]) => `${sp}:${pg}`));
 const ALL_EDIT_KEYS = Object.entries(PERM_MATRIX).flatMap(([sp, rows]) => rows.filter(r => r[2].edit).map(([pg]) => `${sp}:${pg}`));
 const ALL_MONEY_KEYS = Object.entries(PERM_MATRIX).filter(([sp]) => SPACE_CONF[sp]?.showCost).flatMap(([sp, rows]) => rows.filter(r => r[2].money).map(([pg]) => `${sp}:${pg}`));
@@ -825,6 +826,7 @@ export default function App() {
   const _vp = profile?.view_pages || [];
   const _ep = profile?.pages || [];
   const _mp = profile?.money_pages || [];
+  // 預設「全開」，admin 在權限頁逐項取消才會關閉（空陣列＝全部允許）。未登入訪客一律唯讀但可看。
   const viewOK = (sp, pg) => {
     if (isAdmin) return true;
     if (!_vp.length) return true;                                   // 未設＝全可見
@@ -832,13 +834,14 @@ export default function App() {
   };
   const editOK = (sp, pg) => {
     if (isAdmin || isManager) return true;
-    if (_ep.includes(`${sp}:${pg}`)) return true;
-    const lg = LEGACY_EDIT[pg]; return !!(lg && _ep.includes(lg));  // 舊資料相容
+    if (!profile) return false;                                     // 未登入訪客：唯讀
+    if (!_ep.length) return true;                                   // 登入者未設＝預設可編輯（全開）
+    return _ep.includes(`${sp}:${pg}`) || _ep.includes(LEGACY_EDIT[pg]); // 含舊資料相容
   };
   const moneyOK = (sp, pg) => {
-    if (isAdmin || isManager || !profile) return true;             // 訪客可看（維持原行為）
-    if (_mp.length) return _mp.includes(`${sp}:${pg}`);
-    return !!profile?.can_view_money;                              // 舊：全域開關相容
+    if (isAdmin || isManager || !profile) return true;             // 訪客可看
+    if (!_mp.length) return true;                                   // 登入者未設＝預設看得到（全開）
+    return _mp.includes(`${sp}:${pg}`);
   };
   const canViewMoney = moneyOK(CURRENT_SPACE, view);
   CAN_VIEW_MONEY = canViewMoney; // 同步給 showMoney()（依「目前頁面」決定金額欄位/KPI 顯示與否）
@@ -5552,29 +5555,22 @@ function AccountManager({ confirm, myId }) {
     if (error) { setErr("儲存失敗：" + error.message); load(); }
   };
   // ── 矩陣勾選邏輯（含舊資料具體化：第一次動手就把「預設全可見/全域金額」攤成明確清單）──
+  // 三個維度一律「預設全開」：[]＝全部允許、[PERM_NONE]＝全部禁止、其餘＝明確允許清單。勾＝開、取消＝關。
   const viewChecked = (p, sid, pg) => { const vp = p.view_pages || []; if (!vp.length) return true; return vp.includes(`${sid}:${pg}`) || vp.includes(pg); };
-  const editChecked = (p, sid, pg) => { const ep = p.pages || []; return ep.includes(`${sid}:${pg}`) || ep.includes(LEGACY_EDIT[pg]); };
-  const moneyChecked = (p, sid, pg) => { const mp = p.money_pages || []; if (mp.length) return mp.includes(`${sid}:${pg}`); return !!p.can_view_money; };
+  const editChecked = (p, sid, pg) => { const ep = p.pages || []; if (!ep.length) return true; return ep.includes(`${sid}:${pg}`) || ep.includes(LEGACY_EDIT[pg]); };
+  const moneyChecked = (p, sid, pg) => { const mp = p.money_pages || []; if (!mp.length) return true; return mp.includes(`${sid}:${pg}`); };
   const spaceChecked = (p, sid) => { const sp = p.spaces || []; return !sp.length || sp.includes(sid); };
 
-  const toggleView = (p, sid, pg) => {
-    const key = `${sid}:${pg}`; const vp = p.view_pages || [];
-    let base = !vp.length ? [...ALL_VIEW_KEYS] : ALL_VIEW_KEYS.filter(k => { const [s, g] = k.split(":"); return vp.includes(k) || vp.includes(g); });
-    base = base.includes(key) ? base.filter(k => k !== key) : [...base, key];
-    patch(p.id, { view_pages: base.length === ALL_VIEW_KEYS.length ? [] : base }); // 全選＝回到預設空陣列
+  // 通用切換：all=該維度全部key、isOn=目前是否開。攤成明確清單、扣/加該項，再依「全開→[]、全關→[PERM_NONE]」收斂。
+  const toggleDim = (p, field, all, isOn, key) => {
+    let cur = all.filter(k => { const [s, g] = k.split(":"); return isOn(p, s, g); });
+    cur = cur.includes(key) ? cur.filter(k => k !== key) : [...cur, key];
+    const store = cur.length === all.length ? [] : (cur.length === 0 ? [PERM_NONE] : cur);
+    patch(p.id, { [field]: store });
   };
-  const toggleEdit = (p, sid, pg) => {
-    const key = `${sid}:${pg}`; const ep = p.pages || [];
-    let base = ALL_EDIT_KEYS.filter(k => { const [s, g] = k.split(":"); return ep.includes(k) || ep.includes(LEGACY_EDIT[g]); });
-    base = base.includes(key) ? base.filter(k => k !== key) : [...base, key];
-    patch(p.id, { pages: base });
-  };
-  const toggleMoney = (p, sid, pg) => {
-    const key = `${sid}:${pg}`; const mp = p.money_pages || [];
-    let base = mp.length ? [...mp] : (p.can_view_money ? [...ALL_MONEY_KEYS] : []);
-    base = base.includes(key) ? base.filter(k => k !== key) : [...base, key];
-    patch(p.id, { money_pages: base, can_view_money: base.length > 0 }); // 同步舊欄位供相容
-  };
+  const toggleView = (p, sid, pg) => toggleDim(p, "view_pages", ALL_VIEW_KEYS, viewChecked, `${sid}:${pg}`);
+  const toggleEdit = (p, sid, pg) => toggleDim(p, "pages", ALL_EDIT_KEYS, editChecked, `${sid}:${pg}`);
+  const toggleMoney = (p, sid, pg) => toggleDim(p, "money_pages", ALL_MONEY_KEYS, moneyChecked, `${sid}:${pg}`);
   const toggleSpace = (p, sid) => {
     const sp = p.spaces || [];
     let base = sp.length ? [...sp] : SPACES.map(s => s.id);
@@ -5667,27 +5663,33 @@ function AccountManager({ confirm, myId }) {
                     <div style={{ flex:1 }} />
                     {pill(on, "可進入", (e) => { e.stopPropagation(); toggleSpace(p, sid); })}
                   </div>
-                  {on && spOpen && (
+                  {on && spOpen && (() => {
+                    const gtc = hasMoney ? "1fr 76px 76px 76px" : "1fr 76px 76px";
+                    const sep = "1px solid #EFE8D6";
+                    const hc = { padding: "6px 0", textAlign: "center", borderLeft: sep };
+                    const cc = { display: "flex", alignItems: "center", justifyContent: "center", borderLeft: sep, padding: "5px 0" };
+                    return (
                     <div>
-                      <div style={{ display:"flex", alignItems:"center", padding:"5px 12px", fontSize:11, color:"#A99F88", background:"#FCFAF4", borderBottom:"1px solid #F0E9D8" }}>
-                        <div style={{ flex:1 }}>頁面</div>
-                        <div style={{ width:56, textAlign:"center" }}>可見</div>
-                        <div style={{ width:56, textAlign:"center" }}>可編輯</div>
-                        {hasMoney && <div style={{ width:56, textAlign:"center" }}>看金額</div>}
+                      <div style={{ display: "grid", gridTemplateColumns: gtc, fontSize: 11.5, fontWeight: 600, color: "#A99F88", background: "#FCFAF4", borderBottom: sep }}>
+                        <div style={{ padding: "6px 12px" }}>頁面</div>
+                        <div style={hc}>可見</div>
+                        <div style={hc}>可編輯</div>
+                        {hasMoney && <div style={hc}>看金額</div>}
                       </div>
-                      {rows.map(([pg, plabel, caps]) => {
+                      {rows.map(([pg, plabel, caps], i) => {
                         const vis = viewChecked(p, sid, pg);
                         return (
-                          <div key={pg} style={{ display:"flex", alignItems:"center", padding:"6px 12px", borderTop:"1px solid #F6F1E5" }}>
-                            <div style={{ flex:1, fontSize:13, color: vis ? "#4A4234" : "#BDB39A" }}>{plabel}</div>
-                            <div style={{ width:56, textAlign:"center" }}>{cbox(vis, () => toggleView(p, sid, pg), "#3C8C3C")}</div>
-                            <div style={{ width:56, textAlign:"center" }}>{caps.edit ? cbox(editChecked(p, sid, pg), () => toggleEdit(p, sid, pg), "#b5512b") : <span style={{ color:"#DDD4BE" }}>—</span>}</div>
-                            {hasMoney && <div style={{ width:56, textAlign:"center" }}>{caps.money ? cbox(moneyChecked(p, sid, pg), () => toggleMoney(p, sid, pg), "#2E7D32") : <span style={{ color:"#DDD4BE" }}>—</span>}</div>}
+                          <div key={pg} style={{ display: "grid", gridTemplateColumns: gtc, alignItems: "center", background: i % 2 ? "#FBF8F0" : "#fff", borderTop: "1px solid #F3EEE1" }}>
+                            <div style={{ padding: "5px 12px", fontSize: 13, color: vis ? "#4A4234" : "#BDB39A" }}>{plabel}</div>
+                            <div style={cc}>{cbox(vis, () => toggleView(p, sid, pg), "#3C8C3C")}</div>
+                            <div style={cc}>{caps.edit ? cbox(editChecked(p, sid, pg), () => toggleEdit(p, sid, pg), "#b5512b") : <span style={{ color: "#DDD4BE" }}>—</span>}</div>
+                            {hasMoney && <div style={cc}>{caps.money ? cbox(moneyChecked(p, sid, pg), () => toggleMoney(p, sid, pg), "#2E7D32") : <span style={{ color: "#DDD4BE" }}>—</span>}</div>}
                           </div>
                         );
                       })}
                     </div>
-                  )}
+                    );
+                  })()}
                 </div>
               );
             })}
