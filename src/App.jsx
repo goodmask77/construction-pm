@@ -402,6 +402,13 @@ const PERM_MATRIX = {
 // 舊資料相容：以前的可編輯權限只有 data/files/advisor 三類，對應到各頁
 const LEGACY_EDIT = { overview: "data", gantt: "data", petty: "data", issues: "data", owner: "data", groups: "data", kb: "data", r360: "data", fb: "data", quest: "data", poll: "data", shop: "data", rank: "data", files: "files", compare: "files", advisor: "advisor" };
 const PERM_NONE = "__none__"; // 哨兵：陣列＝[PERM_NONE] 代表「明確全關」(與空陣列＝預設全開 區分)
+// 預設身份範本（連動式）。陣列規則同矩陣：[]＝全開、[PERM_NONE]＝全關、其餘＝明確允許清單。
+const DEFAULT_ROLES = [
+  { id: "role-foreman", name: "工地監工", spaces: ["construction"], view_pages: [], pages: [], money_pages: [] },
+  { id: "role-account", name: "會計/財務", spaces: [], view_pages: [], pages: ["construction:petty"], money_pages: [] },
+  { id: "role-staff", name: "一般員工", spaces: [], view_pages: [], pages: ["__none__"], money_pages: ["__none__"] },
+  { id: "role-vendor", name: "廠商/外部", spaces: ["construction"], view_pages: ["construction:overview", "construction:gantt", "construction:files", "construction:issues"], pages: ["__none__"], money_pages: ["__none__"] },
+];
 const ALL_VIEW_KEYS = Object.entries(PERM_MATRIX).flatMap(([sp, rows]) => rows.map(([pg]) => `${sp}:${pg}`));
 const ALL_EDIT_KEYS = Object.entries(PERM_MATRIX).flatMap(([sp, rows]) => rows.filter(r => r[2].edit).map(([pg]) => `${sp}:${pg}`));
 const ALL_MONEY_KEYS = Object.entries(PERM_MATRIX).filter(([sp]) => SPACE_CONF[sp]?.showCost).flatMap(([sp, rows]) => rows.filter(r => r[2].money).map(([pg]) => `${sp}:${pg}`));
@@ -426,7 +433,7 @@ const withPettyItems = (cats, petty) => {
   return cats.map(c => byCat[c.id] ? { ...c, items: [...(c.items || []), ...byCat[c.id]] } : c);
 };
 const COST_COL_IDS = new Set(["estQty", "unit", "estUnitPrice", "taxType", "taxAmount", "estTotal", "itemPaid", "payAccount", "payDate"]);
-const GLOBAL_KEYS = new Set(["pm_role", "pm_known_users", "pm_current_space"]);
+const GLOBAL_KEYS = new Set(["pm_role", "pm_known_users", "pm_current_space", "pm_roles"]);
 let CURRENT_SPACE = "construction";
 try { CURRENT_SPACE = localStorage.getItem("pm_current_space") || "construction"; } catch (_) {}
 if (!SPACES.some(s => s.id === CURRENT_SPACE)) CURRENT_SPACE = "construction";
@@ -648,10 +655,15 @@ export default function App() {
   const [journal, setJournal] = useState([]);
   const [plans, setPlans] = useState([]);
   const [petty, setPetty] = useState({ advances: [], spends: [] }); // 零用金帳本：撥款 / 花費
+  const [roles, setRoles] = useState([]); // 身份範本（連動式）：指派給帳號後，帳號權限跟著身份走
   const { confirm, Dialog: ConfirmDialog } = useConfirm();
   const commitPetty = (next) => {
     setPetty(next);
     window.storage.set(K("pm_petty"), JSON.stringify(next), true).catch(() => {});
+  };
+  const commitRoles = (next) => {
+    setRoles(next);
+    window.storage.set(K("pm_roles"), JSON.stringify(next), true).catch(() => {});
   };
 
   // 工作日誌：寫入 state 並存進共享後端
@@ -706,7 +718,7 @@ export default function App() {
     (async () => {
       const parse = (v, def) => { if (!v) return def; try { return JSON.parse(v); } catch (_) { return def; } };
       // 一次抓所有共用資料（合併成單一請求）+ 本機的角色，避免開啟時打十幾次 API
-      const SHARED_KEYS = ["pm_data", "pm_global_chat", "pm_settings", "pm_ai_log", "pm_activity", "pm_known_users", "pm_worklog", "pm_photos", "pm_accounts", "pm_seqlogs", "pm_columns", "pm_events", "pm_journal", "pm_plans", "pm_trash", "pm_petty"];
+      const SHARED_KEYS = ["pm_data", "pm_global_chat", "pm_settings", "pm_ai_log", "pm_activity", "pm_known_users", "pm_worklog", "pm_photos", "pm_accounts", "pm_seqlogs", "pm_columns", "pm_events", "pm_journal", "pm_plans", "pm_trash", "pm_petty", "pm_roles"];
       const [batch, savedName] = await Promise.all([getSharedMany(SHARED_KEYS.map(K)), loadRole()]);
       if (cancelled) return;
       const raw = (k) => batch[K(k)] || null;
@@ -715,7 +727,8 @@ export default function App() {
       const sv = parse(raw("pm_settings"), null);
       const log = parse(raw("pm_ai_log"), []);
       const alog = parse(raw("pm_activity"), []);
-      const kuV = raw("pm_known_users"), wlV = raw("pm_worklog"), phV = raw("pm_photos"), acV = raw("pm_accounts"), slV = raw("pm_seqlogs"), ccV = raw("pm_columns"), evV = raw("pm_events"), jnV = raw("pm_journal"), plV = raw("pm_plans"), trV = raw("pm_trash"), ptV = raw("pm_petty");
+      const kuV = raw("pm_known_users"), wlV = raw("pm_worklog"), phV = raw("pm_photos"), acV = raw("pm_accounts"), slV = raw("pm_seqlogs"), ccV = raw("pm_columns"), evV = raw("pm_events"), jnV = raw("pm_journal"), plV = raw("pm_plans"), trV = raw("pm_trash"), ptV = raw("pm_petty"), rlV = raw("pm_roles");
+      { const r = parse(rlV, null); setRoles(Array.isArray(r) && r.length ? r : DEFAULT_ROLES); } // 沒存過＝用預設範本（記憶體即可，admin 編輯時才落地）
 
       const seed = CURRENT_SPACE === "construction" ? INITIAL_CATEGORIES : [];
       const migrated = migratePayments(d || seed);
@@ -823,9 +836,12 @@ export default function App() {
   // ── 帳號權限二合一矩陣解析：每空間×每頁的「可見/可編輯/看金額」。admin/manager/未登入訪客＝全開；
   //    一般帳號：可見預設全部(由admin逐頁限縮)、可編輯預設無、看金額預設無。只有目前這一頁的元件會 render，
   //    所以可編輯/看金額直接依「目前頁面 view」判定，不必到處改編輯邏輯（降低風險）。
-  const _vp = profile?.view_pages || [];
-  const _ep = profile?.pages || [];
-  const _mp = profile?.money_pages || [];
+  // 連動式身份：帳號若指定了身份範本(role_template)，權限一律跟著該身份走（改身份→所有人一起變）；否則用個人設定。
+  const myRole = (profile?.role_template && roles.length) ? roles.find(r => r.id === profile.role_template) : null;
+  const eff = myRole || profile;
+  const _vp = eff?.view_pages || [];
+  const _ep = eff?.pages || [];
+  const _mp = eff?.money_pages || [];
   // 預設「全開」，admin 在權限頁逐項取消才會關閉（空陣列＝全部允許）。未登入訪客一律唯讀但可看。
   const viewOK = (sp, pg) => {
     if (isAdmin) return true;
@@ -847,7 +863,7 @@ export default function App() {
   CAN_VIEW_MONEY = canViewMoney; // 同步給 showMoney()（依「目前頁面」決定金額欄位/KPI 顯示與否）
   const can = (page) => isAdmin || isManager || !!account?.pages?.includes(page);
   // 可見空間（admin 全開；未設＝全開）；可見頁面＝目前空間中通過 viewOK 的頁面清單
-  const allowedSpaces = isAdmin ? SPACES.map(s => s.id) : (profile?.spaces?.length ? profile.spaces : SPACES.map(s => s.id));
+  const allowedSpaces = isAdmin ? SPACES.map(s => s.id) : (eff?.spaces?.length ? eff.spaces : SPACES.map(s => s.id));
   const allowedViewPages = isAdmin ? null : (!_vp.length ? null : (PERM_MATRIX[CURRENT_SPACE] || []).map(r => r[0]).filter(pg => viewOK(CURRENT_SPACE, pg)));
   const canEditData = editOK(CURRENT_SPACE, view);   // 目前頁面是否可編輯（內容）
   const canEditWorklog = canEditData;
@@ -1029,7 +1045,7 @@ export default function App() {
           <CompareView canEdit={canEditFiles} requireLogin={denyEdit} />
         )}
         {view === "accounts" && isAdmin && (
-          <AccountManager confirm={confirm} myId={profile?.id} />
+          <AccountManager confirm={confirm} myId={profile?.id} roles={roles} commitRoles={commitRoles} />
         )}
         {view === "petty" && showMoney() && (
           <PettyCashView petty={petty} setPetty={commitPetty} cats={cats} setCats={guardedSetCats} canEdit={canEditData} confirm={confirm} />
@@ -5522,7 +5538,7 @@ function PhotoLibraryView({ photos, setPhotos, cats, canEdit, userName, requireL
 const ACCT_SPACES = [["construction","🏗 工程專案"],["team","👥 團隊工作"],["crew","🤝 夥伴中心"]];
 const ACCT_VIEW_PAGES = [["owner","儀表板"],["overview","總覽"],["gantt","工序"],["files","檔案庫"],["petty","零用金"],["issues","ToDo"],["compare","比價"],["advisor","AI設定"]];
 const ACCT_EDIT_PAGES = [["data","總覽/工程資料"],["worklog","工序日誌"],["files","檔案庫"],["advisor","AI設定"]];
-function AccountManager({ confirm, myId }) {
+function AccountManager({ confirm, myId, roles = [], commitRoles }) {
   const [list, setList] = useState(null); // null=loading
   const [err, setErr] = useState("");
   const [nName, setNName] = useState(""); const [nUser, setNUser] = useState(""); const [nPw, setNPw] = useState(""); const [nAdmin, setNAdmin] = useState(false);
@@ -5561,22 +5577,31 @@ function AccountManager({ confirm, myId }) {
   const moneyChecked = (p, sid, pg) => { const mp = p.money_pages || []; if (!mp.length) return true; return mp.includes(`${sid}:${pg}`); };
   const spaceChecked = (p, sid) => { const sp = p.spaces || []; return !sp.length || sp.includes(sid); };
 
-  // 通用切換：all=該維度全部key、isOn=目前是否開。攤成明確清單、扣/加該項，再依「全開→[]、全關→[PERM_NONE]」收斂。
-  const toggleDim = (p, field, all, isOn, key) => {
-    let cur = all.filter(k => { const [s, g] = k.split(":"); return isOn(p, s, g); });
+  // 通用切換：對任一實體(帳號或身份範本)操作，save 決定存到哪。攤成明確清單後依「全開→[]、全關→[PERM_NONE]」收斂。
+  const applyToggle = (obj, field, all, isOn, key, save) => {
+    let cur = all.filter(k => { const [s, g] = k.split(":"); return isOn(obj, s, g); });
     cur = cur.includes(key) ? cur.filter(k => k !== key) : [...cur, key];
-    const store = cur.length === all.length ? [] : (cur.length === 0 ? [PERM_NONE] : cur);
-    patch(p.id, { [field]: store });
+    save({ [field]: cur.length === all.length ? [] : (cur.length === 0 ? [PERM_NONE] : cur) });
   };
-  const toggleView = (p, sid, pg) => toggleDim(p, "view_pages", ALL_VIEW_KEYS, viewChecked, `${sid}:${pg}`);
-  const toggleEdit = (p, sid, pg) => toggleDim(p, "pages", ALL_EDIT_KEYS, editChecked, `${sid}:${pg}`);
-  const toggleMoney = (p, sid, pg) => toggleDim(p, "money_pages", ALL_MONEY_KEYS, moneyChecked, `${sid}:${pg}`);
-  const toggleSpace = (p, sid) => {
-    const sp = p.spaces || [];
+  const tView = (obj, sid, pg, save) => applyToggle(obj, "view_pages", ALL_VIEW_KEYS, viewChecked, `${sid}:${pg}`, save);
+  const tEdit = (obj, sid, pg, save) => applyToggle(obj, "pages", ALL_EDIT_KEYS, editChecked, `${sid}:${pg}`, save);
+  const tMoney = (obj, sid, pg, save) => applyToggle(obj, "money_pages", ALL_MONEY_KEYS, moneyChecked, `${sid}:${pg}`, save);
+  const tSpace = (obj, sid, save) => {
+    const sp = obj.spaces || [];
     let base = sp.length ? [...sp] : SPACES.map(s => s.id);
     base = base.includes(sid) ? base.filter(x => x !== sid) : [...base, sid];
-    patch(p.id, { spaces: base.length === SPACES.length ? [] : base });
+    save({ spaces: base.length === SPACES.length ? [] : base });
   };
+  // ── 身份範本（連動）CRUD ──
+  const updateRole = (id, changes) => commitRoles && commitRoles(roles.map(r => r.id === id ? { ...r, ...changes } : r));
+  const addRole = () => { const n = window.prompt("新增身份名稱（例：工地監工）"); if (!n || !n.trim() || !commitRoles) return; commitRoles([...roles, { id: "role-" + Math.random().toString(36).slice(2, 7), name: n.trim(), spaces: [], view_pages: [], pages: [], money_pages: [] }]); };
+  const renameRole = (r) => { const n = window.prompt("身份改名", r.name); if (n && n.trim()) updateRole(r.id, { name: n.trim() }); };
+  const delRole = async (r) => {
+    if (!(await confirm(`刪除身份「${r.name}」？指派此身份的帳號會變回「自訂」。`, { confirmLabel: "刪除" })) || !commitRoles) return;
+    commitRoles(roles.filter(x => x.id !== r.id));
+    (list || []).filter(p => p.role_template === r.id).forEach(p => patch(p.id, { role_template: null }));
+  };
+  const roleName = (id) => roles.find(r => r.id === id)?.name;
 
   const addAcct = async () => {
     if (!nUser.trim() || !nPw || busy) return;
@@ -5603,14 +5628,95 @@ function AccountManager({ confirm, myId }) {
     <button onClick={onClick} style={{ padding: "4px 12px", borderRadius: 999, border: `1px solid ${on ? "#3C8C3C" : "#D8CFBB"}`, background: on ? "#EAF3EA" : "#ECE6D7", color: on ? "#2E7D32" : "#A99F88", fontSize: 12.5, fontWeight: 700, cursor: "pointer" }}>{on ? "✓ " : ""}{label}</button>
   );
 
+  // 可重用矩陣：對任一實體(帳號或身份範本)渲染「每空間×每頁」勾選表。readOnly＝唯讀(顯示連動帳號的實際權限)。
+  const renderMatrix = (obj, save, idPrefix, readOnly = false) => (
+    <div style={{ display: "grid", gap: 10, marginTop: 12 }}>
+      {ACCT_SPACES.map(([sid, slabel]) => {
+        const rows = PERM_MATRIX[sid] || [];
+        const on = spaceChecked(obj, sid);
+        const hasMoney = !!SPACE_CONF[sid]?.showCost;
+        const spKey = idPrefix + ":" + sid;
+        const spOpen = openSp.has(spKey);
+        const visN = rows.filter(([pg]) => viewChecked(obj, sid, pg)).length;
+        const editN = rows.filter(([pg,, c]) => c.edit && editChecked(obj, sid, pg)).length;
+        const moneyN = hasMoney ? rows.filter(([pg,, c]) => c.money && moneyChecked(obj, sid, pg)).length : 0;
+        const click = (fn) => readOnly ? undefined : fn;
+        return (
+          <div key={sid} style={{ border: "1px solid #E7DFCC", borderRadius: 10, overflow: "hidden", opacity: on ? 1 : 0.6 }}>
+            <div onClick={() => on && toggleSet(setOpenSp, spKey)} style={{ display: "flex", alignItems: "center", gap: 8, background: "#F7F2E7", padding: "8px 12px", cursor: on ? "pointer" : "default" }}>
+              <span style={{ fontSize: 11, color: "#A99F88", width: 10, display: "inline-block", transform: spOpen ? "rotate(90deg)" : "none", transition: "transform .15s" }}>{on ? "▸" : ""}</span>
+              <div style={{ fontSize: 13.5, fontWeight: 700, color: "#211C15" }}>{slabel}</div>
+              {on && !spOpen && <span style={{ fontSize: 11.5, color: "#A99F88" }}>可見 {visN}/{rows.length}・可編輯 {editN}{hasMoney ? `・看金額 ${moneyN}` : ""}</span>}
+              <div style={{ flex: 1 }} />
+              {pill(on, "可進入", (e) => { e.stopPropagation(); if (!readOnly) tSpace(obj, sid, save); })}
+            </div>
+            {on && spOpen && (() => {
+              const gtc = hasMoney ? "1fr 76px 76px 76px" : "1fr 76px 76px";
+              const sep = "1px solid #EFE8D6";
+              const hc = { padding: "6px 0", textAlign: "center", borderLeft: sep };
+              const cc = { display: "flex", alignItems: "center", justifyContent: "center", borderLeft: sep, padding: "5px 0" };
+              return (
+                <div>
+                  <div style={{ display: "grid", gridTemplateColumns: gtc, fontSize: 11.5, fontWeight: 600, color: "#A99F88", background: "#FCFAF4", borderBottom: sep }}>
+                    <div style={{ padding: "6px 12px" }}>頁面</div>
+                    <div style={hc}>可見</div><div style={hc}>可編輯</div>{hasMoney && <div style={hc}>看金額</div>}
+                  </div>
+                  {rows.map(([pg, plabel, caps], i) => {
+                    const vis = viewChecked(obj, sid, pg);
+                    return (
+                      <div key={pg} style={{ display: "grid", gridTemplateColumns: gtc, alignItems: "center", background: i % 2 ? "#FBF8F0" : "#fff", borderTop: "1px solid #F3EEE1" }}>
+                        <div style={{ padding: "5px 12px", fontSize: 13, color: vis ? "#4A4234" : "#BDB39A" }}>{plabel}</div>
+                        <div style={cc}>{cbox(vis, click(() => tView(obj, sid, pg, save)), "#3C8C3C")}</div>
+                        <div style={cc}>{caps.edit ? cbox(editChecked(obj, sid, pg), click(() => tEdit(obj, sid, pg, save)), "#b5512b") : <span style={{ color: "#DDD4BE" }}>—</span>}</div>
+                        {hasMoney && <div style={cc}>{caps.money ? cbox(moneyChecked(obj, sid, pg), click(() => tMoney(obj, sid, pg, save)), "#2E7D32") : <span style={{ color: "#DDD4BE" }}>—</span>}</div>}
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })()}
+          </div>
+        );
+      })}
+    </div>
+  );
+
   return (
     <div style={{ maxWidth: 1100, margin: "16px auto", padding: "0 4px" }}>
       <div style={{ fontSize:18, fontWeight: 600, color:"#211C15", marginBottom:6 }}>👤 帳號管理（僅管理員）</div>
       <div style={{ background:"#faf6ee", border:"1px solid #e4ddc9", borderRadius:10, padding:"10px 14px", marginBottom:16, fontSize:13, color:"#6b6450", lineHeight:1.7 }}>
-        建立夥伴帳號後，按該帳號右邊的<b style={{color:"#b45309"}}>「設定權限」</b>展開矩陣，逐個空間／頁面勾選<b>可見、可編輯、看金額</b>（點空間標題列可展開該空間的細項）。沒登入的人只能檢視；<b>管理員</b>恆有全部權限；新帳號預設只能看、不能改。
+        最省事做法：先在下方<b style={{color:"#b45309"}}>「身份範本」</b>設好各種身份的權限（如工地監工、會計），再到每個帳號選一個<b>身份</b>即可——之後改身份權限，所有用此身份的人<b>自動跟著變</b>。也可選「自訂」單獨設某人。預設全部開放，取消勾就是不給；沒登入的人只能看。
       </div>
 
       {err && <div style={{ background:"#FEF2F2", border:"1px solid #FCA5A5", color:"#DC2626", borderRadius:8, padding:"8px 12px", marginBottom:12, fontSize:13 }}>{err}</div>}
+
+      {/* 身份範本（連動）：設定一次，指派給帳號後權限跟著身份走 */}
+      <div style={{ marginBottom:18 }}>
+        <div style={{ display:"flex", alignItems:"center", gap:10, flexWrap:"wrap", marginBottom:8 }}>
+          <div style={{ fontSize:15, fontWeight:700, color:"#211C15" }}>🧩 身份範本（連動）</div>
+          <span style={{ fontSize:12, color:"#A99F88" }}>設定一次，指派給帳號後權限自動跟著身份走</span>
+          <div style={{ flex:1 }} />
+          <button onClick={addRole} style={{ background:"#b5512b", color:"#fff", border:"none", borderRadius:8, padding:"6px 14px", fontSize:13, fontWeight:600, cursor:"pointer" }}>＋ 新增身份</button>
+        </div>
+        {roles.length === 0 ? <div style={{ fontSize:13, color:"#A99F88", padding:"6px 2px" }}>還沒有身份範本，點「＋ 新增身份」。</div> :
+         roles.map(r => {
+           const open = openAcct.has(r.id);
+           const memberN = (list||[]).filter(p=>p.role_template===r.id).length;
+           return (
+             <div key={r.id} style={{ background:"#fff", border:"1px solid #D8CFBB", borderRadius:12, padding:"10px 14px", marginBottom:8 }}>
+               <div style={{ display:"flex", alignItems:"center", gap:10, flexWrap:"wrap" }}>
+                 <div style={{ fontSize:14, fontWeight:700, color:"#211C15" }}>{r.name}</div>
+                 <span style={{ fontSize:11.5, color:"#A99F88" }}>{memberN} 人使用</span>
+                 <button onClick={()=>renameRole(r)} style={{ background:"#ECE6D7", border:"1px solid #D8CFBB", borderRadius:7, padding:"2px 9px", fontSize:11.5, color:"#6F6656", cursor:"pointer" }}>改名</button>
+                 <div style={{ flex:1 }} />
+                 <button onClick={()=>toggleSet(setOpenAcct, r.id)} style={{ background: open?"#b5512b":"#fff", color: open?"#fff":"#b5512b", border:"1px solid #b5512b", borderRadius:8, padding:"4px 12px", fontSize:12.5, fontWeight:600, cursor:"pointer" }}>{open?"收合 ▴":"編輯權限 ▾"}</button>
+                 <button onClick={()=>delRole(r)} title="刪除身份" style={{ background:"none", border:"none", color:"#C8BCA0", cursor:"pointer", fontSize:18 }} onMouseEnter={e=>e.currentTarget.style.color="#DC2626"} onMouseLeave={e=>e.currentTarget.style.color="#C8BCA0"}>×</button>
+               </div>
+               {open && renderMatrix(r, (changes)=>updateRole(r.id, changes), "role-"+r.id, false)}
+             </div>
+           );
+         })}
+      </div>
 
       {/* 新增帳號 */}
       <div style={{ display:"flex", gap:10, alignItems:"center", marginBottom:18, flexWrap:"wrap", background:"#fff", border:"1px solid #D8CFBB", borderRadius:12, padding:14 }}>
@@ -5629,14 +5735,17 @@ function AccountManager({ confirm, myId }) {
        : list.map(p => {
         const isAdm = p.role === "admin";
         const acctOpen = openAcct.has(p.id);
-        const spacesIn = ACCT_SPACES.filter(([sid]) => spaceChecked(p, sid)).length;
-        const moneyPages = ALL_MONEY_KEYS.filter(k => { const [s, g] = k.split(":"); return moneyChecked(p, s, g); }).length;
+        const linkedRole = p.role_template ? roles.find(r => r.id === p.role_template) : null;
+        const eff = linkedRole || p; // 連動帳號的實際權限來自身份
+        const spacesIn = ACCT_SPACES.filter(([sid]) => spaceChecked(eff, sid)).length;
+        const moneyPages = ALL_MONEY_KEYS.filter(k => { const [s, g] = k.split(":"); return moneyChecked(eff, s, g); }).length;
         return (
         <div key={p.id} style={{ background:"#fff", border:"1px solid #D8CFBB", borderRadius:12, padding:"12px 16px", marginBottom:10 }}>
           <div style={{ display:"flex", alignItems:"center", gap:10, flexWrap:"wrap" }}>
             <div style={{ fontSize:15, fontWeight:700, color:"#211C15" }}>{p.display_name}</div>
             <div style={{ fontSize:12, color:"#A99F88" }}>{(p.email||"").split("@")[0]}</div>
             <button onClick={()=>!isAdm||list.filter(x=>x.role==="admin").length>1 ? patch(p.id, { role: isAdm?"staff":"admin" }) : alert("至少要保留一位管理員")} style={{ background:"#ECE6D7", border:"1px solid #D8CFBB", borderRadius:8, padding:"3px 11px", fontSize:12.5, cursor:"pointer", color:isAdm?"#b5512b":"#4A4234", fontWeight:isAdm?700:400 }}>{isAdm?"管理員":"一般"} ⇄</button>
+            {!isAdm && linkedRole && <span style={{ fontSize:12, fontWeight:700, color:"#2E7D32", background:"#EAF3EA", border:"1px solid #CFE3CF", borderRadius:999, padding:"2px 10px" }}>身份：{linkedRole.name}</span>}
             {!isAdm && <span style={{ fontSize:12, color:"#A99F88" }}>可進入 {spacesIn} 空間{moneyPages?`・看金額 ${moneyPages} 頁`:""}</span>}
             <div style={{ flex:1 }} />
             {!isAdm && <button onClick={()=>toggleSet(setOpenAcct, p.id)} style={{ background: acctOpen?"#b5512b":"#fff", color: acctOpen?"#fff":"#b5512b", border:"1px solid #b5512b", borderRadius:8, padding:"4px 12px", fontSize:12.5, fontWeight:600, cursor:"pointer" }}>{acctOpen?"收合權限 ▴":"設定權限 ▾"}</button>}
@@ -5644,60 +5753,23 @@ function AccountManager({ confirm, myId }) {
             {p.id !== myId && <button onClick={()=>delAcct(p)} title="刪除帳號" style={{ background:"none", border:"none", color:"#C8BCA0", cursor:"pointer", fontSize:18 }} onMouseEnter={e=>e.currentTarget.style.color="#DC2626"} onMouseLeave={e=>e.currentTarget.style.color="#C8BCA0"}>×</button>}
           </div>
           {isAdm ? <div style={{ fontSize:13, color:"#A99F88", marginTop:6 }}>管理員：全部空間／全部頁面／可編輯全部／可看金額</div> : (acctOpen &&
-          <div style={{ display:"grid", gap:10, marginTop:12 }}>
-            {ACCT_SPACES.map(([sid, slabel]) => {
-              const rows = PERM_MATRIX[sid] || [];
-              const on = spaceChecked(p, sid);
-              const hasMoney = !!SPACE_CONF[sid]?.showCost;
-              const spKey = p.id + ":" + sid;
-              const spOpen = openSp.has(spKey);
-              const visN = rows.filter(([pg]) => viewChecked(p, sid, pg)).length;
-              const editN = rows.filter(([pg,, c]) => c.edit && editChecked(p, sid, pg)).length;
-              const moneyN = hasMoney ? rows.filter(([pg,, c]) => c.money && moneyChecked(p, sid, pg)).length : 0;
-              return (
-                <div key={sid} style={{ border:"1px solid #E7DFCC", borderRadius:10, overflow:"hidden", opacity:on?1:0.6 }}>
-                  <div onClick={() => on && toggleSet(setOpenSp, spKey)} style={{ display:"flex", alignItems:"center", gap:8, background:"#F7F2E7", padding:"8px 12px", cursor:on?"pointer":"default" }}>
-                    <span style={{ fontSize:11, color:"#A99F88", width:10, display:"inline-block", transform:spOpen?"rotate(90deg)":"none", transition:"transform .15s" }}>{on?"▸":""}</span>
-                    <div style={{ fontSize:13.5, fontWeight:700, color:"#211C15" }}>{slabel}</div>
-                    {on && !spOpen && <span style={{ fontSize:11.5, color:"#A99F88" }}>可見 {visN}/{rows.length}・可編輯 {editN}{hasMoney?`・看金額 ${moneyN}`:""}</span>}
-                    <div style={{ flex:1 }} />
-                    {pill(on, "可進入", (e) => { e.stopPropagation(); toggleSpace(p, sid); })}
-                  </div>
-                  {on && spOpen && (() => {
-                    const gtc = hasMoney ? "1fr 76px 76px 76px" : "1fr 76px 76px";
-                    const sep = "1px solid #EFE8D6";
-                    const hc = { padding: "6px 0", textAlign: "center", borderLeft: sep };
-                    const cc = { display: "flex", alignItems: "center", justifyContent: "center", borderLeft: sep, padding: "5px 0" };
-                    return (
-                    <div>
-                      <div style={{ display: "grid", gridTemplateColumns: gtc, fontSize: 11.5, fontWeight: 600, color: "#A99F88", background: "#FCFAF4", borderBottom: sep }}>
-                        <div style={{ padding: "6px 12px" }}>頁面</div>
-                        <div style={hc}>可見</div>
-                        <div style={hc}>可編輯</div>
-                        {hasMoney && <div style={hc}>看金額</div>}
-                      </div>
-                      {rows.map(([pg, plabel, caps], i) => {
-                        const vis = viewChecked(p, sid, pg);
-                        return (
-                          <div key={pg} style={{ display: "grid", gridTemplateColumns: gtc, alignItems: "center", background: i % 2 ? "#FBF8F0" : "#fff", borderTop: "1px solid #F3EEE1" }}>
-                            <div style={{ padding: "5px 12px", fontSize: 13, color: vis ? "#4A4234" : "#BDB39A" }}>{plabel}</div>
-                            <div style={cc}>{cbox(vis, () => toggleView(p, sid, pg), "#3C8C3C")}</div>
-                            <div style={cc}>{caps.edit ? cbox(editChecked(p, sid, pg), () => toggleEdit(p, sid, pg), "#b5512b") : <span style={{ color: "#DDD4BE" }}>—</span>}</div>
-                            {hasMoney && <div style={cc}>{caps.money ? cbox(moneyChecked(p, sid, pg), () => toggleMoney(p, sid, pg), "#2E7D32") : <span style={{ color: "#DDD4BE" }}>—</span>}</div>}
-                          </div>
-                        );
-                      })}
-                    </div>
-                    );
-                  })()}
-                </div>
-              );
-            })}
+          <div style={{ marginTop:12 }}>
+            <div style={{ display:"flex", alignItems:"center", gap:8, flexWrap:"wrap" }}>
+              <span style={{ fontSize:12.5, color:"#6F6656" }}>身份：</span>
+              <select value={p.role_template||""} onChange={e=>patch(p.id, { role_template: e.target.value || null })} style={{ ...inputStyle, width:200, padding:"5px 8px" }}>
+                <option value="">自訂（這個人單獨設）</option>
+                {roles.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
+              </select>
+              {linkedRole && <span style={{ fontSize:11.5, color:"#A99F88" }}>權限跟著身份走；要改請改上面的「{linkedRole.name}」身份範本。</span>}
+            </div>
+            {linkedRole
+              ? renderMatrix(linkedRole, ()=>{}, "acctRO-"+p.id, true)
+              : renderMatrix(p, (changes)=>patch(p.id, changes), "acct-"+p.id, false)}
           </div>)}
         </div>);
        })}
       <div style={{ fontSize:11.5, color:"#A99F88", marginTop:8, lineHeight:1.7 }}>
-        提示：可見頁面預設全部勾選（綠），你把不想給看的取消勾即可；可編輯、看金額預設不勾，要開放才勾。「看金額」需先在 Supabase 加 money_pages 欄位才會記住。
+        提示：三欄（可見／可編輯／看金額）都預設打勾＝全開，取消勾就是不給；可一路取消到「全關」。要讓「身份」「看金額」存得住，Supabase 需先有 money_pages、role_template 兩個欄位（見上次給的 SQL）。
       </div>
     </div>
   );
