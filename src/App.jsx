@@ -5651,27 +5651,34 @@ function AccountManager({ confirm, myId, roles = [], commitRoles }) {
               {pill(on, "可進入", (e) => { e.stopPropagation(); if (!readOnly) tSpace(obj, sid, save); })}
             </div>
             {on && spOpen && (() => {
-              const gtc = hasMoney ? "1fr 76px 76px 76px" : "1fr 76px 76px";
+              // 轉置：頁面＝橫向欄位（上方），可見/可編輯/看金額＝往下的列
               const sep = "1px solid #EFE8D6";
-              const hc = { padding: "6px 0", textAlign: "center", borderLeft: sep };
-              const cc = { display: "flex", alignItems: "center", justifyContent: "center", borderLeft: sep, padding: "5px 0" };
+              const gtc = `78px repeat(${rows.length}, minmax(46px, 1fr))`;
+              const dims = [
+                { label: "可見", color: "#3C8C3C", on: (pg) => viewChecked(obj, sid, pg), cap: () => true, go: (pg) => tView(obj, sid, pg, save) },
+                { label: "可編輯", color: "#b5512b", on: (pg) => editChecked(obj, sid, pg), cap: (c) => !!c.edit, go: (pg) => tEdit(obj, sid, pg, save) },
+                ...(hasMoney ? [{ label: "看金額", color: "#2E7D32", on: (pg) => moneyChecked(obj, sid, pg), cap: (c) => !!c.money, go: (pg) => tMoney(obj, sid, pg, save) }] : []),
+              ];
               return (
-                <div>
-                  <div style={{ display: "grid", gridTemplateColumns: gtc, fontSize: 11.5, fontWeight: 600, color: "#A99F88", background: "#FCFAF4", borderBottom: sep }}>
-                    <div style={{ padding: "6px 12px" }}>頁面</div>
-                    <div style={hc}>可見</div><div style={hc}>可編輯</div>{hasMoney && <div style={hc}>看金額</div>}
-                  </div>
-                  {rows.map(([pg, plabel, caps], i) => {
-                    const vis = viewChecked(obj, sid, pg);
-                    return (
-                      <div key={pg} style={{ display: "grid", gridTemplateColumns: gtc, alignItems: "center", background: i % 2 ? "#FBF8F0" : "#fff", borderTop: "1px solid #F3EEE1" }}>
-                        <div style={{ padding: "5px 12px", fontSize: 13, color: vis ? "#4A4234" : "#BDB39A" }}>{plabel}</div>
-                        <div style={cc}>{cbox(vis, click(() => tView(obj, sid, pg, save)), "#3C8C3C")}</div>
-                        <div style={cc}>{caps.edit ? cbox(editChecked(obj, sid, pg), click(() => tEdit(obj, sid, pg, save)), "#b5512b") : <span style={{ color: "#DDD4BE" }}>—</span>}</div>
-                        {hasMoney && <div style={cc}>{caps.money ? cbox(moneyChecked(obj, sid, pg), click(() => tMoney(obj, sid, pg, save)), "#2E7D32") : <span style={{ color: "#DDD4BE" }}>—</span>}</div>}
+                <div style={{ overflowX: "auto" }}>
+                  <div style={{ minWidth: 78 + rows.length * 46 }}>
+                    {/* 表頭：頁面名稱橫向 */}
+                    <div style={{ display: "grid", gridTemplateColumns: gtc, fontSize: 11.5, fontWeight: 600, color: "#7A6F58", background: "#FCFAF4", borderBottom: sep }}>
+                      <div style={{ padding: "6px 8px" }} />
+                      {rows.map(([pg, plabel]) => <div key={pg} style={{ padding: "6px 2px", textAlign: "center", borderLeft: sep, whiteSpace: "nowrap" }}>{plabel}</div>)}
+                    </div>
+                    {/* 三列：可見 / 可編輯 / 看金額 */}
+                    {dims.map((d, di) => (
+                      <div key={d.label} style={{ display: "grid", gridTemplateColumns: gtc, alignItems: "center", background: di % 2 ? "#FBF8F0" : "#fff", borderTop: "1px solid #F3EEE1" }}>
+                        <div style={{ padding: "5px 8px", fontSize: 12.5, fontWeight: 600, color: d.color }}>{d.label}</div>
+                        {rows.map(([pg, , caps]) => (
+                          <div key={pg} style={{ display: "flex", alignItems: "center", justifyContent: "center", borderLeft: sep, padding: "5px 0" }}>
+                            {d.cap(caps) ? cbox(d.on(pg), click(() => d.go(pg)), d.color) : <span style={{ color: "#DDD4BE" }}>—</span>}
+                          </div>
+                        ))}
                       </div>
-                    );
-                  })}
+                    ))}
+                  </div>
                 </div>
               );
             })()}
