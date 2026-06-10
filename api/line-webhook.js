@@ -123,9 +123,9 @@ export default async function handler(req, res) {
   // 診斷用 log（之後 strict 模式會用 sigOK 擋）。暫時：不論驗章結果都處理，先確認 D 會回。
   console.log('LINE webhook hit', JSON.stringify({ rawLen: raw?.length || 0, sigPresent: !!req.headers['x-line-signature'], sigOK, events: (body.events || []).length, secretSet: !!SECRET, tokenSet: !!TOKEN }))
   const events = body.events || []
-  // 先回 200，避免 LINE 逾時重送（驗證請求 events 為空也在此返回）
-  res.status(200).json({ ok: true })
+  if (!events.length) return res.status(200).json({ ok: true }) // LINE 驗證請求等
 
+  // 重要：serverless 一旦 res 回應就會凍結，後面的 await 不會跑完 → 必須「先處理完(含回覆)再回 200」。
   for (const ev of events) {
     try {
       if (ev.type !== 'message' || ev.message?.type !== 'text') continue
@@ -141,4 +141,5 @@ export default async function handler(req, res) {
       if (ev.replyToken) await lineReply(ev.replyToken, reply)
     } catch (e) { console.log('event error', e?.message) }
   }
+  return res.status(200).json({ ok: true })
 }
