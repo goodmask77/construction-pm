@@ -796,7 +796,7 @@ export default function App() {
                 <AccountManager confirm={confirm} myId={profile?.id} roles={roles} commitRoles={commitRoles} />
               )}
               {view === "audit" && isAdmin && (
-                <AuditLogView activityLog={activityLog} />
+                <AuditLogView activityLog={activityLog} confirm={confirm} onCommit={(l) => { setActivityLog(l); saveActivityLog(l); }} />
               )}
               {view === "vault" && isAdmin && (
                 <VaultView />
@@ -3712,18 +3712,27 @@ function OwnerDashboard({ cats, setCats, settings, stalledItems, activityLog, lo
 
 // ── ACTIVITY LOG PANEL ────────────────────────────────────────────────────────
 // 管理員專屬：每個人的登入時間＋操作內容（稽核紀錄）
-function AuditLogView({ activityLog }) {
+function AuditLogView({ activityLog, confirm, onCommit }) {
   const [tab, setTab] = useState("member"); // member | timeline
   const [q, setQ] = useState("");
+  const [act, setAct] = useState("all"); // all | 登入 | 編輯
   const [openU, setOpenU] = useState(() => new Set());
   const toggleU = (u) => setOpenU(prev => { const n = new Set(prev); n.has(u) ? n.delete(u) : n.add(u); return n; });
+  const isLogin = (a) => a.action === "登入";
   const log = (activityLog || []).filter(a => {
+    if (act === "登入" && !isLogin(a)) return false;
+    if (act === "編輯" && isLogin(a)) return false;
     if (!q.trim()) return true; const s = (a.user + " " + a.action + " " + (a.detail || "")).toLowerCase();
     return s.includes(q.trim().toLowerCase());
   });
   const fmtDT = (ts) => { try { return new Date(ts).toLocaleString("zh-TW", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" }); } catch (_) { return ""; } };
   const fmtT = (ts) => { try { return new Date(ts).toLocaleTimeString("zh-TW", { hour: "2-digit", minute: "2-digit" }); } catch (_) { return ""; } };
-  const isLogin = (a) => a.action === "登入";
+  // ── 管理員刪除紀錄 ──
+  const sameEntry = (a, b) => a.ts === b.ts && a.user === b.user && a.action === b.action && a.detail === b.detail;
+  const delEntry = async (a) => { if (onCommit && (!confirm || await confirm("刪除這筆紀錄？"))) onCommit((activityLog || []).filter(x => !sameEntry(x, a))); };
+  const clearMember = async (u) => { if (onCommit && (!confirm || await confirm(`清空「${u}」的全部紀錄？`, { confirmLabel: "清空" }))) onCommit((activityLog || []).filter(x => (x.user || "—") !== u)); };
+  const clearAll = async () => { if (onCommit && (!confirm || await confirm("清空全部登入與操作紀錄？此動作無法復原。", { confirmLabel: "全部清空" }))) onCommit([]); };
+  const delX = (a) => <button onClick={(e) => { e.stopPropagation(); delEntry(a); }} title="刪除此筆" style={{ background: "none", border: "none", color: "#C8BCA0", cursor: "pointer", fontSize: 14, padding: "0 2px", lineHeight: 1 }} onMouseEnter={e => e.currentTarget.style.color = "#DC2626"} onMouseLeave={e => e.currentTarget.style.color = "#C8BCA0"}>×</button>;
 
   // 依成員彙整
   const byUser = {};
@@ -3751,8 +3760,13 @@ function AuditLogView({ activityLog }) {
         {[["member", "👤 依成員"], ["timeline", "🕓 時間軸"]].map(([k, l]) => (
           <button key={k} onClick={() => setTab(k)} style={{ padding: "6px 14px", borderRadius: 8, border: `1px solid ${tab === k ? "#b5512b" : "#D8CFBB"}`, background: tab === k ? "#b5512b" : "#fff", color: tab === k ? "#fff" : "#6F6656", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>{l}</button>
         ))}
+        <span style={{ width: 1, height: 22, background: "#E0D8C4", margin: "0 2px" }} />
+        {[["all", "全部"], ["登入", "只看登入"], ["編輯", "只看操作"]].map(([k, l]) => (
+          <button key={k} onClick={() => setAct(k)} style={{ padding: "5px 11px", borderRadius: 999, border: `1px solid ${act === k ? "#7A6F58" : "#D8CFBB"}`, background: act === k ? "#EFE7D6" : "#fff", color: act === k ? "#4A4234" : "#A99F88", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>{l}</button>
+        ))}
         <div style={{ flex: 1 }} />
-        <input value={q} onChange={e => setQ(e.target.value)} placeholder="搜尋人名／動作…" style={{ ...inputStyle, width: 200, padding: "6px 10px" }} />
+        <input value={q} onChange={e => setQ(e.target.value)} placeholder="搜尋人名／動作…" style={{ ...inputStyle, width: 180, padding: "6px 10px" }} />
+        {(activityLog || []).length > 0 && <button onClick={clearAll} title="清空全部紀錄" style={{ background: "#fff", color: "#DC2626", border: "1px solid #F0C0C0", borderRadius: 8, padding: "6px 12px", fontSize: 12.5, fontWeight: 600, cursor: "pointer" }}>🗑 清空全部</button>}
       </div>
 
       {log.length === 0 ? <div style={{ padding: 30, textAlign: "center", color: "#A99F88", fontSize: 13 }}>尚無紀錄</div> : tab === "member" ? (
@@ -3766,6 +3780,7 @@ function AuditLogView({ activityLog }) {
                 <div style={{ flex: 1 }} />
                 <span style={{ fontSize: 12, color: "#6F6656" }}>最近登入 <b style={{ color: "#2E7D32" }}>{m.lastLogin ? fmtDT(m.lastLogin) : "—"}</b></span>
                 <span style={{ fontSize: 11.5, color: "#A99F88" }}>登入 {m.loginCount} 次・操作 {m.actCount} 次</span>
+                <button onClick={(e) => { e.stopPropagation(); clearMember(m.u); }} title="清空此人紀錄" style={{ background: "none", border: "1px solid #E7DFCC", borderRadius: 6, color: "#A99F88", fontSize: 11.5, padding: "2px 8px", cursor: "pointer" }} onMouseEnter={e => { e.currentTarget.style.color = "#DC2626"; e.currentTarget.style.borderColor = "#F0C0C0"; }} onMouseLeave={e => { e.currentTarget.style.color = "#A99F88"; e.currentTarget.style.borderColor = "#E7DFCC"; }}>清空</button>
               </div>
               {open && (
                 <div style={{ marginTop: 10, borderTop: "1px solid #F0E9D8", paddingTop: 8 }}>
@@ -3773,7 +3788,8 @@ function AuditLogView({ activityLog }) {
                     <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "4px 0", fontSize: 12.5 }}>
                       <span style={{ fontSize: 11, color: "#A99F88", width: 96, flexShrink: 0, fontVariantNumeric: "tabular-nums" }}>{fmtDT(a.ts)}</span>
                       <span style={{ fontSize: 11, fontWeight: 700, borderRadius: 6, padding: "1px 7px", ...tagStyle(a) }}>{a.action}</span>
-                      <span style={{ color: "#4A4234" }}>{a.detail}</span>
+                      <span style={{ color: "#4A4234", flex: 1 }}>{a.detail}</span>
+                      {delX(a)}
                     </div>
                   ))}
                 </div>
@@ -3792,7 +3808,8 @@ function AuditLogView({ activityLog }) {
                 <span style={{ fontSize: 11, color: "#A99F88", width: 42, flexShrink: 0 }}>{fmtT(a.ts)}</span>
                 <span style={{ fontWeight: 700, color: "#211C15", width: 90, flexShrink: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{a.user}</span>
                 <span style={{ fontSize: 11, fontWeight: 700, borderRadius: 6, padding: "1px 7px", ...tagStyle(a) }}>{a.action}</span>
-                <span style={{ color: "#4A4234" }}>{a.detail}</span>
+                <span style={{ color: "#4A4234", flex: 1 }}>{a.detail}</span>
+                {delX(a)}
               </div>
             ))}
           </div>
@@ -3865,8 +3882,37 @@ function VaultView() {
   const upd = (id, k, v) => commit(entries.map(e => e.id === id ? { ...e, [k]: v } : e));
   const del = (id) => commit(entries.filter(e => e.id !== id));
   const copy = (t) => { try { navigator.clipboard.writeText(t); } catch (_) {} };
+  const [sortKey, setSortKey] = useState("cat"); const [sortDir, setSortDir] = useState(1);
+  const [imp, setImp] = useState(null); // 匯入面板 {mode,text,cat,preview,busy,err}
+  const fileToB64 = (file) => new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result).split(",")[1]); r.onerror = rej; r.readAsDataURL(file); });
+  // 貼上解析：Google 試算表複製＝Tab 分隔。欄序 名稱/帳號/密碼/備註/連結；區段標題列(含「帳號」「密碼」)→設目前分類
+  const parsePaste = (text, defCat) => {
+    const out = []; let cur = defCat || "公司帳號";
+    for (const raw of (text || "").split(/\r?\n/)) {
+      if (!raw.trim()) continue;
+      const cells = (raw.includes("\t") ? raw.split("\t") : raw.split(/ {2,}|,/)).map(c => c.trim());
+      if (cells[1] === "帳號" || cells.includes("密碼")) { if (cells[0] && !/帳號|密碼|備註|連結/.test(cells[0])) cur = cells[0]; continue; }
+      if (cells.filter(Boolean).length === 1) { cur = cells[0]; continue; }
+      const [name, account, password, notes, url] = cells;
+      if (!name && !account && !password) continue;
+      out.push({ id: "v" + Math.random().toString(36).slice(2, 8), cat: cur, name: name || "", account: account || "", password: password || "", url: url || "", notes: notes || "" });
+    }
+    return out;
+  };
+  const runImport = (rows) => { if (rows && rows.length) commit([...(entries || []), ...rows]); setImp(null); };
+  const ocrImport = async (file) => {
+    setImp(p => ({ ...(p || {}), busy: true, err: "" }));
+    try {
+      const b64 = await fileToB64(file);
+      const block = { type: "image", source: { type: "base64", media_type: file.type || "image/png", data: b64 } };
+      const reply = await callAI([{ role: "user", content: [block, { type: "text", text: "把這張帳號密碼表解析成 JSON 陣列，每筆 {cat,name,account,password,notes,url}，cat=該列所屬分類/區段；只輸出一個 ```json 區塊，不要其他文字。" }] }], "你是表格解析助理，只輸出 JSON。", "import");
+      const m = reply.match(/```json\s*([\s\S]*?)```/i); const arr = JSON.parse(m ? m[1] : reply);
+      const rows = (Array.isArray(arr) ? arr : []).map(r => ({ id: "v" + Math.random().toString(36).slice(2, 8), cat: r.cat || "公司帳號", name: r.name || "", account: r.account || "", password: r.password || "", url: r.url || "", notes: r.notes || "" }));
+      setImp(p => ({ ...(p || {}), busy: false, preview: rows }));
+    } catch (_) { setImp(p => ({ ...(p || {}), busy: false, err: "解析失敗，請改用「貼上文字」" })); }
+  };
 
-  const wrap = { maxWidth: 920, margin: "16px auto", padding: "0 4px" };
+  const wrap = { maxWidth: 1080, margin: "16px auto", padding: "0 4px" };
   if (blob === undefined) return <div style={{ ...wrap, padding: 30, color: "#A99F88", textAlign: "center" }}>載入中…</div>;
 
   // 鎖定畫面
@@ -3886,43 +3932,97 @@ function VaultView() {
     </div>
   );
 
-  // 已解鎖
-  const cats = [["all", "全部"], ["company", "公司帳號"], ["personal", "個人"]];
-  const list = entries.filter(e => (filt === "all" || e.cat === filt) && (!q.trim() || (e.name + e.account + e.url + e.notes).toLowerCase().includes(q.trim().toLowerCase())));
-  const field = (e, k, ph, w) => <input value={e[k] || ""} onChange={ev => upd(e.id, k, ev.target.value)} placeholder={ph} style={{ border: `1px solid ${BORDER}`, borderRadius: 7, padding: "6px 8px", fontSize: 13, background: "#fff", color: TEXT, width: w || "100%", boxSizing: "border-box" }} />;
+  // 已解鎖：表格化（分類/排序/篩選/搜尋）+ 批量匯入
+  const allCats = Array.from(new Set((entries || []).map(e => e.cat).filter(Boolean)));
+  const filtered = entries.filter(e => (filt === "all" || e.cat === filt) && (!q.trim() || (e.cat + e.name + e.account + e.url + e.notes).toLowerCase().includes(q.trim().toLowerCase())));
+  const sorted = [...filtered].sort((a, b) => (((a[sortKey] || "") + "").localeCompare((b[sortKey] || "") + "", "zh-Hant")) * sortDir);
+  const setSort = (k) => { if (sortKey === k) setSortDir(d => -d); else { setSortKey(k); setSortDir(1); } };
+  const arrow = (k) => sortKey === k ? (sortDir === 1 ? " ▲" : " ▼") : "";
+  const cell = { border: `1px solid ${BORDER}`, borderRadius: 6, padding: "5px 7px", fontSize: 12.5, background: "#fff", color: TEXT, width: "100%", boxSizing: "border-box" };
+  const ico = { border: `1px solid ${BORDER}`, background: "#fff", borderRadius: 6, padding: "4px 6px", cursor: "pointer", fontSize: 12, flexShrink: 0 };
+  const gtc = "130px 1.2fr 1.2fr 1.2fr 1fr 1fr 32px";
+  const sep = `1px solid ${BORDER}`;
+  const th = (label, k) => <div onClick={k ? () => setSort(k) : undefined} style={{ padding: "7px 8px", fontSize: 11.5, fontWeight: 600, color: "#7A6F58", borderLeft: sep, cursor: k ? "pointer" : "default", userSelect: "none" }}>{label}{k ? arrow(k) : ""}</div>;
+  const fld = (e, k, ph) => <input value={e[k] || ""} onChange={ev => upd(e.id, k, ev.target.value)} placeholder={ph} style={cell} />;
   return (
     <div style={wrap}>
-      <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 12 }}>
+      <datalist id="vaultcats">{allCats.map(c => <option key={c} value={c} />)}</datalist>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
         <div style={{ fontSize: 18, fontWeight: 600, color: "#211C15" }}>🔐 密碼金庫</div>
         <span style={{ fontSize: 12, color: "#2E7D32" }}>● 已解鎖（{entries.length} 筆）</span>
         <div style={{ flex: 1 }} />
-        <input value={q} onChange={e => setQ(e.target.value)} placeholder="搜尋…" style={{ ...inputStyle, width: 180, padding: "6px 10px" }} />
-        <button onClick={addEntry} style={{ background: "#b5512b", color: "#fff", border: "none", borderRadius: 8, padding: "7px 14px", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>＋ 新增</button>
+        <input value={q} onChange={e => setQ(e.target.value)} placeholder="搜尋…" style={{ ...inputStyle, width: 160, padding: "6px 10px" }} />
+        <button onClick={addEntry} style={{ background: "#b5512b", color: "#fff", border: "none", borderRadius: 8, padding: "7px 12px", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>＋ 新增</button>
+        <button onClick={() => setImp({ mode: "text", text: "", cat: "公司帳號", preview: null, busy: false, err: "" })} style={{ background: "#fff", color: "#b5512b", border: "1px solid #b5512b", borderRadius: 8, padding: "7px 12px", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>📋 批量匯入</button>
         <button onClick={lock} title="清除記憶體中的明文" style={{ background: "#fff", color: "#6F6656", border: "1px solid #D8CFBB", borderRadius: 8, padding: "7px 12px", fontSize: 13, cursor: "pointer" }}>🔒 鎖定</button>
       </div>
-      <div style={{ display: "flex", gap: 6, marginBottom: 12 }}>{cats.map(([k, l]) => <button key={k} onClick={() => setFilt(k)} style={{ padding: "4px 12px", borderRadius: 999, border: `1px solid ${filt === k ? "#b5512b" : "#D8CFBB"}`, background: filt === k ? "#F4EAE4" : "#fff", color: filt === k ? "#b5512b" : "#6F6656", fontSize: 12.5, fontWeight: 600, cursor: "pointer" }}>{l}</button>)}</div>
-      {list.length === 0 ? <div style={{ padding: 30, textAlign: "center", color: "#A99F88", fontSize: 13 }}>沒有資料，點「＋ 新增」</div> :
-       list.map(e => (
-        <div key={e.id} style={{ background: "#fff", border: "1px solid #D8CFBB", borderRadius: 12, padding: 14, marginBottom: 10 }}>
-          <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginBottom: 8 }}>
-            <select value={e.cat} onChange={ev => upd(e.id, "cat", ev.target.value)} style={{ ...inputStyle, width: 110, padding: "5px 8px" }}><option value="company">公司帳號</option><option value="personal">個人</option></select>
-            {field(e, "name", "用途/名稱（例：銀行網銀）", 240)}
-            <div style={{ flex: 1 }} />
-            <button onClick={() => del(e.id)} title="刪除" style={{ background: "none", border: "none", color: "#C8BCA0", cursor: "pointer", fontSize: 18 }} onMouseEnter={ev => ev.currentTarget.style.color = "#DC2626"} onMouseLeave={ev => ev.currentTarget.style.color = "#C8BCA0"}>×</button>
+      <div style={{ display: "flex", gap: 6, marginBottom: 10, flexWrap: "wrap" }}>
+        {["all", ...allCats].map(k => { const n = k === "all" ? entries.length : entries.filter(e => e.cat === k).length; return <button key={k} onClick={() => setFilt(k)} style={{ padding: "4px 12px", borderRadius: 999, border: `1px solid ${filt === k ? "#b5512b" : "#D8CFBB"}`, background: filt === k ? "#F4EAE4" : "#fff", color: filt === k ? "#b5512b" : "#6F6656", fontSize: 12.5, fontWeight: 600, cursor: "pointer" }}>{k === "all" ? "全部" : k} {n}</button>; })}
+      </div>
+      <div style={{ overflowX: "auto", border: sep, borderRadius: 10, background: "#fff" }}>
+        <div style={{ minWidth: 760 }}>
+          <div style={{ display: "grid", gridTemplateColumns: gtc, background: "#FCFAF4", borderBottom: sep }}>
+            {th("分類", "cat")}{th("名稱", "name")}{th("帳號", "account")}{th("密碼", null)}{th("連結", null)}{th("備註", null)}{th("", null)}
           </div>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-            <div style={{ display: "flex", gap: 6, alignItems: "center" }}>{field(e, "account", "帳號")}<button onClick={() => copy(e.account)} title="複製帳號" style={{ border: `1px solid ${BORDER}`, background: "#fff", borderRadius: 7, padding: "6px 8px", cursor: "pointer", fontSize: 12 }}>📋</button></div>
-            <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-              <input type={reveal[e.id] ? "text" : "password"} value={e.password || ""} onChange={ev => upd(e.id, "password", ev.target.value)} placeholder="密碼" style={{ border: `1px solid ${BORDER}`, borderRadius: 7, padding: "6px 8px", fontSize: 13, background: "#fff", color: TEXT, flex: 1, boxSizing: "border-box" }} />
-              <button onClick={() => setReveal(r => ({ ...r, [e.id]: !r[e.id] }))} title="顯示/隱藏" style={{ border: `1px solid ${BORDER}`, background: "#fff", borderRadius: 7, padding: "6px 8px", cursor: "pointer", fontSize: 12 }}>{reveal[e.id] ? "🙈" : "👁"}</button>
-              <button onClick={() => copy(e.password)} title="複製密碼" style={{ border: `1px solid ${BORDER}`, background: "#fff", borderRadius: 7, padding: "6px 8px", cursor: "pointer", fontSize: 12 }}>📋</button>
+          {sorted.length === 0 ? <div style={{ padding: 24, textAlign: "center", color: "#A99F88", fontSize: 13 }}>沒有資料，點「＋ 新增」或「📋 批量匯入」</div> :
+           sorted.map((e, i) => (
+            <div key={e.id} style={{ display: "grid", gridTemplateColumns: gtc, alignItems: "center", background: i % 2 ? "#FBF8F0" : "#fff", borderTop: i ? "1px solid #F3EEE1" : "none", padding: "5px 6px", gap: 4 }}>
+              <input list="vaultcats" value={e.cat || ""} onChange={ev => upd(e.id, "cat", ev.target.value)} placeholder="分類" style={cell} />
+              {fld(e, "name", "名稱")}
+              <div style={{ display: "flex", gap: 4, alignItems: "center" }}>{fld(e, "account", "帳號")}<button onClick={() => copy(e.account)} title="複製" style={ico}>📋</button></div>
+              <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
+                <input type={reveal[e.id] ? "text" : "password"} value={e.password || ""} onChange={ev => upd(e.id, "password", ev.target.value)} placeholder="密碼" style={cell} />
+                <button onClick={() => setReveal(r => ({ ...r, [e.id]: !r[e.id] }))} title="顯示/隱藏" style={ico}>{reveal[e.id] ? "🙈" : "👁"}</button>
+                <button onClick={() => copy(e.password)} title="複製" style={ico}>📋</button>
+              </div>
+              <div style={{ display: "flex", gap: 4, alignItems: "center" }}>{fld(e, "url", "連結")}{e.url ? <a href={e.url} target="_blank" rel="noreferrer" style={{ ...ico, textDecoration: "none" }}>↗</a> : null}</div>
+              {fld(e, "notes", "備註")}
+              <button onClick={() => del(e.id)} title="刪除" style={{ background: "none", border: "none", color: "#C8BCA0", cursor: "pointer", fontSize: 17 }} onMouseEnter={ev => ev.currentTarget.style.color = "#DC2626"} onMouseLeave={ev => ev.currentTarget.style.color = "#C8BCA0"}>×</button>
             </div>
-            {field(e, "url", "網址/連結（選填）")}
-            {field(e, "notes", "備註（選填）")}
+          ))}
+        </div>
+      </div>
+      <div style={{ fontSize: 11.5, color: "#A99F88", marginTop: 8, lineHeight: 1.7 }}>離開此頁或按「🔒 鎖定」會清掉記憶體中的明文。建議主密碼另外抄一份放安全的地方（忘了無法救回）。</div>
+
+      {imp && (
+        <div onClick={e => e.target === e.currentTarget && setImp(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.4)", zIndex: 500, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+          <div style={{ background: "#fff", borderRadius: 14, padding: 18, width: "min(680px,96vw)", maxHeight: "88vh", overflowY: "auto" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
+              <div style={{ fontSize: 16, fontWeight: 700, color: "#211C15" }}>📋 批量匯入密碼</div>
+              <div style={{ flex: 1 }} />
+              <button onClick={() => setImp(null)} style={{ background: "none", border: "none", fontSize: 22, cursor: "pointer", color: "#6F6656" }}>×</button>
+            </div>
+            <div style={{ display: "flex", gap: 6, marginBottom: 12 }}>
+              {[["text", "貼上文字（私密）"], ["img", "截圖辨識（送AI）"]].map(([m, l]) => <button key={m} onClick={() => setImp(p => ({ ...p, mode: m, preview: null, err: "" }))} style={{ padding: "6px 14px", borderRadius: 8, border: `1px solid ${imp.mode === m ? "#b5512b" : "#D8CFBB"}`, background: imp.mode === m ? "#b5512b" : "#fff", color: imp.mode === m ? "#fff" : "#6F6656", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>{l}</button>)}
+            </div>
+            {imp.mode === "text" ? (
+              <>
+                <div style={{ fontSize: 12, color: "#6F6656", marginBottom: 6 }}>從 Google 試算表整段框選複製、貼到下面（欄序：名稱→帳號→密碼→備註→連結；有「分類標題列」會自動辨識）。<b>此方式在你本機解析，不會外傳。</b></div>
+                <textarea value={imp.text} onChange={e => setImp(p => ({ ...p, text: e.target.value, preview: null }))} placeholder="名稱（Tab）帳號（Tab）密碼（Tab）備註（Tab）連結…" rows={7} style={{ width: "100%", boxSizing: "border-box", border: `1px solid ${BORDER}`, borderRadius: 8, padding: 10, fontSize: 13, fontFamily: "monospace" }} />
+                <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 8, flexWrap: "wrap" }}>
+                  <span style={{ fontSize: 12.5, color: "#6F6656" }}>未標分類者歸到：</span>
+                  <input value={imp.cat} onChange={e => setImp(p => ({ ...p, cat: e.target.value }))} list="vaultcats" style={{ ...inputStyle, width: 160, padding: "6px 8px" }} />
+                  <button onClick={() => setImp(p => ({ ...p, preview: parsePaste(p.text, p.cat) }))} style={{ background: "#fff", color: "#b5512b", border: "1px solid #b5512b", borderRadius: 8, padding: "7px 14px", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>解析預覽</button>
+                </div>
+              </>
+            ) : (
+              <>
+                <div style={{ fontSize: 12, color: "#C2410C", background: "#FBEFE7", border: "1px solid #F0CFB8", borderRadius: 8, padding: "8px 10px", marginBottom: 8, lineHeight: 1.6 }}>⚠️ 截圖會送到 AI 辨識，<b>圖片裡的密碼會經過 AI 服務</b>。介意隱私請改用「貼上文字」。</div>
+                <input type="file" accept="image/*" onChange={e => { const f = e.target.files?.[0]; e.target.value = ""; if (f) ocrImport(f); }} style={{ fontSize: 13 }} />
+                {imp.busy && <div style={{ fontSize: 13, color: "#6F6656", marginTop: 8 }}>AI 辨識中…</div>}
+              </>
+            )}
+            {imp.err && <div style={{ color: "#DC2626", fontSize: 12.5, marginTop: 8 }}>{imp.err}</div>}
+            {imp.preview && (
+              <div style={{ marginTop: 12, borderTop: sep, paddingTop: 10 }}>
+                <div style={{ fontSize: 13, fontWeight: 600, color: "#211C15", marginBottom: 6 }}>解析出 {imp.preview.length} 筆，預覽前 6 筆：</div>
+                {imp.preview.slice(0, 6).map(r => <div key={r.id} style={{ fontSize: 12, color: "#4A4234", padding: "3px 0", borderBottom: "1px solid #F3EEE1" }}>[{r.cat}] {r.name} · {r.account} · {"•".repeat(Math.min(8, (r.password || "").length))}</div>)}
+                <button onClick={() => runImport(imp.preview)} disabled={!imp.preview.length} style={{ marginTop: 10, background: imp.preview.length ? "#2E7D32" : "#D8CFBB", color: "#fff", border: "none", borderRadius: 8, padding: "9px 18px", fontSize: 13.5, fontWeight: 600, cursor: imp.preview.length ? "pointer" : "not-allowed" }}>✅ 匯入這 {imp.preview.length} 筆</button>
+              </div>
+            )}
           </div>
         </div>
-      ))}
-      <div style={{ fontSize: 11.5, color: "#A99F88", marginTop: 8, lineHeight: 1.7 }}>離開此頁或按「🔒 鎖定」會清掉記憶體中的明文，下次要再輸入主密碼。建議主密碼另外抄一份放安全的地方（忘了無法救回）。</div>
+      )}
     </div>
   );
 }
