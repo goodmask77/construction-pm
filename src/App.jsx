@@ -4,6 +4,7 @@ import { uploadPhoto, deletePhotoFile, supabase, getSharedMany } from "./supa.js
 import { fmt, baseAmount, taxOf, estAmount, paidOf, unpaidOf, calcEstimated, calcActual, pretaxOf, isTaxable, catRawEst, catPretaxSub, catDiscount, catEstAfter, catSaved, catItemEstAfter, PAY_CATEGORIES, catPaid, catItemPaidMap, catUnpaidAfter, isFundingCat, pettyItemOf, withPettyItems, projectTotals } from "./lib/cost.js";
 import { INITIAL_CATEGORIES } from "./lib/seed.js";
 import { SPACES, SPACE_CONF, PERM_MATRIX, LEGACY_EDIT, PERM_NONE, DEFAULT_ROLES, ALL_VIEW_KEYS, ALL_EDIT_KEYS, ALL_MONEY_KEYS } from "./lib/spaces.js";
+import { buildBotSnapshot } from "./lib/snapshot.js";
 import SequenceView from "./SequenceView.jsx";
 
 // ── DESIGN TOKENS (Warm editorial — 米色紙感 + 磚紅 + 黑) ──────────────────
@@ -633,6 +634,18 @@ export default function App() {
   const totalEstimated = displayCats ? displayCats.filter(c => !isFundingCat(c)).reduce((s, c) => s + catEstAfter(c), 0) : 0; // 議價後含稅總額（含零用金、排除撥款帳）
   const totalPaid = displayCats ? displayCats.filter(c => !isFundingCat(c)).reduce((s, c) => s + catPaid(c), 0) : 0; // 已付總額（含零用金、排除撥款帳）
   const doneCount = cats ? cats.filter(c => c.status === "done").length : 0;
+
+  // 「唯一真相快照」：資料變動 4 秒後，把目前空間的權威資料寫進 pm_bot_context（給 LINE bot 只讀這一個，數字永遠跟畫面一致）
+  useEffect(() => {
+    if (!cats || !settings) return; // 載入完成才寫，避免覆蓋成空殼
+    const t = setTimeout(() => {
+      try {
+        const snap = buildBotSnapshot({ space: CURRENT_SPACE, settings, cats, petty, journal, events, plans }, new Date().toISOString());
+        window.storage.set(K("pm_bot_context"), JSON.stringify(snap), true).catch(() => {});
+      } catch (_) {}
+    }, 4000);
+    return () => clearTimeout(t);
+  }, [cats, settings, petty, journal, events, plans]);
 
 
   // drag-drop categories
