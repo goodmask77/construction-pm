@@ -1059,21 +1059,36 @@ export default function App() {
         {view === "compare" && (
           <CompareView canEdit={canEditFiles} requireLogin={denyEdit} />
         )}
-        {view === "accounts" && isAdmin && (
-          <AccountManager confirm={confirm} myId={profile?.id} roles={roles} commitRoles={commitRoles} />
-        )}
-        {view === "audit" && isAdmin && (
-          <AuditLogView activityLog={activityLog} />
-        )}
         {view === "petty" && showMoney() && (
           <PettyCashView petty={petty} setPetty={commitPetty} cats={cats} setCats={guardedSetCats} canEdit={canEditData} confirm={confirm} />
         )}
-        {view === "groups" && isAdmin && (
-          <GroupsView cats={cats} canEdit={canEditData} requireLogin={denyEdit} settings={settings} setSettings={guardedSetSettings} journal={journal} events={events} plans={plans} />
-        )}
-        {view === "advisor" && settings && (
-          <AdvisorSettingsView settings={settings} setSettings={guardedSetSettings} cats={cats} aiLog={aiLog} setAiLog={l => { setAiLog(l); saveAILog(l); }} journal={journal} events={events} plans={plans} activityLog={activityLog} logActivity={logActivity} userName={userName} />
-        )}
+        {/* ⚙ 設定：把 AI設定 / 群組 / 帳號 / 紀錄 整合成一頁，內含子分頁 */}
+        {["advisor", "groups", "accounts", "audit"].includes(view) && (() => {
+          const subs = [["advisor", "🤖 AI設定"], ...(isAdmin ? [["groups", "💬 群組"], ["accounts", "👤 帳號"], ["audit", "📜 紀錄"]] : [])].filter(([k]) => k !== "advisor" || allowedViewPages == null || allowedViewPages.includes("advisor"));
+          return (
+            <div>
+              {subs.length > 1 && (
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", maxWidth: 1100, margin: "0 auto 16px" }}>
+                  {subs.map(([k, l]) => (
+                    <button key={k} onClick={() => setView(k)} style={{ padding: "8px 18px", borderRadius: 8, border: `1px solid ${view === k ? PRIMARY : BORDER}`, background: view === k ? PRIMARY : "#fff", color: view === k ? "#fff" : TEXT, fontSize: 13.5, fontWeight: 600, cursor: "pointer" }}>{l}</button>
+                  ))}
+                </div>
+              )}
+              {view === "advisor" && settings && (
+                <AdvisorSettingsView settings={settings} setSettings={guardedSetSettings} cats={cats} aiLog={aiLog} setAiLog={l => { setAiLog(l); saveAILog(l); }} journal={journal} events={events} plans={plans} activityLog={activityLog} logActivity={logActivity} userName={userName} />
+              )}
+              {view === "groups" && isAdmin && (
+                <GroupsView cats={cats} canEdit={canEditData} requireLogin={denyEdit} settings={settings} setSettings={guardedSetSettings} journal={journal} events={events} plans={plans} />
+              )}
+              {view === "accounts" && isAdmin && (
+                <AccountManager confirm={confirm} myId={profile?.id} roles={roles} commitRoles={commitRoles} />
+              )}
+              {view === "audit" && isAdmin && (
+                <AuditLogView activityLog={activityLog} />
+              )}
+            </div>
+          );
+        })()}
       </div>
 
       {/* CATEGORY DETAIL PANEL */}
@@ -2439,14 +2454,14 @@ function CompareView({ canEdit, requireLogin }) {
 
 // ── BOTTOM NAV (手機) ───────────────────────────────────────────────────────
 function BottomNav({ view, setView, isAdmin, allowedViewPages }) {
-  const pageVisible = (v) => !allowedViewPages || allowedViewPages.includes(v) || v === "owner";
-  const tabs = (conf().tabs || [["owner", "儀表板", "📊"], ["overview", L("overview"), "📋"], ["gantt", L("gantt"), "📅"], ["files", "檔案庫", "📁"], ...(conf().showCost ? [["petty", "零用金", "💵"]] : []), ["issues", "ToDo", "📝"], ["compare", "比價", "⚖️"], ["advisor", "AI設定", "🤖"], ...(isAdmin ? [["groups", "群組", "💬"], ["accounts", "帳號", "👤"], ["audit", "紀錄", "📜"]] : [])]).filter(([v]) => !conf().hideTabs.includes(v) && pageVisible(v));
+  const pageVisible = (v) => v === "settings" || !allowedViewPages || allowedViewPages.includes(v) || v === "owner";
+  const tabs = (conf().tabs || [["owner", "儀表板", "📊"], ["overview", L("overview"), "📋"], ["gantt", L("gantt"), "📅"], ["files", "檔案庫", "📁"], ...(conf().showCost ? [["petty", "零用金", "💵"]] : []), ["issues", "ToDo", "📝"], ["compare", "比價", "⚖️"], ...((isAdmin || pageVisible("advisor")) ? [["settings", "設定", "⚙"]] : [])]).filter(([v]) => !conf().hideTabs.includes(v) && pageVisible(v));
   return (
     <div style={{ position: "fixed", left: 0, right: 0, bottom: 0, height: 60, background: "rgba(255,255,255,0.96)", backdropFilter: "blur(10px)", WebkitBackdropFilter: "blur(10px)", borderTop: `1px solid ${BORDER}`, boxShadow: "0 -2px 14px rgba(0,0,0,0.08)", display: "flex", zIndex: 350, paddingBottom: "env(safe-area-inset-bottom)" }}>
       {tabs.map(([v, l, icon]) => {
-        const on = view === v;
+        const on = v === "settings" ? ["settings", "advisor", "groups", "accounts", "audit"].includes(view) : view === v;
         return (
-          <button key={v} onClick={() => setView(v)} title={l} className={v === "issues" && !on ? "todo-glow" : undefined} style={{ flex: 1, minHeight: 44, border: "none", borderRadius: v === "issues" ? 10 : 0, background: "none", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 3, cursor: "pointer", color: on ? ACCENT : (v === "issues" ? "#D97706" : SUB), fontWeight: on ? 700 : (v === "issues" ? 700 : 500), padding: 0 }}>
+          <button key={v} onClick={() => setView(v === "settings" ? "advisor" : v)} title={l} className={v === "issues" && !on ? "todo-glow" : undefined} style={{ flex: 1, minHeight: 44, border: "none", borderRadius: v === "issues" ? 10 : 0, background: "none", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 3, cursor: "pointer", color: on ? ACCENT : (v === "issues" ? "#D97706" : SUB), fontWeight: on ? 700 : (v === "issues" ? 700 : 500), padding: 0 }}>
             <span style={{ fontSize: 19, lineHeight: 1, filter: on ? "none" : "grayscale(0.4) opacity(0.85)" }}>{icon}</span>
             <span style={{ fontSize: 10.5 }}>{l}</span>
           </button>
@@ -2513,7 +2528,9 @@ function TopNav({ view, setView, saving, totalEstimated, totalPaid, doneCount, c
   const totalUnpaid = totalEstimated - totalPaid;
   const payPct = totalEstimated > 0 ? Math.round(totalPaid / totalEstimated * 100) : 0;
   const spaceVisible = (id) => !allowedSpaces || allowedSpaces.includes(id);
-  const pageVisible = (v) => !allowedViewPages || allowedViewPages.includes(v) || v === "owner"; // 儀表板一律可見
+  const pageVisible = (v) => v === "settings" || !allowedViewPages || allowedViewPages.includes(v) || v === "owner"; // 儀表板一律可見；設定永遠可見(內含子分頁各自控管)
+  const SETTINGS_GRP = ["settings", "advisor", "groups", "accounts", "audit"];
+  const tabActive = (v) => v === "settings" ? SETTINGS_GRP.includes(view) : view === v;
   return (
     <div style={{ background: BG, borderBottom: `1px solid ${BORDER}`, padding: isMobile ? "10px 14px 0" : "16px 22px 0", position: "sticky", top: 0, zIndex: 100 }}>
       <div style={{ display: "flex", alignItems: "center", gap: isMobile ? 10 : 16, marginBottom: isMobile ? 10 : 12, flexWrap: "wrap" }}>
@@ -2575,9 +2592,9 @@ function TopNav({ view, setView, saving, totalEstimated, totalPaid, doneCount, c
       {/* view tabs — boxed editorial（手機隱藏，改用底部導覽）*/}
       {!isMobile && (
       <div style={{ display: "flex", gap: 8, paddingBottom: 12, flexWrap: "wrap" }}>
-        {(conf().tabs || [["owner","儀表板"],["overview",L("overview")],["gantt",L("gantt")],["files","檔案庫"],...(conf().showCost?[["petty","零用金"]]:[]),["issues","📝 ToDo"],["compare","比價"],["advisor","AI設定"],...(isAdmin?[["groups","群組"],["accounts","帳號"],["audit","📜 紀錄"]]:[])]).filter(([v]) => !conf().hideTabs.includes(v) && pageVisible(v)).map(([v,l]) => (
-          <button key={v} onClick={() => setView(v)} className={v === "issues" && view !== v ? "todo-glow" : undefined} style={{ padding: "8px 16px", borderRadius: 7, border: `1px solid ${view === v ? PRIMARY : (v === "issues" ? "#F59E0B" : BORDER)}`, cursor: "pointer", fontSize: 14, fontWeight: v === "issues" ? 700 : 500, background: view === v ? PRIMARY : (v === "issues" ? "#FEF3C7" : "transparent"), color: view === v ? "#fff" : (v === "issues" ? "#B45309" : TEXT), transition: "all .12s" }}>{l}</button>
-        ))}
+        {(conf().tabs || [["owner","儀表板"],["overview",L("overview")],["gantt",L("gantt")],["files","檔案庫"],...(conf().showCost?[["petty","零用金"]]:[]),["issues","📝 ToDo"],["compare","比價"],...((isAdmin||pageVisible("advisor"))?[["settings","⚙ 設定"]]:[])]).filter(([v]) => !conf().hideTabs.includes(v) && pageVisible(v)).map(([v,l]) => { const act = tabActive(v); return (
+          <button key={v} onClick={() => setView(v === "settings" ? "advisor" : v)} className={v === "issues" && view !== v ? "todo-glow" : undefined} style={{ padding: "8px 16px", borderRadius: 7, border: `1px solid ${act ? PRIMARY : (v === "issues" ? "#F59E0B" : BORDER)}`, cursor: "pointer", fontSize: 14, fontWeight: v === "issues" ? 700 : 500, background: act ? PRIMARY : (v === "issues" ? "#FEF3C7" : "transparent"), color: act ? "#fff" : (v === "issues" ? "#B45309" : TEXT), transition: "all .12s" }}>{l}</button>
+        ); })}
       </div>
       )}
     </div>
