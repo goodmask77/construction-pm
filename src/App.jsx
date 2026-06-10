@@ -658,6 +658,7 @@ export default function App() {
   const [roles, setRoles] = useState([]); // 身份範本（連動式）：指派給帳號後，帳號權限跟著身份走
   const { confirm, Dialog: ConfirmDialog } = useConfirm();
   const commitPetty = (next) => {
+    logAction("編輯", "零用金");
     setPetty(next);
     window.storage.set(K("pm_petty"), JSON.stringify(next), true).catch(() => {});
   };
@@ -668,11 +669,13 @@ export default function App() {
 
   // 工作日誌：寫入 state 並存進共享後端
   const commitWorklog = (list) => {
+    logAction("編輯", "工序日誌");
     setWorklog(list);
     window.storage.set(K("pm_worklog"), JSON.stringify(list), true).catch(()=>{});
   };
   // 檔案庫照片：metadata 存共享後端（圖片本體在 Supabase Storage）
   const commitPhotos = (list) => {
+    logAction("編輯", "檔案庫");
     setPhotos(list);
     window.storage.set(K("pm_photos"), JSON.stringify(list), true).catch(()=>{});
   };
@@ -828,6 +831,15 @@ export default function App() {
     const entry = { ts: new Date().toISOString(), user: userName||"系統", action, detail };
     setActivityLog(prev => { const next = [entry, ...prev].slice(0,200); saveActivityLog(next); return next; });
   };
+  // 操作紀錄：把連續編輯收斂成「每 90 秒一筆」，避免每打一個字就記一條（只記登入者的操作）
+  const logThrottleRef = useRef({});
+  const logAction = (action, detail, windowMs = 90000) => {
+    if (!userName) return; // 只記登入者
+    const key = action + "|" + detail; const now = Date.now();
+    if (now - (logThrottleRef.current[key] || 0) < windowMs) return;
+    logThrottleRef.current[key] = now;
+    logActivity(action, detail);
+  };
 
   // ── 帳號 / 逐頁權限（一律來自登入 session 的 profile，無法冒名）──
   const account = profile ? { name: profile.display_name, role: profile.role, pages: profile.pages || [] } : null;
@@ -875,15 +887,18 @@ export default function App() {
   const denyEdit = () => { if (!userName) setShowLogin(true); else alert("此帳號沒有編輯此頁面的權限，請聯絡管理員開放。"); };
   const guardedSetCats = (updater) => {
     if (!canEditData) { denyEdit(); return; }
+    logAction("編輯", view === "petty" ? "零用金" : view === "gantt" ? "工序" : view === "issues" ? "ToDo" : "總覽/工程資料");
     setCats(prev => typeof updater === "function" ? updater(prev) : updater);
   };
   const guardedSetSettings = (s) => {
     if (!canEditAdvisor) { denyEdit(); return; }
+    logAction("編輯", "設定/AI");
     setSettings(s); saveSettings(s);
   };
 
   const setCatsLogged = (updater) => {
     if (!canEditData) { denyEdit(); return; }
+    logAction("編輯", view === "owner" ? "儀表板" : "總覽/工程資料");
     setCats(prev => typeof updater === "function" ? updater(prev) : updater);
   };
   const setEventsLogged = (updater) => {
@@ -1046,6 +1061,9 @@ export default function App() {
         )}
         {view === "accounts" && isAdmin && (
           <AccountManager confirm={confirm} myId={profile?.id} roles={roles} commitRoles={commitRoles} />
+        )}
+        {view === "audit" && isAdmin && (
+          <AuditLogView activityLog={activityLog} />
         )}
         {view === "petty" && showMoney() && (
           <PettyCashView petty={petty} setPetty={commitPetty} cats={cats} setCats={guardedSetCats} canEdit={canEditData} confirm={confirm} />
@@ -2422,7 +2440,7 @@ function CompareView({ canEdit, requireLogin }) {
 // ── BOTTOM NAV (手機) ───────────────────────────────────────────────────────
 function BottomNav({ view, setView, isAdmin, allowedViewPages }) {
   const pageVisible = (v) => !allowedViewPages || allowedViewPages.includes(v) || v === "owner";
-  const tabs = (conf().tabs || [["owner", "儀表板", "📊"], ["overview", L("overview"), "📋"], ["gantt", L("gantt"), "📅"], ["files", "檔案庫", "📁"], ...(conf().showCost ? [["petty", "零用金", "💵"]] : []), ["issues", "ToDo", "📝"], ["compare", "比價", "⚖️"], ["advisor", "AI設定", "🤖"], ...(isAdmin ? [["groups", "群組", "💬"], ["accounts", "帳號", "👤"]] : [])]).filter(([v]) => !conf().hideTabs.includes(v) && pageVisible(v));
+  const tabs = (conf().tabs || [["owner", "儀表板", "📊"], ["overview", L("overview"), "📋"], ["gantt", L("gantt"), "📅"], ["files", "檔案庫", "📁"], ...(conf().showCost ? [["petty", "零用金", "💵"]] : []), ["issues", "ToDo", "📝"], ["compare", "比價", "⚖️"], ["advisor", "AI設定", "🤖"], ...(isAdmin ? [["groups", "群組", "💬"], ["accounts", "帳號", "👤"], ["audit", "紀錄", "📜"]] : [])]).filter(([v]) => !conf().hideTabs.includes(v) && pageVisible(v));
   return (
     <div style={{ position: "fixed", left: 0, right: 0, bottom: 0, height: 60, background: "rgba(255,255,255,0.96)", backdropFilter: "blur(10px)", WebkitBackdropFilter: "blur(10px)", borderTop: `1px solid ${BORDER}`, boxShadow: "0 -2px 14px rgba(0,0,0,0.08)", display: "flex", zIndex: 350, paddingBottom: "env(safe-area-inset-bottom)" }}>
       {tabs.map(([v, l, icon]) => {
@@ -2557,7 +2575,7 @@ function TopNav({ view, setView, saving, totalEstimated, totalPaid, doneCount, c
       {/* view tabs — boxed editorial（手機隱藏，改用底部導覽）*/}
       {!isMobile && (
       <div style={{ display: "flex", gap: 8, paddingBottom: 12, flexWrap: "wrap" }}>
-        {(conf().tabs || [["owner","儀表板"],["overview",L("overview")],["gantt",L("gantt")],["files","檔案庫"],...(conf().showCost?[["petty","零用金"]]:[]),["issues","📝 ToDo"],["compare","比價"],["advisor","AI設定"],...(isAdmin?[["groups","群組"],["accounts","帳號"]]:[])]).filter(([v]) => !conf().hideTabs.includes(v) && pageVisible(v)).map(([v,l]) => (
+        {(conf().tabs || [["owner","儀表板"],["overview",L("overview")],["gantt",L("gantt")],["files","檔案庫"],...(conf().showCost?[["petty","零用金"]]:[]),["issues","📝 ToDo"],["compare","比價"],["advisor","AI設定"],...(isAdmin?[["groups","群組"],["accounts","帳號"],["audit","📜 紀錄"]]:[])]).filter(([v]) => !conf().hideTabs.includes(v) && pageVisible(v)).map(([v,l]) => (
           <button key={v} onClick={() => setView(v)} className={v === "issues" && view !== v ? "todo-glow" : undefined} style={{ padding: "8px 16px", borderRadius: 7, border: `1px solid ${view === v ? PRIMARY : (v === "issues" ? "#F59E0B" : BORDER)}`, cursor: "pointer", fontSize: 14, fontWeight: v === "issues" ? 700 : 500, background: view === v ? PRIMARY : (v === "issues" ? "#FEF3C7" : "transparent"), color: view === v ? "#fff" : (v === "issues" ? "#B45309" : TEXT), transition: "all .12s" }}>{l}</button>
         ))}
       </div>
@@ -3961,6 +3979,97 @@ function OwnerDashboard({ cats, setCats, settings, stalledItems, activityLog, lo
 }
 
 // ── ACTIVITY LOG PANEL ────────────────────────────────────────────────────────
+// 管理員專屬：每個人的登入時間＋操作內容（稽核紀錄）
+function AuditLogView({ activityLog }) {
+  const [tab, setTab] = useState("member"); // member | timeline
+  const [q, setQ] = useState("");
+  const [openU, setOpenU] = useState(() => new Set());
+  const toggleU = (u) => setOpenU(prev => { const n = new Set(prev); n.has(u) ? n.delete(u) : n.add(u); return n; });
+  const log = (activityLog || []).filter(a => {
+    if (!q.trim()) return true; const s = (a.user + " " + a.action + " " + (a.detail || "")).toLowerCase();
+    return s.includes(q.trim().toLowerCase());
+  });
+  const fmtDT = (ts) => { try { return new Date(ts).toLocaleString("zh-TW", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" }); } catch (_) { return ""; } };
+  const fmtT = (ts) => { try { return new Date(ts).toLocaleTimeString("zh-TW", { hour: "2-digit", minute: "2-digit" }); } catch (_) { return ""; } };
+  const isLogin = (a) => a.action === "登入";
+
+  // 依成員彙整
+  const byUser = {};
+  log.forEach(a => { const u = a.user || "—"; (byUser[u] = byUser[u] || []).push(a); });
+  const members = Object.entries(byUser).map(([u, list]) => {
+    const logins = list.filter(isLogin);
+    const lastTs = list.reduce((m, a) => a.ts > m ? a.ts : m, "");
+    return { u, list, loginCount: logins.length, lastLogin: logins[0]?.ts, lastTs, actCount: list.length - logins.length };
+  }).sort((a, b) => (b.lastTs > a.lastTs ? 1 : -1));
+
+  // 時間軸（依日期）
+  const byDate = {}; log.forEach(a => { const d = new Date(a.ts).toLocaleDateString("zh-TW"); (byDate[d] = byDate[d] || []).push(a); });
+  const today = new Date().toLocaleDateString("zh-TW");
+  const tagStyle = (a) => isLogin(a)
+    ? { color: "#2E7D32", background: "#EAF3EA", border: "1px solid #CFE3CF" }
+    : { color: "#b5512b", background: "#F6ECE6", border: "1px solid #E6CFC2" };
+
+  return (
+    <div style={{ maxWidth: 900, margin: "16px auto", padding: "0 4px" }}>
+      <div style={{ fontSize: 18, fontWeight: 600, color: "#211C15", marginBottom: 6 }}>📜 登入與操作紀錄（僅管理員）</div>
+      <div style={{ background: "#faf6ee", border: "1px solid #e4ddc9", borderRadius: 10, padding: "10px 14px", marginBottom: 14, fontSize: 13, color: "#6b6450", lineHeight: 1.7 }}>
+        這裡記錄<b>每個人的登入時間</b>與<b>做了什麼</b>（編輯哪一頁）。只有管理員看得到。連續編輯會收斂成每 90 秒一筆，最多保留最近 200 筆。
+      </div>
+      <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 12, flexWrap: "wrap" }}>
+        {[["member", "👤 依成員"], ["timeline", "🕓 時間軸"]].map(([k, l]) => (
+          <button key={k} onClick={() => setTab(k)} style={{ padding: "6px 14px", borderRadius: 8, border: `1px solid ${tab === k ? "#b5512b" : "#D8CFBB"}`, background: tab === k ? "#b5512b" : "#fff", color: tab === k ? "#fff" : "#6F6656", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>{l}</button>
+        ))}
+        <div style={{ flex: 1 }} />
+        <input value={q} onChange={e => setQ(e.target.value)} placeholder="搜尋人名／動作…" style={{ ...inputStyle, width: 200, padding: "6px 10px" }} />
+      </div>
+
+      {log.length === 0 ? <div style={{ padding: 30, textAlign: "center", color: "#A99F88", fontSize: 13 }}>尚無紀錄</div> : tab === "member" ? (
+        members.map(m => {
+          const open = openU.has(m.u);
+          return (
+            <div key={m.u} style={{ background: "#fff", border: "1px solid #D8CFBB", borderRadius: 12, padding: "10px 14px", marginBottom: 10 }}>
+              <div onClick={() => toggleU(m.u)} style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", cursor: "pointer" }}>
+                <span style={{ fontSize: 11, color: "#A99F88", width: 10, transform: open ? "rotate(90deg)" : "none", transition: "transform .15s" }}>▸</span>
+                <div style={{ fontSize: 15, fontWeight: 700, color: "#211C15" }}>{m.u}</div>
+                <div style={{ flex: 1 }} />
+                <span style={{ fontSize: 12, color: "#6F6656" }}>最近登入 <b style={{ color: "#2E7D32" }}>{m.lastLogin ? fmtDT(m.lastLogin) : "—"}</b></span>
+                <span style={{ fontSize: 11.5, color: "#A99F88" }}>登入 {m.loginCount} 次・操作 {m.actCount} 次</span>
+              </div>
+              {open && (
+                <div style={{ marginTop: 10, borderTop: "1px solid #F0E9D8", paddingTop: 8 }}>
+                  {m.list.map((a, i) => (
+                    <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "4px 0", fontSize: 12.5 }}>
+                      <span style={{ fontSize: 11, color: "#A99F88", width: 96, flexShrink: 0, fontVariantNumeric: "tabular-nums" }}>{fmtDT(a.ts)}</span>
+                      <span style={{ fontSize: 11, fontWeight: 700, borderRadius: 6, padding: "1px 7px", ...tagStyle(a) }}>{a.action}</span>
+                      <span style={{ color: "#4A4234" }}>{a.detail}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })
+      ) : (
+        Object.entries(byDate).map(([date, entries]) => (
+          <div key={date} style={{ marginBottom: 16 }}>
+            <div style={{ fontSize: 12, color: "#6F6656", fontWeight: 600, margin: "6px 0 8px", display: "flex", alignItems: "center", gap: 6 }}>
+              <div style={{ height: 1, flex: 1, background: "#E7DFCC" }} />{date === today ? "今天" : date}<div style={{ height: 1, flex: 1, background: "#E7DFCC" }} />
+            </div>
+            {entries.map((a, i) => (
+              <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "5px 4px", fontSize: 12.5, borderBottom: "1px solid #F6F1E5" }}>
+                <span style={{ fontSize: 11, color: "#A99F88", width: 42, flexShrink: 0 }}>{fmtT(a.ts)}</span>
+                <span style={{ fontWeight: 700, color: "#211C15", width: 90, flexShrink: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{a.user}</span>
+                <span style={{ fontSize: 11, fontWeight: 700, borderRadius: 6, padding: "1px 7px", ...tagStyle(a) }}>{a.action}</span>
+                <span style={{ color: "#4A4234" }}>{a.detail}</span>
+              </div>
+            ))}
+          </div>
+        ))
+      )}
+    </div>
+  );
+}
+
 function ActivityLogPanel({ activityLog, onClose }) {
   const today = new Date().toLocaleDateString("zh-TW");
   const grouped = {};
