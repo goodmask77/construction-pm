@@ -127,7 +127,8 @@ export default async function handler(req, res) {
       const gid = ev.source?.groupId || ev.source?.roomId || ev.source?.userId
       await registerGroup(gid, ev.source?.type)
       const text = (ev.message.text || '').trim()
-      if (!triggered(text)) continue
+      const isDM = ev.source?.type === 'user' // 一對一私訊
+      if (!isDM && !triggered(text)) continue // 群組才需關鍵字；私訊一律回，免得使用者講半天 D 不理
       const snaps = await loadSnapshots()
       const reply = await answer(text, snaps)
       if (ev.replyToken) await lineReply(ev.replyToken, reply)
