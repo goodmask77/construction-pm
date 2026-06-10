@@ -19,7 +19,7 @@ D哥的後端已重建在本專案（不再依賴外部 `ground-pm-webhook`）�
 | `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` | 已有 | 本專案已設（帳號管理在用） |
 
 ## LINE 後台設定
-1. Messaging API → **Webhook URL** 設成： `https://<本專案網域>/api/line-webhook`
+1. Messaging API → **Webhook URL** 設成： `https://ground-pm.vercel.app/api/line-webhook`（本專案正式網域）
 2. 開啟「Use webhook」。
 3. 關閉「自動回應訊息」、開啟「Webhook」回應模式。
 4. 把 D哥加進工地群組。
