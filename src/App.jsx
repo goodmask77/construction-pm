@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo, Fragment } from "react";
 import { createPortal } from "react-dom";
 import { uploadPhoto, deletePhotoFile, supabase, getSharedMany } from "./supa.js";
+import { fmt, baseAmount, taxOf, estAmount, paidOf, unpaidOf, calcEstimated, calcActual, pretaxOf, isTaxable, catRawEst, catPretaxSub, catDiscount, catEstAfter, catSaved, catItemEstAfter, PAY_CATEGORIES, catPaid, catItemPaidMap, catUnpaidAfter, isFundingCat, pettyItemOf, withPettyItems, projectTotals } from "./lib/cost.js";
 import SequenceView from "./SequenceView.jsx";
 
 // ── DESIGN TOKENS (Warm editorial — 米色紙感 + 磚紅 + 黑) ──────────────────
@@ -173,85 +174,7 @@ const STATUS_MAP = {
   hold:        { label: "暫停",   color: "#C2872E" },
 };
 
-const fmt = (n) => "NT$" + Math.round(n || 0).toLocaleString();
-// ── 成本金額模型：base=數量×單價，依稅別算稅額與含稅預估；付款=已付/未付（整數 NT$）──
-// 金額基底：有「單據小計（amount）」就用單據的權威數字（避免 數量×單價 的進位尾差，例如發票 2×2086 印 4171 而非 4172）；
-// 沒有就回到 數量×單價。使用者一改數量/單價，amount 會同步重算（見 updateItem）。
-const baseAmount = (it) => {
-  const a = it?.amount;
-  if (a != null && a !== "" && !isNaN(Number(a))) return Math.round(Number(a));
-  return Math.round((Number(it.estQty ?? it.qty) || 0) * (Number(it.estUnitPrice ?? it.unitPrice) || 0));
-};
-const taxOf = (it) => { const b = baseAmount(it); const t = it.taxType || "未稅"; if (t === "免稅") return 0; if (t === "含稅") return b - Math.round(b / 1.05); return Math.round(b * 0.05); };
-const estAmount = (it) => { const b = baseAmount(it); return (it.taxType || "未稅") === "未稅" ? b + Math.round(b * 0.05) : b; }; // 含稅/免稅=base；未稅=base+稅額
-const paidOf = (it) => Number(it.paid ?? it.cust?.paid) || 0;
-const unpaidOf = (it) => estAmount(it) - paidOf(it);
-const calcEstimated = (it) => estAmount(it); // 預估金額（含稅）＝真正預算數字
-const calcActual = (it) => (it.actQty || 0) * (it.actUnitPrice || 0) + (it.actWorkers || 0) * (it.actDailyWage || 0) * (it.actLaborDays || 0); // 舊「施工記錄」沿用於細項詳情
-
-// ── 大項層級議價折扣：折扣套在「未稅」層、稅金重算（細項原報價不動）──────────────
-const pretaxOf = (it) => { const b = baseAmount(it); return (it.taxType || "未稅") === "含稅" ? Math.round(b / 1.05) : b; }; // 未稅基底
-const isTaxable = (it) => (it.taxType || "未稅") !== "免稅";
-const catRawEst = (cat) => (cat?.items || []).reduce((s, it) => s + estAmount(it), 0); // 原報價含稅
-const catPretaxSub = (cat) => (cat?.items || []).reduce((s, it) => s + pretaxOf(it), 0); // 未稅小計
-const catDiscount = (cat) => {
-  // 折% 套在未稅層；固定折讓＝直接從含稅原報價扣（省＝你輸入的金額），上限為含稅原報價
-  const sub = catRawEst(cat); // 折讓上限／百分比換算的基準改用含稅原報價
-  const mode = cat?.discountMode === "amt" ? "amt" : "pct";
-  const v = Number(cat?.discountValue) || 0;
-  if (v <= 0 || sub <= 0) return { hasDiscount: false, factor: 1, pct: 0, amt: 0, mode, value: v, sub };
-  let factor = 1, pct = 0, amt = 0;
-  if (mode === "amt") { amt = Math.min(Math.max(v, 0), sub); factor = (sub - amt) / sub; pct = amt / sub * 100; }
-  else { pct = Math.min(Math.max(v, 0), 100); factor = 1 - pct / 100; amt = sub * pct / 100; }
-  return { hasDiscount: factor < 1, factor, pct, amt, mode, value: v, sub };
-};
-// 議價後含稅＝原報價含稅 × factor（百分比折扣與未稅層折扣在數學上等價，直接乘可避免逐筆進位誤差，
-// 讓「省 = 原報價 × 折%」跟計算機一致；factor 已含固定折讓換算）
-const catEstAfter = (cat) => {
-  const { factor } = catDiscount(cat);
-  if (factor === 1) return catRawEst(cat);
-  return Math.round(catRawEst(cat) * factor);
-};
-const catSaved = (cat) => catRawEst(cat) - catEstAfter(cat);
-// 逐筆「議價後預估金額」：各細項按 factor 打折，進位殘差塞給最後一筆 → Σ 細項 = 大項議價後
-const catItemEstAfter = (cat) => {
-  const map = {};
-  const d = catDiscount(cat);
-  const items = cat?.items || [];
-  if (!d.hasDiscount) { items.forEach(it => { map[it.id] = estAmount(it); }); return map; }
-  const target = catEstAfter(cat);
-  let acc = 0;
-  items.forEach(it => { const v = Math.round(estAmount(it) * d.factor); map[it.id] = v; acc += v; });
-  const last = items[items.length - 1];
-  if (last) map[last.id] += (target - acc);
-  return map;
-};
-// ── 大項（廠商）層級付款紀錄：已付＝該大項所有付款紀錄金額加總 ──────────────────
-const PAY_CATEGORIES = ["訂金", "期中款", "尾款", "其他"];
-// 已付＝大項付款紀錄加總 ＋ 注入的零用金細項(fromPetty，本身即已付)。零用金實支已是花掉的錢，要算進已付，否則大項會把它顯示成未付。
-const catPaid = (cat) => (cat?.payments || []).reduce((s, p) => s + (Number(p.amount) || 0), 0)
-  + (cat?.items || []).reduce((s, it) => s + (it.fromPetty ? (Number(it.paid) || 0) : 0), 0);
-// 逐項已付（含「整批/不指定」付款自動分攤到各品項，依未付餘額比例分配）
-const catItemPaidMap = (cat) => {
-  const estMap = catItemEstAfter(cat);
-  const items = cat?.items || [];
-  const out = {}; const linked = {};
-  items.forEach(it => { out[it.id] = 0; linked[it.id] = 0; });
-  let pool = 0; // 整批/未指定品項的付款，待分攤
-  (cat?.payments || []).forEach(p => { const amt = Number(p.amount) || 0; if (p.itemId && linked[p.itemId] != null) { linked[p.itemId] += amt; out[p.itemId] += amt; } else pool += amt; });
-  // 整批/未指定付款：依品項順序「填滿」(先把前面的補到付清)，而非平均攤成奇怪的 %
-  if (pool > 0) {
-    for (const it of items) {
-      if (pool <= 0) break;
-      const rem = Math.max(0, (estMap[it.id] ?? estAmount(it)) - (out[it.id] || 0));
-      if (rem <= 0) continue;
-      const give = Math.min(rem, pool);
-      out[it.id] += give; pool -= give;
-    }
-  }
-  return out;
-};
-const catUnpaidAfter = (cat) => catEstAfter(cat) - catPaid(cat);
+// 成本金額模型已抽到 ./lib/cost.js（App 與未來 LINE bot 共用同一套算法）。下方僅保留遷移工具。
 // 一次性遷移：
 // 1) 沒有 payments 的大項，把舊的逐項已付總和轉成一筆「既有付款」紀錄（已付總額不變）
 // 2) 清掉第一版殘留的 cat.budget（App 已改用議價後即時值，此欄不再使用，留著會讓 AI/bot 報出空殼金額）
@@ -419,19 +342,7 @@ const L = (key) => conf().labels[key] || SPACE_CONF.construction.labels[key];
 // 由 App 在每次 render 同步（見 App 內 CAN_VIEW_MONEY 指派）。
 let CAN_VIEW_MONEY = true;
 const showMoney = () => conf().showCost && CAN_VIEW_MONEY;
-// 撥款帳（零用金）：只是公司撥現金給工地，不是工程成本 → 從成本總額排除（實際花費改記在「零用金」分頁，依工種併入）
-const isFundingCat = (c) => /零用金/.test(c?.name || "");
-// 把零用金花費轉成「顯示用」的虛擬細項，注入對應工種大項：總覽/總額會自然含它、也列出明細。
-// 注意：這是顯示用副本，真實儲存的 cats 不含這些（不會被存回、不會重複計算；編輯入口仍在零用金頁）。
-const pettyItemOf = (s) => { const amt = Math.round(Number(s.amount) || 0); return { id: "petty::" + s.id, name: s.content || "零用金支出", estQty: 1, qty: 1, estUnitPrice: amt, unitPrice: amt, amount: amt, unit: "式", taxType: "免稅", paid: amt, payDate: s.date || "", assignee: "零用金", status: "done", done: true, receipts: s.receipts || [], notes: s.note || (s.voucher ? `憑證:${s.voucher}${s.invoiceNo ? " " + s.invoiceNo : ""}` : ""), fromPetty: true, _readonly: true, pettyId: s.id }; };
-const withPettyItems = (cats, petty) => {
-  const spends = (petty && petty.spends) || [];
-  if (!spends.length || !cats) return cats;
-  const byCat = {};
-  spends.forEach(s => { if (s.catId) (byCat[s.catId] = byCat[s.catId] || []).push(pettyItemOf(s)); });
-  if (!Object.keys(byCat).length) return cats;
-  return cats.map(c => byCat[c.id] ? { ...c, items: [...(c.items || []), ...byCat[c.id]] } : c);
-};
+// isFundingCat / pettyItemOf / withPettyItems 已抽到 ./lib/cost.js（與 bot 共用）
 const COST_COL_IDS = new Set(["estQty", "unit", "estUnitPrice", "taxType", "taxAmount", "estTotal", "itemPaid", "payAccount", "payDate"]);
 const GLOBAL_KEYS = new Set(["pm_role", "pm_known_users", "pm_current_space", "pm_roles"]);
 let CURRENT_SPACE = "construction";
