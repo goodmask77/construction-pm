@@ -5620,6 +5620,13 @@ function AccountManager({ confirm, myId, roles = [], commitRoles }) {
     const np = window.prompt(`輸入「${p.display_name}」的新密碼（至少 6 碼）：`); if (!np) return;
     setErr(""); try { await api({ action:"resetPassword", id:p.id, password:np }); alert("已重設密碼"); } catch(e){ setErr(e.message); }
   };
+  const renamePerson = (p) => { const n = window.prompt("改顯示名稱（給人看的，不影響登入）：", p.display_name); if (n && n.trim() && n.trim() !== p.display_name) patch(p.id, { display_name: n.trim() }); };
+  const changeUsername = async (p) => {
+    const cur = (p.email || "").split("@")[0];
+    const n = window.prompt(`改登入帳號（目前：${cur}）。\n改完這個人要改用新帳號登入：`, cur);
+    if (!n || !n.trim() || n.trim() === cur) return;
+    setErr(""); try { await api({ action: "update", id: p.id, username: n.trim() }); load(); alert(`已改成「${n.trim()}」，請通知本人改用新帳號登入。`); } catch (e) { setErr(e.message); }
+  };
 
   const cbox = (on, onClick, color = "#3C8C3C") => (
     <button onClick={onClick} title={on ? "已開啟，點擊關閉" : "已關閉，點擊開啟"} style={{ width: 22, height: 22, borderRadius: 6, border: `1.5px solid ${on ? color : "#CFC6B0"}`, background: on ? color : "#fff", color: "#fff", cursor: "pointer", fontSize: 13, lineHeight: 1, display: "inline-flex", alignItems: "center", justifyContent: "center", padding: 0 }}>{on ? "✓" : ""}</button>
@@ -5750,12 +5757,14 @@ function AccountManager({ confirm, myId, roles = [], commitRoles }) {
         <div key={p.id} style={{ background:"#fff", border:"1px solid #D8CFBB", borderRadius:12, padding:"12px 16px", marginBottom:10 }}>
           <div style={{ display:"flex", alignItems:"center", gap:10, flexWrap:"wrap" }}>
             <div style={{ fontSize:15, fontWeight:700, color:"#211C15" }}>{p.display_name}</div>
+            <button onClick={()=>renamePerson(p)} title="改顯示名稱" style={{ background:"none", border:"none", color:"#C8BCA0", cursor:"pointer", fontSize:13, padding:0 }} onMouseEnter={e=>e.currentTarget.style.color="#b5512b"} onMouseLeave={e=>e.currentTarget.style.color="#C8BCA0"}>✎</button>
             <div style={{ fontSize:12, color:"#A99F88" }}>{(p.email||"").split("@")[0]}</div>
             <button onClick={()=>!isAdm||list.filter(x=>x.role==="admin").length>1 ? patch(p.id, { role: isAdm?"staff":"admin" }) : alert("至少要保留一位管理員")} style={{ background:"#ECE6D7", border:"1px solid #D8CFBB", borderRadius:8, padding:"3px 11px", fontSize:12.5, cursor:"pointer", color:isAdm?"#b5512b":"#4A4234", fontWeight:isAdm?700:400 }}>{isAdm?"管理員":"一般"} ⇄</button>
             {!isAdm && linkedRole && <span style={{ fontSize:12, fontWeight:700, color:"#2E7D32", background:"#EAF3EA", border:"1px solid #CFE3CF", borderRadius:999, padding:"2px 10px" }}>身份：{linkedRole.name}</span>}
             {!isAdm && <span style={{ fontSize:12, color:"#A99F88" }}>可進入 {spacesIn} 空間{moneyPages?`・看金額 ${moneyPages} 頁`:""}</span>}
             <div style={{ flex:1 }} />
             {!isAdm && <button onClick={()=>toggleSet(setOpenAcct, p.id)} style={{ background: acctOpen?"#b5512b":"#fff", color: acctOpen?"#fff":"#b5512b", border:"1px solid #b5512b", borderRadius:8, padding:"4px 12px", fontSize:12.5, fontWeight:600, cursor:"pointer" }}>{acctOpen?"收合權限 ▴":"設定權限 ▾"}</button>}
+            <button onClick={()=>changeUsername(p)} style={{ background:"none", border:"1px solid #D8CFBB", borderRadius:8, padding:"3px 10px", fontSize:12, color:"#6F6656", cursor:"pointer" }}>改帳號</button>
             <button onClick={()=>resetPw(p)} style={{ background:"none", border:"1px solid #D8CFBB", borderRadius:8, padding:"3px 10px", fontSize:12, color:"#6F6656", cursor:"pointer" }}>重設密碼</button>
             {p.id !== myId && <button onClick={()=>delAcct(p)} title="刪除帳號" style={{ background:"none", border:"none", color:"#C8BCA0", cursor:"pointer", fontSize:18 }} onMouseEnter={e=>e.currentTarget.style.color="#DC2626"} onMouseLeave={e=>e.currentTarget.style.color="#C8BCA0"}>×</button>}
           </div>

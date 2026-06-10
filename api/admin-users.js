@@ -67,6 +67,28 @@ export default async function handler(req, res) {
       return res.status(200).json({ ok: true })
     }
 
+    if (action === 'update') {
+      if (!id) return res.status(400).json({ error: '缺少帳號 id' })
+      const prof = {}
+      if (username) {
+        const email = String(username).includes('@') ? String(username) : `${username}@ground.local`
+        // 更新 Auth 的登入信箱（＝登入帳號）
+        const uRes = await fetch(`${URL_}/auth/v1/admin/users/${id}`, {
+          method: 'PUT', headers: svcHeaders, body: JSON.stringify({ email, email_confirm: true }),
+        })
+        const uData = await uRes.json().catch(() => ({}))
+        if (!uRes.ok) return res.status(400).json({ error: /already|exists|registered/i.test(JSON.stringify(uData)) ? '此帳號已被使用' : (uData?.msg || '改帳號失敗') })
+        prof.email = email
+      }
+      if (displayName != null) prof.display_name = displayName
+      if (Object.keys(prof).length) {
+        await fetch(`${URL_}/rest/v1/profiles?id=eq.${id}`, {
+          method: 'PATCH', headers: { ...svcHeaders, Prefer: 'return=minimal' }, body: JSON.stringify(prof),
+        })
+      }
+      return res.status(200).json({ ok: true, email: prof.email })
+    }
+
     return res.status(400).json({ error: '未知動作' })
   } catch (e) {
     return res.status(500).json({ error: e?.message || '伺服器錯誤' })
