@@ -773,8 +773,8 @@ export default function App() {
           <PettyCashView petty={petty} setPetty={commitPetty} cats={cats} setCats={guardedSetCats} canEdit={canEditData} confirm={confirm} />
         )}
         {/* ⚙ 設定：把 AI設定 / 群組 / 帳號 / 紀錄 整合成一頁，內含子分頁 */}
-        {["advisor", "groups", "accounts", "audit"].includes(view) && (() => {
-          const subs = [["advisor", "🤖 AI設定"], ...(isAdmin ? [["groups", "💬 群組"], ["accounts", "👤 帳號"], ["audit", "📜 紀錄"]] : [])].filter(([k]) => k !== "advisor" || allowedViewPages == null || allowedViewPages.includes("advisor"));
+        {["advisor", "groups", "accounts", "audit", "vault"].includes(view) && (() => {
+          const subs = [["advisor", "🤖 AI設定"], ...(isAdmin ? [["groups", "💬 群組"], ["accounts", "👤 帳號"], ["audit", "📜 紀錄"], ["vault", "🔐 金庫"]] : [])].filter(([k]) => k !== "advisor" || allowedViewPages == null || allowedViewPages.includes("advisor"));
           return (
             <div>
               {subs.length > 1 && (
@@ -795,6 +795,9 @@ export default function App() {
               )}
               {view === "audit" && isAdmin && (
                 <AuditLogView activityLog={activityLog} />
+              )}
+              {view === "vault" && isAdmin && (
+                <VaultView />
               )}
             </div>
           );
@@ -2169,7 +2172,7 @@ function BottomNav({ view, setView, isAdmin, allowedViewPages }) {
   return (
     <div style={{ position: "fixed", left: 0, right: 0, bottom: 0, height: 60, background: "rgba(255,255,255,0.96)", backdropFilter: "blur(10px)", WebkitBackdropFilter: "blur(10px)", borderTop: `1px solid ${BORDER}`, boxShadow: "0 -2px 14px rgba(0,0,0,0.08)", display: "flex", zIndex: 350, paddingBottom: "env(safe-area-inset-bottom)" }}>
       {tabs.map(([v, l, icon]) => {
-        const on = v === "settings" ? ["settings", "advisor", "groups", "accounts", "audit"].includes(view) : view === v;
+        const on = v === "settings" ? ["settings", "advisor", "groups", "accounts", "audit", "vault"].includes(view) : view === v;
         return (
           <button key={v} onClick={() => setView(v === "settings" ? "advisor" : v)} title={l} className={v === "issues" && !on ? "todo-glow" : undefined} style={{ flex: 1, minHeight: 44, border: "none", borderRadius: v === "issues" ? 10 : 0, background: "none", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 3, cursor: "pointer", color: on ? ACCENT : (v === "issues" ? "#D97706" : SUB), fontWeight: on ? 700 : (v === "issues" ? 700 : 500), padding: 0 }}>
             <span style={{ fontSize: 19, lineHeight: 1, filter: on ? "none" : "grayscale(0.4) opacity(0.85)" }}>{icon}</span>
@@ -2239,7 +2242,7 @@ function TopNav({ view, setView, saving, totalEstimated, totalPaid, doneCount, c
   const payPct = totalEstimated > 0 ? Math.round(totalPaid / totalEstimated * 100) : 0;
   const spaceVisible = (id) => !allowedSpaces || allowedSpaces.includes(id);
   const pageVisible = (v) => v === "settings" || !allowedViewPages || allowedViewPages.includes(v) || v === "owner"; // 儀表板一律可見；設定永遠可見(內含子分頁各自控管)
-  const SETTINGS_GRP = ["settings", "advisor", "groups", "accounts", "audit"];
+  const SETTINGS_GRP = ["settings", "advisor", "groups", "accounts", "audit", "vault"];
   const tabActive = (v) => v === "settings" ? SETTINGS_GRP.includes(view) : view === v;
   return (
     <div style={{ background: BG, borderBottom: `1px solid ${BORDER}`, padding: isMobile ? "10px 14px 0" : "16px 22px 0", position: "sticky", top: 0, zIndex: 100 }}>
@@ -3793,6 +3796,131 @@ function AuditLogView({ activityLog }) {
           </div>
         ))
       )}
+    </div>
+  );
+}
+
+// ── 🔐 加密金庫（零知識）：主密碼只在本機，密碼先加密才上傳，伺服器只存亂碼 ──
+const _enc = (s) => new TextEncoder().encode(s);
+const _dec = (b) => new TextDecoder().decode(b);
+const _b64 = (u8) => { let s = ""; u8.forEach(b => s += String.fromCharCode(b)); return btoa(s); };
+const _ub64 = (s) => Uint8Array.from(atob(s), c => c.charCodeAt(0));
+async function _deriveKey(pw, salt) {
+  const mat = await crypto.subtle.importKey("raw", _enc(pw), "PBKDF2", false, ["deriveKey"]);
+  return crypto.subtle.deriveKey({ name: "PBKDF2", salt, iterations: 210000, hash: "SHA-256" }, mat, { name: "AES-GCM", length: 256 }, false, ["encrypt", "decrypt"]);
+}
+// 用「已導出的金鑰」加密（解鎖時導一次 PBKDF2 並快取，之後存檔只跑快速的 AES，不卡打字）
+async function vaultEncWithKey(obj, key, salt) {
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const ct = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, _enc(JSON.stringify(obj)));
+  return { v: 1, salt: _b64(salt), iv: _b64(iv), ct: _b64(new Uint8Array(ct)) };
+}
+async function vaultDecWithKey(blob, key) {
+  const pt = await crypto.subtle.decrypt({ name: "AES-GCM", iv: _ub64(blob.iv) }, key, _ub64(blob.ct)); // 主密碼錯會丟例外
+  return JSON.parse(_dec(pt));
+}
+
+function VaultView() {
+  const [blob, setBlob] = useState(undefined); // undefined=載入中, null=尚無金庫, obj=密文
+  const [pw, setPw] = useState(""); const [pw2, setPw2] = useState("");
+  const [entries, setEntries] = useState(null); // null=鎖定中, array=已解鎖
+  const keyRef = useRef(null); const saltRef = useRef(null); // 快取的 CryptoKey + salt（鎖定即清）
+  const [err, setErr] = useState(""); const [busy, setBusy] = useState(false);
+  const [reveal, setReveal] = useState({}); const [q, setQ] = useState(""); const [filt, setFilt] = useState("all");
+
+  useEffect(() => { (async () => {
+    try { const r = await window.storage.get("pm_vault", true); setBlob(r && r.value ? JSON.parse(r.value) : null); }
+    catch (_) { setBlob(null); }
+  })(); return () => { keyRef.current = null; saltRef.current = null; }; }, []);
+
+  const isNew = blob === null;
+  const save = async (list) => {
+    const enc = await vaultEncWithKey({ entries: list }, keyRef.current, saltRef.current);
+    setBlob(enc); await window.storage.set("pm_vault", JSON.stringify(enc), true);
+  };
+  const unlock = async () => {
+    setErr(""); if (!pw) return; setBusy(true);
+    try {
+      if (isNew) {
+        if (pw.length < 6) { setErr("主密碼至少 6 碼"); setBusy(false); return; }
+        if (pw !== pw2) { setErr("兩次主密碼不一致"); setBusy(false); return; }
+        saltRef.current = crypto.getRandomValues(new Uint8Array(16));
+        keyRef.current = await _deriveKey(pw, saltRef.current);
+        await save([]); setEntries([]);
+      } else {
+        const salt = _ub64(blob.salt);
+        const key = await _deriveKey(pw, salt);
+        const data = await vaultDecWithKey(blob, key); // 主密碼錯會丟例外
+        keyRef.current = key; saltRef.current = salt; setEntries(data.entries || []);
+      }
+      setPw(""); setPw2("");
+    } catch (_) { setErr("主密碼錯誤，解不開"); }
+    setBusy(false);
+  };
+  const lock = () => { keyRef.current = null; saltRef.current = null; setEntries(null); setReveal({}); setPw(""); };
+  const commit = async (list) => { setEntries(list); try { await save(list); } catch (_) { setErr("儲存失敗"); } };
+  const addEntry = () => commit([...(entries || []), { id: "v" + Math.random().toString(36).slice(2, 8), cat: "company", name: "", account: "", password: "", url: "", notes: "" }]);
+  const upd = (id, k, v) => commit(entries.map(e => e.id === id ? { ...e, [k]: v } : e));
+  const del = (id) => commit(entries.filter(e => e.id !== id));
+  const copy = (t) => { try { navigator.clipboard.writeText(t); } catch (_) {} };
+
+  const wrap = { maxWidth: 920, margin: "16px auto", padding: "0 4px" };
+  if (blob === undefined) return <div style={{ ...wrap, padding: 30, color: "#A99F88", textAlign: "center" }}>載入中…</div>;
+
+  // 鎖定畫面
+  if (entries === null) return (
+    <div style={wrap}>
+      <div style={{ fontSize: 18, fontWeight: 600, color: "#211C15", marginBottom: 6 }}>🔐 密碼金庫（僅管理員）</div>
+      <div style={{ background: "#faf6ee", border: "1px solid #e4ddc9", borderRadius: 10, padding: "10px 14px", marginBottom: 16, fontSize: 13, color: "#6b6450", lineHeight: 1.7 }}>
+        密碼會在<b>你的瀏覽器先加密</b>才上傳，伺服器只存亂碼、<b>連我都看不到明文</b>。只有輸入正確主密碼才解得開。<b style={{ color: "#b45309" }}>主密碼忘了就救不回</b>（這正是它安全的原因）。
+      </div>
+      <div style={{ maxWidth: 420, background: "#fff", border: "1px solid #D8CFBB", borderRadius: 12, padding: 18 }}>
+        <div style={{ fontSize: 14, fontWeight: 700, color: "#211C15", marginBottom: 12 }}>{isNew ? "設定主密碼（首次建立金庫）" : "輸入主密碼解鎖"}</div>
+        <input type="password" value={pw} onChange={e => setPw(e.target.value)} onKeyDown={e => e.key === "Enter" && !isNew && unlock()} placeholder="主密碼" autoFocus style={{ ...inputStyle, width: "100%", boxSizing: "border-box", marginBottom: 10 }} />
+        {isNew && <input type="password" value={pw2} onChange={e => setPw2(e.target.value)} onKeyDown={e => e.key === "Enter" && unlock()} placeholder="再輸入一次主密碼" style={{ ...inputStyle, width: "100%", boxSizing: "border-box", marginBottom: 10 }} />}
+        {err && <div style={{ color: "#DC2626", fontSize: 12.5, marginBottom: 10 }}>{err}</div>}
+        <button onClick={unlock} disabled={busy || !pw} style={{ width: "100%", background: busy || !pw ? "#D8CFBB" : "#b5512b", color: "#fff", border: "none", borderRadius: 8, padding: "10px 0", fontWeight: 600, cursor: busy || !pw ? "not-allowed" : "pointer" }}>{busy ? "處理中…" : isNew ? "建立金庫" : "解鎖"}</button>
+      </div>
+    </div>
+  );
+
+  // 已解鎖
+  const cats = [["all", "全部"], ["company", "公司帳號"], ["personal", "個人"]];
+  const list = entries.filter(e => (filt === "all" || e.cat === filt) && (!q.trim() || (e.name + e.account + e.url + e.notes).toLowerCase().includes(q.trim().toLowerCase())));
+  const field = (e, k, ph, w) => <input value={e[k] || ""} onChange={ev => upd(e.id, k, ev.target.value)} placeholder={ph} style={{ border: `1px solid ${BORDER}`, borderRadius: 7, padding: "6px 8px", fontSize: 13, background: "#fff", color: TEXT, width: w || "100%", boxSizing: "border-box" }} />;
+  return (
+    <div style={wrap}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 12 }}>
+        <div style={{ fontSize: 18, fontWeight: 600, color: "#211C15" }}>🔐 密碼金庫</div>
+        <span style={{ fontSize: 12, color: "#2E7D32" }}>● 已解鎖（{entries.length} 筆）</span>
+        <div style={{ flex: 1 }} />
+        <input value={q} onChange={e => setQ(e.target.value)} placeholder="搜尋…" style={{ ...inputStyle, width: 180, padding: "6px 10px" }} />
+        <button onClick={addEntry} style={{ background: "#b5512b", color: "#fff", border: "none", borderRadius: 8, padding: "7px 14px", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>＋ 新增</button>
+        <button onClick={lock} title="清除記憶體中的明文" style={{ background: "#fff", color: "#6F6656", border: "1px solid #D8CFBB", borderRadius: 8, padding: "7px 12px", fontSize: 13, cursor: "pointer" }}>🔒 鎖定</button>
+      </div>
+      <div style={{ display: "flex", gap: 6, marginBottom: 12 }}>{cats.map(([k, l]) => <button key={k} onClick={() => setFilt(k)} style={{ padding: "4px 12px", borderRadius: 999, border: `1px solid ${filt === k ? "#b5512b" : "#D8CFBB"}`, background: filt === k ? "#F4EAE4" : "#fff", color: filt === k ? "#b5512b" : "#6F6656", fontSize: 12.5, fontWeight: 600, cursor: "pointer" }}>{l}</button>)}</div>
+      {list.length === 0 ? <div style={{ padding: 30, textAlign: "center", color: "#A99F88", fontSize: 13 }}>沒有資料，點「＋ 新增」</div> :
+       list.map(e => (
+        <div key={e.id} style={{ background: "#fff", border: "1px solid #D8CFBB", borderRadius: 12, padding: 14, marginBottom: 10 }}>
+          <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginBottom: 8 }}>
+            <select value={e.cat} onChange={ev => upd(e.id, "cat", ev.target.value)} style={{ ...inputStyle, width: 110, padding: "5px 8px" }}><option value="company">公司帳號</option><option value="personal">個人</option></select>
+            {field(e, "name", "用途/名稱（例：銀行網銀）", 240)}
+            <div style={{ flex: 1 }} />
+            <button onClick={() => del(e.id)} title="刪除" style={{ background: "none", border: "none", color: "#C8BCA0", cursor: "pointer", fontSize: 18 }} onMouseEnter={ev => ev.currentTarget.style.color = "#DC2626"} onMouseLeave={ev => ev.currentTarget.style.color = "#C8BCA0"}>×</button>
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+            <div style={{ display: "flex", gap: 6, alignItems: "center" }}>{field(e, "account", "帳號")}<button onClick={() => copy(e.account)} title="複製帳號" style={{ border: `1px solid ${BORDER}`, background: "#fff", borderRadius: 7, padding: "6px 8px", cursor: "pointer", fontSize: 12 }}>📋</button></div>
+            <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+              <input type={reveal[e.id] ? "text" : "password"} value={e.password || ""} onChange={ev => upd(e.id, "password", ev.target.value)} placeholder="密碼" style={{ border: `1px solid ${BORDER}`, borderRadius: 7, padding: "6px 8px", fontSize: 13, background: "#fff", color: TEXT, flex: 1, boxSizing: "border-box" }} />
+              <button onClick={() => setReveal(r => ({ ...r, [e.id]: !r[e.id] }))} title="顯示/隱藏" style={{ border: `1px solid ${BORDER}`, background: "#fff", borderRadius: 7, padding: "6px 8px", cursor: "pointer", fontSize: 12 }}>{reveal[e.id] ? "🙈" : "👁"}</button>
+              <button onClick={() => copy(e.password)} title="複製密碼" style={{ border: `1px solid ${BORDER}`, background: "#fff", borderRadius: 7, padding: "6px 8px", cursor: "pointer", fontSize: 12 }}>📋</button>
+            </div>
+            {field(e, "url", "網址/連結（選填）")}
+            {field(e, "notes", "備註（選填）")}
+          </div>
+        </div>
+      ))}
+      <div style={{ fontSize: 11.5, color: "#A99F88", marginTop: 8, lineHeight: 1.7 }}>離開此頁或按「🔒 鎖定」會清掉記憶體中的明文，下次要再輸入主密碼。建議主密碼另外抄一份放安全的地方（忘了無法救回）。</div>
     </div>
   );
 }
