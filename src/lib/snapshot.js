@@ -2,7 +2,18 @@
 // 未來 LINE bot 只讀這一個 key 就拿到「跟畫面一致、不漏、不重算」的全部資料。
 import { catEstAfter, catPaid, catUnpaidAfter, isFundingCat, withPettyItems, projectTotals } from "./cost.js";
 
-export function buildBotSnapshot({ space, settings, cats, petty, journal = [], events = [], plans = [] }, nowISO) {
+// 工序 itemId（cat / cat::sub / cat::ci::costItem）→ 可讀名稱
+function seqItemName(cats, itemId) {
+  if (!itemId) return "";
+  const [cid, mid, iid] = String(itemId).split("::");
+  const cat = (cats || []).find((c) => c.id === cid);
+  if (!cat) return itemId;
+  if (!mid) return cat.name;
+  if (mid === "ci") { const it = (cat.items || []).find((x) => x.id === iid); return `${cat.name}／${it?.name || iid}`; }
+  const sub = (cat.seqSubs || []).find((s) => s.id === mid); return `${cat.name}／${sub?.name || mid}`;
+}
+
+export function buildBotSnapshot({ space, settings, cats, petty, journal = [], events = [], plans = [], seqLogs = [], issues = [] }, nowISO) {
   const now = nowISO ? new Date(nowISO) : new Date();
   const display = withPettyItems(cats || [], petty);
   const real = (display || []).filter((c) => !isFundingCat(c));
@@ -24,6 +35,27 @@ export function buildBotSnapshot({ space, settings, cats, petty, journal = [], e
 
   const targetDate = settings?.targetDate || "";
   const daysLeft = targetDate ? Math.ceil((new Date(targetDate) - now) / 86400000) : null;
+
+  // 工序：近 ±21 天的日誌（日期／工項／做了什麼／預計／是否異常）＋ 急件🔥
+  const lo = new Date(now.getTime() - 21 * 86400000), hi = new Date(now.getTime() + 21 * 86400000);
+  const seqEntries = (seqLogs || [])
+    .filter((l) => l && l.date)
+    .filter((l) => { const d = new Date(l.date); return d >= lo && d <= hi; })
+    .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0))
+    .slice(0, 120)
+    .map((l) => ({ date: l.date, item: seqItemName(cats, l.itemId), done: l.done || "", next: l.next || "", issue: !!l.issue }));
+  const urgent = [];
+  (cats || []).forEach((c) => {
+    if (c.urgent) urgent.push(c.name);
+    (c.seqSubs || []).forEach((s) => { if (s.urgent) urgent.push(`${c.name}／${s.name}`); });
+    (c.items || []).forEach((it) => { if (it.seq?.urgent) urgent.push(`${c.name}／${it.name}`); });
+  });
+
+  // ToDo（待辦）：未完成事項
+  const todo = (issues || [])
+    .filter((i) => i && (i.status || "open") !== "done")
+    .slice(0, 80)
+    .map((i) => ({ desc: i.desc || "", category: i.category || "其他", due: i.due || "", track: !!i.track }));
 
   return {
     space,
@@ -57,6 +89,8 @@ export function buildBotSnapshot({ space, settings, cats, petty, journal = [], e
       payAccount: c.payAccount || "",
     })),
     petty: { advances: advTotal, spends: spendTotal, balance: advTotal - spendTotal, byCat: pettyByCat },
+    seq: { logs: seqEntries, urgent },
+    todo,
     issues: allItems.filter((i) => i.status === "issue").map((i) => i.name).slice(0, 50),
     journalRecent: (journal || []).slice(0, 10).map((j) => ({ date: j.date || "", title: j.title || "", content: (j.content || "").slice(0, 120) })),
     eventsUpcoming: (events || [])

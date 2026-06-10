@@ -638,14 +638,16 @@ export default function App() {
   // 「唯一真相快照」：資料變動 4 秒後，把目前空間的權威資料寫進 pm_bot_context（給 LINE bot 只讀這一個，數字永遠跟畫面一致）
   useEffect(() => {
     if (!cats || !settings) return; // 載入完成才寫，避免覆蓋成空殼
-    const t = setTimeout(() => {
+    const t = setTimeout(async () => {
       try {
-        const snap = buildBotSnapshot({ space: CURRENT_SPACE, settings, cats, petty, journal, events, plans }, new Date().toISOString());
+        let issues = [];
+        try { const r = await window.storage.get(K("pm_issues"), true); issues = r && r.value ? JSON.parse(r.value) : []; } catch (_) {}
+        const snap = buildBotSnapshot({ space: CURRENT_SPACE, settings, cats, petty, journal, events, plans, seqLogs, issues }, new Date().toISOString());
         window.storage.set(K("pm_bot_context"), JSON.stringify(snap), true).catch(() => {});
       } catch (_) {}
     }, 4000);
     return () => clearTimeout(t);
-  }, [cats, settings, petty, journal, events, plans]);
+  }, [cats, settings, petty, journal, events, plans, seqLogs]);
 
 
   // drag-drop categories

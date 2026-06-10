@@ -83,15 +83,29 @@ function snapshotsToContext(snaps) {
       s.project?.daysLeft != null ? `距完工 ${s.project.daysLeft} 天（目標 ${s.project.targetDate}）` : '',
       s.petty ? `零用金：撥款 NT$${Math.round(s.petty.advances).toLocaleString()}、花費 NT$${Math.round(s.petty.spends).toLocaleString()}、餘額 NT$${Math.round(s.petty.balance).toLocaleString()}` : '',
       (s.cats || []).length ? '各大項：\n' + s.cats.map((c) => `  - ${c.name}（${c.status}）預估 ${Math.round(c.est).toLocaleString()}／已付 ${Math.round(c.paid).toLocaleString()}／未付 ${Math.round(c.unpaid).toLocaleString()}`).join('\n') : '',
+      s.seq?.urgent?.length ? `🔥 急件：${s.seq.urgent.join('、')}` : '',
+      s.seq?.logs?.length ? '工序日誌（近期，含每日做了什麼/預計）：\n' + s.seq.logs.map((l) => `  - ${l.date} ${l.item}：${l.done || l.next || '（只有照片）'}${l.next && l.done ? `（預計：${l.next}）` : ''}${l.issue ? ' ⚠️異常' : ''}`).join('\n') : '工序日誌：近期無紀錄',
+      (s.todo || []).length ? 'ToDo 待辦事項：\n' + s.todo.map((t) => `  - [${t.category}] ${t.desc}${t.due ? `（交期 ${t.due}）` : ''}`).join('\n') : 'ToDo：目前無待辦',
       (s.issues || []).length ? `⚠️ 有問題項目：${s.issues.join('、')}` : '',
     ].filter(Boolean)
     return lines.join('\n')
   }).join('\n\n')
 }
 
-async function answer(question, snaps) {
+// 帳號清單（誰能用 App）— 用 service role 讀 profiles，只取名字/角色，不碰密碼
+async function loadAccounts() {
+  if (!SB_URL || !SB_KEY) return ''
+  try {
+    const r = await fetch(`${SB_URL}/rest/v1/profiles?select=display_name,role,role_template`, { headers: sbHeaders })
+    const rows = r.ok ? await r.json() : []
+    if (!rows.length) return ''
+    return '\n\n【App 帳號清單】\n' + rows.map((p) => `  - ${p.display_name}（${p.role === 'admin' ? '管理員' : '一般'}）`).join('\n')
+  } catch (_) { return '' }
+}
+
+async function answer(question, snaps, accountsText) {
   if (!ANTHROPIC) return '（D哥的 AI 金鑰尚未設定。）'
-  const system = '你是「D哥」，喬亞國際餐飲工程專案的 LINE 助理。只根據下方「目前資料」回答，數字直接引用、不要自己亂算；資料沒有的就說沒有。用繁體中文、簡短口語、必要時條列。\n\n【目前資料】\n' + snapshotsToContext(snaps)
+  const system = '你是「D哥」，喬亞國際餐飲工程專案的 LINE 助理。只根據下方「目前資料」回答，數字直接引用、不要自己亂算；資料沒有的就說沒有。用繁體中文、簡短口語、必要時條列。\n\n【目前資料】\n' + snapshotsToContext(snaps) + (accountsText || '')
   try {
     const r = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
