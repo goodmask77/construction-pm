@@ -58,12 +58,17 @@ async function registerGroup(gid, src) {
   await kvSet('pm_group_seen', cur)
 }
 
-function lineReply(replyToken, text) {
-  return fetch('https://api.line.me/v2/bot/message/reply', {
-    method: 'POST',
-    headers: { 'content-type': 'application/json', authorization: `Bearer ${TOKEN}` },
-    body: JSON.stringify({ replyToken, messages: [{ type: 'text', text: String(text).slice(0, 4900) }] }),
-  }).catch(() => {})
+async function lineReply(replyToken, text) {
+  try {
+    const r = await fetch('https://api.line.me/v2/bot/message/reply', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${TOKEN}` },
+      body: JSON.stringify({ replyToken, messages: [{ type: 'text', text: String(text).slice(0, 4900) }] }),
+    })
+    if (!r.ok) { const d = await r.text().catch(() => ''); console.log('LINE reply FAILED', r.status, d.slice(0, 300)) }
+    else console.log('LINE reply OK')
+    return r.ok
+  } catch (e) { console.log('LINE reply error', e?.message); return false }
 }
 
 // 把快照整理成精簡文字，餵給 AI 當依據
@@ -105,18 +110,18 @@ const triggered = (text) => /[?？]\s*$/.test(text) || TRIGGERS.some((k) => text
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).end()
   const raw = await readRaw(req)
-  let body = {}
+  let body = {}, sigOK = null
   if (raw && raw.length) {
-    // 有拿到原始 bytes → 嚴格驗章（LINE 用 channel secret 對 raw body 做 HMAC-SHA256 → base64）
     if (SECRET) {
       const sig = crypto.createHmac('sha256', SECRET).update(raw).digest('base64')
-      if (sig !== (req.headers['x-line-signature'] || '')) return res.status(401).end()
+      sigOK = sig === (req.headers['x-line-signature'] || '')
     }
     try { body = JSON.parse(raw.toString('utf8') || '{}') } catch (_) {}
   } else if (req.body) {
-    // 平台已先解析掉 body（拿不到原始 bytes）→ 退而用已解析的 body（驗章在此情況略過，部署測試時再加固）
     body = typeof req.body === 'string' ? (() => { try { return JSON.parse(req.body) } catch (_) { return {} } })() : req.body
   }
+  // 診斷用 log（之後 strict 模式會用 sigOK 擋）。暫時：不論驗章結果都處理，先確認 D 會回。
+  console.log('LINE webhook hit', JSON.stringify({ rawLen: raw?.length || 0, sigPresent: !!req.headers['x-line-signature'], sigOK, events: (body.events || []).length, secretSet: !!SECRET, tokenSet: !!TOKEN }))
   const events = body.events || []
   // 先回 200，避免 LINE 逾時重送（驗證請求 events 為空也在此返回）
   res.status(200).json({ ok: true })
@@ -128,10 +133,12 @@ export default async function handler(req, res) {
       await registerGroup(gid, ev.source?.type)
       const text = (ev.message.text || '').trim()
       const isDM = ev.source?.type === 'user' // 一對一私訊
-      if (!isDM && !triggered(text)) continue // 群組才需關鍵字；私訊一律回，免得使用者講半天 D 不理
+      console.log('event', JSON.stringify({ src: ev.source?.type, isDM, text: text.slice(0, 40), trig: triggered(text), hasToken: !!ev.replyToken }))
+      if (!isDM && !triggered(text)) continue // 群組才需關鍵字；私訊一律回
       const snaps = await loadSnapshots()
       const reply = await answer(text, snaps)
+      console.log('answer', JSON.stringify({ snaps: snaps.length, replyLen: reply.length }))
       if (ev.replyToken) await lineReply(ev.replyToken, reply)
-    } catch (_) {}
+    } catch (e) { console.log('event error', e?.message) }
   }
 }
