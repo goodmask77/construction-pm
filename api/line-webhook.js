@@ -105,7 +105,7 @@ async function loadAccounts() {
 
 async function answer(question, snaps, accountsText) {
   if (!ANTHROPIC) return '（D哥的 AI 金鑰尚未設定。）'
-  const system = '你是「D哥」，喬亞國際餐飲工程專案的 LINE 助理。只根據下方「目前資料」回答，數字直接引用、不要自己亂算；資料沒有的就說沒有。用繁體中文、簡短口語、必要時條列。\n\n【目前資料】\n' + snapshotsToContext(snaps) + (accountsText || '')
+  const system = '你是「D哥」，喬亞國際餐飲工程專案的 LINE 助理。\n規則：①只根據下方「目前資料」回答，數字直接引用、不要自己亂算。②如果使用者問的東西資料裡沒有（例如現場尺寸、深度、材質、施工細節、與本專案無關的閒聊），就**直接簡短說「這個我沒有資料」**，不要改用進度或其他數字硬湊答案。③答案要對準問題，問什麼答什麼，不要不相關地報整體進度。④用繁體中文、簡短口語、必要時條列。\n\n【目前資料】\n' + snapshotsToContext(snaps) + (accountsText || '')
   try {
     const r = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
@@ -147,8 +147,10 @@ export default async function handler(req, res) {
       await registerGroup(gid, ev.source?.type)
       const text = (ev.message.text || '').trim()
       const isDM = ev.source?.type === 'user' // 一對一私訊
-      console.log('event', JSON.stringify({ src: ev.source?.type, isDM, text: text.slice(0, 40), trig: triggered(text), hasToken: !!ev.replyToken }))
-      if (!isDM && !triggered(text)) continue // 群組才需關鍵字；私訊一律回
+      const mentionedSelf = (ev.message?.mention?.mentionees || []).some((m) => m.isSelf)
+      const named = mentionedSelf || /d哥|＠d|@d/i.test(text) // 群組只在「被@ 或叫到 D哥」時才回，避免插嘴別人對話
+      console.log('event', JSON.stringify({ src: ev.source?.type, isDM, named, text: text.slice(0, 40) }))
+      if (!isDM && !named) continue // 私訊一律回；群組必須被點名
       const snaps = await loadSnapshots()
       const reply = await answer(text, snaps)
       console.log('answer', JSON.stringify({ snaps: snaps.length, replyLen: reply.length }))
