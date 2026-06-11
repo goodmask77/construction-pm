@@ -131,7 +131,7 @@ let CAN_VIEW_MONEY = true;
 const showMoney = () => conf().showCost && CAN_VIEW_MONEY;
 // isFundingCat / pettyItemOf / withPettyItems 已抽到 ./lib/cost.js（與 bot 共用）
 const COST_COL_IDS = new Set(["estQty", "unit", "estUnitPrice", "taxType", "taxAmount", "estTotal", "itemPaid", "payAccount", "payDate"]);
-const GLOBAL_KEYS = new Set(["pm_role", "pm_known_users", "pm_current_space", "pm_roles"]);
+const GLOBAL_KEYS = new Set(["pm_role", "pm_known_users", "pm_current_space", "pm_roles", "pm_guest_perms"]);
 let CURRENT_SPACE = "construction";
 try { CURRENT_SPACE = localStorage.getItem("pm_current_space") || "construction"; } catch (_) {}
 if (!SPACES.some(s => s.id === CURRENT_SPACE)) CURRENT_SPACE = "construction";
@@ -354,6 +354,8 @@ export default function App() {
   const [plans, setPlans] = useState([]);
   const [petty, setPetty] = useState({ advances: [], spends: [] }); // 零用金帳本：撥款 / 花費
   const [roles, setRoles] = useState([]); // 身份範本（連動式）：指派給帳號後，帳號權限跟著身份走
+  const [guestPerms, setGuestPerms] = useState({ money_pages: ["__none__"] }); // 未登入訪客的權限（可設定；金額預設關）
+  const commitGuestPerms = (next) => { setGuestPerms(next); window.storage.set("pm_guest_perms", JSON.stringify(next), true).catch(() => {}); };
   const { confirm, Dialog: ConfirmDialog } = useConfirm();
   const commitPetty = (next) => {
     logAction("編輯", "零用金");
@@ -419,7 +421,7 @@ export default function App() {
     (async () => {
       const parse = (v, def) => { if (!v) return def; try { return JSON.parse(v); } catch (_) { return def; } };
       // 一次抓所有共用資料（合併成單一請求）+ 本機的角色，避免開啟時打十幾次 API
-      const SHARED_KEYS = ["pm_data", "pm_global_chat", "pm_settings", "pm_ai_log", "pm_activity", "pm_known_users", "pm_worklog", "pm_photos", "pm_accounts", "pm_seqlogs", "pm_columns", "pm_events", "pm_journal", "pm_plans", "pm_trash", "pm_petty", "pm_roles"];
+      const SHARED_KEYS = ["pm_data", "pm_global_chat", "pm_settings", "pm_ai_log", "pm_activity", "pm_known_users", "pm_worklog", "pm_photos", "pm_accounts", "pm_seqlogs", "pm_columns", "pm_events", "pm_journal", "pm_plans", "pm_trash", "pm_petty", "pm_roles", "pm_guest_perms"];
       const [batch, savedName] = await Promise.all([getSharedMany(SHARED_KEYS.map(K)), loadRole()]);
       if (cancelled) return;
       const raw = (k) => batch[K(k)] || null;
@@ -430,6 +432,7 @@ export default function App() {
       const alog = parse(raw("pm_activity"), []);
       const kuV = raw("pm_known_users"), wlV = raw("pm_worklog"), phV = raw("pm_photos"), acV = raw("pm_accounts"), slV = raw("pm_seqlogs"), ccV = raw("pm_columns"), evV = raw("pm_events"), jnV = raw("pm_journal"), plV = raw("pm_plans"), trV = raw("pm_trash"), ptV = raw("pm_petty"), rlV = raw("pm_roles");
       { const r = parse(rlV, null); setRoles(Array.isArray(r) && r.length ? r : DEFAULT_ROLES); } // 沒存過＝用預設範本（記憶體即可，admin 編輯時才落地）
+      { const g = parse(raw("pm_guest_perms"), null); if (g && typeof g === "object") setGuestPerms(g); } // 訪客權限（沒存過＝預設金額關）
 
       const seed = CURRENT_SPACE === "construction" ? INITIAL_CATEGORIES : [];
       const migrated = migratePayments(d || seed);
@@ -548,7 +551,7 @@ export default function App() {
   //    所以可編輯/看金額直接依「目前頁面 view」判定，不必到處改編輯邏輯（降低風險）。
   // 連動式身份：帳號若指定了身份範本(role_template)，權限一律跟著該身份走（改身份→所有人一起變）；否則用個人設定。
   const myRole = (profile?.role_template && roles.length) ? roles.find(r => r.id === profile.role_template) : null;
-  const eff = myRole || profile;
+  const eff = myRole || profile || guestPerms; // 未登入訪客＝用可設定的 guestPerms
   const _vp = eff?.view_pages || [];
   const _ep = eff?.pages || [];
   const _mp = eff?.money_pages || [];
@@ -565,8 +568,8 @@ export default function App() {
     return _ep.includes(`${sp}:${pg}`) || _ep.includes(LEGACY_EDIT[pg]); // 含舊資料相容
   };
   const moneyOK = (sp, pg) => {
-    if (isAdmin || isManager || !profile) return true;             // 訪客可看
-    if (!_mp.length) return true;                                   // 登入者未設＝預設看得到（全開）
+    if (isAdmin || isManager) return true;
+    if (!_mp.length) return true;                                  // 空＝全開（訪客預設 guestPerms.money_pages=[PERM_NONE]→看不到；admin 可逐頁開放或全開）
     return _mp.includes(`${sp}:${pg}`);
   };
   const canViewMoney = moneyOK(CURRENT_SPACE, view);
@@ -793,7 +796,7 @@ export default function App() {
                 <GroupsView cats={cats} canEdit={canEditData} requireLogin={denyEdit} settings={settings} setSettings={guardedSetSettings} journal={journal} events={events} plans={plans} />
               )}
               {view === "accounts" && isAdmin && (
-                <AccountManager confirm={confirm} myId={profile?.id} roles={roles} commitRoles={commitRoles} onLog={logActivity} />
+                <AccountManager confirm={confirm} myId={profile?.id} roles={roles} commitRoles={commitRoles} onLog={logActivity} guestPerms={guestPerms} commitGuestPerms={commitGuestPerms} />
               )}
               {view === "audit" && isAdmin && (
                 <AuditLogView activityLog={activityLog} confirm={confirm} onCommit={(l) => { setActivityLog(l); saveActivityLog(l); }} />
@@ -5604,7 +5607,7 @@ function PhotoLibraryView({ photos, setPhotos, cats, canEdit, userName, requireL
 const ACCT_SPACES = [["construction","🏗 工程專案"],["team","👥 團隊工作"],["crew","🤝 夥伴中心"]];
 const ACCT_VIEW_PAGES = [["owner","儀表板"],["overview","總覽"],["gantt","工序"],["files","檔案庫"],["petty","零用金"],["issues","ToDo"],["compare","比價"],["advisor","AI設定"]];
 const ACCT_EDIT_PAGES = [["data","總覽/工程資料"],["worklog","工序日誌"],["files","檔案庫"],["advisor","AI設定"]];
-function AccountManager({ confirm, myId, roles = [], commitRoles, onLog }) {
+function AccountManager({ confirm, myId, roles = [], commitRoles, onLog, guestPerms = {}, commitGuestPerms }) {
   const logAct = (action, detail) => { try { onLog && onLog(action, detail); } catch (_) {} };
   const permLogRef = useRef({});
   const logThrottled = (action, key) => { const k = action + "|" + key; const now = Date.now(); if (now - (permLogRef.current[k] || 0) < 12000) return; permLogRef.current[k] = now; logAct(action, key); }; // 連續勾選收斂成一筆
@@ -5707,7 +5710,7 @@ function AccountManager({ confirm, myId, roles = [], commitRoles, onLog }) {
   );
 
   // 可重用矩陣：對任一實體(帳號或身份範本)渲染「每空間×每頁」勾選表。readOnly＝唯讀(顯示連動帳號的實際權限)。
-  const renderMatrix = (obj, save, idPrefix, readOnly = false) => (
+  const renderMatrix = (obj, save, idPrefix, readOnly = false, hideEdit = false) => (
     <div style={{ display: "grid", gap: 10, marginTop: 12 }}>
       {ACCT_SPACES.map(([sid, slabel]) => {
         const rows = PERM_MATRIX[sid] || [];
@@ -5734,7 +5737,7 @@ function AccountManager({ confirm, myId, roles = [], commitRoles, onLog }) {
               const gtc = `78px repeat(${rows.length}, minmax(46px, 1fr))`;
               const dims = [
                 { label: "可見", color: "#3C8C3C", on: (pg) => viewChecked(obj, sid, pg), cap: () => true, go: (pg) => tView(obj, sid, pg, save) },
-                { label: "可編輯", color: "#b5512b", on: (pg) => editChecked(obj, sid, pg), cap: (c) => !!c.edit, go: (pg) => tEdit(obj, sid, pg, save) },
+                ...(hideEdit ? [] : [{ label: "可編輯", color: "#b5512b", on: (pg) => editChecked(obj, sid, pg), cap: (c) => !!c.edit, go: (pg) => tEdit(obj, sid, pg, save) }]),
                 ...(hasMoney ? [{ label: "看金額", color: "#2E7D32", on: (pg) => moneyChecked(obj, sid, pg), cap: (c) => !!c.money, go: (pg) => tMoney(obj, sid, pg, save) }] : []),
               ];
               return (
@@ -5774,6 +5777,26 @@ function AccountManager({ confirm, myId, roles = [], commitRoles, onLog }) {
       </div>
 
       {err && <div style={{ background:"#FEF2F2", border:"1px solid #FCA5A5", color:"#DC2626", borderRadius:8, padding:"8px 12px", marginBottom:12, fontSize:13 }}>{err}</div>}
+
+      {/* 訪客（未登入）權限：誰點連結沒登入時能看到什麼 */}
+      {commitGuestPerms && (() => {
+        const open = openAcct.has("__guest__");
+        const gMoney = ALL_MONEY_KEYS.filter(k => { const [s, g] = k.split(":"); return moneyChecked(guestPerms, s, g); }).length;
+        return (
+          <div style={{ background: "#FFF7F2", border: "1px solid #F0CFB8", borderRadius: 12, padding: "12px 16px", marginBottom: 18 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+              <div style={{ fontSize: 15, fontWeight: 700, color: "#211C15" }}>👁 訪客（未登入）</div>
+              <span style={{ fontSize: 12, color: "#A99F88" }}>沒登入就點連結的人能看到什麼{gMoney ? `・看得到 ${gMoney} 頁金額` : "・看不到金額"}</span>
+              <div style={{ flex: 1 }} />
+              <button onClick={() => toggleSet(setOpenAcct, "__guest__")} style={{ background: open ? "#b5512b" : "#fff", color: open ? "#fff" : "#b5512b", border: "1px solid #b5512b", borderRadius: 8, padding: "4px 12px", fontSize: 12.5, fontWeight: 600, cursor: "pointer" }}>{open ? "收合 ▴" : "設定 ▾"}</button>
+            </div>
+            {open && <>
+              <div style={{ fontSize: 12, color: "#6F6656", marginTop: 8, lineHeight: 1.7 }}>訪客<b>一律唯讀</b>（不能改任何東西）。下面設定他「看得到哪些空間/頁面」「哪幾頁看得到金額」。<b style={{ color: "#C2410C" }}>金額預設全關</b>，要逐頁勾才看得到。不同階段可隨時調。</div>
+              {renderMatrix(guestPerms, (changes) => { commitGuestPerms({ ...guestPerms, ...changes }); logThrottled("改訪客權限", "訪客"); }, "guest", false, true)}
+            </>}
+          </div>
+        );
+      })()}
 
       {/* 身份範本（連動）：設定一次，指派給帳號後權限跟著身份走 */}
       <div style={{ marginBottom:18 }}>
