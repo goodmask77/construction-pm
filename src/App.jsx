@@ -793,7 +793,7 @@ export default function App() {
                 <GroupsView cats={cats} canEdit={canEditData} requireLogin={denyEdit} settings={settings} setSettings={guardedSetSettings} journal={journal} events={events} plans={plans} />
               )}
               {view === "accounts" && isAdmin && (
-                <AccountManager confirm={confirm} myId={profile?.id} roles={roles} commitRoles={commitRoles} />
+                <AccountManager confirm={confirm} myId={profile?.id} roles={roles} commitRoles={commitRoles} onLog={logActivity} />
               )}
               {view === "audit" && isAdmin && (
                 <AuditLogView activityLog={activityLog} confirm={confirm} onCommit={(l) => { setActivityLog(l); saveActivityLog(l); }} />
@@ -5604,7 +5604,10 @@ function PhotoLibraryView({ photos, setPhotos, cats, canEdit, userName, requireL
 const ACCT_SPACES = [["construction","🏗 工程專案"],["team","👥 團隊工作"],["crew","🤝 夥伴中心"]];
 const ACCT_VIEW_PAGES = [["owner","儀表板"],["overview","總覽"],["gantt","工序"],["files","檔案庫"],["petty","零用金"],["issues","ToDo"],["compare","比價"],["advisor","AI設定"]];
 const ACCT_EDIT_PAGES = [["data","總覽/工程資料"],["worklog","工序日誌"],["files","檔案庫"],["advisor","AI設定"]];
-function AccountManager({ confirm, myId, roles = [], commitRoles }) {
+function AccountManager({ confirm, myId, roles = [], commitRoles, onLog }) {
+  const logAct = (action, detail) => { try { onLog && onLog(action, detail); } catch (_) {} };
+  const permLogRef = useRef({});
+  const logThrottled = (action, key) => { const k = action + "|" + key; const now = Date.now(); if (now - (permLogRef.current[k] || 0) < 12000) return; permLogRef.current[k] = now; logAct(action, key); }; // 連續勾選收斂成一筆
   const [list, setList] = useState(null); // null=loading
   const [err, setErr] = useState("");
   const [nName, setNName] = useState(""); const [nUser, setNUser] = useState(""); const [nPw, setNPw] = useState(""); const [nAdmin, setNAdmin] = useState(false);
@@ -5660,12 +5663,13 @@ function AccountManager({ confirm, myId, roles = [], commitRoles }) {
   };
   // ── 身份範本（連動）CRUD ──
   const updateRole = (id, changes) => commitRoles && commitRoles(roles.map(r => r.id === id ? { ...r, ...changes } : r));
-  const addRole = () => { const n = window.prompt("新增身份名稱（例：工地監工）"); if (!n || !n.trim() || !commitRoles) return; commitRoles([...roles, { id: "role-" + Math.random().toString(36).slice(2, 7), name: n.trim(), spaces: [], view_pages: [], pages: [], money_pages: [] }]); };
-  const renameRole = (r) => { const n = window.prompt("身份改名", r.name); if (n && n.trim()) updateRole(r.id, { name: n.trim() }); };
+  const addRole = () => { const n = window.prompt("新增身份名稱（例：工地監工）"); if (!n || !n.trim() || !commitRoles) return; commitRoles([...roles, { id: "role-" + Math.random().toString(36).slice(2, 7), name: n.trim(), spaces: [], view_pages: [], pages: [], money_pages: [] }]); logAct("新增身份", n.trim()); };
+  const renameRole = (r) => { const n = window.prompt("身份改名", r.name); if (n && n.trim()) { updateRole(r.id, { name: n.trim() }); logAct("身份改名", `${r.name}→${n.trim()}`); } };
   const delRole = async (r) => {
     if (!(await confirm(`刪除身份「${r.name}」？指派此身份的帳號會變回「自訂」。`, { confirmLabel: "刪除" })) || !commitRoles) return;
     commitRoles(roles.filter(x => x.id !== r.id));
     (list || []).filter(p => p.role_template === r.id).forEach(p => patch(p.id, { role_template: null }));
+    logAct("刪除身份", r.name);
   };
   const roleName = (id) => roles.find(r => r.id === id)?.name;
 
@@ -5673,6 +5677,7 @@ function AccountManager({ confirm, myId, roles = [], commitRoles }) {
     if (!nUser.trim() || !nPw || busy) return;
     setBusy(true); setErr("");
     try { await api({ action:"create", username:nUser.trim(), password:nPw, displayName:nName.trim()||nUser.trim(), role:nAdmin?"admin":"staff" });
+      logAct("新增帳號", (nName.trim()||nUser.trim()) + (nAdmin ? "（管理員）" : ""));
       setNName(""); setNUser(""); setNPw(""); setNAdmin(false); setBusy(false); load(); // 建好即放開按鈕，清單在背景刷新（不卡住）
       return;
     } catch(e){ setErr(e.message); }
@@ -5680,18 +5685,18 @@ function AccountManager({ confirm, myId, roles = [], commitRoles }) {
   };
   const delAcct = async (p) => {
     if (!(await confirm(`刪除帳號「${p.display_name}」？刪除後此人將無法再登入。`, { confirmLabel:"刪除" }))) return;
-    setErr(""); try { await api({ action:"delete", id:p.id }); load(); } catch(e){ setErr(e.message); }
+    setErr(""); try { await api({ action:"delete", id:p.id }); logAct("刪除帳號", p.display_name); load(); } catch(e){ setErr(e.message); }
   };
   const resetPw = async (p) => {
     const np = window.prompt(`輸入「${p.display_name}」的新密碼（至少 6 碼）：`); if (!np) return;
-    setErr(""); try { await api({ action:"resetPassword", id:p.id, password:np }); alert("已重設密碼"); } catch(e){ setErr(e.message); }
+    setErr(""); try { await api({ action:"resetPassword", id:p.id, password:np }); logAct("重設密碼", p.display_name); alert("已重設密碼"); } catch(e){ setErr(e.message); }
   };
-  const renamePerson = (p) => { const n = window.prompt("改顯示名稱（給人看的，不影響登入）：", p.display_name); if (n && n.trim() && n.trim() !== p.display_name) patch(p.id, { display_name: n.trim() }); };
+  const renamePerson = (p) => { const n = window.prompt("改顯示名稱（給人看的，不影響登入）：", p.display_name); if (n && n.trim() && n.trim() !== p.display_name) { patch(p.id, { display_name: n.trim() }); logAct("改顯示名稱", `${p.display_name}→${n.trim()}`); } };
   const changeUsername = async (p) => {
     const cur = (p.email || "").split("@")[0];
     const n = window.prompt(`改登入帳號（目前：${cur}）。\n改完這個人要改用新帳號登入：`, cur);
     if (!n || !n.trim() || n.trim() === cur) return;
-    setErr(""); try { await api({ action: "update", id: p.id, username: n.trim() }); load(); alert(`已改成「${n.trim()}」，請通知本人改用新帳號登入。`); } catch (e) { setErr(e.message); }
+    setErr(""); try { await api({ action: "update", id: p.id, username: n.trim() }); logAct("改登入帳號", `${p.display_name}：${cur}→${n.trim()}`); load(); alert(`已改成「${n.trim()}」，請通知本人改用新帳號登入。`); } catch (e) { setErr(e.message); }
   };
 
   const cbox = (on, onClick, color = "#3C8C3C") => (
@@ -5792,7 +5797,7 @@ function AccountManager({ confirm, myId, roles = [], commitRoles }) {
                  <button onClick={()=>toggleSet(setOpenAcct, r.id)} style={{ background: open?"#b5512b":"#fff", color: open?"#fff":"#b5512b", border:"1px solid #b5512b", borderRadius:8, padding:"4px 12px", fontSize:12.5, fontWeight:600, cursor:"pointer" }}>{open?"收合 ▴":"編輯權限 ▾"}</button>
                  <button onClick={()=>delRole(r)} title="刪除身份" style={{ background:"none", border:"none", color:"#C8BCA0", cursor:"pointer", fontSize:18 }} onMouseEnter={e=>e.currentTarget.style.color="#DC2626"} onMouseLeave={e=>e.currentTarget.style.color="#C8BCA0"}>×</button>
                </div>
-               {open && renderMatrix(r, (changes)=>updateRole(r.id, changes), "role-"+r.id, false)}
+               {open && renderMatrix(r, (changes)=>{ updateRole(r.id, changes); logThrottled("改身份權限", r.name); }, "role-"+r.id, false)}
              </div>
            );
          })}
@@ -5825,7 +5830,7 @@ function AccountManager({ confirm, myId, roles = [], commitRoles }) {
             <div style={{ fontSize:15, fontWeight:700, color:"#211C15" }}>{p.display_name}</div>
             <button onClick={()=>renamePerson(p)} title="改顯示名稱" style={{ background:"none", border:"none", color:"#C8BCA0", cursor:"pointer", fontSize:13, padding:0 }} onMouseEnter={e=>e.currentTarget.style.color="#b5512b"} onMouseLeave={e=>e.currentTarget.style.color="#C8BCA0"}>✎</button>
             <div style={{ fontSize:12, color:"#A99F88" }}>{(p.email||"").split("@")[0]}</div>
-            <button onClick={()=>!isAdm||list.filter(x=>x.role==="admin").length>1 ? patch(p.id, { role: isAdm?"staff":"admin" }) : alert("至少要保留一位管理員")} style={{ background:"#ECE6D7", border:"1px solid #D8CFBB", borderRadius:8, padding:"3px 11px", fontSize:12.5, cursor:"pointer", color:isAdm?"#b5512b":"#4A4234", fontWeight:isAdm?700:400 }}>{isAdm?"管理員":"一般"} ⇄</button>
+            <button onClick={()=>!isAdm||list.filter(x=>x.role==="admin").length>1 ? (patch(p.id, { role: isAdm?"staff":"admin" }), logAct("改層級", `${p.display_name}→${isAdm?"一般":"管理員"}`)) : alert("至少要保留一位管理員")} style={{ background:"#ECE6D7", border:"1px solid #D8CFBB", borderRadius:8, padding:"3px 11px", fontSize:12.5, cursor:"pointer", color:isAdm?"#b5512b":"#4A4234", fontWeight:isAdm?700:400 }}>{isAdm?"管理員":"一般"} ⇄</button>
             {!isAdm && linkedRole && <span style={{ fontSize:12, fontWeight:700, color:"#2E7D32", background:"#EAF3EA", border:"1px solid #CFE3CF", borderRadius:999, padding:"2px 10px" }}>身份：{linkedRole.name}</span>}
             {!isAdm && <span style={{ fontSize:12, color:"#A99F88" }}>可進入 {spacesIn} 空間{moneyPages?`・看金額 ${moneyPages} 頁`:""}</span>}
             <div style={{ flex:1 }} />
@@ -5838,7 +5843,7 @@ function AccountManager({ confirm, myId, roles = [], commitRoles }) {
           <div style={{ marginTop:12 }}>
             <div style={{ display:"flex", alignItems:"center", gap:8, flexWrap:"wrap" }}>
               <span style={{ fontSize:12.5, color:"#6F6656" }}>身份：</span>
-              <select value={p.role_template||""} onChange={e=>patch(p.id, { role_template: e.target.value || null })} style={{ ...inputStyle, width:200, padding:"5px 8px" }}>
+              <select value={p.role_template||""} onChange={e=>{ patch(p.id, { role_template: e.target.value || null }); logAct("指派身份", `${p.display_name}→${roleName(e.target.value) || "自訂"}`); }} style={{ ...inputStyle, width:200, padding:"5px 8px" }}>
                 <option value="">自訂（這個人單獨設）</option>
                 {roles.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
               </select>
@@ -5846,7 +5851,7 @@ function AccountManager({ confirm, myId, roles = [], commitRoles }) {
             </div>
             {linkedRole
               ? renderMatrix(linkedRole, ()=>{}, "acctRO-"+p.id, true)
-              : renderMatrix(p, (changes)=>patch(p.id, changes), "acct-"+p.id, false)}
+              : renderMatrix(p, (changes)=>{ patch(p.id, changes); logThrottled("改權限", p.display_name); }, "acct-"+p.id, false)}
           </div>)}
         </div>);
        })}
