@@ -774,9 +774,11 @@ export default function App() {
         {view === "compare" && (
           <CompareView canEdit={canEditFiles} requireLogin={denyEdit} />
         )}
-        {view === "petty" && showMoney() && (
+        {view === "petty" && (showMoney() ? (
           <PettyCashView petty={petty} setPetty={commitPetty} cats={cats} setCats={guardedSetCats} canEdit={canEditData} confirm={confirm} />
-        )}
+        ) : (
+          <div style={{ padding: 40, textAlign: "center", color: SUB, fontSize: 14, background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: 12, margin: "8px 0" }}>🔒 零用金含金額，你沒有看金額的權限。</div>
+        ))}
         {/* ⚙ 設定：把 AI設定 / 群組 / 帳號 / 紀錄 整合成一頁，內含子分頁 */}
         {["advisor", "groups", "accounts", "audit", "vault"].includes(view) && (() => {
           const subs = [["advisor", "🤖 AI設定"], ...(isAdmin ? [["groups", "💬 群組"], ["accounts", "👤 帳號"], ["audit", "📜 紀錄"], ["vault", "🔐 金庫"]] : [])].filter(([k]) => k !== "advisor" || allowedViewPages == null || allowedViewPages.includes("advisor"));
@@ -2053,6 +2055,7 @@ function CompareView({ canEdit, requireLogin }) {
   const lowest = sorted.length ? (sorted.find(e => e.total > 0)?.total || 0) : 0;
   const highest = sorted.length ? Math.max(...ests.map(e => e.total || 0)) : 0;
 
+  if (!showMoney()) return <div style={{ padding: 40, textAlign: "center", color: SUB, fontSize: 14, background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: 12, margin: "8px 0" }}>🔒 比價頁含報價金額，你沒有看金額的權限。</div>;
   return (
     <div>
       <div style={{ display: "flex", alignItems: "center", gap: 12, margin: "8px 0 16px", flexWrap: "wrap" }}>
@@ -3589,7 +3592,8 @@ function OwnerDashboard({ cats, setCats, settings, stalledItems, activityLog, lo
           ) : <div style={{ fontSize:13, color:"#A99F88", marginTop:12 }}>尚未設定完工日</div>}
         </div>
 
-        {/* 預算 */}
+        {/* 付款進度（金額，受權限控管）*/}
+        {showMoney() ? (
         <div style={card}>
           <div style={kLabel}>付款進度（已付／預估）</div>
           <div style={{ fontSize:19, fontWeight:700, color:overBudget?"#C0392B":"#3C8C3C", marginTop:4, fontFamily:"ui-monospace, monospace" }}>{totalAct>0?fmt(totalAct):"—"}</div>
@@ -3599,6 +3603,12 @@ function OwnerDashboard({ cats, setCats, settings, stalledItems, activityLog, lo
           </div>
           <div style={{ fontSize:11.5, fontWeight:700, marginTop:5, color:overBudget?"#C0392B":"#6F6656" }}>{totalAct>0?`已付 ${budgetPct}%${overBudget?"（溢付）":""}`:"尚未付款"}</div>
         </div>
+        ) : (
+        <div style={card}>
+          <div style={kLabel}>付款進度</div>
+          <div style={{ fontSize:13, color:"#A99F88", marginTop:14 }}>🔒 沒有看金額的權限</div>
+        </div>
+        )}
 
         {/* 狀態總覽 */}
         <div style={card}>
