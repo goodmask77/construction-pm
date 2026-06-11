@@ -541,6 +541,37 @@ export default function App() {
     logThrottleRef.current[key] = now;
     logActivity(action, detail);
   };
+  // 比對 cats 前後差異 → 產生「具體動作」描述（給紀錄更明確）
+  const describeCatChange = (prev, next) => {
+    const pc = prev || [], nc = next || [];
+    if (nc.length > pc.length) { const a = nc.find(c => !pc.some(p => p.id === c.id)); return `新增大項「${a?.name || "—"}」`; }
+    if (nc.length < pc.length) { const r = pc.find(c => !nc.some(n => n.id === c.id)); return `刪除大項「${r?.name || "—"}」`; }
+    const FL = { name: "名稱", estQty: "數量", estUnitPrice: "單價", amount: "金額", taxType: "稅別", status: "狀態", assignee: "負責人", payDate: "付款日", notes: "備註", paid: "已付", discountValue: "議價", catId: "工種", seq: "工序" };
+    for (const n of nc) {
+      const p = pc.find(c => c.id === n.id); if (!p) continue;
+      const pi = p.items || [], ni = n.items || [];
+      if (ni.length > pi.length) { const a = ni.find(i => !pi.some(x => x.id === i.id)); return `「${n.name}」新增細項${a?.name ? `「${a.name}」` : ""}`; }
+      if (ni.length < pi.length) { const r = pi.find(i => !ni.some(x => x.id === i.id)); return `「${n.name}」刪除細項${r?.name ? `「${r.name}」` : ""}`; }
+      for (const ix of ni) {
+        const px = pi.find(i => i.id === ix.id); if (!px) continue;
+        const f = ["name", "estQty", "estUnitPrice", "amount", "taxType", "status", "assignee", "payDate", "paid", "catId"].find(k => JSON.stringify(px[k] ?? "") !== JSON.stringify(ix[k] ?? ""));
+        if (f) return `改「${n.name}／${ix.name}」的${FL[f] || f}`;
+        if (JSON.stringify(px.notes ?? "") !== JSON.stringify(ix.notes ?? "")) return `改「${n.name}／${ix.name}」的備註`;
+      }
+      if (p.name !== n.name) return `大項改名「${p.name}」→「${n.name}」`;
+      if ((p.payments || []).length !== (n.payments || []).length) return (n.payments || []).length > (p.payments || []).length ? `「${n.name}」新增付款` : `「${n.name}」刪除付款`;
+      if ((p.discountValue ?? "") !== (n.discountValue ?? "") || (p.discountMode ?? "") !== (n.discountMode ?? "")) return `改「${n.name}」議價`;
+      if ((p.status ?? "") !== (n.status ?? "")) return `改「${n.name}」狀態`;
+    }
+    return "編輯工程資料";
+  };
+  const setCatsAndLog = (updater) => {
+    setCats(prev => {
+      const next = typeof updater === "function" ? updater(prev) : updater;
+      try { queueMicrotask(() => logAction("編輯", describeCatChange(prev, next), 6000)); } catch (_) {}
+      return next;
+    });
+  };
 
   // ── 帳號 / 逐頁權限（一律來自登入 session 的 profile，無法冒名）──
   const account = profile ? { name: profile.display_name, role: profile.role, pages: profile.pages || [] } : null;
@@ -588,8 +619,7 @@ export default function App() {
   const denyEdit = () => { if (!userName) setShowLogin(true); else alert("此帳號沒有編輯此頁面的權限，請聯絡管理員開放。"); };
   const guardedSetCats = (updater) => {
     if (!canEditData) { denyEdit(); return; }
-    logAction("編輯", view === "petty" ? "零用金" : view === "gantt" ? "工序" : view === "issues" ? "ToDo" : "總覽/工程資料");
-    setCats(prev => typeof updater === "function" ? updater(prev) : updater);
+    setCatsAndLog(updater); // 用前後差異記錄具體動作（改X金額/新增大項/刪細項…）
   };
   const guardedSetSettings = (s) => {
     if (!canEditAdvisor) { denyEdit(); return; }
@@ -599,8 +629,7 @@ export default function App() {
 
   const setCatsLogged = (updater) => {
     if (!canEditData) { denyEdit(); return; }
-    logAction("編輯", view === "owner" ? "儀表板" : "總覽/工程資料");
-    setCats(prev => typeof updater === "function" ? updater(prev) : updater);
+    setCatsAndLog(updater);
   };
   const setEventsLogged = (updater) => {
     setEvents(prev => {
