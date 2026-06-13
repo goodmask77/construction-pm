@@ -33,6 +33,36 @@ const STATUS_MAP = {
   hold:        { label: "暫停",   color: "#C2872E" },
 };
 
+// ── 大項⇄細項狀態連動 ──
+// 大項標完工 → 底下所有細項一起完工
+const markCatDone = (cat) => ({ ...cat, status: "done", items: (cat.items || []).map(it => ({ ...it, status: "done", done: true })) });
+// 依細項回算大項狀態：全完工→完工；大項原為完工但細項未全完工→降回進行中/待開工；其餘保留(尊重手動標的進行中/有問題/暫停)
+const syncCatStatus = (cat) => {
+  const items = cat.items || [];
+  if (!items.length) return cat;
+  const allDone = items.every(it => it.done || it.status === "done");
+  if (allDone) return cat.status === "done" ? cat : { ...cat, status: "done" };
+  if (cat.status === "done") { const active = items.some(it => it.done || it.status === "done" || it.status === "inprogress"); return { ...cat, status: active ? "inprogress" : "pending" }; }
+  return cat;
+};
+// 一次性修正既有不一致：大項=完工但細項未全完工 → 細項補完工；細項全完工但大項未標完工 → 大項補完工
+function reconcileStatuses(cats) {
+  if (!Array.isArray(cats)) return cats;
+  let changed = false;
+  const out = cats.map(c => {
+    const items = c.items || [];
+    if (!items.length) return c;
+    if (c.status === "done") {
+      const ni = items.map(it => (it.done || it.status === "done") ? it : { ...it, status: "done", done: true });
+      if (ni.some((it, i) => it !== items[i])) { changed = true; return { ...c, items: ni }; }
+      return c;
+    }
+    if (items.every(it => it.done || it.status === "done")) { changed = true; return { ...c, status: "done" }; }
+    return c;
+  });
+  return changed ? out : cats;
+}
+
 // 成本金額模型已抽到 ./lib/cost.js（App 與未來 LINE bot 共用同一套算法）。下方僅保留遷移工具。
 // 一次性遷移：
 // 1) 沒有 payments 的大項，把舊的逐項已付總和轉成一筆「既有付款」紀錄（已付總額不變）
@@ -435,7 +465,7 @@ export default function App() {
       { const g = parse(raw("pm_guest_perms"), null); if (g && typeof g === "object") setGuestPerms(g); } // 訪客權限（沒存過＝預設金額關）
 
       const seed = CURRENT_SPACE === "construction" ? INITIAL_CATEGORIES : [];
-      const migrated = migratePayments(d || seed);
+      const migrated = reconcileStatuses(migratePayments(d || seed));
       setCats(migrated);
       // 只有「真的有讀到資料」且需要遷移時才回寫；絕不把 seed 自動存回去（避免讀取失敗時蓋掉真資料）
       if (d && migrated !== d) saveData(migrated);
@@ -654,8 +684,8 @@ export default function App() {
   };
 
   // Stall detection: items not updated > 3 days
-  const stalledItems = cats ? cats.flatMap(c => c.items.filter(it => {
-    if (it.status === "done" || it.done) return false;
+  const stalledItems = cats ? cats.filter(c => !isFundingCat(c) && !c.nonProject).flatMap(c => c.items.filter(it => {
+    if (it.fromPetty || it.status === "done" || it.done) return false;
     if (!it.lastUpdated) return false;
     const days = (Date.now() - new Date(it.lastUpdated)) / (1000*60*60*24);
     return days > 3;
@@ -723,7 +753,7 @@ export default function App() {
   const _updSub = (itemId, patch) => { const [cid,sid] = itemId.split("::"); setCats(prev => prev.map(c => c.id===cid ? { ...c, seqSubs:(c.seqSubs||[]).map(s => s.id===sid ? { ...s, ...patch } : s) } : c)); };
   const _updCost = (itemId, patch) => { const [cid,,iid] = itemId.split("::"); setCats(prev => prev.map(c => c.id===cid ? { ...c, items:(c.items||[]).map(it => it.id===iid ? { ...it, seq:{ ...(it.seq||{}), ...patch } } : it) } : c)); };
   const _updSeqSub = (itemId, patch) => itemId.includes("::ci::") ? _updCost(itemId, patch) : _updSub(itemId, patch);
-  const seqSetStatus = (itemId, wsKey) => { if (!canEditData) { denyEdit(); return; } const st = WS2CAT[wsKey]||"pending"; if (itemId.includes("::")) _updSeqSub(itemId, { status: st }); else setCats(prev => prev.map(c => c.id===itemId ? { ...c, status: st } : c)); };
+  const seqSetStatus = (itemId, wsKey) => { if (!canEditData) { denyEdit(); return; } const st = WS2CAT[wsKey]||"pending"; if (itemId.includes("::")) _updSeqSub(itemId, { status: st }); else setCats(prev => prev.map(c => c.id===itemId ? (st === "done" ? markCatDone(c) : { ...c, status: st }) : c)); };
   const seqSetSchedule = (itemId, segs) => { if (!canEditData) { denyEdit(); return; } if (itemId.includes("::")) _updSeqSub(itemId, { segments: segs }); else setCats(prev => prev.map(c => c.id===itemId ? { ...c, segments: segs } : c)); };
   const seqSetUrgent = (itemId, val) => { if (!canEditData) { denyEdit(); return; } if (itemId.includes("::")) _updSeqSub(itemId, { urgent: val }); else setCats(prev => prev.map(c => c.id===itemId ? { ...c, urgent: val } : c)); };
   const seqReorder = (fromId, toId) => { if (!canEditData) { denyEdit(); return; } setCats(prev => { const arr = [...prev].sort((a,b)=>(a.order??0)-(b.order??0)); const fi = arr.findIndex(c=>c.id===fromId), ti = arr.findIndex(c=>c.id===toId); if (fi<0||ti<0||fi===ti) return prev; const [m] = arr.splice(fi,1); arr.splice(ti,0,m); return arr.map((c,i)=>({ ...c, order:i })); }); };
@@ -2446,20 +2476,23 @@ function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols,
   const rows = allRows.filter(r => (filterStatus === "all" || r.item.status === filterStatus) && matchRow(r));
 
   const updateItem = (catId, itemId, field, val) => {
-    setCats(prev => prev.map(c => c.id === catId
-      ? { ...c, items: c.items.map(it => {
-          if (it.id !== itemId) return it;
-          const next = { ...it, [field]: val };
-          // 改數量或單價 → 金額回到「數量×單價」（解除匯入時鎖定的單據小計），避免新舊不一致
-          if (["estQty", "qty", "estUnitPrice", "unitPrice"].includes(field)) {
-            const q = Number(next.estQty ?? next.qty) || 0;
-            const u = Number(next.estUnitPrice ?? next.unitPrice) || 0;
-            next.amount = Math.round(q * u);
-          }
-          return next;
-        }) }
-      : c
-    ));
+    setCats(prev => prev.map(c => {
+      if (c.id !== catId) return c;
+      const items = c.items.map(it => {
+        if (it.id !== itemId) return it;
+        const next = { ...it, [field]: val };
+        if (field === "status") next.done = val === "done"; // 狀態與 done 同步
+        // 改數量或單價 → 金額回到「數量×單價」（解除匯入時鎖定的單據小計），避免新舊不一致
+        if (["estQty", "qty", "estUnitPrice", "unitPrice"].includes(field)) {
+          const q = Number(next.estQty ?? next.qty) || 0;
+          const u = Number(next.estUnitPrice ?? next.unitPrice) || 0;
+          next.amount = Math.round(q * u);
+        }
+        return next;
+      });
+      const c2 = { ...c, items };
+      return field === "status" ? syncCatStatus(c2) : c2; // 改細項狀態 → 回算大項狀態
+    }));
   };
   // 移動細項到其他大項：把「此細項的已付」一起帶走（含分攤到它的整批付款），來源不留殘渣、金額守恆
   const moveItemToCat = (fromCatId, itemId, toCatId) => {
@@ -3455,10 +3488,13 @@ function OwnerDashboard({ cats, setCats, settings, stalledItems, activityLog, lo
   const [report, setReport] = useState("");
   const [showReport, setShowReport] = useState(false);
 
-  const totalItems = cats.reduce((s,c)=>s+c.items.length, 0);
-  const doneItems = cats.flatMap(c=>c.items).filter(i=>i.done||i.status==="done").length;
-  const inProgressItems = cats.flatMap(c=>c.items).filter(i=>i.status==="inprogress");
-  const issueItems = cats.flatMap(c=>c.items).filter(i=>i.status==="issue");
+  // 進度只算「工程細項」：排除 撥款帳/非工程(業主自理)/零用金注入項
+  const workCats = cats.filter(c => !isFundingCat(c) && !c.nonProject);
+  const allItems = workCats.flatMap(c => (c.items || []).filter(it => !it.fromPetty));
+  const totalItems = allItems.length;
+  const doneItems = allItems.filter(i=>i.done||i.status==="done").length;
+  const inProgressItems = allItems.filter(i=>i.status==="inprogress");
+  const issueItems = allItems.filter(i=>i.status==="issue");
   const pct = totalItems ? Math.round(doneItems/totalItems*100) : 0;
   const totalEst = cats.filter(c=>!isFundingCat(c)).reduce((s,c)=>s+catEstAfter(c),0); // 議價後含稅總額（排除撥款帳）
   const totalAct = cats.filter(c=>!isFundingCat(c)).reduce((s,c)=>s+catPaid(c),0); // 已付總額（排除撥款帳）
@@ -3466,7 +3502,6 @@ function OwnerDashboard({ cats, setCats, settings, stalledItems, activityLog, lo
   const today = new Date().toLocaleDateString("zh-TW");
 
   // 狀態項目數
-  const allItems = cats.flatMap(c=>c.items);
   const cnt = (s)=>allItems.filter(i=>i.status===s).length;
   const holdItems = allItems.filter(i=>i.status==="hold");
   // 進度 vs 時程（開工日→完工日，時間已過 % 對比完成 %）
@@ -3655,7 +3690,7 @@ function OwnerDashboard({ cats, setCats, settings, stalledItems, activityLog, lo
       <div style={{ background:"#ffffff", border:"1px solid #D8CFBB", borderRadius:16, padding:20, marginBottom:20 }}>
         <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:14, flexWrap:"wrap", gap:8 }}>
           <div style={{ fontSize:14, fontWeight: 600, color:"#211C15" }}>各工程進度</div>
-          <div style={{ fontSize:12, color:"#6F6656" }}>{cats.length} 大項 · 完工 {cats.filter(c=>c.status==="done").length} · 進行中 {cats.filter(c=>c.status==="inprogress").length} · 待開工 {cats.filter(c=>c.status==="pending").length}</div>
+          <div style={{ fontSize:12, color:"#6F6656" }}>{workCats.length} 大項 · 完工 {workCats.filter(c=>c.status==="done").length} · 進行中 {workCats.filter(c=>c.status==="inprogress").length} · 待開工 {workCats.filter(c=>c.status==="pending").length}</div>
         </div>
         {[...cats].sort((a,b)=>{
           const rank = s => s==="issue"?0 : s==="inprogress"?1 : s==="hold"?2 : s==="done"?4 : 3;
@@ -4654,8 +4689,11 @@ function StatusBadge({ status, setCats, catId, itemId }) {
   const openMenu = (e) => { e.stopPropagation(); const r = e.currentTarget.getBoundingClientRect(); setPos({ x: r.left, y: r.bottom + 4 }); };
   const pick = (k) => { setCats(prev => prev.map(c => {
     if (catId && c.id === catId) {
-      if (itemId) return { ...c, items: c.items.map(it => it.id === itemId ? { ...it, status: k, lastUpdated: new Date().toISOString() } : it) };
-      return { ...c, status: k };
+      if (itemId) { // 改細項狀態 → 回算大項狀態
+        const items = c.items.map(it => it.id === itemId ? { ...it, status: k, done: k === "done", lastUpdated: new Date().toISOString() } : it);
+        return syncCatStatus({ ...c, items });
+      }
+      return k === "done" ? markCatDone(c) : { ...c, status: k }; // 大項標完工 → 細項全部完工
     }
     return c;
   })); setPos(null); };
@@ -6018,7 +6056,7 @@ function applyActions(actions, cats, settings, worklog) {
         else results.push(`⚠️ 找不到大項「${a.category}」`);
       } else if (t === "set_category_status") {
         const c = findCat(next, a.category); const s = normStatus(a.status);
-        if (c && s) { c.status = s; results.push(`🔖 「${c.name}」狀態設為 ${a.status}`); }
+        if (c && s) { c.status = s; if (s === "done") c.items = (c.items || []).map(it => ({ ...it, status: "done", done: true })); results.push(`🔖 「${c.name}」狀態設為 ${a.status}`); }
         else results.push(`⚠️ 無法設定「${a.category}」狀態`);
       } else if (t === "set_gantt") {
         const c = findCat(next, a.category);
