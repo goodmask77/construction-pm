@@ -4,6 +4,7 @@
 // 未來財務負責人接手開發，原則上只動這個資料夾，碰不到工程/總覽。
 import { useState, useEffect, useMemo } from "react";
 import { fmt } from "../lib/cost.js";
+import { parseNum, blankZero } from "../lib/num.js";
 
 const C = { text: "#211C15", sub: "#6F6656", faint: "#A99F88", line: "#D8CFBB", soft: "#ECE6D7", bg: "#FCFAF4", accent: "#2E7D32", red: "#C0392B", amber: "#C2872E" };
 const ACC_TYPES = [["bank", "銀行"], ["company", "公司帳戶"], ["cash", "現金"], ["petty", "零用金"], ["loan", "貸款"]];
@@ -13,7 +14,7 @@ const kindMeta = (k) => KINDS.find(x => x[0] === k) || KINDS[0];
 const inp = { border: `1px solid ${C.line}`, borderRadius: 7, padding: "6px 8px", fontSize: 13, background: "#fff", color: C.text, boxSizing: "border-box", outline: "none" };
 const dateInp = { ...inp, colorScheme: "light", fontFamily: "'Noto Sans TC', sans-serif", cursor: "pointer" };
 const rid = (p) => p + Math.random().toString(36).slice(2, 8);
-const num = (v) => Number(String(v ?? "").replace(/[^0-9.-]/g, "")) || 0;
+const num = parseNum; // 共用解析（避免卡0）
 
 export default function FinanceView({ K, confirm, canEdit, ReceiptUploader }) {
   const [tab, setTab] = useState("ledger");      // overview | accounts | ledger
@@ -112,7 +113,7 @@ export default function FinanceView({ K, confirm, canEdit, ReceiptUploader }) {
                 <div key={a.id} style={{ background: "#fff", border: `1px solid ${C.line}`, borderRadius: 10, padding: 12, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
                   <select value={a.type} onChange={e => updAcc(a.id, "type", e.target.value)} style={{ ...inp, width: 110 }}>{ACC_TYPES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select>
                   <input value={a.name} onChange={e => updAcc(a.id, "name", e.target.value)} placeholder="帳戶名稱（例：合庫商銀 ***244）" style={{ ...inp, flex: 1, minWidth: 180 }} />
-                  <label style={{ fontSize: 12, color: C.sub }}>期初 <input value={a.opening} onChange={e => updAcc(a.id, "opening", num(e.target.value))} type="number" style={{ ...inp, width: 120, fontFamily: "monospace" }} /></label>
+                  <label style={{ fontSize: 12, color: C.sub }}>期初 <input value={blankZero(a.opening)} onChange={e => updAcc(a.id, "opening", num(e.target.value))} type="number" placeholder="0" style={{ ...inp, width: 120, fontFamily: "monospace" }} /></label>
                   <div style={{ fontSize: 13, color: balanceOf(a.id) < 0 ? C.red : C.accent, fontWeight: 700, fontVariantNumeric: "tabular-nums", minWidth: 110, textAlign: "right" }}>餘 {fmt(balanceOf(a.id))}</div>
                   <button onClick={() => delAcc(a)} title="刪除" style={{ background: "none", border: "none", color: C.faint, cursor: "pointer", fontSize: 18 }}>×</button>
                 </div>
@@ -147,7 +148,7 @@ export default function FinanceView({ K, confirm, canEdit, ReceiptUploader }) {
                   <div key={l.id} style={{ display: "grid", gridTemplateColumns: gtc, alignItems: "center", background: i % 2 ? "#FBF8F0" : "#fff", borderTop: i ? "1px solid #F3EEE1" : "none", gap: 3, padding: "4px 4px" }}>
                     <input type="date" value={String(l.date || "").replace(/\//g, "-").slice(0, 10)} onChange={e => updLed(l.id, "date", e.target.value)} style={{ ...dateInp, width: "100%" }} />
                     <select value={l.kind} onChange={e => updLed(l.id, "kind", e.target.value)} style={{ ...inp, border: "none", color: km[2], fontWeight: 600, padding: "5px 2px" }}>{KINDS.map(([v, lb]) => <option key={v} value={v}>{lb}</option>)}</select>
-                    <input value={l.amount} onChange={e => updLed(l.id, "amount", num(e.target.value))} type="number" placeholder="0" style={{ ...inp, fontFamily: "monospace", fontWeight: 600 }} />
+                    <input value={blankZero(l.amount)} onChange={e => updLed(l.id, "amount", num(e.target.value))} type="number" placeholder="0" style={{ ...inp, fontFamily: "monospace", fontWeight: 600 }} />
                     <select value={l.from || ""} onChange={e => updLed(l.id, "from", e.target.value)} style={{ ...inp, opacity: l.kind === "income" ? 0.5 : 1 }}><option value="">—</option>{accounts.map(a => <option key={a.id} value={a.id}>{a.name || "未命名"}</option>)}</select>
                     <select value={l.to || ""} onChange={e => updLed(l.id, "to", e.target.value)} style={{ ...inp, opacity: l.kind === "expense" ? 0.5 : 1 }}><option value="">—</option>{accounts.map(a => <option key={a.id} value={a.id}>{a.name || "未命名"}</option>)}</select>
                     <input value={l.category || ""} onChange={e => updLed(l.id, "category", e.target.value)} placeholder={l.kind === "expense" ? "科目/工種" : "—"} style={inp} />
