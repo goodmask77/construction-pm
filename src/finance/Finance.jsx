@@ -37,10 +37,8 @@ export default function FinanceView({ K, confirm, canEdit, ReceiptUploader }) {
     return b;
   };
 
-  if (accounts === null || ledger === null) return <div style={{ padding: 40, textAlign: "center", color: C.faint }}>載入中…</div>;
-
   // ── 帳戶 CRUD ──
-  const addAcc = () => guard() && saveAcc([...accounts, { id: rid("acc"), name: "", type: "bank", opening: 0, note: "", active: true }]);
+  const addAcc = () => guard() && saveAcc([...(accounts || []), { id: rid("acc"), name: "", type: "bank", opening: 0, note: "", active: true }]);
   const updAcc = (id, k, v) => saveAcc(accounts.map(a => a.id === id ? { ...a, [k]: v } : a));
   const delAcc = async (a) => { if (!guard()) return; const used = (ledger || []).some(l => l.from === a.id || l.to === a.id); if (!(await confirm(`刪除帳戶「${a.name || "未命名"}」？${used ? "（仍有交易用到它，刪後那些交易會標示「已刪帳戶」）" : ""}`, { confirmLabel: "刪除" }))) return; saveAcc(accounts.filter(x => x.id !== a.id)); };
 
@@ -49,14 +47,18 @@ export default function FinanceView({ K, confirm, canEdit, ReceiptUploader }) {
   const updLed = (id, k, v) => saveLed(ledger.map(l => l.id === id ? { ...l, [k]: v } : l));
   const delLed = async (l) => { if (!guard()) return; if (!(await confirm(`刪除這筆交易（${fmt(num(l.amount))}）？`, { confirmLabel: "刪除" }))) return; saveLed(ledger.filter(x => x.id !== l.id)); };
 
+  // useMemo 必須在任何提早 return 之前（hooks 規則）；對 null 安全
   const rows = useMemo(() => {
-    let r = ledger.filter(l => (fKind === "all" || l.kind === fKind) && (fAcc === "all" || l.from === fAcc || l.to === fAcc) && (!q.trim() || (l.vendor + l.category + l.note + l.invoiceNo + accName(l.from) + accName(l.to)).toLowerCase().includes(q.trim().toLowerCase())));
+    let r = (ledger || []).filter(l => (fKind === "all" || l.kind === fKind) && (fAcc === "all" || l.from === fAcc || l.to === fAcc) && (!q.trim() || (l.vendor + l.category + l.note + l.invoiceNo + accName(l.from) + accName(l.to)).toLowerCase().includes(q.trim().toLowerCase())));
     r = [...r].sort((a, b) => ((a.date || "") < (b.date || "") ? -1 : (a.date || "") > (b.date || "") ? 1 : 0) * sortDir);
     return r;
-  }, [ledger, fKind, fAcc, q, sortDir, accounts]);
+  }, [ledger, fKind, fAcc, q, sortDir, accounts]); // eslint-disable-line
   const filteredSum = rows.reduce((s, l) => s + num(l.amount), 0);
 
   const Tab = (k, label) => <button key={k} onClick={() => setTab(k)} style={{ padding: "7px 16px", borderRadius: 8, border: `1px solid ${tab === k ? "#b5512b" : C.line}`, background: tab === k ? "#b5512b" : "#fff", color: tab === k ? "#fff" : C.sub, fontSize: 13.5, fontWeight: 600, cursor: "pointer" }}>{label}</button>;
+
+  // 所有 hooks 都呼叫完了，這裡才可以提早 return
+  if (accounts === null || ledger === null) return <div style={{ padding: 40, textAlign: "center", color: C.faint }}>載入中…</div>;
 
   return (
     <div style={{ maxWidth: 1180, margin: "8px auto", padding: "0 4px" }}>
