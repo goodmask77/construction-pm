@@ -16,6 +16,28 @@ const dateInp = { ...inp, colorScheme: "light", fontFamily: "'Noto Sans TC', san
 const rid = (p) => p + Math.random().toString(36).slice(2, 8);
 const num = parseNum; // 共用解析（避免卡0）
 
+// 預設會計科目樹（依張良的公司帳務表；可在「科目」頁自由增刪改）
+function SEED_COA() {
+  const tree = {
+    "A營業收入": { "營業額": ["餐飲"], "包場": ["訂金", "尾款"], "外送": ["Uber", "Foodpanda", "Cutaway", "Inline", "Eztable", "FunNow", "Wemo", "FoodMarco", "社群平台", "悠遊卡公司"], "選物": ["餐具", "家具", "飾品"] },
+    "F物料成本": { "內場": ["肉商", "雞肉", "海鮮", "烘焙", "菜商", "雜貨", "蛋商", "油商", "其他"], "吧台": ["啤酒", "基酒", "紅白酒", "牛奶", "咖啡", "水果", "雜貨", "其他"], "外場": ["包材", "備品", "其他"] },
+    "L人事成本": { "薪資": ["正職", "PT"], "加班費": ["正職", "PT"], "獎金": ["正職", "PT"], "健保": [], "勞保": [], "勞退": [], "其他": ["資遣費", "招募獎金"], "季薪資": [], "未休特休": [] },
+    "R租金成本": { "店租": ["思泊客"], "營登": ["悅鑽", "天成"] },
+    "X營業成本": { "規費": ["水費", "電費", "網路電信", "刷卡手續費", "銀行手續費", "管理費"], "系統": ["POS", "訂位", "人資", "文書", "雲端", "音樂", "外送平台"], "會計": ["記帳", "代辦", "顧問"], "消毒": [], "垃圾": [], "維護": ["洗碗機", "廚具", "淨水器", "冰箱", "空調", "弱電", "消防", "公安", "電梯", "咖啡機", "靜電機"] },
+    "T稅金成本": { "營所稅": [], "營業稅": [] },
+    "Z其他成本": {}, "獎金": {}, "資金": {}, "合庫世貿": {}, "台企東湖": {}, "盈餘公積使用": {},
+  };
+  const out = []; let i = 0; const id = () => "coa" + (i++).toString(36) + Math.random().toString(36).slice(2, 5);
+  for (const [l1, mids] of Object.entries(tree)) {
+    const p1 = id(); out.push({ id: p1, name: l1, parentId: null });
+    for (const [l2, leaves] of Object.entries(mids)) {
+      const p2 = id(); out.push({ id: p2, name: l2, parentId: p1 });
+      for (const leaf of leaves) out.push({ id: id(), name: leaf, parentId: p2 });
+    }
+  }
+  return out;
+}
+
 export default function FinanceView({ K, confirm, canEdit, ReceiptUploader }) {
   const [tab, setTab] = useState("ledger");      // overview | accounts | ledger
   const [accounts, setAccounts] = useState(null); // null=載入中
@@ -23,14 +45,22 @@ export default function FinanceView({ K, confirm, canEdit, ReceiptUploader }) {
   const [q, setQ] = useState(""); const [fKind, setFKind] = useState("all"); const [fAcc, setFAcc] = useState("all");
   const [sortDir, setSortDir] = useState(-1); // 日期 -1=新到舊
   const [imp, setImp] = useState(null); // 批量匯入面板（hook 一定要在提早 return 之前）
+  const [coa, setCoa] = useState(null);  // 會計科目樹 [{id,name,parentId}]
+  const [coaImp, setCoaImp] = useState(null); // 科目批量建立面板
 
   useEffect(() => { (async () => {
     try { const a = await window.storage.get(K("pm_fin_accounts"), true); setAccounts(a && a.value ? JSON.parse(a.value) : []); } catch { setAccounts([]); }
     try { const l = await window.storage.get(K("pm_fin_ledger"), true); setLedger(l && l.value ? JSON.parse(l.value) : []); } catch { setLedger([]); }
+    try { const c = await window.storage.get(K("pm_fin_coa"), true); const v = c && c.value ? JSON.parse(c.value) : null; setCoa(Array.isArray(v) && v.length ? v : SEED_COA()); } catch { setCoa(SEED_COA()); }
   })(); }, []); // eslint-disable-line
   const guard = () => { if (!canEdit) { alert("沒有編輯權限，請聯絡管理員。"); return false; } return true; };
   const saveAcc = (list) => { setAccounts(list); window.storage.set(K("pm_fin_accounts"), JSON.stringify(list), true).catch(() => {}); };
   const saveLed = (list) => { setLedger(list); window.storage.set(K("pm_fin_ledger"), JSON.stringify(list), true).catch(() => {}); };
+  const saveCoa = (list) => { if (!guard()) return; setCoa(list); window.storage.set(K("pm_fin_coa"), JSON.stringify(list), true).catch(() => {}); };
+  // 科目樹工具
+  const coaChildren = (pid) => (coa || []).filter(c => (c.parentId || null) === (pid || null));
+  const coaPath = (id) => { const out = []; let n = (coa || []).find(c => c.id === id); let g = 0; while (n && g++ < 6) { out.unshift(n.name); n = (coa || []).find(c => c.id === n.parentId); } return out.join(" / "); };
+  const coaFlat = () => { const out = []; const walk = (pid, depth) => coaChildren(pid).forEach(n => { out.push({ id: n.id, name: n.name, depth }); walk(n.id, depth + 1); }); walk(null, 0); return out; };
 
   const accName = (id) => accounts?.find(a => a.id === id)?.name || (id ? "(已刪帳戶)" : "—");
   const balanceOf = (id) => {
@@ -88,7 +118,7 @@ export default function FinanceView({ K, confirm, canEdit, ReceiptUploader }) {
   const Tab = (k, label) => <button key={k} onClick={() => setTab(k)} style={{ padding: "7px 16px", borderRadius: 8, border: `1px solid ${tab === k ? "#b5512b" : C.line}`, background: tab === k ? "#b5512b" : "#fff", color: tab === k ? "#fff" : C.sub, fontSize: 13.5, fontWeight: 600, cursor: "pointer" }}>{label}</button>;
 
   // 所有 hooks 都呼叫完了，這裡才可以提早 return
-  if (accounts === null || ledger === null) return <div style={{ padding: 40, textAlign: "center", color: C.faint }}>載入中…</div>;
+  if (accounts === null || ledger === null || coa === null) return <div style={{ padding: 40, textAlign: "center", color: C.faint }}>載入中…</div>;
 
   return (
     <div style={{ maxWidth: 1240, margin: "8px auto", padding: "0 4px" }}>
@@ -97,7 +127,7 @@ export default function FinanceView({ K, confirm, canEdit, ReceiptUploader }) {
         <span style={{ fontSize: 12, color: C.faint }}>多帳戶總表・轉帳不算成本</span>
         <div style={{ flex: 1 }} />
         <div style={{ display: "inline-flex", background: C.head, border: `1px solid ${C.line}`, borderRadius: 10, padding: 3, gap: 2 }}>
-          {[["overview", "📊 總覽"], ["accounts", "🏦 帳戶"], ["ledger", "🧾 交易明細"]].map(([k, l]) => (
+          {[["overview", "📊 總覽"], ["accounts", "🏦 帳戶"], ["ledger", "🧾 交易明細"], ["coa", "🗂 科目"]].map(([k, l]) => (
             <button key={k} onClick={() => setTab(k)} style={{ padding: "6px 16px", borderRadius: 7, border: "none", background: tab === k ? C.brand : "transparent", color: tab === k ? "#fff" : C.sub, fontSize: 13.5, fontWeight: 600, cursor: "pointer", transition: "all .12s" }}>{l}</button>
           ))}
         </div>
@@ -156,6 +186,61 @@ export default function FinanceView({ K, confirm, canEdit, ReceiptUploader }) {
         </div>
       )}
 
+      {tab === "coa" && (() => {
+        const depthName = (d) => ["大項", "中項", "細項", "子項"][d] || "子項";
+        const descIds = (id) => { const acc = [id]; const walk = (p) => coaChildren(p).forEach(c => { acc.push(c.id); walk(c.id); }); walk(id); return acc; };
+        const addTop = () => saveCoa([...coa, { id: "coa" + rid(""), name: "新大項", parentId: null }]);
+        const addChild = (pid) => saveCoa([...coa, { id: "coa" + rid(""), name: "新項目", parentId: pid }]);
+        const renameNode = (id, name) => saveCoa(coa.map(c => c.id === id ? { ...c, name } : c));
+        const delNode = async (node) => { const ids = new Set(descIds(node.id)); const used = ledger.filter(l => ids.has(l.catId)).length; if (!(await confirm(`刪除「${node.name}」${ids.size > 1 ? `及其 ${ids.size - 1} 個子科目` : ""}？${used ? `（有 ${used} 筆交易用到，刪後那些交易的科目會清空）` : ""}`, { confirmLabel: "刪除" }))) return; if (!guard()) return; setCoa(coa.filter(c => !ids.has(c.id))); window.storage.set(K("pm_fin_coa"), JSON.stringify(coa.filter(c => !ids.has(c.id))), true).catch(() => {}); };
+        const NodeRow = (node, depth) => {
+          const kids = coaChildren(node.id);
+          const tint = depth === 0 ? "#2C5A8C" : depth === 1 ? C.brand : C.sub;
+          return (
+            <div key={node.id}>
+              <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "3px 0", paddingLeft: depth * 22 }}>
+                <span style={{ fontSize: 10, fontWeight: 700, color: tint, width: 30, flexShrink: 0 }}>{depthName(depth)}</span>
+                <input value={node.name} onChange={e => renameNode(node.id, e.target.value)} style={{ border: `1px solid ${C.line}`, borderRadius: 6, padding: "5px 8px", fontSize: 13, fontWeight: depth === 0 ? 700 : depth === 1 ? 600 : 400, color: C.text, width: 220, background: C.card }} />
+                {depth < 3 && <button onClick={() => addChild(node.id)} title="新增子科目" style={{ border: `1px solid ${C.line}`, background: C.card, color: C.sub, borderRadius: 6, padding: "3px 9px", fontSize: 12, cursor: "pointer" }}>＋子科目</button>}
+                <button onClick={() => delNode(node)} title="刪除" style={{ background: "none", border: "none", color: C.faint, cursor: "pointer", fontSize: 16 }} onMouseEnter={e => e.currentTarget.style.color = C.red} onMouseLeave={e => e.currentTarget.style.color = C.faint}>×</button>
+              </div>
+              {kids.map(k => NodeRow(k, depth + 1))}
+            </div>
+          );
+        };
+        const tops = coaChildren(null);
+        return (
+          <div>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
+              <span style={{ fontSize: 13, color: C.sub }}>會計科目分層（大項 → 中項 → 細項），交易明細的「科目」會跟著這裡的樹連動。</span>
+              <div style={{ flex: 1 }} />
+              <button onClick={() => setCoaImp({ text: "" })} style={{ background: C.card, color: C.brand, border: `1px solid ${C.brand}`, borderRadius: 8, padding: "7px 14px", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>📋 批量建立</button>
+              <button onClick={addTop} style={{ background: C.brand, color: "#fff", border: "none", borderRadius: 8, padding: "7px 14px", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>＋ 新增大項</button>
+            </div>
+            <div style={{ background: C.card, border: `1px solid ${C.line}`, borderRadius: 10, padding: "12px 14px", boxShadow: "0 1px 3px rgba(0,0,0,.04)" }}>
+              {tops.length === 0 ? <div style={{ padding: 24, textAlign: "center", color: C.faint }}>還沒有科目，點「＋ 新增大項」或「📋 批量建立」。</div> : tops.map(n => NodeRow(n, 0))}
+            </div>
+            {coaImp && (
+              <div onClick={e => e.target === e.currentTarget && setCoaImp(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.4)", zIndex: 600, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+                <div style={{ background: "#fff", borderRadius: 14, padding: 20, width: "min(620px,96vw)", maxHeight: "88vh", overflowY: "auto" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}><div style={{ fontSize: 16, fontWeight: 700, color: C.text }}>📋 批量建立科目</div><div style={{ flex: 1 }} /><button onClick={() => setCoaImp(null)} style={{ background: "none", border: "none", fontSize: 22, cursor: "pointer", color: C.sub }}>×</button></div>
+                  <div style={{ fontSize: 12.5, color: C.sub, marginBottom: 8, lineHeight: 1.7 }}>每列一筆，用 <b>Tab 或逗號</b>分隔「大項　中項　細項」。空白欄略過。例：<br /><code style={{ fontSize: 11 }}>F物料成本　內場　肉商</code>。會自動建立/沿用相同的大項、中項。</div>
+                  <textarea value={coaImp.text} onChange={e => setCoaImp({ text: e.target.value })} rows={9} placeholder={"F物料成本\t內場\t肉商\nF物料成本\t吧台\t啤酒\nX營業成本\t規費\t水費"} style={{ width: "100%", boxSizing: "border-box", border: `1px solid ${C.line}`, borderRadius: 8, padding: 10, fontSize: 13, fontFamily: "monospace" }} />
+                  <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 10 }}>
+                    <button onClick={() => {
+                      const next = [...coa];
+                      const findOrAdd = (name, parentId) => { if (!name) return parentId; let n = next.find(c => c.name === name && (c.parentId || null) === (parentId || null)); if (!n) { n = { id: "coa" + rid(""), name, parentId: parentId || null }; next.push(n); } return n.id; };
+                      (coaImp.text || "").split(/\r?\n/).forEach(line => { if (!line.trim()) return; const [a, b, c] = line.split(/\t|,/).map(s => s.trim()); const p1 = findOrAdd(a, null); const p2 = findOrAdd(b, p1); findOrAdd(c, p2); });
+                      saveCoa(next); setCoaImp(null);
+                    }} style={{ background: C.accent, color: "#fff", border: "none", borderRadius: 8, padding: "9px 18px", fontSize: 13.5, fontWeight: 700, cursor: "pointer" }}>建立</button>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      })()}
+
       {tab === "ledger" && (() => {
         const sep = `1px solid ${C.line}`;
         const single = fAcc !== "all" ? fAcc : null; // 篩到單一帳戶 → 顯示逐筆餘額（像銀行對帳單）
@@ -193,7 +278,15 @@ export default function FinanceView({ K, confirm, canEdit, ReceiptUploader }) {
                     <input value={blankZero(l.amount)} onChange={e => updLed(l.id, "amount", num(e.target.value))} type="number" placeholder="0" style={{ ...cellI, fontFamily: "ui-monospace, monospace", fontWeight: 700, textAlign: "right", color: km[2] }} />
                     <select value={l.from || ""} onChange={e => updLed(l.id, "from", e.target.value)} style={{ ...cellI, opacity: l.kind === "income" ? 0.45 : 1 }}><option value="">—</option>{accounts.map(a => <option key={a.id} value={a.id}>{a.name || "未命名"}</option>)}</select>
                     <select value={l.to || ""} onChange={e => updLed(l.id, "to", e.target.value)} style={{ ...cellI, opacity: l.kind === "expense" ? 0.45 : 1 }}><option value="">—</option>{accounts.map(a => <option key={a.id} value={a.id}>{a.name || "未命名"}</option>)}</select>
-                    <input value={l.category || ""} onChange={e => updLed(l.id, "category", e.target.value)} placeholder={l.kind === "expense" ? "科目/工種" : "—"} style={cellI} />
+                    {coa.length ? (
+                      <select value={l.catId || (l.category ? "__legacy__" : "")} onChange={e => { const v = e.target.value; if (v === "__legacy__") return; saveLed(ledger.map(x => x.id === l.id ? { ...x, catId: v, category: v ? coaPath(v) : "" } : x)); }} title={l.catId ? coaPath(l.catId) : l.category} style={{ ...cellI }}>
+                        <option value="">— 科目 —</option>
+                        {l.category && !l.catId && <option value="__legacy__">（自訂）{l.category}</option>}
+                        {coaFlat().map(n => <option key={n.id} value={n.id}>{(n.depth ? "　".repeat(n.depth) : "▸ ") + n.name}</option>)}
+                      </select>
+                    ) : (
+                      <input value={l.category || ""} onChange={e => updLed(l.id, "category", e.target.value)} placeholder={l.kind === "expense" ? "科目/工種" : "—"} style={cellI} />
+                    )}
                     <input value={l.vendor || ""} onChange={e => updLed(l.id, "vendor", e.target.value)} placeholder="廠商/對象" style={cellI} />
                     <input value={l.invoiceNo || ""} onChange={e => updLed(l.id, "invoiceNo", e.target.value)} placeholder="—" style={cellI} />
                     <input value={l.note || ""} onChange={e => updLed(l.id, "note", e.target.value)} placeholder="備註" style={cellI} />
