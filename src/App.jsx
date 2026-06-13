@@ -571,34 +571,54 @@ export default function App() {
     logThrottleRef.current[key] = now;
     logActivity(action, detail);
   };
-  // 比對 cats 前後差異 → 產生「具體動作」描述（給紀錄更明確）
+  // 比對 cats 前後差異 → 產生「具體動作＋新值」描述。回傳 {key, detail}：key 用來節流(同欄位不論值)、detail 給人看(含新值)
   const describeCatChange = (prev, next) => {
     const pc = prev || [], nc = next || [];
-    if (nc.length > pc.length) { const a = nc.find(c => !pc.some(p => p.id === c.id)); return `新增大項「${a?.name || "—"}」`; }
-    if (nc.length < pc.length) { const r = pc.find(c => !nc.some(n => n.id === c.id)); return `刪除大項「${r?.name || "—"}」`; }
-    const FL = { name: "名稱", estQty: "數量", estUnitPrice: "單價", amount: "金額", taxType: "稅別", status: "狀態", assignee: "負責人", payDate: "付款日", notes: "備註", paid: "已付", discountValue: "議價", catId: "工種", seq: "工序" };
+    const SL = (s) => STATUS_MAP[s]?.label || s || "—";
+    if (nc.length > pc.length) { const a = nc.find(c => !pc.some(p => p.id === c.id)); return { key: "addcat", detail: `新增大項「${a?.name || "—"}」` }; }
+    if (nc.length < pc.length) { const r = pc.find(c => !nc.some(n => n.id === c.id)); return { key: "delcat", detail: `刪除大項「${r?.name || "—"}」` }; }
     for (const n of nc) {
       const p = pc.find(c => c.id === n.id); if (!p) continue;
       const pi = p.items || [], ni = n.items || [];
-      if (ni.length > pi.length) { const a = ni.find(i => !pi.some(x => x.id === i.id)); return `「${n.name}」新增細項${a?.name ? `「${a.name}」` : ""}`; }
-      if (ni.length < pi.length) { const r = pi.find(i => !ni.some(x => x.id === i.id)); return `「${n.name}」刪除細項${r?.name ? `「${r.name}」` : ""}`; }
+      if (ni.length > pi.length) { const a = ni.find(i => !pi.some(x => x.id === i.id)); return { key: `additem:${n.id}`, detail: `「${n.name}」新增細項${a?.name ? `「${a.name}」` : ""}` }; }
+      if (ni.length < pi.length) { const r = pi.find(i => !ni.some(x => x.id === i.id)); return { key: `delitem:${n.id}`, detail: `「${n.name}」刪除細項${r?.name ? `「${r.name}」` : ""}` }; }
       for (const ix of ni) {
         const px = pi.find(i => i.id === ix.id); if (!px) continue;
-        const f = ["name", "estQty", "estUnitPrice", "amount", "taxType", "status", "assignee", "payDate", "paid", "catId"].find(k => JSON.stringify(px[k] ?? "") !== JSON.stringify(ix[k] ?? ""));
-        if (f) return `改「${n.name}／${ix.name}」的${FL[f] || f}`;
-        if (JSON.stringify(px.notes ?? "") !== JSON.stringify(ix.notes ?? "")) return `改「${n.name}／${ix.name}」的備註`;
+        const tag = `${n.name}／${ix.name}`;
+        if ((px.name ?? "") !== (ix.name ?? "")) return { key: `item:${ix.id}:name`, detail: `細項改名「${n.name}／${px.name}」→「${ix.name}」` };
+        const F = [
+          ["status", (v) => `改「${tag}」狀態 → ${SL(v)}`],
+          ["estQty", (v) => `改「${tag}」數量 ${px.estQty ?? px.qty ?? "—"} → ${v}`],
+          ["estUnitPrice", (v) => `改「${tag}」單價 → ${fmt(v)}`],
+          ["amount", (v) => `改「${tag}」金額 → ${fmt(v)}`],
+          ["taxType", (v) => `改「${tag}」稅別 → ${v}`],
+          ["assignee", (v) => `改「${tag}」廠商 → ${v || "（清空）"}`],
+          ["payDate", (v) => `改「${tag}」付款日 → ${v || "（清空）"}`],
+          ["paid", (v) => `改「${tag}」已付 → ${fmt(v)}`],
+          ["catId", () => `把「${tag}」改歸到別的工種`],
+          ["notes", () => `改「${tag}」備註`],
+        ];
+        for (const [k, fn] of F) { if (JSON.stringify(px[k] ?? "") !== JSON.stringify(ix[k] ?? "")) return { key: `item:${ix.id}:${k}`, detail: fn(ix[k]) }; }
       }
-      if (p.name !== n.name) return `大項改名「${p.name}」→「${n.name}」`;
-      if ((p.payments || []).length !== (n.payments || []).length) return (n.payments || []).length > (p.payments || []).length ? `「${n.name}」新增付款` : `「${n.name}」刪除付款`;
-      if ((p.discountValue ?? "") !== (n.discountValue ?? "") || (p.discountMode ?? "") !== (n.discountMode ?? "")) return `改「${n.name}」議價`;
-      if ((p.status ?? "") !== (n.status ?? "")) return `改「${n.name}」狀態`;
+      if (p.name !== n.name) return { key: `catname:${n.id}`, detail: `大項改名「${p.name}」→「${n.name}」` };
+      if ((p.payments || []).length !== (n.payments || []).length) { const more = (n.payments || []).length > (p.payments || []).length; const last = (n.payments || [])[(n.payments || []).length - 1]; return { key: `pay:${n.id}`, detail: more ? `「${n.name}」新增付款${last?.amount ? ` ${fmt(last.amount)}` : ""}` : `「${n.name}」刪除付款` }; }
+      if ((p.discountValue ?? "") !== (n.discountValue ?? "") || (p.discountMode ?? "") !== (n.discountMode ?? "")) return { key: `disc:${n.id}`, detail: `改「${n.name}」議價 → ${n.discountValue || 0}${n.discountMode === "amt" ? "元" : "%"}` };
+      if ((p.status ?? "") !== (n.status ?? "")) return { key: `catstatus:${n.id}`, detail: `改大項「${n.name}」狀態 → ${SL(n.status)}` };
     }
-    return "編輯工程資料";
+    return { key: "edit", detail: "編輯工程資料" };
+  };
+  // 防抖：同一格連續打字 → 停手 1.2 秒後只記「最後一筆（含最終值）」
+  const logDebounceRef = useRef({});
+  const logActionDebounced = (action, dkey, detail, delay = 1200) => {
+    if (!userName) return;
+    const k = action + "|" + dkey;
+    clearTimeout(logDebounceRef.current[k]);
+    logDebounceRef.current[k] = setTimeout(() => { logActivity(action, detail); }, delay);
   };
   const setCatsAndLog = (updater) => {
     setCats(prev => {
       const next = typeof updater === "function" ? updater(prev) : updater;
-      try { queueMicrotask(() => logAction("編輯", describeCatChange(prev, next), 6000)); } catch (_) {}
+      try { const d = describeCatChange(prev, next); if (d && d.detail) queueMicrotask(() => logActionDebounced("編輯", d.key, d.detail)); } catch (_) {}
       return next;
     });
   };
