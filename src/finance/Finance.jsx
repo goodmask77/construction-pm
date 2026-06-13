@@ -6,7 +6,7 @@ import { useState, useEffect, useMemo } from "react";
 import { fmt } from "../lib/cost.js";
 import { parseNum, blankZero } from "../lib/num.js";
 
-const C = { text: "#211C15", sub: "#6F6656", faint: "#A99F88", line: "#D8CFBB", soft: "#ECE6D7", bg: "#FCFAF4", accent: "#2E7D32", red: "#C0392B", amber: "#C2872E" };
+const C = { text: "#1C1A17", sub: "#6B6456", faint: "#A8A08D", line: "#E4DDCB", soft: "#F1ECDD", bg: "#FBF9F3", card: "#FFFFFF", head: "#F6F2E8", accent: "#2E7D32", red: "#C0392B", blue: "#3E72A8", amber: "#C2872E", brand: "#b5512b" };
 const ACC_TYPES = [["bank", "銀行"], ["company", "公司帳戶"], ["cash", "現金"], ["petty", "零用金"], ["loan", "貸款"]];
 const KINDS = [["expense", "支出", C.red], ["transfer", "轉帳", "#3E72A8"], ["income", "收入", C.accent]];
 const typeLabel = (t) => (ACC_TYPES.find(x => x[0] === t) || [, "—"])[1];
@@ -22,6 +22,7 @@ export default function FinanceView({ K, confirm, canEdit, ReceiptUploader }) {
   const [ledger, setLedger] = useState(null);
   const [q, setQ] = useState(""); const [fKind, setFKind] = useState("all"); const [fAcc, setFAcc] = useState("all");
   const [sortDir, setSortDir] = useState(-1); // 日期 -1=新到舊
+  const [imp, setImp] = useState(null); // 批量匯入面板（hook 一定要在提早 return 之前）
 
   useEffect(() => { (async () => {
     try { const a = await window.storage.get(K("pm_fin_accounts"), true); setAccounts(a && a.value ? JSON.parse(a.value) : []); } catch { setAccounts([]); }
@@ -36,6 +37,34 @@ export default function FinanceView({ K, confirm, canEdit, ReceiptUploader }) {
     let b = num(accounts?.find(a => a.id === id)?.opening);
     (ledger || []).forEach(l => { const amt = num(l.amount); if (l.to === id) b += amt; if (l.from === id) b -= amt; });
     return b;
+  };
+
+  // ── 批量匯入：貼上(Tab分隔)→欄位對應→預覽驗證→餘額對帳→入帳 ──
+  const normDate = (v) => { const s = String(v ?? "").replace(/\//g, "-").trim(); const m = s.match(/(\d{4})-(\d{1,2})-(\d{1,2})/); return m ? `${m[1]}-${m[2].padStart(2, "0")}-${m[3].padStart(2, "0")}` : ""; };
+  const kindFrom = (s) => { s = String(s || ""); if (/收入|收款|入帳|營收/.test(s)) return "income"; if (/轉帳|轉出|轉入|互轉/.test(s)) return "transfer"; return "expense"; };
+  const parsePaste = (text, hasHeader) => {
+    const lines = (text || "").split(/\r?\n/).filter(l => l.trim());
+    if (!lines.length) return null;
+    const rows = lines.map(l => (l.includes("\t") ? l.split("\t") : l.split(/ {2,}|,/)).map(c => c.trim()));
+    const n = Math.max(...rows.map(r => r.length));
+    const headers = hasHeader ? rows[0] : Array.from({ length: n }, (_, i) => `第${i + 1}欄`);
+    return { headers, rows: hasHeader ? rows.slice(1) : rows };
+  };
+  const guessMap = (headers) => { const f = (kws) => headers.findIndex(h => kws.some(k => h.includes(k))); return { date: f(["日期", "日"]), amount: f(["金額", "支出", "付款金額", "付款額"]), kind: f(["類型", "收支"]), vendor: f(["廠商", "對象", "收款", "匯款人"]), category: f(["科目", "大項", "類別", "項目內容", "項目"]), note: f(["備註", "說明", "內容"]) }; };
+  const buildPreview = (parsed, map, accId, defKind) => {
+    const valid = [], invalid = [];
+    const cellOf = (r, k) => (map[k] != null && map[k] >= 0) ? (r[map[k]] || "") : "";
+    parsed.rows.forEach((r, i) => {
+      const amount = Math.abs(parseNum(cellOf(r, "amount")));
+      if (!amount) { invalid.push({ i: i + 1, reason: "金額空白/非數字", raw: r.filter(Boolean).join(" | ").slice(0, 50) }); return; }
+      const kind = (map.kind >= 0 && cellOf(r, "kind")) ? kindFrom(cellOf(r, "kind")) : defKind;
+      valid.push({ id: rid("tx"), date: normDate(cellOf(r, "date")), kind, amount, from: kind === "income" ? "" : accId, to: kind === "income" ? accId : "", category: cellOf(r, "category"), vendor: cellOf(r, "vendor"), invoiceNo: "", note: cellOf(r, "note"), receipts: [] });
+    });
+    return { valid, invalid };
+  };
+  const projectedBalance = () => {
+    if (!imp?.preview || !imp.account) return null;
+    return imp.preview.valid.reduce((s, e) => s + (e.to === imp.account ? num(e.amount) : e.from === imp.account ? -num(e.amount) : 0), balanceOf(imp.account));
   };
 
   // ── 帳戶 CRUD ──
@@ -62,12 +91,16 @@ export default function FinanceView({ K, confirm, canEdit, ReceiptUploader }) {
   if (accounts === null || ledger === null) return <div style={{ padding: 40, textAlign: "center", color: C.faint }}>載入中…</div>;
 
   return (
-    <div style={{ maxWidth: 1180, margin: "8px auto", padding: "0 4px" }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 14 }}>
-        <div style={{ fontSize: 18, fontWeight: 700, color: C.text }}>💰 財務內帳</div>
-        <span style={{ fontSize: 12.5, color: C.sub }}>多帳戶總表（轉帳＝資金搬家不算成本；支出＝費用）</span>
+    <div style={{ maxWidth: 1240, margin: "8px auto", padding: "0 4px" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 16, paddingBottom: 12, borderBottom: `1px solid ${C.line}` }}>
+        <div style={{ fontSize: 19, fontWeight: 800, color: C.text, letterSpacing: -0.3 }}>財務內帳</div>
+        <span style={{ fontSize: 12, color: C.faint }}>多帳戶總表・轉帳不算成本</span>
         <div style={{ flex: 1 }} />
-        {[["overview", "📊 總覽"], ["accounts", "🏦 帳戶"], ["ledger", "🧾 交易明細"]].map(([k, l]) => Tab(k, l))}
+        <div style={{ display: "inline-flex", background: C.head, border: `1px solid ${C.line}`, borderRadius: 10, padding: 3, gap: 2 }}>
+          {[["overview", "📊 總覽"], ["accounts", "🏦 帳戶"], ["ledger", "🧾 交易明細"]].map(([k, l]) => (
+            <button key={k} onClick={() => setTab(k)} style={{ padding: "6px 16px", borderRadius: 7, border: "none", background: tab === k ? C.brand : "transparent", color: tab === k ? "#fff" : C.sub, fontSize: 13.5, fontWeight: 600, cursor: "pointer", transition: "all .12s" }}>{l}</button>
+          ))}
+        </div>
       </div>
 
       {tab === "overview" && (() => {
@@ -76,24 +109,25 @@ export default function FinanceView({ K, confirm, canEdit, ReceiptUploader }) {
         const loans = groups.貸款.reduce((s, a) => s + balanceOf(a.id), 0);
         const totalIn = ledger.filter(l => l.kind === "income").reduce((s, l) => s + num(l.amount), 0);
         const totalExp = ledger.filter(l => l.kind === "expense").reduce((s, l) => s + num(l.amount), 0);
-        const card = (label, val, color) => <div style={{ flex: "1 1 200px", background: "#fff", border: `1px solid ${C.line}`, borderRadius: 12, padding: "12px 16px" }}><div style={{ fontSize: 12, color: C.sub }}>{label}</div><div style={{ fontSize: 22, fontWeight: 800, color, fontVariantNumeric: "tabular-nums" }}>{fmt(val)}</div></div>;
+        const accColor = (t) => t === "loan" ? C.red : (t === "cash" || t === "petty") ? C.amber : C.blue;
+        const card = (label, val, color) => <div style={{ flex: "1 1 200px", background: C.card, border: `1px solid ${C.line}`, borderRadius: 12, padding: "14px 18px", boxShadow: "0 1px 3px rgba(0,0,0,.04)" }}><div style={{ fontSize: 12, color: C.sub, fontWeight: 600 }}>{label}</div><div style={{ fontSize: 26, fontWeight: 800, color, fontVariantNumeric: "tabular-nums", letterSpacing: -0.5, marginTop: 2 }}>{fmt(val)}</div></div>;
         return (
           <div>
-            <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 16 }}>
+            <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 12 }}>
               {card("資產餘額合計", assets, C.accent)}
               {card("貸款餘額（欠款）", loans, C.red)}
               {card("淨額（資產−欠款）", assets + loans, C.text)}
             </div>
-            <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 16, fontSize: 13, color: C.sub }}>
-              <span>本表累計：收入 <b style={{ color: C.accent }}>{fmt(totalIn)}</b>・支出 <b style={{ color: C.red }}>{fmt(totalExp)}</b></span>
-            </div>
+            <div style={{ marginBottom: 18, fontSize: 12.5, color: C.sub }}>本表累計：收入 <b style={{ color: C.accent }}>{fmt(totalIn)}</b>・支出 <b style={{ color: C.red }}>{fmt(totalExp)}</b></div>
+            <div style={{ fontSize: 13, fontWeight: 700, color: C.text, marginBottom: 10 }}>各帳戶餘額</div>
             {accounts.length === 0 ? <div style={{ padding: 30, textAlign: "center", color: C.faint }}>還沒有帳戶，去「🏦 帳戶」新增銀行/貸款/現金帳戶。</div> :
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(220px,1fr))", gap: 10 }}>
                 {accounts.map(a => { const b = balanceOf(a.id); return (
-                  <div key={a.id} style={{ background: "#fff", border: `1px solid ${C.line}`, borderRadius: 12, padding: "12px 14px" }}>
-                    <div style={{ fontSize: 11.5, color: C.faint }}>{typeLabel(a.type)}</div>
-                    <div style={{ fontSize: 14.5, fontWeight: 700, color: C.text, marginBottom: 4 }}>{a.name || "未命名帳戶"}</div>
-                    <div style={{ fontSize: 19, fontWeight: 800, color: b < 0 ? C.red : C.accent, fontVariantNumeric: "tabular-nums" }}>{fmt(b)}</div>
+                  <div key={a.id} style={{ background: C.card, border: `1px solid ${C.line}`, borderRadius: 12, padding: "12px 14px 12px 16px", position: "relative", overflow: "hidden", boxShadow: "0 1px 2px rgba(0,0,0,.03)" }}>
+                    <div style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: 4, background: accColor(a.type) }} />
+                    <div style={{ fontSize: 11, color: accColor(a.type), fontWeight: 700 }}>{typeLabel(a.type)}</div>
+                    <div style={{ fontSize: 14.5, fontWeight: 700, color: C.text, marginBottom: 6, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{a.name || "未命名帳戶"}</div>
+                    <div style={{ fontSize: 21, fontWeight: 800, color: b < 0 ? C.red : C.text, fontVariantNumeric: "tabular-nums", letterSpacing: -0.5 }}>{fmt(b)}</div>
                     <div style={{ fontSize: 11, color: C.faint, marginTop: 2 }}>期初 {fmt(num(a.opening))}</div>
                   </div>
                 ); })}
@@ -124,8 +158,14 @@ export default function FinanceView({ K, confirm, canEdit, ReceiptUploader }) {
 
       {tab === "ledger" && (() => {
         const sep = `1px solid ${C.line}`;
-        const gtc = "104px 78px 110px 130px 130px 110px 120px 110px 1fr 90px 30px";
-        const th = (l, click) => <div onClick={click} style={{ padding: "7px 6px", fontSize: 11, fontWeight: 600, color: C.faint, borderLeft: sep, cursor: click ? "pointer" : "default" }}>{l}</div>;
+        const single = fAcc !== "all" ? fAcc : null; // 篩到單一帳戶 → 顯示逐筆餘額（像銀行對帳單）
+        const running = {};
+        if (single) { const chron = (ledger || []).filter(l => l.from === single || l.to === single).sort((a, b) => (a.date || "") < (b.date || "") ? -1 : (a.date || "") > (b.date || "") ? 1 : 0); let bal = num(accounts.find(a => a.id === single)?.opening); chron.forEach(l => { bal += l.to === single ? num(l.amount) : l.from === single ? -num(l.amount) : 0; running[l.id] = bal; }); }
+        const inSum = rows.filter(r => r.kind === "income").reduce((s, r) => s + num(r.amount), 0);
+        const expSum = rows.filter(r => r.kind === "expense").reduce((s, r) => s + num(r.amount), 0);
+        const gtc = "98px 60px 116px 116px 116px 92px 104px 78px 1fr 124px 56px 24px";
+        const th = (l, align, click) => <div onClick={click} style={{ padding: "9px 8px", fontSize: 11, fontWeight: 700, color: C.sub, borderLeft: sep, cursor: click ? "pointer" : "default", textAlign: align || "left", letterSpacing: .3, userSelect: "none" }}>{l}</div>;
+        const cellI = { border: "1px solid transparent", borderRadius: 5, padding: "6px 7px", fontSize: 12.5, background: "transparent", color: C.text, boxSizing: "border-box", width: "100%", outline: "none" };
         const noAcc = accounts.length === 0;
         return (
           <div>
@@ -135,34 +175,124 @@ export default function FinanceView({ K, confirm, canEdit, ReceiptUploader }) {
               <select value={fAcc} onChange={e => setFAcc(e.target.value)} style={{ ...inp, width: 140 }}><option value="all">全部帳戶</option>{accounts.map(a => <option key={a.id} value={a.id}>{a.name || "未命名"}</option>)}</select>
               <div style={{ flex: 1 }} />
               <span style={{ fontSize: 12.5, color: C.sub }}>{rows.length} 筆・合計 <b style={{ color: C.text }}>{fmt(filteredSum)}</b></span>
+              <button onClick={() => { if (!guard()) return; setImp({ text: "", hasHeader: true, parsed: null, map: {}, account: accounts[0]?.id || "", defKind: "expense", preview: null, expected: "" }); }} disabled={noAcc} title={noAcc ? "請先建帳戶" : "從 Excel/Google 試算表整段貼上批量匯入"} style={{ background: "#fff", color: noAcc ? C.faint : "#b5512b", border: `1px solid ${noAcc ? C.line : "#b5512b"}`, borderRadius: 8, padding: "8px 14px", fontSize: 13, fontWeight: 600, cursor: noAcc ? "not-allowed" : "pointer" }}>📥 批量匯入</button>
               <button onClick={addLed} disabled={noAcc} title={noAcc ? "請先到「帳戶」建立至少一個帳戶" : ""} style={{ background: noAcc ? C.line : "#b5512b", color: "#fff", border: "none", borderRadius: 8, padding: "8px 14px", fontSize: 13, fontWeight: 600, cursor: noAcc ? "not-allowed" : "pointer" }}>＋ 新增交易</button>
             </div>
-            {noAcc ? <div style={{ padding: 30, textAlign: "center", color: C.faint, background: "#fff", border: sep, borderRadius: 12 }}>請先到 <b>🏦 帳戶</b> 建立帳戶，才能記交易。</div> :
-            <div style={{ overflowX: "auto", border: sep, borderRadius: 10, background: "#fff" }}>
-              <div style={{ minWidth: 1180 }}>
-                <div style={{ display: "grid", gridTemplateColumns: gtc, background: C.bg, borderBottom: sep }}>
-                  {th("日期 " + (sortDir === -1 ? "▼" : "▲"), () => setSortDir(d => -d))}{th("類型")}{th("金額")}{th("從帳戶（出）")}{th("到帳戶（進）")}{th("科目/工種")}{th("廠商")}{th("發票號")}{th("備註")}{th("憑證")}{th("")}
+            {noAcc ? <div style={{ padding: 30, textAlign: "center", color: C.faint, background: C.card, border: sep, borderRadius: 12 }}>請先到 <b>🏦 帳戶</b> 建立帳戶，才能記交易。</div> :
+            <div style={{ border: sep, borderRadius: 10, background: C.card, overflow: "hidden", boxShadow: "0 1px 3px rgba(0,0,0,.04)" }}>
+             <div style={{ maxHeight: "62vh", overflow: "auto" }}>
+              <div style={{ minWidth: 1240 }}>
+                <div style={{ display: "grid", gridTemplateColumns: gtc, background: C.head, borderBottom: sep, position: "sticky", top: 0, zIndex: 2 }}>
+                  {th(`日期 ${sortDir === -1 ? "▼" : "▲"}`, "left", () => setSortDir(d => -d))}{th("類型")}{th("金額", "right")}{th("從帳戶 出")}{th("到帳戶 進")}{th("科目/工種")}{th("廠商")}{th("發票")}{th("備註")}{th(single ? "帳戶餘額" : "餘額", "right")}{th("憑證", "center")}{th("")}
                 </div>
-                {rows.length === 0 ? <div style={{ padding: 22, textAlign: "center", color: C.faint, fontSize: 13 }}>沒有符合的交易，點「＋ 新增交易」</div> :
-                 rows.map((l, i) => { const km = kindMeta(l.kind); return (
-                  <div key={l.id} style={{ display: "grid", gridTemplateColumns: gtc, alignItems: "center", background: i % 2 ? "#FBF8F0" : "#fff", borderTop: i ? "1px solid #F3EEE1" : "none", gap: 3, padding: "4px 4px" }}>
-                    <input type="date" value={String(l.date || "").replace(/\//g, "-").slice(0, 10)} onChange={e => updLed(l.id, "date", e.target.value)} style={{ ...dateInp, width: "100%" }} />
-                    <select value={l.kind} onChange={e => updLed(l.id, "kind", e.target.value)} style={{ ...inp, border: "none", color: km[2], fontWeight: 600, padding: "5px 2px" }}>{KINDS.map(([v, lb]) => <option key={v} value={v}>{lb}</option>)}</select>
-                    <input value={blankZero(l.amount)} onChange={e => updLed(l.id, "amount", num(e.target.value))} type="number" placeholder="0" style={{ ...inp, fontFamily: "monospace", fontWeight: 600 }} />
-                    <select value={l.from || ""} onChange={e => updLed(l.id, "from", e.target.value)} style={{ ...inp, opacity: l.kind === "income" ? 0.5 : 1 }}><option value="">—</option>{accounts.map(a => <option key={a.id} value={a.id}>{a.name || "未命名"}</option>)}</select>
-                    <select value={l.to || ""} onChange={e => updLed(l.id, "to", e.target.value)} style={{ ...inp, opacity: l.kind === "expense" ? 0.5 : 1 }}><option value="">—</option>{accounts.map(a => <option key={a.id} value={a.id}>{a.name || "未命名"}</option>)}</select>
-                    <input value={l.category || ""} onChange={e => updLed(l.id, "category", e.target.value)} placeholder={l.kind === "expense" ? "科目/工種" : "—"} style={inp} />
-                    <input value={l.vendor || ""} onChange={e => updLed(l.id, "vendor", e.target.value)} placeholder="廠商/對象" style={inp} />
-                    <input value={l.invoiceNo || ""} onChange={e => updLed(l.id, "invoiceNo", e.target.value)} placeholder="發票號" style={inp} />
-                    <input value={l.note || ""} onChange={e => updLed(l.id, "note", e.target.value)} placeholder="備註" style={inp} />
-                    <div style={{ display: "flex", alignItems: "center", justifyContent: "center" }}>{ReceiptUploader ? <ReceiptUploader receipts={l.receipts || []} onChange={r => updLed(l.id, "receipts", r)} size={22} /> : null}</div>
-                    <button onClick={() => delLed(l)} title="刪除" style={{ background: "none", border: "none", color: C.faint, cursor: "pointer", fontSize: 16 }}>×</button>
+                {rows.length === 0 ? <div style={{ padding: 22, textAlign: "center", color: C.faint, fontSize: 13 }}>沒有符合的交易，點「＋ 新增交易」或「📥 批量匯入」</div> :
+                 rows.map((l, i) => { const km = kindMeta(l.kind); const rb = single ? running[l.id] : null; return (
+                  <div key={l.id} style={{ display: "grid", gridTemplateColumns: gtc, alignItems: "center", background: i % 2 ? "#FBFAF5" : C.card, borderTop: "1px solid #F1ECDD" }}>
+                    <input type="date" value={String(l.date || "").replace(/\//g, "-").slice(0, 10)} onChange={e => updLed(l.id, "date", e.target.value)} style={{ ...cellI, ...dateInp, fontSize: 12 }} />
+                    <select value={l.kind} onChange={e => updLed(l.id, "kind", e.target.value)} style={{ ...cellI, color: km[2], fontWeight: 700, padding: "6px 2px" }}>{KINDS.map(([v, lb]) => <option key={v} value={v}>{lb}</option>)}</select>
+                    <input value={blankZero(l.amount)} onChange={e => updLed(l.id, "amount", num(e.target.value))} type="number" placeholder="0" style={{ ...cellI, fontFamily: "ui-monospace, monospace", fontWeight: 700, textAlign: "right", color: km[2] }} />
+                    <select value={l.from || ""} onChange={e => updLed(l.id, "from", e.target.value)} style={{ ...cellI, opacity: l.kind === "income" ? 0.45 : 1 }}><option value="">—</option>{accounts.map(a => <option key={a.id} value={a.id}>{a.name || "未命名"}</option>)}</select>
+                    <select value={l.to || ""} onChange={e => updLed(l.id, "to", e.target.value)} style={{ ...cellI, opacity: l.kind === "expense" ? 0.45 : 1 }}><option value="">—</option>{accounts.map(a => <option key={a.id} value={a.id}>{a.name || "未命名"}</option>)}</select>
+                    <input value={l.category || ""} onChange={e => updLed(l.id, "category", e.target.value)} placeholder={l.kind === "expense" ? "科目/工種" : "—"} style={cellI} />
+                    <input value={l.vendor || ""} onChange={e => updLed(l.id, "vendor", e.target.value)} placeholder="廠商/對象" style={cellI} />
+                    <input value={l.invoiceNo || ""} onChange={e => updLed(l.id, "invoiceNo", e.target.value)} placeholder="—" style={cellI} />
+                    <input value={l.note || ""} onChange={e => updLed(l.id, "note", e.target.value)} placeholder="備註" style={cellI} />
+                    <div style={{ padding: "6px 8px", textAlign: "right", fontFamily: "ui-monospace, monospace", fontSize: 12.5, fontWeight: 600, color: rb == null ? C.faint : rb < 0 ? C.red : C.text }}>{rb == null ? "·" : fmt(rb)}</div>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "center" }}>{ReceiptUploader ? <ReceiptUploader receipts={l.receipts || []} onChange={r => updLed(l.id, "receipts", r)} size={20} /> : null}</div>
+                    <button onClick={() => delLed(l)} title="刪除" style={{ background: "none", border: "none", color: C.faint, cursor: "pointer", fontSize: 15 }} onMouseEnter={e => e.currentTarget.style.color = C.red} onMouseLeave={e => e.currentTarget.style.color = C.faint}>×</button>
                   </div>
                 ); })}
               </div>
+             </div>
+             {/* 合計列 */}
+             <div style={{ display: "flex", gap: 18, justifyContent: "flex-end", alignItems: "center", padding: "9px 14px", borderTop: `2px solid ${C.line}`, background: C.head, fontSize: 12.5, fontVariantNumeric: "tabular-nums" }}>
+               <span style={{ color: C.sub }}>本頁 {rows.length} 筆</span>
+               <span style={{ color: C.sub }}>收入 <b style={{ color: C.accent }}>{fmt(inSum)}</b></span>
+               <span style={{ color: C.sub }}>支出 <b style={{ color: C.red }}>{fmt(expSum)}</b></span>
+               <span style={{ color: C.sub }}>淨 <b style={{ color: (inSum - expSum) < 0 ? C.red : C.text }}>{fmt(inSum - expSum)}</b></span>
+               {single && <span style={{ color: C.sub }}>此帳戶餘額 <b style={{ color: balanceOf(single) < 0 ? C.red : C.accent }}>{fmt(balanceOf(single))}</b></span>}
+             </div>
             </div>}
             <div style={{ fontSize: 11.5, color: C.faint, marginTop: 8, lineHeight: 1.7 }}>
-              類型：<b>支出</b>＝從某帳戶付出去（算費用，標科目/工種）；<b>轉帳</b>＝帳戶間搬錢（不算成本，要選「從／到」）；<b>收入</b>＝錢進某帳戶。餘額＝期初＋Σ進−Σ出，會即時反映到「總覽／帳戶」。
+              <b>支出</b>＝從某帳戶付出去（標科目/工種）；<b>轉帳</b>＝帳戶間搬錢（不算成本，選「從／到」）；<b>收入</b>＝錢進某帳戶。<b>篩選單一帳戶</b>時右側顯示逐筆餘額（像對帳單）。
+            </div>
+          </div>
+        );
+      })()}
+
+      {imp && (() => {
+        const fields = [["date", "日期", true], ["amount", "金額", true], ["kind", "類型(選填)", false], ["category", "科目/工種", false], ["vendor", "廠商/對象", false], ["note", "備註", false]];
+        const proj = projectedBalance();
+        const expNum = parseNum(imp.expected);
+        const diff = proj != null && imp.expected !== "" ? proj - expNum : null;
+        return (
+          <div onClick={e => e.target === e.currentTarget && setImp(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.4)", zIndex: 600, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+            <div style={{ background: "#fff", borderRadius: 14, padding: 20, width: "min(820px,97vw)", maxHeight: "90vh", overflowY: "auto" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }}>
+                <div style={{ fontSize: 16, fontWeight: 700, color: C.text }}>📥 批量匯入交易</div>
+                <span style={{ fontSize: 12, color: C.faint }}>從 Excel／Google 試算表整段框選複製，貼到下面</span>
+                <div style={{ flex: 1 }} />
+                <button onClick={() => setImp(null)} style={{ background: "none", border: "none", fontSize: 22, cursor: "pointer", color: C.sub }}>×</button>
+              </div>
+
+              {!imp.parsed ? (
+                <>
+                  <textarea value={imp.text} onChange={e => setImp(p => ({ ...p, text: e.target.value }))} placeholder="日期(Tab)金額(Tab)廠商(Tab)…　每列一筆交易" rows={9} style={{ width: "100%", boxSizing: "border-box", border: `1px solid ${C.line}`, borderRadius: 8, padding: 10, fontSize: 13, fontFamily: "monospace" }} />
+                  <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 10, flexWrap: "wrap" }}>
+                    <label style={{ fontSize: 13, color: C.sub, display: "flex", alignItems: "center", gap: 6, cursor: "pointer" }}><input type="checkbox" checked={imp.hasHeader} onChange={e => setImp(p => ({ ...p, hasHeader: e.target.checked }))} /> 第一列是標題</label>
+                    <div style={{ flex: 1 }} />
+                    <button onClick={() => { const parsed = parsePaste(imp.text, imp.hasHeader); if (!parsed) { alert("沒有解析到資料"); return; } setImp(p => ({ ...p, parsed, map: guessMap(parsed.headers), preview: null })); }} disabled={!imp.text.trim()} style={{ background: imp.text.trim() ? "#b5512b" : C.line, color: "#fff", border: "none", borderRadius: 8, padding: "8px 18px", fontSize: 13.5, fontWeight: 600, cursor: imp.text.trim() ? "pointer" : "not-allowed" }}>解析 →</button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div style={{ fontSize: 13, color: C.sub, marginBottom: 12 }}>解析到 <b style={{ color: C.text }}>{imp.parsed.rows.length}</b> 列、<b style={{ color: C.text }}>{imp.parsed.headers.length}</b> 欄。<button onClick={() => setImp(p => ({ ...p, parsed: null, preview: null }))} style={{ background: "none", border: "none", color: "#b5512b", cursor: "pointer", fontSize: 12.5 }}>← 重貼</button></div>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: C.text, marginBottom: 8 }}>① 欄位對應</div>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(220px,1fr))", gap: 8, marginBottom: 14 }}>
+                    {fields.map(([k, label, req]) => (
+                      <label key={k} style={{ fontSize: 12.5, color: C.sub }}>{label}{req && <span style={{ color: C.red }}>*</span>}<br />
+                        <select value={imp.map[k] ?? -1} onChange={e => setImp(p => ({ ...p, map: { ...p.map, [k]: Number(e.target.value) }, preview: null }))} style={{ ...inp, width: "100%", marginTop: 3 }}>
+                          <option value={-1}>—（無）</option>
+                          {imp.parsed.headers.map((h, idx) => <option key={idx} value={idx}>{h || `第${idx + 1}欄`}</option>)}
+                        </select>
+                      </label>
+                    ))}
+                  </div>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: C.text, marginBottom: 8 }}>② 這批屬於哪個帳戶 ＆ 預設類型</div>
+                  <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginBottom: 14 }}>
+                    <select value={imp.account} onChange={e => setImp(p => ({ ...p, account: e.target.value, preview: null }))} style={{ ...inp, width: 200 }}>{accounts.map(a => <option key={a.id} value={a.id}>{a.name || "未命名"}</option>)}</select>
+                    <select value={imp.defKind} onChange={e => setImp(p => ({ ...p, defKind: e.target.value, preview: null }))} style={{ ...inp, width: 130 }}>{KINDS.map(([v, l]) => <option key={v} value={v}>預設：{l}</option>)}</select>
+                    <button onClick={() => { if (imp.map.amount == null || imp.map.amount < 0) { alert("請先對應「金額」欄"); return; } setImp(p => ({ ...p, preview: buildPreview(p.parsed, p.map, p.account, p.defKind) })); }} style={{ background: "#fff", color: "#b5512b", border: "1px solid #b5512b", borderRadius: 8, padding: "8px 16px", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>產生預覽 →</button>
+                  </div>
+
+                  {imp.preview && (
+                    <div style={{ borderTop: `1px solid ${C.line}`, paddingTop: 12 }}>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: C.text, marginBottom: 8 }}>③ 預覽＋驗證</div>
+                      <div style={{ fontSize: 13, marginBottom: 8 }}>✅ 可匯入 <b style={{ color: C.accent }}>{imp.preview.valid.length}</b> 筆{imp.preview.invalid.length > 0 && <>　⚠️ 跳過 <b style={{ color: C.red }}>{imp.preview.invalid.length}</b> 筆</>}</div>
+                      {imp.preview.invalid.length > 0 && <div style={{ background: "#FEF2F2", border: "1px solid #FCA5A5", borderRadius: 8, padding: "8px 10px", marginBottom: 10, fontSize: 11.5, color: "#B91C1C", maxHeight: 100, overflowY: "auto" }}>{imp.preview.invalid.slice(0, 12).map(x => <div key={x.i}>第{x.i}列：{x.reason}　{x.raw}</div>)}</div>}
+                      <div style={{ maxHeight: 180, overflowY: "auto", border: `1px solid ${C.line}`, borderRadius: 8, marginBottom: 12 }}>
+                        {imp.preview.valid.slice(0, 30).map(e => { const km = kindMeta(e.kind); return (
+                          <div key={e.id} style={{ display: "flex", gap: 8, padding: "4px 8px", fontSize: 12, borderBottom: "1px solid #F3EEE1", alignItems: "center" }}>
+                            <span style={{ width: 78, color: C.faint }}>{e.date || "(無日期)"}</span>
+                            <span style={{ width: 40, color: km[2], fontWeight: 600 }}>{km[1]}</span>
+                            <span style={{ width: 90, textAlign: "right", fontFamily: "monospace" }}>{fmt(e.amount)}</span>
+                            <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: C.sub }}>{[e.category, e.vendor, e.note].filter(Boolean).join("・")}</span>
+                          </div>
+                        ); })}
+                      </div>
+
+                      <div style={{ fontSize: 13, fontWeight: 700, color: C.text, marginBottom: 8 }}>④ 餘額對帳（選填，強烈建議）</div>
+                      <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginBottom: 6, fontSize: 13 }}>
+                        <span style={{ color: C.sub }}>你試算表上「{accName(imp.account)}」的期末餘額：</span>
+                        <input value={imp.expected} onChange={e => setImp(p => ({ ...p, expected: e.target.value }))} type="number" placeholder="（輸入做對帳）" style={{ ...inp, width: 160, fontFamily: "monospace" }} />
+                      </div>
+                      {proj != null && <div style={{ fontSize: 12.5, color: C.sub, marginBottom: 12 }}>匯入後系統算的餘額 = <b style={{ color: C.text }}>{fmt(proj)}</b>{diff != null && (Math.abs(diff) < 1 ? <b style={{ color: C.accent }}> ✅ 與你的期末一致</b> : <b style={{ color: C.red }}> ⚠️ 差 {fmt(diff)}（檢查是否漏/重）</b>)}</div>}
+
+                      <button onClick={async () => { if (!imp.preview.valid.length) return; if (!(await confirm(`確認把 ${imp.preview.valid.length} 筆匯入「${accName(imp.account)}」？`, { confirmLabel: "匯入" }))) return; saveLed([...imp.preview.valid, ...ledger]); setImp(null); }} disabled={!imp.preview.valid.length} style={{ background: imp.preview.valid.length ? C.accent : C.line, color: "#fff", border: "none", borderRadius: 8, padding: "10px 20px", fontSize: 14, fontWeight: 700, cursor: imp.preview.valid.length ? "pointer" : "not-allowed" }}>✅ 確認匯入 {imp.preview.valid.length} 筆</button>
+                    </div>
+                  )}
+                </>
+              )}
             </div>
           </div>
         );
