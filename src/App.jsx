@@ -3195,7 +3195,7 @@ function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols,
             <div style={{ border: `2px dashed ${BORDER}`, borderRadius: 10, padding: "18px 10px", textAlign: "center", fontSize: 13, color: "#A99F88", marginBottom: 10, background: "#FBF7EE" }}>📋 在此按 <b style={{ color: ACCENT }}>Cmd+V</b> 貼上截圖</div>
             <div style={{ display: "flex", gap: 8 }}>
               <label style={{ flex: 1, textAlign: "center", border: `1px solid ${BORDER}`, borderRadius: 8, padding: "8px", fontSize: 13, cursor: "pointer", color: TEXT, background: SURFACE }}>📎 選擇檔案
-                <input type="file" accept="image/*,application/pdf" multiple style={{ display: "none" }} onChange={e => { const fs = e.target.files; e.target.value = ""; addReceipts(rcpAdd.catId, cats.find(c=>c.id===rcpAdd.catId)?.items.find(i=>i.id===rcpAdd.item.id) || rcpAdd.item, fs); setRcpAdd(null); }} />
+                <input type="file" accept="*/*" multiple style={{ display: "none" }} onChange={e => { const fs = e.target.files; e.target.value = ""; addReceipts(rcpAdd.catId, cats.find(c=>c.id===rcpAdd.catId)?.items.find(i=>i.id===rcpAdd.item.id) || rcpAdd.item, fs); setRcpAdd(null); }} />
               </label>
               <button onClick={() => setRcpAdd(null)} style={{ border: `1px solid ${BORDER}`, background: "#fff", color: SUB, borderRadius: 8, padding: "8px 12px", fontSize: 13, cursor: "pointer" }}>取消</button>
             </div>
@@ -3366,7 +3366,7 @@ function PaymentsPanel({ cat, setCats, onClose, confirm }) {
           {thumbs(draft.receipts, (ri) => setDraft({ ...draft, receipts: draft.receipts.filter((_, i) => i !== ri) }))}
           <label style={{ fontSize: 12, border: "1px dashed #D8CFBB", borderRadius: 6, padding: "6px 12px", cursor: "pointer", color: "#6F6656" }}>
             {busy ? "上傳中…" : "📎 上傳憑證"}
-            <input type="file" accept="image/*,application/pdf" multiple style={{ display: "none" }} onChange={async e => { const f = e.target.files; e.target.value = ""; const up = await uploadRcp(f); if (up.length) setDraft(d => ({ ...d, receipts: [...d.receipts, ...up] })); }} />
+            <input type="file" accept="*/*" multiple style={{ display: "none" }} onChange={async e => { const f = e.target.files; e.target.value = ""; const up = await uploadRcp(f); if (up.length) setDraft(d => ({ ...d, receipts: [...d.receipts, ...up] })); }} />
           </label>
           <div style={{ flex: 1 }} />
           <button onClick={addPayment} disabled={!(Number(draft.amount) > 0)} style={{ background: Number(draft.amount) > 0 ? "#3C8C3C" : "#C8BCA0", color: "#fff", border: "none", borderRadius: 8, padding: "8px 18px", fontSize: 13, fontWeight: 600, cursor: Number(draft.amount) > 0 ? "pointer" : "default" }}>新增</button>
@@ -3422,7 +3422,7 @@ function PaymentsPanel({ cat, setCats, onClose, confirm }) {
             {thumbs(p.receipts, (ri) => removeRcp(p.id, ri))}
             <label style={{ fontSize: 11, border: "1px dashed #D8CFBB", borderRadius: 6, padding: "4px 10px", cursor: "pointer", color: "#6F6656" }}>
               {busy ? "上傳中…" : "📎 加憑證"}
-              <input type="file" accept="image/*,application/pdf" multiple style={{ display: "none" }} onChange={async e => { const f = e.target.files; e.target.value = ""; const up = await uploadRcp(f); if (up.length) editPay(p.id, "receipts", [...(p.receipts || []), ...up]); }} />
+              <input type="file" accept="*/*" multiple style={{ display: "none" }} onChange={async e => { const f = e.target.files; e.target.value = ""; const up = await uploadRcp(f); if (up.length) editPay(p.id, "receipts", [...(p.receipts || []), ...up]); }} />
             </label>
           </div>
         </div>
@@ -5282,7 +5282,7 @@ function ItemPanel({ cat, item, cats, setCats, onClose, confirm }) {
           ))}
           <label style={{ width: 80, height: 80, borderRadius: 8, border: "1px dashed #D8CFBB", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 4, cursor: "pointer", color: "#A99F88", fontSize: 12 }}>
             <span style={{ fontSize: 22 }}>{rcpBusy ? "…" : "＋"}</span>{rcpBusy ? "上傳中" : "上傳"}
-            <input type="file" accept="image/*,application/pdf" multiple style={{ display: "none" }} onChange={e => { addReceipts(e.target.files); e.target.value = ""; }} />
+            <input type="file" accept="*/*" multiple style={{ display: "none" }} onChange={e => { addReceipts(e.target.files); e.target.value = ""; }} />
           </label>
         </div>
       </div>
@@ -6211,7 +6211,7 @@ function ReceiptUploader({ receipts = [], onChange, size = 26 }) {
   };
   return (
     <div onPaste={onPaste} style={{ display: "flex", alignItems: "center", gap: 4, flexWrap: "wrap" }}>
-      <input ref={inputRef} type="file" accept="image/*,application/pdf" multiple style={{ display: "none" }} onChange={e => { add(e.target.files); e.target.value = ""; }} />
+      <input ref={inputRef} type="file" accept="*/*" multiple style={{ display: "none" }} onChange={e => { add(e.target.files); e.target.value = ""; }} />
       {(receipts || []).map(r => (
         <span key={r.id} style={{ position: "relative", display: "inline-flex" }}>
           {r.isImage
