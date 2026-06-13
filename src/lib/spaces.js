@@ -3,6 +3,7 @@ export const SPACES = [
   { id: "construction", name: "工程專案", icon: "🏗" },
   { id: "team",         name: "團隊工作", icon: "👥" },
   { id: "crew",         name: "夥伴中心", icon: "🤝" },
+  { id: "finance",      name: "財務內帳", icon: "💰" },
 ];
 // 每個空間的外觀客製（顯示成本與否、隱藏分頁、名詞、AI 角色、專屬分頁）
 export const SPACE_CONF = {
@@ -26,6 +27,15 @@ export const SPACE_CONF = {
     hideKpi: true, // 夥伴中心頂部不顯示工程 KPI
     labels: { cat: "項目", item: "項目", overview: "資料庫", gantt: "進度", subtitle: "夥伴中心" },
     aiRole: "你是餐飲團隊的夥伴中心助理，協助夥伴查找內外場 SOP/手冊/教學等資料、解答工作問題。請用繁體中文、親切清楚。",
+  },
+  finance: {
+    showCost: true, // 內帳全是金額，受看金額權限控管
+    hideTabs: [],
+    tabs: [["finance", "內帳總表", "💰"]], // 財務空間：單一入口，內部再分子分頁（總覽/帳戶/交易）
+    defaultView: "finance",
+    hideKpi: true, // 不顯示工程 KPI
+    labels: { cat: "科目", item: "交易", overview: "財務總覽", gantt: "—", subtitle: "多帳戶內帳總表" },
+    aiRole: "你是公司財務內帳助理，協助管理多個銀行/貸款/現金帳戶、記錄交易、對帳與餘額試算。請用繁體中文、精準務實。",
   },
 };
 // ── 權限矩陣：每個空間有哪些頁面、各頁是否有「可編輯」「看金額」維度（帳號權限二合一矩陣用）──
@@ -57,9 +67,12 @@ export const PERM_MATRIX = {
     ["shop", "商城", { edit: 1 }],
     ["rank", "排行榜", {}],
   ],
+  finance: [
+    ["finance", "內帳總表", { edit: 1, money: 1 }],
+  ],
 };
 // 舊資料相容：以前的可編輯權限只有 data/files/advisor 三類，對應到各頁
-export const LEGACY_EDIT = { overview: "data", gantt: "data", petty: "data", issues: "data", owner: "data", groups: "data", kb: "data", r360: "data", fb: "data", quest: "data", poll: "data", shop: "data", rank: "data", files: "files", compare: "files", advisor: "advisor" };
+export const LEGACY_EDIT = { overview: "data", gantt: "data", petty: "data", issues: "data", owner: "data", groups: "data", kb: "data", r360: "data", fb: "data", quest: "data", poll: "data", shop: "data", rank: "data", finance: "data", files: "files", compare: "files", advisor: "advisor" };
 export const PERM_NONE = "__none__"; // 哨兵：陣列＝[PERM_NONE] 代表「明確全關」(與空陣列＝預設全開 區分)
 // 預設身份範本（連動式）。陣列規則同矩陣：[]＝全開、[PERM_NONE]＝全關、其餘＝明確允許清單。
 export const DEFAULT_ROLES = [
