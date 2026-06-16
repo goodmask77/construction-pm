@@ -147,10 +147,13 @@ export default async function handler(req, res) {
       await registerGroup(gid, ev.source?.type)
       const text = (ev.message.text || '').trim()
       const isDM = ev.source?.type === 'user' // 一對一私訊
-      const mentionedSelf = (ev.message?.mention?.mentionees || []).some((m) => m.isSelf)
-      const named = mentionedSelf || /d哥|＠d|@d/i.test(text) // 群組只在「被@ 或叫到 D哥」時才回，避免插嘴別人對話
-      console.log('event', JSON.stringify({ src: ev.source?.type, isDM, named, text: text.slice(0, 40) }))
-      if (!isDM && !named) continue // 私訊一律回；群組必須被點名
+      // 只在「真的被 @到本帳號」(排除 @All/@他人) 或「明確叫到 D哥」時才回。
+      // 移除舊的 /@d/：它會誤中別人的 @Doris、@David… 導致 D 插嘴。
+      const mentionees = ev.message?.mention?.mentionees || []
+      const mentionedSelf = mentionees.some((m) => m.isSelf === true && m.type !== 'all')
+      const named = mentionedSelf || /d哥/i.test(text)
+      console.log('event', JSON.stringify({ src: ev.source?.type, isDM, named, mSelf: mentionedSelf, text: text.slice(0, 40) }))
+      if (!isDM && !named) continue // 私訊一律回；群組必須被點名（@本帳號 或 講「D哥」）
       const snaps = await loadSnapshots()
       const reply = await answer(text, snaps)
       console.log('answer', JSON.stringify({ snaps: snaps.length, replyLen: reply.length }))
