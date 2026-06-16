@@ -103,9 +103,29 @@ async function loadAccounts() {
   } catch (_) { return '' }
 }
 
-async function answer(question, snaps, accountsText) {
+// 財務內帳（多帳戶 + 交易 + 科目）→ 文字
+async function loadFinanceText() {
+  try {
+    const fin = await kvGetMany(['sp_finance_pm_fin_accounts', 'sp_finance_pm_fin_ledger', 'sp_finance_pm_fin_coa'])
+    const accs = fin['sp_finance_pm_fin_accounts'] || [], led = fin['sp_finance_pm_fin_ledger'] || [], coa = fin['sp_finance_pm_fin_coa'] || []
+    if (!accs.length && !led.length) return ''
+    const n = (v) => Number(String(v ?? '').replace(/[^0-9.\-]/g, '')) || 0
+    const bal = (id) => { let b = n((accs.find(a => a.id === id) || {}).opening); led.forEach(l => { if (l.to === id) b += n(l.amount); if (l.from === id) b -= n(l.amount); }); return b }
+    const lines = ['\n\n【財務內帳（多帳戶總表）】']
+    if (accs.length) { lines.push('各帳戶餘額：'); accs.forEach(a => lines.push(`  - ${a.name || '未命名'} 餘額 NT$${Math.round(bal(a.id)).toLocaleString()}`)) }
+    const inc = led.filter(l => l.kind === 'income').reduce((s, l) => s + n(l.amount), 0)
+    const exp = led.filter(l => l.kind === 'expense').reduce((s, l) => s + n(l.amount), 0)
+    lines.push(`交易共 ${led.length} 筆，累計收入 NT$${Math.round(inc).toLocaleString()}、支出 NT$${Math.round(exp).toLocaleString()}`)
+    const recent = [...led].sort((a, b) => (a.date < b.date ? 1 : -1)).slice(0, 15)
+    if (recent.length) { lines.push('最近交易：'); recent.forEach(l => lines.push(`  - ${l.date || ''} ${l.kind === 'income' ? '收入' : l.kind === 'transfer' ? '轉帳' : '支出'} ${Math.round(n(l.amount)).toLocaleString()} ${[l.category, l.vendor, l.note].filter(Boolean).join('・')}`)) }
+    if (coa.length) lines.push(`會計科目樹：共 ${coa.length} 個科目（大項/中項/細項）`)
+    return lines.join('\n')
+  } catch (_) { return '' }
+}
+
+async function answer(question, snaps, accountsText, financeText) {
   if (!ANTHROPIC) return '（D哥的 AI 金鑰尚未設定。）'
-  const system = '你是「D哥」，喬亞國際餐飲工程專案的 LINE 助理。\n規則：①只根據下方「目前資料」回答，數字直接引用、不要自己亂算。②如果使用者問的東西資料裡沒有（例如現場尺寸、深度、材質、施工細節、與本專案無關的閒聊），就**直接簡短說「這個我沒有資料」**，不要改用進度或其他數字硬湊答案。③答案要對準問題，問什麼答什麼，不要不相關地報整體進度。④用繁體中文、簡短口語、必要時條列。\n\n【目前資料】\n' + snapshotsToContext(snaps) + (accountsText || '')
+  const system = '你是「D哥」，喬亞國際餐飲的 LINE 全能助理，掌握 App 內幾乎所有資料：工程專案（預算/付款/進度/工序日誌/零用金/ToDo/有問題項目）、財務內帳（多帳戶/交易/餘額/科目）、App 帳號清單。\n規則：①只根據下方「目前資料」回答，數字直接引用、不要亂算。②下方資料涵蓋 App 內絕大多數資訊——**優先從裡面找答案，能答就答清楚完整**。③**只有「App 完全沒有的東西」**（例如現場實際尺寸/深度/材質、與公司無關的閒聊）才說「這個我沒有資料」；不要把 App 裡明明有的（帳號、財務、進度…）也說沒有。④答案對準問題，用繁體中文、簡短口語、必要時條列。\n\n【目前資料】\n' + snapshotsToContext(snaps) + (accountsText || '') + (financeText || '')
   try {
     const r = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
@@ -154,8 +174,8 @@ export default async function handler(req, res) {
       const named = mentionedSelf || /d哥/i.test(text)
       console.log('event', JSON.stringify({ src: ev.source?.type, isDM, named, mSelf: mentionedSelf, text: text.slice(0, 40) }))
       if (!isDM && !named) continue // 私訊一律回；群組必須被點名（@本帳號 或 講「D哥」）
-      const snaps = await loadSnapshots()
-      const reply = await answer(text, snaps)
+      const [snaps, accountsText, financeText] = await Promise.all([loadSnapshots(), loadAccounts(), loadFinanceText()])
+      const reply = await answer(text, snaps, accountsText, financeText)
       console.log('answer', JSON.stringify({ snaps: snaps.length, replyLen: reply.length }))
       if (ev.replyToken) await lineReply(ev.replyToken, reply)
     } catch (e) { console.log('event error', e?.message) }
