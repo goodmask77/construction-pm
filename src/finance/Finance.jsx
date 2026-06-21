@@ -2,7 +2,7 @@
 // 自成一格：自己載入/儲存資料（pm_fin_accounts / pm_fin_ledger，依目前空間前綴）。
 // 核心觀念（照內帳藍圖）：帳戶(accounts) + 交易明細(ledger)，分開「資金流(轉帳)」與「費用(支出)」。
 // 未來財務負責人接手開發，原則上只動這個資料夾，碰不到工程/總覽。
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { fmt } from "../lib/cost.js";
 import { parseNum, blankZero } from "../lib/num.js";
 
@@ -38,7 +38,10 @@ function SEED_COA() {
   return out;
 }
 
-export default function FinanceView({ K, confirm, canEdit, ReceiptUploader }) {
+export default function FinanceView({ K, confirm, canEdit, ReceiptUploader, onLog }) {
+  // 操作紀錄：逐筆敲字的編輯做節流（同訊息 8 秒內只記一次），新增/刪除/匯入等明確動作即時記
+  const lastLog = useRef({});
+  const logT = (action, detail, ms = 8000) => { if (!onLog) return; const now = Date.now(); if (lastLog.current[detail] && now - lastLog.current[detail] < ms) return; lastLog.current[detail] = now; onLog(action, detail); };
   const [tab, setTab] = useState("ledger");      // overview | accounts | ledger
   const [accounts, setAccounts] = useState(null); // null=載入中
   const [ledger, setLedger] = useState(null);
@@ -98,14 +101,14 @@ export default function FinanceView({ K, confirm, canEdit, ReceiptUploader }) {
   };
 
   // ── 帳戶 CRUD ──
-  const addAcc = () => guard() && saveAcc([...(accounts || []), { id: rid("acc"), name: "", type: "bank", opening: 0, note: "", active: true }]);
-  const updAcc = (id, k, v) => saveAcc(accounts.map(a => a.id === id ? { ...a, [k]: v } : a));
-  const delAcc = async (a) => { if (!guard()) return; const used = (ledger || []).some(l => l.from === a.id || l.to === a.id); if (!(await confirm(`刪除帳戶「${a.name || "未命名"}」？${used ? "（仍有交易用到它，刪後那些交易會標示「已刪帳戶」）" : ""}`, { confirmLabel: "刪除" }))) return; saveAcc(accounts.filter(x => x.id !== a.id)); };
+  const addAcc = () => { if (!guard()) return; onLog?.("新增", "新增財務帳戶"); saveAcc([...(accounts || []), { id: rid("acc"), name: "", type: "bank", opening: 0, note: "", active: true }]); };
+  const updAcc = (id, k, v) => { logT("編輯", "編輯財務帳戶"); saveAcc(accounts.map(a => a.id === id ? { ...a, [k]: v } : a)); };
+  const delAcc = async (a) => { if (!guard()) return; const used = (ledger || []).some(l => l.from === a.id || l.to === a.id); if (!(await confirm(`刪除帳戶「${a.name || "未命名"}」？${used ? "（仍有交易用到它，刪後那些交易會標示「已刪帳戶」）" : ""}`, { confirmLabel: "刪除" }))) return; onLog?.("刪除", `刪除財務帳戶「${a.name || "未命名"}」`); saveAcc(accounts.filter(x => x.id !== a.id)); };
 
   // ── 交易 CRUD ──
-  const addLed = () => guard() && saveLed([{ id: rid("tx"), date: "", kind: "expense", amount: 0, from: accounts[0]?.id || "", to: "", category: "", vendor: "", invoiceNo: "", note: "", receipts: [] }, ...ledger]);
-  const updLed = (id, k, v) => saveLed(ledger.map(l => l.id === id ? { ...l, [k]: v } : l));
-  const delLed = async (l) => { if (!guard()) return; if (!(await confirm(`刪除這筆交易（${fmt(num(l.amount))}）？`, { confirmLabel: "刪除" }))) return; saveLed(ledger.filter(x => x.id !== l.id)); };
+  const addLed = () => { if (!guard()) return; onLog?.("新增", "新增財務交易"); saveLed([{ id: rid("tx"), date: "", kind: "expense", amount: 0, from: accounts[0]?.id || "", to: "", category: "", vendor: "", invoiceNo: "", note: "", receipts: [] }, ...ledger]); };
+  const updLed = (id, k, v) => { logT("編輯", "編輯財務交易"); saveLed(ledger.map(l => l.id === id ? { ...l, [k]: v } : l)); };
+  const delLed = async (l) => { if (!guard()) return; if (!(await confirm(`刪除這筆交易（${fmt(num(l.amount))}）？`, { confirmLabel: "刪除" }))) return; onLog?.("刪除", `刪除財務交易 ${fmt(num(l.amount))}${l.vendor ? "（" + l.vendor + "）" : ""}`); saveLed(ledger.filter(x => x.id !== l.id)); };
 
   // useMemo 必須在任何提早 return 之前（hooks 規則）；對 null 安全
   const rows = useMemo(() => {
@@ -189,10 +192,10 @@ export default function FinanceView({ K, confirm, canEdit, ReceiptUploader }) {
       {tab === "coa" && (() => {
         const depthName = (d) => ["大項", "中項", "細項", "子項"][d] || "子項";
         const descIds = (id) => { const acc = [id]; const walk = (p) => coaChildren(p).forEach(c => { acc.push(c.id); walk(c.id); }); walk(id); return acc; };
-        const addTop = () => saveCoa([...coa, { id: "coa" + rid(""), name: "新大項", parentId: null }]);
-        const addChild = (pid) => saveCoa([...coa, { id: "coa" + rid(""), name: "新項目", parentId: pid }]);
-        const renameNode = (id, name) => saveCoa(coa.map(c => c.id === id ? { ...c, name } : c));
-        const delNode = async (node) => { const ids = new Set(descIds(node.id)); const used = ledger.filter(l => ids.has(l.catId)).length; if (!(await confirm(`刪除「${node.name}」${ids.size > 1 ? `及其 ${ids.size - 1} 個子科目` : ""}？${used ? `（有 ${used} 筆交易用到，刪後那些交易的科目會清空）` : ""}`, { confirmLabel: "刪除" }))) return; if (!guard()) return; setCoa(coa.filter(c => !ids.has(c.id))); window.storage.set(K("pm_fin_coa"), JSON.stringify(coa.filter(c => !ids.has(c.id))), true).catch(() => {}); };
+        const addTop = () => { onLog?.("新增", "新增會計科目大項"); saveCoa([...coa, { id: "coa" + rid(""), name: "新大項", parentId: null }]); };
+        const addChild = (pid) => { onLog?.("新增", "新增會計科目"); saveCoa([...coa, { id: "coa" + rid(""), name: "新項目", parentId: pid }]); };
+        const renameNode = (id, name) => { logT("編輯", "編輯會計科目"); saveCoa(coa.map(c => c.id === id ? { ...c, name } : c)); };
+        const delNode = async (node) => { const ids = new Set(descIds(node.id)); const used = ledger.filter(l => ids.has(l.catId)).length; if (!(await confirm(`刪除「${node.name}」${ids.size > 1 ? `及其 ${ids.size - 1} 個子科目` : ""}？${used ? `（有 ${used} 筆交易用到，刪後那些交易的科目會清空）` : ""}`, { confirmLabel: "刪除" }))) return; if (!guard()) return; onLog?.("刪除", `刪除會計科目「${node.name}」`); setCoa(coa.filter(c => !ids.has(c.id))); window.storage.set(K("pm_fin_coa"), JSON.stringify(coa.filter(c => !ids.has(c.id))), true).catch(() => {}); };
         const NodeRow = (node, depth) => {
           const kids = coaChildren(node.id);
           const tint = depth === 0 ? "#2C5A8C" : depth === 1 ? C.brand : C.sub;
@@ -231,6 +234,7 @@ export default function FinanceView({ K, confirm, canEdit, ReceiptUploader }) {
                       const next = [...coa];
                       const findOrAdd = (name, parentId) => { if (!name) return parentId; let n = next.find(c => c.name === name && (c.parentId || null) === (parentId || null)); if (!n) { n = { id: "coa" + rid(""), name, parentId: parentId || null }; next.push(n); } return n.id; };
                       (coaImp.text || "").split(/\r?\n/).forEach(line => { if (!line.trim()) return; const [a, b, c] = line.split(/\t|,/).map(s => s.trim()); const p1 = findOrAdd(a, null); const p2 = findOrAdd(b, p1); findOrAdd(c, p2); });
+                      onLog?.("新增", `批量建立會計科目（+${next.length - coa.length} 項）`);
                       saveCoa(next); setCoaImp(null);
                     }} style={{ background: C.accent, color: "#fff", border: "none", borderRadius: 8, padding: "9px 18px", fontSize: 13.5, fontWeight: 700, cursor: "pointer" }}>建立</button>
                   </div>
@@ -279,7 +283,7 @@ export default function FinanceView({ K, confirm, canEdit, ReceiptUploader }) {
                     <select value={l.from || ""} onChange={e => updLed(l.id, "from", e.target.value)} style={{ ...cellI, opacity: l.kind === "income" ? 0.45 : 1 }}><option value="">—</option>{accounts.map(a => <option key={a.id} value={a.id}>{a.name || "未命名"}</option>)}</select>
                     <select value={l.to || ""} onChange={e => updLed(l.id, "to", e.target.value)} style={{ ...cellI, opacity: l.kind === "expense" ? 0.45 : 1 }}><option value="">—</option>{accounts.map(a => <option key={a.id} value={a.id}>{a.name || "未命名"}</option>)}</select>
                     {coa.length ? (
-                      <select value={l.catId || (l.category ? "__legacy__" : "")} onChange={e => { const v = e.target.value; if (v === "__legacy__") return; saveLed(ledger.map(x => x.id === l.id ? { ...x, catId: v, category: v ? coaPath(v) : "" } : x)); }} title={l.catId ? coaPath(l.catId) : l.category} style={{ ...cellI }}>
+                      <select value={l.catId || (l.category ? "__legacy__" : "")} onChange={e => { const v = e.target.value; if (v === "__legacy__") return; logT("編輯", "設定財務交易科目"); saveLed(ledger.map(x => x.id === l.id ? { ...x, catId: v, category: v ? coaPath(v) : "" } : x)); }} title={l.catId ? coaPath(l.catId) : l.category} style={{ ...cellI }}>
                         <option value="">— 科目 —</option>
                         {l.category && !l.catId && <option value="__legacy__">（自訂）{l.category}</option>}
                         {coaFlat().map(n => <option key={n.id} value={n.id}>{(n.depth ? "　".repeat(n.depth) : "▸ ") + n.name}</option>)}
@@ -381,7 +385,7 @@ export default function FinanceView({ K, confirm, canEdit, ReceiptUploader }) {
                       </div>
                       {proj != null && <div style={{ fontSize: 12.5, color: C.sub, marginBottom: 12 }}>匯入後系統算的餘額 = <b style={{ color: C.text }}>{fmt(proj)}</b>{diff != null && (Math.abs(diff) < 1 ? <b style={{ color: C.accent }}> ✅ 與你的期末一致</b> : <b style={{ color: C.red }}> ⚠️ 差 {fmt(diff)}（檢查是否漏/重）</b>)}</div>}
 
-                      <button onClick={async () => { if (!imp.preview.valid.length) return; if (!(await confirm(`確認把 ${imp.preview.valid.length} 筆匯入「${accName(imp.account)}」？`, { confirmLabel: "匯入" }))) return; saveLed([...imp.preview.valid, ...ledger]); setImp(null); }} disabled={!imp.preview.valid.length} style={{ background: imp.preview.valid.length ? C.accent : C.line, color: "#fff", border: "none", borderRadius: 8, padding: "10px 20px", fontSize: 14, fontWeight: 700, cursor: imp.preview.valid.length ? "pointer" : "not-allowed" }}>✅ 確認匯入 {imp.preview.valid.length} 筆</button>
+                      <button onClick={async () => { if (!imp.preview.valid.length) return; if (!(await confirm(`確認把 ${imp.preview.valid.length} 筆匯入「${accName(imp.account)}」？`, { confirmLabel: "匯入" }))) return; onLog?.("新增", `批量匯入 ${imp.preview.valid.length} 筆財務交易到「${accName(imp.account)}」`); saveLed([...imp.preview.valid, ...ledger]); setImp(null); }} disabled={!imp.preview.valid.length} style={{ background: imp.preview.valid.length ? C.accent : C.line, color: "#fff", border: "none", borderRadius: 8, padding: "10px 20px", fontSize: 14, fontWeight: 700, cursor: imp.preview.valid.length ? "pointer" : "not-allowed" }}>✅ 確認匯入 {imp.preview.valid.length} 筆</button>
                     </div>
                   )}
                 </>

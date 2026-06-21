@@ -415,14 +415,17 @@ export default function App() {
     window.storage.set(K("pm_accounts"), JSON.stringify(list), true).catch(()=>{});
   };
   const commitCustomCols = (list) => {
+    logAction("編輯", "調整總覽欄位", 5000);
     setCustomCols(list);
     window.storage.set(K("pm_columns"), JSON.stringify(list), true).catch(()=>{});
   };
   const commitColOrder = (list) => {
+    logAction("編輯", "調整欄位順序", 5000);
     setColOrder(list);
     window.storage.set(K("pm_colorder"), JSON.stringify(list), true).catch(()=>{});
   };
   const commitSeqLogs = (list) => {
+    try { const p = seqLogs || []; if (list.length > p.length) logAction("編輯", "新增工序日誌", 4000); else if (list.length < p.length) logAction("編輯", "刪除工序日誌", 4000); else logAction("編輯", "編輯工序日誌", 4000); } catch (_) {}
     setSeqLogs(list);
     window.storage.set(K("pm_seqlogs"), JSON.stringify(list), true).catch(()=>{});
   };
@@ -438,6 +441,7 @@ export default function App() {
   };
   const restoreTrash = (tid) => {
     const e = trash.find(x => x.tid === tid); if (!e) return;
+    logActivity("編輯", `還原細項「${e?.item?.name || "—"}」（從垃圾桶）`);
     setCats(prev => {
       let target = prev.find(c => c.id === e.catId) || prev.find(c => c.name === e.catName);
       if (!target) return prev; // 來源大項已不存在
@@ -791,12 +795,13 @@ export default function App() {
   const _updSub = (itemId, patch) => { const [cid,sid] = itemId.split("::"); setCats(prev => prev.map(c => c.id===cid ? { ...c, seqSubs:(c.seqSubs||[]).map(s => s.id===sid ? { ...s, ...patch } : s) } : c)); };
   const _updCost = (itemId, patch) => { const [cid,,iid] = itemId.split("::"); setCats(prev => prev.map(c => c.id===cid ? { ...c, items:(c.items||[]).map(it => it.id===iid ? { ...it, seq:{ ...(it.seq||{}), ...patch } } : it) } : c)); };
   const _updSeqSub = (itemId, patch) => itemId.includes("::ci::") ? _updCost(itemId, patch) : _updSub(itemId, patch);
-  const seqSetStatus = (itemId, wsKey) => { if (!canEditData) { denyEdit(); return; } const st = WS2CAT[wsKey]||"pending"; if (itemId.includes("::")) _updSeqSub(itemId, { status: st }); else setCats(prev => prev.map(c => c.id===itemId ? (st === "done" ? markCatDone(c) : { ...c, status: st }) : c)); };
-  const seqSetSchedule = (itemId, segs) => { if (!canEditData) { denyEdit(); return; } if (itemId.includes("::")) _updSeqSub(itemId, { segments: segs }); else setCats(prev => prev.map(c => c.id===itemId ? { ...c, segments: segs } : c)); };
-  const seqSetUrgent = (itemId, val) => { if (!canEditData) { denyEdit(); return; } if (itemId.includes("::")) _updSeqSub(itemId, { urgent: val }); else setCats(prev => prev.map(c => c.id===itemId ? { ...c, urgent: val } : c)); };
-  const seqReorder = (fromId, toId) => { if (!canEditData) { denyEdit(); return; } setCats(prev => { const arr = [...prev].sort((a,b)=>(a.order??0)-(b.order??0)); const fi = arr.findIndex(c=>c.id===fromId), ti = arr.findIndex(c=>c.id===toId); if (fi<0||ti<0||fi===ti) return prev; const [m] = arr.splice(fi,1); arr.splice(ti,0,m); return arr.map((c,i)=>({ ...c, order:i })); }); };
-  const seqAddSub = (catId, name) => { if (!canEditData) { denyEdit(); return; } const n=(name||"").trim(); if(!n) return; setCats(prev => prev.map(c => c.id===catId ? { ...c, seqSubs:[...(c.seqSubs||[]), { id:"ss-"+Math.random().toString(36).slice(2,7), name:n, status:"pending", segments:[] }] } : c)); };
-  const seqDelSub = (itemId) => { if (!canEditData) { denyEdit(); return; } if (itemId.includes("::ci::")) { const [cid,,iid] = itemId.split("::"); setCats(prev => prev.map(c => c.id===cid ? { ...c, items:(c.items||[]).map(it => it.id===iid ? { ...it, inSeq:false } : it) } : c)); return; } const [cid,sid] = itemId.split("::"); setCats(prev => prev.map(c => c.id===cid ? { ...c, seqSubs:(c.seqSubs||[]).filter(s=>s.id!==sid) } : c)); };
+  const _seqName = (itemId) => { try { const cid = itemId.split("::")[0]; const c = (cats||[]).find(x=>x.id===cid); return c ? c.name : ""; } catch(_) { return ""; } };
+  const seqSetStatus = (itemId, wsKey) => { if (!canEditData) { denyEdit(); return; } const st = WS2CAT[wsKey]||"pending"; const lbl = { done:"完工", working:"施工中", problem:"有問題", pending:"待開工" }[st] || st; logAction("編輯", `改工序狀態「${_seqName(itemId)}」→${lbl}`, 4000); if (itemId.includes("::")) _updSeqSub(itemId, { status: st }); else setCats(prev => prev.map(c => c.id===itemId ? (st === "done" ? markCatDone(c) : { ...c, status: st }) : c)); };
+  const seqSetSchedule = (itemId, segs) => { if (!canEditData) { denyEdit(); return; } logAction("編輯", `調整工序排程「${_seqName(itemId)}」`, 4000); if (itemId.includes("::")) _updSeqSub(itemId, { segments: segs }); else setCats(prev => prev.map(c => c.id===itemId ? { ...c, segments: segs } : c)); };
+  const seqSetUrgent = (itemId, val) => { if (!canEditData) { denyEdit(); return; } logAction("編輯", `${val?"標記":"取消"}工序超急件「${_seqName(itemId)}」`, 4000); if (itemId.includes("::")) _updSeqSub(itemId, { urgent: val }); else setCats(prev => prev.map(c => c.id===itemId ? { ...c, urgent: val } : c)); };
+  const seqReorder = (fromId, toId) => { if (!canEditData) { denyEdit(); return; } logAction("編輯", "調整工序順序", 4000); setCats(prev => { const arr = [...prev].sort((a,b)=>(a.order??0)-(b.order??0)); const fi = arr.findIndex(c=>c.id===fromId), ti = arr.findIndex(c=>c.id===toId); if (fi<0||ti<0||fi===ti) return prev; const [m] = arr.splice(fi,1); arr.splice(ti,0,m); return arr.map((c,i)=>({ ...c, order:i })); }); };
+  const seqAddSub = (catId, name) => { if (!canEditData) { denyEdit(); return; } const n=(name||"").trim(); if(!n) return; logActivity("編輯", `新增工序子項「${n}」`); setCats(prev => prev.map(c => c.id===catId ? { ...c, seqSubs:[...(c.seqSubs||[]), { id:"ss-"+Math.random().toString(36).slice(2,7), name:n, status:"pending", segments:[] }] } : c)); };
+  const seqDelSub = (itemId) => { if (!canEditData) { denyEdit(); return; } logActivity("編輯", "移除工序子項"); if (itemId.includes("::ci::")) { const [cid,,iid] = itemId.split("::"); setCats(prev => prev.map(c => c.id===cid ? { ...c, items:(c.items||[]).map(it => it.id===iid ? { ...it, inSeq:false } : it) } : c)); return; } const [cid,sid] = itemId.split("::"); setCats(prev => prev.map(c => c.id===cid ? { ...c, seqSubs:(c.seqSubs||[]).filter(s=>s.id!==sid) } : c)); };
   const seqSetProjectStart = (v) => { if (!canEditData) { denyEdit(); return; } const s = { ...(settings||{}), projectStart: v }; setSettings(s); saveSettings(s); };
   const seqUploadPhotos = async (files) => { const out=[]; for (const f of files) { try { const { url } = await uploadPhoto(f); out.push({ url, name: f.name || "檔案", isImage: !!(f.type || "").startsWith("image/") }); } catch(_){} } return out; };
   const seqAiTidy = async (f) => {
@@ -866,13 +871,13 @@ export default function App() {
           <PhotoLibraryView photos={photos} setPhotos={commitPhotos} cats={cats} canEdit={canEditFiles} userName={userName} requireLogin={denyEdit} confirm={confirm} />
         )}
         {view === "issues" && (
-          <IssuesView canEdit={canEditData} requireLogin={denyEdit} confirm={confirm} />
+          <IssuesView canEdit={canEditData} requireLogin={denyEdit} confirm={confirm} onLog={logActivity} />
         )}
         {view === "compare" && (
-          <CompareView canEdit={canEditFiles} requireLogin={denyEdit} />
+          <CompareView canEdit={canEditFiles} requireLogin={denyEdit} onLog={logActivity} />
         )}
         {view === "finance" && CURRENT_SPACE === "finance" && (showMoney() ? (
-          <FinanceView K={K} confirm={confirm} canEdit={canEditData} ReceiptUploader={ReceiptUploader} />
+          <FinanceView K={K} confirm={confirm} canEdit={canEditData} ReceiptUploader={ReceiptUploader} onLog={logActivity} />
         ) : (
           <div style={{ padding: 40, textAlign: "center", color: SUB, fontSize: 14, background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: 12, margin: "8px 0" }}>🔒 財務內帳含金額，你沒有看金額的權限。</div>
         ))}
@@ -894,10 +899,10 @@ export default function App() {
                 </div>
               )}
               {view === "advisor" && settings && (
-                <AdvisorSettingsView settings={settings} setSettings={guardedSetSettings} cats={cats} aiLog={aiLog} setAiLog={l => { setAiLog(l); saveAILog(l); }} journal={journal} events={events} plans={plans} activityLog={activityLog} logActivity={logActivity} userName={userName} />
+                <AdvisorSettingsView settings={settings} setSettings={guardedSetSettings} cats={cats} aiLog={aiLog} setAiLog={l => { if ((aiLog||[]).length && !(l||[]).length) logActivity("編輯", "清空 AI 顧問對話"); setAiLog(l); saveAILog(l); }} journal={journal} events={events} plans={plans} activityLog={activityLog} logActivity={logActivity} userName={userName} />
               )}
               {view === "groups" && isAdmin && (
-                <GroupsView cats={cats} canEdit={canEditData} requireLogin={denyEdit} settings={settings} setSettings={guardedSetSettings} journal={journal} events={events} plans={plans} />
+                <GroupsView cats={cats} canEdit={canEditData} requireLogin={denyEdit} settings={settings} setSettings={guardedSetSettings} journal={journal} events={events} plans={plans} onLog={logActivity} />
               )}
               {view === "accounts" && isAdmin && (
                 <AccountManager confirm={confirm} myId={profile?.id} roles={roles} commitRoles={commitRoles} onLog={logActivity} guestPerms={guestPerms} commitGuestPerms={commitGuestPerms} />
@@ -906,7 +911,7 @@ export default function App() {
                 <AuditLogView activityLog={activityLog} confirm={confirm} onCommit={(l) => { setActivityLog(l); saveActivityLog(l); }} />
               )}
               {view === "vault" && isAdmin && (
-                <VaultView />
+                <VaultView onLog={logActivity} />
               )}
             </div>
           );
@@ -1681,7 +1686,7 @@ const dueInfo = (due) => {
   return { txt: `${due}`, color: SUB, bold: false };
 };
 
-function IssuesView({ canEdit, requireLogin, confirm }) {
+function IssuesView({ canEdit, requireLogin, confirm, onLog }) {
   const [issues, setIssues] = useState(null);
   const [cats, setCats] = useState(DEFAULT_TODO_CATS);
   const [filter, setFilter] = useState("open");
@@ -1727,23 +1732,25 @@ function IssuesView({ canEdit, requireLogin, confirm }) {
   const patch = (id, fields) => { if (!guard()) return; save(issues.map(i => i.id === id ? { ...i, ...fields } : i)); };
   const toggleDone = async (it) => {
     if (!guard()) return;
-    if (it.status === "done") { patch(it.id, { status: "open" }); return; }
+    if (it.status === "done") { onLog?.("編輯", `重啟待辦「${(it.desc||"").slice(0,20)}」`); patch(it.id, { status: "open" }); return; }
     const ans = window.prompt("這件的結論／答案是？（可留空，直接標完成；按取消則不完成）", it.answer || "");
     if (ans === null) return; // 取消 → 不標完成
+    onLog?.("編輯", `完成待辦「${(it.desc||"").slice(0,20)}」`);
     patch(it.id, { status: "done", track: false, answer: ans.trim() || it.answer || "" });
   };
-  const del = async (id) => { if (!guard()) return; if (await confirm("刪除這筆事項？")) save(issues.filter(i => i.id !== id)); };
+  const del = async (id) => { if (!guard()) return; const t = (issues.find(i=>i.id===id)?.desc||"").slice(0,20); if (await confirm("刪除這筆事項？")) { onLog?.("刪除", `刪除待辦「${t}」`); save(issues.filter(i => i.id !== id)); } };
   const addNew = () => {
     if (!guard()) return;
     const desc = nd.desc.trim(); if (!desc) return;
     const entry = { id: "is-" + Math.random().toString(36).slice(2, 8), desc, category: nd.category, due: nd.due, remindEnd: "", track: !!nd.track, remindEvery: 0, status: "open", source: "todo", by: "App", ts: new Date().toISOString(), nudges: 0, answer: "", catName: "", catId: "", photoUrl: "" };
+    onLog?.("新增", `新增待辦「${desc.slice(0,20)}」`);
     save([entry, ...issues]);
     setNd({ desc: "", category: cats[0] || "其他", due: "", track: true }); setShowAdd(false);
   };
   // 分類管理
-  const addCat = () => { if (!guard()) return; const n = newCat.trim(); if (!n || cats.includes(n)) { setNewCat(""); return; } saveCats([...cats, n]); setNewCat(""); };
-  const renameCat = (old, val) => { const n = val.trim(); if (!n || (cats.includes(n) && n !== old)) return; saveCats(cats.map(c => c === old ? n : c)); save(issues.map(i => catOf(i) === old ? { ...i, category: n } : i)); };
-  const delCat = async (c) => { if (!guard()) return; const used = issues.filter(i => catOf(i) === c).length; if (used && !(await confirm(`「${c}」還有 ${used} 筆事項，刪除分類後它們會歸到「其他」。確定刪除？`))) return; saveCats(cats.filter(x => x !== c)); if (used) save(issues.map(i => catOf(i) === c ? { ...i, category: "其他" } : i)); if (catFilter === c) setCatFilter("全部"); };
+  const addCat = () => { if (!guard()) return; const n = newCat.trim(); if (!n || cats.includes(n)) { setNewCat(""); return; } onLog?.("新增", `新增待辦分類「${n}」`); saveCats([...cats, n]); setNewCat(""); };
+  const renameCat = (old, val) => { const n = val.trim(); if (!n || (cats.includes(n) && n !== old)) return; onLog?.("編輯", `待辦分類改名「${old}」→「${n}」`); saveCats(cats.map(c => c === old ? n : c)); save(issues.map(i => catOf(i) === old ? { ...i, category: n } : i)); };
+  const delCat = async (c) => { if (!guard()) return; const used = issues.filter(i => catOf(i) === c).length; if (used && !(await confirm(`「${c}」還有 ${used} 筆事項，刪除分類後它們會歸到「其他」。確定刪除？`))) return; onLog?.("刪除", `刪除待辦分類「${c}」`); saveCats(cats.filter(x => x !== c)); if (used) save(issues.map(i => catOf(i) === c ? { ...i, category: "其他" } : i)); if (catFilter === c) setCatFilter("全部"); };
 
   if (issues === null) return <div style={{ padding: 40, color: SUB, fontSize: 14 }}>載入中…</div>;
   const open = issues.filter(i => i.status !== "done");
@@ -1914,7 +1921,7 @@ function IssuesView({ canEdit, requireLogin, confirm }) {
 // ── LINE 群組管理（D哥所在的所有群：設權限 + 每日彙報開關）────────────────────
 // pm_group_seen：D哥自動登記的群清單（名稱/最近活躍/則數，由 bot 寫）
 // pm_bot_groups：每個群的設定（mode/綁定工程/彙報開關，由這頁寫）
-function GroupsView({ cats, canEdit, requireLogin, settings, setSettings, journal, events, plans }) {
+function GroupsView({ cats, canEdit, requireLogin, settings, setSettings, journal, events, plans, onLog }) {
   const [seen, setSeen] = useState(null);
   const [cfg, setCfg] = useState({});
   const [saving, setSaving] = useState(false);
@@ -1934,6 +1941,7 @@ function GroupsView({ cats, canEdit, requireLogin, settings, setSettings, journa
   const guard = () => { if (!canEdit) { requireLogin && requireLogin(); return false; } return true; };
   const persist = async (next) => {
     setCfg(next); setSaving(true);
+    onLog?.("編輯", "調整 LINE 群組設定");
     try { await window.storage.set(K("pm_bot_groups"), JSON.stringify(next), true); } catch (_) {}
     setSaving(false);
   };
@@ -2083,7 +2091,7 @@ function _fileToB64(f) {
   });
 }
 
-function CompareView({ canEdit, requireLogin }) {
+function CompareView({ canEdit, requireLogin, onLog }) {
   const [ests, setEsts] = useState(null);
   const [busy, setBusy] = useState("");
   const [analysis, setAnalysis] = useState(null);
@@ -2104,6 +2112,7 @@ function CompareView({ canEdit, requireLogin }) {
 
   const runAnalysis = async () => {
     if (!canEdit) { requireLogin && requireLogin(); return; }
+    onLog?.("編輯", `執行比價分析（${ests.length} 份估價單）`);
     setAnalyzing(true);
     try {
       const forAI = ests.map(e => ({ vendor: e.vendor, total: e.total, items: (e.items || []).map(i => ({ name: i.name, qty: i.qty, unit: i.unit, unitPrice: i.unitPrice })) }));
@@ -2147,10 +2156,11 @@ function CompareView({ canEdit, requireLogin }) {
       }
     }
     setBusy("");
+    if (added.length) onLog?.("新增", `上傳比價估價單 ${added.length} 份（${added.map(a=>a.vendor).filter(Boolean).slice(0,3).join("、")}）`);
     save([...(ests || []), ...added]);
   };
 
-  const remove = (id) => { if (!canEdit) { requireLogin && requireLogin(); return; } save(ests.filter(e => e.id !== id)); };
+  const remove = (id) => { if (!canEdit) { requireLogin && requireLogin(); return; } const v = (ests||[]).find(e=>e.id===id)?.vendor || "—"; onLog?.("刪除", `刪除比價估價單「${v}」`); save(ests.filter(e => e.id !== id)); };
 
   if (ests === null) return <div style={{ padding: 40, color: SUB, fontSize: 14 }}>載入中…</div>;
   const sorted = [...ests].sort((a, b) => (a.total || 0) - (b.total || 0));
@@ -3959,7 +3969,7 @@ async function vaultDecWithKey(blob, key) {
   return JSON.parse(_dec(pt));
 }
 
-function VaultView() {
+function VaultView({ onLog }) {
   const [blob, setBlob] = useState(undefined); // undefined=載入中, null=尚無金庫, obj=密文
   const [pw, setPw] = useState(""); const [pw2, setPw2] = useState("");
   const [entries, setEntries] = useState(null); // null=鎖定中, array=已解鎖
@@ -3997,7 +4007,7 @@ function VaultView() {
     setBusy(false);
   };
   const lock = () => { keyRef.current = null; saltRef.current = null; setEntries(null); setReveal({}); setPw(""); };
-  const commit = async (list) => { setEntries(list); try { await save(list); } catch (_) { setErr("儲存失敗"); } };
+  const commit = async (list) => { setEntries(list); try { await save(list); onLog?.("編輯", "更新密碼金庫"); } catch (_) { setErr("儲存失敗"); } };
   const addEntry = () => commit([...(entries || []), { id: "v" + Math.random().toString(36).slice(2, 8), cat: "company", name: "", account: "", password: "", url: "", notes: "" }]);
   const upd = (id, k, v) => commit(entries.map(e => e.id === id ? { ...e, [k]: v } : e));
   const del = (id) => commit(entries.filter(e => e.id !== id));
