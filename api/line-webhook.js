@@ -123,9 +123,64 @@ async function loadFinanceText() {
   } catch (_) { return '' }
 }
 
-async function answer(question, snaps, accountsText, financeText) {
+// 操作 / 登入紀錄（pm_activity，各空間）→ 文字。D哥要能答「誰最近登入、誰改了什麼」
+async function loadActivityText() {
+  try {
+    const keys = ['pm_activity', 'sp_team_pm_activity', 'sp_crew_pm_activity', 'sp_finance_pm_activity']
+    const map = await kvGetMany(keys)
+    const spaceName = { pm_activity: '工程', sp_team_pm_activity: '團隊', sp_crew_pm_activity: '夥伴', sp_finance_pm_activity: '財務' }
+    let all = []
+    for (const k of keys) { const arr = map[k] || []; if (Array.isArray(arr)) all.push(...arr.map(e => ({ ...e, space: spaceName[k] || '' }))) }
+    if (!all.length) return ''
+    all.sort((a, b) => (a.ts < b.ts ? 1 : -1))
+    const fmtT = (ts) => { try { const d = new Date(ts); return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}` } catch (_) { return ts || '' } }
+    const lines = ['\n\n【操作紀錄（誰做了什麼，新到舊）】']
+    all.slice(0, 40).forEach(e => lines.push(`  - ${fmtT(e.ts)} ${e.user || '—'}（${e.space}）${e.action || ''}：${e.detail || ''}`))
+    // 登入紀錄獨立整理：每人最後一次登入時間
+    const logins = all.filter(e => e.action === '登入')
+    if (logins.length) {
+      const last = {}
+      logins.forEach(e => { if (!last[e.user]) last[e.user] = e.ts }) // 已是新到舊，第一次遇到即最近
+      lines.push('\n【登入紀錄（每人最近一次登入）】')
+      Object.entries(last).forEach(([u, ts]) => lines.push(`  - ${u}：${fmtT(ts)}`))
+    }
+    return lines.join('\n')
+  } catch (_) { return '' }
+}
+
+// 比價估價單（pm_estimates）→ 文字
+async function loadEstimatesText() {
+  try {
+    const map = await kvGetMany(['pm_estimates'])
+    const ests = map['pm_estimates'] || []
+    if (!Array.isArray(ests) || !ests.length) return ''
+    const n = (v) => Number(String(v ?? '').replace(/[^0-9.\-]/g, '')) || 0
+    const lines = ['\n\n【比價估價單】共 ' + ests.length + ' 份：']
+    ests.forEach(e => lines.push(`  - ${e.vendor || e.file || '未命名'}：總價 NT$${Math.round(n(e.total)).toLocaleString()}（${(e.items || []).length} 個品項）`))
+    return lines.join('\n')
+  } catch (_) { return '' }
+}
+
+// 夥伴中心（團隊）資料：360 互評 / 意見回饋 / 闖關積分 / 獎勵商店 / 知識庫 / 投票。
+// 這些是半結構化資料，直接餵精簡 JSON 讓 D哥自己解讀，確保「答得出來」。
+async function loadCrewText() {
+  try {
+    const bases = ['kb_360', 'kb_feedback', 'kb_quests', 'kb_shop', 'kb_docs', 'kb_polls']
+    const keys = []
+    for (const p of ['sp_crew_', 'sp_team_']) for (const b of bases) keys.push(p + b)
+    const map = await kvGetMany(keys)
+    const label = { kb_360: '360 互評', kb_feedback: '意見回饋', kb_quests: '闖關任務/積分', kb_shop: '獎勵商店', kb_docs: '知識庫文件', kb_polls: '投票' }
+    const present = Object.entries(map).filter(([, v]) => v && (Array.isArray(v) ? v.length : Object.keys(v).length))
+    if (!present.length) return ''
+    const lines = ['\n\n【夥伴中心（團隊）資料】']
+    present.forEach(([k, v]) => { const base = k.replace(/^sp_(crew|team)_/, ''); let j = JSON.stringify(v); if (j.length > 1400) j = j.slice(0, 1400) + '…(略)'; lines.push(`▍${label[base] || base}：${j}`) })
+    return lines.join('\n')
+  } catch (_) { return '' }
+}
+
+async function answer(question, snaps, accountsText, financeText, activityText, estimatesText, crewText) {
   if (!ANTHROPIC) return '（D哥的 AI 金鑰尚未設定。）'
-  const system = '你是「D哥」，喬亞國際餐飲的 LINE 全能助理，掌握 App 內幾乎所有資料：工程專案（預算/付款/進度/工序日誌/零用金/ToDo/有問題項目）、財務內帳（多帳戶/交易/餘額/科目）、App 帳號清單。\n規則：①只根據下方「目前資料」回答，數字直接引用、不要亂算。②下方資料涵蓋 App 內絕大多數資訊——**優先從裡面找答案，能答就答清楚完整**。③**只有「App 完全沒有的東西」**（例如現場實際尺寸/深度/材質、與公司無關的閒聊）才說「這個我沒有資料」；不要把 App 裡明明有的（帳號、財務、進度…）也說沒有。④答案對準問題，用繁體中文、簡短口語、必要時條列。\n\n【目前資料】\n' + snapshotsToContext(snaps) + (accountsText || '') + (financeText || '')
+  const system = '你是「D哥」，喬亞國際餐飲的 LINE 全能助理，掌握 App 內幾乎所有資料：工程專案（預算/付款/進度/工序日誌/零用金/ToDo/有問題項目）、財務內帳（多帳戶/交易/餘額/科目）、比價估價單、App 帳號清單、操作與登入紀錄（誰做了什麼、誰最近登入）、夥伴中心（360互評/意見回饋/闖關積分/獎勵商店/知識庫）。\n規則：①只根據下方「目前資料」回答，數字直接引用、不要亂算。②下方資料涵蓋 App 內絕大多數資訊——**優先從裡面找答案，能答就答清楚完整**。③**只有「App 完全沒有的東西」**（例如現場實際尺寸/深度/材質、與公司無關的閒聊）才說「這個我沒有資料」；不要把 App 裡明明有的（帳號、財務、進度、登入/操作紀錄、比價、夥伴中心…）也說沒有。④答案對準問題，用繁體中文、簡短口語、必要時條列。\n\n【目前資料】\n' + snapshotsToContext(snaps) + (accountsText || '') + (financeText || '') + (activityText || '') + (estimatesText || '') + (crewText || '')
   try {
     const r = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
@@ -174,8 +229,8 @@ export default async function handler(req, res) {
       const named = mentionedSelf || /d哥/i.test(text)
       console.log('event', JSON.stringify({ src: ev.source?.type, isDM, named, mSelf: mentionedSelf, text: text.slice(0, 40) }))
       if (!isDM && !named) continue // 私訊一律回；群組必須被點名（@本帳號 或 講「D哥」）
-      const [snaps, accountsText, financeText] = await Promise.all([loadSnapshots(), loadAccounts(), loadFinanceText()])
-      const reply = await answer(text, snaps, accountsText, financeText)
+      const [snaps, accountsText, financeText, activityText, estimatesText, crewText] = await Promise.all([loadSnapshots(), loadAccounts(), loadFinanceText(), loadActivityText(), loadEstimatesText(), loadCrewText()])
+      const reply = await answer(text, snaps, accountsText, financeText, activityText, estimatesText, crewText)
       console.log('answer', JSON.stringify({ snaps: snaps.length, replyLen: reply.length }))
       if (ev.replyToken) await lineReply(ev.replyToken, reply)
     } catch (e) { console.log('event error', e?.message) }
