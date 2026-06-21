@@ -389,7 +389,7 @@ export default function App() {
   const commitGuestPerms = (next) => { setGuestPerms(next); window.storage.set("pm_guest_perms", JSON.stringify(next), true).catch(() => {}); };
   const { confirm, Dialog: ConfirmDialog } = useConfirm();
   const commitPetty = (next) => {
-    logAction("編輯", "零用金");
+    try { const d = describePettyChange(petty, next); if (d && d.detail) logActionDebounced("編輯", d.key, d.detail); } catch (_) {}
     setPetty(next);
     window.storage.set(K("pm_petty"), JSON.stringify(next), true).catch(() => {});
   };
@@ -615,6 +615,23 @@ export default function App() {
     const k = action + "|" + dkey;
     clearTimeout(logDebounceRef.current[k]);
     logDebounceRef.current[k] = setTimeout(() => { logActivity(action, detail); }, delay);
+  };
+  // 零用金前後差異 → 具體動作（記/改/刪 花費或撥款，含新值）
+  const describePettyChange = (prev, next) => {
+    const ps = (prev?.spends) || [], ns = (next?.spends) || [], pa = (prev?.advances) || [], na = (next?.advances) || [];
+    if (ns.length > ps.length) { const a = ns.find(x => !ps.some(y => y.id === x.id)); return { key: "pettyAddSpend", detail: `記零用金花費「${a?.content || "—"}」${a?.amount ? " " + fmt(a.amount) : ""}` }; }
+    if (ns.length < ps.length) { const r = ps.find(x => !ns.some(y => y.id === x.id)); return { key: "pettyDelSpend", detail: `刪零用金花費「${r?.content || "—"}」` }; }
+    for (const x of ns) { const y = ps.find(z => z.id === x.id); if (!y) continue; const nm = x.content || y.content || "";
+      const F = [["content", "內容", v => `→${v}`], ["amount", "金額", v => `→${fmt(v)}`], ["catId", "工種", () => ""], ["date", "日期", v => `→${v}`], ["voucher", "憑證", v => `→${v}`], ["invoiceNo", "發票號", v => `→${v}`], ["note", "備註", () => ""]];
+      for (const [k, lbl, fn] of F) if (JSON.stringify(y[k] ?? "") !== JSON.stringify(x[k] ?? "")) return { key: `pettySpend:${x.id}:${k}`, detail: `改零用金花費「${nm}」${lbl}${fn(x[k])}` };
+    }
+    if (na.length > pa.length) { const a = na.find(x => !pa.some(y => y.id === x.id)); return { key: "pettyAddAdv", detail: `記零用金撥款${a?.amount ? " " + fmt(a.amount) : ""}` }; }
+    if (na.length < pa.length) return { key: "pettyDelAdv", detail: "刪零用金撥款" };
+    for (const x of na) { const y = pa.find(z => z.id === x.id); if (!y) continue;
+      const F = [["amount", "金額", v => `→${fmt(v)}`], ["date", "日期", v => `→${v}`], ["note", "備註", () => ""]];
+      for (const [k, lbl, fn] of F) if (JSON.stringify(y[k] ?? "") !== JSON.stringify(x[k] ?? "")) return { key: `pettyAdv:${x.id}:${k}`, detail: `改零用金撥款 ${lbl}${fn(x[k])}` };
+    }
+    return { key: "petty", detail: "編輯零用金" };
   };
   const setCatsAndLog = (updater) => {
     setCats(prev => {
