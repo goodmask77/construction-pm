@@ -574,8 +574,9 @@ export default function App() {
     }
   }, [cats]); // eslint-disable-line
 
-  const logActivity = (action, detail) => {
-    const entry = { ts: new Date().toISOString(), user: userName||"系統", action, detail };
+  const logActivity = (action, detail, userOverride) => {
+    // userOverride：登入當下 userName 還沒非同步帶入，要用剛抓到的名字記，否則會記成「系統」
+    const entry = { ts: new Date().toISOString(), user: userOverride || userName || "系統", action, detail };
     setActivityLog(prev => { const next = [entry, ...prev].slice(0,200); saveActivityLog(next); return next; });
   };
   // 操作紀錄：把連續編輯收斂成「每 90 秒一筆」，避免每打一個字就記一條（只記登入者的操作）
@@ -968,11 +969,13 @@ export default function App() {
         <LoginModal onClose={() => setShowLogin(false)} onLogin={async (username, password) => {
           if (!supabase) return { error: "系統未設定登入服務，請聯絡管理員。" };
           const email = username.includes("@") ? username : `${username}@ground.local`;
-          const { error } = await supabase.auth.signInWithPassword({ email, password });
+          const { data, error } = await supabase.auth.signInWithPassword({ email, password });
           if (error) return { error: "帳號或密碼錯誤，請再試一次。" };
-          // 身分由 onAuthStateChange 自動帶入（profile/userName）
+          // 身分由 onAuthStateChange 自動帶入（profile/userName）；但那是非同步，登入紀錄要先抓名字再記，否則會變「系統」
           setShowLogin(false);
-          logActivity("登入", "登入系統");
+          let loginName = username;
+          try { const { data: prof } = await supabase.from("profiles").select("display_name").eq("id", data.user.id).maybeSingle(); loginName = prof?.display_name || username; } catch (_) {}
+          logActivity("登入", "登入系統", loginName);
           return {};
         }} />
       )}
