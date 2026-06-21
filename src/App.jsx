@@ -401,12 +401,35 @@ export default function App() {
   const { confirm, Dialog: ConfirmDialog } = useConfirm();
   const commitPetty = (next) => {
     try { const d = describePettyChange(petty, next); if (d && d.detail) logActionDebounced("編輯", d.key, d.detail); } catch (_) {}
+    try { maybeSnapshot("pm_petty", petty); } catch (_) {} // 改之前先留一份舊的(10分鐘節流)→救得回
     setPetty(next);
     window.storage.set(K("pm_petty"), JSON.stringify(next), true).catch(() => {});
   };
   const commitRoles = (next) => {
     setRoles(next);
     window.storage.set(K("pm_roles"), JSON.stringify(next), true).catch(() => {});
+  };
+
+  // ── 資料保險箱：版本快照／還原點 ──────────────────────────────────────
+  // 重要資料(工程資料/零用金)每次變動就留時間戳快照，之後可一鍵還原到任何一個還原點。
+  const histRef = useRef({}); // 每個 key 最近一次快照時間（節流用）
+  const snapshotData = async (logicalKey, dataObj, opts = {}) => {
+    try {
+      const hk = "pm_hist_" + logicalKey;
+      const r = await window.storage.get(K(hk), true);
+      const list = r && r.value ? JSON.parse(r.value) : [];
+      const json = JSON.stringify(dataObj);
+      if (!opts.force && list[0] && list[0].json === json) return; // 跟最新一筆一樣就不重複存
+      const entry = { id: "h" + Date.now().toString(36) + Math.random().toString(36).slice(2, 5), ts: new Date().toISOString(), user: userName || "系統", json, note: opts.note || "" };
+      const next = [entry, ...list].slice(0, 60); // 最多留 60 個還原點
+      await window.storage.set(K(hk), JSON.stringify(next), true);
+      histRef.current[logicalKey] = Date.now();
+    } catch (_) {}
+  };
+  const maybeSnapshot = (logicalKey, dataObj) => {
+    const last = histRef.current[logicalKey] || 0;
+    if (Date.now() - last < 10 * 60000) return; // 10 分鐘內同一 key 不重複留點（避免每次小改都存）
+    snapshotData(logicalKey, dataObj);
   };
 
   // 工作日誌：寫入 state 並存進共享後端
@@ -553,6 +576,7 @@ export default function App() {
     setSaving(true);
     const t = setTimeout(async () => {
       await saveData(cats);
+      try { maybeSnapshot("pm_data", cats); } catch (_) {} // 工程資料還原點(10分鐘節流)
       setSaving(false);
     }, 1200);
     return () => clearTimeout(t);
@@ -922,8 +946,8 @@ export default function App() {
           <div style={{ padding: 40, textAlign: "center", color: SUB, fontSize: 14, background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: 12, margin: "8px 0" }}>🔒 零用金含金額，你沒有看金額的權限。</div>
         ))}
         {/* ⚙ 設定：把 AI設定 / 群組 / 帳號 / 紀錄 整合成一頁，內含子分頁 */}
-        {["advisor", "groups", "accounts", "audit", "vault"].includes(view) && (() => {
-          const subs = [["advisor", "🤖 AI設定"], ...(isAdmin ? [["groups", "💬 群組"], ["accounts", "👤 帳號"], ["audit", "📜 紀錄"], ["vault", "🔐 金庫"]] : [])].filter(([k]) => k !== "advisor" || allowedViewPages == null || allowedViewPages.includes("advisor"));
+        {["advisor", "groups", "accounts", "audit", "vault", "history"].includes(view) && (() => {
+          const subs = [["advisor", "🤖 AI設定"], ...(isAdmin ? [["groups", "💬 群組"], ["accounts", "👤 帳號"], ["audit", "📜 紀錄"], ["history", "🛟 還原點"], ["vault", "🔐 金庫"]] : [])].filter(([k]) => k !== "advisor" || allowedViewPages == null || allowedViewPages.includes("advisor"));
           return (
             <div>
               {subs.length > 1 && (
@@ -944,6 +968,9 @@ export default function App() {
               )}
               {view === "audit" && isAdmin && (
                 <AuditLogView activityLog={activityLog} confirm={confirm} onCommit={(l) => { setActivityLog(l); saveActivityLog(l); }} />
+              )}
+              {view === "history" && isAdmin && (
+                <HistoryView K={K} confirm={confirm} snapshotData={snapshotData} cats={cats} petty={petty} />
               )}
               {view === "vault" && isAdmin && (
                 <VaultView onLog={logActivity} />
@@ -3874,6 +3901,75 @@ function OwnerDashboard({ cats, setCats, settings, stalledItems, activityLog, lo
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+// ── 資料保險箱：版本快照／還原點 ──────────────────────────────────────────────
+// 管理員專屬：把「工程資料 / 零用金」每隔一段時間留的還原點列成時間軸，可一鍵還原。
+function HistoryView({ K, confirm, snapshotData, cats, petty }) {
+  const [rows, setRows] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const META = { pm_data: { label: "工程資料", color: ACCENT }, pm_petty: { label: "零用金", color: "#C2872E" } };
+  const load = async () => {
+    const out = [];
+    for (const k of ["pm_data", "pm_petty"]) {
+      try { const r = await window.storage.get(K("pm_hist_" + k), true); const list = r && r.value ? JSON.parse(r.value) : []; list.forEach(e => out.push({ ...e, key: k })); } catch (_) {}
+    }
+    out.sort((a, b) => (a.ts < b.ts ? 1 : -1));
+    setRows(out);
+  };
+  useEffect(() => { load(); }, []); // eslint-disable-line
+  const summarize = (e) => {
+    try {
+      const d = JSON.parse(e.json);
+      if (e.key === "pm_data") { const arr = Array.isArray(d) ? d : []; const items = arr.reduce((s, c) => s + (c.items || []).length, 0); let t = { est: 0, paid: 0 }; try { t = projectTotals(arr); } catch (_) {} return `${arr.length} 大項・${items} 細項・預估 ${fmt(t.est || 0)}`; }
+      if (e.key === "pm_petty") { const adv = (d.advances || []).reduce((s, a) => s + (Number(a.amount) || 0), 0); const sp = (d.spends || []).reduce((s, a) => s + (Number(a.amount) || 0), 0); return `撥款 ${fmt(adv)}・花費 ${fmt(sp)}・餘額 ${fmt(adv - sp)}`; }
+    } catch (_) {}
+    return "—";
+  };
+  const fmtWhen = (ts) => { try { const d = new Date(ts); return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`; } catch (_) { return ts; } };
+  const makePoint = async () => {
+    setBusy(true);
+    try { await snapshotData("pm_data", cats, { force: true, note: "手動還原點" }); await snapshotData("pm_petty", petty, { force: true, note: "手動還原點" }); } catch (_) {}
+    await load(); setBusy(false);
+  };
+  const restore = async (e) => {
+    const m = META[e.key];
+    if (!(await confirm(`確定把「${m.label}」還原回 ${fmtWhen(e.ts)} 的版本？\n\n目前的內容會被覆蓋（但會先自動存一個還原點，之後也能再還原回來）。`, { confirmLabel: "還原" }))) return;
+    setBusy(true);
+    try {
+      await snapshotData(e.key, e.key === "pm_data" ? cats : petty, { force: true, note: "還原前自動存點" });
+      await window.storage.set(K(e.key), e.json, true);
+      alert("✅ 已還原，畫面將重新整理。");
+      window.location.reload();
+    } catch (_) { alert("還原失敗，請再試一次。"); setBusy(false); }
+  };
+  return (
+    <div style={{ maxWidth: 1000, margin: "0 auto" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 14 }}>
+        <div style={{ fontSize: 18, fontWeight: 700, color: TEXT }}>🛟 資料保險箱・還原點</div>
+        <div style={{ flex: 1 }} />
+        <button onClick={makePoint} disabled={busy} style={{ background: ACCENT, color: "#fff", border: "none", borderRadius: 8, padding: "8px 16px", fontSize: 13, fontWeight: 600, cursor: busy ? "wait" : "pointer" }}>＋ 現在建立還原點</button>
+      </div>
+      <div style={{ fontSize: 12.5, color: SUB, marginBottom: 14, lineHeight: 1.7, background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: 10, padding: "10px 14px" }}>
+        系統會在「工程資料 / 零用金」變動時，<b>每隔約 10 分鐘自動留一個還原點</b>（最多保留 60 個）。怕資料被改壞時，挑一個時間點按「還原」就能救回。重要操作前也可以先手動按上面建立還原點。
+      </div>
+      {rows === null ? <div style={{ padding: 30, textAlign: "center", color: SUB }}>載入中…</div> :
+        rows.length === 0 ? <div style={{ padding: 30, textAlign: "center", color: SUB }}>還沒有還原點。資料一有變動就會自動開始累積，或按右上角手動建立。</div> :
+          <div style={{ border: `1px solid ${BORDER}`, borderRadius: 12, background: SURFACE, overflow: "hidden" }}>
+            {rows.map((e, i) => { const m = META[e.key]; return (
+              <div key={e.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 14px", borderTop: i ? `1px solid #EFE7D6` : "none" }}>
+                <div style={{ width: 86, flexShrink: 0, fontSize: 12.5, color: SUB, fontVariantNumeric: "tabular-nums" }}>{fmtWhen(e.ts)}</div>
+                <div style={{ flexShrink: 0, width: 64, textAlign: "center", fontSize: 11.5, fontWeight: 700, color: "#fff", background: m.color, borderRadius: 6, padding: "3px 0" }}>{m.label}</div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 13, color: TEXT, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{summarize(e)}</div>
+                  <div style={{ fontSize: 11, color: SUB }}>{e.user || "系統"}{e.note ? `・${e.note}` : ""}</div>
+                </div>
+                <button onClick={() => restore(e)} disabled={busy} style={{ flexShrink: 0, background: "#fff", color: ACCENT, border: `1px solid ${ACCENT}`, borderRadius: 7, padding: "5px 14px", fontSize: 12.5, fontWeight: 600, cursor: busy ? "wait" : "pointer" }}>還原</button>
+              </div>
+            ); })}
+          </div>}
     </div>
   );
 }
