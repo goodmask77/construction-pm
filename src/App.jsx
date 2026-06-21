@@ -168,6 +168,17 @@ try { CURRENT_SPACE = localStorage.getItem("pm_current_space") || "construction"
 if (!SPACES.some(s => s.id === CURRENT_SPACE)) CURRENT_SPACE = "construction";
 // 邏輯 key → 實體 key（依目前空間）
 const K = (key) => (CURRENT_SPACE === "construction" || GLOBAL_KEYS.has(key)) ? key : `sp_${CURRENT_SPACE}_${key}`;
+// 目前登入者（由 App 同步），給 App 元件外的模組（如夥伴中心 crew 元件）寫操作紀錄用
+let CURRENT_USER = "";
+// 模組級操作紀錄：直接讀改寫目前空間的 pm_activity（給 App 元件作用域外的地方用）
+async function auditLog(action, detail) {
+  try {
+    const r = await window.storage.get(K("pm_activity"), true);
+    const prev = r && r.value ? JSON.parse(r.value) : [];
+    const next = [{ ts: new Date().toISOString(), user: CURRENT_USER || "系統", action, detail }, ...prev].slice(0, 200);
+    await window.storage.set(K("pm_activity"), JSON.stringify(next), true);
+  } catch (_) {}
+}
 const switchSpace = (id) => { try { localStorage.setItem("pm_current_space", id); } catch (_) {} window.location.reload(); };
 
 async function loadData() {
@@ -400,13 +411,13 @@ export default function App() {
 
   // 工作日誌：寫入 state 並存進共享後端
   const commitWorklog = (list) => {
-    logAction("編輯", "工序日誌");
+    try { const p = worklog || []; if (list.length > p.length) logActivity("新增", "新增工作日誌"); else if (list.length < p.length) logActivity("刪除", "刪除工作日誌"); else logAction("編輯", "編輯工作日誌", 4000); } catch (_) {}
     setWorklog(list);
     window.storage.set(K("pm_worklog"), JSON.stringify(list), true).catch(()=>{});
   };
   // 檔案庫照片：metadata 存共享後端（圖片本體在 Supabase Storage）
   const commitPhotos = (list) => {
-    logAction("編輯", "檔案庫");
+    try { const p = photos || []; if (list.length > p.length) logActivity("新增", `上傳檔案庫檔案（+${list.length - p.length}）`); else if (list.length < p.length) logActivity("刪除", "刪除檔案庫檔案"); else logAction("編輯", "編輯檔案庫", 4000); } catch (_) {}
     setPhotos(list);
     window.storage.set(K("pm_photos"), JSON.stringify(list), true).catch(()=>{});
   };
@@ -602,13 +613,35 @@ export default function App() {
           ["paid", (v) => `改「${tag}」已付 → ${fmt(v)}`],
           ["catId", () => `把「${tag}」改歸到別的工種`],
           ["notes", () => `改「${tag}」備註`],
+          ["qty", (v) => `改「${tag}」數量 ${px.qty ?? "—"} → ${v}`],
+          ["unitPrice", (v) => `改「${tag}」單價 → ${fmt(v)}`],
+          ["unit", (v) => `改「${tag}」單位 → ${v || "（清空）"}`],
+          ["due", (v) => `改「${tag}」期限 → ${v || "（清空）"}`],
+          ["inSeq", (v) => `${v ? "把" : "取消"}「${tag}」${v ? "加入" : "移出"}工序`],
+          ["urgent", (v) => `${v ? "標記" : "取消"}「${tag}」超急件`],
+          ["receipts", () => `更新「${tag}」憑證`],
         ];
         for (const [k, fn] of F) { if (JSON.stringify(px[k] ?? "") !== JSON.stringify(ix[k] ?? "")) return { key: `item:${ix.id}:${k}`, detail: fn(ix[k]) }; }
+        // 萬用：上面沒列到的任何細項欄位（含自訂欄位/工序設定）也要具體記，不再落到籠統字串
+        for (const k of new Set([...Object.keys(px || {}), ...Object.keys(ix || {})])) {
+          if (k === "id" || k === "name" || k === "lastUpdated") continue; // 純時間戳不算動作
+          if (JSON.stringify(px[k] ?? "") !== JSON.stringify(ix[k] ?? "")) return { key: `item:${ix.id}:${k}`, detail: `改「${tag}」${({ seq: "工序設定", cols: "自訂欄位", done: "完成狀態" }[k]) || "欄位內容"}` };
+        }
       }
       if (p.name !== n.name) return { key: `catname:${n.id}`, detail: `大項改名「${p.name}」→「${n.name}」` };
-      if ((p.payments || []).length !== (n.payments || []).length) { const more = (n.payments || []).length > (p.payments || []).length; const last = (n.payments || [])[(n.payments || []).length - 1]; return { key: `pay:${n.id}`, detail: more ? `「${n.name}」新增付款${last?.amount ? ` ${fmt(last.amount)}` : ""}` : `「${n.name}」刪除付款` }; }
+      if ((p.payments || []).length !== (n.payments || []).length) {
+        const pp = p.payments || [], np = n.payments || [];
+        if (np.length > pp.length) { const last = np[np.length - 1]; return { key: `pay:${n.id}`, detail: `「${n.name}」新增付款${last?.amount ? ` ${fmt(last.amount)}` : ""}` }; }
+        const removed = pp.find(x => !np.some(y => y.id === x.id)) || pp[pp.length - 1];
+        return { key: `pay:${n.id}`, detail: `「${n.name}」刪除付款${removed?.amount ? ` ${fmt(removed.amount)}` : ""}` };
+      }
       if ((p.discountValue ?? "") !== (n.discountValue ?? "") || (p.discountMode ?? "") !== (n.discountMode ?? "")) return { key: `disc:${n.id}`, detail: `改「${n.name}」議價 → ${n.discountValue || 0}${n.discountMode === "amt" ? "元" : "%"}` };
       if ((p.status ?? "") !== (n.status ?? "")) return { key: `catstatus:${n.id}`, detail: `改大項「${n.name}」狀態 → ${SL(n.status)}` };
+      // 萬用：大項層級其餘欄位（非工程標記、序開關、自訂欄位…）也具體記
+      for (const k of new Set([...Object.keys(p || {}), ...Object.keys(n || {})])) {
+        if (["id", "name", "items", "payments", "status", "discountValue", "discountMode", "order"].includes(k)) continue;
+        if (JSON.stringify(p[k] ?? "") !== JSON.stringify(n[k] ?? "")) return { key: `cat:${n.id}:${k}`, detail: `改大項「${n.name}」${({ nonProject: "非工程標記", seq: "序開關", segments: "排程", urgent: "超急件", seqSubs: "工序子項", note: "備註", cols: "自訂欄位" }[k]) || "設定"}` };
+      }
     }
     return { key: "edit", detail: "編輯工程資料" };
   };
@@ -677,6 +710,7 @@ export default function App() {
   };
   const canViewMoney = moneyOK(CURRENT_SPACE, view);
   CAN_VIEW_MONEY = canViewMoney; // 同步給 showMoney()（依「目前頁面」決定金額欄位/KPI 顯示與否）
+  CURRENT_USER = userName || ""; // 同步給模組級 auditLog（夥伴中心等元件作用域外用）
   const can = (page) => isAdmin || isManager || !!account?.pages?.includes(page);
   // 可見空間（admin 全開；未設＝全開）；可見頁面＝目前空間中通過 viewOK 的頁面清單
   const allowedSpaces = isAdmin ? SPACES.map(s => s.id) : (eff?.spaces?.length ? eff.spaces : SPACES.map(s => s.id));
@@ -987,7 +1021,7 @@ function KnowledgeBaseView({ canEdit, requireLogin, confirm, userName }) {
     return () => clearTimeout(safety);
   }, []);
 
-  const persist = async (list) => { setDocs(list); try { await window.storage.set(K("kb_docs"), JSON.stringify(list), true); } catch (_) {} };
+  const persist = async (list) => { try { const p = docs || []; auditLog(list.length > p.length ? "新增" : list.length < p.length ? "刪除" : "編輯", "夥伴中心・知識庫文件"); } catch (_) {} setDocs(list); try { await window.storage.set(K("kb_docs"), JSON.stringify(list), true); } catch (_) {} };
   const guard = () => { if (!canEdit) { requireLogin && requireLogin(); return false; } return true; };
   const cats = [...new Set([...KB_DEFAULT_CATS, ...(docs || []).map(d => d.category).filter(Boolean)])];
 
@@ -1113,7 +1147,7 @@ function Review360View({ canEdit, requireLogin, confirm, isAdmin, userName }) {
   }, []);
   function emptyR360() { return { dimensions: R360_DEFAULT_DIMS.map((l, i) => ({ id: "d" + i, label: l })), people: [], reviews: [] }; }
   function normR360(d) { if (!d) return emptyR360(); return { dimensions: d.dimensions?.length ? d.dimensions : emptyR360().dimensions, people: d.people || [], reviews: d.reviews || [] }; }
-  const persist = async (next) => { setData(next); try { await window.storage.set(K("kb_360"), JSON.stringify(next), true); } catch (_) {} };
+  const persist = async (next) => { try { auditLog("編輯", "夥伴中心・360 互評"); } catch (_) {} setData(next); try { await window.storage.set(K("kb_360"), JSON.stringify(next), true); } catch (_) {} };
   const guard = () => { if (!canEdit) { requireLogin && requireLogin(); return false; } return true; };
 
   if (data === null) return <div style={{ padding: 40, color: SUB, fontSize: 14 }}>載入中…</div>;
@@ -1309,7 +1343,7 @@ function FeedbackView({ canEdit, requireLogin, isAdmin, userName }) {
     })().finally(() => clearTimeout(safety));
     return () => clearTimeout(safety);
   }, []);
-  const persist = async (list) => { setItems(list); try { await window.storage.set(K("kb_feedback"), JSON.stringify({ items: list }), true); } catch (_) {} };
+  const persist = async (list) => { try { const p = items || []; auditLog(list.length > p.length ? "新增" : list.length < p.length ? "刪除" : "編輯", "夥伴中心・意見回饋"); } catch (_) {} setItems(list); try { await window.storage.set(K("kb_feedback"), JSON.stringify({ items: list }), true); } catch (_) {} };
   const nameOf = (id) => people.find(p => p.id === id)?.name || "—";
   if (items === null) return <div style={{ padding: 40, color: SUB, fontSize: 14 }}>載入中…</div>;
 
@@ -1401,7 +1435,8 @@ function FeedbackView({ canEdit, requireLogin, isAdmin, userName }) {
 
 // 夥伴中心共用：讀寫 + 完整積分餘額（回饋 + 闖關 − 兌換）
 const loadCrewJSON = async (key, def) => { try { const r = await window.storage.get(K(key), true); return r && r.value ? JSON.parse(r.value) : def; } catch (_) { return def; } };
-const saveCrewJSON = async (key, val) => { try { await window.storage.set(K(key), JSON.stringify(val), true); } catch (_) {} };
+const CREW_LABELS = { kb_quests: "夥伴中心・闖關任務", kb_polls: "夥伴中心・投票", kb_shop: "夥伴中心・獎勵商店", kb_feedback: "夥伴中心・意見回饋", kb_360: "夥伴中心・360 互評", kb_docs: "夥伴中心・知識庫" };
+const saveCrewJSON = async (key, val) => { try { auditLog("編輯", CREW_LABELS[key] || ("夥伴中心・" + key)); } catch (_) {} try { await window.storage.set(K(key), JSON.stringify(val), true); } catch (_) {} };
 function crewFullBalance(people, fbItems, questsData, shopData) {
   const fb = crewPointStats(fbItems, people); const m = {};
   people.forEach(p => { m[p.id] = fb[p.id]?.points || 0; });
