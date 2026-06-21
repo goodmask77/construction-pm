@@ -9,6 +9,7 @@ const TOKEN = clean(process.env.LINE_CHANNEL_ACCESS_TOKEN)
 const ANTHROPIC = clean(process.env.ANTHROPIC_API_KEY)
 const SB_URL = clean(process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL)
 const SB_KEY = (process.env.SUPABASE_SERVICE_ROLE_KEY || '').trim().replace(/^["']|["']$/g, '').replace(/^[A-Za-z0-9_]+=/, '').trim()
+const OP_CODE = clean(process.env.BOT_OP_CODE) // 操作者授權碼（私訊「授權:碼」才會被列為可執行操作者；未設＝全程唯讀，最安全）
 
 // 必須拿「原始 bytes」驗章，所以關掉預設 body 解析、自己 buffer。
 export const config = { api: { bodyParser: false } }
@@ -178,9 +179,9 @@ async function loadCrewText() {
   } catch (_) { return '' }
 }
 
-async function answer(question, snaps, accountsText, financeText, activityText, estimatesText, crewText) {
+async function answer(question, snaps, accountsText, financeText, activityText, estimatesText, crewText, canAct) {
   if (!ANTHROPIC) return '（D哥的 AI 金鑰尚未設定。）'
-  const system = '你是「D哥」，喬亞國際餐飲的 LINE 全能助理，掌握 App 內幾乎所有資料：工程專案（預算/付款/進度/工序日誌/零用金/ToDo/有問題項目）、財務內帳（多帳戶/交易/餘額/科目）、比價估價單、App 帳號清單、操作與登入紀錄（誰做了什麼、誰最近登入）、夥伴中心（360互評/意見回饋/闖關積分/獎勵商店/知識庫）。\n規則：①只根據下方「目前資料」回答，數字直接引用、不要亂算。②下方資料涵蓋 App 內絕大多數資訊——**優先從裡面找答案，能答就答清楚完整**。③**只有「App 完全沒有的東西」**（例如現場實際尺寸/深度/材質、與公司無關的閒聊）才說「這個我沒有資料」；不要把 App 裡明明有的（帳號、財務、進度、登入/操作紀錄、比價、夥伴中心…）也說沒有。④答案對準問題，用繁體中文、簡短口語、必要時條列。\n\n【目前資料】\n' + snapshotsToContext(snaps) + (accountsText || '') + (financeText || '') + (activityText || '') + (estimatesText || '') + (crewText || '')
+  const system = (canAct ? BOT_AGENT_GUIDE + '\n\n' : '') + '你是「D哥」，喬亞國際餐飲的 LINE 全能助理，掌握 App 內幾乎所有資料：工程專案（預算/付款/進度/工序日誌/零用金/ToDo/有問題項目）、財務內帳（多帳戶/交易/餘額/科目）、比價估價單、App 帳號清單、操作與登入紀錄（誰做了什麼、誰最近登入）、夥伴中心（360互評/意見回饋/闖關積分/獎勵商店/知識庫）。\n規則：①只根據下方「目前資料」回答，數字直接引用、不要亂算。②下方資料涵蓋 App 內絕大多數資訊——**優先從裡面找答案，能答就答清楚完整**。③**只有「App 完全沒有的東西」**（例如現場實際尺寸/深度/材質、與公司無關的閒聊）才說「這個我沒有資料」；不要把 App 裡明明有的（帳號、財務、進度、登入/操作紀錄、比價、夥伴中心…）也說沒有。④答案對準問題，用繁體中文、簡短口語、必要時條列。\n\n【目前資料】\n' + snapshotsToContext(snaps) + (accountsText || '') + (financeText || '') + (activityText || '') + (estimatesText || '') + (crewText || '')
   try {
     const r = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
@@ -192,6 +193,140 @@ async function answer(question, snaps, accountsText, financeText, activityText, 
     return '（AI 回應失敗）'
   } catch (_) { return '（AI 連線失敗）' }
 }
+
+// ════════════════════════════════════════════════════════════════════════
+// D哥 動作引擎：授權操作者可用 LINE 對話直接操作 App（私訊限定＋執行前一律要確認）
+// 寫入格式刻意與 App 內 applyActions 一致，確保不會寫壞資料。
+// ════════════════════════════════════════════════════════════════════════
+const STATUS_ALIASES = { '待開工': 'pending', '未開工': 'pending', 'pending': 'pending', '進行中': 'inprogress', '施工中': 'inprogress', 'inprogress': 'inprogress', 'in_progress': 'inprogress', '完工': 'done', '完成': 'done', '已完成': 'done', 'done': 'done', '有問題': 'issue', '問題': 'issue', 'issue': 'issue', '暫停': 'hold', 'paused': 'hold', 'hold': 'hold' }
+const STATUS_LABEL = { pending: '待開工', inprogress: '進行中', done: '完工', issue: '有問題', hold: '暫停' }
+const normStatus = (s) => STATUS_ALIASES[String(s || '').trim()] || null
+const bid = (p) => p + Date.now().toString(36) + Math.random().toString(36).slice(2, 6)
+const fmtNT = (n) => 'NT$' + (Math.round(Number(n) || 0)).toLocaleString()
+const findCat = (cats, q) => { if (!q) return null; return cats.find(c => c.name === q) || cats.find(c => c.name && (c.name.includes(q) || q.includes(c.name))) }
+const findItem = (cat, q) => { if (!cat || !q) return null; const its = cat.items || []; return its.find(i => i.name === q) || its.find(i => i.name && (i.name.includes(q) || q.includes(i.name))) }
+
+function extractBalancedObjects(s) {
+  const out = []; let depth = 0, start = -1
+  for (let i = 0; i < s.length; i++) { const ch = s[i]; if (ch === '{') { if (depth === 0) start = i; depth++ } else if (ch === '}') { depth--; if (depth === 0 && start >= 0) { out.push(s.slice(start, i + 1)); start = -1 } } }
+  return out
+}
+function parseActions(text) {
+  const actions = [], blocks = []
+  for (const m of text.matchAll(/```(?:json)?\s*([\s\S]*?)```/g)) blocks.push(m[1])
+  if (!blocks.length) { const m = text.match(/\{[\s\S]*"actions"[\s\S]*\}/); if (m) blocks.push(m[0]) }
+  if (!blocks.length) blocks.push(text)
+  for (const b of blocks) {
+    let ok = false
+    try { const o = JSON.parse(b); if (Array.isArray(o)) { actions.push(...o); ok = true } else if (Array.isArray(o.actions)) { actions.push(...o.actions); ok = true } else if (o && o.type) { actions.push(o); ok = true } } catch (_) {}
+    if (!ok) for (const os of extractBalancedObjects(b)) { try { const o = JSON.parse(os); if (o && o.type) actions.push(o) } catch (_) {} }
+  }
+  return actions.filter(a => a && a.type)
+}
+// 把 AI 回覆裡的 json 區塊拿掉，只留給人看的說明文字
+const stripJson = (t) => t.replace(/```(?:json)?[\s\S]*?```/g, '').replace(/\{[\s\S]*"actions"[\s\S]*\}/g, '').trim()
+
+// 一句話描述一個 action（給「執行前確認」用）
+function describeAction(a) {
+  switch (a.type) {
+    case 'add_category': return `新增大項「${a.name || '?'}」`
+    case 'delete_category': return `刪除大項「${a.category || '?'}」`
+    case 'set_category_status': return `把大項「${a.category || '?'}」狀態改成 ${a.status || '?'}`
+    case 'add_item': return `在「${a.category || '?'}」新增細項「${a.name || '?'}」${a.unitPrice ? `（單價 ${fmtNT(a.unitPrice)}×${a.qty || 1}）` : ''}`
+    case 'set_item': case 'set_item_status': return `更新「${a.category || '?'}／${a.item || a.itemName || '?'}」${a.status ? ` 狀態→${a.status}` : ''}`
+    case 'delete_item': return `刪除「${a.category || '?'}」的細項「${a.item || a.itemName || '?'}」`
+    case 'add_payment': return `「${a.category || '?'}」新增付款 ${fmtNT(a.amount)}`
+    case 'add_todo': return `新增待辦「${a.desc || a.content || '?'}」${a.due ? `（交期 ${a.due}）` : ''}`
+    case 'add_petty_spend': return `記零用金花費 ${fmtNT(a.amount)}「${a.content || a.note || ''}」`
+    case 'add_finance_tx': return `記財務${/收/.test(a.kind || '') ? '收入' : /轉/.test(a.kind || '') ? '轉帳' : '支出'} ${fmtNT(a.amount)}${a.vendor ? `（${a.vendor}）` : ''}`
+    case 'add_log': return `新增工作日誌「${(a.content || '').slice(0, 20)}」`
+    default: return `（不支援的操作：${a.type}）`
+  }
+}
+
+async function appendActivity(key, user, action, detail) {
+  try { const cur = (await kvGetMany([key]))[key]; const arr = Array.isArray(cur) ? cur : []; await kvSet(key, [{ ts: new Date().toISOString(), user, action, detail }, ...arr].slice(0, 200)) } catch (_) {}
+}
+
+// 真正執行：載入要動到的資料 → 套用 → 存回 → 記操作紀錄
+async function executeActions(actions, operator) {
+  const ck = await kvGetMany(['pm_data', 'pm_worklog', 'pm_petty', 'pm_issues', 'sp_finance_pm_fin_ledger', 'sp_finance_pm_fin_accounts'])
+  let cats = Array.isArray(ck['pm_data']) ? ck['pm_data'] : []
+  let worklog = Array.isArray(ck['pm_worklog']) ? ck['pm_worklog'] : []
+  const pj = ck['pm_petty'] || {}; let petty = { advances: pj.advances || [], spends: pj.spends || [] }
+  let issues = Array.isArray(ck['pm_issues']) ? ck['pm_issues'] : []
+  let ledger = Array.isArray(ck['sp_finance_pm_fin_ledger']) ? ck['sp_finance_pm_fin_ledger'] : []
+  const accounts = Array.isArray(ck['sp_finance_pm_fin_accounts']) ? ck['sp_finance_pm_fin_accounts'] : []
+  const today = new Date().toISOString().slice(0, 10)
+  const by = 'D哥(' + operator + ')'
+  const results = [], changed = new Set(), audits = []
+  for (const a of actions) {
+    const t = a.type
+    try {
+      if (t === 'add_category') {
+        cats.push({ id: 'cat-' + bid(''), order: cats.length, name: a.name || '新大項', budget: Number(a.budget) || 0, status: 'pending', items: [] })
+        changed.add('pm_data'); results.push(`➕ 新增大項「${a.name || '新大項'}」`); audits.push(['pm_activity', '新增', `新增大項「${a.name || '新大項'}」`])
+      } else if (t === 'delete_category') {
+        const c = findCat(cats, a.category); if (c) { cats = cats.filter(x => x.id !== c.id); changed.add('pm_data'); results.push(`🗑️ 刪除大項「${c.name}」`); audits.push(['pm_activity', '刪除', `刪除大項「${c.name}」`]) } else results.push(`⚠️ 找不到大項「${a.category}」`)
+      } else if (t === 'set_category_status') {
+        const c = findCat(cats, a.category), s = normStatus(a.status)
+        if (c && s) { c.status = s; if (s === 'done') c.items = (c.items || []).map(it => ({ ...it, status: 'done', done: true })); changed.add('pm_data'); results.push(`🔖 「${c.name}」→${STATUS_LABEL[s]}`); audits.push(['pm_activity', '編輯', `改大項「${c.name}」狀態 → ${STATUS_LABEL[s]}`]) } else results.push(`⚠️ 找不到大項「${a.category}」或狀態無效`)
+      } else if (t === 'add_item') {
+        const c = findCat(cats, a.category)
+        if (c) { const tax = ['未稅', '含稅', '免稅'].includes(a.taxType) ? a.taxType : '未稅'; const it = { id: 'i-' + bid(''), name: a.name || '新細項', qty: Number(a.qty) || 1, unit: a.unit || '式', unitPrice: Math.round(Number(a.unitPrice) || 0), taxType: tax, labor: 0, laborDays: 0, dailyWage: 0, assignee: a.assignee || '', status: normStatus(a.status) || 'pending', receipts: [], notes: a.notes || '', chat: [], done: false }; (c.items || (c.items = [])).push(it); changed.add('pm_data'); results.push(`➕ 「${c.name}」新增細項「${it.name}」`); audits.push(['pm_activity', '新增', `「${c.name}」新增細項「${it.name}」`]) } else results.push(`⚠️ 找不到大項「${a.category}」`)
+      } else if (t === 'set_item' || t === 'set_item_status') {
+        const c = findCat(cats, a.category), it = c && findItem(c, a.item || a.itemName)
+        if (c && it) { const chg = []; if (a.qty != null) { it.qty = Number(a.qty); chg.push('數量') } if (a.unitPrice != null) { it.unitPrice = Math.round(Number(a.unitPrice)); chg.push('單價') } if (a.unit != null) { it.unit = a.unit; chg.push('單位') } if (a.assignee != null) { it.assignee = a.assignee; chg.push('廠商') } if (a.status != null) { const s = normStatus(a.status); if (s) { it.status = s; chg.push('狀態' + STATUS_LABEL[s]) } } it.lastUpdated = new Date().toISOString(); changed.add('pm_data'); results.push(`✏️ 「${c.name}／${it.name}」：${chg.join('、') || '無變更'}`); audits.push(['pm_activity', '編輯', `改「${c.name}／${it.name}」${chg.join('、')}`]) } else results.push(`⚠️ 找不到細項「${a.item || a.itemName}」`)
+      } else if (t === 'delete_item') {
+        const c = findCat(cats, a.category), it = c && findItem(c, a.item || a.itemName)
+        if (c && it) { c.items = c.items.filter(x => x.id !== it.id); changed.add('pm_data'); results.push(`🗑️ 刪除「${c.name}／${it.name}」`); audits.push(['pm_activity', '刪除', `「${c.name}」刪除細項「${it.name}」`]) } else results.push(`⚠️ 找不到細項`)
+      } else if (t === 'add_payment') {
+        const c = findCat(cats, a.category)
+        if (c) { const amt = Math.round(Number(a.amount) || 0); const it = (a.item || a.itemName) ? findItem(c, a.item || a.itemName) : null; (c.payments || (c.payments = [])).push({ id: 'pay-' + bid(''), date: a.date || today, amount: amt, category: a.kind || '其他', note: a.note || '', itemId: it ? it.id : null, receipts: [] }); changed.add('pm_data'); results.push(`💵 「${c.name}」新增付款 ${fmtNT(amt)}`); audits.push(['pm_activity', '編輯', `「${c.name}」新增付款 ${fmtNT(amt)}`]) } else results.push(`⚠️ 找不到大項「${a.category}」`)
+      } else if (t === 'add_todo') {
+        const desc = a.desc || a.content || ''; issues = [{ id: 'is-' + bid(''), desc, category: a.category || '其他', due: a.due || '', remindEnd: '', track: a.track !== false, remindEvery: 0, status: 'open', source: 'line', by, ts: new Date().toISOString(), nudges: 0, answer: '', catName: '', catId: '', photoUrl: '' }, ...issues]; changed.add('pm_issues'); results.push(`📝 新增待辦「${desc.slice(0, 20)}」`); audits.push(['pm_activity', '新增', `新增待辦「${desc.slice(0, 20)}」`])
+      } else if (t === 'add_petty_spend') {
+        const c = a.category ? findCat(cats, a.category) : null; const content = a.content || a.note || ''; petty.spends = [...petty.spends, { id: 's' + bid(''), date: a.date || today, content, amount: Math.round(Number(a.amount) || 0), catId: c ? c.id : '__misc__' }]; changed.add('pm_petty'); results.push(`🪙 記零用金花費 ${fmtNT(a.amount)}「${content}」`); audits.push(['pm_activity', '新增', `記零用金花費「${content}」${fmtNT(a.amount)}`])
+      } else if (t === 'add_finance_tx') {
+        const kind = ['expense', 'income', 'transfer'].includes(a.kind) ? a.kind : (/收/.test(a.kind || '') ? 'income' : /轉/.test(a.kind || '') ? 'transfer' : 'expense')
+        const acc = a.account ? (accounts.find(x => x.name === a.account) || accounts.find(x => x.name && x.name.includes(a.account))) : accounts[0]
+        const aid = acc ? acc.id : ''; const toAcc = a.toAccount ? (accounts.find(x => x.name === a.toAccount) || accounts.find(x => x.name && x.name.includes(a.toAccount))) : null
+        ledger = [{ id: 'tx' + bid(''), date: a.date || today, kind, amount: Math.round(Number(a.amount) || 0), from: kind === 'income' ? '' : aid, to: kind === 'income' ? aid : (toAcc ? toAcc.id : ''), category: a.category || '', vendor: a.vendor || '', invoiceNo: '', note: a.note || '', receipts: [] }, ...ledger]; changed.add('sp_finance_pm_fin_ledger'); results.push(`💰 記財務${kind === 'income' ? '收入' : kind === 'transfer' ? '轉帳' : '支出'} ${fmtNT(a.amount)}`); audits.push(['sp_finance_pm_activity', '新增', `記財務${kind === 'income' ? '收入' : kind === 'transfer' ? '轉帳' : '支出'} ${fmtNT(a.amount)}${a.vendor ? `（${a.vendor}）` : ''}`])
+      } else if (t === 'add_log') {
+        worklog = [{ id: 'wl-' + bid(''), date: a.date || today, content: a.content || '', author: by, ts: new Date().toISOString() }, ...worklog]; changed.add('pm_worklog'); results.push(`📓 新增工作日誌`); audits.push(['pm_activity', '新增', '新增工作日誌'])
+      } else results.push(`⚠️ 不支援的操作：${t}`)
+    } catch (e) { results.push(`⚠️ 執行「${t}」失敗`) }
+  }
+  const saveMap = { pm_data: cats, pm_worklog: worklog, pm_petty: petty, pm_issues: issues, sp_finance_pm_fin_ledger: ledger }
+  for (const k of changed) if (saveMap[k] !== undefined) await kvSet(k, saveMap[k])
+  for (const [key, action, detail] of audits) await appendActivity(key, by, action, detail)
+  return results
+}
+
+// 操作者白名單 / 待確認操作（都存在 pm_documents）
+async function getOperators() { return (await kvGetMany(['pm_bot_operators']))['pm_bot_operators'] || {} }
+async function addOperator(userId, name) { const ops = await getOperators(); ops[userId] = { name: name || '操作者', ts: new Date().toISOString() }; await kvSet('pm_bot_operators', ops); return ops[userId] }
+async function getPending(userId) { const all = (await kvGetMany(['pm_bot_pending']))['pm_bot_pending'] || {}; const p = all[userId]; if (!p) return null; if (Date.now() - new Date(p.ts).getTime() > 10 * 60000) return null; return p }
+async function setPending(userId, val) { const all = (await kvGetMany(['pm_bot_pending']))['pm_bot_pending'] || {}; if (val) all[userId] = val; else delete all[userId]; await kvSet('pm_bot_pending', all) }
+async function getLineProfile(userId) { try { const r = await fetch('https://api.line.me/v2/bot/profile/' + userId, { headers: { authorization: `Bearer ${TOKEN}` } }); if (r.ok) { const d = await r.json(); return d.displayName || '' } } catch (_) {} return '' }
+
+const BOT_AGENT_GUIDE = `
+你除了回答問題，還能「直接操作」這個 App。當（且僅當）使用者明確要你「做某個操作」（新增/修改/刪除/記一筆/改狀態…）時，用一段 markdown json 區塊輸出指令；若只是問問題，就正常用文字回答、不要輸出 json。
+\`\`\`json
+{"actions":[ ... ]}
+\`\`\`
+可用指令：
+- {"type":"add_todo","desc":"買水泥3包","category":"採購","due":"2026-06-25"}  // 加待辦；category/due 可省略
+- {"type":"add_log","content":"今天水電進場拉管線","date":"2026-06-22"}  // 工作日誌；date 可省略(預設今天)
+- {"type":"add_petty_spend","amount":390,"content":"工人便當","category":"水電工程"}  // 記零用金花費；category 是歸到哪個工種(可省略)
+- {"type":"add_finance_tx","kind":"expense","amount":12000,"account":"合庫","category":"物料","vendor":"震旦","note":"買桌椅"}  // 財務內帳；kind=expense支出/income收入/transfer轉帳；account=帳戶名
+- {"type":"set_category_status","category":"消防工程","status":"完工"}  // 狀態：待開工/進行中/完工/有問題/暫停
+- {"type":"set_item","category":"消防工程","item":"灑水頭","status":"完工","unitPrice":1200,"qty":10,"assignee":"王師傅"}  // 改細項；欄位都可省略
+- {"type":"add_category","name":"空調工程","budget":300000}
+- {"type":"add_item","category":"空調工程","name":"主機","qty":1,"unit":"式","unitPrice":150000,"taxType":"未稅"}
+- {"type":"delete_item","category":"空調工程","item":"主機"}
+- {"type":"add_payment","category":"消防工程","amount":63000,"date":"2026-06-22","note":"訂金"}  // 大項新增一筆付款
+數字只放阿拉伯數字、不要逗號或「元」。一次可放多個指令。`
 
 const TRIGGERS = ['d哥', 'D哥', '進度', '多少', '還欠', '未付', '已付', '付款', '總額', '預算', '餘額', '報告', '速報', '幾天', '完工', '零用金']
 const triggered = (text) => /[?？]\s*$/.test(text) || TRIGGERS.some((k) => text.includes(k))
@@ -229,10 +364,52 @@ export default async function handler(req, res) {
       const named = mentionedSelf || /d哥/i.test(text)
       console.log('event', JSON.stringify({ src: ev.source?.type, isDM, named, mSelf: mentionedSelf, text: text.slice(0, 40) }))
       if (!isDM && !named) continue // 私訊一律回；群組必須被點名（@本帳號 或 講「D哥」）
+      const userId = ev.source?.userId || ''
+      const send = (t) => ev.replyToken ? lineReply(ev.replyToken, t) : Promise.resolve()
+
+      // ── 動作引擎（只在「私訊」進行，群組一律唯讀，較安全）──
+      // 1) 授權：私訊「授權:碼」→ 列入操作者白名單
+      const mAuth = text.match(/^授權[\s:：]*([^\s]+)/)
+      if (isDM && mAuth) {
+        if (!OP_CODE) { await send('（系統尚未設定操作密碼 BOT_OP_CODE，目前無法授權操作。請先在 Vercel 設定。）'); continue }
+        if (mAuth[1] === OP_CODE) { const name = await getLineProfile(userId); const op = await addOperator(userId, name); await send(`✅ 已授權「${op.name}」為操作者，之後可以直接用對話叫我新增/修改資料（執行前我都會先問你確認）。`) }
+        else await send('❌ 授權碼不對。')
+        continue
+      }
+      const operators = await getOperators()
+      const op = isDM ? operators[userId] : null
+      const canAct = !!op
+
+      // 2) 確認 / 取消 待執行的操作
+      if (isDM && canAct) {
+        const pend = await getPending(userId)
+        if (pend) {
+          if (/^(確認|確定|執行|對|好|yes|y|ok|ｏｋ)$/i.test(text)) {
+            const results = await executeActions(pend.actions, op.name)
+            await setPending(userId, null)
+            await send('✅ 已完成：\n' + results.join('\n'))
+            continue
+          }
+          if (/^(取消|不要|算了|no|n|cancel)$/i.test(text)) { await setPending(userId, null); await send('已取消，沒有做任何更動。'); continue }
+          // 其它訊息 → 視為改主意/新需求，往下重新解析（會覆蓋舊的待確認）
+        }
+      }
+
+      // 3) 一般流程：載入資料 → 問 AI（操作者才開放下指令）
       const [snaps, accountsText, financeText, activityText, estimatesText, crewText] = await Promise.all([loadSnapshots(), loadAccounts(), loadFinanceText(), loadActivityText(), loadEstimatesText(), loadCrewText()])
-      const reply = await answer(text, snaps, accountsText, financeText, activityText, estimatesText, crewText)
-      console.log('answer', JSON.stringify({ snaps: snaps.length, replyLen: reply.length }))
-      if (ev.replyToken) await lineReply(ev.replyToken, reply)
+      const reply = await answer(text, snaps, accountsText, financeText, activityText, estimatesText, crewText, canAct)
+      const actions = canAct ? parseActions(reply) : []
+      console.log('answer', JSON.stringify({ snaps: snaps.length, canAct, actions: actions.length, replyLen: reply.length }))
+
+      if (actions.length) {
+        // 4) 提出操作 → 存待確認 → 請使用者回「確認」
+        await setPending(userId, { actions, ts: new Date().toISOString() })
+        const note = stripJson(reply)
+        const list = actions.map((a, i) => `${i + 1}. ${describeAction(a)}`).join('\n')
+        await send(`${note ? note + '\n\n' : ''}🛠 我要執行以下操作：\n${list}\n\n回「確認」就執行、「取消」放棄。`)
+      } else {
+        await send(reply)
+      }
     } catch (e) { console.log('event error', e?.message) }
   }
   return res.status(200).json({ ok: true })
