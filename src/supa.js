@@ -24,11 +24,15 @@ export const supabase = url && key ? createClient(url, key, {
   },
 }) : null
 
-// 資料讀寫用 client：不帶 session、不刷新權杖、不過 auth 鎖 → 17 個請求可真正並發，載入快。
-// （pm_documents 沒有 RLS，用公鑰即可讀寫；登入相關仍走上面的 supabase。）
+// 資料「讀取」用 client：不帶 session、不刷新權杖、不過 auth 鎖 → 17 個請求可真正並發，載入快。
+// 讀取走 RLS 的「anon 可 SELECT」政策，所以沒登入也能看（訪客瀏覽）。
 const dataClient = url && key ? createClient(url, key, {
   auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
 }) : null
+
+// 資料「寫入」一律走帶 session 的 supabase（登入者＝authenticated 角色）→ RLS 才擋得住外人亂改。
+// 沒登入時這個 client 是 anon 角色，RLS 會擋下寫入（本來訪客就不能改，符合預期）。
+const writeDB = () => supabase || dataClient
 
 export const CLIENT_ID =
   Math.random().toString(36).slice(2) + Date.now().toString(36)
@@ -63,13 +67,14 @@ export async function getSharedMany(keys) {
 async function setShared(k, value) {
   if (!dataClient) { try { localStorage.setItem(k, value) } catch (_) {} ; return }
   try {
-    await dataClient.from('pm_documents').upsert({
+    const { error } = await writeDB().from('pm_documents').upsert({
       id: k,
       data: { v: value },
       editor: CLIENT_ID,
       updated_at: new Date().toISOString(),
     })
-  } catch (_) {}
+    if (error) console.warn('[storage] 寫入失敗', k, error.message || error) // RLS 擋下或未登入時會在這
+  } catch (e) { console.warn('[storage] 寫入例外', k, e?.message) }
 }
 
 function getLocal(k) {
@@ -109,7 +114,7 @@ export function installStorageShim() {
     },
     async delete(key, shared = true) {
       if (shared && dataClient) {
-        try { await dataClient.from('pm_documents').delete().eq('id', key) } catch (_) {}
+        try { await writeDB().from('pm_documents').delete().eq('id', key) } catch (_) {}
       } else { try { localStorage.removeItem(key) } catch (_) {} }
     },
   }
