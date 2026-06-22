@@ -459,7 +459,13 @@ export default function App() {
     window.storage.set(K("pm_colorder"), JSON.stringify(list), true).catch(()=>{});
   };
   const commitSeqLogs = (list) => {
-    try { const p = seqLogs || []; if (list.length > p.length) logAction("編輯", "新增工序日誌", 4000); else if (list.length < p.length) logAction("編輯", "刪除工序日誌", 4000); else logAction("編輯", "編輯工序日誌", 4000); } catch (_) {}
+    try {
+      const p = seqLogs || [];
+      const snip = (e) => { const s = (e?.done || e?.next || "").trim(); return s ? "：" + s.slice(0, 30) : (e?.issue ? "：⚠️異常" : ""); };
+      if (list.length > p.length) { const a = list.find(x => !p.some(y => y.id === x.id)); logActivity("新增", `工序日誌「${_seqName(a?.itemId)}」${a?.date ? " " + a.date : ""}${snip(a)}`); }
+      else if (list.length < p.length) { const r = p.find(x => !list.some(y => y.id === x.id)); logActivity("刪除", `刪工序日誌「${_seqName(r?.itemId)}」${r?.date ? " " + r.date : ""}`); }
+      else { const ch = list.find(x => { const o = p.find(y => y.id === x.id); return o && JSON.stringify(o) !== JSON.stringify(x); }); logAction("編輯", `改工序日誌「${_seqName(ch?.itemId)}」${snip(ch)}`, 4000); }
+    } catch (_) {}
     setSeqLogs(list);
     window.storage.set(K("pm_seqlogs"), JSON.stringify(list), true).catch(()=>{});
   };
@@ -854,7 +860,7 @@ export default function App() {
   const _updSub = (itemId, patch) => { const [cid,sid] = itemId.split("::"); setCats(prev => prev.map(c => c.id===cid ? { ...c, seqSubs:(c.seqSubs||[]).map(s => s.id===sid ? { ...s, ...patch } : s) } : c)); };
   const _updCost = (itemId, patch) => { const [cid,,iid] = itemId.split("::"); setCats(prev => prev.map(c => c.id===cid ? { ...c, items:(c.items||[]).map(it => it.id===iid ? { ...it, seq:{ ...(it.seq||{}), ...patch } } : it) } : c)); };
   const _updSeqSub = (itemId, patch) => itemId.includes("::ci::") ? _updCost(itemId, patch) : _updSub(itemId, patch);
-  const _seqName = (itemId) => { try { const cid = itemId.split("::")[0]; const c = (cats||[]).find(x=>x.id===cid); return c ? c.name : ""; } catch(_) { return ""; } };
+  const _seqName = (itemId) => { try { const [cid, mid, iid] = String(itemId).split("::"); const c = (cats||[]).find(x=>x.id===cid); if (!c) return itemId||""; if (!mid) return c.name; if (mid === "ci") { const it = (c.items||[]).find(x=>x.id===iid); return c.name + "／" + (it?.name || iid); } const s = (c.seqSubs||[]).find(x=>x.id===mid); return c.name + "／" + (s?.name || mid); } catch(_) { return ""; } };
   const seqSetStatus = (itemId, wsKey) => { if (!canEditData) { denyEdit(); return; } const st = WS2CAT[wsKey]||"pending"; const lbl = { done:"完工", working:"施工中", problem:"有問題", pending:"待開工" }[st] || st; logAction("編輯", `改工序狀態「${_seqName(itemId)}」→${lbl}`, 4000); if (itemId.includes("::")) _updSeqSub(itemId, { status: st }); else setCats(prev => prev.map(c => c.id===itemId ? (st === "done" ? markCatDone(c) : { ...c, status: st }) : c)); };
   const seqSetSchedule = (itemId, segs) => { if (!canEditData) { denyEdit(); return; } logAction("編輯", `調整工序排程「${_seqName(itemId)}」`, 4000); if (itemId.includes("::")) _updSeqSub(itemId, { segments: segs }); else setCats(prev => prev.map(c => c.id===itemId ? { ...c, segments: segs } : c)); };
   const seqSetUrgent = (itemId, val) => { if (!canEditData) { denyEdit(); return; } logAction("編輯", `${val?"標記":"取消"}工序超急件「${_seqName(itemId)}」`, 4000); if (itemId.includes("::")) _updSeqSub(itemId, { urgent: val }); else setCats(prev => prev.map(c => c.id===itemId ? { ...c, urgent: val } : c)); };
