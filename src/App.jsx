@@ -3935,6 +3935,7 @@ function HistoryView({ K, confirm, snapshotData, cats, petty }) {
     return "—";
   };
   const fmtWhen = (ts) => { try { const d = new Date(ts); return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`; } catch (_) { return ts; } };
+  const noteLabel = (n) => n === "手動還原點" ? "手動建立" : n === "還原前自動存點" ? "還原前自動存" : n === "變更前自動存點" ? "變更前自動存" : "系統自動存點";
   const makePoint = async () => {
     setBusy(true);
     try { await snapshotData("pm_data", cats, { force: true, note: "手動還原點" }); await snapshotData("pm_petty", petty, { force: true, note: "手動還原點" }); } catch (_) {}
@@ -3959,20 +3960,21 @@ function HistoryView({ K, confirm, snapshotData, cats, petty }) {
         <button onClick={makePoint} disabled={busy} style={{ background: ACCENT, color: "#fff", border: "none", borderRadius: 8, padding: "8px 16px", fontSize: 13, fontWeight: 600, cursor: busy ? "wait" : "pointer" }}>＋ 現在建立還原點</button>
       </div>
       <div style={{ fontSize: 12.5, color: SUB, marginBottom: 14, lineHeight: 1.7, background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: 10, padding: "10px 14px" }}>
-        系統會在「工程資料 / 零用金」變動時，<b>每隔約 10 分鐘自動留一個還原點</b>（最多保留 60 個）。怕資料被改壞時，挑一個時間點按「還原」就能救回。重要操作前也可以先手動按上面建立還原點。
+        每一列＝<b>某個時間點「資料當時的樣子」</b>的一份存檔。中間那串數字是<b>當時的內容</b>（不是名稱），按右邊「還原」就會把現在的資料換回那個版本。<br />
+        系統會在「工程資料 / 零用金」變動時<b>每隔約 10 分鐘自動存一份</b>（各最多 60 份）；重要操作前也可先按右上角手動存一份。
       </div>
       {rows === null ? <div style={{ padding: 30, textAlign: "center", color: SUB }}>載入中…</div> :
         rows.length === 0 ? <div style={{ padding: 30, textAlign: "center", color: SUB }}>還沒有還原點。資料一有變動就會自動開始累積，或按右上角手動建立。</div> :
           <div style={{ border: `1px solid ${BORDER}`, borderRadius: 12, background: SURFACE, overflow: "hidden" }}>
             {rows.map((e, i) => { const m = META[e.key]; return (
-              <div key={e.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 14px", borderTop: i ? `1px solid #EFE7D6` : "none" }}>
-                <div style={{ width: 86, flexShrink: 0, fontSize: 12.5, color: SUB, fontVariantNumeric: "tabular-nums" }}>{fmtWhen(e.ts)}</div>
-                <div style={{ flexShrink: 0, width: 64, textAlign: "center", fontSize: 11.5, fontWeight: 700, color: "#fff", background: m.color, borderRadius: 6, padding: "3px 0" }}>{m.label}</div>
+              <div key={e.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "11px 14px", borderTop: i ? `1px solid #EFE7D6` : "none" }}>
+                <div style={{ flexShrink: 0, width: 70, textAlign: "center", fontSize: 11.5, fontWeight: 700, color: "#fff", background: m.color, borderRadius: 6, padding: "4px 0" }}>{m.label}</div>
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 13, color: TEXT, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{summarize(e)}</div>
-                  <div style={{ fontSize: 11, color: SUB }}>{e.user || "系統"}{e.note ? `・${e.note}` : ""}</div>
+                  <div style={{ fontSize: 13.5, color: TEXT, fontWeight: 600 }}>{fmtWhen(e.ts)} 的版本</div>
+                  <div style={{ fontSize: 12, color: SUB, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", marginTop: 1 }}>當時內容：{summarize(e)}</div>
+                  <div style={{ fontSize: 11, color: "#A99F88", marginTop: 1 }}>{e.user || "系統"}・{noteLabel(e.note)}</div>
                 </div>
-                <button onClick={() => restore(e)} disabled={busy} style={{ flexShrink: 0, background: "#fff", color: ACCENT, border: `1px solid ${ACCENT}`, borderRadius: 7, padding: "5px 14px", fontSize: 12.5, fontWeight: 600, cursor: busy ? "wait" : "pointer" }}>還原</button>
+                <button onClick={() => restore(e)} disabled={busy} title="把現在的資料換回這個版本" style={{ flexShrink: 0, background: "#fff", color: ACCENT, border: `1px solid ${ACCENT}`, borderRadius: 7, padding: "6px 16px", fontSize: 12.5, fontWeight: 600, cursor: busy ? "wait" : "pointer" }}>↩ 還原</button>
               </div>
             ); })}
           </div>}
