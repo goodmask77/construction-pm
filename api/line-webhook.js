@@ -117,8 +117,9 @@ async function loadFinanceText() {
     const inc = led.filter(l => l.kind === 'income').reduce((s, l) => s + n(l.amount), 0)
     const exp = led.filter(l => l.kind === 'expense').reduce((s, l) => s + n(l.amount), 0)
     lines.push(`交易共 ${led.length} 筆，累計收入 NT$${Math.round(inc).toLocaleString()}、支出 NT$${Math.round(exp).toLocaleString()}`)
-    const recent = [...led].sort((a, b) => (a.date < b.date ? 1 : -1)).slice(0, 15)
-    if (recent.length) { lines.push('最近交易：'); recent.forEach(l => lines.push(`  - ${l.date || ''} ${l.kind === 'income' ? '收入' : l.kind === 'transfer' ? '轉帳' : '支出'} ${Math.round(n(l.amount)).toLocaleString()} ${[l.category, l.vendor, l.note].filter(Boolean).join('・')}`)) }
+    const CAP = 120
+    const sorted = [...led].sort((a, b) => (a.date < b.date ? 1 : -1)).slice(0, CAP)
+    if (sorted.length) { lines.push(led.length > CAP ? `交易明細（新到舊，僅列最近 ${CAP} 筆，共 ${led.length} 筆；要更早的請在App查）：` : '全部交易明細（新到舊）：'); sorted.forEach(l => lines.push(`  - ${l.date || ''} ${l.kind === 'income' ? '收入' : l.kind === 'transfer' ? '轉帳' : '支出'} ${Math.round(n(l.amount)).toLocaleString()} ${[l.category, l.vendor, l.note].filter(Boolean).join('・')}`)) }
     if (coa.length) lines.push(`會計科目樹：共 ${coa.length} 個科目（大項/中項/細項）`)
     return lines.join('\n')
   } catch (_) { return '' }
@@ -135,8 +136,8 @@ async function loadActivityText() {
     if (!all.length) return ''
     all.sort((a, b) => (a.ts < b.ts ? 1 : -1))
     const fmtT = (ts) => { try { const d = new Date(ts); return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}` } catch (_) { return ts || '' } }
-    const lines = ['\n\n【操作紀錄（誰做了什麼，新到舊）】']
-    all.slice(0, 40).forEach(e => lines.push(`  - ${fmtT(e.ts)} ${e.user || '—'}（${e.space}）${e.action || ''}：${e.detail || ''}`))
+    const lines = [`\n\n【操作紀錄（誰做了什麼，新到舊${all.length > 80 ? '，僅列最近 80 筆' : ''}）】`]
+    all.slice(0, 80).forEach(e => lines.push(`  - ${fmtT(e.ts)} ${e.user || '—'}（${e.space}）${e.action || ''}：${e.detail || ''}`))
     // 登入紀錄獨立整理：每人最後一次登入時間
     const logins = all.filter(e => e.action === '登入')
     if (logins.length) {
@@ -162,20 +163,72 @@ async function loadEstimatesText() {
   } catch (_) { return '' }
 }
 
-// 夥伴中心（團隊）資料：360 互評 / 意見回饋 / 闖關積分 / 獎勵商店 / 知識庫 / 投票。
-// 這些是半結構化資料，直接餵精簡 JSON 讓 D哥自己解讀，確保「答得出來」。
+// 夥伴中心（團隊）資料：正規解析成「完整但精簡」的摘要（不再截斷原始JSON，避免漏資料）。
+// 360 互評→逐人平均分+各構面；意見回饋→逐人標籤統計+留言；其餘→計數+重點。
 async function loadCrewText() {
   try {
     const bases = ['kb_360', 'kb_feedback', 'kb_quests', 'kb_shop', 'kb_docs', 'kb_polls']
     const keys = []
     for (const p of ['sp_crew_', 'sp_team_']) for (const b of bases) keys.push(p + b)
     const map = await kvGetMany(keys)
-    const label = { kb_360: '360 互評', kb_feedback: '意見回饋', kb_quests: '闖關任務/積分', kb_shop: '獎勵商店', kb_docs: '知識庫文件', kb_polls: '投票' }
-    const present = Object.entries(map).filter(([, v]) => v && (Array.isArray(v) ? v.length : Object.keys(v).length))
-    if (!present.length) return ''
-    const lines = ['\n\n【夥伴中心（團隊）資料】']
-    present.forEach(([k, v]) => { const base = k.replace(/^sp_(crew|team)_/, ''); let j = JSON.stringify(v); if (j.length > 1400) j = j.slice(0, 1400) + '…(略)'; lines.push(`▍${label[base] || base}：${j}`) })
-    return lines.join('\n')
+    const pick = (b) => map['sp_crew_' + b] || map['sp_team_' + b] || null
+    const out = ['\n\n【夥伴中心（團隊）資料】']
+    let any = false
+    const r360 = pick('kb_360')
+    const nameOf = {}
+    if (r360 && Array.isArray(r360.people)) r360.people.forEach(p => { nameOf[p.id] = p.name })
+
+    // 360 互評：每個被評者的「整體平均 + 各構面平均 + 份數」（全員、不截斷）
+    if (r360 && Array.isArray(r360.people)) {
+      any = true
+      const dims = r360.dimensions || []
+      const reviews = r360.reviews || []
+      const agg = {}
+      reviews.forEach(rv => {
+        const a = agg[rv.revieweeId] || (agg[rv.revieweeId] = { sum: 0, n: 0, dim: {}, dimN: {}, cnt: 0, comments: [] })
+        a.cnt++
+        Object.entries(rv.scores || {}).forEach(([d, s]) => { const v = Number(s) || 0; a.sum += v; a.n++; a.dim[d] = (a.dim[d] || 0) + v; a.dimN[d] = (a.dimN[d] || 0) + 1 })
+        if (rv.comment) a.comments.push(rv.comment)
+      })
+      const rows = Object.entries(agg).map(([id, a]) => ({ name: nameOf[id] || id, avg: a.n ? a.sum / a.n : 0, cnt: a.cnt, a })).sort((x, y) => y.avg - x.avg)
+      out.push(`▍360 互評（滿分5，共 ${reviews.length} 份評，依平均高→低）：`)
+      rows.forEach(r => {
+        const per = dims.map(d => `${d.label}${r.a.dimN[d.id] ? (r.a.dim[d.id] / r.a.dimN[d.id]).toFixed(1) : '-'}`).join('・')
+        const cm = r.a.comments.length ? `｜評語：${r.a.comments.join('；')}` : ''
+        out.push(`  - ${r.name}：平均 ${r.avg.toFixed(2)}（${r.cnt} 份）｜${per}${cm}`)
+      })
+      const reviewed = new Set(Object.keys(agg))
+      const noRev = r360.people.filter(p => !reviewed.has(p.id)).map(p => p.name)
+      if (noRev.length) out.push(`  -（尚無人評分）：${noRev.join('、')}`)
+    }
+
+    // 意見回饋：逐人收到的標籤次數 + 留言（全部 57 筆都涵蓋，不截斷）
+    const fb = pick('kb_feedback')
+    const items = fb && Array.isArray(fb.items) ? fb.items : (Array.isArray(fb) ? fb : [])
+    if (items.length) {
+      any = true
+      const per = {}
+      items.forEach(it => {
+        const to = nameOf[it.toId] || it.toId || '?'
+        const p = per[to] || (per[to] = { tags: {}, comments: [] })
+        ;(it.tags || []).forEach(t => { p.tags[t] = (p.tags[t] || 0) + 1 })
+        if (it.text) p.comments.push(it.anon ? `${it.text}(匿名)` : it.text)
+      })
+      out.push(`▍意見回饋（共 ${items.length} 筆，依人彙整）：`)
+      Object.entries(per).forEach(([name, p]) => {
+        const tags = Object.entries(p.tags).sort((a, b) => b[1] - a[1]).map(([t, n]) => `${t}${n > 1 ? '×' + n : ''}`).join('、')
+        const cm = p.comments.length ? `｜留言：${p.comments.join('；')}` : ''
+        out.push(`  - ${name}：${tags}${cm}`)
+      })
+    }
+
+    // 其餘：計數 + 重點名稱
+    const q = pick('kb_quests'); if (q) { const qs = q.quests || []; if (qs.length) { any = true; out.push(`▍闖關任務：${qs.length} 個（${qs.map(x => x.title || x.name).filter(Boolean).join('、')}）`) } }
+    const shop = pick('kb_shop'); if (shop) { const rw = shop.rewards || []; if (rw.length) { any = true; out.push(`▍獎勵商店：${rw.length} 個獎品（${rw.map(x => x.name || x.title).filter(Boolean).join('、')}）`) } }
+    const docs = pick('kb_docs'); if (Array.isArray(docs) && docs.length) { any = true; out.push(`▍知識庫：${docs.length} 篇（${docs.map(d => d.title || d.name).filter(Boolean).join('、')}）`) }
+    const polls = pick('kb_polls'); const ps = polls && Array.isArray(polls.polls) ? polls.polls : (Array.isArray(polls) ? polls : []); if (ps.length) { any = true; out.push(`▍投票：${ps.length} 個（${ps.map(p => p.title || p.q).filter(Boolean).join('、')}）`) }
+
+    return any ? out.join('\n') : ''
   } catch (_) { return '' }
 }
 
@@ -266,7 +319,8 @@ function describeAction(a) {
     case 'set_item': case 'set_item_status': return `更新「${a.category || '?'}／${a.item || a.itemName || '?'}」${a.status ? ` 狀態→${a.status}` : ''}`
     case 'delete_item': return `刪除「${a.category || '?'}」的細項「${a.item || a.itemName || '?'}」`
     case 'add_payment': return `「${a.category || '?'}」新增付款 ${fmtNT(a.amount)}`
-    case 'add_todo': return `新增待辦「${a.desc || a.content || '?'}」${a.due ? `（交期 ${a.due}）` : ''}`
+    case 'add_todo': case 'add_task': return `新增任務「${a.desc || a.content || a.title || '?'}」${a.category ? `（歸到 ${a.category}）` : ''}${a.due ? `（交期 ${a.due}）` : ''}`
+    case 'add_conclusion': return `新增公開結論：「${a.topic || a.title || '?'}」→ ${(a.conclusion || a.text || a.content || '').slice(0, 30)}`
     case 'add_petty_spend': return `記零用金花費 ${fmtNT(a.amount)}「${a.content || a.note || ''}」`
     case 'add_finance_tx': return `記財務${/收/.test(a.kind || '') ? '收入' : /轉/.test(a.kind || '') ? '轉帳' : '支出'} ${fmtNT(a.amount)}${a.vendor ? `（${a.vendor}）` : ''}`
     case 'add_log': return `新增工作日誌「${(a.content || '').slice(0, 20)}」`
@@ -280,11 +334,13 @@ async function appendActivity(key, user, action, detail) {
 
 // 真正執行：載入要動到的資料 → 套用 → 存回 → 記操作紀錄
 async function executeActions(actions, operator) {
-  const ck = await kvGetMany(['pm_data', 'pm_worklog', 'pm_petty', 'pm_issues', 'sp_finance_pm_fin_ledger', 'sp_finance_pm_fin_accounts'])
+  const ck = await kvGetMany(['pm_data', 'pm_worklog', 'pm_petty', 'pm_issues', 'pm_tasks', 'pm_conclusions', 'sp_finance_pm_fin_ledger', 'sp_finance_pm_fin_accounts'])
   let cats = Array.isArray(ck['pm_data']) ? ck['pm_data'] : []
   let worklog = Array.isArray(ck['pm_worklog']) ? ck['pm_worklog'] : []
   const pj = ck['pm_petty'] || {}; let petty = { advances: pj.advances || [], spends: pj.spends || [] }
   let issues = Array.isArray(ck['pm_issues']) ? ck['pm_issues'] : []
+  let tasks = Array.isArray(ck['pm_tasks']) ? ck['pm_tasks'] : []
+  let conclusions = Array.isArray(ck['pm_conclusions']) ? ck['pm_conclusions'] : []
   let ledger = Array.isArray(ck['sp_finance_pm_fin_ledger']) ? ck['sp_finance_pm_fin_ledger'] : []
   const accounts = Array.isArray(ck['sp_finance_pm_fin_accounts']) ? ck['sp_finance_pm_fin_accounts'] : []
   const today = new Date().toISOString().slice(0, 10)
@@ -313,8 +369,16 @@ async function executeActions(actions, operator) {
       } else if (t === 'add_payment') {
         const c = findCat(cats, a.category)
         if (c) { const amt = Math.round(Number(a.amount) || 0); const it = (a.item || a.itemName) ? findItem(c, a.item || a.itemName) : null; (c.payments || (c.payments = [])).push({ id: 'pay-' + bid(''), date: a.date || today, amount: amt, category: a.kind || '其他', note: a.note || '', itemId: it ? it.id : null, receipts: [] }); changed.add('pm_data'); results.push(`💵 「${c.name}」新增付款 ${fmtNT(amt)}`); audits.push(['pm_activity', '編輯', `「${c.name}」新增付款 ${fmtNT(amt)}`]) } else results.push(`⚠️ 找不到大項「${a.category}」`)
-      } else if (t === 'add_todo') {
-        const desc = a.desc || a.content || ''; issues = [{ id: 'is-' + bid(''), desc, category: a.category || '其他', due: a.due || '', remindEnd: '', track: a.track !== false, remindEvery: 0, status: 'open', source: 'line', by, ts: new Date().toISOString(), nudges: 0, answer: '', catName: '', catId: '', photoUrl: '' }, ...issues]; changed.add('pm_issues'); results.push(`📝 新增待辦「${desc.slice(0, 20)}」`); audits.push(['pm_activity', '新增', `新增待辦「${desc.slice(0, 20)}」`])
+      } else if (t === 'add_todo' || t === 'add_task') {
+        // ToDo 已併入「任務中心」(pm_tasks)，所以寫到 tasks，App才看得到
+        const title = a.desc || a.content || a.title || ''
+        const tc = a.category ? findCat(cats, a.category) : null
+        tasks = [{ id: 't-' + bid(''), title, note: '', status: 'todo', catId: tc ? tc.id : '__inbox__', start: '', due: a.due || '', priority: a.urgent ? 'urgent' : 'normal', tags: [], createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }, ...tasks]
+        changed.add('pm_tasks'); results.push(`📝 新增任務「${title.slice(0, 20)}」${tc ? '→' + tc.name : ''}`); audits.push(['pm_activity', '新增', `新增任務「${title.slice(0, 20)}」`])
+      } else if (t === 'add_conclusion') {
+        const cc = a.category ? findCat(cats, a.category) : null
+        const e = { id: 'cc-' + bid(''), topic: a.topic || a.title || '(未命名)', conclusion: a.conclusion || a.text || a.content || '', reason: a.reason || '', decidedBy: operator, date: a.date || today, catId: cc ? cc.id : '__none__', tags: Array.isArray(a.tags) ? a.tags : [], status: 'current', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), by }
+        conclusions = [e, ...conclusions]; changed.add('pm_conclusions'); results.push(`📌 新增結論「${e.topic.slice(0, 24)}」：${(e.conclusion || '').slice(0, 30)}`); audits.push(['pm_activity', '新增', `新增結論「${e.topic.slice(0, 24)}」`])
       } else if (t === 'add_petty_spend') {
         const c = a.category ? findCat(cats, a.category) : null; const content = a.content || a.note || ''; petty.spends = [...petty.spends, { id: 's' + bid(''), date: a.date || today, content, amount: Math.round(Number(a.amount) || 0), catId: c ? c.id : '__misc__' }]; changed.add('pm_petty'); results.push(`🪙 記零用金花費 ${fmtNT(a.amount)}「${content}」`); audits.push(['pm_activity', '新增', `記零用金花費「${content}」${fmtNT(a.amount)}`])
       } else if (t === 'add_finance_tx') {
@@ -327,7 +391,7 @@ async function executeActions(actions, operator) {
       } else results.push(`⚠️ 不支援的操作：${t}`)
     } catch (e) { results.push(`⚠️ 執行「${t}」失敗`) }
   }
-  const saveMap = { pm_data: cats, pm_worklog: worklog, pm_petty: petty, pm_issues: issues, sp_finance_pm_fin_ledger: ledger }
+  const saveMap = { pm_data: cats, pm_worklog: worklog, pm_petty: petty, pm_issues: issues, pm_tasks: tasks, pm_conclusions: conclusions, sp_finance_pm_fin_ledger: ledger }
   for (const k of changed) if (saveMap[k] !== undefined) await kvSet(k, saveMap[k])
   for (const [key, action, detail] of audits) await appendActivity(key, by, action, detail)
   return results
@@ -393,7 +457,8 @@ const BOT_AGENT_GUIDE = `
 {"actions":[ ... ]}
 \`\`\`
 可用指令：
-- {"type":"add_todo","desc":"買水泥3包","category":"採購","due":"2026-06-25"}  // 加待辦；category/due 可省略
+- {"type":"add_task","desc":"買水泥3包","category":"消防工程","due":"2026-06-25"}  // 加任務到「任務中心」；category=歸到哪個工程大項(可省略→進收件匣)、due可省略。(「加待辦」也用這個)
+- {"type":"add_conclusion","topic":"開幕日","conclusion":"8/10 開幕","reason":"","category":""}  // 加一條「公開結論」(團隊定案)；topic=主題、conclusion=定案內容
 - {"type":"add_log","content":"今天水電進場拉管線","date":"2026-06-22"}  // 工作日誌；date 可省略(預設今天)
 - {"type":"add_petty_spend","amount":390,"content":"工人便當","category":"水電工程"}  // 記零用金花費；category 是歸到哪個工種(可省略)
 - {"type":"add_finance_tx","kind":"expense","amount":12000,"account":"合庫","category":"物料","vendor":"震旦","note":"買桌椅"}  // 財務內帳；kind=expense支出/income收入/transfer轉帳；account=帳戶名
