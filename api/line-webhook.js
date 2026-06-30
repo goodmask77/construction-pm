@@ -304,10 +304,13 @@ async function executeActions(actions, operator) {
 }
 
 // 操作者白名單 / 待確認操作（都存在 pm_documents）
-async function getOperators() { return (await kvGetMany(['pm_bot_operators']))['pm_bot_operators'] || {} }
+// 注意：用 pm_bot_confirm（不要用舊的 pm_bot_pending，那是舊 bot 留下的「陣列」，
+//       把字串 key 塞進陣列再 JSON.stringify 會被丟掉 → pending 存不進去 → 確認失效）。
+const asObj = (v) => (v && typeof v === 'object' && !Array.isArray(v)) ? v : {}
+async function getOperators() { return asObj((await kvGetMany(['pm_bot_operators']))['pm_bot_operators']) }
 async function addOperator(userId, name) { const ops = await getOperators(); ops[userId] = { name: name || '操作者', ts: new Date().toISOString() }; await kvSet('pm_bot_operators', ops); return ops[userId] }
-async function getPending(userId) { const all = (await kvGetMany(['pm_bot_pending']))['pm_bot_pending'] || {}; const p = all[userId]; if (!p) return null; if (Date.now() - new Date(p.ts).getTime() > 10 * 60000) return null; return p }
-async function setPending(userId, val) { const all = (await kvGetMany(['pm_bot_pending']))['pm_bot_pending'] || {}; if (val) all[userId] = val; else delete all[userId]; await kvSet('pm_bot_pending', all) }
+async function getPending(userId) { const all = asObj((await kvGetMany(['pm_bot_confirm']))['pm_bot_confirm']); const p = all[userId]; if (!p) return null; if (Date.now() - new Date(p.ts).getTime() > 10 * 60000) return null; return p }
+async function setPending(userId, val) { const all = asObj((await kvGetMany(['pm_bot_confirm']))['pm_bot_confirm']); if (val) all[userId] = val; else delete all[userId]; await kvSet('pm_bot_confirm', all) }
 async function getLineProfile(userId) { try { const r = await fetch('https://api.line.me/v2/bot/profile/' + userId, { headers: { authorization: `Bearer ${TOKEN}` } }); if (r.ok) { const d = await r.json(); return d.displayName || '' } } catch (_) {} return '' }
 
 const BOT_AGENT_GUIDE = `
@@ -380,17 +383,19 @@ export default async function handler(req, res) {
       const op = isDM ? operators[userId] : null
       const canAct = !!op
 
-      // 2) 確認 / 取消 待執行的操作
+      // 2) 確認 / 取消 待執行的操作（用詞放寬：確認/確定/執行/請執行/好/送出…都算確認）
       if (isDM && canAct) {
         const pend = await getPending(userId)
         if (pend) {
-          if (/^(確認|確定|執行|對|好|yes|y|ok|ｏｋ)$/i.test(text)) {
+          const isConfirm = /^(請?(確認|確定|執行|送出)|好(的|啊)?|對|是|沒問題|ok|okay|yes|y|go)\s*$/i.test(text)
+          const isCancel = /^(取消|不要|不用|算了|放棄|no|n|cancel)\s*$/i.test(text)
+          if (isConfirm) {
             const results = await executeActions(pend.actions, op.name)
             await setPending(userId, null)
             await send('✅ 已完成：\n' + results.join('\n'))
             continue
           }
-          if (/^(取消|不要|算了|no|n|cancel)$/i.test(text)) { await setPending(userId, null); await send('已取消，沒有做任何更動。'); continue }
+          if (isCancel) { await setPending(userId, null); await send('已取消，沒有做任何更動。'); continue }
           // 其它訊息 → 視為改主意/新需求，往下重新解析（會覆蓋舊的待確認）
         }
       }
@@ -403,10 +408,10 @@ export default async function handler(req, res) {
 
       if (actions.length) {
         // 4) 提出操作 → 存待確認 → 請使用者回「確認」
+        // 不放 AI 的 prose（它常會誤寫「已幫你記錄」其實還沒做）；只給明確的待執行清單。
         await setPending(userId, { actions, ts: new Date().toISOString() })
-        const note = stripJson(reply)
         const list = actions.map((a, i) => `${i + 1}. ${describeAction(a)}`).join('\n')
-        await send(`${note ? note + '\n\n' : ''}🛠 我要執行以下操作：\n${list}\n\n回「確認」就執行、「取消」放棄。`)
+        await send(`🛠 要執行以下操作（還沒做，等你確認）：\n${list}\n\n回「確認」執行、「取消」放棄。`)
       } else {
         await send(reply)
       }
