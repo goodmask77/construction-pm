@@ -7,6 +7,7 @@ import { SPACES, SPACE_CONF, PERM_MATRIX, LEGACY_EDIT, PERM_NONE, DEFAULT_ROLES,
 import { buildBotSnapshot } from "./lib/snapshot.js";
 import FinanceView from "./finance/Finance.jsx";
 import TaskCenter from "./tasks/TaskCenter.jsx";
+import Conclusions from "./conclusions/Conclusions.jsx";
 import SequenceView from "./SequenceView.jsx";
 
 // ── DESIGN TOKENS (Warm editorial — 米色紙感 + 磚紅 + 黑) ──────────────────
@@ -936,6 +937,9 @@ export default function App() {
         {view === "tasks" && (
           <TaskCenter K={K} confirm={confirm} canEdit={canEditData} cats={cats} onLog={logActivity} />
         )}
+        {view === "conclusions" && (
+          <Conclusions K={K} confirm={confirm} canEdit={canEditData} cats={cats} userName={userName} onLog={logActivity} />
+        )}
         {view === "files" && (
           <PhotoLibraryView photos={photos} setPhotos={commitPhotos} cats={cats} canEdit={canEditFiles} userName={userName} requireLogin={denyEdit} confirm={confirm} />
         )}
@@ -956,8 +960,8 @@ export default function App() {
           <div style={{ padding: 40, textAlign: "center", color: SUB, fontSize: 14, background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: 12, margin: "8px 0" }}>🔒 零用金含金額，你沒有看金額的權限。</div>
         ))}
         {/* ⚙ 設定：把 AI設定 / 群組 / 帳號 / 紀錄 整合成一頁，內含子分頁 */}
-        {["advisor", "groups", "accounts", "audit", "vault", "history"].includes(view) && (() => {
-          const subs = [["advisor", "🤖 AI設定"], ...(isAdmin ? [["groups", "💬 群組"], ["accounts", "👤 帳號"], ["audit", "📜 紀錄"], ["history", "🛟 還原點"], ["vault", "🔐 金庫"]] : [])].filter(([k]) => k !== "advisor" || allowedViewPages == null || allowedViewPages.includes("advisor"));
+        {["advisor", "groups", "accounts", "audit", "vault", "history", "changelog"].includes(view) && (() => {
+          const subs = [["advisor", "🤖 AI設定"], ["changelog", "📣 更新"], ...(isAdmin ? [["groups", "💬 群組"], ["accounts", "👤 帳號"], ["audit", "📜 紀錄"], ["history", "🛟 還原點"], ["vault", "🔐 金庫"]] : [])].filter(([k]) => k !== "advisor" || allowedViewPages == null || allowedViewPages.includes("advisor"));
           return (
             <div>
               {subs.length > 1 && (
@@ -970,6 +974,7 @@ export default function App() {
               {view === "advisor" && settings && (
                 <AdvisorSettingsView settings={settings} setSettings={guardedSetSettings} cats={cats} aiLog={aiLog} setAiLog={l => { if ((aiLog||[]).length && !(l||[]).length) logActivity("編輯", "清空 AI 顧問對話"); setAiLog(l); saveAILog(l); }} journal={journal} events={events} plans={plans} activityLog={activityLog} logActivity={logActivity} userName={userName} />
               )}
+              {view === "changelog" && <ChangelogView />}
               {view === "groups" && isAdmin && (
                 <GroupsView cats={cats} canEdit={canEditData} requireLogin={denyEdit} settings={settings} setSettings={guardedSetSettings} journal={journal} events={events} plans={plans} onLog={logActivity} />
               )}
@@ -2363,7 +2368,7 @@ function CompareView({ canEdit, requireLogin, onLog }) {
 // ── BOTTOM NAV (手機) ───────────────────────────────────────────────────────
 function BottomNav({ view, setView, isAdmin, allowedViewPages }) {
   const pageVisible = (v) => v === "settings" || !allowedViewPages || allowedViewPages.includes(v) || v === "owner";
-  const tabs = (conf().tabs || [["owner", "儀表板", "📊"], ["overview", L("overview"), "📋"], ["tasks", "任務", "✅"], ["gantt", L("gantt"), "📅"], ["files", "檔案庫", "📁"], ...(conf().showCost ? [["petty", "零用金", "💵"]] : []), ["compare", "比價", "⚖️"], ...((isAdmin || pageVisible("advisor")) ? [["settings", "設定", "⚙"]] : [])]).filter(([v]) => !conf().hideTabs.includes(v) && pageVisible(v));
+  const tabs = (conf().tabs || [["owner", "儀表板", "📊"], ["overview", L("overview"), "📋"], ["tasks", "任務", "✅"], ["gantt", L("gantt"), "📅"], ["conclusions", "結論", "📌"], ["files", "檔案庫", "📁"], ...(conf().showCost ? [["petty", "零用金", "💵"]] : []), ["compare", "比價", "⚖️"], ...((isAdmin || pageVisible("advisor")) ? [["settings", "設定", "⚙"]] : [])]).filter(([v]) => !conf().hideTabs.includes(v) && pageVisible(v));
   return (
     <div style={{ position: "fixed", left: 0, right: 0, bottom: 0, height: 60, background: "rgba(255,255,255,0.96)", backdropFilter: "blur(10px)", WebkitBackdropFilter: "blur(10px)", borderTop: `1px solid ${BORDER}`, boxShadow: "0 -2px 14px rgba(0,0,0,0.08)", display: "flex", zIndex: 350, paddingBottom: "env(safe-area-inset-bottom)" }}>
       {tabs.map(([v, l, icon]) => {
@@ -2500,7 +2505,7 @@ function TopNav({ view, setView, saving, totalEstimated, totalPaid, doneCount, c
       {/* view tabs — boxed editorial（手機隱藏，改用底部導覽）*/}
       {!isMobile && (
       <div style={{ display: "flex", gap: 8, paddingBottom: 12, flexWrap: "wrap" }}>
-        {(conf().tabs || [["owner","儀表板"],["overview",L("overview")],["tasks","✅ 任務"],["gantt",L("gantt")],["files","檔案庫"],...(conf().showCost?[["petty","零用金"]]:[]),["compare","比價"],...((isAdmin||pageVisible("advisor"))?[["settings","⚙ 設定"]]:[])]).filter(([v]) => !conf().hideTabs.includes(v) && pageVisible(v)).map(([v,l]) => { const act = tabActive(v); return (
+        {(conf().tabs || [["owner","儀表板"],["overview",L("overview")],["tasks","✅ 任務"],["gantt",L("gantt")],["conclusions","📌 結論"],["files","檔案庫"],...(conf().showCost?[["petty","零用金"]]:[]),["compare","比價"],...((isAdmin||pageVisible("advisor"))?[["settings","⚙ 設定"]]:[])]).filter(([v]) => !conf().hideTabs.includes(v) && pageVisible(v)).map(([v,l]) => { const act = tabActive(v); return (
           <button key={v} onClick={() => setView(v === "settings" ? "advisor" : v)} className={v === "issues" && view !== v ? "todo-glow" : undefined} style={{ padding: "8px 16px", borderRadius: 7, border: `1px solid ${act ? PRIMARY : (v === "issues" ? "#F59E0B" : BORDER)}`, cursor: "pointer", fontSize: 14, fontWeight: v === "issues" ? 700 : 500, background: act ? PRIMARY : (v === "issues" ? "#FEF3C7" : "transparent"), color: act ? "#fff" : (v === "issues" ? "#B45309" : TEXT), transition: "all .12s" }}>{l}</button>
         ); })}
       </div>
@@ -3982,6 +3987,51 @@ function HistoryView({ K, confirm, snapshotData, cats, petty }) {
               </div>
             ); })}
           </div>}
+    </div>
+  );
+}
+
+// ── App 更新紀錄（我們對 App 做的功能修改／新增，給全團隊看）─────────────────
+// 維護方式：每次有較大改動就在最上面加一筆（日期 + 條列）。
+const CHANGELOG = [
+  { date: "2026-07-01", items: [
+    "新增「📌 公開結論」頁：集中存團隊定案、版本控制(更新出新版、舊版進歷史)、D哥可直接回答",
+    "新增「✅ 任務中心」：合併取代工序/ToDo，六視角(依大項/看板/清單/時間軸/甘特/心智圖)、收件匣隨手記、小卡拖曳歸屬、大項可直接新增",
+    "D哥大升級：改用最高級 Opus、加「對話記憶」(記得前文)、「長期記事本」(永久記重要事)、會自我判斷做不到就直說",
+    "修正：中文輸入法打字會重複新增任務的問題、D哥回「確認」沒反應的問題",
+  ]},
+  { date: "2026-06-22", items: [
+    "新增「🛟 還原點」資料保險箱：工程資料/零用金自動留版本、可一鍵還原；搭配 Supabase Pro 每日備份",
+    "資料庫上鎖(RLS)：外人無法繞過 App 直接竄改資料",
+    "登入紀錄顯示真實姓名(原本都顯示「系統」)；工序日誌紀錄更具體(工項+內容)",
+  ]},
+  { date: "2026-06-21", items: [
+    "操作紀錄全面化：財務/任務/比價/工序/群組…所有操作都會記、且具體",
+    "D哥串接全部資料(操作/登入紀錄、比價、夥伴中心)，不再答不出來",
+    "D哥動作引擎：可用 LINE 對話直接操作 App(加待辦/記帳/改狀態…含確認)",
+  ]},
+  { date: "2026-06-13", items: [
+    "新增「💰 財務內帳」獨立空間：多帳戶總表、交易明細、會計科目、批量匯入、餘額對帳",
+  ]},
+];
+function ChangelogView() {
+  return (
+    <div style={{ maxWidth: 760, margin: "0 auto" }}>
+      <div style={{ fontSize: 18, fontWeight: 700, color: TEXT, marginBottom: 6 }}>📣 App 更新紀錄</div>
+      <div style={{ fontSize: 12.5, color: SUB, marginBottom: 16, background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: 10, padding: "8px 12px" }}>這裡記錄我們對這個系統做的功能新增／修改，讓大家知道最近多了什麼、改了什麼。</div>
+      <div style={{ display: "grid", gap: 12 }}>
+        {CHANGELOG.map((c, i) => (
+          <div key={c.date} style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: 12, padding: "12px 16px" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+              <span style={{ fontSize: 13.5, fontWeight: 800, color: i === 0 ? ACCENT : TEXT }}>{c.date}</span>
+              {i === 0 && <span style={{ fontSize: 10.5, color: "#fff", background: ACCENT, borderRadius: 5, padding: "1px 7px", fontWeight: 600 }}>最新</span>}
+            </div>
+            <ul style={{ margin: 0, paddingLeft: 18, display: "grid", gap: 5 }}>
+              {c.items.map((it, j) => <li key={j} style={{ fontSize: 13, color: TEXT, lineHeight: 1.55 }}>{it}</li>)}
+            </ul>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -5881,7 +5931,7 @@ function PhotoLibraryView({ photos, setPhotos, cats, canEdit, userName, requireL
 
 // ── 帳號管理 ─────────────────────────────────────────────────────────────────
 const ACCT_SPACES = [["construction","🏗 工程專案"],["team","👥 團隊工作"],["crew","🤝 夥伴中心"],["finance","💰 財務內帳"]];
-const ACCT_VIEW_PAGES = [["owner","儀表板"],["overview","總覽"],["tasks","任務"],["gantt","工序"],["files","檔案庫"],["petty","零用金"],["issues","ToDo"],["compare","比價"],["advisor","AI設定"]];
+const ACCT_VIEW_PAGES = [["owner","儀表板"],["overview","總覽"],["tasks","任務"],["gantt","工序"],["conclusions","結論"],["files","檔案庫"],["petty","零用金"],["compare","比價"],["advisor","AI設定"]];
 const ACCT_EDIT_PAGES = [["data","總覽/工程資料"],["worklog","工序日誌"],["files","檔案庫"],["advisor","AI設定"]];
 function AccountManager({ confirm, myId, roles = [], commitRoles, onLog, guestPerms = {}, commitGuestPerms }) {
   const logAct = (action, detail) => { try { onLog && onLog(action, detail); } catch (_) {} };

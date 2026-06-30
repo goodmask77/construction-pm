@@ -26,6 +26,7 @@ export default function TaskCenter({ K, confirm, canEdit, cats, onLog }) {
   const [overKey, setOverKey] = useState(null); // 拖過的群組/欄
   const [q, setQ] = useState("");
   const [fStatus, setFStatus] = useState("open"); // list 篩選
+  const [gnew, setGnew] = useState({}); // 各大項的「直接新增」輸入
 
   useEffect(() => { (async () => {
     try {
@@ -57,6 +58,13 @@ export default function TaskCenter({ K, confirm, canEdit, cats, onLog }) {
     const task = { id: rid(), title: t, note: "", status: "todo", catId: INBOX, start: "", due: "", priority: "normal", tags: [], createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
     save([task, ...(tasks || [])]); setQuick("");
     onLog?.("新增", `新增任務「${t.slice(0, 20)}」`);
+  };
+  const addToGroup = (catId) => {
+    if (!guard()) return;
+    const t = (gnew[catId] || "").trim(); if (!t) return;
+    const task = { id: rid(), title: t, note: "", status: "todo", catId, start: "", due: "", priority: "normal", tags: [], createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
+    save([task, ...(tasks || [])]); setGnew(p => ({ ...p, [catId]: "" }));
+    onLog?.("新增", `新增任務「${t.slice(0, 20)}」→${catName(catId)}`);
   };
   const upd = (id, patch) => { save((tasks || []).map(t => t.id === id ? { ...t, ...patch, updatedAt: new Date().toISOString() } : t)); };
   const del = async (id) => { if (!guard()) return; const t = (tasks || []).find(x => x.id === id); if (!(await confirm(`刪除任務「${t?.title || ""}」？`, { confirmLabel: "刪除" }))) return; save((tasks || []).filter(x => x.id !== id)); setSel(null); onLog?.("刪除", `刪除任務「${(t?.title || "").slice(0, 20)}」`); };
@@ -166,7 +174,8 @@ export default function TaskCenter({ K, confirm, canEdit, cats, onLog }) {
                   <span style={{ fontSize: 11.5, color: C.faint }}>{items.length}</span>
                 </div>
                 {items.map(t => <Card key={t.id} t={t} dropBefore />)}
-                {items.length === 0 && <div style={{ fontSize: 11.5, color: C.faint, textAlign: "center", padding: "10px 0" }}>拖任務到這裡 →歸到此大項</div>}
+                {items.length === 0 && <div style={{ fontSize: 11.5, color: C.faint, textAlign: "center", padding: "8px 0" }}>拖任務到這裡 →歸到此大項</div>}
+                {canEdit && <input value={gnew[g.id] || ""} onChange={e => setGnew(p => ({ ...p, [g.id]: e.target.value }))} onKeyDown={e => { if (e.key === "Enter" && !e.nativeEvent.isComposing && e.keyCode !== 229) addToGroup(g.id); }} placeholder="＋ 直接在此大項新增…" style={{ width: "100%", boxSizing: "border-box", border: `1px dashed ${C.line}`, borderRadius: 7, padding: "6px 9px", fontSize: 12.5, background: "transparent", color: C.text, outline: "none", marginTop: 2 }} />}
               </DropZone>
             );
           })}

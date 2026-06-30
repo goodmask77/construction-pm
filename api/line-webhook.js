@@ -192,9 +192,21 @@ const BOT_PERSONA = `你是「D哥」，喬亞國際餐飲團隊的 LINE 小幫�
 - 如果對話中出現「值得長期記住」的重要事實（某人負責什麼、聯絡方式、分工窗口、老闆的偏好或固定要求、專案的重要約定…），在你回覆的「最後」另起一行用這個格式標記：[[記住:該事實]]（可多行、每行一件、寫簡短）。只標真正值得長期記的，瑣事不要標。這個標記使用者看不到，是給系統存進你的長期記事本用的。`
 const SYS_DATA_HEAD = '\n\n────────\n【你目前掌握的即時資料】\n'
 
-async function answer(question, snaps, accountsText, financeText, activityText, estimatesText, crewText, canAct, history, memoryText) {
+// 公開結論（團隊定案，現行版）→ 文字
+async function loadConclusionsText() {
+  try {
+    const v = (await kvGetMany(['pm_conclusions']))['pm_conclusions']
+    const list = Array.isArray(v) ? v.filter(c => c && c.status !== 'archived') : []
+    if (!list.length) return ''
+    const lines = ['\n\n【公開結論（團隊定案・現行版，問結論優先看這）】']
+    list.slice(0, 60).forEach(c => lines.push(`・${c.topic}：${c.conclusion}${c.decidedBy ? `（${c.decidedBy}${c.date ? ' ' + c.date : ''} 定案）` : ''}`))
+    return lines.join('\n')
+  } catch (_) { return '' }
+}
+
+async function answer(question, snaps, accountsText, financeText, activityText, estimatesText, crewText, canAct, history, memoryText, conclusionsText) {
   if (!ANTHROPIC) return '（D哥的 AI 金鑰尚未設定。）'
-  const system = (canAct ? BOT_AGENT_GUIDE + '\n\n' : '') + BOT_PERSONA + (memoryText || '') + SYS_DATA_HEAD + snapshotsToContext(snaps) + (accountsText || '') + (financeText || '') + (activityText || '') + (estimatesText || '') + (crewText || '')
+  const system = (canAct ? BOT_AGENT_GUIDE + '\n\n' : '') + BOT_PERSONA + (memoryText || '') + SYS_DATA_HEAD + snapshotsToContext(snaps) + (accountsText || '') + (financeText || '') + (activityText || '') + (estimatesText || '') + (crewText || '') + (conclusionsText || '')
   const messages = [...(Array.isArray(history) ? history : []), { role: 'user', content: question }]
   const callModel = async (model) => {
     const r = await fetch('https://api.anthropic.com/v1/messages', {
@@ -479,8 +491,8 @@ export default async function handler(req, res) {
       }
 
       // 3) 一般流程：載入資料＋對話記憶＋長期記事本 → 問 AI（操作者才開放下指令）
-      const [snaps, accountsText, financeText, activityText, estimatesText, crewText, history, memList] = await Promise.all([loadSnapshots(), loadAccounts(), loadFinanceText(), loadActivityText(), loadEstimatesText(), loadCrewText(), getChatHistory(convId), getMemory()])
-      const rawReply = await answer(text, snaps, accountsText, financeText, activityText, estimatesText, crewText, canAct, history, memoryToText(memList))
+      const [snaps, accountsText, financeText, activityText, estimatesText, crewText, history, memList, conclusionsText] = await Promise.all([loadSnapshots(), loadAccounts(), loadFinanceText(), loadActivityText(), loadEstimatesText(), loadCrewText(), getChatHistory(convId), getMemory(), loadConclusionsText()])
+      const rawReply = await answer(text, snaps, accountsText, financeText, activityText, estimatesText, crewText, canAct, history, memoryToText(memList), conclusionsText)
       // 抓出 D 想長期記住的事（[[記住:...]]）→ 存進記事本(僅操作者)，並把標記從給人看的文字拿掉
       const { facts, clean } = extractMemoryTags(rawReply)
       if (canAct && facts.length) { for (const f of facts) await addMemory(f, 'auto', op?.name) }
