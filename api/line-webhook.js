@@ -179,19 +179,36 @@ async function loadCrewText() {
   } catch (_) { return '' }
 }
 
-async function answer(question, snaps, accountsText, financeText, activityText, estimatesText, crewText, canAct) {
+const BOT_MODEL = process.env.ANTHROPIC_MODEL || 'claude-opus-4-8' // 最高級；失敗自動退回 Sonnet
+const BOT_PERSONA = `你是「D哥」，喬亞國際餐飲團隊的 LINE 小幫手。你手上有公司管理 App 的即時資料（附在下面）。
+
+講話風格：像個可靠、反應快、講話自然的同事——親切、直接、不囉嗦。用正常口語跟適度的表情符號，不要像念公文或一條條規則。該一句話講完就一句話，需要才條列。**不要每次都自我介紹**（你們是熟人了，接著聊就好，除非對方第一次跟你說話或問你是誰）。
+
+做事原則：
+- 用下面的資料講真話，數字直接引用、絕不自己亂編。
+- 資料裡真的沒有的，就老實說「這個我手上沒有資料」，但別把明明有的（工程進度、財務、帳號、登入/操作紀錄、比價、夥伴中心…）說成沒有。
+- **如果你判斷自己做不到、或資料不足、或對方的要求不在你能力範圍**：直接、清楚地說「我做不到 X，原因是 Y，你可以這樣做 Z」。不要裝懂、不要答非所問、不要假裝完成。
+- 記得上面的對話脈絡，順著聊，不要把每句話都當第一次見面。`
+const SYS_DATA_HEAD = '\n\n────────\n【你目前掌握的即時資料】\n'
+
+async function answer(question, snaps, accountsText, financeText, activityText, estimatesText, crewText, canAct, history) {
   if (!ANTHROPIC) return '（D哥的 AI 金鑰尚未設定。）'
-  const system = (canAct ? BOT_AGENT_GUIDE + '\n\n' : '') + '你是「D哥」，喬亞國際餐飲的 LINE 全能助理，掌握 App 內幾乎所有資料：工程專案（預算/付款/進度/工序日誌/零用金/ToDo/有問題項目）、財務內帳（多帳戶/交易/餘額/科目）、比價估價單、App 帳號清單、操作與登入紀錄（誰做了什麼、誰最近登入）、夥伴中心（360互評/意見回饋/闖關積分/獎勵商店/知識庫）。\n規則：①只根據下方「目前資料」回答，數字直接引用、不要亂算。②下方資料涵蓋 App 內絕大多數資訊——**優先從裡面找答案，能答就答清楚完整**。③**只有「App 完全沒有的東西」**（例如現場實際尺寸/深度/材質、與公司無關的閒聊）才說「這個我沒有資料」；不要把 App 裡明明有的（帳號、財務、進度、登入/操作紀錄、比價、夥伴中心…）也說沒有。④答案對準問題，用繁體中文、簡短口語、必要時條列。\n\n【目前資料】\n' + snapshotsToContext(snaps) + (accountsText || '') + (financeText || '') + (activityText || '') + (estimatesText || '') + (crewText || '')
-  try {
+  const system = (canAct ? BOT_AGENT_GUIDE + '\n\n' : '') + BOT_PERSONA + SYS_DATA_HEAD + snapshotsToContext(snaps) + (accountsText || '') + (financeText || '') + (activityText || '') + (estimatesText || '') + (crewText || '')
+  const messages = [...(Array.isArray(history) ? history : []), { role: 'user', content: question }]
+  const callModel = async (model) => {
     const r = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: { 'content-type': 'application/json', 'x-api-key': ANTHROPIC, 'anthropic-version': '2023-06-01' },
-      body: JSON.stringify({ model: process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-5', max_tokens: 1024, system, messages: [{ role: 'user', content: question }] }),
+      body: JSON.stringify({ model, max_tokens: 1500, system, messages }),
     })
-    const d = await r.json()
-    if (r.ok) return (d.content || []).map((b) => b.text || '').join('').trim() || '（沒有內容）'
-    return '（AI 回應失敗）'
-  } catch (_) { return '（AI 連線失敗）' }
+    return { ok: r.ok, d: await r.json().catch(() => ({})) }
+  }
+  try {
+    let { ok, d } = await callModel(BOT_MODEL)
+    if (!ok) { console.log('primary model failed, fallback to sonnet', d?.error?.message); ({ ok, d } = await callModel('claude-sonnet-4-5')) } // 主模型不可用就退回，D哥不會啞掉
+    if (ok) return (d.content || []).map((b) => b.text || '').join('').trim() || '（沒有內容）'
+    return '（AI 回應失敗，請稍後再試）'
+  } catch (_) { return '（AI 連線失敗，請稍後再試）' }
 }
 
 // ════════════════════════════════════════════════════════════════════════
@@ -313,6 +330,25 @@ async function getPending(userId) { const all = asObj((await kvGetMany(['pm_bot_
 async function setPending(userId, val) { const all = asObj((await kvGetMany(['pm_bot_confirm']))['pm_bot_confirm']); if (val) all[userId] = val; else delete all[userId]; await kvSet('pm_bot_confirm', all) }
 async function getLineProfile(userId) { try { const r = await fetch('https://api.line.me/v2/bot/profile/' + userId, { headers: { authorization: `Bearer ${TOKEN}` } }); if (r.ok) { const d = await r.json(); return d.displayName || '' } } catch (_) {} return '' }
 
+// ── 對話記憶：每個對話(私訊userId或群組id)留最近幾輪，讓 D哥 記得前文、接得上 ──
+async function getChatHistory(convId) {
+  const all = asObj((await kvGetMany(['pm_bot_chats']))['pm_bot_chats'])
+  const h = all[convId]
+  return Array.isArray(h) ? h.filter(m => m && (m.role === 'user' || m.role === 'assistant') && m.content).slice(-16) : []
+}
+async function pushChat(convId, userText, assistantText) {
+  try {
+    const all = asObj((await kvGetMany(['pm_bot_chats']))['pm_bot_chats'])
+    const h = Array.isArray(all[convId]) ? all[convId] : []
+    h.push({ role: 'user', content: String(userText || '').slice(0, 900) })
+    h.push({ role: 'assistant', content: String(assistantText || '').slice(0, 1400) })
+    all[convId] = h.slice(-16) // 每個對話留最近 8 輪
+    const keys = Object.keys(all)
+    if (keys.length > 40) for (const k of keys.slice(0, keys.length - 40)) delete all[k] // 最多 40 個對話
+    await kvSet('pm_bot_chats', all)
+  } catch (_) {}
+}
+
 const BOT_AGENT_GUIDE = `
 你除了回答問題，還能「直接操作」這個 App。當（且僅當）使用者明確要你「做某個操作」（新增/修改/刪除/記一筆/改狀態…）時，用一段 markdown json 區塊輸出指令；若只是問問題，就正常用文字回答、不要輸出 json。
 \`\`\`json
@@ -368,7 +404,10 @@ export default async function handler(req, res) {
       console.log('event', JSON.stringify({ src: ev.source?.type, isDM, named, mSelf: mentionedSelf, text: text.slice(0, 40) }))
       if (!isDM && !named) continue // 私訊一律回；群組必須被點名（@本帳號 或 講「D哥」）
       const userId = ev.source?.userId || ''
+      const convId = isDM ? ('dm_' + userId) : ('g_' + gid) // 對話記憶的識別
       const send = (t) => ev.replyToken ? lineReply(ev.replyToken, t) : Promise.resolve()
+      // finish＝回覆＋把這輪存進對話記憶（讓 D哥 記得前文）；授權訊息不用 finish(含密碼，不留紀錄)
+      const finish = async (t) => { await send(t); await pushChat(convId, text, t) }
 
       // ── 動作引擎（只在「私訊」進行，群組一律唯讀，較安全）──
       // 1) 授權：私訊「授權:碼」→ 列入操作者白名單
@@ -392,28 +431,29 @@ export default async function handler(req, res) {
           if (isConfirm) {
             const results = await executeActions(pend.actions, op.name)
             await setPending(userId, null)
-            await send('✅ 已完成：\n' + results.join('\n'))
+            await finish('✅ 搞定！\n' + results.join('\n'))
             continue
           }
-          if (isCancel) { await setPending(userId, null); await send('已取消，沒有做任何更動。'); continue }
+          if (isCancel) { await setPending(userId, null); await finish('好，取消了，沒有做任何更動。'); continue }
           // 其它訊息 → 視為改主意/新需求，往下重新解析（會覆蓋舊的待確認）
         }
       }
 
-      // 3) 一般流程：載入資料 → 問 AI（操作者才開放下指令）
-      const [snaps, accountsText, financeText, activityText, estimatesText, crewText] = await Promise.all([loadSnapshots(), loadAccounts(), loadFinanceText(), loadActivityText(), loadEstimatesText(), loadCrewText()])
-      const reply = await answer(text, snaps, accountsText, financeText, activityText, estimatesText, crewText, canAct)
+      // 3) 一般流程：載入資料＋對話記憶 → 問 AI（操作者才開放下指令）
+      const [snaps, accountsText, financeText, activityText, estimatesText, crewText, history] = await Promise.all([loadSnapshots(), loadAccounts(), loadFinanceText(), loadActivityText(), loadEstimatesText(), loadCrewText(), getChatHistory(convId)])
+      const reply = await answer(text, snaps, accountsText, financeText, activityText, estimatesText, crewText, canAct, history)
       const actions = canAct ? parseActions(reply) : []
-      console.log('answer', JSON.stringify({ snaps: snaps.length, canAct, actions: actions.length, replyLen: reply.length }))
+      console.log('answer', JSON.stringify({ snaps: snaps.length, canAct, hist: history.length, actions: actions.length, replyLen: reply.length }))
 
       if (actions.length) {
         // 4) 提出操作 → 存待確認 → 請使用者回「確認」
         // 不放 AI 的 prose（它常會誤寫「已幫你記錄」其實還沒做）；只給明確的待執行清單。
         await setPending(userId, { actions, ts: new Date().toISOString() })
         const list = actions.map((a, i) => `${i + 1}. ${describeAction(a)}`).join('\n')
-        await send(`🛠 要執行以下操作（還沒做，等你確認）：\n${list}\n\n回「確認」執行、「取消」放棄。`)
+        const proposeMsg = `🛠 要執行以下操作（還沒做，等你確認）：\n${list}\n\n回「確認」執行、「取消」放棄。`
+        await finish(proposeMsg)
       } else {
-        await send(reply)
+        await finish(reply)
       }
     } catch (e) { console.log('event error', e?.message) }
   }
