@@ -188,12 +188,13 @@ const BOT_PERSONA = `你是「D哥」，喬亞國際餐飲團隊的 LINE 小幫�
 - 用下面的資料講真話，數字直接引用、絕不自己亂編。
 - 資料裡真的沒有的，就老實說「這個我手上沒有資料」，但別把明明有的（工程進度、財務、帳號、登入/操作紀錄、比價、夥伴中心…）說成沒有。
 - **如果你判斷自己做不到、或資料不足、或對方的要求不在你能力範圍**：直接、清楚地說「我做不到 X，原因是 Y，你可以這樣做 Z」。不要裝懂、不要答非所問、不要假裝完成。
-- 記得上面的對話脈絡，順著聊，不要把每句話都當第一次見面。`
+- 記得上面的對話脈絡，順著聊，不要把每句話都當第一次見面。
+- 如果對話中出現「值得長期記住」的重要事實（某人負責什麼、聯絡方式、分工窗口、老闆的偏好或固定要求、專案的重要約定…），在你回覆的「最後」另起一行用這個格式標記：[[記住:該事實]]（可多行、每行一件、寫簡短）。只標真正值得長期記的，瑣事不要標。這個標記使用者看不到，是給系統存進你的長期記事本用的。`
 const SYS_DATA_HEAD = '\n\n────────\n【你目前掌握的即時資料】\n'
 
-async function answer(question, snaps, accountsText, financeText, activityText, estimatesText, crewText, canAct, history) {
+async function answer(question, snaps, accountsText, financeText, activityText, estimatesText, crewText, canAct, history, memoryText) {
   if (!ANTHROPIC) return '（D哥的 AI 金鑰尚未設定。）'
-  const system = (canAct ? BOT_AGENT_GUIDE + '\n\n' : '') + BOT_PERSONA + SYS_DATA_HEAD + snapshotsToContext(snaps) + (accountsText || '') + (financeText || '') + (activityText || '') + (estimatesText || '') + (crewText || '')
+  const system = (canAct ? BOT_AGENT_GUIDE + '\n\n' : '') + BOT_PERSONA + (memoryText || '') + SYS_DATA_HEAD + snapshotsToContext(snaps) + (accountsText || '') + (financeText || '') + (activityText || '') + (estimatesText || '') + (crewText || '')
   const messages = [...(Array.isArray(history) ? history : []), { role: 'user', content: question }]
   const callModel = async (model) => {
     const r = await fetch('https://api.anthropic.com/v1/messages', {
@@ -334,7 +335,7 @@ async function getLineProfile(userId) { try { const r = await fetch('https://api
 async function getChatHistory(convId) {
   const all = asObj((await kvGetMany(['pm_bot_chats']))['pm_bot_chats'])
   const h = all[convId]
-  return Array.isArray(h) ? h.filter(m => m && (m.role === 'user' || m.role === 'assistant') && m.content).slice(-16) : []
+  return Array.isArray(h) ? h.filter(m => m && (m.role === 'user' || m.role === 'assistant') && m.content).slice(-40) : []
 }
 async function pushChat(convId, userText, assistantText) {
   try {
@@ -342,11 +343,36 @@ async function pushChat(convId, userText, assistantText) {
     const h = Array.isArray(all[convId]) ? all[convId] : []
     h.push({ role: 'user', content: String(userText || '').slice(0, 900) })
     h.push({ role: 'assistant', content: String(assistantText || '').slice(0, 1400) })
-    all[convId] = h.slice(-16) // 每個對話留最近 8 輪
+    all[convId] = h.slice(-40) // 每個對話留最近 20 輪
     const keys = Object.keys(all)
     if (keys.length > 40) for (const k of keys.slice(0, keys.length - 40)) delete all[k] // 最多 40 個對話
     await kvSet('pm_bot_chats', all)
   } catch (_) {}
+}
+
+// ── D哥的長期記事本（pm_bot_memory）：永久記得的事實，每次對話都先翻一遍 ──
+async function getMemory() { const v = (await kvGetMany(['pm_bot_memory']))['pm_bot_memory']; return Array.isArray(v) ? v : [] }
+async function addMemory(text, source, by) {
+  const t = String(text || '').trim().replace(/^[:：,，、\s]+/, ''); if (!t) return null
+  const list = await getMemory()
+  if (list.some(m => m.text === t)) return null // 一模一樣不重複
+  const entry = { id: 'm' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5), text: t.slice(0, 200), ts: new Date().toISOString(), source: source || 'manual', by: by || '' }
+  list.push(entry); await kvSet('pm_bot_memory', list.slice(-100)); return entry // 最多 100 條
+}
+async function removeMemory(query) {
+  const q = String(query || '').trim(); if (!q) return 0
+  const list = await getMemory()
+  const keep = list.filter(m => !(m.text.includes(q) || q.includes(m.text)))
+  const removed = list.length - keep.length
+  if (removed) await kvSet('pm_bot_memory', keep)
+  return removed
+}
+const memoryToText = (list) => (list && list.length) ? '\n\n【D哥的長期記事本（永久記得，回答前優先參考）】\n' + list.map(m => '・' + m.text).join('\n') : ''
+// 從 AI 回覆抓出 [[記住:...]] 標記，回傳 {facts:[...], clean:'去掉標記後的文字'}
+function extractMemoryTags(reply) {
+  const facts = []
+  const clean = String(reply || '').replace(/\[\[記住[:：]?\s*([^\]]+)\]\]/g, (_, f) => { const t = f.trim(); if (t) facts.push(t); return '' }).replace(/\n{3,}/g, '\n\n').trim()
+  return { facts, clean }
 }
 
 const BOT_AGENT_GUIDE = `
@@ -422,6 +448,19 @@ export default async function handler(req, res) {
       const op = isDM ? operators[userId] : null
       const canAct = !!op
 
+      // 1.5) 長期記事本指令（操作者私訊）：記住 / 忘記 / 看記事本
+      if (isDM && canAct) {
+        if (/^(你記得(哪些|什麼|多少|啥)|你記住了(什麼|哪些|啥)?|你的?(記事本|長期記憶)|看記事本|記事本$)/.test(text)) {
+          const list = await getMemory()
+          await finish(list.length ? '🧠 我目前記得這些：\n' + list.map((m, i) => `${i + 1}. ${m.text}`).join('\n') + '\n\n（要忘掉就跟我說「忘記 …」）' : '我的記事本還是空的。你可以跟我說「記住：…」開始建立，或我在聊天中遇到重要的事也會自動記下來。')
+          continue
+        }
+        const mForget = text.match(/^(忘記|忘掉|別記|不要記了?|刪(除|掉)記憶)[\s:：,，、]*(.+)/s)
+        if (mForget && (mForget[3] || '').trim()) { const n = await removeMemory(mForget[3]); await finish(n ? `好，忘掉了 ${n} 條相關的記憶。` : '記事本裡沒找到相關的，沒有刪到東西。'); continue }
+        const mRemember = text.match(/^(記住|幫我記住?|幫我記一下|記一下|記個|備註一下?)[\s:：,，、]*(.+)/s)
+        if (mRemember && (mRemember[2] || '').trim()) { const e = await addMemory(mRemember[2], 'manual', op.name); await finish(e ? `好 👍 我記住了：「${e.text}」` : '這件我已經記過囉。'); continue }
+      }
+
       // 2) 確認 / 取消 待執行的操作（用詞放寬：確認/確定/執行/請執行/好/送出…都算確認）
       if (isDM && canAct) {
         const pend = await getPending(userId)
@@ -439,11 +478,15 @@ export default async function handler(req, res) {
         }
       }
 
-      // 3) 一般流程：載入資料＋對話記憶 → 問 AI（操作者才開放下指令）
-      const [snaps, accountsText, financeText, activityText, estimatesText, crewText, history] = await Promise.all([loadSnapshots(), loadAccounts(), loadFinanceText(), loadActivityText(), loadEstimatesText(), loadCrewText(), getChatHistory(convId)])
-      const reply = await answer(text, snaps, accountsText, financeText, activityText, estimatesText, crewText, canAct, history)
+      // 3) 一般流程：載入資料＋對話記憶＋長期記事本 → 問 AI（操作者才開放下指令）
+      const [snaps, accountsText, financeText, activityText, estimatesText, crewText, history, memList] = await Promise.all([loadSnapshots(), loadAccounts(), loadFinanceText(), loadActivityText(), loadEstimatesText(), loadCrewText(), getChatHistory(convId), getMemory()])
+      const rawReply = await answer(text, snaps, accountsText, financeText, activityText, estimatesText, crewText, canAct, history, memoryToText(memList))
+      // 抓出 D 想長期記住的事（[[記住:...]]）→ 存進記事本(僅操作者)，並把標記從給人看的文字拿掉
+      const { facts, clean } = extractMemoryTags(rawReply)
+      if (canAct && facts.length) { for (const f of facts) await addMemory(f, 'auto', op?.name) }
+      const reply = clean || rawReply
       const actions = canAct ? parseActions(reply) : []
-      console.log('answer', JSON.stringify({ snaps: snaps.length, canAct, hist: history.length, actions: actions.length, replyLen: reply.length }))
+      console.log('answer', JSON.stringify({ snaps: snaps.length, canAct, hist: history.length, mem: memList.length, autoFacts: facts.length, actions: actions.length, replyLen: reply.length }))
 
       if (actions.length) {
         // 4) 提出操作 → 存待確認 → 請使用者回「確認」
