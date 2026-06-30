@@ -103,7 +103,7 @@ export default function TaskCenter({ K, confirm, canEdit, cats, onLog }) {
   const Card = ({ t, dropBefore }) => {
     const pm = pMeta(t.priority);
     return (
-      <div draggable={canEdit}
+      <div key={t.id} draggable={canEdit}
         onDragStart={e => { setDrag(t.id); e.dataTransfer.effectAllowed = "move"; }}
         onDragEnd={() => { setDrag(null); setOverKey(null); }}
         onDragOver={e => { if (drag && dropBefore) { e.preventDefault(); e.stopPropagation(); } }}
@@ -129,7 +129,7 @@ export default function TaskCenter({ K, confirm, canEdit, cats, onLog }) {
 
   // 群組/欄 的落點容器（拖到空白處 → 歸到該群/欄末端）
   const DropZone = ({ keyId, onDropHere, children, style }) => (
-    <div
+    <div key={keyId}
       onDragOver={e => { if (drag) { e.preventDefault(); setOverKey(keyId); } }}
       onDragLeave={() => setOverKey(k => k === keyId ? null : k)}
       onDrop={e => { if (drag) { e.preventDefault(); onDropHere(); setDrag(null); setOverKey(null); } }}
@@ -166,18 +166,17 @@ export default function TaskCenter({ K, confirm, canEdit, cats, onLog }) {
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(280px,1fr))", gap: 12, alignItems: "start" }}>
           {groups.map(g => {
             const items = tasksOf(g.id).filter(matchQ);
-            return (
-              <DropZone key={g.id} keyId={g.id} onDropHere={() => moveTo(drag, { catId: g.id })}
-                style={{ background: C.bg, border: `1px solid ${C.line}`, borderRadius: 12, padding: 10, minHeight: 80 }}>
+            return DropZone({ keyId: g.id, onDropHere: () => moveTo(drag, { catId: g.id }),
+              style: { background: C.bg, border: `1px solid ${C.line}`, borderRadius: 12, padding: 10, minHeight: 80 },
+              children: <>
                 <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8, padding: "0 2px" }}>
                   <div style={{ fontSize: 13.5, fontWeight: 700, color: g.id === INBOX ? C.accent : C.text }}>{g.name}</div>
                   <span style={{ fontSize: 11.5, color: C.faint }}>{items.length}</span>
                 </div>
-                {items.map(t => <Card key={t.id} t={t} dropBefore />)}
+                {items.map(t => Card({ t, dropBefore: true }))}
                 {items.length === 0 && <div style={{ fontSize: 11.5, color: C.faint, textAlign: "center", padding: "8px 0" }}>拖任務到這裡 →歸到此大項</div>}
                 {canEdit && <input value={gnew[g.id] || ""} onChange={e => setGnew(p => ({ ...p, [g.id]: e.target.value }))} onKeyDown={e => { if (e.key === "Enter" && !e.nativeEvent.isComposing && e.keyCode !== 229) addToGroup(g.id); }} placeholder="＋ 直接在此大項新增…" style={{ width: "100%", boxSizing: "border-box", border: `1px dashed ${C.line}`, borderRadius: 7, padding: "6px 9px", fontSize: 12.5, background: "transparent", color: C.text, outline: "none", marginTop: 2 }} />}
-              </DropZone>
-            );
+              </> });
           })}
         </div>
       )}
@@ -187,18 +186,17 @@ export default function TaskCenter({ K, confirm, canEdit, cats, onLog }) {
         <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 12, alignItems: "start" }}>
           {STATUS.map(([sk, sl, sc]) => {
             const items = tasks.filter(t => t.status === sk).filter(matchQ);
-            return (
-              <DropZone key={sk} keyId={sk} onDropHere={() => moveTo(drag, { status: sk })}
-                style={{ background: C.bg, border: `1px solid ${C.line}`, borderRadius: 12, padding: 10, minHeight: 120 }}>
+            return DropZone({ keyId: sk, onDropHere: () => moveTo(drag, { status: sk }),
+              style: { background: C.bg, border: `1px solid ${C.line}`, borderRadius: 12, padding: 10, minHeight: 120 },
+              children: <>
                 <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
                   <span style={{ width: 8, height: 8, borderRadius: "50%", background: sc }} />
                   <div style={{ fontSize: 13.5, fontWeight: 700, color: C.text }}>{sl}</div>
                   <span style={{ fontSize: 11.5, color: C.faint }}>{items.length}</span>
                 </div>
-                {items.map(t => <Card key={t.id} t={t} dropBefore />)}
+                {items.map(t => Card({ t, dropBefore: true }))}
                 {items.length === 0 && <div style={{ fontSize: 11.5, color: C.faint, textAlign: "center", padding: "10px 0" }}>拖到這欄</div>}
-              </DropZone>
-            );
+              </> });
           })}
         </div>
       )}
@@ -255,7 +253,7 @@ export default function TaskCenter({ K, confirm, canEdit, cats, onLog }) {
               <div key={label} style={{ background: C.bg, border: `1px solid ${C.line}`, borderRadius: 12, padding: 12 }}>
                 <div style={{ fontSize: 13.5, fontWeight: 700, color: C.text, marginBottom: 8 }}>{label} <span style={{ color: C.faint, fontSize: 11.5 }}>{arr.length}</span></div>
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(260px,1fr))", gap: 8 }}>
-                  {arr.map(t => <Card key={t.id} t={t} />)}
+                  {arr.map(t => Card({ t }))}
                 </div>
               </div>
             ))}
@@ -311,7 +309,7 @@ export default function TaskCenter({ K, confirm, canEdit, cats, onLog }) {
             {unsched.length > 0 && (
               <div style={{ marginTop: 14 }}>
                 <div style={{ fontSize: 12.5, fontWeight: 700, color: C.sub, marginBottom: 6 }}>未排程（沒設日期）{unsched.length}</div>
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(260px,1fr))", gap: 8 }}>{unsched.map(t => <Card key={t.id} t={t} />)}</div>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(260px,1fr))", gap: 8 }}>{unsched.map(t => Card({ t }))}</div>
               </div>
             )}
           </div>
