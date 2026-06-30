@@ -113,6 +113,7 @@ export default function TaskCenter({ K, confirm, canEdit, cats, onLog }) {
               {(t.tags || []).map(tg => <span key={tg} style={{ fontSize: 10.5, color: C.sub, background: C.soft, borderRadius: 4, padding: "1px 5px" }}>{tg}</span>)}
             </div>
           </div>
+          {canEdit && <button onClick={e => { e.stopPropagation(); del(t.id); }} title="刪除" style={{ flexShrink: 0, background: "none", border: "none", color: C.faint, cursor: "pointer", fontSize: 15, lineHeight: 1, padding: "0 2px" }} onMouseEnter={e => e.currentTarget.style.color = "#C0392B"} onMouseLeave={e => e.currentTarget.style.color = C.faint}>×</button>}
         </div>
       </div>
     );
@@ -138,15 +139,15 @@ export default function TaskCenter({ K, confirm, canEdit, cats, onLog }) {
         <div style={{ fontSize: 19, fontWeight: 800, color: C.text }}>✅ 任務中心</div>
         <span style={{ fontSize: 12, color: C.faint }}>{open.length} 件待辦・共 {tasks.length} 件</span>
         <div style={{ flex: 1 }} />
-        <div style={{ display: "inline-flex", background: C.head, border: `1px solid ${C.line}`, borderRadius: 10, padding: 3, gap: 2 }}>
-          {Tab("group", "📁 依大項")}{Tab("board", "🗂 看板")}{Tab("list", "📋 清單")}
+        <div style={{ display: "inline-flex", background: C.head, border: `1px solid ${C.line}`, borderRadius: 10, padding: 3, gap: 2, flexWrap: "wrap" }}>
+          {Tab("group", "📁 依大項")}{Tab("board", "🗂 看板")}{Tab("list", "📋 清單")}{Tab("timeline", "📅 時間軸")}{Tab("gantt", "📊 甘特")}{Tab("mind", "🧠 心智圖")}
         </div>
       </div>
 
       {/* 快速隨手記 */}
       {canEdit && (
         <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
-          <input value={quick} onChange={e => setQuick(e.target.value)} onKeyDown={e => { if (e.key === "Enter") addQuick(); }}
+          <input value={quick} onChange={e => setQuick(e.target.value)} onKeyDown={e => { if (e.key === "Enter" && !e.nativeEvent.isComposing && e.keyCode !== 229) addQuick(); }}
             placeholder="＋ 隨手丟一句任務…（先進收件匣，之後再拖到大項整理）按 Enter 新增" style={{ ...inp, flex: 1, fontSize: 13.5, padding: "10px 12px" }} />
           <button onClick={addQuick} style={{ background: C.accent, color: "#fff", border: "none", borderRadius: 8, padding: "0 18px", fontSize: 14, fontWeight: 700, cursor: "pointer" }}>新增</button>
         </div>
@@ -223,6 +224,114 @@ export default function TaskCenter({ K, confirm, canEdit, cats, onLog }) {
                     <span style={{ flexShrink: 0, fontSize: 11, color: "#fff", background: sColor(t.status), borderRadius: 5, padding: "2px 8px" }}>{sLabel(t.status)}</span>
                   </div>
                 ))}
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* ── 時間軸（依截止日分桶） ── */}
+      {view === "timeline" && (() => {
+        const t0 = today();
+        const within = (d, n) => { if (!d) return false; const diff = (new Date(d) - new Date(t0)) / 86400000; return diff >= 0 && diff <= n; };
+        const buckets = [
+          ["🔴 逾期", tasks.filter(t => t.status !== "done" && t.due && t.due < t0)],
+          ["📌 今天", tasks.filter(t => t.due === t0)],
+          ["🗓 本週內", tasks.filter(t => t.status !== "done" && t.due && t.due > t0 && within(t.due, 7))],
+          ["⏳ 之後", tasks.filter(t => t.due && t.due > t0 && !within(t.due, 7))],
+          ["📥 無日期", tasks.filter(t => !t.due && t.status !== "done")],
+        ].map(([label, arr]) => [label, arr.filter(matchQ).sort((a, b) => (a.due || "9") < (b.due || "9") ? -1 : 1)]);
+        return (
+          <div style={{ display: "grid", gap: 12 }}>
+            {buckets.map(([label, arr]) => arr.length > 0 && (
+              <div key={label} style={{ background: C.bg, border: `1px solid ${C.line}`, borderRadius: 12, padding: 12 }}>
+                <div style={{ fontSize: 13.5, fontWeight: 700, color: C.text, marginBottom: 8 }}>{label} <span style={{ color: C.faint, fontSize: 11.5 }}>{arr.length}</span></div>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(260px,1fr))", gap: 8 }}>
+                  {arr.map(t => <Card key={t.id} t={t} />)}
+                </div>
+              </div>
+            ))}
+            {tasks.length === 0 && <div style={{ padding: 30, textAlign: "center", color: C.faint }}>還沒有任務</div>}
+          </div>
+        );
+      })()}
+
+      {/* ── 甘特圖（依開始～截止日畫橫條） ── */}
+      {view === "gantt" && (() => {
+        const dayMs = 86400000, dayW = 24;
+        const sched = tasks.filter(t => t.due || t.start).filter(matchQ);
+        const unsched = tasks.filter(t => !t.due && !t.start).filter(matchQ);
+        if (sched.length === 0) return <div style={{ padding: 30, textAlign: "center", color: C.faint }}>還沒有「有日期」的任務。到任務詳情設好開始/截止日，就會出現在甘特圖。</div>;
+        const lo = (t) => new Date(dnorm(t.start || t.due));
+        const hi = (t) => new Date(dnorm(t.due || t.start));
+        let minD = new Date(Math.min(...sched.map(t => +lo(t)), +new Date(today())));
+        let maxD = new Date(Math.max(...sched.map(t => +hi(t)), +new Date(today())));
+        minD = new Date(+minD - 2 * dayMs); maxD = new Date(+maxD + 2 * dayMs);
+        let totalDays = Math.round((maxD - minD) / dayMs) + 1;
+        if (totalDays > 140) { maxD = new Date(+minD + 140 * dayMs); totalDays = 141; }
+        const offset = (d) => Math.round((new Date(dnorm(d)) - minD) / dayMs);
+        const ticks = []; for (let i = 0; i < totalDays; i += 7) { const d = new Date(+minD + i * dayMs); ticks.push({ i, label: `${d.getMonth() + 1}/${d.getDate()}` }); }
+        const todayOff = offset(today());
+        return (
+          <div>
+            <div style={{ border: `1px solid ${C.line}`, borderRadius: 12, background: C.card, overflow: "auto" }}>
+              <div style={{ minWidth: 200 + totalDays * dayW }}>
+                {/* 週刻度 */}
+                <div style={{ display: "flex", borderBottom: `1px solid ${C.line}`, position: "sticky", top: 0, background: C.head, zIndex: 1 }}>
+                  <div style={{ width: 200, flexShrink: 0, borderRight: `1px solid ${C.line}`, padding: "6px 10px", fontSize: 11.5, color: C.sub, fontWeight: 700 }}>任務</div>
+                  <div style={{ position: "relative", height: 26 }}>
+                    {ticks.map(tk => <div key={tk.i} style={{ position: "absolute", left: tk.i * dayW, top: 0, fontSize: 10.5, color: C.sub, padding: "6px 0 0 3px", borderLeft: `1px solid ${C.line}`, height: 26, boxSizing: "border-box" }}>{tk.label}</div>)}
+                  </div>
+                </div>
+                {/* 任務列 */}
+                {sched.sort((a, b) => +lo(a) - +lo(b)).map((t, i) => {
+                  const s = offset(t.start || t.due), e = offset(t.due || t.start);
+                  const left = Math.min(s, e), width = Math.abs(e - s) + 1;
+                  return (
+                    <div key={t.id} onClick={() => setSel(t.id)} style={{ display: "flex", alignItems: "center", borderTop: i ? `1px solid #EFE7D6` : "none", cursor: "pointer", background: i % 2 ? "#FBFAF5" : "#fff" }}>
+                      <div style={{ width: 200, flexShrink: 0, borderRight: `1px solid ${C.line}`, padding: "7px 10px", fontSize: 12.5, color: t.status === "done" ? C.faint : C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.priority === "urgent" && "🔥"}{t.title}</div>
+                      <div style={{ position: "relative", height: 30, flex: 1 }}>
+                        {todayOff >= 0 && todayOff < totalDays && <div style={{ position: "absolute", left: todayOff * dayW, top: 0, bottom: 0, width: 1, background: "#C0392B", opacity: .5 }} />}
+                        <div title={`${t.start || t.due} ~ ${t.due || t.start}`} style={{ position: "absolute", left: left * dayW + 2, top: 7, height: 16, width: Math.max(width * dayW - 4, 8), background: sColor(t.status), borderRadius: 5, opacity: t.status === "done" ? 0.5 : 1 }} />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+            <div style={{ fontSize: 11.5, color: C.faint, marginTop: 8 }}>紅線＝今天。點任務列可編輯日期。</div>
+            {unsched.length > 0 && (
+              <div style={{ marginTop: 14 }}>
+                <div style={{ fontSize: 12.5, fontWeight: 700, color: C.sub, marginBottom: 6 }}>未排程（沒設日期）{unsched.length}</div>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(260px,1fr))", gap: 8 }}>{unsched.map(t => <Card key={t.id} t={t} />)}</div>
+              </div>
+            )}
+          </div>
+        );
+      })()}
+
+      {/* ── 心智圖（中心→大項→任務 樹狀） ── */}
+      {view === "mind" && (() => {
+        const branches = groups.map(g => ({ g, items: tasksOf(g.id).filter(matchQ) })).filter(b => b.items.length > 0);
+        if (branches.length === 0) return <div style={{ padding: 30, textAlign: "center", color: C.faint }}>還沒有任務</div>;
+        return (
+          <div style={{ overflowX: "auto", padding: "10px 0" }}>
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", minWidth: "min-content" }}>
+              <div style={{ background: C.accent, color: "#fff", borderRadius: 20, padding: "8px 20px", fontSize: 15, fontWeight: 800, boxShadow: "0 2px 6px rgba(0,0,0,.12)" }}>✅ 全部任務</div>
+              <div style={{ width: 2, height: 18, background: C.line }} />
+              <div style={{ display: "flex", gap: 18, alignItems: "flex-start", flexWrap: "nowrap" }}>
+                {branches.map(({ g, items }) => (
+                  <div key={g.id} style={{ display: "flex", flexDirection: "column", alignItems: "center", minWidth: 180 }}>
+                    <div style={{ width: 2, height: 8, background: C.line }} />
+                    <div style={{ background: g.id === INBOX ? C.soft2 : C.head, border: `1.5px solid ${g.id === INBOX ? C.accent : C.line}`, borderRadius: 12, padding: "7px 14px", fontSize: 13.5, fontWeight: 700, color: g.id === INBOX ? C.accent : C.text, whiteSpace: "nowrap" }}>{g.name} <span style={{ color: C.faint, fontWeight: 400, fontSize: 11 }}>{items.length}</span></div>
+                    <div style={{ width: 2, height: 10, background: C.line }} />
+                    <div style={{ display: "flex", flexDirection: "column", gap: 7, width: "100%" }}>
+                      {items.map(t => (
+                        <div key={t.id} onClick={() => setSel(t.id)} style={{ background: C.card, border: `1px solid ${C.line}`, borderLeft: `3px solid ${t.priority === "urgent" ? "#C0392B" : sColor(t.status)}`, borderRadius: 9, padding: "6px 10px", fontSize: 12.5, color: t.status === "done" ? C.faint : C.text, textDecoration: t.status === "done" ? "line-through" : "none", cursor: "pointer", boxShadow: "0 1px 2px rgba(0,0,0,.04)" }}>{t.priority === "urgent" && "🔥"}{t.title}</div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
         );
