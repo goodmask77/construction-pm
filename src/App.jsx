@@ -10,16 +10,17 @@ import TaskCenter from "./tasks/TaskCenter.jsx";
 import Conclusions from "./conclusions/Conclusions.jsx";
 import SequenceView from "./SequenceView.jsx";
 
-// ── DESIGN TOKENS (Warm editorial — 米色紙感 + 磚紅 + 黑) ──────────────────
-const ACCENT  = "#C13A22"; // 品牌磚紅 — Logo / 主按鈕 / tag
-const PRIMARY = "#1A1A1A"; // 黑 — 選中 tab / 深色按鈕
-const BG      = "#ECE6D7"; // 米色紙背景
-const SURFACE = "#FCFAF4"; // 卡片/表面（暖白）
-const BORDER  = "#D8CFBB"; // 暖棕邊框
-const TEXT    = "#211C15"; // 主文字（暖黑）
-const SUB     = "#6F6656"; // 次文字（暖灰）
-const ACCENT_SOFT = "#F3E4DE"; // 磚紅淡底
-const DARKCHIP = "#33281E"; // 深棕 chip（分類標籤）
+// ── DESIGN TOKENS（依 docs/DESIGN_SPEC.md：Linear/Stripe 儀表板風 — 中性灰白 + 單一藍色主色）──
+const BRAND   = "#C13A22"; // 品牌磚紅 — 只給 GROUN:D 商標用，不再當 UI 主色
+const ACCENT  = "#2563eb"; // blue-600 — 全站唯一 UI 主色（主按鈕 / 選中 / 連結）
+const PRIMARY = "#171717"; // neutral-900 — 選中 tab / 深色按鈕
+const BG      = "#fafafa"; // neutral-50 頁面背景
+const SURFACE = "#ffffff"; // 卡片/表面
+const BORDER  = "#e5e5e5"; // neutral-200 邊框（一律 1px）
+const TEXT    = "#171717"; // 主文字（近黑）
+const SUB     = "#737373"; // neutral-500 次文字
+const ACCENT_SOFT = "#eff6ff"; // blue-50 主色淡底
+const DARKCHIP = "#262626"; // neutral-800 深色 chip（分類標籤）
 const GOLD    = "#C13A22"; // Logo 用磚紅
 const ADMIN_USER = "goodmask77"; // 僅此帳號可編輯（不顯示於介面）
 // 介面顯示用：絕不顯示登入帳號字串（避免外洩）。管理員一律顯示「管理員」。
@@ -1111,7 +1112,7 @@ function KnowledgeBaseView({ canEdit, requireLogin, confirm, userName }) {
           <button key={c} onClick={() => setCatFilter(c)} style={{ border: `1px solid ${catFilter === c ? PRIMARY : BORDER}`, background: catFilter === c ? PRIMARY : "transparent", color: catFilter === c ? "#fff" : TEXT, borderRadius: 16, padding: "4px 12px", fontSize: 12.5, fontWeight: 500, cursor: "pointer" }}>{c}</button>
         ))}
       </div>
-      {filtered.length === 0 && <div style={{ textAlign: "center", color: "#A99F88", padding: "50px 0", fontSize: 14 }}>{docs.length === 0 ? "還沒有資料，點「＋ 新增」開始建立。" : "沒有符合的資料。"}</div>}
+      {filtered.length === 0 && <div style={{ textAlign: "center", color: "#a3a3a3", padding: "50px 0", fontSize: 14 }}>{docs.length === 0 ? "還沒有資料，點「＋ 新增」開始建立。" : "沒有符合的資料。"}</div>}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: 12 }}>
         {filtered.map(d => (
           <div key={d.id} style={{ background: "#fff", border: `1px solid ${BORDER}`, borderRadius: 12, padding: 14, display: "flex", flexDirection: "column", gap: 6, position: "relative" }}>
@@ -1119,7 +1120,7 @@ function KnowledgeBaseView({ canEdit, requireLogin, confirm, userName }) {
               <span style={{ fontSize: 22, lineHeight: 1 }}>{kbIcon(d)}</span>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ fontSize: 14.5, fontWeight: 600, color: TEXT, wordBreak: "break-word" }}>{d.pinned && "📌 "}{d.title}</div>
-                <div style={{ fontSize: 11, color: SUB, marginTop: 2 }}><span style={{ background: "#F3E4DE", color: "#92400e", borderRadius: 8, padding: "1px 7px" }}>{d.category}</span>{d.tags?.length > 0 && <span style={{ marginLeft: 6 }}>{d.tags.map(t => "#" + t).join(" ")}</span>}</div>
+                <div style={{ fontSize: 11, color: SUB, marginTop: 2 }}><span style={{ background: "#eff6ff", color: "#92400e", borderRadius: 8, padding: "1px 7px" }}>{d.category}</span>{d.tags?.length > 0 && <span style={{ marginLeft: 6 }}>{d.tags.map(t => "#" + t).join(" ")}</span>}</div>
               </div>
             </div>
             {d.kind === "text" && d.content && <div style={{ fontSize: 13, color: "#4A4234", whiteSpace: "pre-wrap", wordBreak: "break-word", maxHeight: 140, overflowY: "auto", background: "#FBF7EE", borderRadius: 8, padding: "8px 10px" }}>{d.content}</div>}
@@ -1249,7 +1250,7 @@ function Review360View({ canEdit, requireLogin, confirm, isAdmin, userName }) {
           {people.map(p => { const done = !!myReviewOf(p.id); const isSelf = p.id === me; return (
             <button key={p.id} onClick={() => setRate({ revieweeId: p.id, scores: myReviewOf(p.id)?.scores || {}, comment: myReviewOf(p.id)?.comment || "" })}
               style={{ textAlign: "left", background: "#fff", border: `1px solid ${done ? "#3C8C3C" : BORDER}`, borderRadius: 10, padding: "12px 14px", cursor: "pointer", display: "flex", alignItems: "center", gap: 10 }}>
-              <span style={{ width: 34, height: 34, borderRadius: "50%", background: "#F3E4DE", color: ACCENT, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, flexShrink: 0 }}>{p.name?.[0] || "?"}</span>
+              <span style={{ width: 34, height: 34, borderRadius: "50%", background: "#eff6ff", color: ACCENT, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, flexShrink: 0 }}>{p.name?.[0] || "?"}</span>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ fontSize: 14, fontWeight: 600, color: TEXT }}>{p.name}{isSelf && <span style={{ fontSize: 11, color: SUB }}> · 自評</span>}</div>
                 <div style={{ fontSize: 11, color: SUB }}>{p.dept || "—"}</div>
@@ -1276,11 +1277,11 @@ function Review360View({ canEdit, requireLogin, confirm, isAdmin, userName }) {
               <div style={{ flex: 1 }} />
               {a.overall != null && <div style={{ fontSize: 22, fontWeight: 800, color: ACCENT, fontVariantNumeric: "tabular-nums" }}>{a.overall.toFixed(1)}<span style={{ fontSize: 12, color: SUB, fontWeight: 400 }}> /5</span></div>}
             </div>
-            {a.count === 0 && <div style={{ fontSize: 13, color: "#A99F88", padding: "10px 0" }}>還沒有人評過這位夥伴。</div>}
+            {a.count === 0 && <div style={{ fontSize: 13, color: "#a3a3a3", padding: "10px 0" }}>還沒有人評過這位夥伴。</div>}
             {a.perDim.map(({ dim, avg, selfV, n }) => (
               <div key={dim.id} style={{ marginBottom: 12 }}>
                 <div style={{ display: "flex", fontSize: 13, marginBottom: 4 }}><span style={{ color: TEXT, fontWeight: 600 }}>{dim.label}</span><div style={{ flex: 1 }} /><span style={{ color: ACCENT, fontFamily: "monospace", fontWeight: 700 }}>{avg != null ? avg.toFixed(1) : "—"}</span>{selfV != null && <span style={{ color: "#2E6FB0", marginLeft: 8, fontSize: 12 }}>自評 {selfV}</span>}</div>
-                <div style={{ position: "relative", height: 8, background: "#EFE7D6", borderRadius: 4 }}>
+                <div style={{ position: "relative", height: 8, background: "#f0f0f0", borderRadius: 4 }}>
                   <div style={{ width: `${(avg || 0) / 5 * 100}%`, height: "100%", background: ACCENT, borderRadius: 4, transition: "width .2s" }} />
                   {selfV != null && <div title="自評" style={{ position: "absolute", top: -2, left: `calc(${selfV / 5 * 100}% - 1px)`, width: 2, height: 12, background: "#2E6FB0" }} />}
                 </div>
@@ -1290,7 +1291,7 @@ function Review360View({ canEdit, requireLogin, confirm, isAdmin, userName }) {
               <div style={{ fontSize: 13, fontWeight: 600, color: TEXT, marginBottom: 8 }}>💬 匿名評語</div>
               {a.comments.map((c, i) => <div key={i} style={{ fontSize: 13, color: "#4A4234", background: "#FBF7EE", borderRadius: 8, padding: "8px 12px", marginBottom: 6, whiteSpace: "pre-wrap" }}>{c}</div>)}
             </div>}
-            <div style={{ fontSize: 11, color: "#A99F88", marginTop: 12 }}>※ 正式版：評語匿名、評鑑者身分隱藏；少於設定人數不顯示結果以保護匿名。</div>
+            <div style={{ fontSize: 11, color: "#a3a3a3", marginTop: 12 }}>※ 正式版：評語匿名、評鑑者身分隱藏；少於設定人數不顯示結果以保護匿名。</div>
           </div>
         ); })()}
       </>)}
@@ -1319,7 +1320,7 @@ function Review360View({ canEdit, requireLogin, confirm, isAdmin, userName }) {
             </div>
           ); })}
           <button onClick={() => { if (!guard()) return; persist({ ...data, people: [...people, { id: "p" + Date.now(), name: "", dept: "", role: "staff", account: "" }] }); }} style={{ border: `1px dashed ${BORDER}`, background: SURFACE, color: SUB, borderRadius: 8, padding: "6px 14px", fontSize: 13, cursor: "pointer", marginTop: 4 }}>＋ 新增夥伴</button>
-          <div style={{ fontSize: 11, color: "#A99F88", marginTop: 8 }}>※ 層級＝權限：主管/管理員可新增關卡、發起投票、上架獎勵。登入帳號＝這個人登入後自動對應的身分（正式版接 Auth 後就不用選身分了）。</div>
+          <div style={{ fontSize: 11, color: "#a3a3a3", marginTop: 8 }}>※ 層級＝權限：主管/管理員可新增關卡、發起投票、上架獎勵。登入帳號＝這個人登入後自動對應的身分（正式版接 Auth 後就不用選身分了）。</div>
         </div>
       </>)}
 
@@ -1454,7 +1455,7 @@ function FeedbackView({ canEdit, requireLogin, isAdmin, userName }) {
         </div>
         {me && wallFilter === "tome" && <div style={{ fontSize: 12, color: SUB, margin: "-4px 2px 10px" }}>👇 別人給你的回饋，覺得有幫助就按「幫到我」，給予者會加分。</div>}
         {(() => { const list = items.filter(it => wallFilter === "all" || !me ? true : wallFilter === "tome" ? it.toId === me : it.fromId === me); return (<>
-        {list.length === 0 && <div style={{ textAlign: "center", color: "#A99F88", padding: "40px 0", fontSize: 14 }}>{items.length === 0 ? "還沒有回饋，去「給回饋」開始吧。" : "這個篩選沒有回饋。"}</div>}
+        {list.length === 0 && <div style={{ textAlign: "center", color: "#a3a3a3", padding: "40px 0", fontSize: 14 }}>{items.length === 0 ? "還沒有回饋，去「給回饋」開始吧。" : "這個篩選沒有回饋。"}</div>}
         {list.map(it => { const helped = (it.helpful || []).includes(me); const mine = it.toId === me; return (
           <div key={it.id} style={card}>
             <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6, fontSize: 13 }}>
@@ -1502,7 +1503,7 @@ const CrewMe = ({ people, me }) => {
     <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
       <span style={{ fontSize: 13, color: SUB }}>身分</span>
       <span style={{ fontSize: 14, fontWeight: 700, color: TEXT }}>{cur.name}{cur.dept ? `（${cur.dept}）` : ""}</span>
-      <span style={{ fontSize: 11, background: canManageRole(cur.role) ? "#FEF3C7" : "#EFE7D6", color: canManageRole(cur.role) ? "#92400e" : SUB, borderRadius: 8, padding: "2px 8px", fontWeight: 600 }}>{roleLabel(cur.role)}</span>
+      <span style={{ fontSize: 11, background: canManageRole(cur.role) ? "#FEF3C7" : "#f0f0f0", color: canManageRole(cur.role) ? "#92400e" : SUB, borderRadius: 8, padding: "2px 8px", fontWeight: 600 }}>{roleLabel(cur.role)}</span>
     </div>
   );
 };
@@ -1536,7 +1537,7 @@ function QuestView({ canEdit, requireLogin, confirm, isAdmin, userName }) {
               <button onClick={() => complete(q)} disabled={d} style={{ border: `1px solid ${d ? "#3C8C3C" : ACCENT}`, background: d ? "#F0FDF4" : ACCENT, color: d ? "#3C8C3C" : "#fff", borderRadius: 8, padding: "6px 16px", fontSize: 13, fontWeight: 600, cursor: d ? "default" : "pointer" }}>{d ? "✓ 已完成" : "完成挑戰"}</button>
             </div>
           </div>); })}
-        {data.quests.length === 0 && <div style={{ color: "#A99F88", fontSize: 14, padding: "30px 0" }}>還沒有關卡{isAdmin ? "，點「＋ 新增關卡」" : ""}。</div>}
+        {data.quests.length === 0 && <div style={{ color: "#a3a3a3", fontSize: 14, padding: "30px 0" }}>還沒有關卡{isAdmin ? "，點「＋ 新增關卡」" : ""}。</div>}
       </div>
       {ed && (
         <div onClick={e => e.target === e.currentTarget && setEd(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 500, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
@@ -1572,14 +1573,14 @@ function PollView({ canEdit, requireLogin, confirm, isAdmin, userName }) {
     <div>
       {crewProtoTitle("🗳", "投票", "一人一票（防灌票）；人物類投票會選出「投票王」。")}
       <div style={{ ...crewCard, padding: "10px 14px", display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}><CrewMe people={people} me={me} setMe={setMe} isAdmin={isAdmin} /><div style={{ flex: 1 }} />{canManage && <button onClick={() => guard() && setEd({ title: "", optText: "", usePeople: false, anon: true })} style={{ border: "none", background: ACCENT, color: "#fff", borderRadius: 8, padding: "7px 14px", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>＋ 發起投票</button>}</div>
-      {data.polls.length === 0 && <div style={{ color: "#A99F88", fontSize: 14, padding: "30px 0" }}>還沒有投票{isAdmin ? "，點「＋ 發起投票」" : ""}。</div>}
+      {data.polls.length === 0 && <div style={{ color: "#a3a3a3", fontSize: 14, padding: "30px 0" }}>還沒有投票{isAdmin ? "，點「＋ 發起投票」" : ""}。</div>}
       {data.polls.map(poll => { const t = tally(poll); const voted = myVote(poll.id); return (
         <div key={poll.id} style={crewCard}>
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}><div style={{ fontSize: 15, fontWeight: 700, color: TEXT }}>{poll.title}</div><div style={{ flex: 1 }} /><span style={{ fontSize: 12, color: SUB }}>{t.total} 票</span></div>
           {poll.peoplePoll && t.win && <div style={{ fontSize: 13, color: "#B8860B", fontWeight: 700, marginBottom: 8 }}>👑 目前投票王：{optLabel(poll, t.win.id)}（{t.c[t.win.id]} 票）</div>}
           {poll.options.map(o => { const n = t.c[o.id] || 0; const pct = t.total ? Math.round(n / t.total * 100) : 0; const mine = voted?.choiceId === o.id; return (
             <div key={o.id} onClick={() => !voted && vote(poll, o.id)} style={{ position: "relative", border: `1px solid ${mine ? ACCENT : BORDER}`, borderRadius: 8, padding: "8px 12px", marginBottom: 6, cursor: voted ? "default" : "pointer", overflow: "hidden" }}>
-              {voted && <div style={{ position: "absolute", inset: 0, width: pct + "%", background: mine ? "#F3E4DE" : "#F4EFE3", zIndex: 0 }} />}
+              {voted && <div style={{ position: "absolute", inset: 0, width: pct + "%", background: mine ? "#eff6ff" : "#f5f5f5", zIndex: 0 }} />}
               <div style={{ position: "relative", zIndex: 1, display: "flex", alignItems: "center" }}><span style={{ fontSize: 14, color: TEXT, fontWeight: mine ? 700 : 500 }}>{optLabel(poll, o.id)}{mine && " ✓"}</span><div style={{ flex: 1 }} />{voted && <span style={{ fontSize: 13, color: SUB, fontVariantNumeric: "tabular-nums" }}>{n}（{pct}%）</span>}</div>
             </div>); })}
           <div style={{ display: "flex", gap: 10, marginTop: 6 }}>{!voted && <span style={{ fontSize: 12, color: ACCENT }}>點選項投票</span>}{voted && <span style={{ fontSize: 12, color: "#3C8C3C" }}>✓ 已投</span>}<div style={{ flex: 1 }} />{canManage && <button onClick={() => guard() && confirm("刪除這個投票？").then(ok => ok && persist({ ...data, polls: data.polls.filter(x => x.id !== poll.id), votes: (data.votes || []).filter(v => v.pollId !== poll.id) }))} style={{ border: "none", background: "none", color: "#DC2626", fontSize: 12, cursor: "pointer" }}>刪除</button>}</div>
@@ -1631,9 +1632,9 @@ function ShopView({ canEdit, requireLogin, confirm, isAdmin, userName }) {
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}><span style={{ fontSize: 16, fontWeight: 800, color: ACCENT }}>{r.cost}<span style={{ fontSize: 11, color: SUB, fontWeight: 400 }}> 分</span></span><span style={{ fontSize: 11, color: SUB }}>{(r.stock ?? 99) >= 99 ? "" : `剩 ${r.stock}`}</span><div style={{ flex: 1 }} />{canManage && <button onClick={() => guard() && setEd({ ...r, stock: r.stock ?? "" })} style={{ border: "none", background: "none", color: SUB, fontSize: 12, cursor: "pointer" }}>編輯</button>}</div>
             <button onClick={() => redeem(r)} disabled={!afford || out} style={{ marginTop: 10, width: "100%", border: "none", background: out ? "#C8BCA0" : afford ? "#3C8C3C" : "#C8BCA0", color: "#fff", borderRadius: 8, padding: "8px", fontSize: 13.5, fontWeight: 600, cursor: afford && !out ? "pointer" : "default" }}>{out ? "已兌完" : afford ? "兌換" : "積分不足"}</button>
           </div>); })}
-        {shop.rewards.length === 0 && <div style={{ color: "#A99F88", fontSize: 14, padding: "30px 0" }}>還沒有獎勵{isAdmin ? "，點「＋ 新增獎勵」" : ""}。</div>}
+        {shop.rewards.length === 0 && <div style={{ color: "#a3a3a3", fontSize: 14, padding: "30px 0" }}>還沒有獎勵{isAdmin ? "，點「＋ 新增獎勵」" : ""}。</div>}
       </div>
-      {me && myRedemptions.length > 0 && <div style={{ ...crewCard, marginTop: 14 }}><div style={{ fontSize: 14, fontWeight: 700, marginBottom: 8 }}>我的兌換紀錄</div>{myRedemptions.map(r => <div key={r.id} style={{ display: "flex", fontSize: 13, padding: "5px 0", borderTop: "1px solid #F4EFE3" }}><span>{r.name}</span><div style={{ flex: 1 }} /><span style={{ color: SUB }}>-{r.cost} 分 · {r.status === "requested" ? "處理中" : r.status}</span></div>)}</div>}
+      {me && myRedemptions.length > 0 && <div style={{ ...crewCard, marginTop: 14 }}><div style={{ fontSize: 14, fontWeight: 700, marginBottom: 8 }}>我的兌換紀錄</div>{myRedemptions.map(r => <div key={r.id} style={{ display: "flex", fontSize: 13, padding: "5px 0", borderTop: "1px solid #f5f5f5" }}><span>{r.name}</span><div style={{ flex: 1 }} /><span style={{ color: SUB }}>-{r.cost} 分 · {r.status === "requested" ? "處理中" : r.status}</span></div>)}</div>}
       {ed && (
         <div onClick={e => e.target === e.currentTarget && setEd(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 500, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
           <div style={{ background: "#fff", borderRadius: 14, padding: 20, width: 420, maxWidth: "100%" }}>
@@ -1676,11 +1677,11 @@ function CrewRankView() {
       <div style={{ background: "#fff", border: `1px solid ${BORDER}`, borderRadius: 12, padding: 16 }}>
         <div style={{ fontSize: 15, fontWeight: 700, color: TEXT }}>{title}</div>
         <div style={{ fontSize: 11.5, color: SUB, marginBottom: 10 }}>{sub}</div>
-        {sorted.length === 0 && <div style={{ fontSize: 13, color: "#A99F88", padding: "8px 0" }}>尚無資料</div>}
+        {sorted.length === 0 && <div style={{ fontSize: 13, color: "#a3a3a3", padding: "8px 0" }}>尚無資料</div>}
         {sorted.map((s, i) => (
-          <div key={s.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "7px 0", borderTop: i ? "1px solid #F4EFE3" : "none" }}>
+          <div key={s.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "7px 0", borderTop: i ? "1px solid #f5f5f5" : "none" }}>
             <span style={{ width: 24, textAlign: "center", fontSize: i < 3 ? 16 : 13, color: SUB, fontWeight: 700 }}>{medal[i] || i + 1}</span>
-            <span style={{ width: 30, height: 30, borderRadius: "50%", background: "#F3E4DE", color: ACCENT, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: 13, flexShrink: 0 }}>{s.name?.[0] || "?"}</span>
+            <span style={{ width: 30, height: 30, borderRadius: "50%", background: "#eff6ff", color: ACCENT, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: 13, flexShrink: 0 }}>{s.name?.[0] || "?"}</span>
             <div style={{ flex: 1, minWidth: 0 }}><div style={{ fontSize: 13.5, fontWeight: 600, color: TEXT }}>{s.name}</div><div style={{ fontSize: 11, color: SUB }}>{s.dept}</div></div>
             <span style={{ fontSize: 16, fontWeight: 800, color, fontVariantNumeric: "tabular-nums" }}>{s[key]}<span style={{ fontSize: 11, color: SUB, fontWeight: 400 }}> {unit}</span></span>
           </div>
@@ -1716,11 +1717,11 @@ function CrewRankView() {
                 return (
                   <div key={poll.id} style={{ background: "#fff", border: `1px solid ${BORDER}`, borderRadius: 12, padding: 16 }}>
                     <div style={{ fontSize: 15, fontWeight: 700, color: TEXT, marginBottom: 10 }}>{poll.title}</div>
-                    {ranked.length === 0 && <div style={{ fontSize: 13, color: "#A99F88" }}>尚無投票</div>}
+                    {ranked.length === 0 && <div style={{ fontSize: 13, color: "#a3a3a3" }}>尚無投票</div>}
                     {ranked.map((s, i) => (
-                      <div key={s.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "7px 0", borderTop: i ? "1px solid #F4EFE3" : "none" }}>
+                      <div key={s.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "7px 0", borderTop: i ? "1px solid #f5f5f5" : "none" }}>
                         <span style={{ width: 24, textAlign: "center", fontSize: i < 3 ? 16 : 13, color: SUB, fontWeight: 700 }}>{medal[i] || i + 1}</span>
-                        <span style={{ width: 30, height: 30, borderRadius: "50%", background: "#F3E4DE", color: ACCENT, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: 13, flexShrink: 0 }}>{s.name?.[0] || "?"}</span>
+                        <span style={{ width: 30, height: 30, borderRadius: "50%", background: "#eff6ff", color: ACCENT, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: 13, flexShrink: 0 }}>{s.name?.[0] || "?"}</span>
                         <div style={{ flex: 1, minWidth: 0 }}><div style={{ fontSize: 13.5, fontWeight: 600, color: TEXT }}>{s.name}</div><div style={{ fontSize: 11, color: SUB }}>{s.dept}</div></div>
                         <span style={{ fontSize: 16, fontWeight: 800, color: "#B8860B", fontVariantNumeric: "tabular-nums" }}>{s.votes}<span style={{ fontSize: 11, color: SUB, fontWeight: 400 }}> 票</span></span>
                       </div>
@@ -2273,7 +2274,7 @@ function CompareView({ canEdit, requireLogin, onLog }) {
               const diff = (e.total || 0) - lowest;
               const pct = lowest > 0 ? Math.round(diff / lowest * 100) : 0;
               return (
-                <div key={e.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 0", borderBottom: idx < sorted.length - 1 ? `1px solid #F4EFE3` : "none" }}>
+                <div key={e.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 0", borderBottom: idx < sorted.length - 1 ? `1px solid #f5f5f5` : "none" }}>
                   <span style={{ fontSize: 15 }}>{idx === 0 && e.total > 0 ? "🥇" : idx === 1 ? "🥈" : idx === 2 ? "🥉" : "・"}</span>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontSize: 14, color: TEXT, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{e.vendor}</div>
@@ -2338,11 +2339,11 @@ function CompareView({ canEdit, requireLogin, onLog }) {
                             const min = vals.length ? Math.min(...vals) : 0;
                             return (
                               <tr key={ri}>
-                                <td style={{ padding: "6px 8px", color: TEXT, borderBottom: `1px solid #F4EFE3` }}>{r.item}{r.note ? <span style={{ color: SUB, fontSize: 11 }}> · {r.note}</span> : ""}</td>
+                                <td style={{ padding: "6px 8px", color: TEXT, borderBottom: `1px solid #f5f5f5` }}>{r.item}{r.note ? <span style={{ color: SUB, fontSize: 11 }}> · {r.note}</span> : ""}</td>
                                 {ests.map(e => {
                                   const v = getP(r, e.vendor);
                                   const isMin = v > 0 && v === min && vals.length > 1;
-                                  return <td key={e.id} style={{ textAlign: "right", padding: "6px 8px", fontFamily: "monospace", borderBottom: `1px solid #F4EFE3`, color: isMin ? "#3C8C3C" : (v == null ? "#C0392B" : TEXT), fontWeight: isMin ? 700 : 400, background: isMin ? "#EAF6EA" : "transparent" }}>{v != null ? fmt(v) : "未列"}</td>;
+                                  return <td key={e.id} style={{ textAlign: "right", padding: "6px 8px", fontFamily: "monospace", borderBottom: `1px solid #f5f5f5`, color: isMin ? "#3C8C3C" : (v == null ? "#C0392B" : TEXT), fontWeight: isMin ? 700 : 400, background: isMin ? "#EAF6EA" : "transparent" }}>{v != null ? fmt(v) : "未列"}</td>;
                                 })}
                               </tr>
                             );
@@ -2395,16 +2396,16 @@ function useConfirm() {
   const lines = state ? (state.lines || String(state.msg).split("\n")) : [];
   const Dialog = state ? (
     <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }} onMouseDown={e => { if (e.target === e.currentTarget) { state.resolve(false); setState(null); } }}>
-      <div style={{ background: "#FBF7EE", border: "1px solid #D8CFBB", borderRadius: 14, padding: "20px 20px 16px", maxWidth: 460, width: "100%", maxHeight: "82vh", display: "flex", flexDirection: "column" }}>
+      <div style={{ background: "#FBF7EE", border: "1px solid #e5e5e5", borderRadius: 14, padding: "20px 20px 16px", maxWidth: 460, width: "100%", maxHeight: "82vh", display: "flex", flexDirection: "column" }}>
         {state.title && <div style={{ fontSize: 15, fontWeight: 700, color: "#211C15", marginBottom: 10 }}>{state.title}</div>}
         <div style={{ fontSize: 14, color: "#211C15", lineHeight: 1.7, overflowY: "auto", marginBottom: 18 }}>
           {lines.length > 1
-            ? lines.map((ln, i) => <div key={i} style={ln.trim() === "" ? { height: 6 } : { padding: "1px 0", display: "flex", gap: 6, alignItems: "flex-start" }}>{ln.trim() && <><span style={{ color: "#A99F88", flexShrink: 0 }}>·</span><span style={{ wordBreak: "break-word" }}>{ln.replace(/^[・·]\s*/, "")}</span></>}</div>)
+            ? lines.map((ln, i) => <div key={i} style={ln.trim() === "" ? { height: 6 } : { padding: "1px 0", display: "flex", gap: 6, alignItems: "flex-start" }}>{ln.trim() && <><span style={{ color: "#a3a3a3", flexShrink: 0 }}>·</span><span style={{ wordBreak: "break-word" }}>{ln.replace(/^[・·]\s*/, "")}</span></>}</div>)
             : <div style={{ textAlign: "center" }}>{state.msg}</div>}
         </div>
         <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
-          <button onClick={() => { state.resolve(false); setState(null); }} style={{ padding: "9px 18px", background: "#D8CFBB", border: "1px solid #D8CFBB", borderRadius: 8, color: "#4A4234", cursor: "pointer", fontSize: 14 }}>取消</button>
-          <button onClick={() => { state.resolve(true); setState(null); }} style={{ padding: "9px 22px", background: danger ? "#F3E4DE" : "#3C8C3C", border: danger ? "1px solid rgba(193,58,34,0.25)" : "none", borderRadius: 8, color: danger ? "#DC2626" : "#fff", cursor: "pointer", fontSize: 14, fontWeight: 600 }}>{label}</button>
+          <button onClick={() => { state.resolve(false); setState(null); }} style={{ padding: "9px 18px", background: "#e5e5e5", border: "1px solid #e5e5e5", borderRadius: 8, color: "#4A4234", cursor: "pointer", fontSize: 14 }}>取消</button>
+          <button onClick={() => { state.resolve(true); setState(null); }} style={{ padding: "9px 22px", background: danger ? "#eff6ff" : "#3C8C3C", border: danger ? "1px solid rgba(193,58,34,0.25)" : "none", borderRadius: 8, color: danger ? "#DC2626" : "#fff", cursor: "pointer", fontSize: 14, fontWeight: 600 }}>{label}</button>
         </div>
       </div>
     </div>
@@ -2428,7 +2429,7 @@ function KPICard({ label, val, color, tip }) {
       </div>
       <div style={{ fontVariantNumeric: "tabular-nums", fontSize: 16, fontWeight: 600, color, letterSpacing: -0.3 }}>{val}</div>
       {show && (
-        <div style={{ position: "absolute", top: "100%", left: 0, marginTop: 6, background: PRIMARY, border: "none", borderRadius: 8, padding: "9px 11px", fontSize: 12, color: "#D8CFBB", zIndex: 300, whiteSpace: "normal", width: 240, lineHeight: 1.6, boxShadow: "0 8px 24px rgba(15,23,42,0.18)" }}>
+        <div style={{ position: "absolute", top: "100%", left: 0, marginTop: 6, background: PRIMARY, border: "none", borderRadius: 8, padding: "9px 11px", fontSize: 12, color: "#e5e5e5", zIndex: 300, whiteSpace: "normal", width: 240, lineHeight: 1.6, boxShadow: "0 8px 24px rgba(15,23,42,0.18)" }}>
           {tip}
         </div>
       )}
@@ -2448,7 +2449,7 @@ function TopNav({ view, setView, saving, totalEstimated, totalPaid, doneCount, c
     <div style={{ background: BG, borderBottom: `1px solid ${BORDER}`, padding: isMobile ? "10px 14px 0" : "16px 22px 0", position: "sticky", top: 0, zIndex: 100 }}>
       <div style={{ display: "flex", alignItems: "center", gap: isMobile ? 10 : 16, marginBottom: isMobile ? 10 : 12, flexWrap: "wrap" }}>
         <div style={{ flexShrink: 0, order: 0 }}>
-          <div style={{ fontSize: isMobile ? 20 : 26, fontWeight: 800, color: ACCENT, lineHeight: 1, letterSpacing: -1 }}>GROUN:D</div>
+          <div style={{ fontSize: isMobile ? 20 : 26, fontWeight: 800, color: BRAND, lineHeight: 1, letterSpacing: -1 }}>GROUN:D</div>
           {!isMobile && <div style={{ fontSize: 9.5, color: SUB, letterSpacing: 2.5, textTransform: "uppercase", marginTop: 4, fontWeight: 600 }}>Construction Project Tracker</div>}
         </div>
         {/* 工作空間切換 */}
@@ -2558,7 +2559,7 @@ function CustomInput({ value, type, onCommit }) {
     return <input autoFocus value={local} onChange={e=>setLocal(e.target.value)}
       onBlur={()=>{ onCommit(isNum ? (parseFloat(local)||0) : local); setEditing(false); }}
       onKeyDown={e=>{ if(e.key==="Enter"||e.key==="Escape") e.target.blur(); }}
-      style={{ width:"100%", border:"none", outline:"2px solid "+ACCENT, borderRadius:4, padding:"2px 4px", fontSize:12.5, fontFamily:"'Noto Sans TC',sans-serif", background:"#F3E4DE" }} />;
+      style={{ width:"100%", border:"none", outline:"2px solid "+ACCENT, borderRadius:4, padding:"2px 4px", fontSize:12.5, fontFamily:"'Noto Sans TC',sans-serif", background:"#eff6ff" }} />;
   }
   return <div onClick={()=>{ setLocal(value ?? ""); setEditing(true); }} style={{ width:"100%", cursor:"text", minHeight:22, color: (value!==undefined&&value!=="")?"#211C15":"#CDC3AC", padding:"2px 2px" }}>{display || "—"}</div>;
 }
@@ -2798,7 +2799,7 @@ function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols,
 
   const cellStyle = (col) => ({
     minWidth: col.w, maxWidth: col.w, width: col.w,
-    padding: "0 8px", borderRight: "1px solid #D8CFBB",
+    padding: "0 8px", borderRight: "1px solid #e5e5e5",
     fontSize: 12.5, overflow: "hidden", whiteSpace: "nowrap",
     textOverflow: "ellipsis", height: 30, display: "flex", alignItems: "center",
     flexShrink: 0,
@@ -2834,7 +2835,7 @@ function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols,
             setEditCell(null);
           }}
           onKeyDown={e => { if (e.key === "Enter" || e.key === "Escape") e.target.blur(); }}
-          style={{ width: "100%", border: "none", outline: "2px solid " + ACCENT, borderRadius: 4, padding: "2px 4px", fontSize: 12.5, fontFamily: "'Noto Sans TC', sans-serif", background: "#F3E4DE" }}
+          style={{ width: "100%", border: "none", outline: "2px solid " + ACCENT, borderRadius: 4, padding: "2px 4px", fontSize: 12.5, fontFamily: "'Noto Sans TC', sans-serif", background: "#eff6ff" }}
         />
       );
     }
@@ -2867,7 +2868,7 @@ function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols,
         <div style={{ fontSize: 16, fontWeight: 600, color: TEXT, letterSpacing: -0.2 }}>總覽</div>
         <div style={{ fontSize: 12.5, color: SUB }}>{L("subtitle")}</div>
         <div style={{ position: "relative", flex: "1 1 200px", maxWidth: 360 }}>
-          <span style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", fontSize: 13, color: "#A99F88", pointerEvents: "none" }}>🔍</span>
+          <span style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", fontSize: 13, color: "#a3a3a3", pointerEvents: "none" }}>🔍</span>
           <input value={search} onChange={e => setSearch(e.target.value)} placeholder="搜尋細項／負責人／備註…" style={{ width: "100%", boxSizing: "border-box", border: `1px solid ${search ? ACCENT : BORDER}`, borderRadius: 8, padding: "6px 28px 6px 30px", fontSize: 13, background: "#fff", color: TEXT, outline: "none" }} />
           {search && <button onClick={() => setSearch("")} style={{ position: "absolute", right: 6, top: "50%", transform: "translateY(-50%)", border: "none", background: "none", color: SUB, cursor: "pointer", fontSize: 14 }}>×</button>}
         </div>
@@ -2881,7 +2882,7 @@ function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols,
         </button>
         <div style={{ flex: 1 }} />
         {viewMode === "table" && showMoney() && (
-          <button onClick={() => setGroupMode(m => !m)} title="分類模式：設定每個大項的費用群組與是否計入工程" style={{ padding: "6px 12px", borderRadius: 7, border: `1px solid ${groupMode ? ACCENT : BORDER}`, fontSize: 12.5, cursor: "pointer", background: groupMode ? "#F3E4DE" : SURFACE, color: groupMode ? ACCENT : SUB, fontWeight: 500 }}>🏷 分類{groupMode ? "中" : ""}</button>
+          <button onClick={() => setGroupMode(m => !m)} title="分類模式：設定每個大項的費用群組與是否計入工程" style={{ padding: "6px 12px", borderRadius: 7, border: `1px solid ${groupMode ? ACCENT : BORDER}`, fontSize: 12.5, cursor: "pointer", background: groupMode ? "#eff6ff" : SURFACE, color: groupMode ? ACCENT : SUB, fontWeight: 500 }}>🏷 分類{groupMode ? "中" : ""}</button>
         )}
         <button onClick={() => setShowTrash(true)} title="垃圾桶（刪除的細項可還原）" style={{ padding: "6px 12px", borderRadius: 7, border: `1px solid ${BORDER}`, fontSize: 12.5, cursor: "pointer", background: SURFACE, color: SUB, fontWeight: 500 }}>🗑 垃圾桶{trash.length ? ` ${trash.length}` : ""}</button>
       </div>
@@ -2968,7 +2969,7 @@ function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols,
             const isCollapsed = !q && collapsed.has(catId); // 搜尋時一律展開
             const isCatDragOver = dragOver === catId;
             // 依「付款日＋廠商」把同一張報價單的細項分組 → 淡色背景區分 + 小計
-            const QUOTE_TINTS = ["#F6F2E8", "#EDF3F6", "#F4EEF4", "#EDF5EE", "#FBF0EA"];
+            const QUOTE_TINTS = ["#fafafa", "#EDF3F6", "#F4EEF4", "#EDF5EE", "#FBF0EA"];
             const quoteKeyOf = (it) => `${it.payDate || ""}¦${it.assignee || ""}`;
             const quoteOrder = []; const quoteInfo = {};
             group.rows.forEach(({ item }) => { if (item.fromPetty) return; const k = quoteKeyOf(item); if (!quoteInfo[k]) { quoteInfo[k] = { idx: quoteOrder.length, sum: 0, n: 0, date: item.payDate || "", vendor: item.assignee || "" }; quoteOrder.push(k); } quoteInfo[k].sum += estAfterOf(item); quoteInfo[k].n++; });
@@ -2977,7 +2978,7 @@ function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols,
             // 有標籤的大項整行反底色：預估群組→藍、非工程→黃、其他費用群組→淡褐
             const isEstimate = !!(cat?.group && /預估/.test(cat.group));
             const isFunding = !!(cat && /零用金/.test(cat.name || "")); // 撥款帳：不計入工程成本
-            const tagTint = isFunding ? "#EDEAE3" : isEstimate ? "#E4EDF7" : cat?.nonProject ? "#FBF1CF" : cat?.group ? "#F1ECDD" : null;
+            const tagTint = isFunding ? "#EDEAE3" : isEstimate ? "#E4EDF7" : cat?.nonProject ? "#FBF1CF" : cat?.group ? "#f5f5f5" : null;
             const tagAccent = isFunding ? "#9A8F78" : isEstimate ? "#3E72A8" : cat?.nonProject ? "#C2872E" : ACCENT;
             return (
               <div key={catId}>
@@ -2988,7 +2989,7 @@ function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols,
                   onDragOver={e => { if (onDragOver) { e.preventDefault(); onDragOver(catId); } }}
                   onDrop={() => onDrop && onDrop(catId)}
                   onDragEnd={() => onDragOver && onDragOver(null)}
-                  style={{ display: "flex", alignItems: "center", background: isCatDragOver ? "#F3E4DE" : (tagTint || BG), borderBottom: `1px solid ${BORDER}`, borderLeft: `2px solid ${tagAccent}`, padding: "0 10px", height: 32, gap: 10, position: "sticky", top: 40, zIndex: 9 }}>
+                  style={{ display: "flex", alignItems: "center", background: isCatDragOver ? "#eff6ff" : (tagTint || BG), borderBottom: `1px solid ${BORDER}`, borderLeft: `2px solid ${tagAccent}`, padding: "0 10px", height: 32, gap: 10, position: "sticky", top: 40, zIndex: 9 }}>
                   <span title="拖曳排序大項" style={{ cursor: "grab", color: "#C8BCA0", fontSize: 13, flexShrink: 0 }}>⠿</span>
                   <button onClick={() => toggleCollapse(catId)} style={{ border: "none", background: "none", cursor: "pointer", color: SUB, fontSize: 11, width: 14, flexShrink: 0, transform: isCollapsed ? "none" : "rotate(90deg)", transition: "transform .15s" }}>▸</button>
                   {/* 狀態徽章固定在最左（每列同一起點，不歪） */}
@@ -3029,7 +3030,7 @@ function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols,
                       <button onClick={() => setCatNonProj(catId, !cat?.nonProject)} title="是否計入工程費用" style={{ border: `1px solid ${cat?.nonProject ? "#C2872E" : BORDER}`, background: cat?.nonProject ? "#FFFBEB" : "transparent", color: cat?.nonProject ? "#C2872E" : SUB, borderRadius: 12, padding: "2px 8px", fontSize: 11, cursor: "pointer" }}>{cat?.nonProject ? "非工程" : "計入工程"}</button>
                     </div>
                   ) : (
-                    cat?.group && <button onClick={() => setGroupEditId(catId)} title="點擊改費用群組" style={{ flexShrink: 0, marginLeft: 6, border: `1px solid ${isEstimate ? "#9DBCE0" : "#C8BCA0"}`, background: isEstimate ? "#DCE8F5" : "#F3E4DE", color: isEstimate ? "#2C5A8C" : "#92400e", borderRadius: 12, padding: "2px 9px", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>🏷 {cat.group}</button>
+                    cat?.group && <button onClick={() => setGroupEditId(catId)} title="點擊改費用群組" style={{ flexShrink: 0, marginLeft: 6, border: `1px solid ${isEstimate ? "#9DBCE0" : "#C8BCA0"}`, background: isEstimate ? "#DCE8F5" : "#eff6ff", color: isEstimate ? "#2C5A8C" : "#92400e", borderRadius: 12, padding: "2px 9px", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>🏷 {cat.group}</button>
                   ))}
                   {showMoney() && isCollapsed && pettyByCat[catId] > 0 && <span onClick={() => setView && setView("petty")} title={`此工種的零用金實支 ${fmt(pettyByCat[catId])}（已併入工程實際成本，來源：零用金帳戶）— 點擊看零用金頁`} style={{ flexShrink: 0, marginLeft: 6, fontSize: 11, fontWeight: 600, color: "#C2410C", background: "#FBEFE7", border: "1px solid #F0CFB8", borderRadius: 12, padding: "2px 8px", cursor: "pointer", whiteSpace: "nowrap" }}>🪙 零用金 +{fmt(pettyByCat[catId])}</span>}
                   {!showMoney() && <div style={{ flex: 1 }} />}
@@ -3040,9 +3041,9 @@ function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols,
                     const over = groupUnpaid < 0;
                     const colNum = (label, val, opts = {}) => <div style={{ width: 150, textAlign: "right", flexShrink: 0, fontSize: 12.5, color: SUB }} title={opts.title}>{label} <span style={{ color: opts.color || TEXT, fontVariantNumeric: "tabular-nums", fontWeight: opts.fw || 500 }}>{val}</span></div>;
                     // 主數字（含稅/議價後）＝這個大項到底多少錢，做成明顯藥丸，不再埋在裡面
-                    const colMain = (label, val, opts = {}) => <div style={{ width: 150, textAlign: "right", flexShrink: 0 }} title={opts.title}><span style={{ fontSize: 10.5, color: "#A99F88", marginRight: 5 }}>{label}</span><span style={{ fontSize: 14.5, fontWeight: 800, color: opts.color || "#1A1A1A", fontVariantNumeric: "tabular-nums", background: opts.bg || "#E6DDC9", borderRadius: 6, padding: "2px 8px", letterSpacing: -0.2 }}>{val}</span></div>;
+                    const colMain = (label, val, opts = {}) => <div style={{ width: 150, textAlign: "right", flexShrink: 0 }} title={opts.title}><span style={{ fontSize: 10.5, color: "#a3a3a3", marginRight: 5 }}>{label}</span><span style={{ fontSize: 14.5, fontWeight: 800, color: opts.color || "#1A1A1A", fontVariantNumeric: "tabular-nums", background: opts.bg || "#E6DDC9", borderRadius: 6, padding: "2px 8px", letterSpacing: -0.2 }}>{val}</span></div>;
                     // 大項名稱（灰）放在「未付」與「＋新增付款」中間 → 右側數字好對焦；空大項保留同寬位置才不會跑掉
-                    const nameCol = <div onClick={() => toggleCollapse(catId)} title={group.name} style={{ width: 130, textAlign: "right", flexShrink: 0, fontSize: 12.5, fontWeight: 600, color: "#A99F88", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", cursor: "pointer" }}>{group.name}</div>;
+                    const nameCol = <div onClick={() => toggleCollapse(catId)} title={group.name} style={{ width: 130, textAlign: "right", flexShrink: 0, fontSize: 12.5, fontWeight: 600, color: "#a3a3a3", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", cursor: "pointer" }}>{group.name}</div>;
                     if (isEmpty) return (<>
                       <span style={{ fontSize: 12, color: "#C8BCA0", width: 630, textAlign: "right", flexShrink: 0 }}>尚未建立明細</span>
                       {nameCol}
@@ -3054,7 +3055,7 @@ function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols,
                         ? colMain("議價後", fmt(groupEst), { color: "#C0392B", bg: "#FBEAE7", title: `原報價 ${fmt(groupRaw)} → 議價後 ${fmt(groupEst)}，省 ${fmt(groupSaved)}（-${Math.round(disc.pct * 10) / 10}%）` })
                         : colMain("含稅", fmt(groupEst), { title: "含稅總計（這個大項的總金額）" })}
                       {/* 已付金額 / 未付金額：固定兩欄、靠右對齊 */}
-                      <button onClick={() => setPayCatId(catId)} title={`檢視／新增付款紀錄${payCount ? `（${payCount} 筆）` : ""}`} style={{ width: 150, textAlign: "right", flexShrink: 0, fontSize: 12.5, color: SUB, border: "none", background: "none", cursor: "pointer", padding: 0 }}>已付 <span style={{ color: groupPaid > 0 ? "#3C8C3C" : "#A99F88", fontVariantNumeric: "tabular-nums", fontWeight: 600 }}>{fmt(groupPaid)}</span></button>
+                      <button onClick={() => setPayCatId(catId)} title={`檢視／新增付款紀錄${payCount ? `（${payCount} 筆）` : ""}`} style={{ width: 150, textAlign: "right", flexShrink: 0, fontSize: 12.5, color: SUB, border: "none", background: "none", cursor: "pointer", padding: 0 }}>已付 <span style={{ color: groupPaid > 0 ? "#3C8C3C" : "#a3a3a3", fontVariantNumeric: "tabular-nums", fontWeight: 600 }}>{fmt(groupPaid)}</span></button>
                       <button onClick={() => setPayCatId(catId)} title="未付金額＝含稅 − 已付" style={{ width: 150, textAlign: "right", flexShrink: 0, fontSize: 12.5, color: SUB, border: "none", background: "none", cursor: "pointer", padding: 0 }}>未付 <span style={{ color: over ? "#DC2626" : groupUnpaid > 0 ? "#C2410C" : "#3C8C3C", fontVariantNumeric: "tabular-nums", fontWeight: 600 }}>{over ? `溢付 ${fmt(-groupUnpaid)}` : fmt(groupUnpaid)}</span></button>
                       {nameCol}
                       <div style={{ width: 96, flexShrink: 0, display: "flex", justifyContent: "flex-end" }}>
@@ -3063,15 +3064,15 @@ function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols,
                     </>);
                   })()}
                   </>}
-                  <div style={{ width: 78, flexShrink: 0, display: "flex", justifyContent: "flex-end", marginLeft: 4 }}>{itemCount > 0 && <button onClick={() => confirm(`清空「${group.name}」的全部 ${itemCount} 筆${L("item")}？\n（細項可到垃圾桶還原；付款紀錄一併清除）`, { confirmLabel: "確定清空" }).then(ok => { if (ok) { const c = cats.find(x => x.id === catId); if (c?.items?.length && trashItems) trashItems(catId, c.name, c.items); setCats(prev => prev.map(c => c.id === catId ? { ...c, items: [], payments: [] } : c)); } })} title="清空此大項的所有細項" style={{ border: "1px solid #D8CFBB", background: "transparent", color: SUB, cursor: "pointer", fontSize: 11, borderRadius: 6, padding: "2px 9px", whiteSpace: "nowrap" }} onMouseEnter={e => { e.currentTarget.style.borderColor = "#DC2626"; e.currentTarget.style.color = "#DC2626"; }} onMouseLeave={e => { e.currentTarget.style.borderColor = "#D8CFBB"; e.currentTarget.style.color = SUB; }}>清空細項</button>}</div>
-                  <button onClick={() => confirm(`確定刪除${L("cat")}「${group.name}」？\n（含其下 ${itemCount} 筆${L("item")}，無法復原）`).then(ok => { if (ok) setCats(prev => prev.filter(c => c.id !== catId)); })} title={`刪除此${L("cat")}`} style={{ flexShrink: 0, marginLeft: 4, width: 22, height: 22, borderRadius: "50%", background: "transparent", border: "none", color: "#C8BCA0", cursor: "pointer", fontSize: 15, lineHeight: 1, display: "flex", alignItems: "center", justifyContent: "center", padding: 0 }} onMouseEnter={e => { e.currentTarget.style.background = "#F3E4DE"; e.currentTarget.style.color = "#DC2626"; }} onMouseLeave={e => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = "#C8BCA0"; }}>×</button>
+                  <div style={{ width: 78, flexShrink: 0, display: "flex", justifyContent: "flex-end", marginLeft: 4 }}>{itemCount > 0 && <button onClick={() => confirm(`清空「${group.name}」的全部 ${itemCount} 筆${L("item")}？\n（細項可到垃圾桶還原；付款紀錄一併清除）`, { confirmLabel: "確定清空" }).then(ok => { if (ok) { const c = cats.find(x => x.id === catId); if (c?.items?.length && trashItems) trashItems(catId, c.name, c.items); setCats(prev => prev.map(c => c.id === catId ? { ...c, items: [], payments: [] } : c)); } })} title="清空此大項的所有細項" style={{ border: "1px solid #e5e5e5", background: "transparent", color: SUB, cursor: "pointer", fontSize: 11, borderRadius: 6, padding: "2px 9px", whiteSpace: "nowrap" }} onMouseEnter={e => { e.currentTarget.style.borderColor = "#DC2626"; e.currentTarget.style.color = "#DC2626"; }} onMouseLeave={e => { e.currentTarget.style.borderColor = "#e5e5e5"; e.currentTarget.style.color = SUB; }}>清空細項</button>}</div>
+                  <button onClick={() => confirm(`確定刪除${L("cat")}「${group.name}」？\n（含其下 ${itemCount} 筆${L("item")}，無法復原）`).then(ok => { if (ok) setCats(prev => prev.filter(c => c.id !== catId)); })} title={`刪除此${L("cat")}`} style={{ flexShrink: 0, marginLeft: 4, width: 22, height: 22, borderRadius: "50%", background: "transparent", border: "none", color: "#C8BCA0", cursor: "pointer", fontSize: 15, lineHeight: 1, display: "flex", alignItems: "center", justifyContent: "center", padding: 0 }} onMouseEnter={e => { e.currentTarget.style.background = "#eff6ff"; e.currentTarget.style.color = "#DC2626"; }} onMouseLeave={e => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = "#C8BCA0"; }}>×</button>
                 </div>
                 {/* item rows（收合時隱藏） */}
                 {!isCollapsed && group.rows.map(({ item }, rIdx) => {
                   // 零用金細項：唯讀、同欄位對齊（日期/金額對齊正常細項），前面用 🪙 標示；編輯入口在零用金頁
                   if (item.fromPetty) return (
-                    <div key={item.id} style={{ display: "flex", alignItems: "center", borderBottom: "1px solid #EFE7D6", background: "#FBF7EE" }}>
-                      <div title="來自零用金帳戶（在零用金頁編輯）" style={{ width: 24, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, borderRight: "1px solid #EFE7D6", height: 38 }}>🪙</div>
+                    <div key={item.id} style={{ display: "flex", alignItems: "center", borderBottom: "1px solid #f0f0f0", background: "#FBF7EE" }}>
+                      <div title="來自零用金帳戶（在零用金頁編輯）" style={{ width: 24, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, borderRight: "1px solid #f0f0f0", height: 38 }}>🪙</div>
                       {orderedCols.map(col => {
                         const cs = { ...cellStyle(col) };
                         const ro = { ...cs, color: "#6F6656", fontSize: 12.5 };
@@ -3106,7 +3107,7 @@ function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols,
                         {qi.vendor && <span>· {qi.vendor}</span>}
                         <span>{qi.n} 筆 · 小計 <b style={{ color: ACCENT, fontVariantNumeric: "tabular-nums" }}>{fmt(qi.sum)}</b></span>
                         <span style={{ flex: 1 }} />
-                        <span style={{ color: "#A99F88" }}>整張付款：</span>
+                        <span style={{ color: "#a3a3a3" }}>整張付款：</span>
                         {[["50%", 0.5], ["30%", 0.3], ["全付清", 1]].map(([lb, r]) => (
                           <button key={lb} onClick={() => payReport(catId, qItemIds, r)} title={`此報價單付到 ${typeof r === "number" && r < 1 ? Math.round(r * 100) + "%" : "全額"}（整組精確）`} style={{ border: `1px solid ${r >= 1 ? "#3C8C3C" : "#C2872E"}`, background: r >= 1 ? "#F0FDF4" : "#FFFBEB", color: r >= 1 ? "#3C8C3C" : "#C2872E", borderRadius: 6, padding: "1px 9px", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>{lb}</button>
                         ))}
@@ -3115,14 +3116,14 @@ function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols,
                     <div
                       onDragOver={e => { e.preventDefault(); setDragOverId(rowKey); }}
                       onDrop={() => onRowDrop(rowKey)}
-                      style={{ display: "flex", alignItems: "center", borderBottom: "1px solid #EFE7D6", background: isDragOver ? "#F3E4DE" : qTint ? qTint : tinted ? stColor + "1A" : "#ffffff", borderLeft: tinted ? `3px solid ${stColor}` : "3px solid transparent", transition: "background 0.15s" }}
+                      style={{ display: "flex", alignItems: "center", borderBottom: "1px solid #f0f0f0", background: isDragOver ? "#eff6ff" : qTint ? qTint : tinted ? stColor + "1A" : "#ffffff", borderLeft: tinted ? `3px solid ${stColor}` : "3px solid transparent", transition: "background 0.15s" }}
                     >
                       {/* drag handle（僅此處可拖曳） */}
                       <div
                         draggable
                         onDragStart={() => onRowDragStart(rowKey)}
                         onDragEnd={() => { setDragRowId(null); setDragOverId(null); }}
-                        style={{ width: 24, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", cursor: "grab", color: "#d1d5db", fontSize: 14, borderRight: "1px solid #EFE7D6", height: 38 }}>⠿</div>
+                        style={{ width: 24, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", cursor: "grab", color: "#d1d5db", fontSize: 14, borderRight: "1px solid #f0f0f0", height: 38 }}>⠿</div>
 
                       {orderedCols.map(col => {
                         const cs = { ...cellStyle(col) };
@@ -3131,12 +3132,12 @@ function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols,
                           return <div key={col.id} style={cs}><CustomInput value={item.cust?.[col.id]} type={col.type} onCommit={(val)=>updateCustom(catId, item.id, col.id, val)} /></div>;
                         }
                         if (col.id === "cat") return <div key={col.id} style={{ ...cs, padding: "0 4px" }}>
-                          <select value={catId} onChange={e => moveItemToCat(catId, item.id, e.target.value)} title="移動此細項到其他大項" style={{ width: "100%", border: "1px solid transparent", borderRadius: 6, padding: "3px 4px", fontSize: 11, color: "#A99F88", background: "transparent", cursor: "pointer" }} onMouseEnter={e => { e.currentTarget.style.border = `1px solid ${BORDER}`; e.currentTarget.style.background = "#fff"; }} onMouseLeave={e => { e.currentTarget.style.border = "1px solid transparent"; e.currentTarget.style.background = "transparent"; }}>
+                          <select value={catId} onChange={e => moveItemToCat(catId, item.id, e.target.value)} title="移動此細項到其他大項" style={{ width: "100%", border: "1px solid transparent", borderRadius: 6, padding: "3px 4px", fontSize: 11, color: "#a3a3a3", background: "transparent", cursor: "pointer" }} onMouseEnter={e => { e.currentTarget.style.border = `1px solid ${BORDER}`; e.currentTarget.style.background = "#fff"; }} onMouseLeave={e => { e.currentTarget.style.border = "1px solid transparent"; e.currentTarget.style.background = "transparent"; }}>
                             {[...cats].sort((a,b)=>a.order-b.order).map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                           </select>
                         </div>;
                         if (col.id === "name") return <div key={col.id} style={{ ...cs, color: "#211C15", fontWeight: 500, gap: 6 }}>
-                          <button onClick={(e) => { e.stopPropagation(); updateItem(catId, item.id, "priority", !item.priority); }} title={item.priority ? "優先追蹤中（點擊取消）" : "標為優先追蹤（AI 會特別關注）"} style={{ flexShrink: 0, width: 20, height: 20, borderRadius: 6, border: "none", background: "transparent", color: item.priority ? "#E8A317" : "#D8CFBB", fontSize: 14, cursor: "pointer", lineHeight: 1, padding: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>{item.priority ? "★" : "☆"}</button>
+                          <button onClick={(e) => { e.stopPropagation(); updateItem(catId, item.id, "priority", !item.priority); }} title={item.priority ? "優先追蹤中（點擊取消）" : "標為優先追蹤（AI 會特別關注）"} style={{ flexShrink: 0, width: 20, height: 20, borderRadius: 6, border: "none", background: "transparent", color: item.priority ? "#E8A317" : "#e5e5e5", fontSize: 14, cursor: "pointer", lineHeight: 1, padding: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>{item.priority ? "★" : "☆"}</button>
                           <button onClick={(e) => { e.stopPropagation(); updateItem(catId, item.id, "inSeq", !item.inSeq); }} title={item.inSeq ? "已排入工序（點擊取消同步）" : "排入工序（同步成工序子項目）"} style={{ flexShrink: 0, width: 20, height: 20, borderRadius: 6, border: item.inSeq ? "none" : `1px solid ${BORDER}`, background: item.inSeq ? ACCENT : "transparent", color: item.inSeq ? "#fff" : SUB, fontSize: 10, fontWeight: 600, cursor: "pointer", lineHeight: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>序</button>
                           <EditableCell catId={catId} itemId={item.id} field="name" value={item.name} />
                         </div>;
@@ -3167,11 +3168,11 @@ function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols,
                             </select>
                           </div>
                         );
-                        if (col.id === "taxAmount") return <div key={col.id} style={{ ...cs, color: "#A99F88", fontFamily: "monospace", fontSize: 12 }}>{fmt(taxOf(item))}</div>;
+                        if (col.id === "taxAmount") return <div key={col.id} style={{ ...cs, color: "#a3a3a3", fontFamily: "monospace", fontSize: 12 }}>{fmt(taxOf(item))}</div>;
                         if (col.id === "estTotal") {
                           const after = estAfterOf(item), raw = estAmount(item), discd = disc.hasDiscount && after !== raw;
                           return <div key={col.id} style={{ ...cs, color: ACCENT, fontFamily: "monospace", fontWeight: 600, gap: 4 }} title={discd ? `原報價 ${fmt(raw)} → 大項議價後 ${fmt(after)}` : "預估金額（含稅，自動計算）"}>
-                            {discd && <span style={{ color: "#A99F88", textDecoration: "line-through", fontWeight: 400, fontSize: 11 }}>{fmt(raw)}</span>}
+                            {discd && <span style={{ color: "#a3a3a3", textDecoration: "line-through", fontWeight: 400, fontSize: 11 }}>{fmt(raw)}</span>}
                             <span>{fmt(after)}</span>
                           </div>;
                         }
@@ -3181,7 +3182,7 @@ function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols,
                           return <div key={col.id} style={{ ...cs }} title="此細項已付／未付（來自大項付款紀錄）">
                             {ip === 0 ? <span style={{ fontSize: 11.5, color: "#C2410C" }}>● 未付</span>
                               : full ? <span style={{ fontSize: 11.5, fontWeight: 700, color: "#3C8C3C", background: "#E7F5E7", borderRadius: 10, padding: "2px 8px" }}>✓ 付清</span>
-                                : <span style={{ fontSize: 11.5, fontVariantNumeric: "tabular-nums" }}><span style={{ color: "#3C8C3C", fontWeight: 600 }}>{fmt(ip)}</span><span style={{ color: "#A99F88" }}> / {tgt > 0 ? Math.round(ip / tgt * 100) : 0}%</span></span>}
+                                : <span style={{ fontSize: 11.5, fontVariantNumeric: "tabular-nums" }}><span style={{ color: "#3C8C3C", fontWeight: 600 }}>{fmt(ip)}</span><span style={{ color: "#a3a3a3" }}> / {tgt > 0 ? Math.round(ip / tgt * 100) : 0}%</span></span>}
                           </div>;
                         }
                         if (col.id === "paid") {
@@ -3205,15 +3206,15 @@ function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols,
                                     onMouseEnter={e => { const b = e.currentTarget.querySelector("button"); if (b) b.style.display = "flex"; }}
                                     onMouseLeave={e => { const b = e.currentTarget.querySelector("button"); if (b) b.style.display = "none"; }}>
                                     {r.isImage !== false
-                                      ? <img src={r.url} alt={r.name} title={r.name} onClick={() => setLightbox(r)} style={{ width: 28, height: 28, objectFit: "cover", borderRadius: 4, border: "1px solid #D8CFBB", cursor: "zoom-in" }} />
-                                      : <a href={r.url} target="_blank" rel="noreferrer" title={r.name} style={{ width: 28, height: 28, borderRadius: 4, border: "1px solid #D8CFBB", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, textDecoration: "none", background: "#F3E4DE" }}>📄</a>}
+                                      ? <img src={r.url} alt={r.name} title={r.name} onClick={() => setLightbox(r)} style={{ width: 28, height: 28, objectFit: "cover", borderRadius: 4, border: "1px solid #e5e5e5", cursor: "zoom-in" }} />
+                                      : <a href={r.url} target="_blank" rel="noreferrer" title={r.name} style={{ width: 28, height: 28, borderRadius: 4, border: "1px solid #e5e5e5", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, textDecoration: "none", background: "#eff6ff" }}>📄</a>}
                                     <button onClick={() => removeReceipt(catId, item, r.id, ri)} title="刪除" style={{ display: "none", position: "absolute", top: -6, right: -6, width: 15, height: 15, borderRadius: "50%", background: "#DC2626", color: "#fff", border: "none", fontSize: 10, lineHeight: 1, cursor: "pointer", alignItems: "center", justifyContent: "center", padding: 0 }}>×</button>
                                   </div>
                                 );
                                 // 舊格式：純文字名稱＋金額（點一下可刪除）
-                                return <span key={ri} title={r.amount ? `${r.name}　$${r.amount}（點擊刪除）` : `${r.name}（點擊刪除）`} onClick={() => removeReceipt(catId, item, r.id, ri)} style={{ fontSize: 10, background: "#F3E4DE", color: "#92400e", borderRadius: 10, padding: "1px 6px", fontWeight: 600, cursor: "pointer", flexShrink: 0 }}>📎 {r.name}</span>;
+                                return <span key={ri} title={r.amount ? `${r.name}　$${r.amount}（點擊刪除）` : `${r.name}（點擊刪除）`} onClick={() => removeReceipt(catId, item, r.id, ri)} style={{ fontSize: 10, background: "#eff6ff", color: "#92400e", borderRadius: 10, padding: "1px 6px", fontWeight: 600, cursor: "pointer", flexShrink: 0 }}>📎 {r.name}</span>;
                               })}
-                              <button title="新增憑證（選檔或貼上截圖）" onClick={e => { const r = e.currentTarget.getBoundingClientRect(); setRcpAdd({ catId, item, x: r.left, y: r.bottom + 4 }); }} style={{ fontSize: 12, background: "none", border: "1px dashed #D8CFBB", borderRadius: 4, padding: rcpBusy === item.id ? "0 6px" : "1px 6px", cursor: "pointer", color: "#A99F88", flexShrink: 0, display: "flex", alignItems: "center", height: 26 }}>{rcpBusy === item.id ? "…" : "＋"}</button>
+                              <button title="新增憑證（選檔或貼上截圖）" onClick={e => { const r = e.currentTarget.getBoundingClientRect(); setRcpAdd({ catId, item, x: r.left, y: r.bottom + 4 }); }} style={{ fontSize: 12, background: "none", border: "1px dashed #e5e5e5", borderRadius: 4, padding: rcpBusy === item.id ? "0 6px" : "1px 6px", cursor: "pointer", color: "#a3a3a3", flexShrink: 0, display: "flex", alignItems: "center", height: 26 }}>{rcpBusy === item.id ? "…" : "＋"}</button>
                             </div>
                           );
                         }
@@ -3238,8 +3239,8 @@ function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols,
                 <div onClick={() => {
                   const newItem = { id: `i-${catId}-${Date.now()}`, name: "新細項", qty: 1, unit: "式", unitPrice: 0, labor: 0, laborDays: 0, dailyWage: 0, assignee: "", status: "pending", receipts: [], notes: "", chat: [], done: false };
                   setCats(prev => prev.map(c => c.id === catId ? { ...c, items: [...c.items, newItem] } : c));
-                }} style={{ display: "flex", alignItems: "center", gap: 6, padding: "3px 32px", color: "#A99F88", fontSize: 12, cursor: "pointer", borderBottom: "1px solid #EFE7D6", transition: "background 0.1s" }}
-                  onMouseEnter={e => e.currentTarget.style.background="#ECE6D7"}
+                }} style={{ display: "flex", alignItems: "center", gap: 6, padding: "3px 32px", color: "#a3a3a3", fontSize: 12, cursor: "pointer", borderBottom: "1px solid #f0f0f0", transition: "background 0.1s" }}
+                  onMouseEnter={e => e.currentTarget.style.background="#f5f5f5"}
                   onMouseLeave={e => e.currentTarget.style.background="transparent"}
                 >
                   <span style={{ fontSize: 16, color: ACCENT }}>+</span> 新增{L("item")}至「{group.name}」
@@ -3254,14 +3255,14 @@ function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols,
             const id = "cat-" + Date.now();
             setCats(prev => [...prev, { id, order: prev.length, name: "新"+L("cat"), budget: 0, status: "pending", items: [] }]);
           }} style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 12px", color: ACCENT, fontSize: 13, fontWeight: 500, cursor: "pointer", borderBottom: `1px solid ${BORDER}`, background: SURFACE }}
-            onMouseEnter={e => e.currentTarget.style.background="#F4EFE3"}
+            onMouseEnter={e => e.currentTarget.style.background="#f5f5f5"}
             onMouseLeave={e => e.currentTarget.style.background=SURFACE}
           >
             <span style={{ fontSize: 16 }}>＋</span> 新增{L("cat")}
           </div>
           {/* 總計列：數字欄位自動加總 */}
-          <div style={{ display: "flex", borderTop: `2px solid ${BORDER}`, background: "#ECE6D7", position: "sticky", bottom: 0, zIndex: 5, fontWeight: 600 }}>
-            <div style={{ width: 24, flexShrink: 0, borderRight: "1px solid #D8CFBB" }} />
+          <div style={{ display: "flex", borderTop: `2px solid ${BORDER}`, background: "#f5f5f5", position: "sticky", bottom: 0, zIndex: 5, fontWeight: 600 }}>
+            <div style={{ width: 24, flexShrink: 0, borderRight: "1px solid #e5e5e5" }} />
             {(() => { const anyDisc = cats.some(c => catDiscount(c).hasDiscount); return
             orderedCols.map(col => {
               const cs = { ...cellStyle(col) };
@@ -3269,7 +3270,7 @@ function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols,
               if (col.id === "estTotal" && anyDisc) {
                 const rawSum = rows.reduce((s, r) => s + estAmount(r.item), 0);
                 const afterSum = rows.reduce((s, r) => s + estAfterOf(r.item), 0);
-                return <div key={col.id} style={{ ...cs, flexDirection: "column", alignItems: "flex-start", justifyContent: "center", gap: 0, lineHeight: 1.2 }} title="上：原報價總計　下：議價後總計"><span style={{ fontFamily: "monospace", color: "#A99F88", textDecoration: "line-through", fontSize: 11 }}>{fmt(rawSum)}</span><span style={{ fontFamily: "monospace", color: ACCENT, fontWeight: 700 }}>{fmt(afterSum)}</span></div>;
+                return <div key={col.id} style={{ ...cs, flexDirection: "column", alignItems: "flex-start", justifyContent: "center", gap: 0, lineHeight: 1.2 }} title="上：原報價總計　下：議價後總計"><span style={{ fontFamily: "monospace", color: "#a3a3a3", textDecoration: "line-through", fontSize: 11 }}>{fmt(rawSum)}</span><span style={{ fontFamily: "monospace", color: ACCENT, fontWeight: 700 }}>{fmt(afterSum)}</span></div>;
               }
               if (summable(col)) {
                 const sum = rows.reduce((s, r) => s + numVal(col, r.item), 0);
@@ -3299,7 +3300,7 @@ function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols,
             style={{ position: "fixed", left: Math.min(rcpAdd.x, window.innerWidth - 280), top: Math.min(rcpAdd.y, window.innerHeight - 160), width: 260, background: "#fff", border: `1px solid ${BORDER}`, borderRadius: 12, boxShadow: "0 8px 30px rgba(0,0,0,.18)", padding: 14, outline: "none" }}>
             <div style={{ fontSize: 13, fontWeight: 700, color: TEXT, marginBottom: 4 }}>新增憑證</div>
             <div style={{ fontSize: 12, color: SUB, marginBottom: 10 }}>{rcpAdd.item.name}</div>
-            <div style={{ border: `2px dashed ${BORDER}`, borderRadius: 10, padding: "18px 10px", textAlign: "center", fontSize: 13, color: "#A99F88", marginBottom: 10, background: "#FBF7EE" }}>📋 在此按 <b style={{ color: ACCENT }}>Cmd+V</b> 貼上截圖</div>
+            <div style={{ border: `2px dashed ${BORDER}`, borderRadius: 10, padding: "18px 10px", textAlign: "center", fontSize: 13, color: "#a3a3a3", marginBottom: 10, background: "#FBF7EE" }}>📋 在此按 <b style={{ color: ACCENT }}>Cmd+V</b> 貼上截圖</div>
             <div style={{ display: "flex", gap: 8 }}>
               <label style={{ flex: 1, textAlign: "center", border: `1px solid ${BORDER}`, borderRadius: 8, padding: "8px", fontSize: 13, cursor: "pointer", color: TEXT, background: SURFACE }}>📎 選擇檔案
                 <input type="file" accept="*/*" multiple style={{ display: "none" }} onChange={e => { const fs = e.target.files; e.target.value = ""; addReceipts(rcpAdd.catId, cats.find(c=>c.id===rcpAdd.catId)?.items.find(i=>i.id===rcpAdd.item.id) || rcpAdd.item, fs); setRcpAdd(null); }} />
@@ -3322,7 +3323,7 @@ function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols,
               <button onClick={() => setShowTrash(false)} style={{ border: "none", background: "none", fontSize: 20, color: SUB, cursor: "pointer" }}>×</button>
             </div>
             <div style={{ flex: 1, overflowY: "auto", padding: 12 }}>
-              {trash.length === 0 && <div style={{ textAlign: "center", color: "#A99F88", padding: "40px 0", fontSize: 14 }}>垃圾桶是空的</div>}
+              {trash.length === 0 && <div style={{ textAlign: "center", color: "#a3a3a3", padding: "40px 0", fontSize: 14 }}>垃圾桶是空的</div>}
               {trash.map(e => { const it = e.item || {}; const amt = estAmount(it); return (
                 <div key={e.tid} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", border: `1px solid ${BORDER}`, borderRadius: 10, marginBottom: 8, background: "#FBF7EE" }}>
                   <div style={{ flex: 1, minWidth: 0 }}>
@@ -3399,8 +3400,8 @@ function PaymentsPanel({ cat, setCats, onClose, confirm }) {
       {(recs || []).map((r, ri) => (
         <div key={ri} style={{ position: "relative", width: 44, height: 44 }}>
           {r.isImage !== false
-            ? <img src={r.url} alt={r.name} title={r.name} onClick={() => setLightbox(r)} style={{ width: 44, height: 44, objectFit: "cover", borderRadius: 6, border: "1px solid #D8CFBB", cursor: "zoom-in" }} />
-            : <a href={r.url} target="_blank" rel="noreferrer" title={r.name} style={{ width: 44, height: 44, borderRadius: 6, border: "1px solid #D8CFBB", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18, textDecoration: "none", background: "#F3E4DE" }}>📄</a>}
+            ? <img src={r.url} alt={r.name} title={r.name} onClick={() => setLightbox(r)} style={{ width: 44, height: 44, objectFit: "cover", borderRadius: 6, border: "1px solid #e5e5e5", cursor: "zoom-in" }} />
+            : <a href={r.url} target="_blank" rel="noreferrer" title={r.name} style={{ width: 44, height: 44, borderRadius: 6, border: "1px solid #e5e5e5", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18, textDecoration: "none", background: "#eff6ff" }}>📄</a>}
           {onDel && <button onClick={() => onDel(ri)} style={{ position: "absolute", top: -6, right: -6, width: 16, height: 16, borderRadius: "50%", background: "#DC2626", color: "#fff", border: "none", fontSize: 10, lineHeight: 1, cursor: "pointer" }}>×</button>}
         </div>
       ))}
@@ -3414,7 +3415,7 @@ function PaymentsPanel({ cat, setCats, onClose, confirm }) {
 
       {/* 三個數字 */}
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: 14 }}>
-        <div style={{ background: "#F3E4DE", border: "1px solid rgba(193,58,34,0.25)", borderRadius: 8, padding: "8px 10px" }}>
+        <div style={{ background: "#eff6ff", border: "1px solid rgba(193,58,34,0.25)", borderRadius: 8, padding: "8px 10px" }}>
           <div style={{ fontSize: 10, color: "#6F6656" }}>議價後</div>
           <div style={{ fontFamily: "monospace", fontSize: 14, fontWeight: 600, color: ACCENT }}>{fmt(est)}</div>
         </div>
@@ -3460,7 +3461,7 @@ function PaymentsPanel({ cat, setCats, onClose, confirm }) {
       })()}
 
       {/* 新增付款表單 */}
-      <div style={{ border: "1px solid #D8CFBB", borderRadius: 10, padding: 12, marginBottom: 16, background: "#FBF7EE" }}>
+      <div style={{ border: "1px solid #e5e5e5", borderRadius: 10, padding: 12, marginBottom: 16, background: "#FBF7EE" }}>
         <div style={{ fontSize: 12, fontWeight: 600, color: "#211C15", marginBottom: 8 }}>＋ 新增付款（單筆／指定品項）</div>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 8 }}>
           <div><div style={{ fontSize: 10, color: "#6F6656", marginBottom: 2 }}>日期</div><input type="date" value={draft.date} onChange={e => setDraft({ ...draft, date: e.target.value })} style={inputStyle} /></div>
@@ -3471,7 +3472,7 @@ function PaymentsPanel({ cat, setCats, onClose, confirm }) {
         {items.length > 0 && <div style={{ marginBottom: 8 }}><div style={{ fontSize: 10, color: "#6F6656", marginBottom: 2 }}>對應品項／廠商（選填，多廠商整合用）</div><select value={draft.itemId} onChange={e => setDraft({ ...draft, itemId: e.target.value })} style={inputStyle}><option value="">整批／不指定</option>{items.map(it => <option key={it.id} value={it.id}>{it.name}</option>)}</select></div>}
         <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
           {thumbs(draft.receipts, (ri) => setDraft({ ...draft, receipts: draft.receipts.filter((_, i) => i !== ri) }))}
-          <label style={{ fontSize: 12, border: "1px dashed #D8CFBB", borderRadius: 6, padding: "6px 12px", cursor: "pointer", color: "#6F6656" }}>
+          <label style={{ fontSize: 12, border: "1px dashed #e5e5e5", borderRadius: 6, padding: "6px 12px", cursor: "pointer", color: "#6F6656" }}>
             {busy ? "上傳中…" : "📎 上傳憑證"}
             <input type="file" accept="*/*" multiple style={{ display: "none" }} onChange={async e => { const f = e.target.files; e.target.value = ""; const up = await uploadRcp(f); if (up.length) setDraft(d => ({ ...d, receipts: [...d.receipts, ...up] })); }} />
           </label>
@@ -3497,9 +3498,9 @@ function PaymentsPanel({ cat, setCats, onClose, confirm }) {
                   <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                     <div style={{ flex: 1, minWidth: 0 }}><div style={{ fontSize: 13, fontWeight: 600, color: "#211C15", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{it.name}</div><div style={{ fontSize: 11, color: "#6F6656", fontVariantNumeric: "tabular-nums" }}>{fmt(target)}</div></div>
                     {full ? <span style={{ fontSize: 11.5, fontWeight: 700, color: "#3C8C3C", background: "#E7F5E7", borderRadius: 12, padding: "3px 10px" }}>✓ 已付清</span>
-                      : <span style={{ fontSize: 11.5, color: ip > 0 ? "#C2872E" : "#A99F88", fontVariantNumeric: "tabular-nums" }}>{ip > 0 ? `已付 ${fmt(ip)}（${pct}%）` : "未付"}</span>}
+                      : <span style={{ fontSize: 11.5, color: ip > 0 ? "#C2872E" : "#a3a3a3", fontVariantNumeric: "tabular-nums" }}>{ip > 0 ? `已付 ${fmt(ip)}（${pct}%）` : "未付"}</span>}
                   </div>
-                  <div style={{ height: 6, background: "#EFE7D6", borderRadius: 3, overflow: "hidden", margin: "6px 0" }}><div style={{ width: pct + "%", height: "100%", background: "#3C8C3C" }} /></div>
+                  <div style={{ height: 6, background: "#f0f0f0", borderRadius: 3, overflow: "hidden", margin: "6px 0" }}><div style={{ width: pct + "%", height: "100%", background: "#3C8C3C" }} /></div>
                   {!full && <div style={{ display: "flex", gap: 6 }}>
                     <button onClick={() => quickPayItem(it, { ratio: 0.5, label: "訂金50%" })} style={{ fontSize: 11.5, border: "1px solid #C2872E", background: "#FFFBEB", color: "#C2872E", borderRadius: 6, padding: "3px 10px", cursor: "pointer" }}>訂金 50%</button>
                     <button onClick={() => quickPayItem(it, { full: true, label: ip > 0 ? "補尾款" : "全額付清" })} style={{ fontSize: 11.5, border: "1px solid #3C8C3C", background: "#F0FDF4", color: "#3C8C3C", borderRadius: 6, padding: "3px 10px", cursor: "pointer" }}>{ip > 0 ? "補尾款付清" : "全額付清"}</button>
@@ -3513,21 +3514,21 @@ function PaymentsPanel({ cat, setCats, onClose, confirm }) {
 
       {/* 付款紀錄列表 */}
       <div style={{ fontSize: 12, color: "#6F6656", marginBottom: 6, display: "flex", alignItems: "center" }}>已付紀錄（{payments.length} 筆）<div style={{ flex: 1 }} />{payments.length > 0 && <button onClick={async () => { if (confirm && !(await confirm(`清除全部 ${payments.length} 筆付款紀錄？`, { confirmLabel: "確定清除" }))) return; update([]); }} style={{ border: "1px solid #DC2626", background: "#fff", color: "#DC2626", borderRadius: 6, padding: "3px 10px", fontSize: 11.5, cursor: "pointer" }}>一鍵清除</button>}</div>
-      {payments.length === 0 && <div style={{ fontSize: 12, color: "#A99F88", padding: "12px 0" }}>尚無付款紀錄</div>}
+      {payments.length === 0 && <div style={{ fontSize: 12, color: "#a3a3a3", padding: "12px 0" }}>尚無付款紀錄</div>}
       {payments.map(p => (
         <div key={p.id} style={{ border: "1px solid #E3DAC6", borderRadius: 8, padding: 10, marginBottom: 8, background: "#fff" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
-            <span style={{ fontSize: 10, background: "#F3E4DE", color: "#92400e", borderRadius: 10, padding: "1px 8px", fontWeight: 600, flexShrink: 0 }}>{p.category || "其他"}</span>
+            <span style={{ fontSize: 10, background: "#eff6ff", color: "#92400e", borderRadius: 10, padding: "1px 8px", fontWeight: 600, flexShrink: 0 }}>{p.category || "其他"}</span>
             {p.itemId && <span style={{ fontSize: 10, background: "#E8F0FB", color: "#2E6FB0", borderRadius: 10, padding: "1px 8px", fontWeight: 600, flexShrink: 0, maxWidth: 120, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={nameOfItem(p.itemId)}>{nameOfItem(p.itemId)}</span>}
             <input type="date" value={p.date || ""} onChange={e => editPay(p.id, "date", e.target.value)} style={{ ...inputStyle, width: 140, padding: "4px 8px", fontSize: 12 }} />
             <input type="number" min={0} value={p.amount || ""} onChange={e => editPay(p.id, "amount", Number(e.target.value) || 0)} style={{ ...inputStyle, width: 120, padding: "4px 8px", fontSize: 13, fontFamily: "monospace", fontWeight: 600, color: "#3C8C3C" }} />
             <div style={{ flex: 1 }} />
-            <button onClick={() => delPayment(p.id)} title="刪除這筆" style={{ width: 24, height: 24, borderRadius: "50%", background: "#F3E4DE", border: "1px solid rgba(193,58,34,0.25)", color: "#DC2626", cursor: "pointer", fontSize: 13, flexShrink: 0 }}>×</button>
+            <button onClick={() => delPayment(p.id)} title="刪除這筆" style={{ width: 24, height: 24, borderRadius: "50%", background: "#eff6ff", border: "1px solid rgba(193,58,34,0.25)", color: "#DC2626", cursor: "pointer", fontSize: 13, flexShrink: 0 }}>×</button>
           </div>
           <input value={p.note || ""} placeholder="備註" onChange={e => editPay(p.id, "note", e.target.value)} style={{ ...inputStyle, padding: "4px 8px", fontSize: 12, marginBottom: (p.receipts?.length || 0) ? 8 : 0 }} />
           <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 8, flexWrap: "wrap" }}>
             {thumbs(p.receipts, (ri) => removeRcp(p.id, ri))}
-            <label style={{ fontSize: 11, border: "1px dashed #D8CFBB", borderRadius: 6, padding: "4px 10px", cursor: "pointer", color: "#6F6656" }}>
+            <label style={{ fontSize: 11, border: "1px dashed #e5e5e5", borderRadius: 6, padding: "4px 10px", cursor: "pointer", color: "#6F6656" }}>
               {busy ? "上傳中…" : "📎 加憑證"}
               <input type="file" accept="*/*" multiple style={{ display: "none" }} onChange={async e => { const f = e.target.files; e.target.value = ""; const up = await uploadRcp(f); if (up.length) editPay(p.id, "receipts", [...(p.receipts || []), ...up]); }} />
             </label>
@@ -3581,18 +3582,18 @@ function LoginModal({ onLogin, onClose }) {
           onKeyDown={e=>{ if(e.key==="Enter"&&!e.nativeEvent.isComposing) submit(); }}
           placeholder="帳號"
           autoFocus autoCapitalize="off" autoCorrect="off"
-          style={{ width:"100%", padding:"11px 14px", border:"2px solid #D8CFBB", borderRadius:10, fontSize:15, outline:"none", fontFamily:"'Noto Sans TC',sans-serif", boxSizing:"border-box", marginBottom:10 }}
+          style={{ width:"100%", padding:"11px 14px", border:"2px solid #e5e5e5", borderRadius:10, fontSize:15, outline:"none", fontFamily:"'Noto Sans TC',sans-serif", boxSizing:"border-box", marginBottom:10 }}
         />
         <input
           type="password" value={pw} onChange={e=>setPw(e.target.value)}
           onKeyDown={e=>{ if(e.key==="Enter"&&!e.nativeEvent.isComposing) submit(); }}
           placeholder="密碼"
-          style={{ width:"100%", padding:"11px 14px", border:"2px solid #D8CFBB", borderRadius:10, fontSize:15, outline:"none", fontFamily:"'Noto Sans TC',sans-serif", boxSizing:"border-box", marginBottom:err?8:14 }}
+          style={{ width:"100%", padding:"11px 14px", border:"2px solid #e5e5e5", borderRadius:10, fontSize:15, outline:"none", fontFamily:"'Noto Sans TC',sans-serif", boxSizing:"border-box", marginBottom:err?8:14 }}
         />
         {err && <div style={{ fontSize:12.5, color:"#DC2626", marginBottom:12 }}>{err}</div>}
         <button onClick={submit}
           disabled={!name.trim()||!pw||busy}
-          style={{ width:"100%", padding:"12px 0", background:(name.trim()&&pw&&!busy)?"#211C15":"#D8CFBB", border:"none", borderRadius:10, color:(name.trim()&&pw&&!busy)?"#ffffff":"#A99F88", fontSize:15, fontWeight: 600, cursor:(name.trim()&&pw&&!busy)?"pointer":"not-allowed" }}>
+          style={{ width:"100%", padding:"12px 0", background:(name.trim()&&pw&&!busy)?"#211C15":"#e5e5e5", border:"none", borderRadius:10, color:(name.trim()&&pw&&!busy)?"#ffffff":"#a3a3a3", fontSize:15, fontWeight: 600, cursor:(name.trim()&&pw&&!busy)?"pointer":"not-allowed" }}>
           {busy?"登入中…":"登入"}
         </button>
         {onClose && (
@@ -3675,14 +3676,14 @@ function OwnerDashboard({ cats, setCats, settings, stalledItems, activityLog, lo
     const offset = circ - (pct/100)*circ;
     return (
       <svg width={size} height={size} style={{ transform:"rotate(-90deg)" }}>
-        <circle cx={size/2} cy={size/2} r={r} fill="none" stroke="#EFE7D6" strokeWidth={stroke} />
+        <circle cx={size/2} cy={size/2} r={r} fill="none" stroke="#f0f0f0" strokeWidth={stroke} />
         <circle cx={size/2} cy={size/2} r={r} fill="none" stroke={color} strokeWidth={stroke}
           strokeDasharray={circ} strokeDashoffset={offset} strokeLinecap="round" style={{ transition:"stroke-dashoffset 0.8s ease" }} />
       </svg>
     );
   };
 
-  const card = { background:"#ffffff", border:"1px solid #D8CFBB", borderRadius:16, padding:18 };
+  const card = { background:"#ffffff", border:"1px solid #e5e5e5", borderRadius:16, padding:18 };
   const kLabel = { fontSize:12, color:"#6F6656", fontWeight:600 };
   const Stat = ({ n, label, color }) => (
     <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between" }}>
@@ -3721,9 +3722,9 @@ function OwnerDashboard({ cats, setCats, settings, stalledItems, activityLog, lo
       {showMoney() && (() => {
         const unpaid = totalEst - totalAct;
         const payPct = totalEst > 0 ? Math.round(totalAct / totalEst * 100) : 0;
-        const big = (label, val, color, sub) => <div style={{ flex:"1 1 180px", minWidth:160 }}><div style={{ fontSize:12.5, color:"#6F6656" }}>{label}{sub && <span style={{ color:"#A99F88", fontSize:11 }}> {sub}</span>}</div><div style={{ fontSize:24, fontWeight:800, color, fontVariantNumeric:"tabular-nums", letterSpacing:-0.5, marginTop:2 }}>{fmt(val)}</div></div>;
+        const big = (label, val, color, sub) => <div style={{ flex:"1 1 180px", minWidth:160 }}><div style={{ fontSize:12.5, color:"#6F6656" }}>{label}{sub && <span style={{ color:"#a3a3a3", fontSize:11 }}> {sub}</span>}</div><div style={{ fontSize:24, fontWeight:800, color, fontVariantNumeric:"tabular-nums", letterSpacing:-0.5, marginTop:2 }}>{fmt(val)}</div></div>;
         return (
-        <div style={{ background:"#fff", border:"1px solid #D8CFBB", borderRadius:16, padding:18, marginBottom:16 }}>
+        <div style={{ background:"#fff", border:"1px solid #e5e5e5", borderRadius:16, padding:18, marginBottom:16 }}>
           <div style={{ fontSize:14, fontWeight:700, color:"#211C15", marginBottom:14 }}>💰 工程財務總覽</div>
           {/* 預算 / 已付 / 未付（重點，大字）*/}
           <div style={{ display:"flex", gap:18, flexWrap:"wrap", marginBottom:14 }}>
@@ -3731,11 +3732,11 @@ function OwnerDashboard({ cats, setCats, settings, stalledItems, activityLog, lo
             {big("已付總額", totalAct, "#3C8C3C")}
             {big("未付（尚需支付）", unpaid, unpaid < 0 ? "#DC2626" : "#C2410C")}
           </div>
-          <div style={{ height:9, background:"#EFE7D6", borderRadius:6, overflow:"hidden", marginBottom:4 }}><div style={{ width:payPct+"%", height:"100%", background:"#3C8C3C", borderRadius:6 }} /></div>
+          <div style={{ height:9, background:"#f0f0f0", borderRadius:6, overflow:"hidden", marginBottom:4 }}><div style={{ width:payPct+"%", height:"100%", background:"#3C8C3C", borderRadius:6 }} /></div>
           <div style={{ fontSize:12, color:"#6F6656", marginBottom:14 }}>付款進度 {payPct}%</div>
           {/* 零用金實支（已併入上方各大項成本）*/}
           {pettyTotal > 0 && (
-            <div style={{ borderTop:"1px solid #EFE7D6", paddingTop:12 }}>
+            <div style={{ borderTop:"1px solid #f0f0f0", paddingTop:12 }}>
               <div style={{ fontSize:12, color:"#6F6656", marginBottom:8 }}>
                 🪙 其中<b style={{ color:"#C2410C" }}> 零用金實支 {fmt(pettyCategorized)}</b>（來自零用金帳戶，已併入上方各工種成本）
                 {pettyUncat > 0 && <span style={{ color:"#C2872E" }}>　· 另有未歸類 {fmt(pettyUncat)}（請到零用金頁歸到工種才會併入）</span>}
@@ -3743,7 +3744,7 @@ function OwnerDashboard({ cats, setCats, settings, stalledItems, activityLog, lo
               {pettyCatRows.length > 0 && (
                 <div style={{ display:"flex", flexWrap:"wrap", gap:7 }}>
                   {pettyCatRows.map(([id, amt]) => (
-                    <span key={id} style={{ fontSize:12, background:"#F4EFE3", border:"1px solid #E3DAC6", borderRadius:10, padding:"3px 10px", color:"#4A4234" }}>{pettyCatName(id)} <b style={{ fontVariantNumeric:"tabular-nums" }}>{fmt(amt)}</b></span>
+                    <span key={id} style={{ fontSize:12, background:"#f5f5f5", border:"1px solid #E3DAC6", borderRadius:10, padding:"3px 10px", color:"#4A4234" }}>{pettyCatName(id)} <b style={{ fontVariantNumeric:"tabular-nums" }}>{fmt(amt)}</b></span>
                   ))}
                 </div>
               )}
@@ -3763,7 +3764,7 @@ function OwnerDashboard({ cats, setCats, settings, stalledItems, activityLog, lo
               <div style={{ position:"absolute", inset:0, display:"flex", alignItems:"center", justifyContent:"center", fontSize:15, fontWeight:700, color:"#211C15" }}>{pct}%</div>
             </div>
             <div>
-              <div style={{ fontSize:18, fontWeight:700, color:"#211C15" }}>{doneItems}<span style={{ fontSize:13, color:"#A99F88", fontWeight:400 }}> / {totalItems} 項</span></div>
+              <div style={{ fontSize:18, fontWeight:700, color:"#211C15" }}>{doneItems}<span style={{ fontSize:13, color:"#a3a3a3", fontWeight:400 }}> / {totalItems} 項</span></div>
               <div style={{ fontSize:12, color:"#3E72A8", marginTop:3, fontWeight:600 }}>進行中 {inProgressItems.length} 項</div>
             </div>
           </div>
@@ -3774,19 +3775,19 @@ function OwnerDashboard({ cats, setCats, settings, stalledItems, activityLog, lo
           <div style={kLabel}>距完工</div>
           {daysLeft !== null ? (
             <>
-              <div style={{ fontSize:26, fontWeight:700, color:daysLeft<14?"#C0392B":daysLeft<30?"#C2872E":"#211C15", marginTop:4 }}>{daysLeft}<span style={{ fontSize:13, fontWeight:400, color:"#A99F88" }}> 天</span></div>
+              <div style={{ fontSize:26, fontWeight:700, color:daysLeft<14?"#C0392B":daysLeft<30?"#C2872E":"#211C15", marginTop:4 }}>{daysLeft}<span style={{ fontSize:13, fontWeight:400, color:"#a3a3a3" }}> 天</span></div>
               {timePct!=null ? (
                 <div style={{ marginTop:8 }}>
                   <div style={{ fontSize:11, color:"#6F6656", marginBottom:4 }}>時程已過 {timePct}%・完成 {pct}%</div>
-                  <div style={{ position:"relative", background:"#EFE7D6", borderRadius:20, height:7 }}>
+                  <div style={{ position:"relative", background:"#f0f0f0", borderRadius:20, height:7 }}>
                     <div style={{ position:"absolute", left:0, top:0, bottom:0, width:pct+"%", background:behind>=10?"#C0392B":"#3C8C3C", borderRadius:20, transition:"width .8s" }} />
                     <div style={{ position:"absolute", left:`calc(${timePct}% - 1px)`, top:-2, bottom:-2, width:2, background:"#211C15" }} title="今日時程基準" />
                   </div>
                   <div style={{ fontSize:11.5, fontWeight:700, marginTop:5, color: behind>=10?"#C0392B":behind>=5?"#C2872E":"#3C8C3C" }}>{behind>=5?`進度落後 ${behind}%`:behind<=-5?`進度超前 ${-behind}%`:"進度符合時程"}</div>
                 </div>
-              ) : <div style={{ fontSize:12, color:"#A99F88", marginTop:8 }}>完工日 {td}</div>}
+              ) : <div style={{ fontSize:12, color:"#a3a3a3", marginTop:8 }}>完工日 {td}</div>}
             </>
-          ) : <div style={{ fontSize:13, color:"#A99F88", marginTop:12 }}>尚未設定完工日</div>}
+          ) : <div style={{ fontSize:13, color:"#a3a3a3", marginTop:12 }}>尚未設定完工日</div>}
         </div>
 
         {/* 付款進度（金額，受權限控管）*/}
@@ -3795,7 +3796,7 @@ function OwnerDashboard({ cats, setCats, settings, stalledItems, activityLog, lo
           <div style={kLabel}>付款進度（已付／預估）</div>
           <div style={{ fontSize:19, fontWeight:700, color:overBudget?"#C0392B":"#3C8C3C", marginTop:4, fontFamily:"ui-monospace, monospace" }}>{totalAct>0?fmt(totalAct):"—"}</div>
           <div style={{ fontSize:11.5, color:"#6F6656", marginTop:2 }}>預估 <span style={{ fontFamily:"ui-monospace, monospace" }}>{fmt(totalEst)}</span>・未付 <span style={{ fontFamily:"ui-monospace, monospace", color:"#C2872E" }}>{fmt(totalEst-totalAct)}</span></div>
-          <div style={{ background:"#EFE7D6", borderRadius:20, height:7, overflow:"hidden", marginTop:9 }}>
+          <div style={{ background:"#f0f0f0", borderRadius:20, height:7, overflow:"hidden", marginTop:9 }}>
             <div style={{ background:overBudget?"#C0392B":"#3C8C3C", height:"100%", width:Math.min(100,budgetPct)+"%", borderRadius:20, transition:"width .8s" }} />
           </div>
           <div style={{ fontSize:11.5, fontWeight:700, marginTop:5, color:overBudget?"#C0392B":"#6F6656" }}>{totalAct>0?`已付 ${budgetPct}%${overBudget?"（溢付）":""}`:"尚未付款"}</div>
@@ -3803,7 +3804,7 @@ function OwnerDashboard({ cats, setCats, settings, stalledItems, activityLog, lo
         ) : (
         <div style={card}>
           <div style={kLabel}>付款進度</div>
-          <div style={{ fontSize:13, color:"#A99F88", marginTop:14 }}>🔒 沒有看金額的權限</div>
+          <div style={{ fontSize:13, color:"#a3a3a3", marginTop:14 }}>🔒 沒有看金額的權限</div>
         </div>
         )}
 
@@ -3820,7 +3821,7 @@ function OwnerDashboard({ cats, setCats, settings, stalledItems, activityLog, lo
       </div>
 
       {/* Category progress bars */}
-      <div style={{ background:"#ffffff", border:"1px solid #D8CFBB", borderRadius:16, padding:20, marginBottom:20 }}>
+      <div style={{ background:"#ffffff", border:"1px solid #e5e5e5", borderRadius:16, padding:20, marginBottom:20 }}>
         <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:14, flexWrap:"wrap", gap:8 }}>
           <div style={{ fontSize:14, fontWeight: 600, color:"#211C15" }}>各工程進度</div>
           <div style={{ fontSize:12, color:"#6F6656" }}>{workCats.length} 大項 · 完工 {workCats.filter(c=>c.status==="done").length} · 進行中 {workCats.filter(c=>c.status==="inprogress").length} · 待開工 {workCats.filter(c=>c.status==="pending").length}</div>
@@ -3841,16 +3842,16 @@ function OwnerDashboard({ cats, setCats, settings, stalledItems, activityLog, lo
                 <div style={{ display:"flex", alignItems:"center", gap:8 }}>
                   <span style={{ width:8, height:8, borderRadius:4, background:st.color, flexShrink:0 }} />
                   <span style={{ fontSize:13, fontWeight:600, color:"#4A4234" }}>{cat.name}</span>
-                  {hasIssue && <span style={{ fontSize:10, background:"#F3E4DE", color:"#dc2626", borderRadius:10, padding:"1px 7px", fontWeight: 600 }}>問題</span>}
+                  {hasIssue && <span style={{ fontSize:10, background:"#eff6ff", color:"#dc2626", borderRadius:10, padding:"1px 7px", fontWeight: 600 }}>問題</span>}
                   {hasStall && <span style={{ fontSize:10, background:"#fffbeb", color:"#d97706", borderRadius:10, padding:"1px 7px", fontWeight: 600 }}>卡關</span>}
                 </div>
                 <div style={{ display:"flex", alignItems:"center", gap:8 }}>
-                  <span style={{ fontSize:11, color:"#A99F88" }}>{done}/{total}</span>
+                  <span style={{ fontSize:11, color:"#a3a3a3" }}>{done}/{total}</span>
                   <span style={{ fontSize:12, fontWeight:700, color:"#211C15", minWidth:34, textAlign:"right" }}>{pct}%</span>
                   <span style={{ fontSize:11, color:st.color, background:st.color+"18", borderRadius:20, padding:"1px 8px", fontWeight: 600 }}>{st.label}</span>
                 </div>
               </div>
-              <div style={{ background:"#EFE7D6", borderRadius:20, height:8, overflow:"hidden" }}>
+              <div style={{ background:"#f0f0f0", borderRadius:20, height:8, overflow:"hidden" }}>
                 <div style={{ background:pct===100?"#3C8C3C":hasIssue?"#C0392B":"#3E72A8", height:"100%", width:pct+"%", borderRadius:20, transition:"width 0.8s" }} />
               </div>
             </div>
@@ -3859,15 +3860,15 @@ function OwnerDashboard({ cats, setCats, settings, stalledItems, activityLog, lo
       </div>
 
       {/* Today's activity */}
-      <div style={{ background:"#ffffff", border:"1px solid #D8CFBB", borderRadius:16, padding:20, marginBottom:20 }}>
+      <div style={{ background:"#ffffff", border:"1px solid #e5e5e5", borderRadius:16, padding:20, marginBottom:20 }}>
         <div style={{ fontSize:14, fontWeight: 600, color:"#211C15", marginBottom:12 }}>今日動態 {todayActivity.length>0&&<span style={{ fontSize:12, color:"#6F6656", fontWeight:400 }}>（{todayActivity.length} 筆）</span>}</div>
         {todayActivity.length === 0 ? (
-          <div style={{ fontSize:13, color:"#A99F88", textAlign:"center", padding:"20px 0" }}>今日尚無更新記錄</div>
+          <div style={{ fontSize:13, color:"#a3a3a3", textAlign:"center", padding:"20px 0" }}>今日尚無更新記錄</div>
         ) : (
           <div style={{ maxHeight:200, overflowY:"auto" }}>
             {todayActivity.slice(0,20).map((a,i) => (
-              <div key={i} style={{ display:"flex", gap:10, alignItems:"flex-start", paddingBottom:10, marginBottom:10, borderBottom:i<todayActivity.length-1?"1px solid #EFE7D6":"none" }}>
-                <div style={{ fontSize:11, color:"#A99F88", whiteSpace:"nowrap", marginTop:2 }}>{new Date(a.ts).toLocaleTimeString("zh-TW",{hour:"2-digit",minute:"2-digit"})}</div>
+              <div key={i} style={{ display:"flex", gap:10, alignItems:"flex-start", paddingBottom:10, marginBottom:10, borderBottom:i<todayActivity.length-1?"1px solid #f0f0f0":"none" }}>
+                <div style={{ fontSize:11, color:"#a3a3a3", whiteSpace:"nowrap", marginTop:2 }}>{new Date(a.ts).toLocaleTimeString("zh-TW",{hour:"2-digit",minute:"2-digit"})}</div>
                 <div style={{ fontSize:12, color:"#4A4234" }}><span style={{ fontWeight:600, color:"#211C15" }}>{maskAccount(a.user)}</span> {a.action}：{a.detail}</div>
               </div>
             ))}
@@ -3976,12 +3977,12 @@ function HistoryView({ K, confirm, snapshotData, cats, petty }) {
         rows.length === 0 ? <div style={{ padding: 30, textAlign: "center", color: SUB }}>還沒有還原點。資料一有變動就會自動開始累積，或按右上角手動建立。</div> :
           <div style={{ border: `1px solid ${BORDER}`, borderRadius: 12, background: SURFACE, overflow: "hidden" }}>
             {rows.map((e, i) => { const m = META[e.key]; return (
-              <div key={e.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "11px 14px", borderTop: i ? `1px solid #EFE7D6` : "none" }}>
+              <div key={e.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "11px 14px", borderTop: i ? `1px solid #f0f0f0` : "none" }}>
                 <div style={{ flexShrink: 0, width: 70, textAlign: "center", fontSize: 11.5, fontWeight: 700, color: "#fff", background: m.color, borderRadius: 6, padding: "4px 0" }}>{m.label}</div>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontSize: 13.5, color: TEXT, fontWeight: 600 }}>{fmtWhen(e.ts)} 的版本</div>
                   <div style={{ fontSize: 12, color: SUB, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", marginTop: 1 }}>當時內容：{summarize(e)}</div>
-                  <div style={{ fontSize: 11, color: "#A99F88", marginTop: 1 }}>{e.user || "系統"}・{noteLabel(e.note)}</div>
+                  <div style={{ fontSize: 11, color: "#a3a3a3", marginTop: 1 }}>{e.user || "系統"}・{noteLabel(e.note)}</div>
                 </div>
                 <button onClick={() => restore(e)} disabled={busy} title="把現在的資料換回這個版本" style={{ flexShrink: 0, background: "#fff", color: ACCENT, border: `1px solid ${ACCENT}`, borderRadius: 7, padding: "6px 16px", fontSize: 12.5, fontWeight: 600, cursor: busy ? "wait" : "pointer" }}>↩ 還原</button>
               </div>
@@ -4084,35 +4085,35 @@ function AuditLogView({ activityLog, confirm, onCommit }) {
       </div>
       <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 12, flexWrap: "wrap" }}>
         {[["member", "👤 依成員"], ["timeline", "🕓 時間軸"]].map(([k, l]) => (
-          <button key={k} onClick={() => setTab(k)} style={{ padding: "6px 14px", borderRadius: 8, border: `1px solid ${tab === k ? "#b5512b" : "#D8CFBB"}`, background: tab === k ? "#b5512b" : "#fff", color: tab === k ? "#fff" : "#6F6656", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>{l}</button>
+          <button key={k} onClick={() => setTab(k)} style={{ padding: "6px 14px", borderRadius: 8, border: `1px solid ${tab === k ? "#b5512b" : "#e5e5e5"}`, background: tab === k ? "#b5512b" : "#fff", color: tab === k ? "#fff" : "#6F6656", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>{l}</button>
         ))}
         <span style={{ width: 1, height: 22, background: "#E0D8C4", margin: "0 2px" }} />
         {[["all", "全部"], ["登入", "只看登入"], ["編輯", "只看操作"]].map(([k, l]) => (
-          <button key={k} onClick={() => setAct(k)} style={{ padding: "5px 11px", borderRadius: 999, border: `1px solid ${act === k ? "#7A6F58" : "#D8CFBB"}`, background: act === k ? "#EFE7D6" : "#fff", color: act === k ? "#4A4234" : "#A99F88", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>{l}</button>
+          <button key={k} onClick={() => setAct(k)} style={{ padding: "5px 11px", borderRadius: 999, border: `1px solid ${act === k ? "#7A6F58" : "#e5e5e5"}`, background: act === k ? "#f0f0f0" : "#fff", color: act === k ? "#4A4234" : "#a3a3a3", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>{l}</button>
         ))}
         <div style={{ flex: 1 }} />
         <input value={q} onChange={e => setQ(e.target.value)} placeholder="搜尋人名／動作…" style={{ ...inputStyle, width: 180, padding: "6px 10px" }} />
         {(activityLog || []).length > 0 && <button onClick={clearAll} title="清空全部紀錄" style={{ background: "#fff", color: "#DC2626", border: "1px solid #F0C0C0", borderRadius: 8, padding: "6px 12px", fontSize: 12.5, fontWeight: 600, cursor: "pointer" }}>🗑 清空全部</button>}
       </div>
 
-      {log.length === 0 ? <div style={{ padding: 30, textAlign: "center", color: "#A99F88", fontSize: 13 }}>尚無紀錄</div> : tab === "member" ? (
+      {log.length === 0 ? <div style={{ padding: 30, textAlign: "center", color: "#a3a3a3", fontSize: 13 }}>尚無紀錄</div> : tab === "member" ? (
         members.map(m => {
           const open = openU.has(m.u);
           return (
-            <div key={m.u} style={{ background: "#fff", border: "1px solid #D8CFBB", borderRadius: 12, padding: "10px 14px", marginBottom: 10 }}>
+            <div key={m.u} style={{ background: "#fff", border: "1px solid #e5e5e5", borderRadius: 12, padding: "10px 14px", marginBottom: 10 }}>
               <div onClick={() => toggleU(m.u)} style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", cursor: "pointer" }}>
-                <span style={{ fontSize: 11, color: "#A99F88", width: 10, transform: open ? "rotate(90deg)" : "none", transition: "transform .15s" }}>▸</span>
+                <span style={{ fontSize: 11, color: "#a3a3a3", width: 10, transform: open ? "rotate(90deg)" : "none", transition: "transform .15s" }}>▸</span>
                 <div style={{ fontSize: 15, fontWeight: 700, color: "#211C15" }}>{m.u}</div>
                 <div style={{ flex: 1 }} />
                 <span style={{ fontSize: 12, color: "#6F6656" }}>最近登入 <b style={{ color: "#2E7D32" }}>{m.lastLogin ? fmtDT(m.lastLogin) : "—"}</b></span>
-                <span style={{ fontSize: 11.5, color: "#A99F88" }}>登入 {m.loginCount} 次・操作 {m.actCount} 次</span>
-                <button onClick={(e) => { e.stopPropagation(); clearMember(m.u); }} title="清空此人紀錄" style={{ background: "none", border: "1px solid #E7DFCC", borderRadius: 6, color: "#A99F88", fontSize: 11.5, padding: "2px 8px", cursor: "pointer" }} onMouseEnter={e => { e.currentTarget.style.color = "#DC2626"; e.currentTarget.style.borderColor = "#F0C0C0"; }} onMouseLeave={e => { e.currentTarget.style.color = "#A99F88"; e.currentTarget.style.borderColor = "#E7DFCC"; }}>清空</button>
+                <span style={{ fontSize: 11.5, color: "#a3a3a3" }}>登入 {m.loginCount} 次・操作 {m.actCount} 次</span>
+                <button onClick={(e) => { e.stopPropagation(); clearMember(m.u); }} title="清空此人紀錄" style={{ background: "none", border: "1px solid #E7DFCC", borderRadius: 6, color: "#a3a3a3", fontSize: 11.5, padding: "2px 8px", cursor: "pointer" }} onMouseEnter={e => { e.currentTarget.style.color = "#DC2626"; e.currentTarget.style.borderColor = "#F0C0C0"; }} onMouseLeave={e => { e.currentTarget.style.color = "#a3a3a3"; e.currentTarget.style.borderColor = "#E7DFCC"; }}>清空</button>
               </div>
               {open && (
                 <div style={{ marginTop: 10, borderTop: "1px solid #F0E9D8", paddingTop: 8 }}>
                   {m.list.map((a, i) => (
                     <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "4px 0", fontSize: 12.5 }}>
-                      <span style={{ fontSize: 11, color: "#A99F88", width: 96, flexShrink: 0, fontVariantNumeric: "tabular-nums" }}>{fmtDT(a.ts)}</span>
+                      <span style={{ fontSize: 11, color: "#a3a3a3", width: 96, flexShrink: 0, fontVariantNumeric: "tabular-nums" }}>{fmtDT(a.ts)}</span>
                       <span style={{ fontSize: 11, fontWeight: 700, borderRadius: 6, padding: "1px 7px", ...tagStyle(a) }}>{a.action}</span>
                       <span style={{ color: "#4A4234", flex: 1 }}>{a.detail}</span>
                       {delX(a)}
@@ -4131,7 +4132,7 @@ function AuditLogView({ activityLog, confirm, onCommit }) {
             </div>
             {entries.map((a, i) => (
               <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "5px 4px", fontSize: 12.5, borderBottom: "1px solid #F6F1E5" }}>
-                <span style={{ fontSize: 11, color: "#A99F88", width: 42, flexShrink: 0 }}>{fmtT(a.ts)}</span>
+                <span style={{ fontSize: 11, color: "#a3a3a3", width: 42, flexShrink: 0 }}>{fmtT(a.ts)}</span>
                 <span style={{ fontWeight: 700, color: "#211C15", width: 90, flexShrink: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{a.user}</span>
                 <span style={{ fontSize: 11, fontWeight: 700, borderRadius: 6, padding: "1px 7px", ...tagStyle(a) }}>{a.action}</span>
                 <span style={{ color: "#4A4234", flex: 1 }}>{a.detail}</span>
@@ -4239,7 +4240,7 @@ function VaultView({ onLog }) {
   };
 
   const wrap = { maxWidth: 1080, margin: "16px auto", padding: "0 4px" };
-  if (blob === undefined) return <div style={{ ...wrap, padding: 30, color: "#A99F88", textAlign: "center" }}>載入中…</div>;
+  if (blob === undefined) return <div style={{ ...wrap, padding: 30, color: "#a3a3a3", textAlign: "center" }}>載入中…</div>;
 
   // 鎖定畫面
   if (entries === null) return (
@@ -4248,12 +4249,12 @@ function VaultView({ onLog }) {
       <div style={{ background: "#faf6ee", border: "1px solid #e4ddc9", borderRadius: 10, padding: "10px 14px", marginBottom: 16, fontSize: 13, color: "#6b6450", lineHeight: 1.7 }}>
         密碼會在<b>你的瀏覽器先加密</b>才上傳，伺服器只存亂碼、<b>連我都看不到明文</b>。只有輸入正確主密碼才解得開。<b style={{ color: "#b45309" }}>主密碼忘了就救不回</b>（這正是它安全的原因）。
       </div>
-      <div style={{ maxWidth: 420, background: "#fff", border: "1px solid #D8CFBB", borderRadius: 12, padding: 18 }}>
+      <div style={{ maxWidth: 420, background: "#fff", border: "1px solid #e5e5e5", borderRadius: 12, padding: 18 }}>
         <div style={{ fontSize: 14, fontWeight: 700, color: "#211C15", marginBottom: 12 }}>{isNew ? "設定主密碼（首次建立金庫）" : "輸入主密碼解鎖"}</div>
         <input type="password" value={pw} onChange={e => setPw(e.target.value)} onKeyDown={e => e.key === "Enter" && !isNew && unlock()} placeholder="主密碼" autoFocus style={{ ...inputStyle, width: "100%", boxSizing: "border-box", marginBottom: 10 }} />
         {isNew && <input type="password" value={pw2} onChange={e => setPw2(e.target.value)} onKeyDown={e => e.key === "Enter" && unlock()} placeholder="再輸入一次主密碼" style={{ ...inputStyle, width: "100%", boxSizing: "border-box", marginBottom: 10 }} />}
         {err && <div style={{ color: "#DC2626", fontSize: 12.5, marginBottom: 10 }}>{err}</div>}
-        <button onClick={unlock} disabled={busy || !pw} style={{ width: "100%", background: busy || !pw ? "#D8CFBB" : "#b5512b", color: "#fff", border: "none", borderRadius: 8, padding: "10px 0", fontWeight: 600, cursor: busy || !pw ? "not-allowed" : "pointer" }}>{busy ? "處理中…" : isNew ? "建立金庫" : "解鎖"}</button>
+        <button onClick={unlock} disabled={busy || !pw} style={{ width: "100%", background: busy || !pw ? "#e5e5e5" : "#b5512b", color: "#fff", border: "none", borderRadius: 8, padding: "10px 0", fontWeight: 600, cursor: busy || !pw ? "not-allowed" : "pointer" }}>{busy ? "處理中…" : isNew ? "建立金庫" : "解鎖"}</button>
       </div>
     </div>
   );
@@ -4280,17 +4281,17 @@ function VaultView({ onLog }) {
         <input value={q} onChange={e => setQ(e.target.value)} placeholder="搜尋…" style={{ ...inputStyle, width: 160, padding: "6px 10px" }} />
         <button onClick={addEntry} style={{ background: "#b5512b", color: "#fff", border: "none", borderRadius: 8, padding: "7px 12px", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>＋ 新增</button>
         <button onClick={() => setImp({ mode: "text", text: "", cat: "公司帳號", preview: null, busy: false, err: "" })} style={{ background: "#fff", color: "#b5512b", border: "1px solid #b5512b", borderRadius: 8, padding: "7px 12px", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>📋 批量匯入</button>
-        <button onClick={lock} title="清除記憶體中的明文" style={{ background: "#fff", color: "#6F6656", border: "1px solid #D8CFBB", borderRadius: 8, padding: "7px 12px", fontSize: 13, cursor: "pointer" }}>🔒 鎖定</button>
+        <button onClick={lock} title="清除記憶體中的明文" style={{ background: "#fff", color: "#6F6656", border: "1px solid #e5e5e5", borderRadius: 8, padding: "7px 12px", fontSize: 13, cursor: "pointer" }}>🔒 鎖定</button>
       </div>
       <div style={{ display: "flex", gap: 6, marginBottom: 10, flexWrap: "wrap" }}>
-        {["all", ...allCats].map(k => { const n = k === "all" ? entries.length : entries.filter(e => e.cat === k).length; return <button key={k} onClick={() => setFilt(k)} style={{ padding: "4px 12px", borderRadius: 999, border: `1px solid ${filt === k ? "#b5512b" : "#D8CFBB"}`, background: filt === k ? "#F4EAE4" : "#fff", color: filt === k ? "#b5512b" : "#6F6656", fontSize: 12.5, fontWeight: 600, cursor: "pointer" }}>{k === "all" ? "全部" : k} {n}</button>; })}
+        {["all", ...allCats].map(k => { const n = k === "all" ? entries.length : entries.filter(e => e.cat === k).length; return <button key={k} onClick={() => setFilt(k)} style={{ padding: "4px 12px", borderRadius: 999, border: `1px solid ${filt === k ? "#b5512b" : "#e5e5e5"}`, background: filt === k ? "#F4EAE4" : "#fff", color: filt === k ? "#b5512b" : "#6F6656", fontSize: 12.5, fontWeight: 600, cursor: "pointer" }}>{k === "all" ? "全部" : k} {n}</button>; })}
       </div>
       <div style={{ overflowX: "auto", border: sep, borderRadius: 10, background: "#fff" }}>
         <div style={{ minWidth: 760 }}>
-          <div style={{ display: "grid", gridTemplateColumns: gtc, background: "#FCFAF4", borderBottom: sep }}>
+          <div style={{ display: "grid", gridTemplateColumns: gtc, background: "#ffffff", borderBottom: sep }}>
             {th("分類", "cat")}{th("名稱", "name")}{th("帳號", "account")}{th("密碼", null)}{th("連結", null)}{th("備註", null)}{th("", null)}
           </div>
-          {sorted.length === 0 ? <div style={{ padding: 24, textAlign: "center", color: "#A99F88", fontSize: 13 }}>沒有資料，點「＋ 新增」或「📋 批量匯入」</div> :
+          {sorted.length === 0 ? <div style={{ padding: 24, textAlign: "center", color: "#a3a3a3", fontSize: 13 }}>沒有資料，點「＋ 新增」或「📋 批量匯入」</div> :
            sorted.map((e, i) => (
             <div key={e.id} style={{ display: "grid", gridTemplateColumns: gtc, alignItems: "center", background: i % 2 ? "#FBF8F0" : "#fff", borderTop: i ? "1px solid #F3EEE1" : "none", padding: "5px 6px", gap: 4 }}>
               <input list="vaultcats" value={e.cat || ""} onChange={ev => upd(e.id, "cat", ev.target.value)} placeholder="分類" style={cell} />
@@ -4308,7 +4309,7 @@ function VaultView({ onLog }) {
           ))}
         </div>
       </div>
-      <div style={{ fontSize: 11.5, color: "#A99F88", marginTop: 8, lineHeight: 1.7 }}>離開此頁或按「🔒 鎖定」會清掉記憶體中的明文。建議主密碼另外抄一份放安全的地方（忘了無法救回）。</div>
+      <div style={{ fontSize: 11.5, color: "#a3a3a3", marginTop: 8, lineHeight: 1.7 }}>離開此頁或按「🔒 鎖定」會清掉記憶體中的明文。建議主密碼另外抄一份放安全的地方（忘了無法救回）。</div>
 
       {imp && (
         <div onClick={e => e.target === e.currentTarget && setImp(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.4)", zIndex: 500, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
@@ -4319,7 +4320,7 @@ function VaultView({ onLog }) {
               <button onClick={() => setImp(null)} style={{ background: "none", border: "none", fontSize: 22, cursor: "pointer", color: "#6F6656" }}>×</button>
             </div>
             <div style={{ display: "flex", gap: 6, marginBottom: 12 }}>
-              {[["text", "貼上文字（私密）"], ["img", "截圖辨識（送AI）"]].map(([m, l]) => <button key={m} onClick={() => setImp(p => ({ ...p, mode: m, preview: null, err: "" }))} style={{ padding: "6px 14px", borderRadius: 8, border: `1px solid ${imp.mode === m ? "#b5512b" : "#D8CFBB"}`, background: imp.mode === m ? "#b5512b" : "#fff", color: imp.mode === m ? "#fff" : "#6F6656", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>{l}</button>)}
+              {[["text", "貼上文字（私密）"], ["img", "截圖辨識（送AI）"]].map(([m, l]) => <button key={m} onClick={() => setImp(p => ({ ...p, mode: m, preview: null, err: "" }))} style={{ padding: "6px 14px", borderRadius: 8, border: `1px solid ${imp.mode === m ? "#b5512b" : "#e5e5e5"}`, background: imp.mode === m ? "#b5512b" : "#fff", color: imp.mode === m ? "#fff" : "#6F6656", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>{l}</button>)}
             </div>
             {imp.mode === "text" ? (
               <>
@@ -4343,7 +4344,7 @@ function VaultView({ onLog }) {
               <div style={{ marginTop: 12, borderTop: sep, paddingTop: 10 }}>
                 <div style={{ fontSize: 13, fontWeight: 600, color: "#211C15", marginBottom: 6 }}>解析出 {imp.preview.length} 筆，預覽前 6 筆：</div>
                 {imp.preview.slice(0, 6).map(r => <div key={r.id} style={{ fontSize: 12, color: "#4A4234", padding: "3px 0", borderBottom: "1px solid #F3EEE1" }}>[{r.cat}] {r.name} · {r.account} · {"•".repeat(Math.min(8, (r.password || "").length))}</div>)}
-                <button onClick={() => runImport(imp.preview)} disabled={!imp.preview.length} style={{ marginTop: 10, background: imp.preview.length ? "#2E7D32" : "#D8CFBB", color: "#fff", border: "none", borderRadius: 8, padding: "9px 18px", fontSize: 13.5, fontWeight: 600, cursor: imp.preview.length ? "pointer" : "not-allowed" }}>✅ 匯入這 {imp.preview.length} 筆</button>
+                <button onClick={() => runImport(imp.preview)} disabled={!imp.preview.length} style={{ marginTop: 10, background: imp.preview.length ? "#2E7D32" : "#e5e5e5", color: "#fff", border: "none", borderRadius: 8, padding: "9px 18px", fontSize: 13.5, fontWeight: 600, cursor: imp.preview.length ? "pointer" : "not-allowed" }}>✅ 匯入這 {imp.preview.length} 筆</button>
               </div>
             )}
           </div>
@@ -4363,29 +4364,29 @@ function ActivityLogPanel({ activityLog, onClose }) {
   });
   return (
     <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.4)", zIndex:400, display:"flex", justifyContent:"flex-end" }} onClick={e=>e.target===e.currentTarget&&onClose()}>
-      <div style={{ width:"min(420px,100vw)", background:"#ffffff", height:"100vh", overflowY:"auto", borderLeft:"1px solid #D8CFBB" }}>
-        <div style={{ padding:"14px 16px", borderBottom:"1px solid #D8CFBB", display:"flex", justifyContent:"space-between", alignItems:"center", position:"sticky", top:0, background:"#ffffff" }}>
+      <div style={{ width:"min(420px,100vw)", background:"#ffffff", height:"100vh", overflowY:"auto", borderLeft:"1px solid #e5e5e5" }}>
+        <div style={{ padding:"14px 16px", borderBottom:"1px solid #e5e5e5", display:"flex", justifyContent:"space-between", alignItems:"center", position:"sticky", top:0, background:"#ffffff" }}>
           <div style={{ fontSize:15, fontWeight: 600, color:"#211C15" }}>活動記錄</div>
           <button onClick={onClose} style={{ background:"none", border:"none", fontSize:22, cursor:"pointer", color:"#6F6656" }}>×</button>
         </div>
         <div style={{ padding:16 }}>
-          {Object.keys(grouped).length === 0 && <div style={{ textAlign:"center", color:"#A99F88", padding:"40px 0" }}>尚無記錄</div>}
+          {Object.keys(grouped).length === 0 && <div style={{ textAlign:"center", color:"#a3a3a3", padding:"40px 0" }}>尚無記錄</div>}
           {Object.entries(grouped).map(([date, entries]) => (
             <div key={date} style={{ marginBottom:20 }}>
               <div style={{ fontSize:12, color:"#6F6656", fontWeight: 600, marginBottom:8, display:"flex", alignItems:"center", gap:6 }}>
-                <div style={{ height:1, flex:1, background:"#D8CFBB" }} />
+                <div style={{ height:1, flex:1, background:"#e5e5e5" }} />
                 {date === today ? "今天" : date}
-                <div style={{ height:1, flex:1, background:"#D8CFBB" }} />
+                <div style={{ height:1, flex:1, background:"#e5e5e5" }} />
               </div>
               {entries.map((a, i) => (
                 <div key={i} style={{ display:"flex", gap:10, marginBottom:10, alignItems:"flex-start" }}>
-                  <div style={{ width:36, height:36, borderRadius:"50%", background:"#EFE7D6", display:"flex", alignItems:"center", justifyContent:"center", fontSize:14, flexShrink:0 }}>
+                  <div style={{ width:36, height:36, borderRadius:"50%", background:"#f0f0f0", display:"flex", alignItems:"center", justifyContent:"center", fontSize:14, flexShrink:0 }}>
                     {"👤"}
                   </div>
                   <div style={{ flex:1 }}>
                     <div style={{ fontSize:12, color:"#211C15" }}><span style={{ fontWeight: 600 }}>{maskAccount(a.user)}</span> {a.action}</div>
                     <div style={{ fontSize:11, color:"#6F6656" }}>{a.detail}</div>
-                    <div style={{ fontSize:10, color:"#A99F88", marginTop:2 }}>{new Date(a.ts).toLocaleTimeString("zh-TW",{hour:"2-digit",minute:"2-digit"})}</div>
+                    <div style={{ fontSize:10, color:"#a3a3a3", marginTop:2 }}>{new Date(a.ts).toLocaleTimeString("zh-TW",{hour:"2-digit",minute:"2-digit"})}</div>
                   </div>
                 </div>
               ))}
@@ -4464,9 +4465,9 @@ function CalendarView({ cats, setCats, settings, events, setEvents, userName }) 
       <div style={{ display:"flex", alignItems:"center", gap:12, marginBottom:16 }}>
         <div style={{ fontSize:20, fontWeight: 600, color:"#211C15" }}>📅 行事曆</div>
         <div style={{ flex:1 }} />
-        <button onClick={()=>setCursor(new Date(year, month-1, 1))} style={{ padding:"6px 10px", background:"#ECE6D7", border:"1px solid #D8CFBB", borderRadius:8, cursor:"pointer", fontSize:13 }}>←</button>
+        <button onClick={()=>setCursor(new Date(year, month-1, 1))} style={{ padding:"6px 10px", background:"#f5f5f5", border:"1px solid #e5e5e5", borderRadius:8, cursor:"pointer", fontSize:13 }}>←</button>
         <div style={{ fontSize:15, fontWeight: 600, color:"#211C15", minWidth:120, textAlign:"center" }}>{year}年 {month+1}月</div>
-        <button onClick={()=>setCursor(new Date(year, month+1, 1))} style={{ padding:"6px 10px", background:"#ECE6D7", border:"1px solid #D8CFBB", borderRadius:8, cursor:"pointer", fontSize:13 }}>→</button>
+        <button onClick={()=>setCursor(new Date(year, month+1, 1))} style={{ padding:"6px 10px", background:"#f5f5f5", border:"1px solid #e5e5e5", borderRadius:8, cursor:"pointer", fontSize:13 }}>→</button>
         <button onClick={()=>setCursor(new Date())} style={{ padding:"6px 14px", background:ACCENT, border:"none", borderRadius:8, cursor:"pointer", fontSize:12, color:"#211C15", fontWeight: 600 }}>今天</button>
       </div>
 
@@ -4488,13 +4489,13 @@ function CalendarView({ cats, setCats, settings, events, setEvents, userName }) 
           const miles = milestonesForDay(d);
           return (
             <div key={i} onClick={()=>addEvent(ds)}
-              style={{ minHeight:96, background:"#ffffff", border:`1px solid ${isToday?ACCENT:"#D8CFBB"}`, borderWidth:isToday?2:1, borderRadius:8, padding:6, cursor:"pointer", transition:"background 0.15s", display:"flex", flexDirection:"column", gap:3 }}
-              onMouseEnter={e=>e.currentTarget.style.background="#FCFAF4"}
+              style={{ minHeight:96, background:"#ffffff", border:`1px solid ${isToday?ACCENT:"#e5e5e5"}`, borderWidth:isToday?2:1, borderRadius:8, padding:6, cursor:"pointer", transition:"background 0.15s", display:"flex", flexDirection:"column", gap:3 }}
+              onMouseEnter={e=>e.currentTarget.style.background="#ffffff"}
               onMouseLeave={e=>e.currentTarget.style.background="#ffffff"}
             >
               <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
                 <div style={{ fontSize:13, fontWeight:isToday?900:600, color: isToday?ACCENT:isWeekend?"#dc2626":"#4A4234" }}>{d.getDate()}</div>
-                {evs.length>0 && <div style={{ fontSize:10, background:"#F3E4DE", color:"#92400e", borderRadius:10, padding:"0 6px", fontWeight: 600 }}>{evs.length}</div>}
+                {evs.length>0 && <div style={{ fontSize:10, background:"#eff6ff", color:"#92400e", borderRadius:10, padding:"0 6px", fontWeight: 600 }}>{evs.length}</div>}
               </div>
               {miles.map((m,mi) => (
                 <div key={mi} style={{ fontSize:10, background:m.color+"20", color:m.color, borderRadius:4, padding:"1px 4px", fontWeight: 600 }}>{m.label}</div>
@@ -4505,7 +4506,7 @@ function CalendarView({ cats, setCats, settings, events, setEvents, userName }) 
                   {e.title || "(未命名)"}
                 </div>
               ))}
-              {evs.length>3 && <div style={{ fontSize:9, color:"#A99F88" }}>+{evs.length-3} 更多</div>}
+              {evs.length>3 && <div style={{ fontSize:9, color:"#a3a3a3" }}>+{evs.length-3} 更多</div>}
             </div>
           );
         })}
@@ -4535,13 +4536,13 @@ function EventEditModal({ event, setEvent, cats, onSave, onDelete, onClose }) {
           <div>
             <div style={{ fontSize:11, color:"#6F6656", marginBottom:4, fontWeight:600 }}>日期</div>
             <input type="date" value={event.date||""} onChange={e=>setEvent({...event, date:e.target.value})}
-              style={{ width:"100%", padding:"8px 10px", border:"1px solid #D8CFBB", borderRadius:8, fontSize:13, outline:"none", boxSizing:"border-box" }} />
+              style={{ width:"100%", padding:"8px 10px", border:"1px solid #e5e5e5", borderRadius:8, fontSize:13, outline:"none", boxSizing:"border-box" }} />
           </div>
           <div>
             <div style={{ fontSize:11, color:"#6F6656", marginBottom:4, fontWeight:600 }}>事件標題 *</div>
             <input value={event.title||""} onChange={e=>setEvent({...event, title:e.target.value})}
               placeholder="例如：磁磚到貨、業主驗收、停工..."
-              style={{ width:"100%", padding:"9px 12px", border:"1px solid #D8CFBB", borderRadius:8, fontSize:14, outline:"none", boxSizing:"border-box" }} autoFocus />
+              style={{ width:"100%", padding:"9px 12px", border:"1px solid #e5e5e5", borderRadius:8, fontSize:14, outline:"none", boxSizing:"border-box" }} autoFocus />
           </div>
           <div>
             <div style={{ fontSize:11, color:"#6F6656", marginBottom:4, fontWeight:600 }}>關聯工程（選填）</div>
@@ -4549,7 +4550,7 @@ function EventEditModal({ event, setEvent, cats, onSave, onDelete, onClose }) {
               const cat = cats.find(c=>c.id===e.target.value);
               setEvent({...event, catId:e.target.value, catName:cat?.name||""});
             }}
-              style={{ width:"100%", padding:"8px 10px", border:"1px solid #D8CFBB", borderRadius:8, fontSize:13, outline:"none", boxSizing:"border-box", background:"#ffffff" }}>
+              style={{ width:"100%", padding:"8px 10px", border:"1px solid #e5e5e5", borderRadius:8, fontSize:13, outline:"none", boxSizing:"border-box", background:"#ffffff" }}>
               <option value="">— 未關聯 —</option>
               {cats.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
             </select>
@@ -4558,14 +4559,14 @@ function EventEditModal({ event, setEvent, cats, onSave, onDelete, onClose }) {
             <div style={{ fontSize:11, color:"#6F6656", marginBottom:4, fontWeight:600 }}>備註</div>
             <textarea value={event.note||""} onChange={e=>setEvent({...event, note:e.target.value})}
               placeholder="備註..."
-              style={{ width:"100%", padding:"8px 12px", border:"1px solid #D8CFBB", borderRadius:8, fontSize:13, outline:"none", boxSizing:"border-box", height:70, resize:"vertical", fontFamily:"'Noto Sans TC',sans-serif" }} />
+              style={{ width:"100%", padding:"8px 12px", border:"1px solid #e5e5e5", borderRadius:8, fontSize:13, outline:"none", boxSizing:"border-box", height:70, resize:"vertical", fontFamily:"'Noto Sans TC',sans-serif" }} />
           </div>
         </div>
         <div style={{ display:"flex", gap:8, marginTop:18 }}>
-          {event.createdBy && <button onClick={()=>onDelete(event.id)} style={{ padding:"10px 14px", background:"#F3E4DE", border:"1px solid #fca5a5", borderRadius:8, color:"#dc2626", fontSize:13, cursor:"pointer", fontWeight:600 }}>刪除</button>}
+          {event.createdBy && <button onClick={()=>onDelete(event.id)} style={{ padding:"10px 14px", background:"#eff6ff", border:"1px solid #fca5a5", borderRadius:8, color:"#dc2626", fontSize:13, cursor:"pointer", fontWeight:600 }}>刪除</button>}
           <div style={{ flex:1 }} />
-          <button onClick={onClose} style={{ padding:"10px 16px", background:"#ECE6D7", border:"1px solid #D8CFBB", borderRadius:8, color:"#6F6656", fontSize:13, cursor:"pointer" }}>取消</button>
-          <button onClick={()=>event.title&&onSave(event)} disabled={!event.title} style={{ padding:"10px 20px", background:event.title?"#211C15":"#D8CFBB", border:"none", borderRadius:8, color:"#ffffff", fontSize:13, fontWeight: 600, cursor:event.title?"pointer":"not-allowed" }}>儲存</button>
+          <button onClick={onClose} style={{ padding:"10px 16px", background:"#f5f5f5", border:"1px solid #e5e5e5", borderRadius:8, color:"#6F6656", fontSize:13, cursor:"pointer" }}>取消</button>
+          <button onClick={()=>event.title&&onSave(event)} disabled={!event.title} style={{ padding:"10px 20px", background:event.title?"#211C15":"#e5e5e5", border:"none", borderRadius:8, color:"#ffffff", fontSize:13, fontWeight: 600, cursor:event.title?"pointer":"not-allowed" }}>儲存</button>
         </div>
       </div>
     </div>
@@ -4611,26 +4612,26 @@ function JournalView({ journal, setJournal, cats, userName }) {
         <div style={{ fontSize:12, color:"#6F6656" }}>共 {journal.length} 筆記錄</div>
         <div style={{ flex:1 }} />
         <input value={filter} onChange={e=>setFilter(e.target.value)} placeholder="搜尋…"
-          style={{ padding:"7px 12px", border:"1px solid #D8CFBB", borderRadius:8, fontSize:13, outline:"none", width:180, fontFamily:"'Noto Sans TC',sans-serif" }} />
+          style={{ padding:"7px 12px", border:"1px solid #e5e5e5", borderRadius:8, fontSize:13, outline:"none", width:180, fontFamily:"'Noto Sans TC',sans-serif" }} />
         <button onClick={()=>setShowNew(true)} style={{ padding:"8px 16px", background:"#211C15", border:"none", borderRadius:8, color:"#ffffff", fontSize:13, fontWeight: 600, cursor:"pointer" }}>+ 新增日誌</button>
       </div>
 
       {filtered.length === 0 && (
-        <div style={{ background:"#ffffff", border:"1px dashed #D8CFBB", borderRadius:14, padding:"60px 20px", textAlign:"center", color:"#A99F88" }}>
+        <div style={{ background:"#ffffff", border:"1px dashed #e5e5e5", borderRadius:14, padding:"60px 20px", textAlign:"center", color:"#a3a3a3" }}>
           <div style={{ fontSize:40, marginBottom:10 }}>📓</div>
           <div style={{ fontSize:14 }}>尚無日誌記錄，點擊右上「+ 新增日誌」開始記錄</div>
         </div>
       )}
 
       {filtered.map(j => (
-        <div key={j.id} style={{ background:"#ffffff", border:"1px solid #D8CFBB", borderRadius:14, padding:18, marginBottom:12 }}>
+        <div key={j.id} style={{ background:"#ffffff", border:"1px solid #e5e5e5", borderRadius:14, padding:18, marginBottom:12 }}>
           <div style={{ display:"flex", alignItems:"flex-start", gap:10, marginBottom:8 }}>
             <div style={{ flex:1 }}>
               <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:4 }}>
                 <div style={{ fontSize:15, fontWeight: 600, color:"#211C15" }}>{j.title||"(無標題)"}</div>
-                {j.catName && <span style={{ fontSize:10, background:"#F3E4DE", color:"#92400e", borderRadius:10, padding:"1px 8px", fontWeight: 600 }}>{j.catName}</span>}
+                {j.catName && <span style={{ fontSize:10, background:"#eff6ff", color:"#92400e", borderRadius:10, padding:"1px 8px", fontWeight: 600 }}>{j.catName}</span>}
               </div>
-              <div style={{ fontSize:11, color:"#A99F88", display:"flex", gap:10, flexWrap:"wrap" }}>
+              <div style={{ fontSize:11, color:"#a3a3a3", display:"flex", gap:10, flexWrap:"wrap" }}>
                 <span>📅 {j.date}</span>
                 {j.author && <span>✍️ {j.author}</span>}
                 {j.weather && <span>🌤 {j.weather}</span>}
@@ -4641,7 +4642,7 @@ function JournalView({ journal, setJournal, cats, userName }) {
           </div>
           {j.content && <div style={{ fontSize:13, lineHeight:1.8, color:"#4A4234", whiteSpace:"pre-wrap", marginTop:10 }}>{j.content}</div>}
           {j.issues && (
-            <div style={{ marginTop:10, padding:"8px 12px", background:"#F3E4DE", border:"1px solid #fca5a5", borderRadius:8, fontSize:12, color:"#991b1b" }}>
+            <div style={{ marginTop:10, padding:"8px 12px", background:"#eff6ff", border:"1px solid #fca5a5", borderRadius:8, fontSize:12, color:"#991b1b" }}>
               <strong>⚠️ 問題/待處理：</strong> {j.issues}
             </div>
           )}
@@ -4657,23 +4658,23 @@ function JournalView({ journal, setJournal, cats, userName }) {
               <div>
                 <div style={{ fontSize:11, color:"#6F6656", marginBottom:4, fontWeight:600 }}>日期</div>
                 <input type="date" value={draft.date} onChange={e=>setDraft({...draft, date:e.target.value})}
-                  style={{ width:"100%", padding:"8px 10px", border:"1px solid #D8CFBB", borderRadius:8, fontSize:13, outline:"none", boxSizing:"border-box" }} />
+                  style={{ width:"100%", padding:"8px 10px", border:"1px solid #e5e5e5", borderRadius:8, fontSize:13, outline:"none", boxSizing:"border-box" }} />
               </div>
               <div>
                 <div style={{ fontSize:11, color:"#6F6656", marginBottom:4, fontWeight:600 }}>天氣</div>
                 <input value={draft.weather} onChange={e=>setDraft({...draft, weather:e.target.value})} placeholder="晴 / 雨 / 陰"
-                  style={{ width:"100%", padding:"8px 10px", border:"1px solid #D8CFBB", borderRadius:8, fontSize:13, outline:"none", boxSizing:"border-box" }} />
+                  style={{ width:"100%", padding:"8px 10px", border:"1px solid #e5e5e5", borderRadius:8, fontSize:13, outline:"none", boxSizing:"border-box" }} />
               </div>
             </div>
             <div style={{ marginBottom:10 }}>
               <div style={{ fontSize:11, color:"#6F6656", marginBottom:4, fontWeight:600 }}>標題</div>
               <input value={draft.title} onChange={e=>setDraft({...draft, title:e.target.value})} placeholder="例如：廚房地坪灌漿完成..."
-                style={{ width:"100%", padding:"9px 12px", border:"1px solid #D8CFBB", borderRadius:8, fontSize:14, outline:"none", boxSizing:"border-box" }} autoFocus />
+                style={{ width:"100%", padding:"9px 12px", border:"1px solid #e5e5e5", borderRadius:8, fontSize:14, outline:"none", boxSizing:"border-box" }} autoFocus />
             </div>
             <div style={{ marginBottom:10 }}>
               <div style={{ fontSize:11, color:"#6F6656", marginBottom:4, fontWeight:600 }}>關聯工程</div>
               <select value={draft.catId} onChange={e=>setDraft({...draft, catId:e.target.value})}
-                style={{ width:"100%", padding:"8px 10px", border:"1px solid #D8CFBB", borderRadius:8, fontSize:13, outline:"none", boxSizing:"border-box", background:"#ffffff" }}>
+                style={{ width:"100%", padding:"8px 10px", border:"1px solid #e5e5e5", borderRadius:8, fontSize:13, outline:"none", boxSizing:"border-box", background:"#ffffff" }}>
                 <option value="">— 未指定 —</option>
                 {cats.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
               </select>
@@ -4681,23 +4682,23 @@ function JournalView({ journal, setJournal, cats, userName }) {
             <div style={{ marginBottom:10 }}>
               <div style={{ fontSize:11, color:"#6F6656", marginBottom:4, fontWeight:600 }}>現場人員</div>
               <input value={draft.workers} onChange={e=>setDraft({...draft, workers:e.target.value})} placeholder="例如：水電2人、泥作3人"
-                style={{ width:"100%", padding:"8px 12px", border:"1px solid #D8CFBB", borderRadius:8, fontSize:13, outline:"none", boxSizing:"border-box" }} />
+                style={{ width:"100%", padding:"8px 12px", border:"1px solid #e5e5e5", borderRadius:8, fontSize:13, outline:"none", boxSizing:"border-box" }} />
             </div>
             <div style={{ marginBottom:10 }}>
               <div style={{ fontSize:11, color:"#6F6656", marginBottom:4, fontWeight:600 }}>內容</div>
               <textarea value={draft.content} onChange={e=>setDraft({...draft, content:e.target.value})}
                 placeholder="今日完成什麼？遇到什麼？&#10;可記錄：進度、用料、人員、照片說明、重要決策..."
-                style={{ width:"100%", padding:"10px 12px", border:"1px solid #D8CFBB", borderRadius:8, fontSize:13, outline:"none", boxSizing:"border-box", height:120, resize:"vertical", fontFamily:"'Noto Sans TC',sans-serif", lineHeight:1.7 }} />
+                style={{ width:"100%", padding:"10px 12px", border:"1px solid #e5e5e5", borderRadius:8, fontSize:13, outline:"none", boxSizing:"border-box", height:120, resize:"vertical", fontFamily:"'Noto Sans TC',sans-serif", lineHeight:1.7 }} />
             </div>
             <div style={{ marginBottom:14 }}>
               <div style={{ fontSize:11, color:"#6F6656", marginBottom:4, fontWeight:600 }}>⚠️ 問題/待處理</div>
               <textarea value={draft.issues} onChange={e=>setDraft({...draft, issues:e.target.value})}
                 placeholder="需要上級決策、材料短缺、工序卡關..."
-                style={{ width:"100%", padding:"10px 12px", border:"1px solid #D8CFBB", borderRadius:8, fontSize:13, outline:"none", boxSizing:"border-box", height:60, resize:"vertical", fontFamily:"'Noto Sans TC',sans-serif" }} />
+                style={{ width:"100%", padding:"10px 12px", border:"1px solid #e5e5e5", borderRadius:8, fontSize:13, outline:"none", boxSizing:"border-box", height:60, resize:"vertical", fontFamily:"'Noto Sans TC',sans-serif" }} />
             </div>
             <div style={{ display:"flex", gap:8 }}>
               <div style={{ flex:1 }} />
-              <button onClick={()=>setShowNew(false)} style={{ padding:"10px 16px", background:"#ECE6D7", border:"1px solid #D8CFBB", borderRadius:8, color:"#6F6656", fontSize:13, cursor:"pointer" }}>取消</button>
+              <button onClick={()=>setShowNew(false)} style={{ padding:"10px 16px", background:"#f5f5f5", border:"1px solid #e5e5e5", borderRadius:8, color:"#6F6656", fontSize:13, cursor:"pointer" }}>取消</button>
               <button onClick={save} style={{ padding:"10px 22px", background:"#211C15", border:"none", borderRadius:8, color:"#ffffff", fontSize:13, fontWeight: 600, cursor:"pointer" }}>儲存日誌</button>
             </div>
           </div>
@@ -4765,18 +4766,18 @@ function PlanView({ cats, setCats, plans, setPlans, settings, userName }) {
 
       {/* summary */}
       <div style={{ display:"flex", gap:10, marginBottom:16, flexWrap:"wrap" }}>
-        {overdueCount>0 && <div style={{ background:"#F3E4DE", border:"1px solid #fca5a5", borderRadius:20, padding:"5px 14px", fontSize:12, color:"#dc2626", fontWeight: 600 }}>⏰ 逾期 {overdueCount} 項</div>}
+        {overdueCount>0 && <div style={{ background:"#eff6ff", border:"1px solid #fca5a5", borderRadius:20, padding:"5px 14px", fontSize:12, color:"#dc2626", fontWeight: 600 }}>⏰ 逾期 {overdueCount} 項</div>}
         {highCount>0 && <div style={{ background:"#fef3c7", border:"1px solid #fcd34d", borderRadius:20, padding:"5px 14px", fontSize:12, color:"#92400e", fontWeight: 600 }}>🔥 高優先 {highCount} 項</div>}
         <div style={{ flex:1 }} />
         <div style={{ display:"flex", gap:4 }}>
           {[["pending","待處理"],["done","已完成"],["all","全部"]].map(([k,l]) => (
-            <button key={k} onClick={()=>setFilter(k)} style={{ padding:"5px 12px", borderRadius:20, fontSize:12, border:"1px solid #D8CFBB", cursor:"pointer", background:filter===k?ACCENT:"#ECE6D7", color:filter===k?"#ffffff":"#6F6656", fontWeight:filter===k?700:400 }}>{l}</button>
+            <button key={k} onClick={()=>setFilter(k)} style={{ padding:"5px 12px", borderRadius:20, fontSize:12, border:"1px solid #e5e5e5", cursor:"pointer", background:filter===k?ACCENT:"#f5f5f5", color:filter===k?"#ffffff":"#6F6656", fontWeight:filter===k?700:400 }}>{l}</button>
           ))}
         </div>
       </div>
 
       {filtered.length === 0 && (
-        <div style={{ background:"#ffffff", border:"1px dashed #D8CFBB", borderRadius:14, padding:"50px 20px", textAlign:"center", color:"#A99F88" }}>
+        <div style={{ background:"#ffffff", border:"1px dashed #e5e5e5", borderRadius:14, padding:"50px 20px", textAlign:"center", color:"#a3a3a3" }}>
           <div style={{ fontSize:40, marginBottom:10 }}>🗓</div>
           <div style={{ fontSize:14 }}>{filter==="done"?"尚無已完成任務":filter==="pending"?"沒有待處理任務，太棒了！":"尚無任務"}</div>
         </div>
@@ -4785,18 +4786,18 @@ function PlanView({ cats, setCats, plans, setPlans, settings, userName }) {
       {filtered.map(p => {
         const isOverdue = !p.done && p.dueDate && p.dueDate < todayStr;
         return (
-          <div key={p.id} style={{ background:"#ffffff", border:`1px solid ${isOverdue?"#fca5a5":"#D8CFBB"}`, borderLeft:`4px solid ${p.done?"#3C8C3C":priorityColor[p.priority]||"#6F6656"}`, borderRadius:12, padding:"12px 16px", marginBottom:10, display:"flex", alignItems:"flex-start", gap:12, opacity:p.done?0.6:1 }}>
+          <div key={p.id} style={{ background:"#ffffff", border:`1px solid ${isOverdue?"#fca5a5":"#e5e5e5"}`, borderLeft:`4px solid ${p.done?"#3C8C3C":priorityColor[p.priority]||"#6F6656"}`, borderRadius:12, padding:"12px 16px", marginBottom:10, display:"flex", alignItems:"flex-start", gap:12, opacity:p.done?0.6:1 }}>
             <input type="checkbox" checked={!!p.done} onChange={()=>toggleDone(p.id)}
               style={{ width:18, height:18, marginTop:3, cursor:"pointer", accentColor:"#3C8C3C", flexShrink:0 }} />
             <div style={{ flex:1 }}>
               <div style={{ display:"flex", alignItems:"center", gap:8, flexWrap:"wrap", marginBottom:4 }}>
-                <div style={{ fontSize:14, fontWeight: 600, color:p.done?"#A99F88":"#211C15", textDecoration:p.done?"line-through":"none" }}>{p.title}</div>
+                <div style={{ fontSize:14, fontWeight: 600, color:p.done?"#a3a3a3":"#211C15", textDecoration:p.done?"line-through":"none" }}>{p.title}</div>
                 <span style={{ fontSize:10, background:priorityColor[p.priority]+"22", color:priorityColor[p.priority], borderRadius:10, padding:"1px 8px", fontWeight: 600 }}>{p.priority}</span>
                 {p.catName && <span style={{ fontSize:10, background:"#eff6ff", color:"#1e40af", borderRadius:10, padding:"1px 8px" }}>{p.catName}</span>}
-                {isOverdue && <span style={{ fontSize:10, background:"#F3E4DE", color:"#dc2626", borderRadius:10, padding:"1px 8px", fontWeight: 600 }}>⏰ 逾期</span>}
+                {isOverdue && <span style={{ fontSize:10, background:"#eff6ff", color:"#dc2626", borderRadius:10, padding:"1px 8px", fontWeight: 600 }}>⏰ 逾期</span>}
               </div>
               {p.description && <div style={{ fontSize:12, color:"#6F6656", lineHeight:1.7, marginBottom:4 }}>{p.description}</div>}
-              <div style={{ fontSize:11, color:"#A99F88", display:"flex", gap:12, flexWrap:"wrap" }}>
+              <div style={{ fontSize:11, color:"#a3a3a3", display:"flex", gap:12, flexWrap:"wrap" }}>
                 {p.dueDate && <span>📅 {p.dueDate}</span>}
                 {p.assignee && <span>👤 {p.assignee}</span>}
                 {p.createdBy && <span>✍️ {p.createdBy}</span>}
@@ -4815,26 +4816,26 @@ function PlanView({ cats, setCats, plans, setPlans, settings, userName }) {
             <div style={{ marginBottom:10 }}>
               <div style={{ fontSize:11, color:"#6F6656", marginBottom:4, fontWeight:600 }}>任務標題 *</div>
               <input value={draft.title} onChange={e=>setDraft({...draft, title:e.target.value})} placeholder="例如：下週前確認磁磚廠商..." autoFocus
-                style={{ width:"100%", padding:"9px 12px", border:"1px solid #D8CFBB", borderRadius:8, fontSize:14, outline:"none", boxSizing:"border-box" }} />
+                style={{ width:"100%", padding:"9px 12px", border:"1px solid #e5e5e5", borderRadius:8, fontSize:14, outline:"none", boxSizing:"border-box" }} />
             </div>
             <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10, marginBottom:10 }}>
               <div>
                 <div style={{ fontSize:11, color:"#6F6656", marginBottom:4, fontWeight:600 }}>優先度</div>
                 <select value={draft.priority} onChange={e=>setDraft({...draft, priority:e.target.value})}
-                  style={{ width:"100%", padding:"8px 10px", border:"1px solid #D8CFBB", borderRadius:8, fontSize:13, outline:"none", boxSizing:"border-box", background:"#ffffff" }}>
+                  style={{ width:"100%", padding:"8px 10px", border:"1px solid #e5e5e5", borderRadius:8, fontSize:13, outline:"none", boxSizing:"border-box", background:"#ffffff" }}>
                   <option>高</option><option>中</option><option>低</option>
                 </select>
               </div>
               <div>
                 <div style={{ fontSize:11, color:"#6F6656", marginBottom:4, fontWeight:600 }}>截止日</div>
                 <input type="date" value={draft.dueDate} onChange={e=>setDraft({...draft, dueDate:e.target.value})}
-                  style={{ width:"100%", padding:"8px 10px", border:"1px solid #D8CFBB", borderRadius:8, fontSize:13, outline:"none", boxSizing:"border-box" }} />
+                  style={{ width:"100%", padding:"8px 10px", border:"1px solid #e5e5e5", borderRadius:8, fontSize:13, outline:"none", boxSizing:"border-box" }} />
               </div>
             </div>
             <div style={{ marginBottom:10 }}>
               <div style={{ fontSize:11, color:"#6F6656", marginBottom:4, fontWeight:600 }}>關聯工程</div>
               <select value={draft.catId} onChange={e=>setDraft({...draft, catId:e.target.value})}
-                style={{ width:"100%", padding:"8px 10px", border:"1px solid #D8CFBB", borderRadius:8, fontSize:13, outline:"none", boxSizing:"border-box", background:"#ffffff" }}>
+                style={{ width:"100%", padding:"8px 10px", border:"1px solid #e5e5e5", borderRadius:8, fontSize:13, outline:"none", boxSizing:"border-box", background:"#ffffff" }}>
                 <option value="">— 未指定 —</option>
                 {cats.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
               </select>
@@ -4842,17 +4843,17 @@ function PlanView({ cats, setCats, plans, setPlans, settings, userName }) {
             <div style={{ marginBottom:10 }}>
               <div style={{ fontSize:11, color:"#6F6656", marginBottom:4, fontWeight:600 }}>負責人</div>
               <input value={draft.assignee} onChange={e=>setDraft({...draft, assignee:e.target.value})} placeholder="誰要做？"
-                style={{ width:"100%", padding:"8px 12px", border:"1px solid #D8CFBB", borderRadius:8, fontSize:13, outline:"none", boxSizing:"border-box" }} />
+                style={{ width:"100%", padding:"8px 12px", border:"1px solid #e5e5e5", borderRadius:8, fontSize:13, outline:"none", boxSizing:"border-box" }} />
             </div>
             <div style={{ marginBottom:14 }}>
               <div style={{ fontSize:11, color:"#6F6656", marginBottom:4, fontWeight:600 }}>描述</div>
               <textarea value={draft.description} onChange={e=>setDraft({...draft, description:e.target.value})}
                 placeholder="詳細說明..."
-                style={{ width:"100%", padding:"10px 12px", border:"1px solid #D8CFBB", borderRadius:8, fontSize:13, outline:"none", boxSizing:"border-box", height:70, resize:"vertical", fontFamily:"'Noto Sans TC',sans-serif" }} />
+                style={{ width:"100%", padding:"10px 12px", border:"1px solid #e5e5e5", borderRadius:8, fontSize:13, outline:"none", boxSizing:"border-box", height:70, resize:"vertical", fontFamily:"'Noto Sans TC',sans-serif" }} />
             </div>
             <div style={{ display:"flex", gap:8 }}>
               <div style={{ flex:1 }} />
-              <button onClick={()=>setShowNew(false)} style={{ padding:"10px 16px", background:"#ECE6D7", border:"1px solid #D8CFBB", borderRadius:8, color:"#6F6656", fontSize:13, cursor:"pointer" }}>取消</button>
+              <button onClick={()=>setShowNew(false)} style={{ padding:"10px 16px", background:"#f5f5f5", border:"1px solid #e5e5e5", borderRadius:8, color:"#6F6656", fontSize:13, cursor:"pointer" }}>取消</button>
               <button onClick={save} style={{ padding:"10px 22px", background:"#211C15", border:"none", borderRadius:8, color:"#ffffff", fontSize:13, fontWeight: 600, cursor:"pointer" }}>建立任務</button>
             </div>
           </div>
@@ -4881,7 +4882,7 @@ function KanbanView({ cats, setCats, onSelect, dragging, dragOver, onDragStart, 
               onDragOver={(e) => { e.preventDefault(); onDragOver(cat.id); }}
               onDrop={() => onDrop(cat.id)}
               onClick={() => onSelect(cat)}
-              style={{ background: isDragOver ? "#e8edf8" : "#ffffff", border: `1px solid ${isDragOver ? ACCENT : "#D8CFBB"}`, borderRadius: 12, padding: 14, cursor: "grab", transition: "border-color 0.2s, transform 0.15s", transform: dragging === cat.id ? "scale(0.97) rotate(-1deg)" : "none", userSelect: "none", position: "relative" }}
+              style={{ background: isDragOver ? "#e8edf8" : "#ffffff", border: `1px solid ${isDragOver ? ACCENT : "#e5e5e5"}`, borderRadius: 12, padding: 14, cursor: "grab", transition: "border-color 0.2s, transform 0.15s", transform: dragging === cat.id ? "scale(0.97) rotate(-1deg)" : "none", userSelect: "none", position: "relative" }}
             >
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 8 }}>
                 <input
@@ -4892,7 +4893,7 @@ function KanbanView({ cats, setCats, onSelect, dragging, dragOver, onDragStart, 
                 />
                 <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
                   <StatusBadge status={cat.status} setCats={setCats} catId={cat.id} />
-                  <button onMouseDown={e => { e.stopPropagation(); e.preventDefault(); }} onClick={e => { e.stopPropagation(); e.preventDefault(); confirm(`確定刪除「${cat.name}」？\n此操作無法復原。`).then(ok => { if (ok) setCats(prev => prev.filter(c => c.id !== cat.id)); }); }} style={{ width: 22, height: 22, borderRadius: "50%", background: "#F3E4DE", border: "1px solid rgba(193,58,34,0.25)", color: "#DC2626", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, cursor: "pointer", lineHeight: 1, flexShrink: 0, padding: 0 }} title="刪除此工程">×</button>
+                  <button onMouseDown={e => { e.stopPropagation(); e.preventDefault(); }} onClick={e => { e.stopPropagation(); e.preventDefault(); confirm(`確定刪除「${cat.name}」？\n此操作無法復原。`).then(ok => { if (ok) setCats(prev => prev.filter(c => c.id !== cat.id)); }); }} style={{ width: 22, height: 22, borderRadius: "50%", background: "#eff6ff", border: "1px solid rgba(193,58,34,0.25)", color: "#DC2626", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, cursor: "pointer", lineHeight: 1, flexShrink: 0, padding: 0 }} title="刪除此工程">×</button>
                 </div>
               </div>
               <div style={{ fontFamily: "monospace", fontSize: 13, color: ACCENT, marginBottom: 8 }}>{fmt(cat.items.reduce((s,it) => s + calcEstimated(it), 0))}</div>
@@ -4920,7 +4921,7 @@ function KanbanView({ cats, setCats, onSelect, dragging, dragOver, onDragStart, 
             const newCat = { id, order: cats.length, name: "新"+L("cat"), budget: 0, status: "pending", items: [] };
             setCats(prev => [...prev, newCat]);
           }}
-          style={{ background: "#FCFAF4", border: "1px dashed rgba(193,58,34,0.3)", borderRadius: 12, padding: 14, cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", minHeight: 120, gap: 8, transition: "border-color 0.2s" }}
+          style={{ background: "#ffffff", border: "1px dashed rgba(193,58,34,0.3)", borderRadius: 12, padding: 14, cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", minHeight: 120, gap: 8, transition: "border-color 0.2s" }}
           onMouseEnter={e => e.currentTarget.style.borderColor=ACCENT}
           onMouseLeave={e => e.currentTarget.style.borderColor="rgba(193,58,34,0.3)"}
         >
@@ -4951,9 +4952,9 @@ function StatusBadge({ status, setCats, catId, itemId }) {
       <div onClick={openMenu} style={{ background: st.color + "22", border: `1px solid ${st.color}55`, color: st.color, borderRadius: 20, padding: "2px 8px", fontSize: 11, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" }}>{st.label}</div>
       {pos && createPortal(
         <div onClick={(e) => { e.stopPropagation(); setPos(null); }} onMouseDown={(e) => e.stopPropagation()} style={{ position: "fixed", inset: 0, zIndex: 10000 }}>
-          <div style={{ position: "fixed", left: Math.min(pos.x, window.innerWidth - 130), top: Math.min(pos.y, window.innerHeight - 220), background: "#fff", border: "1px solid #D8CFBB", borderRadius: 8, boxShadow: "0 6px 24px rgba(0,0,0,.18)", minWidth: 110, overflow: "hidden" }}>
+          <div style={{ position: "fixed", left: Math.min(pos.x, window.innerWidth - 130), top: Math.min(pos.y, window.innerHeight - 220), background: "#fff", border: "1px solid #e5e5e5", borderRadius: 8, boxShadow: "0 6px 24px rgba(0,0,0,.18)", minWidth: 110, overflow: "hidden" }}>
             {Object.entries(STATUS_MAP).map(([k, v]) => (
-              <div key={k} onClick={(e) => { e.stopPropagation(); pick(k); }} style={{ padding: "8px 14px", cursor: "pointer", color: v.color, fontSize: 13, fontWeight: 600, borderBottom: "1px solid #EFE7D6" }} onMouseEnter={e => e.currentTarget.style.background = "#F4EFE3"} onMouseLeave={e => e.currentTarget.style.background = "#fff"}>{v.label}</div>
+              <div key={k} onClick={(e) => { e.stopPropagation(); pick(k); }} style={{ padding: "8px 14px", cursor: "pointer", color: v.color, fontSize: 13, fontWeight: 600, borderBottom: "1px solid #f0f0f0" }} onMouseEnter={e => e.currentTarget.style.background = "#f5f5f5"} onMouseLeave={e => e.currentTarget.style.background = "#fff"}>{v.label}</div>
             ))}
           </div>
         </div>, document.body
@@ -4991,13 +4992,13 @@ function LineNotifySettings({ settings, upd, cats, journal, events, plans }) {
   };
 
   return (
-    <div style={{ background: "#ffffff", border: "1px solid #D8CFBB", borderRadius: 12, padding: "20px" }}>
+    <div style={{ background: "#ffffff", border: "1px solid #e5e5e5", borderRadius: 12, padding: "20px" }}>
       <div style={{ fontSize: 14, fontWeight: 600, color: "#211C15", marginBottom: 4 }}>💬 LINE 通知</div>
       <div style={{ fontSize: 12, color: "#6F6656", marginBottom: 14 }}>設定推播群組與各類事件通知（設定儲存於共用空間，供伺服器排程使用）</div>
 
       <div style={{ fontSize: 12.5, color: "#4A4234", fontWeight: 600, marginBottom: 6 }}>LINE 群組 ID</div>
       <div style={{ display: "flex", gap: 8, marginBottom: 6, flexWrap: "wrap" }}>
-        <input value={groupId} onChange={e => upd("lineGroupId", e.target.value)} placeholder="群組 ID" style={{ flex: 1, minWidth: 200, border: "1px solid #D8CFBB", borderRadius: 8, padding: "10px 12px", fontSize: 14, fontFamily: "monospace" }} />
+        <input value={groupId} onChange={e => upd("lineGroupId", e.target.value)} placeholder="群組 ID" style={{ flex: 1, minWidth: 200, border: "1px solid #e5e5e5", borderRadius: 8, padding: "10px 12px", fontSize: 14, fontFamily: "monospace" }} />
         <button onClick={test} disabled={busy} style={{ border: "none", background: "#06C755", color: "#fff", borderRadius: 8, padding: "10px 18px", fontSize: 13, fontWeight: 600, cursor: busy ? "wait" : "pointer", whiteSpace: "nowrap" }}>{busy ? "傳送中…" : "測試推送"}</button>
       </div>
       {msg && <div style={{ fontSize: 12.5, color: msg.startsWith("✅") ? "#3C8C3C" : msg.startsWith("⚠️") ? "#C0392B" : "#6F6656", marginBottom: 10 }}>{msg}</div>}
@@ -5005,15 +5006,15 @@ function LineNotifySettings({ settings, upd, cats, journal, events, plans }) {
       <div style={{ fontSize: 12.5, color: "#4A4234", fontWeight: 600, margin: "14px 0 6px" }}>通知開關</div>
       <div style={{ display: "flex", flexDirection: "column" }}>
         {LINE_EVENTS.map(([k, label]) => (
-          <label key={k} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 4px", cursor: "pointer", fontSize: 13.5, color: "#211C15", borderBottom: "1px solid #F4EFE3" }}>
+          <label key={k} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 4px", cursor: "pointer", fontSize: 13.5, color: "#211C15", borderBottom: "1px solid #f5f5f5" }}>
             <input type="checkbox" checked={!!notify[k]} onChange={() => toggle(k)} style={{ width: 18, height: 18, accentColor: ACCENT, flexShrink: 0 }} />
             {label}
           </label>
         ))}
       </div>
-      <div style={{ fontSize: 11, color: "#A99F88", marginTop: 8, lineHeight: 1.6 }}>※「有問題 / 完工 / 新日誌」由系統即時推播；「卡關 / 週五週報 / 截止日」為時間排程，由 webhook 伺服器依此設定推播。</div>
+      <div style={{ fontSize: 11, color: "#a3a3a3", marginTop: 8, lineHeight: 1.6 }}>※「有問題 / 完工 / 新日誌」由系統即時推播；「卡關 / 週五週報 / 截止日」為時間排程，由 webhook 伺服器依此設定推播。</div>
 
-      <div style={{ marginTop: 16, paddingTop: 16, borderTop: "1px solid #EFE7D6" }}>
+      <div style={{ marginTop: 16, paddingTop: 16, borderTop: "1px solid #f0f0f0" }}>
         <button onClick={pushWeekly} disabled={wbusy} style={{ border: "none", background: "#211C15", color: "#fff", borderRadius: 9, padding: "11px 18px", fontSize: 13.5, fontWeight: 600, cursor: wbusy ? "wait" : "pointer", display: "flex", alignItems: "center", gap: 8 }}>{wbusy ? "產生中…" : "📋 立即推送業主週報到 LINE"}</button>
       </div>
     </div>
@@ -5037,7 +5038,7 @@ function BotUsagePanel() {
   const card = (label, val, sub) => (
     <div style={{ flex: 1, minWidth: 130, background: "#FBF0EC", border: "1px solid #E6C9BE", borderRadius: 10, padding: "12px 14px" }}>
       <div style={{ fontSize: 22, fontWeight: 800, color: "#211C15", letterSpacing: -0.5, fontVariantNumeric: "tabular-nums" }}>{val}</div>
-      <div style={{ fontSize: 11, color: "#6F6656", marginTop: 2 }}>{label}{sub && <span style={{ color: "#A99F88" }}> {sub}</span>}</div>
+      <div style={{ fontSize: 11, color: "#6F6656", marginTop: 2 }}>{label}{sub && <span style={{ color: "#a3a3a3" }}> {sub}</span>}</div>
     </div>
   );
   return (
@@ -5046,7 +5047,7 @@ function BotUsagePanel() {
         <span style={{ background: "#1A1A1A", color: "#fff", fontSize: 12, fontWeight: 800, borderRadius: 6, padding: "3px 8px" }}>:D</span>
         <div style={{ fontSize: 15, fontWeight: 700, color: "#211C15" }}>D哥（LINE bot）用量 / 估算花費</div>
         <div style={{ flex: 1 }} />
-        <button onClick={load} style={{ fontSize: 12, border: "1px solid #D8CFBB", background: "#ECE6D7", color: "#6F6656", borderRadius: 7, padding: "5px 12px", cursor: "pointer" }}>↻ 重新整理</button>
+        <button onClick={load} style={{ fontSize: 12, border: "1px solid #e5e5e5", background: "#f5f5f5", color: "#6F6656", borderRadius: 7, padding: "5px 12px", cursor: "pointer" }}>↻ 重新整理</button>
       </div>
       <div style={{ background: "#FBF0EC", borderRadius: 8, padding: "8px 12px", fontSize: 12, color: "#6F6656", marginBottom: 14 }}>
         D哥 在 LINE（守門 + 思考 + 彙報 + 監控）累計呼叫 Anthropic API 的<b style={{ color: ACCENT }}>估算</b>花費。<b>這是主要花費。</b>精確帳以 platform.claude.com → Usage（篩 ground-bot key）為準。
@@ -5059,11 +5060,11 @@ function BotUsagePanel() {
       </div>
       {rows.length > 0 ? (
         <div style={{ border: "1px solid #E3DAC6", borderRadius: 8, overflow: "hidden" }}>
-          <div style={{ display: "flex", background: "#F4EFE3", fontSize: 11, color: "#6F6656", fontWeight: 600, padding: "6px 12px" }}>
+          <div style={{ display: "flex", background: "#f5f5f5", fontSize: 11, color: "#6F6656", fontWeight: 600, padding: "6px 12px" }}>
             <div style={{ flex: 2 }}>模型（錢花在哪）</div><div style={{ flex: 1, textAlign: "right" }}>次數</div><div style={{ flex: 1.4, textAlign: "right" }}>tokens</div><div style={{ flex: 1.2, textAlign: "right" }}>USD</div><div style={{ flex: 1.2, textAlign: "right" }}>TWD</div>
           </div>
           {rows.map((r) => (
-            <div key={r.m} style={{ display: "flex", fontSize: 12, color: "#211C15", padding: "6px 12px", borderTop: "1px solid #EFE7D6", fontVariantNumeric: "tabular-nums" }}>
+            <div key={r.m} style={{ display: "flex", fontSize: 12, color: "#211C15", padding: "6px 12px", borderTop: "1px solid #f0f0f0", fontVariantNumeric: "tabular-nums" }}>
               <div style={{ flex: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.m}{/haiku/.test(r.m) ? "（守門/監控）" : /sonnet/.test(r.m) ? "（主力思考）" : ""}</div>
               <div style={{ flex: 1, textAlign: "right" }}>{r.calls}</div>
               <div style={{ flex: 1.4, textAlign: "right" }}>{(r.inTok + r.outTok).toLocaleString()}</div>
@@ -5073,9 +5074,9 @@ function BotUsagePanel() {
           ))}
         </div>
       ) : (
-        <div style={{ fontSize: 12, color: "#A99F88", textAlign: "center", padding: "12px 0" }}>尚無紀錄（從 v7.5 起累計；D哥 之後每次在 LINE 動作就會記）</div>
+        <div style={{ fontSize: 12, color: "#a3a3a3", textAlign: "center", padding: "12px 0" }}>尚無紀錄（從 v7.5 起累計；D哥 之後每次在 LINE 動作就會記）</div>
       )}
-      <div style={{ fontSize: 11, color: "#A99F88", marginTop: 10 }}>{data.since ? `自 ${String(data.since).slice(0, 10)} 起累計` : ""}　⚠ 估算值，精確帳以 Console（ground-bot key）為準。</div>
+      <div style={{ fontSize: 11, color: "#a3a3a3", marginTop: 10 }}>{data.since ? `自 ${String(data.since).slice(0, 10)} 起累計` : ""}　⚠ 估算值，精確帳以 Console（ground-bot key）為準。</div>
     </div>
   );
 }
@@ -5117,19 +5118,19 @@ function AIUsagePanel() {
   const card = (label, val, sub) => (
     <div style={{ flex: 1, minWidth: 130, background: "#FBF7EE", border: "1px solid #E3DAC6", borderRadius: 10, padding: "12px 14px" }}>
       <div style={{ fontSize: 22, fontWeight: 800, color: "#211C15", letterSpacing: -0.5, fontVariantNumeric: "tabular-nums" }}>{val}</div>
-      <div style={{ fontSize: 11, color: "#6F6656", marginTop: 2 }}>{label}{sub && <span style={{ color: "#A99F88" }}> {sub}</span>}</div>
+      <div style={{ fontSize: 11, color: "#6F6656", marginTop: 2 }}>{label}{sub && <span style={{ color: "#a3a3a3" }}> {sub}</span>}</div>
     </div>
   );
 
   return (
-    <div style={{ background: "#ffffff", border: "1px solid #D8CFBB", borderRadius: 12, padding: 20, marginBottom: 14 }}>
+    <div style={{ background: "#ffffff", border: "1px solid #e5e5e5", borderRadius: 12, padding: 20, marginBottom: 14 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
         <span style={{ background: ACCENT, color: "#fff", fontSize: 11, fontWeight: 700, borderRadius: 5, padding: "2px 7px" }}>AI</span>
         <div style={{ fontSize: 15, fontWeight: 700, color: "#211C15" }}>AI 用量 / 估算花費</div>
         <div style={{ flex: 1 }} />
-        <button onClick={load} style={{ fontSize: 12, border: "1px solid #D8CFBB", background: "#ECE6D7", color: "#6F6656", borderRadius: 7, padding: "5px 12px", cursor: "pointer" }}>↻ 重新整理</button>
+        <button onClick={load} style={{ fontSize: 12, border: "1px solid #e5e5e5", background: "#f5f5f5", color: "#6F6656", borderRadius: 7, padding: "5px 12px", cursor: "pointer" }}>↻ 重新整理</button>
       </div>
-      <div style={{ background: "#F4EFE3", borderRadius: 8, padding: "8px 12px", fontSize: 12, color: "#6F6656", marginBottom: 14 }}>
+      <div style={{ background: "#f5f5f5", borderRadius: 8, padding: "8px 12px", fontSize: 12, color: "#6F6656", marginBottom: 14 }}>
         本 App 自己呼叫 Anthropic <b>API</b>（非群組）的累計用量與<b style={{ color: ACCENT }}>估算</b>花費。LINE 群組產生的花費屬 bot 端帳，這裡看不到；Claude 訂閱／Claude Code 也是另一套帳。
       </div>
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 14 }}>
@@ -5140,11 +5141,11 @@ function AIUsagePanel() {
       </div>
       {kinds.length > 0 && (
         <div style={{ border: "1px solid #E3DAC6", borderRadius: 8, overflow: "hidden", marginBottom: 12 }}>
-          <div style={{ display: "flex", background: "#F4EFE3", fontSize: 11, color: "#6F6656", fontWeight: 600, padding: "6px 12px" }}>
+          <div style={{ display: "flex", background: "#f5f5f5", fontSize: 11, color: "#6F6656", fontWeight: 600, padding: "6px 12px" }}>
             <div style={{ flex: 2 }}>用途（錢主要花在哪）</div><div style={{ flex: 1, textAlign: "right" }}>次數</div><div style={{ flex: 1.4, textAlign: "right" }}>tokens</div><div style={{ flex: 1.2, textAlign: "right" }}>USD</div><div style={{ flex: 1.2, textAlign: "right" }}>TWD</div><div style={{ flex: 1, textAlign: "right" }}>占比</div>
           </div>
           {kinds.map(([k, v]) => (
-            <div key={k} style={{ display: "flex", fontSize: 12, color: "#211C15", padding: "6px 12px", borderTop: "1px solid #EFE7D6", fontVariantNumeric: "tabular-nums" }}>
+            <div key={k} style={{ display: "flex", fontSize: 12, color: "#211C15", padding: "6px 12px", borderTop: "1px solid #f0f0f0", fontVariantNumeric: "tabular-nums" }}>
               <div style={{ flex: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontWeight: 600 }}>{KIND_LABEL[k] || k}</div>
               <div style={{ flex: 1, textAlign: "right" }}>{v.calls}</div>
               <div style={{ flex: 1.4, textAlign: "right" }}>{v.tok.toLocaleString()}</div>
@@ -5157,11 +5158,11 @@ function AIUsagePanel() {
       )}
       {models.length > 0 && (
         <div style={{ border: "1px solid #E3DAC6", borderRadius: 8, overflow: "hidden" }}>
-          <div style={{ display: "flex", background: "#F4EFE3", fontSize: 11, color: "#6F6656", fontWeight: 600, padding: "6px 12px" }}>
+          <div style={{ display: "flex", background: "#f5f5f5", fontSize: 11, color: "#6F6656", fontWeight: 600, padding: "6px 12px" }}>
             <div style={{ flex: 2 }}>模型</div><div style={{ flex: 1, textAlign: "right" }}>次數</div><div style={{ flex: 1.4, textAlign: "right" }}>tokens</div><div style={{ flex: 1.2, textAlign: "right" }}>USD</div><div style={{ flex: 1.2, textAlign: "right" }}>TWD</div>
           </div>
           {models.map(([m, v]) => (
-            <div key={m} style={{ display: "flex", fontSize: 12, color: "#211C15", padding: "6px 12px", borderTop: "1px solid #EFE7D6", fontVariantNumeric: "tabular-nums" }}>
+            <div key={m} style={{ display: "flex", fontSize: 12, color: "#211C15", padding: "6px 12px", borderTop: "1px solid #f0f0f0", fontVariantNumeric: "tabular-nums" }}>
               <div style={{ flex: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{m}</div>
               <div style={{ flex: 1, textAlign: "right" }}>{v.calls}</div>
               <div style={{ flex: 1.4, textAlign: "right" }}>{(v.inTok + v.outTok).toLocaleString()}</div>
@@ -5171,8 +5172,8 @@ function AIUsagePanel() {
           ))}
         </div>
       )}
-      {!loading && calls === 0 && <div style={{ fontSize: 12, color: "#A99F88", textAlign: "center", padding: "12px 0" }}>尚無 AI 呼叫紀錄（用過 AI 顧問或匯入後會自動累計）</div>}
-      <div style={{ fontSize: 11, color: "#A99F88", marginTop: 10 }}>⚠ 為前端估算值，精確帳務請以 platform.claude.com → Usage 為準。</div>
+      {!loading && calls === 0 && <div style={{ fontSize: 12, color: "#a3a3a3", textAlign: "center", padding: "12px 0" }}>尚無 AI 呼叫紀錄（用過 AI 顧問或匯入後會自動累計）</div>}
+      <div style={{ fontSize: 11, color: "#a3a3a3", marginTop: 10 }}>⚠ 為前端估算值，精確帳務請以 platform.claude.com → Usage 為準。</div>
     </div>
   );
 }
@@ -5181,7 +5182,7 @@ function AdvisorSettingsView({ settings, setSettings, cats, aiLog, setAiLog, act
   const [busy, setBusy] = useState(false);
   const fileRef = useRef(null);
   const upd = (field, val) => setSettings({ ...settings, [field]: val });
-  const fieldStyle = { width:"100%", padding:"9px 12px", border:"1px solid #D8CFBB", borderRadius:8, fontSize:13, color:"#211C15", outline:"none", fontFamily:"'Noto Sans TC',sans-serif", boxSizing:"border-box", background:"#f9fafb" };
+  const fieldStyle = { width:"100%", padding:"9px 12px", border:"1px solid #e5e5e5", borderRadius:8, fontSize:13, color:"#211C15", outline:"none", fontFamily:"'Noto Sans TC',sans-serif", boxSizing:"border-box", background:"#f9fafb" };
   const docs = settings.aiDocs || [];
   const addDocs = async (files) => {
     const arr = Array.from(files || []); if (!arr.length) return;
@@ -5192,7 +5193,7 @@ function AdvisorSettingsView({ settings, setSettings, cats, aiLog, setAiLog, act
     if (out.length) upd("aiDocs", [...docs, ...out]);
   };
   const delDoc = async (i) => { const d = docs[i]; if (d?.path) { try { await deletePhotoFile(d.path); } catch(_){} } upd("aiDocs", docs.filter((_,x)=>x!==i)); };
-  const card = { background:"#ffffff", border:"1px solid #D8CFBB", borderRadius:12, padding:20, marginBottom:14 };
+  const card = { background:"#ffffff", border:"1px solid #e5e5e5", borderRadius:12, padding:20, marginBottom:14 };
   return (
     <div>
       <div style={{ display:"flex", alignItems:"center", gap:10, margin:"6px 0 14px" }}>
@@ -5211,17 +5212,17 @@ function AdvisorSettingsView({ settings, setSettings, cats, aiLog, setAiLog, act
           {docs.map((d,i)=>(
             <div key={i} style={{ position:"relative" }}>
               {d.isImage
-                ? <img src={d.url} alt={d.name} title={d.name} onClick={()=>window.open(d.url,"_blank")} style={{ width:80,height:80,objectFit:"cover",borderRadius:8,border:"1px solid #D8CFBB",cursor:"pointer" }} />
-                : <div onClick={()=>window.open(d.url,"_blank")} title={d.name+"（點擊開啟）"} style={{ width:80,height:80,borderRadius:8,border:"1px solid #D8CFBB",background:"#F3E4DE",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:4,padding:4,boxSizing:"border-box" }}><span style={{ fontSize:26 }}>📄</span><span style={{ fontSize:8,color:"#6F6656",width:"100%",textAlign:"center",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap" }}>{d.name}</span></div>}
+                ? <img src={d.url} alt={d.name} title={d.name} onClick={()=>window.open(d.url,"_blank")} style={{ width:80,height:80,objectFit:"cover",borderRadius:8,border:"1px solid #e5e5e5",cursor:"pointer" }} />
+                : <div onClick={()=>window.open(d.url,"_blank")} title={d.name+"（點擊開啟）"} style={{ width:80,height:80,borderRadius:8,border:"1px solid #e5e5e5",background:"#eff6ff",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:4,padding:4,boxSizing:"border-box" }}><span style={{ fontSize:26 }}>📄</span><span style={{ fontSize:8,color:"#6F6656",width:"100%",textAlign:"center",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap" }}>{d.name}</span></div>}
               <button onClick={()=>delDoc(i)} style={{ position:"absolute",top:-7,right:-7,width:18,height:18,borderRadius:"50%",background:"#DC2626",color:"#fff",border:"none",fontSize:11,cursor:"pointer" }}>×</button>
             </div>
           ))}
-          <label style={{ width:80,height:80,borderRadius:8,border:"1px dashed #D8CFBB",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:4,cursor:"pointer",color:"#A99F88",fontSize:12 }}>
+          <label style={{ width:80,height:80,borderRadius:8,border:"1px dashed #e5e5e5",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:4,cursor:"pointer",color:"#a3a3a3",fontSize:12 }}>
             <span style={{ fontSize:22 }}>{busy?"…":"＋"}</span>{busy?"上傳中":"上傳"}
             <input ref={fileRef} type="file" multiple style={{ display:"none" }} onChange={e=>{ addDocs(e.target.files); e.target.value=""; }} />
           </label>
         </div>
-        <div style={{ fontSize:11, color:"#A99F88", marginTop:8 }}>※ 目前 AI 會知道有哪些參考檔；「自動解析檔案內容做工種提醒」為進階功能，將逐步開放。</div>
+        <div style={{ fontSize:11, color:"#a3a3a3", marginTop:8 }}>※ 目前 AI 會知道有哪些參考檔；「自動解析檔案內容做工種提醒」為進階功能，將逐步開放。</div>
       </div>
       <div style={{ ...card, marginBottom:0, background:"#FBF7EE" }}>
         <div style={{ fontSize:13, color:"#6F6656", lineHeight:1.8 }}>💡 <b>AI 用量 / 估算花費</b> 已移到「儀表板」。｜ AI 顧問對話請點右上角「AI 顧問」。｜ LINE 通知設定已整合到「群組」分頁。｜ 優先追蹤改在項目上點 ☆。</div>
@@ -5281,7 +5282,7 @@ function GanttView({ cats, setCats }) {
           <div style={{ width: 200, flexShrink: 0, fontSize: 11, color: "#6F6656", padding: "4px 8px" }}>工程項目</div>
           <div style={{ flex: 1, display: "grid", gridTemplateColumns: `repeat(${weeks},1fr)` }}>
             {Array.from({length: weeks}, (_,i) => (
-              <div key={i} style={{ fontSize: 10, color: "#6F6656", textAlign: "center", borderLeft: "1px solid #D8CFBB33" }}>W{i+1}</div>
+              <div key={i} style={{ fontSize: 10, color: "#6F6656", textAlign: "center", borderLeft: "1px solid #e5e5e533" }}>W{i+1}</div>
             ))}
           </div>
         </div>
@@ -5292,7 +5293,7 @@ function GanttView({ cats, setCats }) {
           return (
             <div key={cat.id} style={{ display: "flex", marginBottom: 6, alignItems: "center" }}>
               <div style={{ width: 200, flexShrink: 0, fontSize: 12, color: "#211C15", padding: "4px 8px", fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{cat.name}</div>
-              <div style={{ flex: 1, display: "grid", gridTemplateColumns: `repeat(${weeks},1fr)`, height: 28, background: "#EFE7D6", borderRadius: 4, overflow: "hidden", cursor: "pointer" }}
+              <div style={{ flex: 1, display: "grid", gridTemplateColumns: `repeat(${weeks},1fr)`, height: 28, background: "#f0f0f0", borderRadius: 4, overflow: "hidden", cursor: "pointer" }}
                 onClick={() => {
                   const s = parseInt(prompt(`「${cat.name}」開始週 (1-${weeks}):`, start+1)) - 1;
                   const d = parseInt(prompt("持續週數:", dur));
@@ -5302,7 +5303,7 @@ function GanttView({ cats, setCats }) {
                 {Array.from({length: weeks}, (_,i) => {
                   const inBar = i >= start && i < start + dur;
                   return (
-                    <div key={i} style={{ borderLeft: "1px solid #D8CFBB33", height: "100%", background: inBar ? st.color + "cc" : "transparent", position: "relative" }}>
+                    <div key={i} style={{ borderLeft: "1px solid #e5e5e533", height: "100%", background: inBar ? st.color + "cc" : "transparent", position: "relative" }}>
                       {inBar && i === start && <div style={{ position: "absolute", left: 4, top: "50%", transform: "translateY(-50%)", fontSize: 10, color: "#f4f5f7", fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden" }}>{cat.name.slice(0,6)}</div>}
                     </div>
                   );
@@ -5333,7 +5334,7 @@ function CatPanel({ cat: catProp, cats, setCats, onClose, onSelectItem, confirm 
       </div>
       {(() => { const e = catEstAfter(cat), p = catPaid(cat), u = e - p; return (
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: 12 }}>
-        <div style={{ background: "#F3E4DE", border: "1px solid rgba(193,58,34,0.3)", borderRadius: 8, padding: "8px 10px" }}>
+        <div style={{ background: "#eff6ff", border: "1px solid rgba(193,58,34,0.3)", borderRadius: 8, padding: "8px 10px" }}>
           <div style={{ fontSize: 10, color: "#6F6656", marginBottom: 2 }}>預估（含稅）</div>
           <div style={{ fontFamily: "monospace", fontSize: 14, fontWeight: 600, color: ACCENT }}>{fmt(e)}</div>
         </div>
@@ -5359,14 +5360,14 @@ function CatPanel({ cat: catProp, cats, setCats, onClose, onSelectItem, confirm 
       />
       <div style={{ fontSize: 12, color: "#6F6656", marginBottom: 6 }}>細項列表</div>
       {cat.items.map(item => (
-        <div key={item.id} onClick={() => onSelectItem(item)} style={{ background: "#EFE7D6", borderRadius: 8, padding: "10px 12px", marginBottom: 6, cursor: "pointer", border: "1px solid #D8CFBB", transition: "border-color 0.15s" }}
+        <div key={item.id} onClick={() => onSelectItem(item)} style={{ background: "#f0f0f0", borderRadius: 8, padding: "10px 12px", marginBottom: 6, cursor: "pointer", border: "1px solid #e5e5e5", transition: "border-color 0.15s" }}
           onMouseEnter={e => e.currentTarget.style.borderColor=ACCENT}
-          onMouseLeave={e => e.currentTarget.style.borderColor="#D8CFBB"}
+          onMouseLeave={e => e.currentTarget.style.borderColor="#e5e5e5"}
         >
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 6 }}>
             <div style={{ fontSize: 13, color: item.notes?.includes("⚠️") ? "#C2872E" : "#211C15", flex: 1 }}>{item.name}</div>
             <div style={{ fontFamily: "monospace", fontSize: 12, color: ACCENT }}>{fmt(calcItemTotal(item))}</div>
-            <button onMouseDown={e => e.stopPropagation()} onClick={e => { e.stopPropagation(); confirm(`刪除「${item.name}」？`).then(ok => { if (ok) setCats(prev => prev.map(c => c.id === cat.id ? {...c, items: c.items.filter(it => it.id !== item.id)} : c)); }); }} style={{ width: 20, height: 20, borderRadius: "50%", background: "#F3E4DE", border: "1px solid rgba(193,58,34,0.25)", color: "#DC2626", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, cursor: "pointer", flexShrink: 0, padding: 0 }}>×</button>
+            <button onMouseDown={e => e.stopPropagation()} onClick={e => { e.stopPropagation(); confirm(`刪除「${item.name}」？`).then(ok => { if (ok) setCats(prev => prev.map(c => c.id === cat.id ? {...c, items: c.items.filter(it => it.id !== item.id)} : c)); }); }} style={{ width: 20, height: 20, borderRadius: "50%", background: "#eff6ff", border: "1px solid rgba(193,58,34,0.25)", color: "#DC2626", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, cursor: "pointer", flexShrink: 0, padding: 0 }}>×</button>
           </div>
           <div style={{ fontSize: 11, color: "#6F6656", marginTop: 2 }}>
             {item.qty} {item.unit} · {item.assignee || "未指派"} · <span style={{ color: STATUS_MAP[item.status]?.color || "#6F6656" }}>{STATUS_MAP[item.status]?.label}</span>
@@ -5419,22 +5420,22 @@ function ItemPanel({ cat, item, cats, setCats, onClose, confirm }) {
           style={{ ...inputStyle, fontSize: 15, fontWeight: 600, color: "#211C15" }}
           placeholder="細項名稱"
         />
-        <button onClick={() => confirm(`確定刪除細項「${currentItem.name}」？`).then(ok => { if (ok) { setCats(prev => prev.map(c => c.id === cat.id ? {...c, items: c.items.filter(it => it.id !== item.id)} : c)); onClose(); } })} style={{ marginTop: 6, background: "#F3E4DE", border: "1px solid rgba(193,58,34,0.25)", borderRadius: 7, color: "#DC2626", fontSize: 12, padding: "5px 12px", cursor: "pointer", alignSelf: "flex-start" }}>🗑 刪除此細項</button>
+        <button onClick={() => confirm(`確定刪除細項「${currentItem.name}」？`).then(ok => { if (ok) { setCats(prev => prev.map(c => c.id === cat.id ? {...c, items: c.items.filter(it => it.id !== item.id)} : c)); onClose(); } })} style={{ marginTop: 6, background: "#eff6ff", border: "1px solid rgba(193,58,34,0.25)", borderRadius: 7, color: "#DC2626", fontSize: 12, padding: "5px 12px", cursor: "pointer", alignSelf: "flex-start" }}>🗑 刪除此細項</button>
       </div>
       {/* ── 預估 vs 實際 兩欄 ── */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 0, marginBottom: 14, border: "1px solid #D8CFBB", borderRadius: 10, overflow: "hidden" }}>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 0, marginBottom: 14, border: "1px solid #e5e5e5", borderRadius: 10, overflow: "hidden" }}>
         {/* headers */}
-        <div style={{ background: "#F3E4DE", borderBottom: "1px solid #D8CFBB", borderRight: "1px solid #D8CFBB", padding: "7px 12px", fontSize: 11, fontWeight: 600, color: ACCENT, letterSpacing: 1 }}>📋 預估（估價單）</div>
-        <div style={{ background: "#F3E4DE", borderBottom: "1px solid #D8CFBB", padding: "7px 12px", fontSize: 11, fontWeight: 600, color: "#3E72A8", letterSpacing: 1 }}>🔨 實際（施工記錄）</div>
+        <div style={{ background: "#eff6ff", borderBottom: "1px solid #e5e5e5", borderRight: "1px solid #e5e5e5", padding: "7px 12px", fontSize: 11, fontWeight: 600, color: ACCENT, letterSpacing: 1 }}>📋 預估（估價單）</div>
+        <div style={{ background: "#eff6ff", borderBottom: "1px solid #e5e5e5", padding: "7px 12px", fontSize: 11, fontWeight: 600, color: "#3E72A8", letterSpacing: 1 }}>🔨 實際（施工記錄）</div>
         {/* qty */}
-        <div style={{ borderRight: "1px solid #D8CFBB", borderBottom: "1px solid #D8CFBB55", padding: "8px 12px" }}>
+        <div style={{ borderRight: "1px solid #e5e5e5", borderBottom: "1px solid #e5e5e555", padding: "8px 12px" }}>
           <div style={{ fontSize: 10, color: "#6F6656", marginBottom: 3 }}>數量</div>
           <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
             <NumInput value={currentItem.estQty ?? currentItem.qty ?? 0} onChange={v => updateItem("estQty", v)} style={{ ...inputStyle, flex: 1, fontSize: 13 }} />
             <input value={currentItem.unit} onChange={e => updateItem("unit", e.target.value)} style={{ ...inputStyle, width: 56, fontSize: 12 }} />
           </div>
         </div>
-        <div style={{ borderBottom: "1px solid #D8CFBB55", padding: "8px 12px" }}>
+        <div style={{ borderBottom: "1px solid #e5e5e555", padding: "8px 12px" }}>
           <div style={{ fontSize: 10, color: "#6F6656", marginBottom: 3 }}>數量</div>
           <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
             <NumInput value={currentItem.actQty ?? 0} onChange={v => updateItem("actQty", v)} style={{ ...inputStyle, flex: 1, fontSize: 13 }} />
@@ -5442,20 +5443,20 @@ function ItemPanel({ cat, item, cats, setCats, onClose, confirm }) {
           </div>
         </div>
         {/* unit price */}
-        <div style={{ borderRight: "1px solid #D8CFBB", borderBottom: "1px solid #D8CFBB55", padding: "8px 12px" }}>
+        <div style={{ borderRight: "1px solid #e5e5e5", borderBottom: "1px solid #e5e5e555", padding: "8px 12px" }}>
           <div style={{ fontSize: 10, color: "#6F6656", marginBottom: 3 }}>單價</div>
           <div style={{ display: "flex", alignItems: "center", gap: 4 }}><span style={{ fontSize: 10, color: "#6F6656" }}>NT$</span><NumInput value={currentItem.estUnitPrice ?? currentItem.unitPrice ?? 0} onChange={v => updateItem("estUnitPrice", v)} style={{ ...inputStyle, flex: 1, fontSize: 13 }} /></div>
         </div>
-        <div style={{ borderBottom: "1px solid #D8CFBB55", padding: "8px 12px" }}>
+        <div style={{ borderBottom: "1px solid #e5e5e555", padding: "8px 12px" }}>
           <div style={{ fontSize: 10, color: "#6F6656", marginBottom: 3 }}>單價</div>
           <div style={{ display: "flex", alignItems: "center", gap: 4 }}><span style={{ fontSize: 10, color: "#6F6656" }}>NT$</span><NumInput value={currentItem.actUnitPrice ?? 0} onChange={v => updateItem("actUnitPrice", v)} style={{ ...inputStyle, flex: 1, fontSize: 13 }} /></div>
         </div>
         {/* labor */}
-        <div style={{ borderRight: "1px solid #D8CFBB", borderBottom: "1px solid #D8CFBB55", padding: "8px 12px" }}>
+        <div style={{ borderRight: "1px solid #e5e5e5", borderBottom: "1px solid #e5e5e555", padding: "8px 12px" }}>
           <div style={{ fontSize: 10, color: "#6F6656", marginBottom: 3 }}>人工費（整筆估）</div>
           <div style={{ display: "flex", alignItems: "center", gap: 4 }}><span style={{ fontSize: 10, color: "#6F6656" }}>NT$</span><NumInput value={currentItem.estLabor ?? currentItem.labor ?? 0} onChange={v => updateItem("estLabor", v)} style={{ ...inputStyle, flex: 1, fontSize: 13 }} /></div>
         </div>
-        <div style={{ borderBottom: "1px solid #D8CFBB55", padding: "8px 12px" }}>
+        <div style={{ borderBottom: "1px solid #e5e5e555", padding: "8px 12px" }}>
           <div style={{ fontSize: 10, color: "#6F6656", marginBottom: 3 }}>人數 / 日薪 / 天數</div>
           <div style={{ display: "flex", gap: 4 }}>
             <NumInput value={currentItem.actWorkers ?? 0} onChange={v => updateItem("actWorkers", v)} style={{ ...inputStyle, flex: 1, fontSize: 12 }} placeholder="人" />
@@ -5464,7 +5465,7 @@ function ItemPanel({ cat, item, cats, setCats, onClose, confirm }) {
           </div>
         </div>
         {/* totals */}
-        <div style={{ borderRight: "1px solid #D8CFBB", padding: "8px 12px", background: "#ECE6D7" }}>
+        <div style={{ borderRight: "1px solid #e5e5e5", padding: "8px 12px", background: "#f5f5f5" }}>
           <div style={{ fontSize: 10, color: "#6F6656", marginBottom: 2 }}>預估複價</div>
           <div style={{ fontFamily: "monospace", fontSize: 15, fontWeight: 600, color: ACCENT }}>{fmt(calcEstimated(currentItem))}</div>
         </div>
@@ -5493,17 +5494,17 @@ function ItemPanel({ cat, item, cats, setCats, onClose, confirm }) {
             r.url ? (
               <div key={ri} style={{ position: "relative" }}>
                 {r.isImage !== false
-                  ? <img src={r.url} alt={r.name} title={r.name} onClick={() => setLightbox(r)} style={{ width: 80, height: 80, objectFit: "cover", borderRadius: 8, border: "1px solid #D8CFBB", cursor: "zoom-in" }} />
-                  : <a href={r.url} target="_blank" rel="noreferrer" title={r.name} style={{ width: 80, height: 80, borderRadius: 8, border: "1px solid #D8CFBB", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 28, textDecoration: "none", background: "#F3E4DE" }}>📄</a>}
+                  ? <img src={r.url} alt={r.name} title={r.name} onClick={() => setLightbox(r)} style={{ width: 80, height: 80, objectFit: "cover", borderRadius: 8, border: "1px solid #e5e5e5", cursor: "zoom-in" }} />
+                  : <a href={r.url} target="_blank" rel="noreferrer" title={r.name} style={{ width: 80, height: 80, borderRadius: 8, border: "1px solid #e5e5e5", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 28, textDecoration: "none", background: "#eff6ff" }}>📄</a>}
                 <button onClick={() => removeReceipt(ri)} style={{ position: "absolute", top: -7, right: -7, width: 18, height: 18, borderRadius: "50%", background: "#DC2626", color: "#fff", border: "none", fontSize: 11, lineHeight: 1, cursor: "pointer" }}>×</button>
               </div>
             ) : (
-              <div key={ri} title="點擊刪除" onClick={() => removeReceipt(ri)} style={{ background: "#EFE7D6", borderRadius: 6, padding: "6px 10px", fontSize: 12, display: "flex", gap: 8, alignItems: "center", cursor: "pointer" }}>
+              <div key={ri} title="點擊刪除" onClick={() => removeReceipt(ri)} style={{ background: "#f0f0f0", borderRadius: 6, padding: "6px 10px", fontSize: 12, display: "flex", gap: 8, alignItems: "center", cursor: "pointer" }}>
                 <span>📎 {r.name}</span>{r.amount ? <span style={{ color: ACCENT, fontFamily: "monospace" }}>{fmt(r.amount)}</span> : null}
               </div>
             )
           ))}
-          <label style={{ width: 80, height: 80, borderRadius: 8, border: "1px dashed #D8CFBB", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 4, cursor: "pointer", color: "#A99F88", fontSize: 12 }}>
+          <label style={{ width: 80, height: 80, borderRadius: 8, border: "1px dashed #e5e5e5", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 4, cursor: "pointer", color: "#a3a3a3", fontSize: 12 }}>
             <span style={{ fontSize: 22 }}>{rcpBusy ? "…" : "＋"}</span>{rcpBusy ? "上傳中" : "上傳"}
             <input type="file" accept="*/*" multiple style={{ display: "none" }} onChange={e => { addReceipts(e.target.files); e.target.value = ""; }} />
           </label>
@@ -5515,12 +5516,12 @@ function ItemPanel({ cat, item, cats, setCats, onClose, confirm }) {
         <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 8 }}>
           {currentItem.photos?.map((p, pi) => (
             <div key={pi} style={{ position: "relative" }}>
-              <img src={p.data} alt={p.name} style={{ width: 80, height: 80, objectFit: "cover", borderRadius: 8, border: "1px solid #D8CFBB" }} />
+              <img src={p.data} alt={p.name} style={{ width: 80, height: 80, objectFit: "cover", borderRadius: 8, border: "1px solid #e5e5e5" }} />
               <button onClick={() => updateItem("photos", currentItem.photos.filter((_,i2)=>i2!==pi))}
                 style={{ position:"absolute", top:-6, right:-6, width:20, height:20, borderRadius:"50%", background:"#dc2626", border:"none", color:"#fff", fontSize:12, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", padding:0 }}>×</button>
             </div>
           ))}
-          <label style={{ width:80, height:80, border:"2px dashed #D8CFBB", borderRadius:8, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", cursor:"pointer", color:"#A99F88", fontSize:11, gap:4 }}>
+          <label style={{ width:80, height:80, border:"2px dashed #e5e5e5", borderRadius:8, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", cursor:"pointer", color:"#a3a3a3", fontSize:11, gap:4 }}>
             <span style={{ fontSize:24 }}>+</span>
             <span>照片</span>
             <input type="file" accept="image/*" multiple style={{ display:"none" }} onChange={e => {
@@ -5580,16 +5581,16 @@ function ItemChat({ cat, item, setCats }) {
   return (
     <div>
       <div style={{ fontSize: 12, color: "#6F6656", marginBottom: 8 }}>💬 項目討論室 & AI顧問</div>
-      <div style={{ background: "#f4f5f7", borderRadius: 8, border: "1px solid #D8CFBB", maxHeight: 280, overflowY: "auto", padding: 10, marginBottom: 8 }}>
+      <div style={{ background: "#f4f5f7", borderRadius: 8, border: "1px solid #e5e5e5", maxHeight: 280, overflowY: "auto", padding: 10, marginBottom: 8 }}>
         {(!item.chat || item.chat.length === 0) && (
-          <div style={{ fontSize: 12, color: "#D8CFBB", textAlign: "center", padding: "20px 0" }}>輸入問題詢問AI工程顧問，或記錄討論內容</div>
+          <div style={{ fontSize: 12, color: "#e5e5e5", textAlign: "center", padding: "20px 0" }}>輸入問題詢問AI工程顧問，或記錄討論內容</div>
         )}
         {item.chat?.map((m, i) => (
           <div key={i} style={{ marginBottom: 10, display: "flex", gap: 8, flexDirection: m.role === "user" ? "row-reverse" : "row" }}>
-            <div style={{ width: 28, height: 28, borderRadius: "50%", background: m.role === "user" ? "#3E72A8" : "#F3E4DE", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, flexShrink: 0, border: m.role !== "user" ? `1px solid ${ACCENT}44` : "none" }}>
+            <div style={{ width: 28, height: 28, borderRadius: "50%", background: m.role === "user" ? "#3E72A8" : "#eff6ff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, flexShrink: 0, border: m.role !== "user" ? `1px solid ${ACCENT}44` : "none" }}>
               {m.role === "user" ? "👤" : "🤖"}
             </div>
-            <div style={{ background: m.role === "user" ? ACCENT : "#EFE7D6", border: "none", borderRadius: 10, padding: "8px 11px", maxWidth: "85%", fontSize: 12.5, lineHeight: 1.6, color: m.role === "user" ? "#ffffff" : "#211C15", whiteSpace: "pre-wrap" }}>
+            <div style={{ background: m.role === "user" ? ACCENT : "#f0f0f0", border: "none", borderRadius: 10, padding: "8px 11px", maxWidth: "85%", fontSize: 12.5, lineHeight: 1.6, color: m.role === "user" ? "#ffffff" : "#211C15", whiteSpace: "pre-wrap" }}>
               {m.text}
               <div style={{ fontSize: 10, color: "#6F6656", marginTop: 3 }}>{m.ts}</div>
             </div>
@@ -5597,7 +5598,7 @@ function ItemChat({ cat, item, setCats }) {
         ))}
         {aiLoading && (
           <div style={{ display: "flex", gap: 8 }}>
-            <div style={{ width: 28, height: 28, borderRadius: "50%", background: "#F3E4DE", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, border: `1px solid ${ACCENT}44` }}>🤖</div>
+            <div style={{ width: 28, height: 28, borderRadius: "50%", background: "#eff6ff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, border: `1px solid ${ACCENT}44` }}>🤖</div>
             <div style={{ fontSize: 12, color: ACCENT, padding: "8px 10px" }}>AI顧問分析中…</div>
           </div>
         )}
@@ -5613,7 +5614,7 @@ function ItemChat({ cat, item, setCats }) {
 
 // ── GLOBAL AI PANEL ────────────────────────────────────────────────────────────
 // ── 工作日誌 ─────────────────────────────────────────────────────────────────
-const wlMiniBtn = { background:"#ECE6D7", border:"1px solid #D8CFBB", borderRadius:6, padding:"4px 10px", fontSize:12, cursor:"pointer", color:"#4A4234" };
+const wlMiniBtn = { background:"#f5f5f5", border:"1px solid #e5e5e5", borderRadius:6, padding:"4px 10px", fontSize:12, cursor:"pointer", color:"#4A4234" };
 function WorklogView({ worklog, setWorklog, canEdit, userName, requireLogin, confirm }) {
   const [draft, setDraft] = useState("");
   const [draftDate, setDraftDate] = useState(new Date().toISOString().slice(0,10));
@@ -5662,7 +5663,7 @@ function WorklogView({ worklog, setWorklog, canEdit, userName, requireLogin, con
   const removeEntryPhoto = (id, pid) => setWorklog(worklog.map(w => w.id===id ? { ...w, photos:(w.photos||[]).filter(p=>p.id!==pid) } : w));
   const sorted = [...worklog].sort((a,b) => (b.date||"").localeCompare(a.date||"") || (b.ts||"").localeCompare(a.ts||""));
   const thumb = (p, onRemove) => (
-    <div key={p.id} style={{ position:"relative", width:60, height:60, borderRadius:8, overflow:"hidden", border:"1px solid #D8CFBB", background:"#ECE6D7", display:"flex", alignItems:"center", justifyContent:"center" }}>
+    <div key={p.id} style={{ position:"relative", width:60, height:60, borderRadius:8, overflow:"hidden", border:"1px solid #e5e5e5", background:"#f5f5f5", display:"flex", alignItems:"center", justifyContent:"center" }}>
       {p.isImage!==false ? <img src={p.url} alt="" onClick={()=>setLightbox(p)} style={{ width:"100%", height:"100%", objectFit:"cover", cursor:"zoom-in" }} />
         : <a href={p.url} target="_blank" rel="noreferrer" style={{ fontSize:20, textDecoration:"none" }}>📄</a>}
       {onRemove && <button onClick={()=>onRemove(p.id)} style={{ position:"absolute", top:-6, right:-6, width:18, height:18, borderRadius:"50%", background:"#211C15", color:"#fff", border:"none", fontSize:11, cursor:"pointer", lineHeight:1 }}>×</button>}
@@ -5673,7 +5674,7 @@ function WorklogView({ worklog, setWorklog, canEdit, userName, requireLogin, con
     <div style={{ maxWidth: 760, margin: "16px auto", padding: "0 4px" }}>
       <div style={{ fontSize: 18, fontWeight: 600, color: "#211C15", marginBottom: 12 }}>📓 工作日誌</div>
       {canEdit ? (
-        <div style={{ background:"#fff", border:"1px solid #D8CFBB", borderRadius:12, padding:16, marginBottom:16 }}>
+        <div style={{ background:"#fff", border:"1px solid #e5e5e5", borderRadius:12, padding:16, marginBottom:16 }}>
           <input type="date" value={draftDate} onChange={e=>setDraftDate(e.target.value)} style={{ ...inputStyle, width:170, marginBottom:8 }} />
           <textarea value={draft} onChange={e=>setDraft(e.target.value)} placeholder="記錄今天的工程狀況、決策、問題…（也可在「AI顧問」對話框口述，請它幫你建立日誌）"
             style={{ ...inputStyle, width:"100%", minHeight:80, resize:"vertical", boxSizing:"border-box" }} />
@@ -5684,22 +5685,22 @@ function WorklogView({ worklog, setWorklog, canEdit, userName, requireLogin, con
           )}
           <input ref={fileRef} type="file" accept="image/*" multiple style={{ display:"none" }} onChange={e=>{ addPhotosToDraft(e.target.files); e.target.value=""; }} />
           <div style={{ display:"flex", alignItems:"center", gap:8, marginTop:8 }}>
-            <button onClick={()=>fileRef.current?.click()} disabled={uploading} style={{ background:"#EFE7D6", border:"1px solid #D8CFBB", borderRadius:8, padding:"7px 12px", cursor:"pointer", fontSize:13, color:"#4A4234" }}>{uploading?"上傳中…":"📷 附現場照片"}</button>
-            <span style={{ fontSize:11, color:"#A99F88" }}>可貼上截圖</span>
+            <button onClick={()=>fileRef.current?.click()} disabled={uploading} style={{ background:"#f0f0f0", border:"1px solid #e5e5e5", borderRadius:8, padding:"7px 12px", cursor:"pointer", fontSize:13, color:"#4A4234" }}>{uploading?"上傳中…":"📷 附現場照片"}</button>
+            <span style={{ fontSize:11, color:"#a3a3a3" }}>可貼上截圖</span>
             <div style={{ flex:1 }} />
-            <button onClick={add} disabled={!draft.trim() && draftPhotos.length===0} style={{ background: (draft.trim()||draftPhotos.length)?ACCENT:"#D8CFBB", color: (draft.trim()||draftPhotos.length)?"#ffffff":"#A99F88", border:"none", borderRadius:8, padding:"8px 18px", fontWeight: 600, cursor: (draft.trim()||draftPhotos.length)?"pointer":"not-allowed" }}>新增日誌</button>
+            <button onClick={add} disabled={!draft.trim() && draftPhotos.length===0} style={{ background: (draft.trim()||draftPhotos.length)?ACCENT:"#e5e5e5", color: (draft.trim()||draftPhotos.length)?"#ffffff":"#a3a3a3", border:"none", borderRadius:8, padding:"8px 18px", fontWeight: 600, cursor: (draft.trim()||draftPhotos.length)?"pointer":"not-allowed" }}>新增日誌</button>
           </div>
         </div>
       ) : (
-        <div style={{ background:"#F4EFE3", border:"1px solid #D8CFBB", borderRadius:10, padding:"10px 14px", marginBottom:16, fontSize:13, color:"#6F6656" }}>🔒 唯讀模式：登入後可新增 / 編輯工作日誌。</div>
+        <div style={{ background:"#f5f5f5", border:"1px solid #e5e5e5", borderRadius:10, padding:"10px 14px", marginBottom:16, fontSize:13, color:"#6F6656" }}>🔒 唯讀模式：登入後可新增 / 編輯工作日誌。</div>
       )}
       {sorted.length === 0 ? (
-        <div style={{ textAlign:"center", color:"#A99F88", padding:40 }}>尚無工作日誌</div>
+        <div style={{ textAlign:"center", color:"#a3a3a3", padding:40 }}>尚無工作日誌</div>
       ) : sorted.map(w => (
-        <div key={w.id} style={{ background:"#fff", border:"1px solid #D8CFBB", borderRadius:12, padding:14, marginBottom:10 }}>
+        <div key={w.id} style={{ background:"#fff", border:"1px solid #e5e5e5", borderRadius:12, padding:14, marginBottom:10 }}>
           <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:6 }}>
             <span style={{ fontSize:12, fontWeight: 600, color:ACCENT, fontFamily:"monospace" }}>{w.date}</span>
-            <span style={{ fontSize:11, color:"#A99F88" }}>by {w.author||"—"}</span>
+            <span style={{ fontSize:11, color:"#a3a3a3" }}>by {w.author||"—"}</span>
             <div style={{ flex:1 }} />
             {canEdit && editId !== w.id && (<>
               <button onClick={()=>{ setEditId(w.id); setEditText(w.content); }} style={wlMiniBtn}>編輯</button>
@@ -5722,7 +5723,7 @@ function WorklogView({ worklog, setWorklog, canEdit, userName, requireLogin, con
                   {(w.photos||[]).map(p => thumb(p, canEdit ? (pid)=>removeEntryPhoto(w.id, pid) : null))}
                   {canEdit && (<>
                     <input id={"wlf-"+w.id} type="file" accept="image/*" multiple style={{ display:"none" }} onChange={e=>{ addPhotosToEntry(w.id, e.target.files); e.target.value=""; }} />
-                    <button onClick={()=>document.getElementById("wlf-"+w.id)?.click()} style={{ width:60, height:60, borderRadius:8, border:"1px dashed #D8CFBB", background:"#FCFAF4", color:"#A99F88", fontSize:20, cursor:"pointer" }}>＋</button>
+                    <button onClick={()=>document.getElementById("wlf-"+w.id)?.click()} style={{ width:60, height:60, borderRadius:8, border:"1px dashed #e5e5e5", background:"#ffffff", color:"#a3a3a3", fontSize:20, cursor:"pointer" }}>＋</button>
                   </>)}
                 </div>
               )}
@@ -5742,7 +5743,7 @@ function WorklogView({ worklog, setWorklog, canEdit, userName, requireLogin, con
 // ── 檔案庫 / 相簿 ─────────────────────────────────────────────────────────────
 const PHOTO_KINDS = [["quote","估價單"],["site","現場照"],["invoice","發票"],["other","其他"]];
 const photoKindLabel = (k) => (PHOTO_KINDS.find(x=>x[0]===k)||[,"其他"])[1];
-const photoKindColor = { quote:"#3b82f6", site:"#3C8C3C", invoice:"#DC2626", other:"#A99F88" };
+const photoKindColor = { quote:"#3b82f6", site:"#3C8C3C", invoice:"#DC2626", other:"#a3a3a3" };
 function PhotoLibraryView({ photos, setPhotos, cats, canEdit, userName, requireLogin, confirm }) {
   const [kind, setKind] = useState("site");
   const [catId, setCatId] = useState("");
@@ -5818,15 +5819,15 @@ function PhotoLibraryView({ photos, setPhotos, cats, canEdit, userName, requireL
   })();
 
   const renderCard = (p) => (
-    <div key={p.id} style={{ background:"#fff", border:"1px solid #D8CFBB", borderRadius:12, overflow:"hidden", display:"flex", flexDirection:"column" }}>
-      <div style={{ position:"relative", aspectRatio:"4/3", background:"#EFE7D6", cursor: p.isImage!==false?"zoom-in":"default", display:"flex", alignItems:"center", justifyContent:"center" }} onClick={()=>{ if (p.isImage!==false) setLightbox(p); }}>
+    <div key={p.id} style={{ background:"#fff", border:"1px solid #e5e5e5", borderRadius:12, overflow:"hidden", display:"flex", flexDirection:"column" }}>
+      <div style={{ position:"relative", aspectRatio:"4/3", background:"#f0f0f0", cursor: p.isImage!==false?"zoom-in":"default", display:"flex", alignItems:"center", justifyContent:"center" }} onClick={()=>{ if (p.isImage!==false) setLightbox(p); }}>
         {p.isImage !== false
           ? <img src={p.url} alt={p.name} style={{ width:"100%", height:"100%", objectFit:"cover" }} />
           : <a href={p.url} target="_blank" rel="noreferrer" onClick={e=>e.stopPropagation()} style={{ textAlign:"center", textDecoration:"none", color:"#6F6656", padding:"0 10px" }}>
               <div style={{ fontSize:40 }}>📄</div>
               <div style={{ fontSize:11, marginTop:4, wordBreak:"break-all", maxHeight:32, overflow:"hidden" }}>{p.name}</div>
             </a>}
-        <span style={{ position:"absolute", top:6, left:6, fontSize:10, fontWeight: 600, color:"#fff", background:photoKindColor[p.kind]||"#A99F88", borderRadius:6, padding:"2px 7px" }}>{photoKindLabel(p.kind)}</span>
+        <span style={{ position:"absolute", top:6, left:6, fontSize:10, fontWeight: 600, color:"#fff", background:photoKindColor[p.kind]||"#a3a3a3", borderRadius:6, padding:"2px 7px" }}>{photoKindLabel(p.kind)}</span>
       </div>
       <div style={{ padding:"8px 10px", fontSize:12 }}>
         {editId === p.id ? (
@@ -5843,7 +5844,7 @@ function PhotoLibraryView({ photos, setPhotos, cats, canEdit, userName, requireL
         ) : (
           <>
             <div style={{ color:"#4A4234", fontWeight:600 }}>{p.catName || "（未指定工程）"}</div>
-            <div style={{ color:"#A99F88", fontSize:11, marginTop:2 }}>{p.date} · {p.by}</div>
+            <div style={{ color:"#a3a3a3", fontSize:11, marginTop:2 }}>{p.date} · {p.by}</div>
             {p.note && <div style={{ color:"#6F6656", fontSize:11, marginTop:3, whiteSpace:"pre-wrap" }}>{p.note}</div>}
             {p.kind === "invoice" && (
               <label style={{ display:"flex", alignItems:"center", gap:5, marginTop:6, fontSize:12, color:p.invoiceReceived?"#16a34a":"#dc2626", fontWeight: 600, cursor:canEdit?"pointer":"default" }}>
@@ -5867,51 +5868,51 @@ function PhotoLibraryView({ photos, setPhotos, cats, canEdit, userName, requireL
       <div style={{ fontSize:18, fontWeight: 600, color:"#211C15", marginBottom:12 }}>📁 檔案庫 / 相簿</div>
 
       {pendingInvoices > 0 && (
-        <div style={{ background:"#F3E4DE", border:"1px solid #fca5a5", borderRadius:10, padding:"8px 14px", marginBottom:12, fontSize:13, color:"#dc2626", fontWeight:600 }}>
+        <div style={{ background:"#eff6ff", border:"1px solid #fca5a5", borderRadius:10, padding:"8px 14px", marginBottom:12, fontSize:13, color:"#dc2626", fontWeight:600 }}>
           🧾 有 {pendingInvoices} 張發票尚未確認收到（請在發票卡片勾選「已收到」）
         </div>
       )}
 
       {canEdit ? (
-        <div style={{ background:"#fff", border:"1px solid #D8CFBB", borderRadius:12, padding:14, marginBottom:14, display:"flex", gap:8, flexWrap:"wrap", alignItems:"center" }}>
+        <div style={{ background:"#fff", border:"1px solid #e5e5e5", borderRadius:12, padding:14, marginBottom:14, display:"flex", gap:8, flexWrap:"wrap", alignItems:"center" }}>
           <select value={kind} onChange={e=>setKind(e.target.value)} style={selStyle}>{PHOTO_KINDS.map(([k,l])=><option key={k} value={k}>{l}</option>)}</select>
           <select value={catId} onChange={e=>setCatId(e.target.value)} style={selStyle}><option value="">（不指定工程）</option>{sortedCats.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select>
           <input type="date" value={date} onChange={e=>setDate(e.target.value)} style={selStyle} />
           <input value={note} onChange={e=>setNote(e.target.value)} placeholder="備註（選填）" style={{ ...inputStyle, flex:1, minWidth:120, padding:"6px 10px" }} />
           <input ref={fileRef} type="file" multiple style={{ display:"none" }} onChange={e=>{ onPick(e.target.files); e.target.value=""; }} />
           <button onClick={()=>fileRef.current?.click()} disabled={uploading} style={{ background:ACCENT, color:"#ffffff", border:"none", borderRadius:8, padding:"8px 16px", fontWeight: 600, cursor: uploading?"wait":"pointer" }}>{uploading?"上傳中…":"📎 上傳照片 / 檔案"}</button>
-          <span style={{ fontSize:11, color:"#A99F88", width:"100%" }}>支援照片、PDF、Excel 等檔案；也可直接 Ctrl/⌘+V 貼上截圖</span>
+          <span style={{ fontSize:11, color:"#a3a3a3", width:"100%" }}>支援照片、PDF、Excel 等檔案；也可直接 Ctrl/⌘+V 貼上截圖</span>
         </div>
       ) : (
-        <div style={{ background:"#F4EFE3", border:"1px solid #D8CFBB", borderRadius:10, padding:"10px 14px", marginBottom:14, fontSize:13, color:"#6F6656" }}>🔒 唯讀模式：登入後可上傳 / 管理圖片。</div>
+        <div style={{ background:"#f5f5f5", border:"1px solid #e5e5e5", borderRadius:10, padding:"10px 14px", marginBottom:14, fontSize:13, color:"#6F6656" }}>🔒 唯讀模式：登入後可上傳 / 管理圖片。</div>
       )}
 
       <div style={{ display:"flex", gap:6, flexWrap:"wrap", marginBottom:12, alignItems:"center" }}>
-        <span style={{ fontSize:11, color:"#A99F88" }}>類別</span>
+        <span style={{ fontSize:11, color:"#a3a3a3" }}>類別</span>
         {[["all","全部"],...PHOTO_KINDS].map(([k,l])=>(
-          <button key={k} onClick={()=>setFKind(k)} style={{ padding:"3px 10px", borderRadius:20, border:"1px solid #D8CFBB", fontSize:11, cursor:"pointer", background:fKind===k?ACCENT:"#ECE6D7", color:fKind===k?"#ffffff":"#6F6656", fontWeight:fKind===k?700:400 }}>{l}</button>
+          <button key={k} onClick={()=>setFKind(k)} style={{ padding:"3px 10px", borderRadius:20, border:"1px solid #e5e5e5", fontSize:11, cursor:"pointer", background:fKind===k?ACCENT:"#f5f5f5", color:fKind===k?"#ffffff":"#6F6656", fontWeight:fKind===k?700:400 }}>{l}</button>
         ))}
-        <span style={{ fontSize:11, color:"#A99F88", marginLeft:8 }}>工程</span>
+        <span style={{ fontSize:11, color:"#a3a3a3", marginLeft:8 }}>工程</span>
         <select value={fCat} onChange={e=>setFCat(e.target.value)} style={{ ...selStyle, fontSize:12, padding:"4px 8px" }}>
           <option value="all">全部工程</option>{sortedCats.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}
         </select>
         <div style={{ flex:1 }} />
-        <span style={{ fontSize:11, color:"#A99F88" }}>分組</span>
+        <span style={{ fontSize:11, color:"#a3a3a3" }}>分組</span>
         {[["none","不分組"],["cat","按工程"],["date","按日期"]].map(([k,l])=>(
-          <button key={k} onClick={()=>setGroupBy(k)} style={{ padding:"3px 10px", borderRadius:20, border:"1px solid #D8CFBB", fontSize:11, cursor:"pointer", background:groupBy===k?ACCENT:"#ECE6D7", color:groupBy===k?"#ffffff":"#6F6656", fontWeight:groupBy===k?700:400 }}>{l}</button>
+          <button key={k} onClick={()=>setGroupBy(k)} style={{ padding:"3px 10px", borderRadius:20, border:"1px solid #e5e5e5", fontSize:11, cursor:"pointer", background:groupBy===k?ACCENT:"#f5f5f5", color:groupBy===k?"#ffffff":"#6F6656", fontWeight:groupBy===k?700:400 }}>{l}</button>
         ))}
-        <span style={{ fontSize:12, color:"#A99F88", marginLeft:6 }}>共 {filtered.length} 張</span>
+        <span style={{ fontSize:12, color:"#a3a3a3", marginLeft:6 }}>共 {filtered.length} 張</span>
       </div>
 
       {filtered.length === 0 ? (
-        <div style={{ textAlign:"center", color:"#A99F88", padding:40 }}>尚無檔案{canEdit?"，用上方按鈕上傳或貼上截圖":""}</div>
+        <div style={{ textAlign:"center", color:"#a3a3a3", padding:40 }}>尚無檔案{canEdit?"，用上方按鈕上傳或貼上截圖":""}</div>
       ) : groups.map(g => (
         <div key={g.label || "all"} style={{ marginBottom: g.label ? 18 : 0 }}>
           {g.label && (
             <div style={{ fontSize:13, fontWeight: 600, color:"#4A4234", margin:"6px 0 8px", display:"flex", alignItems:"center", gap:8 }}>
               {groupBy==="date" ? "📅" : "🏗️"} {g.label}
-              <span style={{ fontSize:11, color:"#A99F88", fontWeight:400 }}>（{g.items.length}）</span>
-              <div style={{ height:1, flex:1, background:"#D8CFBB" }} />
+              <span style={{ fontSize:11, color:"#a3a3a3", fontWeight:400 }}>（{g.items.length}）</span>
+              <div style={{ height:1, flex:1, background:"#e5e5e5" }} />
             </div>
           )}
           <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill, minmax(180px,1fr))", gap:12 }}>
@@ -6032,7 +6033,7 @@ function AccountManager({ confirm, myId, roles = [], commitRoles, onLog, guestPe
     <button onClick={onClick} title={on ? "已開啟，點擊關閉" : "已關閉，點擊開啟"} style={{ width: 22, height: 22, borderRadius: 6, border: `1.5px solid ${on ? color : "#CFC6B0"}`, background: on ? color : "#fff", color: "#fff", cursor: "pointer", fontSize: 13, lineHeight: 1, display: "inline-flex", alignItems: "center", justifyContent: "center", padding: 0 }}>{on ? "✓" : ""}</button>
   );
   const pill = (on, label, onClick) => (
-    <button onClick={onClick} style={{ padding: "4px 12px", borderRadius: 999, border: `1px solid ${on ? "#3C8C3C" : "#D8CFBB"}`, background: on ? "#EAF3EA" : "#ECE6D7", color: on ? "#2E7D32" : "#A99F88", fontSize: 12.5, fontWeight: 700, cursor: "pointer" }}>{on ? "✓ " : ""}{label}</button>
+    <button onClick={onClick} style={{ padding: "4px 12px", borderRadius: 999, border: `1px solid ${on ? "#3C8C3C" : "#e5e5e5"}`, background: on ? "#EAF3EA" : "#f5f5f5", color: on ? "#2E7D32" : "#a3a3a3", fontSize: 12.5, fontWeight: 700, cursor: "pointer" }}>{on ? "✓ " : ""}{label}</button>
   );
 
   // 可重用矩陣：對任一實體(帳號或身份範本)渲染「每空間×每頁」勾選表。readOnly＝唯讀(顯示連動帳號的實際權限)。
@@ -6051,9 +6052,9 @@ function AccountManager({ confirm, myId, roles = [], commitRoles, onLog, guestPe
         return (
           <div key={sid} style={{ border: "1px solid #E7DFCC", borderRadius: 10, overflow: "hidden", opacity: on ? 1 : 0.6 }}>
             <div onClick={() => on && toggleSet(setOpenSp, spKey)} style={{ display: "flex", alignItems: "center", gap: 8, background: "#F7F2E7", padding: "8px 12px", cursor: on ? "pointer" : "default" }}>
-              <span style={{ fontSize: 11, color: "#A99F88", width: 10, display: "inline-block", transform: spOpen ? "rotate(90deg)" : "none", transition: "transform .15s" }}>{on ? "▸" : ""}</span>
+              <span style={{ fontSize: 11, color: "#a3a3a3", width: 10, display: "inline-block", transform: spOpen ? "rotate(90deg)" : "none", transition: "transform .15s" }}>{on ? "▸" : ""}</span>
               <div style={{ fontSize: 13.5, fontWeight: 700, color: "#211C15" }}>{slabel}</div>
-              {on && !spOpen && <span style={{ fontSize: 11.5, color: "#A99F88" }}>可見 {visN}/{rows.length}・可編輯 {editN}{hasMoney ? `・看金額 ${moneyN}` : ""}</span>}
+              {on && !spOpen && <span style={{ fontSize: 11.5, color: "#a3a3a3" }}>可見 {visN}/{rows.length}・可編輯 {editN}{hasMoney ? `・看金額 ${moneyN}` : ""}</span>}
               <div style={{ flex: 1 }} />
               {pill(on, "可進入", (e) => { e.stopPropagation(); if (!readOnly) tSpace(obj, sid, save); })}
             </div>
@@ -6070,7 +6071,7 @@ function AccountManager({ confirm, myId, roles = [], commitRoles, onLog, guestPe
                 <div style={{ overflowX: "auto" }}>
                   <div style={{ minWidth: 78 + rows.length * 46 }}>
                     {/* 表頭：頁面名稱橫向 */}
-                    <div style={{ display: "grid", gridTemplateColumns: gtc, fontSize: 11.5, fontWeight: 600, color: "#7A6F58", background: "#FCFAF4", borderBottom: sep }}>
+                    <div style={{ display: "grid", gridTemplateColumns: gtc, fontSize: 11.5, fontWeight: 600, color: "#7A6F58", background: "#ffffff", borderBottom: sep }}>
                       <div style={{ padding: "6px 8px" }} />
                       {rows.map(([pg, plabel]) => <div key={pg} style={{ padding: "6px 2px", textAlign: "center", borderLeft: sep, whiteSpace: "nowrap" }}>{plabel}</div>)}
                     </div>
@@ -6112,7 +6113,7 @@ function AccountManager({ confirm, myId, roles = [], commitRoles, onLog, guestPe
           <div style={{ background: "#FFF7F2", border: "1px solid #F0CFB8", borderRadius: 12, padding: "12px 16px", marginBottom: 18 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
               <div style={{ fontSize: 15, fontWeight: 700, color: "#211C15" }}>👁 訪客（未登入）</div>
-              <span style={{ fontSize: 12, color: "#A99F88" }}>沒登入就點連結的人能看到什麼{gMoney ? `・看得到 ${gMoney} 頁金額` : "・看不到金額"}</span>
+              <span style={{ fontSize: 12, color: "#a3a3a3" }}>沒登入就點連結的人能看到什麼{gMoney ? `・看得到 ${gMoney} 頁金額` : "・看不到金額"}</span>
               <div style={{ flex: 1 }} />
               <button onClick={() => toggleSet(setOpenAcct, "__guest__")} style={{ background: open ? "#b5512b" : "#fff", color: open ? "#fff" : "#b5512b", border: "1px solid #b5512b", borderRadius: 8, padding: "4px 12px", fontSize: 12.5, fontWeight: 600, cursor: "pointer" }}>{open ? "收合 ▴" : "設定 ▾"}</button>
             </div>
@@ -6128,20 +6129,20 @@ function AccountManager({ confirm, myId, roles = [], commitRoles, onLog, guestPe
       <div style={{ marginBottom:18 }}>
         <div style={{ display:"flex", alignItems:"center", gap:10, flexWrap:"wrap", marginBottom:8 }}>
           <div style={{ fontSize:15, fontWeight:700, color:"#211C15" }}>🧩 身份範本（連動）</div>
-          <span style={{ fontSize:12, color:"#A99F88" }}>設定一次，指派給帳號後權限自動跟著身份走</span>
+          <span style={{ fontSize:12, color:"#a3a3a3" }}>設定一次，指派給帳號後權限自動跟著身份走</span>
           <div style={{ flex:1 }} />
           <button onClick={addRole} style={{ background:"#b5512b", color:"#fff", border:"none", borderRadius:8, padding:"6px 14px", fontSize:13, fontWeight:600, cursor:"pointer" }}>＋ 新增身份</button>
         </div>
-        {roles.length === 0 ? <div style={{ fontSize:13, color:"#A99F88", padding:"6px 2px" }}>還沒有身份範本，點「＋ 新增身份」。</div> :
+        {roles.length === 0 ? <div style={{ fontSize:13, color:"#a3a3a3", padding:"6px 2px" }}>還沒有身份範本，點「＋ 新增身份」。</div> :
          roles.map(r => {
            const open = openAcct.has(r.id);
            const memberN = (list||[]).filter(p=>p.role_template===r.id).length;
            return (
-             <div key={r.id} style={{ background:"#fff", border:"1px solid #D8CFBB", borderRadius:12, padding:"10px 14px", marginBottom:8 }}>
+             <div key={r.id} style={{ background:"#fff", border:"1px solid #e5e5e5", borderRadius:12, padding:"10px 14px", marginBottom:8 }}>
                <div style={{ display:"flex", alignItems:"center", gap:10, flexWrap:"wrap" }}>
                  <div style={{ fontSize:14, fontWeight:700, color:"#211C15" }}>{r.name}</div>
-                 <span style={{ fontSize:11.5, color:"#A99F88" }}>{memberN} 人使用</span>
-                 <button onClick={()=>renameRole(r)} style={{ background:"#ECE6D7", border:"1px solid #D8CFBB", borderRadius:7, padding:"2px 9px", fontSize:11.5, color:"#6F6656", cursor:"pointer" }}>改名</button>
+                 <span style={{ fontSize:11.5, color:"#a3a3a3" }}>{memberN} 人使用</span>
+                 <button onClick={()=>renameRole(r)} style={{ background:"#f5f5f5", border:"1px solid #e5e5e5", borderRadius:7, padding:"2px 9px", fontSize:11.5, color:"#6F6656", cursor:"pointer" }}>改名</button>
                  <div style={{ flex:1 }} />
                  <button onClick={()=>toggleSet(setOpenAcct, r.id)} style={{ background: open?"#b5512b":"#fff", color: open?"#fff":"#b5512b", border:"1px solid #b5512b", borderRadius:8, padding:"4px 12px", fontSize:12.5, fontWeight:600, cursor:"pointer" }}>{open?"收合 ▴":"編輯權限 ▾"}</button>
                  <button onClick={()=>delRole(r)} title="刪除身份" style={{ background:"none", border:"none", color:"#C8BCA0", cursor:"pointer", fontSize:18 }} onMouseEnter={e=>e.currentTarget.style.color="#DC2626"} onMouseLeave={e=>e.currentTarget.style.color="#C8BCA0"}>×</button>
@@ -6153,19 +6154,19 @@ function AccountManager({ confirm, myId, roles = [], commitRoles, onLog, guestPe
       </div>
 
       {/* 新增帳號 */}
-      <div style={{ display:"flex", gap:10, alignItems:"center", marginBottom:18, flexWrap:"wrap", background:"#fff", border:"1px solid #D8CFBB", borderRadius:12, padding:14 }}>
+      <div style={{ display:"flex", gap:10, alignItems:"center", marginBottom:18, flexWrap:"wrap", background:"#fff", border:"1px solid #e5e5e5", borderRadius:12, padding:14 }}>
         <input value={nName} onChange={e=>setNName(e.target.value)} placeholder="顯示名稱（例：阿明）" style={{ ...inputStyle, width:170 }} />
         <input value={nUser} onChange={e=>setNUser(e.target.value)} placeholder="登入帳號（例：aming）" autoCapitalize="off" autoCorrect="off" style={{ ...inputStyle, width:170 }} />
         <input value={nPw} onChange={e=>setNPw(e.target.value)} type="text" placeholder="密碼（至少6碼）" style={{ ...inputStyle, width:150 }} />
         <label style={{ display:"flex", alignItems:"center", gap:6, fontSize:13, color:"#4A4234", cursor:"pointer" }}>
           <input type="checkbox" checked={nAdmin} onChange={e=>setNAdmin(e.target.checked)} /> 設為管理員
         </label>
-        <button onClick={addAcct} disabled={!nUser.trim()||!nPw||busy} style={{ background:(nUser.trim()&&nPw&&!busy)?"#b5512b":"#D8CFBB", color:(nUser.trim()&&nPw&&!busy)?"#fff":"#A99F88", border:"none", borderRadius:8, padding:"9px 18px", fontWeight: 600, cursor:(nUser.trim()&&nPw&&!busy)?"pointer":"not-allowed" }}>{busy?"建立中…":"＋ 新增帳號"}</button>
+        <button onClick={addAcct} disabled={!nUser.trim()||!nPw||busy} style={{ background:(nUser.trim()&&nPw&&!busy)?"#b5512b":"#e5e5e5", color:(nUser.trim()&&nPw&&!busy)?"#fff":"#a3a3a3", border:"none", borderRadius:8, padding:"9px 18px", fontWeight: 600, cursor:(nUser.trim()&&nPw&&!busy)?"pointer":"not-allowed" }}>{busy?"建立中…":"＋ 新增帳號"}</button>
       </div>
 
       {/* 帳號清單（卡片） */}
-      {list === null ? <div style={{ padding:30, textAlign:"center", color:"#A99F88" }}>載入中…</div>
-       : list.length === 0 ? <div style={{ padding:30, textAlign:"center", color:"#A99F88", fontSize:13 }}>尚無帳號</div>
+      {list === null ? <div style={{ padding:30, textAlign:"center", color:"#a3a3a3" }}>載入中…</div>
+       : list.length === 0 ? <div style={{ padding:30, textAlign:"center", color:"#a3a3a3", fontSize:13 }}>尚無帳號</div>
        : list.map(p => {
         const isAdm = p.role === "admin";
         const acctOpen = openAcct.has(p.id);
@@ -6174,21 +6175,21 @@ function AccountManager({ confirm, myId, roles = [], commitRoles, onLog, guestPe
         const spacesIn = ACCT_SPACES.filter(([sid]) => spaceChecked(eff, sid)).length;
         const moneyPages = ALL_MONEY_KEYS.filter(k => { const [s, g] = k.split(":"); return moneyChecked(eff, s, g); }).length;
         return (
-        <div key={p.id} style={{ background:"#fff", border:"1px solid #D8CFBB", borderRadius:12, padding:"12px 16px", marginBottom:10 }}>
+        <div key={p.id} style={{ background:"#fff", border:"1px solid #e5e5e5", borderRadius:12, padding:"12px 16px", marginBottom:10 }}>
           <div style={{ display:"flex", alignItems:"center", gap:10, flexWrap:"wrap" }}>
             <div style={{ fontSize:15, fontWeight:700, color:"#211C15" }}>{p.display_name}</div>
             <button onClick={()=>renamePerson(p)} title="改顯示名稱" style={{ background:"none", border:"none", color:"#C8BCA0", cursor:"pointer", fontSize:13, padding:0 }} onMouseEnter={e=>e.currentTarget.style.color="#b5512b"} onMouseLeave={e=>e.currentTarget.style.color="#C8BCA0"}>✎</button>
-            <div style={{ fontSize:12, color:"#A99F88" }}>{(p.email||"").split("@")[0]}</div>
-            <button onClick={()=>!isAdm||list.filter(x=>x.role==="admin").length>1 ? (patch(p.id, { role: isAdm?"staff":"admin" }), logAct("改層級", `${p.display_name}→${isAdm?"一般":"管理員"}`)) : alert("至少要保留一位管理員")} style={{ background:"#ECE6D7", border:"1px solid #D8CFBB", borderRadius:8, padding:"3px 11px", fontSize:12.5, cursor:"pointer", color:isAdm?"#b5512b":"#4A4234", fontWeight:isAdm?700:400 }}>{isAdm?"管理員":"一般"} ⇄</button>
+            <div style={{ fontSize:12, color:"#a3a3a3" }}>{(p.email||"").split("@")[0]}</div>
+            <button onClick={()=>!isAdm||list.filter(x=>x.role==="admin").length>1 ? (patch(p.id, { role: isAdm?"staff":"admin" }), logAct("改層級", `${p.display_name}→${isAdm?"一般":"管理員"}`)) : alert("至少要保留一位管理員")} style={{ background:"#f5f5f5", border:"1px solid #e5e5e5", borderRadius:8, padding:"3px 11px", fontSize:12.5, cursor:"pointer", color:isAdm?"#b5512b":"#4A4234", fontWeight:isAdm?700:400 }}>{isAdm?"管理員":"一般"} ⇄</button>
             {!isAdm && linkedRole && <span style={{ fontSize:12, fontWeight:700, color:"#2E7D32", background:"#EAF3EA", border:"1px solid #CFE3CF", borderRadius:999, padding:"2px 10px" }}>身份：{linkedRole.name}</span>}
-            {!isAdm && <span style={{ fontSize:12, color:"#A99F88" }}>可進入 {spacesIn} 空間{moneyPages?`・看金額 ${moneyPages} 頁`:""}</span>}
+            {!isAdm && <span style={{ fontSize:12, color:"#a3a3a3" }}>可進入 {spacesIn} 空間{moneyPages?`・看金額 ${moneyPages} 頁`:""}</span>}
             <div style={{ flex:1 }} />
             {!isAdm && <button onClick={()=>toggleSet(setOpenAcct, p.id)} style={{ background: acctOpen?"#b5512b":"#fff", color: acctOpen?"#fff":"#b5512b", border:"1px solid #b5512b", borderRadius:8, padding:"4px 12px", fontSize:12.5, fontWeight:600, cursor:"pointer" }}>{acctOpen?"收合權限 ▴":"設定權限 ▾"}</button>}
-            <button onClick={()=>changeUsername(p)} style={{ background:"none", border:"1px solid #D8CFBB", borderRadius:8, padding:"3px 10px", fontSize:12, color:"#6F6656", cursor:"pointer" }}>改帳號</button>
-            <button onClick={()=>resetPw(p)} style={{ background:"none", border:"1px solid #D8CFBB", borderRadius:8, padding:"3px 10px", fontSize:12, color:"#6F6656", cursor:"pointer" }}>重設密碼</button>
+            <button onClick={()=>changeUsername(p)} style={{ background:"none", border:"1px solid #e5e5e5", borderRadius:8, padding:"3px 10px", fontSize:12, color:"#6F6656", cursor:"pointer" }}>改帳號</button>
+            <button onClick={()=>resetPw(p)} style={{ background:"none", border:"1px solid #e5e5e5", borderRadius:8, padding:"3px 10px", fontSize:12, color:"#6F6656", cursor:"pointer" }}>重設密碼</button>
             {p.id !== myId && <button onClick={()=>delAcct(p)} title="刪除帳號" style={{ background:"none", border:"none", color:"#C8BCA0", cursor:"pointer", fontSize:18 }} onMouseEnter={e=>e.currentTarget.style.color="#DC2626"} onMouseLeave={e=>e.currentTarget.style.color="#C8BCA0"}>×</button>}
           </div>
-          {isAdm ? <div style={{ fontSize:13, color:"#A99F88", marginTop:6 }}>管理員：全部空間／全部頁面／可編輯全部／可看金額</div> : (acctOpen &&
+          {isAdm ? <div style={{ fontSize:13, color:"#a3a3a3", marginTop:6 }}>管理員：全部空間／全部頁面／可編輯全部／可看金額</div> : (acctOpen &&
           <div style={{ marginTop:12 }}>
             <div style={{ display:"flex", alignItems:"center", gap:8, flexWrap:"wrap" }}>
               <span style={{ fontSize:12.5, color:"#6F6656" }}>身份：</span>
@@ -6196,7 +6197,7 @@ function AccountManager({ confirm, myId, roles = [], commitRoles, onLog, guestPe
                 <option value="">自訂（這個人單獨設）</option>
                 {roles.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
               </select>
-              {linkedRole && <span style={{ fontSize:11.5, color:"#A99F88" }}>權限跟著身份走；要改請改上面的「{linkedRole.name}」身份範本。</span>}
+              {linkedRole && <span style={{ fontSize:11.5, color:"#a3a3a3" }}>權限跟著身份走；要改請改上面的「{linkedRole.name}」身份範本。</span>}
             </div>
             {linkedRole
               ? renderMatrix(linkedRole, ()=>{}, "acctRO-"+p.id, true)
@@ -6204,7 +6205,7 @@ function AccountManager({ confirm, myId, roles = [], commitRoles, onLog, guestPe
           </div>)}
         </div>);
        })}
-      <div style={{ fontSize:11.5, color:"#A99F88", marginTop:8, lineHeight:1.7 }}>
+      <div style={{ fontSize:11.5, color:"#a3a3a3", marginTop:8, lineHeight:1.7 }}>
         提示：三欄（可見／可編輯／看金額）都預設打勾＝全開，取消勾就是不給；可一路取消到「全關」。要讓「身份」「看金額」存得住，Supabase 需先有 money_pages、role_template 兩個欄位（見上次給的 SQL）。
       </div>
     </div>
@@ -6403,7 +6404,7 @@ function ImportElapsed({ startedAt }) {
   const [, tick] = useState(0);
   useEffect(() => { const t = setInterval(() => tick(n => n + 1), 1000); return () => clearInterval(t); }, []);
   const s = startedAt ? Math.floor((Date.now() - startedAt) / 1000) : 0;
-  return <span style={{ fontWeight: 400, color: "#A99F88" }}>（{s} 秒）</span>;
+  return <span style={{ fontWeight: 400, color: "#a3a3a3" }}>（{s} 秒）</span>;
 }
 // ── 零用金帳本（獨立分頁）：撥款／花費／餘額＋工種歸屬＋文字貼上匯入 ──────────────
 // ── 共用元件：日期欄（全 App 同一套；不會跳的原生選擇器）──────────────────────
@@ -6594,16 +6595,16 @@ function PettyCashView({ petty, setPetty, cats, setCats, canEdit, confirm }) {
         <div style={{ background: "#fff", border: `1px solid ${BORDER}`, borderRadius: 12, padding: 16, marginBottom: 12 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
             <div style={{ fontSize: 13.5, fontWeight: 600, color: TEXT }}>各工種零用金花費</div>
-            <span style={{ fontSize: 11.5, color: "#A99F88" }}>· 共 {catRows.length} 類 · 點分類只看該類明細 · 已併入該工種實際成本</span>
+            <span style={{ fontSize: 11.5, color: "#a3a3a3" }}>· 共 {catRows.length} 類 · 點分類只看該類明細 · 已併入該工種實際成本</span>
             {fCat !== "all" && <button onClick={() => setFCat("all")} style={{ marginLeft: "auto", border: `1px solid ${BORDER}`, background: SURFACE, color: SUB, borderRadius: 12, padding: "2px 10px", fontSize: 11.5, cursor: "pointer" }}>✕ 清除分類篩選</button>}
           </div>
           {catRows.map(([id, amt]) => {
             const cnt = spends.filter(s => (s.catId || PETTY_MISC) === id).length;
             const active = fCat === id;
             return (
-              <div key={id} onClick={() => setFCat(active ? "all" : id)} title="點一下：下方明細只看這一類（再點取消）" style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6, cursor: "pointer", background: active ? "#F4EFE3" : "transparent", borderRadius: 8, padding: "3px 6px", border: `1px solid ${active ? "#E0D6BE" : "transparent"}` }}>
-                <div style={{ width: 150, flexShrink: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: 12.5, color: active ? ACCENT : TEXT, fontWeight: active ? 700 : 500 }}>{catName(id)} <span style={{ color: "#A99F88", fontWeight: 400 }}>· {cnt}筆</span></div>
-                <div style={{ flex: 1, height: 14, background: "#EFE7D6", borderRadius: 7, overflow: "hidden" }}><div style={{ width: (amt / maxCat * 100) + "%", height: "100%", background: catColor(id), borderRadius: 7 }} /></div>
+              <div key={id} onClick={() => setFCat(active ? "all" : id)} title="點一下：下方明細只看這一類（再點取消）" style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6, cursor: "pointer", background: active ? "#f5f5f5" : "transparent", borderRadius: 8, padding: "3px 6px", border: `1px solid ${active ? "#E0D6BE" : "transparent"}` }}>
+                <div style={{ width: 150, flexShrink: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: 12.5, color: active ? ACCENT : TEXT, fontWeight: active ? 700 : 500 }}>{catName(id)} <span style={{ color: "#a3a3a3", fontWeight: 400 }}>· {cnt}筆</span></div>
+                <div style={{ flex: 1, height: 14, background: "#f0f0f0", borderRadius: 7, overflow: "hidden" }}><div style={{ width: (amt / maxCat * 100) + "%", height: "100%", background: catColor(id), borderRadius: 7 }} /></div>
                 <div style={{ width: 90, textAlign: "right", fontSize: 13, fontWeight: 600, color: TEXT, fontVariantNumeric: "tabular-nums" }}>{fmt(amt)}</div>
               </div>
             );
@@ -6620,7 +6621,7 @@ function PettyCashView({ petty, setPetty, cats, setCats, canEdit, confirm }) {
             <div style={{ fontSize: 13, color: SUB, marginBottom: 8 }}>把你整理好的明細（日期 / 內容 / 金額 / 分類）整段貼進來，一次帶入：</div>
             <textarea value={paste} onChange={e => setPaste(e.target.value)} rows={6} placeholder={"例：\n4/1 工人便當 390 生活支出\n4/26 油漆一進 11508 油漆工程\n4/2 請款2萬零用金 -20000 零用金"} style={{ width: "100%", boxSizing: "border-box", border: `1px solid ${BORDER}`, borderRadius: 8, padding: 10, fontSize: 13, fontFamily: "inherit", resize: "vertical" }} />
             <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
-              <button onClick={runParse} disabled={!paste.trim()} style={{ border: "none", background: paste.trim() ? ACCENT : "#D8CFBB", color: "#fff", borderRadius: 8, padding: "8px 18px", fontSize: 13.5, fontWeight: 600, cursor: paste.trim() ? "pointer" : "not-allowed" }}>解析</button>
+              <button onClick={runParse} disabled={!paste.trim()} style={{ border: "none", background: paste.trim() ? ACCENT : "#e5e5e5", color: "#fff", borderRadius: 8, padding: "8px 18px", fontSize: 13.5, fontWeight: 600, cursor: paste.trim() ? "pointer" : "not-allowed" }}>解析</button>
               <button onClick={() => { setShowPaste(false); setPaste(""); }} style={{ border: `1px solid ${BORDER}`, background: SURFACE, color: SUB, borderRadius: 8, padding: "8px 16px", fontSize: 13.5, cursor: "pointer" }}>收起</button>
             </div>
           </div>
@@ -6630,12 +6631,12 @@ function PettyCashView({ petty, setPetty, cats, setCats, canEdit, confirm }) {
       {/* 花費明細（專業表格：搜尋/篩選/排序/拖曳/憑證上傳） */}
       <div style={{ background: "#fff", border: `1px solid ${BORDER}`, borderRadius: 12, overflow: "hidden" }}>
         {/* 工具列 */}
-        <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 12px", background: "#ECE6D7", borderBottom: `1px solid ${BORDER}`, flexWrap: "wrap" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 12px", background: "#f5f5f5", borderBottom: `1px solid ${BORDER}`, flexWrap: "wrap" }}>
           <div style={{ fontSize: 13.5, fontWeight: 700, color: TEXT }}>花費明細</div>
           <span style={{ fontSize: 12, color: SUB }}>{viewSpends.length}/{spends.length} 筆 · 合計 {fmt(viewTotal)}</span>
           <div style={{ flex: 1 }} />
           <div style={{ position: "relative" }}>
-            <span style={{ position: "absolute", left: 8, top: "50%", transform: "translateY(-50%)", fontSize: 12, color: "#A99F88" }}>🔍</span>
+            <span style={{ position: "absolute", left: 8, top: "50%", transform: "translateY(-50%)", fontSize: 12, color: "#a3a3a3" }}>🔍</span>
             <input value={search} onChange={e => setSearch(e.target.value)} placeholder="搜尋內容/發票號/備註" style={{ width: 180, border: `1px solid ${BORDER}`, borderRadius: 7, padding: "6px 8px 6px 26px", fontSize: 12.5, background: "#fff" }} />
           </div>
           <select value={fCat} onChange={e => setFCat(e.target.value)} title="篩選工種" style={{ border: `1px solid ${fCat !== "all" ? ACCENT : BORDER}`, borderRadius: 7, padding: "6px 6px", fontSize: 12, background: "#fff", color: TEXT }}>
@@ -6672,7 +6673,7 @@ function PettyCashView({ petty, setPetty, cats, setCats, canEdit, confirm }) {
         <div style={{ overflowX: "auto" }}>
           <table style={{ borderCollapse: "collapse", width: "100%", minWidth: 1000 }}>
             <thead>
-              <tr style={{ background: "#F4EFE3", borderBottom: `1px solid #E3DAC6` }}>
+              <tr style={{ background: "#f5f5f5", borderBottom: `1px solid #E3DAC6` }}>
                 <th style={{ ...thStyle(), width: 38, textAlign: "center" }}><input type="checkbox" title="全選/取消（目前顯示的）" checked={viewSpends.length > 0 && viewSpends.every(s => selected.has(s.id))} onChange={e => { const n = new Set(selected); viewSpends.forEach(s => e.target.checked ? n.add(s.id) : n.delete(s.id)); setSelected(n); }} style={{ cursor: "pointer" }} /></th>
                 <th style={thStyle("date")} onClick={() => toggleSort("date")}>日期{sortArrow("date")}</th>
                 <th style={thStyle()}>工種</th>
@@ -6689,7 +6690,7 @@ function PettyCashView({ petty, setPetty, cats, setCats, canEdit, confirm }) {
             </thead>
             <tbody>
               {viewSpends.length === 0 ? (
-                <tr><td colSpan={13} style={{ padding: 20, textAlign: "center", color: "#A99F88", fontSize: 13 }}>{spends.length ? "沒有符合條件的資料" : "尚無花費；可用上方「貼上整批花費明細」一次帶入，或按「＋ 新增」。"}</td></tr>
+                <tr><td colSpan={13} style={{ padding: 20, textAlign: "center", color: "#a3a3a3", fontSize: 13 }}>{spends.length ? "沒有符合條件的資料" : "尚無花費；可用上方「貼上整批花費明細」一次帶入，或按「＋ 新增」。"}</td></tr>
               ) : viewSpends.map(s => (
                 <tr key={s.id}
                   draggable={manualOrder}
@@ -6697,7 +6698,7 @@ function PettyCashView({ petty, setPetty, cats, setCats, canEdit, confirm }) {
                   onDragOver={e => { if (manualOrder && dragId) { e.preventDefault(); setDragOverId(s.id); } }}
                   onDrop={() => { if (manualOrder && dragId) { reorderSpend(dragId, s.id); setDragId(null); setDragOverId(null); } }}
                   onDragEnd={() => { setDragId(null); setDragOverId(null); }}
-                  style={{ borderBottom: "1px solid #EFE7D6", background: selected.has(s.id) ? "#FFF7E6" : (dragOverId === s.id ? "#F3E4DE" : "transparent") }}>
+                  style={{ borderBottom: "1px solid #f0f0f0", background: selected.has(s.id) ? "#FFF7E6" : (dragOverId === s.id ? "#eff6ff" : "transparent") }}>
                   <td style={{ textAlign: "center", whiteSpace: "nowrap" }}><input type="checkbox" checked={selected.has(s.id)} onChange={e => toggleSel(s.id, e.target.checked)} style={{ cursor: "pointer", verticalAlign: "middle" }} />{manualOrder && <span title="拖曳排序" style={{ color: "#C8BCA0", cursor: "grab", fontSize: 12, marginLeft: 3 }}>⠿</span>}</td>
                   <td style={{ padding: 3 }}><DateField value={s.date} onChange={v => setSpend(s.id, "date", v)} style={{ width: 134, padding: "5px 6px", fontSize: 12.5 }} /></td>
                   <td style={{ padding: 3 }}>
@@ -6708,7 +6709,7 @@ function PettyCashView({ petty, setPetty, cats, setCats, canEdit, confirm }) {
                   <td style={{ padding: 3, minWidth: 200 }}><input value={s.content || ""} onChange={e => setSpend(s.id, "content", e.target.value)} placeholder="花費內容" style={{ width: "100%", boxSizing: "border-box", border: `1px solid ${BORDER}`, borderRadius: 5, padding: "5px 7px", fontSize: 13 }} /></td>
                   <td style={{ padding: 3 }}><input type="number" value={s.amount || ""} onChange={e => setSpend(s.id, "amount", Math.abs(Math.round(Number(e.target.value) || 0)))} style={{ width: 88, textAlign: "right", border: `1px solid ${BORDER}`, borderRadius: 5, padding: "5px 7px", fontSize: 13, fontVariantNumeric: "tabular-nums" }} /></td>
                   <td style={{ padding: 3 }}>
-                    <select value={s.voucher || ""} onChange={e => setSpend(s.id, "voucher", e.target.value)} style={{ border: `1px solid ${voucherColor(s.voucher)}`, color: s.voucher ? "#fff" : "#A99F88", fontWeight: 600, borderRadius: 8, padding: "4px 6px", fontSize: 12, background: s.voucher ? voucherColor(s.voucher) : "#fff" }}>
+                    <select value={s.voucher || ""} onChange={e => setSpend(s.id, "voucher", e.target.value)} style={{ border: `1px solid ${voucherColor(s.voucher)}`, color: s.voucher ? "#fff" : "#a3a3a3", fontWeight: 600, borderRadius: 8, padding: "4px 6px", fontSize: 12, background: s.voucher ? voucherColor(s.voucher) : "#fff" }}>
                       {VOUCHER_OPTS.map(o => <option key={o[0]} value={o[0]} style={{ color: "#000", background: "#fff" }}>{o[1]}</option>)}
                     </select>
                   </td>
@@ -6728,18 +6729,18 @@ function PettyCashView({ petty, setPetty, cats, setCats, canEdit, confirm }) {
 
       {/* 撥款紀錄（移到最下面，不再夾在花費圖表與明細中間）*/}
       <div style={{ background: "#fff", border: `1px solid ${BORDER}`, borderRadius: 12, overflow: "hidden", marginTop: 14 }}>
-        <div style={{ display: "flex", alignItems: "center", padding: "10px 14px", background: "#ECE6D7", borderBottom: `1px solid ${BORDER}` }}>
-          <div style={{ fontSize: 13.5, fontWeight: 600, color: TEXT, flex: 1 }}>撥款紀錄（請款）· {advances.length} 筆<span style={{ fontSize: 11.5, color: "#A99F88", fontWeight: 400 }}>　公司撥現金給工地（不計工程成本）</span></div>
+        <div style={{ display: "flex", alignItems: "center", padding: "10px 14px", background: "#f5f5f5", borderBottom: `1px solid ${BORDER}` }}>
+          <div style={{ fontSize: 13.5, fontWeight: 600, color: TEXT, flex: 1 }}>撥款紀錄（請款）· {advances.length} 筆<span style={{ fontSize: 11.5, color: "#a3a3a3", fontWeight: 400 }}>　公司撥現金給工地（不計工程成本）</span></div>
           <button onClick={addAdv} style={{ border: `1px solid ${BORDER}`, background: "#fff", color: TEXT, borderRadius: 7, padding: "4px 12px", fontSize: 12.5, cursor: "pointer" }}>＋ 新增撥款</button>
         </div>
-        {advances.length === 0 ? <div style={{ padding: 16, textAlign: "center", color: "#A99F88", fontSize: 13 }}>尚無撥款紀錄</div> : advances.map(a => (
+        {advances.length === 0 ? <div style={{ padding: 16, textAlign: "center", color: "#a3a3a3", fontSize: 13 }}>尚無撥款紀錄</div> : advances.map(a => (
           <div key={a.id}
             draggable
             onDragStart={() => setAdvDragId(a.id)}
             onDragOver={e => { if (advDragId) { e.preventDefault(); setAdvDragOverId(a.id); } }}
             onDrop={() => { if (advDragId) { reorderAdv(advDragId, a.id); setAdvDragId(null); setAdvDragOverId(null); } }}
             onDragEnd={() => { setAdvDragId(null); setAdvDragOverId(null); }}
-            style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 14px", borderBottom: `1px solid #EFE7D6`, background: advDragOverId === a.id ? "#F3E4DE" : "transparent" }}>
+            style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 14px", borderBottom: `1px solid #f0f0f0`, background: advDragOverId === a.id ? "#eff6ff" : "transparent" }}>
             <span title="拖曳排序" style={{ color: "#C8BCA0", cursor: "grab", fontSize: 13, flexShrink: 0 }}>⠿</span>
             <DateField value={a.date} onChange={v => setAdv(a.id, "date", v)} style={{ width: 140 }} />
             {cellInput(a.note || "", v => setAdv(a.id, "note", v), { ph: "說明（請款）" })}
@@ -6751,7 +6752,7 @@ function PettyCashView({ petty, setPetty, cats, setCats, canEdit, confirm }) {
         {advances.length > 0 && <button onClick={addAdv} style={{ width: "100%", textAlign: "left", padding: "10px 14px", border: "none", borderTop: `1px dashed ${BORDER}`, background: "#FBF7EE", color: ACCENT, fontSize: 12.5, fontWeight: 600, cursor: "pointer" }}>＋ 在這裡新增一筆撥款</button>}
       </div>
 
-      <div style={{ fontSize: 11.5, color: "#A99F88", marginTop: 10, lineHeight: 1.7 }}>※ 點欄位標題（日期／金額）可排序；清空搜尋/篩選後可拖曳 ⠿ 排序。憑證檔可按「＋」上傳，或在該格直接貼上截圖。請款（撥款）不算工程成本；花費已依工種併入各大項實際成本。</div>
+      <div style={{ fontSize: 11.5, color: "#a3a3a3", marginTop: 10, lineHeight: 1.7 }}>※ 點欄位標題（日期／金額）可排序；清空搜尋/篩選後可拖曳 ⠿ 排序。憑證檔可按「＋」上傳，或在該格直接貼上截圖。請款（撥款）不算工程成本；花費已依工種併入各大項實際成本。</div>
 
       {/* AI 歸類預覽：自動建議工種 → 確認/調整 → 套用 */}
       {classify && (
@@ -6767,7 +6768,7 @@ function PettyCashView({ petty, setPetty, cats, setCats, canEdit, confirm }) {
             ) : (() => {
               const changed = classify.rows.filter(r => r.sug !== r.old).length;
               return (<>
-                <div style={{ padding: "10px 18px", borderBottom: `1px solid ${BORDER}`, fontSize: 12.5, color: SUB }}>共 {classify.rows.length} 筆，AI 建議調整 <b style={{ color: ACCENT }}>{changed}</b> 筆。<span style={{ color: "#A99F88" }}>不對的用右邊下拉改，確認後一次套用。</span></div>
+                <div style={{ padding: "10px 18px", borderBottom: `1px solid ${BORDER}`, fontSize: 12.5, color: SUB }}>共 {classify.rows.length} 筆，AI 建議調整 <b style={{ color: ACCENT }}>{changed}</b> 筆。<span style={{ color: "#a3a3a3" }}>不對的用右邊下拉改，確認後一次套用。</span></div>
                 <div style={{ flex: 1, overflowY: "auto", padding: "4px 18px" }}>
                   {classify.rows.map(r => {
                     const isChanged = r.sug !== r.old;
@@ -6775,7 +6776,7 @@ function PettyCashView({ petty, setPetty, cats, setCats, canEdit, confirm }) {
                       <div key={r.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 0", borderBottom: "1px solid #F2ECDD", background: isChanged ? "#FBF7EE" : "transparent" }}>
                         <span style={{ flex: 1, fontSize: 13, color: TEXT, minWidth: 100 }}>{r.content}</span>
                         <span style={{ width: 70, textAlign: "right", fontSize: 12.5, color: SUB, fontVariantNumeric: "tabular-nums" }}>{fmt(r.amount)}</span>
-                        <span style={{ width: 92, fontSize: 11.5, color: "#A99F88", textAlign: "right", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{catName(r.old)}</span>
+                        <span style={{ width: 92, fontSize: 11.5, color: "#a3a3a3", textAlign: "right", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{catName(r.old)}</span>
                         <span style={{ color: isChanged ? ACCENT : "#C8BCA0", fontSize: 13 }}>→</span>
                         <select value={r.sug} onChange={e => setClassifyRow(r.id, e.target.value)} style={{ width: 150, border: `1px solid ${isChanged ? ACCENT : BORDER}`, borderRadius: 7, padding: "5px 6px", fontSize: 12.5, background: "#fff", color: isChanged ? ACCENT : TEXT, fontWeight: isChanged ? 700 : 400 }}>
                           {cats.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}<option value={PETTY_MISC}>（未歸類）</option>
@@ -7023,9 +7024,9 @@ function GlobalAIPanel({ chat, setChat, onClose, cats, setCats, canEdit, confirm
 
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", zIndex: 500, display: "flex", alignItems: "flex-end", justifyContent: "flex-end" }} onClick={e => e.target === e.currentTarget && onClose()}>
-      <div style={{ width: "min(480px,100vw)", height: "min(680px,90vh)", background: "#ffffff", borderRadius: "16px 0 0 16px", display: "flex", flexDirection: "column", border: "1px solid #D8CFBB", borderRight: "none" }}>
-        <div style={{ padding: "14px 16px", borderBottom: "1px solid #D8CFBB", display: "flex", alignItems: "center", gap: 10 }}>
-          <div style={{ width: 36, height: 36, borderRadius: "50%", background: "#F3E4DE", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18, border: `1px solid ${ACCENT}44` }}>🤖</div>
+      <div style={{ width: "min(480px,100vw)", height: "min(680px,90vh)", background: "#ffffff", borderRadius: "16px 0 0 16px", display: "flex", flexDirection: "column", border: "1px solid #e5e5e5", borderRight: "none" }}>
+        <div style={{ padding: "14px 16px", borderBottom: "1px solid #e5e5e5", display: "flex", alignItems: "center", gap: 10 }}>
+          <div style={{ width: 36, height: 36, borderRadius: "50%", background: "#eff6ff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18, border: `1px solid ${ACCENT}44` }}>🤖</div>
           <div>
             <div style={{ fontSize: 14, fontWeight: 600, color: "#211C15" }}>工程AI顧問</div>
             <div style={{ fontSize: 11, color: "#6F6656" }}>GROUN:D 專案</div>
@@ -7036,10 +7037,10 @@ function GlobalAIPanel({ chat, setChat, onClose, cats, setCats, canEdit, confirm
         <div style={{ flex: 1, overflowY: "auto", padding: 14 }}>
           {chat.map((m, i) => (
             <div key={i} style={{ marginBottom: 12, display: "flex", gap: 8, flexDirection: m.role === "user" ? "row-reverse" : "row" }}>
-              <div style={{ width: 30, height: 30, borderRadius: "50%", background: m.role === "user" ? "#3E72A8" : "#F3E4DE", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, flexShrink: 0 }}>
+              <div style={{ width: 30, height: 30, borderRadius: "50%", background: m.role === "user" ? "#3E72A8" : "#eff6ff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, flexShrink: 0 }}>
                 {m.role === "user" ? "👤" : "🤖"}
               </div>
-              <div style={{ background: m.role === "user" ? ACCENT : "#EFE7D6", border: "none", borderRadius: 12, padding: "10px 13px", maxWidth: "85%", fontSize: 13, lineHeight: 1.7, color: m.role === "user" ? "#ffffff" : "#211C15", whiteSpace: "pre-wrap" }}>
+              <div style={{ background: m.role === "user" ? ACCENT : "#f0f0f0", border: "none", borderRadius: 12, padding: "10px 13px", maxWidth: "85%", fontSize: 13, lineHeight: 1.7, color: m.role === "user" ? "#ffffff" : "#211C15", whiteSpace: "pre-wrap" }}>
                 {m.text}
                 <div style={{ fontSize: 10, color: "#6F6656", marginTop: 4 }}>{m.ts}</div>
               </div>
@@ -7047,7 +7048,7 @@ function GlobalAIPanel({ chat, setChat, onClose, cats, setCats, canEdit, confirm
           ))}
           {loading && (
             <div style={{ display: "flex", gap: 8 }}>
-              <div style={{ width: 30, height: 30, borderRadius: "50%", background: "#F3E4DE", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14 }}>🤖</div>
+              <div style={{ width: 30, height: 30, borderRadius: "50%", background: "#eff6ff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14 }}>🤖</div>
               <div style={{ fontSize: 13, color: ACCENT, padding: "9px 12px" }}>顧問分析中…</div>
             </div>
           )}
@@ -7056,7 +7057,7 @@ function GlobalAIPanel({ chat, setChat, onClose, cats, setCats, canEdit, confirm
         {/* quick prompts */}
         <div style={{ padding: "0 14px 8px", display: "flex", gap: 6, overflowX: "auto" }}>
           {["⚠️ 當前風險摘要","📋 未完成待辦","💰 預算差異分析","📅 建議工序安排"].map(q => (
-            <button key={q} onClick={() => { setInput(q); setTimeout(() => document.getElementById("global-input")?.focus(),0); }} style={{ whiteSpace: "nowrap", background: "#EFE7D6", border: "1px solid #D8CFBB", color: "#6F6656", borderRadius: 20, padding: "4px 10px", fontSize: 11, cursor: "pointer" }}>{q}</button>
+            <button key={q} onClick={() => { setInput(q); setTimeout(() => document.getElementById("global-input")?.focus(),0); }} style={{ whiteSpace: "nowrap", background: "#f0f0f0", border: "1px solid #e5e5e5", color: "#6F6656", borderRadius: 20, padding: "4px 10px", fontSize: 11, cursor: "pointer" }}>{q}</button>
           ))}
         </div>
         <div style={{ padding: "0 14px 14px" }}>
@@ -7064,7 +7065,7 @@ function GlobalAIPanel({ chat, setChat, onClose, cats, setCats, canEdit, confirm
             <div style={{ marginBottom: 8 }}>
               <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 6 }}>
                 {attachments.map(a => (
-                  <div key={a.id} style={{ position: "relative", width: 54, height: 54, borderRadius: 8, overflow: "hidden", border: "1px solid #D8CFBB", background: "#ECE6D7", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                  <div key={a.id} style={{ position: "relative", width: 54, height: 54, borderRadius: 8, overflow: "hidden", border: "1px solid #e5e5e5", background: "#f5f5f5", display: "flex", alignItems: "center", justifyContent: "center" }}>
                     {a.kind === "image"
                       ? <img src={a.preview} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
                       : <span style={{ fontSize: 10, color: "#6F6656", textAlign: "center" }}>📄<br/>PDF</span>}
@@ -7078,7 +7079,7 @@ function GlobalAIPanel({ chat, setChat, onClose, cats, setCats, canEdit, confirm
           <div style={{ display: "flex", gap: 8, alignItems: "flex-end" }}>
             <input ref={fileRef} type="file" accept="image/*,application/pdf" multiple style={{ display: "none" }} onChange={e => { addFiles(e.target.files); e.target.value = ""; }} />
             <input ref={importFileRef} type="file" accept="image/*,application/pdf" multiple style={{ display: "none" }} onChange={e => { startImport(e.target.files); e.target.value = ""; }} />
-            <button onClick={() => fileRef.current?.click()} title="一般上傳（對話用）" style={{ background: "#EFE7D6", border: "1px solid #D8CFBB", borderRadius: 8, padding: "0 12px", height: 40, cursor: "pointer", fontSize: 16, color: "#4A4234", flexShrink: 0 }}>📎</button>
+            <button onClick={() => fileRef.current?.click()} title="一般上傳（對話用）" style={{ background: "#f0f0f0", border: "1px solid #e5e5e5", borderRadius: 8, padding: "0 12px", height: 40, cursor: "pointer", fontSize: 16, color: "#4A4234", flexShrink: 0 }}>📎</button>
             {canEdit && <button onClick={() => importFileRef.current?.click()} title="報價單結構化匯入（解析→預覽→確認）" style={{ background: "#F0FDF4", border: "1px solid #3C8C3C", borderRadius: 8, padding: "0 10px", height: 40, cursor: "pointer", fontSize: 12.5, fontWeight: 600, color: "#3C8C3C", flexShrink: 0, whiteSpace: "nowrap" }}>📋 報價單</button>}
             <textarea id="global-input" value={input} onChange={e => setInput(e.target.value)} onPaste={onPaste} rows={2} onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); send(); } }} placeholder="輸入、貼上截圖，或上傳估價單…（Enter 送出 · Shift+Enter 換行）" style={{ ...inputStyle, flex: 1, margin: 0, resize: "vertical", height: "auto", maxHeight: 160, overflowY: "auto", lineHeight: 1.5, fontFamily: "inherit" }} />
             <button onClick={send} disabled={loading || (!input.trim() && attachments.length === 0)} style={{ background: ACCENT, border: "none", borderRadius: 8, padding: "0 16px", height: 40, color: "#ffffff", fontWeight: 600, cursor: loading ? "not-allowed" : "pointer", fontSize: 14, opacity: loading ? 0.6 : 1, flexShrink: 0 }}>送</button>
@@ -7110,7 +7111,7 @@ function GlobalAIPanel({ chat, setChat, onClose, cats, setCats, canEdit, confirm
                 <span style={{ fontSize: 13, color: SUB }}>單據日期：</span>
                 <input type="date" value={imp.date || ""} onChange={e => setImp({ ...imp, date: e.target.value })} title="會填到各細項的付款日（可改）" style={{ border: `1px solid ${imp.date ? BORDER : "#C2872E"}`, borderRadius: 8, padding: "5px 8px", fontSize: 13, background: "#fff", color: TEXT }} />
                 <span style={{ fontSize: 12, color: SUB }}>共 {imp.rows.length} 筆，勾選 {imp.rows.filter(r=>r.pick).length} 筆</span>
-                <div style={{ fontSize: 11, color: "#A99F88" }}>※ 數字照單據原值、不換算；可直接修改</div>
+                <div style={{ fontSize: 11, color: "#a3a3a3" }}>※ 數字照單據原值、不換算；可直接修改</div>
               </div>
               <div style={{ flex: 1, overflow: "auto", padding: "8px 12px" }}>
                 <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
@@ -7164,7 +7165,7 @@ function SidePanel({ onClose, children, wide }) {
       <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", zIndex: 400, display: "flex", alignItems: "flex-end" }} onClick={e => e.target === e.currentTarget && onClose()}>
         <div style={{ width: "100%", maxHeight: "90vh", background: "#fff", borderTopLeftRadius: 18, borderTopRightRadius: 18, overflowY: "auto", display: "flex", flexDirection: "column", animation: "sheetUp .22s ease", transform: dragY ? `translateY(${dragY}px)` : "none", transition: dragY ? "none" : "transform .2s", paddingBottom: "env(safe-area-inset-bottom)", boxShadow: "0 -8px 30px rgba(0,0,0,0.25)" }}>
           <div onClick={onClose} onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd} title="下拉或點此關閉" style={{ padding: "11px 0 7px", display: "flex", justifyContent: "center", cursor: "pointer", position: "sticky", top: 0, background: "#fff", zIndex: 10, touchAction: "none", borderTopLeftRadius: 18, borderTopRightRadius: 18 }}>
-            <div style={{ width: 42, height: 5, borderRadius: 3, background: "#D8CFBB" }} />
+            <div style={{ width: 42, height: 5, borderRadius: 3, background: "#e5e5e5" }} />
           </div>
           <div style={{ padding: "2px 16px 20px", flex: 1 }}>{children}</div>
         </div>
@@ -7174,8 +7175,8 @@ function SidePanel({ onClose, children, wide }) {
 
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.35)", zIndex: 400, display: "flex", justifyContent: "flex-end" }} onClick={e => e.target === e.currentTarget && onClose()}>
-      <div style={{ width: wide ? "min(600px,100vw)" : "min(440px,100vw)", background: "#ffffff", height: "100vh", overflowY: "auto", borderLeft: "1px solid #D8CFBB", display: "flex", flexDirection: "column" }}>
-        <div style={{ padding: "8px 16px", borderBottom: "1px solid #D8CFBB", display: "flex", alignItems: "center", justifyContent: "flex-end", position: "sticky", top: 0, background: "#ffffff", zIndex: 10 }}>
+      <div style={{ width: wide ? "min(600px,100vw)" : "min(440px,100vw)", background: "#ffffff", height: "100vh", overflowY: "auto", borderLeft: "1px solid #e5e5e5", display: "flex", flexDirection: "column" }}>
+        <div style={{ padding: "8px 16px", borderBottom: "1px solid #e5e5e5", display: "flex", alignItems: "center", justifyContent: "flex-end", position: "sticky", top: 0, background: "#ffffff", zIndex: 10 }}>
           <button onClick={onClose} style={{ background: "none", border: "none", color: "#4A4234", cursor: "pointer", fontSize: 22, lineHeight: 1 }}>×</button>
         </div>
         <div style={{ padding: 16, flex: 1 }}>{children}</div>
@@ -7248,8 +7249,8 @@ function Field({ label, value, onChange, type, readOnly, accent, prefix, suffix,
 }
 
 const inputStyle = {
-  background: "#EFE7D6",
-  border: "1px solid #D8CFBB",
+  background: "#f0f0f0",
+  border: "1px solid #e5e5e5",
   borderRadius: 8,
   color: "#211C15",
   padding: "7px 10px",

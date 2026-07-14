@@ -6,7 +6,7 @@ import { useState, useEffect, useMemo, useRef } from "react";
 import { fmt } from "../lib/cost.js";
 import { parseNum, blankZero } from "../lib/num.js";
 
-const C = { text: "#1C1A17", sub: "#6B6456", faint: "#A8A08D", line: "#E4DDCB", soft: "#F1ECDD", bg: "#FBF9F3", card: "#FFFFFF", head: "#F6F2E8", accent: "#2E7D32", red: "#C0392B", blue: "#3E72A8", amber: "#C2872E", brand: "#b5512b" };
+const C = { text: "#171717", sub: "#737373", faint: "#a3a3a3", line: "#e5e5e5", soft: "#f5f5f5", bg: "#fafafa", card: "#FFFFFF", head: "#fafafa", accent: "#16a34a", red: "#dc2626", blue: "#2563eb", amber: "#d97706", brand: "#2563eb" };
 const ACC_TYPES = [["bank", "銀行"], ["company", "公司帳戶"], ["cash", "現金"], ["petty", "零用金"], ["loan", "貸款"]];
 const KINDS = [["expense", "支出", C.red], ["transfer", "轉帳", "#3E72A8"], ["income", "收入", C.accent]];
 const typeLabel = (t) => (ACC_TYPES.find(x => x[0] === t) || [, "—"])[1];
@@ -276,7 +276,7 @@ export default function FinanceView({ K, confirm, canEdit, ReceiptUploader, onLo
                 </div>
                 {rows.length === 0 ? <div style={{ padding: 22, textAlign: "center", color: C.faint, fontSize: 13 }}>沒有符合的交易，點「＋ 新增交易」或「📥 批量匯入」</div> :
                  rows.map((l, i) => { const km = kindMeta(l.kind); const rb = single ? running[l.id] : null; return (
-                  <div key={l.id} style={{ display: "grid", gridTemplateColumns: gtc, alignItems: "center", background: i % 2 ? "#FBFAF5" : C.card, borderTop: "1px solid #F1ECDD" }}>
+                  <div key={l.id} style={{ display: "grid", gridTemplateColumns: gtc, alignItems: "center", background: i % 2 ? "#fafafa" : C.card, borderTop: "1px solid #f5f5f5" }}>
                     <input type="date" value={String(l.date || "").replace(/\//g, "-").slice(0, 10)} onChange={e => updLed(l.id, "date", e.target.value)} style={{ ...cellI, ...dateInp, fontSize: 12 }} />
                     <select value={l.kind} onChange={e => updLed(l.id, "kind", e.target.value)} style={{ ...cellI, color: km[2], fontWeight: 700, padding: "6px 2px" }}>{KINDS.map(([v, lb]) => <option key={v} value={v}>{lb}</option>)}</select>
                     <input value={blankZero(l.amount)} onChange={e => updLed(l.id, "amount", num(e.target.value))} type="number" placeholder="0" style={{ ...cellI, fontFamily: "ui-monospace, monospace", fontWeight: 700, textAlign: "right", color: km[2] }} />

@@ -4,7 +4,7 @@
 // App 以 props 傳 K / confirm / canEdit / cats(隸屬) / userName / onLog。
 import { useState, useEffect } from "react";
 
-const C = { text: "#211C15", sub: "#6F6656", faint: "#A99F88", line: "#D8CFBB", soft: "#F1ECDD", bg: "#FCFAF4", card: "#FFFFFF", head: "#F6F2E8", accent: "#C13A22", green: "#3C8C3C", soft2: "#F3E4DE" };
+const C = { text: "#171717", sub: "#737373", faint: "#a3a3a3", line: "#e5e5e5", soft: "#f5f5f5", bg: "#fafafa", card: "#FFFFFF", head: "#fafafa", accent: "#2563eb", green: "#16a34a", soft2: "#eff6ff" };
 const rid = () => "cc-" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
 const today = () => new Date().toISOString().slice(0, 10);
 const dnorm = (v) => String(v ?? "").replace(/\//g, "-").slice(0, 10);
