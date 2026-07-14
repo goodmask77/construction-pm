@@ -2,6 +2,8 @@
 // 需要環境變數：LINE_CHANNEL_SECRET、LINE_CHANNEL_ACCESS_TOKEN（新）；ANTHROPIC_API_KEY、SUPABASE_URL、SUPABASE_SERVICE_ROLE_KEY（本專案已有）。
 // LINE 後台 Webhook URL 設成： https://<本專案網域>/api/line-webhook
 import crypto from 'crypto'
+// Task Object v2：與前端共用同一份資料模型（保證 Bot / Front-end 的 Task shape 一致）
+import { normalizePatch, mergeTask, isWaiting, isBlocked } from '../src/tasks/taskModel.js'
 
 const clean = (v) => (v || '').trim().replace(/^["']|["']$/g, '').replace(/^[A-Za-z0-9_]+=/, '').trim()
 const SECRET = clean(process.env.LINE_CHANNEL_SECRET)
@@ -245,6 +247,33 @@ const BOT_PERSONA = `你是「D哥」，喬亞國際餐飲團隊的 LINE 小幫�
 - 如果對話中出現「值得長期記住」的重要事實（某人負責什麼、聯絡方式、分工窗口、老闆的偏好或固定要求、專案的重要約定…），在你回覆的「最後」另起一行用這個格式標記：[[記住:該事實]]（可多行、每行一件、寫簡短）。只標真正值得長期記的，瑣事不要標。這個標記使用者看不到，是給系統存進你的長期記事本用的。`
 const SYS_DATA_HEAD = '\n\n────────\n【你目前掌握的即時資料】\n'
 
+// 任務中心（pm_tasks，Task v2 全欄位）→ 文字。D哥 讀任務一律以這份為準（完整、含衍生狀態）
+async function loadTasksText() {
+  try {
+    const m = await kvGetMany(['pm_tasks', 'pm_data'])
+    const tasks = Array.isArray(m['pm_tasks']) ? m['pm_tasks'] : []
+    if (!tasks.length) return ''
+    const cats = Array.isArray(m['pm_data']) ? m['pm_data'] : []
+    const catName = (id) => (!id || id === '__inbox__') ? '收件匣' : ((cats.find(c => c.id === id) || {}).name || '收件匣')
+    const SL = { todo: '待辦', doing: '進行中', done: '完成' }
+    const lines = [`\n\n【任務中心（共 ${tasks.length} 件，可用 add_task / update_task 操作）】`]
+    tasks.forEach(t => {
+      const bits = [`[${SL[t.status] || t.status}] ${t.title}（${catName(t.catId)}）`]
+      if (t.due) bits.push(`截止${t.due}`)
+      if (t.owner) bits.push(`負責:${t.owner}`)
+      if (isWaiting(t)) bits.push(`等待中:${t.waitingFor}`)
+      if (t.estimatedMinutes != null) bits.push(`預估${t.estimatedMinutes}分`)
+      const deps = (t.dependsOn || []).map(id => { const d = tasks.find(x => x.id === id); return d ? d.title : '(失效引用)' })
+      if (deps.length) bits.push(`依賴:${deps.join('、')}`)
+      if (isBlocked(t, tasks)) bits.push('⛔被前置任務卡住')
+      if (t.priority === 'urgent') bits.push('超急')
+      if ((t.tags || []).length) bits.push(`#${t.tags.join(' #')}`)
+      lines.push('  - ' + bits.join('｜'))
+    })
+    return lines.join('\n')
+  } catch (_) { return '' }
+}
+
 // 公開結論（團隊定案，現行版）→ 文字
 async function loadConclusionsText() {
   try {
@@ -257,9 +286,9 @@ async function loadConclusionsText() {
   } catch (_) { return '' }
 }
 
-async function answer(question, snaps, accountsText, financeText, activityText, estimatesText, crewText, canAct, history, memoryText, conclusionsText) {
+async function answer(question, snaps, accountsText, financeText, activityText, estimatesText, crewText, canAct, history, memoryText, conclusionsText, tasksText) {
   if (!ANTHROPIC) return '（D哥的 AI 金鑰尚未設定。）'
-  const system = (canAct ? BOT_AGENT_GUIDE + '\n\n' : '') + BOT_PERSONA + (memoryText || '') + SYS_DATA_HEAD + snapshotsToContext(snaps) + (accountsText || '') + (financeText || '') + (activityText || '') + (estimatesText || '') + (crewText || '') + (conclusionsText || '')
+  const system = (canAct ? BOT_AGENT_GUIDE + '\n\n' : '') + BOT_PERSONA + (memoryText || '') + SYS_DATA_HEAD + snapshotsToContext(snaps) + (tasksText || '') + (accountsText || '') + (financeText || '') + (activityText || '') + (estimatesText || '') + (crewText || '') + (conclusionsText || '')
   const messages = [...(Array.isArray(history) ? history : []), { role: 'user', content: question }]
   const callModel = async (model) => {
     const r = await fetch('https://api.anthropic.com/v1/messages', {
@@ -288,6 +317,12 @@ const bid = (p) => p + Date.now().toString(36) + Math.random().toString(36).slic
 const fmtNT = (n) => 'NT$' + (Math.round(Number(n) || 0)).toLocaleString()
 const findCat = (cats, q) => { if (!q) return null; return cats.find(c => c.name === q) || cats.find(c => c.name && (c.name.includes(q) || q.includes(c.name))) }
 const findItem = (cat, q) => { if (!cat || !q) return null; const its = cat.items || []; return its.find(i => i.name === q) || its.find(i => i.name && (i.name.includes(q) || q.includes(i.name))) }
+// 任務：用標題(或id)找；精準優先、再模糊
+const findTask = (tasks, q) => { if (!q) return null; return tasks.find(t => t.id === q) || tasks.find(t => t.title === q) || tasks.find(t => t.title && (t.title.includes(q) || q.includes(t.title))) }
+// dependsOn：Bot 端收到「標題或 id」→ 一律換成 Task ID 存（storage 永遠存 id）
+const resolveDeps = (list, tasks) => (Array.isArray(list) ? list : []).map(q => { const d = findTask(tasks, q); return d ? d.id : null }).filter(Boolean)
+const TASK_STATUS = { '待辦': 'todo', 'todo': 'todo', '進行中': 'doing', '施工中': 'doing', 'doing': 'doing', '完成': 'done', '完工': 'done', 'done': 'done' }
+const TASK_PRIO = { '超急': 'urgent', 'urgent': 'urgent', '高': 'high', 'high': 'high', '一般': 'normal', 'normal': 'normal', '低': 'low', 'low': 'low' }
 
 function extractBalancedObjects(s) {
   const out = []; let depth = 0, start = -1
@@ -319,7 +354,8 @@ function describeAction(a) {
     case 'set_item': case 'set_item_status': return `更新「${a.category || '?'}／${a.item || a.itemName || '?'}」${a.status ? ` 狀態→${a.status}` : ''}`
     case 'delete_item': return `刪除「${a.category || '?'}」的細項「${a.item || a.itemName || '?'}」`
     case 'add_payment': return `「${a.category || '?'}」新增付款 ${fmtNT(a.amount)}`
-    case 'add_todo': case 'add_task': return `新增任務「${a.desc || a.content || a.title || '?'}」${a.category ? `（歸到 ${a.category}）` : ''}${a.due ? `（交期 ${a.due}）` : ''}`
+    case 'add_todo': case 'add_task': return `新增任務「${a.desc || a.content || a.title || '?'}」${a.category ? `（歸到 ${a.category}）` : ''}${a.due ? `（交期 ${a.due}）` : ''}${a.owner ? `（負責:${a.owner}）` : ''}${a.estimatedMinutes ? `（預估${a.estimatedMinutes}分）` : ''}`
+    case 'update_task': { const ks = ['status', 'owner', 'waitingFor', 'estimatedMinutes', 'dependsOn', 'due', 'start', 'priority', 'category', 'tags', 'note', 'newTitle'].filter(k => a[k] !== undefined); return `更新任務「${a.task || a.title || '?'}」→ 改 ${ks.join('、') || '?'}` }
     case 'add_conclusion': return `新增公開結論：「${a.topic || a.title || '?'}」→ ${(a.conclusion || a.text || a.content || '').slice(0, 30)}`
     case 'add_petty_spend': return `記零用金花費 ${fmtNT(a.amount)}「${a.content || a.note || ''}」`
     case 'add_finance_tx': return `記財務${/收/.test(a.kind || '') ? '收入' : /轉/.test(a.kind || '') ? '轉帳' : '支出'} ${fmtNT(a.amount)}${a.vendor ? `（${a.vendor}）` : ''}`
@@ -373,8 +409,40 @@ async function executeActions(actions, operator) {
         // ToDo 已併入「任務中心」(pm_tasks)，所以寫到 tasks，App才看得到
         const title = a.desc || a.content || a.title || ''
         const tc = a.category ? findCat(cats, a.category) : null
-        tasks = [{ id: 't-' + bid(''), title, note: '', status: 'todo', catId: tc ? tc.id : '__inbox__', start: '', due: a.due || '', priority: a.urgent ? 'urgent' : 'normal', tags: [], createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }, ...tasks]
+        const newId = 't-' + bid('')
+        // Task v2 選填欄位：只納入 Bot 有提供的 key，經 normalizePatch（trim/去重/循環防護/estimate驗證）
+        const extra = {}
+        if (a.owner !== undefined) extra.owner = a.owner
+        if (a.waitingFor !== undefined) extra.waitingFor = a.waitingFor
+        if (a.estimatedMinutes !== undefined) extra.estimatedMinutes = a.estimatedMinutes
+        if (a.dependsOn !== undefined) extra.dependsOn = resolveDeps(a.dependsOn, tasks)
+        const np = normalizePatch(extra, newId, tasks)
+        tasks = [{ id: newId, title, note: '', status: 'todo', catId: tc ? tc.id : '__inbox__', start: '', due: a.due || '', priority: TASK_PRIO[a.priority] || (a.urgent ? 'urgent' : 'normal'), tags: Array.isArray(a.tags) ? normalizePatch({ tags: a.tags }).tags : [], createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), ...np }, ...tasks]
         changed.add('pm_tasks'); results.push(`📝 新增任務「${title.slice(0, 20)}」${tc ? '→' + tc.name : ''}`); audits.push(['pm_activity', '新增', `新增任務「${title.slice(0, 20)}」`])
+      } else if (t === 'update_task') {
+        // Merge Rule：只帶要改的欄位；沒帶的完全不動（{...existing, ...patch}）
+        const target = findTask(tasks, a.task || a.title)
+        if (!target) { results.push(`⚠️ 找不到任務「${a.task || a.title || '?'}」`) }
+        else {
+          const patch = {}
+          if (a.newTitle != null && String(a.newTitle).trim()) patch.title = String(a.newTitle).trim()
+          if (a.note !== undefined) patch.note = a.note || ''
+          if (a.status != null && TASK_STATUS[String(a.status).trim()]) patch.status = TASK_STATUS[String(a.status).trim()]
+          if (a.due !== undefined) patch.due = a.due || ''
+          if (a.start !== undefined) patch.start = a.start || ''
+          if (a.priority != null && TASK_PRIO[String(a.priority).trim()]) patch.priority = TASK_PRIO[String(a.priority).trim()]
+          if (a.category != null) { const c = findCat(cats, a.category); if (c) patch.catId = c.id }
+          if (a.owner !== undefined) patch.owner = a.owner
+          if (a.waitingFor !== undefined) patch.waitingFor = a.waitingFor
+          if (a.estimatedMinutes !== undefined) patch.estimatedMinutes = a.estimatedMinutes
+          if (a.dependsOn !== undefined) patch.dependsOn = resolveDeps(a.dependsOn, tasks)
+          if (a.tags !== undefined) patch.tags = Array.isArray(a.tags) ? a.tags : []
+          tasks = tasks.map(x => x.id === target.id ? mergeTask(x, patch, tasks) : x)
+          changed.add('pm_tasks')
+          const what = Object.keys(patch).join('、') || '（無變更）'
+          results.push(`✏️ 更新任務「${target.title.slice(0, 20)}」：${what}`)
+          audits.push(['pm_activity', '編輯', `更新任務「${target.title.slice(0, 20)}」(${what})`])
+        }
       } else if (t === 'add_conclusion') {
         const cc = a.category ? findCat(cats, a.category) : null
         const e = { id: 'cc-' + bid(''), topic: a.topic || a.title || '(未命名)', conclusion: a.conclusion || a.text || a.content || '', reason: a.reason || '', decidedBy: operator, date: a.date || today, catId: cc ? cc.id : '__none__', tags: Array.isArray(a.tags) ? a.tags : [], status: 'current', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), by }
@@ -457,7 +525,8 @@ const BOT_AGENT_GUIDE = `
 {"actions":[ ... ]}
 \`\`\`
 可用指令：
-- {"type":"add_task","desc":"買水泥3包","category":"消防工程","due":"2026-06-25"}  // 加任務到「任務中心」；category=歸到哪個工程大項(可省略→進收件匣)、due可省略。(「加待辦」也用這個)
+- {"type":"add_task","desc":"買水泥3包","category":"消防工程","due":"2026-06-25","owner":"阿哲","waitingFor":"等木工","estimatedMinutes":15,"dependsOn":["確認交期"],"tags":["採購"]}  // 加任務到「任務中心」。owner=負責人、waitingFor=在等誰/什麼、estimatedMinutes=預估分鐘(正整數)、dependsOn=依賴的任務(填任務標題)。全部選填(可省略)；category省略→進收件匣。(「加待辦」也用這個)
+- {"type":"update_task","task":"買水泥","status":"完成","owner":"阿哲","waitingFor":"","estimatedMinutes":30,"dependsOn":[],"due":"2026-07-20","category":"消防工程","priority":"高","tags":["採購"],"note":"...","newTitle":"..."}  // 更新既有任務；task=用標題找。⚠️只帶「要改的欄位」，沒帶的欄位絕不要帶(會保留原值)；waitingFor 給 ""=清除等待、dependsOn 給 []=清空依賴。狀態:待辦/進行中/完成
 - {"type":"add_conclusion","topic":"開幕日","conclusion":"8/10 開幕","reason":"","category":""}  // 加一條「公開結論」(團隊定案)；topic=主題、conclusion=定案內容
 - {"type":"add_log","content":"今天水電進場拉管線","date":"2026-06-22"}  // 工作日誌；date 可省略(預設今天)
 - {"type":"add_petty_spend","amount":390,"content":"工人便當","category":"水電工程"}  // 記零用金花費；category 是歸到哪個工種(可省略)
@@ -556,8 +625,8 @@ export default async function handler(req, res) {
       }
 
       // 3) 一般流程：載入資料＋對話記憶＋長期記事本 → 問 AI（操作者才開放下指令）
-      const [snaps, accountsText, financeText, activityText, estimatesText, crewText, history, memList, conclusionsText] = await Promise.all([loadSnapshots(), loadAccounts(), loadFinanceText(), loadActivityText(), loadEstimatesText(), loadCrewText(), getChatHistory(convId), getMemory(), loadConclusionsText()])
-      const rawReply = await answer(text, snaps, accountsText, financeText, activityText, estimatesText, crewText, canAct, history, memoryToText(memList), conclusionsText)
+      const [snaps, accountsText, financeText, activityText, estimatesText, crewText, history, memList, conclusionsText, tasksText] = await Promise.all([loadSnapshots(), loadAccounts(), loadFinanceText(), loadActivityText(), loadEstimatesText(), loadCrewText(), getChatHistory(convId), getMemory(), loadConclusionsText(), loadTasksText()])
+      const rawReply = await answer(text, snaps, accountsText, financeText, activityText, estimatesText, crewText, canAct, history, memoryToText(memList), conclusionsText, tasksText)
       // 抓出 D 想長期記住的事（[[記住:...]]）→ 存進記事本(僅操作者)，並把標記從給人看的文字拿掉
       const { facts, clean } = extractMemoryTags(rawReply)
       if (canAct && facts.length) { for (const f of facts) await addMemory(f, 'auto', op?.name) }

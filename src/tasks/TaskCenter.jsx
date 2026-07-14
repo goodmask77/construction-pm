@@ -6,6 +6,7 @@
 //       lucide 細線圖示 + 狀態小圓點；1px 淺灰邊框、8px 圓角、無陰影、大量留白。
 import { useState, useEffect } from "react";
 import { Inbox, LayoutGrid, Columns3, List, CalendarDays, ChartGantt, Network, Plus, X, Check, Flame, Calendar, Clock, CircleAlert, ListTodo } from "lucide-react";
+import { isWaiting, isBlocked, missingDeps, wouldCycle, mergeTask, removeTaskAndRefs } from "./taskModel.js";
 
 const C = {
   text: "#171717",       // neutral-900 主文字
@@ -49,6 +50,7 @@ export default function TaskCenter({ K, confirm, canEdit, cats, onLog }) {
   const [q, setQ] = useState("");
   const [fStatus, setFStatus] = useState("open"); // list 篩選
   const [gnew, setGnew] = useState({}); // 各大項的「直接新增」輸入
+  const [tagIn, setTagIn] = useState(""); // 詳情彈窗的標籤輸入
 
   useEffect(() => { (async () => {
     try {
@@ -88,8 +90,10 @@ export default function TaskCenter({ K, confirm, canEdit, cats, onLog }) {
     save([task, ...(tasks || [])]); setGnew(p => ({ ...p, [catId]: "" }));
     onLog?.("新增", `新增任務「${t.slice(0, 20)}」→${catName(catId)}`);
   };
-  const upd = (id, patch) => { save((tasks || []).map(t => t.id === id ? { ...t, ...patch, updatedAt: new Date().toISOString() } : t)); };
-  const del = async (id) => { if (!guard()) return; const t = (tasks || []).find(x => x.id === id); if (!(await confirm(`刪除任務「${t?.title || ""}」？`, { confirmLabel: "刪除" }))) return; save((tasks || []).filter(x => x.id !== id)); setSel(null); onLog?.("刪除", `刪除任務「${(t?.title || "").slice(0, 20)}」`); };
+  // Merge Rule：一律 {...existing, ...patch}（normalize 只動 patch 有的 key），絕不重建 task
+  const upd = (id, patch) => { save((tasks || []).map(t => t.id === id ? mergeTask(t, patch, tasks) : t)); };
+  // 刪除：同一次寫回完成「刪任務 + 清掉所有 dependsOn 引用」，不留中間態
+  const del = async (id) => { if (!guard()) return; const t = (tasks || []).find(x => x.id === id); if (!(await confirm(`刪除任務「${t?.title || ""}」？`, { confirmLabel: "刪除" }))) return; save(removeTaskAndRefs(tasks, id)); setSel(null); onLog?.("刪除", `刪除任務「${(t?.title || "").slice(0, 20)}」`); };
 
   // 拖曳：把 dragId 移到 target 之前；可同時改 catId / status
   const moveTo = (dragId, { catId, status, beforeId } = {}) => {
@@ -147,6 +151,8 @@ export default function TaskCenter({ K, confirm, canEdit, cats, onLog }) {
             <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", marginTop: 5 }}>
               {t.due && <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 11, fontVariantNumeric: "tabular-nums", color: (!done && t.due < today()) ? C.red : C.sub }}><Calendar size={11} />{t.due}</span>}
               {view !== "board" && <Pill color={sColor(t.status)} label={sLabel(t.status)} />}
+              {isWaiting(t) && !done && <Pill color={C.amber} label={`等：${t.waitingFor}`} />}
+              {isBlocked(t, tasks) && !done && <Pill color={C.red} label="被前置卡住" />}
               {(t.tags || []).map(tg => <span key={tg} style={{ fontSize: 11, color: C.sub, background: C.soft, borderRadius: 999, padding: "1px 8px" }}>{tg}</span>)}
             </div>
           </div>
@@ -419,7 +425,55 @@ export default function TaskCenter({ K, confirm, canEdit, cats, onLog }) {
                 {F("優先級", <select value={t.priority || "normal"} onChange={e => upd(t.id, { priority: e.target.value })} disabled={!canEdit} style={{ ...inp, width: "100%" }}>{PRIO.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select>)}
                 {F("截止日", <input type="date" value={dnorm(t.due)} onChange={e => upd(t.id, { due: e.target.value })} disabled={!canEdit} style={{ ...dateInp, width: "100%" }} />)}
                 {F("開始日", <input type="date" value={dnorm(t.start)} onChange={e => upd(t.id, { start: e.target.value })} disabled={!canEdit} style={{ ...dateInp, width: "100%" }} />)}
+                {F("負責人", <input value={t.owner || ""} onChange={e => upd(t.id, { owner: e.target.value })} disabled={!canEdit} placeholder="誰負責完成（自由填）" style={{ ...inp, width: "100%" }} />)}
+                {F("等待中（等誰 / 等什麼）", <input value={t.waitingFor || ""} onChange={e => upd(t.id, { waitingFor: e.target.value })} disabled={!canEdit} placeholder="例：等木工、等房東、等設計圖" style={{ ...inp, width: "100%" }} />)}
+                {F("預估時間（分鐘）", <input type="number" min={1} step={1} value={t.estimatedMinutes ?? ""} onChange={e => upd(t.id, { estimatedMinutes: e.target.value })} disabled={!canEdit} placeholder="未估算" style={{ ...inp, width: "100%", fontVariantNumeric: "tabular-nums" }} />)}
               </div>
+              {F("依賴任務（前置做完才能動工）", (() => {
+                const deps = t.dependsOn || [];
+                const missing = missingDeps(t, tasks);
+                return (
+                  <div>
+                    <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: deps.length ? 8 : 0 }}>
+                      {deps.map(id => {
+                        const d = tasks.find(x => x.id === id);
+                        const isMissing = !d;
+                        return (
+                          <span key={id} style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 12, color: isMissing ? C.red : "#404040", background: isMissing ? "#fef2f2" : C.soft, border: `1px solid ${isMissing ? "#fecaca" : C.line}`, borderRadius: 999, padding: "3px 10px" }}>
+                            {isMissing ? <><CircleAlert size={12} />失效依賴</> : <>{d.status === "done" ? <Check size={12} color={C.green} /> : <span style={{ width: 6, height: 6, borderRadius: "50%", background: sColor(d.status) }} />}{d.title}</>}
+                            {canEdit && <button onClick={() => upd(t.id, { dependsOn: deps.filter(x => x !== id) })} style={{ background: "none", border: "none", cursor: "pointer", color: C.faint, padding: 0, display: "flex" }}><X size={12} /></button>}
+                          </span>
+                        );
+                      })}
+                    </div>
+                    {canEdit && (
+                      <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                        <select value="" onChange={e => {
+                          const depId = e.target.value; if (!depId) return;
+                          if (wouldCycle(t.id, depId, tasks)) { alert("不能加這個依賴：會形成循環（例如 A 依賴 B、B 又依賴回 A）。"); return; }
+                          upd(t.id, { dependsOn: [...deps, depId] });
+                        }} style={{ ...inp, flex: 1 }}>
+                          <option value="">＋ 新增依賴…</option>
+                          {tasks.filter(x => x.id !== t.id && !deps.includes(x.id)).map(x => <option key={x.id} value={x.id}>{x.title}</option>)}
+                        </select>
+                        {missing.length > 0 && <button onClick={() => upd(t.id, { dependsOn: deps.filter(id => tasks.some(x => x.id === id)) })} style={{ background: "none", border: `1px solid ${C.line}`, color: C.sub, borderRadius: 8, padding: "6px 12px", fontSize: 12, cursor: "pointer", whiteSpace: "nowrap" }}>清除失效依賴</button>}
+                      </div>
+                    )}
+                  </div>
+                );
+              })())}
+              {F("標籤", (
+                <div>
+                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: (t.tags || []).length ? 8 : 0 }}>
+                    {(t.tags || []).map(tg => (
+                      <span key={tg} style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 12, color: "#404040", background: C.soft, border: `1px solid ${C.line}`, borderRadius: 999, padding: "3px 10px" }}>
+                        {tg}{canEdit && <button onClick={() => upd(t.id, { tags: (t.tags || []).filter(x => x !== tg) })} style={{ background: "none", border: "none", cursor: "pointer", color: C.faint, padding: 0, display: "flex" }}><X size={12} /></button>}
+                      </span>
+                    ))}
+                  </div>
+                  {canEdit && <input value={tagIn} onChange={e => setTagIn(e.target.value)} onKeyDown={e => { if (e.key === "Enter" && !e.nativeEvent.isComposing && e.keyCode !== 229 && tagIn.trim()) { upd(t.id, { tags: [...(t.tags || []), tagIn.trim()] }); setTagIn(""); } }} placeholder="輸入標籤後按 Enter 新增" style={{ ...inp, width: "100%" }} />}
+                </div>
+              ))}
               <div style={{ fontSize: 11, color: C.faint, marginTop: 8, fontVariantNumeric: "tabular-nums" }}>建立於 {dnorm(t.createdAt)}</div>
             </div>
           </div>
