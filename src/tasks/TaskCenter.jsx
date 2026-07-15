@@ -492,8 +492,8 @@ export default function TaskCenter({ K, confirm, canEdit, cats, onLog, onAddCat 
             <div style={{ border: `1px solid ${C.line}`, borderRadius: 8, background: C.card, overflow: "auto" }}>
               <div style={{ minWidth: 200 + totalDays * dayW }}>
                 {/* 週刻度 */}
-                <div style={{ display: "flex", borderBottom: `1px solid ${C.line}`, position: "sticky", top: 0, background: C.bg, zIndex: 1 }}>
-                  <div style={{ width: 200, flexShrink: 0, borderRight: `1px solid ${C.line}`, padding: "6px 10px", fontSize: 11, letterSpacing: 0.5, color: C.faint, fontWeight: 500 }}>任務</div>
+                <div style={{ display: "flex", borderBottom: `1px solid ${C.line}`, position: "sticky", top: 0, background: C.bg, zIndex: 3 }}>
+                  <div style={{ width: 200, flexShrink: 0, borderRight: `1px solid ${C.line}`, padding: "6px 10px", fontSize: 11, letterSpacing: 0.5, color: C.faint, fontWeight: 500, position: "sticky", left: 0, background: C.bg, zIndex: 4 }}>任務</div>
                   <div style={{ position: "relative", height: 26 }}>
                     {ticks.map(tk => <div key={tk.i} style={{ position: "absolute", left: tk.i * dayW, top: 0, fontSize: 10.5, color: C.faint, fontVariantNumeric: "tabular-nums", padding: "6px 0 0 4px", borderLeft: `1px solid ${C.soft}`, height: 26, boxSizing: "border-box" }}>{tk.label}</div>)}
                   </div>
@@ -506,7 +506,7 @@ export default function TaskCenter({ K, confirm, canEdit, cats, onLog, onAddCat 
                     <div key={t.id} onClick={() => setSel(t.id)}
                       onMouseEnter={ev => ev.currentTarget.style.background = C.bg} onMouseLeave={ev => ev.currentTarget.style.background = "#fff"}
                       style={{ display: "flex", alignItems: "center", borderTop: i ? `1px solid ${C.soft}` : "none", cursor: "pointer", background: "#fff" }}>
-                      <div style={{ width: 200, flexShrink: 0, borderRight: `1px solid ${C.line}`, padding: "7px 10px", fontSize: 12.5, color: t.status === "done" ? C.faint : C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "flex", alignItems: "center", gap: 4 }}>{t.priority === "urgent" && <Flame size={11} color={C.red} style={{ flexShrink: 0 }} />}{t.title}<span style={{ fontSize: 10.5, color: C.faint, flexShrink: 0 }}>・{catName(t.catId)}</span></div>
+                      <div style={{ width: 200, flexShrink: 0, borderRight: `1px solid ${C.line}`, padding: "7px 10px", fontSize: 12.5, color: t.status === "done" ? C.faint : C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "flex", alignItems: "center", gap: 4, position: "sticky", left: 0, background: "inherit", zIndex: 2 }}>{t.priority === "urgent" && <Flame size={11} color={C.red} style={{ flexShrink: 0 }} />}{t.title}<span style={{ fontSize: 10.5, color: C.faint, flexShrink: 0 }}>・{catName(t.catId)}</span></div>
                       <div style={{ position: "relative", height: 30, flex: 1 }}>
                         {todayOff >= 0 && todayOff < totalDays && <div style={{ position: "absolute", left: todayOff * dayW, top: 0, bottom: 0, width: 1, background: C.red, opacity: .45 }} />}
                         <div title={`${t.start || t.due} ~ ${t.due || t.start}`} style={{ position: "absolute", left: left * dayW + 2, top: 9, height: 12, width: Math.max(width * dayW - 4, 8), background: t.status === "done" ? C.green : C.accent, borderRadius: 999, opacity: t.status === "done" ? 0.45 : 1 }} />
