@@ -31,4 +31,8 @@
 
 - ✅ Sprint 1：Task Object Foundation（owner / waitingFor / dependsOn / estimatedMinutes、
   derived state 不落地、Merge Rule、normalize、循環防護、D哥同步、Quick Win 定義）
-- ⏳ Sprint 2：Today / Home（待確認 Sprint 1 驗收後開工）
+- ✅ Sprint 2：Today / Home（2026-07-16）——任務中心預設落地頁，獨立於六視角之外。
+  區塊（每任務依緊急度只出現一次、全部即時推導）：今天必處理(逾期+今日) → 進行中 →
+  被前置卡住(含「等：前置名單」) → 在等別人 → Quick Wins(≤15分，Sprint 1 定義的首次 UI) →
+  接下來 7 天。含問候列一眼總覽與 all-clear 空狀態。
+- ⚠️ View Mapping Table 仍待張良貼入本文件；貼入後若與現行 Today 佈局有出入，依表調整。

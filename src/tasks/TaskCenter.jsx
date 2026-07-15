@@ -5,8 +5,8 @@
 // 視覺：依 docs/DESIGN_SPEC.md（Linear/Stripe 儀表板風）— 中性灰白 + 單一藍色主色 +
 //       lucide 細線圖示 + 狀態小圓點；1px 淺灰邊框、8px 圓角、無陰影、大量留白。
 import { useState, useEffect, useRef } from "react";
-import { Inbox, LayoutGrid, Columns3, List, CalendarDays, ChartGantt, Network, Plus, X, Check, Flame, Calendar, Clock, CircleAlert, ListTodo, Search } from "lucide-react";
-import { isWaiting, isBlocked, missingDeps, wouldCycle, mergeTask, removeTaskAndRefs } from "./taskModel.js";
+import { Inbox, LayoutGrid, Columns3, List, CalendarDays, ChartGantt, Network, Plus, X, Check, Flame, Calendar, Clock, CircleAlert, ListTodo, Search, Home, Zap, Hourglass, CirclePlay, Coffee } from "lucide-react";
+import { isWaiting, isBlocked, missingDeps, wouldCycle, mergeTask, removeTaskAndRefs, isQuickWin, QUICK_WIN_MAX_MINUTES } from "./taskModel.js";
 
 const C = {
   text: "#171717",       // neutral-900 主文字
@@ -42,7 +42,7 @@ const Pill = ({ color, label }) => (
 
 export default function TaskCenter({ K, confirm, canEdit, cats, onLog }) {
   const [tasks, setTasks] = useState(null);
-  const [view, setView] = useState("group"); // group | board | list
+  const [view, setView] = useState("today"); // today(Home 落地頁) | group | board | list | timeline | gantt | mind
   const [quick, setQuick] = useState("");
   const [sel, setSel] = useState(null);     // 開啟詳情的任務 id
   const [drag, setDrag] = useState(null);   // 拖曳中的任務 id
@@ -209,6 +209,10 @@ export default function TaskCenter({ K, confirm, canEdit, cats, onLog }) {
           <input value={q} onChange={e => setQ(e.target.value)} placeholder="搜尋任務…" style={{ ...inp, width: 170, padding: "6px 10px 6px 28px", fontSize: 12.5 }} />
           {q && <button onClick={() => setQ("")} style={{ position: "absolute", right: 6, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", color: C.faint, cursor: "pointer", padding: 0, display: "flex" }}><X size={13} /></button>}
         </div>
+        {/* Today 是 Home（落地頁），不是第七個並列視角 → 獨立按鈕放在視角切換器外面 */}
+        <button onClick={() => setView("today")} style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "7px 14px", borderRadius: 8, border: `1px solid ${view === "today" ? C.accent : C.line}`, background: view === "today" ? C.accent : "#fff", color: view === "today" ? "#fff" : C.sub, fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
+          <Home size={14} strokeWidth={1.75} />今日
+        </button>
         <div style={{ display: "inline-flex", background: C.soft, border: `1px solid ${C.line}`, borderRadius: 8, padding: 2, gap: 2, flexWrap: "wrap" }}>
           {TABS.map(([k, l, I]) => Tab(k, l, I))}
         </div>
@@ -222,6 +226,76 @@ export default function TaskCenter({ K, confirm, canEdit, cats, onLog }) {
           <button onClick={addQuick} style={{ display: "inline-flex", alignItems: "center", gap: 6, background: C.accent, color: "#fff", border: "none", borderRadius: 8, padding: "0 16px", fontSize: 13.5, fontWeight: 600, cursor: "pointer" }}><Plus size={15} strokeWidth={2} />新增</button>
         </div>
       )}
+
+      {/* ── Today / Home：每天打開的落地頁，回答「我今天該做什麼」──
+           全部由同一份 tasks 即時推導（不存任何 view 專屬資料）；每個任務依緊急度只出現在一個區塊 */}
+      {view === "today" && (() => {
+        const t0 = today();
+        const openT = tasks.filter(t => t.status !== "done").filter(matchQ);
+        const used = new Set();
+        const take = (arr) => { const out = arr.filter(t => !used.has(t.id)); out.forEach(t => used.add(t.id)); return out; };
+        const prioOrd = { urgent: 0, high: 1, normal: 2, low: 3 };
+        const byUrgency = (a, b) => ((a.due || "9999") !== (b.due || "9999")) ? ((a.due || "9999") < (b.due || "9999") ? -1 : 1) : ((prioOrd[a.priority] ?? 2) - (prioOrd[b.priority] ?? 2));
+        // 去重順序＝緊急度：必處理 → 進行中 → 被卡住 → 在等別人 → Quick Wins → 七天內
+        const dueNow = take(openT.filter(t => t.due && t.due <= t0)).sort(byUrgency);
+        const doing = take(openT.filter(t => t.status === "doing")).sort(byUrgency);
+        const blockedArr = take(openT.filter(t => isBlocked(t, tasks))).sort(byUrgency);
+        const waitingArr = take(openT.filter(t => isWaiting(t))).sort(byUrgency);
+        const quick = take(openT.filter(t => isQuickWin(t))).sort(byUrgency);
+        const upcoming = take(openT.filter(t => t.due && t.due > t0 && (new Date(t.due) - new Date(t0)) / 86400000 <= 7)).sort(byUrgency);
+        const allClear = !dueNow.length && !doing.length && !quick.length && !waitingArr.length && !blockedArr.length && !upcoming.length;
+        const d = new Date();
+        const dateStr = `${d.getMonth() + 1}/${d.getDate()}（週${"日一二三四五六"[d.getDay()]}）`;
+        const inboxOpen = openT.filter(t => (t.catId || INBOX) === INBOX).length;
+        const depNames = (t) => (t.dependsOn || []).map(id => { const x = tasks.find(y => y.id === id); return x && x.status !== "done" ? x.title : null; }).filter(Boolean);
+        const Section = ({ icon: Icon, color, label, hint, children }) => (
+          <div style={{ background: C.card, border: `1px solid ${C.line}`, borderRadius: 8, padding: 14 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 10 }}>
+              <Icon size={14} strokeWidth={1.75} color={color} />
+              <span style={{ fontSize: 13, fontWeight: 600, color: C.text }}>{label}</span>
+              {hint && <span style={{ fontSize: 11, color: C.faint }}>{hint}</span>}
+            </div>
+            {children}
+          </div>
+        );
+        const Grid = ({ arr }) => <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(260px,1fr))", gap: 8 }}>{arr.map(t => Card({ t }))}</div>;
+        return (
+          <div style={{ display: "grid", gap: 12 }}>
+            {/* 問候列：今天的一眼總覽 */}
+            <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap", padding: "2px 2px 0" }}>
+              <span style={{ fontSize: 15, fontWeight: 600, color: C.text }}>今天 {dateStr}</span>
+              <span style={{ fontSize: 12.5, color: C.sub, fontVariantNumeric: "tabular-nums" }}>
+                {dueNow.length > 0 ? `${dueNow.length} 件必處理` : "沒有到期壓力"}
+                {quick.length > 0 && `・${quick.length} 件可速戰速決`}
+                {waitingArr.length > 0 && `・${waitingArr.length} 件在等別人`}
+              </span>
+            </div>
+            {allClear && (
+              <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8, padding: "40px 0", background: C.card, border: `1px solid ${C.line}`, borderRadius: 8 }}>
+                <Coffee size={22} strokeWidth={1.5} color={C.faint} />
+                <span style={{ fontSize: 13, color: C.sub }}>今天沒有急事{inboxOpen > 0 ? `——收件匣還有 ${inboxOpen} 件可以整理` : "，全部都乾淨"}</span>
+              </div>
+            )}
+            {dueNow.length > 0 && <Section icon={CircleAlert} color={C.red} label="今天必處理" hint="逾期與今天到期"><Grid arr={dueNow} /></Section>}
+            {doing.length > 0 && <Section icon={CirclePlay} color={C.accent} label="進行中" hint="手上正在做的"><Grid arr={doing} /></Section>}
+            {quick.length > 0 && <Section icon={Zap} color={C.green} label="Quick Wins" hint={`≤ ${QUICK_WIN_MAX_MINUTES} 分鐘可完成，有空檔就清掉`}><Grid arr={quick} /></Section>}
+            {waitingArr.length > 0 && <Section icon={Clock} color={C.amber} label="在等別人" hint="該催的去催一下">
+              <Grid arr={waitingArr} />
+            </Section>}
+            {blockedArr.length > 0 && <Section icon={Hourglass} color={C.sub} label="被前置卡住" hint="前置任務完成後才能動工">
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(260px,1fr))", gap: 8 }}>
+                {blockedArr.map(t => (
+                  <div key={t.id}>
+                    {Card({ t })}
+                    <div style={{ fontSize: 11, color: C.faint, margin: "-4px 2px 0", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>等：{depNames(t).join("、")}</div>
+                  </div>
+                ))}
+              </div>
+            </Section>}
+            {upcoming.length > 0 && <Section icon={CalendarDays} color={C.sub} label="接下來 7 天" hint="先心裡有數"><Grid arr={upcoming} /></Section>}
+          </div>
+        );
+      })()}
 
       {/* ── 依大項分組 ── */}
       {view === "group" && (
