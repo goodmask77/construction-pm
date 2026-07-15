@@ -52,7 +52,9 @@ export default function FinanceView({ K, confirm, canEdit, ReceiptUploader, onLo
   const [coaImp, setCoaImp] = useState(null); // 科目批量建立面板
   const [editLedId, setEditLedId] = useState(null); // 交易明細：檢視/編輯分離，只有這一列是輸入框
   // ── 對帳中心（試算表 × 工程付款 × 內帳）──
-  const [sheet, setSheet] = useState(null);      // {syncedAt, rows[]}（來自 sheet-sync）
+  const [sheet, setSheet] = useState(null);      // {syncedAt, rows[]}（試算表鏡像，退役中，只當匯入來源）
+  const [bank, setBank] = useState(null);        // ★ 銀行帳務資料庫（永久、只增不改；一切對帳以此為基礎）
+  const [manForm, setManForm] = useState(null);  // 手動新增一筆（未來：貼企業網銀截圖 AI 判讀）
   const [recon, setRecon] = useState({ links: {}, ignored: [] }); // 補記/忽略標記
   const [conCats, setConCats] = useState([]);    // 工程專案大項（唯讀跨空間）
   const [conPetty, setConPetty] = useState({ spends: [] });
@@ -71,14 +73,36 @@ export default function FinanceView({ K, confirm, canEdit, ReceiptUploader, onLo
     try { const c = await window.storage.get(K("pm_fin_coa"), true); const v = c && c.value ? JSON.parse(c.value) : null; setCoa(Array.isArray(v) && v.length ? v : SEED_COA()); } catch { setCoa(SEED_COA()); }
     // 對帳資料：試算表鏡像 + 對帳標記 + 工程專案（跨空間唯讀，絕不寫回）
     try { const sh = await window.storage.get(K("pm_sheet"), true); setSheet(sh && sh.value ? JSON.parse(sh.value) : null); } catch (_) {}
+    try { const bk = await window.storage.get(K("pm_bank"), true); setBank(bk && bk.value ? JSON.parse(bk.value) : null); } catch (_) {}
     try { const rc = await window.storage.get(K("pm_recon"), true); const v = rc && rc.value ? JSON.parse(rc.value) : null; if (v) setRecon({ links: v.links || {}, ignored: v.ignored || [] }); } catch (_) {}
     try { const cd = await window.storage.get("pm_data", true); setConCats(cd && cd.value ? JSON.parse(cd.value) : []); } catch (_) {}
     try { const pt = await window.storage.get("pm_petty", true); const v = pt && pt.value ? JSON.parse(pt.value) : {}; setConPetty({ spends: v.spends || [] }); } catch (_) {}
   })(); }, []); // eslint-disable-line
   const saveRecon = (next) => { setRecon(next); window.storage.set(K("pm_recon"), JSON.stringify(next), true).catch(() => {}); };
+  const saveBank = (next) => { setBank(next); window.storage.set(K("pm_bank"), JSON.stringify(next), true).catch(() => {}); };
+  const mergeToBank = (rows, srcLabel) => {
+    // 資料庫鐵則：只增不改——已存在的列一律不動，僅加入新列
+    const cur = bank || { account: "合作金庫 · 喬亞國際餐飲", entries: [] };
+    const have = new Set((cur.entries || []).map(e => e.id));
+    const add = rows.filter(x => !have.has(x.id)).map(x => ({ ...x, source: x.source || srcLabel, importedAt: new Date().toISOString().slice(0, 10) }));
+    const next = { ...cur, entries: [...(cur.entries || []), ...add], updatedAt: new Date().toISOString() };
+    saveBank(next);
+    return add.length;
+  };
   const runSync = async () => {
     setSyncBusy(true);
-    try { const r = await fetch("/api/sheet-sync"); const d = await r.json(); if (!d.ok) alert("同步失敗：" + (d.error || "未知")); else { const sh = await window.storage.get(K("pm_sheet"), true); setSheet(sh && sh.value ? JSON.parse(sh.value) : null); onLog?.("編輯", `同步公司帳務表（${d.rows} 筆）`); } } catch (e) { alert("同步失敗：" + e.message); }
+    try {
+      const r = await fetch("/api/sheet-sync"); const d = await r.json();
+      if (!d.ok) alert("匯入失敗：" + (d.error || "未知"));
+      else {
+        const sh = await window.storage.get(K("pm_sheet"), true);
+        const parsed = sh && sh.value ? JSON.parse(sh.value) : null;
+        setSheet(parsed);
+        const n = mergeToBank(parsed?.rows || [], "sheet");
+        onLog?.("編輯", `試算表匯入銀行資料庫（新增 ${n} 筆）`);
+        flashRecon(n ? `✓ 從試算表匯入 ${n} 筆新資料進資料庫（既有資料一筆未動）` : "✓ 沒有新資料——資料庫已是最新");
+      }
+    } catch (e) { alert("匯入失敗：" + e.message); }
     setSyncBusy(false);
   };
   const guard = () => { if (!canEdit) { alert("沒有編輯權限，請聯絡管理員。"); return false; } return true; };
@@ -369,7 +393,7 @@ export default function FinanceView({ K, confirm, canEdit, ReceiptUploader, onLo
 
       {/* ── 對帳：合作金庫·喬亞國際餐飲（銀行對帳單式呈現 + 圖表 + 三方核對）── */}
       {tab === "recon" && (() => {
-        const shRows = (sheet?.rows || []);
+        const shRows = (bank?.entries?.length ? bank.entries : (sheet?.rows || []));
         const d2n = (d) => d ? +new Date(d) : 0;
         const close = (a, b) => a && b && Math.abs(d2n(a) - d2n(b)) <= 5 * 86400e3;
         const pool = [
@@ -447,17 +471,18 @@ export default function FinanceView({ K, confirm, canEdit, ReceiptUploader, onLo
               <span style={{ background: C.blue, color: "#fff", fontSize: 11.5, fontWeight: 700, borderRadius: 4, padding: "2px 8px", letterSpacing: 1 }}>帳戶</span>
               <div>
                 <div style={{ fontSize: 16, fontWeight: 800, color: C.text }}>🏦 合作金庫 · 喬亞國際餐飲</div>
-                <div style={{ fontSize: 11, color: C.faint }}>公司帳務表同步{sheet?.syncedAt ? "・上次 " + new Date(sheet.syncedAt).toLocaleString("zh-TW", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" }) + "（每天自動）" : ""}</div>
+                <div style={{ fontSize: 11, color: C.faint }}>銀行帳務資料庫・{shRows.length} 筆（只增不改・所有工程款以此核對）{bank?.updatedAt ? "・更新 " + new Date(bank.updatedAt).toLocaleDateString("zh-TW") : ""}</div>
               </div>
               {latestBal && <div style={{ marginLeft: 6 }}>
                 <div style={{ fontFamily: MONOF, fontSize: 22, fontWeight: 700, color: C.text }}>{fmt(latestBal.v ?? latestBal.balanceAfter)}</div>
                 <div style={{ fontSize: 10.5, color: C.faint }}>最新餘額（{latestBal.payDate}）</div>
               </div>}
               <div style={{ flex: 1 }} />
-              <button onClick={runSync} disabled={syncBusy} style={{ background: C.blue, color: "#fff", border: "none", borderRadius: 8, padding: "7px 16px", fontSize: 13, fontWeight: 700, cursor: syncBusy ? "wait" : "pointer" }}>{syncBusy ? "同步中…" : "立即同步"}</button>
+              {canEdit && <button onClick={() => setManForm({ date: "", cat: "", subject: "", content: "", amount: "", fee: "", payee: "", batch: "", balanceAfter: "" })} style={{ background: C.accent, color: "#fff", border: "none", borderRadius: 8, padding: "7px 16px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>＋ 手動新增一筆</button>}
+              <button onClick={runSync} disabled={syncBusy} title="過渡期用：試算表退役前，把上面的新資料撈進資料庫" style={{ background: "#fff", color: C.blue, border: `1.5px solid ${C.blue}`, borderRadius: 8, padding: "6px 14px", fontSize: 12.5, fontWeight: 700, cursor: syncBusy ? "wait" : "pointer" }}>{syncBusy ? "匯入中…" : "⬇ 從試算表匯入"}</button>
             </div>
-            {!sheet ? (
-              <div style={{ padding: 30, textAlign: "center", color: C.faint, background: C.card, border: `1px solid ${C.line}`, borderRadius: 10 }}>還沒同步過——按右上「立即同步」。</div>
+            {!shRows.length ? (
+              <div style={{ padding: 30, textAlign: "center", color: C.faint, background: C.card, border: `1px solid ${C.line}`, borderRadius: 10 }}>資料庫還是空的——按「⬇ 從試算表匯入」建底稿，或「＋ 手動新增一筆」。</div>
             ) : (
               <>
                 <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 12 }}>
@@ -506,6 +531,37 @@ export default function FinanceView({ K, confirm, canEdit, ReceiptUploader, onLo
                     ))}
                   </div>
                 </div>
+                {/* 手動新增一筆（進資料庫；之後改成貼網銀截圖AI判讀） */}
+                {manForm && (() => {
+                  const mset = (k) => (e) => setManForm(f => ({ ...f, [k]: e.target.value }));
+                  const saveMan = () => {
+                    const amt = num(manForm.amount);
+                    if (!manForm.date || !manForm.content.trim() || !amt) { alert("至少要填：日期、項目內容、金額"); return; }
+                    const e2 = { id: "bk-" + Math.random().toString(36).slice(2, 9), source: "manual", checked: "", notifyDate: "", cat: manForm.cat.trim(), subject: manForm.subject.trim(), content: manForm.content.trim(), owner: "", method: "匯款", pretax: 0, tax: 0, amount: amt, payDate: manForm.date, payee: manForm.payee.trim(), handler: "", fee: num(manForm.fee), bank: "", batch: manForm.batch.trim(), balanceAfter: num(manForm.balanceAfter) };
+                    const cur = bank || { account: "合作金庫 · 喬亞國際餐飲", entries: [] };
+                    saveBank({ ...cur, entries: [...(cur.entries || []), e2], updatedAt: new Date().toISOString() });
+                    onLog?.("新增", "銀行資料庫手動新增 " + fmt(amt));
+                    flashRecon("✓ 已新增進資料庫：「" + manForm.content.trim().slice(0, 16) + "」" + fmt(amt));
+                    setManForm(null);
+                  };
+                  const mi = (w) => ({ ...inp, width: w });
+                  return (
+                    <div style={{ background: "#fff", border: `1.5px solid ${C.accent}`, borderRadius: 8, padding: "10px 14px", marginBottom: 10, display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                      <span style={{ fontSize: 12, fontWeight: 700, color: C.accent }}>新增一筆進資料庫</span>
+                      <input type="date" value={manForm.date} onChange={mset("date")} style={{ ...mi(130), colorScheme: "light" }} />
+                      <input value={manForm.cat} onChange={mset("cat")} placeholder="類別" style={mi(84)} />
+                      <input value={manForm.subject} onChange={mset("subject")} placeholder="科目" style={mi(90)} />
+                      <input value={manForm.content} onChange={mset("content")} placeholder="項目內容 *" style={mi(200)} />
+                      <input value={manForm.amount} onChange={mset("amount")} placeholder="金額 *" inputMode="numeric" style={mi(92)} />
+                      <input value={manForm.fee} onChange={mset("fee")} placeholder="手續費" inputMode="numeric" style={mi(66)} />
+                      <input value={manForm.payee} onChange={mset("payee")} placeholder="收款方" style={mi(110)} />
+                      <input value={manForm.batch} onChange={mset("batch")} placeholder="批號/憑證" style={mi(100)} />
+                      <input value={manForm.balanceAfter} onChange={mset("balanceAfter")} placeholder="匯後餘額" inputMode="numeric" style={mi(96)} />
+                      <button onClick={saveMan} style={{ background: C.accent, color: "#fff", border: "none", borderRadius: 8, padding: "7px 16px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>存入資料庫</button>
+                      <button onClick={() => setManForm(null)} style={{ background: "none", border: `1px solid ${C.line}`, color: C.sub, borderRadius: 8, padding: "6px 12px", fontSize: 12.5, cursor: "pointer" }}>取消</button>
+                    </div>
+                  );
+                })()}
                 {/* 對帳單（試算表式完整呈現） */}
                 {reconMsg && (
                   <div style={{ background: "#eef5ef", border: "1.5px solid #3f7d4e", borderRadius: 8, padding: "8px 14px", marginBottom: 10, fontSize: 13, color: "#2c5a38", fontWeight: 600, display: "flex", alignItems: "center", gap: 8 }}>
@@ -571,6 +627,8 @@ export default function FinanceView({ K, confirm, canEdit, ReceiptUploader, onLo
                                       <button onClick={() => saveRecon({ ...recon, ignored: [...recon.ignored, r.id] })} style={{ border: `1px solid ${C.line}`, background: "#fff", color: C.faint, borderRadius: 6, padding: "2px 6px", fontSize: 10.5, cursor: "pointer" }}>略</button>
                                     </>}
                                     {st.st === "open" && !canEdit && <span style={{ fontSize: 11, color: C.red }}>未對帳</span>}
+                                    {r.source === "manual" && <span title="手動輸入的資料" style={{ fontSize: 9.5, color: C.faint, border: `1px solid ${C.line}`, borderRadius: 4, padding: "0 4px" }}>手動</span>}
+                                    {r.source === "manual" && canEdit && <button onClick={async () => { if (window.confirm("刪除這筆手動輸入？（匯入的資料不能刪，手動的可以）")) { saveBank({ ...bank, entries: bank.entries.filter(x => x.id !== r.id), updatedAt: new Date().toISOString() }); } }} style={{ border: "none", background: "none", color: C.faint, fontSize: 11, cursor: "pointer", padding: 0 }}>刪</button>}
                                   </div>
                                 </div>
                               );

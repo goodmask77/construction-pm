@@ -274,13 +274,15 @@ async function loadTasksText() {
   } catch (_) { return '' }
 }
 
-// 公司帳務表（Google 試算表每日同步鏡像 sp_finance_pm_sheet）→ 文字
+// 銀行帳務資料庫（sp_finance_pm_bank 永久累積；試算表退役中，僅當備援）→ 文字
 async function loadSheetText() {
   try {
-    const v = (await kvGetMany(['sp_finance_pm_sheet']))['sp_finance_pm_sheet']
+    const kv = await kvGetMany(['sp_finance_pm_bank', 'sp_finance_pm_sheet'])
+    const bk = kv['sp_finance_pm_bank']
+    const v = (bk && Array.isArray(bk.entries) && bk.entries.length) ? { rows: bk.entries, syncedAt: bk.updatedAt } : kv['sp_finance_pm_sheet']
     const rows = v && Array.isArray(v.rows) ? v.rows : []
     if (!rows.length) return ''
-    const lines = [`\n\n【公司帳務表（喬亞帳戶，Google 試算表同步於 ${v.syncedAt ? new Date(v.syncedAt).toLocaleString('zh-TW') : ''}，共 ${rows.length} 筆）】`]
+    const lines = [`\n\n【銀行帳務資料庫（合作金庫·喬亞帳戶，每一筆銀行進出，共 ${rows.length} 筆，更新 ${v.syncedAt ? new Date(v.syncedAt).toLocaleString('zh-TW') : ''}）】`]
     rows.slice(-100).forEach(r => lines.push(`  - ${r.payDate || r.notifyDate || ''} [${r.cat}${r.subject ? '/' + r.subject : ''}] ${r.content}｜NT$${Math.round(r.amount).toLocaleString()}${r.payee ? '→' + r.payee : ''}${r.batch ? '（' + r.batch + '）' : ''}`))
     return lines.join('\n')
   } catch (_) { return '' }

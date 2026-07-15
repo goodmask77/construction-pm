@@ -928,7 +928,7 @@ export default function App() {
           <KnowledgeBaseView canEdit={canEditData} requireLogin={denyEdit} confirm={confirm} userName={userName} />
         )}
         {view === "roster" && (
-          <RosterView canEdit={canEditData} confirm={confirm} />
+          <RosterView canEdit={canEditData} confirm={confirm} me={account} />
         )}
         {view === "r360" && (
           <Review360View canEdit={canEditData} requireLogin={denyEdit} confirm={confirm} isAdmin={isAdmin} userName={userName} />
@@ -1726,11 +1726,11 @@ function ShopView({ canEdit, requireLogin, confirm, isAdmin, userName }) {
 // ── 夥伴中心：名冊 / 入職流程（人員主檔：動態自訂欄位、檔案上傳、必填追蹤入職進度）──
 // 欄位定義存在 kb_360.fields，管理員可任意 新增/改名/改型別(文字/日期/選單/檔案上傳)/設必填/刪除。
 const DEFAULT_ROSTER_FIELDS = [
-  { key: "empNo", label: "員工編號(NUEiP)", type: "text" },
-  { key: "dept", label: "部門/崗位", type: "text" },
-  { key: "startDate", label: "到職日", type: "date", req: true },
+  { key: "empNo", show: true, label: "員工編號(NUEiP)", type: "text" },
+  { key: "dept", show: true, label: "部門/崗位", type: "text" },
+  { key: "startDate", show: true, label: "到職日", type: "date", req: true },
   { key: "endDate", label: "離職日", type: "date" },
-  { key: "bday", label: "生日", type: "date", req: true },
+  { key: "bday", show: true, label: "生日", type: "date", req: true },
   { key: "insureCode", label: "投保用生日碼", type: "text" },
   { key: "idNo", label: "身分證字號", type: "text", req: true },
   { key: "workPermit", label: "工作證號(外籍)", type: "text" },
@@ -1754,12 +1754,13 @@ const DEFAULT_ROSTER_FIELDS = [
   { key: "bankDoc", label: "存摺影本", type: "file", req: true },
   { key: "docs", label: "其他文件", type: "file" },
 ];
-function RosterView({ canEdit, confirm }) {
+function RosterView({ canEdit, confirm, me }) {
   const [data, setData] = useState(null);
   const [q, setQ] = useState("");
   const [sort, setSort] = useState({ key: "startDate", dir: 1 });
   const [sel, setSel] = useState(null);
   const [showFields, setShowFields] = useState(false);
+  const [lockTip, setLockTip] = useState(false);
   useEffect(() => { (async () => setData(await loadCrewJSON("kb_360", { dimensions: [], people: [], reviews: [] })))(); }, []);
   if (!data) return <div style={{ padding: 40, color: SUB, fontSize: 14 }}>載入中…</div>;
   const people = data.people || [];
@@ -1773,12 +1774,21 @@ function RosterView({ canEdit, confirm }) {
   const filledOf = (pp, f) => f.type === "file" ? (Array.isArray(pp[f.key]) && pp[f.key].length > 0) : String(pp[f.key] ?? "").trim() !== "";
   const progress = (pp) => reqFields.length ? Math.round(reqFields.filter(f => filledOf(pp, f)).length / reqFields.length * 100) : 100;
   const statusOf = (pp) => pp.endDate ? "離職" : (pp.status || "在職");
+  const isSelf = (pp) => !!me && [pp.account, pp.name, pp.nick].filter(Boolean).includes(me.name);
+  const canOpen = (pp) => canEdit || isSelf(pp);
   const mmdd = (b) => b ? `${Number(b.split("-")[1])}/${Number(b.split("-")[2])}` : "—";
   const docCount = (pp) => fields.filter(f => f.type === "file").reduce((n, f) => n + ((pp[f.key] || []).length), 0);
   const val = (pp, k) => k === "prog" ? progress(pp) : k === "statusD" ? statusOf(pp) : (pp[k] ?? "");
+  const showCols = fields.filter(f => f.show);
+  const colW = (f) => f.type === "file" ? "56px" : f.key === "empNo" ? "76px" : f.type === "date" ? "96px" : "minmax(88px,0.9fr)";
+  const cellVal = (pp, f) => {
+    if (f.key === "bday") { const tm = pp.bday && Number(pp.bday.split("-")[1]) === new Date().getMonth() + 1; return pp.bday ? mmdd(pp.bday) + (tm ? " 🎂" : "") : "—"; }
+    if (f.type === "file") { const n = (pp[f.key] || []).length; return n ? `📎${n}` : "—"; }
+    return String(pp[f.key] ?? "").trim() || "—";
+  };
   let rows = people.filter(pp => !q.trim() || ((pp.name || "") + (pp.nick || "") + (pp.dept || "") + (pp.empNo || "") + (pp.phone || "")).toLowerCase().includes(q.trim().toLowerCase()));
   rows = [...rows].sort((a, b) => { const va = val(a, sort.key), vb = val(b, sort.key); return (va < vb ? -1 : va > vb ? 1 : 0) * sort.dir; });
-  const GTC = "40px 1.5fr 76px 0.7fr 92px 66px 130px 62px 56px";
+  const GTC = `40px 1.5fr ${showCols.map(colW).join(" ")} 130px 62px 56px`;
   const th = (label, key, extra) => (
     <button key={label} onClick={() => key && setSort(s2 => ({ key, dir: s2.key === key ? -s2.dir : 1 }))} style={{ background: "none", border: "none", textAlign: "left", padding: "8px 8px", fontSize: 10.5, letterSpacing: 0.8, color: sort.key === key ? TEXT : "#9b9384", fontWeight: 700, cursor: key ? "pointer" : "default", whiteSpace: "nowrap", ...extra }}>
       {label}{key && sort.key === key ? (sort.dir === 1 ? " ▲" : " ▼") : ""}
@@ -1791,31 +1801,32 @@ function RosterView({ canEdit, confirm }) {
       <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "6px 0 12px", flexWrap: "wrap" }}>
         <span style={{ background: ACCENT, color: "#fff", fontSize: 11.5, fontWeight: 700, borderRadius: 4, padding: "2px 8px", letterSpacing: 1 }}>名冊</span>
         <div style={{ fontSize: 17, fontWeight: 800, color: TEXT, fontFamily: DISP }}>夥伴名冊 / 入職流程</div>
-        <span style={{ fontSize: 12, color: "#9b9384" }}>{people.length} 人・必填 {reqFields.length} 項＝入職進度</span>
+        <span style={{ fontSize: 12, color: "#9b9384" }}>{people.length} 人・必填 {reqFields.length} 項＝入職進度・🔒完整卡片＝主管與本人</span>
         <div style={{ flex: 1 }} />
         <input value={q} onChange={e => setQ(e.target.value)} placeholder="搜尋姓名/綽號/員編/部門…" style={{ ...inpS, width: 210 }} />
         {canEdit && <button onClick={() => setShowFields(true)} style={{ background: "#fff", color: TEXT, border: `1.5px solid #c8bca6`, borderRadius: 8, padding: "8px 14px", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>⚙ 欄位設定</button>}
         {canEdit && <button onClick={addP} style={{ background: ACCENT, color: "#fff", border: "none", borderRadius: 8, padding: "8px 16px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>＋ 新增夥伴</button>}
       </div>
+      {lockTip && <div style={{ background: "#fbeee6", border: `1px solid ${ACCENT}`, color: ACCENT, borderRadius: 8, padding: "8px 14px", fontSize: 13, fontWeight: 600, marginBottom: 10 }}>🔒 完整資料卡（含身分證、薪資等機密）只有主管與本人可以打開；表格上顯示的都是公開欄位。</div>}
       <div style={{ background: "#fff", border: "1.5px solid #c8bca6", borderRadius: 10, overflow: "hidden" }}>
         <div style={{ overflowX: "auto" }}><div style={{ minWidth: 860 }}>
           <div style={{ display: "grid", gridTemplateColumns: GTC, background: "#ece4d6", borderBottom: "1.5px solid #c8bca6", alignItems: "center" }}>
-            <span />{th("姓名（綽號）", "name")}{th("員編", "empNo")}{th("部門", "dept")}{th("到職日", "startDate")}{th("生日", "bday")}{th("入職進度", "prog")}{th("狀態", "statusD")}{th("文件", null)}
+            <span />{th("姓名（綽號）", "name")}{showCols.map(f => th(f.label, f.type === "file" ? null : f.key))}{th("入職進度", "prog")}{th("狀態", "statusD")}{th("文件", null)}
           </div>
           {rows.length === 0 ? <div style={{ padding: 24, textAlign: "center", color: "#9b9384", fontSize: 13 }}>沒有符合的人</div> :
             rows.map((pp, i) => {
               const pg = progress(pp); const st = statusOf(pp);
               const thisMonth = pp.bday && Number(pp.bday.split("-")[1]) === new Date().getMonth() + 1;
               return (
-                <div key={pp.id} onClick={() => setSel(pp.id)}
+                <div key={pp.id} onClick={() => canOpen(pp) ? setSel(pp.id) : (setLockTip(true), setTimeout(() => setLockTip(false), 3000))}
                   onMouseEnter={e => e.currentTarget.style.background = "#f4efe5"} onMouseLeave={e => e.currentTarget.style.background = st === "離職" ? "#f2ede1" : "#fff"}
                   style={{ display: "grid", gridTemplateColumns: GTC, alignItems: "center", height: 40, borderTop: i ? `1px solid #f0ead9` : "none", cursor: "pointer", background: st === "離職" ? "#f2ede1" : "#fff", opacity: st === "離職" ? .72 : 1 }}>
                   <div style={{ display: "flex", justifyContent: "center" }}><span style={{ width: 24, height: 24, borderRadius: "50%", background: "#fbeee6", color: ACCENT, fontSize: 11, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center" }}>{(pp.name || "?")[0]}</span></div>
-                  <div style={{ padding: "0 8px", fontSize: 13, fontWeight: 600, color: TEXT, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{pp.name || "（未命名）"}{pp.nick && <span style={{ color: "#9b9384", fontWeight: 400 }}>（{pp.nick}）</span>}{thisMonth && " 🎂"}</div>
-                  <div style={{ padding: "0 8px", fontSize: 11.5, fontFamily: "'IBM Plex Mono',monospace", color: pp.empNo ? SUB : "#c8bca6" }}>{pp.empNo || "—"}</div>
-                  <div style={{ padding: "0 8px", fontSize: 12.5, color: SUB, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{pp.dept || "—"}</div>
-                  <div style={{ padding: "0 8px", fontSize: 12, fontVariantNumeric: "tabular-nums", color: pp.startDate ? SUB : "#c8bca6" }}>{pp.startDate || "—"}</div>
-                  <div style={{ padding: "0 8px", fontSize: 12.5, fontVariantNumeric: "tabular-nums", color: SUB }}>{mmdd(pp.bday)}</div>
+                  <div style={{ padding: "0 8px", fontSize: 13, fontWeight: 600, color: TEXT, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{pp.name || "（未命名）"}{pp.nick && <span style={{ color: "#9b9384", fontWeight: 400 }}>（{pp.nick}）</span>}{thisMonth && " 🎂"}{canOpen(pp) ? "" : " "}{!canOpen(pp) && <span style={{ fontSize: 10, color: "#c8bca6" }}>🔒</span>}</div>
+                  {showCols.map(f => {
+                    const v = cellVal(pp, f);
+                    return <div key={f.key} style={{ padding: "0 8px", fontSize: f.key === "empNo" ? 11.5 : 12.5, fontFamily: f.key === "empNo" ? "'IBM Plex Mono',monospace" : undefined, fontVariantNumeric: "tabular-nums", color: v === "—" ? "#c8bca6" : SUB, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{v}</div>;
+                  })}
                   <div style={{ padding: "0 10px", display: "flex", alignItems: "center", gap: 7 }}>
                     <div style={{ flex: 1, height: 7, background: "#e6ddc9", borderRadius: 4, overflow: "hidden" }}><div style={{ width: pg + "%", height: "100%", background: pg === 100 ? "#3f7d4e" : pg >= 50 ? "#c98a14" : "#b3261e", borderRadius: 4 }} /></div>
                     <span style={{ fontFamily: "'IBM Plex Mono',monospace", fontSize: 11, fontWeight: 700, color: pg === 100 ? "#3f7d4e" : TEXT, width: 34, textAlign: "right" }}>{pg}%</span>
@@ -1830,15 +1841,17 @@ function RosterView({ canEdit, confirm }) {
       {/* 夥伴詳情：動態欄位（依欄位設定渲染） */}
       {sel && (() => {
         const pp = people.find(x => x.id === sel); if (!pp) return null;
+        if (!canOpen(pp)) return null;
         const pg = progress(pp);
+        const editable = canEdit || isSelf(pp);
         const F = (f) => {
           const missing = f.req && !filledOf(pp, f);
           const lab = <span>{f.label}{f.req && <span style={{ color: missing ? "#b3261e" : "#3f7d4e" }}> {missing ? "＊必填" : "✓"}</span>}</span>;
           let node = null;
-          if (f.type === "file") node = <ReceiptUploader receipts={pp[f.key] || []} onChange={list => updP(pp.id, { [f.key]: list })} size={28} />;
-          else if (f.type === "date") node = <input type="date" value={pp[f.key] || ""} onChange={e => updP(pp.id, { [f.key]: e.target.value })} disabled={!canEdit} style={dateS} />;
-          else if (f.type === "select") node = <select value={pp[f.key] || ""} onChange={e => updP(pp.id, { [f.key]: e.target.value })} disabled={!canEdit} style={inpS}>{(f.options || []).map(o => <option key={o} value={o}>{o || "—"}</option>)}</select>;
-          else node = <input value={pp[f.key] || ""} onChange={e => updP(pp.id, { [f.key]: e.target.value })} disabled={!canEdit} style={inpS} />;
+          if (f.type === "file") node = <ReceiptUploader receipts={pp[f.key] || []} onChange={list => editable && updP(pp.id, { [f.key]: list })} size={28} />;
+          else if (f.type === "date") node = <input type="date" value={pp[f.key] || ""} onChange={e => updP(pp.id, { [f.key]: e.target.value })} disabled={!editable} style={dateS} />;
+          else if (f.type === "select") node = <select value={pp[f.key] || ""} onChange={e => updP(pp.id, { [f.key]: e.target.value })} disabled={!editable} style={inpS}>{(f.options || []).map(o => <option key={o} value={o}>{o || "—"}</option>)}</select>;
+          else node = <input value={pp[f.key] || ""} onChange={e => updP(pp.id, { [f.key]: e.target.value })} disabled={!editable} style={inpS} />;
           return <label key={f.key} style={{ display: "block", fontSize: 11, letterSpacing: 0.5, color: "#9b9384", fontWeight: 600, gridColumn: f.type === "file" ? "1 / -1" : undefined }}>{lab}<div style={{ marginTop: 4 }}>{node}</div></label>;
         };
         return (
@@ -1856,10 +1869,10 @@ function RosterView({ canEdit, confirm }) {
                 <span style={{ fontFamily: "'IBM Plex Mono',monospace", fontSize: 12.5, fontWeight: 700 }}>{pg}%</span>
               </div>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 4 }}>
-                <label style={{ display: "block", fontSize: 11, letterSpacing: 0.5, color: "#9b9384", fontWeight: 600 }}>姓名<div style={{ marginTop: 4 }}><input value={pp.name || ""} onChange={e => updP(pp.id, { name: e.target.value })} disabled={!canEdit} style={inpS} /></div></label>
-                <label style={{ display: "block", fontSize: 11, letterSpacing: 0.5, color: "#9b9384", fontWeight: 600 }}>綽號<div style={{ marginTop: 4 }}><input value={pp.nick || ""} onChange={e => updP(pp.id, { nick: e.target.value })} disabled={!canEdit} style={inpS} /></div></label>
+                <label style={{ display: "block", fontSize: 11, letterSpacing: 0.5, color: "#9b9384", fontWeight: 600 }}>姓名<div style={{ marginTop: 4 }}><input value={pp.name || ""} onChange={e => updP(pp.id, { name: e.target.value })} disabled={!editable} style={inpS} /></div></label>
+                <label style={{ display: "block", fontSize: 11, letterSpacing: 0.5, color: "#9b9384", fontWeight: 600 }}>綽號<div style={{ marginTop: 4 }}><input value={pp.nick || ""} onChange={e => updP(pp.id, { nick: e.target.value })} disabled={!editable} style={inpS} /></div></label>
                 {fields.map(F)}
-                <label style={{ display: "block", fontSize: 11, letterSpacing: 0.5, color: "#9b9384", fontWeight: 600 }}>狀態<div style={{ marginTop: 4 }}><select value={pp.status || "在職"} onChange={e => updP(pp.id, { status: e.target.value })} disabled={!canEdit} style={inpS}><option>在職</option><option>離職</option><option>留停</option></select></div></label>
+                <label style={{ display: "block", fontSize: 11, letterSpacing: 0.5, color: "#9b9384", fontWeight: 600 }}>狀態<div style={{ marginTop: 4 }}><select value={pp.status || "在職"} onChange={e => updP(pp.id, { status: e.target.value })} disabled={!editable} style={inpS}><option>在職</option><option>離職</option><option>留停</option></select></div></label>
               </div>
             </div>
           </div>
@@ -1874,7 +1887,7 @@ function RosterView({ canEdit, confirm }) {
               <div style={{ flex: 1 }} />
               <button onClick={() => setShowFields(false)} style={{ background: "none", border: "none", fontSize: 22, cursor: "pointer", color: SUB }}>×</button>
             </div>
-            <div style={{ fontSize: 12, color: SUB, marginBottom: 12 }}>型別選「檔案上傳」＝該欄位變成可上傳檔案/貼截圖；勾「必填」＝計入入職進度。改動立即套用到所有人。</div>
+            <div style={{ fontSize: 12, color: SUB, marginBottom: 12 }}>型別選「檔案上傳」＝該欄位變成可上傳檔案/貼截圖；勾「顯示」＝直接變成名冊表格的欄位（公開，所有人看得到）；勾「必填」＝計入入職進度。改動立即套用到所有人。</div>
             {fields.map((f, idx) => (
               <div key={f.key} style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 8, flexWrap: "wrap" }}>
                 <input value={f.label} onChange={e => persist({ fields: fields.map((x, j) => j === idx ? { ...x, label: e.target.value } : x) })} style={{ ...inpS, width: 180 }} />
@@ -1882,6 +1895,7 @@ function RosterView({ canEdit, confirm }) {
                   <option value="text">文字</option><option value="date">日期</option><option value="select">選單</option><option value="file">檔案上傳</option>
                 </select>
                 {f.type === "select" && <input value={(f.options || []).join(",")} onChange={e => persist({ fields: fields.map((x, j) => j === idx ? { ...x, options: e.target.value.split(",") } : x) })} placeholder="選項,逗號分隔" style={{ ...inpS, width: 150 }} />}
+                <label style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 12.5, color: TEXT, cursor: "pointer" }}><input type="checkbox" checked={!!f.show} onChange={e => persist({ fields: fields.map((x, j) => j === idx ? { ...x, show: e.target.checked } : x) })} />顯示</label>
                 <label style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 12.5, color: TEXT, cursor: "pointer" }}><input type="checkbox" checked={!!f.req} onChange={e => persist({ fields: fields.map((x, j) => j === idx ? { ...x, req: e.target.checked } : x) })} />必填</label>
                 <button onClick={async () => { if (await confirm(`刪除欄位「${f.label}」？（各人此欄資料仍保留，只是不再顯示）`, { confirmLabel: "刪除" })) persist({ fields: fields.filter((_, j) => j !== idx) }); }} style={{ background: "none", border: "none", color: "#9b9384", cursor: "pointer", fontSize: 15 }}>×</button>
               </div>
@@ -4272,10 +4286,10 @@ function HistoryView({ K, confirm, snapshotData, cats, petty }) {
 // 維護方式：每次有較大改動就在最上面加一筆（日期 + 條列）。
 const CHANGELOG = [
   { date: "2026-07-18", items: [
-    "名冊全面升級：匯入人資「資料總表」全部資料(員編/到離職日/身分證/勞健保/本薪津貼/薪轉帳戶…)，22 人補齊、27 人新增，共 53 人",
-    "名冊欄位可自訂：⚙欄位設定可任意新增/改名/刪除欄位、型別選 文字/日期/選單/檔案上傳、可勾必填",
-    "入職進度條：必填欄位(含必上傳文件)完成率直接顯示在名冊表格，缺什麼一眼看到",
-    "離職夥伴灰底保留於名冊(資料不刪)、可依任何欄位排序、可搜尋姓名/綽號/員編",
+    "財務「對帳」升級為銀行帳務資料庫：每一筆銀行進出永久累積、只增不改，試算表資料一次搬入當底稿(188筆)，之後試算表退役、以資料庫核對所有工程款；可手動新增一筆(未來直接貼網銀截圖AI判讀)",
+    "名冊匯入人資「資料總表」：現職 28 人資料補齊(員編/到職日/身分證/勞健保/本薪津貼/薪轉帳戶…)，已離職者不上",
+    "名冊欄位可自訂：⚙欄位設定可任意新增/改名/刪除、型別選 文字/日期/選單/檔案上傳、勾「顯示」直接變表格欄位、勾「必填」計入入職進度",
+    "名冊個資保護：表格只顯示公開欄位；完整資料卡(身分證/薪資等機密)只有主管與本人打得開，本人可自己補資料傳文件",
   ]},
   { date: "2026-07-17", items: [
     "對帳頁改銀行對帳單式：合作金庫帳戶頭+最新餘額、完整欄位(日期/類別/內容/金額/手續費/餘額/收款方/批號/經手/狀態)、餘額走勢+每月支出+類別佔比圖表、未對帳列內快速補記",
