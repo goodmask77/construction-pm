@@ -333,46 +333,56 @@ export default function TaskCenter({ K, confirm, canEdit, cats, onLog, onAddCat 
         );
       })()}
 
-      {/* ── 依大項分組 ── */}
-      {view === "group" && (
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(280px,1fr))", gap: 12, alignItems: "start" }}>
-          {groups.map(g => {
-            const items = orderTasks(tasksOf(g.id).filter(matchQ), "manual"); // 釘選排最前
-            const isEmpty = items.length === 0;
-            // 空大項＝縮成一行（名稱＋直接新增輸入），不再一片空盒海；仍是拖放落點
-            return DropZone({ keyId: g.id, onDropHere: () => moveTo(drag, { catId: g.id }),
-              style: { background: C.card, border: `1px solid ${C.line}`, borderRadius: 8, padding: isEmpty ? "8px 10px" : 12, gridColumn: isEmpty ? undefined : undefined },
-              children: isEmpty ? (
-                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  {g.id === INBOX && <Inbox size={13} strokeWidth={1.75} color={C.accent} style={{ flexShrink: 0 }} />}
-                  <div style={{ fontSize: 12.5, fontWeight: 600, color: g.id === INBOX ? C.accent : C.sub, whiteSpace: "nowrap" }}>{g.name}</div>
-                  {canEdit
-                    ? <input value={gnew[g.id] || ""} onChange={e => setGnew(p => ({ ...p, [g.id]: e.target.value }))} onKeyDown={e => { if (e.key === "Enter" && !e.nativeEvent.isComposing && e.keyCode !== 229) addToGroup(g.id); }} placeholder="＋ 新增或拖到這裡…" style={{ flex: 1, minWidth: 0, boxSizing: "border-box", border: `1px dashed ${C.line}`, borderRadius: 8, padding: "4px 9px", fontSize: 12, background: "transparent", color: C.text, outline: "none" }} />
-                    : <span style={{ fontSize: 11.5, color: C.faint }}>0</span>}
-                </div>
-              ) : (
-                <>
+      {/* ── 依大項分組（瀑布流：卡片各自貼緊往下堆，不互相撐高度；空大項收到最下面）── */}
+      {view === "group" && (() => {
+        const withItems = groups.map(g => ({ g, items: orderTasks(tasksOf(g.id).filter(matchQ), "manual") }));
+        const filled = withItems.filter(x => x.items.length > 0 || x.g.id === INBOX); // 收件匣固定在主區
+        const empties = withItems.filter(x => x.items.length === 0 && x.g.id !== INBOX);
+        const gInput = (gid, slim) => canEdit && <input value={gnew[gid] || ""} onChange={e => setGnew(p => ({ ...p, [gid]: e.target.value }))} onKeyDown={e => { if (e.key === "Enter" && !e.nativeEvent.isComposing && e.keyCode !== 229) addToGroup(gid); }} placeholder={slim ? "＋ 新增或拖到這裡…" : "＋ 直接在此大項新增…"} style={{ flex: slim ? 1 : undefined, width: slim ? undefined : "100%", minWidth: 0, boxSizing: "border-box", border: `1px dashed ${C.line}`, borderRadius: 8, padding: slim ? "4px 9px" : "6px 10px", fontSize: slim ? 12 : 12.5, background: "transparent", color: C.text, outline: "none", marginTop: slim ? 0 : 4 }} />;
+        return (
+          <div>
+            {/* 主區：有任務的大項（+收件匣），CSS columns 瀑布流 */}
+            <div style={{ columns: "300px", columnGap: 12 }}>
+              {filled.map(({ g, items }) => DropZone({ keyId: g.id, onDropHere: () => moveTo(drag, { catId: g.id }),
+                style: { background: C.card, border: `1px solid ${C.line}`, borderRadius: 8, padding: 12, breakInside: "avoid", marginBottom: 12 },
+                children: <>
                   <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 10, padding: "0 2px" }}>
                     {g.id === INBOX && <Inbox size={13} strokeWidth={1.75} color={C.accent} />}
                     <div style={{ fontSize: 13, fontWeight: 600, color: g.id === INBOX ? C.accent : C.text }}>{g.name}</div>
                     <span style={{ fontSize: 11.5, color: C.faint, fontVariantNumeric: "tabular-nums" }}>{items.length}</span>
                   </div>
                   {items.map(t => Card({ t, dropBefore: true }))}
-                  {canEdit && <input value={gnew[g.id] || ""} onChange={e => setGnew(p => ({ ...p, [g.id]: e.target.value }))} onKeyDown={e => { if (e.key === "Enter" && !e.nativeEvent.isComposing && e.keyCode !== 229) addToGroup(g.id); }} placeholder="＋ 直接在此大項新增…" style={{ width: "100%", boxSizing: "border-box", border: `1px dashed ${C.line}`, borderRadius: 8, padding: "6px 10px", fontSize: 12.5, background: "transparent", color: C.text, outline: "none", marginTop: 4 }} />}
-                </>
-              ) });
-          })}
-          {/* 直接在這裡新增大項（會同步建立到總覽的工程大項） */}
-          {canEdit && onAddCat && (
-            <div style={{ border: `1px dashed ${C.line}`, borderRadius: 8, padding: "8px 10px", display: "flex", alignItems: "center", gap: 8 }}>
-              <FolderPlus size={14} strokeWidth={1.75} color={C.faint} style={{ flexShrink: 0 }} />
-              <input value={newCatIn} onChange={e => setNewCatIn(e.target.value)}
-                onKeyDown={e => { if (e.key === "Enter" && !e.nativeEvent.isComposing && e.keyCode !== 229 && newCatIn.trim()) { onAddCat(newCatIn.trim()); setNewCatIn(""); } }}
-                placeholder="＋ 新增大項，Enter 建立" style={{ flex: 1, minWidth: 0, border: "none", background: "transparent", outline: "none", fontSize: 12.5, color: C.text }} />
+                  {gInput(g.id, false)}
+                </> }))}
             </div>
-          )}
-        </div>
-      )}
+            {/* 下方：沒有任務的大項（縮成一行、仍可拖入/新增）＋ 新增大項 */}
+            {(empties.length > 0 || (canEdit && onAddCat)) && (
+              <div style={{ marginTop: 16 }}>
+                <div style={{ fontSize: 11, letterSpacing: 0.5, fontWeight: 500, color: C.faint, marginBottom: 8 }}>沒有任務的大項（拖進來或直接輸入就會出現在上面）</div>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(240px,1fr))", gap: 8 }}>
+                  {empties.map(({ g }) => DropZone({ keyId: g.id, onDropHere: () => moveTo(drag, { catId: g.id }),
+                    style: { background: C.card, border: `1px solid ${C.line}`, borderRadius: 8, padding: "8px 10px" },
+                    children: (
+                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <div style={{ fontSize: 12.5, fontWeight: 600, color: C.sub, whiteSpace: "nowrap" }}>{g.name}</div>
+                        {gInput(g.id, true) || <span style={{ fontSize: 11.5, color: C.faint }}>0</span>}
+                      </div>
+                    ) }))}
+                  {/* 直接新增大項（會同步建立到總覽的工程大項） */}
+                  {canEdit && onAddCat && (
+                    <div style={{ border: `1px dashed ${C.line}`, borderRadius: 8, padding: "8px 10px", display: "flex", alignItems: "center", gap: 8 }}>
+                      <FolderPlus size={14} strokeWidth={1.75} color={C.faint} style={{ flexShrink: 0 }} />
+                      <input value={newCatIn} onChange={e => setNewCatIn(e.target.value)}
+                        onKeyDown={e => { if (e.key === "Enter" && !e.nativeEvent.isComposing && e.keyCode !== 229 && newCatIn.trim()) { onAddCat(newCatIn.trim()); setNewCatIn(""); } }}
+                        placeholder="＋ 新增大項，Enter 建立" style={{ flex: 1, minWidth: 0, border: "none", background: "transparent", outline: "none", fontSize: 12.5, color: C.text }} />
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      })()}
 
       {/* ── 看板（依狀態） ── */}
       {view === "board" && (
