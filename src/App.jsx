@@ -2064,7 +2064,9 @@ function GroupsView({ cats, canEdit, requireLogin, settings, setSettings, journa
   if (seen === null) return <div style={{ padding: 40, color: SUB, fontSize: 14 }}>載入中…</div>;
 
   // 永遠把內部群放進清單（即使還沒有新訊息）
-  const ids = Array.from(new Set([DEFAULT_LINE_GROUP, ...Object.keys(seen), ...Object.keys(cfg)]));
+  // 過濾掉「私訊」誤登記的項目：LINE 個人 id 以 U 開頭（群組 C、聊天室 R）——私訊不是群，不該出現在這頁
+  const ids = Array.from(new Set([DEFAULT_LINE_GROUP, ...Object.keys(seen), ...Object.keys(cfg)]))
+    .filter(gid => !String(gid).startsWith("U") && (seen[gid]?.src !== "user"));
   ids.sort((a, b) => {
     const am = effMode(a) === "internal" ? 0 : 1, bm = effMode(b) === "internal" ? 0 : 1;
     if (am !== bm) return am - bm;
@@ -4023,6 +4025,18 @@ function HistoryView({ K, confirm, snapshotData, cats, petty }) {
 // ── App 更新紀錄（我們對 App 做的功能修改／新增，給全團隊看）─────────────────
 // 維護方式：每次有較大改動就在最上面加一筆（日期 + 條列）。
 const CHANGELOG = [
+  { date: "2026-07-16", items: [
+    "介面大改版：深色頂欄＋KPI 彩色卡、導覽/設定全面改用專業線條圖示、金額右對齊等寬字",
+    "任務中心升級：釘選＋顏色(全視角同步)、日期/重要度排序、直接新增大項、Cmd+Z 復原、依大項瀑布流、甘特左欄固定、心智圖換行",
+    "零用金明細改「預設唯讀、點✎才編輯」＋分頁載入：更快更好讀、不易誤觸；儀表板完工項目摺疊",
+    "🔒 修補隱私漏洞：未登入訪客原本看得到全部金額，現在預設全部遮蔽",
+    "AI/bot 用量帳單從儀表板移到 設定→用量",
+  ]},
+  { date: "2026-07-15", items: [
+    "任務資料地基 v2：新增 負責人/等待中/依賴任務/預估分鐘 四欄位（防循環依賴、跨視角一致、D哥同步支援）",
+    "新增「今日」落地頁：打開任務中心先看 今天必處理/進行中/Quick Wins/在等別人/被卡住/未來7天",
+    "任務卡片全視角顯示隸屬大項；D哥 新增 update_task 可用 LINE 更新任務欄位",
+  ]},
   { date: "2026-07-01", items: [
     "新增「📌 公開結論」頁：集中存團隊定案、版本控制(更新出新版、舊版進歷史)、D哥可直接回答",
     "新增「✅ 任務中心」：合併取代工序/ToDo，六視角(依大項/看板/清單/時間軸/甘特/心智圖)、收件匣隨手記、小卡拖曳歸屬、大項可直接新增",

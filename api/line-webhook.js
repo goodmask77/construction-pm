@@ -567,7 +567,8 @@ export default async function handler(req, res) {
     try {
       if (ev.type !== 'message' || ev.message?.type !== 'text') continue
       const gid = ev.source?.groupId || ev.source?.roomId || ev.source?.userId
-      await registerGroup(gid, ev.source?.type)
+      // 只登記「群組/聊天室」到群組頁；私訊(user)不是群，登記進去會在群組頁出現「未命名群」
+      if (ev.source?.type !== 'user') await registerGroup(gid, ev.source?.type)
       const text = (ev.message.text || '').trim()
       const isDM = ev.source?.type === 'user' // 一對一私訊
       // 只在「真的被 @到本帳號」(排除 @All/@他人) 或「明確叫到 D哥」時才回。
