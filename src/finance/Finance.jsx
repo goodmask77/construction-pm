@@ -59,8 +59,10 @@ export default function FinanceView({ K, confirm, canEdit, ReceiptUploader, onLo
   const [syncBusy, setSyncBusy] = useState(false);
   const [showMatched, setShowMatched] = useState(false);
   const [showMirror, setShowMirror] = useState(false);
-  const [reconOnlyOpen, setReconOnlyOpen] = useState(true); // 對帳單預設只看未對帳
+  const [reconOnlyOpen, setReconOnlyOpen] = useState(false); // 預設「全部」：對帳狀態欄常駐可見，不會消失
   const [reconMsg, setReconMsg] = useState(null); // 補記後的去向提示
+  const [reconQ, setReconQ] = useState("");        // 對帳單搜尋
+  const [reconCat, setReconCat] = useState("");    // 類別標籤篩選
   const flashRecon = (text) => { setReconMsg(text); setTimeout(() => setReconMsg(m => m === text ? null : m), 8000); };
 
   useEffect(() => { (async () => {
@@ -402,11 +404,19 @@ export default function FinanceView({ K, confirm, canEdit, ReceiptUploader, onLo
           try {
             const cd = await window.storage.get("pm_data", true);
             const cats2 = cd && cd.value ? JSON.parse(cd.value) : [];
-            const next = cats2.map(c => c.id === catId ? { ...c, payments: [...(c.payments || []), { id: "pay-" + Math.random().toString(36).slice(2, 8), date: r.payDate || "", amount: r.amount, category: "其他", note: r.content + (r.batch ? "（" + r.batch + "）" : "") + "〔對帳補記〕", itemId: null, receipts: [] }] } : c);
+            // 正確作法：新增「完整細項」(名稱+金額=該筆匯款、含稅、標銀行已核對) + 綁定的付款 → 預估/已付同步增加、不汙染原有項目金額
+            const itemId = "i-" + catId + "-" + Date.now();
+            const payId = "pay-" + Math.random().toString(36).slice(2, 8);
+            const noteTx = (r.batch ? "（" + r.batch + "）" : "") + "〔對帳補記・銀行已核對〕";
+            const next = cats2.map(c => c.id === catId ? {
+              ...c,
+              items: [...(c.items || []), { id: itemId, name: r.content, qty: 1, unit: "式", unitPrice: r.amount, taxType: "含稅", labor: 0, laborDays: 0, dailyWage: 0, assignee: r.payee || "", status: "done", done: true, receipts: [], notes: noteTx, chat: [], bankVerified: true }],
+              payments: [...(c.payments || []), { id: payId, date: r.payDate || "", amount: r.amount, category: "其他", note: r.content + noteTx, itemId, receipts: [], bankVerified: true }],
+            } : c);
             await window.storage.set("pm_data", JSON.stringify(next), true);
             setConCats(next);
-            saveRecon({ ...recon, links: { ...recon.links, [r.id]: { kind: "pay", catId } } });
-            onLog?.("新增", "對帳補記工程付款 " + fmt(r.amount));
+            saveRecon({ ...recon, links: { ...recon.links, [r.id]: { kind: "pay", catId, itemId } } });
+            onLog?.("新增", "對帳補記工程細項+付款 " + fmt(r.amount));
             const cn2 = (cats2.find(c => c.id === catId) || {}).name || "";
             flashRecon("✓ 「" + r.content.slice(0, 16) + "」" + fmt(r.amount) + " 已補進【工程專案→" + cn2 + " 的付款】（切「全部」可見此列已補記）");
           } catch (e) { alert("寫入工程付款失敗：" + e.message); }
@@ -420,7 +430,9 @@ export default function FinanceView({ K, confirm, canEdit, ReceiptUploader, onLo
         const catArr = Object.entries(cats3).sort((a, b) => b[1] - a[1]).slice(0, 7);
         const catMax = Math.max(1, ...catArr.map(([, v]) => v));
         const CATCOL = { "公      司": "#3a6ea5", "宏匯瑞光": "#3f7d4e", "薪      資": "#c98a14", "設      備": "#b3492f", "行      銷": "#6b4a86", "營業雜支": "#9b9384", "利      息": "#2f7d7a" };
-        const rowsView = reconOnlyOpen ? [...chrono].reverse().filter(r => status[r.id]?.st === "open") : [...chrono].reverse();
+        let rowsView = reconOnlyOpen ? [...chrono].reverse().filter(r => status[r.id]?.st === "open") : [...chrono].reverse();
+        if (reconCat) rowsView = rowsView.filter(r => (r.cat || "").replace(/\s+/g, "") === reconCat);
+        if (reconQ.trim()) { const qq = reconQ.trim().toLowerCase(); rowsView = rowsView.filter(r => (r.content + (r.payee || "") + (r.batch || "") + (r.subject || "") + (r.handler || "") + String(r.amount)).toLowerCase().includes(qq)); }
         const statCard = (n, l, cl) => (
           <div key={l} style={{ background: C.card, border: "1.5px solid #c8bca6", borderRadius: 8, padding: "8px 12px", flex: "1 1 110px" }}>
             <div style={{ fontFamily: MONOF, fontSize: 20, fontWeight: 700, color: C.text }}>{n}</div>
@@ -507,7 +519,18 @@ export default function FinanceView({ K, confirm, canEdit, ReceiptUploader, onLo
                       <button key={String(v)} onClick={() => setReconOnlyOpen(v)} style={{ padding: "5px 12px", borderRadius: 6, border: `1px solid ${reconOnlyOpen === v ? C.line : "transparent"}`, background: reconOnlyOpen === v ? "#fff" : "transparent", color: reconOnlyOpen === v ? C.text : C.sub, fontSize: 12.5, fontWeight: reconOnlyOpen === v ? 700 : 400, cursor: "pointer" }}>{l}</button>
                     ))}
                   </div>
+                  <input value={reconQ} onChange={e => setReconQ(e.target.value)} placeholder="搜尋內容/收款方/批號/金額…" style={{ ...inp, width: 210 }} />
                   <span style={{ fontSize: 11, color: C.faint }}>新 → 舊・之後可直接貼企業網銀截圖補資料（規劃中）</span>
+                </div>
+                {/* 類別標籤：點了直接篩選（再點一次取消） */}
+                <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 10 }}>
+                  {catArr.map(([k, v]) => { const kk = k.replace(/\s+/g, ""); const on = reconCat === kk; return (
+                    <button key={k} onClick={() => setReconCat(on ? "" : kk)} style={{ display: "inline-flex", alignItems: "center", gap: 6, border: `1.5px solid ${on ? (CATCOL[k] || "#9b9384") : C.line}`, background: on ? (CATCOL[k] || "#9b9384") : "#fff", color: on ? "#fff" : C.sub, borderRadius: 14, padding: "3px 12px", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
+                      <span style={{ width: 7, height: 7, borderRadius: "50%", background: on ? "#fff" : (CATCOL[k] || "#9b9384") }} />{kk}
+                      <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 10.5, opacity: .8 }}>{Math.round(v / 1000).toLocaleString()}K</span>
+                    </button>
+                  ); })}
+                  {reconCat && <button onClick={() => setReconCat("")} style={{ border: "none", background: "none", color: C.faint, fontSize: 12, cursor: "pointer" }}>× 清除篩選</button>}
                 </div>
                 <div style={{ border: "1.5px solid #c8bca6", borderRadius: 8, background: C.card, overflow: "hidden" }}>
                   <div style={{ overflowX: "auto" }}><div style={{ minWidth: 1180 }}>
