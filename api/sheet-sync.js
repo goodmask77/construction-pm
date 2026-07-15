@@ -1,7 +1,7 @@
 // 後端：同步「2025喬亞·公司帳務表」Google 試算表 → sp_finance_pm_sheet（對帳中心資料源）
 // 表已設「知道連結者可檢視」→ 用公開 CSV 端點抓，不需 OAuth。
 // 觸發：財務內帳「對帳」分頁的「立即同步」按鈕；cron-daily 每天也會呼叫一次。
-const clean = (v) => (v || '').trim().replace(/^["']|["']$/g, '')
+const clean = (v) => (v || '').trim().replace(/^["']|["']$/g, '').replace(/^[A-Za-z0-9_]+=/, '').trim()
 const SB_URL = clean(process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL)
 const SB_KEY = (process.env.SUPABASE_SERVICE_ROLE_KEY || '').trim()
 const SHEET_ID = clean(process.env.FIN_SHEET_ID) || '1a-OBVgd4reSxvgHvHAfb5oM6JFPtZYtIPYmeibilNCE'
