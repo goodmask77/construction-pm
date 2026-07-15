@@ -1723,97 +1723,173 @@ function ShopView({ canEdit, requireLogin, confirm, isAdmin, userName }) {
 }
 
 
-// ── 夥伴中心：名冊 / 入職（人員主檔：表格化、可排序、點列編輯、可上傳文件）──────
+// ── 夥伴中心：名冊 / 入職流程（人員主檔：動態自訂欄位、檔案上傳、必填追蹤入職進度）──
+// 欄位定義存在 kb_360.fields，管理員可任意 新增/改名/改型別(文字/日期/選單/檔案上傳)/設必填/刪除。
+const DEFAULT_ROSTER_FIELDS = [
+  { key: "empNo", label: "員工編號(NUEiP)", type: "text" },
+  { key: "dept", label: "部門/崗位", type: "text" },
+  { key: "startDate", label: "到職日", type: "date", req: true },
+  { key: "endDate", label: "離職日", type: "date" },
+  { key: "bday", label: "生日", type: "date", req: true },
+  { key: "insureCode", label: "投保用生日碼", type: "text" },
+  { key: "idNo", label: "身分證字號", type: "text", req: true },
+  { key: "workPermit", label: "工作證號(外籍)", type: "text" },
+  { key: "special", label: "特殊身份", type: "text" },
+  { key: "insUpdate", label: "保險更新日期", type: "text" },
+  { key: "laborIns", label: "勞保投保額", type: "text", req: true },
+  { key: "healthIns", label: "健保投保額", type: "text" },
+  { key: "insNote", label: "保險備註", type: "text" },
+  { key: "groupIns", label: "富邦團保", type: "select", options: ["", "Ｖ"] },
+  { key: "baseSalary", label: "本薪", type: "text", req: true },
+  { key: "studyAllow", label: "學習補助", type: "text" },
+  { key: "mealAllow", label: "伙食津貼", type: "text" },
+  { key: "bankBranch", label: "薪轉分行", type: "text", req: true },
+  { key: "bankAcct", label: "薪轉帳號", type: "text", req: true },
+  { key: "phone", label: "電話", type: "text" },
+  { key: "email", label: "Email", type: "text" },
+  { key: "account", label: "App帳號(對應登入名)", type: "text" },
+  { key: "note", label: "備註", type: "text" },
+  { key: "idDoc", label: "身分證影本", type: "file", req: true },
+  { key: "contractDoc", label: "勞動契約", type: "file", req: true },
+  { key: "bankDoc", label: "存摺影本", type: "file", req: true },
+  { key: "docs", label: "其他文件", type: "file" },
+];
 function RosterView({ canEdit, confirm }) {
-  const [data, setData] = useState(null); // 完整 kb_360（dimensions/people/reviews 都保留）
+  const [data, setData] = useState(null);
   const [q, setQ] = useState("");
-  const [sort, setSort] = useState({ key: "bdayMD", dir: 1 });
+  const [sort, setSort] = useState({ key: "startDate", dir: 1 });
   const [sel, setSel] = useState(null);
+  const [showFields, setShowFields] = useState(false);
   useEffect(() => { (async () => setData(await loadCrewJSON("kb_360", { dimensions: [], people: [], reviews: [] })))(); }, []);
   if (!data) return <div style={{ padding: 40, color: SUB, fontSize: 14 }}>載入中…</div>;
   const people = data.people || [];
-  const persist = (nextPeople) => { const next = { ...data, people: nextPeople }; setData(next); saveCrewJSON("kb_360", next); };
-  const updP = (id, patch) => persist(people.map(p => p.id === id ? { ...p, ...patch } : p));
-  const addP = () => { if (!canEdit) return; const np = { id: "p-" + Math.random().toString(36).slice(2, 8), name: "", nick: "", dept: "", role: "staff", account: "", bday: "", phone: "", email: "", startDate: "", status: "在職", note: "", docs: [] }; persist([...people, np]); setSel(np.id); };
-  const delP = async (p) => { if (!canEdit) return; if (!(await confirm(`刪除「${p.name || "未命名"}」？（此人過去的回饋/評分紀錄會失去對應名字）`, { confirmLabel: "刪除" }))) return; persist(people.filter(x => x.id !== p.id)); setSel(null); };
-  const age = (b) => b ? Math.floor((Date.now() - new Date(b)) / (365.25 * 86400e3)) : null;
-  const mmdd = (b) => b ? `${Number(b.split("-")[1])}/${Number(b.split("-")[2])}` : "";
-  const val = (p, k) => k === "nameNick" ? (p.name || "") : k === "bdayMD" ? (p.bday || "9999").slice(5) : k === "age" ? (p.bday || "9999") : (p[k] || "");
-  let rows = people.filter(p => !q.trim() || (p.name + (p.nick || "") + (p.dept || "") + (p.phone || "")).toLowerCase().includes(q.trim().toLowerCase()));
+  const fields = (data.fields && data.fields.length ? data.fields : DEFAULT_ROSTER_FIELDS);
+  const persist = (patch) => { const next = { ...data, ...patch }; setData(next); saveCrewJSON("kb_360", next); };
+  const updP = (id, fp) => persist({ people: people.map(pp => pp.id === id ? { ...pp, ...fp } : pp) });
+  const addP = () => { if (!canEdit) return; const np = { id: "p-" + Math.random().toString(36).slice(2, 8), name: "", nick: "", role: "staff", status: "在職" }; persist({ people: [...people, np] }); setSel(np.id); };
+  const delP = async (pp) => { if (!canEdit) return; if (!(await confirm(`刪除「${pp.name || "未命名"}」？`, { confirmLabel: "刪除" }))) return; persist({ people: people.filter(x => x.id !== pp.id) }); setSel(null); };
+  // 入職進度＝必填欄位完成率（含必上傳的檔案）
+  const reqFields = fields.filter(f => f.req);
+  const filledOf = (pp, f) => f.type === "file" ? (Array.isArray(pp[f.key]) && pp[f.key].length > 0) : String(pp[f.key] ?? "").trim() !== "";
+  const progress = (pp) => reqFields.length ? Math.round(reqFields.filter(f => filledOf(pp, f)).length / reqFields.length * 100) : 100;
+  const statusOf = (pp) => pp.endDate ? "離職" : (pp.status || "在職");
+  const mmdd = (b) => b ? `${Number(b.split("-")[1])}/${Number(b.split("-")[2])}` : "—";
+  const docCount = (pp) => fields.filter(f => f.type === "file").reduce((n, f) => n + ((pp[f.key] || []).length), 0);
+  const val = (pp, k) => k === "prog" ? progress(pp) : k === "statusD" ? statusOf(pp) : (pp[k] ?? "");
+  let rows = people.filter(pp => !q.trim() || ((pp.name || "") + (pp.nick || "") + (pp.dept || "") + (pp.empNo || "") + (pp.phone || "")).toLowerCase().includes(q.trim().toLowerCase()));
   rows = [...rows].sort((a, b) => { const va = val(a, sort.key), vb = val(b, sort.key); return (va < vb ? -1 : va > vb ? 1 : 0) * sort.dir; });
-  const GTC = "40px 1.7fr 0.8fr 74px 52px 1.1fr 96px 64px 56px";
-  const th = (label, key, align) => (
-    <button key={label} onClick={() => key && setSort(s2 => ({ key, dir: s2.key === key ? -s2.dir : 1 }))} style={{ background: "none", border: "none", textAlign: align || "left", padding: "8px 8px", fontSize: 10.5, letterSpacing: 0.8, color: sort.key === key ? TEXT : "#9b9384", fontWeight: 700, cursor: key ? "pointer" : "default", whiteSpace: "nowrap" }}>
+  const GTC = "40px 1.5fr 76px 0.7fr 92px 66px 130px 62px 56px";
+  const th = (label, key, extra) => (
+    <button key={label} onClick={() => key && setSort(s2 => ({ key, dir: s2.key === key ? -s2.dir : 1 }))} style={{ background: "none", border: "none", textAlign: "left", padding: "8px 8px", fontSize: 10.5, letterSpacing: 0.8, color: sort.key === key ? TEXT : "#9b9384", fontWeight: 700, cursor: key ? "pointer" : "default", whiteSpace: "nowrap", ...extra }}>
       {label}{key && sort.key === key ? (sort.dir === 1 ? " ▲" : " ▼") : ""}
     </button>
   );
   const inpS = { border: `1px solid ${BORDER}`, borderRadius: 8, padding: "8px 10px", fontSize: 13.5, background: "#fff", color: TEXT, boxSizing: "border-box", width: "100%", outline: "none" };
-  const F = (label, node) => <label style={{ display: "block", fontSize: 11, letterSpacing: 0.5, color: "#9b9384", fontWeight: 600, marginBottom: 10 }}>{label}<div style={{ marginTop: 4 }}>{node}</div></label>;
+  const dateS = { ...inpS, colorScheme: "light", fontFamily: "'Noto Sans TC',sans-serif", cursor: "pointer" };
   return (
     <div>
       <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "6px 0 12px", flexWrap: "wrap" }}>
         <span style={{ background: ACCENT, color: "#fff", fontSize: 11.5, fontWeight: 700, borderRadius: 4, padding: "2px 8px", letterSpacing: 1 }}>名冊</span>
-        <div style={{ fontSize: 17, fontWeight: 800, color: TEXT, fontFamily: DISP }}>夥伴名冊 / 入職</div>
-        <span style={{ fontSize: 12, color: "#9b9384" }}>{people.length} 人</span>
+        <div style={{ fontSize: 17, fontWeight: 800, color: TEXT, fontFamily: DISP }}>夥伴名冊 / 入職流程</div>
+        <span style={{ fontSize: 12, color: "#9b9384" }}>{people.length} 人・必填 {reqFields.length} 項＝入職進度</span>
         <div style={{ flex: 1 }} />
-        <input value={q} onChange={e => setQ(e.target.value)} placeholder="搜尋姓名/綽號/部門/電話…" style={{ ...inpS, width: 210 }} />
+        <input value={q} onChange={e => setQ(e.target.value)} placeholder="搜尋姓名/綽號/員編/部門…" style={{ ...inpS, width: 210 }} />
+        {canEdit && <button onClick={() => setShowFields(true)} style={{ background: "#fff", color: TEXT, border: `1.5px solid #c8bca6`, borderRadius: 8, padding: "8px 14px", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>⚙ 欄位設定</button>}
         {canEdit && <button onClick={addP} style={{ background: ACCENT, color: "#fff", border: "none", borderRadius: 8, padding: "8px 16px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>＋ 新增夥伴</button>}
       </div>
       <div style={{ background: "#fff", border: "1.5px solid #c8bca6", borderRadius: 10, overflow: "hidden" }}>
-        <div style={{ overflowX: "auto" }}><div style={{ minWidth: 780 }}>
+        <div style={{ overflowX: "auto" }}><div style={{ minWidth: 860 }}>
           <div style={{ display: "grid", gridTemplateColumns: GTC, background: "#ece4d6", borderBottom: "1.5px solid #c8bca6", alignItems: "center" }}>
-            <span />{th("姓名（綽號）", "nameNick")}{th("部門", "dept")}{th("生日", "bdayMD")}{th("歲", "age")}{th("電話", "phone")}{th("到職日", "startDate")}{th("狀態", "status")}{th("文件", null)}
+            <span />{th("姓名（綽號）", "name")}{th("員編", "empNo")}{th("部門", "dept")}{th("到職日", "startDate")}{th("生日", "bday")}{th("入職進度", "prog")}{th("狀態", "statusD")}{th("文件", null)}
           </div>
           {rows.length === 0 ? <div style={{ padding: 24, textAlign: "center", color: "#9b9384", fontSize: 13 }}>沒有符合的人</div> :
-            rows.map((p2, i) => {
-              const thisMonth = p2.bday && Number(p2.bday.split("-")[1]) === new Date().getMonth() + 1;
+            rows.map((pp, i) => {
+              const pg = progress(pp); const st = statusOf(pp);
+              const thisMonth = pp.bday && Number(pp.bday.split("-")[1]) === new Date().getMonth() + 1;
               return (
-                <div key={p2.id} onClick={() => setSel(p2.id)}
-                  onMouseEnter={e => e.currentTarget.style.background = "#f4efe5"} onMouseLeave={e => e.currentTarget.style.background = thisMonth ? "#fbeee6" : "#fff"}
-                  style={{ display: "grid", gridTemplateColumns: GTC, alignItems: "center", height: 38, borderTop: i ? `1px solid #f0ead9` : "none", cursor: "pointer", background: thisMonth ? "#fbeee6" : "#fff" }}>
-                  <div style={{ display: "flex", justifyContent: "center" }}><span style={{ width: 24, height: 24, borderRadius: "50%", background: "#fbeee6", color: ACCENT, fontSize: 11, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center" }}>{(p2.name || "?")[0]}</span></div>
-                  <div style={{ padding: "0 8px", fontSize: 13, fontWeight: 600, color: TEXT, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p2.name || "（未命名）"}{p2.nick && <span style={{ color: "#9b9384", fontWeight: 400 }}>（{p2.nick}）</span>}{thisMonth && " 🎂"}</div>
-                  <div style={{ padding: "0 8px", fontSize: 12.5, color: SUB, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p2.dept || "—"}</div>
-                  <div style={{ padding: "0 8px", fontSize: 12.5, fontVariantNumeric: "tabular-nums", color: SUB }}>{mmdd(p2.bday) || "—"}</div>
-                  <div style={{ padding: "0 8px", fontSize: 12.5, fontVariantNumeric: "tabular-nums", color: "#9b9384" }}>{age(p2.bday) ?? "—"}</div>
-                  <div style={{ padding: "0 8px", fontSize: 12.5, fontVariantNumeric: "tabular-nums", color: p2.phone ? SUB : "#9b9384" }}>{p2.phone || "—"}</div>
-                  <div style={{ padding: "0 8px", fontSize: 12.5, fontVariantNumeric: "tabular-nums", color: p2.startDate ? SUB : "#9b9384" }}>{p2.startDate || "—"}</div>
-                  <div style={{ padding: "0 8px" }}><span style={{ fontSize: 11, fontWeight: 600, color: (p2.status || "在職") === "在職" ? "#3f7d4e" : "#9b9384", background: (p2.status || "在職") === "在職" ? "#eef5ef" : "#ece4d6", borderRadius: 10, padding: "2px 9px" }}>{p2.status || "在職"}</span></div>
-                  <div style={{ padding: "0 8px", fontSize: 12, color: (p2.docs || []).length ? SUB : "#9b9384", fontVariantNumeric: "tabular-nums" }}>{(p2.docs || []).length ? `📎${p2.docs.length}` : "—"}</div>
+                <div key={pp.id} onClick={() => setSel(pp.id)}
+                  onMouseEnter={e => e.currentTarget.style.background = "#f4efe5"} onMouseLeave={e => e.currentTarget.style.background = st === "離職" ? "#f2ede1" : "#fff"}
+                  style={{ display: "grid", gridTemplateColumns: GTC, alignItems: "center", height: 40, borderTop: i ? `1px solid #f0ead9` : "none", cursor: "pointer", background: st === "離職" ? "#f2ede1" : "#fff", opacity: st === "離職" ? .72 : 1 }}>
+                  <div style={{ display: "flex", justifyContent: "center" }}><span style={{ width: 24, height: 24, borderRadius: "50%", background: "#fbeee6", color: ACCENT, fontSize: 11, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center" }}>{(pp.name || "?")[0]}</span></div>
+                  <div style={{ padding: "0 8px", fontSize: 13, fontWeight: 600, color: TEXT, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{pp.name || "（未命名）"}{pp.nick && <span style={{ color: "#9b9384", fontWeight: 400 }}>（{pp.nick}）</span>}{thisMonth && " 🎂"}</div>
+                  <div style={{ padding: "0 8px", fontSize: 11.5, fontFamily: "'IBM Plex Mono',monospace", color: pp.empNo ? SUB : "#c8bca6" }}>{pp.empNo || "—"}</div>
+                  <div style={{ padding: "0 8px", fontSize: 12.5, color: SUB, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{pp.dept || "—"}</div>
+                  <div style={{ padding: "0 8px", fontSize: 12, fontVariantNumeric: "tabular-nums", color: pp.startDate ? SUB : "#c8bca6" }}>{pp.startDate || "—"}</div>
+                  <div style={{ padding: "0 8px", fontSize: 12.5, fontVariantNumeric: "tabular-nums", color: SUB }}>{mmdd(pp.bday)}</div>
+                  <div style={{ padding: "0 10px", display: "flex", alignItems: "center", gap: 7 }}>
+                    <div style={{ flex: 1, height: 7, background: "#e6ddc9", borderRadius: 4, overflow: "hidden" }}><div style={{ width: pg + "%", height: "100%", background: pg === 100 ? "#3f7d4e" : pg >= 50 ? "#c98a14" : "#b3261e", borderRadius: 4 }} /></div>
+                    <span style={{ fontFamily: "'IBM Plex Mono',monospace", fontSize: 11, fontWeight: 700, color: pg === 100 ? "#3f7d4e" : TEXT, width: 34, textAlign: "right" }}>{pg}%</span>
+                  </div>
+                  <div style={{ padding: "0 8px" }}><span style={{ fontSize: 11, fontWeight: 600, color: st === "在職" ? "#3f7d4e" : "#9b9384", background: st === "在職" ? "#eef5ef" : "#ece4d6", borderRadius: 10, padding: "2px 9px", whiteSpace: "nowrap" }}>{st}</span></div>
+                  <div style={{ padding: "0 8px", fontSize: 12, color: docCount(pp) ? SUB : "#c8bca6", fontVariantNumeric: "tabular-nums" }}>{docCount(pp) ? `📎${docCount(pp)}` : "—"}</div>
                 </div>
               );
             })}
         </div></div>
       </div>
+      {/* 夥伴詳情：動態欄位（依欄位設定渲染） */}
       {sel && (() => {
-        const p2 = people.find(x => x.id === sel); if (!p2) return null;
+        const pp = people.find(x => x.id === sel); if (!pp) return null;
+        const pg = progress(pp);
+        const F = (f) => {
+          const missing = f.req && !filledOf(pp, f);
+          const lab = <span>{f.label}{f.req && <span style={{ color: missing ? "#b3261e" : "#3f7d4e" }}> {missing ? "＊必填" : "✓"}</span>}</span>;
+          let node = null;
+          if (f.type === "file") node = <ReceiptUploader receipts={pp[f.key] || []} onChange={list => updP(pp.id, { [f.key]: list })} size={28} />;
+          else if (f.type === "date") node = <input type="date" value={pp[f.key] || ""} onChange={e => updP(pp.id, { [f.key]: e.target.value })} disabled={!canEdit} style={dateS} />;
+          else if (f.type === "select") node = <select value={pp[f.key] || ""} onChange={e => updP(pp.id, { [f.key]: e.target.value })} disabled={!canEdit} style={inpS}>{(f.options || []).map(o => <option key={o} value={o}>{o || "—"}</option>)}</select>;
+          else node = <input value={pp[f.key] || ""} onChange={e => updP(pp.id, { [f.key]: e.target.value })} disabled={!canEdit} style={inpS} />;
+          return <label key={f.key} style={{ display: "block", fontSize: 11, letterSpacing: 0.5, color: "#9b9384", fontWeight: 600, gridColumn: f.type === "file" ? "1 / -1" : undefined }}>{lab}<div style={{ marginTop: 4 }}>{node}</div></label>;
+        };
         return (
           <div onClick={e => e.target === e.currentTarget && setSel(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.4)", zIndex: 700, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
-            <div style={{ background: "#fff", border: `1px solid ${BORDER}`, borderRadius: 12, padding: 24, width: "min(620px,96vw)", maxHeight: "90vh", overflowY: "auto" }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16 }}>
-                <div style={{ fontSize: 15, fontWeight: 700, color: TEXT }}>夥伴資料{p2.name ? `：${p2.name}` : ""}</div>
+            <div style={{ background: "#fff", border: `1px solid ${BORDER}`, borderRadius: 12, padding: 24, width: "min(680px,96vw)", maxHeight: "90vh", overflowY: "auto" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
+                <div style={{ fontSize: 15, fontWeight: 700, color: TEXT }}>夥伴資料{pp.name ? `：${pp.name}` : ""}{pp.nick ? `（${pp.nick}）` : ""}</div>
                 <div style={{ flex: 1 }} />
-                {canEdit && <button onClick={() => delP(p2)} style={{ background: "none", border: `1px solid ${BORDER}`, color: "#b3261e", borderRadius: 8, padding: "5px 12px", fontSize: 12.5, cursor: "pointer" }}>刪除</button>}
+                {canEdit && <button onClick={() => delP(pp)} style={{ background: "none", border: `1px solid ${BORDER}`, color: "#b3261e", borderRadius: 8, padding: "5px 12px", fontSize: 12.5, cursor: "pointer" }}>刪除</button>}
                 <button onClick={() => setSel(null)} style={{ background: "none", border: "none", fontSize: 22, cursor: "pointer", color: SUB }}>×</button>
               </div>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-                {F("姓名", <input value={p2.name || ""} onChange={e => updP(p2.id, { name: e.target.value })} disabled={!canEdit} style={inpS} />)}
-                {F("綽號", <input value={p2.nick || ""} onChange={e => updP(p2.id, { nick: e.target.value })} disabled={!canEdit} style={inpS} />)}
-                {F("部門 / 崗位", <input value={p2.dept || ""} onChange={e => updP(p2.id, { dept: e.target.value })} disabled={!canEdit} placeholder="內場 / 外場 / 吧台…" style={inpS} />)}
-                {F("生日", <input type="date" value={p2.bday || ""} onChange={e => updP(p2.id, { bday: e.target.value })} disabled={!canEdit} style={{ ...inpS, colorScheme: "light", fontFamily: "'Noto Sans TC',sans-serif", cursor: "pointer" }} />)}
-                {F("電話", <input value={p2.phone || ""} onChange={e => updP(p2.id, { phone: e.target.value })} disabled={!canEdit} style={inpS} />)}
-                {F("Email", <input value={p2.email || ""} onChange={e => updP(p2.id, { email: e.target.value })} disabled={!canEdit} style={inpS} />)}
-                {F("到職日", <input type="date" value={p2.startDate || ""} onChange={e => updP(p2.id, { startDate: e.target.value })} disabled={!canEdit} style={{ ...inpS, colorScheme: "light", fontFamily: "'Noto Sans TC',sans-serif", cursor: "pointer" }} />)}
-                {F("狀態", <select value={p2.status || "在職"} onChange={e => updP(p2.id, { status: e.target.value })} disabled={!canEdit} style={inpS}><option>在職</option><option>離職</option><option>留停</option></select>)}
-                {F("App 帳號（對應登入顯示名，用於回饋身分）", <input value={p2.account || ""} onChange={e => updP(p2.id, { account: e.target.value })} disabled={!canEdit} placeholder="例：張良" style={inpS} />)}
-                {F("職務角色", <select value={p2.role || "staff"} onChange={e => updP(p2.id, { role: e.target.value })} disabled={!canEdit} style={inpS}><option value="staff">一般</option><option value="lead">組長</option><option value="manager">主管</option></select>)}
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14 }}>
+                <span style={{ fontSize: 11, letterSpacing: .5, color: "#9b9384", fontWeight: 600 }}>入職進度</span>
+                <div style={{ flex: 1, height: 8, background: "#e6ddc9", borderRadius: 4, overflow: "hidden" }}><div style={{ width: pg + "%", height: "100%", background: pg === 100 ? "#3f7d4e" : pg >= 50 ? "#c98a14" : "#b3261e" }} /></div>
+                <span style={{ fontFamily: "'IBM Plex Mono',monospace", fontSize: 12.5, fontWeight: 700 }}>{pg}%</span>
               </div>
-              {F("備註", <textarea value={p2.note || ""} onChange={e => updP(p2.id, { note: e.target.value })} disabled={!canEdit} rows={2} style={{ ...inpS, resize: "vertical" }} />)}
-              {F("入職文件（證件/合約/勞健保等，任何檔案或直接貼截圖）", <ReceiptUploader receipts={p2.docs || []} onChange={list => updP(p2.id, { docs: list })} size={30} />)}
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 4 }}>
+                <label style={{ display: "block", fontSize: 11, letterSpacing: 0.5, color: "#9b9384", fontWeight: 600 }}>姓名<div style={{ marginTop: 4 }}><input value={pp.name || ""} onChange={e => updP(pp.id, { name: e.target.value })} disabled={!canEdit} style={inpS} /></div></label>
+                <label style={{ display: "block", fontSize: 11, letterSpacing: 0.5, color: "#9b9384", fontWeight: 600 }}>綽號<div style={{ marginTop: 4 }}><input value={pp.nick || ""} onChange={e => updP(pp.id, { nick: e.target.value })} disabled={!canEdit} style={inpS} /></div></label>
+                {fields.map(F)}
+                <label style={{ display: "block", fontSize: 11, letterSpacing: 0.5, color: "#9b9384", fontWeight: 600 }}>狀態<div style={{ marginTop: 4 }}><select value={pp.status || "在職"} onChange={e => updP(pp.id, { status: e.target.value })} disabled={!canEdit} style={inpS}><option>在職</option><option>離職</option><option>留停</option></select></div></label>
+              </div>
             </div>
           </div>
         );
       })()}
+      {/* 欄位設定：任意新增/改名/型別(含檔案上傳)/必填/刪除 */}
+      {showFields && (
+        <div onClick={e => e.target === e.currentTarget && setShowFields(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.4)", zIndex: 720, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+          <div style={{ background: "#fff", border: `1px solid ${BORDER}`, borderRadius: 12, padding: 24, width: "min(640px,96vw)", maxHeight: "88vh", overflowY: "auto" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
+              <div style={{ fontSize: 15, fontWeight: 700, color: TEXT }}>⚙ 名冊欄位設定</div>
+              <div style={{ flex: 1 }} />
+              <button onClick={() => setShowFields(false)} style={{ background: "none", border: "none", fontSize: 22, cursor: "pointer", color: SUB }}>×</button>
+            </div>
+            <div style={{ fontSize: 12, color: SUB, marginBottom: 12 }}>型別選「檔案上傳」＝該欄位變成可上傳檔案/貼截圖；勾「必填」＝計入入職進度。改動立即套用到所有人。</div>
+            {fields.map((f, idx) => (
+              <div key={f.key} style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 8, flexWrap: "wrap" }}>
+                <input value={f.label} onChange={e => persist({ fields: fields.map((x, j) => j === idx ? { ...x, label: e.target.value } : x) })} style={{ ...inpS, width: 180 }} />
+                <select value={f.type} onChange={e => persist({ fields: fields.map((x, j) => j === idx ? { ...x, type: e.target.value } : x) })} style={{ ...inpS, width: 110 }}>
+                  <option value="text">文字</option><option value="date">日期</option><option value="select">選單</option><option value="file">檔案上傳</option>
+                </select>
+                {f.type === "select" && <input value={(f.options || []).join(",")} onChange={e => persist({ fields: fields.map((x, j) => j === idx ? { ...x, options: e.target.value.split(",") } : x) })} placeholder="選項,逗號分隔" style={{ ...inpS, width: 150 }} />}
+                <label style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 12.5, color: TEXT, cursor: "pointer" }}><input type="checkbox" checked={!!f.req} onChange={e => persist({ fields: fields.map((x, j) => j === idx ? { ...x, req: e.target.checked } : x) })} />必填</label>
+                <button onClick={async () => { if (await confirm(`刪除欄位「${f.label}」？（各人此欄資料仍保留，只是不再顯示）`, { confirmLabel: "刪除" })) persist({ fields: fields.filter((_, j) => j !== idx) }); }} style={{ background: "none", border: "none", color: "#9b9384", cursor: "pointer", fontSize: 15 }}>×</button>
+              </div>
+            ))}
+            <button onClick={() => persist({ fields: [...fields, { key: "cf_" + Math.random().toString(36).slice(2, 7), label: "新欄位", type: "text" }] })} style={{ width: "100%", border: `1.5px dashed ${BORDER}`, background: "transparent", color: ACCENT, borderRadius: 8, padding: "9px 0", fontSize: 13, fontWeight: 700, cursor: "pointer", marginTop: 4 }}>＋ 新增欄位</button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -4195,6 +4271,12 @@ function HistoryView({ K, confirm, snapshotData, cats, petty }) {
 // ── App 更新紀錄（我們對 App 做的功能修改／新增，給全團隊看）─────────────────
 // 維護方式：每次有較大改動就在最上面加一筆（日期 + 條列）。
 const CHANGELOG = [
+  { date: "2026-07-18", items: [
+    "名冊全面升級：匯入人資「資料總表」全部資料(員編/到離職日/身分證/勞健保/本薪津貼/薪轉帳戶…)，22 人補齊、27 人新增，共 53 人",
+    "名冊欄位可自訂：⚙欄位設定可任意新增/改名/刪除欄位、型別選 文字/日期/選單/檔案上傳、可勾必填",
+    "入職進度條：必填欄位(含必上傳文件)完成率直接顯示在名冊表格，缺什麼一眼看到",
+    "離職夥伴灰底保留於名冊(資料不刪)、可依任何欄位排序、可搜尋姓名/綽號/員編",
+  ]},
   { date: "2026-07-17", items: [
     "對帳頁改銀行對帳單式：合作金庫帳戶頭+最新餘額、完整欄位(日期/類別/內容/金額/手續費/餘額/收款方/批號/經手/狀態)、餘額走勢+每月支出+類別佔比圖表、未對帳列內快速補記",
     "夥伴中心新增「👥 名冊」分頁：入職人員主檔(姓名綽號同欄/可排序/點列編輯/入職文件上傳/新增刪除)",
