@@ -746,7 +746,9 @@ export default function App() {
   };
   const moneyOK = (sp, pg) => {
     if (isAdmin || isManager) return true;
-    if (!_mp.length) return true;                                  // 空＝全開（訪客預設 guestPerms.money_pages=[PERM_NONE]→看不到；admin 可逐頁開放或全開）
+    // 安全預設：未登入訪客「沒設定」＝全關（金額一律遮蔽）；登入者「沒設定」才是全開。
+    // （曾發生 pm_guest_perms 被存成空陣列 → 舊邏輯把空當全開 → 訪客看光財務數字）
+    if (!_mp.length) return !!profile;
     return _mp.includes(`${sp}:${pg}`);
   };
   const canViewMoney = moneyOK(CURRENT_SPACE, view);
@@ -3668,6 +3670,7 @@ function OwnerDashboard({ cats, setCats, settings, stalledItems, activityLog, lo
   const health = (issueItems.length>0 || behind>=15) ? "red" : (stalledItems.length>0 || holdItems.length>0 || behind>=5) ? "amber" : "green";
   const hh = { green:{c:"#3C8C3C",bg:"#F0FDF4",dot:"🟢",txt:"進度正常"}, amber:{c:"#C2872E",bg:"#FFFBEB",dot:"🟡",txt:"需要注意"}, red:{c:"#C0392B",bg:"#FEF2F2",dot:"🔴",txt:"需立即處理"} }[health];
 
+  const [showDoneCats, setShowDoneCats] = useState(false); // 各工程進度：完工的預設摺疊
   const todayActivity = activityLog.filter(a => {
     const d = new Date(a.ts).toLocaleDateString("zh-TW");
     if (d !== today) return false;
@@ -3843,10 +3846,15 @@ function OwnerDashboard({ cats, setCats, settings, stalledItems, activityLog, lo
           <div style={{ fontSize:14, fontWeight: 600, color:"#211C15" }}>各工程進度</div>
           <div style={{ fontSize:12, color:"#6F6656" }}>{workCats.length} 大項 · 完工 {workCats.filter(c=>c.status==="done").length} · 進行中 {workCats.filter(c=>c.status==="inprogress").length} · 待開工 {workCats.filter(c=>c.status==="pending").length}</div>
         </div>
-        {[...cats].sort((a,b)=>{
-          const rank = s => s==="issue"?0 : s==="inprogress"?1 : s==="hold"?2 : s==="done"?4 : 3;
-          const r = rank(a.status)-rank(b.status); return r!==0 ? r : (a.order-b.order);
-        }).map(cat => {
+        {(() => {
+          const sorted = [...cats].sort((a,b)=>{
+            const rank = s => s==="issue"?0 : s==="inprogress"?1 : s==="hold"?2 : s==="done"?4 : 3;
+            const r = rank(a.status)-rank(b.status); return r!==0 ? r : (a.order-b.order);
+          });
+          // 收斂：完工的預設摺疊（Manus P1），畫面聚焦在進行中/有問題
+          const doneList = sorted.filter(c => c.status === "done");
+          const activeList = sorted.filter(c => c.status !== "done");
+          return (showDoneCats ? sorted : activeList).map(cat => {
           const total = cat.items.length;
           const done = cat.items.filter(i=>i.done||i.status==="done").length;
           const pct = total ? Math.round(done/total*100) : 0;
@@ -3873,7 +3881,13 @@ function OwnerDashboard({ cats, setCats, settings, stalledItems, activityLog, lo
               </div>
             </div>
           );
-        })}
+        });
+        })()}
+        {cats.some(c => c.status === "done") && (
+          <button onClick={() => setShowDoneCats(v => !v)} style={{ width:"100%", border:"1px dashed #e5e5e5", background:"#fafafa", color:"#737373", borderRadius:8, padding:"7px 0", fontSize:12.5, fontWeight:600, cursor:"pointer" }}>
+            {showDoneCats ? "收起已完工" : `已完工 ${cats.filter(c=>c.status==="done").length} 項 ▸ 展開`}
+          </button>
+        )}
       </div>
 
       {/* Today's activity */}
@@ -6481,7 +6495,7 @@ function PettyCashView({ petty, setPetty, cats, setCats, canEdit, confirm }) {
   const addAdv = () => guard() && upd({ ...petty, advances: [...advances, { id: "a" + Date.now(), date: "", amount: 0, note: "" }] });
   const setAdv = (id, k, v) => upd({ ...petty, advances: advances.map(a => a.id === id ? { ...a, [k]: v } : a) });
   const delAdv = async (id) => { if (!guard()) return; const a = advances.find(x => x.id === id); if (!(await confirm(`刪除這筆撥款紀錄（${fmt(a?.amount || 0)}）？`, { confirmLabel: "刪除" }))) return; upd({ ...petty, advances: advances.filter(a => a.id !== id) }); };
-  const addSpend = () => guard() && upd({ ...petty, spends: [...spends, { id: "s" + Date.now(), date: "", content: "", amount: 0, catId: PETTY_MISC }] });
+  const addSpend = () => { if (!guard()) return; const id = "s" + Date.now(); upd({ ...petty, spends: [...spends, { id, date: "", content: "", amount: 0, catId: PETTY_MISC }] }); setEditRowId(id); setShowRows(v => Math.max(v, spends.length + 5)); };
   const setSpend = (id, k, v) => upd({ ...petty, spends: spends.map(s => s.id === id ? { ...s, [k]: v } : s) });
   const delSpend = async (id) => { if (!guard()) return; const s = spends.find(x => x.id === id); if (!(await confirm(`刪除這筆花費「${s?.content || "（無內容）"}」（${fmt(s?.amount || 0)}）？`, { confirmLabel: "刪除" }))) return; upd({ ...petty, spends: spends.filter(s => s.id !== id) }); };
 
@@ -6522,6 +6536,8 @@ function PettyCashView({ petty, setPetty, cats, setCats, canEdit, confirm }) {
   const [fCat, setFCat] = useState("all");
   const [fVoucher, setFVoucher] = useState("all");
   const [fClaimed, setFClaimed] = useState("all");
+  const [editRowId, setEditRowId] = useState(null); // 檢視/編輯分離：只有這一列渲染成輸入框（其餘唯讀，快又乾淨）
+  const [showRows, setShowRows] = useState(50);     // 分頁載入：預設 50 筆，按「顯示更多」再加
   const [sortKey, setSortKey] = useState(null); // "date" | "amount" | null(手動)
   const [sortDir, setSortDir] = useState("asc");
   const [dragId, setDragId] = useState(null);
@@ -6705,15 +6721,40 @@ function PettyCashView({ petty, setPetty, cats, setCats, canEdit, confirm }) {
             <tbody>
               {viewSpends.length === 0 ? (
                 <tr><td colSpan={13} style={{ padding: 20, textAlign: "center", color: "#a3a3a3", fontSize: 13 }}>{spends.length ? "沒有符合條件的資料" : "尚無花費；可用上方「貼上整批花費明細」一次帶入，或按「＋ 新增」。"}</td></tr>
-              ) : viewSpends.map(s => (
-                <tr key={s.id}
-                  draggable={manualOrder}
-                  onDragStart={() => manualOrder && setDragId(s.id)}
-                  onDragOver={e => { if (manualOrder && dragId) { e.preventDefault(); setDragOverId(s.id); } }}
-                  onDrop={() => { if (manualOrder && dragId) { reorderSpend(dragId, s.id); setDragId(null); setDragOverId(null); } }}
-                  onDragEnd={() => { setDragId(null); setDragOverId(null); }}
-                  style={{ borderBottom: "1px solid #f0f0f0", background: selected.has(s.id) ? "#FFF7E6" : (dragOverId === s.id ? "#eff6ff" : "transparent") }}>
-                  <td style={{ textAlign: "center", whiteSpace: "nowrap" }}><input type="checkbox" checked={selected.has(s.id)} onChange={e => toggleSel(s.id, e.target.checked)} style={{ cursor: "pointer", verticalAlign: "middle" }} />{manualOrder && <span title="拖曳排序" style={{ color: "#C8BCA0", cursor: "grab", fontSize: 12, marginLeft: 3 }}>⠿</span>}</td>
+              ) : viewSpends.slice(0, showRows).map(s => {
+                const editing = editRowId === s.id && canEdit;
+                const cid = s.catId || PETTY_MISC;
+                const catNm = cid === PETTY_MISC ? "（未歸類）" : ((cats.find(c => c.id === cid) || {}).name || "（未歸類）");
+                const vLabel = (VOUCHER_OPTS.find(o => o[0] === (s.voucher || "")) || ["", "—"])[1];
+                const rowProps = {
+                  draggable: manualOrder && !editing,
+                  onDragStart: () => manualOrder && setDragId(s.id),
+                  onDragOver: (e) => { if (manualOrder && dragId) { e.preventDefault(); setDragOverId(s.id); } },
+                  onDrop: () => { if (manualOrder && dragId) { reorderSpend(dragId, s.id); setDragId(null); setDragOverId(null); } },
+                  onDragEnd: () => { setDragId(null); setDragOverId(null); },
+                  onDoubleClick: () => canEdit && setEditRowId(s.id),
+                  style: { borderBottom: "1px solid #f0f0f0", background: editing ? "#eff6ff" : (selected.has(s.id) ? "#FFF7E6" : (dragOverId === s.id ? "#eff6ff" : "transparent")) },
+                };
+                // 檢視/編輯分離（Manus P0）：預設唯讀文字（好讀、快、不誤觸），✎ 或雙擊才進編輯
+                if (!editing) return (
+                  <tr key={s.id} {...rowProps}>
+                    <td style={{ textAlign: "center", whiteSpace: "nowrap" }}><input type="checkbox" checked={selected.has(s.id)} onChange={e => toggleSel(s.id, e.target.checked)} style={{ cursor: "pointer", verticalAlign: "middle" }} />{manualOrder && <span title="拖曳排序" style={{ color: "#C8BCA0", cursor: "grab", fontSize: 12, marginLeft: 3 }}>⠿</span>}</td>
+                    <td style={{ padding: "6px 7px", fontSize: 12.5, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap", color: s.date ? TEXT : "#a3a3a3" }}>{s.date || "—"}</td>
+                    <td style={{ padding: "6px 7px" }}><span style={{ display: "inline-block", color: catColor(cid), fontWeight: 600, fontSize: 12, background: catColor(cid) + "14", border: `1px solid ${catColor(cid)}33`, borderRadius: 12, padding: "2px 9px", whiteSpace: "nowrap" }}>{catNm}</span></td>
+                    <td style={{ padding: "6px 7px", fontSize: 13, minWidth: 200, maxWidth: 320, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.content || <span style={{ color: "#a3a3a3" }}>—</span>}</td>
+                    <td style={{ padding: "6px 7px", fontSize: 13, textAlign: "right", fontVariantNumeric: "tabular-nums", fontWeight: 600, whiteSpace: "nowrap" }}>{(Number(s.amount) || 0).toLocaleString()}</td>
+                    <td style={{ padding: "6px 7px" }}>{s.voucher ? <span style={{ color: "#fff", fontWeight: 600, fontSize: 11.5, background: voucherColor(s.voucher), borderRadius: 8, padding: "2px 8px", whiteSpace: "nowrap" }}>{vLabel}</span> : <span style={{ color: "#a3a3a3", fontSize: 12 }}>—</span>}</td>
+                    <td style={{ padding: "6px 7px", fontSize: 12, fontVariantNumeric: "tabular-nums", color: s.invoiceNo ? TEXT : "#a3a3a3" }}>{s.invoiceNo || "—"}</td>
+                    <td style={{ textAlign: "center", fontSize: 13, color: s.handed ? "#16a34a" : "#d4d4d4" }}>{s.handed ? "✓" : "—"}</td>
+                    <td style={{ textAlign: "center", fontSize: 13, color: s.claimed ? "#2563eb" : "#d4d4d4" }}>{s.claimed ? "✓" : "—"}</td>
+                    <td style={{ padding: 3 }}><ReceiptUploader receipts={s.receipts || []} onChange={list => setSpend(s.id, "receipts", list)} /></td>
+                    <td style={{ padding: "6px 7px", fontSize: 12.5, minWidth: 120, maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: s.note ? TEXT : "#a3a3a3" }}>{s.note || "—"}</td>
+                    <td style={{ textAlign: "center", whiteSpace: "nowrap" }}>{canEdit && <button onClick={() => setEditRowId(s.id)} title="編輯這一列（也可雙擊該列）" style={{ border: "none", background: "none", color: "#a3a3a3", cursor: "pointer", fontSize: 13 }} onMouseEnter={e => e.currentTarget.style.color = ACCENT} onMouseLeave={e => e.currentTarget.style.color = "#a3a3a3"}>✎</button>}</td>
+                  </tr>
+                );
+                return (
+                <tr key={s.id} {...rowProps}>
+                  <td style={{ textAlign: "center", whiteSpace: "nowrap" }}><input type="checkbox" checked={selected.has(s.id)} onChange={e => toggleSel(s.id, e.target.checked)} style={{ cursor: "pointer", verticalAlign: "middle" }} /></td>
                   <td style={{ padding: 3 }}><DateField value={s.date} onChange={v => setSpend(s.id, "date", v)} style={{ width: 134, padding: "5px 6px", fontSize: 12.5 }} /></td>
                   <td style={{ padding: 3 }}>
                     <select value={s.catId || PETTY_MISC} onChange={e => setSpend(s.id, "catId", e.target.value)} style={{ minWidth: 110, border: `1px solid ${catColor(s.catId || PETTY_MISC)}`, color: catColor(s.catId || PETTY_MISC), fontWeight: 600, borderRadius: 12, padding: "4px 6px", fontSize: 12, background: catColor(s.catId || PETTY_MISC) + "14" }}>
@@ -6732,9 +6773,16 @@ function PettyCashView({ petty, setPetty, cats, setCats, canEdit, confirm }) {
                   <td style={{ textAlign: "center" }}><input type="checkbox" checked={!!s.claimed} onChange={e => setSpend(s.id, "claimed", e.target.checked)} style={{ width: 16, height: 16, cursor: "pointer", accentColor: "#3E72A8" }} /></td>
                   <td style={{ padding: 3 }}><ReceiptUploader receipts={s.receipts || []} onChange={list => setSpend(s.id, "receipts", list)} /></td>
                   <td style={{ padding: 3, minWidth: 120 }}><input value={s.note || ""} onChange={e => setSpend(s.id, "note", e.target.value)} placeholder="—" style={{ width: "100%", boxSizing: "border-box", border: `1px solid ${BORDER}`, borderRadius: 5, padding: "5px 6px", fontSize: 12.5 }} /></td>
-                  <td style={{ textAlign: "center" }}><button onClick={() => delSpend(s.id)} title="刪除" style={{ border: "none", background: "none", color: "#C8BCA0", cursor: "pointer", fontSize: 15 }} onMouseEnter={e => e.currentTarget.style.color = "#DC2626"} onMouseLeave={e => e.currentTarget.style.color = "#C8BCA0"}>×</button></td>
+                  <td style={{ textAlign: "center", whiteSpace: "nowrap" }}>
+                    <button onClick={() => setEditRowId(null)} title="完成編輯" style={{ border: "none", background: ACCENT, color: "#fff", borderRadius: 5, cursor: "pointer", fontSize: 12, padding: "3px 8px", fontWeight: 600 }}>完成</button>
+                    <button onClick={() => delSpend(s.id)} title="刪除" style={{ border: "none", background: "none", color: "#C8BCA0", cursor: "pointer", fontSize: 15, marginLeft: 2 }} onMouseEnter={e => e.currentTarget.style.color = "#DC2626"} onMouseLeave={e => e.currentTarget.style.color = "#C8BCA0"}>×</button>
+                  </td>
                 </tr>
-              ))}
+                );
+              })}
+              {viewSpends.length > showRows && (
+                <tr><td colSpan={13} style={{ padding: 0 }}><button onClick={() => setShowRows(r => r + 100)} style={{ width: "100%", padding: "10px 16px", border: "none", borderTop: `1px solid #f0f0f0`, background: "#fafafa", color: ACCENT, fontSize: 13, fontWeight: 600, cursor: "pointer" }}>顯示更多（還有 {viewSpends.length - showRows} 筆）</button></td></tr>
+              )}
               <tr><td colSpan={13} style={{ padding: 0 }}><button onClick={addSpend} style={{ width: "100%", textAlign: "left", padding: "11px 16px", border: "none", borderTop: `1px dashed ${BORDER}`, background: "#FBF7EE", color: ACCENT, fontSize: 13, fontWeight: 600, cursor: "pointer" }}>＋ 在這裡新增一筆花費</button></td></tr>
             </tbody>
           </table>
