@@ -50,6 +50,7 @@ export default function FinanceView({ K, confirm, canEdit, ReceiptUploader, onLo
   const [imp, setImp] = useState(null); // 批量匯入面板（hook 一定要在提早 return 之前）
   const [coa, setCoa] = useState(null);  // 會計科目樹 [{id,name,parentId}]
   const [coaImp, setCoaImp] = useState(null); // 科目批量建立面板
+  const [editLedId, setEditLedId] = useState(null); // 交易明細：檢視/編輯分離，只有這一列是輸入框
   // ── 對帳中心（試算表 × 工程付款 × 內帳）──
   const [sheet, setSheet] = useState(null);      // {syncedAt, rows[]}（來自 sheet-sync）
   const [recon, setRecon] = useState({ links: {}, ignored: [] }); // 補記/忽略標記
@@ -125,7 +126,7 @@ export default function FinanceView({ K, confirm, canEdit, ReceiptUploader, onLo
   const delAcc = async (a) => { if (!guard()) return; const used = (ledger || []).some(l => l.from === a.id || l.to === a.id); if (!(await confirm(`刪除帳戶「${a.name || "未命名"}」？${used ? "（仍有交易用到它，刪後那些交易會標示「已刪帳戶」）" : ""}`, { confirmLabel: "刪除" }))) return; onLog?.("刪除", `刪除財務帳戶「${a.name || "未命名"}」`); saveAcc(accounts.filter(x => x.id !== a.id)); };
 
   // ── 交易 CRUD ──
-  const addLed = () => { if (!guard()) return; onLog?.("新增", "新增財務交易"); saveLed([{ id: rid("tx"), date: "", kind: "expense", amount: 0, from: accounts[0]?.id || "", to: "", category: "", vendor: "", invoiceNo: "", note: "", receipts: [] }, ...ledger]); };
+  const addLed = () => { if (!guard()) return; onLog?.("新增", "新增財務交易"); const nid = rid("tx"); setEditLedId(nid); saveLed([{ id: nid, date: "", kind: "expense", amount: 0, from: accounts[0]?.id || "", to: "", category: "", vendor: "", invoiceNo: "", note: "", receipts: [] }, ...ledger]); };
   const updLed = (id, k, v) => { logT("編輯", "編輯財務交易"); saveLed(ledger.map(l => l.id === id ? { ...l, [k]: v } : l)); };
   const delLed = async (l) => { if (!guard()) return; if (!(await confirm(`刪除這筆交易（${fmt(num(l.amount))}）？`, { confirmLabel: "刪除" }))) return; onLog?.("刪除", `刪除財務交易 ${fmt(num(l.amount))}${l.vendor ? "（" + l.vendor + "）" : ""}`); saveLed(ledger.filter(x => x.id !== l.id)); };
 
@@ -271,7 +272,7 @@ export default function FinanceView({ K, confirm, canEdit, ReceiptUploader, onLo
         if (single) { const chron = (ledger || []).filter(l => l.from === single || l.to === single).sort((a, b) => (a.date || "") < (b.date || "") ? -1 : (a.date || "") > (b.date || "") ? 1 : 0); let bal = num(accounts.find(a => a.id === single)?.opening); chron.forEach(l => { bal += l.to === single ? num(l.amount) : l.from === single ? -num(l.amount) : 0; running[l.id] = bal; }); }
         const inSum = rows.filter(r => r.kind === "income").reduce((s, r) => s + num(r.amount), 0);
         const expSum = rows.filter(r => r.kind === "expense").reduce((s, r) => s + num(r.amount), 0);
-        const gtc = "98px 60px 116px 116px 116px 92px 104px 78px 1fr 124px 56px 24px";
+        const gtc = "84px 64px 108px 112px 112px 100px 96px 76px 1fr 110px 52px 62px";
         const th = (l, align, click) => <div onClick={click} style={{ padding: "9px 8px", fontSize: 11, fontWeight: 700, color: C.sub, borderLeft: sep, cursor: click ? "pointer" : "default", textAlign: align || "left", letterSpacing: .3, userSelect: "none" }}>{l}</div>;
         const cellI = { border: "1px solid transparent", borderRadius: 5, padding: "6px 7px", fontSize: 12.5, background: "transparent", color: C.text, boxSizing: "border-box", width: "100%", outline: "none" };
         const noAcc = accounts.length === 0;
@@ -294,8 +295,30 @@ export default function FinanceView({ K, confirm, canEdit, ReceiptUploader, onLo
                   {th(`日期 ${sortDir === -1 ? "▼" : "▲"}`, "left", () => setSortDir(d => -d))}{th("類型")}{th("金額", "right")}{th("從帳戶 出")}{th("到帳戶 進")}{th("科目/工種")}{th("廠商")}{th("發票")}{th("備註")}{th(single ? "帳戶餘額" : "餘額", "right")}{th("憑證", "center")}{th("")}
                 </div>
                 {rows.length === 0 ? <div style={{ padding: 22, textAlign: "center", color: C.faint, fontSize: 13 }}>沒有符合的交易，點「＋ 新增交易」或「📥 批量匯入」</div> :
-                 rows.map((l, i) => { const km = kindMeta(l.kind); const rb = single ? running[l.id] : null; return (
-                  <div key={l.id} style={{ display: "grid", gridTemplateColumns: gtc, alignItems: "center", background: i % 2 ? "#f4efe5" : C.card, borderTop: "1px solid #ece4d6" }}>
+                 rows.map((l, i) => { const km = kindMeta(l.kind); const rb = single ? running[l.id] : null;
+                  const editing = editLedId === l.id && canEdit;
+                  const MONOF = "'IBM Plex Mono', ui-monospace, Menlo, monospace";
+                  const ro = { padding: "0 8px", fontSize: 12.5, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" };
+                  // 唯讀 Linear 密列：一行 36px、好掃讀；✎ 或雙擊進編輯
+                  if (!editing) return (
+                    <div key={l.id} onDoubleClick={() => canEdit && setEditLedId(l.id)}
+                      style={{ display: "grid", gridTemplateColumns: gtc, alignItems: "center", height: 36, background: i % 2 ? "#f8f4ea" : C.card, borderTop: "1px solid #ece4d6", cursor: canEdit ? "default" : "default" }}>
+                      <div style={{ ...ro, fontFamily: MONOF, fontSize: 11.5, color: l.date ? C.sub : C.faint }}>{l.date ? String(l.date).slice(2) : "—"}</div>
+                      <div style={{ ...ro, display: "flex", alignItems: "center", gap: 5 }}><span style={{ width: 6, height: 6, borderRadius: "50%", background: km[2], flexShrink: 0 }} /><span style={{ fontSize: 12, color: C.sub }}>{km[1]}</span></div>
+                      <div style={{ ...ro, fontFamily: MONOF, fontWeight: 700, textAlign: "right", color: km[2], fontSize: 12.5 }}>{fmt(num(l.amount))}</div>
+                      <div style={{ ...ro, color: l.from ? C.text : C.faint, opacity: l.kind === "income" ? 0.5 : 1 }}>{l.from ? accName(l.from) : "—"}</div>
+                      <div style={{ ...ro, color: l.to ? C.text : C.faint, opacity: l.kind === "expense" ? 0.5 : 1 }}>{l.to ? accName(l.to) : "—"}</div>
+                      <div style={{ ...ro, color: (l.catId || l.category) ? C.text : C.faint }} title={l.catId ? coaPath(l.catId) : l.category}>{l.catId ? coaPath(l.catId).split(" / ").pop() : (l.category || "—")}</div>
+                      <div style={{ ...ro, color: l.vendor ? C.text : C.faint }}>{l.vendor || "—"}</div>
+                      <div style={{ ...ro, fontFamily: MONOF, fontSize: 11, color: l.invoiceNo ? C.sub : C.faint }}>{l.invoiceNo || "—"}</div>
+                      <div style={{ ...ro, color: l.note ? C.sub : C.faint, fontSize: 12 }}>{l.note || "—"}</div>
+                      <div style={{ padding: "0 8px", textAlign: "right", fontFamily: MONOF, fontSize: 12, fontWeight: 600, color: rb == null ? C.faint : rb < 0 ? C.red : C.text }}>{rb == null ? "·" : fmt(rb)}</div>
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "center" }}>{ReceiptUploader ? <ReceiptUploader receipts={l.receipts || []} onChange={r => updLed(l.id, "receipts", r)} size={18} /> : null}</div>
+                      {canEdit ? <button onClick={() => setEditLedId(l.id)} title="編輯這一列（也可雙擊）" style={{ background: "none", border: "none", color: C.faint, cursor: "pointer", fontSize: 13 }} onMouseEnter={e => e.currentTarget.style.color = C.blue} onMouseLeave={e => e.currentTarget.style.color = C.faint}>✎</button> : <span />}
+                    </div>
+                  );
+                  return (
+                  <div key={l.id} style={{ display: "grid", gridTemplateColumns: gtc, alignItems: "center", background: "#fbeee6", borderTop: "1px solid #ece4d6" }}>
                     <input type="date" value={String(l.date || "").replace(/\//g, "-").slice(0, 10)} onChange={e => updLed(l.id, "date", e.target.value)} style={{ ...cellI, ...dateInp, fontSize: 12 }} />
                     <select value={l.kind} onChange={e => updLed(l.id, "kind", e.target.value)} style={{ ...cellI, color: km[2], fontWeight: 700, padding: "6px 2px" }}>{KINDS.map(([v, lb]) => <option key={v} value={v}>{lb}</option>)}</select>
                     <input value={blankZero(l.amount)} onChange={e => updLed(l.id, "amount", num(e.target.value))} type="number" placeholder="0" style={{ ...cellI, fontFamily: "ui-monospace, monospace", fontWeight: 700, textAlign: "right", color: km[2] }} />
@@ -315,7 +338,10 @@ export default function FinanceView({ K, confirm, canEdit, ReceiptUploader, onLo
                     <input value={l.note || ""} onChange={e => updLed(l.id, "note", e.target.value)} placeholder="備註" style={cellI} />
                     <div style={{ padding: "6px 8px", textAlign: "right", fontFamily: "ui-monospace, monospace", fontSize: 12.5, fontWeight: 600, color: rb == null ? C.faint : rb < 0 ? C.red : C.text }}>{rb == null ? "·" : fmt(rb)}</div>
                     <div style={{ display: "flex", alignItems: "center", justifyContent: "center" }}>{ReceiptUploader ? <ReceiptUploader receipts={l.receipts || []} onChange={r => updLed(l.id, "receipts", r)} size={20} /> : null}</div>
-                    <button onClick={() => delLed(l)} title="刪除" style={{ background: "none", border: "none", color: C.faint, cursor: "pointer", fontSize: 15 }} onMouseEnter={e => e.currentTarget.style.color = C.red} onMouseLeave={e => e.currentTarget.style.color = C.faint}>×</button>
+                    <div style={{ display: "flex", alignItems: "center", whiteSpace: "nowrap" }}>
+                      <button onClick={() => setEditLedId(null)} title="完成編輯" style={{ border: "none", background: C.blue, color: "#fff", borderRadius: 5, cursor: "pointer", fontSize: 11.5, padding: "3px 7px", fontWeight: 700 }}>完成</button>
+                      <button onClick={() => delLed(l)} title="刪除" style={{ background: "none", border: "none", color: C.faint, cursor: "pointer", fontSize: 15 }} onMouseEnter={e => e.currentTarget.style.color = C.red} onMouseLeave={e => e.currentTarget.style.color = C.faint}>×</button>
+                    </div>
                   </div>
                 ); })}
               </div>
