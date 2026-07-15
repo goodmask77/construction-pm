@@ -10,21 +10,22 @@ import { isWaiting, isBlocked, missingDeps, wouldCycle, mergeTask, removeTaskAnd
 
 // 任務顏色（Google Keep 式，低飽和淡色底，白＝無色）
 const TASK_COLORS = ["", "#fef2f2", "#fff7ed", "#fefce8", "#f0fdf4", "#eff6ff", "#faf5ff", "#f5f5f5"];
+const MONO = "'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace"; // 數字專用（gpack）
 
 const C = {
-  text: "#171717",       // neutral-900 主文字
-  sub: "#737373",        // neutral-500 次要文字
-  faint: "#a3a3a3",      // neutral-400 小標籤
-  line: "#e5e5e5",       // neutral-200 邊框（一律 1px）
-  soft: "#f5f5f5",       // neutral-100 pill 底
-  bg: "#fafafa",         // neutral-50 面板底
-  card: "#ffffff",
-  accent: "#2563eb",     // blue-600 全站唯一主色
-  accentSoft: "#eff6ff", // blue-50
-  green: "#16a34a", amber: "#d97706", red: "#dc2626",
+  text: "#1d1a15",       // 墨黑（gpack ink）
+  sub: "#5a5247",        // 次要文字
+  faint: "#9b9384",      // 小標籤
+  line: "#d9cfbd",       // 邊框
+  soft: "#ece4d6",       // pill 底
+  bg: "#f4efe5",         // 米色紙底
+  card: "#fbf8f1",
+  accent: "#c4582a",     // 磚紅（唯一強調色）
+  accentSoft: "#fbeee6",
+  green: "#3f7d4e", amber: "#c98a14", red: "#b3261e",
 };
-const STATUS = [["todo", "待辦", "#737373"], ["doing", "進行中", "#2563eb"], ["done", "完成", "#16a34a"]];
-const PRIO = [["urgent", "超急", "#dc2626"], ["high", "高", "#d97706"], ["normal", "一般", "#737373"], ["low", "低", "#a3a3a3"]];
+const STATUS = [["todo", "待辦", "#9b9384"], ["doing", "進行中", "#3a6ea5"], ["done", "完成", "#3f7d4e"]];
+const PRIO = [["urgent", "超急", "#b3261e"], ["high", "高", "#c98a14"], ["normal", "一般", "#5a5247"], ["low", "低", "#9b9384"]];
 const sLabel = (s) => (STATUS.find(x => x[0] === s) || STATUS[0])[1];
 const sColor = (s) => (STATUS.find(x => x[0] === s) || STATUS[0])[2];
 const pMeta = (p) => PRIO.find(x => x[0] === p) || PRIO[2];
@@ -151,7 +152,7 @@ export default function TaskCenter({ K, confirm, canEdit, cats, onLog, onAddCat 
   // 載入中：skeleton（規格：淺灰佔位塊，不用轉圈）
   if (tasks === null) return (
     <div style={{ maxWidth: 1240, margin: "6px auto", padding: "0 4px" }}>
-      {[38, 120, 120].map((h, i) => <div key={i} style={{ height: h, background: "#f0f0f0", borderRadius: 8, marginBottom: 12 }} />)}
+      {[38, 120, 120].map((h, i) => <div key={i} style={{ height: h, background: "#e6ddc9", borderRadius: 8, marginBottom: 12 }} />)}
     </div>
   );
 
@@ -173,7 +174,7 @@ export default function TaskCenter({ K, confirm, canEdit, cats, onLog, onAddCat 
         style={{ background: t.color || C.card, border: `1px solid ${C.line}`, borderRadius: 8, padding: "9px 11px", marginBottom: 8, cursor: canEdit ? "grab" : "pointer", opacity: drag === t.id ? 0.4 : 1 }}>
         <div style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
           <button onClick={e => { e.stopPropagation(); if (guard()) upd(t.id, { status: done ? "todo" : "done" }); }}
-            title="切換完成" style={{ flexShrink: 0, width: 16, height: 16, marginTop: 2, borderRadius: 4, border: `1px solid ${done ? C.green : "#d4d4d4"}`, background: done ? C.green : "#fff", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", padding: 0 }}>{done && <Check size={11} color="#fff" strokeWidth={3} />}</button>
+            title="切換完成" style={{ flexShrink: 0, width: 16, height: 16, marginTop: 2, borderRadius: 4, border: `1px solid ${done ? C.green : "#c8bca6"}`, background: done ? C.green : "#fff", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", padding: 0 }}>{done && <Check size={11} color="#fff" strokeWidth={3} />}</button>
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 13, color: done ? C.faint : C.text, textDecoration: done ? "line-through" : "none", lineHeight: 1.45, wordBreak: "break-word" }}>
               {t.priority === "urgent" && <Flame size={12} color={C.red} style={{ flexShrink: 0 }} />}{t.title}
@@ -187,7 +188,7 @@ export default function TaskCenter({ K, confirm, canEdit, cats, onLog, onAddCat 
               {(t.tags || []).map(tg => <span key={tg} style={{ fontSize: 11, color: C.sub, background: C.soft, borderRadius: 999, padding: "1px 8px" }}>{tg}</span>)}
             </div>
           </div>
-          {(canEdit || t.pinned) && <button onClick={e => { e.stopPropagation(); if (guard()) upd(t.id, { pinned: !t.pinned }); }} title={t.pinned ? "取消釘選" : "釘選到最上面"} style={{ flexShrink: 0, background: "none", border: "none", cursor: canEdit ? "pointer" : "default", lineHeight: 1, padding: "2px", color: t.pinned ? C.accent : "#d4d4d4" }}><Pin size={13} fill={t.pinned ? C.accent : "none"} /></button>}
+          {(canEdit || t.pinned) && <button onClick={e => { e.stopPropagation(); if (guard()) upd(t.id, { pinned: !t.pinned }); }} title={t.pinned ? "取消釘選" : "釘選到最上面"} style={{ flexShrink: 0, background: "none", border: "none", cursor: canEdit ? "pointer" : "default", lineHeight: 1, padding: "2px", color: t.pinned ? C.accent : "#c8bca6" }}><Pin size={13} fill={t.pinned ? C.accent : "none"} /></button>}
           {t.owner && <span title={`負責人：${t.owner}`} style={{ flexShrink: 0, width: 20, height: 20, borderRadius: "50%", background: C.accentSoft, color: C.accent, fontSize: 10, fontWeight: 600, display: "flex", alignItems: "center", justifyContent: "center", whiteSpace: "nowrap", overflow: "hidden" }}>{t.owner.slice(0, 2)}</span>}
           {canEdit && <button onClick={e => { e.stopPropagation(); del(t.id); }} title="刪除" style={{ flexShrink: 0, background: "none", border: "none", color: C.faint, cursor: "pointer", lineHeight: 1, padding: "2px" }} onMouseEnter={e => e.currentTarget.style.color = C.red} onMouseLeave={e => e.currentTarget.style.color = C.faint}><X size={14} /></button>}
         </div>
@@ -297,14 +298,17 @@ export default function TaskCenter({ K, confirm, canEdit, cats, onLog, onAddCat 
         const Grid = ({ arr }) => <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(260px,1fr))", gap: 8 }}>{arr.map(t => Card({ t }))}</div>;
         return (
           <div style={{ display: "grid", gap: 12 }}>
-            {/* 問候列：今天的一眼總覽 */}
-            <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap", padding: "2px 2px 0" }}>
-              <span style={{ fontSize: 15, fontWeight: 600, color: C.text }}>今天 {dateStr}</span>
-              <span style={{ fontSize: 12.5, color: C.sub, fontVariantNumeric: "tabular-nums" }}>
-                {dueNow.length > 0 ? `${dueNow.length} 件必處理` : "沒有到期壓力"}
-                {quick.length > 0 && `・${quick.length} 件可速戰速決`}
-                {waitingArr.length > 0 && `・${waitingArr.length} 件在等別人`}
-              </span>
+            {/* 問候＋大數字摘要卡（gpack 式 mono 大數字＝視覺錨點，一眼知道今天量級） */}
+            <div style={{ fontSize: 15, fontWeight: 700, color: C.text, padding: "2px 2px 0" }}>今天 {dateStr}</div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(130px,1fr))", gap: 10 }}>
+              {[[dueNow.length, "今天必處理", C.red], [quick.length, `Quick Wins ≤${QUICK_WIN_MAX_MINUTES}分`, C.green], [waitingArr.length, "在等別人", C.amber], [blockedArr.length, "被前置卡住", C.faint]].map(([n, l, cl]) => (
+                <div key={l} style={{ background: C.card, border: "1.5px solid #c8bca6", borderRadius: 8, padding: "10px 12px" }}>
+                  <div style={{ fontFamily: MONO, fontSize: 24, fontWeight: 700, color: n > 0 ? C.text : C.faint, lineHeight: 1.1 }}>{n}</div>
+                  <div style={{ fontSize: 11, color: C.sub, marginTop: 3, display: "flex", alignItems: "center", gap: 5 }}>
+                    <span style={{ width: 6, height: 6, borderRadius: "50%", background: cl, flexShrink: 0 }} />{l}
+                  </div>
+                </div>
+              ))}
             </div>
             {allClear && (
               <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8, padding: "40px 0", background: C.card, border: `1px solid ${C.line}`, borderRadius: 8 }}>
@@ -314,7 +318,22 @@ export default function TaskCenter({ K, confirm, canEdit, cats, onLog, onAddCat 
             )}
             {dueNow.length > 0 && <Section icon={CircleAlert} color={C.red} label="今天必處理" hint="逾期與今天到期"><Grid arr={dueNow} /></Section>}
             {doing.length > 0 && <Section icon={CirclePlay} color={C.accent} label="進行中" hint="手上正在做的"><Grid arr={doing} /></Section>}
-            {quick.length > 0 && <Section icon={Zap} color={C.green} label="Quick Wins" hint={`≤ ${QUICK_WIN_MAX_MINUTES} 分鐘可完成，有空檔就清掉`}><Grid arr={quick} /></Section>}
+            {quick.length > 0 && <Section icon={Zap} color={C.green} label="Quick Wins" hint={`≤ ${QUICK_WIN_MAX_MINUTES} 分鐘可完成，有空檔就清掉`}>
+              {(() => {
+                // 按預估時間分欄（5 / 10 / 15 分）——空檔多長就挑哪欄
+                const b5 = quick.filter(t => t.estimatedMinutes <= 5), b10 = quick.filter(t => t.estimatedMinutes > 5 && t.estimatedMinutes <= 10), b15 = quick.filter(t => t.estimatedMinutes > 10);
+                return (
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(240px,1fr))", gap: 12 }}>
+                    {[["≤ 5 min", b5], ["6–10 min", b10], ["11–15 min", b15]].map(([l, arr]) => arr.length > 0 && (
+                      <div key={l}>
+                        <div style={{ fontFamily: MONO, fontSize: 11, color: C.faint, fontWeight: 600, letterSpacing: 0.5, marginBottom: 6 }}>{l}</div>
+                        {arr.map(t => Card({ t }))}
+                      </div>
+                    ))}
+                  </div>
+                );
+              })()}
+            </Section>}
             {waitingArr.length > 0 && <Section icon={Clock} color={C.amber} label="在等別人" hint="該催的去催一下">
               <Grid arr={waitingArr} />
             </Section>}
@@ -329,6 +348,36 @@ export default function TaskCenter({ K, confirm, canEdit, cats, onLog, onAddCat 
               </div>
             </Section>}
             {upcoming.length > 0 && <Section icon={CalendarDays} color={C.sub} label="接下來 7 天" hint="先心裡有數"><Grid arr={upcoming} /></Section>}
+            {/* 各大項一眼：任務完成度 + 今天 + 卡住（GPT 建議的 Project 摘要，資料同一份即時算） */}
+            {(() => {
+              const rows = (cats || []).filter(c => !c.nonProject).map(c => {
+                const ts = tasks.filter(t => (t.catId || INBOX) === c.id);
+                if (!ts.length) return null;
+                const done = ts.filter(t => t.status === "done").length;
+                const tdN = ts.filter(t => t.status !== "done" && t.due && t.due <= t0).length;
+                const blkN = ts.filter(t => t.status !== "done" && isBlocked(t, tasks)).length;
+                return { c, total: ts.length, done, tdN, blkN, pct: Math.round(done / ts.length * 100) };
+              }).filter(Boolean);
+              if (!rows.length) return null;
+              return (
+                <Section icon={LayoutGrid} color={C.sub} label="各大項一眼" hint="任務完成度・今天・卡住">
+                  <div style={{ display: "grid", gap: 9 }}>
+                    {rows.map(r => (
+                      <div key={r.c.id} style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                        <span style={{ width: 130, flexShrink: 0, fontSize: 12.5, fontWeight: 600, color: C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.c.name}</span>
+                        <div style={{ flex: 1, height: 8, background: "#e6ddc9", borderRadius: 6, overflow: "hidden" }}>
+                          <div style={{ width: r.pct + "%", height: "100%", background: r.pct === 100 ? C.green : "#3a6ea5", borderRadius: 6 }} />
+                        </div>
+                        <span style={{ fontFamily: MONO, fontSize: 12, fontWeight: 700, color: C.text, width: 44, textAlign: "right", flexShrink: 0 }}>{r.pct}%</span>
+                        <span style={{ fontFamily: MONO, fontSize: 11, color: C.faint, width: 40, textAlign: "right", flexShrink: 0 }}>{r.done}/{r.total}</span>
+                        <span style={{ fontSize: 11, color: r.tdN > 0 ? C.red : C.faint, fontWeight: r.tdN > 0 ? 700 : 400, width: 52, textAlign: "right", flexShrink: 0 }}>今天 {r.tdN}</span>
+                        <span style={{ fontSize: 11, color: r.blkN > 0 ? C.sub : C.faint, fontWeight: r.blkN > 0 ? 700 : 400, width: 52, textAlign: "right", flexShrink: 0 }}>卡住 {r.blkN}</span>
+                      </div>
+                    ))}
+                  </div>
+                </Section>
+              );
+            })()}
           </div>
         );
       })()}
@@ -428,7 +477,7 @@ export default function TaskCenter({ K, confirm, canEdit, cats, onLog, onAddCat 
                   <div key={t.id} onClick={() => setSel(t.id)}
                     onMouseEnter={e => e.currentTarget.style.background = t.color || C.bg} onMouseLeave={e => e.currentTarget.style.background = t.color || "#fff"}
                     style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", borderTop: i ? `1px solid ${C.soft}` : "none", cursor: "pointer", background: t.color || "#fff" }}>
-                    <button onClick={e => { e.stopPropagation(); if (guard()) upd(t.id, { status: t.status === "done" ? "todo" : "done" }); }} style={{ flexShrink: 0, width: 16, height: 16, borderRadius: 4, border: `1px solid ${t.status === "done" ? C.green : "#d4d4d4"}`, background: t.status === "done" ? C.green : "#fff", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", padding: 0 }}>{t.status === "done" && <Check size={11} color="#fff" strokeWidth={3} />}</button>
+                    <button onClick={e => { e.stopPropagation(); if (guard()) upd(t.id, { status: t.status === "done" ? "todo" : "done" }); }} style={{ flexShrink: 0, width: 16, height: 16, borderRadius: 4, border: `1px solid ${t.status === "done" ? C.green : "#c8bca6"}`, background: t.status === "done" ? C.green : "#fff", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", padding: 0 }}>{t.status === "done" && <Check size={11} color="#fff" strokeWidth={3} />}</button>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 13.5, color: t.status === "done" ? C.faint : C.text, textDecoration: t.status === "done" ? "line-through" : "none" }}>{t.pinned && <Pin size={12} color={C.accent} fill={C.accent} style={{ flexShrink: 0 }} />}{t.priority === "urgent" && <Flame size={12} color={C.red} />}{t.title}</div>
                       <div style={{ fontSize: 11.5, color: C.faint, marginTop: 2, fontVariantNumeric: "tabular-nums" }}>{catName(t.catId)}{t.due ? `・${t.due}` : ""}</div>

@@ -13,8 +13,8 @@ function useIsMobile(bp = MOBILE_BP) {
  *  排程支援實際日期、非連續多區段（item.segments=[{start,end}]）。
  * ════════════════════════════════════════════════════════════════════════ */
 
-const ACCENT = "#2563eb", RED = "#C0392B", ACCENT_SOFT = "#eff6ff", PRIMARY = "#1A1A1A", SUB = "#737373";
-const C = { text: "#171717", sub: "#737373", faint: "#a3a3a3", line: "#e5e5e5", soft: "#f5f5f5" };
+const ACCENT = "#c4582a", RED = "#C0392B", ACCENT_SOFT = "#fbeee6", PRIMARY = "#1A1A1A", SUB = "#5a5247";
+const C = { text: "#1d1a15", sub: "#5a5247", faint: "#9b9384", line: "#d9cfbd", soft: "#ece4d6" };
 // 附件相容：舊資料是 url 字串(圖片)，新資料是 {url,name,isImage}
 const attUrl = (p) => (typeof p === "string" ? p : (p && p.url) || "");
 const attName = (p) => (typeof p === "string" ? "" : (p && p.name) || "");
@@ -67,10 +67,10 @@ const DAY_W = 150, ROW_FAT = 34, ROW_THIN = 34;  // 有紀錄列最小高度＝�
 const ACTIVE = ["doing", "wait", "issue"]; // 置頂組（正在動的工序）
 
 const WS = {
-  pending: { label: "待開工",   color: "#737373", bar: "#CDC3AC", tint: "#f0f0f0" },
-  doing:   { label: "施工中",   color: "#3E72A8", bar: "#6B97C4", tint: "#eff6ff" },
+  pending: { label: "待開工",   color: "#5a5247", bar: "#CDC3AC", tint: "#e6ddc9" },
+  doing:   { label: "施工中",   color: "#3E72A8", bar: "#6B97C4", tint: "#fbeee6" },
   done:    { label: "完成",     color: "#3C8C3C", bar: "#7BA85A", tint: "#F0FDF4" },
-  issue:   { label: "問題/延遲", color: "#DC2626", bar: "#F87171", tint: "#FEF2F2" },
+  issue:   { label: "問題/延遲", color: "#b3261e", bar: "#F87171", tint: "#FEF2F2" },
   wait:    { label: "等待材料", color: "#D97706", bar: "#FBBF24", tint: "#FFFBEB" },
 };
 const pad = (n) => String(n).padStart(2, "0");
@@ -129,7 +129,7 @@ export default function SequenceView({
   const idxOf = (k) => Math.round((new Date(k + "T00:00:00") - START_D) / 86400000);
   const dayKey = (i) => { const d = new Date(START_D); d.setDate(d.getDate() + i); return toKey(d); };
   const TODAY_IDX = idxOf(TODAY);
-  const dotFill = (log) => idxOf(log.date) > TODAY_IDX ? ACCENT : log.issue ? RED : "#ffffff";
+  const dotFill = (log) => idxOf(log.date) > TODAY_IDX ? ACCENT : log.issue ? RED : "#fbf8f1";
 
   // 週視圖／日視圖皆為連續座標（原生橫向捲動，不限視窗）
   const ppd = WEEK_PXD;
@@ -260,7 +260,7 @@ export default function SequenceView({
         <span onClick={(e) => { e.stopPropagation(); if (canEdit) setStatusPick({ id: it.id, x: e.clientX, y: e.clientY }); }} title={canEdit ? `${w.label}（點擊設定狀態）` : w.label} style={{ width: 10, height: 10, borderRadius: 5, background: w.bar, flexShrink: 0, cursor: canEdit ? "pointer" : "default" }} />
         {it.urgent && <span className="seq-fire" onClick={(e) => { e.stopPropagation(); canEdit && onSetUrgent && onSetUrgent(it.id, false); }} title="超急件（點擊取消）" style={{ fontSize: 13, flexShrink: 0, cursor: canEdit ? "pointer" : "default" }}>🔥</span>}
         <span title={`${it.name}（${w.label}）`} style={{ fontSize: it.isSub ? 13 : 14, fontWeight: it.urgent ? 600 : (it.isSub ? 500 : 600), color: it.urgent ? "#B3261E" : (it.isSub ? C.sub : PRIMARY), overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1, letterSpacing: -0.1 }}>{it.name}</span>
-        {isContainer && !subsOpen && <span style={{ fontSize: 11, fontWeight: 500, color: SUB, background: "#f0f0f0", borderRadius: 10, padding: "1px 7px", flexShrink: 0, lineHeight: 1.5 }}>{subCount(it)}</span>}
+        {isContainer && !subsOpen && <span style={{ fontSize: 11, fontWeight: 500, color: SUB, background: "#e6ddc9", borderRadius: 10, padding: "1px 7px", flexShrink: 0, lineHeight: 1.5 }}>{subCount(it)}</span>}
         {warnSet.has(it.id) && <span title={`連續 ${warnDays} 天無紀錄`} style={{ color: RED, fontSize: 13, flexShrink: 0 }}>⚠</span>}
         {(jPrev != null || jNext != null) && (
           <span onClick={(e) => e.stopPropagation()} style={{ display: "inline-flex", alignItems: "center", gap: 2, flexShrink: 0 }} title="跳到此工序有施工紀錄的日期">
@@ -271,7 +271,7 @@ export default function SequenceView({
         {canEdit && <div className="seq-actions" style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 3, flexShrink: 0 }}>
           {!it.urgent && <button onClick={(e) => { e.stopPropagation(); onSetUrgent && onSetUrgent(it.id, true); }} title="標記超急件（置頂＋閃爍提醒）" style={{ border: "none", background: "none", cursor: "pointer", fontSize: 13, filter: "grayscale(1)", opacity: .7 }}>🔥</button>}
           {it.isParent && <button onClick={(e) => { e.stopPropagation(); const n = prompt(`在「${it.name}」下新增工程子項目：`); if (n && n.trim()) onAddSub && onAddSub(it.id, n.trim()); }} title="新增子項目" style={{ border: "none", background: "none", cursor: "pointer", color: ACCENT, fontSize: 15, fontWeight: 500 }}>＋</button>}
-          {it.isSub && <button onClick={(e) => { e.stopPropagation(); if (window.confirm(`刪除子項目「${it.name}」？`)) onDelSub && onDelSub(it.id); }} title="刪除子項目" style={{ border: "none", background: "none", cursor: "pointer", color: "#DC2626", fontSize: 13 }}>×</button>}
+          {it.isSub && <button onClick={(e) => { e.stopPropagation(); if (window.confirm(`刪除子項目「${it.name}」？`)) onDelSub && onDelSub(it.id); }} title="刪除子項目" style={{ border: "none", background: "none", cursor: "pointer", color: "#b3261e", fontSize: 13 }}>×</button>}
         </div>}
       </div>
     );
@@ -279,7 +279,7 @@ export default function SequenceView({
 
   return (
     <div style={{ fontFamily: "-apple-system,'PingFang TC','Noto Sans TC',system-ui,'Segoe UI',Roboto,sans-serif", color: C.text, letterSpacing: 0.1 }}>
-      <style>{`.seq-row .seq-actions{opacity:0;transition:opacity .12s} .seq-row:hover .seq-actions{opacity:1} .seq-row:hover{background:#f5f5f5} .thin-add{opacity:0;transition:opacity .12s} .seq-row:hover .thin-add{opacity:.5}
+      <style>{`.seq-row .seq-actions{opacity:0;transition:opacity .12s} .seq-row:hover .seq-actions{opacity:1} .seq-row:hover{background:#ece4d6} .thin-add{opacity:0;transition:opacity .12s} .seq-row:hover .thin-add{opacity:.5}
         @keyframes seqUrgentBg{0%,100%{background:#FCEDE8}50%{background:#F6D5CB}}
         @keyframes seqUrgentPulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.45;transform:scale(.86)}}
         .seq-urgent-cell{animation:seqUrgentBg 1.15s ease-in-out infinite !important}
@@ -295,14 +295,14 @@ export default function SequenceView({
                 <option value="">指定回工序…</option>
                 {items.map((it) => <option key={it.id} value={it.id}>{it.name}</option>)}
               </select>
-              <button onClick={() => onDelLog && onDelLog(l)} disabled={!canEdit} title="刪除此日誌" style={{ border: "1px solid #FCA5A5", background: "#fff", color: "#DC2626", borderRadius: 8, padding: "5px 10px", fontSize: 12, cursor: "pointer" }}>刪除</button>
+              <button onClick={() => onDelLog && onDelLog(l)} disabled={!canEdit} title="刪除此日誌" style={{ border: "1px solid #FCA5A5", background: "#fff", color: "#b3261e", borderRadius: 8, padding: "5px 10px", fontSize: 12, cursor: "pointer" }}>刪除</button>
             </div>
           ))}
         </div>
       )}
       {!isMobile && (
       <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10, flexWrap: "wrap" }}>
-        <div style={{ display: "inline-flex", background: "#f0f0f0", borderRadius: 8, padding: 2 }}>
+        <div style={{ display: "inline-flex", background: "#e6ddc9", borderRadius: 8, padding: 2 }}>
           {[["week", "週"], ["day", "日"]].map(([k, l]) => (
             <button key={k} onClick={() => { setZoom(k); if (k === "week") setOpenIds([]); }} style={{ border: "none", cursor: "pointer", padding: "5px 15px", borderRadius: 6, fontSize: 13, fontWeight: 500, background: zoom === k ? "#fff" : "transparent", color: zoom === k ? C.text : C.sub, boxShadow: zoom === k ? "0 1px 2px rgba(0,0,0,.1)" : "none" }}>{l}</button>
           ))}
@@ -326,7 +326,7 @@ export default function SequenceView({
           專案起始
           <input type="date" value={projectStart} disabled={!canEdit} onChange={e => onSetProjectStart && onSetProjectStart(e.target.value)} style={{ border: `1px solid ${C.line}`, borderRadius: 7, padding: "4px 6px", fontSize: 12 }} />
         </label>
-        <button onClick={doWeekly} style={{ border: `1px solid ${ACCENT}`, background: "#eff6ff", color: "#3E72A8", borderRadius: 8, padding: "6px 12px", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>✨ AI 週報</button>
+        <button onClick={doWeekly} style={{ border: `1px solid ${ACCENT}`, background: "#fbeee6", color: "#3E72A8", borderRadius: 8, padding: "6px 12px", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>✨ AI 週報</button>
         <span style={{ fontSize: 13, color: C.faint }}>{zoom === "week" ? "點工序條切日視圖" : "點格子＝記錄 · 橫向拖曳空格＝設工期 · 拖紀錄到別格＝改日期/工序"}</span>
         <div style={{ flex: 1 }} />
         {Object.values(WS).map((s) => <span key={s.label} style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 12, color: C.sub }}><span style={{ width: 9, height: 9, borderRadius: 3, background: s.bar }} />{s.label}</span>)}
@@ -337,7 +337,7 @@ export default function SequenceView({
       {isMobile && (
         <div style={{ marginBottom: 10 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
-            <div style={{ display: "inline-flex", background: "#f0f0f0", borderRadius: 8, padding: 2 }}>
+            <div style={{ display: "inline-flex", background: "#e6ddc9", borderRadius: 8, padding: 2 }}>
               {[["day", "日"], ["week", "週"]].map(([k, l]) => (
                 <button key={k} onClick={() => setMobView(k)} style={{ border: "none", cursor: "pointer", padding: "8px 18px", borderRadius: 6, fontSize: 13, fontWeight: 600, minHeight: 40, background: mobView === k ? "#fff" : "transparent", color: mobView === k ? C.text : C.sub, boxShadow: mobView === k ? "0 1px 2px rgba(0,0,0,.1)" : "none" }}>{l}</button>
               ))}
@@ -346,7 +346,7 @@ export default function SequenceView({
               <input type="checkbox" checked={onlyIssue} onChange={(e) => setOnlyIssue(e.target.checked)} style={{ width: 18, height: 18 }} />只看異常
             </label>
             <div style={{ flex: 1 }} />
-            <button onClick={doWeekly} title="AI 週報" style={{ border: `1px solid ${ACCENT}`, background: "#eff6ff", color: "#3E72A8", borderRadius: 8, padding: "0 12px", height: 40, fontSize: 13, fontWeight: 600, cursor: "pointer" }}>✨週報</button>
+            <button onClick={doWeekly} title="AI 週報" style={{ border: `1px solid ${ACCENT}`, background: "#fbeee6", color: "#3E72A8", borderRadius: 8, padding: "0 12px", height: 40, fontSize: 13, fontWeight: 600, cursor: "pointer" }}>✨週報</button>
           </div>
           {mobView === "day" && (
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -442,17 +442,17 @@ export default function SequenceView({
               <div key={it.id} className="seq-row"
                 onDragOver={(e) => { if (it.isParent && dragId && dragId !== it.id) { e.preventDefault(); setDragOverId(it.id); } }}
                 onDrop={() => { if (it.isParent && dragId && dragId !== it.id) onReorder && onReorder(dragId, it.id); setDragId(null); setDragOverId(null); }}
-                style={{ display: "flex", borderBottom: `1px solid ${C.line}`, minHeight: open ? ROW_H_OPEN : (it.isSub ? 38 : 46), background: dragOverId === it.id ? ACCENT_SOFT : (open ? "#f5f5f5" : (it.isSub ? "#FCFDFE" : "#fff")) }}>
-                <div onClick={() => toggle(it)} style={{ width: labelW, flexShrink: 0, boxSizing: "border-box", position: "sticky", left: 0, zIndex: 2, background: dragOverId === it.id ? ACCENT_SOFT : (open ? "#f5f5f5" : (it.isSub ? "#FCFDFE" : "#fff")), borderRight: `1px solid ${C.line}`, borderLeft: it.isSub ? "3px solid transparent" : `3px solid ${w.bar}`, padding: "0 8px", paddingLeft: it.isSub ? 18 : 6, display: "flex", alignItems: "center", gap: 6, cursor: "pointer" }}>
+                style={{ display: "flex", borderBottom: `1px solid ${C.line}`, minHeight: open ? ROW_H_OPEN : (it.isSub ? 38 : 46), background: dragOverId === it.id ? ACCENT_SOFT : (open ? "#ece4d6" : (it.isSub ? "#FCFDFE" : "#fff")) }}>
+                <div onClick={() => toggle(it)} style={{ width: labelW, flexShrink: 0, boxSizing: "border-box", position: "sticky", left: 0, zIndex: 2, background: dragOverId === it.id ? ACCENT_SOFT : (open ? "#ece4d6" : (it.isSub ? "#FCFDFE" : "#fff")), borderRight: `1px solid ${C.line}`, borderLeft: it.isSub ? "3px solid transparent" : `3px solid ${w.bar}`, padding: "0 8px", paddingLeft: it.isSub ? 18 : 6, display: "flex", alignItems: "center", gap: 6, cursor: "pointer" }}>
                   {it.isParent && canEdit && <span className="seq-actions" draggable onClick={(e) => e.stopPropagation()} onDragStart={() => setDragId(it.id)} onDragEnd={() => { setDragId(null); setDragOverId(null); }} title="拖曳排序大項" style={{ cursor: "grab", color: "#CDC3AC", fontSize: 13, flexShrink: 0 }}>⠿</span>}
                   {it.isSub && <span style={{ color: "#CDC3AC", fontSize: 12, flexShrink: 0, lineHeight: 1 }}>└</span>}
                   <span onClick={(e) => { e.stopPropagation(); if (canEdit) setStatusPick({ id: it.id, x: e.clientX, y: e.clientY }); }} title={canEdit ? `${w.label}（點擊設定狀態）` : w.label} style={{ width: 8, height: 8, borderRadius: 4, background: w.bar, flexShrink: 0, cursor: canEdit ? "pointer" : "default" }} />
                   <span title={`${it.name}（${w.label}）`} style={{ fontSize: it.isSub ? 13 : 14, fontWeight: it.isSub ? 500 : 600, color: it.isSub ? C.sub : PRIMARY, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1, letterSpacing: -0.1 }}>{it.name}</span>
-                  {isContainer && !subsOpen && <span style={{ fontSize: 11, fontWeight: 500, color: SUB, background: "#f0f0f0", borderRadius: 10, padding: "1px 7px", flexShrink: 0, lineHeight: 1.5 }}>{subCount(it)}</span>}
-                  {warnSet.has(it.id) && <span title={`連續 ${warnDays} 天無紀錄`} style={{ fontSize: 10.5, fontWeight: 500, color: "#DC2626", background: "#FEF2F2", borderRadius: 6, padding: "1px 6px", flexShrink: 0, lineHeight: 1.5 }}>逾期</span>}
+                  {isContainer && !subsOpen && <span style={{ fontSize: 11, fontWeight: 500, color: SUB, background: "#e6ddc9", borderRadius: 10, padding: "1px 7px", flexShrink: 0, lineHeight: 1.5 }}>{subCount(it)}</span>}
+                  {warnSet.has(it.id) && <span title={`連續 ${warnDays} 天無紀錄`} style={{ fontSize: 10.5, fontWeight: 500, color: "#b3261e", background: "#FEF2F2", borderRadius: 6, padding: "1px 6px", flexShrink: 0, lineHeight: 1.5 }}>逾期</span>}
                   {canEdit && <div className="seq-actions" style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 3, flexShrink: 0 }}>
                     {it.isParent && <button onClick={(e) => { e.stopPropagation(); const n = prompt(`在「${it.name}」下新增工程子項目：`); if (n && n.trim()) onAddSub && onAddSub(it.id, n.trim()); }} title="新增子項目" style={{ border: "none", background: "none", cursor: "pointer", color: ACCENT, fontSize: 15, fontWeight: 500 }}>＋</button>}
-                    {it.isSub && <button onClick={(e) => { e.stopPropagation(); if (window.confirm(`刪除子項目「${it.name}」？`)) onDelSub && onDelSub(it.id); }} title="刪除子項目" style={{ border: "none", background: "none", cursor: "pointer", color: "#DC2626", fontSize: 13 }}>×</button>}
+                    {it.isSub && <button onClick={(e) => { e.stopPropagation(); if (window.confirm(`刪除子項目「${it.name}」？`)) onDelSub && onDelSub(it.id); }} title="刪除子項目" style={{ border: "none", background: "none", cursor: "pointer", color: "#b3261e", fontSize: 13 }}>×</button>}
                   </div>}
                 </div>
                 <div onClick={(e) => { if (!open) return; const r = e.currentTarget.getBoundingClientRect(); const i = Math.floor((e.clientX - r.left) / ppd); if (inRange(it, i)) openCell(it.id, dayKey(i)); }}
@@ -534,7 +534,7 @@ export default function SequenceView({
                             {planned && <span style={{ fontSize: 10, fontWeight: 600, color: ACCENT }}>預排</span>}
                             {!planned && log.prog > 0 && (
                               <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
-                                <div style={{ flex: 1, height: 4, background: "#f0f0f0", borderRadius: 2, overflow: "hidden" }}><div style={{ width: `${log.prog}%`, height: "100%", background: w.bar }} /></div>
+                                <div style={{ flex: 1, height: 4, background: "#e6ddc9", borderRadius: 2, overflow: "hidden" }}><div style={{ width: `${log.prog}%`, height: "100%", background: w.bar }} /></div>
                                 <span style={{ fontSize: 10, color: C.sub, fontWeight: 600 }}>{log.prog}%</span>
                               </div>
                             )}
@@ -785,7 +785,7 @@ function ScheduleEditor({ item, onClose, onSave }) {
         <button onClick={add} style={{ border: `1px dashed ${C.line}`, background: C.soft, borderRadius: 8, padding: "6px 12px", fontSize: 13, color: C.sub, cursor: "pointer", marginBottom: 16 }}>＋ 新增區段</button>
         <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
           <button onClick={() => onSave([])} style={{ border: `1px solid ${C.line}`, background: "#fff", borderRadius: 9, padding: "8px 14px", fontSize: 13, cursor: "pointer", color: C.sub }}>清空排程</button>
-          <button onClick={() => onSave(valid)} style={{ border: "none", background: ACCENT, color: "#ffffff", borderRadius: 9, padding: "9px 22px", fontSize: 14, fontWeight: 600, cursor: "pointer" }}>儲存</button>
+          <button onClick={() => onSave(valid)} style={{ border: "none", background: ACCENT, color: "#fbf8f1", borderRadius: 9, padding: "9px 22px", fontSize: 14, fontWeight: 600, cursor: "pointer" }}>儲存</button>
         </div>
       </div>
     </div>
@@ -820,7 +820,7 @@ function Drawer({ data, item, TODAY, onSetStatus, onSave, onDelete, onClose, onC
         <select value={item?.status || "pending"} disabled={!canEdit} onChange={(e) => onSetStatus && onSetStatus(f.itemId, e.target.value)} style={{ ...ta, padding: "9px 10px", marginBottom: 14 }}>{Object.entries(WS).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}</select>
         <Label>進度 {f.prog}%</Label>
         <input type="range" min="0" max="100" step="5" value={f.prog} onChange={(e) => upd("prog", +e.target.value)} style={{ width: "100%", marginBottom: 14, accentColor: ACCENT }} />
-        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}><Label>{planned ? "預計工作" : "今日完成"}</Label><div style={{ flex: 1 }} /><button onClick={doTidy} style={{ border: `1px solid ${ACCENT}`, background: "#eff6ff", color: "#3E72A8", borderRadius: 7, padding: "3px 9px", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>✨ AI 整理</button></div>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}><Label>{planned ? "預計工作" : "今日完成"}</Label><div style={{ flex: 1 }} /><button onClick={doTidy} style={{ border: `1px solid ${ACCENT}`, background: "#fbeee6", color: "#3E72A8", borderRadius: 7, padding: "3px 9px", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>✨ AI 整理</button></div>
         <textarea rows={3} value={planned ? f.next : f.done} onChange={(e) => upd(planned ? "next" : "done", e.target.value)} placeholder={planned ? "預計進場、預計拉線…" : "今天做了什麼…（可貼上截圖）"} style={{ ...ta, marginBottom: 14 }} />
         {!planned && <>
           <Label>問題 / 待追蹤</Label>
@@ -843,7 +843,7 @@ function Drawer({ data, item, TODAY, onSetStatus, onSave, onDelete, onClose, onC
           <button onClick={() => onCopy(f)} style={{ border: `1px solid ${C.line}`, background: C.soft, borderRadius: 9, padding: "8px 12px", fontSize: 13, cursor: "pointer", color: C.text }}>複製昨日</button>
           <div style={{ flex: 1 }} />
           {f.id && <button onClick={() => onDelete(f.id)} style={{ border: "none", background: "none", color: "#e11d48", fontSize: 14, cursor: "pointer" }}>刪除</button>}
-          <button onClick={() => onSave(f)} disabled={busy} style={{ border: "none", background: ACCENT, color: "#ffffff", borderRadius: 9, padding: "9px 24px", fontSize: 14, fontWeight: 600, cursor: busy ? "wait" : "pointer" }}>{f.id ? "更新" : "儲存"}</button>
+          <button onClick={() => onSave(f)} disabled={busy} style={{ border: "none", background: ACCENT, color: "#fbf8f1", borderRadius: 9, padding: "9px 24px", fontSize: 14, fontWeight: 600, cursor: busy ? "wait" : "pointer" }}>{f.id ? "更新" : "儲存"}</button>
         </div>
       </div>
       <PhotoViewer viewer={viewer} setViewer={setViewer} />
