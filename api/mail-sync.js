@@ -86,6 +86,22 @@ async function syncCtbc(days) {
 // ── ② Eats365 POS 日結（xlsx 附件）──────────────────────────
 // 報表是「標籤/數值」直欄式（概覽/總銷售額/銷售來源/付款方式/審計…）→ 掃全表建 label→value 字典＋抽關鍵欄位
 // 實測樣本：DailyClosing (.xls 舊格式)；label 內含全形/半形空白（信 用 卡）→ key 一律去空白
+// 通用「段落表」解析（其餘五個分頁：類別銷售/捆綁/商品類別/優惠券/付款方式）→ 無損保留
+// 規則：含「名稱」的列=表頭、純文字短列=段標題、其餘=資料列
+function sheetSections(grid) {
+  const secs = []; let cur = null; let pendingTitle = ''
+  for (const row of grid) {
+    const cells = row.map(c => typeof c === 'number' ? c : String(c ?? '').trim()).filter(c => c !== '')
+    if (!cells.length) continue
+    const isHeader = cells.some(c => c === '名稱')
+    if (isHeader) { cur = { title: pendingTitle, header: cells, rows: [] }; secs.push(cur); pendingTitle = ''; continue }
+    const hasNum = cells.some(c => typeof c === 'number')
+    if (!hasNum && cells.length <= 2) { pendingTitle = String(cells[0]); cur = null; continue }
+    if (cur) cur.rows.push(cells)
+    else { cur = { title: pendingTitle || String(cells[0]), header: [], rows: [cells] }; secs.push(cur); pendingTitle = '' }
+  }
+  return secs
+}
 function parsePosWorkbook(buf, subject) {
   const wb = XLSX.read(buf, { type: 'buffer' })
   const ws = wb.Sheets[wb.SheetNames[0]]
@@ -116,6 +132,7 @@ function parsePosWorkbook(buf, subject) {
     posSales: kv['POS'] ?? 0, apiSales: kv['API'] ?? 0,
     voidItems: kv['VoidItems'] ?? 0, returnDish: kv['退菜'] ?? 0, unsettled: kv['未結賬(轉移)'] ?? 0,
     kv, source: 'mail',
+    _details: Object.fromEntries(wb.SheetNames.slice(1).map(sn => [sn, sheetSections(XLSX.utils.sheet_to_json(wb.Sheets[sn], { header: 1, raw: true, defval: '' }))])),
   }
 }
 async function syncPos(days) {
@@ -150,7 +167,17 @@ async function syncPos(days) {
   })
   const add = Object.values(found)
   if (add.length) {
-    store.entries = [...store.entries, ...add].sort((a, b) => (a.date < b.date ? -1 : 1))
+    // 明細按月分檔 sp_finance_pm_pos_d_YYYY-MM（已存在的日期不覆蓋＝只增不改）
+    const byMonth = {}
+    for (const r of add) { if (r.date && r._details) (byMonth[r.date.slice(0, 7)] = byMonth[r.date.slice(0, 7)] || []).push(r) }
+    for (const [mo, recs] of Object.entries(byMonth)) {
+      const did = 'sp_finance_pm_pos_d_' + mo
+      const doc = (await kvGet(did)) || { days: {} }
+      let changed = false
+      for (const r of recs) { if (!doc.days[r.date]) { doc.days[r.date] = { date: r.date, period: r.period, store: r.store, sheets: r._details }; changed = true } }
+      if (changed) { doc.updatedAt = new Date().toISOString(); await kvPut(did, doc, 'POS明細自動入庫') }
+    }
+    store.entries = [...store.entries, ...add.map(({ _details, ...r }) => r)].sort((a, b) => (a.date < b.date ? -1 : 1))
     store.updatedAt = new Date().toISOString()
     await kvPut('sp_finance_pm_pos', store, 'POS日結自動收信')
   }
