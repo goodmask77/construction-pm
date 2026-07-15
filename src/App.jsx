@@ -1725,6 +1725,7 @@ function CrewRankView() {
   const [quests, setQuests] = useState({ quests: [], progress: [] });
   const [shop, setShop] = useState({ rewards: [], redemptions: [] });
   const [polls, setPolls] = useState({ polls: [], votes: [] });
+  const [showRoster, setShowRoster] = useState(false);
   useEffect(() => {
     const safety = setTimeout(() => setItems(prev => prev || []), 8000);
     (async () => {
@@ -1770,6 +1771,30 @@ function CrewRankView() {
           {bd.map(pp => <span key={pp.id} style={{ fontSize: 12.5, background: "#fbeee6", color: ACCENT, borderRadius: 14, padding: "3px 12px", fontWeight: 600 }}>{pp.nick || pp.name}・{Number(pp.bday.split("-")[1])}/{Number(pp.bday.split("-")[2])}</span>)}
         </div>
       ); })()}
+      {people.some(pp => pp.bday) && (
+        <div style={{ margin: "10px 0 0" }}>
+          <button onClick={() => setShowRoster(v => !v)} style={{ background: "none", border: "none", color: SUB, fontSize: 12.5, cursor: "pointer", padding: "4px 0", fontWeight: 600 }}>{showRoster ? "▾" : "▸"} 👥 全員名冊（{people.length} 人・姓名/綽號/生日）</button>
+          {showRoster && (
+            <div style={{ background: "#fff", border: `1px solid ${BORDER}`, borderRadius: 12, overflow: "hidden", marginTop: 6 }}>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 90px 70px", background: "#ece4d6", padding: "7px 14px", fontSize: 11, letterSpacing: 0.8, color: SUB, fontWeight: 700 }}>
+                <span>姓名</span><span>綽號</span><span>生日</span><span>歲數</span>
+              </div>
+              {[...people].sort((a, b) => (a.bday || "9").slice(5) < (b.bday || "9").slice(5) ? -1 : 1).map((pp, i) => {
+                const age = pp.bday ? Math.floor((Date.now() - new Date(pp.bday)) / (365.25 * 86400e3)) : null;
+                const thisMonth = pp.bday && Number(pp.bday.split("-")[1]) === new Date().getMonth() + 1;
+                return (
+                  <div key={pp.id} style={{ display: "grid", gridTemplateColumns: "1fr 1fr 90px 70px", padding: "8px 14px", borderTop: i ? "1px solid #f0ead9" : "none", fontSize: 13, background: thisMonth ? "#fbeee6" : "transparent" }}>
+                    <span style={{ fontWeight: 600, color: TEXT }}>{pp.name}{thisMonth && " 🎂"}</span>
+                    <span style={{ color: SUB }}>{pp.nick || "—"}</span>
+                    <span style={{ fontVariantNumeric: "tabular-nums", color: SUB }}>{pp.bday ? `${Number(pp.bday.split("-")[1])}/${Number(pp.bday.split("-")[2])}` : "—"}</span>
+                    <span style={{ fontVariantNumeric: "tabular-nums", color: "#9b9384" }}>{age != null ? age : "—"}</span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
       {(() => { const top = [...stats].sort((a, b) => b.points - a.points)[0]; if (!top || top.points <= 0) return null; return (
         <div style={{ background: "#fff", border: "1.5px solid #c8bca6", borderRadius: 12, padding: "12px 16px", margin: "10px 0 14px", display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
           <span style={{ fontSize: 28 }}>👑</span>
