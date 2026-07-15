@@ -101,8 +101,19 @@ export function normalizePatch(patch, taskId, tasks) {
     const arr = Array.isArray(p.tags) ? p.tags : [];
     p.tags = [...new Set(arr.map((s) => String(s || "").trim()).filter(Boolean))];
   }
+  if ("pinned" in p) p.pinned = p.pinned ? true : undefined; // 取消釘選 → key 消失
+  if ("color" in p) { const v = String(p.color ?? "").trim(); p.color = v || undefined; } // 清除顏色 → key 消失
   return p;
 }
+
+// 排序工具：釘選永遠排最前（穩定排序，不打亂原相對順序）
+export const PRIO_ORD = { urgent: 0, high: 1, normal: 2, low: 3 };
+export const cmpDue = (a, b) => ((a.due || "9999") !== (b.due || "9999")) ? ((a.due || "9999") < (b.due || "9999") ? -1 : 1) : ((PRIO_ORD[a.priority] ?? 2) - (PRIO_ORD[b.priority] ?? 2));
+export const cmpPrio = (a, b) => ((PRIO_ORD[a.priority] ?? 2) - (PRIO_ORD[b.priority] ?? 2)) || cmpDue(a, b);
+export const orderTasks = (arr, mode) => {
+  const base = mode === "due" ? [...arr].sort(cmpDue) : mode === "prio" ? [...arr].sort(cmpPrio) : [...arr];
+  return base.sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0));
+};
 
 // 合併更新（唯一正確寫法）：絕不重建 task，一律展開舊物件再蓋 patch
 export function mergeTask(existing, patch, tasks) {

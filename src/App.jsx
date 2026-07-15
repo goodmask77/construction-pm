@@ -936,7 +936,8 @@ export default function App() {
           />
         )}
         {view === "tasks" && (
-          <TaskCenter K={K} confirm={confirm} canEdit={canEditData} cats={cats} onLog={logActivity} />
+          <TaskCenter K={K} confirm={confirm} canEdit={canEditData} cats={cats} onLog={logActivity}
+            onAddCat={(name) => guardedSetCats(prev => [...prev, { id: "cat-" + Date.now(), order: prev.length, name, budget: 0, status: "pending", items: [] }])} />
         )}
         {view === "conclusions" && (
           <Conclusions K={K} confirm={confirm} canEdit={canEditData} cats={cats} userName={userName} onLog={logActivity} />

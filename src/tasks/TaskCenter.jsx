@@ -5,8 +5,11 @@
 // 視覺：依 docs/DESIGN_SPEC.md（Linear/Stripe 儀表板風）— 中性灰白 + 單一藍色主色 +
 //       lucide 細線圖示 + 狀態小圓點；1px 淺灰邊框、8px 圓角、無陰影、大量留白。
 import { useState, useEffect, useRef } from "react";
-import { Inbox, LayoutGrid, Columns3, List, CalendarDays, ChartGantt, Network, Plus, X, Check, Flame, Calendar, Clock, CircleAlert, ListTodo, Search, Home, Zap, Hourglass, CirclePlay, Coffee } from "lucide-react";
-import { isWaiting, isBlocked, missingDeps, wouldCycle, mergeTask, removeTaskAndRefs, isQuickWin, QUICK_WIN_MAX_MINUTES } from "./taskModel.js";
+import { Inbox, LayoutGrid, Columns3, List, CalendarDays, ChartGantt, Network, Plus, X, Check, Flame, Calendar, Clock, CircleAlert, ListTodo, Search, Home, Zap, Hourglass, CirclePlay, Coffee, Pin, ArrowUpDown, FolderPlus } from "lucide-react";
+import { isWaiting, isBlocked, missingDeps, wouldCycle, mergeTask, removeTaskAndRefs, isQuickWin, QUICK_WIN_MAX_MINUTES, orderTasks } from "./taskModel.js";
+
+// 任務顏色（Google Keep 式，低飽和淡色底，白＝無色）
+const TASK_COLORS = ["", "#fef2f2", "#fff7ed", "#fefce8", "#f0fdf4", "#eff6ff", "#faf5ff", "#f5f5f5"];
 
 const C = {
   text: "#171717",       // neutral-900 主文字
@@ -40,7 +43,7 @@ const Pill = ({ color, label }) => (
   </span>
 );
 
-export default function TaskCenter({ K, confirm, canEdit, cats, onLog }) {
+export default function TaskCenter({ K, confirm, canEdit, cats, onLog, onAddCat }) {
   const [tasks, setTasks] = useState(null);
   const [view, setView] = useState("today"); // today(Home 落地頁) | group | board | list | timeline | gantt | mind
   const [quick, setQuick] = useState("");
@@ -52,6 +55,8 @@ export default function TaskCenter({ K, confirm, canEdit, cats, onLog }) {
   const [gnew, setGnew] = useState({}); // 各大項的「直接新增」輸入
   const [tagIn, setTagIn] = useState(""); // 詳情彈窗的標籤輸入
   const [showAllDone, setShowAllDone] = useState(false); // 看板「完成」欄預設只列最近幾件
+  const [sortMode, setSortMode] = useState("manual"); // manual(手動/拖曳順序) | due(日期) | prio(重要度)
+  const [newCatIn, setNewCatIn] = useState(""); // 依大項視角「新增大項」輸入
 
   useEffect(() => { (async () => {
     try {
@@ -76,11 +81,29 @@ export default function TaskCenter({ K, confirm, canEdit, cats, onLog }) {
   const guard = () => { if (!canEdit) { alert("沒有編輯權限，請聯絡管理員。"); return false; } return true; };
   // 存檔防抖：畫面即時更新，但停手 0.5 秒才寫後端（避免打一個字寫一次資料庫）
   const saveTimer = useRef(null);
-  const save = (list) => {
+  const undoStack = useRef([]); // Cmd+Z 復原：保留最近 30 步
+  const tasksRef = useRef(null);
+  const save = (list, opts = {}) => {
+    if (!opts.skipUndo && tasksRef.current) { undoStack.current.push(tasksRef.current); if (undoStack.current.length > 30) undoStack.current.shift(); }
+    tasksRef.current = list;
     setTasks(list);
     if (saveTimer.current) clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(() => { window.storage.set(K("pm_tasks"), JSON.stringify(list), true).catch(() => {}); }, 500);
   };
+  useEffect(() => { tasksRef.current = tasks; }, [tasks]); // 初次載入也帶進 ref
+  // Cmd+Z / Ctrl+Z 復原上一步（打字中在輸入框時不攔截，讓輸入框用原生復原）
+  useEffect(() => {
+    const h = (e) => {
+      if (!(e.metaKey || e.ctrlKey) || String(e.key).toLowerCase() !== "z" || e.shiftKey) return;
+      const tag = (e.target?.tagName || "").toLowerCase();
+      if (tag === "input" || tag === "textarea" || tag === "select" || e.target?.isContentEditable) return;
+      if (!undoStack.current.length) return;
+      e.preventDefault();
+      save(undoStack.current.pop(), { skipUndo: true });
+    };
+    window.addEventListener("keydown", h);
+    return () => window.removeEventListener("keydown", h);
+  }, []); // eslint-disable-line
   const catName = (id) => id === INBOX || !id ? "收件匣" : (cats || []).find(c => c.id === id)?.name || "收件匣";
 
   const addQuick = () => {
@@ -147,7 +170,7 @@ export default function TaskCenter({ K, confirm, canEdit, cats, onLog }) {
         onDragOver={e => { if (drag && dropBefore) { e.preventDefault(); e.stopPropagation(); } }}
         onDrop={e => { if (drag && dropBefore) { e.preventDefault(); e.stopPropagation(); moveTo(drag, { catId: view === "group" ? t.catId : undefined, status: view === "board" ? t.status : undefined, beforeId: t.id }); setDrag(null); setOverKey(null); } }}
         onClick={() => setSel(t.id)}
-        style={{ background: C.card, border: `1px solid ${C.line}`, borderRadius: 8, padding: "9px 11px", marginBottom: 8, cursor: canEdit ? "grab" : "pointer", opacity: drag === t.id ? 0.4 : 1 }}>
+        style={{ background: t.color || C.card, border: `1px solid ${C.line}`, borderRadius: 8, padding: "9px 11px", marginBottom: 8, cursor: canEdit ? "grab" : "pointer", opacity: drag === t.id ? 0.4 : 1 }}>
         <div style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
           <button onClick={e => { e.stopPropagation(); if (guard()) upd(t.id, { status: done ? "todo" : "done" }); }}
             title="切換完成" style={{ flexShrink: 0, width: 16, height: 16, marginTop: 2, borderRadius: 4, border: `1px solid ${done ? C.green : "#d4d4d4"}`, background: done ? C.green : "#fff", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", padding: 0 }}>{done && <Check size={11} color="#fff" strokeWidth={3} />}</button>
@@ -164,6 +187,7 @@ export default function TaskCenter({ K, confirm, canEdit, cats, onLog }) {
               {(t.tags || []).map(tg => <span key={tg} style={{ fontSize: 11, color: C.sub, background: C.soft, borderRadius: 999, padding: "1px 8px" }}>{tg}</span>)}
             </div>
           </div>
+          {(canEdit || t.pinned) && <button onClick={e => { e.stopPropagation(); if (guard()) upd(t.id, { pinned: !t.pinned }); }} title={t.pinned ? "取消釘選" : "釘選到最上面"} style={{ flexShrink: 0, background: "none", border: "none", cursor: canEdit ? "pointer" : "default", lineHeight: 1, padding: "2px", color: t.pinned ? C.accent : "#d4d4d4" }}><Pin size={13} fill={t.pinned ? C.accent : "none"} /></button>}
           {t.owner && <span title={`負責人：${t.owner}`} style={{ flexShrink: 0, width: 20, height: 20, borderRadius: "50%", background: C.accentSoft, color: C.accent, fontSize: 10, fontWeight: 600, display: "flex", alignItems: "center", justifyContent: "center", whiteSpace: "nowrap", overflow: "hidden" }}>{t.owner.slice(0, 2)}</span>}
           {canEdit && <button onClick={e => { e.stopPropagation(); del(t.id); }} title="刪除" style={{ flexShrink: 0, background: "none", border: "none", color: C.faint, cursor: "pointer", lineHeight: 1, padding: "2px" }} onMouseEnter={e => e.currentTarget.style.color = C.red} onMouseLeave={e => e.currentTarget.style.color = C.faint}><X size={14} /></button>}
         </div>
@@ -210,6 +234,16 @@ export default function TaskCenter({ K, confirm, canEdit, cats, onLog }) {
           <input value={q} onChange={e => setQ(e.target.value)} placeholder="搜尋任務…" style={{ ...inp, width: 170, padding: "6px 10px 6px 28px", fontSize: 12.5 }} />
           {q && <button onClick={() => setQ("")} style={{ position: "absolute", right: 6, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", color: C.faint, cursor: "pointer", padding: 0, display: "flex" }}><X size={13} /></button>}
         </div>
+        {/* 排序切換：看板/清單可切 手動(拖曳)/日期/重要度；釘選永遠最前 */}
+        {(view === "board" || view === "list") && (
+          <div style={{ display: "inline-flex", alignItems: "center", background: C.soft, border: `1px solid ${C.line}`, borderRadius: 8, padding: 2, gap: 2 }}>
+            <ArrowUpDown size={12} color={C.faint} style={{ margin: "0 2px 0 7px" }} />
+            {(view === "board" ? [["manual", "手動"], ["due", "日期"], ["prio", "重要度"]] : [["due", "日期"], ["prio", "重要度"]]).map(([k, l]) => {
+              const act = sortMode === k || (view === "list" && sortMode === "manual" && k === "due");
+              return <button key={k} onClick={() => setSortMode(k)} style={{ padding: "5px 10px", borderRadius: 6, border: `1px solid ${act ? C.line : "transparent"}`, background: act ? "#fff" : "transparent", color: act ? C.text : C.sub, fontSize: 12, fontWeight: act ? 600 : 400, cursor: "pointer" }}>{l}</button>;
+            })}
+          </div>
+        )}
         {/* Today 是 Home（落地頁），不是第七個並列視角 → 獨立按鈕放在視角切換器外面 */}
         <button onClick={() => setView("today")} style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "7px 14px", borderRadius: 8, border: `1px solid ${view === "today" ? C.accent : C.line}`, background: view === "today" ? C.accent : "#fff", color: view === "today" ? "#fff" : C.sub, fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
           <Home size={14} strokeWidth={1.75} />今日
@@ -238,12 +272,13 @@ export default function TaskCenter({ K, confirm, canEdit, cats, onLog }) {
         const prioOrd = { urgent: 0, high: 1, normal: 2, low: 3 };
         const byUrgency = (a, b) => ((a.due || "9999") !== (b.due || "9999")) ? ((a.due || "9999") < (b.due || "9999") ? -1 : 1) : ((prioOrd[a.priority] ?? 2) - (prioOrd[b.priority] ?? 2));
         // 去重順序＝緊急度：必處理 → 進行中 → 被卡住 → 在等別人 → Quick Wins → 七天內
-        const dueNow = take(openT.filter(t => t.due && t.due <= t0)).sort(byUrgency);
-        const doing = take(openT.filter(t => t.status === "doing")).sort(byUrgency);
-        const blockedArr = take(openT.filter(t => isBlocked(t, tasks))).sort(byUrgency);
-        const waitingArr = take(openT.filter(t => isWaiting(t))).sort(byUrgency);
-        const quick = take(openT.filter(t => isQuickWin(t))).sort(byUrgency);
-        const upcoming = take(openT.filter(t => t.due && t.due > t0 && (new Date(t.due) - new Date(t0)) / 86400000 <= 7)).sort(byUrgency);
+        const pinFirst = (arr) => orderTasks(arr, "manual"); // 釘選排區塊最前
+        const dueNow = pinFirst(take(openT.filter(t => t.due && t.due <= t0)).sort(byUrgency));
+        const doing = pinFirst(take(openT.filter(t => t.status === "doing")).sort(byUrgency));
+        const blockedArr = pinFirst(take(openT.filter(t => isBlocked(t, tasks))).sort(byUrgency));
+        const waitingArr = pinFirst(take(openT.filter(t => isWaiting(t))).sort(byUrgency));
+        const quick = pinFirst(take(openT.filter(t => isQuickWin(t))).sort(byUrgency));
+        const upcoming = pinFirst(take(openT.filter(t => t.due && t.due > t0 && (new Date(t.due) - new Date(t0)) / 86400000 <= 7)).sort(byUrgency));
         const allClear = !dueNow.length && !doing.length && !quick.length && !waitingArr.length && !blockedArr.length && !upcoming.length;
         const d = new Date();
         const dateStr = `${d.getMonth() + 1}/${d.getDate()}（週${"日一二三四五六"[d.getDay()]}）`;
@@ -302,7 +337,7 @@ export default function TaskCenter({ K, confirm, canEdit, cats, onLog }) {
       {view === "group" && (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(280px,1fr))", gap: 12, alignItems: "start" }}>
           {groups.map(g => {
-            const items = tasksOf(g.id).filter(matchQ);
+            const items = orderTasks(tasksOf(g.id).filter(matchQ), "manual"); // 釘選排最前
             const isEmpty = items.length === 0;
             // 空大項＝縮成一行（名稱＋直接新增輸入），不再一片空盒海；仍是拖放落點
             return DropZone({ keyId: g.id, onDropHere: () => moveTo(drag, { catId: g.id }),
@@ -327,6 +362,15 @@ export default function TaskCenter({ K, confirm, canEdit, cats, onLog }) {
                 </>
               ) });
           })}
+          {/* 直接在這裡新增大項（會同步建立到總覽的工程大項） */}
+          {canEdit && onAddCat && (
+            <div style={{ border: `1px dashed ${C.line}`, borderRadius: 8, padding: "8px 10px", display: "flex", alignItems: "center", gap: 8 }}>
+              <FolderPlus size={14} strokeWidth={1.75} color={C.faint} style={{ flexShrink: 0 }} />
+              <input value={newCatIn} onChange={e => setNewCatIn(e.target.value)}
+                onKeyDown={e => { if (e.key === "Enter" && !e.nativeEvent.isComposing && e.keyCode !== 229 && newCatIn.trim()) { onAddCat(newCatIn.trim()); setNewCatIn(""); } }}
+                placeholder="＋ 新增大項，Enter 建立" style={{ flex: 1, minWidth: 0, border: "none", background: "transparent", outline: "none", fontSize: 12.5, color: C.text }} />
+            </div>
+          )}
         </div>
       )}
 
@@ -334,7 +378,7 @@ export default function TaskCenter({ K, confirm, canEdit, cats, onLog }) {
       {view === "board" && (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(240px,1fr))", gap: 12, alignItems: "start" }}>
           {STATUS.map(([sk, sl, sc]) => {
-            const items = tasks.filter(t => t.status === sk).filter(matchQ);
+            const items = orderTasks(tasks.filter(t => t.status === sk).filter(matchQ), sortMode); // 依排序模式；釘選最前
             // 「完成」欄會無限累積 → 預設只列最近 8 件，其餘收起
             const shown = (sk === "done" && !showAllDone) ? items.slice(0, 8) : items;
             const hidden = items.length - shown.length;
@@ -358,11 +402,7 @@ export default function TaskCenter({ K, confirm, canEdit, cats, onLog }) {
       {/* ── 清單 ── */}
       {view === "list" && (() => {
         let rows = tasks.filter(matchQ).filter(t => fStatus === "all" || (fStatus === "open" ? t.status !== "done" : t.status === fStatus));
-        rows = [...rows].sort((a, b) => {
-          const ord = { urgent: 0, high: 1, normal: 2, low: 3 };
-          if ((a.due || "9") !== (b.due || "9")) return (a.due || "9999") < (b.due || "9999") ? -1 : 1;
-          return (ord[a.priority] ?? 2) - (ord[b.priority] ?? 2);
-        });
+        rows = orderTasks(rows, sortMode === "prio" ? "prio" : "due"); // 清單依 日期/重要度；釘選最前
         return (
           <div>
             <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 10, flexWrap: "wrap" }}>
@@ -401,7 +441,7 @@ export default function TaskCenter({ K, confirm, canEdit, cats, onLog }) {
           ["本週內", CalendarDays, C.sub, tasks.filter(t => t.status !== "done" && t.due && t.due > t0 && within(t.due, 7))],
           ["之後", Clock, C.sub, tasks.filter(t => t.status !== "done" && t.due && t.due > t0 && !within(t.due, 7))],
           ["無日期", Inbox, C.faint, tasks.filter(t => !t.due && t.status !== "done")],
-        ].map(([label, Icon, color, arr]) => [label, Icon, color, arr.filter(matchQ).sort((a, b) => (a.due || "9") < (b.due || "9") ? -1 : 1)]);
+        ].map(([label, Icon, color, arr]) => [label, Icon, color, orderTasks(arr.filter(matchQ).sort((a, b) => (a.due || "9") < (b.due || "9") ? -1 : 1), "manual")]);
         return (
           <div style={{ display: "grid", gap: 12 }}>
             {buckets.map(([label, Icon, color, arr]) => arr.length > 0 && (
@@ -482,13 +522,14 @@ export default function TaskCenter({ K, confirm, canEdit, cats, onLog }) {
         const branches = groups.map(g => ({ g, items: tasksOf(g.id).filter(matchQ) })).filter(b => b.items.length > 0);
         if (branches.length === 0) return <Empty icon={Network} text="還沒有任務" pad={24} />;
         return (
-          <div style={{ overflowX: "auto", padding: "10px 0" }}>
-            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", minWidth: "min-content" }}>
+          <div style={{ padding: "10px 0" }}>
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
               <div style={{ background: C.accent, color: "#fff", borderRadius: 999, padding: "7px 18px", fontSize: 14, fontWeight: 600 }}>全部任務</div>
               <div style={{ width: 1, height: 18, background: C.line }} />
-              <div style={{ display: "flex", gap: 18, alignItems: "flex-start", flexWrap: "nowrap" }}>
+              {/* 分支換行鋪滿整個寬度（原本 nowrap 只能橫向捲、畫面窄） */}
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(200px,1fr))", gap: 16, alignItems: "start", width: "100%" }}>
                 {branches.map(({ g, items }) => (
-                  <div key={g.id} style={{ display: "flex", flexDirection: "column", alignItems: "center", minWidth: 180 }}>
+                  <div key={g.id} style={{ display: "flex", flexDirection: "column", alignItems: "center", minWidth: 0 }}>
                     <div style={{ width: 1, height: 8, background: C.line }} />
                     <div style={{ background: g.id === INBOX ? C.accentSoft : C.card, border: `1px solid ${g.id === INBOX ? C.accent : C.line}`, borderRadius: 8, padding: "6px 14px", fontSize: 13, fontWeight: 600, color: g.id === INBOX ? C.accent : C.text, whiteSpace: "nowrap" }}>{g.name} <span style={{ color: C.faint, fontWeight: 400, fontSize: 11, fontVariantNumeric: "tabular-nums" }}>{items.length}</span></div>
                     <div style={{ width: 1, height: 10, background: C.line }} />
@@ -518,6 +559,7 @@ export default function TaskCenter({ K, confirm, canEdit, cats, onLog }) {
               <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16 }}>
                 <div style={{ fontSize: 15, fontWeight: 600, color: C.text }}>任務詳情</div>
                 <div style={{ flex: 1 }} />
+                {canEdit && <button onClick={() => upd(t.id, { pinned: !t.pinned })} title={t.pinned ? "取消釘選" : "釘選到最上面"} style={{ display: "inline-flex", alignItems: "center", gap: 5, background: t.pinned ? C.accentSoft : "none", border: `1px solid ${t.pinned ? C.accent : C.line}`, color: t.pinned ? C.accent : C.sub, borderRadius: 8, padding: "5px 12px", fontSize: 12.5, cursor: "pointer" }}><Pin size={12} fill={t.pinned ? C.accent : "none"} />{t.pinned ? "已釘選" : "釘選"}</button>}
                 <button onClick={() => del(t.id)} style={{ background: "none", border: `1px solid ${C.line}`, color: C.red, borderRadius: 8, padding: "5px 12px", fontSize: 12.5, cursor: "pointer" }}>刪除</button>
                 <button onClick={() => setSel(null)} style={{ background: "none", border: "none", cursor: "pointer", color: C.sub, padding: 4, display: "flex" }}><X size={18} /></button>
               </div>
@@ -576,6 +618,17 @@ export default function TaskCenter({ K, confirm, canEdit, cats, onLog }) {
                     ))}
                   </div>
                   {canEdit && <input value={tagIn} onChange={e => setTagIn(e.target.value)} onKeyDown={e => { if (e.key === "Enter" && !e.nativeEvent.isComposing && e.keyCode !== 229 && tagIn.trim()) { upd(t.id, { tags: [...(t.tags || []), tagIn.trim()] }); setTagIn(""); } }} placeholder="輸入標籤後按 Enter 新增" style={{ ...inp, width: "100%" }} />}
+                </div>
+              ))}
+              {F("顏色（各視角同步顯示）", (
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  {TASK_COLORS.map(c => {
+                    const sel = (t.color || "") === c;
+                    return <button key={c || "none"} disabled={!canEdit} onClick={() => upd(t.id, { color: c })} title={c ? "" : "無顏色"}
+                      style={{ width: 26, height: 26, borderRadius: "50%", cursor: canEdit ? "pointer" : "default", background: c || "#fff", border: `2px solid ${sel ? C.accent : C.line}`, display: "flex", alignItems: "center", justifyContent: "center", padding: 0 }}>
+                      {!c && <X size={11} color={C.faint} />}{c && sel && <Check size={12} color={C.accent} strokeWidth={3} />}
+                    </button>;
+                  })}
                 </div>
               ))}
               <div style={{ fontSize: 11, color: C.faint, marginTop: 8, fontVariantNumeric: "tabular-nums" }}>建立於 {dnorm(t.createdAt)}</div>

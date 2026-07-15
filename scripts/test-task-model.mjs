@@ -68,6 +68,11 @@ ok("dependsOn 去重/去空/去自己", (() => { const p = normalizePatch({ depe
 ok("tags 去重去空", normalizePatch({ tags: ["a", "a", "", " b "] }).tags.join() === "a,b");
 ok("JSON 存檔會丟掉 undefined key（owner 清空後不留欄位）", !("owner" in JSON.parse(JSON.stringify(mergeTask({ id: "z", owner: "x" }, { owner: "" }, [])))));
 
+console.log("── 釘選 / 顏色（v2.1）──");
+ok("merge 改狀態後 pinned/color 保留", (() => { const r = mergeTask({ id: "z", pinned: true, color: "#eff6ff" }, { status: "doing" }, []); return r.pinned === true && r.color === "#eff6ff"; })());
+ok("取消釘選 → key 消失", !("pinned" in JSON.parse(JSON.stringify(mergeTask({ id: "z", pinned: true }, { pinned: false }, [])))));
+ok("清除顏色 → key 消失", !("color" in JSON.parse(JSON.stringify(mergeTask({ id: "z", color: "#fef2f2" }, { color: "" }, [])))));
+
 console.log("── 刪除＝同一次寫回（任務+引用一起清）──");
 const before = [
   { id: "p", status: "todo", dependsOn: ["q"] },

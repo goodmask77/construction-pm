@@ -258,7 +258,7 @@ async function loadTasksText() {
     const SL = { todo: '待辦', doing: '進行中', done: '完成' }
     const lines = [`\n\n【任務中心（共 ${tasks.length} 件，可用 add_task / update_task 操作）】`]
     tasks.forEach(t => {
-      const bits = [`[${SL[t.status] || t.status}] ${t.title}（${catName(t.catId)}）`]
+      const bits = [`${t.pinned ? '📌' : ''}[${SL[t.status] || t.status}] ${t.title}（${catName(t.catId)}）`]
       if (t.due) bits.push(`截止${t.due}`)
       if (t.owner) bits.push(`負責:${t.owner}`)
       if (isWaiting(t)) bits.push(`等待中:${t.waitingFor}`)
@@ -416,6 +416,7 @@ async function executeActions(actions, operator) {
         if (a.waitingFor !== undefined) extra.waitingFor = a.waitingFor
         if (a.estimatedMinutes !== undefined) extra.estimatedMinutes = a.estimatedMinutes
         if (a.dependsOn !== undefined) extra.dependsOn = resolveDeps(a.dependsOn, tasks)
+        if (a.pinned !== undefined) extra.pinned = a.pinned
         const np = normalizePatch(extra, newId, tasks)
         tasks = [{ id: newId, title, note: '', status: 'todo', catId: tc ? tc.id : '__inbox__', start: '', due: a.due || '', priority: TASK_PRIO[a.priority] || (a.urgent ? 'urgent' : 'normal'), tags: Array.isArray(a.tags) ? normalizePatch({ tags: a.tags }).tags : [], createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), ...np }, ...tasks]
         changed.add('pm_tasks'); results.push(`📝 新增任務「${title.slice(0, 20)}」${tc ? '→' + tc.name : ''}`); audits.push(['pm_activity', '新增', `新增任務「${title.slice(0, 20)}」`])
@@ -436,6 +437,7 @@ async function executeActions(actions, operator) {
           if (a.waitingFor !== undefined) patch.waitingFor = a.waitingFor
           if (a.estimatedMinutes !== undefined) patch.estimatedMinutes = a.estimatedMinutes
           if (a.dependsOn !== undefined) patch.dependsOn = resolveDeps(a.dependsOn, tasks)
+          if (a.pinned !== undefined) patch.pinned = a.pinned
           if (a.tags !== undefined) patch.tags = Array.isArray(a.tags) ? a.tags : []
           tasks = tasks.map(x => x.id === target.id ? mergeTask(x, patch, tasks) : x)
           changed.add('pm_tasks')
@@ -526,7 +528,7 @@ const BOT_AGENT_GUIDE = `
 \`\`\`
 可用指令：
 - {"type":"add_task","desc":"買水泥3包","category":"消防工程","due":"2026-06-25","owner":"阿哲","waitingFor":"等木工","estimatedMinutes":15,"dependsOn":["確認交期"],"tags":["採購"]}  // 加任務到「任務中心」。owner=負責人、waitingFor=在等誰/什麼、estimatedMinutes=預估分鐘(正整數)、dependsOn=依賴的任務(填任務標題)。全部選填(可省略)；category省略→進收件匣。(「加待辦」也用這個)
-- {"type":"update_task","task":"買水泥","status":"完成","owner":"阿哲","waitingFor":"","estimatedMinutes":30,"dependsOn":[],"due":"2026-07-20","category":"消防工程","priority":"高","tags":["採購"],"note":"...","newTitle":"..."}  // 更新既有任務；task=用標題找。⚠️只帶「要改的欄位」，沒帶的欄位絕不要帶(會保留原值)；waitingFor 給 ""=清除等待、dependsOn 給 []=清空依賴。狀態:待辦/進行中/完成
+- {"type":"update_task","task":"買水泥","status":"完成","owner":"阿哲","waitingFor":"","estimatedMinutes":30,"dependsOn":[],"pinned":true,"due":"2026-07-20","category":"消防工程","priority":"高","tags":["採購"],"note":"...","newTitle":"..."}  // 更新既有任務；task=用標題找。⚠️只帶「要改的欄位」，沒帶的欄位絕不要帶(會保留原值)；waitingFor 給 ""=清除等待、dependsOn 給 []=清空依賴。狀態:待辦/進行中/完成
 - {"type":"add_conclusion","topic":"開幕日","conclusion":"8/10 開幕","reason":"","category":""}  // 加一條「公開結論」(團隊定案)；topic=主題、conclusion=定案內容
 - {"type":"add_log","content":"今天水電進場拉管線","date":"2026-06-22"}  // 工作日誌；date 可省略(預設今天)
 - {"type":"add_petty_spend","amount":390,"content":"工人便當","category":"水電工程"}  // 記零用金花費；category 是歸到哪個工種(可省略)
