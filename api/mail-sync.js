@@ -85,45 +85,50 @@ async function syncCtbc(days) {
 
 // ── ② Eats365 POS 日結（xlsx 附件）──────────────────────────
 // 報表是「標籤/數值」直欄式（概覽/總銷售額/銷售來源/付款方式/審計…）→ 掃全表建 label→value 字典＋抽關鍵欄位
+// 實測樣本：DailyClosing (.xls 舊格式)；label 內含全形/半形空白（信 用 卡）→ key 一律去空白
 function parsePosWorkbook(buf, subject) {
   const wb = XLSX.read(buf, { type: 'buffer' })
   const ws = wb.Sheets[wb.SheetNames[0]]
   const grid = XLSX.utils.sheet_to_json(ws, { header: 1, raw: true, defval: '' })
-  const kv = {}
+  const kv = {}, kvArr = {}
+  let name = '', period = ''
   for (const row of grid) {
     const cells = row.map(c => String(c ?? '').trim())
-    const label = cells.find(c => c && !/^[-()\d,.$NT\s%]+$/.test(c))
-    const nums = cells.filter(c => /[\d]/.test(c) && /^[()\-NT$\d,.\s]+$/.test(c))
+    const joined = cells.join('')
+    if (joined.startsWith('名稱:')) name = joined.slice(3).replace(/服務由.*$/, '').trim()
+    if (joined.startsWith('報表日期:')) period = joined.slice(5).trim()
+    const label = cells.find(c => c && isNaN(parseFloat(c.replace(/[NT$,()\s]/g, ''))))
+    const nums = row.filter(c => typeof c === 'number' || (String(c).trim() && !isNaN(parseFloat(String(c).replace(/[NT$,\s]/g, '').replace(/^\((.*)\)$/, '-$1'))))).map(c => typeof c === 'number' ? c : parseFloat(String(c).replace(/[NT$,\s]/g, '').replace(/^\((.*)\)$/, '-$1')))
     if (!label || !nums.length) continue
-    const last = nums[nums.length - 1]
-    const n = parseFloat(last.replace(/[NT$,\s]/g, '').replace(/^\((.*)\)$/, '-$1'))
-    if (!isNaN(n) && !(label in kv)) kv[label] = n
+    const key = label.replace(/\s+/g, '')
+    if (!(key in kv)) { kv[key] = nums[nums.length - 1]; kvArr[key] = nums }
   }
-  // 主旨含期間：… 2026-07-15 11-12-23 至 2026-07-15 21-01-26
-  const pm = (subject || '').match(/(\d{4}-\d{2}-\d{2})[ 	]([\d-]+)[ 	]*(?:至|to)[ 	]*(\d{4}-\d{2}-\d{2})/)
-  const date = pm ? pm[1] : ''
+  const pm = period.match(/(\d{4}-\d{2}-\d{2})/)
+  const cnt = (k) => (kvArr[k] && kvArr[k].length > 1) ? kvArr[k][0] : null
   return {
-    id: 'pos-' + (pm ? pm[1] + '_' + pm[2] : Math.random().toString(36).slice(2, 9)),
-    date, subject: subject || '',
+    id: 'pos-' + (period.replace(/[^\d]/g, '').slice(0, 20) || Math.random().toString(36).slice(2, 9)),
+    date: pm ? pm[1] : '', period, store: name, subject: subject || '',
     revenue: kv['總收入'] ?? kv['總銷售額'] ?? 0,
-    grossSales: kv['總銷售額'] ?? 0,
-    txCount: kv['交易數量'] ?? 0,
-    guests: kv['人數(堂食)'] ?? kv['人數'] ?? 0,
+    grossSales: kv['總銷售額'] ?? 0, txCount: kv['交易數量'] ?? 0, guests: kv['人數(堂食)'] ?? 0,
     sales: kv['銷售'] ?? 0, serviceFee: kv['服務費'] ?? 0, discount: kv['折扣'] ?? 0, refund: kv['退單'] ?? 0,
-    cash: kv['現金'] ?? 0, card: kv['信　用　卡'] ?? kv['信用卡'] ?? 0, uber: kv['點餐平台 (UBEREATS) - API'] ?? kv['點餐平台(UBEREATS) - API'] ?? 0,
+    cash: kv['現金'] ?? 0, cashCount: cnt('現金'), card: kv['信用卡'] ?? 0, cardCount: cnt('信用卡'),
+    uber: kv['點餐平台(UBEREATS)-API'] ?? 0, uberCount: cnt('點餐平台(UBEREATS)-API'),
     posSales: kv['POS'] ?? 0, apiSales: kv['API'] ?? 0,
-    voidItems: kv['Void Items'] ?? 0, unsettled: kv['未結賬(轉移)'] ?? kv['未結帳(轉移)'] ?? 0,
-    kv, // 全部欄位保留（分析頁要什麼有什麼）
-    source: 'mail',
+    voidItems: kv['VoidItems'] ?? 0, returnDish: kv['退菜'] ?? 0, unsettled: kv['未結賬(轉移)'] ?? 0,
+    kv, source: 'mail',
   }
 }
 async function syncPos(days) {
-  if (!M2U || !M2P) return { skipped: '未設 MAIL_USER2/MAIL_PASS2（等 money@gumgum.club 應用程式密碼）' }
+  // 來源：money@gumgum.club（設 MAIL_USER2/MAIL_PASS2 後）＋ goodmask77（吃「轉寄/自動轉寄」的報表信）
+  const accounts = []
+  if (M2U && M2P) accounts.push([M2U, M2P])
+  if (M1U && M1P) accounts.push([M1U, M1P])
+  if (!accounts.length) return { skipped: '未設信箱憑證' }
   const store = (await kvGet('sp_finance_pm_pos')) || { name: 'Eats365 POS 日結', entries: [] }
   const have = new Set(store.entries.map(e => e.id))
   const found = {}
   let scanned = 0
-  await withMailboxes(M2U, M2P, async (client) => {
+  for (const [au, ap] of accounts) await withMailboxes(au, ap, async (client) => {
     const uids = await client.search({ since: new Date(Date.now() - days * 864e5) }, { uid: true })
     if (!uids || !uids.length) return
     for await (const msg of client.fetch(uids, { uid: true, envelope: true, bodyStructure: true })) {

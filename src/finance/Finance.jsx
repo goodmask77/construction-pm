@@ -55,6 +55,7 @@ export default function FinanceView({ K, confirm, canEdit, ReceiptUploader, onLo
   const [sheet, setSheet] = useState(null);      // {syncedAt, rows[]}（試算表鏡像，退役中，只當匯入來源）
   const [bank, setBank] = useState(null);        // ★ 銀行帳務資料庫（永久、只增不改；一切對帳以此為基礎）
   const [manForm, setManForm] = useState(null);  // 手動新增一筆（未來：貼企業網銀截圖 AI 判讀）
+  const [pos, setPos] = useState(null);          // Eats365 POS 日結資料庫（自動收信入庫）
   const [recon, setRecon] = useState({ links: {}, ignored: [] }); // 補記/忽略標記
   const [conCats, setConCats] = useState([]);    // 工程專案大項（唯讀跨空間）
   const [conPetty, setConPetty] = useState({ spends: [] });
@@ -74,6 +75,7 @@ export default function FinanceView({ K, confirm, canEdit, ReceiptUploader, onLo
     // 對帳資料：試算表鏡像 + 對帳標記 + 工程專案（跨空間唯讀，絕不寫回）
     try { const sh = await window.storage.get(K("pm_sheet"), true); setSheet(sh && sh.value ? JSON.parse(sh.value) : null); } catch (_) {}
     try { const bk = await window.storage.get(K("pm_bank"), true); setBank(bk && bk.value ? JSON.parse(bk.value) : null); } catch (_) {}
+    try { const ps = await window.storage.get(K("pm_pos"), true); setPos(ps && ps.value ? JSON.parse(ps.value) : null); } catch (_) {}
     try { const rc = await window.storage.get(K("pm_recon"), true); const v = rc && rc.value ? JSON.parse(rc.value) : null; if (v) setRecon({ links: v.links || {}, ignored: v.ignored || [] }); } catch (_) {}
     try { const cd = await window.storage.get("pm_data", true); setConCats(cd && cd.value ? JSON.parse(cd.value) : []); } catch (_) {}
     try { const pt = await window.storage.get("pm_petty", true); const v = pt && pt.value ? JSON.parse(pt.value) : {}; setConPetty({ spends: v.spends || [] }); } catch (_) {}
@@ -179,7 +181,7 @@ export default function FinanceView({ K, confirm, canEdit, ReceiptUploader, onLo
         <span style={{ fontSize: 12, color: C.faint }}>多帳戶總表・轉帳不算成本</span>
         <div style={{ flex: 1 }} />
         <div style={{ display: "inline-flex", background: C.head, border: `1px solid ${C.line}`, borderRadius: 10, padding: 3, gap: 2 }}>
-          {[["overview", "📊 總覽"], ["accounts", "🏦 帳戶"], ["ledger", "🧾 交易明細"], ["coa", "🗂 科目"], ["recon", "🔄 對帳"]].map(([k, l]) => (
+          {[["overview", "📊 總覽"], ["accounts", "🏦 帳戶"], ["ledger", "🧾 交易明細"], ["coa", "🗂 科目"], ["recon", "🔄 對帳"], ["pos", "📈 營運"]].map(([k, l]) => (
             <button key={k} onClick={() => setTab(k)} style={{ padding: "6px 16px", borderRadius: 7, border: "none", background: tab === k ? C.brand : "transparent", color: tab === k ? "#fff" : C.sub, fontSize: 13.5, fontWeight: 600, cursor: "pointer", transition: "all .12s" }}>{l}</button>
           ))}
         </div>
@@ -651,6 +653,102 @@ export default function FinanceView({ K, confirm, canEdit, ReceiptUploader, onLo
                     ))}
                   </div>
                 )}
+              </>
+            )}
+          </div>
+        );
+      })()}
+
+      {/* ── 營運（Eats365 POS 日結：每日自動收信入庫）── */}
+      {tab === "pos" && (() => {
+        const MONOF = "'IBM Plex Mono', ui-monospace, Menlo, monospace";
+        const days = [...((pos?.entries) || [])].sort((a, b) => (a.date < b.date ? -1 : 1));
+        const last = days[days.length - 1];
+        const n30 = days.slice(-30);
+        const sum = (arr, k) => arr.reduce((t, x) => t + (Number(x[k]) || 0), 0);
+        const avgTicket = (d) => d && d.txCount ? Math.round(d.revenue / d.txCount) : 0;
+        const maxRev = Math.max(1, ...n30.map(d => d.revenue || 0));
+        const kpi = (label, val, sub2, cl) => (
+          <div key={label} style={{ background: C.card, border: "1.5px solid #c8bca6", borderRadius: 8, padding: "10px 14px", flex: "1 1 130px" }}>
+            <div style={{ fontFamily: MONOF, fontSize: 22, fontWeight: 700, color: cl || C.text }}>{val}</div>
+            <div style={{ fontSize: 11, color: C.sub, marginTop: 2 }}>{label}{sub2 ? <span style={{ color: C.faint }}>・{sub2}</span> : null}</div>
+          </div>
+        );
+        const payRow = (label, amt, count, total, cl) => (
+          <div key={label} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 5 }}>
+            <span style={{ fontSize: 11.5, color: C.sub, width: 108 }}>{label}{count != null ? `（${count}筆）` : ""}</span>
+            <div style={{ flex: 1, height: 10, background: "#eee5d3", borderRadius: 5, overflow: "hidden" }}><div style={{ width: (total ? amt / total * 100 : 0) + "%", height: "100%", background: cl, borderRadius: 5 }} /></div>
+            <span style={{ fontFamily: MONOF, fontSize: 11, color: C.text, width: 86, textAlign: "right" }}>{fmt(amt)}</span>
+          </div>
+        );
+        return (
+          <div>
+            <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", marginBottom: 12 }}>
+              <span style={{ background: "#3f7d4e", color: "#fff", fontSize: 11.5, fontWeight: 700, borderRadius: 4, padding: "2px 8px", letterSpacing: 1 }}>營運</span>
+              <div>
+                <div style={{ fontSize: 16, fontWeight: 800, color: C.text }}>🍽 {last?.store || "Eats365 POS"} 日結</div>
+                <div style={{ fontSize: 11, color: C.faint }}>POS 結帳信自動入庫・{days.length} 天資料{pos?.updatedAt ? "・更新 " + new Date(pos.updatedAt).toLocaleDateString("zh-TW") : ""}</div>
+              </div>
+            </div>
+            {!days.length ? (
+              <div style={{ padding: 30, textAlign: "center", color: C.faint, background: C.card, border: `1px solid ${C.line}`, borderRadius: 10 }}>還沒有資料——POS 日結信寄到後會自動進來（每天）。</div>
+            ) : (
+              <>
+                <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 12 }}>
+                  {kpi("最新日營收", fmt(last.revenue), last.date.slice(5), C.text)}
+                  {kpi("交易數", last.txCount, "客單 " + fmt(avgTicket(last)))}
+                  {kpi("來客(堂食)", last.guests || "—", null)}
+                  {kpi("近30天累計", fmt(sum(n30, "revenue")), n30.length + " 天", "#3f7d4e")}
+                </div>
+                <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 14 }}>
+                  <div style={{ background: C.card, border: "1.5px solid #c8bca6", borderRadius: 8, padding: "10px 14px", flex: "2 1 320px", minWidth: 280 }}>
+                    <div style={{ fontSize: 11.5, fontWeight: 700, color: C.sub, marginBottom: 8 }}>每日營收（近 30 天）</div>
+                    <div style={{ display: "flex", alignItems: "flex-end", gap: 3, height: 110 }}>
+                      {n30.map(d => (
+                        <div key={d.id} title={`${d.date}　${fmt(d.revenue)}・${d.txCount}單`} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}>
+                          <div style={{ width: "100%", height: Math.max(3, d.revenue / maxRev * 92), background: "#3a6ea5", borderRadius: "3px 3px 0 0" }} />
+                          <span style={{ fontSize: 8.5, color: C.faint, fontFamily: MONOF }}>{Number(d.date.slice(8))}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                  <div style={{ background: C.card, border: "1.5px solid #c8bca6", borderRadius: 8, padding: "10px 14px", flex: "1 1 260px", minWidth: 250 }}>
+                    <div style={{ fontSize: 11.5, fontWeight: 700, color: C.sub, marginBottom: 8 }}>付款方式（最新一天）</div>
+                    {payRow("信用卡", last.card || 0, last.cardCount, last.revenue, "#3a6ea5")}
+                    {payRow("現金", last.cash || 0, last.cashCount, last.revenue, "#3f7d4e")}
+                    {payRow("UberEats", last.uber || 0, last.uberCount, last.revenue, "#c98a14")}
+                    <div style={{ fontSize: 11, color: C.faint, marginTop: 8 }}>審計：退菜 {fmt(last.returnDish || 0)}・Void {fmt(last.voidItems || 0)}・折扣 {fmt(last.discount || 0)}</div>
+                  </div>
+                </div>
+                <div style={{ border: "1.5px solid #c8bca6", borderRadius: 8, background: C.card, overflow: "hidden" }}>
+                  <div style={{ overflowX: "auto" }}><div style={{ minWidth: 900 }}>
+                    {(() => {
+                      const GTC = "88px minmax(140px,1fr) 96px 64px 64px 80px 96px 96px 96px 80px";
+                      const hc = { fontSize: 10.5, letterSpacing: 0.8, color: C.faint, fontWeight: 700, padding: "7px 8px", whiteSpace: "nowrap" };
+                      const cell = (v, extra) => <div style={{ padding: "0 8px", fontFamily: MONOF, fontSize: 11.5, textAlign: "right", color: C.sub, ...extra }}>{v}</div>;
+                      return (
+                        <>
+                          <div style={{ display: "grid", gridTemplateColumns: GTC, background: C.soft, borderBottom: "1.5px solid #c8bca6" }}>
+                            <div style={hc}>日期</div><div style={hc}>店</div><div style={{ ...hc, textAlign: "right" }}>營收</div><div style={{ ...hc, textAlign: "right" }}>單數</div><div style={{ ...hc, textAlign: "right" }}>來客</div><div style={{ ...hc, textAlign: "right" }}>客單</div><div style={{ ...hc, textAlign: "right" }}>現金</div><div style={{ ...hc, textAlign: "right" }}>信用卡</div><div style={{ ...hc, textAlign: "right" }}>Uber</div><div style={{ ...hc, textAlign: "right" }}>折扣</div>
+                          </div>
+                          <div style={{ maxHeight: "50vh", overflowY: "auto" }}>
+                            {[...days].reverse().map((d, i) => (
+                              <div key={d.id} style={{ display: "grid", gridTemplateColumns: GTC, alignItems: "center", minHeight: 32, borderTop: i ? "1px solid #f0ead9" : "none", background: i % 2 ? "#f8f4ea" : C.card }}>
+                                <div style={{ padding: "0 8px", fontFamily: MONOF, fontSize: 11.5, color: C.sub }}>{d.date.slice(2)}</div>
+                                <div style={{ padding: "0 8px", fontSize: 11.5, color: C.sub, overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis" }}>{d.store}</div>
+                                {cell(fmt(d.revenue), { fontWeight: 700, color: C.text })}
+                                {cell(d.txCount)}{cell(d.guests || "—")}{cell(fmt(avgTicket(d)))}
+                                {cell(fmt(d.cash || 0))}{cell(fmt(d.card || 0))}{cell(fmt(d.uber || 0))}
+                                {cell(d.discount ? fmt(d.discount) : "—", { color: d.discount ? C.accent : "#d5cbb6" })}
+                              </div>
+                            ))}
+                          </div>
+                        </>
+                      );
+                    })()}
+                  </div></div>
+                </div>
+                <div style={{ fontSize: 11.5, color: C.faint, marginTop: 8 }}>之後資料多了會加：週/月彙總、來客與客單價趨勢、POS信用卡 ↔ 銀行入帳自動核對。</div>
               </>
             )}
           </div>
