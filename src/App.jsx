@@ -1475,7 +1475,7 @@ function FeedbackView({ canEdit, requireLogin, isAdmin, userName }) {
           <div style={{ fontSize: 12, color: SUB, marginBottom: 4 }}>給誰</div>
           <select value={draft.toId} onChange={e => setDraft({ ...draft, toId: e.target.value })} style={{ width: "100%", boxSizing: "border-box", border: `1px solid ${BORDER}`, borderRadius: 8, padding: "8px 10px", fontSize: 14, background: "#fff", color: TEXT, marginBottom: 12 }}>
             <option value="">— 選擇夥伴 —</option>
-            {people.filter(p => p.id !== me && !isExcluded(me, p.id)).map(p => <option key={p.id} value={p.id}>{p.name}{p.dept ? `（${p.dept}）` : ""}</option>)}
+            {people.filter(p => p.id !== me && !isExcluded(me, p.id)).map(p => <option key={p.id} value={p.id}>{p.name}{p.nick ? `（${p.nick}）` : (p.dept ? `（${p.dept}）` : "")}</option>)}
           </select>
           <div style={{ fontSize: 12, color: SUB, marginBottom: 6 }}>👍 正向標籤</div>
           <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 12 }}>{FB_POS_TAGS.map(t => tagChip(t, draft.tags.includes(t), () => toggleTag(t)))}</div>
@@ -1763,6 +1763,13 @@ function CrewRankView() {
       <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "6px 0 4px", flexWrap: "wrap" }}>
         <div style={{ fontSize: 18, fontWeight: 700, color: TEXT }}>🏆 排行榜</div>
       </div>
+      {(() => { const mo = new Date().getMonth() + 1; const bd = people.filter(pp => pp.bday && Number(pp.bday.split("-")[1]) === mo).sort((a, b) => a.bday.slice(8) < b.bday.slice(8) ? -1 : 1); if (!bd.length) return null; return (
+        <div style={{ background: "#fff", border: `1px solid ${BORDER}`, borderRadius: 12, padding: "10px 16px", margin: "10px 0 0", display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+          <span style={{ fontSize: 20 }}>🎂</span>
+          <span style={{ fontSize: 12.5, fontWeight: 700, color: TEXT }}>本月壽星</span>
+          {bd.map(pp => <span key={pp.id} style={{ fontSize: 12.5, background: "#fbeee6", color: ACCENT, borderRadius: 14, padding: "3px 12px", fontWeight: 600 }}>{pp.nick || pp.name}・{Number(pp.bday.split("-")[1])}/{Number(pp.bday.split("-")[2])}</span>)}
+        </div>
+      ); })()}
       {(() => { const top = [...stats].sort((a, b) => b.points - a.points)[0]; if (!top || top.points <= 0) return null; return (
         <div style={{ background: "#fff", border: "1.5px solid #c8bca6", borderRadius: 12, padding: "12px 16px", margin: "10px 0 14px", display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
           <span style={{ fontSize: 28 }}>👑</span>
