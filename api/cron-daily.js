@@ -38,6 +38,8 @@ export default async function handler(req, res) {
   if (secret && req.headers['authorization'] !== `Bearer ${secret}`) return res.status(401).json({ ok: false })
   // 對帳中心：每天順手同步一次公司帳務試算表（失敗不影響速報）
   try { await fetch('https://ground-pm.vercel.app/api/sheet-sync') } catch (_) {}
+  // 自動收信：中信 e-Cash 通知 + Eats365 POS 日結（失敗不影響速報）
+  try { await fetch('https://ground-pm.vercel.app/api/mail-sync?days=10') } catch (_) {}
   if (!TOKEN) return res.status(200).json({ ok: false, skipped: '未設 LINE_CHANNEL_ACCESS_TOKEN' })
   const messages = []
   const snap = await loadSnapshot()
