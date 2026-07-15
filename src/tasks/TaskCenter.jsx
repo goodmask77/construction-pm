@@ -4,8 +4,8 @@
 // App 以 props 傳 K / confirm / canEdit / cats(工程大項，給「隸屬」用) / onLog。
 // 視覺：依 docs/DESIGN_SPEC.md（Linear/Stripe 儀表板風）— 中性灰白 + 單一藍色主色 +
 //       lucide 細線圖示 + 狀態小圓點；1px 淺灰邊框、8px 圓角、無陰影、大量留白。
-import { useState, useEffect } from "react";
-import { Inbox, LayoutGrid, Columns3, List, CalendarDays, ChartGantt, Network, Plus, X, Check, Flame, Calendar, Clock, CircleAlert, ListTodo } from "lucide-react";
+import { useState, useEffect, useRef } from "react";
+import { Inbox, LayoutGrid, Columns3, List, CalendarDays, ChartGantt, Network, Plus, X, Check, Flame, Calendar, Clock, CircleAlert, ListTodo, Search } from "lucide-react";
 import { isWaiting, isBlocked, missingDeps, wouldCycle, mergeTask, removeTaskAndRefs } from "./taskModel.js";
 
 const C = {
@@ -51,6 +51,7 @@ export default function TaskCenter({ K, confirm, canEdit, cats, onLog }) {
   const [fStatus, setFStatus] = useState("open"); // list 篩選
   const [gnew, setGnew] = useState({}); // 各大項的「直接新增」輸入
   const [tagIn, setTagIn] = useState(""); // 詳情彈窗的標籤輸入
+  const [showAllDone, setShowAllDone] = useState(false); // 看板「完成」欄預設只列最近幾件
 
   useEffect(() => { (async () => {
     try {
@@ -73,7 +74,13 @@ export default function TaskCenter({ K, confirm, canEdit, cats, onLog }) {
   })(); }, []); // eslint-disable-line
 
   const guard = () => { if (!canEdit) { alert("沒有編輯權限，請聯絡管理員。"); return false; } return true; };
-  const save = (list) => { setTasks(list); window.storage.set(K("pm_tasks"), JSON.stringify(list), true).catch(() => {}); };
+  // 存檔防抖：畫面即時更新，但停手 0.5 秒才寫後端（避免打一個字寫一次資料庫）
+  const saveTimer = useRef(null);
+  const save = (list) => {
+    setTasks(list);
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    saveTimer.current = setTimeout(() => { window.storage.set(K("pm_tasks"), JSON.stringify(list), true).catch(() => {}); }, 500);
+  };
   const catName = (id) => id === INBOX || !id ? "收件匣" : (cats || []).find(c => c.id === id)?.name || "收件匣";
 
   const addQuick = () => {
@@ -156,6 +163,7 @@ export default function TaskCenter({ K, confirm, canEdit, cats, onLog }) {
               {(t.tags || []).map(tg => <span key={tg} style={{ fontSize: 11, color: C.sub, background: C.soft, borderRadius: 999, padding: "1px 8px" }}>{tg}</span>)}
             </div>
           </div>
+          {t.owner && <span title={`負責人：${t.owner}`} style={{ flexShrink: 0, width: 20, height: 20, borderRadius: "50%", background: C.accentSoft, color: C.accent, fontSize: 10, fontWeight: 600, display: "flex", alignItems: "center", justifyContent: "center", whiteSpace: "nowrap", overflow: "hidden" }}>{t.owner.slice(0, 2)}</span>}
           {canEdit && <button onClick={e => { e.stopPropagation(); del(t.id); }} title="刪除" style={{ flexShrink: 0, background: "none", border: "none", color: C.faint, cursor: "pointer", lineHeight: 1, padding: "2px" }} onMouseEnter={e => e.currentTarget.style.color = C.red} onMouseLeave={e => e.currentTarget.style.color = C.faint}><X size={14} /></button>}
         </div>
       </div>
@@ -195,6 +203,12 @@ export default function TaskCenter({ K, confirm, canEdit, cats, onLog }) {
         <div style={{ fontSize: 17, fontWeight: 600, color: C.text }}>任務中心</div>
         <span style={{ fontSize: 12, color: C.faint, fontVariantNumeric: "tabular-nums" }}>{open.length} 件待辦・共 {tasks.length} 件</span>
         <div style={{ flex: 1 }} />
+        {/* 全域搜尋：六個視角通用（避免在別的視角被看不見的搜尋條件默默過濾） */}
+        <div style={{ position: "relative" }}>
+          <Search size={13} strokeWidth={1.75} color={C.faint} style={{ position: "absolute", left: 9, top: "50%", transform: "translateY(-50%)" }} />
+          <input value={q} onChange={e => setQ(e.target.value)} placeholder="搜尋任務…" style={{ ...inp, width: 170, padding: "6px 10px 6px 28px", fontSize: 12.5 }} />
+          {q && <button onClick={() => setQ("")} style={{ position: "absolute", right: 6, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", color: C.faint, cursor: "pointer", padding: 0, display: "flex" }}><X size={13} /></button>}
+        </div>
         <div style={{ display: "inline-flex", background: C.soft, border: `1px solid ${C.line}`, borderRadius: 8, padding: 2, gap: 2, flexWrap: "wrap" }}>
           {TABS.map(([k, l, I]) => Tab(k, l, I))}
         </div>
@@ -214,27 +228,41 @@ export default function TaskCenter({ K, confirm, canEdit, cats, onLog }) {
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(280px,1fr))", gap: 12, alignItems: "start" }}>
           {groups.map(g => {
             const items = tasksOf(g.id).filter(matchQ);
+            const isEmpty = items.length === 0;
+            // 空大項＝縮成一行（名稱＋直接新增輸入），不再一片空盒海；仍是拖放落點
             return DropZone({ keyId: g.id, onDropHere: () => moveTo(drag, { catId: g.id }),
-              style: { background: C.card, border: `1px solid ${C.line}`, borderRadius: 8, padding: 12, minHeight: 80 },
-              children: <>
-                <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 10, padding: "0 2px" }}>
-                  {g.id === INBOX && <Inbox size={13} strokeWidth={1.75} color={C.accent} />}
-                  <div style={{ fontSize: 13, fontWeight: 600, color: g.id === INBOX ? C.accent : C.text }}>{g.name}</div>
-                  <span style={{ fontSize: 11.5, color: C.faint, fontVariantNumeric: "tabular-nums" }}>{items.length}</span>
+              style: { background: C.card, border: `1px solid ${C.line}`, borderRadius: 8, padding: isEmpty ? "8px 10px" : 12, gridColumn: isEmpty ? undefined : undefined },
+              children: isEmpty ? (
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  {g.id === INBOX && <Inbox size={13} strokeWidth={1.75} color={C.accent} style={{ flexShrink: 0 }} />}
+                  <div style={{ fontSize: 12.5, fontWeight: 600, color: g.id === INBOX ? C.accent : C.sub, whiteSpace: "nowrap" }}>{g.name}</div>
+                  {canEdit
+                    ? <input value={gnew[g.id] || ""} onChange={e => setGnew(p => ({ ...p, [g.id]: e.target.value }))} onKeyDown={e => { if (e.key === "Enter" && !e.nativeEvent.isComposing && e.keyCode !== 229) addToGroup(g.id); }} placeholder="＋ 新增或拖到這裡…" style={{ flex: 1, minWidth: 0, boxSizing: "border-box", border: `1px dashed ${C.line}`, borderRadius: 8, padding: "4px 9px", fontSize: 12, background: "transparent", color: C.text, outline: "none" }} />
+                    : <span style={{ fontSize: 11.5, color: C.faint }}>0</span>}
                 </div>
-                {items.map(t => Card({ t, dropBefore: true }))}
-                {items.length === 0 && <Empty icon={Inbox} text="拖任務到這裡，歸到此大項" />}
-                {canEdit && <input value={gnew[g.id] || ""} onChange={e => setGnew(p => ({ ...p, [g.id]: e.target.value }))} onKeyDown={e => { if (e.key === "Enter" && !e.nativeEvent.isComposing && e.keyCode !== 229) addToGroup(g.id); }} placeholder="＋ 直接在此大項新增…" style={{ width: "100%", boxSizing: "border-box", border: `1px dashed ${C.line}`, borderRadius: 8, padding: "6px 10px", fontSize: 12.5, background: "transparent", color: C.text, outline: "none", marginTop: 4 }} />}
-              </> });
+              ) : (
+                <>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 10, padding: "0 2px" }}>
+                    {g.id === INBOX && <Inbox size={13} strokeWidth={1.75} color={C.accent} />}
+                    <div style={{ fontSize: 13, fontWeight: 600, color: g.id === INBOX ? C.accent : C.text }}>{g.name}</div>
+                    <span style={{ fontSize: 11.5, color: C.faint, fontVariantNumeric: "tabular-nums" }}>{items.length}</span>
+                  </div>
+                  {items.map(t => Card({ t, dropBefore: true }))}
+                  {canEdit && <input value={gnew[g.id] || ""} onChange={e => setGnew(p => ({ ...p, [g.id]: e.target.value }))} onKeyDown={e => { if (e.key === "Enter" && !e.nativeEvent.isComposing && e.keyCode !== 229) addToGroup(g.id); }} placeholder="＋ 直接在此大項新增…" style={{ width: "100%", boxSizing: "border-box", border: `1px dashed ${C.line}`, borderRadius: 8, padding: "6px 10px", fontSize: 12.5, background: "transparent", color: C.text, outline: "none", marginTop: 4 }} />}
+                </>
+              ) });
           })}
         </div>
       )}
 
       {/* ── 看板（依狀態） ── */}
       {view === "board" && (
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 12, alignItems: "start" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(240px,1fr))", gap: 12, alignItems: "start" }}>
           {STATUS.map(([sk, sl, sc]) => {
             const items = tasks.filter(t => t.status === sk).filter(matchQ);
+            // 「完成」欄會無限累積 → 預設只列最近 8 件，其餘收起
+            const shown = (sk === "done" && !showAllDone) ? items.slice(0, 8) : items;
+            const hidden = items.length - shown.length;
             return DropZone({ keyId: sk, onDropHere: () => moveTo(drag, { status: sk }),
               style: { background: C.card, border: `1px solid ${C.line}`, borderRadius: 8, padding: 12, minHeight: 120 },
               children: <>
@@ -243,7 +271,9 @@ export default function TaskCenter({ K, confirm, canEdit, cats, onLog }) {
                   <div style={{ fontSize: 13, fontWeight: 600, color: C.text }}>{sl}</div>
                   <span style={{ fontSize: 11.5, color: C.faint, fontVariantNumeric: "tabular-nums" }}>{items.length}</span>
                 </div>
-                {items.map(t => Card({ t, dropBefore: true }))}
+                {shown.map(t => Card({ t, dropBefore: true }))}
+                {hidden > 0 && <button onClick={() => setShowAllDone(true)} style={{ width: "100%", background: "none", border: `1px dashed ${C.line}`, borderRadius: 8, padding: "6px 0", fontSize: 12, color: C.sub, cursor: "pointer" }}>顯示全部（還有 {hidden} 件）</button>}
+                {sk === "done" && showAllDone && items.length > 8 && <button onClick={() => setShowAllDone(false)} style={{ width: "100%", background: "none", border: "none", padding: "6px 0", fontSize: 12, color: C.faint, cursor: "pointer" }}>收起</button>}
                 {items.length === 0 && <Empty icon={Columns3} text="拖到這欄" />}
               </> });
           })}
@@ -261,7 +291,6 @@ export default function TaskCenter({ K, confirm, canEdit, cats, onLog }) {
         return (
           <div>
             <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 10, flexWrap: "wrap" }}>
-              <input value={q} onChange={e => setQ(e.target.value)} placeholder="搜尋任務…" style={{ ...inp, width: 220 }} />
               <div style={{ display: "inline-flex", background: C.soft, border: `1px solid ${C.line}`, borderRadius: 8, padding: 2, gap: 2 }}>
                 {[["open", "未完成"], ["all", "全部"], ["done", "已完成"]].map(([k, l]) => (
                   <button key={k} onClick={() => setFStatus(k)} style={{ padding: "5px 12px", borderRadius: 6, border: `1px solid ${fStatus === k ? C.line : "transparent"}`, background: fStatus === k ? "#fff" : "transparent", color: fStatus === k ? C.text : C.sub, fontSize: 12.5, fontWeight: fStatus === k ? 600 : 400, cursor: "pointer" }}>{l}</button>
@@ -293,9 +322,9 @@ export default function TaskCenter({ K, confirm, canEdit, cats, onLog }) {
         const within = (d, n) => { if (!d) return false; const diff = (new Date(d) - new Date(t0)) / 86400000; return diff >= 0 && diff <= n; };
         const buckets = [
           ["逾期", CircleAlert, C.red, tasks.filter(t => t.status !== "done" && t.due && t.due < t0)],
-          ["今天", Calendar, C.accent, tasks.filter(t => t.due === t0)],
+          ["今天", Calendar, C.accent, tasks.filter(t => t.status !== "done" && t.due === t0)],
           ["本週內", CalendarDays, C.sub, tasks.filter(t => t.status !== "done" && t.due && t.due > t0 && within(t.due, 7))],
-          ["之後", Clock, C.sub, tasks.filter(t => t.due && t.due > t0 && !within(t.due, 7))],
+          ["之後", Clock, C.sub, tasks.filter(t => t.status !== "done" && t.due && t.due > t0 && !within(t.due, 7))],
           ["無日期", Inbox, C.faint, tasks.filter(t => !t.due && t.status !== "done")],
         ].map(([label, Icon, color, arr]) => [label, Icon, color, arr.filter(matchQ).sort((a, b) => (a.due || "9") < (b.due || "9") ? -1 : 1)]);
         return (
@@ -425,8 +454,8 @@ export default function TaskCenter({ K, confirm, canEdit, cats, onLog }) {
                 {F("優先級", <select value={t.priority || "normal"} onChange={e => upd(t.id, { priority: e.target.value })} disabled={!canEdit} style={{ ...inp, width: "100%" }}>{PRIO.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select>)}
                 {F("截止日", <input type="date" value={dnorm(t.due)} onChange={e => upd(t.id, { due: e.target.value })} disabled={!canEdit} style={{ ...dateInp, width: "100%" }} />)}
                 {F("開始日", <input type="date" value={dnorm(t.start)} onChange={e => upd(t.id, { start: e.target.value })} disabled={!canEdit} style={{ ...dateInp, width: "100%" }} />)}
-                {F("負責人", <input value={t.owner || ""} onChange={e => upd(t.id, { owner: e.target.value })} disabled={!canEdit} placeholder="誰負責完成（自由填）" style={{ ...inp, width: "100%" }} />)}
-                {F("等待中（等誰 / 等什麼）", <input value={t.waitingFor || ""} onChange={e => upd(t.id, { waitingFor: e.target.value })} disabled={!canEdit} placeholder="例：等木工、等房東、等設計圖" style={{ ...inp, width: "100%" }} />)}
+                {F("負責人", <input key={t.id + "-ow"} defaultValue={t.owner || ""} onBlur={e => upd(t.id, { owner: e.target.value })} disabled={!canEdit} placeholder="誰負責完成（自由填）" style={{ ...inp, width: "100%" }} />)}
+                {F("等待中（等誰 / 等什麼）", <input key={t.id + "-wf"} defaultValue={t.waitingFor || ""} onBlur={e => upd(t.id, { waitingFor: e.target.value })} disabled={!canEdit} placeholder="例：等木工、等房東、等設計圖" style={{ ...inp, width: "100%" }} />)}
                 {F("預估時間（分鐘）", <input type="number" min={1} step={1} value={t.estimatedMinutes ?? ""} onChange={e => upd(t.id, { estimatedMinutes: e.target.value })} disabled={!canEdit} placeholder="未估算" style={{ ...inp, width: "100%", fontVariantNumeric: "tabular-nums" }} />)}
               </div>
               {F("依賴任務（前置做完才能動工）", (() => {
