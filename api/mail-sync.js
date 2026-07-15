@@ -26,7 +26,9 @@ async function kvPut(id, obj, editor) {
 }
 
 // 開連線＋找出「所有郵件」「垃圾桶」兩個資料夾（信被使用者整理/刪掉也照抓）
+const DBG = { boxes: [], cred: '' }
 async function withMailboxes(user, pass, fn) {
+  DBG.cred = `${(user || '').slice(0, 4)}…/len${(pass || '').length}`
   const client = new ImapFlow({ host: 'imap.gmail.com', port: 993, secure: true, auth: { user, pass }, logger: false })
   await client.connect()
   try {
@@ -35,6 +37,7 @@ async function withMailboxes(user, pass, fn) {
       if (mb.specialUse === '\\All' || mb.specialUse === '\\Trash') paths.push(mb.path)
     }
     if (!paths.length) paths.push('INBOX')
+    DBG.boxes.push(...paths)
     for (const p of paths) {
       const lock = await client.getMailboxLock(p)
       try { await fn(client) } finally { lock.release() }
@@ -190,5 +193,6 @@ export default async function handler(req, res) {
   const out = { ok: true, days }
   try { out.ctbc = await syncCtbc(days) } catch (e) { out.ctbc = { error: e?.message || String(e) } }
   try { out.pos = await syncPos(days) } catch (e) { out.pos = { error: e?.message || String(e) } }
+  if (req.query?.debug) out.dbg = DBG
   return res.status(200).json(out)
 }
