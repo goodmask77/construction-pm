@@ -31,7 +31,7 @@ const SUB     = "#5a5247"; // 次文字
 const ACCENT_SOFT = "#fbeee6"; // 磚紅淡底
 const DARKCHIP = "#33281E"; // 深棕 chip（分類標籤）
 const MONO = "'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace"; // 數字專用等寬字
-const DISP = "'Archivo','Noto Sans TC',-apple-system,system-ui,sans-serif"; // 標題展示字
+const DISP = "'Montserrat','Noto Sans TC',-apple-system,system-ui,sans-serif"; // 標題展示字（品牌字 Montserrat SemiBold）
 // 語意色（gpack 調）：綠=完成/已付、琥珀=進行/部分、藍=進行中、灰=待開工、紅=危險
 const SEM = { green: "#3f7d4e", amber: "#c98a14", blue: "#3a6ea5", grey: "#9b9384", red: "#b3261e" };
 // 段落頭：紅底小徽章 + 大粗標題（gpack 的招牌識別元件）
@@ -1414,16 +1414,20 @@ function FeedbackView({ canEdit, requireLogin, isAdmin, userName }) {
   const [tab, setTab] = useState("give");
   const [draft, setDraft] = useState({ toId: "", tags: [], text: "", anon: false });
   const [wallFilter, setWallFilter] = useState("all"); // all | tome | byme
+  const [exclusions, setExclusions] = useState([]); // 迴避配對 [[idA,idB],...]（立場衝突者互不回饋）
+  const [exDraft, setExDraft] = useState({ a: "", b: "" });
 
   useEffect(() => {
     const safety = setTimeout(() => setItems(prev => prev || []), 8000);
     (async () => {
       const r = await loadCrewRoster(); setPeople(r); setMe(meFromRoster(r, userName));
-      try { const rr = await window.storage.get(K("kb_feedback"), true); setItems(rr && rr.value ? JSON.parse(rr.value).items || [] : []); } catch (_) { setItems([]); }
+      try { const rr = await window.storage.get(K("kb_feedback"), true); const parsed = rr && rr.value ? JSON.parse(rr.value) : {}; setItems(parsed.items || []); setExclusions(parsed.exclusions || []); } catch (_) { setItems([]); }
     })().finally(() => clearTimeout(safety));
     return () => clearTimeout(safety);
   }, []);
-  const persist = async (list) => { try { const p = items || []; auditLog(list.length > p.length ? "新增" : list.length < p.length ? "刪除" : "編輯", "夥伴中心・意見回饋"); } catch (_) {} setItems(list); try { await window.storage.set(K("kb_feedback"), JSON.stringify({ items: list }), true); } catch (_) {} };
+  const persist = async (list) => { try { const p = items || []; auditLog(list.length > p.length ? "新增" : list.length < p.length ? "刪除" : "編輯", "夥伴中心・意見回饋"); } catch (_) {} setItems(list); try { await window.storage.set(K("kb_feedback"), JSON.stringify({ items: list, exclusions }), true); } catch (_) {} };
+  const persistEx = async (next) => { setExclusions(next); try { auditLog("編輯", "夥伴中心・回饋迴避設定"); } catch (_) {} try { await window.storage.set(K("kb_feedback"), JSON.stringify({ items: items || [], exclusions: next }), true); } catch (_) {} };
+  const isExcluded = (a, b) => exclusions.some(([x, y]) => (x === a && y === b) || (x === b && y === a));
   const nameOf = (id) => people.find(p => p.id === id)?.name || "—";
   if (items === null) return <div style={{ padding: 40, color: SUB, fontSize: 14 }}>載入中…</div>;
 
@@ -1453,9 +1457,16 @@ function FeedbackView({ canEdit, requireLogin, isAdmin, userName }) {
     <div>
       <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "6px 0 4px", flexWrap: "wrap" }}>
         <div style={{ fontSize: 18, fontWeight: 700, color: TEXT }}>💬 回饋</div>
-        <span style={{ fontSize: 11, background: "#FEF3C7", color: "#92400e", borderRadius: 8, padding: "2px 8px", fontWeight: 600 }}>設計原型</span>
       </div>
       <div style={{ fontSize: 12, color: SUB, marginBottom: 12 }}>讓正向、有建設性的回饋變習慣——給回饋得分、被按「幫到我」更高分，累積成回饋王。</div>
+      {/* 週期性觸發：本週（週一起算）還沒給過回饋 → 提示（搭配每週五 LINE 提醒） */}
+      {me && (() => { const now = new Date(); const monday = new Date(now); monday.setHours(0,0,0,0); monday.setDate(now.getDate() - ((now.getDay() + 6) % 7)); const given = (items || []).some(it => it.fromId === me && new Date(it.ts) >= monday); if (given) return null; return (
+        <div style={{ background: "#FFF7ED", border: "1.5px solid #c98a14", borderRadius: 10, padding: "10px 14px", marginBottom: 12, display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+          <span style={{ fontSize: 13, color: "#7a5410", fontWeight: 600 }}>⏰ 你本週還沒給出回饋——花 30 秒鼓勵一位夥伴，讓好表現被看見。</span>
+          <div style={{ flex: 1 }} />
+          {tab !== "give" && <button onClick={() => setTab("give")} style={{ border: "none", background: ACCENT, color: "#fff", borderRadius: 8, padding: "6px 14px", fontSize: 12.5, fontWeight: 700, cursor: "pointer" }}>去給回饋 ＋2分</button>}
+        </div>
+      ); })()}
       <div style={{ display: "flex", gap: 8, marginBottom: 14, flexWrap: "wrap" }}>{subTab("give", "✍ 給回饋")}{subTab("wall", "🧱 回饋牆")}</div>
 
       {tab === "give" && (
@@ -1464,7 +1475,7 @@ function FeedbackView({ canEdit, requireLogin, isAdmin, userName }) {
           <div style={{ fontSize: 12, color: SUB, marginBottom: 4 }}>給誰</div>
           <select value={draft.toId} onChange={e => setDraft({ ...draft, toId: e.target.value })} style={{ width: "100%", boxSizing: "border-box", border: `1px solid ${BORDER}`, borderRadius: 8, padding: "8px 10px", fontSize: 14, background: "#fff", color: TEXT, marginBottom: 12 }}>
             <option value="">— 選擇夥伴 —</option>
-            {people.filter(p => p.id !== me).map(p => <option key={p.id} value={p.id}>{p.name}{p.dept ? `（${p.dept}）` : ""}</option>)}
+            {people.filter(p => p.id !== me && !isExcluded(me, p.id)).map(p => <option key={p.id} value={p.id}>{p.name}{p.dept ? `（${p.dept}）` : ""}</option>)}
           </select>
           <div style={{ fontSize: 12, color: SUB, marginBottom: 6 }}>👍 正向標籤</div>
           <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 12 }}>{FB_POS_TAGS.map(t => tagChip(t, draft.tags.includes(t), () => toggleTag(t)))}</div>
@@ -1476,6 +1487,30 @@ function FeedbackView({ canEdit, requireLogin, isAdmin, userName }) {
             <div style={{ flex: 1 }} />
             <button onClick={submit} style={{ border: "none", background: ACCENT, color: "#fff", borderRadius: 8, padding: "9px 22px", fontSize: 14, fontWeight: 600, cursor: "pointer" }}>送出回饋 ＋2分</button>
           </div>
+          {isAdmin && (
+            <div style={{ marginTop: 16, borderTop: `1px dashed ${BORDER}`, paddingTop: 12 }}>
+              <div style={{ fontSize: 12.5, fontWeight: 700, color: TEXT, marginBottom: 4 }}>⚖ 迴避設定（管理員）</div>
+              <div style={{ fontSize: 11.5, color: SUB, marginBottom: 8 }}>立場衝突的兩人（例如主管×直屬、有心結）互相不會出現在對方的回饋名單。</div>
+              <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginBottom: 8 }}>
+                {[["a"], ["b"]].map(([k], i) => (
+                  <select key={k} value={exDraft[k]} onChange={e => setExDraft(d => ({ ...d, [k]: e.target.value }))} style={{ border: `1px solid ${BORDER}`, borderRadius: 8, padding: "6px 9px", fontSize: 13, background: "#fff", color: TEXT }}>
+                    <option value="">{i === 0 ? "— 甲 —" : "— 乙 —"}</option>
+                    {people.map(pp => <option key={pp.id} value={pp.id}>{pp.name}</option>)}
+                  </select>
+                ))}
+                <button onClick={() => { if (!exDraft.a || !exDraft.b || exDraft.a === exDraft.b || isExcluded(exDraft.a, exDraft.b)) return; persistEx([...exclusions, [exDraft.a, exDraft.b]]); setExDraft({ a: "", b: "" }); }} style={{ border: `1.5px solid ${ACCENT}`, background: "#fff", color: ACCENT, borderRadius: 8, padding: "6px 14px", fontSize: 12.5, fontWeight: 700, cursor: "pointer" }}>＋ 新增迴避</button>
+              </div>
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                {exclusions.length === 0 && <span style={{ fontSize: 12, color: "#9b9384" }}>目前沒有迴避配對</span>}
+                {exclusions.map(([a, b], i) => (
+                  <span key={i} style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12.5, background: "#ece4d6", border: `1px solid ${BORDER}`, borderRadius: 14, padding: "3px 10px" }}>
+                    {nameOf(a)} ✕ {nameOf(b)}
+                    <button onClick={() => persistEx(exclusions.filter((_, j) => j !== i))} style={{ border: "none", background: "none", color: "#9b9384", cursor: "pointer", padding: 0, fontSize: 13 }}>×</button>
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -1727,8 +1762,18 @@ function CrewRankView() {
     <div>
       <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "6px 0 4px", flexWrap: "wrap" }}>
         <div style={{ fontSize: 18, fontWeight: 700, color: TEXT }}>🏆 排行榜</div>
-        <span style={{ fontSize: 11, background: "#FEF3C7", color: "#92400e", borderRadius: 8, padding: "2px 8px", fontWeight: 600 }}>設計原型</span>
       </div>
+      {(() => { const top = [...stats].sort((a, b) => b.points - a.points)[0]; if (!top || top.points <= 0) return null; return (
+        <div style={{ background: "#fff", border: "1.5px solid #c8bca6", borderRadius: 12, padding: "12px 16px", margin: "10px 0 14px", display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+          <span style={{ fontSize: 28 }}>👑</span>
+          <div>
+            <div style={{ fontSize: 10.5, letterSpacing: 1.5, color: SUB, fontWeight: 700 }}>本期回饋王</div>
+            <div style={{ fontSize: 18, fontWeight: 800, color: TEXT }}>{top.name} <span style={{ fontFamily: MONO, fontSize: 15, color: ACCENT }}>{top.points} 分</span></div>
+          </div>
+          <div style={{ flex: 1 }} />
+          <span style={{ fontSize: 11.5, color: SUB }}>給出 {top.given} 則・被按幫到我 {top.helpfulGot} 次</span>
+        </div>
+      ); })()}
       <div style={{ fontSize: 12, color: SUB, marginBottom: 14 }}>積分＝給回饋×2 ＋ 收到×1 ＋ 你的回饋被按「幫到我」×5。</div>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 12 }}>
         {board("🏅 積分王", "總積分（回饋＋闖關－兌換）", "balance", "分", ACCENT)}
@@ -2487,7 +2532,7 @@ function TopNav({ view, setView, saving, totalEstimated, totalPaid, doneCount, c
     <div style={{ background: HEAD_BG, borderBottom: `2px solid ${HEAD_LINE}`, padding: isMobile ? "10px 14px 0" : "16px 22px 0", position: "sticky", top: 0, zIndex: 100 }}>
       <div style={{ display: "flex", alignItems: "center", gap: isMobile ? 10 : 16, marginBottom: isMobile ? 10 : 12, flexWrap: "wrap" }}>
         <div style={{ flexShrink: 0, order: 0 }}>
-          <div style={{ fontSize: isMobile ? 20 : 26, fontWeight: 800, color: BRAND, lineHeight: 1, letterSpacing: -1 }}>GROUN:D</div>
+          <div style={{ fontSize: isMobile ? 20 : 26, fontWeight: 600, fontFamily: DISP, color: BRAND, lineHeight: 1, letterSpacing: -0.5 }}>GROUN:D</div>
           {!isMobile && <div style={{ fontSize: 9.5, color: HEAD_SUB, letterSpacing: 2.5, textTransform: "uppercase", marginTop: 4, fontWeight: 600 }}>Construction Project Tracker</div>}
         </div>
         {/* 工作空間切換 */}
@@ -4044,6 +4089,10 @@ function HistoryView({ K, confirm, snapshotData, cats, petty }) {
 // ── App 更新紀錄（我們對 App 做的功能修改／新增，給全團隊看）─────────────────
 // 維護方式：每次有較大改動就在最上面加一筆（日期 + 條列）。
 const CHANGELOG = [
+  { date: "2026-07-17", items: [
+    "夥伴中心「360評鑑」完成版：每週五 LINE 自動提醒給回饋、App 內「本週還沒給回饋」提示、迴避設定(立場衝突互不評)、回饋王 👑 加冕；具名/匿名與按讚加分原本就有",
+    "任務清單改 Linear 密表(一行一件、欄位對齊、逾期紅字)；全站標題字統一 Montserrat SemiBold(品牌字)",
+  ]},
   { date: "2026-07-16 晚", items: [
     "全站改版定案「米色紙感＋硬邊框＋磚紅」（參考自家 ground-pack）：深色頂欄與藍色退場、數字改等寬粗體、紅徽章段落頭",
     "今日頁升級：頂部大數字摘要卡(必處理/QuickWins/在等/卡住)、Quick Wins 按 5/10/15 分鐘分欄、新增「各大項一眼」(完成度/今天/卡住)",

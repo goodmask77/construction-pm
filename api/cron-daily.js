@@ -37,16 +37,21 @@ export default async function handler(req, res) {
   const secret = clean(process.env.CRON_SECRET)
   if (secret && req.headers['authorization'] !== `Bearer ${secret}`) return res.status(401).json({ ok: false })
   if (!TOKEN) return res.status(200).json({ ok: false, skipped: '未設 LINE_CHANNEL_ACCESS_TOKEN' })
+  const messages = []
   const snap = await loadSnapshot()
   const text = buildReport(snap)
-  if (!text) return res.status(200).json({ ok: false, skipped: '無快照資料' })
+  if (text) messages.push({ type: 'text', text })
+  // 360評鑑：每週五（台北時間）自動觸發「回饋時間」提醒 —— 解決人性懶得給回饋
+  const taipeiDay = new Date(Date.now() + 8 * 3600e3).getUTCDay()
+  if (taipeiDay === 5) messages.push({ type: 'text', text: '💬 每週回饋時間！\n花 30 秒到「夥伴中心 → 回饋」，給一位夥伴一句具體的鼓勵或建議（可匿名）。\n被按「幫到我」還會加分，衝一波回饋王 👑\nhttps://ground-pm.vercel.app/' })
+  if (!messages.length) return res.status(200).json({ ok: false, skipped: '無內容可推' })
   try {
     const r = await fetch('https://api.line.me/v2/bot/message/push', {
       method: 'POST',
       headers: { 'content-type': 'application/json', authorization: `Bearer ${TOKEN}` },
-      body: JSON.stringify({ to: GROUP, messages: [{ type: 'text', text }] }),
+      body: JSON.stringify({ to: GROUP, messages: messages.slice(0, 5) }),
     })
-    return res.status(200).json({ ok: r.ok })
+    return res.status(200).json({ ok: r.ok, pushed: messages.length })
   } catch (e) {
     return res.status(200).json({ ok: false, error: e?.message })
   }
