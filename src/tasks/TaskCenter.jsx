@@ -426,11 +426,11 @@ export default function TaskCenter({ K, confirm, canEdit, cats, onLog, onAddCat 
               {rows.length === 0 ? <Empty icon={List} text="沒有任務" pad={24} /> :
                 rows.map((t, i) => (
                   <div key={t.id} onClick={() => setSel(t.id)}
-                    onMouseEnter={e => e.currentTarget.style.background = C.bg} onMouseLeave={e => e.currentTarget.style.background = "#fff"}
-                    style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", borderTop: i ? `1px solid ${C.soft}` : "none", cursor: "pointer", background: "#fff" }}>
+                    onMouseEnter={e => e.currentTarget.style.background = t.color || C.bg} onMouseLeave={e => e.currentTarget.style.background = t.color || "#fff"}
+                    style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", borderTop: i ? `1px solid ${C.soft}` : "none", cursor: "pointer", background: t.color || "#fff" }}>
                     <button onClick={e => { e.stopPropagation(); if (guard()) upd(t.id, { status: t.status === "done" ? "todo" : "done" }); }} style={{ flexShrink: 0, width: 16, height: 16, borderRadius: 4, border: `1px solid ${t.status === "done" ? C.green : "#d4d4d4"}`, background: t.status === "done" ? C.green : "#fff", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", padding: 0 }}>{t.status === "done" && <Check size={11} color="#fff" strokeWidth={3} />}</button>
                     <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 13.5, color: t.status === "done" ? C.faint : C.text, textDecoration: t.status === "done" ? "line-through" : "none" }}>{t.priority === "urgent" && <Flame size={12} color={C.red} />}{t.title}</div>
+                      <div style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 13.5, color: t.status === "done" ? C.faint : C.text, textDecoration: t.status === "done" ? "line-through" : "none" }}>{t.pinned && <Pin size={12} color={C.accent} fill={C.accent} style={{ flexShrink: 0 }} />}{t.priority === "urgent" && <Flame size={12} color={C.red} />}{t.title}</div>
                       <div style={{ fontSize: 11.5, color: C.faint, marginTop: 2, fontVariantNumeric: "tabular-nums" }}>{catName(t.catId)}{t.due ? `・${t.due}` : ""}</div>
                     </div>
                     <Pill color={sColor(t.status)} label={sLabel(t.status)} />
@@ -504,8 +504,8 @@ export default function TaskCenter({ K, confirm, canEdit, cats, onLog, onAddCat 
                   const left = Math.min(s, e), width = Math.abs(e - s) + 1;
                   return (
                     <div key={t.id} onClick={() => setSel(t.id)}
-                      onMouseEnter={ev => ev.currentTarget.style.background = C.bg} onMouseLeave={ev => ev.currentTarget.style.background = "#fff"}
-                      style={{ display: "flex", alignItems: "center", borderTop: i ? `1px solid ${C.soft}` : "none", cursor: "pointer", background: "#fff" }}>
+                      onMouseEnter={ev => ev.currentTarget.style.background = t.color || C.bg} onMouseLeave={ev => ev.currentTarget.style.background = t.color || "#fff"}
+                      style={{ display: "flex", alignItems: "center", borderTop: i ? `1px solid ${C.soft}` : "none", cursor: "pointer", background: t.color || "#fff" }}>
                       <div style={{ width: 200, flexShrink: 0, borderRight: `1px solid ${C.line}`, padding: "7px 10px", fontSize: 12.5, color: t.status === "done" ? C.faint : C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "flex", alignItems: "center", gap: 4, position: "sticky", left: 0, background: "inherit", zIndex: 2 }}>{t.priority === "urgent" && <Flame size={11} color={C.red} style={{ flexShrink: 0 }} />}{t.title}<span style={{ fontSize: 10.5, color: C.faint, flexShrink: 0 }}>・{catName(t.catId)}</span></div>
                       <div style={{ position: "relative", height: 30, flex: 1 }}>
                         {todayOff >= 0 && todayOff < totalDays && <div style={{ position: "absolute", left: todayOff * dayW, top: 0, bottom: 0, width: 1, background: C.red, opacity: .45 }} />}
@@ -545,8 +545,9 @@ export default function TaskCenter({ K, confirm, canEdit, cats, onLog, onAddCat 
                     <div style={{ width: 1, height: 10, background: C.line }} />
                     <div style={{ display: "flex", flexDirection: "column", gap: 7, width: "100%" }}>
                       {items.map(t => (
-                        <div key={t.id} onClick={() => setSel(t.id)} style={{ display: "flex", alignItems: "center", gap: 5, background: C.card, border: `1px solid ${C.line}`, borderRadius: 8, padding: "6px 10px", fontSize: 12.5, color: t.status === "done" ? C.faint : C.text, textDecoration: t.status === "done" ? "line-through" : "none", cursor: "pointer" }}>
+                        <div key={t.id} onClick={() => setSel(t.id)} style={{ display: "flex", alignItems: "center", gap: 5, background: t.color || C.card, border: `1px solid ${C.line}`, borderRadius: 8, padding: "6px 10px", fontSize: 12.5, color: t.status === "done" ? C.faint : C.text, textDecoration: t.status === "done" ? "line-through" : "none", cursor: "pointer" }}>
                           <span style={{ width: 6, height: 6, borderRadius: "50%", background: sColor(t.status), flexShrink: 0 }} />
+                          {t.pinned && <Pin size={11} color={C.accent} fill={C.accent} style={{ flexShrink: 0 }} />}
                           {t.priority === "urgent" && <Flame size={11} color={C.red} style={{ flexShrink: 0 }} />}{t.title}
                         </div>
                       ))}
