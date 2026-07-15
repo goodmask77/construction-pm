@@ -50,12 +50,31 @@ export default function FinanceView({ K, confirm, canEdit, ReceiptUploader, onLo
   const [imp, setImp] = useState(null); // 批量匯入面板（hook 一定要在提早 return 之前）
   const [coa, setCoa] = useState(null);  // 會計科目樹 [{id,name,parentId}]
   const [coaImp, setCoaImp] = useState(null); // 科目批量建立面板
+  // ── 對帳中心（試算表 × 工程付款 × 內帳）──
+  const [sheet, setSheet] = useState(null);      // {syncedAt, rows[]}（來自 sheet-sync）
+  const [recon, setRecon] = useState({ links: {}, ignored: [] }); // 補記/忽略標記
+  const [conCats, setConCats] = useState([]);    // 工程專案大項（唯讀跨空間）
+  const [conPetty, setConPetty] = useState({ spends: [] });
+  const [syncBusy, setSyncBusy] = useState(false);
+  const [showMatched, setShowMatched] = useState(false);
+  const [showMirror, setShowMirror] = useState(false);
 
   useEffect(() => { (async () => {
     try { const a = await window.storage.get(K("pm_fin_accounts"), true); setAccounts(a && a.value ? JSON.parse(a.value) : []); } catch { setAccounts([]); }
     try { const l = await window.storage.get(K("pm_fin_ledger"), true); setLedger(l && l.value ? JSON.parse(l.value) : []); } catch { setLedger([]); }
     try { const c = await window.storage.get(K("pm_fin_coa"), true); const v = c && c.value ? JSON.parse(c.value) : null; setCoa(Array.isArray(v) && v.length ? v : SEED_COA()); } catch { setCoa(SEED_COA()); }
+    // 對帳資料：試算表鏡像 + 對帳標記 + 工程專案（跨空間唯讀，絕不寫回）
+    try { const sh = await window.storage.get(K("pm_sheet"), true); setSheet(sh && sh.value ? JSON.parse(sh.value) : null); } catch (_) {}
+    try { const rc = await window.storage.get(K("pm_recon"), true); const v = rc && rc.value ? JSON.parse(rc.value) : null; if (v) setRecon({ links: v.links || {}, ignored: v.ignored || [] }); } catch (_) {}
+    try { const cd = await window.storage.get("pm_data", true); setConCats(cd && cd.value ? JSON.parse(cd.value) : []); } catch (_) {}
+    try { const pt = await window.storage.get("pm_petty", true); const v = pt && pt.value ? JSON.parse(pt.value) : {}; setConPetty({ spends: v.spends || [] }); } catch (_) {}
   })(); }, []); // eslint-disable-line
+  const saveRecon = (next) => { setRecon(next); window.storage.set(K("pm_recon"), JSON.stringify(next), true).catch(() => {}); };
+  const runSync = async () => {
+    setSyncBusy(true);
+    try { const r = await fetch("/api/sheet-sync"); const d = await r.json(); if (!d.ok) alert("同步失敗：" + (d.error || "未知")); else { const sh = await window.storage.get(K("pm_sheet"), true); setSheet(sh && sh.value ? JSON.parse(sh.value) : null); onLog?.("編輯", `同步公司帳務表（${d.rows} 筆）`); } } catch (e) { alert("同步失敗：" + e.message); }
+    setSyncBusy(false);
+  };
   const guard = () => { if (!canEdit) { alert("沒有編輯權限，請聯絡管理員。"); return false; } return true; };
   const saveAcc = (list) => { setAccounts(list); window.storage.set(K("pm_fin_accounts"), JSON.stringify(list), true).catch(() => {}); };
   const saveLed = (list) => { setLedger(list); window.storage.set(K("pm_fin_ledger"), JSON.stringify(list), true).catch(() => {}); };
@@ -130,7 +149,7 @@ export default function FinanceView({ K, confirm, canEdit, ReceiptUploader, onLo
         <span style={{ fontSize: 12, color: C.faint }}>多帳戶總表・轉帳不算成本</span>
         <div style={{ flex: 1 }} />
         <div style={{ display: "inline-flex", background: C.head, border: `1px solid ${C.line}`, borderRadius: 10, padding: 3, gap: 2 }}>
-          {[["overview", "📊 總覽"], ["accounts", "🏦 帳戶"], ["ledger", "🧾 交易明細"], ["coa", "🗂 科目"]].map(([k, l]) => (
+          {[["overview", "📊 總覽"], ["accounts", "🏦 帳戶"], ["ledger", "🧾 交易明細"], ["coa", "🗂 科目"], ["recon", "🔄 對帳"]].map(([k, l]) => (
             <button key={k} onClick={() => setTab(k)} style={{ padding: "6px 16px", borderRadius: 7, border: "none", background: tab === k ? C.brand : "transparent", color: tab === k ? "#fff" : C.sub, fontSize: 13.5, fontWeight: 600, cursor: "pointer", transition: "all .12s" }}>{l}</button>
           ))}
         </div>
@@ -313,6 +332,144 @@ export default function FinanceView({ K, confirm, canEdit, ReceiptUploader, onLo
             <div style={{ fontSize: 11.5, color: C.faint, marginTop: 8, lineHeight: 1.7 }}>
               <b>支出</b>＝從某帳戶付出去（標科目/工種）；<b>轉帳</b>＝帳戶間搬錢（不算成本，選「從／到」）；<b>收入</b>＝錢進某帳戶。<b>篩選單一帳戶</b>時右側顯示逐筆餘額（像對帳單）。
             </div>
+          </div>
+        );
+      })()}
+
+      {/* ── 對帳中心：試算表(喬亞帳戶) × 工程付款 × 內帳 ── */}
+      {tab === "recon" && (() => {
+        const shRows = (sheet?.rows || []);
+        const d2n = (d) => d ? +new Date(d) : 0;
+        const close = (a, b) => a && b && Math.abs(d2n(a) - d2n(b)) <= 5 * 86400e3;
+        // App 端資金池：工程付款（各大項 payments）＋ 內帳交易（零用金為現金小額，不進銀行對帳）
+        const pool = [
+          ...conCats.flatMap(c => (c.payments || []).map(pm => ({ kind: "工程付款", key: "pay:" + pm.id, date: pm.date, amount: num(pm.amount), label: c.name, note: pm.note || "" }))),
+          ...(ledger || []).map(l => ({ kind: "內帳", key: "fin:" + l.id, date: l.date, amount: num(l.amount), label: accName(l.from) || "內帳", note: [l.category, l.vendor, l.note].filter(Boolean).join("・") })),
+        ];
+        const usedPool = new Set();
+        const matched = [], onlySheet = [];
+        shRows.forEach(r => {
+          if (recon.ignored.includes(r.id)) return;
+          if (recon.links[r.id]) { matched.push({ r, via: "已補記" }); return; }
+          const hit = pool.find(pl => !usedPool.has(pl.key) && pl.amount === r.amount && (close(pl.date, r.payDate) || !pl.date || !r.payDate));
+          if (hit) { usedPool.add(hit.key); matched.push({ r, via: `${hit.kind}｜${hit.label}` }); }
+          else onlySheet.push(r);
+        });
+        const onlyApp = pool.filter(pl => !usedPool.has(pl.key) && pl.kind === "工程付款" && num(pl.amount) > 0);
+        const ignoredN = recon.ignored.length;
+        const MONOF = "'IBM Plex Mono', ui-monospace, Menlo, monospace";
+        const statCard = (n, l, cl) => (
+          <div key={l} style={{ background: C.card, border: "1.5px solid #c8bca6", borderRadius: 8, padding: "10px 14px", flex: "1 1 120px" }}>
+            <div style={{ fontFamily: MONOF, fontSize: 22, fontWeight: 700, color: C.text }}>{n}</div>
+            <div style={{ fontSize: 11, color: C.sub, marginTop: 2, display: "flex", alignItems: "center", gap: 5 }}><span style={{ width: 6, height: 6, borderRadius: "50%", background: cl }} />{l}</div>
+          </div>
+        );
+        const doFillFin = (r) => {
+          if (!guard()) return;
+          saveLed([{ id: rid("tx"), date: r.payDate || "", kind: "expense", amount: r.amount, from: accounts[0]?.id || "", to: "", category: r.subject || r.cat, vendor: r.payee || "", invoiceNo: "", note: r.content + (r.batch ? `（${r.batch}）` : "") + "〔對帳補記〕", receipts: [] }, ...ledger]);
+          saveRecon({ ...recon, links: { ...recon.links, [r.id]: { kind: "fin" } } });
+          onLog?.("新增", `對帳補記內帳 ${fmt(r.amount)}（${r.content.slice(0, 14)}）`);
+        };
+        const doFillPay = async (r, catId) => {
+          if (!guard() || !catId) return;
+          try {
+            const cd = await window.storage.get("pm_data", true);
+            const cats2 = cd && cd.value ? JSON.parse(cd.value) : [];
+            const next = cats2.map(c => c.id === catId ? { ...c, payments: [...(c.payments || []), { id: "pay-" + Math.random().toString(36).slice(2, 8), date: r.payDate || "", amount: r.amount, category: "其他", note: r.content + (r.batch ? `（${r.batch}）` : "") + "〔對帳補記〕", itemId: null, receipts: [] }] } : c);
+            await window.storage.set("pm_data", JSON.stringify(next), true);
+            setConCats(next);
+            saveRecon({ ...recon, links: { ...recon.links, [r.id]: { kind: "pay", catId } } });
+            const cn = (cats2.find(c => c.id === catId) || {}).name || "";
+            onLog?.("新增", `對帳補記工程付款「${cn}」${fmt(r.amount)}`);
+          } catch (e) { alert("寫入工程付款失敗：" + e.message); }
+        };
+        const rowBox = { background: C.card, border: `1px solid ${C.line}`, borderRadius: 8, padding: "9px 12px", marginBottom: 8 };
+        return (
+          <div>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 12 }}>
+              <span style={{ background: C.blue, color: "#fff", fontSize: 11.5, fontWeight: 700, borderRadius: 4, padding: "2px 8px", letterSpacing: 1 }}>對帳</span>
+              <span style={{ fontSize: 15, fontWeight: 800, color: C.text }}>公司帳務表 × 工程付款 × 內帳</span>
+              <div style={{ flex: 1 }} />
+              <span style={{ fontSize: 11.5, color: C.faint }}>{sheet?.syncedAt ? `上次同步 ${new Date(sheet.syncedAt).toLocaleString("zh-TW", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })}（每天也會自動同步）` : "尚未同步過"}</span>
+              <button onClick={runSync} disabled={syncBusy} style={{ background: C.blue, color: "#fff", border: "none", borderRadius: 8, padding: "7px 16px", fontSize: 13, fontWeight: 700, cursor: syncBusy ? "wait" : "pointer" }}>{syncBusy ? "同步中…" : "立即同步"}</button>
+            </div>
+            {!sheet ? (
+              <div style={{ padding: 30, textAlign: "center", color: C.faint, background: C.card, border: `1px solid ${C.line}`, borderRadius: 10 }}>還沒同步過——按右上「立即同步」抓一次公司帳務表。</div>
+            ) : (
+              <>
+                <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 14 }}>
+                  {statCard(matched.length, "對上了 / 已補記", C.accent)}
+                  {statCard(onlySheet.length, "只在帳務表（App 可能漏記）", C.red)}
+                  {statCard(onlyApp.length, "只在 App（帳務表可能漏記）", C.amber)}
+                  {statCard(ignoredN, "已忽略", C.faint)}
+                </div>
+                {onlySheet.length > 0 && (
+                  <div style={{ marginBottom: 16 }}>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: C.red, marginBottom: 8 }}>⚠ 只在帳務表——挑要補進哪邊（工程款請選大項）</div>
+                    {onlySheet.map(r => (
+                      <div key={r.id} style={rowBox}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                          <span style={{ fontFamily: MONOF, fontSize: 12, color: C.sub, width: 74 }}>{r.payDate || "—"}</span>
+                          <span style={{ fontSize: 11, background: C.soft, borderRadius: 5, padding: "1px 7px", color: C.sub }}>{r.cat}{r.subject ? "・" + r.subject : ""}</span>
+                          <span style={{ flex: 1, minWidth: 160, fontSize: 13, color: C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={r.content}>{r.content}</span>
+                          <span style={{ fontFamily: MONOF, fontSize: 13.5, fontWeight: 700, color: C.text }}>{fmt(r.amount)}</span>
+                        </div>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 7, flexWrap: "wrap" }}>
+                          {r.payee && <span style={{ fontSize: 11, color: C.faint }}>→ {r.payee}</span>}
+                          <div style={{ flex: 1 }} />
+                          {canEdit && <>
+                            <select defaultValue="" onChange={e => { if (e.target.value) { doFillPay(r, e.target.value); e.target.value = ""; } }} style={{ ...inp, padding: "5px 8px", fontSize: 12 }}>
+                              <option value="">補進工程付款（選大項）…</option>
+                              {conCats.filter(c => !c.nonProject).map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                            </select>
+                            <button onClick={() => doFillFin(r)} style={{ border: `1.5px solid ${C.blue}`, background: "#fff", color: C.blue, borderRadius: 7, padding: "5px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>補進內帳</button>
+                            <button onClick={() => saveRecon({ ...recon, ignored: [...recon.ignored, r.id] })} style={{ border: `1px solid ${C.line}`, background: "#fff", color: C.faint, borderRadius: 7, padding: "5px 10px", fontSize: 12, cursor: "pointer" }}>忽略</button>
+                          </>}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {onlyApp.length > 0 && (
+                  <div style={{ marginBottom: 16 }}>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: C.amber, marginBottom: 8 }}>⚠ 只在 App 的工程付款——帳務表那邊可能漏記（去補表或確認是否現金/零用金）</div>
+                    {onlyApp.slice(0, 30).map(pl => (
+                      <div key={pl.key} style={{ ...rowBox, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                        <span style={{ fontFamily: MONOF, fontSize: 12, color: C.sub, width: 74 }}>{pl.date || "—"}</span>
+                        <span style={{ fontSize: 11, background: C.soft, borderRadius: 5, padding: "1px 7px", color: C.sub }}>{pl.kind}</span>
+                        <span style={{ flex: 1, minWidth: 140, fontSize: 13, color: C.text }}>{pl.label}{pl.note ? `・${pl.note}` : ""}</span>
+                        <span style={{ fontFamily: MONOF, fontSize: 13.5, fontWeight: 700, color: C.text }}>{fmt(pl.amount)}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <button onClick={() => setShowMatched(v => !v)} style={{ background: "none", border: "none", color: C.sub, fontSize: 12.5, cursor: "pointer", padding: 0, marginBottom: 8 }}>{showMatched ? "▾" : "▸"} 對上了 {matched.length} 筆</button>
+                {showMatched && matched.map(({ r, via }) => (
+                  <div key={r.id} style={{ ...rowBox, display: "flex", alignItems: "center", gap: 8, opacity: .75 }}>
+                    <span style={{ color: C.accent, fontSize: 13 }}>✓</span>
+                    <span style={{ fontFamily: MONOF, fontSize: 12, color: C.sub, width: 74 }}>{r.payDate || "—"}</span>
+                    <span style={{ flex: 1, fontSize: 12.5, color: C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.content}</span>
+                    <span style={{ fontSize: 11, color: C.faint }}>{via}</span>
+                    <span style={{ fontFamily: MONOF, fontSize: 12.5, fontWeight: 700 }}>{fmt(r.amount)}</span>
+                  </div>
+                ))}
+                <div style={{ marginTop: 14 }}>
+                  <button onClick={() => setShowMirror(v => !v)} style={{ background: "none", border: "none", color: C.sub, fontSize: 12.5, cursor: "pointer", padding: 0 }}>{showMirror ? "▾" : "▸"} 📄 帳務表鏡像（唯讀・{shRows.length} 筆）</button>
+                  {showMirror && (
+                    <div style={{ border: `1px solid ${C.line}`, borderRadius: 8, background: C.card, marginTop: 8, maxHeight: 400, overflow: "auto" }}>
+                      {shRows.map(r => (
+                        <div key={r.id} style={{ display: "flex", gap: 8, padding: "6px 10px", borderBottom: "1px solid #f0ead9", fontSize: 12, alignItems: "center" }}>
+                          <span style={{ fontFamily: MONOF, color: C.sub, width: 72, flexShrink: 0 }}>{r.payDate || r.notifyDate || "—"}</span>
+                          <span style={{ width: 76, flexShrink: 0, color: C.faint, overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis" }}>{r.cat}</span>
+                          <span style={{ flex: 1, overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis", color: C.text }} title={r.content}>{r.content}</span>
+                          <span style={{ fontFamily: MONOF, fontWeight: 600, flexShrink: 0 }}>{fmt(r.amount)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </>
+            )}
           </div>
         );
       })()}

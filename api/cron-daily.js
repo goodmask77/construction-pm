@@ -36,6 +36,8 @@ export default async function handler(req, res) {
   // 可選：用 CRON_SECRET 防止外部亂打
   const secret = clean(process.env.CRON_SECRET)
   if (secret && req.headers['authorization'] !== `Bearer ${secret}`) return res.status(401).json({ ok: false })
+  // 對帳中心：每天順手同步一次公司帳務試算表（失敗不影響速報）
+  try { await fetch('https://ground-pm.vercel.app/api/sheet-sync') } catch (_) {}
   if (!TOKEN) return res.status(200).json({ ok: false, skipped: '未設 LINE_CHANNEL_ACCESS_TOKEN' })
   const messages = []
   const snap = await loadSnapshot()

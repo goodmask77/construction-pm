@@ -274,6 +274,18 @@ async function loadTasksText() {
   } catch (_) { return '' }
 }
 
+// 公司帳務表（Google 試算表每日同步鏡像 sp_finance_pm_sheet）→ 文字
+async function loadSheetText() {
+  try {
+    const v = (await kvGetMany(['sp_finance_pm_sheet']))['sp_finance_pm_sheet']
+    const rows = v && Array.isArray(v.rows) ? v.rows : []
+    if (!rows.length) return ''
+    const lines = [`\n\n【公司帳務表（喬亞帳戶，Google 試算表同步於 ${v.syncedAt ? new Date(v.syncedAt).toLocaleString('zh-TW') : ''}，共 ${rows.length} 筆）】`]
+    rows.slice(-100).forEach(r => lines.push(`  - ${r.payDate || r.notifyDate || ''} [${r.cat}${r.subject ? '/' + r.subject : ''}] ${r.content}｜NT$${Math.round(r.amount).toLocaleString()}${r.payee ? '→' + r.payee : ''}${r.batch ? '（' + r.batch + '）' : ''}`))
+    return lines.join('\n')
+  } catch (_) { return '' }
+}
+
 // 公開結論（團隊定案，現行版）→ 文字
 async function loadConclusionsText() {
   try {
@@ -286,9 +298,9 @@ async function loadConclusionsText() {
   } catch (_) { return '' }
 }
 
-async function answer(question, snaps, accountsText, financeText, activityText, estimatesText, crewText, canAct, history, memoryText, conclusionsText, tasksText) {
+async function answer(question, snaps, accountsText, financeText, activityText, estimatesText, crewText, canAct, history, memoryText, conclusionsText, tasksText, sheetText) {
   if (!ANTHROPIC) return '（D哥的 AI 金鑰尚未設定。）'
-  const system = (canAct ? BOT_AGENT_GUIDE + '\n\n' : '') + BOT_PERSONA + (memoryText || '') + SYS_DATA_HEAD + snapshotsToContext(snaps) + (tasksText || '') + (accountsText || '') + (financeText || '') + (activityText || '') + (estimatesText || '') + (crewText || '') + (conclusionsText || '')
+  const system = (canAct ? BOT_AGENT_GUIDE + '\n\n' : '') + BOT_PERSONA + (memoryText || '') + SYS_DATA_HEAD + snapshotsToContext(snaps) + (tasksText || '') + (accountsText || '') + (financeText || '') + (activityText || '') + (estimatesText || '') + (crewText || '') + (conclusionsText || '') + (sheetText || '')
   const messages = [...(Array.isArray(history) ? history : []), { role: 'user', content: question }]
   const callModel = async (model) => {
     const r = await fetch('https://api.anthropic.com/v1/messages', {
@@ -628,8 +640,8 @@ export default async function handler(req, res) {
       }
 
       // 3) 一般流程：載入資料＋對話記憶＋長期記事本 → 問 AI（操作者才開放下指令）
-      const [snaps, accountsText, financeText, activityText, estimatesText, crewText, history, memList, conclusionsText, tasksText] = await Promise.all([loadSnapshots(), loadAccounts(), loadFinanceText(), loadActivityText(), loadEstimatesText(), loadCrewText(), getChatHistory(convId), getMemory(), loadConclusionsText(), loadTasksText()])
-      const rawReply = await answer(text, snaps, accountsText, financeText, activityText, estimatesText, crewText, canAct, history, memoryToText(memList), conclusionsText, tasksText)
+      const [snaps, accountsText, financeText, activityText, estimatesText, crewText, history, memList, conclusionsText, tasksText, sheetText] = await Promise.all([loadSnapshots(), loadAccounts(), loadFinanceText(), loadActivityText(), loadEstimatesText(), loadCrewText(), getChatHistory(convId), getMemory(), loadConclusionsText(), loadTasksText(), loadSheetText()])
+      const rawReply = await answer(text, snaps, accountsText, financeText, activityText, estimatesText, crewText, canAct, history, memoryToText(memList), conclusionsText, tasksText, sheetText)
       // 抓出 D 想長期記住的事（[[記住:...]]）→ 存進記事本(僅操作者)，並把標記從給人看的文字拿掉
       const { facts, clean } = extractMemoryTags(rawReply)
       if (canAct && facts.length) { for (const f of facts) await addMemory(f, 'auto', op?.name) }
