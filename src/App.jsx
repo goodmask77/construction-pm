@@ -9,6 +9,13 @@ import FinanceView from "./finance/Finance.jsx";
 import TaskCenter from "./tasks/TaskCenter.jsx";
 import Conclusions from "./conclusions/Conclusions.jsx";
 import SequenceView from "./SequenceView.jsx";
+import { LayoutDashboard, ClipboardList, CheckSquare, CalendarDays, Pin as PinIcon, FolderOpen, Wallet, Scale, Settings as SettingsIcon, Bot, Megaphone, MessagesSquare, Users as UsersIcon, ScrollText, LifeBuoy, Lock as LockIcon, Gauge, Bell, KeyRound } from "lucide-react";
+
+// 導覽分頁圖示（依 DESIGN_SPEC：lucide 細線取代 emoji）
+const NAV_ICONS = { owner: LayoutDashboard, overview: ClipboardList, tasks: CheckSquare, gantt: CalendarDays, conclusions: PinIcon, files: FolderOpen, petty: Wallet, compare: Scale, settings: SettingsIcon };
+const SUB_ICONS = { advisor: Bot, changelog: Megaphone, groups: MessagesSquare, accounts: UsersIcon, audit: ScrollText, history: LifeBuoy, vault: LockIcon, usage: Gauge };
+// 深色頂欄（Linear 式錨點）
+const HEAD_BG = "#171717", HEAD_LINE = "#2e2e2e", HEAD_SUB = "#9ca3af", HEAD_CHIP = "#262626";
 
 // ── DESIGN TOKENS（依 docs/DESIGN_SPEC.md：Linear/Stripe 儀表板風 — 中性灰白 + 單一藍色主色）──
 const BRAND   = "#C13A22"; // 品牌磚紅 — 只給 GROUN:D 商標用，不再當 UI 主色
@@ -962,15 +969,15 @@ export default function App() {
           <div style={{ padding: 40, textAlign: "center", color: SUB, fontSize: 14, background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: 12, margin: "8px 0" }}>🔒 零用金含金額，你沒有看金額的權限。</div>
         ))}
         {/* ⚙ 設定：把 AI設定 / 群組 / 帳號 / 紀錄 整合成一頁，內含子分頁 */}
-        {["advisor", "groups", "accounts", "audit", "vault", "history", "changelog"].includes(view) && (() => {
-          const subs = [["advisor", "🤖 AI設定"], ["changelog", "📣 更新"], ...(isAdmin ? [["groups", "💬 群組"], ["accounts", "👤 帳號"], ["audit", "📜 紀錄"], ["history", "🛟 還原點"], ["vault", "🔐 金庫"]] : [])].filter(([k]) => k !== "advisor" || allowedViewPages == null || allowedViewPages.includes("advisor"));
+        {["advisor", "groups", "accounts", "audit", "vault", "history", "changelog", "usage"].includes(view) && (() => {
+          const subs = [["advisor", "AI設定"], ["changelog", "更新"], ...(isAdmin ? [["groups", "群組"], ["accounts", "帳號"], ["audit", "紀錄"], ["history", "還原點"], ["usage", "用量"], ["vault", "金庫"]] : [])].filter(([k]) => k !== "advisor" || allowedViewPages == null || allowedViewPages.includes("advisor"));
           return (
             <div>
               {subs.length > 1 && (
                 <div style={{ display: "flex", gap: 8, flexWrap: "wrap", maxWidth: 1100, margin: "0 auto 16px" }}>
-                  {subs.map(([k, l]) => (
-                    <button key={k} onClick={() => setView(k)} style={{ padding: "8px 18px", borderRadius: 8, border: `1px solid ${view === k ? PRIMARY : BORDER}`, background: view === k ? PRIMARY : "#fff", color: view === k ? "#fff" : TEXT, fontSize: 13.5, fontWeight: 600, cursor: "pointer" }}>{l}</button>
-                  ))}
+                  {subs.map(([k, l]) => { const SubI = SUB_ICONS[k]; return (
+                    <button key={k} onClick={() => setView(k)} style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 16px", borderRadius: 8, border: `1px solid ${view === k ? PRIMARY : BORDER}`, background: view === k ? PRIMARY : "#fff", color: view === k ? "#fff" : TEXT, fontSize: 13.5, fontWeight: 600, cursor: "pointer" }}>{SubI && <SubI size={14} strokeWidth={1.75} />}{l}</button>
+                  ); })}
                 </div>
               )}
               {view === "advisor" && settings && (
@@ -988,6 +995,13 @@ export default function App() {
               )}
               {view === "history" && isAdmin && (
                 <HistoryView K={K} confirm={confirm} snapshotData={snapshotData} cats={cats} petty={petty} />
+              )}
+              {view === "usage" && isAdmin && (
+                <div style={{ maxWidth: 1000, margin: "0 auto" }}>
+                  <div style={{ fontSize: 12.5, color: SUB, marginBottom: 14, background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: 10, padding: "8px 12px" }}>系統 AI／LINE bot 的用量與估算花費（從儀表板移到這裡，業主看不到帳單細節）。</div>
+                  <BotUsagePanel />
+                  <div style={{ marginTop: 16 }}><AIUsagePanel /></div>
+                </div>
               )}
               {view === "vault" && isAdmin && (
                 <VaultView onLog={logActivity} />
@@ -2415,11 +2429,11 @@ function useConfirm() {
 }
 
 // ── KPI CARD WITH TOOLTIP ────────────────────────────────────────────────────
-function KPICard({ label, val, color, tip }) {
+function KPICard({ label, val, color, tip, bg, bar }) {
   const [show, setShow] = useState(false);
   return (
     <div
-      style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: 9, padding: "6px 11px", position: "relative", cursor: "help" }}
+      style={{ background: bg || SURFACE, border: `1px solid ${BORDER}`, borderLeft: bar ? `3px solid ${bar}` : `1px solid ${BORDER}`, borderRadius: 9, padding: "6px 11px", position: "relative", cursor: "help" }}
       onMouseEnter={() => setShow(true)}
       onMouseLeave={() => setShow(false)}
       onClick={() => setShow(s => !s)}
@@ -2444,71 +2458,71 @@ function TopNav({ view, setView, saving, totalEstimated, totalPaid, doneCount, c
   const payPct = totalEstimated > 0 ? Math.round(totalPaid / totalEstimated * 100) : 0;
   const spaceVisible = (id) => !allowedSpaces || allowedSpaces.includes(id);
   const pageVisible = (v) => v === "settings" || !allowedViewPages || allowedViewPages.includes(v) || v === "owner"; // 儀表板一律可見；設定永遠可見(內含子分頁各自控管)
-  const SETTINGS_GRP = ["settings", "advisor", "groups", "accounts", "audit", "vault"];
+  const SETTINGS_GRP = ["settings", "advisor", "groups", "accounts", "audit", "vault", "history", "changelog", "usage"];
   const tabActive = (v) => v === "settings" ? SETTINGS_GRP.includes(view) : view === v;
   return (
-    <div style={{ background: BG, borderBottom: `1px solid ${BORDER}`, padding: isMobile ? "10px 14px 0" : "16px 22px 0", position: "sticky", top: 0, zIndex: 100 }}>
+    <div style={{ background: HEAD_BG, borderBottom: `1px solid ${HEAD_LINE}`, padding: isMobile ? "10px 14px 0" : "16px 22px 0", position: "sticky", top: 0, zIndex: 100 }}>
       <div style={{ display: "flex", alignItems: "center", gap: isMobile ? 10 : 16, marginBottom: isMobile ? 10 : 12, flexWrap: "wrap" }}>
         <div style={{ flexShrink: 0, order: 0 }}>
           <div style={{ fontSize: isMobile ? 20 : 26, fontWeight: 800, color: BRAND, lineHeight: 1, letterSpacing: -1 }}>GROUN:D</div>
-          {!isMobile && <div style={{ fontSize: 9.5, color: SUB, letterSpacing: 2.5, textTransform: "uppercase", marginTop: 4, fontWeight: 600 }}>Construction Project Tracker</div>}
+          {!isMobile && <div style={{ fontSize: 9.5, color: HEAD_SUB, letterSpacing: 2.5, textTransform: "uppercase", marginTop: 4, fontWeight: 600 }}>Construction Project Tracker</div>}
         </div>
         {/* 工作空間切換 */}
         <div style={{ flexShrink: 0, order: isMobile ? 1 : 0 }}>
           <select value={CURRENT_SPACE} onChange={(e) => switchSpace(e.target.value)} title="切換工作空間（各空間資料獨立）"
-            style={{ border: `1px solid ${BORDER}`, background: SURFACE, color: TEXT, borderRadius: 8, padding: isMobile ? "5px 8px" : "7px 10px", fontSize: 13, fontWeight: 600, cursor: "pointer", outline: "none" }}>
+            style={{ border: `1px solid ${HEAD_LINE}`, background: HEAD_CHIP, color: "#fff", borderRadius: 8, padding: isMobile ? "5px 8px" : "7px 10px", fontSize: 13, fontWeight: 600, cursor: "pointer", outline: "none" }}>
             {SPACES.filter(s => spaceVisible(s.id)).map(s => <option key={s.id} value={s.id}>{s.icon} {s.name}</option>)}
           </select>
         </div>
         {/* KPI cards inline（手機改 2×2、整列獨佔一行；夥伴中心等空間隱藏）*/}
         {!conf().hideKpi && (() => {
           const kpis = showMoney() ? [
-            { label: "預估總額", val: fmt(totalEstimated), color: TEXT, tip: "各細項「數量×單價」依稅別換算含稅後加總＝總預算" },
-            { label: "已付總額", val: totalPaid > 0 ? fmt(totalPaid) : "尚未付款", color: totalPaid > 0 ? "#3C8C3C" : SUB, tip: `各細項「已付金額」加總。付款進度 ${payPct}%` },
-            { label: "未付總額", val: fmt(totalUnpaid), color: totalUnpaid < 0 ? "#DC2626" : "#C2872E", tip: totalUnpaid < 0 ? "已付超過預估（溢付）" : "預估總額 − 已付總額＝尚需支付" },
-            { label: "完工項目", val: `${doneCount} / ${catCount}`, color: ACCENT, tip: "狀態標示為「完工」的大項數" },
+            { label: "預估總額", val: fmt(totalEstimated), color: "#1e40af", bg: "#eff6ff", bar: "#2563eb", tip: "各細項「數量×單價」依稅別換算含稅後加總＝總預算" },
+            { label: "已付總額", val: totalPaid > 0 ? fmt(totalPaid) : "尚未付款", color: totalPaid > 0 ? "#15803d" : SUB, bg: "#f0fdf4", bar: "#16a34a", tip: `各細項「已付金額」加總。付款進度 ${payPct}%` },
+            { label: "未付總額", val: fmt(totalUnpaid), color: totalUnpaid < 0 ? "#DC2626" : "#b45309", bg: "#fffbeb", bar: totalUnpaid < 0 ? "#dc2626" : "#d97706", tip: totalUnpaid < 0 ? "已付超過預估（溢付）" : "預估總額 − 已付總額＝尚需支付" },
+            { label: "完工項目", val: `${doneCount} / ${catCount}`, color: TEXT, bg: "#fafafa", bar: "#737373", tip: "狀態標示為「完工」的大項數" },
           ] : [
-            { label: `${L("cat")}數`, val: String(catCount), color: TEXT, tip: `目前空間的${L("cat")}數` },
-            { label: "完工", val: `${doneCount} / ${catCount}`, color: ACCENT, tip: `狀態為「完工」的${L("cat")}` },
+            { label: `${L("cat")}數`, val: String(catCount), color: TEXT, bg: "#fafafa", bar: "#737373", tip: `目前空間的${L("cat")}數` },
+            { label: "完工", val: `${doneCount} / ${catCount}`, color: "#15803d", bg: "#f0fdf4", bar: "#16a34a", tip: `狀態為「完工」的${L("cat")}` },
           ];
           return (
           <div style={{ display: "grid", gridTemplateColumns: isMobile ? `repeat(${Math.min(kpis.length,2)},1fr)` : `repeat(${kpis.length},minmax(110px,1fr))`, gap: 8, flex: isMobile ? "1 1 100%" : (showMoney() ? 1 : "0 1 auto"), minWidth: isMobile ? 0 : (showMoney() ? 360 : 0), order: isMobile ? 2 : 0 }}>
-            {kpis.map(k => <KPICard key={k.label} label={k.label} val={k.val} color={k.color} tip={k.tip} />)}
+            {kpis.map(k => <KPICard key={k.label} label={k.label} val={k.val} color={k.color} tip={k.tip} bg={k.bg} bar={k.bar} />)}
           </div>
           );
         })()}
         {/* actions（手機改 icon-only，保留 title 提示）*/}
         <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0, order: isMobile ? 1 : 0, marginLeft: isMobile ? "auto" : 0 }}>
-          {saving && <div style={{ fontSize: 11, color: SUB }}>同步中…</div>}
+          {saving && <div style={{ fontSize: 11, color: HEAD_SUB }}>同步中…</div>}
           {stalledCount > 0 && (
             <div title={`${stalledCount} 項卡關`} style={{ background: "#FEF2F2", border: "1px solid #FECACA", borderRadius: 7, padding: "4px 10px", fontSize: 12, color: "#DC2626", fontWeight: 500, cursor: "pointer", display: "flex", alignItems: "center", gap: 5 }} onClick={() => setView && setView("overview")}>
               <span style={{ width: 6, height: 6, borderRadius: 3, background: "#DC2626" }} />{stalledCount}
             </div>
           )}
           {userName ? (
-            <div onClick={onRoleClick} title={`${userName}（點擊可切換帳號 / 登出）`} style={{ display: "flex", alignItems: "center", gap: 7, background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: 8, padding: isMobile ? "6px" : "5px 12px", minHeight: 40, cursor: "pointer" }}>
-              <span style={{ width: 26, height: 26, borderRadius: 13, background: ACCENT_SOFT, color: ACCENT, fontSize: 12, fontWeight: 600, display: "flex", alignItems: "center", justifyContent: "center" }}>{(userName[0] || "?").toUpperCase()}</span>
-              {!isMobile && <span style={{ fontSize: 13, color: TEXT, fontWeight: 500 }}>{userName}</span>}
+            <div onClick={onRoleClick} title={`${userName}（點擊可切換帳號 / 登出）`} style={{ display: "flex", alignItems: "center", gap: 7, background: HEAD_CHIP, border: `1px solid ${HEAD_LINE}`, borderRadius: 8, padding: isMobile ? "6px" : "5px 12px", minHeight: 40, cursor: "pointer" }}>
+              <span style={{ width: 26, height: 26, borderRadius: 13, background: ACCENT, color: "#fff", fontSize: 12, fontWeight: 600, display: "flex", alignItems: "center", justifyContent: "center" }}>{(userName[0] || "?").toUpperCase()}</span>
+              {!isMobile && <span style={{ fontSize: 13, color: "#fff", fontWeight: 500 }}>{userName}</span>}
             </div>
           ) : (
-            <button onClick={onRoleClick} title="登入以編輯" style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 6, background: PRIMARY, border: "none", borderRadius: 8, padding: isMobile ? 0 : "8px 16px", width: isMobile ? 40 : "auto", height: isMobile ? 40 : "auto", minHeight: 40, cursor: "pointer", color: "#fff", fontSize: isMobile ? 17 : 13, fontWeight: 500 }}>
-              {isMobile ? "🔑" : "登入以編輯"}
+            <button onClick={onRoleClick} title="登入以編輯" style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 6, background: "#fff", border: "none", borderRadius: 8, padding: isMobile ? 0 : "8px 16px", width: isMobile ? 40 : "auto", height: isMobile ? 40 : "auto", minHeight: 40, cursor: "pointer", color: HEAD_BG, fontSize: 13, fontWeight: 600 }}>
+              {isMobile ? <KeyRound size={17} /> : "登入以編輯"}
             </button>
           )}
-          <button onClick={onActivityLog} title="活動記錄" style={{ background: SURFACE, border: `1px solid ${BORDER}`, color: TEXT, borderRadius: 8, padding: isMobile ? 0 : "7px 12px", width: isMobile ? 40 : "auto", height: isMobile ? 40 : "auto", minHeight: 40, cursor: "pointer", fontSize: isMobile ? 17 : 13, display: "flex", alignItems: "center", justifyContent: "center", gap: 5, position: "relative" }}>
-            {isMobile ? "🔔" : <>活動{activityCount > 0 ? <span style={{ fontSize: 10, background: ACCENT_SOFT, color: ACCENT, fontWeight: 600, borderRadius: 10, padding: "1px 6px" }}>{activityCount}</span> : ""}</>}
+          <button onClick={onActivityLog} title="活動記錄" style={{ background: "transparent", border: `1px solid ${HEAD_LINE}`, color: "#d4d4d4", borderRadius: 8, padding: isMobile ? 0 : "7px 12px", width: isMobile ? 40 : "auto", height: isMobile ? 40 : "auto", minHeight: 40, cursor: "pointer", fontSize: isMobile ? 17 : 13, display: "flex", alignItems: "center", justifyContent: "center", gap: 5, position: "relative" }}>
+            {isMobile ? <Bell size={17} /> : <>活動{activityCount > 0 ? <span style={{ fontSize: 10, background: ACCENT, color: "#fff", fontWeight: 600, borderRadius: 10, padding: "1px 6px" }}>{activityCount}</span> : ""}</>}
             {isMobile && activityCount > 0 && <span style={{ position: "absolute", top: -3, right: -3, minWidth: 15, height: 15, padding: "0 3px", background: ACCENT, color: "#fff", fontSize: 9, fontWeight: 700, borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center" }}>{activityCount > 99 ? "99+" : activityCount}</span>}
           </button>
           <button onClick={onAI} title="AI 顧問" style={{ background: ACCENT, border: "none", color: "#fff", borderRadius: 8, padding: isMobile ? 0 : "8px 16px", width: isMobile ? 40 : "auto", height: isMobile ? 40 : "auto", minHeight: 40, cursor: "pointer", fontSize: isMobile ? 17 : 13, fontWeight: 600, display: "flex", alignItems: "center", justifyContent: "center" }}>
-            {isMobile ? "🤖" : "AI 顧問"}
+            {isMobile ? <Bot size={17} /> : "AI 顧問"}
           </button>
         </div>
       </div>
       {/* view tabs — boxed editorial（手機隱藏，改用底部導覽）*/}
       {!isMobile && (
       <div style={{ display: "flex", gap: 8, paddingBottom: 12, flexWrap: "wrap" }}>
-        {(conf().tabs || [["owner","儀表板"],["overview",L("overview")],["tasks","✅ 任務"],["gantt",L("gantt")],["conclusions","📌 結論"],["files","檔案庫"],...(conf().showCost?[["petty","零用金"]]:[]),["compare","比價"],...((isAdmin||pageVisible("advisor"))?[["settings","⚙ 設定"]]:[])]).filter(([v]) => !conf().hideTabs.includes(v) && pageVisible(v)).map(([v,l]) => { const act = tabActive(v); return (
-          <button key={v} onClick={() => setView(v === "settings" ? "advisor" : v)} className={v === "issues" && view !== v ? "todo-glow" : undefined} style={{ padding: "8px 16px", borderRadius: 7, border: `1px solid ${act ? PRIMARY : (v === "issues" ? "#F59E0B" : BORDER)}`, cursor: "pointer", fontSize: 14, fontWeight: v === "issues" ? 700 : 500, background: act ? PRIMARY : (v === "issues" ? "#FEF3C7" : "transparent"), color: act ? "#fff" : (v === "issues" ? "#B45309" : TEXT), transition: "all .12s" }}>{l}</button>
+        {(conf().tabs || [["owner","儀表板"],["overview",L("overview")],["tasks","任務"],["gantt",L("gantt")],["conclusions","結論"],["files","檔案庫"],...(conf().showCost?[["petty","零用金"]]:[]),["compare","比價"],...((isAdmin||pageVisible("advisor"))?[["settings","設定"]]:[])]).filter(([v]) => !conf().hideTabs.includes(v) && pageVisible(v)).map(([v,l]) => { const act = tabActive(v); const NavI = NAV_ICONS[v]; return (
+          <button key={v} onClick={() => setView(v === "settings" ? "advisor" : v)} style={{ display: "inline-flex", alignItems: "center", gap: 7, padding: "8px 15px", borderRadius: 7, border: `1px solid ${act ? "#fff" : "transparent"}`, cursor: "pointer", fontSize: 14, fontWeight: act ? 600 : 400, background: act ? "#fff" : "transparent", color: act ? HEAD_BG : HEAD_SUB, transition: "all .12s" }}>{NavI && <NavI size={15} strokeWidth={1.75} />}{String(l).replace(/^[^一-鿿A-Za-z0-9]+\s*/, "")}</button>
         ); })}
       </div>
       )}
@@ -2804,6 +2818,8 @@ function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols,
     fontSize: 12.5, overflow: "hidden", whiteSpace: "nowrap",
     textOverflow: "ellipsis", height: 30, display: "flex", alignItems: "center",
     flexShrink: 0,
+    // 金額/數字欄：右對齊 + 等寬數字（財務表格基本排版，方便上下比對位數）
+    ...(COST_COL_IDS.has(col.id) ? { justifyContent: "flex-end", fontVariantNumeric: "tabular-nums" } : {}),
   });
 
   const EditableCell = ({ catId, itemId, field, value, type="text", placeholder="" }) => {
@@ -3897,10 +3913,7 @@ function OwnerDashboard({ cats, setCats, settings, stalledItems, activityLog, lo
         </div>
       )}
 
-      {/* D哥(LINE bot) 用量 — 主要花費在這 */}
-      <div style={{ marginTop: 16 }}><BotUsagePanel /></div>
-      {/* AI 用量 / 估算花費（App 自己的，較小）*/}
-      <div style={{ marginTop: 16 }}><AIUsagePanel /></div>
+      {/* AI/bot 用量帳單已移到 設定 → 用量（業主視角的儀表板不該看到 API 帳單） */}
 
       {/* Weekly Report Modal */}
       {showReport && (
