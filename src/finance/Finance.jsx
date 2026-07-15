@@ -60,6 +60,8 @@ export default function FinanceView({ K, confirm, canEdit, ReceiptUploader, onLo
   const [showMatched, setShowMatched] = useState(false);
   const [showMirror, setShowMirror] = useState(false);
   const [reconOnlyOpen, setReconOnlyOpen] = useState(true); // 對帳單預設只看未對帳
+  const [reconMsg, setReconMsg] = useState(null); // 補記後的去向提示
+  const flashRecon = (text) => { setReconMsg(text); setTimeout(() => setReconMsg(m => m === text ? null : m), 8000); };
 
   useEffect(() => { (async () => {
     try { const a = await window.storage.get(K("pm_fin_accounts"), true); setAccounts(a && a.value ? JSON.parse(a.value) : []); } catch { setAccounts([]); }
@@ -393,6 +395,7 @@ export default function FinanceView({ K, confirm, canEdit, ReceiptUploader, onLo
           saveLed([{ id: rid("tx"), date: r.payDate || "", kind: "expense", amount: r.amount, from: accounts[0]?.id || "", to: "", category: r.subject || r.cat, vendor: r.payee || "", invoiceNo: "", note: r.content + (r.batch ? "（" + r.batch + "）" : "") + "〔對帳補記〕", receipts: [] }, ...ledger]);
           saveRecon({ ...recon, links: { ...recon.links, [r.id]: { kind: "fin" } } });
           onLog?.("新增", "對帳補記內帳 " + fmt(r.amount) + "（" + r.content.slice(0, 14) + "）");
+          flashRecon("✓ 「" + r.content.slice(0, 16) + "」" + fmt(r.amount) + " 已補進【交易明細】，此列狀態變為已補記（切「全部」可見）");
         };
         const doFillPay = async (r, catId) => {
           if (!guard() || !catId) return;
@@ -404,6 +407,8 @@ export default function FinanceView({ K, confirm, canEdit, ReceiptUploader, onLo
             setConCats(next);
             saveRecon({ ...recon, links: { ...recon.links, [r.id]: { kind: "pay", catId } } });
             onLog?.("新增", "對帳補記工程付款 " + fmt(r.amount));
+            const cn2 = (cats2.find(c => c.id === catId) || {}).name || "";
+            flashRecon("✓ 「" + r.content.slice(0, 16) + "」" + fmt(r.amount) + " 已補進【工程專案→" + cn2 + " 的付款】（切「全部」可見此列已補記）");
           } catch (e) { alert("寫入工程付款失敗：" + e.message); }
         };
         // 圖表資料
@@ -490,6 +495,12 @@ export default function FinanceView({ K, confirm, canEdit, ReceiptUploader, onLo
                   </div>
                 </div>
                 {/* 對帳單（試算表式完整呈現） */}
+                {reconMsg && (
+                  <div style={{ background: "#eef5ef", border: "1.5px solid #3f7d4e", borderRadius: 8, padding: "8px 14px", marginBottom: 10, fontSize: 13, color: "#2c5a38", fontWeight: 600, display: "flex", alignItems: "center", gap: 8 }}>
+                    <span style={{ flex: 1 }}>{reconMsg}</span>
+                    <button onClick={() => setReconMsg(null)} style={{ border: "none", background: "none", color: "#3f7d4e", cursor: "pointer", fontSize: 15 }}>×</button>
+                  </div>
+                )}
                 <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
                   <div style={{ display: "inline-flex", background: C.soft, border: `1px solid ${C.line}`, borderRadius: 8, padding: 2, gap: 2 }}>
                     {[[false, "全部 " + shRows.length], [true, "只看未對帳 " + nOpen]].map(([v, l]) => (
