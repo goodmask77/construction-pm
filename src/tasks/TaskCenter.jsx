@@ -471,21 +471,55 @@ export default function TaskCenter({ K, confirm, canEdit, cats, onLog, onAddCat 
                 ))}
               </div>
             </div>
-            <div style={{ border: `1px solid ${C.line}`, borderRadius: 8, background: C.card, overflow: "hidden" }}>
-              {rows.length === 0 ? <Empty icon={List} text="沒有任務" pad={24} /> :
-                rows.map((t, i) => (
-                  <div key={t.id} onClick={() => setSel(t.id)}
-                    onMouseEnter={e => e.currentTarget.style.background = t.color || C.bg} onMouseLeave={e => e.currentTarget.style.background = t.color || "#fff"}
-                    style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", borderTop: i ? `1px solid ${C.soft}` : "none", cursor: "pointer", background: t.color || "#fff" }}>
-                    <button onClick={e => { e.stopPropagation(); if (guard()) upd(t.id, { status: t.status === "done" ? "todo" : "done" }); }} style={{ flexShrink: 0, width: 16, height: 16, borderRadius: 4, border: `1px solid ${t.status === "done" ? C.green : "#c8bca6"}`, background: t.status === "done" ? C.green : "#fff", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", padding: 0 }}>{t.status === "done" && <Check size={11} color="#fff" strokeWidth={3} />}</button>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 13.5, color: t.status === "done" ? C.faint : C.text, textDecoration: t.status === "done" ? "line-through" : "none" }}>{t.pinned && <Pin size={12} color={C.accent} fill={C.accent} style={{ flexShrink: 0 }} />}{t.priority === "urgent" && <Flame size={12} color={C.red} />}{t.title}</div>
-                      <div style={{ fontSize: 11.5, color: C.faint, marginTop: 2, fontVariantNumeric: "tabular-nums" }}>{catName(t.catId)}{t.due ? `・${t.due}` : ""}</div>
-                    </div>
-                    <Pill color={sColor(t.status)} label={sLabel(t.status)} />
-                  </div>
-                ))}
+            {/* Linear 式密表：一件一行 36px、欄位對齊、唯讀掃讀；點列開詳情 */}
+            <div style={{ border: "1.5px solid #c8bca6", borderRadius: 8, background: C.card, overflow: "hidden" }}>
+              <div style={{ overflowX: "auto" }}>
+                <div style={{ minWidth: 880 }}>
+                  {(() => {
+                    const GTC = "34px minmax(220px,1fr) 72px 96px 130px 52px 130px 88px";
+                    const hc = { fontSize: 10.5, letterSpacing: 0.8, color: C.faint, fontWeight: 600, padding: "7px 8px", whiteSpace: "nowrap" };
+                    const overdue = (t) => t.status !== "done" && t.due && t.due < today();
+                    return (
+                      <>
+                        <div style={{ display: "grid", gridTemplateColumns: GTC, background: C.soft, borderBottom: "1.5px solid #c8bca6", alignItems: "center" }}>
+                          <div />
+                          <div style={hc}>標題</div><div style={hc}>截止</div><div style={hc}>負責人</div><div style={hc}>等待中</div><div style={hc}>優先</div><div style={hc}>大項</div><div style={hc}>狀態</div>
+                        </div>
+                        {rows.length === 0 ? <Empty icon={List} text="沒有任務" pad={24} /> :
+                          rows.map((t, i) => {
+                            const done = t.status === "done";
+                            const pm = pMeta(t.priority);
+                            return (
+                              <div key={t.id} onClick={() => setSel(t.id)}
+                                onMouseEnter={e => e.currentTarget.style.background = t.color || C.bg} onMouseLeave={e => e.currentTarget.style.background = t.color || C.card}
+                                style={{ display: "grid", gridTemplateColumns: GTC, alignItems: "center", height: 36, borderTop: i ? `1px solid ${C.line}` : "none", cursor: "pointer", background: t.color || C.card }}>
+                                <div style={{ display: "flex", justifyContent: "center" }}>
+                                  <button onClick={e => { e.stopPropagation(); if (guard()) upd(t.id, { status: done ? "todo" : "done" }); }} style={{ width: 15, height: 15, borderRadius: 4, border: `1px solid ${done ? C.green : "#c8bca6"}`, background: done ? C.green : "#fff", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", padding: 0 }}>{done && <Check size={10} color="#fff" strokeWidth={3} />}</button>
+                                </div>
+                                <div style={{ display: "flex", alignItems: "center", gap: 5, padding: "0 8px", fontSize: 13, color: done ? C.faint : C.text, textDecoration: done ? "line-through" : "none", overflow: "hidden", whiteSpace: "nowrap" }}>
+                                  {t.pinned && <Pin size={11} color={C.accent} fill={C.accent} style={{ flexShrink: 0 }} />}
+                                  {t.priority === "urgent" && !done && <Flame size={11} color={C.red} style={{ flexShrink: 0 }} />}
+                                  <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>{t.title}</span>
+                                </div>
+                                <div style={{ padding: "0 8px", fontFamily: MONO, fontSize: 11.5, fontWeight: overdue(t) ? 700 : 500, color: overdue(t) ? C.red : (t.due ? C.sub : C.faint), whiteSpace: "nowrap" }}>{t.due ? t.due.slice(5) : "—"}</div>
+                                <div style={{ padding: "0 8px", fontSize: 12, color: t.owner ? C.text : C.faint, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "flex", alignItems: "center", gap: 5 }}>
+                                  {t.owner && <span style={{ width: 17, height: 17, borderRadius: "50%", background: C.accentSoft, color: C.accent, fontSize: 9, fontWeight: 700, display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{t.owner.slice(0, 2)}</span>}
+                                  {t.owner || "—"}
+                                </div>
+                                <div style={{ padding: "0 8px", fontSize: 12, color: isWaiting(t) ? C.amber : C.faint, fontWeight: isWaiting(t) ? 600 : 400, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.waitingFor || "—"}</div>
+                                <div style={{ padding: "0 8px", fontSize: 12, fontWeight: t.priority === "urgent" ? 700 : 500, color: t.priority === "urgent" ? C.red : t.priority === "high" ? C.amber : t.priority === "low" ? C.faint : C.sub, whiteSpace: "nowrap" }}>{pm[1]}</div>
+                                <div style={{ padding: "0 8px", fontSize: 12, color: C.sub, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{catName(t.catId)}</div>
+                                <div style={{ padding: "0 6px" }}><Pill color={sColor(t.status)} label={sLabel(t.status)} /></div>
+                              </div>
+                            );
+                          })}
+                      </>
+                    );
+                  })()}
+                </div>
+              </div>
             </div>
+            {rows.length > 0 && <div style={{ fontSize: 11, color: C.faint, marginTop: 6, fontFamily: MONO }}>{rows.length} 件</div>}
           </div>
         );
       })()}
