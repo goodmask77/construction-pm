@@ -156,6 +156,7 @@ export default function TaskCenter({ K, confirm, canEdit, cats, onLog }) {
               {t.priority === "urgent" && <Flame size={12} color={C.red} style={{ flexShrink: 0 }} />}{t.title}
             </div>
             <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", marginTop: 5 }}>
+              {view !== "group" && <span style={{ fontSize: 11, color: C.faint, maxWidth: 120, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{catName(t.catId)}</span>}
               {t.due && <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 11, fontVariantNumeric: "tabular-nums", color: (!done && t.due < today()) ? C.red : C.sub }}><Calendar size={11} />{t.due}</span>}
               {view !== "board" && <Pill color={sColor(t.status)} label={sLabel(t.status)} />}
               {isWaiting(t) && !done && <Pill color={C.amber} label={`等：${t.waitingFor}`} />}
@@ -455,7 +456,7 @@ export default function TaskCenter({ K, confirm, canEdit, cats, onLog }) {
                     <div key={t.id} onClick={() => setSel(t.id)}
                       onMouseEnter={ev => ev.currentTarget.style.background = C.bg} onMouseLeave={ev => ev.currentTarget.style.background = "#fff"}
                       style={{ display: "flex", alignItems: "center", borderTop: i ? `1px solid ${C.soft}` : "none", cursor: "pointer", background: "#fff" }}>
-                      <div style={{ width: 200, flexShrink: 0, borderRight: `1px solid ${C.line}`, padding: "7px 10px", fontSize: 12.5, color: t.status === "done" ? C.faint : C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "flex", alignItems: "center", gap: 4 }}>{t.priority === "urgent" && <Flame size={11} color={C.red} style={{ flexShrink: 0 }} />}{t.title}</div>
+                      <div style={{ width: 200, flexShrink: 0, borderRight: `1px solid ${C.line}`, padding: "7px 10px", fontSize: 12.5, color: t.status === "done" ? C.faint : C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "flex", alignItems: "center", gap: 4 }}>{t.priority === "urgent" && <Flame size={11} color={C.red} style={{ flexShrink: 0 }} />}{t.title}<span style={{ fontSize: 10.5, color: C.faint, flexShrink: 0 }}>・{catName(t.catId)}</span></div>
                       <div style={{ position: "relative", height: 30, flex: 1 }}>
                         {todayOff >= 0 && todayOff < totalDays && <div style={{ position: "absolute", left: todayOff * dayW, top: 0, bottom: 0, width: 1, background: C.red, opacity: .45 }} />}
                         <div title={`${t.start || t.due} ~ ${t.due || t.start}`} style={{ position: "absolute", left: left * dayW + 2, top: 9, height: 12, width: Math.max(width * dayW - 4, 8), background: t.status === "done" ? C.green : C.accent, borderRadius: 999, opacity: t.status === "done" ? 0.45 : 1 }} />
