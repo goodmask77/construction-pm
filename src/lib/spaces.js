@@ -22,7 +22,7 @@ export const SPACE_CONF = {
   crew: {
     showCost: false,
     hideTabs: [],
-    tabs: [["kb", "資料庫", "📚"], ["r360", "360評鑑", "⭐"], ["fb", "回饋", "💬"], ["quest", "闖關", "🎮"], ["poll", "投票", "🗳"], ["shop", "商城", "🎁"], ["rank", "排行榜", "🏆"]], // 夥伴中心專屬分頁
+    tabs: [["kb", "資料庫", "📚"], ["roster", "名冊", "👥"], ["r360", "360評鑑", "⭐"], ["fb", "回饋", "💬"], ["quest", "闖關", "🎮"], ["poll", "投票", "🗳"], ["shop", "商城", "🎁"], ["rank", "排行榜", "🏆"]], // 夥伴中心專屬分頁
     defaultView: "kb",
     hideKpi: true, // 夥伴中心頂部不顯示工程 KPI
     labels: { cat: "項目", item: "項目", overview: "資料庫", gantt: "進度", subtitle: "夥伴中心" },
@@ -60,6 +60,7 @@ export const PERM_MATRIX = {
   ],
   crew: [
     ["kb", "資料庫", { edit: 1 }],
+    ["roster", "名冊", { edit: 1 }],
     ["r360", "360評鑑", { edit: 1 }],
     ["fb", "回饋", { edit: 1 }],
     ["quest", "闖關", { edit: 1 }],
