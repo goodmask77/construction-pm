@@ -72,6 +72,8 @@ export default async function handler(req, res) {
         pretax: num(c[10]), tax: num(c[11]), amount,
         payDate: payDate || notifyDate, // 匯出日期優先
         payee: (c[25] || '').trim(),            // 收款戶名
+        handler: (c[16] || '').trim(),          // 匯款人/經手人
+        fee: num(c[20]),                        // 手續費
         bank: (c[23] || '').trim(),
         batch: (c[30] || '').trim(),            // 批號/憑證
         balanceAfter: num(c[22]),

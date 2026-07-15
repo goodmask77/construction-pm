@@ -59,6 +59,7 @@ export default function FinanceView({ K, confirm, canEdit, ReceiptUploader, onLo
   const [syncBusy, setSyncBusy] = useState(false);
   const [showMatched, setShowMatched] = useState(false);
   const [showMirror, setShowMirror] = useState(false);
+  const [reconOnlyOpen, setReconOnlyOpen] = useState(true); // 對帳單預設只看未對帳
 
   useEffect(() => { (async () => {
     try { const a = await window.storage.get(K("pm_fin_accounts"), true); setAccounts(a && a.value ? JSON.parse(a.value) : []); } catch { setAccounts([]); }
@@ -362,138 +363,202 @@ export default function FinanceView({ K, confirm, canEdit, ReceiptUploader, onLo
         );
       })()}
 
-      {/* ── 對帳中心：試算表(喬亞帳戶) × 工程付款 × 內帳 ── */}
+      {/* ── 對帳：合作金庫·喬亞國際餐飲（銀行對帳單式呈現 + 圖表 + 三方核對）── */}
       {tab === "recon" && (() => {
         const shRows = (sheet?.rows || []);
         const d2n = (d) => d ? +new Date(d) : 0;
         const close = (a, b) => a && b && Math.abs(d2n(a) - d2n(b)) <= 5 * 86400e3;
-        // App 端資金池：工程付款（各大項 payments）＋ 內帳交易（零用金為現金小額，不進銀行對帳）
         const pool = [
           ...conCats.flatMap(c => (c.payments || []).map(pm => ({ kind: "工程付款", key: "pay:" + pm.id, date: pm.date, amount: num(pm.amount), label: c.name, note: pm.note || "" }))),
           ...(ledger || []).map(l => ({ kind: "內帳", key: "fin:" + l.id, date: l.date, amount: num(l.amount), label: accName(l.from) || "內帳", note: [l.category, l.vendor, l.note].filter(Boolean).join("・") })),
         ];
         const usedPool = new Set();
-        const matched = [], onlySheet = [];
+        const status = {}; // sheetRowId → {st:'linked'|'ignored'|'matched'|'open', via}
         shRows.forEach(r => {
-          if (recon.ignored.includes(r.id)) return;
-          if (recon.links[r.id]) { matched.push({ r, via: "已補記" }); return; }
+          if (recon.links[r.id]) { status[r.id] = { st: "linked" }; return; }
+          if (recon.ignored.includes(r.id)) { status[r.id] = { st: "ignored" }; return; }
           const hit = pool.find(pl => !usedPool.has(pl.key) && pl.amount === r.amount && (close(pl.date, r.payDate) || !pl.date || !r.payDate));
-          if (hit) { usedPool.add(hit.key); matched.push({ r, via: `${hit.kind}｜${hit.label}` }); }
-          else onlySheet.push(r);
+          if (hit) { usedPool.add(hit.key); status[r.id] = { st: "matched", via: hit.kind + "｜" + hit.label }; }
+          else status[r.id] = { st: "open" };
         });
+        const nMatched = shRows.filter(r => ["matched", "linked"].includes(status[r.id]?.st)).length;
+        const nOpen = shRows.filter(r => status[r.id]?.st === "open").length;
+        const nIgn = recon.ignored.length;
         const onlyApp = pool.filter(pl => !usedPool.has(pl.key) && pl.kind === "工程付款" && num(pl.amount) > 0);
-        const ignoredN = recon.ignored.length;
         const MONOF = "'IBM Plex Mono', ui-monospace, Menlo, monospace";
-        const statCard = (n, l, cl) => (
-          <div key={l} style={{ background: C.card, border: "1.5px solid #c8bca6", borderRadius: 8, padding: "10px 14px", flex: "1 1 120px" }}>
-            <div style={{ fontFamily: MONOF, fontSize: 22, fontWeight: 700, color: C.text }}>{n}</div>
-            <div style={{ fontSize: 11, color: C.sub, marginTop: 2, display: "flex", alignItems: "center", gap: 5 }}><span style={{ width: 6, height: 6, borderRadius: "50%", background: cl }} />{l}</div>
-          </div>
-        );
+        const chrono = [...shRows].sort((a, b) => (a.payDate || a.notifyDate || "") < (b.payDate || b.notifyDate || "") ? -1 : 1);
+        const latestBal = [...chrono].reverse().find(r => r.balanceAfter > 0);
         const doFillFin = (r) => {
           if (!guard()) return;
-          saveLed([{ id: rid("tx"), date: r.payDate || "", kind: "expense", amount: r.amount, from: accounts[0]?.id || "", to: "", category: r.subject || r.cat, vendor: r.payee || "", invoiceNo: "", note: r.content + (r.batch ? `（${r.batch}）` : "") + "〔對帳補記〕", receipts: [] }, ...ledger]);
+          saveLed([{ id: rid("tx"), date: r.payDate || "", kind: "expense", amount: r.amount, from: accounts[0]?.id || "", to: "", category: r.subject || r.cat, vendor: r.payee || "", invoiceNo: "", note: r.content + (r.batch ? "（" + r.batch + "）" : "") + "〔對帳補記〕", receipts: [] }, ...ledger]);
           saveRecon({ ...recon, links: { ...recon.links, [r.id]: { kind: "fin" } } });
-          onLog?.("新增", `對帳補記內帳 ${fmt(r.amount)}（${r.content.slice(0, 14)}）`);
+          onLog?.("新增", "對帳補記內帳 " + fmt(r.amount) + "（" + r.content.slice(0, 14) + "）");
         };
         const doFillPay = async (r, catId) => {
           if (!guard() || !catId) return;
           try {
             const cd = await window.storage.get("pm_data", true);
             const cats2 = cd && cd.value ? JSON.parse(cd.value) : [];
-            const next = cats2.map(c => c.id === catId ? { ...c, payments: [...(c.payments || []), { id: "pay-" + Math.random().toString(36).slice(2, 8), date: r.payDate || "", amount: r.amount, category: "其他", note: r.content + (r.batch ? `（${r.batch}）` : "") + "〔對帳補記〕", itemId: null, receipts: [] }] } : c);
+            const next = cats2.map(c => c.id === catId ? { ...c, payments: [...(c.payments || []), { id: "pay-" + Math.random().toString(36).slice(2, 8), date: r.payDate || "", amount: r.amount, category: "其他", note: r.content + (r.batch ? "（" + r.batch + "）" : "") + "〔對帳補記〕", itemId: null, receipts: [] }] } : c);
             await window.storage.set("pm_data", JSON.stringify(next), true);
             setConCats(next);
             saveRecon({ ...recon, links: { ...recon.links, [r.id]: { kind: "pay", catId } } });
-            const cn = (cats2.find(c => c.id === catId) || {}).name || "";
-            onLog?.("新增", `對帳補記工程付款「${cn}」${fmt(r.amount)}`);
+            onLog?.("新增", "對帳補記工程付款 " + fmt(r.amount));
           } catch (e) { alert("寫入工程付款失敗：" + e.message); }
         };
-        const rowBox = { background: C.card, border: `1px solid ${C.line}`, borderRadius: 8, padding: "9px 12px", marginBottom: 8 };
+        // 圖表資料
+        const balSeries = chrono.filter(r => r.balanceAfter > 0 && r.payDate).map(r => ({ d: r.payDate, v: r.balanceAfter }));
+        const months = {}; chrono.forEach(r => { const m = (r.payDate || "").slice(0, 7); if (m && r.amount > 0) months[m] = (months[m] || 0) + r.amount; });
+        const moArr = Object.entries(months).sort();
+        const moMax = Math.max(1, ...moArr.map(([, v]) => v));
+        const cats3 = {}; chrono.forEach(r => { const k = (r.cat || "未分類").trim(); if (r.amount > 0) cats3[k] = (cats3[k] || 0) + r.amount; });
+        const catArr = Object.entries(cats3).sort((a, b) => b[1] - a[1]).slice(0, 7);
+        const catMax = Math.max(1, ...catArr.map(([, v]) => v));
+        const CATCOL = { "公      司": "#3a6ea5", "宏匯瑞光": "#3f7d4e", "薪      資": "#c98a14", "設      備": "#b3492f", "行      銷": "#6b4a86", "營業雜支": "#9b9384", "利      息": "#2f7d7a" };
+        const rowsView = reconOnlyOpen ? [...chrono].reverse().filter(r => status[r.id]?.st === "open") : [...chrono].reverse();
+        const statCard = (n, l, cl) => (
+          <div key={l} style={{ background: C.card, border: "1.5px solid #c8bca6", borderRadius: 8, padding: "8px 12px", flex: "1 1 110px" }}>
+            <div style={{ fontFamily: MONOF, fontSize: 20, fontWeight: 700, color: C.text }}>{n}</div>
+            <div style={{ fontSize: 11, color: C.sub, marginTop: 2, display: "flex", alignItems: "center", gap: 5 }}><span style={{ width: 6, height: 6, borderRadius: "50%", background: cl }} />{l}</div>
+          </div>
+        );
+        const chartBox = { background: C.card, border: "1.5px solid #c8bca6", borderRadius: 8, padding: "10px 14px", flex: "1 1 280px", minWidth: 260 };
         return (
           <div>
-            <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 12 }}>
-              <span style={{ background: C.blue, color: "#fff", fontSize: 11.5, fontWeight: 700, borderRadius: 4, padding: "2px 8px", letterSpacing: 1 }}>對帳</span>
-              <span style={{ fontSize: 15, fontWeight: 800, color: C.text }}>公司帳務表 × 工程付款 × 內帳</span>
+            {/* 帳戶頭 */}
+            <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", marginBottom: 12 }}>
+              <span style={{ background: C.blue, color: "#fff", fontSize: 11.5, fontWeight: 700, borderRadius: 4, padding: "2px 8px", letterSpacing: 1 }}>帳戶</span>
+              <div>
+                <div style={{ fontSize: 16, fontWeight: 800, color: C.text }}>🏦 合作金庫 · 喬亞國際餐飲</div>
+                <div style={{ fontSize: 11, color: C.faint }}>公司帳務表同步{sheet?.syncedAt ? "・上次 " + new Date(sheet.syncedAt).toLocaleString("zh-TW", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" }) + "（每天自動）" : ""}</div>
+              </div>
+              {latestBal && <div style={{ marginLeft: 6 }}>
+                <div style={{ fontFamily: MONOF, fontSize: 22, fontWeight: 700, color: C.text }}>{fmt(latestBal.v ?? latestBal.balanceAfter)}</div>
+                <div style={{ fontSize: 10.5, color: C.faint }}>最新餘額（{latestBal.payDate}）</div>
+              </div>}
               <div style={{ flex: 1 }} />
-              <span style={{ fontSize: 11.5, color: C.faint }}>{sheet?.syncedAt ? `上次同步 ${new Date(sheet.syncedAt).toLocaleString("zh-TW", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })}（每天也會自動同步）` : "尚未同步過"}</span>
               <button onClick={runSync} disabled={syncBusy} style={{ background: C.blue, color: "#fff", border: "none", borderRadius: 8, padding: "7px 16px", fontSize: 13, fontWeight: 700, cursor: syncBusy ? "wait" : "pointer" }}>{syncBusy ? "同步中…" : "立即同步"}</button>
             </div>
             {!sheet ? (
-              <div style={{ padding: 30, textAlign: "center", color: C.faint, background: C.card, border: `1px solid ${C.line}`, borderRadius: 10 }}>還沒同步過——按右上「立即同步」抓一次公司帳務表。</div>
+              <div style={{ padding: 30, textAlign: "center", color: C.faint, background: C.card, border: `1px solid ${C.line}`, borderRadius: 10 }}>還沒同步過——按右上「立即同步」。</div>
             ) : (
               <>
+                <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 12 }}>
+                  {statCard(nMatched, "對上了 / 已補記", C.accent)}
+                  {statCard(nOpen, "未對帳（待處理）", C.red)}
+                  {statCard(onlyApp.length, "只在 App（帳務表可能漏）", C.amber)}
+                  {statCard(nIgn, "已忽略", C.faint)}
+                </div>
+                {/* 圖像化：餘額走勢 / 每月支出 / 類別佔比 */}
                 <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 14 }}>
-                  {statCard(matched.length, "對上了 / 已補記", C.accent)}
-                  {statCard(onlySheet.length, "只在帳務表（App 可能漏記）", C.red)}
-                  {statCard(onlyApp.length, "只在 App（帳務表可能漏記）", C.amber)}
-                  {statCard(ignoredN, "已忽略", C.faint)}
-                </div>
-                {onlySheet.length > 0 && (
-                  <div style={{ marginBottom: 16 }}>
-                    <div style={{ fontSize: 13, fontWeight: 700, color: C.red, marginBottom: 8 }}>⚠ 只在帳務表——挑要補進哪邊（工程款請選大項）</div>
-                    {onlySheet.map(r => (
-                      <div key={r.id} style={rowBox}>
-                        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                          <span style={{ fontFamily: MONOF, fontSize: 12, color: C.sub, width: 74 }}>{r.payDate || "—"}</span>
-                          <span style={{ fontSize: 11, background: C.soft, borderRadius: 5, padding: "1px 7px", color: C.sub }}>{r.cat}{r.subject ? "・" + r.subject : ""}</span>
-                          <span style={{ flex: 1, minWidth: 160, fontSize: 13, color: C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={r.content}>{r.content}</span>
-                          <span style={{ fontFamily: MONOF, fontSize: 13.5, fontWeight: 700, color: C.text }}>{fmt(r.amount)}</span>
-                        </div>
-                        <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 7, flexWrap: "wrap" }}>
-                          {r.payee && <span style={{ fontSize: 11, color: C.faint }}>→ {r.payee}</span>}
-                          <div style={{ flex: 1 }} />
-                          {canEdit && <>
-                            <select defaultValue="" onChange={e => { if (e.target.value) { doFillPay(r, e.target.value); e.target.value = ""; } }} style={{ ...inp, padding: "5px 8px", fontSize: 12 }}>
-                              <option value="">補進工程付款（選大項）…</option>
-                              {conCats.filter(c => !c.nonProject).map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                            </select>
-                            <button onClick={() => doFillFin(r)} style={{ border: `1.5px solid ${C.blue}`, background: "#fff", color: C.blue, borderRadius: 7, padding: "5px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>補進內帳</button>
-                            <button onClick={() => saveRecon({ ...recon, ignored: [...recon.ignored, r.id] })} style={{ border: `1px solid ${C.line}`, background: "#fff", color: C.faint, borderRadius: 7, padding: "5px 10px", fontSize: 12, cursor: "pointer" }}>忽略</button>
-                          </>}
-                        </div>
+                  <div style={chartBox}>
+                    <div style={{ fontSize: 11.5, fontWeight: 700, color: C.sub, marginBottom: 6 }}>帳戶餘額走勢</div>
+                    {balSeries.length > 1 ? (() => {
+                      const vs = balSeries.map(x => x.v); const mn = Math.min(...vs), mx = Math.max(...vs);
+                      const pts = balSeries.map((x, i) => `${(i / (balSeries.length - 1)) * 580 + 10},${120 - ((x.v - mn) / Math.max(1, mx - mn)) * 100}`).join(" ");
+                      return (
+                        <>
+                          <svg viewBox="0 0 600 130" style={{ width: "100%", height: 90 }}>
+                            <polyline points={pts} fill="none" stroke="#3a6ea5" strokeWidth="2.5" />
+                          </svg>
+                          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: C.faint, fontFamily: MONOF }}>
+                            <span>{balSeries[0].d.slice(5)}　低 {fmt(mn)}</span><span>{balSeries[balSeries.length - 1].d.slice(5)}　高 {fmt(mx)}</span>
+                          </div>
+                        </>
+                      );
+                    })() : <div style={{ fontSize: 12, color: C.faint }}>資料不足</div>}
+                  </div>
+                  <div style={chartBox}>
+                    <div style={{ fontSize: 11.5, fontWeight: 700, color: C.sub, marginBottom: 6 }}>每月支出</div>
+                    {moArr.map(([m, v]) => (
+                      <div key={m} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+                        <span style={{ fontFamily: MONOF, fontSize: 10.5, color: C.sub, width: 52 }}>{m}</span>
+                        <div style={{ flex: 1, height: 10, background: "#eee5d3", borderRadius: 5, overflow: "hidden" }}><div style={{ width: (v / moMax * 100) + "%", height: "100%", background: "#3a6ea5", borderRadius: 5 }} /></div>
+                        <span style={{ fontFamily: MONOF, fontSize: 10.5, color: C.text, width: 78, textAlign: "right" }}>{Math.round(v / 1000).toLocaleString()}K</span>
                       </div>
                     ))}
                   </div>
-                )}
+                  <div style={chartBox}>
+                    <div style={{ fontSize: 11.5, fontWeight: 700, color: C.sub, marginBottom: 6 }}>類別佔比（累計支出）</div>
+                    {catArr.map(([k, v]) => (
+                      <div key={k} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+                        <span style={{ fontSize: 10.5, color: C.sub, width: 64, overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis" }}>{k.replace(/\s+/g, "")}</span>
+                        <div style={{ flex: 1, height: 10, background: "#eee5d3", borderRadius: 5, overflow: "hidden" }}><div style={{ width: (v / catMax * 100) + "%", height: "100%", background: CATCOL[k] || "#9b9384", borderRadius: 5 }} /></div>
+                        <span style={{ fontFamily: MONOF, fontSize: 10.5, color: C.text, width: 78, textAlign: "right" }}>{Math.round(v / 1000).toLocaleString()}K</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                {/* 對帳單（試算表式完整呈現） */}
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+                  <div style={{ display: "inline-flex", background: C.soft, border: `1px solid ${C.line}`, borderRadius: 8, padding: 2, gap: 2 }}>
+                    {[[false, "全部 " + shRows.length], [true, "只看未對帳 " + nOpen]].map(([v, l]) => (
+                      <button key={String(v)} onClick={() => setReconOnlyOpen(v)} style={{ padding: "5px 12px", borderRadius: 6, border: `1px solid ${reconOnlyOpen === v ? C.line : "transparent"}`, background: reconOnlyOpen === v ? "#fff" : "transparent", color: reconOnlyOpen === v ? C.text : C.sub, fontSize: 12.5, fontWeight: reconOnlyOpen === v ? 700 : 400, cursor: "pointer" }}>{l}</button>
+                    ))}
+                  </div>
+                  <span style={{ fontSize: 11, color: C.faint }}>新 → 舊・之後可直接貼企業網銀截圖補資料（規劃中）</span>
+                </div>
+                <div style={{ border: "1.5px solid #c8bca6", borderRadius: 8, background: C.card, overflow: "hidden" }}>
+                  <div style={{ overflowX: "auto" }}><div style={{ minWidth: 1180 }}>
+                    {(() => {
+                      const GTC = "78px 108px minmax(200px,1fr) 96px 46px 104px 170px 118px 56px 210px";
+                      const hc = { fontSize: 10.5, letterSpacing: 0.8, color: C.faint, fontWeight: 700, padding: "7px 8px", whiteSpace: "nowrap" };
+                      return (
+                        <>
+                          <div style={{ display: "grid", gridTemplateColumns: GTC, background: C.soft, borderBottom: "1.5px solid #c8bca6", alignItems: "center", position: "sticky", top: 0 }}>
+                            <div style={hc}>日期</div><div style={hc}>類別・科目</div><div style={hc}>項目內容</div><div style={{ ...hc, textAlign: "right" }}>金額</div><div style={{ ...hc, textAlign: "right" }}>手續</div><div style={{ ...hc, textAlign: "right" }}>餘額</div><div style={hc}>收款方</div><div style={hc}>批號</div><div style={hc}>經手</div><div style={hc}>對帳狀態</div>
+                          </div>
+                          <div style={{ maxHeight: "60vh", overflowY: "auto" }}>
+                            {rowsView.map((r, i) => {
+                              const st = status[r.id] || { st: "open" };
+                              return (
+                                <div key={r.id} style={{ display: "grid", gridTemplateColumns: GTC, alignItems: "center", minHeight: 34, borderTop: i ? `1px solid #f0ead9` : "none", background: st.st === "open" ? "#fdf6f4" : (i % 2 ? "#f8f4ea" : C.card) }}>
+                                  <div style={{ padding: "0 8px", fontFamily: MONOF, fontSize: 11.5, color: C.sub, whiteSpace: "nowrap" }}>{(r.payDate || r.notifyDate || "—").slice(2)}</div>
+                                  <div style={{ padding: "0 8px", fontSize: 11, color: C.sub, overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis" }} title={(r.cat + "・" + r.subject).replace(/\s+/g, "")}>{(r.cat || "").replace(/\s+/g, "")}{r.subject ? "・" + r.subject : ""}</div>
+                                  <div style={{ padding: "0 8px", fontSize: 12.5, color: C.text, overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis" }} title={r.content}>{r.content}</div>
+                                  <div style={{ padding: "0 8px", fontFamily: MONOF, fontSize: 12.5, fontWeight: 700, textAlign: "right", color: r.amount < 0 ? C.accent : C.text }}>{fmt(r.amount)}</div>
+                                  <div style={{ padding: "0 8px", fontFamily: MONOF, fontSize: 11, textAlign: "right", color: r.fee ? C.faint : "#d5cbb6" }}>{r.fee || "—"}</div>
+                                  <div style={{ padding: "0 8px", fontFamily: MONOF, fontSize: 11.5, textAlign: "right", color: r.balanceAfter > 0 ? C.sub : "#d5cbb6" }}>{r.balanceAfter > 0 ? fmt(r.balanceAfter) : "—"}</div>
+                                  <div style={{ padding: "0 8px", fontSize: 11.5, overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis" }} title={(r.payee || "") + (r.bank ? "（" + r.bank + "）" : "")}>
+                                    <span style={{ color: r.payee ? C.text : "#d5cbb6" }}>{r.payee || "—"}</span>{r.bank && <span style={{ color: C.faint, fontSize: 10 }}>（{r.bank}）</span>}
+                                  </div>
+                                  <div style={{ padding: "0 8px", fontFamily: MONOF, fontSize: 10, color: r.batch ? C.faint : "#d5cbb6", overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis" }} title={r.batch}>{(r.batch || "—").replace("批號：", "")}</div>
+                                  <div style={{ padding: "0 8px", fontSize: 11.5, color: r.handler ? C.sub : "#d5cbb6" }}>{r.handler || "—"}</div>
+                                  <div style={{ padding: "2px 8px", display: "flex", alignItems: "center", gap: 4, flexWrap: "wrap" }}>
+                                    {st.st === "matched" && <span title={st.via} style={{ fontSize: 11, color: "#3f7d4e", fontWeight: 700 }}>✓ 對上（{st.via?.split("｜")[0]}）</span>}
+                                    {st.st === "linked" && <span style={{ fontSize: 11, color: C.blue, fontWeight: 700 }}>✓ 已補記</span>}
+                                    {st.st === "ignored" && <><span style={{ fontSize: 11, color: C.faint }}>已忽略</span>{canEdit && <button onClick={() => saveRecon({ ...recon, ignored: recon.ignored.filter(x => x !== r.id) })} style={{ border: "none", background: "none", color: C.blue, fontSize: 11, cursor: "pointer", padding: 0 }}>復原</button>}</>}
+                                    {st.st === "open" && canEdit && <>
+                                      <select defaultValue="" onChange={e => { if (e.target.value) { doFillPay(r, e.target.value); e.target.value = ""; } }} style={{ border: `1px solid ${C.line}`, borderRadius: 6, padding: "2px 4px", fontSize: 10.5, background: "#fff", maxWidth: 86 }}>
+                                        <option value="">工程▾</option>
+                                        {conCats.filter(c => !c.nonProject).map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                                      </select>
+                                      <button onClick={() => doFillFin(r)} style={{ border: `1px solid ${C.blue}`, background: "#fff", color: C.blue, borderRadius: 6, padding: "2px 7px", fontSize: 10.5, fontWeight: 700, cursor: "pointer" }}>內帳</button>
+                                      <button onClick={() => saveRecon({ ...recon, ignored: [...recon.ignored, r.id] })} style={{ border: `1px solid ${C.line}`, background: "#fff", color: C.faint, borderRadius: 6, padding: "2px 6px", fontSize: 10.5, cursor: "pointer" }}>略</button>
+                                    </>}
+                                    {st.st === "open" && !canEdit && <span style={{ fontSize: 11, color: C.red }}>未對帳</span>}
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </>
+                      );
+                    })()}
+                  </div></div>
+                </div>
                 {onlyApp.length > 0 && (
-                  <div style={{ marginBottom: 16 }}>
-                    <div style={{ fontSize: 13, fontWeight: 700, color: C.amber, marginBottom: 8 }}>⚠ 只在 App 的工程付款——帳務表那邊可能漏記（去補表或確認是否現金/零用金）</div>
+                  <div style={{ marginTop: 16 }}>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: C.amber, marginBottom: 8 }}>⚠ 只在 App 的工程付款——帳務表可能漏記（或屬現金/零用金）</div>
                     {onlyApp.slice(0, 30).map(pl => (
-                      <div key={pl.key} style={{ ...rowBox, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                      <div key={pl.key} style={{ background: C.card, border: `1px solid ${C.line}`, borderRadius: 8, padding: "8px 12px", marginBottom: 6, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                         <span style={{ fontFamily: MONOF, fontSize: 12, color: C.sub, width: 74 }}>{pl.date || "—"}</span>
-                        <span style={{ fontSize: 11, background: C.soft, borderRadius: 5, padding: "1px 7px", color: C.sub }}>{pl.kind}</span>
-                        <span style={{ flex: 1, minWidth: 140, fontSize: 13, color: C.text }}>{pl.label}{pl.note ? `・${pl.note}` : ""}</span>
-                        <span style={{ fontFamily: MONOF, fontSize: 13.5, fontWeight: 700, color: C.text }}>{fmt(pl.amount)}</span>
+                        <span style={{ flex: 1, minWidth: 140, fontSize: 12.5, color: C.text }}>{pl.label}{pl.note ? "・" + pl.note : ""}</span>
+                        <span style={{ fontFamily: MONOF, fontSize: 13, fontWeight: 700 }}>{fmt(pl.amount)}</span>
                       </div>
                     ))}
                   </div>
                 )}
-                <button onClick={() => setShowMatched(v => !v)} style={{ background: "none", border: "none", color: C.sub, fontSize: 12.5, cursor: "pointer", padding: 0, marginBottom: 8 }}>{showMatched ? "▾" : "▸"} 對上了 {matched.length} 筆</button>
-                {showMatched && matched.map(({ r, via }) => (
-                  <div key={r.id} style={{ ...rowBox, display: "flex", alignItems: "center", gap: 8, opacity: .75 }}>
-                    <span style={{ color: C.accent, fontSize: 13 }}>✓</span>
-                    <span style={{ fontFamily: MONOF, fontSize: 12, color: C.sub, width: 74 }}>{r.payDate || "—"}</span>
-                    <span style={{ flex: 1, fontSize: 12.5, color: C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.content}</span>
-                    <span style={{ fontSize: 11, color: C.faint }}>{via}</span>
-                    <span style={{ fontFamily: MONOF, fontSize: 12.5, fontWeight: 700 }}>{fmt(r.amount)}</span>
-                  </div>
-                ))}
-                <div style={{ marginTop: 14 }}>
-                  <button onClick={() => setShowMirror(v => !v)} style={{ background: "none", border: "none", color: C.sub, fontSize: 12.5, cursor: "pointer", padding: 0 }}>{showMirror ? "▾" : "▸"} 📄 帳務表鏡像（唯讀・{shRows.length} 筆）</button>
-                  {showMirror && (
-                    <div style={{ border: `1px solid ${C.line}`, borderRadius: 8, background: C.card, marginTop: 8, maxHeight: 400, overflow: "auto" }}>
-                      {shRows.map(r => (
-                        <div key={r.id} style={{ display: "flex", gap: 8, padding: "6px 10px", borderBottom: "1px solid #f0ead9", fontSize: 12, alignItems: "center" }}>
-                          <span style={{ fontFamily: MONOF, color: C.sub, width: 72, flexShrink: 0 }}>{r.payDate || r.notifyDate || "—"}</span>
-                          <span style={{ width: 76, flexShrink: 0, color: C.faint, overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis" }}>{r.cat}</span>
-                          <span style={{ flex: 1, overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis", color: C.text }} title={r.content}>{r.content}</span>
-                          <span style={{ fontFamily: MONOF, fontWeight: 600, flexShrink: 0 }}>{fmt(r.amount)}</span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
               </>
             )}
           </div>
