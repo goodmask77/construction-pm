@@ -5,7 +5,7 @@
 // 視覺：依 docs/DESIGN_SPEC.md（Linear/Stripe 儀表板風）— 中性灰白 + 單一藍色主色 +
 //       lucide 細線圖示 + 狀態小圓點；1px 淺灰邊框、8px 圓角、無陰影、大量留白。
 import { useState, useEffect, useRef } from "react";
-import { Inbox, LayoutGrid, Columns3, List, CalendarDays, ChartGantt, Network, Plus, X, Check, Flame, Calendar, Clock, CircleAlert, ListTodo, Search, Home, Zap, Hourglass, CirclePlay, Coffee, Pin, ArrowUpDown, FolderPlus } from "lucide-react";
+import { Inbox, LayoutGrid, Columns3, List, CalendarDays, ChartGantt, Network, Plus, X, Check, Flame, Calendar, Clock, CircleAlert, ListTodo, Search, Home, Zap, Hourglass, CirclePlay, Coffee, Pin, ArrowUpDown, FolderPlus, Sun } from "lucide-react";
 import { isWaiting, isBlocked, missingDeps, wouldCycle, mergeTask, removeTaskAndRefs, isQuickWin, QUICK_WIN_MAX_MINUTES, orderTasks } from "./taskModel.js";
 
 // 任務顏色（Google Keep 式，低飽和淡色底，白＝無色）
@@ -31,7 +31,7 @@ const sColor = (s) => (STATUS.find(x => x[0] === s) || STATUS[0])[2];
 const pMeta = (p) => PRIO.find(x => x[0] === p) || PRIO[2];
 const INBOX = "__inbox__";
 const rid = () => "t-" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
-const today = () => new Date().toISOString().slice(0, 10);
+const today = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; }; // 本地日期（不能用 toISOString＝UTC，台灣早上會慢一天）
 const dnorm = (v) => String(v ?? "").replace(/\//g, "-").slice(0, 10);
 const inp = { border: `1px solid ${C.line}`, borderRadius: 8, padding: "7px 10px", fontSize: 13, background: "#fff", color: C.text, boxSizing: "border-box", outline: "none" };
 const dateInp = { ...inp, colorScheme: "light", fontFamily: "'Noto Sans TC',sans-serif", cursor: "pointer" };
@@ -188,6 +188,7 @@ export default function TaskCenter({ K, confirm, canEdit, cats, onLog, onAddCat 
               {(t.tags || []).map(tg => <span key={tg} style={{ fontSize: 11, color: C.sub, background: C.soft, borderRadius: 999, padding: "1px 8px" }}>{tg}</span>)}
             </div>
           </div>
+          {canEdit && !done && t.due !== today() && <button onClick={e => { e.stopPropagation(); if (guard()) upd(t.id, { due: today() }); }} title="設為今天必處理" style={{ flexShrink: 0, background: "none", border: "none", cursor: "pointer", lineHeight: 1, padding: "2px", color: "#c8bca6" }} onMouseEnter={e => e.currentTarget.style.color = C.red} onMouseLeave={e => e.currentTarget.style.color = "#c8bca6"}><Sun size={13} /></button>}
           {(canEdit || t.pinned) && <button onClick={e => { e.stopPropagation(); if (guard()) upd(t.id, { pinned: !t.pinned }); }} title={t.pinned ? "取消釘選" : "釘選到最上面"} style={{ flexShrink: 0, background: "none", border: "none", cursor: canEdit ? "pointer" : "default", lineHeight: 1, padding: "2px", color: t.pinned ? C.accent : "#c8bca6" }}><Pin size={13} fill={t.pinned ? C.accent : "none"} /></button>}
           {t.owner && <span title={`負責人：${t.owner}`} style={{ flexShrink: 0, width: 20, height: 20, borderRadius: "50%", background: C.accentSoft, color: C.accent, fontSize: 10, fontWeight: 600, display: "flex", alignItems: "center", justifyContent: "center", whiteSpace: "nowrap", overflow: "hidden" }}>{t.owner.slice(0, 2)}</span>}
           {canEdit && <button onClick={e => { e.stopPropagation(); del(t.id); }} title="刪除" style={{ flexShrink: 0, background: "none", border: "none", color: C.faint, cursor: "pointer", lineHeight: 1, padding: "2px" }} onMouseEnter={e => e.currentTarget.style.color = C.red} onMouseLeave={e => e.currentTarget.style.color = C.faint}><X size={14} /></button>}
@@ -280,7 +281,7 @@ export default function TaskCenter({ K, confirm, canEdit, cats, onLog, onAddCat 
         const waitingArr = pinFirst(take(openT.filter(t => isWaiting(t))).sort(byUrgency));
         const quick = pinFirst(take(openT.filter(t => isQuickWin(t))).sort(byUrgency));
         const upcoming = pinFirst(take(openT.filter(t => t.due && t.due > t0 && (new Date(t.due) - new Date(t0)) / 86400000 <= 7)).sort(byUrgency));
-        const allClear = !dueNow.length && !doing.length && !quick.length && !waitingArr.length && !blockedArr.length && !upcoming.length;
+        const allClear = false; // 「今天必處理」改為常駐區塊，不再整頁 all-clear
         const d = new Date();
         const dateStr = `${d.getMonth() + 1}/${d.getDate()}（週${"日一二三四五六"[d.getDay()]}）`;
         const inboxOpen = openT.filter(t => (t.catId || INBOX) === INBOX).length;
@@ -316,7 +317,7 @@ export default function TaskCenter({ K, confirm, canEdit, cats, onLog, onAddCat 
                 <span style={{ fontSize: 13, color: C.sub }}>今天沒有急事{inboxOpen > 0 ? `——收件匣還有 ${inboxOpen} 件可以整理` : "，全部都乾淨"}</span>
               </div>
             )}
-            {dueNow.length > 0 && <Section icon={CircleAlert} color={C.red} label="今天必處理" hint="逾期與今天到期"><Grid arr={dueNow} /></Section>}
+            <Section icon={CircleAlert} color={C.red} label="今天必處理" hint="逾期與今天到期・卡片按 ☀ 可直接排進來">{dueNow.length ? <Grid arr={dueNow} /> : <div style={{ fontSize: 12.5, color: C.faint, padding: "6px 2px" }}>目前沒有——任何卡片按 ☀ 就會排到今天。</div>}</Section>
             {doing.length > 0 && <Section icon={CirclePlay} color={C.accent} label="進行中" hint="手上正在做的"><Grid arr={doing} /></Section>}
             {quick.length > 0 && <Section icon={Zap} color={C.green} label="Quick Wins" hint={`≤ ${QUICK_WIN_MAX_MINUTES} 分鐘可完成，有空檔就清掉`}>
               {(() => {
