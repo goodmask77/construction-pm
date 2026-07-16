@@ -55,7 +55,9 @@ async function syncCtbc(days) {
   const found = {}
   let scanned = 0
   await withMailboxes(M1U, M1P, async (client) => {
-    const uids = await client.search({ from: 'bank.csc@inib.ctbcbank.com', since: new Date(Date.now() - days * 864e5) }, { uid: true })
+    let uids
+    try { uids = await client.search({ from: 'bank.csc@inib.ctbcbank.com', since: new Date(Date.now() - days * 864e5) }, { uid: true }) } catch (e) { DBG.boxes.push('ctbc-searchERR:' + e.message) }
+    DBG.boxes.push('ctbc:' + (Array.isArray(uids) ? uids.length : String(uids)))
     if (!uids || !uids.length) return
     for await (const msg of client.fetch(uids, { uid: true, envelope: true, source: true })) {
       scanned++
@@ -149,7 +151,9 @@ async function syncPos(days) {
   const found = {}
   let scanned = 0
   for (const [au, ap] of accounts) await withMailboxes(au, ap, async (client) => {
-    const uids = await client.search({ since: new Date(Date.now() - days * 864e5) }, { uid: true })
+    let uids
+    try { uids = await client.search({ since: new Date(Date.now() - days * 864e5) }, { uid: true }) } catch (e) { DBG.boxes.push('pos-searchERR:' + e.message) }
+    DBG.boxes.push('pos:' + (Array.isArray(uids) ? uids.length : String(uids)))
     if (!uids || !uids.length) return
     for await (const msg of client.fetch(uids, { uid: true, envelope: true, bodyStructure: true })) {
       const from = msg.envelope?.from?.[0]?.address || ''
