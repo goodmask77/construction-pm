@@ -31,7 +31,7 @@ export default function MailManagerView({ K, canEdit, confirm }) {
   const [log, setLog] = useState({ items: [] });
   const [busy, setBusy] = useState("");
   const [msg, setMsg] = useState(null);
-  const [showMails, setShowMails] = useState(false);
+  const [openFrom, setOpenFrom] = useState(null); // 展開中的來源（顯示該來源的信件）
   const [q, setQ] = useState("");
   const flash = (t) => { setMsg(t); setTimeout(() => setMsg(m => (m === t ? null : m)), 9000); };
 
@@ -119,59 +119,51 @@ export default function MailManagerView({ K, canEdit, confirm }) {
         )}
       </div>
 
-      {/* 信件來源判讀：一鍵採用建議＝建立規則 */}
+      {/* 信件來源＋信件（整合）：點來源列展開該來源的信；動作鈕＝建規則 */}
       <div style={box}>
         <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8, flexWrap: "wrap" }}>
-          <div style={{ fontSize: 13.5, fontWeight: 700, color: C.text }}>📊 信件來源（收件匣近 {scan?.days || 90} 天）</div>
-          <span style={{ fontSize: 11, color: C.faint }}>點動作按鈕＝建立該來源的規則（系統照你的標記學習）</span>
+          <div style={{ fontSize: 13.5, fontWeight: 700, color: C.text }}>📬 信件來源（收件匣近 {scan?.days || 90} 天・{(scan?.mails || []).length} 封）</div>
+          <span style={{ fontSize: 11, color: C.faint }}>點來源列＝展開信件；點動作鈕＝建立規則（系統照你的標記學習）</span>
           <div style={{ flex: 1 }} />
           <input value={q} onChange={e => setQ(e.target.value)} placeholder="搜尋來源/主旨…" style={{ ...inp, width: 180 }} />
         </div>
-        {!scan ? <div style={{ padding: 16, textAlign: "center", color: C.faint, fontSize: 12.5 }}>按右上「🔍 重新掃描」開始。</div> : (
-          <div style={{ overflowX: "auto" }}><div style={{ minWidth: 860, maxHeight: "46vh", overflowY: "auto" }}>
+        {!scan ? <div style={{ padding: 16, textAlign: "center", color: C.faint, fontSize: 12.5 }}>按右上「🔍 重新掃描」開始。</div> : senders.length === 0 ? <div style={{ padding: 16, textAlign: "center", color: C.faint, fontSize: 12.5 }}>收件匣乾乾淨淨 🎉（或掃描後全被規則處理掉了）</div> : (
+          <div style={{ overflowX: "auto" }}><div style={{ minWidth: 860, maxHeight: "58vh", overflowY: "auto" }}>
             {senders.map(sd => {
               const r = ruleFor(sd); const sg = suggest(sd);
+              const open = openFrom === sd.from;
+              const mailsOf = open ? (scan.mails || []).filter(m => m.from === sd.from) : [];
               return (
-                <div key={sd.from} style={{ display: "grid", gridTemplateColumns: "minmax(190px,1.2fr) 44px 76px minmax(180px,1.4fr) minmax(150px,1fr) 236px", gap: 8, alignItems: "center", minHeight: 34, borderTop: `1px solid #f0ead9`, fontSize: 12 }}>
-                  <div style={{ overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis" }} title={sd.from}><b style={{ color: C.text }}>{sd.name || sd.from.split("@")[0]}</b> <span style={{ color: C.faint, fontSize: 10.5 }}>{sd.from}</span></div>
-                  <span style={{ fontFamily: MONOF, fontWeight: 700, textAlign: "right", color: sd.count >= 10 ? C.accent : C.text }}>{sd.count}</span>
-                  <span style={{ fontFamily: MONOF, fontSize: 11, color: C.sub }}>{sd.latest.slice(5)}</span>
-                  <span style={{ color: C.sub, overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis" }} title={sd.sample}>{sd.sample}</span>
-                  {r ? <span style={{ fontSize: 11.5, fontWeight: 700, color: ACT_COLOR[r.action] }}>✓ {ACTIONS.find(a => a[0] === r.action)?.[1]}{r.label ? `(${r.label})` : ""}</span>
-                    : sg ? <span style={{ fontSize: 11, color: C.faint }}>建議：<b style={{ color: ACT_COLOR[sg.action] }}>{ACTIONS.find(a => a[0] === sg.action)?.[1]}</b>・{sg.why}</span>
-                      : <span style={{ fontSize: 11, color: "#d5cbb6" }}>—</span>}
-                  <div style={{ display: "flex", gap: 4 }}>
-                    {canEdit && [["delete", "🗑刪"], ["label", "🏷標"], ["archive", "📁存"], ["keep", "✋留"]].map(([a, l]) => (
-                      <button key={a} onClick={() => quickRule("from", sd.from, a, sd.name || sd.from)} title={ACTIONS.find(x => x[0] === a)?.[1]} style={{ border: `1px solid ${r?.action === a ? ACT_COLOR[a] : C.line}`, background: r?.action === a ? ACT_COLOR[a] : "#fff", color: r?.action === a ? "#fff" : C.sub, borderRadius: 6, padding: "3px 8px", fontSize: 11, cursor: "pointer", fontWeight: 600 }}>{l}</button>
-                    ))}
+                <React.Fragment key={sd.from}>
+                  <div onClick={() => setOpenFrom(open ? null : sd.from)} style={{ display: "grid", gridTemplateColumns: "18px minmax(180px,1.2fr) 44px 76px minmax(170px,1.4fr) minmax(150px,1fr) 236px", gap: 8, alignItems: "center", minHeight: 34, borderTop: `1px solid #f0ead9`, fontSize: 12, cursor: "pointer", background: open ? "#f4efe5" : "transparent" }}>
+                    <span style={{ color: C.faint, fontSize: 10, textAlign: "center" }}>{open ? "▾" : "▸"}</span>
+                    <div style={{ overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis" }} title={sd.from}><b style={{ color: C.text }}>{sd.name || sd.from.split("@")[0]}</b> <span style={{ color: C.faint, fontSize: 10.5 }}>{sd.from}</span></div>
+                    <span style={{ fontFamily: MONOF, fontWeight: 700, textAlign: "right", color: sd.count >= 10 ? C.accent : C.text }}>{sd.count}</span>
+                    <span style={{ fontFamily: MONOF, fontSize: 11, color: C.sub }}>{sd.latest.slice(5)}</span>
+                    <span style={{ color: C.sub, overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis" }} title={sd.sample}>{sd.sample}</span>
+                    {r ? <span style={{ fontSize: 11.5, fontWeight: 700, color: ACT_COLOR[r.action] }}>✓ {ACTIONS.find(a => a[0] === r.action)?.[1]}{r.label ? `(${r.label})` : ""}</span>
+                      : sg ? <span style={{ fontSize: 11, color: C.faint }}>建議：<b style={{ color: ACT_COLOR[sg.action] }}>{ACTIONS.find(a => a[0] === sg.action)?.[1]}</b>・{sg.why}</span>
+                        : <span style={{ fontSize: 11, color: "#d5cbb6" }}>—</span>}
+                    <div style={{ display: "flex", gap: 4 }} onClick={e => e.stopPropagation()}>
+                      {canEdit && [["delete", "🗑刪"], ["label", "🏷標"], ["archive", "📁存"], ["keep", "✋留"]].map(([a, l]) => (
+                        <button key={a} onClick={() => quickRule("from", sd.from, a, sd.name || sd.from)} title={ACTIONS.find(x => x[0] === a)?.[1]} style={{ border: `1px solid ${r?.action === a ? ACT_COLOR[a] : C.line}`, background: r?.action === a ? ACT_COLOR[a] : "#fff", color: r?.action === a ? "#fff" : C.sub, borderRadius: 6, padding: "3px 8px", fontSize: 11, cursor: "pointer", fontWeight: 600 }}>{l}</button>
+                      ))}
+                    </div>
                   </div>
-                </div>
+                  {open && mailsOf.map((m, i) => (
+                    <div key={i} style={{ display: "grid", gridTemplateColumns: "18px 76px minmax(260px,1fr) 150px", gap: 8, alignItems: "center", minHeight: 28, fontSize: 11.5, background: "#faf6ec", borderTop: "1px solid #f0ead9" }}>
+                      <span />
+                      <span style={{ fontFamily: MONOF, fontSize: 10.5, color: C.faint }}>{m.date.slice(5)}</span>
+                      <span style={{ color: C.text, overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis" }} title={m.subject}>{m.subject}</span>
+                      {canEdit && <div style={{ display: "flex", gap: 4 }}>
+                        <button onClick={() => { const kw = window.prompt("主旨要包含什麼文字就直接刪？（可改短）", m.subject.slice(0, 20)); if (kw) quickRule("subject", kw, "delete", "主旨:" + kw); }} style={{ border: `1px solid ${C.line}`, background: "#fff", color: C.red, borderRadius: 6, padding: "2px 7px", fontSize: 10.5, cursor: "pointer" }}>此標題→刪</button>
+                      </div>}
+                    </div>
+                  ))}
+                </React.Fragment>
               );
             })}
           </div></div>
-        )}
-      </div>
-
-      {/* 最近信件（可針對單一主旨建規則） */}
-      <div style={box}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }} onClick={() => setShowMails(v => !v)}>
-          <div style={{ fontSize: 13.5, fontWeight: 700, color: C.text }}>{showMails ? "▾" : "▸"} 📧 最近信件（{(scan?.mails || []).length} 封）</div>
-          <span style={{ fontSize: 11, color: C.faint }}>對「特定標題」設規則從這裡點</span>
-        </div>
-        {showMails && (
-          <div style={{ maxHeight: "40vh", overflowY: "auto", marginTop: 8 }}>
-            {(scan?.mails || []).slice(0, 150).map((m, i) => (
-              <div key={i} style={{ display: "grid", gridTemplateColumns: "76px minmax(120px,0.8fr) minmax(200px,1.6fr) 120px", gap: 8, alignItems: "center", minHeight: 30, borderTop: `1px solid #f0ead9`, fontSize: 12 }}>
-                <span style={{ fontFamily: MONOF, fontSize: 11, color: C.sub }}>{m.date.slice(5)}</span>
-                <span style={{ color: C.sub, overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis" }} title={m.from}>{m.name || m.from}</span>
-                <span style={{ color: C.text, overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis" }} title={m.subject}>{m.subject}</span>
-                {canEdit && <div style={{ display: "flex", gap: 4 }}>
-                  <button onClick={() => { const kw = window.prompt("主旨要包含什麼文字就處理？（可改短一點）", m.subject.slice(0, 20)); if (kw) quickRule("subject", kw, "delete", "主旨:" + kw); }} style={{ border: `1px solid ${C.line}`, background: "#fff", color: C.red, borderRadius: 6, padding: "2px 7px", fontSize: 10.5, cursor: "pointer" }}>此標題→刪</button>
-                  <button onClick={() => quickRule("from", m.from, "delete", m.name || m.from)} style={{ border: `1px solid ${C.line}`, background: "#fff", color: C.sub, borderRadius: 6, padding: "2px 7px", fontSize: 10.5, cursor: "pointer" }}>此來源→刪</button>
-                </div>}
-              </div>
-            ))}
-          </div>
         )}
       </div>
 
