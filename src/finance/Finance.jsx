@@ -56,6 +56,8 @@ export default function FinanceView({ K, confirm, canEdit, ReceiptUploader, onLo
   const [bank, setBank] = useState(null);        // ★ 銀行帳務資料庫（永久、只增不改；一切對帳以此為基礎）
   const [manForm, setManForm] = useState(null);  // 手動新增一筆（未來：貼企業網銀截圖 AI 判讀）
   const [pos, setPos] = useState(null);          // Eats365 POS 日結資料庫（自動收信入庫）
+  const [posDet, setPosDet] = useState({});      // POS 明細（按月分檔 pm_pos_d_YYYY-MM：分類/商品/優惠券/付款）
+  const [posRange, setPosRange] = useState(30);  // 分析期間：7 / 30 / 9999 天
   const [recon, setRecon] = useState({ links: {}, ignored: [] }); // 補記/忽略標記
   const [conCats, setConCats] = useState([]);    // 工程專案大項（唯讀跨空間）
   const [conPetty, setConPetty] = useState({ spends: [] });
@@ -80,6 +82,13 @@ export default function FinanceView({ K, confirm, canEdit, ReceiptUploader, onLo
     try { const cd = await window.storage.get("pm_data", true); setConCats(cd && cd.value ? JSON.parse(cd.value) : []); } catch (_) {}
     try { const pt = await window.storage.get("pm_petty", true); const v = pt && pt.value ? JSON.parse(pt.value) : {}; setConPetty({ spends: v.spends || [] }); } catch (_) {}
   })(); }, []); // eslint-disable-line
+  useEffect(() => { (async () => {
+    if (!pos?.entries?.length) return;
+    const months = [...new Set(pos.entries.map(e => (e.date || "").slice(0, 7)).filter(Boolean))].slice(-4);
+    const out = {};
+    for (const mo of months) { try { const d = await window.storage.get(K("pm_pos_d_" + mo), true); if (d && d.value) out[mo] = JSON.parse(d.value); } catch (_) {} }
+    setPosDet(out);
+  })(); }, [pos]); // eslint-disable-line
   const saveRecon = (next) => { setRecon(next); window.storage.set(K("pm_recon"), JSON.stringify(next), true).catch(() => {}); };
   const saveBank = (next) => { setBank(next); window.storage.set(K("pm_bank"), JSON.stringify(next), true).catch(() => {}); };
   const mergeToBank = (rows, srcLabel) => {
@@ -659,35 +668,63 @@ export default function FinanceView({ K, confirm, canEdit, ReceiptUploader, onLo
         );
       })()}
 
-      {/* ── 營運（Eats365 POS 日結：每日自動收信入庫）── */}
+      {/* ── 營運（Eats365 POS 日結：每日自動收信入庫 + 分類/商品分析）── */}
       {tab === "pos" && (() => {
         const MONOF = "'IBM Plex Mono', ui-monospace, Menlo, monospace";
-        const days = [...((pos?.entries) || [])].sort((a, b) => (a.date < b.date ? -1 : 1));
+        const all = [...((pos?.entries) || [])].sort((a, b) => (a.date < b.date ? -1 : 1));
+        const days = posRange >= 9999 ? all : all.slice(-posRange);
         const last = days[days.length - 1];
-        const n30 = days.slice(-30);
         const sum = (arr, k) => arr.reduce((t, x) => t + (Number(x[k]) || 0), 0);
-        const avgTicket = (d) => d && d.txCount ? Math.round(d.revenue / d.txCount) : 0;
-        const maxRev = Math.max(1, ...n30.map(d => d.revenue || 0));
+        const revSum = sum(days, "revenue"), txSum = sum(days, "txCount"), guestSum = sum(days, "guests");
+        const avgTicket = txSum ? Math.round(revSum / txSum) : 0;
+        const maxRev = Math.max(1, ...days.map(d => d.revenue || 0));
+        // 明細彙總（期間內）：分類 / 商品Top / 優惠券
+        const catAgg = {}, itemAgg = {};
+        days.forEach(d => {
+          const det = posDet[(d.date || "").slice(0, 7)]?.days?.[d.date];
+          const secs = det?.sheets?.["總銷售額 (以類別分類)"] || [];
+          secs.forEach(sec => {
+            (sec.rows || []).forEach(r => {
+              if (!Array.isArray(r) || typeof r[0] !== "string") return;
+              const amt = Number(r[r.length - 1]) || 0, qty = Number(r[1]) || 0;
+              if (sec.title === "總結") { if (amt > 0) { const c = catAgg[r[0]] = catAgg[r[0]] || { qty: 0, amt: 0 }; c.qty += qty; c.amt += amt; } }
+              else if (amt > 0) { const it = itemAgg[r[0]] = itemAgg[r[0]] || { qty: 0, amt: 0, cat: sec.title }; it.qty += qty; it.amt += amt; }
+            });
+          });
+        });
+        const catArr2 = Object.entries(catAgg).sort((a, b) => b[1].amt - a[1].amt);
+        const catMax2 = Math.max(1, ...catArr2.map(([, v]) => v.amt));
+        const topItems = Object.entries(itemAgg).sort((a, b) => b[1].amt - a[1].amt).slice(0, 12);
+        const PAL = ["#3a6ea5", "#3f7d4e", "#c98a14", "#b3492f", "#6b4a86", "#2f7d7a", "#9b9384", "#c4582a", "#5a6e3a", "#8a5a44", "#4a6b86", "#7d3f5e"];
+        const paySum = { card: sum(days, "card"), cash: sum(days, "cash"), uber: sum(days, "uber") };
         const kpi = (label, val, sub2, cl) => (
-          <div key={label} style={{ background: C.card, border: "1.5px solid #c8bca6", borderRadius: 8, padding: "10px 14px", flex: "1 1 130px" }}>
-            <div style={{ fontFamily: MONOF, fontSize: 22, fontWeight: 700, color: cl || C.text }}>{val}</div>
+          <div key={label} style={{ background: C.card, border: "1.5px solid #c8bca6", borderRadius: 8, padding: "10px 14px", flex: "1 1 128px" }}>
+            <div style={{ fontFamily: MONOF, fontSize: 21, fontWeight: 700, color: cl || C.text, whiteSpace: "nowrap" }}>{val}</div>
             <div style={{ fontSize: 11, color: C.sub, marginTop: 2 }}>{label}{sub2 ? <span style={{ color: C.faint }}>・{sub2}</span> : null}</div>
           </div>
         );
-        const payRow = (label, amt, count, total, cl) => (
+        const barRow = (label, amt, total, cl, extra) => (
           <div key={label} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 5 }}>
-            <span style={{ fontSize: 11.5, color: C.sub, width: 108 }}>{label}{count != null ? `（${count}筆）` : ""}</span>
-            <div style={{ flex: 1, height: 10, background: "#eee5d3", borderRadius: 5, overflow: "hidden" }}><div style={{ width: (total ? amt / total * 100 : 0) + "%", height: "100%", background: cl, borderRadius: 5 }} /></div>
-            <span style={{ fontFamily: MONOF, fontSize: 11, color: C.text, width: 86, textAlign: "right" }}>{fmt(amt)}</span>
+            <span style={{ fontSize: 11.5, color: C.sub, width: 118, overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis" }} title={label}>{label}</span>
+            <div style={{ flex: 1, height: 10, background: "#eee5d3", borderRadius: 5, overflow: "hidden" }}><div style={{ width: Math.max(1, amt / total * 100) + "%", height: "100%", background: cl, borderRadius: 5 }} /></div>
+            <span style={{ fontFamily: MONOF, fontSize: 11, color: C.text, width: 84, textAlign: "right" }}>{fmt(amt)}</span>
+            {extra != null && <span style={{ fontFamily: MONOF, fontSize: 10, color: C.faint, width: 40, textAlign: "right" }}>{extra}</span>}
           </div>
         );
+        const chartBox2 = { background: C.card, border: "1.5px solid #c8bca6", borderRadius: 8, padding: "10px 14px" };
         return (
           <div>
             <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", marginBottom: 12 }}>
               <span style={{ background: "#3f7d4e", color: "#fff", fontSize: 11.5, fontWeight: 700, borderRadius: 4, padding: "2px 8px", letterSpacing: 1 }}>營運</span>
               <div>
                 <div style={{ fontSize: 16, fontWeight: 800, color: C.text }}>🍽 {last?.store || "Eats365 POS"} 日結</div>
-                <div style={{ fontSize: 11, color: C.faint }}>POS 結帳信自動入庫・{days.length} 天資料{pos?.updatedAt ? "・更新 " + new Date(pos.updatedAt).toLocaleDateString("zh-TW") : ""}</div>
+                <div style={{ fontSize: 11, color: C.faint }}>POS 結帳信自動入庫・{all.length} 天資料{pos?.updatedAt ? "・更新 " + new Date(pos.updatedAt).toLocaleDateString("zh-TW") : ""}</div>
+              </div>
+              <div style={{ flex: 1 }} />
+              <div style={{ display: "inline-flex", background: C.soft, border: `1px solid ${C.line}`, borderRadius: 8, padding: 2, gap: 2 }}>
+                {[[7, "近7天"], [30, "近30天"], [9999, "全部"]].map(([v, l]) => (
+                  <button key={v} onClick={() => setPosRange(v)} style={{ padding: "5px 12px", borderRadius: 6, border: `1px solid ${posRange === v ? C.line : "transparent"}`, background: posRange === v ? "#fff" : "transparent", color: posRange === v ? C.text : C.sub, fontSize: 12.5, fontWeight: posRange === v ? 700 : 400, cursor: "pointer" }}>{l}</button>
+                ))}
               </div>
             </div>
             {!days.length ? (
@@ -695,29 +732,42 @@ export default function FinanceView({ K, confirm, canEdit, ReceiptUploader, onLo
             ) : (
               <>
                 <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 12 }}>
-                  {kpi("最新日營收", fmt(last.revenue), last.date.slice(5), C.text)}
-                  {kpi("交易數", last.txCount, "客單 " + fmt(avgTicket(last)))}
-                  {kpi("來客(堂食)", last.guests || "—", null)}
-                  {kpi("近30天累計", fmt(sum(n30, "revenue")), n30.length + " 天", "#3f7d4e")}
+                  {kpi("期間營收", fmt(revSum), days.length + " 天", "#3f7d4e")}
+                  {kpi("日均營收", fmt(Math.round(revSum / days.length)), null)}
+                  {kpi("交易數", txSum, "客單 " + fmt(avgTicket))}
+                  {kpi("來客(堂食)", guestSum || "—", null)}
+                  {kpi("最新一天", fmt(last.revenue), last.date.slice(5))}
                 </div>
-                <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 14 }}>
-                  <div style={{ background: C.card, border: "1.5px solid #c8bca6", borderRadius: 8, padding: "10px 14px", flex: "2 1 320px", minWidth: 280 }}>
-                    <div style={{ fontSize: 11.5, fontWeight: 700, color: C.sub, marginBottom: 8 }}>每日營收（近 30 天）</div>
-                    <div style={{ display: "flex", alignItems: "flex-end", gap: 3, height: 110 }}>
-                      {n30.map(d => (
-                        <div key={d.id} title={`${d.date}　${fmt(d.revenue)}・${d.txCount}單`} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}>
-                          <div style={{ width: "100%", height: Math.max(3, d.revenue / maxRev * 92), background: "#3a6ea5", borderRadius: "3px 3px 0 0" }} />
-                          <span style={{ fontSize: 8.5, color: C.faint, fontFamily: MONOF }}>{Number(d.date.slice(8))}</span>
-                        </div>
-                      ))}
-                    </div>
+                <div style={{ ...chartBox2, marginBottom: 10 }}>
+                  <div style={{ fontSize: 11.5, fontWeight: 700, color: C.sub, marginBottom: 8 }}>每日營收</div>
+                  <div style={{ display: "flex", alignItems: "flex-end", gap: 3, height: 130 }}>
+                    {days.map(d => (
+                      <div key={d.id} title={`${d.date}　${fmt(d.revenue)}・${d.txCount}單・客單 ${fmt(d.txCount ? Math.round(d.revenue / d.txCount) : 0)}`} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 2, minWidth: 0 }}>
+                        {days.length <= 20 && <span style={{ fontSize: 9, color: C.sub, fontFamily: MONOF }}>{Math.round((d.revenue || 0) / 1000)}K</span>}
+                        <div style={{ width: "100%", height: Math.max(3, (d.revenue || 0) / maxRev * 96), background: "#3a6ea5", borderRadius: "3px 3px 0 0" }} />
+                        <span style={{ fontSize: 8.5, color: C.faint, fontFamily: MONOF }}>{Number(d.date.slice(8))}</span>
+                      </div>
+                    ))}
                   </div>
-                  <div style={{ background: C.card, border: "1.5px solid #c8bca6", borderRadius: 8, padding: "10px 14px", flex: "1 1 260px", minWidth: 250 }}>
-                    <div style={{ fontSize: 11.5, fontWeight: 700, color: C.sub, marginBottom: 8 }}>付款方式（最新一天）</div>
-                    {payRow("信用卡", last.card || 0, last.cardCount, last.revenue, "#3a6ea5")}
-                    {payRow("現金", last.cash || 0, last.cashCount, last.revenue, "#3f7d4e")}
-                    {payRow("UberEats", last.uber || 0, last.uberCount, last.revenue, "#c98a14")}
-                    <div style={{ fontSize: 11, color: C.faint, marginTop: 8 }}>審計：退菜 {fmt(last.returnDish || 0)}・Void {fmt(last.voidItems || 0)}・折扣 {fmt(last.discount || 0)}</div>
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 10, marginBottom: 12 }}>
+                  <div style={chartBox2}>
+                    <div style={{ fontSize: 11.5, fontWeight: 700, color: C.sub, marginBottom: 8 }}>分類銷售（期間累計）</div>
+                    {catArr2.length ? catArr2.map(([k, v], i) => barRow(k, v.amt, catMax2, PAL[i % PAL.length], v.qty + "份")) : <div style={{ fontSize: 12, color: C.faint }}>無明細資料</div>}
+                  </div>
+                  <div style={chartBox2}>
+                    <div style={{ fontSize: 11.5, fontWeight: 700, color: C.sub, marginBottom: 8 }}>熱銷商品 Top 12（期間累計）</div>
+                    {topItems.length ? topItems.map(([k, v], i) => barRow(`${i + 1}. ${k}`, v.amt, topItems[0][1].amt, "#3f7d4e", v.qty + "份")) : <div style={{ fontSize: 12, color: C.faint }}>無明細資料</div>}
+                  </div>
+                  <div style={chartBox2}>
+                    <div style={{ fontSize: 11.5, fontWeight: 700, color: C.sub, marginBottom: 8 }}>付款方式（期間累計）</div>
+                    {barRow("信用卡", paySum.card, revSum || 1, "#3a6ea5", revSum ? Math.round(paySum.card / revSum * 100) + "%" : "")}
+                    {barRow("現金", paySum.cash, revSum || 1, "#3f7d4e", revSum ? Math.round(paySum.cash / revSum * 100) + "%" : "")}
+                    {barRow("UberEats", paySum.uber, revSum || 1, "#c98a14", revSum ? Math.round(paySum.uber / revSum * 100) + "%" : "")}
+                    <div style={{ fontSize: 11, color: C.faint, marginTop: 10, lineHeight: 1.8 }}>
+                      期間審計：退菜 {fmt(sum(days, "returnDish"))}・Void {fmt(sum(days, "voidItems"))}・折扣 {fmt(sum(days, "discount"))}<br />
+                      最新一天：信用卡 {last.cardCount ?? "—"} 筆・現金 {last.cashCount ?? "—"} 筆・Uber {last.uberCount ?? "—"} 筆
+                    </div>
                   </div>
                 </div>
                 <div style={{ border: "1.5px solid #c8bca6", borderRadius: 8, background: C.card, overflow: "hidden" }}>
@@ -737,7 +787,7 @@ export default function FinanceView({ K, confirm, canEdit, ReceiptUploader, onLo
                                 <div style={{ padding: "0 8px", fontFamily: MONOF, fontSize: 11.5, color: C.sub }}>{d.date.slice(2)}</div>
                                 <div style={{ padding: "0 8px", fontSize: 11.5, color: C.sub, overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis" }}>{d.store}</div>
                                 {cell(fmt(d.revenue), { fontWeight: 700, color: C.text })}
-                                {cell(d.txCount)}{cell(d.guests || "—")}{cell(fmt(avgTicket(d)))}
+                                {cell(d.txCount)}{cell(d.guests || "—")}{cell(fmt(d.txCount ? Math.round(d.revenue / d.txCount) : 0))}
                                 {cell(fmt(d.cash || 0))}{cell(fmt(d.card || 0))}{cell(fmt(d.uber || 0))}
                                 {cell(d.discount ? fmt(d.discount) : "—", { color: d.discount ? C.accent : "#d5cbb6" })}
                               </div>
@@ -748,7 +798,7 @@ export default function FinanceView({ K, confirm, canEdit, ReceiptUploader, onLo
                     })()}
                   </div></div>
                 </div>
-                <div style={{ fontSize: 11.5, color: C.faint, marginTop: 8 }}>之後資料多了會加：週/月彙總、來客與客單價趨勢、POS信用卡 ↔ 銀行入帳自動核對。</div>
+                <div style={{ fontSize: 11.5, color: C.faint, marginTop: 8 }}>資料來源：Eats365 日結信（寄到 goodmask77 即自動入庫）。之後接：週/月彙總、POS信用卡 ↔ 銀行入帳自動核對、進銷存成本對照。</div>
               </>
             )}
           </div>
