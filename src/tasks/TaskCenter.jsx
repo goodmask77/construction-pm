@@ -171,7 +171,13 @@ export default function TaskCenter({ K, confirm, canEdit, cats, onLog, onAddCat 
         onDragOver={e => { if (drag && dropBefore) { e.preventDefault(); e.stopPropagation(); } }}
         onDrop={e => { if (drag && dropBefore) { e.preventDefault(); e.stopPropagation(); moveTo(drag, { catId: view === "group" ? t.catId : undefined, status: view === "board" ? t.status : undefined, beforeId: t.id }); setDrag(null); setOverKey(null); } }}
         onClick={() => setSel(t.id)}
-        style={{ background: t.color || C.card, border: `1px solid ${C.line}`, borderRadius: 8, padding: "9px 11px", marginBottom: 8, cursor: canEdit ? "grab" : "pointer", opacity: drag === t.id ? 0.4 : 1 }}>
+        style={done
+          // 已完成：沉下去（透明底＋虛線框＋降透明度、無陰影）——跟待辦一眼分開
+          ? { background: "transparent", border: `1px dashed ${C.line}`, borderRadius: 8, padding: "9px 11px", marginBottom: 8, cursor: canEdit ? "grab" : "pointer", opacity: drag === t.id ? 0.4 : 0.6 }
+          // 待辦：浮起來（白底/色底＋硬框＋紙感陰影，懸停再浮一點）
+          : { background: t.color || "#fff", border: "1.5px solid #c8bca6", borderRadius: 8, padding: "9px 11px", marginBottom: 8, cursor: canEdit ? "grab" : "pointer", opacity: drag === t.id ? 0.4 : 1, boxShadow: "0 1px 3px rgba(29,26,21,.10)", transition: "box-shadow .12s, transform .12s" }}
+        onMouseEnter={e => { if (!done) { e.currentTarget.style.boxShadow = "0 3px 10px rgba(29,26,21,.16)"; e.currentTarget.style.transform = "translateY(-1px)"; } }}
+        onMouseLeave={e => { if (!done) { e.currentTarget.style.boxShadow = "0 1px 3px rgba(29,26,21,.10)"; e.currentTarget.style.transform = "none"; } }}>
         <div style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
           <button onClick={e => { e.stopPropagation(); if (guard()) upd(t.id, { status: done ? "todo" : "done" }); }}
             title="切換完成" style={{ flexShrink: 0, width: 16, height: 16, marginTop: 2, borderRadius: 4, border: `1px solid ${done ? C.green : "#c8bca6"}`, background: done ? C.green : "#fff", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", padding: 0 }}>{done && <Check size={11} color="#fff" strokeWidth={3} />}</button>
