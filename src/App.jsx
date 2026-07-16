@@ -1829,7 +1829,7 @@ function RosterView({ canEdit, confirm, me }) {
     const c = (typeof va === "number" && typeof vb === "number") ? (va - vb) : String(va).localeCompare(String(vb), "zh-Hant-TW");
     return c * sort.dir;
   });
-  const GTC = `40px ${nameW}px ${showCols.flatMap(f => f.key === "bday" ? ["112px", "56px"] : [colW(f)]).join(" ")} 126px 58px 48px`;
+  const GTC = `40px ${nameW}px ${showCols.flatMap(f => f.key === "bday" ? ["150px", "52px"] : [colW(f)]).join(" ")} 126px 58px 48px`;
   const th = (label, key, extra) => (
     <button key={label} onClick={() => key && setSort(s2 => ({ key, dir: s2.key === key ? -s2.dir : 1 }))} title={label} style={{ background: "none", border: "none", textAlign: "left", padding: "8px 8px", fontSize: 10.5, letterSpacing: 0.8, color: sort.key === key ? TEXT : "#9b9384", fontWeight: 700, cursor: key ? "pointer" : "default", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", minWidth: 0, maxWidth: "100%", ...extra }}>
       {label}{key && sort.key === key ? (sort.dir === 1 ? " ▲" : " ▼") : ""}
