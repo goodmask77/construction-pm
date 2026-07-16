@@ -907,9 +907,9 @@ export default function FinanceView({ K, confirm, canEdit, ReceiptUploader, onLo
                     <div style={{ overflow: "auto", border: `1.5px solid #c8bca6`, borderRadius: 8 }}>
                       {(!drill.pivot || posDrillView === "list") ? (
                         <table style={{ borderCollapse: "collapse", width: "100%", fontSize: 12 }}>
-                          <thead><tr>{drill.cols.map((c2, ci) => (
-                            <th key={c2} onClick={() => setPosDrillSort(sx => sx && sx.i === ci ? { i: ci, dir: -sx.dir } : { i: ci, dir: 1 })} style={{ position: "sticky", top: 0, background: "#ece4d6", textAlign: "left", padding: "6px 10px", fontSize: 10.5, letterSpacing: 0.6, color: posDrillSort?.i === ci ? C.text : C.sub, whiteSpace: "nowrap", borderBottom: "1.5px solid #c8bca6", cursor: "pointer", userSelect: "none" }}>{c2}{posDrillSort?.i === ci ? (posDrillSort.dir === 1 ? " ▲" : " ▼") : ""}</th>
-                          ))}</tr></thead>
+                          <thead><tr>{drill.cols.map((c2, ci) => { const numCol = ["數量", "佔比", "金額", "營收", "單數", "來客", "客單", "現金", "信用卡", "Uber", "折扣", "服務費", "退菜", "Void", "筆數", "佔當日營收"].includes(c2); return (
+                            <th key={c2} onClick={() => setPosDrillSort(sx => sx && sx.i === ci ? { i: ci, dir: -sx.dir } : { i: ci, dir: 1 })} style={{ position: "sticky", top: 0, background: "#ece4d6", textAlign: numCol ? "right" : "left", padding: "6px 10px", fontSize: 10.5, letterSpacing: 0.6, color: posDrillSort?.i === ci ? C.text : C.sub, whiteSpace: "nowrap", borderBottom: "1.5px solid #c8bca6", cursor: "pointer", userSelect: "none" }}>{c2}{posDrillSort?.i === ci ? (posDrillSort.dir === 1 ? " ▲" : " ▼") : ""}</th>
+                          ); })}</tr></thead>
                           <tbody>
                             {rows2.length === 0 ? <tr><td colSpan={drill.cols.length} style={{ padding: 16, textAlign: "center", color: C.faint }}>期間內沒有資料</td></tr> :
                               rows2.map((r, i) => (
