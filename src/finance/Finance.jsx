@@ -721,6 +721,26 @@ export default function FinanceView({ K, confirm, canEdit, ReceiptUploader, onLo
         const paySum = { card: sum(days, "card"), cash: sum(days, "cash"), uber: sum(days, "uber") };
         // ── 下鑽：每種數字 → 組成它的原始資料列 ──
         const pct1 = (v) => typeof v === "number" && v <= 1 ? (v * 100).toFixed(1) + "%" : (v ?? "");
+        // 依段落表頭把原始列解成固定欄位（名稱/數量/佔比/金額/備註）
+        const parseRow = (sec, r) => {
+          const cells = Array.isArray(r) ? r : [r];
+          const name = String(cells[0] ?? "");
+          const rest = cells.slice(1);
+          const labels = (sec.header || []).map(x => String(x)).slice(1);
+          const numsN = rest.filter(c => typeof c === "number").length;
+          let qty = "", pctS = "", amt = "", note = [];
+          let li = 0;
+          for (const c of rest) {
+            if (typeof c !== "number") { if (String(c).trim()) note.push(String(c)); continue; }
+            let lab = labels[li++] || "";
+            if (!lab) lab = (c > 0 && c < 1) ? "%" : (numsN >= 2 && li === 1 ? "數量" : "金額");
+            if (numsN === 1 && note.length) lab = "金額"; // 例：優惠券的單號列（D21・小胖・原因・480）
+            if (/數量/.test(lab)) qty = c;
+            else if (lab.includes("%")) pctS = c <= 1 ? (c * 100).toFixed(1) + "%" : c + "%";
+            else amt = fmt(c);
+          }
+          return [name, qty, pctS, amt, note.join("・")];
+        };
         const buildDrill = (dr) => {
           if (!dr) return null;
           if (dr.type === "days") return {
@@ -734,6 +754,14 @@ export default function FinanceView({ K, confirm, canEdit, ReceiptUploader, onLo
               title: `分類「${dr.key}」逐日商品明細`, cols: ["日期", "品項", "數量", "佔比", "金額"],
               rows: raw.map(x => [x.date, x.name, x.qty, pct1(x.pct), fmt(x.amt)]), raw, pivot: true,
               note: "來源：日結信「總銷售額(以類別分類)」分頁 → 明細資料庫 pm_pos_d_月份",
+            };
+          }
+          if (dr.type === "allitems") {
+            const raw = [...days].reverse().flatMap(d => (dayDet(d.date)?.sheets?.[CATSHEET] || []).filter(sec => sec.title !== "總結").flatMap(sec => (sec.rows || []).map(r => ({ date: d.date, name: String(r[0]), cat: sec.title, qty: Number(r[1]) || 0, pct: r[2], amt: Number(r[r.length - 1]) || 0 }))));
+            return {
+              title: "全部品項 × 日期（所有分類）", cols: ["日期", "分類", "品項", "數量", "佔比", "金額"],
+              rows: raw.map(x => [x.date, x.cat, x.name, x.qty, pct1(x.pct), fmt(x.amt)]), raw, pivot: true, defaultPivot: true,
+              note: "來源：日結信「總銷售額(以類別分類)」全部分類 → 明細資料庫 pm_pos_d_月份",
             };
           }
           if (dr.type === "item") {
@@ -753,8 +781,8 @@ export default function FinanceView({ K, confirm, canEdit, ReceiptUploader, onLo
             };
           }
           if (dr.type === "coupon") return {
-            title: "優惠券 / 折扣明細（含單號・經手・原因）", cols: ["日期", "區塊", "內容"],
-            rows: [...days].reverse().flatMap(d => (dayDet(d.date)?.sheets?.["優惠券"] || []).flatMap(sec => (sec.rows || []).map(r => [d.date, sec.title || "優惠券", (Array.isArray(r) ? r : [r]).map(c => typeof c === "number" ? (c <= 1 && c > 0 ? (c * 100).toFixed(1) + "%" : fmt(c)) : c).join("　")]))),
+            title: "優惠券 / 折扣明細（含單號・經手・原因）", cols: ["日期", "區塊", "品項/單號", "數量", "佔比", "金額", "經手・原因"],
+            rows: [...days].reverse().flatMap(d => (dayDet(d.date)?.sheets?.["優惠券"] || []).flatMap(sec => (sec.rows || []).map(r => [d.date, sec.title || "優惠券", ...parseRow(sec, r)]))),
             note: "來源：日結信「優惠券」分頁 → 明細資料庫 pm_pos_d_月份",
           };
           if (dr.type === "day") {
@@ -771,7 +799,7 @@ export default function FinanceView({ K, confirm, canEdit, ReceiptUploader, onLo
           return null;
         };
         const drill = buildDrill(posDrill);
-        const openDrill = (dr) => { setPosDrillView("list"); setPosDrillSort(null); setPosDrill(dr); };
+        const openDrill = (dr) => { setPosDrillView(dr.type === "allitems" ? "pivot" : "list"); setPosDrillSort(null); setPosDrill(dr); };
         const WD = ["日", "一", "二", "三", "四", "五", "六"];
         const wd = (v) => (typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v)) ? `${v.slice(5)}（${WD[new Date(v + "T00:00:00").getDay()]}）` : v;
         const kpi = (label, val, sub2, cl, onClick) => (
@@ -835,7 +863,11 @@ export default function FinanceView({ K, confirm, canEdit, ReceiptUploader, onLo
                     {catArr2.length ? catArr2.map(([k, v], i) => barRow(k, v.amt, catMax2, PAL[i % PAL.length], v.qty + "份", () => openDrill({ type: "cat", key: k }))) : <div style={{ fontSize: 12, color: C.faint }}>無明細資料</div>}
                   </div>
                   <div style={chartBox2}>
-                    <div style={{ fontSize: 11.5, fontWeight: 700, color: C.sub, marginBottom: 8 }}>熱銷商品 Top 12（期間累計）</div>
+                    <div style={{ display: "flex", alignItems: "center", marginBottom: 8 }}>
+                      <div style={{ fontSize: 11.5, fontWeight: 700, color: C.sub }}>熱銷商品 Top 12（期間累計）</div>
+                      <div style={{ flex: 1 }} />
+                      <button onClick={() => openDrill({ type: "allitems" })} style={{ border: `1px solid ${C.blue}`, background: "#fff", color: C.blue, borderRadius: 6, padding: "2px 10px", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>🔲 全部品項×日期</button>
+                    </div>
                     {topItems.length ? topItems.map(([k, v], i) => barRow(`${i + 1}. ${k}`, v.amt, topItems[0][1].amt, "#3f7d4e", v.qty + "份", () => openDrill({ type: "item", key: k }))) : <div style={{ fontSize: 12, color: C.faint }}>無明細資料</div>}
                   </div>
                   <div style={chartBox2}>
