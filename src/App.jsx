@@ -1801,7 +1801,16 @@ function RosterView({ canEdit, confirm, me }) {
   const DEPT_PAL = ["#3a6ea5", "#3f7d4e", "#c98a14", "#b3492f", "#6b4a86", "#2f7d7a", "#c4582a", "#5a6e3a"];
   const deptColor = (v) => { const opts = ((fields.find(f2 => f2.key === "dept") || {}).options || []).filter(Boolean); const i = opts.indexOf(v); return DEPT_PAL[(i >= 0 ? i : opts.length) % DEPT_PAL.length]; };
   const ageOf = (b) => { if (!b) return ""; const t = new Date(), d = new Date(b + "T00:00:00"); let a = t.getFullYear() - d.getFullYear(); if (t.getMonth() < d.getMonth() || (t.getMonth() === d.getMonth() && t.getDate() < d.getDate())) a--; return a; };
+  const tenureOf = (pp) => {
+    if (!pp.startDate) return "";
+    const st = new Date(pp.startDate + "T00:00:00"), en = pp.endDate ? new Date(pp.endDate + "T00:00:00") : new Date();
+    let m = (en.getFullYear() - st.getFullYear()) * 12 + en.getMonth() - st.getMonth() - (en.getDate() < st.getDate() ? 1 : 0);
+    if (m < 0) m = 0;
+    const y = Math.floor(m / 12), mo = m % 12;
+    return y ? `${y}年${mo}月` : `${mo}月`;
+  };
   const cellVal = (pp, f) => {
+    if (f.key === "startDate") return pp.startDate ? `${pp.startDate}（${tenureOf(pp)}）` : "—";
     if (f.key === "bday") { const tm = pp.bday && Number(pp.bday.split("-")[1]) === new Date().getMonth() + 1; return pp.bday ? `${pp.bday}（${ageOf(pp.bday)}歲）` + (tm ? " 🎂" : "") : "—"; }
     if (f.type === "file") { const n = (pp[f.key] || []).length; return n ? `📎${n}` : "—"; }
     return String(pp[f.key] ?? "").trim() || "—";
