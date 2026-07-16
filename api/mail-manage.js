@@ -126,6 +126,8 @@ async function doApply(days) {
             try { await client.mailboxCreate(dest) } catch (_) {} // 已存在會丟錯，忽略
           }
           if (!dest || dest === box || !pl.uids.length) continue
+          // 直接刪除的垃圾信：先標已讀再進垃圾桶 → 垃圾桶不會掛未讀數字引人去點
+          if (r.action === 'delete') { try { await client.messageFlagsAdd(pl.uids, ['\\Seen'], { uid: true }) } catch (_) {} }
           await client.messageMove(pl.uids, dest, { uid: true })
           moved += pl.uids.length
           const ex = perRule.find(x => x.ruleId === r.id && x.action === r.action)
