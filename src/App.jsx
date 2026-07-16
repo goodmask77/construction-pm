@@ -1767,6 +1767,7 @@ function RosterView({ canEdit, confirm, me }) {
   const [sel, setSel] = useState(null);
   const [showFields, setShowFields] = useState(false);
   const [lockTip, setLockTip] = useState(false);
+  const [dragIdx, setDragIdx] = useState(null); // 欄位設定拖曳排序
   useEffect(() => { (async () => setData(await loadCrewJSON("kb_360", { dimensions: [], people: [], reviews: [] })))(); }, []);
   if (!data) return <div style={{ padding: 40, color: SUB, fontSize: 14 }}>載入中…</div>;
   const people = data.people || [];
@@ -1786,15 +1787,15 @@ function RosterView({ canEdit, confirm, me }) {
   const docCount = (pp) => fields.filter(f => f.type === "file").reduce((n, f) => n + ((pp[f.key] || []).length), 0);
   const val = (pp, k) => k === "prog" ? progress(pp) : k === "statusD" ? statusOf(pp) : (pp[k] ?? "");
   const showCols = fields.filter(f => f.show);
-  // 欄寬配平：固定內容給固定寬、長文字欄平均分（避免有的擠有的空）
-  const colW = (f) =>
-    f.type === "file" ? "52px"
-    : f.key === "empNo" ? "80px"
-    : f.key === "bday" ? "150px"
-    : f.type === "date" ? "96px"
-    : f.key === "phone" ? "108px"
-    : f.key === "email" ? "minmax(150px,1fr)"
-    : "minmax(96px,0.7fr)";
+  // 欄寬自動調整：依「表頭 + 該欄實際內容」計算（中文算2格、英數算1格），夾在 56~230px
+  const dispW = (t) => [...String(t)].reduce((n, ch) => n + (ch.charCodeAt(0) > 255 ? 2 : 1), 0);
+  const colW = (f) => {
+    if (f.type === "file") return "52px";
+    if (f.key === "bday") return "150px";
+    const units = Math.max(dispW(f.label) * 0.9, 6, ...people.map(pp => dispW(cellVal(pp, f) === "—" ? "" : cellVal(pp, f))));
+    const px = Math.min(230, Math.max(56, Math.round(units * 7.2 + (f.key === "dept" ? 34 : 18))));
+    return px + "px";
+  };
   const DEPT_PAL = ["#3a6ea5", "#3f7d4e", "#c98a14", "#b3492f", "#6b4a86", "#2f7d7a", "#c4582a", "#5a6e3a"];
   const deptColor = (v) => { const opts = ((fields.find(f2 => f2.key === "dept") || {}).options || []).filter(Boolean); const i = opts.indexOf(v); return DEPT_PAL[(i >= 0 ? i : opts.length) % DEPT_PAL.length]; };
   const ageOf = (b) => { if (!b) return ""; const t = new Date(), d = new Date(b + "T00:00:00"); let a = t.getFullYear() - d.getFullYear(); if (t.getMonth() < d.getMonth() || (t.getMonth() === d.getMonth() && t.getDate() < d.getDate())) a--; return a; };
@@ -1917,9 +1918,14 @@ function RosterView({ canEdit, confirm, me }) {
               <div style={{ flex: 1 }} />
               <button onClick={() => setShowFields(false)} style={{ background: "none", border: "none", fontSize: 22, cursor: "pointer", color: SUB }}>×</button>
             </div>
-            <div style={{ fontSize: 12, color: SUB, marginBottom: 12 }}>型別選「檔案上傳」＝該欄位變成可上傳檔案/貼截圖；勾「顯示」＝直接變成名冊表格的欄位（公開，所有人看得到）；勾「必填」＝計入入職進度。改動立即套用到所有人。</div>
+            <div style={{ fontSize: 12, color: SUB, marginBottom: 12 }}>拖 ⠿ 可調整欄位順序（＝表格欄位順序）；選單的選項順序直接在逗號字串裡調整。型別選「檔案上傳」＝可上傳檔案/貼截圖；勾「顯示」＝變成表格欄位（公開）；勾「必填」＝計入入職進度。改動立即套用。</div>
             {fields.map((f, idx) => (
-              <div key={f.key} style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 8, flexWrap: "wrap" }}>
+              <div key={f.key} draggable={canEdit}
+                onDragStart={() => setDragIdx(idx)}
+                onDragOver={e => e.preventDefault()}
+                onDrop={() => { if (dragIdx == null || dragIdx === idx) return; const arr = [...fields]; const [m] = arr.splice(dragIdx, 1); arr.splice(idx, 0, m); persist({ fields: arr }); setDragIdx(null); }}
+                style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 8, flexWrap: "wrap", background: dragIdx === idx ? "#fbeee6" : "transparent", borderRadius: 8, cursor: "grab" }}>
+                <span title="拖曳調整順序（欄位順序＝表格欄位順序）" style={{ color: "#c8bca6", fontSize: 14, cursor: "grab", userSelect: "none" }}>⠿</span>
                 <input value={f.label} onChange={e => persist({ fields: fields.map((x, j) => j === idx ? { ...x, label: e.target.value } : x) })} style={{ ...inpS, width: 180 }} />
                 <select value={f.type} onChange={e => persist({ fields: fields.map((x, j) => j === idx ? { ...x, type: e.target.value } : x) })} style={{ ...inpS, width: 110 }}>
                   <option value="text">文字</option><option value="date">日期</option><option value="select">選單</option><option value="file">檔案上傳</option>
