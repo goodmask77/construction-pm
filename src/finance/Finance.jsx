@@ -61,6 +61,8 @@ export default function FinanceView({ K, confirm, canEdit, ReceiptUploader, onLo
   const [posDet, setPosDet] = useState({});      // POS 明細（按月分檔 pm_pos_d_YYYY-MM：分類/商品/優惠券/付款）
   const [posRange, setPosRange] = useState(30);  // 分析期間：7 / 30 / 9999 天
   const [posDrill, setPosDrill] = useState(null); // 明細下鑽：{type, key} → 顯示組成該數字的原始資料
+  const [posDrillView, setPosDrillView] = useState("list"); // 明細視角：list=清單 / pivot=品項×日期矩陣
+  const [posDrillSort, setPosDrillSort] = useState(null);   // 明細排序：{i, dir}
   const [recon, setRecon] = useState({ links: {}, ignored: [] }); // 補記/忽略標記
   const [conCats, setConCats] = useState([]);    // 工程專案大項（唯讀跨空間）
   const [conPetty, setConPetty] = useState({ spends: [] });
@@ -726,16 +728,22 @@ export default function FinanceView({ K, confirm, canEdit, ReceiptUploader, onLo
             rows: [...days].reverse().map(d => [d.date, fmt(d.revenue), d.txCount, d.guests || "—", d.guests ? fmt(ticket(d.revenue, d.guests)) : "—", fmt(d.cash || 0), fmt(d.card || 0), fmt(d.uber || 0), fmt(d.discount || 0), fmt(d.serviceFee || 0), fmt(d.returnDish || 0), fmt(d.voidItems || 0)]),
             note: "來源：每日 POS 日結信 Balance Sheet 分頁 → 資料庫 pm_pos（只增不改）",
           };
-          if (dr.type === "cat") return {
-            title: `分類「${dr.key}」逐日商品明細`, cols: ["日期", "品項", "數量", "佔比", "金額"],
-            rows: [...days].reverse().flatMap(d => (dayDet(d.date)?.sheets?.[CATSHEET] || []).filter(sec => sec.title === dr.key).flatMap(sec => (sec.rows || []).map(r => [d.date, r[0], r[1], pct1(r[2]), fmt(Number(r[r.length - 1]) || 0)]))),
-            note: "來源：日結信「總銷售額(以類別分類)」分頁 → 明細資料庫 pm_pos_d_月份",
-          };
-          if (dr.type === "item") return {
-            title: `商品「${dr.key}」逐日銷售`, cols: ["日期", "分類", "數量", "佔比", "金額"],
-            rows: [...days].reverse().flatMap(d => (dayDet(d.date)?.sheets?.[CATSHEET] || []).filter(sec => sec.title !== "總結").flatMap(sec => (sec.rows || []).filter(r => r[0] === dr.key).map(r => [d.date, sec.title, r[1], pct1(r[2]), fmt(Number(r[r.length - 1]) || 0)]))),
-            note: "來源：日結信「總銷售額(以類別分類)」分頁 → 明細資料庫 pm_pos_d_月份",
-          };
+          if (dr.type === "cat") {
+            const raw = [...days].reverse().flatMap(d => (dayDet(d.date)?.sheets?.[CATSHEET] || []).filter(sec => sec.title === dr.key).flatMap(sec => (sec.rows || []).map(r => ({ date: d.date, name: String(r[0]), qty: Number(r[1]) || 0, pct: r[2], amt: Number(r[r.length - 1]) || 0 }))));
+            return {
+              title: `分類「${dr.key}」逐日商品明細`, cols: ["日期", "品項", "數量", "佔比", "金額"],
+              rows: raw.map(x => [x.date, x.name, x.qty, pct1(x.pct), fmt(x.amt)]), raw, pivot: true,
+              note: "來源：日結信「總銷售額(以類別分類)」分頁 → 明細資料庫 pm_pos_d_月份",
+            };
+          }
+          if (dr.type === "item") {
+            const raw = [...days].reverse().flatMap(d => (dayDet(d.date)?.sheets?.[CATSHEET] || []).filter(sec => sec.title !== "總結").flatMap(sec => (sec.rows || []).filter(r => r[0] === dr.key).map(r => ({ date: d.date, name: String(r[0]), cat: sec.title, qty: Number(r[1]) || 0, pct: r[2], amt: Number(r[r.length - 1]) || 0 }))));
+            return {
+              title: `商品「${dr.key}」逐日銷售`, cols: ["日期", "分類", "數量", "佔比", "金額"],
+              rows: raw.map(x => [x.date, x.cat, x.qty, pct1(x.pct), fmt(x.amt)]), raw, pivot: true,
+              note: "來源：日結信「總銷售額(以類別分類)」分頁 → 明細資料庫 pm_pos_d_月份",
+            };
+          }
           if (dr.type === "pay") {
             const K2 = { card: ["card", "cardCount", "信用卡"], cash: ["cash", "cashCount", "現金"], uber: ["uber", "uberCount", "UberEats"] }[dr.key];
             return {
@@ -763,6 +771,9 @@ export default function FinanceView({ K, confirm, canEdit, ReceiptUploader, onLo
           return null;
         };
         const drill = buildDrill(posDrill);
+        const openDrill = (dr) => { setPosDrillView("list"); setPosDrillSort(null); setPosDrill(dr); };
+        const WD = ["日", "一", "二", "三", "四", "五", "六"];
+        const wd = (v) => (typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v)) ? `${v.slice(5)}（${WD[new Date(v + "T00:00:00").getDay()]}）` : v;
         const kpi = (label, val, sub2, cl, onClick) => (
           <div key={label} onClick={onClick} title="點我看組成明細" style={{ background: C.card, border: "1.5px solid #c8bca6", borderRadius: 8, padding: "10px 14px", flex: "1 1 128px", cursor: "pointer" }}
             onMouseEnter={e => e.currentTarget.style.borderColor = "#3a6ea5"} onMouseLeave={e => e.currentTarget.style.borderColor = "#c8bca6"}>
@@ -800,17 +811,17 @@ export default function FinanceView({ K, confirm, canEdit, ReceiptUploader, onLo
             ) : (
               <>
                 <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 12 }}>
-                  {kpi("期間營收", fmt(revSum), days.length + " 天", "#3f7d4e", () => setPosDrill({ type: "days" }))}
-                  {kpi("日均營收", fmt(Math.round(revSum / days.length)), null, null, () => setPosDrill({ type: "days" }))}
-                  {kpi("交易數", txSum, null, null, () => setPosDrill({ type: "days" }))}
-                  {kpi("來客(堂食)", guestSum || "—", avgTicket ? "客單 " + fmt(avgTicket) : null, null, () => setPosDrill({ type: "days" }))}
-                  {kpi("最新一天", fmt(last.revenue), last.date.slice(5), null, () => setPosDrill({ type: "day", key: last.date }))}
+                  {kpi("期間營收", fmt(revSum), days.length + " 天", "#3f7d4e", () => openDrill({ type: "days" }))}
+                  {kpi("日均營收", fmt(Math.round(revSum / days.length)), null, null, () => openDrill({ type: "days" }))}
+                  {kpi("交易數", txSum, null, null, () => openDrill({ type: "days" }))}
+                  {kpi("來客(堂食)", guestSum || "—", avgTicket ? "客單 " + fmt(avgTicket) : null, null, () => openDrill({ type: "days" }))}
+                  {kpi("最新一天", fmt(last.revenue), last.date.slice(5), null, () => openDrill({ type: "day", key: last.date }))}
                 </div>
                 <div style={{ ...chartBox2, marginBottom: 10 }}>
                   <div style={{ fontSize: 11.5, fontWeight: 700, color: C.sub, marginBottom: 8 }}>每日營收 <span style={{ fontWeight: 400, color: C.faint }}>（點柱子看該日完整原始資料）</span></div>
                   <div style={{ display: "flex", alignItems: "flex-end", gap: 3, height: 130 }}>
                     {days.map(d => (
-                      <div key={d.id} onClick={() => setPosDrill({ type: "day", key: d.date })} title={`${d.date}　${fmt(d.revenue)}・${d.txCount}單・客單 ${d.guests ? fmt(ticket(d.revenue, d.guests)) : "—"}`} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 2, minWidth: 0, cursor: "pointer" }}>
+                      <div key={d.id} onClick={() => openDrill({ type: "day", key: d.date })} title={`${d.date}　${fmt(d.revenue)}・${d.txCount}單・客單 ${d.guests ? fmt(ticket(d.revenue, d.guests)) : "—"}`} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 2, minWidth: 0, cursor: "pointer" }}>
                         {days.length <= 20 && <span style={{ fontSize: 9, color: C.sub, fontFamily: MONOF }}>{Math.round((d.revenue || 0) / 1000)}K</span>}
                         <div style={{ width: "100%", height: Math.max(3, (d.revenue || 0) / maxRev * 96), background: "#3a6ea5", borderRadius: "3px 3px 0 0" }} />
                         <span style={{ fontSize: 8.5, color: C.faint, fontFamily: MONOF }}>{Number(d.date.slice(8))}</span>
@@ -821,18 +832,18 @@ export default function FinanceView({ K, confirm, canEdit, ReceiptUploader, onLo
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 10, marginBottom: 12 }}>
                   <div style={chartBox2}>
                     <div style={{ fontSize: 11.5, fontWeight: 700, color: C.sub, marginBottom: 8 }}>分類銷售（期間累計）</div>
-                    {catArr2.length ? catArr2.map(([k, v], i) => barRow(k, v.amt, catMax2, PAL[i % PAL.length], v.qty + "份", () => setPosDrill({ type: "cat", key: k }))) : <div style={{ fontSize: 12, color: C.faint }}>無明細資料</div>}
+                    {catArr2.length ? catArr2.map(([k, v], i) => barRow(k, v.amt, catMax2, PAL[i % PAL.length], v.qty + "份", () => openDrill({ type: "cat", key: k }))) : <div style={{ fontSize: 12, color: C.faint }}>無明細資料</div>}
                   </div>
                   <div style={chartBox2}>
                     <div style={{ fontSize: 11.5, fontWeight: 700, color: C.sub, marginBottom: 8 }}>熱銷商品 Top 12（期間累計）</div>
-                    {topItems.length ? topItems.map(([k, v], i) => barRow(`${i + 1}. ${k}`, v.amt, topItems[0][1].amt, "#3f7d4e", v.qty + "份", () => setPosDrill({ type: "item", key: k }))) : <div style={{ fontSize: 12, color: C.faint }}>無明細資料</div>}
+                    {topItems.length ? topItems.map(([k, v], i) => barRow(`${i + 1}. ${k}`, v.amt, topItems[0][1].amt, "#3f7d4e", v.qty + "份", () => openDrill({ type: "item", key: k }))) : <div style={{ fontSize: 12, color: C.faint }}>無明細資料</div>}
                   </div>
                   <div style={chartBox2}>
                     <div style={{ fontSize: 11.5, fontWeight: 700, color: C.sub, marginBottom: 8 }}>付款方式（期間累計）</div>
-                    {barRow("信用卡", paySum.card, revSum || 1, "#3a6ea5", revSum ? Math.round(paySum.card / revSum * 100) + "%" : "", () => setPosDrill({ type: "pay", key: "card" }))}
-                    {barRow("現金", paySum.cash, revSum || 1, "#3f7d4e", revSum ? Math.round(paySum.cash / revSum * 100) + "%" : "", () => setPosDrill({ type: "pay", key: "cash" }))}
-                    {barRow("UberEats", paySum.uber, revSum || 1, "#c98a14", revSum ? Math.round(paySum.uber / revSum * 100) + "%" : "", () => setPosDrill({ type: "pay", key: "uber" }))}
-                    <div onClick={() => setPosDrill({ type: "coupon" })} title="點我看優惠券/折扣明細（單號・經手・原因）" style={{ fontSize: 11, color: C.faint, marginTop: 10, lineHeight: 1.8, cursor: "pointer" }}
+                    {barRow("信用卡", paySum.card, revSum || 1, "#3a6ea5", revSum ? Math.round(paySum.card / revSum * 100) + "%" : "", () => openDrill({ type: "pay", key: "card" }))}
+                    {barRow("現金", paySum.cash, revSum || 1, "#3f7d4e", revSum ? Math.round(paySum.cash / revSum * 100) + "%" : "", () => openDrill({ type: "pay", key: "cash" }))}
+                    {barRow("UberEats", paySum.uber, revSum || 1, "#c98a14", revSum ? Math.round(paySum.uber / revSum * 100) + "%" : "", () => openDrill({ type: "pay", key: "uber" }))}
+                    <div onClick={() => openDrill({ type: "coupon" })} title="點我看優惠券/折扣明細（單號・經手・原因）" style={{ fontSize: 11, color: C.faint, marginTop: 10, lineHeight: 1.8, cursor: "pointer" }}
                       onMouseEnter={e => e.currentTarget.style.color = "#3a6ea5"} onMouseLeave={e => e.currentTarget.style.color = C.faint}>
                       期間審計：退菜 {fmt(sum(days, "returnDish"))}・Void {fmt(sum(days, "voidItems"))}・折扣 {fmt(sum(days, "discount"))} <u>看折扣/優惠券明細（誰給的・為什麼）→</u>
                     </div>
@@ -851,7 +862,7 @@ export default function FinanceView({ K, confirm, canEdit, ReceiptUploader, onLo
                           </div>
                           <div style={{ maxHeight: "50vh", overflowY: "auto" }}>
                             {[...days].reverse().map((d, i) => (
-                              <div key={d.id} onClick={() => setPosDrill({ type: "day", key: d.date })} title="點我看該日完整原始資料" style={{ display: "grid", gridTemplateColumns: GTC, alignItems: "center", minHeight: 32, borderTop: i ? "1px solid #f0ead9" : "none", background: i % 2 ? "#f8f4ea" : C.card, cursor: "pointer" }}
+                              <div key={d.id} onClick={() => openDrill({ type: "day", key: d.date })} title="點我看該日完整原始資料" style={{ display: "grid", gridTemplateColumns: GTC, alignItems: "center", minHeight: 32, borderTop: i ? "1px solid #f0ead9" : "none", background: i % 2 ? "#f8f4ea" : C.card, cursor: "pointer" }}
                                 onMouseEnter={e => e.currentTarget.style.background = "#f4efe5"} onMouseLeave={e => e.currentTarget.style.background = i % 2 ? "#f8f4ea" : C.card}>
                                 <div style={{ padding: "0 8px", fontFamily: MONOF, fontSize: 11.5, color: C.sub }}>{d.date.slice(2)}</div>
                                 <div style={{ padding: "0 8px", fontSize: 11.5, color: C.sub, overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis" }}>{d.store}</div>
@@ -870,34 +881,80 @@ export default function FinanceView({ K, confirm, canEdit, ReceiptUploader, onLo
                 <div style={{ fontSize: 11.5, color: C.faint, marginTop: 8 }}>資料來源：Eats365 日結信六個分頁全數入庫（摘要 pm_pos＋明細 pm_pos_d_月份，只增不改）。之後接：週/月彙總、POS信用卡 ↔ 銀行入帳核對、進銷存成本對照。</div>
               </>
             )}
-            {/* 下鑽明細（組成該數字的原始資料） */}
-            {drill && (
-              <div onClick={e => e.target === e.currentTarget && setPosDrill(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.4)", zIndex: 720, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
-                <div style={{ background: "#fff", border: `1px solid ${C.line}`, borderRadius: 12, padding: 20, width: "min(860px,96vw)", maxHeight: "88vh", display: "flex", flexDirection: "column" }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}>
-                    <span style={{ background: "#3f7d4e", color: "#fff", fontSize: 11, fontWeight: 700, borderRadius: 4, padding: "2px 8px" }}>明細</span>
-                    <div style={{ fontSize: 14.5, fontWeight: 700, color: C.text }}>{drill.title}</div>
-                    <span style={{ fontFamily: MONOF, fontSize: 11.5, color: C.faint }}>{drill.rows.length} 列</span>
-                    <div style={{ flex: 1 }} />
-                    <button onClick={() => setPosDrill(null)} style={{ background: "none", border: "none", fontSize: 22, cursor: "pointer", color: C.sub }}>×</button>
-                  </div>
-                  <div style={{ fontSize: 11, color: C.faint, marginBottom: 10 }}>{drill.note}</div>
-                  <div style={{ overflow: "auto", border: `1.5px solid #c8bca6`, borderRadius: 8 }}>
-                    <table style={{ borderCollapse: "collapse", width: "100%", fontSize: 12 }}>
-                      <thead><tr>{drill.cols.map(c2 => <th key={c2} style={{ position: "sticky", top: 0, background: "#ece4d6", textAlign: "left", padding: "6px 10px", fontSize: 10.5, letterSpacing: 0.6, color: C.sub, whiteSpace: "nowrap", borderBottom: "1.5px solid #c8bca6" }}>{c2}</th>)}</tr></thead>
-                      <tbody>
-                        {drill.rows.length === 0 ? <tr><td colSpan={drill.cols.length} style={{ padding: 16, textAlign: "center", color: C.faint }}>期間內沒有資料</td></tr> :
-                          drill.rows.map((r, i) => (
-                            <tr key={i} style={{ background: i % 2 ? "#f8f4ea" : "#fff" }}>
-                              {r.map((c2, j) => <td key={j} style={{ padding: "5px 10px", fontFamily: (typeof c2 === "string" && /[0-9]/.test(c2) && j > 0) ? MONOF : undefined, color: C.text, borderTop: "1px solid #f0ead9", whiteSpace: j === r.length - 1 && drill.cols[j] === "內容" ? "normal" : "nowrap" }}>{c2}</td>)}
-                            </tr>
+            {/* 下鑽明細（組成該數字的原始資料）：欄位可排序、日期帶星期、清單/矩陣切換 */}
+            {drill && (() => {
+              const sortVal = (v) => { if (typeof v === "number") return v; const n = parseFloat(String(v).replace(/[NT$,%\s]/g, "")); return isNaN(n) ? String(v) : n; };
+              let rows2 = drill.rows;
+              if (posDrillSort) rows2 = [...drill.rows].sort((a, b) => { const va = sortVal(a[posDrillSort.i]), vb = sortVal(b[posDrillSort.i]); return (va < vb ? -1 : va > vb ? 1 : 0) * posDrillSort.dir; });
+              return (
+                <div onClick={e => e.target === e.currentTarget && setPosDrill(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.4)", zIndex: 720, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+                  <div style={{ background: "#fff", border: `1px solid ${C.line}`, borderRadius: 12, padding: 20, width: "min(980px,96vw)", maxHeight: "88vh", display: "flex", flexDirection: "column" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4, flexWrap: "wrap" }}>
+                      <span style={{ background: "#3f7d4e", color: "#fff", fontSize: 11, fontWeight: 700, borderRadius: 4, padding: "2px 8px" }}>明細</span>
+                      <div style={{ fontSize: 14.5, fontWeight: 700, color: C.text }}>{drill.title}</div>
+                      <span style={{ fontFamily: MONOF, fontSize: 11.5, color: C.faint }}>{drill.rows.length} 列</span>
+                      <div style={{ flex: 1 }} />
+                      {drill.pivot && (
+                        <div style={{ display: "inline-flex", background: C.soft, border: `1px solid ${C.line}`, borderRadius: 8, padding: 2, gap: 2 }}>
+                          {[["list", "📋 清單"], ["pivot", "🔲 品項×日期"]].map(([v, l]) => (
+                            <button key={v} onClick={() => setPosDrillView(v)} style={{ padding: "4px 12px", borderRadius: 6, border: `1px solid ${posDrillView === v ? C.line : "transparent"}`, background: posDrillView === v ? "#fff" : "transparent", color: posDrillView === v ? C.text : C.sub, fontSize: 12, fontWeight: posDrillView === v ? 700 : 400, cursor: "pointer" }}>{l}</button>
                           ))}
-                      </tbody>
-                    </table>
+                        </div>
+                      )}
+                      <button onClick={() => setPosDrill(null)} style={{ background: "none", border: "none", fontSize: 22, cursor: "pointer", color: C.sub }}>×</button>
+                    </div>
+                    <div style={{ fontSize: 11, color: C.faint, marginBottom: 10 }}>{drill.note}{drill.pivot && posDrillView === "pivot" ? "・顏色越深＝當天賣越多；「—」＝當天沒賣" : "・點欄位標題可排序"}</div>
+                    <div style={{ overflow: "auto", border: `1.5px solid #c8bca6`, borderRadius: 8 }}>
+                      {(!drill.pivot || posDrillView === "list") ? (
+                        <table style={{ borderCollapse: "collapse", width: "100%", fontSize: 12 }}>
+                          <thead><tr>{drill.cols.map((c2, ci) => (
+                            <th key={c2} onClick={() => setPosDrillSort(sx => sx && sx.i === ci ? { i: ci, dir: -sx.dir } : { i: ci, dir: 1 })} style={{ position: "sticky", top: 0, background: "#ece4d6", textAlign: "left", padding: "6px 10px", fontSize: 10.5, letterSpacing: 0.6, color: posDrillSort?.i === ci ? C.text : C.sub, whiteSpace: "nowrap", borderBottom: "1.5px solid #c8bca6", cursor: "pointer", userSelect: "none" }}>{c2}{posDrillSort?.i === ci ? (posDrillSort.dir === 1 ? " ▲" : " ▼") : ""}</th>
+                          ))}</tr></thead>
+                          <tbody>
+                            {rows2.length === 0 ? <tr><td colSpan={drill.cols.length} style={{ padding: 16, textAlign: "center", color: C.faint }}>期間內沒有資料</td></tr> :
+                              rows2.map((r, i) => (
+                                <tr key={i} style={{ background: i % 2 ? "#f8f4ea" : "#fff" }}>
+                                  {r.map((c2, j) => { const numCol = ["數量", "佔比", "金額", "營收", "單數", "來客", "客單", "現金", "信用卡", "Uber", "折扣", "服務費", "退菜", "Void", "筆數", "佔當日營收"].includes(drill.cols[j]); const disp = drill.cols[j] === "日期" ? wd(c2) : c2; return <td key={j} style={{ padding: "5px 10px", fontFamily: numCol || (typeof disp === "string" && /[0-9]/.test(disp) && j > 0) ? MONOF : undefined, textAlign: numCol ? "right" : "left", color: disp === "" ? "#d5cbb6" : C.text, borderTop: "1px solid #f0ead9", whiteSpace: "nowrap", fontSize: 11.5 }}>{disp === "" ? "—" : disp}</td>; })}
+                                </tr>
+                              ))}
+                          </tbody>
+                        </table>
+                      ) : (() => {
+                        // 矩陣：列=品項（依總份數排序）、欄=日期、格=當天份數（熱力著色）
+                        const dts = [...new Set(drill.raw.map(x => x.date))].sort();
+                        const byName = {};
+                        drill.raw.forEach(x => { const o = byName[x.name] = byName[x.name] || { total: 0, amt: 0, days: {} }; o.days[x.date] = (o.days[x.date] || 0) + x.qty; o.total += x.qty; o.amt += x.amt; });
+                        const names = Object.entries(byName).sort((a, b) => b[1].total - a[1].total);
+                        const mx = Math.max(1, ...names.flatMap(([, o]) => dts.map(dt => o.days[dt] || 0)));
+                        const thS = { position: "sticky", top: 0, background: "#ece4d6", padding: "6px 8px", fontSize: 10.5, color: C.sub, whiteSpace: "nowrap", borderBottom: "1.5px solid #c8bca6" };
+                        return (
+                          <table style={{ borderCollapse: "collapse", width: "100%", fontSize: 11.5 }}>
+                            <thead><tr>
+                              <th style={{ ...thS, textAlign: "left", position: "sticky", left: 0, zIndex: 2 }}>品項</th>
+                              {dts.map(dt => <th key={dt} style={{ ...thS, textAlign: "center", fontFamily: MONOF }}>{wd(dt)}</th>)}
+                              <th style={{ ...thS, textAlign: "right" }}>合計</th>
+                              <th style={{ ...thS, textAlign: "right" }}>金額</th>
+                            </tr></thead>
+                            <tbody>
+                              {names.map(([nm, o], i) => (
+                                <tr key={nm}>
+                                  <td style={{ padding: "5px 10px", color: C.text, fontWeight: 600, borderTop: "1px solid #f0ead9", whiteSpace: "nowrap", maxWidth: 240, overflow: "hidden", textOverflow: "ellipsis", position: "sticky", left: 0, background: i % 2 ? "#f8f4ea" : "#fff", zIndex: 1 }} title={nm}>{nm}</td>
+                                  {dts.map(dt => { const q = o.days[dt] || 0; return (
+                                    <td key={dt} style={{ padding: "5px 6px", textAlign: "center", fontFamily: MONOF, fontWeight: q ? 700 : 400, color: q ? "#1d3a5f" : "#d5cbb6", background: q ? `rgba(58,110,165,${0.08 + (q / mx) * 0.42})` : (i % 2 ? "#f8f4ea" : "#fff"), borderTop: "1px solid #f0ead9" }}>{q || "—"}</td>
+                                  ); })}
+                                  <td style={{ padding: "5px 10px", textAlign: "right", fontFamily: MONOF, fontWeight: 700, color: C.text, borderTop: "1px solid #f0ead9", background: i % 2 ? "#f8f4ea" : "#fff" }}>{o.total}</td>
+                                  <td style={{ padding: "5px 10px", textAlign: "right", fontFamily: MONOF, color: C.sub, borderTop: "1px solid #f0ead9", background: i % 2 ? "#f8f4ea" : "#fff" }}>{fmt(o.amt)}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        );
+                      })()}
+                    </div>
                   </div>
                 </div>
-              </div>
-            )}
+              );
+            })()}
           </div>
         );
       })()}
