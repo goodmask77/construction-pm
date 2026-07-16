@@ -4,6 +4,7 @@ export const SPACES = [
   { id: "team",         name: "團隊工作", icon: "👥" },
   { id: "crew",         name: "夥伴中心", icon: "🤝" },
   { id: "finance",      name: "財務內帳", icon: "💰" },
+  { id: "lw",           name: "LWLWLW",   icon: "📮" },
 ];
 // 每個空間的外觀客製（顯示成本與否、隱藏分頁、名詞、AI 角色、專屬分頁）
 export const SPACE_CONF = {
@@ -36,6 +37,15 @@ export const SPACE_CONF = {
     hideKpi: true, // 不顯示工程 KPI
     labels: { cat: "科目", item: "交易", overview: "財務總覽", gantt: "—", subtitle: "多帳戶內帳總表" },
     aiRole: "你是公司財務內帳助理，協助管理多個銀行/貸款/現金帳戶、記錄交易、對帳與餘額試算。請用繁體中文、精準務實。",
+  },
+  lw: {
+    showCost: false,
+    hideTabs: [],
+    tabs: [["mail", "信箱管理", "📮"]], // LW 個人空間：第一個功能=電子信箱管理（來源判讀/規則/自動刪除分類）
+    defaultView: "mail",
+    hideKpi: true,
+    labels: { cat: "項目", item: "項目", overview: "信箱", gantt: "—", subtitle: "LW 個人空間" },
+    aiRole: "你是張良的個人助理，協助管理電子信箱與個人事務。請用繁體中文、簡潔務實。",
   },
 };
 // ── 權限矩陣：每個空間有哪些頁面、各頁是否有「可編輯」「看金額」維度（帳號權限二合一矩陣用）──
@@ -70,6 +80,9 @@ export const PERM_MATRIX = {
   ],
   finance: [
     ["finance", "內帳總表", { edit: 1, money: 1 }],
+  ],
+  lw: [
+    ["mail", "信箱管理", { edit: 1 }],
   ],
 };
 // 舊資料相容：以前的可編輯權限只有 data/files/advisor 三類，對應到各頁

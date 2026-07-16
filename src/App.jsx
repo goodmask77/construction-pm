@@ -6,6 +6,7 @@ import { INITIAL_CATEGORIES } from "./lib/seed.js";
 import { SPACES, SPACE_CONF, PERM_MATRIX, LEGACY_EDIT, PERM_NONE, DEFAULT_ROLES, ALL_VIEW_KEYS, ALL_EDIT_KEYS, ALL_MONEY_KEYS } from "./lib/spaces.js";
 import { buildBotSnapshot } from "./lib/snapshot.js";
 import FinanceView from "./finance/Finance.jsx";
+import MailManagerView from "./lw/MailManager.jsx";
 import TaskCenter from "./tasks/TaskCenter.jsx";
 import Conclusions from "./conclusions/Conclusions.jsx";
 import SequenceView from "./SequenceView.jsx";
@@ -980,6 +981,11 @@ export default function App() {
         {view === "compare" && (
           <CompareView canEdit={canEditFiles} requireLogin={denyEdit} onLog={logActivity} />
         )}
+        {view === "mail" && CURRENT_SPACE === "lw" && (profile?.role === "admin" ? (
+          <MailManagerView K={K} canEdit={canEditData} confirm={confirm} />
+        ) : (
+          <div style={{ padding: 40, textAlign: "center", color: SUB, fontSize: 14, background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: 12, margin: "8px 0" }}>🔒 這是 LW 的個人空間，只有管理員可以進入。</div>
+        ))}
         {view === "finance" && CURRENT_SPACE === "finance" && (showMoney() ? (
           <FinanceView K={K} confirm={confirm} canEdit={canEditData} ReceiptUploader={ReceiptUploader} onLog={logActivity} />
         ) : (
@@ -6255,7 +6261,7 @@ function PhotoLibraryView({ photos, setPhotos, cats, canEdit, userName, requireL
 }
 
 // ── 帳號管理 ─────────────────────────────────────────────────────────────────
-const ACCT_SPACES = [["construction","🏗 工程專案"],["team","👥 團隊工作"],["crew","🤝 夥伴中心"],["finance","💰 財務內帳"]];
+const ACCT_SPACES = [["construction","🏗 工程專案"],["team","👥 團隊工作"],["crew","🤝 夥伴中心"],["finance","💰 財務內帳"],["lw","📮 LWLWLW"]];
 const ACCT_VIEW_PAGES = [["owner","儀表板"],["overview","總覽"],["tasks","任務"],["gantt","工序"],["conclusions","結論"],["files","檔案庫"],["petty","零用金"],["compare","比價"],["advisor","AI設定"]];
 const ACCT_EDIT_PAGES = [["data","總覽/工程資料"],["worklog","工序日誌"],["files","檔案庫"],["advisor","AI設定"]];
 function AccountManager({ confirm, myId, roles = [], commitRoles, onLog, guestPerms = {}, commitGuestPerms }) {
