@@ -162,6 +162,8 @@ export default function TaskCenter({ K, confirm, canEdit, cats, onLog, onAddCat 
   const matchQ = (t) => !q.trim() || (t.title + (t.note || "") + (t.tags || []).join("")).toLowerCase().includes(q.trim().toLowerCase());
 
   // ── 任務小卡 ──
+  const WDZH = ["日", "一", "二", "三", "四", "五", "六"];
+  const wdOf = (d) => d && /^\d{4}-\d{2}-\d{2}$/.test(d) ? `（${WDZH[new Date(d + "T00:00:00").getDay()]}）` : "";
   const Card = ({ t, dropBefore }) => {
     const done = t.status === "done";
     return (
@@ -187,7 +189,7 @@ export default function TaskCenter({ K, confirm, canEdit, cats, onLog, onAddCat 
             </div>
             <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", marginTop: 5 }}>
               {view !== "group" && <span style={{ fontSize: 11, color: C.faint, maxWidth: 120, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{catName(t.catId)}</span>}
-              {t.due && <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 11, fontVariantNumeric: "tabular-nums", color: (!done && t.due < today()) ? C.red : C.sub }}><Calendar size={11} />{t.due}</span>}
+              {t.due && <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 11, fontVariantNumeric: "tabular-nums", color: (!done && t.due < today()) ? C.red : C.sub }}><Calendar size={11} />{t.due}{wdOf(t.due)}</span>}
               {view !== "board" && <Pill color={sColor(t.status)} label={sLabel(t.status)} />}
               {isWaiting(t) && !done && <Pill color={C.amber} label={`等：${t.waitingFor}`} />}
               {isBlocked(t, tasks) && !done && <Pill color={C.red} label="被前置卡住" />}
@@ -510,7 +512,7 @@ export default function TaskCenter({ K, confirm, canEdit, cats, onLog, onAddCat 
                                   {t.priority === "urgent" && !done && <Flame size={11} color={C.red} style={{ flexShrink: 0 }} />}
                                   <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>{t.title}</span>
                                 </div>
-                                <div style={{ padding: "0 8px", fontFamily: MONO, fontSize: 11.5, fontWeight: overdue(t) ? 700 : 500, color: overdue(t) ? C.red : (t.due ? C.sub : C.faint), whiteSpace: "nowrap" }}>{t.due ? t.due.slice(5) : "—"}</div>
+                                <div style={{ padding: "0 8px", fontFamily: MONO, fontSize: 11.5, fontWeight: overdue(t) ? 700 : 500, color: overdue(t) ? C.red : (t.due ? C.sub : C.faint), whiteSpace: "nowrap" }}>{t.due ? t.due.slice(5) + wdOf(t.due) : "—"}</div>
                                 <div style={{ padding: "0 8px", fontSize: 12, color: t.owner ? C.text : C.faint, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "flex", alignItems: "center", gap: 5 }}>
                                   {t.owner && <span style={{ width: 17, height: 17, borderRadius: "50%", background: C.accentSoft, color: C.accent, fontSize: 9, fontWeight: 700, display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{t.owner.slice(0, 2)}</span>}
                                   {t.owner || "—"}
