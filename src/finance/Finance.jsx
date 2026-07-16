@@ -751,9 +751,14 @@ export default function FinanceView({ K, confirm, canEdit, ReceiptUploader, onLo
           };
           if (dr.type === "day") {
             const det = dayDet(dr.key);
+            const dEnt = days.find(x => x.date === dr.key) || {};
             const rows = [];
-            Object.entries(det?.sheets || {}).forEach(([sn, secs]) => secs.forEach(sec => (sec.rows || []).forEach(r => rows.push([sn.replace(/總銷售額 |\(|\)/g, ""), sec.title, (Array.isArray(r) ? r : [r]).map(c => typeof c === "number" ? (c <= 1 && c > 0 ? (c * 100).toFixed(1) + "%" : fmt(c)) : c).join("　")]))));
-            return { title: `${dr.key} 當日完整原始資料（${det?.period || ""}）`, cols: ["分頁", "區塊", "內容"], rows, note: "來源：當日日結信全部六個分頁，無刪減入庫" };
+            // Balance Sheet 概覽（日結摘要）放最前面
+            [["總收入", dEnt.revenue], ["交易數量", dEnt.txCount, true], ["人數(堂食)", dEnt.guests, true], ["銷售", dEnt.sales], ["服務費", dEnt.serviceFee], ["折扣", dEnt.discount], ["現金", dEnt.cash], ["信用卡", dEnt.card], ["UberEats", dEnt.uber], ["退菜", dEnt.returnDish], ["Void", dEnt.voidItems]].forEach(([lb, v, isCnt]) => {
+              if (v != null && v !== 0) rows.push(["Balance Sheet", "概覽", lb, isCnt ? v : "", "", isCnt ? "" : fmt(v), ""]);
+            });
+            Object.entries(det?.sheets || {}).forEach(([sn, secs]) => secs.forEach(sec => (sec.rows || []).forEach(r => rows.push([sn.replace(/總銷售額 |[()（）]/g, ""), sec.title, ...parseRow(sec, r)]))));
+            return { title: `${dr.key} 當日完整原始資料（${det?.period || ""}）`, cols: ["分頁", "區塊", "名稱", "數量", "佔比", "金額", "備註"], rows, note: "來源：當日日結信全部六個分頁，無刪減入庫" };
           }
           return null;
         };
