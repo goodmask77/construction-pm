@@ -65,6 +65,8 @@ export default function FinanceView({ K, confirm, canEdit, ReceiptUploader, onLo
   const [posDrillSort, setPosDrillSort] = useState(null);   // 明細排序：{i, dir}
   const [posGran, setPosGran] = useState("day");            // 比較粒度：day/week/month
   const [posCats, setPosCats] = useState([]);               // 標籤自選：選到的分類做比較（空＝全部）
+  const [posPivotCats, setPosPivotCats] = useState(null);   // 矩陣內分類勾選（null=全選）
+  const [posPivotSort, setPosPivotSort] = useState(null);   // 矩陣排序 {col, dir}
   const [recon, setRecon] = useState({ links: {}, ignored: [] }); // 補記/忽略標記
   const [conCats, setConCats] = useState([]);    // 工程專案大項（唯讀跨空間）
   const [conPetty, setConPetty] = useState({ spends: [] });
@@ -808,7 +810,7 @@ export default function FinanceView({ K, confirm, canEdit, ReceiptUploader, onLo
             note: "來源：每日 POS 日結信 Balance Sheet 分頁 → 資料庫 pm_pos（只增不改）",
           };
           if (dr.type === "cat") {
-            const raw = [...days].reverse().flatMap(d => (dayDet(d.date)?.sheets?.[CATSHEET] || []).filter(sec => sec.title === dr.key).flatMap(sec => (sec.rows || []).map(r => ({ date: d.date, name: String(r[0]), qty: Number(r[1]) || 0, pct: r[2], amt: Number(r[r.length - 1]) || 0 }))));
+            const raw = [...days].reverse().flatMap(d => (dayDet(d.date)?.sheets?.[CATSHEET] || []).filter(sec => sec.title === dr.key).flatMap(sec => (sec.rows || []).map(r => ({ date: d.date, name: String(r[0]), cat: dr.key, qty: Number(r[1]) || 0, pct: r[2], amt: Number(r[r.length - 1]) || 0 }))));
             return {
               title: `分類「${dr.key}」逐日商品明細`, cols: ["日期", "品項", "數量", "佔比", "金額"],
               rows: raw.map(x => [x.date, x.name, x.qty, pct1(x.pct), fmt(x.amt)]), raw, pivot: true,
@@ -816,7 +818,7 @@ export default function FinanceView({ K, confirm, canEdit, ReceiptUploader, onLo
             };
           }
           if (dr.type === "catmatrix") {
-            const raw = [...days].reverse().flatMap(d => Object.entries(catDay).filter(([, dm]) => dm[d.date]).map(([c, dm]) => ({ date: d.date, name: c, qty: dm[d.date], amt: dm[d.date] })));
+            const raw = [...days].reverse().flatMap(d => Object.entries(catDay).filter(([, dm]) => dm[d.date]).map(([c, dm]) => ({ date: d.date, name: c, cat: c, qty: dm[d.date], amt: dm[d.date] })));
             return {
               title: "全類別 × 日期（金額）", cols: ["日期", "分類", "金額"],
               rows: raw.map(x => [x.date, x.name, fmt(x.amt)]), raw, pivot: true, pivotMoney: true,
@@ -866,7 +868,7 @@ export default function FinanceView({ K, confirm, canEdit, ReceiptUploader, onLo
           return null;
         };
         const drill = buildDrill(posDrill);
-        const openDrill = (dr) => { setPosDrillView(["allitems", "catmatrix"].includes(dr.type) ? "pivot" : "list"); setPosDrillSort(null); setPosDrill(dr); };
+        const openDrill = (dr) => { setPosDrillView(["allitems", "catmatrix"].includes(dr.type) ? "pivot" : "list"); setPosDrillSort(null); setPosPivotCats(null); setPosPivotSort(null); setPosDrill(dr); };
         const WD = ["日", "一", "二", "三", "四", "五", "六"];
         const wd = (v) => (typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v)) ? `${v.slice(5)}（${WD[new Date(v + "T00:00:00").getDay()]}）` : v;
         const kpi = (label, val, sub2, cl, onClick) => (
@@ -1104,34 +1106,59 @@ export default function FinanceView({ K, confirm, canEdit, ReceiptUploader, onLo
                           </tbody>
                         </table>
                       ) : (() => {
-                        // 矩陣：列=品項（依總份數排序）、欄=日期、格=當天份數（熱力著色）
-                        const dts = [...new Set(drill.raw.map(x => x.date))].sort();
+                        // 矩陣：列=品項、欄=日期；分類可勾選（全選→再刪）、表頭可排序
+                        const catsAll = [...new Set(drill.raw.map(x => x.cat).filter(Boolean))];
+                        const selCats = posPivotCats == null ? catsAll : posPivotCats;
+                        const raw2 = drill.raw.filter(x => !x.cat || selCats.includes(x.cat));
+                        const dts = [...new Set(raw2.map(x => x.date))].sort();
                         const byName = {};
-                        drill.raw.forEach(x => { const o = byName[x.name] = byName[x.name] || { total: 0, amt: 0, days: {} }; o.days[x.date] = (o.days[x.date] || 0) + x.qty; o.total += x.qty; o.amt += x.amt; });
-                        const names = Object.entries(byName).sort((a, b) => b[1].total - a[1].total);
+                        raw2.forEach(x => { const o = byName[x.name] = byName[x.name] || { total: 0, amt: 0, days: {}, cat: x.cat || "" }; o.days[x.date] = (o.days[x.date] || 0) + x.qty; o.total += x.qty; o.amt += x.amt; });
+                        const sk = posPivotSort || { col: "total", dir: -1 };
+                        const names = Object.entries(byName).sort((a, b) => {
+                          const gv = (e) => sk.col === "name" ? e[0] : sk.col === "cat" ? e[1].cat : sk.col === "amt" ? e[1].amt : sk.col === "total" ? e[1].total : (e[1].days[sk.col] || 0);
+                          const va = gv(a), vb = gv(b);
+                          const c2 = (typeof va === "number" && typeof vb === "number") ? va - vb : String(va).localeCompare(String(vb), "zh-Hant-TW");
+                          return c2 * sk.dir;
+                        });
                         const mx = Math.max(1, ...names.flatMap(([, o]) => dts.map(dt => o.days[dt] || 0)));
-                        const thS = { position: "sticky", top: 0, background: "#ece4d6", padding: "6px 8px", fontSize: 10.5, color: C.sub, whiteSpace: "nowrap", borderBottom: "1.5px solid #c8bca6" };
+                        const showCat = !drill.pivotMoney && catsAll.length > 0;
+                        const thS = { position: "sticky", top: 0, background: "#ece4d6", padding: "6px 8px", fontSize: 10.5, color: C.sub, whiteSpace: "nowrap", borderBottom: "1.5px solid #c8bca6", cursor: "pointer", userSelect: "none", zIndex: 1 };
+                        const thBtn = (label, col, extra) => <th key={col} onClick={() => setPosPivotSort(s2 => s2 && s2.col === col ? { col, dir: -s2.dir } : { col, dir: (col === "name" || col === "cat") ? 1 : -1 })} style={{ ...thS, ...extra }}>{label}{sk.col === col ? (sk.dir === 1 ? " ▲" : " ▼") : ""}</th>;
+                        const cbtn = (label, on, onClick, col) => <button key={label} onClick={onClick} style={{ display: "inline-flex", alignItems: "center", gap: 4, border: `1.5px solid ${on ? (col || C.blue) : C.line}`, background: on ? (col || C.blue) : "#fff", color: on ? "#fff" : C.sub, borderRadius: 12, padding: "2px 10px", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>{label}</button>;
                         return (
-                          <table style={{ borderCollapse: "collapse", width: "100%", fontSize: 11.5 }}>
-                            <thead><tr>
-                              <th style={{ ...thS, textAlign: "left", position: "sticky", left: 0, zIndex: 2 }}>品項</th>
-                              {dts.map(dt => <th key={dt} style={{ ...thS, textAlign: "center", fontFamily: MONOF }}>{wd(dt)}</th>)}
-                              <th style={{ ...thS, textAlign: "right" }}>合計</th>
-                              {!drill.pivotMoney && <th style={{ ...thS, textAlign: "right" }}>金額</th>}
-                            </tr></thead>
-                            <tbody>
-                              {names.map(([nm, o], i) => (
-                                <tr key={nm}>
-                                  <td style={{ padding: "5px 10px", color: C.text, fontWeight: 600, borderTop: "1px solid #f0ead9", whiteSpace: "nowrap", maxWidth: 240, overflow: "hidden", textOverflow: "ellipsis", position: "sticky", left: 0, background: i % 2 ? "#f8f4ea" : "#fff", zIndex: 1 }} title={nm}>{nm}</td>
-                                  {dts.map(dt => { const q = o.days[dt] || 0; const disp = !q ? "—" : drill.pivotMoney ? (q >= 10000 ? Math.round(q / 1000) + "K" : q.toLocaleString()) : q; return (
-                                    <td key={dt} style={{ padding: "5px 6px", textAlign: "center", fontFamily: MONOF, fontWeight: q ? 700 : 400, fontSize: drill.pivotMoney ? 10.5 : undefined, color: q ? "#1d3a5f" : "#d5cbb6", background: q ? `rgba(58,110,165,${0.08 + (q / mx) * 0.42})` : (i % 2 ? "#f8f4ea" : "#fff"), borderTop: "1px solid #f0ead9" }}>{disp}</td>
-                                  ); })}
-                                  <td style={{ padding: "5px 10px", textAlign: "right", fontFamily: MONOF, fontWeight: 700, color: C.text, borderTop: "1px solid #f0ead9", background: i % 2 ? "#f8f4ea" : "#fff" }}>{drill.pivotMoney ? fmt(o.total) : o.total}</td>
-                                  {!drill.pivotMoney && <td style={{ padding: "5px 10px", textAlign: "right", fontFamily: MONOF, color: C.sub, borderTop: "1px solid #f0ead9", background: i % 2 ? "#f8f4ea" : "#fff" }}>{fmt(o.amt)}</td>}
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
+                          <div>
+                            {catsAll.length > 1 && (
+                              <div style={{ display: "flex", gap: 5, flexWrap: "wrap", alignItems: "center", padding: "8px 10px", borderBottom: "1.5px solid #c8bca6", background: "#f8f4ea", position: "sticky", left: 0 }}>
+                                <span style={{ fontSize: 11, fontWeight: 700, color: C.sub }}>分類：</span>
+                                <button onClick={() => setPosPivotCats(null)} style={{ border: `1px solid ${C.green}`, background: posPivotCats == null ? C.green : "#fff", color: posPivotCats == null ? "#fff" : C.green, borderRadius: 6, padding: "2px 9px", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>全選</button>
+                                <button onClick={() => setPosPivotCats([])} style={{ border: `1px solid ${C.line}`, background: "#fff", color: C.sub, borderRadius: 6, padding: "2px 9px", fontSize: 11, cursor: "pointer" }}>全不選</button>
+                                {catsAll.map(c2 => cbtn(c2, selCats.includes(c2), () => setPosPivotCats(pc => { const cur = pc == null ? catsAll : pc; return cur.includes(c2) ? cur.filter(x => x !== c2) : [...cur, c2]; })))}
+                                <span style={{ fontSize: 10.5, color: C.faint }}>（{names.length} 品項）</span>
+                              </div>
+                            )}
+                            <table style={{ borderCollapse: "collapse", width: "100%", fontSize: 11.5 }}>
+                              <thead><tr>
+                                {thBtn(drill.pivotMoney ? "分類" : "品項", "name", { textAlign: "left", position: "sticky", left: 0, zIndex: 2 })}
+                                {showCat && thBtn("分類", "cat", { textAlign: "left" })}
+                                {dts.map(dt => thBtn(wd(dt), dt, { textAlign: "center", fontFamily: MONOF }))}
+                                {thBtn("合計", "total", { textAlign: "right" })}
+                                {!drill.pivotMoney && thBtn("金額", "amt", { textAlign: "right" })}
+                              </tr></thead>
+                              <tbody>
+                                {names.map(([nm, o], i) => (
+                                  <tr key={nm}>
+                                    <td style={{ padding: "5px 10px", color: C.text, fontWeight: 600, borderTop: "1px solid #f0ead9", whiteSpace: "nowrap", maxWidth: 230, overflow: "hidden", textOverflow: "ellipsis", position: "sticky", left: 0, background: i % 2 ? "#f8f4ea" : "#fff", zIndex: 1 }} title={nm}>{nm}</td>
+                                    {showCat && <td style={{ padding: "5px 8px", color: C.faint, fontSize: 10.5, borderTop: "1px solid #f0ead9", whiteSpace: "nowrap", background: i % 2 ? "#f8f4ea" : "#fff" }}>{o.cat}</td>}
+                                    {dts.map(dt => { const q = o.days[dt] || 0; const disp = !q ? "—" : drill.pivotMoney ? (q >= 10000 ? Math.round(q / 1000) + "K" : q.toLocaleString()) : q; return (
+                                      <td key={dt} style={{ padding: "5px 6px", textAlign: "center", fontFamily: MONOF, fontWeight: q ? 700 : 400, fontSize: drill.pivotMoney ? 10.5 : undefined, color: q ? "#1d3a5f" : "#d5cbb6", background: q ? `rgba(58,110,165,${0.08 + (q / mx) * 0.42})` : (i % 2 ? "#f8f4ea" : "#fff"), borderTop: "1px solid #f0ead9" }}>{disp}</td>
+                                    ); })}
+                                    <td style={{ padding: "5px 10px", textAlign: "right", fontFamily: MONOF, fontWeight: 700, color: C.text, borderTop: "1px solid #f0ead9", background: i % 2 ? "#f8f4ea" : "#fff" }}>{drill.pivotMoney ? fmt(o.total) : o.total}</td>
+                                    {!drill.pivotMoney && <td style={{ padding: "5px 10px", textAlign: "right", fontFamily: MONOF, color: C.sub, borderTop: "1px solid #f0ead9", background: i % 2 ? "#f8f4ea" : "#fff" }}>{fmt(o.amt)}</td>}
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
                         );
                       })()}
                     </div>
