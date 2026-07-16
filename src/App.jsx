@@ -1785,7 +1785,15 @@ function RosterView({ canEdit, confirm, me }) {
   const canOpen = (pp) => canEdit || isSelf(pp);
   const mmdd = (b) => b ? `${Number(b.split("-")[1])}/${Number(b.split("-")[2])}` : "—";
   const docCount = (pp) => fields.filter(f => f.type === "file").reduce((n, f) => n + ((pp[f.key] || []).length), 0);
-  const val = (pp, k) => k === "prog" ? progress(pp) : k === "statusD" ? statusOf(pp) : (pp[k] ?? "");
+  const nextBdayDays = (b) => {
+    if (!b) return 9999;
+    const t = new Date(); const [, m, d] = b.split("-").map(Number);
+    const today = new Date(t.getFullYear(), t.getMonth(), t.getDate());
+    let nb = new Date(t.getFullYear(), m - 1, d);
+    if (nb < today) nb = new Date(t.getFullYear() + 1, m - 1, d);
+    return Math.round((nb - today) / 864e5);
+  };
+  const val = (pp, k) => k === "prog" ? progress(pp) : k === "statusD" ? statusOf(pp) : k === "bdayMD" ? nextBdayDays(pp.bday) : k === "age" ? (ageOf(pp.bday) === "" ? 999 : ageOf(pp.bday)) : (pp[k] ?? "");
   const showCols = fields.filter(f => f.show);
   // 欄寬自動調整：依「表頭 + 該欄實際內容」計算（中文算2格、英數算1格），夾在 56~230px
   const dispW = (t) => [...String(t)].reduce((n, ch) => n + (ch.charCodeAt(0) > 255 ? 2 : 1), 0);
@@ -1821,7 +1829,7 @@ function RosterView({ canEdit, confirm, me }) {
     const c = (typeof va === "number" && typeof vb === "number") ? (va - vb) : String(va).localeCompare(String(vb), "zh-Hant-TW");
     return c * sort.dir;
   });
-  const GTC = `40px ${nameW}px ${showCols.map(colW).join(" ")} 126px 58px 48px`;
+  const GTC = `40px ${nameW}px ${showCols.flatMap(f => f.key === "bday" ? ["112px", "56px"] : [colW(f)]).join(" ")} 126px 58px 48px`;
   const th = (label, key, extra) => (
     <button key={label} onClick={() => key && setSort(s2 => ({ key, dir: s2.key === key ? -s2.dir : 1 }))} title={label} style={{ background: "none", border: "none", textAlign: "left", padding: "8px 8px", fontSize: 10.5, letterSpacing: 0.8, color: sort.key === key ? TEXT : "#9b9384", fontWeight: 700, cursor: key ? "pointer" : "default", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", minWidth: 0, maxWidth: "100%", ...extra }}>
       {label}{key && sort.key === key ? (sort.dir === 1 ? " ▲" : " ▼") : ""}
@@ -1844,7 +1852,7 @@ function RosterView({ canEdit, confirm, me }) {
       <div style={{ background: "#fff", border: "1.5px solid #c8bca6", borderRadius: 10, overflow: "hidden" }}>
         <div style={{ overflowX: "auto" }}><div style={{ minWidth: 860 }}>
           <div style={{ display: "grid", gridTemplateColumns: GTC, background: "#ece4d6", borderBottom: "1.5px solid #c8bca6", alignItems: "center" }}>
-            <span />{th("姓名（綽號）", "name")}{showCols.map(f => th(f.label, f.type === "file" ? null : f.key))}{th("入職進度", "prog")}{th("狀態", "statusD")}{th("文件", null)}
+            <span />{th("姓名（綽號）", "name")}{showCols.flatMap(f => f.key === "bday" ? [th("生日", "bdayMD"), th("年紀", "age")] : [th(f.label, f.type === "file" ? null : f.key)])}{th("入職進度", "prog")}{th("狀態", "statusD")}{th("文件", null)}
           </div>
           {rows.length === 0 ? <div style={{ padding: 24, textAlign: "center", color: "#9b9384", fontSize: 13 }}>沒有符合的人</div> :
             rows.map((pp, i) => {
@@ -1856,11 +1864,21 @@ function RosterView({ canEdit, confirm, me }) {
                   style={{ display: "grid", gridTemplateColumns: GTC, alignItems: "center", height: 40, borderTop: i ? `1px solid #f0ead9` : "none", cursor: "pointer", background: st === "離職" ? "#f2ede1" : "#fff", opacity: st === "離職" ? .72 : 1 }}>
                   <div style={{ display: "flex", justifyContent: "center" }}><span style={{ width: 24, height: 24, borderRadius: "50%", background: "#fbeee6", color: ACCENT, fontSize: 11, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center" }}>{(pp.name || "?")[0]}</span></div>
                   <div style={{ padding: "0 8px", fontSize: 13, fontWeight: 600, color: TEXT, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{pp.name || "（未命名）"}{pp.nick && <span style={{ color: "#9b9384", fontWeight: 400 }}>（{pp.nick}）</span>}{thisMonth && " 🎂"}{canOpen(pp) ? "" : " "}{!canOpen(pp) && <span style={{ fontSize: 10, color: "#c8bca6" }}>🔒</span>}</div>
-                  {showCols.map(f => {
+                  {showCols.flatMap(f => {
+                    if (f.key === "bday") {
+                      const dLeft = nextBdayDays(pp.bday);
+                      const near = pp.bday && dLeft <= 30;
+                      return [
+                        <div key="bdayMD" style={{ padding: "0 6px" }}>{pp.bday ? (
+                          <span style={near ? { fontSize: 12, fontWeight: 700, color: ACCENT, background: "#fbeee6", border: `1px solid ${ACCENT}`, borderRadius: 8, padding: "2px 8px", whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" } : { fontSize: 12.5, color: SUB, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>
+                            {pp.bday.slice(5)}{dLeft === 0 ? " 🎂今天" : near ? `（${dLeft}天後）` : ""}
+                          </span>) : <span style={{ color: "#c8bca6" }}>—</span>}</div>,
+                        <div key="age" style={{ padding: "0 8px", fontSize: 12.5, color: SUB, fontVariantNumeric: "tabular-nums" }}>{pp.bday ? ageOf(pp.bday) : "—"}</div>,
+                      ];
+                    }
                     const v = cellVal(pp, f);
-                    if (f.key === "dept" && v !== "—") return <div key={f.key} style={{ padding: "0 8px" }}><span style={{ fontSize: 11, fontWeight: 700, color: "#fff", background: deptColor(v), borderRadius: 10, padding: "2px 10px", whiteSpace: "nowrap" }}>{v}</span></div>;
-                    if (f.key === "bday" && thisMonth) return <div key={f.key} style={{ padding: "0 4px" }}><span style={{ fontSize: 12, fontWeight: 700, color: ACCENT, background: "#fbeee6", border: `1px solid ${ACCENT}`, borderRadius: 8, padding: "2px 8px", whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" }}>{v}</span></div>;
-                    return <div key={f.key} style={{ padding: "0 8px", fontSize: f.key === "empNo" ? 11.5 : 12.5, fontFamily: f.key === "empNo" ? "'IBM Plex Mono',monospace" : undefined, fontVariantNumeric: "tabular-nums", color: v === "—" ? "#c8bca6" : SUB, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{v}</div>;
+                    if (f.key === "dept" && v !== "—") return [<div key={f.key} style={{ padding: "0 8px" }}><span style={{ fontSize: 11, fontWeight: 700, color: "#fff", background: deptColor(v), borderRadius: 10, padding: "2px 10px", whiteSpace: "nowrap" }}>{v}</span></div>];
+                    return [<div key={f.key} style={{ padding: "0 8px", fontSize: f.key === "empNo" ? 11.5 : 12.5, fontFamily: f.key === "empNo" ? "'IBM Plex Mono',monospace" : undefined, fontVariantNumeric: "tabular-nums", color: v === "—" ? "#c8bca6" : SUB, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{v}</div>];
                   })}
                   <div style={{ padding: "0 10px", display: "flex", alignItems: "center", gap: 7 }}>
                     <div style={{ flex: 1, height: 7, background: "#e6ddc9", borderRadius: 4, overflow: "hidden" }}><div style={{ width: pg + "%", height: "100%", background: pg === 100 ? "#3f7d4e" : pg >= 50 ? "#c98a14" : "#b3261e", borderRadius: 4 }} /></div>
