@@ -79,7 +79,7 @@ async function doApply(days) {
   const acts = rules.filter(r => r.action !== 'keep')
   if (!acts.length) return { skipped: '只有保留規則，無需動作' }
   const hit = (r, m) => {
-    const t = (r.field === 'subject' ? m.subject : (m.from + ' ' + m.name)).toLowerCase()
+    const t = (r.field === 'subject' ? m.subject : r.field === 'to' ? (m.to || '') : (m.from + ' ' + m.name)).toLowerCase()
     return r.match.toLowerCase().split('|').some(k => k.trim() && t.includes(k.trim()))
   }
   const client = await connect()
@@ -94,6 +94,7 @@ async function doApply(days) {
       if (mb.flags && mb.flags.has && mb.flags.has('\\Noselect')) continue
       // Gmail「重要郵件」的 \Important 是非標準旗標，imapflow 不會放進 specialUse → 要看 flags
       if (mb.specialUse === '\\Important' || (mb.flags && mb.flags.has && mb.flags.has('\\Important'))) { boxes.push(mb.path); continue }
+      if (mb.specialUse === '\\Junk') { boxes.push(mb.path); continue } // 垃圾郵件夾也套規則（配合「收件人」規則清掉外洩地址的信）
       if (mb.specialUse || mb.path === 'INBOX' || mb.path === 'Notes') continue
       if (/^\[Gmail\]/.test(mb.path)) continue
       if (targets.has(mb.path)) continue
@@ -107,7 +108,7 @@ async function doApply(days) {
         if (uids && uids.length) {
           for await (const msg of client.fetch(uids, { envelope: true }, { uid: true })) {
             const fr = msg.envelope?.from?.[0] || {}
-            const m = { from: (fr.address || '').toLowerCase(), name: fr.name || '', subject: msg.envelope?.subject || '' }
+            const m = { from: (fr.address || '').toLowerCase(), name: fr.name || '', subject: msg.envelope?.subject || '', to: (msg.envelope?.to || []).map(x => x.address || '').join(' ').toLowerCase() }
             if (keeps.some(r => hit(r, m))) continue // 白名單：永不動
             const r = acts.find(r2 => hit(r2, m))
             if (!r) continue

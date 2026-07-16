@@ -105,7 +105,7 @@ export default function MailManagerView({ K, canEdit, confirm }) {
             </div>
             {rulesDoc.rules.map(r => (
               <div key={r.id} style={{ display: "grid", gridTemplateColumns: "96px minmax(160px,1fr) 130px 110px minmax(120px,1fr) 52px 56px 34px", gap: 6, alignItems: "center", padding: "3px 4px", opacity: r.enabled === false ? .5 : 1 }}>
-                <select value={r.field} onChange={e => upd(r.id, { field: e.target.value })} disabled={!canEdit} style={inp}><option value="from">寄件者</option><option value="subject">主旨</option></select>
+                <select value={r.field} onChange={e => upd(r.id, { field: e.target.value })} disabled={!canEdit} style={inp}><option value="from">寄件者</option><option value="subject">主旨</option><option value="to">收件人</option></select>
                 <input value={r.match} onChange={e => upd(r.id, { match: e.target.value })} disabled={!canEdit} placeholder="例：ctbcbank 或 發票|invoice" style={inp} />
                 <select value={r.action} onChange={e => upd(r.id, { action: e.target.value })} disabled={!canEdit} style={{ ...inp, color: ACT_COLOR[r.action], fontWeight: 700 }}>{ACTIONS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select>
                 <input value={r.label || ""} onChange={e => upd(r.id, { label: e.target.value })} disabled={!canEdit || r.action !== "label"} placeholder={r.action === "label" ? "標籤名" : "—"} style={inp} />
@@ -179,7 +179,7 @@ export default function MailManagerView({ K, canEdit, confirm }) {
           ))}
         </div>
       )}
-      <div style={{ fontSize: 11.5, color: C.faint }}>安全機制：刪除＝移到 Gmail 垃圾桶（30 天可救回）；「保留」規則是白名單、永遠不會被動到；處理範圍＝收件匣＋重要郵件＋你自建的資料夾；分類好的目標資料夾、寄件備份、垃圾桶不會碰。規則每天自動跑一次。</div>
+      <div style={{ fontSize: 11.5, color: C.faint }}>安全機制：刪除＝移到 Gmail 垃圾桶（30 天可救回）；「保留」規則是白名單、永遠不會被動到；處理範圍＝收件匣＋重要郵件＋垃圾郵件夾＋你自建的資料夾；「收件人」規則可清外洩地址（如 privaterelay）的信；分類好的目標資料夾、寄件備份、垃圾桶不會碰。規則每天自動跑一次。</div>
     </div>
   );
 }
