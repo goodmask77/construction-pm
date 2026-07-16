@@ -59,7 +59,7 @@ async function syncCtbc(days) {
     try { uids = await client.search({ from: 'bank.csc@inib.ctbcbank.com', since: new Date(Date.now() - days * 864e5) }, { uid: true }) } catch (e) { DBG.boxes.push('ctbc-searchERR:' + e.message) }
     DBG.boxes.push('ctbc:' + (Array.isArray(uids) ? uids.length : String(uids)))
     if (!uids || !uids.length) return
-    for await (const msg of client.fetch(uids, { uid: true, envelope: true, source: true })) {
+    for await (const msg of client.fetch(uids, { envelope: true, source: true }, { uid: true })) {
       scanned++
       if (!/帳務處理結果/.test(msg.envelope?.subject || '')) continue
       const parsed = await simpleParser(msg.source)
@@ -155,7 +155,7 @@ async function syncPos(days) {
     try { uids = await client.search({ since: new Date(Date.now() - days * 864e5) }, { uid: true }) } catch (e) { DBG.boxes.push('pos-searchERR:' + e.message) }
     DBG.boxes.push('pos:' + (Array.isArray(uids) ? uids.length : String(uids)))
     if (!uids || !uids.length) return
-    for await (const msg of client.fetch(uids, { uid: true, envelope: true, bodyStructure: true })) {
+    for await (const msg of client.fetch(uids, { envelope: true, bodyStructure: true }, { uid: true })) {
       const from = msg.envelope?.from?.[0]?.address || ''
       const subject = msg.envelope?.subject || ''
       if (!/eats365/i.test(from) && !/營業報告|Eats365/i.test(subject)) continue
