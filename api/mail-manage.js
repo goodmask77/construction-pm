@@ -148,8 +148,8 @@ async function doApply(days) {
 export default async function handler(req, res) {
   if (!SB_URL || !SB_KEY) return res.status(200).json({ ok: false, error: '缺 Supabase 設定' })
   if (!MU || !MP) return res.status(200).json({ ok: false, error: '缺信箱憑證' })
-  const action = String(req.query?.action || 'scan')
-  const days = Math.min(3650, Math.max(1, parseInt(req.query?.days || (action === 'scan' ? '90' : '7'), 10) || 7))
+  const action = String(req.query?.action || 'apply') // cron 每小時直打不帶參數＝套用規則
+  const days = Math.min(3650, Math.max(1, parseInt(req.query?.days || (action === 'scan' ? '90' : '2'), 10) || 2))
   try {
     if (action === 'scan') return res.status(200).json({ ok: true, ...(await doScan(days)) })
     if (action === 'apply') return res.status(200).json({ ok: true, ...(await doApply(days)) })
