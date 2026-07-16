@@ -63,6 +63,8 @@ export default function FinanceView({ K, confirm, canEdit, ReceiptUploader, onLo
   const [posDrill, setPosDrill] = useState(null); // 明細下鑽：{type, key} → 顯示組成該數字的原始資料
   const [posDrillView, setPosDrillView] = useState("list"); // 明細視角：list=清單 / pivot=品項×日期矩陣
   const [posDrillSort, setPosDrillSort] = useState(null);   // 明細排序：{i, dir}
+  const [posGran, setPosGran] = useState("day");            // 比較粒度：day/week/month
+  const [posCats, setPosCats] = useState([]);               // 標籤自選：選到的分類做比較（空＝全部）
   const [recon, setRecon] = useState({ links: {}, ignored: [] }); // 補記/忽略標記
   const [conCats, setConCats] = useState([]);    // 工程專案大項（唯讀跨空間）
   const [conPetty, setConPetty] = useState({ spends: [] });
@@ -716,9 +718,66 @@ export default function FinanceView({ K, confirm, canEdit, ReceiptUploader, onLo
         });
         const catArr2 = Object.entries(catAgg).sort((a, b) => b[1].amt - a[1].amt);
         const catMax2 = Math.max(1, ...catArr2.map(([, v]) => v.amt));
-        const topItems = Object.entries(itemAgg).sort((a, b) => b[1].amt - a[1].amt).slice(0, 12);
+        const topItems = Object.entries(itemAgg).filter(([, v]) => !posCats.length || posCats.includes(v.cat)).sort((a, b) => b[1].amt - a[1].amt).slice(0, 12);
         const PAL = ["#3a6ea5", "#3f7d4e", "#c98a14", "#b3492f", "#6b4a86", "#2f7d7a", "#9b9384", "#c4582a", "#5a6e3a", "#8a5a44", "#4a6b86", "#7d3f5e"];
         const paySum = { card: sum(days, "card"), cash: sum(days, "cash"), uber: sum(days, "uber") };
+        // 分類×日 / 品項×日（比較與智慧摘要用）
+        const catDay = {}, itemDay = {};
+        days.forEach(d => (dayDet(d.date)?.sheets?.[CATSHEET] || []).forEach(sec => (sec.rows || []).forEach(r => {
+          if (!Array.isArray(r) || typeof r[0] !== "string") return;
+          const amt = Number(r[r.length - 1]) || 0, qty = Number(r[1]) || 0;
+          if (sec.title === "總結") { if (amt > 0) (catDay[r[0]] = catDay[r[0]] || {})[d.date] = ((catDay[r[0]] || {})[d.date] || 0) + amt; }
+          else if (qty > 0) (itemDay[r[0]] = itemDay[r[0]] || {})[d.date] = ((itemDay[r[0]] || {})[d.date] || 0) + qty;
+        })));
+        // 期間彙總（日/週/月）
+        const WD2 = ["日", "一", "二", "三", "四", "五", "六"];
+        const perKey = (date) => {
+          if (posGran === "day") return date;
+          if (posGran === "month") return date.slice(0, 7);
+          const dt = new Date(date + "T00:00:00"); const mon = new Date(dt); mon.setDate(dt.getDate() - ((dt.getDay() + 6) % 7));
+          return `${mon.getFullYear()}-${String(mon.getMonth() + 1).padStart(2, "0")}-${String(mon.getDate()).padStart(2, "0")}`;
+        };
+        const perLabel = (k) => posGran === "day" ? `${Number(k.slice(8))}` : posGran === "month" ? k : `${Number(k.slice(5, 7))}/${Number(k.slice(8))}週`;
+        const periods = (() => {
+          const m = {};
+          days.forEach(d => {
+            const k = perKey(d.date);
+            const o = m[k] = m[k] || { key: k, nDays: 0, revenue: 0, txCount: 0, guests: 0, cash: 0, card: 0, uber: 0, discount: 0, dates: [] };
+            o.nDays++; o.dates.push(d.date);
+            ["revenue", "txCount", "guests", "cash", "card", "uber", "discount"].forEach(f2 => o[f2] += Number(d[f2]) || 0);
+          });
+          return Object.values(m).sort((a, b) => (a.key < b.key ? -1 : 1));
+        })();
+        const maxPer = Math.max(1, ...periods.map(pp => pp.revenue));
+        // 智慧摘要：重點 + 警示 + 建議（全部由原始資料計算）
+        const insights = (() => {
+          const out = [];
+          if (days.length < 2) return out;
+          const byRev = [...days].sort((a, b) => b.revenue - a.revenue);
+          const wdName = (d) => WD2[new Date(d.date + "T00:00:00").getDay()];
+          out.push(["🏆", `最佳 ${byRev[0].date.slice(5)}（${wdName(byRev[0])}）${fmt(byRev[0].revenue)}；最低 ${byRev[byRev.length - 1].date.slice(5)}（${wdName(byRev[byRev.length - 1])}）${fmt(byRev[byRev.length - 1].revenue)}`]);
+          const wk = days.filter(d => [0, 6].includes(new Date(d.date + "T00:00:00").getDay())), wd = days.filter(d => ![0, 6].includes(new Date(d.date + "T00:00:00").getDay()));
+          if (wk.length && wd.length) { const a = sum(wk, "revenue") / wk.length, b = sum(wd, "revenue") / wd.length; out.push(["🗓", `週末日均 ${fmt(Math.round(a))} vs 平日 ${fmt(Math.round(b))}（${a >= b ? "週末" : "平日"}強 ${Math.round(Math.abs(a - b) / Math.max(1, Math.min(a, b)) * 100)}%）`]); }
+          if (days.length >= 4) {
+            const half = Math.floor(days.length / 2);
+            const d1 = days.slice(0, half).map(d => d.date), d2 = days.slice(-half).map(d => d.date);
+            const movers = Object.entries(catDay).map(([c, dm]) => { const a = d1.reduce((t, dd) => t + (dm[dd] || 0), 0) / half, b = d2.reduce((t, dd) => t + (dm[dd] || 0), 0) / half; return { c, g: a > 0 ? (b - a) / a : (b > 0 ? 1 : 0), base: a + b }; }).filter(x => x.base > 2000);
+            const up = movers.filter(x => x.g > 0.25).sort((a, b) => b.g - a.g).slice(0, 3);
+            const dn = movers.filter(x => x.g < -0.25).sort((a, b) => a.g - b.g).slice(0, 3);
+            if (up.length) out.push(["🚀", "成長中：" + up.map(x => `${x.c} +${Math.round(x.g * 100)}%`).join("、") + "（前後半期日均比較）"]);
+            if (dn.length) out.push(["📉", "下滑中：" + dn.map(x => `${x.c} ${Math.round(x.g * 100)}%`).join("、")]);
+            const unstable = Object.entries(itemDay).map(([n, dm]) => { const qs = days.map(d => dm[d.date] || 0); const mean = qs.reduce((a, b) => a + b, 0) / qs.length; if (mean < 1.5) return null; const sd = Math.sqrt(qs.reduce((t, q) => t + (q - mean) ** 2, 0) / qs.length); return { n, cv: sd / mean }; }).filter(Boolean).sort((a, b) => b.cv - a.cv).slice(0, 3);
+            if (unstable.length) out.push(["🎢", "銷量最不穩：" + unstable.map(x => `${x.n}（波動${Math.round(x.cv * 100)}%）`).join("、")]);
+          }
+          const slow = Object.entries(itemAgg).filter(([, v]) => v.qty <= 2 && v.amt > 0).map(([n]) => n);
+          if (slow.length) out.push(["🐌", `滯銷提醒（期間只賣 ≤2 份）共 ${slow.length} 項：${slow.slice(0, 6).join("、")}${slow.length > 6 ? "…" : ""}`]);
+          const discAbs = Math.abs(sum(days, "discount"));
+          if (revSum && discAbs / revSum > 0.03) out.push(["⚠️", `折扣佔營收 ${Math.round(discAbs / revSum * 100)}%（${fmt(discAbs)}）超過 3% 警戒——點付款卡的「折扣/優惠券明細」查誰給的、為什麼`]);
+          const wasteAbs = Math.abs(sum(days, "voidItems")) + Math.abs(sum(days, "returnDish"));
+          if (revSum && wasteAbs / revSum > 0.02) out.push(["⚠️", `退菜＋Void 佔營收 ${Math.round(wasteAbs / revSum * 100)}%（${fmt(wasteAbs)}）偏高，注意出餐/點錯`]);
+          if (avgTicket) { const t1 = days.slice(0, Math.floor(days.length / 2)), t2 = days.slice(-Math.floor(days.length / 2)); const g1 = sum(t1, "guests"), g2 = sum(t2, "guests"); if (g1 && g2) { const a = sum(t1, "revenue") / g1, b = sum(t2, "revenue") / g2; if (Math.abs(b - a) / a > 0.15) out.push([b > a ? "💡" : "🔻", `客單價${b > a ? "上升" : "下降"}：前半 ${fmt(Math.round(a))} → 後半 ${fmt(Math.round(b))}`]); } }
+          return out;
+        })();
         // ── 下鑽：每種數字 → 組成它的原始資料列 ──
         const pct1 = (v) => typeof v === "number" && v <= 1 ? (v * 100).toFixed(1) + "%" : (v ?? "");
         // 依段落表頭把原始列解成固定欄位（名稱/數量/佔比/金額/備註）
@@ -829,8 +888,13 @@ export default function FinanceView({ K, confirm, canEdit, ReceiptUploader, onLo
               </div>
               <div style={{ flex: 1 }} />
               <div style={{ display: "inline-flex", background: C.soft, border: `1px solid ${C.line}`, borderRadius: 8, padding: 2, gap: 2 }}>
-                {[[7, "近7天"], [30, "近30天"], [9999, "全部"]].map(([v, l]) => (
-                  <button key={v} onClick={() => setPosRange(v)} style={{ padding: "5px 12px", borderRadius: 6, border: `1px solid ${posRange === v ? C.line : "transparent"}`, background: posRange === v ? "#fff" : "transparent", color: posRange === v ? C.text : C.sub, fontSize: 12.5, fontWeight: posRange === v ? 700 : 400, cursor: "pointer" }}>{l}</button>
+                {[[7, "近7天"], [14, "近14天"], [30, "近30天"], [90, "近90天"], [9999, "全部"]].map(([v, l]) => (
+                  <button key={v} onClick={() => setPosRange(v)} style={{ padding: "5px 10px", borderRadius: 6, border: `1px solid ${posRange === v ? C.line : "transparent"}`, background: posRange === v ? "#fff" : "transparent", color: posRange === v ? C.text : C.sub, fontSize: 12.5, fontWeight: posRange === v ? 700 : 400, cursor: "pointer" }}>{l}</button>
+                ))}
+              </div>
+              <div style={{ display: "inline-flex", background: C.soft, border: `1px solid ${C.line}`, borderRadius: 8, padding: 2, gap: 2 }}>
+                {[["day", "每天"], ["week", "每週"], ["month", "每月"]].map(([v, l]) => (
+                  <button key={v} onClick={() => setPosGran(v)} style={{ padding: "5px 10px", borderRadius: 6, border: `1px solid ${posGran === v ? C.line : "transparent"}`, background: posGran === v ? "#fff" : "transparent", color: posGran === v ? C.text : C.sub, fontSize: 12.5, fontWeight: posGran === v ? 700 : 400, cursor: "pointer" }}>{l}</button>
                 ))}
               </div>
             </div>
@@ -845,17 +909,63 @@ export default function FinanceView({ K, confirm, canEdit, ReceiptUploader, onLo
                   {kpi("來客(堂食)", guestSum || "—", avgTicket ? "客單 " + fmt(avgTicket) : null, null, () => openDrill({ type: "days" }))}
                   {kpi("最新一天", fmt(last.revenue), last.date.slice(5), null, () => openDrill({ type: "day", key: last.date }))}
                 </div>
-                <div style={{ ...chartBox2, marginBottom: 10 }}>
-                  <div style={{ fontSize: 11.5, fontWeight: 700, color: C.sub, marginBottom: 8 }}>每日營收 <span style={{ fontWeight: 400, color: C.faint }}>（點柱子看該日完整原始資料）</span></div>
-                  <div style={{ display: "flex", alignItems: "flex-end", gap: 3, height: 130 }}>
-                    {days.map(d => (
-                      <div key={d.id} onClick={() => openDrill({ type: "day", key: d.date })} title={`${d.date}　${fmt(d.revenue)}・${d.txCount}單・客單 ${d.guests ? fmt(ticket(d.revenue, d.guests)) : "—"}`} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 2, minWidth: 0, cursor: "pointer" }}>
-                        {days.length <= 20 && <span style={{ fontSize: 9, color: C.sub, fontFamily: MONOF }}>{Math.round((d.revenue || 0) / 1000)}K</span>}
-                        <div style={{ width: "100%", height: Math.max(3, (d.revenue || 0) / maxRev * 96), background: "#3a6ea5", borderRadius: "3px 3px 0 0" }} />
-                        <span style={{ fontSize: 8.5, color: C.faint, fontFamily: MONOF }}>{Number(d.date.slice(8))}</span>
+                {insights.length > 0 && (
+                  <div style={{ ...chartBox2, marginBottom: 10, borderLeft: `4px solid ${C.accent}` }}>
+                    <div style={{ fontSize: 11.5, fontWeight: 700, color: C.sub, marginBottom: 6 }}>🧠 重點摘要・提醒・建議 <span style={{ fontWeight: 400, color: C.faint }}>（全部由原始資料即時計算）</span></div>
+                    {insights.map(([ic, t], i) => (
+                      <div key={i} style={{ display: "flex", gap: 8, alignItems: "flex-start", padding: "3px 0", fontSize: 12.5, color: ic === "⚠️" || ic === "🔻" ? C.red : C.text, borderTop: i ? `1px solid #f0ead9` : "none" }}>
+                        <span>{ic}</span><span style={{ flex: 1 }}>{t}</span>
                       </div>
                     ))}
                   </div>
+                )}
+                <div style={{ ...chartBox2, marginBottom: 10 }}>
+                  <div style={{ fontSize: 11.5, fontWeight: 700, color: C.sub, marginBottom: 8 }}>{posGran === "day" ? "每日" : posGran === "week" ? "每週" : "每月"}營收 <span style={{ fontWeight: 400, color: C.faint }}>{posGran === "day" ? "（點柱子看該日完整原始資料）" : "（彙總自每日日結）"}</span></div>
+                  <div style={{ display: "flex", alignItems: "flex-end", gap: 3, height: 130 }}>
+                    {periods.map(pp => (
+                      <div key={pp.key} onClick={() => posGran === "day" && openDrill({ type: "day", key: pp.key })} title={`${pp.key}　${fmt(pp.revenue)}・${pp.txCount}單${pp.nDays > 1 ? `・${pp.nDays}天` : ""}`} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 2, minWidth: 0, cursor: posGran === "day" ? "pointer" : "default" }}>
+                        {periods.length <= 20 && <span style={{ fontSize: 9, color: C.sub, fontFamily: MONOF }}>{Math.round((pp.revenue || 0) / 1000)}K</span>}
+                        <div style={{ width: "100%", height: Math.max(3, (pp.revenue || 0) / maxPer * 96), background: "#3a6ea5", borderRadius: "3px 3px 0 0" }} />
+                        <span style={{ fontSize: 8.5, color: C.faint, fontFamily: MONOF, whiteSpace: "nowrap" }}>{perLabel(pp.key)}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                {/* 標籤自選比較：點分類籤 → 選到的分類逐期比較 */}
+                <div style={{ ...chartBox2, marginBottom: 10 }}>
+                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+                    <span style={{ fontSize: 11.5, fontWeight: 700, color: C.sub }}>🏷 分類比較</span>
+                    {catArr2.map(([k], i) => { const on = posCats.includes(k); return (
+                      <button key={k} onClick={() => setPosCats(cs => on ? cs.filter(x => x !== k) : [...cs, k])} style={{ display: "inline-flex", alignItems: "center", gap: 5, border: `1.5px solid ${on ? PAL[i % PAL.length] : C.line}`, background: on ? PAL[i % PAL.length] : "#fff", color: on ? "#fff" : C.sub, borderRadius: 13, padding: "2px 10px", fontSize: 11.5, fontWeight: 600, cursor: "pointer" }}>
+                        <span style={{ width: 7, height: 7, borderRadius: "50%", background: on ? "#fff" : PAL[i % PAL.length] }} />{k}
+                      </button>
+                    ); })}
+                    {posCats.length > 0 && <button onClick={() => setPosCats([])} style={{ border: "none", background: "none", color: C.faint, fontSize: 11.5, cursor: "pointer" }}>× 清除</button>}
+                    {!posCats.length && <span style={{ fontSize: 11, color: C.faint }}>點分類籤＝下方出現「選到的分類」逐{posGran === "day" ? "日" : posGran === "week" ? "週" : "月"}比較；熱銷榜也會跟著只看選到的分類</span>}
+                  </div>
+                  {posCats.length > 0 && (() => {
+                    const series = posCats.map(c => ({ c, col: PAL[catArr2.findIndex(([k]) => k === c) % PAL.length], per: periods.map(pp => pp.dates.reduce((t, dd) => t + ((catDay[c] || {})[dd] || 0), 0)) }));
+                    const mx = Math.max(1, ...series.flatMap(sr => sr.per));
+                    return (
+                      <div style={{ marginTop: 10 }}>
+                        <div style={{ display: "flex", alignItems: "flex-end", gap: 6, height: 120, overflowX: "auto" }}>
+                          {periods.map((pp, pi) => (
+                            <div key={pp.key} style={{ flex: 1, minWidth: 30 + series.length * 12, display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}>
+                              <div style={{ display: "flex", alignItems: "flex-end", gap: 2, height: 96 }}>
+                                {series.map(sr => (
+                                  <div key={sr.c} title={`${sr.c}　${perLabel(pp.key)}　${fmt(sr.per[pi])}`} style={{ width: 10, height: Math.max(2, sr.per[pi] / mx * 92), background: sr.col, borderRadius: "2px 2px 0 0" }} />
+                                ))}
+                              </div>
+                              <span style={{ fontSize: 8.5, color: C.faint, fontFamily: MONOF }}>{perLabel(pp.key)}</span>
+                            </div>
+                          ))}
+                        </div>
+                        <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginTop: 6 }}>
+                          {series.map(sr => <span key={sr.c} style={{ fontSize: 11, color: C.sub, display: "inline-flex", alignItems: "center", gap: 5 }}><span style={{ width: 9, height: 9, borderRadius: 2, background: sr.col }} />{sr.c}　合計 <b style={{ fontFamily: MONOF }}>{fmt(sr.per.reduce((a, b) => a + b, 0))}</b></span>)}
+                        </div>
+                      </div>
+                    );
+                  })()}
                 </div>
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 10, marginBottom: 12 }}>
                   <div style={chartBox2}>
@@ -881,6 +991,7 @@ export default function FinanceView({ K, confirm, canEdit, ReceiptUploader, onLo
                     </div>
                   </div>
                 </div>
+                {posGran === "day" ? (
                 <div style={{ border: "1.5px solid #c8bca6", borderRadius: 8, background: C.card, overflow: "hidden" }}>
                   <div style={{ overflowX: "auto" }}><div style={{ minWidth: 900 }}>
                     {(() => {
@@ -910,6 +1021,36 @@ export default function FinanceView({ K, confirm, canEdit, ReceiptUploader, onLo
                     })()}
                   </div></div>
                 </div>
+                ) : (
+                  <div style={{ border: "1.5px solid #c8bca6", borderRadius: 8, background: C.card, overflow: "hidden" }}>
+                    <div style={{ overflowX: "auto" }}><div style={{ minWidth: 860 }}>
+                      {(() => {
+                        const GTC2 = "110px 56px 110px 104px 64px 64px 80px 100px 100px 96px 84px";
+                        const hc2 = { fontSize: 10.5, letterSpacing: 0.8, color: C.faint, fontWeight: 700, padding: "7px 8px", whiteSpace: "nowrap", textAlign: "right" };
+                        const cell2 = (v, extra) => <div style={{ padding: "0 8px", fontFamily: MONOF, fontSize: 11.5, textAlign: "right", color: C.sub, ...extra }}>{v}</div>;
+                        return (
+                          <>
+                            <div style={{ display: "grid", gridTemplateColumns: GTC2, background: C.soft, borderBottom: "1.5px solid #c8bca6" }}>
+                              <div style={{ ...hc2, textAlign: "left" }}>{posGran === "week" ? "週（起始日）" : "月份"}</div><div style={hc2}>天數</div><div style={hc2}>營收</div><div style={hc2}>日均</div><div style={hc2}>單數</div><div style={hc2}>來客</div><div style={hc2}>客單</div><div style={hc2}>現金</div><div style={hc2}>信用卡</div><div style={hc2}>Uber</div><div style={hc2}>折扣</div>
+                            </div>
+                            {[...periods].reverse().map((pp, i) => (
+                              <div key={pp.key} style={{ display: "grid", gridTemplateColumns: GTC2, alignItems: "center", minHeight: 32, borderTop: i ? "1px solid #f0ead9" : "none", background: i % 2 ? "#f8f4ea" : C.card }}>
+                                <div style={{ padding: "0 8px", fontFamily: MONOF, fontSize: 11.5, color: C.text, fontWeight: 700 }}>{posGran === "week" ? pp.key.slice(5) + " 起" : pp.key}</div>
+                                {cell2(pp.nDays)}
+                                {cell2(fmt(pp.revenue), { fontWeight: 700, color: C.text })}
+                                {cell2(fmt(Math.round(pp.revenue / Math.max(1, pp.nDays))))}
+                                {cell2(pp.txCount)}{cell2(pp.guests || "—")}
+                                {cell2(pp.guests ? fmt(Math.round(pp.revenue / pp.guests)) : "—")}
+                                {cell2(fmt(pp.cash))}{cell2(fmt(pp.card))}{cell2(fmt(pp.uber))}
+                                {cell2(pp.discount ? fmt(pp.discount) : "—", { color: pp.discount ? C.accent : "#d5cbb6" })}
+                              </div>
+                            ))}
+                          </>
+                        );
+                      })()}
+                    </div></div>
+                  </div>
+                )}
                 <div style={{ fontSize: 11.5, color: C.faint, marginTop: 8 }}>資料來源：Eats365 日結信六個分頁全數入庫（摘要 pm_pos＋明細 pm_pos_d_月份，只增不改）。之後接：週/月彙總、POS信用卡 ↔ 銀行入帳核對、進銷存成本對照。</div>
               </>
             )}
