@@ -70,7 +70,7 @@ async function doScan(days) {
   return { inboxCount: mails.length, senders: senders.length }
 }
 
-// 套用規則（只動收件匣；keep=白名單優先）
+// 套用規則（範圍：收件匣＋重要郵件＋使用者自建資料夾；keep=白名單優先；目標標籤資料夾本身不掃避免自轉）
 async function doApply(days) {
   const rulesDoc = (await kvGet('sp_lw_pm_mail_rules')) || { rules: [] }
   const rules = (rulesDoc.rules || []).filter(r => r.enabled !== false && r.match)
@@ -87,38 +87,52 @@ async function doApply(days) {
   let moved = 0
   try {
     const sp = await specialPaths(client)
-    const lock = await client.getMailboxLock('INBOX')
-    const plan = {} // ruleId → {uids, samples, dest, action}
-    try {
-      const uids = await client.search({ since: new Date(Date.now() - days * 864e5) }, { uid: true })
-      if (uids && uids.length) {
-        for await (const msg of client.fetch(uids, { envelope: true }, { uid: true })) {
-          const fr = msg.envelope?.from?.[0] || {}
-          const m = { from: (fr.address || '').toLowerCase(), name: fr.name || '', subject: msg.envelope?.subject || '' }
-          if (keeps.some(r => hit(r, m))) continue // 白名單：永不動
-          const r = acts.find(r2 => hit(r2, m))
-          if (!r) continue
-          const pl = plan[r.id] = plan[r.id] || { uids: [], samples: [], rule: r }
-          pl.uids.push(msg.uid)
-          if (pl.samples.length < 5) pl.samples.push(m.subject.slice(0, 40))
+    // 掃描範圍：收件匣 + 重要郵件(\Important) + 使用者自建資料夾；排除規則目標標籤/系統資料夾/Notes
+    const targets = new Set(acts.filter(r => r.action === 'label').map(r => (r.label || '').trim()).filter(Boolean))
+    const boxes = ['INBOX']
+    for (const mb of await client.list()) {
+      if (mb.flags && mb.flags.has && mb.flags.has('\\Noselect')) continue
+      if (mb.specialUse === '\\Important') { boxes.push(mb.path); continue }
+      if (mb.specialUse || mb.path === 'INBOX' || mb.path === 'Notes') continue
+      if (/^\[Gmail\]/.test(mb.path)) continue
+      if (targets.has(mb.path)) continue
+      boxes.push(mb.path)
+    }
+    for (const box of boxes) {
+      const lock = await client.getMailboxLock(box)
+      const plan = {} // ruleId → {uids, samples, rule}
+      try {
+        const uids = await client.search({ since: new Date(Date.now() - days * 864e5) }, { uid: true })
+        if (uids && uids.length) {
+          for await (const msg of client.fetch(uids, { envelope: true }, { uid: true })) {
+            const fr = msg.envelope?.from?.[0] || {}
+            const m = { from: (fr.address || '').toLowerCase(), name: fr.name || '', subject: msg.envelope?.subject || '' }
+            if (keeps.some(r => hit(r, m))) continue // 白名單：永不動
+            const r = acts.find(r2 => hit(r2, m))
+            if (!r) continue
+            const pl = plan[r.id] = plan[r.id] || { uids: [], samples: [], rule: r }
+            pl.uids.push(msg.uid)
+            if (pl.samples.length < 5) pl.samples.push(m.subject.slice(0, 40))
+          }
         }
-      }
-      for (const pl of Object.values(plan)) {
-        const r = pl.rule
-        let dest = ''
-        if (r.action === 'delete') dest = sp.trash || '[Gmail]/Trash'
-        else if (r.action === 'archive') dest = sp.all || '[Gmail]/All Mail'
-        else if (r.action === 'label') {
-          dest = (r.label || '自動分類').trim()
-          try { await client.mailboxCreate(dest) } catch (_) {} // 已存在會丟錯，忽略
+        for (const pl of Object.values(plan)) {
+          const r = pl.rule
+          let dest = ''
+          if (r.action === 'delete') dest = sp.trash || '[Gmail]/Trash'
+          else if (r.action === 'archive') dest = sp.all || '[Gmail]/All Mail'
+          else if (r.action === 'label') {
+            dest = (r.label || '自動分類').trim()
+            try { await client.mailboxCreate(dest) } catch (_) {} // 已存在會丟錯，忽略
+          }
+          if (!dest || dest === box || !pl.uids.length) continue
+          await client.messageMove(pl.uids, dest, { uid: true })
+          moved += pl.uids.length
+          const ex = perRule.find(x => x.ruleId === r.id && x.action === r.action)
+          if (ex) { ex.count += pl.uids.length } else perRule.push({ ruleId: r.id, rule: r.note || r.match, action: r.action, label: r.label || '', count: pl.uids.length, samples: pl.samples })
+          r.hits = (r.hits || 0) + pl.uids.length
         }
-        if (!dest || !pl.uids.length) continue
-        await client.messageMove(pl.uids, dest, { uid: true })
-        moved += pl.uids.length
-        perRule.push({ rule: r.note || r.match, action: r.action, label: r.label || '', count: pl.uids.length, samples: pl.samples })
-        r.hits = (r.hits || 0) + pl.uids.length
-      }
-    } finally { lock.release() }
+      } finally { lock.release() }
+    }
   } finally { await client.logout().catch(() => {}) }
   if (perRule.length) {
     rulesDoc.updatedAt = new Date().toISOString()

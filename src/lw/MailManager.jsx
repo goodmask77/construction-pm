@@ -54,7 +54,7 @@ export default function MailManagerView({ K, canEdit, confirm }) {
     if (!canEdit) return;
     const acts = rulesDoc.rules.filter(r => r.enabled !== false && r.action !== "keep");
     if (!acts.length) { alert("還沒有可執行的規則（只有保留/沒啟用）。"); return; }
-    if (!(await confirm(`套用 ${acts.length} 條規則到收件匣${days > 30 ? "（全部範圍）" : "（近 " + days + " 天）"}？\n刪除＝移到垃圾桶，30 天內可救回。`, { confirmLabel: "執行" }))) return;
+    if (!(await confirm(`套用 ${acts.length} 條規則？範圍：收件匣＋重要郵件＋自建資料夾${days > 30 ? "（不限時間）" : "（近 " + days + " 天）"}。\n刪除＝移到垃圾桶，30 天內可救回。`, { confirmLabel: "執行" }))) return;
     setBusy("apply");
     try { const r = await fetch("/api/mail-manage?action=apply&days=" + days); const d = await r.json(); if (!d.ok) alert("執行失敗：" + d.error); else { await loadAll(); flash(d.skipped ? d.skipped : `✓ 已處理 ${d.moved} 封（${(d.perRule || []).map(x => `${x.rule}×${x.count}`).join("、")}）`); await runScan(); } } catch (e) { alert("執行失敗：" + e.message); }
     setBusy("");
@@ -86,7 +86,7 @@ export default function MailManagerView({ K, canEdit, confirm }) {
         </div>
         <div style={{ flex: 1 }} />
         {btn(busy === "scan" ? "掃描中…" : "🔍 重新掃描", runScan, { color: C.blue, borderColor: C.blue })}
-        {canEdit && btn(busy === "apply" ? "執行中…" : "▶ 立即執行規則", () => runApply(90), { background: C.accent, color: "#fff", borderColor: C.accent })}
+        {canEdit && btn(busy === "apply" ? "執行中…" : "▶ 立即執行規則", () => runApply(3650), { background: C.accent, color: "#fff", borderColor: C.accent })}
       </div>
       {msg && <div style={{ background: "#eef5ef", border: `1.5px solid ${C.green}`, borderRadius: 8, padding: "8px 14px", marginBottom: 12, fontSize: 13, color: "#2c5a38", fontWeight: 600 }}>{msg} <button onClick={() => setMsg(null)} style={{ border: "none", background: "none", color: C.green, cursor: "pointer", float: "right" }}>×</button></div>}
 
@@ -187,7 +187,7 @@ export default function MailManagerView({ K, canEdit, confirm }) {
           ))}
         </div>
       )}
-      <div style={{ fontSize: 11.5, color: C.faint }}>安全機制：刪除＝移到 Gmail 垃圾桶（30 天可救回）；「保留」規則是白名單、永遠不會被動到；只處理收件匣，其他資料夾不碰。規則每天自動跑一次。</div>
+      <div style={{ fontSize: 11.5, color: C.faint }}>安全機制：刪除＝移到 Gmail 垃圾桶（30 天可救回）；「保留」規則是白名單、永遠不會被動到；處理範圍＝收件匣＋重要郵件＋你自建的資料夾；分類好的目標資料夾、寄件備份、垃圾桶不會碰。規則每天自動跑一次。</div>
     </div>
   );
 }
