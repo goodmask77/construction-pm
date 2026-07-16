@@ -1875,7 +1875,7 @@ function RosterView({ canEdit, confirm, me }) {
           else if (f.type === "date") node = <input type="date" value={pp[f.key] || ""} onChange={e => updP(pp.id, { [f.key]: e.target.value })} disabled={!editable} style={dateS} />;
           else if (f.type === "select") {
             const cur = pp[f.key] || "";
-            const opts = [...new Set([...(f.options || []), ...(cur && !(f.options || []).includes(cur) ? [cur] : [])])];
+            const opts = [...new Set(["", ...(f.options || []).map(o => String(o).trim()), ...(cur ? [cur] : [])])];
             node = <select value={cur} onChange={e => {
               if (e.target.value === "__add__") { const nv = window.prompt(`「${f.label}」新增選項`); if (nv && nv.trim()) { persist({ fields: fields.map(x => x.key === f.key ? { ...x, options: [...(x.options || []), nv.trim()] } : x), people: people.map(x => x.id === pp.id ? { ...x, [f.key]: nv.trim() } : x) }); } return; }
               updP(pp.id, { [f.key]: e.target.value });
