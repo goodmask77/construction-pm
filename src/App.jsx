@@ -1786,14 +1786,19 @@ function RosterView({ canEdit, confirm, me }) {
   const docCount = (pp) => fields.filter(f => f.type === "file").reduce((n, f) => n + ((pp[f.key] || []).length), 0);
   const val = (pp, k) => k === "prog" ? progress(pp) : k === "statusD" ? statusOf(pp) : k === "bday" ? String(pp.bday || "").slice(5) : (pp[k] ?? "");
   const showCols = fields.filter(f => f.show);
-  const colW = (f) => f.type === "file" ? "56px" : f.key === "empNo" ? "76px" : f.type === "date" ? "96px" : "minmax(88px,0.9fr)";
+  const colW = (f) => f.type === "file" ? "56px" : f.key === "empNo" ? "76px" : f.key === "bday" ? "156px" : f.type === "date" ? "96px" : "minmax(88px,0.9fr)";
+  const ageOf = (b) => { if (!b) return ""; const t = new Date(), d = new Date(b + "T00:00:00"); let a = t.getFullYear() - d.getFullYear(); if (t.getMonth() < d.getMonth() || (t.getMonth() === d.getMonth() && t.getDate() < d.getDate())) a--; return a; };
   const cellVal = (pp, f) => {
-    if (f.key === "bday") { const tm = pp.bday && Number(pp.bday.split("-")[1]) === new Date().getMonth() + 1; return pp.bday ? mmdd(pp.bday) + (tm ? " 🎂" : "") : "—"; }
+    if (f.key === "bday") { const tm = pp.bday && Number(pp.bday.split("-")[1]) === new Date().getMonth() + 1; return pp.bday ? `${pp.bday}（${ageOf(pp.bday)}歲）` + (tm ? " 🎂" : "") : "—"; }
     if (f.type === "file") { const n = (pp[f.key] || []).length; return n ? `📎${n}` : "—"; }
     return String(pp[f.key] ?? "").trim() || "—";
   };
   let rows = people.filter(pp => !q.trim() || ((pp.name || "") + (pp.nick || "") + (pp.dept || "") + (pp.empNo || "") + (pp.phone || "")).toLowerCase().includes(q.trim().toLowerCase()));
-  rows = [...rows].sort((a, b) => { const va = val(a, sort.key), vb = val(b, sort.key); return (va < vb ? -1 : va > vb ? 1 : 0) * sort.dir; });
+  rows = [...rows].sort((a, b) => {
+    const va = val(a, sort.key), vb = val(b, sort.key);
+    const c = (typeof va === "number" && typeof vb === "number") ? (va - vb) : String(va).localeCompare(String(vb), "zh-Hant-TW");
+    return c * sort.dir;
+  });
   const GTC = `40px 1.5fr ${showCols.map(colW).join(" ")} 130px 62px 56px`;
   const th = (label, key, extra) => (
     <button key={label} onClick={() => key && setSort(s2 => ({ key, dir: s2.key === key ? -s2.dir : 1 }))} title={label} style={{ background: "none", border: "none", textAlign: "left", padding: "8px 8px", fontSize: 10.5, letterSpacing: 0.8, color: sort.key === key ? TEXT : "#9b9384", fontWeight: 700, cursor: key ? "pointer" : "default", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", minWidth: 0, maxWidth: "100%", ...extra }}>
