@@ -56,6 +56,8 @@ export default function FinanceView({ K, confirm, canEdit, ReceiptUploader, onLo
   const [bank, setBank] = useState(null);        // ★ 銀行帳務資料庫（永久、只增不改；一切對帳以此為基礎）
   const [manForm, setManForm] = useState(null);  // 手動新增一筆（未來：貼企業網銀截圖 AI 判讀）
   const [pos, setPos] = useState(null);          // Eats365 POS 日結資料庫（自動收信入庫）
+  const [ctbc, setCtbc] = useState(null);        // 中信 e-Cash 匯款通知資料庫（自動收信入庫）
+  const [reconAcct, setReconAcct] = useState("coop"); // 對帳帳戶切換：coop=合庫 / ctbc=中信
   const [posDet, setPosDet] = useState({});      // POS 明細（按月分檔 pm_pos_d_YYYY-MM：分類/商品/優惠券/付款）
   const [posRange, setPosRange] = useState(30);  // 分析期間：7 / 30 / 9999 天
   const [recon, setRecon] = useState({ links: {}, ignored: [] }); // 補記/忽略標記
@@ -78,6 +80,7 @@ export default function FinanceView({ K, confirm, canEdit, ReceiptUploader, onLo
     try { const sh = await window.storage.get(K("pm_sheet"), true); setSheet(sh && sh.value ? JSON.parse(sh.value) : null); } catch (_) {}
     try { const bk = await window.storage.get(K("pm_bank"), true); setBank(bk && bk.value ? JSON.parse(bk.value) : null); } catch (_) {}
     try { const ps = await window.storage.get(K("pm_pos"), true); setPos(ps && ps.value ? JSON.parse(ps.value) : null); } catch (_) {}
+    try { const ct = await window.storage.get(K("pm_ctbc"), true); setCtbc(ct && ct.value ? JSON.parse(ct.value) : null); } catch (_) {}
     try { const rc = await window.storage.get(K("pm_recon"), true); const v = rc && rc.value ? JSON.parse(rc.value) : null; if (v) setRecon({ links: v.links || {}, ignored: v.ignored || [] }); } catch (_) {}
     try { const cd = await window.storage.get("pm_data", true); setConCats(cd && cd.value ? JSON.parse(cd.value) : []); } catch (_) {}
     try { const pt = await window.storage.get("pm_petty", true); const v = pt && pt.value ? JSON.parse(pt.value) : {}; setConPetty({ spends: v.spends || [] }); } catch (_) {}
@@ -404,7 +407,14 @@ export default function FinanceView({ K, confirm, canEdit, ReceiptUploader, onLo
 
       {/* ── 對帳：合作金庫·喬亞國際餐飲（銀行對帳單式呈現 + 圖表 + 三方核對）── */}
       {tab === "recon" && (() => {
-        const shRows = (bank?.entries?.length ? bank.entries : (sheet?.rows || []));
+        const ctbcRows = ((ctbc?.entries) || []).map(e => ({
+          id: e.id, payDate: e.effDate || e.setDate, notifyDate: e.setDate,
+          cat: e.type || "", subject: e.result && e.result !== "交易完成" ? e.result : "",
+          content: (e.note || e.type || "") + (e.count > 1 ? `（${e.count}筆）` : ""),
+          amount: e.amount, fee: 0, balanceAfter: 0,
+          payee: e.inAcct || "", bank: "", batch: e.id, handler: "", source: "ctbc",
+        }));
+        const shRows = reconAcct === "ctbc" ? ctbcRows : (bank?.entries?.length ? bank.entries : (sheet?.rows || []));
         const d2n = (d) => d ? +new Date(d) : 0;
         const close = (a, b) => a && b && Math.abs(d2n(a) - d2n(b)) <= 5 * 86400e3;
         const pool = [
@@ -480,20 +490,27 @@ export default function FinanceView({ K, confirm, canEdit, ReceiptUploader, onLo
             {/* 帳戶頭 */}
             <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", marginBottom: 12 }}>
               <span style={{ background: C.blue, color: "#fff", fontSize: 11.5, fontWeight: 700, borderRadius: 4, padding: "2px 8px", letterSpacing: 1 }}>帳戶</span>
+              <div style={{ display: "inline-flex", background: C.soft, border: `1px solid ${C.line}`, borderRadius: 8, padding: 2, gap: 2 }}>
+                {[["coop", "合作金庫 · 喬亞"], ["ctbc", "中國信託 e-Cash"]].map(([v, l]) => (
+                  <button key={v} onClick={() => setReconAcct(v)} style={{ padding: "6px 14px", borderRadius: 6, border: `1px solid ${reconAcct === v ? C.line : "transparent"}`, background: reconAcct === v ? "#fff" : "transparent", color: reconAcct === v ? C.text : C.sub, fontSize: 13, fontWeight: reconAcct === v ? 700 : 400, cursor: "pointer" }}>{l}</button>
+                ))}
+              </div>
               <div>
-                <div style={{ fontSize: 16, fontWeight: 800, color: C.text }}>🏦 合作金庫 · 喬亞國際餐飲</div>
-                <div style={{ fontSize: 11, color: C.faint }}>銀行帳務資料庫・{shRows.length} 筆（只增不改・所有工程款以此核對）{bank?.updatedAt ? "・更新 " + new Date(bank.updatedAt).toLocaleDateString("zh-TW") : ""}</div>
+                <div style={{ fontSize: 16, fontWeight: 800, color: C.text }}>{reconAcct === "ctbc" ? "🏦 中國信託 · 企業收付 e-Cash" : "🏦 合作金庫 · 喬亞國際餐飲"}</div>
+                <div style={{ fontSize: 11, color: C.faint }}>{reconAcct === "ctbc"
+                  ? `匯款通知自動入庫・${shRows.length} 筆（每天自動收信，交易序號去重）${ctbc?.updatedAt ? "・更新 " + new Date(ctbc.updatedAt).toLocaleDateString("zh-TW") : ""}`
+                  : `銀行帳務資料庫・${shRows.length} 筆（只增不改・所有工程款以此核對）${bank?.updatedAt ? "・更新 " + new Date(bank.updatedAt).toLocaleDateString("zh-TW") : ""}`}</div>
               </div>
               {latestBal && <div style={{ marginLeft: 6 }}>
                 <div style={{ fontFamily: MONOF, fontSize: 22, fontWeight: 700, color: C.text }}>{fmt(latestBal.v ?? latestBal.balanceAfter)}</div>
                 <div style={{ fontSize: 10.5, color: C.faint }}>最新餘額（{latestBal.payDate}）</div>
               </div>}
               <div style={{ flex: 1 }} />
-              {canEdit && <button onClick={() => setManForm({ date: "", cat: "", subject: "", content: "", amount: "", fee: "", payee: "", batch: "", balanceAfter: "" })} style={{ background: C.accent, color: "#fff", border: "none", borderRadius: 8, padding: "7px 16px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>＋ 手動新增一筆</button>}
-              <button onClick={runSync} disabled={syncBusy} title="過渡期用：試算表退役前，把上面的新資料撈進資料庫" style={{ background: "#fff", color: C.blue, border: `1.5px solid ${C.blue}`, borderRadius: 8, padding: "6px 14px", fontSize: 12.5, fontWeight: 700, cursor: syncBusy ? "wait" : "pointer" }}>{syncBusy ? "匯入中…" : "⬇ 從試算表匯入"}</button>
+              {canEdit && reconAcct === "coop" && <button onClick={() => setManForm({ date: "", cat: "", subject: "", content: "", amount: "", fee: "", payee: "", batch: "", balanceAfter: "" })} style={{ background: C.accent, color: "#fff", border: "none", borderRadius: 8, padding: "7px 16px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>＋ 手動新增一筆</button>}
+              {reconAcct === "coop" && <button onClick={runSync} disabled={syncBusy} title="過渡期用：試算表退役前，把上面的新資料撈進資料庫" style={{ background: "#fff", color: C.blue, border: `1.5px solid ${C.blue}`, borderRadius: 8, padding: "6px 14px", fontSize: 12.5, fontWeight: 700, cursor: syncBusy ? "wait" : "pointer" }}>{syncBusy ? "匯入中…" : "⬇ 從試算表匯入"}</button>}
             </div>
             {!shRows.length ? (
-              <div style={{ padding: 30, textAlign: "center", color: C.faint, background: C.card, border: `1px solid ${C.line}`, borderRadius: 10 }}>資料庫還是空的——按「⬇ 從試算表匯入」建底稿，或「＋ 手動新增一筆」。</div>
+              <div style={{ padding: 30, textAlign: "center", color: C.faint, background: C.card, border: `1px solid ${C.line}`, borderRadius: 10 }}>{reconAcct === "ctbc" ? "中信資料還沒進來——每天自動收信後就會出現。" : "資料庫還是空的——按「⬇ 從試算表匯入」建底稿，或「＋ 手動新增一筆」。"}</div>
             ) : (
               <>
                 <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 12 }}>

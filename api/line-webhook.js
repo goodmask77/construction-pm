@@ -277,12 +277,17 @@ async function loadTasksText() {
 // 銀行帳務資料庫（sp_finance_pm_bank 永久累積；試算表退役中，僅當備援）→ 文字
 async function loadSheetText() {
   try {
-    const kv = await kvGetMany(['sp_finance_pm_bank', 'sp_finance_pm_sheet'])
+    const kv = await kvGetMany(['sp_finance_pm_bank', 'sp_finance_pm_sheet', 'sp_finance_pm_ctbc'])
     const bk = kv['sp_finance_pm_bank']
     const v = (bk && Array.isArray(bk.entries) && bk.entries.length) ? { rows: bk.entries, syncedAt: bk.updatedAt } : kv['sp_finance_pm_sheet']
     const rows = v && Array.isArray(v.rows) ? v.rows : []
     if (!rows.length) return ''
     const lines = [`\n\n【銀行帳務資料庫（合作金庫·喬亞帳戶，每一筆銀行進出，共 ${rows.length} 筆，更新 ${v.syncedAt ? new Date(v.syncedAt).toLocaleString('zh-TW') : ''}）】`]
+    const ct = kv['sp_finance_pm_ctbc']
+    if (ct && Array.isArray(ct.entries) && ct.entries.length) {
+      lines.push(`【中國信託 e-Cash 匯款紀錄（匯款通知自動入庫，共 ${ct.entries.length} 筆，以下最近 60 筆）】`)
+      ct.entries.slice(-60).forEach(e => lines.push(`  - ${e.effDate || e.setDate} [${e.type}] ${e.note || ''}｜NT$${Math.round(e.amount).toLocaleString()}${e.count > 1 ? `（${e.count}筆）` : ''}${e.result !== '交易完成' ? `〔${e.result}〕` : ''}`))
+    }
     rows.slice(-100).forEach(r => lines.push(`  - ${r.payDate || r.notifyDate || ''} [${r.cat}${r.subject ? '/' + r.subject : ''}] ${r.content}｜NT$${Math.round(r.amount).toLocaleString()}${r.payee ? '→' + r.payee : ''}${r.batch ? '（' + r.batch + '）' : ''}`))
     return lines.join('\n')
   } catch (_) { return '' }
