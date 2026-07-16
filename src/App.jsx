@@ -1795,6 +1795,8 @@ function RosterView({ canEdit, confirm, me }) {
     : f.key === "phone" ? "108px"
     : f.key === "email" ? "minmax(150px,1fr)"
     : "minmax(96px,0.7fr)";
+  const DEPT_PAL = ["#3a6ea5", "#3f7d4e", "#c98a14", "#b3492f", "#6b4a86", "#2f7d7a", "#c4582a", "#5a6e3a"];
+  const deptColor = (v) => { const opts = ((fields.find(f2 => f2.key === "dept") || {}).options || []).filter(Boolean); const i = opts.indexOf(v); return DEPT_PAL[(i >= 0 ? i : opts.length) % DEPT_PAL.length]; };
   const ageOf = (b) => { if (!b) return ""; const t = new Date(), d = new Date(b + "T00:00:00"); let a = t.getFullYear() - d.getFullYear(); if (t.getMonth() < d.getMonth() || (t.getMonth() === d.getMonth() && t.getDate() < d.getDate())) a--; return a; };
   const cellVal = (pp, f) => {
     if (f.key === "bday") { const tm = pp.bday && Number(pp.bday.split("-")[1]) === new Date().getMonth() + 1; return pp.bday ? `${pp.bday}（${ageOf(pp.bday)}歲）` + (tm ? " 🎂" : "") : "—"; }
@@ -1844,6 +1846,8 @@ function RosterView({ canEdit, confirm, me }) {
                   <div style={{ padding: "0 8px", fontSize: 13, fontWeight: 600, color: TEXT, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{pp.name || "（未命名）"}{pp.nick && <span style={{ color: "#9b9384", fontWeight: 400 }}>（{pp.nick}）</span>}{thisMonth && " 🎂"}{canOpen(pp) ? "" : " "}{!canOpen(pp) && <span style={{ fontSize: 10, color: "#c8bca6" }}>🔒</span>}</div>
                   {showCols.map(f => {
                     const v = cellVal(pp, f);
+                    if (f.key === "dept" && v !== "—") return <div key={f.key} style={{ padding: "0 8px" }}><span style={{ fontSize: 11, fontWeight: 700, color: "#fff", background: deptColor(v), borderRadius: 10, padding: "2px 10px", whiteSpace: "nowrap" }}>{v}</span></div>;
+                    if (f.key === "bday" && thisMonth) return <div key={f.key} style={{ padding: "0 4px" }}><span style={{ fontSize: 12, fontWeight: 700, color: ACCENT, background: "#fbeee6", border: `1px solid ${ACCENT}`, borderRadius: 8, padding: "2px 8px", whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" }}>{v}</span></div>;
                     return <div key={f.key} style={{ padding: "0 8px", fontSize: f.key === "empNo" ? 11.5 : 12.5, fontFamily: f.key === "empNo" ? "'IBM Plex Mono',monospace" : undefined, fontVariantNumeric: "tabular-nums", color: v === "—" ? "#c8bca6" : SUB, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{v}</div>;
                   })}
                   <div style={{ padding: "0 10px", display: "flex", alignItems: "center", gap: 7 }}>
@@ -1869,7 +1873,14 @@ function RosterView({ canEdit, confirm, me }) {
           let node = null;
           if (f.type === "file") node = <ReceiptUploader receipts={pp[f.key] || []} onChange={list => editable && updP(pp.id, { [f.key]: list })} size={28} />;
           else if (f.type === "date") node = <input type="date" value={pp[f.key] || ""} onChange={e => updP(pp.id, { [f.key]: e.target.value })} disabled={!editable} style={dateS} />;
-          else if (f.type === "select") node = <select value={pp[f.key] || ""} onChange={e => updP(pp.id, { [f.key]: e.target.value })} disabled={!editable} style={inpS}>{(f.options || []).map(o => <option key={o} value={o}>{o || "—"}</option>)}</select>;
+          else if (f.type === "select") {
+            const cur = pp[f.key] || "";
+            const opts = [...new Set([...(f.options || []), ...(cur && !(f.options || []).includes(cur) ? [cur] : [])])];
+            node = <select value={cur} onChange={e => {
+              if (e.target.value === "__add__") { const nv = window.prompt(`「${f.label}」新增選項`); if (nv && nv.trim()) { persist({ fields: fields.map(x => x.key === f.key ? { ...x, options: [...(x.options || []), nv.trim()] } : x), people: people.map(x => x.id === pp.id ? { ...x, [f.key]: nv.trim() } : x) }); } return; }
+              updP(pp.id, { [f.key]: e.target.value });
+            }} disabled={!editable} style={inpS}>{opts.map(o => <option key={o} value={o}>{o || "—"}</option>)}{editable && <option value="__add__">＋ 新增選項…</option>}</select>;
+          }
           else node = <input value={pp[f.key] || ""} onChange={e => updP(pp.id, { [f.key]: e.target.value })} disabled={!editable} style={inpS} />;
           return <label key={f.key} style={{ display: "block", fontSize: 11, letterSpacing: 0.5, color: "#9b9384", fontWeight: 600, gridColumn: f.type === "file" ? "1 / -1" : undefined }}>{lab}<div style={{ marginTop: 4 }}>{node}</div></label>;
         };
