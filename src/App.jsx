@@ -51,21 +51,35 @@ const ADMIN_USER = "goodmask77"; // 僅此帳號可編輯（不顯示於介面�
 // 介面顯示用：絕不顯示登入帳號字串（避免外洩）。管理員一律顯示「管理員」。
 const maskAccount = (u) => !u ? "—" : (u === ADMIN_USER ? "管理員" : u);
 const API_URL = "https://api.anthropic.com/v1/messages";
-// AI顧問的空間即時資料（財務空間＝營運日結+品項逐日+銀行帳戶；問「哪道菜穩不穩」才有數字可答）
+// AI顧問全域即時資料：不分空間、所有資料域全接（與 D哥 同級）。
+// 【鐵則】每新增資料域：D哥(line-webhook loaders) 與這裡 都要同步接上。
 async function loadSpaceAIContext() {
-  if (CURRENT_SPACE !== "finance") return "";
   try {
     const nt = (n) => "NT$" + Math.round(n || 0).toLocaleString();
     const g = async (k) => { try { const v = await window.storage.get(k, true); return v && v.value ? JSON.parse(v.value) : null; } catch (_) { return null; } };
-    const [pos, bank, ctbc] = await Promise.all([g("sp_finance_pm_pos"), g("sp_finance_pm_bank"), g("sp_finance_pm_ctbc")]);
+    const d0 = new Date(); const mo = `${d0.getFullYear()}-${String(d0.getMonth() + 1).padStart(2, "0")}`;
+    const [snapC, snapT, snapK, snapF, tasks, crew, pos, posD, bank, ctbc, accounts, ledger, conclusions, mailRules, mailLog] = await Promise.all([
+      g("pm_bot_context"), g("sp_team_pm_bot_context"), g("sp_crew_pm_bot_context"), g("sp_finance_pm_bot_context"),
+      g("pm_tasks"), g("sp_crew_kb_360"), g("sp_finance_pm_pos"), g("sp_finance_pm_pos_d_" + mo),
+      g("sp_finance_pm_bank"), g("sp_finance_pm_ctbc"), g("sp_finance_pm_fin_accounts"), g("sp_finance_pm_fin_ledger"),
+      g("pm_conclusions"), g("sp_lw_pm_mail_rules"), g("sp_lw_pm_mail_log"),
+    ]);
     const parts = [];
+    // 各空間快照
+    const snapLine = (label, sn) => { if (!sn) return null; const p2 = sn.project || {}, t = sn.totals || {}, pr = sn.progress || {}; return `- ${label}：${p2.name || ""}｜進度${pr.pct || 0}%（${pr.doneItems || 0}/${pr.totalItems || 0}）｜預估${nt(t.est)}/已付${nt(t.paid)}${sn.petty ? `｜零用金餘額${nt(sn.petty.balance)}` : ""}${(sn.issues || []).length ? `｜⚠${sn.issues.slice(0, 5).join("、")}` : ""}`; };
+    const snaps = [snapLine("工程專案", snapC), snapLine("團隊工作", snapT), snapLine("夥伴中心", snapK), snapLine("財務內帳", snapF)].filter(Boolean);
+    if (snaps.length) parts.push("【各空間快照】\n" + snaps.join("\n"));
+    // 任務
+    const tk = Array.isArray(tasks) ? tasks.filter(t => t.status !== "done") : [];
+    if (tk.length) parts.push("【未完成任務（" + tk.length + " 件）】\n" + tk.slice(0, 40).map(t => `- ${t.title}${t.due ? "｜期限" + t.due : ""}${t.prio ? "｜" + t.prio : ""}${t.owner ? "｜負責:" + t.owner : ""}${t.waitingFor ? "｜等:" + t.waitingFor : ""}`).join("\n"));
+    // 夥伴名冊（不含薪資/身分證等機密）
+    if (crew?.people?.length) parts.push("【夥伴名冊（" + crew.people.length + " 人）】\n" + crew.people.map(pp => `- ${pp.name}${pp.nick ? "（" + pp.nick + "）" : ""}｜生日${pp.bday || "?"}｜到職${pp.startDate || "?"}${pp.dept ? "｜" + pp.dept : ""}｜${pp.status || "在職"}`).join("\n"));
+    // 營運日結 + 品項逐日
     if (pos?.entries?.length) {
-      parts.push("【營運日結（" + (pos.entries[0].store || "POS") + "，每日自動入庫）】\n" + pos.entries.slice(-30).map(e => `- ${e.date} 營收${nt(e.revenue)}｜${e.txCount}單｜來客${e.guests || "?"}｜現金${nt(e.cash)}/卡${nt(e.card)}/Uber${nt(e.uber)}｜折扣${nt(e.discount)}`).join("\n"));
-      const d = new Date(); const mo = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-      const det = await g("sp_finance_pm_pos_d_" + mo);
-      if (det?.days) {
+      parts.push("【營運日結（" + (pos.entries[0].store || "POS") + "）】\n" + pos.entries.slice(-30).map(e => `- ${e.date} 營收${nt(e.revenue)}｜${e.txCount}單｜來客${e.guests || "?"}｜現金${nt(e.cash)}/卡${nt(e.card)}/Uber${nt(e.uber)}｜折扣${nt(e.discount)}`).join("\n"));
+      if (posD?.days) {
         const per = {};
-        Object.entries(det.days).forEach(([date, day]) => (day.sheets?.["總銷售額 (以類別分類)"] || []).forEach(sec => {
+        Object.entries(posD.days).forEach(([date, day]) => (day.sheets?.["總銷售額 (以類別分類)"] || []).forEach(sec => {
           if (sec.title === "總結") return;
           (sec.rows || []).forEach(r => {
             if (!Array.isArray(r) || typeof r[0] !== "string") return;
@@ -74,12 +88,30 @@ async function loadSpaceAIContext() {
           });
         }));
         const arr = Object.entries(per).filter(([, v]) => v.amt > 0).sort((a, b) => b[1].amt - a[1].amt);
-        parts.push("【本月品項逐日銷售（分析穩定度/成長用；格式：品項｜分類｜總份｜總額｜各日份數）】\n" + arr.slice(0, 60).map(([n, v]) => `- ${n}｜${v.cat}｜${v.qty}份｜${nt(v.amt)}｜` + Object.entries(v.days).sort().map(([dd, q]) => `${Number(dd.slice(8))}日:${q}`).join(" ")).join("\n"));
+        if (arr.length) parts.push("【本月品項逐日銷售（品項｜分類｜總份｜總額｜各日份數）】\n" + arr.slice(0, 60).map(([n, v]) => `- ${n}｜${v.cat}｜${v.qty}份｜${nt(v.amt)}｜` + Object.entries(v.days).sort().map(([dd, q]) => `${Number(dd.slice(8))}日:${q}`).join(" ")).join("\n"));
       }
     }
-    if (bank?.entries?.length) { const last = [...bank.entries].reverse().find(e => e.balanceAfter > 0); parts.push(`【合作金庫·喬亞帳戶】銀行進出 ${bank.entries.length} 筆${last ? `，最新餘額 ${nt(last.balanceAfter)}（${last.payDate}）` : ""}`); }
-    if (ctbc?.entries?.length) parts.push(`【中信 e-Cash 匯款】共 ${ctbc.entries.length} 筆（最近：${ctbc.entries.slice(-3).map(e => `${e.effDate} ${e.note || e.type} ${nt(e.amount)}`).join("、")}）`);
-    return parts.length ? "\n\n=== 即時營運/財務資料（回答營運、銷售、帳戶問題一律以此為準，不要說沒有資料） ===\n\n" + parts.join("\n\n") : "";
+    // 銀行/內帳
+    if (bank?.entries?.length) { const last = [...bank.entries].reverse().find(e => e.balanceAfter > 0); parts.push(`【合作金庫·喬亞帳戶】銀行進出 ${bank.entries.length} 筆${last ? `，最新餘額 ${nt(last.balanceAfter)}（${last.payDate}）` : ""}；最近5筆：` + bank.entries.slice(-5).map(e => `${e.payDate} ${e.content.slice(0, 12)} ${nt(e.amount)}`).join("、")); }
+    if (ctbc?.entries?.length) parts.push(`【中信 e-Cash 匯款】共 ${ctbc.entries.length} 筆；最近5筆：` + ctbc.entries.slice(-5).map(e => `${e.effDate} ${e.note || e.type} ${nt(e.amount)}`).join("、"));
+    if (Array.isArray(accounts) && accounts.length) parts.push("【內帳帳戶】" + accounts.map(a => a.name).join("、") + (Array.isArray(ledger) ? `；交易明細共 ${ledger.length} 筆，最近5筆：` + ledger.slice(0, 5).map(l => `${l.date} ${l.kind} ${nt(l.amount)} ${l.note || l.category || ""}`.trim()).join("、") : ""));
+    // 公開結論
+    const con = Array.isArray(conclusions) ? conclusions.filter(c => c && c.status !== "archived") : [];
+    if (con.length) parts.push("【公開結論（團隊定案）】\n" + con.slice(0, 40).map(c => `- ${c.topic}：${c.conclusion}`).join("\n"));
+    // 信箱管理
+    if (mailRules?.rules?.length) parts.push(`【信箱管理（LWLWLW）】規則 ${mailRules.rules.length} 條（每小時自動跑）${mailLog?.items?.[0] ? `；最近一次處理 ${mailLog.items[0].moved} 封` : ""}`);
+    // 資料總目錄（新功能上線自動出現在這裡）
+    try {
+      const su = import.meta.env.VITE_SUPABASE_URL, sk = import.meta.env.VITE_SUPABASE_ANON_KEY;
+      if (su && sk) {
+        const r = await fetch(`${su}/rest/v1/pm_documents?select=id&order=id`, { headers: { apikey: sk, Authorization: `Bearer ${sk}` } });
+        const rows = r.ok ? await r.json() : [];
+        const skip = /^(pm_hist_|sp_.*_pm_hist_)|backup|pm_bot_(chats|confirm|operators)|pm_vault/;
+        const ids = rows.map(x => x.id).filter(id => !skip.test(id));
+        if (ids.length) parts.push("【資料總目錄（全部資料域；被問到沒細節的，回「資料有收錄，請張良叫 Claude 接上細節」）】\n" + ids.join("、"));
+      }
+    } catch (_) {}
+    return parts.length ? "\n\n=== 全系統即時資料（回答任何空間的問題一律以此為準，不要說沒有資料） ===\n\n" + parts.join("\n\n") : "";
   } catch (_) { return ""; }
 }
 const MODEL = "claude-sonnet-4-20250514";
