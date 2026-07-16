@@ -1784,7 +1784,7 @@ function RosterView({ canEdit, confirm, me }) {
   const canOpen = (pp) => canEdit || isSelf(pp);
   const mmdd = (b) => b ? `${Number(b.split("-")[1])}/${Number(b.split("-")[2])}` : "—";
   const docCount = (pp) => fields.filter(f => f.type === "file").reduce((n, f) => n + ((pp[f.key] || []).length), 0);
-  const val = (pp, k) => k === "prog" ? progress(pp) : k === "statusD" ? statusOf(pp) : k === "bday" ? String(pp.bday || "").slice(5) : (pp[k] ?? "");
+  const val = (pp, k) => k === "prog" ? progress(pp) : k === "statusD" ? statusOf(pp) : (pp[k] ?? "");
   const showCols = fields.filter(f => f.show);
   // 欄寬配平：固定內容給固定寬、長文字欄平均分（避免有的擠有的空）
   const colW = (f) =>
