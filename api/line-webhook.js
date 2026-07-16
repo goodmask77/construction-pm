@@ -179,6 +179,11 @@ async function loadCrewText() {
     const r360 = pick('kb_360')
     const nameOf = {}
     if (r360 && Array.isArray(r360.people)) r360.people.forEach(p => { nameOf[p.id] = p.name })
+    if (r360 && Array.isArray(r360.people) && r360.people.length) {
+      any = true
+      out.push(`【夥伴名冊（共 ${r360.people.length} 人；生日格式 西元年-月-日，問「誰快生日」看月-日）】`)
+      r360.people.forEach(p => out.push(`  - ${p.name}${p.nick ? '（' + p.nick + '）' : ''}｜生日:${p.bday || '?'}｜到職:${p.startDate || '?'}${p.dept ? '｜部門:' + p.dept : ''}｜${p.status || '在職'}`))
+    }
 
     // 360 互評：每個被評者的「整體平均 + 各構面平均 + 份數」（全員、不截斷）
     if (r360 && Array.isArray(r360.people)) {
