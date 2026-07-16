@@ -137,6 +137,17 @@ async function doApply(days) {
         }
       } finally { lock.release() }
     }
+    // 垃圾郵件夾一律標已讀：不掛未讀數字煩人；Gmail 30 天後自動永久刪除
+    try {
+      const junk = (await client.list()).find(mb => mb.specialUse === '\\Junk')
+      if (junk) {
+        const lock2 = await client.getMailboxLock(junk.path)
+        try {
+          const un = await client.search({ seen: false }, { uid: true })
+          if (un && un.length) { await client.messageFlagsAdd(un, ['\\Seen'], { uid: true }); DBG.boxes.push('junk-seen:' + un.length) }
+        } finally { lock2.release() }
+      }
+    } catch (_) {}
   } finally { await client.logout().catch(() => {}) }
   if (perRule.length) {
     rulesDoc.updatedAt = new Date().toISOString()
