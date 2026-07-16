@@ -1793,9 +1793,11 @@ function RosterView({ canEdit, confirm, me }) {
     if (f.type === "file") return "52px";
     if (f.key === "bday") return "150px";
     const units = Math.max(dispW(f.label) * 0.9, 6, ...people.map(pp => dispW(cellVal(pp, f) === "—" ? "" : cellVal(pp, f))));
-    const px = Math.min(230, Math.max(56, Math.round(units * 7.2 + (f.key === "dept" ? 34 : 18))));
+    const px = Math.min(230, Math.max(56, Math.round(units * 7.6 + (f.key === "dept" ? 34 : 20))));
     return px + "px";
   };
+  // 姓名欄也依內容自動寬（避免當彈性欄吃掉全部剩餘空間、跟員編隔一大片）
+  const nameW = Math.min(250, Math.max(150, Math.round(Math.max(8, ...people.map(pp => dispW(`${pp.name || ""}（${pp.nick || ""}）`))) * 7.6 + 30)));
   const DEPT_PAL = ["#3a6ea5", "#3f7d4e", "#c98a14", "#b3492f", "#6b4a86", "#2f7d7a", "#c4582a", "#5a6e3a"];
   const deptColor = (v) => { const opts = ((fields.find(f2 => f2.key === "dept") || {}).options || []).filter(Boolean); const i = opts.indexOf(v); return DEPT_PAL[(i >= 0 ? i : opts.length) % DEPT_PAL.length]; };
   const ageOf = (b) => { if (!b) return ""; const t = new Date(), d = new Date(b + "T00:00:00"); let a = t.getFullYear() - d.getFullYear(); if (t.getMonth() < d.getMonth() || (t.getMonth() === d.getMonth() && t.getDate() < d.getDate())) a--; return a; };
@@ -1810,7 +1812,7 @@ function RosterView({ canEdit, confirm, me }) {
     const c = (typeof va === "number" && typeof vb === "number") ? (va - vb) : String(va).localeCompare(String(vb), "zh-Hant-TW");
     return c * sort.dir;
   });
-  const GTC = `40px minmax(150px,1.1fr) ${showCols.map(colW).join(" ")} 126px 58px 48px`;
+  const GTC = `40px ${nameW}px ${showCols.map(colW).join(" ")} 126px 58px 48px`;
   const th = (label, key, extra) => (
     <button key={label} onClick={() => key && setSort(s2 => ({ key, dir: s2.key === key ? -s2.dir : 1 }))} title={label} style={{ background: "none", border: "none", textAlign: "left", padding: "8px 8px", fontSize: 10.5, letterSpacing: 0.8, color: sort.key === key ? TEXT : "#9b9384", fontWeight: 700, cursor: key ? "pointer" : "default", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", minWidth: 0, maxWidth: "100%", ...extra }}>
       {label}{key && sort.key === key ? (sort.dir === 1 ? " ▲" : " ▼") : ""}
