@@ -293,6 +293,53 @@ async function loadSheetText() {
   } catch (_) { return '' }
 }
 
+// POS 營運日結（Eats365 自動收信入庫 sp_finance_pm_pos + 當月明細）→ 文字
+async function loadPosText() {
+  try {
+    const now = new Date(Date.now() + 8 * 3600e3)
+    const mo = now.toISOString().slice(0, 7)
+    const kv = await kvGetMany(['sp_finance_pm_pos', 'sp_finance_pm_pos_d_' + mo])
+    const pos = kv['sp_finance_pm_pos']
+    const entries = pos && Array.isArray(pos.entries) ? pos.entries : []
+    if (!entries.length) return ''
+    const nt = (n) => 'NT$' + Math.round(n || 0).toLocaleString()
+    const lines = [`\n\n【營運日結（${entries[0]?.store || 'POS'}，每日結帳自動入庫，共 ${entries.length} 天）】`]
+    entries.slice(-30).forEach(e => lines.push(`  - ${e.date} 營收${nt(e.revenue)}｜${e.txCount}單｜來客${e.guests || '?'}｜客單${e.guests ? nt(Math.round(e.revenue / e.guests)) : '—'}｜現金${nt(e.cash)}/卡${nt(e.card)}/Uber${nt(e.uber)}｜折扣${nt(e.discount)}`))
+    // 當月品項銷售彙總（答「哪些餐賣得好」用）
+    const det = kv['sp_finance_pm_pos_d_' + mo]
+    if (det && det.days) {
+      const agg = {}
+      Object.values(det.days).forEach(day => (day.sheets?.['總銷售額 (以類別分類)'] || []).forEach(sec => {
+        if (sec.title === '總結') return
+        ;(sec.rows || []).forEach(r => {
+          if (!Array.isArray(r) || typeof r[0] !== 'string') return
+          const a = agg[r[0]] = agg[r[0]] || { qty: 0, amt: 0, cat: sec.title }
+          a.qty += Number(r[1]) || 0; a.amt += Number(r[r.length - 1]) || 0
+        })
+      }))
+      const arr = Object.entries(agg).filter(([, v]) => v.amt > 0).sort((a, b) => b[1].amt - a[1].amt)
+      if (arr.length) {
+        lines.push(`【本月品項銷售彙總（依營收排序，共 ${arr.length} 品項；前 25 名＋末 10 名）】`)
+        arr.slice(0, 25).forEach(([n, v], i) => lines.push(`  ${i + 1}. ${n}［${v.cat}］ ${v.qty}份 ${nt(v.amt)}`))
+        if (arr.length > 35) { lines.push('  …（中段略）…'); arr.slice(-10).forEach(([n, v]) => lines.push(`  末段: ${n}［${v.cat}］ ${v.qty}份 ${nt(v.amt)}`)) }
+      }
+    }
+    return lines.join('\n')
+  } catch (_) { return '' }
+}
+
+// 資料總目錄：列出資料庫所有文件 id → D 知道系統有哪些資料域（新空間/新功能上線自動出現在這）
+async function loadCatalogText() {
+  try {
+    const r = await fetch(`${SB_URL}/rest/v1/pm_documents?select=id,updated_at&order=id`, { headers: { apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}` } })
+    const rows = r.ok ? await r.json() : []
+    const skip = /^(pm_hist_|sp_.*_pm_hist_)|backup|pm_bot_(chats|confirm|operators)/
+    const ids = rows.filter(x => !skip.test(x.id)).map(x => `${x.id}(${(x.updated_at || '').slice(5, 10)})`)
+    if (!ids.length) return ''
+    return `\n\n【資料總目錄（App 全部資料域＋最後更新月-日；若被問到你沒有的細節，先看這裡有沒有對應資料域，有的話回「這個資料我有收錄，請張良叫 Claude 幫我接上細節」）】\n  ${ids.join('、')}`
+  } catch (_) { return '' }
+}
+
 // 公開結論（團隊定案，現行版）→ 文字
 async function loadConclusionsText() {
   try {
@@ -305,9 +352,9 @@ async function loadConclusionsText() {
   } catch (_) { return '' }
 }
 
-async function answer(question, snaps, accountsText, financeText, activityText, estimatesText, crewText, canAct, history, memoryText, conclusionsText, tasksText, sheetText) {
+async function answer(question, snaps, accountsText, financeText, activityText, estimatesText, crewText, canAct, history, memoryText, conclusionsText, tasksText, sheetText, posText, catalogText) {
   if (!ANTHROPIC) return '（D哥的 AI 金鑰尚未設定。）'
-  const system = (canAct ? BOT_AGENT_GUIDE + '\n\n' : '') + BOT_PERSONA + (memoryText || '') + SYS_DATA_HEAD + snapshotsToContext(snaps) + (tasksText || '') + (accountsText || '') + (financeText || '') + (activityText || '') + (estimatesText || '') + (crewText || '') + (conclusionsText || '') + (sheetText || '')
+  const system = (canAct ? BOT_AGENT_GUIDE + '\n\n' : '') + BOT_PERSONA + (memoryText || '') + SYS_DATA_HEAD + snapshotsToContext(snaps) + (tasksText || '') + (accountsText || '') + (financeText || '') + (activityText || '') + (estimatesText || '') + (crewText || '') + (conclusionsText || '') + (sheetText || '') + (posText || '') + (catalogText || '')
   const messages = [...(Array.isArray(history) ? history : []), { role: 'user', content: question }]
   const callModel = async (model) => {
     const r = await fetch('https://api.anthropic.com/v1/messages', {
@@ -647,8 +694,8 @@ export default async function handler(req, res) {
       }
 
       // 3) 一般流程：載入資料＋對話記憶＋長期記事本 → 問 AI（操作者才開放下指令）
-      const [snaps, accountsText, financeText, activityText, estimatesText, crewText, history, memList, conclusionsText, tasksText, sheetText] = await Promise.all([loadSnapshots(), loadAccounts(), loadFinanceText(), loadActivityText(), loadEstimatesText(), loadCrewText(), getChatHistory(convId), getMemory(), loadConclusionsText(), loadTasksText(), loadSheetText()])
-      const rawReply = await answer(text, snaps, accountsText, financeText, activityText, estimatesText, crewText, canAct, history, memoryToText(memList), conclusionsText, tasksText, sheetText)
+      const [snaps, accountsText, financeText, activityText, estimatesText, crewText, history, memList, conclusionsText, tasksText, sheetText, posText, catalogText] = await Promise.all([loadSnapshots(), loadAccounts(), loadFinanceText(), loadActivityText(), loadEstimatesText(), loadCrewText(), getChatHistory(convId), getMemory(), loadConclusionsText(), loadTasksText(), loadSheetText(), loadPosText(), loadCatalogText()])
+      const rawReply = await answer(text, snaps, accountsText, financeText, activityText, estimatesText, crewText, canAct, history, memoryToText(memList), conclusionsText, tasksText, sheetText, posText, catalogText)
       // 抓出 D 想長期記住的事（[[記住:...]]）→ 存進記事本(僅操作者)，並把標記從給人看的文字拿掉
       const { facts, clean } = extractMemoryTags(rawReply)
       if (canAct && facts.length) { for (const f of facts) await addMemory(f, 'auto', op?.name) }
