@@ -92,7 +92,8 @@ async function doApply(days) {
     const boxes = ['INBOX']
     for (const mb of await client.list()) {
       if (mb.flags && mb.flags.has && mb.flags.has('\\Noselect')) continue
-      if (mb.specialUse === '\\Important') { boxes.push(mb.path); continue }
+      // Gmail「重要郵件」的 \Important 是非標準旗標，imapflow 不會放進 specialUse → 要看 flags
+      if (mb.specialUse === '\\Important' || (mb.flags && mb.flags.has && mb.flags.has('\\Important'))) { boxes.push(mb.path); continue }
       if (mb.specialUse || mb.path === 'INBOX' || mb.path === 'Notes') continue
       if (/^\[Gmail\]/.test(mb.path)) continue
       if (targets.has(mb.path)) continue
