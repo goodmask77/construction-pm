@@ -51,6 +51,37 @@ const ADMIN_USER = "goodmask77"; // 僅此帳號可編輯（不顯示於介面�
 // 介面顯示用：絕不顯示登入帳號字串（避免外洩）。管理員一律顯示「管理員」。
 const maskAccount = (u) => !u ? "—" : (u === ADMIN_USER ? "管理員" : u);
 const API_URL = "https://api.anthropic.com/v1/messages";
+// AI顧問的空間即時資料（財務空間＝營運日結+品項逐日+銀行帳戶；問「哪道菜穩不穩」才有數字可答）
+async function loadSpaceAIContext() {
+  if (CURRENT_SPACE !== "finance") return "";
+  try {
+    const nt = (n) => "NT$" + Math.round(n || 0).toLocaleString();
+    const g = async (k) => { try { const v = await window.storage.get(k, true); return v && v.value ? JSON.parse(v.value) : null; } catch (_) { return null; } };
+    const [pos, bank, ctbc] = await Promise.all([g("sp_finance_pm_pos"), g("sp_finance_pm_bank"), g("sp_finance_pm_ctbc")]);
+    const parts = [];
+    if (pos?.entries?.length) {
+      parts.push("【營運日結（" + (pos.entries[0].store || "POS") + "，每日自動入庫）】\n" + pos.entries.slice(-30).map(e => `- ${e.date} 營收${nt(e.revenue)}｜${e.txCount}單｜來客${e.guests || "?"}｜現金${nt(e.cash)}/卡${nt(e.card)}/Uber${nt(e.uber)}｜折扣${nt(e.discount)}`).join("\n"));
+      const d = new Date(); const mo = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+      const det = await g("sp_finance_pm_pos_d_" + mo);
+      if (det?.days) {
+        const per = {};
+        Object.entries(det.days).forEach(([date, day]) => (day.sheets?.["總銷售額 (以類別分類)"] || []).forEach(sec => {
+          if (sec.title === "總結") return;
+          (sec.rows || []).forEach(r => {
+            if (!Array.isArray(r) || typeof r[0] !== "string") return;
+            const o = per[r[0]] = per[r[0]] || { cat: sec.title, days: {}, qty: 0, amt: 0 };
+            o.days[date] = (o.days[date] || 0) + (Number(r[1]) || 0); o.qty += Number(r[1]) || 0; o.amt += Number(r[r.length - 1]) || 0;
+          });
+        }));
+        const arr = Object.entries(per).filter(([, v]) => v.amt > 0).sort((a, b) => b[1].amt - a[1].amt);
+        parts.push("【本月品項逐日銷售（分析穩定度/成長用；格式：品項｜分類｜總份｜總額｜各日份數）】\n" + arr.slice(0, 60).map(([n, v]) => `- ${n}｜${v.cat}｜${v.qty}份｜${nt(v.amt)}｜` + Object.entries(v.days).sort().map(([dd, q]) => `${Number(dd.slice(8))}日:${q}`).join(" ")).join("\n"));
+      }
+    }
+    if (bank?.entries?.length) { const last = [...bank.entries].reverse().find(e => e.balanceAfter > 0); parts.push(`【合作金庫·喬亞帳戶】銀行進出 ${bank.entries.length} 筆${last ? `，最新餘額 ${nt(last.balanceAfter)}（${last.payDate}）` : ""}`); }
+    if (ctbc?.entries?.length) parts.push(`【中信 e-Cash 匯款】共 ${ctbc.entries.length} 筆（最近：${ctbc.entries.slice(-3).map(e => `${e.effDate} ${e.note || e.type} ${nt(e.amount)}`).join("、")}）`);
+    return parts.length ? "\n\n=== 即時營運/財務資料（回答營運、銷售、帳戶問題一律以此為準，不要說沒有資料） ===\n\n" + parts.join("\n\n") : "";
+  } catch (_) { return ""; }
+}
 const MODEL = "claude-sonnet-4-20250514";
 
 
@@ -7413,7 +7444,8 @@ function GlobalAIPanel({ chat, setChat, onClose, cats, setCats, canEdit, confirm
       }
       history.push({ role: "user", content });
       const userRules = (settings?.notes || "").trim() ? `\n\n【使用者的自訂指示（最高優先，務必遵守）】\n${settings.notes.trim()}` : "";
-      const reply = await callAI(history, (conf().aiRole || SYSTEM_GLOBAL) + (canEdit ? (AGENT_GUIDE + VISION_GUIDE) : "") + userRules);
+      const spaceCtx = await loadSpaceAIContext();
+      const reply = await callAI(history, (conf().aiRole || SYSTEM_GLOBAL) + spaceCtx + (canEdit ? (AGENT_GUIDE + VISION_GUIDE) : "") + userRules);
 
       // 顯示去掉 json 指令區塊後的乾淨文字
       const cleanText = reply.replace(/```json[\s\S]*?```/gi, "").trim();
