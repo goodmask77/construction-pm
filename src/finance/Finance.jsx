@@ -815,6 +815,14 @@ export default function FinanceView({ K, confirm, canEdit, ReceiptUploader, onLo
               note: "來源：日結信「總銷售額(以類別分類)」分頁 → 明細資料庫 pm_pos_d_月份",
             };
           }
+          if (dr.type === "catmatrix") {
+            const raw = [...days].reverse().flatMap(d => Object.entries(catDay).filter(([, dm]) => dm[d.date]).map(([c, dm]) => ({ date: d.date, name: c, qty: dm[d.date], amt: dm[d.date] })));
+            return {
+              title: "全類別 × 日期（金額）", cols: ["日期", "分類", "金額"],
+              rows: raw.map(x => [x.date, x.name, fmt(x.amt)]), raw, pivot: true, pivotMoney: true,
+              note: "來源：日結信「總銷售額(以類別分類)」總結段 → 明細資料庫 pm_pos_d_月份・格子＝當日該分類營收",
+            };
+          }
           if (dr.type === "allitems") {
             const raw = [...days].reverse().flatMap(d => (dayDet(d.date)?.sheets?.[CATSHEET] || []).filter(sec => sec.title !== "總結").flatMap(sec => (sec.rows || []).map(r => ({ date: d.date, name: String(r[0]), cat: sec.title, qty: Number(r[1]) || 0, pct: r[2], amt: Number(r[r.length - 1]) || 0 }))));
             return {
@@ -858,7 +866,7 @@ export default function FinanceView({ K, confirm, canEdit, ReceiptUploader, onLo
           return null;
         };
         const drill = buildDrill(posDrill);
-        const openDrill = (dr) => { setPosDrillView(dr.type === "allitems" ? "pivot" : "list"); setPosDrillSort(null); setPosDrill(dr); };
+        const openDrill = (dr) => { setPosDrillView(["allitems", "catmatrix"].includes(dr.type) ? "pivot" : "list"); setPosDrillSort(null); setPosDrill(dr); };
         const WD = ["日", "一", "二", "三", "四", "五", "六"];
         const wd = (v) => (typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v)) ? `${v.slice(5)}（${WD[new Date(v + "T00:00:00").getDay()]}）` : v;
         const kpi = (label, val, sub2, cl, onClick) => (
@@ -941,6 +949,9 @@ export default function FinanceView({ K, confirm, canEdit, ReceiptUploader, onLo
                       </button>
                     ); })}
                     {posCats.length > 0 && <button onClick={() => setPosCats([])} style={{ border: "none", background: "none", color: C.faint, fontSize: 11.5, cursor: "pointer" }}>× 清除</button>}
+                    <div style={{ flex: 1 }} />
+                    <button onClick={() => openDrill({ type: "catmatrix" })} style={{ border: `1px solid ${C.blue}`, background: "#fff", color: C.blue, borderRadius: 6, padding: "2px 10px", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>🔲 全類別×日期</button>
+                    <button onClick={() => openDrill({ type: "allitems" })} style={{ border: `1px solid ${C.green}`, background: "#fff", color: C.green, borderRadius: 6, padding: "2px 10px", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>🔲 全品項×日期</button>
                     {!posCats.length && <span style={{ fontSize: 11, color: C.faint }}>點分類籤＝下方出現「選到的分類」逐{posGran === "day" ? "日" : posGran === "week" ? "週" : "月"}比較；熱銷榜也會跟著只看選到的分類</span>}
                   </div>
                   {posCats.length > 0 && (() => {
@@ -1106,17 +1117,17 @@ export default function FinanceView({ K, confirm, canEdit, ReceiptUploader, onLo
                               <th style={{ ...thS, textAlign: "left", position: "sticky", left: 0, zIndex: 2 }}>品項</th>
                               {dts.map(dt => <th key={dt} style={{ ...thS, textAlign: "center", fontFamily: MONOF }}>{wd(dt)}</th>)}
                               <th style={{ ...thS, textAlign: "right" }}>合計</th>
-                              <th style={{ ...thS, textAlign: "right" }}>金額</th>
+                              {!drill.pivotMoney && <th style={{ ...thS, textAlign: "right" }}>金額</th>}
                             </tr></thead>
                             <tbody>
                               {names.map(([nm, o], i) => (
                                 <tr key={nm}>
                                   <td style={{ padding: "5px 10px", color: C.text, fontWeight: 600, borderTop: "1px solid #f0ead9", whiteSpace: "nowrap", maxWidth: 240, overflow: "hidden", textOverflow: "ellipsis", position: "sticky", left: 0, background: i % 2 ? "#f8f4ea" : "#fff", zIndex: 1 }} title={nm}>{nm}</td>
-                                  {dts.map(dt => { const q = o.days[dt] || 0; return (
-                                    <td key={dt} style={{ padding: "5px 6px", textAlign: "center", fontFamily: MONOF, fontWeight: q ? 700 : 400, color: q ? "#1d3a5f" : "#d5cbb6", background: q ? `rgba(58,110,165,${0.08 + (q / mx) * 0.42})` : (i % 2 ? "#f8f4ea" : "#fff"), borderTop: "1px solid #f0ead9" }}>{q || "—"}</td>
+                                  {dts.map(dt => { const q = o.days[dt] || 0; const disp = !q ? "—" : drill.pivotMoney ? (q >= 10000 ? Math.round(q / 1000) + "K" : q.toLocaleString()) : q; return (
+                                    <td key={dt} style={{ padding: "5px 6px", textAlign: "center", fontFamily: MONOF, fontWeight: q ? 700 : 400, fontSize: drill.pivotMoney ? 10.5 : undefined, color: q ? "#1d3a5f" : "#d5cbb6", background: q ? `rgba(58,110,165,${0.08 + (q / mx) * 0.42})` : (i % 2 ? "#f8f4ea" : "#fff"), borderTop: "1px solid #f0ead9" }}>{disp}</td>
                                   ); })}
-                                  <td style={{ padding: "5px 10px", textAlign: "right", fontFamily: MONOF, fontWeight: 700, color: C.text, borderTop: "1px solid #f0ead9", background: i % 2 ? "#f8f4ea" : "#fff" }}>{o.total}</td>
-                                  <td style={{ padding: "5px 10px", textAlign: "right", fontFamily: MONOF, color: C.sub, borderTop: "1px solid #f0ead9", background: i % 2 ? "#f8f4ea" : "#fff" }}>{fmt(o.amt)}</td>
+                                  <td style={{ padding: "5px 10px", textAlign: "right", fontFamily: MONOF, fontWeight: 700, color: C.text, borderTop: "1px solid #f0ead9", background: i % 2 ? "#f8f4ea" : "#fff" }}>{drill.pivotMoney ? fmt(o.total) : o.total}</td>
+                                  {!drill.pivotMoney && <td style={{ padding: "5px 10px", textAlign: "right", fontFamily: MONOF, color: C.sub, borderTop: "1px solid #f0ead9", background: i % 2 ? "#f8f4ea" : "#fff" }}>{fmt(o.amt)}</td>}
                                 </tr>
                               ))}
                             </tbody>
