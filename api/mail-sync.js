@@ -155,19 +155,22 @@ async function syncPos(days) {
     try { uids = await client.search({ since: new Date(Date.now() - days * 864e5) }, { uid: true }) } catch (e) { DBG.boxes.push('pos-searchERR:' + e.message) }
     DBG.boxes.push('pos:' + (Array.isArray(uids) ? uids.length : String(uids)))
     if (!uids || !uids.length) return
-    for await (const msg of client.fetch(uids, { envelope: true, bodyStructure: true }, { uid: true })) {
+    // ⚠️ imapflow：fetch 迭代中不可再下其他指令（會死鎖）→ 先收集符合的 uid，迴圈外再下載
+    const matched = []
+    for await (const msg of client.fetch(uids, { envelope: true }, { uid: true })) {
       const from = msg.envelope?.from?.[0]?.address || ''
       const subject = msg.envelope?.subject || ''
-      if (!/eats365/i.test(from) && !/營業報告|Eats365/i.test(subject)) continue
+      if (/eats365/i.test(from) || /營業報告|Eats365/i.test(subject)) matched.push({ uid: msg.uid, subject })
+    }
+    for (const mm of matched) {
       scanned++
-      // 需要附件 → 抓整封再讓 mailparser 拆
-      const { content } = await client.download(msg.uid, undefined, { uid: true })
+      const { content } = await client.download(mm.uid, undefined, { uid: true })
       const chunks = []; for await (const c of content) chunks.push(c)
       const parsed = await simpleParser(Buffer.concat(chunks))
       const att = (parsed.attachments || []).find(a => /\.xlsx?$/i.test(a.filename || ''))
       if (!att) continue
       try {
-        const rec = parsePosWorkbook(att.content, subject)
+        const rec = parsePosWorkbook(att.content, mm.subject)
         if (!have.has(rec.id) && !found[rec.id]) found[rec.id] = rec
       } catch (_) {}
     }
