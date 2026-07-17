@@ -60,7 +60,8 @@ export default function MailManagerView({ K, canEdit, confirm }) {
   const [tab, setTab] = useState("rules"); // 第一層＝規則；mails＝第二層信件；logs
   const [scan, setScan] = useState(null);
   const [rules, setRules] = useState(null);
-  const [builtin, setBuiltin] = useState({ junkAi: true, unsub: true }); // 內建智慧規則開關（後端 apply 會讀）
+  const [builtin, setBuiltin] = useState({ junkAi: { on: true, scope: "all" }, unsub: { on: true, scope: "all" } }); // 內建智慧規則：啟用+套用範圍（後端 apply 會讀）
+  const [binDrawer, setBinDrawer] = useState(null); // 內建規則編輯（junkAi | unsub）
   const [reviews, setReviews] = useState([]); // 覆核紀錄（學習用）
   const [log, setLog] = useState({ items: [] });
   const [busy, setBusy] = useState("");
@@ -83,7 +84,8 @@ export default function MailManagerView({ K, canEdit, confirm }) {
       let list = (d.rules || []).map(migrateRule);
       if (d.v !== 2) { await window.storage.set(K("pm_mail_rules"), JSON.stringify({ v: 2, rules: list, builtin: d.builtin }), true).catch(() => {}); }
       setRules(list);
-      setBuiltin({ junkAi: d.builtin?.junkAi !== false, unsub: d.builtin?.unsub !== false });
+      const nb = (b) => b === false ? { on: false, scope: "all" } : (b && typeof b === "object") ? { on: b.on !== false, scope: b.scope || "all" } : { on: true, scope: "all" };
+      setBuiltin({ junkAi: nb(d.builtin?.junkAi), unsub: nb(d.builtin?.unsub) });
     } catch (_) { setRules([]); }
   };
   useEffect(() => { loadAll(); }, []); // eslint-disable-line
@@ -137,7 +139,10 @@ export default function MailManagerView({ K, canEdit, confirm }) {
   const senders = (scan?.senders || []).filter(sd => !covered(sd));
   const pendingN = senders.length;
   const acctRules = (rules || []).filter(r => inScope(r, acct));
-  const groups = [...new Set(acctRules.map(r => r.group || ""))].sort((a, b) => (a === "" ? 1 : b === "" ? -1 : a.localeCompare(b, "zh-TW")));
+  // 分組排序：同動作放一起（保留 → 分類 → 刪除；未分組最後）
+  const actRank = (a) => a === "keep" ? 0 : a === "move" ? 1 : 2;
+  const groupRank = (g) => g === "" ? 9 : Math.min(...acctRules.filter(r => (r.group || "") === g).map(r => actRank(r.action)));
+  const groups = [...new Set(acctRules.map(r => r.group || ""))].sort((a, b) => (groupRank(a) - groupRank(b)) || a.localeCompare(b, "zh-TW"));
   const folders = [...new Set((rules || []).map(r => r.folder).filter(Boolean))];
   const groupNames = [...new Set((rules || []).map(r => r.group).filter(Boolean))];
   const ydayMoved = (() => { const y = new Date(Date.now() - 864e5).toLocaleDateString("zh-TW"); return (log.items || []).filter(it => new Date(it.ts).toLocaleDateString("zh-TW") === y).reduce((s, it) => s + (it.moved || 0), 0); })();
@@ -226,30 +231,6 @@ export default function MailManagerView({ K, canEdit, confirm }) {
                 {canEdit && btn("＋ 新增規則", () => { const nid = rid(); saveRules([{ id: nid, name: "", fields: ["subject"], mode: "any", keywords: [], action: "delete", folder: "", group: "", scope: [acct], enabled: true, hits: 0 }, ...rules]); setDrawer(nid); setKwInput(""); })}
                 {canEdit && btn(busy === "apply" ? "執行中…" : "▶ 執行全部規則", runApply, { background: C.accent, color: "#fff", borderColor: C.accent })}
               </div>
-              {/* 內建智慧規則（引擎內建、不用設定；可停用）——命中數取自執行紀錄 */}
-              {(() => {
-                const sum = (rid2) => (log.items || []).reduce((s, it) => s + (it.perRule || []).filter(p => p.ruleId === rid2).reduce((s2, p) => s2 + p.count, 0), 0);
-                const rows = [
-                  ["junkAi", "垃圾夾智慧清理", "Gmail 已判垃圾＋（收件人不是我 或 寄件網域是亂碼）→ 直接刪", sum("__junk_ai__")],
-                  ["unsub", "訂閱廣告信自動刪", "收件匣裡沒有規則接手、又帶「取消訂閱」標頭的信 → 直接刪", sum("__unsub__")],
-                ];
-                return (
-                  <div style={{ marginBottom: 14 }}>
-                    <div style={{ fontSize: 12, fontWeight: 800, color: C.sub, margin: "0 0 6px 2px" }}>🤖 內建智慧規則 <span style={{ fontWeight: 400, color: C.faint }}>引擎自動判斷，不用設定；可停用</span></div>
-                    <div style={{ border: `1px solid ${C.line}`, borderRadius: 10, overflow: "hidden" }}>
-                      {rows.map(([k, name, desc, hits], i) => (
-                        <div key={k} style={{ display: isM ? "block" : "grid", gridTemplateColumns: "minmax(240px,1.6fr) 150px 70px 56px 46px", gap: 10, padding: "8px 12px", alignItems: "center", borderTop: i ? `1px solid #f0ead9` : "none", background: i % 2 ? "#faf6ec" : "#fff", opacity: builtin[k] ? 1 : .45 }}>
-                          <span><div style={{ fontSize: 13, fontWeight: 700, color: C.text }}>{name} <span style={{ fontSize: 9.5, color: "#7a5c1e", background: "#f3e8cf", border: "1px solid #e4d5ae", borderRadius: 5, padding: "1px 6px", verticalAlign: "middle" }}>內建</span></div><div style={{ fontSize: 11, color: C.faint }}>{desc}</div></span>
-                          <span style={{ fontSize: 11.5, fontWeight: 700, color: C.red }}>🗑 刪除</span>
-                          <span style={{ fontSize: 10.5, color: C.faint }}>此信箱</span>
-                          <span style={{ fontFamily: MONOF, fontSize: 11.5, textAlign: isM ? "left" : "right", color: hits ? C.sub : "#d5cbb6" }}>{hits}</span>
-                          <span style={{ textAlign: "center" }}><input type="checkbox" checked={!!builtin[k]} onChange={e => canEdit && saveBuiltin({ ...builtin, [k]: e.target.checked })} /></span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                );
-              })()}
               {acctRules.length === 0 ? <div style={{ padding: 24, textAlign: "center", color: C.faint, fontSize: 13 }}>還沒有規則——按「＋新增規則」，或到「信件」頁從實際信件建。</div> :
                 groups.map(g => (
                   <div key={g || "__none__"} style={{ marginBottom: 14 }}>
@@ -272,6 +253,30 @@ export default function MailManagerView({ K, canEdit, confirm }) {
                     </div>
                   </div>
                 ))}
+              {/* 🤖 內建智慧規則（特徵判斷、非文字比對→沒有關鍵字可編；可點開改 啟用/套用範圍）——排在刪除區旁 */}
+              {(() => {
+                const sum = (rid2) => (log.items || []).reduce((s, it) => s + (it.perRule || []).filter(p => p.ruleId === rid2).reduce((s2, p) => s2 + p.count, 0), 0);
+                const rows = [
+                  ["junkAi", "垃圾夾智慧清理", "Gmail 已判垃圾＋（收件人不是我 或 寄件網域是亂碼）→ 直接刪", sum("__junk_ai__")],
+                  ["unsub", "訂閱廣告信自動刪", "收件匣裡沒有規則接手、又帶「取消訂閱」標頭的信 → 直接刪", sum("__unsub__")],
+                ];
+                return (
+                  <div style={{ marginBottom: 14 }}>
+                    <div style={{ fontSize: 12, fontWeight: 800, color: C.sub, margin: "0 0 6px 2px" }}>🤖 內建智慧刪除 <span style={{ fontWeight: 400, color: C.faint }}>特徵判斷（非關鍵字），點列可調 啟用/套用範圍</span></div>
+                    <div style={{ border: `1px solid ${C.line}`, borderRadius: 10, overflow: "hidden" }}>
+                      {rows.map(([k, name, desc, hits], i) => (
+                        <div key={k} onClick={() => canEdit && setBinDrawer(k)} style={{ display: isM ? "block" : "grid", gridTemplateColumns: "minmax(240px,1.6fr) 150px 70px 56px 46px", gap: 10, padding: "8px 12px", alignItems: "center", borderTop: i ? `1px solid #f0ead9` : "none", background: i % 2 ? "#faf6ec" : "#fff", opacity: builtin[k]?.on ? 1 : .45, cursor: canEdit ? "pointer" : "default" }}>
+                          <span><div style={{ fontSize: 13, fontWeight: 700, color: C.text }}>{name} <span style={{ fontSize: 9.5, color: "#7a5c1e", background: "#f3e8cf", border: "1px solid #e4d5ae", borderRadius: 5, padding: "1px 6px", verticalAlign: "middle" }}>內建</span></div><div style={{ fontSize: 11, color: C.faint }}>{desc}</div></span>
+                          <span style={{ fontSize: 11.5, fontWeight: 700, color: C.red }}>🗑 刪除</span>
+                          <span style={{ fontSize: 10.5 }}>{builtin[k]?.scope === "all" ? <span style={{ fontWeight: 700, color: "#7a5c1e", background: "#f3e8cf", border: "1px solid #e4d5ae", borderRadius: 5, padding: "1px 7px" }}>全部信箱</span> : <span style={{ color: C.faint }}>此信箱</span>}</span>
+                          <span style={{ fontFamily: MONOF, fontSize: 11.5, textAlign: isM ? "left" : "right", color: hits ? C.sub : "#d5cbb6" }}>{hits}</span>
+                          <span style={{ textAlign: "center" }} onClick={e => e.stopPropagation()}><input type="checkbox" checked={!!builtin[k]?.on} onChange={e => canEdit && saveBuiltin({ ...builtin, [k]: { ...builtin[k], on: e.target.checked } })} /></span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
           )}
 
@@ -355,6 +360,34 @@ export default function MailManagerView({ K, canEdit, confirm }) {
           )}
         </div>
       )}
+
+      {/* ══ 內建智慧規則 drawer（只能調 啟用/套用範圍；判斷邏輯是特徵不是關鍵字） ══ */}
+      {binDrawer && (() => {
+        const meta = { junkAi: ["垃圾夾智慧清理", "Gmail 已判垃圾的信裡，「收件人不是我」（偽造收件、外洩名單）或「寄件網域是亂碼」（.fnq/.ejg 這種）→ 直接刪。這是特徵判斷、會自動適應每封不同的亂碼地址，所以沒有關鍵字可以編。"], unsub: ["訂閱廣告信自動刪", "收件匣裡「沒有任何規則接手」又帶『取消訂閱』標頭（廣告/電子報必備）的信 → 直接刪。要留的來源請設一條「保留」規則，它就不會被動到。"] }[binDrawer];
+        const b = builtin[binDrawer] || { on: true, scope: "all" };
+        const set = (patch) => saveBuiltin({ ...builtin, [binDrawer]: { ...b, ...patch } });
+        return (
+          <div onClick={e => e.target === e.currentTarget && setBinDrawer(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.3)", zIndex: 750 }}>
+            <div style={{ position: "absolute", top: 0, right: 0, bottom: 0, width: "min(400px,100vw)", background: "#fff", boxShadow: "-6px 0 30px rgba(0,0,0,.15)", padding: 22, overflowY: "auto", boxSizing: "border-box" }}>
+              <div style={{ display: "flex", alignItems: "center", marginBottom: 12 }}>
+                <div style={{ fontSize: 15, fontWeight: 800, color: C.text }}>🤖 {meta[0]}</div>
+                <div style={{ flex: 1 }} />
+                <button onClick={() => setBinDrawer(null)} style={{ background: "none", border: "none", fontSize: 20, cursor: "pointer", color: C.sub }}>×</button>
+              </div>
+              <div style={{ fontSize: 12.5, color: C.sub, lineHeight: 1.7, background: C.card, border: `1px solid ${C.line}`, borderRadius: 8, padding: "10px 12px", marginBottom: 14 }}>{meta[1]}</div>
+              <div style={{ fontSize: 12, color: C.faint, fontWeight: 700, margin: "0 0 7px" }}>套用範圍</div>
+              <div style={{ display: "flex", gap: 6, marginBottom: 14 }}>
+                {chip(b.scope !== "all", "目前信箱", () => set({ scope: [acct === "__all__" ? "gm77" : acct] }))}
+                {chip(b.scope === "all", "全部信箱", () => set({ scope: "all" }))}
+              </div>
+              <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12.5, color: C.text, marginBottom: 16 }}>
+                <input type="checkbox" checked={!!b.on} onChange={e => set({ on: e.target.checked })} />啟用
+              </label>
+              <button onClick={() => setBinDrawer(null)} style={{ width: "100%", border: "none", background: C.accent, color: "#fff", borderRadius: 8, padding: "8px 0", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>完成</button>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* ══ 規則編輯 drawer（通用文字規則） ══ */}
       {drawerRule && (() => {

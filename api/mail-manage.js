@@ -88,6 +88,8 @@ async function doApply(days) {
   const keeps = all.filter(x => x.n.action === 'keep')
   const acts = all.filter(x => x.n.action !== 'keep')
   if (!acts.length) return { skipped: '只有保留規則，無需動作' }
+  // 內建智慧規則設定：舊格式 boolean、新格式 {on, scope}；scope 指定但不含本信箱 → 不跑
+  const binOn = (k) => { const b = rulesDoc.builtin?.[k]; if (b === false) return false; if (b && typeof b === 'object') { if (b.on === false) return false; if (b.scope && b.scope !== 'all' && Array.isArray(b.scope) && !b.scope.includes(ACCT_ID)) return false } return true }
   // bodySets：ruleId|kw → Set(uid)（內文比對＝Gmail 伺服器端搜尋，不下載信件內容；每個信箱資料夾各查一次）
   const hit = (n, m, uid, bodySets) => {
     const textOf = (f) => f === 'subject' ? (m.subject || '') : f === 'from' ? ((m.from || '') + ' ' + (m.name || '')) : f === 'to' ? (m.to || '') : ''
@@ -144,7 +146,7 @@ async function doApply(days) {
             if (keeps.some(({ n }) => hit(n, m, msg.uid, bodySets))) continue // 白名單：永不動
             const found = acts.find(({ n }) => hit(n, m, msg.uid, bodySets))
             if (!found) {
-              if (isInbox && rulesDoc.builtin?.unsub !== false && msg.headers && /list-unsubscribe/i.test(msg.headers.toString())) {
+              if (isInbox && binOn('unsub') && msg.headers && /list-unsubscribe/i.test(msg.headers.toString())) {
                 const pl2 = plan.__unsub__ = plan.__unsub__ || { uids: [], samples: [], rule: { id: '__unsub__', action: 'delete', folder: '', name: '訂閱廣告信(帶取消訂閱標頭)' }, orig: null }
                 pl2.uids.push(msg.uid)
                 if (pl2.samples.length < 5) pl2.samples.push(m.subject.slice(0, 40))
@@ -178,7 +180,7 @@ async function doApply(days) {
     // 垃圾郵件夾智慧清理：Gmail 已判垃圾 ＋（收件人不是本人 或 寄件網域是亂碼TLD）→ 直接進垃圾桶（標已讀）
     // 亂碼垃圾每封換寄件位址，規則比對不到，用特徵判讀；真正寄「給你」而被誤判的信會留在垃圾郵件夾等你看
     try {
-      const junk = rulesDoc.builtin?.junkAi === false ? null : (await client.list()).find(mb => mb.specialUse === '\\Junk')
+      const junk = !binOn('junkAi') ? null : (await client.list()).find(mb => mb.specialUse === '\\Junk')
       if (junk) {
         const lock2 = await client.getMailboxLock(junk.path)
         try {
