@@ -1049,16 +1049,13 @@ export default function App() {
         {view === "compare" && (
           <CompareView canEdit={canEditFiles} requireLogin={denyEdit} onLog={logActivity} />
         )}
-        {["sproducts", "svendors", "sorder"].includes(view) && CURRENT_SPACE === "supply" && (profile?.role === "admin" ? (
+        {/* 供應鏈/LWLWLW：進入與編輯全依「帳號權限矩陣」（不另設管理員硬鎖，勾了就看得到） */}
+        {["sproducts", "svendors", "sorder"].includes(view) && CURRENT_SPACE === "supply" && (
           <SupplyView view={view} K={K} canEdit={canEditData} confirm={confirm} showMoney={showMoney()} />
-        ) : (
-          <div style={{ padding: 40, textAlign: "center", color: SUB, fontSize: 14, background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: 12, margin: "8px 0" }}>🔒 供應鏈空間建置中，目前只開放管理員。</div>
-        ))}
-        {view === "mail" && CURRENT_SPACE === "lw" && (profile?.role === "admin" ? (
+        )}
+        {view === "mail" && CURRENT_SPACE === "lw" && (
           <MailManagerView K={K} canEdit={canEditData} confirm={confirm} />
-        ) : (
-          <div style={{ padding: 40, textAlign: "center", color: SUB, fontSize: 14, background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: 12, margin: "8px 0" }}>🔒 這是 LW 的個人空間，只有管理員可以進入。</div>
-        ))}
+        )}
         {view === "finance" && CURRENT_SPACE === "finance" && (showMoney() ? (
           <FinanceView K={K} confirm={confirm} canEdit={canEditData} ReceiptUploader={ReceiptUploader} onLog={logActivity} />
         ) : (
@@ -1081,6 +1078,7 @@ export default function App() {
                   ); })}
                 </div>
               )}
+              {view === "advisor" && !settings && <div style={{ padding: 30, textAlign: "center", color: SUB, fontSize: 13 }}>設定載入中…（若一直空白代表此帳號無 AI 設定權限）</div>}
               {view === "advisor" && settings && (
                 <AdvisorSettingsView settings={settings} setSettings={guardedSetSettings} cats={cats} aiLog={aiLog} setAiLog={l => { if ((aiLog||[]).length && !(l||[]).length) logActivity("編輯", "清空 AI 顧問對話"); setAiLog(l); saveAILog(l); }} journal={journal} events={events} plans={plans} activityLog={activityLog} logActivity={logActivity} userName={userName} />
               )}
