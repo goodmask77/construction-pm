@@ -706,7 +706,8 @@ export default function TaskCenter({ K, confirm, canEdit, cats, onLog, onAddCat 
               </div>
               {F("主題", <input value={t.title} onChange={e => upd(t.id, { title: e.target.value })} disabled={!canEdit} style={{ ...inp, width: "100%", fontSize: 14, fontWeight: 600 }} />)}
               {F("內容 / 備註", <textarea value={t.note || ""} onChange={e => upd(t.id, { note: e.target.value })} disabled={!canEdit} rows={3} style={{ ...inp, width: "100%", resize: "vertical" }} />)}
-              {F("附件（截圖直接 Cmd+V 貼上，或按＋上傳檔案）", <TaskAttach files={t.files || []} onChange={list => upd(t.id, { files: list })} canEdit={canEdit} C={C} line={C.line} />)}
+              {/* 附件外層不能用 <label>（F()）：label 會把任何點擊轉發給裡面的隱藏選檔 input → 點縮圖/刪除都跳出選檔視窗 */}
+              <div style={lbl}>附件（截圖直接 Cmd+V 貼上，或按＋上傳檔案）<div style={{ marginTop: 5 }}><TaskAttach files={t.files || []} onChange={list => upd(t.id, { files: list })} canEdit={canEdit} C={C} line={C.line} /></div></div>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
                 {F("隸屬大項", <select value={t.catId || INBOX} onChange={e => upd(t.id, { catId: e.target.value })} disabled={!canEdit} style={{ ...inp, width: "100%" }}>{groups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}</select>)}
                 {F("狀態", <select value={t.status} onChange={e => upd(t.id, { status: e.target.value })} disabled={!canEdit} style={{ ...inp, width: "100%" }}>{STATUS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select>)}
