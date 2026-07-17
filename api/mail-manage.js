@@ -137,12 +137,34 @@ async function doApply(days) {
         }
       } finally { lock.release() }
     }
-    // 垃圾郵件夾一律標已讀：不掛未讀數字煩人；Gmail 30 天後自動永久刪除
+    // 垃圾郵件夾智慧清理：Gmail 已判垃圾 ＋（收件人不是本人 或 寄件網域是亂碼TLD）→ 直接進垃圾桶（標已讀）
+    // 亂碼垃圾每封換寄件位址，規則比對不到，用特徵判讀；真正寄「給你」而被誤判的信會留在垃圾郵件夾等你看
     try {
       const junk = (await client.list()).find(mb => mb.specialUse === '\\Junk')
       if (junk) {
         const lock2 = await client.getMailboxLock(junk.path)
         try {
+          const TLDS = new Set(['com', 'net', 'org', 'edu', 'gov', 'mil', 'int', 'io', 'co', 'tw', 'jp', 'kr', 'cn', 'hk', 'sg', 'us', 'uk', 'de', 'fr', 'ca', 'au', 'app', 'dev', 'ai', 'me', 'info', 'biz', 'cc', 'tv', 'xyz', 'club', 'shop', 'online', 'site', 'store', 'email', 'cloud', 'life', 'world', 'today', 'news', 'gg', 'ly', 'to'])
+          const mine = MU.toLowerCase()
+          const uidsJ = await client.search({ since: new Date(Date.now() - days * 864e5) }, { uid: true })
+          const kill = [], samples = []
+          if (uidsJ && uidsJ.length) {
+            for await (const msg of client.fetch(uidsJ, { envelope: true }, { uid: true })) {
+              const toStr = (msg.envelope?.to || []).map(x => (x.address || '').toLowerCase()).join(' ')
+              const fromAd = (msg.envelope?.from?.[0]?.address || '').toLowerCase()
+              const tld = (fromAd.split('.').pop() || '').replace(/[^a-z]/g, '')
+              const notMine = !toStr.includes(mine)          // 收件人偽造（me@aol.com 之類）＝必為垃圾
+              const weirdTld = tld && !TLDS.has(tld)          // 寄件網域亂碼（.fnq/.ejg 之類）
+              if (notMine || weirdTld) { kill.push(msg.uid); if (samples.length < 5) samples.push((msg.envelope?.subject || '').slice(0, 36)) }
+            }
+          }
+          if (kill.length) {
+            try { await client.messageFlagsAdd(kill, ['\\Seen'], { uid: true }) } catch (_) {}
+            await client.messageMove(kill, sp.trash || '[Gmail]/Trash', { uid: true })
+            moved += kill.length
+            perRule.push({ ruleId: '__junk_ai__', rule: '垃圾夾智慧清理(亂碼寄件/偽造收件)', action: 'delete', label: '', count: kill.length, samples })
+          }
+          // 剩下的（真的寄給你、只是被 Gmail 誤判的）標已讀就好，不掛未讀數
           const un = await client.search({ seen: false }, { uid: true })
           if (un && un.length) { await client.messageFlagsAdd(un, ['\\Seen'], { uid: true }); DBG.boxes.push('junk-seen:' + un.length) }
         } finally { lock2.release() }
