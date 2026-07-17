@@ -64,6 +64,48 @@ export default function SupplyView({ view, K, canEdit, confirm, showMoney }) {
         `\n──────\n合計 $${d2t(total)}` +
         (needDate ? `\n希望到貨：${dz(needDate)}` : "") + "\n麻煩核對品項與金額，謝謝！";
     };
+    // D發群用 Flex 卡片（LINE 原生電子收據樣式：品項/數量/單價/小計對齊＋合計）
+    const orderFlex = (v) => {
+      const its = picked(v.id);
+      const t = new Date();
+      const d2t = (n) => (Math.round(n * 100) / 100).toLocaleString(undefined, { maximumFractionDigits: 2 });
+      const total = its.reduce((tt, it) => tt + (Number(it.price) || 0) * (Number(qty[it.id]) || 0), 0);
+      const cell = (txt, flexN, opts = {}) => ({ type: "text", text: String(txt), size: "xs", flex: flexN, ...opts });
+      return {
+        type: "flex",
+        altText: orderText(v).slice(0, 390),
+        contents: {
+          type: "bubble", size: "mega",
+          header: {
+            type: "box", layout: "vertical", backgroundColor: "#1d1a15", paddingAll: "14px", contents: [
+              { type: "text", text: "📦 A Beach 101 叫貨單", color: "#ffffff", weight: "bold", size: "md" },
+              { type: "text", text: `${t.getMonth() + 1}/${t.getDate()}（${WDZ[t.getDay()]}）｜${v.name}`, color: "#d9cfbd", size: "xs", margin: "sm" },
+            ],
+          },
+          body: {
+            type: "box", layout: "vertical", spacing: "sm", paddingAll: "14px", contents: [
+              { type: "box", layout: "horizontal", spacing: "sm", contents: [
+                cell("品名", 5, { color: "#9b9384", weight: "bold" }), cell("數量", 2, { color: "#9b9384", align: "end", weight: "bold" }), cell("單價", 2, { color: "#9b9384", align: "end", weight: "bold" }), cell("小計", 3, { color: "#9b9384", align: "end", weight: "bold" }),
+              ] },
+              { type: "separator", color: "#c8bca6" },
+              ...its.map(it => ({ type: "box", layout: "horizontal", spacing: "sm", contents: [
+                cell(it.name + (it.spec ? " " + it.spec : ""), 5, { color: "#1d1a15", wrap: true }),
+                cell(`${qty[it.id]}${it.unit || ""}`, 2, { color: "#5a5247", align: "end" }),
+                cell(it.price ? d2t(Number(it.price)) : "—", 2, { color: "#5a5247", align: "end" }),
+                cell(it.price ? "$" + d2t(Number(it.price) * Number(qty[it.id])) : "—", 3, { color: "#1d1a15", align: "end", weight: "bold" }),
+              ] })),
+              { type: "separator", color: "#c8bca6" },
+              { type: "box", layout: "horizontal", contents: [
+                { type: "text", text: "合計", size: "sm", weight: "bold", color: "#c4582a", flex: 3 },
+                { type: "text", text: "$" + d2t(total), size: "lg", weight: "bold", color: "#c4582a", flex: 5, align: "end" },
+              ] },
+              ...(needDate ? [{ type: "text", text: "🚚 希望到貨：" + dz(needDate), size: "xs", color: "#c4582a", margin: "sm" }] : []),
+              { type: "text", text: "麻煩核對品項與金額，謝謝！", size: "xxs", color: "#9b9384", margin: "sm", wrap: true },
+            ],
+          },
+        },
+      };
+    };
     const recordOrder = (v, via, status, text) => {
       const its = picked(v.id);
       const od = { id: rid("o"), ts: new Date().toISOString(), vendor_id: v.id, vendorName: v.name, dept: v.dept || "共用", needDate, via, status, text, items: its.map(it => ({ id: it.id, name: it.name, spec: it.spec, unit: it.unit, qty: Number(qty[it.id]), price: it.price })) };
@@ -224,7 +266,7 @@ export default function SupplyView({ view, K, canEdit, confirm, showMoney }) {
             const gname = (groups[pv.lineGroupId] || {}).name || pv.lineGroupId;
             if (!(await confirm(`確定把叫貨單發送到「${gname}」？（對外訊息，發出去就收不回）`, { confirmLabel: "發送" }))) return;
             try {
-              const r = await fetch("/api/push", { method: "POST", headers: { "Content-Type": "application/json", "X-API-Key": "ground-pm-2026-secret-abc123" }, body: JSON.stringify({ to: pv.lineGroupId, text }) });
+              const r = await fetch("/api/push", { method: "POST", headers: { "Content-Type": "application/json", "X-API-Key": "ground-pm-2026-secret-abc123" }, body: JSON.stringify({ to: pv.lineGroupId, messages: [orderFlex(pv)] }) });
               const d = await r.json();
               if (!d.ok) { alert(/monthly limit/i.test(d.error || "") ? "LINE 推播月額度用完了（輕用量 200 則/月，每月 1 號重置）。\n這單先按「複製文字」貼給廠商；常用的話可考慮升級 LINE 方案。" : "發送失敗：" + (d.error || "未知")); return; }
               recordOrder(pv, "D發群", "已送出", text); flash("✓ 已由 D哥 發送到「" + gname + "」，叫貨單已記錄");
