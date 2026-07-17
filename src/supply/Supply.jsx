@@ -18,6 +18,8 @@ export default function SupplyView({ view, K, canEdit, confirm, showMoney, userN
   const [tagF, setTagF] = useState("");
   const [flat, setFlat] = useState(false);
   const [collapsed, setCollapsed] = useState({});
+  const [dragV, setDragV] = useState(null); // 拖曳中的廠商 id
+  const [dragI, setDragI] = useState(null); // 拖曳中的品項 id
   const [sel, setSel] = useState(null); // 產品詳情
   const [msg, setMsg] = useState(null);
   const [orders, setOrders] = useState([]);   // 叫貨單紀錄（sp_supply_pm_orders）
@@ -502,7 +504,24 @@ export default function SupplyView({ view, K, canEdit, confirm, showMoney, userN
     const itemsOf = (vid) => (db.vendorItems || []).filter(x => x.vendor_id === vid).sort((a, b) => (a.sort || 0) - (b.sort || 0));
     const addVendor = () => { if (!canEdit) return; const nv = { id: rid("v"), name: "", en: "", dept: "外場", url: "", tags: [], note: "", lineGroupId: "", sendMode: "share", sort: (db.vendors || []).length }; save({ vendors: [...db.vendors, nv] }); setSel("v:" + nv.id); };
     const updV = (id, fp) => save({ vendors: db.vendors.map(x => x.id === id ? { ...x, ...fp } : x) });
-    const addItem = (vid) => { if (!canEdit) return; const ni = { id: rid("vi"), vendor_id: vid, name: "", spec: "", unit: "件", price: "", safeStock: "", sort: itemsOf(vid).length }; save({ vendorItems: [...(db.vendorItems || []), ni] }); setSel("i:" + ni.id); };
+    const addItem = (vid, grp) => { if (!canEdit) return; const ni = { id: rid("vi"), vendor_id: vid, grp: grp || "", name: "", spec: "", unit: "件", price: "", safeStock: "", sort: itemsOf(vid).length }; save({ vendorItems: [...(db.vendorItems || []), ni] }); setSel("i:" + ni.id); };
+    // 拖曳排序：廠商對廠商、品項對品項（同廠商內）
+    const dropVendor = (targetId) => {
+      if (!dragV || dragV === targetId) return setDragV(null);
+      const list = [...(db.vendors || [])].sort((a, b) => (a.sort || 0) - (b.sort || 0));
+      const from = list.findIndex(x => x.id === dragV), to = list.findIndex(x => x.id === targetId);
+      if (from < 0 || to < 0) return setDragV(null);
+      const [mv] = list.splice(from, 1); list.splice(to, 0, mv);
+      save({ vendors: list.map((x, i2) => ({ ...x, sort: i2 })) }); setDragV(null);
+    };
+    const dropItem = (targetId, vid) => {
+      if (!dragI || dragI === targetId) return setDragI(null);
+      const mine = itemsOf(vid); const others = (db.vendorItems || []).filter(x => x.vendor_id !== vid);
+      const from = mine.findIndex(x => x.id === dragI), to = mine.findIndex(x => x.id === targetId);
+      if (from < 0 || to < 0) return setDragI(null);
+      const [mv] = mine.splice(from, 1); const target = mine[to]; mine.splice(to, 0, { ...mv, grp: (target?.grp ?? mv.grp) }); // 拖進別的分類就跟著換組
+      save({ vendorItems: [...others, ...mine.map((x, i2) => ({ ...x, sort: i2 }))] }); setDragI(null);
+    };
     const updI = (id, fp) => save({ vendorItems: (db.vendorItems || []).map(x => x.id === id ? { ...x, ...fp } : x) });
     const selV = sel && sel.startsWith("v:") && db.vendors.find(x => x.id === sel.slice(2));
     const selI = sel && sel.startsWith("i:") && (db.vendorItems || []).find(x => x.id === sel.slice(2));
@@ -526,8 +545,10 @@ export default function SupplyView({ view, K, canEdit, confirm, showMoney, userN
             return (
               <React.Fragment key={v.id}>
                 <div onClick={() => setCollapsed(c2 => ({ ...c2, ["v" + v.id]: !c2["v" + v.id] }))}
-                  style={{ display: "grid", gridTemplateColumns: "18px minmax(150px,1fr) 64px 56px minmax(160px,1.4fr) minmax(140px,1.2fr) 120px", gap: 8, alignItems: "center", minHeight: 44, borderTop: i ? `1px solid #f0ead9` : "none", padding: "4px 10px", cursor: "pointer", background: open ? C.soft : "#fff" }}
+                  onDragOver={e => dragV && e.preventDefault()} onDrop={() => dropVendor(v.id)}
+                  style={{ display: "grid", gridTemplateColumns: "16px 18px minmax(150px,1fr) 64px 56px minmax(160px,1.4fr) minmax(140px,1.2fr) 120px", gap: 8, alignItems: "center", minHeight: 44, borderTop: i ? `1px solid #f0ead9` : "none", padding: "4px 10px", cursor: "pointer", background: open ? C.soft : "#fff", outline: dragV === v.id ? `2px dashed ${C.accent}` : "none" }}
                   onMouseEnter={e => e.currentTarget.style.background = C.soft} onMouseLeave={e => e.currentTarget.style.background = open ? C.soft : "#fff"}>
+                  {canEdit ? <span draggable onDragStart={e => { e.stopPropagation(); setDragV(v.id); }} onDragEnd={() => setDragV(null)} onClick={e => e.stopPropagation()} title="拖曳調整廠商順序" style={{ cursor: "grab", color: "#c8bca6", fontSize: 13, textAlign: "center" }}>⠿</span> : <span />}
                   <span style={{ fontSize: 10, color: C.faint }}>{open ? "▾" : "▸"}</span>
                   <div>
                     <div style={{ fontSize: 13.5, fontWeight: 700, color: C.text }}>{v.name || "（未命名）"}</div>
@@ -542,25 +563,58 @@ export default function SupplyView({ view, K, canEdit, confirm, showMoney, userN
                     {canEdit && <button onClick={() => setSel("v:" + v.id)} style={{ border: `1px solid ${C.line}`, background: "#fff", color: C.sub, borderRadius: 6, padding: "2px 9px", fontSize: 11, cursor: "pointer" }}>✎ 編輯</button>}
                   </div>
                 </div>
-                {open && (
-                  <div style={{ background: "#faf6ec", borderTop: `1px solid #f0ead9`, padding: "6px 12px 10px 36px" }}>
-                    <div style={{ display: "grid", gridTemplateColumns: `minmax(170px,1.4fr) minmax(120px,1fr) 64px ${showMoney ? "84px " : ""}80px 60px`, gap: 8, padding: "4px 0", fontSize: 10, color: C.faint, fontWeight: 700 }}>
-                      <span>品名</span><span>規格</span><span>單位</span>{showMoney && <span style={{ textAlign: "right" }}>單價</span>}<span style={{ textAlign: "right" }}>安全庫存</span><span />
+                {open && (() => {
+                  // 品項依「分類」分層（可折疊/改名/刪除/拖曳；拖到別的分類會跟著換組）
+                  const GTCI = `16px minmax(160px,1.4fr) minmax(110px,1fr) 60px ${showMoney ? "80px " : ""}76px 56px`;
+                  const grpsI = {}; its.forEach(it => { (grpsI[it.grp || "未分類"] = grpsI[it.grp || "未分類"] || []).push(it); });
+                  const gKeys = Object.keys(grpsI).sort((a, b) => (a === "未分類" ? 1 : 0) - (b === "未分類" ? 1 : 0) || (grpsI[a][0].sort || 0) - (grpsI[b][0].sort || 0));
+                  const renameGrp = (g) => { const n = window.prompt("分類名稱", g === "未分類" ? "" : g); if (n === null) return; save({ vendorItems: (db.vendorItems || []).map(x => x.vendor_id === v.id && (x.grp || "未分類") === g ? { ...x, grp: n.trim() } : x) }); };
+                  const delGrp = async (g) => { if (await confirm(`移除分類「${g}」？裡面的品項會移到「未分類」（品項不會被刪）。`, { confirmLabel: "移除分類", danger: false })) save({ vendorItems: (db.vendorItems || []).map(x => x.vendor_id === v.id && (x.grp || "未分類") === g ? { ...x, grp: "" } : x) }); };
+                  const itemRow = (it) => (
+                    <div key={it.id} onDragOver={e => dragI && e.preventDefault()} onDrop={() => dropItem(it.id, v.id)}
+                      style={{ display: "grid", gridTemplateColumns: GTCI, gap: 8, alignItems: "center", minHeight: 30, borderTop: `1px solid #f0ead9`, fontSize: 12.5, outline: dragI === it.id ? `2px dashed ${C.accent}` : "none" }}>
+                      {canEdit ? <span draggable onDragStart={() => setDragI(it.id)} onDragEnd={() => setDragI(null)} title="拖曳排序／拖到別的分類" style={{ cursor: "grab", color: "#c8bca6", fontSize: 12, textAlign: "center" }}>⠿</span> : <span />}
+                      <span style={{ fontWeight: 600, color: C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{it.name || "（未命名）"}{it.matId ? <span title="來自包材庫" style={{ fontSize: 9.5, color: "#7a5c1e", marginLeft: 4 }}>📦</span> : null}</span>
+                      <span style={{ color: C.sub, fontSize: 11.5 }}>{it.spec || "—"}</span>
+                      <span style={{ color: C.sub }}>{it.unit || "—"}</span>
+                      {showMoney && <span style={{ fontFamily: MONOF, textAlign: "right", color: it.price ? C.text : "#d5cbb6" }}>{it.price ? Number(it.price).toLocaleString() : "—"}</span>}
+                      <span style={{ fontFamily: MONOF, textAlign: "right", color: it.safeStock !== "" && it.safeStock != null ? C.sub : "#d5cbb6" }}>{it.safeStock !== "" && it.safeStock != null ? it.safeStock : "—"}</span>
+                      {canEdit ? <button onClick={() => setSel("i:" + it.id)} style={{ border: `1px solid ${C.line}`, background: "#fff", color: C.sub, borderRadius: 6, padding: "1px 8px", fontSize: 11, cursor: "pointer" }}>✎</button> : <span />}
                     </div>
-                    {its.length === 0 && <div style={{ fontSize: 12, color: C.faint, padding: "4px 0" }}>還沒有品項——按下面「＋品項」建立這家的叫貨清單。</div>}
-                    {its.map(it => (
-                      <div key={it.id} style={{ display: "grid", gridTemplateColumns: `minmax(170px,1.4fr) minmax(120px,1fr) 64px ${showMoney ? "84px " : ""}80px 60px`, gap: 8, alignItems: "center", minHeight: 30, borderTop: `1px solid #f0ead9`, fontSize: 12.5 }}>
-                        <span style={{ fontWeight: 600, color: C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{it.name || "（未命名）"}</span>
-                        <span style={{ color: C.sub, fontSize: 11.5 }}>{it.spec || "—"}</span>
-                        <span style={{ color: C.sub }}>{it.unit || "—"}</span>
-                        {showMoney && <span style={{ fontFamily: MONOF, textAlign: "right", color: it.price ? C.text : "#d5cbb6" }}>{it.price ? Number(it.price).toLocaleString() : "—"}</span>}
-                        <span style={{ fontFamily: MONOF, textAlign: "right", color: it.safeStock !== "" && it.safeStock != null ? C.sub : "#d5cbb6" }}>{it.safeStock !== "" && it.safeStock != null ? it.safeStock : "—"}</span>
-                        {canEdit ? <button onClick={() => setSel("i:" + it.id)} style={{ border: `1px solid ${C.line}`, background: "#fff", color: C.sub, borderRadius: 6, padding: "1px 8px", fontSize: 11, cursor: "pointer" }}>✎</button> : <span />}
+                  );
+                  return (
+                    <div style={{ background: "#faf6ec", borderTop: `1px solid #f0ead9`, padding: "6px 12px 10px 30px" }}>
+                      <div style={{ display: "grid", gridTemplateColumns: GTCI, gap: 8, padding: "4px 0", fontSize: 10, color: C.faint, fontWeight: 700 }}>
+                        <span /><span>品名</span><span>規格</span><span>單位</span>{showMoney && <span style={{ textAlign: "right" }}>單價</span>}<span style={{ textAlign: "right" }}>安全庫存</span><span />
                       </div>
-                    ))}
-                    {canEdit && <button onClick={() => addItem(v.id)} style={{ marginTop: 8, border: `1.5px dashed ${C.line}`, background: "transparent", color: C.accent, borderRadius: 7, padding: "5px 14px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>＋ 品項</button>}
-                  </div>
-                )}
+                      {its.length === 0 && <div style={{ fontSize: 12, color: C.faint, padding: "4px 0" }}>還沒有品項——按下面「＋新增品項」建立這家的清單（包材/食材/耗材都放這）。</div>}
+                      {gKeys.map(g => {
+                        const gOpen = !collapsed["g" + v.id + g];
+                        return (
+                          <React.Fragment key={g}>
+                            {(gKeys.length > 1 || g !== "未分類") && (
+                              <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "5px 0 2px", borderTop: `1px solid #f0ead9` }}>
+                                <span onClick={() => setCollapsed(c2 => ({ ...c2, ["g" + v.id + g]: gOpen }))} style={{ cursor: "pointer", fontSize: 10, color: C.faint }}>{gOpen ? "▾" : "▸"}</span>
+                                <span onClick={() => setCollapsed(c2 => ({ ...c2, ["g" + v.id + g]: gOpen }))} style={{ cursor: "pointer", fontSize: 11.5, fontWeight: 800, color: C.sub }}>{g}</span>
+                                <span style={{ fontFamily: MONOF, fontSize: 10.5, color: C.faint }}>{grpsI[g].length}</span>
+                                {canEdit && <>
+                                  <button onClick={() => addItem(v.id, g === "未分類" ? "" : g)} title="在此分類新增品項" style={{ border: "none", background: "none", color: C.accent, fontSize: 11.5, fontWeight: 700, cursor: "pointer", padding: "0 2px" }}>＋</button>
+                                  <button onClick={() => renameGrp(g)} title="重新命名分類" style={{ border: "none", background: "none", color: C.faint, fontSize: 10.5, cursor: "pointer", padding: 0 }}>✎</button>
+                                  {g !== "未分類" && <button onClick={() => delGrp(g)} title="移除分類（品項移到未分類）" style={{ border: "none", background: "none", color: C.faint, fontSize: 11, cursor: "pointer", padding: 0 }}>×</button>}
+                                </>}
+                              </div>
+                            )}
+                            {gOpen && grpsI[g].map(itemRow)}
+                          </React.Fragment>
+                        );
+                      })}
+                      {canEdit && <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+                        <button onClick={() => addItem(v.id)} style={{ border: `1.5px dashed ${C.accent}`, background: "#fff", color: C.accent, borderRadius: 7, padding: "5px 16px", fontSize: 12.5, fontWeight: 700, cursor: "pointer" }}>＋ 新增品項</button>
+                        <button onClick={() => { const n = window.prompt("新分類名稱（例：醬料杯類/盒類/食材）"); if (n && n.trim()) addItem(v.id, n.trim()); }} style={{ border: `1px dashed ${C.line}`, background: "transparent", color: C.sub, borderRadius: 7, padding: "5px 14px", fontSize: 12, cursor: "pointer" }}>＋ 新分類</button>
+                      </div>}
+                    </div>
+                  );
+                })()}
               </React.Fragment>
             );
           })}
@@ -650,7 +704,7 @@ export default function SupplyView({ view, K, canEdit, confirm, showMoney, userN
                 <button onClick={() => setSel(null)} style={{ background: "none", border: "none", fontSize: 22, cursor: "pointer", color: C.sub }}>×</button>
               </div>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-                {[["name", "品名", "1 / -1"], ["spec", "規格（例：2500入/箱）", "1 / -1"], ["unit", "單位（箱/件/包）"], ...(showMoney ? [["price", "單價"]] : []), ["safeStock", "安全庫存量"]].map(([k, l, span]) => (
+                {[["name", "品名", "1 / -1"], ["grp", "分類（例：醬料杯類/盒類/食材，留空＝未分類）", "1 / -1"], ["spec", "規格（例：2500入/箱）", "1 / -1"], ["unit", "單位（箱/件/包）"], ...(showMoney ? [["price", "單價"]] : []), ["safeStock", "安全庫存量"]].map(([k, l, span]) => (
                   <label key={k} style={{ display: "block", fontSize: 11, color: C.faint, fontWeight: 600, gridColumn: span }}>{l}
                     <input value={selI[k] ?? ""} onChange={e => updI(selI.id, { [k]: e.target.value })} disabled={!canEdit} style={{ ...inp, width: "100%", marginTop: 4 }} />
                   </label>
