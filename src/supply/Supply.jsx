@@ -57,9 +57,12 @@ export default function SupplyView({ view, K, canEdit, confirm, showMoney }) {
     const orderText = (v) => {
       const its = picked(v.id);
       const t = new Date();
+      const d2t = (n) => (Math.round(n * 100) / 100).toLocaleString(undefined, { maximumFractionDigits: 2 });
+      const total = its.reduce((tt, it) => tt + (Number(it.price) || 0) * (Number(qty[it.id]) || 0), 0);
       return `📦 A Beach 101 叫貨單 ${t.getMonth() + 1}/${t.getDate()}（${WDZ[t.getDay()]}）\n【${v.name}】\n` +
-        its.map(it => `・${it.name}${it.spec ? " " + it.spec : ""} ×${qty[it.id]} ${it.unit || ""}`).join("\n") +
-        (needDate ? `\n希望到貨：${dz(needDate)}` : "") + "\n再麻煩確認，謝謝！";
+        its.map(it => `・${it.name}${it.spec ? " " + it.spec : ""} ×${qty[it.id]} ${it.unit || ""}${it.price ? `＠${d2t(Number(it.price))}＝$${d2t(Number(it.price) * Number(qty[it.id]))}` : ""}`).join("\n") +
+        `\n──────\n合計 $${d2t(total)}` +
+        (needDate ? `\n希望到貨：${dz(needDate)}` : "") + "\n麻煩核對品項與金額，謝謝！";
     };
     const recordOrder = (v, via, status, text) => {
       const its = picked(v.id);
@@ -72,7 +75,8 @@ export default function SupplyView({ view, K, canEdit, confirm, showMoney }) {
     const orderTotal = (od) => od.items.reduce((t, x) => t + (Number(x.price) || 0) * (x.qty || 0), 0);
     const pickTotal = (vid) => picked(vid).reduce((t, it) => t + (Number(it.price) || 0) * (Number(qty[it.id]) || 0), 0);
     const grandTotal = vlist.reduce((t, v) => t + pickTotal(v.id), 0);
-    const nt2 = (n) => "NT$" + Math.round(n).toLocaleString();
+    const d2 = (n) => (Math.round(n * 100) / 100).toLocaleString(undefined, { maximumFractionDigits: 2 });
+    const nt2 = (n) => "NT$" + d2(n);
     const ST = ["已送出", "廠商已確認", "已到貨", "草稿"];
     // 月底對帳：本月（依紀錄月份）各廠商彙總
     const moNow = new Date().toISOString().slice(0, 7);
@@ -126,7 +130,7 @@ export default function SupplyView({ view, K, canEdit, confirm, showMoney }) {
                       <input value={qv} onChange={e => setQty(q2 => ({ ...q2, [it.id]: e.target.value.replace(/[^0-9.]/g, "") }))} inputMode="decimal" placeholder="0" style={{ ...inp, width: 52, textAlign: "center", padding: "4px 4px", fontFamily: MONOF }} />
                       <button onClick={() => setQty(q2 => ({ ...q2, [it.id]: (Number(q2[it.id]) || 0) + 1 }))} style={{ width: 24, height: 24, border: `1px solid ${C.line}`, background: "#fff", borderRadius: 6, cursor: "pointer", color: C.sub }}>＋</button>
                     </div>
-                    {showMoney && <span style={{ fontFamily: MONOF, textAlign: "right", fontWeight: 700, color: Number(qv) > 0 ? C.accent : "#d5cbb6" }}>{Number(qv) > 0 && it.price ? Math.round(Number(qv) * Number(it.price)).toLocaleString() : "—"}</span>}
+                    {showMoney && <span style={{ fontFamily: MONOF, textAlign: "right", fontWeight: 700, color: Number(qv) > 0 ? C.accent : "#d5cbb6" }}>{Number(qv) > 0 && it.price ? (Math.round(Number(qv) * Number(it.price) * 100) / 100).toLocaleString(undefined, { maximumFractionDigits: 2 }) : "—"}</span>}
                   </div>
                 );
               })}
@@ -194,7 +198,7 @@ export default function SupplyView({ view, K, canEdit, confirm, showMoney }) {
                     <span style={{ color: C.sub, fontSize: 11.5 }}>{x.spec || "—"}</span>
                     <span style={{ fontFamily: MONOF, textAlign: "right" }}>{x.qty} {x.unit || ""}</span>
                     {showMoney && <><span style={{ fontFamily: MONOF, textAlign: "right", color: C.sub }}>{x.price ? Number(x.price).toLocaleString() : "—"}</span>
-                    <span style={{ fontFamily: MONOF, textAlign: "right", fontWeight: 700 }}>{x.price ? Math.round(Number(x.price) * x.qty).toLocaleString() : "—"}</span></>}
+                    <span style={{ fontFamily: MONOF, textAlign: "right", fontWeight: 700 }}>{x.price ? (Math.round(Number(x.price) * x.qty * 100) / 100).toLocaleString(undefined, { maximumFractionDigits: 2 }) : "—"}</span></>}
                   </div>
                 ))}
                 {showMoney && <div style={{ display: "flex", padding: "7px 10px", borderTop: `1.5px solid ${C.hard}`, fontSize: 13, alignItems: "center" }}>
@@ -204,7 +208,7 @@ export default function SupplyView({ view, K, canEdit, confirm, showMoney }) {
                 </div>}
               </div>
               {showMoney && <button onClick={async () => {
-                const txt = `【對帳明細】${odDetail.vendorName} ${new Date(odDetail.ts).toLocaleDateString("zh-TW")}\n` + odDetail.items.map(x => `${x.name} ${x.spec || ""} ×${x.qty}${x.unit || ""} @${x.price || "?"} = ${x.price ? Math.round(Number(x.price) * x.qty).toLocaleString() : "?"}`).join("\n") + `\n總金額 ${nt2(orderTotal(odDetail))}`;
+                const txt = `【對帳明細】${odDetail.vendorName} ${new Date(odDetail.ts).toLocaleDateString("zh-TW")}\n` + odDetail.items.map(x => `${x.name} ${x.spec || ""} ×${x.qty}${x.unit || ""} @${x.price || "?"} = ${x.price ? (Math.round(Number(x.price) * x.qty * 100) / 100).toLocaleString() : "?"}`).join("\n") + `\n總金額 ${nt2(orderTotal(odDetail))}`;
                 try { await navigator.clipboard.writeText(txt); flash("✓ 已複製對帳明細（含單價，內部用）"); } catch (_) {}
                 setOdSel(null);
               }} style={{ width: "100%", marginTop: 10, border: `1px solid ${C.line}`, background: "#fff", color: C.text, borderRadius: 8, padding: "8px 0", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>📋 複製對帳明細（含金額）</button>}
@@ -235,7 +239,7 @@ export default function SupplyView({ view, K, canEdit, confirm, showMoney }) {
                   <button onClick={() => setPreview(null)} style={{ background: "none", border: "none", fontSize: 22, cursor: "pointer", color: C.sub }}>×</button>
                 </div>
                 <pre style={{ background: C.soft, border: `1px solid ${C.line}`, borderRadius: 8, padding: 12, fontSize: 13, whiteSpace: "pre-wrap", fontFamily: "'Noto Sans TC',sans-serif", color: C.text, margin: 0 }}>{text}</pre>
-                <div style={{ fontSize: 11, color: C.faint, margin: "8px 0" }}>訊息不帶價格（金額是內部資料）。</div>
+                <div style={{ fontSize: 11, color: C.faint, margin: "8px 0" }}>叫貨單含單價與合計，方便廠商一起核對金額（價格有調整馬上會發現）。</div>
                 {/* D 群綁定 */}
                 <div style={{ margin: "10px 0" }}>
                   <div style={{ fontSize: 11.5, fontWeight: 700, color: C.sub, marginBottom: 4 }}>D哥 發送目標群（要先把 D 拉進該廠商的 LINE 群，群才會出現在這裡）</div>
