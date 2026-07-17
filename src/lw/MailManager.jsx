@@ -60,6 +60,7 @@ export default function MailManagerView({ K, canEdit, confirm }) {
   const [tab, setTab] = useState("rules"); // 第一層＝規則；mails＝第二層信件；logs
   const [scan, setScan] = useState(null);
   const [rules, setRules] = useState(null);
+  const [builtin, setBuiltin] = useState({ junkAi: true, unsub: true }); // 內建智慧規則開關（後端 apply 會讀）
   const [reviews, setReviews] = useState([]); // 覆核紀錄（學習用）
   const [log, setLog] = useState({ items: [] });
   const [busy, setBusy] = useState("");
@@ -80,14 +81,16 @@ export default function MailManagerView({ K, canEdit, confirm }) {
     try {
       const v = await window.storage.get(K("pm_mail_rules"), true); const d = v && v.value ? JSON.parse(v.value) : { rules: [] };
       let list = (d.rules || []).map(migrateRule);
-      if (d.v !== 2) { await window.storage.set(K("pm_mail_rules"), JSON.stringify({ v: 2, rules: list }), true).catch(() => {}); }
+      if (d.v !== 2) { await window.storage.set(K("pm_mail_rules"), JSON.stringify({ v: 2, rules: list, builtin: d.builtin }), true).catch(() => {}); }
       setRules(list);
+      setBuiltin({ junkAi: d.builtin?.junkAi !== false, unsub: d.builtin?.unsub !== false });
     } catch (_) { setRules([]); }
   };
   useEffect(() => { loadAll(); }, []); // eslint-disable-line
   useEffect(() => { try { localStorage.setItem("pm_mail_last_acct", acct); } catch (_) {} }, [acct]);
 
-  const saveRules = (list) => { setRules(list); window.storage.set(K("pm_mail_rules"), JSON.stringify({ v: 2, rules: list }), true).catch(() => {}); };
+  const saveRules = (list, bi) => { setRules(list); window.storage.set(K("pm_mail_rules"), JSON.stringify({ v: 2, rules: list, builtin: bi || builtin }), true).catch(() => {}); };
+  const saveBuiltin = (bi) => { setBuiltin(bi); saveRules(rules || [], bi); };
   const saveAccts = (list) => { setAccts(list); window.storage.set(K("pm_mail_accounts"), JSON.stringify({ list }), true).catch(() => {}); };
   const saveReviews = (items) => { setReviews(items); window.storage.set(K("pm_mail_reviews"), JSON.stringify({ items: items.slice(0, 500) }), true).catch(() => {}); };
   const upd = (id, patch) => saveRules(rules.map(r => r.id === id ? { ...r, ...patch } : r));
@@ -223,6 +226,30 @@ export default function MailManagerView({ K, canEdit, confirm }) {
                 {canEdit && btn("＋ 新增規則", () => { const nid = rid(); saveRules([{ id: nid, name: "", fields: ["subject"], mode: "any", keywords: [], action: "delete", folder: "", group: "", scope: [acct], enabled: true, hits: 0 }, ...rules]); setDrawer(nid); setKwInput(""); })}
                 {canEdit && btn(busy === "apply" ? "執行中…" : "▶ 執行全部規則", runApply, { background: C.accent, color: "#fff", borderColor: C.accent })}
               </div>
+              {/* 內建智慧規則（引擎內建、不用設定；可停用）——命中數取自執行紀錄 */}
+              {(() => {
+                const sum = (rid2) => (log.items || []).reduce((s, it) => s + (it.perRule || []).filter(p => p.ruleId === rid2).reduce((s2, p) => s2 + p.count, 0), 0);
+                const rows = [
+                  ["junkAi", "垃圾夾智慧清理", "Gmail 已判垃圾＋（收件人不是我 或 寄件網域是亂碼）→ 直接刪", sum("__junk_ai__")],
+                  ["unsub", "訂閱廣告信自動刪", "收件匣裡沒有規則接手、又帶「取消訂閱」標頭的信 → 直接刪", sum("__unsub__")],
+                ];
+                return (
+                  <div style={{ marginBottom: 14 }}>
+                    <div style={{ fontSize: 12, fontWeight: 800, color: C.sub, margin: "0 0 6px 2px" }}>🤖 內建智慧規則 <span style={{ fontWeight: 400, color: C.faint }}>引擎自動判斷，不用設定；可停用</span></div>
+                    <div style={{ border: `1px solid ${C.line}`, borderRadius: 10, overflow: "hidden" }}>
+                      {rows.map(([k, name, desc, hits], i) => (
+                        <div key={k} style={{ display: isM ? "block" : "grid", gridTemplateColumns: "minmax(240px,1.6fr) 150px 70px 56px 46px", gap: 10, padding: "8px 12px", alignItems: "center", borderTop: i ? `1px solid #f0ead9` : "none", background: i % 2 ? "#faf6ec" : "#fff", opacity: builtin[k] ? 1 : .45 }}>
+                          <span><div style={{ fontSize: 13, fontWeight: 700, color: C.text }}>{name} <span style={{ fontSize: 9.5, color: "#7a5c1e", background: "#f3e8cf", border: "1px solid #e4d5ae", borderRadius: 5, padding: "1px 6px", verticalAlign: "middle" }}>內建</span></div><div style={{ fontSize: 11, color: C.faint }}>{desc}</div></span>
+                          <span style={{ fontSize: 11.5, fontWeight: 700, color: C.red }}>🗑 刪除</span>
+                          <span style={{ fontSize: 10.5, color: C.faint }}>此信箱</span>
+                          <span style={{ fontFamily: MONOF, fontSize: 11.5, textAlign: isM ? "left" : "right", color: hits ? C.sub : "#d5cbb6" }}>{hits}</span>
+                          <span style={{ textAlign: "center" }}><input type="checkbox" checked={!!builtin[k]} onChange={e => canEdit && saveBuiltin({ ...builtin, [k]: e.target.checked })} /></span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })()}
               {acctRules.length === 0 ? <div style={{ padding: 24, textAlign: "center", color: C.faint, fontSize: 13 }}>還沒有規則——按「＋新增規則」，或到「信件」頁從實際信件建。</div> :
                 groups.map(g => (
                   <div key={g || "__none__"} style={{ marginBottom: 14 }}>
