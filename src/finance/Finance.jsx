@@ -770,7 +770,7 @@ export default function FinanceView({ K, confirm, canEdit, ReceiptUploader, onLo
           if (days.length < 2) return out;
           const byRev = [...days].sort((a, b) => b.revenue - a.revenue);
           const wdName = (d) => WD2[new Date(d.date + "T00:00:00").getDay()];
-          out.push(["🏆", `最佳 ${byRev[0].date.slice(5)}（${wdName(byRev[0])}）${fmt(byRev[0].revenue)}；最低 ${byRev[byRev.length - 1].date.slice(5)}（${wdName(byRev[byRev.length - 1])}）${fmt(byRev[byRev.length - 1].revenue)}`]);
+          out.push(["🏆", `最佳 ${byRev[0].date.slice(5)}（${wdName(byRev[0])}）${fmt(byRev[0].revenue)}；最低 ${byRev[byRev.length - 1].date.slice(5)}（${wdName(byRev[byRev.length - 1])}）${fmt(byRev[byRev.length - 1].revenue)}`, { type: "day", key: byRev[0].date }]);
           const wk = days.filter(d => [0, 6].includes(new Date(d.date + "T00:00:00").getDay())), wd = days.filter(d => ![0, 6].includes(new Date(d.date + "T00:00:00").getDay()));
           if (wk.length && wd.length) { const a = sum(wk, "revenue") / wk.length, b = sum(wd, "revenue") / wd.length; out.push(["🗓", `週末日均 ${fmt(Math.round(a))} vs 平日 ${fmt(Math.round(b))}（${a >= b ? "週末" : "平日"}強 ${Math.round(Math.abs(a - b) / Math.max(1, Math.min(a, b)) * 100)}%）`]); }
           if (days.length >= 4) {
@@ -785,11 +785,11 @@ export default function FinanceView({ K, confirm, canEdit, ReceiptUploader, onLo
             if (unstable.length) out.push(["🎢", "銷量最不穩：" + unstable.map(x => `${x.n}（波動${Math.round(x.cv * 100)}%）`).join("、")]);
           }
           const slow = Object.entries(itemAgg).filter(([, v]) => v.qty <= 2 && v.amt > 0).map(([n, v]) => `${n}〔${v.cat}・${v.qty}份〕`);
-          if (slow.length) out.push(["🐌", `滯銷提醒（期間只賣 ≤2 份）共 ${slow.length} 項：${slow.slice(0, 6).join("、")}${slow.length > 6 ? "…" : ""}（同名但分類不同＝POS 新舊重複品項，建議整併）`]);
+          if (slow.length) out.push(["🐌", `滯銷提醒（期間只賣 ≤2 份）共 ${slow.length} 項：${slow.slice(0, 6).join("、")}${slow.length > 6 ? "…" : ""}（同名但分類不同＝POS 新舊重複品項，建議整併）`, { type: "allitems" }]);
           const discAbs = Math.abs(sum(days, "discount"));
-          if (revSum && discAbs / revSum > 0.03) out.push(["⚠️", `折扣佔營收 ${Math.round(discAbs / revSum * 100)}%（${fmt(discAbs)}）超過 3% 警戒——點付款卡的「折扣/優惠券明細」查誰給的、為什麼`]);
+          if (revSum && discAbs / revSum > 0.03) out.push(["⚠️", `折扣佔營收 ${Math.round(discAbs / revSum * 100)}%（${fmt(discAbs)}）超過 3% 警戒——點我看逐筆明細（誰給的、為什麼）`, { type: "coupon" }]);
           const wasteAbs = Math.abs(sum(days, "voidItems")) + Math.abs(sum(days, "returnDish"));
-          if (revSum && wasteAbs / revSum > 0.02) out.push(["⚠️", `退菜＋Void 佔營收 ${Math.round(wasteAbs / revSum * 100)}%（${fmt(wasteAbs)}）偏高，注意出餐/點錯`]);
+          if (revSum && wasteAbs / revSum > 0.02) out.push(["⚠️", `退菜＋Void 佔營收 ${Math.round(wasteAbs / revSum * 100)}%（${fmt(wasteAbs)}）偏高——點我看逐日追蹤`, { type: "waste" }]);
           if (avgTicket) { const t1 = days.slice(0, Math.floor(days.length / 2)), t2 = days.slice(-Math.floor(days.length / 2)); const g1 = sum(t1, "guests"), g2 = sum(t2, "guests"); if (g1 && g2) { const a = sum(t1, "revenue") / g1, b = sum(t2, "revenue") / g2; if (Math.abs(b - a) / a > 0.15) out.push([b > a ? "💡" : "🔻", `客單價${b > a ? "上升" : "下降"}：前半 ${fmt(Math.round(a))} → 後半 ${fmt(Math.round(b))}`]); } }
           return out;
         })();
@@ -862,6 +862,14 @@ export default function FinanceView({ K, confirm, canEdit, ReceiptUploader, onLo
               note: "來源：日結信 Balance Sheet「付款方式」段 → 資料庫 pm_pos",
             };
           }
+          if (dr.type === "waste") return {
+            title: "退菜＋Void 逐日追蹤", cols: ["日期", "退菜", "Void", "退單", "合計", "佔當日營收"],
+            rows: [...days].reverse().map(d => {
+              const w = Math.abs(d.returnDish || 0) + Math.abs(d.voidItems || 0);
+              return [d.date, fmt(Math.abs(d.returnDish || 0)), fmt(Math.abs(d.voidItems || 0)), d.refund || 0, fmt(w), d.revenue ? (w / d.revenue * 100).toFixed(1) + "%" : "—"];
+            }),
+            note: "來源：日結信 Balance Sheet 審計段 → 資料庫 pm_pos・想看單日是哪幾筆，點該日營收柱進當日完整原始資料的「審計」區塊",
+          };
           if (dr.type === "coupon") return {
             title: "優惠券 / 折扣明細（含單號・經手・原因）", cols: ["日期", "區塊", "品項/單號", "數量", "佔比", "金額", "經手・原因"],
             rows: [...days].reverse().flatMap(d => (dayDet(d.date)?.sheets?.["優惠券"] || []).flatMap(sec => (sec.rows || []).map(r => [d.date, sec.title || "優惠券", ...parseRow(sec, r)]))),
@@ -997,9 +1005,10 @@ export default function FinanceView({ K, confirm, canEdit, ReceiptUploader, onLo
                 {insights.length > 0 && (
                   <div style={{ ...chartBox2, marginBottom: 10, borderLeft: `4px solid ${C.accent}` }}>
                     <div style={{ fontSize: 11.5, fontWeight: 700, color: C.sub, marginBottom: 6 }}>🧠 重點摘要・提醒・建議 <span style={{ fontWeight: 400, color: C.faint }}>（全部由原始資料即時計算）</span></div>
-                    {insights.map(([ic, t], i) => (
-                      <div key={i} style={{ display: "flex", gap: 8, alignItems: "flex-start", padding: "3px 0", fontSize: 12.5, color: ic === "⚠️" || ic === "🔻" ? C.red : C.text, borderTop: i ? `1px solid #f0ead9` : "none" }}>
-                        <span>{ic}</span><span style={{ flex: 1 }}>{t}</span>
+                    {insights.map(([ic, t, dr2], i) => (
+                      <div key={i} onClick={() => dr2 && openDrill(dr2)} style={{ display: "flex", gap: 8, alignItems: "flex-start", padding: "3px 0", fontSize: 12.5, color: ic === "⚠️" || ic === "🔻" ? C.red : C.text, borderTop: i ? `1px solid #f0ead9` : "none", cursor: dr2 ? "pointer" : "default" }}
+                        onMouseEnter={e => { if (dr2) e.currentTarget.style.background = "#f4efe5"; }} onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
+                        <span>{ic}</span><span style={{ flex: 1 }}>{t}{dr2 && <span style={{ color: C.blue, fontWeight: 700 }}> →</span>}</span>
                       </div>
                     ))}
                   </div>
