@@ -73,24 +73,42 @@ async function doScan(days) {
 // 套用規則（範圍：收件匣＋重要郵件＋使用者自建資料夾；keep=白名單優先；目標標籤資料夾本身不掃避免自轉）
 async function doApply(days) {
   const rulesDoc = (await kvGet('sp_lw_pm_mail_rules')) || { rules: [] }
-  // scope（規則適用範圍）：'all'＝全部信箱／陣列＝指定信箱；本管線目前只跑 gm77（goodmask77），沒有 scope 的舊規則視同適用
-  const ACCT_ID = 'gm77'
-  const rules = (rulesDoc.rules || []).filter(r => r.enabled !== false && r.match && (!r.scope || r.scope === 'all' || (Array.isArray(r.scope) && r.scope.includes(ACCT_ID))))
-  if (!rules.length) return { skipped: '沒有啟用中的規則' }
-  const keeps = rules.filter(r => r.action === 'keep')
-  const acts = rules.filter(r => r.action !== 'keep')
+  // ── 通用文字規則引擎 v2：{fields[],mode,keywords[],action:delete|keep|move,folder,scope}；相容 v1 {field,match,action,label} ──
+  const ACCT_ID = 'gm77' // 本管線目前只跑 goodmask77
+  const norm = (r) => r.fields && r.keywords ? r : {
+    ...r, name: r.note || r.match || '規則',
+    fields: [r.field === 'subject' ? 'subject' : r.field === 'to' ? 'to' : 'from'],
+    mode: 'any', keywords: String(r.match || '').split('|').map(s => s.trim()).filter(Boolean),
+    action: r.action === 'label' ? 'move' : r.action === 'archive' ? 'move' : r.action,
+    folder: r.label || (r.action === 'archive' ? '封存' : ''),
+  }
+  const all = (rulesDoc.rules || []).map(r => ({ n: norm(r), _orig: r }))
+    .filter(({ n }) => n.enabled !== false && (n.keywords || []).length && (!n.scope || n.scope === 'all' || (Array.isArray(n.scope) && n.scope.includes(ACCT_ID))))
+  if (!all.length) return { skipped: '沒有啟用中的規則' }
+  const keeps = all.filter(x => x.n.action === 'keep')
+  const acts = all.filter(x => x.n.action !== 'keep')
   if (!acts.length) return { skipped: '只有保留規則，無需動作' }
-  const hit = (r, m) => {
-    const t = (r.field === 'subject' ? m.subject : r.field === 'to' ? (m.to || '') : (m.from + ' ' + m.name)).toLowerCase()
-    return r.match.toLowerCase().split('|').some(k => k.trim() && t.includes(k.trim()))
+  // bodySets：ruleId|kw → Set(uid)（內文比對＝Gmail 伺服器端搜尋，不下載信件內容；每個信箱資料夾各查一次）
+  const hit = (n, m, uid, bodySets) => {
+    const textOf = (f) => f === 'subject' ? (m.subject || '') : f === 'from' ? ((m.from || '') + ' ' + (m.name || '')) : f === 'to' ? (m.to || '') : ''
+    const kwHit = (kw) => {
+      const k = kw.toLowerCase()
+      for (const f of n.fields || []) {
+        if (f === 'body') { if (bodySets && bodySets.get(n.id + '|' + k)?.has(uid)) return true }
+        else { const t = textOf(f).toLowerCase(); if (n.mode === 'exact' ? t.trim() === k : t.includes(k)) return true }
+      }
+      return false
+    }
+    const kws = n.keywords || []
+    return n.mode === 'all' ? kws.every(kwHit) : kws.some(kwHit)
   }
   const client = await connect()
   const perRule = []
   let moved = 0
   try {
     const sp = await specialPaths(client)
-    // 掃描範圍：收件匣 + 重要郵件(\Important) + 使用者自建資料夾；排除規則目標標籤/系統資料夾/Notes
-    const targets = new Set(acts.filter(r => r.action === 'label').map(r => (r.label || '').trim()).filter(Boolean))
+    // 掃描範圍：收件匣 + 重要郵件(\Important) + 使用者自建資料夾；排除規則目標資料夾/系統資料夾/Notes
+    const targets = new Set(acts.filter(({ n }) => n.action === 'move').map(({ n }) => (n.folder || '').trim()).filter(Boolean))
     const boxes = ['INBOX']
     for (const mb of await client.list()) {
       if (mb.flags && mb.flags.has && mb.flags.has('\\Noselect')) continue
@@ -107,24 +125,33 @@ async function doApply(days) {
       const lock = await client.getMailboxLock(box)
       const plan = {} // ruleId → {uids, samples, rule}
       try {
-        const uids = await client.search({ since: new Date(Date.now() - days * 864e5) }, { uid: true })
+        const since = new Date(Date.now() - days * 864e5)
+        const uids = await client.search({ since }, { uid: true })
         if (uids && uids.length) {
+          // 內文關鍵字：伺服器端搜尋（每條含 body 的規則 × 每個關鍵字查一次，回 uid 集合）
+          const bodySets = new Map()
+          for (const { n } of [...keeps, ...acts]) {
+            if (!(n.fields || []).includes('body')) continue
+            for (const kw of n.keywords || []) {
+              try { const bu = await client.search({ body: kw, since }, { uid: true }); bodySets.set(n.id + '|' + kw.toLowerCase(), new Set(bu || [])) } catch (_) {}
+            }
+          }
           // 收件匣多抓「退訂標頭」：沒被任何規則接手、又帶 List-Unsubscribe（廣告/訂閱信必備）→ 直接刪
           const fq = isInbox ? { envelope: true, headers: ['list-unsubscribe'] } : { envelope: true }
           for await (const msg of client.fetch(uids, fq, { uid: true })) {
             const fr = msg.envelope?.from?.[0] || {}
             const m = { from: (fr.address || '').toLowerCase(), name: fr.name || '', subject: msg.envelope?.subject || '', to: (msg.envelope?.to || []).map(x => x.address || '').join(' ').toLowerCase() }
-            if (keeps.some(r => hit(r, m))) continue // 白名單：永不動
-            const r = acts.find(r2 => hit(r2, m))
-            if (!r) {
+            if (keeps.some(({ n }) => hit(n, m, msg.uid, bodySets))) continue // 白名單：永不動
+            const found = acts.find(({ n }) => hit(n, m, msg.uid, bodySets))
+            if (!found) {
               if (isInbox && msg.headers && /list-unsubscribe/i.test(msg.headers.toString())) {
-                const pl2 = plan.__unsub__ = plan.__unsub__ || { uids: [], samples: [], rule: { id: '__unsub__', action: 'delete', label: '', note: '訂閱廣告信(帶取消訂閱標頭)' } }
+                const pl2 = plan.__unsub__ = plan.__unsub__ || { uids: [], samples: [], rule: { id: '__unsub__', action: 'delete', folder: '', name: '訂閱廣告信(帶取消訂閱標頭)' }, orig: null }
                 pl2.uids.push(msg.uid)
                 if (pl2.samples.length < 5) pl2.samples.push(m.subject.slice(0, 40))
               }
               continue
             }
-            const pl = plan[r.id] = plan[r.id] || { uids: [], samples: [], rule: r }
+            const pl = plan[found.n.id] = plan[found.n.id] || { uids: [], samples: [], rule: found.n, orig: found._orig }
             pl.uids.push(msg.uid)
             if (pl.samples.length < 5) pl.samples.push(m.subject.slice(0, 40))
           }
@@ -133,9 +160,8 @@ async function doApply(days) {
           const r = pl.rule
           let dest = ''
           if (r.action === 'delete') dest = sp.trash || '[Gmail]/Trash'
-          else if (r.action === 'archive') dest = sp.all || '[Gmail]/All Mail'
-          else if (r.action === 'label') {
-            dest = (r.label || '自動分類').trim()
+          else if (r.action === 'move') {
+            dest = (r.folder || '自動分類').trim()
             try { await client.mailboxCreate(dest) } catch (_) {} // 已存在會丟錯，忽略
           }
           if (!dest || dest === box || !pl.uids.length) continue
@@ -144,8 +170,8 @@ async function doApply(days) {
           await client.messageMove(pl.uids, dest, { uid: true })
           moved += pl.uids.length
           const ex = perRule.find(x => x.ruleId === r.id && x.action === r.action)
-          if (ex) { ex.count += pl.uids.length } else perRule.push({ ruleId: r.id, rule: r.note || r.match, action: r.action, label: r.label || '', count: pl.uids.length, samples: pl.samples })
-          if (!String(r.id).startsWith('__')) r.hits = (r.hits || 0) + pl.uids.length
+          if (ex) { ex.count += pl.uids.length } else perRule.push({ ruleId: r.id, rule: r.name || '規則', action: r.action === 'move' ? 'label' : r.action, label: r.folder || '', count: pl.uids.length, samples: pl.samples })
+          if (pl.orig) pl.orig.hits = (pl.orig.hits || 0) + pl.uids.length
         }
       } finally { lock.release() }
     }
@@ -178,7 +204,7 @@ async function doApply(days) {
           }
           // 剩下的（真的寄給你、只是被 Gmail 誤判的）標已讀就好，不掛未讀數
           const un = await client.search({ seen: false }, { uid: true })
-          if (un && un.length) { await client.messageFlagsAdd(un, ['\\Seen'], { uid: true }); DBG.boxes.push('junk-seen:' + un.length) }
+          if (un && un.length) { await client.messageFlagsAdd(un, ['\\Seen'], { uid: true }) }
         } finally { lock2.release() }
       }
     } catch (_) {}
