@@ -60,7 +60,7 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
   const [ctbc, setCtbc] = useState(null);        // 中信 e-Cash 匯款通知資料庫（自動收信入庫）
   const [reconAcct, setReconAcct] = useState("coop"); // 對帳帳戶切換：coop=合庫 / ctbc=中信
   const [posDet, setPosDet] = useState({});      // POS 明細（按月分檔 pm_pos_d_YYYY-MM：分類/商品/優惠券/付款）
-  const [posRange, setPosRange] = useState(30);  // 分析期間：7 / 30 / 9999 天
+  const [posPeriod, setPosPeriod] = useState({ mode: "all", month: "", from: "", to: "" }); // 分析期間：全部 / 選月份 / 自訂（張良 2026-07-18）
   const [posDrill, setPosDrill] = useState(null); // 明細下鑽：{type, key} → 顯示組成該數字的原始資料
   const [posDrillView, setPosDrillView] = useState("list"); // 明細視角：list=清單 / pivot=品項×日期矩陣
   const [posDrillSort, setPosDrillSort] = useState(null);   // 明細排序：{i, dir}
@@ -702,7 +702,10 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
         const storeKeyOf = (n) => /groun/i.test(n || "") ? "ground" : "abeach";
         const STORES = [["abeach", "A Beach 101"], ["ground", "GROUN:D"]];
         const all = [...((pos?.entries) || [])].filter(e => storeKeyOf(e.store) === posStore).sort((a, b) => (a.date < b.date ? -1 : 1));
-        const days = posRange >= 9999 ? all : all.slice(-posRange);
+        const days = posPeriod.mode === "month" && posPeriod.month ? all.filter(e => (e.date || "").slice(0, 7) === posPeriod.month)
+          : posPeriod.mode === "custom" ? all.filter(e => (!posPeriod.from || e.date >= posPeriod.from) && (!posPeriod.to || e.date <= posPeriod.to))
+          : all;
+        const monthsAvail = [...new Set(all.map(e => (e.date || "").slice(0, 7)))].sort().reverse(); // 有資料的月份（新→舊）
         const last = days[days.length - 1];
         const sum = (arr, k) => arr.reduce((t, x) => t + (Number(x[k]) || 0), 0);
         const revSum = sum(days, "revenue"), txSum = sum(days, "txCount"), guestSum = sum(days, "guests");
@@ -913,22 +916,32 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
                   <button key={v} onClick={() => setPosStore(v)} style={{ padding: "6px 14px", borderRadius: 6, border: "none", background: posStore === v ? C.brand : "transparent", color: posStore === v ? "#fff" : C.sub, fontSize: 13, fontWeight: 700, cursor: "pointer" }}>{l}</button>
                 ))}
               </div>
-              <div>
-                <div style={{ fontSize: 11, color: C.faint }}>POS 結帳信自動入庫・{all.length} 天資料・所有數字皆由原始資料計算，點任一數字看組成明細</div>
-              </div>
+              {/* 更新鈕緊跟店名右邊（張良 2026-07-18 手機版面優化） */}
+              <button onClick={runPosSync} disabled={posSyncBusy} title="信箱有新日結信就立刻入庫" style={{ border: `1px solid ${C.blue}`, background: "#fff", color: C.blue, borderRadius: 8, padding: "6px 14px", fontSize: 12.5, fontWeight: 700, cursor: posSyncBusy ? "wait" : "pointer" }}>{posSyncBusy ? "更新中…" : "🔄 更新"}</button>
               <div style={{ flex: 1 }} />
+              {/* 期間：全部 / 選月份 / 自訂（張良：近X天太多，改三種） */}
               <div style={{ display: "inline-flex", background: C.soft, border: `1px solid ${C.line}`, borderRadius: 8, padding: 2, gap: 2 }}>
-                {[[7, "近7天"], [14, "近14天"], [30, "近30天"], [90, "近90天"], [9999, "全部"]].map(([v, l]) => (
-                  <button key={v} onClick={() => setPosRange(v)} style={{ padding: "5px 10px", borderRadius: 6, border: `1px solid ${posRange === v ? C.line : "transparent"}`, background: posRange === v ? "#fff" : "transparent", color: posRange === v ? C.text : C.sub, fontSize: 12.5, fontWeight: posRange === v ? 700 : 400, cursor: "pointer" }}>{l}</button>
+                {[["all", "全部"], ["month", "選月份"], ["custom", "自訂"]].map(([v, l]) => (
+                  <button key={v} onClick={() => setPosPeriod(p => ({ ...p, mode: v, month: v === "month" ? (p.month || monthsAvail[0] || "") : p.month }))} style={{ padding: "5px 12px", borderRadius: 6, border: `1px solid ${posPeriod.mode === v ? C.line : "transparent"}`, background: posPeriod.mode === v ? "#fff" : "transparent", color: posPeriod.mode === v ? C.text : C.sub, fontSize: 12.5, fontWeight: posPeriod.mode === v ? 700 : 400, cursor: "pointer" }}>{l}</button>
                 ))}
               </div>
+              {posPeriod.mode === "month" && (
+                <select value={posPeriod.month} onChange={e => setPosPeriod(p => ({ ...p, month: e.target.value }))} style={{ border: `1px solid ${C.line}`, borderRadius: 8, padding: "6px 10px", fontSize: 12.5, fontWeight: 700, background: "#fff", color: C.text }}>
+                  {monthsAvail.map(m => <option key={m} value={m}>{Number(m.slice(0, 4))}年{Number(m.slice(5))}月</option>)}
+                </select>
+              )}
+              {posPeriod.mode === "custom" && (
+                <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+                  <input type="date" value={posPeriod.from} onChange={e => setPosPeriod(p => ({ ...p, from: e.target.value }))} style={{ border: `1px solid ${C.line}`, borderRadius: 8, padding: "5px 8px", fontSize: 12, background: "#fff", color: C.text, colorScheme: "light" }} />
+                  <span style={{ fontSize: 12, color: C.faint }}>～</span>
+                  <input type="date" value={posPeriod.to} onChange={e => setPosPeriod(p => ({ ...p, to: e.target.value }))} style={{ border: `1px solid ${C.line}`, borderRadius: 8, padding: "5px 8px", fontSize: 12, background: "#fff", color: C.text, colorScheme: "light" }} />
+                </span>
+              )}
               <div style={{ display: "inline-flex", background: C.soft, border: `1px solid ${C.line}`, borderRadius: 8, padding: 2, gap: 2 }}>
                 {[["day", "每天"], ["week", "每週"], ["month", "每月"]].map(([v, l]) => (
                   <button key={v} onClick={() => setPosGran(v)} style={{ padding: "5px 10px", borderRadius: 6, border: `1px solid ${posGran === v ? C.line : "transparent"}`, background: posGran === v ? "#fff" : "transparent", color: posGran === v ? C.text : C.sub, fontSize: 12.5, fontWeight: posGran === v ? 700 : 400, cursor: "pointer" }}>{l}</button>
                 ))}
               </div>
-              {/* 更新鈕放最右（張良：放中間很奇怪） */}
-              <button onClick={runPosSync} disabled={posSyncBusy} title="信箱有新日結信就立刻入庫" style={{ border: `1px solid ${C.blue}`, background: "#fff", color: C.blue, borderRadius: 8, padding: "6px 14px", fontSize: 12.5, fontWeight: 700, cursor: posSyncBusy ? "wait" : "pointer" }}>{posSyncBusy ? "更新中…" : "🔄 更新"}</button>
             </div>
             {posMsg && <div style={{ background: "#eef5ef", border: `1.5px solid ${C.green}`, borderRadius: 8, padding: "7px 12px", marginBottom: 10, fontSize: 12.5, color: "#2c5a38", fontWeight: 600 }}>{posMsg}</div>}
             {!days.length ? (
