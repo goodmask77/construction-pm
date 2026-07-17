@@ -44,30 +44,133 @@ export default function SupplyView({ view, K, canEdit, confirm, showMoney }) {
     </div>
   );
 
-  // ── 廠商（P1 唯讀預覽；P2 完整版含品項清單/報價/LINE群綁定）──
+  // ── 廠商（完整版）：可新增/編輯廠商（部門/標籤/LINE群），展開管理該廠商品項清單 ──
   if (view === "svendors") {
-    const vs = (db.vendors || []).filter(v => !q.trim() || (v.name + (v.en || "") + (v.tags || []).join("") + (v.note || "")).toLowerCase().includes(q.trim().toLowerCase()));
+    const DEPTS = ["外場", "內場", "吧檯", "共用"];
+    const vs = (db.vendors || []).filter(v => !q.trim() || (v.name + (v.en || "") + (v.tags || []).join("") + (v.note || "") + (v.dept || "")).toLowerCase().includes(q.trim().toLowerCase()))
+      .filter(v => !catF || (v.dept || "共用") === catF);
+    const itemsOf = (vid) => (db.vendorItems || []).filter(x => x.vendor_id === vid).sort((a, b) => (a.sort || 0) - (b.sort || 0));
+    const addVendor = () => { if (!canEdit) return; const nv = { id: rid("v"), name: "", en: "", dept: "外場", url: "", tags: [], note: "", lineGroupId: "", sendMode: "share", sort: (db.vendors || []).length }; save({ vendors: [...db.vendors, nv] }); setSel("v:" + nv.id); };
+    const updV = (id, fp) => save({ vendors: db.vendors.map(x => x.id === id ? { ...x, ...fp } : x) });
+    const addItem = (vid) => { if (!canEdit) return; const ni = { id: rid("vi"), vendor_id: vid, name: "", spec: "", unit: "件", price: "", safeStock: "", sort: itemsOf(vid).length }; save({ vendorItems: [...(db.vendorItems || []), ni] }); setSel("i:" + ni.id); };
+    const updI = (id, fp) => save({ vendorItems: (db.vendorItems || []).map(x => x.id === id ? { ...x, ...fp } : x) });
+    const selV = sel && sel.startsWith("v:") && db.vendors.find(x => x.id === sel.slice(2));
+    const selI = sel && sel.startsWith("i:") && (db.vendorItems || []).find(x => x.id === sel.slice(2));
     return (
       <div>
         <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "6px 0 12px", flexWrap: "wrap" }}>
           <span style={{ background: C.accent, color: "#fff", fontSize: 11.5, fontWeight: 700, borderRadius: 4, padding: "2px 8px" }}>廠商</span>
-          <div style={{ fontSize: 17, fontWeight: 800, color: C.text }}>供應商名錄 <span style={{ fontSize: 12, color: C.faint, fontWeight: 400 }}>{vs.length} 家・P2 將加：品項清單/報價/LINE群綁定/叫貨</span></div>
+          <div>
+            <div style={{ fontSize: 17, fontWeight: 800, color: C.text }}>供應商與品項</div>
+            <div style={{ fontSize: 11, color: C.faint }}>{(db.vendors || []).length} 家・叫貨品項 {(db.vendorItems || []).length} 項・點廠商列展開品項清單</div>
+          </div>
           <div style={{ flex: 1 }} />
-          <input value={q} onChange={e => setQ(e.target.value)} placeholder="搜尋廠商/標籤…" style={{ ...inp, width: 200 }} />
+          <select value={catF} onChange={e => setCatF(e.target.value)} style={inp}><option value="">全部部門</option>{DEPTS.map(d => <option key={d} value={d}>{d}</option>)}</select>
+          <input value={q} onChange={e => setQ(e.target.value)} placeholder="搜尋廠商/標籤…" style={{ ...inp, width: 180 }} />
+          {canEdit && btn("＋ 新增廠商", addVendor, { background: C.accent, color: "#fff", borderColor: C.accent })}
         </div>
         <div style={box}>
-          {vs.map((v, i) => (
-            <div key={v.id} style={{ display: "grid", gridTemplateColumns: "minmax(160px,0.9fr) minmax(220px,1.6fr) minmax(160px,1.4fr) 90px", gap: 10, alignItems: "center", minHeight: 44, borderTop: i ? `1px solid #f0ead9` : "none", padding: "6px 12px" }}>
-              <div>
-                <div style={{ fontSize: 13.5, fontWeight: 700, color: C.text }}>{v.name}</div>
-                <div style={{ fontSize: 10.5, color: C.faint }}>{v.en}</div>
-              </div>
-              <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>{(v.tags || []).map(t => <span key={t} style={{ fontSize: 10.5, color: C.sub, background: C.soft, border: `1px solid ${C.line}`, borderRadius: 10, padding: "1px 8px" }}>{t}</span>)}</div>
-              <div style={{ fontSize: 11.5, color: C.sub, overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }} title={v.note}>{v.note}</div>
-              <div>{v.url && <a href={v.url} target="_blank" rel="noreferrer" style={{ fontSize: 12, color: C.blue }}>官網 ↗</a>}</div>
-            </div>
-          ))}
+          {vs.map((v, i) => {
+            const open = collapsed["v" + v.id];
+            const its = itemsOf(v.id);
+            return (
+              <React.Fragment key={v.id}>
+                <div onClick={() => setCollapsed(c2 => ({ ...c2, ["v" + v.id]: !c2["v" + v.id] }))}
+                  style={{ display: "grid", gridTemplateColumns: "18px minmax(150px,1fr) 64px 56px minmax(160px,1.4fr) minmax(140px,1.2fr) 120px", gap: 8, alignItems: "center", minHeight: 44, borderTop: i ? `1px solid #f0ead9` : "none", padding: "4px 10px", cursor: "pointer", background: open ? C.soft : "#fff" }}
+                  onMouseEnter={e => e.currentTarget.style.background = C.soft} onMouseLeave={e => e.currentTarget.style.background = open ? C.soft : "#fff"}>
+                  <span style={{ fontSize: 10, color: C.faint }}>{open ? "▾" : "▸"}</span>
+                  <div>
+                    <div style={{ fontSize: 13.5, fontWeight: 700, color: C.text }}>{v.name || "（未命名）"}</div>
+                    <div style={{ fontSize: 10.5, color: C.faint }}>{v.en}</div>
+                  </div>
+                  <span style={{ fontSize: 10.5, fontWeight: 700, color: "#fff", background: v.dept === "內場" ? C.green : v.dept === "吧檯" ? C.amber : v.dept === "共用" ? "#9b9384" : C.blue, borderRadius: 9, padding: "2px 8px", textAlign: "center" }}>{v.dept || "共用"}</span>
+                  <span style={{ fontFamily: MONOF, fontSize: 12, color: its.length ? C.text : "#d5cbb6", textAlign: "center" }}>{its.length ? its.length + "項" : "—"}</span>
+                  <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>{(v.tags || []).slice(0, 4).map(t => <span key={t} style={{ fontSize: 10, color: C.sub, background: C.soft, border: `1px solid ${C.line}`, borderRadius: 9, padding: "0 7px" }}>{t}</span>)}</div>
+                  <div style={{ fontSize: 11, color: C.sub, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={v.note}>{v.note}</div>
+                  <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }} onClick={e => e.stopPropagation()}>
+                    {v.url && <a href={v.url} target="_blank" rel="noreferrer" style={{ fontSize: 11.5, color: C.blue }}>官網↗</a>}
+                    {canEdit && <button onClick={() => setSel("v:" + v.id)} style={{ border: `1px solid ${C.line}`, background: "#fff", color: C.sub, borderRadius: 6, padding: "2px 9px", fontSize: 11, cursor: "pointer" }}>✎ 編輯</button>}
+                  </div>
+                </div>
+                {open && (
+                  <div style={{ background: "#faf6ec", borderTop: `1px solid #f0ead9`, padding: "6px 12px 10px 36px" }}>
+                    <div style={{ display: "grid", gridTemplateColumns: `minmax(170px,1.4fr) minmax(120px,1fr) 64px ${showMoney ? "84px " : ""}80px 60px`, gap: 8, padding: "4px 0", fontSize: 10, color: C.faint, fontWeight: 700 }}>
+                      <span>品名</span><span>規格</span><span>單位</span>{showMoney && <span style={{ textAlign: "right" }}>單價</span>}<span style={{ textAlign: "right" }}>安全庫存</span><span />
+                    </div>
+                    {its.length === 0 && <div style={{ fontSize: 12, color: C.faint, padding: "4px 0" }}>還沒有品項——按下面「＋品項」建立這家的叫貨清單。</div>}
+                    {its.map(it => (
+                      <div key={it.id} style={{ display: "grid", gridTemplateColumns: `minmax(170px,1.4fr) minmax(120px,1fr) 64px ${showMoney ? "84px " : ""}80px 60px`, gap: 8, alignItems: "center", minHeight: 30, borderTop: `1px solid #f0ead9`, fontSize: 12.5 }}>
+                        <span style={{ fontWeight: 600, color: C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{it.name || "（未命名）"}</span>
+                        <span style={{ color: C.sub, fontSize: 11.5 }}>{it.spec || "—"}</span>
+                        <span style={{ color: C.sub }}>{it.unit || "—"}</span>
+                        {showMoney && <span style={{ fontFamily: MONOF, textAlign: "right", color: it.price ? C.text : "#d5cbb6" }}>{it.price ? Number(it.price).toLocaleString() : "—"}</span>}
+                        <span style={{ fontFamily: MONOF, textAlign: "right", color: it.safeStock !== "" && it.safeStock != null ? C.sub : "#d5cbb6" }}>{it.safeStock !== "" && it.safeStock != null ? it.safeStock : "—"}</span>
+                        {canEdit ? <button onClick={() => setSel("i:" + it.id)} style={{ border: `1px solid ${C.line}`, background: "#fff", color: C.sub, borderRadius: 6, padding: "1px 8px", fontSize: 11, cursor: "pointer" }}>✎</button> : <span />}
+                      </div>
+                    ))}
+                    {canEdit && <button onClick={() => addItem(v.id)} style={{ marginTop: 8, border: `1.5px dashed ${C.line}`, background: "transparent", color: C.accent, borderRadius: 7, padding: "5px 14px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>＋ 品項</button>}
+                  </div>
+                )}
+              </React.Fragment>
+            );
+          })}
         </div>
+        {/* 廠商編輯 */}
+        {selV && (
+          <div onClick={e => e.target === e.currentTarget && setSel(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.4)", zIndex: 700, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+            <div style={{ background: "#fff", border: `1px solid ${C.line}`, borderRadius: 12, padding: 22, width: "min(560px,96vw)", maxHeight: "90vh", overflowY: "auto" }}>
+              <div style={{ display: "flex", alignItems: "center", marginBottom: 12 }}>
+                <div style={{ fontSize: 15, fontWeight: 700, color: C.text }}>廠商{selV.name ? `：${selV.name}` : ""}</div>
+                <div style={{ flex: 1 }} />
+                {canEdit && <button onClick={async () => { if (await confirm(`刪除「${selV.name || "未命名"}」及其 ${itemsOf(selV.id).length} 個品項？`, { confirmLabel: "刪除" })) { save({ vendors: db.vendors.filter(x => x.id !== selV.id), vendorItems: (db.vendorItems || []).filter(x => x.vendor_id !== selV.id) }); setSel(null); } }} style={{ background: "none", border: `1px solid ${C.line}`, color: C.red, borderRadius: 8, padding: "5px 12px", fontSize: 12.5, cursor: "pointer", marginRight: 8 }}>刪除</button>}
+                <button onClick={() => setSel(null)} style={{ background: "none", border: "none", fontSize: 22, cursor: "pointer", color: C.sub }}>×</button>
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                {[["name", "廠商名稱"], ["en", "英文/簡稱"], ["url", "官網/訂購網址"]].map(([k, l]) => (
+                  <label key={k} style={{ display: "block", fontSize: 11, color: C.faint, fontWeight: 600, gridColumn: k === "url" ? "1 / -1" : undefined }}>{l}
+                    <input value={selV[k] ?? ""} onChange={e => updV(selV.id, { [k]: e.target.value })} disabled={!canEdit} style={{ ...inp, width: "100%", marginTop: 4 }} />
+                  </label>
+                ))}
+                <label style={{ display: "block", fontSize: 11, color: C.faint, fontWeight: 600 }}>部門
+                  <select value={selV.dept || "共用"} onChange={e => updV(selV.id, { dept: e.target.value })} disabled={!canEdit} style={{ ...inp, width: "100%", marginTop: 4 }}>{DEPTS.map(d => <option key={d}>{d}</option>)}</select>
+                </label>
+                <label style={{ display: "block", fontSize: 11, color: C.faint, fontWeight: 600 }}>叫貨發送方式
+                  <select value={selV.sendMode || "share"} onChange={e => updV(selV.id, { sendMode: e.target.value })} disabled={!canEdit} style={{ ...inp, width: "100%", marginTop: 4 }}>
+                    <option value="share">LINE 分享（廠商是官方帳號/1:1）</option>
+                    <option value="dbot">D哥 自動發群（D 已在廠商群）</option>
+                    <option value="copy">複製文字</option>
+                  </select>
+                </label>
+                <label style={{ display: "block", fontSize: 11, color: C.faint, fontWeight: 600, gridColumn: "1 / -1" }}>標籤（逗號分隔）
+                  <input value={(selV.tags || []).join(",")} onChange={e => updV(selV.id, { tags: e.target.value.split(",").map(x => x.trim()).filter(Boolean) })} disabled={!canEdit} style={{ ...inp, width: "100%", marginTop: 4 }} />
+                </label>
+                <label style={{ display: "block", fontSize: 11, color: C.faint, fontWeight: 600, gridColumn: "1 / -1" }}>備註
+                  <input value={selV.note ?? ""} onChange={e => updV(selV.id, { note: e.target.value })} disabled={!canEdit} style={{ ...inp, width: "100%", marginTop: 4 }} />
+                </label>
+              </div>
+            </div>
+          </div>
+        )}
+        {/* 品項編輯 */}
+        {selI && (
+          <div onClick={e => e.target === e.currentTarget && setSel(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.4)", zIndex: 700, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+            <div style={{ background: "#fff", border: `1px solid ${C.line}`, borderRadius: 12, padding: 22, width: "min(480px,96vw)" }}>
+              <div style={{ display: "flex", alignItems: "center", marginBottom: 12 }}>
+                <div style={{ fontSize: 15, fontWeight: 700, color: C.text }}>品項{selI.name ? `：${selI.name}` : ""} <span style={{ fontSize: 11, color: C.faint, fontWeight: 400 }}>（{(db.vendors.find(v => v.id === selI.vendor_id) || {}).name}）</span></div>
+                <div style={{ flex: 1 }} />
+                {canEdit && <button onClick={async () => { if (await confirm(`刪除品項「${selI.name || "未命名"}」？`, { confirmLabel: "刪除" })) { save({ vendorItems: (db.vendorItems || []).filter(x => x.id !== selI.id) }); setSel(null); } }} style={{ background: "none", border: `1px solid ${C.line}`, color: C.red, borderRadius: 8, padding: "5px 12px", fontSize: 12.5, cursor: "pointer", marginRight: 8 }}>刪除</button>}
+                <button onClick={() => setSel(null)} style={{ background: "none", border: "none", fontSize: 22, cursor: "pointer", color: C.sub }}>×</button>
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                {[["name", "品名", "1 / -1"], ["spec", "規格（例：2500入/箱）", "1 / -1"], ["unit", "單位（箱/件/包）"], ...(showMoney ? [["price", "單價"]] : []), ["safeStock", "安全庫存量"]].map(([k, l, span]) => (
+                  <label key={k} style={{ display: "block", fontSize: 11, color: C.faint, fontWeight: 600, gridColumn: span }}>{l}
+                    <input value={selI[k] ?? ""} onChange={e => updI(selI.id, { [k]: e.target.value })} disabled={!canEdit} style={{ ...inp, width: "100%", marginTop: 4 }} />
+                  </label>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     );
   }
