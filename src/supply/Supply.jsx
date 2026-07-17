@@ -506,9 +506,12 @@ export default function SupplyView({ view, K, canEdit, confirm, showMoney, userN
   // ── 廠商（完整版）：可新增/編輯廠商（部門/標籤/LINE群），展開管理該廠商品項清單 ──
   if (view === "svendors") {
     const DEPTS = ["外場", "內場", "吧檯", "共用"];
-    const vs = (db.vendors || []).filter(v => !q.trim() || (v.name + (v.en || "") + (v.tags || []).join("") + (v.note || "") + (v.dept || "")).toLowerCase().includes(q.trim().toLowerCase()))
-      .filter(v => !catF || (v.dept || "共用") === catF);
     const itemsOf = (vid) => (db.vendorItems || []).filter(x => x.vendor_id === vid).sort((a, b) => (a.sort || 0) - (b.sort || 0));
+    // 搜尋：除了廠商欄位，也比對品項（品名/規格/分類/標籤）——有中的品項就列出該廠商並自動展開
+    const qq = q.trim().toLowerCase();
+    const matchIt = (it) => !!qq && `${it.name || ""} ${it.spec || ""} ${it.grp || ""} ${it.tags || ""}`.toLowerCase().includes(qq);
+    const vs = (db.vendors || []).filter(v => !qq || (v.name + (v.en || "") + (v.tags || []).join("") + (v.note || "") + (v.dept || "")).toLowerCase().includes(qq) || itemsOf(v.id).some(matchIt))
+      .filter(v => !catF || (v.dept || "共用") === catF);
     const addVendor = () => { if (!canEdit) return; const nv = { id: rid("v"), name: "", en: "", dept: "外場", url: "", tags: [], note: "", lineGroupId: "", sendMode: "share", sort: (db.vendors || []).length }; save({ vendors: [...db.vendors, nv] }); setSel("v:" + nv.id); };
     const updV = (id, fp) => save({ vendors: db.vendors.map(x => x.id === id ? { ...x, ...fp } : x) });
     const addItem = (vid, grp) => { if (!canEdit) return; const ni = { id: rid("vi"), vendor_id: vid, grp: grp || "", name: "", spec: "", unit: "件", price: "", safeStock: "", sort: itemsOf(vid).length }; save({ vendorItems: [...(db.vendorItems || []), ni] }); setSel("i:" + ni.id); };
@@ -542,7 +545,7 @@ export default function SupplyView({ view, K, canEdit, confirm, showMoney, userN
           </div>
           <div style={{ flex: 1 }} />
           <select value={catF} onChange={e => setCatF(e.target.value)} style={inp}><option value="">全部部門</option>{DEPTS.map(d => <option key={d} value={d}>{d}</option>)}</select>
-          <input value={q} onChange={e => setQ(e.target.value)} placeholder="搜尋廠商…" style={{ ...inp, width: 160 }} />
+          <input value={q} onChange={e => setQ(e.target.value)} placeholder="🔍 搜尋廠商/品項/標籤…" style={{ ...inp, width: 185 }} />
           {canEdit && btn("＋ 新增分類", () => { const n = window.prompt("分類名稱（例：菜商/包材/耗材/飲品）"); if (n && n.trim()) { save({ vendorCats: [...new Set([...(db.vendorCats || []), n.trim()])] }); setCollapsed(c2 => ({ ...c2, ["vc" + n.trim()]: true })); } })}
           {canEdit && btn("＋ 新增廠商", addVendor, { background: C.accent, color: "#fff", borderColor: C.accent })}
         </div>
@@ -556,7 +559,7 @@ export default function SupplyView({ view, K, canEdit, confirm, showMoney, userN
           const delVcat = async (g) => { if (await confirm(`移除分類「${g}」？裡面的廠商會移到「未分類」（廠商不會被刪）。`, { confirmLabel: "移除", danger: false })) save({ vendors: db.vendors.map(x => vcatOf(x) === g ? { ...x, vcat: "" } : x), vendorCats: (db.vendorCats || []).filter(c => c !== g) }); };
           return keys2.map(g => {
             const gvs = vs.filter(v => vcatOf(v) === g).sort((a, b) => (b.official ? 1 : 0) - (a.official ? 1 : 0)); // 正式供應商置頂
-            const gOpen = !!collapsed["vc" + g];
+            const gOpen = qq ? true : !!collapsed["vc" + g]; // 搜尋中：分類全展開
             return (
               <div key={g} style={{ border: `1.5px solid ${C.hard}`, borderRadius: 4, marginBottom: 10, overflow: "hidden", background: "#fff" }}>
                 <div onClick={() => setCollapsed(c2 => ({ ...c2, ["vc" + g]: !gOpen }))} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", background: "#ece4d6", cursor: "pointer" }}>
@@ -571,8 +574,9 @@ export default function SupplyView({ view, K, canEdit, confirm, showMoney, userN
                   </>}
                 </div>
                 {gOpen && gvs.map((v, i) => {
-            const open = collapsed["v" + v.id];
-            const its = itemsOf(v.id);
+            const hitIts = qq ? itemsOf(v.id).filter(matchIt) : []; // 搜尋命中的品項
+            const open = qq && hitIts.length ? true : collapsed["v" + v.id]; // 有命中品項→自動展開
+            const its = qq && hitIts.length ? hitIts : itemsOf(v.id); // 搜尋中只列命中的品項
             return (
               <React.Fragment key={v.id}>
                 <div onClick={() => setCollapsed(c2 => ({ ...c2, ["v" + v.id]: !c2["v" + v.id] }))}
