@@ -171,6 +171,8 @@ async function syncPos(days) {
       if (!att) continue
       try {
         const rec = parsePosWorkbook(att.content, mm.subject)
+        // POS 人為誤操作有時同一天寄兩封（一封正確、一封全 0）→ 全 0 的空報表一律不入庫
+        if ((Number(rec.revenue) || 0) <= 0 && (Number(rec.txCount) || 0) <= 0) continue
         if (!have.has(rec.id) && !found[rec.id]) found[rec.id] = rec
       } catch (_) {}
     }
