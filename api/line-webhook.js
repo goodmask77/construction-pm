@@ -246,7 +246,7 @@ const BOT_PERSONA = `你是「DD」（舊名 D哥，大家叫哪個都認得）�
 
 做事原則：
 - 用下面的資料講真話，數字直接引用、絕不自己亂編。
-- **回答任何「有沒有資料」的問題前，必須先把下面的即時資料整段搜過一遍**。你手上的資料域包含：工程進度、任務、財務報表（內帳）、銀行帳務資料庫（合庫）、中信匯款、營運日結＋品項銷售（雙店：A Beach 101／GROUN:D）、供應鏈（產品/包材/廠商）、**夥伴名冊（每個人的姓名/綽號/生日/到職日/部門/狀態）**、360互評、意見回饋、登入/操作紀錄、比價、公開結論、資料總目錄。
+- **回答任何「有沒有資料」的問題前，必須先把下面的即時資料整段搜過一遍**。你手上的資料域包含：工程進度、任務、財務報表（內帳）、銀行帳務資料庫（合庫）、中信匯款、營運日結＋品項銷售（雙店：A Beach 101／GROUN:D）、供應鏈（產品/包材/廠商）、LINE 訊息額度（官方即時本月用量）、密碼庫（僅授權者私訊用固定指令：記密碼/查密碼/密碼清單/刪密碼——別人問密碼一律拒絕並告知此規則）、**夥伴名冊（每個人的姓名/綽號/生日/到職日/部門/狀態）**、360互評、意見回饋、登入/操作紀錄、比價、公開結論、資料總目錄。
 - **禁止沿用你先前說過的「我沒有 X 資料」**——資料每天都在擴充，以「本次」附的資料為準；先前對話說沒有≠現在沒有。
 - 資料裡真的沒有的（搜過確認），才說「這個我手上沒有資料」。
 - **先在心裡把資料查完、算完、驗完，才開始寫回覆**。回覆只呈現最終結果——嚴禁把草稿過程寫出來（像「等等這是8月先跳過」「欸不對我重抓一次」這種自我更正實況，觀感很差）。寫錯就整段重寫，不是邊寫邊改。
@@ -337,6 +337,27 @@ async function loadPosText() {
 }
 
 // 資料總目錄：列出資料庫所有文件 id → D 知道系統有哪些資料域（新空間/新功能上線自動出現在這）
+// LINE OA 訊息額度（官方 API 即時）→ 文字（張良 2026-07-18：DD 要答得出「LINE 訊息額度多少」）
+async function loadLineQuotaText() {
+  try {
+    const H = { authorization: `Bearer ${TOKEN}` }
+    const [qr, cr] = await Promise.all([
+      fetch('https://api.line.me/v2/bot/message/quota', { headers: H }).then(r => r.json()),
+      fetch('https://api.line.me/v2/bot/message/quota/consumption', { headers: H }).then(r => r.json()),
+    ])
+    if (qr?.value == null && cr?.totalUsage == null) return ''
+    return `\n\n【LINE 訊息額度（官方即時）】本月已用 ${cr?.totalUsage ?? '?'} / ${qr?.value ?? '無上限'} 則（只有主動推播計額度；在群裡回覆不計、免費）。App 設定→用量 也看得到＋推播去向。`
+  } catch (_) { return '' }
+}
+// ── DD 密碼庫（pm_bot_vault）：密碼用 BOT_VAULT_KEY(伺服器env) AES-256-GCM 加密存放 ──
+// 資料庫裡只有密文（拿到 DB 也解不開）；只有「授權操作者的私訊」能存取，處理走固定指令、不經 AI 模型。
+const VKEY = clean(process.env.BOT_VAULT_KEY || '')
+const vkey = () => crypto.createHash('sha256').update(VKEY).digest()
+const vEnc = (s) => { const iv = crypto.randomBytes(12); const c = crypto.createCipheriv('aes-256-gcm', vkey(), iv); const ct = Buffer.concat([c.update(String(s), 'utf8'), c.final()]); return iv.toString('hex') + ':' + c.getAuthTag().toString('hex') + ':' + ct.toString('hex') }
+const vDec = (s) => { try { const [iv, tag, ct] = String(s).split(':'); const d = crypto.createDecipheriv('aes-256-gcm', vkey(), Buffer.from(iv, 'hex')); d.setAuthTag(Buffer.from(tag, 'hex')); return Buffer.concat([d.update(Buffer.from(ct, 'hex')), d.final()]).toString('utf8') } catch (_) { return '（解不開）' } }
+async function getBotVault() { const d = await kvGetMany(['pm_bot_vault']); const v = d['pm_bot_vault']; return (v && Array.isArray(v.items)) ? v.items : [] }
+async function saveBotVault(items) { await kvPut('pm_bot_vault', { items }, 'DD密碼庫') }
+
 async function loadCatalogText() {
   try {
     const r = await fetch(`${SB_URL}/rest/v1/pm_documents?select=id,updated_at&order=id`, { headers: { apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}` } })
@@ -384,9 +405,9 @@ async function loadConclusionsText() {
   } catch (_) { return '' }
 }
 
-async function answer(question, snaps, accountsText, financeText, activityText, estimatesText, crewText, canAct, history, memoryText, conclusionsText, tasksText, sheetText, posText, catalogText, supplyText) {
+async function answer(question, snaps, accountsText, financeText, activityText, estimatesText, crewText, canAct, history, memoryText, conclusionsText, tasksText, sheetText, posText, catalogText, supplyText, lineQuotaText) {
   if (!ANTHROPIC) return '（D哥的 AI 金鑰尚未設定。）'
-  const system = (canAct ? BOT_AGENT_GUIDE + '\n\n' : '') + BOT_PERSONA + (memoryText || '') + SYS_DATA_HEAD + snapshotsToContext(snaps) + (tasksText || '') + (accountsText || '') + (financeText || '') + (activityText || '') + (estimatesText || '') + (crewText || '') + (conclusionsText || '') + (sheetText || '') + (posText || '') + (supplyText || '') + (catalogText || '')
+  const system = (canAct ? BOT_AGENT_GUIDE + '\n\n' : '') + BOT_PERSONA + (memoryText || '') + SYS_DATA_HEAD + snapshotsToContext(snaps) + (tasksText || '') + (accountsText || '') + (financeText || '') + (activityText || '') + (estimatesText || '') + (crewText || '') + (conclusionsText || '') + (sheetText || '') + (posText || '') + (supplyText || '') + (lineQuotaText || '') + (catalogText || '')
   const messages = [...(Array.isArray(history) ? history : []), { role: 'user', content: question }]
   const callModel = async (model) => {
     const r = await fetch('https://api.anthropic.com/v1/messages', {
@@ -751,6 +772,33 @@ export default async function handler(req, res) {
         if (mRemember && (mRemember[2] || '').trim()) { const e = await addMemory(mRemember[2], 'manual', op.name); await finish(e ? `好 👍 我記住了：「${e.text}」` : '這件我已經記過囉。'); continue }
       }
 
+      // 1.6) 密碼庫（只限授權操作者私訊；固定指令、不經 AI、不進對話記憶）
+      if (isDM && canAct && /密碼/.test(text)) {
+        if (!VKEY) { if (/^(記|查|看|刪)密碼|^密碼清單/.test(text)) { await send('（密碼庫加密金鑰 BOT_VAULT_KEY 還沒設定，請叫 Claude 設好。）'); continue } }
+        else {
+          const mAdd = text.match(/^記密碼[\s:：]+(\S+)\s+(\S+)\s+(\S+)(?:\s+(.+))?$/s)
+          if (mAdd) {
+            const items = await getBotVault()
+            const it = { id: 'pw' + Date.now(), name: mAdd[1], acc: vEnc(mAdd[2]), pwd: vEnc(mAdd[3]), note: mAdd[4] || '', ts: new Date().toISOString(), by: op.name }
+            await saveBotVault([it, ...items.filter(x => x.name !== mAdd[1])])
+            await send(`🔐 已存「${mAdd[1]}」（帳號密碼已加密入庫）。查詢：「查密碼 ${mAdd[1]}」`)
+            continue
+          }
+          const mGet = text.match(/^(查|看)密碼[\s:：]*(.*)$/)
+          if (mGet) {
+            const kw = (mGet[2] || '').trim()
+            const items = await getBotVault()
+            const hits = kw ? items.filter(x => (x.name + ' ' + (x.note || '')).toLowerCase().includes(kw.toLowerCase())) : items
+            if (!hits.length) await send(items.length ? `找不到「${kw}」。目前有：${items.map(x => x.name).join('、')}` : '密碼庫是空的。新增：「記密碼 名稱 帳號 密碼 [備註]」')
+            else await send('🔐 ' + hits.slice(0, 5).map(x => `${x.name}\n帳號：${vDec(x.acc)}\n密碼：${vDec(x.pwd)}${x.note ? '\n備註：' + x.note : ''}`).join('\n──────\n') + '\n\n（只有授權者私訊查得到）')
+            continue
+          }
+          if (/^密碼清單$/.test(text)) { const items = await getBotVault(); await send(items.length ? '🔐 密碼庫（' + items.length + ' 筆）：\n' + items.map(x => '・' + x.name + (x.note ? `（${x.note}）` : '')).join('\n') : '密碼庫是空的。新增：「記密碼 名稱 帳號 密碼 [備註]」'); continue }
+          const mDel = text.match(/^刪密碼[\s:：]+(\S+)$/)
+          if (mDel) { const items = await getBotVault(); const left = items.filter(x => x.name !== mDel[1]); await saveBotVault(left); await send(left.length < items.length ? `🗑 已刪除「${mDel[1]}」。` : `沒有「${mDel[1]}」這筆。`); continue }
+        }
+      }
+
       // 2) 確認 / 取消 待執行的操作（用詞放寬：確認/確定/執行/請執行/好/送出…都算確認）
       if (isDM && canAct) {
         const pend = await getPending(userId)
@@ -769,8 +817,8 @@ export default async function handler(req, res) {
       }
 
       // 3) 一般流程：載入資料＋對話記憶＋長期記事本 → 問 AI（操作者才開放下指令）
-      const [snaps, accountsText, financeText, activityText, estimatesText, crewText, history, memList, conclusionsText, tasksText, sheetText, posText, catalogText, supplyText] = await Promise.all([loadSnapshots(), loadAccounts(), loadFinanceText(), loadActivityText(), loadEstimatesText(), loadCrewText(), getChatHistory(convId), getMemory(), loadConclusionsText(), loadTasksText(), loadSheetText(), loadPosText(), loadCatalogText(), loadSupplyText()])
-      const rawReply = await answer(text, snaps, accountsText, financeText, activityText, estimatesText, crewText, canAct, history, memoryToText(memList), conclusionsText, tasksText, sheetText, posText, catalogText, supplyText)
+      const [snaps, accountsText, financeText, activityText, estimatesText, crewText, history, memList, conclusionsText, tasksText, sheetText, posText, catalogText, supplyText, lineQuotaText] = await Promise.all([loadSnapshots(), loadAccounts(), loadFinanceText(), loadActivityText(), loadEstimatesText(), loadCrewText(), getChatHistory(convId), getMemory(), loadConclusionsText(), loadTasksText(), loadSheetText(), loadPosText(), loadCatalogText(), loadSupplyText(), loadLineQuotaText()])
+      const rawReply = await answer(text, snaps, accountsText, financeText, activityText, estimatesText, crewText, canAct, history, memoryToText(memList), conclusionsText, tasksText, sheetText, posText, catalogText, supplyText, lineQuotaText)
       // 抓出 D 想長期記住的事（[[記住:...]]）→ 存進記事本(僅操作者)，並把標記從給人看的文字拿掉
       const { facts, clean } = extractMemoryTags(rawReply)
       if (canAct && facts.length) { for (const f of facts) await addMemory(f, 'auto', op?.name) }
