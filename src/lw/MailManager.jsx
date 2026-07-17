@@ -80,6 +80,8 @@ export default function MailManagerView({ K, canEdit, confirm }) {
     const exist = (rules || []).find(r => r.field === "from" && r.match.toLowerCase() === sd.from.toLowerCase());
     if (exist) upd(exist.id, { action, label, enabled: true });
     else saveRules([{ id: rid(), field: "from", match: sd.from, action, label, note: sd.name || sd.from, enabled: true, hits: 0, scope: [acct] }, ...(rules || [])]);
+    // 決定完＝立刻從待確認消失（規則已接手；下次掃描也不會再出現）
+    setScan(s => s ? { ...s, senders: (s.senders || []).filter(x => x.from !== sd.from), mails: (s.mails || []).filter(m => m.from !== sd.from) } : s);
     flash(`✓ 規則已建立：「${sd.name || sd.from}」→ ${actLabel(action)}。按規則頁「執行全部規則」馬上生效，之後每天自動。`);
   };
 
@@ -87,7 +89,9 @@ export default function MailManagerView({ K, canEdit, confirm }) {
   const btn = (label, onClick, style2) => <button onClick={onClick} style={{ border: `1px solid ${C.line}`, background: "#fff", color: C.sub, borderRadius: 7, padding: "6px 12px", fontSize: 12.5, fontWeight: 600, cursor: "pointer", ...style2 }}>{label}</button>;
 
   const curAcct = accts.find(a => a.id === acct);
-  const senders = scan?.senders || [];
+  // 待確認＝還沒有規則接手的來源（已建規則的不再出現）
+  const covered = (from) => (rules || []).some(r => r.field === "from" && r.match && from.toLowerCase().includes(r.match.toLowerCase()));
+  const senders = (scan?.senders || []).filter(sd => !covered(sd.from));
   const pendingN = senders.length;
   const acctRules = (rules || []).filter(r => inScope(r, acct));
   // 昨日自動處理量（給「都處理好了」那行）
@@ -299,29 +303,43 @@ export default function MailManagerView({ K, canEdit, confirm }) {
               <div style={{ flex: 1 }} />
               <button onClick={() => setDrawer(null)} style={{ background: "none", border: "none", fontSize: 20, cursor: "pointer", color: C.sub }}>×</button>
             </div>
-            {[
-              ["比對欄位", <select value={drawerRule.field} onChange={e => upd(drawerRule.id, { field: e.target.value })} style={{ ...inp, width: "100%" }}><option value="from">寄件者</option><option value="subject">主旨</option><option value="to">收件人</option></select>],
-              ["包含文字（多關鍵字用 | 分隔）", <input value={drawerRule.match} onChange={e => upd(drawerRule.id, { match: e.target.value })} placeholder="例：ctbcbank 或 發票|invoice" style={{ ...inp, width: "100%" }} autoFocus />],
-              ["處理方式", <select value={drawerRule.action} onChange={e => upd(drawerRule.id, { action: e.target.value })} style={{ ...inp, width: "100%", color: ACT_COLOR[drawerRule.action], fontWeight: 700 }}>{ACTIONS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select>],
-              ...(drawerRule.action === "label" ? [["標籤名稱", <input value={drawerRule.label || ""} onChange={e => upd(drawerRule.id, { label: e.target.value })} style={{ ...inp, width: "100%" }} />]] : []),
-              ["備註（為什麼）", <input value={drawerRule.note || ""} onChange={e => upd(drawerRule.id, { note: e.target.value })} style={{ ...inp, width: "100%" }} />],
-            ].map(([l, node], i) => <label key={i} style={{ display: "block", fontSize: 11, color: C.faint, fontWeight: 600, marginBottom: 12 }}>{l}<div style={{ marginTop: 4 }}>{node}</div></label>)}
-            <div style={{ fontSize: 11, color: C.faint, fontWeight: 600, marginBottom: 6 }}>適用範圍</div>
-            <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
-              <button onClick={() => upd(drawerRule.id, { scope: "all" })} style={{ flex: 1, border: `1.5px solid ${drawerRule.scope === "all" ? C.accent : C.line}`, background: drawerRule.scope === "all" ? "#fdf3ee" : "#fff", color: drawerRule.scope === "all" ? C.accent : C.sub, borderRadius: 8, padding: "7px 0", fontSize: 12.5, fontWeight: 700, cursor: "pointer" }}>全部信箱</button>
-              <button onClick={() => upd(drawerRule.id, { scope: Array.isArray(drawerRule.scope) && drawerRule.scope.length ? drawerRule.scope : [acct === "__all__" ? "gm77" : acct] })} style={{ flex: 1, border: `1.5px solid ${drawerRule.scope !== "all" ? C.accent : C.line}`, background: drawerRule.scope !== "all" ? "#fdf3ee" : "#fff", color: drawerRule.scope !== "all" ? C.accent : C.sub, borderRadius: 8, padding: "7px 0", fontSize: 12.5, fontWeight: 700, cursor: "pointer" }}>指定信箱</button>
-            </div>
-            {drawerRule.scope !== "all" && accts.map(a => (
-              <label key={a.id} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12.5, color: C.text, marginBottom: 6 }}>
-                <input type="checkbox" checked={Array.isArray(drawerRule.scope) && drawerRule.scope.includes(a.id)} onChange={e => {
-                  const cur = Array.isArray(drawerRule.scope) ? drawerRule.scope : [];
-                  upd(drawerRule.id, { scope: e.target.checked ? [...cur, a.id] : cur.filter(x => x !== a.id) });
-                }} />{a.email}
-              </label>
-            ))}
-            <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12.5, color: C.text, margin: "14px 0" }}>
-              <input type="checkbox" checked={drawerRule.enabled !== false} onChange={e => upd(drawerRule.id, { enabled: e.target.checked })} />啟用這條規則
-            </label>
+            {/* 一句話式設定（張良：規則為主體、全部用點選）──「包含__文字（寄件者/標題/收件人）→ 刪除/分類/保留 → 此信箱/全信箱」 */}
+            {(() => {
+              const chip = (on, label, onClick, color) => (
+                <button key={label} onClick={onClick} style={{ border: `1.5px solid ${on ? (color || C.accent) : C.line}`, background: on ? (color || C.accent) : "#fff", color: on ? "#fff" : C.sub, borderRadius: 999, padding: "5px 13px", fontSize: 12.5, fontWeight: 700, cursor: "pointer" }}>{label}</button>
+              );
+              const step = (n, t) => <div style={{ fontSize: 12, color: C.faint, fontWeight: 700, margin: "14px 0 7px" }}>{n} {t}</div>;
+              return (<>
+                {step("①", "信件的哪裡")}
+                <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                  {[["from", "寄件者地址"], ["subject", "標題"], ["to", "收件人地址"]].map(([v, l]) => chip(drawerRule.field === v, l, () => upd(drawerRule.id, { field: v })))}
+                </div>
+                {step("②", "包含這些文字（多關鍵字用｜分隔）")}
+                <input value={drawerRule.match} onChange={e => upd(drawerRule.id, { match: e.target.value })} placeholder="例：ctbcbank 或 發票|invoice" style={{ ...inp, width: "100%" }} autoFocus />
+                {step("③", "就這樣處理")}
+                <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                  {[["delete", "🗑 刪除", C.red], ["label", "🏷 分類到資料夾", C.blue], ["archive", "📁 封存", C.amber], ["keep", "✋ 保留", C.green]].map(([v, l, cl]) => chip(drawerRule.action === v, l, () => upd(drawerRule.id, { action: v }), cl))}
+                </div>
+                {drawerRule.action === "label" && <input value={drawerRule.label || ""} onChange={e => upd(drawerRule.id, { label: e.target.value })} placeholder="資料夾名稱（Gmail 自動建立）" style={{ ...inp, width: "100%", marginTop: 8 }} />}
+                {step("④", "套用到")}
+                <div style={{ display: "flex", gap: 6 }}>
+                  {chip(drawerRule.scope !== "all", "此信箱", () => upd(drawerRule.id, { scope: [acct === "__all__" ? "gm77" : acct] }))}
+                  {chip(drawerRule.scope === "all", "全部信箱", () => upd(drawerRule.id, { scope: "all" }))}
+                </div>
+                {drawerRule.scope !== "all" && accts.length > 1 && accts.map(a => (
+                  <label key={a.id} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12.5, color: C.text, marginTop: 6 }}>
+                    <input type="checkbox" checked={Array.isArray(drawerRule.scope) && drawerRule.scope.includes(a.id)} onChange={e => {
+                      const cur = Array.isArray(drawerRule.scope) ? drawerRule.scope : [];
+                      upd(drawerRule.id, { scope: e.target.checked ? [...cur, a.id] : cur.filter(x => x !== a.id) });
+                    }} />{a.email}
+                  </label>
+                ))}
+                <input value={drawerRule.note || ""} onChange={e => upd(drawerRule.id, { note: e.target.value })} placeholder="備註（選填，例：玉山證券廣告）" style={{ ...inp, width: "100%", marginTop: 14 }} />
+                <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12.5, color: C.text, margin: "12px 0" }}>
+                  <input type="checkbox" checked={drawerRule.enabled !== false} onChange={e => upd(drawerRule.id, { enabled: e.target.checked })} />啟用這條規則
+                </label>
+              </>);
+            })()}
             <div style={{ fontSize: 11, color: C.faint, marginBottom: 14 }}>刪除＝移到 Gmail 垃圾桶（30 天可救回）；「保留」＝白名單，永遠不會被動到。</div>
             <div style={{ display: "flex", gap: 8 }}>
               <button onClick={async () => { if (await confirm(`刪除規則「${drawerRule.note || drawerRule.match}」？`, { confirmLabel: "刪除" })) { saveRules(rules.filter(x => x.id !== drawerRule.id)); setDrawer(null); } }} style={{ border: `1px solid #e5c4bd`, background: "#fff", color: C.red, borderRadius: 8, padding: "8px 16px", fontSize: 12.5, fontWeight: 600, cursor: "pointer" }}>刪除規則</button>
