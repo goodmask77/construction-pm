@@ -616,6 +616,11 @@ const TRIGGERS = ['d哥', 'D哥', '進度', '多少', '還欠', '未付', '已�
 const triggered = (text) => /[?？]\s*$/.test(text) || TRIGGERS.some((k) => text.includes(k))
 
 export default async function handler(req, res) {
+  // 診斷探針（唯讀）：/api/line-webhook?probe=crew → 回 D 實際拿到的夥伴中心文字開頭
+  if (req.method === 'GET' && req.query?.probe === 'crew') {
+    const t = await loadCrewText()
+    return res.status(200).json({ len: t.length, head: t.slice(0, 800) })
+  }
   if (req.method !== 'POST') return res.status(405).end()
   const raw = await readRaw(req)
   let body = {}, sigOK = null
