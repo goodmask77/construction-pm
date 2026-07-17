@@ -2895,23 +2895,8 @@ function TopNav({ view, setView, saving, totalEstimated, totalPaid, doneCount, c
             </button>
           )}
         </div>
-        {/* KPI cards inline（手機改 2×2、整列獨佔一行；夥伴中心等空間隱藏；設定開著時也隱藏＝設定是全域不屬於空間）*/}
-        {!conf().hideKpi && !settingsOn && (() => {
-          const kpis = showMoney() ? [
-            { label: "預估總額", val: fmt(totalEstimated), bar: SEM.blue, tip: "各細項「數量×單價」依稅別換算含稅後加總＝總預算" },
-            { label: "已付總額", val: totalPaid > 0 ? fmt(totalPaid) : "尚未付款", bar: SEM.green, tip: `各細項「已付金額」加總。付款進度 ${payPct}%` },
-            { label: "未付總額", val: fmt(totalUnpaid), bar: totalUnpaid < 0 ? SEM.red : SEM.amber, tip: totalUnpaid < 0 ? "已付超過預估（溢付）" : "預估總額 − 已付總額＝尚需支付" },
-            { label: "完工項目", val: `${doneCount} / ${catCount}`, bar: SEM.grey, tip: "狀態標示為「完工」的大項數" },
-          ] : [
-            { label: `${L("cat")}數`, val: String(catCount), bar: SEM.grey, tip: `目前空間的${L("cat")}數` },
-            { label: "完工", val: `${doneCount} / ${catCount}`, bar: SEM.green, tip: `狀態為「完工」的${L("cat")}` },
-          ];
-          return (
-          <div style={{ display: "grid", gridTemplateColumns: isMobile ? `repeat(${Math.min(kpis.length,2)},1fr)` : `repeat(${kpis.length},minmax(110px,1fr))`, gap: 8, flex: isMobile ? "1 1 100%" : (showMoney() ? 1 : "0 1 auto"), minWidth: isMobile ? 0 : (showMoney() ? 360 : 0), order: isMobile ? 2 : 0 }}>
-            {kpis.map(k => <KPICard key={k.label} label={k.label} val={k.val} color={k.color} tip={k.tip} bg={k.bg} bar={k.bar} />)}
-          </div>
-          );
-        })()}
+        {/* 頂欄 KPI 卡已移除（張良 2026-07-18：數字被截斷看不完整、和儀表板重複沒意義）——完整數字看各空間「儀表板」 */}
+        <div style={{ flex: 1, order: isMobile ? 2 : 0 }} />
         {/* actions（手機改 icon-only，保留 title 提示）*/}
         <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0, order: isMobile ? 1 : 0, marginLeft: isMobile ? "auto" : 0 }}>
           {saving && <div style={{ fontSize: 11, color: HEAD_SUB }}>同步中…</div>}
