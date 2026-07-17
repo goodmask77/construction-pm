@@ -246,7 +246,7 @@ const BOT_PERSONA = `你是「D哥」，喬亞國際餐飲團隊的 LINE 小幫�
 
 做事原則：
 - 用下面的資料講真話，數字直接引用、絕不自己亂編。
-- **回答任何「有沒有資料」的問題前，必須先把下面的即時資料整段搜過一遍**。你手上的資料域包含：工程進度、任務、財務內帳、銀行帳務資料庫（合庫）、中信匯款、營運日結＋品項銷售、**夥伴名冊（每個人的姓名/綽號/生日/到職日/部門/狀態）**、360互評、意見回饋、登入/操作紀錄、比價、公開結論、資料總目錄。
+- **回答任何「有沒有資料」的問題前，必須先把下面的即時資料整段搜過一遍**。你手上的資料域包含：工程進度、任務、財務內帳、銀行帳務資料庫（合庫）、中信匯款、營運日結＋品項銷售、供應鏈（產品/包材/廠商）、**夥伴名冊（每個人的姓名/綽號/生日/到職日/部門/狀態）**、360互評、意見回饋、登入/操作紀錄、比價、公開結論、資料總目錄。
 - **禁止沿用你先前說過的「我沒有 X 資料」**——資料每天都在擴充，以「本次」附的資料為準；先前對話說沒有≠現在沒有。
 - 資料裡真的沒有的（搜過確認），才說「這個我手上沒有資料」。
 - **先在心裡把資料查完、算完、驗完，才開始寫回覆**。回覆只呈現最終結果——嚴禁把草稿過程寫出來（像「等等這是8月先跳過」「欸不對我重抓一次」這種自我更正實況，觀感很差）。寫錯就整段重寫，不是邊寫邊改。
@@ -348,6 +348,20 @@ async function loadCatalogText() {
   } catch (_) { return '' }
 }
 
+// 供應鏈（sp_supply_pm_supply：產品/物料/廠商）→ 文字
+async function loadSupplyText() {
+  try {
+    const v = (await kvGetMany(['sp_supply_pm_supply']))['sp_supply_pm_supply']
+    if (!v || !Array.isArray(v.products) || !v.products.length) return ''
+    const lines = [`\n\n【供應鏈（產品 ${v.products.length} 項・物料/包材 ${(v.materials || []).length} 項・廠商 ${(v.vendors || []).length} 家）】`]
+    const byCat = {}
+    v.products.forEach(x => { (byCat[x.category || '未分類'] = byCat[x.category || '未分類'] || []).push(x.name) })
+    Object.entries(byCat).forEach(([c, arr]) => lines.push(`  - ${c}：${arr.join('、')}`))
+    lines.push(`  廠商：${(v.vendors || []).map(x => `${x.name}(${(x.tags || []).slice(0, 2).join('/')})`).join('、')}`)
+    return lines.join('\n')
+  } catch (_) { return '' }
+}
+
 // 公開結論（團隊定案，現行版）→ 文字
 async function loadConclusionsText() {
   try {
@@ -360,9 +374,9 @@ async function loadConclusionsText() {
   } catch (_) { return '' }
 }
 
-async function answer(question, snaps, accountsText, financeText, activityText, estimatesText, crewText, canAct, history, memoryText, conclusionsText, tasksText, sheetText, posText, catalogText) {
+async function answer(question, snaps, accountsText, financeText, activityText, estimatesText, crewText, canAct, history, memoryText, conclusionsText, tasksText, sheetText, posText, catalogText, supplyText) {
   if (!ANTHROPIC) return '（D哥的 AI 金鑰尚未設定。）'
-  const system = (canAct ? BOT_AGENT_GUIDE + '\n\n' : '') + BOT_PERSONA + (memoryText || '') + SYS_DATA_HEAD + snapshotsToContext(snaps) + (tasksText || '') + (accountsText || '') + (financeText || '') + (activityText || '') + (estimatesText || '') + (crewText || '') + (conclusionsText || '') + (sheetText || '') + (posText || '') + (catalogText || '')
+  const system = (canAct ? BOT_AGENT_GUIDE + '\n\n' : '') + BOT_PERSONA + (memoryText || '') + SYS_DATA_HEAD + snapshotsToContext(snaps) + (tasksText || '') + (accountsText || '') + (financeText || '') + (activityText || '') + (estimatesText || '') + (crewText || '') + (conclusionsText || '') + (sheetText || '') + (posText || '') + (supplyText || '') + (catalogText || '')
   const messages = [...(Array.isArray(history) ? history : []), { role: 'user', content: question }]
   const callModel = async (model) => {
     const r = await fetch('https://api.anthropic.com/v1/messages', {
@@ -707,8 +721,8 @@ export default async function handler(req, res) {
       }
 
       // 3) 一般流程：載入資料＋對話記憶＋長期記事本 → 問 AI（操作者才開放下指令）
-      const [snaps, accountsText, financeText, activityText, estimatesText, crewText, history, memList, conclusionsText, tasksText, sheetText, posText, catalogText] = await Promise.all([loadSnapshots(), loadAccounts(), loadFinanceText(), loadActivityText(), loadEstimatesText(), loadCrewText(), getChatHistory(convId), getMemory(), loadConclusionsText(), loadTasksText(), loadSheetText(), loadPosText(), loadCatalogText()])
-      const rawReply = await answer(text, snaps, accountsText, financeText, activityText, estimatesText, crewText, canAct, history, memoryToText(memList), conclusionsText, tasksText, sheetText, posText, catalogText)
+      const [snaps, accountsText, financeText, activityText, estimatesText, crewText, history, memList, conclusionsText, tasksText, sheetText, posText, catalogText, supplyText] = await Promise.all([loadSnapshots(), loadAccounts(), loadFinanceText(), loadActivityText(), loadEstimatesText(), loadCrewText(), getChatHistory(convId), getMemory(), loadConclusionsText(), loadTasksText(), loadSheetText(), loadPosText(), loadCatalogText(), loadSupplyText()])
+      const rawReply = await answer(text, snaps, accountsText, financeText, activityText, estimatesText, crewText, canAct, history, memoryToText(memList), conclusionsText, tasksText, sheetText, posText, catalogText, supplyText)
       // 抓出 D 想長期記住的事（[[記住:...]]）→ 存進記事本(僅操作者)，並把標記從給人看的文字拿掉
       const { facts, clean } = extractMemoryTags(rawReply)
       if (canAct && facts.length) { for (const f of facts) await addMemory(f, 'auto', op?.name) }

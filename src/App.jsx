@@ -7,6 +7,7 @@ import { SPACES, SPACE_CONF, PERM_MATRIX, LEGACY_EDIT, PERM_NONE, DEFAULT_ROLES,
 import { buildBotSnapshot } from "./lib/snapshot.js";
 import FinanceView from "./finance/Finance.jsx";
 import MailManagerView from "./lw/MailManager.jsx";
+import SupplyView from "./supply/Supply.jsx";
 import TaskCenter from "./tasks/TaskCenter.jsx";
 import Conclusions from "./conclusions/Conclusions.jsx";
 import SequenceView from "./SequenceView.jsx";
@@ -58,11 +59,11 @@ async function loadSpaceAIContext() {
     const nt = (n) => "NT$" + Math.round(n || 0).toLocaleString();
     const g = async (k) => { try { const v = await window.storage.get(k, true); return v && v.value ? JSON.parse(v.value) : null; } catch (_) { return null; } };
     const d0 = new Date(); const mo = `${d0.getFullYear()}-${String(d0.getMonth() + 1).padStart(2, "0")}`;
-    const [snapC, snapT, snapK, snapF, tasks, crew, pos, posD, bank, ctbc, accounts, ledger, conclusions, mailRules, mailLog] = await Promise.all([
+    const [snapC, snapT, snapK, snapF, tasks, crew, pos, posD, bank, ctbc, accounts, ledger, conclusions, mailRules, mailLog, supply] = await Promise.all([
       g("pm_bot_context"), g("sp_team_pm_bot_context"), g("sp_crew_pm_bot_context"), g("sp_finance_pm_bot_context"),
       g("pm_tasks"), g("sp_crew_kb_360"), g("sp_finance_pm_pos"), g("sp_finance_pm_pos_d_" + mo),
       g("sp_finance_pm_bank"), g("sp_finance_pm_ctbc"), g("sp_finance_pm_fin_accounts"), g("sp_finance_pm_fin_ledger"),
-      g("pm_conclusions"), g("sp_lw_pm_mail_rules"), g("sp_lw_pm_mail_log"),
+      g("pm_conclusions"), g("sp_lw_pm_mail_rules"), g("sp_lw_pm_mail_log"), g("sp_supply_pm_supply"),
     ]);
     const parts = [];
     // 各空間快照
@@ -100,6 +101,8 @@ async function loadSpaceAIContext() {
     if (con.length) parts.push("【公開結論（團隊定案）】\n" + con.slice(0, 40).map(c => `- ${c.topic}：${c.conclusion}`).join("\n"));
     // 信箱管理
     if (mailRules?.rules?.length) parts.push(`【信箱管理（LWLWLW）】規則 ${mailRules.rules.length} 條（每小時自動跑）${mailLog?.items?.[0] ? `；最近一次處理 ${mailLog.items[0].moved} 封` : ""}`);
+    // 供應鏈
+    if (supply?.products?.length) parts.push(`【供應鏈】產品 ${supply.products.length} 項（${(supply.categories || []).map(c2 => c2.name).join("/")}）・物料/包材 ${(supply.materials || []).length} 項・廠商 ${(supply.vendors || []).length} 家（${(supply.vendors || []).slice(0, 8).map(v => v.name).join("、")}…）`);
     // 資料總目錄（新功能上線自動出現在這裡）
     try {
       const su = import.meta.env.VITE_SUPABASE_URL, sk = import.meta.env.VITE_SUPABASE_ANON_KEY;
@@ -1046,6 +1049,11 @@ export default function App() {
         {view === "compare" && (
           <CompareView canEdit={canEditFiles} requireLogin={denyEdit} onLog={logActivity} />
         )}
+        {["sproducts", "svendors", "sorder"].includes(view) && CURRENT_SPACE === "supply" && (profile?.role === "admin" ? (
+          <SupplyView view={view} K={K} canEdit={canEditData} confirm={confirm} showMoney={showMoney()} />
+        ) : (
+          <div style={{ padding: 40, textAlign: "center", color: SUB, fontSize: 14, background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: 12, margin: "8px 0" }}>🔒 供應鏈空間建置中，目前只開放管理員。</div>
+        ))}
         {view === "mail" && CURRENT_SPACE === "lw" && (profile?.role === "admin" ? (
           <MailManagerView K={K} canEdit={canEditData} confirm={confirm} />
         ) : (
@@ -4415,6 +4423,11 @@ function HistoryView({ K, confirm, snapshotData, cats, petty }) {
 // ── App 更新紀錄（我們對 App 做的功能修改／新增，給全團隊看）─────────────────
 // 維護方式：每次有較大改動就在最上面加一筆（日期 + 條列）。
 const CHANGELOG = [
+  { date: "2026-07-20", items: [
+    "新空間「🔗 供應鏈」上線(P1)：ground-pack 包材系統整併進 App——產品 59 項/類別 10/物料包材 36/廠商 14 全量搬遷完成",
+    "產品管理頁：依類別分組(可折疊)/全部攤平、搜尋/類別/標籤/啟用篩選、密表列點開編輯、綁定包材勾選、售價受看金額權限控管",
+    "廠商名錄唯讀預覽；叫貨系統與廠商完整版(P2)建置中：依廠商勾品項→叫貨單→D自動發廠商群/LINE分享→到貨點收→待付款進財務",
+  ]},
   { date: "2026-07-19", items: [
     "自動收信入庫：App 每天自動讀信箱——中信 e-Cash 匯款通知(歷史786筆已回填，2020/12起) + Eats365 POS 日結報表(Excel附件自動解析)",
     "財務新「📈 營運」分頁：日營收/交易數/客單價/來客 KPI、近30天營收圖、付款方式佔比(現金/信用卡/UberEats)、每日一列日結明細表",
@@ -6385,7 +6398,7 @@ function PhotoLibraryView({ photos, setPhotos, cats, canEdit, userName, requireL
 }
 
 // ── 帳號管理 ─────────────────────────────────────────────────────────────────
-const ACCT_SPACES = [["construction","🏗 工程專案"],["team","👥 團隊工作"],["crew","🤝 夥伴中心"],["finance","💰 財務內帳"],["lw","📮 LWLWLW"]];
+const ACCT_SPACES = [["construction","🏗 工程專案"],["team","👥 團隊工作"],["crew","🤝 夥伴中心"],["finance","💰 財務內帳"],["lw","📮 LWLWLW"],["supply","🔗 供應鏈"]];
 const ACCT_VIEW_PAGES = [["owner","儀表板"],["overview","總覽"],["tasks","任務"],["gantt","工序"],["conclusions","結論"],["files","檔案庫"],["petty","零用金"],["compare","比價"],["advisor","AI設定"]];
 const ACCT_EDIT_PAGES = [["data","總覽/工程資料"],["worklog","工序日誌"],["files","檔案庫"],["advisor","AI設定"]];
 function AccountManager({ confirm, myId, roles = [], commitRoles, onLog, guestPerms = {}, commitGuestPerms }) {

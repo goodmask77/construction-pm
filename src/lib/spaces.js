@@ -5,6 +5,7 @@ export const SPACES = [
   { id: "crew",         name: "夥伴中心", icon: "🤝" },
   { id: "finance",      name: "財務內帳", icon: "💰" },
   { id: "lw",           name: "LWLWLW",   icon: "📮" },
+  { id: "supply",       name: "供應鏈",    icon: "🔗" },
 ];
 // 每個空間的外觀客製（顯示成本與否、隱藏分頁、名詞、AI 角色、專屬分頁）
 export const SPACE_CONF = {
@@ -47,6 +48,15 @@ export const SPACE_CONF = {
     labels: { cat: "項目", item: "項目", overview: "信箱", gantt: "—", subtitle: "LW 個人空間" },
     aiRole: "你是張良的個人助理，協助管理電子信箱與個人事務。請用繁體中文、簡潔務實。",
   },
+  supply: {
+    showCost: true, // 售價/採購價受「看金額」權限控管（店長層可遮）
+    hideTabs: [],
+    tabs: [["sproducts", "產品管理", "📦"], ["svendors", "廠商", "🏭"], ["sorder", "叫貨", "🛒"]],
+    defaultView: "sproducts",
+    hideKpi: true,
+    labels: { cat: "類別", item: "品項", overview: "供應鏈", gantt: "—", subtitle: "供應鏈管理（進銷存/採購/比價）" },
+    aiRole: "你是供應鏈管理助理，協助管理產品主檔、包材/物料、廠商與叫貨採購。請用繁體中文、簡潔務實。",
+  },
 };
 // ── 權限矩陣：每個空間有哪些頁面、各頁是否有「可編輯」「看金額」維度（帳號權限二合一矩陣用）──
 export const PERM_MATRIX = {
@@ -83,6 +93,11 @@ export const PERM_MATRIX = {
   ],
   lw: [
     ["mail", "信箱管理", { edit: 1 }],
+  ],
+  supply: [
+    ["sproducts", "產品管理", { edit: 1, money: 1 }],
+    ["svendors", "廠商", { edit: 1, money: 1 }],
+    ["sorder", "叫貨", { edit: 1, money: 1 }],
   ],
 };
 // 舊資料相容：以前的可編輯權限只有 data/files/advisor 三類，對應到各頁
