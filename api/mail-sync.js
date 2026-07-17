@@ -148,6 +148,9 @@ async function syncPos(days) {
   if (!accounts.length) return { skipped: '未設信箱憑證' }
   const store = (await kvGet('sp_finance_pm_pos')) || { name: 'Eats365 POS 日結', entries: [] }
   const have = new Set(store.entries.map(e => e.id))
+  // 雙店支援：A Beach 101 與 GROUN:D 同一天各寄一封 → 以「日期+店名」二次去重（舊 id 不含店名也擋得住重複）
+  const storeKeyOf = (n) => /groun/i.test(n || '') ? 'ground' : 'abeach'
+  const haveCombo = new Set(store.entries.map(e => (e.date || '') + '|' + storeKeyOf(e.store)))
   const found = {}
   let scanned = 0
   for (const [au, ap] of accounts) await withMailboxes(au, ap, async (client) => {
@@ -173,7 +176,9 @@ async function syncPos(days) {
         const rec = parsePosWorkbook(att.content, mm.subject)
         // POS 人為誤操作有時同一天寄兩封（一封正確、一封全 0）→ 全 0 的空報表一律不入庫
         if ((Number(rec.revenue) || 0) <= 0 && (Number(rec.txCount) || 0) <= 0) continue
-        if (!have.has(rec.id) && !found[rec.id]) found[rec.id] = rec
+        // id 加上店代碼，兩店同日不撞 id；再用 日期|店 組合擋掉舊格式 id 的重複入庫
+        rec.id = rec.id + '-' + storeKeyOf(rec.store)
+        if (!have.has(rec.id) && !haveCombo.has(rec.date + '|' + storeKeyOf(rec.store)) && !found[rec.id]) found[rec.id] = rec
       } catch (_) {}
     }
   })
@@ -186,7 +191,12 @@ async function syncPos(days) {
       const did = 'sp_finance_pm_pos_d_' + mo
       const doc = (await kvGet(did)) || { days: {} }
       let changed = false
-      for (const r of recs) { if (!doc.days[r.date]) { doc.days[r.date] = { date: r.date, period: r.period, store: r.store, sheets: r._details }; changed = true } }
+      // 明細 key＝日期::店代碼（雙店同日不互蓋）；舊資料是純日期 key，若同店同日已存在（不論新舊格式）都不覆蓋
+      for (const r of recs) {
+        const dk = r.date + '::' + storeKeyOf(r.store)
+        const legacy = doc.days[r.date] && storeKeyOf(doc.days[r.date].store) === storeKeyOf(r.store)
+        if (!doc.days[dk] && !legacy) { doc.days[dk] = { date: r.date, period: r.period, store: r.store, sheets: r._details }; changed = true }
+      }
       if (changed) { doc.updatedAt = new Date().toISOString(); await kvPut(did, doc, 'POS明細自動入庫') }
     }
     store.entries = [...store.entries, ...add.map(({ _details, ...r }) => r)].sort((a, b) => (a.date < b.date ? -1 : 1))

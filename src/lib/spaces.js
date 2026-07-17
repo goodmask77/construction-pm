@@ -3,8 +3,8 @@ export const SPACES = [
   { id: "construction", name: "工程專案", icon: "🏗" },
   { id: "team",         name: "團隊工作", icon: "👥" },
   { id: "crew",         name: "夥伴中心", icon: "🤝" },
-  { id: "finance",      name: "財務內帳", icon: "💰" },
-  { id: "lw",           name: "LWLWLW",   icon: "📮" },
+  { id: "finance",      name: "財務報表", icon: "💰" },
+  // lw（LWLWLW）空間已收起：信箱管理移入全域「設定」內（資料 sp_lw_ 前綴保留不動）
   { id: "supply",       name: "供應鏈",    icon: "🔗" },
 ];
 // 每個空間的外觀客製（顯示成本與否、隱藏分頁、名詞、AI 角色、專屬分頁）
@@ -33,10 +33,11 @@ export const SPACE_CONF = {
   finance: {
     showCost: true, // 內帳全是金額，受看金額權限控管
     hideTabs: [],
-    tabs: [["finance", "內帳總表", "💰"]], // 財務空間：單一入口，內部再分子分頁（總覽/帳戶/交易）
-    defaultView: "finance",
+    // 財務報表：原本「內帳總表」單一入口＋內部子分頁 → 攤平成第二層直接切（張良 2026-07-18）
+    tabs: [["fin_ov", "總覽", "📊"], ["fin_acct", "帳戶", "🏦"], ["fin_ledger", "交易明細", "🧾"], ["fin_coa", "科目", "🗂"], ["fin_recon", "對帳", "🔄"], ["fin_pos", "營運報表", "📈"]],
+    defaultView: "fin_ov",
     hideKpi: true, // 不顯示工程 KPI
-    labels: { cat: "科目", item: "交易", overview: "財務總覽", gantt: "—", subtitle: "多帳戶內帳總表" },
+    labels: { cat: "科目", item: "交易", overview: "財務總覽", gantt: "—", subtitle: "多帳戶財務報表" },
     aiRole: "你是公司財務內帳助理，協助管理多個銀行/貸款/現金帳戶、記錄交易、對帳與餘額試算。請用繁體中文、精準務實。",
   },
   lw: {
@@ -89,11 +90,14 @@ export const PERM_MATRIX = {
     ["rank", "排行榜", {}],
   ],
   finance: [
-    ["finance", "內帳總表", { edit: 1, money: 1 }],
+    ["fin_ov", "總覽", { money: 1 }],
+    ["fin_acct", "帳戶", { edit: 1, money: 1 }],
+    ["fin_ledger", "交易明細", { edit: 1, money: 1 }],
+    ["fin_coa", "科目", { edit: 1 }],
+    ["fin_recon", "對帳", { edit: 1, money: 1 }],
+    ["fin_pos", "營運報表", { edit: 1, money: 1 }],
   ],
-  lw: [
-    ["mail", "信箱管理", { edit: 1 }],
-  ],
+  // lw 空間收起：信箱管理改掛在全域「設定」（管理員限定），不再進權限矩陣
   supply: [
     ["sproducts", "產品管理", { edit: 1, money: 1 }],
     ["svendors", "廠商", { edit: 1, money: 1 }],

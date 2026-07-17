@@ -68,7 +68,7 @@ async function loadSpaceAIContext() {
     const parts = [];
     // 各空間快照
     const snapLine = (label, sn) => { if (!sn) return null; const p2 = sn.project || {}, t = sn.totals || {}, pr = sn.progress || {}; return `- ${label}：${p2.name || ""}｜進度${pr.pct || 0}%（${pr.doneItems || 0}/${pr.totalItems || 0}）｜預估${nt(t.est)}/已付${nt(t.paid)}${sn.petty ? `｜零用金餘額${nt(sn.petty.balance)}` : ""}${(sn.issues || []).length ? `｜⚠${sn.issues.slice(0, 5).join("、")}` : ""}`; };
-    const snaps = [snapLine("工程專案", snapC), snapLine("團隊工作", snapT), snapLine("夥伴中心", snapK), snapLine("財務內帳", snapF)].filter(Boolean);
+    const snaps = [snapLine("工程專案", snapC), snapLine("團隊工作", snapT), snapLine("夥伴中心", snapK), snapLine("財務報表", snapF)].filter(Boolean);
     if (snaps.length) parts.push("【各空間快照】\n" + snaps.join("\n"));
     // 任務
     const tk = Array.isArray(tasks) ? tasks.filter(t => t.status !== "done") : [];
@@ -80,8 +80,9 @@ async function loadSpaceAIContext() {
       parts.push("【營運日結（" + (pos.entries[0].store || "POS") + "）】\n" + pos.entries.slice(-30).map(e => `- ${e.date} 營收${nt(e.revenue)}｜${e.txCount}單｜來客${e.guests || "?"}｜現金${nt(e.cash)}/卡${nt(e.card)}/Uber${nt(e.uber)}｜折扣${nt(e.discount)}`).join("\n"));
       if (posD?.days) {
         const per = {};
-        Object.entries(posD.days).forEach(([date, day]) => (day.sheets?.["總銷售額 (以類別分類)"] || []).forEach(sec => {
+        Object.entries(posD.days).forEach(([dkey, day]) => (day.sheets?.["總銷售額 (以類別分類)"] || []).forEach(sec => {
           if (sec.title === "總結") return;
+          const date = (day.date || dkey).slice(0, 10); // 新格式 key＝日期::店代碼（雙店），取純日期
           (sec.rows || []).forEach(r => {
             if (!Array.isArray(r) || typeof r[0] !== "string") return;
             const o = per[r[0]] = per[r[0]] || { cat: sec.title, days: {}, qty: 0, amt: 0 };
@@ -100,7 +101,7 @@ async function loadSpaceAIContext() {
     const con = Array.isArray(conclusions) ? conclusions.filter(c => c && c.status !== "archived") : [];
     if (con.length) parts.push("【公開結論（團隊定案）】\n" + con.slice(0, 40).map(c => `- ${c.topic}：${c.conclusion}`).join("\n"));
     // 信箱管理
-    if (mailRules?.rules?.length) parts.push(`【信箱管理（LWLWLW）】規則 ${mailRules.rules.length} 條（每小時自動跑）${mailLog?.items?.[0] ? `；最近一次處理 ${mailLog.items[0].moved} 封` : ""}`);
+    if (mailRules?.rules?.length) parts.push(`【郵件管理（設定內）】規則 ${mailRules.rules.length} 條（每小時自動跑）${mailLog?.items?.[0] ? `；最近一次處理 ${mailLog.items[0].moved} 封` : ""}`);
     // 供應鏈
     if (supply?.products?.length) parts.push(`【供應鏈】產品 ${supply.products.length} 項（${(supply.categories || []).map(c2 => c2.name).join("/")}）・物料/包材 ${(supply.materials || []).length} 項・廠商 ${(supply.vendors || []).length} 家（${(supply.vendors || []).slice(0, 8).map(v => v.name).join("、")}…）`);
     // 資料總目錄（新功能上線自動出現在這裡）
@@ -819,23 +820,25 @@ export default function App() {
   const _ep = eff?.pages || [];
   const _mp = eff?.money_pages || [];
   // 預設「全開」，admin 在權限頁逐項取消才會關閉（空陣列＝全部允許）。未登入訪客一律唯讀但可看。
+  // 舊財務單頁相容：以前財務空間只有一頁 finance:finance，攤平後拆成 fin_* 六頁；舊勾選視同六頁全勾
+  const legacyFin = (arr, sp, pg) => sp === "finance" && String(pg).startsWith("fin_") && arr.includes("finance:finance");
   const viewOK = (sp, pg) => {
     if (isAdmin) return true;
     if (!_vp.length) return true;                                   // 未設＝全可見
-    return _vp.includes(`${sp}:${pg}`) || _vp.includes(pg);         // 後者＝舊裸key相容
+    return _vp.includes(`${sp}:${pg}`) || _vp.includes(pg) || legacyFin(_vp, sp, pg); // 中者＝舊裸key相容
   };
   const editOK = (sp, pg) => {
     if (isAdmin || isManager) return true;
     if (!profile) return false;                                     // 未登入訪客：唯讀
     if (!_ep.length) return true;                                   // 登入者未設＝預設可編輯（全開）
-    return _ep.includes(`${sp}:${pg}`) || _ep.includes(LEGACY_EDIT[pg]); // 含舊資料相容
+    return _ep.includes(`${sp}:${pg}`) || _ep.includes(LEGACY_EDIT[pg]) || legacyFin(_ep, sp, pg); // 含舊資料相容
   };
   const moneyOK = (sp, pg) => {
     if (isAdmin || isManager) return true;
     // 安全預設：未登入訪客「沒設定」＝全關（金額一律遮蔽）；登入者「沒設定」才是全開。
     // （曾發生 pm_guest_perms 被存成空陣列 → 舊邏輯把空當全開 → 訪客看光財務數字）
     if (!_mp.length) return !!profile;
-    return _mp.includes(`${sp}:${pg}`);
+    return _mp.includes(`${sp}:${pg}`) || legacyFin(_mp, sp, pg);
   };
   const canViewMoney = moneyOK(CURRENT_SPACE, view);
   CAN_VIEW_MONEY = canViewMoney; // 同步給 showMoney()（依「目前頁面」決定金額欄位/KPI 顯示與否）
@@ -1053,22 +1056,20 @@ export default function App() {
         {["sproducts", "svendors", "sorder"].includes(view) && CURRENT_SPACE === "supply" && (
           <SupplyView view={view} K={K} canEdit={canEditData} confirm={confirm} showMoney={showMoney()} />
         )}
-        {view === "mail" && CURRENT_SPACE === "lw" && (
-          <MailManagerView K={K} canEdit={canEditData} confirm={confirm} />
-        )}
-        {view === "finance" && CURRENT_SPACE === "finance" && (showMoney() ? (
-          <FinanceView K={K} confirm={confirm} canEdit={canEditData} ReceiptUploader={ReceiptUploader} onLog={logActivity} />
+        {/* 財務報表：第二層直接六分頁（總覽/帳戶/交易明細/科目/對帳/營運報表），view 直傳 FinanceView */}
+        {["fin_ov", "fin_acct", "fin_ledger", "fin_coa", "fin_recon", "fin_pos"].includes(view) && CURRENT_SPACE === "finance" && (showMoney() ? (
+          <FinanceView view={view} K={K} confirm={confirm} canEdit={canEditData} ReceiptUploader={ReceiptUploader} onLog={logActivity} />
         ) : (
-          <div style={{ padding: 40, textAlign: "center", color: SUB, fontSize: 14, background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: 12, margin: "8px 0" }}>🔒 財務內帳含金額，你沒有看金額的權限。</div>
+          <div style={{ padding: 40, textAlign: "center", color: SUB, fontSize: 14, background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: 12, margin: "8px 0" }}>🔒 財務報表含金額，你沒有看金額的權限。</div>
         ))}
         {view === "petty" && (showMoney() ? (
           <PettyCashView petty={petty} setPetty={commitPetty} cats={cats} setCats={guardedSetCats} canEdit={canEditData} confirm={confirm} />
         ) : (
           <div style={{ padding: 40, textAlign: "center", color: SUB, fontSize: 14, background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: 12, margin: "8px 0" }}>🔒 零用金含金額，你沒有看金額的權限。</div>
         ))}
-        {/* ⚙ 設定：把 AI設定 / 群組 / 帳號 / 紀錄 整合成一頁，內含子分頁 */}
-        {["advisor", "groups", "accounts", "audit", "vault", "history", "changelog", "usage"].includes(view) && (() => {
-          const subs = [["advisor", "AI設定"], ["changelog", "更新"], ...(isAdmin ? [["groups", "群組"], ["accounts", "帳號"], ["audit", "紀錄"], ["history", "還原點"], ["usage", "用量"], ["vault", "金庫"]] : [])].filter(([k]) => k !== "advisor" || allowedViewPages == null || allowedViewPages.includes("advisor"));
+        {/* ⚙ 設定：把 AI設定 / 郵件管理 / 群組 / 帳號 / 紀錄 整合成一頁，內含子分頁（第一層全域入口） */}
+        {["advisor", "mail", "groups", "accounts", "audit", "vault", "history", "changelog", "usage"].includes(view) && (() => {
+          const subs = [["advisor", "AI設定"], ["changelog", "更新"], ...(isAdmin ? [["mail", "郵件管理"], ["groups", "群組"], ["accounts", "帳號"], ["audit", "紀錄"], ["history", "還原點"], ["usage", "用量"], ["vault", "金庫"]] : [])].filter(([k]) => k !== "advisor" || allowedViewPages == null || allowedViewPages.includes("advisor"));
           return (
             <div>
               {subs.length > 1 && (
@@ -1083,6 +1084,10 @@ export default function App() {
                 <AdvisorSettingsView settings={settings} setSettings={guardedSetSettings} cats={cats} aiLog={aiLog} setAiLog={l => { if ((aiLog||[]).length && !(l||[]).length) logActivity("編輯", "清空 AI 顧問對話"); setAiLog(l); saveAILog(l); }} journal={journal} events={events} plans={plans} activityLog={activityLog} logActivity={logActivity} userName={userName} />
               )}
               {view === "changelog" && <ChangelogView />}
+              {/* 郵件管理（原 LWLWLW 空間）：資料仍存 sp_lw_ 前綴，這裡用固定 KLW 不隨目前空間變動；之後可加其他公司信箱 */}
+              {view === "mail" && isAdmin && (
+                <MailManagerView K={(k) => GLOBAL_KEYS.has(k) ? k : `sp_lw_${k}`} canEdit={canEditData} confirm={confirm} />
+              )}
               {view === "groups" && isAdmin && (
                 <GroupsView cats={cats} canEdit={canEditData} requireLogin={denyEdit} settings={settings} setSettings={guardedSetSettings} journal={journal} events={events} plans={plans} onLog={logActivity} />
               )}
@@ -2782,7 +2787,8 @@ function CompareView({ canEdit, requireLogin, onLog }) {
 // ── BOTTOM NAV (手機) ───────────────────────────────────────────────────────
 function BottomNav({ view, setView, isAdmin, allowedViewPages }) {
   const pageVisible = (v) => v === "settings" || !allowedViewPages || allowedViewPages.includes(v) || v === "owner";
-  const tabs = (conf().tabs || [["owner", "儀表板", "📊"], ["overview", L("overview"), "📋"], ["tasks", "任務", "✅"], ["gantt", L("gantt"), "📅"], ["conclusions", "結論", "📌"], ["files", "檔案庫", "📁"], ...(conf().showCost ? [["petty", "零用金", "💵"]] : []), ["compare", "比價", "⚖️"], ...((isAdmin || pageVisible("advisor")) ? [["settings", "設定", "⚙"]] : [])]).filter(([v]) => !conf().hideTabs.includes(v) && pageVisible(v));
+  // 設定已移到第一層（TopNav 空間列尾端的 ⚙），底部導覽不再放設定
+  const tabs = (conf().tabs || [["owner", "儀表板", "📊"], ["overview", L("overview"), "📋"], ["tasks", "任務", "✅"], ["gantt", L("gantt"), "📅"], ["conclusions", "結論", "📌"], ["files", "檔案庫", "📁"], ...(conf().showCost ? [["petty", "零用金", "💵"]] : []), ["compare", "比價", "⚖️"]]).filter(([v]) => !conf().hideTabs.includes(v) && pageVisible(v));
   return (
     <div style={{ position: "fixed", left: 0, right: 0, bottom: 0, height: 60, background: "rgba(255,255,255,0.96)", backdropFilter: "blur(10px)", WebkitBackdropFilter: "blur(10px)", borderTop: `1px solid ${BORDER}`, boxShadow: "0 -2px 14px rgba(0,0,0,0.08)", display: "flex", zIndex: 350, paddingBottom: "env(safe-area-inset-bottom)" }}>
       {tabs.map(([v, l, icon]) => {
@@ -2858,8 +2864,9 @@ function TopNav({ view, setView, saving, totalEstimated, totalPaid, doneCount, c
   const payPct = totalEstimated > 0 ? Math.round(totalPaid / totalEstimated * 100) : 0;
   const spaceVisible = (id) => !allowedSpaces || allowedSpaces.includes(id);
   const pageVisible = (v) => v === "settings" || !allowedViewPages || allowedViewPages.includes(v) || v === "owner"; // 儀表板一律可見；設定永遠可見(內含子分頁各自控管)
-  const SETTINGS_GRP = ["settings", "advisor", "groups", "accounts", "audit", "vault", "history", "changelog", "usage"];
+  const SETTINGS_GRP = ["settings", "advisor", "mail", "groups", "accounts", "audit", "vault", "history", "changelog", "usage"];
   const tabActive = (v) => v === "settings" ? SETTINGS_GRP.includes(view) : view === v;
+  const settingsOn = SETTINGS_GRP.includes(view);
   return (
     <div style={{ background: HEAD_BG, borderBottom: `2px solid ${HEAD_LINE}`, padding: isMobile ? "10px 14px 0" : "16px 22px 0", position: "sticky", top: 0, zIndex: 100 }}>
       <div style={{ display: "flex", alignItems: "center", gap: isMobile ? 10 : 16, marginBottom: isMobile ? 10 : 12, flexWrap: "wrap" }}>
@@ -2878,6 +2885,13 @@ function TopNav({ view, setView, saving, totalEstimated, totalPaid, doneCount, c
               </button>
             );
           })}
+          {/* ⚙ 設定移到第一層最後（張良 2026-07-18）：全域設定不屬於任何空間 */}
+          {(isAdmin || pageVisible("advisor")) && (
+            <button onClick={() => !settingsOn && setView("advisor")} title="設定（AI/郵件/群組/帳號/紀錄）"
+              style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: isMobile ? "5px 7px" : "6px 11px", borderRadius: 7, border: `1px solid ${settingsOn ? "#c8bca6" : "transparent"}`, background: settingsOn ? "#fff" : "transparent", color: settingsOn ? "#1d1a15" : "#5a5247", fontSize: isMobile ? 14 : 12.5, fontWeight: settingsOn ? 700 : 500, cursor: settingsOn ? "default" : "pointer", whiteSpace: "nowrap" }}>
+              <SettingsIcon size={isMobile ? 15 : 14} strokeWidth={1.75} />{(!isMobile || settingsOn) && <span>設定</span>}
+            </button>
+          )}
         </div>
         {/* KPI cards inline（手機改 2×2、整列獨佔一行；夥伴中心等空間隱藏）*/}
         {!conf().hideKpi && (() => {
@@ -2926,7 +2940,7 @@ function TopNav({ view, setView, saving, totalEstimated, totalPaid, doneCount, c
       {/* view tabs — boxed editorial（手機隱藏，改用底部導覽）*/}
       {!isMobile && (
       <div style={{ display: "flex", gap: 8, paddingBottom: 12, flexWrap: "wrap" }}>
-        {(conf().tabs || [["owner","儀表板"],["overview",L("overview")],["tasks","任務"],["gantt",L("gantt")],["conclusions","結論"],["files","檔案庫"],...(conf().showCost?[["petty","零用金"]]:[]),["compare","比價"],...((isAdmin||pageVisible("advisor"))?[["settings","設定"]]:[])]).filter(([v]) => !conf().hideTabs.includes(v) && pageVisible(v)).map(([v,l]) => { const act = tabActive(v); const NavI = NAV_ICONS[v]; return (
+        {(conf().tabs || [["owner","儀表板"],["overview",L("overview")],["tasks","任務"],["gantt",L("gantt")],["conclusions","結論"],["files","檔案庫"],...(conf().showCost?[["petty","零用金"]]:[]),["compare","比價"]]).filter(([v]) => !conf().hideTabs.includes(v) && pageVisible(v)).map(([v,l]) => { const act = tabActive(v); const NavI = NAV_ICONS[v]; return (
           <button key={v} onClick={() => setView(v === "settings" ? "advisor" : v)} style={{ display: "inline-flex", alignItems: "center", gap: 7, padding: "8px 15px", borderRadius: 7, border: `1.5px solid ${act ? PRIMARY : "#c8bca6"}`, cursor: "pointer", fontSize: 14, fontWeight: act ? 700 : 500, background: act ? PRIMARY : HEAD_CHIP, color: act ? "#fff" : TEXT, transition: "all .12s" }}>{NavI && <NavI size={15} strokeWidth={1.75} />}{String(l).replace(/^[^一-鿿A-Za-z0-9]+\s*/, "")}</button>
         ); })}
       </div>
@@ -4426,6 +4440,12 @@ function HistoryView({ K, confirm, snapshotData, cats, petty }) {
 // ── App 更新紀錄（我們對 App 做的功能修改／新增，給全團隊看）─────────────────
 // 維護方式：每次有較大改動就在最上面加一筆（日期 + 條列）。
 const CHANGELOG = [
+  { date: "2026-07-21", items: [
+    "導覽大整理：空間「財務內帳」改名「財務報表」，原第三層(總覽/帳戶/交易明細/科目/對帳/營運)攤平升到第二層，「內帳總表」入口移除",
+    "「營運」改名「營運報表」並新增分店切換：A Beach 101 / GROUN:D 兩鍵各看各的營收（GROUN:D 待 Eats365 設定寄信後自動進資料）；更新鈕移到最右",
+    "⚙ 設定移到第一層（空間列最後面）：全域設定不再藏在工程專案裡；郵件管理從 LWLWLW 空間併入設定（之後可加其他公司信箱），LWLWLW 空間收起",
+    "收信管線支援雙店：兩店同日各寄日結信不互蓋、不重複入庫",
+  ]},
   { date: "2026-07-20", items: [
     "新空間「🔗 供應鏈」上線(P1)：ground-pack 包材系統整併進 App——產品 59 項/類別 10/物料包材 36/廠商 14 全量搬遷完成",
     "產品管理頁：依類別分組(可折疊)/全部攤平、搜尋/類別/標籤/啟用篩選、密表列點開編輯、綁定包材勾選、售價受看金額權限控管",
@@ -6401,7 +6421,7 @@ function PhotoLibraryView({ photos, setPhotos, cats, canEdit, userName, requireL
 }
 
 // ── 帳號管理 ─────────────────────────────────────────────────────────────────
-const ACCT_SPACES = [["construction","🏗 工程專案"],["team","👥 團隊工作"],["crew","🤝 夥伴中心"],["finance","💰 財務內帳"],["lw","📮 LWLWLW"],["supply","🔗 供應鏈"]];
+const ACCT_SPACES = [["construction","🏗 工程專案"],["team","👥 團隊工作"],["crew","🤝 夥伴中心"],["finance","💰 財務報表"],["supply","🔗 供應鏈"]];
 const ACCT_VIEW_PAGES = [["owner","儀表板"],["overview","總覽"],["tasks","任務"],["gantt","工序"],["conclusions","結論"],["files","檔案庫"],["petty","零用金"],["compare","比價"],["advisor","AI設定"]];
 const ACCT_EDIT_PAGES = [["data","總覽/工程資料"],["worklog","工序日誌"],["files","檔案庫"],["advisor","AI設定"]];
 function AccountManager({ confirm, myId, roles = [], commitRoles, onLog, guestPerms = {}, commitGuestPerms }) {

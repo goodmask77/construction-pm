@@ -38,11 +38,12 @@ function SEED_COA() {
   return out;
 }
 
-export default function FinanceView({ K, confirm, canEdit, ReceiptUploader, onLog }) {
+export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader, onLog }) {
   // 操作紀錄：逐筆敲字的編輯做節流（同訊息 8 秒內只記一次），新增/刪除/匯入等明確動作即時記
   const lastLog = useRef({});
   const logT = (action, detail, ms = 8000) => { if (!onLog) return; const now = Date.now(); if (lastLog.current[detail] && now - lastLog.current[detail] < ms) return; lastLog.current[detail] = now; onLog(action, detail); };
-  const [tab, setTab] = useState("ledger");      // overview | accounts | ledger
+  // 分頁改由外層第二層導覽決定（財務報表攤平，不再有內部第三層）；view=fin_* 直接映射
+  const tab = ({ fin_ov: "overview", fin_acct: "accounts", fin_ledger: "ledger", fin_coa: "coa", fin_recon: "recon", fin_pos: "pos" })[view] || "overview";
   const [accounts, setAccounts] = useState(null); // null=載入中
   const [ledger, setLedger] = useState(null);
   const [q, setQ] = useState(""); const [fKind, setFKind] = useState("all"); const [fAcc, setFAcc] = useState("all");
@@ -66,6 +67,7 @@ export default function FinanceView({ K, confirm, canEdit, ReceiptUploader, onLo
   const [posSyncBusy, setPosSyncBusy] = useState(false);    // 營運手動更新中
   const [posMsg, setPosMsg] = useState(null);               // 營運更新結果提示
   const [posGran, setPosGran] = useState("day");            // 比較粒度：day/week/month
+  const [posStore, setPosStore] = useState("abeach");       // 分店切換：abeach=A Beach 101 / ground=GROUN:D（營運報表第三層）
   const [posCats, setPosCats] = useState([]);               // 標籤自選：選到的分類做比較（空＝全部）
   const [posPivotCats, setPosPivotCats] = useState(null);   // 矩陣內分類勾選（null=全選）
   const [posPivotSort, setPosPivotSort] = useState(null);   // 矩陣排序 {col, dir}
@@ -201,23 +203,11 @@ export default function FinanceView({ K, confirm, canEdit, ReceiptUploader, onLo
   }, [ledger, fKind, fAcc, q, sortDir, accounts]); // eslint-disable-line
   const filteredSum = rows.reduce((s, l) => s + num(l.amount), 0);
 
-  const Tab = (k, label) => <button key={k} onClick={() => setTab(k)} style={{ padding: "7px 16px", borderRadius: 8, border: `1px solid ${tab === k ? "#b5512b" : C.line}`, background: tab === k ? "#b5512b" : "#fff", color: tab === k ? "#fff" : C.sub, fontSize: 13.5, fontWeight: 600, cursor: "pointer" }}>{label}</button>;
-
   // 所有 hooks 都呼叫完了，這裡才可以提早 return
   if (accounts === null || ledger === null || coa === null) return <div style={{ padding: 40, textAlign: "center", color: C.faint }}>載入中…</div>;
 
   return (
     <div style={{ maxWidth: 1240, margin: "8px auto", padding: "0 4px" }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 16, paddingBottom: 12, borderBottom: `1px solid ${C.line}` }}>
-        <div style={{ fontSize: 19, fontWeight: 800, color: C.text, letterSpacing: -0.3 }}>財務內帳</div>
-        <span style={{ fontSize: 12, color: C.faint }}>多帳戶總表・轉帳不算成本</span>
-        <div style={{ flex: 1 }} />
-        <div style={{ display: "inline-flex", background: C.head, border: `1px solid ${C.line}`, borderRadius: 10, padding: 3, gap: 2 }}>
-          {[["overview", "📊 總覽"], ["accounts", "🏦 帳戶"], ["ledger", "🧾 交易明細"], ["coa", "🗂 科目"], ["recon", "🔄 對帳"], ["pos", "📈 營運"]].map(([k, l]) => (
-            <button key={k} onClick={() => setTab(k)} style={{ padding: "6px 16px", borderRadius: 7, border: "none", background: tab === k ? C.brand : "transparent", color: tab === k ? "#fff" : C.sub, fontSize: 13.5, fontWeight: 600, cursor: "pointer", transition: "all .12s" }}>{l}</button>
-          ))}
-        </div>
-      </div>
 
       {tab === "overview" && (() => {
         const groups = { 資產: accounts.filter(a => ["bank", "company", "cash", "petty"].includes(a.type)), 貸款: accounts.filter(a => a.type === "loan") };
@@ -708,7 +698,10 @@ export default function FinanceView({ K, confirm, canEdit, ReceiptUploader, onLo
       {/* ── 營運（Eats365 POS 日結：所有數字都從原始資料算、點任何數字下鑽到明細資料庫）── */}
       {tab === "pos" && (() => {
         const MONOF = "'IBM Plex Mono', ui-monospace, Menlo, monospace";
-        const all = [...((pos?.entries) || [])].sort((a, b) => (a.date < b.date ? -1 : 1));
+        // 分店切換：依店名判斷歸屬（GROUN:D 的日結信開始寄進來後，這裡自動就有資料）
+        const storeKeyOf = (n) => /groun/i.test(n || "") ? "ground" : "abeach";
+        const STORES = [["abeach", "A Beach 101"], ["ground", "GROUN:D"]];
+        const all = [...((pos?.entries) || [])].filter(e => storeKeyOf(e.store) === posStore).sort((a, b) => (a.date < b.date ? -1 : 1));
         const days = posRange >= 9999 ? all : all.slice(-posRange);
         const last = days[days.length - 1];
         const sum = (arr, k) => arr.reduce((t, x) => t + (Number(x[k]) || 0), 0);
@@ -717,7 +710,8 @@ export default function FinanceView({ K, confirm, canEdit, ReceiptUploader, onLo
         const ticket = (rev, g) => g ? Math.round(rev / g) : null;
         const avgTicket = ticket(revSum, guestSum);
         const maxRev = Math.max(1, ...days.map(d => d.revenue || 0));
-        const dayDet = (date) => posDet[(date || "").slice(0, 7)]?.days?.[date];
+        // 明細庫：新格式 key=日期::店代碼（雙店同日不互蓋）；舊格式 key=日期（依 store 欄判斷歸屬）
+        const dayDet = (date) => { const m = posDet[(date || "").slice(0, 7)]?.days; if (!m) return undefined; const nd = m[`${date}::${posStore}`]; if (nd) return nd; const od = m[date]; return od && storeKeyOf(od.store) === posStore ? od : undefined; };
         const CATSHEET = "總銷售額 (以類別分類)";
         // 明細彙總（期間內，全部從原始明細資料庫算）
         const catAgg = {}, itemAgg = {};
@@ -863,12 +857,12 @@ export default function FinanceView({ K, confirm, canEdit, ReceiptUploader, onLo
             };
           }
           if (dr.type === "waste") return {
-            title: "退菜＋Void 逐日追蹤", cols: ["日期", "退菜", "Void", "退單", "合計", "佔當日營收"],
+            title: "退菜＋Void（作廢）逐日追蹤", cols: ["日期", "退菜", "Void", "退單", "合計", "佔當日營收"],
             rows: [...days].reverse().map(d => {
               const w = Math.abs(d.returnDish || 0) + Math.abs(d.voidItems || 0);
               return [d.date, fmt(Math.abs(d.returnDish || 0)), fmt(Math.abs(d.voidItems || 0)), d.refund || 0, fmt(w), d.revenue ? (w / d.revenue * 100).toFixed(1) + "%" : "—"];
             }),
-            note: "來源：日結信 Balance Sheet 審計段 → 資料庫 pm_pos・想看單日是哪幾筆，點該日營收柱進當日完整原始資料的「審計」區塊",
+            note: "Void＝結帳前作廢的品項（點錯/客人改單/廚房已做但取消）；退菜＝送出後退回；退單＝整張單退掉。日結信只有每日總額、沒有逐筆明細——想看是哪道菜/誰操作，要到 Eats365 後台：報表 → 審計報告/交易紀錄",
           };
           if (dr.type === "coupon") return {
             title: "優惠券 / 折扣明細（含單號・經手・原因）", cols: ["日期", "區塊", "品項/單號", "數量", "佔比", "金額", "經手・原因"],
@@ -912,9 +906,14 @@ export default function FinanceView({ K, confirm, canEdit, ReceiptUploader, onLo
         return (
           <div>
             <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", marginBottom: 12 }}>
-              <span style={{ background: "#3f7d4e", color: "#fff", fontSize: 11.5, fontWeight: 700, borderRadius: 4, padding: "2px 8px", letterSpacing: 1 }}>營運</span>
+              <span style={{ background: "#3f7d4e", color: "#fff", fontSize: 11.5, fontWeight: 700, borderRadius: 4, padding: "2px 8px", letterSpacing: 1 }}>營運報表</span>
+              {/* 分店切換（第三層）：兩間店各看各的營收 */}
+              <div style={{ display: "inline-flex", background: C.soft, border: `1.5px solid #c8bca6`, borderRadius: 8, padding: 2, gap: 2 }}>
+                {STORES.map(([v, l]) => (
+                  <button key={v} onClick={() => setPosStore(v)} style={{ padding: "6px 14px", borderRadius: 6, border: "none", background: posStore === v ? C.brand : "transparent", color: posStore === v ? "#fff" : C.sub, fontSize: 13, fontWeight: 700, cursor: "pointer" }}>{l}</button>
+                ))}
+              </div>
               <div>
-                <div style={{ fontSize: 16, fontWeight: 800, color: C.text }}>🍽 {last?.store || "Eats365 POS"} 日結</div>
                 <div style={{ fontSize: 11, color: C.faint }}>POS 結帳信自動入庫・{all.length} 天資料・所有數字皆由原始資料計算，點任一數字看組成明細</div>
               </div>
               <div style={{ flex: 1 }} />
@@ -923,16 +922,21 @@ export default function FinanceView({ K, confirm, canEdit, ReceiptUploader, onLo
                   <button key={v} onClick={() => setPosRange(v)} style={{ padding: "5px 10px", borderRadius: 6, border: `1px solid ${posRange === v ? C.line : "transparent"}`, background: posRange === v ? "#fff" : "transparent", color: posRange === v ? C.text : C.sub, fontSize: 12.5, fontWeight: posRange === v ? 700 : 400, cursor: "pointer" }}>{l}</button>
                 ))}
               </div>
-              <button onClick={runPosSync} disabled={posSyncBusy} title="信箱有新日結信就立刻入庫" style={{ border: `1px solid ${C.blue}`, background: "#fff", color: C.blue, borderRadius: 8, padding: "6px 14px", fontSize: 12.5, fontWeight: 700, cursor: posSyncBusy ? "wait" : "pointer" }}>{posSyncBusy ? "更新中…" : "🔄 更新"}</button>
               <div style={{ display: "inline-flex", background: C.soft, border: `1px solid ${C.line}`, borderRadius: 8, padding: 2, gap: 2 }}>
                 {[["day", "每天"], ["week", "每週"], ["month", "每月"]].map(([v, l]) => (
                   <button key={v} onClick={() => setPosGran(v)} style={{ padding: "5px 10px", borderRadius: 6, border: `1px solid ${posGran === v ? C.line : "transparent"}`, background: posGran === v ? "#fff" : "transparent", color: posGran === v ? C.text : C.sub, fontSize: 12.5, fontWeight: posGran === v ? 700 : 400, cursor: "pointer" }}>{l}</button>
                 ))}
               </div>
+              {/* 更新鈕放最右（張良：放中間很奇怪） */}
+              <button onClick={runPosSync} disabled={posSyncBusy} title="信箱有新日結信就立刻入庫" style={{ border: `1px solid ${C.blue}`, background: "#fff", color: C.blue, borderRadius: 8, padding: "6px 14px", fontSize: 12.5, fontWeight: 700, cursor: posSyncBusy ? "wait" : "pointer" }}>{posSyncBusy ? "更新中…" : "🔄 更新"}</button>
             </div>
             {posMsg && <div style={{ background: "#eef5ef", border: `1.5px solid ${C.green}`, borderRadius: 8, padding: "7px 12px", marginBottom: 10, fontSize: 12.5, color: "#2c5a38", fontWeight: 600 }}>{posMsg}</div>}
             {!days.length ? (
-              <div style={{ padding: 30, textAlign: "center", color: C.faint, background: C.card, border: `1px solid ${C.line}`, borderRadius: 10 }}>還沒有資料——POS 日結信寄到後會自動進來（每天）。</div>
+              <div style={{ padding: 30, textAlign: "center", color: C.faint, background: C.card, border: `1px solid ${C.line}`, borderRadius: 10 }}>
+                {posStore === "ground"
+                  ? "GROUN:D 還沒有日結資料——去 Eats365 後台把 GROUN:D 的日結報表設定寄到 goodmask77@gmail.com，之後每天會自動進來。"
+                  : "還沒有資料——POS 日結信寄到後會自動進來（每天）。"}
+              </div>
             ) : (
               <>
                 <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 12 }}>
