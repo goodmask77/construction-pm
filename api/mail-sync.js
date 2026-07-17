@@ -198,7 +198,7 @@ async function syncPos(days) {
 
 export default async function handler(req, res) {
   if (!SB_URL || !SB_KEY) return res.status(200).json({ ok: false, error: '缺 Supabase 設定' })
-  const days = Math.min(120, Math.max(1, parseInt(req.query?.days || '10', 10) || 10))
+  const days = Math.min(120, Math.max(1, parseInt(req.query?.days || '3', 10) || 3)) // 每小時 cron 跑近3天(增量)；手動可帶 ?days=N
   const out = { ok: true, days }
   try { out.ctbc = await syncCtbc(days) } catch (e) { out.ctbc = { error: e?.message || String(e) } }
   try { out.pos = await syncPos(days) } catch (e) { out.pos = { error: e?.message || String(e) } }
