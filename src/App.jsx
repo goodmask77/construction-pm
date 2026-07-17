@@ -661,7 +661,9 @@ export default function App() {
       } catch (_) { setProfile(null); setUserName(null); }
     };
     // 只用 onAuthStateChange（訂閱時會立即發 INITIAL_SESSION 帶入目前登入狀態），不另外再呼叫 getSession，少一次往返
-    const { data: sub } = supabase.auth.onAuthStateChange((_e, session) => applySession(session));
+    // ⚠️ 死鎖防範：不能在 onAuthStateChange 回呼內「直接」呼叫其他 supabase 方法（登入流程持鎖中，
+    // 回呼裡再打 supabase 會等鎖 → 互等卡死，手機新登入必踩）。setTimeout(0) 把工作延到鎖釋放之後。
+    const { data: sub } = supabase.auth.onAuthStateChange((_e, session) => { setTimeout(() => applySession(session), 0); });
     return () => { active = false; sub?.subscription?.unsubscribe?.(); };
   }, []);
 
