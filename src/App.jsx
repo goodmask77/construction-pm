@@ -2878,9 +2878,9 @@ function TopNav({ view, setView, saving, totalEstimated, totalPaid, doneCount, c
         {/* 工作空間切換：按鈕列直接點（桌機顯示名稱、手機只顯示圖示省空間） */}
         <div style={{ flexShrink: 0, order: isMobile ? 1 : 0, display: "inline-flex", background: HEAD_CHIP, border: `1.5px solid #c8bca6`, borderRadius: 9, padding: 2, gap: 2, maxWidth: "100%", overflowX: "auto" }}>
           {SPACES.filter(s => spaceVisible(s.id)).map(s => {
-            const on = s.id === CURRENT_SPACE;
+            const on = s.id === CURRENT_SPACE && !settingsOn; // 設定開著時空間chip不反白（避免兩顆同時亮）
             return (
-              <button key={s.id} onClick={() => !on && switchSpace(s.id)} title={s.name + "（各空間資料獨立）"}
+              <button key={s.id} onClick={() => !on && (s.id === CURRENT_SPACE ? setView(conf().defaultView || "owner") : switchSpace(s.id))} title={s.name + "（各空間資料獨立）"}
                 style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: isMobile ? "5px 7px" : "6px 11px", borderRadius: 7, border: `1px solid ${on ? "#c8bca6" : "transparent"}`, background: on ? "#fff" : "transparent", color: on ? "#1d1a15" : "#5a5247", fontSize: isMobile ? 14 : 12.5, fontWeight: on ? 700 : 500, cursor: on ? "default" : "pointer", whiteSpace: "nowrap" }}>
                 <span>{s.icon}</span>{(!isMobile || on) && <span>{s.name}</span>}
               </button>
