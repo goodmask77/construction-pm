@@ -249,6 +249,62 @@ export default function SupplyView({ view, K, canEdit, confirm, showMoney }) {
                   <span style={{ fontFamily: MONOF, fontWeight: 800, fontSize: 15, color: C.accent }}>{nt2(orderTotal(odDetail))}</span>
                 </div>}
               </div>
+              {/* 草稿：補發送按鈕（發完自動變已送出） */}
+              {odDetail.status === "草稿" && (() => {
+                const v2 = db.vendors.find(x => x.id === odDetail.vendor_id);
+                const text2 = odDetail.text || (`📦 A Beach 101 叫貨單\n【${odDetail.vendorName}】\n` + odDetail.items.map(x => `・${x.name}${x.spec ? " " + x.spec : ""} ×${x.qty} ${x.unit || ""}${x.price ? `＠${d2(Number(x.price))}＝$${d2(Number(x.price) * x.qty)}` : ""}`).join("\n") + `\n──────\n合計 $${d2(orderTotal(odDetail))}` + (odDetail.needDate ? `\n希望到貨：${dz(odDetail.needDate)}` : "") + "\n麻煩核對品項與金額，謝謝！");
+                const markSent = (via) => { saveOrders(orders.map(x => x.id === odDetail.id ? { ...x, status: "已送出", via } : x)); setOdSel(null); };
+                const cell2 = (txt, flexN, opts = {}) => ({ type: "text", text: String(txt), size: "xs", flex: flexN, ...opts });
+                const flex2 = {
+                  type: "flex", altText: text2.slice(0, 390),
+                  contents: { type: "bubble", size: "mega",
+                    header: { type: "box", layout: "vertical", backgroundColor: "#1d1a15", paddingAll: "14px", contents: [
+                      { type: "text", text: "📦 A Beach 101 叫貨單", color: "#ffffff", weight: "bold", size: "md" },
+                      { type: "text", text: `${new Date().getMonth() + 1}/${new Date().getDate()}（${WDZ[new Date().getDay()]}）｜${odDetail.vendorName}`, color: "#d9cfbd", size: "xs", margin: "sm" },
+                    ] },
+                    body: { type: "box", layout: "vertical", spacing: "sm", paddingAll: "14px", contents: [
+                      { type: "box", layout: "horizontal", spacing: "sm", contents: [cell2("品名", 5, { color: "#9b9384", weight: "bold" }), cell2("數量", 2, { color: "#9b9384", align: "end", weight: "bold" }), cell2("單價", 2, { color: "#9b9384", align: "end", weight: "bold" }), cell2("小計", 3, { color: "#9b9384", align: "end", weight: "bold" })] },
+                      { type: "separator", color: "#c8bca6" },
+                      ...odDetail.items.map(x => ({ type: "box", layout: "horizontal", spacing: "sm", contents: [
+                        cell2(x.name + (x.spec ? " " + x.spec : ""), 5, { color: "#1d1a15", wrap: true }),
+                        cell2(`${x.qty}${x.unit || ""}`, 2, { color: "#5a5247", align: "end" }),
+                        cell2(x.price ? d2(Number(x.price)) : "—", 2, { color: "#5a5247", align: "end" }),
+                        cell2(x.price ? "$" + d2(Number(x.price) * x.qty) : "—", 3, { color: "#1d1a15", align: "end", weight: "bold" }),
+                      ] })),
+                      { type: "separator", color: "#c8bca6" },
+                      { type: "box", layout: "horizontal", contents: [
+                        { type: "text", text: "合計", size: "sm", weight: "bold", color: "#c4582a", flex: 3 },
+                        { type: "text", text: "$" + d2(orderTotal(odDetail)), size: "lg", weight: "bold", color: "#c4582a", flex: 5, align: "end" },
+                      ] },
+                      ...(odDetail.needDate ? [{ type: "text", text: "🚚 希望到貨：" + dz(odDetail.needDate), size: "xs", color: "#c4582a", margin: "sm" }] : []),
+                      { type: "text", text: "麻煩核對品項與金額，謝謝！", size: "xxs", color: "#9b9384", margin: "sm", wrap: true },
+                    ] },
+                  },
+                };
+                return (
+                  <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+                    <button onClick={async () => {
+                      if (!v2?.lineGroupId) { alert("這家廠商還沒綁定群——先用 LINE 分享或複製。"); return; }
+                      const gname = (groups[v2.lineGroupId] || {}).name || v2.lineGroupId;
+                      if (!(await confirm(`把這張草稿發送到「${gname}」？`, { confirmLabel: "發送" }))) return;
+                      try {
+                        const r = await fetch("/api/push", { method: "POST", headers: { "Content-Type": "application/json", "X-API-Key": "ground-pm-2026-secret-abc123" }, body: JSON.stringify({ to: v2.lineGroupId, messages: [flex2] }) });
+                        const d = await r.json();
+                        if (!d.ok) { alert(/monthly limit/i.test(d.error || "") ? "LINE 推播月額度不足。" : "發送失敗：" + (d.error || "未知")); return; }
+                        markSent("D發群"); flash("✓ 草稿已由 D哥 發送到「" + gname + "」");
+                      } catch (e) { alert("發送失敗：" + e.message); }
+                    }} style={{ flex: 1, border: "none", background: v2?.lineGroupId ? C.green : "#d5cbb6", color: "#fff", borderRadius: 8, padding: "9px 0", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>🤖 D哥 發送</button>
+                    <button onClick={async () => {
+                      try { await navigator.clipboard.writeText(text2); } catch (_) {}
+                      const mobile = /iPhone|iPad|Android/i.test(navigator.userAgent);
+                      markSent(mobile ? "LINE分享" : "複製");
+                      if (mobile) window.open("https://line.me/R/share?text=" + encodeURIComponent(text2));
+                      else flash("💻 已複製叫貨單文字，開 LINE 貼給廠商即可");
+                    }} style={{ flex: 1, border: "none", background: "#06C755", color: "#fff", borderRadius: 8, padding: "9px 0", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>📱 LINE 分享</button>
+                    <button onClick={async () => { try { await navigator.clipboard.writeText(text2); } catch (_) {} markSent("複製"); flash("✓ 已複製叫貨單文字"); }} style={{ flex: 1, border: `1px solid ${C.line}`, background: "#fff", color: C.text, borderRadius: 8, padding: "9px 0", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>📋 複製</button>
+                  </div>
+                );
+              })()}
               {showMoney && <button onClick={async () => {
                 const txt = `【對帳明細】${odDetail.vendorName} ${new Date(odDetail.ts).toLocaleDateString("zh-TW")}\n` + odDetail.items.map(x => `${x.name} ${x.spec || ""} ×${x.qty}${x.unit || ""} @${x.price || "?"} = ${x.price ? (Math.round(Number(x.price) * x.qty * 100) / 100).toLocaleString() : "?"}`).join("\n") + `\n總金額 ${nt2(orderTotal(odDetail))}`;
                 try { await navigator.clipboard.writeText(txt); flash("✓ 已複製對帳明細（含單價，內部用）"); } catch (_) {}
