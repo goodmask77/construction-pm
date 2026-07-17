@@ -526,41 +526,64 @@ export default function SupplyView({ view, K, canEdit, confirm, showMoney, userN
     const selV = sel && sel.startsWith("v:") && db.vendors.find(x => x.id === sel.slice(2));
     const selI = sel && sel.startsWith("i:") && (db.vendorItems || []).find(x => x.id === sel.slice(2));
     return (
-      <div>
+      <div style={{ maxWidth: 1120, margin: "0 auto" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "6px 0 12px", flexWrap: "wrap" }}>
           <span style={{ background: C.accent, color: "#fff", fontSize: 11.5, fontWeight: 700, borderRadius: 4, padding: "2px 8px" }}>廠商</span>
           <div>
             <div style={{ fontSize: 17, fontWeight: 800, color: C.text }}>供應商與品項</div>
-            <div style={{ fontSize: 11, color: C.faint }}>{(db.vendors || []).length} 家・叫貨品項 {(db.vendorItems || []).length} 項・點廠商列展開品項清單</div>
+            <div style={{ fontSize: 11, color: C.faint }}>{(db.vendors || []).length} 家・品項 {(db.vendorItems || []).length} 項・第一層分類 → 廠商 → 品項</div>
           </div>
           <div style={{ flex: 1 }} />
           <select value={catF} onChange={e => setCatF(e.target.value)} style={inp}><option value="">全部部門</option>{DEPTS.map(d => <option key={d} value={d}>{d}</option>)}</select>
-          <input value={q} onChange={e => setQ(e.target.value)} placeholder="搜尋廠商/標籤…" style={{ ...inp, width: 180 }} />
+          <input value={q} onChange={e => setQ(e.target.value)} placeholder="搜尋廠商…" style={{ ...inp, width: 160 }} />
+          {canEdit && btn("＋ 新增分類", () => { const n = window.prompt("分類名稱（例：菜商/包材/耗材/飲品）"); if (n && n.trim()) { save({ vendorCats: [...new Set([...(db.vendorCats || []), n.trim()])] }); setCollapsed(c2 => ({ ...c2, ["vc" + n.trim()]: true })); } })}
           {canEdit && btn("＋ 新增廠商", addVendor, { background: C.accent, color: "#fff", borderColor: C.accent })}
         </div>
-        <div style={box}>
-          {vs.map((v, i) => {
+        {/* 第一層＝廠商分類（預設收合，點了才出現該類廠商）；分類可新增/改名/移除（張良 2026-07-18） */}
+        {(() => {
+          const vcatOf = (v) => (v.vcat || "").trim() || "未分類";
+          const cats2 = [...new Set([...(db.vendorCats || []), ...vs.map(vcatOf)])];
+          const keys2 = cats2.filter(c => c !== "未分類").sort((a, b) => a.localeCompare(b, "zh-TW"));
+          if (cats2.includes("未分類")) keys2.push("未分類");
+          const renameVcat = (g) => { const n = window.prompt("分類名稱", g); if (n === null || !n.trim() || n === g) return; save({ vendors: db.vendors.map(x => vcatOf(x) === g ? { ...x, vcat: n.trim() } : x), vendorCats: [...new Set((db.vendorCats || []).map(c => c === g ? n.trim() : c))] }); };
+          const delVcat = async (g) => { if (await confirm(`移除分類「${g}」？裡面的廠商會移到「未分類」（廠商不會被刪）。`, { confirmLabel: "移除", danger: false })) save({ vendors: db.vendors.map(x => vcatOf(x) === g ? { ...x, vcat: "" } : x), vendorCats: (db.vendorCats || []).filter(c => c !== g) }); };
+          return keys2.map(g => {
+            const gvs = vs.filter(v => vcatOf(v) === g);
+            const gOpen = !!collapsed["vc" + g];
+            return (
+              <div key={g} style={{ border: `1.5px solid ${C.hard}`, borderRadius: 4, marginBottom: 10, overflow: "hidden", background: "#fff" }}>
+                <div onClick={() => setCollapsed(c2 => ({ ...c2, ["vc" + g]: !gOpen }))} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", background: "#ece4d6", cursor: "pointer" }}>
+                  <span style={{ fontSize: 10, color: C.faint }}>{gOpen ? "▾" : "▸"}</span>
+                  <span style={{ fontSize: 13.5, fontWeight: 800, color: C.text }}>{g}</span>
+                  <span style={{ fontFamily: MONOF, fontSize: 11.5, color: C.faint }}>{gvs.length} 家</span>
+                  <div style={{ flex: 1 }} />
+                  {canEdit && <>
+                    <button onClick={e => { e.stopPropagation(); const nv = { id: rid("v"), name: "", en: "", vcat: g === "未分類" ? "" : g, dept: "外場", url: "", tags: [], note: "", lineGroupId: "", sendMode: "share", sort: (db.vendors || []).length }; save({ vendors: [...db.vendors, nv] }); setSel("v:" + nv.id); }} style={{ border: `1px solid ${C.line}`, background: "#fff", color: C.accent, borderRadius: 6, padding: "2px 10px", fontSize: 11.5, fontWeight: 700, cursor: "pointer" }}>＋ 廠商</button>
+                    {g !== "未分類" && <button onClick={e => { e.stopPropagation(); renameVcat(g); }} title="重新命名分類" style={{ border: "none", background: "none", color: C.sub, fontSize: 11.5, cursor: "pointer" }}>✎</button>}
+                    {g !== "未分類" && <button onClick={e => { e.stopPropagation(); delVcat(g); }} title="移除分類" style={{ border: "none", background: "none", color: C.sub, fontSize: 12, cursor: "pointer" }}>×</button>}
+                  </>}
+                </div>
+                {gOpen && gvs.map((v, i) => {
             const open = collapsed["v" + v.id];
             const its = itemsOf(v.id);
             return (
               <React.Fragment key={v.id}>
                 <div onClick={() => setCollapsed(c2 => ({ ...c2, ["v" + v.id]: !c2["v" + v.id] }))}
                   onDragOver={e => dragV && e.preventDefault()} onDrop={() => dropVendor(v.id)}
-                  style={{ display: "grid", gridTemplateColumns: "16px 18px minmax(150px,1fr) 64px 56px minmax(160px,1.4fr) minmax(140px,1.2fr) 120px", gap: 8, alignItems: "center", minHeight: 44, borderTop: i ? `1px solid #f0ead9` : "none", padding: "4px 10px", cursor: "pointer", background: open ? C.soft : "#fff", outline: dragV === v.id ? `2px dashed ${C.accent}` : "none" }}
+                  style={{ display: "grid", gridTemplateColumns: "16px 14px minmax(150px,1fr) 44px 44px minmax(140px,1.3fr) 92px", gap: 8, alignItems: "center", minHeight: 38, borderTop: `1px solid #e0d6bf`, padding: "3px 10px", cursor: "pointer", background: open ? C.soft : "#fff", outline: dragV === v.id ? `2px dashed ${C.accent}` : "none" }}
                   onMouseEnter={e => e.currentTarget.style.background = C.soft} onMouseLeave={e => e.currentTarget.style.background = open ? C.soft : "#fff"}>
                   {canEdit ? <span draggable onDragStart={e => { e.stopPropagation(); setDragV(v.id); }} onDragEnd={() => setDragV(null)} onClick={e => e.stopPropagation()} title="拖曳調整廠商順序" style={{ cursor: "grab", color: "#c8bca6", fontSize: 13, textAlign: "center" }}>⠿</span> : <span />}
                   <span style={{ fontSize: 10, color: C.faint }}>{open ? "▾" : "▸"}</span>
-                  <div>
-                    <div style={{ fontSize: 13.5, fontWeight: 700, color: C.text }}>{v.name || "（未命名）"}</div>
-                    <div style={{ fontSize: 10.5, color: C.faint }}>{v.en}</div>
+                  <div style={{ overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis" }}>
+                    <span style={{ fontSize: 13, fontWeight: 700, color: C.text }}>{v.name || "（未命名）"}</span>
+                    {v.en && <span style={{ fontSize: 10.5, color: C.faint, marginLeft: 6 }}>{v.en}</span>}
                   </div>
-                  <span style={{ fontSize: 10.5, fontWeight: 700, color: "#fff", background: v.dept === "內場" ? C.green : v.dept === "吧檯" ? C.amber : v.dept === "共用" ? "#9b9384" : C.blue, borderRadius: 9, padding: "2px 8px", textAlign: "center" }}>{v.dept || "共用"}</span>
-                  <span style={{ fontFamily: MONOF, fontSize: 12, color: its.length ? C.text : "#d5cbb6", textAlign: "center" }}>{its.length ? its.length + "項" : "—"}</span>
-                  <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>{(v.tags || []).slice(0, 4).map(t => <span key={t} style={{ fontSize: 10, color: C.sub, background: C.soft, border: `1px solid ${C.line}`, borderRadius: 9, padding: "0 7px" }}>{t}</span>)}</div>
-                  <div style={{ fontSize: 11, color: C.sub, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={v.note}>{v.note}</div>
+                  <span style={{ fontSize: 11, fontWeight: 700, color: v.dept === "內場" ? C.green : v.dept === "吧檯" ? C.amber : v.dept === "共用" ? "#9b9384" : C.blue }}>{v.dept || "共用"}</span>
+                  <span style={{ fontFamily: MONOF, fontSize: 12, color: its.length ? C.text : "#d5cbb6", textAlign: "center" }}>{its.length || "—"}</span>
+                  <span style={{ fontSize: 11, color: C.sub, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={v.note}>{v.note}</span>
                   <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }} onClick={e => e.stopPropagation()}>
-                    {v.url && <a href={v.url} target="_blank" rel="noreferrer" style={{ fontSize: 11.5, color: C.blue }}>官網↗</a>}
-                    {canEdit && <button onClick={() => setSel("v:" + v.id)} style={{ border: `1px solid ${C.line}`, background: "#fff", color: C.sub, borderRadius: 6, padding: "2px 9px", fontSize: 11, cursor: "pointer" }}>✎ 編輯</button>}
+                    {v.url && <a href={v.url} target="_blank" rel="noreferrer" style={{ fontSize: 11, color: C.blue }}>官網↗</a>}
+                    {canEdit && <button onClick={() => setSel("v:" + v.id)} style={{ border: `1px solid ${C.line}`, background: "#fff", color: C.sub, borderRadius: 6, padding: "1px 8px", fontSize: 11, cursor: "pointer" }}>✎</button>}
                   </div>
                 </div>
                 {open && (() => {
@@ -593,15 +616,16 @@ export default function SupplyView({ view, K, canEdit, confirm, showMoney, userN
                         return (
                           <React.Fragment key={g}>
                             {(gKeys.length > 1 || g !== "未分類") && (
-                              <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "5px 0 2px", borderTop: `1px solid #f0ead9` }}>
-                                <span onClick={() => setCollapsed(c2 => ({ ...c2, ["g" + v.id + g]: gOpen }))} style={{ cursor: "pointer", fontSize: 10, color: C.faint }}>{gOpen ? "▾" : "▸"}</span>
-                                <span onClick={() => setCollapsed(c2 => ({ ...c2, ["g" + v.id + g]: gOpen }))} style={{ cursor: "pointer", fontSize: 11.5, fontWeight: 800, color: C.sub }}>{g}</span>
-                                <span style={{ fontFamily: MONOF, fontSize: 10.5, color: C.faint }}>{grpsI[g].length}</span>
-                                {canEdit && <>
-                                  <button onClick={() => addItem(v.id, g === "未分類" ? "" : g)} title="在此分類新增品項" style={{ border: "none", background: "none", color: C.accent, fontSize: 11.5, fontWeight: 700, cursor: "pointer", padding: "0 2px" }}>＋</button>
-                                  <button onClick={() => renameGrp(g)} title="重新命名分類" style={{ border: "none", background: "none", color: C.faint, fontSize: 10.5, cursor: "pointer", padding: 0 }}>✎</button>
-                                  {g !== "未分類" && <button onClick={() => delGrp(g)} title="移除分類（品項移到未分類）" style={{ border: "none", background: "none", color: C.faint, fontSize: 11, cursor: "pointer", padding: 0 }}>×</button>}
-                                </>}
+                              <div onClick={() => setCollapsed(c2 => ({ ...c2, ["g" + v.id + g]: gOpen }))} style={{ display: "flex", alignItems: "center", gap: 8, padding: "4px 10px", margin: "6px 0 0", background: "#f0e9d8", border: `1px solid #e0d6bf`, borderRadius: 3, cursor: "pointer" }}>
+                                <span style={{ fontSize: 9, color: C.faint }}>{gOpen ? "▾" : "▸"}</span>
+                                <span style={{ fontSize: 12, fontWeight: 800, color: C.text }}>{g}</span>
+                                <span style={{ fontFamily: MONOF, fontSize: 10.5, color: C.faint }}>{grpsI[g].length} 項</span>
+                                <div style={{ flex: 1 }} />
+                                {canEdit && <span onClick={e => e.stopPropagation()} style={{ display: "inline-flex", gap: 4 }}>
+                                  <button onClick={() => addItem(v.id, g === "未分類" ? "" : g)} title="在此分類新增品項" style={{ border: `1px solid #d9cfbd`, background: "#fff", color: C.accent, borderRadius: 4, padding: "0 8px", fontSize: 11, fontWeight: 700, cursor: "pointer", lineHeight: "18px" }}>＋ 品項</button>
+                                  <button onClick={() => renameGrp(g)} title="重新命名分類" style={{ border: `1px solid #d9cfbd`, background: "#fff", color: C.sub, borderRadius: 4, padding: "0 6px", fontSize: 10.5, cursor: "pointer", lineHeight: "18px" }}>✎</button>
+                                  {g !== "未分類" && <button onClick={() => delGrp(g)} title="移除分類（品項移到未分類）" style={{ border: `1px solid #d9cfbd`, background: "#fff", color: C.sub, borderRadius: 4, padding: "0 6px", fontSize: 11, cursor: "pointer", lineHeight: "18px" }}>×</button>}
+                                </span>}
                               </div>
                             )}
                             {gOpen && grpsI[g].map(itemRow)}
@@ -618,7 +642,10 @@ export default function SupplyView({ view, K, canEdit, confirm, showMoney, userN
               </React.Fragment>
             );
           })}
-        </div>
+              </div>
+            );
+          });
+        })()}
         {/* 📦 包材庫（自 ground-pack 搬來的 36 項）：在這裡歸屬給廠商 → 會出現在該廠商品項清單＆產品綁定分組（張良 2026-07-18） */}
         {(() => {
           const unassigned = (db.materials || []).filter(m => !m.vendor_id);
@@ -683,10 +710,11 @@ export default function SupplyView({ view, K, canEdit, confirm, showMoney, userN
                     <option value="copy">複製文字</option>
                   </select>
                 </label>
-                <label style={{ display: "block", fontSize: 11, color: C.faint, fontWeight: 600, gridColumn: "1 / -1" }}>標籤（逗號分隔）
-                  <input value={(selV.tags || []).join(",")} onChange={e => updV(selV.id, { tags: e.target.value.split(",").map(x => x.trim()).filter(Boolean) })} disabled={!canEdit} style={{ ...inp, width: "100%", marginTop: 4 }} />
+                <label style={{ display: "block", fontSize: 11, color: C.faint, fontWeight: 600 }}>分類（例：菜商/包材/耗材）
+                  <input value={selV.vcat ?? ""} onChange={e => updV(selV.id, { vcat: e.target.value })} disabled={!canEdit} list="sv-vcats" placeholder="留空＝未分類" style={{ ...inp, width: "100%", marginTop: 4 }} />
+                  <datalist id="sv-vcats">{[...new Set([...(db.vendorCats || []), ...db.vendors.map(x => (x.vcat || "").trim()).filter(Boolean)])].map(g => <option key={g} value={g} />)}</datalist>
                 </label>
-                <label style={{ display: "block", fontSize: 11, color: C.faint, fontWeight: 600, gridColumn: "1 / -1" }}>備註
+                <label style={{ display: "block", fontSize: 11, color: C.faint, fontWeight: 600, gridColumn: "1 / -1" }}>備註（簡短即可）
                   <input value={selV.note ?? ""} onChange={e => updV(selV.id, { note: e.target.value })} disabled={!canEdit} style={{ ...inp, width: "100%", marginTop: 4 }} />
                 </label>
               </div>
