@@ -603,6 +603,7 @@ async function handleUnsend(ev) {
       headers: { 'content-type': 'application/json', authorization: `Bearer ${TOKEN}` },
       body: JSON.stringify({ to: boss, messages: [{ type: 'text', text: `🕵️ 回收訊息通知\n群：${gname}\n誰：${uname}\n${textLine}` }] }),
     })
+    try { const { logPush } = await import('./push.js'); await logPush(boss, 1, '回收訊息通知') } catch (_) {}
   } catch (_) {}
 }
 async function getLineProfile(userId) { try { const r = await fetch('https://api.line.me/v2/bot/profile/' + userId, { headers: { authorization: `Bearer ${TOKEN}` } }); if (r.ok) { const d = await r.json(); return d.displayName || '' } } catch (_) {} return '' }

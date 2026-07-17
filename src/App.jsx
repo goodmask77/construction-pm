@@ -5622,6 +5622,47 @@ function BotUsagePanel() {
         <div style={{ fontSize: 12, color: "#9b9384", textAlign: "center", padding: "12px 0" }}>尚無紀錄（從 v7.5 起累計；D哥 之後每次在 LINE 動作就會記）</div>
       )}
       <div style={{ fontSize: 11, color: "#9b9384", marginTop: 10 }}>{data.since ? `自 ${String(data.since).slice(0, 10)} 起累計` : ""}　⚠ 估算值，精確帳以 Console（ground-bot key）為準。</div>
+      <LineQuotaBlock />
+    </div>
+  );
+}
+
+// ── LINE 訊息額度（本月已用/上限 + 最近推播去向）——張良測試時不用開 LINE 官方後台 ──
+function LineQuotaBlock() {
+  const [q, setQ] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const load = async () => { setBusy(true); try { const r = await fetch("/api/line-quota"); setQ(await r.json()); } catch (_) { setQ({ ok: false, error: "連線失敗" }); } setBusy(false); };
+  useEffect(() => { load(); }, []);
+  if (!q) return <div style={{ fontSize: 12, color: "#9b9384", marginTop: 14 }}>LINE 訊息額度載入中…</div>;
+  if (!q.ok) return <div style={{ fontSize: 12, color: "#9b9384", marginTop: 14 }}>LINE 訊息額度：{q.error}</div>;
+  const pct = q.limit ? Math.min(100, Math.round((q.used || 0) / q.limit * 100)) : 0;
+  const warn = pct >= 80;
+  return (
+    <div style={{ marginTop: 16, borderTop: "1.5px solid #E3DAC6", paddingTop: 14 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8, flexWrap: "wrap" }}>
+        <div style={{ fontSize: 14, fontWeight: 700, color: "#211C15" }}>💬 LINE 訊息額度（本月）</div>
+        <div style={{ fontSize: 13, fontWeight: 800, fontVariantNumeric: "tabular-nums", color: warn ? "#b3261e" : "#211C15" }}>{(q.used ?? "?").toLocaleString?.() || q.used} / {q.limit ? q.limit.toLocaleString() : "無上限"}</div>
+        <div style={{ flex: 1 }} />
+        <button onClick={load} disabled={busy} style={{ border: "1px solid #d9cfbd", background: "#fff", color: "#5a5247", borderRadius: 7, padding: "4px 12px", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>{busy ? "…" : "↻ 重新整理"}</button>
+      </div>
+      {q.limit && <div style={{ height: 8, background: "#eee5d3", borderRadius: 4, overflow: "hidden", marginBottom: 6 }}><div style={{ width: pct + "%", height: "100%", background: warn ? "#b3261e" : "#3f7d4e" }} /></div>}
+      <div style={{ fontSize: 11, color: "#9b9384", marginBottom: 10 }}>只有「主動推播」計額度（D發群/每日彙報/監控通知）；在群裡回話（reply）不計、免費。官方即時數字，與 LINE 後台一致。</div>
+      {(q.items || []).length > 0 && (
+        <div style={{ border: "1px solid #E3DAC6", borderRadius: 8, overflow: "hidden" }}>
+          <div style={{ display: "flex", background: "#ece4d6", fontSize: 11, color: "#6F6656", fontWeight: 600, padding: "5px 12px" }}>
+            <div style={{ width: 96 }}>時間</div><div style={{ flex: 1.4 }}>推到哪</div><div style={{ flex: 1 }}>來源</div><div style={{ width: 40, textAlign: "right" }}>則數</div>
+          </div>
+          {q.items.slice(0, 10).map((it, i) => (
+            <div key={i} style={{ display: "flex", fontSize: 12, color: "#211C15", padding: "5px 12px", borderTop: "1px solid #e6ddc9" }}>
+              <div style={{ width: 96, fontFamily: "monospace", fontSize: 11, color: "#9b9384" }}>{new Date(it.ts).toLocaleString("zh-TW", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })}</div>
+              <div style={{ flex: 1.4, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{it.name}</div>
+              <div style={{ flex: 1, color: "#5a5247" }}>{it.src || "—"}</div>
+              <div style={{ width: 40, textAlign: "right", fontFamily: "monospace" }}>{it.n}</div>
+            </div>
+          ))}
+        </div>
+      )}
+      {(q.items || []).length === 0 && <div style={{ fontSize: 11.5, color: "#9b9384" }}>推播去向紀錄從現在開始累積（之後每次推播都會記：時間/推到哪個群/來源/則數）。</div>}
     </div>
   );
 }
