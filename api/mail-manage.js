@@ -101,17 +101,27 @@ async function doApply(days) {
       boxes.push(mb.path)
     }
     for (const box of boxes) {
+      const isInbox = box === 'INBOX'
       const lock = await client.getMailboxLock(box)
       const plan = {} // ruleId → {uids, samples, rule}
       try {
         const uids = await client.search({ since: new Date(Date.now() - days * 864e5) }, { uid: true })
         if (uids && uids.length) {
-          for await (const msg of client.fetch(uids, { envelope: true }, { uid: true })) {
+          // 收件匣多抓「退訂標頭」：沒被任何規則接手、又帶 List-Unsubscribe（廣告/訂閱信必備）→ 直接刪
+          const fq = isInbox ? { envelope: true, headers: ['list-unsubscribe'] } : { envelope: true }
+          for await (const msg of client.fetch(uids, fq, { uid: true })) {
             const fr = msg.envelope?.from?.[0] || {}
             const m = { from: (fr.address || '').toLowerCase(), name: fr.name || '', subject: msg.envelope?.subject || '', to: (msg.envelope?.to || []).map(x => x.address || '').join(' ').toLowerCase() }
             if (keeps.some(r => hit(r, m))) continue // 白名單：永不動
             const r = acts.find(r2 => hit(r2, m))
-            if (!r) continue
+            if (!r) {
+              if (isInbox && msg.headers && /list-unsubscribe/i.test(msg.headers.toString())) {
+                const pl2 = plan.__unsub__ = plan.__unsub__ || { uids: [], samples: [], rule: { id: '__unsub__', action: 'delete', label: '', note: '訂閱廣告信(帶取消訂閱標頭)' } }
+                pl2.uids.push(msg.uid)
+                if (pl2.samples.length < 5) pl2.samples.push(m.subject.slice(0, 40))
+              }
+              continue
+            }
             const pl = plan[r.id] = plan[r.id] || { uids: [], samples: [], rule: r }
             pl.uids.push(msg.uid)
             if (pl.samples.length < 5) pl.samples.push(m.subject.slice(0, 40))
@@ -133,7 +143,7 @@ async function doApply(days) {
           moved += pl.uids.length
           const ex = perRule.find(x => x.ruleId === r.id && x.action === r.action)
           if (ex) { ex.count += pl.uids.length } else perRule.push({ ruleId: r.id, rule: r.note || r.match, action: r.action, label: r.label || '', count: pl.uids.length, samples: pl.samples })
-          r.hits = (r.hits || 0) + pl.uids.length
+          if (!String(r.id).startsWith('__')) r.hits = (r.hits || 0) + pl.uids.length
         }
       } finally { lock.release() }
     }
