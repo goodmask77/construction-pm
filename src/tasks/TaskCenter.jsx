@@ -79,7 +79,7 @@ const Pill = ({ color, label }) => (
   </span>
 );
 
-export default function TaskCenter({ K, confirm, canEdit, cats, onLog, onAddCat }) {
+export default function TaskCenter({ K, confirm, canEdit, cats, onLog, onAddCat, waitHint = "例：等對方回覆、等報價、等主管確認" }) {
   const [tasks, setTasks] = useState(null);
   const [view, setView] = useState("today"); // today(Home 落地頁) | group | board | list | timeline | gantt | mind
   const [quick, setQuick] = useState("");
@@ -715,7 +715,7 @@ export default function TaskCenter({ K, confirm, canEdit, cats, onLog, onAddCat 
                 {F("截止日", <input type="date" value={dnorm(t.due)} onChange={e => upd(t.id, { due: e.target.value })} disabled={!canEdit} style={{ ...dateInp, width: "100%" }} />)}
                 {F("開始日", <input type="date" value={dnorm(t.start)} onChange={e => upd(t.id, { start: e.target.value })} disabled={!canEdit} style={{ ...dateInp, width: "100%" }} />)}
                 {F("負責人", <input key={t.id + "-ow"} defaultValue={t.owner || ""} onBlur={e => upd(t.id, { owner: e.target.value })} disabled={!canEdit} placeholder="誰負責完成（自由填）" style={{ ...inp, width: "100%" }} />)}
-                {F("等待中（等誰 / 等什麼）", <input key={t.id + "-wf"} defaultValue={t.waitingFor || ""} onBlur={e => upd(t.id, { waitingFor: e.target.value })} disabled={!canEdit} placeholder="例：等木工、等房東、等設計圖" style={{ ...inp, width: "100%" }} />)}
+                {F("等待中（等誰 / 等什麼）", <input key={t.id + "-wf"} defaultValue={t.waitingFor || ""} onBlur={e => upd(t.id, { waitingFor: e.target.value })} disabled={!canEdit} placeholder={waitHint} style={{ ...inp, width: "100%" }} />)}
                 {F("預估時間（分鐘）", <input type="number" min={1} step={1} value={t.estimatedMinutes ?? ""} onChange={e => upd(t.id, { estimatedMinutes: e.target.value })} disabled={!canEdit} placeholder="未估算" style={{ ...inp, width: "100%", fontVariantNumeric: "tabular-nums" }} />)}
               </div>
               {F("依賴任務（前置做完才能動工）", (() => {

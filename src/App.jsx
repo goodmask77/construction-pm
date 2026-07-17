@@ -1038,6 +1038,7 @@ export default function App() {
         )}
         {view === "tasks" && (
           <TaskCenter K={K} confirm={confirm} canEdit={canEditData} cats={cats} onLog={logActivity}
+            waitHint={CURRENT_SPACE === "construction" ? "例：等木工、等房東、等設計圖" : "例：等對方回覆、等報價、等主管確認"}
             onAddCat={(name) => guardedSetCats(prev => [...prev, { id: "cat-" + Date.now(), order: prev.length, name, budget: 0, status: "pending", items: [] }])} />
         )}
         {view === "conclusions" && (
@@ -4439,28 +4440,26 @@ function HistoryView({ K, confirm, snapshotData, cats, petty }) {
 // ── App 更新紀錄（我們對 App 做的功能修改／新增，給全團隊看）─────────────────
 // 維護方式：每次有較大改動就在最上面加一筆（日期 + 條列）。
 const CHANGELOG = [
-  { date: "2026-07-21", items: [
+  { date: "2026-07-18", items: [
     "導覽大整理：空間「財務內帳」改名「財務報表」，原第三層(總覽/帳戶/交易明細/科目/對帳/營運)攤平升到第二層，「內帳總表」入口移除",
     "「營運」改名「營運報表」並新增分店切換：A Beach 101 / GROUN:D 兩鍵各看各的營收（GROUN:D 待 Eats365 設定寄信後自動進資料）；更新鈕移到最右",
     "⚙ 設定移到第一層（空間列最後面）：全域設定不再藏在工程專案裡；郵件管理從 LWLWLW 空間併入設定（之後可加其他公司信箱），LWLWLW 空間收起",
     "收信管線支援雙店：兩店同日各寄日結信不互蓋、不重複入庫",
+    "任務詳情新增「附件」：截圖直接 Cmd+V 貼上、＋上傳檔案、縮圖點開放大、卡片顯示 📎 數",
+    "團隊工作收起「任務板/進度」（與任務中心重疊）；營運智慧摘要警示可點開明細（折扣逐筆/退菜Void逐日）",
+    "團隊空間去工程字眼：檔案庫類別改 文件/照片/單據、篩選與關聯改「專案/群組」",
   ]},
-  { date: "2026-07-20", items: [
+  { date: "2026-07-17", items: [
     "新空間「🔗 供應鏈」上線(P1)：ground-pack 包材系統整併進 App——產品 59 項/類別 10/物料包材 36/廠商 14 全量搬遷完成",
     "產品管理頁：依類別分組(可折疊)/全部攤平、搜尋/類別/標籤/啟用篩選、密表列點開編輯、綁定包材勾選、售價受看金額權限控管",
     "廠商名錄唯讀預覽；叫貨系統與廠商完整版(P2)建置中：依廠商勾品項→叫貨單→D自動發廠商群/LINE分享→到貨點收→待付款進財務",
-  ]},
-  { date: "2026-07-19", items: [
     "自動收信入庫：App 每天自動讀信箱——中信 e-Cash 匯款通知(歷史786筆已回填，2020/12起) + Eats365 POS 日結報表(Excel附件自動解析)",
     "財務新「📈 營運」分頁：日營收/交易數/客單價/來客 KPI、近30天營收圖、付款方式佔比(現金/信用卡/UberEats)、每日一列日結明細表",
-  ]},
-  { date: "2026-07-18", items: [
     "財務「對帳」升級為銀行帳務資料庫：每一筆銀行進出永久累積、只增不改，試算表資料一次搬入當底稿(188筆)，之後試算表退役、以資料庫核對所有工程款；可手動新增一筆(未來直接貼網銀截圖AI判讀)",
-    "名冊匯入人資「資料總表」：現職 28 人資料補齊(員編/到職日/身分證/勞健保/本薪津貼/薪轉帳戶…)，已離職者不上",
-    "名冊欄位可自訂：⚙欄位設定可任意新增/改名/刪除、型別選 文字/日期/選單/檔案上傳、勾「顯示」直接變表格欄位、勾「必填」計入入職進度",
+    "名冊匯入人資「資料總表」：現職 28 人資料補齊(員編/到職日/身分證/勞健保/本薪津貼/薪轉帳戶…)，已離職者不上；欄位可自訂(型別/顯示/必填)",
     "名冊個資保護：表格只顯示公開欄位；完整資料卡(身分證/薪資等機密)只有主管與本人打得開，本人可自己補資料傳文件",
   ]},
-  { date: "2026-07-17", items: [
+  { date: "2026-07-16 深夜", items: [
     "對帳頁改銀行對帳單式：合作金庫帳戶頭+最新餘額、完整欄位(日期/類別/內容/金額/手續費/餘額/收款方/批號/經手/狀態)、餘額走勢+每月支出+類別佔比圖表、未對帳列內快速補記",
     "夥伴中心新增「👥 名冊」分頁：入職人員主檔(姓名綽號同欄/可排序/點列編輯/入職文件上傳/新增刪除)",
     "財務交易明細改 Linear 密表：預設唯讀一行一筆(36px)、✎或雙擊才編輯該列、刪除鈕收進編輯模式",
@@ -5157,11 +5156,11 @@ function JournalView({ journal, setJournal, cats, userName }) {
             </div>
             <div style={{ marginBottom:10 }}>
               <div style={{ fontSize:11, color:"#6F6656", marginBottom:4, fontWeight:600 }}>標題</div>
-              <input value={draft.title} onChange={e=>setDraft({...draft, title:e.target.value})} placeholder="例如：廚房地坪灌漿完成..."
+              <input value={draft.title} onChange={e=>setDraft({...draft, title:e.target.value})} placeholder={CURRENT_SPACE === "construction" ? "例如：廚房地坪灌漿完成..." : "例如：週會決議、規則定案…"}
                 style={{ width:"100%", padding:"9px 12px", border:"1px solid #d9cfbd", borderRadius:8, fontSize:14, outline:"none", boxSizing:"border-box" }} autoFocus />
             </div>
             <div style={{ marginBottom:10 }}>
-              <div style={{ fontSize:11, color:"#6F6656", marginBottom:4, fontWeight:600 }}>關聯工程</div>
+              <div style={{ fontSize:11, color:"#6F6656", marginBottom:4, fontWeight:600 }}>關聯{L("cat")}</div>
               <select value={draft.catId} onChange={e=>setDraft({...draft, catId:e.target.value})}
                 style={{ width:"100%", padding:"8px 10px", border:"1px solid #d9cfbd", borderRadius:8, fontSize:13, outline:"none", boxSizing:"border-box", background:"#fbf8f1" }}>
                 <option value="">— 未指定 —</option>
@@ -5322,7 +5321,7 @@ function PlanView({ cats, setCats, plans, setPlans, settings, userName }) {
               </div>
             </div>
             <div style={{ marginBottom:10 }}>
-              <div style={{ fontSize:11, color:"#6F6656", marginBottom:4, fontWeight:600 }}>關聯工程</div>
+              <div style={{ fontSize:11, color:"#6F6656", marginBottom:4, fontWeight:600 }}>關聯{L("cat")}</div>
               <select value={draft.catId} onChange={e=>setDraft({...draft, catId:e.target.value})}
                 style={{ width:"100%", padding:"8px 10px", border:"1px solid #d9cfbd", borderRadius:8, fontSize:13, outline:"none", boxSizing:"border-box", background:"#fbf8f1" }}>
                 <option value="">— 未指定 —</option>
@@ -6230,7 +6229,10 @@ function WorklogView({ worklog, setWorklog, canEdit, userName, requireLogin, con
 }
 
 // ── 檔案庫 / 相簿 ─────────────────────────────────────────────────────────────
-const PHOTO_KINDS = [["quote","估價單"],["site","現場照"],["invoice","發票"],["other","其他"]];
+// 檔案類別依空間換詞（key 不變＝舊資料照常對應）：工程用工程詞、其他空間用通用詞
+const PHOTO_KINDS = CURRENT_SPACE === "construction"
+  ? [["quote","估價單"],["site","現場照"],["invoice","發票"],["other","其他"]]
+  : [["quote","文件"],["site","照片"],["invoice","單據"],["other","其他"]];
 const photoKindLabel = (k) => (PHOTO_KINDS.find(x=>x[0]===k)||[,"其他"])[1];
 const photoKindColor = { quote:"#3b82f6", site:"#3C8C3C", invoice:"#b3261e", other:"#9b9384" };
 function PhotoLibraryView({ photos, setPhotos, cats, canEdit, userName, requireLogin, confirm }) {
@@ -6322,7 +6324,7 @@ function PhotoLibraryView({ photos, setPhotos, cats, canEdit, userName, requireL
         {editId === p.id ? (
           <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
             <select value={ef.kind} onChange={e=>setEf({...ef, kind:e.target.value})} style={{ ...inputStyle, padding:"5px 8px", fontSize:12 }}>{PHOTO_KINDS.map(([k,l])=><option key={k} value={k}>{l}</option>)}</select>
-            <select value={ef.catId} onChange={e=>setEf({...ef, catId:e.target.value})} style={{ ...inputStyle, padding:"5px 8px", fontSize:12 }}><option value="">（不指定工程）</option>{sortedCats.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select>
+            <select value={ef.catId} onChange={e=>setEf({...ef, catId:e.target.value})} style={{ ...inputStyle, padding:"5px 8px", fontSize:12 }}><option value="">（不指定{L("cat")}）</option>{sortedCats.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select>
             <input type="date" value={ef.date} onChange={e=>setEf({...ef, date:e.target.value})} style={{ ...inputStyle, padding:"5px 8px", fontSize:12 }} />
             <input value={ef.note} onChange={e=>setEf({...ef, note:e.target.value})} placeholder="備註" style={{ ...inputStyle, padding:"5px 8px", fontSize:12 }} />
             <div style={{ display:"flex", gap:8, justifyContent:"flex-end" }}>
@@ -6365,7 +6367,7 @@ function PhotoLibraryView({ photos, setPhotos, cats, canEdit, userName, requireL
       {canEdit ? (
         <div style={{ background:"#fff", border:"1px solid #d9cfbd", borderRadius:12, padding:14, marginBottom:14, display:"flex", gap:8, flexWrap:"wrap", alignItems:"center" }}>
           <select value={kind} onChange={e=>setKind(e.target.value)} style={selStyle}>{PHOTO_KINDS.map(([k,l])=><option key={k} value={k}>{l}</option>)}</select>
-          <select value={catId} onChange={e=>setCatId(e.target.value)} style={selStyle}><option value="">（不指定工程）</option>{sortedCats.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select>
+          <select value={catId} onChange={e=>setCatId(e.target.value)} style={selStyle}><option value="">（不指定{L("cat")}）</option>{sortedCats.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select>
           <input type="date" value={date} onChange={e=>setDate(e.target.value)} style={selStyle} />
           <input value={note} onChange={e=>setNote(e.target.value)} placeholder="備註（選填）" style={{ ...inputStyle, flex:1, minWidth:120, padding:"6px 10px" }} />
           <input ref={fileRef} type="file" multiple style={{ display:"none" }} onChange={e=>{ onPick(e.target.files); e.target.value=""; }} />
@@ -6381,9 +6383,9 @@ function PhotoLibraryView({ photos, setPhotos, cats, canEdit, userName, requireL
         {[["all","全部"],...PHOTO_KINDS].map(([k,l])=>(
           <button key={k} onClick={()=>setFKind(k)} style={{ padding:"3px 10px", borderRadius:20, border:"1px solid #d9cfbd", fontSize:11, cursor:"pointer", background:fKind===k?ACCENT:"#ece4d6", color:fKind===k?"#fbf8f1":"#6F6656", fontWeight:fKind===k?700:400 }}>{l}</button>
         ))}
-        <span style={{ fontSize:11, color:"#9b9384", marginLeft:8 }}>工程</span>
+        <span style={{ fontSize:11, color:"#9b9384", marginLeft:8 }}>{L("cat")}</span>
         <select value={fCat} onChange={e=>setFCat(e.target.value)} style={{ ...selStyle, fontSize:12, padding:"4px 8px" }}>
-          <option value="all">全部工程</option>{sortedCats.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}
+          <option value="all">全部{L("cat")}</option>{sortedCats.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}
         </select>
         <div style={{ flex:1 }} />
         <span style={{ fontSize:11, color:"#9b9384" }}>分組</span>
