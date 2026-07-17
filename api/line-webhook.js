@@ -563,6 +563,38 @@ async function getOperators() { return asObj((await kvGetMany(['pm_bot_operators
 async function addOperator(userId, name) { const ops = await getOperators(); ops[userId] = { name: name || '操作者', ts: new Date().toISOString() }; await kvSet('pm_bot_operators', ops); return ops[userId] }
 async function getPending(userId) { const all = asObj((await kvGetMany(['pm_bot_confirm']))['pm_bot_confirm']); const p = all[userId]; if (!p) return null; if (Date.now() - new Date(p.ts).getTime() > 10 * 60000) return null; return p }
 async function setPending(userId, val) { const all = asObj((await kvGetMany(['pm_bot_confirm']))['pm_bot_confirm']); if (val) all[userId] = val; else delete all[userId]; await kvSet('pm_bot_confirm', all) }
+// ── 回收訊息監控：群訊息滾動快取，有人回收 → 私訊老闆（第一位授權操作者）──
+async function cacheGroupMsg(ev) {
+  try {
+    const cache = asObj((await kvGetMany(['pm_bot_msgcache']))['pm_bot_msgcache'])
+    const list = Array.isArray(cache.list) ? cache.list : []
+    list.push({ id: ev.message.id, gid: ev.source?.groupId || ev.source?.roomId || '', uid: ev.source?.userId || '', text: (ev.message.text || '').slice(0, 300), ts: ev.timestamp || Date.now() })
+    await kvSet('pm_bot_msgcache', { list: list.slice(-300) })
+  } catch (_) {}
+}
+async function handleUnsend(ev) {
+  try {
+    const mid = ev.unsend?.messageId
+    if (!mid) return
+    const cache = asObj((await kvGetMany(['pm_bot_msgcache']))['pm_bot_msgcache'])
+    const hit = (Array.isArray(cache.list) ? cache.list : []).find(m => m.id === mid)
+    const ops = await getOperators()
+    const boss = Object.keys(ops)[0]
+    if (!boss || !TOKEN) return
+    const gid = ev.source?.groupId || ev.source?.roomId || hit?.gid || ''
+    const groupsSeen = asObj((await kvGetMany(['pm_group_seen']))['pm_group_seen'])
+    const gname = (groupsSeen[gid] && groupsSeen[gid].name) || '未知群'
+    const uid = ev.source?.userId || hit?.uid || ''
+    const uname = uid ? (await getLineProfile(uid)) || uid.slice(-6) : '未知'
+    const when = hit ? new Date(hit.ts).toLocaleString('zh-TW', { hour12: false }) : ''
+    const textLine = hit ? `內容：「${hit.text}」${when ? `\n原發送：${when}` : ''}` : '內容：D 沒快取到這則（可能較舊或非文字訊息）'
+    await fetch('https://api.line.me/v2/bot/message/push', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${TOKEN}` },
+      body: JSON.stringify({ to: boss, messages: [{ type: 'text', text: `🕵️ 回收訊息通知\n群：${gname}\n誰：${uname}\n${textLine}` }] }),
+    })
+  } catch (_) {}
+}
 async function getLineProfile(userId) { try { const r = await fetch('https://api.line.me/v2/bot/profile/' + userId, { headers: { authorization: `Bearer ${TOKEN}` } }); if (r.ok) { const d = await r.json(); return d.displayName || '' } } catch (_) {} return '' }
 
 // ── 對話記憶：每個對話(私訊userId或群組id)留最近幾輪，讓 D哥 記得前文、接得上 ──
@@ -658,7 +690,11 @@ export default async function handler(req, res) {
   // 重要：serverless 一旦 res 回應就會凍結，後面的 await 不會跑完 → 必須「先處理完(含回覆)再回 200」。
   for (const ev of events) {
     try {
+      // 回收訊息 → 私訊老闆（誰在哪個群回收了什麼）
+      if (ev.type === 'unsend') { await handleUnsend(ev); continue }
       if (ev.type !== 'message' || ev.message?.type !== 'text') continue
+      // 群組文字訊息先快取（回收監控用；私訊不快取）
+      if (ev.source?.type !== 'user') await cacheGroupMsg(ev)
       const gid = ev.source?.groupId || ev.source?.roomId || ev.source?.userId
       // 只登記「群組/聊天室」到群組頁；私訊(user)不是群，登記進去會在群組頁出現「未命名群」
       if (ev.source?.type !== 'user') await registerGroup(gid, ev.source?.type)

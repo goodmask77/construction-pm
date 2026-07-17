@@ -260,7 +260,7 @@ export default function SupplyView({ view, K, canEdit, confirm, showMoney }) {
         {/* 叫貨單預覽 + 發送 */}
         {pv && (() => {
           const text = orderText(pv);
-          const glist = Object.entries(groups || {});
+          const glist = Object.entries(groups || {}).filter(([gid, g]) => gid.startsWith("C") && g && g.name); // 只列有名稱的群（濾掉亂碼/個人ID）
           const doSend = async () => {
             if (!pv.lineGroupId) { alert("還沒綁定群組——請先在下面選擇 D 要發到哪個群。"); return; }
             const gname = (groups[pv.lineGroupId] || {}).name || pv.lineGroupId;
