@@ -11,11 +11,11 @@ import SupplyView from "./supply/Supply.jsx";
 import TaskCenter from "./tasks/TaskCenter.jsx";
 import Conclusions from "./conclusions/Conclusions.jsx";
 import SequenceView from "./SequenceView.jsx";
-import { LayoutDashboard, ClipboardList, CheckSquare, CalendarDays, Pin as PinIcon, FolderOpen, Wallet, Scale, Settings as SettingsIcon, Bot, Megaphone, MessagesSquare, Users as UsersIcon, ScrollText, LifeBuoy, Lock as LockIcon, Gauge, Bell, KeyRound } from "lucide-react";
+import { LayoutDashboard, ClipboardList, CheckSquare, CalendarDays, Pin as PinIcon, FolderOpen, Wallet, Scale, Settings as SettingsIcon, Bot, Megaphone, MessagesSquare, Users as UsersIcon, ScrollText, LifeBuoy, Lock as LockIcon, Gauge, Bell, KeyRound, Mail as MailIcon } from "lucide-react";
 
 // 導覽分頁圖示（依 DESIGN_SPEC：lucide 細線取代 emoji）
 const NAV_ICONS = { owner: LayoutDashboard, overview: ClipboardList, tasks: CheckSquare, gantt: CalendarDays, conclusions: PinIcon, files: FolderOpen, petty: Wallet, compare: Scale, settings: SettingsIcon };
-const SUB_ICONS = { advisor: Bot, changelog: Megaphone, groups: MessagesSquare, accounts: UsersIcon, audit: ScrollText, history: LifeBuoy, vault: LockIcon, usage: Gauge };
+const SUB_ICONS = { advisor: Bot, changelog: Megaphone, mail: MailIcon, groups: MessagesSquare, accounts: UsersIcon, audit: ScrollText, history: LifeBuoy, vault: LockIcon, usage: Gauge };
 // 頂欄（ground-pack 系：米色 + 粗黑底線；深色頂欄已退場 2026-07-16）
 const HEAD_BG = "#f4efe5", HEAD_LINE = "#1d1a15", HEAD_SUB = "#5a5247", HEAD_CHIP = "#fbf8f1";
 
@@ -1073,7 +1073,8 @@ export default function App() {
           const subs = [["advisor", "AI設定"], ["changelog", "更新"], ...(isAdmin ? [["mail", "郵件管理"], ["groups", "群組"], ["accounts", "帳號"], ["audit", "紀錄"], ["history", "還原點"], ["usage", "用量"], ["vault", "金庫"]] : [])].filter(([k]) => k !== "advisor" || allowedViewPages == null || allowedViewPages.includes("advisor"));
           return (
             <div>
-              {subs.length > 1 && (
+              {/* 桌機版子分頁已升到第二層（TopNav），這裡只給手機用 */}
+              {subs.length > 1 && isMobile && (
                 <div style={{ display: "flex", gap: 8, flexWrap: "wrap", maxWidth: 1100, margin: "0 auto 16px" }}>
                   {subs.map(([k, l]) => { const SubI = SUB_ICONS[k]; return (
                     <button key={k} onClick={() => setView(k)} style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 16px", borderRadius: 8, border: `1px solid ${view === k ? PRIMARY : BORDER}`, background: view === k ? PRIMARY : "#fff", color: view === k ? "#fff" : TEXT, fontSize: 13.5, fontWeight: 600, cursor: "pointer" }}>{SubI && <SubI size={14} strokeWidth={1.75} />}{l}</button>
@@ -2894,8 +2895,8 @@ function TopNav({ view, setView, saving, totalEstimated, totalPaid, doneCount, c
             </button>
           )}
         </div>
-        {/* KPI cards inline（手機改 2×2、整列獨佔一行；夥伴中心等空間隱藏）*/}
-        {!conf().hideKpi && (() => {
+        {/* KPI cards inline（手機改 2×2、整列獨佔一行；夥伴中心等空間隱藏；設定開著時也隱藏＝設定是全域不屬於空間）*/}
+        {!conf().hideKpi && !settingsOn && (() => {
           const kpis = showMoney() ? [
             { label: "預估總額", val: fmt(totalEstimated), bar: SEM.blue, tip: "各細項「數量×單價」依稅別換算含稅後加總＝總預算" },
             { label: "已付總額", val: totalPaid > 0 ? fmt(totalPaid) : "尚未付款", bar: SEM.green, tip: `各細項「已付金額」加總。付款進度 ${payPct}%` },
@@ -2938,11 +2939,18 @@ function TopNav({ view, setView, saving, totalEstimated, totalPaid, doneCount, c
           </button>
         </div>
       </div>
-      {/* view tabs — boxed editorial（手機隱藏，改用底部導覽）；設定開著時隱藏空間分頁列＝設定子分頁升為第二層 */}
+      {/* view tabs — boxed editorial（手機隱藏，改用底部導覽）；設定開著時第二層換成「設定子分頁」（同樣排版樣式） */}
       {!isMobile && !settingsOn && (
       <div style={{ display: "flex", gap: 8, paddingBottom: 12, flexWrap: "wrap" }}>
         {(conf().tabs || [["owner","儀表板"],["overview",L("overview")],["tasks","任務"],["gantt",L("gantt")],["conclusions","結論"],["files","檔案庫"],...(conf().showCost?[["petty","零用金"]]:[]),["compare","比價"]]).filter(([v]) => !conf().hideTabs.includes(v) && pageVisible(v)).map(([v,l]) => { const act = tabActive(v); const NavI = NAV_ICONS[v]; return (
           <button key={v} onClick={() => setView(v === "settings" ? "advisor" : v)} style={{ display: "inline-flex", alignItems: "center", gap: 7, padding: "8px 15px", borderRadius: 7, border: `1.5px solid ${act ? PRIMARY : "#c8bca6"}`, cursor: "pointer", fontSize: 14, fontWeight: act ? 700 : 500, background: act ? PRIMARY : HEAD_CHIP, color: act ? "#fff" : TEXT, transition: "all .12s" }}>{NavI && <NavI size={15} strokeWidth={1.75} />}{String(l).replace(/^[^一-鿿A-Za-z0-9]+\s*/, "")}</button>
+        ); })}
+      </div>
+      )}
+      {!isMobile && settingsOn && (
+      <div style={{ display: "flex", gap: 8, paddingBottom: 12, flexWrap: "wrap" }}>
+        {[["advisor", "AI設定"], ["changelog", "更新"], ...(isAdmin ? [["mail", "郵件管理"], ["groups", "群組"], ["accounts", "帳號"], ["audit", "紀錄"], ["history", "還原點"], ["usage", "用量"], ["vault", "金庫"]] : [])].filter(([k]) => k !== "advisor" || allowedViewPages == null || allowedViewPages.includes("advisor")).map(([k, l]) => { const act = view === k; const SubI = SUB_ICONS[k]; return (
+          <button key={k} onClick={() => setView(k)} style={{ display: "inline-flex", alignItems: "center", gap: 7, padding: "8px 15px", borderRadius: 7, border: `1.5px solid ${act ? PRIMARY : "#c8bca6"}`, cursor: "pointer", fontSize: 14, fontWeight: act ? 700 : 500, background: act ? PRIMARY : HEAD_CHIP, color: act ? "#fff" : TEXT, transition: "all .12s" }}>{SubI && <SubI size={15} strokeWidth={1.75} />}{l}</button>
         ); })}
       </div>
       )}
