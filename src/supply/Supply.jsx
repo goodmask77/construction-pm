@@ -150,7 +150,7 @@ export default function SupplyView({ view, K, canEdit, confirm, showMoney }) {
             try {
               const r = await fetch("/api/push", { method: "POST", headers: { "Content-Type": "application/json", "X-API-Key": "ground-pm-2026-secret-abc123" }, body: JSON.stringify({ to: pv.lineGroupId, text }) });
               const d = await r.json();
-              if (!d.ok) { alert("發送失敗：" + (d.error || "未知")); return; }
+              if (!d.ok) { alert(/monthly limit/i.test(d.error || "") ? "LINE 推播月額度用完了（輕用量 200 則/月，每月 1 號重置）。\n這單先按「複製文字」貼給廠商；常用的話可考慮升級 LINE 方案。" : "發送失敗：" + (d.error || "未知")); return; }
               recordOrder(pv, "D發群", "已送出", text); flash("✓ 已由 D哥 發送到「" + gname + "」，叫貨單已記錄");
             } catch (e) { alert("發送失敗：" + e.message); }
           };
@@ -174,7 +174,13 @@ export default function SupplyView({ view, K, canEdit, confirm, showMoney }) {
                 </div>
                 <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                   <button onClick={doSend} style={{ flex: 1, border: "none", background: pv.lineGroupId ? C.green : "#d5cbb6", color: "#fff", borderRadius: 8, padding: "10px 0", fontSize: 13.5, fontWeight: 700, cursor: "pointer" }}>🤖 D哥 發送到群</button>
-                  <button onClick={() => { recordOrder(pv, "LINE分享", "已送出", text); window.open("https://line.me/R/share?text=" + encodeURIComponent(text)); }} style={{ flex: 1, border: "none", background: "#06C755", color: "#fff", borderRadius: 8, padding: "10px 0", fontSize: 13.5, fontWeight: 700, cursor: "pointer" }}>📱 LINE 分享</button>
+                  <button onClick={async () => {
+                    try { await navigator.clipboard.writeText(text); } catch (_) {}
+                    const mobile = /iPhone|iPad|Android/i.test(navigator.userAgent);
+                    recordOrder(pv, mobile ? "LINE分享" : "複製", "已送出", text);
+                    if (mobile) window.open("https://line.me/R/share?text=" + encodeURIComponent(text));
+                    else flash("💻 桌機不支援 LINE 分享選單——已自動複製叫貨單，打開 LINE 貼給廠商即可（用手機開 App 按這顆才會跳選聊天室）");
+                  }} style={{ flex: 1, border: "none", background: "#06C755", color: "#fff", borderRadius: 8, padding: "10px 0", fontSize: 13.5, fontWeight: 700, cursor: "pointer" }}>📱 LINE 分享</button>
                   <button onClick={async () => { try { await navigator.clipboard.writeText(text); } catch (_) {} recordOrder(pv, "複製", "已送出", text); flash("✓ 已複製叫貨單文字，貼到廠商聊天室即可"); }} style={{ flex: 1, border: `1px solid ${C.line}`, background: "#fff", color: C.text, borderRadius: 8, padding: "10px 0", fontSize: 13.5, fontWeight: 700, cursor: "pointer" }}>📋 複製文字</button>
                 </div>
                 <button onClick={() => recordOrder(pv, "草稿", "草稿", text)} style={{ width: "100%", marginTop: 8, border: `1.5px dashed ${C.line}`, background: "transparent", color: C.sub, borderRadius: 8, padding: "7px 0", fontSize: 12.5, cursor: "pointer" }}>先存草稿不發送</button>
