@@ -2869,12 +2869,17 @@ function TopNav({ view, setView, saving, totalEstimated, totalPaid, doneCount, c
           <div style={{ fontSize: isMobile ? 20 : 26, fontWeight: 600, fontFamily: DISP, color: BRAND, lineHeight: 1, letterSpacing: -0.5 }}>GROUN:D</div>
           {!isMobile && <div style={{ fontSize: 9.5, color: HEAD_SUB, letterSpacing: 2.5, textTransform: "uppercase", marginTop: 4, fontWeight: 600 }}>Construction Project Tracker</div>}
         </div>
-        {/* 工作空間切換 */}
-        <div style={{ flexShrink: 0, order: isMobile ? 1 : 0 }}>
-          <select value={CURRENT_SPACE} onChange={(e) => switchSpace(e.target.value)} title="切換工作空間（各空間資料獨立）"
-            style={{ border: `1.5px solid #c8bca6`, background: HEAD_CHIP, color: "#1d1a15", borderRadius: 8, padding: isMobile ? "5px 8px" : "7px 10px", fontSize: 13, fontWeight: 600, cursor: "pointer", outline: "none" }}>
-            {SPACES.filter(s => spaceVisible(s.id)).map(s => <option key={s.id} value={s.id}>{s.icon} {s.name}</option>)}
-          </select>
+        {/* 工作空間切換：按鈕列直接點（桌機顯示名稱、手機只顯示圖示省空間） */}
+        <div style={{ flexShrink: 0, order: isMobile ? 1 : 0, display: "inline-flex", background: HEAD_CHIP, border: `1.5px solid #c8bca6`, borderRadius: 9, padding: 2, gap: 2, maxWidth: "100%", overflowX: "auto" }}>
+          {SPACES.filter(s => spaceVisible(s.id)).map(s => {
+            const on = s.id === CURRENT_SPACE;
+            return (
+              <button key={s.id} onClick={() => !on && switchSpace(s.id)} title={s.name + "（各空間資料獨立）"}
+                style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: isMobile ? "5px 7px" : "6px 11px", borderRadius: 7, border: `1px solid ${on ? "#c8bca6" : "transparent"}`, background: on ? "#fff" : "transparent", color: on ? "#1d1a15" : "#5a5247", fontSize: isMobile ? 14 : 12.5, fontWeight: on ? 700 : 500, cursor: on ? "default" : "pointer", whiteSpace: "nowrap" }}>
+                <span>{s.icon}</span>{(!isMobile || on) && <span>{s.name}</span>}
+              </button>
+            );
+          })}
         </div>
         {/* KPI cards inline（手機改 2×2、整列獨佔一行；夥伴中心等空間隱藏）*/}
         {!conf().hideKpi && (() => {
