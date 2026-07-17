@@ -4365,10 +4365,14 @@ function HistoryView({ K, confirm, snapshotData, cats, petty }) {
   const [rows, setRows] = useState(null);
   const [busy, setBusy] = useState(false);
   const META = { pm_data: { label: "工程資料", color: ACCENT }, pm_petty: { label: "零用金", color: "#C2872E" } };
+  // 設定是全域 → 還原點彙整全部空間（各空間各存一份 pm_hist_*，只讀當前空間會像「還原點消失」）
+  const HIST_SP = { construction: "工程", team: "團隊", crew: "夥伴", finance: "財務", supply: "供應鏈" };
+  const histKey = (sp, k) => sp === "construction" ? `pm_hist_${k}` : `sp_${sp}_pm_hist_${k}`;
+  const dataKey = (sp, k) => sp === "construction" ? k : `sp_${sp}_${k}`;
   const load = async () => {
     const out = [];
-    for (const k of ["pm_data", "pm_petty"]) {
-      try { const r = await window.storage.get(K("pm_hist_" + k), true); const list = r && r.value ? JSON.parse(r.value) : []; list.forEach(e => out.push({ ...e, key: k })); } catch (_) {}
+    for (const sp of Object.keys(HIST_SP)) for (const k of ["pm_data", "pm_petty"]) {
+      try { const r = await window.storage.get(histKey(sp, k), true); const list = r && r.value ? JSON.parse(r.value) : []; list.forEach(e => out.push({ ...e, key: k, _sp: sp })); } catch (_) {}
     }
     out.sort((a, b) => (a.ts < b.ts ? 1 : -1));
     setRows(out);
@@ -4391,11 +4395,21 @@ function HistoryView({ K, confirm, snapshotData, cats, petty }) {
   };
   const restore = async (e) => {
     const m = META[e.key];
-    if (!(await confirm(`確定把「${m.label}」還原回 ${fmtWhen(e.ts)} 的版本？\n\n目前的內容會被覆蓋（但會先自動存一個還原點，之後也能再還原回來）。`, { confirmLabel: "還原" }))) return;
+    const sp = e._sp || CURRENT_SPACE;
+    if (!(await confirm(`確定把「${HIST_SP[sp] || sp}空間的${m.label}」還原回 ${fmtWhen(e.ts)} 的版本？\n\n目前的內容會被覆蓋（但會先自動存一個還原點，之後也能再還原回來）。`, { confirmLabel: "還原" }))) return;
     setBusy(true);
     try {
-      await snapshotData(e.key, e.key === "pm_data" ? cats : petty, { force: true, note: "還原前自動存點" });
-      await window.storage.set(K(e.key), e.json, true);
+      // 還原前先把「該空間現在的資料」存成還原點（跨空間直接讀寫該空間的 key，不經 K()）
+      try {
+        const cur = await window.storage.get(dataKey(sp, e.key), true);
+        if (cur && cur.value) {
+          const hr = await window.storage.get(histKey(sp, e.key), true);
+          const hlist = hr && hr.value ? JSON.parse(hr.value) : [];
+          hlist.unshift({ id: "h" + Date.now(), ts: new Date().toISOString(), user: CURRENT_USER || "—", json: cur.value, note: "還原前自動存點" });
+          await window.storage.set(histKey(sp, e.key), JSON.stringify(hlist.slice(0, 60)), true);
+        }
+      } catch (_) {}
+      await window.storage.set(dataKey(sp, e.key), e.json, true);
       alert("✅ 已還原，畫面將重新整理。");
       window.location.reload();
     } catch (_) { alert("還原失敗，請再試一次。"); setBusy(false); }
@@ -4416,7 +4430,7 @@ function HistoryView({ K, confirm, snapshotData, cats, petty }) {
           <div style={{ border: `1px solid ${BORDER}`, borderRadius: 12, background: SURFACE, overflow: "hidden" }}>
             {rows.map((e, i) => { const m = META[e.key]; return (
               <div key={e.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "11px 14px", borderTop: i ? `1px solid #e6ddc9` : "none" }}>
-                <div style={{ flexShrink: 0, width: 70, textAlign: "center", fontSize: 11.5, fontWeight: 700, color: "#fff", background: m.color, borderRadius: 6, padding: "4px 0" }}>{m.label}</div>
+                <div style={{ flexShrink: 0, width: 100, textAlign: "center", fontSize: 11.5, fontWeight: 700, color: "#fff", background: m.color, borderRadius: 6, padding: "4px 0" }}>{HIST_SP[e._sp] || ""}・{e.key === "pm_data" ? "資料" : "零用金"}</div>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontSize: 13.5, color: TEXT, fontWeight: 600 }}>{fmtWhen(e.ts)} 的版本</div>
                   <div style={{ fontSize: 12, color: SUB, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", marginTop: 1 }}>當時內容：{summarize(e)}</div>
@@ -5540,7 +5554,8 @@ const botPriceFor = (m) => { const k = String(m || "").replace(/-\d{6,}$/, ""); 
 const botUsdOf = (m, inTok, outTok) => { const [pi, po] = botPriceFor(m); return (Number(inTok) || 0) / 1e6 * pi + (Number(outTok) || 0) / 1e6 * po; };
 function BotUsagePanel() {
   const [data, setData] = useState(null);
-  const load = async () => { try { const r = await window.storage.get(K("pm_bot_aiusage"), true); setData(r && r.value ? JSON.parse(r.value) : {}); } catch (_) { setData({}); } };
+  // D哥用量存全域 key（webhook 寫入不分空間）——不能用 K()，否則從其他空間開設定會顯示 0（張良 2026-07-18 回報「資料消失」）
+  const load = async () => { try { const r = await window.storage.get("pm_bot_aiusage", true); setData(r && r.value ? JSON.parse(r.value) : {}); } catch (_) { setData({}); } };
   useEffect(() => { load(); }, []);
   if (data === null) return null;
   const total = data.total || { calls: 0, inTok: 0, outTok: 0 };
@@ -5599,8 +5614,11 @@ function AIUsagePanel() {
   const [loading, setLoading] = useState(true);
   const load = async () => {
     setLoading(true);
-    try { const r = await window.storage.get(K("pm_ai_usage"), true); setLog(r && r.value ? JSON.parse(r.value) : []); }
-    catch (_) { setLog([]); }
+    // AI 用量每空間各存一份 → 設定是全域的，彙整全部空間加總（否則從別的空間開設定像歸零）
+    const keys = ["pm_ai_usage", ...["team", "crew", "finance", "supply", "lw"].map(id => `sp_${id}_pm_ai_usage`)];
+    const all = [];
+    for (const k of keys) { try { const r = await window.storage.get(k, true); if (r && r.value) all.push(...(JSON.parse(r.value) || [])); } catch (_) {} }
+    setLog(all);
     setLoading(false);
   };
   useEffect(() => { load(); }, []);
