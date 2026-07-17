@@ -25,6 +25,7 @@ export default function SupplyView({ view, K, canEdit, confirm, showMoney }) {
   const [needDate, setNeedDate] = useState(""); // 希望到貨日
   const [preview, setPreview] = useState(null); // 叫貨單預覽 vendorId
   const [odSel, setOdSel] = useState(null);      // 叫貨紀錄詳情 orderId
+  const [inspEdit, setInspEdit] = useState(false); // 驗收選項編輯器（新增/改名/刪除/排序）
   const [groups, setGroups] = useState({});     // D哥看過的LINE群（pm_group_seen，發送綁定用）
   const flash = (t) => { setMsg(t); setTimeout(() => setMsg(m => (m === t ? null : m)), 6000); };
 
@@ -206,7 +207,7 @@ export default function SupplyView({ view, K, canEdit, confirm, showMoney }) {
               <div key={od.id} onClick={() => setOdSel(od.id)} style={{ display: "grid", gridTemplateColumns: `108px minmax(90px,0.8fr) 56px minmax(150px,1.4fr) ${showMoney ? "90px " : ""}88px 110px 30px`, gap: 8, alignItems: "center", minHeight: 32, borderTop: `1px solid #f0ead9`, fontSize: 12, cursor: "pointer" }}
                 onMouseEnter={e => e.currentTarget.style.background = C.soft} onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
                 <span style={{ fontFamily: MONOF, fontSize: 11, color: C.sub }}>{new Date(od.ts).toLocaleString("zh-TW", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })}</span>
-                <span style={{ fontWeight: 700, color: C.text }}>{od.vendorName}{od.check && Object.values(od.check.items || {}).some(x => x.st && x.st !== "✓ 正確") && <span title="驗收有問題" style={{ color: C.red, marginLeft: 4 }}>⚠</span>}</span>
+                <span style={{ fontWeight: 700, color: C.text }}>{od.vendorName}{od.check && Object.values(od.check.items || {}).some(x => x.st && x.st !== (db.inspectOpts || ["✓ 正確"])[0]) && <span title="驗收有問題" style={{ color: C.red, marginLeft: 4 }}>⚠</span>}</span>
                 <span style={{ color: C.sub }}>{od.items.length} 項</span>
                 <span style={{ color: C.sub, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={od.items.map(x => `${x.name}×${x.qty}`).join("、")}>{od.items.map(x => `${x.name}×${x.qty}`).join("、")}</span>
                 {showMoney && <span style={{ fontFamily: MONOF, textAlign: "right", color: orderTotal(od) ? C.text : "#d5cbb6" }}>{orderTotal(od) ? "NT$" + Math.round(orderTotal(od)).toLocaleString() : "—"}</span>}
@@ -217,10 +218,10 @@ export default function SupplyView({ view, K, canEdit, confirm, showMoney }) {
             ))}
           </div>
         )}
-        {/* 貨單詳細（月底對帳） */}
+        {/* 貨單詳細（月底對帳）——驗收欄要夠寬，字不能被切 */}
         {odDetail && (
           <div onClick={e => e.target === e.currentTarget && setOdSel(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.4)", zIndex: 710, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
-            <div style={{ background: "#fff", border: `1px solid ${C.line}`, borderRadius: 12, padding: 22, width: "min(560px,96vw)", maxHeight: "90vh", overflowY: "auto" }}>
+            <div style={{ background: "#fff", border: `1px solid ${C.line}`, borderRadius: 12, padding: 22, width: "min(880px,96vw)", maxHeight: "90vh", overflowY: "auto" }}>
               <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
                 <div style={{ fontSize: 15, fontWeight: 700, color: C.text }}>貨單明細：{odDetail.vendorName}</div>
                 <span style={{ fontSize: 11, color: "#fff", background: odDetail.status === "已到貨" ? C.green : odDetail.status === "廠商已確認" ? C.blue : C.amber, borderRadius: 9, padding: "1px 8px", fontWeight: 700 }}>{odDetail.status}</span>
@@ -235,17 +236,19 @@ export default function SupplyView({ view, K, canEdit, confirm, showMoney }) {
                 const chk = odDetail.check || { items: {}, by: "", note: "", ts: "" };
                 const setChk = (patch) => saveOrders(orders.map(x => x.id === odDetail.id ? { ...x, check: { ...chk, ...patch } } : x));
                 const setChkItem = (i, patch) => setChk({ items: { ...chk.items, [i]: { ...(chk.items[i] || {}), ...patch } } });
-                const ISSUES = ["", "✓ 正確", "數量不符", "規格錯誤", "漏送", "送錯品", "改單", "退回"];
+                // 驗收選項可自訂（第一個＝正常，綠色；其餘＝問題，紅色）；不用下拉，直接點選比較快
+                const INSP = db.inspectOpts || ["✓ 正確", "數量不符", "規格錯誤", "漏送", "退回"];
+                const okOpt = INSP[0];
                 const allOk = odDetail.items.every((_, i) => (chk.items[i] || {}).st);
-                const GTC3 = `minmax(140px,1.3fr) minmax(84px,0.9fr) 58px ${showMoney ? "72px 82px " : ""}${isChk ? "112px minmax(90px,0.9fr)" : ""}`;
+                const GTC3 = `minmax(130px,1.2fr) minmax(76px,0.8fr) 54px ${showMoney ? "66px 76px " : ""}${isChk ? `minmax(${60 + INSP.length * 62}px,1.8fr) minmax(96px,0.9fr)` : ""}`;
                 return (
                   <div style={{ border: `1.5px solid ${C.hard}`, borderRadius: 8, overflow: "hidden" }}>
-                    <div style={{ display: "grid", gridTemplateColumns: GTC3, gap: 8, background: "#ece4d6", padding: "6px 10px", fontSize: 10.5, color: C.sub, fontWeight: 700 }}>
-                      <span>品名</span><span>規格</span><span style={{ textAlign: "right" }}>數量</span>{showMoney && <><span style={{ textAlign: "right" }}>單價</span><span style={{ textAlign: "right" }}>小計</span></>}{isChk && <><span>驗收</span><span>備註</span></>}
+                    <div style={{ display: "grid", gridTemplateColumns: GTC3, gap: 8, background: "#ece4d6", padding: "6px 10px", fontSize: 10.5, color: C.sub, fontWeight: 700, alignItems: "center" }}>
+                      <span>品名</span><span>規格</span><span style={{ textAlign: "right" }}>數量</span>{showMoney && <><span style={{ textAlign: "right" }}>單價</span><span style={{ textAlign: "right" }}>小計</span></>}{isChk && <><span>驗收（直接點選）{canEdit && <button onClick={() => setInspEdit(true)} title="編輯驗收選項（新增/改名/刪除/排序）" style={{ border: "none", background: "none", cursor: "pointer", fontSize: 11, color: C.sub, padding: "0 3px" }}>⚙</button>}</span><span>備註</span></>}
                     </div>
                     {odDetail.items.map((x, i) => {
                       const ci = chk.items[i] || {};
-                      const bad = ci.st && ci.st !== "✓ 正確";
+                      const bad = ci.st && ci.st !== okOpt;
                       return (
                         <div key={i} style={{ display: "grid", gridTemplateColumns: GTC3, gap: 8, padding: "5px 10px", borderTop: `1px solid #f0ead9`, fontSize: 12.5, alignItems: "center", background: bad ? "#fdf3f2" : i % 2 ? "#f8f4ea" : "#fff" }}>
                           <span style={{ fontWeight: 600, color: C.text }}>{x.name}</span>
@@ -254,9 +257,12 @@ export default function SupplyView({ view, K, canEdit, confirm, showMoney }) {
                           {showMoney && <><span style={{ fontFamily: MONOF, textAlign: "right", color: C.sub }}>{x.price ? Number(x.price).toLocaleString() : "—"}</span>
                           <span style={{ fontFamily: MONOF, textAlign: "right", fontWeight: 700 }}>{x.price ? (Math.round(Number(x.price) * x.qty * 100) / 100).toLocaleString(undefined, { maximumFractionDigits: 2 }) : "—"}</span></>}
                           {isChk && <>
-                            <select value={ci.st || ""} onChange={e => setChkItem(i, { st: e.target.value })} disabled={!canEdit} style={{ ...inp, padding: "3px 5px", fontSize: 11.5, color: bad ? C.red : ci.st ? C.green : C.text, fontWeight: ci.st ? 700 : 400 }}>
-                              {ISSUES.map(o => <option key={o} value={o}>{o || "— 待驗 —"}</option>)}
-                            </select>
+                            <span style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+                              {INSP.map(o => { const on = ci.st === o; const isOk = o === okOpt; return (
+                                <button key={o} onClick={() => canEdit && setChkItem(i, { st: on ? "" : o })} disabled={!canEdit}
+                                  style={{ border: `1.5px solid ${on ? (isOk ? C.green : C.red) : "#d9cfbd"}`, background: on ? (isOk ? C.green : C.red) : "#fff", color: on ? "#fff" : C.sub, borderRadius: 999, padding: "3px 10px", fontSize: 11.5, fontWeight: on ? 700 : 500, cursor: canEdit ? "pointer" : "default", whiteSpace: "nowrap" }}>{o}</button>
+                              ); })}
+                            </span>
                             <input value={ci.note || ""} onChange={e => setChkItem(i, { note: e.target.value })} disabled={!canEdit} placeholder={bad ? "問題說明" : "備註"} style={{ ...inp, padding: "3px 7px", fontSize: 11.5, borderColor: bad && !ci.note ? C.red : C.line }} />
                           </>}
                         </div>
@@ -268,7 +274,7 @@ export default function SupplyView({ view, K, canEdit, confirm, showMoney }) {
                         <input value={chk.by || ""} onChange={e => setChk({ by: e.target.value })} disabled={!canEdit} placeholder="驗收人" style={{ ...inp, width: 90, padding: "4px 8px", fontSize: 12 }} />
                         <input value={chk.note || ""} onChange={e => setChk({ note: e.target.value })} disabled={!canEdit} placeholder="整體備註（改單/補送約定…）" style={{ ...inp, flex: 1, minWidth: 140, padding: "4px 8px", fontSize: 12 }} />
                         {canEdit && <button onClick={() => {
-                          const bad2 = Object.values(chk.items || {}).some(x => x.st && x.st !== "✓ 正確");
+                          const bad2 = Object.values(chk.items || {}).some(x => x.st && x.st !== okOpt);
                           saveOrders(orders.map(x => x.id === odDetail.id ? { ...x, status: bad2 ? "有問題" : "已到貨", check: { ...chk, ts: new Date().toISOString() } } : x));
                           flash(bad2 ? "⚠ 驗收完成：有問題項目已標記，狀態→有問題" : "✓ 驗收完成，全數正確，狀態→已到貨");
                         }} disabled={!allOk} title={allOk ? "" : "每一項都要選驗收結果"} style={{ border: "none", background: allOk ? C.green : "#d5cbb6", color: "#fff", borderRadius: 7, padding: "6px 14px", fontSize: 12.5, fontWeight: 700, cursor: allOk ? "pointer" : "default" }}>完成驗收</button>}
@@ -394,42 +400,7 @@ export default function SupplyView({ view, K, canEdit, confirm, showMoney }) {
                   </div>
                 );
               })()}
-              {/* 到貨驗收/核銷：逐項核對 + 備註 + 驗收人（有問題自動標記追蹤） */}
-              {odDetail.status !== "草稿" && (() => {
-                const chk = odDetail.check || { items: {}, by: "", note: "", ts: "" };
-                const setChk = (patch) => saveOrders(orders.map(x => x.id === odDetail.id ? { ...x, check: { ...chk, ...patch } } : x));
-                const setChkItem = (i, patch) => setChk({ items: { ...chk.items, [i]: { ...(chk.items[i] || {}), ...patch } } });
-                const ISSUES = ["", "✓ 正確", "數量不符", "規格錯誤", "漏送", "送錯品", "改單", "退回"];
-                const anyIssue = Object.values(chk.items || {}).some(x => x.st && x.st !== "✓ 正確");
-                const allOk = odDetail.items.every((_, i) => (chk.items[i] || {}).st);
-                return (
-                  <div style={{ marginTop: 12, border: `1.5px solid ${anyIssue ? C.red : C.hard}`, borderRadius: 8, padding: "10px 12px", background: anyIssue ? "#fdf3f2" : C.soft }}>
-                    <div style={{ fontSize: 12.5, fontWeight: 800, color: anyIssue ? C.red : C.text, marginBottom: 8 }}>📥 到貨驗收{chk.ts ? `（${new Date(chk.ts).toLocaleString("zh-TW", { hour12: false })}${chk.by ? "・" + chk.by : ""}）` : ""}</div>
-                    {odDetail.items.map((x, i) => {
-                      const ci = chk.items[i] || {};
-                      const bad = ci.st && ci.st !== "✓ 正確";
-                      return (
-                        <div key={i} style={{ display: "grid", gridTemplateColumns: "minmax(120px,1.2fr) 108px minmax(110px,1fr)", gap: 8, alignItems: "center", padding: "3px 0", borderTop: i ? `1px solid #f0ead9` : "none" }}>
-                          <span style={{ fontSize: 12, fontWeight: 600, color: C.text }}>{x.name} <span style={{ color: C.faint, fontSize: 10.5 }}>×{x.qty}{x.unit || ""}</span></span>
-                          <select value={ci.st || ""} onChange={e => setChkItem(i, { st: e.target.value })} disabled={!canEdit} style={{ ...inp, padding: "4px 6px", fontSize: 12, color: bad ? C.red : ci.st ? C.green : C.text, fontWeight: ci.st ? 700 : 400 }}>
-                            {ISSUES.map(o => <option key={o} value={o}>{o || "— 待驗 —"}</option>)}
-                          </select>
-                          <input value={ci.note || ""} onChange={e => setChkItem(i, { note: e.target.value })} disabled={!canEdit} placeholder={bad ? "問題說明（必填較好追）" : "備註"} style={{ ...inp, padding: "4px 8px", fontSize: 12, borderColor: bad && !ci.note ? C.red : C.line }} />
-                        </div>
-                      );
-                    })}
-                    <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap", alignItems: "center" }}>
-                      <input value={chk.by || ""} onChange={e => setChk({ by: e.target.value })} disabled={!canEdit} placeholder="驗收人" style={{ ...inp, width: 100, padding: "5px 8px", fontSize: 12 }} />
-                      <input value={chk.note || ""} onChange={e => setChk({ note: e.target.value })} disabled={!canEdit} placeholder="整體備註（改單/補送約定…）" style={{ ...inp, flex: 1, minWidth: 160, padding: "5px 8px", fontSize: 12 }} />
-                      {canEdit && <button onClick={() => {
-                        const bad2 = Object.values({ ...(chk.items || {}) }).some(x => x.st && x.st !== "✓ 正確");
-                        saveOrders(orders.map(x => x.id === odDetail.id ? { ...x, status: bad2 ? "有問題" : "已到貨", check: { ...chk, ts: new Date().toISOString() } } : x));
-                        flash(bad2 ? "⚠ 驗收完成：有問題項目已標記，狀態→有問題（追蹤到解決）" : "✓ 驗收完成，全數正確，狀態→已到貨");
-                      }} disabled={!allOk} title={allOk ? "" : "每一項都要選驗收結果"} style={{ border: "none", background: allOk ? C.green : "#d5cbb6", color: "#fff", borderRadius: 7, padding: "7px 16px", fontSize: 12.5, fontWeight: 700, cursor: allOk ? "pointer" : "default" }}>完成驗收</button>}
-                    </div>
-                  </div>
-                );
-              })()}
+              {/* 到貨驗收已合併進上方表格「驗收」欄（直接點選），這裡不再重複一段 */}
               {showMoney && <button onClick={async () => {
                 const txt = `【對帳明細】${odDetail.vendorName} ${new Date(odDetail.ts).toLocaleDateString("zh-TW")}\n` + odDetail.items.map(x => `${x.name} ${x.spec || ""} ×${x.qty}${x.unit || ""} @${x.price || "?"} = ${x.price ? (Math.round(Number(x.price) * x.qty * 100) / 100).toLocaleString() : "?"}`).join("\n") + `\n總金額 ${nt2(orderTotal(odDetail))}`;
                 try { await navigator.clipboard.writeText(txt); flash("✓ 已複製對帳明細（含單價，內部用）"); } catch (_) {}
@@ -438,6 +409,37 @@ export default function SupplyView({ view, K, canEdit, confirm, showMoney }) {
             </div>
           </div>
         )}
+        {/* 驗收選項編輯器：新增/改名/刪除/排序（第一個＝正常綠色，其餘＝問題紅色） */}
+        {inspEdit && (() => {
+          const opts = db.inspectOpts || ["✓ 正確", "數量不符", "規格錯誤", "漏送", "退回"];
+          const setOpts = (list) => save({ inspectOpts: list });
+          const move = (i, d) => { const n = [...opts]; const j = i + d; if (j < 0 || j >= n.length) return; [n[i], n[j]] = [n[j], n[i]]; setOpts(n); };
+          return (
+            <div onClick={e => e.target === e.currentTarget && setInspEdit(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.4)", zIndex: 720, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+              <div style={{ background: "#fff", border: `1px solid ${C.line}`, borderRadius: 12, padding: 20, width: "min(420px,94vw)" }}>
+                <div style={{ display: "flex", alignItems: "center", marginBottom: 6 }}>
+                  <div style={{ fontSize: 14.5, fontWeight: 700, color: C.text }}>⚙ 驗收選項</div>
+                  <div style={{ flex: 1 }} />
+                  <button onClick={() => setInspEdit(false)} style={{ background: "none", border: "none", fontSize: 20, cursor: "pointer", color: C.sub }}>×</button>
+                </div>
+                <div style={{ fontSize: 11, color: C.faint, marginBottom: 10 }}>第一個＝「正常」（綠色）；其他都算問題（紅色、會標記追蹤）。可改名、拖上下排序、刪除、新增。</div>
+                {opts.map((o, i) => (
+                  <div key={i} style={{ display: "flex", gap: 6, alignItems: "center", marginBottom: 6 }}>
+                    <span style={{ fontSize: 10.5, color: i === 0 ? C.green : C.red, fontWeight: 700, width: 28 }}>{i === 0 ? "正常" : "問題"}</span>
+                    <input value={o} onChange={e => setOpts(opts.map((x, j) => j === i ? e.target.value : x))} style={{ ...inp, flex: 1, padding: "5px 9px", fontSize: 12.5 }} />
+                    <button onClick={() => move(i, -1)} disabled={i === 0} style={{ border: `1px solid ${C.line}`, background: "#fff", borderRadius: 6, padding: "3px 7px", fontSize: 11, cursor: i === 0 ? "default" : "pointer", color: C.sub, opacity: i === 0 ? .4 : 1 }}>↑</button>
+                    <button onClick={() => move(i, 1)} disabled={i === opts.length - 1} style={{ border: `1px solid ${C.line}`, background: "#fff", borderRadius: 6, padding: "3px 7px", fontSize: 11, cursor: i === opts.length - 1 ? "default" : "pointer", color: C.sub, opacity: i === opts.length - 1 ? .4 : 1 }}>↓</button>
+                    <button onClick={() => opts.length > 2 ? setOpts(opts.filter((_, j) => j !== i)) : flash("至少要留 2 個選項")} style={{ border: "none", background: "none", color: C.red, cursor: "pointer", fontSize: 14 }}>×</button>
+                  </div>
+                ))}
+                <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+                  <button onClick={() => setOpts([...opts, "新選項"])} style={{ flex: 1, border: `1px dashed ${C.line}`, background: "#fff", color: C.sub, borderRadius: 7, padding: "7px 0", fontSize: 12.5, fontWeight: 600, cursor: "pointer" }}>＋ 新增選項</button>
+                  <button onClick={() => setInspEdit(false)} style={{ flex: 1, border: "none", background: C.accent, color: "#fff", borderRadius: 7, padding: "7px 0", fontSize: 12.5, fontWeight: 700, cursor: "pointer" }}>完成</button>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
         {/* 叫貨單預覽 + 發送 */}
         {pv && (() => {
           const text = orderText(pv);
