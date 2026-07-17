@@ -32,6 +32,7 @@ export default function MailManagerView({ K, canEdit, confirm }) {
   const [busy, setBusy] = useState("");
   const [msg, setMsg] = useState(null);
   const [openFrom, setOpenFrom] = useState(null); // 展開中的來源（顯示該來源的信件）
+  const [editRule, setEditRule] = useState(null); // 規則密表：正在編輯的那一條（其餘唯讀一行）
   const [q, setQ] = useState("");
   const flash = (t) => { setMsg(t); setTimeout(() => setMsg(m => (m === t ? null : m)), 9000); };
 
@@ -81,8 +82,13 @@ export default function MailManagerView({ K, canEdit, confirm }) {
       <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "6px 0 12px", flexWrap: "wrap" }}>
         <span style={{ background: C.accent, color: "#fff", fontSize: 11.5, fontWeight: 700, borderRadius: 4, padding: "2px 8px", letterSpacing: 1 }}>信箱</span>
         <div>
-          <div style={{ fontSize: 17, fontWeight: 800, color: C.text }}>📮 電子信箱管理 <span style={{ fontSize: 12, color: C.faint, fontWeight: 400 }}>goodmask77@gmail.com</span></div>
+          <div style={{ fontSize: 17, fontWeight: 800, color: C.text }}>📮 電子信箱管理</div>
           <div style={{ fontSize: 11, color: C.faint }}>{scan ? `上次掃描 ${new Date(scan.scannedAt).toLocaleString("zh-TW")}・收件匣近${scan.days}天 ${scan.inboxCount} 封・${(scan.senders || []).length} 個來源` : "還沒掃描過"}・規則每天自動套用</div>
+        </div>
+        {/* 信箱切換：之後接其他公司信箱，會多出現一顆 chip，各信箱各自的規則/來源 */}
+        <div style={{ display: "inline-flex", background: "#f3eddc", border: `1.5px solid #c8bca6`, borderRadius: 8, padding: 2, gap: 2 }}>
+          <span style={{ background: "#fff", border: `1px solid #c8bca6`, borderRadius: 6, padding: "4px 12px", fontSize: 12, fontWeight: 700, color: C.text }}>goodmask77@gmail.com</span>
+          <button onClick={() => flash("要接其他公司信箱時跟我（Claude）說一聲，給我該信箱的應用程式密碼就會出現在這裡。")} title="之後可接其他公司信箱" style={{ border: "none", background: "transparent", color: C.faint, borderRadius: 6, padding: "4px 10px", fontSize: 12, cursor: "pointer" }}>＋信箱</button>
         </div>
         <div style={{ flex: 1 }} />
         {btn(busy === "scan" ? "掃描中…" : "🔍 重新掃描", runScan, { color: C.blue, borderColor: C.blue })}
@@ -90,32 +96,45 @@ export default function MailManagerView({ K, canEdit, confirm }) {
       </div>
       {msg && <div style={{ background: "#eef5ef", border: `1.5px solid ${C.green}`, borderRadius: 8, padding: "8px 14px", marginBottom: 12, fontSize: 13, color: "#2c5a38", fontWeight: 600 }}>{msg} <button onClick={() => setMsg(null)} style={{ border: "none", background: "none", color: C.green, cursor: "pointer", float: "right" }}>×</button></div>}
 
-      {/* 規則表：留/刪/分類 全部在這裡設定 */}
+      {/* 規則表：預設唯讀密表（一行一條、點✎才編輯），畫面才裝得下多信箱（App 慣例：同交易明細） */}
       <div style={box}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8, flexWrap: "wrap" }}>
           <div style={{ fontSize: 13.5, fontWeight: 700, color: C.text }}>📋 處理規則</div>
-          <span style={{ fontSize: 11, color: C.faint }}>由上往下比對，「保留」優先於一切；「直接刪除」＝寄來就進垃圾桶（30天可救回）</span>
+          <span style={{ fontSize: 11.5, color: C.sub, fontWeight: 600 }}>{rulesDoc.rules.length} 條（🗑刪 {rulesDoc.rules.filter(r => r.action === "delete").length}・🏷分類 {rulesDoc.rules.filter(r => r.action === "label").length}・✋保留 {rulesDoc.rules.filter(r => r.action === "keep").length}）</span>
+          <span style={{ fontSize: 11, color: C.faint }}>由上往下比對，「保留」優先；「直接刪除」＝進垃圾桶(30天可救回)・點列可編輯</span>
           <div style={{ flex: 1 }} />
-          {canEdit && btn("＋ 新增規則", () => saveRules([{ id: rid(), field: "from", match: "", action: "delete", label: "", note: "", enabled: true, hits: 0 }, ...rulesDoc.rules]))}
+          {canEdit && btn("＋ 新增規則", () => { const nid = rid(); saveRules([{ id: nid, field: "from", match: "", action: "delete", label: "", note: "", enabled: true, hits: 0 }, ...rulesDoc.rules]); setEditRule(nid); })}
         </div>
         {rulesDoc.rules.length === 0 ? <div style={{ padding: 14, textAlign: "center", color: C.faint, fontSize: 12.5 }}>還沒有規則——從下面「信件來源」點快速按鈕建立，或按「＋新增規則」。</div> : (
-          <div style={{ overflowX: "auto" }}><div style={{ minWidth: 760 }}>
-            <div style={{ display: "grid", gridTemplateColumns: "96px minmax(160px,1fr) 130px 110px minmax(120px,1fr) 52px 56px 34px", gap: 6, fontSize: 10.5, color: C.faint, fontWeight: 700, padding: "2px 4px" }}>
-              <span>比對欄位</span><span>包含文字（多關鍵字用 | 分隔）</span><span>動作</span><span>標籤</span><span>備註</span><span>啟用</span><span>命中</span><span />
-            </div>
-            {rulesDoc.rules.map(r => (
-              <div key={r.id} style={{ display: "grid", gridTemplateColumns: "96px minmax(160px,1fr) 130px 110px minmax(120px,1fr) 52px 56px 34px", gap: 6, alignItems: "center", padding: "3px 4px", opacity: r.enabled === false ? .5 : 1 }}>
-                <select value={r.field} onChange={e => upd(r.id, { field: e.target.value })} disabled={!canEdit} style={inp}><option value="from">寄件者</option><option value="subject">主旨</option><option value="to">收件人</option></select>
-                <input value={r.match} onChange={e => upd(r.id, { match: e.target.value })} disabled={!canEdit} placeholder="例：ctbcbank 或 發票|invoice" style={inp} />
-                <select value={r.action} onChange={e => upd(r.id, { action: e.target.value })} disabled={!canEdit} style={{ ...inp, color: ACT_COLOR[r.action], fontWeight: 700 }}>{ACTIONS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select>
-                <input value={r.label || ""} onChange={e => upd(r.id, { label: e.target.value })} disabled={!canEdit || r.action !== "label"} placeholder={r.action === "label" ? "標籤名" : "—"} style={inp} />
-                <input value={r.note || ""} onChange={e => upd(r.id, { note: e.target.value })} disabled={!canEdit} placeholder="為什麼" style={inp} />
-                <input type="checkbox" checked={r.enabled !== false} onChange={e => upd(r.id, { enabled: e.target.checked })} disabled={!canEdit} style={{ justifySelf: "center" }} />
-                <span style={{ fontFamily: MONOF, fontSize: 11.5, color: r.hits ? C.text : C.faint, textAlign: "right" }}>{r.hits || 0}</span>
-                {canEdit && <button onClick={async () => { if (await confirm(`刪除規則「${r.note || r.match}」？`, { confirmLabel: "刪除" })) saveRules(rulesDoc.rules.filter(x => x.id !== r.id)); }} style={{ border: "none", background: "none", color: C.faint, cursor: "pointer", fontSize: 14 }}>×</button>}
+          <div style={{ maxHeight: "44vh", overflowY: "auto", border: `1px solid ${C.line}`, borderRadius: 8 }}>
+            {rulesDoc.rules.map((r, i) => editRule === r.id ? (
+              /* 編輯模式：這一列展開成完整輸入 */
+              <div key={r.id} style={{ display: "grid", gridTemplateColumns: "92px minmax(150px,1fr) 120px 104px minmax(110px,1fr) 44px auto", gap: 6, alignItems: "center", padding: "6px 8px", background: "#fdf9ef", borderTop: i ? `1px solid ${C.line}` : "none" }}>
+                <select value={r.field} onChange={e => upd(r.id, { field: e.target.value })} style={inp}><option value="from">寄件者</option><option value="subject">主旨</option><option value="to">收件人</option></select>
+                <input value={r.match} onChange={e => upd(r.id, { match: e.target.value })} placeholder="例：ctbcbank 或 發票|invoice" style={inp} autoFocus />
+                <select value={r.action} onChange={e => upd(r.id, { action: e.target.value })} style={{ ...inp, color: ACT_COLOR[r.action], fontWeight: 700 }}>{ACTIONS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select>
+                <input value={r.label || ""} onChange={e => upd(r.id, { label: e.target.value })} disabled={r.action !== "label"} placeholder={r.action === "label" ? "標籤名" : "—"} style={inp} />
+                <input value={r.note || ""} onChange={e => upd(r.id, { note: e.target.value })} placeholder="為什麼" style={inp} />
+                <label style={{ display: "inline-flex", alignItems: "center", gap: 3, fontSize: 11, color: C.sub, justifySelf: "center" }}><input type="checkbox" checked={r.enabled !== false} onChange={e => upd(r.id, { enabled: e.target.checked })} />啟</label>
+                <span style={{ display: "inline-flex", gap: 6, justifySelf: "end" }}>
+                  <button onClick={async () => { if (await confirm(`刪除規則「${r.note || r.match}」？`, { confirmLabel: "刪除" })) { saveRules(rulesDoc.rules.filter(x => x.id !== r.id)); setEditRule(null); } }} style={{ border: `1px solid #e5c4bd`, background: "#fff", color: "#b3261e", borderRadius: 6, padding: "4px 10px", fontSize: 11.5, cursor: "pointer" }}>刪除</button>
+                  <button onClick={() => setEditRule(null)} style={{ border: "none", background: C.accent, color: "#fff", borderRadius: 6, padding: "4px 12px", fontSize: 11.5, fontWeight: 700, cursor: "pointer" }}>完成</button>
+                </span>
+              </div>
+            ) : (
+              /* 唯讀密列：一行一條 */
+              <div key={r.id} onClick={() => canEdit && setEditRule(r.id)} title={canEdit ? "點一下編輯這條規則" : undefined}
+                style={{ display: "grid", gridTemplateColumns: "52px minmax(150px,1.2fr) 88px 104px minmax(100px,1fr) 44px 26px", gap: 8, alignItems: "center", padding: "5px 8px", minHeight: 30, borderTop: i ? `1px solid #f0ead9` : "none", background: i % 2 ? "#faf6ec" : "#fff", opacity: r.enabled === false ? .45 : 1, cursor: canEdit ? "pointer" : "default" }}>
+                <span style={{ fontSize: 10.5, color: C.faint, fontWeight: 700 }}>{({ from: "寄件者", subject: "主旨", to: "收件人" })[r.field] || r.field}</span>
+                <span style={{ fontFamily: MONOF, fontSize: 11.5, color: C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.match || <i style={{ color: C.faint }}>（空）</i>}</span>
+                <span style={{ fontSize: 11, fontWeight: 700, color: ACT_COLOR[r.action] }}>{(ACTIONS.find(a => a[0] === r.action) || [])[1] || r.action}{r.enabled === false ? "・停用" : ""}</span>
+                <span style={{ fontSize: 11, color: r.label ? "#7a5c1e" : "#d5cbb6", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.label ? "🏷 " + r.label : "—"}</span>
+                <span style={{ fontSize: 11, color: C.faint, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.note || ""}</span>
+                <span style={{ fontFamily: MONOF, fontSize: 11, color: r.hits ? C.sub : "#d5cbb6", textAlign: "right" }}>{r.hits || 0}</span>
+                <span style={{ color: "#c8bca6", fontSize: 11.5, textAlign: "center" }}>{canEdit ? "✎" : ""}</span>
               </div>
             ))}
-          </div></div>
+          </div>
         )}
       </div>
 
