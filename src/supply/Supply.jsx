@@ -27,6 +27,7 @@ export default function SupplyView({ view, K, canEdit, confirm, showMoney, userN
   const [needDate, setNeedDate] = useState(""); // 希望到貨日
   const [preview, setPreview] = useState(null); // 叫貨單預覽 vendorId
   const [odSel, setOdSel] = useState(null);      // 叫貨紀錄詳情 orderId
+  const [oq, setOq] = useState("");              // 叫貨表搜尋（品項/標籤，比價用）
   const [inspEdit, setInspEdit] = useState(false); // 驗收選項編輯器（新增/改名/刪除/排序）
   const [groups, setGroups] = useState({});     // DD看過的LINE群（pm_group_seen，發送綁定用）
   const flash = (t) => { setMsg(t); setTimeout(() => setMsg(m => (m === t ? null : m)), 6000); };
@@ -54,7 +55,12 @@ export default function SupplyView({ view, K, canEdit, confirm, showMoney, userN
   if (view === "sorder") {
     const DEPTS = ["外場", "內場", "吧檯", "共用"];
     const itemsOf = (vid) => (db.vendorItems || []).filter(x => x.vendor_id === vid).sort((a, b) => (a.sort || 0) - (b.sort || 0));
-    const vlist = (db.vendors || []).filter(v => itemsOf(v.id).length).filter(v => !catF || (v.dept || "共用") === catF);
+    // 搜尋：品名/規格/分類/標籤都比對（跨廠商找同類品項好比價）
+    const qq = oq.trim().toLowerCase();
+    const matchIt = (it) => !qq || `${it.name || ""} ${it.spec || ""} ${it.grp || ""} ${it.tags || ""}`.toLowerCase().includes(qq);
+    const shownOf = (vid) => itemsOf(vid).filter(matchIt);
+    // 只列「正式供應商」（廠商頁名稱前打勾）
+    const vlist = (db.vendors || []).filter(v => v.official).filter(v => shownOf(v.id).length).filter(v => !catF || (v.dept || "共用") === catF);
     const picked = (vid) => itemsOf(vid).filter(it => Number(qty[it.id]) > 0);
     const updV = (id, fp) => save({ vendors: db.vendors.map(x => x.id === id ? { ...x, ...fp } : x) });
     const orderText = (v) => {
@@ -135,9 +141,10 @@ export default function SupplyView({ view, K, canEdit, confirm, showMoney, userN
           <span style={{ background: C.accent, color: "#fff", fontSize: 11.5, fontWeight: 700, borderRadius: 4, padding: "2px 8px" }}>叫貨</span>
           <div>
             <div style={{ fontSize: 17, fontWeight: 800, color: C.text }}>叫貨</div>
-            <div style={{ fontSize: 11, color: C.faint }}>填數量 → 產生叫貨單 → 發送（不帶價格）。品項到「廠商」頁維護。</div>
+            <div style={{ fontSize: 11, color: C.faint }}>填數量 → 產生叫貨單 → 發送。只列正式供應商（廠商頁名稱前打勾）。品項到「廠商」頁維護。</div>
           </div>
           <div style={{ flex: 1 }} />
+          <input value={oq} onChange={e => setOq(e.target.value)} placeholder="🔍 搜尋品項/標籤（比價）" style={{ ...inp, width: 180 }} />
           {DEPTS.map(d => <button key={d} onClick={() => setCatF(catF === d ? "" : d)} style={{ border: `1.5px solid ${catF === d ? C.accent : C.line}`, background: catF === d ? C.accent : "#fff", color: catF === d ? "#fff" : C.sub, borderRadius: 12, padding: "3px 12px", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>{d}</button>)}
           <label style={{ fontSize: 11.5, color: C.sub, display: "flex", alignItems: "center", gap: 5 }}>希望到貨
             <input type="date" value={needDate} onChange={e => setNeedDate(e.target.value)} style={{ ...inp, colorScheme: "light" }} />
@@ -145,9 +152,9 @@ export default function SupplyView({ view, K, canEdit, confirm, showMoney, userN
           {showMoney && grandTotal > 0 && <span style={{ fontFamily: MONOF, fontSize: 15, fontWeight: 800, color: C.accent, background: "#fbeee6", border: `1.5px solid ${C.accent}`, borderRadius: 8, padding: "5px 14px" }}>本次總計 {nt2(grandTotal)}</span>}
         </div>
         {msg && <div style={{ background: "#eef5ef", border: `1.5px solid ${C.green}`, borderRadius: 8, padding: "7px 12px", marginBottom: 10, fontSize: 12.5, color: "#2c5a38", fontWeight: 600 }}>{msg}</div>}
-        {vlist.length === 0 && <div style={{ padding: 30, textAlign: "center", color: C.faint, background: C.card, border: `1.5px solid ${C.hard}`, borderRadius: 10 }}>這個部門還沒有「有品項清單」的廠商——先到「廠商」頁建品項。</div>}
+        {vlist.length === 0 && <div style={{ padding: 30, textAlign: "center", color: C.faint, background: C.card, border: `1.5px solid ${C.hard}`, borderRadius: 10 }}>{qq ? "沒有符合的品項/標籤——換個關鍵字試試。" : "還沒有可叫貨的正式供應商——到「廠商」頁在廠商名稱前打勾（正式供應商），並建好品項清單。"}</div>}
         {vlist.map(v => {
-          const its = itemsOf(v.id); const pk = picked(v.id);
+          const its = shownOf(v.id); const pk = picked(v.id);
           return (
             <div key={v.id} style={box}>
               <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 12px", background: "#ece4d6" }}>
@@ -165,7 +172,7 @@ export default function SupplyView({ view, K, canEdit, confirm, showMoney, userN
                 const qv = qty[it.id] || "";
                 return (
                   <div key={it.id} style={{ display: "grid", gridTemplateColumns: `minmax(170px,1.4fr) minmax(110px,1fr) 56px ${showMoney ? "76px " : ""}70px 130px${showMoney ? " 86px" : ""}`, gap: 8, alignItems: "center", minHeight: 34, borderTop: `1px solid #f0ead9`, padding: "0 12px", background: Number(qv) > 0 ? "#fbeee6" : "#fff", fontSize: 12.5 }}>
-                    <span style={{ fontWeight: 600, color: C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{it.name}</span>
+                    <span style={{ fontWeight: 600, color: C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{it.name}{it.tags ? <span style={{ fontSize: 9.5, fontWeight: 600, color: C.amber, marginLeft: 5 }}>{String(it.tags).split(/[,，\s]+/).filter(Boolean).map(t => "#" + t).join(" ")}</span> : null}</span>
                     <span style={{ color: C.sub, fontSize: 11.5 }}>{it.spec || "—"}</span>
                     <span style={{ color: C.sub }}>{it.unit || "—"}</span>
                     {showMoney && <span style={{ fontFamily: MONOF, textAlign: "right", color: C.sub }}>{it.price ? Number(it.price).toLocaleString() : "—"}</span>}
@@ -531,7 +538,7 @@ export default function SupplyView({ view, K, canEdit, confirm, showMoney, userN
           <span style={{ background: C.accent, color: "#fff", fontSize: 11.5, fontWeight: 700, borderRadius: 4, padding: "2px 8px" }}>廠商</span>
           <div>
             <div style={{ fontSize: 17, fontWeight: 800, color: C.text }}>供應商與品項</div>
-            <div style={{ fontSize: 11, color: C.faint }}>{(db.vendors || []).length} 家・品項 {(db.vendorItems || []).length} 項・第一層分類 → 廠商 → 品項</div>
+            <div style={{ fontSize: 11, color: C.faint }}>{(db.vendors || []).length} 家・品項 {(db.vendorItems || []).length} 項・名稱前打勾＝正式供應商（才會進叫貨表，置頂）</div>
           </div>
           <div style={{ flex: 1 }} />
           <select value={catF} onChange={e => setCatF(e.target.value)} style={inp}><option value="">全部部門</option>{DEPTS.map(d => <option key={d} value={d}>{d}</option>)}</select>
@@ -548,7 +555,7 @@ export default function SupplyView({ view, K, canEdit, confirm, showMoney, userN
           const renameVcat = (g) => { const n = window.prompt("分類名稱", g); if (n === null || !n.trim() || n === g) return; save({ vendors: db.vendors.map(x => vcatOf(x) === g ? { ...x, vcat: n.trim() } : x), vendorCats: [...new Set((db.vendorCats || []).map(c => c === g ? n.trim() : c))] }); };
           const delVcat = async (g) => { if (await confirm(`移除分類「${g}」？裡面的廠商會移到「未分類」（廠商不會被刪）。`, { confirmLabel: "移除", danger: false })) save({ vendors: db.vendors.map(x => vcatOf(x) === g ? { ...x, vcat: "" } : x), vendorCats: (db.vendorCats || []).filter(c => c !== g) }); };
           return keys2.map(g => {
-            const gvs = vs.filter(v => vcatOf(v) === g);
+            const gvs = vs.filter(v => vcatOf(v) === g).sort((a, b) => (b.official ? 1 : 0) - (a.official ? 1 : 0)); // 正式供應商置頂
             const gOpen = !!collapsed["vc" + g];
             return (
               <div key={g} style={{ border: `1.5px solid ${C.hard}`, borderRadius: 4, marginBottom: 10, overflow: "hidden", background: "#fff" }}>
@@ -570,10 +577,11 @@ export default function SupplyView({ view, K, canEdit, confirm, showMoney, userN
               <React.Fragment key={v.id}>
                 <div onClick={() => setCollapsed(c2 => ({ ...c2, ["v" + v.id]: !c2["v" + v.id] }))}
                   onDragOver={e => dragV && e.preventDefault()} onDrop={() => dropVendor(v.id)}
-                  style={{ display: "grid", gridTemplateColumns: "16px 14px minmax(150px,1fr) 44px 44px minmax(140px,1.3fr) 92px", gap: 8, alignItems: "center", minHeight: 38, borderTop: `1px solid #e0d6bf`, padding: "3px 10px", cursor: "pointer", background: open ? C.soft : "#fff", outline: dragV === v.id ? `2px dashed ${C.accent}` : "none" }}
+                  style={{ display: "grid", gridTemplateColumns: "16px 14px 20px minmax(150px,1fr) 44px 44px minmax(140px,1.3fr) 92px", gap: 8, alignItems: "center", minHeight: 38, borderTop: `1px solid #e0d6bf`, padding: "3px 10px", cursor: "pointer", background: open ? C.soft : "#fff", outline: dragV === v.id ? `2px dashed ${C.accent}` : "none" }}
                   onMouseEnter={e => e.currentTarget.style.background = C.soft} onMouseLeave={e => e.currentTarget.style.background = open ? C.soft : "#fff"}>
                   {canEdit ? <span draggable onDragStart={e => { e.stopPropagation(); setDragV(v.id); }} onDragEnd={() => setDragV(null)} onClick={e => e.stopPropagation()} title="拖曳調整廠商順序" style={{ cursor: "grab", color: "#c8bca6", fontSize: 13, textAlign: "center" }}>⠿</span> : <span />}
                   <span style={{ fontSize: 10, color: C.faint }}>{open ? "▾" : "▸"}</span>
+                  <input type="checkbox" checked={!!v.official} disabled={!canEdit} onClick={e => e.stopPropagation()} onChange={e => { e.stopPropagation(); updV(v.id, { official: e.target.checked }); }} title="正式供應商（打勾＝出現在叫貨表，並置頂）" style={{ accentColor: C.accent, cursor: canEdit ? "pointer" : "default", margin: 0, width: 14, height: 14 }} />
                   <div style={{ overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis" }}>
                     <span style={{ fontSize: 13, fontWeight: 700, color: C.text }}>{v.name || "（未命名）"}</span>
                     {v.en && <span style={{ fontSize: 10.5, color: C.faint, marginLeft: 6 }}>{v.en}</span>}
@@ -597,7 +605,7 @@ export default function SupplyView({ view, K, canEdit, confirm, showMoney, userN
                     <div key={it.id} onDragOver={e => dragI && e.preventDefault()} onDrop={() => dropItem(it.id, v.id)}
                       style={{ display: "grid", gridTemplateColumns: GTCI, gap: 8, alignItems: "center", minHeight: 30, borderTop: `1px solid #f0ead9`, fontSize: 12.5, outline: dragI === it.id ? `2px dashed ${C.accent}` : "none" }}>
                       {canEdit ? <span draggable onDragStart={() => setDragI(it.id)} onDragEnd={() => setDragI(null)} title="拖曳排序／拖到別的分類" style={{ cursor: "grab", color: "#c8bca6", fontSize: 12, textAlign: "center" }}>⠿</span> : <span />}
-                      <span style={{ fontWeight: 600, color: C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{it.name || "（未命名）"}{it.matId ? <span title="來自包材庫" style={{ fontSize: 9.5, color: "#7a5c1e", marginLeft: 4 }}>📦</span> : null}</span>
+                      <span style={{ fontWeight: 600, color: C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{it.name || "（未命名）"}{it.matId ? <span title="來自包材庫" style={{ fontSize: 9.5, color: "#7a5c1e", marginLeft: 4 }}>📦</span> : null}{it.tags ? <span style={{ fontSize: 9.5, fontWeight: 600, color: C.amber, marginLeft: 5 }}>{String(it.tags).split(/[,，\s]+/).filter(Boolean).map(t => "#" + t).join(" ")}</span> : null}</span>
                       <span style={{ color: C.sub, fontSize: 11.5 }}>{it.spec || "—"}</span>
                       <span style={{ color: C.sub }}>{it.unit || "—"}</span>
                       {showMoney && <span style={{ fontFamily: MONOF, textAlign: "right", color: it.price ? C.text : "#d5cbb6" }}>{it.price ? Number(it.price).toLocaleString() : "—"}</span>}
@@ -717,6 +725,10 @@ export default function SupplyView({ view, K, canEdit, confirm, showMoney, userN
                 <label style={{ display: "block", fontSize: 11, color: C.faint, fontWeight: 600, gridColumn: "1 / -1" }}>備註（簡短即可）
                   <input value={selV.note ?? ""} onChange={e => updV(selV.id, { note: e.target.value })} disabled={!canEdit} style={{ ...inp, width: "100%", marginTop: 4 }} />
                 </label>
+                <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12.5, color: C.text, fontWeight: 700, gridColumn: "1 / -1", cursor: canEdit ? "pointer" : "default" }}>
+                  <input type="checkbox" checked={!!selV.official} disabled={!canEdit} onChange={e => updV(selV.id, { official: e.target.checked })} style={{ accentColor: C.accent, width: 15, height: 15 }} />
+                  正式供應商（打勾才會出現在叫貨表，並置頂）
+                </label>
               </div>
             </div>
           </div>
@@ -732,7 +744,7 @@ export default function SupplyView({ view, K, canEdit, confirm, showMoney, userN
                 <button onClick={() => setSel(null)} style={{ background: "none", border: "none", fontSize: 22, cursor: "pointer", color: C.sub }}>×</button>
               </div>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-                {[["name", "品名", "1 / -1"], ["grp", "分類（例：醬料杯類/盒類/食材，留空＝未分類）", "1 / -1"], ["spec", "規格（例：2500入/箱）", "1 / -1"], ["unit", "單位（箱/件/包）"], ...(showMoney ? [["price", "單價"]] : []), ["safeStock", "安全庫存量"]].map(([k, l, span]) => (
+                {[["name", "品名", "1 / -1"], ["grp", "分類（例：醬料杯類/盒類/食材，留空＝未分類）", "1 / -1"], ["spec", "規格（例：2500入/箱）", "1 / -1"], ["tags", "標籤（比價用，逗號分隔，例：薯條,冷凍）", "1 / -1"], ["unit", "單位（箱/件/包）"], ...(showMoney ? [["price", "單價"]] : []), ["safeStock", "安全庫存量"]].map(([k, l, span]) => (
                   <label key={k} style={{ display: "block", fontSize: 11, color: C.faint, fontWeight: 600, gridColumn: span }}>{l}
                     <input value={selI[k] ?? ""} onChange={e => updI(selI.id, { [k]: e.target.value })} disabled={!canEdit} style={{ ...inp, width: "100%", marginTop: 4 }} />
                   </label>
