@@ -73,7 +73,9 @@ async function doScan(days) {
 // 套用規則（範圍：收件匣＋重要郵件＋使用者自建資料夾；keep=白名單優先；目標標籤資料夾本身不掃避免自轉）
 async function doApply(days) {
   const rulesDoc = (await kvGet('sp_lw_pm_mail_rules')) || { rules: [] }
-  const rules = (rulesDoc.rules || []).filter(r => r.enabled !== false && r.match)
+  // scope（規則適用範圍）：'all'＝全部信箱／陣列＝指定信箱；本管線目前只跑 gm77（goodmask77），沒有 scope 的舊規則視同適用
+  const ACCT_ID = 'gm77'
+  const rules = (rulesDoc.rules || []).filter(r => r.enabled !== false && r.match && (!r.scope || r.scope === 'all' || (Array.isArray(r.scope) && r.scope.includes(ACCT_ID))))
   if (!rules.length) return { skipped: '沒有啟用中的規則' }
   const keeps = rules.filter(r => r.action === 'keep')
   const acts = rules.filter(r => r.action !== 'keep')
