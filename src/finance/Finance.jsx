@@ -63,6 +63,8 @@ export default function FinanceView({ K, confirm, canEdit, ReceiptUploader, onLo
   const [posDrill, setPosDrill] = useState(null); // 明細下鑽：{type, key} → 顯示組成該數字的原始資料
   const [posDrillView, setPosDrillView] = useState("list"); // 明細視角：list=清單 / pivot=品項×日期矩陣
   const [posDrillSort, setPosDrillSort] = useState(null);   // 明細排序：{i, dir}
+  const [posSyncBusy, setPosSyncBusy] = useState(false);    // 營運手動更新中
+  const [posMsg, setPosMsg] = useState(null);               // 營運更新結果提示
   const [posGran, setPosGran] = useState("day");            // 比較粒度：day/week/month
   const [posCats, setPosCats] = useState([]);               // 標籤自選：選到的分類做比較（空＝全部）
   const [posPivotCats, setPosPivotCats] = useState(null);   // 矩陣內分類勾選（null=全選）
@@ -101,6 +103,17 @@ export default function FinanceView({ K, confirm, canEdit, ReceiptUploader, onLo
   })(); }, [pos]); // eslint-disable-line
   const saveRecon = (next) => { setRecon(next); window.storage.set(K("pm_recon"), JSON.stringify(next), true).catch(() => {}); };
   const saveBank = (next) => { setBank(next); window.storage.set(K("pm_bank"), JSON.stringify(next), true).catch(() => {}); };
+  // 營運「更新」：mail 到了就手動抓（打烊信一到按一下即上）
+  const runPosSync = async () => {
+    setPosSyncBusy(true);
+    try {
+      const r = await fetch("/api/mail-sync?days=2"); const d = await r.json();
+      const ps = await window.storage.get(K("pm_pos"), true); setPos(ps && ps.value ? JSON.parse(ps.value) : null);
+      const t = d?.pos?.added ? `✓ 更新完成：新入庫 ${d.pos.added} 天日結` : "✓ 已檢查信箱——沒有新的日結信（目前資料已是最新）";
+      setPosMsg(t); setTimeout(() => setPosMsg(m => m === t ? null : m), 8000);
+    } catch (e) { setPosMsg("更新失敗：" + e.message); }
+    setPosSyncBusy(false);
+  };
   const mergeToBank = (rows, srcLabel) => {
     // 資料庫鐵則：只增不改——已存在的列一律不動，僅加入新列
     const cur = bank || { account: "合作金庫 · 喬亞國際餐飲", entries: [] };
@@ -902,12 +915,14 @@ export default function FinanceView({ K, confirm, canEdit, ReceiptUploader, onLo
                   <button key={v} onClick={() => setPosRange(v)} style={{ padding: "5px 10px", borderRadius: 6, border: `1px solid ${posRange === v ? C.line : "transparent"}`, background: posRange === v ? "#fff" : "transparent", color: posRange === v ? C.text : C.sub, fontSize: 12.5, fontWeight: posRange === v ? 700 : 400, cursor: "pointer" }}>{l}</button>
                 ))}
               </div>
+              <button onClick={runPosSync} disabled={posSyncBusy} title="信箱有新日結信就立刻入庫" style={{ border: `1px solid ${C.blue}`, background: "#fff", color: C.blue, borderRadius: 8, padding: "6px 14px", fontSize: 12.5, fontWeight: 700, cursor: posSyncBusy ? "wait" : "pointer" }}>{posSyncBusy ? "更新中…" : "🔄 更新"}</button>
               <div style={{ display: "inline-flex", background: C.soft, border: `1px solid ${C.line}`, borderRadius: 8, padding: 2, gap: 2 }}>
                 {[["day", "每天"], ["week", "每週"], ["month", "每月"]].map(([v, l]) => (
                   <button key={v} onClick={() => setPosGran(v)} style={{ padding: "5px 10px", borderRadius: 6, border: `1px solid ${posGran === v ? C.line : "transparent"}`, background: posGran === v ? "#fff" : "transparent", color: posGran === v ? C.text : C.sub, fontSize: 12.5, fontWeight: posGran === v ? 700 : 400, cursor: "pointer" }}>{l}</button>
                 ))}
               </div>
             </div>
+            {posMsg && <div style={{ background: "#eef5ef", border: `1.5px solid ${C.green}`, borderRadius: 8, padding: "7px 12px", marginBottom: 10, fontSize: 12.5, color: "#2c5a38", fontWeight: 600 }}>{posMsg}</div>}
             {!days.length ? (
               <div style={{ padding: 30, textAlign: "center", color: C.faint, background: C.card, border: `1px solid ${C.line}`, borderRadius: 10 }}>還沒有資料——POS 日結信寄到後會自動進來（每天）。</div>
             ) : (
@@ -919,6 +934,66 @@ export default function FinanceView({ K, confirm, canEdit, ReceiptUploader, onLo
                   {kpi("來客(堂食)", guestSum || "—", avgTicket ? "客單 " + fmt(avgTicket) : null, null, () => openDrill({ type: "days" }))}
                   {kpi("最新一天", fmt(last.revenue), last.date.slice(5), null, () => openDrill({ type: "day", key: last.date }))}
                 </div>
+                {posGran === "day" ? (
+                <div style={{ border: "1.5px solid #c8bca6", borderRadius: 8, background: C.card, overflow: "hidden" }}>
+                  <div style={{ overflowX: "auto" }}><div style={{ minWidth: 900 }}>
+                    {(() => {
+                      const GTC = "88px minmax(140px,1fr) 96px 64px 64px 80px 96px 96px 96px 80px";
+                      const hc = { fontSize: 10.5, letterSpacing: 0.8, color: C.faint, fontWeight: 700, padding: "7px 8px", whiteSpace: "nowrap" };
+                      const cell = (v, extra) => <div style={{ padding: "0 8px", fontFamily: MONOF, fontSize: 11.5, textAlign: "right", color: C.sub, ...extra }}>{v}</div>;
+                      return (
+                        <>
+                          <div style={{ display: "grid", gridTemplateColumns: GTC, background: C.soft, borderBottom: "1.5px solid #c8bca6" }}>
+                            <div style={hc}>日期</div><div style={hc}>店</div><div style={{ ...hc, textAlign: "right" }}>營收</div><div style={{ ...hc, textAlign: "right" }}>單數</div><div style={{ ...hc, textAlign: "right" }}>來客</div><div style={{ ...hc, textAlign: "right" }}>客單(÷來客)</div><div style={{ ...hc, textAlign: "right" }}>現金</div><div style={{ ...hc, textAlign: "right" }}>信用卡</div><div style={{ ...hc, textAlign: "right" }}>Uber</div><div style={{ ...hc, textAlign: "right" }}>折扣</div>
+                          </div>
+                          <div style={{ maxHeight: "50vh", overflowY: "auto" }}>
+                            {[...days].reverse().map((d, i) => (
+                              <div key={d.id} onClick={() => openDrill({ type: "day", key: d.date })} title="點我看該日完整原始資料" style={{ display: "grid", gridTemplateColumns: GTC, alignItems: "center", minHeight: 32, borderTop: i ? "1px solid #f0ead9" : "none", background: i % 2 ? "#f8f4ea" : C.card, cursor: "pointer" }}
+                                onMouseEnter={e => e.currentTarget.style.background = "#f4efe5"} onMouseLeave={e => e.currentTarget.style.background = i % 2 ? "#f8f4ea" : C.card}>
+                                <div style={{ padding: "0 8px", fontFamily: MONOF, fontSize: 11.5, color: C.sub }}>{d.date.slice(2)}</div>
+                                <div style={{ padding: "0 8px", fontSize: 11.5, color: C.sub, overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis" }}>{d.store}</div>
+                                {cell(fmt(d.revenue), { fontWeight: 700, color: C.text })}
+                                {cell(d.txCount)}{cell(d.guests || "—")}{cell(d.guests ? fmt(ticket(d.revenue, d.guests)) : "—")}
+                                {cell(fmt(d.cash || 0))}{cell(fmt(d.card || 0))}{cell(fmt(d.uber || 0))}
+                                {cell(d.discount ? fmt(d.discount) : "—", { color: d.discount ? C.accent : "#d5cbb6" })}
+                              </div>
+                            ))}
+                          </div>
+                        </>
+                      );
+                    })()}
+                  </div></div>
+                </div>
+                ) : (
+                  <div style={{ border: "1.5px solid #c8bca6", borderRadius: 8, background: C.card, overflow: "hidden" }}>
+                    <div style={{ overflowX: "auto" }}><div style={{ minWidth: 860 }}>
+                      {(() => {
+                        const GTC2 = "110px 56px 110px 104px 64px 64px 80px 100px 100px 96px 84px";
+                        const hc2 = { fontSize: 10.5, letterSpacing: 0.8, color: C.faint, fontWeight: 700, padding: "7px 8px", whiteSpace: "nowrap", textAlign: "right" };
+                        const cell2 = (v, extra) => <div style={{ padding: "0 8px", fontFamily: MONOF, fontSize: 11.5, textAlign: "right", color: C.sub, ...extra }}>{v}</div>;
+                        return (
+                          <>
+                            <div style={{ display: "grid", gridTemplateColumns: GTC2, background: C.soft, borderBottom: "1.5px solid #c8bca6" }}>
+                              <div style={{ ...hc2, textAlign: "left" }}>{posGran === "week" ? "週（起始日）" : "月份"}</div><div style={hc2}>天數</div><div style={hc2}>營收</div><div style={hc2}>日均</div><div style={hc2}>單數</div><div style={hc2}>來客</div><div style={hc2}>客單</div><div style={hc2}>現金</div><div style={hc2}>信用卡</div><div style={hc2}>Uber</div><div style={hc2}>折扣</div>
+                            </div>
+                            {[...periods].reverse().map((pp, i) => (
+                              <div key={pp.key} style={{ display: "grid", gridTemplateColumns: GTC2, alignItems: "center", minHeight: 32, borderTop: i ? "1px solid #f0ead9" : "none", background: i % 2 ? "#f8f4ea" : C.card }}>
+                                <div style={{ padding: "0 8px", fontFamily: MONOF, fontSize: 11.5, color: C.text, fontWeight: 700 }}>{posGran === "week" ? pp.key.slice(5) + " 起" : pp.key}</div>
+                                {cell2(pp.nDays)}
+                                {cell2(fmt(pp.revenue), { fontWeight: 700, color: C.text })}
+                                {cell2(fmt(Math.round(pp.revenue / Math.max(1, pp.nDays))))}
+                                {cell2(pp.txCount)}{cell2(pp.guests || "—")}
+                                {cell2(pp.guests ? fmt(Math.round(pp.revenue / pp.guests)) : "—")}
+                                {cell2(fmt(pp.cash))}{cell2(fmt(pp.card))}{cell2(fmt(pp.uber))}
+                                {cell2(pp.discount ? fmt(pp.discount) : "—", { color: pp.discount ? C.accent : "#d5cbb6" })}
+                              </div>
+                            ))}
+                          </>
+                        );
+                      })()}
+                    </div></div>
+                  </div>
+                )}
                 {insights.length > 0 && (
                   <div style={{ ...chartBox2, marginBottom: 10, borderLeft: `4px solid ${C.accent}` }}>
                     <div style={{ fontSize: 11.5, fontWeight: 700, color: C.sub, marginBottom: 6 }}>🧠 重點摘要・提醒・建議 <span style={{ fontWeight: 400, color: C.faint }}>（全部由原始資料即時計算）</span></div>
@@ -1004,66 +1079,6 @@ export default function FinanceView({ K, confirm, canEdit, ReceiptUploader, onLo
                     </div>
                   </div>
                 </div>
-                {posGran === "day" ? (
-                <div style={{ border: "1.5px solid #c8bca6", borderRadius: 8, background: C.card, overflow: "hidden" }}>
-                  <div style={{ overflowX: "auto" }}><div style={{ minWidth: 900 }}>
-                    {(() => {
-                      const GTC = "88px minmax(140px,1fr) 96px 64px 64px 80px 96px 96px 96px 80px";
-                      const hc = { fontSize: 10.5, letterSpacing: 0.8, color: C.faint, fontWeight: 700, padding: "7px 8px", whiteSpace: "nowrap" };
-                      const cell = (v, extra) => <div style={{ padding: "0 8px", fontFamily: MONOF, fontSize: 11.5, textAlign: "right", color: C.sub, ...extra }}>{v}</div>;
-                      return (
-                        <>
-                          <div style={{ display: "grid", gridTemplateColumns: GTC, background: C.soft, borderBottom: "1.5px solid #c8bca6" }}>
-                            <div style={hc}>日期</div><div style={hc}>店</div><div style={{ ...hc, textAlign: "right" }}>營收</div><div style={{ ...hc, textAlign: "right" }}>單數</div><div style={{ ...hc, textAlign: "right" }}>來客</div><div style={{ ...hc, textAlign: "right" }}>客單(÷來客)</div><div style={{ ...hc, textAlign: "right" }}>現金</div><div style={{ ...hc, textAlign: "right" }}>信用卡</div><div style={{ ...hc, textAlign: "right" }}>Uber</div><div style={{ ...hc, textAlign: "right" }}>折扣</div>
-                          </div>
-                          <div style={{ maxHeight: "50vh", overflowY: "auto" }}>
-                            {[...days].reverse().map((d, i) => (
-                              <div key={d.id} onClick={() => openDrill({ type: "day", key: d.date })} title="點我看該日完整原始資料" style={{ display: "grid", gridTemplateColumns: GTC, alignItems: "center", minHeight: 32, borderTop: i ? "1px solid #f0ead9" : "none", background: i % 2 ? "#f8f4ea" : C.card, cursor: "pointer" }}
-                                onMouseEnter={e => e.currentTarget.style.background = "#f4efe5"} onMouseLeave={e => e.currentTarget.style.background = i % 2 ? "#f8f4ea" : C.card}>
-                                <div style={{ padding: "0 8px", fontFamily: MONOF, fontSize: 11.5, color: C.sub }}>{d.date.slice(2)}</div>
-                                <div style={{ padding: "0 8px", fontSize: 11.5, color: C.sub, overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis" }}>{d.store}</div>
-                                {cell(fmt(d.revenue), { fontWeight: 700, color: C.text })}
-                                {cell(d.txCount)}{cell(d.guests || "—")}{cell(d.guests ? fmt(ticket(d.revenue, d.guests)) : "—")}
-                                {cell(fmt(d.cash || 0))}{cell(fmt(d.card || 0))}{cell(fmt(d.uber || 0))}
-                                {cell(d.discount ? fmt(d.discount) : "—", { color: d.discount ? C.accent : "#d5cbb6" })}
-                              </div>
-                            ))}
-                          </div>
-                        </>
-                      );
-                    })()}
-                  </div></div>
-                </div>
-                ) : (
-                  <div style={{ border: "1.5px solid #c8bca6", borderRadius: 8, background: C.card, overflow: "hidden" }}>
-                    <div style={{ overflowX: "auto" }}><div style={{ minWidth: 860 }}>
-                      {(() => {
-                        const GTC2 = "110px 56px 110px 104px 64px 64px 80px 100px 100px 96px 84px";
-                        const hc2 = { fontSize: 10.5, letterSpacing: 0.8, color: C.faint, fontWeight: 700, padding: "7px 8px", whiteSpace: "nowrap", textAlign: "right" };
-                        const cell2 = (v, extra) => <div style={{ padding: "0 8px", fontFamily: MONOF, fontSize: 11.5, textAlign: "right", color: C.sub, ...extra }}>{v}</div>;
-                        return (
-                          <>
-                            <div style={{ display: "grid", gridTemplateColumns: GTC2, background: C.soft, borderBottom: "1.5px solid #c8bca6" }}>
-                              <div style={{ ...hc2, textAlign: "left" }}>{posGran === "week" ? "週（起始日）" : "月份"}</div><div style={hc2}>天數</div><div style={hc2}>營收</div><div style={hc2}>日均</div><div style={hc2}>單數</div><div style={hc2}>來客</div><div style={hc2}>客單</div><div style={hc2}>現金</div><div style={hc2}>信用卡</div><div style={hc2}>Uber</div><div style={hc2}>折扣</div>
-                            </div>
-                            {[...periods].reverse().map((pp, i) => (
-                              <div key={pp.key} style={{ display: "grid", gridTemplateColumns: GTC2, alignItems: "center", minHeight: 32, borderTop: i ? "1px solid #f0ead9" : "none", background: i % 2 ? "#f8f4ea" : C.card }}>
-                                <div style={{ padding: "0 8px", fontFamily: MONOF, fontSize: 11.5, color: C.text, fontWeight: 700 }}>{posGran === "week" ? pp.key.slice(5) + " 起" : pp.key}</div>
-                                {cell2(pp.nDays)}
-                                {cell2(fmt(pp.revenue), { fontWeight: 700, color: C.text })}
-                                {cell2(fmt(Math.round(pp.revenue / Math.max(1, pp.nDays))))}
-                                {cell2(pp.txCount)}{cell2(pp.guests || "—")}
-                                {cell2(pp.guests ? fmt(Math.round(pp.revenue / pp.guests)) : "—")}
-                                {cell2(fmt(pp.cash))}{cell2(fmt(pp.card))}{cell2(fmt(pp.uber))}
-                                {cell2(pp.discount ? fmt(pp.discount) : "—", { color: pp.discount ? C.accent : "#d5cbb6" })}
-                              </div>
-                            ))}
-                          </>
-                        );
-                      })()}
-                    </div></div>
-                  </div>
-                )}
                 <div style={{ fontSize: 11.5, color: C.faint, marginTop: 8 }}>資料來源：Eats365 日結信六個分頁全數入庫（摘要 pm_pos＋明細 pm_pos_d_月份，只增不改）。之後接：週/月彙總、POS信用卡 ↔ 銀行入帳核對、進銷存成本對照。</div>
               </>
             )}
