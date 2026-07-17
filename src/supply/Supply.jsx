@@ -565,6 +565,44 @@ export default function SupplyView({ view, K, canEdit, confirm, showMoney, userN
             );
           })}
         </div>
+        {/* 📦 包材庫（自 ground-pack 搬來的 36 項）：在這裡歸屬給廠商 → 會出現在該廠商品項清單＆產品綁定分組（張良 2026-07-18） */}
+        {(() => {
+          const unassigned = (db.materials || []).filter(m => !m.vendor_id);
+          const assigned = (db.materials || []).filter(m => m.vendor_id);
+          const updM = (id, fp) => save({ materials: (db.materials || []).map(x => x.id === id ? { ...x, ...fp } : x) });
+          const assign = (m, vid) => {
+            if (!vid) return;
+            // 歸屬：包材標上廠商 + 同步塞進該廠商的叫貨品項清單（帶 matId 連結）
+            const already = (db.vendorItems || []).some(x => x.matId === m.id && x.vendor_id === vid);
+            save({
+              materials: (db.materials || []).map(x => x.id === m.id ? { ...x, vendor_id: vid } : x),
+              vendorItems: already ? db.vendorItems : [...(db.vendorItems || []), { id: rid("vi"), vendor_id: vid, matId: m.id, name: m.name, spec: m.spec || "", unit: "件", price: "", safeStock: "", sort: (db.vendorItems || []).length }],
+            });
+            flash(`✓「${m.name}」已歸屬給「${(db.vendors.find(v => v.id === vid) || {}).name}」，同時加進該廠商的品項清單（單價記得補）`);
+          };
+          return (
+            <div style={{ marginTop: 14, border: `1.5px solid ${C.hard}`, borderRadius: 4, overflow: "hidden" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", background: "#ece4d6" }}>
+                <span style={{ fontSize: 13, fontWeight: 800, color: C.text }}>📦 包材庫</span>
+                <span style={{ fontSize: 11, color: C.faint }}>未歸屬 {unassigned.length}・已歸屬 {assigned.length}——歸屬給廠商後會出現在該廠商品項清單與產品綁定分組</span>
+              </div>
+              {unassigned.length === 0 ? <div style={{ padding: 12, fontSize: 12, color: C.green, fontWeight: 600, textAlign: "center" }}>✓ 全部包材都已歸屬廠商</div> : unassigned.map((m, i) => (
+                <div key={m.id} style={{ display: "grid", gridTemplateColumns: "minmax(120px,1fr) minmax(100px,1fr) minmax(90px,0.8fr) 180px 26px", gap: 8, alignItems: "center", padding: "4px 12px", borderTop: `1px solid #e0d6bf`, background: i % 2 ? "#faf6ec" : "#fff", fontSize: 12.5 }}>
+                  <input value={m.name} onChange={e => canEdit && updM(m.id, { name: e.target.value })} disabled={!canEdit} style={{ border: "none", background: "transparent", fontSize: 12.5, fontWeight: 600, color: C.text, outline: "none" }} />
+                  <input value={m.spec || ""} onChange={e => canEdit && updM(m.id, { spec: e.target.value })} disabled={!canEdit} placeholder="規格" style={{ border: "none", background: "transparent", fontSize: 11.5, color: C.sub, outline: "none" }} />
+                  <span style={{ fontSize: 10.5, color: C.faint }}>{m.grp}</span>
+                  {canEdit ? (
+                    <select value="" onChange={e => assign(m, e.target.value)} style={{ ...inp, padding: "3px 6px", fontSize: 11.5 }}>
+                      <option value="">歸屬給廠商…</option>
+                      {(db.vendors || []).filter(v => v.name).map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
+                    </select>
+                  ) : <span />}
+                  {canEdit ? <button onClick={async () => { if (await confirm(`刪除包材「${m.name}」？`, { confirmLabel: "刪除" })) save({ materials: (db.materials || []).filter(x => x.id !== m.id), productPackaging: (db.productPackaging || []).filter(x => x.packaging_id !== m.id) }); }} style={{ border: "none", background: "none", color: C.faint, cursor: "pointer", fontSize: 13 }}>×</button> : <span />}
+                </div>
+              ))}
+            </div>
+          );
+        })()}
         {/* 廠商編輯 */}
         {selV && (
           <div onClick={e => e.target === e.currentTarget && setSel(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.4)", zIndex: 700, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
@@ -743,20 +781,32 @@ export default function SupplyView({ view, K, canEdit, confirm, showMoney, userN
             {/* 包材綁定 */}
             <div style={{ marginTop: 14 }}>
               <div style={{ fontSize: 12, fontWeight: 700, color: C.sub, marginBottom: 6 }}>📦 綁定包材（{packCount(selP.id)}）</div>
-              <div style={{ maxHeight: 190, overflowY: "auto", border: `1px solid ${C.line}`, borderRadius: 8, padding: "6px 10px" }}>
-                {(db.materials || []).map(m => {
-                  const on = (db.productPackaging || []).some(x => x.product_id === selP.id && x.packaging_id === m.id);
-                  return (
-                    <label key={m.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "3px 0", fontSize: 12.5, color: C.text, cursor: canEdit ? "pointer" : "default" }}>
-                      <input type="checkbox" checked={on} disabled={!canEdit} onChange={e => {
-                        const pp = db.productPackaging || [];
-                        save({ productPackaging: e.target.checked ? [...pp, { product_id: selP.id, packaging_id: m.id, sort: pp.length }] : pp.filter(x => !(x.product_id === selP.id && x.packaging_id === m.id)) });
-                      }} />
-                      <span style={{ fontWeight: 600 }}>{m.name}</span>
-                      <span style={{ fontSize: 10.5, color: C.faint }}>{m.grp}{m.spec ? `・${m.spec}` : ""}</span>
-                    </label>
-                  );
-                })}
+              {/* 包材依「歸屬廠商」分組（張良：包材要隸屬在廠商的品項清單下）；未歸屬的到 廠商頁→包材庫 指定 */}
+              <div style={{ maxHeight: 220, overflowY: "auto", border: `1px solid ${C.line}`, borderRadius: 8, padding: "6px 10px" }}>
+                {(() => {
+                  const vname = (vid) => (db.vendors || []).find(v => v.id === vid)?.name || "";
+                  const grps = {};
+                  (db.materials || []).forEach(m => { const k = m.vendor_id ? vname(m.vendor_id) : "（未歸屬廠商——到 廠商頁 最下面的包材庫指定）"; (grps[k] = grps[k] || []).push(m); });
+                  const keys = Object.keys(grps).sort((a, b) => (a.startsWith("（") ? 1 : 0) - (b.startsWith("（") ? 1 : 0) || a.localeCompare(b, "zh-TW"));
+                  return keys.map(k => (
+                    <div key={k} style={{ marginBottom: 6 }}>
+                      <div style={{ fontSize: 10.5, fontWeight: 800, color: k.startsWith("（") ? C.faint : C.blue, margin: "4px 0 2px" }}>🏭 {k}</div>
+                      {grps[k].map(m => {
+                        const on = (db.productPackaging || []).some(x => x.product_id === selP.id && x.packaging_id === m.id);
+                        return (
+                          <label key={m.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "3px 0 3px 8px", fontSize: 12.5, color: C.text, cursor: canEdit ? "pointer" : "default" }}>
+                            <input type="checkbox" checked={on} disabled={!canEdit} onChange={e => {
+                              const pp = db.productPackaging || [];
+                              save({ productPackaging: e.target.checked ? [...pp, { product_id: selP.id, packaging_id: m.id, sort: pp.length }] : pp.filter(x => !(x.product_id === selP.id && x.packaging_id === m.id)) });
+                            }} />
+                            <span style={{ fontWeight: 600 }}>{m.name}</span>
+                            <span style={{ fontSize: 10.5, color: C.faint }}>{m.grp}{m.spec ? `・${m.spec}` : ""}</span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  ));
+                })()}
               </div>
             </div>
           </div>
