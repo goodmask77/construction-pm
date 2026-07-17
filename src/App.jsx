@@ -4759,11 +4759,26 @@ function VaultView({ onLog }) {
     } catch (_) { setErr("主密碼錯誤，解不開"); }
     setBusy(false);
   };
-  const lock = () => { keyRef.current = null; saltRef.current = null; setEntries(null); setReveal({}); setPw(""); };
-  const commit = async (list) => { setEntries(list); try { await save(list); onLog?.("編輯", "更新密碼金庫"); } catch (_) { setErr("儲存失敗"); } };
-  const addEntry = () => commit([...(entries || []), { id: "v" + Math.random().toString(36).slice(2, 8), cat: "company", name: "", account: "", password: "", url: "", notes: "" }]);
+  // 存檔防抖：打字每敲一鍵都 commit 會「每個字存一次庫＋記一筆操作紀錄」（張良 2026-07-18 抓到刷版 bug）
+  // → 畫面即時更新，但實際加密寫庫＋記錄等停止輸入 1 秒後才做一次
+  const saveTimer = useRef(null); const pendingRef = useRef(null);
+  const flushSave = () => {
+    if (!saveTimer.current) return;
+    clearTimeout(saveTimer.current); saveTimer.current = null;
+    const list = pendingRef.current;
+    if (list) save(list).then(() => onLog?.("編輯", "更新密碼金庫")).catch(() => setErr("儲存失敗"));
+  };
+  const commit = (list, instant) => {
+    setEntries(list); pendingRef.current = list;
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    if (instant) { saveTimer.current = null; save(list).then(() => onLog?.("編輯", "更新密碼金庫")).catch(() => setErr("儲存失敗")); return; }
+    saveTimer.current = setTimeout(() => { saveTimer.current = null; flushSave2(); }, 1000);
+  };
+  const flushSave2 = () => { const list = pendingRef.current; if (list) save(list).then(() => onLog?.("編輯", "更新密碼金庫")).catch(() => setErr("儲存失敗")); };
+  const lock = () => { flushSave(); keyRef.current = null; saltRef.current = null; setEntries(null); setReveal({}); setPw(""); };
+  const addEntry = () => commit([...(entries || []), { id: "v" + Math.random().toString(36).slice(2, 8), cat: "company", name: "", account: "", password: "", url: "", notes: "" }], true);
   const upd = (id, k, v) => commit(entries.map(e => e.id === id ? { ...e, [k]: v } : e));
-  const del = (id) => commit(entries.filter(e => e.id !== id));
+  const del = (id) => commit(entries.filter(e => e.id !== id), true);
   const copy = (t) => { try { navigator.clipboard.writeText(t); } catch (_) {} };
   const [sortKey, setSortKey] = useState("cat"); const [sortDir, setSortDir] = useState(1);
   const [imp, setImp] = useState(null); // 匯入面板 {mode,text,cat,preview,busy,err}
