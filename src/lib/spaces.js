@@ -17,7 +17,9 @@ export const SPACE_CONF = {
   },
   team: {
     showCost: false,
-    hideTabs: ["compare"], // 團隊不需要比價
+    // 任務板(overview)/進度(gantt) 與任務中心重疊尷尬（張良 2026-07-18）→ 收起，任務中心一站搞定（清單/看板/時間軸/甘特都有）；資料保留，要回來把這兩個從 hideTabs 拿掉即可
+    hideTabs: ["compare", "overview", "gantt"],
+    defaultView: "tasks",
     labels: { cat: "專案/群組", item: "任務", overview: "任務板", gantt: "進度", subtitle: "團隊任務追蹤" },
     aiRole: "你是團隊專案協作助理，協助追蹤每個人的任務進度、彙整待辦與提醒、整理會議與決策。請用繁體中文、簡潔專業，必要時條列重點。",
   },
