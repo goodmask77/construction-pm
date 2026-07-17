@@ -351,9 +351,19 @@ async function loadCatalogText() {
 // 供應鏈（sp_supply_pm_supply：產品/物料/廠商）→ 文字
 async function loadSupplyText() {
   try {
-    const v = (await kvGetMany(['sp_supply_pm_supply']))['sp_supply_pm_supply']
+    const kv2 = await kvGetMany(['sp_supply_pm_supply', 'sp_supply_pm_orders'])
+    const v = kv2['sp_supply_pm_supply']
     if (!v || !Array.isArray(v.products) || !v.products.length) return ''
     const lines = [`\n\n【供應鏈（產品 ${v.products.length} 項・物料/包材 ${(v.materials || []).length} 項・廠商 ${(v.vendors || []).length} 家）】`]
+    const ods = Array.isArray(kv2['sp_supply_pm_orders']) ? kv2['sp_supply_pm_orders'] : []
+    if (ods.length) {
+      lines.push(`【叫貨紀錄（最近 ${Math.min(ods.length, 15)} 筆）】`)
+      ods.slice(0, 15).forEach(od => {
+        const amt = (od.items || []).reduce((t, x) => t + (Number(x.price) || 0) * (x.qty || 0), 0)
+        const bad = od.check && Object.values(od.check.items || {}).filter(x => x.st && x.st !== '✓ 正確')
+        lines.push(`  - ${(od.ts || '').slice(5, 10)} ${od.vendorName}｜${(od.items || []).map(x => `${x.name}×${x.qty}`).join('、')}｜NT$${Math.round(amt).toLocaleString()}｜${od.status}${bad && bad.length ? `｜⚠驗收問題:${bad.map(x => x.st).join('/')}` : ''}`)
+      })
+    }
     const byCat = {}
     v.products.forEach(x => { (byCat[x.category || '未分類'] = byCat[x.category || '未分類'] || []).push(x.name) })
     Object.entries(byCat).forEach(([c, arr]) => lines.push(`  - ${c}：${arr.join('、')}`))
