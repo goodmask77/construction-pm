@@ -2424,30 +2424,43 @@ function GroupsView({ cats, canEdit, requireLogin, settings, setSettings, journa
   const [seen, setSeen] = useState(null);
   const [cfg, setCfg] = useState({});
   const [saving, setSaving] = useState(false);
-  const updSettings = (k, v) => setSettings && setSettings({ ...(settings || {}), [k]: v });
+  // 設定是全域的：群組/LINE 通知資料一律讀寫「工程空間（bot 老家）」的 key，不跟目前空間走
+  // pm_group_seen / pm_bot_groups 本來就是 bot 寫的無前綴全域 key；LINE 通知設定住在工程空間的 pm_settings
+  const [gset, setGset] = useState(CURRENT_SPACE === "construction" ? (settings || {}) : null);
+  const [gcats, setGcats] = useState(CURRENT_SPACE === "construction" ? (cats || []) : []); // 綁定工程用的大項＝一律工程空間的
+  const updSettings = (k, v) => {
+    const next = { ...(gset || {}), [k]: v };
+    setGset(next);
+    if (CURRENT_SPACE === "construction") { setSettings && setSettings(next); }
+    else { window.storage.set("pm_settings", JSON.stringify(next), true).catch(() => {}); }
+  };
 
   useEffect(() => {
     (async () => {
       try {
-        const s = await window.storage.get(K("pm_group_seen"), true);
-        const c = await window.storage.get(K("pm_bot_groups"), true);
+        const s = await window.storage.get("pm_group_seen", true);
+        const c = await window.storage.get("pm_bot_groups", true);
         setSeen(s && s.value ? JSON.parse(s.value) : {});
         setCfg(c && c.value ? JSON.parse(c.value) : {});
       } catch { setSeen({}); setCfg({}); }
+      if (CURRENT_SPACE !== "construction") {
+        try { const r = await window.storage.get("pm_settings", true); setGset(r && r.value ? JSON.parse(r.value) : {}); } catch (_) { setGset({}); }
+        try { const r = await window.storage.get("pm_data", true); const d = r && r.value ? JSON.parse(r.value) : []; setGcats(Array.isArray(d) ? d : []); } catch (_) { setGcats([]); }
+      }
     })();
-  }, []);
+  }, []); // eslint-disable-line
 
   const guard = () => { if (!canEdit) { requireLogin && requireLogin(); return false; } return true; };
   const persist = async (next) => {
     setCfg(next); setSaving(true);
     onLog?.("編輯", "調整 LINE 群組設定");
-    try { await window.storage.set(K("pm_bot_groups"), JSON.stringify(next), true); } catch (_) {}
+    try { await window.storage.set("pm_bot_groups", JSON.stringify(next), true); } catch (_) {}
     setSaving(false);
   };
   const effMode = (gid) => { const c = cfg[gid] || {}; return c.mode || (gid === DEFAULT_LINE_GROUP ? "internal" : (c.catId ? "vendor" : "locked")); };
   const effDigest = (gid) => (cfg[gid]?.digest !== false);
   const setMode = (gid, mode) => { if (!guard()) return; const c = { ...(cfg[gid] || {}) }; c.mode = mode; if (mode !== "vendor") { delete c.catId; delete c.catName; } persist({ ...cfg, [gid]: c }); };
-  const setVendorCat = (gid, catId) => { if (!guard()) return; const cat = (cats || []).find(x => x.id === catId); persist({ ...cfg, [gid]: { ...(cfg[gid] || {}), mode: "vendor", catId, catName: cat ? cat.name : "" } }); };
+  const setVendorCat = (gid, catId) => { if (!guard()) return; const cat = (gcats || []).find(x => x.id === catId); persist({ ...cfg, [gid]: { ...(cfg[gid] || {}), mode: "vendor", catId, catName: cat ? cat.name : "" } }); };
   const toggleDigest = (gid) => { if (!guard()) return; persist({ ...cfg, [gid]: { ...(cfg[gid] || {}), digest: !effDigest(gid) } }); };
   const effMonitor = (gid) => (cfg[gid]?.monitor === true);
   const toggleMonitor = (gid) => { if (!guard()) return; persist({ ...cfg, [gid]: { ...(cfg[gid] || {}), monitor: !effMonitor(gid) } }); };
@@ -2458,7 +2471,7 @@ function GroupsView({ cats, canEdit, requireLogin, settings, setSettings, journa
     if (!guard()) return;
     if (!window.confirm("從清單移除這個群？\n（若 D哥 還在群裡，下次有人講話會再自動出現；只有「已被移出/解散」的死群才會真正消失）")) return;
     const ns = { ...seen }; delete ns[gid]; setSeen(ns);
-    try { window.storage.set(K("pm_group_seen"), JSON.stringify(ns), true); } catch (_) {}
+    try { window.storage.set("pm_group_seen", JSON.stringify(ns), true); } catch (_) {}
     const nc = { ...cfg }; delete nc[gid]; persist(nc);
   };
 
@@ -2543,7 +2556,7 @@ function GroupsView({ cats, canEdit, requireLogin, settings, setSettings, journa
                       <span>
                         <select value={cfg[gid]?.catId || ""} onChange={e => setVendorCat(gid, e.target.value)} style={{ ...selStyle, borderColor: cfg[gid]?.catId ? BORDER : ACCENT }}>
                           <option value="">— 請選 —</option>
-                          {(cats || []).map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                          {(gcats || []).map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                         </select>
                         {!cfg[gid]?.catId && <span style={{ color: ACCENT, fontSize: 11, marginLeft: 6 }}>⚠️未綁</span>}
                       </span>
@@ -2568,7 +2581,7 @@ function GroupsView({ cats, canEdit, requireLogin, settings, setSettings, journa
       {/* LINE 通知設定（從 AI設定 整合過來）*/}
       {settings && (
         <div style={{ marginTop: 22 }}>
-          <LineNotifySettings settings={settings} upd={updSettings} cats={cats} journal={journal} events={events} plans={plans} />
+          <LineNotifySettings settings={gset || {}} upd={updSettings} cats={gcats} journal={journal} events={events} plans={plans} />
         </div>
       )}
     </div>
