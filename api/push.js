@@ -19,6 +19,16 @@ export async function logPush(to, n, src) {
   } catch (_) {}
 }
 
+// 群組人數：LINE 群組推播「按群內人數」計費（1 則 × N 人 = N 則）——查人數才能算真實扣多少
+export async function groupMembers(to) {
+  try {
+    if (!/^C/.test(String(to || ''))) return 1
+    const r = await fetch(`https://api.line.me/v2/bot/group/${to}/members/count`, { headers: { authorization: `Bearer ${TOKEN}` } })
+    const d = r.ok ? await r.json() : null
+    return d?.count || 1
+  } catch (_) { return 1 }
+}
+
 export default async function handler(req, res) {
   try {
     if (req.method !== 'POST') return res.status(405).json({ ok: false, error: '僅支援 POST' })
@@ -42,8 +52,10 @@ export default async function handler(req, res) {
       const d = await r.json().catch(() => ({}))
       return res.status(400).json({ ok: false, error: d?.message || `LINE 回應 ${r.status}` })
     }
-    await logPush(to, messages.length, body.src || 'App推播(叫貨單/D發群)')
-    return res.status(200).json({ ok: true })
+    const members = await groupMembers(to)
+    const billed = messages.length * members
+    await logPush(to, billed, body.src || 'App推播(叫貨單/D發群)')
+    return res.status(200).json({ ok: true, members, billed })
   } catch (e) {
     return res.status(500).json({ ok: false, error: e?.message || '伺服器錯誤' })
   }

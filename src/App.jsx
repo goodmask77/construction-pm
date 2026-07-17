@@ -5651,7 +5651,7 @@ function LineQuotaBlock() {
         after = q2?.used ?? after;
         if (after != null && before != null && after > before) break;
       }
-      setTest({ before, after });
+      setTest({ before, after, members: pr.members, billed: pr.billed });
       load();
     } catch (e) { setTest({ err: String(e) }); }
   };
@@ -5671,25 +5671,28 @@ function LineQuotaBlock() {
       {test && test !== "run" && (
         <div style={{ background: test.err ? "#fdf3f2" : "#eef5ef", border: `1.5px solid ${test.err ? "#b3261e" : "#3f7d4e"}`, borderRadius: 8, padding: "7px 12px", marginBottom: 8, fontSize: 12.5, fontWeight: 600, color: test.err ? "#8c1d16" : "#2c5a38" }}>
           {test.err ? "❌ 檢測失敗：" + test.err
-            : `推播前 ${test.before ?? "?"} → 推播後 ${test.after ?? "?"}` + (
-              test.after - test.before === 1 ? "（+1）✓ 計數正常：發 1 則就加 1"
-              : test.after === test.before ? "（+0）⚠ 官方計數還沒跳——等幾秒按「↻ 重新整理」再看"
-              : `（+${test.after - test.before}）⚠ 多跳了——同一時間有別的推播（DD提醒/排程）也在計`)}
+            : `推播前 ${test.before ?? "?"} → 推播後 ${test.after ?? "?"}` + (() => {
+              const d = test.after - test.before;
+              const exp = test.billed || 1;
+              if (d === 0) return "（+0）⚠ 官方計數還沒跳——等幾秒按「↻ 重新整理」再看";
+              if (d === exp) return `（+${d}）✓ 計數正常：LINE 群組推播按「群內人數」計費——這群 ${test.members} 人，1 則 × ${test.members} 人 = 扣 ${d} 則`;
+              return `（+${d}）⚠ 與預期 ${exp} 不符（這群 ${test.members || "?"} 人）——可能同時有其他推播也在計`;
+            })()}
         </div>
       )}
       {q.limit && <div style={{ height: 8, background: "#eee5d3", borderRadius: 4, overflow: "hidden", marginBottom: 6 }}><div style={{ width: pct + "%", height: "100%", background: warn ? "#b3261e" : "#3f7d4e" }} /></div>}
-      <div style={{ fontSize: 11, color: "#9b9384", marginBottom: 10 }}>只有「主動推播」計額度（D發群/每日彙報/監控通知）；在群裡回話（reply）不計、免費。這裡是官方「即時」API 數字；LINE 後台總覽頁更新有延遲（常慢幾小時～一天），兩邊短暫不同是正常的，以這裡為準。</div>
+      <div style={{ fontSize: 11, color: "#9b9384", marginBottom: 10 }}>只有「主動推播」計額度，且群組推播按「群內人數」計費：發 1 則到 10 人的群＝扣 10 則（人越多越貴）；在群裡回話（reply）不計、免費。這裡是官方「即時」API 數字；LINE 後台總覽頁更新有延遲（常慢幾小時～一天），以這裡為準。</div>
       {(q.items || []).length > 0 && (
         <div style={{ border: "1px solid #E3DAC6", borderRadius: 8, overflow: "hidden" }}>
           <div style={{ display: "flex", background: "#ece4d6", fontSize: 11, color: "#6F6656", fontWeight: 600, padding: "5px 12px" }}>
-            <div style={{ width: 96 }}>時間</div><div style={{ flex: 1.4 }}>推到哪</div><div style={{ flex: 1 }}>來源</div><div style={{ width: 40, textAlign: "right" }}>則數</div>
+            <div style={{ width: 96 }}>時間</div><div style={{ flex: 1.4 }}>推到哪</div><div style={{ flex: 1 }}>來源</div><div style={{ width: 64, textAlign: "right" }}>計費則數</div>
           </div>
           {q.items.slice(0, 10).map((it, i) => (
             <div key={i} style={{ display: "flex", fontSize: 12, color: "#211C15", padding: "5px 12px", borderTop: "1px solid #e6ddc9" }}>
               <div style={{ width: 96, fontFamily: "monospace", fontSize: 11, color: "#9b9384" }}>{new Date(it.ts).toLocaleString("zh-TW", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })}</div>
               <div style={{ flex: 1.4, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{it.name}</div>
               <div style={{ flex: 1, color: "#5a5247" }}>{it.src || "—"}</div>
-              <div style={{ width: 40, textAlign: "right", fontFamily: "monospace" }}>{it.n}</div>
+              <div style={{ width: 64, textAlign: "right", fontFamily: "monospace" }}>{it.n}</div>
             </div>
           ))}
         </div>

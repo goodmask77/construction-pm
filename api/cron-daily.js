@@ -64,7 +64,7 @@ export default async function handler(req, res) {
       headers: { 'content-type': 'application/json', authorization: `Bearer ${TOKEN}` },
       body: JSON.stringify({ to: target, messages: messages.slice(0, 5) }),
     })
-    if (r.ok) { try { const { logPush } = await import('./push.js'); await logPush(target, messages.length, '每日彙報') } catch (_) {} }
+    if (r.ok) { try { const { logPush, groupMembers } = await import('./push.js'); const m = await groupMembers(target); await logPush(target, messages.length * m, '每日彙報') } catch (_) {} }
     return res.status(200).json({ ok: r.ok, pushed: messages.length })
   } catch (e) {
     return res.status(200).json({ ok: false, error: e?.message })
