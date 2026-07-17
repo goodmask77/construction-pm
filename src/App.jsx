@@ -2938,8 +2938,8 @@ function TopNav({ view, setView, saving, totalEstimated, totalPaid, doneCount, c
           </button>
         </div>
       </div>
-      {/* view tabs — boxed editorial（手機隱藏，改用底部導覽）*/}
-      {!isMobile && (
+      {/* view tabs — boxed editorial（手機隱藏，改用底部導覽）；設定開著時隱藏空間分頁列＝設定子分頁升為第二層 */}
+      {!isMobile && !settingsOn && (
       <div style={{ display: "flex", gap: 8, paddingBottom: 12, flexWrap: "wrap" }}>
         {(conf().tabs || [["owner","儀表板"],["overview",L("overview")],["tasks","任務"],["gantt",L("gantt")],["conclusions","結論"],["files","檔案庫"],...(conf().showCost?[["petty","零用金"]]:[]),["compare","比價"]]).filter(([v]) => !conf().hideTabs.includes(v) && pageVisible(v)).map(([v,l]) => { const act = tabActive(v); const NavI = NAV_ICONS[v]; return (
           <button key={v} onClick={() => setView(v === "settings" ? "advisor" : v)} style={{ display: "inline-flex", alignItems: "center", gap: 7, padding: "8px 15px", borderRadius: 7, border: `1.5px solid ${act ? PRIMARY : "#c8bca6"}`, cursor: "pointer", fontSize: 14, fontWeight: act ? 700 : 500, background: act ? PRIMARY : HEAD_CHIP, color: act ? "#fff" : TEXT, transition: "all .12s" }}>{NavI && <NavI size={15} strokeWidth={1.75} />}{String(l).replace(/^[^一-鿿A-Za-z0-9]+\s*/, "")}</button>
