@@ -24,6 +24,7 @@ export default function SupplyView({ view, K, canEdit, confirm, showMoney }) {
   const [qty, setQty] = useState({});          // 叫貨數量 itemId→qty
   const [needDate, setNeedDate] = useState(""); // 希望到貨日
   const [preview, setPreview] = useState(null); // 叫貨單預覽 vendorId
+  const [odSel, setOdSel] = useState(null);      // 叫貨紀錄詳情 orderId
   const [groups, setGroups] = useState({});     // D哥看過的LINE群（pm_group_seen，發送綁定用）
   const flash = (t) => { setMsg(t); setTimeout(() => setMsg(m => (m === t ? null : m)), 6000); };
 
@@ -69,7 +70,16 @@ export default function SupplyView({ view, K, canEdit, confirm, showMoney }) {
     };
     const pv = preview && db.vendors.find(v => v.id === preview);
     const orderTotal = (od) => od.items.reduce((t, x) => t + (Number(x.price) || 0) * (x.qty || 0), 0);
+    const pickTotal = (vid) => picked(vid).reduce((t, it) => t + (Number(it.price) || 0) * (Number(qty[it.id]) || 0), 0);
+    const grandTotal = vlist.reduce((t, v) => t + pickTotal(v.id), 0);
+    const nt2 = (n) => "NT$" + Math.round(n).toLocaleString();
     const ST = ["已送出", "廠商已確認", "已到貨", "草稿"];
+    // 月底對帳：本月（依紀錄月份）各廠商彙總
+    const moNow = new Date().toISOString().slice(0, 7);
+    const moOrders = orders.filter(od => (od.ts || "").slice(0, 7) === moNow && od.status !== "草稿");
+    const byVendor = {};
+    moOrders.forEach(od => { const o = byVendor[od.vendorName] = byVendor[od.vendorName] || { n: 0, amt: 0 }; o.n++; o.amt += orderTotal(od); });
+    const odDetail = odSel && orders.find(x => x.id === odSel);
     return (
       <div>
         <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "6px 0 12px", flexWrap: "wrap" }}>
@@ -83,6 +93,7 @@ export default function SupplyView({ view, K, canEdit, confirm, showMoney }) {
           <label style={{ fontSize: 11.5, color: C.sub, display: "flex", alignItems: "center", gap: 5 }}>希望到貨
             <input type="date" value={needDate} onChange={e => setNeedDate(e.target.value)} style={{ ...inp, colorScheme: "light" }} />
           </label>
+          {showMoney && grandTotal > 0 && <span style={{ fontFamily: MONOF, fontSize: 15, fontWeight: 800, color: C.accent, background: "#fbeee6", border: `1.5px solid ${C.accent}`, borderRadius: 8, padding: "5px 14px" }}>本次總計 {nt2(grandTotal)}</span>}
         </div>
         {msg && <div style={{ background: "#eef5ef", border: `1.5px solid ${C.green}`, borderRadius: 8, padding: "7px 12px", marginBottom: 10, fontSize: 12.5, color: "#2c5a38", fontWeight: 600 }}>{msg}</div>}
         {vlist.length === 0 && <div style={{ padding: 30, textAlign: "center", color: C.faint, background: C.card, border: `1.5px solid ${C.hard}`, borderRadius: 10 }}>這個部門還沒有「有品項清單」的廠商——先到「廠商」頁建品項。</div>}
@@ -95,16 +106,16 @@ export default function SupplyView({ view, K, canEdit, confirm, showMoney }) {
                 <span style={{ fontSize: 10.5, fontWeight: 700, color: "#fff", background: v.dept === "內場" ? C.green : v.dept === "吧檯" ? C.amber : v.dept === "共用" ? "#9b9384" : C.blue, borderRadius: 9, padding: "1px 8px" }}>{v.dept || "共用"}</span>
                 <span style={{ fontSize: 11, color: C.faint }}>{v.sendMode === "dbot" ? (v.lineGroupId ? "D自動發群 ✓已綁定" : "D自動發群 ⚠未綁定群") : v.sendMode === "copy" ? "複製文字" : "LINE分享"}</span>
                 <div style={{ flex: 1 }} />
-                {pk.length > 0 && <span style={{ fontFamily: MONOF, fontSize: 12, color: C.accent, fontWeight: 700 }}>已選 {pk.length} 項</span>}
+                {pk.length > 0 && <span style={{ fontFamily: MONOF, fontSize: 12, color: C.accent, fontWeight: 700 }}>已選 {pk.length} 項{showMoney ? "・" + nt2(pickTotal(v.id)) : ""}</span>}
                 <button disabled={!pk.length} onClick={() => setPreview(v.id)} style={{ border: "none", background: pk.length ? C.accent : "#d5cbb6", color: "#fff", borderRadius: 7, padding: "6px 16px", fontSize: 12.5, fontWeight: 700, cursor: pk.length ? "pointer" : "default" }}>產生叫貨單</button>
               </div>
-              <div style={{ display: "grid", gridTemplateColumns: `minmax(170px,1.4fr) minmax(110px,1fr) 56px ${showMoney ? "76px " : ""}70px 130px`, gap: 8, padding: "4px 12px", fontSize: 10, color: C.faint, fontWeight: 700, borderBottom: `1px solid #f0ead9` }}>
-                <span>品名</span><span>規格</span><span>單位</span>{showMoney && <span style={{ textAlign: "right" }}>單價</span>}<span style={{ textAlign: "right" }}>安全庫存</span><span style={{ textAlign: "center" }}>叫貨量</span>
+              <div style={{ display: "grid", gridTemplateColumns: `minmax(170px,1.4fr) minmax(110px,1fr) 56px ${showMoney ? "76px " : ""}70px 130px${showMoney ? " 86px" : ""}`, gap: 8, padding: "4px 12px", fontSize: 10, color: C.faint, fontWeight: 700, borderBottom: `1px solid #f0ead9` }}>
+                <span>品名</span><span>規格</span><span>單位</span>{showMoney && <span style={{ textAlign: "right" }}>單價</span>}<span style={{ textAlign: "right" }}>安全庫存</span><span style={{ textAlign: "center" }}>叫貨量</span>{showMoney && <span style={{ textAlign: "right" }}>小計</span>}
               </div>
               {its.map(it => {
                 const qv = qty[it.id] || "";
                 return (
-                  <div key={it.id} style={{ display: "grid", gridTemplateColumns: `minmax(170px,1.4fr) minmax(110px,1fr) 56px ${showMoney ? "76px " : ""}70px 130px`, gap: 8, alignItems: "center", minHeight: 34, borderTop: `1px solid #f0ead9`, padding: "0 12px", background: Number(qv) > 0 ? "#fbeee6" : "#fff", fontSize: 12.5 }}>
+                  <div key={it.id} style={{ display: "grid", gridTemplateColumns: `minmax(170px,1.4fr) minmax(110px,1fr) 56px ${showMoney ? "76px " : ""}70px 130px${showMoney ? " 86px" : ""}`, gap: 8, alignItems: "center", minHeight: 34, borderTop: `1px solid #f0ead9`, padding: "0 12px", background: Number(qv) > 0 ? "#fbeee6" : "#fff", fontSize: 12.5 }}>
                     <span style={{ fontWeight: 600, color: C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{it.name}</span>
                     <span style={{ color: C.sub, fontSize: 11.5 }}>{it.spec || "—"}</span>
                     <span style={{ color: C.sub }}>{it.unit || "—"}</span>
@@ -115,28 +126,89 @@ export default function SupplyView({ view, K, canEdit, confirm, showMoney }) {
                       <input value={qv} onChange={e => setQty(q2 => ({ ...q2, [it.id]: e.target.value.replace(/[^0-9.]/g, "") }))} inputMode="decimal" placeholder="0" style={{ ...inp, width: 52, textAlign: "center", padding: "4px 4px", fontFamily: MONOF }} />
                       <button onClick={() => setQty(q2 => ({ ...q2, [it.id]: (Number(q2[it.id]) || 0) + 1 }))} style={{ width: 24, height: 24, border: `1px solid ${C.line}`, background: "#fff", borderRadius: 6, cursor: "pointer", color: C.sub }}>＋</button>
                     </div>
+                    {showMoney && <span style={{ fontFamily: MONOF, textAlign: "right", fontWeight: 700, color: Number(qv) > 0 ? C.accent : "#d5cbb6" }}>{Number(qv) > 0 && it.price ? Math.round(Number(qv) * Number(it.price)).toLocaleString() : "—"}</span>}
                   </div>
                 );
               })}
             </div>
           );
         })}
+        {/* 本月對帳彙總 */}
+        {showMoney && Object.keys(byVendor).length > 0 && (
+          <div style={{ ...box, padding: "10px 14px" }}>
+            <div style={{ fontSize: 13, fontWeight: 700, color: C.text, marginBottom: 6 }}>📅 本月叫貨彙總（{moNow}・月底對帳用）</div>
+            {Object.entries(byVendor).sort((a, b) => b[1].amt - a[1].amt).map(([vn, o]) => (
+              <div key={vn} style={{ display: "flex", alignItems: "center", gap: 10, minHeight: 28, borderTop: `1px solid #f0ead9`, fontSize: 12.5 }}>
+                <span style={{ fontWeight: 700, color: C.text, width: 120 }}>{vn}</span>
+                <span style={{ color: C.faint, fontSize: 11.5 }}>{o.n} 張單</span>
+                <div style={{ flex: 1 }} />
+                <span style={{ fontFamily: MONOF, fontWeight: 700, color: C.text }}>{nt2(o.amt)}</span>
+              </div>
+            ))}
+            <div style={{ display: "flex", alignItems: "center", gap: 10, minHeight: 32, borderTop: `1.5px solid ${C.hard}`, fontSize: 13 }}>
+              <span style={{ fontWeight: 800, color: C.accent }}>本月總計</span>
+              <div style={{ flex: 1 }} />
+              <span style={{ fontFamily: MONOF, fontWeight: 800, fontSize: 15, color: C.accent }}>{nt2(Object.values(byVendor).reduce((t, o) => t + o.amt, 0))}</span>
+            </div>
+          </div>
+        )}
         {/* 叫貨紀錄 */}
         {orders.length > 0 && (
           <div style={{ ...box, padding: "10px 14px" }}>
-            <div style={{ fontSize: 13, fontWeight: 700, color: C.text, marginBottom: 6 }}>🧾 叫貨紀錄</div>
+            <div style={{ fontSize: 13, fontWeight: 700, color: C.text, marginBottom: 6 }}>🧾 叫貨紀錄 <span style={{ fontWeight: 400, fontSize: 11, color: C.faint }}>點列看貨單完整明細</span></div>
             {orders.slice(0, 15).map(od => (
-              <div key={od.id} style={{ display: "grid", gridTemplateColumns: `108px minmax(90px,0.8fr) 56px minmax(150px,1.4fr) ${showMoney ? "90px " : ""}88px 110px 30px`, gap: 8, alignItems: "center", minHeight: 32, borderTop: `1px solid #f0ead9`, fontSize: 12 }}>
+              <div key={od.id} onClick={() => setOdSel(od.id)} style={{ display: "grid", gridTemplateColumns: `108px minmax(90px,0.8fr) 56px minmax(150px,1.4fr) ${showMoney ? "90px " : ""}88px 110px 30px`, gap: 8, alignItems: "center", minHeight: 32, borderTop: `1px solid #f0ead9`, fontSize: 12, cursor: "pointer" }}
+                onMouseEnter={e => e.currentTarget.style.background = C.soft} onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
                 <span style={{ fontFamily: MONOF, fontSize: 11, color: C.sub }}>{new Date(od.ts).toLocaleString("zh-TW", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })}</span>
                 <span style={{ fontWeight: 700, color: C.text }}>{od.vendorName}</span>
                 <span style={{ color: C.sub }}>{od.items.length} 項</span>
                 <span style={{ color: C.sub, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={od.items.map(x => `${x.name}×${x.qty}`).join("、")}>{od.items.map(x => `${x.name}×${x.qty}`).join("、")}</span>
                 {showMoney && <span style={{ fontFamily: MONOF, textAlign: "right", color: orderTotal(od) ? C.text : "#d5cbb6" }}>{orderTotal(od) ? "NT$" + Math.round(orderTotal(od)).toLocaleString() : "—"}</span>}
                 <span style={{ fontSize: 10.5, color: C.faint }}>{od.via}</span>
-                <select value={od.status} onChange={e => saveOrders(orders.map(x => x.id === od.id ? { ...x, status: e.target.value } : x))} disabled={!canEdit} style={{ ...inp, padding: "3px 6px", fontSize: 11.5, color: od.status === "已到貨" ? C.green : od.status === "廠商已確認" ? C.blue : C.text }}>{ST.map(x => <option key={x}>{x}</option>)}</select>
-                {canEdit ? <button onClick={async () => { if (await confirm("刪除這筆叫貨紀錄？", { confirmLabel: "刪除" })) saveOrders(orders.filter(x => x.id !== od.id)); }} style={{ border: "none", background: "none", color: C.faint, cursor: "pointer" }}>×</button> : <span />}
+                <select onClick={e => e.stopPropagation()} value={od.status} onChange={e => saveOrders(orders.map(x => x.id === od.id ? { ...x, status: e.target.value } : x))} disabled={!canEdit} style={{ ...inp, padding: "3px 6px", fontSize: 11.5, color: od.status === "已到貨" ? C.green : od.status === "廠商已確認" ? C.blue : C.text }}>{ST.map(x => <option key={x}>{x}</option>)}</select>
+                {canEdit ? <button onClick={async (e) => { e.stopPropagation(); if (await confirm("刪除這筆叫貨紀錄？", { confirmLabel: "刪除" })) saveOrders(orders.filter(x => x.id !== od.id)); }} style={{ border: "none", background: "none", color: C.faint, cursor: "pointer" }}>×</button> : <span />}
               </div>
             ))}
+          </div>
+        )}
+        {/* 貨單詳細（月底對帳） */}
+        {odDetail && (
+          <div onClick={e => e.target === e.currentTarget && setOdSel(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.4)", zIndex: 710, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+            <div style={{ background: "#fff", border: `1px solid ${C.line}`, borderRadius: 12, padding: 22, width: "min(560px,96vw)", maxHeight: "90vh", overflowY: "auto" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+                <div style={{ fontSize: 15, fontWeight: 700, color: C.text }}>貨單明細：{odDetail.vendorName}</div>
+                <span style={{ fontSize: 11, color: "#fff", background: odDetail.status === "已到貨" ? C.green : odDetail.status === "廠商已確認" ? C.blue : C.amber, borderRadius: 9, padding: "1px 8px", fontWeight: 700 }}>{odDetail.status}</span>
+                <div style={{ flex: 1 }} />
+                <button onClick={() => setOdSel(null)} style={{ background: "none", border: "none", fontSize: 22, cursor: "pointer", color: C.sub }}>×</button>
+              </div>
+              <div style={{ fontSize: 11.5, color: C.faint, marginBottom: 10 }}>
+                {new Date(odDetail.ts).toLocaleString("zh-TW")}・{odDetail.via}{odDetail.needDate ? "・希望到貨 " + dz(odDetail.needDate) : ""}・{odDetail.dept}
+              </div>
+              <div style={{ border: `1.5px solid ${C.hard}`, borderRadius: 8, overflow: "hidden" }}>
+                <div style={{ display: "grid", gridTemplateColumns: `minmax(150px,1.4fr) minmax(90px,1fr) 60px ${showMoney ? "76px 86px" : ""}`, gap: 8, background: "#ece4d6", padding: "6px 10px", fontSize: 10.5, color: C.sub, fontWeight: 700 }}>
+                  <span>品名</span><span>規格</span><span style={{ textAlign: "right" }}>數量</span>{showMoney && <><span style={{ textAlign: "right" }}>單價</span><span style={{ textAlign: "right" }}>小計</span></>}
+                </div>
+                {odDetail.items.map((x, i) => (
+                  <div key={i} style={{ display: "grid", gridTemplateColumns: `minmax(150px,1.4fr) minmax(90px,1fr) 60px ${showMoney ? "76px 86px" : ""}`, gap: 8, padding: "5px 10px", borderTop: `1px solid #f0ead9`, fontSize: 12.5, alignItems: "center", background: i % 2 ? "#f8f4ea" : "#fff" }}>
+                    <span style={{ fontWeight: 600, color: C.text }}>{x.name}</span>
+                    <span style={{ color: C.sub, fontSize: 11.5 }}>{x.spec || "—"}</span>
+                    <span style={{ fontFamily: MONOF, textAlign: "right" }}>{x.qty} {x.unit || ""}</span>
+                    {showMoney && <><span style={{ fontFamily: MONOF, textAlign: "right", color: C.sub }}>{x.price ? Number(x.price).toLocaleString() : "—"}</span>
+                    <span style={{ fontFamily: MONOF, textAlign: "right", fontWeight: 700 }}>{x.price ? Math.round(Number(x.price) * x.qty).toLocaleString() : "—"}</span></>}
+                  </div>
+                ))}
+                {showMoney && <div style={{ display: "flex", padding: "7px 10px", borderTop: `1.5px solid ${C.hard}`, fontSize: 13, alignItems: "center" }}>
+                  <span style={{ fontWeight: 800, color: C.accent }}>總金額</span>
+                  <div style={{ flex: 1 }} />
+                  <span style={{ fontFamily: MONOF, fontWeight: 800, fontSize: 15, color: C.accent }}>{nt2(orderTotal(odDetail))}</span>
+                </div>}
+              </div>
+              {showMoney && <button onClick={async () => {
+                const txt = `【對帳明細】${odDetail.vendorName} ${new Date(odDetail.ts).toLocaleDateString("zh-TW")}\n` + odDetail.items.map(x => `${x.name} ${x.spec || ""} ×${x.qty}${x.unit || ""} @${x.price || "?"} = ${x.price ? Math.round(Number(x.price) * x.qty).toLocaleString() : "?"}`).join("\n") + `\n總金額 ${nt2(orderTotal(odDetail))}`;
+                try { await navigator.clipboard.writeText(txt); flash("✓ 已複製對帳明細（含單價，內部用）"); } catch (_) {}
+                setOdSel(null);
+              }} style={{ width: "100%", marginTop: 10, border: `1px solid ${C.line}`, background: "#fff", color: C.text, borderRadius: 8, padding: "8px 0", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>📋 複製對帳明細（含金額）</button>}
+            </div>
           </div>
         )}
         {/* 叫貨單預覽 + 發送 */}
