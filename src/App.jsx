@@ -5631,8 +5631,30 @@ function BotUsagePanel() {
 function LineQuotaBlock() {
   const [q, setQ] = useState(null);
   const [busy, setBusy] = useState(false);
+  const [test, setTest] = useState(null); // 額度自我檢測：null | "run" | {before,after} | {err}
   const load = async () => { setBusy(true); try { const r = await fetch("/api/line-quota"); setQ(await r.json()); } catch (_) { setQ({ ok: false, error: "連線失敗" }); } setBusy(false); };
   useEffect(() => { load(); }, []);
+  // 額度檢測：記下推播前數字 → 真的發 1 則到群 → 等官方計數跳動 → 顯示前後對照（張良 2026-07-18：驗證計數到底準不準）
+  const runTest = async () => {
+    setTest("run");
+    try {
+      const q1 = await (await fetch("/api/line-quota")).json();
+      const before = q1?.used;
+      const s = await _lineSettings();
+      const to = s.lineGroupId || DEFAULT_LINE_GROUP;
+      const pr = await (await fetch("/api/push", { method: "POST", headers: { "Content-Type": "application/json", "X-API-Key": LINE_API_KEY }, body: JSON.stringify({ to, text: `🧪 額度檢測：這是 1 則測試訊息（發送前本月已用 ${before ?? "?"} 則）`, src: "額度檢測" }) })).json();
+      if (!pr.ok) { setTest({ err: pr.error || "推播失敗" }); return; }
+      let after = before;
+      for (const ms of [2500, 4000, 6000]) { // 官方計數通常幾秒內跳，最多等三輪
+        await new Promise(r2 => setTimeout(r2, ms));
+        const q2 = await (await fetch("/api/line-quota")).json();
+        after = q2?.used ?? after;
+        if (after != null && before != null && after > before) break;
+      }
+      setTest({ before, after });
+      load();
+    } catch (e) { setTest({ err: String(e) }); }
+  };
   if (!q) return <div style={{ fontSize: 12, color: "#9b9384", marginTop: 14 }}>LINE 訊息額度載入中…</div>;
   if (!q.ok) return <div style={{ fontSize: 12, color: "#9b9384", marginTop: 14 }}>LINE 訊息額度：{q.error}</div>;
   const pct = q.limit ? Math.min(100, Math.round((q.used || 0) / q.limit * 100)) : 0;
@@ -5643,8 +5665,18 @@ function LineQuotaBlock() {
         <div style={{ fontSize: 14, fontWeight: 700, color: "#211C15" }}>💬 LINE 訊息額度（本月）</div>
         <div style={{ fontSize: 13, fontWeight: 800, fontVariantNumeric: "tabular-nums", color: warn ? "#b3261e" : "#211C15" }}>{(q.used ?? "?").toLocaleString?.() || q.used} / {q.limit ? q.limit.toLocaleString() : "無上限"}</div>
         <div style={{ flex: 1 }} />
+        <button onClick={runTest} disabled={test === "run"} title="真的發 1 則到群，對照發送前後的官方計數" style={{ border: "1px solid #d9cfbd", background: "#fff", color: "#5a5247", borderRadius: 7, padding: "4px 12px", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>{test === "run" ? "檢測中…" : "🧪 發 1 則測額度"}</button>
         <button onClick={load} disabled={busy} style={{ border: "1px solid #d9cfbd", background: "#fff", color: "#5a5247", borderRadius: 7, padding: "4px 12px", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>{busy ? "…" : "↻ 重新整理"}</button>
       </div>
+      {test && test !== "run" && (
+        <div style={{ background: test.err ? "#fdf3f2" : "#eef5ef", border: `1.5px solid ${test.err ? "#b3261e" : "#3f7d4e"}`, borderRadius: 8, padding: "7px 12px", marginBottom: 8, fontSize: 12.5, fontWeight: 600, color: test.err ? "#8c1d16" : "#2c5a38" }}>
+          {test.err ? "❌ 檢測失敗：" + test.err
+            : `推播前 ${test.before ?? "?"} → 推播後 ${test.after ?? "?"}` + (
+              test.after - test.before === 1 ? "（+1）✓ 計數正常：發 1 則就加 1"
+              : test.after === test.before ? "（+0）⚠ 官方計數還沒跳——等幾秒按「↻ 重新整理」再看"
+              : `（+${test.after - test.before}）⚠ 多跳了——同一時間有別的推播（DD提醒/排程）也在計`)}
+        </div>
+      )}
       {q.limit && <div style={{ height: 8, background: "#eee5d3", borderRadius: 4, overflow: "hidden", marginBottom: 6 }}><div style={{ width: pct + "%", height: "100%", background: warn ? "#b3261e" : "#3f7d4e" }} /></div>}
       <div style={{ fontSize: 11, color: "#9b9384", marginBottom: 10 }}>只有「主動推播」計額度（D發群/每日彙報/監控通知）；在群裡回話（reply）不計、免費。這裡是官方「即時」API 數字；LINE 後台總覽頁更新有延遲（常慢幾小時～一天），兩邊短暫不同是正常的，以這裡為準。</div>
       {(q.items || []).length > 0 && (
