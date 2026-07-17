@@ -10,7 +10,7 @@ const MONOF = "'IBM Plex Mono', ui-monospace, Menlo, monospace";
 const rid = (p) => p + Math.random().toString(36).slice(2, 8);
 const fmt$ = (v) => { const n = Number(String(v).replace(/[^0-9.-]/g, "")); return isNaN(n) || v === "" ? "" : "NT$" + Math.round(n).toLocaleString(); };
 
-export default function SupplyView({ view, K, canEdit, confirm, showMoney }) {
+export default function SupplyView({ view, K, canEdit, confirm, showMoney, userName }) {
   const [db, setDb] = useState(null);
   const [q, setQ] = useState("");
   const [catF, setCatF] = useState("");
@@ -270,12 +270,13 @@ export default function SupplyView({ view, K, canEdit, confirm, showMoney }) {
                     })}
                     {isChk && (
                       <div style={{ display: "flex", gap: 8, padding: "7px 10px", borderTop: `1px solid #f0ead9`, alignItems: "center", flexWrap: "wrap", background: "#faf6ec" }}>
-                        <span style={{ fontSize: 11.5, fontWeight: 700, color: C.sub }}>📥 驗收{chk.ts ? `（${new Date(chk.ts).toLocaleString("zh-TW", { hour12: false })}${chk.by ? "・" + chk.by : ""}）` : ""}</span>
-                        <input value={chk.by || ""} onChange={e => setChk({ by: e.target.value })} disabled={!canEdit} placeholder="驗收人" style={{ ...inp, width: 90, padding: "4px 8px", fontSize: 12 }} />
+                        <span style={{ fontSize: 11.5, fontWeight: 700, color: C.sub }}>📥 驗收{chk.ts ? `（${new Date(chk.ts).toLocaleString("zh-TW", { hour12: false })}）` : ""}</span>
+                        {/* 驗收人＝自動帶登入帳號（不能手填，才追得到人） */}
+                        <span title="驗收人自動帶登入者，無法手改" style={{ fontSize: 12, fontWeight: 700, color: C.text, background: "#f3eddc", border: `1px solid #d9cfbd`, borderRadius: 6, padding: "3px 10px" }}>👤 {chk.ts ? (chk.by || "—") : (userName || "未登入")}</span>
                         <input value={chk.note || ""} onChange={e => setChk({ note: e.target.value })} disabled={!canEdit} placeholder="整體備註（改單/補送約定…）" style={{ ...inp, flex: 1, minWidth: 140, padding: "4px 8px", fontSize: 12 }} />
                         {canEdit && <button onClick={() => {
                           const bad2 = Object.values(chk.items || {}).some(x => x.st && x.st !== okOpt);
-                          saveOrders(orders.map(x => x.id === odDetail.id ? { ...x, status: bad2 ? "有問題" : "已到貨", check: { ...chk, ts: new Date().toISOString() } } : x));
+                          saveOrders(orders.map(x => x.id === odDetail.id ? { ...x, status: bad2 ? "有問題" : "已到貨", check: { ...chk, by: userName || "—", ts: new Date().toISOString() } } : x));
                           flash(bad2 ? "⚠ 驗收完成：有問題項目已標記，狀態→有問題" : "✓ 驗收完成，全數正確，狀態→已到貨");
                         }} disabled={!allOk} title={allOk ? "" : "每一項都要選驗收結果"} style={{ border: "none", background: allOk ? C.green : "#d5cbb6", color: "#fff", borderRadius: 7, padding: "6px 14px", fontSize: 12.5, fontWeight: 700, cursor: allOk ? "pointer" : "default" }}>完成驗收</button>}
                       </div>
