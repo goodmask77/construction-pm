@@ -4534,19 +4534,48 @@ function AuditLogView({ activityLog, confirm, onCommit }) {
   const [openU, setOpenU] = useState(() => new Set());
   const toggleU = (u) => setOpenU(prev => { const n = new Set(prev); n.has(u) ? n.delete(u) : n.add(u); return n; });
   const isLogin = (a) => a.action === "登入";
-  const log = (activityLog || []).filter(a => {
+  // ── 設定變全域後：紀錄一律「彙整全部空間」（每空間各存一份 pm_activity，只看目前空間會像紀錄不見）──
+  const AUD_SP = { construction: "工程", team: "團隊", crew: "夥伴", finance: "財務", supply: "供應鏈", lw: "LW" };
+  const audKey = (id) => id === "construction" ? "pm_activity" : `sp_${id}_pm_activity`;
+  const [others, setOthers] = useState({}); // 其他空間的紀錄 {spaceId: entries[]}
+  useEffect(() => { (async () => {
+    const out = {};
+    for (const id of Object.keys(AUD_SP)) {
+      if (id === CURRENT_SPACE) continue;
+      try { const r = await window.storage.get(audKey(id), true); if (r && r.value) out[id] = JSON.parse(r.value) || []; } catch (_) {}
+    }
+    setOthers(out);
+  })(); }, []); // eslint-disable-line
+  const allLog = [
+    ...(activityLog || []).map(a => ({ ...a, _sp: CURRENT_SPACE })),
+    ...Object.entries(others).flatMap(([id, list]) => (list || []).map(a => ({ ...a, _sp: id }))),
+  ].sort((a, b) => (a.ts < b.ts ? 1 : -1));
+  const log = allLog.filter(a => {
     if (act === "登入" && !isLogin(a)) return false;
     if (act === "編輯" && isLogin(a)) return false;
-    if (!q.trim()) return true; const s = (a.user + " " + a.action + " " + (a.detail || "")).toLowerCase();
+    if (!q.trim()) return true; const s = (a.user + " " + a.action + " " + (a.detail || "") + " " + (AUD_SP[a._sp] || "")).toLowerCase();
     return s.includes(q.trim().toLowerCase());
   });
+  const spTag = (a) => <span style={{ fontSize: 10, color: "#8a8171", background: "#f3eddc", border: "1px solid #e4dbc4", borderRadius: 5, padding: "0 6px", flexShrink: 0 }}>{AUD_SP[a._sp] || a._sp}</span>;
   const fmtDT = (ts) => { try { return new Date(ts).toLocaleString("zh-TW", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" }); } catch (_) { return ""; } };
   const fmtT = (ts) => { try { return new Date(ts).toLocaleTimeString("zh-TW", { hour: "2-digit", minute: "2-digit" }); } catch (_) { return ""; } };
-  // ── 管理員刪除紀錄 ──
+  // ── 管理員刪除紀錄（跨空間：寫回該筆所屬空間的 key）──
   const sameEntry = (a, b) => a.ts === b.ts && a.user === b.user && a.action === b.action && a.detail === b.detail;
-  const delEntry = async (a) => { if (onCommit && (!confirm || await confirm("刪除這筆紀錄？"))) onCommit((activityLog || []).filter(x => !sameEntry(x, a))); };
-  const clearMember = async (u) => { if (onCommit && (!confirm || await confirm(`清空「${u}」的全部紀錄？`, { confirmLabel: "清空" }))) onCommit((activityLog || []).filter(x => (x.user || "—") !== u)); };
-  const clearAll = async () => { if (onCommit && (!confirm || await confirm("清空全部登入與操作紀錄？此動作無法復原。", { confirmLabel: "全部清空" }))) onCommit([]); };
+  const strip = (list) => list.map(({ _sp, ...r }) => r);
+  const writeSpace = async (id, nextList) => {
+    if (id === CURRENT_SPACE) { onCommit && onCommit(strip(nextList)); }
+    else { setOthers(o => ({ ...o, [id]: strip(nextList) })); try { await window.storage.set(audKey(id), JSON.stringify(strip(nextList).slice(0, 200)), true); } catch (_) {} }
+  };
+  const listOf = (id) => id === CURRENT_SPACE ? (activityLog || []) : (others[id] || []);
+  const delEntry = async (a) => { if (!confirm || await confirm("刪除這筆紀錄？")) await writeSpace(a._sp, listOf(a._sp).filter(x => !sameEntry(x, a))); };
+  const clearMember = async (u) => {
+    if (!confirm || await confirm(`清空「${u}」在所有空間的紀錄？`, { confirmLabel: "清空" }))
+      for (const id of [CURRENT_SPACE, ...Object.keys(others)]) await writeSpace(id, listOf(id).filter(x => (x.user || "—") !== u));
+  };
+  const clearAll = async () => {
+    if (!confirm || await confirm("清空「全部空間」的登入與操作紀錄？此動作無法復原。", { confirmLabel: "全部清空" }))
+      for (const id of [CURRENT_SPACE, ...Object.keys(others)]) await writeSpace(id, []);
+  };
   const delX = (a) => <button onClick={(e) => { e.stopPropagation(); delEntry(a); }} title="刪除此筆" style={{ background: "none", border: "none", color: "#C8BCA0", cursor: "pointer", fontSize: 14, padding: "0 2px", lineHeight: 1 }} onMouseEnter={e => e.currentTarget.style.color = "#b3261e"} onMouseLeave={e => e.currentTarget.style.color = "#C8BCA0"}>×</button>;
 
   // 依成員彙整
@@ -4569,7 +4598,7 @@ function AuditLogView({ activityLog, confirm, onCommit }) {
     <div style={{ maxWidth: 900, margin: "16px auto", padding: "0 4px" }}>
       <div style={{ fontSize: 18, fontWeight: 600, color: "#211C15", marginBottom: 6 }}>📜 登入與操作紀錄（僅管理員）</div>
       <div style={{ background: "#faf6ee", border: "1px solid #e4ddc9", borderRadius: 10, padding: "10px 14px", marginBottom: 14, fontSize: 13, color: "#6b6450", lineHeight: 1.7 }}>
-        這裡記錄<b>每個人的登入時間</b>與<b>做了什麼</b>（編輯哪一頁）。只有管理員看得到。連續編輯會收斂成每 90 秒一筆，最多保留最近 200 筆。
+        這裡記錄<b>每個人的登入時間</b>與<b>做了什麼</b>（編輯哪一頁），<b>彙整全部空間</b>（每筆有空間標籤）。只有管理員看得到。連續編輯會收斂成每 90 秒一筆，每個空間各保留最近 200 筆。
       </div>
       <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 12, flexWrap: "wrap" }}>
         {[["member", "👤 依成員"], ["timeline", "🕓 時間軸"]].map(([k, l]) => (
@@ -4581,7 +4610,7 @@ function AuditLogView({ activityLog, confirm, onCommit }) {
         ))}
         <div style={{ flex: 1 }} />
         <input value={q} onChange={e => setQ(e.target.value)} placeholder="搜尋人名／動作…" style={{ ...inputStyle, width: 180, padding: "6px 10px" }} />
-        {(activityLog || []).length > 0 && <button onClick={clearAll} title="清空全部紀錄" style={{ background: "#fff", color: "#b3261e", border: "1px solid #F0C0C0", borderRadius: 8, padding: "6px 12px", fontSize: 12.5, fontWeight: 600, cursor: "pointer" }}>🗑 清空全部</button>}
+        {allLog.length > 0 && <button onClick={clearAll} title="清空全部空間的紀錄" style={{ background: "#fff", color: "#b3261e", border: "1px solid #F0C0C0", borderRadius: 8, padding: "6px 12px", fontSize: 12.5, fontWeight: 600, cursor: "pointer" }}>🗑 清空全部</button>}
       </div>
 
       {log.length === 0 ? <div style={{ padding: 30, textAlign: "center", color: "#9b9384", fontSize: 13 }}>尚無紀錄</div> : tab === "member" ? (
@@ -4602,6 +4631,7 @@ function AuditLogView({ activityLog, confirm, onCommit }) {
                   {m.list.map((a, i) => (
                     <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "4px 0", fontSize: 12.5 }}>
                       <span style={{ fontSize: 11, color: "#9b9384", width: 96, flexShrink: 0, fontVariantNumeric: "tabular-nums" }}>{fmtDT(a.ts)}</span>
+                      {spTag(a)}
                       <span style={{ fontSize: 11, fontWeight: 700, borderRadius: 6, padding: "1px 7px", ...tagStyle(a) }}>{a.action}</span>
                       <span style={{ color: "#4A4234", flex: 1 }}>{a.detail}</span>
                       {delX(a)}
@@ -4622,6 +4652,7 @@ function AuditLogView({ activityLog, confirm, onCommit }) {
               <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "5px 4px", fontSize: 12.5, borderBottom: "1px solid #F6F1E5" }}>
                 <span style={{ fontSize: 11, color: "#9b9384", width: 42, flexShrink: 0 }}>{fmtT(a.ts)}</span>
                 <span style={{ fontWeight: 700, color: "#211C15", width: 90, flexShrink: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{a.user}</span>
+                {spTag(a)}
                 <span style={{ fontSize: 11, fontWeight: 700, borderRadius: 6, padding: "1px 7px", ...tagStyle(a) }}>{a.action}</span>
                 <span style={{ color: "#4A4234", flex: 1 }}>{a.detail}</span>
                 {delX(a)}
