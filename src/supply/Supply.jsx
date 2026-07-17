@@ -26,7 +26,7 @@ export default function SupplyView({ view, K, canEdit, confirm, showMoney, userN
   const [preview, setPreview] = useState(null); // 叫貨單預覽 vendorId
   const [odSel, setOdSel] = useState(null);      // 叫貨紀錄詳情 orderId
   const [inspEdit, setInspEdit] = useState(false); // 驗收選項編輯器（新增/改名/刪除/排序）
-  const [groups, setGroups] = useState({});     // D哥看過的LINE群（pm_group_seen，發送綁定用）
+  const [groups, setGroups] = useState({});     // DD看過的LINE群（pm_group_seen，發送綁定用）
   const flash = (t) => { setMsg(t); setTimeout(() => setMsg(m => (m === t ? null : m)), 6000); };
 
   useEffect(() => { (async () => {
@@ -331,9 +331,9 @@ export default function SupplyView({ view, K, canEdit, confirm, showMoney, userN
                         const r = await fetch("/api/push", { method: "POST", headers: { "Content-Type": "application/json", "X-API-Key": "ground-pm-2026-secret-abc123" }, body: JSON.stringify({ to: v2.lineGroupId, messages: [flex2] }) });
                         const d = await r.json();
                         if (!d.ok) { alert(/monthly limit/i.test(d.error || "") ? "LINE 推播月額度不足。" : "發送失敗：" + (d.error || "未知")); return; }
-                        markSent("D發群"); flash("✓ 草稿已由 D哥 發送到「" + gname + "」");
+                        markSent("D發群"); flash("✓ 草稿已由 DD 發送到「" + gname + "」");
                       } catch (e) { alert("發送失敗：" + e.message); }
-                    }} style={{ flex: 1, border: "none", background: v2?.lineGroupId ? C.green : "#d5cbb6", color: "#fff", borderRadius: 8, padding: "9px 0", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>🤖 D哥 發送</button>
+                    }} style={{ flex: 1, border: "none", background: v2?.lineGroupId ? C.green : "#d5cbb6", color: "#fff", borderRadius: 8, padding: "9px 0", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>🤖 DD 發送</button>
                     <button onClick={async () => {
                       try { await navigator.clipboard.writeText(text2); } catch (_) {}
                       const mobile = /iPhone|iPad|Android/i.test(navigator.userAgent);
@@ -387,9 +387,9 @@ export default function SupplyView({ view, K, canEdit, confirm, showMoney, userN
                         const r = await fetch("/api/push", { method: "POST", headers: { "Content-Type": "application/json", "X-API-Key": "ground-pm-2026-secret-abc123" }, body: JSON.stringify({ to: v2.lineGroupId, messages: [flex2] }) });
                         const d = await r.json();
                         if (!d.ok) { alert(/monthly limit/i.test(d.error || "") ? "LINE 推播月額度不足。" : "發送失敗：" + (d.error || "未知")); return; }
-                        markSent("D發群"); flash("✓ 草稿已由 D哥 發送到「" + gname + "」");
+                        markSent("D發群"); flash("✓ 草稿已由 DD 發送到「" + gname + "」");
                       } catch (e) { alert("發送失敗：" + e.message); }
-                    }} style={{ flex: 1, border: "none", background: v2?.lineGroupId ? C.green : "#d5cbb6", color: "#fff", borderRadius: 8, padding: "9px 0", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>🤖 D哥 發送</button>
+                    }} style={{ flex: 1, border: "none", background: v2?.lineGroupId ? C.green : "#d5cbb6", color: "#fff", borderRadius: 8, padding: "9px 0", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>🤖 DD 發送</button>
                     <button onClick={async () => {
                       try { await navigator.clipboard.writeText(text2); } catch (_) {}
                       const mobile = /iPhone|iPad|Android/i.test(navigator.userAgent);
@@ -453,7 +453,7 @@ export default function SupplyView({ view, K, canEdit, confirm, showMoney, userN
               const r = await fetch("/api/push", { method: "POST", headers: { "Content-Type": "application/json", "X-API-Key": "ground-pm-2026-secret-abc123" }, body: JSON.stringify({ to: pv.lineGroupId, messages: [orderFlex(pv)] }) });
               const d = await r.json();
               if (!d.ok) { alert(/monthly limit/i.test(d.error || "") ? "LINE 推播月額度用完了（輕用量 200 則/月，每月 1 號重置）。\n這單先按「複製文字」貼給廠商；常用的話可考慮升級 LINE 方案。" : "發送失敗：" + (d.error || "未知")); return; }
-              recordOrder(pv, "D發群", "已送出", text); flash("✓ 已由 D哥 發送到「" + gname + "」，叫貨單已記錄");
+              recordOrder(pv, "D發群", "已送出", text); flash("✓ 已由 DD 發送到「" + gname + "」，叫貨單已記錄");
             } catch (e) { alert("發送失敗：" + e.message); }
           };
           return (
@@ -468,14 +468,14 @@ export default function SupplyView({ view, K, canEdit, confirm, showMoney, userN
                 <div style={{ fontSize: 11, color: C.faint, margin: "8px 0" }}>叫貨單含單價與合計，方便廠商一起核對金額（價格有調整馬上會發現）。</div>
                 {/* D 群綁定 */}
                 <div style={{ margin: "10px 0" }}>
-                  <div style={{ fontSize: 11.5, fontWeight: 700, color: C.sub, marginBottom: 4 }}>D哥 發送目標群（要先把 D 拉進該廠商的 LINE 群，群才會出現在這裡）</div>
+                  <div style={{ fontSize: 11.5, fontWeight: 700, color: C.sub, marginBottom: 4 }}>DD 發送目標群（要先把 D 拉進該廠商的 LINE 群，群才會出現在這裡）</div>
                   <select value={pv.lineGroupId || ""} onChange={e => updV(pv.id, { lineGroupId: e.target.value, sendMode: e.target.value ? "dbot" : pv.sendMode })} disabled={!canEdit} style={{ ...inp, width: "100%" }}>
                     <option value="">— 未綁定（用下面的 LINE 分享 / 複製）—</option>
                     {glist.map(([gid, g]) => <option key={gid} value={gid}>{(g && g.name) || gid}</option>)}
                   </select>
                 </div>
                 <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                  <button onClick={doSend} style={{ flex: 1, border: "none", background: pv.lineGroupId ? C.green : "#d5cbb6", color: "#fff", borderRadius: 8, padding: "10px 0", fontSize: 13.5, fontWeight: 700, cursor: "pointer" }}>🤖 D哥 發送到群</button>
+                  <button onClick={doSend} style={{ flex: 1, border: "none", background: pv.lineGroupId ? C.green : "#d5cbb6", color: "#fff", borderRadius: 8, padding: "10px 0", fontSize: 13.5, fontWeight: 700, cursor: "pointer" }}>🤖 DD 發送到群</button>
                   <button onClick={async () => {
                     try { await navigator.clipboard.writeText(text); } catch (_) {}
                     const mobile = /iPhone|iPad|Android/i.test(navigator.userAgent);
@@ -587,7 +587,7 @@ export default function SupplyView({ view, K, canEdit, confirm, showMoney, userN
                 <label style={{ display: "block", fontSize: 11, color: C.faint, fontWeight: 600 }}>叫貨發送方式
                   <select value={selV.sendMode || "share"} onChange={e => updV(selV.id, { sendMode: e.target.value })} disabled={!canEdit} style={{ ...inp, width: "100%", marginTop: 4 }}>
                     <option value="share">LINE 分享（廠商是官方帳號/1:1）</option>
-                    <option value="dbot">D哥 自動發群（D 已在廠商群）</option>
+                    <option value="dbot">DD 自動發群（D 已在廠商群）</option>
                     <option value="copy">複製文字</option>
                   </select>
                 </label>

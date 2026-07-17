@@ -240,7 +240,7 @@ async function loadCrewText() {
 }
 
 const BOT_MODEL = process.env.ANTHROPIC_MODEL || 'claude-opus-4-8' // 最高級；失敗自動退回 Sonnet
-const BOT_PERSONA = `你是「D哥」，喬亞國際餐飲團隊的 LINE 小幫手。你手上有公司管理 App 的即時資料（附在下面）。
+const BOT_PERSONA = `你是「DD」（舊名 D哥，大家叫哪個都認得），喬亞國際餐飲團隊的 LINE 小幫手。你手上有公司管理 App 的即時資料（附在下面）。
 
 講話風格：像個可靠、反應快、講話自然的同事——親切、直接、不囉嗦。用正常口語跟適度的表情符號，不要像念公文或一條條規則。該一句話講完就一句話，需要才條列。**不要每次都自我介紹**（你們是熟人了，接著聊就好，除非對方第一次跟你說話或問你是誰）。
 
@@ -715,7 +715,8 @@ export default async function handler(req, res) {
       // 移除舊的 /@d/：它會誤中別人的 @Doris、@David… 導致 D 插嘴。
       const mentionees = ev.message?.mention?.mentionees || []
       const mentionedSelf = mentionees.some((m) => m.isSelf === true && m.type !== 'all')
-      const named = mentionedSelf || /d哥/i.test(text)
+      // 叫名字：新名 DD（要獨立字，避免 add/odd 誤觸）或舊名 D哥 都算
+      const named = mentionedSelf || /d哥/i.test(text) || /(^|[^a-z0-9])dd([^a-z0-9]|$)/i.test(text)
       console.log('event', JSON.stringify({ src: ev.source?.type, isDM, named, mSelf: mentionedSelf, text: text.slice(0, 40) }))
       if (!isDM && !named) continue // 私訊一律回；群組必須被點名（@本帳號 或 講「D哥」）
       const userId = ev.source?.userId || ''

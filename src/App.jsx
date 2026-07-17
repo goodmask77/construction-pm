@@ -2321,7 +2321,7 @@ function IssuesView({ canEdit, requireLogin, confirm, onLog }) {
       {shown.length === 0 ? (
         <div style={{ padding: 40, textAlign: "center", color: SUB, fontSize: 14, background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: 12 }}>
           {filter === "open" ? "🎉 目前沒有待處理的事項" : "尚無記錄"}
-          <div style={{ fontSize: 12, marginTop: 8 }}>在 LINE 跟 D哥 說「幫我記…」「追一下…」，或按上面「＋ 新增事項」</div>
+          <div style={{ fontSize: 12, marginTop: 8 }}>在 LINE 跟 DD 說「幫我記…」「追一下…」，或按上面「＋ 新增事項」</div>
         </div>
       ) : (
         <div style={{ overflowX: "auto", border: `1px solid ${BORDER}`, borderRadius: 12, background: "#fff" }}>
@@ -2417,8 +2417,8 @@ function IssuesView({ canEdit, requireLogin, confirm, onLog }) {
   );
 }
 
-// ── LINE 群組管理（D哥所在的所有群：設權限 + 每日彙報開關）────────────────────
-// pm_group_seen：D哥自動登記的群清單（名稱/最近活躍/則數，由 bot 寫）
+// ── LINE 群組管理（DD所在的所有群：設權限 + 每日彙報開關）────────────────────
+// pm_group_seen：DD自動登記的群清單（名稱/最近活躍/則數，由 bot 寫）
 // pm_bot_groups：每個群的設定（mode/綁定工程/彙報開關，由這頁寫）
 function GroupsView({ cats, canEdit, requireLogin, settings, setSettings, journal, events, plans, onLog }) {
   const [seen, setSeen] = useState(null);
@@ -2466,10 +2466,10 @@ function GroupsView({ cats, canEdit, requireLogin, settings, setSettings, journa
   const toggleMonitor = (gid) => { if (!guard()) return; persist({ ...cfg, [gid]: { ...(cfg[gid] || {}), monitor: !effMonitor(gid) } }); };
   const effChat = (gid) => cfg[gid]?.chat || (effMode(gid) === "internal" ? "normal" : "quiet");
   const setChat = (gid, val) => { if (!guard()) return; persist({ ...cfg, [gid]: { ...(cfg[gid] || {}), chat: val } }); };
-  const renameGroup = (gid, cur) => { if (!guard()) return; const n = window.prompt("這個群的顯示名稱（D哥抓不到名字時可手動命名）", cur || ""); if (n === null) return; persist({ ...cfg, [gid]: { ...(cfg[gid] || {}), name: n.trim() || undefined } }); };
+  const renameGroup = (gid, cur) => { if (!guard()) return; const n = window.prompt("這個群的顯示名稱（DD抓不到名字時可手動命名）", cur || ""); if (n === null) return; persist({ ...cfg, [gid]: { ...(cfg[gid] || {}), name: n.trim() || undefined } }); };
   const removeGroup = (gid) => {
     if (!guard()) return;
-    if (!window.confirm("從清單移除這個群？\n（若 D哥 還在群裡，下次有人講話會再自動出現；只有「已被移出/解散」的死群才會真正消失）")) return;
+    if (!window.confirm("從清單移除這個群？\n（若 DD 還在群裡，下次有人講話會再自動出現；只有「已被移出/解散」的死群才會真正消失）")) return;
     const ns = { ...seen }; delete ns[gid]; setSeen(ns);
     try { window.storage.set("pm_group_seen", JSON.stringify(ns), true); } catch (_) {}
     const nc = { ...cfg }; delete nc[gid]; persist(nc);
@@ -2481,7 +2481,7 @@ function GroupsView({ cats, canEdit, requireLogin, settings, setSettings, journa
   // 過濾掉「私訊」誤登記的項目：LINE 個人 id 以 U 開頭（群組 C、聊天室 R）——私訊不是群，不該出現在這頁
   const idsAll = Array.from(new Set([DEFAULT_LINE_GROUP, ...Object.keys(seen), ...Object.keys(cfg)]))
     .filter(gid => !String(gid).startsWith("U") && (seen[gid]?.src !== "user"));
-  // 未命名群（抓不到名字的亂碼 ID）直接不顯示（張良 2026-07-18）；D哥抓到名字後會自動出現
+  // 未命名群（抓不到名字的亂碼 ID）直接不顯示（張良 2026-07-18）；DD抓到名字後會自動出現
   const hasName = (gid) => { const n = (cfg[gid]?.name) || seen[gid]?.name || (gid === DEFAULT_LINE_GROUP ? "瑞光路337" : ""); return n && !/^[CRU][0-9a-f]{32}$/.test(n); };
   const ids = idsAll.filter(hasName);
   const hiddenN = idsAll.length - ids.length;
@@ -2500,7 +2500,7 @@ function GroupsView({ cats, canEdit, requireLogin, settings, setSettings, journa
     <div>
       <div style={{ display: "flex", alignItems: "center", gap: 12, margin: "8px 0 6px", flexWrap: "wrap" }}>
         <div style={{ fontSize: 17, fontWeight: 700, color: TEXT }}>💬 LINE 群組</div>
-        <div style={{ fontSize: 12.5, color: SUB }}>D哥所在 {ids.length} 個群{hiddenN > 0 ? `（另 ${hiddenN} 個未命名群已隱藏，抓到群名會自動出現）` : ""}{saving ? " · 儲存中…" : ""}</div>
+        <div style={{ fontSize: 12.5, color: SUB }}>DD所在 {ids.length} 個群{hiddenN > 0 ? `（另 ${hiddenN} 個未命名群已隱藏，抓到群名會自動出現）` : ""}{saving ? " · 儲存中…" : ""}</div>
       </div>
       <div style={{ fontSize: 12, color: SUB, marginBottom: 14, lineHeight: 1.6 }}>
         <b style={{ color: ACCENT }}>內部群</b>＝自己人，可查預算金額全部工程；<b style={{ color: "#2E6FB0" }}>廠商群</b>＝只回它那項工程進度，<b style={{ color: ACCENT }}>絕不洩漏金額</b>（要選綁定工程）；<b style={{ color: SUB }}>鎖定</b>＝只閒聊。外群一律「叫名字才回話」。<br />
@@ -2532,7 +2532,7 @@ function GroupsView({ cats, canEdit, requireLogin, settings, setSettings, journa
                   <td style={td}>
                     <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                       <span style={{ width: 8, height: 8, borderRadius: "50%", background: MODE_COLOR[mode], flexShrink: 0 }} />
-                      <span style={{ fontWeight: 600, color: isRawId ? SUB : TEXT, maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={isRawId ? "D哥抓不到群名，點 ✎ 手動命名" : name}>{isRawId ? "（未命名群）" : name}</span>
+                      <span style={{ fontWeight: 600, color: isRawId ? SUB : TEXT, maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={isRawId ? "DD抓不到群名，點 ✎ 手動命名" : name}>{isRawId ? "（未命名群）" : name}</span>
                       <button onClick={() => renameGroup(gid, isRawId ? "" : name)} title="改顯示名稱" style={{ border: "none", background: "none", cursor: "pointer", color: isRawId ? ACCENT : SUB, fontSize: 12, padding: 0 }}>✎</button>
                       {!isDefault && <button onClick={() => removeGroup(gid)} title="從清單移除（死群清理）" style={{ border: "none", background: "none", cursor: "pointer", color: isRawId ? "#b3261e" : SUB, fontSize: 12, padding: 0 }}>🗑</button>}
                     </div>
@@ -2576,7 +2576,7 @@ function GroupsView({ cats, canEdit, requireLogin, settings, setSettings, journa
         </table>
       </div>
       <div style={{ fontSize: 11.5, color: SUB, marginTop: 10, lineHeight: 1.6 }}>
-        新群只要 D哥 在裡面、有人講話或貼圖，就會自動列進來。設定即時生效。
+        新群只要 DD 在裡面、有人講話或貼圖，就會自動列進來。設定即時生效。
       </div>
       {/* LINE 通知設定（從 AI設定 整合過來）*/}
       {settings && (
@@ -2700,7 +2700,7 @@ function CompareView({ canEdit, requireLogin, onLog }) {
       {ests.length === 0 ? (
         <div style={{ padding: 40, textAlign: "center", color: SUB, fontSize: 14, background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: 12 }}>
           上傳 2 份以上估價單（PDF／圖片）開始比價
-          <div style={{ fontSize: 12, marginTop: 8 }}>D哥 會解析每份的廠商／總額／品項，自動排序並對比</div>
+          <div style={{ fontSize: 12, marginTop: 8 }}>DD 會解析每份的廠商／總額／品項，自動排序並對比</div>
         </div>
       ) : (
         <>
@@ -5590,12 +5590,12 @@ function BotUsagePanel() {
     <div style={{ background: "#fbf8f1", border: `1px solid ${ACCENT}`, borderRadius: 12, padding: 20 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
         <span style={{ background: "#1A1A1A", color: "#fff", fontSize: 12, fontWeight: 800, borderRadius: 6, padding: "3px 8px" }}>:D</span>
-        <div style={{ fontSize: 15, fontWeight: 700, color: "#211C15" }}>D哥（LINE bot）用量 / 估算花費</div>
+        <div style={{ fontSize: 15, fontWeight: 700, color: "#211C15" }}>DD（LINE bot）用量 / 估算花費</div>
         <div style={{ flex: 1 }} />
         <button onClick={load} style={{ fontSize: 12, border: "1px solid #d9cfbd", background: "#ece4d6", color: "#6F6656", borderRadius: 7, padding: "5px 12px", cursor: "pointer" }}>↻ 重新整理</button>
       </div>
       <div style={{ background: "#FBF0EC", borderRadius: 8, padding: "8px 12px", fontSize: 12, color: "#6F6656", marginBottom: 14 }}>
-        D哥 在 LINE（守門 + 思考 + 彙報 + 監控）累計呼叫 Anthropic API 的<b style={{ color: ACCENT }}>估算</b>花費。<b>這是主要花費。</b>精確帳以 platform.claude.com → Usage（篩 ground-bot key）為準。
+        DD 在 LINE（守門 + 思考 + 彙報 + 監控）累計呼叫 Anthropic API 的<b style={{ color: ACCENT }}>估算</b>花費。<b>這是主要花費。</b>精確帳以 platform.claude.com → Usage（篩 ground-bot key）為準。
       </div>
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 14 }}>
         {card("估算總花費（USD）", "$" + totUsd.toFixed(3))}
@@ -5619,7 +5619,7 @@ function BotUsagePanel() {
           ))}
         </div>
       ) : (
-        <div style={{ fontSize: 12, color: "#9b9384", textAlign: "center", padding: "12px 0" }}>尚無紀錄（從 v7.5 起累計；D哥 之後每次在 LINE 動作就會記）</div>
+        <div style={{ fontSize: 12, color: "#9b9384", textAlign: "center", padding: "12px 0" }}>尚無紀錄（從 v7.5 起累計；DD 之後每次在 LINE 動作就會記）</div>
       )}
       <div style={{ fontSize: 11, color: "#9b9384", marginTop: 10 }}>{data.since ? `自 ${String(data.since).slice(0, 10)} 起累計` : ""}　⚠ 估算值，精確帳以 Console（ground-bot key）為準。</div>
       <LineQuotaBlock />
