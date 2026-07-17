@@ -633,7 +633,10 @@ export default function SupplyView({ view, K, canEdit, confirm, showMoney, userN
   const byCat = {};
   prods.forEach(x => { (byCat[x.category || "未分類"] = byCat[x.category || "未分類"] || []).push(x); });
   const catNames = [...cats.map(c => c.name), ...Object.keys(byCat).filter(n => !cats.some(c => c.name === n))].filter(n => byCat[n]?.length);
-  const GTC = `minmax(150px,1.2fr) minmax(130px,1fr) minmax(120px,1fr) 76px ${showMoney ? "88px " : ""}64px 110px 80px 44px`;
+  // ground-pack 風：緊湊欄寬（固定為主、備註吃剩餘）＋每格直向格線＋方角硬邊框（張良 2026-07-18 指定）
+  const GTC = `172px 188px minmax(120px,1fr) 56px ${showMoney ? "84px " : ""}52px 96px 58px 34px`;
+  const vline = { borderRight: "1px solid #e0d6bf", alignSelf: "stretch", display: "flex", alignItems: "center" };
+  const hardBox = { background: "#fff", border: `1.5px solid ${C.hard}`, borderRadius: 4, marginBottom: 12, overflow: "hidden" };
   const addProduct = (catName) => {
     if (!canEdit) return;
     const np = { id: rid("p"), category: catName || catNames[0] || "未分類", name: "", english_name: "", price: "", note: "", is_active: true, sort: (db.products || []).length, unit: "", tags: [] };
@@ -643,16 +646,16 @@ export default function SupplyView({ view, K, canEdit, confirm, showMoney, userN
   const rows = (list) => list.map((x, i) => (
     <div key={x.id} onClick={() => setSel(x.id)}
       onMouseEnter={e => e.currentTarget.style.background = C.soft} onMouseLeave={e => e.currentTarget.style.background = x.is_active === false ? "#f2ede1" : "#fff"}
-      style={{ display: "grid", gridTemplateColumns: GTC, alignItems: "center", minHeight: 36, borderTop: `1px solid #f0ead9`, cursor: "pointer", background: x.is_active === false ? "#f2ede1" : "#fff", opacity: x.is_active === false ? .6 : 1, padding: "0 4px" }}>
-      <div style={{ padding: "0 8px", fontSize: 13, fontWeight: 600, color: C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{x.name || "（未命名）"}</div>
-      <div style={{ padding: "0 8px", fontSize: 11.5, color: C.faint, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{x.english_name}</div>
-      <div style={{ padding: "0 8px", fontSize: 11.5, color: C.sub, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{x.note || "—"}</div>
-      <div style={{ padding: "0 8px", fontSize: 12, color: x.unit ? C.sub : "#d5cbb6" }}>{x.unit || "—"}</div>
-      {showMoney && <div style={{ padding: "0 8px", fontFamily: MONOF, fontSize: 12, textAlign: "right", color: x.price ? C.text : "#d5cbb6" }}>{fmt$(x.price) || "—"}</div>}
-      <div style={{ padding: "0 8px", fontFamily: MONOF, fontSize: 12, textAlign: "center", color: packCount(x.id) ? C.blue : "#d5cbb6" }}>{packCount(x.id) || "—"}</div>
-      <div style={{ padding: "0 6px", display: "flex", gap: 3, flexWrap: "wrap" }}>{(x.tags || []).map(t => <span key={t} style={{ fontSize: 10, color: C.accent, background: "#fbeee6", borderRadius: 8, padding: "0 6px" }}>#{t}</span>)}</div>
-      <div style={{ padding: "0 6px" }}><span style={{ fontSize: 10.5, fontWeight: 600, color: x.is_active !== false ? C.green : C.faint, background: x.is_active !== false ? "#eef5ef" : "#ece4d6", borderRadius: 9, padding: "1px 8px" }}>{x.is_active !== false ? "啟用" : "停用"}</span></div>
-      <div style={{ textAlign: "center", color: C.faint, fontSize: 12 }}>✎</div>
+      style={{ display: "grid", gridTemplateColumns: GTC, alignItems: "stretch", minHeight: 34, borderTop: `1px solid #e0d6bf`, cursor: "pointer", background: x.is_active === false ? "#f2ede1" : "#fff", opacity: x.is_active === false ? .6 : 1 }}>
+      <div style={{ ...vline, padding: "0 9px", fontSize: 13, fontWeight: 600, color: C.text, overflow: "hidden" }}><span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{x.name || "（未命名）"}</span></div>
+      <div style={{ ...vline, padding: "0 9px", fontSize: 11.5, color: C.faint, overflow: "hidden" }}><span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{x.english_name}</span></div>
+      <div style={{ ...vline, padding: "0 9px", fontSize: 11.5, color: C.sub, overflow: "hidden" }}><span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{x.note || "—"}</span></div>
+      <div style={{ ...vline, padding: "0 9px", fontSize: 12, color: x.unit ? C.sub : "#d5cbb6" }}>{x.unit || "—"}</div>
+      {showMoney && <div style={{ ...vline, padding: "0 9px", fontFamily: MONOF, fontSize: 12, justifyContent: "flex-end", color: x.price ? C.text : "#d5cbb6" }}>{fmt$(x.price) || "—"}</div>}
+      <div style={{ ...vline, padding: "0 9px", fontFamily: MONOF, fontSize: 12, justifyContent: "center", color: packCount(x.id) ? C.blue : "#d5cbb6" }}>{packCount(x.id) || "—"}</div>
+      <div style={{ ...vline, padding: "0 7px", gap: 3, flexWrap: "wrap" }}>{(x.tags || []).map(t => <span key={t} style={{ fontSize: 10, color: C.accent, background: "#fbeee6", borderRadius: 3, padding: "0 5px" }}>#{t}</span>)}</div>
+      <div style={{ ...vline, padding: "0 7px" }}><span style={{ fontSize: 10.5, fontWeight: 600, color: x.is_active !== false ? C.green : C.faint }}>{x.is_active !== false ? "啟用" : "停用"}</span></div>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", color: C.faint, fontSize: 12 }}>✎</div>
     </div>
   ));
   const selP = sel && db.products.find(x => x.id === sel);
@@ -683,14 +686,14 @@ export default function SupplyView({ view, K, canEdit, confirm, showMoney, userN
       </div>
       {/* 表格 */}
       {flat ? (
-        <div style={box}>
-          <div style={{ display: "grid", gridTemplateColumns: GTC, background: "#ece4d6", borderBottom: `1.5px solid ${C.hard}`, padding: "0 4px" }}>
-            {["品名", "英文名稱", "內容/備註", "單位", ...(showMoney ? ["售價"] : []), "包材", "標籤", "狀態", ""].map((h, i2) => <div key={i2} style={{ padding: "7px 8px", fontSize: 10.5, letterSpacing: .6, color: C.sub, fontWeight: 700, textAlign: h === "售價" ? "right" : h === "包材" ? "center" : "left" }}>{h}</div>)}
+        <div style={hardBox}>
+          <div style={{ display: "grid", gridTemplateColumns: GTC, background: "#ece4d6", borderBottom: `1.5px solid ${C.hard}`, alignItems: "stretch" }}>
+            {["品名", "英文名稱", "內容/備註", "單位", ...(showMoney ? ["售價"] : []), "包材", "標籤", "狀態", ""].map((h, i2) => <div key={i2} style={{ ...vline, borderRight: "1px solid #d3c8ac", padding: "7px 9px", fontSize: 10.5, letterSpacing: .6, color: C.sub, fontWeight: 700, justifyContent: h === "售價" ? "flex-end" : h === "包材" ? "center" : "flex-start" }}>{h}</div>)}
           </div>
           {rows([...prods].sort((a, b) => (a.sort || 0) - (b.sort || 0)))}
         </div>
       ) : catNames.map(cn => (
-        <div key={cn} style={box}>
+        <div key={cn} style={hardBox}>
           <div onClick={() => setCollapsed(c2 => ({ ...c2, [cn]: !c2[cn] }))} style={{ display: "flex", alignItems: "center", gap: 8, padding: "9px 12px", background: "#ece4d6", cursor: "pointer" }}>
             <span style={{ fontSize: 11, color: C.faint }}>{collapsed[cn] ? "▸" : "▾"}</span>
             <span style={{ fontSize: 13.5, fontWeight: 800, color: C.text }}>{cn}</span>
@@ -700,8 +703,8 @@ export default function SupplyView({ view, K, canEdit, confirm, showMoney, userN
           </div>
           {!collapsed[cn] && (
             <>
-              <div style={{ display: "grid", gridTemplateColumns: GTC, background: C.soft, borderTop: `1px solid ${C.line}`, padding: "0 4px" }}>
-                {["品名", "英文名稱", "內容/備註", "單位", ...(showMoney ? ["售價"] : []), "包材", "標籤", "狀態", ""].map((h, i2) => <div key={i2} style={{ padding: "5px 8px", fontSize: 10, letterSpacing: .6, color: C.faint, fontWeight: 700, textAlign: h === "售價" ? "right" : h === "包材" ? "center" : "left" }}>{h}</div>)}
+              <div style={{ display: "grid", gridTemplateColumns: GTC, background: C.soft, borderTop: `1px solid ${C.line}`, alignItems: "stretch" }}>
+                {["品名", "英文名稱", "內容/備註", "單位", ...(showMoney ? ["售價"] : []), "包材", "標籤", "狀態", ""].map((h, i2) => <div key={i2} style={{ ...vline, padding: "5px 9px", fontSize: 10, letterSpacing: .6, color: C.faint, fontWeight: 700, justifyContent: h === "售價" ? "flex-end" : h === "包材" ? "center" : "flex-start" }}>{h}</div>)}
               </div>
               {rows([...byCat[cn]].sort((a, b) => (a.sort || 0) - (b.sort || 0)))}
             </>
