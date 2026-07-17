@@ -784,8 +784,8 @@ export default function FinanceView({ K, confirm, canEdit, ReceiptUploader, onLo
             const unstable = Object.entries(itemDay).map(([n, dm]) => { const qs = days.map(d => dm[d.date] || 0); const mean = qs.reduce((a, b) => a + b, 0) / qs.length; if (mean < 1.5) return null; const sd = Math.sqrt(qs.reduce((t, q) => t + (q - mean) ** 2, 0) / qs.length); return { n, cv: sd / mean }; }).filter(Boolean).sort((a, b) => b.cv - a.cv).slice(0, 3);
             if (unstable.length) out.push(["🎢", "銷量最不穩：" + unstable.map(x => `${x.n}（波動${Math.round(x.cv * 100)}%）`).join("、")]);
           }
-          const slow = Object.entries(itemAgg).filter(([, v]) => v.qty <= 2 && v.amt > 0).map(([n]) => n);
-          if (slow.length) out.push(["🐌", `滯銷提醒（期間只賣 ≤2 份）共 ${slow.length} 項：${slow.slice(0, 6).join("、")}${slow.length > 6 ? "…" : ""}`]);
+          const slow = Object.entries(itemAgg).filter(([, v]) => v.qty <= 2 && v.amt > 0).map(([n, v]) => `${n}〔${v.cat}・${v.qty}份〕`);
+          if (slow.length) out.push(["🐌", `滯銷提醒（期間只賣 ≤2 份）共 ${slow.length} 項：${slow.slice(0, 6).join("、")}${slow.length > 6 ? "…" : ""}（同名但分類不同＝POS 新舊重複品項，建議整併）`]);
           const discAbs = Math.abs(sum(days, "discount"));
           if (revSum && discAbs / revSum > 0.03) out.push(["⚠️", `折扣佔營收 ${Math.round(discAbs / revSum * 100)}%（${fmt(discAbs)}）超過 3% 警戒——點付款卡的「折扣/優惠券明細」查誰給的、為什麼`]);
           const wasteAbs = Math.abs(sum(days, "voidItems")) + Math.abs(sum(days, "returnDish"));
