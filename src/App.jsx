@@ -5646,7 +5646,7 @@ function LineQuotaBlock() {
         <button onClick={load} disabled={busy} style={{ border: "1px solid #d9cfbd", background: "#fff", color: "#5a5247", borderRadius: 7, padding: "4px 12px", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>{busy ? "…" : "↻ 重新整理"}</button>
       </div>
       {q.limit && <div style={{ height: 8, background: "#eee5d3", borderRadius: 4, overflow: "hidden", marginBottom: 6 }}><div style={{ width: pct + "%", height: "100%", background: warn ? "#b3261e" : "#3f7d4e" }} /></div>}
-      <div style={{ fontSize: 11, color: "#9b9384", marginBottom: 10 }}>只有「主動推播」計額度（D發群/每日彙報/監控通知）；在群裡回話（reply）不計、免費。官方即時數字，與 LINE 後台一致。</div>
+      <div style={{ fontSize: 11, color: "#9b9384", marginBottom: 10 }}>只有「主動推播」計額度（D發群/每日彙報/監控通知）；在群裡回話（reply）不計、免費。這裡是官方「即時」API 數字；LINE 後台總覽頁更新有延遲（常慢幾小時～一天），兩邊短暫不同是正常的，以這裡為準。</div>
       {(q.items || []).length > 0 && (
         <div style={{ border: "1px solid #E3DAC6", borderRadius: 8, overflow: "hidden" }}>
           <div style={{ display: "flex", background: "#ece4d6", fontSize: 11, color: "#6F6656", fontWeight: 600, padding: "5px 12px" }}>

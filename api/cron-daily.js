@@ -6,15 +6,16 @@ const GROUP = clean(process.env.LINE_DEFAULT_GROUP) || 'Cf7940efc6517b0c084ad2ad
 const SB_URL = clean(process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL)
 const SB_KEY = (process.env.SUPABASE_SERVICE_ROLE_KEY || '').trim().replace(/^["']|["']$/g, '').replace(/^[A-Za-z0-9_]+=/, '').trim()
 
-async function loadSnapshot() {
+async function kvGet(id) {
   if (!SB_URL || !SB_KEY) return null
   try {
-    const r = await fetch(`${SB_URL}/rest/v1/pm_documents?id=eq.pm_bot_context&select=data`, { headers: { apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}` } })
+    const r = await fetch(`${SB_URL}/rest/v1/pm_documents?id=eq.${id}&select=data`, { headers: { apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}` } })
     const rows = r.ok ? await r.json() : []
     if (rows[0]?.data?.v) return JSON.parse(rows[0].data.v)
   } catch (_) {}
   return null
 }
+const loadSnapshot = () => kvGet('pm_bot_context')
 
 const nt = (n) => 'NT$' + Math.round(n || 0).toLocaleString()
 
@@ -43,21 +44,27 @@ export default async function handler(req, res) {
   // 信箱管理：依張良設定的規則自動處理新信（LWLWLW 空間）
   try { await fetch('https://ground-pm.vercel.app/api/mail-manage?action=apply&days=7') } catch (_) {}
   if (!TOKEN) return res.status(200).json({ ok: false, skipped: '未設 LINE_CHANNEL_ACCESS_TOKEN' })
+  // 尊重「設定 → LINE 通知」開關（張良 2026-07-18：關了還照發＝bug）；沒勾就只做資料同步、不推播
+  const settings = (await kvGet('pm_settings')) || {}
+  const notify = settings.lineNotify || {}
+  const target = clean(settings.lineGroupId) || GROUP
   const messages = []
-  const snap = await loadSnapshot()
-  const text = buildReport(snap)
-  if (text) messages.push({ type: 'text', text })
-  // 360評鑑：每週五（台北時間）自動觸發「回饋時間」提醒 —— 解決人性懶得給回饋
+  if (notify.daily) {
+    const snap = await loadSnapshot()
+    const text = buildReport(snap)
+    if (text) messages.push({ type: 'text', text })
+  }
+  // 360評鑑：每週五（台北時間）「回饋時間」提醒——跟著「AI 週報每週五」開關走
   const taipeiDay = new Date(Date.now() + 8 * 3600e3).getUTCDay()
-  if (taipeiDay === 5) messages.push({ type: 'text', text: '💬 每週回饋時間！\n花 30 秒到「夥伴中心 → 回饋」，給一位夥伴一句具體的鼓勵或建議（可匿名）。\n被按「幫到我」還會加分，衝一波回饋王 👑\nhttps://ground-pm.vercel.app/' })
-  if (!messages.length) return res.status(200).json({ ok: false, skipped: '無內容可推' })
+  if (taipeiDay === 5 && notify.weekly) messages.push({ type: 'text', text: '💬 每週回饋時間！\n花 30 秒到「夥伴中心 → 回饋」，給一位夥伴一句具體的鼓勵或建議（可匿名）。\n被按「幫到我」還會加分，衝一波回饋王 👑\nhttps://ground-pm.vercel.app/' })
+  if (!messages.length) return res.status(200).json({ ok: true, skipped: '通知開關未勾選，僅完成資料同步、未推播' })
   try {
     const r = await fetch('https://api.line.me/v2/bot/message/push', {
       method: 'POST',
       headers: { 'content-type': 'application/json', authorization: `Bearer ${TOKEN}` },
-      body: JSON.stringify({ to: GROUP, messages: messages.slice(0, 5) }),
+      body: JSON.stringify({ to: target, messages: messages.slice(0, 5) }),
     })
-    if (r.ok) { try { const { logPush } = await import('./push.js'); await logPush(GROUP, messages.length, '每日彙報') } catch (_) {} }
+    if (r.ok) { try { const { logPush } = await import('./push.js'); await logPush(target, messages.length, '每日彙報') } catch (_) {} }
     return res.status(200).json({ ok: r.ok, pushed: messages.length })
   } catch (e) {
     return res.status(200).json({ ok: false, error: e?.message })
