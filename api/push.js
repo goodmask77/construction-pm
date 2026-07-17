@@ -7,14 +7,15 @@ const PUSH_KEY = clean(process.env.LINE_PUSH_KEY) || 'ground-pm-2026-secret-abc1
 const SB_URL = clean(process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL)
 const SB_KEY = (process.env.SUPABASE_SERVICE_ROLE_KEY || '').trim()
 // 推播去向紀錄（給 設定→用量 顯示「用在哪」）；best-effort，失敗不影響推播
-export async function logPush(to, n, src) {
+export async function logPush(to, n, src, m = 1) {
+  // n=訊息則數、m=群內人數、b=計費數(n×m)——LINE 群組推播按人數計費
   try {
     if (!SB_URL || !SB_KEY) return
     const H = { apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}`, 'content-type': 'application/json', Prefer: 'resolution=merge-duplicates' }
     const r = await fetch(`${SB_URL}/rest/v1/pm_documents?id=eq.pm_bot_pushlog&select=data`, { headers: H })
     const rows = r.ok ? await r.json() : []
     const doc = rows[0]?.data?.v ? JSON.parse(rows[0].data.v) : { items: [] }
-    doc.items = [{ ts: new Date().toISOString(), to, n, src }, ...(doc.items || [])].slice(0, 200)
+    doc.items = [{ ts: new Date().toISOString(), to, n, m, b: n * m, src }, ...(doc.items || [])].slice(0, 200)
     await fetch(`${SB_URL}/rest/v1/pm_documents`, { method: 'POST', headers: H, body: JSON.stringify({ id: 'pm_bot_pushlog', data: { v: JSON.stringify(doc) }, editor: '推播紀錄', updated_at: new Date().toISOString() }) })
   } catch (_) {}
 }
@@ -54,7 +55,7 @@ export default async function handler(req, res) {
     }
     const members = await groupMembers(to)
     const billed = messages.length * members
-    await logPush(to, billed, body.src || 'App推播(叫貨單/D發群)')
+    await logPush(to, messages.length, body.src || 'App推播(叫貨單/D發群)', members)
     return res.status(200).json({ ok: true, members, billed })
   } catch (e) {
     return res.status(500).json({ ok: false, error: e?.message || '伺服器錯誤' })

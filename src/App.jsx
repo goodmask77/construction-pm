@@ -5691,14 +5691,16 @@ function LineQuotaBlock() {
       {(q.items || []).length > 0 && (
         <div style={{ border: "1px solid #E3DAC6", borderRadius: 8, overflow: "hidden" }}>
           <div style={{ display: "flex", background: "#ece4d6", fontSize: 11, color: "#6F6656", fontWeight: 600, padding: "5px 12px" }}>
-            <div style={{ width: 96 }}>時間</div><div style={{ flex: 1.4 }}>推到哪</div><div style={{ flex: 1 }}>來源</div><div style={{ width: 64, textAlign: "right" }}>計費則數</div>
+            <div style={{ width: 96 }}>時間</div><div style={{ flex: 1.4 }}>推到哪</div><div style={{ flex: 1 }}>來源</div><div style={{ width: 44, textAlign: "right" }}>則數</div><div style={{ width: 44, textAlign: "right" }}>人數</div><div style={{ width: 56, textAlign: "right" }}>計費數</div>
           </div>
           {q.items.slice(0, 10).map((it, i) => (
             <div key={i} style={{ display: "flex", fontSize: 12, color: "#211C15", padding: "5px 12px", borderTop: "1px solid #e6ddc9" }}>
               <div style={{ width: 96, fontFamily: "monospace", fontSize: 11, color: "#9b9384" }}>{new Date(it.ts).toLocaleString("zh-TW", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })}</div>
               <div style={{ flex: 1.4, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{it.name}</div>
               <div style={{ flex: 1, color: "#5a5247" }}>{it.src || "—"}</div>
-              <div style={{ width: 64, textAlign: "right", fontFamily: "monospace" }}>{it.n}</div>
+              <div style={{ width: 44, textAlign: "right", fontFamily: "monospace" }}>{it.n}</div>
+              <div style={{ width: 44, textAlign: "right", fontFamily: "monospace", color: "#9b9384" }}>{it.m ?? "—"}</div>
+              <div style={{ width: 56, textAlign: "right", fontFamily: "monospace", fontWeight: 700 }} title={it.b == null ? "舊紀錄沒存人數，算不出計費數" : ""}>{it.b ?? "—"}</div>
             </div>
           ))}
         </div>
