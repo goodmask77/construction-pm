@@ -5,6 +5,7 @@ import { fmt, baseAmount, taxOf, estAmount, paidOf, unpaidOf, calcEstimated, cal
 import { INITIAL_CATEGORIES } from "./lib/seed.js";
 import { SPACES, SPACE_CONF, PERM_MATRIX, LEGACY_EDIT, PERM_NONE, DEFAULT_ROLES, ALL_VIEW_KEYS, ALL_EDIT_KEYS, ALL_MONEY_KEYS } from "./lib/spaces.js";
 import { buildBotSnapshot } from "./lib/snapshot.js";
+import CHANGELOG_GEN from "./changelog.gen.json"; // build 前自動從 git 產生（scripts/gen-changelog.mjs）——手寫漏了也不停更
 import FinanceView from "./finance/Finance.jsx";
 import MailManagerView from "./lw/MailManager.jsx";
 import SupplyView from "./supply/Supply.jsx";
@@ -4535,16 +4536,21 @@ const CHANGELOG = [
   ]},
 ];
 function ChangelogView() {
+  // 手寫的 CHANGELOG 優先；沒手寫到的日期用 git commit 自動整理保底（不會再「停更」）
+  const curated = new Set(CHANGELOG.map(c => c.date));
+  const MERGED = [...CHANGELOG, ...CHANGELOG_GEN.filter(g => !curated.has(g.date)).map(g => ({ ...g, auto: true }))]
+    .sort((a, b) => (a.date < b.date ? 1 : -1));
   return (
     <div style={{ maxWidth: 760, margin: "0 auto" }}>
       <SecHead tag="更新" title="App 更新紀錄" style={{ marginBottom: 6 }} />
-      <div style={{ fontSize: 12.5, color: SUB, marginBottom: 16, background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: 10, padding: "8px 12px" }}>這裡記錄我們對這個系統做的功能新增／修改，讓大家知道最近多了什麼、改了什麼。</div>
+      <div style={{ fontSize: 12.5, color: SUB, marginBottom: 16, background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: 10, padding: "8px 12px" }}>這裡記錄我們對這個系統做的功能新增／修改，讓大家知道最近多了什麼、改了什麼。標「自動」的是從版本紀錄自動整理，文字比較技術一點。</div>
       <div style={{ display: "grid", gap: 12 }}>
-        {CHANGELOG.map((c, i) => (
+        {MERGED.map((c, i) => (
           <div key={c.date} style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: 12, padding: "12px 16px" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
               <span style={{ fontSize: 13.5, fontWeight: 800, color: i === 0 ? ACCENT : TEXT }}>{c.date}</span>
               {i === 0 && <span style={{ fontSize: 10.5, color: "#fff", background: ACCENT, borderRadius: 5, padding: "1px 7px", fontWeight: 600 }}>最新</span>}
+              {c.auto && <span title="從 git 版本紀錄自動整理" style={{ fontSize: 10.5, color: SUB, background: "#eee5d3", borderRadius: 5, padding: "1px 7px", fontWeight: 600 }}>自動</span>}
             </div>
             <ul style={{ margin: 0, paddingLeft: 18, display: "grid", gap: 5 }}>
               {c.items.map((it, j) => <li key={j} style={{ fontSize: 13, color: TEXT, lineHeight: 1.55 }}>{it}</li>)}

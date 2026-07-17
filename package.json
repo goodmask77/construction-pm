@@ -1,10 +1,11 @@
 {
   "name": "construction-pm",
   "private": true,
-  "version": "1.2.0",
+  "version": "1.3.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "prebuild": "node scripts/gen-changelog.mjs",
     "build": "vite build",
     "preview": "vite preview"
   },
