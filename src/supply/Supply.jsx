@@ -119,7 +119,7 @@ export default function SupplyView({ view, K, canEdit, confirm, showMoney }) {
     const grandTotal = vlist.reduce((t, v) => t + pickTotal(v.id), 0);
     const d2 = (n) => (Math.round(n * 100) / 100).toLocaleString(undefined, { maximumFractionDigits: 2 });
     const nt2 = (n) => "NT$" + d2(n);
-    const ST = ["已送出", "廠商已確認", "已到貨", "草稿"];
+    const ST = ["已送出", "廠商已確認", "已到貨", "有問題", "草稿"];
     // 月底對帳：本月（依紀錄月份）各廠商彙總
     const moNow = new Date().toISOString().slice(0, 7);
     const moOrders = orders.filter(od => (od.ts || "").slice(0, 7) === moNow && od.status !== "草稿");
@@ -206,12 +206,12 @@ export default function SupplyView({ view, K, canEdit, confirm, showMoney }) {
               <div key={od.id} onClick={() => setOdSel(od.id)} style={{ display: "grid", gridTemplateColumns: `108px minmax(90px,0.8fr) 56px minmax(150px,1.4fr) ${showMoney ? "90px " : ""}88px 110px 30px`, gap: 8, alignItems: "center", minHeight: 32, borderTop: `1px solid #f0ead9`, fontSize: 12, cursor: "pointer" }}
                 onMouseEnter={e => e.currentTarget.style.background = C.soft} onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
                 <span style={{ fontFamily: MONOF, fontSize: 11, color: C.sub }}>{new Date(od.ts).toLocaleString("zh-TW", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })}</span>
-                <span style={{ fontWeight: 700, color: C.text }}>{od.vendorName}</span>
+                <span style={{ fontWeight: 700, color: C.text }}>{od.vendorName}{od.check && Object.values(od.check.items || {}).some(x => x.st && x.st !== "✓ 正確") && <span title="驗收有問題" style={{ color: C.red, marginLeft: 4 }}>⚠</span>}</span>
                 <span style={{ color: C.sub }}>{od.items.length} 項</span>
                 <span style={{ color: C.sub, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={od.items.map(x => `${x.name}×${x.qty}`).join("、")}>{od.items.map(x => `${x.name}×${x.qty}`).join("、")}</span>
                 {showMoney && <span style={{ fontFamily: MONOF, textAlign: "right", color: orderTotal(od) ? C.text : "#d5cbb6" }}>{orderTotal(od) ? "NT$" + Math.round(orderTotal(od)).toLocaleString() : "—"}</span>}
                 <span style={{ fontSize: 10.5, color: C.faint }}>{od.via}</span>
-                <select onClick={e => e.stopPropagation()} value={od.status} onChange={e => saveOrders(orders.map(x => x.id === od.id ? { ...x, status: e.target.value } : x))} disabled={!canEdit} style={{ ...inp, padding: "3px 6px", fontSize: 11.5, color: od.status === "已到貨" ? C.green : od.status === "廠商已確認" ? C.blue : C.text }}>{ST.map(x => <option key={x}>{x}</option>)}</select>
+                <select onClick={e => e.stopPropagation()} value={od.status} onChange={e => saveOrders(orders.map(x => x.id === od.id ? { ...x, status: e.target.value } : x))} disabled={!canEdit} style={{ ...inp, padding: "3px 6px", fontSize: 11.5, color: od.status === "已到貨" ? C.green : od.status === "有問題" ? C.red : od.status === "廠商已確認" ? C.blue : C.text }}>{ST.map(x => <option key={x}>{x}</option>)}</select>
                 {canEdit ? <button onClick={async (e) => { e.stopPropagation(); if (await confirm("刪除這筆叫貨紀錄？", { confirmLabel: "刪除" })) saveOrders(orders.filter(x => x.id !== od.id)); }} style={{ border: "none", background: "none", color: C.faint, cursor: "pointer" }}>×</button> : <span />}
               </div>
             ))}
@@ -302,6 +302,42 @@ export default function SupplyView({ view, K, canEdit, confirm, showMoney }) {
                       else flash("💻 已複製叫貨單文字，開 LINE 貼給廠商即可");
                     }} style={{ flex: 1, border: "none", background: "#06C755", color: "#fff", borderRadius: 8, padding: "9px 0", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>📱 LINE 分享</button>
                     <button onClick={async () => { try { await navigator.clipboard.writeText(text2); } catch (_) {} markSent("複製"); flash("✓ 已複製叫貨單文字"); }} style={{ flex: 1, border: `1px solid ${C.line}`, background: "#fff", color: C.text, borderRadius: 8, padding: "9px 0", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>📋 複製</button>
+                  </div>
+                );
+              })()}
+              {/* 到貨驗收/核銷：逐項核對 + 備註 + 驗收人（有問題自動標記追蹤） */}
+              {odDetail.status !== "草稿" && (() => {
+                const chk = odDetail.check || { items: {}, by: "", note: "", ts: "" };
+                const setChk = (patch) => saveOrders(orders.map(x => x.id === odDetail.id ? { ...x, check: { ...chk, ...patch } } : x));
+                const setChkItem = (i, patch) => setChk({ items: { ...chk.items, [i]: { ...(chk.items[i] || {}), ...patch } } });
+                const ISSUES = ["", "✓ 正確", "數量不符", "規格錯誤", "漏送", "送錯品", "改單", "退回"];
+                const anyIssue = Object.values(chk.items || {}).some(x => x.st && x.st !== "✓ 正確");
+                const allOk = odDetail.items.every((_, i) => (chk.items[i] || {}).st);
+                return (
+                  <div style={{ marginTop: 12, border: `1.5px solid ${anyIssue ? C.red : C.hard}`, borderRadius: 8, padding: "10px 12px", background: anyIssue ? "#fdf3f2" : C.soft }}>
+                    <div style={{ fontSize: 12.5, fontWeight: 800, color: anyIssue ? C.red : C.text, marginBottom: 8 }}>📥 到貨驗收{chk.ts ? `（${new Date(chk.ts).toLocaleString("zh-TW", { hour12: false })}${chk.by ? "・" + chk.by : ""}）` : ""}</div>
+                    {odDetail.items.map((x, i) => {
+                      const ci = chk.items[i] || {};
+                      const bad = ci.st && ci.st !== "✓ 正確";
+                      return (
+                        <div key={i} style={{ display: "grid", gridTemplateColumns: "minmax(120px,1.2fr) 108px minmax(110px,1fr)", gap: 8, alignItems: "center", padding: "3px 0", borderTop: i ? `1px solid #f0ead9` : "none" }}>
+                          <span style={{ fontSize: 12, fontWeight: 600, color: C.text }}>{x.name} <span style={{ color: C.faint, fontSize: 10.5 }}>×{x.qty}{x.unit || ""}</span></span>
+                          <select value={ci.st || ""} onChange={e => setChkItem(i, { st: e.target.value })} disabled={!canEdit} style={{ ...inp, padding: "4px 6px", fontSize: 12, color: bad ? C.red : ci.st ? C.green : C.text, fontWeight: ci.st ? 700 : 400 }}>
+                            {ISSUES.map(o => <option key={o} value={o}>{o || "— 待驗 —"}</option>)}
+                          </select>
+                          <input value={ci.note || ""} onChange={e => setChkItem(i, { note: e.target.value })} disabled={!canEdit} placeholder={bad ? "問題說明（必填較好追）" : "備註"} style={{ ...inp, padding: "4px 8px", fontSize: 12, borderColor: bad && !ci.note ? C.red : C.line }} />
+                        </div>
+                      );
+                    })}
+                    <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap", alignItems: "center" }}>
+                      <input value={chk.by || ""} onChange={e => setChk({ by: e.target.value })} disabled={!canEdit} placeholder="驗收人" style={{ ...inp, width: 100, padding: "5px 8px", fontSize: 12 }} />
+                      <input value={chk.note || ""} onChange={e => setChk({ note: e.target.value })} disabled={!canEdit} placeholder="整體備註（改單/補送約定…）" style={{ ...inp, flex: 1, minWidth: 160, padding: "5px 8px", fontSize: 12 }} />
+                      {canEdit && <button onClick={() => {
+                        const bad2 = Object.values({ ...(chk.items || {}) }).some(x => x.st && x.st !== "✓ 正確");
+                        saveOrders(orders.map(x => x.id === odDetail.id ? { ...x, status: bad2 ? "有問題" : "已到貨", check: { ...chk, ts: new Date().toISOString() } } : x));
+                        flash(bad2 ? "⚠ 驗收完成：有問題項目已標記，狀態→有問題（追蹤到解決）" : "✓ 驗收完成，全數正確，狀態→已到貨");
+                      }} disabled={!allOk} title={allOk ? "" : "每一項都要選驗收結果"} style={{ border: "none", background: allOk ? C.green : "#d5cbb6", color: "#fff", borderRadius: 7, padding: "7px 16px", fontSize: 12.5, fontWeight: 700, cursor: allOk ? "pointer" : "default" }}>完成驗收</button>}
+                    </div>
                   </div>
                 );
               })()}
