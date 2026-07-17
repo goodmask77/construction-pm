@@ -7,6 +7,41 @@
 import { useState, useEffect, useRef } from "react";
 import { Inbox, LayoutGrid, Columns3, List, CalendarDays, ChartGantt, Network, Plus, X, Check, Flame, Calendar, Clock, CircleAlert, ListTodo, Search, Home, Zap, Hourglass, CirclePlay, Coffee, Pin, ArrowUpDown, FolderPlus, Sun } from "lucide-react";
 import { isWaiting, isBlocked, missingDeps, wouldCycle, mergeTask, removeTaskAndRefs, isQuickWin, QUICK_WIN_MAX_MINUTES, orderTasks } from "./taskModel.js";
+import { uploadPhoto } from "../supa.js";
+
+// 任務附件：可上傳檔案＋直接 Cmd+V 貼截圖（彈窗開著時全域接住貼上）＋縮圖點開放大（App 慣例）
+function TaskAttach({ files = [], onChange, canEdit, C, line }) {
+  const [busy, setBusy] = useState(false);
+  const [lb, setLb] = useState(null);
+  const inputRef = useRef(null);
+  const add = async (fileList) => {
+    const arr = Array.from(fileList || []); if (!arr.length || !canEdit) return;
+    setBusy(true); const out = [];
+    for (const f of arr) { try { const { url, path } = await uploadPhoto(f); out.push({ id: "tf" + Math.random().toString(36).slice(2, 7), url, path, name: f.name || "檔案", isImage: /^image\//.test(f.type) }); } catch (_) {} }
+    setBusy(false); if (out.length) onChange([...(files || []), ...out]);
+  };
+  // 彈窗開著（本元件掛載中）時，在任何地方 Cmd+V 貼圖都會進附件
+  useEffect(() => {
+    const h = (e) => { const items = e.clipboardData?.items; if (!items) return; const fs = []; for (const it of items) { if (it.type?.startsWith("image/")) { const f = it.getAsFile(); if (f) fs.push(f); } } if (fs.length) { e.preventDefault(); add(fs); } };
+    document.addEventListener("paste", h);
+    return () => document.removeEventListener("paste", h);
+  }); // eslint-disable-line
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+      <input ref={inputRef} type="file" accept="*/*" multiple style={{ display: "none" }} onChange={e => { add(e.target.files); e.target.value = ""; }} />
+      {(files || []).map(r => (
+        <span key={r.id} style={{ position: "relative", display: "inline-flex" }}>
+          {r.isImage
+            ? <img src={r.url} alt="" onClick={() => setLb(r)} style={{ width: 52, height: 52, objectFit: "cover", borderRadius: 6, border: `1px solid ${line}`, cursor: "zoom-in" }} />
+            : <a href={r.url} target="_blank" rel="noreferrer" title={r.name} style={{ display: "inline-flex", flexDirection: "column", alignItems: "center", justifyContent: "center", width: 52, height: 52, borderRadius: 6, border: `1px solid ${line}`, textDecoration: "none", fontSize: 18 }}>📄<span style={{ fontSize: 8.5, color: "#8a8171", maxWidth: 46, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.name}</span></a>}
+          {canEdit && <button onClick={() => { if (window.confirm("移除這個附件？")) onChange((files || []).filter(x => x.id !== r.id)); }} style={{ position: "absolute", top: -6, right: -6, width: 17, height: 17, borderRadius: 9, border: "1.5px solid #fff", background: "#b3261e", color: "#fff", fontSize: 11, lineHeight: "14px", cursor: "pointer", padding: 0 }}>×</button>}
+        </span>
+      ))}
+      {canEdit && <button onClick={() => inputRef.current?.click()} title="點選檔上傳；或直接 Cmd+V 貼截圖" style={{ border: `1.5px dashed ${line}`, background: "#fff", color: "#8a8171", borderRadius: 6, width: 52, height: 52, fontSize: 12, cursor: "pointer", lineHeight: 1.3 }}>{busy ? "…" : <>＋<br />貼/傳</>}</button>}
+      {lb && <div onClick={() => setLb(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.85)", zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center", padding: 20, cursor: "zoom-out" }}><img src={lb.url} alt={lb.name} style={{ maxWidth: "95%", maxHeight: "95%", objectFit: "contain", borderRadius: 8 }} /></div>}
+    </div>
+  );
+}
 
 // 任務顏色（Google Keep 式，低飽和淡色底，白＝無色）
 const TASK_COLORS = ["", "#fef2f2", "#fff7ed", "#fefce8", "#f0fdf4", "#eff6ff", "#faf5ff", "#f5f5f5"];
@@ -190,6 +225,7 @@ export default function TaskCenter({ K, confirm, canEdit, cats, onLog, onAddCat 
             <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", marginTop: 5 }}>
               {view !== "group" && <span style={{ fontSize: 11, color: C.faint, maxWidth: 120, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{catName(t.catId)}</span>}
               {t.due && <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 11, fontVariantNumeric: "tabular-nums", color: (!done && t.due < today()) ? C.red : C.sub }}><Calendar size={11} />{t.due}{wdOf(t.due)}</span>}
+              {(t.files || []).length > 0 && <span title={`${t.files.length} 個附件`} style={{ fontSize: 11, color: C.sub }}>📎{t.files.length}</span>}
               {view !== "board" && <Pill color={sColor(t.status)} label={sLabel(t.status)} />}
               {isWaiting(t) && !done && <Pill color={C.amber} label={`等：${t.waitingFor}`} />}
               {isBlocked(t, tasks) && !done && <Pill color={C.red} label="被前置卡住" />}
@@ -670,6 +706,7 @@ export default function TaskCenter({ K, confirm, canEdit, cats, onLog, onAddCat 
               </div>
               {F("主題", <input value={t.title} onChange={e => upd(t.id, { title: e.target.value })} disabled={!canEdit} style={{ ...inp, width: "100%", fontSize: 14, fontWeight: 600 }} />)}
               {F("內容 / 備註", <textarea value={t.note || ""} onChange={e => upd(t.id, { note: e.target.value })} disabled={!canEdit} rows={3} style={{ ...inp, width: "100%", resize: "vertical" }} />)}
+              {F("附件（截圖直接 Cmd+V 貼上，或按＋上傳檔案）", <TaskAttach files={t.files || []} onChange={list => upd(t.id, { files: list })} canEdit={canEdit} C={C} line={C.line} />)}
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
                 {F("隸屬大項", <select value={t.catId || INBOX} onChange={e => upd(t.id, { catId: e.target.value })} disabled={!canEdit} style={{ ...inp, width: "100%" }}>{groups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}</select>)}
                 {F("狀態", <select value={t.status} onChange={e => upd(t.id, { status: e.target.value })} disabled={!canEdit} style={{ ...inp, width: "100%" }}>{STATUS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select>)}

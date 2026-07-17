@@ -3699,8 +3699,7 @@ function OverviewTable({ cats, setCats, confirm, customCols = [], setCustomCols,
           {/* 總計列：數字欄位自動加總 */}
           <div style={{ display: "flex", borderTop: `2px solid ${BORDER}`, background: "#ece4d6", position: "sticky", bottom: 0, zIndex: 5, fontWeight: 600 }}>
             <div style={{ width: 24, flexShrink: 0, borderRight: "1px solid #d9cfbd" }} />
-            {(() => { const anyDisc = cats.some(c => catDiscount(c).hasDiscount); return
-            orderedCols.map(col => {
+            {(() => { const anyDisc = cats.some(c => catDiscount(c).hasDiscount); return orderedCols.map(col => {
               const cs = { ...cellStyle(col) };
               if (col.id === "name") { const preSum = rows.reduce((s, r) => s + pretaxOf(r.item), 0); return <div key={col.id} style={{ ...cs, fontWeight: 600, color: "#211C15", gap: 8, flexWrap: "wrap" }}>總計（{rows.length} 筆）<span style={{ fontWeight: 500, color: SUB, fontSize: 12, fontVariantNumeric: "tabular-nums" }}>未稅小計 {fmt(preSum)}</span>{anyDisc && <span style={{ fontWeight: 400, color: SUB, fontSize: 11 }}>· 已含議價折扣</span>}</div>; }
               if (col.id === "estTotal" && anyDisc) {
