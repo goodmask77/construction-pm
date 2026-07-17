@@ -20,10 +20,17 @@ export default function SupplyView({ view, K, canEdit, confirm, showMoney }) {
   const [collapsed, setCollapsed] = useState({});
   const [sel, setSel] = useState(null); // 產品詳情
   const [msg, setMsg] = useState(null);
+  const [orders, setOrders] = useState([]);   // 叫貨單紀錄（sp_supply_pm_orders）
+  const [qty, setQty] = useState({});          // 叫貨數量 itemId→qty
+  const [needDate, setNeedDate] = useState(""); // 希望到貨日
+  const [preview, setPreview] = useState(null); // 叫貨單預覽 vendorId
+  const [groups, setGroups] = useState({});     // D哥看過的LINE群（pm_group_seen，發送綁定用）
   const flash = (t) => { setMsg(t); setTimeout(() => setMsg(m => (m === t ? null : m)), 6000); };
 
   useEffect(() => { (async () => {
     try { const v = await window.storage.get(K("pm_supply"), true); setDb(v && v.value ? JSON.parse(v.value) : { categories: [], products: [], materials: [], vendors: [], matches: [], productPackaging: [] }); } catch (_) { setDb({ categories: [], products: [], materials: [], vendors: [], matches: [], productPackaging: [] }); }
+    try { const o = await window.storage.get(K("pm_orders"), true); setOrders(o && o.value ? JSON.parse(o.value) : []); } catch (_) {}
+    try { const g = await window.storage.get("pm_group_seen", true); setGroups(g && g.value ? JSON.parse(g.value) : {}); } catch (_) {}
   })(); }, []); // eslint-disable-line
 
   if (!db) return <div style={{ padding: 40, color: C.sub, fontSize: 14 }}>載入中…</div>;
@@ -35,14 +42,149 @@ export default function SupplyView({ view, K, canEdit, confirm, showMoney }) {
   const btn = (label, onClick, st) => <button onClick={onClick} style={{ border: `1px solid ${C.line}`, background: "#fff", color: C.sub, borderRadius: 7, padding: "7px 13px", fontSize: 12.5, fontWeight: 600, cursor: "pointer", ...st }}>{label}</button>;
   const box = { background: C.card, border: `1.5px solid ${C.hard}`, borderRadius: 10, marginBottom: 12, overflow: "hidden" };
 
-  // ── 叫貨（P2 佔位）──
-  if (view === "sorder") return (
-    <div style={{ padding: 40, textAlign: "center", background: C.card, border: `1.5px solid ${C.hard}`, borderRadius: 12 }}>
-      <div style={{ fontSize: 34 }}>🛒</div>
-      <div style={{ fontSize: 16, fontWeight: 800, color: C.text, marginTop: 8 }}>叫貨系統（P2 建置中）</div>
-      <div style={{ fontSize: 13, color: C.sub, marginTop: 6, lineHeight: 1.9 }}>依廠商勾品項數量 → 存叫貨單 → D自動發廠商群 / LINE分享 → 到貨點收 → 待付款進財務。<br />資料已就緒：{(db.materials || []).length} 項物料・{(db.vendors || []).length} 家廠商。</div>
-    </div>
-  );
+  const saveOrders = (list) => { setOrders(list); window.storage.set(K("pm_orders"), JSON.stringify(list), true).catch(() => {}); };
+  const WDZ = ["日", "一", "二", "三", "四", "五", "六"];
+  const dz = (d) => d ? `${Number(d.slice(5, 7))}/${Number(d.slice(8))}（${WDZ[new Date(d + "T00:00:00").getDay()]}）` : "";
+
+  // ── 叫貨：依廠商勾數量 → 叫貨單 → D自動發群 / LINE分享 / 複製 → 紀錄可追狀態 ──
+  if (view === "sorder") {
+    const DEPTS = ["外場", "內場", "吧檯", "共用"];
+    const itemsOf = (vid) => (db.vendorItems || []).filter(x => x.vendor_id === vid).sort((a, b) => (a.sort || 0) - (b.sort || 0));
+    const vlist = (db.vendors || []).filter(v => itemsOf(v.id).length).filter(v => !catF || (v.dept || "共用") === catF);
+    const picked = (vid) => itemsOf(vid).filter(it => Number(qty[it.id]) > 0);
+    const updV = (id, fp) => save({ vendors: db.vendors.map(x => x.id === id ? { ...x, ...fp } : x) });
+    const orderText = (v) => {
+      const its = picked(v.id);
+      const t = new Date();
+      return `📦 A Beach 101 叫貨單 ${t.getMonth() + 1}/${t.getDate()}（${WDZ[t.getDay()]}）\n【${v.name}】\n` +
+        its.map(it => `・${it.name}${it.spec ? " " + it.spec : ""} ×${qty[it.id]} ${it.unit || ""}`).join("\n") +
+        (needDate ? `\n希望到貨：${dz(needDate)}` : "") + "\n再麻煩確認，謝謝！";
+    };
+    const recordOrder = (v, via, status, text) => {
+      const its = picked(v.id);
+      const od = { id: rid("o"), ts: new Date().toISOString(), vendor_id: v.id, vendorName: v.name, dept: v.dept || "共用", needDate, via, status, text, items: its.map(it => ({ id: it.id, name: it.name, spec: it.spec, unit: it.unit, qty: Number(qty[it.id]), price: it.price })) };
+      saveOrders([od, ...orders].slice(0, 200));
+      const nq = { ...qty }; its.forEach(it => delete nq[it.id]); setQty(nq);
+      setPreview(null);
+    };
+    const pv = preview && db.vendors.find(v => v.id === preview);
+    const orderTotal = (od) => od.items.reduce((t, x) => t + (Number(x.price) || 0) * (x.qty || 0), 0);
+    const ST = ["已送出", "廠商已確認", "已到貨", "草稿"];
+    return (
+      <div>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "6px 0 12px", flexWrap: "wrap" }}>
+          <span style={{ background: C.accent, color: "#fff", fontSize: 11.5, fontWeight: 700, borderRadius: 4, padding: "2px 8px" }}>叫貨</span>
+          <div>
+            <div style={{ fontSize: 17, fontWeight: 800, color: C.text }}>叫貨</div>
+            <div style={{ fontSize: 11, color: C.faint }}>填數量 → 產生叫貨單 → 發送（不帶價格）。品項到「廠商」頁維護。</div>
+          </div>
+          <div style={{ flex: 1 }} />
+          {DEPTS.map(d => <button key={d} onClick={() => setCatF(catF === d ? "" : d)} style={{ border: `1.5px solid ${catF === d ? C.accent : C.line}`, background: catF === d ? C.accent : "#fff", color: catF === d ? "#fff" : C.sub, borderRadius: 12, padding: "3px 12px", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>{d}</button>)}
+          <label style={{ fontSize: 11.5, color: C.sub, display: "flex", alignItems: "center", gap: 5 }}>希望到貨
+            <input type="date" value={needDate} onChange={e => setNeedDate(e.target.value)} style={{ ...inp, colorScheme: "light" }} />
+          </label>
+        </div>
+        {msg && <div style={{ background: "#eef5ef", border: `1.5px solid ${C.green}`, borderRadius: 8, padding: "7px 12px", marginBottom: 10, fontSize: 12.5, color: "#2c5a38", fontWeight: 600 }}>{msg}</div>}
+        {vlist.length === 0 && <div style={{ padding: 30, textAlign: "center", color: C.faint, background: C.card, border: `1.5px solid ${C.hard}`, borderRadius: 10 }}>這個部門還沒有「有品項清單」的廠商——先到「廠商」頁建品項。</div>}
+        {vlist.map(v => {
+          const its = itemsOf(v.id); const pk = picked(v.id);
+          return (
+            <div key={v.id} style={box}>
+              <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 12px", background: "#ece4d6" }}>
+                <span style={{ fontSize: 13.5, fontWeight: 800, color: C.text }}>{v.name}</span>
+                <span style={{ fontSize: 10.5, fontWeight: 700, color: "#fff", background: v.dept === "內場" ? C.green : v.dept === "吧檯" ? C.amber : v.dept === "共用" ? "#9b9384" : C.blue, borderRadius: 9, padding: "1px 8px" }}>{v.dept || "共用"}</span>
+                <span style={{ fontSize: 11, color: C.faint }}>{v.sendMode === "dbot" ? (v.lineGroupId ? "D自動發群 ✓已綁定" : "D自動發群 ⚠未綁定群") : v.sendMode === "copy" ? "複製文字" : "LINE分享"}</span>
+                <div style={{ flex: 1 }} />
+                {pk.length > 0 && <span style={{ fontFamily: MONOF, fontSize: 12, color: C.accent, fontWeight: 700 }}>已選 {pk.length} 項</span>}
+                <button disabled={!pk.length} onClick={() => setPreview(v.id)} style={{ border: "none", background: pk.length ? C.accent : "#d5cbb6", color: "#fff", borderRadius: 7, padding: "6px 16px", fontSize: 12.5, fontWeight: 700, cursor: pk.length ? "pointer" : "default" }}>產生叫貨單</button>
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: `minmax(170px,1.4fr) minmax(110px,1fr) 56px ${showMoney ? "76px " : ""}70px 130px`, gap: 8, padding: "4px 12px", fontSize: 10, color: C.faint, fontWeight: 700, borderBottom: `1px solid #f0ead9` }}>
+                <span>品名</span><span>規格</span><span>單位</span>{showMoney && <span style={{ textAlign: "right" }}>單價</span>}<span style={{ textAlign: "right" }}>安全庫存</span><span style={{ textAlign: "center" }}>叫貨量</span>
+              </div>
+              {its.map(it => {
+                const qv = qty[it.id] || "";
+                return (
+                  <div key={it.id} style={{ display: "grid", gridTemplateColumns: `minmax(170px,1.4fr) minmax(110px,1fr) 56px ${showMoney ? "76px " : ""}70px 130px`, gap: 8, alignItems: "center", minHeight: 34, borderTop: `1px solid #f0ead9`, padding: "0 12px", background: Number(qv) > 0 ? "#fbeee6" : "#fff", fontSize: 12.5 }}>
+                    <span style={{ fontWeight: 600, color: C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{it.name}</span>
+                    <span style={{ color: C.sub, fontSize: 11.5 }}>{it.spec || "—"}</span>
+                    <span style={{ color: C.sub }}>{it.unit || "—"}</span>
+                    {showMoney && <span style={{ fontFamily: MONOF, textAlign: "right", color: C.sub }}>{it.price ? Number(it.price).toLocaleString() : "—"}</span>}
+                    <span style={{ fontFamily: MONOF, textAlign: "right", color: C.faint }}>{it.safeStock ?? "—"}</span>
+                    <div style={{ display: "flex", alignItems: "center", gap: 4, justifyContent: "center" }}>
+                      <button onClick={() => setQty(q2 => ({ ...q2, [it.id]: Math.max(0, (Number(q2[it.id]) || 0) - 1) || "" }))} style={{ width: 24, height: 24, border: `1px solid ${C.line}`, background: "#fff", borderRadius: 6, cursor: "pointer", color: C.sub }}>−</button>
+                      <input value={qv} onChange={e => setQty(q2 => ({ ...q2, [it.id]: e.target.value.replace(/[^0-9.]/g, "") }))} inputMode="decimal" placeholder="0" style={{ ...inp, width: 52, textAlign: "center", padding: "4px 4px", fontFamily: MONOF }} />
+                      <button onClick={() => setQty(q2 => ({ ...q2, [it.id]: (Number(q2[it.id]) || 0) + 1 }))} style={{ width: 24, height: 24, border: `1px solid ${C.line}`, background: "#fff", borderRadius: 6, cursor: "pointer", color: C.sub }}>＋</button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          );
+        })}
+        {/* 叫貨紀錄 */}
+        {orders.length > 0 && (
+          <div style={{ ...box, padding: "10px 14px" }}>
+            <div style={{ fontSize: 13, fontWeight: 700, color: C.text, marginBottom: 6 }}>🧾 叫貨紀錄</div>
+            {orders.slice(0, 15).map(od => (
+              <div key={od.id} style={{ display: "grid", gridTemplateColumns: `108px minmax(90px,0.8fr) 56px minmax(150px,1.4fr) ${showMoney ? "90px " : ""}88px 110px 30px`, gap: 8, alignItems: "center", minHeight: 32, borderTop: `1px solid #f0ead9`, fontSize: 12 }}>
+                <span style={{ fontFamily: MONOF, fontSize: 11, color: C.sub }}>{new Date(od.ts).toLocaleString("zh-TW", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })}</span>
+                <span style={{ fontWeight: 700, color: C.text }}>{od.vendorName}</span>
+                <span style={{ color: C.sub }}>{od.items.length} 項</span>
+                <span style={{ color: C.sub, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={od.items.map(x => `${x.name}×${x.qty}`).join("、")}>{od.items.map(x => `${x.name}×${x.qty}`).join("、")}</span>
+                {showMoney && <span style={{ fontFamily: MONOF, textAlign: "right", color: orderTotal(od) ? C.text : "#d5cbb6" }}>{orderTotal(od) ? "NT$" + Math.round(orderTotal(od)).toLocaleString() : "—"}</span>}
+                <span style={{ fontSize: 10.5, color: C.faint }}>{od.via}</span>
+                <select value={od.status} onChange={e => saveOrders(orders.map(x => x.id === od.id ? { ...x, status: e.target.value } : x))} disabled={!canEdit} style={{ ...inp, padding: "3px 6px", fontSize: 11.5, color: od.status === "已到貨" ? C.green : od.status === "廠商已確認" ? C.blue : C.text }}>{ST.map(x => <option key={x}>{x}</option>)}</select>
+                {canEdit ? <button onClick={async () => { if (await confirm("刪除這筆叫貨紀錄？", { confirmLabel: "刪除" })) saveOrders(orders.filter(x => x.id !== od.id)); }} style={{ border: "none", background: "none", color: C.faint, cursor: "pointer" }}>×</button> : <span />}
+              </div>
+            ))}
+          </div>
+        )}
+        {/* 叫貨單預覽 + 發送 */}
+        {pv && (() => {
+          const text = orderText(pv);
+          const glist = Object.entries(groups || {});
+          const doSend = async () => {
+            if (!pv.lineGroupId) { alert("還沒綁定群組——請先在下面選擇 D 要發到哪個群。"); return; }
+            const gname = (groups[pv.lineGroupId] || {}).name || pv.lineGroupId;
+            if (!(await confirm(`確定把叫貨單發送到「${gname}」？（對外訊息，發出去就收不回）`, { confirmLabel: "發送" }))) return;
+            try {
+              const r = await fetch("/api/push", { method: "POST", headers: { "Content-Type": "application/json", "X-API-Key": "ground-pm-2026-secret-abc123" }, body: JSON.stringify({ to: pv.lineGroupId, text }) });
+              const d = await r.json();
+              if (!d.ok) { alert("發送失敗：" + (d.error || "未知")); return; }
+              recordOrder(pv, "D發群", "已送出", text); flash("✓ 已由 D哥 發送到「" + gname + "」，叫貨單已記錄");
+            } catch (e) { alert("發送失敗：" + e.message); }
+          };
+          return (
+            <div onClick={e => e.target === e.currentTarget && setPreview(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.4)", zIndex: 700, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+              <div style={{ background: "#fff", border: `1px solid ${C.line}`, borderRadius: 12, padding: 22, width: "min(520px,96vw)", maxHeight: "90vh", overflowY: "auto" }}>
+                <div style={{ display: "flex", alignItems: "center", marginBottom: 10 }}>
+                  <div style={{ fontSize: 15, fontWeight: 700, color: C.text }}>叫貨單預覽：{pv.name}</div>
+                  <div style={{ flex: 1 }} />
+                  <button onClick={() => setPreview(null)} style={{ background: "none", border: "none", fontSize: 22, cursor: "pointer", color: C.sub }}>×</button>
+                </div>
+                <pre style={{ background: C.soft, border: `1px solid ${C.line}`, borderRadius: 8, padding: 12, fontSize: 13, whiteSpace: "pre-wrap", fontFamily: "'Noto Sans TC',sans-serif", color: C.text, margin: 0 }}>{text}</pre>
+                <div style={{ fontSize: 11, color: C.faint, margin: "8px 0" }}>訊息不帶價格（金額是內部資料）。</div>
+                {/* D 群綁定 */}
+                <div style={{ margin: "10px 0" }}>
+                  <div style={{ fontSize: 11.5, fontWeight: 700, color: C.sub, marginBottom: 4 }}>D哥 發送目標群（要先把 D 拉進該廠商的 LINE 群，群才會出現在這裡）</div>
+                  <select value={pv.lineGroupId || ""} onChange={e => updV(pv.id, { lineGroupId: e.target.value, sendMode: e.target.value ? "dbot" : pv.sendMode })} disabled={!canEdit} style={{ ...inp, width: "100%" }}>
+                    <option value="">— 未綁定（用下面的 LINE 分享 / 複製）—</option>
+                    {glist.map(([gid, g]) => <option key={gid} value={gid}>{(g && g.name) || gid}</option>)}
+                  </select>
+                </div>
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  <button onClick={doSend} style={{ flex: 1, border: "none", background: pv.lineGroupId ? C.green : "#d5cbb6", color: "#fff", borderRadius: 8, padding: "10px 0", fontSize: 13.5, fontWeight: 700, cursor: "pointer" }}>🤖 D哥 發送到群</button>
+                  <button onClick={() => { recordOrder(pv, "LINE分享", "已送出", text); window.open("https://line.me/R/share?text=" + encodeURIComponent(text)); }} style={{ flex: 1, border: "none", background: "#06C755", color: "#fff", borderRadius: 8, padding: "10px 0", fontSize: 13.5, fontWeight: 700, cursor: "pointer" }}>📱 LINE 分享</button>
+                  <button onClick={async () => { try { await navigator.clipboard.writeText(text); } catch (_) {} recordOrder(pv, "複製", "已送出", text); flash("✓ 已複製叫貨單文字，貼到廠商聊天室即可"); }} style={{ flex: 1, border: `1px solid ${C.line}`, background: "#fff", color: C.text, borderRadius: 8, padding: "10px 0", fontSize: 13.5, fontWeight: 700, cursor: "pointer" }}>📋 複製文字</button>
+                </div>
+                <button onClick={() => recordOrder(pv, "草稿", "草稿", text)} style={{ width: "100%", marginTop: 8, border: `1.5px dashed ${C.line}`, background: "transparent", color: C.sub, borderRadius: 8, padding: "7px 0", fontSize: 12.5, cursor: "pointer" }}>先存草稿不發送</button>
+              </div>
+            </div>
+          );
+        })()}
+      </div>
+    );
+  }
 
   // ── 廠商（完整版）：可新增/編輯廠商（部門/標籤/LINE群），展開管理該廠商品項清單 ──
   if (view === "svendors") {
