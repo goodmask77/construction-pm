@@ -2466,8 +2466,12 @@ function GroupsView({ cats, canEdit, requireLogin, settings, setSettings, journa
 
   // 永遠把內部群放進清單（即使還沒有新訊息）
   // 過濾掉「私訊」誤登記的項目：LINE 個人 id 以 U 開頭（群組 C、聊天室 R）——私訊不是群，不該出現在這頁
-  const ids = Array.from(new Set([DEFAULT_LINE_GROUP, ...Object.keys(seen), ...Object.keys(cfg)]))
+  const idsAll = Array.from(new Set([DEFAULT_LINE_GROUP, ...Object.keys(seen), ...Object.keys(cfg)]))
     .filter(gid => !String(gid).startsWith("U") && (seen[gid]?.src !== "user"));
+  // 未命名群（抓不到名字的亂碼 ID）直接不顯示（張良 2026-07-18）；D哥抓到名字後會自動出現
+  const hasName = (gid) => { const n = (cfg[gid]?.name) || seen[gid]?.name || (gid === DEFAULT_LINE_GROUP ? "瑞光路337" : ""); return n && !/^[CRU][0-9a-f]{32}$/.test(n); };
+  const ids = idsAll.filter(hasName);
+  const hiddenN = idsAll.length - ids.length;
   ids.sort((a, b) => {
     const am = effMode(a) === "internal" ? 0 : 1, bm = effMode(b) === "internal" ? 0 : 1;
     if (am !== bm) return am - bm;
@@ -2483,7 +2487,7 @@ function GroupsView({ cats, canEdit, requireLogin, settings, setSettings, journa
     <div>
       <div style={{ display: "flex", alignItems: "center", gap: 12, margin: "8px 0 6px", flexWrap: "wrap" }}>
         <div style={{ fontSize: 17, fontWeight: 700, color: TEXT }}>💬 LINE 群組</div>
-        <div style={{ fontSize: 12.5, color: SUB }}>D哥所在 {ids.length} 個群{saving ? " · 儲存中…" : ""}</div>
+        <div style={{ fontSize: 12.5, color: SUB }}>D哥所在 {ids.length} 個群{hiddenN > 0 ? `（另 ${hiddenN} 個未命名群已隱藏，抓到群名會自動出現）` : ""}{saving ? " · 儲存中…" : ""}</div>
       </div>
       <div style={{ fontSize: 12, color: SUB, marginBottom: 14, lineHeight: 1.6 }}>
         <b style={{ color: ACCENT }}>內部群</b>＝自己人，可查預算金額全部工程；<b style={{ color: "#2E6FB0" }}>廠商群</b>＝只回它那項工程進度，<b style={{ color: ACCENT }}>絕不洩漏金額</b>（要選綁定工程）；<b style={{ color: SUB }}>鎖定</b>＝只閒聊。外群一律「叫名字才回話」。<br />
