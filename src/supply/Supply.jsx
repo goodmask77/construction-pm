@@ -250,8 +250,13 @@ export default function SupplyView({ view, K, canEdit, confirm, showMoney, userN
             flash("✓ 已展開 " + vids.map(vname2).join("、") + "——到各廠商填數量產生叫貨單");
           };
           if (!ingsQ.length) return <div style={{ padding: 30, textAlign: "center", color: C.faint, background: C.card, border: `1.5px solid ${C.hard}`, borderRadius: 10 }}>還沒有可比價的物料——先到「🥬 物料」頁建物料卡、把各廠商貨源歸戶進來。</div>;
+          // 表格化：一貨源一行、物料名只標在該組第一行；限寬，畫面簡潔
+          const QGRID = `minmax(72px,0.9fr) minmax(88px,1.1fr) 150px 92px 40px`;
           return (
-            <div style={box}>
+            <div style={{ ...box, maxWidth: 700 }}>
+              <div style={{ display: "grid", gridTemplateColumns: QGRID, gap: 8, padding: "6px 12px", fontSize: 10, color: C.faint, fontWeight: 700, background: "#f4efe5" }}>
+                <span>物料</span><span>廠商</span><span>今日報價</span><span style={{ textAlign: "right" }}>換算單價</span><span style={{ textAlign: "center" }}>本次</span>
+              </div>
               {ingsQ.map(({ g, srcs }) => {
                 const cells = srcs.map(vi => {
                   const pend = qv2[vi.id];
@@ -261,45 +266,34 @@ export default function SupplyView({ view, K, canEdit, confirm, showMoney, userN
                 });
                 const us = cells.map(c => c.u).filter(u => u != null);
                 const minU = us.length ? Math.min(...us) : null;
-                return (
-                  <div key={g.id} style={{ borderTop: `1px solid #f0ead9`, padding: "8px 12px" }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 5 }}>
-                      <span style={{ fontWeight: 800, fontSize: 13, color: C.text }}>{g.isKey ? "★ " : ""}{g.name || "（未命名）"}</span>
-                      <span style={{ fontSize: 10.5, color: C.faint }}>{(g.cat || "").trim() || "未分類"}・比 $/{g.baseUnit || "單位"}</span>
+                return cells.map(({ vi, u }, i) => {
+                  const best = showMoney && u != null && minU != null && u <= minU + 1e-9 && us.length > 1;
+                  const on = g.pickVi === vi.id;
+                  return (
+                    <div key={vi.id} style={{ display: "grid", gridTemplateColumns: QGRID, gap: 8, alignItems: "center", padding: "4px 12px", borderTop: i === 0 ? `1px solid ${C.line}` : `1px solid #f0ead9`, fontSize: 12, background: best ? "#eef5ef" : "#fff" }}>
+                      <span style={{ fontWeight: 800, fontSize: 12.5, color: C.text, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{i === 0 ? <>{g.isKey ? "★ " : ""}{g.name || "（未命名）"}</> : ""}</span>
+                      <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }} title={`${vname2(vi.vendor_id)} ${vi.spec || ""}`}>
+                        <span style={{ fontWeight: 700, fontSize: 12, color: C.text }}>{vname2(vi.vendor_id)}</span>
+                        {vi.spec && <span style={{ fontSize: 10, color: C.faint }}>　{vi.spec}</span>}
+                      </span>
+                      <span style={{ display: "flex", alignItems: "center", gap: 4, whiteSpace: "nowrap" }}>
+                        <span style={{ fontSize: 10.5, color: C.sub }}>$</span>
+                        <input value={qv2[vi.id] !== undefined ? qv2[vi.id] : ((vi.quote && vi.quote.price) || "")} disabled={!canEdit}
+                          onChange={e => setQv2(q3 => ({ ...q3, [vi.id]: e.target.value.replace(/[^0-9.]/g, "") }))}
+                          onBlur={() => commitQuote(vi)} onKeyDown={e => e.key === "Enter" && e.currentTarget.blur()}
+                          placeholder="報價" inputMode="decimal" style={{ ...inp, width: 64, padding: "3px 6px", fontFamily: MONOF, fontSize: 12 }} />
+                        <span style={{ fontSize: 10.5, color: C.sub }}>/{vi.unit || "單位"}</span>
+                        {vi.quote && vi.quote.ts && qv2[vi.id] === undefined && <span style={{ fontSize: 9.5, color: C.faint }}>{String(vi.quote.ts).slice(5, 10)}</span>}
+                      </span>
+                      <span style={{ fontFamily: MONOF, fontSize: 11, fontWeight: 700, textAlign: "right", whiteSpace: "nowrap", color: u != null ? (best ? C.green : C.sub) : (packToBase(vi) ? "#d5cbb6" : C.red) }}>
+                        {showMoney ? (u != null ? `$${u >= 100 ? Math.round(u).toLocaleString() : Math.round(u * 1000) / 1000}/${g.baseUnit || "單位"}${best ? " 低" : ""}` : (packToBase(vi) ? "—" : "未設換算")) : ""}
+                      </span>
+                      <span style={{ textAlign: "center" }}>
+                        <input type="radio" title="本次跟他叫" checked={on} disabled={!canEdit} onChange={() => save({ ingredients: (db.ingredients || []).map(x => x.id === g.id ? { ...x, pickVi: vi.id } : x) })} style={{ accentColor: C.accent, cursor: canEdit ? "pointer" : "default" }} />
+                      </span>
                     </div>
-                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                      {cells.map(({ vi, u }) => {
-                        const best = showMoney && u != null && minU != null && u <= minU + 1e-9 && us.length > 1;
-                        const on = g.pickVi === vi.id;
-                        return (
-                          <div key={vi.id} style={{ border: `1.5px solid ${on ? C.accent : best ? C.green : C.line}`, background: best ? "#eef5ef" : "#fff", borderRadius: 9, padding: "6px 10px", minWidth: 170 }}>
-                            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                              <span style={{ fontWeight: 700, fontSize: 12, color: C.text }}>{vname2(vi.vendor_id)}</span>
-                              <span style={{ fontSize: 10, color: C.faint }}>{vi.spec || ""}</span>
-                              {best && <span style={{ fontSize: 9.5, fontWeight: 700, color: "#fff", background: C.green, borderRadius: 8, padding: "0 6px" }}>最低</span>}
-                            </div>
-                            <div style={{ display: "flex", alignItems: "center", gap: 4, margin: "4px 0" }}>
-                              <span style={{ fontSize: 10.5, color: C.sub }}>$</span>
-                              <input value={qv2[vi.id] !== undefined ? qv2[vi.id] : ((vi.quote && vi.quote.price) || "")} disabled={!canEdit}
-                                onChange={e => setQv2(q3 => ({ ...q3, [vi.id]: e.target.value.replace(/[^0-9.]/g, "") }))}
-                                onBlur={() => commitQuote(vi)} onKeyDown={e => e.key === "Enter" && e.currentTarget.blur()}
-                                placeholder="報價" inputMode="decimal" style={{ ...inp, width: 76, padding: "3px 6px", fontFamily: MONOF, fontSize: 12 }} />
-                              <span style={{ fontSize: 10.5, color: C.sub }}>/{vi.unit || "單位"}</span>
-                              {vi.quote && vi.quote.ts && qv2[vi.id] === undefined && <span style={{ fontSize: 9.5, color: C.faint }}>{String(vi.quote.ts).slice(5, 10)}</span>}
-                            </div>
-                            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                              {showMoney && <span style={{ fontFamily: MONOF, fontSize: 11, fontWeight: 700, color: u != null ? (best ? C.green : C.sub) : C.red }}>{u != null ? `$${u >= 100 ? Math.round(u).toLocaleString() : Math.round(u * 1000) / 1000}/${g.baseUnit}` : (packToBase(vi) ? "填報價" : "未設換算")}</span>}
-                              <div style={{ flex: 1 }} />
-                              <label style={{ fontSize: 10.5, color: on ? C.accent : C.sub, fontWeight: on ? 700 : 500, display: "flex", alignItems: "center", gap: 3, cursor: canEdit ? "pointer" : "default" }}>
-                                <input type="radio" checked={on} disabled={!canEdit} onChange={() => save({ ingredients: (db.ingredients || []).map(x => x.id === g.id ? { ...x, pickVi: vi.id } : x) })} />本次跟他叫
-                              </label>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                );
+                  );
+                });
               })}
               <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", borderTop: `1.5px solid ${C.hard}`, background: "#faf6ec" }}>
                 <span style={{ fontSize: 11.5, color: C.sub }}>已勾 {picked2.length} 項物料的本次供應商</span>
