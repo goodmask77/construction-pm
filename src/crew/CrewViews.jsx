@@ -592,7 +592,7 @@ export function PollView({ canEdit, requireLogin, confirm, isAdmin, userName }) 
   const guard = () => { if (!canEdit) { requireLogin && requireLogin(); return false; } return true; };
   if (data === null) return <div style={{ padding: 40, color: SUB, fontSize: 14 }}>載入中…</div>;
   const canManage = canManageRole((people.find(p => p.id === me) || {}).role);
-  const nameOf = (id) => people.find(p => p.id === id)?.name || id;
+  const nameOf = (id) => people.find(p => p.id === id)?.name || "（查無此人）"; // 防呆：名冊查無id不再裸露內部代號
   const myVote = (pid) => (data.votes || []).find(v => v.pollId === pid && v.voterId === me);
   const vote = (poll, optId) => { if (!me) { alert("尚未對應到名單身分"); return; } if (myVote(poll.id)) return; persist({ ...data, votes: [...(data.votes || []), { pollId: poll.id, voterId: me, choiceId: optId, ts: new Date().toISOString() }] }); };
   const tally = (poll) => { const c = {}; poll.options.forEach(o => c[o.id] = 0); (data.votes || []).filter(v => v.pollId === poll.id).forEach(v => { if (c[v.choiceId] != null) c[v.choiceId]++; }); const total = Object.values(c).reduce((a, b) => a + b, 0); const win = poll.options.slice().sort((a, b) => c[b.id] - c[a.id])[0]; return { c, total, win: total > 0 ? win : null }; };
