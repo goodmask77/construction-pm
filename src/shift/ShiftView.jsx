@@ -80,6 +80,24 @@ export default function ShiftView({ K, canEdit, confirm, userName, isAdmin, onLo
         ]);
         try { onLog && onLog("新增", "排班・初始化示範資料（" + SEED_BATCH + "）"); } catch (_) {}
       }
+      // 自動對照名冊（人員主檔唯一真相）：名冊有異動（新人/離職/職稱/部門/順序）→ 開排班頁即自動帶入；
+      // 排班專屬設定（技能/期望班數/不可排/成本係數）不會被蓋（syncRosterToShift 保留舊值）
+      try {
+        const kbR = await window.storage.get(K("kb_360"), true);
+        const kb = kbR && kbR.value ? JSON.parse(kbR.value) : null;
+        if (kb?.people?.length) {
+          const titleField = (kb.fields || []).find(f => /職稱/.test(f.label || ""));
+          const titleOf = (p) => titleField ? (p[titleField.key] || "") : "";
+          const titleOrder = (titleField?.options || []).map(o => String(o).trim()).filter(Boolean);
+          const res = syncRosterToShift(kb.people, titleOf, staffDoc.staff, stationsDoc.stations, stationsDoc.skills, "abeach", titleOrder);
+          if (JSON.stringify(res.staff) !== JSON.stringify(staffDoc.staff) || JSON.stringify(res.skills) !== JSON.stringify(stationsDoc.skills)) {
+            staffDoc = { ...staffDoc, staff: res.staff };
+            stationsDoc = { ...stationsDoc, skills: res.skills };
+            await saveDoc(DOC_KEYS.staff, staffDoc, "自動同步名冊人員");
+            await saveDoc(DOC_KEYS.stations, stationsDoc);
+          }
+        }
+      } catch (_) {}
       setDocs({ stores, rulesDoc, staffDoc, stationsDoc, templatesDoc, leavesDoc, weightsDoc });
     })();
   }, [K]); // eslint-disable-line

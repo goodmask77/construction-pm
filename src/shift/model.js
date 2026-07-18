@@ -453,6 +453,16 @@ export function syncRosterToShift(rosterPeople, titleOf, existingStaff, stations
     // 職稱=值班DUTY → 自動給「值班」崗位資格（可在矩陣調成主力/拿掉）
     if (isDuty && (!skills[id]["st-duty"] || skills[id]["st-duty"] === "no")) skills[id] = { ...skills[id], "st-duty": "ok" };
   }
+  // 成員沒增減時 → 保留使用者手動拖過的順序（名冊順序只在有人加入/離開時重排）
+  const newIds = new Set(staff.map(s => s.id));
+  const exIds = (existingStaff || []).filter(s => s.rosterId).map(s => s.id);
+  if (exIds.length === staff.length && exIds.every(id => newIds.has(id))) {
+    const pos = Object.fromEntries(exIds.map((id, i) => [id, i]));
+    staff.sort((a, b) => pos[a.id] - pos[b.id]);
+  }
+  // 手動「新增」的排班人員（無名冊對應）保留不動
+  const manual = (existingStaff || []).filter(s => !s.rosterId && !String(s.seed || "").startsWith("demo-"));
+  staff.push(...manual);
   // 名冊已離職/移出內外場者 → 從排班人員移除（demo 假人也在此一併清掉）
   const keepIds = new Set(staff.map(s => s.id));
   for (const k of Object.keys(skills)) if (!keepIds.has(k)) delete skills[k];
