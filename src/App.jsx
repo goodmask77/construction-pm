@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo, Fragment } from "react";
-import { uploadPhoto, deletePhotoFile, supabase, getSharedMany } from "./supa.js";
+import { uploadPhoto, deletePhotoFile, supabase, getSharedMany, getSharedPrefix, hasSession, listSharedIds } from "./supa.js";
 import { fmt, baseAmount, taxOf, estAmount, paidOf, unpaidOf, calcEstimated, calcActual, pretaxOf, isTaxable, catRawEst, catPretaxSub, catDiscount, catEstAfter, catSaved, catItemEstAfter, PAY_CATEGORIES, catPaid, catItemPaidMap, catUnpaidAfter, isFundingCat, pettyItemOf, withPettyItems, projectTotals } from "./lib/cost.js";
 import { INITIAL_CATEGORIES } from "./lib/seed.js";
 import { SPACES, SPACE_CONF, PERM_MATRIX, LEGACY_EDIT, PERM_NONE, DEFAULT_ROLES, ALL_VIEW_KEYS, ALL_EDIT_KEYS, ALL_MONEY_KEYS } from "./lib/spaces.js";
@@ -35,13 +35,23 @@ async function loadSpaceAIContext() {
   try {
     const nt = (n) => "NT$" + Math.round(n || 0).toLocaleString();
     const g = async (k) => { try { const v = await window.storage.get(k, true); return v && v.value ? JSON.parse(v.value) : null; } catch (_) { return null; } };
+    // 逐筆存集合（2026-07-18）：有 marker＝一筆一檔（前綴掃描），沒有＝讀舊整包
+    const recs = async (marker, prefix, legacy) => {
+      try {
+        if (await g(marker)) { const m = await getSharedPrefix(prefix); return Object.values(m).map(v => { try { return JSON.parse(v) } catch (_) { return null } }).filter(Boolean); }
+      } catch (_) {}
+      return await g(legacy);
+    };
     const d0 = new Date(); const mo = `${d0.getFullYear()}-${String(d0.getMonth() + 1).padStart(2, "0")}`;
-    const [snapC, snapT, snapK, snapF, tasks, crew, pos, posD, bank, ctbc, accounts, ledger, conclusions, mailRules, mailLog, supply] = await Promise.all([
+    const [snapC, snapT, snapK, snapF, tasks, crewRoster, crewOld, pos, posD, bank, ctbc, accounts, ledger, conclusions, mailRules, mailLog, supply] = await Promise.all([
       g("pm_bot_context"), g("sp_team_pm_bot_context"), g("sp_crew_pm_bot_context"), g("sp_finance_pm_bot_context"),
-      g("pm_tasks"), g("sp_crew_kb_360"), g("sp_finance_pm_pos"), g("sp_finance_pm_pos_d_" + mo),
-      g("sp_finance_pm_bank"), g("sp_finance_pm_ctbc"), g("sp_finance_pm_fin_accounts"), g("sp_finance_pm_fin_ledger"),
+      recs("pm_tasks_v2", "pm_task_", "pm_tasks"), g("sp_crew_kb_roster"), g("sp_crew_kb_360"), g("sp_finance_pm_pos"), g("sp_finance_pm_pos_d_" + mo),
+      g("sp_finance_pm_bank"), g("sp_finance_pm_ctbc"), g("sp_finance_pm_fin_accounts"), recs("sp_finance_pm_fin_ledger_v2", "sp_finance_pm_fin_tx_", "sp_finance_pm_fin_ledger"),
       g("pm_conclusions"), g("sp_lw_pm_mail_rules"), g("sp_lw_pm_mail_log"), g("sp_supply_pm_supply"),
     ]);
+    const crew = (crewRoster && (crewRoster.people || []).length) ? crewRoster : crewOld; // 名冊已分家：優先讀 kb_roster
+    if (Array.isArray(tasks)) tasks.sort((a, b) => (a.ord ?? 0) - (b.ord ?? 0));            // 逐筆載入後照手動順序
+    if (Array.isArray(ledger)) ledger.sort((a, b) => ((a.date || "") < (b.date || "") ? 1 : -1)); // 新到舊
     const parts = [];
     // 各空間快照
     const snapLine = (label, sn) => { if (!sn) return null; const p2 = sn.project || {}, t = sn.totals || {}, pr = sn.progress || {}; return `- ${label}：${p2.name || ""}｜進度${pr.pct || 0}%（${pr.doneItems || 0}/${pr.totalItems || 0}）｜預估${nt(t.est)}/已付${nt(t.paid)}${sn.petty ? `｜零用金餘額${nt(sn.petty.balance)}` : ""}${(sn.issues || []).length ? `｜⚠${sn.issues.slice(0, 5).join("、")}` : ""}`; };
@@ -83,14 +93,10 @@ async function loadSpaceAIContext() {
     if (supply?.products?.length) parts.push(`【供應鏈】產品 ${supply.products.length} 項（${(supply.categories || []).map(c2 => c2.name).join("/")}）・物料/包材 ${(supply.materials || []).length} 項・廠商 ${(supply.vendors || []).length} 家（${(supply.vendors || []).slice(0, 8).map(v => v.name).join("、")}…）`);
     // 資料總目錄（新功能上線自動出現在這裡）
     try {
-      const su = import.meta.env.VITE_SUPABASE_URL, sk = import.meta.env.VITE_SUPABASE_ANON_KEY;
-      if (su && sk) {
-        const r = await fetch(`${su}/rest/v1/pm_documents?select=id&order=id`, { headers: { apikey: sk, Authorization: `Bearer ${sk}` } });
-        const rows = r.ok ? await r.json() : [];
-        const skip = /^(pm_hist_|sp_.*_pm_hist_)|backup|pm_bot_(chats|confirm|operators)|pm_vault/;
-        const ids = rows.map(x => x.id).filter(id => !skip.test(id));
-        if (ids.length) parts.push("【資料總目錄（全部資料域；被問到沒細節的，回「資料有收錄，請張良叫 Claude 接上細節」）】\n" + ids.join("、"));
-      }
+      // 帶登入權杖讀（RLS 上鎖後仍可用）；逐筆存的一筆一檔太瑣碎，收斂成一個代表名稱
+      const skip = /^(pm_hist_|sp_.*_pm_hist_)|backup|pm_bot_(chats|confirm|operators)|pm_vault|pm_task_|sp_finance_pm_fin_tx_/;
+      const ids = (await listSharedIds()).filter(id => !skip.test(id));
+      if (ids.length) parts.push("【資料總目錄（全部資料域；被問到沒細節的，回「資料有收錄，請張良叫 Claude 接上細節」）】\n" + ids.join("、"));
     } catch (_) {}
     return parts.length ? "\n\n=== 全系統即時資料（回答任何空間的問題一律以此為準，不要說沒有資料） ===\n\n" + parts.join("\n\n") : "";
   } catch (_) { return ""; }
@@ -250,6 +256,7 @@ export default function App() {
   const [profile, setProfile] = useState(null);   // 登入者的 profiles 資料（角色/部門/看金額）
   const [activityLog, setActivityLog] = useState([]);
   const [showLogin, setShowLogin] = useState(false);
+  const [locked, setLocked] = useState(false); // RLS 上鎖後：沒登入＝資料全讀不到 → 顯示登入畫面（不再訪客瀏覽）
   const [showAcctMenu, setShowAcctMenu] = useState(false);
   const [knownUsers, setKnownUsers] = useState([]);
   const [worklog, setWorklog] = useState([]);
@@ -367,6 +374,8 @@ export default function App() {
       const SHARED_KEYS = ["pm_data", "pm_global_chat", "pm_settings", "pm_ai_log", "pm_activity", "pm_known_users", "pm_worklog", "pm_photos", "pm_accounts", "pm_seqlogs", "pm_columns", "pm_events", "pm_journal", "pm_plans", "pm_trash", "pm_petty", "pm_roles", "pm_guest_perms"];
       const [batch, savedName] = await Promise.all([getSharedMany(SHARED_KEYS.map(K)), loadRole()]);
       if (cancelled) return;
+      // 資料庫已上鎖（RLS）且沒登入 → 一筆都讀不到 → 顯示登入畫面，不讓訪客看到空殼/示範資料
+      if (supabase && !hasSession() && Object.keys(batch).length === 0) { setLocked(true); }
       const raw = (k) => batch[K(k)] || null;
       const d = parse(raw("pm_data"), null);
       const gc = parse(raw("pm_global_chat"), []);
@@ -771,6 +780,20 @@ export default function App() {
 
   const isMobile = useIsMobile();
 
+  // 資料庫已上鎖且未登入 → 全螢幕登入（登入成功直接重新載入，帶著登入身分重抓資料）
+  if (locked && !userName) return (
+    <div style={{ minHeight: "100vh", background: BG, fontFamily: "-apple-system,'PingFang TC','Noto Sans TC',system-ui,sans-serif" }}>
+      <LoginModal onClose={() => {}} onLogin={async (username, password) => {
+        if (!supabase) return { error: "系統未設定登入服務，請聯絡管理員。" };
+        const email = username.includes("@") ? username : `${username}@ground.local`;
+        const { error } = await supabase.auth.signInWithPassword({ email, password });
+        if (error) return { error: "帳號或密碼錯誤，請再試一次。" };
+        window.location.reload();
+        return {};
+      }} />
+    </div>
+  );
+
   if (!cats) return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16, alignItems: "center", justifyContent: "center", height: "100vh", background: BG, color: SUB, fontFamily: "-apple-system,'PingFang TC','Noto Sans TC',system-ui,sans-serif", fontSize: 15 }}>
       <div>載入中…</div>
@@ -1153,7 +1176,7 @@ function LoginModal({ onLogin, onClose }) {
     <div onClick={onClose} style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.55)", zIndex:9999, display:"flex", alignItems:"center", justifyContent:"center", padding:16 }}>
       <div onClick={e=>e.stopPropagation()} style={{ background:"#fbf8f1", borderRadius:16, padding:28, maxWidth:380, width:"100%", boxShadow:"0 20px 60px rgba(0,0,0,0.2)" }}>
         <div style={{ fontSize:22, fontWeight: 600, color:"#211C15", marginBottom:6 }}>登入</div>
-        <div style={{ fontSize:13, color:"#6F6656", marginBottom:20 }}>未登入只能檢視。輸入你的帳號與密碼登入；忘記密碼請找管理員重設。</div>
+        <div style={{ fontSize:13, color:"#6F6656", marginBottom:20 }}>請輸入你的帳號與密碼登入；忘記密碼請找管理員重設。</div>
         <input
           value={name} onChange={e=>setName(e.target.value)}
           onKeyDown={e=>{ if(e.key==="Enter"&&!e.nativeEvent.isComposing) submit(); }}

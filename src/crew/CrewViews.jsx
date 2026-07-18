@@ -1,9 +1,10 @@
 // ── 夥伴中心（crew 空間）：知識庫/名冊/360互評/回饋/闖關/投票/商城/排行榜 ─────────
 // 由 App.jsx 原樣搬出（2026-07-18 拆檔第一刀；行為/畫面零改變）。
 import { useState, useEffect, useRef } from "react";
-import { uploadPhoto } from "../supa.js";
+import { uploadPhoto, onSharedChange } from "../supa.js";
 import { ACCENT, PRIMARY, SURFACE, BORDER, TEXT, SUB, MONO, DISP } from "../lib/theme.jsx";
 import { K, auditLog } from "../lib/runtime.js";
+import { ROSTER_KEY, loadRosterDoc, saveRosterDoc, saveRosterPatch } from "./roster.js";
 
 // ── 夥伴中心：資料庫 / 知識庫（內外場 SOP、手冊、教學…）─────────────────────────
 const KB_DEFAULT_CATS = ["內場", "外場", "通用", "教育訓練"];
@@ -135,7 +136,8 @@ export function KnowledgeBaseView({ canEdit, requireLogin, confirm, userName }) 
 // ── 夥伴中心：360 評鑑（設計原型；正式版接 Auth+正規表+權限/匿名）─────────────────
 const R360_DEFAULT_DIMS = ["工作態度", "團隊合作", "專業技能", "服務品質", "責任感", "學習成長"];
 export function Review360View({ canEdit, requireLogin, confirm, isAdmin, userName }) {
-  const [data, setData] = useState(null); // {dimensions, people, reviews}
+  const [data, setData] = useState(null);     // {dimensions, reviews}（kb_360；名冊已分家獨立存）
+  const [people, setPeople] = useState([]);   // 名冊人員（kb_roster，唯一真相）
   const [tab, setTab] = useState("fill"); // fill | result | setup
   const [me, setMe] = useState("");
   const [rate, setRate] = useState(null); // 正在評的對象 {revieweeId, scores, comment}
@@ -144,18 +146,26 @@ export function Review360View({ canEdit, requireLogin, confirm, isAdmin, userNam
   useEffect(() => {
     const safety = setTimeout(() => setData(prev => prev || emptyR360()), 8000);
     (async () => {
-      try { const r = await window.storage.get(K("kb_360"), true); const d = r && r.value ? JSON.parse(r.value) : null; const nd = normR360(d); setData(nd); setMe(meFromRoster(nd.people, userName)); }
+      try {
+        const [ros, r] = await Promise.all([loadRosterDoc(), window.storage.get(K("kb_360"), true)]);
+        const d = r && r.value ? JSON.parse(r.value) : null;
+        setData(normR360(d)); setPeople(ros.people); setMe(meFromRoster(ros.people, userName));
+      }
       catch (_) { setData(emptyR360()); }
     })().finally(() => clearTimeout(safety));
-    return () => clearTimeout(safety);
+    // 即時同步：別台改了評鑑/名冊 → 這裡畫面跟著更新
+    const un1 = onSharedChange(K("kb_360"), (_k, v) => { try { setData(normR360(v ? JSON.parse(v) : null)); } catch (_) {} });
+    const un2 = onSharedChange(K(ROSTER_KEY), (_k, v) => { try { const p = v ? (JSON.parse(v).people || []) : []; setPeople(p); setMe(m => m || meFromRoster(p, userName)); } catch (_) {} });
+    return () => { clearTimeout(safety); un1(); un2(); };
   }, []);
-  function emptyR360() { return { dimensions: R360_DEFAULT_DIMS.map((l, i) => ({ id: "d" + i, label: l })), people: [], reviews: [] }; }
-  function normR360(d) { if (!d) return emptyR360(); return { dimensions: d.dimensions?.length ? d.dimensions : emptyR360().dimensions, people: d.people || [], reviews: d.reviews || [] }; }
-  const persist = async (next) => { try { auditLog("編輯", "夥伴中心・360 互評"); } catch (_) {} setData(next); try { await window.storage.set(K("kb_360"), JSON.stringify(next), true); } catch (_) {} };
+  function emptyR360() { return { dimensions: R360_DEFAULT_DIMS.map((l, i) => ({ id: "d" + i, label: l })), reviews: [] }; }
+  function normR360(d) { if (!d) return emptyR360(); return { dimensions: d.dimensions?.length ? d.dimensions : emptyR360().dimensions, reviews: d.reviews || [] }; }
+  const persist = async (next) => { try { auditLog("編輯", "夥伴中心・360 互評"); } catch (_) {} setData(next); try { await window.storage.set(K("kb_360"), JSON.stringify({ dimensions: next.dimensions, reviews: next.reviews }), true); } catch (_) {} };
+  const persistPeople = (nextPeople) => { setPeople(nextPeople); saveRosterPatch({ people: nextPeople }); }; // 只動 people；fields 由名冊頁管理
   const guard = () => { if (!canEdit) { requireLogin && requireLogin(); return false; } return true; };
 
   if (data === null) return <div style={{ padding: 40, color: SUB, fontSize: 14 }}>載入中…</div>;
-  const { dimensions, people, reviews } = data;
+  const { dimensions, reviews } = data;
   const nameOf = (id) => people.find(p => p.id === id)?.name || "—";
 
   // 儲存一筆評鑑（同一人評同一人＝覆蓋）
@@ -268,16 +278,16 @@ export function Review360View({ canEdit, requireLogin, confirm, isAdmin, userNam
         <div style={card}>
           <div style={{ fontSize: 14, fontWeight: 700, color: TEXT, marginBottom: 10 }}>夥伴名單（{people.length}）</div>
           <div style={{ display: "flex", gap: 8, fontSize: 10, color: SUB, marginBottom: 4, padding: "0 2px" }}><span style={{ flex: 1 }}>姓名</span><span style={{ width: 80 }}>部門</span><span style={{ width: 90 }}>層級</span><span style={{ width: 110 }}>登入帳號</span><span style={{ width: 20 }} /></div>
-          {people.map(p => { const up = (k, v) => persist({ ...data, people: people.map(x => x.id === p.id ? { ...x, [k]: v } : x) }); return (
+          {people.map(p => { const up = (k, v) => persistPeople(people.map(x => x.id === p.id ? { ...x, [k]: v } : x)); return (
             <div key={p.id} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6, flexWrap: "wrap" }}>
               <input value={p.name} onChange={e => up("name", e.target.value)} placeholder="姓名" style={{ flex: 1, minWidth: 90, border: `1px solid ${BORDER}`, borderRadius: 8, padding: "6px 10px", fontSize: 13, background: "#fff", color: TEXT }} />
               <input value={p.dept || ""} onChange={e => up("dept", e.target.value)} placeholder="部門" style={{ width: 80, border: `1px solid ${BORDER}`, borderRadius: 8, padding: "6px 8px", fontSize: 13, background: "#fff", color: TEXT }} />
               <select value={p.role || "staff"} onChange={e => up("role", e.target.value)} title="層級＝權限：主管/管理員可管理" style={{ width: 90, border: `1px solid ${canManageRole(p.role) ? "#C2872E" : BORDER}`, borderRadius: 8, padding: "6px 6px", fontSize: 13, background: "#fff", color: TEXT }}>{CREW_ROLES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select>
               <input value={p.account || ""} onChange={e => up("account", e.target.value)} placeholder="登入帳號" title="對應登入身分（例：goodmask77）" style={{ width: 110, border: `1px solid ${BORDER}`, borderRadius: 8, padding: "6px 8px", fontSize: 13, background: "#fff", color: TEXT }} />
-              <button onClick={() => { if (!guard()) return; confirm(`移除「${p.name}」？`).then(ok => ok && persist({ ...data, people: people.filter(x => x.id !== p.id) })); }} style={{ border: "none", background: "none", color: "#b3261e", cursor: "pointer", fontSize: 16 }}>×</button>
+              <button onClick={() => { if (!guard()) return; confirm(`移除「${p.name}」？`).then(ok => ok && persistPeople(people.filter(x => x.id !== p.id))); }} style={{ border: "none", background: "none", color: "#b3261e", cursor: "pointer", fontSize: 16 }}>×</button>
             </div>
           ); })}
-          <button onClick={() => { if (!guard()) return; persist({ ...data, people: [...people, { id: "p" + Date.now(), name: "", dept: "", role: "staff", account: "" }] }); }} style={{ border: `1px dashed ${BORDER}`, background: SURFACE, color: SUB, borderRadius: 8, padding: "6px 14px", fontSize: 13, cursor: "pointer", marginTop: 4 }}>＋ 新增夥伴</button>
+          <button onClick={() => { if (!guard()) return; persistPeople([...people, { id: "p" + Date.now(), name: "", dept: "", role: "staff", account: "" }]); }} style={{ border: `1px dashed ${BORDER}`, background: SURFACE, color: SUB, borderRadius: 8, padding: "6px 14px", fontSize: 13, cursor: "pointer", marginTop: 4 }}>＋ 新增夥伴</button>
           <div style={{ fontSize: 11, color: "#9b9384", marginTop: 8 }}>※ 層級＝權限：主管/管理員可新增關卡、發起投票、上架獎勵。登入帳號＝這個人登入後自動對應的身分（正式版接 Auth 後就不用選身分了）。</div>
         </div>
       </>)}
@@ -328,7 +338,7 @@ function crewPointStats(items, people) {
   return m;
 }
 async function loadCrewRoster() {
-  try { const r = await window.storage.get(K("kb_360"), true); const d = r && r.value ? JSON.parse(r.value) : null; return d?.people || []; } catch (_) { return []; }
+  try { return (await loadRosterDoc()).people || []; } catch (_) { return []; }
 }
 
 export function FeedbackView({ canEdit, requireLogin, isAdmin, userName }) {
@@ -645,7 +655,7 @@ export function ShopView({ canEdit, requireLogin, confirm, isAdmin, userName }) 
 
 
 // ── 夥伴中心：名冊 / 入職流程（人員主檔：動態自訂欄位、檔案上傳、必填追蹤入職進度）──
-// 欄位定義存在 kb_360.fields，管理員可任意 新增/改名/改型別(文字/日期/選單/檔案上傳)/設必填/刪除。
+// 欄位定義存在 kb_roster.fields（2026-07-18 與 360 分家），管理員可任意 新增/改名/改型別(文字/日期/選單/檔案上傳)/設必填/刪除。
 const DEFAULT_ROSTER_FIELDS = [
   { key: "empNo", show: true, label: "員工編號(NUEiP)", type: "text" },
   { key: "dept", show: true, label: "部門/崗位", type: "text" },
@@ -684,7 +694,12 @@ export function RosterView({ canEdit, confirm, me, ReceiptUploader }) {
   const [lockTip, setLockTip] = useState(false);
   const [dragIdx, setDragIdx] = useState(null); // 欄位設定拖曳排序
   const [optField, setOptField] = useState(null); // 選項管理中的欄位 key（選單型欄位的增刪改）
-  useEffect(() => { (async () => setData(await loadCrewJSON("kb_360", { dimensions: [], people: [], reviews: [] })))(); }, []);
+  useEffect(() => {
+    (async () => setData(await loadRosterDoc()))();
+    // 即時同步：別台改了名冊 → 這裡跟著更新
+    const un = onSharedChange(K(ROSTER_KEY), (_k, v) => { try { const d = v ? JSON.parse(v) : { people: [], fields: [] }; setData({ people: d.people || [], fields: d.fields || [] }); } catch (_) {} });
+    return un;
+  }, []);
   if (!data) return <div style={{ padding: 40, color: SUB, fontSize: 14 }}>載入中…</div>;
   const people = data.people || [];
   const fields = (data.fields && data.fields.length ? data.fields : DEFAULT_ROSTER_FIELDS);
@@ -692,7 +707,7 @@ export function RosterView({ canEdit, confirm, me, ReceiptUploader }) {
   const titleField = fields.find(f => /職稱/.test(f.label || ""));
   const sort = sortUser || [{ key: "dept", dir: 1 }, ...(titleField ? [{ key: titleField.key, dir: 1 }] : []), { key: "startDate", dir: -1 }];
   const setSort = (fn) => setSortUser(typeof fn === "function" ? fn(sort) : fn);
-  const persist = (patch) => { const next = { ...data, ...patch }; setData(next); saveCrewJSON("kb_360", next); };
+  const persist = (patch) => { const next = { ...data, ...patch }; setData(next); saveRosterDoc(next); }; // 沒自訂過欄位＝fields 留空，跟舊行為一樣沿用預設（日後預設更新能跟上）
   const updP = (id, fp) => persist({ people: people.map(pp => pp.id === id ? { ...pp, ...fp } : pp) });
   const addP = () => { if (!canEdit) return; const np = { id: "p-" + Math.random().toString(36).slice(2, 8), name: "", nick: "", role: "staff", status: "在職" }; persist({ people: [...people, np] }); setSel(np.id); };
   const delP = async (pp) => { if (!canEdit) return; if (!(await confirm(`刪除「${pp.name || "未命名"}」？`, { confirmLabel: "刪除" }))) return; persist({ people: people.filter(x => x.id !== pp.id) }); setSel(null); };

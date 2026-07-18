@@ -9,6 +9,7 @@ import {
   buildBaselineActual, BASELINE_WEEK, byId, shiftHours, newSchedule, syncRosterToShift,
 } from "./model.js";
 import { DOC_LABOR_CONTRACT, DOC_LABOR_MEETING_CONSENT } from "./docs.js";
+import { loadRosterDoc } from "../crew/roster.js"; // 名冊已與 360 分家（kb_roster），排班一律讀這份
 import WeekBoard from "./WeekBoard.jsx";
 import { Users, CalendarDays, Scale, LayoutGrid, Plus, Trash2, AlertTriangle, Copy, FileText, Lock } from "lucide-react";
 
@@ -83,8 +84,7 @@ export default function ShiftView({ K, canEdit, confirm, userName, isAdmin, onLo
       // 自動對照名冊（人員主檔唯一真相）：名冊有異動（新人/離職/職稱/部門/順序）→ 開排班頁即自動帶入；
       // 排班專屬設定（技能/期望班數/不可排/成本係數）不會被蓋（syncRosterToShift 保留舊值）
       try {
-        const kbR = await window.storage.get(K("kb_360"), true);
-        const kb = kbR && kbR.value ? JSON.parse(kbR.value) : null;
+        const kb = await loadRosterDoc();
         if (kb?.people?.length) {
           const titleField = (kb.fields || []).find(f => /職稱/.test(f.label || ""));
           const titleOf = (p) => titleField ? (p[titleField.key] || "") : "";
@@ -152,8 +152,7 @@ function PeoplePage({ staffDoc, stationsDoc, storeId, canEdit, confirm, isMobile
   // 從名冊同步（張良 2026-07-18：排班人員全部對照名冊內外場；可重複按，不會蓋掉手動調過的技能/班數/不可排）
   const syncRoster = async () => {
     try {
-      const r = await window.storage.get(K("kb_360"), true);
-      const kb = r && r.value ? JSON.parse(r.value) : null;
+      const kb = await loadRosterDoc();
       if (!kb?.people?.length) { alert("讀不到名冊資料"); return; }
       const titleField = (kb.fields || []).find(f => /職稱/.test(f.label || ""));
       const titleOf = (p) => titleField ? (p[titleField.key] || "") : "";

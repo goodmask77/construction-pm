@@ -45,6 +45,37 @@ async function kvSet(id, valueObj) {
   } catch (_) {}
 }
 
+// ── 逐筆存（v2）相容（2026-07-18）：前端改「一筆交易/任務＝一份文件」後，D哥 讀寫要跟上 ──
+async function kvGetPrefix(prefix) {
+  if (!SB_URL || !SB_KEY) return []
+  try {
+    const r = await fetch(`${SB_URL}/rest/v1/pm_documents?id=like.${encodeURIComponent(prefix)}*&select=id,data`, { headers: sbHeaders })
+    const rows = r.ok ? await r.json() : []
+    const out = []
+    rows.forEach((row) => { if (row?.data?.v) { try { out.push(JSON.parse(row.data.v)) } catch (_) {} } })
+    return out
+  } catch (_) { return [] }
+}
+// 有 marker＝已遷移 → 前綴掃描逐筆；沒有 → 讀舊整包。回傳 { list, v2 }
+async function kvLoadRecords(markerKey, prefix, legacyKey) {
+  const m = await kvGetMany([markerKey])
+  if (m[markerKey]) return { list: await kvGetPrefix(prefix), v2: true }
+  const l = await kvGetMany([legacyKey])
+  return { list: Array.isArray(l[legacyKey]) ? l[legacyKey] : [], v2: false }
+}
+const kvLoadTasks = async () => { const r = await kvLoadRecords('pm_tasks_v2', 'pm_task_', 'pm_tasks'); r.list.sort((a, b) => (a.ord ?? 0) - (b.ord ?? 0)); return r }
+const kvLoadLedger = async () => { const r = await kvLoadRecords('sp_finance_pm_fin_ledger_v2', 'sp_finance_pm_fin_tx_', 'sp_finance_pm_fin_ledger'); r.list.sort((a, b) => ((a.date || '') < (b.date || '') ? 1 : -1)); return r }
+// v2 儲存：只寫「跟載入時不同」的那幾筆（新增/被改的），不整包重寫
+async function kvSaveRecordsDiff(prefix, origList, nextList, withOrd) {
+  const orig = new Set(origList)
+  let minOrd = 0; nextList.forEach(t => { if (typeof t.ord === 'number' && t.ord < minOrd) minOrd = t.ord })
+  for (const t of nextList) {
+    if (orig.has(t)) continue // 物件沒被換掉＝沒改過
+    if (withOrd && typeof t.ord !== 'number') { minOrd -= 1; t.ord = minOrd } // 新任務放最前（跟 App 一致）
+    await kvSet(prefix + t.id, t)
+  }
+}
+
 // 全部空間的快照（每空間一個 key）
 async function loadSnapshots() {
   const keys = ['pm_bot_context', 'sp_team_pm_bot_context', 'sp_crew_pm_bot_context']
@@ -109,8 +140,8 @@ async function loadAccounts() {
 // 財務內帳（多帳戶 + 交易 + 科目）→ 文字
 async function loadFinanceText() {
   try {
-    const fin = await kvGetMany(['sp_finance_pm_fin_accounts', 'sp_finance_pm_fin_ledger', 'sp_finance_pm_fin_coa'])
-    const accs = fin['sp_finance_pm_fin_accounts'] || [], led = fin['sp_finance_pm_fin_ledger'] || [], coa = fin['sp_finance_pm_fin_coa'] || []
+    const [fin, ledR] = await Promise.all([kvGetMany(['sp_finance_pm_fin_accounts', 'sp_finance_pm_fin_coa']), kvLoadLedger()])
+    const accs = fin['sp_finance_pm_fin_accounts'] || [], led = ledR.list, coa = fin['sp_finance_pm_fin_coa'] || []
     if (!accs.length && !led.length) return ''
     const n = (v) => Number(String(v ?? '').replace(/[^0-9.\-]/g, '')) || 0
     const bal = (id) => { let b = n((accs.find(a => a.id === id) || {}).opening); led.forEach(l => { if (l.to === id) b += n(l.amount); if (l.from === id) b -= n(l.amount); }); return b }
@@ -169,7 +200,7 @@ async function loadEstimatesText() {
 // 360 互評→逐人平均分+各構面；意見回饋→逐人標籤統計+留言；其餘→計數+重點。
 async function loadCrewText() {
   try {
-    const bases = ['kb_360', 'kb_feedback', 'kb_quests', 'kb_shop', 'kb_docs', 'kb_polls']
+    const bases = ['kb_360', 'kb_roster', 'kb_feedback', 'kb_quests', 'kb_shop', 'kb_docs', 'kb_polls']
     const keys = []
     for (const p of ['sp_crew_', 'sp_team_']) for (const b of bases) keys.push(p + b)
     const map = await kvGetMany(keys)
@@ -177,16 +208,20 @@ async function loadCrewText() {
     const out = ['\n\n【夥伴中心（團隊）資料】']
     let any = false
     const r360 = pick('kb_360')
+    // 名冊/360 已分家（2026-07-18）：人員優先讀 kb_roster；舊資料還在 kb_360.people 就當備援
+    const roster = pick('kb_roster')
+    const people = (roster && Array.isArray(roster.people) && roster.people.length) ? roster.people
+      : (r360 && Array.isArray(r360.people) ? r360.people : [])
     const nameOf = {}
-    if (r360 && Array.isArray(r360.people)) r360.people.forEach(p => { nameOf[p.id] = p.name })
-    if (r360 && Array.isArray(r360.people) && r360.people.length) {
+    people.forEach(p => { nameOf[p.id] = p.name })
+    if (people.length) {
       any = true
-      out.push(`【夥伴名冊（共 ${r360.people.length} 人；生日格式 西元年-月-日，問「誰快生日」看月-日）】`)
-      r360.people.forEach(p => out.push(`  - ${p.name}${p.nick ? '（' + p.nick + '）' : ''}｜生日:${p.bday || '?'}｜到職:${p.startDate || '?'}${p.dept ? '｜部門:' + p.dept : ''}｜${p.status || '在職'}`))
+      out.push(`【夥伴名冊（共 ${people.length} 人；生日格式 西元年-月-日，問「誰快生日」看月-日）】`)
+      people.forEach(p => out.push(`  - ${p.name}${p.nick ? '（' + p.nick + '）' : ''}｜生日:${p.bday || '?'}｜到職:${p.startDate || '?'}${p.dept ? '｜部門:' + p.dept : ''}｜${p.status || '在職'}`))
     }
 
     // 360 互評：每個被評者的「整體平均 + 各構面平均 + 份數」（全員、不截斷）
-    if (r360 && Array.isArray(r360.people)) {
+    if (r360 && people.length) {
       any = true
       const dims = r360.dimensions || []
       const reviews = r360.reviews || []
@@ -205,7 +240,7 @@ async function loadCrewText() {
         out.push(`  - ${r.name}：平均 ${r.avg.toFixed(2)}（${r.cnt} 份）｜${per}${cm}`)
       })
       const reviewed = new Set(Object.keys(agg))
-      const noRev = r360.people.filter(p => !reviewed.has(p.id)).map(p => p.name)
+      const noRev = people.filter(p => !reviewed.has(p.id)).map(p => p.name)
       if (noRev.length) out.push(`  -（尚無人評分）：${noRev.join('、')}`)
     }
 
@@ -258,8 +293,8 @@ const SYS_DATA_HEAD = '\n\n────────\n【你目前掌握的即時
 // 任務中心（pm_tasks，Task v2 全欄位）→ 文字。D哥 讀任務一律以這份為準（完整、含衍生狀態）
 async function loadTasksText() {
   try {
-    const m = await kvGetMany(['pm_tasks', 'pm_data'])
-    const tasks = Array.isArray(m['pm_tasks']) ? m['pm_tasks'] : []
+    const [m, tR] = await Promise.all([kvGetMany(['pm_data']), kvLoadTasks()])
+    const tasks = tR.list
     if (!tasks.length) return ''
     const cats = Array.isArray(m['pm_data']) ? m['pm_data'] : []
     const catName = (id) => (!id || id === '__inbox__') ? '收件匣' : ((cats.find(c => c.id === id) || {}).name || '收件匣')
@@ -489,14 +524,18 @@ async function appendActivity(key, user, action, detail) {
 
 // 真正執行：載入要動到的資料 → 套用 → 存回 → 記操作紀錄
 async function executeActions(actions, operator) {
-  const ck = await kvGetMany(['pm_data', 'pm_worklog', 'pm_petty', 'pm_issues', 'pm_tasks', 'pm_conclusions', 'sp_finance_pm_fin_ledger', 'sp_finance_pm_fin_accounts'])
+  const [ck, tR, lR] = await Promise.all([
+    kvGetMany(['pm_data', 'pm_worklog', 'pm_petty', 'pm_issues', 'pm_conclusions', 'sp_finance_pm_fin_accounts']),
+    kvLoadTasks(), kvLoadLedger(),
+  ])
   let cats = Array.isArray(ck['pm_data']) ? ck['pm_data'] : []
   let worklog = Array.isArray(ck['pm_worklog']) ? ck['pm_worklog'] : []
   const pj = ck['pm_petty'] || {}; let petty = { advances: pj.advances || [], spends: pj.spends || [] }
   let issues = Array.isArray(ck['pm_issues']) ? ck['pm_issues'] : []
-  let tasks = Array.isArray(ck['pm_tasks']) ? ck['pm_tasks'] : []
+  let tasks = tR.list
   let conclusions = Array.isArray(ck['pm_conclusions']) ? ck['pm_conclusions'] : []
-  let ledger = Array.isArray(ck['sp_finance_pm_fin_ledger']) ? ck['sp_finance_pm_fin_ledger'] : []
+  let ledger = lR.list
+  const tasks0 = [...tasks], ledger0 = [...ledger] // v2 差異寫入的比對基準（載入時的原物件）
   const accounts = Array.isArray(ck['sp_finance_pm_fin_accounts']) ? ck['sp_finance_pm_fin_accounts'] : []
   const today = new Date().toISOString().slice(0, 10)
   const by = 'D哥(' + operator + ')'
@@ -580,8 +619,11 @@ async function executeActions(actions, operator) {
       } else results.push(`⚠️ 不支援的操作：${t}`)
     } catch (e) { results.push(`⚠️ 執行「${t}」失敗`) }
   }
-  const saveMap = { pm_data: cats, pm_worklog: worklog, pm_petty: petty, pm_issues: issues, pm_tasks: tasks, pm_conclusions: conclusions, sp_finance_pm_fin_ledger: ledger }
+  const saveMap = { pm_data: cats, pm_worklog: worklog, pm_petty: petty, pm_issues: issues, pm_conclusions: conclusions }
   for (const k of changed) if (saveMap[k] !== undefined) await kvSet(k, saveMap[k])
+  // 任務/交易明細：已遷移逐筆存＝只寫動到的那幾筆；還沒遷移＝照舊整包寫
+  if (changed.has('pm_tasks')) { if (tR.v2) await kvSaveRecordsDiff('pm_task_', tasks0, tasks, true); else await kvSet('pm_tasks', tasks) }
+  if (changed.has('sp_finance_pm_fin_ledger')) { if (lR.v2) await kvSaveRecordsDiff('sp_finance_pm_fin_tx_', ledger0, ledger, false); else await kvSet('sp_finance_pm_fin_ledger', ledger) }
   for (const [key, action, detail] of audits) await appendActivity(key, by, action, detail)
   return results
 }

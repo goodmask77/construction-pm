@@ -7,7 +7,8 @@
 import { useState, useEffect, useRef } from "react";
 import { Inbox, LayoutGrid, Columns3, List, CalendarDays, ChartGantt, Network, Plus, X, Check, Flame, Calendar, Clock, CircleAlert, ListTodo, Search, Home, Zap, Hourglass, CirclePlay, Coffee, Pin, ArrowUpDown, FolderPlus, Sun } from "lucide-react";
 import { isWaiting, isBlocked, missingDeps, wouldCycle, mergeTask, removeTaskAndRefs, isQuickWin, QUICK_WIN_MAX_MINUTES, orderTasks } from "./taskModel.js";
-import { uploadPhoto } from "../supa.js";
+import { uploadPhoto, getSharedPrefix } from "../supa.js";
+import { migrateRecords, diffPersist, subscribeRecords } from "../lib/records.js";
 
 // 任務附件：可上傳檔案＋直接 Cmd+V 貼截圖（彈窗開著時全域接住貼上）＋縮圖點開放大（App 慣例）
 function TaskAttach({ files = [], onChange, canEdit, C, line }) {
@@ -94,10 +95,20 @@ export default function TaskCenter({ K, confirm, canEdit, cats, onLog, onAddCat,
   const [sortMode, setSortMode] = useState("manual"); // manual(手動/拖曳順序) | due(日期) | prio(重要度)
   const [newCatIn, setNewCatIn] = useState(""); // 依大項視角「新增大項」輸入
 
+  // 任務逐筆存（2026-07-18）：一件任務＝一份文件 pm_task_<id>（含 ord＝手動排序位置），
+  // 兩人同時改任務不再整包互蓋；舊整包 pm_tasks 第一次載入自動遷移。
+  const persistedTasks = useRef([]); // 上次已存清單（差異寫入的比對基準）
+  const recConf = () => ({ markerKey: K("pm_tasks_v2"), prefix: K("pm_task_"), withOrd: true });
   useEffect(() => { (async () => {
     try {
+      const mark = await window.storage.get(K("pm_tasks_v2"), true);
+      if (mark && mark.value) { // 已遷移 → 逐筆載入，照 ord 排
+        const m = await getSharedPrefix(K("pm_task_"));
+        const list = Object.values(m).map(v => { try { return JSON.parse(v) } catch (_) { return null } }).filter(Boolean).sort((a, b) => (a.ord ?? 0) - (b.ord ?? 0));
+        persistedTasks.current = list; setTasks(list); return;
+      }
       const r = await window.storage.get(K("pm_tasks"), true);
-      if (r && r.value) { setTasks(JSON.parse(r.value)); return; }
+      if (r && r.value) { const list = JSON.parse(r.value); setTasks(list); migrateRecords({ ...recConf(), list }).then(() => { persistedTasks.current = list; }).catch(() => {}); return; }
       // 第一次：把舊 ToDo(pm_issues) 匯入成任務（一次性）
       let imported = [];
       try {
@@ -110,9 +121,17 @@ export default function TaskCenter({ K, confirm, canEdit, cats, onLog, onAddCat,
         }));
       } catch (_) {}
       setTasks(imported);
-      window.storage.set(K("pm_tasks"), JSON.stringify(imported), true).catch(() => {});
+      migrateRecords({ ...recConf(), list: imported }).then(() => { persistedTasks.current = imported; }).catch(() => {});
     } catch { setTasks([]); }
   })(); }, []); // eslint-disable-line
+  // 即時同步：別台改的任務 → 這裡畫面即時跟上（依 ord 插回正確位置）
+  useEffect(() => {
+    const un = subscribeRecords(K("pm_task_"), (id, t) => {
+      persistedTasks.current = (t ? [...persistedTasks.current.filter(x => x.id !== id), t] : persistedTasks.current.filter(x => x.id !== id)).sort((a, b) => (a.ord ?? 0) - (b.ord ?? 0));
+      setTasks(prev => prev == null ? prev : (t ? [...prev.filter(x => x.id !== id), t] : prev.filter(x => x.id !== id)).sort((a, b) => (a.ord ?? 0) - (b.ord ?? 0)));
+    });
+    return un;
+  }, []); // eslint-disable-line
 
   const guard = () => { if (!canEdit) { alert("沒有編輯權限，請聯絡管理員。"); return false; } return true; };
   // 存檔防抖：畫面即時更新，但停手 0.5 秒才寫後端（避免打一個字寫一次資料庫）
@@ -124,7 +143,8 @@ export default function TaskCenter({ K, confirm, canEdit, cats, onLog, onAddCat,
     tasksRef.current = list;
     setTasks(list);
     if (saveTimer.current) clearTimeout(saveTimer.current);
-    saveTimer.current = setTimeout(() => { window.storage.set(K("pm_tasks"), JSON.stringify(list), true).catch(() => {}); }, 500);
+    // 逐筆存：只寫「有變動的那幾筆」（含順序變動＝ord 改變的）；刪除的刪各自文件
+    saveTimer.current = setTimeout(() => { try { persistedTasks.current = diffPersist({ prefix: K("pm_task_"), prevList: persistedTasks.current, nextList: list, withOrd: true }); } catch (_) {} }, 500);
   };
   useEffect(() => { tasksRef.current = tasks; }, [tasks]); // 初次載入也帶進 ref
   // Cmd+Z / Ctrl+Z 復原上一步（打字中在輸入框時不攔截，讓輸入框用原生復原）

@@ -5,6 +5,8 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 import { fmt } from "../lib/cost.js";
 import { parseNum, blankZero } from "../lib/num.js";
+import { loadRecords, diffPersist, subscribeRecords } from "../lib/records.js";
+import { onSharedChange } from "../supa.js";
 
 const C = { text: "#1d1a15", sub: "#5a5247", faint: "#9b9384", line: "#d9cfbd", soft: "#ece4d6", bg: "#f4efe5", card: "#FFFFFF", head: "#f4efe5", accent: "#3f7d4e", red: "#b3261e", blue: "#c4582a", amber: "#c98a14", brand: "#c4582a" };
 const ACC_TYPES = [["bank", "銀行"], ["company", "公司帳戶"], ["cash", "現金"], ["petty", "零用金"], ["loan", "貸款"]];
@@ -83,9 +85,13 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
   const [reconCat, setReconCat] = useState("");    // 類別標籤篩選
   const flashRecon = (text) => { setReconMsg(text); setTimeout(() => setReconMsg(m => m === text ? null : m), 8000); };
 
+  // 交易明細逐筆存（2026-07-18）：一筆交易＝一份文件 pm_fin_tx_<id>，兩人同時記帳不再整包互蓋；
+  // 舊整包 pm_fin_ledger 第一次載入自動遷移。persistedRef＝上次已存清單（差異寫入的比對基準）。
+  const persistedLed = useRef([]);
+  const ledgerConf = () => ({ markerKey: K("pm_fin_ledger_v2"), prefix: K("pm_fin_tx_"), legacyKey: K("pm_fin_ledger") });
   useEffect(() => { (async () => {
     try { const a = await window.storage.get(K("pm_fin_accounts"), true); setAccounts(a && a.value ? JSON.parse(a.value) : []); } catch { setAccounts([]); }
-    try { const l = await window.storage.get(K("pm_fin_ledger"), true); setLedger(l && l.value ? JSON.parse(l.value) : []); } catch { setLedger([]); }
+    try { const list = await loadRecords({ ...ledgerConf(), sortBy: (a, b) => ((a.date || "") < (b.date || "") ? 1 : -1) }); persistedLed.current = list; setLedger(list); } catch { setLedger([]); }
     try { const c = await window.storage.get(K("pm_fin_coa"), true); const v = c && c.value ? JSON.parse(c.value) : null; setCoa(Array.isArray(v) && v.length ? v : SEED_COA()); } catch { setCoa(SEED_COA()); }
     // 對帳資料：試算表鏡像 + 對帳標記 + 工程專案（跨空間唯讀，絕不寫回）
     try { const sh = await window.storage.get(K("pm_sheet"), true); setSheet(sh && sh.value ? JSON.parse(sh.value) : null); } catch (_) {}
@@ -103,6 +109,15 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
     for (const mo of months) { try { const d = await window.storage.get(K("pm_pos_d_" + mo), true); if (d && d.value) out[mo] = JSON.parse(d.value); } catch (_) {} }
     setPosDet(out);
   })(); }, [pos]); // eslint-disable-line
+  // 即時同步：別台記的帳/改的帳戶 → 這裡畫面即時跟上（自己這台寫的不會收到）
+  useEffect(() => {
+    const un1 = subscribeRecords(K("pm_fin_tx_"), (id, tx) => {
+      persistedLed.current = tx ? [tx, ...persistedLed.current.filter(l => l.id !== id)] : persistedLed.current.filter(l => l.id !== id);
+      setLedger(prev => prev == null ? prev : (tx ? [tx, ...prev.filter(l => l.id !== id)] : prev.filter(l => l.id !== id)));
+    });
+    const un2 = onSharedChange(K("pm_fin_accounts"), (_k, v) => { try { setAccounts(v ? JSON.parse(v) : []); } catch (_) {} });
+    return () => { un1(); un2(); };
+  }, []); // eslint-disable-line
   const saveRecon = (next) => { setRecon(next); window.storage.set(K("pm_recon"), JSON.stringify(next), true).catch(() => {}); };
   const saveBank = (next) => { setBank(next); window.storage.set(K("pm_bank"), JSON.stringify(next), true).catch(() => {}); };
   // 營運「更新」：mail 到了就手動抓（打烊信一到按一下即上）
@@ -143,7 +158,8 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
   };
   const guard = () => { if (!canEdit) { alert("沒有編輯權限，請聯絡管理員。"); return false; } return true; };
   const saveAcc = (list) => { setAccounts(list); window.storage.set(K("pm_fin_accounts"), JSON.stringify(list), true).catch(() => {}); };
-  const saveLed = (list) => { setLedger(list); window.storage.set(K("pm_fin_ledger"), JSON.stringify(list), true).catch(() => {}); };
+  // 逐筆存：跟上次已存清單比差異，只寫有變動的那幾筆（新增/編輯/刪除各只動自己那份文件）
+  const saveLed = (list) => { setLedger(list); persistedLed.current = diffPersist({ prefix: K("pm_fin_tx_"), prevList: persistedLed.current, nextList: list }); };
   const saveCoa = (list) => { if (!guard()) return; setCoa(list); window.storage.set(K("pm_fin_coa"), JSON.stringify(list), true).catch(() => {}); };
   // 科目樹工具
   const coaChildren = (pid) => (coa || []).filter(c => (c.parentId || null) === (pid || null));
