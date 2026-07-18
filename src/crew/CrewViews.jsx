@@ -678,7 +678,7 @@ const DEFAULT_ROSTER_FIELDS = [
 export function RosterView({ canEdit, confirm, me, ReceiptUploader }) {
   const [data, setData] = useState(null);
   const [q, setQ] = useState("");
-  const [sort, setSort] = useState({ key: "startDate", dir: 1 });
+  const [sort, setSort] = useState([{ key: "startDate", dir: 1 }]); // 疊加排序：先點=主排序、再點別欄=次排序；同欄第2次反向、第3次取消
   const [sel, setSel] = useState(null);
   const [showFields, setShowFields] = useState(false);
   const [lockTip, setLockTip] = useState(false);
@@ -741,16 +741,28 @@ export function RosterView({ canEdit, confirm, me, ReceiptUploader }) {
   };
   let rows = people.filter(pp => !q.trim() || ((pp.name || "") + (pp.nick || "") + (pp.dept || "") + (pp.empNo || "") + (pp.phone || "")).toLowerCase().includes(q.trim().toLowerCase()));
   rows = [...rows].sort((a, b) => {
-    const va = val(a, sort.key), vb = val(b, sort.key);
-    const c = (typeof va === "number" && typeof vb === "number") ? (va - vb) : String(va).localeCompare(String(vb), "zh-Hant-TW");
-    return c * sort.dir;
+    for (const s of (sort.length ? sort : [{ key: "startDate", dir: 1 }])) {
+      const va = val(a, s.key), vb = val(b, s.key);
+      const c = (typeof va === "number" && typeof vb === "number") ? (va - vb) : String(va).localeCompare(String(vb), "zh-Hant-TW");
+      if (c) return c * s.dir;
+    }
+    return 0;
   });
   const GTC = `40px ${nameW}px ${showCols.flatMap(f => f.key === "bday" ? ["150px", "52px"] : [colW(f)]).join(" ")} 126px 58px 48px`;
-  const th = (label, key, extra) => (
-    <button key={label} onClick={() => key && setSort(s2 => ({ key, dir: s2.key === key ? -s2.dir : 1 }))} title={label} style={{ background: "none", border: "none", textAlign: "left", padding: "8px 8px", fontSize: 10.5, letterSpacing: 0.8, color: sort.key === key ? TEXT : "#9b9384", fontWeight: 700, cursor: key ? "pointer" : "default", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", minWidth: 0, maxWidth: "100%", ...extra }}>
-      {label}{key && sort.key === key ? (sort.dir === 1 ? " ▲" : " ▼") : ""}
-    </button>
-  );
+  const th = (label, key, extra) => {
+    const si = key ? sort.findIndex(s => s.key === key) : -1;
+    const s = si >= 0 ? sort[si] : null;
+    return (
+      <button key={label} onClick={() => key && setSort(list => {
+        const i = list.findIndex(x => x.key === key);
+        if (i < 0) return [...list, { key, dir: 1 }];              // 沒點過 → 疊加為次排序（▲）
+        if (list[i].dir === 1) return list.map((x, j) => j === i ? { ...x, dir: -1 } : x); // 第2次 → 反向（▼）
+        return list.filter((_, j) => j !== i);                     // 第3次 → 從排序中移除
+      })} title={`${label}｜點一下疊加排序、再點反向、第三下取消`} style={{ background: "none", border: "none", textAlign: "left", padding: "8px 8px", fontSize: 10.5, letterSpacing: 0.8, color: s ? TEXT : "#9b9384", fontWeight: 700, cursor: key ? "pointer" : "default", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", minWidth: 0, maxWidth: "100%", ...extra }}>
+        {label}{s ? (s.dir === 1 ? " ▲" : " ▼") : ""}{s && sort.length > 1 ? <span style={{ fontSize: 9, color: ACCENT }}>{si + 1}</span> : null}
+      </button>
+    );
+  };
   const inpS = { border: `1px solid ${BORDER}`, borderRadius: 8, padding: "8px 10px", fontSize: 13.5, background: "#fff", color: TEXT, boxSizing: "border-box", width: "100%", outline: "none" };
   const dateS = { ...inpS, colorScheme: "light", fontFamily: "'Noto Sans TC',sans-serif", cursor: "pointer" };
   return (
