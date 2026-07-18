@@ -1,13 +1,17 @@
-// 供應鏈空間（P1）：產品管理（完整）＋廠商（唯讀預覽，P2 完整版）＋叫貨（P2）
-// 資料：sp_supply_pm_supply（B案自 ground-pack 全量搬遷；categories/products/materials/vendors/matches/productPackaging）
+// 供應鏈空間（P1）：產品管理（完整）＋物料主檔（進銷存地基）＋廠商＋叫貨
+// 資料：sp_supply_pm_supply（categories/products/materials/vendors/vendorItems/ingredients/matches/productPackaging）
+// 進銷存藍圖見 docs/INVENTORY_BLUEPRINT.md：物料↔貨源多對一、進價/報價/食譜全存流水、成本只用實付價
 import React, { useEffect, useState } from "react";
+import IngredientsView from "./Ingredients.jsx";
+import RecipeCard from "./Recipe.jsx";
+import { buildPriceEvents, applyLastPaid, applyQuote, priceAlert, unitCost, quoteUnit, packToBase, srcsOf, lastPaid } from "./inv.js";
 
-const C = {
+export const C = {
   text: "#1d1a15", sub: "#5a5247", faint: "#9b9384", line: "#d9cfbd", hard: "#c8bca6",
   card: "#fbf8f1", soft: "#f4efe5", accent: "#c4582a", blue: "#3a6ea5", green: "#3f7d4e", red: "#b3261e", amber: "#c98a14",
 };
-const MONOF = "'IBM Plex Mono', ui-monospace, Menlo, monospace";
-const rid = (p) => p + Math.random().toString(36).slice(2, 8);
+export const MONOF = "'IBM Plex Mono', ui-monospace, Menlo, monospace";
+export const rid = (p) => p + Math.random().toString(36).slice(2, 8);
 const fmt$ = (v) => { const n = Number(String(v).replace(/[^0-9.-]/g, "")); return isNaN(n) || v === "" ? "" : "NT$" + Math.round(n).toLocaleString(); };
 
 export default function SupplyView({ view, K, canEdit, confirm, showMoney, userName }) {
@@ -33,11 +37,12 @@ export default function SupplyView({ view, K, canEdit, confirm, showMoney, userN
   const [oTab, setOTab] = useState("order");     // 叫貨頁子分頁：order=下單 / rec=紀錄・對帳 / issue=問題追蹤
   const [moSel2, setMoSel2] = useState("");      // 紀錄・對帳：月份篩選（空=本月）
   const [vF, setVF] = useState("");              // 紀錄・對帳：廠商篩選
+  const [qv2, setQv2] = useState({});            // 報價分頁：輸入中的報價（viId → 文字，離開欄位才寫入流水）
   const [groups, setGroups] = useState({});     // DD看過的LINE群（pm_group_seen，發送綁定用）
   const flash = (t) => { setMsg(t); setTimeout(() => setMsg(m => (m === t ? null : m)), 6000); };
 
   useEffect(() => { (async () => {
-    try { const v = await window.storage.get(K("pm_supply"), true); setDb(v && v.value ? JSON.parse(v.value) : { categories: [], products: [], materials: [], vendors: [], matches: [], productPackaging: [] }); } catch (_) { setDb({ categories: [], products: [], materials: [], vendors: [], matches: [], productPackaging: [] }); }
+    try { const v = await window.storage.get(K("pm_supply"), true); setDb(v && v.value ? JSON.parse(v.value) : { categories: [], products: [], materials: [], vendors: [], vendorItems: [], ingredients: [], matches: [], productPackaging: [] }); } catch (_) { setDb({ categories: [], products: [], materials: [], vendors: [], vendorItems: [], ingredients: [], matches: [], productPackaging: [] }); }
     try { const o = await window.storage.get(K("pm_orders"), true); setOrders(o && o.value ? JSON.parse(o.value) : []); } catch (_) {}
     try { const g = await window.storage.get("pm_group_seen", true); setGroups(g && g.value ? JSON.parse(g.value) : {}); } catch (_) {}
   })(); }, []); // eslint-disable-line
@@ -54,6 +59,9 @@ export default function SupplyView({ view, K, canEdit, confirm, showMoney, userN
   const saveOrders = (list) => { setOrders(list); window.storage.set(K("pm_orders"), JSON.stringify(list), true).catch(() => {}); };
   const WDZ = ["日", "一", "二", "三", "四", "五", "六"];
   const dz = (d) => d ? `${Number(d.slice(5, 7))}/${Number(d.slice(8))}（${WDZ[new Date(d + "T00:00:00").getDay()]}）` : "";
+
+  // ── 物料清單（進銷存中控台）：物料主檔＋盤點頻率＋貨源歸戶＋比價 ──
+  if (view === "singred") return <IngredientsView db={db} save={save} canEdit={canEdit} showMoney={showMoney} confirm={confirm} flash={flash} />;
 
   // ── 叫貨：依廠商勾數量 → 叫貨單 → D自動發群 / LINE分享 / 複製 → 紀錄可追狀態 ──
   if (view === "sorder") {
@@ -153,7 +161,7 @@ export default function SupplyView({ view, K, canEdit, confirm, showMoney, userN
           <span style={{ background: C.accent, color: "#fff", fontSize: 11.5, fontWeight: 700, borderRadius: 4, padding: "2px 8px" }}>叫貨</span>
           <div>
             <div style={{ fontSize: 17, fontWeight: 800, color: C.text }}>叫貨</div>
-            <div style={{ fontSize: 11, color: C.faint }}>{oTab === "order" ? "點廠商名展開品項 → 填數量 → 產生叫貨單 → 發送。只列正式供應商（廠商頁名稱前打勾）。" : oTab === "rec" ? "彙總＋逐張紀錄放一起，可選月份、篩廠商，月底對帳用。" : "驗收有問題的品項自動集中在這裡，追到解決為止。"}</div>
+            <div style={{ fontSize: 11, color: C.faint }}>{oTab === "order" ? "點廠商名展開品項 → 填數量 → 產生叫貨單 → 發送。只列正式供應商（廠商頁名稱前打勾）。" : oTab === "quote" ? "key 各家今日報價 → 自動換算同單位、最低標綠 → 勾本次跟誰叫 → 帶入下單。報價只供比價，成本一律用驗收實付價。" : oTab === "rec" ? "彙總＋逐張紀錄放一起，可選月份、篩廠商，月底對帳用。" : "驗收有問題的品項自動集中在這裡，追到解決為止。"}</div>
           </div>
           <div style={{ flex: 1 }} />
           {oTab === "order" && <>
@@ -167,7 +175,7 @@ export default function SupplyView({ view, K, canEdit, confirm, showMoney, userN
         </div>
         {/* 子分頁：下單 / 紀錄・對帳 / 問題追蹤（未解決數掛紅徽章） */}
         <div style={{ display: "flex", gap: 4, marginBottom: 12, borderBottom: `1.5px solid ${C.hard}` }}>
-          {[["order", "📝 下單", 0], ["rec", "🧾 紀錄・對帳", 0], ["issue", "🚩 問題追蹤", openIssueN]].map(([k, lb, n]) => (
+          {[["order", "📝 下單", 0], ["quote", "💰 報價", 0], ["rec", "🧾 紀錄・對帳", 0], ["issue", "🚩 問題追蹤", openIssueN]].map(([k, lb, n]) => (
             <button key={k} onClick={() => setOTab(k)} style={{ border: "none", borderBottom: `2.5px solid ${oTab === k ? C.accent : "transparent"}`, marginBottom: -1.5, background: "none", color: oTab === k ? C.text : C.sub, padding: "7px 14px", fontSize: 13, fontWeight: oTab === k ? 800 : 600, cursor: "pointer" }}>
               {lb}{n > 0 && <span style={{ marginLeft: 5, fontSize: 10.5, fontWeight: 700, color: "#fff", background: C.red, borderRadius: 9, padding: "1px 7px" }}>{n}</span>}
             </button>
@@ -219,7 +227,89 @@ export default function SupplyView({ view, K, canEdit, confirm, showMoney, userN
           );
         })}
         </>}
-        {/* ── 分頁2：紀錄・對帳（月份/廠商篩選 → 當月彙總＋當月全部紀錄） ── */}
+        {/* ── 分頁2：報價比價（物料×貨源矩陣；key 報價→寫 pm_quote_ 流水＋quote 快取；成本永遠不用報價） ── */}
+        {oTab === "quote" && (() => {
+          const ingsQ = (db.ingredients || []).slice().sort((a, b) => (a.sort || 0) - (b.sort || 0)).map(g => ({ g, srcs: srcsOf(db, g.id) })).filter(x => x.srcs.length > 0);
+          const vname2 = (vid) => ((db.vendors || []).find(v => v.id === vid) || {}).name || "—";
+          const commitQuote = (vi) => {
+            const raw = qv2[vi.id]; if (raw === undefined) return;
+            const price = Number(raw);
+            if (!(price > 0) || price === Number(vi.quote && vi.quote.price)) { setQv2(q3 => { const n = { ...q3 }; delete n[vi.id]; return n; }); return; }
+            const ts3 = new Date().toISOString();
+            const ev = { id: rid("qt"), ts: ts3, date: ts3.slice(0, 10), ingredient_id: vi.ingredient_id || "", vendor_item_id: vi.id, vendor_id: vi.vendor_id, price, by: userName || "—" };
+            window.storage.set(K("pm_quote_" + ev.id), JSON.stringify(ev), true).catch(() => {});
+            save({ vendorItems: applyQuote(db.vendorItems || [], vi.id, price, ts3) });
+            setQv2(q3 => { const n = { ...q3 }; delete n[vi.id]; return n; });
+            flash(`✓ 已記報價：${vname2(vi.vendor_id)} ${vi.name} $${price}（存流水，不覆蓋歷史）`);
+          };
+          const picked2 = ingsQ.filter(x => x.g.pickVi && x.srcs.some(vi => vi.id === x.g.pickVi));
+          const goOrder = () => {
+            const vids = [...new Set(picked2.map(x => x.srcs.find(vi => vi.id === x.g.pickVi).vendor_id))];
+            setCollapsed(c2 => { const n = { ...c2 }; vids.forEach(vid => { n["ov" + vid] = true; }); return n; });
+            setOTab("order");
+            flash("✓ 已展開 " + vids.map(vname2).join("、") + "——到各廠商填數量產生叫貨單");
+          };
+          if (!ingsQ.length) return <div style={{ padding: 30, textAlign: "center", color: C.faint, background: C.card, border: `1.5px solid ${C.hard}`, borderRadius: 10 }}>還沒有可比價的物料——先到「🥬 物料」頁建物料卡、把各廠商貨源歸戶進來。</div>;
+          return (
+            <div style={box}>
+              {ingsQ.map(({ g, srcs }) => {
+                const cells = srcs.map(vi => {
+                  const pend = qv2[vi.id];
+                  const price = pend !== undefined ? Number(pend) || 0 : (vi.quote && Number(vi.quote.price)) || 0;
+                  const k = packToBase(vi);
+                  return { vi, price, u: price > 0 && k ? price / k : null };
+                });
+                const us = cells.map(c => c.u).filter(u => u != null);
+                const minU = us.length ? Math.min(...us) : null;
+                return (
+                  <div key={g.id} style={{ borderTop: `1px solid #f0ead9`, padding: "8px 12px" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 5 }}>
+                      <span style={{ fontWeight: 800, fontSize: 13, color: C.text }}>{g.isKey ? "★ " : ""}{g.name || "（未命名）"}</span>
+                      <span style={{ fontSize: 10.5, color: C.faint }}>{(g.cat || "").trim() || "未分類"}・比 $/{g.baseUnit || "單位"}</span>
+                    </div>
+                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                      {cells.map(({ vi, u }) => {
+                        const best = showMoney && u != null && minU != null && u <= minU + 1e-9 && us.length > 1;
+                        const on = g.pickVi === vi.id;
+                        return (
+                          <div key={vi.id} style={{ border: `1.5px solid ${on ? C.accent : best ? C.green : C.line}`, background: best ? "#eef5ef" : "#fff", borderRadius: 9, padding: "6px 10px", minWidth: 170 }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                              <span style={{ fontWeight: 700, fontSize: 12, color: C.text }}>{vname2(vi.vendor_id)}</span>
+                              <span style={{ fontSize: 10, color: C.faint }}>{vi.spec || ""}</span>
+                              {best && <span style={{ fontSize: 9.5, fontWeight: 700, color: "#fff", background: C.green, borderRadius: 8, padding: "0 6px" }}>最低</span>}
+                            </div>
+                            <div style={{ display: "flex", alignItems: "center", gap: 4, margin: "4px 0" }}>
+                              <span style={{ fontSize: 10.5, color: C.sub }}>$</span>
+                              <input value={qv2[vi.id] !== undefined ? qv2[vi.id] : ((vi.quote && vi.quote.price) || "")} disabled={!canEdit}
+                                onChange={e => setQv2(q3 => ({ ...q3, [vi.id]: e.target.value.replace(/[^0-9.]/g, "") }))}
+                                onBlur={() => commitQuote(vi)} onKeyDown={e => e.key === "Enter" && e.currentTarget.blur()}
+                                placeholder="報價" inputMode="decimal" style={{ ...inp, width: 76, padding: "3px 6px", fontFamily: MONOF, fontSize: 12 }} />
+                              <span style={{ fontSize: 10.5, color: C.sub }}>/{vi.unit || "單位"}</span>
+                              {vi.quote && vi.quote.ts && qv2[vi.id] === undefined && <span style={{ fontSize: 9.5, color: C.faint }}>{String(vi.quote.ts).slice(5, 10)}</span>}
+                            </div>
+                            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                              {showMoney && <span style={{ fontFamily: MONOF, fontSize: 11, fontWeight: 700, color: u != null ? (best ? C.green : C.sub) : C.red }}>{u != null ? `$${u >= 100 ? Math.round(u).toLocaleString() : Math.round(u * 1000) / 1000}/${g.baseUnit}` : (packToBase(vi) ? "填報價" : "未設換算")}</span>}
+                              <div style={{ flex: 1 }} />
+                              <label style={{ fontSize: 10.5, color: on ? C.accent : C.sub, fontWeight: on ? 700 : 500, display: "flex", alignItems: "center", gap: 3, cursor: canEdit ? "pointer" : "default" }}>
+                                <input type="radio" checked={on} disabled={!canEdit} onChange={() => save({ ingredients: (db.ingredients || []).map(x => x.id === g.id ? { ...x, pickVi: vi.id } : x) })} />本次跟他叫
+                              </label>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
+              <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", borderTop: `1.5px solid ${C.hard}`, background: "#faf6ec" }}>
+                <span style={{ fontSize: 11.5, color: C.sub }}>已勾 {picked2.length} 項物料的本次供應商</span>
+                <div style={{ flex: 1 }} />
+                <button disabled={!picked2.length} onClick={goOrder} style={{ border: "none", background: picked2.length ? C.accent : "#d5cbb6", color: "#fff", borderRadius: 8, padding: "8px 18px", fontSize: 13, fontWeight: 700, cursor: picked2.length ? "pointer" : "default" }}>🛒 帶入下單（展開已選廠商）</button>
+              </div>
+            </div>
+          );
+        })()}
+        {/* ── 分頁3：紀錄・對帳（月份/廠商篩選 → 當月彙總＋當月全部紀錄） ── */}
         {oTab === "rec" && <>
         <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10, flexWrap: "wrap" }}>
           <select value={moSel2 || moNow} onChange={e => setMoSel2(e.target.value === moNow ? "" : e.target.value)} style={inp}>{moList.map(m => <option key={m} value={m}>{m}{m === moNow ? "（本月）" : ""}</option>)}</select>
@@ -393,7 +483,15 @@ export default function SupplyView({ view, K, canEdit, confirm, showMoney, userN
                           <span style={{ fontWeight: 600, color: C.text }}>{x.name}</span>
                           <span style={{ color: C.sub, fontSize: 11.5 }}>{x.spec || "—"}</span>
                           <span style={{ fontFamily: MONOF, textAlign: "right" }}>{x.qty} {x.unit || ""}</span>
-                          {showMoney && <><span style={{ fontFamily: MONOF, textAlign: "right", color: C.sub }}>{x.price ? Number(x.price).toLocaleString() : "—"}</span>
+                          {showMoney && <><span style={{ fontFamily: MONOF, textAlign: "right", color: C.sub }}>{x.price ? Number(x.price).toLocaleString() : "—"}{(() => {
+                            // 變價提示：跟該貨源上次實付價比（本單已寫入快取→比 prevPrice；還沒→比 last.price）
+                            const vi = (db.vendorItems || []).find(v => v.id === x.id); const cur = Number(x.price) || 0;
+                            if (!vi || !vi.last || !cur) return null;
+                            const base = Number(vi.last.price) === cur ? Number(vi.last.prevPrice) || 0 : Number(vi.last.price) || 0;
+                            if (!base) return null;
+                            const ch = (cur - base) / base * 100;
+                            return Math.abs(ch) >= ((db.settings && db.settings.priceAlertPct) || 15) ? <span style={{ color: ch > 0 ? C.red : C.green, fontWeight: 700, fontSize: 10 }}>{ch > 0 ? " ▲" : " ▼"}{Math.abs(Math.round(ch))}%</span> : null;
+                          })()}</span>
                           <span style={{ fontFamily: MONOF, textAlign: "right", fontWeight: 700 }}>{x.price ? (Math.round(Number(x.price) * x.qty * 100) / 100).toLocaleString(undefined, { maximumFractionDigits: 2 }) : "—"}</span></>}
                           {isChk && <>
                             <span style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
@@ -415,8 +513,20 @@ export default function SupplyView({ view, K, canEdit, confirm, showMoney, userN
                         <input value={chk.note || ""} onChange={e => setChk({ note: e.target.value })} disabled={!canEdit} placeholder="整體備註（改單/補送約定…）" style={{ ...inp, flex: 1, minWidth: 140, padding: "4px 8px", fontSize: 12 }} />
                         {canEdit && <button onClick={() => {
                           const bad2 = Object.values(chk.items || {}).some(x => x.st && x.st !== okOpt);
-                          saveOrders(orders.map(x => x.id === odDetail.id ? { ...x, status: bad2 ? "有問題" : "已到貨", check: { ...chk, by: userName || "—", ts: new Date().toISOString() } } : x));
-                          flash(bad2 ? "⚠ 驗收完成：有問題項目已標記，狀態→有問題" : "✓ 驗收完成，全數正確，狀態→已到貨");
+                          const ts2 = new Date().toISOString();
+                          const od2 = { ...odDetail, status: bad2 ? "有問題" : "已到貨", check: { ...chk, by: userName || "—", ts: ts2 } };
+                          saveOrders(orders.map(x => x.id === odDetail.id ? od2 : x));
+                          // 進價事件（實付）：逐品項寫流水 pm_price_<orderId>_<i>（決定性 id，重按冪等）＋更新貨源 last 快取
+                          let m = bad2 ? "⚠ 驗收完成：有問題項目已標記，狀態→有問題" : "✓ 驗收完成，全數正確，狀態→已到貨";
+                          const evs = buildPriceEvents(od2, db, ts2);
+                          evs.forEach(ev => window.storage.set(K("pm_price_" + ev.id), JSON.stringify(ev), true).catch(() => {}));
+                          if (evs.length) {
+                            const nvis = applyLastPaid(db.vendorItems || [], evs, ts2);
+                            save({ vendorItems: nvis });
+                            const alerts = nvis.filter(vi => evs.some(e => e.vendor_item_id === vi.id)).map(vi => ({ vi, al: priceAlert(vi, (db.settings && db.settings.priceAlertPct) || 15) })).filter(x => x.al);
+                            if (alerts.length) m += "｜⚠ 變價：" + alerts.map(x => `${x.vi.name} ${x.al.up ? "▲+" : "▼"}${Math.abs(x.al.pct)}%（$${x.vi.last.prevPrice}→$${x.vi.last.price}）`).join("、");
+                          }
+                          flash(m);
                         }} disabled={!allOk} title={allOk ? "" : "每一項都要選驗收結果"} style={{ border: "none", background: allOk ? C.green : "#d5cbb6", color: "#fff", borderRadius: 7, padding: "6px 14px", fontSize: 12.5, fontWeight: 700, cursor: allOk ? "pointer" : "default" }}>完成驗收</button>}
                       </div>
                     )}
@@ -932,7 +1042,7 @@ export default function SupplyView({ view, K, canEdit, confirm, showMoney, userN
               <button onClick={() => setSel(null)} style={{ background: "none", border: "none", fontSize: 22, cursor: "pointer", color: C.sub }}>×</button>
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-              {[["name", "品名"], ["english_name", "英文名稱"], ["unit", "單位"], ...(showMoney ? [["price", "售價"]] : []), ["note", "內容/備註"]].map(([k, l]) => (
+              {[["name", "品名"], ["english_name", "英文名稱"], ["unit", "單位"], ...(showMoney ? [["price", "售價"]] : []), ["posName", "POS品名（對應POS報表）"], ["note", "內容/備註"]].map(([k, l]) => (
                 <label key={k} style={{ display: "block", fontSize: 11, color: C.faint, fontWeight: 600, gridColumn: k === "note" ? "1 / -1" : undefined }}>{l}
                   <input value={selP[k] ?? ""} onChange={e => updP(selP.id, { [k]: e.target.value })} disabled={!canEdit} style={{ ...inp, width: "100%", marginTop: 4 }} />
                 </label>
@@ -981,6 +1091,8 @@ export default function SupplyView({ view, K, canEdit, confirm, showMoney, userN
                 })()}
               </div>
             </div>
+            {/* 食譜／SOP／成本卡（版本流水 pm_recipe_v_；成本＝用料×最近實付價＋包材） */}
+            <RecipeCard product={selP} db={db} canEdit={canEdit} showMoney={showMoney} userName={userName} K={K} />
           </div>
         </div>
       )}

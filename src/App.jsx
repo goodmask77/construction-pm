@@ -892,7 +892,7 @@ export default function App() {
           <CompareView canEdit={canEditFiles} requireLogin={denyEdit} onLog={logActivity} />
         )}
         {/* 供應鏈/LWLWLW：進入與編輯全依「帳號權限矩陣」（不另設管理員硬鎖，勾了就看得到） */}
-        {["sproducts", "svendors", "sorder"].includes(view) && CURRENT_SPACE === "supply" && (
+        {["sproducts", "singred", "svendors", "sorder"].includes(view) && CURRENT_SPACE === "supply" && (
           <SupplyView view={view} K={K} canEdit={canEditData} confirm={confirm} showMoney={showMoney()} userName={userName} />
         )}
         {/* 財務報表：第二層直接六分頁（總覽/帳戶/交易明細/科目/對帳/營運報表），view 直傳 FinanceView */}
