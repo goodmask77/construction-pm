@@ -140,7 +140,7 @@ export const SOFT_ITEMS = [
   ["fixedPref", "固定班別偏好"],
   ["otWilling", "有加班意願者優先給加班"],
 ];
-export const DEFAULT_WEIGHTS = { expectShifts: "high", wishOff: "max", fairness: "normal", noCloseThenOpen: "high", mentorPair: "normal", cost: "normal", fixedPref: "normal", otWilling: "normal" };
+export const DEFAULT_WEIGHTS = { expectShifts: "max", wishOff: "max", fairness: "normal", noCloseThenOpen: "high", mentorPair: "normal", cost: "normal", fixedPref: "normal", otWilling: "high" }; // 張良2026-07-18：正職每週要排滿目標班數→班數權重最高；六天班的人靠 期望6+加班意願
 
 // ── §A stores ──
 export const SEED_STORES = [

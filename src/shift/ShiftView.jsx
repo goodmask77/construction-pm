@@ -180,10 +180,14 @@ function PeoplePage({ staffDoc, stationsDoc, storeId, canEdit, confirm, isMobile
                 <td style={{ padding: "5px 8px" }}><span style={chip(p.grade === "管理" ? T.TEXT : p.grade === "正職" ? T.BLUE : p.grade === "週末PT" ? T.AMBER : T.GREY)}>{p.grade}</span></td>
                 <td style={{ padding: "5px 8px", fontFamily: T.MONO }}>{p.empNo}</td>
                 <td style={{ padding: "5px 8px", fontFamily: T.MONO }}>{p.birthYear}{p.birthYear && (new Date().getFullYear() - p.birthYear) < 18 && <span title="未滿18歲，受 LR-048 保護" style={{ marginLeft: 4 }}>🔞</span>}</td>
-                <td style={{ padding: "5px 8px", fontFamily: T.MONO }}>{p.expectShifts}</td>
+                <td style={{ padding: "5px 8px" }}>{canEdit ? (
+                  <select value={p.expectShifts || 0} onChange={e => upd(p.id, { expectShifts: Number(e.target.value) })} style={{ ...inp, padding: "3px 6px", fontFamily: T.MONO, fontWeight: 700 }} title="每週目標班數：正職 5；有加班需求（週休一日）設 6">
+                    {[0, 1, 2, 3, 4, 5, 6].map(n => <option key={n} value={n}>{n} 天</option>)}
+                  </select>
+                ) : <span style={{ fontFamily: T.MONO }}>{p.expectShifts}</span>}</td>
                 <td style={{ padding: "5px 8px", fontFamily: T.MONO }}>{p.costFactor}</td>
                 <td style={{ padding: "5px 8px", fontSize: 11.5, color: T.SUB }}>{(p.unavailable || []).map(u => `週${DOW_LABEL[u.dow]}`).join("、") || "—"}</td>
-                <td style={{ padding: "5px 8px" }}>{p.otWilling ? "✓" : "—"}</td>
+                <td style={{ padding: "5px 8px" }}><input type="checkbox" disabled={!canEdit} checked={!!p.otWilling} title="有加班需求（勾了排第 6 天時優先給他）" onChange={e => upd(p.id, { otWilling: e.target.checked })} /></td>
                 <td style={{ padding: "5px 8px", whiteSpace: "nowrap" }}>
                   {canEdit && <button style={{ ...btn(false), padding: "3px 8px", fontSize: 12 }} onClick={() => setEditId(p.id)}>編輯</button>}
                   {canEdit && <button style={{ ...btn(false), padding: "3px 8px", fontSize: 12, marginLeft: 4, color: T.RED }} onClick={async () => { if (await confirm(`刪除 ${p.nick || p.name}？（不影響歷史班表顯示）`)) saveStaff({ ...staffDoc, staff: staffDoc.staff.filter(x => x.id !== p.id) }); }}><Trash2 size={12} /></button>}
