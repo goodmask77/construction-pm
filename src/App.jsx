@@ -64,8 +64,27 @@ async function loadSpaceAIContext() {
     // 任務
     const tk = Array.isArray(tasks) ? tasks.filter(t => t.status !== "done") : [];
     if (tk.length) parts.push("【未完成任務（" + tk.length + " 件）】\n" + tk.slice(0, 40).map(t => `- ${t.title}${t.due ? "｜期限" + t.due : ""}${t.prio ? "｜" + t.prio : ""}${t.owner ? "｜負責:" + t.owner : ""}${t.waitingFor ? "｜等:" + t.waitingFor : ""}`).join("\n"));
-    // 夥伴名冊（不含薪資/身分證等機密）
+    // 夥伴名冊（不含薪資/身分證等機密——App 內 AI 所有登入者都能問，機密只給 D哥 私訊老闆）
     if (crew?.people?.length) parts.push("【夥伴名冊（" + crew.people.length + " 人）】\n" + crew.people.map(pp => `- ${pp.name}${pp.nick ? "（" + pp.nick + "）" : ""}｜生日${pp.bday || "?"}｜到職${pp.startDate || "?"}${pp.dept ? "｜" + pp.dept : ""}｜${pp.status || "在職"}`).join("\n"));
+    // 排班（100%資料鐵則：問誰哪天上什麼班以此為準；與 D哥 loadShiftText 同步接上）
+    try {
+      const [stf, tpl, idx] = await Promise.all([g("sp_crew_shift_staff"), g("sp_crew_shift_templates"), g("sp_crew_shift_sched_index")]);
+      const staff = stf?.staff || [], shifts = tpl?.shifts || [];
+      const weeks = (idx?.weeks || []).sort((a, b) => (a.weekStart < b.weekStart ? 1 : -1)).slice(0, 4);
+      if (staff.length || weeks.length) {
+        const sName = (id) => { const p = staff.find(x => x.id === id); return p ? (p.nick || p.name) : id; };
+        const shOf = (id) => shifts.find(x => x.id === id);
+        const lines = ["【排班（最近 " + weeks.length + " 週；班別：" + shifts.map(s => `${s.code}=${s.start}-${s.end}`).join("、") + "）】"];
+        const docs = await Promise.all(weeks.map(w => g("sp_crew_shift_sched_" + w.storeId + "_" + w.weekStart)));
+        weeks.forEach((w, i) => {
+          const doc = docs[i]; if (!doc) return;
+          const byDate = {};
+          (doc.assignments || []).forEach(a => { const sh = shOf(a.shiftId); (byDate[a.date] = byDate[a.date] || []).push(`${sName(a.staffId)}${sh ? sh.code : ""}`); });
+          lines.push(`▍週 ${w.weekStart}（${doc.status || "?"}${doc.isActual ? "實際" : ""}）` + Object.keys(byDate).sort().map(d => ` ${d.slice(5)}:${byDate[d].join("/")}`).join(""));
+        });
+        parts.push(lines.join("\n"));
+      }
+    } catch (_) {}
     // 營運日結 + 品項逐日
     if (pos?.entries?.length) {
       parts.push("【營運日結（" + (pos.entries[0].store || "POS") + "）】\n" + pos.entries.slice(-30).map(e => `- ${e.date} 營收${nt(e.revenue)}｜${e.txCount}單｜來客${e.guests || "?"}｜現金${nt(e.cash)}/卡${nt(e.card)}/Uber${nt(e.uber)}｜折扣${nt(e.discount)}`).join("\n"));

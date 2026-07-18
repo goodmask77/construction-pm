@@ -222,8 +222,21 @@ async function loadCrewText() {
     people.forEach(p => { nameOf[p.id] = p.name })
     if (people.length) {
       any = true
-      out.push(`【夥伴名冊（共 ${people.length} 人；生日格式 西元年-月-日，問「誰快生日」看月-日）】`)
-      people.forEach(p => out.push(`  - ${p.name}${p.nick ? '（' + p.nick + '）' : ''}｜生日:${p.bday || '?'}｜到職:${p.startDate || '?'}${p.dept ? '｜部門:' + p.dept : ''}｜${p.status || '在職'}`))
+      // 【100%資料鐵則】名冊全欄位（含薪資/保險/證件等機密）都要掌握；
+      // 但機密欄位（薪資/身分證/保險/銀行）只在老闆（張良）的私訊裡回答，群組一律只回公開資訊（姓名/部門/到職/生日）。
+      const rosterFields = (roster && Array.isArray(roster.fields) && roster.fields.length) ? roster.fields : null
+      out.push(`【夥伴名冊（共 ${people.length} 人；生日格式 西元年-月-日，問「誰快生日」看月-日。含機密欄位：薪資/保險/證件/銀行——只私訊回老闆，群組不透露）】`)
+      people.forEach(p => {
+        let line = `  - ${p.name}${p.nick ? '（' + p.nick + '）' : ''}｜生日:${p.bday || '?'}｜到職:${p.startDate || '?'}${p.dept ? '｜部門:' + p.dept : ''}｜${p.status || '在職'}`
+        if (rosterFields) {
+          const extra = rosterFields.filter(f => !['dept', 'startDate', 'bday'].includes(f.key)).map(f => {
+            if (f.type === 'file') { const n = (p[f.key] || []).length; return n ? `${f.label}:📎${n}份` : null }
+            const v = String(p[f.key] ?? '').trim(); return v ? `${f.label}:${v}` : null
+          }).filter(Boolean).join('｜')
+          if (extra) line += '｜' + extra
+        }
+        out.push(line)
+      })
     }
 
     // 360 互評：每個被評者的「整體平均 + 各構面平均 + 份數」（全員、不截斷）
@@ -295,6 +308,42 @@ const BOT_PERSONA = `你是「DD」（舊名 D哥，大家叫哪個都認得）�
 - 記得上面的對話脈絡，順著聊，不要把每句話都當第一次見面。
 - 如果對話中出現「值得長期記住」的重要事實（某人負責什麼、聯絡方式、分工窗口、老闆的偏好或固定要求、專案的重要約定…），在你回覆的「最後」另起一行用這個格式標記：[[記住:該事實]]（可多行、每行一件、寫簡短）。只標真正值得長期記的，瑣事不要標。這個標記使用者看不到，是給系統存進你的長期記事本用的。`
 const SYS_DATA_HEAD = '\n\n────────\n【你目前掌握的即時資料】\n'
+
+// 排班系統（夥伴中心・排班）→ 文字。【100%資料鐵則】問「某人某天上什麼班」一律以此為準。
+async function loadShiftText() {
+  try {
+    const base = ['shift_staff', 'shift_templates', 'shift_stations', 'shift_leaves', 'shift_sched_index'].map(k => 'sp_crew_' + k)
+    const m = await kvGetMany(base)
+    const g = (k) => m['sp_crew_' + k] || {}
+    const staff = g('shift_staff').staff || []
+    const shifts = g('shift_templates').shifts || []
+    const stations = g('shift_stations').stations || []
+    const leaves = g('shift_leaves').leaves || []
+    const weeks = (g('shift_sched_index').weeks || []).sort((a, b) => (a.weekStart < b.weekStart ? 1 : -1)).slice(0, 6) // 最近 6 週
+    if (!staff.length && !weeks.length) return ''
+    const sName = (id) => { const p = staff.find((x) => x.id === id); return p ? (p.nick || p.name) : id }
+    const shOf = (id) => shifts.find((x) => x.id === id)
+    const stOf = (id) => stations.find((x) => x.id === id)
+    const out = ['\n\n【排班系統（夥伴中心・排班；問誰哪天上什麼班、班別時間、請假，一律以此為準）】']
+    if (staff.length) out.push('排班人員（' + staff.length + ' 人）：' + staff.map((p) => `${p.nick || p.name}(${p.dept || '?'}/${p.grade || '?'}${p.expectShifts != null ? '/週' + p.expectShifts + '班' : ''})`).join('、'))
+    if (shifts.length) out.push('班別代碼：' + shifts.map((s) => `${s.code}=${s.name} ${s.start}-${s.end}(${s.dept})`).join('、'))
+    const schedKeys = weeks.map((w) => 'sp_crew_shift_sched_' + w.storeId + '_' + w.weekStart)
+    const sm = schedKeys.length ? await kvGetMany(schedKeys) : {}
+    for (const w of weeks) {
+      const doc = sm['sp_crew_shift_sched_' + w.storeId + '_' + w.weekStart]
+      if (!doc) continue
+      const byDate = {}
+      for (const a of doc.assignments || []) {
+        const sh = shOf(a.shiftId)
+        ;(byDate[a.date] = byDate[a.date] || []).push(`${sName(a.staffId)} ${sh ? sh.code + ' ' + sh.start + '-' + sh.end : a.shiftId}${a.stationId && stOf(a.stationId) ? '@' + stOf(a.stationId).name : ''}`)
+      }
+      out.push(`▍週 ${w.weekStart}（店:${w.storeId}，狀態:${doc.status || w.status || '?'}${doc.isActual ? '，實際出勤' : ''}）`)
+      Object.keys(byDate).sort().forEach((d) => out.push(`  - ${d}：${byDate[d].join('、')}`))
+    }
+    if (leaves.length) out.push('請假紀錄：' + leaves.slice(-30).map((l) => `${sName(l.staffId)} ${l.date} ${l.type || '休'}(${l.status || '?'})`).join('、'))
+    return out.join('\n')
+  } catch (_) { return '' }
+}
 
 // 任務中心（pm_tasks，Task v2 全欄位）→ 文字。D哥 讀任務一律以這份為準（完整、含衍生狀態）
 async function loadTasksText() {
@@ -747,8 +796,8 @@ const triggered = (text) => /[?？]\s*$/.test(text) || TRIGGERS.some((k) => text
 export default async function handler(req, res) {
   // 診斷探針（唯讀）：/api/line-webhook?probe=crew → 回 D 實際拿到的夥伴中心文字開頭
   if (req.method === 'GET' && req.query?.probe === 'crew') {
-    const t = await loadCrewText()
-    return res.status(200).json({ len: t.length, head: t.slice(0, 800) })
+    const t = (await loadCrewText()) + (await loadShiftText())
+    return res.status(200).json({ len: t.length, head: t.slice(0, 800), shiftHead: t.includes('【排班系統') ? t.slice(t.indexOf('【排班系統'), t.indexOf('【排班系統') + 600) : '（無排班段落）' })
   }
   if (req.method !== 'POST') return res.status(405).end()
   const raw = await readRaw(req)
@@ -865,7 +914,7 @@ export default async function handler(req, res) {
       }
 
       // 3) 一般流程：載入資料＋對話記憶＋長期記事本 → 問 AI（操作者才開放下指令）
-      const [snaps, accountsText, financeText, activityText, estimatesText, crewText, history, memList, conclusionsText, tasksText, sheetText, posText, catalogText, supplyText, lineQuotaText] = await Promise.all([loadSnapshots(), loadAccounts(), loadFinanceText(), loadActivityText(), loadEstimatesText(), loadCrewText(), getChatHistory(convId), getMemory(), loadConclusionsText(), loadTasksText(), loadSheetText(), loadPosText(), loadCatalogText(), loadSupplyText(), loadLineQuotaText()])
+      const [snaps, accountsText, financeText, activityText, estimatesText, crewText, history, memList, conclusionsText, tasksText, sheetText, posText, catalogText, supplyText, lineQuotaText] = await Promise.all([loadSnapshots(), loadAccounts(), loadFinanceText(), loadActivityText(), loadEstimatesText(), Promise.all([loadCrewText(), loadShiftText()]).then(([a, b]) => a + b), getChatHistory(convId), getMemory(), loadConclusionsText(), loadTasksText(), loadSheetText(), loadPosText(), loadCatalogText(), loadSupplyText(), loadLineQuotaText()])
       const rawReply = await answer(text, snaps, accountsText, financeText, activityText, estimatesText, crewText, canAct, history, memoryToText(memList), conclusionsText, tasksText, sheetText, posText, catalogText, supplyText, lineQuotaText)
       // 抓出 D 想長期記住的事（[[記住:...]]）→ 存進記事本(僅操作者)，並把標記從給人看的文字拿掉
       const { facts, clean } = extractMemoryTags(rawReply)
