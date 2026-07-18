@@ -683,6 +683,7 @@ export function RosterView({ canEdit, confirm, me, ReceiptUploader }) {
   const [showFields, setShowFields] = useState(false);
   const [lockTip, setLockTip] = useState(false);
   const [dragIdx, setDragIdx] = useState(null); // 欄位設定拖曳排序
+  const [optField, setOptField] = useState(null); // 選項管理中的欄位 key（選單型欄位的增刪改）
   useEffect(() => { (async () => setData(await loadCrewJSON("kb_360", { dimensions: [], people: [], reviews: [] })))(); }, []);
   if (!data) return <div style={{ padding: 40, color: SUB, fontSize: 14 }}>載入中…</div>;
   const people = data.people || [];
@@ -823,8 +824,9 @@ export function RosterView({ canEdit, confirm, me, ReceiptUploader }) {
             const opts = [...new Set(["", ...(f.options || []).map(o => String(o).trim()), ...(cur ? [cur] : [])])];
             node = <select value={cur} onChange={e => {
               if (e.target.value === "__add__") { const nv = window.prompt(`「${f.label}」新增選項`); if (nv && nv.trim()) { persist({ fields: fields.map(x => x.key === f.key ? { ...x, options: [...(x.options || []), nv.trim()] } : x), people: people.map(x => x.id === pp.id ? { ...x, [f.key]: nv.trim() } : x) }); } return; }
+              if (e.target.value === "__manage__") { setOptField(f.key); return; }
               updP(pp.id, { [f.key]: e.target.value });
-            }} disabled={!editable} style={inpS}>{opts.map(o => <option key={o} value={o}>{o || "—"}</option>)}{editable && <option value="__add__">＋ 新增選項…</option>}</select>;
+            }} disabled={!editable} style={inpS}>{opts.map(o => <option key={o} value={o}>{o || "—"}</option>)}{editable && <option value="__add__">＋ 新增選項…</option>}{editable && <option value="__manage__">✎ 編輯選項（改名/刪除/排序）…</option>}</select>;
           }
           else node = <input value={pp[f.key] || ""} onChange={e => updP(pp.id, { [f.key]: e.target.value })} disabled={!editable} style={inpS} />;
           return <label key={f.key} style={{ display: "block", fontSize: 11, letterSpacing: 0.5, color: "#9b9384", fontWeight: 600, gridColumn: f.type === "file" ? "1 / -1" : undefined }}>{lab}<div style={{ marginTop: 4 }}>{node}</div></label>;
@@ -862,7 +864,7 @@ export function RosterView({ canEdit, confirm, me, ReceiptUploader }) {
               <div style={{ flex: 1 }} />
               <button onClick={() => setShowFields(false)} style={{ background: "none", border: "none", fontSize: 22, cursor: "pointer", color: SUB }}>×</button>
             </div>
-            <div style={{ fontSize: 12, color: SUB, marginBottom: 12 }}>拖 ⠿ 可調整欄位順序（＝表格欄位順序）；選單的選項順序直接在逗號字串裡調整。型別選「檔案上傳」＝可上傳檔案/貼截圖；勾「顯示」＝變成表格欄位（公開）；勾「必填」＝計入入職進度。改動立即套用。</div>
+            <div style={{ fontSize: 12, color: SUB, marginBottom: 12 }}>拖 ⠿ 可調整欄位順序（＝表格欄位順序）；選單型欄位按「✎ 編輯」管理選項（改名/刪除/排序）。型別選「檔案上傳」＝可上傳檔案/貼截圖；勾「顯示」＝變成表格欄位（公開）；勾「必填」＝計入入職進度。改動立即套用。</div>
             {fields.map((f, idx) => (
               <div key={f.key} draggable={canEdit}
                 onDragStart={() => setDragIdx(idx)}
@@ -874,7 +876,7 @@ export function RosterView({ canEdit, confirm, me, ReceiptUploader }) {
                 <select value={f.type} onChange={e => persist({ fields: fields.map((x, j) => j === idx ? { ...x, type: e.target.value } : x) })} style={{ ...inpS, width: 110 }}>
                   <option value="text">文字</option><option value="date">日期</option><option value="select">選單</option><option value="file">檔案上傳</option>
                 </select>
-                {f.type === "select" && <input value={(f.options || []).join(",")} onChange={e => persist({ fields: fields.map((x, j) => j === idx ? { ...x, options: e.target.value.split(",") } : x) })} placeholder="選項,逗號分隔" style={{ ...inpS, width: 150 }} />}
+                {f.type === "select" && <button onClick={() => setOptField(f.key)} style={{ ...inpS, width: 150, textAlign: "left", cursor: "pointer" }}>選項（{(f.options || []).filter(o => String(o).trim() !== "").length}）✎ 編輯…</button>}
                 <label style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 12.5, color: TEXT, cursor: "pointer" }}><input type="checkbox" checked={!!f.show} onChange={e => persist({ fields: fields.map((x, j) => j === idx ? { ...x, show: e.target.checked } : x) })} />顯示</label>
                 <label style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 12.5, color: TEXT, cursor: "pointer" }}><input type="checkbox" checked={!!f.req} onChange={e => persist({ fields: fields.map((x, j) => j === idx ? { ...x, req: e.target.checked } : x) })} />必填</label>
                 <button onClick={async () => { if (await confirm(`刪除欄位「${f.label}」？（各人此欄資料仍保留，只是不再顯示）`, { confirmLabel: "刪除" })) persist({ fields: fields.filter((_, j) => j !== idx) }); }} style={{ background: "none", border: "none", color: "#9b9384", cursor: "pointer", fontSize: 15 }}>×</button>
@@ -884,6 +886,45 @@ export function RosterView({ canEdit, confirm, me, ReceiptUploader }) {
           </div>
         </div>
       )}
+      {/* 選項管理：選單型欄位的選項 改名(同步更新所有人資料)/刪除/排序/新增 */}
+      {optField && (() => {
+        const f = fields.find(x => x.key === optField);
+        if (!f) return null;
+        const opts = f.options || [];
+        const setOpts = (list) => persist({ fields: fields.map(x => x.key === optField ? { ...x, options: list } : x) });
+        const usedBy = (o) => people.filter(p => (p[optField] || "") === o && String(o).trim() !== "").length;
+        return (
+          <div onClick={e => e.target === e.currentTarget && setOptField(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.4)", zIndex: 740, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+            <div style={{ background: "#fff", border: `1px solid ${BORDER}`, borderRadius: 12, padding: 24, width: "min(440px,96vw)", maxHeight: "85vh", overflowY: "auto" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}>
+                <div style={{ fontSize: 15, fontWeight: 700, color: TEXT }}>✎ 「{f.label}」選項管理</div>
+                <div style={{ flex: 1 }} />
+                <button onClick={() => setOptField(null)} style={{ background: "none", border: "none", fontSize: 22, cursor: "pointer", color: SUB }}>×</button>
+              </div>
+              <div style={{ fontSize: 12, color: SUB, marginBottom: 12 }}>改名會同步更新所有夥伴的資料；刪除選項不動已填的人（他們的舊值會保留顯示）。</div>
+              {opts.map((o, i) => (
+                <div key={i} style={{ display: "flex", gap: 6, alignItems: "center", marginBottom: 6 }}>
+                  <input value={o} placeholder="(空白)" onChange={e => {
+                    const nv = e.target.value;
+                    persist({
+                      fields: fields.map(x => x.key === optField ? { ...x, options: opts.map((y, j) => j === i ? nv : y) } : x),
+                      people: String(o).trim() ? people.map(p => p[optField] === o ? { ...p, [optField]: nv } : p) : people,
+                    });
+                  }} style={{ ...inpS, flex: 1 }} />
+                  <span style={{ fontSize: 11, color: SUB, minWidth: 34, textAlign: "right" }}>{usedBy(o) ? `${usedBy(o)}人` : ""}</span>
+                  <button title="上移" disabled={i === 0} onClick={() => { const l = [...opts]; [l[i - 1], l[i]] = [l[i], l[i - 1]]; setOpts(l); }} style={{ background: "none", border: `1px solid ${BORDER}`, borderRadius: 6, cursor: i === 0 ? "default" : "pointer", color: i === 0 ? "#d9cfbd" : SUB, padding: "4px 7px" }}>↑</button>
+                  <button title="下移" disabled={i === opts.length - 1} onClick={() => { const l = [...opts]; [l[i], l[i + 1]] = [l[i + 1], l[i]]; setOpts(l); }} style={{ background: "none", border: `1px solid ${BORDER}`, borderRadius: 6, cursor: i === opts.length - 1 ? "default" : "pointer", color: i === opts.length - 1 ? "#d9cfbd" : SUB, padding: "4px 7px" }}>↓</button>
+                  <button title="刪除選項" onClick={async () => {
+                    const n = usedBy(o);
+                    if (await confirm(`刪除選項「${o || "(空白)"}」？${n ? `（${n} 人目前填此值，資料不會被改動）` : ""}`, { confirmLabel: "刪除" })) setOpts(opts.filter((_, j) => j !== i));
+                  }} style={{ background: "none", border: "none", color: "#b3261e", cursor: "pointer", fontSize: 15 }}>×</button>
+                </div>
+              ))}
+              <button onClick={() => setOpts([...opts, ""])} style={{ width: "100%", border: `1.5px dashed ${BORDER}`, background: "transparent", color: ACCENT, borderRadius: 8, padding: "8px 0", fontSize: 13, fontWeight: 700, cursor: "pointer", marginTop: 4 }}>＋ 新增選項</button>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }
