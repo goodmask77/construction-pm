@@ -30,6 +30,9 @@ export default function SupplyView({ view, K, canEdit, confirm, showMoney, userN
   const [oq, setOq] = useState("");              // 叫貨表搜尋（品項/標籤，比價用）
   const [inspEdit, setInspEdit] = useState(false); // 驗收選項編輯器（新增/改名/刪除/排序）
   const [fuTxt, setFuTxt] = useState({});        // 問題追蹤：後續紀錄輸入框（odId:idx → 文字）
+  const [oTab, setOTab] = useState("order");     // 叫貨頁子分頁：order=下單 / rec=紀錄・對帳 / issue=問題追蹤
+  const [moSel2, setMoSel2] = useState("");      // 紀錄・對帳：月份篩選（空=本月）
+  const [vF, setVF] = useState("");              // 紀錄・對帳：廠商篩選
   const [groups, setGroups] = useState({});     // DD看過的LINE群（pm_group_seen，發送綁定用）
   const flash = (t) => { setMsg(t); setTimeout(() => setMsg(m => (m === t ? null : m)), 6000); };
 
@@ -119,7 +122,7 @@ export default function SupplyView({ view, K, canEdit, confirm, showMoney, userN
     const recordOrder = (v, via, status, text) => {
       const its = picked(v.id);
       const od = { id: rid("o"), ts: new Date().toISOString(), vendor_id: v.id, vendorName: v.name, dept: v.dept || "共用", needDate, via, status, text, items: its.map(it => ({ id: it.id, name: it.name, spec: it.spec, unit: it.unit, qty: Number(qty[it.id]), price: it.price })) };
-      saveOrders([od, ...orders].slice(0, 200));
+      saveOrders([od, ...orders].slice(0, 600)); // 每月約百張，留半年份可回查對帳
       const nq = { ...qty }; its.forEach(it => delete nq[it.id]); setQty(nq);
       setPreview(null);
     };
@@ -130,42 +133,66 @@ export default function SupplyView({ view, K, canEdit, confirm, showMoney, userN
     const d2 = (n) => (Math.round(n * 100) / 100).toLocaleString(undefined, { maximumFractionDigits: 2 });
     const nt2 = (n) => "NT$" + d2(n);
     const ST = ["已送出", "廠商已確認", "已到貨", "有問題", "草稿"];
-    // 月底對帳：本月（依紀錄月份）各廠商彙總
+    // 紀錄・對帳：可選月份（預設本月）＋廠商篩選；彙總不含草稿、紀錄含草稿（草稿要能補發）
     const moNow = new Date().toISOString().slice(0, 7);
-    const moOrders = orders.filter(od => (od.ts || "").slice(0, 7) === moNow && od.status !== "草稿");
+    const mo2 = moSel2 || moNow;
+    const moList = [...new Set([moNow, ...orders.map(od => (od.ts || "").slice(0, 7)).filter(Boolean)])].sort().reverse();
+    const moOrders = orders.filter(od => (od.ts || "").slice(0, 7) === mo2 && od.status !== "草稿");
     const byVendor = {};
     moOrders.forEach(od => { const o = byVendor[od.vendorName] = byVendor[od.vendorName] || { n: 0, amt: 0 }; o.n++; o.amt += orderTotal(od); });
+    const recVendors = [...new Set(orders.filter(od => (od.ts || "").slice(0, 7) === mo2).map(od => od.vendorName))].sort((a, b) => a.localeCompare(b, "zh-TW"));
+    const recOrders = orders.filter(od => (od.ts || "").slice(0, 7) === mo2).filter(od => !vF || od.vendorName === vF);
+    // 問題追蹤未解決數（分頁徽章用；明細在問題追蹤分頁內計算）
+    const okOptB = (db.inspectOpts || ["✓ 正確"])[0];
+    let openIssueN = 0;
+    orders.forEach(od => { const chk = od.check; if (!chk || !chk.items) return; od.items.forEach((_, i) => { const ci = chk.items[i]; if (ci && ci.st && ci.st !== okOptB && ((ci.fu && ci.fu.st) || "待處理") !== "已解決") openIssueN++; }); });
     const odDetail = odSel && orders.find(x => x.id === odSel);
     return (
       <div>
-        <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "6px 0 12px", flexWrap: "wrap" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "6px 0 8px", flexWrap: "wrap" }}>
           <span style={{ background: C.accent, color: "#fff", fontSize: 11.5, fontWeight: 700, borderRadius: 4, padding: "2px 8px" }}>叫貨</span>
           <div>
             <div style={{ fontSize: 17, fontWeight: 800, color: C.text }}>叫貨</div>
-            <div style={{ fontSize: 11, color: C.faint }}>填數量 → 產生叫貨單 → 發送。只列正式供應商（廠商頁名稱前打勾）。品項到「廠商」頁維護。</div>
+            <div style={{ fontSize: 11, color: C.faint }}>{oTab === "order" ? "點廠商名展開品項 → 填數量 → 產生叫貨單 → 發送。只列正式供應商（廠商頁名稱前打勾）。" : oTab === "rec" ? "彙總＋逐張紀錄放一起，可選月份、篩廠商，月底對帳用。" : "驗收有問題的品項自動集中在這裡，追到解決為止。"}</div>
           </div>
           <div style={{ flex: 1 }} />
-          <input value={oq} onChange={e => setOq(e.target.value)} placeholder="🔍 搜尋品項/標籤（比價）" style={{ ...inp, width: 180 }} />
-          {DEPTS.map(d => <button key={d} onClick={() => setCatF(catF === d ? "" : d)} style={{ border: `1.5px solid ${catF === d ? C.accent : C.line}`, background: catF === d ? C.accent : "#fff", color: catF === d ? "#fff" : C.sub, borderRadius: 12, padding: "3px 12px", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>{d}</button>)}
-          <label style={{ fontSize: 11.5, color: C.sub, display: "flex", alignItems: "center", gap: 5 }}>希望到貨
-            <input type="date" value={needDate} onChange={e => setNeedDate(e.target.value)} style={{ ...inp, colorScheme: "light" }} />
-          </label>
-          {showMoney && grandTotal > 0 && <span style={{ fontFamily: MONOF, fontSize: 15, fontWeight: 800, color: C.accent, background: "#fbeee6", border: `1.5px solid ${C.accent}`, borderRadius: 8, padding: "5px 14px" }}>本次總計 {nt2(grandTotal)}</span>}
+          {oTab === "order" && <>
+            <input value={oq} onChange={e => setOq(e.target.value)} placeholder="🔍 搜尋品項/標籤（比價）" style={{ ...inp, width: 180 }} />
+            {DEPTS.map(d => <button key={d} onClick={() => setCatF(catF === d ? "" : d)} style={{ border: `1.5px solid ${catF === d ? C.accent : C.line}`, background: catF === d ? C.accent : "#fff", color: catF === d ? "#fff" : C.sub, borderRadius: 12, padding: "3px 12px", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>{d}</button>)}
+            <label style={{ fontSize: 11.5, color: C.sub, display: "flex", alignItems: "center", gap: 5 }}>希望到貨
+              <input type="date" value={needDate} onChange={e => setNeedDate(e.target.value)} style={{ ...inp, colorScheme: "light" }} />
+            </label>
+            {showMoney && grandTotal > 0 && <span style={{ fontFamily: MONOF, fontSize: 15, fontWeight: 800, color: C.accent, background: "#fbeee6", border: `1.5px solid ${C.accent}`, borderRadius: 8, padding: "5px 14px" }}>本次總計 {nt2(grandTotal)}</span>}
+          </>}
+        </div>
+        {/* 子分頁：下單 / 紀錄・對帳 / 問題追蹤（未解決數掛紅徽章） */}
+        <div style={{ display: "flex", gap: 4, marginBottom: 12, borderBottom: `1.5px solid ${C.hard}` }}>
+          {[["order", "📝 下單", 0], ["rec", "🧾 紀錄・對帳", 0], ["issue", "🚩 問題追蹤", openIssueN]].map(([k, lb, n]) => (
+            <button key={k} onClick={() => setOTab(k)} style={{ border: "none", borderBottom: `2.5px solid ${oTab === k ? C.accent : "transparent"}`, marginBottom: -1.5, background: "none", color: oTab === k ? C.text : C.sub, padding: "7px 14px", fontSize: 13, fontWeight: oTab === k ? 800 : 600, cursor: "pointer" }}>
+              {lb}{n > 0 && <span style={{ marginLeft: 5, fontSize: 10.5, fontWeight: 700, color: "#fff", background: C.red, borderRadius: 9, padding: "1px 7px" }}>{n}</span>}
+            </button>
+          ))}
         </div>
         {msg && <div style={{ background: "#eef5ef", border: `1.5px solid ${C.green}`, borderRadius: 8, padding: "7px 12px", marginBottom: 10, fontSize: 12.5, color: "#2c5a38", fontWeight: 600 }}>{msg}</div>}
+        {/* ── 分頁1：下單（廠商預設收合，點開才展品項；搜尋/已選數量自動展開） ── */}
+        {oTab === "order" && <>
         {vlist.length === 0 && <div style={{ padding: 30, textAlign: "center", color: C.faint, background: C.card, border: `1.5px solid ${C.hard}`, borderRadius: 10 }}>{qq ? "沒有符合的品項/標籤——換個關鍵字試試。" : "還沒有可叫貨的正式供應商——到「廠商」頁在廠商名稱前打勾（正式供應商），並建好品項清單。"}</div>}
         {vlist.map(v => {
           const its = shownOf(v.id); const pk = picked(v.id);
+          const open = qq ? true : (collapsed["ov" + v.id] !== undefined ? !!collapsed["ov" + v.id] : pk.length > 0); // 預設收合；搜尋中/已選數量自動展開
           return (
-            <div key={v.id} style={box}>
-              <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 12px", background: "#ece4d6" }}>
+            <div key={v.id} style={{ ...box, marginBottom: 8 }}>
+              <div onClick={() => setCollapsed(c2 => ({ ...c2, ["ov" + v.id]: !open }))} style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 12px", background: "#ece4d6", cursor: "pointer" }}>
+                <span style={{ fontSize: 10, color: C.faint }}>{open ? "▾" : "▸"}</span>
                 <span style={{ fontSize: 13.5, fontWeight: 800, color: C.text }}>{v.name}</span>
+                <span style={{ fontFamily: MONOF, fontSize: 11, color: C.faint }}>{its.length} 項</span>
                 <span style={{ fontSize: 10.5, fontWeight: 700, color: "#fff", background: v.dept === "內場" ? C.green : v.dept === "吧檯" ? C.amber : v.dept === "共用" ? "#9b9384" : C.blue, borderRadius: 9, padding: "1px 8px" }}>{v.dept || "共用"}</span>
                 <span style={{ fontSize: 11, color: C.faint }}>{v.sendMode === "dbot" ? (v.lineGroupId ? "D自動發群 ✓已綁定" : "D自動發群 ⚠未綁定群") : v.sendMode === "copy" ? "複製文字" : "LINE分享"}</span>
                 <div style={{ flex: 1 }} />
                 {pk.length > 0 && <span style={{ fontFamily: MONOF, fontSize: 12, color: C.accent, fontWeight: 700 }}>已選 {pk.length} 項{showMoney ? "・" + nt2(pickTotal(v.id)) : ""}</span>}
-                <button disabled={!pk.length} onClick={() => setPreview(v.id)} style={{ border: "none", background: pk.length ? C.accent : "#d5cbb6", color: "#fff", borderRadius: 7, padding: "6px 16px", fontSize: 12.5, fontWeight: 700, cursor: pk.length ? "pointer" : "default" }}>產生叫貨單</button>
+                <button disabled={!pk.length} onClick={e => { e.stopPropagation(); setPreview(v.id); }} style={{ border: "none", background: pk.length ? C.accent : "#d5cbb6", color: "#fff", borderRadius: 7, padding: "6px 16px", fontSize: 12.5, fontWeight: 700, cursor: pk.length ? "pointer" : "default" }}>產生叫貨單</button>
               </div>
+              {open && <>
               <div style={{ display: "grid", gridTemplateColumns: `minmax(170px,1.4fr) minmax(110px,1fr) 56px ${showMoney ? "76px " : ""}70px 130px${showMoney ? " 86px" : ""}`, gap: 8, padding: "4px 12px", fontSize: 10, color: C.faint, fontWeight: 700, borderBottom: `1px solid #f0ead9` }}>
                 <span>品名</span><span>規格</span><span>單位</span>{showMoney && <span style={{ textAlign: "right" }}>單價</span>}<span style={{ textAlign: "right" }}>安全庫存</span><span style={{ textAlign: "center" }}>叫貨量</span>{showMoney && <span style={{ textAlign: "right" }}>小計</span>}
               </div>
@@ -187,13 +214,21 @@ export default function SupplyView({ view, K, canEdit, confirm, showMoney, userN
                   </div>
                 );
               })}
+              </>}
             </div>
           );
         })}
-        {/* 本月對帳彙總 */}
+        </>}
+        {/* ── 分頁2：紀錄・對帳（月份/廠商篩選 → 當月彙總＋當月全部紀錄） ── */}
+        {oTab === "rec" && <>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10, flexWrap: "wrap" }}>
+          <select value={moSel2 || moNow} onChange={e => setMoSel2(e.target.value === moNow ? "" : e.target.value)} style={inp}>{moList.map(m => <option key={m} value={m}>{m}{m === moNow ? "（本月）" : ""}</option>)}</select>
+          <select value={vF} onChange={e => setVF(e.target.value)} style={inp}><option value="">全部廠商</option>{recVendors.map(vn => <option key={vn}>{vn}</option>)}</select>
+          <span style={{ fontSize: 11.5, color: C.faint }}>{recOrders.length} 張單</span>
+        </div>
         {showMoney && Object.keys(byVendor).length > 0 && (
           <div style={{ ...box, padding: "10px 14px" }}>
-            <div style={{ fontSize: 13, fontWeight: 700, color: C.text, marginBottom: 6 }}>📅 本月叫貨彙總（{moNow}・月底對帳用）</div>
+            <div style={{ fontSize: 13, fontWeight: 700, color: C.text, marginBottom: 6 }}>📅 叫貨彙總（{mo2}・月底對帳用，不含草稿）</div>
             {Object.entries(byVendor).sort((a, b) => b[1].amt - a[1].amt).map(([vn, o]) => (
               <div key={vn} style={{ display: "flex", alignItems: "center", gap: 10, minHeight: 28, borderTop: `1px solid #f0ead9`, fontSize: 12.5 }}>
                 <span style={{ fontWeight: 700, color: C.text, width: 120 }}>{vn}</span>
@@ -203,21 +238,22 @@ export default function SupplyView({ view, K, canEdit, confirm, showMoney, userN
               </div>
             ))}
             <div style={{ display: "flex", alignItems: "center", gap: 10, minHeight: 32, borderTop: `1.5px solid ${C.hard}`, fontSize: 13 }}>
-              <span style={{ fontWeight: 800, color: C.accent }}>本月總計</span>
+              <span style={{ fontWeight: 800, color: C.accent }}>當月總計</span>
               <div style={{ flex: 1 }} />
               <span style={{ fontFamily: MONOF, fontWeight: 800, fontSize: 15, color: C.accent }}>{nt2(Object.values(byVendor).reduce((t, o) => t + o.amt, 0))}</span>
             </div>
           </div>
         )}
-        {/* 問題追蹤：驗收有問題的品項集中一頁，追到解決為止（未解決置頂、已解決收合） */}
-        {(() => {
+        </>}
+        {/* ── 分頁3：問題追蹤（驗收有問題的品項集中追到解決為止；未解決置頂、已解決收合） ── */}
+        {oTab === "issue" && (() => {
           const okOpt0 = (db.inspectOpts || ["✓ 正確"])[0];
           const issues = [];
           orders.forEach(od => {
             const chk = od.check; if (!chk || !chk.items) return;
             od.items.forEach((x, i) => { const ci = chk.items[i]; if (ci && ci.st && ci.st !== okOpt0) issues.push({ od, i, x, ci }); });
           });
-          if (!issues.length) return null;
+          if (!issues.length) return <div style={{ padding: 30, textAlign: "center", color: C.faint, background: C.card, border: `1.5px solid ${C.hard}`, borderRadius: 10 }}>目前沒有驗收問題 🎉（驗收時點到紅色選項的品項會自動列在這裡）</div>;
           const FU = ["待處理", "處理中", "已解決"];
           const stOf = (ci) => (ci.fu && ci.fu.st) || "待處理";
           const openIs = issues.filter(e => stOf(e.ci) !== "已解決");
@@ -301,11 +337,12 @@ export default function SupplyView({ view, K, canEdit, confirm, showMoney, userN
             </div>
           );
         })()}
-        {/* 叫貨紀錄 */}
-        {orders.length > 0 && (
+        {/* 叫貨紀錄（紀錄・對帳分頁：整月全列、跟月份/廠商篩選連動） */}
+        {oTab === "rec" && recOrders.length === 0 && <div style={{ padding: 30, textAlign: "center", color: C.faint, background: C.card, border: `1.5px solid ${C.hard}`, borderRadius: 10 }}>{mo2} 沒有{vF ? `「${vF}」的` : ""}叫貨紀錄。</div>}
+        {oTab === "rec" && recOrders.length > 0 && (
           <div style={{ ...box, padding: "10px 14px" }}>
-            <div style={{ fontSize: 13, fontWeight: 700, color: C.text, marginBottom: 6 }}>🧾 叫貨紀錄 <span style={{ fontWeight: 400, fontSize: 11, color: C.faint }}>點列看貨單完整明細</span></div>
-            {orders.slice(0, 15).map(od => (
+            <div style={{ fontSize: 13, fontWeight: 700, color: C.text, marginBottom: 6 }}>🧾 叫貨紀錄（{mo2}{vF ? "・" + vF : ""}） <span style={{ fontWeight: 400, fontSize: 11, color: C.faint }}>點列看貨單完整明細</span></div>
+            {recOrders.map(od => (
               <div key={od.id} onClick={() => setOdSel(od.id)} style={{ display: "grid", gridTemplateColumns: `108px minmax(90px,0.8fr) 56px minmax(150px,1.4fr) ${showMoney ? "90px " : ""}88px 110px 30px`, gap: 8, alignItems: "center", minHeight: 32, borderTop: `1px solid #f0ead9`, fontSize: 12, cursor: "pointer" }}
                 onMouseEnter={e => e.currentTarget.style.background = C.soft} onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
                 <span style={{ fontFamily: MONOF, fontSize: 11, color: C.sub }}>{new Date(od.ts).toLocaleString("zh-TW", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })}</span>
