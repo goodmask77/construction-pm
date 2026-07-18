@@ -678,7 +678,7 @@ const DEFAULT_ROSTER_FIELDS = [
 export function RosterView({ canEdit, confirm, me, ReceiptUploader }) {
   const [data, setData] = useState(null);
   const [q, setQ] = useState("");
-  const [sort, setSort] = useState([{ key: "startDate", dir: 1 }]); // 疊加排序：先點=主排序、再點別欄=次排序；同欄第2次反向、第3次取消
+  const [sortUser, setSortUser] = useState(null); // 疊加排序（null=用預設）：先點=主排序、再點別欄=次排序；同欄第2次反向、第3次取消
   const [sel, setSel] = useState(null);
   const [showFields, setShowFields] = useState(false);
   const [lockTip, setLockTip] = useState(false);
@@ -688,6 +688,10 @@ export function RosterView({ canEdit, confirm, me, ReceiptUploader }) {
   if (!data) return <div style={{ padding: 40, color: SUB, fontSize: 14 }}>載入中…</div>;
   const people = data.people || [];
   const fields = (data.fields && data.fields.length ? data.fields : DEFAULT_ROSTER_FIELDS);
+  // 預設排序（張良 2026-07-18 定案）：部門 ▲ → 職稱 ▲ → 到職日 ▼（職稱是自訂欄位，動態找 key）
+  const titleField = fields.find(f => /職稱/.test(f.label || ""));
+  const sort = sortUser || [{ key: "dept", dir: 1 }, ...(titleField ? [{ key: titleField.key, dir: 1 }] : []), { key: "startDate", dir: -1 }];
+  const setSort = (fn) => setSortUser(typeof fn === "function" ? fn(sort) : fn);
   const persist = (patch) => { const next = { ...data, ...patch }; setData(next); saveCrewJSON("kb_360", next); };
   const updP = (id, fp) => persist({ people: people.map(pp => pp.id === id ? { ...pp, ...fp } : pp) });
   const addP = () => { if (!canEdit) return; const np = { id: "p-" + Math.random().toString(36).slice(2, 8), name: "", nick: "", role: "staff", status: "在職" }; persist({ people: [...people, np] }); setSel(np.id); };
@@ -709,7 +713,21 @@ export function RosterView({ canEdit, confirm, me, ReceiptUploader }) {
     if (nb < today) nb = new Date(t.getFullYear() + 1, m - 1, d);
     return Math.round((nb - today) / 864e5);
   };
-  const val = (pp, k) => k === "prog" ? progress(pp) : k === "statusD" ? statusOf(pp) : k === "bdayMD" ? nextBdayDays(pp.bday) : k === "age" ? (ageOf(pp.bday) === "" ? 999 : ageOf(pp.bday)) : (pp[k] ?? "");
+  const val = (pp, k) => {
+    if (k === "prog") return progress(pp);
+    if (k === "statusD") return statusOf(pp);
+    if (k === "bdayMD") return nextBdayDays(pp.bday);
+    if (k === "age") return ageOf(pp.bday) === "" ? 999 : ageOf(pp.bday);
+    // 選單型欄位照「選項管理」裡排的順序（不是筆畫）；沒填/不在清單的排最後
+    const f = fields.find(x => x.key === k);
+    if (f && f.type === "select") {
+      const v = String(pp[k] ?? "").trim();
+      if (!v) return 999; // 沒填的排最後
+      const i = (f.options || []).indexOf(v);
+      return i >= 0 ? i : 998;
+    }
+    return pp[k] ?? "";
+  };
   const showCols = fields.filter(f => f.show);
   // 欄寬自動調整：依「表頭 + 該欄實際內容」計算（中文算2格、英數算1格），夾在 56~230px
   const dispW = (t) => [...String(t)].reduce((n, ch) => n + (ch.charCodeAt(0) > 255 ? 2 : 1), 0);

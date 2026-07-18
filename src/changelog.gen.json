@@ -2,6 +2,7 @@
  {
   "date": "2026-07-18",
   "items": [
+   "名冊排序可疊加: 點欄位依序疊多層排序(主/次/第三…顯示序號) 同欄再點反向 第三下取消 例:部門→職稱=內外場分好再各自排正職PT",
    "名冊選單選項可增刪改: 下拉加✎編輯選項 選項管理視窗(改名同步全員資料/刪除留舊值/↑↓排序/顯示使用人數) 欄位設定逗號字串改編輯按鈕",
    "拆檔二刀: 設定8子頁→src/settings/ 工程專案6分頁→src/construction/(Overview獨立檔) ReceiptUploader/ai/line/status/ui抽lib共用 App.jsx 6923→2854行 死碼原地不動 純搬家 build+selftest+no-undef綠",
    "拆檔一刀: 抽lib/theme.jsx(設計tokens+SecHead+useIsMobile)+lib/runtime.js(K/auditLog/CURRENT_USER setter化) 夥伴中心8元件搬src/crew/CrewViews.jsx App.jsx 7978→6923行 純搬家零行為改變 build+selftest綠 v1.5.0",
