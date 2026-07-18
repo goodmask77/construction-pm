@@ -1,6 +1,6 @@
 // 進銷存算法 selftest：node scripts/test-inv.mjs
 // 覆蓋：單位成本/比價取最近實付/食譜成本(含包材/缺料/循環)/進價事件冪等/警示門檻/報價快取
-import { unitCost, quoteUnit, latestCostOfIngredient, recipeCost, buildPriceEvents, applyLastPaid, priceAlert, applyQuote } from "../src/supply/inv.js";
+import { unitCost, quoteUnit, latestCostOfIngredient, recipeCost, buildPriceEvents, applyLastPaid, priceAlert, applyQuote, parseSpec, isServiceName, normName } from "../src/supply/inv.js";
 let pass = 0, fail = 0;
 const ok = (name, cond) => { cond ? pass++ : (fail++, console.log("✗ " + name)); };
 
@@ -44,6 +44,19 @@ ok("重按同價 prev 不動（冪等）", v1b.last.price === 850 && v1b.last.pr
 ok("850vs800=6% 不警示(門檻15)", priceAlert(v1a, 15) === null);
 ok("1000vs800=25% 警示", priceAlert({ last: { price: 1000, prevPrice: 800 } }, 15).pct === 25);
 ok("報價快取寫入", applyQuote(db.vendorItems, "v3", 40, "T3").find(x => x.id === "v3").quote.price === 40);
+
+// 規格自動解析（物料頁 v2 自動整理用）
+ok("2000入/件→2000個", (() => { const p = parseSpec("(2000入/件)"); return p.packToBase === 2000 && p.baseUnit === "個"; })());
+ok("雙括號 ((2500入/件))", parseSpec("((2500入/件))").packToBase === 2500);
+ok("20公斤/箱→20000g", (() => { const p = parseSpec("20公斤/箱"); return p.packToBase === 20000 && p.baseUnit === "g"; })());
+ok("600g/包→600g", (() => { const p = parseSpec("600g/包"); return p.packToBase === 600 && p.baseUnit === "g"; })());
+ok("5台斤→3000g", parseSpec("5台斤").packToBase === 3000);
+ok("2L→2000ml", (() => { const p = parseSpec("2L"); return p.packToBase === 2000 && p.baseUnit === "ml"; })());
+ok("看不出入數→null不猜", (() => { const p = parseSpec("10*10衛生紙"); return p.packToBase === null; })());
+ok("空規格→null", parseSpec("").packToBase === null);
+ok("服務類判斷：咖啡機年度保養", isServiceName("咖啡機年度保養") === true);
+ok("服務類判斷：醬料杯不是服務", isServiceName("A140醬料杯") === false);
+ok("正規化：同名不同符號視為同物", normName("PET-2oz醬料杯") === normName("PET–2oz 醬料杯"));
 
 console.log(`結果：${pass} 通過 / ${fail} 失敗`);
 process.exit(fail ? 1 : 0);

@@ -229,7 +229,7 @@ export default function SupplyView({ view, K, canEdit, confirm, showMoney, userN
         </>}
         {/* ── 分頁2：報價比價（物料×貨源矩陣；key 報價→寫 pm_quote_ 流水＋quote 快取；成本永遠不用報價） ── */}
         {oTab === "quote" && (() => {
-          const ingsQ = (db.ingredients || []).slice().sort((a, b) => (a.sort || 0) - (b.sort || 0)).map(g => ({ g, srcs: srcsOf(db, g.id) })).filter(x => x.srcs.length > 0);
+          const ingsQ = (db.ingredients || []).filter(g => !g.nonStock).slice().sort((a, b) => (a.sort || 0) - (b.sort || 0)).map(g => ({ g, srcs: srcsOf(db, g.id) })).filter(x => x.srcs.length > 0);
           const vname2 = (vid) => ((db.vendors || []).find(v => v.id === vid) || {}).name || "—";
           const commitQuote = (vi) => {
             const raw = qv2[vi.id]; if (raw === undefined) return;
@@ -249,7 +249,7 @@ export default function SupplyView({ view, K, canEdit, confirm, showMoney, userN
             setOTab("order");
             flash("✓ 已展開 " + vids.map(vname2).join("、") + "——到各廠商填數量產生叫貨單");
           };
-          if (!ingsQ.length) return <div style={{ padding: 30, textAlign: "center", color: C.faint, background: C.card, border: `1.5px solid ${C.hard}`, borderRadius: 10 }}>還沒有可比價的物料——先到「🥬 物料」頁建物料卡、把各廠商貨源歸戶進來。</div>;
+          if (!ingsQ.length) return <div style={{ padding: 30, textAlign: "center", color: C.faint, background: C.card, border: `1.5px solid ${C.hard}`, borderRadius: 10 }}>還沒有可比價的物料——到「🥬 物料」頁按「⚡ 自動整理」一鍵生成物料卡。</div>;
           // 表格化：一貨源一行、物料名只標在該組第一行；限寬，畫面簡潔
           const QGRID = `minmax(72px,0.9fr) minmax(88px,1.1fr) 150px 92px 40px`;
           return (

@@ -1,5 +1,11 @@
 [
  {
+  "date": "2026-07-19",
+  "items": [
+   "報價分頁卡片式改單行表格: 一貨源一行(物料名只標組首行)+五欄(物料/廠商/報價/換算單價/本次radio)+限寬700畫面簡潔 build+selftest 15全綠已部署 v1.10.0"
+  ]
+ },
+ {
   "date": "2026-07-18",
   "items": [
    "修commit誤收: .claude/worktrees內嵌git repo移出索引+gitignore(另一session的夥伴中心worktree不該進版本庫 磁碟檔案未動)",

@@ -114,3 +114,24 @@ export const applyQuote = (vendorItems, viId, price, ts) => (vendorItems || []).
   if (Number(cur.price) === Number(price)) return { ...vi, quote: { ...cur, ts } };
   return { ...vi, quote: { price: Number(price), ts, prevPrice: Number(cur.price) || 0, prevTs: cur.ts || "" } };
 });
+
+// ── 物料頁自動整理用（v1.11 重新設計：預設全自動，人只處理例外）──
+
+// 規格自動解析：「(2000入/件)」→ 每件入數 2000、單位「個」；「20公斤/箱」→ 20000g——系統有資料就不叫人重打
+export const parseSpec = (spec) => {
+  const s = String(spec || "");
+  let m;
+  if ((m = s.match(/([\d.]+)\s*(?:公斤|kg)/i))) return { packToBase: Math.round(parseFloat(m[1]) * 1000), baseUnit: "g" };
+  if ((m = s.match(/([\d.]+)\s*(?:台斤|斤)/))) return { packToBase: Math.round(parseFloat(m[1]) * 600), baseUnit: "g" };
+  if ((m = s.match(/([\d.]+)\s*(?:公克|克)/)) || (m = s.match(/([\d.]+)\s*g\b/i))) return { packToBase: Math.round(parseFloat(m[1])), baseUnit: "g" };
+  if ((m = s.match(/([\d.]+)\s*(?:公升|升)/)) || (m = s.match(/([\d.]+)\s*L\b/))) return { packToBase: Math.round(parseFloat(m[1]) * 1000), baseUnit: "ml" };
+  if ((m = s.match(/([\d.]+)\s*(?:毫升|ml|cc)\b/i))) return { packToBase: Math.round(parseFloat(m[1])), baseUnit: "ml" };
+  if ((m = s.match(/(\d+)\s*(?:入|個|个|顆|粒|支|張|片|捲|卷|份|組|雙|條|条|袋|包)/))) return { packToBase: parseInt(m[1], 10), baseUnit: "個" };
+  return { packToBase: null, baseUnit: "個" };
+};
+
+// 服務/費用類判斷（保養、運費…）→ 標非物料，不進盤點/成本
+export const isServiceName = (name) => /保養|維修|修理|運費|服務|安裝|清潔費|檢測|租金|費用|工資|施工/.test(String(name || ""));
+
+// 品名正規化（自動併卡/建議合併用）：去空白符號、統一小寫
+export const normName = (s) => String(s || "").toLowerCase().replace(/[\s\-–—（）()【】\[\]／/、,，.。・*×xX＊]/g, "");

@@ -37,7 +37,7 @@ export default function RecipeCard({ product, db, canEdit, showMoney, userName, 
 
   if (recs === null || !draft) return <div style={{ marginTop: 14, fontSize: 12, color: C.faint }}>🍳 食譜載入中…</div>;
 
-  const ings = (db.ingredients || []).slice().sort((a, b) => (a.sort || 0) - (b.sort || 0));
+  const ings = (db.ingredients || []).filter(g => !g.nonStock).slice().sort((a, b) => (a.sort || 0) - (b.sort || 0)); // 非物料（服務/費用）不進食譜
   const ingOf = (id) => ings.find(g => g.id === id);
   const upd = (fp) => setDraft(d => ({ ...d, ...fp }));
   const updLine = (i, fp) => upd({ ingredients: draft.ingredients.map((x, j) => j === i ? { ...x, ...fp } : x) });
