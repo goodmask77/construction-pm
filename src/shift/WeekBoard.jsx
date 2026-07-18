@@ -11,7 +11,7 @@ import { Lock, Unlock, Play, RotateCcw, GitCompare, Plus, Trash2, ChevronLeft, C
 
 const todayISO = () => toISO(new Date());
 
-export default function WeekBoard({ K, storeId, canEdit, confirm, userName, isMobile, onLog, data, saveLeaves }) {
+export default function WeekBoard({ K, storeId, canEdit, confirm, userName, isMobile, onLog, data, saveLeaves, saveStaffOrder }) {
   const { staff, skills, stations, shifts, demands, leaves, rules, settings, weights } = data;
   const staffById = byId(staff), shiftById = byId(shifts), stationById = byId(stations);
   const [weekStart, setWeekStart] = useState(mondayOf(todayISO()));
@@ -19,6 +19,7 @@ export default function WeekBoard({ K, storeId, canEdit, confirm, userName, isMo
   const [others, setOthers] = useState([]);        // 其他週 assignments（跨週規則用）
   const [editCell, setEditCell] = useState(null);  // {staffId, date}
   const [dragA, setDragA] = useState(null);        // 拖拉中的 assignment id
+  const [rowDrag, setRowDrag] = useState(null);    // 拖拉中的人員列（調整順序）
   const [dragOver, setDragOver] = useState(null);
   const [diffModal, setDiffModal] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -141,6 +142,16 @@ export default function WeekBoard({ K, storeId, canEdit, confirm, userName, isMo
   const blockCount = check.violations.filter(v => v.severity === "block").length;
   const warnCount = check.violations.length - blockCount;
   const staffRows = staff.filter(p => (p.stores || []).includes(storeId));
+  // 內外場分區塊（照張良試算表）：區塊內順序＝人員檔順序（可拖曳 ⠿ 調整）
+  const DEPT_ORDER = ["內場", "外場", "管理"];
+  const groups = [
+    ...DEPT_ORDER.map(d => ({ dept: d, rows: staffRows.filter(p => p.dept === d) })),
+    { dept: "其他", rows: staffRows.filter(p => !DEPT_ORDER.includes(p.dept)) },
+  ].filter(g => g.rows.length);
+  // 該員本週排班「天數」（同日兩班算 1 天）
+  const daysOf = (staffId) => new Set(sched.assignments.filter(a => a.staffId === staffId).map(a => a.date)).size;
+  // 各部門當天排班人數（人頭，不是班次）
+  const deptCount = (dept, d) => new Set(sched.assignments.filter(a => a.date === d && staffById[a.staffId]?.dept === dept).map(a => a.staffId)).size;
 
   const setStatus = async (next) => {
     if (next === "published" && !canPublish(check.violations)) { alert(`還有 ${blockCount} 筆硬條件違規，不能發布（§14）。先解決紅色格。`); return; }
@@ -218,35 +229,60 @@ export default function WeekBoard({ K, storeId, canEdit, confirm, userName, isMo
                   {fmtMD(d)}（{DOW_LABEL[dowOf(d)]}）
                   <div style={{ fontSize: 10, fontWeight: 400, color: ok.ok >= ok.need ? T.GREEN : T.RED }}>{ok.ok}/{ok.need} 席</div>
                 </th>); })}
+              <th style={{ padding: 6, color: T.SUB, minWidth: 44 }}>班數</th>
             </tr></thead>
-            <tbody>{staffRows.map(p => (
-              <tr key={p.id}>
-                <td style={{ padding: "4px 6px", fontWeight: 700, borderTop: `1px solid ${T.BORDER}`, whiteSpace: "nowrap" }}>
-                  {p.nick || p.name}
-                  <div style={{ fontSize: 10, color: T.SUB, fontWeight: 400 }}>{cellCount(sched, p.id)}班 / 期望{p.expectShifts || 0}</div>
-                </td>
-                {dates.map(d => {
-                  const flag = cellFlag[p.id + "|" + d];
-                  const onLeave = leaves.find(l => l.staffId === p.id && l.date === d && l.status === "approved");
-                  const ua = (p.unavailable || []).some(u => u.dow === dowOf(d));
-                  return (
-                    <td key={d}
-                      onDragOver={e => { e.preventDefault(); setDragOver(p.id + "|" + d); }}
-                      onDrop={() => onDropCell(p.id, d)}
-                      onClick={() => canEdit && setEditCell({ staffId: p.id, date: d })}
-                      style={{
-                        padding: 3, borderTop: `1px solid ${T.BORDER}`, borderLeft: `1px solid ${T.BORDER}`, verticalAlign: "top", cursor: canEdit ? "pointer" : "default", minHeight: 40,
-                        background: dragOver === p.id + "|" + d ? T.SOFT : onLeave ? "#f3eee6" : "transparent",
-                        outline: flag ? `2px solid ${flagColor[flag]}` : "none", outlineOffset: -2,
-                      }}>
-                      {onLeave && <div style={{ fontSize: 10, color: T.SUB, textAlign: "center" }}>{onLeave.type}</div>}
-                      {!onLeave && ua && !cellAssigns(p.id, d).length && <div style={{ fontSize: 10, color: T.GREY, textAlign: "center" }}>不可</div>}
-                      <CellChips p={p} date={d} />
-                    </td>);
-                })}
-              </tr>))}</tbody>
+            <tbody>{groups.map(g => (
+              <Fragment key={g.dept}>
+                {/* 部門區塊頭：當天該部門排班人數（照張良試算表的「人數」列） */}
+                <tr style={{ background: T.SOFT }}>
+                  <td style={{ padding: "5px 6px", fontWeight: 800, color: T.ACCENT, borderTop: `2px solid ${T.LINE2}` }}>{g.dept}｜人數</td>
+                  {dates.map(d => { const n = deptCount(g.dept, d); return <td key={d} style={{ padding: "5px 6px", textAlign: "center", fontFamily: T.MONO, fontWeight: 800, color: n ? T.TEXT : T.GREY, borderTop: `2px solid ${T.LINE2}`, borderLeft: `1px solid ${T.BORDER}` }}>{n || "—"}</td>; })}
+                  <td style={{ padding: "5px 6px", textAlign: "center", fontFamily: T.MONO, fontWeight: 800, color: T.SUB, borderTop: `2px solid ${T.LINE2}`, borderLeft: `1px solid ${T.BORDER}` }}>{g.rows.reduce((s, p) => s + daysOf(p.id), 0)}</td>
+                </tr>
+                {g.rows.map(p => (
+                  <tr key={p.id}>
+                    <td
+                      onDragOver={e => { if (rowDrag) e.preventDefault(); }}
+                      onDrop={() => {
+                        if (!rowDrag || rowDrag === p.id || !saveStaffOrder) { setRowDrag(null); return; }
+                        const list = [...staff]; const fi = list.findIndex(x => x.id === rowDrag), ti = list.findIndex(x => x.id === p.id);
+                        if (fi < 0 || ti < 0) { setRowDrag(null); return; }
+                        const [m] = list.splice(fi, 1); list.splice(ti, 0, m);
+                        saveStaffOrder(list); setRowDrag(null);
+                      }}
+                      style={{ padding: "4px 6px", fontWeight: 700, borderTop: `1px solid ${T.BORDER}`, whiteSpace: "nowrap", background: rowDrag === p.id ? T.SOFT : "transparent" }}>
+                      {canEdit && <span draggable onDragStart={() => setRowDrag(p.id)} onDragEnd={() => setRowDrag(null)} title="拖曳調整人員順序" style={{ cursor: "grab", color: T.LINE2, marginRight: 4, userSelect: "none" }}>⠿</span>}
+                      {p.nick || p.name}
+                      <div style={{ fontSize: 10, color: T.SUB, fontWeight: 400, paddingLeft: canEdit ? 16 : 0 }}>{p.grade}</div>
+                    </td>
+                    {dates.map(d => {
+                      const flag = cellFlag[p.id + "|" + d];
+                      const onLeave = leaves.find(l => l.staffId === p.id && l.date === d && l.status === "approved");
+                      const ua = (p.unavailable || []).some(u => u.dow === dowOf(d));
+                      return (
+                        <td key={d}
+                          onDragOver={e => { if (!rowDrag) { e.preventDefault(); setDragOver(p.id + "|" + d); } }}
+                          onDrop={() => onDropCell(p.id, d)}
+                          onClick={() => canEdit && setEditCell({ staffId: p.id, date: d })}
+                          style={{
+                            padding: 3, borderTop: `1px solid ${T.BORDER}`, borderLeft: `1px solid ${T.BORDER}`, verticalAlign: "top", cursor: canEdit ? "pointer" : "default", minHeight: 40,
+                            background: dragOver === p.id + "|" + d ? T.SOFT : onLeave ? "#f3eee6" : "transparent",
+                            outline: flag ? `2px solid ${flagColor[flag]}` : "none", outlineOffset: -2,
+                          }}>
+                          {onLeave && <div style={{ fontSize: 10, color: T.SUB, textAlign: "center" }}>{onLeave.type}</div>}
+                          {!onLeave && ua && !cellAssigns(p.id, d).length && <div style={{ fontSize: 10, color: T.GREY, textAlign: "center" }}>不可</div>}
+                          <CellChips p={p} date={d} />
+                        </td>);
+                    })}
+                    {/* 最右：本週排班天數（同日兩班算 1 天）；= 期望綠、少橘、多紅 */}
+                    {(() => { const n = daysOf(p.id), exp = p.expectShifts || 0; return (
+                      <td style={{ padding: "4px 6px", textAlign: "center", borderTop: `1px solid ${T.BORDER}`, borderLeft: `1px solid ${T.BORDER}`, fontFamily: T.MONO, fontWeight: 800, color: n === exp ? T.GREEN : n > exp ? T.RED : T.AMBER }}>
+                        {n}<span style={{ fontSize: 9, color: T.SUB, fontWeight: 400 }}>/{exp}</span>
+                      </td>); })()}
+                  </tr>))}
+              </Fragment>))}</tbody>
           </table>
-          <div style={{ fontSize: 11, color: T.SUB, padding: "6px 4px" }}>拖拉格子換人/換天（🔒鎖定格不動）；點格子編輯。紅框=硬條件違規（不可發布）、黃框=提示。</div>
+          <div style={{ fontSize: 11, color: T.SUB, padding: "6px 4px" }}>拖拉格子換人/換天（🔒鎖定格不動）；拖 ⠿ 調人員順序；點格子編輯。紅框=硬條件違規（不可發布）、黃框=提示。右欄=本週天數/期望。</div>
         </div>
       ) : (
         /* 手機版：表格改卡片（§H38） */

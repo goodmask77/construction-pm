@@ -120,7 +120,8 @@ export default function ShiftView({ K, canEdit, confirm, userName, isAdmin, onLo
         saveWeights={(d) => { set({ weightsDoc: d }); saveDoc(DOC_KEYS.weights, d, "軟條件權重"); }} onLog={onLog} />}
       {page === "week" && <WeekBoard {...{ K, storeId, canEdit, confirm, userName, isMobile, onLog }}
         data={{ staff: staffDoc.staff, skills: stationsDoc.skills, stations: stationsDoc.stations, shifts: templatesDoc.shifts, demands: templatesDoc.demands, leaves: leavesDoc.leaves, rules: rulesDoc.rules, settings: rulesDoc.settings, weights: weightsDoc.weights }}
-        saveLeaves={(list) => { const d = { ...leavesDoc, leaves: list }; set({ leavesDoc: d }); saveDoc(DOC_KEYS.leaves, d, "請假"); }} />}
+        saveLeaves={(list) => { const d = { ...leavesDoc, leaves: list }; set({ leavesDoc: d }); saveDoc(DOC_KEYS.leaves, d, "請假"); }}
+        saveStaffOrder={(list) => { const d = { ...staffDoc, staff: list }; set({ staffDoc: d }); saveDoc(DOC_KEYS.staff, d, "人員順序"); }} />}
     </div>
   );
 }
