@@ -413,3 +413,39 @@ export const newSchedule = (storeId, weekStart) => ({
   schema_v: SCHEMA_V, storeId, weekStart, status: "draft",
   assignments: [], overrides: [], changeLog: [], seed: "",
 });
+
+// ── 名冊 → 排班人員 對照（張良 2026-07-18：排班人員全部對照名冊內外場）──
+// 重複同步不會蓋掉手動調過的技能/期望班數/不可排：既有者只更新基本資料，新人才建新檔。
+// grade 對照：名冊職稱 正職→正職、含PT→全班PT；預設技能：內場→內場崗位全「可勝任」、外場→外場崗位全「可勝任」（假設值，請在矩陣校正）。
+export function syncRosterToShift(rosterPeople, titleOf, existingStaff, stations, existingSkills, storeId = "abeach") {
+  const active = (rosterPeople || []).filter(p => (p.status || "在職") === "在職" && ["內場", "外場"].includes(p.dept));
+  const byRoster = Object.fromEntries((existingStaff || []).filter(s => s.rosterId).map(s => [s.rosterId, s]));
+  const staff = [], skills = { ...(existingSkills || {}) };
+  const deptStations = (dept) => (stations || []).filter(st => st.storeId === storeId && st.dept === dept);
+  for (const p of active) {
+    const title = String(titleOf ? titleOf(p) : "").trim();
+    const grade = /pt/i.test(title) ? "全班PT" : "正職";
+    const old = byRoster[p.id];
+    const id = old ? old.id : "rs-" + p.id;
+    const base = {
+      id, rosterId: p.id, name: p.name || "", nick: p.nick || "", empNo: p.empNo || "",
+      dept: p.dept, grade,
+      birthYear: p.bday ? Number(String(p.bday).slice(0, 4)) || null : null,
+      startDate: p.startDate || "", endDate: p.endDate || "",
+      stores: [storeId], supportDepts: old?.supportDepts || [],
+      expectShifts: old?.expectShifts ?? (grade === "正職" ? 5 : 3),
+      costFactor: old?.costFactor ?? (grade === "正職" ? 1 : 0.8),
+      unavailable: old?.unavailable || [], wishOff: old?.wishOff || [],
+      otWilling: old?.otWilling || false, fixedPrefShiftIds: old?.fixedPrefShiftIds || [],
+      note: old?.note || "", seed: "",
+    };
+    staff.push(base);
+    if (!skills[id] || !Object.keys(skills[id]).length) {
+      skills[id] = Object.fromEntries(deptStations(p.dept).map(st => [st.id, "ok"])); // 假設值：本部門全「可勝任」
+    }
+  }
+  // 名冊已離職/移出內外場者 → 從排班人員移除（demo 假人也在此一併清掉）
+  const keepIds = new Set(staff.map(s => s.id));
+  for (const k of Object.keys(skills)) if (!keepIds.has(k)) delete skills[k];
+  return { staff, skills, added: active.filter(p => !byRoster[p.id]).length, total: staff.length };
+}

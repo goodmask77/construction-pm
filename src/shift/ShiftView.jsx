@@ -6,7 +6,7 @@ import {
   SEED_STORES, SEED_STAFF, SEED_SKILLS, SEED_STATIONS, SEED_SHIFTS, SEED_DEMANDS, SEED_LEAVES,
   DEFAULT_RULES, DEFAULT_RULE_SETTINGS, DEFAULT_WEIGHTS, SOFT_ITEMS, WEIGHT_LEVELS,
   GRADES, SKILL_LEVELS, SKILL_LABEL, DAY_TYPES, DOW_LABEL,
-  buildBaselineActual, BASELINE_WEEK, byId, shiftHours, newSchedule,
+  buildBaselineActual, BASELINE_WEEK, byId, shiftHours, newSchedule, syncRosterToShift,
 } from "./model.js";
 import { DOC_LABOR_CONTRACT, DOC_LABOR_MEETING_CONSENT } from "./docs.js";
 import WeekBoard from "./WeekBoard.jsx";
@@ -110,7 +110,7 @@ export default function ShiftView({ K, canEdit, confirm, userName, isAdmin, onLo
       </div>
       {storeId === "ground" && <div style={{ ...card, color: T.SUB, marginBottom: 12 }}>GROUN:D 店別本階段留空（規格 §A5）— 先在 A Beach 101 驗證。</div>}
 
-      {page === "people" && <PeoplePage {...{ staffDoc, stationsDoc, storeId, canEdit, confirm, isMobile }}
+      {page === "people" && <PeoplePage {...{ staffDoc, stationsDoc, storeId, canEdit, confirm, isMobile, K }}
         saveStaff={(d) => { set({ staffDoc: d }); saveDoc(DOC_KEYS.staff, d, "人員主檔"); }}
         saveStations={(d) => { set({ stationsDoc: d }); saveDoc(DOC_KEYS.stations, d, "崗位技能矩陣"); }} />}
       {page === "templates" && <TemplatesPage {...{ templatesDoc, stationsDoc, storeId, canEdit, confirm, isMobile }}
@@ -126,8 +126,22 @@ export default function ShiftView({ K, canEdit, confirm, userName, isAdmin, onLo
 }
 
 // ═══ 頁 1：人員與能力（§H35）═══
-function PeoplePage({ staffDoc, stationsDoc, storeId, canEdit, confirm, isMobile, saveStaff, saveStations }) {
+function PeoplePage({ staffDoc, stationsDoc, storeId, canEdit, confirm, isMobile, K, saveStaff, saveStations }) {
   const [editId, setEditId] = useState(null);
+  // 從名冊同步（張良 2026-07-18：排班人員全部對照名冊內外場；可重複按，不會蓋掉手動調過的技能/班數/不可排）
+  const syncRoster = async () => {
+    try {
+      const r = await window.storage.get(K("kb_360"), true);
+      const kb = r && r.value ? JSON.parse(r.value) : null;
+      if (!kb?.people?.length) { alert("讀不到名冊資料"); return; }
+      const titleField = (kb.fields || []).find(f => /職稱/.test(f.label || ""));
+      const titleOf = (p) => titleField ? (p[titleField.key] || "") : "";
+      const res = syncRosterToShift(kb.people, titleOf, staffDoc.staff, stationsDoc.stations, stationsDoc.skills, storeId);
+      if (!(await confirm(`將同步 ${res.total} 位內外場夥伴（新增 ${res.added} 位）；名冊已離職/非內外場者與示範假人會移出排班。技能矩陣：新人預設本部門全「可勝任」，請再校正。繼續？`))) return;
+      saveStaff({ ...staffDoc, staff: res.staff });
+      saveStations({ ...stationsDoc, skills: res.skills });
+    } catch (e) { alert("同步失敗：" + (e?.message || e)); }
+  };
   const staff = (staffDoc.staff || []).filter(p => (p.stores || []).includes(storeId));
   const stations = (stationsDoc.stations || []).filter(s => s.storeId === storeId);
   const skills = stationsDoc.skills || {};
@@ -147,13 +161,14 @@ function PeoplePage({ staffDoc, stationsDoc, storeId, canEdit, confirm, isMobile
   return (
     <div style={{ display: "grid", gap: 16 }}>
       <div style={card}>
-        <SecHead tag="STAFF" title={`人員（${staff.length} 人）`} right={canEdit && (
+        <SecHead tag="STAFF" title={`人員（${staff.length} 人）`} right={canEdit && (<div style={{ display: "flex", gap: 6 }}>
+          <button style={btn(false)} onClick={syncRoster} title="把名冊的內外場在職夥伴同步進排班（可重複按）">⟳ 從名冊同步</button>
           <button style={btn(true)} onClick={() => {
             const id = "sf-" + Math.random().toString(36).slice(2, 8);
             saveStaff({ ...staffDoc, staff: [...staffDoc.staff, { id, name: "新夥伴", nick: "", empNo: "", dept: "內場", grade: "正職", birthYear: 2000, expectShifts: 5, costFactor: 1, startDate: "", endDate: "", stores: [storeId], supportDepts: [], unavailable: [], otWilling: false, fixedPrefShiftIds: [], wishOff: [], note: "", seed: "" }] });
             setEditId(id);
           }}><Plus size={13} /> 新增</button>
-        )} />
+        </div>)} />
         <div style={{ overflowX: "auto" }}>
           <table style={{ borderCollapse: "collapse", width: "100%", fontSize: 12.5 }}>
             <thead><tr style={{ color: T.SUB, textAlign: "left" }}>{["暱稱/姓名", "部門", "職級", "員編", "出生年", "期望班數", "成本係數", "固定不可排", "加班意願", ""].map(h => <th key={h} style={{ padding: "4px 8px", borderBottom: `1px solid ${T.BORDER}`, whiteSpace: "nowrap" }}>{h}</th>)}</tr></thead>
