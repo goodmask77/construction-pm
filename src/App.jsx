@@ -35,12 +35,16 @@ async function loadSpaceAIContext() {
   try {
     const nt = (n) => "NT$" + Math.round(n || 0).toLocaleString();
     const g = async (k) => { try { const v = await window.storage.get(k, true); return v && v.value ? JSON.parse(v.value) : null; } catch (_) { return null; } };
-    // 逐筆存集合（2026-07-18）：有 marker＝一筆一檔（前綴掃描），沒有＝讀舊整包
+    // 逐筆存集合（2026-07-18）：合併讀——有 marker＝只用逐筆檔；沒有＝舊整包+逐筆檔合併（同 id 逐筆檔優先）
     const recs = async (marker, prefix, legacy) => {
       try {
-        if (await g(marker)) { const m = await getSharedPrefix(prefix); return Object.values(m).map(v => { try { return JSON.parse(v) } catch (_) { return null } }).filter(Boolean); }
-      } catch (_) {}
-      return await g(legacy);
+        const [mk, m, lg] = await Promise.all([g(marker), getSharedPrefix(prefix), g(legacy)]);
+        const rl = Object.values(m).map(v => { try { return JSON.parse(v) } catch (_) { return null } }).filter(t => t && t.id);
+        if (mk) return rl;
+        const byId = new Map((Array.isArray(lg) ? lg : []).filter(t => t && t.id).map(t => [t.id, t]));
+        rl.forEach(t => byId.set(t.id, t));
+        return [...byId.values()];
+      } catch (_) { return await g(legacy); }
     };
     const d0 = new Date(); const mo = `${d0.getFullYear()}-${String(d0.getMonth() + 1).padStart(2, "0")}`;
     const [snapC, snapT, snapK, snapF, tasks, crewRoster, crewOld, pos, posD, bank, ctbc, accounts, ledger, conclusions, mailRules, mailLog, supply] = await Promise.all([

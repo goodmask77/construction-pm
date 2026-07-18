@@ -4,21 +4,28 @@
 // 舊整包資料第一次載入時自動遷移（寫入 marker 後改走逐筆）。
 import { getSharedPrefix, setSharedMany, onSharedChange, announceShared } from "../supa.js";
 
-// 載入：有 marker ＝ 已遷移 → 前綴掃描逐筆；沒有 → 讀舊整包並就地遷移（一次批次寫入）。
+// 載入（防丟資料設計）：marker 只是「已遷移完」的加速器——
+// 有 marker → 只掃逐筆檔；沒 marker → 「舊整包 + 逐筆檔」合併（同 id 以逐筆檔為準）。
+// 就算某次讀取短暫失敗（回空），合併結果也只會少不會錯，且不會寫下錯誤的 marker
+// （2026-07-18 遷移實測抓到：API 短暫回空 → 差點把「0 筆」當已遷移，記號會蓋住真資料）。
 // sortBy：載入後排序（例：(a,b)=>a.ord-b.ord）。回傳陣列。
 export async function loadRecords({ markerKey, prefix, legacyKey, withOrd, sortBy }) {
   try {
-    const mark = await window.storage.get(markerKey, true);
-    if (mark && mark.value) {
-      const m = await getSharedPrefix(prefix);
-      let list = Object.values(m).map(v => { try { return JSON.parse(v) } catch (_) { return null } }).filter(Boolean);
-      if (sortBy) list = list.sort(sortBy);
-      return list;
-    }
-    const r = await window.storage.get(legacyKey, true);
-    const arr = r && r.value ? JSON.parse(r.value) : [];
-    const list = Array.isArray(arr) ? arr : [];
-    // 就地遷移（未登入時寫入會被 RLS 擋下＝維持舊制，登入者下次開啟會完成遷移）
+    const [mark, r, m] = await Promise.all([
+      window.storage.get(markerKey, true),
+      window.storage.get(legacyKey, true),
+      getSharedPrefix(prefix),
+    ]);
+    const recs = Object.values(m).map(v => { try { return JSON.parse(v) } catch (_) { return null } }).filter(t => t && t.id);
+    const srt = (l) => (sortBy ? [...l].sort(sortBy) : l);
+    if (mark && mark.value) return srt(recs); // 已遷移完 → 逐筆檔就是全部
+    let legacy = []; try { const a = r && r.value ? JSON.parse(r.value) : []; legacy = Array.isArray(a) ? a.filter(t => t && t.id) : []; } catch (_) {}
+    if (!legacy.length) return srt(recs);
+    // 合併：逐筆檔優先蓋掉舊整包同 id（遷移到一半也不漏、不重複）
+    const byId = new Map(legacy.map(t => [t.id, t]));
+    recs.forEach(t => byId.set(t.id, t));
+    const list = srt([...byId.values()]);
+    // 就地遷移（只在「真的有資料」時寫 marker；未登入被 RLS 擋下＝維持合併讀，下次再試）
     migrateRecords({ markerKey, prefix, list, withOrd }).catch(() => {});
     return list;
   } catch (_) { return []; }
@@ -26,6 +33,7 @@ export async function loadRecords({ markerKey, prefix, legacyKey, withOrd, sortB
 
 export async function migrateRecords({ markerKey, prefix, list, withOrd }) {
   const pairs = list.filter(t => t && t.id).map((t, i) => [prefix + t.id, JSON.stringify(withOrd ? { ...t, ord: i } : t)]);
+  if (!pairs.length) return; // 空清單絕不寫 marker（防「短暫讀失敗→記號蓋住真資料」）
   const ok = await setSharedMany(pairs);
   if (!ok) return; // 沒寫成（未登入/斷線）→ 不做記號，維持舊制，下次再試
   await window.storage.set(markerKey, JSON.stringify({ migratedAt: new Date().toISOString(), n: pairs.length }), true);

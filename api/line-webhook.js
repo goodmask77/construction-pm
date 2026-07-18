@@ -49,19 +49,25 @@ async function kvSet(id, valueObj) {
 async function kvGetPrefix(prefix) {
   if (!SB_URL || !SB_KEY) return []
   try {
-    const r = await fetch(`${SB_URL}/rest/v1/pm_documents?id=like.${encodeURIComponent(prefix)}*&select=id,data`, { headers: sbHeaders })
+    // SQL LIKE 的 _ 也是萬用字元（pm_task_* 會誤匹配 pm_tasks）→ 底線要跳脫
+    const pattern = prefix.replace(/[\\%_]/g, (m) => '\\' + m)
+    const r = await fetch(`${SB_URL}/rest/v1/pm_documents?id=like.${encodeURIComponent(pattern)}*&select=id,data`, { headers: sbHeaders })
     const rows = r.ok ? await r.json() : []
     const out = []
     rows.forEach((row) => { if (row?.data?.v) { try { out.push(JSON.parse(row.data.v)) } catch (_) {} } })
     return out
   } catch (_) { return [] }
 }
-// 有 marker＝已遷移 → 前綴掃描逐筆；沒有 → 讀舊整包。回傳 { list, v2 }
+// 合併讀（防丟資料）：有 marker → 只用逐筆檔；沒 marker → 舊整包+逐筆檔合併（同 id 逐筆檔優先）。
+// v2 旗標＝「寫入時走逐筆」：只要逐筆檔已存在就走逐筆，避免把舊整包整包寫回蓋掉別人的逐筆編輯。
 async function kvLoadRecords(markerKey, prefix, legacyKey) {
-  const m = await kvGetMany([markerKey])
-  if (m[markerKey]) return { list: await kvGetPrefix(prefix), v2: true }
-  const l = await kvGetMany([legacyKey])
-  return { list: Array.isArray(l[legacyKey]) ? l[legacyKey] : [], v2: false }
+  const [m, recs] = await Promise.all([kvGetMany([markerKey, legacyKey]), kvGetPrefix(prefix)])
+  if (m[markerKey]) return { list: recs, v2: true }
+  const legacy = Array.isArray(m[legacyKey]) ? m[legacyKey] : []
+  if (!legacy.length) return { list: recs, v2: recs.length > 0 }
+  const byId = new Map(legacy.filter(t => t && t.id).map(t => [t.id, t]))
+  recs.forEach(t => { if (t && t.id) byId.set(t.id, t) })
+  return { list: [...byId.values()], v2: recs.length > 0 }
 }
 const kvLoadTasks = async () => { const r = await kvLoadRecords('pm_tasks_v2', 'pm_task_', 'pm_tasks'); r.list.sort((a, b) => (a.ord ?? 0) - (b.ord ?? 0)); return r }
 const kvLoadLedger = async () => { const r = await kvLoadRecords('sp_finance_pm_fin_ledger_v2', 'sp_finance_pm_fin_tx_', 'sp_finance_pm_fin_ledger'); r.list.sort((a, b) => ((a.date || '') < (b.date || '') ? 1 : -1)); return r }

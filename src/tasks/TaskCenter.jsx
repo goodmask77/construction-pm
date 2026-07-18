@@ -7,8 +7,8 @@
 import { useState, useEffect, useRef } from "react";
 import { Inbox, LayoutGrid, Columns3, List, CalendarDays, ChartGantt, Network, Plus, X, Check, Flame, Calendar, Clock, CircleAlert, ListTodo, Search, Home, Zap, Hourglass, CirclePlay, Coffee, Pin, ArrowUpDown, FolderPlus, Sun } from "lucide-react";
 import { isWaiting, isBlocked, missingDeps, wouldCycle, mergeTask, removeTaskAndRefs, isQuickWin, QUICK_WIN_MAX_MINUTES, orderTasks } from "./taskModel.js";
-import { uploadPhoto, getSharedPrefix } from "../supa.js";
-import { migrateRecords, diffPersist, subscribeRecords } from "../lib/records.js";
+import { uploadPhoto } from "../supa.js";
+import { loadRecords, migrateRecords, diffPersist, subscribeRecords } from "../lib/records.js";
 
 // 任務附件：可上傳檔案＋直接 Cmd+V 貼截圖（彈窗開著時全域接住貼上）＋縮圖點開放大（App 慣例）
 function TaskAttach({ files = [], onChange, canEdit, C, line }) {
@@ -101,15 +101,12 @@ export default function TaskCenter({ K, confirm, canEdit, cats, onLog, onAddCat,
   const recConf = () => ({ markerKey: K("pm_tasks_v2"), prefix: K("pm_task_"), withOrd: true });
   useEffect(() => { (async () => {
     try {
-      const mark = await window.storage.get(K("pm_tasks_v2"), true);
-      if (mark && mark.value) { // 已遷移 → 逐筆載入，照 ord 排
-        const m = await getSharedPrefix(K("pm_task_"));
-        const list = Object.values(m).map(v => { try { return JSON.parse(v) } catch (_) { return null } }).filter(Boolean).sort((a, b) => (a.ord ?? 0) - (b.ord ?? 0));
-        persistedTasks.current = list; setTasks(list); return;
-      }
-      const r = await window.storage.get(K("pm_tasks"), true);
-      if (r && r.value) { const list = JSON.parse(r.value); setTasks(list); migrateRecords({ ...recConf(), list }).then(() => { persistedTasks.current = list; }).catch(() => {}); return; }
-      // 第一次：把舊 ToDo(pm_issues) 匯入成任務（一次性）
+      // 合併讀（marker=加速器；沒 marker＝舊整包+逐筆檔合併，讀取偶發失敗也不丟資料）
+      const list = await loadRecords({ ...recConf(), legacyKey: K("pm_tasks"), sortBy: (a, b) => (a.ord ?? 0) - (b.ord ?? 0) });
+      if (list.length) { persistedTasks.current = list; setTasks(list); return; }
+      // 完全沒任務：只有「從未建立過」（沒 marker、沒舊 doc）才做一次性 pm_issues 匯入
+      const [mark, legacy] = await Promise.all([window.storage.get(K("pm_tasks_v2"), true), window.storage.get(K("pm_tasks"), true)]);
+      if ((mark && mark.value) || (legacy && legacy.value)) { setTasks([]); return; }
       let imported = [];
       try {
         const ti = await window.storage.get(K("pm_issues"), true);

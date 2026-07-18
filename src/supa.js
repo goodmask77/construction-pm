@@ -90,8 +90,9 @@ export async function getSharedPrefix(prefix) {
     return out
   }
   try {
-    // like 的 % 萬用字元；key 本身只有英數/底線/連字號，不用跳脫
-    const { data } = await dataClient.from('pm_documents').select('id,data').like('id', prefix + '%')
+    // SQL LIKE 的 _ 也是萬用字元（2026-07-18 遷移實測抓到：pm_task_% 誤匹配 pm_tasks）→ 底線要跳脫
+    const pattern = prefix.replace(/[\\%_]/g, (m) => '\\' + m) + '%'
+    const { data } = await dataClient.from('pm_documents').select('id,data').like('id', pattern)
     const out = {}
     ;(data || []).forEach(row => { if (row && row.data && typeof row.data.v === 'string') out[row.id] = row.data.v })
     return out
