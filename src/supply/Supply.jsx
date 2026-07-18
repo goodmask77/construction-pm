@@ -29,6 +29,7 @@ export default function SupplyView({ view, K, canEdit, confirm, showMoney, userN
   const [odSel, setOdSel] = useState(null);      // 叫貨紀錄詳情 orderId
   const [oq, setOq] = useState("");              // 叫貨表搜尋（品項/標籤，比價用）
   const [inspEdit, setInspEdit] = useState(false); // 驗收選項編輯器（新增/改名/刪除/排序）
+  const [fuTxt, setFuTxt] = useState({});        // 問題追蹤：後續紀錄輸入框（odId:idx → 文字）
   const [groups, setGroups] = useState({});     // DD看過的LINE群（pm_group_seen，發送綁定用）
   const flash = (t) => { setMsg(t); setTimeout(() => setMsg(m => (m === t ? null : m)), 6000); };
 
@@ -208,6 +209,98 @@ export default function SupplyView({ view, K, canEdit, confirm, showMoney, userN
             </div>
           </div>
         )}
+        {/* 問題追蹤：驗收有問題的品項集中一頁，追到解決為止（未解決置頂、已解決收合） */}
+        {(() => {
+          const okOpt0 = (db.inspectOpts || ["✓ 正確"])[0];
+          const issues = [];
+          orders.forEach(od => {
+            const chk = od.check; if (!chk || !chk.items) return;
+            od.items.forEach((x, i) => { const ci = chk.items[i]; if (ci && ci.st && ci.st !== okOpt0) issues.push({ od, i, x, ci }); });
+          });
+          if (!issues.length) return null;
+          const FU = ["待處理", "處理中", "已解決"];
+          const stOf = (ci) => (ci.fu && ci.fu.st) || "待處理";
+          const openIs = issues.filter(e => stOf(e.ci) !== "已解決");
+          const doneIs = issues.filter(e => stOf(e.ci) === "已解決");
+          const showDone = !!collapsed.fuDone;
+          // 追蹤狀態/後續紀錄直接寫回該貨單的 check.items[i].fu（單一資料來源，跟貨單明細同步）
+          const setFu = (od, i, patch, logText) => {
+            saveOrders(orders.map(o => {
+              if (o.id !== od.id) return o;
+              const chk = o.check || { items: {} };
+              const ci = chk.items[i] || {};
+              const fu = { ...(ci.fu || {}), ...patch };
+              if (logText) fu.log = [...(fu.log || []), { ts: new Date().toISOString(), by: userName || "—", text: logText }];
+              const items2 = { ...chk.items, [i]: { ...ci, fu } };
+              // 這張單所有問題都解決→狀態自動回「已到貨」；還有未解決→維持「有問題」
+              const anyOpen = o.items.some((_, j) => { const c2 = items2[j]; return c2 && c2.st && c2.st !== okOpt0 && ((c2.fu && c2.fu.st) || "待處理") !== "已解決"; });
+              const st2 = (o.status === "有問題" || o.status === "已到貨") ? (anyOpen ? "有問題" : "已到貨") : o.status;
+              return { ...o, status: st2, check: { ...chk, items: items2 } };
+            }));
+          };
+          const addLog = (e2) => {
+            const k = e2.od.id + ":" + e2.i; const t = (fuTxt[k] || "").trim(); if (!t) return;
+            setFu(e2.od, e2.i, stOf(e2.ci) === "待處理" ? { st: "處理中" } : {}, t); // 有後續紀錄＝至少「處理中」
+            setFuTxt(f => ({ ...f, [k]: "" }));
+          };
+          const row = (e2) => {
+            const { od, i, x, ci } = e2; const k = od.id + ":" + i; const fu = ci.fu || {}; const st = stOf(ci);
+            const baseTs = (od.check && od.check.ts) || od.ts;
+            const days = Math.max(0, Math.floor((Date.now() - new Date(baseTs).getTime()) / 86400000));
+            const late = st !== "已解決" && days >= 3;
+            return (
+              <div key={k} style={{ borderTop: `1px solid #f0ead9`, padding: "7px 0" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12.5, flexWrap: "wrap" }}>
+                  <span style={{ fontFamily: MONOF, fontSize: 11, color: C.sub, width: 44 }}>{new Date(baseTs).toLocaleDateString("zh-TW", { month: "numeric", day: "numeric" })}</span>
+                  <span onClick={() => setOdSel(od.id)} title="點開貨單明細" style={{ fontWeight: 700, color: C.blue, cursor: "pointer", textDecoration: "underline", textUnderlineOffset: 2 }}>{od.vendorName}</span>
+                  <span style={{ fontWeight: 600, color: C.text }}>{x.name}{x.spec ? <span style={{ fontWeight: 400, color: C.sub, fontSize: 11.5 }}>（{x.spec}）</span> : null}</span>
+                  <span style={{ fontSize: 10.5, fontWeight: 700, color: "#fff", background: C.red, borderRadius: 9, padding: "1px 8px" }}>{ci.st}</span>
+                  {ci.note && <span style={{ fontSize: 11.5, color: C.sub }}>「{ci.note}」</span>}
+                  {late && <span style={{ fontSize: 10.5, fontWeight: 700, color: C.red }}>⏰ 拖 {days} 天未解決</span>}
+                  <div style={{ flex: 1 }} />
+                  <span style={{ display: "flex", gap: 4 }}>
+                    {FU.map(o => { const on = st === o; const isDone = o === "已解決"; return (
+                      <button key={o} onClick={() => canEdit && setFu(od, i, { st: o }, on ? "" : (isDone ? "標記已解決" : ""))} disabled={!canEdit}
+                        style={{ border: `1.5px solid ${on ? (isDone ? C.green : C.amber) : "#d9cfbd"}`, background: on ? (isDone ? C.green : C.amber) : "#fff", color: on ? "#fff" : C.sub, borderRadius: 999, padding: "2px 9px", fontSize: 11, fontWeight: on ? 700 : 500, cursor: canEdit ? "pointer" : "default", whiteSpace: "nowrap" }}>{o}</button>
+                    ); })}
+                  </span>
+                </div>
+                {(fu.log || []).length > 0 && (
+                  <div style={{ margin: "4px 0 0 52px" }}>
+                    {(fu.log || []).map((l, li) => (
+                      <div key={li} style={{ fontSize: 11.5, color: C.sub, lineHeight: 1.7 }}>
+                        <span style={{ fontFamily: MONOF, fontSize: 10.5, color: C.faint }}>{new Date(l.ts).toLocaleString("zh-TW", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })}</span>
+                        <span style={{ color: C.faint }}>・{l.by}：</span>{l.text}
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {canEdit && st !== "已解決" && (
+                  <div style={{ display: "flex", gap: 6, margin: "5px 0 0 52px" }}>
+                    <input value={fuTxt[k] || ""} onChange={ev => setFuTxt(f => ({ ...f, [k]: ev.target.value }))} onKeyDown={ev => ev.key === "Enter" && addLog(e2)}
+                      placeholder="後續紀錄（例：7/20 廠商說補送）→ Enter" style={{ ...inp, flex: 1, maxWidth: 420, padding: "4px 8px", fontSize: 11.5 }} />
+                    <button onClick={() => addLog(e2)} style={{ border: `1px solid ${C.line}`, background: "#fff", color: C.sub, borderRadius: 7, padding: "4px 12px", fontSize: 11.5, fontWeight: 600, cursor: "pointer" }}>記一筆</button>
+                  </div>
+                )}
+              </div>
+            );
+          };
+          return (
+            <div style={{ ...box, padding: "10px 14px", borderColor: openIs.length ? C.red : C.hard }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+                <span style={{ fontSize: 13, fontWeight: 700, color: C.text }}>🚩 問題追蹤</span>
+                {openIs.length ? <span style={{ fontSize: 10.5, fontWeight: 700, color: "#fff", background: C.red, borderRadius: 9, padding: "1px 8px" }}>{openIs.length} 筆未解決</span>
+                  : <span style={{ fontSize: 10.5, fontWeight: 700, color: "#fff", background: C.green, borderRadius: 9, padding: "1px 8px" }}>全部解決 ✓</span>}
+                <span style={{ fontSize: 11, color: C.faint }}>驗收有問題的品項自動列在這裡，追到解決為止；點廠商名可回看貨單。</span>
+                <div style={{ flex: 1 }} />
+                {doneIs.length > 0 && <button onClick={() => setCollapsed(c2 => ({ ...c2, fuDone: !showDone }))} style={{ border: "none", background: "none", color: C.sub, fontSize: 11.5, cursor: "pointer" }}>{showDone ? "▾" : "▸"} 已解決 {doneIs.length} 筆</button>}
+              </div>
+              {openIs.map(row)}
+              {openIs.length === 0 && <div style={{ padding: "8px 0", fontSize: 12, color: C.faint, borderTop: `1px solid #f0ead9` }}>目前沒有未解決的問題 🎉</div>}
+              {showDone && doneIs.map(row)}
+            </div>
+          );
+        })()}
         {/* 叫貨紀錄 */}
         {orders.length > 0 && (
           <div style={{ ...box, padding: "10px 14px" }}>
@@ -295,62 +388,6 @@ export default function SupplyView({ view, K, canEdit, confirm, showMoney, userN
                       <div style={{ flex: 1 }} />
                       <span style={{ fontFamily: MONOF, fontWeight: 800, fontSize: 15, color: C.accent }}>{nt2(orderTotal(odDetail))}</span>
                     </div>}
-                  </div>
-                );
-              })()}
-              {/* 草稿：補發送按鈕（發完自動變已送出） */}
-              {odDetail.status === "草稿" && (() => {
-                const v2 = db.vendors.find(x => x.id === odDetail.vendor_id);
-                const text2 = odDetail.text || (`📦 A Beach 101 叫貨單\n【${odDetail.vendorName}】\n` + odDetail.items.map(x => `・${x.name}${x.spec ? " " + x.spec : ""} ×${x.qty} ${x.unit || ""}${x.price ? `＠${d2(Number(x.price))}＝$${d2(Number(x.price) * x.qty)}` : ""}`).join("\n") + `\n──────\n合計 $${d2(orderTotal(odDetail))}` + (odDetail.needDate ? `\n希望到貨：${dz(odDetail.needDate)}` : "") + "\n麻煩核對品項與金額，謝謝！");
-                const markSent = (via) => { saveOrders(orders.map(x => x.id === odDetail.id ? { ...x, status: "已送出", via } : x)); setOdSel(null); };
-                const cell2 = (txt, flexN, opts = {}) => ({ type: "text", text: String(txt), size: "xs", flex: flexN, ...opts });
-                const flex2 = {
-                  type: "flex", altText: text2.slice(0, 390),
-                  contents: { type: "bubble", size: "mega",
-                    header: { type: "box", layout: "vertical", backgroundColor: "#1d1a15", paddingAll: "14px", contents: [
-                      { type: "text", text: "📦 A Beach 101 叫貨單", color: "#ffffff", weight: "bold", size: "md" },
-                      { type: "text", text: `${new Date().getMonth() + 1}/${new Date().getDate()}（${WDZ[new Date().getDay()]}）｜${odDetail.vendorName}`, color: "#d9cfbd", size: "xs", margin: "sm" },
-                    ] },
-                    body: { type: "box", layout: "vertical", spacing: "sm", paddingAll: "14px", contents: [
-                      { type: "box", layout: "horizontal", spacing: "sm", contents: [cell2("品名", 5, { color: "#9b9384", weight: "bold" }), cell2("數量", 2, { color: "#9b9384", align: "end", weight: "bold" }), cell2("單價", 2, { color: "#9b9384", align: "end", weight: "bold" }), cell2("小計", 3, { color: "#9b9384", align: "end", weight: "bold" })] },
-                      { type: "separator", color: "#c8bca6" },
-                      ...odDetail.items.map(x => ({ type: "box", layout: "horizontal", spacing: "sm", contents: [
-                        cell2(x.name + (x.spec ? " " + x.spec : ""), 5, { color: "#1d1a15", wrap: true }),
-                        cell2(`${x.qty}${x.unit || ""}`, 2, { color: "#5a5247", align: "end" }),
-                        cell2(x.price ? d2(Number(x.price)) : "—", 2, { color: "#5a5247", align: "end" }),
-                        cell2(x.price ? "$" + d2(Number(x.price) * x.qty) : "—", 3, { color: "#1d1a15", align: "end", weight: "bold" }),
-                      ] })),
-                      { type: "separator", color: "#c8bca6" },
-                      { type: "box", layout: "horizontal", contents: [
-                        { type: "text", text: "合計", size: "sm", weight: "bold", color: "#c4582a", flex: 3 },
-                        { type: "text", text: "$" + d2(orderTotal(odDetail)), size: "lg", weight: "bold", color: "#c4582a", flex: 5, align: "end" },
-                      ] },
-                      ...(odDetail.needDate ? [{ type: "text", text: "🚚 希望到貨：" + dz(odDetail.needDate), size: "xs", color: "#c4582a", margin: "sm" }] : []),
-                      { type: "text", text: "麻煩核對品項與金額，謝謝！", size: "xxs", color: "#9b9384", margin: "sm", wrap: true },
-                    ] },
-                  },
-                };
-                return (
-                  <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
-                    <button onClick={async () => {
-                      if (!v2?.lineGroupId) { alert("這家廠商還沒綁定群——先用 LINE 分享或複製。"); return; }
-                      const gname = (groups[v2.lineGroupId] || {}).name || v2.lineGroupId;
-                      if (!(await confirm(`把這張草稿發送到「${gname}」？`, { confirmLabel: "發送" }))) return;
-                      try {
-                        const r = await fetch("/api/push", { method: "POST", headers: { "Content-Type": "application/json", "X-API-Key": "ground-pm-2026-secret-abc123" }, body: JSON.stringify({ to: v2.lineGroupId, messages: [flex2] }) });
-                        const d = await r.json();
-                        if (!d.ok) { alert(/monthly limit/i.test(d.error || "") ? "LINE 推播月額度不足。" : "發送失敗：" + (d.error || "未知")); return; }
-                        markSent("D發群"); flash("✓ 草稿已由 DD 發送到「" + gname + "」");
-                      } catch (e) { alert("發送失敗：" + e.message); }
-                    }} style={{ flex: 1, border: "none", background: v2?.lineGroupId ? C.green : "#d5cbb6", color: "#fff", borderRadius: 8, padding: "9px 0", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>🤖 DD 發送</button>
-                    <button onClick={async () => {
-                      try { await navigator.clipboard.writeText(text2); } catch (_) {}
-                      const mobile = /iPhone|iPad|Android/i.test(navigator.userAgent);
-                      markSent(mobile ? "LINE分享" : "複製");
-                      if (mobile) window.open("https://line.me/R/share?text=" + encodeURIComponent(text2));
-                      else flash("💻 已複製叫貨單文字，開 LINE 貼給廠商即可");
-                    }} style={{ flex: 1, border: "none", background: "#06C755", color: "#fff", borderRadius: 8, padding: "9px 0", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>📱 LINE 分享</button>
-                    <button onClick={async () => { try { await navigator.clipboard.writeText(text2); } catch (_) {} markSent("複製"); flash("✓ 已複製叫貨單文字"); }} style={{ flex: 1, border: `1px solid ${C.line}`, background: "#fff", color: C.text, borderRadius: 8, padding: "9px 0", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>📋 複製</button>
                   </div>
                 );
               })()}
