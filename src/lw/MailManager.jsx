@@ -46,11 +46,15 @@ function suggestFor(sd, reviews) {
   if (rv) return { action: rv.choice, why: "你上次對這個網域的覆核", learned: true };
   const f = (sd.from + " " + (sd.name || "")).toLowerCase(), sj = (sd.sample || "").toLowerCase();
   const has = (...ks) => ks.some(k => f.includes(k) || sj.includes(k));
-  if (has("pinterest", "linkedin", "facebook", "instagram", "newsletter", "電子報", "促銷", "優惠", "任務", "points")) return { action: "delete", why: "廣告/社群通知" };
-  if (has("驗證碼", "login", "verification", "登入")) return { action: "delete", why: "登入/驗證信，看過即丟" };
-  if (has("發票", "invoice", "receipt", "帳單", "statement", "收據")) return { action: "move", why: "憑證類，建議分類保存" };
+  // 憑證/政府類優先於行銷判斷（銀行同網域既發帳單也發廣告，先看信件主旨性質）
+  if (has("發票", "invoice", "receipt", "帳單", "statement", "收據", "對帳單", "扣款", "繳費")) return { action: "move", why: "憑證類，建議分類保存" };
   if (has("gov.tw", "勞保", "健保", "國稅", "補貼")) return { action: "keep", why: "政府/法定通知，建議保留" };
-  return null;
+  if (has("驗證碼", "login", "verification", "登入", "otp")) return { action: "delete", why: "登入/驗證信，看過即丟" };
+  if (has("pinterest", "linkedin", "facebook", "instagram", "newsletter", "電子報", "促銷", "優惠", "任務", "points",
+    "信用卡", "神卡", "回饋", "紅利", "好禮", "抽獎", "限時", "活動", "推薦", "貸", "利率", "快訊", "新品", "上市", "折扣", "特價", "vip", "會員專屬")) return { action: "delete", why: "行銷/推廣信" };
+  // 兜底：一定給建議（不再出現空白「—」）
+  if (/no[-_.]?reply|noreply|donotreply/.test(f)) return { action: "delete", why: "系統群發信（no-reply）預設可刪；不對就按保留，我會學起來" };
+  return { action: "keep", why: "來源不明先保留；你覆核一次，之後同網域照你的決定" };
 }
 
 export default function MailManagerView({ K, canEdit, confirm }) {
@@ -285,7 +289,7 @@ export default function MailManagerView({ K, canEdit, confirm }) {
             !scan ? <div style={{ padding: 30, textAlign: "center", color: C.faint, fontSize: 13 }}>還沒掃描過——按右上「🔍 立即掃描」。</div> :
             pendingN === 0 ? <div style={{ padding: 26, textAlign: "center", fontSize: 14, color: C.green, fontWeight: 700 }}>✓ 收件匣的信都有規則接手了 · 昨日自動處理 {ydayMoved} 封</div> : (
               <div>
-                <div style={{ fontSize: 11.5, color: C.faint, marginBottom: 8 }}>這些來源還沒有規則接手。我先給建議（會從你的覆核學），你按一下覆核；確認後可一鍵變通用規則。</div>
+                <div style={{ fontSize: 11.5, color: C.faint, marginBottom: 8 }}>這些來源還沒有規則接手。每列的 💡 是我的建議（有填色的按鈕＝建議動作）；<b>按任一顆按鈕＝覆核</b>（同意就按填色那顆，不同意按別顆，我會學你的決定），按完可一鍵變通用規則。</div>
                 {senders.map(sd => {
                   const open = openFrom === sd.from;
                   const sug = suggestFor(sd, reviews);
