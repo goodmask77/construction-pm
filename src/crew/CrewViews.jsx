@@ -6,13 +6,23 @@ import { ACCENT, PRIMARY, SURFACE, BORDER, TEXT, SUB, MONO, DISP } from "../lib/
 import { K, auditLog } from "../lib/runtime.js";
 import { ROSTER_KEY, loadRosterDoc, saveRosterDoc, saveRosterPatch } from "./roster.js";
 
-// ── 夥伴中心：資料庫 / 知識庫（內外場 SOP、手冊、教學…）─────────────────────────
-const KB_DEFAULT_CATS = ["內場", "外場", "通用", "教育訓練"];
+// ── 夥伴中心：SOP知識庫（2026-07-18 雙維度改造）──────────────────────────────
+// 舊的單一分類「內場/外場/通用/教育訓練」混了兩個維度（前三個是「誰的」、教育訓練是「什麼用途」）
+// → 拆成 適用對象(aud) × 內容類型(dtype) 兩個正交維度；崗位（炸台/早爐…）走 tags，跟排班同一組詞。
+const KB_AUDIENCES = ["內場", "外場", "管理", "全員"];       // 維度1：適用對象
+const KB_TYPES = ["SOP", "工作標準", "教學", "表單", "制度"]; // 維度2：內容類型
+// 舊文件自動歸類（讀到即套用、下次儲存寫回新欄位；不需一次性搬資料）：
+// 內場/外場→照舊；通用/教育訓練/自訂→全員；教育訓練→類型=教學（教育訓練不是分類，是內容類型）
+export const kbDims = (d) => ({
+  aud: d.aud || (d.category === "內場" || d.category === "外場" ? d.category : "全員"),
+  dtype: d.dtype || (d.category === "教育訓練" ? "教學" : "SOP"),
+});
 const kbIcon = (d) => d.kind === "link" ? "🔗" : d.kind === "text" ? "📝" : (d.isImage ? "🖼️" : (/\.pdf$/i.test(d.name || "") ? "📕" : /\.(xls|xlsx|csv)$/i.test(d.name || "") ? "📊" : "📄"));
 export function KnowledgeBaseView({ canEdit, requireLogin, confirm, userName }) {
   const [docs, setDocs] = useState(null);
   const [q, setQ] = useState("");
-  const [catFilter, setCatFilter] = useState("全部");
+  const [audFilter, setAudFilter] = useState("全部");
+  const [typeFilter, setTypeFilter] = useState("全部");
   const [edit, setEdit] = useState(null); // 正在編輯/新增的 doc
   const [busy, setBusy] = useState(false);
   const fileRef = useRef(null);
@@ -28,14 +38,14 @@ export function KnowledgeBaseView({ canEdit, requireLogin, confirm, userName }) 
 
   const persist = async (list) => { try { const p = docs || []; auditLog(list.length > p.length ? "新增" : list.length < p.length ? "刪除" : "編輯", "夥伴中心・知識庫文件"); } catch (_) {} setDocs(list); try { await window.storage.set(K("kb_docs"), JSON.stringify(list), true); } catch (_) {} };
   const guard = () => { if (!canEdit) { requireLogin && requireLogin(); return false; } return true; };
-  const cats = [...new Set([...KB_DEFAULT_CATS, ...(docs || []).map(d => d.category).filter(Boolean)])];
 
-  const blank = () => ({ id: "", category: KB_DEFAULT_CATS[0], title: "", kind: "link", url: "", name: "", content: "", tags: "", pinned: false });
+  const blank = () => ({ id: "", aud: "全員", dtype: "SOP", title: "", kind: "link", url: "", name: "", content: "", tags: "", pinned: false });
   const openNew = () => { if (!guard()) return; setEdit(blank()); };
-  const openEdit = (d) => { if (!guard()) return; setEdit({ ...d, tags: (d.tags || []).join(", ") }); };
+  const openEdit = (d) => { if (!guard()) return; setEdit({ ...d, ...kbDims(d), tags: (d.tags || []).join(", ") }); };
   const saveDoc = () => {
     const e = edit; if (!e.title.trim()) { alert("請填標題"); return; }
-    const doc = { id: e.id || "kb-" + Math.random().toString(36).slice(2, 8), category: e.category, title: e.title.trim(), kind: e.kind, url: e.url || "", name: e.name || "", isImage: !!e.isImage, content: e.content || "", tags: (e.tags || "").split(/[,，]/).map(t => t.trim()).filter(Boolean), pinned: !!e.pinned, updatedBy: userName || "—", updatedAt: new Date().toISOString() };
+    // category 保留寫回（=適用對象；全員寫「通用」）給舊版畫面/D哥相容；新篩選只認 aud/dtype
+    const doc = { id: e.id || "kb-" + Math.random().toString(36).slice(2, 8), aud: e.aud, dtype: e.dtype, category: e.aud === "全員" ? "通用" : e.aud, title: e.title.trim(), kind: e.kind, url: e.url || "", name: e.name || "", isImage: !!e.isImage, content: e.content || "", tags: (e.tags || "").split(/[,，]/).map(t => t.trim()).filter(Boolean), pinned: !!e.pinned, updatedBy: userName || "—", updatedAt: new Date().toISOString() };
     const list = e.id ? (docs || []).map(d => d.id === e.id ? doc : d) : [doc, ...(docs || [])];
     persist(list); setEdit(null);
   };
@@ -50,7 +60,8 @@ export function KnowledgeBaseView({ canEdit, requireLogin, confirm, userName }) 
   };
 
   const filtered = (docs || [])
-    .filter(d => catFilter === "全部" || d.category === catFilter)
+    .filter(d => audFilter === "全部" || kbDims(d).aud === audFilter)
+    .filter(d => typeFilter === "全部" || kbDims(d).dtype === typeFilter)
     .filter(d => { if (!q.trim()) return true; const s = (d.title + " " + (d.tags || []).join(" ") + " " + (d.content || "")).toLowerCase(); return s.includes(q.trim().toLowerCase()); })
     .sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0) || (b.updatedAt || "").localeCompare(a.updatedAt || ""));
 
@@ -60,17 +71,22 @@ export function KnowledgeBaseView({ canEdit, requireLogin, confirm, userName }) 
   return (
     <div>
       <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "6px 0 12px", flexWrap: "wrap" }}>
-        <div style={{ fontSize: 18, fontWeight: 700, color: TEXT }}>📚 資料庫</div>
-        <div style={{ fontSize: 12.5, color: SUB }}>內外場 SOP・手冊・教學（{docs.length}）</div>
+        <div style={{ fontSize: 18, fontWeight: 700, color: TEXT }}>📚 SOP知識庫</div>
+        <div style={{ fontSize: 12.5, color: SUB }}>SOP・工作標準・教學・表單・制度（{docs.length}）</div>
         <div style={{ flex: 1 }} />
         <input value={q} onChange={e => setQ(e.target.value)} placeholder="🔍 搜尋標題／標籤…" style={{ ...inputS, width: 220, maxWidth: "50vw" }} />
         {canEdit && <button onClick={openNew} style={{ border: "none", background: ACCENT, color: "#fff", borderRadius: 8, padding: "8px 16px", fontSize: 13.5, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" }}>＋ 新增</button>}
       </div>
-      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 14 }}>
-        {["全部", ...cats].map(c => (
-          <button key={c} onClick={() => setCatFilter(c)} style={{ border: `1px solid ${catFilter === c ? PRIMARY : BORDER}`, background: catFilter === c ? PRIMARY : "transparent", color: catFilter === c ? "#fff" : TEXT, borderRadius: 16, padding: "4px 12px", fontSize: 12.5, fontWeight: 500, cursor: "pointer" }}>{c}</button>
-        ))}
-      </div>
+      {/* 兩維度篩選：適用對象 × 內容類型（可疊加），同一份文件可同時標「內場＋SOP＋炸台」 */}
+      {[["對象", KB_AUDIENCES, audFilter, setAudFilter], ["類型", KB_TYPES, typeFilter, setTypeFilter]].map(([lab, opts, cur, set]) => (
+        <div key={lab} style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", marginBottom: 8 }}>
+          <span style={{ fontSize: 11.5, color: SUB, fontWeight: 600, width: 30 }}>{lab}</span>
+          {["全部", ...opts].map(c => (
+            <button key={c} onClick={() => set(c)} style={{ border: `1px solid ${cur === c ? PRIMARY : BORDER}`, background: cur === c ? PRIMARY : "transparent", color: cur === c ? "#fff" : TEXT, borderRadius: 16, padding: "4px 12px", fontSize: 12.5, fontWeight: 500, cursor: "pointer" }}>{c}</button>
+          ))}
+        </div>
+      ))}
+      <div style={{ marginBottom: 6 }} />
       {filtered.length === 0 && <div style={{ textAlign: "center", color: "#9b9384", padding: "50px 0", fontSize: 14 }}>{docs.length === 0 ? "還沒有資料，點「＋ 新增」開始建立。" : "沒有符合的資料。"}</div>}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: 12 }}>
         {filtered.map(d => (
@@ -79,7 +95,11 @@ export function KnowledgeBaseView({ canEdit, requireLogin, confirm, userName }) 
               <span style={{ fontSize: 22, lineHeight: 1 }}>{kbIcon(d)}</span>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ fontSize: 14.5, fontWeight: 600, color: TEXT, wordBreak: "break-word" }}>{d.pinned && "📌 "}{d.title}</div>
-                <div style={{ fontSize: 11, color: SUB, marginTop: 2 }}><span style={{ background: "#fbeee6", color: "#92400e", borderRadius: 8, padding: "1px 7px" }}>{d.category}</span>{d.tags?.length > 0 && <span style={{ marginLeft: 6 }}>{d.tags.map(t => "#" + t).join(" ")}</span>}</div>
+                <div style={{ fontSize: 11, color: SUB, marginTop: 2, display: "flex", gap: 4, flexWrap: "wrap", alignItems: "center" }}>
+                  <span style={{ background: "#fbeee6", color: "#92400e", borderRadius: 8, padding: "1px 7px" }}>{kbDims(d).aud}</span>
+                  <span style={{ background: "#ece4d6", color: "#4A4234", borderRadius: 8, padding: "1px 7px" }}>{kbDims(d).dtype}</span>
+                  {d.tags?.length > 0 && <span>{d.tags.map(t => "#" + t).join(" ")}</span>}
+                </div>
               </div>
             </div>
             {d.kind === "text" && d.content && <div style={{ fontSize: 13, color: "#4A4234", whiteSpace: "pre-wrap", wordBreak: "break-word", maxHeight: 140, overflowY: "auto", background: "#FBF7EE", borderRadius: 8, padding: "8px 10px" }}>{d.content}</div>}
@@ -101,11 +121,17 @@ export function KnowledgeBaseView({ canEdit, requireLogin, confirm, userName }) 
             <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
               <div><div style={{ fontSize: 11, color: SUB, marginBottom: 4 }}>標題</div><input value={edit.title} onChange={e => setEdit({ ...edit, title: e.target.value })} style={inputS} placeholder="例：外場點餐 SOP" /></div>
               <div style={{ display: "flex", gap: 10 }}>
-                <div style={{ flex: 1 }}><div style={{ fontSize: 11, color: SUB, marginBottom: 4 }}>分類</div>
-                  <input list="kb-cats" value={edit.category} onChange={e => setEdit({ ...edit, category: e.target.value })} style={inputS} />
-                  <datalist id="kb-cats">{cats.map(c => <option key={c} value={c} />)}</datalist>
+                <div style={{ flex: 1 }}><div style={{ fontSize: 11, color: SUB, marginBottom: 4 }}>適用對象</div>
+                  <select value={edit.aud} onChange={e => setEdit({ ...edit, aud: e.target.value })} style={inputS}>
+                    {KB_AUDIENCES.map(c => <option key={c} value={c}>{c}</option>)}
+                  </select>
                 </div>
-                <div style={{ flex: 1 }}><div style={{ fontSize: 11, color: SUB, marginBottom: 4 }}>類型</div>
+                <div style={{ flex: 1 }}><div style={{ fontSize: 11, color: SUB, marginBottom: 4 }}>內容類型</div>
+                  <select value={edit.dtype} onChange={e => setEdit({ ...edit, dtype: e.target.value })} style={inputS}>
+                    {KB_TYPES.map(c => <option key={c} value={c}>{c}</option>)}
+                  </select>
+                </div>
+                <div style={{ flex: 1 }}><div style={{ fontSize: 11, color: SUB, marginBottom: 4 }}>形式</div>
                   <select value={edit.kind} onChange={e => setEdit({ ...edit, kind: e.target.value })} style={inputS}>
                     <option value="link">🔗 連結</option><option value="file">📎 檔案</option><option value="text">📝 純文字</option>
                   </select>
@@ -119,7 +145,7 @@ export function KnowledgeBaseView({ canEdit, requireLogin, confirm, userName }) 
                   <input ref={fileRef} type="file" style={{ display: "none" }} onChange={e => { uploadFile(e.target.files); e.target.value = ""; }} />
                 </div></div>}
               {edit.kind === "text" && <div><div style={{ fontSize: 11, color: SUB, marginBottom: 4 }}>內容</div><textarea value={edit.content} onChange={e => setEdit({ ...edit, content: e.target.value })} style={{ ...inputS, height: 140, resize: "vertical", fontFamily: "inherit" }} placeholder="直接輸入內容…" /></div>}
-              <div><div style={{ fontSize: 11, color: SUB, marginBottom: 4 }}>標籤（逗號分隔）</div><input value={edit.tags} onChange={e => setEdit({ ...edit, tags: e.target.value })} style={inputS} placeholder="例：點餐, 新人必讀" /></div>
+              <div><div style={{ fontSize: 11, color: SUB, marginBottom: 4 }}>崗位／標籤（逗號分隔；崗位請用跟排班一樣的名稱，例：炸台、早爐）</div><input value={edit.tags} onChange={e => setEdit({ ...edit, tags: e.target.value })} style={inputS} placeholder="例：炸台, 新人必讀" /></div>
               <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: TEXT, cursor: "pointer" }}><input type="checkbox" checked={edit.pinned} onChange={e => setEdit({ ...edit, pinned: e.target.checked })} />📌 置頂</label>
             </div>
             <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 16 }}>
@@ -1078,3 +1104,153 @@ export function CrewRankView() {
   );
 }
 
+
+// ── 獎勵中心：商城＋排行榜合併（2026-07-18 分層重整：兩者同屬「積分激勵」，共用一個入口）──
+export function RewardCenterView(props) {
+  const [sub, setSub] = useState("shop"); // shop | rank
+  const subTab = (k, l) => <button key={k} onClick={() => setSub(k)} style={{ border: `1px solid ${sub === k ? PRIMARY : BORDER}`, background: sub === k ? PRIMARY : "transparent", color: sub === k ? "#fff" : TEXT, borderRadius: 8, padding: "7px 16px", fontSize: 13.5, fontWeight: 600, cursor: "pointer" }}>{l}</button>;
+  return (
+    <div>
+      <div style={{ display: "flex", gap: 8, margin: "6px 0 10px", flexWrap: "wrap" }}>{subTab("shop", "🎁 商城")}{subTab("rank", "🏆 排行榜")}</div>
+      {sub === "shop" ? <ShopView {...props} /> : <CrewRankView />}
+    </div>
+  );
+}
+
+// ── 今日（夥伴中心首頁）：一進來先看「今天與我有關的事」，不再落在空資料庫 ─────────
+// 全部用現有資料組合：訓練(kb_quests)/評鑑(kb_360)/回饋(kb_feedback)/SOP更新(kb_docs)/積分(kb_shop)。
+// 排班資訊等排班系統接上真實資料後再加進來（現在還是虛擬資料，不硬塞）。
+export function CrewTodayView({ userName, isAdmin, setView }) {
+  const [people, setPeople] = useState([]);
+  const [docs, setDocs] = useState(null);
+  const [quests, setQuests] = useState({ quests: [], progress: [] });
+  const [r360, setR360] = useState({ reviews: [] });
+  const [fb, setFb] = useState({ items: [] });
+  const [shop, setShop] = useState({ rewards: [], redemptions: [] });
+  const [me, setMe] = useState("");
+  useEffect(() => {
+    const s = setTimeout(() => setDocs(prev => prev || []), 8000);
+    (async () => {
+      const r = await loadCrewRoster(); setPeople(r); setMe(meFromRoster(r, userName));
+      setDocs(await loadCrewJSON("kb_docs", []));
+      setQuests(await loadCrewJSON("kb_quests", { quests: [], progress: [] }));
+      setR360(await loadCrewJSON("kb_360", { reviews: [] }));
+      setFb(await loadCrewJSON("kb_feedback", { items: [] }));
+      setShop(await loadCrewJSON("kb_shop", { rewards: [], redemptions: [] }));
+    })().finally(() => clearTimeout(s));
+    return () => clearTimeout(s);
+  }, []);
+  if (docs === null) return <div style={{ padding: 40, color: SUB, fontSize: 14 }}>載入中…</div>;
+
+  const now = new Date();
+  const active = people.filter(p => p.status !== "離職");
+  const myRole = (people.find(p => p.id === me) || {}).role;
+  const canManage = isAdmin || canManageRole(myRole);
+  // 我的待辦：未完成訓練關卡、還沒評的夥伴、本週是否給過回饋
+  const activeQuests = (quests.quests || []).filter(q => q.active !== false);
+  const myPendingQuests = me ? activeQuests.filter(q => !(quests.progress || []).some(p => p.questId === q.id && p.userId === me && p.status === "completed")) : [];
+  const myPending360 = me ? active.filter(p => !(r360.reviews || []).some(rv => rv.reviewerId === me && rv.revieweeId === p.id)) : [];
+  const monday = new Date(now); monday.setHours(0, 0, 0, 0); monday.setDate(now.getDate() - ((now.getDay() + 6) % 7));
+  const fbGivenThisWeek = me ? (fb.items || []).some(it => it.fromId === me && new Date(it.ts) >= monday) : false;
+  const myBal = me ? (crewFullBalance(people, fb.items || [], quests, shop)[me] || 0) : null;
+  const recentDocs = [...(docs || [])].sort((a, b) => (b.updatedAt || "").localeCompare(a.updatedAt || "")).slice(0, 5);
+  // 管理者概況：訓練完成率、本週已給回饋人數、待處理兌換
+  const questSlots = activeQuests.length * active.length;
+  const questDone = (quests.progress || []).filter(p => p.status === "completed" && activeQuests.some(q => q.id === p.questId) && active.some(a2 => a2.id === p.userId)).length;
+  const fbGivers = new Set((fb.items || []).filter(it => new Date(it.ts) >= monday).map(it => it.fromId));
+  const pendingRedeem = (shop.redemptions || []).filter(r => r.status === "requested").length;
+
+  const go = (v) => setView && setView(v);
+  const num = (n, label, color, onClick) => (
+    <div onClick={onClick} style={{ background: "#fff", border: `1px solid ${BORDER}`, borderRadius: 12, padding: "12px 14px", cursor: onClick ? "pointer" : "default", flex: 1, minWidth: 120 }}>
+      <div style={{ fontFamily: MONO, fontSize: 24, fontWeight: 800, color, lineHeight: 1.1 }}>{n}</div>
+      <div style={{ fontSize: 11.5, color: SUB, marginTop: 3, fontWeight: 500 }}>{label}</div>
+    </div>
+  );
+  const secT = (t, btnLabel, v) => (
+    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+      <div style={{ fontSize: 14.5, fontWeight: 700, color: TEXT }}>{t}</div>
+      <div style={{ flex: 1 }} />
+      {btnLabel && <button onClick={() => go(v)} style={{ border: "none", background: "none", color: ACCENT, fontSize: 12.5, fontWeight: 600, cursor: "pointer", padding: 0 }}>{btnLabel} →</button>}
+    </div>
+  );
+
+  return (
+    <div>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "6px 0 4px", flexWrap: "wrap" }}>
+        <div style={{ fontSize: 18, fontWeight: 700, color: TEXT }}>🏠 今日</div>
+        <div style={{ fontSize: 12.5, color: SUB }}>{now.toLocaleDateString("zh-TW", { month: "long", day: "numeric", weekday: "long" })}</div>
+      </div>
+      <div style={{ margin: "8px 0 14px" }}><CrewMe people={people} me={me} /></div>
+
+      {/* 摘要數字卡：今天跟我有關的事一眼看完 */}
+      {me && (
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 16 }}>
+          {num(myPendingQuests.length, "待完成訓練", myPendingQuests.length ? ACCENT : "#3C8C3C", () => go("quest"))}
+          {num(myPending360.length, "待回覆評鑑", myPending360.length ? "#C2872E" : "#3C8C3C", () => go("r360"))}
+          {num(fbGivenThisWeek ? "✓" : "0", "本週給出回饋", fbGivenThisWeek ? "#3C8C3C" : "#b3261e", () => go("fb"))}
+          {num(myBal, "我的積分", ACCENT, () => go("reward"))}
+        </div>
+      )}
+      {!fbGivenThisWeek && me && (
+        <div style={{ background: "#FFF7ED", border: "1.5px solid #c98a14", borderRadius: 10, padding: "10px 14px", marginBottom: 14, display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+          <span style={{ fontSize: 13, color: "#7a5410", fontWeight: 600 }}>⏰ 本週還沒給出回饋——花 30 秒鼓勵一位夥伴。</span>
+          <div style={{ flex: 1 }} />
+          <button onClick={() => go("fb")} style={{ border: "none", background: ACCENT, color: "#fff", borderRadius: 8, padding: "6px 14px", fontSize: 12.5, fontWeight: 700, cursor: "pointer" }}>去給回饋 ＋2分</button>
+        </div>
+      )}
+
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(290px, 1fr))", gap: 12 }}>
+        {/* 待完成訓練 */}
+        {me && (
+          <div style={crewCard}>
+            {secT("🎯 待完成訓練", "去闖關", "quest")}
+            {myPendingQuests.length === 0 && <div style={{ fontSize: 13, color: "#3C8C3C" }}>✓ 目前的訓練關卡都完成了</div>}
+            {myPendingQuests.slice(0, 5).map(q => (
+              <div key={q.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 0", borderTop: "1px solid #ece4d6", fontSize: 13.5 }}>
+                <span style={{ color: TEXT, fontWeight: 600 }}>{q.title}</span><div style={{ flex: 1 }} /><span style={{ color: ACCENT, fontWeight: 700 }}>+{q.points}</span>
+              </div>
+            ))}
+            {myPendingQuests.length > 5 && <div style={{ fontSize: 12, color: SUB, marginTop: 4 }}>…還有 {myPendingQuests.length - 5} 關</div>}
+          </div>
+        )}
+        {/* 待回覆評鑑 */}
+        {me && myPending360.length > 0 && (
+          <div style={crewCard}>
+            {secT("⭐ 待回覆評鑑", "去評鑑", "r360")}
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+              {myPending360.slice(0, 10).map(p => <span key={p.id} style={{ fontSize: 12.5, background: "#fbeee6", color: "#92400e", borderRadius: 14, padding: "3px 12px", fontWeight: 600 }}>{p.nick || p.name}</span>)}
+              {myPending360.length > 10 && <span style={{ fontSize: 12, color: SUB, alignSelf: "center" }}>…共 {myPending360.length} 位</span>}
+            </div>
+          </div>
+        )}
+        {/* 最新 SOP / 公告更新 */}
+        <div style={crewCard}>
+          {secT("📚 SOP・公告最新更新", "看全部", "kb")}
+          {recentDocs.length === 0 && <div style={{ fontSize: 13, color: "#9b9384" }}>知識庫還沒有內容。</div>}
+          {recentDocs.map(d => (
+            <div key={d.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 0", borderTop: "1px solid #ece4d6", fontSize: 13 }}>
+              <span style={{ background: "#fbeee6", color: "#92400e", borderRadius: 8, padding: "1px 7px", fontSize: 11, flexShrink: 0 }}>{kbDims(d).aud}</span>
+              <span style={{ background: "#ece4d6", color: "#4A4234", borderRadius: 8, padding: "1px 7px", fontSize: 11, flexShrink: 0 }}>{kbDims(d).dtype}</span>
+              <span style={{ color: TEXT, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{d.title}</span>
+              <div style={{ flex: 1 }} />
+              <span style={{ fontSize: 11, color: "#C8BCA0", flexShrink: 0 }}>{d.updatedAt ? new Date(d.updatedAt).toLocaleDateString("zh-TW") : ""}</span>
+            </div>
+          ))}
+        </div>
+        {/* 管理者概況（組長以上） */}
+        {canManage && (
+          <div style={{ ...crewCard, border: "1.5px solid #c8bca6" }}>
+            {secT("👔 團隊概況（管理）", null, null)}
+            <div style={{ display: "flex", flexDirection: "column", gap: 7, fontSize: 13.5 }}>
+              <div style={{ display: "flex" }}><span style={{ color: SUB }}>訓練完成率</span><div style={{ flex: 1 }} /><span style={{ fontFamily: MONO, fontWeight: 700, color: TEXT }}>{questSlots ? Math.round(questDone / questSlots * 100) + "%" : "—"}<span style={{ color: SUB, fontWeight: 400, fontSize: 11.5 }}>（{questDone}/{questSlots || 0}）</span></span></div>
+              <div style={{ display: "flex" }}><span style={{ color: SUB }}>本週已給回饋</span><div style={{ flex: 1 }} /><span style={{ fontFamily: MONO, fontWeight: 700, color: TEXT }}>{fbGivers.size}<span style={{ color: SUB, fontWeight: 400, fontSize: 11.5 }}>／{active.length} 人</span></span></div>
+              <div style={{ display: "flex", cursor: "pointer" }} onClick={() => go("reward")}><span style={{ color: SUB }}>待處理兌換</span><div style={{ flex: 1 }} /><span style={{ fontFamily: MONO, fontWeight: 700, color: pendingRedeem ? ACCENT : TEXT }}>{pendingRedeem} 筆 →</span></div>
+            </div>
+          </div>
+        )}
+      </div>
+      {!me && <div style={{ marginTop: 14, fontSize: 13, color: SUB, background: "#fff", border: `1px solid ${BORDER}`, borderRadius: 12, padding: 16 }}>登入並綁定夥伴身分後，這裡會顯示你的待完成訓練、待回覆評鑑與積分。</div>}
+    </div>
+  );
+}

@@ -26,10 +26,18 @@ export const SPACE_CONF = {
   crew: {
     showCost: false,
     hideTabs: [],
-    tabs: [["kb", "資料庫", "📚"], ["roster", "名冊", "👥"], ["shift", "排班", "📅"], ["r360", "360評鑑", "⭐"], ["fb", "回饋", "💬"], ["quest", "闖關", "🎮"], ["poll", "投票", "🗳"], ["shop", "商城", "🎁"], ["rank", "排行榜", "🏆"]], // 夥伴中心專屬分頁
-    defaultView: "kb",
+    // 夥伴中心分層重整（張良 2026-07-18）：第一層依「工作目的」分四個主入口，第二層才是功能頁——
+    // 分頁不再全部平鋪一排（人事/訓練/激勵混在一起會越加越長）。groups: [id, 名稱, icon, [第二層 view keys]]
+    groups: [
+      ["g_today", "今日", "🏠", ["ctoday"]],
+      ["g_people", "人員與排班", "👥", ["roster", "shift"]],
+      ["g_sop", "SOP與訓練", "📚", ["kb", "quest"]],
+      ["g_grow", "成長與文化", "🌱", ["r360", "fb", "poll", "reward"]],
+    ],
+    tabs: [["ctoday", "今日", "🏠"], ["roster", "名冊", "👥"], ["shift", "排班", "📅"], ["kb", "SOP知識庫", "📚"], ["quest", "闖關", "🎮"], ["r360", "360評鑑", "⭐"], ["fb", "回饋", "💬"], ["poll", "投票", "🗳"], ["reward", "獎勵中心", "🏆"]], // 商城＋排行榜合併成「獎勵中心」；資料庫改名「SOP知識庫」
+    defaultView: "ctoday", // 一進來先看「今天與我有關的事」，不再落在空資料庫
     hideKpi: true, // 夥伴中心頂部不顯示工程 KPI
-    labels: { cat: "項目", item: "項目", overview: "資料庫", gantt: "進度", subtitle: "夥伴中心" },
+    labels: { cat: "項目", item: "項目", overview: "SOP知識庫", gantt: "進度", subtitle: "夥伴中心" },
     aiRole: "你是餐飲團隊的夥伴中心助理，協助夥伴查找內外場 SOP/手冊/教學等資料、解答工作問題。請用繁體中文、親切清楚。",
   },
   finance: {
@@ -82,15 +90,15 @@ export const PERM_MATRIX = {
     ["advisor", "AI設定", { edit: 1 }],
   ],
   crew: [
-    ["kb", "資料庫", { edit: 1 }],
+    ["ctoday", "今日", {}],
+    ["kb", "SOP知識庫", { edit: 1 }],
     ["roster", "名冊", { edit: 1 }],
     ["shift", "排班", { edit: 1 }],
     ["r360", "360評鑑", { edit: 1 }],
     ["fb", "回饋", { edit: 1 }],
     ["quest", "闖關", { edit: 1 }],
     ["poll", "投票", { edit: 1 }],
-    ["shop", "商城", { edit: 1 }],
-    ["rank", "排行榜", {}],
+    ["reward", "獎勵中心", { edit: 1 }], // 原 商城(shop)＋排行榜(rank) 合併；舊權限勾選由 VIEW_PERM_ALIAS 相容
   ],
   finance: [
     ["fin_ov", "總覽", { money: 1 }],
@@ -108,7 +116,9 @@ export const PERM_MATRIX = {
   ],
 };
 // 舊資料相容：以前的可編輯權限只有 data/files/advisor 三類，對應到各頁
-export const LEGACY_EDIT = { overview: "data", gantt: "data", petty: "data", issues: "data", owner: "data", groups: "data", kb: "data", r360: "data", fb: "data", quest: "data", poll: "data", shop: "data", rank: "data", finance: "data", files: "files", compare: "files", advisor: "advisor" };
+export const LEGACY_EDIT = { overview: "data", gantt: "data", petty: "data", issues: "data", owner: "data", groups: "data", kb: "data", r360: "data", fb: "data", quest: "data", poll: "data", shop: "data", rank: "data", reward: "data", finance: "data", files: "files", compare: "files", advisor: "advisor" };
+// 分頁改組相容：新頁 key → 舊頁 key 清單（帳號權限若勾過舊頁，視同勾了新頁）。例：獎勵中心=舊商城+排行榜
+export const VIEW_PERM_ALIAS = { reward: ["shop", "rank"] };
 export const PERM_NONE = "__none__"; // 哨兵：陣列＝[PERM_NONE] 代表「明確全關」(與空陣列＝預設全開 區分)
 // 預設身份範本（連動式）。陣列規則同矩陣：[]＝全開、[PERM_NONE]＝全關、其餘＝明確允許清單。
 export const DEFAULT_ROLES = [

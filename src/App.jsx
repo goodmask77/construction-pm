@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback, useMemo, Fragment } from "rea
 import { uploadPhoto, deletePhotoFile, supabase, getSharedMany, getSharedPrefix, hasSession, listSharedIds } from "./supa.js";
 import { fmt, baseAmount, taxOf, estAmount, paidOf, unpaidOf, calcEstimated, calcActual, pretaxOf, isTaxable, catRawEst, catPretaxSub, catDiscount, catEstAfter, catSaved, catItemEstAfter, PAY_CATEGORIES, catPaid, catItemPaidMap, catUnpaidAfter, isFundingCat, pettyItemOf, withPettyItems, projectTotals } from "./lib/cost.js";
 import { INITIAL_CATEGORIES } from "./lib/seed.js";
-import { SPACES, SPACE_CONF, PERM_MATRIX, LEGACY_EDIT, PERM_NONE, DEFAULT_ROLES, ALL_VIEW_KEYS, ALL_EDIT_KEYS, ALL_MONEY_KEYS } from "./lib/spaces.js";
+import { SPACES, SPACE_CONF, PERM_MATRIX, LEGACY_EDIT, PERM_NONE, DEFAULT_ROLES, ALL_VIEW_KEYS, ALL_EDIT_KEYS, ALL_MONEY_KEYS, VIEW_PERM_ALIAS } from "./lib/spaces.js";
 import { buildBotSnapshot } from "./lib/snapshot.js";
 import FinanceView from "./finance/Finance.jsx";
 import MailManagerView from "./lw/MailManager.jsx";
@@ -14,7 +14,7 @@ import SequenceView from "./SequenceView.jsx";
 import { LayoutDashboard, ClipboardList, CheckSquare, CalendarDays, Pin as PinIcon, FolderOpen, Wallet, Scale, Settings as SettingsIcon, Bot, Megaphone, MessagesSquare, Users as UsersIcon, ScrollText, LifeBuoy, Lock as LockIcon, Gauge, Bell, KeyRound, Mail as MailIcon } from "lucide-react";
 import { BRAND, ACCENT, PRIMARY, BG, SURFACE, BORDER, LINE2, TEXT, SUB, ACCENT_SOFT, DARKCHIP, MONO, DISP, SEM, GOLD, HEAD_BG, HEAD_LINE, HEAD_SUB, HEAD_CHIP, SecHead, MOBILE_BP, useIsMobile } from "./lib/theme.jsx";
 import { GLOBAL_KEYS, CURRENT_SPACE, K, switchSpace, CURRENT_USER, setCurrentUser, auditLog, conf, CAN_VIEW_MONEY, setCanViewMoney, showMoney, ADMIN_USER, maskAccount, L } from "./lib/runtime.js";
-import { KnowledgeBaseView, RosterView, Review360View, FeedbackView, QuestView, PollView, ShopView, CrewRankView } from "./crew/CrewViews.jsx";
+import { KnowledgeBaseView, RosterView, Review360View, FeedbackView, QuestView, PollView, RewardCenterView, CrewTodayView } from "./crew/CrewViews.jsx";
 import { STATUS_MAP, markCatDone } from "./lib/status.js";
 import { DEFAULT_LINE_GROUP, notifyLineEvent } from "./lib/line.js";
 import { callAI } from "./lib/ai.js";
@@ -643,16 +643,18 @@ export default function App() {
   // 預設「全開」，admin 在權限頁逐項取消才會關閉（空陣列＝全部允許）。未登入訪客一律唯讀但可看。
   // 舊財務單頁相容：以前財務空間只有一頁 finance:finance，攤平後拆成 fin_* 六頁；舊勾選視同六頁全勾
   const legacyFin = (arr, sp, pg) => sp === "finance" && String(pg).startsWith("fin_") && arr.includes("finance:finance");
+  // 分頁改組相容：新頁承接舊頁的勾選（例：crew:reward 承接 crew:shop / crew:rank）
+  const aliasOK = (arr, sp, pg) => (VIEW_PERM_ALIAS[pg] || []).some(old => arr.includes(`${sp}:${old}`) || arr.includes(old));
   const viewOK = (sp, pg) => {
     if (isAdmin) return true;
     if (!_vp.length) return true;                                   // 未設＝全可見
-    return _vp.includes(`${sp}:${pg}`) || _vp.includes(pg) || legacyFin(_vp, sp, pg); // 中者＝舊裸key相容
+    return _vp.includes(`${sp}:${pg}`) || _vp.includes(pg) || legacyFin(_vp, sp, pg) || aliasOK(_vp, sp, pg); // 中者＝舊裸key相容
   };
   const editOK = (sp, pg) => {
     if (isAdmin || isManager) return true;
     if (!profile) return false;                                     // 未登入訪客：唯讀
     if (!_ep.length) return true;                                   // 登入者未設＝預設可編輯（全開）
-    return _ep.includes(`${sp}:${pg}`) || _ep.includes(LEGACY_EDIT[pg]) || legacyFin(_ep, sp, pg); // 含舊資料相容
+    return _ep.includes(`${sp}:${pg}`) || _ep.includes(LEGACY_EDIT[pg]) || legacyFin(_ep, sp, pg) || aliasOK(_ep, sp, pg); // 含舊資料相容
   };
   const moneyOK = (sp, pg) => {
     if (isAdmin || isManager) return true;
@@ -668,6 +670,7 @@ export default function App() {
   // 可見空間（admin 全開；未設＝全開）；可見頁面＝目前空間中通過 viewOK 的頁面清單
   const allowedSpaces = isAdmin ? SPACES.map(s => s.id) : (eff?.spaces?.length ? eff.spaces : SPACES.map(s => s.id));
   const allowedViewPages = isAdmin ? null : (!_vp.length ? null : (PERM_MATRIX[CURRENT_SPACE] || []).map(r => r[0]).filter(pg => viewOK(CURRENT_SPACE, pg)));
+  const pageVisibleMain = (v) => v === "settings" || v === "ctoday" || !allowedViewPages || allowedViewPages.includes(v) || v === "owner"; // 今日/儀表板/設定一律可見
   const canEditData = editOK(CURRENT_SPACE, view);   // 目前頁面是否可編輯（內容）
   const canEditWorklog = canEditData;
   const canEditFiles = canEditData;                  // files/compare 各為獨立 view，editOK(view) 已正確
@@ -831,6 +834,23 @@ export default function App() {
 
       {/* MAIN */}
       <div style={{ padding: isMobile ? "0 12px 84px" : "0 16px 80px" }}>
+        {/* 手機版：主入口的第二層子分頁列（桌機版在 TopNav 第二排；底部導覽只放四個主入口） */}
+        {isMobile && conf().groups && (() => {
+          const vis = (t) => !conf().hideTabs.includes(t) && pageVisibleMain(t);
+          const g = conf().groups.map(([, , , ts]) => ts.filter(vis)).find(ts => ts.includes(view));
+          if (!g || g.length < 2) return null;
+          const lbl = Object.fromEntries((conf().tabs || []).map(t => [t[0], t]));
+          return (
+            <div style={{ display: "flex", gap: 6, overflowX: "auto", padding: "10px 2px 2px" }}>
+              {g.map(t => { const on = view === t; const [, l, ic] = lbl[t] || [t, t, ""]; return (
+                <button key={t} onClick={() => setView(t)} style={{ flexShrink: 0, border: `1px solid ${on ? PRIMARY : BORDER}`, background: on ? PRIMARY : "#fff", color: on ? "#fff" : TEXT, borderRadius: 16, padding: "6px 14px", fontSize: 13, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" }}>{ic} {l}</button>
+              ); })}
+            </div>
+          );
+        })()}
+        {view === "ctoday" && (
+          <CrewTodayView userName={userName} isAdmin={isAdmin} setView={setView} />
+        )}
         {view === "kb" && (
           <KnowledgeBaseView canEdit={canEditData} requireLogin={denyEdit} confirm={confirm} userName={userName} />
         )}
@@ -852,11 +872,8 @@ export default function App() {
         {view === "poll" && (
           <PollView canEdit={canEditData} requireLogin={denyEdit} confirm={confirm} isAdmin={isAdmin} userName={userName} />
         )}
-        {view === "shop" && (
-          <ShopView canEdit={canEditData} requireLogin={denyEdit} confirm={confirm} isAdmin={isAdmin} userName={userName} />
-        )}
-        {view === "rank" && (
-          <CrewRankView />
+        {view === "reward" && (
+          <RewardCenterView canEdit={canEditData} requireLogin={denyEdit} confirm={confirm} isAdmin={isAdmin} userName={userName} />
         )}
         {view === "owner" && settings && (
           <OwnerDashboard cats={displayCats} setCats={setCatsLogged} settings={settings} stalledItems={stalledItems} activityLog={activityLog} logActivity={logActivity} userName={userName} isAdmin={isAdmin} journal={journal} events={events} plans={plans} petty={petty} totalPaid={totalPaid} pettyInCats={true} />
@@ -1011,13 +1028,16 @@ export default function App() {
 // CompareView（估價單比價）已抽到 ./construction/ConstructionViews.jsx（拆檔第二刀，2026-07-18）
 // ── BOTTOM NAV (手機) ───────────────────────────────────────────────────────
 function BottomNav({ view, setView, isAdmin, allowedViewPages }) {
-  const pageVisible = (v) => v === "settings" || !allowedViewPages || allowedViewPages.includes(v) || v === "owner";
+  const pageVisible = (v) => v === "settings" || v === "ctoday" || !allowedViewPages || allowedViewPages.includes(v) || v === "owner";
   // 設定已移到第一層（TopNav 空間列尾端的 ⚙），底部導覽不再放設定
-  const tabs = (conf().tabs || [["owner", "儀表板", "📊"], ["overview", L("overview"), "📋"], ["tasks", "任務", "✅"], ["gantt", L("gantt"), "📅"], ["conclusions", "結論", "📌"], ["files", "檔案庫", "📁"], ...(conf().showCost ? [["petty", "零用金", "💵"]] : []), ["compare", "比價", "⚖️"]]).filter(([v]) => !conf().hideTabs.includes(v) && pageVisible(v));
+  // 有 groups 的空間（夥伴中心）：底部只放四個主入口，點入口跳該組第一頁；組內子分頁在內容區上方切
+  const tabs = conf().groups
+    ? conf().groups.map(([gid, gl, gi, ts]) => { const vis = ts.filter(t => !conf().hideTabs.includes(t) && pageVisible(t)); return vis.length ? [vis[0], gl, gi, vis] : null; }).filter(Boolean)
+    : (conf().tabs || [["owner", "儀表板", "📊"], ["overview", L("overview"), "📋"], ["tasks", "任務", "✅"], ["gantt", L("gantt"), "📅"], ["conclusions", "結論", "📌"], ["files", "檔案庫", "📁"], ...(conf().showCost ? [["petty", "零用金", "💵"]] : []), ["compare", "比價", "⚖️"]]).filter(([v]) => !conf().hideTabs.includes(v) && pageVisible(v));
   return (
     <div style={{ position: "fixed", left: 0, right: 0, bottom: 0, height: 60, background: "rgba(255,255,255,0.96)", backdropFilter: "blur(10px)", WebkitBackdropFilter: "blur(10px)", borderTop: `1px solid ${BORDER}`, boxShadow: "0 -2px 14px rgba(0,0,0,0.08)", display: "flex", zIndex: 350, paddingBottom: "env(safe-area-inset-bottom)" }}>
-      {tabs.map(([v, l, icon]) => {
-        const on = v === "settings" ? ["settings", "advisor", "groups", "accounts", "audit", "vault"].includes(view) : view === v;
+      {tabs.map(([v, l, icon, groupTabs]) => {
+        const on = groupTabs ? groupTabs.includes(view) : (v === "settings" ? ["settings", "advisor", "groups", "accounts", "audit", "vault"].includes(view) : view === v);
         return (
           <button key={v} onClick={() => setView(v === "settings" ? "advisor" : v)} title={l} className={v === "issues" && !on ? "todo-glow" : undefined} style={{ flex: 1, minHeight: 44, border: "none", borderRadius: v === "issues" ? 10 : 0, background: "none", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 3, cursor: "pointer", color: on ? ACCENT : (v === "issues" ? "#D97706" : SUB), fontWeight: on ? 700 : (v === "issues" ? 700 : 500), padding: 0 }}>
             <span style={{ fontSize: 19, lineHeight: 1, filter: on ? "none" : "grayscale(0.4) opacity(0.85)" }}>{icon}</span>
@@ -1088,7 +1108,7 @@ function TopNav({ view, setView, saving, totalEstimated, totalPaid, doneCount, c
   const totalUnpaid = totalEstimated - totalPaid;
   const payPct = totalEstimated > 0 ? Math.round(totalPaid / totalEstimated * 100) : 0;
   const spaceVisible = (id) => !allowedSpaces || allowedSpaces.includes(id);
-  const pageVisible = (v) => v === "settings" || !allowedViewPages || allowedViewPages.includes(v) || v === "owner"; // 儀表板一律可見；設定永遠可見(內含子分頁各自控管)
+  const pageVisible = (v) => v === "settings" || v === "ctoday" || !allowedViewPages || allowedViewPages.includes(v) || v === "owner"; // 儀表板/今日一律可見；設定永遠可見(內含子分頁各自控管)
   const SETTINGS_GRP = ["settings", "advisor", "mail", "groups", "accounts", "audit", "vault", "history", "changelog", "usage"];
   const tabActive = (v) => v === "settings" ? SETTINGS_GRP.includes(view) : view === v;
   const settingsOn = SETTINGS_GRP.includes(view);
@@ -1148,13 +1168,37 @@ function TopNav({ view, setView, saving, totalEstimated, totalPaid, doneCount, c
         </div>
       </div>
       {/* view tabs — boxed editorial（手機隱藏，改用底部導覽）；設定開著時第二層換成「設定子分頁」（同樣排版樣式） */}
-      {!isMobile && !settingsOn && (
-      <div style={{ display: "flex", gap: 8, paddingBottom: 12, flexWrap: "wrap" }}>
-        {(conf().tabs || [["owner","儀表板"],["overview",L("overview")],["tasks","任務"],["gantt",L("gantt")],["conclusions","結論"],["files","檔案庫"],...(conf().showCost?[["petty","零用金"]]:[]),["compare","比價"]]).filter(([v]) => !conf().hideTabs.includes(v) && pageVisible(v)).map(([v,l]) => { const act = tabActive(v); const NavI = NAV_ICONS[v]; return (
-          <button key={v} onClick={() => setView(v === "settings" ? "advisor" : v)} style={{ display: "inline-flex", alignItems: "center", gap: 7, padding: "8px 15px", borderRadius: 7, border: `1.5px solid ${act ? PRIMARY : "#c8bca6"}`, cursor: "pointer", fontSize: 14, fontWeight: act ? 700 : 500, background: act ? PRIMARY : HEAD_CHIP, color: act ? "#fff" : TEXT, transition: "all .12s" }}>{NavI && <NavI size={15} strokeWidth={1.75} />}{String(l).replace(/^[^一-鿿A-Za-z0-9]+\s*/, "")}</button>
-        ); })}
-      </div>
-      )}
+      {!isMobile && !settingsOn && (() => {
+        const tabBtn = (v, l, act, onClick, small) => { const NavI = NAV_ICONS[v]; return (
+          <button key={v} onClick={onClick} style={{ display: "inline-flex", alignItems: "center", gap: 7, padding: small ? "6px 13px" : "8px 15px", borderRadius: 7, border: `1.5px solid ${act ? PRIMARY : "#c8bca6"}`, cursor: "pointer", fontSize: small ? 13 : 14, fontWeight: act ? 700 : 500, background: act ? PRIMARY : HEAD_CHIP, color: act ? "#fff" : TEXT, transition: "all .12s" }}>{NavI && <NavI size={15} strokeWidth={1.75} />}{String(l).replace(/^[^一-鿿A-Za-z0-9]+\s*/, "")}</button>
+        ); };
+        // 有 groups 的空間（夥伴中心）：第一層＝四個主入口，第二層＝該入口的功能頁；第一層永遠只有四個，不隨功能增加變長
+        if (conf().groups) {
+          const vis = (t) => !conf().hideTabs.includes(t) && pageVisible(t);
+          const lbl = Object.fromEntries((conf().tabs || []).map(t => [t[0], t]));
+          const gs = conf().groups.map(([gid, gl, gi, ts]) => ({ gid, gl, gi, ts: ts.filter(vis) })).filter(g => g.ts.length);
+          const active = gs.find(g => g.ts.includes(view));
+          return (<>
+            <div style={{ display: "flex", gap: 8, paddingBottom: active && active.ts.length > 1 ? 8 : 12, flexWrap: "wrap" }}>
+              {gs.map(g => { const act = g === active; return (
+                <button key={g.gid} onClick={() => !act && setView(g.ts[0])} style={{ display: "inline-flex", alignItems: "center", gap: 7, padding: "8px 15px", borderRadius: 7, border: `1.5px solid ${act ? PRIMARY : "#c8bca6"}`, cursor: "pointer", fontSize: 14, fontWeight: act ? 700 : 500, background: act ? PRIMARY : HEAD_CHIP, color: act ? "#fff" : TEXT, transition: "all .12s" }}><span>{g.gi}</span>{g.gl}</button>
+              ); })}
+            </div>
+            {active && active.ts.length > 1 && (
+              <div style={{ display: "flex", gap: 6, paddingBottom: 12, flexWrap: "wrap" }}>
+                {active.ts.map(t => { const [, l, ic] = lbl[t] || [t, t, ""]; const act = view === t; return (
+                  <button key={t} onClick={() => setView(t)} style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "5px 13px", borderRadius: 15, border: `1px solid ${act ? PRIMARY : "#c8bca6"}`, cursor: "pointer", fontSize: 13, fontWeight: act ? 700 : 500, background: act ? PRIMARY : "transparent", color: act ? "#fff" : "#4A4234", transition: "all .12s" }}>{ic} {l}</button>
+                ); })}
+              </div>
+            )}
+          </>);
+        }
+        return (
+        <div style={{ display: "flex", gap: 8, paddingBottom: 12, flexWrap: "wrap" }}>
+          {(conf().tabs || [["owner","儀表板"],["overview",L("overview")],["tasks","任務"],["gantt",L("gantt")],["conclusions","結論"],["files","檔案庫"],...(conf().showCost?[["petty","零用金"]]:[]),["compare","比價"]]).filter(([v]) => !conf().hideTabs.includes(v) && pageVisible(v)).map(([v,l]) => tabBtn(v, l, tabActive(v), () => setView(v === "settings" ? "advisor" : v)))}
+        </div>
+        );
+      })()}
       {!isMobile && settingsOn && (
       <div style={{ display: "flex", gap: 8, paddingBottom: 12, flexWrap: "wrap" }}>
         {[["advisor", "AI設定"], ["changelog", "更新"], ...(isAdmin ? [["mail", "郵件管理"], ["groups", "群組"], ["accounts", "帳號"], ["audit", "紀錄"], ["history", "還原點"], ["usage", "用量"], ["vault", "金庫"]] : [])].filter(([k]) => k !== "advisor" || allowedViewPages == null || allowedViewPages.includes("advisor")).map(([k, l]) => { const act = view === k; const SubI = SUB_ICONS[k]; return (
