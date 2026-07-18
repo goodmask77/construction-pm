@@ -336,7 +336,7 @@ export default function WeekBoard({ K, storeId, canEdit, confirm, userName, isMo
       {/* 本週請假登記（已核准 = 硬條件 §23） */}
       <div style={card}>
         <SecHead tag="LEAVE" title="請假／不可排（本週）" right={canEdit && <button style={btn(false)} onClick={() => saveLeaves([...leaves, { id: "lv-" + Math.random().toString(36).slice(2, 8), staffId: staffRows[0]?.id, date: weekStart, from: "00:00", to: "24:00", type: "特休", status: "approved", approver: userName || "", seed: "" }])}><Plus size={12} /> 登記</button>} />
-        {leaves.filter(l => l.date >= weekStart && l.date <= addDays(weekStart, 6)).map(l => (
+        {leaves.filter(l => l.date >= weekStart && l.date <= addDays(weekStart, 6)).sort((a, b) => a.date.localeCompare(b.date)).map(l => (
           <div key={l.id} style={{ display: "flex", gap: 6, alignItems: "center", marginBottom: 4, fontSize: 12.5, flexWrap: "wrap" }}>
             <select disabled={!canEdit} style={inp} value={l.staffId} onChange={e => saveLeaves(leaves.map(x => x.id === l.id ? { ...x, staffId: e.target.value } : x))}>{staffRows.map(p => <option key={p.id} value={p.id}>{p.nick || p.name}</option>)}</select>
             <input type="date" disabled={!canEdit} style={inp} value={l.date} onChange={e => saveLeaves(leaves.map(x => x.id === l.id ? { ...x, date: e.target.value } : x))} />

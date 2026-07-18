@@ -1,6 +1,6 @@
 // 排班系統（夥伴中心・排班）— 四頁：人員與能力 / 班別與需求 / 排班條件 / 週班表
 // 資料：pm_documents 文件式（DOC_KEYS），demo 資料帶 seed 批次可整批清除
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback, Fragment } from "react";
 import {
   DOC_KEYS, SCHEMA_V, SEED_BATCH, schedKey,
   SEED_STORES, SEED_STAFF, SEED_SKILLS, SEED_STATIONS, SEED_SHIFTS, SEED_DEMANDS, SEED_LEAVES,
@@ -127,8 +127,10 @@ export default function ShiftView({ K, canEdit, confirm, userName, isAdmin, onLo
 }
 
 // ═══ 頁 1：人員與能力（§H35）═══
+const DEPT_ORDER = ["內場", "外場", "管理"];
 function PeoplePage({ staffDoc, stationsDoc, storeId, canEdit, confirm, isMobile, K, saveStaff, saveStations }) {
   const [editId, setEditId] = useState(null);
+  const [rowDrag, setRowDrag] = useState(null); // 人員列拖曳排序（與週班表共用同一份順序）
   // 從名冊同步（張良 2026-07-18：排班人員全部對照名冊內外場；可重複按，不會蓋掉手動調過的技能/班數/不可排）
   const syncRoster = async () => {
     try {
@@ -146,6 +148,20 @@ function PeoplePage({ staffDoc, stationsDoc, storeId, canEdit, confirm, isMobile
   const staff = (staffDoc.staff || []).filter(p => (p.stores || []).includes(storeId));
   const stations = (stationsDoc.stations || []).filter(s => s.storeId === storeId);
   const skills = stationsDoc.skills || {};
+  // 內外場分區塊（跟週班表同一套順序）；區塊內順序＝人員檔順序（⠿ 可拖曳）
+  const groups = [
+    ...DEPT_ORDER.map(d => ({ dept: d, rows: staff.filter(p => p.dept === d) })),
+    { dept: "其他", rows: staff.filter(p => !DEPT_ORDER.includes(p.dept)) },
+  ].filter(g => g.rows.length);
+  const orderedStaff = groups.flatMap(g => g.rows);
+  const dropRow = (targetId) => {
+    if (!rowDrag || rowDrag === targetId) { setRowDrag(null); return; }
+    const list = [...staffDoc.staff];
+    const fi = list.findIndex(x => x.id === rowDrag), ti = list.findIndex(x => x.id === targetId);
+    if (fi < 0 || ti < 0) { setRowDrag(null); return; }
+    const [m] = list.splice(fi, 1); list.splice(ti, 0, m);
+    saveStaff({ ...staffDoc, staff: list }); setRowDrag(null);
+  };
   // 單點故障：主力僅 1 人的崗位（§35）
   const spof = useMemo(() => new Set(stations.filter(st => staff.filter(p => skills[p.id]?.[st.id] === "main").length === 1).map(st => st.id)), [stations, staff, skills]);
   const cycleSkill = (pid, stId) => {
@@ -173,9 +189,14 @@ function PeoplePage({ staffDoc, stationsDoc, storeId, canEdit, confirm, isMobile
         <div style={{ overflowX: "auto" }}>
           <table style={{ borderCollapse: "collapse", width: "100%", fontSize: 12.5 }}>
             <thead><tr style={{ color: T.SUB, textAlign: "left" }}>{["暱稱/姓名", "部門", "職級", "員編", "出生年", "期望班數", "成本係數", "固定不可排", "加班意願", ""].map(h => <th key={h} style={{ padding: "4px 8px", borderBottom: `1px solid ${T.BORDER}`, whiteSpace: "nowrap" }}>{h}</th>)}</tr></thead>
-            <tbody>{staff.map(p => (
-              <tr key={p.id} style={{ borderBottom: `1px solid ${T.BORDER}` }}>
-                <td style={{ padding: "5px 8px", fontWeight: 700, whiteSpace: "nowrap" }}>{p.nick || p.name}<span style={{ color: T.SUB, fontWeight: 400, marginLeft: 6, fontSize: 11 }}>{p.nick ? p.name : ""}</span></td>
+            <tbody>{groups.map(g => (
+              <Fragment key={g.dept}>
+                <tr><td colSpan={10} style={{ padding: "6px 8px", background: T.SOFT, fontWeight: 800, color: T.ACCENT, borderTop: `2px solid ${T.LINE2}` }}>{g.dept}（{g.rows.length} 人）</td></tr>
+                {g.rows.map(p => (
+              <tr key={p.id} style={{ borderBottom: `1px solid ${T.BORDER}`, background: rowDrag === p.id ? T.SOFT : "transparent" }}>
+                <td onDragOver={e => { if (rowDrag) e.preventDefault(); }} onDrop={() => dropRow(p.id)} style={{ padding: "5px 8px", fontWeight: 700, whiteSpace: "nowrap" }}>
+                  {canEdit && <span draggable onDragStart={() => setRowDrag(p.id)} onDragEnd={() => setRowDrag(null)} title="拖曳調整順序（週班表同步）" style={{ cursor: "grab", color: T.LINE2, marginRight: 5, userSelect: "none" }}>⠿</span>}
+                  {p.nick || p.name}<span style={{ color: T.SUB, fontWeight: 400, marginLeft: 6, fontSize: 11 }}>{p.nick ? p.name : ""}</span></td>
                 <td style={{ padding: "5px 8px" }}>{p.dept}</td>
                 <td style={{ padding: "5px 8px" }}><span style={chip(p.grade === "管理" ? T.TEXT : p.grade === "正職" ? T.BLUE : p.grade === "週末PT" ? T.AMBER : T.GREY)}>{p.grade}</span></td>
                 <td style={{ padding: "5px 8px", fontFamily: T.MONO }}>{p.empNo}</td>
@@ -192,10 +213,11 @@ function PeoplePage({ staffDoc, stationsDoc, storeId, canEdit, confirm, isMobile
                   {canEdit && <button style={{ ...btn(false), padding: "3px 8px", fontSize: 12 }} onClick={() => setEditId(p.id)}>編輯</button>}
                   {canEdit && <button style={{ ...btn(false), padding: "3px 8px", fontSize: 12, marginLeft: 4, color: T.RED }} onClick={async () => { if (await confirm(`刪除 ${p.nick || p.name}？（不影響歷史班表顯示）`)) saveStaff({ ...staffDoc, staff: staffDoc.staff.filter(x => x.id !== p.id) }); }}><Trash2 size={12} /></button>}
                 </td>
-              </tr>))}</tbody>
+              </tr>))}
+              </Fragment>))}</tbody>
           </table>
         </div>
-        <div style={{ color: T.SUB, fontSize: 11.5, marginTop: 8 }}>※ 目前為示範資料（seed: {SEED_BATCH}）。不存身分證/勞健保/實際薪資 — 成本係數為相對值。</div>
+        <div style={{ color: T.SUB, fontSize: 11.5, marginTop: 8 }}>※ 人員來自名冊（⟳ 可重新同步）。不存身分證/勞健保/實際薪資 — 成本係數為相對值。拖 ⠿ 調順序，週班表同步。</div>
       </div>
 
       {editP && <EditStaffModal p={editP} onClose={() => setEditId(null)} upd={upd} />}
@@ -208,14 +230,18 @@ function PeoplePage({ staffDoc, stationsDoc, storeId, canEdit, confirm, isMobile
               <th style={{ padding: "4px 8px", textAlign: "left", color: T.SUB }}>人員＼崗位</th>
               {stations.map(st => <th key={st.id} style={{ padding: "4px 6px", color: spof.has(st.id) ? T.RED : T.SUB, whiteSpace: "nowrap" }}>{st.code}{spof.has(st.id) && <span title="單點故障：主力僅 1 人"> ⚠</span>}</th>)}
             </tr></thead>
-            <tbody>{staff.map(p => (
+            <tbody>{groups.map(g => (
+              <Fragment key={g.dept}>
+                <tr><td colSpan={stations.length + 1} style={{ padding: "5px 8px", background: T.SOFT, fontWeight: 800, color: T.ACCENT, borderTop: `2px solid ${T.LINE2}` }}>{g.dept}</td></tr>
+                {g.rows.map(p => (
               <tr key={p.id}>
                 <td style={{ padding: "3px 8px", fontWeight: 700, whiteSpace: "nowrap", borderBottom: `1px solid ${T.BORDER}` }}>{p.nick || p.name}</td>
                 {stations.map(st => { const lv = skills[p.id]?.[st.id] || "no"; return (
                   <td key={st.id} onClick={() => cycleSkill(p.id, st.id)} style={{ padding: 2, borderBottom: `1px solid ${T.BORDER}`, cursor: canEdit ? "pointer" : "default" }}>
                     <div style={{ ...skillStyle[lv], borderRadius: 4, textAlign: "center", padding: "3px 2px", minWidth: 44, fontWeight: 600 }}>{lv === "no" ? "·" : SKILL_LABEL[lv]}</div>
                   </td>); })}
-              </tr>))}</tbody>
+              </tr>))}
+              </Fragment>))}</tbody>
           </table>
         </div>
         {spof.size > 0 && <div style={{ marginTop: 10, color: T.RED, fontSize: 12.5, display: "flex", alignItems: "center", gap: 6 }}><AlertTriangle size={14} /> 單點故障提示：{stations.filter(s => spof.has(s.id)).map(s => s.code).join("、")} 崗位主力僅 1 人 — 該人請假即開天窗，建議培訓第二主力。</div>}
@@ -267,7 +293,20 @@ function TemplatesPage({ templatesDoc, stationsDoc, storeId, canEdit, confirm, i
   const demands = (templatesDoc.demands || []).filter(d => d.storeId === storeId);
   const stations = (stationsDoc.stations || []).filter(s => s.storeId === storeId);
   const [dayType, setDayType] = useState("weekday");
+  const [shDrag, setShDrag] = useState(null); // 班別列拖曳排序
   const dm = demands.find(d => d.dayType === dayType);
+  const dropShift = (targetId) => {
+    if (!shDrag || shDrag === targetId) { setShDrag(null); return; }
+    const list = [...templatesDoc.shifts];
+    const fi = list.findIndex(x => x.id === shDrag), ti = list.findIndex(x => x.id === targetId);
+    if (fi < 0 || ti < 0) { setShDrag(null); return; }
+    const [m] = list.splice(fi, 1); list.splice(ti, 0, m);
+    save({ ...templatesDoc, shifts: list }); setShDrag(null);
+  };
+  // 需求席次顯示順序：照班別起始時間→崗位（存檔順序不動，僅顯示排序）
+  const tmin = (t) => { const [h, m] = String(t || "0:0").split(":").map(Number); return h * 60 + (m || 0); };
+  const seatRows = (dm?.seats || []).map((seat, i) => ({ seat, i }))
+    .sort((a, b) => (tmin(shifts.find(s => s.id === a.seat.shiftId)?.start) - tmin(shifts.find(s => s.id === b.seat.shiftId)?.start)) || String(a.seat.stationId).localeCompare(String(b.seat.stationId)));
   const updShift = (id, patch) => save({ ...templatesDoc, shifts: templatesDoc.shifts.map(s => s.id === id ? { ...s, ...patch } : s) });
   const updDemand = (patch) => {
     let list = templatesDoc.demands;
@@ -284,8 +323,10 @@ function TemplatesPage({ templatesDoc, stationsDoc, storeId, canEdit, confirm, i
           <table style={{ borderCollapse: "collapse", width: "100%", fontSize: 12.5 }}>
             <thead><tr style={{ color: T.SUB, textAlign: "left" }}>{["代碼", "名稱", "起", "迄", "休(分)", "實工時", "部門", "開店", "閉店", "值班", "顏色", ""].map(h => <th key={h} style={{ ...cell, whiteSpace: "nowrap" }}>{h}</th>)}</tr></thead>
             <tbody>{shifts.map(s => (
-              <tr key={s.id}>
-                <td style={cell}><span style={chip(s.color)}>{s.code}</span></td>
+              <tr key={s.id} style={{ background: shDrag === s.id ? T.SOFT : "transparent" }}>
+                <td style={cell} onDragOver={e => { if (shDrag) e.preventDefault(); }} onDrop={() => dropShift(s.id)}>
+                  {canEdit && <span draggable onDragStart={() => setShDrag(s.id)} onDragEnd={() => setShDrag(null)} title="拖曳調整班別順序" style={{ cursor: "grab", color: T.LINE2, marginRight: 5, userSelect: "none" }}>⠿</span>}
+                  <span style={chip(s.color)}>{s.code}</span></td>
                 <td style={cell}>{canEdit ? <input style={{ ...inp, width: 110 }} value={s.name} onChange={e => updShift(s.id, { name: e.target.value })} /> : s.name}</td>
                 <td style={cell}>{canEdit ? <input type="time" style={inp} value={s.start} onChange={e => updShift(s.id, { start: e.target.value })} /> : s.start}</td>
                 <td style={cell}>{canEdit ? <input type="time" style={inp} value={s.end} onChange={e => updShift(s.id, { end: e.target.value })} /> : s.end}</td>
@@ -307,7 +348,7 @@ function TemplatesPage({ templatesDoc, stationsDoc, storeId, canEdit, confirm, i
         {!dm && <div style={{ color: T.SUB, fontSize: 13, marginBottom: 8 }}>此日型態尚無需求模板（求解時會退用「平日」模板）。{canEdit && "新增一列即自動建立。"}</div>}
         <table style={{ borderCollapse: "collapse", fontSize: 12.5 }}>
           <thead><tr style={{ color: T.SUB, textAlign: "left" }}>{["班別", "崗位", "人數", ""].map(h => <th key={h} style={{ ...cell, minWidth: 90 }}>{h}</th>)}</tr></thead>
-          <tbody>{(dm?.seats || []).map((seat, i) => (
+          <tbody>{seatRows.map(({ seat, i }) => (
             <tr key={i}>
               <td style={cell}><select disabled={!canEdit} style={inp} value={seat.shiftId} onChange={e => { const seats = [...dm.seats]; seats[i] = { ...seat, shiftId: e.target.value }; updDemand({ seats }); }}>{shifts.map(s => <option key={s.id} value={s.id}>{s.code} {s.start}–{s.end}</option>)}</select></td>
               <td style={cell}><select disabled={!canEdit} style={inp} value={seat.stationId} onChange={e => { const seats = [...dm.seats]; seats[i] = { ...seat, stationId: e.target.value }; updDemand({ seats }); }}>{stations.map(s => <option key={s.id} value={s.id}>{s.code}</option>)}</select></td>
