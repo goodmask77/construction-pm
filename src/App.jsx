@@ -624,7 +624,15 @@ export default function App() {
       if (Array.isArray(kuArr)) { const arr = kuArr.filter(u => u !== ADMIN_USER); setKnownUsers(arr); window.storage.set(K("pm_known_users"), JSON.stringify(arr), true).catch(()=>{}); }
       else setKnownUsers([]);
 
-      setActivityLog(alog);
+      // 一次性清舊帳：把歷史紀錄裡「同人同動作同內容、3 分鐘內」的連刷合併成一筆（密碼金庫那種幾十連發）
+      const dedupLog = [];
+      for (const e of alog) {
+        const last = dedupLog[dedupLog.length - 1];
+        if (last && last.user === e.user && last.action === e.action && last.detail === e.detail && Math.abs(Date.parse(last.ts) - Date.parse(e.ts)) < 180000) continue;
+        dedupLog.push(e);
+      }
+      if (dedupLog.length !== alog.length) saveActivityLog(dedupLog);
+      setActivityLog(dedupLog);
       if (wlV) setWorklog(parse(wlV, []));
       if (phV) setPhotos(parse(phV, []));
       if (acV) setAccounts(parse(acV, []));
@@ -704,8 +712,16 @@ export default function App() {
 
   const logActivity = (action, detail, userOverride) => {
     // userOverride：登入當下 userName 還沒非同步帶入，要用剛抓到的名字記，否則會記成「系統」
-    const entry = { ts: new Date().toISOString(), user: userOverride || userName || "系統", action, detail };
-    setActivityLog(prev => { const next = [entry, ...prev].slice(0,200); saveActivityLog(next); return next; });
+    const user = userOverride || userName || "系統";
+    const ts = new Date().toISOString();
+    setActivityLog(prev => {
+      // 同人＋同動作＋同內容、3 分鐘內連續發生 → 合併成一筆只更新時間（治「每敲一鍵記一條」刷版）
+      const last = prev[0];
+      if (last && last.user === user && last.action === action && last.detail === detail && Date.parse(ts) - Date.parse(last.ts) < 180000) {
+        const next = [{ ...last, ts }, ...prev.slice(1)]; saveActivityLog(next); return next;
+      }
+      const next = [{ ts, user, action, detail }, ...prev].slice(0, 200); saveActivityLog(next); return next;
+    });
   };
   // 操作紀錄：把連續編輯收斂成「每 90 秒一筆」，避免每打一個字就記一條（只記登入者的操作）
   const logThrottleRef = useRef({});

@@ -102,17 +102,32 @@ export async function deletePhotoFile(path) {
 }
 
 // 安裝 window.storage 墊片（在 App 掛載前呼叫）
+// 寫入防抖（2026-07-18 治本）：全 App 有 21 處輸入欄「每敲一鍵就 set 一次」→
+// 統一在這層收斂：同一個 key 停止寫入 800ms 後，才真正上傳「最後一版」到 Supabase。
+// get() 若該 key 有排隊中的新值，直接回新值（不會讀到舊資料）；關頁/切背景立刻 flush，不漏資料。
+const _pend = new Map() // key → { value, timer }
+function _flushAllPending() {
+  for (const [key, p] of [..._pend.entries()]) {
+    clearTimeout(p.timer); _pend.delete(key); setShared(key, p.value)
+  }
+}
 export function installStorageShim() {
   if (typeof window === 'undefined') return
+  window.addEventListener('pagehide', _flushAllPending)
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') _flushAllPending() })
   window.storage = {
     async get(key, shared = true) {
+      if (shared && _pend.has(key)) return { value: _pend.get(key).value } // 排隊中的最新值優先
       return shared ? await getShared(key) : getLocal(key)
     },
     async set(key, value, shared = true) {
-      if (shared) await setShared(key, value)
-      else setLocal(key, value)
+      if (!shared) { setLocal(key, value); return }
+      const prev = _pend.get(key); if (prev) clearTimeout(prev.timer)
+      const timer = setTimeout(() => { const p = _pend.get(key); if (p) { _pend.delete(key); setShared(key, p.value) } }, 800)
+      _pend.set(key, { value, timer })
     },
     async delete(key, shared = true) {
+      const p = _pend.get(key); if (p) { clearTimeout(p.timer); _pend.delete(key) } // 刪除前先取消排隊中的寫入，避免死而復生
       if (shared && dataClient) {
         try { await writeDB().from('pm_documents').delete().eq('id', key) } catch (_) {}
       } else { try { localStorage.removeItem(key) } catch (_) {} }
