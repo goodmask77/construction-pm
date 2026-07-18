@@ -139,7 +139,8 @@ function PeoplePage({ staffDoc, stationsDoc, storeId, canEdit, confirm, isMobile
       if (!kb?.people?.length) { alert("讀不到名冊資料"); return; }
       const titleField = (kb.fields || []).find(f => /職稱/.test(f.label || ""));
       const titleOf = (p) => titleField ? (p[titleField.key] || "") : "";
-      const res = syncRosterToShift(kb.people, titleOf, staffDoc.staff, stationsDoc.stations, stationsDoc.skills, storeId);
+      const titleOrder = (titleField?.options || []).map(o => String(o).trim()).filter(Boolean);
+      const res = syncRosterToShift(kb.people, titleOf, staffDoc.staff, stationsDoc.stations, stationsDoc.skills, storeId, titleOrder);
       if (!(await confirm(`將同步 ${res.total} 位內外場夥伴（新增 ${res.added} 位）；名冊已離職/非內外場者與示範假人會移出排班。技能矩陣：新人預設本部門全「可勝任」，請再校正。繼續？`))) return;
       saveStaff({ ...staffDoc, staff: res.staff });
       saveStations({ ...stationsDoc, skills: res.skills });
@@ -188,19 +189,18 @@ function PeoplePage({ staffDoc, stationsDoc, storeId, canEdit, confirm, isMobile
         </div>)} />
         <div style={{ overflowX: "auto" }}>
           <table style={{ borderCollapse: "collapse", width: "100%", fontSize: 12.5 }}>
-            <thead><tr style={{ color: T.SUB, textAlign: "left" }}>{["暱稱/姓名", "部門", "職級", "員編", "出生年", "期望班數", "成本係數", "固定不可排", "加班意願", ""].map(h => <th key={h} style={{ padding: "4px 8px", borderBottom: `1px solid ${T.BORDER}`, whiteSpace: "nowrap" }}>{h}</th>)}</tr></thead>
+            <thead><tr style={{ color: T.SUB, textAlign: "left" }}>{["暱稱/姓名", "部門", "職級", "期望班數", "成本係數", "固定不可排", "加班意願", ""].map(h => <th key={h} style={{ padding: "4px 8px", borderBottom: `1px solid ${T.BORDER}`, whiteSpace: "nowrap" }}>{h}</th>)}</tr></thead>
             <tbody>{groups.map(g => (
               <Fragment key={g.dept}>
-                <tr><td colSpan={10} style={{ padding: "6px 8px", background: T.SOFT, fontWeight: 800, color: T.ACCENT, borderTop: `2px solid ${T.LINE2}` }}>{g.dept}（{g.rows.length} 人）</td></tr>
+                <tr><td colSpan={8} style={{ padding: "6px 8px", background: T.SOFT, fontWeight: 800, color: T.ACCENT, borderTop: `2px solid ${T.LINE2}` }}>{g.dept}（{g.rows.length} 人）</td></tr>
                 {g.rows.map(p => (
               <tr key={p.id} style={{ borderBottom: `1px solid ${T.BORDER}`, background: rowDrag === p.id ? T.SOFT : "transparent" }}>
                 <td onDragOver={e => { if (rowDrag) e.preventDefault(); }} onDrop={() => dropRow(p.id)} style={{ padding: "5px 8px", fontWeight: 700, whiteSpace: "nowrap" }}>
                   {canEdit && <span draggable onDragStart={() => setRowDrag(p.id)} onDragEnd={() => setRowDrag(null)} title="拖曳調整順序（週班表同步）" style={{ cursor: "grab", color: T.LINE2, marginRight: 5, userSelect: "none" }}>⠿</span>}
-                  {p.nick || p.name}<span style={{ color: T.SUB, fontWeight: 400, marginLeft: 6, fontSize: 11 }}>{p.nick ? p.name : ""}</span></td>
+                  {p.nick || p.name}<span style={{ color: T.SUB, fontWeight: 400, marginLeft: 6, fontSize: 11 }}>{p.nick ? p.name : ""}</span>
+                  {p.birthYear && (new Date().getFullYear() - p.birthYear) < 18 && <span title="未滿18歲，受 LR-048 夜間工作限制保護" style={{ marginLeft: 4 }}>🔞</span>}</td>
                 <td style={{ padding: "5px 8px" }}>{p.dept}</td>
-                <td style={{ padding: "5px 8px" }}><span style={chip(p.grade === "管理" ? T.TEXT : p.grade === "正職" ? T.BLUE : p.grade === "週末PT" ? T.AMBER : T.GREY)}>{p.grade}</span></td>
-                <td style={{ padding: "5px 8px", fontFamily: T.MONO }}>{p.empNo}</td>
-                <td style={{ padding: "5px 8px", fontFamily: T.MONO }}>{p.birthYear}{p.birthYear && (new Date().getFullYear() - p.birthYear) < 18 && <span title="未滿18歲，受 LR-048 保護" style={{ marginLeft: 4 }}>🔞</span>}</td>
+                <td style={{ padding: "5px 8px" }}><span style={chip(/值班/.test(p.grade) ? T.TEXT : p.grade === "正職" ? T.BLUE : /pt/i.test(p.grade) ? T.AMBER : T.GREY)}>{p.grade}</span></td>
                 <td style={{ padding: "5px 8px" }}>{canEdit ? (
                   <select value={p.expectShifts || 0} onChange={e => upd(p.id, { expectShifts: Number(e.target.value) })} style={{ ...inp, padding: "3px 6px", fontFamily: T.MONO, fontWeight: 700 }} title="每週目標班數：正職 5；有加班需求（週休一日）設 6">
                     {[0, 1, 2, 3, 4, 5, 6].map(n => <option key={n} value={n}>{n} 天</option>)}

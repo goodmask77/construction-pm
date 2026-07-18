@@ -45,7 +45,7 @@ export const dayTypeOf = (iso, holidaySet) => {
 export const DAY_TYPES = [["weekday", "平日"], ["fri", "週五"], ["sat", "週六"], ["sun", "週日"], ["holiday", "國定假日"], ["event", "活動日"]];
 
 // ── 職級 / 技能等級 ──
-export const GRADES = ["正職", "實習生", "全班PT", "週末PT", "管理"];
+export const GRADES = ["正職", "值班DUTY", "PT", "全班PT", "週末PT", "實習生", "管理"]; // 職級以名冊「職稱」為準（2026-07-18 同步：正職/PT/值班DUTY）
 export const SKILL_LEVELS = [["main", "主力"], ["ok", "可勝任"], ["training", "受訓中"], ["no", "不可"]];
 export const SKILL_LABEL = { main: "主力", ok: "可勝任", training: "受訓中", no: "不可" };
 export const SKILL_RANK = { main: 3, ok: 2, training: 1, no: 0 }; // minLevel 比較用
@@ -417,14 +417,21 @@ export const newSchedule = (storeId, weekStart) => ({
 // ── 名冊 → 排班人員 對照（張良 2026-07-18：排班人員全部對照名冊內外場）──
 // 重複同步不會蓋掉手動調過的技能/期望班數/不可排：既有者只更新基本資料，新人才建新檔。
 // grade 對照：名冊職稱 正職→正職、含PT→全班PT；預設技能：內場→內場崗位全「可勝任」、外場→外場崗位全「可勝任」（假設值，請在矩陣校正）。
-export function syncRosterToShift(rosterPeople, titleOf, existingStaff, stations, existingSkills, storeId = "abeach") {
+export function syncRosterToShift(rosterPeople, titleOf, existingStaff, stations, existingSkills, storeId = "abeach", titleOrder = []) {
   const active = (rosterPeople || []).filter(p => (p.status || "在職") === "在職" && ["內場", "外場"].includes(p.dept));
+  // 順序以名冊為基準：部門(內→外) → 職稱(照名冊選項順序) → 到職日新→舊
+  const dIdx = (d) => { const i = ["內場", "外場"].indexOf(d); return i < 0 ? 9 : i; };
+  const tIdx = (t) => { const i = titleOrder.indexOf(t); return i < 0 ? 9 : i; };
+  active.sort((a, b) => (dIdx(a.dept) - dIdx(b.dept))
+    || (tIdx(String(titleOf ? titleOf(a) : "").trim()) - tIdx(String(titleOf ? titleOf(b) : "").trim()))
+    || String(b.startDate || "").localeCompare(String(a.startDate || "")));
   const byRoster = Object.fromEntries((existingStaff || []).filter(s => s.rosterId).map(s => [s.rosterId, s]));
   const staff = [], skills = { ...(existingSkills || {}) };
   const deptStations = (dept) => (stations || []).filter(st => st.storeId === storeId && st.dept === dept);
   for (const p of active) {
     const title = String(titleOf ? titleOf(p) : "").trim();
-    const grade = /pt/i.test(title) ? "全班PT" : "正職";
+    const isDuty = /值班|duty/i.test(title);
+    const grade = title || "正職"; // 職級=名冊職稱原文（正職/PT/值班DUTY…）
     const old = byRoster[p.id];
     const id = old ? old.id : "rs-" + p.id;
     const base = {
@@ -433,8 +440,8 @@ export function syncRosterToShift(rosterPeople, titleOf, existingStaff, stations
       birthYear: p.bday ? Number(String(p.bday).slice(0, 4)) || null : null,
       startDate: p.startDate || "", endDate: p.endDate || "",
       stores: [storeId], supportDepts: old?.supportDepts || [],
-      expectShifts: old?.expectShifts ?? (grade === "正職" ? 5 : 3),
-      costFactor: old?.costFactor ?? (grade === "正職" ? 1 : 0.8),
+      expectShifts: old?.expectShifts ?? (/pt/i.test(grade) ? 3 : 5),
+      costFactor: old?.costFactor ?? (/pt/i.test(grade) ? 0.8 : 1),
       unavailable: old?.unavailable || [], wishOff: old?.wishOff || [],
       otWilling: old?.otWilling || false, fixedPrefShiftIds: old?.fixedPrefShiftIds || [],
       note: old?.note || "", seed: "",
@@ -443,6 +450,8 @@ export function syncRosterToShift(rosterPeople, titleOf, existingStaff, stations
     if (!skills[id] || !Object.keys(skills[id]).length) {
       skills[id] = Object.fromEntries(deptStations(p.dept).map(st => [st.id, "ok"])); // 假設值：本部門全「可勝任」
     }
+    // 職稱=值班DUTY → 自動給「值班」崗位資格（可在矩陣調成主力/拿掉）
+    if (isDuty && (!skills[id]["st-duty"] || skills[id]["st-duty"] === "no")) skills[id] = { ...skills[id], "st-duty": "ok" };
   }
   // 名冊已離職/移出內外場者 → 從排班人員移除（demo 假人也在此一併清掉）
   const keepIds = new Set(staff.map(s => s.id));
