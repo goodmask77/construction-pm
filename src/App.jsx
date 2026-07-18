@@ -271,7 +271,13 @@ async function auditLog(action, detail) {
   try {
     const r = await window.storage.get(K("pm_activity"), true);
     const prev = r && r.value ? JSON.parse(r.value) : [];
-    const next = [{ ts: new Date().toISOString(), user: CURRENT_USER || "系統", action, detail }, ...prev].slice(0, 200);
+    const user = CURRENT_USER || "系統";
+    const ts = new Date().toISOString();
+    // 同人＋同動作＋同內容、3 分鐘內連續 → 合併成一筆只更新時間（跟 logActivity 同規則；治 360/夥伴中心每鍵記一條）
+    const last = prev[0];
+    const next = (last && last.user === user && last.action === action && last.detail === detail && Date.parse(ts) - Date.parse(last.ts) < 180000)
+      ? [{ ...last, ts }, ...prev.slice(1)]
+      : [{ ts, user, action, detail }, ...prev].slice(0, 200);
     await window.storage.set(K("pm_activity"), JSON.stringify(next), true);
   } catch (_) {}
 }
