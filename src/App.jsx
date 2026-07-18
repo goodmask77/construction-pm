@@ -10,6 +10,7 @@ import FinanceView from "./finance/Finance.jsx";
 import MailManagerView from "./lw/MailManager.jsx";
 import SupplyView from "./supply/Supply.jsx";
 import TaskCenter from "./tasks/TaskCenter.jsx";
+import ShiftView from "./shift/ShiftView.jsx";
 import Conclusions from "./conclusions/Conclusions.jsx";
 import SequenceView from "./SequenceView.jsx";
 import { LayoutDashboard, ClipboardList, CheckSquare, CalendarDays, Pin as PinIcon, FolderOpen, Wallet, Scale, Settings as SettingsIcon, Bot, Megaphone, MessagesSquare, Users as UsersIcon, ScrollText, LifeBuoy, Lock as LockIcon, Gauge, Bell, KeyRound, Mail as MailIcon } from "lucide-react";
@@ -1024,6 +1025,9 @@ export default function App() {
         )}
         {view === "roster" && (
           <RosterView canEdit={canEditData} confirm={confirm} me={account} />
+        )}
+        {view === "shift" && (
+          <ShiftView K={K} canEdit={canEditData} confirm={confirm} userName={userName} isAdmin={isAdmin} onLog={logActivity} />
         )}
         {view === "r360" && (
           <Review360View canEdit={canEditData} requireLogin={denyEdit} confirm={confirm} isAdmin={isAdmin} userName={userName} />
