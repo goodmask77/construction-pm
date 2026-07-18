@@ -2,6 +2,8 @@
  {
   "date": "2026-07-18",
   "items": [
+   "拆檔一刀: 抽lib/theme.jsx(設計tokens+SecHead+useIsMobile)+lib/runtime.js(K/auditLog/CURRENT_USER setter化) 夥伴中心8元件搬src/crew/CrewViews.jsx App.jsx 7978→6923行 純搬家零行為改變 build+selftest綠 v1.5.0",
+   "夥伴中心新增模組化班表(第一階段): labor_rules參數表+法遵檢查器(唯一實作)+人員技能矩陣+班別需求模板+週班表拖拉鎖定即時檢查+確定性求解器(貪婪回溯) A Beach101虛擬資料 三份測試班表+上週基準比對 勞動契約/勞資會議同意書範本 selftest全過 v1.4.0",
    "360/夥伴中心稽核路徑補合併: 模組級auditLog同人同事3分鐘內合併一筆(與logActivity同規則) 該路徑原本每鍵記一條防抖罩不到紀錄面",
    "全站治本每鍵寫庫bug(21處): storage層統一防抖800ms(get回排隊值/關頁flush/刪除取消排隊) 操作紀錄同人同事3分鐘內合併一筆 載入時一次清舊連刷紀錄",
    "修密碼金庫刷版bug: 每敲一鍵存一次庫+記一筆紀錄→防抖1秒才存一次只記一筆 新增/刪除/上鎖立即存(上鎖前先flush)",

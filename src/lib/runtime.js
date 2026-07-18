@@ -38,3 +38,10 @@ export async function auditLog(action, detail) {
     await window.storage.set(K("pm_activity"), JSON.stringify(next), true);
   } catch (_) {}
 }
+
+// ── 管理員帳號＋帳號顯示遮罩＋空間詞彙（由 App.jsx 原樣搬出，2026-07-18 拆檔第二刀）──
+export const ADMIN_USER = "goodmask77"; // 僅此帳號可編輯（不顯示於介面）
+// 介面顯示用：絕不顯示登入帳號字串（避免外洩）。管理員一律顯示「管理員」。
+export const maskAccount = (u) => !u ? "—" : (u === ADMIN_USER ? "管理員" : u);
+// 空間詞彙（依目前空間換詞；工程空間為預設詞）
+export const L = (key) => conf().labels[key] || SPACE_CONF.construction.labels[key];
