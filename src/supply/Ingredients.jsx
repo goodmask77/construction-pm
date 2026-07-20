@@ -317,11 +317,11 @@ export default function IngredientsView({ db, save, canEdit, showMoney, confirm,
 
   // ── 廠商視角 ──
   const vendorView = () => {
-    const vs = (db.vendors || []).slice().sort((a, b) => (b.official ? 1 : 0) - (a.official ? 1 : 0) || (a.sort || 0) - (b.sort || 0)).filter(v => itemsOfV(v.id).length);
-    if (!vs.length) return <div style={{ padding: 30, textAlign: "center", color: C.faint, background: C.card, border: `1.5px solid ${C.hard}`, borderRadius: 10 }}>還沒有廠商品項——用「📸 貼截圖匯入」或到「廠商」頁建。</div>;
+    const vs = (db.vendors || []).slice().sort((a, b) => (b.official ? 1 : 0) - (a.official ? 1 : 0) || (a.sort || 0) - (b.sort || 0)).filter(v => (v.name || "").trim());
+    if (!vs.length) return <div style={{ padding: 30, textAlign: "center", color: C.faint, background: C.card, border: `1.5px solid ${C.hard}`, borderRadius: 10 }}>還沒有廠商——先到「廠商建檔」頁建一家，回來就能加品項或截圖匯入。</div>;
     return vs.map(v => {
       const its = itemsOfV(v.id).filter(vi => !qq || `${vi.name || ""} ${vi.spec || ""}`.toLowerCase().includes(qq));
-      if (!its.length) return null;
+      if (qq && !its.length) return null; // 搜尋中才隱藏沒命中的；平常空廠商也要顯示（才有地方按＋品項）
       const opened = colV[v.id] !== false;
       return (
         <div key={v.id} style={{ background: C.card, border: `1.5px solid ${C.hard}`, borderRadius: 10, marginBottom: 10, overflow: "hidden" }}>
@@ -329,6 +329,8 @@ export default function IngredientsView({ db, save, canEdit, showMoney, confirm,
             <span style={{ fontSize: 10, color: C.faint }}>{opened ? "▾" : "▸"}</span>
             <span style={{ fontSize: 13, fontWeight: 800, color: C.text }}>{v.official ? "✓ " : ""}{v.name}</span>
             <span style={{ fontFamily: MONOF, fontSize: 11, color: C.faint }}>{its.length} 項</span>
+            <div style={{ flex: 1 }} />
+            {canEdit && <button onClick={e => { e.stopPropagation(); const ni = { id: rid("vi"), vendor_id: v.id, grp: "", name: "", spec: "", unit: "箱", price: "", safeStock: "", sort: itemsOfV(v.id).length, tags: "" }; save({ vendorItems: [...(db.vendorItems || []), ni] }); setColV(s => ({ ...s, [v.id]: true })); setDisp("list"); }} style={{ border: `1px solid ${C.line}`, background: "#fff", color: C.accent, borderRadius: 6, padding: "2px 10px", fontSize: 11.5, fontWeight: 700, cursor: "pointer" }}>＋ 品項</button>}
           </div>
           {opened && disp === "grid" && (
             <div style={{ display: "flex", flexWrap: "wrap", gap: 8, padding: 10 }}>
@@ -346,25 +348,31 @@ export default function IngredientsView({ db, save, canEdit, showMoney, confirm,
               ); })}
             </div>
           )}
-          {opened && disp === "list" && <>
-            <div style={{ display: "grid", gridTemplateColumns: `minmax(130px,1.4fr) minmax(90px,1fr) 150px ${showMoney ? "100px " : ""}minmax(90px,1fr)`, gap: 8, padding: "3px 12px", fontSize: 9.5, color: C.faint, fontWeight: 700 }}>
-              <span>品名（拖曳可排序）</span><span>規格</span><span>每件入數</span>{showMoney && <span style={{ textAlign: "right" }}>最近實付</span>}<span>物料卡</span>
+          {opened && disp === "list" && (() => {
+            const updVi = (id, fp) => save({ vendorItems: (db.vendorItems || []).map(x => x.id === id ? { ...x, ...fp } : x) });
+            const VGRID = `16px minmax(120px,1.3fr) minmax(85px,0.9fr) 158px ${showMoney ? "84px " : ""}minmax(80px,0.9fr) 22px`;
+            return <>
+            <div style={{ display: "grid", gridTemplateColumns: VGRID, gap: 8, padding: "3px 12px", fontSize: 9.5, color: C.faint, fontWeight: 700 }}>
+              <span /><span>品名（可直接改）</span><span>規格</span><span>每件入數</span>{showMoney && <span style={{ textAlign: "right" }}>單價</span>}<span>物料卡</span><span />
             </div>
-            {its.map(vi => { const g = all.find(x => x.id === vi.ingredient_id); const lp = lastPaid(vi); return (
-              <div key={vi.id} draggable={canEdit} onDragStart={() => setDragI(vi.id)} onDragOver={e => dragI && e.preventDefault()} onDrop={() => dropItemOn(vi.id, v.id)}
-                style={{ display: "grid", gridTemplateColumns: `minmax(130px,1.4fr) minmax(90px,1fr) 150px ${showMoney ? "100px " : ""}minmax(90px,1fr)`, gap: 8, alignItems: "center", minHeight: 32, padding: "2px 12px", borderTop: `1px solid #f0ead9`, fontSize: 12, background: "#fff", cursor: canEdit ? "grab" : "default" }}>
-                <span style={{ fontWeight: 600, color: C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{vi.name}</span>
-                <span style={{ color: C.sub, fontSize: 11 }}>{vi.spec || "—"}</span>
-                <span style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 11 }}>
-                  1{vi.unit || "件"}=
-                  <input value={vi.packToBase ?? ""} onChange={e => save({ vendorItems: (db.vendorItems || []).map(x => x.id === vi.id ? { ...x, packToBase: e.target.value.replace(/[^0-9.]/g, "") } : x) })} disabled={!canEdit} inputMode="decimal" placeholder="？" style={{ ...inp, width: 60, padding: "2px 6px", fontFamily: MONOF, borderColor: packToBase(vi) ? C.line : C.red }} />
+            {its.map(vi => { const g = all.find(x => x.id === vi.ingredient_id); return (
+              <div key={vi.id} onDragOver={e => dragI && e.preventDefault()} onDrop={() => dropItemOn(vi.id, v.id)}
+                style={{ display: "grid", gridTemplateColumns: VGRID, gap: 8, alignItems: "center", minHeight: 32, padding: "2px 12px", borderTop: `1px solid #f0ead9`, fontSize: 12, background: "#fff", outline: dragI === vi.id ? `2px dashed ${C.accent}` : "none" }}>
+                {canEdit ? <span draggable onDragStart={() => setDragI(vi.id)} onDragEnd={() => setDragI(null)} title="拖曳排序" style={{ cursor: "grab", color: "#c8bca6", fontSize: 12, textAlign: "center" }}>⠿</span> : <span />}
+                <input value={vi.name || ""} onChange={e => updVi(vi.id, { name: e.target.value })} disabled={!canEdit} placeholder="品名" style={{ ...inp, padding: "3px 7px", fontSize: 12, fontWeight: 600 }} />
+                <input value={vi.spec || ""} onChange={e => updVi(vi.id, { spec: e.target.value })} disabled={!canEdit} placeholder="規格" style={{ ...inp, padding: "3px 7px", fontSize: 11 }} />
+                <span style={{ display: "flex", alignItems: "center", gap: 3, fontSize: 11 }}>
+                  1<input value={vi.unit || ""} onChange={e => updVi(vi.id, { unit: e.target.value })} disabled={!canEdit} placeholder="箱" style={{ ...inp, width: 36, padding: "2px 4px", fontSize: 11, textAlign: "center" }} />=
+                  <input value={vi.packToBase ?? ""} onChange={e => updVi(vi.id, { packToBase: e.target.value.replace(/[^0-9.]/g, "") })} disabled={!canEdit} inputMode="decimal" placeholder="？" style={{ ...inp, width: 58, padding: "2px 6px", fontFamily: MONOF, borderColor: packToBase(vi) ? C.line : C.red }} />
                   {g ? g.baseUnit : ""}
                 </span>
-                {showMoney && <span style={{ fontFamily: MONOF, textAlign: "right", fontSize: 11.5, color: lp ? C.text : "#d5cbb6" }}>{lp ? `$${d2(lp.price)}` : "—"}</span>}
-                {g ? <span onClick={() => setOpen(g.id)} style={{ fontSize: 10.5, fontWeight: 700, color: C.blue, cursor: "pointer", textDecoration: "underline", textUnderlineOffset: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{g.name}</span> : <span style={{ fontSize: 10.5, color: C.amber, fontWeight: 700 }}>⚠ 未整理</span>}
+                {showMoney && <input value={vi.price ?? ""} onChange={e => updVi(vi.id, { price: e.target.value.replace(/[^0-9.]/g, "") })} disabled={!canEdit} inputMode="decimal" placeholder="單價" style={{ ...inp, padding: "3px 6px", fontSize: 11.5, fontFamily: MONOF, textAlign: "right" }} />}
+                {g ? <span onClick={() => setOpen(g.id)} style={{ fontSize: 10.5, fontWeight: 700, color: C.blue, cursor: "pointer", textDecoration: "underline", textUnderlineOffset: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{g.name}</span> : <span style={{ fontSize: 10.5, color: C.amber, fontWeight: 700 }}>⚠ 按⚡整理</span>}
+                {canEdit ? <button onClick={async () => { if (await confirm(`刪除品項「${vi.name || "未命名"}」？叫貨表裡也會消失。`, { confirmLabel: "刪除" })) save({ vendorItems: (db.vendorItems || []).filter(x => x.id !== vi.id) }); }} style={{ border: "none", background: "none", color: C.faint, cursor: "pointer", fontSize: 13 }}>×</button> : <span />}
               </div>
             ); })}
-          </>}
+            </>;
+          })()}
         </div>
       );
     });

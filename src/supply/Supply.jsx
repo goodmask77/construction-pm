@@ -682,18 +682,15 @@ export default function SupplyView({ view, K, canEdit, confirm, showMoney, userN
   }
 
   // ── 廠商（完整版）：可新增/編輯廠商（部門/標籤/LINE群），展開管理該廠商品項清單 ──
+  // ── 廠商建檔（2026-07-20 瘦身）：只管廠商資料本身；品項一律到「物料」頁維護（截圖匯入/手動），不再重複 ──
   if (view === "svendors") {
     const DEPTS = ["外場", "內場", "吧檯", "共用"];
-    const itemsOf = (vid) => (db.vendorItems || []).filter(x => x.vendor_id === vid).sort((a, b) => (a.sort || 0) - (b.sort || 0));
-    // 搜尋：除了廠商欄位，也比對品項（品名/規格/分類/標籤）——有中的品項就列出該廠商並自動展開
+    const itemsOf = (vid) => (db.vendorItems || []).filter(x => x.vendor_id === vid);
     const qq = q.trim().toLowerCase();
-    const matchIt = (it) => !!qq && `${it.name || ""} ${it.spec || ""} ${it.grp || ""} ${it.tags || ""}`.toLowerCase().includes(qq);
-    const vs = (db.vendors || []).filter(v => !qq || (v.name + (v.en || "") + (v.tags || []).join("") + (v.note || "") + (v.dept || "")).toLowerCase().includes(qq) || itemsOf(v.id).some(matchIt))
+    const vs = (db.vendors || []).filter(v => !qq || (v.name + (v.en || "") + (v.tags || []).join("") + (v.note || "") + (v.dept || "")).toLowerCase().includes(qq))
       .filter(v => !catF || (v.dept || "共用") === catF);
     const addVendor = () => { if (!canEdit) return; const nv = { id: rid("v"), name: "", en: "", dept: "外場", url: "", tags: [], note: "", lineGroupId: "", sendMode: "share", sort: (db.vendors || []).length }; save({ vendors: [...db.vendors, nv] }); setSel("v:" + nv.id); };
     const updV = (id, fp) => save({ vendors: db.vendors.map(x => x.id === id ? { ...x, ...fp } : x) });
-    const addItem = (vid, grp) => { if (!canEdit) return; const ni = { id: rid("vi"), vendor_id: vid, grp: grp || "", name: "", spec: "", unit: "件", price: "", safeStock: "", sort: itemsOf(vid).length }; save({ vendorItems: [...(db.vendorItems || []), ni] }); setSel("i:" + ni.id); };
-    // 拖曳排序：廠商對廠商、品項對品項（同廠商內）
     const dropVendor = (targetId) => {
       if (!dragV || dragV === targetId) return setDragV(null);
       const list = [...(db.vendors || [])].sort((a, b) => (a.sort || 0) - (b.sort || 0));
@@ -702,28 +699,18 @@ export default function SupplyView({ view, K, canEdit, confirm, showMoney, userN
       const [mv] = list.splice(from, 1); list.splice(to, 0, mv);
       save({ vendors: list.map((x, i2) => ({ ...x, sort: i2 })) }); setDragV(null);
     };
-    const dropItem = (targetId, vid) => {
-      if (!dragI || dragI === targetId) return setDragI(null);
-      const mine = itemsOf(vid); const others = (db.vendorItems || []).filter(x => x.vendor_id !== vid);
-      const from = mine.findIndex(x => x.id === dragI), to = mine.findIndex(x => x.id === targetId);
-      if (from < 0 || to < 0) return setDragI(null);
-      const [mv] = mine.splice(from, 1); const target = mine[to]; mine.splice(to, 0, { ...mv, grp: (target?.grp ?? mv.grp) }); // 拖進別的分類就跟著換組
-      save({ vendorItems: [...others, ...mine.map((x, i2) => ({ ...x, sort: i2 }))] }); setDragI(null);
-    };
-    const updI = (id, fp) => save({ vendorItems: (db.vendorItems || []).map(x => x.id === id ? { ...x, ...fp } : x) });
     const selV = sel && sel.startsWith("v:") && db.vendors.find(x => x.id === sel.slice(2));
-    const selI = sel && sel.startsWith("i:") && (db.vendorItems || []).find(x => x.id === sel.slice(2));
     return (
       <div style={{ maxWidth: 1120, margin: "0 auto" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "6px 0 12px", flexWrap: "wrap" }}>
           <span style={{ background: C.accent, color: "#fff", fontSize: 11.5, fontWeight: 700, borderRadius: 4, padding: "2px 8px" }}>廠商</span>
           <div>
-            <div style={{ fontSize: 17, fontWeight: 800, color: C.text }}>供應商與品項</div>
-            <div style={{ fontSize: 11, color: C.faint }}>{(db.vendors || []).length} 家・品項 {(db.vendorItems || []).length} 項・名稱前打勾＝正式供應商（才會進叫貨表，置頂）</div>
+            <div style={{ fontSize: 17, fontWeight: 800, color: C.text }}>廠商建檔</div>
+            <div style={{ fontSize: 11, color: C.faint }}>{(db.vendors || []).length} 家・建好的廠商會自動出現在物料/叫貨/截圖匯入的選單。品項到「物料」頁維護。打勾＝正式供應商（才會進叫貨表）。</div>
           </div>
           <div style={{ flex: 1 }} />
           <select value={catF} onChange={e => setCatF(e.target.value)} style={inp}><option value="">全部部門</option>{DEPTS.map(d => <option key={d} value={d}>{d}</option>)}</select>
-          <input value={q} onChange={e => setQ(e.target.value)} placeholder="🔍 搜尋廠商/品項/標籤…" style={{ ...inp, width: 185 }} />
+          <input value={q} onChange={e => setQ(e.target.value)} placeholder="🔍 搜尋廠商…" style={{ ...inp, width: 160 }} />
           {canEdit && btn("＋ 新增分類", () => { const n = window.prompt("分類名稱（例：菜商/包材/耗材/飲品）"); if (n && n.trim()) { save({ vendorCats: [...new Set([...(db.vendorCats || []), n.trim()])] }); setCollapsed(c2 => ({ ...c2, ["vc" + n.trim()]: true })); } })}
           {canEdit && btn("＋ 新增廠商", addVendor, { background: C.accent, color: "#fff", borderColor: C.accent })}
         </div>
@@ -751,87 +738,29 @@ export default function SupplyView({ view, K, canEdit, confirm, showMoney, userN
                     {g !== "未分類" && <button onClick={e => { e.stopPropagation(); delVcat(g); }} title="移除分類" style={{ border: "none", background: "none", color: C.sub, fontSize: 12, cursor: "pointer" }}>×</button>}
                   </>}
                 </div>
-                {gOpen && gvs.map((v, i) => {
-            const hitIts = qq ? itemsOf(v.id).filter(matchIt) : []; // 搜尋命中的品項
-            const open = qq && hitIts.length ? true : collapsed["v" + v.id]; // 有命中品項→自動展開
-            const its = qq && hitIts.length ? hitIts : itemsOf(v.id); // 搜尋中只列命中的品項
-            return (
-              <React.Fragment key={v.id}>
-                <div onClick={() => setCollapsed(c2 => ({ ...c2, ["v" + v.id]: !c2["v" + v.id] }))}
-                  onDragOver={e => dragV && e.preventDefault()} onDrop={() => dropVendor(v.id)}
-                  style={{ display: "grid", gridTemplateColumns: "16px 14px 20px minmax(150px,1fr) 44px 44px minmax(140px,1.3fr) 92px", gap: 8, alignItems: "center", minHeight: 38, borderTop: `1px solid #e0d6bf`, padding: "3px 10px", cursor: "pointer", background: open ? C.soft : "#fff", outline: dragV === v.id ? `2px dashed ${C.accent}` : "none" }}
-                  onMouseEnter={e => e.currentTarget.style.background = C.soft} onMouseLeave={e => e.currentTarget.style.background = open ? C.soft : "#fff"}>
-                  {canEdit ? <span draggable onDragStart={e => { e.stopPropagation(); setDragV(v.id); }} onDragEnd={() => setDragV(null)} onClick={e => e.stopPropagation()} title="拖曳調整廠商順序" style={{ cursor: "grab", color: "#c8bca6", fontSize: 13, textAlign: "center" }}>⠿</span> : <span />}
-                  <span style={{ fontSize: 10, color: C.faint }}>{open ? "▾" : "▸"}</span>
-                  <input type="checkbox" checked={!!v.official} disabled={!canEdit} onClick={e => e.stopPropagation()} onChange={e => { e.stopPropagation(); updV(v.id, { official: e.target.checked }); }} title="正式供應商（打勾＝出現在叫貨表，並置頂）" style={{ accentColor: C.accent, cursor: canEdit ? "pointer" : "default", margin: 0, width: 14, height: 14 }} />
-                  <div style={{ overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis" }}>
-                    <span style={{ fontSize: 13, fontWeight: 700, color: C.text }}>{v.name || "（未命名）"}</span>
-                    {v.en && <span style={{ fontSize: 10.5, color: C.faint, marginLeft: 6 }}>{v.en}</span>}
-                  </div>
-                  <span style={{ fontSize: 11, fontWeight: 700, color: v.dept === "內場" ? C.green : v.dept === "吧檯" ? C.amber : v.dept === "共用" ? "#9b9384" : C.blue }}>{v.dept || "共用"}</span>
-                  <span style={{ fontFamily: MONOF, fontSize: 12, color: its.length ? C.text : "#d5cbb6", textAlign: "center" }}>{its.length || "—"}</span>
-                  <span style={{ fontSize: 11, color: C.sub, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={v.note}>{v.note}</span>
-                  <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }} onClick={e => e.stopPropagation()}>
-                    {v.url && <a href={v.url} target="_blank" rel="noreferrer" style={{ fontSize: 11, color: C.blue }}>官網↗</a>}
-                    {canEdit && <button onClick={() => setSel("v:" + v.id)} style={{ border: `1px solid ${C.line}`, background: "#fff", color: C.sub, borderRadius: 6, padding: "1px 8px", fontSize: 11, cursor: "pointer" }}>✎</button>}
-                  </div>
-                </div>
-                {open && (() => {
-                  // 品項依「分類」分層（可折疊/改名/刪除/拖曳；拖到別的分類會跟著換組）
-                  const GTCI = `16px minmax(160px,1.4fr) minmax(110px,1fr) 60px ${showMoney ? "80px " : ""}76px 56px`;
-                  const grpsI = {}; its.forEach(it => { (grpsI[it.grp || "未分類"] = grpsI[it.grp || "未分類"] || []).push(it); });
-                  const gKeys = Object.keys(grpsI).sort((a, b) => (a === "未分類" ? 1 : 0) - (b === "未分類" ? 1 : 0) || (grpsI[a][0].sort || 0) - (grpsI[b][0].sort || 0));
-                  const renameGrp = (g) => { const n = window.prompt("分類名稱", g === "未分類" ? "" : g); if (n === null) return; save({ vendorItems: (db.vendorItems || []).map(x => x.vendor_id === v.id && (x.grp || "未分類") === g ? { ...x, grp: n.trim() } : x) }); };
-                  const delGrp = async (g) => { if (await confirm(`移除分類「${g}」？裡面的品項會移到「未分類」（品項不會被刪）。`, { confirmLabel: "移除分類", danger: false })) save({ vendorItems: (db.vendorItems || []).map(x => x.vendor_id === v.id && (x.grp || "未分類") === g ? { ...x, grp: "" } : x) }); };
-                  const itemRow = (it) => (
-                    <div key={it.id} onDragOver={e => dragI && e.preventDefault()} onDrop={() => dropItem(it.id, v.id)}
-                      style={{ display: "grid", gridTemplateColumns: GTCI, gap: 8, alignItems: "center", minHeight: 30, borderTop: `1px solid #f0ead9`, fontSize: 12.5, outline: dragI === it.id ? `2px dashed ${C.accent}` : "none" }}>
-                      {canEdit ? <span draggable onDragStart={() => setDragI(it.id)} onDragEnd={() => setDragI(null)} title="拖曳排序／拖到別的分類" style={{ cursor: "grab", color: "#c8bca6", fontSize: 12, textAlign: "center" }}>⠿</span> : <span />}
-                      <span style={{ fontWeight: 600, color: C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{it.name || "（未命名）"}{it.matId ? <span title="來自包材庫" style={{ fontSize: 9.5, color: "#7a5c1e", marginLeft: 4 }}>📦</span> : null}{it.tags ? <span style={{ fontSize: 9.5, fontWeight: 600, color: C.amber, marginLeft: 5 }}>{String(it.tags).split(/[,，\s]+/).filter(Boolean).map(t => "#" + t).join(" ")}</span> : null}</span>
-                      <span style={{ color: C.sub, fontSize: 11.5 }}>{it.spec || "—"}</span>
-                      <span style={{ color: C.sub }}>{it.unit || "—"}</span>
-                      {showMoney && <span style={{ fontFamily: MONOF, textAlign: "right", color: it.price ? C.text : "#d5cbb6" }}>{it.price ? Number(it.price).toLocaleString() : "—"}</span>}
-                      <span style={{ fontFamily: MONOF, textAlign: "right", color: it.safeStock !== "" && it.safeStock != null ? C.sub : "#d5cbb6" }}>{it.safeStock !== "" && it.safeStock != null ? it.safeStock : "—"}</span>
-                      {canEdit ? <button onClick={() => setSel("i:" + it.id)} style={{ border: `1px solid ${C.line}`, background: "#fff", color: C.sub, borderRadius: 6, padding: "1px 8px", fontSize: 11, cursor: "pointer" }}>✎</button> : <span />}
-                    </div>
-                  );
+                {gOpen && gvs.map(v => {
+                  const nIts = itemsOf(v.id).length;
                   return (
-                    <div style={{ background: "#faf6ec", borderTop: `1px solid #f0ead9`, padding: "6px 12px 10px 30px" }}>
-                      <div style={{ display: "grid", gridTemplateColumns: GTCI, gap: 8, padding: "4px 0", fontSize: 10, color: C.faint, fontWeight: 700 }}>
-                        <span /><span>品名</span><span>規格</span><span>單位</span>{showMoney && <span style={{ textAlign: "right" }}>單價</span>}<span style={{ textAlign: "right" }}>安全庫存</span><span />
+                    <div key={v.id} onClick={() => canEdit && setSel("v:" + v.id)}
+                      onDragOver={e => dragV && e.preventDefault()} onDrop={() => dropVendor(v.id)}
+                      style={{ display: "grid", gridTemplateColumns: "16px 20px minmax(150px,1fr) 44px 60px minmax(140px,1.3fr) 92px", gap: 8, alignItems: "center", minHeight: 38, borderTop: `1px solid #e0d6bf`, padding: "3px 10px", cursor: canEdit ? "pointer" : "default", background: "#fff", outline: dragV === v.id ? `2px dashed ${C.accent}` : "none" }}
+                      onMouseEnter={e => e.currentTarget.style.background = C.soft} onMouseLeave={e => e.currentTarget.style.background = "#fff"}>
+                      {canEdit ? <span draggable onDragStart={e => { e.stopPropagation(); setDragV(v.id); }} onDragEnd={() => setDragV(null)} onClick={e => e.stopPropagation()} title="拖曳調整廠商順序" style={{ cursor: "grab", color: "#c8bca6", fontSize: 13, textAlign: "center" }}>⠿</span> : <span />}
+                      <input type="checkbox" checked={!!v.official} disabled={!canEdit} onClick={e => e.stopPropagation()} onChange={e => { e.stopPropagation(); updV(v.id, { official: e.target.checked }); }} title="正式供應商（打勾＝出現在叫貨表，並置頂）" style={{ accentColor: C.accent, cursor: canEdit ? "pointer" : "default", margin: 0, width: 14, height: 14 }} />
+                      <div style={{ overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis" }}>
+                        <span style={{ fontSize: 13, fontWeight: 700, color: C.text }}>{v.name || "（未命名）"}</span>
+                        {v.en && <span style={{ fontSize: 10.5, color: C.faint, marginLeft: 6 }}>{v.en}</span>}
                       </div>
-                      {its.length === 0 && <div style={{ fontSize: 12, color: C.faint, padding: "4px 0" }}>還沒有品項——按下面「＋新增品項」建立這家的清單（包材/食材/耗材都放這）。</div>}
-                      {gKeys.map(g => {
-                        const gOpen = !collapsed["g" + v.id + g];
-                        return (
-                          <React.Fragment key={g}>
-                            {(gKeys.length > 1 || g !== "未分類") && (
-                              <div onClick={() => setCollapsed(c2 => ({ ...c2, ["g" + v.id + g]: gOpen }))} style={{ display: "flex", alignItems: "center", gap: 8, padding: "4px 10px", margin: "6px 0 0", background: "#f0e9d8", border: `1px solid #e0d6bf`, borderRadius: 3, cursor: "pointer" }}>
-                                <span style={{ fontSize: 9, color: C.faint }}>{gOpen ? "▾" : "▸"}</span>
-                                <span style={{ fontSize: 12, fontWeight: 800, color: C.text }}>{g}</span>
-                                <span style={{ fontFamily: MONOF, fontSize: 10.5, color: C.faint }}>{grpsI[g].length} 項</span>
-                                <div style={{ flex: 1 }} />
-                                {canEdit && <span onClick={e => e.stopPropagation()} style={{ display: "inline-flex", gap: 4 }}>
-                                  <button onClick={() => addItem(v.id, g === "未分類" ? "" : g)} title="在此分類新增品項" style={{ border: `1px solid #d9cfbd`, background: "#fff", color: C.accent, borderRadius: 4, padding: "0 8px", fontSize: 11, fontWeight: 700, cursor: "pointer", lineHeight: "18px" }}>＋ 品項</button>
-                                  <button onClick={() => renameGrp(g)} title="重新命名分類" style={{ border: `1px solid #d9cfbd`, background: "#fff", color: C.sub, borderRadius: 4, padding: "0 6px", fontSize: 10.5, cursor: "pointer", lineHeight: "18px" }}>✎</button>
-                                  {g !== "未分類" && <button onClick={() => delGrp(g)} title="移除分類（品項移到未分類）" style={{ border: `1px solid #d9cfbd`, background: "#fff", color: C.sub, borderRadius: 4, padding: "0 6px", fontSize: 11, cursor: "pointer", lineHeight: "18px" }}>×</button>}
-                                </span>}
-                              </div>
-                            )}
-                            {gOpen && grpsI[g].map(itemRow)}
-                          </React.Fragment>
-                        );
-                      })}
-                      {canEdit && <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
-                        <button onClick={() => addItem(v.id)} style={{ border: `1.5px dashed ${C.accent}`, background: "#fff", color: C.accent, borderRadius: 7, padding: "5px 16px", fontSize: 12.5, fontWeight: 700, cursor: "pointer" }}>＋ 新增品項</button>
-                        <button onClick={() => { const n = window.prompt("新分類名稱（例：醬料杯類/盒類/食材）"); if (n && n.trim()) addItem(v.id, n.trim()); }} style={{ border: `1px dashed ${C.line}`, background: "transparent", color: C.sub, borderRadius: 7, padding: "5px 14px", fontSize: 12, cursor: "pointer" }}>＋ 新分類</button>
-                      </div>}
+                      <span style={{ fontSize: 11, fontWeight: 700, color: v.dept === "內場" ? C.green : v.dept === "吧檯" ? C.amber : v.dept === "共用" ? "#9b9384" : C.blue }}>{v.dept || "共用"}</span>
+                      <span title="品項到「物料」頁維護（截圖匯入或手動）" style={{ fontFamily: MONOF, fontSize: 11.5, color: nIts ? C.text : "#d5cbb6", textAlign: "center" }}>{nIts ? nIts + " 項" : "—"}</span>
+                      <span style={{ fontSize: 11, color: C.sub, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={v.note}>{v.note}</span>
+                      <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }} onClick={e => e.stopPropagation()}>
+                        {v.url && <a href={v.url} target="_blank" rel="noreferrer" style={{ fontSize: 11, color: C.blue }}>官網↗</a>}
+                        {canEdit && <button onClick={() => setSel("v:" + v.id)} style={{ border: `1px solid ${C.line}`, background: "#fff", color: C.sub, borderRadius: 6, padding: "1px 8px", fontSize: 11, cursor: "pointer" }}>✎</button>}
+                      </div>
                     </div>
                   );
-                })()}
-              </React.Fragment>
-            );
-          })}
+                })}
               </div>
             );
           });
@@ -911,26 +840,6 @@ export default function SupplyView({ view, K, canEdit, confirm, showMoney, userN
                   <input type="checkbox" checked={!!selV.official} disabled={!canEdit} onChange={e => updV(selV.id, { official: e.target.checked })} style={{ accentColor: C.accent, width: 15, height: 15 }} />
                   正式供應商（打勾才會出現在叫貨表，並置頂）
                 </label>
-              </div>
-            </div>
-          </div>
-        )}
-        {/* 品項編輯 */}
-        {selI && (
-          <div onClick={e => e.target === e.currentTarget && setSel(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.4)", zIndex: 700, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
-            <div style={{ background: "#fff", border: `1px solid ${C.line}`, borderRadius: 12, padding: 22, width: "min(480px,96vw)" }}>
-              <div style={{ display: "flex", alignItems: "center", marginBottom: 12 }}>
-                <div style={{ fontSize: 15, fontWeight: 700, color: C.text }}>品項{selI.name ? `：${selI.name}` : ""} <span style={{ fontSize: 11, color: C.faint, fontWeight: 400 }}>（{(db.vendors.find(v => v.id === selI.vendor_id) || {}).name}）</span></div>
-                <div style={{ flex: 1 }} />
-                {canEdit && <button onClick={async () => { if (await confirm(`刪除品項「${selI.name || "未命名"}」？`, { confirmLabel: "刪除" })) { save({ vendorItems: (db.vendorItems || []).filter(x => x.id !== selI.id) }); setSel(null); } }} style={{ background: "none", border: `1px solid ${C.line}`, color: C.red, borderRadius: 8, padding: "5px 12px", fontSize: 12.5, cursor: "pointer", marginRight: 8 }}>刪除</button>}
-                <button onClick={() => setSel(null)} style={{ background: "none", border: "none", fontSize: 22, cursor: "pointer", color: C.sub }}>×</button>
-              </div>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-                {[["name", "品名", "1 / -1"], ["grp", "分類（例：醬料杯類/盒類/食材，留空＝未分類）", "1 / -1"], ["spec", "規格（例：2500入/箱）", "1 / -1"], ["tags", "標籤（比價用，逗號分隔，例：薯條,冷凍）", "1 / -1"], ["unit", "單位（箱/件/包）"], ...(showMoney ? [["price", "單價"]] : []), ["safeStock", "安全庫存量"]].map(([k, l, span]) => (
-                  <label key={k} style={{ display: "block", fontSize: 11, color: C.faint, fontWeight: 600, gridColumn: span }}>{l}
-                    <input value={selI[k] ?? ""} onChange={e => updI(selI.id, { [k]: e.target.value })} disabled={!canEdit} style={{ ...inp, width: "100%", marginTop: 4 }} />
-                  </label>
-                ))}
               </div>
             </div>
           </div>

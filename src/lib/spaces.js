@@ -54,7 +54,7 @@ export const SPACE_CONF = {
   supply: {
     showCost: true, // 售價/採購價受「看金額」權限控管（店長層可遮）
     hideTabs: [],
-    tabs: [["sproducts", "產品管理", "📦"], ["singred", "物料", "🥬"], ["svendors", "廠商", "🏭"], ["sorder", "叫貨", "🛒"]],
+    tabs: [["sproducts", "產品管理", "📦"], ["singred", "物料", "🥬"], ["svendors", "廠商建檔", "🏭"], ["sorder", "叫貨", "🛒"]],
     defaultView: "sproducts",
     hideKpi: true,
     labels: { cat: "類別", item: "品項", overview: "供應鏈", gantt: "—", subtitle: "供應鏈管理（進銷存/採購/比價）" },
@@ -104,7 +104,7 @@ export const PERM_MATRIX = {
   supply: [
     ["sproducts", "產品管理", { edit: 1, money: 1 }],
     ["singred", "物料", { edit: 1, money: 1 }],
-    ["svendors", "廠商", { edit: 1, money: 1 }],
+    ["svendors", "廠商建檔", { edit: 1, money: 1 }],
     ["sorder", "叫貨", { edit: 1, money: 1 }],
   ],
 };
