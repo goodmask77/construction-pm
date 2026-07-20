@@ -883,11 +883,25 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
             }),
             note: "Void＝結帳前作廢的品項（點錯/客人改單/廚房已做但取消）；退菜＝送出後退回；退單＝整張單退掉。日結信只有每日總額、沒有逐筆明細——想看是哪道菜/誰操作，要到 Eats365 後台：報表 → 審計報告/交易紀錄",
           };
-          if (dr.type === "coupon") return {
-            title: "優惠券 / 折扣明細（含單號・經手・原因）", cols: ["日期", "區塊", "品項/單號", "數量", "佔比", "金額", "經手・原因"],
-            rows: [...days].reverse().flatMap(d => (dayDet(d.date)?.sheets?.["優惠券"] || []).flatMap(sec => (sec.rows || []).map(r => [d.date, sec.title || "優惠券", ...parseRow(sec, r)]))),
-            note: "來源：日結信「優惠券」分頁 → 明細資料庫 pm_pos_d_月份",
-          };
+          if (dr.type === "coupon") {
+            // POS 把一筆拆兩列（品項列有數量/佔比、單號列有經手/原因、金額相同）→ 相鄰同金額配對併回一列（張良 2026-07-20：兩行很亂）
+            const rows = [];
+            [...days].reverse().forEach(d => (dayDet(d.date)?.sheets?.["優惠券"] || []).forEach(sec => {
+              const parsed = (sec.rows || []).map(r => parseRow(sec, r)); // [名稱, 數量, 佔比, 金額, 經手備註]
+              for (let i = 0; i < parsed.length; i++) {
+                const a = parsed[i], b = parsed[i + 1];
+                if (b && a[1] !== "" && !a[4] && b[1] === "" && b[3] === a[3] && (b[4] || /^[A-Z]{1,2}\d+/.test(b[0]))) {
+                  rows.push([d.date, sec.title || "優惠券", `${a[0]}｜${b[0]}`, a[1], a[2], a[3], b[4] || "—"]);
+                  i++; // 吃掉單號列
+                } else rows.push([d.date, sec.title || "優惠券", a[0], a[1], a[2], a[3], a[4]]);
+              }
+            }));
+            return {
+              title: "優惠券 / 折扣明細（含單號・經手・原因）", cols: ["日期", "區塊", "品項｜單號", "數量", "佔比", "金額", "經手・原因"],
+              rows,
+              note: "來源：日結信「優惠券」分頁 → 明細資料庫 pm_pos_d_月份・POS 原始是一筆拆兩列，這裡已自動併回一列（品項｜單號）",
+            };
+          }
           if (dr.type === "day") {
             const det = dayDet(dr.key);
             const dEnt = days.find(x => x.date === dr.key) || {};
