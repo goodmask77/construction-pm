@@ -424,6 +424,18 @@ export default function IngredientsView({ db, save, canEdit, showMoney, confirm,
           <input value={batCat} onChange={e => setBatCat(e.target.value)} placeholder="設分類…" list="ingcats" style={{ ...inp, width: 100, padding: "3px 8px" }} />
           <button onClick={() => { if (batCat.trim()) { batch({ cat: batCat.trim() }); flash(`✓ 已把 ${selIds.length} 項分類設為「${batCat.trim()}」`); setBatCat(""); } }} style={{ border: "1px solid #5a5247", background: "transparent", color: "#fff", borderRadius: 7, padding: "3px 11px", fontSize: 11.5, cursor: "pointer" }}>套用</button>
           <button onClick={() => { batch({ nonStock: true }); flash(`✓ 已把 ${selIds.length} 項標為非物料`); setSel2({}); }} style={{ border: "1px solid #5a5247", background: "transparent", color: "#fff", borderRadius: 7, padding: "3px 11px", fontSize: 11.5, cursor: "pointer" }}>標非物料</button>
+          <span style={{ width: 8 }} />
+          <button onClick={async () => {
+            if (!(await confirm(`刪除勾選的 ${selIds.length} 張物料卡？（廠商品項不刪，會退回「待整理」）`, { confirmLabel: "刪卡" }))) return;
+            save({ ingredients: (db.ingredients || []).filter(x => !sel2[x.id]), vendorItems: (db.vendorItems || []).map(v => sel2[v.ingredient_id] ? { ...v, ingredient_id: "" } : v) });
+            setSel2({}); flash(`✓ 已刪 ${selIds.length} 張物料卡（品項退回待整理）`);
+          }} style={{ border: "1px solid #b3261e", background: "transparent", color: "#f0a9a4", borderRadius: 7, padding: "3px 11px", fontSize: 11.5, cursor: "pointer" }}>刪卡</button>
+          <button onClick={async () => {
+            const nVi = (db.vendorItems || []).filter(v => sel2[v.ingredient_id]).length;
+            if (!(await confirm(`把勾選的 ${selIds.length} 張物料卡「連同 ${nVi} 筆廠商品項」全部刪除？（叫貨表也會少這些品項，通常只在清誤匯入的資料時用）`, { confirmLabel: "全部刪除" }))) return;
+            save({ ingredients: (db.ingredients || []).filter(x => !sel2[x.id]), vendorItems: (db.vendorItems || []).filter(v => !sel2[v.ingredient_id]) });
+            setSel2({}); flash(`✓ 已刪 ${selIds.length} 張卡＋${nVi} 筆廠商品項`);
+          }} style={{ border: "1px solid #b3261e", background: "#b3261e", color: "#fff", borderRadius: 7, padding: "3px 11px", fontSize: 11.5, fontWeight: 700, cursor: "pointer" }}>連品項一起刪</button>
           <div style={{ flex: 1 }} />
           <button onClick={() => setSel2({})} style={{ border: "none", background: "none", color: "#d9cfbd", fontSize: 11.5, cursor: "pointer" }}>取消選取</button>
         </div>
