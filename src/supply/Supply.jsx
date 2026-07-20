@@ -594,6 +594,7 @@ export default function SupplyView({ view, K, canEdit, confirm, showMoney, userN
                 try { await navigator.clipboard.writeText(txt); flash("✓ 已複製對帳明細（含單價，內部用）"); } catch (_) {}
                 setOdSel(null);
               }} style={{ width: "100%", marginTop: 10, border: `1px solid ${C.line}`, background: "#fff", color: C.text, borderRadius: 8, padding: "8px 0", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>📋 複製對帳明細（含金額）</button>}
+              <button onClick={() => setOdSel(null)} style={{ width: "100%", marginTop: 8, border: "none", background: C.green, color: "#fff", borderRadius: 8, padding: "9px 0", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>✓ 完成</button>
             </div>
           </div>
         )}
@@ -841,6 +842,7 @@ export default function SupplyView({ view, K, canEdit, confirm, showMoney, userN
                   正式供應商（打勾才會出現在叫貨表，並置頂）
                 </label>
               </div>
+              <button onClick={() => setSel(null)} style={{ width: "100%", marginTop: 14, border: "none", background: C.green, color: "#fff", borderRadius: 8, padding: "9px 0", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>✓ 完成</button>
             </div>
           </div>
         )}
@@ -996,6 +998,7 @@ export default function SupplyView({ view, K, canEdit, confirm, showMoney, userN
             </div>
             {/* 食譜／SOP／成本卡（版本流水 pm_recipe_v_；成本＝用料×最近實付價＋包材） */}
             <RecipeCard product={selP} db={db} canEdit={canEdit} showMoney={showMoney} userName={userName} K={K} />
+            <button onClick={() => setSel(null)} style={{ width: "100%", marginTop: 14, border: "none", background: C.green, color: "#fff", borderRadius: 8, padding: "9px 0", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>✓ 完成</button>
           </div>
         </div>
       )}

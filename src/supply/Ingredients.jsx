@@ -254,6 +254,8 @@ export default function IngredientsView({ db, save, canEdit, showMoney, confirm,
             </select>
           </div>
         )}
+        {/* 完成鈕（使用者習慣要有收尾；改動其實已即時存檔） */}
+        <button onClick={() => setOpen(null)} style={{ width: "100%", marginTop: 10, border: "none", background: C.green, color: "#fff", borderRadius: 8, padding: "9px 0", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>✓ 完成</button>
       </div>
     );
   };
