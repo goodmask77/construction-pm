@@ -2,7 +2,7 @@
 // v2 原則不變：預設全自動（⚡自動整理/同名併卡/規格解析入數/服務類收摺），人只處理例外
 // 截圖匯入：貼上或上傳截圖 → AI 解析品項 → 人工確認才寫入（AI 辨識必經人確認，張良原則）
 import React, { useEffect, useRef, useState } from "react";
-import { Leaf, Factory, List, Image as ImageIcon, Camera, Zap } from "lucide-react";
+import { Leaf, Factory, List, Image as ImageIcon, Camera, Zap, ZoomIn } from "lucide-react";
 import { C, MONOF, rid } from "./Supply.jsx";
 import { packToBase, lastPaid, unitCost, srcsOf, priceAlert, normName, organizeAll } from "./inv.js";
 import { uploadPhoto } from "../supa.js";
@@ -28,6 +28,7 @@ export default function IngredientsView({ db, save, canEdit, showMoney, confirm,
   const [dragI, setDragI] = useState(null);      // 拖曳中的廠商品項 id（廠商視角）
   const [colV, setColV] = useState({});          // 廠商視角收合
   const [colCat, setColCat] = useState({});      // 物料視角：分類收合（truthy=收合）
+  const [zoom, setZoom] = useState(null);        // 圖片放大檢視（lightbox）url
   const [imp, setImp] = useState(null);          // 截圖匯入 modal：{vid,newVendor,vendorGuess,rows,busy}
   const imgRef = useRef(null); const imgFor = useRef(null); // 圖片上傳 input + 目標物料 id
   const shotRef = useRef(null);                  // 截圖上傳 input
@@ -277,7 +278,9 @@ export default function IngredientsView({ db, save, canEdit, showMoney, confirm,
       <div onClick={e => e.stopPropagation()}>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginBottom: 8 }}>
           {/* 圖片：點縮圖或按鈕換圖（也可在圖片視角卡片上直接按📷） */}
-          <span onClick={() => { if (canEdit) { imgFor.current = g.id; imgRef.current && imgRef.current.click(); } }} title="點擊上傳，或直接 Ctrl/Cmd+V 貼上截圖" style={{ width: 46, height: 46, borderRadius: 8, border: `1px solid ${C.line}`, background: g.img ? `url(${g.img}) center/cover` : "#f4efe5", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, color: C.faint, cursor: canEdit ? "pointer" : "default", flexShrink: 0 }}>{g.img ? "" : "📷"}</span>
+          {/* 有圖：點縮圖=放大看；換圖用旁邊小鈕或直接 Ctrl+V 貼。無圖：點=上傳 */}
+          <span onClick={() => { if (g.img) setZoom(g.img); else if (canEdit) { imgFor.current = g.id; imgRef.current && imgRef.current.click(); } }} title={g.img ? "點擊放大檢視" : "點擊上傳，或直接 Ctrl/Cmd+V 貼上截圖"} style={{ width: 46, height: 46, borderRadius: 8, border: `1px solid ${C.line}`, background: g.img ? `url(${g.img}) center/cover` : "#f4efe5", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, color: C.faint, cursor: g.img || canEdit ? "pointer" : "default", flexShrink: 0 }}>{g.img ? "" : "📷"}</span>
+          {g.img && canEdit && <button onClick={() => { imgFor.current = g.id; imgRef.current && imgRef.current.click(); }} title="更換圖片（也可直接 Ctrl+V 貼上）" style={{ ...sbtn, padding: "3px 8px", fontSize: 10.5 }}>換圖</button>}
           <label style={{ fontSize: 11, color: C.sub }}>名稱 <input value={g.name || ""} onChange={e => updIng(g.id, { name: e.target.value })} disabled={!canEdit} style={{ ...inp, width: 140 }} /></label>
           <label style={{ fontSize: 11, color: C.sub }}>分類 <input value={g.cat || ""} onChange={e => updIng(g.id, { cat: e.target.value })} disabled={!canEdit} list="ingcats" style={{ ...inp, width: 90 }} /></label>
           <label style={{ fontSize: 11, color: C.sub }}>計量單位 <input value={g.baseUnit || ""} onChange={e => updIng(g.id, { baseUnit: e.target.value })} disabled={!canEdit} placeholder="個/g/ml" style={{ ...inp, width: 56 }} /></label>
@@ -342,7 +345,7 @@ export default function IngredientsView({ db, save, canEdit, showMoney, confirm,
   };
 
   // ── 物料視角：清單列（ground-pack 硬格線風：方角、直向格線、字體同產品管理；張良 2026-07-20）──
-  const IGRID = `54px minmax(150px,1.2fr) 118px minmax(130px,1.2fr) ${showMoney ? "92px " : ""}92px 26px`;
+  const IGRID = `54px 38px minmax(150px,1.2fr) 118px minmax(130px,1.2fr) ${showMoney ? "92px " : ""}92px 26px`;
   const vline = { borderRight: "1px solid #e0d6bf", alignSelf: "stretch", display: "flex", alignItems: "center" };
   const listRow = (g) => {
     const srcs = srcsOf(db, g.id);
@@ -361,6 +364,10 @@ export default function IngredientsView({ db, save, canEdit, showMoney, confirm,
           <div style={{ ...vline, padding: "0 6px", gap: 4, justifyContent: "center" }} onClick={e => e.stopPropagation()}>
             <input type="checkbox" checked={!!sel2[g.id]} onChange={e => setSel2(s => ({ ...s, [g.id]: e.target.checked }))} disabled={!canEdit} style={{ cursor: "pointer" }} />
             <button onClick={() => canEdit && updIng(g.id, { isKey: !g.isKey })} title={g.isKey ? "關鍵品項（點擊取消）" : "標為關鍵品項"} style={{ border: "none", background: "none", color: g.isKey ? "#E8A317" : "#d9cfbd", fontSize: 14, cursor: "pointer", padding: 0 }}>{g.isKey ? "★" : "☆"}</button>
+          </div>
+          {/* 縮圖欄：一眼看有沒有照片；點小圖=放大檢視 */}
+          <div style={{ ...vline, padding: "3px 4px", justifyContent: "center" }} onClick={e => { if (g.img) { e.stopPropagation(); setZoom(g.img); } }}>
+            <span title={g.img ? "點擊放大檢視" : "還沒有照片（點開卡片上傳或貼上）"} style={{ width: 28, height: 28, borderRadius: 5, border: `1px solid ${C.line}`, background: g.img ? `url(${g.img}) center/cover` : "#f4efe5", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, color: "#d5cbb6", cursor: g.img ? "zoom-in" : "pointer", flexShrink: 0 }}>{g.img ? "" : "—"}</span>
           </div>
           <div style={{ ...vline, padding: "0 9px", overflow: "hidden" }}><span style={{ fontSize: 13, fontWeight: 600, color: C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{g.name || <span style={{ color: C.faint }}>（未命名）</span>}{anyAlert && <span style={{ fontSize: 10, fontWeight: 700, color: anyAlert.up ? C.red : C.green, marginLeft: 4 }}>{anyAlert.up ? "▲" : "▼"}{Math.abs(anyAlert.pct)}%</span>}</span></div>
           <div style={{ ...vline, padding: "0 9px", fontFamily: MONOF, fontSize: 11.5, color: mainVi && packToBase(mainVi) ? C.sub : C.red }}>{mainVi ? (packToBase(mainVi) ? `1${mainVi.unit || "件"}=${Number(mainVi.packToBase).toLocaleString()}${g.baseUnit}` : "1件=？") : "—"}</div>
@@ -388,7 +395,7 @@ export default function IngredientsView({ db, save, canEdit, showMoney, confirm,
         style={{ width: 150, border: `1.5px solid ${C.hard}`, borderRadius: 10, overflow: "hidden", background: "#fff", cursor: "pointer" }}>
         <div style={{ height: 96, background: g.img ? `url(${g.img}) center/cover` : "#f4efe5", position: "relative", display: "flex", alignItems: "center", justifyContent: "center" }}>
           {!g.img && <span style={{ fontSize: 24, opacity: 0.35 }}>🥬</span>}
-          {canEdit && <button onClick={e => { e.stopPropagation(); imgFor.current = g.id; imgRef.current && imgRef.current.click(); }} title="上傳/更換圖片" style={{ position: "absolute", right: 4, bottom: 4, border: "none", background: "rgba(29,26,21,.65)", color: "#fff", borderRadius: 6, padding: "2px 7px", fontSize: 11, cursor: "pointer" }}>📷</button>}
+          {g.img && <button onClick={e => { e.stopPropagation(); setZoom(g.img); }} title="放大檢視" style={{ position: "absolute", right: 4, bottom: 4, border: "none", background: "rgba(29,26,21,.65)", color: "#fff", borderRadius: 6, padding: "3px 7px", fontSize: 11, cursor: "pointer", display: "flex", alignItems: "center" }}><ZoomIn size={13} strokeWidth={2} /></button>}
           {g.isKey && <span style={{ position: "absolute", left: 4, top: 4, color: "#E8A317", fontSize: 14 }}>★</span>}
         </div>
         <div style={{ padding: "6px 8px" }}>
@@ -567,6 +574,7 @@ export default function IngredientsView({ db, save, canEdit, showMoney, confirm,
             {!catClosed && disp === "list" && <>
               <div style={{ display: "grid", gridTemplateColumns: IGRID, alignItems: "stretch", background: "#f2ecdd" }}>
                 <div style={{ ...vline, padding: "0 6px" }} />
+                <div style={{ ...vline, padding: "4px 4px", fontSize: 10.5, color: C.sub, fontWeight: 700, justifyContent: "center" }}>圖</div>
                 <div style={{ ...vline, padding: "4px 9px", fontSize: 10.5, color: C.sub, fontWeight: 700 }}>名稱（拖曳可排序）</div>
                 <div style={{ ...vline, padding: "4px 9px", fontSize: 10.5, color: C.sub, fontWeight: 700 }}>每件入數</div>
                 <div style={{ ...vline, padding: "4px 9px", fontSize: 10.5, color: C.sub, fontWeight: 700 }}>哪些廠商賣</div>
@@ -617,6 +625,12 @@ export default function IngredientsView({ db, save, canEdit, showMoney, confirm,
         </div>
       )}
 
+      {/* 圖片放大檢視（lightbox）：點任何縮圖進來，點一下關閉 */}
+      {zoom && (
+        <div onClick={() => setZoom(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.75)", zIndex: 760, display: "flex", alignItems: "center", justifyContent: "center", padding: 20, cursor: "zoom-out" }}>
+          <img src={zoom} alt="" style={{ maxWidth: "92vw", maxHeight: "90vh", borderRadius: 10, boxShadow: "0 8px 40px rgba(0,0,0,.5)" }} />
+        </div>
+      )}
       {/* 📸 截圖匯入 modal */}
       {imp && (
         <div onClick={e => e.target === e.currentTarget && !imp.busy && setImp(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.4)", zIndex: 730, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
