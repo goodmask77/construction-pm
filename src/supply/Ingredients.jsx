@@ -377,7 +377,17 @@ export default function IngredientsView({ db, save, canEdit, showMoney, confirm,
                 </span>
                 {showMoney && <input value={vi.price ?? ""} onChange={e => updVi(vi.id, { price: e.target.value.replace(/[^0-9.]/g, "") })} disabled={!canEdit} inputMode="decimal" placeholder="單價" style={{ ...inp, padding: "3px 6px", fontSize: 11.5, fontFamily: MONOF, textAlign: "right" }} />}
                 {g ? <span onClick={() => setOpen(g.id)} style={{ fontSize: 10.5, fontWeight: 700, color: C.blue, cursor: "pointer", textDecoration: "underline", textUnderlineOffset: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{g.name}</span> : <span style={{ fontSize: 10.5, color: C.amber, fontWeight: 700 }}>⚠ 按⚡整理</span>}
-                {canEdit ? <button onClick={async () => { if (await confirm(`刪除品項「${vi.name || "未命名"}」？叫貨表裡也會消失。`, { confirmLabel: "刪除" })) save({ vendorItems: (db.vendorItems || []).filter(x => x.id !== vi.id) }); }} style={{ border: "none", background: "none", color: C.faint, cursor: "pointer", fontSize: 13 }}>×</button> : <span />}
+                {canEdit ? <button onClick={async () => {
+                  // 刪到「最後一家貨源」時物料卡一起刪（跟物料視角的刪除一致：刪了就是整個不見，不留孤兒卡）
+                  const lastSrc = g && srcsOf(db, g.id).length === 1;
+                  if (lastSrc) {
+                    if (!(await confirm(`刪除品項「${vi.name || "未命名"}」？這是物料卡「${g.name}」唯一的貨源，卡片會一起刪除（叫貨表也會消失；食譜若有用到會顯示缺料）。`, { confirmLabel: "刪除" }))) return;
+                    save({ vendorItems: (db.vendorItems || []).filter(x => x.id !== vi.id), ingredients: (db.ingredients || []).filter(x => x.id !== g.id) });
+                  } else {
+                    if (!(await confirm(`刪除品項「${vi.name || "未命名"}」？叫貨表裡也會消失。`, { confirmLabel: "刪除" }))) return;
+                    save({ vendorItems: (db.vendorItems || []).filter(x => x.id !== vi.id) });
+                  }
+                }} style={{ border: "none", background: "none", color: C.faint, cursor: "pointer", fontSize: 13 }}>×</button> : <span />}
               </div>
             ); })}
             </>;
