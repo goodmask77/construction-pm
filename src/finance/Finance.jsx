@@ -884,22 +884,38 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
             note: "Void＝結帳前作廢的品項（點錯/客人改單/廚房已做但取消）；退菜＝送出後退回；退單＝整張單退掉。日結信只有每日總額、沒有逐筆明細——想看是哪道菜/誰操作，要到 Eats365 後台：報表 → 審計報告/交易紀錄",
           };
           if (dr.type === "coupon") {
-            // POS 把一筆拆兩列（品項列有數量/佔比、單號列有經手/原因、金額相同）→ 相鄰同金額配對併回一列（張良 2026-07-20：兩行很亂）
-            const rows = [];
+            // ① POS 一筆拆兩列（品項列＋單號列、金額相同）→ 相鄰配對併回一列
+            // ② 依用途自動分類（客訴補償/試菜/夥伴/VIP/招待/一般優惠）→ 上方彙總卡＋明細按類別分組（張良 2026-07-20：流水帳看不出分析）
+            const couponClass = (t) => {
+              if (/客訴|投訴|滴到|不足|做錯|上錯|送錯|太慢|等太久|重做|補償|道歉|異物|瑕疵|冷掉/.test(t)) return "客訴補償";
+              if (/試菜/.test(t)) return "試菜";
+              if (/夥伴|員工|自己人/.test(t)) return "夥伴/員工";
+              if (/VIP|貴賓/i.test(t)) return "VIP";
+              if (/招待|常客|贈送/.test(t)) return "招待/行銷";
+              return "一般優惠/折扣";
+            };
+            const CAT_ORDER = ["客訴補償", "試菜", "夥伴/員工", "VIP", "招待/行銷", "一般優惠/折扣", "（日小計）"];
+            const recs = [];
             [...days].reverse().forEach(d => (dayDet(d.date)?.sheets?.["優惠券"] || []).forEach(sec => {
               const parsed = (sec.rows || []).map(r => parseRow(sec, r)); // [名稱, 數量, 佔比, 金額, 經手備註]
               for (let i = 0; i < parsed.length; i++) {
                 const a = parsed[i], b = parsed[i + 1];
-                if (b && a[1] !== "" && !a[4] && b[1] === "" && b[3] === a[3] && (b[4] || /^[A-Z]{1,2}\d+/.test(b[0]))) {
-                  rows.push([d.date, sec.title || "優惠券", `${a[0]}｜${b[0]}`, a[1], a[2], a[3], b[4] || "—"]);
-                  i++; // 吃掉單號列
-                } else rows.push([d.date, sec.title || "優惠券", a[0], a[1], a[2], a[3], a[4]]);
+                let name = a[0], qty = a[1], pctS = a[2], amtS = a[3], who = a[4];
+                if (b && a[1] !== "" && !a[4] && b[1] === "" && b[3] === a[3] && (b[4] || /^[A-Z]{1,2}\d+/.test(b[0]))) { name = `${a[0]}｜${b[0]}`; who = b[4] || "—"; i++; }
+                const isSubtotal = a[0] === "優惠券" && a[1] === "" && !a[4];
+                const cat = isSubtotal ? "（日小計）" : couponClass(name + " " + who);
+                recs.push({ cat, date: d.date, blk: sec.title || "優惠券", name, qty, pctS, amtS, who, amtN: Number(String(amtS).replace(/[^0-9.-]/g, "")) || 0 });
               }
             }));
+            const real = recs.filter(x => x.cat !== "（日小計）");
+            const totalN = real.reduce((t, x) => t + x.amtN, 0);
+            const summary = CAT_ORDER.filter(c2 => c2 !== "（日小計）").map(c2 => { const g2 = real.filter(x => x.cat === c2); return g2.length ? { label: c2, n: g2.length, amt: fmt(g2.reduce((t, x) => t + x.amtN, 0)), pct: totalN ? Math.round(g2.reduce((t, x) => t + x.amtN, 0) / totalN * 100) + "%" : "—" } : null; }).filter(Boolean);
+            recs.sort((x, y) => CAT_ORDER.indexOf(x.cat) - CAT_ORDER.indexOf(y.cat) || (x.date < y.date ? 1 : x.date > y.date ? -1 : 0));
             return {
-              title: "優惠券 / 折扣明細（含單號・經手・原因）", cols: ["日期", "區塊", "品項｜單號", "數量", "佔比", "金額", "經手・原因"],
-              rows,
-              note: "來源：日結信「優惠券」分頁 → 明細資料庫 pm_pos_d_月份・POS 原始是一筆拆兩列，這裡已自動併回一列（品項｜單號）",
+              title: "優惠券 / 折扣明細（依用途分類）", cols: ["類別", "日期", "品項｜單號", "數量", "佔比", "金額", "經手・原因"],
+              rows: recs.map(x => [x.cat, x.date, x.name, x.qty, x.pctS, x.amtS, x.who]),
+              summary,
+              note: "來源：日結信「優惠券」分頁・已自動併列＋依關鍵字分類（客訴/試菜/夥伴/VIP/招待/一般）・（日小計）＝POS 每日總額列不計入彙總・點欄位標題可排序",
             };
           }
           if (dr.type === "day") {
@@ -1161,6 +1177,18 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
                       <button onClick={() => setPosDrill(null)} style={{ background: "none", border: "none", fontSize: 22, cursor: "pointer", color: C.sub }}>×</button>
                     </div>
                     <div style={{ fontSize: 11, color: C.faint, marginBottom: 10 }}>{drill.note}{drill.pivot && posDrillView === "pivot" ? "・顏色越深＝當天賣越多；「—」＝當天沒賣" : "・點欄位標題可排序"}</div>
+                    {/* 分類彙總卡（優惠券明細用）：先看錢花去哪，再看逐筆 */}
+                    {drill.summary && drill.summary.length > 0 && (
+                      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
+                        {drill.summary.map(s2 => (
+                          <div key={s2.label} style={{ border: `1.5px solid ${s2.label === "客訴補償" ? "#b3261e" : "#c8bca6"}`, borderRadius: 8, padding: "6px 14px", background: "#fff", minWidth: 96 }}>
+                            <div style={{ fontSize: 10.5, color: s2.label === "客訴補償" ? "#b3261e" : C.sub, fontWeight: 700 }}>{s2.label}</div>
+                            <div style={{ fontFamily: MONOF, fontSize: 14.5, fontWeight: 800, color: C.text }}>{s2.amt}</div>
+                            <div style={{ fontSize: 10, color: C.faint }}>{s2.n} 筆・佔 {s2.pct}</div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                     <div style={{ overflow: "auto", border: `1.5px solid #c8bca6`, borderRadius: 8 }}>
                       {(!drill.pivot || posDrillView === "list") ? (
                         <table style={{ borderCollapse: "collapse", width: "100%", fontSize: 12 }}>
