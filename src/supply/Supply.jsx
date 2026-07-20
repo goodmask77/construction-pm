@@ -2,6 +2,7 @@
 // 資料：sp_supply_pm_supply（categories/products/materials/vendors/vendorItems/ingredients/matches/productPackaging）
 // 進銷存藍圖見 docs/INVENTORY_BLUEPRINT.md：物料↔貨源多對一、進價/報價/食譜全存流水、成本只用實付價
 import React, { useEffect, useState } from "react";
+import { PenLine, BadgeDollarSign, ReceiptText, Flag } from "lucide-react";
 import IngredientsView from "./Ingredients.jsx";
 import RecipeCard from "./Recipe.jsx";
 import { buildPriceEvents, applyLastPaid, applyQuote, priceAlert, unitCost, quoteUnit, packToBase, srcsOf, lastPaid } from "./inv.js";
@@ -175,9 +176,9 @@ export default function SupplyView({ view, K, canEdit, confirm, showMoney, userN
         </div>
         {/* 子分頁：下單 / 紀錄・對帳 / 問題追蹤（未解決數掛紅徽章） */}
         <div style={{ display: "flex", gap: 4, marginBottom: 12, borderBottom: `1.5px solid ${C.hard}` }}>
-          {[["order", "📝 下單", 0], ["quote", "💰 報價", 0], ["rec", "🧾 紀錄・對帳", 0], ["issue", "🚩 問題追蹤", openIssueN]].map(([k, lb, n]) => (
-            <button key={k} onClick={() => setOTab(k)} style={{ border: "none", borderBottom: `2.5px solid ${oTab === k ? C.accent : "transparent"}`, marginBottom: -1.5, background: "none", color: oTab === k ? C.text : C.sub, padding: "7px 14px", fontSize: 13, fontWeight: oTab === k ? 800 : 600, cursor: "pointer" }}>
-              {lb}{n > 0 && <span style={{ marginLeft: 5, fontSize: 10.5, fontWeight: 700, color: "#fff", background: C.red, borderRadius: 9, padding: "1px 7px" }}>{n}</span>}
+          {[["order", "下單", PenLine, 0], ["quote", "報價", BadgeDollarSign, 0], ["rec", "紀錄・對帳", ReceiptText, 0], ["issue", "問題追蹤", Flag, openIssueN]].map(([k, lb, TabI, n]) => (
+            <button key={k} onClick={() => setOTab(k)} style={{ display: "inline-flex", alignItems: "center", gap: 6, border: "none", borderBottom: `2.5px solid ${oTab === k ? C.accent : "transparent"}`, marginBottom: -1.5, background: "none", color: oTab === k ? C.text : C.sub, padding: "7px 14px", fontSize: 13, fontWeight: oTab === k ? 800 : 600, cursor: "pointer" }}>
+              <TabI size={14} strokeWidth={1.75} />{lb}{n > 0 && <span style={{ marginLeft: 2, fontSize: 10.5, fontWeight: 700, color: "#fff", background: C.red, borderRadius: 9, padding: "1px 7px" }}>{n}</span>}
             </button>
           ))}
         </div>
@@ -702,7 +703,7 @@ export default function SupplyView({ view, K, canEdit, confirm, showMoney, userN
     };
     const selV = sel && sel.startsWith("v:") && db.vendors.find(x => x.id === sel.slice(2));
     return (
-      <div style={{ maxWidth: 1120, margin: "0 auto" }}>
+      <div style={{ maxWidth: 1060, margin: "0 auto" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "6px 0 12px", flexWrap: "wrap" }}>
           <span style={{ background: C.accent, color: "#fff", fontSize: 11.5, fontWeight: 700, borderRadius: 4, padding: "2px 8px" }}>廠商</span>
           <div>
@@ -858,8 +859,8 @@ export default function SupplyView({ view, K, canEdit, confirm, showMoney, userN
   const byCat = {};
   prods.forEach(x => { (byCat[x.category || "未分類"] = byCat[x.category || "未分類"] || []).push(x); });
   const catNames = [...cats.map(c => c.name), ...Object.keys(byCat).filter(n => !cats.some(c => c.name === n))].filter(n => byCat[n]?.length);
-  // ground-pack 風：緊湊欄寬（固定為主、備註吃剩餘）＋每格直向格線＋方角硬邊框（張良 2026-07-18 指定）
-  const GTC = `172px 188px minmax(120px,1fr) 56px ${showMoney ? "84px " : ""}52px 96px 58px 34px`;
+  // ground-pack 風：緊湊欄寬（固定為主、備註吃剩餘）＋每格直向格線＋方角硬邊框（張良 2026-07-18 指定；07-20 欄寬收窄＋整頁限寬）
+  const GTC = `150px 158px minmax(110px,1fr) 46px ${showMoney ? "76px " : ""}46px 88px 50px 30px`;
   const vline = { borderRight: "1px solid #e0d6bf", alignSelf: "stretch", display: "flex", alignItems: "center" };
   const hardBox = { background: "#fff", border: `1.5px solid ${C.hard}`, borderRadius: 4, marginBottom: 12, overflow: "hidden" };
   const addProduct = (catName) => {
@@ -885,7 +886,7 @@ export default function SupplyView({ view, K, canEdit, confirm, showMoney, userN
   ));
   const selP = sel && db.products.find(x => x.id === sel);
   return (
-    <div>
+    <div style={{ maxWidth: 1060, margin: "0 auto" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "6px 0 10px", flexWrap: "wrap" }}>
         <span style={{ background: C.accent, color: "#fff", fontSize: 11.5, fontWeight: 700, borderRadius: 4, padding: "2px 8px" }}>產品</span>
         <div>

@@ -54,7 +54,7 @@ export const SPACE_CONF = {
   supply: {
     showCost: true, // 售價/採購價受「看金額」權限控管（店長層可遮）
     hideTabs: [],
-    tabs: [["sproducts", "產品管理", "📦"], ["singred", "物料", "🥬"], ["svendors", "廠商建檔", "🏭"], ["sorder", "叫貨", "🛒"]],
+    tabs: [["svendors", "廠商建檔", "🏭"], ["sproducts", "產品管理", "📦"], ["singred", "物料", "🥬"], ["sorder", "叫貨", "🛒"]], // 順序＝建檔流程：先建廠商→產品→物料→叫貨（張良 2026-07-20）
     defaultView: "sproducts",
     hideKpi: true,
     labels: { cat: "類別", item: "品項", overview: "供應鏈", gantt: "—", subtitle: "供應鏈管理（進銷存/採購/比價）" },
@@ -102,9 +102,9 @@ export const PERM_MATRIX = {
   ],
   // lw 空間收起：信箱管理改掛在全域「設定」（管理員限定），不再進權限矩陣
   supply: [
+    ["svendors", "廠商建檔", { edit: 1, money: 1 }],
     ["sproducts", "產品管理", { edit: 1, money: 1 }],
     ["singred", "物料", { edit: 1, money: 1 }],
-    ["svendors", "廠商建檔", { edit: 1, money: 1 }],
     ["sorder", "叫貨", { edit: 1, money: 1 }],
   ],
 };

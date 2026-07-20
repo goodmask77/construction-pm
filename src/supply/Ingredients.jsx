@@ -2,6 +2,7 @@
 // v2 原則不變：預設全自動（⚡自動整理/同名併卡/規格解析入數/服務類收摺），人只處理例外
 // 截圖匯入：貼上或上傳截圖 → AI 解析品項 → 人工確認才寫入（AI 辨識必經人確認，張良原則）
 import React, { useEffect, useRef, useState } from "react";
+import { Leaf, Factory, List, Image as ImageIcon, Camera, Zap } from "lucide-react";
 import { C, MONOF, rid } from "./Supply.jsx";
 import { packToBase, lastPaid, unitCost, srcsOf, priceAlert, normName, organizeAll } from "./inv.js";
 import { uploadPhoto } from "../supa.js";
@@ -260,7 +261,9 @@ export default function IngredientsView({ db, save, canEdit, showMoney, confirm,
     );
   };
 
-  // ── 物料視角：清單列 ──
+  // ── 物料視角：清單列（ground-pack 硬格線風：方角、直向格線、字體同產品管理；張良 2026-07-20）──
+  const IGRID = `54px minmax(150px,1.2fr) 118px minmax(130px,1.2fr) ${showMoney ? "92px " : ""}92px 26px`;
+  const vline = { borderRight: "1px solid #e0d6bf", alignSelf: "stretch", display: "flex", alignItems: "center" };
   const listRow = (g) => {
     const srcs = srcsOf(db, g.id);
     const isOpen = open === g.id;
@@ -268,23 +271,27 @@ export default function IngredientsView({ db, save, canEdit, showMoney, confirm,
     const minU = units.length ? Math.min(...units) : null;
     const anyAlert = srcs.map(vi => priceAlert(vi, alertPct)).find(Boolean);
     const mainVi = srcs.find(vi => packToBase(vi)) || srcs[0];
+    const vnames = [...new Set(srcs.map(vi => vname(vi.vendor_id)))].join("、");
     return (
       <React.Fragment key={g.id}>
         <div draggable={canEdit} onDragStart={() => setDrag(g.id)} onDragOver={e => drag && e.preventDefault()} onDrop={() => dropOn(g.id)}
           onClick={() => setOpen(isOpen ? null : g.id)}
-          style={{ display: "grid", gridTemplateColumns: `26px 24px minmax(120px,1.4fr) 110px 90px ${showMoney ? "110px " : ""}96px 30px`, gap: 6, alignItems: "center", minHeight: 34, padding: "2px 10px", borderTop: `1px solid #f0ead9`, fontSize: 12.5, cursor: "pointer", background: isOpen ? "#fbeee6" : sel2[g.id] ? "#f2f6fb" : "#fff" }}>
-          <input type="checkbox" checked={!!sel2[g.id]} onClick={e => e.stopPropagation()} onChange={e => setSel2(s => ({ ...s, [g.id]: e.target.checked }))} disabled={!canEdit} style={{ cursor: "pointer" }} />
-          <button onClick={e => { e.stopPropagation(); canEdit && updIng(g.id, { isKey: !g.isKey }); }} title={g.isKey ? "關鍵品項（點擊取消）" : "標為關鍵品項"} style={{ border: "none", background: "none", color: g.isKey ? "#E8A317" : "#d9cfbd", fontSize: 14, cursor: "pointer", padding: 0 }}>{g.isKey ? "★" : "☆"}</button>
-          <span style={{ fontWeight: 700, color: C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{g.name || <span style={{ color: C.faint }}>（未命名）</span>}{anyAlert && <span style={{ fontSize: 10, fontWeight: 700, color: anyAlert.up ? C.red : C.green, marginLeft: 4 }}>{anyAlert.up ? "▲" : "▼"}{Math.abs(anyAlert.pct)}%</span>}</span>
-          <span style={{ fontFamily: MONOF, fontSize: 11, color: mainVi && packToBase(mainVi) ? C.sub : C.red }}>{mainVi ? (packToBase(mainVi) ? `1${mainVi.unit || "件"}=${Number(mainVi.packToBase).toLocaleString()}${g.baseUnit}` : "1件=？") : "—"}</span>
-          <span style={{ fontSize: 11, color: srcs.length ? C.sub : C.red }}>{srcs.length ? `${srcs.length} 家賣` : "沒人賣"}</span>
-          {showMoney && <span style={{ fontFamily: MONOF, fontSize: 11, textAlign: "right", color: minU != null ? C.text : "#d5cbb6" }}>{minU != null ? `$${d2(minU)}/${g.baseUnit}` : "—"}</span>}
-          <span onClick={e => e.stopPropagation()} style={{ display: "flex" }}>
+          style={{ display: "grid", gridTemplateColumns: IGRID, alignItems: "stretch", minHeight: 34, borderTop: `1px solid #e0d6bf`, cursor: "pointer", background: isOpen ? "#fbeee6" : sel2[g.id] ? "#f2f6fb" : "#fff" }}
+          onMouseEnter={e => { if (!isOpen && !sel2[g.id]) e.currentTarget.style.background = C.soft; }} onMouseLeave={e => { e.currentTarget.style.background = isOpen ? "#fbeee6" : sel2[g.id] ? "#f2f6fb" : "#fff"; }}>
+          <div style={{ ...vline, padding: "0 6px", gap: 4, justifyContent: "center" }} onClick={e => e.stopPropagation()}>
+            <input type="checkbox" checked={!!sel2[g.id]} onChange={e => setSel2(s => ({ ...s, [g.id]: e.target.checked }))} disabled={!canEdit} style={{ cursor: "pointer" }} />
+            <button onClick={() => canEdit && updIng(g.id, { isKey: !g.isKey })} title={g.isKey ? "關鍵品項（點擊取消）" : "標為關鍵品項"} style={{ border: "none", background: "none", color: g.isKey ? "#E8A317" : "#d9cfbd", fontSize: 14, cursor: "pointer", padding: 0 }}>{g.isKey ? "★" : "☆"}</button>
+          </div>
+          <div style={{ ...vline, padding: "0 9px", overflow: "hidden" }}><span style={{ fontSize: 13, fontWeight: 600, color: C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{g.name || <span style={{ color: C.faint }}>（未命名）</span>}{anyAlert && <span style={{ fontSize: 10, fontWeight: 700, color: anyAlert.up ? C.red : C.green, marginLeft: 4 }}>{anyAlert.up ? "▲" : "▼"}{Math.abs(anyAlert.pct)}%</span>}</span></div>
+          <div style={{ ...vline, padding: "0 9px", fontFamily: MONOF, fontSize: 11.5, color: mainVi && packToBase(mainVi) ? C.sub : C.red }}>{mainVi ? (packToBase(mainVi) ? `1${mainVi.unit || "件"}=${Number(mainVi.packToBase).toLocaleString()}${g.baseUnit}` : "1件=？") : "—"}</div>
+          <div style={{ ...vline, padding: "0 9px", overflow: "hidden" }}><span style={{ fontSize: 11.5, color: srcs.length ? C.sub : C.red, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={vnames}>{vnames || "沒人賣"}</span></div>
+          {showMoney && <div style={{ ...vline, padding: "0 9px", fontFamily: MONOF, fontSize: 11.5, justifyContent: "flex-end", color: minU != null ? C.text : "#d5cbb6" }}>{minU != null ? `$${d2(minU)}/${g.baseUnit}` : "—"}</div>}
+          <div style={{ ...vline, padding: "0 7px" }} onClick={e => e.stopPropagation()}>
             <button onClick={() => setOpen(isOpen ? null : g.id)} style={{ ...pill(g.countFreq && g.countFreq.type !== "none" && !g.countFreq.paused, C.blue), padding: "2px 9px", fontSize: 10.5 }}>{freqText(g.countFreq)}</button>
-          </span>
-          <span style={{ fontSize: 10, color: C.faint, textAlign: "center" }}>{isOpen ? "▾" : "▸"}</span>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, color: C.faint }}>{isOpen ? "▾" : "▸"}</div>
         </div>
-        {isOpen && <div style={{ padding: "10px 14px 12px 42px", borderTop: `1px solid #f0ead9`, background: "#fdfaf3" }}>{detailBody(g)}</div>}
+        {isOpen && <div style={{ padding: "10px 14px 12px 42px", borderTop: `1px solid #e0d6bf`, background: "#fdfaf3" }}>{detailBody(g)}</div>}
       </React.Fragment>
     );
   };
@@ -383,25 +390,25 @@ export default function IngredientsView({ db, save, canEdit, showMoney, confirm,
   const openG = open && all.find(g => g.id === open);
 
   return (
-    <div style={{ maxWidth: 1120, margin: "0 auto" }}>
+    <div style={{ maxWidth: 1060, margin: "0 auto" }}>
       <input ref={imgRef} type="file" accept="image/*" style={{ display: "none" }} onChange={e => { const f = e.target.files && e.target.files[0]; if (f) upImg(f); e.target.value = ""; }} />
       <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "6px 0 12px", flexWrap: "wrap" }}>
         <span style={{ background: C.accent, color: "#fff", fontSize: 11.5, fontWeight: 700, borderRadius: 4, padding: "2px 8px" }}>物料</span>
         <div style={{ fontSize: 17, fontWeight: 800, color: C.text }} title="截圖貼上就能匯入品項；同名自動併卡、入數自動抓；拖曳可排序。">物料清單</div>
         {/* 視角/顯示切換 */}
         <div style={{ display: "flex", background: "#e8e0cf", borderRadius: 8, padding: 2 }}>
-          <button onClick={() => setVw("mat")} style={seg(vw === "mat")}>🥬 物料</button>
-          <button onClick={() => setVw("ven")} style={seg(vw === "ven")}>🏭 廠商</button>
+          <button onClick={() => setVw("mat")} style={{ ...seg(vw === "mat"), display: "inline-flex", alignItems: "center", gap: 5 }}><Leaf size={13} strokeWidth={1.75} />物料</button>
+          <button onClick={() => setVw("ven")} style={{ ...seg(vw === "ven"), display: "inline-flex", alignItems: "center", gap: 5 }}><Factory size={13} strokeWidth={1.75} />廠商</button>
         </div>
         <div style={{ display: "flex", background: "#e8e0cf", borderRadius: 8, padding: 2 }}>
-          <button onClick={() => setDisp("list")} style={seg(disp === "list")}>☰ 清單</button>
-          <button onClick={() => setDisp("grid")} style={seg(disp === "grid")}>🖼 圖片</button>
+          <button onClick={() => setDisp("list")} style={{ ...seg(disp === "list"), display: "inline-flex", alignItems: "center", gap: 5 }}><List size={13} strokeWidth={1.75} />清單</button>
+          <button onClick={() => setDisp("grid")} style={{ ...seg(disp === "grid"), display: "inline-flex", alignItems: "center", gap: 5 }}><ImageIcon size={13} strokeWidth={1.75} />圖片</button>
         </div>
         <div style={{ flex: 1 }} />
-        <input value={q} onChange={e => setQ(e.target.value)} placeholder="🔍 搜尋" style={{ ...inp, width: 130 }} />
-        {canEdit && <button onClick={() => setImp({ vid: "", newVendor: "", vendorGuess: "", rows: [], busy: "" })} style={{ border: `1.5px solid ${C.accent}`, background: "#fff", color: C.accent, borderRadius: 7, padding: "6px 13px", fontSize: 12.5, fontWeight: 700, cursor: "pointer" }}>📸 貼截圖匯入</button>}
+        <input value={q} onChange={e => setQ(e.target.value)} placeholder="搜尋" style={{ ...inp, width: 120 }} />
+        {canEdit && <button onClick={() => setImp({ vid: "", newVendor: "", vendorGuess: "", rows: [], busy: "" })} style={{ display: "inline-flex", alignItems: "center", gap: 5, border: `1.5px solid ${C.accent}`, background: "#fff", color: C.accent, borderRadius: 7, padding: "6px 13px", fontSize: 12.5, fontWeight: 700, cursor: "pointer" }}><Camera size={14} strokeWidth={1.75} />貼截圖匯入</button>}
         {canEdit && <button onClick={() => { const g = { id: rid("g"), name: "", cat: "", baseUnit: "g", countFreq: { type: "none", days: [], dom: 1, paused: false }, countRole: "", countUnit: "", isKey: false, safeStock: "", note: "", sort: all.length, tags: "" }; save({ ingredients: [...(db.ingredients || []), g] }); setVw("mat"); setDisp("list"); setOpen(g.id); }} style={sbtn}>＋ 手動新增</button>}
-        {canEdit && <button onClick={autoOrganize} disabled={!pending.length} style={{ border: "none", background: pending.length ? C.accent : "#d5cbb6", color: "#fff", borderRadius: 7, padding: "7px 14px", fontSize: 12.5, fontWeight: 700, cursor: pending.length ? "pointer" : "default" }}>⚡ 自動整理{pending.length ? `（${pending.length}）` : ""}</button>}
+        {canEdit && <button onClick={autoOrganize} disabled={!pending.length} style={{ display: "inline-flex", alignItems: "center", gap: 5, border: "none", background: pending.length ? C.accent : "#d5cbb6", color: "#fff", borderRadius: 7, padding: "7px 14px", fontSize: 12.5, fontWeight: 700, cursor: pending.length ? "pointer" : "default" }}><Zap size={14} strokeWidth={1.75} />自動整理{pending.length ? `（${pending.length}）` : ""}</button>}
       </div>
       <datalist id="ingcats">{[...new Set(all.map(x => (x.cat || "").trim()).filter(Boolean))].map(c2 => <option key={c2} value={c2} />)}</datalist>
 
@@ -453,15 +460,21 @@ export default function IngredientsView({ db, save, canEdit, showMoney, confirm,
         const rows = shown.filter(g => ((g.cat || "").trim() || "未分類") === cat);
         const allSel = rows.every(g => sel2[g.id]);
         return (
-          <div key={cat} style={{ background: C.card, border: `1.5px solid ${C.hard}`, borderRadius: 10, marginBottom: 10, overflow: "hidden" }}>
+          <div key={cat} style={{ background: "#fff", border: `1.5px solid ${C.hard}`, borderRadius: 4, marginBottom: 12, overflow: "hidden" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 10px", background: "#ece4d6" }}>
               {disp === "list" && <input type="checkbox" checked={allSel} onChange={e => setSel2(s => { const n = { ...s }; rows.forEach(g => { n[g.id] = e.target.checked; }); return n; })} disabled={!canEdit} title="全選這個分類" style={{ cursor: "pointer" }} />}
               <span style={{ fontSize: 13, fontWeight: 800, color: C.text }}>{cat}</span>
               <span style={{ fontFamily: MONOF, fontSize: 11, color: C.faint }}>{rows.length} 項</span>
             </div>
             {disp === "list" && <>
-              <div style={{ display: "grid", gridTemplateColumns: `26px 24px minmax(120px,1.4fr) 110px 90px ${showMoney ? "110px " : ""}96px 30px`, gap: 6, padding: "3px 10px", fontSize: 9.5, color: C.faint, fontWeight: 700 }}>
-                <span /><span /><span>名稱（拖曳可排序）</span><span>每件入數</span><span>哪些廠商賣</span>{showMoney && <span style={{ textAlign: "right" }}>最低價</span>}<span>盤點</span><span />
+              <div style={{ display: "grid", gridTemplateColumns: IGRID, alignItems: "stretch", background: "#f2ecdd" }}>
+                <div style={{ ...vline, padding: "0 6px" }} />
+                <div style={{ ...vline, padding: "4px 9px", fontSize: 10.5, color: C.sub, fontWeight: 700 }}>名稱（拖曳可排序）</div>
+                <div style={{ ...vline, padding: "4px 9px", fontSize: 10.5, color: C.sub, fontWeight: 700 }}>每件入數</div>
+                <div style={{ ...vline, padding: "4px 9px", fontSize: 10.5, color: C.sub, fontWeight: 700 }}>哪些廠商賣</div>
+                {showMoney && <div style={{ ...vline, padding: "4px 9px", fontSize: 10.5, color: C.sub, fontWeight: 700, justifyContent: "flex-end" }}>最低價</div>}
+                <div style={{ ...vline, padding: "4px 7px", fontSize: 10.5, color: C.sub, fontWeight: 700 }}>盤點</div>
+                <div />
               </div>
               {rows.map(listRow)}
             </>}
