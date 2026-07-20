@@ -98,19 +98,39 @@ export default function IngredientsView({ db, save, canEdit, showMoney, confirm,
     save({ vendorItems: [...others, ...mine.map((x, i) => ({ ...x, sort: i }))] }); setDragI(null);
   };
 
-  // ── 📸 截圖匯入：AI 解析 → 預覽表（可改）→ 人工確認才寫入 ──
+  // ── 📸 截圖匯入：AI 解析（含商品照片位置）→ 自動裁圖 → 預覽表（可改）→ 人工確認才寫入 ──
+  const loadImgEl = (f) => new Promise((res, rej) => { const u = URL.createObjectURL(f); const im = new Image(); im.onload = () => res(im); im.onerror = rej; im.src = u; });
+  const cropBox = (im, b) => new Promise((res) => {
+    // 裁下截圖裡的商品照片；座標稍微夾一下範圍，裁不出來就回 null（不擋文字匯入）
+    try {
+      const W = im.naturalWidth, H = im.naturalHeight;
+      let x = Math.max(0, Math.min(Number(b.x) || 0, W - 2)), y = Math.max(0, Math.min(Number(b.y) || 0, H - 2));
+      let w = Math.min(Number(b.w) || 0, W - x), h = Math.min(Number(b.h) || 0, H - y);
+      if (w < 20 || h < 20) return res(null);
+      const c = document.createElement("canvas"); c.width = w; c.height = h;
+      c.getContext("2d").drawImage(im, x, y, w, h, 0, 0, w, h);
+      c.toBlob(bl => res(bl || null), "image/jpeg", 0.85);
+    } catch (_) { res(null); }
+  });
   const parseShots = async (files) => {
     const arr = Array.from(files || []).filter(f => /^image\//.test(f.type)); if (!arr.length) return;
     setImp(m => m ? { ...m, busy: `AI 解析中（${arr.length} 張）…` } : m);
     for (const f of arr) {
       try {
-        const b64 = await fileToB64(f);
+        const [b64, im] = await Promise.all([fileToB64(f), loadImgEl(f)]);
+        const W = im.naturalWidth, H = im.naturalHeight;
         const block = { type: "image", source: { type: "base64", media_type: f.type || "image/png", data: b64 } };
-        const prompt = `這是廠商網站/購物車/報價單/型錄的截圖。抽出每一個商品，只回 JSON、不要其他文字：{"vendor":"截圖上可辨識的廠商或網站名稱(沒有就空字串)","items":[{"name":"品名(簡短,去掉與規格重複的贅字)","spec":"規格(例:1000入/箱,600g/包,沒有就空字串)","unit":"採購單位(箱/件/包/組,預設箱)","price":單價數字}]}。金額只放數字，看不到的欄位留空字串或 0。`;
+        const prompt = `這是廠商網站/購物車/報價單/型錄的截圖，原始尺寸 ${W}x${H} 像素。抽出每一個商品，只回 JSON、不要其他文字：{"vendor":"截圖上可辨識的廠商或網站名稱(沒有就空字串)","items":[{"name":"品名(簡短,去掉與規格重複的贅字)","spec":"規格(例:1000入/箱,600g/包,沒有就空字串)","unit":"採購單位(箱/件/包/組,預設箱)","price":單價數字,"img":{"x":左上x,"y":左上y,"w":寬,"h":高}}]}。img=該商品縮圖照片在截圖中的像素範圍（以原始 ${W}x${H} 座標、整數、框準照片本身不含文字），該商品沒有照片就給 null。金額只放數字，看不到的欄位留空字串或 0。`;
         const reply = await callAI([{ role: "user", content: [block, { type: "text", text: prompt }] }], "你是採購品項解析助理，只輸出 JSON。", "import");
         const clean = reply.replace(/```json|```/gi, "").trim();
         const parsed = JSON.parse(clean.slice(clean.indexOf("{"), clean.lastIndexOf("}") + 1));
-        const rows = (parsed.items || []).map(it => ({ on: true, name: String(it.name || "").trim(), spec: String(it.spec || "").trim(), unit: String(it.unit || "箱").trim() || "箱", price: Number(it.price) || "" })).filter(r => r.name);
+        const rows = [];
+        for (const it of (parsed.items || [])) {
+          const name = String(it.name || "").trim(); if (!name) continue;
+          let thumb = null, thumbUrl = "";
+          if (it.img && typeof it.img === "object") { thumb = await cropBox(im, it.img); if (thumb) thumbUrl = URL.createObjectURL(thumb); }
+          rows.push({ on: true, name, spec: String(it.spec || "").trim(), unit: String(it.unit || "箱").trim() || "箱", price: Number(it.price) || "", thumb, thumbUrl });
+        }
         setImp(m => m ? { ...m, rows: [...m.rows, ...rows], vendorGuess: m.vendorGuess || String(parsed.vendor || "").trim() } : m);
       } catch (e) { flash("解析失敗：" + (e?.message || e)); }
     }
@@ -121,7 +141,7 @@ export default function IngredientsView({ db, save, canEdit, showMoney, confirm,
     const h = (e) => { const its = (e.clipboardData || {}).items || []; const fs = []; for (const it of its) { if (it.type && it.type.startsWith("image/")) { const f = it.getAsFile(); if (f) fs.push(f); } } if (fs.length) { e.preventDefault(); parseShots(fs); } };
     window.addEventListener("paste", h); return () => window.removeEventListener("paste", h);
   }, [imp]); // eslint-disable-line
-  const doImport = () => {
+  const doImport = async () => {
     const rows = (imp.rows || []).filter(r => r.on && r.name.trim()); if (!rows.length) return;
     let vid = imp.vid; let vendors2 = db.vendors || [];
     if (!vid) { flash("先選這批品項是哪家廠商的"); return; }
@@ -130,12 +150,35 @@ export default function IngredientsView({ db, save, canEdit, showMoney, confirm,
       const nv = { id: rid("v"), name: nm, dept: "共用", vcat: "", url: "", tags: [], note: "", lineGroupId: "", sendMode: "share", sort: vendors2.length };
       vendors2 = [...vendors2, nv]; vid = nv.id;
     }
-    const baseSort = (db.vendorItems || []).filter(v => v.vendor_id === vid).length;
-    const newVis = rows.map((r, i) => ({ id: rid("vi"), vendor_id: vid, grp: "", name: r.name.trim(), spec: r.spec.trim(), unit: r.unit || "箱", price: r.price || "", safeStock: "", sort: baseSort + i, tags: "" }));
-    const plan = organizeAll({ ...db, vendors: vendors2, vendorItems: [...(db.vendorItems || []), ...newVis] });
+    // 同廠商同名品項＝更新不重複建（重貼同一張截圖不會灌重複資料）
+    let vis2 = [...(db.vendorItems || [])];
+    let addN = 0, updN = 0;
+    const baseSort = vis2.filter(v => v.vendor_id === vid).length;
+    rows.forEach((r, i) => {
+      const ex = vis2.find(v => v.vendor_id === vid && normName(v.name) === normName(r.name));
+      if (ex) { vis2 = vis2.map(v => v.id === ex.id ? { ...v, spec: r.spec.trim() || v.spec, unit: r.unit || v.unit, price: r.price !== "" ? r.price : v.price } : v); updN++; }
+      else { vis2.push({ id: rid("vi"), vendor_id: vid, grp: "", name: r.name.trim(), spec: r.spec.trim(), unit: r.unit || "箱", price: r.price || "", safeStock: "", sort: baseSort + i, tags: "" }); addN++; }
+    });
+    const plan = organizeAll({ ...db, vendors: vendors2, vendorItems: vis2 });
+    // 截圖裁下的商品照片 → 上傳 → 掛到物料卡（卡上已有圖就不動）
+    let imgN = 0;
+    const withThumb = rows.filter(r => r.thumb);
+    if (withThumb.length) {
+      setImp(m => m ? { ...m, busy: `上傳圖片中（${withThumb.length} 張）…` } : m);
+      for (const r of withThumb) {
+        const g = plan.ingredients.find(x => normName(x.name) === normName(r.name));
+        if (!g || g.img) continue;
+        try {
+          const file = new File([r.thumb], "item.jpg", { type: "image/jpeg" });
+          const { url, path } = await uploadPhoto(file);
+          plan.ingredients = plan.ingredients.map(x => x.id === g.id ? { ...x, img: url, imgPath: path } : x);
+          imgN++;
+        } catch (_) { /* 單張失敗不擋整批 */ }
+      }
+    }
     save({ vendors: vendors2, vendorItems: plan.vendorItems, ingredients: plan.ingredients });
     setImp(null);
-    flash(`📸 已匯入 ${newVis.length} 筆到「${vname(vid) || (vendors2.find(v => v.id === vid) || {}).name}」，自動建 ${plan.stats.created} 張物料卡、同名併入 ${plan.stats.merged} 筆`);
+    flash(`📸 匯入完成：新增 ${addN} 筆、更新 ${updN} 筆${imgN ? `、掛上 ${imgN} 張商品圖` : ""}；自動建 ${plan.stats.created} 張物料卡、同名併入 ${plan.stats.merged} 筆`);
   };
 
   const qq = q.trim().toLowerCase();
@@ -473,12 +516,13 @@ export default function IngredientsView({ db, save, canEdit, showMoney, confirm,
             <input ref={shotRef} type="file" accept="image/*" multiple style={{ display: "none" }} onChange={e => { parseShots(e.target.files); e.target.value = ""; }} />
             {/* 預覽表：AI 結果可勾可改，人工確認才寫入 */}
             {imp.rows.length > 0 && <>
-              <div style={{ display: "grid", gridTemplateColumns: "26px minmax(140px,1.5fr) minmax(100px,1fr) 64px 84px", gap: 6, padding: "4px 6px", fontSize: 10, color: C.faint, fontWeight: 700, background: "#f4efe5", borderRadius: 6 }}>
-                <span /><span>品名</span><span>規格</span><span>單位</span><span style={{ textAlign: "right" }}>單價</span>
+              <div style={{ display: "grid", gridTemplateColumns: "26px 36px minmax(140px,1.5fr) minmax(100px,1fr) 64px 84px", gap: 6, padding: "4px 6px", fontSize: 10, color: C.faint, fontWeight: 700, background: "#f4efe5", borderRadius: 6 }}>
+                <span /><span>圖</span><span>品名</span><span>規格</span><span>單位</span><span style={{ textAlign: "right" }}>單價</span>
               </div>
               {imp.rows.map((r, i) => (
-                <div key={i} style={{ display: "grid", gridTemplateColumns: "26px minmax(140px,1.5fr) minmax(100px,1fr) 64px 84px", gap: 6, alignItems: "center", padding: "3px 6px", borderBottom: `1px solid #f0ead9`, opacity: r.on ? 1 : 0.45 }}>
+                <div key={i} style={{ display: "grid", gridTemplateColumns: "26px 36px minmax(140px,1.5fr) minmax(100px,1fr) 64px 84px", gap: 6, alignItems: "center", padding: "3px 6px", borderBottom: `1px solid #f0ead9`, opacity: r.on ? 1 : 0.45 }}>
                   <input type="checkbox" checked={r.on} onChange={e => setImp(m => ({ ...m, rows: m.rows.map((x, j) => j === i ? { ...x, on: e.target.checked } : x) }))} />
+                  <span title={r.thumbUrl ? "會一起掛到物料卡" : "這筆沒抓到商品照片（不影響匯入，之後可手動補圖）"} style={{ width: 32, height: 32, borderRadius: 6, border: `1px solid ${C.line}`, background: r.thumbUrl ? `url(${r.thumbUrl}) center/cover` : "#f4efe5", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, color: C.faint }}>{r.thumbUrl ? "" : "—"}</span>
                   <input value={r.name} onChange={e => setImp(m => ({ ...m, rows: m.rows.map((x, j) => j === i ? { ...x, name: e.target.value } : x) }))} style={{ ...inp, padding: "3px 7px", fontSize: 12 }} />
                   <input value={r.spec} onChange={e => setImp(m => ({ ...m, rows: m.rows.map((x, j) => j === i ? { ...x, spec: e.target.value } : x) }))} style={{ ...inp, padding: "3px 7px", fontSize: 11.5 }} />
                   <input value={r.unit} onChange={e => setImp(m => ({ ...m, rows: m.rows.map((x, j) => j === i ? { ...x, unit: e.target.value } : x) }))} style={{ ...inp, padding: "3px 7px", fontSize: 11.5 }} />
