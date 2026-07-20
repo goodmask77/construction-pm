@@ -27,6 +27,7 @@ export default function IngredientsView({ db, save, canEdit, showMoney, confirm,
   const [drag, setDrag] = useState(null);        // 拖曳中的物料 id
   const [dragI, setDragI] = useState(null);      // 拖曳中的廠商品項 id（廠商視角）
   const [colV, setColV] = useState({});          // 廠商視角收合
+  const [colCat, setColCat] = useState({});      // 物料視角：分類收合（truthy=收合）
   const [imp, setImp] = useState(null);          // 截圖匯入 modal：{vid,newVendor,vendorGuess,rows,busy}
   const imgRef = useRef(null); const imgFor = useRef(null); // 圖片上傳 input + 目標物料 id
   const shotRef = useRef(null);                  // 截圖上傳 input
@@ -40,6 +41,23 @@ export default function IngredientsView({ db, save, canEdit, showMoney, confirm,
   const alertPct = (db.settings && db.settings.priceAlertPct) || 15;
   const updIng = (id, fp) => save({ ingredients: (db.ingredients || []).map(x => x.id === id ? { ...x, ...fp } : x) });
   const d2 = (n) => n >= 100 ? Math.round(n).toLocaleString() : (Math.round(n * 1000) / 1000).toString();
+
+  // ── 包材庫一次性鏡射（2026-07-20 張良：包材庫品項直接搬到物料清單，標★置頂重點比價）──
+  useEffect(() => {
+    if (!canEdit || (db.settings && db.settings.matMirrored)) return;
+    const mats = db.materials || []; if (!mats.length) return;
+    const byN = new Set((db.ingredients || []).map(g => normName(g.name)).filter(Boolean));
+    const add = mats.filter(m => (m.name || "").trim() && !byN.has(normName(m.name))).map((m, i) => ({ id: rid("g"), name: m.name.trim(), cat: "菜單包材", baseUnit: "個", countFreq: { type: "none", days: [], dom: 1, paused: false }, countRole: "", countUnit: "", isKey: true, safeStock: "", note: m.spec ? `規格 ${m.spec}` : "", sort: (db.ingredients || []).length + i, tags: "", matId: m.id }));
+    save({ ingredients: [...(db.ingredients || []), ...add], settings: { ...(db.settings || {}), matMirrored: 1 } });
+    if (add.length) flash(`📦 已把包材庫 ${add.length} 項搬進物料清單（標★置頂、分類「菜單包材」）——等廠商報價/截圖匯入同名品項會自動掛上比價`);
+  }, [db.settings && db.settings.matMirrored, canEdit]); // eslint-disable-line
+
+  // ── 卡片開著時直接 Ctrl+V 貼截圖＝換卡片圖片（通則）──
+  useEffect(() => {
+    if (!open || imp || !canEdit) return;
+    const h = (e) => { const its = (e.clipboardData || {}).items || []; for (const it of its) { if (it.type && it.type.startsWith("image/")) { const f = it.getAsFile(); if (f) { e.preventDefault(); imgFor.current = open; upImg(f); return; } } } };
+    window.addEventListener("paste", h); return () => window.removeEventListener("paste", h);
+  }, [open, imp, canEdit]); // eslint-disable-line
 
   // ── ⚡ 自動整理（共用 organizeAll）──
   const pending = (db.vendorItems || []).filter(vi => !vi.ingredient_id && (vi.name || "").trim());
@@ -186,7 +204,21 @@ export default function IngredientsView({ db, save, canEdit, showMoney, confirm,
   const match = (g) => !qq || `${g.name || ""} ${g.cat || ""} ${g.tags || ""}`.toLowerCase().includes(qq);
   const shown = stock.filter(match);
   const svcList = all.filter(g => g.nonStock).filter(match);
-  const cats = [...new Set(shown.map(g => (g.cat || "").trim() || "未分類"))];
+  // 分類順序：settings.ingCatOrder（可拖曳排序），沒登記的照筆畫排後面
+  const catOrder = (db.settings && db.settings.ingCatOrder) || [];
+  const cats = [...new Set(shown.map(g => (g.cat || "").trim() || "未分類"))].sort((a, b) => {
+    const ia = catOrder.indexOf(a), ib = catOrder.indexOf(b);
+    return (ia < 0 ? 999 : ia) - (ib < 0 ? 999 : ib) || a.localeCompare(b, "zh-TW");
+  });
+  const [dragCat2, setDragCat2] = [drag && drag.startsWith("cat:") ? drag.slice(4) : null, (c2) => setDrag(c2 ? "cat:" + c2 : null)];
+  const dropCatOn = (target) => {
+    if (!dragCat2 || dragCat2 === target) return setDragCat2(null);
+    const names = [...cats];
+    const from = names.indexOf(dragCat2), to = names.indexOf(target);
+    if (from < 0 || to < 0) return setDragCat2(null);
+    const [mv] = names.splice(from, 1); names.splice(to, 0, mv);
+    save({ settings: { ...(db.settings || {}), ingCatOrder: names } }); setDragCat2(null);
+  };
 
   // ── 物料詳情內容（清單展開與圖片視角彈窗共用）──
   const detailBody = (g) => {
@@ -197,7 +229,7 @@ export default function IngredientsView({ db, save, canEdit, showMoney, confirm,
       <div onClick={e => e.stopPropagation()}>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginBottom: 8 }}>
           {/* 圖片：點縮圖或按鈕換圖（也可在圖片視角卡片上直接按📷） */}
-          <span onClick={() => { if (canEdit) { imgFor.current = g.id; imgRef.current && imgRef.current.click(); } }} title="點擊上傳/更換圖片" style={{ width: 46, height: 46, borderRadius: 8, border: `1px solid ${C.line}`, background: g.img ? `url(${g.img}) center/cover` : "#f4efe5", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, color: C.faint, cursor: canEdit ? "pointer" : "default", flexShrink: 0 }}>{g.img ? "" : "📷"}</span>
+          <span onClick={() => { if (canEdit) { imgFor.current = g.id; imgRef.current && imgRef.current.click(); } }} title="點擊上傳，或直接 Ctrl/Cmd+V 貼上截圖" style={{ width: 46, height: 46, borderRadius: 8, border: `1px solid ${C.line}`, background: g.img ? `url(${g.img}) center/cover` : "#f4efe5", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, color: C.faint, cursor: canEdit ? "pointer" : "default", flexShrink: 0 }}>{g.img ? "" : "📷"}</span>
           <label style={{ fontSize: 11, color: C.sub }}>名稱 <input value={g.name || ""} onChange={e => updIng(g.id, { name: e.target.value })} disabled={!canEdit} style={{ ...inp, width: 140 }} /></label>
           <label style={{ fontSize: 11, color: C.sub }}>分類 <input value={g.cat || ""} onChange={e => updIng(g.id, { cat: e.target.value })} disabled={!canEdit} list="ingcats" style={{ ...inp, width: 90 }} /></label>
           <label style={{ fontSize: 11, color: C.sub }}>計量單位 <input value={g.baseUnit || ""} onChange={e => updIng(g.id, { baseUnit: e.target.value })} disabled={!canEdit} placeholder="個/g/ml" style={{ ...inp, width: 56 }} /></label>
@@ -415,6 +447,7 @@ export default function IngredientsView({ db, save, canEdit, showMoney, confirm,
           <button onClick={() => setDisp("grid")} style={{ ...seg(disp === "grid"), display: "inline-flex", alignItems: "center", gap: 5 }}><ImageIcon size={13} strokeWidth={1.75} />圖片</button>
         </div>
         <div style={{ flex: 1 }} />
+        {vw === "mat" && <button onClick={() => { const allC = cats.every(c2 => colCat[c2]); setColCat(s => { const n = { ...s }; cats.forEach(c2 => { n[c2] = !allC; }); return n; }); }} style={{ ...sbtn, padding: "6px 12px", fontSize: 12 }}>{cats.length && cats.every(c2 => colCat[c2]) ? "▾ 全部展開" : "▸ 全部收合"}</button>}
         <input value={q} onChange={e => setQ(e.target.value)} placeholder="搜尋" style={{ ...inp, width: 120 }} />
         {canEdit && <button onClick={() => setImp({ vid: "", newVendor: "", vendorGuess: "", rows: [], busy: "" })} style={{ display: "inline-flex", alignItems: "center", gap: 5, border: `1.5px solid ${C.accent}`, background: "#fff", color: C.accent, borderRadius: 7, padding: "6px 13px", fontSize: 12.5, fontWeight: 700, cursor: "pointer" }}><Camera size={14} strokeWidth={1.75} />貼截圖匯入</button>}
         {canEdit && <button onClick={() => { const g = { id: rid("g"), name: "", cat: "", baseUnit: "g", countFreq: { type: "none", days: [], dom: 1, paused: false }, countRole: "", countUnit: "", isKey: false, safeStock: "", note: "", sort: all.length, tags: "" }; save({ ingredients: [...(db.ingredients || []), g] }); setVw("mat"); setDisp("list"); setOpen(g.id); }} style={sbtn}>＋ 手動新增</button>}
@@ -457,6 +490,8 @@ export default function IngredientsView({ db, save, canEdit, showMoney, confirm,
             save({ ingredients: (db.ingredients || []).filter(x => !sel2[x.id]), vendorItems: (db.vendorItems || []).filter(v => !sel2[v.ingredient_id]) });
             setSel2({}); flash(`✓ 已刪除 ${selIds.length} 項`);
           }} style={{ border: "1px solid #b3261e", background: "#b3261e", color: "#fff", borderRadius: 7, padding: "3px 11px", fontSize: 11.5, fontWeight: 700, cursor: "pointer" }}>刪除</button>
+          <span style={{ width: 8 }} />
+          <button onClick={() => setSel2(s => { const n = { ...s }; shown.forEach(g => { n[g.id] = true; }); return n; })} style={{ border: "1px solid #5a5247", background: "transparent", color: "#fff", borderRadius: 7, padding: "3px 11px", fontSize: 11.5, cursor: "pointer" }}>全選</button>
           <div style={{ flex: 1 }} />
           <button onClick={() => setSel2({})} style={{ border: "none", background: "none", color: "#d9cfbd", fontSize: 11.5, cursor: "pointer" }}>取消選取</button>
         </div>
@@ -467,16 +502,21 @@ export default function IngredientsView({ db, save, canEdit, showMoney, confirm,
 
       {/* 物料視角 */}
       {vw === "mat" && cats.map(cat => {
-        const rows = shown.filter(g => ((g.cat || "").trim() || "未分類") === cat);
+        const rows = shown.filter(g => ((g.cat || "").trim() || "未分類") === cat).sort((a, b) => (b.isKey ? 1 : 0) - (a.isKey ? 1 : 0)); // ★ 置頂（重點比價）
         const allSel = rows.every(g => sel2[g.id]);
+        const catClosed = !!colCat[cat];
         return (
-          <div key={cat} style={{ background: "#fff", border: `1.5px solid ${C.hard}`, borderRadius: 4, marginBottom: 12, overflow: "hidden" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 10px", background: "#ece4d6" }}>
-              {disp === "list" && <input type="checkbox" checked={allSel} onChange={e => setSel2(s => { const n = { ...s }; rows.forEach(g => { n[g.id] = e.target.checked; }); return n; })} disabled={!canEdit} title="全選這個分類" style={{ cursor: "pointer" }} />}
+          <div key={cat} style={{ background: "#fff", border: `1.5px solid ${C.hard}`, borderRadius: 4, marginBottom: 12, overflow: "hidden", outline: dragCat2 === cat ? `2px dashed ${C.accent}` : "none" }}>
+            <div onClick={() => setColCat(s => ({ ...s, [cat]: !catClosed }))}
+              draggable={canEdit} onDragStart={() => setDragCat2(cat)} onDragEnd={() => setDragCat2(null)} onDragOver={e => dragCat2 && e.preventDefault()} onDrop={() => dropCatOn(cat)}
+              style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 10px", background: "#ece4d6", cursor: "pointer" }}>
+              {canEdit && <span title="拖曳調整分類順序" style={{ cursor: "grab", color: "#c8bca6", fontSize: 13 }}>⠿</span>}
+              {disp === "list" && <input type="checkbox" checked={allSel} onClick={e => e.stopPropagation()} onChange={e => setSel2(s => { const n = { ...s }; rows.forEach(g => { n[g.id] = e.target.checked; }); return n; })} disabled={!canEdit} title="全選這個分類" style={{ cursor: "pointer" }} />}
+              <span style={{ fontSize: 10, color: C.faint }}>{catClosed ? "▸" : "▾"}</span>
               <span style={{ fontSize: 13, fontWeight: 800, color: C.text }}>{cat}</span>
               <span style={{ fontFamily: MONOF, fontSize: 11, color: C.faint }}>{rows.length} 項</span>
             </div>
-            {disp === "list" && <>
+            {!catClosed && disp === "list" && <>
               <div style={{ display: "grid", gridTemplateColumns: IGRID, alignItems: "stretch", background: "#f2ecdd" }}>
                 <div style={{ ...vline, padding: "0 6px" }} />
                 <div style={{ ...vline, padding: "4px 9px", fontSize: 10.5, color: C.sub, fontWeight: 700 }}>名稱（拖曳可排序）</div>
@@ -488,7 +528,7 @@ export default function IngredientsView({ db, save, canEdit, showMoney, confirm,
               </div>
               {rows.map(listRow)}
             </>}
-            {disp === "grid" && <div style={{ display: "flex", flexWrap: "wrap", gap: 8, padding: 10 }}>{rows.map(gridCard)}</div>}
+            {!catClosed && disp === "grid" && <div style={{ display: "flex", flexWrap: "wrap", gap: 8, padding: 10 }}>{rows.map(gridCard)}</div>}
           </div>
         );
       })}

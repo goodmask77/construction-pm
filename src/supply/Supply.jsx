@@ -39,6 +39,8 @@ export default function SupplyView({ view, K, canEdit, confirm, showMoney, userN
   const [moSel2, setMoSel2] = useState("");      // 紀錄・對帳：月份篩選（空=本月）
   const [vF, setVF] = useState("");              // 紀錄・對帳：廠商篩選
   const [qv2, setQv2] = useState({});            // 報價分頁：輸入中的報價（viId → 文字，離開欄位才寫入流水）
+  const [selRows, setSelRows] = useState({});    // 菜單管理/廠商建檔：批次勾選 id→true
+  const [dragC, setDragC] = useState(null);      // 拖曳中的類別/分類名稱
   const [groups, setGroups] = useState({});     // DD看過的LINE群（pm_group_seen，發送綁定用）
   const flash = (t) => { setMsg(t); setTimeout(() => setMsg(m => (m === t ? null : m)), 6000); };
 
@@ -160,10 +162,7 @@ export default function SupplyView({ view, K, canEdit, confirm, showMoney, userN
       <div>
         <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "6px 0 8px", flexWrap: "wrap" }}>
           <span style={{ background: C.accent, color: "#fff", fontSize: 11.5, fontWeight: 700, borderRadius: 4, padding: "2px 8px" }}>叫貨</span>
-          <div>
-            <div style={{ fontSize: 17, fontWeight: 800, color: C.text }}>叫貨</div>
-            <div style={{ fontSize: 11, color: C.faint }}>{oTab === "order" ? "點廠商名展開品項 → 填數量 → 產生叫貨單 → 發送。只列正式供應商（廠商頁名稱前打勾）。" : oTab === "quote" ? "key 各家今日報價 → 自動換算同單位、最低標綠 → 勾本次跟誰叫 → 帶入下單。報價只供比價，成本一律用驗收實付價。" : oTab === "rec" ? "彙總＋逐張紀錄放一起，可選月份、篩廠商，月底對帳用。" : "驗收有問題的品項自動集中在這裡，追到解決為止。"}</div>
-          </div>
+          <div style={{ fontSize: 17, fontWeight: 800, color: C.text }} title={oTab === "order" ? "點廠商名展開品項 → 填數量 → 產生叫貨單 → 發送。只列正式供應商。" : oTab === "quote" ? "key 各家今日報價 → 自動換算同單位、最低標綠 → 勾本次跟誰叫 → 帶入下單。成本一律用驗收實付價。" : oTab === "rec" ? "彙總＋逐張紀錄，可選月份、篩廠商，月底對帳用。" : "驗收有問題的品項自動集中，追到解決為止。"}>叫貨</div>
           <div style={{ flex: 1 }} />
           {oTab === "order" && <>
             <input value={oq} onChange={e => setOq(e.target.value)} placeholder="🔍 搜尋品項/標籤（比價）" style={{ ...inp, width: 180 }} />
@@ -230,7 +229,7 @@ export default function SupplyView({ view, K, canEdit, confirm, showMoney, userN
         </>}
         {/* ── 分頁2：報價比價（物料×貨源矩陣；key 報價→寫 pm_quote_ 流水＋quote 快取；成本永遠不用報價） ── */}
         {oTab === "quote" && (() => {
-          const ingsQ = (db.ingredients || []).filter(g => !g.nonStock).slice().sort((a, b) => (a.sort || 0) - (b.sort || 0)).map(g => ({ g, srcs: srcsOf(db, g.id) })).filter(x => x.srcs.length > 0);
+          const ingsQ = (db.ingredients || []).filter(g => !g.nonStock).slice().sort((a, b) => (b.isKey ? 1 : 0) - (a.isKey ? 1 : 0) || (a.sort || 0) - (b.sort || 0)).map(g => ({ g, srcs: srcsOf(db, g.id) })).filter(x => x.srcs.length > 0); // ★ 置頂重點比價
           const vname2 = (vid) => ((db.vendors || []).find(v => v.id === vid) || {}).name || "—";
           const commitQuote = (vi) => {
             const raw = qv2[vi.id]; if (raw === undefined) return;
@@ -706,30 +705,73 @@ export default function SupplyView({ view, K, canEdit, confirm, showMoney, userN
       <div style={{ maxWidth: 1060, margin: "0 auto" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "6px 0 12px", flexWrap: "wrap" }}>
           <span style={{ background: C.accent, color: "#fff", fontSize: 11.5, fontWeight: 700, borderRadius: 4, padding: "2px 8px" }}>廠商</span>
-          <div>
-            <div style={{ fontSize: 17, fontWeight: 800, color: C.text }}>廠商建檔</div>
-            <div style={{ fontSize: 11, color: C.faint }}>{(db.vendors || []).length} 家・建好的廠商會自動出現在物料/叫貨/截圖匯入的選單。品項到「物料」頁維護。打勾＝正式供應商（才會進叫貨表）。</div>
-          </div>
+          <div style={{ fontSize: 17, fontWeight: 800, color: C.text }} title={`${(db.vendors || []).length} 家・建好的廠商會自動出現在物料/叫貨/截圖匯入的選單。品項到「物料清單」頁維護。打勾＝正式供應商（才會進叫貨表）。`}>廠商建檔</div>
           <div style={{ flex: 1 }} />
           <select value={catF} onChange={e => setCatF(e.target.value)} style={inp}><option value="">全部部門</option>{DEPTS.map(d => <option key={d} value={d}>{d}</option>)}</select>
-          <input value={q} onChange={e => setQ(e.target.value)} placeholder="🔍 搜尋廠商…" style={{ ...inp, width: 160 }} />
+          <input value={q} onChange={e => setQ(e.target.value)} placeholder="搜尋廠商…" style={{ ...inp, width: 150 }} />
+          {(() => { const der = [...new Set(vs.map(v => (v.vcat || "").trim() || "未分類"))]; const reg = (db.vendorCats || []).filter(c => c !== "未分類"); const ks = [...reg, ...der.filter(c => c !== "未分類" && !reg.includes(c))]; if (der.includes("未分類")) ks.push("未分類"); const allOpen = ks.length > 0 && ks.every(g2 => collapsed["vc" + g2]); return <button onClick={() => setCollapsed(c2 => { const n = { ...c2 }; ks.forEach(g2 => { n["vc" + g2] = !allOpen; }); return n; })} style={{ border: `1px solid ${C.line}`, background: "#fff", color: C.sub, borderRadius: 7, padding: "6px 12px", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>{allOpen ? "▸ 全部收合" : "▾ 全部展開"}</button>; })()}
           {canEdit && btn("＋ 新增分類", () => { const n = window.prompt("分類名稱（例：菜商/包材/耗材/飲品）"); if (n && n.trim()) { save({ vendorCats: [...new Set([...(db.vendorCats || []), n.trim()])] }); setCollapsed(c2 => ({ ...c2, ["vc" + n.trim()]: true })); } })}
           {canEdit && btn("＋ 新增廠商", addVendor, { background: C.accent, color: "#fff", borderColor: C.accent })}
         </div>
-        {/* 第一層＝廠商分類（預設收合，點了才出現該類廠商）；分類可新增/改名/移除（張良 2026-07-18） */}
+        {/* 批次工具列（勾了才出現） */}
+        {(() => {
+          const ids = Object.keys(selRows).filter(id => selRows[id] && (db.vendors || []).some(v => v.id === id));
+          if (!ids.length) return null;
+          const batchV = (fp, m2) => { save({ vendors: db.vendors.map(v => selRows[v.id] ? { ...v, ...fp } : v) }); flash(`✓ 已把 ${ids.length} 家${m2}`); };
+          return (
+            <div style={{ position: "sticky", top: 0, zIndex: 5, background: "#1d1a15", color: "#fff", borderRadius: 10, marginBottom: 10, padding: "8px 12px", display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+              <span style={{ fontSize: 12.5, fontWeight: 700 }}>已勾 {ids.length} 家：</span>
+              <button onClick={() => batchV({ official: true }, "設為正式供應商")} style={{ border: "1px solid #5a5247", background: "transparent", color: "#fff", borderRadius: 7, padding: "3px 11px", fontSize: 11.5, cursor: "pointer" }}>設正式</button>
+              <button onClick={() => batchV({ official: false }, "取消正式")} style={{ border: "1px solid #5a5247", background: "transparent", color: "#fff", borderRadius: 7, padding: "3px 11px", fontSize: 11.5, cursor: "pointer" }}>取消正式</button>
+              <select defaultValue="" onChange={e => { if (e.target.value !== "") { batchV({ vcat: e.target.value === "__none" ? "" : e.target.value }, `移到「${e.target.value === "__none" ? "未分類" : e.target.value}」`); e.target.value = ""; } }} style={{ ...inp, padding: "3px 8px", fontSize: 11.5, width: 110 }}>
+                <option value="">移到分類…</option>
+                {[...new Set([...(db.vendorCats || []), ...(db.vendors || []).map(v => (v.vcat || "").trim()).filter(Boolean)])].map(g => <option key={g} value={g}>{g}</option>)}
+                <option value="__none">未分類</option>
+              </select>
+              <button onClick={async () => {
+                const nVi = (db.vendorItems || []).filter(x => selRows[x.vendor_id]).length;
+                if (!(await confirm(`刪除勾選的 ${ids.length} 家廠商？他們的 ${nVi} 筆品項會一起刪除（叫貨表/物料卡也會消失）。`, { confirmLabel: "刪除" }))) return;
+                const remainVis = (db.vendorItems || []).filter(x => !selRows[x.vendor_id]);
+                const hasSrc = new Set(remainVis.map(x => x.ingredient_id).filter(Boolean));
+                // 物料卡若因此變孤兒（原本有貨源、現在全沒了）一併刪，不留「沒人賣」
+                const ings2 = (db.ingredients || []).filter(g => { const had = (db.vendorItems || []).some(x => x.ingredient_id === g.id); return !had || hasSrc.has(g.id); });
+                save({ vendors: db.vendors.filter(v => !selRows[v.id]), vendorItems: remainVis, ingredients: ings2 });
+                setSelRows({}); flash(`✓ 已刪 ${ids.length} 家廠商＋${nVi} 筆品項`);
+              }} style={{ border: "1px solid #b3261e", background: "#b3261e", color: "#fff", borderRadius: 7, padding: "3px 11px", fontSize: 11.5, fontWeight: 700, cursor: "pointer" }}>刪除</button>
+              <span style={{ width: 8 }} />
+              <button onClick={() => setSelRows(s => { const n = { ...s }; vs.forEach(v => { n[v.id] = true; }); return n; })} style={{ border: "1px solid #5a5247", background: "transparent", color: "#fff", borderRadius: 7, padding: "3px 11px", fontSize: 11.5, cursor: "pointer" }}>全選</button>
+              <div style={{ flex: 1 }} />
+              <button onClick={() => setSelRows({})} style={{ border: "none", background: "none", color: "#d9cfbd", fontSize: 11.5, cursor: "pointer" }}>取消選取</button>
+            </div>
+          );
+        })()}
+        {/* 第一層＝廠商分類（預設收合，點了才出現該類廠商）；分類可新增/改名/移除/拖曳排序（張良 2026-07-18/07-20） */}
         {(() => {
           const vcatOf = (v) => (v.vcat || "").trim() || "未分類";
-          const cats2 = [...new Set([...(db.vendorCats || []), ...vs.map(vcatOf)])];
-          const keys2 = cats2.filter(c => c !== "未分類").sort((a, b) => a.localeCompare(b, "zh-TW"));
-          if (cats2.includes("未分類")) keys2.push("未分類");
+          const derived = [...new Set(vs.map(vcatOf))];
+          const reg = (db.vendorCats || []).filter(c => c !== "未分類");
+          const keys2 = [...reg, ...derived.filter(c => c !== "未分類" && !reg.includes(c)).sort((a, b) => a.localeCompare(b, "zh-TW"))];
+          if (derived.includes("未分類")) keys2.push("未分類");
+          const dropVCat = (target) => {
+            if (!dragC || dragC === target || target === "未分類" || dragC === "未分類") return setDragC(null);
+            const names = keys2.filter(c => c !== "未分類");
+            const from = names.indexOf(dragC), to = names.indexOf(target);
+            if (from < 0 || to < 0) return setDragC(null);
+            const [mv] = names.splice(from, 1); names.splice(to, 0, mv);
+            save({ vendorCats: names }); setDragC(null);
+          };
           const renameVcat = (g) => { const n = window.prompt("分類名稱", g); if (n === null || !n.trim() || n === g) return; save({ vendors: db.vendors.map(x => vcatOf(x) === g ? { ...x, vcat: n.trim() } : x), vendorCats: [...new Set((db.vendorCats || []).map(c => c === g ? n.trim() : c))] }); };
           const delVcat = async (g) => { if (await confirm(`移除分類「${g}」？裡面的廠商會移到「未分類」（廠商不會被刪）。`, { confirmLabel: "移除", danger: false })) save({ vendors: db.vendors.map(x => vcatOf(x) === g ? { ...x, vcat: "" } : x), vendorCats: (db.vendorCats || []).filter(c => c !== g) }); };
           return keys2.map(g => {
             const gvs = vs.filter(v => vcatOf(v) === g).sort((a, b) => (b.official ? 1 : 0) - (a.official ? 1 : 0)); // 正式供應商置頂
             const gOpen = qq ? true : !!collapsed["vc" + g]; // 搜尋中：分類全展開
             return (
-              <div key={g} style={{ border: `1.5px solid ${C.hard}`, borderRadius: 4, marginBottom: 10, overflow: "hidden", background: "#fff" }}>
-                <div onClick={() => setCollapsed(c2 => ({ ...c2, ["vc" + g]: !gOpen }))} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", background: "#ece4d6", cursor: "pointer" }}>
+              <div key={g} style={{ border: `1.5px solid ${C.hard}`, borderRadius: 4, marginBottom: 10, overflow: "hidden", background: "#fff", outline: dragC === g ? `2px dashed ${C.accent}` : "none" }}>
+                <div onClick={() => setCollapsed(c2 => ({ ...c2, ["vc" + g]: !gOpen }))}
+                  draggable={canEdit && g !== "未分類"} onDragStart={() => setDragC(g)} onDragEnd={() => setDragC(null)} onDragOver={e => dragC && e.preventDefault()} onDrop={() => dropVCat(g)}
+                  style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", background: "#ece4d6", cursor: "pointer" }}>
+                  {canEdit && g !== "未分類" && <span title="拖曳調整分類順序" style={{ cursor: "grab", color: "#c8bca6", fontSize: 13 }}>⠿</span>}
+                  <input type="checkbox" checked={gvs.length > 0 && gvs.every(v => selRows[v.id])} onClick={e => e.stopPropagation()} onChange={e => setSelRows(s => { const n = { ...s }; gvs.forEach(v => { n[v.id] = e.target.checked; }); return n; })} disabled={!canEdit || !gvs.length} title="全選這個分類" style={{ cursor: "pointer" }} />
                   <span style={{ fontSize: 10, color: C.faint }}>{gOpen ? "▾" : "▸"}</span>
                   <span style={{ fontSize: 13.5, fontWeight: 800, color: C.text }}>{g}</span>
                   <span style={{ fontFamily: MONOF, fontSize: 11.5, color: C.faint }}>{gvs.length} 家</span>
@@ -745,9 +787,10 @@ export default function SupplyView({ view, K, canEdit, confirm, showMoney, userN
                   return (
                     <div key={v.id} onClick={() => canEdit && setSel("v:" + v.id)}
                       onDragOver={e => dragV && e.preventDefault()} onDrop={() => dropVendor(v.id)}
-                      style={{ display: "grid", gridTemplateColumns: "16px 20px minmax(150px,1fr) 44px 60px minmax(140px,1.3fr) 92px", gap: 8, alignItems: "center", minHeight: 38, borderTop: `1px solid #e0d6bf`, padding: "3px 10px", cursor: canEdit ? "pointer" : "default", background: "#fff", outline: dragV === v.id ? `2px dashed ${C.accent}` : "none" }}
+                      style={{ display: "grid", gridTemplateColumns: "16px 22px 20px minmax(150px,1fr) 44px 60px minmax(140px,1.3fr) 92px", gap: 8, alignItems: "center", minHeight: 38, borderTop: `1px solid #e0d6bf`, padding: "3px 10px", cursor: canEdit ? "pointer" : "default", background: "#fff", outline: dragV === v.id ? `2px dashed ${C.accent}` : "none" }}
                       onMouseEnter={e => e.currentTarget.style.background = C.soft} onMouseLeave={e => e.currentTarget.style.background = "#fff"}>
                       {canEdit ? <span draggable onDragStart={e => { e.stopPropagation(); setDragV(v.id); }} onDragEnd={() => setDragV(null)} onClick={e => e.stopPropagation()} title="拖曳調整廠商順序" style={{ cursor: "grab", color: "#c8bca6", fontSize: 13, textAlign: "center" }}>⠿</span> : <span />}
+                      <input type="checkbox" checked={!!selRows[v.id]} onClick={e => e.stopPropagation()} onChange={e => setSelRows(s => ({ ...s, [v.id]: e.target.checked }))} disabled={!canEdit} title="勾選（批次動作用）" style={{ cursor: "pointer", margin: 0 }} />
                       <input type="checkbox" checked={!!v.official} disabled={!canEdit} onClick={e => e.stopPropagation()} onChange={e => { e.stopPropagation(); updV(v.id, { official: e.target.checked }); }} title="正式供應商（打勾＝出現在叫貨表，並置頂）" style={{ accentColor: C.accent, cursor: canEdit ? "pointer" : "default", margin: 0, width: 14, height: 14 }} />
                       <div style={{ overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis" }}>
                         <span style={{ fontSize: 13, fontWeight: 700, color: C.text }}>{v.name || "（未命名）"}</span>
@@ -767,44 +810,7 @@ export default function SupplyView({ view, K, canEdit, confirm, showMoney, userN
             );
           });
         })()}
-        {/* 📦 包材庫（自 ground-pack 搬來的 36 項）：在這裡歸屬給廠商 → 會出現在該廠商品項清單＆產品綁定分組（張良 2026-07-18） */}
-        {(() => {
-          const unassigned = (db.materials || []).filter(m => !m.vendor_id);
-          const assigned = (db.materials || []).filter(m => m.vendor_id);
-          const updM = (id, fp) => save({ materials: (db.materials || []).map(x => x.id === id ? { ...x, ...fp } : x) });
-          const assign = (m, vid) => {
-            if (!vid) return;
-            // 歸屬：包材標上廠商 + 同步塞進該廠商的叫貨品項清單（帶 matId 連結）
-            const already = (db.vendorItems || []).some(x => x.matId === m.id && x.vendor_id === vid);
-            save({
-              materials: (db.materials || []).map(x => x.id === m.id ? { ...x, vendor_id: vid } : x),
-              vendorItems: already ? db.vendorItems : [...(db.vendorItems || []), { id: rid("vi"), vendor_id: vid, matId: m.id, name: m.name, spec: m.spec || "", unit: "件", price: "", safeStock: "", sort: (db.vendorItems || []).length }],
-            });
-            flash(`✓「${m.name}」已歸屬給「${(db.vendors.find(v => v.id === vid) || {}).name}」，同時加進該廠商的品項清單（單價記得補）`);
-          };
-          return (
-            <div style={{ marginTop: 14, border: `1.5px solid ${C.hard}`, borderRadius: 4, overflow: "hidden" }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", background: "#ece4d6" }}>
-                <span style={{ fontSize: 13, fontWeight: 800, color: C.text }}>📦 包材庫</span>
-                <span style={{ fontSize: 11, color: C.faint }}>未歸屬 {unassigned.length}・已歸屬 {assigned.length}——歸屬給廠商後會出現在該廠商品項清單與產品綁定分組</span>
-              </div>
-              {unassigned.length === 0 ? <div style={{ padding: 12, fontSize: 12, color: C.green, fontWeight: 600, textAlign: "center" }}>✓ 全部包材都已歸屬廠商</div> : unassigned.map((m, i) => (
-                <div key={m.id} style={{ display: "grid", gridTemplateColumns: "minmax(120px,1fr) minmax(100px,1fr) minmax(90px,0.8fr) 180px 26px", gap: 8, alignItems: "center", padding: "4px 12px", borderTop: `1px solid #e0d6bf`, background: i % 2 ? "#faf6ec" : "#fff", fontSize: 12.5 }}>
-                  <input value={m.name} onChange={e => canEdit && updM(m.id, { name: e.target.value })} disabled={!canEdit} style={{ border: "none", background: "transparent", fontSize: 12.5, fontWeight: 600, color: C.text, outline: "none" }} />
-                  <input value={m.spec || ""} onChange={e => canEdit && updM(m.id, { spec: e.target.value })} disabled={!canEdit} placeholder="規格" style={{ border: "none", background: "transparent", fontSize: 11.5, color: C.sub, outline: "none" }} />
-                  <span style={{ fontSize: 10.5, color: C.faint }}>{m.grp}</span>
-                  {canEdit ? (
-                    <select value="" onChange={e => assign(m, e.target.value)} style={{ ...inp, padding: "3px 6px", fontSize: 11.5 }}>
-                      <option value="">歸屬給廠商…</option>
-                      {(db.vendors || []).filter(v => v.name).map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
-                    </select>
-                  ) : <span />}
-                  {canEdit ? <button onClick={async () => { if (await confirm(`刪除包材「${m.name}」？`, { confirmLabel: "刪除" })) save({ materials: (db.materials || []).filter(x => x.id !== m.id), productPackaging: (db.productPackaging || []).filter(x => x.packaging_id !== m.id) }); }} style={{ border: "none", background: "none", color: C.faint, cursor: "pointer", fontSize: 13 }}>×</button> : <span />}
-                </div>
-              ))}
-            </div>
-          );
-        })()}
+        {/* 包材庫已搬到「物料清單」頁（2026-07-20 張良指定：速食菜單主要包材，標★置頂重點比價） */}
         {/* 廠商編輯 */}
         {selV && (
           <div onClick={e => e.target === e.currentTarget && setSel(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.4)", zIndex: 700, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
@@ -859,8 +865,8 @@ export default function SupplyView({ view, K, canEdit, confirm, showMoney, userN
   const byCat = {};
   prods.forEach(x => { (byCat[x.category || "未分類"] = byCat[x.category || "未分類"] || []).push(x); });
   const catNames = [...cats.map(c => c.name), ...Object.keys(byCat).filter(n => !cats.some(c => c.name === n))].filter(n => byCat[n]?.length);
-  // ground-pack 風：緊湊欄寬（固定為主、備註吃剩餘）＋每格直向格線＋方角硬邊框（張良 2026-07-18 指定；07-20 欄寬收窄＋整頁限寬）
-  const GTC = `150px 158px minmax(110px,1fr) 46px ${showMoney ? "76px " : ""}46px 88px 50px 30px`;
+  // ground-pack 風：緊湊欄寬（固定為主、備註吃剩餘）＋每格直向格線＋方角硬邊框（張良 2026-07-18 指定；07-20 欄寬收窄＋整頁限寬＋勾選/拖曳欄）
+  const GTC = `26px 22px 140px 148px minmax(100px,1fr) 44px ${showMoney ? "72px " : ""}44px 84px 48px 28px`;
   const vline = { borderRight: "1px solid #e0d6bf", alignSelf: "stretch", display: "flex", alignItems: "center" };
   const hardBox = { background: "#fff", border: `1.5px solid ${C.hard}`, borderRadius: 4, marginBottom: 12, overflow: "hidden" };
   const addProduct = (catName) => {
@@ -869,10 +875,33 @@ export default function SupplyView({ view, K, canEdit, confirm, showMoney, userN
     save({ products: [...db.products, np] }); setSel(np.id);
   };
   const addCategory = () => { if (!canEdit) return; const nm = window.prompt("新類別名稱"); if (!nm || !nm.trim()) return; save({ categories: [...db.categories, { name: nm.trim(), sort: db.categories.length }] }); };
+  // 產品拖曳排序（同類別內重排；拖到別類的列上會跟著換類別）
+  const dropProd = (targetId) => {
+    if (!dragI || dragI === targetId) return setDragI(null);
+    const list = [...db.products].sort((x, y) => (x.sort || 0) - (y.sort || 0));
+    const from = list.findIndex(p => p.id === dragI), to = list.findIndex(p => p.id === targetId);
+    if (from < 0 || to < 0) return setDragI(null);
+    const cat2 = list[to].category;
+    const [mv] = list.splice(from, 1); list.splice(to, 0, { ...mv, category: cat2 });
+    save({ products: list.map((p, i2) => ({ ...p, sort: i2 })) }); setDragI(null);
+  };
+  // 類別拖曳排序（收合狀態也能拖；順便把「未登記的衍生類別」正式登記進 categories）
+  const dropCat = (targetName) => {
+    if (!dragC || dragC === targetName) return setDragC(null);
+    const names = [...catNames];
+    const from = names.indexOf(dragC), to = names.indexOf(targetName);
+    if (from < 0 || to < 0) return setDragC(null);
+    const [mv] = names.splice(from, 1); names.splice(to, 0, mv);
+    save({ categories: names.map((name, i2) => ({ name, sort: i2 })) }); setDragC(null);
+  };
   const rows = (list) => list.map((x, i) => (
-    <div key={x.id} onClick={() => setSel(x.id)}
+    <div key={x.id} onClick={() => setSel(x.id)} onDragOver={e => dragI && e.preventDefault()} onDrop={() => dropProd(x.id)}
       onMouseEnter={e => e.currentTarget.style.background = C.soft} onMouseLeave={e => e.currentTarget.style.background = x.is_active === false ? "#f2ede1" : "#fff"}
-      style={{ display: "grid", gridTemplateColumns: GTC, alignItems: "stretch", minHeight: 34, borderTop: `1px solid #e0d6bf`, cursor: "pointer", background: x.is_active === false ? "#f2ede1" : "#fff", opacity: x.is_active === false ? .6 : 1 }}>
+      style={{ display: "grid", gridTemplateColumns: GTC, alignItems: "stretch", minHeight: 34, borderTop: `1px solid #e0d6bf`, cursor: "pointer", background: x.is_active === false ? "#f2ede1" : "#fff", opacity: x.is_active === false ? .6 : 1, outline: dragI === x.id ? `2px dashed ${C.accent}` : "none" }}>
+      <div style={{ ...vline, padding: "0 4px", justifyContent: "center" }} onClick={e => e.stopPropagation()}>
+        <input type="checkbox" checked={!!selRows[x.id]} onChange={e => setSelRows(s => ({ ...s, [x.id]: e.target.checked }))} disabled={!canEdit} style={{ cursor: "pointer" }} />
+      </div>
+      {canEdit ? <div draggable onDragStart={e => { e.stopPropagation(); setDragI(x.id); }} onDragEnd={() => setDragI(null)} onClick={e => e.stopPropagation()} title="拖曳排序（拖到別類會換類別）" style={{ ...vline, justifyContent: "center", cursor: "grab", color: "#c8bca6", fontSize: 12 }}>⠿</div> : <div style={vline} />}
       <div style={{ ...vline, padding: "0 9px", fontSize: 13, fontWeight: 600, color: C.text, overflow: "hidden" }}><span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{x.name || "（未命名）"}</span></div>
       <div style={{ ...vline, padding: "0 9px", fontSize: 11.5, color: C.faint, overflow: "hidden" }}><span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{x.english_name}</span></div>
       <div style={{ ...vline, padding: "0 9px", fontSize: 11.5, color: C.sub, overflow: "hidden" }}><span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{x.note || "—"}</span></div>
@@ -888,11 +917,8 @@ export default function SupplyView({ view, K, canEdit, confirm, showMoney, userN
   return (
     <div style={{ maxWidth: 1060, margin: "0 auto" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "6px 0 10px", flexWrap: "wrap" }}>
-        <span style={{ background: C.accent, color: "#fff", fontSize: 11.5, fontWeight: 700, borderRadius: 4, padding: "2px 8px" }}>產品</span>
-        <div>
-          <div style={{ fontSize: 17, fontWeight: 800, color: C.text }}>產品管理</div>
-          <div style={{ fontSize: 11, color: C.faint }}>{db.products.length} 項產品・{cats.length} 類別・{(db.materials || []).length} 項物料/包材（自 ground-pack 搬遷完成）</div>
-        </div>
+        <span style={{ background: C.accent, color: "#fff", fontSize: 11.5, fontWeight: 700, borderRadius: 4, padding: "2px 8px" }}>菜單</span>
+        <div style={{ fontSize: 17, fontWeight: 800, color: C.text }} title={`${db.products.length} 項產品・${cats.length} 類別`}>菜單管理</div>
         <div style={{ flex: 1 }} />
         {canEdit && btn("＋ 新增類別", addCategory)}
         {canEdit && btn("＋ 新增產品", () => addProduct(catF || ""), { background: C.accent, color: "#fff", borderColor: C.accent })}
@@ -909,18 +935,49 @@ export default function SupplyView({ view, K, canEdit, confirm, showMoney, userN
             <button key={l} onClick={() => setFlat(v)} style={{ padding: "4px 11px", borderRadius: 6, border: `1px solid ${flat === v ? C.line : "transparent"}`, background: flat === v ? "#fff" : "transparent", color: flat === v ? C.text : C.sub, fontSize: 12, fontWeight: flat === v ? 700 : 400, cursor: "pointer" }}>{l}</button>
           ))}
         </div>
+        {!flat && <button onClick={() => { const allC = catNames.every(cn => collapsed[cn]); setCollapsed(c2 => { const n = { ...c2 }; catNames.forEach(cn => { n[cn] = !allC; }); return n; }); }} style={{ border: `1px solid ${C.line}`, background: "#fff", color: C.sub, borderRadius: 7, padding: "4px 12px", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>{catNames.every(cn => collapsed[cn]) ? "▾ 全部展開" : "▸ 全部收合"}</button>}
       </div>
+      {/* 批次工具列（勾了才出現） */}
+      {(() => {
+        const selIdsP = Object.keys(selRows).filter(id => selRows[id] && (db.products || []).some(p => p.id === id));
+        if (!selIdsP.length) return null;
+        const batchP = (fp, m2) => { save({ products: db.products.map(p => selRows[p.id] ? { ...p, ...fp } : p) }); flash(`✓ 已把 ${selIdsP.length} 項${m2}`); };
+        return (
+          <div style={{ position: "sticky", top: 0, zIndex: 5, background: "#1d1a15", color: "#fff", borderRadius: 10, marginBottom: 10, padding: "8px 12px", display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+            <span style={{ fontSize: 12.5, fontWeight: 700 }}>已勾 {selIdsP.length} 項：</span>
+            <button onClick={() => batchP({ is_active: true }, "設為啟用")} style={{ border: "1px solid #5a5247", background: "transparent", color: "#fff", borderRadius: 7, padding: "3px 11px", fontSize: 11.5, cursor: "pointer" }}>啟用</button>
+            <button onClick={() => batchP({ is_active: false }, "設為停用")} style={{ border: "1px solid #5a5247", background: "transparent", color: "#fff", borderRadius: 7, padding: "3px 11px", fontSize: 11.5, cursor: "pointer" }}>停用</button>
+            <select defaultValue="" onChange={e => { if (e.target.value) { batchP({ category: e.target.value }, `移到「${e.target.value}」`); e.target.value = ""; } }} style={{ ...inp, padding: "3px 8px", fontSize: 11.5, width: 110 }}>
+              <option value="">移到類別…</option>
+              {catNames.map(cn => <option key={cn} value={cn}>{cn}</option>)}
+            </select>
+            <button onClick={async () => {
+              if (!(await confirm(`刪除勾選的 ${selIdsP.length} 項產品？（食譜/包材綁定也會一併移除）`, { confirmLabel: "刪除" }))) return;
+              save({ products: db.products.filter(p => !selRows[p.id]), productPackaging: (db.productPackaging || []).filter(x => !selRows[x.product_id]) });
+              setSelRows({}); flash(`✓ 已刪除 ${selIdsP.length} 項`);
+            }} style={{ border: "1px solid #b3261e", background: "#b3261e", color: "#fff", borderRadius: 7, padding: "3px 11px", fontSize: 11.5, fontWeight: 700, cursor: "pointer" }}>刪除</button>
+            <span style={{ width: 8 }} />
+            <button onClick={() => setSelRows(s => { const n = { ...s }; prods.forEach(p => { n[p.id] = true; }); return n; })} style={{ border: "1px solid #5a5247", background: "transparent", color: "#fff", borderRadius: 7, padding: "3px 11px", fontSize: 11.5, cursor: "pointer" }}>全選</button>
+            <div style={{ flex: 1 }} />
+            <button onClick={() => setSelRows({})} style={{ border: "none", background: "none", color: "#d9cfbd", fontSize: 11.5, cursor: "pointer" }}>取消選取</button>
+          </div>
+        );
+      })()}
       {/* 表格 */}
       {flat ? (
         <div style={hardBox}>
           <div style={{ display: "grid", gridTemplateColumns: GTC, background: "#ece4d6", borderBottom: `1.5px solid ${C.hard}`, alignItems: "stretch" }}>
-            {["品名", "英文名稱", "內容/備註", "單位", ...(showMoney ? ["售價"] : []), "包材", "標籤", "狀態", ""].map((h, i2) => <div key={i2} style={{ ...vline, borderRight: "1px solid #d3c8ac", padding: "7px 9px", fontSize: 10.5, letterSpacing: .6, color: C.sub, fontWeight: 700, justifyContent: h === "售價" ? "flex-end" : h === "包材" ? "center" : "flex-start" }}>{h}</div>)}
+            {["", "", "品名", "英文名稱", "內容/備註", "單位", ...(showMoney ? ["售價"] : []), "包材", "標籤", "狀態", ""].map((h, i2) => <div key={i2} style={{ ...vline, borderRight: "1px solid #d3c8ac", padding: "7px 9px", fontSize: 10.5, letterSpacing: .6, color: C.sub, fontWeight: 700, justifyContent: h === "售價" ? "flex-end" : h === "包材" ? "center" : "flex-start" }}>{h}</div>)}
           </div>
           {rows([...prods].sort((a, b) => (a.sort || 0) - (b.sort || 0)))}
         </div>
       ) : catNames.map(cn => (
-        <div key={cn} style={hardBox}>
-          <div onClick={() => setCollapsed(c2 => ({ ...c2, [cn]: !c2[cn] }))} style={{ display: "flex", alignItems: "center", gap: 8, padding: "9px 12px", background: "#ece4d6", cursor: "pointer" }}>
+        <div key={cn} style={{ ...hardBox, outline: dragC === cn ? `2px dashed ${C.accent}` : "none" }}>
+          <div onClick={() => setCollapsed(c2 => ({ ...c2, [cn]: !c2[cn] }))}
+            draggable={canEdit} onDragStart={() => setDragC(cn)} onDragEnd={() => setDragC(null)} onDragOver={e => dragC && e.preventDefault()} onDrop={() => dropCat(cn)}
+            style={{ display: "flex", alignItems: "center", gap: 8, padding: "9px 12px", background: "#ece4d6", cursor: "pointer" }}>
+            {canEdit && <span title="拖曳調整類別順序" style={{ cursor: "grab", color: "#c8bca6", fontSize: 13 }}>⠿</span>}
+            <input type="checkbox" checked={byCat[cn].every(p => selRows[p.id])} onClick={e => e.stopPropagation()} onChange={e => setSelRows(s => { const n = { ...s }; byCat[cn].forEach(p => { n[p.id] = e.target.checked; }); return n; })} disabled={!canEdit} title="全選這個類別" style={{ cursor: "pointer" }} />
             <span style={{ fontSize: 11, color: C.faint }}>{collapsed[cn] ? "▸" : "▾"}</span>
             <span style={{ fontSize: 13.5, fontWeight: 800, color: C.text }}>{cn}</span>
             <span style={{ fontFamily: MONOF, fontSize: 11.5, color: C.faint }}>{byCat[cn].length} 項</span>
@@ -930,7 +987,7 @@ export default function SupplyView({ view, K, canEdit, confirm, showMoney, userN
           {!collapsed[cn] && (
             <>
               <div style={{ display: "grid", gridTemplateColumns: GTC, background: C.soft, borderTop: `1px solid ${C.line}`, alignItems: "stretch" }}>
-                {["品名", "英文名稱", "內容/備註", "單位", ...(showMoney ? ["售價"] : []), "包材", "標籤", "狀態", ""].map((h, i2) => <div key={i2} style={{ ...vline, padding: "5px 9px", fontSize: 10, letterSpacing: .6, color: C.faint, fontWeight: 700, justifyContent: h === "售價" ? "flex-end" : h === "包材" ? "center" : "flex-start" }}>{h}</div>)}
+                {["", "", "品名", "英文名稱", "內容/備註", "單位", ...(showMoney ? ["售價"] : []), "包材", "標籤", "狀態", ""].map((h, i2) => <div key={i2} style={{ ...vline, padding: "5px 9px", fontSize: 10, letterSpacing: .6, color: C.faint, fontWeight: 700, justifyContent: h === "售價" ? "flex-end" : h === "包材" ? "center" : "flex-start" }}>{h}</div>)}
               </div>
               {rows([...byCat[cn]].sort((a, b) => (a.sort || 0) - (b.sort || 0)))}
             </>
