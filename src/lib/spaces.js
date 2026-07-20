@@ -37,7 +37,7 @@ export const SPACE_CONF = {
     hideTabs: [],
     // 財務報表：原本「內帳總表」單一入口＋內部子分頁 → 攤平成第二層直接切（張良 2026-07-18）
     tabs: [["fin_ov", "總覽", "📊"], ["fin_acct", "帳戶", "🏦"], ["fin_ledger", "交易明細", "🧾"], ["fin_coa", "科目", "🗂"], ["fin_recon", "對帳", "🔄"], ["fin_pos", "營運報表", "📈"]],
-    defaultView: "fin_ov",
+    defaultView: "fin_pos", // 張良 2026-07-20：財務報表預設打開＝營運報表（分店預設 A Beach 101）
     hideKpi: true, // 不顯示工程 KPI
     labels: { cat: "科目", item: "交易", overview: "財務總覽", gantt: "—", subtitle: "多帳戶財務報表" },
     aiRole: "你是公司財務內帳助理，協助管理多個銀行/貸款/現金帳戶、記錄交易、對帳與餘額試算。請用繁體中文、精準務實。",
