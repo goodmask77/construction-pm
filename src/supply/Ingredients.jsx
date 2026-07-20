@@ -175,7 +175,7 @@ export default function IngredientsView({ db, save, canEdit, showMoney, confirm,
         const [b64, im] = await Promise.all([fileToB64(f), loadImgEl(f)]);
         const W = im.naturalWidth, H = im.naturalHeight;
         const block = { type: "image", source: { type: "base64", media_type: f.type || "image/png", data: b64 } };
-        const prompt = `這是廠商網站/購物車/報價單/型錄的截圖，原始尺寸 ${W}x${H} 像素。抽出每一個商品，只回 JSON、不要其他文字：{"vendor":"截圖上可辨識的廠商或網站名稱(沒有就空字串)","items":[{"name":"品名(簡短,去掉與規格重複的贅字)","spec":"規格(例:1000入/箱,600g/包,沒有就空字串)","unit":"採購單位(箱/件/包/組,預設箱)","price":單價數字,"img":{"x":左上x,"y":左上y,"w":寬,"h":高}}]}。品名注意：很多購物車「主標題相同、副標/選項才是真正的品項」（例：主標「餐刀/叉/匙-白色」出現三列，副標分別是 餐刀、餐叉、餐匙＝三個不同商品）——要用副標/選項組出「彼此不同、能區分」的品名，每一列都要輸出，不可因主標相同而省略或合併。img=該商品縮圖照片在截圖中的像素範圍（以原始 ${W}x${H} 座標、整數、框準照片本身不含文字），該商品沒有照片就給 null。金額只放數字，看不到的欄位留空字串或 0。`;
+        const prompt = `這是廠商網站/購物車/報價單/型錄的截圖，原始尺寸 ${W}x${H} 像素。抽出每一個商品，只回 JSON、不要其他文字：{"vendor":"截圖上可辨識的廠商或網站名稱(沒有就空字串)","items":[{"name":"品名","spec":"規格(例:1000入/箱,600g/包,沒有就空字串)","unit":"採購單位(箱/件/包/組,預設箱)","price":單價數字,"img":{"x":左上x,"y":左上y,"w":寬,"h":高}}]}。品名規則：①【完整保留】主標題的文字不可刪減、不可自行簡化——只把純規格（如 200入/箱、600g）抽到 spec 欄，其餘每個字都留在品名（例：主標「可拆式瓦楞杯座 200入/箱」→ name=可拆式瓦楞杯座、spec=200入/箱）。②副標/小字若有材質、系列、型號等主標沒有的資訊，用括號補在品名後（例：副標「杯座-立體瓦楞紙可拆式」→ name=可拆式瓦楞杯座（立體瓦楞紙）；副標「HR-紙漿二杯架」→ name=紙漿杯座-二杯-原色（HR）」。③主標題相同、副標/選項不同＝不同商品（例：餐刀/餐叉/餐匙三列）——用副標組出彼此能區分的品名，每一列都要輸出，不可省略或合併。img=該商品縮圖照片在截圖中的像素範圍（以原始 ${W}x${H} 座標、整數、框準照片本身不含文字），該商品沒有照片就給 null。金額只放數字，看不到的欄位留空字串或 0。`;
         const reply = await callAI([{ role: "user", content: [block, { type: "text", text: prompt }] }], "你是採購品項解析助理，只輸出 JSON。", "import");
         const clean = reply.replace(/```json|```/gi, "").trim();
         const parsed = JSON.parse(clean.slice(clean.indexOf("{"), clean.lastIndexOf("}") + 1));
