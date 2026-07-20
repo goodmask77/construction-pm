@@ -131,6 +131,41 @@ export default function IngredientsView({ db, save, canEdit, showMoney, confirm,
       c.toBlob(bl => res(bl || null), "image/jpeg", 0.85);
     } catch (_) { res(null); }
   });
+  // AI 座標會飄 → 像素校正：在候選框附近找「最大塊連續內容」（縮圖=大方塊；價格/文字=矮條，會被排除）
+  const refineBox = (im, b) => {
+    try {
+      const W = im.naturalWidth, H = im.naturalHeight;
+      const pad = Math.round(Math.max(b.w, b.h) * 0.45);
+      const x0 = Math.max(0, Math.round(b.x) - pad), y0 = Math.max(0, Math.round(b.y) - pad);
+      const x1 = Math.min(W, Math.round(b.x + b.w) + pad), y1 = Math.min(H, Math.round(b.y + b.h) + pad);
+      const cw = x1 - x0, ch = y1 - y0;
+      if (cw < 40 || ch < 40) return b;
+      const c = document.createElement("canvas"); c.width = cw; c.height = ch;
+      const ctx = c.getContext("2d", { willReadFrequently: true });
+      ctx.drawImage(im, x0, y0, cw, ch, 0, 0, cw, ch);
+      const d = ctx.getImageData(0, 0, cw, ch).data;
+      const rowD = new Array(ch).fill(0), isBg = (i) => d[i] > 232 && d[i + 1] > 228 && d[i + 2] > 220; // 白/米白頁面底色都算背景
+      for (let y = 0; y < ch; y++) for (let x = 0; x < cw; x++) { if (!isBg((y * cw + x) * 4)) rowD[y]++; }
+      // 最長連續「內容列」＝縮圖高度範圍
+      const thR = cw * 0.3; let bT = -1, bB = -1, t = -1;
+      for (let y = 0; y <= ch; y++) {
+        const on = y < ch && rowD[y] >= thR;
+        if (on && t < 0) t = y;
+        if (!on && t >= 0) { if (bT < 0 || (y - t) > (bB - bT)) { bT = t; bB = y; } t = -1; }
+      }
+      if (bT < 0 || bB - bT < 30) return b;
+      const colD = new Array(cw).fill(0);
+      for (let y = bT; y < bB; y++) for (let x = 0; x < cw; x++) { if (!isBg((y * cw + x) * 4)) colD[x]++; }
+      const thC = (bB - bT) * 0.3; let bL = -1, bR = -1; t = -1;
+      for (let x = 0; x <= cw; x++) {
+        const on = x < cw && colD[x] >= thC;
+        if (on && t < 0) t = x;
+        if (!on && t >= 0) { if (bL < 0 || (x - t) > (bR - bL)) { bL = t; bR = x; } t = -1; }
+      }
+      if (bL < 0 || bR - bL < 30) return b;
+      return { x: x0 + bL, y: y0 + bT, w: bR - bL, h: bB - bT };
+    } catch (_) { return b; }
+  };
   const parseShots = async (files) => {
     const arr = Array.from(files || []).filter(f => /^image\//.test(f.type)); if (!arr.length) return;
     setImp(m => m ? { ...m, busy: `AI 解析中（${arr.length} 張）…` } : m);
@@ -146,9 +181,22 @@ export default function IngredientsView({ db, save, canEdit, showMoney, confirm,
         const rows = [];
         for (const it of (parsed.items || [])) {
           const name = String(it.name || "").trim(); if (!name) continue;
-          let thumb = null, thumbUrl = "";
-          if (it.img && typeof it.img === "object") { thumb = await cropBox(im, it.img); if (thumb) thumbUrl = URL.createObjectURL(thumb); }
-          rows.push({ on: true, name, spec: String(it.spec || "").trim(), unit: String(it.unit || "箱").trim() || "箱", price: Number(it.price) || "", thumb, thumbUrl });
+          const box = it.img && typeof it.img === "object" ? { x: Number(it.img.x) || 0, y: Number(it.img.y) || 0, w: Number(it.img.w) || 0, h: Number(it.img.h) || 0 } : null;
+          rows.push({ on: true, name, spec: String(it.spec || "").trim(), unit: String(it.unit || "箱").trim() || "箱", price: Number(it.price) || "", thumb: null, thumbUrl: "", box });
+        }
+        // 座標校正①：同一張截圖的縮圖通常同尺寸同 x → 取中位數統一（AI 座標飄的自動拉回）
+        const bs = rows.filter(r => r.box && r.box.w >= 20 && r.box.h >= 20);
+        if (bs.length >= 3) {
+          const med = (a) => { const s2 = [...a].sort((x, y) => x - y); return s2[Math.floor(s2.length / 2)]; };
+          const mx = med(bs.map(r => r.box.x)), mw = med(bs.map(r => r.box.w)), mh = med(bs.map(r => r.box.h));
+          bs.forEach(r => { const cy = r.box.y + r.box.h / 2; r.box = { x: mx, y: cy - mh / 2, w: mw, h: mh }; });
+        }
+        // 座標校正②：像素邊界偵測鎖定縮圖本體 → 裁圖
+        for (const r of rows) {
+          if (!r.box || r.box.w < 20 || r.box.h < 20) { delete r.box; continue; }
+          const thumb = await cropBox(im, refineBox(im, r.box));
+          if (thumb) { r.thumb = thumb; r.thumbUrl = URL.createObjectURL(thumb); }
+          delete r.box;
         }
         setImp(m => m ? { ...m, rows: [...m.rows, ...rows], vendorGuess: m.vendorGuess || String(parsed.vendor || "").trim() } : m);
       } catch (e) { flash("解析失敗：" + (e?.message || e)); }
