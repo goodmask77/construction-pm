@@ -135,3 +135,31 @@ export const isServiceName = (name) => /保養|維修|修理|運費|服務|安�
 
 // 品名正規化（自動併卡/建議合併用）：去空白符號、統一小寫
 export const normName = (s) => String(s || "").toLowerCase().replace(/[\s\-–—（）()【】\[\]／/、,，.。・*×xX＊]/g, "");
+
+const _rid = (p) => p + Math.random().toString(36).slice(2, 8);
+
+// 自動整理（物料頁⚡按鈕與截圖匯入共用）：未掛卡的廠商品項 → 同名併入既有卡、否則自動建卡
+// 回 { ingredients, vendorItems, stats }——純函式不寫庫，呼叫端自己 save
+export const organizeAll = (db) => {
+  const list = [...(db.ingredients || [])];
+  const byNorm = new Map();
+  list.forEach(g => { const k = normName(g.name); if (k && !byNorm.has(k)) byNorm.set(k, g); });
+  let created = 0, merged = 0, svcN = 0, needFix = 0;
+  const vendorItems = (db.vendorItems || []).map(vi => {
+    if (vi.ingredient_id || !(vi.name || "").trim()) return vi;
+    const k = normName(vi.name);
+    let g = byNorm.get(k);
+    if (g) merged++;
+    else {
+      const p = parseSpec(vi.spec);
+      const svc = isServiceName(vi.name);
+      const vend = (db.vendors || []).find(v => v.id === vi.vendor_id) || {};
+      g = { id: _rid("g"), name: vi.name.trim(), cat: (vi.grp || "").trim() || (vend.vcat || "").trim() || "", baseUnit: p.baseUnit, countFreq: { type: "none", days: [], dom: 1, paused: false }, countRole: "", countUnit: "", isKey: false, safeStock: "", note: "", sort: list.length, tags: "", nonStock: svc };
+      list.push(g); byNorm.set(k, g); created++; if (svc) svcN++;
+    }
+    const nv = { ...vi, ingredient_id: g.id };
+    if (!Number(nv.packToBase)) { const p2 = parseSpec(vi.spec); if (p2.packToBase) nv.packToBase = p2.packToBase; else if (!g.nonStock) needFix++; }
+    return nv;
+  });
+  return { ingredients: list, vendorItems, stats: { created, merged, svcN, needFix } };
+};
