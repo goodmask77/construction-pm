@@ -334,10 +334,7 @@ export default function IngredientsView({ db, save, canEdit, showMoney, confirm,
       <input ref={imgRef} type="file" accept="image/*" style={{ display: "none" }} onChange={e => { const f = e.target.files && e.target.files[0]; if (f) upImg(f); e.target.value = ""; }} />
       <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "6px 0 12px", flexWrap: "wrap" }}>
         <span style={{ background: C.accent, color: "#fff", fontSize: 11.5, fontWeight: 700, borderRadius: 4, padding: "2px 8px" }}>物料</span>
-        <div>
-          <div style={{ fontSize: 17, fontWeight: 800, color: C.text }}>物料清單</div>
-          <div style={{ fontSize: 11, color: C.faint }}>截圖貼上就能匯入品項；同名自動併卡、入數自動抓；拖曳可排序。</div>
-        </div>
+        <div style={{ fontSize: 17, fontWeight: 800, color: C.text }} title="截圖貼上就能匯入品項；同名自動併卡、入數自動抓；拖曳可排序。">物料清單</div>
         {/* 視角/顯示切換 */}
         <div style={{ display: "flex", background: "#e8e0cf", borderRadius: 8, padding: 2 }}>
           <button onClick={() => setVw("mat")} style={seg(vw === "mat")}>🥬 物料</button>
