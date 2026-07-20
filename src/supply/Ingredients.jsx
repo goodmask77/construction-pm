@@ -120,7 +120,7 @@ export default function IngredientsView({ db, save, canEdit, showMoney, confirm,
         const [b64, im] = await Promise.all([fileToB64(f), loadImgEl(f)]);
         const W = im.naturalWidth, H = im.naturalHeight;
         const block = { type: "image", source: { type: "base64", media_type: f.type || "image/png", data: b64 } };
-        const prompt = `這是廠商網站/購物車/報價單/型錄的截圖，原始尺寸 ${W}x${H} 像素。抽出每一個商品，只回 JSON、不要其他文字：{"vendor":"截圖上可辨識的廠商或網站名稱(沒有就空字串)","items":[{"name":"品名(簡短,去掉與規格重複的贅字)","spec":"規格(例:1000入/箱,600g/包,沒有就空字串)","unit":"採購單位(箱/件/包/組,預設箱)","price":單價數字,"img":{"x":左上x,"y":左上y,"w":寬,"h":高}}]}。img=該商品縮圖照片在截圖中的像素範圍（以原始 ${W}x${H} 座標、整數、框準照片本身不含文字），該商品沒有照片就給 null。金額只放數字，看不到的欄位留空字串或 0。`;
+        const prompt = `這是廠商網站/購物車/報價單/型錄的截圖，原始尺寸 ${W}x${H} 像素。抽出每一個商品，只回 JSON、不要其他文字：{"vendor":"截圖上可辨識的廠商或網站名稱(沒有就空字串)","items":[{"name":"品名(簡短,去掉與規格重複的贅字)","spec":"規格(例:1000入/箱,600g/包,沒有就空字串)","unit":"採購單位(箱/件/包/組,預設箱)","price":單價數字,"img":{"x":左上x,"y":左上y,"w":寬,"h":高}}]}。品名注意：很多購物車「主標題相同、副標/選項才是真正的品項」（例：主標「餐刀/叉/匙-白色」出現三列，副標分別是 餐刀、餐叉、餐匙＝三個不同商品）——要用副標/選項組出「彼此不同、能區分」的品名，每一列都要輸出，不可因主標相同而省略或合併。img=該商品縮圖照片在截圖中的像素範圍（以原始 ${W}x${H} 座標、整數、框準照片本身不含文字），該商品沒有照片就給 null。金額只放數字，看不到的欄位留空字串或 0。`;
         const reply = await callAI([{ role: "user", content: [block, { type: "text", text: prompt }] }], "你是採購品項解析助理，只輸出 JSON。", "import");
         const clean = reply.replace(/```json|```/gi, "").trim();
         const parsed = JSON.parse(clean.slice(clean.indexOf("{"), clean.lastIndexOf("}") + 1));
@@ -528,8 +528,12 @@ export default function IngredientsView({ db, save, canEdit, showMoney, confirm,
               {imp.busy ? <b>⏳ {imp.busy}</b> : <>直接 <b>Ctrl/Cmd+V 貼上截圖</b>，或點這裡上傳圖片（可多張、可連續貼）</>}
             </div>
             <input ref={shotRef} type="file" accept="image/*" multiple style={{ display: "none" }} onChange={e => { parseShots(e.target.files); e.target.value = ""; }} />
-            {/* 預覽表：AI 結果可勾可改，人工確認才寫入 */}
-            {imp.rows.length > 0 && <>
+            {/* 預覽表：AI 結果可勾可改，人工確認才寫入；同名紅框警示（同名匯入會併成同一筆） */}
+            {imp.rows.length > 0 && (() => {
+              const cnt = {}; imp.rows.filter(r => r.on).forEach(r => { const k = normName(r.name); if (k) cnt[k] = (cnt[k] || 0) + 1; });
+              const isDup = (r) => (cnt[normName(r.name)] || 0) > 1;
+              const dupN = Object.keys(cnt).filter(k => cnt[k] > 1).length;
+              return <>
               <div style={{ display: "grid", gridTemplateColumns: "26px 36px minmax(140px,1.5fr) minmax(100px,1fr) 64px 84px", gap: 6, padding: "4px 6px", fontSize: 10, color: C.faint, fontWeight: 700, background: "#f4efe5", borderRadius: 6 }}>
                 <span /><span>圖</span><span>品名</span><span>規格</span><span>單位</span><span style={{ textAlign: "right" }}>單價</span>
               </div>
@@ -537,18 +541,20 @@ export default function IngredientsView({ db, save, canEdit, showMoney, confirm,
                 <div key={i} style={{ display: "grid", gridTemplateColumns: "26px 36px minmax(140px,1.5fr) minmax(100px,1fr) 64px 84px", gap: 6, alignItems: "center", padding: "3px 6px", borderBottom: `1px solid #f0ead9`, opacity: r.on ? 1 : 0.45 }}>
                   <input type="checkbox" checked={r.on} onChange={e => setImp(m => ({ ...m, rows: m.rows.map((x, j) => j === i ? { ...x, on: e.target.checked } : x) }))} />
                   <span title={r.thumbUrl ? "會一起掛到物料卡" : "這筆沒抓到商品照片（不影響匯入，之後可手動補圖）"} style={{ width: 32, height: 32, borderRadius: 6, border: `1px solid ${C.line}`, background: r.thumbUrl ? `url(${r.thumbUrl}) center/cover` : "#f4efe5", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, color: C.faint }}>{r.thumbUrl ? "" : "—"}</span>
-                  <input value={r.name} onChange={e => setImp(m => ({ ...m, rows: m.rows.map((x, j) => j === i ? { ...x, name: e.target.value } : x) }))} style={{ ...inp, padding: "3px 7px", fontSize: 12 }} />
+                  <input value={r.name} onChange={e => setImp(m => ({ ...m, rows: m.rows.map((x, j) => j === i ? { ...x, name: e.target.value } : x) }))} style={{ ...inp, padding: "3px 7px", fontSize: 12, borderColor: isDup(r) ? C.red : C.line, borderWidth: isDup(r) ? 1.5 : 1 }} />
                   <input value={r.spec} onChange={e => setImp(m => ({ ...m, rows: m.rows.map((x, j) => j === i ? { ...x, spec: e.target.value } : x) }))} style={{ ...inp, padding: "3px 7px", fontSize: 11.5 }} />
                   <input value={r.unit} onChange={e => setImp(m => ({ ...m, rows: m.rows.map((x, j) => j === i ? { ...x, unit: e.target.value } : x) }))} style={{ ...inp, padding: "3px 7px", fontSize: 11.5 }} />
                   <input value={r.price} onChange={e => setImp(m => ({ ...m, rows: m.rows.map((x, j) => j === i ? { ...x, price: e.target.value.replace(/[^0-9.]/g, "") } : x) }))} inputMode="decimal" style={{ ...inp, padding: "3px 7px", fontSize: 11.5, fontFamily: MONOF, textAlign: "right" }} />
                 </div>
               ))}
+              {dupN > 0 && <div style={{ marginTop: 8, fontSize: 12, color: C.red, fontWeight: 600 }}>⚠ 紅框的品名重複——如果其實是不同商品（例如刀/叉/匙三種），請把名字改到不一樣；名字一樣的匯入後會被當成同一筆。</div>}
               <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 10 }}>
                 <span style={{ fontSize: 11.5, color: C.faint }}>已勾 {imp.rows.filter(r => r.on && r.name.trim()).length} 筆。匯入後自動建物料卡、同名自動併卡、入數自動從規格抓。</span>
                 <div style={{ flex: 1 }} />
                 <button onClick={doImport} disabled={!imp.rows.some(r => r.on && r.name.trim()) || !!imp.busy} style={{ border: "none", background: imp.rows.some(r => r.on && r.name.trim()) && !imp.busy ? C.green : "#d5cbb6", color: "#fff", borderRadius: 8, padding: "8px 18px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>✓ 確認匯入</button>
               </div>
-            </>}
+            </>;
+            })()}
           </div>
         </div>
       )}
