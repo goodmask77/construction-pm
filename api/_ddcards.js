@@ -255,6 +255,28 @@ export async function handleDDCards(ev, operators) {
     return true
   }
 
+  // 「心得 …」→ 記錄每日心得（夥伴主動傳＝回覆免費，不扣推播額度）
+  const mJournal = text.match(/^(?:心得|今日心得|下班心得)[\s:：]+([\s\S]+)/)
+  if (mJournal) {
+    const roster = await loadRoster()
+    const me = personByUid(roster, uid)
+    if (!me) { await reply(txt('請先報到綁定（輸入「你的本名＋報到」）。')); return true }
+    const d = (await kvGet('sp_crew_kb_journal')) || { items: [] }
+    d.items = [{ id: 'jn-' + Math.random().toString(36).slice(2, 8), personId: me.id, name: me.name, text: mJournal[1].trim().slice(0, 500), ts: new Date().toISOString(), via: 'line' }, ...(d.items || [])].slice(0, 1000)
+    await kvSet('sp_crew_kb_journal', d)
+    await reply(txt(`📝 收到，${me.name} 的今日心得記下來了！老闆看得到、也會成為改善的參考。辛苦了 👏`))
+    return true
+  }
+  if (/^我的心得$/.test(text)) {
+    const roster = await loadRoster()
+    const me = personByUid(roster, uid)
+    if (!me) { await reply(txt('請先報到綁定。')); return true }
+    const d = (await kvGet('sp_crew_kb_journal')) || { items: [] }
+    const mine = (d.items || []).filter(i => i.personId === me.id).slice(0, 5)
+    await reply(txt(mine.length ? '你最近的心得：\n' + mine.map(i => `・${i.ts.slice(5, 10)} ${i.text.slice(0, 60)}`).join('\n') : '還沒有心得紀錄。輸入「心得 你想說的」隨時記一筆。'))
+    return true
+  }
+
   // 操作者指令：推播給全體綁定夥伴（會逐人計 LINE 則數，量力而為）
   const isOp = !!operators?.[uid]
   if (isOp && /^推播回饋卡$/.test(text)) {
@@ -275,6 +297,24 @@ export async function handleDDCards(ev, operators) {
     let n = 0
     for (const p of bound) { if (!(d.votes || []).some(v => v.pollId === poll.id && v.voterId === p.id)) { await pushMessages(p.lineUserId, [pollFlex(poll, roster.people)]); n++ } }
     await reply(txt(`已推播「${poll.title}」給 ${n} 位還沒投的綁定夥伴（計 ${n} 則）。`))
+    return true
+  }
+  // 操作者：看心得彙整（回覆免費）
+  const mSeeJ = isOp && text.match(/^看心得[\s]*(\d*)$/)
+  if (mSeeJ) {
+    const days = Number(mSeeJ[1]) || 7
+    const d = (await kvGet('sp_crew_kb_journal')) || { items: [] }
+    const since = Date.now() - days * 86400000
+    const list = (d.items || []).filter(i => new Date(i.ts).getTime() >= since).slice(0, 30)
+    await reply(txt(list.length ? `📝 近${days}天心得（${list.length}則）：\n` + list.map(i => `・${i.ts.slice(5, 10)} ${i.name}：${i.text.slice(0, 80)}`).join('\n') : `近${days}天沒有心得紀錄。可用「推播心得提醒」邀大家寫（會扣推播額度）。`))
+    return true
+  }
+  // 操作者：推播心得提醒（扣額度，回報則數）
+  if (isOp && /^推播心得提醒$/.test(text)) {
+    const roster = await loadRoster()
+    const bound = roster.people.filter(p => p.lineUserId && (p.status || '在職') !== '離職')
+    for (const p of bound) await pushMessages(p.lineUserId, [txt(`${p.nick || p.name}，下班辛苦了 🌙 今天有什麼心得或想法嗎？\n直接回覆「心得 你想說的話」就記錄囉（一兩句就好）。`)])
+    await reply(txt(`已推播心得提醒給 ${bound.length} 位綁定夥伴（計 ${bound.length} 則）。`))
     return true
   }
   // 操作者：測試卡片（推給自己）
