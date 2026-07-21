@@ -1,14 +1,13 @@
-// ── 入職 2.0 對外端點：契約簽署頁 / 私密文件連結 / 審核（核准/退回）/ 邀請碼設定 ──
-// GET  ?action=sign&t=<token>          → 契約簽署頁（HTML，一次性連結）
-// POST ?action=sign                    → {t, name, agree} 完成簽署
-// GET  ?action=docurl&path=...         → (Bearer=登入者) 管理員/主管/本人 → 302 到短效簽名連結
-// GET  ?action=pending                 → (Bearer) 管理員/主管 → 待審核清單
-// POST ?action=approve|reject          → (Bearer 管理員/主管) {appId, reason?}
-// GET/POST ?action=conf                → (Bearer 管理員) 邀請碼查看/設定 {inviteCode}
-import { SB_URL, SB_KEY, svc, kvGet, loadApps, loadRoster, loadConf, saveConf, signedUrl } from './_onboard.js'
+// ── 入職 2.1 對外端點：契約簽署頁 / 私密檔案上傳與連結 / 審核（核准/退回）──
+// GET  ?action=sign&t=<token>   → 契約簽署頁（HTML；token 存在名冊本人卡上）
+// POST ?action=sign             → {t, name, agree} 完成簽署
+// POST ?action=upload           → (Bearer=登入者，主管或本人) {personId, fieldKey, filename, dataUrl} → 存私有桶
+// GET  ?action=docurl&path=...  → (Bearer=登入者) 主管/本人 → 短效簽名連結
+// POST ?action=approve|reject   → (Bearer 管理員/主管) {personId, dept?, reason?}
+import { SB_URL, SB_KEY, svc, loadRoster, saveRoster, signedUrl, uploadPrivate } from './_onboard.js'
 import { DOC_LABOR_CONTRACT } from '../src/shift/docs.js'
 
-async function whoAmI(req) { // 驗登入者 → {id, role} 或 null
+async function whoAmI(req) { // 驗登入者 → {id, role, name} 或 null
   const token = (req.headers.authorization || '').replace(/^Bearer\s+/i, '')
   if (!token) return null
   const r = await fetch(`${SB_URL}/auth/v1/user`, { headers: { apikey: SB_KEY, Authorization: `Bearer ${token}` } })
@@ -20,6 +19,7 @@ async function whoAmI(req) { // 驗登入者 → {id, role} 或 null
   return { id: u.id, role: rows[0]?.role || 'staff', name: rows[0]?.display_name || '' }
 }
 const isMgr = (me) => me && (me.role === 'admin' || me.role === 'manager')
+const bodyOf = (req) => typeof req.body === 'string' ? JSON.parse(req.body || '{}') : (req.body || {})
 
 const esc = (s) => String(s || '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]))
 function signPage(name, token, contract) {
@@ -41,7 +41,7 @@ button:disabled{background:#C8BCA0}.ok{color:#3C8C3C;font-weight:700;font-size:1
 <input type="text" id="nm" placeholder="輸入本名" autocomplete="off">
 <div class="err" id="err"></div>
 <button id="go" onclick="submitSign()">✍ 確認簽署</button>
-<div id="done" style="display:none" class="ok">✅ 簽署完成！申請已送出，審核通過後 LINE 會收到登入連結。<br>可以關閉此頁回到 LINE。</div>
+<div id="done" style="display:none" class="ok">✅ 簽署完成！可以關閉此頁，回 App 繼續完成其他入職資料。</div>
 <script>
 async function submitSign(){
   const err=document.getElementById('err');err.textContent='';
@@ -64,34 +64,58 @@ export default async function handler(req, res) {
     if (!SB_URL || !SB_KEY) return res.status(500).json({ error: '後端未設定' })
     const action = req.query?.action || ''
 
-    // ── 簽署頁（免登入、一次性 token）──
+    // ── 簽署頁（免登入、token 綁名冊本人）──
     if (action === 'sign' && req.method === 'GET') {
       const t = req.query?.t || ''
-      const states = (await kvGet('pm_onboard_state')) || {}
-      const st = Object.values(states).find(s => s.signToken === t)
+      const roster = await loadRoster()
+      const p = roster.people.find(x => x.signToken === t)
       res.setHeader('content-type', 'text/html; charset=utf-8')
-      if (!st) return res.status(404).send('<meta charset="utf-8">連結無效或已完成簽署。請回 LINE 確認狀態。')
-      if (st.contractSigned) return res.status(200).send('<meta charset="utf-8">✅ 已完成簽署，等待審核中。可關閉此頁。')
-      return res.status(200).send(signPage(st.data?.name || '', t, DOC_LABOR_CONTRACT))
+      if (!p) return res.status(404).send('<meta charset="utf-8">連結無效。請回 App 的入職資料卡重新點「簽署契約」。')
+      if (p.contractSigned) return res.status(200).send('<meta charset="utf-8">✅ 已完成簽署。可關閉此頁。')
+      return res.status(200).send(signPage(p.name || '', t, DOC_LABOR_CONTRACT))
     }
     if (action === 'sign' && req.method === 'POST') {
       const { completeSign } = await import('./_onboard.js')
-      const body = typeof req.body === 'string' ? JSON.parse(req.body || '{}') : (req.body || {})
+      const body = bodyOf(req)
       const ip = (req.headers['x-forwarded-for'] || '').split(',')[0] || ''
       const out = await completeSign(String(body.t || ''), String(body.name || ''), ip)
       return res.status(out.error ? 400 : 200).json(out)
     }
 
-    // ── 私密文件短效連結（管理員/主管/本人）──
+    // ── 私密檔案上傳（主管或本人；存私有桶並寫回名冊欄位）──
+    if (action === 'upload' && req.method === 'POST') {
+      const me = await whoAmI(req)
+      if (!me) return res.status(401).json({ error: '未登入' })
+      const body = bodyOf(req)
+      const { personId, fieldKey, filename } = body
+      if (!personId || !fieldKey || !/^[\w]+$/.test(fieldKey)) return res.status(400).json({ error: '參數不足' })
+      const m = String(body.dataUrl || '').match(/^data:([\w/+.-]+);base64,(.+)$/s)
+      if (!m) return res.status(400).json({ error: '檔案格式錯誤' })
+      const buf = Buffer.from(m[2], 'base64')
+      if (buf.length > 12 * 1024 * 1024) return res.status(400).json({ error: '檔案太大（上限 12MB）' })
+      const roster = await loadRoster()
+      const p = roster.people.find(x => x.id === personId)
+      if (!p) return res.status(404).json({ error: '找不到人員' })
+      if (!isMgr(me) && p.account !== me.name) return res.status(403).json({ error: '只有主管或本人可以上傳' })
+      const safe = String(filename || 'file').replace(/[^\w.一-鿿-]/g, '_').slice(0, 60)
+      const path = `roster/${p.id}/${fieldKey}-${Date.now().toString(36)}-${safe}`
+      const ok = await uploadPrivate(path, buf, m[1])
+      if (!ok) return res.status(500).json({ error: '儲存失敗，請再試一次' })
+      const entry = { name: safe, path, private: true, ts: new Date().toISOString(), by: me.name }
+      p[fieldKey] = [...(Array.isArray(p[fieldKey]) ? p[fieldKey] : []), entry]
+      await saveRoster(roster)
+      return res.status(200).json({ ok: true, entry })
+    }
+
+    // ── 私密文件短效連結（主管/本人）──
     if (action === 'docurl' && req.method === 'GET') {
       const me = await whoAmI(req)
       if (!me) return res.status(401).json({ error: '未登入' })
       const path = String(req.query?.path || '')
-      if (!/^onboard\/[\w-]+\/[\w.-]+$/.test(path)) return res.status(400).json({ error: '路徑不合法' })
+      if (!/^(roster|onboard)\/[\w-]+\/[\w.一-鿿()-]+$/.test(path)) return res.status(400).json({ error: '路徑不合法' })
       if (!isMgr(me)) {
-        // 非主管：只能看自己的（名冊上 account=display_name 且 onboardId 對得上）
         const roster = await loadRoster()
-        const mine = roster.people.find(p => p.account === me.name && path.startsWith('onboard/' + (p.onboardId || '__none__') + '/'))
+        const mine = roster.people.find(p => p.account === me.name && (path.startsWith(`roster/${p.id}/`) || path.startsWith(`onboard/${p.onboardId || '__none__'}/`)))
         if (!mine) return res.status(403).json({ error: '沒有權限' })
       }
       const url = await signedUrl(path, 300)
@@ -99,43 +123,16 @@ export default async function handler(req, res) {
       return res.status(200).json({ url })
     }
 
-    // ── 待審核清單 ──
-    if (action === 'pending' && req.method === 'GET') {
+    // ── 核准 / 退回（名冊入職中人員；核心邏輯在 _onboard）──
+    if ((action === 'approve' || action === 'reject') && req.method === 'POST') {
       const me = await whoAmI(req)
-      if (!isMgr(me)) return res.status(403).json({ error: '只有管理員/主管可以看' })
-      const apps = await loadApps()
-      return res.status(200).json({ apps: apps.apps.filter(a => a.status === 'pending') })
-    }
-
-    // ── 核准（開帳號→建名冊→綁LINE→發登入連結；核心邏輯在 _onboard.approveApp）──
-    if (action === 'approve' && req.method === 'POST') {
-      const me = await whoAmI(req)
-      if (!isMgr(me)) return res.status(403).json({ error: '只有管理員/主管可以核准' })
-      const body = typeof req.body === 'string' ? JSON.parse(req.body || '{}') : (req.body || {})
-      const { approveApp } = await import('./_onboard.js')
-      const out = await approveApp(body.appId, body.dept || '', me.name, body.startDate)
+      if (!isMgr(me)) return res.status(403).json({ error: '只有管理員/主管可以審核' })
+      const body = bodyOf(req)
+      const mod = await import('./_onboard.js')
+      const out = action === 'approve'
+        ? await mod.approveApp(body.personId, body.dept || '', me.name, body.startDate)
+        : await mod.rejectApp(body.personId, body.reason || '', me.name)
       return res.status(out.error ? 400 : 200).json(out)
-    }
-
-    // ── 退回 ──
-    if (action === 'reject' && req.method === 'POST') {
-      const me = await whoAmI(req)
-      if (!isMgr(me)) return res.status(403).json({ error: '只有管理員/主管可以退回' })
-      const body = typeof req.body === 'string' ? JSON.parse(req.body || '{}') : (req.body || {})
-      const { rejectApp } = await import('./_onboard.js')
-      const out = await rejectApp(body.appId, body.reason || '', me.name)
-      return res.status(out.error ? 400 : 200).json(out)
-    }
-
-    // ── 邀請碼 ──
-    if (action === 'conf') {
-      const me = await whoAmI(req)
-      if (!isMgr(me)) return res.status(403).json({ error: '只有管理員/主管可以設定' })
-      if (req.method === 'GET') return res.status(200).json(await loadConf())
-      const body = typeof req.body === 'string' ? JSON.parse(req.body || '{}') : (req.body || {})
-      const conf = await loadConf(); conf.inviteCode = String(body.inviteCode || '').trim()
-      await saveConf(conf)
-      return res.status(200).json({ ok: true, inviteCode: conf.inviteCode })
     }
 
     return res.status(400).json({ error: '未知動作' })

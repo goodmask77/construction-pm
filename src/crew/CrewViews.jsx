@@ -724,7 +724,7 @@ const DEFAULT_ROSTER_FIELDS = [
   { key: "bankDoc", label: "存摺影本", type: "file", req: true },
   { key: "docs", label: "其他文件", type: "file" },
 ];
-// ── 入職 2.0：私密文件（存私有桶，經 api/onboard 驗身分換短效連結才開得了）──
+// ── 入職 2.1：私密文件（存私有桶 ground-private，經 api/onboard 驗身分換短效連結才開得了）──
 const authToken = async () => { try { const { data } = await supabase.auth.getSession(); return data?.session?.access_token || ""; } catch (_) { return ""; } };
 const openPrivateDoc = async (path) => {
   try {
@@ -737,83 +737,86 @@ const openPrivateDoc = async (path) => {
 const PrivateDocBtns = ({ docs }) => (
   <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
     {(docs || []).map(dcc => (
-      <button key={dcc.path} onClick={() => openPrivateDoc(dcc.path)} style={{ border: `1px solid ${BORDER}`, background: "#FBF7EE", color: "#2E6FB0", borderRadius: 8, padding: "5px 12px", fontSize: 12.5, cursor: "pointer" }}>🔒 {dcc.label}</button>
+      <button key={dcc.path} onClick={() => openPrivateDoc(dcc.path)} style={{ border: `1px solid ${BORDER}`, background: "#FBF7EE", color: "#2E6FB0", borderRadius: 8, padding: "5px 12px", fontSize: 12.5, cursor: "pointer" }}>🔒 {dcc.label || dcc.name}</button>
     ))}
   </div>
 );
-// 名冊「待審核」區：LINE 入職申請 → 管理員在這裡看資料/證件 → 一鍵核准（自動建檔+開帳號+發登入連結）
-function OnboardReviewSection({ canEdit, confirm }) {
-  const [apps, setApps] = useState(null);
-  const [conf, setConf] = useState(null);
+// 名冊機密檔案欄（身分證/存摺/契約…）：上傳走私有桶（治本：不再進公開圖庫）；舊的公開檔連結照樣能開
+function PrivateFileField({ person, fieldKey, entries, editable, onLocal }) {
+  const [busy, setBusy] = useState(false);
+  const ref = useRef(null);
+  const up = async (files) => {
+    const f = files?.[0]; if (!f) return;
+    if (f.size > 12 * 1024 * 1024) { alert("檔案太大（上限 12MB）"); return; }
+    setBusy(true);
+    try {
+      const dataUrl = await new Promise((res, rej) => { const rd = new FileReader(); rd.onload = () => res(rd.result); rd.onerror = rej; rd.readAsDataURL(f); });
+      const t = await authToken();
+      const r = await fetch("/api/onboard?action=upload", { method: "POST", headers: { Authorization: `Bearer ${t}`, "content-type": "application/json" }, body: JSON.stringify({ personId: person.id, fieldKey, filename: f.name, dataUrl }) });
+      const d = await r.json();
+      if (d.ok) onLocal([...(entries || []), d.entry]); // 後端已寫回名冊；前端只同步畫面不重存（避免互蓋）
+      else alert(d.error || "上傳失敗");
+    } catch (_) { alert("上傳失敗"); }
+    setBusy(false);
+  };
+  return (
+    <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+      {(entries || []).map((e2, i) => e2.private || (!e2.url && e2.path)
+        ? <button key={i} onClick={() => openPrivateDoc(e2.path)} style={{ border: `1px solid ${BORDER}`, background: "#FBF7EE", color: "#2E6FB0", borderRadius: 8, padding: "5px 10px", fontSize: 12, cursor: "pointer" }}>🔒 {e2.name || "檔案"}</button>
+        : <a key={i} href={e2.url} target="_blank" rel="noreferrer" style={{ border: `1px solid ${BORDER}`, background: "#fff", color: "#2E6FB0", borderRadius: 8, padding: "5px 10px", fontSize: 12, textDecoration: "none" }}>📎 {e2.name || "檔案"}</a>)}
+      {editable && <>
+        <button onClick={() => ref.current?.click()} disabled={busy} style={{ border: `1px dashed ${BORDER}`, background: SURFACE, color: SUB, borderRadius: 8, padding: "5px 12px", fontSize: 12, cursor: "pointer" }}>{busy ? "上傳中…" : "＋ 上傳(拍照)"}</button>
+        <input ref={ref} type="file" accept="image/*,.pdf" style={{ display: "none" }} onChange={e => { up(e.target.files); e.target.value = ""; }} />
+      </>}
+      {(entries || []).length === 0 && !editable && <span style={{ fontSize: 12, color: "#C8BCA0" }}>—</span>}
+    </div>
+  );
+}
+// 名冊「待審核」區（入職 2.1）：LINE 報到即開帳號＋名冊「入職中」卡，夥伴自己在 App 填資料，
+// 這裡看進度/證件 → 一鍵核准轉正式（退回=刪卡+刪帳號+LINE 通知）
+function OnboardReviewSection({ pending, fields, progressOf, canEdit, confirm }) {
   const [busy, setBusy] = useState("");
   const [deptDraft, setDeptDraft] = useState({});
-  const reload = async () => {
-    try {
-      const t = await authToken(); if (!t) { setApps([]); return; }
-      const [r1, r2] = await Promise.all([
-        fetch("/api/onboard?action=pending", { headers: { Authorization: `Bearer ${t}` } }),
-        fetch("/api/onboard?action=conf", { headers: { Authorization: `Bearer ${t}` } }),
-      ]);
-      const d1 = await r1.json().catch(() => ({}));
-      const d2 = await r2.json().catch(() => ({}));
-      setApps(d1.apps || []);
-      if (d2.inviteCode != null) setConf(d2);
-    } catch (_) { setApps([]); }
-  };
-  useEffect(() => { reload(); }, []);
-  if (!canEdit || apps === null) return null;
-  const act = async (action, app, reason) => {
-    setBusy(app.id);
+  if (!canEdit || !pending.length) return null;
+  const act = async (action, p, reason) => {
+    setBusy(p.id);
     try {
       const t = await authToken();
-      const r = await fetch(`/api/onboard?action=${action}`, { method: "POST", headers: { Authorization: `Bearer ${t}`, "content-type": "application/json" }, body: JSON.stringify({ appId: app.id, dept: deptDraft[app.id] || "", reason }) });
+      const r = await fetch(`/api/onboard?action=${action}`, { method: "POST", headers: { Authorization: `Bearer ${t}`, "content-type": "application/json" }, body: JSON.stringify({ personId: p.id, dept: deptDraft[p.id] || "", reason }) });
       const d = await r.json();
       if (!d.ok) alert(d.error || "操作失敗");
-      else { try { auditLog(action === "approve" ? "新增" : "編輯", `入職申請${action === "approve" ? "核准" : "退回"}：${app.data?.name}`); } catch (_) {} }
-      await reload();
+      else { try { auditLog(action === "approve" ? "新增" : "刪除", `入職${action === "approve" ? "核准" : "退回"}：${p.name}`); } catch (_) {} }
     } catch (_) { alert("操作失敗"); }
     setBusy("");
   };
-  const saveCode = async () => {
-    const nv = window.prompt("設定入職邀請碼（新夥伴在 LINE 輸入這個碼開始申請；清空=關閉申請）", conf?.inviteCode || "");
-    if (nv === null) return;
-    const t = await authToken();
-    await fetch("/api/onboard?action=conf", { method: "POST", headers: { Authorization: `Bearer ${t}`, "content-type": "application/json" }, body: JSON.stringify({ inviteCode: nv.trim() }) });
-    reload();
-  };
   return (
     <div style={{ marginBottom: 14 }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8, flexWrap: "wrap" }}>
-        <div style={{ fontSize: 14.5, fontWeight: 700, color: TEXT }}>📥 入職申請待審核{apps.length > 0 && <span style={{ marginLeft: 6, fontSize: 11, background: ACCENT, color: "#fff", borderRadius: 10, padding: "1px 8px", fontWeight: 700 }}>{apps.length}</span>}</div>
-        <div style={{ flex: 1 }} />
-        {conf != null && <button onClick={saveCode} style={{ border: `1px solid ${BORDER}`, background: "#fff", color: SUB, borderRadius: 8, padding: "5px 12px", fontSize: 12, cursor: "pointer" }}>🎟 邀請碼：{conf.inviteCode || "（未設定=關閉申請）"}</button>}
-      </div>
-      {apps.length === 0 && <div style={{ fontSize: 12.5, color: "#9b9384", background: "#fff", border: `1px dashed ${BORDER}`, borderRadius: 10, padding: "10px 14px" }}>目前沒有待審核的申請。新夥伴加官方 LINE 輸入「入職 邀請碼」即可自助申請。</div>}
+      <div style={{ fontSize: 14.5, fontWeight: 700, color: TEXT, marginBottom: 8 }}>📥 入職中・待審核<span style={{ marginLeft: 6, fontSize: 11, background: ACCENT, color: "#fff", borderRadius: 10, padding: "1px 8px", fontWeight: 700 }}>{pending.length}</span></div>
       <div style={{ display: "grid", gap: 10 }}>
-        {apps.map(a => { const d = a.data || {}; return (
-          <div key={a.id} style={{ background: "#fff", border: "1.5px solid #c98a14", borderRadius: 12, padding: 14 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
-              <span style={{ fontSize: 15, fontWeight: 800, color: TEXT }}>{d.name}{d.nick ? `（${d.nick}）` : ""}</span>
-              {a.minor && <span style={{ fontSize: 11, background: "#FEF2F2", color: "#b3261e", border: "1px solid #FECACA", borderRadius: 8, padding: "1px 8px", fontWeight: 700 }}>未成年·需家長同意書</span>}
-              <span style={{ fontSize: 11.5, color: SUB }}>{(a.submittedAt || "").slice(0, 10)} 送出</span>
-              <div style={{ flex: 1 }} />
-              <span style={{ fontSize: 12, color: "#3C8C3C", fontWeight: 600 }}>✍ 契約已簽（{d.name}·{(a.contract?.signedAt || "").slice(0, 10)}）</span>
+        {pending.map(p => {
+          const pg = progressOf(p);
+          const missing = fields.filter(f => f.req && !(f.type === "file" ? (p[f.key] || []).length : String(p[f.key] ?? "").trim())).map(f => f.label);
+          const docs = fields.filter(f => f.type === "file").flatMap(f => (p[f.key] || []).filter(e2 => e2.private || e2.path));
+          return (
+            <div key={p.id} style={{ background: "#fff", border: "1.5px solid #c98a14", borderRadius: 12, padding: 14 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 8 }}>
+                <span style={{ fontSize: 15, fontWeight: 800, color: TEXT }}>{p.name}{p.nick ? `（${p.nick}）` : ""}</span>
+                <span style={{ fontSize: 11.5, color: SUB }}>{(p.onboardAt || "").slice(0, 10)} 報到</span>
+                <span style={{ fontSize: 12, fontWeight: 700, color: p.contractSigned ? "#3C8C3C" : "#b3261e" }}>{p.contractSigned ? `✍ 契約已簽 ${(p.contractSigned || "").slice(0, 10)}` : "✍ 契約未簽"}</span>
+                <div style={{ flex: 1 }} />
+                <span style={{ fontFamily: MONO, fontSize: 13, fontWeight: 800, color: pg === 100 ? "#3C8C3C" : "#c98a14" }}>資料 {pg}%</span>
+              </div>
+              {missing.length > 0 && <div style={{ fontSize: 12, color: "#9b9384", marginBottom: 8 }}>缺：{missing.slice(0, 6).join("、")}{missing.length > 6 ? `…共${missing.length}項` : ""}（點下方名冊本人卡片可代填）</div>}
+              {docs.length > 0 && <div style={{ marginBottom: 4 }}><PrivateDocBtns docs={docs} /></div>}
+              <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 10, flexWrap: "wrap" }}>
+                <input value={deptDraft[p.id] ?? (p.dept || "")} onChange={e => setDeptDraft(s => ({ ...s, [p.id]: e.target.value }))} placeholder="部門/崗位（例：外場）" style={{ border: `1px solid ${BORDER}`, borderRadius: 8, padding: "7px 10px", fontSize: 13, width: 170 }} />
+                <div style={{ flex: 1 }} />
+                <button disabled={busy === p.id} onClick={async () => { const rs = window.prompt("退回原因（會用 LINE 告訴對方；退回=刪除這張卡與帳號）", "非本店錄取人員"); if (rs === null) return; act("reject", p, rs); }} style={{ border: `1px solid ${BORDER}`, background: "#fff", color: "#b3261e", borderRadius: 8, padding: "8px 16px", fontSize: 13, cursor: "pointer" }}>退回並刪除</button>
+                <button disabled={busy === p.id} onClick={async () => { if (await confirm(`核准「${p.name}」轉正式夥伴？\n・部門：${deptDraft[p.id] ?? (p.dept || "未填")}\n・到職日：今天（可再改）\n・LINE 通知本人`, { danger: false, confirmLabel: "核准" })) act("approve", p); }} style={{ border: "none", background: "#3C8C3C", color: "#fff", borderRadius: 8, padding: "8px 20px", fontSize: 13.5, fontWeight: 700, cursor: "pointer" }}>{busy === p.id ? "處理中…" : "✅ 核准轉正式"}</button>
+              </div>
             </div>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(170px,1fr))", gap: 6, fontSize: 13, marginBottom: 10 }}>
-              <span><span style={{ color: SUB }}>電話</span> {d.phone}</span>
-              <span><span style={{ color: SUB }}>生日</span> {d.bday}</span>
-              <span><span style={{ color: SUB }}>身分證</span> {d.idNo}</span>
-              <span><span style={{ color: SUB }}>薪轉</span> {d.bankBranch || "待補"} {d.bankAcct === "待補" ? "" : d.bankAcct}</span>
-            </div>
-            <PrivateDocBtns docs={[...Object.values(a.files || {}), { label: "勞動契約(已簽)", path: `onboard/${a.id}/contract.json` }]} />
-            <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 12, flexWrap: "wrap" }}>
-              <input value={deptDraft[a.id] || ""} onChange={e => setDeptDraft(s => ({ ...s, [a.id]: e.target.value }))} placeholder="部門/崗位（例：外場）" style={{ border: `1px solid ${BORDER}`, borderRadius: 8, padding: "7px 10px", fontSize: 13, width: 170 }} />
-              <div style={{ flex: 1 }} />
-              <button disabled={busy === a.id} onClick={async () => { const rs = window.prompt("退回原因（會用 LINE 告訴對方）", "資料/照片需重傳"); if (rs === null) return; act("reject", a, rs); }} style={{ border: `1px solid ${BORDER}`, background: "#fff", color: "#b3261e", borderRadius: 8, padding: "8px 16px", fontSize: 13, cursor: "pointer" }}>退回</button>
-              <button disabled={busy === a.id} onClick={async () => { if (await confirm(`核准「${d.name}」入職？\n・自動建入名冊（部門：${deptDraft[a.id] || "未填"}）\n・開通帳號並用 LINE 發登入連結`, { danger: false, confirmLabel: "核准" })) act("approve", a); }} style={{ border: "none", background: "#3C8C3C", color: "#fff", borderRadius: 8, padding: "8px 20px", fontSize: 13.5, fontWeight: 700, cursor: "pointer" }}>{busy === a.id ? "處理中…" : "✅ 核准入職"}</button>
-            </div>
-          </div>
-        ); })}
+          );
+        })}
       </div>
     </div>
   );
@@ -829,7 +832,11 @@ export function RosterView({ canEdit, confirm, me, ReceiptUploader }) {
   const [dragIdx, setDragIdx] = useState(null); // 欄位設定拖曳排序
   const [optField, setOptField] = useState(null); // 選項管理中的欄位 key（選單型欄位的增刪改）
   useEffect(() => {
-    (async () => setData(await loadRosterDoc()))();
+    (async () => {
+      const d = await loadRosterDoc(); setData(d);
+      // 今日頁「入職資料卡」導過來 → 自動打開本人卡片
+      try { const openId = localStorage.getItem("pm_open_self_card"); if (openId && (d.people || []).some(pp => pp.id === openId)) { setSel(openId); localStorage.removeItem("pm_open_self_card"); } } catch (_) {}
+    })();
     // 即時同步：別台改了名冊 → 這裡跟著更新
     const un = onSharedChange(K(ROSTER_KEY), (_k, v) => { try { const d = v ? JSON.parse(v) : { people: [], fields: [] }; setData({ people: d.people || [], fields: d.fields || [] }); } catch (_) {} });
     return un;
@@ -843,6 +850,7 @@ export function RosterView({ canEdit, confirm, me, ReceiptUploader }) {
   const setSort = (fn) => setSortUser(typeof fn === "function" ? fn(sort) : fn);
   const persist = (patch) => { const next = { ...data, ...patch }; setData(next); saveRosterDoc(next); }; // 沒自訂過欄位＝fields 留空，跟舊行為一樣沿用預設（日後預設更新能跟上）
   const updP = (id, fp) => persist({ people: people.map(pp => pp.id === id ? { ...pp, ...fp } : pp) });
+  const updLocal = (id, fp) => setData(d => ({ ...d, people: (d.people || []).map(pp => pp.id === id ? { ...pp, ...fp } : pp) })); // 只更新畫面不重存（私密上傳後端已寫回名冊）
   const addP = () => { if (!canEdit) return; const np = { id: "p-" + Math.random().toString(36).slice(2, 8), name: "", nick: "", role: "staff", status: "在職" }; persist({ people: [...people, np] }); setSel(np.id); };
   const delP = async (pp) => { if (!canEdit) return; if (!(await confirm(`刪除「${pp.name || "未命名"}」？`, { confirmLabel: "刪除" }))) return; persist({ people: people.filter(x => x.id !== pp.id) }); setSel(null); };
   // 入職進度＝必填欄位完成率（含必上傳的檔案）
@@ -934,7 +942,7 @@ export function RosterView({ canEdit, confirm, me, ReceiptUploader }) {
   const dateS = { ...inpS, colorScheme: "light", fontFamily: "'Noto Sans TC',sans-serif", cursor: "pointer" };
   return (
     <div>
-      <OnboardReviewSection canEdit={canEdit} confirm={confirm} />
+      <OnboardReviewSection pending={people.filter(pp => pp.onboarding)} fields={fields} progressOf={progress} canEdit={canEdit} confirm={confirm} />
       <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "6px 0 12px", flexWrap: "wrap" }}>
         <span style={{ background: ACCENT, color: "#fff", fontSize: 11.5, fontWeight: 700, borderRadius: 4, padding: "2px 8px", letterSpacing: 1 }}>名冊</span>
         <div style={{ fontSize: 17, fontWeight: 800, color: TEXT, fontFamily: DISP }}>夥伴名冊 / 入職流程</div>
@@ -997,7 +1005,8 @@ export function RosterView({ canEdit, confirm, me, ReceiptUploader }) {
           const missing = f.req && !filledOf(pp, f);
           const lab = <span>{f.label}{f.req && <span style={{ color: missing ? "#b3261e" : "#3f7d4e" }}> {missing ? "＊必填" : "✓"}</span>}</span>;
           let node = null;
-          if (f.type === "file") node = <ReceiptUploader receipts={pp[f.key] || []} onChange={list => editable && updP(pp.id, { [f.key]: list })} size={28} />;
+          // 機密檔案（身分證/存摺/契約…）改走私有桶上傳（入職 2.1；舊公開檔連結照常能開）
+          if (f.type === "file") node = <PrivateFileField person={pp} fieldKey={f.key} entries={pp[f.key] || []} editable={editable} onLocal={list => updLocal(pp.id, { [f.key]: list })} />;
           else if (f.type === "date") node = <input type="date" value={pp[f.key] || ""} onChange={e => updP(pp.id, { [f.key]: e.target.value })} disabled={!editable} style={dateS} />;
           else if (f.type === "select") {
             const cur = pp[f.key] || "";
@@ -1237,6 +1246,7 @@ export function RewardCenterView(props) {
 // 排班資訊等排班系統接上真實資料後再加進來（現在還是虛擬資料，不硬塞）。
 export function CrewTodayView({ userName, isAdmin, setView }) {
   const [people, setPeople] = useState([]);
+  const [rfields, setRfields] = useState([]); // 名冊欄位定義（入職資料卡算必填進度用）
   const [docs, setDocs] = useState(null);
   const [quests, setQuests] = useState({ quests: [], progress: [] });
   const [r360, setR360] = useState({ reviews: [] });
@@ -1246,7 +1256,7 @@ export function CrewTodayView({ userName, isAdmin, setView }) {
   useEffect(() => {
     const s = setTimeout(() => setDocs(prev => prev || []), 8000);
     (async () => {
-      const r = await loadCrewRoster(); setPeople(r); setMe(meFromRoster(r, userName));
+      const rd = await loadRosterDoc(); const r = rd.people || []; setPeople(r); setRfields(rd.fields || []); setMe(meFromRoster(r, userName));
       setDocs(await loadCrewJSON("kb_docs", []));
       setQuests(await loadCrewJSON("kb_quests", { quests: [], progress: [] }));
       setR360(await loadCrewJSON("kb_360", { reviews: [] }));
@@ -1297,6 +1307,37 @@ export function CrewTodayView({ userName, isAdmin, setView }) {
         <div style={{ fontSize: 12.5, color: SUB }}>{now.toLocaleDateString("zh-TW", { month: "long", day: "numeric", weekday: "long" })}</div>
       </div>
       <div style={{ margin: "8px 0 14px" }}><CrewMe people={people} me={me} /></div>
+
+      {/* 入職資料卡（入職 2.1）：入職中的夥伴一進來就看到「像註冊一樣」的填寫進度與下一步 */}
+      {(() => {
+        const meP = people.find(p => p.id === me);
+        if (!meP?.onboarding) return null;
+        const flds = (rfields && rfields.length ? rfields : DEFAULT_ROSTER_FIELDS);
+        const req = flds.filter(f => f.req);
+        const filled = (f) => f.type === "file" ? (Array.isArray(meP[f.key]) && meP[f.key].length > 0) : String(meP[f.key] ?? "").trim() !== "";
+        const missing = req.filter(f => !filled(f)).map(f => f.label);
+        const pg = req.length ? Math.round((req.length - missing.length) / req.length * 100) : 100;
+        const allDone = missing.length === 0 && !!meP.contractSigned;
+        return (
+          <div style={{ background: "#fff", border: "1.5px solid #c98a14", borderRadius: 12, padding: 16, marginBottom: 16 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8, flexWrap: "wrap" }}>
+              <div style={{ fontSize: 15, fontWeight: 800, color: TEXT }}>📋 入職資料卡</div>
+              <span style={{ fontSize: 11.5, color: SUB }}>把資料填齊＋簽好契約，店長核准後就正式加入</span>
+              <div style={{ flex: 1 }} />
+              <span style={{ fontFamily: MONO, fontSize: 15, fontWeight: 800, color: pg === 100 ? "#3C8C3C" : "#c98a14" }}>{pg}%</span>
+            </div>
+            <div style={{ height: 8, background: "#e6ddc9", borderRadius: 4, overflow: "hidden", marginBottom: 10 }}><div style={{ width: pg + "%", height: "100%", background: pg === 100 ? "#3f7d4e" : "#c98a14" }} /></div>
+            {missing.length > 0 && <div style={{ fontSize: 12.5, color: "#9b9384", marginBottom: 10 }}>還缺：{missing.slice(0, 5).join("、")}{missing.length > 5 ? `…共 ${missing.length} 項` : ""}</div>}
+            {allDone && <div style={{ fontSize: 13, color: "#3C8C3C", fontWeight: 600, marginBottom: 10 }}>✅ 資料齊了！等店長核准就完成入職。</div>}
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              <button onClick={() => { try { localStorage.setItem("pm_open_self_card", meP.id); } catch (_) {} go("roster"); }} style={{ border: "none", background: ACCENT, color: "#fff", borderRadius: 8, padding: "9px 18px", fontSize: 13.5, fontWeight: 700, cursor: "pointer" }}>✍ 去填資料／傳證件</button>
+              {meP.contractSigned
+                ? <span style={{ alignSelf: "center", fontSize: 12.5, color: "#3C8C3C", fontWeight: 600 }}>✍ 勞動契約已簽（{String(meP.contractSigned).slice(0, 10)}）</span>
+                : meP.signToken && <button onClick={() => window.open(`/api/onboard?action=sign&t=${encodeURIComponent(meP.signToken)}`, "_blank")} style={{ border: `1.5px solid ${ACCENT}`, background: "#fff", color: ACCENT, borderRadius: 8, padding: "9px 18px", fontSize: 13.5, fontWeight: 700, cursor: "pointer" }}>📜 閱讀＋簽署勞動契約</button>}
+            </div>
+          </div>
+        );
+      })()}
 
       {/* 摘要數字卡：今天跟我有關的事一眼看完 */}
       {me && (
