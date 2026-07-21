@@ -2,7 +2,7 @@
 // v2 原則不變：預設全自動（⚡自動整理/同名併卡/規格解析入數/服務類收摺），人只處理例外
 // 截圖匯入：貼上或上傳截圖 → AI 解析品項 → 人工確認才寫入（AI 辨識必經人確認，張良原則）
 import React, { useEffect, useRef, useState } from "react";
-import { Leaf, Factory, List, Image as ImageIcon, Camera, Zap, ZoomIn } from "lucide-react";
+import { Leaf, Factory, List, Image as ImageIcon, Camera, Zap, ZoomIn, ExternalLink } from "lucide-react";
 import { C, MONOF, rid } from "./Supply.jsx";
 import { packToBase, lastPaid, unitCost, srcsOf, priceAlert, normName, organizeAll, repairPackToBase } from "./inv.js";
 import { uploadPhoto } from "../supa.js";
@@ -64,8 +64,8 @@ export default function IngredientsView({ db, save, canEdit, showMoney, confirm,
   // 只修「現值＝舊版誤值」的機器填值，人工改過的不碰；修完即冪等不會重複觸發
   useEffect(() => {
     if (!canEdit) return;
-    const r = repairPackToBase(db.vendorItems);
-    if (r.fixed) { save({ vendorItems: r.vendorItems }); flash(`✓ 已自動修正 ${r.fixed} 筆多層包裝入數（如 100張/包×60包/箱=6,000）`); }
+    const r = repairPackToBase(db.vendorItems, db.ingredients);
+    if (r.fixed) { save({ vendorItems: r.vendorItems }); flash(`✓ 已自動補正 ${r.fixed} 筆每件入數（多層包裝鏈乘／單顆計價=1）`); }
   }, [(db.vendorItems || []).length, canEdit]); // eslint-disable-line
 
   // ── ⚡ 自動整理（共用 organizeAll）──
@@ -183,7 +183,7 @@ export default function IngredientsView({ db, save, canEdit, showMoney, confirm,
         const [b64, im] = await Promise.all([fileToB64(f), loadImgEl(f)]);
         const W = im.naturalWidth, H = im.naturalHeight;
         const block = { type: "image", source: { type: "base64", media_type: f.type || "image/png", data: b64 } };
-        const prompt = `這是廠商網站/購物車/報價單/型錄的截圖，原始尺寸 ${W}x${H} 像素。抽出每一個商品，只回 JSON、不要其他文字：{"vendor":"截圖上可辨識的廠商或網站名稱(沒有就空字串)","items":[{"name":"品名","spec":"規格(例:1000入/箱,600g/包,沒有就空字串)","unit":"採購單位(箱/件/包/組,預設箱)","price":單價數字,"img":{"x":左上x,"y":左上y,"w":寬,"h":高}}]}。品名規則（張良 2026-07-20 拍板）：①name＝【主標題完整原文，一字不改、包含規格】（例：主標「紙漿杯座-二杯-原色-600入/箱」→ name=紙漿杯座-二杯-原色-600入/箱）。副標/小字（如型號 HR-紙漿二杯架）不要放進品名。②spec＝把規格再抄一份到 spec 欄（例：600入/箱），系統算每件入數用；主標沒有規格才從副標/頁面找。③唯一例外：多列主標題「完全相同」時＝其實是不同商品（例：主標同為「餐刀/叉/匙-白色(散裝) 2000入/箱」三列、副標分別是餐刀/餐叉/餐匙）——此時把主標中的共用字換成副標的差異字組出可區分品名（例：霧面餐刀-白色(散裝) 2000入/箱），每一列都要輸出，不可省略或合併。img=該商品縮圖照片在截圖中的像素範圍（以原始 ${W}x${H} 座標、整數、框準照片本身不含文字），該商品沒有照片就給 null。金額只放數字，看不到的欄位留空字串或 0。`;
+        const prompt = `這是廠商網站/購物車/報價單/型錄的截圖，原始尺寸 ${W}x${H} 像素。抽出每一個商品，只回 JSON、不要其他文字：{"vendor":"截圖上可辨識的廠商或網站名稱(沒有就空字串)","url":"截圖裡瀏覽器網址列的完整網址(看不到網址列就空字串)","items":[{"name":"品名","spec":"規格(例:1000入/箱,600g/包,沒有就空字串)","unit":"採購單位(照截圖單位欄原文:箱/件/包/組/個/支/張…,看不到才預設箱)","price":單價數字,"img":{"x":左上x,"y":左上y,"w":寬,"h":高}}]}。注意：報價單的「數量」欄是這次要買幾個（採購量），不是每件入數，不要抄進 spec；單價若是「每個」的價，unit 就寫 個。品名規則（張良 2026-07-20 拍板）：①name＝【主標題完整原文，一字不改、包含規格】（例：主標「紙漿杯座-二杯-原色-600入/箱」→ name=紙漿杯座-二杯-原色-600入/箱）。副標/小字（如型號 HR-紙漿二杯架）不要放進品名。②spec＝把規格再抄一份到 spec 欄（例：600入/箱），系統算每件入數用；主標沒有規格才從副標/頁面找。③唯一例外：多列主標題「完全相同」時＝其實是不同商品（例：主標同為「餐刀/叉/匙-白色(散裝) 2000入/箱」三列、副標分別是餐刀/餐叉/餐匙）——此時把主標中的共用字換成副標的差異字組出可區分品名（例：霧面餐刀-白色(散裝) 2000入/箱），每一列都要輸出，不可省略或合併。img=該商品縮圖照片在截圖中的像素範圍（以原始 ${W}x${H} 座標、整數、框準照片本身不含文字），該商品沒有照片就給 null。金額只放數字，看不到的欄位留空字串或 0。`;
         const reply = await callAI([{ role: "user", content: [block, { type: "text", text: prompt }] }], "你是採購品項解析助理，只輸出 JSON。", "import");
         const clean = reply.replace(/```json|```/gi, "").trim();
         const parsed = JSON.parse(clean.slice(clean.indexOf("{"), clean.lastIndexOf("}") + 1));
@@ -191,8 +191,11 @@ export default function IngredientsView({ db, save, canEdit, showMoney, confirm,
         for (const it of (parsed.items || [])) {
           const name = String(it.name || "").trim(); if (!name) continue;
           const box = it.img && typeof it.img === "object" ? { x: Number(it.img.x) || 0, y: Number(it.img.y) || 0, w: Number(it.img.w) || 0, h: Number(it.img.h) || 0 } : null;
-          rows.push({ on: true, name, spec: String(it.spec || "").trim(), unit: String(it.unit || "箱").trim() || "箱", price: Number(it.price) || "", thumb: null, thumbUrl: "", box });
+          rows.push({ on: true, name, spec: String(it.spec || "").trim(), unit: String(it.unit || "箱").trim() || "箱", price: Number(it.price) || "", url: "", thumb: null, thumbUrl: "", box });
         }
+        // 商品頁截圖（單一商品）→ 網址列的網址掛到該品項；多品項（購物車/報價單）網址非單品專屬不掛
+        const pageUrl = String(parsed.url || "").trim();
+        if (rows.length === 1 && /^https?:\/\//.test(pageUrl)) rows[0].url = pageUrl;
         // 座標校正①：同一張截圖的縮圖通常同尺寸同 x → 取中位數統一（AI 座標飄的自動拉回）
         const bs = rows.filter(r => r.box && r.box.w >= 20 && r.box.h >= 20);
         if (bs.length >= 3) {
@@ -232,8 +235,8 @@ export default function IngredientsView({ db, save, canEdit, showMoney, confirm,
     const baseSort = vis2.filter(v => v.vendor_id === vid).length;
     rows.forEach((r, i) => {
       const ex = vis2.find(v => v.vendor_id === vid && normName(v.name) === normName(r.name));
-      if (ex) { vis2 = vis2.map(v => v.id === ex.id ? { ...v, spec: r.spec.trim() || v.spec, unit: r.unit || v.unit, price: r.price !== "" ? r.price : v.price } : v); updN++; }
-      else { vis2.push({ id: rid("vi"), vendor_id: vid, grp: "", name: r.name.trim(), spec: r.spec.trim(), unit: r.unit || "箱", price: r.price || "", safeStock: "", sort: baseSort + i, tags: "" }); addN++; }
+      if (ex) { vis2 = vis2.map(v => v.id === ex.id ? { ...v, spec: r.spec.trim() || v.spec, unit: r.unit || v.unit, price: r.price !== "" ? r.price : v.price, url: r.url || v.url || "" } : v); updN++; }
+      else { vis2.push({ id: rid("vi"), vendor_id: vid, grp: "", name: r.name.trim(), spec: r.spec.trim(), unit: r.unit || "箱", price: r.price || "", url: r.url || "", safeStock: "", sort: baseSort + i, tags: "" }); addN++; }
     });
     const plan = organizeAll({ ...db, vendors: vendors2, vendorItems: vis2 });
     // 截圖裁下的商品照片 → 上傳 → 掛到物料卡（卡上已有圖就不動）
@@ -323,7 +326,14 @@ export default function IngredientsView({ db, save, canEdit, showMoney, confirm,
             return (
               <div key={vi.id} style={{ display: "grid", gridTemplateColumns: `minmax(80px,0.9fr) minmax(120px,1.3fr) 150px ${showMoney ? "110px 90px" : ""}`, gap: 8, alignItems: "center", padding: "4px 10px", borderTop: `1px solid #f0ead9`, fontSize: 12, background: best ? "#eef5ef" : "#fff" }}>
                 <span style={{ fontWeight: 700, color: C.text }}>{vname(vi.vendor_id)}</span>
-                <span style={{ color: C.sub, fontSize: 11.5 }}>{vi.name}{vi.spec ? `（${vi.spec}）` : ""}</span>
+                {/* 品名/規格＋商品網址（截圖有網址列會自動帶入；太長截不進圖就直接貼這裡）*/}
+                <span style={{ color: C.sub, fontSize: 11.5, minWidth: 0 }}>
+                  <div>{vi.name}{vi.spec ? `（${vi.spec}）` : ""}</div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 4, marginTop: 2 }}>
+                    <input value={vi.url || ""} onChange={e => save({ vendorItems: (db.vendorItems || []).map(v => v.id === vi.id ? { ...v, url: e.target.value.trim() } : v) })} disabled={!canEdit} placeholder="貼商品網址…" style={{ ...inp, fontSize: 10, padding: "2px 6px", flex: 1, minWidth: 0, color: C.sub }} />
+                    {/^https?:\/\//.test(vi.url || "") && <a href={vi.url} target="_blank" rel="noreferrer" title="打開商品網頁" onClick={e => e.stopPropagation()} style={{ color: C.blue, display: "flex", flexShrink: 0 }}><ExternalLink size={14} strokeWidth={2} /></a>}
+                  </div>
+                </span>
                 <span style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 11 }}>
                   1{vi.unit || "件"}=
                   <input value={vi.packToBase ?? ""} onChange={e => save({ vendorItems: (db.vendorItems || []).map(v => v.id === vi.id ? { ...v, packToBase: e.target.value.replace(/[^0-9.]/g, "") } : v) })} disabled={!canEdit} inputMode="decimal" placeholder="？" style={{ ...inp, width: 66, padding: "3px 6px", fontFamily: MONOF, borderColor: packToBase(vi) ? C.line : C.red }} />
@@ -377,7 +387,8 @@ export default function IngredientsView({ db, save, canEdit, showMoney, confirm,
           <div style={{ ...vline, padding: "3px 4px", justifyContent: "center" }} onClick={e => { if (g.img) { e.stopPropagation(); setZoom(g.img); } }}>
             <span title={g.img ? "點擊放大檢視" : "還沒有照片（點開卡片上傳或貼上）"} style={{ width: 28, height: 28, borderRadius: 5, border: `1px solid ${C.line}`, background: g.img ? `url(${g.img}) center/cover` : "#f4efe5", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, color: "#d5cbb6", cursor: g.img ? "zoom-in" : "pointer", flexShrink: 0 }}>{g.img ? "" : "—"}</span>
           </div>
-          <div style={{ ...vline, padding: "0 9px", overflow: "hidden" }}><span style={{ fontSize: 13, fontWeight: 600, color: C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{g.name || <span style={{ color: C.faint }}>（未命名）</span>}{anyAlert && <span style={{ fontSize: 10, fontWeight: 700, color: anyAlert.up ? C.red : C.green, marginLeft: 4 }}>{anyAlert.up ? "▲" : "▼"}{Math.abs(anyAlert.pct)}%</span>}</span></div>
+          {/* 名稱長也要看得到：最多兩行、hover 有完整名（2026-07-21 張良：欄位卡住名稱看不到後面） */}
+          <div style={{ ...vline, padding: "3px 9px", overflow: "hidden" }}><span title={g.name || ""} style={{ fontSize: 13, fontWeight: 600, color: C.text, overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", lineHeight: 1.22, wordBreak: "break-all" }}>{g.name || <span style={{ color: C.faint }}>（未命名）</span>}{anyAlert && <span style={{ fontSize: 10, fontWeight: 700, color: anyAlert.up ? C.red : C.green, marginLeft: 4 }}>{anyAlert.up ? "▲" : "▼"}{Math.abs(anyAlert.pct)}%</span>}</span></div>
           <div style={{ ...vline, padding: "0 9px", fontFamily: MONOF, fontSize: 11.5, color: mainVi && packToBase(mainVi) ? C.sub : C.red }}>{mainVi ? (packToBase(mainVi) ? `1${mainVi.unit || "件"}=${Number(mainVi.packToBase).toLocaleString()}${g.baseUnit}` : "1件=？") : "—"}</div>
           <div style={{ ...vline, padding: "0 9px", overflow: "hidden" }}><span style={{ fontSize: 11.5, color: srcs.length ? C.sub : C.red, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={vnames}>{vnames || "沒人賣"}</span></div>
           {showMoney && <div style={{ ...vline, padding: "0 9px", fontFamily: MONOF, fontSize: 11.5, justifyContent: "flex-end", color: minU != null ? C.text : "#d5cbb6" }}>{minU != null ? `$${d2(minU)}/${g.baseUnit}` : "—"}</div>}

@@ -159,18 +159,28 @@ export const parseSpec = (spec) => {
   return _parseFlat(s);
 };
 
-// 一次性資料修復：多層規格被舊版算錯的入數——只改「現值＝舊版誤值」的（人工改過的不碰）；回 { vendorItems, fixed }
-export const repairPackToBase = (vendorItems) => {
+// 一次性資料修復（物料頁載入自動跑、冪等）：
+// ①多層規格被舊版算錯的入數——只改「現值＝舊版誤值」的（人工改過的不碰）
+// ②沒規格但採購單位＝單顆（個/支/張…）且計量單位＝個 → 入數自動補 1（報價單位就是最小單位）
+export const repairPackToBase = (vendorItems, ingredients) => {
   let fixed = 0;
+  const byId = new Map((ingredients || []).map(g => [g.id, g]));
   const out = (vendorItems || []).map(vi => {
     const neu = parseSpec(vi.spec);
-    if (!neu.packToBase) return vi;
-    const old = _parseFlat(String(vi.spec || ""));
-    if (old.packToBase && neu.packToBase !== old.packToBase && Number(vi.packToBase) === old.packToBase) { fixed++; return { ...vi, packToBase: neu.packToBase }; }
+    if (neu.packToBase) {
+      const old = _parseFlat(String(vi.spec || ""));
+      if (old.packToBase && neu.packToBase !== old.packToBase && Number(vi.packToBase) === old.packToBase) { fixed++; return { ...vi, packToBase: neu.packToBase }; }
+      return vi;
+    }
+    const g = byId.get(vi.ingredient_id);
+    if (!Number(vi.packToBase) && isPieceUnit(vi.unit) && g && (g.baseUnit || "個") === "個") { fixed++; return { ...vi, packToBase: 1 }; }
     return vi;
   });
   return { vendorItems: out, fixed };
 };
+
+// 單顆計價單位：採購單位本身＝最小單位（報價單「5,000個×$4.9/個」）→ 1個=1個，入數必=1 不用問人
+export const isPieceUnit = (u) => /^(個|个|顆|粒|支|張|片|份|雙|只|枝)$/.test(String(u || "").trim());
 
 // 服務/費用類判斷（保養、運費…）→ 標非物料，不進盤點/成本
 export const isServiceName = (name) => /保養|維修|修理|運費|服務|安裝|清潔費|檢測|租金|費用|工資|施工/.test(String(name || ""));
@@ -200,7 +210,7 @@ export const organizeAll = (db) => {
       list.push(g); byNorm.set(k, g); created++; if (svc) svcN++;
     }
     const nv = { ...vi, ingredient_id: g.id };
-    if (!Number(nv.packToBase)) { const p2 = parseSpec(vi.spec); if (p2.packToBase) nv.packToBase = p2.packToBase; else if (!g.nonStock) needFix++; }
+    if (!Number(nv.packToBase)) { const p2 = parseSpec(vi.spec); if (p2.packToBase) nv.packToBase = p2.packToBase; else if (isPieceUnit(nv.unit) && (g.baseUnit || "個") === "個") nv.packToBase = 1; else if (!g.nonStock) needFix++; }
     return nv;
   });
   return { ingredients: list, vendorItems, stats: { created, merged, svcN, needFix } };

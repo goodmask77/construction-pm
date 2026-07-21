@@ -1,6 +1,6 @@
 // 進銷存算法 selftest：node scripts/test-inv.mjs
 // 覆蓋：單位成本/比價取最近實付/食譜成本(含包材/缺料/循環)/進價事件冪等/警示門檻/報價快取
-import { unitCost, quoteUnit, latestCostOfIngredient, recipeCost, buildPriceEvents, applyLastPaid, priceAlert, applyQuote, parseSpec, repairPackToBase, isServiceName, normName } from "../src/supply/inv.js";
+import { unitCost, quoteUnit, latestCostOfIngredient, recipeCost, buildPriceEvents, applyLastPaid, priceAlert, applyQuote, parseSpec, repairPackToBase, isPieceUnit, organizeAll, isServiceName, normName } from "../src/supply/inv.js";
 let pass = 0, fail = 0;
 const ok = (name, cond) => { cond ? pass++ : (fail++, console.log("✗ " + name)); };
 
@@ -68,6 +68,20 @@ ok("修復：舊誤值100→6000、人工值/正確值不碰", (() => {
     { id: "d", spec: "", packToBase: "" },                      // 沒規格 → 不動
   ]);
   return r.fixed === 1 && r.vendorItems[0].packToBase === 6000 && r.vendorItems[1].packToBase === 5000 && r.vendorItems[2].packToBase === 2000;
+})());
+// 單顆計價（2026-07-21 張良：報價單 5,000個×$4.9/個 匯入卡「1件=?」）
+ok("isPieceUnit 個/張/支=true 箱/包=false", isPieceUnit("個") && isPieceUnit("張") && isPieceUnit("支") && !isPieceUnit("箱") && !isPieceUnit("包"));
+ok("修復：單位=個沒規格→入數補1、單位=箱不亂補", (() => {
+  const r = repairPackToBase([
+    { id: "a", spec: "", unit: "個", packToBase: "", ingredient_id: "g9" },  // 單顆計價 → 補 1
+    { id: "b", spec: "", unit: "箱", packToBase: "", ingredient_id: "g9" },  // 箱不知入數 → 不猜
+    { id: "c", spec: "", unit: "個", packToBase: "", ingredient_id: "gW" },  // 計量單位是 g → 不補
+  ], [{ id: "g9", baseUnit: "個" }, { id: "gW", baseUnit: "g" }]);
+  return r.fixed === 1 && r.vendorItems[0].packToBase === 1 && r.vendorItems[1].packToBase === "" && r.vendorItems[2].packToBase === "";
+})());
+ok("organizeAll：單位=個新建卡自動入數=1", (() => {
+  const plan = organizeAll({ vendors: [], ingredients: [], vendorItems: [{ id: "x1", vendor_id: "A", name: "少量紙提袋(4色)", spec: "", unit: "個", price: 4.9 }] });
+  return plan.vendorItems[0].packToBase === 1 && plan.stats.needFix === 0;
 })());
 ok("服務類判斷：咖啡機年度保養", isServiceName("咖啡機年度保養") === true);
 ok("服務類判斷：醬料杯不是服務", isServiceName("A140醬料杯") === false);
