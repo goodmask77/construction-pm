@@ -688,7 +688,7 @@ export default function IngredientsView({ db, save, canEdit, showMoney, confirm,
 
       {/* 物料視角 */}
       {vw === "mat" && cats.map(cat => {
-        const rows = shown.filter(g => effCat(g) === cat).sort((a, b) => (b.isKey ? 1 : 0) - (a.isKey ? 1 : 0)); // ★ 置頂（重點比價）
+        const rows = shown.filter(g => ((g.cat || "").trim() || "未分類") === cat).sort((a, b) => (b.isKey ? 1 : 0) - (a.isKey ? 1 : 0)); // ★ 置頂（重點比價）
         const allSel = rows.every(g => sel2[g.id]);
         const catClosed = !!colCat[cat];
         return (
