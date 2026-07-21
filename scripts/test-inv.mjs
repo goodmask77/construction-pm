@@ -83,6 +83,23 @@ ok("organizeAll：單位=個新建卡自動入數=1", (() => {
   const plan = organizeAll({ vendors: [], ingredients: [], vendorItems: [{ id: "x1", vendor_id: "A", name: "少量紙提袋(4色)", spec: "", unit: "個", price: 4.9 }] });
   return plan.vendorItems[0].packToBase === 1 && plan.stats.needFix === 0;
 })());
+// MOQ 誤當入數（2026-07-21 張良：數量5000個=MOQ、@5.80/pc=單顆價）
+ok("pcs 規格看得懂：2000pcs/箱→2000個", (() => { const p = parseSpec("2000pcs/箱"); return p.packToBase === 2000 && p.baseUnit === "個"; })());
+ok("isPieceUnit 認得 pc/pcs", isPieceUnit("pc") && isPieceUnit("pcs") && isPieceUnit("PCS"));
+ok("修復：規格=數量50000張(MOQ)誤成入數→入數1+搬moq+清規格", (() => {
+  const r = repairPackToBase([{ id: "a", spec: "50000張", unit: "張", packToBase: 50000, ingredient_id: "g9" }], [{ id: "g9", baseUnit: "個" }]);
+  const a = r.vendorItems[0];
+  return r.fixed === 1 && a.packToBase === 1 && a.moq === 50000 && a.spec === "";
+})());
+ok("修復：入數空但規格可解析→自動補(2000pcs/箱)", (() => {
+  const r = repairPackToBase([{ id: "b", spec: "2000pcs/箱", unit: "箱", packToBase: "", ingredient_id: "g9" }], [{ id: "g9", baseUnit: "個" }]);
+  return r.fixed === 1 && r.vendorItems[0].packToBase === 2000;
+})());
+ok("organizeAll：單位=個+規格只有數量→入數1、數量搬moq", (() => {
+  const plan = organizeAll({ vendors: [], ingredients: [], vendorItems: [{ id: "x2", vendor_id: "A", name: "小紙袋無手提", spec: "30000個", unit: "個", price: 1.72 }] });
+  const v = plan.vendorItems[0];
+  return v.packToBase === 1 && v.moq === 30000 && v.spec === "";
+})());
 ok("服務類判斷：咖啡機年度保養", isServiceName("咖啡機年度保養") === true);
 ok("服務類判斷：醬料杯不是服務", isServiceName("A140醬料杯") === false);
 ok("正規化：同名不同符號視為同物", normName("PET-2oz醬料杯") === normName("PET–2oz 醬料杯"));

@@ -136,13 +136,13 @@ const _parseFlat = (s) => {
   if ((m = s.match(/([\d.]+)\s*(?:公克|克)/)) || (m = s.match(/([\d.]+)\s*g\b/i))) return { packToBase: Math.round(parseFloat(m[1])), baseUnit: "g" };
   if ((m = s.match(/([\d.]+)\s*(?:公升|升)/)) || (m = s.match(/([\d.]+)\s*L\b/))) return { packToBase: Math.round(parseFloat(m[1]) * 1000), baseUnit: "ml" };
   if ((m = s.match(/([\d.]+)\s*(?:毫升|ml|cc)\b/i))) return { packToBase: Math.round(parseFloat(m[1])), baseUnit: "ml" };
-  if ((m = s.match(/(\d+)\s*(?:入|個|个|顆|粒|支|張|片|捲|卷|份|組|雙|條|条|袋|包)/))) return { packToBase: parseInt(m[1], 10), baseUnit: "個" };
+  if ((m = s.match(/(\d+)\s*(?:入|個|个|顆|粒|支|張|片|捲|卷|份|組|雙|條|条|袋|包|[pP][cC][sS]?)/))) return { packToBase: parseInt(m[1], 10), baseUnit: "個" };
   return { packToBase: null, baseUnit: "個" };
 };
 export const parseSpec = (spec) => {
   const s = String(spec || "");
-  // 抓所有「數字＋單位／容器」段（100張/包、60包/箱），兩段以上→從最外層容器往內鏈乘
-  const re = /([\d.]+)\s*(公斤|kg|台斤|斤|公克|克|g|公升|升|L|毫升|ml|cc|入|個|个|顆|粒|支|張|片|捲|卷|份|組|雙|條|条|袋|包|盒|瓶|罐|桶)\s*[/／]\s*(箱|件|袋|包|盒|組|桶|捲|卷|罐|瓶)/gi;
+  // 抓所有「數字＋單位／容器」段（100張/包、60包/箱、2000pcs/箱），兩段以上→從最外層容器往內鏈乘
+  const re = /([\d.]+)\s*(公斤|kg|台斤|斤|公克|克|g|公升|升|L|毫升|ml|cc|pcs|pc|入|個|个|顆|粒|支|張|片|捲|卷|份|組|雙|條|条|袋|包|盒|瓶|罐|桶)\s*[/／]\s*(箱|件|袋|包|盒|組|桶|捲|卷|罐|瓶)/gi;
   const segs = []; let m;
   while ((m = re.exec(s))) segs.push({ qty: parseFloat(m[1]), unit: m[2], per: m[3] });
   if (segs.length >= 2) {
@@ -160,27 +160,37 @@ export const parseSpec = (spec) => {
 };
 
 // 一次性資料修復（物料頁載入自動跑、冪等）：
-// ①多層規格被舊版算錯的入數——只改「現值＝舊版誤值」的（人工改過的不碰）
-// ②沒規格但採購單位＝單顆（個/支/張…）且計量單位＝個 → 入數自動補 1（報價單位就是最小單位）
+// ①單顆計價（單位=個/張/pc…且計量=個）：入數必=1；被灌成 MOQ 大數（規格「50000張」）→ 入數=1、數字搬 moq、規格清掉
+// ②多層規格被舊版算錯的入數——只改「現值＝舊版誤值」的（人工改過的不碰）
+// ③有規格但入數空白 → 從規格補（2000pcs/箱 → 2000）
 export const repairPackToBase = (vendorItems, ingredients) => {
   let fixed = 0;
   const byId = new Map((ingredients || []).map(g => [g.id, g]));
   const out = (vendorItems || []).map(vi => {
-    const neu = parseSpec(vi.spec);
-    if (neu.packToBase) {
-      const old = _parseFlat(String(vi.spec || ""));
-      if (old.packToBase && neu.packToBase !== old.packToBase && Number(vi.packToBase) === old.packToBase) { fixed++; return { ...vi, packToBase: neu.packToBase }; }
+    const g = byId.get(vi.ingredient_id);
+    if (isPieceUnit(vi.unit) && g && (g.baseUnit || "個") === "個") {
+      const n = Number(vi.packToBase);
+      const bare = String(vi.spec || "").trim().match(_bareCount);
+      if (bare && n > 1 && Number(bare[1].replace(/,/g, "")) === n) { fixed++; return { ...vi, packToBase: 1, moq: Number(vi.moq) > 0 ? vi.moq : n, spec: "" }; }
+      if (!(n > 0)) { fixed++; return { ...vi, packToBase: 1, ...(bare && !(Number(vi.moq) > 0) ? { moq: Number(bare[1].replace(/,/g, "")), spec: "" } : {}) }; }
       return vi;
     }
-    const g = byId.get(vi.ingredient_id);
-    if (!Number(vi.packToBase) && isPieceUnit(vi.unit) && g && (g.baseUnit || "個") === "個") { fixed++; return { ...vi, packToBase: 1 }; }
+    const neu = parseSpec(vi.spec);
+    if (neu.packToBase) {
+      if (!Number(vi.packToBase)) { fixed++; return { ...vi, packToBase: neu.packToBase }; }
+      const old = _parseFlat(String(vi.spec || ""));
+      if (old.packToBase && neu.packToBase !== old.packToBase && Number(vi.packToBase) === old.packToBase) { fixed++; return { ...vi, packToBase: neu.packToBase }; }
+    }
     return vi;
   });
   return { vendorItems: out, fixed };
 };
 
-// 單顆計價單位：採購單位本身＝最小單位（報價單「5,000個×$4.9/個」）→ 1個=1個，入數必=1 不用問人
-export const isPieceUnit = (u) => /^(個|个|顆|粒|支|張|片|份|雙|只|枝)$/.test(String(u || "").trim());
+// 單顆計價單位：採購單位本身＝最小單位（報價單「5,000個×$4.9/個」「@5.80/pc」）→ 1個=1個，入數必=1 不用問人
+export const isPieceUnit = (u) => /^(個|个|顆|粒|支|張|片|份|雙|只|枝|pcs?)$/i.test(String(u || "").trim());
+
+// 「純數量」規格（50000張 / 30000個 / 5000pcs）＝報價的最低訂購量 MOQ，不是每件入數——搬去 moq 欄
+const _bareCount = /^\(?\s*([\d,]+)\s*(?:張|個|个|顆|粒|支|片|份|雙|只|枝|pcs?)\s*\)?$/i;
 
 // 服務/費用類判斷（保養、運費…）→ 標非物料，不進盤點/成本
 export const isServiceName = (name) => /保養|維修|修理|運費|服務|安裝|清潔費|檢測|租金|費用|工資|施工/.test(String(name || ""));
@@ -210,7 +220,14 @@ export const organizeAll = (db) => {
       list.push(g); byNorm.set(k, g); created++; if (svc) svcN++;
     }
     const nv = { ...vi, ingredient_id: g.id };
-    if (!Number(nv.packToBase)) { const p2 = parseSpec(vi.spec); if (p2.packToBase) nv.packToBase = p2.packToBase; else if (isPieceUnit(nv.unit) && (g.baseUnit || "個") === "個") nv.packToBase = 1; else if (!g.nonStock) needFix++; }
+    if (!Number(nv.packToBase)) {
+      if (isPieceUnit(nv.unit) && (g.baseUnit || "個") === "個") {
+        // 單顆計價：入數必=1；規格若只是「50000張」這種純數量＝MOQ → 搬去 moq、不留在規格
+        nv.packToBase = 1;
+        const bare = String(nv.spec || "").trim().match(_bareCount);
+        if (bare && !(Number(nv.moq) > 0)) { nv.moq = Number(bare[1].replace(/,/g, "")); nv.spec = ""; }
+      } else { const p2 = parseSpec(vi.spec); if (p2.packToBase) nv.packToBase = p2.packToBase; else if (!g.nonStock) needFix++; }
+    }
     return nv;
   });
   return { ingredients: list, vendorItems, stats: { created, merged, svcN, needFix } };
