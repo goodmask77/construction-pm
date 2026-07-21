@@ -911,10 +911,23 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
             const totalN = real.reduce((t, x) => t + x.amtN, 0);
             const summary = CAT_ORDER.filter(c2 => c2 !== "（日小計）").map(c2 => { const g2 = real.filter(x => x.cat === c2); return g2.length ? { label: c2, n: g2.length, amt: fmt(g2.reduce((t, x) => t + x.amtN, 0)), pct: totalN ? Math.round(g2.reduce((t, x) => t + x.amtN, 0) / totalN * 100) + "%" : "—" } : null; }).filter(Boolean);
             recs.sort((x, y) => CAT_ORDER.indexOf(x.cat) - CAT_ORDER.indexOf(y.cat) || (x.date < y.date ? 1 : x.date > y.date ? -1 : 0));
+            // 逐日視圖（張良 2026-07-21）：直式＝日期一列（預設）、⇄轉置＝類別一列日期一欄
+            const CATS = CAT_ORDER.filter(c2 => c2 !== "（日小計）");
+            const byDay = {};
+            real.forEach(x => { const o = byDay[x.date] = byDay[x.date] || {}; o[x.cat] = (o[x.cat] || 0) + x.amtN; });
+            const dayKeys = Object.keys(byDay).sort().reverse();
+            const revOf = (dt) => (days.find(d2 => d2.date === dt) || {}).revenue || 0;
+            const dayTotal = (dt) => Object.values(byDay[dt]).reduce((t, v) => t + v, 0);
+            const cellV = (dt, c2) => (byDay[dt][c2] ? fmt(byDay[dt][c2]) : "");
+            const catTotal = (c2) => real.filter(x => x.cat === c2).reduce((t, x) => t + x.amtN, 0);
+            const daily = {
+              v: { cols: ["日期", ...CATS, "合計", "佔當日營收"], rows: dayKeys.map(dt => [dt, ...CATS.map(c2 => cellV(dt, c2)), fmt(dayTotal(dt)), revOf(dt) ? (dayTotal(dt) / revOf(dt) * 100).toFixed(1) + "%" : ""]) },
+              t: { cols: ["類別", ...dayKeys.map(dt => dt.slice(5)), "期間合計"], rows: [...CATS.map(c2 => [c2, ...dayKeys.map(dt => cellV(dt, c2)), fmt(catTotal(c2))]), ["合計", ...dayKeys.map(dt => fmt(dayTotal(dt))), fmt(totalN)]] },
+            };
             return {
               title: "優惠券 / 折扣明細（依用途分類）", cols: ["類別", "日期", "品項｜單號", "數量", "佔比", "金額", "經手・原因"],
               rows: recs.map(x => [x.cat, x.date, x.name, x.qty, x.pctS, x.amtS, x.who]),
-              summary,
+              summary, daily,
               note: "來源：日結信「優惠券」分頁・已自動併列＋依關鍵字分類（客訴/試菜/夥伴/VIP/招待/一般）・（日小計）＝POS 每日總額列不計入彙總・點欄位標題可排序",
             };
           }
@@ -1157,8 +1170,13 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
             {/* 下鑽明細（組成該數字的原始資料）：欄位可排序、日期帶星期、清單/矩陣切換 */}
             {drill && (() => {
               const sortVal = (v) => { if (typeof v === "number") return v; const n = parseFloat(String(v).replace(/[NT$,%\s]/g, "")); return isNaN(n) ? String(v) : n; };
-              let rows2 = drill.rows;
-              if (posDrillSort) rows2 = [...drill.rows].sort((a, b) => { const va = sortVal(a[posDrillSort.i]), vb = sortVal(b[posDrillSort.i]); return (va < vb ? -1 : va > vb ? 1 : 0) * posDrillSort.dir; });
+              // 逐日視圖（優惠券明細）：daily=日期一列（預設直式）、dailyT=轉置（類別一列、日期一欄）
+              const eff = drill.daily && posDrillView === "daily" ? drill.daily.v : drill.daily && posDrillView === "dailyT" ? drill.daily.t : null;
+              const cols3 = eff ? eff.cols : drill.cols;
+              const isNum = (c2) => ["數量", "佔比", "金額", "營收", "單數", "來客", "客單", "現金", "信用卡", "Uber", "折扣", "服務費", "退菜", "Void", "筆數", "佔當日營收"].includes(c2) || (eff && cols3.indexOf(c2) > 0);
+              const redCell = (colName, disp) => disp !== "—" && disp !== "" && (colName === "客訴補償" || (colName === "佔當日營收" && parseFloat(disp) > 5));
+              let rows2 = eff ? eff.rows : drill.rows;
+              if (posDrillSort) rows2 = [...rows2].sort((a, b) => { const va = sortVal(a[posDrillSort.i]), vb = sortVal(b[posDrillSort.i]); return (va < vb ? -1 : va > vb ? 1 : 0) * posDrillSort.dir; });
               return (
                 <div onClick={e => e.target === e.currentTarget && setPosDrill(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.4)", zIndex: 720, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
                   <div style={{ background: "#fff", border: `1px solid ${C.line}`, borderRadius: 12, padding: 20, width: "min(980px,96vw)", maxHeight: "88vh", display: "flex", flexDirection: "column" }}>
@@ -1174,11 +1192,18 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
                           ))}
                         </div>
                       )}
+                      {drill.daily && (
+                        <div style={{ display: "inline-flex", background: C.soft, border: `1px solid ${C.line}`, borderRadius: 8, padding: 2, gap: 2 }}>
+                          {[["list", "逐筆"], ["daily", "逐日"], ["dailyT", "逐日 ⇄"]].map(([v, l]) => { const on = posDrillView === v || (v === "list" && posDrillView !== "daily" && posDrillView !== "dailyT"); return (
+                            <button key={v} onClick={() => { setPosDrillView(v); setPosDrillSort(null); }} style={{ padding: "4px 12px", borderRadius: 6, border: `1px solid ${on ? C.line : "transparent"}`, background: on ? "#fff" : "transparent", color: on ? C.text : C.sub, fontSize: 12, fontWeight: on ? 700 : 400, cursor: "pointer" }}>{l}</button>
+                          ); })}
+                        </div>
+                      )}
                       <button onClick={() => setPosDrill(null)} style={{ background: "none", border: "none", fontSize: 22, cursor: "pointer", color: C.sub }}>×</button>
                     </div>
                     <div style={{ fontSize: 11, color: C.faint, marginBottom: 10 }}>{drill.note}{drill.pivot && posDrillView === "pivot" ? "・顏色越深＝當天賣越多；「—」＝當天沒賣" : "・點欄位標題可排序"}</div>
                     {/* 分類彙總卡（優惠券明細用）：先看錢花去哪，再看逐筆 */}
-                    {drill.summary && drill.summary.length > 0 && (
+                    {drill.summary && drill.summary.length > 0 && !eff && (
                       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
                         {drill.summary.map(s2 => (
                           <div key={s2.label} style={{ border: `1.5px solid ${s2.label === "客訴補償" ? "#b3261e" : "#c8bca6"}`, borderRadius: 8, padding: "6px 14px", background: "#fff", minWidth: 96 }}>
@@ -1192,14 +1217,14 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
                     <div style={{ overflow: "auto", border: `1.5px solid #c8bca6`, borderRadius: 8 }}>
                       {(!drill.pivot || posDrillView === "list") ? (
                         <table style={{ borderCollapse: "collapse", width: "100%", fontSize: 12 }}>
-                          <thead><tr>{drill.cols.map((c2, ci) => { const numCol = ["數量", "佔比", "金額", "營收", "單數", "來客", "客單", "現金", "信用卡", "Uber", "折扣", "服務費", "退菜", "Void", "筆數", "佔當日營收"].includes(c2); return (
+                          <thead><tr>{cols3.map((c2, ci) => { const numCol = isNum(c2); return (
                             <th key={c2} onClick={() => setPosDrillSort(sx => sx && sx.i === ci ? { i: ci, dir: -sx.dir } : { i: ci, dir: 1 })} style={{ position: "sticky", top: 0, background: "#ece4d6", textAlign: numCol ? "right" : "left", padding: "6px 10px", fontSize: 10.5, letterSpacing: 0.6, color: posDrillSort?.i === ci ? C.text : C.sub, whiteSpace: "nowrap", borderBottom: "1.5px solid #c8bca6", cursor: "pointer", userSelect: "none" }}>{c2}{posDrillSort?.i === ci ? (posDrillSort.dir === 1 ? " ▲" : " ▼") : ""}</th>
                           ); })}</tr></thead>
                           <tbody>
-                            {rows2.length === 0 ? <tr><td colSpan={drill.cols.length} style={{ padding: 16, textAlign: "center", color: C.faint }}>期間內沒有資料</td></tr> :
+                            {rows2.length === 0 ? <tr><td colSpan={cols3.length} style={{ padding: 16, textAlign: "center", color: C.faint }}>期間內沒有資料</td></tr> :
                               rows2.map((r, i) => (
                                 <tr key={i} style={{ background: i % 2 ? "#f8f4ea" : "#fff" }}>
-                                  {r.map((c2, j) => { const numCol = ["數量", "佔比", "金額", "營收", "單數", "來客", "客單", "現金", "信用卡", "Uber", "折扣", "服務費", "退菜", "Void", "筆數", "佔當日營收"].includes(drill.cols[j]); const disp = drill.cols[j] === "日期" ? wd(c2) : c2; return <td key={j} style={{ padding: "5px 10px", fontFamily: numCol || (typeof disp === "string" && /[0-9]/.test(disp) && j > 0) ? MONOF : undefined, textAlign: numCol ? "right" : "left", color: disp === "" ? "#d5cbb6" : C.text, borderTop: "1px solid #f0ead9", whiteSpace: "nowrap", fontSize: 11.5 }}>{disp === "" ? "—" : disp}</td>; })}
+                                  {r.map((c2, j) => { const numCol = isNum(cols3[j]); const disp = cols3[j] === "日期" ? wd(c2) : c2; const red = redCell(cols3[j], String(disp)); return <td key={j} style={{ padding: "5px 10px", fontFamily: numCol || (typeof disp === "string" && /[0-9]/.test(disp) && j > 0) ? MONOF : undefined, textAlign: numCol ? "right" : "left", color: red ? "#b3261e" : disp === "" ? "#d5cbb6" : C.text, fontWeight: red ? 700 : undefined, borderTop: "1px solid #f0ead9", whiteSpace: "nowrap", fontSize: 11.5 }}>{disp === "" ? "—" : disp}</td>; })}
                                 </tr>
                               ))}
                           </tbody>
