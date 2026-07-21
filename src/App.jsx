@@ -484,6 +484,16 @@ export default function App() {
     return () => { active = false; sub?.subscription?.unsubscribe?.(); };
   }, []);
 
+  // 本機驗證用模擬登入：只在「完全沒設 Supabase 後端」（純 localStorage 模式）才生效，
+  // 正式站一定有 VITE_SUPABASE_*，此段永遠不會跑。localStorage.pm_dev_user = {"name":"...","role":"admin"}
+  useEffect(() => {
+    if (supabase) return;
+    try {
+      const dev = JSON.parse(localStorage.getItem("pm_dev_user") || "null");
+      if (dev?.name) { setProfile({ display_name: dev.name, role: dev.role || "staff", pages: [] }); setUserName(dev.name); }
+    } catch (_) {}
+  }, []);
+
   // auto-save（防呆：略過「初始載入」造成的第一次寫入，避免載入失敗時把範例資料存回去蓋掉真資料）
   const initialLoadDone = useRef(false);
   useEffect(() => {
