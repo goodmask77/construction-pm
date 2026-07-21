@@ -30,11 +30,11 @@ export const SPACE_CONF = {
     // 分頁不再全部平鋪一排（人事/訓練/激勵混在一起會越加越長）。groups: [id, 名稱, icon, [第二層 view keys]]
     groups: [
       ["g_today", "今日", "🏠", ["ctoday"]],
-      ["g_people", "人員與排班", "👥", ["roster", "shift"]],
+      ["g_people", "人員與排班", "👥", ["roster", "shift", "punch"]],
       ["g_sop", "SOP與訓練", "📚", ["kb", "quest"]],
       ["g_grow", "成長與文化", "🌱", ["r360", "fb", "poll", "reward"]],
     ],
-    tabs: [["ctoday", "今日", "🏠"], ["roster", "名冊", "👥"], ["shift", "排班", "📅"], ["kb", "SOP知識庫", "📚"], ["quest", "闖關", "🎮"], ["r360", "360評鑑", "⭐"], ["fb", "回饋", "💬"], ["poll", "投票", "🗳"], ["reward", "獎勵中心", "🏆"]], // 商城＋排行榜合併成「獎勵中心」；資料庫改名「SOP知識庫」
+    tabs: [["ctoday", "今日", "🏠"], ["roster", "名冊", "👥"], ["shift", "排班", "📅"], ["punch", "出勤", "⏱"], ["kb", "SOP知識庫", "📚"], ["quest", "闖關", "🎮"], ["r360", "360評鑑", "⭐"], ["fb", "回饋", "💬"], ["poll", "投票", "🗳"], ["reward", "獎勵中心", "🏆"]], // 商城＋排行榜合併成「獎勵中心」；資料庫改名「SOP知識庫」
     defaultView: "ctoday", // 一進來先看「今天與我有關的事」，不再落在空資料庫
     hideKpi: true, // 夥伴中心頂部不顯示工程 KPI
     labels: { cat: "項目", item: "項目", overview: "SOP知識庫", gantt: "進度", subtitle: "夥伴中心" },
@@ -94,6 +94,7 @@ export const PERM_MATRIX = {
     ["kb", "SOP知識庫", { edit: 1 }],
     ["roster", "名冊", { edit: 1 }],
     ["shift", "排班", { edit: 1 }],
+    ["punch", "出勤", { edit: 1 }],
     ["r360", "360評鑑", { edit: 1 }],
     ["fb", "回饋", { edit: 1 }],
     ["quest", "闖關", { edit: 1 }],

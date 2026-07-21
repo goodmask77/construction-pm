@@ -255,6 +255,19 @@ export async function handleDDCards(ev, operators) {
     return true
   }
 
+  // 「上班」「下班」→ LINE 備援打卡（打卡站掃不了時用；未經站點驗證，負責人要在 App 出勤頁審核）
+  const mPunch = text.match(/^(上班|下班)$/)
+  if (mPunch) {
+    const roster = await loadRoster()
+    const me = personByUid(roster, uid)
+    if (!me) { await reply(txt('請先報到綁定（輸入「你的本名＋報到」）。')); return true }
+    const { recordPunch } = await import('./punch.js')
+    const out = await recordPunch(me, 'line', false, mPunch[1] === '上班' ? 'in' : 'out')
+    const hhmm = new Date(out.ts).toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Taipei' })
+    await reply(txt(`⏱ 已記錄「${mPunch[1]}」${hhmm}（LINE 備援打卡，會請負責人補審核）。\n今日累計 ${out.todayHours} 小時。平常請優先掃店內打卡站 QR。`))
+    return true
+  }
+
   // 「心得 …」→ 記錄每日心得（夥伴主動傳＝回覆免費，不扣推播額度）
   const mJournal = text.match(/^(?:心得|今日心得|下班心得)[\s:：]+([\s\S]+)/)
   if (mJournal) {
