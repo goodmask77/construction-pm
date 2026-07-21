@@ -5,7 +5,8 @@ import React, { useEffect, useState } from "react";
 import { PenLine, BadgeDollarSign, ReceiptText, Flag } from "lucide-react";
 import IngredientsView from "./Ingredients.jsx";
 import RecipeCard from "./Recipe.jsx";
-import { buildPriceEvents, applyLastPaid, applyQuote, priceAlert, unitCost, quoteUnit, packToBase, srcsOf, lastPaid } from "./inv.js";
+import { buildPriceEvents, applyLastPaid, applyQuote, priceAlert, unitCost, quoteUnit, packToBase, srcsOf, lastPaid, latestRecipeOf } from "./inv.js";
+import { getSharedPrefix } from "../supa.js";
 
 export const C = {
   text: "#1d1a15", sub: "#5a5247", faint: "#9b9384", line: "#d9cfbd", hard: "#c8bca6",
@@ -44,10 +45,12 @@ export default function SupplyView({ view, K, canEdit, confirm, showMoney, userN
   const [groups, setGroups] = useState({});     // DD看過的LINE群（pm_group_seen，發送綁定用）
   const flash = (t) => { setMsg(t); setTimeout(() => setMsg(m => (m === t ? null : m)), 6000); };
 
+  const [recipesAll, setRecipesAll] = useState(null); // 全部食譜版本（缺料總覽用；量小全載）
   useEffect(() => { (async () => {
     try { const v = await window.storage.get(K("pm_supply"), true); setDb(v && v.value ? JSON.parse(v.value) : { categories: [], products: [], materials: [], vendors: [], vendorItems: [], ingredients: [], matches: [], productPackaging: [] }); } catch (_) { setDb({ categories: [], products: [], materials: [], vendors: [], vendorItems: [], ingredients: [], matches: [], productPackaging: [] }); }
     try { const o = await window.storage.get(K("pm_orders"), true); setOrders(o && o.value ? JSON.parse(o.value) : []); } catch (_) {}
     try { const g = await window.storage.get("pm_group_seen", true); setGroups(g && g.value ? JSON.parse(g.value) : {}); } catch (_) {}
+    try { const rows = await getSharedPrefix(K("pm_recipe_v_")); setRecipesAll(Object.values(rows).map(v => { try { return JSON.parse(v); } catch (_) { return null; } }).filter(Boolean)); } catch (_) { setRecipesAll([]); }
   })(); }, []); // eslint-disable-line
 
   if (!db) return <div style={{ padding: 40, color: C.sub, fontSize: 14 }}>載入中…</div>;
@@ -963,6 +966,17 @@ export default function SupplyView({ view, K, canEdit, confirm, showMoney, userN
           </div>
         );
       })()}
+      {/* 缺料總覽（2026-07-22 張良第一性原理：物料需求源自菜單）——沒設食譜的產品算不出成本，紅字盯著補 */}
+      {recipesAll && (() => {
+        const act = (db.products || []).filter(p => p.is_active !== false && (p.name || "").trim());
+        const miss = act.filter(p => !latestRecipeOf(recipesAll, p.id));
+        if (!miss.length) return null;
+        return (
+          <div style={{ background: "#fdf3ec", border: `1.5px solid ${C.accent}`, borderRadius: 10, padding: "8px 12px", marginBottom: 10, fontSize: 12.5, color: C.text }}>
+            🍳 <b>{miss.length} 個上架產品還沒設食譜</b>（沒食譜＝算不出物料需求跟成本毛利）：{miss.slice(0, 8).map(p => p.name).join("、")}{miss.length > 8 ? ` …等 ${miss.length} 個` : ""}——點產品 → 下方「食譜/成本卡」補
+          </div>
+        );
+      })()}
       {/* 表格 */}
       {flat ? (
         <div style={hardBox}>
@@ -1055,7 +1069,7 @@ export default function SupplyView({ view, K, canEdit, confirm, showMoney, userN
               </div>
             </div>
             {/* 食譜／SOP／成本卡（版本流水 pm_recipe_v_；成本＝用料×最近實付價＋包材） */}
-            <RecipeCard product={selP} db={db} canEdit={canEdit} showMoney={showMoney} userName={userName} K={K} />
+            <RecipeCard product={selP} db={db} save={save} canEdit={canEdit} showMoney={showMoney} userName={userName} K={K} />
             <button onClick={() => setSel(null)} style={{ width: "100%", marginTop: 14, border: "none", background: C.green, color: "#fff", borderRadius: 8, padding: "9px 0", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>✓ 完成</button>
           </div>
         </div>

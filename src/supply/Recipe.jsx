@@ -7,7 +7,7 @@ import { getSharedPrefix } from "../supa.js";
 import { subscribeRecords } from "../lib/records.js";
 import { recipeCost, latestRecipeOf } from "./inv.js";
 
-export default function RecipeCard({ product, db, canEdit, showMoney, userName, K }) {
+export default function RecipeCard({ product, db, save, canEdit, showMoney, userName, K }) {
   const [recs, setRecs] = useState(null);     // 全部食譜版本（跨產品，量小全載）
   const [draft, setDraft] = useState(null);   // 編輯中的草稿（未存＝不進流水）
   const [showHist, setShowHist] = useState(false);
@@ -77,9 +77,21 @@ export default function RecipeCard({ product, db, canEdit, showMoney, userName, 
         const g = ingOf(li.ingredient_id);
         return (
           <div key={i} style={{ display: "flex", gap: 6, alignItems: "center", marginBottom: 4 }}>
-            <select value={li.ingredient_id || ""} onChange={e => updLine(i, { ingredient_id: e.target.value })} disabled={!canEdit} style={{ ...inp, flex: 1, maxWidth: 200 }}>
+            {/* 菜單=物料源頭（2026-07-22 張良第一性原理）：缺什麼物料，在這裡直接「＋新建物料卡」不用跳頁 */}
+            <select value={li.ingredient_id || ""} onChange={e => {
+              const v = e.target.value;
+              if (v === "__new") {
+                const nm = window.prompt("新物料卡名稱（例：漢堡紙）："); if (!nm || !nm.trim() || !save) return;
+                const ng = { id: rid("g"), name: nm.trim(), cat: "", baseUnit: "g", countFreq: { type: "none", days: [], dom: 1, paused: false }, countRole: "", countUnit: "", isKey: false, safeStock: "", note: "", sort: (db.ingredients || []).length, tags: "" };
+                save({ ingredients: [...(db.ingredients || []), ng] });
+                updLine(i, { ingredient_id: ng.id });
+                return;
+              }
+              updLine(i, { ingredient_id: v });
+            }} disabled={!canEdit} style={{ ...inp, flex: 1, maxWidth: 200 }}>
               <option value="">選物料…</option>
               {ings.map(x => <option key={x.id} value={x.id}>{x.name || "（未命名）"}</option>)}
+              {canEdit && save && <option value="__new">＋ 新建物料卡…</option>}
             </select>
             <input value={li.qty ?? ""} onChange={e => updLine(i, { qty: e.target.value.replace(/[^0-9.]/g, "") })} disabled={!canEdit} inputMode="decimal" placeholder="用量" style={{ ...inp, width: 70, fontFamily: MONOF, textAlign: "right" }} />
             <span style={{ fontSize: 11, color: C.sub, width: 30 }}>{g ? g.baseUnit : ""}</span>
