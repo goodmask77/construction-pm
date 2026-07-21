@@ -1267,11 +1267,13 @@ export function CrewTodayView({ userName, isAdmin, setView }) {
   const [r360, setR360] = useState({ reviews: [] });
   const [fb, setFb] = useState({ items: [] });
   const [shop, setShop] = useState({ rewards: [], redemptions: [] });
+  const [journal, setJournal] = useState({ items: [] }); // 每日心得（夥伴在 LINE 用「心得 …」記錄）
   const [me, setMe] = useState("");
   useEffect(() => {
     const s = setTimeout(() => setDocs(prev => prev || []), 8000);
     (async () => {
       const rd = await loadRosterDoc(); const r = rd.people || []; setPeople(r); setRfields(rd.fields || []); setMe(meFromRoster(r, userName));
+      setJournal(await loadCrewJSON("kb_journal", { items: [] }));
       setDocs(await loadCrewJSON("kb_docs", []));
       setQuests(await loadCrewJSON("kb_quests", { quests: [], progress: [] }));
       setR360(await loadCrewJSON("kb_360", { reviews: [] }));
@@ -1410,16 +1412,25 @@ export function CrewTodayView({ userName, isAdmin, setView }) {
           ))}
         </div>
         {/* 管理者概況（組長以上） */}
-        {canManage && (
+        {canManage && (() => {
+          const monday2 = new Date(now); monday2.setHours(0, 0, 0, 0); monday2.setDate(now.getDate() - ((now.getDay() + 6) % 7));
+          const wkJournal = (journal.items || []).filter(i => new Date(i.ts) >= monday2);
+          return (
           <div style={{ ...crewCard, border: "1.5px solid #c8bca6" }}>
             {secT("👔 團隊概況（管理）", null, null)}
             <div style={{ display: "flex", flexDirection: "column", gap: 7, fontSize: 13.5 }}>
               <div style={{ display: "flex" }}><span style={{ color: SUB }}>訓練完成率</span><div style={{ flex: 1 }} /><span style={{ fontFamily: MONO, fontWeight: 700, color: TEXT }}>{questSlots ? Math.round(questDone / questSlots * 100) + "%" : "—"}<span style={{ color: SUB, fontWeight: 400, fontSize: 11.5 }}>（{questDone}/{questSlots || 0}）</span></span></div>
               <div style={{ display: "flex" }}><span style={{ color: SUB }}>本週已給回饋</span><div style={{ flex: 1 }} /><span style={{ fontFamily: MONO, fontWeight: 700, color: TEXT }}>{fbGivers.size}<span style={{ color: SUB, fontWeight: 400, fontSize: 11.5 }}>／{active.length} 人</span></span></div>
               <div style={{ display: "flex", cursor: "pointer" }} onClick={() => go("reward")}><span style={{ color: SUB }}>待處理兌換</span><div style={{ flex: 1 }} /><span style={{ fontFamily: MONO, fontWeight: 700, color: pendingRedeem ? ACCENT : TEXT }}>{pendingRedeem} 筆 →</span></div>
+              <div style={{ display: "flex" }}><span style={{ color: SUB }}>本週夥伴心得</span><div style={{ flex: 1 }} /><span style={{ fontFamily: MONO, fontWeight: 700, color: TEXT }}>{wkJournal.length} 則</span></div>
+              {wkJournal.slice(0, 3).map(i => (
+                <div key={i.id} style={{ fontSize: 12, color: SUB, background: "#FBF7EE", borderRadius: 8, padding: "6px 10px", lineHeight: 1.5 }}>💬 <b style={{ color: TEXT }}>{i.name}</b>：{(i.text || "").slice(0, 42)}{(i.text || "").length > 42 ? "…" : ""}</div>
+              ))}
+              {wkJournal.length === 0 && <div style={{ fontSize: 11.5, color: "#9b9384" }}>夥伴在 LINE 對 DD 說「心得 …」就會記錄到這裡（也可對 DD 說「推播心得提醒」邀大家寫）</div>}
             </div>
           </div>
-        )}
+          );
+        })()}
       </div>
       {!me && <div style={{ marginTop: 14, fontSize: 13, color: SUB, background: "#fff", border: `1px solid ${BORDER}`, borderRadius: 12, padding: 16 }}>登入並綁定夥伴身分後，這裡會顯示你的待完成訓練、待回覆評鑑與積分。</div>}
     </div>

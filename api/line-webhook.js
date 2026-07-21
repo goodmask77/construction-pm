@@ -212,7 +212,7 @@ async function loadEstimatesText() {
 // 360 互評→逐人平均分+各構面；意見回饋→逐人標籤統計+留言；其餘→計數+重點。
 async function loadCrewText() {
   try {
-    const bases = ['kb_360', 'kb_roster', 'kb_feedback', 'kb_quests', 'kb_shop', 'kb_docs', 'kb_polls']
+    const bases = ['kb_360', 'kb_roster', 'kb_feedback', 'kb_quests', 'kb_shop', 'kb_docs', 'kb_polls', 'kb_journal']
     const keys = []
     for (const p of ['sp_crew_', 'sp_team_']) for (const b of bases) keys.push(p + b)
     const map = await kvGetMany(keys)
@@ -294,6 +294,9 @@ async function loadCrewText() {
     const shop = pick('kb_shop'); if (shop) { const rw = shop.rewards || []; if (rw.length) { any = true; out.push(`▍獎勵商店：${rw.length} 個獎品（${rw.map(x => x.name || x.title).filter(Boolean).join('、')}）`) } }
     const docs = pick('kb_docs'); if (Array.isArray(docs) && docs.length) { any = true; out.push(`▍知識庫：${docs.length} 篇（${docs.map(d => d.title || d.name).filter(Boolean).join('、')}）`) }
     const polls = pick('kb_polls'); const ps = polls && Array.isArray(polls.polls) ? polls.polls : (Array.isArray(polls) ? polls : []); if (ps.length) { any = true; out.push(`▍投票：${ps.length} 個（${ps.map(p => p.title || p.q).filter(Boolean).join('、')}）`) }
+    // 每日心得（夥伴用 LINE「心得 …」記錄；近14天給 AI 掌握）
+    const jn = pick('kb_journal'); const ji = jn && Array.isArray(jn.items) ? jn.items : []
+    if (ji.length) { any = true; const since = Date.now() - 14 * 86400000; const recent = ji.filter(i => new Date(i.ts).getTime() >= since).slice(0, 30); out.push(`▍夥伴每日心得（近14天 ${recent.length} 則，最新在前）：`); recent.forEach(i => out.push(`  - ${(i.ts || '').slice(5, 10)} ${i.name}：${(i.text || '').slice(0, 80)}`)) }
     // 入職 2.1：名冊上「入職中」的人（只給姓名/進度狀態；證件在私有桶，不進 AI）
     const obPeople = people.filter(p => p.onboarding); if (obPeople.length) { any = true; out.push(`▍入職中（待審核）：${obPeople.length} 位（${obPeople.map(p => `${p.name}${p.contractSigned ? '·契約已簽' : '·契約未簽'}`).join('、')}）——資料填齊後請老闆到 App 名冊「待審核」核准`) }
 
