@@ -183,7 +183,7 @@ export default function IngredientsView({ db, save, canEdit, showMoney, confirm,
         const [b64, im] = await Promise.all([fileToB64(f), loadImgEl(f)]);
         const W = im.naturalWidth, H = im.naturalHeight;
         const block = { type: "image", source: { type: "base64", media_type: f.type || "image/png", data: b64 } };
-        const prompt = `這是廠商網站/購物車/報價單/型錄的截圖，原始尺寸 ${W}x${H} 像素。抽出每一個商品，只回 JSON、不要其他文字：{"vendor":"截圖上可辨識的廠商或網站名稱(沒有就空字串)","url":"截圖裡瀏覽器網址列的完整網址(看不到網址列就空字串)","items":[{"name":"品名","spec":"規格(例:1000入/箱,600g/包,沒有就空字串)","unit":"採購單位(照截圖單位欄原文:箱/件/包/組/個/支/張…,看不到才預設箱)","price":單價數字,"img":{"x":左上x,"y":左上y,"w":寬,"h":高}}]}。注意：報價單的「數量」欄是這次要買幾個（採購量），不是每件入數，不要抄進 spec；單價若是「每個」的價，unit 就寫 個。品名規則（張良 2026-07-20 拍板）：①name＝【主標題完整原文，一字不改、包含規格】（例：主標「紙漿杯座-二杯-原色-600入/箱」→ name=紙漿杯座-二杯-原色-600入/箱）。副標/小字（如型號 HR-紙漿二杯架）不要放進品名。②spec＝把規格再抄一份到 spec 欄（例：600入/箱），系統算每件入數用；主標沒有規格才從副標/頁面找。③唯一例外：多列主標題「完全相同」時＝其實是不同商品（例：主標同為「餐刀/叉/匙-白色(散裝) 2000入/箱」三列、副標分別是餐刀/餐叉/餐匙）——此時把主標中的共用字換成副標的差異字組出可區分品名（例：霧面餐刀-白色(散裝) 2000入/箱），每一列都要輸出，不可省略或合併。img=該商品縮圖照片在截圖中的像素範圍（以原始 ${W}x${H} 座標、整數、框準照片本身不含文字），該商品沒有照片就給 null。金額只放數字，看不到的欄位留空字串或 0。`;
+        const prompt = `這是廠商網站/購物車/報價單/型錄的截圖，原始尺寸 ${W}x${H} 像素。抽出每一個商品，只回 JSON、不要其他文字：{"vendor":"截圖上可辨識的廠商或網站名稱(沒有就空字串)","url":"截圖裡瀏覽器網址列的完整網址(看不到網址列就空字串)","items":[{"name":"品名","spec":"包裝規格(例:1000入/箱,600g/包,沒有就空字串)","unit":"採購單位(照截圖單位欄原文:箱/件/包/組/個/支/張…,看不到才預設箱)","price":單價數字,"moq":最低訂購量數字(沒有就0),"note":"版費/模具費/交期等備註(沒有就空字串)","img":{"x":左上x,"y":左上y,"w":寬,"h":高}}]}。金額欄位判讀鐵則：①「數量 50000張」「數量5000個」這種＝最低訂購量MOQ→放 moq，絕對不是包裝規格、不要抄進 spec 或品名。②「@1.32/pc」「@5.80/pc」＝每一個的單價→price=1.32、unit=個。③「版費 5000.00」等一次性費用→寫進 note，不是單價。④spec 只放「一箱/一包裝幾個」的包裝規格（例:2000pcs/箱），報價訊息通常沒有，留空。品名規則（張良 2026-07-20 拍板）：①name＝【主標題完整原文，一字不改、包含規格】（例：主標「紙漿杯座-二杯-原色-600入/箱」→ name=紙漿杯座-二杯-原色-600入/箱）。副標/小字（如型號 HR-紙漿二杯架）不要放進品名。②spec＝把規格再抄一份到 spec 欄（例：600入/箱），系統算每件入數用；主標沒有規格才從副標/頁面找。③唯一例外：多列主標題「完全相同」時＝其實是不同商品（例：主標同為「餐刀/叉/匙-白色(散裝) 2000入/箱」三列、副標分別是餐刀/餐叉/餐匙）——此時把主標中的共用字換成副標的差異字組出可區分品名（例：霧面餐刀-白色(散裝) 2000入/箱），每一列都要輸出，不可省略或合併。img=該商品縮圖照片在截圖中的像素範圍（以原始 ${W}x${H} 座標、整數、框準照片本身不含文字），該商品沒有照片就給 null。金額只放數字，看不到的欄位留空字串或 0。`;
         const reply = await callAI([{ role: "user", content: [block, { type: "text", text: prompt }] }], "你是採購品項解析助理，只輸出 JSON。", "import");
         const clean = reply.replace(/```json|```/gi, "").trim();
         const parsed = JSON.parse(clean.slice(clean.indexOf("{"), clean.lastIndexOf("}") + 1));
@@ -191,7 +191,7 @@ export default function IngredientsView({ db, save, canEdit, showMoney, confirm,
         for (const it of (parsed.items || [])) {
           const name = String(it.name || "").trim(); if (!name) continue;
           const box = it.img && typeof it.img === "object" ? { x: Number(it.img.x) || 0, y: Number(it.img.y) || 0, w: Number(it.img.w) || 0, h: Number(it.img.h) || 0 } : null;
-          rows.push({ on: true, name, spec: String(it.spec || "").trim(), unit: String(it.unit || "箱").trim() || "箱", price: Number(it.price) || "", url: "", thumb: null, thumbUrl: "", box });
+          rows.push({ on: true, name, spec: String(it.spec || "").trim(), unit: String(it.unit || "箱").trim() || "箱", price: Number(it.price) || "", moq: Number(it.moq) || "", note: String(it.note || "").trim(), url: "", thumb: null, thumbUrl: "", box });
         }
         // 商品頁截圖（單一商品）→ 網址列的網址掛到該品項；多品項（購物車/報價單）網址非單品專屬不掛
         const pageUrl = String(parsed.url || "").trim();
@@ -235,8 +235,8 @@ export default function IngredientsView({ db, save, canEdit, showMoney, confirm,
     const baseSort = vis2.filter(v => v.vendor_id === vid).length;
     rows.forEach((r, i) => {
       const ex = vis2.find(v => v.vendor_id === vid && normName(v.name) === normName(r.name));
-      if (ex) { vis2 = vis2.map(v => v.id === ex.id ? { ...v, spec: r.spec.trim() || v.spec, unit: r.unit || v.unit, price: r.price !== "" ? r.price : v.price, url: r.url || v.url || "" } : v); updN++; }
-      else { vis2.push({ id: rid("vi"), vendor_id: vid, grp: "", name: r.name.trim(), spec: r.spec.trim(), unit: r.unit || "箱", price: r.price || "", url: r.url || "", safeStock: "", sort: baseSort + i, tags: "" }); addN++; }
+      if (ex) { vis2 = vis2.map(v => v.id === ex.id ? { ...v, spec: r.spec.trim() || v.spec, unit: r.unit || v.unit, price: r.price !== "" ? r.price : v.price, moq: r.moq !== "" ? r.moq : (v.moq ?? ""), note: r.note || v.note || "", url: r.url || v.url || "" } : v); updN++; }
+      else { vis2.push({ id: rid("vi"), vendor_id: vid, grp: "", name: r.name.trim(), spec: r.spec.trim(), unit: r.unit || "箱", price: r.price || "", moq: r.moq || "", note: r.note || "", url: r.url || "", safeStock: "", sort: baseSort + i, tags: "" }); addN++; }
     });
     const plan = organizeAll({ ...db, vendors: vendors2, vendorItems: vis2 });
     // 截圖裁下的商品照片 → 上傳 → 掛到物料卡（卡上已有圖就不動）
@@ -316,19 +316,20 @@ export default function IngredientsView({ db, save, canEdit, showMoney, confirm,
           </>}
         </div>
         <div style={{ border: `1px solid ${C.line}`, borderRadius: 8, overflow: "hidden", background: "#fff" }}>
-          <div style={{ display: "grid", gridTemplateColumns: `minmax(80px,0.9fr) minmax(120px,1.3fr) 150px ${showMoney ? "110px 90px" : ""}`, gap: 8, padding: "5px 10px", fontSize: 10, color: C.faint, fontWeight: 700, background: "#f4efe5" }}>
-            <span>廠商</span><span>品名/規格</span><span>每件入數</span>{showMoney && <><span style={{ textAlign: "right" }}>最近實付</span><span style={{ textAlign: "right" }}>$/{g.baseUnit || "單位"}</span></>}
+          <div style={{ display: "grid", gridTemplateColumns: `minmax(80px,0.9fr) minmax(120px,1.3fr) 150px 92px ${showMoney ? "110px 90px" : ""}`, gap: 8, padding: "5px 10px", fontSize: 10, color: C.faint, fontWeight: 700, background: "#f4efe5" }}>
+            <span>廠商</span><span>品名/規格</span><span>每件入數</span><span title="這家報價的最低訂購量（MOQ）">最低訂購</span>{showMoney && <><span style={{ textAlign: "right" }}>最近實付</span><span style={{ textAlign: "right" }}>$/{g.baseUnit || "單位"}</span></>}
           </div>
           {srcs.length === 0 && <div style={{ padding: "8px 10px", fontSize: 11.5, color: C.red }}>沒有廠商賣這個——按上面「⚡ 自動整理」或用「📸 貼截圖匯入」。</div>}
           {srcs.map(vi => {
             const u = unitCost(vi); const lp = lastPaid(vi); const al = priceAlert(vi, alertPct);
             const best = showMoney && u != null && minU != null && u <= minU + 1e-9 && units.length > 1;
             return (
-              <div key={vi.id} style={{ display: "grid", gridTemplateColumns: `minmax(80px,0.9fr) minmax(120px,1.3fr) 150px ${showMoney ? "110px 90px" : ""}`, gap: 8, alignItems: "center", padding: "4px 10px", borderTop: `1px solid #f0ead9`, fontSize: 12, background: best ? "#eef5ef" : "#fff" }}>
+              <div key={vi.id} style={{ display: "grid", gridTemplateColumns: `minmax(80px,0.9fr) minmax(120px,1.3fr) 150px 92px ${showMoney ? "110px 90px" : ""}`, gap: 8, alignItems: "center", padding: "4px 10px", borderTop: `1px solid #f0ead9`, fontSize: 12, background: best ? "#eef5ef" : "#fff" }}>
                 <span style={{ fontWeight: 700, color: C.text }}>{vname(vi.vendor_id)}</span>
                 {/* 品名/規格＋商品網址（截圖有網址列會自動帶入；太長截不進圖就直接貼這裡）*/}
                 <span style={{ color: C.sub, fontSize: 11.5, minWidth: 0 }}>
                   <div>{vi.name}{vi.spec ? `（${vi.spec}）` : ""}</div>
+                  {vi.note && <div style={{ fontSize: 10, color: C.faint }}>📝 {vi.note}</div>}
                   <div style={{ display: "flex", alignItems: "center", gap: 4, marginTop: 2 }}>
                     <input value={vi.url || ""} onChange={e => save({ vendorItems: (db.vendorItems || []).map(v => v.id === vi.id ? { ...v, url: e.target.value.trim() } : v) })} disabled={!canEdit} placeholder="貼商品網址…" style={{ ...inp, fontSize: 10, padding: "2px 6px", flex: 1, minWidth: 0, color: C.sub }} />
                     {/^https?:\/\//.test(vi.url || "") && <a href={vi.url} target="_blank" rel="noreferrer" title="打開商品網頁" onClick={e => e.stopPropagation()} style={{ color: C.blue, display: "flex", flexShrink: 0 }}><ExternalLink size={14} strokeWidth={2} /></a>}
@@ -338,6 +339,11 @@ export default function IngredientsView({ db, save, canEdit, showMoney, confirm,
                   1{vi.unit || "件"}=
                   <input value={vi.packToBase ?? ""} onChange={e => save({ vendorItems: (db.vendorItems || []).map(v => v.id === vi.id ? { ...v, packToBase: e.target.value.replace(/[^0-9.]/g, "") } : v) })} disabled={!canEdit} inputMode="decimal" placeholder="？" style={{ ...inp, width: 66, padding: "3px 6px", fontFamily: MONOF, borderColor: packToBase(vi) ? C.line : C.red }} />
                   {g.baseUnit}
+                </span>
+                {/* 最低訂購量 MOQ：報價「數量5000個」是至少要訂這麼多，不是入數（2026-07-21 張良） */}
+                <span style={{ display: "flex", alignItems: "center", gap: 3, fontSize: 11 }}>
+                  <input value={vi.moq ?? ""} onChange={e => save({ vendorItems: (db.vendorItems || []).map(v => v.id === vi.id ? { ...v, moq: e.target.value.replace(/[^0-9]/g, "") } : v) })} disabled={!canEdit} inputMode="numeric" placeholder="—" style={{ ...inp, width: 62, padding: "3px 6px", fontFamily: MONOF }} />
+                  {Number(vi.moq) > 0 && g.baseUnit}
                 </span>
                 {showMoney && <>
                   <span style={{ fontFamily: MONOF, textAlign: "right", color: lp ? C.text : "#d5cbb6", fontSize: 11.5 }}>{lp ? `$${d2(lp.price)}` : "—"}{lp && lp.src === "主檔" && <span title="還沒有驗收實付紀錄，暫用主檔單價" style={{ color: C.faint, fontSize: 9.5 }}>*</span>}{al && <span style={{ color: al.up ? C.red : C.green, fontWeight: 700, marginLeft: 3 }}>{al.up ? "▲" : "▼"}{Math.abs(al.pct)}%</span>}</span>
@@ -653,7 +659,7 @@ export default function IngredientsView({ db, save, canEdit, showMoney, confirm,
       {/* 📸 截圖匯入 modal */}
       {imp && (
         <div onClick={e => e.target === e.currentTarget && !imp.busy && setImp(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.4)", zIndex: 730, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
-          <div style={{ background: "#fff", border: `1px solid ${C.line}`, borderRadius: 12, padding: 20, width: "min(720px,96vw)", maxHeight: "90vh", overflowY: "auto" }}>
+          <div style={{ background: "#fff", border: `1px solid ${C.line}`, borderRadius: 12, padding: 20, width: "min(840px,96vw)", maxHeight: "90vh", overflowY: "auto" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
               <span style={{ fontSize: 14.5, fontWeight: 800, color: C.text }}>📸 貼截圖匯入品項</span>
               <div style={{ flex: 1 }} />
@@ -680,17 +686,19 @@ export default function IngredientsView({ db, save, canEdit, showMoney, confirm,
               const isDup = (r) => (cnt[normName(r.name)] || 0) > 1;
               const dupN = Object.keys(cnt).filter(k => cnt[k] > 1).length;
               return <>
-              <div style={{ display: "grid", gridTemplateColumns: "26px 36px minmax(140px,1.5fr) minmax(100px,1fr) 64px 84px", gap: 6, padding: "4px 6px", fontSize: 10, color: C.faint, fontWeight: 700, background: "#f4efe5", borderRadius: 6 }}>
-                <span /><span>圖</span><span>品名</span><span>規格</span><span>單位</span><span style={{ textAlign: "right" }}>單價</span>
+              <div style={{ display: "grid", gridTemplateColumns: "26px 36px minmax(140px,1.5fr) minmax(80px,0.8fr) 54px 74px 76px minmax(70px,0.7fr)", gap: 6, padding: "4px 6px", fontSize: 10, color: C.faint, fontWeight: 700, background: "#f4efe5", borderRadius: 6 }}>
+                <span /><span>圖</span><span>品名</span><span>規格</span><span>單位</span><span style={{ textAlign: "right" }}>單價</span><span style={{ textAlign: "right" }} title="最低訂購量（報價的「數量」通常是這個）">最低訂購</span><span>備註</span>
               </div>
               {imp.rows.map((r, i) => (
-                <div key={i} style={{ display: "grid", gridTemplateColumns: "26px 36px minmax(140px,1.5fr) minmax(100px,1fr) 64px 84px", gap: 6, alignItems: "center", padding: "3px 6px", borderBottom: `1px solid #f0ead9`, opacity: r.on ? 1 : 0.45 }}>
+                <div key={i} style={{ display: "grid", gridTemplateColumns: "26px 36px minmax(140px,1.5fr) minmax(80px,0.8fr) 54px 74px 76px minmax(70px,0.7fr)", gap: 6, alignItems: "center", padding: "3px 6px", borderBottom: `1px solid #f0ead9`, opacity: r.on ? 1 : 0.45 }}>
                   <input type="checkbox" checked={r.on} onChange={e => setImp(m => ({ ...m, rows: m.rows.map((x, j) => j === i ? { ...x, on: e.target.checked } : x) }))} />
                   <span title={r.thumbUrl ? "會一起掛到物料卡" : "這筆沒抓到商品照片（不影響匯入，之後可手動補圖）"} style={{ width: 32, height: 32, borderRadius: 6, border: `1px solid ${C.line}`, background: r.thumbUrl ? `url(${r.thumbUrl}) center/cover` : "#f4efe5", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, color: C.faint }}>{r.thumbUrl ? "" : "—"}</span>
                   <input value={r.name} onChange={e => setImp(m => ({ ...m, rows: m.rows.map((x, j) => j === i ? { ...x, name: e.target.value } : x) }))} style={{ ...inp, padding: "3px 7px", fontSize: 12, borderColor: isDup(r) ? C.red : C.line, borderWidth: isDup(r) ? 1.5 : 1 }} />
                   <input value={r.spec} onChange={e => setImp(m => ({ ...m, rows: m.rows.map((x, j) => j === i ? { ...x, spec: e.target.value } : x) }))} style={{ ...inp, padding: "3px 7px", fontSize: 11.5 }} />
                   <input value={r.unit} onChange={e => setImp(m => ({ ...m, rows: m.rows.map((x, j) => j === i ? { ...x, unit: e.target.value } : x) }))} style={{ ...inp, padding: "3px 7px", fontSize: 11.5 }} />
                   <input value={r.price} onChange={e => setImp(m => ({ ...m, rows: m.rows.map((x, j) => j === i ? { ...x, price: e.target.value.replace(/[^0-9.]/g, "") } : x) }))} inputMode="decimal" style={{ ...inp, padding: "3px 7px", fontSize: 11.5, fontFamily: MONOF, textAlign: "right" }} />
+                  <input value={r.moq} onChange={e => setImp(m => ({ ...m, rows: m.rows.map((x, j) => j === i ? { ...x, moq: e.target.value.replace(/[^0-9]/g, "") } : x) }))} inputMode="numeric" placeholder="—" style={{ ...inp, padding: "3px 7px", fontSize: 11.5, fontFamily: MONOF, textAlign: "right" }} />
+                  <input value={r.note} onChange={e => setImp(m => ({ ...m, rows: m.rows.map((x, j) => j === i ? { ...x, note: e.target.value } : x) }))} placeholder="版費…" style={{ ...inp, padding: "3px 7px", fontSize: 11 }} />
                 </div>
               ))}
               {dupN > 0 && <div style={{ marginTop: 8, fontSize: 12, color: C.red, fontWeight: 600 }}>⚠ 紅框的品名重複——如果其實是不同商品（例如刀/叉/匙三種），請把名字改到不一樣；名字一樣的匯入後會被當成同一筆。</div>}

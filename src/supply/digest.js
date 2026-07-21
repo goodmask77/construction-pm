@@ -18,7 +18,7 @@ export function supplyDigest({ supply, orders, recipes }) {
       parts.push(`▍物料清單（${ings.length} 項；★=重點比價；$=最近實付、報$=最新報價；成本一律用實付價）\n` + ings.map(g => {
         const ss = srcsOf(db, g.id);
         const us = ss.map(vi => ({ vi, u: unitCost(vi) })).filter(x => x.u != null).sort((a, b) => a.u - b.u);
-        const sellers = ss.map(vi => { const lp = lastPaid(vi); return `${vname(vi.vendor_id)}${lp ? `$${d3(lp.price)}/${vi.unit || "件"}` : ""}${vi.quote && vi.quote.price ? `(報$${d3(vi.quote.price)})` : ""}`; }).join("、");
+        const sellers = ss.map(vi => { const lp = lastPaid(vi); return `${vname(vi.vendor_id)}${lp ? `$${d3(lp.price)}/${vi.unit || "件"}` : ""}${vi.quote && vi.quote.price ? `(報$${d3(vi.quote.price)})` : ""}${Number(vi.moq) > 0 ? `(MOQ${Number(vi.moq).toLocaleString()})` : ""}${vi.note ? `(${vi.note})` : ""}`; }).join("、");
         const pk = ss.find(vi => packToBase(vi));
         return `- ${g.isKey ? "★" : ""}${g.name}｜${(g.cat || "").trim() || "未分類"}｜盤點${fq(g.countFreq)}${g.safeStock ? `｜安全庫存${g.safeStock}${g.baseUnit}` : ""}${pk ? `｜1${pk.unit || "件"}=${Number(pk.packToBase).toLocaleString()}${g.baseUnit}` : ""}｜賣家:${sellers || "（沒人賣）"}${us.length ? `｜最低$${d3(us[0].u)}/${g.baseUnit}=${vname(us[0].vi.vendor_id)}` : ""}`;
       }).join("\n"));
