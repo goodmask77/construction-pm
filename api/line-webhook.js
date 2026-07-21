@@ -4,6 +4,8 @@
 import crypto from 'crypto'
 // Task Object v2：與前端共用同一份資料模型（保證 Bot / Front-end 的 Task shape 一致）
 import { normalizePatch, mergeTask, isWaiting, isBlocked } from '../src/tasks/taskModel.js'
+// 供應鏈 AI 摘要：與 App 全域 AI 顧問共用同一份（100%資料鐵則——新資料域加 digest.js 一處，兩邊自動同步）
+import { supplyDigest } from '../src/supply/digest.js'
 
 const clean = (v) => (v || '').trim().replace(/^["']|["']$/g, '').replace(/^[A-Za-z0-9_]+=/, '').trim()
 const SECRET = clean(process.env.LINE_CHANNEL_SECRET)
@@ -459,27 +461,14 @@ async function loadCatalogText() {
   } catch (_) { return '' }
 }
 
-// 供應鏈（sp_supply_pm_supply：產品/物料/廠商）→ 文字
+// 供應鏈（廠商/物料比價/變價/叫貨驗收問題追蹤/食譜成本）→ 文字（與 App 共用 supplyDigest，一處維護兩邊同步）
 async function loadSupplyText() {
   try {
-    const kv2 = await kvGetMany(['sp_supply_pm_supply', 'sp_supply_pm_orders'])
-    const v = kv2['sp_supply_pm_supply']
-    if (!v || !Array.isArray(v.products) || !v.products.length) return ''
-    const lines = [`\n\n【供應鏈（產品 ${v.products.length} 項・物料/包材 ${(v.materials || []).length} 項・廠商 ${(v.vendors || []).length} 家）】`]
-    const ods = Array.isArray(kv2['sp_supply_pm_orders']) ? kv2['sp_supply_pm_orders'] : []
-    if (ods.length) {
-      lines.push(`【叫貨紀錄（最近 ${Math.min(ods.length, 15)} 筆）】`)
-      ods.slice(0, 15).forEach(od => {
-        const amt = (od.items || []).reduce((t, x) => t + (Number(x.price) || 0) * (x.qty || 0), 0)
-        const bad = od.check && Object.values(od.check.items || {}).filter(x => x.st && x.st !== '✓ 正確')
-        lines.push(`  - ${(od.ts || '').slice(5, 10)} ${od.vendorName}｜${(od.items || []).map(x => `${x.name}×${x.qty}`).join('、')}｜NT$${Math.round(amt).toLocaleString()}｜${od.status}${bad && bad.length ? `｜⚠驗收問題:${bad.map(x => x.st).join('/')}` : ''}`)
-      })
-    }
-    const byCat = {}
-    v.products.forEach(x => { (byCat[x.category || '未分類'] = byCat[x.category || '未分類'] || []).push(x.name) })
-    Object.entries(byCat).forEach(([c, arr]) => lines.push(`  - ${c}：${arr.join('、')}`))
-    lines.push(`  廠商：${(v.vendors || []).map(x => `${x.name}(${(x.tags || []).slice(0, 2).join('/')})`).join('、')}`)
-    return lines.join('\n')
+    const [kv2, recipes] = await Promise.all([
+      kvGetMany(['sp_supply_pm_supply', 'sp_supply_pm_orders']),
+      kvGetPrefix('sp_supply_pm_recipe_v_'),
+    ])
+    return supplyDigest({ supply: kv2['sp_supply_pm_supply'], orders: kv2['sp_supply_pm_orders'], recipes })
   } catch (_) { return '' }
 }
 

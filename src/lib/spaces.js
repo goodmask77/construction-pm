@@ -45,7 +45,7 @@ export const SPACE_CONF = {
     hideTabs: [],
     // 財務報表：原本「內帳總表」單一入口＋內部子分頁 → 攤平成第二層直接切（張良 2026-07-18）
     tabs: [["fin_ov", "總覽", "📊"], ["fin_acct", "帳戶", "🏦"], ["fin_ledger", "交易明細", "🧾"], ["fin_coa", "科目", "🗂"], ["fin_recon", "對帳", "🔄"], ["fin_pos", "營運報表", "📈"]],
-    defaultView: "fin_ov",
+    defaultView: "fin_pos", // 張良 2026-07-20：財務報表預設打開＝營運報表（分店預設 A Beach 101）
     hideKpi: true, // 不顯示工程 KPI
     labels: { cat: "科目", item: "交易", overview: "財務總覽", gantt: "—", subtitle: "多帳戶財務報表" },
     aiRole: "你是公司財務內帳助理，協助管理多個銀行/貸款/現金帳戶、記錄交易、對帳與餘額試算。請用繁體中文、精準務實。",
@@ -62,7 +62,7 @@ export const SPACE_CONF = {
   supply: {
     showCost: true, // 售價/採購價受「看金額」權限控管（店長層可遮）
     hideTabs: [],
-    tabs: [["sproducts", "產品管理", "📦"], ["svendors", "廠商", "🏭"], ["sorder", "叫貨", "🛒"]],
+    tabs: [["svendors", "廠商建檔", "🏭"], ["sproducts", "菜單管理", "📦"], ["singred", "物料清單", "🥬"], ["sorder", "叫貨", "🛒"]], // 順序＝建檔流程：先建廠商→菜單→物料→叫貨（張良 2026-07-20）
     defaultView: "sproducts",
     hideKpi: true,
     labels: { cat: "類別", item: "品項", overview: "供應鏈", gantt: "—", subtitle: "供應鏈管理（進銷存/採購/比價）" },
@@ -110,8 +110,9 @@ export const PERM_MATRIX = {
   ],
   // lw 空間收起：信箱管理改掛在全域「設定」（管理員限定），不再進權限矩陣
   supply: [
-    ["sproducts", "產品管理", { edit: 1, money: 1 }],
-    ["svendors", "廠商", { edit: 1, money: 1 }],
+    ["svendors", "廠商建檔", { edit: 1, money: 1 }],
+    ["sproducts", "菜單管理", { edit: 1, money: 1 }],
+    ["singred", "物料清單", { edit: 1, money: 1 }],
     ["sorder", "叫貨", { edit: 1, money: 1 }],
   ],
 };

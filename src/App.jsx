@@ -11,7 +11,7 @@ import TaskCenter from "./tasks/TaskCenter.jsx";
 import ShiftView from "./shift/ShiftView.jsx";
 import Conclusions from "./conclusions/Conclusions.jsx";
 import SequenceView from "./SequenceView.jsx";
-import { LayoutDashboard, ClipboardList, CheckSquare, CalendarDays, Pin as PinIcon, FolderOpen, Wallet, Scale, Settings as SettingsIcon, Bot, Megaphone, MessagesSquare, Users as UsersIcon, ScrollText, LifeBuoy, Lock as LockIcon, Gauge, Bell, KeyRound, Mail as MailIcon } from "lucide-react";
+import { LayoutDashboard, ClipboardList, CheckSquare, CalendarDays, Pin as PinIcon, FolderOpen, Wallet, Scale, Settings as SettingsIcon, Bot, Megaphone, MessagesSquare, Users as UsersIcon, ScrollText, LifeBuoy, Lock as LockIcon, Gauge, Bell, KeyRound, Mail as MailIcon, HardHat, Handshake, Landmark, Boxes, Factory, ShoppingCart, Leaf, Package, BookOpen, Star, MessageSquare, Gamepad2, Vote, Gift, Trophy, BarChart3, Receipt, FolderTree, RefreshCw, TrendingUp } from "lucide-react";
 import { BRAND, ACCENT, PRIMARY, BG, SURFACE, BORDER, LINE2, TEXT, SUB, ACCENT_SOFT, DARKCHIP, MONO, DISP, SEM, GOLD, HEAD_BG, HEAD_LINE, HEAD_SUB, HEAD_CHIP, SecHead, MOBILE_BP, useIsMobile } from "./lib/theme.jsx";
 import { GLOBAL_KEYS, CURRENT_SPACE, K, switchSpace, CURRENT_USER, setCurrentUser, auditLog, conf, CAN_VIEW_MONEY, setCanViewMoney, showMoney, ADMIN_USER, maskAccount, L } from "./lib/runtime.js";
 import { KnowledgeBaseView, RosterView, Review360View, FeedbackView, QuestView, PollView, RewardCenterView, CrewTodayView } from "./crew/CrewViews.jsx";
@@ -22,9 +22,22 @@ import { SidePanel, ImportElapsed, inputStyle } from "./lib/ui.jsx";
 import ReceiptUploader from "./lib/ReceiptUploader.jsx";
 import { AdvisorSettingsView, ChangelogView, GroupsView, AccountManager, AuditLogView, HistoryView, VaultView, BotUsagePanel, AIUsagePanel } from "./settings/SettingsViews.jsx";
 import { OwnerDashboard, OverviewTable, PettyCashView, PhotoLibraryView, IssuesView, CompareView, StatusBadge, COLS } from "./construction/ConstructionViews.jsx";
+import { supplyDigest } from "./supply/digest.js"; // 供應鏈 AI 摘要：與 D哥(line-webhook) 共用同一份
 
-// 導覽分頁圖示（依 DESIGN_SPEC：lucide 細線取代 emoji）
-const NAV_ICONS = { owner: LayoutDashboard, overview: ClipboardList, tasks: CheckSquare, gantt: CalendarDays, conclusions: PinIcon, files: FolderOpen, petty: Wallet, compare: Scale, settings: SettingsIcon };
+// 導覽分頁圖示（依 DESIGN_SPEC：lucide 細線取代 emoji；張良 2026-07-20 全空間補齊——emoji 只留標題/訊息，不當導覽圖示）
+const NAV_ICONS = {
+  owner: LayoutDashboard, overview: ClipboardList, tasks: CheckSquare, gantt: CalendarDays, conclusions: PinIcon, files: FolderOpen, petty: Wallet, compare: Scale, settings: SettingsIcon,
+  // 供應鏈
+  svendors: Factory, sproducts: Package, singred: Leaf, sorder: ShoppingCart,
+  // 夥伴中心
+  kb: BookOpen, roster: UsersIcon, shift: CalendarDays, r360: Star, fb: MessageSquare, quest: Gamepad2, poll: Vote, shop: Gift, rank: Trophy,
+  // 財務報表
+  fin_ov: BarChart3, fin_acct: Landmark, fin_ledger: Receipt, fin_coa: FolderTree, fin_recon: RefreshCw, fin_pos: TrendingUp,
+  // 其他
+  mail: MailIcon,
+};
+// 第一層空間圖示（取代 SPACES 裡的 emoji）
+const SPACE_ICONS = { construction: HardHat, team: UsersIcon, crew: Handshake, finance: Landmark, supply: Boxes, lw: MailIcon };
 const SUB_ICONS = { advisor: Bot, changelog: Megaphone, mail: MailIcon, groups: MessagesSquare, accounts: UsersIcon, audit: ScrollText, history: LifeBuoy, vault: LockIcon, usage: Gauge };
 // 設計 tokens／SecHead／useIsMobile 已抽到 ./lib/theme.jsx（拆檔第一刀，2026-07-18）
 // ADMIN_USER / maskAccount 已抽到 ./lib/runtime.js（拆檔第二刀，2026-07-18）
@@ -47,12 +60,14 @@ async function loadSpaceAIContext() {
       } catch (_) { return await g(legacy); }
     };
     const d0 = new Date(); const mo = `${d0.getFullYear()}-${String(d0.getMonth() + 1).padStart(2, "0")}`;
-    const [snapC, snapT, snapK, snapF, tasks, crewRoster, crewOld, pos, posD, bank, ctbc, accounts, ledger, conclusions, mailRules, mailLog, supply] = await Promise.all([
+    const [snapC, snapT, snapK, snapF, tasks, crewRoster, crewOld, pos, posD, bank, ctbc, accounts, ledger, conclusions, mailRules, mailLog, supply, supplyOrders, supplyRecipesRaw] = await Promise.all([
       g("pm_bot_context"), g("sp_team_pm_bot_context"), g("sp_crew_pm_bot_context"), g("sp_finance_pm_bot_context"),
       recs("pm_tasks_v2", "pm_task_", "pm_tasks"), g("sp_crew_kb_roster"), g("sp_crew_kb_360"), g("sp_finance_pm_pos"), g("sp_finance_pm_pos_d_" + mo),
       g("sp_finance_pm_bank"), g("sp_finance_pm_ctbc"), g("sp_finance_pm_fin_accounts"), recs("sp_finance_pm_fin_ledger_v2", "sp_finance_pm_fin_tx_", "sp_finance_pm_fin_ledger"),
       g("pm_conclusions"), g("sp_lw_pm_mail_rules"), g("sp_lw_pm_mail_log"), g("sp_supply_pm_supply"),
+      g("sp_supply_pm_orders"), getSharedPrefix("sp_supply_pm_recipe_v_"),
     ]);
+    const supplyRecipes = Object.values(supplyRecipesRaw || {}).map(v => { try { return JSON.parse(v); } catch (_) { return null; } }).filter(Boolean);
     const crew = (crewRoster && (crewRoster.people || []).length) ? crewRoster : crewOld; // 名冊已分家：優先讀 kb_roster
     if (Array.isArray(tasks)) tasks.sort((a, b) => (a.ord ?? 0) - (b.ord ?? 0));            // 逐筆載入後照手動順序
     if (Array.isArray(ledger)) ledger.sort((a, b) => ((a.date || "") < (b.date || "") ? 1 : -1)); // 新到舊
@@ -112,12 +127,12 @@ async function loadSpaceAIContext() {
     if (con.length) parts.push("【公開結論（團隊定案）】\n" + con.slice(0, 40).map(c => `- ${c.topic}：${c.conclusion}`).join("\n"));
     // 信箱管理
     if (mailRules?.rules?.length) parts.push(`【郵件管理（設定內）】規則 ${mailRules.rules.length} 條（每小時自動跑）${mailLog?.items?.[0] ? `；最近一次處理 ${mailLog.items[0].moved} 封` : ""}`);
-    // 供應鏈
-    if (supply?.products?.length) parts.push(`【供應鏈】產品 ${supply.products.length} 項（${(supply.categories || []).map(c2 => c2.name).join("/")}）・物料/包材 ${(supply.materials || []).length} 項・廠商 ${(supply.vendors || []).length} 家（${(supply.vendors || []).slice(0, 8).map(v => v.name).join("、")}…）`);
+    // 供應鏈（與 D哥 line-webhook 共用 supplyDigest：廠商/物料比價/變價/叫貨驗收問題追蹤/食譜成本）
+    try { const st = supplyDigest({ supply, orders: supplyOrders, recipes: supplyRecipes }); if (st) parts.push(st.trim()); } catch (_) {}
     // 資料總目錄（新功能上線自動出現在這裡）
     try {
       // 帶登入權杖讀（RLS 上鎖後仍可用）；逐筆存的一筆一檔太瑣碎，收斂成一個代表名稱
-      const skip = /^(pm_hist_|sp_.*_pm_hist_)|backup|pm_bot_(chats|confirm|operators)|pm_vault|pm_task_|sp_finance_pm_fin_tx_/;
+      const skip = /^(pm_hist_|sp_.*_pm_hist_)|backup|pm_bot_(chats|confirm|operators)|pm_vault|pm_task_|sp_finance_pm_fin_tx_|sp_supply_pm_(price|quote|recipe_v)_/; // 逐筆流水已收斂進摘要，不逐鍵列
       const ids = (await listSharedIds()).filter(id => !skip.test(id));
       if (ids.length) parts.push("【資料總目錄（全部資料域；被問到沒細節的，回「資料有收錄，請張良叫 Claude 接上細節」）】\n" + ids.join("、"));
     } catch (_) {}
@@ -919,7 +934,7 @@ export default function App() {
           <CompareView canEdit={canEditFiles} requireLogin={denyEdit} onLog={logActivity} />
         )}
         {/* 供應鏈/LWLWLW：進入與編輯全依「帳號權限矩陣」（不另設管理員硬鎖，勾了就看得到） */}
-        {["sproducts", "svendors", "sorder"].includes(view) && CURRENT_SPACE === "supply" && (
+        {["sproducts", "singred", "svendors", "sorder"].includes(view) && CURRENT_SPACE === "supply" && (
           <SupplyView view={view} K={K} canEdit={canEditData} confirm={confirm} showMoney={showMoney()} userName={userName} />
         )}
         {/* 財務報表：第二層直接六分頁（總覽/帳戶/交易明細/科目/對帳/營運報表），view 直傳 FinanceView */}
@@ -1050,7 +1065,7 @@ function BottomNav({ view, setView, isAdmin, allowedViewPages }) {
         const on = groupTabs ? groupTabs.includes(view) : (v === "settings" ? ["settings", "advisor", "groups", "accounts", "audit", "vault"].includes(view) : view === v);
         return (
           <button key={v} onClick={() => setView(v === "settings" ? "advisor" : v)} title={l} className={v === "issues" && !on ? "todo-glow" : undefined} style={{ flex: 1, minHeight: 44, border: "none", borderRadius: v === "issues" ? 10 : 0, background: "none", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 3, cursor: "pointer", color: on ? ACCENT : (v === "issues" ? "#D97706" : SUB), fontWeight: on ? 700 : (v === "issues" ? 700 : 500), padding: 0 }}>
-            <span style={{ fontSize: 19, lineHeight: 1, filter: on ? "none" : "grayscale(0.4) opacity(0.85)" }}>{icon}</span>
+            {(() => { const NavI = NAV_ICONS[v]; return NavI ? <NavI size={19} strokeWidth={1.75} /> : <span style={{ fontSize: 19, lineHeight: 1, filter: on ? "none" : "grayscale(0.4) opacity(0.85)" }}>{icon}</span>; })()}
             <span style={{ fontSize: 10.5 }}>{l}</span>
           </button>
         );
@@ -1136,7 +1151,7 @@ function TopNav({ view, setView, saving, totalEstimated, totalPaid, doneCount, c
             return (
               <button key={s.id} onClick={() => !on && (s.id === CURRENT_SPACE ? setView(conf().defaultView || "owner") : switchSpace(s.id))} title={s.name + "（各空間資料獨立）"}
                 style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: isMobile ? "5px 7px" : "6px 11px", borderRadius: 7, border: `1px solid ${on ? "#c8bca6" : "transparent"}`, background: on ? "#fff" : "transparent", color: on ? "#1d1a15" : "#5a5247", fontSize: isMobile ? 14 : 12.5, fontWeight: on ? 700 : 500, cursor: on ? "default" : "pointer", whiteSpace: "nowrap" }}>
-                <span>{s.icon}</span>{(!isMobile || on) && <span>{s.name}</span>}
+                {(() => { const SI = SPACE_ICONS[s.id]; return SI ? <SI size={isMobile ? 16 : 14} strokeWidth={1.75} /> : <span>{s.icon}</span>; })()}{(!isMobile || on) && <span>{s.name}</span>}
               </button>
             );
           })}
