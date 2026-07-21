@@ -181,6 +181,7 @@ export function Review360View({ canEdit, requireLogin, confirm, isAdmin, userNam
   const [me, setMe] = useState("");
   const [rate, setRate] = useState(null); // 正在評的對象 {revieweeId, scores, comment}
   const [resultId, setResultId] = useState("");
+  useMeSync(people, userName, setMe);
 
   useEffect(() => {
     const safety = setTimeout(() => setData(prev => prev || emptyR360()), 8000);
@@ -389,6 +390,7 @@ export function FeedbackView({ canEdit, requireLogin, isAdmin, userName }) {
   const [wallFilter, setWallFilter] = useState("all"); // all | tome | byme
   const [exclusions, setExclusions] = useState([]); // 迴避配對 [[idA,idB],...]（立場衝突者互不回饋）
   const [exDraft, setExDraft] = useState({ a: "", b: "" });
+  useMeSync(people, userName, setMe);
 
   useEffect(() => {
     const safety = setTimeout(() => setItems(prev => prev || []), 8000);
@@ -537,10 +539,13 @@ const CREW_ROLES = [["staff", "基層"], ["lead", "組長"], ["manager", "主管
 const roleLabel = (r) => (CREW_ROLES.find(x => x[0] === r) || ["staff", "基層"])[1];
 const canManageRole = (r) => r === "manager" || r === "admin";
 const meFromRoster = (people, userName) => (people.find(p => p.account && p.account === userName) || {}).id || "";
+// 修（張良 2026-07-22 回報「有時顯示尚未綁定」）：登入身分(profile)常比頁面晚載入，
+// 掛載當下 userName 還是 null → me 算成空且不再重算。這個 hook 在 userName/名冊就緒後補綁一次。
+const useMeSync = (people, userName, setMe) => { useEffect(() => { if (userName && people.length) setMe(m => m || meFromRoster(people, userName)); }, [userName, people]); };
 // 目前身分＝登入帳號對應的人（固定、不可切換，避免冒名頂替）
 const CrewMe = ({ people, me }) => {
   const cur = people.find(p => p.id === me);
-  if (!cur) return <div style={{ fontSize: 12.5, color: "#C2872E" }}>⚠ 你的登入帳號尚未綁定夥伴身分（到 360評鑑 → 設定，把你的「登入帳號」填到對應的人）。</div>;
+  if (!cur) return <div style={{ fontSize: 12.5, color: "#C2872E" }}>⚠ 你的登入帳號尚未綁定夥伴身分——用 LINE 對 DD 說「你的本名＋報到」即可綁定；或請管理員在名冊把你的「App帳號」欄填上登入名稱。</div>;
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
       <span style={{ fontSize: 13, color: SUB }}>身分</span>
@@ -555,6 +560,7 @@ const crewProtoTitle = (emoji, t, sub) => (<><div style={{ display: "flex", alig
 // ── 闖關任務 ─────────────────────────────────────────────────────────────────
 export function QuestView({ canEdit, requireLogin, confirm, isAdmin, userName }) {
   const [people, setPeople] = useState([]); const [data, setData] = useState(null); const [me, setMe] = useState(""); const [ed, setEd] = useState(null);
+  useMeSync(people, userName, setMe);
   useEffect(() => { const s = setTimeout(() => setData(p => p || { quests: [], progress: [] }), 8000);
     (async () => { const r = await loadCrewRoster(); setPeople(r); setMe(meFromRoster(r, userName)); setData(await loadCrewJSON("kb_quests", { quests: [], progress: [] })); })().finally(() => clearTimeout(s)); return () => clearTimeout(s); }, []);
   const persist = (n) => { setData(n); saveCrewJSON("kb_quests", n); };
@@ -599,6 +605,7 @@ export function QuestView({ canEdit, requireLogin, confirm, isAdmin, userName })
 // ── 投票（含各項投票王）──────────────────────────────────────────────────────
 export function PollView({ canEdit, requireLogin, confirm, isAdmin, userName }) {
   const [people, setPeople] = useState([]); const [data, setData] = useState(null); const [me, setMe] = useState(""); const [ed, setEd] = useState(null);
+  useMeSync(people, userName, setMe);
   useEffect(() => { const s = setTimeout(() => setData(p => p || { polls: [], votes: [] }), 8000);
     (async () => { const r = await loadCrewRoster(); setPeople(r); setMe(meFromRoster(r, userName)); setData(await loadCrewJSON("kb_polls", { polls: [], votes: [] })); })().finally(() => clearTimeout(s)); return () => clearTimeout(s); }, []);
   const persist = (n) => { setData(n); saveCrewJSON("kb_polls", n); };
@@ -646,6 +653,7 @@ export function PollView({ canEdit, requireLogin, confirm, isAdmin, userName }) 
 // ── 兌換商城 + 錢包 ───────────────────────────────────────────────────────────
 export function ShopView({ canEdit, requireLogin, confirm, isAdmin, userName }) {
   const [people, setPeople] = useState([]); const [fb, setFb] = useState([]); const [quests, setQuests] = useState({ quests: [], progress: [] }); const [shop, setShop] = useState(null); const [me, setMe] = useState(""); const [ed, setEd] = useState(null);
+  useMeSync(people, userName, setMe);
   const reload = async () => { const r = await loadCrewRoster(); setPeople(r); setMe(meFromRoster(r, userName)); const f = await loadCrewJSON("kb_feedback", { items: [] }); setFb(f.items || []); setQuests(await loadCrewJSON("kb_quests", { quests: [], progress: [] })); setShop(await loadCrewJSON("kb_shop", { rewards: [], redemptions: [] })); };
   useEffect(() => { const s = setTimeout(() => setShop(p => p || { rewards: [], redemptions: [] }), 8000); reload().finally(() => clearTimeout(s)); return () => clearTimeout(s); }, []);
   const persist = (n) => { setShop(n); saveCrewJSON("kb_shop", n); };
@@ -774,10 +782,10 @@ function PrivateFileField({ person, fieldKey, entries, editable, onLocal }) {
 }
 // 名冊「待審核」區（入職 2.1）：LINE 報到即開帳號＋名冊「入職中」卡，夥伴自己在 App 填資料，
 // 這裡看進度/證件 → 一鍵核准轉正式（退回=刪卡+刪帳號+LINE 通知）
-function OnboardReviewSection({ pending, fields, progressOf, canEdit, confirm }) {
+function OnboardReviewSection({ pending, fields, progressOf, mgr, confirm, refresh }) {
   const [busy, setBusy] = useState("");
   const [deptDraft, setDeptDraft] = useState({});
-  if (!canEdit || !pending.length) return null;
+  if (!mgr || !pending.length) return null; // 只有管理員/主管看得到審核區（一般夥伴/新人不該看到別人的申請）
   const act = async (action, p, reason) => {
     setBusy(p.id);
     try {
@@ -786,6 +794,7 @@ function OnboardReviewSection({ pending, fields, progressOf, canEdit, confirm })
       const d = await r.json();
       if (!d.ok) alert(d.error || "操作失敗");
       else { try { auditLog(action === "approve" ? "新增" : "刪除", `入職${action === "approve" ? "核准" : "退回"}：${p.name}`); } catch (_) {} }
+      await refresh?.(); // 後端寫完馬上重抓名冊（伺服器寫入不會觸發前端即時廣播，不重抓畫面會卡舊狀態）
     } catch (_) { alert("操作失敗"); }
     setBusy("");
   };
@@ -944,7 +953,7 @@ export function RosterView({ canEdit, confirm, me, ReceiptUploader }) {
   const dateS = { ...inpS, colorScheme: "light", fontFamily: "'Noto Sans TC',sans-serif", cursor: "pointer" };
   return (
     <div>
-      <OnboardReviewSection pending={people.filter(pp => pp.onboarding)} fields={fields} progressOf={progress} canEdit={canEdit} confirm={confirm} />
+      <OnboardReviewSection pending={people.filter(pp => pp.onboarding)} fields={fields} progressOf={progress} mgr={me?.role === "admin" || me?.role === "manager"} confirm={confirm} refresh={async () => setData(await loadRosterDoc())} />
       <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "6px 0 12px", flexWrap: "wrap" }}>
         <span style={{ background: ACCENT, color: "#fff", fontSize: 11.5, fontWeight: 700, borderRadius: 4, padding: "2px 8px", letterSpacing: 1 }}>名冊</span>
         <div style={{ fontSize: 17, fontWeight: 800, color: TEXT, fontFamily: DISP }}>夥伴名冊 / 入職流程</div>
@@ -1269,6 +1278,7 @@ export function CrewTodayView({ userName, isAdmin, setView }) {
   const [shop, setShop] = useState({ rewards: [], redemptions: [] });
   const [journal, setJournal] = useState({ items: [] }); // 每日心得（夥伴在 LINE 用「心得 …」記錄）
   const [me, setMe] = useState("");
+  useMeSync(people, userName, setMe);
   useEffect(() => {
     const s = setTimeout(() => setDocs(prev => prev || []), 8000);
     (async () => {
