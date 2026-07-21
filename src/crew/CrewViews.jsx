@@ -1,7 +1,8 @@
 // ── 夥伴中心（crew 空間）：知識庫/名冊/360互評/回饋/闖關/投票/商城/排行榜 ─────────
 // 由 App.jsx 原樣搬出（2026-07-18 拆檔第一刀；行為/畫面零改變）。
 import { useState, useEffect, useRef } from "react";
-import { uploadPhoto, onSharedChange, supabase } from "../supa.js";
+import { uploadPhoto, onSharedChange, supabase, getSharedPrefix } from "../supa.js";
+import QRCode from "qrcode";
 import { ACCENT, PRIMARY, SURFACE, BORDER, TEXT, SUB, MONO, DISP } from "../lib/theme.jsx";
 import { K, auditLog } from "../lib/runtime.js";
 import { ROSTER_KEY, loadRosterDoc, saveRosterDoc, saveRosterPatch } from "./roster.js";
@@ -1494,4 +1495,174 @@ export function CrewTodayView({ userName, isAdmin, setView }) {
       {!me && <div style={{ marginTop: 14, fontSize: 13, color: SUB, background: "#fff", border: `1px solid ${BORDER}`, borderRadius: 12, padding: 16 }}>登入並綁定夥伴身分後，這裡會顯示你的待完成訓練、待回覆評鑑與積分。</div>}
     </div>
   );
+}
+
+// ── 出勤打卡（P1，張良 2026-07-22）：店內 iPad 開「打卡站」顯示動態 QR（30秒換、HMAC簽章、不用GPS），
+// 夥伴手機相機掃 → 帶 ?pt= 開 App → 自動打卡；相機壞掉備援＝LINE 對 DD 打「上班/下班」（負責人在這裡審核）。
+// 出勤＝法定紀錄：逐筆一筆一檔 sp_crew_pch_*、記到分鐘、永久保存。
+const pchDayKey = (d = new Date()) => new Intl.DateTimeFormat("sv-SE", { timeZone: "Asia/Taipei" }).format(d).replace(/-/g, "");
+const pchHHMM = (t) => new Date(t).toLocaleTimeString("zh-TW", { hour: "2-digit", minute: "2-digit", timeZone: "Asia/Taipei" });
+async function loadPunchDays(days) { // 近 N 天全部打卡（依日期前綴撈）
+  const out = [];
+  for (let i = 0; i < days; i++) {
+    const d = new Date(Date.now() - i * 86400000);
+    const map = await getSharedPrefix(`sp_crew_pch_${pchDayKey(d)}_`);
+    Object.entries(map).forEach(([k, v]) => { try { out.push({ key: k, day: pchDayKey(d), ...JSON.parse(v) } ); } catch (_) {} });
+  }
+  return out.sort((a, b) => (a.ts < b.ts ? -1 : 1));
+}
+const pairHours = (recs) => { let ms = 0; for (let i = 0; i < recs.length; i += 2) if (recs[i]?.dir === "in" && recs[i + 1]?.dir === "out") ms += new Date(recs[i + 1].ts) - new Date(recs[i].ts); return Math.round(ms / 360000) / 10; };
+
+export function PunchView({ me: account, userName }) {
+  const [people, setPeople] = useState([]);
+  const [meId, setMeId] = useState("");
+  const [recs, setRecs] = useState(null); // 近7天全部
+  const [station, setStation] = useState(false); // 打卡站全螢幕
+  const [qrErr, setQrErr] = useState("");
+  const [punchMsg, setPunchMsg] = useState(null); // 掃碼進來的打卡結果
+  const canvasRef = useRef(null);
+  useMeSync(people, userName, setMeId);
+  const mgr = account?.role === "admin" || account?.role === "manager";
+  const reload = async () => setRecs(await loadPunchDays(7));
+  useEffect(() => { (async () => { const rd = await loadRosterDoc(); setPeople(rd.people || []); setMeId(meFromRoster(rd.people || [], userName)); await reload(); })(); }, []);
+
+  // 掃碼深連結：App.jsx 把 ?pt= 存進 sessionStorage 後切到本頁 → 自動打卡
+  useEffect(() => {
+    (async () => {
+      let pt = ""; try { pt = sessionStorage.getItem("pm_punch_token") || ""; sessionStorage.removeItem("pm_punch_token"); } catch (_) {}
+      if (!pt) return;
+      setPunchMsg({ busy: true });
+      try {
+        const t = await authToken();
+        const r = await fetch("/api/punch?action=punch", { method: "POST", headers: { Authorization: `Bearer ${t}`, "content-type": "application/json" }, body: JSON.stringify({ token: pt }) });
+        const d = await r.json();
+        setPunchMsg(d.ok ? { ok: true, ...d } : { error: d.error || "打卡失敗" });
+        if (d.ok) reload();
+      } catch (_) { setPunchMsg({ error: "網路異常，請重掃一次" }); }
+    })();
+  }, []);
+  const fixLast = async () => {
+    try { const t = await authToken(); const r = await fetch("/api/punch?action=fix", { method: "POST", headers: { Authorization: `Bearer ${t}` } }); const d = await r.json(); if (d.ok) { setPunchMsg(m => ({ ...m, dir: d.dir, fixed: true })); reload(); } else alert(d.error); } catch (_) {}
+  };
+
+  // 打卡站：每 28 秒抓新 token 畫 QR
+  useEffect(() => {
+    if (!station) return;
+    let alive = true;
+    const draw = async () => {
+      try {
+        const t = await authToken();
+        const r = await fetch("/api/punch?action=token", { headers: { Authorization: `Bearer ${t}` } });
+        const d = await r.json();
+        if (!alive) return;
+        if (!d.token) { setQrErr(d.error || "取得 QR 失敗"); return; }
+        setQrErr("");
+        const url = `${window.location.origin}/?pt=${encodeURIComponent(d.token)}`;
+        if (canvasRef.current) await QRCode.toCanvas(canvasRef.current, url, { width: Math.min(520, window.innerWidth - 80), margin: 1, color: { dark: "#211C15", light: "#ffffff" } });
+      } catch (_) { if (alive) setQrErr("網路異常，重試中…"); }
+    };
+    draw();
+    const iv = setInterval(draw, 28000);
+    return () => { alive = false; clearInterval(iv); };
+  }, [station]);
+
+  if (recs === null) return <div style={{ padding: 40, color: SUB, fontSize: 14 }}>載入中…</div>;
+  const today = pchDayKey();
+  const mine = recs.filter(r => r.personId === meId);
+  const mineToday = mine.filter(r => r.day === today);
+  const pendingLine = recs.filter(r => r.src === "line" && !r.verified);
+  const verify = async (r, ok) => {
+    try { const t = await authToken(); const res = await fetch("/api/punch?action=verify", { method: "POST", headers: { Authorization: `Bearer ${t}`, "content-type": "application/json" }, body: JSON.stringify({ recordId: r.key, ok }) }); const d = await res.json(); if (!d.ok) alert(d.error); else { try { auditLog("編輯", `${ok ? "核可" : "刪除"} ${r.name} 的LINE打卡`); } catch (_) {} reload(); } } catch (_) { alert("操作失敗"); }
+  };
+  const nameOf2 = (id) => (people.find(p => p.id === id) || {}).name || "—";
+  // 今日各人狀態（管理者總覽）
+  const byPerson = {};
+  recs.filter(r => r.day === today).forEach(r => { (byPerson[r.personId] = byPerson[r.personId] || []).push(r); });
+
+  return (
+    <div>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "6px 0 12px", flexWrap: "wrap" }}>
+        <div style={{ fontSize: 18, fontWeight: 700, color: TEXT }}>⏱ 出勤打卡</div>
+        <span style={{ fontSize: 12.5, color: SUB }}>掃店內打卡站 QR 打卡；掃不了時 LINE 跟 DD 說「上班」「下班」（需負責人審核）</span>
+        <div style={{ flex: 1 }} />
+        {mgr && <button onClick={() => setStation(true)} style={{ border: "none", background: PRIMARY, color: "#fff", borderRadius: 8, padding: "9px 18px", fontSize: 13.5, fontWeight: 700, cursor: "pointer" }}>🖥 開啟打卡站（iPad 放這頁）</button>}
+      </div>
+
+      {/* 掃碼打卡結果 */}
+      {punchMsg && (
+        <div style={{ ...crewCard, border: `2px solid ${punchMsg.ok ? "#3C8C3C" : punchMsg.busy ? BORDER : "#b3261e"}`, textAlign: "center", padding: 22 }}>
+          {punchMsg.busy ? <div style={{ fontSize: 15, color: SUB }}>打卡中…</div> : punchMsg.ok ? (<>
+            <div style={{ fontSize: 34 }}>{punchMsg.dir === "in" ? "🟢" : "🔴"}</div>
+            <div style={{ fontSize: 20, fontWeight: 800, color: TEXT, margin: "4px 0" }}>{punchMsg.name}｜{punchMsg.dir === "in" ? "上班" : "下班"}打卡成功</div>
+            <div style={{ fontSize: 14, color: SUB }}>{pchHHMM(punchMsg.ts)}・今日累計 {punchMsg.todayHours} 小時</div>
+            {!punchMsg.fixed && <button onClick={fixLast} style={{ marginTop: 10, border: `1px solid ${BORDER}`, background: "#fff", color: SUB, borderRadius: 8, padding: "6px 14px", fontSize: 12.5, cursor: "pointer" }}>打錯了？改成{punchMsg.dir === "in" ? "下班" : "上班"}（5分鐘內）</button>}
+          </>) : <div style={{ fontSize: 15, fontWeight: 700, color: "#b3261e" }}>{punchMsg.error}</div>}
+        </div>
+      )}
+
+      {/* 負責人：LINE 備援打卡待審核 */}
+      {mgr && pendingLine.length > 0 && (
+        <div style={{ ...crewCard, border: "1.5px solid #c98a14" }}>
+          <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 6 }}>⚠ LINE 備援打卡待審核<span style={{ marginLeft: 6, fontSize: 11, background: ACCENT, color: "#fff", borderRadius: 10, padding: "1px 8px", fontWeight: 700 }}>{pendingLine.length}</span></div>
+          {pendingLine.map(r => (
+            <div key={r.key} style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 13.5, padding: "6px 0", borderTop: "1px solid #ece4d6", flexWrap: "wrap" }}>
+              <b>{r.name}</b><span>{r.dir === "in" ? "上班" : "下班"} {r.day.slice(4, 6)}/{r.day.slice(6)} {pchHHMM(r.ts)}</span>
+              <div style={{ flex: 1 }} />
+              <button onClick={() => verify(r, false)} style={{ border: `1px solid ${BORDER}`, background: "#fff", color: "#b3261e", borderRadius: 8, padding: "5px 12px", fontSize: 12.5, cursor: "pointer" }}>刪除</button>
+              <button onClick={() => verify(r, true)} style={{ border: "none", background: "#3C8C3C", color: "#fff", borderRadius: 8, padding: "5px 14px", fontSize: 12.5, fontWeight: 700, cursor: "pointer" }}>✅ 核可</button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* 我的出勤 */}
+      <div style={crewCard}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
+          <div style={{ fontSize: 14.5, fontWeight: 700, color: TEXT }}>我的出勤</div>
+          <span style={{ fontSize: 12, color: SUB }}>今日 {pairHours(mineToday)} 小時・近7天 {pairHours(mine)} 小時</span>
+        </div>
+        {mine.length === 0 && <div style={{ fontSize: 13, color: "#9b9384" }}>還沒有打卡紀錄。到店掃打卡站 QR 開始第一筆！</div>}
+        {[...new Set(mine.map(r => r.day))].sort().reverse().slice(0, 7).map(d => { const list = mine.filter(r => r.day === d); return (
+          <div key={d} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, padding: "6px 0", borderTop: "1px solid #ece4d6", flexWrap: "wrap" }}>
+            <span style={{ fontFamily: MONO, fontWeight: 700, color: TEXT, width: 52 }}>{d.slice(4, 6)}/{d.slice(6)}</span>
+            {list.map(r => <span key={r.key} style={{ background: r.dir === "in" ? "#eef5ef" : "#fbeee6", color: r.dir === "in" ? "#3f7d4e" : ACCENT, borderRadius: 8, padding: "2px 9px", fontSize: 12 }}>{r.dir === "in" ? "上" : "下"} {pchHHMM(r.ts)}{r.src === "line" && <span style={{ color: r.verified ? "#3f7d4e" : "#c98a14" }}>{r.verified ? " ✓" : " 待審"}</span>}</span>)}
+            <div style={{ flex: 1 }} />
+            <span style={{ fontFamily: MONO, fontSize: 12.5, fontWeight: 700 }}>{pairHours(list)}h</span>
+          </div>
+        ); })}
+      </div>
+
+      {/* 管理者：今日全店出勤 */}
+      {mgr && Object.keys(byPerson).length > 0 && (
+        <div style={crewCard}>
+          <div style={{ fontSize: 14.5, fontWeight: 700, color: TEXT, marginBottom: 8 }}>今日全店出勤（{Object.keys(byPerson).length} 人）</div>
+          {Object.entries(byPerson).map(([pid, list]) => { const last = list[list.length - 1]; return (
+            <div key={pid} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, padding: "6px 0", borderTop: "1px solid #ece4d6", flexWrap: "wrap" }}>
+              <b style={{ width: 70 }}>{nameOf2(pid)}</b>
+              <span style={{ fontSize: 11.5, fontWeight: 700, color: last.dir === "in" ? "#3f7d4e" : SUB }}>{last.dir === "in" ? "🟢 上班中" : "已下班"}</span>
+              {list.map(r => <span key={r.key} style={{ fontSize: 12, color: SUB }}>{r.dir === "in" ? "上" : "下"}{pchHHMM(r.ts)}</span>)}
+              <div style={{ flex: 1 }} />
+              <span style={{ fontFamily: MONO, fontSize: 12.5, fontWeight: 700 }}>{pairHours(list)}h</span>
+            </div>
+          ); })}
+        </div>
+      )}
+
+      {/* 打卡站全螢幕（iPad 開著這個） */}
+      {station && (
+        <div style={{ position: "fixed", inset: 0, background: "#F2EDE3", zIndex: 900, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 14 }}>
+          <div style={{ fontSize: 26, fontWeight: 800, color: TEXT, fontFamily: DISP }}>GROUN:D 打卡站</div>
+          <div style={{ fontSize: 14, color: SUB }}>用手機「相機」掃描 QR 完成上/下班打卡（QR 每 30 秒更新）</div>
+          {qrErr ? <div style={{ color: "#b3261e", fontSize: 15, fontWeight: 700, padding: 40 }}>{qrErr}</div> : <canvas ref={canvasRef} style={{ background: "#fff", borderRadius: 16, padding: 8, border: `1px solid ${BORDER}` }} />}
+          <StationClock />
+          <button onClick={() => setStation(false)} style={{ position: "absolute", top: 14, right: 16, border: `1px solid ${BORDER}`, background: "#fff", color: SUB, borderRadius: 8, padding: "8px 16px", fontSize: 13, cursor: "pointer" }}>關閉打卡站</button>
+        </div>
+      )}
+    </div>
+  );
+}
+function StationClock() {
+  const [now, setNow] = useState(new Date());
+  useEffect(() => { const iv = setInterval(() => setNow(new Date()), 1000); return () => clearInterval(iv); }, []);
+  return <div style={{ fontFamily: MONO, fontSize: 40, fontWeight: 800, color: TEXT, letterSpacing: 1 }}>{now.toLocaleTimeString("zh-TW", { hour12: false, timeZone: "Asia/Taipei" })}</div>;
 }

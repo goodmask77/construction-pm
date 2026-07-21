@@ -321,6 +321,25 @@ const BOT_PERSONA = `你是「DD」（舊名 D哥，大家叫哪個都認得）�
 const SYS_DATA_HEAD = '\n\n────────\n【你目前掌握的即時資料】\n'
 
 // 排班系統（夥伴中心・排班）→ 文字。【100%資料鐵則】問「某人某天上什麼班」一律以此為準。
+// 出勤打卡（今日）：誰上班中/已下班、LINE備援未審核筆數（100%資料鐵則——打卡新資料域）
+async function loadPunchText() {
+  try {
+    const { todayPunchesAll } = await import('./punch.js')
+    const all = await todayPunchesAll()
+    if (!all.length) return ''
+    const by = {}
+    all.forEach(r => { (by[r.personId] = by[r.personId] || { name: r.name, recs: [] }).recs.push(r) })
+    const lines = ['\n【今日出勤打卡（記到分鐘；qr=打卡站掃碼、line=備援需審核）】']
+    Object.values(by).forEach(p => {
+      const last = p.recs[p.recs.length - 1]
+      const hhmm = (t) => new Date(t).toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Taipei' })
+      lines.push(`  - ${p.name}：${p.recs.map(r => `${r.dir === 'in' ? '上' : '下'}${hhmm(r.ts)}${r.src === 'line' ? (r.verified ? '(line✓)' : '(line待審)') : ''}`).join(' ')}｜${last.dir === 'in' ? '🟢上班中' : '已下班'}`)
+    })
+    const pend = all.filter(r => r.src === 'line' && !r.verified).length
+    if (pend) lines.push(`  ⚠ LINE 備援打卡待審核 ${pend} 筆（負責人請到 App 夥伴中心→出勤 審核）`)
+    return lines.join('\n')
+  } catch (_) { return '' }
+}
 async function loadShiftText() {
   try {
     const base = ['shift_staff', 'shift_templates', 'shift_stations', 'shift_leaves', 'shift_sched_index'].map(k => 'sp_crew_' + k)
@@ -923,7 +942,7 @@ export default async function handler(req, res) {
       }
 
       // 3) 一般流程：載入資料＋對話記憶＋長期記事本 → 問 AI（操作者才開放下指令）
-      const [snaps, accountsText, financeText, activityText, estimatesText, crewText, history, memList, conclusionsText, tasksText, sheetText, posText, catalogText, supplyText, lineQuotaText] = await Promise.all([loadSnapshots(), loadAccounts(), loadFinanceText(), loadActivityText(), loadEstimatesText(), Promise.all([loadCrewText(), loadShiftText()]).then(([a, b]) => a + b), getChatHistory(convId), getMemory(), loadConclusionsText(), loadTasksText(), loadSheetText(), loadPosText(), loadCatalogText(), loadSupplyText(), loadLineQuotaText()])
+      const [snaps, accountsText, financeText, activityText, estimatesText, crewText, history, memList, conclusionsText, tasksText, sheetText, posText, catalogText, supplyText, lineQuotaText] = await Promise.all([loadSnapshots(), loadAccounts(), loadFinanceText(), loadActivityText(), loadEstimatesText(), Promise.all([loadCrewText(), loadShiftText(), loadPunchText()]).then(([a, b, c]) => a + b + c), getChatHistory(convId), getMemory(), loadConclusionsText(), loadTasksText(), loadSheetText(), loadPosText(), loadCatalogText(), loadSupplyText(), loadLineQuotaText()])
       const rawReply = await answer(text, snaps, accountsText, financeText, activityText, estimatesText, crewText, canAct, history, memoryToText(memList), conclusionsText, tasksText, sheetText, posText, catalogText, supplyText, lineQuotaText)
       // 抓出 D 想長期記住的事（[[記住:...]]）→ 存進記事本(僅操作者)，並把標記從給人看的文字拿掉
       const { facts, clean } = extractMemoryTags(rawReply)

@@ -14,7 +14,7 @@ import SequenceView from "./SequenceView.jsx";
 import { LayoutDashboard, ClipboardList, CheckSquare, CalendarDays, Pin as PinIcon, FolderOpen, Wallet, Scale, Settings as SettingsIcon, Bot, Megaphone, MessagesSquare, Users as UsersIcon, ScrollText, LifeBuoy, Lock as LockIcon, Gauge, Bell, KeyRound, Mail as MailIcon, HardHat, Handshake, Landmark, Boxes, Factory, ShoppingCart, Leaf, Package, BookOpen, Star, MessageSquare, Gamepad2, Vote, Gift, Trophy, BarChart3, Receipt, FolderTree, RefreshCw, TrendingUp } from "lucide-react";
 import { BRAND, ACCENT, PRIMARY, BG, SURFACE, BORDER, LINE2, TEXT, SUB, ACCENT_SOFT, DARKCHIP, MONO, DISP, SEM, GOLD, HEAD_BG, HEAD_LINE, HEAD_SUB, HEAD_CHIP, SecHead, MOBILE_BP, useIsMobile } from "./lib/theme.jsx";
 import { GLOBAL_KEYS, CURRENT_SPACE, K, switchSpace, CURRENT_USER, setCurrentUser, auditLog, conf, CAN_VIEW_MONEY, setCanViewMoney, showMoney, ADMIN_USER, maskAccount, L } from "./lib/runtime.js";
-import { KnowledgeBaseView, RosterView, Review360View, FeedbackView, QuestView, PollView, RewardCenterView, CrewTodayView } from "./crew/CrewViews.jsx";
+import { KnowledgeBaseView, RosterView, Review360View, FeedbackView, QuestView, PollView, RewardCenterView, CrewTodayView, PunchView } from "./crew/CrewViews.jsx";
 import { STATUS_MAP, markCatDone } from "./lib/status.js";
 import { DEFAULT_LINE_GROUP, notifyLineEvent } from "./lib/line.js";
 import { callAI } from "./lib/ai.js";
@@ -278,7 +278,7 @@ const SYSTEM_ITEM = (catName, itemName) => `你是一位專業餐廳裝修工程
 // ── MAIN APP ──────────────────────────────────────────────────────────────────
 export default function App() {
   const [cats, setCats] = useState(null);
-  const [view, setView] = useState(conf().defaultView || "overview"); // 預設總覽頁（夥伴中心預設資料庫）
+  const [view, setView] = useState(() => { try { const pv = localStorage.getItem("pm_pending_view"); if (pv) { localStorage.removeItem("pm_pending_view"); return pv; } } catch (_) {} return conf().defaultView || "overview"; }); // 預設落點；pm_pending_view=跨空間深連結（掃碼打卡）指定頁
   const [selectedCat, setSelectedCat] = useState(null);
   const [selectedItem, setSelectedItem] = useState(null);
   const [globalChat, setGlobalChat] = useState([]);
@@ -507,6 +507,16 @@ export default function App() {
       const dev = JSON.parse(localStorage.getItem("pm_dev_user") || "null");
       if (dev?.name) { setProfile({ display_name: dev.name, role: dev.role || "staff", pages: [] }); setUserName(dev.name); }
     } catch (_) {}
+  }, []);
+
+  // 掃碼打卡深連結（?pt=打卡站token）：存起來 → 切到夥伴中心出勤頁 → PunchView 自動送打卡
+  useEffect(() => {
+    let pt = ""; try { pt = new URLSearchParams(window.location.search).get("pt") || ""; } catch (_) {}
+    if (!pt) return;
+    try { sessionStorage.setItem("pm_punch_token", pt); } catch (_) {}
+    try { window.history.replaceState({}, "", window.location.pathname); } catch (_) {}
+    if (CURRENT_SPACE !== "crew") { try { localStorage.setItem("pm_current_space", "crew"); localStorage.setItem("pm_pending_view", "punch"); } catch (_) {} window.location.reload(); return; }
+    setView("punch");
   }, []);
 
   // 一次性登入連結（入職 2.0：DD 用 LINE 發的 ?otl=token_hash）：直接以 token 換 session，
@@ -902,6 +912,9 @@ export default function App() {
         )}
         {view === "shift" && (
           <ShiftView K={K} canEdit={canEditData} confirm={confirm} userName={userName} isAdmin={isAdmin} onLog={logActivity} />
+        )}
+        {view === "punch" && (
+          <PunchView me={account} userName={userName} />
         )}
         {view === "r360" && (
           <Review360View canEdit={canEditData} requireLogin={denyEdit} confirm={confirm} isAdmin={isAdmin} userName={userName} />
