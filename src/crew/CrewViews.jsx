@@ -1720,6 +1720,17 @@ function StationClock() {
 
 // ── P3 薪資試算（張良 2026-07-22：可用模擬班表估、勞基法條件進設定頁+預排生效日自動切換）──
 // ⚠ 草稿試算：正式發薪以人工核定為準。引擎= src/shift/payroll.js（App 與 D哥 同一套）。
+// 薪資表欄位定義（版面設定用：可勾選顯示、可點欄頭排序——全站表格慣例）
+const PAY_COLS = [
+  { k: "hours", label: "時數 正常+加班", w: "110px" },
+  { k: "wage", label: "底薪/時薪", w: "1fr" },
+  { k: "otPay", label: "加班費", w: "90px" },
+  { k: "allowance", label: "津貼", w: "90px" },
+  { k: "insSelf", label: "勞健保自付", w: "90px" },
+  { k: "gross", label: "應發", w: "100px" },
+  { k: "net", label: "預估實領", w: "100px" },
+  { k: "employerCost", label: "雇主總成本", w: "100px" },
+];
 export function PayView({ me: account, userName }) {
   const [roster, setRoster] = useState(null);
   const [rulesDoc, setRulesDoc] = useState(null);
@@ -1727,6 +1738,8 @@ export function PayView({ me: account, userName }) {
   const [source, setSource] = useState("auto"); // auto=實際打卡優先 / sched=純班表模擬
   const [hoursBy, setHoursBy] = useState(null);  // {rosterId: {date: hours}}
   const [showSet, setShowSet] = useState(false);
+  const [showCols, setShowColsUI] = useState(false); // 🧩 欄位設定小視窗
+  const [sort, setSort] = useState(null); // {k, dir}
   const mgr = account?.role === "admin" || account?.role === "manager";
   const [meId, setMeId] = useState("");
 
@@ -1783,7 +1796,14 @@ export function PayView({ me: account, userName }) {
     if (!days.length) return null;
     return { p, title: titleOf(p), pay: calcMonthPay({ person: p, title: titleOf(p), days, rules }) };
   }).filter(Boolean);
-  const show = mgr ? rows : rows.filter(r => r.p.id === meId);
+  let show = mgr ? rows : rows.filter(r => r.p.id === meId);
+  // 版面設定：欄位勾選（存 pay_rules.uiCols＝全裝置一致）＋點欄頭排序
+  const uiCols = { ...Object.fromEntries(PAY_COLS.map(c => [c.k, true])), ...(rulesDoc?.uiCols || {}) };
+  const cols = PAY_COLS.filter(c => uiCols[c.k]);
+  const valOf = (r, k) => k === "hours" ? r.pay.hours.total : k === "wage" ? r.pay.wage : k === "insSelf" ? (r.pay.laborSelf + r.pay.healthSelf) : (r.pay[k] || 0);
+  if (sort) show = [...show].sort((a, b) => (sort.k === "name" ? String(a.p.name).localeCompare(String(b.p.name), "zh-Hant-TW") : valOf(a, sort.k) - valOf(b, sort.k)) * sort.dir);
+  const clickSort = (k) => setSort(s => !s || s.k !== k ? { k, dir: -1 } : s.dir === -1 ? { k, dir: 1 } : null); // 點一下大→小、再點小→大、第三下取消
+  const GTCPAY = `150px ${cols.map(c => c.w).join(" ")}`;
   const sum = monthSummary(rows);
   const fmt$ = (x) => "$" + Math.round(x).toLocaleString();
   const nextSched = (rulesDoc?.scheduled || []).filter(s => s.effective > monthEnd).sort((a, b) => a.effective.localeCompare(b.effective))[0];
@@ -1801,6 +1821,7 @@ export function PayView({ me: account, userName }) {
             <button key={k} onClick={() => setSource(k)} style={{ border: "none", background: source === k ? "#fff" : "transparent", color: TEXT, borderRadius: 6, padding: "6px 12px", fontSize: 12.5, fontWeight: source === k ? 700 : 500, cursor: "pointer" }}>{l}</button>
           ))}
         </div>
+        {mgr && <button onClick={() => setShowColsUI(true)} style={{ border: `1.5px solid #c8bca6`, background: "#fff", color: TEXT, borderRadius: 8, padding: "8px 14px", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>🧩 欄位設定</button>}
         {mgr && <button onClick={() => setShowSet(true)} style={{ border: `1.5px solid #c8bca6`, background: "#fff", color: TEXT, borderRadius: 8, padding: "8px 14px", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>⚙ 薪資/勞基法設定</button>}
       </div>
       <div style={{ fontSize: 12, color: SUB, marginBottom: 12 }}>
@@ -1810,32 +1831,51 @@ export function PayView({ me: account, userName }) {
       {show.length === 0 && <div style={{ ...crewCard, color: "#9b9384", fontSize: 13.5 }}>{month} 沒有可試算的時數——{source === "sched" ? "本月沒有發布班表" : "本月沒有打卡也沒有班表"}。排班頁發布班表或開始打卡後，這裡就能試算。</div>}
       {show.length > 0 && (
         <div style={{ background: "#fff", border: "1.5px solid #c8bca6", borderRadius: 10, overflow: "hidden" }}>
-          <div style={{ overflowX: "auto" }}><div style={{ minWidth: 900 }}>
-            <div style={{ display: "grid", gridTemplateColumns: "150px 110px 1fr 90px 90px 90px 100px 100px 100px", background: "#ece4d6", borderBottom: "1.5px solid #c8bca6", fontSize: 10.5, fontWeight: 700, color: "#9b9384", letterSpacing: .8 }}>
-              {["姓名（職稱）", "時數 正常+加班", "底薪/時薪", "加班費", "津貼", "勞健保自付", "應發", "預估實領", "雇主總成本"].map(h => <span key={h} style={{ padding: "8px 8px" }}>{h}</span>)}
+          <div style={{ overflowX: "auto" }}><div style={{ minWidth: 640 }}>
+            <div style={{ display: "grid", gridTemplateColumns: GTCPAY, background: "#ece4d6", borderBottom: "1.5px solid #c8bca6" }}>
+              {[{ k: "name", label: "姓名（職稱）" }, ...cols].map(c => { const on = sort?.k === c.k; return (
+                <button key={c.k} onClick={() => clickSort(c.k)} title="點一下排序、再點反向、第三下取消" style={{ background: "none", border: "none", textAlign: "left", padding: "8px 8px", fontSize: 10.5, fontWeight: 700, color: on ? TEXT : "#9b9384", letterSpacing: .8, cursor: "pointer", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{c.label}{on ? (sort.dir === -1 ? " ▼" : " ▲") : ""}</button>
+              ); })}
             </div>
-            {show.map(({ p, title, pay }) => (
-              <div key={p.id} style={{ display: "grid", gridTemplateColumns: "150px 110px 1fr 90px 90px 90px 100px 100px 100px", alignItems: "center", borderTop: "1px solid #f0ead9", fontSize: 13, height: 40 }}>
-                <span style={{ padding: "0 8px", fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.name}<span style={{ color: "#9b9384", fontWeight: 400, fontSize: 11.5 }}>（{title || "—"}）</span></span>
-                <span style={{ padding: "0 8px", fontFamily: MONO, fontSize: 12.5 }}>{pay.hours.reg}+{r1sum(pay.hours.ot1, pay.hours.ot2)}h</span>
-                <span style={{ padding: "0 8px", fontFamily: MONO, fontSize: 12.5 }}>{pay.hourlyMode ? `${pay.wage}/時` : fmt$(pay.wage) + "/月"}</span>
-                <span style={{ padding: "0 8px", fontFamily: MONO, fontSize: 12.5, color: pay.otPay ? "#C2872E" : SUB }}>{fmt$(pay.otPay)}</span>
-                <span style={{ padding: "0 8px", fontFamily: MONO, fontSize: 12.5, color: SUB }}>{fmt$(pay.allowance)}</span>
-                <span style={{ padding: "0 8px", fontFamily: MONO, fontSize: 12.5, color: SUB }}>-{fmt$(pay.laborSelf + pay.healthSelf)}</span>
-                <span style={{ padding: "0 8px", fontFamily: MONO, fontSize: 13, fontWeight: 700 }}>{fmt$(pay.gross)}</span>
-                <span style={{ padding: "0 8px", fontFamily: MONO, fontSize: 13, fontWeight: 800, color: "#3f7d4e" }}>{fmt$(pay.net)}</span>
-                <span style={{ padding: "0 8px", fontFamily: MONO, fontSize: 12.5, color: ACCENT }}>{fmt$(pay.employerCost)}</span>
-              </div>
-            ))}
-            {mgr && (
-              <div style={{ display: "grid", gridTemplateColumns: "150px 110px 1fr 90px 90px 90px 100px 100px 100px", alignItems: "center", borderTop: "1.5px solid #c8bca6", background: "#FBF7EE", fontSize: 13, height: 42, fontWeight: 800 }}>
-                <span style={{ padding: "0 8px" }}>合計（{sum.people} 人）</span><span /><span /><span style={{ padding: "0 8px", fontFamily: MONO }}>{fmt$(sum.otPay)}</span><span /><span />
-                <span style={{ padding: "0 8px", fontFamily: MONO }}>{fmt$(sum.gross)}</span>
-                <span style={{ padding: "0 8px", fontFamily: MONO, color: "#3f7d4e" }}>{fmt$(sum.net)}</span>
-                <span style={{ padding: "0 8px", fontFamily: MONO, color: ACCENT }}>{fmt$(sum.employerCost)}</span>
-              </div>
-            )}
+            {show.map(({ p, title, pay }) => {
+              const cell = { hours: [`${pay.hours.reg}+${r1sum(pay.hours.ot1, pay.hours.ot2)}h`, SUB], wage: [pay.hourlyMode ? `${pay.wage}/時` : fmt$(pay.wage) + "/月", TEXT], otPay: [fmt$(pay.otPay), pay.otPay ? "#C2872E" : SUB], allowance: [fmt$(pay.allowance), SUB], insSelf: ["-" + fmt$(pay.laborSelf + pay.healthSelf), SUB], gross: [fmt$(pay.gross), TEXT], net: [fmt$(pay.net), "#3f7d4e"], employerCost: [fmt$(pay.employerCost), ACCENT] };
+              return (
+                <div key={p.id} style={{ display: "grid", gridTemplateColumns: GTCPAY, alignItems: "center", borderTop: "1px solid #f0ead9", fontSize: 13, height: 40 }}>
+                  <span style={{ padding: "0 8px", fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.name}<span style={{ color: "#9b9384", fontWeight: 400, fontSize: 11.5 }}>（{title || "—"}）</span></span>
+                  {cols.map(c => <span key={c.k} style={{ padding: "0 8px", fontFamily: MONO, fontSize: ["gross", "net"].includes(c.k) ? 13 : 12.5, fontWeight: c.k === "net" ? 800 : c.k === "gross" ? 700 : 400, color: cell[c.k][1] }}>{cell[c.k][0]}</span>)}
+                </div>
+              );
+            })}
+            {mgr && (() => {
+              const sumCell = { hours: "", wage: "", otPay: fmt$(sum.otPay), allowance: "", insSelf: "", gross: fmt$(sum.gross), net: fmt$(sum.net), employerCost: fmt$(sum.employerCost) };
+              const sumColor = { net: "#3f7d4e", employerCost: ACCENT };
+              return (
+                <div style={{ display: "grid", gridTemplateColumns: GTCPAY, alignItems: "center", borderTop: "1.5px solid #c8bca6", background: "#FBF7EE", fontSize: 13, height: 42, fontWeight: 800 }}>
+                  <span style={{ padding: "0 8px" }}>合計（{sum.people} 人）</span>
+                  {cols.map(c => <span key={c.k} style={{ padding: "0 8px", fontFamily: MONO, color: sumColor[c.k] || TEXT }}>{sumCell[c.k]}</span>)}
+                </div>
+              );
+            })()}
           </div></div>
+        </div>
+      )}
+      {/* 🧩 欄位設定：勾選顯示哪些欄（存設定檔＝所有裝置一致）——全站表格慣例 */}
+      {showCols && (
+        <div onClick={e => e.target === e.currentTarget && setShowColsUI(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.4)", zIndex: 800, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+          <div style={{ background: "#fff", border: `1px solid ${BORDER}`, borderRadius: 12, padding: 22, width: "min(380px,94vw)" }}>
+            <div style={{ display: "flex", alignItems: "center", marginBottom: 8 }}>
+              <div style={{ fontSize: 15, fontWeight: 700 }}>🧩 薪資表欄位設定</div><div style={{ flex: 1 }} />
+              <button onClick={() => setShowColsUI(false)} style={{ background: "none", border: "none", fontSize: 22, cursor: "pointer", color: SUB }}>×</button>
+            </div>
+            <div style={{ fontSize: 11.5, color: SUB, marginBottom: 10 }}>勾＝顯示在表格；也可點表格欄頭排序（再點反向、第三下取消）。設定會存起來、所有裝置一致。</div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+              {PAY_COLS.map(c => (
+                <label key={c.k} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13.5, cursor: "pointer" }}>
+                  <input type="checkbox" checked={!!uiCols[c.k]} onChange={e => saveRules({ uiCols: { ...uiCols, [c.k]: e.target.checked } })} />{c.label}
+                </label>
+              ))}
+            </div>
+          </div>
         </div>
       )}
       {showSet && <PayRulesModal rulesDoc={rulesDoc} onSave={saveRules} onClose={() => setShowSet(false)} />}
