@@ -1,7 +1,7 @@
 // ── 夥伴中心（crew 空間）：知識庫/名冊/360互評/回饋/闖關/投票/商城/排行榜 ─────────
 // 由 App.jsx 原樣搬出（2026-07-18 拆檔第一刀；行為/畫面零改變）。
 import { useState, useEffect, useRef } from "react";
-import { uploadPhoto, onSharedChange } from "../supa.js";
+import { uploadPhoto, onSharedChange, supabase } from "../supa.js";
 import { ACCENT, PRIMARY, SURFACE, BORDER, TEXT, SUB, MONO, DISP } from "../lib/theme.jsx";
 import { K, auditLog } from "../lib/runtime.js";
 import { ROSTER_KEY, loadRosterDoc, saveRosterDoc, saveRosterPatch } from "./roster.js";
@@ -23,6 +23,7 @@ export function KnowledgeBaseView({ canEdit, requireLogin, confirm, userName }) 
   const [q, setQ] = useState("");
   const [audFilter, setAudFilter] = useState("全部");
   const [typeFilter, setTypeFilter] = useState("全部");
+  const [stations, setStations] = useState([]); // 崗位清單（跟排班同一份 shift_stations；點選不手打，避免「炸台/炸檯」兩套寫法）
   const [edit, setEdit] = useState(null); // 正在編輯/新增的 doc
   const [busy, setBusy] = useState(false);
   const fileRef = useRef(null);
@@ -32,6 +33,7 @@ export function KnowledgeBaseView({ canEdit, requireLogin, confirm, userName }) 
     (async () => {
       try { const r = await window.storage.get(K("kb_docs"), true); setDocs(r && r.value ? JSON.parse(r.value) : []); }
       catch (_) { setDocs([]); }
+      try { const s = await window.storage.get(K("shift_stations"), true); const d = s && s.value ? JSON.parse(s.value) : null; setStations([...new Set((d?.stations || []).map(x => x.name).filter(Boolean))]); } catch (_) {}
     })().finally(() => clearTimeout(safety));
     return () => clearTimeout(safety);
   }, []);
@@ -145,7 +147,18 @@ export function KnowledgeBaseView({ canEdit, requireLogin, confirm, userName }) 
                   <input ref={fileRef} type="file" style={{ display: "none" }} onChange={e => { uploadFile(e.target.files); e.target.value = ""; }} />
                 </div></div>}
               {edit.kind === "text" && <div><div style={{ fontSize: 11, color: SUB, marginBottom: 4 }}>內容</div><textarea value={edit.content} onChange={e => setEdit({ ...edit, content: e.target.value })} style={{ ...inputS, height: 140, resize: "vertical", fontFamily: "inherit" }} placeholder="直接輸入內容…" /></div>}
-              <div><div style={{ fontSize: 11, color: SUB, marginBottom: 4 }}>崗位／標籤（逗號分隔；崗位請用跟排班一樣的名稱，例：炸台、早爐）</div><input value={edit.tags} onChange={e => setEdit({ ...edit, tags: e.target.value })} style={inputS} placeholder="例：炸台, 新人必讀" /></div>
+              <div>
+                <div style={{ fontSize: 11, color: SUB, marginBottom: 4 }}>適用崗位（點選，跟排班同一份清單）</div>
+                {stations.length > 0 ? (
+                  <div style={{ display: "flex", gap: 5, flexWrap: "wrap", marginBottom: 8 }}>
+                    {stations.map(s => { const cur = (edit.tags || "").split(/[,，]/).map(t => t.trim()).filter(Boolean); const on = cur.includes(s); return (
+                      <button key={s} onClick={() => setEdit({ ...edit, tags: (on ? cur.filter(t => t !== s) : [...cur, s]).join(", ") })} style={{ border: `1px solid ${on ? ACCENT : BORDER}`, background: on ? ACCENT : "#fff", color: on ? "#fff" : TEXT, borderRadius: 14, padding: "4px 12px", fontSize: 12.5, cursor: "pointer" }}>{s}</button>
+                    ); })}
+                  </div>
+                ) : <div style={{ fontSize: 11.5, color: "#9b9384", marginBottom: 8 }}>（排班的崗位清單建立後，這裡會出現可點選的崗位）</div>}
+                <div style={{ fontSize: 11, color: SUB, marginBottom: 4 }}>其他標籤（逗號分隔）</div>
+                <input value={edit.tags} onChange={e => setEdit({ ...edit, tags: e.target.value })} style={inputS} placeholder="例：新人必讀" />
+              </div>
               <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: TEXT, cursor: "pointer" }}><input type="checkbox" checked={edit.pinned} onChange={e => setEdit({ ...edit, pinned: e.target.checked })} />📌 置頂</label>
             </div>
             <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 16 }}>
@@ -711,6 +724,101 @@ const DEFAULT_ROSTER_FIELDS = [
   { key: "bankDoc", label: "存摺影本", type: "file", req: true },
   { key: "docs", label: "其他文件", type: "file" },
 ];
+// ── 入職 2.0：私密文件（存私有桶，經 api/onboard 驗身分換短效連結才開得了）──
+const authToken = async () => { try { const { data } = await supabase.auth.getSession(); return data?.session?.access_token || ""; } catch (_) { return ""; } };
+const openPrivateDoc = async (path) => {
+  try {
+    const t = await authToken();
+    const r = await fetch(`/api/onboard?action=docurl&path=${encodeURIComponent(path)}`, { headers: { Authorization: `Bearer ${t}` } });
+    const d = await r.json();
+    if (d.url) window.open(d.url, "_blank"); else alert(d.error || "無法開啟文件");
+  } catch (_) { alert("無法開啟文件"); }
+};
+const PrivateDocBtns = ({ docs }) => (
+  <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+    {(docs || []).map(dcc => (
+      <button key={dcc.path} onClick={() => openPrivateDoc(dcc.path)} style={{ border: `1px solid ${BORDER}`, background: "#FBF7EE", color: "#2E6FB0", borderRadius: 8, padding: "5px 12px", fontSize: 12.5, cursor: "pointer" }}>🔒 {dcc.label}</button>
+    ))}
+  </div>
+);
+// 名冊「待審核」區：LINE 入職申請 → 管理員在這裡看資料/證件 → 一鍵核准（自動建檔+開帳號+發登入連結）
+function OnboardReviewSection({ canEdit, confirm }) {
+  const [apps, setApps] = useState(null);
+  const [conf, setConf] = useState(null);
+  const [busy, setBusy] = useState("");
+  const [deptDraft, setDeptDraft] = useState({});
+  const reload = async () => {
+    try {
+      const t = await authToken(); if (!t) { setApps([]); return; }
+      const [r1, r2] = await Promise.all([
+        fetch("/api/onboard?action=pending", { headers: { Authorization: `Bearer ${t}` } }),
+        fetch("/api/onboard?action=conf", { headers: { Authorization: `Bearer ${t}` } }),
+      ]);
+      const d1 = await r1.json().catch(() => ({}));
+      const d2 = await r2.json().catch(() => ({}));
+      setApps(d1.apps || []);
+      if (d2.inviteCode != null) setConf(d2);
+    } catch (_) { setApps([]); }
+  };
+  useEffect(() => { reload(); }, []);
+  if (!canEdit || apps === null) return null;
+  const act = async (action, app, reason) => {
+    setBusy(app.id);
+    try {
+      const t = await authToken();
+      const r = await fetch(`/api/onboard?action=${action}`, { method: "POST", headers: { Authorization: `Bearer ${t}`, "content-type": "application/json" }, body: JSON.stringify({ appId: app.id, dept: deptDraft[app.id] || "", reason }) });
+      const d = await r.json();
+      if (!d.ok) alert(d.error || "操作失敗");
+      else { try { auditLog(action === "approve" ? "新增" : "編輯", `入職申請${action === "approve" ? "核准" : "退回"}：${app.data?.name}`); } catch (_) {} }
+      await reload();
+    } catch (_) { alert("操作失敗"); }
+    setBusy("");
+  };
+  const saveCode = async () => {
+    const nv = window.prompt("設定入職邀請碼（新夥伴在 LINE 輸入這個碼開始申請；清空=關閉申請）", conf?.inviteCode || "");
+    if (nv === null) return;
+    const t = await authToken();
+    await fetch("/api/onboard?action=conf", { method: "POST", headers: { Authorization: `Bearer ${t}`, "content-type": "application/json" }, body: JSON.stringify({ inviteCode: nv.trim() }) });
+    reload();
+  };
+  return (
+    <div style={{ marginBottom: 14 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8, flexWrap: "wrap" }}>
+        <div style={{ fontSize: 14.5, fontWeight: 700, color: TEXT }}>📥 入職申請待審核{apps.length > 0 && <span style={{ marginLeft: 6, fontSize: 11, background: ACCENT, color: "#fff", borderRadius: 10, padding: "1px 8px", fontWeight: 700 }}>{apps.length}</span>}</div>
+        <div style={{ flex: 1 }} />
+        {conf != null && <button onClick={saveCode} style={{ border: `1px solid ${BORDER}`, background: "#fff", color: SUB, borderRadius: 8, padding: "5px 12px", fontSize: 12, cursor: "pointer" }}>🎟 邀請碼：{conf.inviteCode || "（未設定=關閉申請）"}</button>}
+      </div>
+      {apps.length === 0 && <div style={{ fontSize: 12.5, color: "#9b9384", background: "#fff", border: `1px dashed ${BORDER}`, borderRadius: 10, padding: "10px 14px" }}>目前沒有待審核的申請。新夥伴加官方 LINE 輸入「入職 邀請碼」即可自助申請。</div>}
+      <div style={{ display: "grid", gap: 10 }}>
+        {apps.map(a => { const d = a.data || {}; return (
+          <div key={a.id} style={{ background: "#fff", border: "1.5px solid #c98a14", borderRadius: 12, padding: 14 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
+              <span style={{ fontSize: 15, fontWeight: 800, color: TEXT }}>{d.name}{d.nick ? `（${d.nick}）` : ""}</span>
+              {a.minor && <span style={{ fontSize: 11, background: "#FEF2F2", color: "#b3261e", border: "1px solid #FECACA", borderRadius: 8, padding: "1px 8px", fontWeight: 700 }}>未成年·需家長同意書</span>}
+              <span style={{ fontSize: 11.5, color: SUB }}>{(a.submittedAt || "").slice(0, 10)} 送出</span>
+              <div style={{ flex: 1 }} />
+              <span style={{ fontSize: 12, color: "#3C8C3C", fontWeight: 600 }}>✍ 契約已簽（{d.name}·{(a.contract?.signedAt || "").slice(0, 10)}）</span>
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(170px,1fr))", gap: 6, fontSize: 13, marginBottom: 10 }}>
+              <span><span style={{ color: SUB }}>電話</span> {d.phone}</span>
+              <span><span style={{ color: SUB }}>生日</span> {d.bday}</span>
+              <span><span style={{ color: SUB }}>身分證</span> {d.idNo}</span>
+              <span><span style={{ color: SUB }}>薪轉</span> {d.bankBranch || "待補"} {d.bankAcct === "待補" ? "" : d.bankAcct}</span>
+            </div>
+            <PrivateDocBtns docs={[...Object.values(a.files || {}), { label: "勞動契約(已簽)", path: `onboard/${a.id}/contract.json` }]} />
+            <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 12, flexWrap: "wrap" }}>
+              <input value={deptDraft[a.id] || ""} onChange={e => setDeptDraft(s => ({ ...s, [a.id]: e.target.value }))} placeholder="部門/崗位（例：外場）" style={{ border: `1px solid ${BORDER}`, borderRadius: 8, padding: "7px 10px", fontSize: 13, width: 170 }} />
+              <div style={{ flex: 1 }} />
+              <button disabled={busy === a.id} onClick={async () => { const rs = window.prompt("退回原因（會用 LINE 告訴對方）", "資料/照片需重傳"); if (rs === null) return; act("reject", a, rs); }} style={{ border: `1px solid ${BORDER}`, background: "#fff", color: "#b3261e", borderRadius: 8, padding: "8px 16px", fontSize: 13, cursor: "pointer" }}>退回</button>
+              <button disabled={busy === a.id} onClick={async () => { if (await confirm(`核准「${d.name}」入職？\n・自動建入名冊（部門：${deptDraft[a.id] || "未填"}）\n・開通帳號並用 LINE 發登入連結`, { danger: false, confirmLabel: "核准" })) act("approve", a); }} style={{ border: "none", background: "#3C8C3C", color: "#fff", borderRadius: 8, padding: "8px 20px", fontSize: 13.5, fontWeight: 700, cursor: "pointer" }}>{busy === a.id ? "處理中…" : "✅ 核准入職"}</button>
+            </div>
+          </div>
+        ); })}
+      </div>
+    </div>
+  );
+}
+
 export function RosterView({ canEdit, confirm, me, ReceiptUploader }) {
   const [data, setData] = useState(null);
   const [q, setQ] = useState("");
@@ -826,6 +934,7 @@ export function RosterView({ canEdit, confirm, me, ReceiptUploader }) {
   const dateS = { ...inpS, colorScheme: "light", fontFamily: "'Noto Sans TC',sans-serif", cursor: "pointer" };
   return (
     <div>
+      <OnboardReviewSection canEdit={canEdit} confirm={confirm} />
       <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "6px 0 12px", flexWrap: "wrap" }}>
         <span style={{ background: ACCENT, color: "#fff", fontSize: 11.5, fontWeight: 700, borderRadius: 4, padding: "2px 8px", letterSpacing: 1 }}>名冊</span>
         <div style={{ fontSize: 17, fontWeight: 800, color: TEXT, fontFamily: DISP }}>夥伴名冊 / 入職流程</div>
@@ -921,6 +1030,12 @@ export function RosterView({ canEdit, confirm, me, ReceiptUploader }) {
                 <label style={{ display: "block", fontSize: 11, letterSpacing: 0.5, color: "#9b9384", fontWeight: 600 }}>綽號<div style={{ marginTop: 4 }}><input value={pp.nick || ""} onChange={e => updP(pp.id, { nick: e.target.value })} disabled={!editable} style={inpS} /></div></label>
                 {fields.map(F)}
                 <label style={{ display: "block", fontSize: 11, letterSpacing: 0.5, color: "#9b9384", fontWeight: 600 }}>狀態<div style={{ marginTop: 4 }}><select value={pp.status || "在職"} onChange={e => updP(pp.id, { status: e.target.value })} disabled={!editable} style={inpS}><option>在職</option><option>離職</option><option>留停</option></select></div></label>
+                {(pp.privateDocs || []).length > 0 && (
+                  <div style={{ gridColumn: "1 / -1" }}>
+                    <div style={{ fontSize: 11, letterSpacing: 0.5, color: "#9b9384", fontWeight: 600, marginBottom: 4 }}>🔒 入職文件（私密加密存放，點擊開啟短效連結）</div>
+                    <PrivateDocBtns docs={pp.privateDocs} />
+                  </div>
+                )}
               </div>
             </div>
           </div>

@@ -509,6 +509,24 @@ export default function App() {
     } catch (_) {}
   }, []);
 
+  // 一次性登入連結（入職 2.0：DD 用 LINE 發的 ?otl=token_hash）：直接以 token 換 session，
+  // 不依賴 Supabase 轉址/Site URL 設定；夥伴點連結即登入、之後這台裝置保持登入。
+  useEffect(() => {
+    if (!supabase) return;
+    let otl = "";
+    try { otl = new URLSearchParams(window.location.search).get("otl") || ""; } catch (_) {}
+    if (!otl) return;
+    (async () => {
+      try {
+        let r = await supabase.auth.verifyOtp({ type: "magiclink", token_hash: otl });
+        if (r?.error) r = await supabase.auth.verifyOtp({ type: "email", token_hash: otl });
+        if (r?.error) { alert("登入連結無效或已過期。請回 LINE 跟 DD 說「登入」，拿一條新的連結。"); }
+        else { try { localStorage.setItem("pm_current_space", "crew"); } catch (_) {} window.history.replaceState({}, "", window.location.pathname); window.location.reload(); return; }
+      } catch (_) {}
+      try { window.history.replaceState({}, "", window.location.pathname); } catch (_) {}
+    })();
+  }, []);
+
   // auto-save（防呆：略過「初始載入」造成的第一次寫入，避免載入失敗時把範例資料存回去蓋掉真資料）
   const initialLoadDone = useRef(false);
   useEffect(() => {

@@ -6,6 +6,8 @@ import crypto from 'crypto'
 import { normalizePatch, mergeTask, isWaiting, isBlocked } from '../src/tasks/taskModel.js'
 // 供應鏈 AI 摘要：與 App 全域 AI 顧問共用同一份（100%資料鐵則——新資料域加 digest.js 一處，兩邊自動同步）
 import { supplyDigest } from '../src/supply/digest.js'
+// 入職 2.0：LINE 申請/報到綁定（固定表單流程、證件直存私有桶，「不經 AI」）
+import { handleOnboardEvent } from './_onboard.js'
 
 const clean = (v) => (v || '').trim().replace(/^["']|["']$/g, '').replace(/^[A-Za-z0-9_]+=/, '').trim()
 const SECRET = clean(process.env.LINE_CHANNEL_SECRET)
@@ -208,7 +210,7 @@ async function loadEstimatesText() {
 // 360 互評→逐人平均分+各構面；意見回饋→逐人標籤統計+留言；其餘→計數+重點。
 async function loadCrewText() {
   try {
-    const bases = ['kb_360', 'kb_roster', 'kb_feedback', 'kb_quests', 'kb_shop', 'kb_docs', 'kb_polls']
+    const bases = ['kb_360', 'kb_roster', 'kb_feedback', 'kb_quests', 'kb_shop', 'kb_docs', 'kb_polls', 'kb_onboard']
     const keys = []
     for (const p of ['sp_crew_', 'sp_team_']) for (const b of bases) keys.push(p + b)
     const map = await kvGetMany(keys)
@@ -290,6 +292,8 @@ async function loadCrewText() {
     const shop = pick('kb_shop'); if (shop) { const rw = shop.rewards || []; if (rw.length) { any = true; out.push(`▍獎勵商店：${rw.length} 個獎品（${rw.map(x => x.name || x.title).filter(Boolean).join('、')}）`) } }
     const docs = pick('kb_docs'); if (Array.isArray(docs) && docs.length) { any = true; out.push(`▍知識庫：${docs.length} 篇（${docs.map(d => d.title || d.name).filter(Boolean).join('、')}）`) }
     const polls = pick('kb_polls'); const ps = polls && Array.isArray(polls.polls) ? polls.polls : (Array.isArray(polls) ? polls : []); if (ps.length) { any = true; out.push(`▍投票：${ps.length} 個（${ps.map(p => p.title || p.q).filter(Boolean).join('、')}）`) }
+    // 入職 2.0 申請（只給狀態與姓名；證件/個資在私有桶，不進 AI）
+    const ob = pick('kb_onboard'); const oa = ob && Array.isArray(ob.apps) ? ob.apps : []; if (oa.length) { any = true; const pd = oa.filter(a => a.status === 'pending'); out.push(`▍入職申請：待審核 ${pd.length} 筆${pd.length ? '（' + pd.map(a => a.data?.name).filter(Boolean).join('、') + '——請老闆到 App 名冊「待審核」處理）' : ''}；歷史共 ${oa.length} 筆`) }
 
     return any ? out.join('\n') : ''
   } catch (_) { return '' }
@@ -810,6 +814,10 @@ export default async function handler(req, res) {
     try {
       // 回收訊息 → 私訊老闆（誰在哪個群回收了什麼）
       if (ev.type === 'unsend') { await handleUnsend(ev); continue }
+      // 入職/報到（只在私訊）：固定表單流程優先於 AI；圖片訊息也在這裡吃（證件照直存私有桶、不經 AI）
+      if (ev.type === 'message' && ev.source?.type === 'user') {
+        try { if (await handleOnboardEvent(ev)) continue } catch (e) { console.log('onboard error', e?.message) }
+      }
       if (ev.type !== 'message' || ev.message?.type !== 'text') continue
       // 群組文字訊息先快取（回收監控用；私訊不快取）
       if (ev.source?.type !== 'user') await cacheGroupMsg(ev)
