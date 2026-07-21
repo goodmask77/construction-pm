@@ -681,13 +681,13 @@ export default function IngredientsView({ db, save, canEdit, showMoney, confirm,
           <button onClick={() => { if (batCat.trim()) { batch({ cat: batCat.trim() }); flash(`✓ 已把 ${selIds.length} 項分類設為「${batCat.trim()}」`); setBatCat(""); } }} style={{ border: "1px solid #5a5247", background: "transparent", color: "#fff", borderRadius: 7, padding: "3px 11px", fontSize: 11.5, cursor: "pointer" }}>套用</button>
           <button onClick={() => { batch({ nonStock: true }); flash(`✓ 已把 ${selIds.length} 項標為非物料`); setSel2({}); }} style={{ border: "1px solid #5a5247", background: "transparent", color: "#fff", borderRadius: 7, padding: "3px 11px", fontSize: 11.5, cursor: "pointer" }}>標非物料</button>
           <span style={{ width: 8 }} />
-          {/* ⊕ 建立群組（2026-07-22 張良：A杯+A蓋同廠商一定一起看）＝勾選類別一鍵建物料卡群組 */}
+          {/* ⊕ 組成物料卡（=建物料卡的快捷鍵；2026-07-22 張良確認「群組」與物料卡是同一概念，統一用語） */}
           <button onClick={() => {
-            const nm = window.prompt(`把勾選的 ${selIds.length} 個類別建成一個群組（物料卡）\n群組名稱：`); if (!nm || !nm.trim()) return;
+            const nm = window.prompt(`把勾選的 ${selIds.length} 個類別組成一張物料卡\n物料卡名稱：`); if (!nm || !nm.trim()) return;
             const c = { id: rid("mc"), name: nm.trim(), cat: "", sort: matCards.length };
             save({ matCards: [...(db.matCards || []), c], ingredients: (db.ingredients || []).map(x => sel2[x.id] ? { ...x, card_id: c.id } : x) });
-            flash(`✓ 已建群組「${c.name}」，${selIds.length} 個類別歸入`); setSel2({});
-          }} style={{ border: "1px solid #4c9a5f", background: "#2e7d43", color: "#fff", borderRadius: 7, padding: "3px 12px", fontSize: 11.5, fontWeight: 700, cursor: "pointer" }}>⊕ 建立群組</button>
+            flash(`✓ 已組成物料卡「${c.name}」，${selIds.length} 個類別歸入`); setSel2({});
+          }} style={{ border: "1px solid #4c9a5f", background: "#2e7d43", color: "#fff", borderRadius: 7, padding: "3px 12px", fontSize: 11.5, fontWeight: 700, cursor: "pointer" }}>⊕ 組成物料卡</button>
           {/* 批量歸物料卡（2026-07-22 三層架構）：勾選類別 → 一次歸進大類 */}
           <select value="" onChange={e => {
             const v = e.target.value; e.target.value = "";
@@ -752,7 +752,7 @@ export default function IngredientsView({ db, save, canEdit, showMoney, confirm,
               <div style={{ ...vline, padding: "4px 9px", fontSize: 10.5, color: C.sub, fontWeight: 700 }}>底下的項目（類別/中項）</div>
               <div />
             </div>
-            {shownMc.length === 0 && <div style={{ padding: "20px 12px", textAlign: "center", fontSize: 12, color: C.faint }}>{qq ? "沒有符合的物料卡。" : "還沒有物料卡——按「＋ 新增物料卡」手動建，或到「物料」頁勾選類別按「⊕ 建立群組」。"}</div>}
+            {shownMc.length === 0 && <div style={{ padding: "20px 12px", textAlign: "center", fontSize: 12, color: C.faint }}>{qq ? "沒有符合的物料卡。" : "還沒有物料卡——按「＋ 新增物料卡」手動建，或到「物料」頁勾選類別按「⊕ 組成物料卡」。"}</div>}
             {shownMc.map(c => {
               const members = stock.filter(g => g.card_id === c.id);
               return (
@@ -773,7 +773,7 @@ export default function IngredientsView({ db, save, canEdit, showMoney, confirm,
                     </select>
                   </div>
                   <div style={{ ...vline, padding: "0 9px", fontFamily: MONOF, fontSize: 11.5, color: members.length ? C.sub : C.faint }}>{members.length}</div>
-                  <div style={{ ...vline, padding: "0 9px", overflow: "hidden" }}><span style={{ fontSize: 10.5, color: C.faint, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={members.map(g => g.name).join("、")}>{members.map(g => g.name).join("、") || "—（到「物料」頁勾選類別→「⊕ 建立群組」或「歸入物料卡…」）"}</span></div>
+                  <div style={{ ...vline, padding: "0 9px", overflow: "hidden" }}><span style={{ fontSize: 10.5, color: C.faint, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={members.map(g => g.name).join("、")}>{members.map(g => g.name).join("、") || "—（到「物料」頁勾選類別→「⊕ 組成物料卡」或「歸入物料卡…」）"}</span></div>
                   {canEdit ? <button onClick={async () => {
                     if (!(await confirm(`刪除物料卡「${c.name || "未命名"}」？\n底下 ${members.length} 個類別不會被刪，會變回「未歸卡」。`, { confirmLabel: "刪除" }))) return;
                     save({ matCards: (db.matCards || []).filter(x => x.id !== c.id), ingredients: (db.ingredients || []).map(g => g.card_id === c.id ? { ...g, card_id: "" } : g) });
