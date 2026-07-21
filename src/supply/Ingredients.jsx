@@ -111,13 +111,28 @@ export default function IngredientsView({ db, save, canEdit, showMoney, confirm,
     catch (e) { flash("圖片上傳失敗：" + (e?.message || e)); }
   };
 
-  // ── ✂️ 拆出：合併錯了，把單一貨源拆回獨立一張卡（照片跟著走）──
-  const splitOut = async (g, vi) => {
-    if (!(await confirm(`把「${vi.name}」從「${g.name}」拆出去、自己成一張卡？`, { confirmLabel: "拆出" }))) return;
-    const ng = { id: rid("g"), name: (vi.name || "").trim() || "未命名", cat: g.cat || "", baseUnit: g.baseUnit || "個", countFreq: { type: "none", days: [], dom: 1, paused: false }, countRole: "", countUnit: "", isKey: false, safeStock: "", note: "", sort: (db.ingredients || []).length, tags: "", img: vi.img || "", imgPath: vi.imgPath || "" };
-    save({ ingredients: [...(db.ingredients || []), ng], vendorItems: (db.vendorItems || []).map(v => v.id === vi.id ? { ...v, ingredient_id: ng.id } : v) });
+  // ── 品項搬家（2026-07-22 張良拍板兩層架構：物料卡=手動增刪不能併；品項=在卡之間自由搬）──
+  // 移到別張卡 / 拆成新卡；來源卡搬空了問一句要不要刪。照片跟著品項走，永遠可逆。
+  const moveVi = async (g, vi, targetId) => {
+    let ings = db.ingredients || [];
+    let tName = "";
+    if (targetId === "__new") {
+      if (!(await confirm(`把「${vi.name}」拆成獨立的新物料卡？`, { confirmLabel: "拆成新卡" }))) return;
+      const ng = { id: rid("g"), name: (vi.name || "").trim() || "未命名", cat: g.cat || "", baseUnit: g.baseUnit || "個", countFreq: { type: "none", days: [], dom: 1, paused: false }, countRole: "", countUnit: "", isKey: false, safeStock: "", note: "", sort: ings.length, tags: "", img: vi.img || "", imgPath: vi.imgPath || "" };
+      ings = [...ings, ng]; targetId = ng.id; tName = ng.name;
+    } else {
+      const t = ings.find(x => x.id === targetId); if (!t) return;
+      if (!(await confirm(`把「${vi.name}」移到「${t.name}」底下？`, { confirmLabel: "移過去" }))) return;
+      tName = t.name;
+      if (!t.img && vi.img) ings = ings.map(x => x.id === t.id ? { ...x, img: vi.img, imgPath: vi.imgPath || "" } : x); // 目標卡沒代表圖→接手
+    }
+    const emptied = (db.vendorItems || []).filter(v => v.ingredient_id === g.id && v.id !== vi.id).length === 0;
+    if (emptied && await confirm(`「${g.name}」這張卡已經沒有品項了，要一起刪掉嗎？\n（留著也可以，之後再把別的品項移進來）`, { confirmLabel: "刪掉空卡" })) {
+      ings = ings.filter(x => x.id !== g.id);
+    }
+    save({ ingredients: ings, vendorItems: (db.vendorItems || []).map(v => v.id === vi.id ? { ...v, ingredient_id: targetId } : v) });
     setOpen(null);
-    flash(`✂️ 已把「${vi.name}」拆成獨立卡片`);
+    flash(`✓ 已把「${vi.name}」移到「${tName}」`);
   };
 
   // ── 建議合併 ──
@@ -138,7 +153,7 @@ export default function IngredientsView({ db, save, canEdit, showMoney, confirm,
       ingredients: (db.ingredients || []).filter(x => x.id !== src.id).map(x => x.id === target.id && !x.img && src.img ? { ...x, img: src.img, imgPath: src.imgPath || "" } : x),
       vendorItems: (db.vendorItems || []).map(v => v.ingredient_id === src.id ? { ...v, ingredient_id: target.id, img: v.img || src.img || "", imgPath: v.imgPath || src.imgPath || "" } : v),
     });
-    flash(`✓ 已把「${src.name}」併入「${target.name}」`);
+    flash(`✓ 已把「${src.name}」的品項搬進「${target.name}」，空卡已刪`);
   };
   const dismissSugg = (key) => save({ settings: { ...(db.settings || {}), mergeDismissed: [...((db.settings && db.settings.mergeDismissed) || []), key] } });
 
@@ -371,7 +386,11 @@ export default function IngredientsView({ db, save, canEdit, showMoney, confirm,
                 <span onClick={() => { if (canEdit) { viImgFor.current = vi.id; viImgRef.current && viImgRef.current.click(); } else if (vi.img) setZoom(vi.img); }} title={vi.img ? "這個品項自己的照片（點擊更換）" : "點擊上傳這個品項自己的照片"} style={{ width: 30, height: 30, borderRadius: 6, border: `1px solid ${C.line}`, background: vi.img ? `url(${vi.img}) center/cover` : "#f4efe5", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, color: "#c8bca6", cursor: "pointer", flexShrink: 0 }}>{vi.img ? "" : "＋"}</span>
                 <span style={{ fontWeight: 700, color: C.text, minWidth: 0 }}>
                   <div>{vname(vi.vendor_id)}</div>
-                  {canEdit && srcs.length > 1 && <button onClick={() => splitOut(g, vi)} title="把這個品項拆回獨立一張卡（合併錯了用這個）" style={{ ...sbtn, padding: "1px 8px", fontSize: 10, marginTop: 2 }}>✂ 拆出</button>}
+                  {canEdit && <select value="" onChange={e => { const v2 = e.target.value; e.target.value = ""; if (v2) moveVi(g, vi, v2); }} title="把這個品項移到別張物料卡（放錯卡/要另外比價時用）" style={{ ...inp, fontSize: 10, padding: "1px 4px", marginTop: 2, maxWidth: 96, color: C.sub }}>
+                    <option value="">移到…</option>
+                    <option value="__new">＋ 拆成新卡</option>
+                    {stock.filter(x => x.id !== g.id).map(x => <option key={x.id} value={x.id}>{x.name || "（未命名）"}</option>)}
+                  </select>}
                 </span>
                 {/* 品名/規格＋商品網址（截圖有網址列會自動帶入；太長截不進圖就直接貼這裡）*/}
                 <span style={{ color: C.sub, fontSize: 11.5, minWidth: 0 }}>
@@ -400,15 +419,7 @@ export default function IngredientsView({ db, save, canEdit, showMoney, confirm,
             );
           })}
         </div>
-        {canEdit && stock.length > 1 && (
-          <div style={{ display: "flex", gap: 6, marginTop: 8, alignItems: "center" }}>
-            <span style={{ fontSize: 11, color: C.faint }}>這張卡跟別張是同一種東西？</span>
-            <select defaultValue="" onChange={async e => { const t = stock.find(x => x.id === e.target.value); e.target.value = ""; if (t && await confirm(`把「${g.name}」併入「${t.name}」？賣家會合併到同一張卡。`, { confirmLabel: "合併" })) { doMerge(t, g); setOpen(null); } }} style={{ ...inp, fontSize: 11.5, maxWidth: 200 }}>
-              <option value="">合併到…</option>
-              {stock.filter(x => x.id !== g.id).map(x => <option key={x.id} value={x.id}>{x.name || "（未命名）"}</option>)}
-            </select>
-          </div>
-        )}
+        {/* 2026-07-22 張良拍板：物料卡不能整張合併（移除「合併到…」）——整理一律用品項列的「移到…」搬家 */}
         {/* 確定/取消（2026-07-22 張良：要有確定跟取消）——取消=把這次打開後的所有修改復原 */}
         <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
           <button onClick={cancelEdit} title="放棄這次打開後的所有修改，恢復原狀" style={{ flex: 1, border: `1.5px solid #d9cfbd`, background: "#fff", color: C.sub, borderRadius: 8, padding: "9px 0", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>✕ 取消</button>
@@ -590,13 +601,13 @@ export default function IngredientsView({ db, save, canEdit, showMoney, confirm,
       {/* 建議合併 */}
       {canEdit && vw === "mat" && sugg.length > 0 && (
         <div style={{ background: "#f2f6fb", border: `1.5px solid ${C.blue}`, borderRadius: 10, marginBottom: 10, padding: "8px 12px" }}>
-          <div style={{ fontSize: 12.5, fontWeight: 700, color: C.text, marginBottom: 4 }}>🔗 這幾組名字很像，是同一種東西嗎？（合併後多家廠商在同一張卡比價）</div>
+          <div style={{ fontSize: 12.5, fontWeight: 700, color: C.text, marginBottom: 4 }}>🔗 這幾組名字很像，是同一種東西嗎？（是的話把品項搬進同一張卡，多家廠商一起比價）</div>
           {sugg.slice(0, 6).map(({ key, a, b }) => (
             <div key={key} style={{ display: "flex", alignItems: "center", gap: 8, minHeight: 28, fontSize: 12, borderTop: `1px solid #dde6f2` }}>
               <span style={{ fontWeight: 700 }}>{a.name}</span><span style={{ color: C.faint }}>vs</span><span style={{ fontWeight: 700 }}>{b.name}</span>
               <span style={{ fontSize: 10.5, color: C.faint }}>（{srcsOf(db, a.id).map(x => vname(x.vendor_id)).join("、") || "無賣家"}｜{srcsOf(db, b.id).map(x => vname(x.vendor_id)).join("、") || "無賣家"}）</span>
               <div style={{ flex: 1 }} />
-              <button onClick={() => doMerge(a, b)} style={{ ...sbtn, color: C.green, borderColor: C.green }}>是，合併</button>
+              <button onClick={() => doMerge(a, b)} style={{ ...sbtn, color: C.green, borderColor: C.green }}>是，搬到同一張</button>
               <button onClick={() => dismissSugg(key)} style={sbtn}>不是，別再問</button>
             </div>
           ))}
