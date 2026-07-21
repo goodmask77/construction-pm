@@ -2,7 +2,7 @@
 // v2 原則不變：預設全自動（⚡自動整理/同名併卡/規格解析入數/服務類收摺），人只處理例外
 // 截圖匯入：貼上或上傳截圖 → AI 解析品項 → 人工確認才寫入（AI 辨識必經人確認，張良原則）
 import React, { useEffect, useRef, useState } from "react";
-import { Leaf, Factory, List, Image as ImageIcon, Camera, Zap, ZoomIn, ExternalLink, Layers, Folder, Sparkles } from "lucide-react";
+import { Leaf, Factory, List, Image as ImageIcon, Camera, Zap, ZoomIn, ExternalLink, Layers, Folder } from "lucide-react";
 import { C, MONOF, rid } from "./Supply.jsx";
 import { packToBase, lastPaid, unitCost, srcsOf, priceAlert, normName, organizeAll, repairPackToBase } from "./inv.js";
 import { uploadPhoto } from "../supa.js";
@@ -30,7 +30,6 @@ export default function IngredientsView({ db, save, canEdit, showMoney, confirm,
   const [colCat, setColCat] = useState({});      // 物料視角：分類收合（truthy=收合）
   const [colCard, setColCard] = useState({});    // 物料視角：物料卡子群組收合
   const [selVi, setSelVi] = useState({});        // 廠商視角：品項批次選取
-  const [aiOrg, setAiOrg] = useState(null);      // AI 歸類建議 modal：{busy,groups:[{on,card,cat,ids}]}
   const [dragMc, setDragMc] = useState(null);    // 物料卡管理頁拖曳中 id
   const [zoom, setZoom] = useState(null);        // 圖片放大檢視（lightbox）url
   const [imp, setImp] = useState(null);          // 截圖匯入 modal：{vid,newVendor,vendorGuess,rows,busy}
@@ -147,38 +146,6 @@ export default function IngredientsView({ db, save, canEdit, showMoney, confirm,
     save({ ingredients: ings, vendorItems: (db.vendorItems || []).map(v => v.id === vi.id ? { ...v, ingredient_id: targetId } : v) });
     setOpen(null);
     flash(`✓ 已把「${vi.name}」移到「${tName}」`);
-  };
-
-  // ── ✨ AI 歸類建議：掃未歸卡的類別名 → 分組成物料卡 → 人工勾選確認才套用 ──
-  const aiOrganize = async () => {
-    const unass = stock.filter(g => !cardOf(g));
-    if (!unass.length) { flash("所有類別都已經歸卡了"); return; }
-    setAiOrg({ busy: true, groups: null });
-    try {
-      const listTxt = unass.map(g => `${g.id}|${g.name}|${(g.cat || "").trim()}`).join("\n");
-      const prompt = `這是餐飲進銷存的「類別」清單（每行 = id|名稱|分類）。請把同一種東西的不同規格歸成同一張「物料卡」（大類），例：兩杯杯架/四杯杯架→杯架；小紙袋/中紙袋/大紙袋/特大提袋→紙袋；A140醬料杯/PET-2oz醬料杯→醬料杯。只回 JSON、不要其他文字：{"groups":[{"card":"物料卡名(最短共同稱呼)","cat":"分類(取成員多數,沒有就空字串)","ids":["id1","id2"]}]}。規則：①一個 id 最多出現一次 ②看不出同類的就不要硬湊，寧可不放進任何 group ③單一種東西不用自成一卡（留著就好）。\n${listTxt}`;
-      const reply = await callAI([{ role: "user", content: prompt }], "你是資料整理助理，只輸出 JSON。", "organize");
-      const clean = reply.replace(/```json|```/gi, "").trim();
-      const parsed = JSON.parse(clean.slice(clean.indexOf("{"), clean.lastIndexOf("}") + 1));
-      const groups = (parsed.groups || [])
-        .map(gr => ({ on: true, card: String(gr.card || "").trim(), cat: String(gr.cat || "").trim(), ids: [...new Set(gr.ids || [])].filter(id => unass.some(g => g.id === id)) }))
-        .filter(gr => gr.card && gr.ids.length >= 2);
-      setAiOrg({ busy: false, groups });
-    } catch (e) { setAiOrg(null); flash("AI 歸類失敗：" + (e?.message || e)); }
-  };
-  const applyAiOrg = () => {
-    const groups = ((aiOrg && aiOrg.groups) || []).filter(gr => gr.on && gr.card.trim() && gr.ids.length);
-    if (!groups.length) { setAiOrg(null); return; }
-    let cards = [...(db.matCards || [])];
-    let ings = db.ingredients || [];
-    groups.forEach(gr => {
-      let c = cards.find(x => normName(x.name) === normName(gr.card));
-      if (!c) { c = { id: rid("mc"), name: gr.card.trim(), cat: gr.cat || "", sort: cards.length }; cards.push(c); }
-      ings = ings.map(g => gr.ids.includes(g.id) ? { ...g, card_id: c.id } : g);
-    });
-    save({ matCards: cards, ingredients: ings });
-    setAiOrg(null);
-    flash(`✓ 已建/沿用 ${groups.length} 張物料卡，歸入 ${groups.reduce((t, gr) => t + gr.ids.length, 0)} 個類別`);
   };
 
   // ── 品項批量歸類別（廠商視角勾選 → 歸入類別/直接放進物料卡自動建類別）──
@@ -510,7 +477,7 @@ export default function IngredientsView({ db, save, canEdit, showMoney, confirm,
   // ── 物料視角：清單列（ground-pack 硬格線風：方角、直向格線、字體同產品管理；張良 2026-07-20）──
   const IGRID = `54px 38px minmax(150px,1.2fr) 118px minmax(130px,1.2fr) ${showMoney ? "92px " : ""}92px 26px`;
   const vline = { borderRight: "1px solid #e0d6bf", alignSelf: "stretch", display: "flex", alignItems: "center" };
-  const listRow = (g) => {
+  const listRow = (g, inCard) => {
     const srcs = srcsOf(db, g.id);
     const isOpen = open === g.id;
     const units = srcs.map(vi => unitCost(vi)).filter(u => u != null);
@@ -533,7 +500,7 @@ export default function IngredientsView({ db, save, canEdit, showMoney, confirm,
             <span title={g.img ? "點擊放大檢視" : "還沒有照片（點開卡片上傳或貼上）"} style={{ width: 28, height: 28, borderRadius: 5, border: `1px solid ${C.line}`, background: g.img ? `url(${g.img}) center/cover` : "#f4efe5", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, color: "#d5cbb6", cursor: g.img ? "zoom-in" : "pointer", flexShrink: 0 }}>{g.img ? "" : "—"}</span>
           </div>
           {/* 名稱長也要看得到：最多兩行、hover 有完整名（2026-07-21 張良：欄位卡住名稱看不到後面） */}
-          <div style={{ ...vline, padding: "3px 9px", overflow: "hidden" }}><span title={g.name || ""} style={{ fontSize: 13, fontWeight: 600, color: C.text, overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", lineHeight: 1.22, wordBreak: "break-all" }}>{g.name || <span style={{ color: C.faint }}>（未命名）</span>}{anyAlert && <span style={{ fontSize: 10, fontWeight: 700, color: anyAlert.up ? C.red : C.green, marginLeft: 4 }}>{anyAlert.up ? "▲" : "▼"}{Math.abs(anyAlert.pct)}%</span>}</span></div>
+          <div style={{ ...vline, padding: "3px 9px", overflow: "hidden" }}><span title={g.name || ""} style={{ fontSize: 13, fontWeight: 600, color: C.text, overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", lineHeight: 1.22, wordBreak: "break-all" }}>{!inCard && cardOf(g) && <span title={`屬於物料卡「${cardOf(g).name}」`} style={{ fontSize: 10, fontWeight: 700, color: C.sub, background: "#efe9db", borderRadius: 4, padding: "1px 5px", marginRight: 5, whiteSpace: "nowrap" }}>📁{cardOf(g).name}</span>}{g.name || <span style={{ color: C.faint }}>（未命名）</span>}{anyAlert && <span style={{ fontSize: 10, fontWeight: 700, color: anyAlert.up ? C.red : C.green, marginLeft: 4 }}>{anyAlert.up ? "▲" : "▼"}{Math.abs(anyAlert.pct)}%</span>}</span></div>
           <div style={{ ...vline, padding: "0 9px", fontFamily: MONOF, fontSize: 11.5, color: mainVi && packToBase(mainVi) ? C.sub : C.red }}>{mainVi ? (packToBase(mainVi) ? `1${mainVi.unit || "件"}=${Number(mainVi.packToBase).toLocaleString()}${g.baseUnit}` : "1件=？") : "—"}</div>
           <div style={{ ...vline, padding: "0 9px", overflow: "hidden" }}><span style={{ fontSize: 11.5, color: srcs.length ? C.sub : C.red, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={vnames}>{vnames || "沒人賣"}</span></div>
           {showMoney && <div style={{ ...vline, padding: "0 9px", fontFamily: MONOF, fontSize: 11.5, justifyContent: "flex-end", color: minU != null ? C.text : "#d5cbb6" }}>{minU != null ? `$${d2(minU)}/${g.baseUnit}` : "—"}</div>}
@@ -671,6 +638,7 @@ export default function IngredientsView({ db, save, canEdit, showMoney, confirm,
         </div>
         <div style={{ flex: 1 }} />
         {vw === "mat" && <button onClick={() => { const allC = cats.every(c2 => colCat[c2]); setColCat(s => { const n = { ...s }; cats.forEach(c2 => { n[c2] = !allC; }); return n; }); }} style={{ ...sbtn, padding: "6px 12px", fontSize: 12 }}>{cats.length && cats.every(c2 => colCat[c2]) ? "▾ 全部展開" : "▸ 全部收合"}</button>}
+        {vw === "ven" && (() => { const vs = (db.vendors || []).filter(v => (v.name || "").trim()); const allClosed = vs.length > 0 && vs.every(v => colV[v.id] === false); return <button onClick={() => setColV(() => { const n = {}; vs.forEach(v => { n[v.id] = allClosed; }); return n; })} style={{ ...sbtn, padding: "6px 12px", fontSize: 12 }}>{allClosed ? "▾ 全部展開" : "▸ 全部收合"}</button>; })()}
         <input value={q} onChange={e => setQ(e.target.value)} placeholder="搜尋" style={{ ...inp, width: 120 }} />
         {canEdit && <button onClick={() => setImp({ vid: "", newVendor: "", vendorGuess: "", rows: [], busy: "" })} style={{ display: "inline-flex", alignItems: "center", gap: 5, border: `1.5px solid ${C.accent}`, background: "#fff", color: C.accent, borderRadius: 7, padding: "6px 13px", fontSize: 12.5, fontWeight: 700, cursor: "pointer" }}><Camera size={14} strokeWidth={1.75} />貼截圖匯入</button>}
         {canEdit && <button onClick={() => { const g = { id: rid("g"), name: "", cat: "", baseUnit: "g", countFreq: { type: "none", days: [], dom: 1, paused: false }, countRole: "", countUnit: "", isKey: false, safeStock: "", note: "", sort: all.length, tags: "" }; save({ ingredients: [...(db.ingredients || []), g] }); setVw("mat"); setDisp("list"); setOpen(g.id); }} style={sbtn}>＋ 手動新增</button>}
@@ -708,6 +676,13 @@ export default function IngredientsView({ db, save, canEdit, showMoney, confirm,
           <button onClick={() => { if (batCat.trim()) { batch({ cat: batCat.trim() }); flash(`✓ 已把 ${selIds.length} 項分類設為「${batCat.trim()}」`); setBatCat(""); } }} style={{ border: "1px solid #5a5247", background: "transparent", color: "#fff", borderRadius: 7, padding: "3px 11px", fontSize: 11.5, cursor: "pointer" }}>套用</button>
           <button onClick={() => { batch({ nonStock: true }); flash(`✓ 已把 ${selIds.length} 項標為非物料`); setSel2({}); }} style={{ border: "1px solid #5a5247", background: "transparent", color: "#fff", borderRadius: 7, padding: "3px 11px", fontSize: 11.5, cursor: "pointer" }}>標非物料</button>
           <span style={{ width: 8 }} />
+          {/* ⊕ 建立群組（2026-07-22 張良：A杯+A蓋同廠商一定一起看）＝勾選類別一鍵建物料卡群組 */}
+          <button onClick={() => {
+            const nm = window.prompt(`把勾選的 ${selIds.length} 個類別建成一個群組（物料卡）\n群組名稱：`); if (!nm || !nm.trim()) return;
+            const c = { id: rid("mc"), name: nm.trim(), cat: "", sort: matCards.length };
+            save({ matCards: [...(db.matCards || []), c], ingredients: (db.ingredients || []).map(x => sel2[x.id] ? { ...x, card_id: c.id } : x) });
+            flash(`✓ 已建群組「${c.name}」，${selIds.length} 個類別歸入`); setSel2({});
+          }} style={{ border: "1px solid #4c9a5f", background: "#2e7d43", color: "#fff", borderRadius: 7, padding: "3px 12px", fontSize: 11.5, fontWeight: 700, cursor: "pointer" }}>⊕ 建立群組</button>
           {/* 批量歸物料卡（2026-07-22 三層架構）：勾選類別 → 一次歸進大類 */}
           <select value="" onChange={e => {
             const v = e.target.value; e.target.value = "";
@@ -758,22 +733,21 @@ export default function IngredientsView({ db, save, canEdit, showMoney, confirm,
         return (
           <div style={{ background: "#fff", border: `1.5px solid ${C.hard}`, borderRadius: 4, overflow: "hidden" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "7px 12px", background: "#ece4d6" }}>
-              <span style={{ fontSize: 13, fontWeight: 800, color: C.text }}>物料卡（大類）</span>
+              <span style={{ fontSize: 13, fontWeight: 800, color: C.text }}>物料卡（大項）</span>
               <span style={{ fontFamily: MONOF, fontSize: 11, color: C.faint }}>{matCards.length} 張</span>
-              <span style={{ fontSize: 10.5, color: C.faint }}>＝資料夾：把同類的類別收在一起（例：杯架 → 兩杯杯架／四杯杯架）</span>
+              <span style={{ fontSize: 10.5, color: C.faint }}>三層：物料卡=大項 → 類別=中項 → 品項=小項（例：杯架 → 兩杯杯架/四杯杯架 → 各廠商報價）</span>
               <div style={{ flex: 1 }} />
-              {canEdit && <button onClick={aiOrganize} style={{ display: "inline-flex", alignItems: "center", gap: 5, border: `1px solid ${C.blue}`, background: "#fff", color: C.blue, borderRadius: 7, padding: "4px 12px", fontSize: 11.5, fontWeight: 700, cursor: "pointer" }}><Sparkles size={13} strokeWidth={1.75} />AI 歸類建議</button>}
               {canEdit && <button onClick={() => { const c = { id: rid("mc"), name: "", cat: "", sort: matCards.length }; save({ matCards: [...(db.matCards || []), c] }); }} style={{ border: "none", background: C.accent, color: "#fff", borderRadius: 7, padding: "4px 14px", fontSize: 11.5, fontWeight: 700, cursor: "pointer" }}>＋ 新增物料卡</button>}
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "26px minmax(140px,1.2fr) 130px 90px minmax(120px,1fr) 40px", alignItems: "stretch", background: "#f2ecdd" }}>
               <div style={{ ...vline }} />
               <div style={{ ...vline, padding: "4px 9px", fontSize: 10.5, color: C.sub, fontWeight: 700 }}>名稱（可直接改）</div>
-              <div style={{ ...vline, padding: "4px 9px", fontSize: 10.5, color: C.sub, fontWeight: 700 }}>分類</div>
-              <div style={{ ...vline, padding: "4px 9px", fontSize: 10.5, color: C.sub, fontWeight: 700 }}>類別數</div>
-              <div style={{ ...vline, padding: "4px 9px", fontSize: 10.5, color: C.sub, fontWeight: 700 }}>底下的類別</div>
+              <div style={{ ...vline, padding: "4px 9px", fontSize: 10.5, color: C.sub, fontWeight: 700 }}>分類（選現有或直接打新的）</div>
+              <div style={{ ...vline, padding: "4px 9px", fontSize: 10.5, color: C.sub, fontWeight: 700 }}>項目數</div>
+              <div style={{ ...vline, padding: "4px 9px", fontSize: 10.5, color: C.sub, fontWeight: 700 }}>底下的項目（類別/中項）</div>
               <div />
             </div>
-            {shownMc.length === 0 && <div style={{ padding: "20px 12px", textAlign: "center", fontSize: 12, color: C.faint }}>{qq ? "沒有符合的物料卡。" : "還沒有物料卡——按「＋ 新增物料卡」手動建，或按「AI 歸類建議」讓 AI 把現有類別自動分組給你勾選。"}</div>}
+            {shownMc.length === 0 && <div style={{ padding: "20px 12px", textAlign: "center", fontSize: 12, color: C.faint }}>{qq ? "沒有符合的物料卡。" : "還沒有物料卡——按「＋ 新增物料卡」手動建，或到「物料」頁勾選類別按「⊕ 建立群組」。"}</div>}
             {shownMc.map(c => {
               const members = stock.filter(g => g.card_id === c.id);
               return (
@@ -783,7 +757,7 @@ export default function IngredientsView({ db, save, canEdit, showMoney, confirm,
                   <div style={{ ...vline, padding: "2px 6px" }}><input value={c.name || ""} onChange={e => updMc(c.id, { name: e.target.value })} disabled={!canEdit} placeholder="物料卡名稱（例：杯架）" style={{ ...inp, width: "100%", padding: "4px 8px", fontWeight: 700 }} /></div>
                   <div style={{ ...vline, padding: "2px 6px" }}><input value={c.cat || ""} onChange={e => updMc(c.id, { cat: e.target.value })} disabled={!canEdit} list="ingcats" placeholder="包材…" style={{ ...inp, width: "100%", padding: "4px 8px", fontSize: 11.5 }} /></div>
                   <div style={{ ...vline, padding: "0 9px", fontFamily: MONOF, fontSize: 11.5, color: members.length ? C.sub : C.faint }}>{members.length}</div>
-                  <div style={{ ...vline, padding: "0 9px", overflow: "hidden" }}><span style={{ fontSize: 10.5, color: C.faint, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={members.map(g => g.name).join("、")}>{members.map(g => g.name).join("、") || "—（到物料頁勾選類別→批次「歸入物料卡」）"}</span></div>
+                  <div style={{ ...vline, padding: "0 9px", overflow: "hidden" }}><span style={{ fontSize: 10.5, color: C.faint, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={members.map(g => g.name).join("、")}>{members.map(g => g.name).join("、") || "—（到「物料」頁勾選類別→「⊕ 建立群組」或「歸入物料卡…」）"}</span></div>
                   {canEdit ? <button onClick={async () => {
                     if (!(await confirm(`刪除物料卡「${c.name || "未命名"}」？\n底下 ${members.length} 個類別不會被刪，會變回「未歸卡」。`, { confirmLabel: "刪除" }))) return;
                     save({ matCards: (db.matCards || []).filter(x => x.id !== c.id), ingredients: (db.ingredients || []).map(g => g.card_id === c.id ? { ...g, card_id: "" } : g) });
@@ -825,7 +799,7 @@ export default function IngredientsView({ db, save, canEdit, showMoney, confirm,
                 <div style={{ ...vline, padding: "4px 7px", fontSize: 10.5, color: C.sub, fontWeight: 700 }}>盤點</div>
                 <div />
               </div>
-              {flat.map(listRow)}
+              {flat.map(g => listRow(g))}
               {grouped.map(({ c, members }) => {
                 const closed = !!colCard[c.id];
                 const allSelC = members.every(g => sel2[g.id]);
@@ -838,7 +812,7 @@ export default function IngredientsView({ db, save, canEdit, showMoney, confirm,
                       <span style={{ fontSize: 12.5, fontWeight: 800, color: C.text }}>{c.name}</span>
                       <span style={{ fontFamily: MONOF, fontSize: 10.5, color: C.faint }}>{members.length} 類別</span>
                     </div>
-                    {!closed && members.map(listRow)}
+                    {!closed && members.map(g => listRow(g, true))}
                   </React.Fragment>
                 );
               })}
@@ -911,49 +885,6 @@ export default function IngredientsView({ db, save, canEdit, showMoney, confirm,
         </div>
       )}
       {/* 📸 截圖匯入 modal */}
-      {/* ✨ AI 歸類建議 modal：AI 分組 → 勾選/改名 → 套用才寫入 */}
-      {aiOrg && (
-        <div onClick={e => e.target === e.currentTarget && !aiOrg.busy && setAiOrg(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.4)", zIndex: 735, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
-          <div style={{ background: "#fff", border: `1px solid ${C.line}`, borderRadius: 12, padding: 20, width: "min(640px,96vw)", maxHeight: "88vh", overflowY: "auto" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
-              <span style={{ fontSize: 14.5, fontWeight: 800, color: C.text }}>✨ AI 歸類建議</span>
-              <div style={{ flex: 1 }} />
-              <button onClick={() => setAiOrg(null)} style={{ background: "none", border: "none", fontSize: 20, cursor: "pointer", color: C.sub }}>×</button>
-            </div>
-            {aiOrg.busy && <div style={{ padding: "24px 0", textAlign: "center", fontSize: 13, color: C.sub }}>⏳ AI 分組中…</div>}
-            {!aiOrg.busy && aiOrg.groups && aiOrg.groups.length === 0 && <div style={{ padding: "18px 0", textAlign: "center", fontSize: 12.5, color: C.faint }}>AI 看不出有可以歸在一起的類別（都各自獨立）。</div>}
-            {!aiOrg.busy && (aiOrg.groups || []).length > 0 && (
-              <div style={{ background: "#f2f6fb", border: `1px solid ${C.blue}`, borderRadius: 8, padding: "8px 12px", fontSize: 12, color: C.text, marginBottom: 10, lineHeight: 1.6 }}>
-                AI 幫你把散落的類別分好組了。每一格＝<b>要新建的一張物料卡（資料夾）</b>：<br />
-                ✔ 打勾＝要建這張卡｜名字和分類都可以直接改｜「收進去」＝這幾個類別會歸到這張卡底下。<br />
-                看不順眼的把勾拿掉就好，<b>按最下面綠色按鈕才會真的寫入</b>。
-              </div>
-            )}
-            {!aiOrg.busy && (aiOrg.groups || []).map((gr, i) => (
-              <div key={i} style={{ border: `1px solid ${gr.on ? C.blue : C.line}`, borderRadius: 8, padding: "8px 10px", marginBottom: 8, opacity: gr.on ? 1 : 0.5 }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-                  <input type="checkbox" checked={gr.on} onChange={e => setAiOrg(m => ({ ...m, groups: m.groups.map((x, j) => j === i ? { ...x, on: e.target.checked } : x) }))} style={{ cursor: "pointer" }} />
-                  <span style={{ fontSize: 12, color: C.sub }}>建物料卡</span>
-                  <Folder size={13} strokeWidth={1.75} style={{ color: C.sub }} />
-                  <input value={gr.card} onChange={e => setAiOrg(m => ({ ...m, groups: m.groups.map((x, j) => j === i ? { ...x, card: e.target.value } : x) }))} title="新物料卡的名稱（可改）" style={{ ...inp, width: 130, padding: "3px 8px", fontWeight: 700 }} />
-                  <span style={{ fontSize: 12, color: C.sub }}>，分類</span>
-                  <input value={gr.cat} onChange={e => setAiOrg(m => ({ ...m, groups: m.groups.map((x, j) => j === i ? { ...x, cat: e.target.value } : x) }))} list="ingcats" placeholder="（空）" title="這張物料卡放在哪個分類底下（可改）" style={{ ...inp, width: 90, padding: "3px 8px", fontSize: 11.5 }} />
-                </div>
-                <div style={{ fontSize: 11.5, color: C.sub, marginTop: 5, paddingLeft: 24 }}>
-                  <b style={{ color: C.text }}>收進去 {gr.ids.length} 個類別：</b>{gr.ids.map(id => (stock.find(g => g.id === id) || {}).name).filter(Boolean).join("、")}
-                </div>
-              </div>
-            ))}
-            {!aiOrg.busy && (aiOrg.groups || []).length > 0 && (
-              <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
-                <button onClick={() => setAiOrg(null)} style={{ flex: 1, border: `1.5px solid #d9cfbd`, background: "#fff", color: C.sub, borderRadius: 8, padding: "9px 0", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>✕ 取消</button>
-                <button onClick={applyAiOrg} style={{ flex: 2, border: "none", background: C.green, color: "#fff", borderRadius: 8, padding: "9px 0", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>✓ 建立勾選的 {(aiOrg.groups || []).filter(g2 => g2.on).length} 張物料卡並歸類</button>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
       {imp && (
         <div onClick={e => e.target === e.currentTarget && !imp.busy && setImp(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.4)", zIndex: 730, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
           <div style={{ background: "#fff", border: `1px solid ${C.line}`, borderRadius: 12, padding: 20, width: "min(840px,96vw)", maxHeight: "90vh", overflowY: "auto" }}>
