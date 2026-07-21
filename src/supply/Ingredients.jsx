@@ -922,22 +922,32 @@ export default function IngredientsView({ db, save, canEdit, showMoney, confirm,
             </div>
             {aiOrg.busy && <div style={{ padding: "24px 0", textAlign: "center", fontSize: 13, color: C.sub }}>⏳ AI 分組中…</div>}
             {!aiOrg.busy && aiOrg.groups && aiOrg.groups.length === 0 && <div style={{ padding: "18px 0", textAlign: "center", fontSize: 12.5, color: C.faint }}>AI 看不出有可以歸在一起的類別（都各自獨立）。</div>}
+            {!aiOrg.busy && (aiOrg.groups || []).length > 0 && (
+              <div style={{ background: "#f2f6fb", border: `1px solid ${C.blue}`, borderRadius: 8, padding: "8px 12px", fontSize: 12, color: C.text, marginBottom: 10, lineHeight: 1.6 }}>
+                AI 幫你把散落的類別分好組了。每一格＝<b>要新建的一張物料卡（資料夾）</b>：<br />
+                ✔ 打勾＝要建這張卡｜名字和分類都可以直接改｜「收進去」＝這幾個類別會歸到這張卡底下。<br />
+                看不順眼的把勾拿掉就好，<b>按最下面綠色按鈕才會真的寫入</b>。
+              </div>
+            )}
             {!aiOrg.busy && (aiOrg.groups || []).map((gr, i) => (
-              <div key={i} style={{ border: `1px solid ${gr.on ? C.blue : C.line}`, borderRadius: 8, padding: "7px 10px", marginBottom: 8, opacity: gr.on ? 1 : 0.5 }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <div key={i} style={{ border: `1px solid ${gr.on ? C.blue : C.line}`, borderRadius: 8, padding: "8px 10px", marginBottom: 8, opacity: gr.on ? 1 : 0.5 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
                   <input type="checkbox" checked={gr.on} onChange={e => setAiOrg(m => ({ ...m, groups: m.groups.map((x, j) => j === i ? { ...x, on: e.target.checked } : x) }))} style={{ cursor: "pointer" }} />
+                  <span style={{ fontSize: 12, color: C.sub }}>建物料卡</span>
                   <Folder size={13} strokeWidth={1.75} style={{ color: C.sub }} />
-                  <input value={gr.card} onChange={e => setAiOrg(m => ({ ...m, groups: m.groups.map((x, j) => j === i ? { ...x, card: e.target.value } : x) }))} style={{ ...inp, width: 140, padding: "3px 8px", fontWeight: 700 }} />
-                  <input value={gr.cat} onChange={e => setAiOrg(m => ({ ...m, groups: m.groups.map((x, j) => j === i ? { ...x, cat: e.target.value } : x) }))} list="ingcats" placeholder="分類" style={{ ...inp, width: 90, padding: "3px 8px", fontSize: 11.5 }} />
-                  <span style={{ fontFamily: MONOF, fontSize: 10.5, color: C.faint }}>{gr.ids.length} 類別</span>
+                  <input value={gr.card} onChange={e => setAiOrg(m => ({ ...m, groups: m.groups.map((x, j) => j === i ? { ...x, card: e.target.value } : x) }))} title="新物料卡的名稱（可改）" style={{ ...inp, width: 130, padding: "3px 8px", fontWeight: 700 }} />
+                  <span style={{ fontSize: 12, color: C.sub }}>，分類</span>
+                  <input value={gr.cat} onChange={e => setAiOrg(m => ({ ...m, groups: m.groups.map((x, j) => j === i ? { ...x, cat: e.target.value } : x) }))} list="ingcats" placeholder="（空）" title="這張物料卡放在哪個分類底下（可改）" style={{ ...inp, width: 90, padding: "3px 8px", fontSize: 11.5 }} />
                 </div>
-                <div style={{ fontSize: 11, color: C.sub, marginTop: 4, paddingLeft: 26 }}>{gr.ids.map(id => (stock.find(g => g.id === id) || {}).name).filter(Boolean).join("、")}</div>
+                <div style={{ fontSize: 11.5, color: C.sub, marginTop: 5, paddingLeft: 24 }}>
+                  <b style={{ color: C.text }}>收進去 {gr.ids.length} 個類別：</b>{gr.ids.map(id => (stock.find(g => g.id === id) || {}).name).filter(Boolean).join("、")}
+                </div>
               </div>
             ))}
             {!aiOrg.busy && (aiOrg.groups || []).length > 0 && (
               <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
                 <button onClick={() => setAiOrg(null)} style={{ flex: 1, border: `1.5px solid #d9cfbd`, background: "#fff", color: C.sub, borderRadius: 8, padding: "9px 0", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>✕ 取消</button>
-                <button onClick={applyAiOrg} style={{ flex: 2, border: "none", background: C.green, color: "#fff", borderRadius: 8, padding: "9px 0", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>✓ 套用勾選的 {(aiOrg.groups || []).filter(g2 => g2.on).length} 組</button>
+                <button onClick={applyAiOrg} style={{ flex: 2, border: "none", background: C.green, color: "#fff", borderRadius: 8, padding: "9px 0", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>✓ 建立勾選的 {(aiOrg.groups || []).filter(g2 => g2.on).length} 張物料卡並歸類</button>
               </div>
             )}
           </div>
