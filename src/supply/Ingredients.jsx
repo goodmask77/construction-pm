@@ -360,7 +360,11 @@ export default function IngredientsView({ db, save, canEdit, showMoney, confirm,
   const svcList = all.filter(g => g.nonStock).filter(match);
   // 分類順序：settings.ingCatOrder（可拖曳排序），沒登記的照筆畫排後面
   const catOrder = (db.settings && db.settings.ingCatOrder) || [];
-  const cats = [...new Set(shown.map(g => effCat(g)))].sort((a, b) => {
+  // 分類主檔 db.catList（2026-07-22 張良：分類要能真的「新增」）——不再只靠卡片/類別身上的字推算
+  // 「＋新增分類」→ 寫進 catList → 物料頁馬上出現該群組（就算還是空的）；搜尋時空群組不顯示
+  const catList = db.catList || [];
+  const catsAll = [...new Set([...catList, ...all.map(x => (x.cat || "").trim()), ...matCards.map(c => (c.cat || "").trim())].filter(Boolean))];
+  const cats = [...new Set([...(qq ? [] : catList), ...shown.map(g => effCat(g))])].sort((a, b) => {
     const ia = catOrder.indexOf(a), ib = catOrder.indexOf(b);
     return (ia < 0 ? 999 : ia) - (ib < 0 ? 999 : ib) || a.localeCompare(b, "zh-TW");
   });
@@ -644,8 +648,8 @@ export default function IngredientsView({ db, save, canEdit, showMoney, confirm,
         {canEdit && <button onClick={() => { const g = { id: rid("g"), name: "", cat: "", baseUnit: "g", countFreq: { type: "none", days: [], dom: 1, paused: false }, countRole: "", countUnit: "", isKey: false, safeStock: "", note: "", sort: all.length, tags: "" }; save({ ingredients: [...(db.ingredients || []), g] }); setVw("mat"); setDisp("list"); setOpen(g.id); }} style={sbtn}>＋ 手動新增</button>}
         {canEdit && <button onClick={autoOrganize} disabled={!pending.length} style={{ display: "inline-flex", alignItems: "center", gap: 5, border: "none", background: pending.length ? C.accent : "#d5cbb6", color: "#fff", borderRadius: 7, padding: "7px 14px", fontSize: 12.5, fontWeight: 700, cursor: pending.length ? "pointer" : "default" }}><Zap size={14} strokeWidth={1.75} />自動整理{pending.length ? `（${pending.length}）` : ""}</button>}
       </div>
-      {/* 分類建議清單＝類別用過的＋物料卡上設過的（新打的分類存檔後就會出現在所有下拉）*/}
-      <datalist id="ingcats">{[...new Set([...all.map(x => (x.cat || "").trim()), ...matCards.map(c => (c.cat || "").trim())].filter(Boolean))].map(c2 => <option key={c2} value={c2} />)}</datalist>
+      {/* 分類建議清單＝catList 主檔＋類別/物料卡用過的 */}
+      <datalist id="ingcats">{catsAll.map(c2 => <option key={c2} value={c2} />)}</datalist>
 
       {/* 建議合併 */}
       {canEdit && vw === "mat" && sugg.length > 0 && (
@@ -743,7 +747,7 @@ export default function IngredientsView({ db, save, canEdit, showMoney, confirm,
             <div style={{ display: "grid", gridTemplateColumns: "26px minmax(140px,1.2fr) 130px 90px minmax(120px,1fr) 40px", alignItems: "stretch", background: "#f2ecdd" }}>
               <div style={{ ...vline }} />
               <div style={{ ...vline, padding: "4px 9px", fontSize: 10.5, color: C.sub, fontWeight: 700 }}>名稱（可直接改）</div>
-              <div style={{ ...vline, padding: "4px 9px", fontSize: 10.5, color: C.sub, fontWeight: 700 }}>分類（選現有或直接打新的）</div>
+              <div style={{ ...vline, padding: "4px 9px", fontSize: 10.5, color: C.sub, fontWeight: 700 }}>分類（下拉選，最底下可＋新增）</div>
               <div style={{ ...vline, padding: "4px 9px", fontSize: 10.5, color: C.sub, fontWeight: 700 }}>項目數</div>
               <div style={{ ...vline, padding: "4px 9px", fontSize: 10.5, color: C.sub, fontWeight: 700 }}>底下的項目（類別/中項）</div>
               <div />
@@ -756,7 +760,18 @@ export default function IngredientsView({ db, save, canEdit, showMoney, confirm,
                   style={{ display: "grid", gridTemplateColumns: "26px minmax(140px,1.2fr) 130px 90px minmax(120px,1fr) 40px", alignItems: "center", minHeight: 34, borderTop: "1px solid #e0d6bf", background: "#fff", outline: dragMc === c.id ? `2px dashed ${C.accent}` : "none" }}>
                   <span title="拖曳排序" style={{ cursor: canEdit ? "grab" : "default", color: "#c8bca6", fontSize: 12, textAlign: "center" }}>⠿</span>
                   <div style={{ ...vline, padding: "2px 6px" }}><input value={c.name || ""} onChange={e => updMc(c.id, { name: e.target.value })} disabled={!canEdit} placeholder="物料卡名稱（例：杯架）" style={{ ...inp, width: "100%", padding: "4px 8px", fontWeight: 700 }} /></div>
-                  <div style={{ ...vline, padding: "2px 6px" }}><input value={c.cat || ""} onChange={e => updMc(c.id, { cat: e.target.value })} disabled={!canEdit} list="ingcats" placeholder="包材…" style={{ ...inp, width: "100%", padding: "4px 8px", fontSize: 11.5 }} /></div>
+                  <div style={{ ...vline, padding: "2px 6px" }}>
+                    {/* 分類=真下拉：選現有或「＋新增分類」（寫進 catList 主檔，物料頁馬上多一個群組） */}
+                    <select value={catsAll.includes(c.cat || "") ? c.cat : ""} onChange={e => {
+                      const v = e.target.value;
+                      if (v === "__new") { const nm = window.prompt("新分類名稱："); if (nm && nm.trim()) { const name = nm.trim(); save({ catList: [...new Set([...(db.catList || []), name])], matCards: (db.matCards || []).map(x => x.id === c.id ? { ...x, cat: name } : x) }); flash(`✓ 已新增分類「${name}」並套用`); } return; }
+                      updMc(c.id, { cat: v });
+                    }} disabled={!canEdit} style={{ ...inp, width: "100%", padding: "4px 6px", fontSize: 11.5 }}>
+                      <option value="">（未分類）</option>
+                      {catsAll.map(c2 => <option key={c2} value={c2}>{c2}</option>)}
+                      <option value="__new">＋ 新增分類…</option>
+                    </select>
+                  </div>
                   <div style={{ ...vline, padding: "0 9px", fontFamily: MONOF, fontSize: 11.5, color: members.length ? C.sub : C.faint }}>{members.length}</div>
                   <div style={{ ...vline, padding: "0 9px", overflow: "hidden" }}><span style={{ fontSize: 10.5, color: C.faint, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={members.map(g => g.name).join("、")}>{members.map(g => g.name).join("、") || "—（到「物料」頁勾選類別→「⊕ 建立群組」或「歸入物料卡…」）"}</span></div>
                   {canEdit ? <button onClick={async () => {
