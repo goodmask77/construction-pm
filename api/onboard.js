@@ -123,6 +123,30 @@ export default async function handler(req, res) {
       return res.status(200).json({ url })
     }
 
+    // ── 獎勵藏寶盒 LINE 通知（使用申請→通知操作者；核銷/退回→通知本人）。資料本體由 App 寫，這裡只發通知 ──
+    if (action === 'reward-event' && req.method === 'POST') {
+      const me = await whoAmI(req)
+      if (!me) return res.status(401).json({ error: '未登入' })
+      const body = bodyOf(req)
+      const mod = await import('./_onboard.js')
+      const shop = (await mod.kvGet('sp_crew_kb_shop')) || { redemptions: [] }
+      const rd = (shop.redemptions || []).find(x => x.id === body.redemptionId)
+      if (!rd) return res.status(404).json({ error: '找不到兌換紀錄' })
+      const roster = await loadRoster()
+      const owner = roster.people.find(p => p.id === rd.userId)
+      if (body.kind === 'use') {
+        if (!owner || owner.account !== me.name) return res.status(403).json({ error: '只有本人可以申請使用' })
+        await mod.notifyOps(`🎫 ${owner.name} 申請使用獎品「${rd.name}」。請當面確認交付後，到 App 獎勵中心按「核銷」。`)
+        return res.status(200).json({ ok: true })
+      }
+      if (body.kind === 'verified' || body.kind === 'returned') {
+        if (!isMgr(me)) return res.status(403).json({ error: '只有管理員/主管可以核銷' })
+        if (owner?.lineUserId) await mod.linePush(owner.lineUserId, body.kind === 'verified' ? `🎁 你的「${rd.name}」已核銷使用完成，祝使用愉快！` : `你的「${rd.name}」已退回藏寶盒，之後要用再按「使用」。`)
+        return res.status(200).json({ ok: true })
+      }
+      return res.status(400).json({ error: '未知事件' })
+    }
+
     // ── 核准 / 退回（名冊入職中人員；核心邏輯在 _onboard）──
     if ((action === 'approve' || action === 'reject') && req.method === 'POST') {
       const me = await whoAmI(req)

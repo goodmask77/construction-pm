@@ -662,9 +662,20 @@ export function ShopView({ canEdit, requireLogin, confirm, isAdmin, userName }) 
   const canManage = canManageRole((people.find(p => p.id === me) || {}).role);
   const balances = crewFullBalance(people, fb, quests, shop);
   const myBal = me ? (balances[me] || 0) : null;
-  const redeem = (r) => { if (!me) { alert("尚未對應到名單身分"); return; } if ((balances[me] || 0) < r.cost) { alert("積分不足"); return; } if ((r.stock ?? 99) <= 0) { alert("已兌完"); return; } confirm(`用 ${r.cost} 分兌換「${r.name}」？`).then(ok => { if (!ok) return; persist({ ...shop, rewards: shop.rewards.map(x => x.id === r.id ? { ...x, stock: (x.stock ?? 99) - 1 } : x), redemptions: [...(shop.redemptions || []), { id: "rd-" + Math.random().toString(36).slice(2, 7), userId: me, rewardId: r.id, cost: r.cost, name: r.name, status: "requested", ts: new Date().toISOString() }] }); }); };
+  // 兌換生命週期（張良 2026-07-22 藏寶盒）：兌換→owned(進藏寶盒) → 要用時按「使用」→using(等主管核銷) → 核銷→used
+  // 舊資料相容：requested 一律視為 owned（原本「處理中」的概念改為「已入藏寶盒」）
+  const rdStatus = (r) => r.status === "requested" ? "owned" : (r.status || "owned");
+  const updRd = (id, patch) => persist({ ...shop, redemptions: (shop.redemptions || []).map(x => x.id === id ? { ...x, ...patch } : x) });
+  const notifyRewardEvent = async (kind, redemptionId) => { try { const t = await authToken(); await fetch("/api/onboard?action=reward-event", { method: "POST", headers: { Authorization: `Bearer ${t}`, "content-type": "application/json" }, body: JSON.stringify({ kind, redemptionId }) }); } catch (_) {} };
+  const redeem = (r) => { if (!me) { alert("尚未對應到名單身分"); return; } if ((balances[me] || 0) < r.cost) { alert("積分不足"); return; } if ((r.stock ?? 99) <= 0) { alert("已兌完"); return; } confirm(`用 ${r.cost} 分兌換「${r.name}」？\n兌換後會放進「我的藏寶盒」，要用的時候再拿出來核銷。`, { danger: false, confirmLabel: "兌換" }).then(ok => { if (!ok) return; try { auditLog("新增", `兌換獎勵「${r.name}」`); } catch (_) {} persist({ ...shop, rewards: shop.rewards.map(x => x.id === r.id ? { ...x, stock: (x.stock ?? 99) - 1 } : x), redemptions: [...(shop.redemptions || []), { id: "rd-" + Math.random().toString(36).slice(2, 7), userId: me, rewardId: r.id, cost: r.cost, name: r.name, status: "owned", ts: new Date().toISOString() }] }); }); };
+  const useItem = (r) => confirm(`要使用「${r.name}」嗎？\n送出後請找主管確認核銷（主管的獎勵中心會看到）。`, { danger: false, confirmLabel: "使用" }).then(ok => { if (!ok) return; try { auditLog("編輯", `申請使用獎勵「${r.name}」`); } catch (_) {} updRd(r.id, { status: "using", usingAt: new Date().toISOString() }); notifyRewardEvent("use", r.id); });
+  const cancelUse = (r) => updRd(r.id, { status: "owned", usingAt: null });
+  const verifyItem = (r, pName) => confirm(`核銷 ${pName} 的「${r.name}」？（確認已交付/已使用）`, { danger: false, confirmLabel: "核銷" }).then(ok => { if (!ok) return; try { auditLog("編輯", `核銷 ${pName} 的獎勵「${r.name}」`); } catch (_) {} updRd(r.id, { status: "used", usedAt: new Date().toISOString(), verifiedBy: userName || "主管" }); notifyRewardEvent("verified", r.id); });
+  const returnItem = (r) => updRd(r.id, { status: "owned", usingAt: null });
   const saveReward = () => { if (!ed.name.trim()) { alert("請填名稱"); return; } const r = { id: ed.id || "rw-" + Math.random().toString(36).slice(2, 7), name: ed.name.trim(), desc: ed.desc || "", cost: Number(ed.cost) || 0, stock: ed.stock === "" ? 99 : Number(ed.stock), active: ed.active !== false }; persist({ ...shop, rewards: ed.id ? shop.rewards.map(x => x.id === ed.id ? r : x) : [...shop.rewards, r] }); setEd(null); };
   const myRedemptions = (shop.redemptions || []).filter(r => r.userId === me);
+  const nameOfP = (id) => (people.find(p => p.id === id) || {}).name || "—";
+  const allUsing = (shop.redemptions || []).filter(r => rdStatus(r) === "using");
   return (
     <div>
       {crewProtoTitle("🎁", "獎勵商城", "用累積的積分兌換獎勵（正式版兌換＝原子扣點、可稽核）。")}
@@ -684,7 +695,45 @@ export function ShopView({ canEdit, requireLogin, confirm, isAdmin, userName }) 
           </div>); })}
         {shop.rewards.length === 0 && <div style={{ color: "#9b9384", fontSize: 14, padding: "30px 0" }}>還沒有獎勵{isAdmin ? "，點「＋ 新增獎勵」" : ""}。</div>}
       </div>
-      {me && myRedemptions.length > 0 && <div style={{ ...crewCard, marginTop: 14 }}><div style={{ fontSize: 14, fontWeight: 700, marginBottom: 8 }}>我的兌換紀錄</div>{myRedemptions.map(r => <div key={r.id} style={{ display: "flex", fontSize: 13, padding: "5px 0", borderTop: "1px solid #ece4d6" }}><span>{r.name}</span><div style={{ flex: 1 }} /><span style={{ color: SUB }}>-{r.cost} 分 · {r.status === "requested" ? "處理中" : r.status}</span></div>)}</div>}
+      {/* 主管：待核銷（夥伴按了「使用」的獎品，當面確認後在這裡核銷） */}
+      {canManage && allUsing.length > 0 && (
+        <div style={{ ...crewCard, marginTop: 14, border: "1.5px solid #c98a14" }}>
+          <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 8 }}>🎫 待核銷<span style={{ marginLeft: 6, fontSize: 11, background: ACCENT, color: "#fff", borderRadius: 10, padding: "1px 8px", fontWeight: 700 }}>{allUsing.length}</span><span style={{ marginLeft: 8, fontSize: 11.5, color: SUB, fontWeight: 400 }}>夥伴申請使用的獎品，當面確認交付後按核銷</span></div>
+          {allUsing.map(r => (
+            <div key={r.id} style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 13.5, padding: "7px 0", borderTop: "1px solid #ece4d6", flexWrap: "wrap" }}>
+              <b style={{ color: TEXT }}>{nameOfP(r.userId)}</b><span>{r.name}</span>
+              <span style={{ fontSize: 11.5, color: SUB }}>{(r.usingAt || "").slice(5, 16).replace("T", " ")} 申請</span>
+              <div style={{ flex: 1 }} />
+              <button onClick={() => returnItem(r)} style={{ border: `1px solid ${BORDER}`, background: "#fff", color: SUB, borderRadius: 8, padding: "5px 12px", fontSize: 12.5, cursor: "pointer" }}>退回藏寶盒</button>
+              <button onClick={() => verifyItem(r, nameOfP(r.userId))} style={{ border: "none", background: "#3C8C3C", color: "#fff", borderRadius: 8, padding: "6px 16px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>✅ 核銷</button>
+            </div>
+          ))}
+        </div>
+      )}
+      {/* 我的藏寶盒：兌換到的獎品放這裡，要用時按「使用」請主管核銷 */}
+      {me && myRedemptions.length > 0 && (() => {
+        const owned = myRedemptions.filter(r => rdStatus(r) === "owned");
+        const using = myRedemptions.filter(r => rdStatus(r) === "using");
+        const used = myRedemptions.filter(r => rdStatus(r) === "used");
+        return (
+          <div style={{ ...crewCard, marginTop: 14 }}>
+            <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 4 }}>🎒 我的藏寶盒<span style={{ marginLeft: 8, fontSize: 11.5, color: SUB, fontWeight: 400 }}>兌換到的獎品放這裡，要用的時候按「使用」找主管核銷</span></div>
+            {owned.length + using.length === 0 && <div style={{ fontSize: 12.5, color: "#9b9384", padding: "6px 0" }}>藏寶盒是空的——上面商城逛起來！</div>}
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(210px, 1fr))", gap: 10, marginTop: 8 }}>
+              {[...using, ...owned].map(r => { const isUsing = rdStatus(r) === "using"; return (
+                <div key={r.id} style={{ border: `1.5px solid ${isUsing ? "#c98a14" : BORDER}`, borderRadius: 10, padding: "10px 12px", background: isUsing ? "#FFF7ED" : "#FBF7EE" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}><span style={{ fontSize: 18 }}>🎁</span><b style={{ fontSize: 13.5, color: TEXT }}>{r.name}</b></div>
+                  <div style={{ fontSize: 11, color: SUB, margin: "3px 0 8px" }}>{(r.ts || "").slice(0, 10)} 兌換 · {r.cost} 分</div>
+                  {isUsing
+                    ? <div style={{ display: "flex", alignItems: "center", gap: 8 }}><span style={{ fontSize: 12, color: "#c98a14", fontWeight: 700 }}>⏳ 等待主管核銷</span><div style={{ flex: 1 }} /><button onClick={() => cancelUse(r)} style={{ border: "none", background: "none", color: SUB, fontSize: 11.5, cursor: "pointer" }}>取消</button></div>
+                    : <button onClick={() => useItem(r)} style={{ width: "100%", border: "none", background: ACCENT, color: "#fff", borderRadius: 8, padding: "7px", fontSize: 12.5, fontWeight: 700, cursor: "pointer" }}>🎫 使用</button>}
+                </div>
+              ); })}
+            </div>
+            {used.length > 0 && <div style={{ marginTop: 10, fontSize: 12, color: SUB }}>已使用 {used.length} 項：{used.slice(0, 5).map(r => `${r.name}（${(r.usedAt || "").slice(0, 10)}）`).join("、")}{used.length > 5 ? "…" : ""}</div>}
+          </div>
+        );
+      })()}
       {ed && (
         <div onClick={e => e.target === e.currentTarget && setEd(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 500, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
           <div style={{ background: "#fff", borderRadius: 14, padding: 20, width: 420, maxWidth: "100%" }}>
@@ -1310,7 +1359,7 @@ export function CrewTodayView({ userName, isAdmin, setView }) {
   const questSlots = activeQuests.length * active.length;
   const questDone = (quests.progress || []).filter(p => p.status === "completed" && activeQuests.some(q => q.id === p.questId) && active.some(a2 => a2.id === p.userId)).length;
   const fbGivers = new Set((fb.items || []).filter(it => new Date(it.ts) >= monday).map(it => it.fromId));
-  const pendingRedeem = (shop.redemptions || []).filter(r => r.status === "requested").length;
+  const pendingRedeem = (shop.redemptions || []).filter(r => r.status === "using").length; // 藏寶盒制：待核銷=夥伴按了「使用」的獎品
 
   const go = (v) => setView && setView(v);
   const num = (n, label, color, onClick) => (
@@ -1431,7 +1480,7 @@ export function CrewTodayView({ userName, isAdmin, setView }) {
             <div style={{ display: "flex", flexDirection: "column", gap: 7, fontSize: 13.5 }}>
               <div style={{ display: "flex" }}><span style={{ color: SUB }}>訓練完成率</span><div style={{ flex: 1 }} /><span style={{ fontFamily: MONO, fontWeight: 700, color: TEXT }}>{questSlots ? Math.round(questDone / questSlots * 100) + "%" : "—"}<span style={{ color: SUB, fontWeight: 400, fontSize: 11.5 }}>（{questDone}/{questSlots || 0}）</span></span></div>
               <div style={{ display: "flex" }}><span style={{ color: SUB }}>本週已給回饋</span><div style={{ flex: 1 }} /><span style={{ fontFamily: MONO, fontWeight: 700, color: TEXT }}>{fbGivers.size}<span style={{ color: SUB, fontWeight: 400, fontSize: 11.5 }}>／{active.length} 人</span></span></div>
-              <div style={{ display: "flex", cursor: "pointer" }} onClick={() => go("reward")}><span style={{ color: SUB }}>待處理兌換</span><div style={{ flex: 1 }} /><span style={{ fontFamily: MONO, fontWeight: 700, color: pendingRedeem ? ACCENT : TEXT }}>{pendingRedeem} 筆 →</span></div>
+              <div style={{ display: "flex", cursor: "pointer" }} onClick={() => go("reward")}><span style={{ color: SUB }}>待核銷獎品</span><div style={{ flex: 1 }} /><span style={{ fontFamily: MONO, fontWeight: 700, color: pendingRedeem ? ACCENT : TEXT }}>{pendingRedeem} 筆 →</span></div>
               <div style={{ display: "flex" }}><span style={{ color: SUB }}>本週夥伴心得</span><div style={{ flex: 1 }} /><span style={{ fontFamily: MONO, fontWeight: 700, color: TEXT }}>{wkJournal.length} 則</span></div>
               {wkJournal.slice(0, 3).map(i => (
                 <div key={i.id} style={{ fontSize: 12, color: SUB, background: "#FBF7EE", borderRadius: 8, padding: "6px 10px", lineHeight: 1.5 }}>💬 <b style={{ color: TEXT }}>{i.name}</b>：{(i.text || "").slice(0, 42)}{(i.text || "").length > 42 ? "…" : ""}</div>
