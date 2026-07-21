@@ -8,6 +8,8 @@ import { normalizePatch, mergeTask, isWaiting, isBlocked } from '../src/tasks/ta
 import { supplyDigest } from '../src/supply/digest.js'
 // 入職 2.0：LINE 申請/報到綁定（固定表單流程、證件直存私有桶，「不經 AI」）
 import { handleOnboardEvent } from './_onboard.js'
+// DD 互動卡片：照片歸檔/回饋卡/投票卡（Flex+postback，固定指令不經 AI，答案直接寫回 App 同一份資料）
+import { handleDDCards } from './_ddcards.js'
 
 const clean = (v) => (v || '').trim().replace(/^["']|["']$/g, '').replace(/^[A-Za-z0-9_]+=/, '').trim()
 const SECRET = clean(process.env.LINE_CHANNEL_SECRET)
@@ -814,9 +816,16 @@ export default async function handler(req, res) {
     try {
       // 回收訊息 → 私訊老闆（誰在哪個群回收了什麼）
       if (ev.type === 'unsend') { await handleUnsend(ev); continue }
+      // 互動卡片按鈕（postback）：回饋/投票/文件歸類（只在私訊）
+      if (ev.type === 'postback' && ev.source?.type === 'user') {
+        try { await handleDDCards(ev, await getOperators()) } catch (e) { console.log('ddcards postback error', e?.message) }
+        continue
+      }
       // 報到/登入（只在私訊）：「王小明報到」直接開帳號發登入連結（固定格式、不經 AI）；資料改在 App 名冊卡填
       if (ev.type === 'message' && ev.source?.type === 'user') {
         try { if (await handleOnboardEvent(ev)) continue } catch (e) { console.log('onboard error', e?.message) }
+        // 回饋/投票/照片歸檔/推播指令（固定指令與圖片，不經 AI）
+        try { if (await handleDDCards(ev, await getOperators())) continue } catch (e) { console.log('ddcards error', e?.message) }
       }
       if (ev.type !== 'message' || ev.message?.type !== 'text') continue
       // 群組文字訊息先快取（回收監控用；私訊不快取）
