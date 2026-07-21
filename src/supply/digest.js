@@ -20,7 +20,8 @@ export function supplyDigest({ supply, orders, recipes }) {
         const us = ss.map(vi => ({ vi, u: unitCost(vi) })).filter(x => x.u != null).sort((a, b) => a.u - b.u);
         const sellers = ss.map(vi => { const lp = lastPaid(vi); return `${vname(vi.vendor_id)}${lp ? `$${d3(lp.price)}/${vi.unit || "件"}` : ""}${vi.quote && vi.quote.price ? `(報$${d3(vi.quote.price)})` : ""}${Number(vi.moq) > 0 ? `(MOQ${Number(vi.moq).toLocaleString()})` : ""}${vi.note ? `(${vi.note})` : ""}`; }).join("、");
         const pk = ss.find(vi => packToBase(vi));
-        return `- ${g.isKey ? "★" : ""}${g.name}｜${(g.cat || "").trim() || "未分類"}｜盤點${fq(g.countFreq)}${g.safeStock ? `｜安全庫存${g.safeStock}${g.baseUnit}` : ""}${pk ? `｜1${pk.unit || "件"}=${Number(pk.packToBase).toLocaleString()}${g.baseUnit}` : ""}｜賣家:${sellers || "（沒人賣）"}${us.length ? `｜最低$${d3(us[0].u)}/${g.baseUnit}=${vname(us[0].vi.vendor_id)}` : ""}`;
+        const mc = (db.matCards || []).find(c => c.id === g.card_id); // 三層：物料卡(大類)→類別→品項
+        return `- ${g.isKey ? "★" : ""}${mc ? `[${mc.name}] ` : ""}${g.name}｜${((mc && mc.cat) || g.cat || "").trim() || "未分類"}｜盤點${fq(g.countFreq)}${g.safeStock ? `｜安全庫存${g.safeStock}${g.baseUnit}` : ""}${pk ? `｜1${pk.unit || "件"}=${Number(pk.packToBase).toLocaleString()}${g.baseUnit}` : ""}｜賣家:${sellers || "（沒人賣）"}${us.length ? `｜最低$${d3(us[0].u)}/${g.baseUnit}=${vname(us[0].vi.vendor_id)}` : ""}`;
       }).join("\n"));
     }
     // 最近變價（實付 vs 上次實付）
