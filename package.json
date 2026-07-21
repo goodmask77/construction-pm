@@ -1,14 +1,14 @@
 {
   "name": "construction-pm",
   "private": true,
-  "version": "1.47.0",
+  "version": "1.48.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "prebuild": "node scripts/gen-changelog.mjs && npm run selftest",
     "build": "vite build",
     "preview": "vite preview",
-    "selftest": "node scripts/test-task-model.mjs && node scripts/test-inv.mjs && node scripts/test-ai-coverage.mjs"
+    "selftest": "node scripts/test-task-model.mjs && node scripts/test-inv.mjs && node scripts/test-ai-coverage.mjs && node scripts/test-attendance.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.4",

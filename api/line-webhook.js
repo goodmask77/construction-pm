@@ -337,6 +337,8 @@ async function loadPunchText() {
     })
     const pend = all.filter(r => r.src === 'line' && !r.verified).length
     if (pend) lines.push(`  ⚠ LINE 備援打卡待審核 ${pend} 筆（負責人請到 App 夥伴中心→出勤 審核）`)
+    // P2：今日班表比對（本週有發布班表才有）
+    try { const pj = await import('./punch.js'); const cmp = await pj.attendanceCompareToday(); lines.push(...pj.attendanceLines(cmp)) } catch (_) {}
     return lines.join('\n')
   } catch (_) { return '' }
 }

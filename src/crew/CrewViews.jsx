@@ -6,6 +6,8 @@ import QRCode from "qrcode";
 import { ACCENT, PRIMARY, SURFACE, BORDER, TEXT, SUB, MONO, DISP } from "../lib/theme.jsx";
 import { K, auditLog } from "../lib/runtime.js";
 import { ROSTER_KEY, loadRosterDoc, saveRosterDoc, saveRosterPatch } from "./roster.js";
+import { compareDay, summarize, ATT_LABEL } from "../shift/attendance.js";
+import { schedKey, mondayOf } from "../shift/model.js";
 
 // ── 夥伴中心：SOP知識庫（2026-07-18 雙維度改造）──────────────────────────────
 // 舊的單一分類「內場/外場/通用/教育訓練」混了兩個維度（前三個是「誰的」、教育訓練是「什麼用途」）
@@ -1523,8 +1525,22 @@ export function PunchView({ me: account, userName }) {
   const canvasRef = useRef(null);
   useMeSync(people, userName, setMeId);
   const mgr = account?.role === "admin" || account?.role === "manager";
+  const [shiftDocs, setShiftDocs] = useState(null); // {staffById, shiftById, assignments} 今日班表（P2 比對用）
   const reload = async () => setRecs(await loadPunchDays(7));
-  useEffect(() => { (async () => { const rd = await loadRosterDoc(); setPeople(rd.people || []); setMeId(meFromRoster(rd.people || [], userName)); await reload(); })(); }, []);
+  useEffect(() => { (async () => {
+    const rd = await loadRosterDoc(); setPeople(rd.people || []); setMeId(meFromRoster(rd.people || [], userName)); await reload();
+    // P2：載入本週班表＋班別定義（沒發布＝比對區顯示提示）
+    try {
+      const todayISO = new Intl.DateTimeFormat("sv-SE", { timeZone: "Asia/Taipei" }).format(new Date());
+      const [sd, td, sc] = await Promise.all([
+        window.storage.get(K("shift_staff"), true), window.storage.get(K("shift_templates"), true), window.storage.get(K(schedKey("abeach", mondayOf(todayISO))), true),
+      ]);
+      const staff = sd?.value ? (JSON.parse(sd.value).staff || []) : [];
+      const shifts = td?.value ? (JSON.parse(td.value).shifts || []) : [];
+      const assignments = sc?.value ? ((JSON.parse(sc.value).assignments || []).filter(a => a.date === todayISO)) : [];
+      setShiftDocs({ staffById: Object.fromEntries(staff.map(s => [s.id, s])), shiftById: Object.fromEntries(shifts.map(s => [s.id, s])), assignments, todayISO });
+    } catch (_) { setShiftDocs({ staffById: {}, shiftById: {}, assignments: [], todayISO: "" }); }
+  })(); }, []);
 
   // 掃碼深連結：App.jsx 把 ?pt= 存進 sessionStorage 後切到本頁 → 自動打卡
   useEffect(() => {
@@ -1631,6 +1647,40 @@ export function PunchView({ me: account, userName }) {
           </div>
         ); })}
       </div>
+
+      {/* P2：今日班表比對（App 與 D哥 同一套 attendance.js 演算法；寬限5分鐘） */}
+      {(() => {
+        if (!shiftDocs) return null;
+        const punchesToday = recs.filter(r => r.day === today).map(r => ({ personId: r.personId, name: r.name, dir: r.dir, ts: r.ts }));
+        if (!shiftDocs.assignments.length) {
+          return mgr ? <div style={{ ...crewCard, fontSize: 12.5, color: "#9b9384" }}>📋 班表比對：本週尚無發布班表——排班頁發布真實班表後，這裡會自動顯示每個人「準時/遲到/未到/早退」。</div> : null;
+        }
+        const now = new Date(); const tstr = now.toLocaleTimeString("en-GB", { hour12: false, timeZone: "Asia/Taipei" });
+        const nowMin = Number(tstr.slice(0, 2)) * 60 + Number(tstr.slice(3, 5));
+        const rows = compareDay({ date: shiftDocs.todayISO, assignments: shiftDocs.assignments, staffById: shiftDocs.staffById, shiftById: shiftDocs.shiftById, punches: punchesToday, nowMin });
+        const show = mgr ? rows : rows.filter(r => r.rosterId === meId);
+        if (!show.length) return null;
+        const color = { done: "#3f7d4e", working: "#2E6FB0", late: "#b3261e", early: "#C2872E", absent: "#b3261e", pending: "#9b9384", extra: "#8d4fa8", ontime: "#3f7d4e" };
+        const sum = summarize(rows);
+        return (
+          <div style={{ ...crewCard, border: sum.bad.length && mgr ? "1.5px solid #c98a14" : `1px solid ${BORDER}` }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8, flexWrap: "wrap" }}>
+              <div style={{ fontSize: 14.5, fontWeight: 700, color: TEXT }}>📋 今日班表比對</div>
+              <span style={{ fontSize: 11.5, color: SUB }}>遲到寬限 5 分鐘</span>
+              {mgr && sum.bad.length > 0 && <span style={{ fontSize: 11, background: "#FEF2F2", color: "#b3261e", border: "1px solid #FECACA", borderRadius: 8, padding: "1px 8px", fontWeight: 700 }}>異常 {sum.bad.length}</span>}
+            </div>
+            {show.map((r, i) => (
+              <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, padding: "6px 0", borderTop: "1px solid #ece4d6", flexWrap: "wrap" }}>
+                <b style={{ width: 70 }}>{r.name}</b>
+                <span style={{ fontSize: 12, color: SUB }}>{r.shiftCode || "未排班"}{r.planIn ? ` ${r.planIn}-${r.planOut}` : ""}</span>
+                <span style={{ fontSize: 12, color: SUB }}>實到 {r.firstIn || "—"}{r.lastOut ? `~${r.lastOut}` : ""}</span>
+                <div style={{ flex: 1 }} />
+                <span style={{ fontSize: 11.5, fontWeight: 700, color: "#fff", background: color[r.status] || SUB, borderRadius: 9, padding: "2px 10px" }}>{ATT_LABEL[r.status]}{r.lateMin ? ` ${r.lateMin}分` : r.earlyMin ? ` ${r.earlyMin}分` : ""}</span>
+              </div>
+            ))}
+          </div>
+        );
+      })()}
 
       {/* 管理者：今日全店出勤 */}
       {mgr && Object.keys(byPerson).length > 0 && (

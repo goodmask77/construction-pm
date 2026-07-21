@@ -7,6 +7,8 @@
 // 出勤紀錄＝法定文件：逐筆一筆一檔 sp_crew_pch_<日期>_<personId>_<亂碼>，記到分鐘、只增不改（判向修正除外）、永久保存。
 import crypto from 'crypto'
 import { SB_URL, SB_KEY, svc, kvGet, kvSet, loadRoster } from './_onboard.js'
+import { compareDay, summarize, ATT_LABEL } from '../src/shift/attendance.js'
+import { schedKey, mondayOf } from '../src/shift/model.js'
 
 const SECRET = crypto.createHash('sha256').update('punch:' + SB_KEY).digest() // 站點 token 簽章金鑰（由服務金鑰衍生，不另設環境變數）
 const TOKEN_TTL = 75 * 1000 // QR 每 30 秒換新，容忍慢掃 75 秒
@@ -66,6 +68,31 @@ export async function recordPunch(person, src, verified, forceDir) {
   let ms = 0
   for (let i = 0; i < list.length; i += 2) if (list[i]?.dir === 'in' && list[i + 1]?.dir === 'out') ms += new Date(list[i + 1].ts) - new Date(list[i].ts)
   return { key, dir, ts, todayHours: Math.round(ms / 360000) / 10, count: list.length }
+}
+
+// P2 出勤×班表比對（今日）：App 與 D哥 共用（attendance.js 同一套算法）。本週沒發布班表回 null。
+export async function attendanceCompareToday() {
+  const todayISO = tpeDate()
+  const [staffDoc, tplDoc, sched] = await Promise.all([
+    kvGet('sp_crew_shift_staff'), kvGet('sp_crew_shift_templates'), kvGet('sp_crew_' + schedKey('abeach', mondayOf(todayISO))),
+  ])
+  const assignments = (sched?.assignments || []).filter(a => a.date === todayISO)
+  if (!assignments.length) return null
+  const staffById = Object.fromEntries((staffDoc?.staff || []).map(s => [s.id, s]))
+  const shiftById = Object.fromEntries((tplDoc?.shifts || []).map(s => [s.id, s]))
+  const punches = await todayPunchesAll()
+  const t = new Date().toLocaleTimeString('en-GB', { hour12: false, timeZone: 'Asia/Taipei' })
+  const nowMin = Number(t.slice(0, 2)) * 60 + Number(t.slice(3, 5))
+  const rows = compareDay({ date: todayISO, assignments, staffById, shiftById, punches, nowMin })
+  return { rows, sum: summarize(rows) }
+}
+export function attendanceLines(cmp) {
+  if (!cmp) return []
+  const lines = ['【今日班表比對（遲到寬限5分）】']
+  cmp.rows.forEach(r => lines.push(`  - ${r.name}｜${r.shiftCode || '未排班'} ${r.planIn ? r.planIn + '-' + r.planOut : ''}｜實到 ${r.firstIn || '—'}${r.lastOut ? '~' + r.lastOut : ''}｜${ATT_LABEL[r.status]}${r.lateMin ? `(遲${r.lateMin}分)` : ''}${r.earlyMin ? `(早退${r.earlyMin}分)` : ''}`))
+  const b = cmp.sum.bad
+  if (b.length) lines.push(`  ⚠ 異常 ${b.length} 筆：${b.map(r => `${r.name}${ATT_LABEL[r.status]}`).join('、')}`)
+  return lines
 }
 
 export default async function handler(req, res) {

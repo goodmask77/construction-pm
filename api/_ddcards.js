@@ -312,6 +312,21 @@ export async function handleDDCards(ev, operators) {
     await reply(txt(`已推播「${poll.title}」給 ${n} 位還沒投的綁定夥伴（計 ${n} 則）。`))
     return true
   }
+  // 操作者：出勤日報（回覆免費）：今日打卡＋班表比對
+  if (isOp && /^出勤日報$/.test(text)) {
+    const pj = await import('./punch.js')
+    const all = await pj.todayPunchesAll()
+    const lines = [`⏱ 今日出勤（${all.length} 筆打卡）`]
+    const by = {}
+    all.forEach(r => { (by[r.personId] = by[r.personId] || { name: r.name, recs: [] }).recs.push(r) })
+    const hhmm = (t) => new Date(t).toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Taipei' })
+    Object.values(by).forEach(pp => lines.push(`・${pp.name}：${pp.recs.map(r => `${r.dir === 'in' ? '上' : '下'}${hhmm(r.ts)}${r.src === 'line' && !r.verified ? '(待審)' : ''}`).join(' ')}`))
+    const cmp = await pj.attendanceCompareToday()
+    if (cmp) lines.push(...pj.attendanceLines(cmp))
+    else lines.push('（本週尚無發布班表，無法比對遲到/未到）')
+    await reply(txt(lines.join('\n').slice(0, 4800)))
+    return true
+  }
   // 操作者：看心得彙整（回覆免費）
   const mSeeJ = isOp && text.match(/^看心得[\s]*(\d*)$/)
   if (mSeeJ) {
