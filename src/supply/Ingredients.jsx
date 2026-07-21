@@ -31,6 +31,7 @@ export default function IngredientsView({ db, save, canEdit, showMoney, confirm,
   const [zoom, setZoom] = useState(null);        // 圖片放大檢視（lightbox）url
   const [imp, setImp] = useState(null);          // 截圖匯入 modal：{vid,newVendor,vendorGuess,rows,busy}
   const imgRef = useRef(null); const imgFor = useRef(null); // 圖片上傳 input + 目標物料 id
+  const viImgRef = useRef(null); const viImgFor = useRef(null); // 貨源（品項）自己的照片上傳
   const shotRef = useRef(null);                  // 截圖上傳 input
   const inp = { border: `1px solid ${C.line}`, borderRadius: 7, padding: "5px 8px", fontSize: 12.5, background: "#fff", color: C.text, outline: "none", boxSizing: "border-box" };
   const pill = (on, color) => ({ border: `1.5px solid ${on ? color : "#d9cfbd"}`, background: on ? color : "#fff", color: on ? "#fff" : C.sub, borderRadius: 999, padding: "3px 10px", fontSize: 11.5, fontWeight: on ? 700 : 500, cursor: canEdit ? "pointer" : "default", whiteSpace: "nowrap" });
@@ -103,6 +104,22 @@ export default function IngredientsView({ db, save, canEdit, showMoney, confirm,
     catch (e) { flash("圖片上傳失敗：" + (e?.message || e)); }
   };
 
+  // ── 貨源（品項）自己的照片：跟卡片主圖分家，合併/換卡都跟著品項走 ──
+  const upViImg = async (file) => {
+    const vid = viImgFor.current; if (!vid || !file) return;
+    try { const { url, path } = await uploadPhoto(file); save({ vendorItems: (db.vendorItems || []).map(v => v.id === vid ? { ...v, img: url, imgPath: path } : v) }); flash("✓ 品項照片已更新"); }
+    catch (e) { flash("圖片上傳失敗：" + (e?.message || e)); }
+  };
+
+  // ── ✂️ 拆出：合併錯了，把單一貨源拆回獨立一張卡（照片跟著走）──
+  const splitOut = async (g, vi) => {
+    if (!(await confirm(`把「${vi.name}」從「${g.name}」拆出去、自己成一張卡？`, { confirmLabel: "拆出" }))) return;
+    const ng = { id: rid("g"), name: (vi.name || "").trim() || "未命名", cat: g.cat || "", baseUnit: g.baseUnit || "個", countFreq: { type: "none", days: [], dom: 1, paused: false }, countRole: "", countUnit: "", isKey: false, safeStock: "", note: "", sort: (db.ingredients || []).length, tags: "", img: vi.img || "", imgPath: vi.imgPath || "" };
+    save({ ingredients: [...(db.ingredients || []), ng], vendorItems: (db.vendorItems || []).map(v => v.id === vi.id ? { ...v, ingredient_id: ng.id } : v) });
+    setOpen(null);
+    flash(`✂️ 已把「${vi.name}」拆成獨立卡片`);
+  };
+
   // ── 建議合併 ──
   const dismissed = new Set((db.settings && db.settings.mergeDismissed) || []);
   const stock = all.filter(g => !g.nonStock);
@@ -116,7 +133,11 @@ export default function IngredientsView({ db, save, canEdit, showMoney, confirm,
     }
   }
   const doMerge = (target, src) => {
-    save({ ingredients: (db.ingredients || []).filter(x => x.id !== src.id), vendorItems: (db.vendorItems || []).map(v => v.ingredient_id === src.id ? { ...v, ingredient_id: target.id } : v) });
+    // 照片保護（2026-07-22 張良：合併後品項照片不見）：被併卡的圖下放給沒圖的貨源；目標卡沒主圖就接手當代表圖
+    save({
+      ingredients: (db.ingredients || []).filter(x => x.id !== src.id).map(x => x.id === target.id && !x.img && src.img ? { ...x, img: src.img, imgPath: src.imgPath || "" } : x),
+      vendorItems: (db.vendorItems || []).map(v => v.ingredient_id === src.id ? { ...v, ingredient_id: target.id, img: v.img || src.img || "", imgPath: v.imgPath || src.imgPath || "" } : v),
+    });
     flash(`✓ 已把「${src.name}」併入「${target.name}」`);
   };
   const dismissSugg = (key) => save({ settings: { ...(db.settings || {}), mergeDismissed: [...((db.settings && db.settings.mergeDismissed) || []), key] } });
@@ -257,18 +278,21 @@ export default function IngredientsView({ db, save, canEdit, showMoney, confirm,
       else { vis2.push({ id: rid("vi"), vendor_id: vid, grp: "", name: r.name.trim(), spec: r.spec.trim(), unit: r.unit || "箱", price: r.price || "", moq: r.moq || "", note: r.note || "", url: r.url || "", safeStock: "", sort: baseSort + i, tags: "" }); addN++; }
     });
     const plan = organizeAll({ ...db, vendors: vendors2, vendorItems: vis2 });
-    // 截圖裁下的商品照片 → 上傳 → 掛到物料卡（卡上已有圖就不動）
+    // 截圖裁下的商品照片 → 上傳 → 存到「貨源」自己身上（品項的圖跟品項走，合併也不丟）＋物料卡沒主圖就順便當代表圖
     let imgN = 0;
     const withThumb = rows.filter(r => r.thumb);
     if (withThumb.length) {
       setImp(m => m ? { ...m, busy: `上傳圖片中（${withThumb.length} 張）…` } : m);
       for (const r of withThumb) {
-        const g = plan.ingredients.find(x => normName(x.name) === normName(r.name));
-        if (!g || g.img) continue;
+        const key = normName(r.name);
+        const g = plan.ingredients.find(x => normName(x.name) === key);
+        const vi2 = plan.vendorItems.find(v => v.vendor_id === vid && normName(v.name) === key);
+        if ((!g || g.img) && (!vi2 || vi2.img)) continue;
         try {
           const file = new File([r.thumb], "item.jpg", { type: "image/jpeg" });
           const { url, path } = await uploadPhoto(file);
-          plan.ingredients = plan.ingredients.map(x => x.id === g.id ? { ...x, img: url, imgPath: path } : x);
+          if (vi2 && !vi2.img) plan.vendorItems = plan.vendorItems.map(v => v.id === vi2.id ? { ...v, img: url, imgPath: path } : v);
+          if (g && !g.img) plan.ingredients = plan.ingredients.map(x => x.id === g.id ? { ...x, img: url, imgPath: path } : x);
           imgN++;
         } catch (_) { /* 單張失敗不擋整批 */ }
       }
@@ -334,16 +358,21 @@ export default function IngredientsView({ db, save, canEdit, showMoney, confirm,
           </>}
         </div>
         <div style={{ border: `1px solid ${C.line}`, borderRadius: 8, overflow: "hidden", background: "#fff" }}>
-          <div style={{ display: "grid", gridTemplateColumns: `minmax(80px,0.9fr) minmax(120px,1.3fr) 150px 92px ${showMoney ? "110px 90px" : ""}`, gap: 8, padding: "5px 10px", fontSize: 10, color: C.faint, fontWeight: 700, background: "#f4efe5" }}>
-            <span>廠商</span><span>品名/規格</span><span>每件入數</span><span title="這家報價的最低訂購量（MOQ）">最低訂購</span>{showMoney && <><span style={{ textAlign: "right" }}>最近實付</span><span style={{ textAlign: "right" }}>$/{g.baseUnit || "單位"}</span></>}
+          <div style={{ display: "grid", gridTemplateColumns: `34px minmax(80px,0.9fr) minmax(120px,1.3fr) 150px 92px ${showMoney ? "110px 90px" : ""}`, gap: 8, padding: "5px 10px", fontSize: 10, color: C.faint, fontWeight: 700, background: "#f4efe5" }}>
+            <span>圖</span><span>廠商</span><span>品名/規格</span><span>每件入數</span><span title="這家報價的最低訂購量（MOQ）">最低訂購</span>{showMoney && <><span style={{ textAlign: "right" }}>最近實付</span><span style={{ textAlign: "right" }}>$/{g.baseUnit || "單位"}</span></>}
           </div>
           {srcs.length === 0 && <div style={{ padding: "8px 10px", fontSize: 11.5, color: C.red }}>沒有廠商賣這個——按上面「⚡ 自動整理」或用「📸 貼截圖匯入」。</div>}
           {srcs.map(vi => {
             const u = unitCost(vi); const lp = lastPaid(vi); const al = priceAlert(vi, alertPct);
             const best = showMoney && u != null && minU != null && u <= minU + 1e-9 && units.length > 1;
             return (
-              <div key={vi.id} style={{ display: "grid", gridTemplateColumns: `minmax(80px,0.9fr) minmax(120px,1.3fr) 150px 92px ${showMoney ? "110px 90px" : ""}`, gap: 8, alignItems: "center", padding: "4px 10px", borderTop: `1px solid #f0ead9`, fontSize: 12, background: best ? "#eef5ef" : "#fff" }}>
-                <span style={{ fontWeight: 700, color: C.text }}>{vname(vi.vendor_id)}</span>
+              <div key={vi.id} style={{ display: "grid", gridTemplateColumns: `34px minmax(80px,0.9fr) minmax(120px,1.3fr) 150px 92px ${showMoney ? "110px 90px" : ""}`, gap: 8, alignItems: "center", padding: "4px 10px", borderTop: `1px solid #f0ead9`, fontSize: 12, background: best ? "#eef5ef" : "#fff" }}>
+                {/* 品項自己的照片：點擊上傳/更換（跟卡片主圖分家） */}
+                <span onClick={() => { if (canEdit) { viImgFor.current = vi.id; viImgRef.current && viImgRef.current.click(); } else if (vi.img) setZoom(vi.img); }} title={vi.img ? "這個品項自己的照片（點擊更換）" : "點擊上傳這個品項自己的照片"} style={{ width: 30, height: 30, borderRadius: 6, border: `1px solid ${C.line}`, background: vi.img ? `url(${vi.img}) center/cover` : "#f4efe5", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, color: "#c8bca6", cursor: "pointer", flexShrink: 0 }}>{vi.img ? "" : "＋"}</span>
+                <span style={{ fontWeight: 700, color: C.text, minWidth: 0 }}>
+                  <div>{vname(vi.vendor_id)}</div>
+                  {canEdit && srcs.length > 1 && <button onClick={() => splitOut(g, vi)} title="把這個品項拆回獨立一張卡（合併錯了用這個）" style={{ ...sbtn, padding: "1px 8px", fontSize: 10, marginTop: 2 }}>✂ 拆出</button>}
+                </span>
                 {/* 品名/規格＋商品網址（截圖有網址列會自動帶入；太長截不進圖就直接貼這裡）*/}
                 <span style={{ color: C.sub, fontSize: 11.5, minWidth: 0 }}>
                   <div>{vi.name}{vi.spec ? `（${vi.spec}）` : ""}</div>
@@ -480,7 +509,8 @@ export default function IngredientsView({ db, save, canEdit, showMoney, confirm,
                 <div key={vi.id} draggable={canEdit} onDragStart={() => setDragI(vi.id)} onDragOver={e => dragI && e.preventDefault()} onDrop={() => dropItemOn(vi.id, v.id)}
                   onClick={() => g && setOpen(g.id)}
                   style={{ width: 150, border: `1.5px solid ${C.hard}`, borderRadius: 10, overflow: "hidden", background: "#fff", cursor: g ? "pointer" : "default" }}>
-                  <div style={{ height: 80, background: g && g.img ? `url(${g.img}) center/cover` : "#f4efe5", display: "flex", alignItems: "center", justifyContent: "center" }}>{!(g && g.img) && <span style={{ fontSize: 20, opacity: 0.3 }}>📦</span>}</div>
+                  {/* 品項自己的圖優先，沒有才用卡片代表圖 */}
+                  <div style={{ height: 80, background: (vi.img || (g && g.img)) ? `url(${vi.img || g.img}) center/cover` : "#f4efe5", display: "flex", alignItems: "center", justifyContent: "center" }}>{!(vi.img || (g && g.img)) && <span style={{ fontSize: 20, opacity: 0.3 }}>📦</span>}</div>
                   <div style={{ padding: "5px 8px" }}>
                     <div style={{ fontSize: 11.5, fontWeight: 700, color: C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{vi.name}</div>
                     <div style={{ fontSize: 9.5, color: C.faint }}>{vi.spec || "—"}</div>
@@ -535,6 +565,7 @@ export default function IngredientsView({ db, save, canEdit, showMoney, confirm,
   return (
     <div style={{ maxWidth: 1060, margin: "0 auto" }}>
       <input ref={imgRef} type="file" accept="image/*" style={{ display: "none" }} onChange={e => { const f = e.target.files && e.target.files[0]; if (f) upImg(f); e.target.value = ""; }} />
+      <input ref={viImgRef} type="file" accept="image/*" style={{ display: "none" }} onChange={e => { const f = e.target.files && e.target.files[0]; if (f) upViImg(f); e.target.value = ""; }} />
       <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "6px 0 12px", flexWrap: "wrap" }}>
         <span style={{ background: C.accent, color: "#fff", fontSize: 11.5, fontWeight: 700, borderRadius: 4, padding: "2px 8px" }}>物料</span>
         <div style={{ fontSize: 17, fontWeight: 800, color: C.text }} title="截圖貼上就能匯入品項；同名自動併卡、入數自動抓；拖曳可排序。">物料清單</div>
