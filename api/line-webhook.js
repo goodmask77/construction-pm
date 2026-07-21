@@ -339,6 +339,13 @@ async function loadPunchText() {
     if (pend) lines.push(`  ⚠ LINE 備援打卡待審核 ${pend} 筆（負責人請到 App 夥伴中心→出勤 審核）`)
     // P2：今日班表比對（本週有發布班表才有）
     try { const pj = await import('./punch.js'); const cmp = await pj.attendanceCompareToday(); lines.push(...pj.attendanceLines(cmp)) } catch (_) {}
+    // P3：薪資試算參數（sp_crew_pay_rules；試算明細在 App 薪資頁。薪資屬機密——數字只私訊回老闆）
+    try {
+      const { rulesAt } = await import('../src/shift/payroll.js')
+      const doc = await kvGetMany(['sp_crew_pay_rules']).then(m => m['sp_crew_pay_rules'])
+      const rr = rulesAt(doc, new Date().toISOString().slice(0, 10))
+      lines.push(`【薪資/勞基法參數（App 夥伴中心→薪資試算 ⚙ 可調；試算=草稿）】基本工資 月${rr.minWageMonthly}/時${rr.minWageHourly}・加班 ${rr.otRate1}/${rr.otRate2}・勞保 ${rr.laborInsRate} 健保 ${rr.healthInsRate} 勞退 ${rr.pensionRate}${(doc?.scheduled || []).length ? `・預排調整 ${(doc.scheduled).map(s => s.effective).join('、')}` : ''}`)
+    } catch (_) {}
     return lines.join('\n')
   } catch (_) { return '' }
 }

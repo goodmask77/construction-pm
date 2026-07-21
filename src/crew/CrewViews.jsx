@@ -8,6 +8,7 @@ import { K, auditLog } from "../lib/runtime.js";
 import { ROSTER_KEY, loadRosterDoc, saveRosterDoc, saveRosterPatch } from "./roster.js";
 import { compareDay, summarize, ATT_LABEL } from "../shift/attendance.js";
 import { schedKey, mondayOf } from "../shift/model.js";
+import { PAY_DEFAULTS, rulesAt, calcMonthPay, monthSummary } from "../shift/payroll.js";
 
 // ── 夥伴中心：SOP知識庫（2026-07-18 雙維度改造）──────────────────────────────
 // 舊的單一分類「內場/外場/通用/教育訓練」混了兩個維度（前三個是「誰的」、教育訓練是「什麼用途」）
@@ -1715,4 +1716,183 @@ function StationClock() {
   const [now, setNow] = useState(new Date());
   useEffect(() => { const iv = setInterval(() => setNow(new Date()), 1000); return () => clearInterval(iv); }, []);
   return <div style={{ fontFamily: MONO, fontSize: 40, fontWeight: 800, color: TEXT, letterSpacing: 1 }}>{now.toLocaleTimeString("zh-TW", { hour12: false, timeZone: "Asia/Taipei" })}</div>;
+}
+
+// ── P3 薪資試算（張良 2026-07-22：可用模擬班表估、勞基法條件進設定頁+預排生效日自動切換）──
+// ⚠ 草稿試算：正式發薪以人工核定為準。引擎= src/shift/payroll.js（App 與 D哥 同一套）。
+export function PayView({ me: account, userName }) {
+  const [roster, setRoster] = useState(null);
+  const [rulesDoc, setRulesDoc] = useState(null);
+  const [month, setMonth] = useState(new Intl.DateTimeFormat("sv-SE", { timeZone: "Asia/Taipei" }).format(new Date()).slice(0, 7)); // YYYY-MM
+  const [source, setSource] = useState("auto"); // auto=實際打卡優先 / sched=純班表模擬
+  const [hoursBy, setHoursBy] = useState(null);  // {rosterId: {date: hours}}
+  const [showSet, setShowSet] = useState(false);
+  const mgr = account?.role === "admin" || account?.role === "manager";
+  const [meId, setMeId] = useState("");
+
+  const loadAll = async (m = month, src = source) => {
+    setHoursBy(null);
+    const rd = await loadRosterDoc(); setRoster(rd); setMeId(meFromRoster(rd.people || [], userName));
+    let prd = null; try { const r = await window.storage.get(K("pay_rules"), true); prd = r?.value ? JSON.parse(r.value) : null; } catch (_) {}
+    setRulesDoc(prd);
+    // 班表時數（模擬）：抓涵蓋本月的每週班表
+    const schedHours = {}; // rosterId -> date -> hours
+    try {
+      const [sd, td] = await Promise.all([window.storage.get(K("shift_staff"), true), window.storage.get(K("shift_templates"), true)]);
+      const staff = sd?.value ? (JSON.parse(sd.value).staff || []) : [];
+      const shifts = td?.value ? (JSON.parse(td.value).shifts || []) : [];
+      const shiftById = Object.fromEntries(shifts.map(s => [s.id, s]));
+      const rosterOf = Object.fromEntries(staff.map(s => [s.id, s.rosterId]));
+      const shiftHours = (sh) => { const [h1, m1] = sh.start.split(":").map(Number), [h2, m2] = sh.end.split(":").map(Number); return Math.max(0, (h2 * 60 + m2 - h1 * 60 - m1 - (sh.breakMin || 0)) / 60); };
+      const first = `${month}-01`;
+      const mondays = new Set(); for (let i = 0; i < 31; i++) { const d = new Date(first + "T12:00:00"); d.setDate(d.getDate() + i); const iso = d.toISOString().slice(0, 10); if (!iso.startsWith(month)) break; mondays.add(mondayOf(iso)); }
+      for (const wk of mondays) {
+        try { const sc = await window.storage.get(K(schedKey("abeach", wk)), true); const asg = sc?.value ? (JSON.parse(sc.value).assignments || []) : [];
+          asg.filter(a => String(a.date || "").startsWith(month)).forEach(a => { const rid = rosterOf[a.staffId]; const sh = shiftById[a.shiftId]; if (!rid || !sh) return; (schedHours[rid] = schedHours[rid] || {})[a.date] = (schedHours[rid][a.date] || 0) + shiftHours(sh); });
+        } catch (_) {}
+      }
+    } catch (_) {}
+    // 實際打卡時數：一次抓整月前綴
+    const punchHours = {};
+    try {
+      const map = await getSharedPrefix(`sp_crew_pch_${month.replace("-", "")}`);
+      const byPD = {};
+      Object.entries(map).forEach(([k, v]) => { try { const r = JSON.parse(v); const day = k.split("_")[3]; (byPD[r.personId + "|" + day] = byPD[r.personId + "|" + day] || []).push(r); } catch (_) {} });
+      Object.entries(byPD).forEach(([pd, list]) => { const [rid, day] = pd.split("|"); list.sort((a, b) => a.ts < b.ts ? -1 : 1); let ms = 0; for (let i = 0; i < list.length; i += 2) if (list[i]?.dir === "in" && list[i + 1]?.dir === "out") ms += new Date(list[i + 1].ts) - new Date(list[i].ts); const date = `${day.slice(0, 4)}-${day.slice(4, 6)}-${day.slice(6)}`; (punchHours[rid] = punchHours[rid] || {})[date] = Math.round(ms / 360000) / 10; });
+    } catch (_) {}
+    // 合成：auto=該日有打卡用打卡、否則用班表；sched=全用班表
+    const out = {};
+    const ids = new Set([...Object.keys(schedHours), ...Object.keys(punchHours)]);
+    for (const rid of ids) {
+      out[rid] = {};
+      const dates = new Set([...Object.keys(schedHours[rid] || {}), ...Object.keys(punchHours[rid] || {})]);
+      for (const d of dates) out[rid][d] = (src === "sched") ? (schedHours[rid]?.[d] || 0) : (punchHours[rid]?.[d] ?? schedHours[rid]?.[d] ?? 0);
+    }
+    setHoursBy(out);
+  };
+  useEffect(() => { loadAll(); }, [month, source]);
+
+  if (!roster || hoursBy === null) return <div style={{ padding: 40, color: SUB, fontSize: 14 }}>試算中…</div>;
+  const people = (roster.people || []).filter(p => (p.status || "在職") === "在職" && !p.onboarding);
+  const titleField = (roster.fields || []).find(f => /職稱/.test(f.label || ""));
+  const titleOf = (p) => titleField ? (p[titleField.key] || "") : (p.grade || "");
+  const monthEnd = `${month}-28`;
+  const rules = rulesAt(rulesDoc, monthEnd);
+  const rows = people.map(p => {
+    const days = Object.entries(hoursBy[p.id] || {}).map(([date, hours]) => ({ date, hours }));
+    if (!days.length) return null;
+    return { p, title: titleOf(p), pay: calcMonthPay({ person: p, title: titleOf(p), days, rules }) };
+  }).filter(Boolean);
+  const show = mgr ? rows : rows.filter(r => r.p.id === meId);
+  const sum = monthSummary(rows);
+  const fmt$ = (x) => "$" + Math.round(x).toLocaleString();
+  const nextSched = (rulesDoc?.scheduled || []).filter(s => s.effective > monthEnd).sort((a, b) => a.effective.localeCompare(b.effective))[0];
+  const saveRules = async (next) => { const doc = { ...(rulesDoc || {}), ...next, updatedAt: new Date().toISOString() }; setRulesDoc(doc); try { auditLog("編輯", "薪資/勞基法參數設定"); } catch (_) {} try { await window.storage.set(K("pay_rules"), JSON.stringify(doc), true); } catch (_) {} };
+
+  return (
+    <div>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "6px 0 10px", flexWrap: "wrap" }}>
+        <div style={{ fontSize: 18, fontWeight: 700, color: TEXT }}>💰 薪資試算</div>
+        <span style={{ fontSize: 11, background: "#FEF3C7", color: "#92400e", borderRadius: 8, padding: "2px 8px", fontWeight: 600 }}>草稿試算・發薪以人工核定為準</span>
+        <div style={{ flex: 1 }} />
+        <input type="month" value={month} onChange={e => setMonth(e.target.value)} style={{ border: `1px solid ${BORDER}`, borderRadius: 8, padding: "7px 10px", fontSize: 13.5, background: "#fff" }} />
+        <div style={{ display: "inline-flex", background: "#ece4d6", borderRadius: 8, padding: 2 }}>
+          {[["auto", "實卡優先"], ["sched", "純班表模擬"]].map(([k, l]) => (
+            <button key={k} onClick={() => setSource(k)} style={{ border: "none", background: source === k ? "#fff" : "transparent", color: TEXT, borderRadius: 6, padding: "6px 12px", fontSize: 12.5, fontWeight: source === k ? 700 : 500, cursor: "pointer" }}>{l}</button>
+          ))}
+        </div>
+        {mgr && <button onClick={() => setShowSet(true)} style={{ border: `1.5px solid #c8bca6`, background: "#fff", color: TEXT, borderRadius: 8, padding: "8px 14px", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>⚙ 薪資/勞基法設定</button>}
+      </div>
+      <div style={{ fontSize: 12, color: SUB, marginBottom: 12 }}>
+        時數來源：{source === "auto" ? "有打卡的日子用實際打卡、沒打卡用班表排定（模擬）" : "全部用班表排定時數模擬"}・適用參數：基本工資 月{rules.minWageMonthly.toLocaleString()}／時{rules.minWageHourly}、加班 {rules.otRate1}／{rules.otRate2}
+        {nextSched && <span style={{ color: "#C2872E", fontWeight: 600 }}>・📅 已預排 {nextSched.effective} 起自動套用新參數{nextSched.note ? `（${nextSched.note}）` : ""}</span>}
+      </div>
+      {show.length === 0 && <div style={{ ...crewCard, color: "#9b9384", fontSize: 13.5 }}>{month} 沒有可試算的時數——{source === "sched" ? "本月沒有發布班表" : "本月沒有打卡也沒有班表"}。排班頁發布班表或開始打卡後，這裡就能試算。</div>}
+      {show.length > 0 && (
+        <div style={{ background: "#fff", border: "1.5px solid #c8bca6", borderRadius: 10, overflow: "hidden" }}>
+          <div style={{ overflowX: "auto" }}><div style={{ minWidth: 900 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "150px 110px 1fr 90px 90px 90px 100px 100px 100px", background: "#ece4d6", borderBottom: "1.5px solid #c8bca6", fontSize: 10.5, fontWeight: 700, color: "#9b9384", letterSpacing: .8 }}>
+              {["姓名（職稱）", "時數 正常+加班", "底薪/時薪", "加班費", "津貼", "勞健保自付", "應發", "預估實領", "雇主總成本"].map(h => <span key={h} style={{ padding: "8px 8px" }}>{h}</span>)}
+            </div>
+            {show.map(({ p, title, pay }) => (
+              <div key={p.id} style={{ display: "grid", gridTemplateColumns: "150px 110px 1fr 90px 90px 90px 100px 100px 100px", alignItems: "center", borderTop: "1px solid #f0ead9", fontSize: 13, height: 40 }}>
+                <span style={{ padding: "0 8px", fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.name}<span style={{ color: "#9b9384", fontWeight: 400, fontSize: 11.5 }}>（{title || "—"}）</span></span>
+                <span style={{ padding: "0 8px", fontFamily: MONO, fontSize: 12.5 }}>{pay.hours.reg}+{r1sum(pay.hours.ot1, pay.hours.ot2)}h</span>
+                <span style={{ padding: "0 8px", fontFamily: MONO, fontSize: 12.5 }}>{pay.hourlyMode ? `${pay.wage}/時` : fmt$(pay.wage) + "/月"}</span>
+                <span style={{ padding: "0 8px", fontFamily: MONO, fontSize: 12.5, color: pay.otPay ? "#C2872E" : SUB }}>{fmt$(pay.otPay)}</span>
+                <span style={{ padding: "0 8px", fontFamily: MONO, fontSize: 12.5, color: SUB }}>{fmt$(pay.allowance)}</span>
+                <span style={{ padding: "0 8px", fontFamily: MONO, fontSize: 12.5, color: SUB }}>-{fmt$(pay.laborSelf + pay.healthSelf)}</span>
+                <span style={{ padding: "0 8px", fontFamily: MONO, fontSize: 13, fontWeight: 700 }}>{fmt$(pay.gross)}</span>
+                <span style={{ padding: "0 8px", fontFamily: MONO, fontSize: 13, fontWeight: 800, color: "#3f7d4e" }}>{fmt$(pay.net)}</span>
+                <span style={{ padding: "0 8px", fontFamily: MONO, fontSize: 12.5, color: ACCENT }}>{fmt$(pay.employerCost)}</span>
+              </div>
+            ))}
+            {mgr && (
+              <div style={{ display: "grid", gridTemplateColumns: "150px 110px 1fr 90px 90px 90px 100px 100px 100px", alignItems: "center", borderTop: "1.5px solid #c8bca6", background: "#FBF7EE", fontSize: 13, height: 42, fontWeight: 800 }}>
+                <span style={{ padding: "0 8px" }}>合計（{sum.people} 人）</span><span /><span /><span style={{ padding: "0 8px", fontFamily: MONO }}>{fmt$(sum.otPay)}</span><span /><span />
+                <span style={{ padding: "0 8px", fontFamily: MONO }}>{fmt$(sum.gross)}</span>
+                <span style={{ padding: "0 8px", fontFamily: MONO, color: "#3f7d4e" }}>{fmt$(sum.net)}</span>
+                <span style={{ padding: "0 8px", fontFamily: MONO, color: ACCENT }}>{fmt$(sum.employerCost)}</span>
+              </div>
+            )}
+          </div></div>
+        </div>
+      )}
+      {showSet && <PayRulesModal rulesDoc={rulesDoc} onSave={saveRules} onClose={() => setShowSet(false)} />}
+    </div>
+  );
+}
+const r1sum = (a, b) => Math.round((a + b) * 10) / 10;
+
+// ⚙ 薪資/勞基法設定（可改參數＋預排調整：設生效日到期自動切換——法規調整不用改程式）
+function PayRulesModal({ rulesDoc, onSave, onClose }) {
+  const cur = { ...PAY_DEFAULTS, ...(rulesDoc || {}) };
+  const [d, setD] = useState({ minWageMonthly: cur.minWageMonthly, minWageHourly: cur.minWageHourly, otRate1: cur.otRate1, otRate2: cur.otRate2, laborInsRate: cur.laborInsRate, laborInsEmpShare: cur.laborInsEmpShare, healthInsRate: cur.healthInsRate, healthInsEmpShare: cur.healthInsEmpShare, pensionRate: cur.pensionRate, monthlyBaseHours: cur.monthlyBaseHours });
+  const [sch, setSch] = useState(cur.scheduled || []);
+  const [ns, setNs] = useState({ effective: "", minWageMonthly: "", minWageHourly: "", note: "" });
+  const F = (k, label, step = 1) => (
+    <label style={{ display: "block", fontSize: 11, color: "#9b9384", fontWeight: 600 }}>{label}
+      <input type="number" step={step} value={d[k]} onChange={e => setD(s => ({ ...s, [k]: Number(e.target.value) }))} style={{ width: "100%", boxSizing: "border-box", border: `1px solid ${BORDER}`, borderRadius: 8, padding: "7px 9px", fontSize: 13.5, marginTop: 3 }} />
+    </label>
+  );
+  return (
+    <div onClick={e => e.target === e.currentTarget && onClose()} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.45)", zIndex: 800, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+      <div style={{ background: "#fff", border: `1px solid ${BORDER}`, borderRadius: 12, padding: 22, width: "min(620px,96vw)", maxHeight: "88vh", overflowY: "auto" }}>
+        <div style={{ display: "flex", alignItems: "center", marginBottom: 4 }}>
+          <div style={{ fontSize: 15, fontWeight: 700 }}>⚙ 薪資／勞基法參數設定</div><div style={{ flex: 1 }} />
+          <button onClick={onClose} style={{ background: "none", border: "none", fontSize: 22, cursor: "pointer", color: SUB }}>×</button>
+        </div>
+        <div style={{ fontSize: 11.5, color: SUB, marginBottom: 12 }}>法規調整（例每年基本工資公告）在下面「預排調整」設好生效日＝到期自動套用，不用改程式。每年 1 月記得跟官方公告核對一次。⚠ 倍率/費率建議經勞資顧問覆核。</div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(160px,1fr))", gap: 10 }}>
+          {F("minWageMonthly", "基本工資（月薪）")}{F("minWageHourly", "基本工資（時薪）")}
+          {F("otRate1", "加班倍率（前2小時）", 0.01)}{F("otRate2", "加班倍率（第3小時起）", 0.01)}
+          {F("monthlyBaseHours", "月薪換算時薪除數")}
+          {F("laborInsRate", "勞保費率", 0.001)}{F("laborInsEmpShare", "勞保自付比例", 0.01)}
+          {F("healthInsRate", "健保費率", 0.0001)}{F("healthInsEmpShare", "健保自付比例", 0.01)}
+          {F("pensionRate", "勞退雇主提繳率", 0.01)}
+        </div>
+        <div style={{ marginTop: 16, borderTop: `1px dashed ${BORDER}`, paddingTop: 12 }}>
+          <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 6 }}>📅 預排調整（到生效日自動套用）</div>
+          {sch.length === 0 && <div style={{ fontSize: 12, color: "#9b9384", marginBottom: 6 }}>尚無預排。例：明年基本工資公告後，設 2027-01-01 生效的新數字。</div>}
+          {sch.map((s, i) => (
+            <div key={i} style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 12.5, padding: "4px 0", flexWrap: "wrap" }}>
+              <b>{s.effective}</b><span>{Object.entries(s.patch || {}).map(([k, v]) => `${k}=${v}`).join("、")}</span><span style={{ color: SUB }}>{s.note}</span>
+              <div style={{ flex: 1 }} /><button onClick={() => setSch(sch.filter((_, j) => j !== i))} style={{ border: "none", background: "none", color: "#b3261e", cursor: "pointer" }}>×</button>
+            </div>
+          ))}
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "flex-end", marginTop: 6 }}>
+            <label style={{ fontSize: 11, color: "#9b9384" }}>生效日<input type="date" value={ns.effective} onChange={e => setNs({ ...ns, effective: e.target.value })} style={{ display: "block", border: `1px solid ${BORDER}`, borderRadius: 8, padding: "6px 8px", fontSize: 13, marginTop: 3 }} /></label>
+            <label style={{ fontSize: 11, color: "#9b9384" }}>月薪基本工資<input type="number" value={ns.minWageMonthly} onChange={e => setNs({ ...ns, minWageMonthly: e.target.value })} style={{ display: "block", width: 110, border: `1px solid ${BORDER}`, borderRadius: 8, padding: "6px 8px", fontSize: 13, marginTop: 3 }} /></label>
+            <label style={{ fontSize: 11, color: "#9b9384" }}>時薪基本工資<input type="number" value={ns.minWageHourly} onChange={e => setNs({ ...ns, minWageHourly: e.target.value })} style={{ display: "block", width: 100, border: `1px solid ${BORDER}`, borderRadius: 8, padding: "6px 8px", fontSize: 13, marginTop: 3 }} /></label>
+            <label style={{ fontSize: 11, color: "#9b9384", flex: 1, minWidth: 120 }}>備註<input value={ns.note} onChange={e => setNs({ ...ns, note: e.target.value })} style={{ display: "block", width: "100%", boxSizing: "border-box", border: `1px solid ${BORDER}`, borderRadius: 8, padding: "6px 8px", fontSize: 13, marginTop: 3 }} placeholder="例：2027基本工資調整" /></label>
+            <button onClick={() => { if (!ns.effective) { alert("請選生效日"); return; } const patch = {}; if (ns.minWageMonthly) patch.minWageMonthly = Number(ns.minWageMonthly); if (ns.minWageHourly) patch.minWageHourly = Number(ns.minWageHourly); if (!Object.keys(patch).length) { alert("至少填一個新數字"); return; } setSch([...sch, { effective: ns.effective, patch, note: ns.note }]); setNs({ effective: "", minWageMonthly: "", minWageHourly: "", note: "" }); }} style={{ border: `1.5px solid ${ACCENT}`, background: "#fff", color: ACCENT, borderRadius: 8, padding: "7px 14px", fontSize: 12.5, fontWeight: 700, cursor: "pointer" }}>＋ 加入預排</button>
+          </div>
+        </div>
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 16 }}>
+          <button onClick={onClose} style={{ border: `1px solid ${BORDER}`, background: "#fff", color: SUB, borderRadius: 8, padding: "8px 16px", fontSize: 13, cursor: "pointer" }}>取消</button>
+          <button onClick={() => { onSave({ ...d, scheduled: sch }); onClose(); }} style={{ border: "none", background: ACCENT, color: "#fff", borderRadius: 8, padding: "8px 22px", fontSize: 13.5, fontWeight: 700, cursor: "pointer" }}>儲存設定</button>
+        </div>
+      </div>
+    </div>
+  );
 }

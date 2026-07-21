@@ -14,7 +14,7 @@ import SequenceView from "./SequenceView.jsx";
 import { LayoutDashboard, ClipboardList, CheckSquare, CalendarDays, Pin as PinIcon, FolderOpen, Wallet, Scale, Settings as SettingsIcon, Bot, Megaphone, MessagesSquare, Users as UsersIcon, ScrollText, LifeBuoy, Lock as LockIcon, Gauge, Bell, KeyRound, Mail as MailIcon, HardHat, Handshake, Landmark, Boxes, Factory, ShoppingCart, Leaf, Package, BookOpen, Star, MessageSquare, Gamepad2, Vote, Gift, Trophy, BarChart3, Receipt, FolderTree, RefreshCw, TrendingUp } from "lucide-react";
 import { BRAND, ACCENT, PRIMARY, BG, SURFACE, BORDER, LINE2, TEXT, SUB, ACCENT_SOFT, DARKCHIP, MONO, DISP, SEM, GOLD, HEAD_BG, HEAD_LINE, HEAD_SUB, HEAD_CHIP, SecHead, MOBILE_BP, useIsMobile } from "./lib/theme.jsx";
 import { GLOBAL_KEYS, CURRENT_SPACE, K, switchSpace, CURRENT_USER, setCurrentUser, auditLog, conf, CAN_VIEW_MONEY, setCanViewMoney, showMoney, ADMIN_USER, maskAccount, L } from "./lib/runtime.js";
-import { KnowledgeBaseView, RosterView, Review360View, FeedbackView, QuestView, PollView, RewardCenterView, CrewTodayView, PunchView } from "./crew/CrewViews.jsx";
+import { KnowledgeBaseView, RosterView, Review360View, FeedbackView, QuestView, PollView, RewardCenterView, CrewTodayView, PunchView, PayView } from "./crew/CrewViews.jsx";
 import { STATUS_MAP, markCatDone } from "./lib/status.js";
 import { DEFAULT_LINE_GROUP, notifyLineEvent } from "./lib/line.js";
 import { callAI } from "./lib/ai.js";
@@ -915,6 +915,9 @@ export default function App() {
         )}
         {view === "punch" && (
           <PunchView me={account} userName={userName} />
+        )}
+        {view === "pay" && (
+          <PayView me={account} userName={userName} />
         )}
         {view === "r360" && (
           <Review360View canEdit={canEditData} requireLogin={denyEdit} confirm={confirm} isAdmin={isAdmin} userName={userName} />
