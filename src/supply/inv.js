@@ -118,8 +118,18 @@ export const applyQuote = (vendorItems, viId, price, ts) => (vendorItems || []).
 // ── 物料頁自動整理用（v1.11 重新設計：預設全自動，人只處理例外）──
 
 // 規格自動解析：「(2000入/件)」→ 每件入數 2000、單位「個」；「20公斤/箱」→ 20000g——系統有資料就不叫人重打
-export const parseSpec = (spec) => {
-  const s = String(spec || "");
+// v1.32 修多層包裝：「100張/包 60包/箱」要鏈乘=6000（舊版只抓第一段誤=100）
+const _toBase = (n, unit) => {
+  const u = String(unit).toLowerCase();
+  if (u === "公斤" || u === "kg") return { packToBase: Math.round(n * 1000), baseUnit: "g" };
+  if (u === "台斤" || u === "斤") return { packToBase: Math.round(n * 600), baseUnit: "g" };
+  if (u === "公克" || u === "克" || u === "g") return { packToBase: Math.round(n), baseUnit: "g" };
+  if (u === "公升" || u === "升" || u === "l") return { packToBase: Math.round(n * 1000), baseUnit: "ml" };
+  if (u === "毫升" || u === "ml" || u === "cc") return { packToBase: Math.round(n), baseUnit: "ml" };
+  return { packToBase: Math.round(n), baseUnit: "個" };
+};
+// 單層解析（原邏輯；repairPackToBase 比對「舊版誤值」也用它）
+const _parseFlat = (s) => {
   let m;
   if ((m = s.match(/([\d.]+)\s*(?:公斤|kg)/i))) return { packToBase: Math.round(parseFloat(m[1]) * 1000), baseUnit: "g" };
   if ((m = s.match(/([\d.]+)\s*(?:台斤|斤)/))) return { packToBase: Math.round(parseFloat(m[1]) * 600), baseUnit: "g" };
@@ -128,6 +138,38 @@ export const parseSpec = (spec) => {
   if ((m = s.match(/([\d.]+)\s*(?:毫升|ml|cc)\b/i))) return { packToBase: Math.round(parseFloat(m[1])), baseUnit: "ml" };
   if ((m = s.match(/(\d+)\s*(?:入|個|个|顆|粒|支|張|片|捲|卷|份|組|雙|條|条|袋|包)/))) return { packToBase: parseInt(m[1], 10), baseUnit: "個" };
   return { packToBase: null, baseUnit: "個" };
+};
+export const parseSpec = (spec) => {
+  const s = String(spec || "");
+  // 抓所有「數字＋單位／容器」段（100張/包、60包/箱），兩段以上→從最外層容器往內鏈乘
+  const re = /([\d.]+)\s*(公斤|kg|台斤|斤|公克|克|g|公升|升|L|毫升|ml|cc|入|個|个|顆|粒|支|張|片|捲|卷|份|組|雙|條|条|袋|包|盒|瓶|罐|桶)\s*[/／]\s*(箱|件|袋|包|盒|組|桶|捲|卷|罐|瓶)/gi;
+  const segs = []; let m;
+  while ((m = re.exec(s))) segs.push({ qty: parseFloat(m[1]), unit: m[2], per: m[3] });
+  if (segs.length >= 2) {
+    const units = new Set(segs.map(x => x.unit));
+    let cur = segs.find(x => !units.has(x.per)) || segs[segs.length - 1]; // 最外層＝容器沒被別段當計量單位
+    let total = cur.qty; const used = new Set([cur]);
+    for (let i = 0; i < segs.length; i++) {
+      const nx = segs.find(x => !used.has(x) && x.per === cur.unit);
+      if (!nx) break;
+      total *= nx.qty; used.add(nx); cur = nx;
+    }
+    if (total > 0) return _toBase(total, cur.unit);
+  }
+  return _parseFlat(s);
+};
+
+// 一次性資料修復：多層規格被舊版算錯的入數——只改「現值＝舊版誤值」的（人工改過的不碰）；回 { vendorItems, fixed }
+export const repairPackToBase = (vendorItems) => {
+  let fixed = 0;
+  const out = (vendorItems || []).map(vi => {
+    const neu = parseSpec(vi.spec);
+    if (!neu.packToBase) return vi;
+    const old = _parseFlat(String(vi.spec || ""));
+    if (old.packToBase && neu.packToBase !== old.packToBase && Number(vi.packToBase) === old.packToBase) { fixed++; return { ...vi, packToBase: neu.packToBase }; }
+    return vi;
+  });
+  return { vendorItems: out, fixed };
 };
 
 // 服務/費用類判斷（保養、運費…）→ 標非物料，不進盤點/成本

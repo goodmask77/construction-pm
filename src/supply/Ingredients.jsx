@@ -4,7 +4,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { Leaf, Factory, List, Image as ImageIcon, Camera, Zap, ZoomIn } from "lucide-react";
 import { C, MONOF, rid } from "./Supply.jsx";
-import { packToBase, lastPaid, unitCost, srcsOf, priceAlert, normName, organizeAll } from "./inv.js";
+import { packToBase, lastPaid, unitCost, srcsOf, priceAlert, normName, organizeAll, repairPackToBase } from "./inv.js";
 import { uploadPhoto } from "../supa.js";
 import { callAI } from "../lib/ai.js";
 
@@ -59,6 +59,14 @@ export default function IngredientsView({ db, save, canEdit, showMoney, confirm,
     const h = (e) => { const its = (e.clipboardData || {}).items || []; for (const it of its) { if (it.type && it.type.startsWith("image/")) { const f = it.getAsFile(); if (f) { e.preventDefault(); imgFor.current = open; upImg(f); return; } } } };
     window.addEventListener("paste", h); return () => window.removeEventListener("paste", h);
   }, [open, imp, canEdit]); // eslint-disable-line
+
+  // ── 多層包裝入數自動修復（2026-07-21 張良：一箱怎會=100？舊版規格解析只抓第一段「100張/包 60包/箱」誤=100）──
+  // 只修「現值＝舊版誤值」的機器填值，人工改過的不碰；修完即冪等不會重複觸發
+  useEffect(() => {
+    if (!canEdit) return;
+    const r = repairPackToBase(db.vendorItems);
+    if (r.fixed) { save({ vendorItems: r.vendorItems }); flash(`✓ 已自動修正 ${r.fixed} 筆多層包裝入數（如 100張/包×60包/箱=6,000）`); }
+  }, [(db.vendorItems || []).length, canEdit]); // eslint-disable-line
 
   // ── ⚡ 自動整理（共用 organizeAll）──
   const pending = (db.vendorItems || []).filter(vi => !vi.ingredient_id && (vi.name || "").trim());

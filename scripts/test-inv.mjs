@@ -1,6 +1,6 @@
 // 進銷存算法 selftest：node scripts/test-inv.mjs
 // 覆蓋：單位成本/比價取最近實付/食譜成本(含包材/缺料/循環)/進價事件冪等/警示門檻/報價快取
-import { unitCost, quoteUnit, latestCostOfIngredient, recipeCost, buildPriceEvents, applyLastPaid, priceAlert, applyQuote, parseSpec, isServiceName, normName } from "../src/supply/inv.js";
+import { unitCost, quoteUnit, latestCostOfIngredient, recipeCost, buildPriceEvents, applyLastPaid, priceAlert, applyQuote, parseSpec, repairPackToBase, isServiceName, normName } from "../src/supply/inv.js";
 let pass = 0, fail = 0;
 const ok = (name, cond) => { cond ? pass++ : (fail++, console.log("✗ " + name)); };
 
@@ -54,6 +54,21 @@ ok("5台斤→3000g", parseSpec("5台斤").packToBase === 3000);
 ok("2L→2000ml", (() => { const p = parseSpec("2L"); return p.packToBase === 2000 && p.baseUnit === "ml"; })());
 ok("看不出入數→null不猜", (() => { const p = parseSpec("10*10衛生紙"); return p.packToBase === null; })());
 ok("空規格→null", parseSpec("").packToBase === null);
+// 多層包裝鏈乘（2026-07-21 張良回報：一箱=100 算錯）
+ok("多層 100張/包 60包/箱→6000個", (() => { const p = parseSpec("環保餐巾紙 23x23cm 原色（100張/包 60包/箱）"); return p.packToBase === 6000 && p.baseUnit === "個"; })());
+ok("多層順序顛倒 10捲/箱 300張/捲→3000", parseSpec("10捲/箱 300張/捲").packToBase === 3000);
+ok("多層帶重量 600g/包 20包/箱→12000g", (() => { const p = parseSpec("600g/包 20包/箱"); return p.packToBase === 12000 && p.baseUnit === "g"; })());
+ok("單層 600包/箱 不誤鏈乘=600", parseSpec("600包/箱").packToBase === 600);
+ok("單層 20公斤/箱 不受影響", parseSpec("20公斤/箱").packToBase === 20000);
+ok("修復：舊誤值100→6000、人工值/正確值不碰", (() => {
+  const r = repairPackToBase([
+    { id: "a", spec: "100張/包 60包/箱", packToBase: 100 },   // 機器舊誤值 → 修成 6000
+    { id: "b", spec: "100張/包 60包/箱", packToBase: 5000 },  // 人工改過 → 不碰
+    { id: "c", spec: "2000入/件", packToBase: 2000 },          // 單層正確 → 不動
+    { id: "d", spec: "", packToBase: "" },                      // 沒規格 → 不動
+  ]);
+  return r.fixed === 1 && r.vendorItems[0].packToBase === 6000 && r.vendorItems[1].packToBase === 5000 && r.vendorItems[2].packToBase === 2000;
+})());
 ok("服務類判斷：咖啡機年度保養", isServiceName("咖啡機年度保養") === true);
 ok("服務類判斷：醬料杯不是服務", isServiceName("A140醬料杯") === false);
 ok("正規化：同名不同符號視為同物", normName("PET-2oz醬料杯") === normName("PET–2oz 醬料杯"));
