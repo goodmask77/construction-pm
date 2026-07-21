@@ -644,7 +644,8 @@ export default function IngredientsView({ db, save, canEdit, showMoney, confirm,
         {canEdit && <button onClick={() => { const g = { id: rid("g"), name: "", cat: "", baseUnit: "g", countFreq: { type: "none", days: [], dom: 1, paused: false }, countRole: "", countUnit: "", isKey: false, safeStock: "", note: "", sort: all.length, tags: "" }; save({ ingredients: [...(db.ingredients || []), g] }); setVw("mat"); setDisp("list"); setOpen(g.id); }} style={sbtn}>＋ 手動新增</button>}
         {canEdit && <button onClick={autoOrganize} disabled={!pending.length} style={{ display: "inline-flex", alignItems: "center", gap: 5, border: "none", background: pending.length ? C.accent : "#d5cbb6", color: "#fff", borderRadius: 7, padding: "7px 14px", fontSize: 12.5, fontWeight: 700, cursor: pending.length ? "pointer" : "default" }}><Zap size={14} strokeWidth={1.75} />自動整理{pending.length ? `（${pending.length}）` : ""}</button>}
       </div>
-      <datalist id="ingcats">{[...new Set(all.map(x => (x.cat || "").trim()).filter(Boolean))].map(c2 => <option key={c2} value={c2} />)}</datalist>
+      {/* 分類建議清單＝類別用過的＋物料卡上設過的（新打的分類存檔後就會出現在所有下拉）*/}
+      <datalist id="ingcats">{[...new Set([...all.map(x => (x.cat || "").trim()), ...matCards.map(c => (c.cat || "").trim())].filter(Boolean))].map(c2 => <option key={c2} value={c2} />)}</datalist>
 
       {/* 建議合併 */}
       {canEdit && vw === "mat" && sugg.length > 0 && (
