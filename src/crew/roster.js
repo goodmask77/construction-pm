@@ -10,7 +10,7 @@ export const ROSTER_KEY = "kb_roster";
 export async function loadRosterDoc() {
   try {
     const r = await window.storage.get(K(ROSTER_KEY), true);
-    if (r && r.value) { const d = JSON.parse(r.value); return { people: d.people || [], fields: d.fields || [] }; }
+    if (r && r.value) { const d = JSON.parse(r.value); return { people: d.people || [], fields: d.fields || [], autoCols: d.autoCols || {} }; }
   } catch (_) {}
   // 舊制遷移：從 kb_360 把 people/fields 搬出來（kb_360 內舊欄位保留不動、不再讀寫）
   try {
@@ -27,11 +27,11 @@ export async function loadRosterDoc() {
 
 export async function saveRosterDoc(next) {
   try { auditLog("編輯", "夥伴中心・名冊"); } catch (_) {}
-  try { await window.storage.set(K(ROSTER_KEY), JSON.stringify({ people: next.people || [], fields: next.fields || [] }), true); } catch (_) {}
+  try { await window.storage.set(K(ROSTER_KEY), JSON.stringify({ people: next.people || [], fields: next.fields || [], autoCols: next.autoCols || {} }), true); } catch (_) {}
 }
 
-// 局部更新（例：360 設定頁只改 people）：先讀現況再合併，避免把另一半（fields）洗掉
+// 局部更新（例：360 設定頁只改 people）：先讀現況再合併，避免把另一半（fields/autoCols）洗掉
 export async function saveRosterPatch(patch) {
   const cur = await loadRosterDoc();
-  await saveRosterDoc({ people: patch.people ?? cur.people, fields: patch.fields ?? cur.fields });
+  await saveRosterDoc({ people: patch.people ?? cur.people, fields: patch.fields ?? cur.fields, autoCols: patch.autoCols ?? cur.autoCols });
 }

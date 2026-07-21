@@ -838,12 +838,14 @@ export function RosterView({ canEdit, confirm, me, ReceiptUploader }) {
       try { const openId = localStorage.getItem("pm_open_self_card"); if (openId && (d.people || []).some(pp => pp.id === openId)) { setSel(openId); localStorage.removeItem("pm_open_self_card"); } } catch (_) {}
     })();
     // 即時同步：別台改了名冊 → 這裡跟著更新
-    const un = onSharedChange(K(ROSTER_KEY), (_k, v) => { try { const d = v ? JSON.parse(v) : { people: [], fields: [] }; setData({ people: d.people || [], fields: d.fields || [] }); } catch (_) {} });
+    const un = onSharedChange(K(ROSTER_KEY), (_k, v) => { try { const d = v ? JSON.parse(v) : { people: [], fields: [] }; setData({ people: d.people || [], fields: d.fields || [], autoCols: d.autoCols || {} }); } catch (_) {} });
     return un;
   }, []);
   if (!data) return <div style={{ padding: 40, color: SUB, fontSize: 14 }}>載入中…</div>;
   const people = data.people || [];
   const fields = (data.fields && data.fields.length ? data.fields : DEFAULT_ROSTER_FIELDS);
+  // 自動計算欄位（年紀/入職進度/狀態/文件）：不是資料欄位、系統自己算，但可在欄位設定勾顯示與否（張良 2026-07-22）
+  const autoCols = { age: true, prog: true, status: true, docs: true, ...(data.autoCols || {}) };
   // 預設排序（張良 2026-07-18 定案）：部門 ▲ → 職稱 ▲ → 到職日 ▼（職稱是自訂欄位，動態找 key）
   const titleField = fields.find(f => /職稱/.test(f.label || ""));
   const sort = sortUser || [{ key: "dept", dir: 1 }, ...(titleField ? [{ key: titleField.key, dir: 1 }] : []), { key: "startDate", dir: -1 }];
@@ -923,7 +925,7 @@ export function RosterView({ canEdit, confirm, me, ReceiptUploader }) {
     }
     return 0;
   });
-  const GTC = `40px ${nameW}px ${showCols.flatMap(f => f.key === "bday" ? ["150px", "52px"] : [colW(f)]).join(" ")} 126px 58px 48px`;
+  const GTC = `40px ${nameW}px ${showCols.flatMap(f => f.key === "bday" ? ["150px", ...(autoCols.age ? ["52px"] : [])] : [colW(f)]).join(" ")}${autoCols.prog ? " 126px" : ""}${autoCols.status ? " 58px" : ""}${autoCols.docs ? " 48px" : ""}`;
   const th = (label, key, extra) => {
     const si = key ? sort.findIndex(s => s.key === key) : -1;
     const s = si >= 0 ? sort[si] : null;
@@ -956,7 +958,7 @@ export function RosterView({ canEdit, confirm, me, ReceiptUploader }) {
       <div style={{ background: "#fff", border: "1.5px solid #c8bca6", borderRadius: 10, overflow: "hidden" }}>
         <div style={{ overflowX: "auto" }}><div style={{ minWidth: 860 }}>
           <div style={{ display: "grid", gridTemplateColumns: GTC, background: "#ece4d6", borderBottom: "1.5px solid #c8bca6", alignItems: "center" }}>
-            <span />{th("姓名（綽號）", "name")}{showCols.flatMap(f => f.key === "bday" ? [th("生日", "bdayMD"), th("年紀", "age")] : [th(f.label, f.type === "file" ? null : f.key)])}{th("入職進度", "prog")}{th("狀態", "statusD")}{th("文件", null)}
+            <span />{th("姓名（綽號）", "name")}{showCols.flatMap(f => f.key === "bday" ? [th("生日", "bdayMD"), ...(autoCols.age ? [th("年紀", "age")] : [])] : [th(f.label, f.type === "file" ? null : f.key)])}{autoCols.prog && th("入職進度", "prog")}{autoCols.status && th("狀態", "statusD")}{autoCols.docs && th("文件", null)}
           </div>
           {rows.length === 0 ? <div style={{ padding: 24, textAlign: "center", color: "#9b9384", fontSize: 13 }}>沒有符合的人</div> :
             rows.map((pp, i) => {
@@ -977,19 +979,19 @@ export function RosterView({ canEdit, confirm, me, ReceiptUploader }) {
                           <span style={near ? { fontSize: 12, fontWeight: 700, color: ACCENT, background: "#fbeee6", border: `1px solid ${ACCENT}`, borderRadius: 8, padding: "2px 8px", whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" } : { fontSize: 12.5, color: SUB, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>
                             {pp.bday.slice(5)}{dLeft === 0 ? " 🎂今天" : near ? `（${dLeft}天後）` : ""}
                           </span>) : <span style={{ color: "#c8bca6" }}>—</span>}</div>,
-                        <div key="age" style={{ padding: "0 8px", fontSize: 12.5, color: SUB, fontVariantNumeric: "tabular-nums" }}>{pp.bday ? ageOf(pp.bday) : "—"}</div>,
+                        ...(autoCols.age ? [<div key="age" style={{ padding: "0 8px", fontSize: 12.5, color: SUB, fontVariantNumeric: "tabular-nums" }}>{pp.bday ? ageOf(pp.bday) : "—"}</div>] : []),
                       ];
                     }
                     const v = cellVal(pp, f);
                     if (f.key === "dept" && v !== "—") return [<div key={f.key} style={{ padding: "0 8px" }}><span style={{ fontSize: 11, fontWeight: 700, color: "#fff", background: deptColor(v), borderRadius: 10, padding: "2px 10px", whiteSpace: "nowrap" }}>{v}</span></div>];
                     return [<div key={f.key} style={{ padding: "0 8px", fontSize: f.key === "empNo" ? 11.5 : 12.5, fontFamily: f.key === "empNo" ? "'IBM Plex Mono',monospace" : undefined, fontVariantNumeric: "tabular-nums", color: v === "—" ? "#c8bca6" : SUB, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{v}</div>];
                   })}
-                  <div style={{ padding: "0 10px", display: "flex", alignItems: "center", gap: 7 }}>
+                  {autoCols.prog && <div style={{ padding: "0 10px", display: "flex", alignItems: "center", gap: 7 }}>
                     <div style={{ flex: 1, height: 7, background: "#e6ddc9", borderRadius: 4, overflow: "hidden" }}><div style={{ width: pg + "%", height: "100%", background: pg === 100 ? "#3f7d4e" : pg >= 50 ? "#c98a14" : "#b3261e", borderRadius: 4 }} /></div>
                     <span style={{ fontFamily: "'IBM Plex Mono',monospace", fontSize: 11, fontWeight: 700, color: pg === 100 ? "#3f7d4e" : TEXT, width: 34, textAlign: "right" }}>{pg}%</span>
-                  </div>
-                  <div style={{ padding: "0 8px" }}><span style={{ fontSize: 11, fontWeight: 600, color: st === "在職" ? "#3f7d4e" : "#9b9384", background: st === "在職" ? "#eef5ef" : "#ece4d6", borderRadius: 10, padding: "2px 9px", whiteSpace: "nowrap" }}>{st}</span></div>
-                  <div style={{ padding: "0 8px", fontSize: 12, color: docCount(pp) ? SUB : "#c8bca6", fontVariantNumeric: "tabular-nums" }}>{docCount(pp) ? `📎${docCount(pp)}` : "—"}</div>
+                  </div>}
+                  {autoCols.status && <div style={{ padding: "0 8px" }}><span style={{ fontSize: 11, fontWeight: 600, color: st === "在職" ? "#3f7d4e" : "#9b9384", background: st === "在職" ? "#eef5ef" : "#ece4d6", borderRadius: 10, padding: "2px 9px", whiteSpace: "nowrap" }}>{st}</span></div>}
+                  {autoCols.docs && <div style={{ padding: "0 8px", fontSize: 12, color: docCount(pp) ? SUB : "#c8bca6", fontVariantNumeric: "tabular-nums" }}>{docCount(pp) ? `📎${docCount(pp)}` : "—"}</div>}
                 </div>
               );
             })}
@@ -1059,25 +1061,38 @@ export function RosterView({ canEdit, confirm, me, ReceiptUploader }) {
               <div style={{ flex: 1 }} />
               <button onClick={() => setShowFields(false)} style={{ background: "none", border: "none", fontSize: 22, cursor: "pointer", color: SUB }}>×</button>
             </div>
-            <div style={{ fontSize: 12, color: SUB, marginBottom: 12 }}>拖 ⠿ 可調整欄位順序（＝表格欄位順序）；選單型欄位按「✎ 編輯」管理選項（改名/刪除/排序）。型別選「檔案上傳」＝可上傳檔案/貼截圖；勾「顯示」＝變成表格欄位（公開）；勾「必填」＝計入入職進度。改動立即套用。</div>
+            <div style={{ fontSize: 12, color: SUB, marginBottom: 12 }}>拖 ⠿ 可調整欄位順序（＝表格欄位順序）；選單型欄位按「✎」管理選項（改名/刪除/排序）。型別選「檔案上傳」＝可上傳檔案/貼截圖；勾「顯示」＝變成表格欄位（公開）；勾「必填」＝計入入職進度。改動立即套用。<br />※「姓名（綽號）」是固定欄位（在人員卡片編輯）；年紀/入職進度等自動算的欄位在最下面「🤖 自動計算欄位」勾選。</div>
             {fields.map((f, idx) => (
               <div key={f.key} draggable={canEdit}
                 onDragStart={() => setDragIdx(idx)}
                 onDragOver={e => e.preventDefault()}
                 onDrop={() => { if (dragIdx == null || dragIdx === idx) return; const arr = [...fields]; const [m] = arr.splice(dragIdx, 1); arr.splice(idx, 0, m); persist({ fields: arr }); setDragIdx(null); }}
-                style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 8, flexWrap: "wrap", background: dragIdx === idx ? "#fbeee6" : "transparent", borderRadius: 8, cursor: "grab" }}>
-                <span title="拖曳調整順序（欄位順序＝表格欄位順序）" style={{ color: "#c8bca6", fontSize: 14, cursor: "grab", userSelect: "none" }}>⠿</span>
-                <input value={f.label} onChange={e => persist({ fields: fields.map((x, j) => j === idx ? { ...x, label: e.target.value } : x) })} style={{ ...inpS, width: 180 }} />
-                <select value={f.type} onChange={e => persist({ fields: fields.map((x, j) => j === idx ? { ...x, type: e.target.value } : x) })} style={{ ...inpS, width: 110 }}>
+                style={{ display: "flex", gap: 6, alignItems: "center", marginBottom: 8, flexWrap: "nowrap", background: dragIdx === idx ? "#fbeee6" : "transparent", borderRadius: 8, cursor: "grab" }}>
+                <span title="拖曳調整順序（欄位順序＝表格欄位順序）" style={{ color: "#c8bca6", fontSize: 14, cursor: "grab", userSelect: "none", flexShrink: 0 }}>⠿</span>
+                <input value={f.label} onChange={e => persist({ fields: fields.map((x, j) => j === idx ? { ...x, label: e.target.value } : x) })} style={{ ...inpS, width: 150, minWidth: 100 }} />
+                <select value={f.type} onChange={e => persist({ fields: fields.map((x, j) => j === idx ? { ...x, type: e.target.value } : x) })} style={{ ...inpS, width: 96, flexShrink: 0 }}>
                   <option value="text">文字</option><option value="date">日期</option><option value="select">選單</option><option value="file">檔案上傳</option>
                 </select>
-                {f.type === "select" && <button onClick={() => setOptField(f.key)} style={{ ...inpS, width: 150, textAlign: "left", cursor: "pointer" }}>選項（{(f.options || []).filter(o => String(o).trim() !== "").length}）✎ 編輯…</button>}
-                <label style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 12.5, color: TEXT, cursor: "pointer" }}><input type="checkbox" checked={!!f.show} onChange={e => persist({ fields: fields.map((x, j) => j === idx ? { ...x, show: e.target.checked } : x) })} />顯示</label>
-                <label style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 12.5, color: TEXT, cursor: "pointer" }}><input type="checkbox" checked={!!f.req} onChange={e => persist({ fields: fields.map((x, j) => j === idx ? { ...x, req: e.target.checked } : x) })} />必填</label>
-                <button onClick={async () => { if (await confirm(`刪除欄位「${f.label}」？（各人此欄資料仍保留，只是不再顯示）`, { confirmLabel: "刪除" })) persist({ fields: fields.filter((_, j) => j !== idx) }); }} style={{ background: "none", border: "none", color: "#9b9384", cursor: "pointer", fontSize: 15 }}>×</button>
+                {f.type === "select" && <button onClick={() => setOptField(f.key)} style={{ ...inpS, width: 118, flexShrink: 0, textAlign: "left", cursor: "pointer", whiteSpace: "nowrap", overflow: "hidden" }}>選項({(f.options || []).filter(o => String(o).trim() !== "").length}) ✎</button>}
+                <label style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 12.5, color: TEXT, cursor: "pointer", flexShrink: 0, whiteSpace: "nowrap" }}><input type="checkbox" checked={!!f.show} onChange={e => persist({ fields: fields.map((x, j) => j === idx ? { ...x, show: e.target.checked } : x) })} />顯示</label>
+                <label style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 12.5, color: TEXT, cursor: "pointer", flexShrink: 0, whiteSpace: "nowrap" }}><input type="checkbox" checked={!!f.req} onChange={e => persist({ fields: fields.map((x, j) => j === idx ? { ...x, req: e.target.checked } : x) })} />必填</label>
+                <button onClick={async () => { if (await confirm(`刪除欄位「${f.label}」？（各人此欄資料仍保留，只是不再顯示）`, { confirmLabel: "刪除" })) persist({ fields: fields.filter((_, j) => j !== idx) }); }} style={{ background: "none", border: "none", color: "#9b9384", cursor: "pointer", fontSize: 15, flexShrink: 0 }}>×</button>
               </div>
             ))}
             <button onClick={() => persist({ fields: [...fields, { key: "cf_" + Math.random().toString(36).slice(2, 7), label: "新欄位", type: "text" }] })} style={{ width: "100%", border: `1.5px dashed ${BORDER}`, background: "transparent", color: ACCENT, borderRadius: 8, padding: "9px 0", fontSize: 13, fontWeight: 700, cursor: "pointer", marginTop: 4 }}>＋ 新增欄位</button>
+            {/* 自動計算欄位：不是資料欄位（不用填），系統依現有資料自動算；只決定「表格要不要顯示」 */}
+            <div style={{ marginTop: 16, borderTop: `1px dashed ${BORDER}`, paddingTop: 12 }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: TEXT, marginBottom: 2 }}>🤖 自動計算欄位</div>
+              <div style={{ fontSize: 11.5, color: SUB, marginBottom: 8 }}>這些不用填、系統自動算出來，所以不在上面的欄位清單；勾選＝顯示在表格。</div>
+              <div style={{ display: "flex", gap: 14, flexWrap: "wrap" }}>
+                {[["age", "年紀", "由「生日」計算（生日欄要勾顯示才會出現）"], ["prog", "入職進度", "必填欄位完成率"], ["status", "狀態", "在職/離職/留停"], ["docs", "文件", "已上傳文件份數"]].map(([k, l, tip]) => (
+                  <label key={k} title={tip} style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 13, color: TEXT, cursor: "pointer" }}>
+                    <input type="checkbox" checked={!!autoCols[k]} onChange={e => persist({ autoCols: { ...autoCols, [k]: e.target.checked } })} />{l}
+                    <span style={{ fontSize: 10.5, color: "#c8bca6" }}>ⓘ</span>
+                  </label>
+                ))}
+              </div>
+            </div>
           </div>
         </div>
       )}
