@@ -43,6 +43,24 @@ export default function IngredientsView({ db, save, canEdit, showMoney, confirm,
   const updIng = (id, fp) => save({ ingredients: (db.ingredients || []).map(x => x.id === id ? { ...x, ...fp } : x) });
   const d2 = (n) => n >= 100 ? Math.round(n).toLocaleString() : (Math.round(n * 1000) / 1000).toString();
 
+  // ── 卡片編輯快照：打開時記原狀，「取消」整卡復原（改動平常即時存檔，確定=收尾不動作）──
+  const snapRef = useRef(null);
+  useEffect(() => {
+    if (!open) { snapRef.current = null; return; }
+    const g = (db.ingredients || []).find(x => x.id === open);
+    if (!g) return;
+    snapRef.current = { id: open, ing: JSON.parse(JSON.stringify(g)), vis: JSON.parse(JSON.stringify((db.vendorItems || []).filter(v => v.ingredient_id === open))) };
+  }, [open]); // eslint-disable-line
+  const cancelEdit = () => {
+    const s = snapRef.current;
+    if (s && s.id === open) {
+      const byId = new Map(s.vis.map(v => [v.id, v]));
+      save({ ingredients: (db.ingredients || []).map(x => x.id === s.id ? s.ing : x), vendorItems: (db.vendorItems || []).map(v => byId.get(v.id) || v) });
+      flash("↩ 已取消，這張卡恢復打開前的樣子");
+    }
+    setOpen(null);
+  };
+
   // ── 包材庫一次性鏡射（2026-07-20 張良：包材庫品項直接搬到物料清單，標★置頂重點比價）──
   useEffect(() => {
     if (!canEdit || (db.settings && db.settings.matMirrored)) return;
@@ -362,8 +380,11 @@ export default function IngredientsView({ db, save, canEdit, showMoney, confirm,
             </select>
           </div>
         )}
-        {/* 完成鈕（使用者習慣要有收尾；改動其實已即時存檔） */}
-        <button onClick={() => setOpen(null)} style={{ width: "100%", marginTop: 10, border: "none", background: C.green, color: "#fff", borderRadius: 8, padding: "9px 0", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>✓ 完成</button>
+        {/* 確定/取消（2026-07-22 張良：要有確定跟取消）——取消=把這次打開後的所有修改復原 */}
+        <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+          <button onClick={cancelEdit} title="放棄這次打開後的所有修改，恢復原狀" style={{ flex: 1, border: `1.5px solid #d9cfbd`, background: "#fff", color: C.sub, borderRadius: 8, padding: "9px 0", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>✕ 取消</button>
+          <button onClick={() => setOpen(null)} style={{ flex: 2, border: "none", background: C.green, color: "#fff", borderRadius: 8, padding: "9px 0", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>✓ 確定</button>
+        </div>
       </div>
     );
   };
