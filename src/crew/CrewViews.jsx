@@ -1720,17 +1720,18 @@ function StationClock() {
 
 // ── P3 薪資試算（張良 2026-07-22：可用模擬班表估、勞基法條件進設定頁+預排生效日自動切換）──
 // ⚠ 草稿試算：正式發薪以人工核定為準。引擎= src/shift/payroll.js（App 與 D哥 同一套）。
-// 薪資表欄位定義（版面設定用：可勾選顯示、可點欄頭排序——全站表格慣例）
+// 薪資表欄位定義（版面設定：可勾選顯示、可點欄頭排序、緊湊欄寬——ground-pack 硬格線表格慣例）
 const PAY_COLS = [
-  { k: "hours", label: "時數 正常+加班", w: "110px" },
-  { k: "wage", label: "底薪/時薪", w: "1fr" },
-  { k: "otPay", label: "加班費", w: "90px" },
-  { k: "allowance", label: "津貼", w: "90px" },
-  { k: "insSelf", label: "勞健保自付", w: "90px" },
-  { k: "gross", label: "應發", w: "100px" },
-  { k: "net", label: "預估實領", w: "100px" },
+  { k: "hours", label: "時數 正常+加班", w: "96px" },
+  { k: "wage", label: "底薪/時薪", w: "104px" },
+  { k: "otPay", label: "加班費", w: "84px" },
+  { k: "allowance", label: "津貼", w: "84px" },
+  { k: "insSelf", label: "勞健保自付", w: "92px" },
+  { k: "gross", label: "應發", w: "96px" },
+  { k: "net", label: "預估實領", w: "96px" },
   { k: "employerCost", label: "雇主總成本", w: "100px" },
 ];
+const payVline = { borderRight: "1px solid #e0d6bf", alignSelf: "stretch", display: "flex", alignItems: "center" }; // 直向格線（同產品管理頁範本）
 export function PayView({ me: account, userName }) {
   const [roster, setRoster] = useState(null);
   const [rulesDoc, setRulesDoc] = useState(null);
@@ -1803,7 +1804,7 @@ export function PayView({ me: account, userName }) {
   const valOf = (r, k) => k === "hours" ? r.pay.hours.total : k === "wage" ? r.pay.wage : k === "insSelf" ? (r.pay.laborSelf + r.pay.healthSelf) : (r.pay[k] || 0);
   if (sort) show = [...show].sort((a, b) => (sort.k === "name" ? String(a.p.name).localeCompare(String(b.p.name), "zh-Hant-TW") : valOf(a, sort.k) - valOf(b, sort.k)) * sort.dir);
   const clickSort = (k) => setSort(s => !s || s.k !== k ? { k, dir: -1 } : s.dir === -1 ? { k, dir: 1 } : null); // 點一下大→小、再點小→大、第三下取消
-  const GTCPAY = `150px ${cols.map(c => c.w).join(" ")}`;
+  const GTCPAY = `minmax(150px,1fr) ${cols.map(c => c.w).join(" ")}`; // 姓名欄彈性吸收剩餘寬度（不留尾端空欄）
   const sum = monthSummary(rows);
   const fmt$ = (x) => "$" + Math.round(x).toLocaleString();
   const nextSched = (rulesDoc?.scheduled || []).filter(s => s.effective > monthEnd).sort((a, b) => a.effective.localeCompare(b.effective))[0];
@@ -1830,19 +1831,20 @@ export function PayView({ me: account, userName }) {
       </div>
       {show.length === 0 && <div style={{ ...crewCard, color: "#9b9384", fontSize: 13.5 }}>{month} 沒有可試算的時數——{source === "sched" ? "本月沒有發布班表" : "本月沒有打卡也沒有班表"}。排班頁發布班表或開始打卡後，這裡就能試算。</div>}
       {show.length > 0 && (
-        <div style={{ background: "#fff", border: "1.5px solid #c8bca6", borderRadius: 10, overflow: "hidden" }}>
+        <div style={{ maxWidth: 1060 }}>{/* 頁寬限 1060＋方角4＋直向格線＋數字MONO右對齊（ground-pack 表格慣例） */}
+        <div style={{ background: "#fff", border: "1.5px solid #c8bca6", borderRadius: 4, overflow: "hidden" }}>
           <div style={{ overflowX: "auto" }}><div style={{ minWidth: 640 }}>
             <div style={{ display: "grid", gridTemplateColumns: GTCPAY, background: "#ece4d6", borderBottom: "1.5px solid #c8bca6" }}>
               {[{ k: "name", label: "姓名（職稱）" }, ...cols].map(c => { const on = sort?.k === c.k; return (
-                <button key={c.k} onClick={() => clickSort(c.k)} title="點一下排序、再點反向、第三下取消" style={{ background: "none", border: "none", textAlign: "left", padding: "8px 8px", fontSize: 10.5, fontWeight: 700, color: on ? TEXT : "#9b9384", letterSpacing: .8, cursor: "pointer", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{c.label}{on ? (sort.dir === -1 ? " ▼" : " ▲") : ""}</button>
+                <button key={c.k} onClick={() => clickSort(c.k)} title="點一下排序、再點反向、第三下取消" style={{ ...payVline, borderRight: "1px solid #d3c8ac", background: "none", justifyContent: c.k === "name" ? "flex-start" : "flex-end", padding: "7px 9px", fontSize: 10.5, fontWeight: 700, color: on ? TEXT : "#9b9384", letterSpacing: .6, cursor: "pointer", whiteSpace: "nowrap", overflow: "hidden" }}>{c.label}{on ? (sort.dir === -1 ? " ▼" : " ▲") : ""}</button>
               ); })}
             </div>
             {show.map(({ p, title, pay }) => {
               const cell = { hours: [`${pay.hours.reg}+${r1sum(pay.hours.ot1, pay.hours.ot2)}h`, SUB], wage: [pay.hourlyMode ? `${pay.wage}/時` : fmt$(pay.wage) + "/月", TEXT], otPay: [fmt$(pay.otPay), pay.otPay ? "#C2872E" : SUB], allowance: [fmt$(pay.allowance), SUB], insSelf: ["-" + fmt$(pay.laborSelf + pay.healthSelf), SUB], gross: [fmt$(pay.gross), TEXT], net: [fmt$(pay.net), "#3f7d4e"], employerCost: [fmt$(pay.employerCost), ACCENT] };
               return (
-                <div key={p.id} style={{ display: "grid", gridTemplateColumns: GTCPAY, alignItems: "center", borderTop: "1px solid #f0ead9", fontSize: 13, height: 40 }}>
-                  <span style={{ padding: "0 8px", fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.name}<span style={{ color: "#9b9384", fontWeight: 400, fontSize: 11.5 }}>（{title || "—"}）</span></span>
-                  {cols.map(c => <span key={c.k} style={{ padding: "0 8px", fontFamily: MONO, fontSize: ["gross", "net"].includes(c.k) ? 13 : 12.5, fontWeight: c.k === "net" ? 800 : c.k === "gross" ? 700 : 400, color: cell[c.k][1] }}>{cell[c.k][0]}</span>)}
+                <div key={p.id} style={{ display: "grid", gridTemplateColumns: GTCPAY, borderTop: "1px solid #f0ead9", fontSize: 13, height: 36 }}>
+                  <span style={{ ...payVline, padding: "0 9px", fontWeight: 600, overflow: "hidden" }}><span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.name}<span style={{ color: "#9b9384", fontWeight: 400, fontSize: 11.5 }}>（{title || "—"}）</span></span></span>
+                  {cols.map(c => <span key={c.k} style={{ ...payVline, justifyContent: "flex-end", padding: "0 9px", fontFamily: MONO, fontVariantNumeric: "tabular-nums", fontSize: ["gross", "net"].includes(c.k) ? 13 : 12.5, fontWeight: c.k === "net" ? 800 : c.k === "gross" ? 700 : 400, color: cell[c.k][1] }}>{cell[c.k][0]}</span>)}
                 </div>
               );
             })}
@@ -1850,13 +1852,14 @@ export function PayView({ me: account, userName }) {
               const sumCell = { hours: "", wage: "", otPay: fmt$(sum.otPay), allowance: "", insSelf: "", gross: fmt$(sum.gross), net: fmt$(sum.net), employerCost: fmt$(sum.employerCost) };
               const sumColor = { net: "#3f7d4e", employerCost: ACCENT };
               return (
-                <div style={{ display: "grid", gridTemplateColumns: GTCPAY, alignItems: "center", borderTop: "1.5px solid #c8bca6", background: "#FBF7EE", fontSize: 13, height: 42, fontWeight: 800 }}>
-                  <span style={{ padding: "0 8px" }}>合計（{sum.people} 人）</span>
-                  {cols.map(c => <span key={c.k} style={{ padding: "0 8px", fontFamily: MONO, color: sumColor[c.k] || TEXT }}>{sumCell[c.k]}</span>)}
+                <div style={{ display: "grid", gridTemplateColumns: GTCPAY, borderTop: "1.5px solid #c8bca6", background: "#FBF7EE", fontSize: 13, height: 38, fontWeight: 800 }}>
+                  <span style={{ ...payVline, padding: "0 9px" }}>合計（{sum.people} 人）</span>
+                  {cols.map(c => <span key={c.k} style={{ ...payVline, justifyContent: "flex-end", padding: "0 9px", fontFamily: MONO, fontVariantNumeric: "tabular-nums", color: sumColor[c.k] || TEXT }}>{sumCell[c.k]}</span>)}
                 </div>
               );
             })()}
           </div></div>
+        </div>
         </div>
       )}
       {/* 🧩 欄位設定：勾選顯示哪些欄（存設定檔＝所有裝置一致）——全站表格慣例 */}
