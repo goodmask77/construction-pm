@@ -657,6 +657,7 @@ export function PollView({ canEdit, requireLogin, confirm, isAdmin, userName }) 
 // ── 兌換商城 + 錢包 ───────────────────────────────────────────────────────────
 export function ShopView({ canEdit, requireLogin, confirm, isAdmin, userName }) {
   const [people, setPeople] = useState([]); const [fb, setFb] = useState([]); const [quests, setQuests] = useState({ quests: [], progress: [] }); const [shop, setShop] = useState(null); const [me, setMe] = useState(""); const [ed, setEd] = useState(null);
+  const [showLedger, setShowLedger] = useState(false); // 📒 積分存摺
   useMeSync(people, userName, setMe);
   const reload = async () => { const r = await loadCrewRoster(); setPeople(r); setMe(meFromRoster(r, userName)); const f = await loadCrewJSON("kb_feedback", { items: [] }); setFb(f.items || []); setQuests(await loadCrewJSON("kb_quests", { quests: [], progress: [] })); setShop(await loadCrewJSON("kb_shop", { rewards: [], redemptions: [] })); };
   useEffect(() => { const s = setTimeout(() => setShop(p => p || { rewards: [], redemptions: [] }), 8000); reload().finally(() => clearTimeout(s)); return () => clearTimeout(s); }, []);
@@ -685,7 +686,7 @@ export function ShopView({ canEdit, requireLogin, confirm, isAdmin, userName }) 
       {crewProtoTitle("🎁", "獎勵商城", "用累積的積分兌換獎勵（正式版兌換＝原子扣點、可稽核）。")}
       <div style={{ ...crewCard, display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
         <CrewMe people={people} me={me} setMe={setMe} isAdmin={isAdmin} />
-        {me && <div style={{ display: "flex", alignItems: "center", gap: 8 }}><span style={{ fontSize: 13, color: SUB }}>我的積分</span><span style={{ fontSize: 24, fontWeight: 800, color: ACCENT, fontVariantNumeric: "tabular-nums" }}>{myBal}</span><span style={{ fontSize: 12, color: SUB }}>分</span></div>}
+        {me && <div onClick={() => setShowLedger(true)} title="點開積分存摺（逐筆來源與使用，像銀行收支）" style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}><span style={{ fontSize: 13, color: SUB }}>我的積分</span><span style={{ fontSize: 24, fontWeight: 800, color: ACCENT, fontVariantNumeric: "tabular-nums" }}>{myBal}</span><span style={{ fontSize: 12, color: SUB }}>分</span><span style={{ fontSize: 11.5, color: "#2E6FB0", fontWeight: 600 }}>📒 明細</span></div>}
         <div style={{ flex: 1 }} />{canManage && <button onClick={() => guard() && setEd({ name: "", desc: "", cost: 100, stock: "", active: true })} style={{ border: "none", background: ACCENT, color: "#fff", borderRadius: 8, padding: "7px 14px", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>＋ 新增獎勵</button>}
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 12 }}>
@@ -699,6 +700,7 @@ export function ShopView({ canEdit, requireLogin, confirm, isAdmin, userName }) 
           </div>); })}
         {shop.rewards.length === 0 && <div style={{ color: "#9b9384", fontSize: 14, padding: "30px 0" }}>還沒有獎勵{isAdmin ? "，點「＋ 新增獎勵」" : ""}。</div>}
       </div>
+      {showLedger && me && <PointsLedgerModal me={me} people={people} fbItems={fb} quests={quests} shop={shop} onClose={() => setShowLedger(false)} />}
       {/* 主管：待核銷（夥伴按了「使用」的獎品，當面確認後在這裡核銷） */}
       {canManage && allUsing.length > 0 && (
         <div style={{ ...crewCard, marginTop: 14, border: "1.5px solid #c98a14" }}>
@@ -1331,6 +1333,7 @@ export function CrewTodayView({ userName, isAdmin, setView }) {
   const [shop, setShop] = useState({ rewards: [], redemptions: [] });
   const [journal, setJournal] = useState({ items: [] }); // 每日心得（夥伴在 LINE 用「心得 …」記錄）
   const [me, setMe] = useState("");
+  const [showLedger, setShowLedger] = useState(false); // 📒 積分存摺
   useMeSync(people, userName, setMe);
   useEffect(() => {
     const s = setTimeout(() => setDocs(prev => prev || []), 8000);
@@ -1425,7 +1428,7 @@ export function CrewTodayView({ userName, isAdmin, setView }) {
           {num(myPendingQuests.length, "待完成訓練", myPendingQuests.length ? ACCENT : "#3C8C3C", () => go("quest"))}
           {num(myPending360.length, "待回覆評鑑", myPending360.length ? "#C2872E" : "#3C8C3C", () => go("r360"))}
           {num(fbGivenThisWeek ? "✓" : "0", "本週給出回饋", fbGivenThisWeek ? "#3C8C3C" : "#b3261e", () => go("fb"))}
-          {num(myBal, "我的積分", ACCENT, () => go("reward"))}
+          {num(myBal, "我的積分 📒", ACCENT, () => setShowLedger(true))}
         </div>
       )}
       {!fbGivenThisWeek && me && (
@@ -1495,7 +1498,8 @@ export function CrewTodayView({ userName, isAdmin, setView }) {
           );
         })()}
       </div>
-      {!me && <div style={{ marginTop: 14, fontSize: 13, color: SUB, background: "#fff", border: `1px solid ${BORDER}`, borderRadius: 12, padding: 16 }}>登入並綁定夥伴身分後，這裡會顯示你的待完成訓練、待回覆評鑑與積分。</div>}
+      {showLedger && me && <PointsLedgerModal me={me} people={people} fbItems={fb.items || []} quests={quests} shop={shop} onClose={() => setShowLedger(false)} />}
+      {!me && <div style={{ marginTop: 14, fontSize: 13, color: SUB, background: `#fff`, border: `1px solid ${BORDER}`, borderRadius: 12, padding: 16 }}>登入並綁定夥伴身分後，這裡會顯示你的待完成訓練、待回覆評鑑與積分。</div>}
     </div>
   );
 }
@@ -1934,6 +1938,69 @@ function PayRulesModal({ rulesDoc, onSave, onClose }) {
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 16 }}>
           <button onClick={onClose} style={{ border: `1px solid ${BORDER}`, background: "#fff", color: SUB, borderRadius: 8, padding: "8px 16px", fontSize: 13, cursor: "pointer" }}>取消</button>
           <button onClick={() => { onSave({ ...d, scheduled: sch }); onClose(); }} style={{ border: "none", background: ACCENT, color: "#fff", borderRadius: 8, padding: "8px 22px", fontSize: 13.5, fontWeight: 700, cursor: "pointer" }}>儲存設定</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── 積分存摺（張良 2026-07-24：我的積分要像銀行收支/LINE Points 逐筆顯示來源與使用＋餘額）──
+// 不另存一份帳：直接從 回饋/闖關/兌換 原始資料推導（跟排行榜 crewFullBalance 同一套公式＝數字一致）。
+export function buildPointLedger(me, people, fbItems, quests, shop) {
+  const entries = [];
+  const nameOf = (id) => (people.find(p => p.id === id) || {}).name || "—";
+  (fbItems || []).forEach(it => {
+    if (it.fromId === me) {
+      entries.push({ ts: it.ts, icon: "✍", label: `給回饋 → ${nameOf(it.toId)}${it.tags?.[0] ? `「${it.tags[0]}」` : ""}`, delta: 2 });
+      if ((it.helpful || []).length) entries.push({ ts: it.ts, icon: "👍", label: `回饋被 ${nameOf(it.toId)} 按「幫到我」×${it.helpful.length}`, delta: 5 * it.helpful.length });
+    }
+    if (it.toId === me) entries.push({ ts: it.ts, icon: "💬", label: `收到回饋 ← ${it.anon ? "匿名夥伴" : nameOf(it.fromId)}`, delta: 1 });
+  });
+  (quests?.progress || []).filter(p => p.userId === me && p.status === "completed").forEach(pr => {
+    const q = (quests.quests || []).find(x => x.id === pr.questId);
+    if (q) entries.push({ ts: pr.ts, icon: "🎯", label: `完成關卡「${q.title}」`, delta: q.points || 0 });
+  });
+  (shop?.redemptions || []).filter(r => r.userId === me && r.status !== "rejected").forEach(r => {
+    entries.push({ ts: r.ts, icon: "🎁", label: `兌換「${r.name}」`, delta: -(r.cost || 0) });
+  });
+  entries.sort((a, b) => String(a.ts).localeCompare(String(b.ts)));
+  let bal = 0;
+  entries.forEach(e => { bal += e.delta; e.balance = bal; });
+  return entries.reverse(); // 新到舊（最上面是最新，跟銀行 App 一樣）
+}
+export function PointsLedgerModal({ me, people, fbItems, quests, shop, onClose }) {
+  const entries = buildPointLedger(me, people, fbItems, quests, shop);
+  const cur = entries[0]?.balance || 0;
+  const fmtD = (ts) => { const d = new Date(ts); return `${d.getMonth() + 1}/${d.getDate()}`; };
+  return (
+    <div onClick={e => e.target === e.currentTarget && onClose()} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.45)", zIndex: 820, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+      <div style={{ background: "#fff", border: `1px solid ${BORDER}`, borderRadius: 12, width: "min(480px,96vw)", maxHeight: "86vh", display: "flex", flexDirection: "column", overflow: "hidden" }}>
+        <div style={{ padding: "16px 18px 12px", borderBottom: `1.5px solid #c8bca6`, background: "#FBF7EE" }}>
+          <div style={{ display: "flex", alignItems: "center" }}>
+            <div style={{ fontSize: 15, fontWeight: 700, color: TEXT }}>📒 我的積分存摺</div>
+            <div style={{ flex: 1 }} />
+            <button onClick={onClose} style={{ background: "none", border: "none", fontSize: 22, cursor: "pointer", color: SUB }}>×</button>
+          </div>
+          <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginTop: 4 }}>
+            <span style={{ fontFamily: MONO, fontSize: 30, fontWeight: 800, color: ACCENT }}>{cur}</span>
+            <span style={{ fontSize: 12.5, color: SUB }}>分・共 {entries.length} 筆紀錄</span>
+          </div>
+          <div style={{ fontSize: 11, color: "#9b9384", marginTop: 2 }}>給回饋+2・收到回饋+1・被按幫到我+5/讚・闖關依關卡・兌換扣分（與排行榜同一套算法）</div>
+        </div>
+        <div style={{ overflowY: "auto", padding: "4px 0" }}>
+          {entries.length === 0 && <div style={{ padding: "36px 0", textAlign: "center", color: "#9b9384", fontSize: 13.5 }}>還沒有積分紀錄——去「回饋」給夥伴一個鼓勵就有第一筆了！</div>}
+          {entries.map((e, i) => (
+            <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 18px", borderTop: i ? "1px solid #f0ead9" : "none" }}>
+              <span style={{ fontFamily: MONO, fontSize: 11.5, color: "#9b9384", width: 34, flexShrink: 0 }}>{fmtD(e.ts)}</span>
+              <span style={{ fontSize: 15, flexShrink: 0 }}>{e.icon}</span>
+              <span style={{ fontSize: 13, color: TEXT, flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={e.label}>{e.label}</span>
+              <span style={{ fontFamily: MONO, fontVariantNumeric: "tabular-nums", fontSize: 13.5, fontWeight: 800, color: e.delta >= 0 ? "#3f7d4e" : "#b3261e", width: 46, textAlign: "right", flexShrink: 0 }}>{e.delta >= 0 ? "+" : ""}{e.delta}</span>
+              <span style={{ fontFamily: MONO, fontVariantNumeric: "tabular-nums", fontSize: 12, color: SUB, width: 52, textAlign: "right", flexShrink: 0 }}>{e.balance}</span>
+            </div>
+          ))}
+        </div>
+        <div style={{ padding: "8px 18px", borderTop: `1px solid ${BORDER}`, display: "flex", fontSize: 10.5, color: "#c8bca6" }}>
+          <span style={{ flex: 1 }} /><span style={{ width: 46, textAlign: "right" }}>增減</span><span style={{ width: 52, textAlign: "right" }}>餘額</span>
         </div>
       </div>
     </div>
