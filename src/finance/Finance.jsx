@@ -1031,17 +1031,27 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
                             <div style={hc}>日期</div><div style={hc}>店</div><div style={{ ...hc, textAlign: "right" }}>營收</div><div style={{ ...hc, textAlign: "right" }}>單數</div><div style={{ ...hc, textAlign: "right" }}>來客</div><div style={{ ...hc, textAlign: "right" }}>客單(÷來客)</div><div style={{ ...hc, textAlign: "right" }}>現金</div><div style={{ ...hc, textAlign: "right" }}>信用卡</div><div style={{ ...hc, textAlign: "right" }}>Uber</div><div style={{ ...hc, textAlign: "right" }}>折扣</div>
                           </div>
                           <div style={{ maxHeight: "50vh", overflowY: "auto" }}>
-                            {[...days].reverse().map((d, i) => (
-                              <div key={d.id} onClick={() => openDrill({ type: "day", key: d.date })} title="點我看該日完整原始資料" style={{ display: "grid", gridTemplateColumns: GTC, alignItems: "center", minHeight: 32, borderTop: i ? "1px solid #f0ead9" : "none", background: i % 2 ? "#f8f4ea" : C.card, cursor: "pointer" }}
-                                onMouseEnter={e => e.currentTarget.style.background = "#f4efe5"} onMouseLeave={e => e.currentTarget.style.background = i % 2 ? "#f8f4ea" : C.card}>
-                                <div style={{ padding: "0 8px", fontFamily: MONOF, fontSize: 11.5, color: C.sub }}>{d.date.slice(2)}（{WD2[new Date(d.date + "T00:00:00").getDay()]}）</div>
+                            {(() => {
+                              // 週末辨識（張良 2026-07-24）：六日列淡琥珀底＋日期琥珀字；跨週處畫粗分隔線
+                              const monOf = (ds) => { const dt = new Date(ds + "T00:00:00"); dt.setDate(dt.getDate() - ((dt.getDay() + 6) % 7)); return `${dt.getFullYear()}-${dt.getMonth() + 1}-${dt.getDate()}`; };
+                              const arr = [...days].reverse();
+                              return arr.map((d, i) => {
+                              const gd = new Date(d.date + "T00:00:00").getDay(), wknd = gd === 0 || gd === 6;
+                              const newWeek = i > 0 && monOf(arr[i - 1].date) !== monOf(d.date);
+                              const rowBg = wknd ? "#f6ecd3" : i % 2 ? "#f8f4ea" : C.card;
+                              return (
+                              <div key={d.id} onClick={() => openDrill({ type: "day", key: d.date })} title="點我看該日完整原始資料" style={{ display: "grid", gridTemplateColumns: GTC, alignItems: "center", minHeight: 32, borderTop: i ? (newWeek ? "2px solid #c8bca6" : "1px solid #f0ead9") : "none", background: rowBg, cursor: "pointer" }}
+                                onMouseEnter={e => e.currentTarget.style.background = "#f4efe5"} onMouseLeave={e => e.currentTarget.style.background = rowBg}>
+                                <div style={{ padding: "0 8px", fontFamily: MONOF, fontSize: 11.5, color: wknd ? "#a97a10" : C.sub, fontWeight: wknd ? 700 : 400 }}>{d.date.slice(2)}（{WD2[gd]}）</div>
                                 <div style={{ padding: "0 8px", fontSize: 11.5, color: C.sub, overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis" }}>{d.store}</div>
                                 {cell(fmt(d.revenue), { fontWeight: 700, color: C.text })}
                                 {cell(d.txCount)}{cell(d.guests || "—")}{cell(d.guests ? fmt(ticket(d.revenue, d.guests)) : "—")}
                                 {cell(fmt(d.cash || 0))}{cell(fmt(d.card || 0))}{cell(fmt(d.uber || 0))}
                                 {cell(d.discount ? fmt(d.discount) : "—", { color: d.discount ? C.accent : "#d5cbb6" })}
                               </div>
-                            ))}
+                              );
+                              });
+                            })()}
                           </div>
                         </>
                       );
@@ -1079,15 +1089,21 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
                   </div>
                 )}
                 <div style={{ ...chartBox2, marginTop: 10, marginBottom: 10 }}>
-                  <div style={{ fontSize: 11.5, fontWeight: 700, color: C.sub, marginBottom: 8 }}>{posGran === "day" ? "每日" : posGran === "week" ? "每週" : "每月"}營收 <span style={{ fontWeight: 400, color: C.faint }}>{posGran === "day" ? "（點柱子看該日完整原始資料）" : "（彙總自每日日結）"}</span></div>
+                  <div style={{ fontSize: 11.5, fontWeight: 700, color: C.sub, marginBottom: 8 }}>{posGran === "day" ? "每日" : posGran === "week" ? "每週" : "每月"}營收 <span style={{ fontWeight: 400, color: C.faint }}>{posGran === "day" ? "（點柱子看該日完整原始資料・" : "（彙總自每日日結）"}</span>{posGran === "day" && <span style={{ fontWeight: 400, color: C.faint }}><span style={{ display: "inline-block", width: 8, height: 8, borderRadius: 2, background: C.amber, verticalAlign: "middle", margin: "0 3px 2px 0" }} />＝週末）</span>}</div>
                   <div style={{ display: "flex", alignItems: "flex-end", gap: 3, height: 130 }}>
-                    {periods.map(pp => (
-                      <div key={pp.key} onClick={() => posGran === "day" && openDrill({ type: "day", key: pp.key })} title={`${pp.key}　${fmt(pp.revenue)}・${pp.txCount}單${pp.nDays > 1 ? `・${pp.nDays}天` : ""}`} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 2, minWidth: 0, cursor: posGran === "day" ? "pointer" : "default" }}>
+                    {periods.map((pp, pi) => {
+                      // 週末柱琥珀色、跨週（週一）柱前留縫（張良 2026-07-24：一眼認出週末）
+                      const gd3 = posGran === "day" ? new Date(pp.key + "T00:00:00").getDay() : -1;
+                      const wknd3 = gd3 === 0 || gd3 === 6;
+                      const newWeek3 = posGran === "day" && pi > 0 && gd3 === 1;
+                      return (
+                      <div key={pp.key} onClick={() => posGran === "day" && openDrill({ type: "day", key: pp.key })} title={`${pp.key}　${fmt(pp.revenue)}・${pp.txCount}單${pp.nDays > 1 ? `・${pp.nDays}天` : ""}`} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 2, minWidth: 0, cursor: posGran === "day" ? "pointer" : "default", marginLeft: newWeek3 ? 9 : 0, borderLeft: newWeek3 ? "1px dashed #c8bca6" : "none", paddingLeft: newWeek3 ? 6 : 0 }}>
                         {periods.length <= 20 && <span style={{ fontSize: 9, color: C.sub, fontFamily: MONOF }}>{Math.round((pp.revenue || 0) / 1000)}K</span>}
-                        <div style={{ width: "100%", height: Math.max(3, (pp.revenue || 0) / maxPer * 96), background: "#3a6ea5", borderRadius: "3px 3px 0 0" }} />
-                        <span style={{ fontSize: 8.5, color: C.faint, fontFamily: MONOF, whiteSpace: "nowrap" }}>{perLabel(pp.key)}</span>
+                        <div style={{ width: "100%", height: Math.max(3, (pp.revenue || 0) / maxPer * 96), background: wknd3 ? C.amber : "#3a6ea5", borderRadius: "3px 3px 0 0" }} />
+                        <span style={{ fontSize: 8.5, color: wknd3 ? "#a97a10" : C.faint, fontWeight: wknd3 ? 700 : 400, fontFamily: MONOF, whiteSpace: "nowrap" }}>{perLabel(pp.key)}</span>
                       </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </div>
                 {insights.length > 0 && (
