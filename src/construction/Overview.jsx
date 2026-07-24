@@ -6,6 +6,7 @@ import { uploadPhoto, deletePhotoFile } from "../supa.js";
 import { fmt, taxOf, estAmount, paidOf, pretaxOf, catRawEst, catPretaxSub, catDiscount, catEstAfter, catItemEstAfter, PAY_CATEGORIES, catPaid, catItemPaidMap, isFundingCat } from "../lib/cost.js";
 import { ACCENT, PRIMARY, BG, SURFACE, BORDER, TEXT, SUB } from "../lib/theme.jsx";
 import { showMoney, L } from "../lib/runtime.js";
+import { parseNum } from "../lib/num.js";
 import { STATUS_MAP, markCatDone, syncCatStatus } from "../lib/status.js";
 import { SidePanel, inputStyle } from "../lib/ui.jsx";
 
@@ -52,7 +53,7 @@ function CustomInput({ value, type, onCommit }) {
   const display = (type === "money" && value !== undefined && value !== "" && value !== null) ? fmt(Number(value)||0) : (value ?? "");
   if (editing) {
     return <input autoFocus value={local} onChange={e=>setLocal(e.target.value)}
-      onBlur={()=>{ onCommit(isNum ? (parseFloat(local)||0) : local); setEditing(false); }}
+      onBlur={()=>{ onCommit(isNum ? parseNum(local) : local); setEditing(false); }}
       onKeyDown={e=>{ if(e.key==="Enter"||e.key==="Escape") e.target.blur(); }}
       style={{ width:"100%", border:"none", outline:"2px solid "+ACCENT, borderRadius:4, padding:"2px 4px", fontSize:12.5, fontFamily:"'Noto Sans TC',sans-serif", background:"#fbeee6" }} />;
   }
@@ -327,7 +328,7 @@ export function OverviewTable({ cats, setCats, confirm, customCols = [], setCust
           value={local}
           onChange={e => setLocal(e.target.value)}
           onBlur={() => {
-            const v = type === "number" ? (parseFloat(local) || 0) : local;
+            const v = type === "number" ? parseNum(local) : local;
             updateItem(catId, itemId, field, v);
             setEditCell(null);
           }}

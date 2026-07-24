@@ -2950,7 +2950,7 @@ function NumInput({ value, onChange, style, placeholder }) {
       type="text" inputMode="decimal"
       value={local}
       placeholder={placeholder}
-      onChange={e => { if (/^-?\d*\.?\d*$/.test(e.target.value) || e.target.value === "") setLocal(e.target.value); }}
+      onChange={e => { const raw = e.target.value.replace(/[,，\sNT$元]/g, ""); if (/^-?\d*\.?\d*$/.test(raw) || raw === "") setLocal(raw); }}
       onBlur={() => { const n = parseFloat(local); const v = isNaN(n) ? 0 : n; ref.current = v; setLocal(String(v)); onChange(v); }}
       onFocus={e => e.target.select()}
       style={style}
@@ -2983,7 +2983,7 @@ function Field({ label, value, onChange, type, readOnly, accent, prefix, suffix,
             type="text"
             inputMode="decimal"
             value={local}
-            onChange={e => { if (/^-?\d*\.?\d*$/.test(e.target.value) || e.target.value === "") setLocal(e.target.value); }}
+            onChange={e => { const raw = e.target.value.replace(/[,，\sNT$元]/g, ""); if (/^-?\d*\.?\d*$/.test(raw) || raw === "") setLocal(raw); }}
             onBlur={() => { const n = parseFloat(local); const v = isNaN(n) ? 0 : n; committed.current = v; setLocal(String(v)); onChange(v); }}
             onFocus={e => e.target.select()}
             style={{ ...inputStyle, flex: 1 }}

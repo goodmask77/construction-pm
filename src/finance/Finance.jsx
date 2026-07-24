@@ -765,7 +765,7 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
           const dt = new Date(date + "T00:00:00"); const mon = new Date(dt); mon.setDate(dt.getDate() - ((dt.getDay() + 6) % 7));
           return `${mon.getFullYear()}-${String(mon.getMonth() + 1).padStart(2, "0")}-${String(mon.getDate()).padStart(2, "0")}`;
         };
-        const perLabel = (k) => posGran === "day" ? `${Number(k.slice(8))}` : posGran === "month" ? k : `${Number(k.slice(5, 7))}/${Number(k.slice(8))}週`;
+        const perLabel = (k) => posGran === "day" ? `${Number(k.slice(8))}(${WD2[new Date(k + "T00:00:00").getDay()]})` : posGran === "month" ? k : `${Number(k.slice(5, 7))}/${Number(k.slice(8))}週`;
         const periods = (() => {
           const m = {};
           days.forEach(d => {
@@ -1022,7 +1022,7 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
                 <div style={{ border: "1.5px solid #c8bca6", borderRadius: 8, background: C.card, overflow: "hidden" }}>
                   <div style={{ overflowX: "auto" }}><div style={{ minWidth: 900 }}>
                     {(() => {
-                      const GTC = "88px minmax(140px,1fr) 96px 64px 64px 80px 96px 96px 96px 80px";
+                      const GTC = "118px minmax(140px,1fr) 96px 64px 64px 80px 96px 96px 96px 80px";
                       const hc = { fontSize: 10.5, letterSpacing: 0.8, color: C.faint, fontWeight: 700, padding: "7px 8px", whiteSpace: "nowrap" };
                       const cell = (v, extra) => <div style={{ padding: "0 8px", fontFamily: MONOF, fontSize: 11.5, textAlign: "right", color: C.sub, ...extra }}>{v}</div>;
                       return (
@@ -1034,7 +1034,7 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
                             {[...days].reverse().map((d, i) => (
                               <div key={d.id} onClick={() => openDrill({ type: "day", key: d.date })} title="點我看該日完整原始資料" style={{ display: "grid", gridTemplateColumns: GTC, alignItems: "center", minHeight: 32, borderTop: i ? "1px solid #f0ead9" : "none", background: i % 2 ? "#f8f4ea" : C.card, cursor: "pointer" }}
                                 onMouseEnter={e => e.currentTarget.style.background = "#f4efe5"} onMouseLeave={e => e.currentTarget.style.background = i % 2 ? "#f8f4ea" : C.card}>
-                                <div style={{ padding: "0 8px", fontFamily: MONOF, fontSize: 11.5, color: C.sub }}>{d.date.slice(2)}</div>
+                                <div style={{ padding: "0 8px", fontFamily: MONOF, fontSize: 11.5, color: C.sub }}>{d.date.slice(2)}（{WD2[new Date(d.date + "T00:00:00").getDay()]}）</div>
                                 <div style={{ padding: "0 8px", fontSize: 11.5, color: C.sub, overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis" }}>{d.store}</div>
                                 {cell(fmt(d.revenue), { fontWeight: 700, color: C.text })}
                                 {cell(d.txCount)}{cell(d.guests || "—")}{cell(d.guests ? fmt(ticket(d.revenue, d.guests)) : "—")}
@@ -1078,18 +1078,7 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
                     </div></div>
                   </div>
                 )}
-                {insights.length > 0 && (
-                  <div style={{ ...chartBox2, marginBottom: 10, borderLeft: `4px solid ${C.accent}` }}>
-                    <div style={{ fontSize: 11.5, fontWeight: 700, color: C.sub, marginBottom: 6 }}>🧠 重點摘要・提醒・建議 <span style={{ fontWeight: 400, color: C.faint }}>（全部由原始資料即時計算）</span></div>
-                    {insights.map(([ic, t, dr2], i) => (
-                      <div key={i} onClick={() => dr2 && openDrill(dr2)} style={{ display: "flex", gap: 8, alignItems: "flex-start", padding: "3px 0", fontSize: 12.5, color: ic === "⚠️" || ic === "🔻" ? C.red : C.text, borderTop: i ? `1px solid #f0ead9` : "none", cursor: dr2 ? "pointer" : "default" }}
-                        onMouseEnter={e => { if (dr2) e.currentTarget.style.background = "#f4efe5"; }} onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
-                        <span>{ic}</span><span style={{ flex: 1 }}>{t}{dr2 && <span style={{ color: C.blue, fontWeight: 700 }}> →</span>}</span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-                <div style={{ ...chartBox2, marginBottom: 10 }}>
+                <div style={{ ...chartBox2, marginTop: 10, marginBottom: 10 }}>
                   <div style={{ fontSize: 11.5, fontWeight: 700, color: C.sub, marginBottom: 8 }}>{posGran === "day" ? "每日" : posGran === "week" ? "每週" : "每月"}營收 <span style={{ fontWeight: 400, color: C.faint }}>{posGran === "day" ? "（點柱子看該日完整原始資料）" : "（彙總自每日日結）"}</span></div>
                   <div style={{ display: "flex", alignItems: "flex-end", gap: 3, height: 130 }}>
                     {periods.map(pp => (
@@ -1101,6 +1090,17 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
                     ))}
                   </div>
                 </div>
+                {insights.length > 0 && (
+                  <div style={{ ...chartBox2, marginBottom: 10, borderLeft: `4px solid ${C.accent}` }}>
+                    <div style={{ fontSize: 11.5, fontWeight: 700, color: C.sub, marginBottom: 6 }}>🧠 重點摘要・提醒・建議 <span style={{ fontWeight: 400, color: C.faint }}>（全部由原始資料即時計算）</span></div>
+                    {insights.map(([ic, t, dr2], i) => (
+                      <div key={i} onClick={() => dr2 && openDrill(dr2)} style={{ display: "flex", gap: 8, alignItems: "flex-start", padding: "3px 0", fontSize: 12.5, color: ic === "⚠️" || ic === "🔻" ? C.red : C.text, borderTop: i ? `1px solid #f0ead9` : "none", cursor: dr2 ? "pointer" : "default" }}
+                        onMouseEnter={e => { if (dr2) e.currentTarget.style.background = "#f4efe5"; }} onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
+                        <span>{ic}</span><span style={{ flex: 1 }}>{t}{dr2 && <span style={{ color: C.blue, fontWeight: 700 }}> →</span>}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
                 {/* 標籤自選比較：點分類籤 → 選到的分類逐期比較 */}
                 <div style={{ ...chartBox2, marginBottom: 10 }}>
                   <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
