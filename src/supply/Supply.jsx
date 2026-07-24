@@ -44,6 +44,7 @@ export default function SupplyView({ view, K, canEdit, confirm, showMoney, userN
   const [dragC, setDragC] = useState(null);      // 拖曳中的類別/分類名稱
   const [groups, setGroups] = useState({});     // DD看過的LINE群（pm_group_seen，發送綁定用）
   const flash = (t) => { setMsg(t); setTimeout(() => setMsg(m => (m === t ? null : m)), 6000); };
+  const isMob = typeof window !== "undefined" && window.innerWidth <= 640; // 手機版窄版排版（叫貨下單）
 
   const [recipesAll, setRecipesAll] = useState(null); // 全部食譜版本（缺料總覽用；量小全載）
   useEffect(() => { (async () => {
@@ -204,11 +205,30 @@ export default function SupplyView({ view, K, canEdit, confirm, showMoney, userN
                 <button disabled={!pk.length} onClick={e => { e.stopPropagation(); setPreview(v.id); }} style={{ border: "none", background: pk.length ? C.accent : "#d5cbb6", color: "#fff", borderRadius: 7, padding: "6px 16px", fontSize: 12.5, fontWeight: 700, cursor: pk.length ? "pointer" : "default" }}>產生叫貨單</button>
               </div>
               {open && <>
-              <div style={{ display: "grid", gridTemplateColumns: `minmax(170px,1.4fr) minmax(110px,1fr) 56px ${showMoney ? "76px " : ""}70px 130px${showMoney ? " 86px" : ""}`, gap: 8, padding: "4px 12px", fontSize: 10, color: C.faint, fontWeight: 700, borderBottom: `1px solid #f0ead9` }}>
+              {!isMob && <div style={{ display: "grid", gridTemplateColumns: `minmax(170px,1.4fr) minmax(110px,1fr) 56px ${showMoney ? "76px " : ""}70px 130px${showMoney ? " 86px" : ""}`, gap: 8, padding: "4px 12px", fontSize: 10, color: C.faint, fontWeight: 700, borderBottom: `1px solid #f0ead9` }}>
                 <span>品名</span><span>規格</span><span>單位</span>{showMoney && <span style={{ textAlign: "right" }}>單價</span>}<span style={{ textAlign: "right" }}>安全庫存</span><span style={{ textAlign: "center" }}>叫貨量</span>{showMoney && <span style={{ textAlign: "right" }}>小計</span>}
-              </div>
+              </div>}
               {its.map(it => {
                 const qv = qty[it.id] || "";
+                // 叫貨量 −/輸入/＋（桌機手機共用）
+                const stepper = (
+                  <div style={{ display: "flex", alignItems: "center", gap: 4, justifyContent: "center", flexShrink: 0 }}>
+                    <button onClick={() => setQty(q2 => ({ ...q2, [it.id]: Math.max(0, (Number(q2[it.id]) || 0) - 1) || "" }))} style={{ width: isMob ? 30 : 24, height: isMob ? 30 : 24, border: `1px solid ${C.line}`, background: "#fff", borderRadius: 6, cursor: "pointer", color: C.sub, fontSize: isMob ? 15 : 12 }}>−</button>
+                    <input value={qv} onChange={e => setQty(q2 => ({ ...q2, [it.id]: e.target.value.replace(/[^0-9.]/g, "") }))} inputMode="decimal" placeholder="0" style={{ ...inp, width: isMob ? 56 : 52, textAlign: "center", padding: "4px 4px", fontFamily: MONOF, fontSize: isMob ? 14 : 12.5 }} />
+                    <button onClick={() => setQty(q2 => ({ ...q2, [it.id]: (Number(q2[it.id]) || 0) + 1 }))} style={{ width: isMob ? 30 : 24, height: isMob ? 30 : 24, border: `1px solid ${C.line}`, background: "#fff", borderRadius: 6, cursor: "pointer", color: C.sub, fontSize: isMob ? 15 : 12 }}>＋</button>
+                  </div>
+                );
+                // 手機版兩行式（2026-07-24 張良：手機叫貨量欄被切到畫面外沒法叫貨）
+                if (isMob) return (
+                  <div key={it.id} style={{ borderTop: `1px solid #f0ead9`, padding: "7px 12px", background: Number(qv) > 0 ? "#fbeee6" : "#fff" }}>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: C.text }}>{it.name}{it.tags ? <span style={{ fontSize: 9.5, fontWeight: 600, color: C.amber, marginLeft: 5 }}>{String(it.tags).split(/[,，\s]+/).filter(Boolean).map(t => "#" + t).join(" ")}</span> : null}</div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 5 }}>
+                      <span style={{ fontSize: 11, color: C.sub, flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{[it.spec || "", it.unit ? `單位:${it.unit}` : "", showMoney && it.price ? `$${Number(it.price).toLocaleString()}` : ""].filter(Boolean).join("｜") || "—"}</span>
+                      {stepper}
+                      {showMoney && <span style={{ fontFamily: MONOF, textAlign: "right", fontWeight: 700, minWidth: 52, color: Number(qv) > 0 ? C.accent : "#d5cbb6" }}>{Number(qv) > 0 && it.price ? (Math.round(Number(qv) * Number(it.price) * 100) / 100).toLocaleString(undefined, { maximumFractionDigits: 2 }) : ""}</span>}
+                    </div>
+                  </div>
+                );
                 return (
                   <div key={it.id} style={{ display: "grid", gridTemplateColumns: `minmax(170px,1.4fr) minmax(110px,1fr) 56px ${showMoney ? "76px " : ""}70px 130px${showMoney ? " 86px" : ""}`, gap: 8, alignItems: "center", minHeight: 34, borderTop: `1px solid #f0ead9`, padding: "0 12px", background: Number(qv) > 0 ? "#fbeee6" : "#fff", fontSize: 12.5 }}>
                     <span style={{ fontWeight: 600, color: C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{it.name}{it.tags ? <span style={{ fontSize: 9.5, fontWeight: 600, color: C.amber, marginLeft: 5 }}>{String(it.tags).split(/[,，\s]+/).filter(Boolean).map(t => "#" + t).join(" ")}</span> : null}</span>
@@ -216,11 +236,7 @@ export default function SupplyView({ view, K, canEdit, confirm, showMoney, userN
                     <span style={{ color: C.sub }}>{it.unit || "—"}</span>
                     {showMoney && <span style={{ fontFamily: MONOF, textAlign: "right", color: C.sub }}>{it.price ? Number(it.price).toLocaleString() : "—"}</span>}
                     <span style={{ fontFamily: MONOF, textAlign: "right", color: C.faint }}>{it.safeStock ?? "—"}</span>
-                    <div style={{ display: "flex", alignItems: "center", gap: 4, justifyContent: "center" }}>
-                      <button onClick={() => setQty(q2 => ({ ...q2, [it.id]: Math.max(0, (Number(q2[it.id]) || 0) - 1) || "" }))} style={{ width: 24, height: 24, border: `1px solid ${C.line}`, background: "#fff", borderRadius: 6, cursor: "pointer", color: C.sub }}>−</button>
-                      <input value={qv} onChange={e => setQty(q2 => ({ ...q2, [it.id]: e.target.value.replace(/[^0-9.]/g, "") }))} inputMode="decimal" placeholder="0" style={{ ...inp, width: 52, textAlign: "center", padding: "4px 4px", fontFamily: MONOF }} />
-                      <button onClick={() => setQty(q2 => ({ ...q2, [it.id]: (Number(q2[it.id]) || 0) + 1 }))} style={{ width: 24, height: 24, border: `1px solid ${C.line}`, background: "#fff", borderRadius: 6, cursor: "pointer", color: C.sub }}>＋</button>
-                    </div>
+                    {stepper}
                     {showMoney && <span style={{ fontFamily: MONOF, textAlign: "right", fontWeight: 700, color: Number(qv) > 0 ? C.accent : "#d5cbb6" }}>{Number(qv) > 0 && it.price ? (Math.round(Number(qv) * Number(it.price) * 100) / 100).toLocaleString(undefined, { maximumFractionDigits: 2 }) : "—"}</span>}
                   </div>
                 );

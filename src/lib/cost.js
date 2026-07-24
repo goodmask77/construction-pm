@@ -65,15 +65,29 @@ export const catItemPaidMap = (cat) => {
   const items = cat?.items || [];
   const out = {}; const linked = {};
   items.forEach(it => { out[it.id] = 0; linked[it.id] = 0; });
-  let pool = 0;
-  (cat?.payments || []).forEach(p => { const amt = Number(p.amount) || 0; if (p.itemId && linked[p.itemId] != null) { linked[p.itemId] += amt; out[p.itemId] += amt; } else pool += amt; });
-  if (pool > 0) {
-    for (const it of items) {
-      if (pool <= 0) break;
+  // 整批（未指定品項）付款：正數池分攤給正數目標細項、負數池（退款/沖銷）分攤給負數目標細項（退押金等），互不抵銷才不會把細項進度弄亂
+  let poolPos = 0, poolNeg = 0;
+  (cat?.payments || []).forEach(p => { const amt = Number(p.amount) || 0; if (p.itemId && linked[p.itemId] != null) { linked[p.itemId] += amt; out[p.itemId] += amt; } else if (amt >= 0) poolPos += amt; else poolNeg += amt; });
+  // 分攤順序＝細項「建立時間」舊→新（id 尾碼帶時間戳；沒有時間戳的舊資料視為最舊、維持原相對順序）。
+  // 這樣整批款只會先填舊細項，之後新增的細項不會「一填金額就顯示付清」。零用金虛擬細項本身即已付，不參與分攤。
+  const createdTs = (it) => { const m = String(it.id).match(/(\d{10,})$/); return m ? Number(m[1]) : 0; };
+  const allocOrder = items.filter(it => !it.fromPetty).map((it, i) => ({ it, i })).sort((a, b) => (createdTs(a.it) - createdTs(b.it)) || (a.i - b.i)).map(x => x.it);
+  if (poolPos > 0) {
+    for (const it of allocOrder) {
+      if (poolPos <= 0) break;
       const rem = Math.max(0, (estMap[it.id] ?? estAmount(it)) - (out[it.id] || 0));
       if (rem <= 0) continue;
-      const give = Math.min(rem, pool);
-      out[it.id] += give; pool -= give;
+      const give = Math.min(rem, poolPos);
+      out[it.id] += give; poolPos -= give;
+    }
+  }
+  if (poolNeg < 0) {
+    for (const it of allocOrder) {
+      if (poolNeg >= 0) break;
+      const rem = Math.min(0, (estMap[it.id] ?? estAmount(it)) - (out[it.id] || 0));
+      if (rem >= 0) continue;
+      const give = Math.max(rem, poolNeg); // 兩者皆負，取絕對值較小者
+      out[it.id] += give; poolNeg -= give;
     }
   }
   return out;
