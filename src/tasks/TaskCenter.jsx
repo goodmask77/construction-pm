@@ -9,6 +9,7 @@ import { Inbox, LayoutGrid, Columns3, List, CalendarDays, ChartGantt, Network, P
 import { isWaiting, isBlocked, missingDeps, wouldCycle, mergeTask, removeTaskAndRefs, isQuickWin, QUICK_WIN_MAX_MINUTES, orderTasks } from "./taskModel.js";
 import { uploadPhoto } from "../supa.js";
 import { loadRecords, migrateRecords, diffPersist, subscribeRecords } from "../lib/records.js";
+import { useIsMobile } from "../lib/theme.jsx"; // 手機判斷（張良 2026-07-26 手機版全面體檢）
 
 // 任務附件：可上傳檔案＋直接 Cmd+V 貼截圖（彈窗開著時全域接住貼上）＋縮圖點開放大（App 慣例）
 function TaskAttach({ files = [], onChange, canEdit, C, line }) {
@@ -94,6 +95,7 @@ export default function TaskCenter({ K, confirm, canEdit, cats, onLog, onAddCat,
   const [showAllDone, setShowAllDone] = useState(false); // 看板「完成」欄預設只列最近幾件
   const [sortMode, setSortMode] = useState("manual"); // manual(手動/拖曳順序) | due(日期) | prio(重要度)
   const [newCatIn, setNewCatIn] = useState(""); // 依大項視角「新增大項」輸入
+  const isMobile = useIsMobile(); // 手機(<640px)排版切換（張良 2026-07-26 手機版全面體檢）
 
   // 任務逐筆存（2026-07-18）：一件任務＝一份文件 pm_task_<id>（含 ord＝手動排序位置），
   // 兩人同時改任務不再整包互蓋；舊整包 pm_tasks 第一次載入自動遷移。
@@ -538,16 +540,19 @@ export default function TaskCenter({ K, confirm, canEdit, cats, onLog, onAddCat,
             {/* Linear 式密表：一件一行 36px、欄位對齊、唯讀掃讀；點列開詳情 */}
             <div style={{ border: "1.5px solid #c8bca6", borderRadius: 8, background: C.card, overflow: "hidden" }}>
               <div style={{ overflowX: "auto" }}>
-                <div style={{ minWidth: 880 }}>
+                {/* 張良 2026-07-26 手機版全面體檢：手機不橫滑，只留 勾選/標題/截止/狀態 四欄；桌機八欄不變 */}
+                <div style={isMobile ? undefined : { minWidth: 880 }}>
                   {(() => {
-                    const GTC = "34px minmax(220px,1fr) 72px 96px 130px 52px 130px 88px";
+                    const GTC = isMobile ? "34px minmax(0,1fr) 72px 88px" : "34px minmax(220px,1fr) 72px 96px 130px 52px 130px 88px";
                     const hc = { fontSize: 10.5, letterSpacing: 0.8, color: C.faint, fontWeight: 600, padding: "7px 8px", whiteSpace: "nowrap" };
                     const overdue = (t) => t.status !== "done" && t.due && t.due < today();
                     return (
                       <>
                         <div style={{ display: "grid", gridTemplateColumns: GTC, background: C.soft, borderBottom: "1.5px solid #c8bca6", alignItems: "center" }}>
                           <div />
-                          <div style={hc}>標題</div><div style={hc}>截止</div><div style={hc}>負責人</div><div style={hc}>等待中</div><div style={hc}>優先</div><div style={hc}>大項</div><div style={hc}>狀態</div>
+                          <div style={hc}>標題</div><div style={hc}>截止</div>
+                          {!isMobile && <><div style={hc}>負責人</div><div style={hc}>等待中</div><div style={hc}>優先</div><div style={hc}>大項</div></>}
+                          <div style={hc}>狀態</div>
                         </div>
                         {rows.length === 0 ? <Empty icon={List} text="沒有任務" pad={24} /> :
                           rows.map((t, i) => {
@@ -566,13 +571,16 @@ export default function TaskCenter({ K, confirm, canEdit, cats, onLog, onAddCat,
                                   <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>{t.title}</span>
                                 </div>
                                 <div style={{ padding: "0 8px", fontFamily: MONO, fontSize: 11.5, fontWeight: overdue(t) ? 700 : 500, color: overdue(t) ? C.red : (t.due ? C.sub : C.faint), whiteSpace: "nowrap" }}>{t.due ? t.due.slice(5) + wdOf(t.due) : "—"}</div>
-                                <div style={{ padding: "0 8px", fontSize: 12, color: t.owner ? C.text : C.faint, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "flex", alignItems: "center", gap: 5 }}>
-                                  {t.owner && <span style={{ width: 17, height: 17, borderRadius: "50%", background: C.accentSoft, color: C.accent, fontSize: 9, fontWeight: 700, display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{t.owner.slice(0, 2)}</span>}
-                                  {t.owner || "—"}
-                                </div>
-                                <div style={{ padding: "0 8px", fontSize: 12, color: isWaiting(t) ? C.amber : C.faint, fontWeight: isWaiting(t) ? 600 : 400, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.waitingFor || "—"}</div>
-                                <div style={{ padding: "0 8px", fontSize: 12, fontWeight: t.priority === "urgent" ? 700 : 500, color: t.priority === "urgent" ? C.red : t.priority === "high" ? C.amber : t.priority === "low" ? C.faint : C.sub, whiteSpace: "nowrap" }}>{pm[1]}</div>
-                                <div style={{ padding: "0 8px", fontSize: 12, color: C.sub, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{catName(t.catId)}</div>
+                                {/* 張良 2026-07-26 手機版全面體檢：負責人/等待中/優先/大項 手機隱藏（點列開詳情仍可看） */}
+                                {!isMobile && <>
+                                  <div style={{ padding: "0 8px", fontSize: 12, color: t.owner ? C.text : C.faint, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "flex", alignItems: "center", gap: 5 }}>
+                                    {t.owner && <span style={{ width: 17, height: 17, borderRadius: "50%", background: C.accentSoft, color: C.accent, fontSize: 9, fontWeight: 700, display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{t.owner.slice(0, 2)}</span>}
+                                    {t.owner || "—"}
+                                  </div>
+                                  <div style={{ padding: "0 8px", fontSize: 12, color: isWaiting(t) ? C.amber : C.faint, fontWeight: isWaiting(t) ? 600 : 400, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.waitingFor || "—"}</div>
+                                  <div style={{ padding: "0 8px", fontSize: 12, fontWeight: t.priority === "urgent" ? 700 : 500, color: t.priority === "urgent" ? C.red : t.priority === "high" ? C.amber : t.priority === "low" ? C.faint : C.sub, whiteSpace: "nowrap" }}>{pm[1]}</div>
+                                  <div style={{ padding: "0 8px", fontSize: 12, color: C.sub, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{catName(t.catId)}</div>
+                                </>}
                                 <div style={{ padding: "0 6px" }}><Pill color={sColor(t.status)} label={sLabel(t.status)} /></div>
                               </div>
                             );
@@ -634,13 +642,15 @@ export default function TaskCenter({ K, confirm, canEdit, cats, onLog, onAddCat,
         const offset = (d) => Math.round((new Date(dnorm(d)) - minD) / dayMs);
         const ticks = []; for (let i = 0; i < totalDays; i += 7) { const d = new Date(+minD + i * dayMs); ticks.push({ i, label: `${d.getMonth() + 1}/${d.getDate()}` }); }
         const todayOff = offset(today());
+        // 張良 2026-07-26 手機版全面體檢：手機左欄 200→96，任務名縮字＋省略號，時間軸多留空間（橫滑保留）
+        const nameW = isMobile ? 96 : 200;
         return (
           <div>
             <div style={{ border: `1px solid ${C.line}`, borderRadius: 8, background: C.card, overflow: "auto" }}>
-              <div style={{ minWidth: 200 + totalDays * dayW }}>
+              <div style={{ minWidth: nameW + totalDays * dayW }}>
                 {/* 週刻度 */}
                 <div style={{ display: "flex", borderBottom: `1px solid ${C.line}`, position: "sticky", top: 0, background: C.bg, zIndex: 3 }}>
-                  <div style={{ width: 200, flexShrink: 0, borderRight: `1px solid ${C.line}`, padding: "6px 10px", fontSize: 11, letterSpacing: 0.5, color: C.faint, fontWeight: 500, position: "sticky", left: 0, background: C.bg, zIndex: 4 }}>任務</div>
+                  <div style={{ width: nameW, flexShrink: 0, borderRight: `1px solid ${C.line}`, padding: "6px 10px", fontSize: 11, letterSpacing: 0.5, color: C.faint, fontWeight: 500, position: "sticky", left: 0, background: C.bg, zIndex: 4 }}>任務</div>
                   <div style={{ position: "relative", height: 26 }}>
                     {ticks.map(tk => <div key={tk.i} style={{ position: "absolute", left: tk.i * dayW, top: 0, fontSize: 10.5, color: C.faint, fontVariantNumeric: "tabular-nums", padding: "6px 0 0 4px", borderLeft: `1px solid ${C.soft}`, height: 26, boxSizing: "border-box" }}>{tk.label}</div>)}
                   </div>
@@ -653,7 +663,8 @@ export default function TaskCenter({ K, confirm, canEdit, cats, onLog, onAddCat,
                     <div key={t.id} onClick={() => setSel(t.id)}
                       onMouseEnter={ev => ev.currentTarget.style.background = t.color || C.bg} onMouseLeave={ev => ev.currentTarget.style.background = t.color || "#fff"}
                       style={{ display: "flex", alignItems: "center", borderTop: i ? `1px solid ${C.soft}` : "none", cursor: "pointer", background: t.color || "#fff" }}>
-                      <div style={{ width: 200, flexShrink: 0, borderRight: `1px solid ${C.line}`, padding: "7px 10px", fontSize: 12.5, color: t.status === "done" ? C.faint : C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "flex", alignItems: "center", gap: 4, position: "sticky", left: 0, background: "inherit", zIndex: 2 }}>{t.priority === "urgent" && <Flame size={11} color={C.red} style={{ flexShrink: 0 }} />}{t.title}<span style={{ fontSize: 10.5, color: C.faint, flexShrink: 0 }}>・{catName(t.catId)}</span></div>
+                      {/* 張良 2026-07-26 手機版全面體檢：手機左欄縮窄、任務名縮字並用 span 包住才吃得到 ellipsis；手機省略「・大項」後綴 */}
+                      <div style={{ width: nameW, flexShrink: 0, borderRight: `1px solid ${C.line}`, padding: "7px 10px", fontSize: isMobile ? 11 : 12.5, color: t.status === "done" ? C.faint : C.text, overflow: "hidden", whiteSpace: "nowrap", display: "flex", alignItems: "center", gap: 4, position: "sticky", left: 0, background: "inherit", zIndex: 2 }}>{t.priority === "urgent" && <Flame size={11} color={C.red} style={{ flexShrink: 0 }} />}<span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>{t.title}</span>{!isMobile && <span style={{ fontSize: 10.5, color: C.faint, flexShrink: 0 }}>・{catName(t.catId)}</span>}</div>
                       <div style={{ position: "relative", height: 30, flex: 1 }}>
                         {todayOff >= 0 && todayOff < totalDays && <div style={{ position: "absolute", left: todayOff * dayW, top: 0, bottom: 0, width: 1, background: C.red, opacity: .45 }} />}
                         <div title={`${t.start || t.due} ~ ${t.due || t.start}`} style={{ position: "absolute", left: left * dayW + 2, top: 9, height: 12, width: Math.max(width * dayW - 4, 8), background: t.status === "done" ? C.green : C.accent, borderRadius: 999, opacity: t.status === "done" ? 0.45 : 1 }} />

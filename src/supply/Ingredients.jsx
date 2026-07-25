@@ -8,6 +8,7 @@ import { packToBase, lastPaid, unitCost, srcsOf, priceAlert, normName, organizeA
 import { uploadPhoto, getSharedPrefix } from "../supa.js";
 import { K } from "../lib/runtime.js";
 import { callAI } from "../lib/ai.js";
+import { useIsMobile } from "../lib/theme.jsx"; // 張良 2026-07-26 手機版全面體檢：手機窄版排版判斷
 
 const WDZ = ["日", "一", "二", "三", "四", "五", "六"];
 const freqText = (f) => {
@@ -36,6 +37,7 @@ export default function IngredientsView({ db, save, canEdit, showMoney, confirm,
   const imgRef = useRef(null); const imgFor = useRef(null); // 圖片上傳 input + 目標物料 id
   const viImgRef = useRef(null); const viImgFor = useRef(null); // 貨源（品項）自己的照片上傳
   const shotRef = useRef(null);                  // 截圖上傳 input
+  const isMob = useIsMobile(641);                // 手機版（≤640px，跟 Supply.jsx 同一斷點）窄版排版（張良 2026-07-26 手機版全面體檢）
   const inp = { border: `1px solid ${C.line}`, borderRadius: 7, padding: "5px 8px", fontSize: 12.5, background: "#fff", color: C.text, outline: "none", boxSizing: "border-box" };
   const pill = (on, color) => ({ border: `1.5px solid ${on ? color : "#d9cfbd"}`, background: on ? color : "#fff", color: on ? "#fff" : C.sub, borderRadius: 999, padding: "3px 10px", fontSize: 11.5, fontWeight: on ? 700 : 500, cursor: canEdit ? "pointer" : "default", whiteSpace: "nowrap" });
   const sbtn = { border: `1px solid ${C.line}`, background: "#fff", color: C.sub, borderRadius: 7, padding: "4px 12px", fontSize: 11.5, fontWeight: 600, cursor: "pointer" };
@@ -399,6 +401,9 @@ export default function IngredientsView({ db, save, canEdit, showMoney, confirm,
           </>}
         </div>
         <div style={{ border: `1px solid ${C.line}`, borderRadius: 8, overflow: "hidden", background: "#fff" }}>
+          {/* 手機外包橫向捲動＋內層撐最小寬（張良 2026-07-26 手機版全面體檢：貨源小表固定欄寬手機被切） */}
+          <div style={{ overflowX: "auto" }}>
+          <div style={{ minWidth: isMob ? (showMoney ? 700 : 520) : 0 }}>
           <div style={{ display: "grid", gridTemplateColumns: `34px minmax(80px,0.9fr) minmax(120px,1.3fr) 150px 92px ${showMoney ? "110px 90px" : ""}`, gap: 8, padding: "5px 10px", fontSize: 10, color: C.faint, fontWeight: 700, background: "#f4efe5" }}>
             <span>圖</span><span>廠商</span><span>品名/規格</span><span>每件入數</span><span title="這家報價的最低訂購量（MOQ）">最低訂購</span>{showMoney && <><span style={{ textAlign: "right" }}>最近實付</span><span style={{ textAlign: "right" }}>$/{g.baseUnit || "單位"}</span></>}
           </div>
@@ -444,6 +449,8 @@ export default function IngredientsView({ db, save, canEdit, showMoney, confirm,
               </div>
             );
           })}
+          </div>
+          </div>
         </div>
         {/* 被哪些產品用到（2026-07-22 第一性原理：物料需求源自菜單）——沒人用=可能多餘採購 */}
         {(() => {
@@ -478,6 +485,34 @@ export default function IngredientsView({ db, save, canEdit, showMoney, confirm,
     const anyAlert = srcs.map(vi => priceAlert(vi, alertPct)).find(Boolean);
     const mainVi = srcs.find(vi => packToBase(vi)) || srcs[0];
     const vnames = [...new Set(srcs.map(vi => vname(vi.vendor_id)))].join("、");
+    // 手機版兩行式（張良 2026-07-26 手機版全面體檢：IGRID 固定欄寬 showMoney 時 468px 手機爆版）
+    // 第一行＝勾選＋★＋縮圖＋名稱＋最低價；第二行＝入數/廠商＋盤點鈕＋展開箭頭；點列展開同一份 detailBody（拖曳排序手機不支援，桌機不變）
+    if (isMob) return (
+      <React.Fragment key={g.id}>
+        <div onClick={() => setOpen(isOpen ? null : g.id)} style={{ borderTop: `1px solid #e0d6bf`, padding: "7px 10px", cursor: "pointer", background: isOpen ? "#fbeee6" : sel2[g.id] ? "#f2f6fb" : "#fff" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <span onClick={e => e.stopPropagation()} style={{ display: "flex", alignItems: "center", flexShrink: 0 }}>
+              <input type="checkbox" checked={!!sel2[g.id]} onChange={e => setSel2(s => ({ ...s, [g.id]: e.target.checked }))} disabled={!canEdit} style={{ cursor: "pointer" }} />
+              <button onClick={() => canEdit && updIng(g.id, { isKey: !g.isKey })} title={g.isKey ? "關鍵品項（點擊取消）" : "標為關鍵品項"} style={{ border: "none", background: "none", color: g.isKey ? "#E8A317" : "#d9cfbd", fontSize: 15, cursor: "pointer", padding: 6, minWidth: 30, minHeight: 30, lineHeight: 1 }}>{g.isKey ? "★" : "☆"}</button>
+            </span>
+            <span onClick={e => { if (g.img) { e.stopPropagation(); setZoom(g.img); } }} title={g.img ? "點擊放大檢視" : ""} style={{ width: 28, height: 28, borderRadius: 5, border: `1px solid ${C.line}`, background: g.img ? `url(${g.img}) center/cover` : "#f4efe5", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, color: "#d5cbb6", flexShrink: 0 }}>{g.img ? "" : "—"}</span>
+            <span title={g.name || ""} style={{ fontSize: 13, fontWeight: 600, color: C.text, flex: 1, minWidth: 0, overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", lineHeight: 1.22, wordBreak: "break-all" }}>{g.name || <span style={{ color: C.faint }}>（未命名）</span>}{anyAlert && <span style={{ fontSize: 10, fontWeight: 700, color: anyAlert.up ? C.red : C.green, marginLeft: 4 }}>{anyAlert.up ? "▲" : "▼"}{Math.abs(anyAlert.pct)}%</span>}</span>
+            {showMoney && <span style={{ fontFamily: MONOF, fontSize: 11.5, fontWeight: 700, flexShrink: 0, color: minU != null ? C.text : "#d5cbb6" }}>{minU != null ? `$${d2(minU)}/${g.baseUnit}` : "—"}</span>}
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 4, paddingLeft: 36 }}>
+            <span style={{ fontSize: 11, color: srcs.length ? C.sub : C.red, flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={vnames}>
+              <span style={{ fontFamily: MONOF, color: mainVi && packToBase(mainVi) ? C.sub : C.red }}>{mainVi ? (packToBase(mainVi) ? `1${mainVi.unit || "件"}=${Number(mainVi.packToBase).toLocaleString()}${g.baseUnit}` : "1件=？") : "—"}</span>
+              ｜{vnames || "沒人賣"}
+            </span>
+            <span onClick={e => e.stopPropagation()} style={{ flexShrink: 0 }}>
+              <button onClick={() => setOpen(isOpen ? null : g.id)} style={{ ...pill(g.countFreq && g.countFreq.type !== "none" && !g.countFreq.paused, C.blue), padding: "4px 10px", minHeight: 28, fontSize: 10.5 }}>{freqText(g.countFreq)}</button>
+            </span>
+            <span style={{ fontSize: 10, color: C.faint, flexShrink: 0 }}>{isOpen ? "▾" : "▸"}</span>
+          </div>
+        </div>
+        {isOpen && <div style={{ padding: "10px 10px 12px", borderTop: `1px solid #e0d6bf`, background: "#fdfaf3" }}>{detailBody(g)}</div>}
+      </React.Fragment>
+    );
     return (
       <React.Fragment key={g.id}>
         <div draggable={canEdit} onDragStart={() => setDrag(g.id)} onDragOver={e => drag && e.preventDefault()} onDrop={() => dropOn(g.id)}
@@ -486,7 +521,8 @@ export default function IngredientsView({ db, save, canEdit, showMoney, confirm,
           onMouseEnter={e => { if (!isOpen && !sel2[g.id]) e.currentTarget.style.background = C.soft; }} onMouseLeave={e => { e.currentTarget.style.background = isOpen ? "#fbeee6" : sel2[g.id] ? "#f2f6fb" : "#fff"; }}>
           <div style={{ ...vline, padding: "0 6px", gap: 4, justifyContent: "center" }} onClick={e => e.stopPropagation()}>
             <input type="checkbox" checked={!!sel2[g.id]} onChange={e => setSel2(s => ({ ...s, [g.id]: e.target.checked }))} disabled={!canEdit} style={{ cursor: "pointer" }} />
-            <button onClick={() => canEdit && updIng(g.id, { isKey: !g.isKey })} title={g.isKey ? "關鍵品項（點擊取消）" : "標為關鍵品項"} style={{ border: "none", background: "none", color: g.isKey ? "#E8A317" : "#d9cfbd", fontSize: 14, cursor: "pointer", padding: 0 }}>{g.isKey ? "★" : "☆"}</button>
+            {/* 點擊區加大到約32px（張良 2026-07-26 手機版全面體檢：padding:0 手指點不到） */}
+            <button onClick={() => canEdit && updIng(g.id, { isKey: !g.isKey })} title={g.isKey ? "關鍵品項（點擊取消）" : "標為關鍵品項"} style={{ border: "none", background: "none", color: g.isKey ? "#E8A317" : "#d9cfbd", fontSize: 14, cursor: "pointer", padding: 6, minWidth: 30, minHeight: 30, lineHeight: 1 }}>{g.isKey ? "★" : "☆"}</button>
           </div>
           {/* 縮圖欄：一眼看有沒有照片；點小圖=放大檢視 */}
           <div style={{ ...vline, padding: "3px 4px", justifyContent: "center" }} onClick={e => { if (g.img) { e.stopPropagation(); setZoom(g.img); } }}>
@@ -572,7 +608,9 @@ export default function IngredientsView({ db, save, canEdit, showMoney, confirm,
           {opened && disp === "list" && (() => {
             const updVi = (id, fp) => save({ vendorItems: (db.vendorItems || []).map(x => x.id === id ? { ...x, ...fp } : x) });
             const VGRID = `20px 16px minmax(120px,1.3fr) minmax(85px,0.9fr) 158px ${showMoney ? "84px " : ""}minmax(80px,0.9fr) 22px`;
-            return <>
+            // 手機外包橫向捲動＋內層撐最小寬（張良 2026-07-26 手機版全面體檢：VGRID 固定欄寬手機被切）
+            return <div style={{ overflowX: "auto" }}>
+            <div style={{ minWidth: isMob ? (showMoney ? 660 : 570) : 0 }}>
             <div style={{ display: "grid", gridTemplateColumns: VGRID, gap: 8, padding: "3px 12px", fontSize: 9.5, color: C.faint, fontWeight: 700 }}>
               <span /><span /><span>品名（可直接改）</span><span>規格</span><span>每件入數</span>{showMoney && <span style={{ textAlign: "right" }}>單價</span>}<span>物料卡</span><span />
             </div>
@@ -600,10 +638,11 @@ export default function IngredientsView({ db, save, canEdit, showMoney, confirm,
                     if (!(await confirm(`刪除品項「${vi.name || "未命名"}」？叫貨表裡也會消失。`, { confirmLabel: "刪除" }))) return;
                     save({ vendorItems: (db.vendorItems || []).filter(x => x.id !== vi.id) });
                   }
-                }} style={{ border: "none", background: "none", color: C.faint, cursor: "pointer", fontSize: 13 }}>×</button> : <span />}
+                }} style={{ border: "none", background: "none", color: C.faint, cursor: "pointer", fontSize: 13, padding: 6, minWidth: 28, minHeight: 28, lineHeight: 1 }}>×</button> : <span />}
               </div>
             ); })}
-            </>;
+            </div>
+            </div>;
           })()}
         </div>
       );
@@ -703,7 +742,8 @@ export default function IngredientsView({ db, save, canEdit, showMoney, confirm,
               <span style={{ fontFamily: MONOF, fontSize: 11, color: C.faint }}>{rows.length} 項</span>
             </div>
             {!catClosed && disp === "list" && <>
-              <div style={{ display: "grid", gridTemplateColumns: IGRID, alignItems: "stretch", background: "#f2ecdd" }}>
+              {/* 表格頭手機版隱藏（列已改兩行式；張良 2026-07-26 手機版全面體檢） */}
+              {!isMob && <div style={{ display: "grid", gridTemplateColumns: IGRID, alignItems: "stretch", background: "#f2ecdd" }}>
                 <div style={{ ...vline, padding: "0 6px" }} />
                 <div style={{ ...vline, padding: "4px 4px", fontSize: 10.5, color: C.sub, fontWeight: 700, justifyContent: "center" }}>圖</div>
                 <div style={{ ...vline, padding: "4px 9px", fontSize: 10.5, color: C.sub, fontWeight: 700 }}>名稱（拖曳可排序）</div>
@@ -712,7 +752,7 @@ export default function IngredientsView({ db, save, canEdit, showMoney, confirm,
                 {showMoney && <div style={{ ...vline, padding: "4px 9px", fontSize: 10.5, color: C.sub, fontWeight: 700, justifyContent: "flex-end" }}>最低價</div>}
                 <div style={{ ...vline, padding: "4px 7px", fontSize: 10.5, color: C.sub, fontWeight: 700 }}>盤點</div>
                 <div />
-              </div>
+              </div>}
               {rows.map(listRow)}
             </>}
             {!catClosed && disp === "grid" && <div style={{ display: "flex", flexWrap: "wrap", gap: 8, padding: 10 }}>{rows.map(gridCard)}</div>}
@@ -804,6 +844,9 @@ export default function IngredientsView({ db, save, canEdit, showMoney, confirm,
               const isDup = (r) => (cnt[normName(r.name)] || 0) > 1;
               const dupN = Object.keys(cnt).filter(k => cnt[k] > 1).length;
               return <>
+              {/* 手機外包橫向捲動＋內層撐最小寬（張良 2026-07-26 手機版全面體檢：預覽表固定欄寬手機被切） */}
+              <div style={{ overflowX: "auto" }}>
+              <div style={{ minWidth: isMob ? 620 : 0 }}>
               <div style={{ display: "grid", gridTemplateColumns: "26px 36px minmax(140px,1.5fr) minmax(80px,0.8fr) 54px 74px 76px minmax(70px,0.7fr)", gap: 6, padding: "4px 6px", fontSize: 10, color: C.faint, fontWeight: 700, background: "#f4efe5", borderRadius: 6 }}>
                 <span /><span>圖</span><span>品名</span><span>規格</span><span>單位</span><span style={{ textAlign: "right" }}>單價</span><span style={{ textAlign: "right" }} title="最低訂購量（報價的「數量」通常是這個）">最低訂購</span><span>備註</span>
               </div>
@@ -819,7 +862,9 @@ export default function IngredientsView({ db, save, canEdit, showMoney, confirm,
                   <input value={r.note} onChange={e => setImp(m => ({ ...m, rows: m.rows.map((x, j) => j === i ? { ...x, note: e.target.value } : x) }))} placeholder="版費…" style={{ ...inp, padding: "3px 7px", fontSize: 11 }} />
                 </div>
               ))}
-              {dupN > 0 && <div style={{ marginTop: 8, fontSize: 12, color: C.red, fontWeight: 600 }}>⚠ 紅框的品名重複——如果其實是不同商品（例如刀/叉/匙三種），請把名字改到不一樣；名字一樣的匯入後會被當成同一筆。</div>}
+              </div>
+              </div>
+              {dupN > 0 &&<div style={{ marginTop: 8, fontSize: 12, color: C.red, fontWeight: 600 }}>⚠ 紅框的品名重複——如果其實是不同商品（例如刀/叉/匙三種），請把名字改到不一樣；名字一樣的匯入後會被當成同一筆。</div>}
               <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 10 }}>
                 <span style={{ fontSize: 11.5, color: C.faint }}>已勾 {imp.rows.filter(r => r.on && r.name.trim()).length} 筆。匯入後自動建物料卡、同名自動併卡、入數自動從規格抓。</span>
                 <div style={{ flex: 1 }} />

@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef, Fragment } from "react";
 import { uploadPhoto, deletePhotoFile } from "../supa.js";
 import { fmt, catEstAfter, catPaid, isFundingCat } from "../lib/cost.js";
-import { ACCENT, PRIMARY, SURFACE, BORDER, TEXT, SUB, ACCENT_SOFT, SecHead } from "../lib/theme.jsx";
+import { ACCENT, PRIMARY, SURFACE, BORDER, TEXT, SUB, ACCENT_SOFT, SecHead, useIsMobile } from "../lib/theme.jsx"; // useIsMobile：張良 2026-07-26 手機版全面體檢
 import { CURRENT_SPACE, K, showMoney, maskAccount, L } from "../lib/runtime.js";
 import { STATUS_MAP } from "../lib/status.js";
 import { callAI, buildAdvisorSystem } from "../lib/ai.js";
@@ -56,6 +56,7 @@ export function IssuesView({ canEdit, requireLogin, confirm, onLog }) {
   const [cfd, setCfd] = useState(1); // 自訂頻率：每 cfd 天
   const [cft, setCft] = useState(1); // …提醒 cft 次
   const [nd, setNd] = useState({ desc: "", category: "其他", due: "", track: true });
+  const isMobile = useIsMobile(); // 手機(<640px)排版切換（張良 2026-07-26 手機版全面體檢）
 
   useEffect(() => {
     // 保險：避免 Supabase 讀取卡住造成永久「載入中…」，最多 8 秒就先顯示空清單
@@ -152,13 +153,14 @@ export function IssuesView({ canEdit, requireLogin, confirm, onLog }) {
             {cats.map(c => (
               <div key={c} style={{ display: "flex", alignItems: "center", gap: 8 }}>
                 <span style={{ width: 12, height: 12, borderRadius: "50%", background: colorForCat(c, cats), flexShrink: 0 }} />
-                <input defaultValue={c} onBlur={e => renameCat(c, e.target.value)} style={{ ...inp, flex: "0 1 220px" }} />
+                {/* 張良 2026-07-26 手機版全面體檢：手機時輸入框吃滿剩餘寬度（minWidth 0 才縮得下去），桌機維持 220px */}
+                <input defaultValue={c} onBlur={e => renameCat(c, e.target.value)} style={{ ...inp, flex: isMobile ? "1 1 auto" : "0 1 220px", ...(isMobile ? { minWidth: 0 } : {}) }} />
                 <span style={{ fontSize: 11.5, color: SUB }}>{issues.filter(i => catOf(i) === c).length} 筆</span>
                 <button onClick={() => delCat(c)} style={{ padding: "4px 9px", borderRadius: 7, border: `1px solid ${BORDER}`, background: "transparent", color: "#b3261e", fontSize: 12, cursor: "pointer" }}>🗑</button>
               </div>
             ))}
             <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 4 }}>
-              <input value={newCat} onChange={e => setNewCat(e.target.value)} onKeyDown={e => e.key === "Enter" && addCat()} placeholder="新增分類名稱…" style={{ ...inp, flex: "0 1 220px" }} />
+              <input value={newCat} onChange={e => setNewCat(e.target.value)} onKeyDown={e => e.key === "Enter" && addCat()} placeholder="新增分類名稱…" style={{ ...inp, flex: isMobile ? "1 1 auto" : "0 1 220px", ...(isMobile ? { minWidth: 0 } : {}) }} />
               <button onClick={addCat} style={{ padding: "5px 14px", borderRadius: 7, border: "none", background: ACCENT, color: "#fff", fontSize: 12.5, fontWeight: 700, cursor: "pointer" }}>＋ 新增分類</button>
             </div>
           </div>
@@ -216,10 +218,11 @@ export function IssuesView({ canEdit, requireLogin, confirm, onLog }) {
                         {!done && it.track && <div style={{ fontSize: 11, color: "#C2872E", marginTop: 2 }}>🔔{it.nudges ? `已提醒${it.nudges}次` : "追蹤中"}</div>}
                       </td>
                       <td style={{ ...tdS, textAlign: "center", whiteSpace: "nowrap" }}>
+                        {/* 張良 2026-07-26 手機版全面體檢：操作鈕 5px→7px 加大點按面積（桌機手機一致微調） */}
                         <div style={{ display: "inline-flex", gap: 5 }}>
-                          <button onClick={() => toggleDone(it)} title={done ? "重開" : "完成/給答案"} style={{ padding: "5px 8px", borderRadius: 7, border: `1px solid ${BORDER}`, background: done ? "transparent" : "#EAF6EA", color: done ? SUB : "#3C8C3C", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>{done ? "↩" : "✅"}</button>
-                          <button onClick={() => setEditId(editing ? null : it.id)} title="編輯" style={{ padding: "5px 8px", borderRadius: 7, border: `1px solid ${editing ? ACCENT : BORDER}`, background: editing ? ACCENT : "transparent", color: editing ? "#fff" : SUB, fontSize: 12, cursor: "pointer" }}>⚙️</button>
-                          <button onClick={() => del(it.id)} title="刪除" style={{ padding: "5px 8px", borderRadius: 7, border: `1px solid ${BORDER}`, background: "transparent", color: "#b3261e", fontSize: 12, cursor: "pointer" }}>🗑</button>
+                          <button onClick={() => toggleDone(it)} title={done ? "重開" : "完成/給答案"} style={{ padding: "7px 10px", borderRadius: 7, border: `1px solid ${BORDER}`, background: done ? "transparent" : "#EAF6EA", color: done ? SUB : "#3C8C3C", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>{done ? "↩" : "✅"}</button>
+                          <button onClick={() => setEditId(editing ? null : it.id)} title="編輯" style={{ padding: "7px 10px", borderRadius: 7, border: `1px solid ${editing ? ACCENT : BORDER}`, background: editing ? ACCENT : "transparent", color: editing ? "#fff" : SUB, fontSize: 12, cursor: "pointer" }}>⚙️</button>
+                          <button onClick={() => del(it.id)} title="刪除" style={{ padding: "7px 10px", borderRadius: 7, border: `1px solid ${BORDER}`, background: "transparent", color: "#b3261e", fontSize: 12, cursor: "pointer" }}>🗑</button>
                         </div>
                       </td>
                     </tr>
@@ -454,7 +457,8 @@ export function CompareView({ canEdit, requireLogin, onLog }) {
                         <thead>
                           <tr>
                             <th style={{ textAlign: "left", padding: "6px 8px", color: SUB, borderBottom: `1px solid ${BORDER}`, whiteSpace: "nowrap" }}>品項</th>
-                            {ests.map(e => <th key={e.id} style={{ textAlign: "right", padding: "6px 8px", color: SUB, borderBottom: `1px solid ${BORDER}`, whiteSpace: "nowrap", maxWidth: 100, overflow: "hidden", textOverflow: "ellipsis" }}>{e.vendor}</th>)}
+                            {/* 張良 2026-07-26 手機版全面體檢：廠商名被 100px 截斷 → 加 title 長按/滑過可看全名 */}
+                            {ests.map(e => <th key={e.id} title={e.vendor} style={{ textAlign: "right", padding: "6px 8px", color: SUB, borderBottom: `1px solid ${BORDER}`, whiteSpace: "nowrap", maxWidth: 100, overflow: "hidden", textOverflow: "ellipsis" }}>{e.vendor}</th>)}
                           </tr>
                         </thead>
                         <tbody>

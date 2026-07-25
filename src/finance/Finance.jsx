@@ -7,6 +7,7 @@ import { fmt } from "../lib/cost.js";
 import { parseNum, blankZero } from "../lib/num.js";
 import { loadRecords, diffPersist, subscribeRecords } from "../lib/records.js";
 import { onSharedChange } from "../supa.js";
+import { useIsMobile } from "../lib/theme.jsx"; // 張良 2026-07-26 手機版全面體檢：RWD 斷點 hook
 
 const C = { text: "#1d1a15", sub: "#5a5247", faint: "#9b9384", line: "#d9cfbd", soft: "#ece4d6", bg: "#f4efe5", card: "#FFFFFF", head: "#f4efe5", accent: "#3f7d4e", red: "#b3261e", blue: "#c4582a", amber: "#c98a14", brand: "#c4582a" };
 const ACC_TYPES = [["bank", "銀行"], ["company", "公司帳戶"], ["cash", "現金"], ["petty", "零用金"], ["loan", "貸款"]];
@@ -41,6 +42,8 @@ function SEED_COA() {
 }
 
 export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader, onLog }) {
+  // 張良 2026-07-26 手機版全面體檢：hook 只能在元件頂層呼叫一次（<640px 視為手機），下面各分頁共用
+  const isMobile = useIsMobile(640);
   // 操作紀錄：逐筆敲字的編輯做節流（同訊息 8 秒內只記一次），新增/刪除/匯入等明確動作即時記
   const lastLog = useRef({});
   const logT = (action, detail, ms = 8000) => { if (!onLog) return; const now = Date.now(); if (lastLog.current[detail] && now - lastLog.current[detail] < ms) return; lastLog.current[detail] = now; onLog(action, detail); };
@@ -265,13 +268,14 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
           </div>
           {accounts.length === 0 ? <div style={{ padding: 30, textAlign: "center", color: C.faint }}>還沒有帳戶。新增銀行、貸款、現金、零用金等帳戶，設定期初餘額。</div> :
             <div style={{ display: "grid", gap: 8 }}>
+              {/* 張良 2026-07-26 手機版全面體檢：手機改直向堆疊（欄位各佔一行 100%），桌機維持橫排不變 */}
               {accounts.map(a => (
-                <div key={a.id} style={{ background: "#fff", border: `1px solid ${C.line}`, borderRadius: 10, padding: 12, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-                  <select value={a.type} onChange={e => updAcc(a.id, "type", e.target.value)} style={{ ...inp, width: 110 }}>{ACC_TYPES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select>
-                  <input value={a.name} onChange={e => updAcc(a.id, "name", e.target.value)} placeholder="帳戶名稱（例：合庫商銀 ***244）" style={{ ...inp, flex: 1, minWidth: 180 }} />
-                  <label style={{ fontSize: 12, color: C.sub }}>期初 <input value={blankZero(a.opening)} onChange={e => updAcc(a.id, "opening", num(e.target.value))} type="number" placeholder="0" style={{ ...inp, width: 120, fontFamily: "monospace" }} /></label>
-                  <div style={{ fontSize: 13, color: balanceOf(a.id) < 0 ? C.red : C.accent, fontWeight: 700, fontVariantNumeric: "tabular-nums", minWidth: 110, textAlign: "right" }}>餘 {fmt(balanceOf(a.id))}</div>
-                  <button onClick={() => delAcc(a)} title="刪除" style={{ background: "none", border: "none", color: C.faint, cursor: "pointer", fontSize: 18 }}>×</button>
+                <div key={a.id} style={{ background: "#fff", border: `1px solid ${C.line}`, borderRadius: 10, padding: 12, display: "flex", gap: 8, alignItems: isMobile ? "stretch" : "center", flexWrap: "wrap", flexDirection: isMobile ? "column" : "row" }}>
+                  <select value={a.type} onChange={e => updAcc(a.id, "type", e.target.value)} style={{ ...inp, width: isMobile ? "100%" : 110 }}>{ACC_TYPES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select>
+                  <input value={a.name} onChange={e => updAcc(a.id, "name", e.target.value)} placeholder="帳戶名稱（例：合庫商銀 ***244）" style={{ ...inp, ...(isMobile ? { width: "100%" } : { flex: 1, minWidth: 180 }) }} />
+                  <label style={{ fontSize: 12, color: C.sub, ...(isMobile ? { display: "flex", alignItems: "center", gap: 6, width: "100%" } : {}) }}>期初 <input value={blankZero(a.opening)} onChange={e => updAcc(a.id, "opening", num(e.target.value))} type="number" placeholder="0" style={{ ...inp, ...(isMobile ? { flex: 1, width: "auto" } : { width: 120 }), fontFamily: "monospace" }} /></label>
+                  <div style={{ fontSize: 13, color: balanceOf(a.id) < 0 ? C.red : C.accent, fontWeight: 700, fontVariantNumeric: "tabular-nums", ...(isMobile ? { width: "100%" } : { minWidth: 110 }), textAlign: "right" }}>餘 {fmt(balanceOf(a.id))}</div>
+                  <button onClick={() => delAcc(a)} title="刪除" style={{ background: "none", border: "none", color: C.faint, cursor: "pointer", fontSize: 18, ...(isMobile ? { alignSelf: "flex-end", padding: "2px 8px" } : {}) }}>×</button>
                 </div>
               ))}
             </div>}
@@ -513,8 +517,8 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
         const chartBox = { background: C.card, border: "1.5px solid #c8bca6", borderRadius: 8, padding: "10px 14px", flex: "1 1 280px", minWidth: 260 };
         return (
           <div>
-            {/* 帳戶頭 */}
-            <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", marginBottom: 12 }}>
+            {/* 帳戶頭（張良 2026-07-26 手機版全面體檢：已有 flexWrap 可換行，手機 gap 縮小避免溢出） */}
+            <div style={{ display: "flex", alignItems: "center", gap: isMobile ? 8 : 12, flexWrap: "wrap", marginBottom: 12 }}>
               <span style={{ background: C.blue, color: "#fff", fontSize: 11.5, fontWeight: 700, borderRadius: 4, padding: "2px 8px", letterSpacing: 1 }}>帳戶</span>
               <div style={{ display: "inline-flex", background: C.soft, border: `1px solid ${C.line}`, borderRadius: 8, padding: 2, gap: 2 }}>
                 {[["coop", "合作金庫 · 喬亞"], ["ctbc", "中國信託 e-Cash"]].map(([v, l]) => (
@@ -671,18 +675,19 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
                                   <div style={{ padding: "2px 8px", display: "flex", alignItems: "center", gap: 4, flexWrap: "wrap" }}>
                                     {st.st === "matched" && <span title={st.via} style={{ fontSize: 11, color: "#3f7d4e", fontWeight: 700 }}>✓ 對上（{st.via?.split("｜")[0]}）</span>}
                                     {st.st === "linked" && <span style={{ fontSize: 11, color: C.blue, fontWeight: 700 }}>✓ 已補記</span>}
-                                    {st.st === "ignored" && <><span style={{ fontSize: 11, color: C.faint }}>已忽略</span>{canEdit && <button onClick={() => saveRecon({ ...recon, ignored: recon.ignored.filter(x => x !== r.id) })} style={{ border: "none", background: "none", color: C.blue, fontSize: 11, cursor: "pointer", padding: 0 }}>復原</button>}</>}
+                                    {st.st === "ignored" && <><span style={{ fontSize: 11, color: C.faint }}>已忽略</span>{canEdit && <button onClick={() => saveRecon({ ...recon, ignored: recon.ignored.filter(x => x !== r.id) })} style={{ border: "none", background: "none", color: C.blue, fontSize: 11, cursor: "pointer", padding: isMobile ? "6px 8px" : 0, ...(isMobile ? { minHeight: 32 } : {}) }}>復原</button>}</>}
+                                    {/* 張良 2026-07-26 手機版全面體檢：原 padding 2px 高度僅~17px 手指點不到 → 手機加大到 minHeight 32；桌機不變 */}
                                     {st.st === "open" && canEdit && <>
-                                      <select defaultValue="" onChange={e => { if (e.target.value) { doFillPay(r, e.target.value); e.target.value = ""; } }} style={{ border: `1px solid ${C.line}`, borderRadius: 6, padding: "2px 4px", fontSize: 10.5, background: "#fff", maxWidth: 86 }}>
+                                      <select defaultValue="" onChange={e => { if (e.target.value) { doFillPay(r, e.target.value); e.target.value = ""; } }} style={{ border: `1px solid ${C.line}`, borderRadius: 6, padding: isMobile ? "6px 8px" : "2px 4px", fontSize: 10.5, background: "#fff", maxWidth: 86, ...(isMobile ? { minHeight: 32 } : {}) }}>
                                         <option value="">工程▾</option>
                                         {conCats.filter(c => !c.nonProject).map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                                       </select>
-                                      <button onClick={() => doFillFin(r)} style={{ border: `1px solid ${C.blue}`, background: "#fff", color: C.blue, borderRadius: 6, padding: "2px 7px", fontSize: 10.5, fontWeight: 700, cursor: "pointer" }}>內帳</button>
-                                      <button onClick={() => saveRecon({ ...recon, ignored: [...recon.ignored, r.id] })} style={{ border: `1px solid ${C.line}`, background: "#fff", color: C.faint, borderRadius: 6, padding: "2px 6px", fontSize: 10.5, cursor: "pointer" }}>略</button>
+                                      <button onClick={() => doFillFin(r)} style={{ border: `1px solid ${C.blue}`, background: "#fff", color: C.blue, borderRadius: 6, padding: isMobile ? "6px 10px" : "2px 7px", fontSize: 10.5, fontWeight: 700, cursor: "pointer", ...(isMobile ? { minHeight: 32 } : {}) }}>內帳</button>
+                                      <button onClick={() => saveRecon({ ...recon, ignored: [...recon.ignored, r.id] })} style={{ border: `1px solid ${C.line}`, background: "#fff", color: C.faint, borderRadius: 6, padding: isMobile ? "6px 10px" : "2px 6px", fontSize: 10.5, cursor: "pointer", ...(isMobile ? { minHeight: 32 } : {}) }}>略</button>
                                     </>}
                                     {st.st === "open" && !canEdit && <span style={{ fontSize: 11, color: C.red }}>未對帳</span>}
                                     {r.source === "manual" && <span title="手動輸入的資料" style={{ fontSize: 9.5, color: C.faint, border: `1px solid ${C.line}`, borderRadius: 4, padding: "0 4px" }}>手動</span>}
-                                    {r.source === "manual" && canEdit && <button onClick={async () => { if (window.confirm("刪除這筆手動輸入？（匯入的資料不能刪，手動的可以）")) { saveBank({ ...bank, entries: bank.entries.filter(x => x.id !== r.id), updatedAt: new Date().toISOString() }); } }} style={{ border: "none", background: "none", color: C.faint, fontSize: 11, cursor: "pointer", padding: 0 }}>刪</button>}
+                                    {r.source === "manual" && canEdit && <button onClick={async () => { if (window.confirm("刪除這筆手動輸入？（匯入的資料不能刪，手動的可以）")) { saveBank({ ...bank, entries: bank.entries.filter(x => x.id !== r.id), updatedAt: new Date().toISOString() }); } }} style={{ border: "none", background: "none", color: C.faint, fontSize: 11, cursor: "pointer", padding: isMobile ? "6px 8px" : 0, ...(isMobile ? { minHeight: 32 } : {}) }}>刪</button>}
                                   </div>
                                 </div>
                               );
@@ -1089,22 +1094,32 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
                   </div>
                 )}
                 <div style={{ ...chartBox2, marginTop: 10, marginBottom: 10 }}>
-                  <div style={{ fontSize: 11.5, fontWeight: 700, color: C.sub, marginBottom: 8 }}>{posGran === "day" ? "每日" : posGran === "week" ? "每週" : "每月"}營收 <span style={{ fontWeight: 400, color: C.faint }}>{posGran === "day" ? "（點柱子看該日完整原始資料・" : "（彙總自每日日結）"}</span>{posGran === "day" && <span style={{ fontWeight: 400, color: C.faint }}><span style={{ display: "inline-block", width: 8, height: 8, borderRadius: 2, background: C.amber, verticalAlign: "middle", margin: "0 3px 2px 0" }} />＝週末）</span>}</div>
-                  <div style={{ display: "flex", alignItems: "flex-end", gap: 3, height: 130 }}>
-                    {periods.map((pp, pi) => {
-                      // 週末柱琥珀色、跨週（週一）柱前留縫（張良 2026-07-24：一眼認出週末）
-                      const gd3 = posGran === "day" ? new Date(pp.key + "T00:00:00").getDay() : -1;
-                      const wknd3 = gd3 === 0 || gd3 === 6;
-                      const newWeek3 = posGran === "day" && pi > 0 && gd3 === 1;
-                      return (
-                      <div key={pp.key} onClick={() => posGran === "day" && openDrill({ type: "day", key: pp.key })} title={`${pp.key}　${fmt(pp.revenue)}・${pp.txCount}單${pp.nDays > 1 ? `・${pp.nDays}天` : ""}`} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 2, minWidth: 0, cursor: posGran === "day" ? "pointer" : "default", marginLeft: newWeek3 ? 9 : 0, borderLeft: newWeek3 ? "1px dashed #c8bca6" : "none", paddingLeft: newWeek3 ? 6 : 0 }}>
-                        {periods.length <= 20 && <span style={{ fontSize: 9, color: C.sub, fontFamily: MONOF }}>{Math.round((pp.revenue || 0) / 1000)}K</span>}
-                        <div style={{ width: "100%", height: Math.max(3, (pp.revenue || 0) / maxPer * 96), background: wknd3 ? C.amber : "#3a6ea5", borderRadius: "3px 3px 0 0" }} />
-                        <span style={{ fontSize: 8.5, color: wknd3 ? "#a97a10" : C.faint, fontWeight: wknd3 ? 700 : 400, fontFamily: MONOF, whiteSpace: "nowrap" }}>{perLabel(pp.key)}</span>
-                      </div>
-                      );
-                    })}
-                  </div>
+                  {(() => {
+                    // 張良 2026-07-26 手機版全面體檢：手機＋每天粒度且超過14期 → 只畫最近14期（柱子才不會擠成細線）；桌機、週/月粒度不變
+                    const trim14 = isMobile && posGran === "day" && periods.length > 14;
+                    const chartPer = trim14 ? periods.slice(-14) : periods;
+                    const chartMax = trim14 ? Math.max(1, ...chartPer.map(pp => pp.revenue)) : maxPer;
+                    return (
+                      <>
+                        <div style={{ fontSize: 11.5, fontWeight: 700, color: C.sub, marginBottom: 8 }}>{posGran === "day" ? "每日" : posGran === "week" ? "每週" : "每月"}營收 <span style={{ fontWeight: 400, color: C.faint }}>{posGran === "day" ? "（點柱子看該日完整原始資料・" : "（彙總自每日日結）"}</span>{posGran === "day" && <span style={{ fontWeight: 400, color: C.faint }}><span style={{ display: "inline-block", width: 8, height: 8, borderRadius: 2, background: C.amber, verticalAlign: "middle", margin: "0 3px 2px 0" }} />＝週末）</span>}{trim14 && <span style={{ fontWeight: 400, color: C.faint, fontSize: 10.5 }}>・近14天</span>}</div>
+                        <div style={{ display: "flex", alignItems: "flex-end", gap: 3, height: 130 }}>
+                          {chartPer.map((pp, pi) => {
+                            // 週末柱琥珀色、跨週（週一）柱前留縫（張良 2026-07-24：一眼認出週末）
+                            const gd3 = posGran === "day" ? new Date(pp.key + "T00:00:00").getDay() : -1;
+                            const wknd3 = gd3 === 0 || gd3 === 6;
+                            const newWeek3 = posGran === "day" && pi > 0 && gd3 === 1;
+                            return (
+                            <div key={pp.key} onClick={() => posGran === "day" && openDrill({ type: "day", key: pp.key })} title={`${pp.key}　${fmt(pp.revenue)}・${pp.txCount}單${pp.nDays > 1 ? `・${pp.nDays}天` : ""}`} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 2, minWidth: 0, cursor: posGran === "day" ? "pointer" : "default", marginLeft: newWeek3 ? 9 : 0, borderLeft: newWeek3 ? "1px dashed #c8bca6" : "none", paddingLeft: newWeek3 ? 6 : 0 }}>
+                              {chartPer.length <= 20 && <span style={{ fontSize: isMobile ? 10 : 9, color: C.sub, fontFamily: MONOF }}>{Math.round((pp.revenue || 0) / 1000)}K</span>}
+                              <div style={{ width: "100%", height: Math.max(3, (pp.revenue || 0) / chartMax * 96), background: wknd3 ? C.amber : "#3a6ea5", borderRadius: "3px 3px 0 0" }} />
+                              <span style={{ fontSize: isMobile ? 9.5 : 8.5, color: wknd3 ? "#a97a10" : C.faint, fontWeight: wknd3 ? 700 : 400, fontFamily: MONOF, whiteSpace: "nowrap" }}>{perLabel(pp.key)}</span>
+                            </div>
+                            );
+                          })}
+                        </div>
+                      </>
+                    );
+                  })()}
                 </div>
                 {insights.length > 0 && (
                   <div style={{ ...chartBox2, marginBottom: 10, borderLeft: `4px solid ${C.accent}` }}>
@@ -1134,11 +1149,15 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
                   </div>
                   {posCats.length > 0 && (() => {
                     const series = posCats.map(c => ({ c, col: PAL[catArr2.findIndex(([k]) => k === c) % PAL.length], per: periods.map(pp => pp.dates.reduce((t, dd) => t + ((catDay[c] || {})[dd] || 0), 0)) }));
-                    const mx = Math.max(1, ...series.flatMap(sr => sr.per));
+                    // 張良 2026-07-26 手機版全面體檢：手機超過14期只畫最近14期（保持圖表不改清單）；startIdx=0 時桌機完全不變
+                    const startIdx = isMobile && periods.length > 14 ? periods.length - 14 : 0;
+                    const perView = periods.slice(startIdx);
+                    const mx = Math.max(1, ...series.flatMap(sr => sr.per.slice(startIdx)));
                     return (
                       <div style={{ marginTop: 10 }}>
+                        {startIdx > 0 && <div style={{ fontSize: 10.5, color: C.faint, marginBottom: 2 }}>（近14期）</div>}
                         <div style={{ display: "flex", alignItems: "flex-end", gap: 6, height: 120, overflowX: "auto" }}>
-                          {periods.map((pp, pi) => (
+                          {perView.map((pp, pv) => { const pi = pv + startIdx; return (
                             <div key={pp.key} style={{ flex: 1, minWidth: 30 + series.length * 12, display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}>
                               <div style={{ display: "flex", alignItems: "flex-end", gap: 2, height: 96 }}>
                                 {series.map(sr => (
@@ -1147,7 +1166,7 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
                               </div>
                               <span style={{ fontSize: 8.5, color: C.faint, fontFamily: MONOF }}>{perLabel(pp.key)}</span>
                             </div>
-                          ))}
+                          ); })}
                         </div>
                         <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginTop: 6 }}>
                           {series.map(sr => <span key={sr.c} style={{ fontSize: 11, color: C.sub, display: "inline-flex", alignItems: "center", gap: 5 }}><span style={{ width: 9, height: 9, borderRadius: 2, background: sr.col }} />{sr.c}　合計 <b style={{ fontFamily: MONOF }}>{fmt(sr.per.reduce((a, b) => a + b, 0))}</b></span>)}
@@ -1195,7 +1214,8 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
               if (posDrillSort) rows2 = [...rows2].sort((a, b) => { const va = sortVal(a[posDrillSort.i]), vb = sortVal(b[posDrillSort.i]); return (va < vb ? -1 : va > vb ? 1 : 0) * posDrillSort.dir; });
               return (
                 <div onClick={e => e.target === e.currentTarget && setPosDrill(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.4)", zIndex: 720, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
-                  <div style={{ background: "#fff", border: `1px solid ${C.line}`, borderRadius: 12, padding: 20, width: "min(980px,96vw)", maxHeight: "88vh", display: "flex", flexDirection: "column" }}>
+                  {/* 張良 2026-07-26 手機版全面體檢：手機加高到 92vh、padding 縮小多留內容寬（內層表格容器本來就有 overflow:auto 可橫滑） */}
+                  <div style={{ background: "#fff", border: `1px solid ${C.line}`, borderRadius: 12, padding: isMobile ? 12 : 20, width: "min(980px,96vw)", maxHeight: isMobile ? "92vh" : "88vh", display: "flex", flexDirection: "column" }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4, flexWrap: "wrap" }}>
                       <span style={{ background: "#3f7d4e", color: "#fff", fontSize: 11, fontWeight: 700, borderRadius: 4, padding: "2px 8px" }}>明細</span>
                       <div style={{ fontSize: 14.5, fontWeight: 700, color: C.text }}>{drill.title}</div>

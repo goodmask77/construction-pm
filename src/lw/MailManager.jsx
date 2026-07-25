@@ -240,8 +240,9 @@ export default function MailManagerView({ K, canEdit, confirm }) {
                   <div key={g || "__none__"} style={{ marginBottom: 14 }}>
                     <div style={{ fontSize: 12, fontWeight: 800, color: C.sub, margin: "0 0 6px 2px" }}>{g || "未分組"} <span style={{ fontWeight: 400, color: C.faint }}>{acctRules.filter(r => (r.group || "") === g).length} 條</span></div>
                     <div style={{ border: `1px solid ${C.line}`, borderRadius: 10, overflow: "hidden" }}>
+                      {/* 張良 2026-07-26 手機版全面體檢：手機由 block（子欄無排版、視覺錯亂）改直向 flex，逐欄一行、不溢出 */}
                       {acctRules.filter(r => (r.group || "") === g).map((r, i) => (
-                        <div key={r.id} onClick={() => canEdit && (setDrawer(r.id), setKwInput(""))} style={{ display: isM ? "block" : "grid", gridTemplateColumns: "minmax(240px,1.6fr) 150px 70px 56px 46px", gap: 10, padding: "8px 12px", alignItems: "center", borderTop: i ? `1px solid #f0ead9` : "none", background: i % 2 ? "#faf6ec" : "#fff", opacity: r.enabled === false ? .45 : 1, cursor: canEdit ? "pointer" : "default" }}>
+                        <div key={r.id} onClick={() => canEdit && (setDrawer(r.id), setKwInput(""))} style={{ display: isM ? "flex" : "grid", ...(isM ? { flexDirection: "column", gap: 6 } : { gridTemplateColumns: "minmax(240px,1.6fr) 150px 70px 56px 46px", gap: 10 }), padding: "8px 12px", alignItems: isM ? "stretch" : "center", borderTop: i ? `1px solid #f0ead9` : "none", background: i % 2 ? "#faf6ec" : "#fff", opacity: r.enabled === false ? .45 : 1, cursor: canEdit ? "pointer" : "default" }}>
                           <span style={{ minWidth: 0 }}>
                             <div style={{ fontSize: 13, fontWeight: 700, color: C.text }}>{r.name || "（未命名）"}</div>
                             <div style={{ fontSize: 11, color: C.faint, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{summary(r)}</div>
@@ -249,7 +250,7 @@ export default function MailManagerView({ K, canEdit, confirm }) {
                           <span style={{ fontSize: 11.5, fontWeight: 700, color: actColor(r.action) }}>{actLabel(r)}</span>
                           <span style={{ fontSize: 10.5 }}>{r.scope === "all" ? <span style={{ fontWeight: 700, color: "#7a5c1e", background: "#f3e8cf", border: "1px solid #e4d5ae", borderRadius: 5, padding: "1px 7px" }}>全部信箱</span> : <span style={{ color: C.faint }}>此信箱</span>}</span>
                           <span style={{ fontFamily: MONOF, fontSize: 11.5, textAlign: isM ? "left" : "right", color: r.hits ? C.sub : "#d5cbb6" }}>{r.hits || 0}</span>
-                          <span style={{ textAlign: "center" }} onClick={e => e.stopPropagation()}>
+                          <span style={{ textAlign: isM ? "left" : "center" }} onClick={e => e.stopPropagation()}>
                             <input type="checkbox" checked={r.enabled !== false} onChange={e => canEdit && upd(r.id, { enabled: e.target.checked })} />
                           </span>
                         </div>
@@ -268,13 +269,14 @@ export default function MailManagerView({ K, canEdit, confirm }) {
                   <div style={{ marginBottom: 14 }}>
                     <div style={{ fontSize: 12, fontWeight: 800, color: C.sub, margin: "0 0 6px 2px" }}>🤖 內建智慧刪除 <span style={{ fontWeight: 400, color: C.faint }}>特徵判斷（非關鍵字），點列可調 啟用/套用範圍</span></div>
                     <div style={{ border: `1px solid ${C.line}`, borderRadius: 10, overflow: "hidden" }}>
+                      {/* 張良 2026-07-26 手機版全面體檢：內建規則列同規則列改直向 flex（原 block 子欄視覺錯亂） */}
                       {rows.map(([k, name, desc, hits], i) => (
-                        <div key={k} onClick={() => canEdit && setBinDrawer(k)} style={{ display: isM ? "block" : "grid", gridTemplateColumns: "minmax(240px,1.6fr) 150px 70px 56px 46px", gap: 10, padding: "8px 12px", alignItems: "center", borderTop: i ? `1px solid #f0ead9` : "none", background: i % 2 ? "#faf6ec" : "#fff", opacity: builtin[k]?.on ? 1 : .45, cursor: canEdit ? "pointer" : "default" }}>
+                        <div key={k} onClick={() => canEdit && setBinDrawer(k)} style={{ display: isM ? "flex" : "grid", ...(isM ? { flexDirection: "column", gap: 6 } : { gridTemplateColumns: "minmax(240px,1.6fr) 150px 70px 56px 46px", gap: 10 }), padding: "8px 12px", alignItems: isM ? "stretch" : "center", borderTop: i ? `1px solid #f0ead9` : "none", background: i % 2 ? "#faf6ec" : "#fff", opacity: builtin[k]?.on ? 1 : .45, cursor: canEdit ? "pointer" : "default" }}>
                           <span><div style={{ fontSize: 13, fontWeight: 700, color: C.text }}>{name} <span style={{ fontSize: 9.5, color: "#7a5c1e", background: "#f3e8cf", border: "1px solid #e4d5ae", borderRadius: 5, padding: "1px 6px", verticalAlign: "middle" }}>內建</span></div><div style={{ fontSize: 11, color: C.faint }}>{desc}</div></span>
                           <span style={{ fontSize: 11.5, fontWeight: 700, color: C.red }}>🗑 刪除</span>
                           <span style={{ fontSize: 10.5 }}>{builtin[k]?.scope === "all" ? <span style={{ fontWeight: 700, color: "#7a5c1e", background: "#f3e8cf", border: "1px solid #e4d5ae", borderRadius: 5, padding: "1px 7px" }}>全部信箱</span> : <span style={{ color: C.faint }}>此信箱</span>}</span>
                           <span style={{ fontFamily: MONOF, fontSize: 11.5, textAlign: isM ? "left" : "right", color: hits ? C.sub : "#d5cbb6" }}>{hits}</span>
-                          <span style={{ textAlign: "center" }} onClick={e => e.stopPropagation()}><input type="checkbox" checked={!!builtin[k]?.on} onChange={e => canEdit && saveBuiltin({ ...builtin, [k]: { ...builtin[k], on: e.target.checked } })} /></span>
+                          <span style={{ textAlign: isM ? "left" : "center" }} onClick={e => e.stopPropagation()}><input type="checkbox" checked={!!builtin[k]?.on} onChange={e => canEdit && saveBuiltin({ ...builtin, [k]: { ...builtin[k], on: e.target.checked } })} /></span>
                         </div>
                       ))}
                     </div>
@@ -296,12 +298,14 @@ export default function MailManagerView({ K, canEdit, confirm }) {
                   const mailsOf = open ? (scan.mails || []).filter(m => m.from === sd.from) : [];
                   return (
                     <React.Fragment key={sd.from}>
-                      <div onClick={() => setOpenFrom(open ? null : sd.from)} style={{ display: isM ? "block" : "grid", gridTemplateColumns: "minmax(190px,1.2fr) 40px minmax(150px,1.2fr) minmax(140px,1fr) 224px", gap: 10, alignItems: "center", padding: "8px 10px", borderTop: `1px solid #f0ead9`, cursor: "pointer", background: open ? C.soft : "transparent" }}>
+                      {/* 張良 2026-07-26 手機版全面體檢：信件列手機由 block 改直向 flex，寄件人/封數/主旨/建議/按鈕逐行排、不溢出 */}
+                      <div onClick={() => setOpenFrom(open ? null : sd.from)} style={{ display: isM ? "flex" : "grid", ...(isM ? { flexDirection: "column", gap: 6 } : { gridTemplateColumns: "minmax(190px,1.2fr) 40px minmax(150px,1.2fr) minmax(140px,1fr) 224px", gap: 10 }), alignItems: isM ? "stretch" : "center", padding: "8px 10px", borderTop: `1px solid #f0ead9`, cursor: "pointer", background: open ? C.soft : "transparent" }}>
                         <div style={{ overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis", fontSize: 12.5 }} title={sd.from}><b style={{ color: C.text }}>{sd.name || sd.from.split("@")[0]}</b> <span style={{ color: C.faint, fontSize: 10.5 }}>{sd.from}</span></div>
                         <span style={{ fontFamily: MONOF, fontWeight: 700, fontSize: 12, color: sd.count >= 10 ? C.accent : C.sub, textAlign: isM ? "left" : "right" }}>{sd.count}封</span>
                         <span style={{ color: C.sub, fontSize: 11.5, overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis" }} title={sd.sample}>{sd.sample}</span>
                         {sug ? <span style={{ fontSize: 11, color: sug.learned ? C.green : C.faint, overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis" }}>{sug.learned ? "🧠 " : "💡 "}建議<b style={{ color: actColor(sug.action) }}>{(ACT_OPTS.find(a => a[0] === sug.action) || [])[1]}</b>・{sug.why}</span> : <span style={{ fontSize: 11, color: "#d5cbb6" }}>—</span>}
-                        <div style={{ display: "flex", gap: 5, marginTop: isM ? 6 : 0 }} onClick={e => e.stopPropagation()}>
+                        {/* 手機：flex column 已有 gap 6，去掉原 block 模式的 marginTop；按鈕過寬時允許換行 */}
+                        <div style={{ display: "flex", gap: 5, flexWrap: isM ? "wrap" : "nowrap" }} onClick={e => e.stopPropagation()}>
                           {canEdit && ACT_OPTS.map(([a, l, cl]) => (
                             <button key={a} onClick={() => review(sd, a)} style={{ border: `1.5px solid ${cl}`, background: sug?.action === a ? cl : "#fff", color: sug?.action === a ? "#fff" : cl, borderRadius: 999, padding: "3px 11px", fontSize: 11.5, fontWeight: 700, cursor: "pointer" }}>{l.replace("移到資料夾", "分類")}</button>
                           ))}

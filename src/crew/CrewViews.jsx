@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import { uploadPhoto, onSharedChange, supabase, getSharedPrefix } from "../supa.js";
 import QRCode from "qrcode";
-import { ACCENT, PRIMARY, SURFACE, BORDER, TEXT, SUB, MONO, DISP } from "../lib/theme.jsx";
+import { ACCENT, PRIMARY, SURFACE, BORDER, TEXT, SUB, MONO, DISP, useIsMobile } from "../lib/theme.jsx"; // 張良 2026-07-26 手機版全面體檢：引入 useIsMobile
 import { K, auditLog } from "../lib/runtime.js";
 import { ROSTER_KEY, loadRosterDoc, saveRosterDoc, saveRosterPatch } from "./roster.js";
 import { compareDay, summarize, ATT_LABEL } from "../shift/attendance.js";
@@ -23,6 +23,7 @@ export const kbDims = (d) => ({
 });
 const kbIcon = (d) => d.kind === "link" ? "🔗" : d.kind === "text" ? "📝" : (d.isImage ? "🖼️" : (/\.pdf$/i.test(d.name || "") ? "📕" : /\.(xls|xlsx|csv)$/i.test(d.name || "") ? "📊" : "📄"));
 export function KnowledgeBaseView({ canEdit, requireLogin, confirm, userName }) {
+  const isMobile = useIsMobile(); // 張良 2026-07-26 手機版全面體檢：編輯彈窗三個下拉手機改直向堆疊
   const [docs, setDocs] = useState(null);
   const [q, setQ] = useState("");
   const [audFilter, setAudFilter] = useState("全部");
@@ -126,7 +127,8 @@ export function KnowledgeBaseView({ canEdit, requireLogin, confirm, userName }) 
             <div style={{ fontSize: 16, fontWeight: 700, color: TEXT, marginBottom: 14 }}>{edit.id ? "編輯資料" : "新增資料"}</div>
             <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
               <div><div style={{ fontSize: 11, color: SUB, marginBottom: 4 }}>標題</div><input value={edit.title} onChange={e => setEdit({ ...edit, title: e.target.value })} style={inputS} placeholder="例：外場點餐 SOP" /></div>
-              <div style={{ display: "flex", gap: 10 }}>
+              {/* 張良 2026-07-26 手機版全面體檢：三個下拉手機直向堆疊（桌機維持並排） */}
+              <div style={{ display: "flex", gap: 10, flexDirection: isMobile ? "column" : "row" }}>
                 <div style={{ flex: 1 }}><div style={{ fontSize: 11, color: SUB, marginBottom: 4 }}>適用對象</div>
                   <select value={edit.aud} onChange={e => setEdit({ ...edit, aud: e.target.value })} style={inputS}>
                     {KB_AUDIENCES.map(c => <option key={c} value={c}>{c}</option>)}
@@ -179,6 +181,7 @@ export function KnowledgeBaseView({ canEdit, requireLogin, confirm, userName }) 
 // ── 夥伴中心：360 評鑑（設計原型；正式版接 Auth+正規表+權限/匿名）─────────────────
 const R360_DEFAULT_DIMS = ["工作態度", "團隊合作", "專業技能", "服務品質", "責任感", "學習成長"];
 export function Review360View({ canEdit, requireLogin, confirm, isAdmin, userName }) {
+  const isMobile = useIsMobile(); // 張良 2026-07-26 手機版全面體檢：setup 人員編輯列手機改網格排版
   const [data, setData] = useState(null);     // {dimensions, reviews}（kb_360；名冊已分家獨立存）
   const [people, setPeople] = useState([]);   // 名冊人員（kb_roster，唯一真相）
   const [tab, setTab] = useState("fill"); // fill | result | setup
@@ -321,14 +324,17 @@ export function Review360View({ canEdit, requireLogin, confirm, isAdmin, userNam
         </div>
         <div style={card}>
           <div style={{ fontSize: 14, fontWeight: 700, color: TEXT, marginBottom: 10 }}>夥伴名單（{people.length}）</div>
-          <div style={{ display: "flex", gap: 8, fontSize: 10, color: SUB, marginBottom: 4, padding: "0 2px" }}><span style={{ flex: 1 }}>姓名</span><span style={{ width: 80 }}>部門</span><span style={{ width: 90 }}>層級</span><span style={{ width: 110 }}>登入帳號</span><span style={{ width: 20 }} /></div>
+          {/* 張良 2026-07-26 手機版全面體檢：欄頭列手機隱藏（各輸入框有 placeholder），編輯列手機改兩欄網格不溢出 */}
+          {!isMobile && <div style={{ display: "flex", gap: 8, fontSize: 10, color: SUB, marginBottom: 4, padding: "0 2px" }}><span style={{ flex: 1 }}>姓名</span><span style={{ width: 80 }}>部門</span><span style={{ width: 90 }}>層級</span><span style={{ width: 110 }}>登入帳號</span><span style={{ width: 20 }} /></div>}
           {people.map(p => { const up = (k, v) => persistPeople(people.map(x => x.id === p.id ? { ...x, [k]: v } : x)); return (
-            <div key={p.id} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6, flexWrap: "wrap" }}>
-              <input value={p.name} onChange={e => up("name", e.target.value)} placeholder="姓名" style={{ flex: 1, minWidth: 90, border: `1px solid ${BORDER}`, borderRadius: 8, padding: "6px 10px", fontSize: 13, background: "#fff", color: TEXT }} />
-              <input value={p.dept || ""} onChange={e => up("dept", e.target.value)} placeholder="部門" style={{ width: 80, border: `1px solid ${BORDER}`, borderRadius: 8, padding: "6px 8px", fontSize: 13, background: "#fff", color: TEXT }} />
-              <select value={p.role || "staff"} onChange={e => up("role", e.target.value)} title="層級＝權限：主管/管理員可管理" style={{ width: 90, border: `1px solid ${canManageRole(p.role) ? "#C2872E" : BORDER}`, borderRadius: 8, padding: "6px 6px", fontSize: 13, background: "#fff", color: TEXT }}>{CREW_ROLES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select>
-              <input value={p.account || ""} onChange={e => up("account", e.target.value)} placeholder="登入帳號" title="對應登入身分（例：goodmask77）" style={{ width: 110, border: `1px solid ${BORDER}`, borderRadius: 8, padding: "6px 8px", fontSize: 13, background: "#fff", color: TEXT }} />
-              <button onClick={() => { if (!guard()) return; confirm(`移除「${p.name}」？`).then(ok => ok && persistPeople(people.filter(x => x.id !== p.id))); }} style={{ border: "none", background: "none", color: "#b3261e", cursor: "pointer", fontSize: 16 }}>×</button>
+            <div key={p.id} style={isMobile
+              ? { display: "grid", gridTemplateColumns: "1fr 1fr 28px", gap: 6, alignItems: "center", marginBottom: 10, paddingBottom: 10, borderBottom: "1px solid #f0ead9" }
+              : { display: "flex", alignItems: "center", gap: 8, marginBottom: 6, flexWrap: "wrap" }}>
+              <input value={p.name} onChange={e => up("name", e.target.value)} placeholder="姓名" style={{ ...(isMobile ? { gridColumn: "1 / 3", gridRow: 1, width: "100%", boxSizing: "border-box" } : { flex: 1, minWidth: 90 }), border: `1px solid ${BORDER}`, borderRadius: 8, padding: "6px 10px", fontSize: 13, background: "#fff", color: TEXT }} />
+              <input value={p.dept || ""} onChange={e => up("dept", e.target.value)} placeholder="部門" style={{ ...(isMobile ? { gridColumn: 1, gridRow: 2, width: "100%", boxSizing: "border-box" } : { width: 80 }), border: `1px solid ${BORDER}`, borderRadius: 8, padding: "6px 8px", fontSize: 13, background: "#fff", color: TEXT }} />
+              <select value={p.role || "staff"} onChange={e => up("role", e.target.value)} title="層級＝權限：主管/管理員可管理" style={{ ...(isMobile ? { gridColumn: 2, gridRow: 2, width: "100%", boxSizing: "border-box" } : { width: 90 }), border: `1px solid ${canManageRole(p.role) ? "#C2872E" : BORDER}`, borderRadius: 8, padding: "6px 6px", fontSize: 13, background: "#fff", color: TEXT }}>{CREW_ROLES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select>
+              <input value={p.account || ""} onChange={e => up("account", e.target.value)} placeholder="登入帳號" title="對應登入身分（例：goodmask77）" style={{ ...(isMobile ? { gridColumn: "1 / 3", gridRow: 3, width: "100%", boxSizing: "border-box" } : { width: 110 }), border: `1px solid ${BORDER}`, borderRadius: 8, padding: "6px 8px", fontSize: 13, background: "#fff", color: TEXT }} />
+              <button onClick={() => { if (!guard()) return; confirm(`移除「${p.name}」？`).then(ok => ok && persistPeople(people.filter(x => x.id !== p.id))); }} style={{ ...(isMobile ? { gridColumn: 3, gridRow: 1 } : {}), border: "none", background: "none", color: "#b3261e", cursor: "pointer", fontSize: 16 }}>×</button>
             </div>
           ); })}
           <button onClick={() => { if (!guard()) return; persistPeople([...people, { id: "p" + Date.now(), name: "", dept: "", role: "staff", account: "" }]); }} style={{ border: `1px dashed ${BORDER}`, background: SURFACE, color: SUB, borderRadius: 8, padding: "6px 14px", fontSize: 13, cursor: "pointer", marginTop: 4 }}>＋ 新增夥伴</button>
@@ -689,7 +695,8 @@ export function ShopView({ canEdit, requireLogin, confirm, isAdmin, userName }) 
         {me && <div onClick={() => setShowLedger(true)} title="點開積分存摺（逐筆來源與使用，像銀行收支）" style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}><span style={{ fontSize: 13, color: SUB }}>我的積分</span><span style={{ fontSize: 24, fontWeight: 800, color: ACCENT, fontVariantNumeric: "tabular-nums" }}>{myBal}</span><span style={{ fontSize: 12, color: SUB }}>分</span><span style={{ fontSize: 11.5, color: "#2E6FB0", fontWeight: 600 }}>📒 明細</span></div>}
         <div style={{ flex: 1 }} />{canManage && <button onClick={() => guard() && setEd({ name: "", desc: "", cost: 100, stock: "", active: true })} style={{ border: "none", background: ACCENT, color: "#fff", borderRadius: 8, padding: "7px 14px", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>＋ 新增獎勵</button>}
       </div>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 12 }}>
+      {/* 張良 2026-07-26 手機版全面體檢：220→160 手機可排兩欄不擠 */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))", gap: 12 }}>
         {shop.rewards.filter(r => r.active !== false || canManage).map(r => { const afford = me && (balances[me] || 0) >= r.cost; const out = (r.stock ?? 99) <= 0; return (
           <div key={r.id} style={{ ...crewCard, marginBottom: 0, opacity: r.active === false ? 0.55 : 1 }}>
             <div style={{ fontSize: 30, marginBottom: 4 }}>🎁</div>
@@ -725,7 +732,8 @@ export function ShopView({ canEdit, requireLogin, confirm, isAdmin, userName }) 
           <div style={{ ...crewCard, marginTop: 14 }}>
             <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 4 }}>🎒 我的藏寶盒<span style={{ marginLeft: 8, fontSize: 11.5, color: SUB, fontWeight: 400 }}>兌換到的獎品放這裡，要用的時候按「使用」找主管核銷</span></div>
             {owned.length + using.length === 0 && <div style={{ fontSize: 12.5, color: "#9b9384", padding: "6px 0" }}>藏寶盒是空的——上面商城逛起來！</div>}
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(210px, 1fr))", gap: 10, marginTop: 8 }}>
+            {/* 張良 2026-07-26 手機版全面體檢：210→160 手機可排兩欄不擠 */}
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))", gap: 10, marginTop: 8 }}>
               {[...using, ...owned].map(r => { const isUsing = rdStatus(r) === "using"; return (
                 <div key={r.id} style={{ border: `1.5px solid ${isUsing ? "#c98a14" : BORDER}`, borderRadius: 10, padding: "10px 12px", background: isUsing ? "#FFF7ED" : "#FBF7EE" }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 6 }}><span style={{ fontSize: 18 }}>🎁</span><b style={{ fontSize: 13.5, color: TEXT }}>{r.name}</b></div>
@@ -887,6 +895,7 @@ function OnboardReviewSection({ pending, fields, progressOf, mgr, confirm, refre
 }
 
 export function RosterView({ canEdit, confirm, me, ReceiptUploader }) {
+  const isMobile = useIsMobile(); // 張良 2026-07-26 手機版全面體檢：夥伴詳情彈窗手機改單欄（主表維持橫滑）
   const [data, setData] = useState(null);
   const [q, setQ] = useState("");
   const [sortUser, setSortUser] = useState(null); // 疊加排序（null=用預設）：先點=主排序、再點別欄=次排序；同欄第2次反向、第3次取消
@@ -1100,7 +1109,8 @@ export function RosterView({ canEdit, confirm, me, ReceiptUploader }) {
                 <div style={{ flex: 1, height: 8, background: "#e6ddc9", borderRadius: 4, overflow: "hidden" }}><div style={{ width: pg + "%", height: "100%", background: pg === 100 ? "#3f7d4e" : pg >= 50 ? "#c98a14" : "#b3261e" }} /></div>
                 <span style={{ fontFamily: "'IBM Plex Mono',monospace", fontSize: 12.5, fontWeight: 700 }}>{pg}%</span>
               </div>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 4 }}>
+              {/* 張良 2026-07-26 手機版全面體檢：手機改單欄直列（桌機維持兩欄） */}
+              <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 12, marginBottom: 4 }}>
                 <label style={{ display: "block", fontSize: 11, letterSpacing: 0.5, color: "#9b9384", fontWeight: 600 }}>姓名<div style={{ marginTop: 4 }}><input value={pp.name || ""} onChange={e => updP(pp.id, { name: e.target.value })} disabled={!editable} style={inpS} /></div></label>
                 <label style={{ display: "block", fontSize: 11, letterSpacing: 0.5, color: "#9b9384", fontWeight: 600 }}>綽號<div style={{ marginTop: 4 }}><input value={pp.nick || ""} onChange={e => updP(pp.id, { nick: e.target.value })} disabled={!editable} style={inpS} /></div></label>
                 {fields.map(F)}
@@ -1737,6 +1747,8 @@ const PAY_COLS = [
 ];
 const payVline = { borderRight: "1px solid #e0d6bf", alignSelf: "stretch", display: "flex", alignItems: "center" }; // 直向格線（同產品管理頁範本）
 export function PayView({ me: account, userName }) {
+  const isMobile = useIsMobile(); // 張良 2026-07-26 手機版全面體檢：手機薪資表改一人一卡（桌機表格不變）
+  const [payOpen, setPayOpen] = useState(null); // 手機卡片展開中的人（rosterId）
   const [roster, setRoster] = useState(null);
   const [rulesDoc, setRulesDoc] = useState(null);
   const [month, setMonth] = useState(new Intl.DateTimeFormat("sv-SE", { timeZone: "Asia/Taipei" }).format(new Date()).slice(0, 7)); // YYYY-MM
@@ -1834,7 +1846,58 @@ export function PayView({ me: account, userName }) {
         {nextSched && <span style={{ color: "#C2872E", fontWeight: 600 }}>・📅 已預排 {nextSched.effective} 起自動套用新參數{nextSched.note ? `（${nextSched.note}）` : ""}</span>}
       </div>
       {show.length === 0 && <div style={{ ...crewCard, color: "#9b9384", fontSize: 13.5 }}>{month} 沒有可試算的時數——{source === "sched" ? "本月沒有發布班表" : "本月沒有打卡也沒有班表"}。排班頁發布班表或開始打卡後，這裡就能試算。</div>}
-      {show.length > 0 && (
+      {/* 張良 2026-07-26 手機版全面體檢：手機一人一卡（第一行姓名＋實領/應發、點卡展開已啟用欄位明細），橫滑表格只留桌機 */}
+      {show.length > 0 && isMobile && (
+        <div>
+          {show.map(({ p, title, pay }) => {
+            const cell = { hours: [`${pay.hours.reg}+${r1sum(pay.hours.ot1, pay.hours.ot2)}h`, SUB], wage: [pay.hourlyMode ? `${pay.wage}/時` : fmt$(pay.wage) + "/月", TEXT], otPay: [fmt$(pay.otPay), pay.otPay ? "#C2872E" : SUB], allowance: [fmt$(pay.allowance), SUB], insSelf: ["-" + fmt$(pay.laborSelf + pay.healthSelf), SUB], gross: [fmt$(pay.gross), TEXT], net: [fmt$(pay.net), "#3f7d4e"], employerCost: [fmt$(pay.employerCost), ACCENT] };
+            const open = payOpen === p.id;
+            return (
+              <div key={p.id} onClick={() => setPayOpen(open ? null : p.id)} style={{ background: "#fff", border: "1.5px solid #c8bca6", borderRadius: 4, padding: "11px 14px", marginBottom: 10, cursor: "pointer" }}>
+                <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
+                  <span style={{ fontSize: 14.5, fontWeight: 700, color: TEXT }}>{p.name}</span>
+                  <span style={{ fontSize: 11.5, color: "#9b9384" }}>{title || "—"}</span>
+                  <div style={{ flex: 1 }} />
+                  <span style={{ fontFamily: MONO, fontVariantNumeric: "tabular-nums", fontSize: 16, fontWeight: 800, color: "#3f7d4e", textAlign: "right" }}>{fmt$(pay.net)}</span>
+                </div>
+                <div style={{ display: "flex", alignItems: "center", fontSize: 11.5, color: SUB, marginTop: 3 }}>
+                  <span>應發 <span style={{ fontFamily: MONO, fontVariantNumeric: "tabular-nums", fontWeight: 700, color: TEXT }}>{fmt$(pay.gross)}</span>・實領為預估</span>
+                  <div style={{ flex: 1 }} />
+                  <span style={{ color: "#2E6FB0", fontWeight: 600 }}>{open ? "▲ 收合" : "▼ 明細"}</span>
+                </div>
+                {open && (
+                  <div style={{ marginTop: 8, borderTop: "1px solid #f0ead9", paddingTop: 4 }}>
+                    {cols.map(c => (
+                      <div key={c.k} style={{ display: "flex", alignItems: "baseline", fontSize: 13, padding: "4px 0" }}>
+                        <span style={{ color: SUB, fontSize: 12 }}>{c.label}</span>
+                        <div style={{ flex: 1 }} />
+                        <span style={{ fontFamily: MONO, fontVariantNumeric: "tabular-nums", fontWeight: ["gross", "net"].includes(c.k) ? 800 : 500, color: cell[c.k][1] }}>{cell[c.k][0]}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+          {mgr && (() => {
+            const sumCell = { otPay: fmt$(sum.otPay), gross: fmt$(sum.gross), net: fmt$(sum.net), employerCost: fmt$(sum.employerCost) };
+            const sumColor = { net: "#3f7d4e", employerCost: ACCENT };
+            return (
+              <div style={{ background: "#FBF7EE", border: "1.5px solid #c8bca6", borderRadius: 4, padding: "11px 14px" }}>
+                <div style={{ fontSize: 13.5, fontWeight: 800, color: TEXT, marginBottom: 4 }}>合計（{sum.people} 人）</div>
+                {cols.filter(c => sumCell[c.k]).map(c => (
+                  <div key={c.k} style={{ display: "flex", alignItems: "baseline", fontSize: 13, padding: "3px 0" }}>
+                    <span style={{ color: SUB, fontSize: 12 }}>{c.label}</span>
+                    <div style={{ flex: 1 }} />
+                    <span style={{ fontFamily: MONO, fontVariantNumeric: "tabular-nums", fontWeight: 800, color: sumColor[c.k] || TEXT }}>{sumCell[c.k]}</span>
+                  </div>
+                ))}
+              </div>
+            );
+          })()}
+        </div>
+      )}
+      {show.length > 0 && !isMobile && (
         <div style={{ maxWidth: 1060 }}>{/* 頁寬限 1060＋方角4＋直向格線＋數字MONO右對齊（ground-pack 表格慣例） */}
         <div style={{ background: "#fff", border: "1.5px solid #c8bca6", borderRadius: 4, overflow: "hidden" }}>
           <div style={{ overflowX: "auto" }}><div style={{ minWidth: 640 }}>
@@ -1875,7 +1938,8 @@ export function PayView({ me: account, userName }) {
               <button onClick={() => setShowColsUI(false)} style={{ background: "none", border: "none", fontSize: 22, cursor: "pointer", color: SUB }}>×</button>
             </div>
             <div style={{ fontSize: 11.5, color: SUB, marginBottom: 10 }}>勾＝顯示在表格；也可點表格欄頭排序（再點反向、第三下取消）。設定會存起來、所有裝置一致。</div>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+            {/* 張良 2026-07-26 手機版全面體檢：手機改單欄，欄名不擠壓換行 */}
+            <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 8 }}>
               {PAY_COLS.map(c => (
                 <label key={c.k} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13.5, cursor: "pointer" }}>
                   <input type="checkbox" checked={!!uiCols[c.k]} onChange={e => saveRules({ uiCols: { ...uiCols, [c.k]: e.target.checked } })} />{c.label}

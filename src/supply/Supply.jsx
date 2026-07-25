@@ -445,19 +445,41 @@ export default function SupplyView({ view, K, canEdit, confirm, showMoney, userN
         {oTab === "rec" && recOrders.length > 0 && (
           <div style={{ ...box, padding: "10px 14px" }}>
             <div style={{ fontSize: 13, fontWeight: 700, color: C.text, marginBottom: 6 }}>🧾 叫貨紀錄（{mo2}{vF ? "・" + vF : ""}） <span style={{ fontWeight: 400, fontSize: 11, color: C.faint }}>點列看貨單完整明細</span></div>
-            {recOrders.map(od => (
+            {recOrders.map(od => {
+              const badO = od.check && Object.values(od.check.items || {}).some(x => x.st && x.st !== (db.inspectOpts || ["✓ 正確"])[0]);
+              const stSel = (
+                <select onClick={e => e.stopPropagation()} value={od.status} onChange={e => saveOrders(orders.map(x => x.id === od.id ? { ...x, status: e.target.value } : x))} disabled={!canEdit} style={{ ...inp, padding: "3px 6px", fontSize: 11.5, color: od.status === "已到貨" ? C.green : od.status === "有問題" ? C.red : od.status === "廠商已確認" ? C.blue : C.text }}>{ST.map(x => <option key={x}>{x}</option>)}</select>
+              );
+              const delBtn = canEdit ? <button onClick={async (e) => { e.stopPropagation(); if (await confirm("刪除這筆叫貨紀錄？", { confirmLabel: "刪除" })) saveOrders(orders.filter(x => x.id !== od.id)); }} style={{ border: "none", background: "none", color: C.faint, cursor: "pointer", ...(isMob ? { padding: "6px 8px" } : {}) }}>×</button> : <span />;
+              // 手機版兩行卡片（張良 2026-07-26 手機版全面體檢：固定欄寬 grid 手機爆版）——第一行日期＋廠商＋狀態，第二行品項摘要＋金額；整列仍可點開貨單詳情
+              if (isMob) return (
+                <div key={od.id} onClick={() => setOdSel(od.id)} style={{ borderTop: `1px solid #f0ead9`, padding: "8px 0", cursor: "pointer" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <span style={{ fontFamily: MONOF, fontSize: 11, color: C.sub, flexShrink: 0 }}>{new Date(od.ts).toLocaleString("zh-TW", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })}</span>
+                    <span style={{ fontWeight: 700, color: C.text, fontSize: 12.5, flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{od.vendorName}{badO && <span title="驗收有問題" style={{ color: C.red, marginLeft: 4 }}>⚠</span>}</span>
+                    {stSel}
+                    {delBtn}
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 4 }}>
+                    <span style={{ color: C.sub, fontSize: 11.5, flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={od.items.map(x => `${x.name}×${x.qty}`).join("、")}>{od.items.length} 項｜{od.items.map(x => `${x.name}×${x.qty}`).join("、")}</span>
+                    {showMoney && <span style={{ fontFamily: MONOF, fontSize: 12, fontWeight: 700, flexShrink: 0, color: orderTotal(od) ? C.text : "#d5cbb6" }}>{orderTotal(od) ? "NT$" + Math.round(orderTotal(od)).toLocaleString() : "—"}</span>}
+                  </div>
+                </div>
+              );
+              return (
               <div key={od.id} onClick={() => setOdSel(od.id)} style={{ display: "grid", gridTemplateColumns: `108px minmax(90px,0.8fr) 56px minmax(150px,1.4fr) ${showMoney ? "90px " : ""}88px 110px 30px`, gap: 8, alignItems: "center", minHeight: 32, borderTop: `1px solid #f0ead9`, fontSize: 12, cursor: "pointer" }}
                 onMouseEnter={e => e.currentTarget.style.background = C.soft} onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
                 <span style={{ fontFamily: MONOF, fontSize: 11, color: C.sub }}>{new Date(od.ts).toLocaleString("zh-TW", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })}</span>
-                <span style={{ fontWeight: 700, color: C.text }}>{od.vendorName}{od.check && Object.values(od.check.items || {}).some(x => x.st && x.st !== (db.inspectOpts || ["✓ 正確"])[0]) && <span title="驗收有問題" style={{ color: C.red, marginLeft: 4 }}>⚠</span>}</span>
+                <span style={{ fontWeight: 700, color: C.text }}>{od.vendorName}{badO && <span title="驗收有問題" style={{ color: C.red, marginLeft: 4 }}>⚠</span>}</span>
                 <span style={{ color: C.sub }}>{od.items.length} 項</span>
                 <span style={{ color: C.sub, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={od.items.map(x => `${x.name}×${x.qty}`).join("、")}>{od.items.map(x => `${x.name}×${x.qty}`).join("、")}</span>
                 {showMoney && <span style={{ fontFamily: MONOF, textAlign: "right", color: orderTotal(od) ? C.text : "#d5cbb6" }}>{orderTotal(od) ? "NT$" + Math.round(orderTotal(od)).toLocaleString() : "—"}</span>}
                 <span style={{ fontSize: 10.5, color: C.faint }}>{od.via}</span>
-                <select onClick={e => e.stopPropagation()} value={od.status} onChange={e => saveOrders(orders.map(x => x.id === od.id ? { ...x, status: e.target.value } : x))} disabled={!canEdit} style={{ ...inp, padding: "3px 6px", fontSize: 11.5, color: od.status === "已到貨" ? C.green : od.status === "有問題" ? C.red : od.status === "廠商已確認" ? C.blue : C.text }}>{ST.map(x => <option key={x}>{x}</option>)}</select>
-                {canEdit ? <button onClick={async (e) => { e.stopPropagation(); if (await confirm("刪除這筆叫貨紀錄？", { confirmLabel: "刪除" })) saveOrders(orders.filter(x => x.id !== od.id)); }} style={{ border: "none", background: "none", color: C.faint, cursor: "pointer" }}>×</button> : <span />}
+                {stSel}
+                {delBtn}
               </div>
-            ))}
+              );
+            })}
           </div>
         )}
         {/* 貨單詳細（月底對帳）——驗收欄要夠寬，字不能被切 */}
@@ -485,26 +507,54 @@ export default function SupplyView({ view, K, canEdit, confirm, showMoney, userN
                 const GTC3 = `minmax(130px,1.2fr) minmax(76px,0.8fr) 54px ${showMoney ? "66px 76px " : ""}${isChk ? `minmax(${60 + INSP.length * 62}px,1.8fr) minmax(96px,0.9fr)` : ""}`;
                 return (
                   <div style={{ border: `1.5px solid ${C.hard}`, borderRadius: 8, overflow: "hidden" }}>
-                    <div style={{ display: "grid", gridTemplateColumns: GTC3, gap: 8, background: "#ece4d6", padding: "6px 10px", fontSize: 10.5, color: C.sub, fontWeight: 700, alignItems: "center" }}>
+                    {/* 表格頭：手機版隱藏（改直向卡片），只留一條含⚙的窄標題（張良 2026-07-26 手機版全面體檢） */}
+                    {!isMob && <div style={{ display: "grid", gridTemplateColumns: GTC3, gap: 8, background: "#ece4d6", padding: "6px 10px", fontSize: 10.5, color: C.sub, fontWeight: 700, alignItems: "center" }}>
                       <span>品名</span><span>規格</span><span style={{ textAlign: "right" }}>數量</span>{showMoney && <><span style={{ textAlign: "right" }}>單價</span><span style={{ textAlign: "right" }}>小計</span></>}{isChk && <><span>驗收（直接點選）{canEdit && <button onClick={() => setInspEdit(true)} title="編輯驗收選項（新增/改名/刪除/排序）" style={{ border: "none", background: "none", cursor: "pointer", fontSize: 11, color: C.sub, padding: "0 3px" }}>⚙</button>}</span><span>備註</span></>}
-                    </div>
+                    </div>}
+                    {isMob && <div style={{ display: "flex", alignItems: "center", background: "#ece4d6", padding: "6px 10px", fontSize: 10.5, color: C.sub, fontWeight: 700 }}>
+                      <span>品項明細{isChk ? "（每項直接點驗收）" : ""}</span>
+                      <div style={{ flex: 1 }} />
+                      {isChk && canEdit && <button onClick={() => setInspEdit(true)} title="編輯驗收選項（新增/改名/刪除/排序）" style={{ border: "none", background: "none", cursor: "pointer", fontSize: 13, color: C.sub, padding: "2px 8px" }}>⚙</button>}
+                    </div>}
                     {odDetail.items.map((x, i) => {
                       const ci = chk.items[i] || {};
                       const bad = ci.st && ci.st !== okOpt;
+                      // 變價提示：跟該貨源上次實付價比（本單已寫入快取→比 prevPrice；還沒→比 last.price）——桌機/手機共用
+                      const priceAl = (() => {
+                        const vi = (db.vendorItems || []).find(v => v.id === x.id); const cur = Number(x.price) || 0;
+                        if (!vi || !vi.last || !cur) return null;
+                        const base = Number(vi.last.price) === cur ? Number(vi.last.prevPrice) || 0 : Number(vi.last.price) || 0;
+                        if (!base) return null;
+                        const ch = (cur - base) / base * 100;
+                        return Math.abs(ch) >= ((db.settings && db.settings.priceAlertPct) || 15) ? <span style={{ color: ch > 0 ? C.red : C.green, fontWeight: 700, fontSize: 10 }}>{ch > 0 ? " ▲" : " ▼"}{Math.abs(Math.round(ch))}%</span> : null;
+                      })();
+                      // 手機版：每個品項一張直向卡片（張良 2026-07-26 手機版全面體檢：GTC3 固定寬約 694px 手機爆版）
+                      if (isMob) return (
+                        <div key={i} style={{ padding: "8px 10px", borderTop: `1px solid #f0ead9`, background: bad ? "#fdf3f2" : i % 2 ? "#f8f4ea" : "#fff" }}>
+                          <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
+                            <span style={{ fontWeight: 600, color: C.text, fontSize: 13, flex: 1, minWidth: 0 }}>{x.name}{x.spec ? <span style={{ color: C.sub, fontSize: 11, fontWeight: 400 }}>　{x.spec}</span> : null}</span>
+                            <span style={{ fontFamily: MONOF, fontSize: 12.5, flexShrink: 0 }}>{x.qty} {x.unit || ""}</span>
+                          </div>
+                          {showMoney && <div style={{ fontFamily: MONOF, fontSize: 11.5, color: C.sub, marginTop: 2 }}>
+                            單價 {x.price ? Number(x.price).toLocaleString() : "—"}{priceAl}　小計 <b>{x.price ? (Math.round(Number(x.price) * x.qty * 100) / 100).toLocaleString(undefined, { maximumFractionDigits: 2 }) : "—"}</b>
+                          </div>}
+                          {isChk && <>
+                            <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 6 }}>
+                              {INSP.map(o => { const on = ci.st === o; const isOk = o === okOpt; return (
+                                <button key={o} onClick={() => canEdit && setChkItem(i, { st: on ? "" : o })} disabled={!canEdit}
+                                  style={{ border: `1.5px solid ${on ? (isOk ? C.green : C.red) : "#d9cfbd"}`, background: on ? (isOk ? C.green : C.red) : "#fff", color: on ? "#fff" : C.sub, borderRadius: 999, padding: "5px 12px", minHeight: 32, fontSize: 12, fontWeight: on ? 700 : 500, cursor: canEdit ? "pointer" : "default", whiteSpace: "nowrap" }}>{o}</button>
+                              ); })}
+                            </div>
+                            <input value={ci.note || ""} onChange={e => setChkItem(i, { note: e.target.value })} disabled={!canEdit} placeholder={bad ? "問題說明" : "備註"} style={{ ...inp, width: "100%", marginTop: 6, padding: "6px 8px", fontSize: 12, borderColor: bad && !ci.note ? C.red : C.line }} />
+                          </>}
+                        </div>
+                      );
                       return (
                         <div key={i} style={{ display: "grid", gridTemplateColumns: GTC3, gap: 8, padding: "5px 10px", borderTop: `1px solid #f0ead9`, fontSize: 12.5, alignItems: "center", background: bad ? "#fdf3f2" : i % 2 ? "#f8f4ea" : "#fff" }}>
                           <span style={{ fontWeight: 600, color: C.text }}>{x.name}</span>
                           <span style={{ color: C.sub, fontSize: 11.5 }}>{x.spec || "—"}</span>
                           <span style={{ fontFamily: MONOF, textAlign: "right" }}>{x.qty} {x.unit || ""}</span>
-                          {showMoney && <><span style={{ fontFamily: MONOF, textAlign: "right", color: C.sub }}>{x.price ? Number(x.price).toLocaleString() : "—"}{(() => {
-                            // 變價提示：跟該貨源上次實付價比（本單已寫入快取→比 prevPrice；還沒→比 last.price）
-                            const vi = (db.vendorItems || []).find(v => v.id === x.id); const cur = Number(x.price) || 0;
-                            if (!vi || !vi.last || !cur) return null;
-                            const base = Number(vi.last.price) === cur ? Number(vi.last.prevPrice) || 0 : Number(vi.last.price) || 0;
-                            if (!base) return null;
-                            const ch = (cur - base) / base * 100;
-                            return Math.abs(ch) >= ((db.settings && db.settings.priceAlertPct) || 15) ? <span style={{ color: ch > 0 ? C.red : C.green, fontWeight: 700, fontSize: 10 }}>{ch > 0 ? " ▲" : " ▼"}{Math.abs(Math.round(ch))}%</span> : null;
-                          })()}</span>
+                          {showMoney && <><span style={{ fontFamily: MONOF, textAlign: "right", color: C.sub }}>{x.price ? Number(x.price).toLocaleString() : "—"}{priceAl}</span>
                           <span style={{ fontFamily: MONOF, textAlign: "right", fontWeight: 700 }}>{x.price ? (Math.round(Number(x.price) * x.qty * 100) / 100).toLocaleString(undefined, { maximumFractionDigits: 2 }) : "—"}</span></>}
                           {isChk && <>
                             <span style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
@@ -583,8 +633,9 @@ export default function SupplyView({ view, K, canEdit, confirm, showMoney, userN
                     ] },
                   },
                 };
+                // 手機版按鈕全寬直向堆疊（張良 2026-07-26 手機版全面體檢）
                 return (
-                  <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+                  <div style={{ display: "flex", gap: 8, marginTop: 10, flexDirection: isMob ? "column" : "row" }}>
                     <button onClick={async () => {
                       if (!v2?.lineGroupId) { alert("這家廠商還沒綁定群——先用 LINE 分享或複製。"); return; }
                       const gname = (groups[v2.lineGroupId] || {}).name || v2.lineGroupId;
@@ -595,15 +646,15 @@ export default function SupplyView({ view, K, canEdit, confirm, showMoney, userN
                         if (!d.ok) { alert(/monthly limit/i.test(d.error || "") ? "LINE 推播月額度不足。" : "發送失敗：" + (d.error || "未知")); return; }
                         markSent("D發群"); flash("✓ 草稿已由 DD 發送到「" + gname + "」");
                       } catch (e) { alert("發送失敗：" + e.message); }
-                    }} style={{ flex: 1, border: "none", background: v2?.lineGroupId ? C.green : "#d5cbb6", color: "#fff", borderRadius: 8, padding: "9px 0", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>🤖 DD 發送</button>
+                    }} style={{ flex: isMob ? "none" : 1, border: "none", background: v2?.lineGroupId ? C.green : "#d5cbb6", color: "#fff", borderRadius: 8, padding: "9px 0", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>🤖 DD 發送</button>
                     <button onClick={async () => {
                       try { await navigator.clipboard.writeText(text2); } catch (_) {}
                       const mobile = /iPhone|iPad|Android/i.test(navigator.userAgent);
                       markSent(mobile ? "LINE分享" : "複製");
                       if (mobile) window.open("https://line.me/R/share?text=" + encodeURIComponent(text2));
                       else flash("💻 已複製叫貨單文字，開 LINE 貼給廠商即可");
-                    }} style={{ flex: 1, border: "none", background: "#06C755", color: "#fff", borderRadius: 8, padding: "9px 0", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>📱 LINE 分享</button>
-                    <button onClick={async () => { try { await navigator.clipboard.writeText(text2); } catch (_) {} markSent("複製"); flash("✓ 已複製叫貨單文字"); }} style={{ flex: 1, border: `1px solid ${C.line}`, background: "#fff", color: C.text, borderRadius: 8, padding: "9px 0", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>📋 複製</button>
+                    }} style={{ flex: isMob ? "none" : 1, border: "none", background: "#06C755", color: "#fff", borderRadius: 8, padding: "9px 0", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>📱 LINE 分享</button>
+                    <button onClick={async () => { try { await navigator.clipboard.writeText(text2); } catch (_) {} markSent("複製"); flash("✓ 已複製叫貨單文字"); }} style={{ flex: isMob ? "none" : 1, border: `1px solid ${C.line}`, background: "#fff", color: C.text, borderRadius: 8, padding: "9px 0", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>📋 複製</button>
                   </div>
                 );
               })()}
@@ -681,16 +732,17 @@ export default function SupplyView({ view, K, canEdit, confirm, showMoney, userN
                     {glist.map(([gid, g]) => <option key={gid} value={gid}>{(g && g.name) || gid}</option>)}
                   </select>
                 </div>
-                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                  <button onClick={doSend} style={{ flex: 1, border: "none", background: pv.lineGroupId ? C.green : "#d5cbb6", color: "#fff", borderRadius: 8, padding: "10px 0", fontSize: 13.5, fontWeight: 700, cursor: "pointer" }}>🤖 DD 發送到群</button>
+                {/* 手機版按鈕全寬直向堆疊（張良 2026-07-26 手機版全面體檢：三顆並排手機太擠） */}
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", flexDirection: isMob ? "column" : "row" }}>
+                  <button onClick={doSend} style={{ flex: isMob ? "none" : 1, border: "none", background: pv.lineGroupId ? C.green : "#d5cbb6", color: "#fff", borderRadius: 8, padding: "10px 0", fontSize: 13.5, fontWeight: 700, cursor: "pointer" }}>🤖 DD 發送到群</button>
                   <button onClick={async () => {
                     try { await navigator.clipboard.writeText(text); } catch (_) {}
                     const mobile = /iPhone|iPad|Android/i.test(navigator.userAgent);
                     recordOrder(pv, mobile ? "LINE分享" : "複製", "已送出", text);
                     if (mobile) window.open("https://line.me/R/share?text=" + encodeURIComponent(text));
                     else flash("💻 桌機不支援 LINE 分享選單——已自動複製叫貨單，打開 LINE 貼給廠商即可（用手機開 App 按這顆才會跳選聊天室）");
-                  }} style={{ flex: 1, border: "none", background: "#06C755", color: "#fff", borderRadius: 8, padding: "10px 0", fontSize: 13.5, fontWeight: 700, cursor: "pointer" }}>📱 LINE 分享</button>
-                  <button onClick={async () => { try { await navigator.clipboard.writeText(text); } catch (_) {} recordOrder(pv, "複製", "已送出", text); flash("✓ 已複製叫貨單文字，貼到廠商聊天室即可"); }} style={{ flex: 1, border: `1px solid ${C.line}`, background: "#fff", color: C.text, borderRadius: 8, padding: "10px 0", fontSize: 13.5, fontWeight: 700, cursor: "pointer" }}>📋 複製文字</button>
+                  }} style={{ flex: isMob ? "none" : 1, border: "none", background: "#06C755", color: "#fff", borderRadius: 8, padding: "10px 0", fontSize: 13.5, fontWeight: 700, cursor: "pointer" }}>📱 LINE 分享</button>
+                  <button onClick={async () => { try { await navigator.clipboard.writeText(text); } catch (_) {} recordOrder(pv, "複製", "已送出", text); flash("✓ 已複製叫貨單文字，貼到廠商聊天室即可"); }} style={{ flex: isMob ? "none" : 1, border: `1px solid ${C.line}`, background: "#fff", color: C.text, borderRadius: 8, padding: "10px 0", fontSize: 13.5, fontWeight: 700, cursor: "pointer" }}>📋 複製文字</button>
                 </div>
                 <button onClick={() => recordOrder(pv, "草稿", "草稿", text)} style={{ width: "100%", marginTop: 8, border: `1.5px dashed ${C.line}`, background: "transparent", color: C.sub, borderRadius: 8, padding: "7px 0", fontSize: 12.5, cursor: "pointer" }}>先存草稿不發送</button>
               </div>
@@ -913,7 +965,28 @@ export default function SupplyView({ view, K, canEdit, confirm, showMoney, userN
     const [mv] = names.splice(from, 1); names.splice(to, 0, mv);
     save({ categories: names.map((name, i2) => ({ name, sort: i2 })) }); setDragC(null);
   };
-  const rows = (list) => list.map((x, i) => (
+  const rows = (list) => list.map((x, i) => {
+    // 手機版兩行式（張良 2026-07-26 手機版全面體檢：GTC 固定欄寬總和 656-728px 手機爆版）
+    // 第一行＝勾選＋品名＋售價；第二行＝英文名/單位/備註/標籤＋狀態＋✎；點整列開編輯卡（拖曳排序手機不支援，桌機不變）
+    if (isMob) return (
+      <div key={x.id} onClick={() => setSel(x.id)} style={{ borderTop: `1px solid #e0d6bf`, padding: "7px 10px", cursor: "pointer", background: x.is_active === false ? "#f2ede1" : "#fff", opacity: x.is_active === false ? .6 : 1 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <input type="checkbox" checked={!!selRows[x.id]} onClick={e => e.stopPropagation()} onChange={e => setSelRows(s => ({ ...s, [x.id]: e.target.checked }))} disabled={!canEdit} style={{ cursor: "pointer", flexShrink: 0 }} />
+          <span style={{ fontSize: 13, fontWeight: 600, color: C.text, flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{x.name || "（未命名）"}</span>
+          {showMoney && <span style={{ fontFamily: MONOF, fontSize: 12.5, fontWeight: 700, flexShrink: 0, color: x.price ? C.text : "#d5cbb6" }}>{fmt$(x.price) || "—"}</span>}
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 4, paddingLeft: 21 }}>
+          <span style={{ fontSize: 11, color: C.sub, flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            {[x.english_name || "", x.unit || "", x.note || ""].filter(Boolean).join("｜") || "—"}
+            {(x.tags || []).map(t => <span key={t} style={{ fontSize: 10, color: C.accent, background: "#fbeee6", borderRadius: 3, padding: "0 5px", marginLeft: 4 }}>#{t}</span>)}
+          </span>
+          {packCount(x.id) > 0 && <span style={{ fontFamily: MONOF, fontSize: 10.5, color: C.blue, flexShrink: 0 }}>包材{packCount(x.id)}</span>}
+          <span style={{ fontSize: 10.5, fontWeight: 600, flexShrink: 0, color: x.is_active !== false ? C.green : C.faint }}>{x.is_active !== false ? "啟用" : "停用"}</span>
+          <span style={{ color: C.faint, fontSize: 12, flexShrink: 0 }}>✎</span>
+        </div>
+      </div>
+    );
+    return (
     <div key={x.id} onClick={() => setSel(x.id)} onDragOver={e => dragI && e.preventDefault()} onDrop={() => dropProd(x.id)}
       onMouseEnter={e => e.currentTarget.style.background = C.soft} onMouseLeave={e => e.currentTarget.style.background = x.is_active === false ? "#f2ede1" : "#fff"}
       style={{ display: "grid", gridTemplateColumns: GTC, alignItems: "stretch", minHeight: 34, borderTop: `1px solid #e0d6bf`, cursor: "pointer", background: x.is_active === false ? "#f2ede1" : "#fff", opacity: x.is_active === false ? .6 : 1, outline: dragI === x.id ? `2px dashed ${C.accent}` : "none" }}>
@@ -931,7 +1004,8 @@ export default function SupplyView({ view, K, canEdit, confirm, showMoney, userN
       <div style={{ ...vline, padding: "0 7px" }}><span style={{ fontSize: 10.5, fontWeight: 600, color: x.is_active !== false ? C.green : C.faint }}>{x.is_active !== false ? "啟用" : "停用"}</span></div>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "center", color: C.faint, fontSize: 12 }}>✎</div>
     </div>
-  ));
+    );
+  });
   const selP = sel && db.products.find(x => x.id === sel);
   return (
     <div style={{ maxWidth: 1060, margin: "0 auto" }}>
@@ -996,9 +1070,10 @@ export default function SupplyView({ view, K, canEdit, confirm, showMoney, userN
       {/* 表格 */}
       {flat ? (
         <div style={hardBox}>
-          <div style={{ display: "grid", gridTemplateColumns: GTC, background: "#ece4d6", borderBottom: `1.5px solid ${C.hard}`, alignItems: "stretch" }}>
+          {/* 表格頭手機版隱藏（列已改兩行式；張良 2026-07-26 手機版全面體檢） */}
+          {!isMob && <div style={{ display: "grid", gridTemplateColumns: GTC, background: "#ece4d6", borderBottom: `1.5px solid ${C.hard}`, alignItems: "stretch" }}>
             {["", "", "品名", "英文名稱", "內容/備註", "單位", ...(showMoney ? ["售價"] : []), "包材", "標籤", "狀態", ""].map((h, i2) => <div key={i2} style={{ ...vline, borderRight: "1px solid #d3c8ac", padding: "7px 9px", fontSize: 10.5, letterSpacing: .6, color: C.sub, fontWeight: 700, justifyContent: h === "售價" ? "flex-end" : h === "包材" ? "center" : "flex-start" }}>{h}</div>)}
-          </div>
+          </div>}
           {rows([...prods].sort((a, b) => (a.sort || 0) - (b.sort || 0)))}
         </div>
       ) : catNames.map(cn => (
@@ -1016,9 +1091,10 @@ export default function SupplyView({ view, K, canEdit, confirm, showMoney, userN
           </div>
           {!collapsed[cn] && (
             <>
-              <div style={{ display: "grid", gridTemplateColumns: GTC, background: C.soft, borderTop: `1px solid ${C.line}`, alignItems: "stretch" }}>
+              {/* 表格頭手機版隱藏（列已改兩行式；張良 2026-07-26 手機版全面體檢） */}
+              {!isMob && <div style={{ display: "grid", gridTemplateColumns: GTC, background: C.soft, borderTop: `1px solid ${C.line}`, alignItems: "stretch" }}>
                 {["", "", "品名", "英文名稱", "內容/備註", "單位", ...(showMoney ? ["售價"] : []), "包材", "標籤", "狀態", ""].map((h, i2) => <div key={i2} style={{ ...vline, padding: "5px 9px", fontSize: 10, letterSpacing: .6, color: C.faint, fontWeight: 700, justifyContent: h === "售價" ? "flex-end" : h === "包材" ? "center" : "flex-start" }}>{h}</div>)}
-              </div>
+              </div>}
               {rows([...byCat[cn]].sort((a, b) => (a.sort || 0) - (b.sort || 0)))}
             </>
           )}
