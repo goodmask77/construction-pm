@@ -758,10 +758,23 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
               if (!Array.isArray(r) || typeof r[0] !== "string") return;
               const amt = Number(r[r.length - 1]) || 0, qty = Number(r[1]) || 0;
               if (sec.title === "總結") { if (amt > 0) { const c = catAgg[r[0]] = catAgg[r[0]] || { qty: 0, amt: 0 }; c.qty += qty; c.amt += amt; } }
-              else if (amt > 0) { const it = itemAgg[r[0]] = itemAgg[r[0]] || { qty: 0, amt: 0, cat: sec.title }; it.qty += qty; it.amt += amt; }
+              else if (amt > 0) {
+                const it = itemAgg[r[0]] = itemAgg[r[0]] || { qty: 0, amt: 0, cat: sec.title }; it.qty += qty; it.amt += amt;
+                // 同名品項各分類分開記（張良 2026-07-26：外帶類別同名但單價較低，要辨識得出來）
+                const bc = (it.byCat = it.byCat || {})[sec.title] = (it.byCat || {})[sec.title] || { qty: 0, amt: 0 };
+                bc.qty += qty; bc.amt += amt;
+              }
             });
           });
         });
+        // 同名多分類且單價有落差＝疑似外帶/優惠版（單價=金額÷份數；差 ≥5% 且 ≥10 元才算）
+        const dupeGroups = Object.entries(itemAgg).map(([n, v]) => {
+          const cats = Object.entries(v.byCat || {}).filter(([, b]) => b.qty > 0).map(([c2, b]) => ({ cat: c2, qty: b.qty, amt: b.amt, unit: Math.round(b.amt / b.qty) }));
+          if (cats.length < 2) return null;
+          cats.sort((a, b) => b.unit - a.unit);
+          const hi = cats[0].unit, lo = cats[cats.length - 1].unit;
+          return (hi - lo >= 10 && (hi - lo) / hi >= 0.05) ? { n, cats, diff: hi - lo } : null;
+        }).filter(Boolean).sort((a, b) => b.diff - a.diff);
         const catArr2 = Object.entries(catAgg).sort((a, b) => b[1].amt - a[1].amt);
         const catMax2 = Math.max(1, ...catArr2.map(([, v]) => v.amt));
         const topItems = Object.entries(itemAgg).filter(([, v]) => !posCats.length || posCats.includes(v.cat)).sort((a, b) => b[1].amt - a[1].amt).slice(0, 12);
@@ -817,6 +830,8 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
           }
           const slow = Object.entries(itemAgg).filter(([, v]) => v.qty <= 2 && v.amt > 0).map(([n, v]) => `${n}〔${v.cat}・${v.qty}份〕`);
           if (slow.length) out.push(["🐌", `滯銷提醒（期間只賣 ≤2 份）共 ${slow.length} 項：${slow.slice(0, 6).join("、")}${slow.length > 6 ? "…" : ""}（同名但分類不同＝POS 新舊重複品項，建議整併）`, { type: "allitems" }]);
+          // 同名分類價差辨識（張良 2026-07-26：賣很少+單價比同名低=外帶類別，要認得出來）
+          if (dupeGroups.length) out.push(["👯", `同名品項有分類價差 ${dupeGroups.length} 組（低價版多為外帶/優惠類別）：${dupeGroups.slice(0, 4).map(g => `${g.n}（差 ${fmt(g.diff)}）`).join("、")}${dupeGroups.length > 4 ? "…" : ""}——點我看逐組比對`, { type: "dupes" }]);
           // 連續沒賣偵測（張良 2026-07-26）：跟「😴 沒賣預警」區同一份設定（門檻天數＋排除清單），摘要只給結論、細節看區塊
           const icfg = posIdleCfg || { days: 7, exCats: [], exItems: [] };
           const lastDate = days[days.length - 1].date;
@@ -905,6 +920,11 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
               note: "來源：日結信「總銷售額(以類別分類)」分頁 → 明細資料庫 pm_pos_d_月份",
             };
           }
+          if (dr.type === "dupes") return {
+            title: "同名品項・分類價差比對（低價版多為外帶類別）", cols: ["品項", "分類", "份數", "金額", "單價", "判讀"],
+            rows: dupeGroups.flatMap(g => g.cats.map((c2, i) => [g.n, c2.cat, c2.qty, fmt(c2.amt), fmt(c2.unit), i === 0 ? "主要版（單價最高）" : `疑似外帶/優惠版（低 ${fmt(g.cats[0].unit - c2.unit)}）`])),
+            note: "單價＝期間金額÷份數。同一道菜出現在多個分類且單價不同＝POS 裡的外帶/優惠版本。沒賣預警與品項彙總已把同名合併計算（不會把外帶版誤報成滯銷）；這張表是給你決定要不要在 POS 整併品項用",
+          };
           if (dr.type === "pay") {
             const K2 = { card: ["card", "cardCount", "信用卡"], cash: ["cash", "cashCount", "現金"], uber: ["uber", "uberCount", "UberEats"] }[dr.key];
             return {

@@ -112,10 +112,21 @@ async function loadSpaceAIContext() {
             if (!Array.isArray(r) || typeof r[0] !== "string") return;
             const o = per[r[0]] = per[r[0]] || { cat: sec.title, days: {}, qty: 0, amt: 0 };
             o.days[date] = (o.days[date] || 0) + (Number(r[1]) || 0); o.qty += Number(r[1]) || 0; o.amt += Number(r[r.length - 1]) || 0;
+            const bc = (o.byCat = o.byCat || {})[sec.title] = (o.byCat || {})[sec.title] || { qty: 0, amt: 0 };
+            bc.qty += Number(r[1]) || 0; bc.amt += Number(r[r.length - 1]) || 0;
           });
         }));
         const arr = Object.entries(per).filter(([, v]) => v.amt > 0).sort((a, b) => b[1].amt - a[1].amt);
         if (arr.length) parts.push("【本月品項逐日銷售（品項｜分類｜總份｜總額｜各日份數）】\n" + arr.slice(0, 60).map(([n, v]) => `- ${n}｜${v.cat}｜${v.qty}份｜${nt(v.amt)}｜` + Object.entries(v.days).sort().map(([dd, q]) => `${Number(dd.slice(8))}日:${q}`).join(" ")).join("\n"));
+        // 同名品項分類價差（低價版多為外帶類別；與 D哥同步接）
+        const dupes = Object.entries(per).map(([n, v]) => {
+          const cats = Object.entries(v.byCat || {}).filter(([, b]) => b.qty > 0).map(([c2, b]) => ({ c: c2, qty: b.qty, unit: Math.round(b.amt / b.qty) }));
+          if (cats.length < 2) return null;
+          cats.sort((a, b) => b.unit - a.unit);
+          const df = cats[0].unit - cats[cats.length - 1].unit;
+          return (df >= 10 && df / cats[0].unit >= 0.05) ? { n, cats, df } : null;
+        }).filter(Boolean).sort((a, b) => b.df - a.df);
+        if (dupes.length) parts.push(`【同名品項分類價差（低價版多為外帶/優惠類別；共 ${dupes.length} 組。同名銷量統計已合併計算）】\n` + dupes.slice(0, 15).map(g => `- ${g.n}：` + g.cats.map(c2 => `${c2.c} 單價${nt(c2.unit)}(${c2.qty}份)`).join(" vs ")).join("\n"));
         // 品項連續未售（答「哪些餐點連續幾天沒賣」；門檻/排除＝「沒賣預警」區設定，與 D哥 loadPosText 同步接）
         const lastD = pos.entries[pos.entries.length - 1]?.date;
         if (lastD) {

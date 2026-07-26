@@ -452,6 +452,9 @@ async function loadPosText() {
           if (!Array.isArray(r) || typeof r[0] !== 'string') return
           const a = agg[r[0]] = agg[r[0]] || { qty: 0, amt: 0, cat: sec.title }
           a.qty += Number(r[1]) || 0; a.amt += Number(r[r.length - 1]) || 0
+          // 同名品項各分類分開記（答「哪些是外帶低價版」）
+          const bc = (a.byCat = a.byCat || {})[sec.title] = (a.byCat || {})[sec.title] || { qty: 0, amt: 0 }
+          bc.qty += Number(r[1]) || 0; bc.amt += Number(r[r.length - 1]) || 0
         })
       }))
       const arr = Object.entries(agg).filter(([, v]) => v.amt > 0).sort((a, b) => b[1].amt - a[1].amt)
@@ -459,6 +462,18 @@ async function loadPosText() {
         lines.push(`【本月品項銷售彙總（依營收排序，共 ${arr.length} 品項；前 25 名＋末 10 名）】`)
         arr.slice(0, 25).forEach(([n, v], i) => lines.push(`  ${i + 1}. ${n}［${v.cat}］ ${v.qty}份 ${nt(v.amt)}`))
         if (arr.length > 35) { lines.push('  …（中段略）…'); arr.slice(-10).forEach(([n, v]) => lines.push(`  末段: ${n}［${v.cat}］ ${v.qty}份 ${nt(v.amt)}`)) }
+      }
+      // 同名品項分類價差（張良 2026-07-26：賣很少+單價低=外帶類別版本，DD 要認得）
+      const dupes = Object.entries(agg).map(([n, v]) => {
+        const cats = Object.entries(v.byCat || {}).filter(([, b]) => b.qty > 0).map(([c2, b]) => ({ c: c2, qty: b.qty, unit: Math.round(b.amt / b.qty) }))
+        if (cats.length < 2) return null
+        cats.sort((a, b) => b.unit - a.unit)
+        const df = cats[0].unit - cats[cats.length - 1].unit
+        return (df >= 10 && df / cats[0].unit >= 0.05) ? { n, cats, df } : null
+      }).filter(Boolean).sort((a, b) => b.df - a.df)
+      if (dupes.length) {
+        lines.push(`【同名品項分類價差（低價版多為外帶/優惠類別；共 ${dupes.length} 組。同名銷量統計已合併計算）】`)
+        dupes.slice(0, 15).forEach(g => lines.push(`  - ${g.n}：` + g.cats.map(c2 => `${c2.c} 單價${nt(c2.unit)}(${c2.qty}份)`).join(' vs ')))
       }
       // 品項連續未售（張良 2026-07-26：DD 要答得出「哪些餐點連續幾天沒賣」）：逐日明細算每品項最後售出日
       // 門檻/排除清單跟 App「😴 沒賣預警」區同一份設定（sp_finance_pm_pos_idlecfg）＝資料一致
