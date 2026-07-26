@@ -475,7 +475,7 @@ async function loadPosText() {
     const flags = kv['sp_finance_pm_pos_flags']
     if (flags && flags.items && Object.keys(flags.items).length) {
       lines.push('【POS 日別標記（老闆確認過的非營運事件，警示已排除）】')
-      Object.entries(flags.items).slice(-20).forEach(([k, f]) => { const [d8, , kind] = k.split('::'); lines.push(`  - ${d8} ${kind === 'waste' ? '退菜/Void' : '折扣'}：${f.type}${f.note ? `（${f.note}）` : ''}`) })
+      Object.entries(flags.items).slice(-20).forEach(([k, f]) => { const [d8, , kind] = k.split('::'); lines.push(`  - ${d8} ${kind === 'waste' ? '退菜/Void' : '折扣'}：${f.type}${f.note ? `（${f.note}）` : ''}｜排除${Number(f.amt) > 0 ? 'NT$' + Number(f.amt).toLocaleString() : '整天全額'}`) })
     }
     return lines.join('\n')
   } catch (_) { return '' }

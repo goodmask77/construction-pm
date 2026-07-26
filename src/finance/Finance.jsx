@@ -815,14 +815,18 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
           }
           const slow = Object.entries(itemAgg).filter(([, v]) => v.qty <= 2 && v.amt > 0).map(([n, v]) => `${n}〔${v.cat}・${v.qty}份〕`);
           if (slow.length) out.push(["🐌", `滯銷提醒（期間只賣 ≤2 份）共 ${slow.length} 項：${slow.slice(0, 6).join("、")}${slow.length > 6 ? "…" : ""}（同名但分類不同＝POS 新舊重複品項，建議整併）`, { type: "allitems" }]);
-          // 日別標記（張良 2026-07-26：測試單/包場折扣確認過就不要再嚇人）——警示計算排除已標記天；原始數字照舊
+          // 日別標記（張良 2026-07-26：測試單/包場折扣確認過就不要再嚇人）——警示計算扣掉「排除金額」；沒填金額＝整天全額；原始數字照舊
           const flg = (d, kind) => posFlags?.items?.[`${d.date}::${posStore}::${kind}`];
-          const discDays = days.filter(d => !flg(d, "discount")), discEx = days.length - discDays.length;
-          const discAbs = Math.abs(sum(discDays, "discount"));
-          if (revSum && discAbs / revSum > 0.03) out.push(["⚠️", `折扣佔營收 ${Math.round(discAbs / revSum * 100)}%（${fmt(discAbs)}）超過 3% 警戒${discEx ? `（已排除 ${discEx} 天標記非營運）` : ""}——點我看逐筆明細（誰給的、為什麼）`, { type: "coupon" }]);
-          const wasteDays = days.filter(d => !flg(d, "waste")), wasteEx = days.length - wasteDays.length;
-          const wasteAbs = Math.abs(sum(wasteDays, "voidItems")) + Math.abs(sum(wasteDays, "returnDish"));
-          if (revSum && wasteAbs / revSum > 0.02) out.push(["⚠️", `退菜＋Void 佔營收 ${Math.round(wasteAbs / revSum * 100)}%（${fmt(wasteAbs)}）偏高${wasteEx ? `（已排除 ${wasteEx} 天標記非營運）` : ""}——點我看逐日追蹤`, { type: "waste" }]);
+          const exAmt = (d, kind, raw) => { const f = flg(d, kind); if (!f) return 0; const a = Number(f.amt); return a > 0 ? Math.min(a, raw) : raw; };
+          let discRaw = 0, discExAmt = 0, discAbs = 0;
+          days.forEach(d => { const raw = Math.abs(d.discount || 0); const e = exAmt(d, "discount", raw); discRaw += raw; discExAmt += e; discAbs += raw - e; });
+          if (revSum && discAbs / revSum > 0.03) out.push(["⚠️", `折扣佔營收 ${Math.round(discAbs / revSum * 100)}%（${fmt(discAbs)}）超過 3% 警戒${discExAmt ? `（已排除標記 ${fmt(discExAmt)}）` : ""}——點我看逐筆明細（誰給的、為什麼）`, { type: "coupon" }]);
+          let wasteRaw = 0, wasteExAmt = 0, wasteAbs = 0;
+          days.forEach(d => { const raw = Math.abs(d.voidItems || 0) + Math.abs(d.returnDish || 0); const e = exAmt(d, "waste", raw); wasteRaw += raw; wasteExAmt += e; wasteAbs += raw - e; });
+          if (revSum && wasteAbs / revSum > 0.02) out.push(["⚠️", `退菜＋Void 佔營收 ${Math.round(wasteAbs / revSum * 100)}%（${fmt(wasteAbs)}）偏高${wasteExAmt ? `（已排除標記 ${fmt(wasteExAmt)}）` : ""}——點我看逐日追蹤`, { type: "waste" }]);
+          // 常駐審計入口（張良 2026-07-26：標記完警示消失就找不到頁面）——不管有沒有警示都固定在摘要裡
+          out.push(["🧾", `退菜＋Void 追蹤：期間 ${fmt(wasteRaw)}${wasteExAmt ? `，排除標記 ${fmt(wasteExAmt)} 後＝${fmt(wasteAbs)}` : ""}——點我看逐日＆標記`, { type: "waste" }]);
+          out.push(["🧾", `折扣追蹤：期間 ${fmt(discRaw)}${discExAmt ? `，排除標記 ${fmt(discExAmt)} 後＝${fmt(discAbs)}` : ""}——點我看明細＆標記`, { type: "coupon" }]);
           // 主動偵查：疑似測試/誤操作（退菜=Void 同額且佔營收>20%）與異常大額折扣日——沒標記才提醒，確認後標記就安靜
           days.forEach(d => {
             const rv = Math.abs(d.returnDish || 0), vv = Math.abs(d.voidItems || 0);
@@ -1322,8 +1326,8 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
                                       const fkey = `${r[fc.dateIdx]}::${posStore}::${fc.kind}`;
                                       const f = posFlags?.items?.[fkey];
                                       return <td key={j} onClick={e => e.stopPropagation()} style={{ padding: "5px 10px", borderTop: "1px solid #f0ead9", whiteSpace: "nowrap", fontSize: 11 }}>
-                                        {f ? <span style={{ display: "inline-flex", alignItems: "center", gap: 4, background: "#eef5ef", border: `1px solid ${C.accent}`, color: "#2c5a38", borderRadius: 10, padding: "1px 8px", fontWeight: 700 }} title={f.note || ""}>🏷 {f.type}{f.note ? `・${f.note}` : ""}<span onClick={() => removeFlag(fkey)} style={{ cursor: "pointer", color: C.faint, fontWeight: 400, marginLeft: 2 }}>×</span></span>
-                                          : <button onClick={() => setPosFlagEdit({ date: r[fc.dateIdx], kind: fc.kind, type: "系統測試", note: "" })} style={{ border: `1px dashed ${C.line}`, background: "#fff", color: C.sub, borderRadius: 10, padding: "1px 8px", fontSize: 11, cursor: "pointer" }}>＋標記</button>}
+                                        {f ? <span style={{ display: "inline-flex", alignItems: "center", gap: 4, background: "#eef5ef", border: `1px solid ${C.accent}`, color: "#2c5a38", borderRadius: 10, padding: "1px 8px", fontWeight: 700 }} title={f.note || ""}>🏷 {f.type}{f.note ? `・${f.note}` : ""}｜排除 {Number(f.amt) > 0 ? fmt(f.amt) : "全額"}<span onClick={() => removeFlag(fkey)} style={{ cursor: "pointer", color: C.faint, fontWeight: 400, marginLeft: 2 }}>×</span></span>
+                                          : <button onClick={() => { const dref = days.find(x => x.date === r[fc.dateIdx]); const defAmt = dref ? (fc.kind === "waste" ? Math.abs(dref.voidItems || 0) + Math.abs(dref.returnDish || 0) : Math.abs(dref.discount || 0)) : 0; setPosFlagEdit({ date: r[fc.dateIdx], kind: fc.kind, type: "系統測試", note: "", amt: String(defAmt || "") }); }} style={{ border: `1px dashed ${C.line}`, background: "#fff", color: C.sub, borderRadius: 10, padding: "1px 8px", fontSize: 11, cursor: "pointer" }}>＋標記</button>}
                                       </td>;
                                     }
                                     const numCol = isNum(cols3[j], j); const disp = cols3[j] === "日期" ? wd(c2) : c2; const red = rowRed || redCell(cols3[j], String(disp)); return <td key={j} style={{ padding: "5px 10px", fontFamily: numCol || (typeof disp === "string" && /[0-9]/.test(disp) && j > 0) ? MONOF : undefined, textAlign: numCol ? "right" : "left", color: red ? "#b3261e" : disp === "" ? "#d5cbb6" : C.text, fontWeight: red ? 700 : undefined, borderTop: "1px solid #f0ead9", whiteSpace: "nowrap", fontSize: 11.5 }}>{disp === "" ? "—" : disp}</td>; })}
@@ -1402,10 +1406,16 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
                       <button key={tp} onClick={() => setPosFlagEdit(fe => ({ ...fe, type: tp }))} style={{ border: `1.5px solid ${posFlagEdit.type === tp ? C.accent : C.line}`, background: posFlagEdit.type === tp ? C.accent : "#fff", color: posFlagEdit.type === tp ? "#fff" : C.sub, borderRadius: 14, padding: "4px 12px", fontSize: 12.5, fontWeight: 700, cursor: "pointer" }}>{tp}</button>
                     ))}
                   </div>
-                  <input value={posFlagEdit.note} onChange={e => setPosFlagEdit(fe => ({ ...fe, note: e.target.value }))} placeholder="原因（例：阿桑系統測試、婚禮包場）" style={{ width: "100%", boxSizing: "border-box", border: `1px solid ${C.line}`, borderRadius: 8, padding: "8px 10px", fontSize: 13, marginBottom: 12, background: "#fff", color: C.text }} />
+                  <input value={posFlagEdit.note} onChange={e => setPosFlagEdit(fe => ({ ...fe, note: e.target.value }))} placeholder="原因（例：阿桑系統測試、婚禮包場）" style={{ width: "100%", boxSizing: "border-box", border: `1px solid ${C.line}`, borderRadius: 8, padding: "8px 10px", fontSize: 13, marginBottom: 8, background: "#fff", color: C.text }} />
+                  {/* 排除金額（張良 2026-07-26：整天全排不對，當天可能還有真實折扣）——預設整天全額，可改成只排那一筆 */}
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
+                    <span style={{ fontSize: 12.5, color: C.sub, whiteSpace: "nowrap" }}>排除金額</span>
+                    <input type="number" value={posFlagEdit.amt ?? ""} onChange={e => setPosFlagEdit(fe => ({ ...fe, amt: e.target.value }))} style={{ flex: 1, boxSizing: "border-box", border: `1px solid ${C.line}`, borderRadius: 8, padding: "8px 10px", fontSize: 13, fontFamily: MONOF, textAlign: "right", background: "#fff", color: C.text }} />
+                    <span style={{ fontSize: 11, color: C.faint }}>預設＝整天全額；只排某一筆就改成那筆的金額，其餘照算</span>
+                  </div>
                   <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
                     <button onClick={() => setPosFlagEdit(null)} style={{ border: `1px solid ${C.line}`, background: "#fff", color: C.sub, borderRadius: 8, padding: "7px 16px", fontSize: 13, cursor: "pointer" }}>取消</button>
-                    <button onClick={() => { const fkey = `${posFlagEdit.date}::${posStore}::${posFlagEdit.kind}`; const next = { ...(posFlags || { items: {} }), items: { ...(posFlags?.items || {}), [fkey]: { type: posFlagEdit.type, note: posFlagEdit.note.trim(), at: new Date().toISOString() } } }; saveFlags(next); setPosFlagEdit(null); }} style={{ border: "none", background: C.accent, color: "#fff", borderRadius: 8, padding: "7px 18px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>✓ 完成</button>
+                    <button onClick={() => { const fkey = `${posFlagEdit.date}::${posStore}::${posFlagEdit.kind}`; const next = { ...(posFlags || { items: {} }), items: { ...(posFlags?.items || {}), [fkey]: { type: posFlagEdit.type, note: posFlagEdit.note.trim(), amt: Number(posFlagEdit.amt) || 0, at: new Date().toISOString() } } }; saveFlags(next); setPosFlagEdit(null); }} style={{ border: "none", background: C.accent, color: "#fff", borderRadius: 8, padding: "7px 18px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>✓ 完成</button>
                   </div>
                 </div>
               </div>

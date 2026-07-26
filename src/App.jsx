@@ -128,7 +128,7 @@ async function loadSpaceAIContext() {
       }
       // 日別標記（老闆確認過的非營運事件：測試/包場/行銷——警示已排除，回答營運問題時當背景知識）
       if (posFlags?.items && Object.keys(posFlags.items).length) {
-        parts.push("【POS 日別標記（非營運，警示已排除）】\n" + Object.entries(posFlags.items).slice(-20).map(([k, f]) => { const [d8, , kind] = k.split("::"); return `- ${d8} ${kind === "waste" ? "退菜/Void" : "折扣"}：${f.type}${f.note ? `（${f.note}）` : ""}`; }).join("\n"));
+        parts.push("【POS 日別標記（非營運，警示已排除）】\n" + Object.entries(posFlags.items).slice(-20).map(([k, f]) => { const [d8, , kind] = k.split("::"); return `- ${d8} ${kind === "waste" ? "退菜/Void" : "折扣"}：${f.type}${f.note ? `（${f.note}）` : ""}｜排除${Number(f.amt) > 0 ? nt(f.amt) : "整天全額"}`; }).join("\n"));
       }
     }
     // 銀行/內帳
