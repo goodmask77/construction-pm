@@ -460,6 +460,25 @@ async function loadPosText() {
         arr.slice(0, 25).forEach(([n, v], i) => lines.push(`  ${i + 1}. ${n}［${v.cat}］ ${v.qty}份 ${nt(v.amt)}`))
         if (arr.length > 35) { lines.push('  …（中段略）…'); arr.slice(-10).forEach(([n, v]) => lines.push(`  末段: ${n}［${v.cat}］ ${v.qty}份 ${nt(v.amt)}`)) }
       }
+      // 品項連續未售（張良 2026-07-26：DD 要答得出「哪些餐點連續幾天沒賣」）：逐日明細算每品項最後售出日
+      const itemLast = {}
+      Object.values(det.days).forEach(day => (day.sheets?.['總銷售額 (以類別分類)'] || []).forEach(sec => {
+        if (sec.title === '總結') return
+        ;(sec.rows || []).forEach(r => {
+          if (!Array.isArray(r) || typeof r[0] !== 'string' || (Number(r[1]) || 0) <= 0) return
+          const dte = (day.date || '').slice(0, 10)
+          if (dte && (!itemLast[r[0]] || itemLast[r[0]] < dte)) itemLast[r[0]] = dte
+        })
+      }))
+      const lastD = entries[entries.length - 1]?.date
+      if (lastD && Object.keys(itemLast).length) {
+        const idle = Object.entries(itemLast).map(([n, ld]) => ({ n, ld, gap: Math.round((new Date(lastD + 'T00:00:00') - new Date(ld + 'T00:00:00')) / 864e5) })).filter(x => x.gap >= 5).sort((a, b) => b.gap - a.gap)
+        if (idle.length) {
+          lines.push(`【連續未售品項（本月內有賣過、距最新日結 ${lastD} 已 ≥5 天沒動；共 ${idle.length} 項）】`)
+          idle.slice(0, 25).forEach(x => lines.push(`  - ${x.n}：${x.gap} 天沒賣（最後售出 ${x.ld}）`))
+          lines.push('  ※只看得到本月有賣過的品項；上月就停售的看不到（逐日明細只到本月）')
+        }
+      }
     }
     // 逐筆交易（日結信 Transaction 附件，sp_finance_pm_pos_tx_月檔）：只濃縮「作廢/退」相關列（100%資料鐵則；答「7/23 那筆 Void 是哪張單」）
     const txd = kv['sp_finance_pm_pos_tx_' + mo]

@@ -815,6 +815,10 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
           }
           const slow = Object.entries(itemAgg).filter(([, v]) => v.qty <= 2 && v.amt > 0).map(([n, v]) => `${n}〔${v.cat}・${v.qty}份〕`);
           if (slow.length) out.push(["🐌", `滯銷提醒（期間只賣 ≤2 份）共 ${slow.length} 項：${slow.slice(0, 6).join("、")}${slow.length > 6 ? "…" : ""}（同名但分類不同＝POS 新舊重複品項，建議整併）`, { type: "allitems" }]);
+          // 連續沒賣偵測（張良 2026-07-26：整週掛蛋要主動提醒）：期間賣過但最近 ≥7 天完全沒動的品項
+          const lastDate = days[days.length - 1].date;
+          const idleItems = Object.entries(itemDay).map(([n, dm]) => { const ds = Object.keys(dm).filter(dd => dm[dd] > 0).sort(); return ds.length ? { n, ld: ds[ds.length - 1], gap: Math.round((new Date(lastDate + "T00:00:00") - new Date(ds[ds.length - 1] + "T00:00:00")) / 864e5) } : null; }).filter(x => x && x.gap >= 7).sort((a, b) => b.gap - a.gap);
+          if (idleItems.length) out.push(["😴", `連續 ${idleItems[0].gap >= 14 ? "兩週" : "7 天"}以上沒賣出 共 ${idleItems.length} 項：${idleItems.slice(0, 8).map(x => `${x.n}（${x.gap} 天，最後 ${x.ld.slice(5)}）`).join("、")}${idleItems.length > 8 ? "…" : ""}——考慮下架/調整或行銷推一波`, { type: "allitems" }]);
           // 日別標記（張良 2026-07-26：測試單/包場折扣確認過就不要再嚇人）——警示計算扣掉「排除金額」；沒填金額＝整天全額；原始數字照舊
           const flg = (d, kind) => posFlags?.items?.[`${d.date}::${posStore}::${kind}`];
           const exAmt = (d, kind, raw) => { const f = flg(d, kind); if (!f) return 0; const a = Number(f.amt); return a > 0 ? Math.min(a, raw) : raw; };
