@@ -68,6 +68,7 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
   const [posTx, setPosTx] = useState({});        // POS 逐筆交易（按月分檔 pm_pos_tx_YYYY-MM；點下鑽才載入，不拖慢日常）
   const [posFlags, setPosFlags] = useState(null); // POS 日別標記（非營運：測試/包場/行銷）→ 警示與佔比排除；原始數字不動
   const [posFlagEdit, setPosFlagEdit] = useState(null); // 標記編輯小卡 {date, kind, type, note}
+  const [posIdleCfg, setPosIdleCfg] = useState(null);   // 沒賣預警設定 {days, exCats[], exItems[]}——存 DB，DD 讀同一份（資料一致）
   const [posPeriod, setPosPeriod] = useState({ mode: "all", month: "", from: "", to: "" }); // 分析期間：全部 / 選月份 / 自訂（張良 2026-07-18）
   const [posDrill, setPosDrill] = useState(null); // 明細下鑽：{type, key} → 顯示組成該數字的原始資料
   const [posDrillView, setPosDrillView] = useState("list"); // 明細視角：list=清單 / pivot=品項×日期矩陣
@@ -105,6 +106,7 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
     try { const ps = await window.storage.get(K("pm_pos"), true); setPos(ps && ps.value ? JSON.parse(ps.value) : null); } catch (_) {}
     try { const ct = await window.storage.get(K("pm_ctbc"), true); setCtbc(ct && ct.value ? JSON.parse(ct.value) : null); } catch (_) {}
     try { const fl = await window.storage.get(K("pm_pos_flags"), true); setPosFlags(fl && fl.value ? JSON.parse(fl.value) : { items: {} }); } catch (_) { setPosFlags({ items: {} }); }
+    try { const ic = await window.storage.get(K("pm_pos_idlecfg"), true); setPosIdleCfg(ic && ic.value ? JSON.parse(ic.value) : { days: 7, exCats: [], exItems: [] }); } catch (_) { setPosIdleCfg({ days: 7, exCats: [], exItems: [] }); }
     try { const rc = await window.storage.get(K("pm_recon"), true); const v = rc && rc.value ? JSON.parse(rc.value) : null; if (v) setRecon({ links: v.links || {}, ignored: v.ignored || [] }); } catch (_) {}
     try { const cd = await window.storage.get("pm_data", true); setConCats(cd && cd.value ? JSON.parse(cd.value) : []); } catch (_) {}
     try { const pt = await window.storage.get("pm_petty", true); const v = pt && pt.value ? JSON.parse(pt.value) : {}; setConPetty({ spends: v.spends || [] }); } catch (_) {}
@@ -815,10 +817,11 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
           }
           const slow = Object.entries(itemAgg).filter(([, v]) => v.qty <= 2 && v.amt > 0).map(([n, v]) => `${n}〔${v.cat}・${v.qty}份〕`);
           if (slow.length) out.push(["🐌", `滯銷提醒（期間只賣 ≤2 份）共 ${slow.length} 項：${slow.slice(0, 6).join("、")}${slow.length > 6 ? "…" : ""}（同名但分類不同＝POS 新舊重複品項，建議整併）`, { type: "allitems" }]);
-          // 連續沒賣偵測（張良 2026-07-26：整週掛蛋要主動提醒）：期間賣過但最近 ≥7 天完全沒動的品項
+          // 連續沒賣偵測（張良 2026-07-26）：跟「😴 沒賣預警」區同一份設定（門檻天數＋排除清單），摘要只給結論、細節看區塊
+          const icfg = posIdleCfg || { days: 7, exCats: [], exItems: [] };
           const lastDate = days[days.length - 1].date;
-          const idleItems = Object.entries(itemDay).map(([n, dm]) => { const ds = Object.keys(dm).filter(dd => dm[dd] > 0).sort(); return ds.length ? { n, ld: ds[ds.length - 1], gap: Math.round((new Date(lastDate + "T00:00:00") - new Date(ds[ds.length - 1] + "T00:00:00")) / 864e5) } : null; }).filter(x => x && x.gap >= 7).sort((a, b) => b.gap - a.gap);
-          if (idleItems.length) out.push(["😴", `連續 ${idleItems[0].gap >= 14 ? "兩週" : "7 天"}以上沒賣出 共 ${idleItems.length} 項：${idleItems.slice(0, 8).map(x => `${x.n}（${x.gap} 天，最後 ${x.ld.slice(5)}）`).join("、")}${idleItems.length > 8 ? "…" : ""}——考慮下架/調整或行銷推一波`, { type: "allitems" }]);
+          const idleItems = Object.entries(itemDay).map(([n, dm]) => { const ds = Object.keys(dm).filter(dd => dm[dd] > 0).sort(); return ds.length ? { n, ld: ds[ds.length - 1], gap: Math.round((new Date(lastDate + "T00:00:00") - new Date(ds[ds.length - 1] + "T00:00:00")) / 864e5), cat: itemAgg[n]?.cat || "" } : null; }).filter(x => x && x.gap >= icfg.days && !icfg.exCats.includes(x.cat) && !icfg.exItems.includes(x.n)).sort((a, b) => b.gap - a.gap);
+          if (idleItems.length) out.push(["😴", `沒賣預警：${idleItems.length} 項超過 ${icfg.days} 天沒賣出（最久 ${idleItems[0].n} ${idleItems[0].gap} 天）——詳見下方「😴 沒賣預警」區，天數/排除項目都能調`]);
           // 日別標記（張良 2026-07-26：測試單/包場折扣確認過就不要再嚇人）——警示計算扣掉「排除金額」；沒填金額＝整天全額；原始數字照舊
           const flg = (d, kind) => posFlags?.items?.[`${d.date}::${posStore}::${kind}`];
           const exAmt = (d, kind, raw) => { const f = flg(d, kind); if (!f) return 0; const a = Number(f.amt); return a > 0 ? Math.min(a, raw) : raw; };
@@ -1013,6 +1016,7 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
         // 日別標記存檔（pm_pos_flags 一份文件；key=日期::店::類別）
         const saveFlags = (next) => { setPosFlags(next); window.storage.set(K("pm_pos_flags"), JSON.stringify(next), true).catch(() => {}); };
         const removeFlag = (fkey) => { const next = { ...(posFlags || { items: {} }), items: { ...(posFlags?.items || {}) } }; delete next.items[fkey]; saveFlags(next); };
+        const saveIdleCfg = (next) => { setPosIdleCfg(next); window.storage.set(K("pm_pos_idlecfg"), JSON.stringify(next), true).catch(() => {}); };
         const WD = ["日", "一", "二", "三", "四", "五", "六"];
         const wd = (v) => (typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v)) ? `${v.slice(5)}（${WD[new Date(v + "T00:00:00").getDay()]}）` : v;
         const kpi = (label, val, sub2, cl, onClick) => (
@@ -1237,6 +1241,69 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
                     );
                   })()}
                 </div>
+                {/* 😴 沒賣預警（張良 2026-07-26：重要的事要顯眼好查閱、天數可任選、可排除包場/工具箱類、圖表可截圖問 DD）——設定存 DB，DD 讀同一份 */}
+                {(() => {
+                  const cfg = posIdleCfg || { days: 7, exCats: [], exItems: [] };
+                  const lastDate = days[days.length - 1].date;
+                  const stripDates = days.slice(-14).map(d => d.date);
+                  const idleAll = Object.entries(itemDay).map(([n, dm]) => {
+                    const ds = Object.keys(dm).filter(dd => dm[dd] > 0).sort();
+                    if (!ds.length) return null;
+                    return { n, ld: ds[ds.length - 1], gap: Math.round((new Date(lastDate + "T00:00:00") - new Date(ds[ds.length - 1] + "T00:00:00")) / 864e5), cat: itemAgg[n]?.cat || "" };
+                  }).filter(Boolean);
+                  const hits = idleAll.filter(x => x.gap >= cfg.days && !cfg.exCats.includes(x.cat) && !cfg.exItems.includes(x.n)).sort((a, b) => b.gap - a.gap);
+                  const chip = (label, on, onClick) => <button key={label} onClick={onClick} style={{ border: `1.5px solid ${on ? "#9b6a6a" : C.line}`, background: on ? "#f3e6e6" : "#fff", color: on ? "#8a4040" : C.sub, borderRadius: 12, padding: "2px 10px", fontSize: 11, fontWeight: 600, cursor: "pointer", textDecoration: on ? "line-through" : "none" }}>{label}</button>;
+                  return (
+                    <div style={{ ...chartBox2, marginBottom: 10, borderLeft: "4px solid #c98a14" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 6 }}>
+                        <span style={{ fontSize: 11.5, fontWeight: 700, color: C.sub }}>😴 沒賣預警 <span style={{ fontWeight: 400, color: C.faint }}>（超過門檻天數一份都沒賣出的品項；資料＝本月逐日明細）</span></span>
+                        <div style={{ flex: 1 }} />
+                        <span style={{ fontSize: 11, color: C.faint }}>門檻</span>
+                        <div style={{ display: "inline-flex", background: C.soft, border: `1px solid ${C.line}`, borderRadius: 8, padding: 2, gap: 2 }}>
+                          {[3, 5, 7, 14].map(dv => (
+                            <button key={dv} onClick={() => saveIdleCfg({ ...cfg, days: dv })} style={{ padding: "4px 10px", borderRadius: 6, border: `1px solid ${cfg.days === dv ? C.line : "transparent"}`, background: cfg.days === dv ? "#fff" : "transparent", color: cfg.days === dv ? C.text : C.sub, fontSize: 12, fontWeight: cfg.days === dv ? 700 : 400, cursor: "pointer" }}>{dv} 天</button>
+                          ))}
+                        </div>
+                      </div>
+                      <div style={{ display: "flex", gap: 5, flexWrap: "wrap", alignItems: "center", marginBottom: 8 }}>
+                        <span style={{ fontSize: 11, color: C.faint }}>排除分類（本來就不是每天賣的，點了畫掉不列入）：</span>
+                        {catArr2.map(([k]) => chip(k, cfg.exCats.includes(k), () => saveIdleCfg({ ...cfg, exCats: cfg.exCats.includes(k) ? cfg.exCats.filter(c2 => c2 !== k) : [...cfg.exCats, k] })))}
+                      </div>
+                      {hits.length === 0 ? (
+                        <div style={{ fontSize: 12.5, color: "#2c5a38", fontWeight: 600, padding: "6px 0" }}>✅ 目前沒有超過 {cfg.days} 天沒賣的品項（排除 {cfg.exCats.length} 分類 / {cfg.exItems.length} 品項）</div>
+                      ) : (
+                        <div style={{ overflowX: "auto" }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "2px 0" }}>
+                            <span style={{ flex: "0 0 230px" }} />
+                            <div style={{ display: "flex", gap: 2 }}>{stripDates.map(dd => <div key={dd} style={{ width: 16, textAlign: "center", fontSize: 8.5, color: C.faint, fontFamily: MONOF }}>{Number(dd.slice(8))}</div>)}</div>
+                            <span style={{ width: 64, textAlign: "right", fontSize: 9.5, color: C.faint }}>沒賣</span>
+                            <span style={{ width: 78, fontSize: 9.5, color: C.faint }}>最後售出</span>
+                            <span style={{ width: 44 }} />
+                          </div>
+                          {hits.slice(0, 30).map(x => (
+                            <div key={x.n} style={{ display: "flex", alignItems: "center", gap: 8, padding: "3px 0", borderTop: "1px solid #f0ead9" }}>
+                              <span style={{ flex: "0 0 230px", fontSize: 12, color: C.text, overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis" }} title={`${x.n}（${x.cat}）`}>{x.n} <span style={{ color: C.faint, fontSize: 10 }}>{x.cat}</span></span>
+                              <div style={{ display: "flex", gap: 2 }}>
+                                {stripDates.map(dd => { const q = (itemDay[x.n] || {})[dd] || 0; return <div key={dd} title={`${dd}${q ? `・${q} 份` : "・沒賣"}`} style={{ width: 16, height: 16, borderRadius: 3, background: q ? "#3f7d4e" : "#eee5d3", color: "#fff", fontSize: 9, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: MONOF, fontWeight: 700 }}>{q || ""}</div>; })}
+                              </div>
+                              <span style={{ width: 64, textAlign: "right", fontFamily: MONOF, fontSize: 12.5, fontWeight: 800, color: C.red }}>{x.gap} 天</span>
+                              <span style={{ width: 78, fontFamily: MONOF, fontSize: 11, color: C.sub }}>{x.ld.slice(5)}（{WD2[new Date(x.ld + "T00:00:00").getDay()]}）</span>
+                              <button onClick={() => saveIdleCfg({ ...cfg, exItems: [...cfg.exItems, x.n] })} title="這項本來就不常賣，之後不要再提醒" style={{ width: 44, border: `1px dashed ${C.line}`, background: "#fff", color: C.sub, borderRadius: 8, padding: "1px 6px", fontSize: 10.5, cursor: "pointer" }}>×排除</button>
+                            </div>
+                          ))}
+                          {hits.length > 30 && <div style={{ fontSize: 11, color: C.faint, marginTop: 4 }}>…共 {hits.length} 項，只列前 30（把門檻調高或排除分類可縮短清單）</div>}
+                        </div>
+                      )}
+                      {cfg.exItems.length > 0 && (
+                        <div style={{ display: "flex", gap: 5, flexWrap: "wrap", alignItems: "center", marginTop: 8, paddingTop: 6, borderTop: "1px dashed #e5dcc8" }}>
+                          <span style={{ fontSize: 11, color: C.faint }}>已排除品項（點 × 移回）：</span>
+                          {cfg.exItems.map(n => <span key={n} style={{ fontSize: 11, color: C.sub, background: C.soft, borderRadius: 10, padding: "1px 8px", textDecoration: "line-through" }}>{n} <span onClick={() => saveIdleCfg({ ...cfg, exItems: cfg.exItems.filter(x => x !== n) })} style={{ cursor: "pointer", textDecoration: "none" }}>×</span></span>)}
+                        </div>
+                      )}
+                      <div style={{ fontSize: 10.5, color: C.faint, marginTop: 6 }}>設定（門檻/排除）會存起來，DD 回答「哪些餐點連續沒賣」也用同一份設定。限制：只看得到本月有賣過的品項，上月就停售的不在清單裡。</div>
+                    </div>
+                  );
+                })()}
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 10, marginBottom: 12 }}>
                   <div style={chartBox2}>
                     <div style={{ fontSize: 11.5, fontWeight: 700, color: C.sub, marginBottom: 8 }}>分類銷售（期間累計）</div>

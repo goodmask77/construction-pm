@@ -435,7 +435,7 @@ async function loadPosText() {
   try {
     const now = new Date(Date.now() + 8 * 3600e3)
     const mo = now.toISOString().slice(0, 7)
-    const kv = await kvGetMany(['sp_finance_pm_pos', 'sp_finance_pm_pos_d_' + mo, 'sp_finance_pm_pos_tx_' + mo, 'sp_finance_pm_pos_flags'])
+    const kv = await kvGetMany(['sp_finance_pm_pos', 'sp_finance_pm_pos_d_' + mo, 'sp_finance_pm_pos_tx_' + mo, 'sp_finance_pm_pos_flags', 'sp_finance_pm_pos_idlecfg'])
     const pos = kv['sp_finance_pm_pos']
     const entries = pos && Array.isArray(pos.entries) ? pos.entries : []
     if (!entries.length) return ''
@@ -461,22 +461,29 @@ async function loadPosText() {
         if (arr.length > 35) { lines.push('  …（中段略）…'); arr.slice(-10).forEach(([n, v]) => lines.push(`  末段: ${n}［${v.cat}］ ${v.qty}份 ${nt(v.amt)}`)) }
       }
       // 品項連續未售（張良 2026-07-26：DD 要答得出「哪些餐點連續幾天沒賣」）：逐日明細算每品項最後售出日
-      const itemLast = {}
+      // 門檻/排除清單跟 App「😴 沒賣預警」區同一份設定（sp_finance_pm_pos_idlecfg）＝資料一致
+      const icfg = kv['sp_finance_pm_pos_idlecfg'] || {}
+      const idleDays = Number(icfg.days) || 7
+      const exCats = Array.isArray(icfg.exCats) ? icfg.exCats : []
+      const exItems = Array.isArray(icfg.exItems) ? icfg.exItems : []
+      const itemLast = {}, itemCat = {}
       Object.values(det.days).forEach(day => (day.sheets?.['總銷售額 (以類別分類)'] || []).forEach(sec => {
         if (sec.title === '總結') return
         ;(sec.rows || []).forEach(r => {
           if (!Array.isArray(r) || typeof r[0] !== 'string' || (Number(r[1]) || 0) <= 0) return
           const dte = (day.date || '').slice(0, 10)
-          if (dte && (!itemLast[r[0]] || itemLast[r[0]] < dte)) itemLast[r[0]] = dte
+          if (dte && (!itemLast[r[0]] || itemLast[r[0]] < dte)) { itemLast[r[0]] = dte; itemCat[r[0]] = sec.title }
         })
       }))
       const lastD = entries[entries.length - 1]?.date
       if (lastD && Object.keys(itemLast).length) {
-        const idle = Object.entries(itemLast).map(([n, ld]) => ({ n, ld, gap: Math.round((new Date(lastD + 'T00:00:00') - new Date(ld + 'T00:00:00')) / 864e5) })).filter(x => x.gap >= 5).sort((a, b) => b.gap - a.gap)
+        const idle = Object.entries(itemLast).map(([n, ld]) => ({ n, ld, gap: Math.round((new Date(lastD + 'T00:00:00') - new Date(ld + 'T00:00:00')) / 864e5) })).filter(x => x.gap >= idleDays && !exCats.includes(itemCat[x.n]) && !exItems.includes(x.n)).sort((a, b) => b.gap - a.gap)
         if (idle.length) {
-          lines.push(`【連續未售品項（本月內有賣過、距最新日結 ${lastD} 已 ≥5 天沒動；共 ${idle.length} 項）】`)
-          idle.slice(0, 25).forEach(x => lines.push(`  - ${x.n}：${x.gap} 天沒賣（最後售出 ${x.ld}）`))
+          lines.push(`【連續未售品項（門檻 ${idleDays} 天＝老闆在營運報表「沒賣預警」設的；已排除 ${exCats.length} 分類/${exItems.length} 品項；距最新日結 ${lastD}；共 ${idle.length} 項）】`)
+          idle.slice(0, 25).forEach(x => lines.push(`  - ${x.n}［${itemCat[x.n] || ''}］：${x.gap} 天沒賣（最後售出 ${x.ld}）`))
           lines.push('  ※只看得到本月有賣過的品項；上月就停售的看不到（逐日明細只到本月）')
+        } else {
+          lines.push(`【連續未售品項】目前沒有超過 ${idleDays} 天沒賣的品項（門檻與排除清單＝老闆在「沒賣預警」區的設定）`)
         }
       }
     }
