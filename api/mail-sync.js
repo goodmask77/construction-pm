@@ -245,6 +245,22 @@ async function syncPos(days) {
 
 export default async function handler(req, res) {
   if (!SB_URL || !SB_KEY) return res.status(200).json({ ok: false, error: '缺 Supabase 設定' })
+  // 診斷探針（只回結構統計，不回金額/內容——端點公開，保守）：?txprobe=YYYY-MM-DD
+  if (req.query?.txprobe) {
+    const dt = String(req.query.txprobe)
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dt)) return res.status(400).json({ ok: false })
+    const doc = (await kvGet('sp_finance_pm_pos_tx_' + dt.slice(0, 7))) || { days: {} }
+    const out2 = {}
+    for (const [dk, day] of Object.entries(doc.days)) {
+      if (!dk.startsWith(dt)) continue
+      const t = day.tx || {}
+      const si = (t.h || []).findIndex(h => /狀態|status/i.test(h))
+      const statuses = {}
+      ;(t.r || []).forEach(row => { const s = si >= 0 ? String(row[si] || '—') : '—'; statuses[s] = (statuses[s] || 0) + 1 })
+      out2[dk] = { rows: (t.r || []).length, statuses, voidLike: (t.r || []).filter(row => row.some(c => /void|作廢|退菜|退單|取消|refund/i.test(String(c)))).length }
+    }
+    return res.status(200).json({ ok: true, probe: dt, days: out2 })
+  }
   const days = Math.min(120, Math.max(1, parseInt(req.query?.days || '3', 10) || 3)) // 每小時 cron 跑近3天(增量)；手動可帶 ?days=N
   const out = { ok: true, days }
   try { out.ctbc = await syncCtbc(days) } catch (e) { out.ctbc = { error: e?.message || String(e) } }

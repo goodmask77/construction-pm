@@ -113,10 +113,10 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
     for (const mo of months) { try { const d = await window.storage.get(K("pm_pos_d_" + mo), true); if (d && d.value) out[mo] = JSON.parse(d.value); } catch (_) {} }
     setPosDet(out);
   })(); }, [pos]); // eslint-disable-line
-  // 逐筆交易月檔：開「逐筆交易」下鑽才抓那個月（undefined=還沒抓/抓取中、null=庫裡沒有）
+  // 逐筆交易月檔：開「逐筆交易」下鑽才抓那個月（有檔=不重抓；上次抓到空＝每次點都再試一次，後端剛回補完不用重新整理頁面）
   useEffect(() => { (async () => {
     const mo = posDrill?.type === "tx" ? String(posDrill.key || "").slice(0, 7) : null;
-    if (!mo || posTx[mo] !== undefined) return;
+    if (!mo || posTx[mo]) return;
     try { const d = await window.storage.get(K("pm_pos_tx_" + mo), true); setPosTx(p => ({ ...p, [mo]: d && d.value ? JSON.parse(d.value) : null })); }
     catch (_) { setPosTx(p => ({ ...p, [mo]: null })); }
   })(); }, [posDrill]); // eslint-disable-line
@@ -911,12 +911,17 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
               note: txDoc === undefined ? "載入中…再點一下重新整理" : "這一天的逐筆交易還沒入庫——按上面的「🔄 更新」補抓一次（新日結信自動入庫；舊日期只要信還在信箱也會自動回補）",
             };
             const isMoneyCol = (h) => /金額|amount|total|小計|合計|稅|服務費|折扣|價|退|void/i.test(String(h));
+            // 狀態統計放最前面：60 筆裡有 1 筆已取消，先講重點再看清單（張良 2026-07-26）
+            const si3 = t3.h.findIndex(h => /狀態|status/i.test(String(h)));
+            const stat3 = {};
+            if (si3 >= 0) t3.r.forEach(row => { const s = String(row[si3] || "—"); stat3[s] = (stat3[s] || 0) + 1; });
+            const statTxt = Object.entries(stat3).sort((a, b) => a[1] - b[1]).map(([s, n]) => `${s} ${n} 筆`).join("、");
             return {
               title: ttl, cols: t3.h, back,
               rows: t3.r.map(row => t3.h.map((h, j) => { const v = row[j]; return typeof v === "number" ? (isMoneyCol(h) ? fmt(v) : String(v)) : (v ?? ""); })),
               numIdx: new Set(t3.h.map((_, j) => j).filter(j => t3.r.some(row => typeof row[j] === "number"))),
               redRow: (row) => row.some(c => /void|作廢|退菜|退單|取消|refund/i.test(String(c))),
-              note: "來源：日結信 Transaction 附件（每天跟日結總表一起寄來）→ 逐筆無刪減入庫 pm_pos_tx_月份・紅字列＝作廢/退相關・點欄位標題可排序",
+              note: `本日 ${t3.r.length} 筆${statTxt ? `：${statTxt}` : ""}・紅字列＝作廢/退/取消相關（點「狀態」欄標題可把它排到最上面）・來源：日結信 Transaction 附件逐筆無刪減入庫`,
             };
           }
           if (dr.type === "coupon") {
