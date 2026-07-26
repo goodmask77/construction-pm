@@ -60,9 +60,9 @@ async function loadSpaceAIContext() {
       } catch (_) { return await g(legacy); }
     };
     const d0 = new Date(); const mo = `${d0.getFullYear()}-${String(d0.getMonth() + 1).padStart(2, "0")}`;
-    const [snapC, snapT, snapK, snapF, tasks, crewRoster, crewOld, pos, posD, posTx, bank, ctbc, accounts, ledger, conclusions, mailRules, mailLog, supply, supplyOrders, supplyRecipesRaw] = await Promise.all([
+    const [snapC, snapT, snapK, snapF, tasks, crewRoster, crewOld, pos, posD, posTx, posFlags, bank, ctbc, accounts, ledger, conclusions, mailRules, mailLog, supply, supplyOrders, supplyRecipesRaw] = await Promise.all([
       g("pm_bot_context"), g("sp_team_pm_bot_context"), g("sp_crew_pm_bot_context"), g("sp_finance_pm_bot_context"),
-      recs("pm_tasks_v2", "pm_task_", "pm_tasks"), g("sp_crew_kb_roster"), g("sp_crew_kb_360"), g("sp_finance_pm_pos"), g("sp_finance_pm_pos_d_" + mo), g("sp_finance_pm_pos_tx_" + mo),
+      recs("pm_tasks_v2", "pm_task_", "pm_tasks"), g("sp_crew_kb_roster"), g("sp_crew_kb_360"), g("sp_finance_pm_pos"), g("sp_finance_pm_pos_d_" + mo), g("sp_finance_pm_pos_tx_" + mo), g("sp_finance_pm_pos_flags"),
       g("sp_finance_pm_bank"), g("sp_finance_pm_ctbc"), g("sp_finance_pm_fin_accounts"), recs("sp_finance_pm_fin_ledger_v2", "sp_finance_pm_fin_tx_", "sp_finance_pm_fin_ledger"),
       g("pm_conclusions"), g("sp_lw_pm_mail_rules"), g("sp_lw_pm_mail_log"), g("sp_supply_pm_supply"),
       g("sp_supply_pm_orders"), getSharedPrefix("sp_supply_pm_recipe_v_"),
@@ -125,6 +125,10 @@ async function loadSpaceAIContext() {
           (t.r || []).forEach(row => { if (row.some(c => /void|作廢|退菜|退單|取消|refund/i.test(String(c)))) bad.push(`- ${day.date} ` + t.h.map((h, j) => (row[j] !== "" && row[j] != null) ? `${h}:${row[j]}` : "").filter(Boolean).join("｜")); });
         });
         if (bad.length) parts.push("【本月逐筆交易「作廢/退」相關（" + bad.length + " 筆）】\n" + bad.slice(-40).join("\n"));
+      }
+      // 日別標記（老闆確認過的非營運事件：測試/包場/行銷——警示已排除，回答營運問題時當背景知識）
+      if (posFlags?.items && Object.keys(posFlags.items).length) {
+        parts.push("【POS 日別標記（非營運，警示已排除）】\n" + Object.entries(posFlags.items).slice(-20).map(([k, f]) => { const [d8, , kind] = k.split("::"); return `- ${d8} ${kind === "waste" ? "退菜/Void" : "折扣"}：${f.type}${f.note ? `（${f.note}）` : ""}`; }).join("\n"));
       }
     }
     // 銀行/內帳

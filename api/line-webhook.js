@@ -435,7 +435,7 @@ async function loadPosText() {
   try {
     const now = new Date(Date.now() + 8 * 3600e3)
     const mo = now.toISOString().slice(0, 7)
-    const kv = await kvGetMany(['sp_finance_pm_pos', 'sp_finance_pm_pos_d_' + mo, 'sp_finance_pm_pos_tx_' + mo])
+    const kv = await kvGetMany(['sp_finance_pm_pos', 'sp_finance_pm_pos_d_' + mo, 'sp_finance_pm_pos_tx_' + mo, 'sp_finance_pm_pos_flags'])
     const pos = kv['sp_finance_pm_pos']
     const entries = pos && Array.isArray(pos.entries) ? pos.entries : []
     if (!entries.length) return ''
@@ -470,6 +470,12 @@ async function loadPosText() {
         ;(t.r || []).forEach(row => { if (row.some(c => /void|作廢|退菜|退單|取消|refund/i.test(String(c)))) bad.push(`  - ${day.date} ` + t.h.map((h, j) => (row[j] !== '' && row[j] != null) ? `${h}:${row[j]}` : '').filter(Boolean).join('｜')) })
       })
       if (bad.length) { lines.push(`【本月逐筆交易「作廢/退」相關（共 ${bad.length} 筆）】`); bad.slice(-40).forEach(l => lines.push(l)) }
+    }
+    // 日別標記（老闆確認過的非營運事件：測試/包場/行銷——警示已排除，回答時要當背景知識）
+    const flags = kv['sp_finance_pm_pos_flags']
+    if (flags && flags.items && Object.keys(flags.items).length) {
+      lines.push('【POS 日別標記（老闆確認過的非營運事件，警示已排除）】')
+      Object.entries(flags.items).slice(-20).forEach(([k, f]) => { const [d8, , kind] = k.split('::'); lines.push(`  - ${d8} ${kind === 'waste' ? '退菜/Void' : '折扣'}：${f.type}${f.note ? `（${f.note}）` : ''}`) })
     }
     return lines.join('\n')
   } catch (_) { return '' }

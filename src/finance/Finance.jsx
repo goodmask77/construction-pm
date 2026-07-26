@@ -66,6 +66,8 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
   const [reconAcct, setReconAcct] = useState("coop"); // 對帳帳戶切換：coop=合庫 / ctbc=中信
   const [posDet, setPosDet] = useState({});      // POS 明細（按月分檔 pm_pos_d_YYYY-MM：分類/商品/優惠券/付款）
   const [posTx, setPosTx] = useState({});        // POS 逐筆交易（按月分檔 pm_pos_tx_YYYY-MM；點下鑽才載入，不拖慢日常）
+  const [posFlags, setPosFlags] = useState(null); // POS 日別標記（非營運：測試/包場/行銷）→ 警示與佔比排除；原始數字不動
+  const [posFlagEdit, setPosFlagEdit] = useState(null); // 標記編輯小卡 {date, kind, type, note}
   const [posPeriod, setPosPeriod] = useState({ mode: "all", month: "", from: "", to: "" }); // 分析期間：全部 / 選月份 / 自訂（張良 2026-07-18）
   const [posDrill, setPosDrill] = useState(null); // 明細下鑽：{type, key} → 顯示組成該數字的原始資料
   const [posDrillView, setPosDrillView] = useState("list"); // 明細視角：list=清單 / pivot=品項×日期矩陣
@@ -102,6 +104,7 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
     try { const bk = await window.storage.get(K("pm_bank"), true); setBank(bk && bk.value ? JSON.parse(bk.value) : null); } catch (_) {}
     try { const ps = await window.storage.get(K("pm_pos"), true); setPos(ps && ps.value ? JSON.parse(ps.value) : null); } catch (_) {}
     try { const ct = await window.storage.get(K("pm_ctbc"), true); setCtbc(ct && ct.value ? JSON.parse(ct.value) : null); } catch (_) {}
+    try { const fl = await window.storage.get(K("pm_pos_flags"), true); setPosFlags(fl && fl.value ? JSON.parse(fl.value) : { items: {} }); } catch (_) { setPosFlags({ items: {} }); }
     try { const rc = await window.storage.get(K("pm_recon"), true); const v = rc && rc.value ? JSON.parse(rc.value) : null; if (v) setRecon({ links: v.links || {}, ignored: v.ignored || [] }); } catch (_) {}
     try { const cd = await window.storage.get("pm_data", true); setConCats(cd && cd.value ? JSON.parse(cd.value) : []); } catch (_) {}
     try { const pt = await window.storage.get("pm_petty", true); const v = pt && pt.value ? JSON.parse(pt.value) : {}; setConPetty({ spends: v.spends || [] }); } catch (_) {}
@@ -812,10 +815,21 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
           }
           const slow = Object.entries(itemAgg).filter(([, v]) => v.qty <= 2 && v.amt > 0).map(([n, v]) => `${n}〔${v.cat}・${v.qty}份〕`);
           if (slow.length) out.push(["🐌", `滯銷提醒（期間只賣 ≤2 份）共 ${slow.length} 項：${slow.slice(0, 6).join("、")}${slow.length > 6 ? "…" : ""}（同名但分類不同＝POS 新舊重複品項，建議整併）`, { type: "allitems" }]);
-          const discAbs = Math.abs(sum(days, "discount"));
-          if (revSum && discAbs / revSum > 0.03) out.push(["⚠️", `折扣佔營收 ${Math.round(discAbs / revSum * 100)}%（${fmt(discAbs)}）超過 3% 警戒——點我看逐筆明細（誰給的、為什麼）`, { type: "coupon" }]);
-          const wasteAbs = Math.abs(sum(days, "voidItems")) + Math.abs(sum(days, "returnDish"));
-          if (revSum && wasteAbs / revSum > 0.02) out.push(["⚠️", `退菜＋Void 佔營收 ${Math.round(wasteAbs / revSum * 100)}%（${fmt(wasteAbs)}）偏高——點我看逐日追蹤`, { type: "waste" }]);
+          // 日別標記（張良 2026-07-26：測試單/包場折扣確認過就不要再嚇人）——警示計算排除已標記天；原始數字照舊
+          const flg = (d, kind) => posFlags?.items?.[`${d.date}::${posStore}::${kind}`];
+          const discDays = days.filter(d => !flg(d, "discount")), discEx = days.length - discDays.length;
+          const discAbs = Math.abs(sum(discDays, "discount"));
+          if (revSum && discAbs / revSum > 0.03) out.push(["⚠️", `折扣佔營收 ${Math.round(discAbs / revSum * 100)}%（${fmt(discAbs)}）超過 3% 警戒${discEx ? `（已排除 ${discEx} 天標記非營運）` : ""}——點我看逐筆明細（誰給的、為什麼）`, { type: "coupon" }]);
+          const wasteDays = days.filter(d => !flg(d, "waste")), wasteEx = days.length - wasteDays.length;
+          const wasteAbs = Math.abs(sum(wasteDays, "voidItems")) + Math.abs(sum(wasteDays, "returnDish"));
+          if (revSum && wasteAbs / revSum > 0.02) out.push(["⚠️", `退菜＋Void 佔營收 ${Math.round(wasteAbs / revSum * 100)}%（${fmt(wasteAbs)}）偏高${wasteEx ? `（已排除 ${wasteEx} 天標記非營運）` : ""}——點我看逐日追蹤`, { type: "waste" }]);
+          // 主動偵查：疑似測試/誤操作（退菜=Void 同額且佔營收>20%）與異常大額折扣日——沒標記才提醒，確認後標記就安靜
+          days.forEach(d => {
+            const rv = Math.abs(d.returnDish || 0), vv = Math.abs(d.voidItems || 0);
+            if (rv > 0 && rv === vv && d.revenue && rv / d.revenue > 0.2 && !flg(d, "waste")) out.push(["🚨", `${d.date.slice(5)} 退菜＝Void 同額 ${fmt(rv)}（佔營收 ${Math.round(rv / d.revenue * 100)}%）疑似測試/誤操作——點我看該日逐筆，確認後按「＋標記」排除`, { type: "tx", key: d.date }]);
+            const dd = Math.abs(d.discount || 0);
+            if (dd > 20000 && !flg(d, "discount")) out.push(["🚨", `${d.date.slice(5)} 單日折扣 ${fmt(dd)} 異常大——確認原因後到明細按「＋標記」（包場/行銷）排除警示`, { type: "coupon" }]);
+          });
           if (avgTicket) { const t1 = days.slice(0, Math.floor(days.length / 2)), t2 = days.slice(-Math.floor(days.length / 2)); const g1 = sum(t1, "guests"), g2 = sum(t2, "guests"); if (g1 && g2) { const a = sum(t1, "revenue") / g1, b = sum(t2, "revenue") / g2; if (Math.abs(b - a) / a > 0.15) out.push([b > a ? "💡" : "🔻", `客單價${b > a ? "上升" : "下降"}：前半 ${fmt(Math.round(a))} → 後半 ${fmt(Math.round(b))}`]); } }
           return out;
         })();
@@ -889,13 +903,14 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
             };
           }
           if (dr.type === "waste") return {
-            title: "退菜＋Void（作廢）逐日追蹤", cols: ["日期", "退菜", "Void", "退單", "合計", "佔當日營收"],
+            title: "退菜＋Void（作廢）逐日追蹤", cols: ["日期", "退菜", "Void", "退單", "合計", "佔當日營收", "標記"],
             rows: [...days].reverse().map(d => {
               const w = Math.abs(d.returnDish || 0) + Math.abs(d.voidItems || 0);
-              return [d.date, fmt(Math.abs(d.returnDish || 0)), fmt(Math.abs(d.voidItems || 0)), d.refund || 0, fmt(w), d.revenue ? (w / d.revenue * 100).toFixed(1) + "%" : "—"];
+              return [d.date, fmt(Math.abs(d.returnDish || 0)), fmt(Math.abs(d.voidItems || 0)), d.refund || 0, fmt(w), d.revenue ? (w / d.revenue * 100).toFixed(1) + "%" : "—", ""];
             }),
             rowClick: (r) => ({ type: "tx", key: r[0] }),
-            note: "Void＝結帳前作廢的品項（點錯/客人改單/廚房已做但取消）；退菜＝送出後退回；退單＝整張單退掉。兩欄同額時很可能是同一筆事件被計兩次，「合計」會偏高——點任一列＝看該日逐筆交易，確認是哪張單",
+            flagCol: { kind: "waste", dateIdx: 0 },
+            note: "Void＝結帳前作廢的品項（點錯/客人改單/廚房已做但取消）；退菜＝送出後退回；退單＝整張單退掉。兩欄同額時很可能是同一筆事件被計兩次——點任一列＝看該日逐筆交易；確認是測試/包場就按「＋標記」，警示與佔比不再計入（原始數字保留）",
           };
           if (dr.type === "tx") {
             // 逐筆交易（日結信 Transaction 附件）：結構未知先泛用渲染——表頭原樣、金額欄加千分位、作廢/退相關整列紅字
@@ -962,7 +977,7 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
             const cellV = (dt, c2) => (byDay[dt][c2] ? fmt(byDay[dt][c2]) : "");
             const catTotal = (c2) => real.filter(x => x.cat === c2).reduce((t, x) => t + x.amtN, 0);
             const daily = {
-              v: { cols: ["日期", ...CATS, "合計", "佔當日營收"], rows: dayKeys.map(dt => [dt, ...CATS.map(c2 => cellV(dt, c2)), fmt(dayTotal(dt)), revOf(dt) ? (dayTotal(dt) / revOf(dt) * 100).toFixed(1) + "%" : ""]) },
+              v: { cols: ["日期", ...CATS, "合計", "佔當日營收", "標記"], rows: dayKeys.map(dt => [dt, ...CATS.map(c2 => cellV(dt, c2)), fmt(dayTotal(dt)), revOf(dt) ? (dayTotal(dt) / revOf(dt) * 100).toFixed(1) + "%" : "", ""]), flagCol: { kind: "discount", dateIdx: 0 } },
               t: { cols: ["類別", ...dayKeys.map(dt => dt.slice(5)), "期間合計"], rows: [...CATS.map(c2 => [c2, ...dayKeys.map(dt => cellV(dt, c2)), fmt(catTotal(c2))]), ["合計", ...dayKeys.map(dt => fmt(dayTotal(dt))), fmt(totalN)]] },
             };
             return {
@@ -987,6 +1002,9 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
         };
         const drill = buildDrill(posDrill);
         const openDrill = (dr) => { setPosDrillView(["allitems", "catmatrix"].includes(dr.type) ? "pivot" : "list"); setPosDrillSort(null); setPosPivotCats(null); setPosPivotSort(null); setPosDrill(dr); };
+        // 日別標記存檔（pm_pos_flags 一份文件；key=日期::店::類別）
+        const saveFlags = (next) => { setPosFlags(next); window.storage.set(K("pm_pos_flags"), JSON.stringify(next), true).catch(() => {}); };
+        const removeFlag = (fkey) => { const next = { ...(posFlags || { items: {} }), items: { ...(posFlags?.items || {}) } }; delete next.items[fkey]; saveFlags(next); };
         const WD = ["日", "一", "二", "三", "四", "五", "六"];
         const wd = (v) => (typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v)) ? `${v.slice(5)}（${WD[new Date(v + "T00:00:00").getDay()]}）` : v;
         const kpi = (label, val, sub2, cl, onClick) => (
@@ -1295,10 +1313,20 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
                           ); })}</tr></thead>
                           <tbody>
                             {rows2.length === 0 ? <tr><td colSpan={cols3.length} style={{ padding: 16, textAlign: "center", color: C.faint }}>期間內沒有資料</td></tr> :
-                              rows2.map((r, i) => { const rowRed = drill.redRow && drill.redRow(r); return (
+                              rows2.map((r, i) => { const rowRed = drill.redRow && drill.redRow(r); const fc = eff ? eff.flagCol : drill.flagCol; return (
                                 <tr key={i} onClick={drill.rowClick ? () => { const nx = drill.rowClick(r); if (nx) openDrill(nx); } : undefined} title={drill.rowClick ? "點我看該日逐筆交易" : undefined} style={{ background: i % 2 ? "#f8f4ea" : "#fff", cursor: drill.rowClick ? "pointer" : undefined }}
                                   onMouseEnter={drill.rowClick ? (e => e.currentTarget.style.background = "#f4efe5") : undefined} onMouseLeave={drill.rowClick ? (e => e.currentTarget.style.background = i % 2 ? "#f8f4ea" : "#fff") : undefined}>
-                                  {r.map((c2, j) => { const numCol = isNum(cols3[j], j); const disp = cols3[j] === "日期" ? wd(c2) : c2; const red = rowRed || redCell(cols3[j], String(disp)); return <td key={j} style={{ padding: "5px 10px", fontFamily: numCol || (typeof disp === "string" && /[0-9]/.test(disp) && j > 0) ? MONOF : undefined, textAlign: numCol ? "right" : "left", color: red ? "#b3261e" : disp === "" ? "#d5cbb6" : C.text, fontWeight: red ? 700 : undefined, borderTop: "1px solid #f0ead9", whiteSpace: "nowrap", fontSize: 11.5 }}>{disp === "" ? "—" : disp}</td>; })}
+                                  {r.map((c2, j) => {
+                                    // 標記欄：已標記→綠籤＋×移除；未標記→＋標記（開小卡）。點擊不觸發整列下鑽
+                                    if (fc && cols3[j] === "標記") {
+                                      const fkey = `${r[fc.dateIdx]}::${posStore}::${fc.kind}`;
+                                      const f = posFlags?.items?.[fkey];
+                                      return <td key={j} onClick={e => e.stopPropagation()} style={{ padding: "5px 10px", borderTop: "1px solid #f0ead9", whiteSpace: "nowrap", fontSize: 11 }}>
+                                        {f ? <span style={{ display: "inline-flex", alignItems: "center", gap: 4, background: "#eef5ef", border: `1px solid ${C.accent}`, color: "#2c5a38", borderRadius: 10, padding: "1px 8px", fontWeight: 700 }} title={f.note || ""}>🏷 {f.type}{f.note ? `・${f.note}` : ""}<span onClick={() => removeFlag(fkey)} style={{ cursor: "pointer", color: C.faint, fontWeight: 400, marginLeft: 2 }}>×</span></span>
+                                          : <button onClick={() => setPosFlagEdit({ date: r[fc.dateIdx], kind: fc.kind, type: "系統測試", note: "" })} style={{ border: `1px dashed ${C.line}`, background: "#fff", color: C.sub, borderRadius: 10, padding: "1px 8px", fontSize: 11, cursor: "pointer" }}>＋標記</button>}
+                                      </td>;
+                                    }
+                                    const numCol = isNum(cols3[j], j); const disp = cols3[j] === "日期" ? wd(c2) : c2; const red = rowRed || redCell(cols3[j], String(disp)); return <td key={j} style={{ padding: "5px 10px", fontFamily: numCol || (typeof disp === "string" && /[0-9]/.test(disp) && j > 0) ? MONOF : undefined, textAlign: numCol ? "right" : "left", color: red ? "#b3261e" : disp === "" ? "#d5cbb6" : C.text, fontWeight: red ? 700 : undefined, borderTop: "1px solid #f0ead9", whiteSpace: "nowrap", fontSize: 11.5 }}>{disp === "" ? "—" : disp}</td>; })}
                                 </tr>
                               ); })}
                           </tbody>
@@ -1364,6 +1392,24 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
                 </div>
               );
             })()}
+            {/* 日別標記小卡（張良 2026-07-26：測試/包場確認過就標記，警示不再計入；原始數字不動） */}
+            {posFlagEdit && (
+              <div onClick={e => e.target === e.currentTarget && setPosFlagEdit(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.35)", zIndex: 740, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+                <div style={{ background: "#fff", border: `1px solid ${C.line}`, borderRadius: 12, padding: 18, width: "min(420px,94vw)" }}>
+                  <div style={{ fontSize: 14, fontWeight: 700, color: C.text, marginBottom: 10 }}>🏷 標記 {posFlagEdit.date.slice(5)} 的{posFlagEdit.kind === "waste" ? "退菜/Void" : "折扣"}為非營運</div>
+                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 10 }}>
+                    {["系統測試", "包場/活動", "行銷/招待", "其他"].map(tp => (
+                      <button key={tp} onClick={() => setPosFlagEdit(fe => ({ ...fe, type: tp }))} style={{ border: `1.5px solid ${posFlagEdit.type === tp ? C.accent : C.line}`, background: posFlagEdit.type === tp ? C.accent : "#fff", color: posFlagEdit.type === tp ? "#fff" : C.sub, borderRadius: 14, padding: "4px 12px", fontSize: 12.5, fontWeight: 700, cursor: "pointer" }}>{tp}</button>
+                    ))}
+                  </div>
+                  <input value={posFlagEdit.note} onChange={e => setPosFlagEdit(fe => ({ ...fe, note: e.target.value }))} placeholder="原因（例：阿桑系統測試、婚禮包場）" style={{ width: "100%", boxSizing: "border-box", border: `1px solid ${C.line}`, borderRadius: 8, padding: "8px 10px", fontSize: 13, marginBottom: 12, background: "#fff", color: C.text }} />
+                  <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+                    <button onClick={() => setPosFlagEdit(null)} style={{ border: `1px solid ${C.line}`, background: "#fff", color: C.sub, borderRadius: 8, padding: "7px 16px", fontSize: 13, cursor: "pointer" }}>取消</button>
+                    <button onClick={() => { const fkey = `${posFlagEdit.date}::${posStore}::${posFlagEdit.kind}`; const next = { ...(posFlags || { items: {} }), items: { ...(posFlags?.items || {}), [fkey]: { type: posFlagEdit.type, note: posFlagEdit.note.trim(), at: new Date().toISOString() } } }; saveFlags(next); setPosFlagEdit(null); }} style={{ border: "none", background: C.accent, color: "#fff", borderRadius: 8, padding: "7px 18px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>✓ 完成</button>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         );
       })()}
