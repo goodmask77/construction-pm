@@ -140,6 +140,21 @@ function parsePosWorkbook(buf, subject) {
     _details: Object.fromEntries(wb.SheetNames.slice(1).map(sn => [sn, sheetSections(XLSX.utils.sheet_to_json(wb.Sheets[sn], { header: 1, raw: true, defval: '' }))])),
   }
 }
+// Transaction 附件（逐筆交易）→ 泛用表格解析：第一個「含≥3個字串格」的列＝表頭，其後＝資料列
+// 結構未知先無損保留（h=表頭 r=列），前端泛用渲染；欄名由 sync 回傳 txCols 可驗
+function parseTxSheet(buf) {
+  try {
+    const wb = XLSX.read(buf, { type: 'buffer' })
+    const grid = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, raw: true, defval: '' })
+    const hi = grid.findIndex(row => row.filter(c => typeof c === 'string' && String(c).trim()).length >= 3)
+    if (hi < 0) return null
+    const h = grid[hi].map(c => String(c ?? '').trim())
+    const r = grid.slice(hi + 1)
+      .map(row => row.slice(0, h.length).map(c => typeof c === 'number' ? c : String(c ?? '').trim()))
+      .filter(row => row.some(c => c !== ''))
+    return r.length ? { h, r, sn: wb.SheetNames } : null
+  } catch (_) { return null }
+}
 async function syncPos(days) {
   // 來源：money@gumgum.club（設 MAIL_USER2/MAIL_PASS2 後）＋ goodmask77（吃「轉寄/自動轉寄」的報表信）
   const accounts = []
@@ -152,6 +167,7 @@ async function syncPos(days) {
   const storeKeyOf = (n) => /groun/i.test(n || '') ? 'ground' : 'abeach'
   const haveCombo = new Set(store.entries.map(e => (e.date || '') + '|' + storeKeyOf(e.store)))
   const found = {}
+  const txAll = [] // 逐筆交易（含已入庫日期→回補）
   let scanned = 0
   for (const [au, ap] of accounts) await withMailboxes(au, ap, async (client) => {
     let uids
@@ -170,12 +186,18 @@ async function syncPos(days) {
       const { content } = await client.download(mm.uid, undefined, { uid: true })
       const chunks = []; for await (const c of content) chunks.push(c)
       const parsed = await simpleParser(Buffer.concat(chunks))
-      const att = (parsed.attachments || []).find(a => /\.xlsx?$/i.test(a.filename || ''))
+      const atts = parsed.attachments || []
+      // 同一封信有三個附件：DailyClosing(日結)/Transaction(逐筆交易)/Reconciliation(對帳)——先照名字挑，挑不到退回「第一個 xls」（舊行為）
+      const att = atts.find(a => /daily\s*closing/i.test(a.filename || '')) || atts.find(a => /\.xlsx?$/i.test(a.filename || ''))
       if (!att) continue
       try {
         const rec = parsePosWorkbook(att.content, mm.subject)
         // POS 人為誤操作有時同一天寄兩封（一封正確、一封全 0）→ 全 0 的空報表一律不入庫
         if ((Number(rec.revenue) || 0) <= 0 && (Number(rec.txCount) || 0) <= 0) continue
+        // 逐筆交易附件：不論摘要是否已入庫都解析，之後回補到 tx 月檔（張良 2026-07-26：數字要能點到來源）
+        const attTx = atts.find(a => /^transaction/i.test((a.filename || '').trim()))
+        const tx = attTx ? parseTxSheet(attTx.content) : null
+        if (tx && rec.date) txAll.push({ date: rec.date, store: rec.store, tx })
         // id 加上店代碼，兩店同日不撞 id；再用 日期|店 組合擋掉舊格式 id 的重複入庫
         rec.id = rec.id + '-' + storeKeyOf(rec.store)
         if (!have.has(rec.id) && !haveCombo.has(rec.date + '|' + storeKeyOf(rec.store)) && !found[rec.id]) found[rec.id] = rec
@@ -203,7 +225,22 @@ async function syncPos(days) {
     store.updatedAt = new Date().toISOString()
     await kvPut('sp_finance_pm_pos', store, 'POS日結自動收信')
   }
-  return { scanned, added: add.length, total: store.entries.length }
+  // 逐筆交易另存 tx 月檔（sp_finance_pm_pos_tx_YYYY-MM）：跟 _d_ 分開＝前端點下鑽才載、不拖慢日常載入
+  // 只增不改：該日已有 tx 就不覆蓋；舊日期只要信還在信箱就會回補
+  let txPatched = 0
+  const txByMonth = {}
+  for (const t of txAll) (txByMonth[t.date.slice(0, 7)] = txByMonth[t.date.slice(0, 7)] || []).push(t)
+  for (const [mo, recs] of Object.entries(txByMonth)) {
+    const tid = 'sp_finance_pm_pos_tx_' + mo
+    const doc = (await kvGet(tid)) || { days: {} }
+    let changed = false
+    for (const t of recs) {
+      const dk = t.date + '::' + storeKeyOf(t.store)
+      if (!doc.days[dk]) { doc.days[dk] = { date: t.date, store: t.store, tx: t.tx }; changed = true; txPatched++ }
+    }
+    if (changed) { doc.updatedAt = new Date().toISOString(); await kvPut(tid, doc, 'POS逐筆交易入庫') }
+  }
+  return { scanned, added: add.length, total: store.entries.length, txParsed: txAll.length, txPatched, txCols: txAll[0]?.tx?.h || null }
 }
 
 export default async function handler(req, res) {

@@ -65,6 +65,7 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
   const [ctbc, setCtbc] = useState(null);        // 中信 e-Cash 匯款通知資料庫（自動收信入庫）
   const [reconAcct, setReconAcct] = useState("coop"); // 對帳帳戶切換：coop=合庫 / ctbc=中信
   const [posDet, setPosDet] = useState({});      // POS 明細（按月分檔 pm_pos_d_YYYY-MM：分類/商品/優惠券/付款）
+  const [posTx, setPosTx] = useState({});        // POS 逐筆交易（按月分檔 pm_pos_tx_YYYY-MM；點下鑽才載入，不拖慢日常）
   const [posPeriod, setPosPeriod] = useState({ mode: "all", month: "", from: "", to: "" }); // 分析期間：全部 / 選月份 / 自訂（張良 2026-07-18）
   const [posDrill, setPosDrill] = useState(null); // 明細下鑽：{type, key} → 顯示組成該數字的原始資料
   const [posDrillView, setPosDrillView] = useState("list"); // 明細視角：list=清單 / pivot=品項×日期矩陣
@@ -112,6 +113,13 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
     for (const mo of months) { try { const d = await window.storage.get(K("pm_pos_d_" + mo), true); if (d && d.value) out[mo] = JSON.parse(d.value); } catch (_) {} }
     setPosDet(out);
   })(); }, [pos]); // eslint-disable-line
+  // 逐筆交易月檔：開「逐筆交易」下鑽才抓那個月（undefined=還沒抓/抓取中、null=庫裡沒有）
+  useEffect(() => { (async () => {
+    const mo = posDrill?.type === "tx" ? String(posDrill.key || "").slice(0, 7) : null;
+    if (!mo || posTx[mo] !== undefined) return;
+    try { const d = await window.storage.get(K("pm_pos_tx_" + mo), true); setPosTx(p => ({ ...p, [mo]: d && d.value ? JSON.parse(d.value) : null })); }
+    catch (_) { setPosTx(p => ({ ...p, [mo]: null })); }
+  })(); }, [posDrill]); // eslint-disable-line
   // 即時同步：別台記的帳/改的帳戶 → 這裡畫面即時跟上（自己這台寫的不會收到）
   useEffect(() => {
     const un1 = subscribeRecords(K("pm_fin_tx_"), (id, tx) => {
@@ -886,8 +894,31 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
               const w = Math.abs(d.returnDish || 0) + Math.abs(d.voidItems || 0);
               return [d.date, fmt(Math.abs(d.returnDish || 0)), fmt(Math.abs(d.voidItems || 0)), d.refund || 0, fmt(w), d.revenue ? (w / d.revenue * 100).toFixed(1) + "%" : "—"];
             }),
-            note: "Void＝結帳前作廢的品項（點錯/客人改單/廚房已做但取消）；退菜＝送出後退回；退單＝整張單退掉。日結信只有每日總額、沒有逐筆明細——想看是哪道菜/誰操作，要到 Eats365 後台：報表 → 審計報告/交易紀錄",
+            rowClick: (r) => ({ type: "tx", key: r[0] }),
+            note: "Void＝結帳前作廢的品項（點錯/客人改單/廚房已做但取消）；退菜＝送出後退回；退單＝整張單退掉。兩欄同額時很可能是同一筆事件被計兩次，「合計」會偏高——點任一列＝看該日逐筆交易，確認是哪張單",
           };
+          if (dr.type === "tx") {
+            // 逐筆交易（日結信 Transaction 附件）：結構未知先泛用渲染——表頭原樣、金額欄加千分位、作廢/退相關整列紅字
+            const mo2 = String(dr.key).slice(0, 7);
+            const txDoc = posTx[mo2];
+            const m3 = txDoc?.days;
+            const ent3 = m3 ? (m3[`${dr.key}::${posStore}`] || ((m3[dr.key] && storeKeyOf(m3[dr.key].store) === posStore) ? m3[dr.key] : null)) : null;
+            const t3 = ent3?.tx;
+            const ttl = `${dr.key.slice(5)}（${WD2[new Date(dr.key + "T00:00:00").getDay()]}）逐筆交易`;
+            const back = { label: "← 回逐日追蹤", dr: { type: "waste" } };
+            if (!t3) return {
+              title: ttl, cols: ["說明"], rows: [], back,
+              note: txDoc === undefined ? "載入中…再點一下重新整理" : "這一天的逐筆交易還沒入庫——按上面的「🔄 更新」補抓一次（新日結信自動入庫；舊日期只要信還在信箱也會自動回補）",
+            };
+            const isMoneyCol = (h) => /金額|amount|total|小計|合計|稅|服務費|折扣|價|退|void/i.test(String(h));
+            return {
+              title: ttl, cols: t3.h, back,
+              rows: t3.r.map(row => t3.h.map((h, j) => { const v = row[j]; return typeof v === "number" ? (isMoneyCol(h) ? fmt(v) : String(v)) : (v ?? ""); })),
+              numIdx: new Set(t3.h.map((_, j) => j).filter(j => t3.r.some(row => typeof row[j] === "number"))),
+              redRow: (row) => row.some(c => /void|作廢|退菜|退單|取消|refund/i.test(String(c))),
+              note: "來源：日結信 Transaction 附件（每天跟日結總表一起寄來）→ 逐筆無刪減入庫 pm_pos_tx_月份・紅字列＝作廢/退相關・點欄位標題可排序",
+            };
+          }
           if (dr.type === "coupon") {
             // ① POS 一筆拆兩列（品項列＋單號列、金額相同）→ 相鄰配對併回一列
             // ② 依用途自動分類（客訴補償/試菜/夥伴/VIP/招待/一般優惠）→ 上方彙總卡＋明細按類別分組（張良 2026-07-20：流水帳看不出分析）
@@ -1199,7 +1230,7 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
                     </div>
                   </div>
                 </div>
-                <div style={{ fontSize: 11.5, color: C.faint, marginTop: 8 }}>資料來源：Eats365 日結信六個分頁全數入庫（摘要 pm_pos＋明細 pm_pos_d_月份，只增不改）。之後接：週/月彙總、POS信用卡 ↔ 銀行入帳核對、進銷存成本對照。</div>
+                <div style={{ fontSize: 11.5, color: C.faint, marginTop: 8 }}>資料來源：Eats365 日結信六個分頁全數入庫（摘要 pm_pos＋明細 pm_pos_d_月份＋逐筆交易 pm_pos_tx_月份，只增不改）。之後接：週/月彙總、POS信用卡 ↔ 銀行入帳核對、進銷存成本對照。</div>
               </>
             )}
             {/* 下鑽明細（組成該數字的原始資料）：欄位可排序、日期帶星期、清單/矩陣切換 */}
@@ -1208,7 +1239,7 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
               // 逐日視圖（優惠券明細）：daily=日期一列（預設直式）、dailyT=轉置（類別一列、日期一欄）
               const eff = drill.daily && posDrillView === "daily" ? drill.daily.v : drill.daily && posDrillView === "dailyT" ? drill.daily.t : null;
               const cols3 = eff ? eff.cols : drill.cols;
-              const isNum = (c2) => ["數量", "佔比", "金額", "營收", "單數", "來客", "客單", "現金", "信用卡", "Uber", "折扣", "服務費", "退菜", "Void", "筆數", "佔當日營收"].includes(c2) || (eff && cols3.indexOf(c2) > 0);
+              const isNum = (c2, ci2) => ["數量", "佔比", "金額", "營收", "單數", "來客", "客單", "現金", "信用卡", "Uber", "折扣", "服務費", "退菜", "Void", "筆數", "佔當日營收"].includes(c2) || (eff && cols3.indexOf(c2) > 0) || (drill.numIdx && drill.numIdx.has(ci2 ?? cols3.indexOf(c2)));
               const redCell = (colName, disp) => disp !== "—" && disp !== "" && (colName === "客訴補償" || (colName === "佔當日營收" && parseFloat(disp) > 5));
               let rows2 = eff ? eff.rows : drill.rows;
               if (posDrillSort) rows2 = [...rows2].sort((a, b) => { const va = sortVal(a[posDrillSort.i]), vb = sortVal(b[posDrillSort.i]); return (va < vb ? -1 : va > vb ? 1 : 0) * posDrillSort.dir; });
@@ -1217,6 +1248,7 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
                   {/* 張良 2026-07-26 手機版全面體檢：手機加高到 92vh、padding 縮小多留內容寬（內層表格容器本來就有 overflow:auto 可橫滑） */}
                   <div style={{ background: "#fff", border: `1px solid ${C.line}`, borderRadius: 12, padding: isMobile ? 12 : 20, width: "min(980px,96vw)", maxHeight: isMobile ? "92vh" : "88vh", display: "flex", flexDirection: "column" }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4, flexWrap: "wrap" }}>
+                      {drill.back && <button onClick={() => openDrill(drill.back.dr)} style={{ border: `1px solid ${C.line}`, background: "#fff", color: C.sub, borderRadius: 6, padding: "3px 10px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>{drill.back.label}</button>}
                       <span style={{ background: "#3f7d4e", color: "#fff", fontSize: 11, fontWeight: 700, borderRadius: 4, padding: "2px 8px" }}>明細</span>
                       <div style={{ fontSize: 14.5, fontWeight: 700, color: C.text }}>{drill.title}</div>
                       <span style={{ fontFamily: MONOF, fontSize: 11.5, color: C.faint }}>{drill.rows.length} 列</span>
@@ -1253,16 +1285,17 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
                     <div style={{ overflow: "auto", border: `1.5px solid #c8bca6`, borderRadius: 8 }}>
                       {(!drill.pivot || posDrillView === "list") ? (
                         <table style={{ borderCollapse: "collapse", width: "100%", fontSize: 12 }}>
-                          <thead><tr>{cols3.map((c2, ci) => { const numCol = isNum(c2); return (
+                          <thead><tr>{cols3.map((c2, ci) => { const numCol = isNum(c2, ci); return (
                             <th key={c2} onClick={() => setPosDrillSort(sx => sx && sx.i === ci ? { i: ci, dir: -sx.dir } : { i: ci, dir: 1 })} style={{ position: "sticky", top: 0, background: "#ece4d6", textAlign: numCol ? "right" : "left", padding: "6px 10px", fontSize: 10.5, letterSpacing: 0.6, color: posDrillSort?.i === ci ? C.text : C.sub, whiteSpace: "nowrap", borderBottom: "1.5px solid #c8bca6", cursor: "pointer", userSelect: "none" }}>{c2}{posDrillSort?.i === ci ? (posDrillSort.dir === 1 ? " ▲" : " ▼") : ""}</th>
                           ); })}</tr></thead>
                           <tbody>
                             {rows2.length === 0 ? <tr><td colSpan={cols3.length} style={{ padding: 16, textAlign: "center", color: C.faint }}>期間內沒有資料</td></tr> :
-                              rows2.map((r, i) => (
-                                <tr key={i} style={{ background: i % 2 ? "#f8f4ea" : "#fff" }}>
-                                  {r.map((c2, j) => { const numCol = isNum(cols3[j]); const disp = cols3[j] === "日期" ? wd(c2) : c2; const red = redCell(cols3[j], String(disp)); return <td key={j} style={{ padding: "5px 10px", fontFamily: numCol || (typeof disp === "string" && /[0-9]/.test(disp) && j > 0) ? MONOF : undefined, textAlign: numCol ? "right" : "left", color: red ? "#b3261e" : disp === "" ? "#d5cbb6" : C.text, fontWeight: red ? 700 : undefined, borderTop: "1px solid #f0ead9", whiteSpace: "nowrap", fontSize: 11.5 }}>{disp === "" ? "—" : disp}</td>; })}
+                              rows2.map((r, i) => { const rowRed = drill.redRow && drill.redRow(r); return (
+                                <tr key={i} onClick={drill.rowClick ? () => { const nx = drill.rowClick(r); if (nx) openDrill(nx); } : undefined} title={drill.rowClick ? "點我看該日逐筆交易" : undefined} style={{ background: i % 2 ? "#f8f4ea" : "#fff", cursor: drill.rowClick ? "pointer" : undefined }}
+                                  onMouseEnter={drill.rowClick ? (e => e.currentTarget.style.background = "#f4efe5") : undefined} onMouseLeave={drill.rowClick ? (e => e.currentTarget.style.background = i % 2 ? "#f8f4ea" : "#fff") : undefined}>
+                                  {r.map((c2, j) => { const numCol = isNum(cols3[j], j); const disp = cols3[j] === "日期" ? wd(c2) : c2; const red = rowRed || redCell(cols3[j], String(disp)); return <td key={j} style={{ padding: "5px 10px", fontFamily: numCol || (typeof disp === "string" && /[0-9]/.test(disp) && j > 0) ? MONOF : undefined, textAlign: numCol ? "right" : "left", color: red ? "#b3261e" : disp === "" ? "#d5cbb6" : C.text, fontWeight: red ? 700 : undefined, borderTop: "1px solid #f0ead9", whiteSpace: "nowrap", fontSize: 11.5 }}>{disp === "" ? "—" : disp}</td>; })}
                                 </tr>
-                              ))}
+                              ); })}
                           </tbody>
                         </table>
                       ) : (() => {

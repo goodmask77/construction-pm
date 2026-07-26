@@ -435,7 +435,7 @@ async function loadPosText() {
   try {
     const now = new Date(Date.now() + 8 * 3600e3)
     const mo = now.toISOString().slice(0, 7)
-    const kv = await kvGetMany(['sp_finance_pm_pos', 'sp_finance_pm_pos_d_' + mo])
+    const kv = await kvGetMany(['sp_finance_pm_pos', 'sp_finance_pm_pos_d_' + mo, 'sp_finance_pm_pos_tx_' + mo])
     const pos = kv['sp_finance_pm_pos']
     const entries = pos && Array.isArray(pos.entries) ? pos.entries : []
     if (!entries.length) return ''
@@ -460,6 +460,16 @@ async function loadPosText() {
         arr.slice(0, 25).forEach(([n, v], i) => lines.push(`  ${i + 1}. ${n}［${v.cat}］ ${v.qty}份 ${nt(v.amt)}`))
         if (arr.length > 35) { lines.push('  …（中段略）…'); arr.slice(-10).forEach(([n, v]) => lines.push(`  末段: ${n}［${v.cat}］ ${v.qty}份 ${nt(v.amt)}`)) }
       }
+    }
+    // 逐筆交易（日結信 Transaction 附件，sp_finance_pm_pos_tx_月檔）：只濃縮「作廢/退」相關列（100%資料鐵則；答「7/23 那筆 Void 是哪張單」）
+    const txd = kv['sp_finance_pm_pos_tx_' + mo]
+    if (txd && txd.days) {
+      const bad = []
+      Object.values(txd.days).forEach(day => {
+        const t = day.tx; if (!t || !t.h) return
+        ;(t.r || []).forEach(row => { if (row.some(c => /void|作廢|退菜|退單|取消|refund/i.test(String(c)))) bad.push(`  - ${day.date} ` + t.h.map((h, j) => (row[j] !== '' && row[j] != null) ? `${h}:${row[j]}` : '').filter(Boolean).join('｜')) })
+      })
+      if (bad.length) { lines.push(`【本月逐筆交易「作廢/退」相關（共 ${bad.length} 筆）】`); bad.slice(-40).forEach(l => lines.push(l)) }
     }
     return lines.join('\n')
   } catch (_) { return '' }

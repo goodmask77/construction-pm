@@ -60,9 +60,9 @@ async function loadSpaceAIContext() {
       } catch (_) { return await g(legacy); }
     };
     const d0 = new Date(); const mo = `${d0.getFullYear()}-${String(d0.getMonth() + 1).padStart(2, "0")}`;
-    const [snapC, snapT, snapK, snapF, tasks, crewRoster, crewOld, pos, posD, bank, ctbc, accounts, ledger, conclusions, mailRules, mailLog, supply, supplyOrders, supplyRecipesRaw] = await Promise.all([
+    const [snapC, snapT, snapK, snapF, tasks, crewRoster, crewOld, pos, posD, posTx, bank, ctbc, accounts, ledger, conclusions, mailRules, mailLog, supply, supplyOrders, supplyRecipesRaw] = await Promise.all([
       g("pm_bot_context"), g("sp_team_pm_bot_context"), g("sp_crew_pm_bot_context"), g("sp_finance_pm_bot_context"),
-      recs("pm_tasks_v2", "pm_task_", "pm_tasks"), g("sp_crew_kb_roster"), g("sp_crew_kb_360"), g("sp_finance_pm_pos"), g("sp_finance_pm_pos_d_" + mo),
+      recs("pm_tasks_v2", "pm_task_", "pm_tasks"), g("sp_crew_kb_roster"), g("sp_crew_kb_360"), g("sp_finance_pm_pos"), g("sp_finance_pm_pos_d_" + mo), g("sp_finance_pm_pos_tx_" + mo),
       g("sp_finance_pm_bank"), g("sp_finance_pm_ctbc"), g("sp_finance_pm_fin_accounts"), recs("sp_finance_pm_fin_ledger_v2", "sp_finance_pm_fin_tx_", "sp_finance_pm_fin_ledger"),
       g("pm_conclusions"), g("sp_lw_pm_mail_rules"), g("sp_lw_pm_mail_log"), g("sp_supply_pm_supply"),
       g("sp_supply_pm_orders"), getSharedPrefix("sp_supply_pm_recipe_v_"),
@@ -116,6 +116,15 @@ async function loadSpaceAIContext() {
         }));
         const arr = Object.entries(per).filter(([, v]) => v.amt > 0).sort((a, b) => b[1].amt - a[1].amt);
         if (arr.length) parts.push("【本月品項逐日銷售（品項｜分類｜總份｜總額｜各日份數）】\n" + arr.slice(0, 60).map(([n, v]) => `- ${n}｜${v.cat}｜${v.qty}份｜${nt(v.amt)}｜` + Object.entries(v.days).sort().map(([dd, q]) => `${Number(dd.slice(8))}日:${q}`).join(" ")).join("\n"));
+      }
+      // 逐筆交易（日結信 Transaction 附件，pm_pos_tx_月檔）：只濃縮「作廢/退」相關列（100%資料鐵則；答「哪天的 Void 是哪張單」）
+      if (posTx?.days) {
+        const bad = [];
+        Object.values(posTx.days).forEach(day => {
+          const t = day.tx; if (!t || !t.h) return;
+          (t.r || []).forEach(row => { if (row.some(c => /void|作廢|退菜|退單|取消|refund/i.test(String(c)))) bad.push(`- ${day.date} ` + t.h.map((h, j) => (row[j] !== "" && row[j] != null) ? `${h}:${row[j]}` : "").filter(Boolean).join("｜")); });
+        });
+        if (bad.length) parts.push("【本月逐筆交易「作廢/退」相關（" + bad.length + " 筆）】\n" + bad.slice(-40).join("\n"));
       }
     }
     // 銀行/內帳
