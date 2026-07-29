@@ -147,6 +147,63 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
     } catch (e) { setPosMsg("更新失敗：" + e.message); }
     setPosSyncBusy(false);
   };
+  // 手動匯入舊日結（張良 2026-07-30：信箱 7/12 才開通，7/1-11 從 POS 後台下載的報表補進來）
+  // 解析器＝api/_pos-parse.js 與收信同一套（動態載入，不拖慢平常開頁）；規則同收信：只增不改、全零不入庫、日期+店去重
+  const importPosFiles = async (files) => {
+    setPosSyncBusy(true);
+    try {
+      const mod = await import("../../api/_pos-parse.js");
+      const skOf = (n) => /groun/i.test(n || "") ? "ground" : "abeach";
+      const store = pos && Array.isArray(pos.entries) ? { ...pos, entries: [...pos.entries] } : { name: "Eats365 POS 日結", entries: [] };
+      const haveCombo = new Set(store.entries.map(e => (e.date || "") + "|" + skOf(e.store)));
+      let added = 0, dup = 0, zero = 0, txAdded = 0, bad = 0;
+      const byMonth = {}, txByMonth = {};
+      for (const f of files) {
+        try {
+          const buf = new Uint8Array(await f.arrayBuffer());
+          if (/^transaction/i.test(f.name.trim())) {
+            // 逐筆交易檔：日期取自檔名（Transaction (2026-07-05 ...).xls）
+            const tx = mod.parseTxSheet(buf, "array");
+            const dm = f.name.match(/(\d{4}-\d{2}-\d{2})/);
+            if (tx && dm) (txByMonth[dm[1].slice(0, 7)] = txByMonth[dm[1].slice(0, 7)] || []).push({ date: dm[1], tx }); else bad++;
+            continue;
+          }
+          const rec = mod.parsePosWorkbook(buf, f.name, "array");
+          if (!rec.date) { bad++; continue; }
+          if ((Number(rec.revenue) || 0) <= 0 && (Number(rec.txCount) || 0) <= 0) { zero++; continue; }
+          const sk = skOf(rec.store);
+          if (haveCombo.has(rec.date + "|" + sk)) { dup++; continue; }
+          haveCombo.add(rec.date + "|" + sk);
+          const { _details, ...summary } = rec;
+          summary.id = rec.id + "-" + sk; summary.source = "manual";
+          store.entries.push(summary); added++;
+          if (_details) (byMonth[rec.date.slice(0, 7)] = byMonth[rec.date.slice(0, 7)] || []).push({ date: rec.date, period: rec.period, store: rec.store, sheets: _details });
+        } catch (_) { bad++; }
+      }
+      if (added) {
+        store.entries.sort((a, b) => (a.date < b.date ? -1 : 1)); store.updatedAt = new Date().toISOString();
+        await window.storage.set(K("pm_pos"), JSON.stringify(store), true);
+        for (const [mo, recs] of Object.entries(byMonth)) {
+          const cur = await window.storage.get(K("pm_pos_d_" + mo), true);
+          const doc = cur && cur.value ? JSON.parse(cur.value) : { days: {} };
+          for (const r of recs) { const dk = r.date + "::" + skOf(r.store); const legacy = doc.days[r.date] && skOf(doc.days[r.date].store) === skOf(r.store); if (!doc.days[dk] && !legacy) doc.days[dk] = r; }
+          doc.updatedAt = new Date().toISOString();
+          await window.storage.set(K("pm_pos_d_" + mo), JSON.stringify(doc), true);
+        }
+        setPos(store); // posDet 會跟著 [pos] effect 重載，畫面即刻有 7/1-11
+      }
+      for (const [mo, recs] of Object.entries(txByMonth)) {
+        const cur = await window.storage.get(K("pm_pos_tx_" + mo), true);
+        const doc = cur && cur.value ? JSON.parse(cur.value) : { days: {} };
+        let ch = false;
+        for (const r of recs) { const dk = r.date + "::" + posStore; if (!doc.days[dk]) { doc.days[dk] = { date: r.date, store: posStore === "ground" ? "GROUN:D" : "A Beach 101&Pizza", tx: r.tx }; ch = true; txAdded++; } }
+        if (ch) { doc.updatedAt = new Date().toISOString(); await window.storage.set(K("pm_pos_tx_" + mo), JSON.stringify(doc), true); setPosTx(p => ({ ...p, [mo]: doc })); }
+      }
+      const t = `📥 匯入完成：日結 ${added} 天${txAdded ? `、逐筆交易 ${txAdded} 天` : ""}${dup ? `・略過已存在 ${dup}` : ""}${zero ? `・略過無營收 ${zero}（颱風/店休本來就會空白）` : ""}${bad ? `・讀不懂 ${bad} 個檔` : ""}`;
+      setPosMsg(t); setTimeout(() => setPosMsg(m => m === t ? null : m), 15000);
+    } catch (e) { setPosMsg("匯入失敗：" + (e?.message || e)); }
+    setPosSyncBusy(false);
+  };
   const mergeToBank = (rows, srcLabel) => {
     // 資料庫鐵則：只增不改——已存在的列一律不動，僅加入新列
     const cur = bank || { account: "合作金庫 · 喬亞國際餐飲", entries: [] };
@@ -1068,6 +1125,11 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
               </div>
               {/* 更新鈕緊跟店名右邊（張良 2026-07-18 手機版面優化） */}
               <button onClick={runPosSync} disabled={posSyncBusy} title="信箱有新日結信就立刻入庫" style={{ border: `1px solid ${C.blue}`, background: "#fff", color: C.blue, borderRadius: 8, padding: "6px 14px", fontSize: 12.5, fontWeight: 700, cursor: posSyncBusy ? "wait" : "pointer" }}>{posSyncBusy ? "更新中…" : "🔄 更新"}</button>
+              {/* 手動匯入舊日結（張良 2026-07-30）：POS 後台下載的 DailyClosing / Transaction 檔可多選一次丟入 */}
+              <label title="補信箱開通前的舊資料：把 Eats365 後台下載的 DailyClosing（日結）/ Transaction（逐筆）檔選進來，可一次多選" style={{ border: `1px solid ${C.green}`, background: "#fff", color: C.green, borderRadius: 8, padding: "6px 14px", fontSize: 12.5, fontWeight: 700, cursor: posSyncBusy ? "wait" : "pointer" }}>
+                📥 匯入舊報表
+                <input type="file" multiple accept=".xls,.xlsx" disabled={posSyncBusy} style={{ display: "none" }} onChange={e => { const fs = [...(e.target.files || [])]; e.target.value = ""; if (fs.length) importPosFiles(fs); }} />
+              </label>
               <div style={{ flex: 1 }} />
               {/* 期間：全部 / 選月份 / 自訂（張良：近X天太多，改三種） */}
               <div style={{ display: "inline-flex", background: C.soft, border: `1px solid ${C.line}`, borderRadius: 8, padding: 2, gap: 2 }}>
