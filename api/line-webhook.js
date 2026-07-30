@@ -64,47 +64,68 @@ async function uploadToPhotos(buf, ext, contentType) {
   if (!r.ok) throw new Error('storage upload ' + r.status)
   return { url: `${SB_URL}/storage/v1/object/public/photos/${path}`, path }
 }
-async function stashLibraryFile(ev) {
+// 檔案庫自訂類別清單（pm_photo_folders，字串陣列；App 讀來當篩選/分組）
+const FOLDERS_KEY = 'pm_photo_folders'
+async function ensureFolder(name) {
+  const n = String(name || '').trim(); if (!n) return []
+  const cur = (await kvGetMany([FOLDERS_KEY]))[FOLDERS_KEY]
+  const list = Array.isArray(cur) ? cur.filter(x => typeof x === 'string') : []
+  if (!list.some(x => x.trim().toLowerCase() === n.toLowerCase())) { list.unshift(n); await kvSet(FOLDERS_KEY, list.slice(0, 100)) }
+  return list
+}
+async function listFolders() {
+  const cur = (await kvGetMany([FOLDERS_KEY]))[FOLDERS_KEY]
+  return Array.isArray(cur) ? cur.filter(x => typeof x === 'string') : []
+}
+// 只記「檔案參考」(LINE message id)，先不下載——等使用者說「存到檔案庫」才真的抓，省儲存空間（群組也不會塞爆）
+async function stashLibraryFile(ev, convId) {
   const msg = ev.message || {}
+  if (!msg.id) return false
   const isImage = msg.type === 'image'
   const fileName = msg.fileName || (isImage ? `LINE-${new Date().toISOString().slice(0, 10)}.jpg` : 'file')
-  const r = await fetch(`https://api-data.line.me/v2/bot/message/${msg.id}/content`, { headers: { authorization: `Bearer ${TOKEN}` } })
-  if (!r.ok) return false
-  const buf = Buffer.from(await r.arrayBuffer())
-  const contentType = r.headers.get('content-type') || (isImage ? 'image/jpeg' : 'application/octet-stream')
-  const ext = isImage ? (/png/.test(contentType) ? 'png' : 'jpg') : ((fileName.split('.').pop() || 'bin'))
-  const { url, path } = await uploadToPhotos(buf, ext, contentType)
   const cur = (await kvGetMany([FILECACHE_KEY]))[FILECACHE_KEY]
   const list = (cur && Array.isArray(cur.list)) ? cur.list : []
-  list.unshift({ id: 'ph-' + Math.random().toString(36).slice(2, 8), url, path, name: fileName, mime: contentType, isImage, ts: new Date().toISOString() })
-  await kvSet(FILECACHE_KEY, { list: list.slice(0, 20) })
+  list.unshift({ mid: msg.id, name: fileName, isImage, convId: convId || '', ts: new Date().toISOString() })
+  await kvSet(FILECACHE_KEY, { list: list.slice(0, 40) })
   return true
 }
-// 把暫存檔存進 App 檔案庫（pm_photos）。label＝使用者講的類別名（設計檔案…）；估價單/發票/現場照 對到固定 kind，其餘歸「其他」+備註
-async function saveCachedFilesToLibrary(label, byName) {
+// 把暫存檔存進 App 檔案庫（pm_photos）。label＝使用者講的類別名（設計檔案…）＝自訂 folder；估價單/發票/現場照 另對到固定 kind
+// convId：只歸「同一個對話(私訊/該群)」剛上傳的檔，避免抓到別的群的檔
+async function saveCachedFilesToLibrary(label, byName, convId) {
   const cache = (await kvGetMany([FILECACHE_KEY]))[FILECACHE_KEY]
   const all = (cache && Array.isArray(cache.list)) ? cache.list : []
   const now = Date.now()
-  const files = all.filter(f => f && f.ts && (now - new Date(f.ts).getTime()) < 60 * 60 * 1000)
-  if (!files.length) return { ok: false, msg: '找不到剛剛上傳的檔案（超過 60 分鐘會清掉）。請重新傳一次，傳完馬上說「存到檔案庫」。' }
+  const mine = all.filter(f => f && f.ts && (now - new Date(f.ts).getTime()) < 60 * 60 * 1000 && (!convId || f.convId === convId))
+  if (!mine.length) return { ok: false, msg: '找不到剛剛上傳的檔案（超過 60 分鐘會清掉）。請重新傳一次，傳完馬上說「存到檔案庫」。' }
   const lb = (label || '').trim()
   let kind = 'other'
   if (/估價單|報價單|報價/.test(lb)) kind = 'quote'
   else if (/發票|收據/.test(lb)) kind = 'invoice'
   else if (/現場照|工地照|進度照/.test(lb)) kind = 'site'
-  const note = (lb && kind === 'other') ? lb : ''
+  const folder = lb // 自訂類別名（可為空）
+  if (folder) await ensureFolder(folder)
   const photos = (await kvGetMany(['pm_photos']))['pm_photos']
   const cur = Array.isArray(photos) ? photos : []
   const today = new Date().toISOString().slice(0, 10)
-  const names = []
-  files.forEach(f => {
-    cur.unshift({ id: f.id, url: f.url, path: f.path, name: f.name, mime: f.mime, isImage: !!f.isImage, kind, catId: '', catName: '', date: today, note, invoiceReceived: false, by: byName || 'D哥(LINE)', ts: new Date().toISOString() })
-    names.push(f.name)
-  })
+  const names = [], failed = []
+  for (const f of mine) {
+    try {
+      const r = await fetch(`https://api-data.line.me/v2/bot/message/${f.mid}/content`, { headers: { authorization: `Bearer ${TOKEN}` } })
+      if (!r.ok) { failed.push(f.name); continue }
+      const buf = Buffer.from(await r.arrayBuffer())
+      const contentType = r.headers.get('content-type') || (f.isImage ? 'image/jpeg' : 'application/octet-stream')
+      const ext = f.isImage ? (/png/.test(contentType) ? 'png' : 'jpg') : ((String(f.name).split('.').pop() || 'bin'))
+      const { url, path } = await uploadToPhotos(buf, ext, contentType)
+      cur.unshift({ id: 'ph-' + Math.random().toString(36).slice(2, 8), url, path, name: f.name, mime: contentType, isImage: !!f.isImage, kind, folder, catId: '', catName: '', date: today, note: '', invoiceReceived: false, by: byName || 'D哥(LINE)', ts: new Date().toISOString() })
+      names.push(f.name)
+    } catch (_) { failed.push(f.name) }
+  }
+  if (!names.length) return { ok: false, msg: '檔案抓取失敗（可能超過 LINE 下載期限），請重新傳一次再說「存到檔案庫」。' }
   await kvSet('pm_photos', cur)
-  await kvSet(FILECACHE_KEY, { list: [] }) // 清暫存
-  const kindLabel = { quote: '估價單', invoice: '發票', site: '現場照', other: note ? `其他・${note}` : '其他' }[kind]
-  return { ok: true, count: names.length, names, label: kindLabel }
+  // 清掉這個對話已處理的暫存參考（其他對話的留著）
+  const rest = all.filter(f => !mine.some(m => m.mid === f.mid))
+  await kvSet(FILECACHE_KEY, { list: rest })
+  return { ok: true, count: names.length, names, failed, label: folder || (kind === 'other' ? '其他' : { quote: '估價單', invoice: '發票', site: '現場照' }[kind]) }
 }
 
 // ── 逐筆存（v2）相容（2026-07-18）：前端改「一筆交易/任務＝一份文件」後，D哥 讀寫要跟上 ──
@@ -971,9 +992,14 @@ export default async function handler(req, res) {
         // 回饋/投票/照片歸檔/推播指令（固定指令與圖片，不經 AI）
         try { if (await handleDDCards(ev, await getOperators())) continue } catch (e) { console.log('ddcards error', e?.message) }
       }
-      // D哥 檔案庫：操作者私訊傳「檔案」(或沒被夥伴中心歸檔的圖) → 下載暫存，等「存到檔案庫」指令再歸檔
-      if (ev.type === 'message' && ev.source?.type === 'user' && (ev.message?.type === 'file' || ev.message?.type === 'image')) {
-        try { const ops = await getOperators(); if (ops[ev.source?.userId]) await stashLibraryFile(ev) } catch (e) { console.log('filelib stash error', e?.message) }
+      // D哥 檔案庫：記下剛傳的檔案參考（私訊操作者 or 任何群組），等「存到檔案庫」指令再抓進檔案庫
+      if (ev.type === 'message' && (ev.message?.type === 'file' || ev.message?.type === 'image')) {
+        try {
+          const uid2 = ev.source?.userId || ''
+          const isDM2 = ev.source?.type === 'user'
+          const cid = isDM2 ? ('dm_' + uid2) : ('g_' + (ev.source?.groupId || ev.source?.roomId || uid2))
+          if (!isDM2 || (await getOperators())[uid2]) await stashLibraryFile(ev, cid) // 私訊只幫操作者記；群組都記
+        } catch (e) { console.log('filelib stash error', e?.message) }
         continue
       }
       if (ev.type !== 'message' || ev.message?.type !== 'text') continue
@@ -1011,6 +1037,29 @@ export default async function handler(req, res) {
       const op = isDM ? operators[userId] : null
       const canAct = !!op
 
+      // 1.4) 檔案庫（私訊操作者 or 被叫名字的群組都能用）：新增類別 / 把剛傳的檔存進 App 檔案庫
+      if (isDM ? canAct : true) {
+        const isFilelib = /(存|放|上傳|收|歸)\S{0,4}(檔案庫|相簿)|(檔案庫|相簿)\S{0,4}(存|放|收|新增|開|加|類別|資料夾)|(新增|開|加)\S{0,3}(檔案庫|相簿)\S{0,3}(類別|資料夾)/.test(text)
+        if (isFilelib) {
+          const label = ((text.split('檔案庫')[1] ?? text.split('相簿')[1]) || '')
+            .replace(/類別|資料夾|夾|開(一個|新)?|新增|加|儲存在?裡面|裡面|這是|一個|請|幫我|存到?|存進?|放到?|放進?|上傳到?|收到?|收進?|歸到?|一下|把|剛剛的?|這些?|那些?/g, '')
+            .replace(/[，,、。\s「」『』:：]/g, '')
+            .trim()
+          const wantCreate = /(新增|開|加).{0,6}(類別|資料夾)/.test(text)
+          const byName = isDM ? op.name : ((await getLineProfile(userId)) || '群組成員')
+          const out = await saveCachedFilesToLibrary(label, byName, convId)
+          if (out.ok) {
+            await finish(`✅ 已把 ${out.count} 個檔案存進 App 檔案庫（類別：${out.label}）：\n${out.names.map(n => '・' + n).join('\n')}${out.failed && out.failed.length ? `\n⚠️ 有 ${out.failed.length} 個抓不到(可能過期)` : ''}\n\n到 App「檔案庫」頁可看＋下載。`)
+          } else if (wantCreate && label) {
+            await ensureFolder(label)
+            await finish(`✅ 檔案庫已新增類別「${label}」。傳檔案給我、再說「存到檔案庫 ${label}」就會歸進去；App 檔案庫也能用這個類別篩選。`)
+          } else {
+            await finish(out.msg)
+          }
+          continue
+        }
+      }
+
       // 1.5) 長期記事本指令（操作者私訊）：記住 / 忘記 / 看記事本
       if (isDM && canAct) {
         if (/^(你記得(哪些|什麼|多少|啥)|你記住了(什麼|哪些|啥)?|你的?(記事本|長期記憶)|看記事本|記事本$)/.test(text)) {
@@ -1022,20 +1071,6 @@ export default async function handler(req, res) {
         if (mForget && (mForget[3] || '').trim()) { const n = await removeMemory(mForget[3]); await finish(n ? `好，忘掉了 ${n} 條相關的記憶。` : '記事本裡沒找到相關的，沒有刪到東西。'); continue }
         const mRemember = text.match(/^(記住|幫我記住?|幫我記一下|記一下|記個|備註一下?)[\s:：,，、]*(.+)/s)
         if (mRemember && (mRemember[2] || '').trim()) { const e = await addMemory(mRemember[2], 'manual', op.name); await finish(e ? `好 👍 我記住了：「${e.text}」` : '這件我已經記過囉。'); continue }
-      }
-
-      // 1.7) 存進檔案庫（操作者私訊）：先傳檔再說「存到檔案庫〔類別〕」→ 把暫存檔歸進 App 檔案庫
-      if (isDM && canAct && /(存|放|上傳|收|歸)\S{0,4}檔案庫|檔案庫\S{0,4}(存|放|收)/.test(text)) {
-        // 類別名＝「檔案庫」後面那段（避免把類別名裡的「檔案」二字誤刪，例『設計檔案』）
-        const label = (text.split('檔案庫')[1] || '')
-          .replace(/類別|資料夾|夾|開(一個|新)?|儲存在?裡面|裡面|這是|一個|請|幫我|存到?|存進?|放到?|放進?|上傳到?|收到?|收進?|歸到?|一下|把|剛剛的?|這些?|那些?/g, '')
-          .replace(/[，,、。\s「」『』:：]/g, '')
-          .trim()
-        const out = await saveCachedFilesToLibrary(label, op.name)
-        await finish(out.ok
-          ? `✅ 已把 ${out.count} 個檔案存進 App 檔案庫（類別：${out.label}）：\n${out.names.map(n => '・' + n).join('\n')}\n\n到 App 的「檔案庫」頁就能看到＋下載。`
-          : out.msg)
-        continue
       }
 
       // 1.6) 密碼庫（只限授權操作者私訊；固定指令、不經 AI、不進對話記憶）

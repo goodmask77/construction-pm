@@ -835,13 +835,16 @@ export function PhotoLibraryView({ photos, setPhotos, cats, canEdit, userName, r
   const [lightbox, setLightbox] = useState(null);
   const [editId, setEditId] = useState(null);
   const [ef, setEf] = useState({});
-  const [groupBy, setGroupBy] = useState("none"); // none | cat | date
+  const [groupBy, setGroupBy] = useState("none"); // none | cat | date | folder
+  const [folder, setFolder] = useState(""); // 上傳時的自訂類別
+  const [fFolder, setFFolder] = useState("all"); // 自訂類別篩選
   const fileRef = useRef(null);
   const sortedCats = [...cats].sort((a,b)=>a.order-b.order);
+  const folders = [...new Set((photos||[]).map(p=>p.folder).filter(Boolean))].sort(); // 自訂類別（DD/上傳建的）
 
-  const startEdit = (p) => { if (!canEdit) { requireLogin&&requireLogin(); return; } setEditId(p.id); setEf({ kind:p.kind, catId:p.catId||"", date:p.date||"", note:p.note||"" }); };
+  const startEdit = (p) => { if (!canEdit) { requireLogin&&requireLogin(); return; } setEditId(p.id); setEf({ kind:p.kind, catId:p.catId||"", date:p.date||"", note:p.note||"", folder:p.folder||"" }); };
   const saveEdit = () => {
-    setPhotos(photos.map(p => p.id===editId ? { ...p, kind:ef.kind, catId:ef.catId, catName:(cats.find(c=>c.id===ef.catId)?.name)||"", date:ef.date, note:ef.note } : p));
+    setPhotos(photos.map(p => p.id===editId ? { ...p, kind:ef.kind, catId:ef.catId, catName:(cats.find(c=>c.id===ef.catId)?.name)||"", date:ef.date, note:ef.note, folder:(ef.folder||"").trim() } : p));
     setEditId(null);
   };
 
@@ -855,7 +858,7 @@ export function PhotoLibraryView({ photos, setPhotos, cats, canEdit, userName, r
       try {
         const { url, path } = await uploadPhoto(f);
         const cat = cats.find(c => c.id === catId);
-        added.push({ id: "ph-"+Math.random().toString(36).slice(2,8), url, path, name: f.name || "檔案", mime: f.type||"", isImage: /^image\//.test(f.type), kind, catId: catId||"", catName: cat?cat.name:"", date, note, invoiceReceived: false, by: userName||"—", ts: new Date().toISOString() });
+        added.push({ id: "ph-"+Math.random().toString(36).slice(2,8), url, path, name: f.name || "檔案", mime: f.type||"", isImage: /^image\//.test(f.type), kind, folder:(folder||"").trim(), catId: catId||"", catName: cat?cat.name:"", date, note, invoiceReceived: false, by: userName||"—", ts: new Date().toISOString() });
       } catch (e) { alert("上傳失敗：" + (e?.message || e)); }
     }
     if (added.length) setPhotos([...added, ...photos]);
@@ -877,7 +880,7 @@ export function PhotoLibraryView({ photos, setPhotos, cats, canEdit, userName, r
   const toggleReceived = (id) => setPhotos(photos.map(p => p.id===id ? {...p, invoiceReceived: !p.invoiceReceived} : p));
   const del = async (p) => { if (confirm && !(await confirm("刪除這張圖片？"))) return; await deletePhotoFile(p.path); setPhotos(photos.filter(x => x.id !== p.id)); };
 
-  const filtered = photos.filter(p => (fKind==="all"||p.kind===fKind) && (fCat==="all"||p.catId===fCat))
+  const filtered = photos.filter(p => (fKind==="all"||p.kind===fKind) && (fCat==="all"||p.catId===fCat) && (fFolder==="all"||(p.folder||"")===fFolder))
     .sort((a,b)=>(b.date||"").localeCompare(a.date||"")||(b.ts||"").localeCompare(a.ts||""));
   const pendingInvoices = photos.filter(p => p.kind==="invoice" && !p.invoiceReceived).length;
 
@@ -894,6 +897,11 @@ export function PhotoLibraryView({ photos, setPhotos, cats, canEdit, userName, r
       const m = {};
       filtered.forEach(p => { const k = p.date || "（無日期）"; (m[k]=m[k]||[]).push(p); });
       return Object.keys(m).sort((a,b)=>b.localeCompare(a)).map(k => ({ label: k, items: m[k] }));
+    }
+    if (groupBy === "folder") {
+      const m = {};
+      filtered.forEach(p => { const k = p.folder || "（未分類）"; (m[k]=m[k]||[]).push(p); });
+      return Object.keys(m).sort().map(k => ({ label: k, items: m[k] }));
     }
     return [{ label: null, items: filtered }];
   })();
@@ -916,6 +924,7 @@ export function PhotoLibraryView({ photos, setPhotos, cats, canEdit, userName, r
             <select value={ef.catId} onChange={e=>setEf({...ef, catId:e.target.value})} style={{ ...inputStyle, padding:"5px 8px", fontSize:12 }}><option value="">（不指定{L("cat")}）</option>{sortedCats.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select>
             <input type="date" value={ef.date} onChange={e=>setEf({...ef, date:e.target.value})} style={{ ...inputStyle, padding:"5px 8px", fontSize:12 }} />
             <input value={ef.note} onChange={e=>setEf({...ef, note:e.target.value})} placeholder="備註" style={{ ...inputStyle, padding:"5px 8px", fontSize:12 }} />
+            <input list="filelib-folders" value={ef.folder||""} onChange={e=>setEf({...ef, folder:e.target.value})} placeholder="自訂類別（如：設計檔案）" style={{ ...inputStyle, padding:"5px 8px", fontSize:12 }} />
             <div style={{ display:"flex", gap:8, justifyContent:"flex-end" }}>
               <button onClick={()=>setEditId(null)} style={{ fontSize:11, color:"#6F6656", background:"none", border:"none", cursor:"pointer" }}>取消</button>
               <button onClick={saveEdit} style={{ fontSize:11, fontWeight: 600, color:"#211C15", background:ACCENT, border:"none", borderRadius:6, padding:"4px 12px", cursor:"pointer" }}>儲存</button>
@@ -924,6 +933,7 @@ export function PhotoLibraryView({ photos, setPhotos, cats, canEdit, userName, r
         ) : (
           <>
             <div style={{ color:"#4A4234", fontWeight:600 }}>{p.catName || "（未指定工程）"}</div>
+            {p.folder && <div style={{ display:"inline-block", marginTop:3, fontSize:10, fontWeight:600, color:"#6b4fbb", background:"#ede9fb", borderRadius:6, padding:"1px 7px" }}>📁 {p.folder}</div>}
             <div style={{ color:"#9b9384", fontSize:11, marginTop:2 }}>{p.date} · {p.by}</div>
             {p.note && <div style={{ color:"#6F6656", fontSize:11, marginTop:3, whiteSpace:"pre-wrap" }}>{p.note}</div>}
             {p.kind === "invoice" && (
@@ -958,7 +968,9 @@ export function PhotoLibraryView({ photos, setPhotos, cats, canEdit, userName, r
           <select value={kind} onChange={e=>setKind(e.target.value)} style={selStyle}>{PHOTO_KINDS.map(([k,l])=><option key={k} value={k}>{l}</option>)}</select>
           <select value={catId} onChange={e=>setCatId(e.target.value)} style={selStyle}><option value="">（不指定{L("cat")}）</option>{sortedCats.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select>
           <input type="date" value={date} onChange={e=>setDate(e.target.value)} style={selStyle} />
+          <input list="filelib-folders" value={folder} onChange={e=>setFolder(e.target.value)} placeholder="自訂類別（如：設計檔案，選填）" style={{ ...inputStyle, width:170, padding:"6px 10px" }} />
           <input value={note} onChange={e=>setNote(e.target.value)} placeholder="備註（選填）" style={{ ...inputStyle, flex:1, minWidth:120, padding:"6px 10px" }} />
+          <datalist id="filelib-folders">{folders.map(f=><option key={f} value={f} />)}</datalist>
           <input ref={fileRef} type="file" multiple style={{ display:"none" }} onChange={e=>{ onPick(e.target.files); e.target.value=""; }} />
           <button onClick={()=>fileRef.current?.click()} disabled={uploading} style={{ background:ACCENT, color:"#fbf8f1", border:"none", borderRadius:8, padding:"8px 16px", fontWeight: 600, cursor: uploading?"wait":"pointer" }}>{uploading?"上傳中…":"📎 上傳照片 / 檔案"}</button>
           <span style={{ fontSize:11, color:"#9b9384", width:"100%" }}>支援照片、PDF、Excel 等檔案；也可直接 Ctrl/⌘+V 貼上截圖</span>
@@ -976,9 +988,15 @@ export function PhotoLibraryView({ photos, setPhotos, cats, canEdit, userName, r
         <select value={fCat} onChange={e=>setFCat(e.target.value)} style={{ ...selStyle, fontSize:12, padding:"4px 8px" }}>
           <option value="all">全部{L("cat")}</option>{sortedCats.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}
         </select>
+        {folders.length > 0 && (<>
+          <span style={{ fontSize:11, color:"#9b9384", marginLeft:8 }}>類別📁</span>
+          <select value={fFolder} onChange={e=>setFFolder(e.target.value)} style={{ ...selStyle, fontSize:12, padding:"4px 8px" }}>
+            <option value="all">全部自訂類別</option>{folders.map(f=><option key={f} value={f}>{f}</option>)}
+          </select>
+        </>)}
         <div style={{ flex:1 }} />
         <span style={{ fontSize:11, color:"#9b9384" }}>分組</span>
-        {[["none","不分組"],["cat","按工程"],["date","按日期"]].map(([k,l])=>(
+        {[["none","不分組"],["cat","按工程"],["date","按日期"],...(folders.length?[["folder","按類別📁"]]:[])].map(([k,l])=>(
           <button key={k} onClick={()=>setGroupBy(k)} style={{ padding:"3px 10px", borderRadius:20, border:"1px solid #d9cfbd", fontSize:11, cursor:"pointer", background:groupBy===k?ACCENT:"#ece4d6", color:groupBy===k?"#fbf8f1":"#6F6656", fontWeight:groupBy===k?700:400 }}>{l}</button>
         ))}
         <span style={{ fontSize:12, color:"#9b9384", marginLeft:6 }}>共 {filtered.length} 張</span>
