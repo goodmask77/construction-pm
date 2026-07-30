@@ -331,6 +331,7 @@ export default function App() {
   const [knownUsers, setKnownUsers] = useState([]);
   const [worklog, setWorklog] = useState([]);
   const [photos, setPhotos] = useState([]);
+  const [photoFolders, setPhotoFolders] = useState([]); // 檔案庫自訂類別清單（含空類別）
   const [accounts, setAccounts] = useState([]);
   const [customCols, setCustomCols] = useState([]);
   const [colOrder, setColOrder] = useState([]);
@@ -441,7 +442,7 @@ export default function App() {
     (async () => {
       const parse = (v, def) => { if (!v) return def; try { return JSON.parse(v); } catch (_) { return def; } };
       // 一次抓所有共用資料（合併成單一請求）+ 本機的角色，避免開啟時打十幾次 API
-      const SHARED_KEYS = ["pm_data", "pm_global_chat", "pm_settings", "pm_ai_log", "pm_activity", "pm_known_users", "pm_worklog", "pm_photos", "pm_accounts", "pm_seqlogs", "pm_columns", "pm_events", "pm_journal", "pm_plans", "pm_trash", "pm_petty", "pm_roles", "pm_guest_perms"];
+      const SHARED_KEYS = ["pm_data", "pm_global_chat", "pm_settings", "pm_ai_log", "pm_activity", "pm_known_users", "pm_worklog", "pm_photos", "pm_photo_folders", "pm_accounts", "pm_seqlogs", "pm_columns", "pm_events", "pm_journal", "pm_plans", "pm_trash", "pm_petty", "pm_roles", "pm_guest_perms"];
       const [batch, savedName] = await Promise.all([getSharedMany(SHARED_KEYS.map(K)), loadRole()]);
       if (cancelled) return;
       // 資料庫已上鎖（RLS）且沒登入 → 一筆都讀不到 → 顯示登入畫面，不讓訪客看到空殼/示範資料
@@ -486,6 +487,7 @@ export default function App() {
       setActivityLog(dedupLog);
       if (wlV) setWorklog(parse(wlV, []));
       if (phV) setPhotos(parse(phV, []));
+      { const ff = parse(raw("pm_photo_folders"), []); setPhotoFolders(Array.isArray(ff) ? ff.filter(x => typeof x === "string") : []); }
       if (acV) setAccounts(parse(acV, []));
       if (slV) setSeqLogs(parse(slV, []));
       if (trV) setTrash(parse(trV, []));
@@ -991,7 +993,7 @@ export default function App() {
           <Conclusions K={K} confirm={confirm} canEdit={canEditData} cats={cats} userName={userName} onLog={logActivity} />
         )}
         {view === "files" && (
-          <PhotoLibraryView photos={photos} setPhotos={commitPhotos} cats={cats} canEdit={canEditFiles} userName={userName} requireLogin={denyEdit} confirm={confirm} />
+          <PhotoLibraryView photos={photos} setPhotos={commitPhotos} cats={cats} canEdit={canEditFiles} userName={userName} requireLogin={denyEdit} confirm={confirm} folderList={photoFolders} />
         )}
         {view === "issues" && (
           <IssuesView canEdit={canEditData} requireLogin={denyEdit} confirm={confirm} onLog={logActivity} />

@@ -824,7 +824,7 @@ const PHOTO_KINDS = CURRENT_SPACE === "construction"
   : [["quote","文件"],["site","照片"],["invoice","單據"],["other","其他"]];
 const photoKindLabel = (k) => (PHOTO_KINDS.find(x=>x[0]===k)||[,"其他"])[1];
 const photoKindColor = { quote:"#3b82f6", site:"#3C8C3C", invoice:"#b3261e", other:"#9b9384" };
-export function PhotoLibraryView({ photos, setPhotos, cats, canEdit, userName, requireLogin, confirm }) {
+export function PhotoLibraryView({ photos, setPhotos, cats, canEdit, userName, requireLogin, confirm, folderList }) {
   const [kind, setKind] = useState("site");
   const [catId, setCatId] = useState("");
   const [date, setDate] = useState(new Date().toISOString().slice(0,10));
@@ -840,7 +840,7 @@ export function PhotoLibraryView({ photos, setPhotos, cats, canEdit, userName, r
   const [fFolder, setFFolder] = useState("all"); // 自訂類別篩選
   const fileRef = useRef(null);
   const sortedCats = [...cats].sort((a,b)=>a.order-b.order);
-  const folders = [...new Set((photos||[]).map(p=>p.folder).filter(Boolean))].sort(); // 自訂類別（DD/上傳建的）
+  const folders = [...new Set([...(folderList||[]), ...(photos||[]).map(p=>p.folder).filter(Boolean)])].sort(); // 自訂類別（含空類別 pm_photo_folders + 已有檔的）
 
   const startEdit = (p) => { if (!canEdit) { requireLogin&&requireLogin(); return; } setEditId(p.id); setEf({ kind:p.kind, catId:p.catId||"", date:p.date||"", note:p.note||"", folder:p.folder||"" }); };
   const saveEdit = () => {
