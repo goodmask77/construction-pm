@@ -656,9 +656,23 @@ async function loadConclusionsText() {
   } catch (_) { return '' }
 }
 
-async function answer(question, snaps, accountsText, financeText, activityText, estimatesText, crewText, canAct, history, memoryText, conclusionsText, tasksText, sheetText, posText, catalogText, supplyText, lineQuotaText) {
+async function loadFilelibText() {
+  try {
+    const [ff, fc] = await Promise.all([kvGetMany([FOLDERS_KEY]), kvGetMany([FILECACHE_KEY])])
+    const folders = Array.isArray(ff[FOLDERS_KEY]) ? ff[FOLDERS_KEY].filter(x => typeof x === 'string') : []
+    const cache = fc[FILECACHE_KEY]
+    const pend = (cache && Array.isArray(cache.list)) ? cache.list.filter(f => f && f.ts && (Date.now() - new Date(f.ts).getTime()) < 60 * 60 * 1000) : []
+    const lines = ['\n\n【檔案庫（App 相簿）｜你會操作，別說做不到】']
+    lines.push('現有自訂類別：' + (folders.length ? folders.join('、') : '（還沒有自訂類別）') + '；固定類別：估價單／現場照／發票／其他。')
+    lines.push('使用者說「新增〔名〕類別」你就會建、「存到檔案庫〔類別〕」你就把剛傳的檔存進去（這些由系統直接執行，你只要照講、別否認自己有此能力）。回答「有沒有X類別」直接看上面清單。')
+    if (pend.length) lines.push(`⏳ 現在有 ${pend.length} 個剛上傳、還沒歸檔的檔案在等你歸檔。`)
+    return lines.join('\n')
+  } catch (_) { return '' }
+}
+
+async function answer(question, snaps, accountsText, financeText, activityText, estimatesText, crewText, canAct, history, memoryText, conclusionsText, tasksText, sheetText, posText, catalogText, supplyText, lineQuotaText, filelibText) {
   if (!ANTHROPIC) return '（D哥的 AI 金鑰尚未設定。）'
-  const system = (canAct ? BOT_AGENT_GUIDE + '\n\n' : '') + BOT_PERSONA + (memoryText || '') + SYS_DATA_HEAD + snapshotsToContext(snaps) + (tasksText || '') + (accountsText || '') + (financeText || '') + (activityText || '') + (estimatesText || '') + (crewText || '') + (conclusionsText || '') + (sheetText || '') + (posText || '') + (supplyText || '') + (lineQuotaText || '') + (catalogText || '')
+  const system = (canAct ? BOT_AGENT_GUIDE + '\n\n' : '') + BOT_PERSONA + (memoryText || '') + SYS_DATA_HEAD + snapshotsToContext(snaps) + (tasksText || '') + (accountsText || '') + (financeText || '') + (activityText || '') + (estimatesText || '') + (crewText || '') + (conclusionsText || '') + (sheetText || '') + (posText || '') + (supplyText || '') + (lineQuotaText || '') + (catalogText || '') + (filelibText || '')
   const messages = [...(Array.isArray(history) ? history : []), { role: 'user', content: question }]
   const callModel = async (model) => {
     const r = await fetch('https://api.anthropic.com/v1/messages', {
@@ -1038,25 +1052,32 @@ export default async function handler(req, res) {
       const op = isDM ? operators[userId] : null
       const canAct = !!op
 
-      // 1.4) 檔案庫（私訊操作者 or 被叫名字的群組都能用）：新增類別 / 把剛傳的檔存進 App 檔案庫
-      if (isDM ? canAct : true) {
-        const isFilelib = /(存|放|上傳|收|歸)\S{0,4}(檔案庫|相簿)|(檔案庫|相簿)\S{0,4}(存|放|收|新增|開|加|類別|資料夾)|(新增|開|加)\S{0,3}(檔案庫|相簿)\S{0,3}(類別|資料夾)/.test(text)
-        if (isFilelib) {
-          const label = ((text.split('檔案庫')[1] ?? text.split('相簿')[1]) || '')
-            .replace(/類別|資料夾|夾|開(一個|新)?|新增|加|儲存在?裡面|裡面|這是|一個|請|幫我|存到?|存進?|放到?|放進?|上傳到?|收到?|收進?|歸到?|一下|把|剛剛的?|這些?|那些?/g, '')
-            .replace(/[，,、。\s「」『』:：]/g, '')
-            .trim()
-          const wantCreate = /(新增|開|加).{0,6}(類別|資料夾)/.test(text)
-          const byName = isDM ? op.name : ((await getLineProfile(userId)) || '群組成員')
-          const out = await saveCachedFilesToLibrary(label, byName, convId)
-          if (out.ok) {
-            await finish(`✅ 已把 ${out.count} 個檔案存進 App 檔案庫（類別：${out.label}）：\n${out.names.map(n => '・' + n).join('\n')}${out.failed && out.failed.length ? `\n⚠️ 有 ${out.failed.length} 個抓不到(可能過期)` : ''}\n\n到 App「檔案庫」頁可看＋下載。`)
-          } else if (wantCreate && label) {
-            await ensureFolder(label)
-            await finish(`✅ 檔案庫已新增類別「${label}」。傳檔案給我、再說「存到檔案庫 ${label}」就會歸進去；App 檔案庫也能用這個類別篩選。`)
-          } else {
-            await finish(out.msg)
+      // 1.4) 檔案庫（私訊操作者 or 被叫名字的群組都能用）：一句話可同時「新增類別／查有哪些類別／把剛傳的檔存進去」
+      if ((isDM ? canAct : true) && /檔案庫|相簿/.test(text)) {
+        // 新增類別（可多個）：兩種語序都接——「新增〔名〕類別」與「新增類別〔名〕」
+        const creates = [...new Set([
+          ...[...text.matchAll(/(?:新增|加|建|開)\s*(?:一個)?\s*[「『]?\s*([^「」『』\s，,、。？?！!的]{1,12}?)\s*[」』]?\s*(?:類別|資料夾|夾)/g)].map(m => m[1]),
+          ...[...text.matchAll(/(?:新增|加|建|開)\s*(?:一個)?\s*(?:類別|資料夾|夾)\s*[「『]?\s*([^「」『』\s，,、。？?！!]{1,12})/g)].map(m => m[1]),
+        ].map(s => (s || '').trim()).filter(s => s && !/^(類別|資料夾|夾)$/.test(s)))]
+        const wantSave = /(存|放|上傳|收|歸)\S{0,6}(檔案庫|相簿)|(檔案庫|相簿)\S{0,6}(存|放|收|歸)/.test(text)
+        const wantQuery = /(有沒有|有哪些|有什麼|哪些類別|什麼類別|類別.{0,3}嗎|有.{1,12}類別)/.test(text)
+        if (creates.length || wantSave || wantQuery) {
+          const parts = []
+          for (const nm of creates) await ensureFolder(nm)
+          if (creates.length) parts.push(`✅ 已新增類別：${creates.map(n => `「${n}」`).join('、')}。`)
+          if (wantSave) {
+            const label = creates[0] || ((text.split(/檔案庫|相簿/)[1] || '')
+              .replace(/類別|資料夾|夾|開.{0,2}|新增|加|存到?|存進?|放到?|放進?|上傳到?|收到?|收進?|歸到?|一下|把|剛剛的?|這些?|那些?|請|幫我|裡面|儲存在?/g, '')
+              .replace(/[，,、。\s「」『』:：]/g, '').trim())
+            const byName = isDM ? op.name : ((await getLineProfile(userId)) || '群組成員')
+            const out = await saveCachedFilesToLibrary(label, byName, convId)
+            parts.push(out.ok
+              ? `✅ 已把 ${out.count} 個檔案存進「${out.label}」${out.failed && out.failed.length ? `（有 ${out.failed.length} 個抓不到，可能過期）` : ''}。`
+              : out.msg)
           }
+          const cur = await listFolders()
+          parts.push(`📁 目前檔案庫自訂類別：${cur.length ? cur.join('、') : '（還沒有）'}（另有固定類別：估價單／現場照／發票／其他）。到 App 檔案庫頁上方「類別📁」可篩選/分組。`)
+          await finish(parts.join('\n'))
           continue
         }
       }
@@ -1119,8 +1140,8 @@ export default async function handler(req, res) {
       }
 
       // 3) 一般流程：載入資料＋對話記憶＋長期記事本 → 問 AI（操作者才開放下指令）
-      const [snaps, accountsText, financeText, activityText, estimatesText, crewText, history, memList, conclusionsText, tasksText, sheetText, posText, catalogText, supplyText, lineQuotaText] = await Promise.all([loadSnapshots(), loadAccounts(), loadFinanceText(), loadActivityText(), loadEstimatesText(), Promise.all([loadCrewText(), loadShiftText(), loadPunchText()]).then(([a, b, c]) => a + b + c), getChatHistory(convId), getMemory(), loadConclusionsText(), loadTasksText(), loadSheetText(), loadPosText(), loadCatalogText(), loadSupplyText(), loadLineQuotaText()])
-      const rawReply = await answer(text, snaps, accountsText, financeText, activityText, estimatesText, crewText, canAct, history, memoryToText(memList), conclusionsText, tasksText, sheetText, posText, catalogText, supplyText, lineQuotaText)
+      const [snaps, accountsText, financeText, activityText, estimatesText, crewText, history, memList, conclusionsText, tasksText, sheetText, posText, catalogText, supplyText, lineQuotaText, filelibText] = await Promise.all([loadSnapshots(), loadAccounts(), loadFinanceText(), loadActivityText(), loadEstimatesText(), Promise.all([loadCrewText(), loadShiftText(), loadPunchText()]).then(([a, b, c]) => a + b + c), getChatHistory(convId), getMemory(), loadConclusionsText(), loadTasksText(), loadSheetText(), loadPosText(), loadCatalogText(), loadSupplyText(), loadLineQuotaText(), loadFilelibText()])
+      const rawReply = await answer(text, snaps, accountsText, financeText, activityText, estimatesText, crewText, canAct, history, memoryToText(memList), conclusionsText, tasksText, sheetText, posText, catalogText, supplyText, lineQuotaText, filelibText)
       // 抓出 D 想長期記住的事（[[記住:...]]）→ 存進記事本(僅操作者)，並把標記從給人看的文字拿掉
       const { facts, clean } = extractMemoryTags(rawReply)
       if (canAct && facts.length) { for (const f of facts) await addMemory(f, 'auto', op?.name) }
