@@ -770,7 +770,16 @@ function LineNotifySettings({ settings, upd, cats, journal, events, plans }) {
       </div>
       {msg && <div style={{ fontSize: 12.5, color: msg.startsWith("✅") ? "#3C8C3C" : msg.startsWith("⚠️") ? "#C0392B" : "#6F6656", marginBottom: 10 }}>{msg}</div>}
 
-      <div style={{ fontSize: 12.5, color: "#4A4234", fontWeight: 600, margin: "14px 0 6px" }}>通知開關</div>
+      {/* 總開關：一鍵暫停所有 LINE 通知 */}
+      <label style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 14px", margin: "6px 0 10px", cursor: "pointer", background: notify.pauseAll ? "#fbe9e7" : "#eef7ee", border: `1.5px solid ${notify.pauseAll ? "#e5a29a" : "#bcd9bc"}`, borderRadius: 10 }}>
+        <input type="checkbox" checked={!!notify.pauseAll} onChange={() => toggle("pauseAll")} style={{ width: 22, height: 22, accentColor: "#b3261e", flexShrink: 0 }} />
+        <div>
+          <div style={{ fontSize: 14.5, fontWeight: 700, color: notify.pauseAll ? "#b3261e" : "#211C15" }}>{notify.pauseAll ? "🔕 已暫停所有 LINE 通知" : "🔔 LINE 通知：正常運作中"}</div>
+          <div style={{ fontSize: 12, color: "#6F6656", marginTop: 3 }}>打開此開關＝<b>所有排程通知（每日速報、週報等）全部停發</b>，不必逐項關。下面的個別開關要打開才生效。</div>
+        </div>
+      </label>
+
+      <div style={{ fontSize: 12.5, color: "#4A4234", fontWeight: 600, margin: "14px 0 6px", opacity: notify.pauseAll ? 0.4 : 1 }}>通知開關{notify.pauseAll ? "（總開關已暫停，以下暫時無效）" : ""}</div>
       <div style={{ display: "flex", flexDirection: "column" }}>
         {LINE_EVENTS.map(([k, label]) => (
           <label key={k} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 4px", cursor: "pointer", fontSize: 13.5, color: "#211C15", borderBottom: "1px solid #ece4d6" }}>

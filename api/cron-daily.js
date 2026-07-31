@@ -47,6 +47,8 @@ export default async function handler(req, res) {
   // 尊重「設定 → LINE 通知」開關（張良 2026-07-18：關了還照發＝bug）；沒勾就只做資料同步、不推播
   const settings = (await kvGet('pm_settings')) || {}
   const notify = settings.lineNotify || {}
+  // 總開關：暫停所有 LINE 通知 → 只做資料同步、完全不推播（張良 2026-07-31）
+  if (notify.pauseAll) return res.status(200).json({ ok: true, skipped: '已暫停所有 LINE 通知（總開關），僅完成資料同步' })
   const target = clean(settings.lineGroupId) || GROUP
   const messages = []
   if (notify.daily) {
