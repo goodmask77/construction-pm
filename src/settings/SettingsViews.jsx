@@ -96,9 +96,9 @@ export function GroupsView({ cats, canEdit, requireLogin, settings, setSettings,
         <div style={{ fontSize: 17, fontWeight: 700, color: TEXT }}>💬 LINE 群組</div>
         <div style={{ fontSize: 12.5, color: SUB }}>DD所在 {ids.length} 個群{hiddenN > 0 ? `（另 ${hiddenN} 個未命名群已隱藏，抓到群名會自動出現）` : ""}{saving ? " · 儲存中…" : ""}</div>
       </div>
-      <div style={{ fontSize: 12, color: SUB, marginBottom: 14, lineHeight: 1.6 }}>
-        <b style={{ color: ACCENT }}>內部群</b>＝自己人，可查預算金額全部工程；<b style={{ color: "#2E6FB0" }}>廠商群</b>＝只回它那項工程進度，<b style={{ color: ACCENT }}>絕不洩漏金額</b>（要選綁定工程）；<b style={{ color: SUB }}>鎖定</b>＝只閒聊。外群一律「叫名字才回話」。<br />
-        <b style={{ color: "#B45309" }}>每日彙報</b>＝每晚 8:00 把重點整理私訊你（一天一次）；<b style={{ color: "#b3261e" }}>即時監控</b>＝有重要訊息（變更／缺失／金額／交期／安全…）<b>當下就私訊你</b>。名字抓不到時，點群名旁 ✎ 可手動命名。
+      <div style={{ fontSize: 12.5, color: SUB, marginBottom: 14, lineHeight: 1.7, background: "#f3efe6", border: `1px solid ${BORDER}`, borderRadius: 8, padding: "10px 12px" }}>
+        這裡只是<b>列出 DD 目前在哪些群</b>。現在的 DD 對所有群<b>一視同仁</b>：要<b>叫一聲「DD」它才回話</b>，而且在群組裡<b>只讀不寫</b>（不會改到任何資料）。抓不到群名的群，點 ✎ 可手動命名。<br />
+        <span style={{ color: "#9b9384" }}>（發通知的設定在下方「LINE 通知」；發到哪個群也在那裡選。）</span>
       </div>
 
       <div style={{ overflowX: "auto", border: `1px solid ${BORDER}`, borderRadius: 12, background: "#fff" }}>
@@ -106,11 +106,6 @@ export function GroupsView({ cats, canEdit, requireLogin, settings, setSettings,
           <thead>
             <tr style={{ background: SURFACE }}>
               <th style={th}>群組</th>
-              <th style={th}>類型</th>
-              <th style={th}>回覆程度</th>
-              <th style={th}>綁定工程</th>
-              <th style={{ ...th, textAlign: "center" }}>每日彙報</th>
-              <th style={{ ...th, textAlign: "center" }}>即時監控</th>
               <th style={{ ...th, textAlign: "right" }}>最近 · 則數</th>
             </tr>
           </thead>
@@ -131,37 +126,6 @@ export function GroupsView({ cats, canEdit, requireLogin, settings, setSettings,
                       {!isDefault && <button onClick={() => removeGroup(gid)} title="從清單移除（死群清理）" style={{ border: "none", background: "none", cursor: "pointer", color: isRawId ? "#b3261e" : SUB, fontSize: 12, padding: 0 }}>🗑</button>}
                     </div>
                   </td>
-                  <td style={td}>
-                    <select value={mode} onChange={e => setMode(gid, e.target.value)} style={{ ...selStyle, fontWeight: 600, color: MODE_COLOR[mode] }}>
-                      <option value="internal">內部群</option>
-                      <option value="vendor">廠商群</option>
-                      <option value="locked">鎖定</option>
-                    </select>
-                  </td>
-                  <td style={td}>
-                    <select value={effChat(gid)} onChange={e => setChat(gid, e.target.value)} title="安靜=只有叫它才回；正常=有正事才回、不亂聊；活潑=正事會回＋偶爾俏皮接話" style={selStyle}>
-                      <option value="quiet">🤫 安靜</option>
-                      <option value="normal">🙂 正常</option>
-                      <option value="lively">😄 活潑</option>
-                    </select>
-                  </td>
-                  <td style={td}>
-                    {mode === "vendor" ? (
-                      <span>
-                        <select value={cfg[gid]?.catId || ""} onChange={e => setVendorCat(gid, e.target.value)} style={{ ...selStyle, borderColor: cfg[gid]?.catId ? BORDER : ACCENT }}>
-                          <option value="">— 請選 —</option>
-                          {(gcats || []).map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                        </select>
-                        {!cfg[gid]?.catId && <span style={{ color: ACCENT, fontSize: 11, marginLeft: 6 }}>⚠️未綁</span>}
-                      </span>
-                    ) : <span style={{ color: SUB }}>—</span>}
-                  </td>
-                  <td style={{ ...td, textAlign: "center" }}>
-                    <button onClick={() => toggleDigest(gid)} title="每晚 8:00 整理重點私訊給你" style={{ width: 26, height: 26, borderRadius: 7, border: `1.5px solid ${dg ? "#3C8C3C" : BORDER}`, cursor: "pointer", background: dg ? "#3C8C3C" : "transparent", color: "#fff", fontSize: 14, lineHeight: 1, fontWeight: 700 }}>{dg ? "✓" : ""}</button>
-                  </td>
-                  <td style={{ ...td, textAlign: "center" }}>
-                    <button onClick={() => toggleMonitor(gid)} title="有重要訊息(變更/缺失/金額/交期/安全…)當下就私訊你" style={{ width: 26, height: 26, borderRadius: 7, border: `1.5px solid ${mon ? "#b3261e" : BORDER}`, cursor: "pointer", background: mon ? "#b3261e" : "transparent", color: "#fff", fontSize: 13, lineHeight: 1, fontWeight: 700 }}>{mon ? "🔔" : ""}</button>
-                  </td>
                   <td style={{ ...td, textAlign: "right", color: SUB, fontSize: 12, whiteSpace: "nowrap" }}>{fmtWhen(s.lastSeen)} · {s.count || 0}</td>
                 </tr>
               );
@@ -175,7 +139,7 @@ export function GroupsView({ cats, canEdit, requireLogin, settings, setSettings,
       {/* LINE 通知設定（從 AI設定 整合過來）*/}
       {settings && (
         <div style={{ marginTop: 22 }}>
-          <LineNotifySettings settings={gset || {}} upd={updSettings} cats={gcats} journal={journal} events={events} plans={plans} />
+          <LineNotifySettings settings={gset || {}} upd={updSettings} cats={gcats} journal={journal} events={events} plans={plans} groups={ids.map(gid => ({ gid, name: (cfg[gid]?.name) || seen[gid]?.name || (gid === DEFAULT_LINE_GROUP ? "瑞光路337（內部群）" : gid) }))} />
         </div>
       )}
     </div>
@@ -731,7 +695,7 @@ export function VaultView({ onLog }) {
 }
 
 // ── LINE 通知設定區塊（AI設定 → 專案設定）────────────────────────────────────
-function LineNotifySettings({ settings, upd, cats, journal, events, plans }) {
+function LineNotifySettings({ settings, upd, cats, journal, events, plans, groups = [] }) {
   const [busy, setBusy] = useState(false);
   const [wbusy, setWbusy] = useState(false);
   const [msg, setMsg] = useState("");
@@ -758,40 +722,64 @@ function LineNotifySettings({ settings, upd, cats, journal, events, plans }) {
     setWbusy(false);
   };
 
+  // 只列「現在的 DD 真的會發」的通知（卡關/截止日等舊功能已隨舊專案移除，不再顯示假開關）
+  const NOTIFY_ITEMS = [
+    ["daily", "每日工地速報", "每天早上 8:00，把進度／卡關／未付款整理發到群組"],
+    ["issue", "有問題通知", "有細項被標成「有問題」時，馬上發到群組"],
+    ["done", "完工通知", "有細項標「完工」時，發到群組"],
+    ["journal", "新日誌通知", "有人新增工作日誌時，發到群組"],
+    ["weekly", "週五回饋提醒", "每週五提醒大家互相回饋（一週一次）"],
+  ];
+  const paused = !!notify.pauseAll;
+  const Switch = ({ on, off }) => (
+    <button type="button" onClick={() => { if (!paused) off ? off() : null; }} disabled={paused} style={{ width: 46, height: 26, borderRadius: 14, border: "none", cursor: paused ? "not-allowed" : "pointer", background: on ? "#3C8C3C" : "#c9c1b2", position: "relative", opacity: paused ? 0.5 : 1, flexShrink: 0, padding: 0 }}>
+      <span style={{ position: "absolute", top: 3, left: on ? 23 : 3, width: 20, height: 20, borderRadius: "50%", background: "#fff", boxShadow: "0 1px 2px rgba(0,0,0,.3)", transition: "left .15s" }} />
+    </button>
+  );
+  const inGroups = groups.some(g => g.gid === groupId);
+
   return (
     <div style={{ background: "#fbf8f1", border: "1px solid #d9cfbd", borderRadius: 12, padding: "20px" }}>
-      <div style={{ fontSize: 14, fontWeight: 600, color: "#211C15", marginBottom: 4 }}>💬 LINE 通知</div>
-      <div style={{ fontSize: 12, color: "#6F6656", marginBottom: 14 }}>設定推播群組與各類事件通知（設定儲存於共用空間，供伺服器排程使用）</div>
+      <div style={{ fontSize: 15, fontWeight: 700, color: "#211C15", marginBottom: 4 }}>💬 LINE 通知</div>
+      <div style={{ fontSize: 12, color: "#6F6656", marginBottom: 14 }}>下面每一項都是「DD 現在真的會做」的通知，設定即時生效。</div>
 
-      <div style={{ fontSize: 12.5, color: "#4A4234", fontWeight: 600, marginBottom: 6 }}>LINE 群組 ID</div>
-      <div style={{ display: "flex", gap: 8, marginBottom: 6, flexWrap: "wrap" }}>
-        <input value={groupId} onChange={e => upd("lineGroupId", e.target.value)} placeholder="群組 ID" style={{ flex: 1, minWidth: 200, border: "1px solid #d9cfbd", borderRadius: 8, padding: "10px 12px", fontSize: 14, fontFamily: "monospace" }} />
-        <button onClick={test} disabled={busy} style={{ border: "none", background: "#06C755", color: "#fff", borderRadius: 8, padding: "10px 18px", fontSize: 13, fontWeight: 600, cursor: busy ? "wait" : "pointer", whiteSpace: "nowrap" }}>{busy ? "傳送中…" : "測試推送"}</button>
-      </div>
-      {msg && <div style={{ fontSize: 12.5, color: msg.startsWith("✅") ? "#3C8C3C" : msg.startsWith("⚠️") ? "#C0392B" : "#6F6656", marginBottom: 10 }}>{msg}</div>}
-
-      {/* 總開關：一鍵暫停所有 LINE 通知 */}
-      <label style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 14px", margin: "6px 0 10px", cursor: "pointer", background: notify.pauseAll ? "#fbe9e7" : "#eef7ee", border: `1.5px solid ${notify.pauseAll ? "#e5a29a" : "#bcd9bc"}`, borderRadius: 10 }}>
-        <input type="checkbox" checked={!!notify.pauseAll} onChange={() => toggle("pauseAll")} style={{ width: 22, height: 22, accentColor: "#b3261e", flexShrink: 0 }} />
+      {/* ① 總開關 */}
+      <label style={{ display: "flex", alignItems: "center", gap: 12, padding: "14px", margin: "0 0 16px", cursor: "pointer", background: paused ? "#fbe9e7" : "#eef7ee", border: `1.5px solid ${paused ? "#e5a29a" : "#bcd9bc"}`, borderRadius: 10 }}>
+        <input type="checkbox" checked={paused} onChange={() => toggle("pauseAll")} style={{ width: 22, height: 22, accentColor: "#b3261e", flexShrink: 0 }} />
         <div>
-          <div style={{ fontSize: 14.5, fontWeight: 700, color: notify.pauseAll ? "#b3261e" : "#211C15" }}>{notify.pauseAll ? "🔕 已暫停所有 LINE 通知" : "🔔 LINE 通知：正常運作中"}</div>
-          <div style={{ fontSize: 12, color: "#6F6656", marginTop: 3 }}>打開此開關＝<b>所有排程通知（每日速報、週報等）全部停發</b>，不必逐項關。下面的個別開關要打開才生效。</div>
+          <div style={{ fontSize: 15, fontWeight: 700, color: paused ? "#b3261e" : "#211C15" }}>{paused ? "🔕 已暫停所有通知" : "🔔 通知：正常運作中"}</div>
+          <div style={{ fontSize: 12, color: "#6F6656", marginTop: 3 }}>打開＝<b>下面全部通知一次停發</b>，不必逐項關。</div>
         </div>
       </label>
 
-      <div style={{ fontSize: 12.5, color: "#4A4234", fontWeight: 600, margin: "14px 0 6px", opacity: notify.pauseAll ? 0.4 : 1 }}>通知開關{notify.pauseAll ? "（總開關已暫停，以下暫時無效）" : ""}</div>
-      <div style={{ display: "flex", flexDirection: "column" }}>
-        {LINE_EVENTS.map(([k, label]) => (
-          <label key={k} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 4px", cursor: "pointer", fontSize: 13.5, color: "#211C15", borderBottom: "1px solid #ece4d6" }}>
-            <input type="checkbox" checked={!!notify[k]} onChange={() => toggle(k)} style={{ width: 18, height: 18, accentColor: ACCENT, flexShrink: 0 }} />
-            {label}
-          </label>
+      {/* ② 通知項目（iOS 直接開關） */}
+      <div style={{ fontSize: 12.5, color: "#4A4234", fontWeight: 700, margin: "0 0 8px" }}>② 通知項目{paused ? "（已暫停，以下暫時不發）" : ""}</div>
+      <div style={{ border: "1px solid #e6ddc9", borderRadius: 10, overflow: "hidden", background: "#fff" }}>
+        {NOTIFY_ITEMS.map(([k, label, desc], i) => (
+          <div key={k} style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 14px", borderTop: i ? "1px solid #ece4d6" : "none", opacity: paused ? 0.45 : 1 }}>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 14, fontWeight: 600, color: "#211C15" }}>{label}</div>
+              <div style={{ fontSize: 12, color: "#6F6656", marginTop: 2 }}>{desc}</div>
+            </div>
+            <Switch on={!!notify[k]} off={() => toggle(k)} />
+          </div>
         ))}
       </div>
-      <div style={{ fontSize: 11, color: "#9b9384", marginTop: 8, lineHeight: 1.6 }}>※「有問題 / 完工 / 新日誌」由系統即時推播；「卡關 / 週五週報 / 截止日」為時間排程，由 webhook 伺服器依此設定推播。</div>
+
+      {/* ③ 發到哪個群 */}
+      <div style={{ fontSize: 12.5, color: "#4A4234", fontWeight: 700, margin: "18px 0 8px" }}>③ 發到哪個群</div>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+        <select value={groupId} onChange={e => upd("lineGroupId", e.target.value)} style={{ flex: 1, minWidth: 200, border: "1px solid #d9cfbd", borderRadius: 8, padding: "10px 12px", fontSize: 14, background: "#fff", color: "#211C15", cursor: "pointer" }}>
+          {!inGroups && <option value={groupId}>（目前設定的群，DD 未在其中）</option>}
+          {groups.map(g => <option key={g.gid} value={g.gid}>{g.name}</option>)}
+        </select>
+        <button onClick={test} disabled={busy} style={{ border: "none", background: "#06C755", color: "#fff", borderRadius: 8, padding: "10px 18px", fontSize: 13, fontWeight: 600, cursor: busy ? "wait" : "pointer", whiteSpace: "nowrap" }}>{busy ? "傳送中…" : "測試推送"}</button>
+      </div>
+      <div style={{ fontSize: 11.5, color: "#9b9384", marginTop: 6 }}>所有通知都發到這個群（DD 必須在這個群裡才收得到）。</div>
+      {msg && <div style={{ fontSize: 12.5, color: msg.startsWith("✅") ? "#3C8C3C" : msg.startsWith("⚠️") ? "#C0392B" : "#6F6656", marginTop: 8 }}>{msg}</div>}
 
       <div style={{ marginTop: 16, paddingTop: 16, borderTop: "1px solid #e6ddc9" }}>
-        <button onClick={pushWeekly} disabled={wbusy} style={{ border: "none", background: "#211C15", color: "#fff", borderRadius: 9, padding: "11px 18px", fontSize: 13.5, fontWeight: 600, cursor: wbusy ? "wait" : "pointer", display: "flex", alignItems: "center", gap: 8 }}>{wbusy ? "產生中…" : "📋 立即推送業主週報到 LINE"}</button>
+        <button onClick={pushWeekly} disabled={wbusy} style={{ border: "none", background: "#211C15", color: "#fff", borderRadius: 9, padding: "11px 18px", fontSize: 13.5, fontWeight: 600, cursor: wbusy ? "wait" : "pointer", display: "flex", alignItems: "center", gap: 8 }}>{wbusy ? "產生中…" : "📋 立即產生＋推送業主週報"}</button>
       </div>
     </div>
   );

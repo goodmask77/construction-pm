@@ -2,6 +2,7 @@
  {
   "date": "2026-07-31",
   "items": [
+   "全面體檢修舊路徑/舊模型(張良:最近發現不少舊檔舊路徑錯誤 全面檢查避免再犯)：①前端LINE推播LINE_PUSH_URL從已死的ground-pm-webhook改回本專案/api/push+欄位對齊push.js({to,text}/{to,messages:[flex]})——原本測試推送/事件通知其實一直發不出去 ②notifyLineEvent加pauseAll總開關保險 ③api/ai.js模型清單去舊(claude-3-5/4-20250514)改claude-sonnet-4-6+opus-4-8 ④line-webhook fallback 4-5→4-6 ⑤刪App.jsx死碼MODEL常數。另清2筆Supabase測試垃圾 v1.69.0",
    "LINE通知加「暫停所有」總開關(張良:暫停所有群組通知+要很清楚的設定頁)：①設定→LINE通知 最上方加顯眼紅/綠總開關 notify.pauseAll，打開=所有排程通知全停、個別開關變灰失效 ②cron-daily.js 讀到 pauseAll 直接只同步不推播。註:張良看到的幽靈通知其實是我稍早誤把金鑰補回停用的舊 ground-pm-webhook 專案、它的排程醒來發的;已移除該專案金鑰(env=0排程已死),真bot的daily本來就false v1.68.0"
   ]
  },
