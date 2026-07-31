@@ -3,9 +3,8 @@
 // 依序嘗試多個現行模型，遇到「模型不存在/無權限」自動換下一個。
 const MODELS = [
   process.env.ANTHROPIC_MODEL,
-  'claude-sonnet-4-5',
-  'claude-sonnet-4-20250514',
-  'claude-3-5-sonnet-latest',
+  'claude-sonnet-4-6',
+  'claude-opus-4-8',
 ].filter(Boolean)
 
 export default async function handler(req, res) {

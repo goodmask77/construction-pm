@@ -684,7 +684,7 @@ async function answer(question, snaps, accountsText, financeText, activityText, 
   }
   try {
     let { ok, d } = await callModel(BOT_MODEL)
-    if (!ok) { console.log('primary model failed, fallback to sonnet', d?.error?.message); ({ ok, d } = await callModel('claude-sonnet-4-5')) } // 主模型不可用就退回，D哥不會啞掉
+    if (!ok) { console.log('primary model failed, fallback to sonnet', d?.error?.message); ({ ok, d } = await callModel('claude-sonnet-4-6')) } // 主模型不可用就退回，D哥不會啞掉
     if (ok) return (d.content || []).map((b) => b.text || '').join('').trim() || '（沒有內容）'
     return '（AI 回應失敗，請稍後再試）'
   } catch (_) { return '（AI 連線失敗，請稍後再試）' }

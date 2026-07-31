@@ -171,7 +171,6 @@ async function loadSpaceAIContext() {
     return parts.length ? "\n\n=== 全系統即時資料（回答任何空間的問題一律以此為準，不要說沒有資料） ===\n\n" + parts.join("\n\n") : "";
   } catch (_) { return ""; }
 }
-const MODEL = "claude-sonnet-4-20250514";
 
 
 // STATUS_MAP / markCatDone / syncCatStatus 已抽到 ./lib/status.js（拆檔第二刀，2026-07-18）

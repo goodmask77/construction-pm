@@ -2,7 +2,7 @@
 // App（事件通知）與設定頁（群組管理/通知設定/額度）共用同一套。
 import { K } from "./runtime.js";
 
-export const LINE_PUSH_URL = "https://ground-pm-webhook.vercel.app/api/push";
+export const LINE_PUSH_URL = "/api/push"; // 本專案後端代理（原本誤指向已刪除的 ground-pm-webhook）
 export const LINE_API_KEY = "ground-pm-2026-secret-abc123"; // 先寫死，之後再改後端代理/加密
 export const DEFAULT_LINE_GROUP = "Cf7940efc6517b0c084ad2ad496b45f30";
 // 通知開關清單（key 同時供 webhook server 排程使用）
@@ -29,20 +29,22 @@ export async function sendLineNotify(text) {
   const s = await _lineSettings();
   const to = s.lineGroupId || DEFAULT_LINE_GROUP;
   if (!to) return { ok: false, reason: "no-group" };
-  return _linePush({ to, message: text });
+  return _linePush({ to, text });
 }
-// 共用：推送 LINE Flex 訊息
+// 共用：推送 LINE Flex 訊息（push.js 收 messages 陣列）
 export async function sendLineFlex(flex) {
   const s = await _lineSettings();
   const to = s.lineGroupId || DEFAULT_LINE_GROUP;
   if (!to) return { ok: false, reason: "no-group" };
-  return _linePush({ to, flex });
+  return _linePush({ to, messages: [flex] });
 }
-// 事件型通知：依「通知開關」決定是否推送
+// 事件型通知：先看「暫停所有通知」總開關，再看該事件的個別開關
 export async function notifyLineEvent(type, text) {
   const s = await _lineSettings();
-  if (!((s.lineNotify || {})[type])) return { ok: false, reason: "disabled" };
+  const notify = s.lineNotify || {};
+  if (notify.pauseAll) return { ok: false, reason: "paused-all" };
+  if (!notify[type]) return { ok: false, reason: "disabled" };
   const to = s.lineGroupId || DEFAULT_LINE_GROUP;
   if (!to) return { ok: false, reason: "no-group" };
-  return _linePush({ to, message: text });
+  return _linePush({ to, text });
 }
