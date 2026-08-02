@@ -881,16 +881,19 @@ async function handleUnsend(ev) {
     if (!mid) return
     const cache = asObj((await kvGetMany(['pm_bot_msgcache']))['pm_bot_msgcache'])
     const hit = (Array.isArray(cache.list) ? cache.list : []).find(m => m.id === mid)
+    if (!hit) return // 沒快取到內容（圖/貼圖/較舊訊息）→ 不發「沒快取到」的空通知
+    const st = asObj((await kvGetMany(['pm_settings']))['pm_settings']) // 尊重「暫停所有 LINE 通知」總開關
+    if (st && st.lineNotify && st.lineNotify.pauseAll) return
     const ops = await getOperators()
     const boss = Object.keys(ops)[0]
     if (!boss || !TOKEN) return
-    const gid = ev.source?.groupId || ev.source?.roomId || hit?.gid || ''
+    const gid = ev.source?.groupId || ev.source?.roomId || hit.gid || ''
     const groupsSeen = asObj((await kvGetMany(['pm_group_seen']))['pm_group_seen'])
     const gname = (groupsSeen[gid] && groupsSeen[gid].name) || '未知群'
-    const uid = ev.source?.userId || hit?.uid || ''
+    const uid = ev.source?.userId || hit.uid || ''
     const uname = uid ? (await getLineProfile(uid)) || uid.slice(-6) : '未知'
-    const when = hit ? new Date(hit.ts).toLocaleString('zh-TW', { hour12: false }) : ''
-    const textLine = hit ? `內容：「${hit.text}」${when ? `\n原發送：${when}` : ''}` : '內容：D 沒快取到這則（可能較舊或非文字訊息）'
+    const when = new Date(hit.ts).toLocaleString('zh-TW', { hour12: false })
+    const textLine = `內容：「${hit.text}」${when ? `\n原發送：${when}` : ''}`
     await fetch('https://api.line.me/v2/bot/message/push', {
       method: 'POST',
       headers: { 'content-type': 'application/json', authorization: `Bearer ${TOKEN}` },
@@ -994,6 +997,8 @@ export default async function handler(req, res) {
   // 重要：serverless 一旦 res 回應就會凍結，後面的 await 不會跑完 → 必須「先處理完(含回覆)再回 200」。
   for (const ev of events) {
     try {
+      // 防重複：LINE 在我們回應慢時會「重送」同一批事件，redelivery 標記為 true → 直接跳過，避免同一則通知/回覆重複
+      if (ev.deliveryContext?.isRedelivery) { console.log('skip redelivery', ev.webhookEventId || ''); continue }
       // 回收訊息 → 私訊老闆（誰在哪個群回收了什麼）
       if (ev.type === 'unsend') { await handleUnsend(ev); continue }
       // 互動卡片按鈕（postback）：回饋/投票/文件歸類（只在私訊）
