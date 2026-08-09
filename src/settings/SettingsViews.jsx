@@ -53,6 +53,9 @@ export function GroupsView({ cats, canEdit, requireLogin, settings, setSettings,
   };
   const effMode = (gid) => { const c = cfg[gid] || {}; return c.mode || (gid === DEFAULT_LINE_GROUP ? "internal" : (c.catId ? "vendor" : "locked")); };
   const effDigest = (gid) => (cfg[gid]?.digest !== false);
+  // 可問金額/財務：主內部群永遠可；其他群預設不可（避免外部群外洩），要手動開
+  const effMoney = (gid) => (gid === DEFAULT_LINE_GROUP) || (cfg[gid]?.money === true);
+  const toggleMoney = (gid) => { if (!guard()) return; if (gid === DEFAULT_LINE_GROUP) return; persist({ ...cfg, [gid]: { ...(cfg[gid] || {}), money: !effMoney(gid) } }); };
   const setMode = (gid, mode) => { if (!guard()) return; const c = { ...(cfg[gid] || {}) }; c.mode = mode; if (mode !== "vendor") { delete c.catId; delete c.catName; } persist({ ...cfg, [gid]: c }); };
   const setVendorCat = (gid, catId) => { if (!guard()) return; const cat = (gcats || []).find(x => x.id === catId); persist({ ...cfg, [gid]: { ...(cfg[gid] || {}), mode: "vendor", catId, catName: cat ? cat.name : "" } }); };
   const toggleDigest = (gid) => { if (!guard()) return; persist({ ...cfg, [gid]: { ...(cfg[gid] || {}), digest: !effDigest(gid) } }); };
@@ -97,8 +100,9 @@ export function GroupsView({ cats, canEdit, requireLogin, settings, setSettings,
         <div style={{ fontSize: 12.5, color: SUB }}>DD所在 {ids.length} 個群{hiddenN > 0 ? `（另 ${hiddenN} 個未命名群已隱藏，抓到群名會自動出現）` : ""}{saving ? " · 儲存中…" : ""}</div>
       </div>
       <div style={{ fontSize: 12.5, color: SUB, marginBottom: 14, lineHeight: 1.7, background: "#f3efe6", border: `1px solid ${BORDER}`, borderRadius: 8, padding: "10px 12px" }}>
-        這裡只是<b>列出 DD 目前在哪些群</b>。現在的 DD 對所有群<b>一視同仁</b>：要<b>叫一聲「DD」它才回話</b>，而且在群組裡<b>只讀不寫</b>（不會改到任何資料）。抓不到群名的群，點 ✎ 可手動命名。<br />
-        <span style={{ color: "#9b9384" }}>（發通知的設定在下方「LINE 通知」；發到哪個群也在那裡選。）</span>
+        DD 在群組裡要<b>叫一聲「DD」才回話</b>，而且<b>只讀不寫</b>（不會改資料）。抓不到群名的群點 ✎ 可命名。<br />
+        <b style={{ color: ACCENT }}>可問金額/財務</b>＝這個群能不能問到金額（預算/未付/營業額/財務…）：<b>內部群、財務群請開 ✅；外部群（廠商/客戶）請關 🚫，避免金額外洩</b>。（主內部群永遠開。）<br />
+        <span style={{ color: "#9b9384" }}>（發通知的設定在下方「LINE 通知」。）</span>
       </div>
 
       <div style={{ overflowX: "auto", border: `1px solid ${BORDER}`, borderRadius: 12, background: "#fff" }}>
@@ -106,6 +110,7 @@ export function GroupsView({ cats, canEdit, requireLogin, settings, setSettings,
           <thead>
             <tr style={{ background: SURFACE }}>
               <th style={th}>群組</th>
+              <th style={{ ...th, textAlign: "center" }}>可問金額/財務</th>
               <th style={{ ...th, textAlign: "right" }}>最近 · 則數</th>
             </tr>
           </thead>
@@ -125,6 +130,13 @@ export function GroupsView({ cats, canEdit, requireLogin, settings, setSettings,
                       <button onClick={() => renameGroup(gid, isRawId ? "" : name)} title="改顯示名稱" style={{ border: "none", background: "none", cursor: "pointer", color: isRawId ? ACCENT : SUB, fontSize: 12, padding: 0 }}>✎</button>
                       {!isDefault && <button onClick={() => removeGroup(gid)} title="從清單移除（死群清理）" style={{ border: "none", background: "none", cursor: "pointer", color: isRawId ? "#b3261e" : SUB, fontSize: 12, padding: 0 }}>🗑</button>}
                     </div>
+                  </td>
+                  <td style={{ ...td, textAlign: "center" }}>
+                    {(() => { const on = effMoney(gid); const locked = gid === DEFAULT_LINE_GROUP; return (
+                      <button type="button" onClick={() => toggleMoney(gid)} disabled={locked} title={locked ? "主內部群，永遠可查金額" : (on ? "可查金額（點一下改成不可）" : "不可查金額（點一下開放）")} style={{ width: 46, height: 26, borderRadius: 14, border: "none", cursor: locked ? "default" : "pointer", background: on ? "#3C8C3C" : "#c9c1b2", position: "relative", opacity: locked ? 0.7 : 1, padding: 0 }}>
+                        <span style={{ position: "absolute", top: 3, left: on ? 23 : 3, width: 20, height: 20, borderRadius: "50%", background: "#fff", boxShadow: "0 1px 2px rgba(0,0,0,.3)", transition: "left .15s" }} />
+                      </button>
+                    ); })()}
                   </td>
                   <td style={{ ...td, textAlign: "right", color: SUB, fontSize: 12, whiteSpace: "nowrap" }}>{fmtWhen(s.lastSeen)} · {s.count || 0}</td>
                 </tr>
