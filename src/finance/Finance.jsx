@@ -132,7 +132,12 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
       setLedger(prev => prev == null ? prev : (tx ? [tx, ...prev.filter(l => l.id !== id)] : prev.filter(l => l.id !== id)));
     });
     const un2 = onSharedChange(K("pm_fin_accounts"), (_k, v) => { try { setAccounts(v ? JSON.parse(v) : []); } catch (_) {} });
-    return () => { un1(); un2(); };
+    // 後台收信入庫（POS 日結信/中信匯款通知）也會廣播 → 開著的營運報表/對帳頁自動跳新資料，
+    // 不用手動按「🔄 更新」或重新整理（張良 2026-08-14）。pm_pos 一變，明細月檔會由上面的 [pos] effect 自動重抓。
+    const un3 = onSharedChange(K("pm_pos"), (_k, v) => { try { setPos(v ? JSON.parse(v) : null); const t = "✓ 收到新日結信，畫面已自動更新"; setPosMsg(t); setTimeout(() => setPosMsg(m => m === t ? null : m), 8000); } catch (_) {} });
+    const un4 = onSharedChange(K("pm_pos_tx_") + "*", (k, v) => { try { const mo = k.slice(-7); setPosTx(p => (mo in p) ? { ...p, [mo]: v ? JSON.parse(v) : null } : p); } catch (_) {} });
+    const un5 = onSharedChange(K("pm_ctbc"), (_k, v) => { try { setCtbc(v ? JSON.parse(v) : null); } catch (_) {} });
+    return () => { un1(); un2(); un3(); un4(); un5(); };
   }, []); // eslint-disable-line
   const saveRecon = (next) => { setRecon(next); window.storage.set(K("pm_recon"), JSON.stringify(next), true).catch(() => {}); };
   const saveBank = (next) => { setBank(next); window.storage.set(K("pm_bank"), JSON.stringify(next), true).catch(() => {}); };
