@@ -90,6 +90,18 @@ export const catItemPaidMap = (cat) => {
       out[it.id] += give; poolNeg -= give;
     }
   }
+  // 負數池還有剩（例：付款被負數紀錄整批沖回，但沒有負數目標細項可吸收）→
+  // 從「最新的細項」開始把已分/已綁的已付扣回來（新→舊、扣到 0 為止）。
+  // 不做這步的話：細項各自顯示✓付清、大項卻只付了一部分——兩邊數字對不上（2026-08-09 張良回報）。
+  if (poolNeg < 0) {
+    for (const it of [...allocOrder].reverse()) {
+      if (poolNeg >= 0) break;
+      const cur = out[it.id] || 0;
+      if (cur <= 0) continue;
+      const take = Math.min(cur, -poolNeg);
+      out[it.id] = cur - take; poolNeg += take;
+    }
+  }
   return out;
 };
 export const catUnpaidAfter = (cat) => catEstAfter(cat) - catPaid(cat);
