@@ -78,6 +78,9 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
   const [posGran, setPosGran] = useState("day");            // 比較粒度：day/week/month
   const [posStore, setPosStore] = useState("abeach");       // 分店切換：abeach=A Beach 101 / ground=GROUN:D（營運報表第三層）
   const [posCats, setPosCats] = useState([]);               // 標籤自選：選到的分類做比較（空＝全部）
+  const [gdTab, setGdTab] = useState("全部");               // GROUN:D 品項明細：品類籤（張良 2026-08-14 指定試營運儀表板版型）
+  const [gdGroup, setGdGroup] = useState(true);             // GROUN:D 品項明細：依品類分組（品類列帶每日總份數）
+  const [gdSort, setGdSort] = useState(null);               // GROUN:D 品項明細：排序欄（日期 or "cum"；預設最新一天）
   const [posPivotCats, setPosPivotCats] = useState(null);   // 矩陣內分類勾選（null=全選）
   const [posPivotSort, setPosPivotSort] = useState(null);   // 矩陣排序 {col, dir}
   const [recon, setRecon] = useState({ links: {}, ignored: [] }); // 補記/忽略標記
@@ -1328,6 +1331,82 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
                     );
                   })()}
                 </div>
+                {/* GROUN:D 品項明細（張良 2026-08-14：用試營運儀表板版型——品類籤＋依品類分組＋每日欄＋累計＋套餐內；品類列再帶每日總份數） */}
+                {posStore === "ground" && (() => {
+                  const dts = days.map(d => d.date); // 期間內有日結的日子＝表格日欄
+                  const items = {}; const catSeen = [];
+                  days.forEach(d => {
+                    (dayDet(d.date)?.sheets?.[CATSHEET] || []).forEach(sec => {
+                      if (sec.title === "總結" || sec.title === "套餐") return;
+                      if (!catSeen.includes(sec.title)) catSeen.push(sec.title);
+                      const ci = (sec.header || []).indexOf("套餐內"); // 欄位用名稱找：真日結信沒這欄＝顯示 —
+                      (sec.rows || []).forEach(r => {
+                        if (!Array.isArray(r) || typeof r[0] !== "string") return;
+                        const o = items[r[0]] = items[r[0]] || { cat: sec.title, q: {}, combo: {} , cum: 0 };
+                        o.q[d.date] = (o.q[d.date] || 0) + (Number(r[1]) || 0); o.cum += Number(r[1]) || 0;
+                        if (ci >= 0) o.combo[d.date] = (o.combo[d.date] || 0) + (Number(r[ci]) || 0);
+                      });
+                    });
+                  });
+                  if (!Object.keys(items).length) return null;
+                  const lastD2 = dts[dts.length - 1], prevD2 = dts[dts.length - 2];
+                  const sortKey = gdSort && (dts.includes(gdSort) || gdSort === "cum") ? gdSort : lastD2;
+                  const comboDay = sortKey === "cum" ? lastD2 : sortKey; // 套餐內欄＝排序那天（預設最新一天）
+                  const sv = (o) => sortKey === "cum" ? o.cum : (o.q[sortKey] || 0);
+                  const rows = Object.entries(items).map(([n, o]) => ({ n, ...o })).filter(r => gdTab === "全部" || r.cat === gdTab).sort((a, b) => sv(b) - sv(a) || b.cum - a.cum);
+                  const zero = (r) => prevD2 && (r.q[prevD2] || 0) > 0 && !(r.q[lastD2] || 0);   // 昨有量今零售（缺貨？沒人要？）
+                  const surge = (r) => prevD2 && (r.q[lastD2] || 0) >= 10 && (r.q[lastD2] || 0) >= (r.q[prevD2] || 0) * 1.5; // 熱銷竄升 +50%
+                  const cb = (r) => r.combo[comboDay];
+                  const groups = gdGroup ? catSeen.filter(c => rows.some(r => r.cat === c)).map(c => [c, rows.filter(r => r.cat === c)]) : [[null, rows]];
+                  const thd = { padding: "6px 8px", textAlign: "right", fontWeight: 700, whiteSpace: "nowrap", fontSize: 11.5, color: C.sub, cursor: "pointer" };
+                  const tdn = { padding: "5px 8px", textAlign: "right", fontFamily: MONOF, fontSize: 12.5, borderTop: "1px solid #f0ead9", whiteSpace: "nowrap" };
+                  const chip2 = (label, on, onClick, dashed) => <button key={label} onClick={onClick} style={{ border: `1.5px ${dashed ? "dashed" : "solid"} ${on ? C.brand : C.line}`, background: on ? C.brand : "#fff", color: on ? "#fff" : C.sub, borderRadius: 13, padding: "2px 11px", fontSize: 11.5, fontWeight: 700, cursor: "pointer" }}>{label}</button>;
+                  return (
+                    <div style={{ ...chartBox2, marginBottom: 10 }}>
+                      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", marginBottom: 8 }}>
+                        <span style={{ fontSize: 11.5, fontWeight: 700, color: C.sub }}>🍽 品項明細</span>
+                        {["全部", ...catSeen].map(t => chip2(t, gdTab === t, () => setGdTab(t)))}
+                        {chip2("依品類分組", gdGroup, () => setGdGroup(!gdGroup), true)}
+                        <span style={{ fontSize: 10.5, color: C.faint }}>點日期/累計欄＝排序；🔥=熱銷竄升(+50%)、紅字⚠0=昨有量今零售</span>
+                      </div>
+                      <div style={{ overflowX: "auto", border: `1px solid ${C.line}`, borderRadius: 8, background: "#fff" }}>
+                        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
+                          <thead><tr style={{ background: C.head }}>
+                            <th style={{ ...thd, textAlign: "left", cursor: "default", position: "sticky", left: 0, background: C.head, zIndex: 1 }}>品項</th>
+                            {!gdGroup && <th style={{ ...thd, textAlign: "left", cursor: "default" }}>品類</th>}
+                            {dts.map(dd => <th key={dd} onClick={() => setGdSort(dd)} style={{ ...thd, fontFamily: MONOF, color: sortKey === dd ? C.brand : C.sub }}>{dd.slice(5)}{sortKey === dd ? " ▼" : ""}</th>)}
+                            <th onClick={() => setGdSort("cum")} style={{ ...thd, color: sortKey === "cum" ? C.brand : C.sub }}>累計{sortKey === "cum" ? " ▼" : ""}</th>
+                            <th style={{ ...thd, cursor: "default" }} title={`排序日（${comboDay?.slice(5) || ""}）當天在套餐內賣出的份數`}>套餐內</th>
+                          </tr></thead>
+                          <tbody>
+                            {groups.flatMap(([cat, g]) => {
+                              const band = cat != null && (
+                                <tr key={"band-" + cat} style={{ background: C.brand }}>
+                                  <td style={{ padding: "5px 8px", color: "#fff", fontWeight: 800, fontSize: 12, letterSpacing: 2, position: "sticky", left: 0, background: C.brand, whiteSpace: "nowrap" }}>{cat}</td>
+                                  {dts.map(dd => <td key={dd} style={{ ...tdn, borderTop: "none", color: "#fff", fontWeight: 700 }}>{g.reduce((t, r) => t + (r.q[dd] || 0), 0)}</td>)}
+                                  <td style={{ ...tdn, borderTop: "none", color: "#fff", fontWeight: 800 }}>{g.reduce((t, r) => t + r.cum, 0)}</td>
+                                  <td style={{ ...tdn, borderTop: "none", color: "#ffe0cf", fontWeight: 700 }}>{g.some(r => cb(r) != null) ? g.reduce((t, r) => t + (cb(r) || 0), 0) : "—"}</td>
+                                </tr>
+                              );
+                              const body = g.map(r => (
+                                <tr key={(cat || "") + r.n}>
+                                  <td style={{ padding: "5px 8px", fontWeight: 600, color: zero(r) ? C.red : C.text, whiteSpace: "nowrap", position: "sticky", left: 0, background: "#fff", borderTop: "1px solid #f0ead9" }}>
+                                    {r.n}{surge(r) ? " 🔥" : ""}{zero(r) ? <span style={{ fontSize: 10.5, fontWeight: 800 }}> ⚠0</span> : ""}</td>
+                                  {!gdGroup && <td style={{ padding: "5px 8px", borderTop: "1px solid #f0ead9" }}><span style={{ border: `1px solid ${C.line}`, background: C.bg, color: C.sub, borderRadius: 10, padding: "1px 8px", fontSize: 10.5, fontWeight: 700, whiteSpace: "nowrap" }}>{r.cat}</span></td>}
+                                  {dts.map(dd => <td key={dd} style={{ ...tdn, fontWeight: sortKey === dd ? 800 : 400, color: sortKey === dd ? C.brand : C.sub }}>{r.q[dd] || 0}</td>)}
+                                  <td style={{ ...tdn, fontWeight: sortKey === "cum" ? 800 : 600, color: sortKey === "cum" ? C.brand : C.text }}>{r.cum}</td>
+                                  <td style={{ ...tdn, color: C.faint }}>{cb(r) != null ? cb(r) : "—"}</td>
+                                </tr>
+                              ));
+                              return [band, ...body].filter(Boolean);
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                      <div style={{ fontSize: 10.5, color: C.faint, marginTop: 6 }}>套餐內＝排序那天（{comboDay?.slice(5)}）該品項在套餐裡賣出的份數；品類色帶＝該品類每日總份數。08-10~13 為試營運人工回填資料。</div>
+                    </div>
+                  );
+                })()}
                 {/* 😴 沒賣預警（張良 2026-07-26：重要的事要顯眼好查閱、天數可任選、可排除包場/工具箱類、圖表可截圖問 DD）——設定存 DB，DD 讀同一份 */}
                 {(() => {
                   const cfg = posIdleCfg || { days: 7, exCats: [], exItems: [] };

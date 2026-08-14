@@ -5,7 +5,7 @@
 import { ImapFlow } from 'imapflow'
 import { simpleParser } from 'mailparser'
 import { parsePosWorkbook, parseTxSheet } from './_pos-parse.js' // 解析器共用模組（前端手動匯入也用同一套）
-import { groundTrialRecords } from './_ground-seed.js' // GROUN:D 試營運 08-10~13 一次性回填（已入庫自動跳過）
+import { groundTrialRecords, SEED_VER } from './_ground-seed.js' // GROUN:D 試營運 08-10~13 一次性回填（已入庫自動跳過）
 
 const clean = (v) => (v || '').trim().replace(/^["']|["']$/g, '').replace(/^[A-Za-z0-9_]+=/, '').trim()
 const SB_URL = clean(process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL)
@@ -176,13 +176,33 @@ async function syncPos(days) {
       for (const r of recs) {
         const dk = r.date + '::' + storeKeyOf(r.store)
         const legacy = doc.days[r.date] && storeKeyOf(doc.days[r.date].store) === storeKeyOf(r.store)
-        if (!doc.days[dk] && !legacy) { doc.days[dk] = { date: r.date, period: r.period, store: r.store, sheets: r._details }; changed = true }
+        if (!doc.days[dk] && !legacy) { doc.days[dk] = { date: r.date, period: r.period, store: r.store, sheets: r._details, ...(r.seedVer ? { seedVer: r.seedVer } : {}) }; changed = true }
       }
       if (changed) { doc.updatedAt = new Date().toISOString(); await kvPut(did, doc, 'POS明細自動入庫') }
     }
     store.entries = [...store.entries, ...add.map(({ _details, ...r }) => r)].sort((a, b) => (a.date < b.date ? -1 : 1))
     store.updatedAt = new Date().toISOString()
     await kvPut('sp_finance_pm_pos', store, 'POS日結自動收信')
+  }
+  // 種子明細版本升級：試營運回填的四天若庫裡是舊版（缺「套餐內」欄等），用新版種子直接替換
+  // 只動 period 帶「試營運手動回填」的日子＝真日結信入的資料絕不會被改
+  let seedUpgraded = 0
+  {
+    const byMo = {}
+    for (const r of groundTrialRecords()) (byMo[r.date.slice(0, 7)] = byMo[r.date.slice(0, 7)] || []).push(r)
+    for (const [mo, recs] of Object.entries(byMo)) {
+      const did = 'sp_finance_pm_pos_d_' + mo
+      const doc = (await kvGet(did)) || { days: {} }
+      let changed = false
+      for (const r of recs) {
+        const dk = r.date + '::' + storeKeyOf(r.store)
+        const cur = doc.days[dk]
+        if (!cur || !/試營運手動回填/.test(cur.period || '') || (cur.seedVer || 1) >= SEED_VER) continue
+        doc.days[dk] = { date: r.date, period: r.period, store: r.store, sheets: r._details, seedVer: SEED_VER }
+        changed = true; seedUpgraded++
+      }
+      if (changed) { doc.updatedAt = new Date().toISOString(); await kvPut(did, doc, 'GROUN:D試營運種子明細升級v' + SEED_VER) }
+    }
   }
   // 逐筆交易另存 tx 月檔（sp_finance_pm_pos_tx_YYYY-MM）：跟 _d_ 分開＝前端點下鑽才載、不拖慢日常載入
   // 只增不改：該日已有 tx 就不覆蓋；舊日期只要信還在信箱就會回補
@@ -199,7 +219,7 @@ async function syncPos(days) {
     }
     if (changed) { doc.updatedAt = new Date().toISOString(); await kvPut(tid, doc, 'POS逐筆交易入庫') }
   }
-  return { scanned, added: add.length, seeded, total: store.entries.length, txParsed: txAll.length, txPatched, txCols: txAll[0]?.tx?.h || null }
+  return { scanned, added: add.length, seeded, seedUpgraded, total: store.entries.length, txParsed: txAll.length, txPatched, txCols: txAll[0]?.tx?.h || null }
 }
 
 export default async function handler(req, res) {

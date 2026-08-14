@@ -21,13 +21,21 @@ for (const r of recs) {
   chk(`${r.date} 段落結構`, secs.every(s => s.title && s.header.includes("名稱") && s.rows.every(row => typeof row[0] === "string" && typeof row[1] === "number" && typeof row[row.length - 1] === "number")));
   chk(`${r.date} 明細帶齊必要欄位`, !!(r.id && r.date && r.period && r.store && r.partial && r._details));
 }
-// 抽查（子代理報告要抽查的精神）：跟儀表板畫面數字對三筆
+// v2：套餐內欄（前端用 header 名稱找欄位）
+chk("v2 header 帶「套餐內」欄", recs.every(r => r._details["總銷售額 (以類別分類)"].every(s => s.header.indexOf("套餐內") === 3)));
+chk("v2 seedVer=2", recs.every(r => r.seedVer === 2));
+// 抽查（子代理報告要抽查的精神）：跟儀表板畫面數字對五筆
+const AMT = (row) => row[row.length - 1], COMBO = (row) => row[3];
 const d13 = recs[3], pizza13 = d13._details["總銷售額 (以類別分類)"].find(s => s.title === "披薩");
-chk("08-13 煙燻BBQ雞肉 13 份（畫面熱銷 3→13）", pizza13.rows.find(r => r[0] === "煙燻BBQ雞肉")?.[1] === 13);
+const bbq = pizza13.rows.find(r => r[0] === "煙燻BBQ雞肉");
+chk("08-13 煙燻BBQ雞肉 13 份（畫面熱銷 3→13）", bbq?.[1] === 13);
+chk("08-13 煙燻BBQ雞肉 套餐內 7（畫面套餐內=7）", COMBO(bbq) === 7);
 const d12 = recs[2], set12 = d12._details["總銷售額 (以類別分類)"].find(s => s.title === "套餐");
-chk("08-12 套餐 106 組 / NT$9,434", set12.rows[0][1] === 106 && set12.rows[0][2] === 9434);
+chk("08-12 套餐 106 組 / NT$9,434", set12.rows[0][1] === 106 && AMT(set12.rows[0]) === 9434);
 const drink10 = recs[0]._details["總銷售額 (以類別分類)"].find(s => s.title === "飲料");
-chk("08-10 經典拿鐵 單點5杯=NT$500", drink10.rows.find(r => r[0] === "經典拿鐵")?.[2] === 500);
+chk("08-10 經典拿鐵 單點5杯=NT$500", AMT(drink10.rows.find(r => r[0] === "經典拿鐵")) === 500);
+const burger13 = d13._details["總銷售額 (以類別分類)"].find(s => s.title === "漢堡");
+chk("08-13 8oz雙層堡 套餐內 17（畫面=17）", COMBO(burger13.rows.find(r => r[0] === "8oz 雙層純牛肉起司堡")) === 17);
 
 console.log(`\n${fail ? "❌" : "✅"} ${pass} 過 / ${fail} 敗`);
 process.exit(fail ? 1 : 0);

@@ -54,26 +54,28 @@ const DAYS = [
 ]
 
 const norm = (s) => (s || "").replace(/\s+/g, "")
+export const SEED_VER = 2 // v2：品項列加「套餐內」欄（張良要看每項幾份在套餐裡）；升級舊版種子明細由 mail-sync 處理
 
 export function groundTrialRecords() {
   return DAYS.map((d) => {
-    // 品項段落：與日結信「總銷售額 (以類別分類)」同構（title=分類、rows=[名稱,數量,銷售額]）
+    // 品項段落：與日結信「總銷售額 (以類別分類)」同構（title=分類、rows 首欄=名稱、r[1]=數量、末欄=金額）
+    // 欄序 [名稱,數量,佔比,套餐內,銷售額]：佔比留空對齊真日結信欄位；套餐內用 header 名稱找欄（真信沒有這欄＝前端顯示—）
     const secs = CAT_ORDER.map((cat) => ({
-      title: cat, header: ["名稱", "數量", "銷售額"],
+      title: cat, header: ["名稱", "數量", "佔比", "套餐內", "銷售額"],
       rows: d.items.filter((it) => it[1] === cat).map(([name, , q, combo]) => {
         const price = PRICE[norm(name)] || 0 // 1/4披薩無單獨牌價→金額記0（只計數量）
         const amt = MAIN.has(cat) ? q * price : Math.max(q - combo, 0) * price
-        return [name, q, amt]
+        return [name, q, "", combo, amt]
       }),
     })).filter((s) => s.rows.length)
-    secs.push({ title: "套餐", header: ["名稱", "數量", "銷售額"], rows: [["套餐費(主餐+加價)", d.combos, d.comboRev]] })
+    secs.push({ title: "套餐", header: ["名稱", "數量", "佔比", "套餐內", "銷售額"], rows: [["套餐費(主餐+加價)", d.combos, "", d.combos, d.comboRev]] })
     return {
       id: "pos-" + d.date.replace(/-/g, "") + "trial-ground",
       date: d.date, period: d.date + "（試營運手動回填）", store: "GROUN:D", subject: "GROUN:D 試營運儀表板資料回填",
       revenue: d.revenue, grossSales: d.gross || d.revenue, discount: d.gross ? d.gross - d.revenue : 0,
       txCount: 0, guests: 0, sales: d.revenue, serviceFee: 0, refund: 0,
       cash: 0, cashCount: null, card: 0, cardCount: null, uber: 0, uberCount: null, posSales: 0, apiSales: 0,
-      voidItems: 0, returnDish: 0, unsettled: 0, kv: {}, source: "trial-seed",
+      voidItems: 0, returnDish: 0, unsettled: 0, kv: {}, source: "trial-seed", seedVer: SEED_VER,
       partial: "試營運人工回填：只有營收與品項，無單數/來客/付款方式拆分",
       _details: { "總銷售額 (以類別分類)": secs },
     }
