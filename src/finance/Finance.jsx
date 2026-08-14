@@ -140,7 +140,10 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
     const un3 = onSharedChange(K("pm_pos"), (_k, v) => { try { setPos(v ? JSON.parse(v) : null); const t = "✓ 收到新日結信，畫面已自動更新"; setPosMsg(t); setTimeout(() => setPosMsg(m => m === t ? null : m), 8000); } catch (_) {} });
     const un4 = onSharedChange(K("pm_pos_tx_") + "*", (k, v) => { try { const mo = k.slice(-7); setPosTx(p => (mo in p) ? { ...p, [mo]: v ? JSON.parse(v) : null } : p); } catch (_) {} });
     const un5 = onSharedChange(K("pm_ctbc"), (_k, v) => { try { setCtbc(v ? JSON.parse(v) : null); } catch (_) {} });
-    return () => { un1(); un2(); un3(); un4(); un5(); };
+    // 明細月檔單獨更新（例：只補明細不動摘要的維護寫入）也要即時跟上——品項明細/分類表不用重新整理（張良 2026-08-14）
+    const un6 = onSharedChange(K("pm_pos_d_") + "*", (k, v) => { try { const mo = k.slice(-7); if (v) setPosDet(p => ({ ...p, [mo]: JSON.parse(v) })); } catch (_) {} });
+    const un7 = onSharedChange(K("pm_pos_flags"), (_k, v) => { try { setPosFlags(v ? JSON.parse(v) : { items: {} }); } catch (_) {} });
+    return () => { un1(); un2(); un3(); un4(); un5(); un6(); un7(); };
   }, []); // eslint-disable-line
   const saveRecon = (next) => { setRecon(next); window.storage.set(K("pm_recon"), JSON.stringify(next), true).catch(() => {}); };
   const saveBank = (next) => { setBank(next); window.storage.set(K("pm_bank"), JSON.stringify(next), true).catch(() => {}); };
