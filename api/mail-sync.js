@@ -5,6 +5,7 @@
 import { ImapFlow } from 'imapflow'
 import { simpleParser } from 'mailparser'
 import { parsePosWorkbook, parseTxSheet } from './_pos-parse.js' // 解析器共用模組（前端手動匯入也用同一套）
+import { groundTrialRecords } from './_ground-seed.js' // GROUN:D 試營運 08-10~13 一次性回填（已入庫自動跳過）
 
 const clean = (v) => (v || '').trim().replace(/^["']|["']$/g, '').replace(/^[A-Za-z0-9_]+=/, '').trim()
 const SB_URL = clean(process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL)
@@ -156,6 +157,12 @@ async function syncPos(days) {
       } catch (_) {}
     }
   })
+  // GROUN:D 試營運 2026-08-10~13 回填（當時日結信未開通，資料來源=試營運儀表板人工彙整）：
+  // 當成「多收到的四封日結信」走同一條只增不改管線——已入庫或未來真信先到，date|store 去重都擋得住
+  let seeded = 0
+  for (const rec of groundTrialRecords()) {
+    if (!have.has(rec.id) && !haveCombo.has(rec.date + '|' + storeKeyOf(rec.store)) && !found[rec.id]) { found[rec.id] = rec; seeded++ }
+  }
   const add = Object.values(found)
   if (add.length) {
     // 明細按月分檔 sp_finance_pm_pos_d_YYYY-MM（已存在的日期不覆蓋＝只增不改）
@@ -192,7 +199,7 @@ async function syncPos(days) {
     }
     if (changed) { doc.updatedAt = new Date().toISOString(); await kvPut(tid, doc, 'POS逐筆交易入庫') }
   }
-  return { scanned, added: add.length, total: store.entries.length, txParsed: txAll.length, txPatched, txCols: txAll[0]?.tx?.h || null }
+  return { scanned, added: add.length, seeded, total: store.entries.length, txParsed: txAll.length, txPatched, txCols: txAll[0]?.tx?.h || null }
 }
 
 export default async function handler(req, res) {

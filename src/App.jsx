@@ -102,15 +102,22 @@ async function loadSpaceAIContext() {
     } catch (_) {}
     // 營運日結 + 品項逐日
     if (pos?.entries?.length) {
-      parts.push("【營運日結（" + (pos.entries[0].store || "POS") + "）】\n" + pos.entries.slice(-30).map(e => `- ${e.date} 營收${nt(e.revenue)}｜${e.txCount}單｜來客${e.guests || "?"}｜現金${nt(e.cash)}/卡${nt(e.card)}/Uber${nt(e.uber)}｜折扣${nt(e.discount)}`).join("\n"));
+      // 雙店（A Beach / GROUN:D）同庫：多店時每行帶店名；partial=人工回填日（只有營收/品項，別答單數/付款拆分）
+      const isG = e => /groun/i.test(e.store || "");
+      const multiStore = new Set(pos.entries.map(e => isG(e) ? "g" : "a")).size > 1;
+      const sTag = e => multiStore ? (isG(e) ? "［GROUN:D］" : "［A Beach］") : "";
+      parts.push("【營運日結（" + (multiStore ? "雙店：A Beach＋GROUN:D" : (pos.entries[0].store || "POS")) + "）】\n" + pos.entries.slice(-30).map(e => e.partial
+        ? `- ${e.date}${sTag(e)} 營收${nt(e.revenue)}${e.grossSales > e.revenue ? `（牌價${nt(e.grossSales)}·試營運折讓）` : ""}｜${e.partial}`
+        : `- ${e.date}${sTag(e)} 營收${nt(e.revenue)}｜${e.txCount}單｜來客${e.guests || "?"}｜現金${nt(e.cash)}/卡${nt(e.card)}/Uber${nt(e.uber)}｜折扣${nt(e.discount)}`).join("\n"));
       if (posD?.days) {
         const per = {};
         Object.entries(posD.days).forEach(([dkey, day]) => (day.sheets?.["總銷售額 (以類別分類)"] || []).forEach(sec => {
           if (sec.title === "總結") return;
           const date = (day.date || dkey).slice(0, 10); // 新格式 key＝日期::店代碼（雙店），取純日期
+          const sfx = multiStore ? (/groun/i.test(day.store || "") ? "〔GROUN:D〕" : "〔A Beach〕") : ""; // 兩店菜單重疊（都賣披薩），品名帶店名分開統計不混算
           (sec.rows || []).forEach(r => {
             if (!Array.isArray(r) || typeof r[0] !== "string") return;
-            const o = per[r[0]] = per[r[0]] || { cat: sec.title, days: {}, qty: 0, amt: 0 };
+            const o = per[r[0] + sfx] = per[r[0] + sfx] || { cat: sec.title, days: {}, qty: 0, amt: 0 };
             o.days[date] = (o.days[date] || 0) + (Number(r[1]) || 0); o.qty += Number(r[1]) || 0; o.amt += Number(r[r.length - 1]) || 0;
             const bc = (o.byCat = o.byCat || {})[sec.title] = (o.byCat || {})[sec.title] || { qty: 0, amt: 0 };
             bc.qty += Number(r[1]) || 0; bc.amt += Number(r[r.length - 1]) || 0;
@@ -132,7 +139,7 @@ async function loadSpaceAIContext() {
         if (lastD) {
           const ic = posIdleCfgAI || {};
           const idleDays = Number(ic.days) || 7, exCats2 = Array.isArray(ic.exCats) ? ic.exCats : [], exItems2 = Array.isArray(ic.exItems) ? ic.exItems : [];
-          const idle = Object.entries(per).map(([n, v]) => { const ds = Object.keys(v.days).filter(dd => v.days[dd] > 0).sort(); return ds.length ? { n, cat: v.cat, ld: ds[ds.length - 1], gap: Math.round((new Date(lastD + "T00:00:00") - new Date(ds[ds.length - 1] + "T00:00:00")) / 864e5) } : null; }).filter(x => x && x.gap >= idleDays && !exCats2.includes(x.cat) && !exItems2.includes(x.n)).sort((a, b) => b.gap - a.gap);
+          const idle = Object.entries(per).map(([n, v]) => { const ds = Object.keys(v.days).filter(dd => v.days[dd] > 0).sort(); return ds.length ? { n, cat: v.cat, ld: ds[ds.length - 1], gap: Math.round((new Date(lastD + "T00:00:00") - new Date(ds[ds.length - 1] + "T00:00:00")) / 864e5) } : null; }).filter(x => x && x.gap >= idleDays && !exCats2.includes(x.cat) && !exItems2.includes(x.n.replace(/〔.*〕$/, ""))).sort((a, b) => b.gap - a.gap);
           if (idle.length) parts.push(`【連續未售品項（門檻 ${idleDays} 天＝「沒賣預警」區設定；已排除 ${exCats2.length} 分類/${exItems2.length} 品項；距最新日結 ${lastD}；共 ${idle.length} 項）】\n` + idle.slice(0, 25).map(x => `- ${x.n}［${x.cat}］：${x.gap} 天沒賣（最後售出 ${x.ld}）`).join("\n") + "\n※只看得到本月有賣過的品項；上月就停售的看不到");
         }
       }

@@ -518,17 +518,24 @@ async function loadPosText() {
     const entries = pos && Array.isArray(pos.entries) ? pos.entries : []
     if (!entries.length) return ''
     const nt = (n) => 'NT$' + Math.round(n || 0).toLocaleString()
-    const lines = [`\n\n【營運日結（${entries[0]?.store || 'POS'}，每日結帳自動入庫，共 ${entries.length} 天）】`]
-    entries.slice(-30).forEach(e => lines.push(`  - ${e.date} 營收${nt(e.revenue)}｜${e.txCount}單｜來客${e.guests || '?'}｜客單${e.guests ? nt(Math.round(e.revenue / e.guests)) : '—'}｜現金${nt(e.cash)}/卡${nt(e.card)}/Uber${nt(e.uber)}｜折扣${nt(e.discount)}`))
+    // 雙店（A Beach / GROUN:D）同庫：多店時每行帶店名；partial=人工回填日（只有營收/品項，別答單數/付款拆分）
+    const isG = (e) => /groun/i.test(e.store || '')
+    const multiStore = new Set(entries.map(e => isG(e) ? 'g' : 'a')).size > 1
+    const sTag = (e) => multiStore ? (isG(e) ? '［GROUN:D］' : '［A Beach］') : ''
+    const lines = [`\n\n【營運日結（${multiStore ? '雙店：A Beach＋GROUN:D' : (entries[0]?.store || 'POS')}，每日結帳自動入庫，共 ${entries.length} 天）】`]
+    entries.slice(-30).forEach(e => lines.push(e.partial
+      ? `  - ${e.date}${sTag(e)} 營收${nt(e.revenue)}${e.grossSales > e.revenue ? `（牌價${nt(e.grossSales)}·試營運折讓）` : ''}｜${e.partial}`
+      : `  - ${e.date}${sTag(e)} 營收${nt(e.revenue)}｜${e.txCount}單｜來客${e.guests || '?'}｜客單${e.guests ? nt(Math.round(e.revenue / e.guests)) : '—'}｜現金${nt(e.cash)}/卡${nt(e.card)}/Uber${nt(e.uber)}｜折扣${nt(e.discount)}`))
     // 當月品項銷售彙總（答「哪些餐賣得好」用）
     const det = kv['sp_finance_pm_pos_d_' + mo]
     if (det && det.days) {
       const agg = {}
       Object.values(det.days).forEach(day => (day.sheets?.['總銷售額 (以類別分類)'] || []).forEach(sec => {
         if (sec.title === '總結') return
+        const sfx = multiStore ? (/groun/i.test(day.store || '') ? '〔GROUN:D〕' : '〔A Beach〕') : '' // 兩店菜單重疊（都賣披薩），品名帶店名分開統計不混算
         ;(sec.rows || []).forEach(r => {
           if (!Array.isArray(r) || typeof r[0] !== 'string') return
-          const a = agg[r[0]] = agg[r[0]] || { qty: 0, amt: 0, cat: sec.title }
+          const a = agg[r[0] + sfx] = agg[r[0] + sfx] || { qty: 0, amt: 0, cat: sec.title }
           a.qty += Number(r[1]) || 0; a.amt += Number(r[r.length - 1]) || 0
           // 同名品項各分類分開記（答「哪些是外帶低價版」）
           const bc = (a.byCat = a.byCat || {})[sec.title] = (a.byCat || {})[sec.title] || { qty: 0, amt: 0 }
@@ -562,15 +569,17 @@ async function loadPosText() {
       const itemLast = {}, itemCat = {}
       Object.values(det.days).forEach(day => (day.sheets?.['總銷售額 (以類別分類)'] || []).forEach(sec => {
         if (sec.title === '總結') return
+        const sfx = multiStore ? (/groun/i.test(day.store || '') ? '〔GROUN:D〕' : '〔A Beach〕') : '' // 未售統計也分店記，跟上面彙總同口徑
         ;(sec.rows || []).forEach(r => {
           if (!Array.isArray(r) || typeof r[0] !== 'string' || (Number(r[1]) || 0) <= 0) return
           const dte = (day.date || '').slice(0, 10)
-          if (dte && (!itemLast[r[0]] || itemLast[r[0]] < dte)) { itemLast[r[0]] = dte; itemCat[r[0]] = sec.title }
+          const nk = r[0] + sfx
+          if (dte && (!itemLast[nk] || itemLast[nk] < dte)) { itemLast[nk] = dte; itemCat[nk] = sec.title }
         })
       }))
       const lastD = entries[entries.length - 1]?.date
       if (lastD && Object.keys(itemLast).length) {
-        const idle = Object.entries(itemLast).map(([n, ld]) => ({ n, ld, gap: Math.round((new Date(lastD + 'T00:00:00') - new Date(ld + 'T00:00:00')) / 864e5) })).filter(x => x.gap >= idleDays && !exCats.includes(itemCat[x.n]) && !exItems.includes(x.n)).sort((a, b) => b.gap - a.gap)
+        const idle = Object.entries(itemLast).map(([n, ld]) => ({ n, ld, gap: Math.round((new Date(lastD + 'T00:00:00') - new Date(ld + 'T00:00:00')) / 864e5) })).filter(x => x.gap >= idleDays && !exCats.includes(itemCat[x.n]) && !exItems.includes(x.n.replace(/〔.*〕$/, ''))).sort((a, b) => b.gap - a.gap)
         if (idle.length) {
           lines.push(`【連續未售品項（門檻 ${idleDays} 天＝老闆在營運報表「沒賣預警」設的；已排除 ${exCats.length} 分類/${exItems.length} 品項；距最新日結 ${lastD}；共 ${idle.length} 項）】`)
           idle.slice(0, 25).forEach(x => lines.push(`  - ${x.n}［${itemCat[x.n] || ''}］：${x.gap} 天沒賣（最後售出 ${x.ld}）`))
