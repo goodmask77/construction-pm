@@ -1373,13 +1373,6 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
                         {chip2("依品類分組", gdGroup, () => setGdGroup(!gdGroup), true)}
                         <span style={{ fontSize: 10.5, color: C.faint }}>點日期/累計欄＝排序；🔥=熱銷竄升(+50%)、紅字⚠0=昨有量今零售</span>
                       </div>
-                      {setQty > 0 && (
-                        <div style={{ display: "flex", gap: 14, flexWrap: "wrap", alignItems: "center", marginBottom: 8, fontSize: 12, color: C.sub, background: C.bg, border: `1px solid ${C.line}`, borderRadius: 8, padding: "6px 12px" }}>
-                          <b style={{ color: C.text }}>套餐（主餐+89 加價購）</b>
-                          {dts.map(dd => <span key={dd} style={{ fontFamily: MONOF }}>{dd.slice(5)}：<b style={{ color: C.text }}>{setDay[dd]?.qty ?? 0}</b> 組・{fmt(setDay[dd]?.amt || 0)}</span>)}
-                          <span style={{ fontFamily: MONOF, color: C.brand, fontWeight: 800 }}>累計 {setQty} 組・{fmt(setAmt)}</span>
-                        </div>
-                      )}
                       <div style={{ overflowX: "auto", border: `1px solid ${C.line}`, borderRadius: 8, background: "#fff" }}>
                         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
                           <thead><tr style={{ background: C.head }}>
@@ -1390,6 +1383,24 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
                             <th style={{ ...thd, cursor: "default" }} title="期間內該品項在套餐裡賣出的份數（累計口徑，跟「累計」欄一致）">套餐內</th>
                           </tr></thead>
                           <tbody>
+                            {/* 套餐列（張良 2026-08-16：不要另外一條橫幅，進表格跟日期欄對齊，日子多了跟表一起捲）：上=組數、下小字=金額 */}
+                            {setQty > 0 && (
+                              <tr style={{ background: C.bg }}>
+                                <td style={{ padding: "5px 8px", fontWeight: 800, color: C.text, whiteSpace: "nowrap", position: "sticky", left: 0, background: C.bg }}>套餐（主餐+89 加價購）</td>
+                                {!gdGroup && <td style={{ borderTop: "1px solid #f0ead9" }} />}
+                                {dts.map(dd => (
+                                  <td key={dd} style={{ ...tdn, lineHeight: 1.25 }}>
+                                    <div style={{ fontWeight: 700 }}>{setDay[dd]?.qty || 0} <span style={{ fontSize: 10, fontWeight: 400, color: C.faint }}>組</span></div>
+                                    <div style={{ fontSize: 10, color: C.faint }}>{setDay[dd]?.amt ? fmt(setDay[dd].amt) : ""}</div>
+                                  </td>
+                                ))}
+                                <td style={{ ...tdn, lineHeight: 1.25 }}>
+                                  <div style={{ fontWeight: 800, color: C.brand }}>{setQty} <span style={{ fontSize: 10, fontWeight: 400, color: C.faint }}>組</span></div>
+                                  <div style={{ fontSize: 10, color: C.brand }}>{fmt(setAmt)}</div>
+                                </td>
+                                <td style={{ ...tdn, color: C.faint }}>—</td>
+                              </tr>
+                            )}
                             {groups.flatMap(([cat, g]) => {
                               const band = cat != null && (
                                 <tr key={"band-" + cat} style={{ background: C.brand }}>
