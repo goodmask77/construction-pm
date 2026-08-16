@@ -1507,7 +1507,8 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
                   <div style={chartBox2}>
                     <div style={{ fontSize: 11.5, fontWeight: 700, color: C.sub, marginBottom: 8 }}>各類別營收佔比（期間累計）</div>
                     {(() => { const catTot = catArr2.reduce((t, [, v]) => t + v.amt, 0) || 1;
-                      return catArr2.length ? catArr2.map(([k, v], i) => barRow(k, v.amt, catMax2, PAL[i % PAL.length], `${Math.round(v.amt / catTot * 100)}%・${fmt(v.amt)}・${v.qty}${k === "套餐" ? "組" : "份"}`, () => openDrill({ type: "cat", key: k }))) : <div style={{ fontSize: 12, color: C.faint }}>無明細資料</div>; })()}
+                      // 版面（張良 2026-08-16）：一行搞定——名稱・份數｜長條｜金額｜佔比%（金額欄 barRow 本來就有，不重複塞）
+                      return catArr2.length ? catArr2.map(([k, v], i) => barRow(`${k}・${v.qty}${k === "套餐" ? "組" : "份"}`, v.amt, catMax2, PAL[i % PAL.length], `${Math.round(v.amt / catTot * 100)}%`, () => openDrill({ type: "cat", key: k }))) : <div style={{ fontSize: 12, color: C.faint }}>無明細資料</div>; })()}
                   </div>
                   <div style={chartBox2}>
                     <div style={{ display: "flex", alignItems: "center", marginBottom: 8 }}>
