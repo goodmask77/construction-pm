@@ -821,12 +821,16 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
         // 明細彙總（期間內，全部從原始明細資料庫算）
         const catAgg = {}, itemAgg = {};
         days.forEach(d => {
-          (dayDet(d.date)?.sheets?.[CATSHEET] || []).forEach(sec => {
+          const secs2 = dayDet(d.date)?.sheets?.[CATSHEET] || [];
+          const hasSum = secs2.some(s => s.title === "總結"); // 真日結信有官方「總結」段＝分類營收用它；試營運回填沒有＝改用品項列加總（同資料不會兩邊都算）
+          secs2.forEach(sec => {
             (sec.rows || []).forEach(r => {
               if (!Array.isArray(r) || typeof r[0] !== "string") return;
               const amt = Number(r[r.length - 1]) || 0, qty = Number(r[1]) || 0;
-              if (sec.title === "總結") { if (amt > 0) { const c = catAgg[r[0]] = catAgg[r[0]] || { qty: 0, amt: 0 }; c.qty += qty; c.amt += amt; } }
-              else if (amt > 0) {
+              if (sec.title === "總結") { if (amt > 0) { const c = catAgg[r[0]] = catAgg[r[0]] || { qty: 0, amt: 0 }; c.qty += qty; c.amt += amt; } return; }
+              if (sec.title === "套餐") { if (amt > 0) { const c = catAgg["套餐"] = catAgg["套餐"] || { qty: 0, amt: 0 }; c.qty += qty; c.amt += amt; } return; } // 套餐自己算一類（張良 2026-08-16），不混進品項榜
+              if (amt > 0) {
+                if (!hasSum) { const c = catAgg[sec.title] = catAgg[sec.title] || { qty: 0, amt: 0 }; c.qty += qty; c.amt += amt; }
                 const it = itemAgg[r[0]] = itemAgg[r[0]] || { qty: 0, amt: 0, cat: sec.title }; it.qty += qty; it.amt += amt;
                 // 同名品項各分類分開記（張良 2026-07-26：外帶類別同名但單價較低，要辨識得出來）
                 const bc = (it.byCat = it.byCat || {})[sec.title] = (it.byCat || {})[sec.title] || { qty: 0, amt: 0 };
@@ -850,12 +854,19 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
         const paySum = { card: sum(days, "card"), cash: sum(days, "cash"), uber: sum(days, "uber") };
         // 分類×日 / 品項×日（比較與智慧摘要用）
         const catDay = {}, itemDay = {};
-        days.forEach(d => (dayDet(d.date)?.sheets?.[CATSHEET] || []).forEach(sec => (sec.rows || []).forEach(r => {
-          if (!Array.isArray(r) || typeof r[0] !== "string") return;
-          const amt = Number(r[r.length - 1]) || 0, qty = Number(r[1]) || 0;
-          if (sec.title === "總結") { if (amt > 0) (catDay[r[0]] = catDay[r[0]] || {})[d.date] = ((catDay[r[0]] || {})[d.date] || 0) + amt; }
-          else if (qty > 0) (itemDay[r[0]] = itemDay[r[0]] || {})[d.date] = ((itemDay[r[0]] || {})[d.date] || 0) + qty;
-        })));
+        const addCatDay = (k, dd, amt) => { (catDay[k] = catDay[k] || {})[dd] = ((catDay[k] || {})[dd] || 0) + amt; };
+        days.forEach(d => {
+          const secs2 = dayDet(d.date)?.sheets?.[CATSHEET] || [];
+          const hasSum = secs2.some(s => s.title === "總結"); // 同 catAgg 口徑：沒有官方總結段就用品項列加總、套餐自成一類
+          secs2.forEach(sec => (sec.rows || []).forEach(r => {
+            if (!Array.isArray(r) || typeof r[0] !== "string") return;
+            const amt = Number(r[r.length - 1]) || 0, qty = Number(r[1]) || 0;
+            if (sec.title === "總結") { if (amt > 0) addCatDay(r[0], d.date, amt); return; }
+            if (sec.title === "套餐") { if (amt > 0) addCatDay("套餐", d.date, amt); return; }
+            if (!hasSum && amt > 0) addCatDay(sec.title, d.date, amt);
+            if (qty > 0) (itemDay[r[0]] = itemDay[r[0]] || {})[d.date] = ((itemDay[r[0]] || {})[d.date] || 0) + qty;
+          }));
+        });
         // 期間彙總（日/週/月）
         const WD2 = ["日", "一", "二", "三", "四", "五", "六"];
         const perKey = (date) => {
@@ -1494,8 +1505,9 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
                 })()}
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 10, marginBottom: 12 }}>
                   <div style={chartBox2}>
-                    <div style={{ fontSize: 11.5, fontWeight: 700, color: C.sub, marginBottom: 8 }}>分類銷售（期間累計）</div>
-                    {catArr2.length ? catArr2.map(([k, v], i) => barRow(k, v.amt, catMax2, PAL[i % PAL.length], v.qty + "份", () => openDrill({ type: "cat", key: k }))) : <div style={{ fontSize: 12, color: C.faint }}>無明細資料</div>}
+                    <div style={{ fontSize: 11.5, fontWeight: 700, color: C.sub, marginBottom: 8 }}>各類別營收佔比（期間累計）</div>
+                    {(() => { const catTot = catArr2.reduce((t, [, v]) => t + v.amt, 0) || 1;
+                      return catArr2.length ? catArr2.map(([k, v], i) => barRow(k, v.amt, catMax2, PAL[i % PAL.length], `${Math.round(v.amt / catTot * 100)}%・${fmt(v.amt)}・${v.qty}${k === "套餐" ? "組" : "份"}`, () => openDrill({ type: "cat", key: k }))) : <div style={{ fontSize: 12, color: C.faint }}>無明細資料</div>; })()}
                   </div>
                   <div style={chartBox2}>
                     <div style={{ display: "flex", alignItems: "center", marginBottom: 8 }}>
