@@ -19,6 +19,26 @@ const dateInp = { ...inp, colorScheme: "light", fontFamily: "'Noto Sans TC', san
 const rid = (p) => p + Math.random().toString(36).slice(2, 8);
 const num = parseNum; // 共用解析（避免卡0）
 
+// ── A Beach 品項明細細分類（張良 2026-08-19：要刪菜單、現場負荷不了，POS 分類太粗，要照湯/沙拉/開胃菜/麵/飯…細品類看排名）──
+// Uber 外送分類（同品項的低價版，張良確認低價=Uber）：份數併進同名品項、另記「Uber」欄
+const AB_UBER_CATS = new Set(["Pizza披薩", "主餐＆早午餐", "沙拉＆湯", "炸物＆前菜", "飲品"]);
+// 非菜單分類：不進品項明細表（工具箱/包場/免招手/蛋糕/福利=服務性按鍵，不是餐點）
+const AB_SKIP_CATS = new Set(["⚡️工具箱", "包場大訂", "免招手", "收蛋糕", "慶生沒蛋糕", "♥️福利♥️", "自訂食品", "總結", "套餐", "商品分類銷售分析"]);
+const AB_FINE_ORDER = ["披薩", "排餐", "麵", "飯", "堡・塔可", "早午餐", "沙拉", "開胃菜", "湯", "炸物", "甜點", "果昔", "茶飲", "咖啡", "熱茶", "調酒", "啤酒", "瓶裝酒"];
+const AB_FINE_RULES = [ // 順序重要：特徵強的先比（長島冰茶→調酒不是茶飲、熱紅酒→調酒不是瓶裝酒、燉飯→飯不是開胃菜的青花）
+  [/披薩/, "披薩"], [/燉飯/, "飯"], [/麵/, "麵"], [/牛排|肋眼|豬排/, "排餐"],
+  [/塔可|漢堡|堡/, "堡・塔可"], [/早餐|法式吐司|班尼迪克|歐姆蛋|布里歐/, "早午餐"],
+  [/沙拉/, "沙拉"], [/湯/, "湯"], [/薯條|雞翅|生蠔|炸物|酥炸/, "炸物"],
+  [/提拉米蘇|蛋糕|檸檬派/, "甜點"], [/果昔/, "果昔"], [/咖啡/, "咖啡"],
+  [/莫西多|桑格利亞|長島|貝里斯|熱紅酒|鳥居|A ?Beach/i, "調酒"],
+  [/洋甘菊|山楂|紅棗|蕎麥|國寶/, "熱茶"], [/奶茶|紅茶|綠茶|冰茶|檸檬水|氣泡飲|蘇打|烏龍/, "茶飲"],
+  [/生啤|啤酒|艾爾|十八天/, "啤酒"], [/紅酒|白酒|氣泡酒|酒莊/, "瓶裝酒"],
+  [/魷魚|節瓜|青花|烤餅|韃靼|脆片|鷹嘴豆/, "開胃菜"],
+];
+const abFineCat = (name) => (AB_FINE_RULES.find(([re]) => re.test(name)) || [, "其他"])[1];
+// 同品項內用/Uber 名字只差 emoji（☘️瑪格麗特 vs 瑪格麗特）→ 去 emoji/空白後當同一鍵合併
+const abNorm = (name) => String(name).replace(/[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE0F}\u{2B00}-\u{2BFF}]/gu, "").replace(/\s+/g, "");
+
 // 預設會計科目樹（依張良的公司帳務表；可在「科目」頁自由增刪改）
 function SEED_COA() {
   const tree = {
@@ -81,6 +101,7 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
   const [gdTab, setGdTab] = useState("全部");               // GROUN:D 品項明細：品類籤（張良 2026-08-14 指定試營運儀表板版型）
   const [gdGroup, setGdGroup] = useState(true);             // GROUN:D 品項明細：依品類分組（品類列帶每日總份數）
   const [gdSort, setGdSort] = useState(null);               // GROUN:D 品項明細：排序欄（日期 or "cum"；預設最新一天）
+  const [gdIdle, setGdIdle] = useState(false);              // 品項明細：只看 7天+沒賣（取代原本佔版面的「沒賣預警」大區塊，張良 2026-08-19）
   const [posPivotCats, setPosPivotCats] = useState(null);   // 矩陣內分類勾選（null=全選）
   const [posPivotSort, setPosPivotSort] = useState(null);   // 矩陣排序 {col, dir}
   const [recon, setRecon] = useState({ links: {}, ignored: [] }); // 補記/忽略標記
@@ -907,15 +928,16 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
             const unstable = Object.entries(itemDay).map(([n, dm]) => { const qs = days.map(d => dm[d.date] || 0); const mean = qs.reduce((a, b) => a + b, 0) / qs.length; if (mean < 1.5) return null; const sd = Math.sqrt(qs.reduce((t, q) => t + (q - mean) ** 2, 0) / qs.length); return { n, cv: sd / mean }; }).filter(Boolean).sort((a, b) => b.cv - a.cv).slice(0, 3);
             if (unstable.length) out.push(["🎢", "銷量最不穩：" + unstable.map(x => `${x.n}（波動${Math.round(x.cv * 100)}%）`).join("、")]);
           }
-          const slow = Object.entries(itemAgg).filter(([, v]) => v.qty <= 2 && v.amt > 0).map(([n, v]) => `${n}〔${v.cat}・${v.qty}份〕`);
+          const junkCat = (c) => posStore === "abeach" && (AB_SKIP_CATS.has(c) || AB_UBER_CATS.has(c)); // 工具箱/包場/Uber低價類不進滯銷與沒賣提醒（張良 2026-08-19）
+          const slow = Object.entries(itemAgg).filter(([, v]) => v.qty <= 2 && v.amt > 0 && !junkCat(v.cat)).map(([n, v]) => `${n}〔${v.cat}・${v.qty}份〕`);
           if (slow.length) out.push(["🐌", `滯銷提醒（期間只賣 ≤2 份）共 ${slow.length} 項：${slow.slice(0, 6).join("、")}${slow.length > 6 ? "…" : ""}（同名但分類不同＝POS 新舊重複品項，建議整併）`, { type: "allitems" }]);
           // 同名分類價差辨識（張良 2026-07-26：賣很少+單價比同名低=外帶類別，要認得出來）
           if (dupeGroups.length) out.push(["👯", `同名品項有分類價差 ${dupeGroups.length} 組（低價版多為外帶/優惠類別）：${dupeGroups.slice(0, 4).map(g => `${g.n}（差 ${fmt(g.diff)}）`).join("、")}${dupeGroups.length > 4 ? "…" : ""}——點我看逐組比對`, { type: "dupes" }]);
-          // 連續沒賣偵測（張良 2026-07-26）：跟「😴 沒賣預警」區同一份設定（門檻天數＋排除清單），摘要只給結論、細節看區塊
+          // 連續沒賣偵測（張良 2026-07-26；2026-08-19 大區塊移除後摘要仍提醒，細節開品項明細「😴 7天+沒賣」篩選看）——設定 pm_pos_idlecfg 保留，DD 同一份
           const icfg = posIdleCfg || { days: 7, exCats: [], exItems: [] };
           const lastDate = days[days.length - 1].date;
-          const idleItems = Object.entries(itemDay).map(([n, dm]) => { const ds = Object.keys(dm).filter(dd => dm[dd] > 0).sort(); return ds.length ? { n, ld: ds[ds.length - 1], gap: Math.round((new Date(lastDate + "T00:00:00") - new Date(ds[ds.length - 1] + "T00:00:00")) / 864e5), cat: itemAgg[n]?.cat || "" } : null; }).filter(x => x && x.gap >= icfg.days && !icfg.exCats.includes(x.cat) && !icfg.exItems.includes(x.n)).sort((a, b) => b.gap - a.gap);
-          if (idleItems.length) out.push(["😴", `沒賣預警：${idleItems.length} 項超過 ${icfg.days} 天沒賣出（最久 ${idleItems[0].n} ${idleItems[0].gap} 天）——詳見下方「😴 沒賣預警」區，天數/排除項目都能調`]);
+          const idleItems = Object.entries(itemDay).map(([n, dm]) => { const ds = Object.keys(dm).filter(dd => dm[dd] > 0).sort(); return ds.length ? { n, ld: ds[ds.length - 1], gap: Math.round((new Date(lastDate + "T00:00:00") - new Date(ds[ds.length - 1] + "T00:00:00")) / 864e5), cat: itemAgg[n]?.cat || "" } : null; }).filter(x => x && x.gap >= icfg.days && !icfg.exCats.includes(x.cat) && !icfg.exItems.includes(x.n) && !junkCat(x.cat)).sort((a, b) => b.gap - a.gap);
+          if (idleItems.length) out.push(["😴", `沒賣提醒：${idleItems.length} 項超過 ${icfg.days} 天沒賣出（最久 ${idleItems[0].n} ${idleItems[0].gap} 天）——開品項明細的「😴 7天+沒賣」篩選看清單`]);
           // 日別標記（張良 2026-07-26：測試單/包場折扣確認過就不要再嚇人）——警示計算扣掉「排除金額」；沒填金額＝整天全額；原始數字照舊
           const flg = (d, kind) => posFlags?.items?.[`${d.date}::${posStore}::${kind}`];
           const exAmt = (d, kind, raw) => { const f = flg(d, kind); if (!f) return 0; const a = Number(f.amt); return a > 0 ? Math.min(a, raw) : raw; };
@@ -1142,7 +1164,7 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
               {/* 分店切換（第三層）：兩間店各看各的營收 */}
               <div style={{ display: "inline-flex", background: C.soft, border: `1.5px solid #c8bca6`, borderRadius: 8, padding: 2, gap: 2 }}>
                 {STORES.map(([v, l]) => (
-                  <button key={v} onClick={() => setPosStore(v)} style={{ padding: "6px 14px", borderRadius: 6, border: "none", background: posStore === v ? C.brand : "transparent", color: posStore === v ? "#fff" : C.sub, fontSize: 13, fontWeight: 700, cursor: "pointer" }}>{l}</button>
+                  <button key={v} onClick={() => { setPosStore(v); setGdTab("全部"); setGdSort(null); setGdIdle(false); }} style={{ padding: "6px 14px", borderRadius: 6, border: "none", background: posStore === v ? C.brand : "transparent", color: posStore === v ? "#fff" : C.sub, fontSize: 13, fontWeight: 700, cursor: "pointer" }}>{l}</button>
                 ))}
               </div>
               {/* 更新鈕緊跟店名右邊（張良 2026-07-18 手機版面優化） */}
@@ -1345,29 +1367,39 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
                     );
                   })()}
                 </div>
-                {/* GROUN:D 品項明細（張良 2026-08-14：用試營運儀表板版型——品類籤＋依品類分組＋每日欄＋累計＋套餐內；品類列再帶每日總份數） */}
-                {posStore === "ground" && (() => {
+                {/* 品項明細（張良 2026-08-14 GD 版型；2026-08-19 A Beach 也接上——POS 分類太粗，改細品類（湯/沙拉/開胃菜/麵/飯…）看排名決定刪菜單；Uber 低價分類併同品項另立欄） */}
+                {(() => {
+                  const isAB = posStore === "abeach";
                   const dts = days.map(d => d.date); // 期間內有日結的日子＝表格日欄
                   const items = {}; const catSeen = []; const setDay = {}; // setDay＝套餐每日 組數/金額（張良 2026-08-16：+89套餐的數量金額要看得到）
                   days.forEach(d => {
                     (dayDet(d.date)?.sheets?.[CATSHEET] || []).forEach(sec => {
                       if (sec.title === "總結") return;
                       if (sec.title === "套餐") { (sec.rows || []).forEach(r => { if (Array.isArray(r)) { const o = setDay[d.date] = setDay[d.date] || { qty: 0, amt: 0 }; o.qty += Number(r[1]) || 0; o.amt += Number(r[r.length - 1]) || 0; } }); return; }
-                      if (!catSeen.includes(sec.title)) catSeen.push(sec.title);
+                      if (isAB && AB_SKIP_CATS.has(sec.title)) return; // 工具箱/包場/免招手…非菜單分類不進表
+                      const uber = isAB && AB_UBER_CATS.has(sec.title); // Uber 低價分類：併入同名品項，份數另記
+                      if (!isAB && !catSeen.includes(sec.title)) catSeen.push(sec.title);
                       const ci = (sec.header || []).indexOf("套餐內"); // 欄位用名稱找：真日結信沒這欄＝顯示 —
                       (sec.rows || []).forEach(r => {
                         if (!Array.isArray(r) || typeof r[0] !== "string") return;
-                        const o = items[r[0]] = items[r[0]] || { cat: sec.title, q: {}, cum: 0, comboCum: 0, comboHas: false };
+                        const key = isAB ? abNorm(r[0]) : r[0]; // A Beach：內用/Uber 同品項（只差emoji）合併
+                        const o = items[key] = items[key] || { n: r[0], cat: isAB ? abFineCat(r[0]) : sec.title, q: {}, cum: 0, comboCum: 0, comboHas: false, uber: 0 };
+                        if (!uber) o.n = r[0]; // 顯示名以內用版為準
                         o.q[d.date] = (o.q[d.date] || 0) + (Number(r[1]) || 0); o.cum += Number(r[1]) || 0;
+                        if (uber) o.uber += Number(r[1]) || 0;
                         if (ci >= 0) { o.comboCum += Number(r[ci]) || 0; o.comboHas = true; } // 套餐內＝期間累計（張良 2026-08-16：跟累計欄同口徑，不再只看排序那天）
                       });
                     });
                   });
                   if (!Object.keys(items).length) return null;
+                  if (isAB) { AB_FINE_ORDER.forEach(c => { if (Object.values(items).some(o => o.cat === c)) catSeen.push(c); }); Object.values(items).forEach(o => { if (!catSeen.includes(o.cat)) catSeen.push(o.cat); }); }
                   const lastD2 = dts[dts.length - 1], prevD2 = dts[dts.length - 2];
                   const sortKey = gdSort && (dts.includes(gdSort) || gdSort === "cum") ? gdSort : lastD2;
                   const sv = (o) => sortKey === "cum" ? o.cum : (o.q[sortKey] || 0);
-                  const rows = Object.entries(items).map(([n, o]) => ({ n, ...o })).filter(r => gdTab === "全部" || r.cat === gdTab).sort((a, b) => sv(b) - sv(a) || b.cum - a.cum);
+                  // 😴 只看沒賣：最後售出距最新日結 ≥7 天（取代原「沒賣預警」大區塊——同資訊、不佔版面）
+                  const lastSold = (o) => { const ds = Object.keys(o.q).filter(dd => o.q[dd] > 0).sort(); return ds[ds.length - 1] || null; };
+                  const idleGap = (o) => { const ls = lastSold(o); return ls ? Math.round((new Date(lastD2 + "T00:00:00") - new Date(ls + "T00:00:00")) / 864e5) : null; };
+                  const rows = Object.values(items).filter(r => gdTab === "全部" || r.cat === gdTab).filter(r => !gdIdle || (idleGap(r) ?? 99) >= 7).sort((a, b) => sv(b) - sv(a) || b.cum - a.cum);
                   const zero = (r) => prevD2 && (r.q[prevD2] || 0) > 0 && !(r.q[lastD2] || 0);   // 昨有量今零售（缺貨？沒人要？）
                   const surge = (r) => prevD2 && (r.q[lastD2] || 0) >= 10 && (r.q[lastD2] || 0) >= (r.q[prevD2] || 0) * 1.5; // 熱銷竄升 +50%
                   const cb = (r) => r.comboHas ? r.comboCum : null;
@@ -1380,8 +1412,9 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
                     <div style={{ ...chartBox2, marginBottom: 10 }}>
                       <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", marginBottom: 8 }}>
                         <span style={{ fontSize: 11.5, fontWeight: 700, color: C.sub }}>🍽 品項明細</span>
-                        {["全部", ...catSeen].map(t => chip2(t, gdTab === t, () => setGdTab(t)))}
+                        {["全部", ...catSeen].map(t => chip2(t, gdTab === t, () => setGdTab(gdTab === t ? "全部" : t)))}
                         {chip2("依品類分組", gdGroup, () => setGdGroup(!gdGroup), true)}
+                        {chip2("😴 7天+沒賣", gdIdle, () => setGdIdle(!gdIdle), true)}
                         <span style={{ fontSize: 10.5, color: C.faint }}>點日期/累計欄＝排序；🔥=熱銷竄升(+50%)、紅字⚠0=昨有量今零售</span>
                       </div>
                       <div style={{ overflowX: "auto", border: `1px solid ${C.line}`, borderRadius: 8, background: "#fff" }}>
@@ -1391,7 +1424,9 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
                             {!gdGroup && <th style={{ ...thd, textAlign: "left", cursor: "default" }}>品類</th>}
                             {dts.map(dd => <th key={dd} onClick={() => setGdSort(dd)} style={{ ...thd, fontFamily: MONOF, color: sortKey === dd ? C.brand : C.sub }}>{dd.slice(5)}{sortKey === dd ? " ▼" : ""}</th>)}
                             <th onClick={() => setGdSort("cum")} style={{ ...thd, color: sortKey === "cum" ? C.brand : C.sub }}>累計{sortKey === "cum" ? " ▼" : ""}</th>
-                            <th style={{ ...thd, cursor: "default" }} title="期間內該品項在套餐裡賣出的份數（累計口徑，跟「累計」欄一致）">套餐內</th>
+                            {isAB
+                              ? <th style={{ ...thd, cursor: "default" }} title="Uber 外送分類（低價版）賣出的份數——已併入左邊各日與累計的總量，這欄單獨列出其中多少來自 Uber">Uber</th>
+                              : <th style={{ ...thd, cursor: "default" }} title="期間內該品項在套餐裡賣出的份數（累計口徑，跟「累計」欄一致）">套餐內</th>}
                           </tr></thead>
                           <tbody>
                             {/* 套餐列（張良 2026-08-16：不要另外一條橫幅，進表格跟日期欄對齊，日子多了跟表一起捲）：上=組數、下小字=金額 */}
@@ -1418,17 +1453,18 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
                                   <td style={{ padding: "5px 8px", color: "#fff", fontWeight: 800, fontSize: 12, letterSpacing: 2, position: "sticky", left: 0, background: C.brand, whiteSpace: "nowrap" }}>{cat}</td>
                                   {dts.map(dd => <td key={dd} style={{ ...tdn, borderTop: "none", color: "#fff", fontWeight: 700 }}>{g.reduce((t, r) => t + (r.q[dd] || 0), 0)}</td>)}
                                   <td style={{ ...tdn, borderTop: "none", color: "#fff", fontWeight: 800 }}>{g.reduce((t, r) => t + r.cum, 0)}</td>
-                                  <td style={{ ...tdn, borderTop: "none", color: "#ffe0cf", fontWeight: 700 }}>{g.some(r => cb(r) != null) ? g.reduce((t, r) => t + (cb(r) || 0), 0) : "—"}</td>
+                                  <td style={{ ...tdn, borderTop: "none", color: "#ffe0cf", fontWeight: 700 }}>{isAB ? (g.reduce((t, r) => t + r.uber, 0) || "—") : (g.some(r => cb(r) != null) ? g.reduce((t, r) => t + (cb(r) || 0), 0) : "—")}</td>
                                 </tr>
                               );
                               const body = g.map(r => (
                                 <tr key={(cat || "") + r.n}>
                                   <td style={{ padding: "5px 8px", fontWeight: 600, color: zero(r) ? C.red : C.text, whiteSpace: "nowrap", position: "sticky", left: 0, background: "#fff", borderTop: "1px solid #f0ead9" }}>
-                                    {r.n}{surge(r) ? " 🔥" : ""}{zero(r) ? <span style={{ fontSize: 10.5, fontWeight: 800 }}> ⚠0</span> : ""}</td>
+                                    {r.n}{surge(r) ? " 🔥" : ""}{zero(r) ? <span style={{ fontSize: 10.5, fontWeight: 800 }}> ⚠0</span> : ""}
+                                    {gdIdle && <span style={{ fontSize: 10, fontWeight: 700, color: C.red, marginLeft: 6 }}>{idleGap(r)}天沒賣・最後 {String(lastSold(r) || "").slice(5)}</span>}</td>
                                   {!gdGroup && <td style={{ padding: "5px 8px", borderTop: "1px solid #f0ead9" }}><span style={{ border: `1px solid ${C.line}`, background: C.bg, color: C.sub, borderRadius: 10, padding: "1px 8px", fontSize: 10.5, fontWeight: 700, whiteSpace: "nowrap" }}>{r.cat}</span></td>}
                                   {dts.map(dd => <td key={dd} style={{ ...tdn, fontWeight: sortKey === dd ? 800 : 400, color: sortKey === dd ? C.brand : C.sub }}>{r.q[dd] || 0}</td>)}
                                   <td style={{ ...tdn, fontWeight: sortKey === "cum" ? 800 : 600, color: sortKey === "cum" ? C.brand : C.text }}>{r.cum}</td>
-                                  <td style={{ ...tdn, color: C.faint }}>{cb(r) != null ? cb(r) : "—"}</td>
+                                  <td style={{ ...tdn, color: C.faint }}>{isAB ? (r.uber || "—") : (cb(r) != null ? cb(r) : "—")}</td>
                                 </tr>
                               ));
                               return [band, ...body].filter(Boolean);
@@ -1436,73 +1472,13 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
                           </tbody>
                         </table>
                       </div>
-                      <div style={{ fontSize: 10.5, color: C.faint, marginTop: 6 }}>套餐內＝期間內該品項在套餐裡賣出的份數（累計，其餘為單點）；每組套餐含飲料一杯，所以「飲料」的套餐內≈套餐組數。品類色帶＝該品類每日總份數。08-10~13 為試營運人工回填資料。</div>
+                      <div style={{ fontSize: 10.5, color: C.faint, marginTop: 6 }}>{isAB
+                        ? "品類＝自訂細分類（湯/沙拉/開胃菜/麵/飯…，跟 POS 分類不同，方便逐品類看排名刪菜單）；Uber 欄＝外送(低價)分類賣出的份數，已併入該品項各日與累計總量。工具箱/包場/免招手/蛋糕/福利等非菜單分類不列入。品類色帶＝該品類每日總份數。"
+                        : "套餐內＝期間內該品項在套餐裡賣出的份數（累計，其餘為單點）；每組套餐含飲料一杯，所以「飲料」的套餐內≈套餐組數。品類色帶＝該品類每日總份數。08-10~13 為試營運人工回填資料。"}</div>
                     </div>
                   );
                 })()}
-                {/* 😴 沒賣預警（張良 2026-07-26：重要的事要顯眼好查閱、天數可任選、可排除包場/工具箱類、圖表可截圖問 DD）——設定存 DB，DD 讀同一份 */}
-                {(() => {
-                  const cfg = posIdleCfg || { days: 7, exCats: [], exItems: [] };
-                  const lastDate = days[days.length - 1].date;
-                  const stripDates = days.slice(-14).map(d => d.date);
-                  const idleAll = Object.entries(itemDay).map(([n, dm]) => {
-                    const ds = Object.keys(dm).filter(dd => dm[dd] > 0).sort();
-                    if (!ds.length) return null;
-                    return { n, ld: ds[ds.length - 1], gap: Math.round((new Date(lastDate + "T00:00:00") - new Date(ds[ds.length - 1] + "T00:00:00")) / 864e5), cat: itemAgg[n]?.cat || "" };
-                  }).filter(Boolean);
-                  const hits = idleAll.filter(x => x.gap >= cfg.days && !cfg.exCats.includes(x.cat) && !cfg.exItems.includes(x.n)).sort((a, b) => b.gap - a.gap);
-                  const chip = (label, on, onClick) => <button key={label} onClick={onClick} style={{ border: `1.5px solid ${on ? "#9b6a6a" : C.line}`, background: on ? "#f3e6e6" : "#fff", color: on ? "#8a4040" : C.sub, borderRadius: 12, padding: "2px 10px", fontSize: 11, fontWeight: 600, cursor: "pointer", textDecoration: on ? "line-through" : "none" }}>{label}</button>;
-                  return (
-                    <div style={{ ...chartBox2, marginBottom: 10, borderLeft: "4px solid #c98a14" }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 6 }}>
-                        <span style={{ fontSize: 11.5, fontWeight: 700, color: C.sub }}>😴 沒賣預警 <span style={{ fontWeight: 400, color: C.faint }}>（超過門檻天數一份都沒賣出的品項；資料＝本月逐日明細）</span></span>
-                        <div style={{ flex: 1 }} />
-                        <span style={{ fontSize: 11, color: C.faint }}>門檻</span>
-                        <div style={{ display: "inline-flex", background: C.soft, border: `1px solid ${C.line}`, borderRadius: 8, padding: 2, gap: 2 }}>
-                          {[3, 5, 7, 14].map(dv => (
-                            <button key={dv} onClick={() => saveIdleCfg({ ...cfg, days: dv })} style={{ padding: "4px 10px", borderRadius: 6, border: `1px solid ${cfg.days === dv ? C.line : "transparent"}`, background: cfg.days === dv ? "#fff" : "transparent", color: cfg.days === dv ? C.text : C.sub, fontSize: 12, fontWeight: cfg.days === dv ? 700 : 400, cursor: "pointer" }}>{dv} 天</button>
-                          ))}
-                        </div>
-                      </div>
-                      <div style={{ display: "flex", gap: 5, flexWrap: "wrap", alignItems: "center", marginBottom: 8 }}>
-                        <span style={{ fontSize: 11, color: C.faint }}>排除分類（本來就不是每天賣的，點了畫掉不列入）：</span>
-                        {catArr2.map(([k]) => chip(k, cfg.exCats.includes(k), () => saveIdleCfg({ ...cfg, exCats: cfg.exCats.includes(k) ? cfg.exCats.filter(c2 => c2 !== k) : [...cfg.exCats, k] })))}
-                      </div>
-                      {hits.length === 0 ? (
-                        <div style={{ fontSize: 12.5, color: "#2c5a38", fontWeight: 600, padding: "6px 0" }}>✅ 目前沒有超過 {cfg.days} 天沒賣的品項（排除 {cfg.exCats.length} 分類 / {cfg.exItems.length} 品項）</div>
-                      ) : (
-                        <div style={{ overflowX: "auto" }}>
-                          <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "2px 0" }}>
-                            <span style={{ flex: "0 0 230px" }} />
-                            <div style={{ display: "flex", gap: 2 }}>{stripDates.map(dd => <div key={dd} style={{ width: 16, textAlign: "center", fontSize: 8.5, color: C.faint, fontFamily: MONOF }}>{Number(dd.slice(8))}</div>)}</div>
-                            <span style={{ width: 64, textAlign: "right", fontSize: 9.5, color: C.faint }}>沒賣</span>
-                            <span style={{ width: 78, fontSize: 9.5, color: C.faint }}>最後售出</span>
-                            <span style={{ width: 44 }} />
-                          </div>
-                          {hits.slice(0, 30).map(x => (
-                            <div key={x.n} style={{ display: "flex", alignItems: "center", gap: 8, padding: "3px 0", borderTop: "1px solid #f0ead9" }}>
-                              <span style={{ flex: "0 0 230px", fontSize: 12, color: C.text, overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis" }} title={`${x.n}（${x.cat}）`}>{x.n} <span style={{ color: C.faint, fontSize: 10 }}>{x.cat}</span></span>
-                              <div style={{ display: "flex", gap: 2 }}>
-                                {stripDates.map(dd => { const q = (itemDay[x.n] || {})[dd] || 0; return <div key={dd} title={`${dd}${q ? `・${q} 份` : "・沒賣"}`} style={{ width: 16, height: 16, borderRadius: 3, background: q ? "#3f7d4e" : "#eee5d3", color: "#fff", fontSize: 9, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: MONOF, fontWeight: 700 }}>{q || ""}</div>; })}
-                              </div>
-                              <span style={{ width: 64, textAlign: "right", fontFamily: MONOF, fontSize: 12.5, fontWeight: 800, color: C.red }}>{x.gap} 天</span>
-                              <span style={{ width: 78, fontFamily: MONOF, fontSize: 11, color: C.sub }}>{x.ld.slice(5)}（{WD2[new Date(x.ld + "T00:00:00").getDay()]}）</span>
-                              <button onClick={() => saveIdleCfg({ ...cfg, exItems: [...cfg.exItems, x.n] })} title="這項本來就不常賣，之後不要再提醒" style={{ width: 44, border: `1px dashed ${C.line}`, background: "#fff", color: C.sub, borderRadius: 8, padding: "1px 6px", fontSize: 10.5, cursor: "pointer" }}>×排除</button>
-                            </div>
-                          ))}
-                          {hits.length > 30 && <div style={{ fontSize: 11, color: C.faint, marginTop: 4 }}>…共 {hits.length} 項，只列前 30（把門檻調高或排除分類可縮短清單）</div>}
-                        </div>
-                      )}
-                      {cfg.exItems.length > 0 && (
-                        <div style={{ display: "flex", gap: 5, flexWrap: "wrap", alignItems: "center", marginTop: 8, paddingTop: 6, borderTop: "1px dashed #e5dcc8" }}>
-                          <span style={{ fontSize: 11, color: C.faint }}>已排除品項（點 × 移回）：</span>
-                          {cfg.exItems.map(n => <span key={n} style={{ fontSize: 11, color: C.sub, background: C.soft, borderRadius: 10, padding: "1px 8px", textDecoration: "line-through" }}>{n} <span onClick={() => saveIdleCfg({ ...cfg, exItems: cfg.exItems.filter(x => x !== n) })} style={{ cursor: "pointer", textDecoration: "none" }}>×</span></span>)}
-                        </div>
-                      )}
-                      <div style={{ fontSize: 10.5, color: C.faint, marginTop: 6 }}>設定（門檻/排除）會存起來，DD 回答「哪些餐點連續沒賣」也用同一份設定。限制：只看得到本月有賣過的品項，上月就停售的不在清單裡。</div>
-                    </div>
-                  );
-                })()}
+                {/* 「😴 沒賣預警」大區塊已移除（張良 2026-08-19：版面佔太大不實用）——改成上面品項明細的「😴 7天+沒賣」篩選；DD 的沒賣設定（pm_pos_idlecfg）保留，摘要警示照舊 */}
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 10, marginBottom: 12 }}>
                   <div style={chartBox2}>
                     <div style={{ fontSize: 11.5, fontWeight: 700, color: C.sub, marginBottom: 8 }}>各類別營收佔比（期間累計）</div>
