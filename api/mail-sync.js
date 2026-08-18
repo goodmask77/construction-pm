@@ -240,6 +240,39 @@ export default async function handler(req, res) {
     }
     return res.status(200).json({ ok: true, probe: dt, days: out2 })
   }
+  // 菜單探針（唯讀＋金鑰保護，回品名/金額 → 沒帶對 MENU_PROBE_KEY 一律 403）：?menuprobe=<key>&store=abeach|ground
+  // 用途：把期間內出現過的全部品項按「日結信分類」彙總（品名/數量/套餐內/金額/出現天數），給菜單盤點/試算表用
+  if (req.query?.menuprobe) {
+    const mk = (process.env.MENU_PROBE_KEY || '').trim()
+    if (!mk || String(req.query.menuprobe) !== mk) return res.status(403).json({ ok: false })
+    const storeQ = String(req.query.store || 'abeach')
+    const skOf = (n) => /groun/i.test(n || '') ? 'ground' : 'abeach'
+    // LIKE 底線要跳脫（記憶鐵則）→ 不用 like，直接撈 id 清單再前綴過濾
+    const lr = await fetch(`${SB_URL}/rest/v1/pm_documents?select=id&id=gte.sp_finance_pm_pos_d_&id=lt.sp_finance_pm_pos_e`, { headers: { apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}` } })
+    const ids = (lr.ok ? await lr.json() : []).map(x => x.id).filter(id => /^sp_finance_pm_pos_d_\d{4}-\d{2}$/.test(id))
+    const items = {} // 分類||品名 -> { cat, name, qty, combo, amt, days, first, last }
+    let dayCnt = 0, from = '', to = ''
+    for (const id of ids) {
+      const doc = await kvGet(id); if (!doc?.days) continue
+      for (const [dk, day] of Object.entries(doc.days)) {
+        if (skOf(day.store) !== storeQ) continue
+        const secs = (day.sheets || {})['總銷售額 (以類別分類)']; if (!Array.isArray(secs)) continue
+        const date = day.date || dk.slice(0, 10)
+        dayCnt++; if (!from || date < from) from = date; if (date > to) to = date
+        for (const s of secs) {
+          const ci = (s.header || []).indexOf('套餐內')
+          for (const row of (s.rows || [])) {
+            const k = (s.title || '(未分類)') + '||' + row[0]
+            const it = items[k] || (items[k] = { cat: s.title || '(未分類)', name: String(row[0]), qty: 0, combo: 0, amt: 0, days: 0, first: date, last: date })
+            it.qty += Number(row[1]) || 0; it.amt += Number(row[row.length - 1]) || 0
+            if (ci >= 0) it.combo += Number(row[ci]) || 0
+            it.days++; if (date < it.first) it.first = date; if (date > it.last) it.last = date
+          }
+        }
+      }
+    }
+    return res.status(200).json({ ok: true, store: storeQ, months: ids.map(i => i.slice(-7)), dayCnt, from, to, items: Object.values(items) })
+  }
   const days = Math.min(120, Math.max(1, parseInt(req.query?.days || '3', 10) || 3)) // 每小時 cron 跑近3天(增量)；手動可帶 ?days=N
   const out = { ok: true, days }
   try { out.ctbc = await syncCtbc(days) } catch (e) { out.ctbc = { error: e?.message || String(e) } }
