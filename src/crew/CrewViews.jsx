@@ -1333,6 +1333,15 @@ export function RewardCenterView(props) {
 // ── 今日（夥伴中心首頁）：一進來先看「今天與我有關的事」，不再落在空資料庫 ─────────
 // 全部用現有資料組合：訓練(kb_quests)/評鑑(kb_360)/回饋(kb_feedback)/SOP更新(kb_docs)/積分(kb_shop)。
 // 排班資訊等排班系統接上真實資料後再加進來（現在還是虛擬資料，不硬塞）。
+// 工作日誌類型定義（今日頁快速發文＋工作日誌看板共用；LINE 端 _ddcards.js 同語意）
+const JN_KM = {
+  note: { ic: "📝", lb: "心得", col: "#5a5247", bg: "#f1ede3" },
+  issue: { ic: "⚠️", lb: "問題", col: "#b3261e", bg: "#fdf0ef" },
+  improve: { ic: "🔧", lb: "改善", col: "#2c6e3a", bg: "#e8f0e8" },
+  help: { ic: "🙋", lb: "求助", col: "#a05c0f", bg: "#fdf3e3" },
+};
+const JN_SM = { abeach: "A Beach", ground: "GROUN:D" };
+
 export function CrewTodayView({ userName, isAdmin, setView }) {
   const [people, setPeople] = useState([]);
   const [rfields, setRfields] = useState([]); // 名冊欄位定義（入職資料卡算必填進度用）
@@ -1344,13 +1353,10 @@ export function CrewTodayView({ userName, isAdmin, setView }) {
   const [journal, setJournal] = useState({ items: [] }); // 每日心得（夥伴在 LINE 用「心得 …」記錄）
   const [me, setMe] = useState("");
   const [showLedger, setShowLedger] = useState(false); // 📒 積分存摺
-  // 📝 工作日誌（張良 2026-08-20）：全員看得見的日誌流——店別篩選＋發文輸入
-  const [jFilter, setJFilter] = useState("all");   // all | abeach | ground
-  const [jHelpOnly, setJHelpOnly] = useState(false);
+  // 📝 工作日誌快速發文（完整看板在「工作日誌」分頁——張良 2026-08-20：要 Notion/Monday 那種有組織的版面）
   const [jText, setJText] = useState("");
   const [jKind, setJKind] = useState("note");
   const [jStore, setJStore] = useState("");
-  const [jMore, setJMore] = useState(false);
   useMeSync(people, userName, setMe);
   useEffect(() => {
     const s = setTimeout(() => setDocs(prev => prev || []), 8000);
@@ -1456,41 +1462,31 @@ export function CrewTodayView({ userName, isAdmin, setView }) {
         </div>
       )}
 
-      {/* 📝 工作日誌（張良 2026-08-20）：每人每天工作上遇到的問題/改的做法/要幫忙，全店看得見、跨店互相學。
-          發文：LINE 對 DD 說「日誌 …」（可加 問題/改善/求助、AB/GD，15分內傳照片自動附）或直接在下面打字 */}
+      {/* 📝 工作日誌快速入口（張良 2026-08-20：完整版＝「工作日誌」分頁的 Notion/Monday 式看板；今日頁只留快速記＋未解決提示） */}
       {(() => {
-        const KM = { note: ["📝", "心得", "#5a5247"], issue: ["⚠️", "問題", "#b3261e"], improve: ["🔧", "改善", "#3C8C3C"], help: ["🙋", "要幫忙", "#C2872E"] };
-        const SM = { abeach: "A Beach", ground: "GROUN:D" };
         const items = journal.items || [];
-        const persistJournal = (n) => { setJournal(n); saveCrewJSON("kb_journal", n); };
         const meP = people.find(p => p.id === me);
         const postJournal = () => {
           if (!meP || !jText.trim()) return;
-          const item = { id: "jn-" + Math.random().toString(36).slice(2, 8), personId: me, name: meP.name, text: jText.trim().slice(0, 500), ts: new Date().toISOString(), via: "web", kind: jKind, store: jStore || null, likes: [], photos: [], ...(jKind === "help" ? { status: "open" } : {}) };
-          persistJournal({ ...journal, items: [item, ...items].slice(0, 1000) });
-          setJText("");
+          const item = { id: "jn-" + Math.random().toString(36).slice(2, 8), personId: me, name: meP.name, text: jText.trim().slice(0, 500), ts: new Date().toISOString(), via: "web", kind: jKind, store: jStore || null, likes: [], photos: [], ...(jKind === "help" || jKind === "issue" ? { status: "open" } : {}) };
+          const n = { ...journal, items: [item, ...items].slice(0, 1000) };
+          setJournal(n); saveCrewJSON("kb_journal", n); setJText("");
         };
-        const jLike = (id) => { if (!me) return; persistJournal({ ...journal, items: items.map(i => i.id === id ? { ...i, likes: (i.likes || []).includes(me) ? (i.likes || []).filter(x => x !== me) : [...(i.likes || []), me] } : i) }); };
-        const jSolve = (id) => { if (!me) return; persistJournal({ ...journal, items: items.map(i => i.id === id ? (i.status === "solved" ? { ...i, status: "open", solvedBy: undefined, solvedAt: undefined } : { ...i, status: "solved", solvedBy: meP?.name || "", solvedAt: new Date().toISOString() }) : i) }); };
-        const shown = items.filter(i => jFilter === "all" || i.store === jFilter).filter(i => !jHelpOnly || i.kind === "help");
-        const openHelp = items.filter(i => i.kind === "help" && i.status !== "solved").length;
-        const chip = (label, on, onClick) => <button key={label} onClick={onClick} style={{ border: `1.5px solid ${on ? ACCENT : BORDER}`, background: on ? ACCENT : "#fff", color: on ? "#fff" : SUB, borderRadius: 13, padding: "3px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>{label}</button>;
+        const openCnt = items.filter(i => (i.kind === "help" || i.kind === "issue") && i.status !== "solved").length;
         const sel = { border: `1px solid ${BORDER}`, borderRadius: 8, padding: "7px 8px", fontSize: 12.5, background: "#fff", color: TEXT };
         return (
           <div style={{ ...crewCard, marginBottom: 14 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
               <div style={{ fontSize: 14.5, fontWeight: 700, color: TEXT }}>📝 工作日誌</div>
-              <span style={{ fontSize: 11.5, color: SUB }}>今天遇到什麼、改了什麼、需要誰幫忙——大家都看得到、跨店互相學</span>
+              <span style={{ fontSize: 11.5, color: SUB }}>今天遇到什麼、改了什麼、需要誰幫忙——記一句就好</span>
+              {openCnt > 0 && <span onClick={() => go("cjournal")} style={{ fontSize: 11.5, fontWeight: 800, color: "#b3261e", background: "#fdf0ef", borderRadius: 10, padding: "2px 10px", cursor: "pointer" }}>⏳ {openCnt} 件未結案</span>}
               <div style={{ flex: 1 }} />
-              {chip("全部", jFilter === "all", () => setJFilter("all"))}
-              {chip("A Beach", jFilter === "abeach", () => setJFilter(jFilter === "abeach" ? "all" : "abeach"))}
-              {chip("GROUN:D", jFilter === "ground", () => setJFilter(jFilter === "ground" ? "all" : "ground"))}
-              {chip(`🙋 要幫忙${openHelp ? `(${openHelp})` : ""}`, jHelpOnly, () => setJHelpOnly(!jHelpOnly))}
+              <button onClick={() => go("cjournal")} style={{ border: "none", background: "none", color: ACCENT, fontSize: 12.5, fontWeight: 600, cursor: "pointer", padding: 0 }}>開日誌看板 →</button>
             </div>
             {meP ? (
-              <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 10 }}>
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
                 <select value={jKind} onChange={e => setJKind(e.target.value)} style={sel}>
-                  {Object.entries(KM).map(([k, [ic, lb]]) => <option key={k} value={k}>{ic} {lb}</option>)}
+                  {Object.entries(JN_KM).map(([k, m]) => <option key={k} value={k}>{m.ic} {m.lb}</option>)}
                 </select>
                 <select value={jStore} onChange={e => setJStore(e.target.value)} style={sel}>
                   <option value="">通用（兩店）</option><option value="abeach">A Beach</option><option value="ground">GROUN:D</option>
@@ -1499,36 +1495,8 @@ export function CrewTodayView({ userName, isAdmin, setView }) {
                 <button onClick={postJournal} disabled={!jText.trim()} style={{ border: "none", background: jText.trim() ? ACCENT : BORDER, color: "#fff", borderRadius: 8, padding: "7px 16px", fontSize: 12.5, fontWeight: 700, cursor: jText.trim() ? "pointer" : "default" }}>送出</button>
               </div>
             ) : (
-              <div style={{ fontSize: 12, color: SUB, marginBottom: 10 }}>綁定夥伴身分後可以在這裡發日誌；也可以在 LINE 對 DD 說「日誌 …」（加「問題/改善/求助」標類型、「AB/GD」標店別，15 分鐘內傳照片自動附上）。</div>
+              <div style={{ fontSize: 12, color: SUB }}>綁定夥伴身分後可以在這裡發日誌；也可以在 LINE 對 DD 說「日誌 …」（私訊或群組都行，15 分鐘內傳照片自動附上）。</div>
             )}
-            {shown.length === 0 && <div style={{ fontSize: 12.5, color: "#9b9384", padding: "4px 0" }}>還沒有日誌。在 LINE 對 DD 說「日誌 今天…」或上面打一句就開始了。</div>}
-            {shown.slice(0, jMore ? 100 : 12).map(i => {
-              const [ic, lb, col] = KM[i.kind] || KM.note;
-              const liked = (i.likes || []).includes(me);
-              return (
-                <div key={i.id} style={{ borderTop: "1px solid #ece4d6", padding: "8px 0" }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 7, flexWrap: "wrap" }}>
-                    <span style={{ fontSize: 12, fontWeight: 800, color: col }}>{ic} {lb}</span>
-                    {i.store && <span style={{ fontSize: 10.5, fontWeight: 700, background: i.store === "ground" ? "#fbeee6" : "#e8f0e8", color: i.store === "ground" ? "#92400e" : "#2c5a38", borderRadius: 8, padding: "1px 7px" }}>{SM[i.store]}</span>}
-                    <span style={{ fontSize: 13, fontWeight: 700, color: TEXT }}>{i.name}</span>
-                    <span style={{ fontSize: 11, color: "#C8BCA0", fontFamily: MONO }}>{(i.ts || "").slice(5, 10)} {(i.ts || "").slice(11, 16) && new Date(i.ts).toLocaleTimeString("zh-TW", { hour: "2-digit", minute: "2-digit" })}</span>
-                    {i.kind === "help" && (i.status === "solved"
-                      ? <span style={{ fontSize: 11, fontWeight: 700, color: "#3C8C3C" }}>✅ 已解決{i.solvedBy ? `・${i.solvedBy}` : ""}</span>
-                      : <span style={{ fontSize: 11, fontWeight: 800, color: "#b3261e" }}>⏳ 等人幫忙</span>)}
-                    <div style={{ flex: 1 }} />
-                    {i.kind === "help" && me && <button onClick={() => jSolve(i.id)} style={{ border: `1px solid ${BORDER}`, background: "#fff", color: i.status === "solved" ? SUB : "#3C8C3C", borderRadius: 8, padding: "2px 10px", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>{i.status === "solved" ? "↩ 還原" : "✓ 標已解決"}</button>}
-                    <button onClick={() => jLike(i.id)} style={{ border: `1px solid ${liked ? ACCENT : BORDER}`, background: liked ? "#fbeee6" : "#fff", color: liked ? ACCENT : SUB, borderRadius: 8, padding: "2px 10px", fontSize: 11, fontWeight: 700, cursor: me ? "pointer" : "default" }}>👍 有用{(i.likes || []).length ? ` ${(i.likes || []).length}` : ""}</button>
-                  </div>
-                  <div style={{ fontSize: 13.5, color: TEXT, marginTop: 4, lineHeight: 1.6, whiteSpace: "pre-wrap" }}>{i.text}</div>
-                  {(i.photos || []).length > 0 && (
-                    <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 6 }}>
-                      {i.photos.map((u, pi) => <a key={pi} href={u} target="_blank" rel="noreferrer"><img src={u} alt="" style={{ width: 74, height: 74, objectFit: "cover", borderRadius: 8, border: `1px solid ${BORDER}` }} /></a>)}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-            {shown.length > 12 && !jMore && <button onClick={() => setJMore(true)} style={{ border: `1px dashed ${BORDER}`, background: "#fff", color: SUB, borderRadius: 8, padding: "5px 14px", fontSize: 12, cursor: "pointer", marginTop: 8 }}>顯示更多（共 {shown.length} 則）</button>}
           </div>
         );
       })()}
@@ -1594,6 +1562,168 @@ export function CrewTodayView({ userName, isAdmin, setView }) {
       </div>
       {showLedger && me && <PointsLedgerModal me={me} people={people} fbItems={fb.items || []} quests={quests} shop={shop} onClose={() => setShowLedger(false)} />}
       {!me && <div style={{ marginTop: 14, fontSize: 13, color: SUB, background: `#fff`, border: `1px solid ${BORDER}`, borderRadius: 12, padding: 16 }}>登入並綁定夥伴身分後，這裡會顯示你的待完成訓練、待回覆評鑑與積分。</div>}
+    </div>
+  );
+}
+
+// ── 📝 工作日誌看板（張良 2026-08-20：不要流水帳，要 Notion/Monday 式有組織的版面——誰/分類/追蹤一眼看清）──
+// 資料同 kb_journal 一份（LINE「日誌 …」與今日頁快速發文都進這裡）；問題/求助有狀態欄可追蹤到結案
+export function JournalBoardView({ userName, isAdmin, confirm }) {
+  const [journal, setJournal] = useState({ items: [] });
+  const [people, setPeople] = useState([]);
+  const [me, setMe] = useState("");
+  const [grp, setGrp] = useState("time");      // 分組：time=依時間 kind=依類型 person=依夥伴 store=依店別
+  const [fStore, setFStore] = useState("all"); // 店別篩選
+  const [fOpen, setFOpen] = useState(false);   // 只看未結案
+  const [q, setQ] = useState("");              // 搜尋（內容/人名）
+  const [days, setDays] = useState(14);        // 期間：近 N 天
+  const [nText, setNText] = useState(""); const [nKind, setNKind] = useState("note"); const [nStore, setNStore] = useState("");
+  useMeSync(people, userName, setMe);
+  useEffect(() => { (async () => {
+    const rd = await loadRosterDoc(); const r = rd.people || []; setPeople(r); setMe(meFromRoster(r, userName));
+    setJournal(await loadCrewJSON("kb_journal", { items: [] }));
+  })(); }, []);
+  const items = journal.items || [];
+  const persist = (n) => { setJournal(n); saveCrewJSON("kb_journal", n); };
+  const meP = people.find(p => p.id === me);
+  const myRole = (meP || {}).role;
+  const canManage = isAdmin || canManageRole(myRole);
+  const trackable = (i) => i.kind === "help" || i.kind === "issue";
+  const isOpen = (i) => trackable(i) && i.status !== "solved";
+
+  // 期間 + 篩選 + 搜尋
+  const since = Date.now() - days * 86400000;
+  const kw = q.trim().toLowerCase();
+  const shown = items
+    .filter(i => new Date(i.ts).getTime() >= since || isOpen(i)) // 未結案不受期間限制——追蹤到結案為止
+    .filter(i => fStore === "all" || (fStore === "none" ? !i.store : i.store === fStore))
+    .filter(i => !fOpen || isOpen(i))
+    .filter(i => !kw || (i.text || "").toLowerCase().includes(kw) || (i.name || "").includes(q.trim()));
+
+  // 統計（Monday 式數字卡）：本週則數/未結案/改善數/參與人數
+  const monday = new Date(); monday.setHours(0, 0, 0, 0); monday.setDate(monday.getDate() - ((monday.getDay() + 6) % 7));
+  const wk = items.filter(i => new Date(i.ts) >= monday);
+  const openAll = items.filter(isOpen);
+  const stats = [
+    ["本週日誌", wk.length, ACCENT],
+    ["⏳ 未結案（問題+求助）", openAll.length, openAll.length ? "#b3261e" : "#3C8C3C"],
+    ["🔧 本週改善", wk.filter(i => i.kind === "improve").length, "#2c6e3a"],
+    ["👥 本週參與", new Set(wk.map(i => i.personId)).size + "／" + people.filter(p => p.status !== "離職").length, "#4A4234"],
+  ];
+
+  // 分組（Monday groups）：時間=依日期、其餘依維度；組內新到舊
+  const sorted = [...shown].sort((a, b) => String(b.ts).localeCompare(String(a.ts)));
+  const groups = (() => {
+    if (grp === "kind") return Object.keys(JN_KM).map(k => [JN_KM[k].ic + " " + JN_KM[k].lb, sorted.filter(i => (i.kind || "note") === k), JN_KM[k]]).filter(g => g[1].length);
+    if (grp === "person") { const ns = [...new Set(sorted.map(i => i.name))]; return ns.map(n => ["👤 " + n, sorted.filter(i => i.name === n), null]); }
+    if (grp === "store") return [["🏖 A Beach", sorted.filter(i => i.store === "abeach"), null], ["🍕 GROUN:D", sorted.filter(i => i.store === "ground"), null], ["🏢 通用（兩店）", sorted.filter(i => !i.store), null]].filter(g => g[1].length);
+    const ds = [...new Set(sorted.map(i => (i.ts || "").slice(0, 10)))];
+    return ds.map(d => [`${d.slice(5)}（${["日", "一", "二", "三", "四", "五", "六"][new Date(d + "T00:00:00").getDay()]}）`, sorted.filter(i => (i.ts || "").slice(0, 10) === d), null]);
+  })();
+
+  const post = () => {
+    if (!meP || !nText.trim()) return;
+    const item = { id: "jn-" + Math.random().toString(36).slice(2, 8), personId: me, name: meP.name, text: nText.trim().slice(0, 500), ts: new Date().toISOString(), via: "web", kind: nKind, store: nStore || null, likes: [], photos: [], ...(nKind === "help" || nKind === "issue" ? { status: "open" } : {}) };
+    persist({ ...journal, items: [item, ...items].slice(0, 1000) }); setNText("");
+  };
+  const like = (id) => { if (!me) return; persist({ ...journal, items: items.map(i => i.id === id ? { ...i, likes: (i.likes || []).includes(me) ? (i.likes || []).filter(x => x !== me) : [...(i.likes || []), me] } : i) }); };
+  const toggle = (id) => { if (!me) return; persist({ ...journal, items: items.map(i => i.id === id ? (i.status === "solved" ? { ...i, status: "open", solvedBy: undefined, solvedAt: undefined } : { ...i, status: "solved", solvedBy: meP?.name || "", solvedAt: new Date().toISOString() }) : i) }); };
+  const del = async (it) => { if (!(canManage || it.personId === me)) return; if (confirm && !(await confirm(`刪除這則日誌？\n${it.name}：${(it.text || "").slice(0, 40)}`))) return; persist({ ...journal, items: items.filter(i => i.id !== it.id) }); };
+
+  const chip = (label, on, onClick) => <button key={label} onClick={onClick} style={{ border: `1.5px solid ${on ? ACCENT : BORDER}`, background: on ? ACCENT : "#fff", color: on ? "#fff" : SUB, borderRadius: 13, padding: "3px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>{label}</button>;
+  const sel = { border: `1px solid ${BORDER}`, borderRadius: 8, padding: "7px 8px", fontSize: 12.5, background: "#fff", color: TEXT };
+  const td = { border: "1px solid #e5dcc8", padding: "7px 9px", fontSize: 12.5, verticalAlign: "top", color: TEXT }; // 硬格線（管理頁慣例）
+  const th = { ...td, background: "#f4efe5", fontWeight: 700, color: SUB, fontSize: 11.5, whiteSpace: "nowrap", textAlign: "left" };
+  const tag = (txt2, col, bg) => <span style={{ display: "inline-block", fontSize: 11, fontWeight: 800, color: col, background: bg, borderRadius: 8, padding: "1px 8px", whiteSpace: "nowrap" }}>{txt2}</span>;
+
+  return (
+    <div>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "6px 0 4px", flexWrap: "wrap" }}>
+        <div style={{ fontSize: 18, fontWeight: 700, color: TEXT }}>📝 工作日誌</div>
+        <span style={{ fontSize: 12.5, color: SUB }}>每天的執行問題・改的做法・要幫忙的事——全店看得見、追蹤到結案</span>
+      </div>
+      {/* 統計列 */}
+      <div style={{ display: "flex", gap: 10, flexWrap: "wrap", margin: "10px 0 12px" }}>
+        {stats.map(([lb, v, col]) => (
+          <div key={lb} style={{ background: "#fff", border: `1px solid ${BORDER}`, borderRadius: 12, padding: "10px 14px", flex: 1, minWidth: 130 }}>
+            <div style={{ fontFamily: MONO, fontSize: 22, fontWeight: 800, color: col, lineHeight: 1.1 }}>{v}</div>
+            <div style={{ fontSize: 11, color: SUB, marginTop: 3, fontWeight: 500 }}>{lb}</div>
+          </div>
+        ))}
+      </div>
+      {/* 工具列：分組/篩選/搜尋/期間 */}
+      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", marginBottom: 10 }}>
+        <select value={grp} onChange={e => setGrp(e.target.value)} style={sel}>
+          <option value="time">分組：依日期</option><option value="kind">分組：依類型</option><option value="person">分組：依夥伴</option><option value="store">分組：依店別</option>
+        </select>
+        <select value={days} onChange={e => setDays(Number(e.target.value))} style={sel}>
+          {[7, 14, 30, 90].map(d => <option key={d} value={d}>近 {d} 天</option>)}
+        </select>
+        {chip("全部", fStore === "all", () => setFStore("all"))}
+        {chip("A Beach", fStore === "abeach", () => setFStore(fStore === "abeach" ? "all" : "abeach"))}
+        {chip("GROUN:D", fStore === "ground", () => setFStore(fStore === "ground" ? "all" : "ground"))}
+        {chip(`⏳ 只看未結案${openAll.length ? `(${openAll.length})` : ""}`, fOpen, () => setFOpen(!fOpen))}
+        <input value={q} onChange={e => setQ(e.target.value)} placeholder="🔍 搜內容或人名" style={{ ...sel, minWidth: 150 }} />
+      </div>
+      {/* 新增列（Notion 式 composer） */}
+      {meP ? (
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 12, background: "#fff", border: `1px solid ${BORDER}`, borderRadius: 12, padding: 10 }}>
+          <select value={nKind} onChange={e => setNKind(e.target.value)} style={sel}>
+            {Object.entries(JN_KM).map(([k, m]) => <option key={k} value={k}>{m.ic} {m.lb}</option>)}
+          </select>
+          <select value={nStore} onChange={e => setNStore(e.target.value)} style={sel}>
+            <option value="">通用（兩店）</option><option value="abeach">A Beach</option><option value="ground">GROUN:D</option>
+          </select>
+          <input value={nText} onChange={e => setNText(e.target.value)} onKeyDown={e => { if (e.key === "Enter") post(); }} placeholder="＋ 記一則：今天遇到什麼、改了什麼、需要誰幫忙" style={{ ...sel, flex: 1, minWidth: 220 }} />
+          <button onClick={post} disabled={!nText.trim()} style={{ border: "none", background: nText.trim() ? ACCENT : BORDER, color: "#fff", borderRadius: 8, padding: "7px 16px", fontSize: 12.5, fontWeight: 700, cursor: nText.trim() ? "pointer" : "default" }}>新增</button>
+          <div style={{ flexBasis: "100%", fontSize: 11, color: "#9b9384" }}>LINE 也能記：對 DD 說「日誌 [問題/改善/求助] [AB/GD] 內容」（私訊或群組），15 分鐘內傳照片自動附上。</div>
+        </div>
+      ) : (
+        <div style={{ fontSize: 12.5, color: SUB, background: "#fff", border: `1px solid ${BORDER}`, borderRadius: 12, padding: 12, marginBottom: 12 }}>綁定夥伴身分後可在這裡新增；或在 LINE 對 DD 說「日誌 …」。</div>
+      )}
+      {/* 表格（硬格線；分組色帶） */}
+      <div style={{ overflowX: "auto", background: "#fff", border: `1px solid ${BORDER}`, borderRadius: 12 }}>
+        <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 720 }}>
+          <thead><tr>
+            <th style={{ ...th, width: 92 }}>日期</th><th style={{ ...th, width: 80 }}>夥伴</th><th style={{ ...th, width: 64 }}>類型</th><th style={{ ...th, width: 76 }}>店別</th>
+            <th style={th}>內容・照片</th><th style={{ ...th, width: 120 }}>狀態（追蹤）</th><th style={{ ...th, width: 86 }}>👍 有用</th><th style={{ ...th, width: 40 }}></th>
+          </tr></thead>
+          <tbody>
+            {groups.length === 0 && <tr><td colSpan={8} style={{ ...td, color: "#9b9384", textAlign: "center", padding: 20 }}>這個範圍沒有日誌。調整期間/篩選，或上面記第一則。</td></tr>}
+            {groups.flatMap(([gLabel, gItems, gMeta]) => [
+              <tr key={"g-" + gLabel}><td colSpan={8} style={{ ...td, background: gMeta ? gMeta.bg : "#ece4d6", fontWeight: 800, fontSize: 12, color: gMeta ? gMeta.col : "#4A4234" }}>{gLabel}　<span style={{ fontWeight: 600, color: SUB }}>{gItems.length} 則</span></td></tr>,
+              ...gItems.map(i => {
+                const m = JN_KM[i.kind] || JN_KM.note;
+                const liked = (i.likes || []).includes(me);
+                return (
+                  <tr key={i.id}>
+                    <td style={{ ...td, fontFamily: MONO, fontSize: 11.5, whiteSpace: "nowrap", color: SUB }}>{(i.ts || "").slice(5, 10)}<br />{new Date(i.ts).toLocaleTimeString("zh-TW", { hour: "2-digit", minute: "2-digit" })}{i.via === "line-group" ? " 💬" : i.via === "line" ? " 📱" : ""}</td>
+                    <td style={{ ...td, fontWeight: 700, whiteSpace: "nowrap" }}>{i.name}</td>
+                    <td style={td}>{tag(`${m.ic} ${m.lb}`, m.col, m.bg)}</td>
+                    <td style={td}>{i.store ? tag(JN_SM[i.store], i.store === "ground" ? "#92400e" : "#2c5a38", i.store === "ground" ? "#fbeee6" : "#e8f0e8") : <span style={{ fontSize: 11, color: "#C8BCA0" }}>通用</span>}</td>
+                    <td style={{ ...td, lineHeight: 1.6 }}>
+                      {i.text}
+                      {(i.photos || []).length > 0 && <div style={{ display: "flex", gap: 5, flexWrap: "wrap", marginTop: 5 }}>{i.photos.map((u, pi) => <a key={pi} href={u} target="_blank" rel="noreferrer"><img src={u} alt="" style={{ width: 56, height: 56, objectFit: "cover", borderRadius: 6, border: `1px solid ${BORDER}` }} /></a>)}</div>}
+                    </td>
+                    <td style={{ ...td, whiteSpace: "nowrap" }}>
+                      {!trackable(i) ? <span style={{ fontSize: 11, color: "#C8BCA0" }}>—（純紀錄）</span> : i.status === "solved" ? (
+                        <div>{tag(i.kind === "help" ? "✅ 已解決" : "✅ 已處理", "#2c6e3a", "#e8f0e8")}<div style={{ fontSize: 10.5, color: SUB, marginTop: 2 }}>{i.solvedBy}{i.solvedAt ? `・${(i.solvedAt || "").slice(5, 10)}` : ""}</div>{me && <button onClick={() => toggle(i.id)} style={{ border: "none", background: "none", color: "#C8BCA0", fontSize: 10.5, cursor: "pointer", padding: 0 }}>↩ 還原</button>}</div>
+                      ) : (
+                        <div>{tag(i.kind === "help" ? "⏳ 等人幫忙" : "⏳ 待處理", "#b3261e", "#fdf0ef")}{me && <div><button onClick={() => toggle(i.id)} style={{ border: `1px solid ${BORDER}`, background: "#fff", color: "#2c6e3a", borderRadius: 8, padding: "2px 8px", fontSize: 11, fontWeight: 700, cursor: "pointer", marginTop: 4 }}>✓ 結案</button></div>}</div>
+                      )}
+                    </td>
+                    <td style={{ ...td, whiteSpace: "nowrap" }}>
+                      <button onClick={() => like(i.id)} style={{ border: `1px solid ${liked ? ACCENT : BORDER}`, background: liked ? "#fbeee6" : "#fff", color: liked ? ACCENT : SUB, borderRadius: 8, padding: "2px 10px", fontSize: 11, fontWeight: 700, cursor: me ? "pointer" : "default" }}>👍{(i.likes || []).length ? ` ${(i.likes || []).length}` : ""}</button>
+                    </td>
+                    <td style={{ ...td, textAlign: "center" }}>{(canManage || i.personId === me) && <span onClick={() => del(i)} title="刪除" style={{ cursor: "pointer", color: "#C8BCA0", fontSize: 13 }}>✕</span>}</td>
+                  </tr>
+                );
+              }),
+            ])}
+          </tbody>
+        </table>
+      </div>
+      <div style={{ fontSize: 11, color: "#9b9384", marginTop: 8 }}>狀態欄：問題/求助＝可追蹤（⏳→✓結案記名）；心得/改善＝純紀錄。未結案的不受「近 N 天」限制，會一直顯示到結案。📱＝LINE 私訊記的、💬＝LINE 群組記的。</div>
     </div>
   );
 }

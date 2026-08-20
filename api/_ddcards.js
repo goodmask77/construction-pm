@@ -170,7 +170,7 @@ export async function handleJournalText(ev) {
     break
   }
   const d = (await kvGet(JOURNAL_KEY)) || { items: [] }
-  const item = { id: 'jn-' + Math.random().toString(36).slice(2, 8), personId: me.id, name: me.name, text: body.slice(0, 500), ts: new Date().toISOString(), via: isDM ? 'line' : 'line-group', kind, store, likes: [], photos: [], ...(kind === 'help' ? { status: 'open' } : {}) }
+  const item = { id: 'jn-' + Math.random().toString(36).slice(2, 8), personId: me.id, name: me.name, text: body.slice(0, 500), ts: new Date().toISOString(), via: isDM ? 'line' : 'line-group', kind, store, likes: [], photos: [], ...(kind === 'help' || kind === 'issue' ? { status: 'open' } : {}) } // 問題/求助帶狀態＝看板可追蹤到結案
   d.items = [item, ...(d.items || [])].slice(0, 1000)
   await kvSet(JOURNAL_KEY, d)
   const kindTag = { note: '📝 心得', issue: '⚠️ 問題', improve: '🔧 改善', help: '🙋 要幫忙' }[kind]
