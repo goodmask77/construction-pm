@@ -9,7 +9,7 @@ import { supplyDigest } from '../src/supply/digest.js'
 // 入職 2.0：LINE 申請/報到綁定（固定表單流程、證件直存私有桶，「不經 AI」）
 import { handleOnboardEvent } from './_onboard.js'
 // DD 互動卡片：照片歸檔/回饋卡/投票卡（Flex+postback，固定指令不經 AI，答案直接寫回 App 同一份資料）
-import { handleDDCards } from './_ddcards.js'
+import { handleDDCards, handleJournalText, attachJournalPhotos } from './_ddcards.js'
 
 const clean = (v) => (v || '').trim().replace(/^["']|["']$/g, '').replace(/^[A-Za-z0-9_]+=/, '').trim()
 const SECRET = clean(process.env.LINE_CHANNEL_SECRET)
@@ -371,9 +371,18 @@ async function loadCrewText() {
     const shop = pick('kb_shop'); if (shop) { const rw = shop.rewards || []; if (rw.length) { any = true; out.push(`▍獎勵商店：${rw.length} 個獎品（${rw.map(x => x.name || x.title).filter(Boolean).join('、')}）`) } }
     const docs = pick('kb_docs'); if (Array.isArray(docs) && docs.length) { any = true; out.push(`▍知識庫：${docs.length} 篇（${docs.map(d => d.title || d.name).filter(Boolean).join('、')}）`) }
     const polls = pick('kb_polls'); const ps = polls && Array.isArray(polls.polls) ? polls.polls : (Array.isArray(polls) ? polls : []); if (ps.length) { any = true; out.push(`▍投票：${ps.length} 個（${ps.map(p => p.title || p.q).filter(Boolean).join('、')}）`) }
-    // 每日心得（夥伴用 LINE「心得 …」記錄；近14天給 AI 掌握）
+    // 工作日誌（夥伴用 LINE「日誌/心得 …」記錄；近14天＋未解決求助給 AI 掌握——100%資料鐵則）
     const jn = pick('kb_journal'); const ji = jn && Array.isArray(jn.items) ? jn.items : []
-    if (ji.length) { any = true; const since = Date.now() - 14 * 86400000; const recent = ji.filter(i => new Date(i.ts).getTime() >= since).slice(0, 30); out.push(`▍夥伴每日心得（近14天 ${recent.length} 則，最新在前）：`); recent.forEach(i => out.push(`  - ${(i.ts || '').slice(5, 10)} ${i.name}：${(i.text || '').slice(0, 80)}`)) }
+    if (ji.length) {
+      any = true; const since = Date.now() - 14 * 86400000
+      const kTag = (i) => ({ issue: '⚠️問題', improve: '🔧改善', help: '🙋求助' }[i.kind] || '心得')
+      const sTag = (i) => i.store === 'ground' ? '〔GD〕' : i.store === 'abeach' ? '〔AB〕' : ''
+      const openHelp = ji.filter(i => i.kind === 'help' && i.status !== 'solved')
+      if (openHelp.length) { out.push(`▍🙋 工作日誌「要幫忙」未解決 ${openHelp.length} 則（有人問「有什麼要幫忙/協作」要答得出）：`); openHelp.slice(0, 10).forEach(i => out.push(`  - ${(i.ts || '').slice(5, 10)} ${i.name}${sTag(i)}：${(i.text || '').slice(0, 80)}`)) }
+      const recent = ji.filter(i => new Date(i.ts).getTime() >= since).slice(0, 30)
+      out.push(`▍夥伴工作日誌（近14天 ${recent.length} 則，最新在前；含類型 心得/問題/改善/求助 與店別）：`)
+      recent.forEach(i => out.push(`  - ${(i.ts || '').slice(5, 10)} ${i.name}${sTag(i)}［${kTag(i)}${i.kind === 'help' ? (i.status === 'solved' ? '·已解決' : '·未解決') : ''}］：${(i.text || '').slice(0, 80)}`))
+    }
     // 入職 2.1：名冊上「入職中」的人（只給姓名/進度狀態；證件在私有桶，不進 AI）
     const obPeople = people.filter(p => p.onboarding); if (obPeople.length) { any = true; out.push(`▍入職中（待審核）：${obPeople.length} 位（${obPeople.map(p => `${p.name}${p.contractSigned ? '·契約已簽' : '·契約未簽'}`).join('、')}）——資料填齊後請老闆到 App 名冊「待審核」核准`) }
 
@@ -1016,6 +1025,28 @@ export default async function handler(req, res) {
       if (ev.type === 'postback' && ev.source?.type === 'user') {
         try { await handleDDCards(ev, await getOperators()) } catch (e) { console.log('ddcards postback error', e?.message) }
         continue
+      }
+      // 工作日誌（張良 2026-08-20：群組跟 DD 講也要能記）：固定前綴「日誌/心得 …」私訊＋群組都收、不用點名；
+      // 記完 15 分鐘內傳的照片自動附上（下面 image 分支）；未綁定者在群組保持安靜（外部群安靜原則）
+      if (ev.type === 'message' && ev.message?.type === 'text') {
+        try { const jr = await handleJournalText(ev); if (jr?.consumed) { if (ev.source?.type !== 'user') await cacheGroupMsg(ev); continue } } catch (e) { console.log('journal error', e?.message) }
+      }
+      // 工作日誌照片：綁定夥伴 15 分鐘內記過日誌 → 這張圖直接附到那則（私訊＋群組）。
+      // 先「只查不寫」確認有近期日誌，才下載上傳——廠商群的圖不會被誤傳進公開桶；沒近期日誌就走原本檔案庫/文件流程
+      if (ev.type === 'message' && ev.message?.type === 'image') {
+        try {
+          const uidJ = ev.source?.userId || ''
+          if (uidJ && await attachJournalPhotos(uidJ, [])) {
+            const rJ = await fetch(`https://api-data.line.me/v2/bot/message/${ev.message.id}/content`, { headers: { authorization: `Bearer ${TOKEN}` } })
+            if (rJ.ok) {
+              const bufJ = Buffer.from(await rJ.arrayBuffer())
+              const ctJ = rJ.headers.get('content-type') || 'image/jpeg'
+              const { url } = await uploadToPhotos(bufJ, /png/.test(ctJ) ? 'png' : 'jpg', ctJ)
+              const hit = await attachJournalPhotos(uidJ, [url])
+              if (hit) { if (ev.replyToken) await lineReply(ev.replyToken, `📷 照片已附到 ${hit.name} 剛剛的日誌（共 ${(hit.photos || []).length} 張）。`); continue }
+            }
+          }
+        } catch (e) { console.log('journal photo error', e?.message) }
       }
       // 報到/登入（只在私訊）：「王小明報到」直接開帳號發登入連結（固定格式、不經 AI）；資料改在 App 名冊卡填
       if (ev.type === 'message' && ev.source?.type === 'user') {

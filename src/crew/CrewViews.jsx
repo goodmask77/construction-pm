@@ -1344,6 +1344,13 @@ export function CrewTodayView({ userName, isAdmin, setView }) {
   const [journal, setJournal] = useState({ items: [] }); // 每日心得（夥伴在 LINE 用「心得 …」記錄）
   const [me, setMe] = useState("");
   const [showLedger, setShowLedger] = useState(false); // 📒 積分存摺
+  // 📝 工作日誌（張良 2026-08-20）：全員看得見的日誌流——店別篩選＋發文輸入
+  const [jFilter, setJFilter] = useState("all");   // all | abeach | ground
+  const [jHelpOnly, setJHelpOnly] = useState(false);
+  const [jText, setJText] = useState("");
+  const [jKind, setJKind] = useState("note");
+  const [jStore, setJStore] = useState("");
+  const [jMore, setJMore] = useState(false);
   useMeSync(people, userName, setMe);
   useEffect(() => {
     const s = setTimeout(() => setDocs(prev => prev || []), 8000);
@@ -1449,6 +1456,83 @@ export function CrewTodayView({ userName, isAdmin, setView }) {
         </div>
       )}
 
+      {/* 📝 工作日誌（張良 2026-08-20）：每人每天工作上遇到的問題/改的做法/要幫忙，全店看得見、跨店互相學。
+          發文：LINE 對 DD 說「日誌 …」（可加 問題/改善/求助、AB/GD，15分內傳照片自動附）或直接在下面打字 */}
+      {(() => {
+        const KM = { note: ["📝", "心得", "#5a5247"], issue: ["⚠️", "問題", "#b3261e"], improve: ["🔧", "改善", "#3C8C3C"], help: ["🙋", "要幫忙", "#C2872E"] };
+        const SM = { abeach: "A Beach", ground: "GROUN:D" };
+        const items = journal.items || [];
+        const persistJournal = (n) => { setJournal(n); saveCrewJSON("kb_journal", n); };
+        const meP = people.find(p => p.id === me);
+        const postJournal = () => {
+          if (!meP || !jText.trim()) return;
+          const item = { id: "jn-" + Math.random().toString(36).slice(2, 8), personId: me, name: meP.name, text: jText.trim().slice(0, 500), ts: new Date().toISOString(), via: "web", kind: jKind, store: jStore || null, likes: [], photos: [], ...(jKind === "help" ? { status: "open" } : {}) };
+          persistJournal({ ...journal, items: [item, ...items].slice(0, 1000) });
+          setJText("");
+        };
+        const jLike = (id) => { if (!me) return; persistJournal({ ...journal, items: items.map(i => i.id === id ? { ...i, likes: (i.likes || []).includes(me) ? (i.likes || []).filter(x => x !== me) : [...(i.likes || []), me] } : i) }); };
+        const jSolve = (id) => { if (!me) return; persistJournal({ ...journal, items: items.map(i => i.id === id ? (i.status === "solved" ? { ...i, status: "open", solvedBy: undefined, solvedAt: undefined } : { ...i, status: "solved", solvedBy: meP?.name || "", solvedAt: new Date().toISOString() }) : i) }); };
+        const shown = items.filter(i => jFilter === "all" || i.store === jFilter).filter(i => !jHelpOnly || i.kind === "help");
+        const openHelp = items.filter(i => i.kind === "help" && i.status !== "solved").length;
+        const chip = (label, on, onClick) => <button key={label} onClick={onClick} style={{ border: `1.5px solid ${on ? ACCENT : BORDER}`, background: on ? ACCENT : "#fff", color: on ? "#fff" : SUB, borderRadius: 13, padding: "3px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>{label}</button>;
+        const sel = { border: `1px solid ${BORDER}`, borderRadius: 8, padding: "7px 8px", fontSize: 12.5, background: "#fff", color: TEXT };
+        return (
+          <div style={{ ...crewCard, marginBottom: 14 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
+              <div style={{ fontSize: 14.5, fontWeight: 700, color: TEXT }}>📝 工作日誌</div>
+              <span style={{ fontSize: 11.5, color: SUB }}>今天遇到什麼、改了什麼、需要誰幫忙——大家都看得到、跨店互相學</span>
+              <div style={{ flex: 1 }} />
+              {chip("全部", jFilter === "all", () => setJFilter("all"))}
+              {chip("A Beach", jFilter === "abeach", () => setJFilter(jFilter === "abeach" ? "all" : "abeach"))}
+              {chip("GROUN:D", jFilter === "ground", () => setJFilter(jFilter === "ground" ? "all" : "ground"))}
+              {chip(`🙋 要幫忙${openHelp ? `(${openHelp})` : ""}`, jHelpOnly, () => setJHelpOnly(!jHelpOnly))}
+            </div>
+            {meP ? (
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 10 }}>
+                <select value={jKind} onChange={e => setJKind(e.target.value)} style={sel}>
+                  {Object.entries(KM).map(([k, [ic, lb]]) => <option key={k} value={k}>{ic} {lb}</option>)}
+                </select>
+                <select value={jStore} onChange={e => setJStore(e.target.value)} style={sel}>
+                  <option value="">通用（兩店）</option><option value="abeach">A Beach</option><option value="ground">GROUN:D</option>
+                </select>
+                <input value={jText} onChange={e => setJText(e.target.value)} onKeyDown={e => { if (e.key === "Enter") postJournal(); }} placeholder="例：組裝漢堡發現奶油滾輪不好用（麵包不平），改用刷子" style={{ ...sel, flex: 1, minWidth: 200 }} />
+                <button onClick={postJournal} disabled={!jText.trim()} style={{ border: "none", background: jText.trim() ? ACCENT : BORDER, color: "#fff", borderRadius: 8, padding: "7px 16px", fontSize: 12.5, fontWeight: 700, cursor: jText.trim() ? "pointer" : "default" }}>送出</button>
+              </div>
+            ) : (
+              <div style={{ fontSize: 12, color: SUB, marginBottom: 10 }}>綁定夥伴身分後可以在這裡發日誌；也可以在 LINE 對 DD 說「日誌 …」（加「問題/改善/求助」標類型、「AB/GD」標店別，15 分鐘內傳照片自動附上）。</div>
+            )}
+            {shown.length === 0 && <div style={{ fontSize: 12.5, color: "#9b9384", padding: "4px 0" }}>還沒有日誌。在 LINE 對 DD 說「日誌 今天…」或上面打一句就開始了。</div>}
+            {shown.slice(0, jMore ? 100 : 12).map(i => {
+              const [ic, lb, col] = KM[i.kind] || KM.note;
+              const liked = (i.likes || []).includes(me);
+              return (
+                <div key={i.id} style={{ borderTop: "1px solid #ece4d6", padding: "8px 0" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 7, flexWrap: "wrap" }}>
+                    <span style={{ fontSize: 12, fontWeight: 800, color: col }}>{ic} {lb}</span>
+                    {i.store && <span style={{ fontSize: 10.5, fontWeight: 700, background: i.store === "ground" ? "#fbeee6" : "#e8f0e8", color: i.store === "ground" ? "#92400e" : "#2c5a38", borderRadius: 8, padding: "1px 7px" }}>{SM[i.store]}</span>}
+                    <span style={{ fontSize: 13, fontWeight: 700, color: TEXT }}>{i.name}</span>
+                    <span style={{ fontSize: 11, color: "#C8BCA0", fontFamily: MONO }}>{(i.ts || "").slice(5, 10)} {(i.ts || "").slice(11, 16) && new Date(i.ts).toLocaleTimeString("zh-TW", { hour: "2-digit", minute: "2-digit" })}</span>
+                    {i.kind === "help" && (i.status === "solved"
+                      ? <span style={{ fontSize: 11, fontWeight: 700, color: "#3C8C3C" }}>✅ 已解決{i.solvedBy ? `・${i.solvedBy}` : ""}</span>
+                      : <span style={{ fontSize: 11, fontWeight: 800, color: "#b3261e" }}>⏳ 等人幫忙</span>)}
+                    <div style={{ flex: 1 }} />
+                    {i.kind === "help" && me && <button onClick={() => jSolve(i.id)} style={{ border: `1px solid ${BORDER}`, background: "#fff", color: i.status === "solved" ? SUB : "#3C8C3C", borderRadius: 8, padding: "2px 10px", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>{i.status === "solved" ? "↩ 還原" : "✓ 標已解決"}</button>}
+                    <button onClick={() => jLike(i.id)} style={{ border: `1px solid ${liked ? ACCENT : BORDER}`, background: liked ? "#fbeee6" : "#fff", color: liked ? ACCENT : SUB, borderRadius: 8, padding: "2px 10px", fontSize: 11, fontWeight: 700, cursor: me ? "pointer" : "default" }}>👍 有用{(i.likes || []).length ? ` ${(i.likes || []).length}` : ""}</button>
+                  </div>
+                  <div style={{ fontSize: 13.5, color: TEXT, marginTop: 4, lineHeight: 1.6, whiteSpace: "pre-wrap" }}>{i.text}</div>
+                  {(i.photos || []).length > 0 && (
+                    <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 6 }}>
+                      {i.photos.map((u, pi) => <a key={pi} href={u} target="_blank" rel="noreferrer"><img src={u} alt="" style={{ width: 74, height: 74, objectFit: "cover", borderRadius: 8, border: `1px solid ${BORDER}` }} /></a>)}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+            {shown.length > 12 && !jMore && <button onClick={() => setJMore(true)} style={{ border: `1px dashed ${BORDER}`, background: "#fff", color: SUB, borderRadius: 8, padding: "5px 14px", fontSize: 12, cursor: "pointer", marginTop: 8 }}>顯示更多（共 {shown.length} 則）</button>}
+          </div>
+        );
+      })()}
+
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(290px, 1fr))", gap: 12 }}>
         {/* 待完成訓練 */}
         {me && (
@@ -1502,7 +1586,7 @@ export function CrewTodayView({ userName, isAdmin, setView }) {
               {wkJournal.slice(0, 3).map(i => (
                 <div key={i.id} style={{ fontSize: 12, color: SUB, background: "#FBF7EE", borderRadius: 8, padding: "6px 10px", lineHeight: 1.5 }}>💬 <b style={{ color: TEXT }}>{i.name}</b>：{(i.text || "").slice(0, 42)}{(i.text || "").length > 42 ? "…" : ""}</div>
               ))}
-              {wkJournal.length === 0 && <div style={{ fontSize: 11.5, color: "#9b9384" }}>夥伴在 LINE 對 DD 說「心得 …」就會記錄到這裡（也可對 DD 說「推播心得提醒」邀大家寫）</div>}
+              {wkJournal.length === 0 && <div style={{ fontSize: 11.5, color: "#9b9384" }}>夥伴在 LINE 對 DD 說「日誌 …」（私訊或群組都行）就會記錄到上面的工作日誌（也可對 DD 說「推播心得提醒」邀大家寫）</div>}
             </div>
           </div>
           );

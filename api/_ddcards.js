@@ -146,6 +146,52 @@ async function deleteObject(key) {
 const FIELD_LABEL = { idDoc: '身分證影本', bankDoc: '存摺影本', contractDoc: '勞動契約', docs: '其他文件' }
 
 // 給外部（推播/測試）直接組卡用
+// ── 工作日誌（張良 2026-08-20）：私訊＋群組都能記、可附照片；全店在夥伴中心看得到 ──
+// 語法：「日誌 [問題|改善|求助] [AB|GD] 內容」——類型/店別可省略（省略＝一般心得/通用）；心得/今日心得/下班心得 同義
+const JOURNAL_KEY = 'sp_crew_kb_journal'
+export async function handleJournalText(ev) {
+  if (ev.type !== 'message' || ev.message?.type !== 'text') return null
+  const text = (ev.message.text || '').trim()
+  const m = text.match(/^(?:心得|日誌|工作日誌|今日心得|下班心得)[\s:：]+([\s\S]+)/)
+  if (!m) return null
+  const uid = ev.source?.userId || ''
+  const isDM = ev.source?.type === 'user'
+  const reply = (t) => ev.replyToken ? lineSend(ev.replyToken, [txt(t)]) : Promise.resolve()
+  const roster = await loadRoster()
+  const me = personByUid(roster, uid)
+  // 未綁定：私訊提示；群組保持安靜（外部群安靜原則——廠商打「日誌 …」不理不回）
+  if (!me) { if (isDM) { await reply('請先報到綁定（輸入「你的本名＋報到」），日誌才記得到你名下。'); return { consumed: true } } return null }
+  let body = m[1].trim()
+  // 開頭 token 解析（順序不拘、各最多一個）：類型與店別
+  let kind = 'note', store = null
+  for (let i = 0; i < 2; i++) {
+    const mK = body.match(/^(問題|改善|求助|要幫忙|幫忙)[\s:：]+/); if (mK && kind === 'note') { kind = mK[1] === '問題' ? 'issue' : mK[1] === '改善' ? 'improve' : 'help'; body = body.slice(mK[0].length); continue }
+    const mS = body.match(/^(AB|ab|A店|海灘|beach|GD|gd|G店|ground|GROUND)[\s:：]+/); if (mS && !store) { store = /^(GD|gd|G店|ground|GROUND)/.test(mS[1]) ? 'ground' : 'abeach'; body = body.slice(mS[0].length); continue }
+    break
+  }
+  const d = (await kvGet(JOURNAL_KEY)) || { items: [] }
+  const item = { id: 'jn-' + Math.random().toString(36).slice(2, 8), personId: me.id, name: me.name, text: body.slice(0, 500), ts: new Date().toISOString(), via: isDM ? 'line' : 'line-group', kind, store, likes: [], photos: [], ...(kind === 'help' ? { status: 'open' } : {}) }
+  d.items = [item, ...(d.items || [])].slice(0, 1000)
+  await kvSet(JOURNAL_KEY, d)
+  const kindTag = { note: '📝 心得', issue: '⚠️ 問題', improve: '🔧 改善', help: '🙋 要幫忙' }[kind]
+  const storeTag = store === 'ground' ? '（GROUN:D）' : store === 'abeach' ? '（A Beach）' : ''
+  await reply(kind === 'help'
+    ? `🙋 收到${storeTag}，已標記「要幫忙」——夥伴中心大家都看得到，有人解決會標記。15分鐘內傳照片會自動附上。`
+    : `${kindTag} 收到${storeTag}，${me.name} 的工作日誌記下來了！大家在夥伴中心都看得到、一起參考。15分鐘內傳照片會自動附上 👏`)
+  return { consumed: true, itemId: item.id, uid }
+}
+// 該夥伴 15 分鐘內最新一則日誌（附照片窗口）；urls 空＝只查不寫。回 item 或 null（沒近期日誌＝照片走原本檔案庫流程）
+export async function attachJournalPhotos(uid, urls) {
+  const roster = await loadRoster()
+  const me = personByUid(roster, uid)
+  if (!me) return null
+  const d = (await kvGet(JOURNAL_KEY)) || { items: [] }
+  const it = (d.items || []).find(i => i.personId === me.id && Date.now() - new Date(i.ts).getTime() < 15 * 60 * 1000)
+  if (!it) return null
+  if (urls && urls.length) { it.photos = [...(it.photos || []), ...urls].slice(0, 6); await kvSet(JOURNAL_KEY, d) }
+  return it
+}
+
 export const buildFbPicker = (people, meId) => personPickerFlex(people, meId, 'fb|to', '💬 給誰回饋？', '點名字 → 選標籤 → 完成（+2分）')
 export const buildPollCard = (poll, people) => pollFlex(poll, people)
 
@@ -268,19 +314,8 @@ export async function handleDDCards(ev, operators) {
     return true
   }
 
-  // 「心得 …」→ 記錄每日心得（夥伴主動傳＝回覆免費，不扣推播額度）
-  const mJournal = text.match(/^(?:心得|今日心得|下班心得)[\s:：]+([\s\S]+)/)
-  if (mJournal) {
-    const roster = await loadRoster()
-    const me = personByUid(roster, uid)
-    if (!me) { await reply(txt('請先報到綁定（輸入「你的本名＋報到」）。')); return true }
-    const d = (await kvGet('sp_crew_kb_journal')) || { items: [] }
-    d.items = [{ id: 'jn-' + Math.random().toString(36).slice(2, 8), personId: me.id, name: me.name, text: mJournal[1].trim().slice(0, 500), ts: new Date().toISOString(), via: 'line' }, ...(d.items || [])].slice(0, 1000)
-    await kvSet('sp_crew_kb_journal', d)
-    await reply(txt(`📝 收到，${me.name} 的今日心得記下來了！老闆看得到、也會成為改善的參考。辛苦了 👏`))
-    return true
-  }
-  if (/^我的心得$/.test(text)) {
+  // （工作日誌「日誌/心得 …」已抽成 handleJournalText——私訊＋群組都收、可附照片；webhook 在更外層呼叫）
+  if (/^(我的心得|我的日誌)$/.test(text)) {
     const roster = await loadRoster()
     const me = personByUid(roster, uid)
     if (!me) { await reply(txt('請先報到綁定。')); return true }
@@ -328,7 +363,7 @@ export async function handleDDCards(ev, operators) {
     return true
   }
   // 操作者：看心得彙整（回覆免費）
-  const mSeeJ = isOp && text.match(/^看心得[\s]*(\d*)$/)
+  const mSeeJ = isOp && text.match(/^(?:看心得|看日誌)[\s]*(\d*)$/)
   if (mSeeJ) {
     const days = Number(mSeeJ[1]) || 7
     const d = (await kvGet('sp_crew_kb_journal')) || { items: [] }
@@ -341,7 +376,7 @@ export async function handleDDCards(ev, operators) {
   if (isOp && /^推播心得提醒$/.test(text)) {
     const roster = await loadRoster()
     const bound = roster.people.filter(p => p.lineUserId && (p.status || '在職') !== '離職')
-    for (const p of bound) await pushMessages(p.lineUserId, [txt(`${p.nick || p.name}，下班辛苦了 🌙 今天有什麼心得或想法嗎？\n直接回覆「心得 你想說的話」就記錄囉（一兩句就好）。`)])
+    for (const p of bound) await pushMessages(p.lineUserId, [txt(`${p.nick || p.name}，下班辛苦了 🌙 今天工作上有遇到什麼、改了什麼嗎？\n・「日誌 你想記的」＝一般心得\n・「日誌 問題 …」「日誌 改善 …」「日誌 求助 …」＝標類型\n・開頭加 AB／GD 可標店別\n一兩句就好，大家在夥伴中心都看得到、互相參考 💪`)])
     await reply(txt(`已推播心得提醒給 ${bound.length} 位綁定夥伴（計 ${bound.length} 則）。`))
     return true
   }
