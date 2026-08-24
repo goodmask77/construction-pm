@@ -245,6 +245,38 @@ export default async function handler(req, res) {
     }
     return res.status(200).json({ ok: true, probe: dt, days: out2 })
   }
+  // 手動回填口（POST＋金鑰，張良 2026-08-24：喬亞POS寄信開通前，回填不用再部署）：
+  // POST ?ingest=<MENU_PROBE_KEY>，body={records:[record…]}，record 形狀同日結信入庫（date/store/revenue/…/_details 選填）
+  // 同一條只增不改管線：id 與 日期|店 都去重，之後寄信自動化來了也不會撞
+  if (req.method === 'POST' && req.query?.ingest) {
+    const mk = (process.env.MENU_PROBE_KEY || '').trim()
+    if (!mk || String(req.query.ingest) !== mk) return res.status(403).json({ ok: false })
+    let recs = []
+    try { recs = (typeof req.body === 'string' ? JSON.parse(req.body) : req.body)?.records || [] } catch (_) {}
+    if (!Array.isArray(recs) || !recs.length || recs.length > 40) return res.status(400).json({ ok: false, error: 'records 空或超過40筆' })
+    for (const r of recs) { if (!/^\d{4}-\d{2}-\d{2}$/.test(r?.date || '') || !r?.store || typeof r?.revenue !== 'number') return res.status(400).json({ ok: false, error: '每筆要有 date/store/revenue', bad: r?.date }) }
+    const skOf2 = (n) => /groun/i.test(n || '') ? 'ground' : 'abeach'
+    const store = (await kvGet('sp_finance_pm_pos')) || { entries: [] }
+    const have = new Set(store.entries.map(e => e.id)), haveCombo = new Set(store.entries.map(e => e.date + '|' + skOf2(e.store)))
+    const add = recs.filter(r => { const id = r.id || ('pos-' + r.date.replace(/-/g, '') + 'ingest-' + skOf2(r.store)); r.id = id; return !have.has(id) && !haveCombo.has(r.date + '|' + skOf2(r.store)) })
+    // 明細按月分檔（同 syncPos：已存在的日期::店不覆蓋）
+    const byMonth = {}
+    for (const r of add) { if (r._details) (byMonth[r.date.slice(0, 7)] = byMonth[r.date.slice(0, 7)] || []).push(r) }
+    for (const [mo, list] of Object.entries(byMonth)) {
+      const did = 'sp_finance_pm_pos_d_' + mo
+      const doc = (await kvGet(did)) || { days: {} }
+      let ch = false
+      for (const r of list) { const dk = r.date + '::' + skOf2(r.store); if (!doc.days[dk] && !(doc.days[r.date] && skOf2(doc.days[r.date].store) === skOf2(r.store))) { doc.days[dk] = { date: r.date, period: r.period, store: r.store, sheets: r._details }; ch = true } }
+      if (ch) { doc.updatedAt = new Date().toISOString(); await kvPut(did, doc, 'POS手動回填口') }
+    }
+    if (add.length) {
+      store.entries = [...store.entries, ...add.map(({ _details, ...r }) => r)].sort((a, b) => (a.date < b.date ? -1 : 1))
+      store.updatedAt = new Date().toISOString()
+      await kvPut('sp_finance_pm_pos', store, 'POS手動回填口')
+    }
+    await announceChanged() // 開著的網頁即刻自動跟上
+    return res.status(200).json({ ok: true, received: recs.length, added: add.length, skippedAsDup: recs.length - add.length, total: store.entries.length })
+  }
   // 營收探針（唯讀＋同 MENU_PROBE_KEY 金鑰）：?revprobe=<key>&store=abeach|ground → 每日 {date, weekday, revenue}
   // 用途：張良問「某月平日/週末營業額」這類彙總，本機被 RLS 擋時走這裡拿原始日列自己算（同一份 sp_finance_pm_pos）
   if (req.query?.revprobe) {
