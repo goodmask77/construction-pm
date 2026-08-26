@@ -7,6 +7,7 @@ import { simpleParser } from 'mailparser'
 import { parsePosWorkbook, parseTxSheet } from './_pos-parse.js' // 解析器共用模組（前端手動匯入也用同一套）
 import { groundTrialRecords, SEED_VER } from './_ground-seed.js' // GROUN:D 試營運 08-10~13 一次性回填（已入庫自動跳過）
 import { groundManualRecords } from './_ground-manual.js' // GROUN:D 喬亞POS報表手動回填（08-19~21，張良 2026-08-24 截圖）
+import { joyaLogin, joyaFetchDay, joyaBuildRecord, taipeiToday } from './_joya.js' // GROUN:D 喬亞行動報表自動抓取（2026-08-26 起全自動）
 
 const clean = (v) => (v || '').trim().replace(/^["']|["']$/g, '').replace(/^[A-Za-z0-9_]+=/, '').trim()
 const SB_URL = clean(process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL)
@@ -227,6 +228,52 @@ async function syncPos(days) {
   return { scanned, added: add.length, seeded, seedUpgraded, total: store.entries.length, txParsed: txAll.length, txPatched, txCols: txAll[0]?.tx?.h || null }
 }
 
+// 共用回填插入（手動回填口＋喬亞自動抓取共用；同 syncPos 口徑：id 與 日期|店 都去重、明細月檔不覆蓋）
+async function ingestPosRecords(recs, editor) {
+  const skOf2 = (n) => /groun/i.test(n || '') ? 'ground' : 'abeach'
+  const store = (await kvGet('sp_finance_pm_pos')) || { entries: [] }
+  const have = new Set(store.entries.map(e => e.id)), haveCombo = new Set(store.entries.map(e => e.date + '|' + skOf2(e.store)))
+  const add = recs.filter(r => { const id = r.id || ('pos-' + r.date.replace(/-/g, '') + 'ingest-' + skOf2(r.store)); r.id = id; return !have.has(id) && !haveCombo.has(r.date + '|' + skOf2(r.store)) })
+  const byMonth = {}
+  for (const r of add) { if (r._details) (byMonth[r.date.slice(0, 7)] = byMonth[r.date.slice(0, 7)] || []).push(r) }
+  for (const [mo, list] of Object.entries(byMonth)) {
+    const did = 'sp_finance_pm_pos_d_' + mo
+    const doc = (await kvGet(did)) || { days: {} }
+    let ch = false
+    for (const r of list) { const dk = r.date + '::' + skOf2(r.store); if (!doc.days[dk] && !(doc.days[r.date] && skOf2(doc.days[r.date].store) === skOf2(r.store))) { doc.days[dk] = { date: r.date, period: r.period, store: r.store, sheets: r._details }; ch = true } }
+    if (ch) { doc.updatedAt = new Date().toISOString(); await kvPut(did, doc, editor) }
+  }
+  if (add.length) {
+    store.entries = [...store.entries, ...add.map(({ _details, ...r }) => r)].sort((a, b) => (a.date < b.date ? -1 : 1))
+    store.updatedAt = new Date().toISOString()
+    await kvPut('sp_finance_pm_pos', store, editor)
+  }
+  return { received: recs.length, added: add.length, skippedAsDup: recs.length - add.length, total: store.entries.length }
+}
+
+// GROUN:D 喬亞行動報表自動抓取（張良 2026-08-26）：每次 cron 跑，補「昨天以前 N 天」還沒入庫的日子
+// 只抓昨天以前（今天營業中、只增不改不能提早凍結）；營收 0 的公休日不入庫
+async function syncJoya(daysBack) {
+  if (!process.env.JOYA_USER) return { skipped: '未設 JOYA_* 環境變數' }
+  const store = (await kvGet('sp_finance_pm_pos')) || { entries: [] }
+  const haveCombo = new Set(store.entries.map(e => e.date + '|' + (/groun/i.test(e.store || '') ? 'ground' : 'abeach')))
+  const today = taipeiToday()
+  const t0 = new Date(today + 'T00:00:00Z').getTime()
+  const dates = []
+  for (let i = 1; i <= daysBack; i++) dates.push(new Date(t0 - i * 86400000).toISOString().slice(0, 10))
+  const need = dates.filter(d => !haveCombo.has(d + '|ground'))
+  if (!need.length) return { checked: dates.length, added: 0 }
+  const cookie = await joyaLogin()
+  const recs = []; let closed = 0
+  for (const d of need) {
+    const day = await joyaFetchDay(cookie, d)
+    if (day.empty) { closed++; continue }
+    recs.push(joyaBuildRecord(day))
+  }
+  const out2 = recs.length ? await ingestPosRecords(recs, '喬亞行動報表自動抓取') : { added: 0 }
+  return { checked: dates.length, needed: need.length, closedDays: closed, ...out2 }
+}
+
 export default async function handler(req, res) {
   if (!SB_URL || !SB_KEY) return res.status(200).json({ ok: false, error: '缺 Supabase 設定' })
   // 診斷探針（只回結構統計，不回金額/內容——端點公開，保守）：?txprobe=YYYY-MM-DD
@@ -255,27 +302,28 @@ export default async function handler(req, res) {
     try { recs = (typeof req.body === 'string' ? JSON.parse(req.body) : req.body)?.records || [] } catch (_) {}
     if (!Array.isArray(recs) || !recs.length || recs.length > 40) return res.status(400).json({ ok: false, error: 'records 空或超過40筆' })
     for (const r of recs) { if (!/^\d{4}-\d{2}-\d{2}$/.test(r?.date || '') || !r?.store || typeof r?.revenue !== 'number') return res.status(400).json({ ok: false, error: '每筆要有 date/store/revenue', bad: r?.date }) }
-    const skOf2 = (n) => /groun/i.test(n || '') ? 'ground' : 'abeach'
-    const store = (await kvGet('sp_finance_pm_pos')) || { entries: [] }
-    const have = new Set(store.entries.map(e => e.id)), haveCombo = new Set(store.entries.map(e => e.date + '|' + skOf2(e.store)))
-    const add = recs.filter(r => { const id = r.id || ('pos-' + r.date.replace(/-/g, '') + 'ingest-' + skOf2(r.store)); r.id = id; return !have.has(id) && !haveCombo.has(r.date + '|' + skOf2(r.store)) })
-    // 明細按月分檔（同 syncPos：已存在的日期::店不覆蓋）
-    const byMonth = {}
-    for (const r of add) { if (r._details) (byMonth[r.date.slice(0, 7)] = byMonth[r.date.slice(0, 7)] || []).push(r) }
-    for (const [mo, list] of Object.entries(byMonth)) {
-      const did = 'sp_finance_pm_pos_d_' + mo
-      const doc = (await kvGet(did)) || { days: {} }
-      let ch = false
-      for (const r of list) { const dk = r.date + '::' + skOf2(r.store); if (!doc.days[dk] && !(doc.days[r.date] && skOf2(doc.days[r.date].store) === skOf2(r.store))) { doc.days[dk] = { date: r.date, period: r.period, store: r.store, sheets: r._details }; ch = true } }
-      if (ch) { doc.updatedAt = new Date().toISOString(); await kvPut(did, doc, 'POS手動回填口') }
-    }
-    if (add.length) {
-      store.entries = [...store.entries, ...add.map(({ _details, ...r }) => r)].sort((a, b) => (a.date < b.date ? -1 : 1))
-      store.updatedAt = new Date().toISOString()
-      await kvPut('sp_finance_pm_pos', store, 'POS手動回填口')
-    }
+    const out2 = await ingestPosRecords(recs, 'POS手動回填口')
     await announceChanged() // 開著的網頁即刻自動跟上
-    return res.status(200).json({ ok: true, received: recs.length, added: add.length, skippedAsDup: recs.length - add.length, total: store.entries.length })
+    return res.status(200).json({ ok: true, ...out2 })
+  }
+  // 清理口（同金鑰）：?delday=<key>&date=YYYY-MM-DD&store=ground → 刪該日摘要＋明細（只用於清誤入資料，例：公休0元日）
+  if (req.query?.delday) {
+    const mk = (process.env.MENU_PROBE_KEY || '').trim()
+    if (!mk || String(req.query.delday) !== mk) return res.status(403).json({ ok: false })
+    const dt = String(req.query.date || ''), stq = String(req.query.store || '')
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dt) || !/^(abeach|ground)$/.test(stq)) return res.status(400).json({ ok: false, error: '要帶 date=YYYY-MM-DD 與 store=abeach|ground' })
+    const skOf3 = (n) => /groun/i.test(n || '') ? 'ground' : 'abeach'
+    const store = (await kvGet('sp_finance_pm_pos')) || { entries: [] }
+    const before = store.entries.length
+    store.entries = store.entries.filter(e => !(e.date === dt && skOf3(e.store) === stq))
+    if (store.entries.length !== before) { store.updatedAt = new Date().toISOString(); await kvPut('sp_finance_pm_pos', store, 'POS清理口') }
+    const did = 'sp_finance_pm_pos_d_' + dt.slice(0, 7)
+    const doc = (await kvGet(did)) || { days: {} }
+    let ch = false
+    for (const dk of Object.keys(doc.days)) { const day = doc.days[dk]; if ((day.date || dk.slice(0, 10)) === dt && skOf3(day.store) === stq) { delete doc.days[dk]; ch = true } }
+    if (ch) { doc.updatedAt = new Date().toISOString(); await kvPut(did, doc, 'POS清理口') }
+    await announceChanged()
+    return res.status(200).json({ ok: true, removedSummary: before - store.entries.length, removedDetail: ch })
   }
   // 營收探針（唯讀＋同 MENU_PROBE_KEY 金鑰）：?revprobe=<key>&store=abeach|ground → 每日 {date, weekday, revenue}
   // 用途：張良問「某月平日/週末營業額」這類彙總，本機被 RLS 擋時走這裡拿原始日列自己算（同一份 sp_finance_pm_pos）
@@ -325,6 +373,7 @@ export default async function handler(req, res) {
   const out = { ok: true, days }
   try { out.ctbc = await syncCtbc(days) } catch (e) { out.ctbc = { error: e?.message || String(e) } }
   try { out.pos = await syncPos(days) } catch (e) { out.pos = { error: e?.message || String(e) } }
+  try { out.joya = await syncJoya(Math.min(days, 20)) } catch (e) { out.joya = { error: e?.message || String(e) } } // GROUN:D 喬亞自動抓（?days=N 可回補 N 天）
   await announceChanged() // 有新資料入庫→通知所有開著的網頁自動重抓（沒新資料就不發）
   if (req.query?.debug) out.dbg = DBG
   return res.status(200).json(out)
