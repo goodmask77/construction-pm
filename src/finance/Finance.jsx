@@ -1212,20 +1212,21 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
                   {kpi("期間營收", fmt(revSum), days.length + " 天", "#3f7d4e", () => openDrill({ type: "days" }))}
                   {kpi("日均營收", fmt(Math.round(revSum / days.length)), null, null, () => openDrill({ type: "days" }))}
                   {kpi("交易數", txSum, null, null, () => openDrill({ type: "days" }))}
+                  {txSum > 0 && kpi("每單平均", fmt(Math.round(revSum / txSum)), "營收÷單數", "#3a6ea5", () => openDrill({ type: "days" }))}
                   {kpi("來客(堂食)", guestSum || "—", avgTicket ? "客單 " + fmt(avgTicket) : null, null, () => openDrill({ type: "days" }))}
                   {kpi("最新一天", fmt(last.revenue), last.date.slice(5), null, () => openDrill({ type: "day", key: last.date }))}
                 </div>
                 {posGran === "day" ? (
                 <div style={{ border: "1.5px solid #c8bca6", borderRadius: 8, background: C.card, overflow: "hidden" }}>
-                  <div style={{ overflowX: "auto" }}><div style={{ minWidth: 900 }}>
+                  <div style={{ overflowX: "auto" }}><div style={{ minWidth: 976 }}>
                     {(() => {
-                      const GTC = "118px minmax(140px,1fr) 96px 64px 64px 80px 96px 96px 96px 80px";
+                      const GTC = "118px minmax(140px,1fr) 96px 64px 76px 64px 80px 96px 96px 96px 80px"; // 張良 2026-08-26：加「單均」欄
                       const hc = { fontSize: 10.5, letterSpacing: 0.8, color: C.faint, fontWeight: 700, padding: "7px 8px", whiteSpace: "nowrap" };
                       const cell = (v, extra) => <div style={{ padding: "0 8px", fontFamily: MONOF, fontSize: 11.5, textAlign: "right", color: C.sub, ...extra }}>{v}</div>;
                       return (
                         <>
                           <div style={{ display: "grid", gridTemplateColumns: GTC, background: C.soft, borderBottom: "1.5px solid #c8bca6" }}>
-                            <div style={hc}>日期</div><div style={hc}>店</div><div style={{ ...hc, textAlign: "right" }}>營收</div><div style={{ ...hc, textAlign: "right" }}>單數</div><div style={{ ...hc, textAlign: "right" }}>來客</div><div style={{ ...hc, textAlign: "right" }}>客單(÷來客)</div><div style={{ ...hc, textAlign: "right" }}>現金</div><div style={{ ...hc, textAlign: "right" }}>信用卡</div><div style={{ ...hc, textAlign: "right" }}>Uber</div><div style={{ ...hc, textAlign: "right" }}>折扣</div>
+                            <div style={hc}>日期</div><div style={hc}>店</div><div style={{ ...hc, textAlign: "right" }}>營收</div><div style={{ ...hc, textAlign: "right" }}>單數</div><div style={{ ...hc, textAlign: "right" }}>單均(÷單數)</div><div style={{ ...hc, textAlign: "right" }}>來客</div><div style={{ ...hc, textAlign: "right" }}>客單(÷來客)</div><div style={{ ...hc, textAlign: "right" }}>現金</div><div style={{ ...hc, textAlign: "right" }}>信用卡</div><div style={{ ...hc, textAlign: "right" }}>Uber</div><div style={{ ...hc, textAlign: "right" }}>折扣</div>
                           </div>
                           <div style={{ maxHeight: "50vh", overflowY: "auto" }}>
                             {(() => {
@@ -1242,7 +1243,7 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
                                 <div style={{ padding: "0 8px", fontFamily: MONOF, fontSize: 11.5, color: wknd ? "#a97a10" : C.sub, fontWeight: wknd ? 700 : 400 }}>{d.date.slice(2)}（{WD2[gd]}）</div>
                                 <div style={{ padding: "0 8px", fontSize: 11.5, color: C.sub, overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis" }}>{d.store}</div>
                                 {cell(fmt(d.revenue), { fontWeight: 700, color: C.text })}
-                                {cell(d.txCount)}{cell(d.guests || "—")}{cell(d.guests ? fmt(ticket(d.revenue, d.guests)) : "—")}
+                                {cell(d.txCount)}{cell(d.txCount ? fmt(Math.round(d.revenue / d.txCount)) : "—", { color: "#3a6ea5", fontWeight: 600 })}{cell(d.guests || "—")}{cell(d.guests ? fmt(ticket(d.revenue, d.guests)) : "—")}
                                 {cell(fmt(d.cash || 0))}{cell(fmt(d.card || 0))}{cell(fmt(d.uber || 0))}
                                 {cell(d.discount ? fmt(d.discount) : "—", { color: d.discount ? C.accent : "#d5cbb6" })}
                               </div>
@@ -1257,15 +1258,15 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
                 </div>
                 ) : (
                   <div style={{ border: "1.5px solid #c8bca6", borderRadius: 8, background: C.card, overflow: "hidden" }}>
-                    <div style={{ overflowX: "auto" }}><div style={{ minWidth: 860 }}>
+                    <div style={{ overflowX: "auto" }}><div style={{ minWidth: 936 }}>
                       {(() => {
-                        const GTC2 = "110px 56px 110px 104px 64px 64px 80px 100px 100px 96px 84px";
+                        const GTC2 = "110px 56px 110px 104px 64px 76px 64px 80px 100px 100px 96px 84px"; // 加「單均」欄
                         const hc2 = { fontSize: 10.5, letterSpacing: 0.8, color: C.faint, fontWeight: 700, padding: "7px 8px", whiteSpace: "nowrap", textAlign: "right" };
                         const cell2 = (v, extra) => <div style={{ padding: "0 8px", fontFamily: MONOF, fontSize: 11.5, textAlign: "right", color: C.sub, ...extra }}>{v}</div>;
                         return (
                           <>
                             <div style={{ display: "grid", gridTemplateColumns: GTC2, background: C.soft, borderBottom: "1.5px solid #c8bca6" }}>
-                              <div style={{ ...hc2, textAlign: "left" }}>{posGran === "week" ? "週（起始日）" : "月份"}</div><div style={hc2}>天數</div><div style={hc2}>營收</div><div style={hc2}>日均</div><div style={hc2}>單數</div><div style={hc2}>來客</div><div style={hc2}>客單</div><div style={hc2}>現金</div><div style={hc2}>信用卡</div><div style={hc2}>Uber</div><div style={hc2}>折扣</div>
+                              <div style={{ ...hc2, textAlign: "left" }}>{posGran === "week" ? "週（起始日）" : "月份"}</div><div style={hc2}>天數</div><div style={hc2}>營收</div><div style={hc2}>日均</div><div style={hc2}>單數</div><div style={hc2}>單均</div><div style={hc2}>來客</div><div style={hc2}>客單</div><div style={hc2}>現金</div><div style={hc2}>信用卡</div><div style={hc2}>Uber</div><div style={hc2}>折扣</div>
                             </div>
                             {[...periods].reverse().map((pp, i) => (
                               <div key={pp.key} style={{ display: "grid", gridTemplateColumns: GTC2, alignItems: "center", minHeight: 32, borderTop: i ? "1px solid #f0ead9" : "none", background: i % 2 ? "#f8f4ea" : C.card }}>
@@ -1273,7 +1274,7 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
                                 {cell2(pp.nDays)}
                                 {cell2(fmt(pp.revenue), { fontWeight: 700, color: C.text })}
                                 {cell2(fmt(Math.round(pp.revenue / Math.max(1, pp.nDays))))}
-                                {cell2(pp.txCount)}{cell2(pp.guests || "—")}
+                                {cell2(pp.txCount)}{cell2(pp.txCount ? fmt(Math.round(pp.revenue / pp.txCount)) : "—", { color: "#3a6ea5", fontWeight: 600 })}{cell2(pp.guests || "—")}
                                 {cell2(pp.guests ? fmt(Math.round(pp.revenue / pp.guests)) : "—")}
                                 {cell2(fmt(pp.cash))}{cell2(fmt(pp.card))}{cell2(fmt(pp.uber))}
                                 {cell2(pp.discount ? fmt(pp.discount) : "—", { color: pp.discount ? C.accent : "#d5cbb6" })}
@@ -1479,6 +1480,26 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
                       <div style={{ fontSize: 10.5, color: C.faint, marginTop: 6 }}>{isAB
                         ? "品類＝自訂細分類（湯/沙拉/開胃菜/麵/飯…，跟 POS 分類不同，方便逐品類看排名刪菜單）；菜名旁 $＝單價估算（期間內用銷售額÷份數，有折扣時會略偏離牌價）；Uber 欄＝外送(低價)分類賣出的份數，已併入該品項各日與累計總量。工具箱/包場/免招手/蛋糕/福利等非菜單分類不列入。品類色帶＝該品類每日總份數。"
                         : "套餐內＝期間內該品項在套餐裡賣出的份數（累計，其餘為單點）；每組套餐含飲料一杯，所以「飲料」的套餐內≈套餐組數。品類色帶＝該品類每日總份數。08-10~13 為試營運人工回填資料。"}</div>
+                    </div>
+                  );
+                })()}
+                {/* ⏰ 時段消費（張良 2026-08-26）：喬亞行動報表時段分析入庫後在這裡彙總；POS 只有每小時粒度（沒有半小時） */}
+                {(() => {
+                  const SLOT = "時段分析(每小時)";
+                  const agg = {}; let daysWith = 0;
+                  days.forEach(d => {
+                    const secs = dayDet(d.date)?.sheets?.[SLOT];
+                    if (!Array.isArray(secs) || !secs.length) return;
+                    daysWith++;
+                    secs.forEach(s => (s.rows || []).forEach(r => { if (!Array.isArray(r)) return; const k = String(r[0]); const o = agg[k] = agg[k] || { amt: 0, od: 0 }; o.od += Number(r[1]) || 0; o.amt += Number(r[r.length - 1]) || 0; }));
+                  });
+                  const keys = Object.keys(agg).sort();
+                  if (!keys.length) return null;
+                  const mx = Math.max(1, ...keys.map(k => agg[k].amt));
+                  return (
+                    <div style={{ ...chartBox2, marginBottom: 10 }}>
+                      <div style={{ fontSize: 11.5, fontWeight: 700, color: C.sub, marginBottom: 8 }}>⏰ 時段消費（期間累計・{daysWith} 天有時段資料）<span style={{ fontWeight: 400, color: C.faint }}>　每列＝營業額｜單數・單均；POS 提供每小時粒度（無半小時）</span></div>
+                      {keys.map(k => barRow(k, agg[k].amt, mx, "#3a6ea5", `${agg[k].od}單・單均${agg[k].od ? fmt(Math.round(agg[k].amt / agg[k].od)) : "—"}`))}
                     </div>
                   );
                 })()}

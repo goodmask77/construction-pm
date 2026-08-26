@@ -7,7 +7,7 @@ import { simpleParser } from 'mailparser'
 import { parsePosWorkbook, parseTxSheet } from './_pos-parse.js' // 解析器共用模組（前端手動匯入也用同一套）
 import { groundTrialRecords, SEED_VER } from './_ground-seed.js' // GROUN:D 試營運 08-10~13 一次性回填（已入庫自動跳過）
 import { groundManualRecords } from './_ground-manual.js' // GROUN:D 喬亞POS報表手動回填（08-19~21，張良 2026-08-24 截圖）
-import { joyaLogin, joyaFetchDay, joyaBuildRecord, taipeiToday } from './_joya.js' // GROUN:D 喬亞行動報表自動抓取（2026-08-26 起全自動）
+import { joyaLogin, joyaFetchDay, joyaBuildRecord, taipeiToday, taipeiAfterClose, joyaFetchTimeslots, timeslotSection, TIMESLOT_SHEET } from './_joya.js' // GROUN:D 喬亞行動報表自動抓取（2026-08-26 起全自動）
 
 const clean = (v) => (v || '').trim().replace(/^["']|["']$/g, '').replace(/^[A-Za-z0-9_]+=/, '').trim()
 const SB_URL = clean(process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL)
@@ -260,18 +260,39 @@ async function syncJoya(daysBack) {
   const today = taipeiToday()
   const t0 = new Date(today + 'T00:00:00Z').getTime()
   const dates = []
-  for (let i = 1; i <= daysBack; i++) dates.push(new Date(t0 - i * 86400000).toISOString().slice(0, 10))
+  // 張良 2026-08-26：營業 11-19、19:30 可結帳 → 過 19:30 連「今天」一起抓（當天晚上數字就進系統）
+  for (let i = taipeiAfterClose() ? 0 : 1; i <= daysBack; i++) dates.push(new Date(t0 - i * 86400000).toISOString().slice(0, 10))
   const need = dates.filter(d => !haveCombo.has(d + '|ground'))
-  if (!need.length) return { checked: dates.length, added: 0 }
-  const cookie = await joyaLogin()
+  let cookie = null
   const recs = []; let closed = 0
-  for (const d of need) {
-    const day = await joyaFetchDay(cookie, d)
-    if (day.empty) { closed++; continue }
-    recs.push(joyaBuildRecord(day))
+  if (need.length) {
+    cookie = await joyaLogin()
+    for (const d of need) {
+      const day = await joyaFetchDay(cookie, d)
+      if (day.empty) { closed++; continue }
+      recs.push(joyaBuildRecord(day))
+    }
   }
   const out2 = recs.length ? await ingestPosRecords(recs, '喬亞行動報表自動抓取') : { added: 0 }
-  return { checked: dates.length, needed: need.length, closedDays: closed, ...out2 }
+  // 舊日子補時段表（手動回填/試營運日入庫時沒有時段）：只加這張表、其他資料不動（只增不改）
+  let slotPatched = 0
+  const detCache = {}
+  for (const d of dates.filter(d2 => haveCombo.has(d2 + '|ground'))) {
+    try {
+      const did = 'sp_finance_pm_pos_d_' + d.slice(0, 7)
+      const doc = detCache[did] = detCache[did] || (await kvGet(did)) || { days: {} }
+      const dk = doc.days[d + '::ground'] ? d + '::ground' : (doc.days[d] && /groun/i.test(doc.days[d].store || '') ? d : null)
+      if (!dk || doc.days[dk].sheets?.[TIMESLOT_SHEET]) continue
+      cookie = cookie || await joyaLogin()
+      const slots = await joyaFetchTimeslots(cookie, d)
+      if (!slots.length) continue
+      doc.days[dk].sheets = { ...(doc.days[dk].sheets || {}), [TIMESLOT_SHEET]: [timeslotSection(slots)] }
+      doc.updatedAt = new Date().toISOString()
+      await kvPut(did, doc, '喬亞時段補齊')
+      slotPatched++
+    } catch (_) {}
+  }
+  return { checked: dates.length, needed: need.length, closedDays: closed, slotPatched, ...out2 }
 }
 
 export default async function handler(req, res) {

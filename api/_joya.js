@@ -35,7 +35,19 @@ const dataList = (html) => { const m = html.match(/var dataList = (\[[\s\S]*?\])
 const pageText = (html) => html.replace(/<script[\s\S]*?<\/script>/g, '').replace(/<[^>]+>/g, '|').replace(/\|+/g, '|')
 const labelVal = (txt, label) => { const m = txt.match(new RegExp(label + '\\|\\s*\\|?\\s*(-?[\\d,]+)')); return m ? num(m[1]) : 0 }
 
-// 抓某一天的完整資料（summary＋分類＋品項含金額＋付款）
+// 時段分析（喬亞只有「每小時」粒度，無半小時）：GROUND 段落的 table rows → [[小時, 營業額, 訂單數]]
+function parseTimeslots(html) {
+  const i = html.indexOf('GROUND'); if (i < 0) return []
+  const seg = html.slice(i, i + 8000)
+  const out = []
+  for (const tr of seg.match(/<tr[^>]*>[\s\S]*?<\/tr>/g) || []) {
+    const cells = (tr.match(/<t[dh][^>]*>[\s\S]*?<\/t[dh]>/g) || []).map(c => c.replace(/<[^>]+>/g, '').trim())
+    if (cells.length >= 3 && /^\d{1,2}$/.test(cells[0])) { const amt = num(cells[1]), orders = num(cells[2]); if (amt > 0 || orders > 0) out.push([Number(cells[0]), amt, orders]) }
+  }
+  return out
+}
+
+// 抓某一天的完整資料（summary＋分類＋品項含金額＋付款＋每小時時段）
 export async function joyaFetchDay(cookie, date) {
   const sd = await jFetch('/api/date', { method: 'POST', body: JSON.stringify({ startDate: date, endDate: date }) }, cookie)
   if (!sd.ok) throw new Error('設日期失敗 ' + sd.status)
@@ -47,11 +59,23 @@ export async function joyaFetchDay(cookie, date) {
     service: labelVal(txt, '服務費'), revenue: labelVal(txt, '實收金額'), txCount: labelVal(txt, '交易筆數'), qty: labelVal(txt, '銷售數量'),
   }
   if (!sum.revenue) return { date, sum, empty: true } // 公休/沒營業（實收0；就算有test單活動也算沒開）：不入庫，免得0元日拉低日均
-  const [cats, items, pays] = await Promise.all([
+  const [cats, items, pays, slots] = await Promise.all([
     get('categorySalesAmount').then(dataList), get('productSalesAmount').then(dataList), get('payment').then(dataList),
+    get('period_time_report').then(parseTimeslots).catch(() => []),
   ])
-  return { date, sum, cats, items, pays, empty: false }
+  return { date, sum, cats, items, pays, slots, empty: false }
 }
+
+// 只抓時段（給「舊日子補時段」用：日子已入庫但當時沒抓時段 → 只補這張表，不動其他資料）
+export async function joyaFetchTimeslots(cookie, date) {
+  const sd = await jFetch('/api/date', { method: 'POST', body: JSON.stringify({ startDate: date, endDate: date }) }, cookie)
+  if (!sd.ok) throw new Error('設日期失敗 ' + sd.status)
+  const r = await jFetch('/period_time_report', {}, cookie); if (!r.ok) throw new Error('period ' + r.status)
+  return parseTimeslots(await r.text())
+}
+
+export const TIMESLOT_SHEET = '時段分析(每小時)'
+export const timeslotSection = (slots) => ({ title: TIMESLOT_SHEET, header: ['時段', '訂單數', '營業額'], rows: slots.map(([h, amt, od]) => [String(h).padStart(2, '0') + ':00', od, amt]) })
 
 // 組成入庫 record（形狀同日結信；rows 無「套餐內」欄→前端顯示 —）
 export function joyaBuildRecord(day) {
@@ -77,8 +101,15 @@ export function joyaBuildRecord(day) {
     cash: pay(/現金/), cashCount: null, card: pay(/信用卡|刷卡|卡/), cardCount: null, uber: 0, uberCount: null, posSales: 0, apiSales: 0,
     voidItems: 0, returnDish: 0, unsettled: 0, kv: {}, source: 'joya-mobile',
     partial: '喬亞行動報表自動抓取：營收/單數/付款/品項含金額為真值；無來客數、無套餐內拆分、退貨未單列',
-    _details: { '總銷售額 (以類別分類)': secs },
+    // 時段放獨立分頁鍵（不能塞進分類表——前端會把 11:00 當品項算進熱銷榜）
+    _details: { '總銷售額 (以類別分類)': secs, ...(day.slots && day.slots.length ? { [TIMESLOT_SHEET]: [timeslotSection(day.slots)] } : {}) },
   }
+}
+
+// 台北現在是否已過結帳時間（張良 2026-08-26：營業 11-19、19:30 就能結）→ 過了就能抓「今天」
+export const taipeiAfterClose = () => {
+  const [h, m] = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Taipei', hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date()).split(':').map(Number)
+  return h * 60 + m >= 19 * 60 + 30
 }
 
 // 台北時區今天（只抓「昨天以前」——今天營業中資料未定，只增不改不能提早凍結）
