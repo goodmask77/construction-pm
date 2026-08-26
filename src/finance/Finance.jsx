@@ -24,10 +24,10 @@ const num = parseNum; // 共用解析（避免卡0）
 const AB_UBER_CATS = new Set(["Pizza披薩", "主餐＆早午餐", "沙拉＆湯", "炸物＆前菜", "飲品"]);
 // 非菜單分類：不進品項明細表（工具箱/包場/免招手/蛋糕/福利=服務性按鍵，不是餐點）
 const AB_SKIP_CATS = new Set(["⚡️工具箱", "包場大訂", "免招手", "收蛋糕", "慶生沒蛋糕", "♥️福利♥️", "自訂食品", "總結", "套餐", "商品分類銷售分析"]);
-const AB_FINE_ORDER = ["披薩", "排餐", "麵", "飯", "堡・塔可", "早午餐", "沙拉", "開胃菜", "湯", "炸物", "甜點", "果昔", "茶飲", "咖啡", "熱茶", "調酒", "啤酒", "瓶裝酒"];
+const AB_FINE_ORDER = ["披薩", "排餐", "麵", "飯", "堡・早午餐", "沙拉", "開胃菜", "湯", "炸物", "甜點", "果昔", "茶飲", "咖啡", "熱茶", "調酒", "啤酒", "瓶裝酒"];
 const AB_FINE_RULES = [ // 順序重要：特徵強的先比（長島冰茶→調酒不是茶飲、熱紅酒→調酒不是瓶裝酒、燉飯→飯不是開胃菜的青花）
   [/披薩/, "披薩"], [/燉飯/, "飯"], [/麵/, "麵"], [/牛排|肋眼|豬排/, "排餐"],
-  [/塔可|漢堡|堡/, "堡・塔可"], [/早餐|法式吐司|班尼迪克|歐姆蛋|布里歐/, "早午餐"],
+  [/塔可|漢堡|堡|早餐|法式吐司|班尼迪克|歐姆蛋|布里歐/, "堡・早午餐"], // 張良 2026-08-26：堡塔可＋早午餐併一類
   [/沙拉/, "沙拉"], [/湯/, "湯"], [/薯條|雞翅|生蠔|炸物|酥炸/, "炸物"],
   [/提拉米蘇|蛋糕|檸檬派/, "甜點"], [/果昔/, "果昔"], [/咖啡/, "咖啡"],
   [/莫西多|桑格利亞|長島|貝里斯|熱紅酒|鳥居|A ?Beach/i, "調酒"],
@@ -1383,10 +1383,13 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
                       (sec.rows || []).forEach(r => {
                         if (!Array.isArray(r) || typeof r[0] !== "string") return;
                         const key = isAB ? abNorm(r[0]) : r[0]; // A Beach：內用/Uber 同品項（只差emoji）合併
-                        const o = items[key] = items[key] || { n: r[0], cat: isAB ? abFineCat(r[0]) : sec.title, q: {}, cum: 0, comboCum: 0, comboHas: false, uber: 0 };
+                        const o = items[key] = items[key] || { n: r[0], cat: isAB ? abFineCat(r[0]) : sec.title, q: {}, cum: 0, comboCum: 0, comboHas: false, uber: 0, amt: 0, aq: 0 };
                         if (!uber) o.n = r[0]; // 顯示名以內用版為準
                         o.q[d.date] = (o.q[d.date] || 0) + (Number(r[1]) || 0); o.cum += Number(r[1]) || 0;
                         if (uber) o.uber += Number(r[1]) || 0;
+                        // 單價估算（張良 2026-08-26：菜名後要顯示價格）＝內用銷售額÷份數；Uber 低價與金額0的列（喬亞回填/1/4披薩）不混入
+                        const amt = Number(r[r.length - 1]) || 0;
+                        if (!uber && amt > 0 && (Number(r[1]) || 0) > 0) { o.amt += amt; o.aq += Number(r[1]) || 0; }
                         if (ci >= 0) { o.comboCum += Number(r[ci]) || 0; o.comboHas = true; } // 套餐內＝期間累計（張良 2026-08-16：跟累計欄同口徑，不再只看排序那天）
                       });
                     });
@@ -1459,7 +1462,8 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
                               const body = g.map(r => (
                                 <tr key={(cat || "") + r.n}>
                                   <td style={{ padding: "5px 8px", fontWeight: 600, color: zero(r) ? C.red : C.text, whiteSpace: "nowrap", position: "sticky", left: 0, background: "#fff", borderTop: "1px solid #f0ead9" }}>
-                                    {r.n}{surge(r) ? " 🔥" : ""}{zero(r) ? <span style={{ fontSize: 10.5, fontWeight: 800 }}> ⚠0</span> : ""}
+                                    {r.n}{r.aq > 0 && <span style={{ fontSize: 10.5, fontWeight: 400, color: C.faint, marginLeft: 5 }} title="單價估算＝期間內用銷售額÷份數（有折扣或多種份量時會偏離牌價；Uber 低價不混入）">${Math.round(r.amt / r.aq).toLocaleString()}</span>}
+                                    {surge(r) ? " 🔥" : ""}{zero(r) ? <span style={{ fontSize: 10.5, fontWeight: 800 }}> ⚠0</span> : ""}
                                     {gdIdle && <span style={{ fontSize: 10, fontWeight: 700, color: C.red, marginLeft: 6 }}>{idleGap(r)}天沒賣・最後 {String(lastSold(r) || "").slice(5)}</span>}</td>
                                   {!gdGroup && <td style={{ padding: "5px 8px", borderTop: "1px solid #f0ead9" }}><span style={{ border: `1px solid ${C.line}`, background: C.bg, color: C.sub, borderRadius: 10, padding: "1px 8px", fontSize: 10.5, fontWeight: 700, whiteSpace: "nowrap" }}>{r.cat}</span></td>}
                                   {dts.map(dd => <td key={dd} style={{ ...tdn, fontWeight: sortKey === dd ? 800 : 400, color: sortKey === dd ? C.brand : C.sub }}>{r.q[dd] || 0}</td>)}
@@ -1473,7 +1477,7 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
                         </table>
                       </div>
                       <div style={{ fontSize: 10.5, color: C.faint, marginTop: 6 }}>{isAB
-                        ? "品類＝自訂細分類（湯/沙拉/開胃菜/麵/飯…，跟 POS 分類不同，方便逐品類看排名刪菜單）；Uber 欄＝外送(低價)分類賣出的份數，已併入該品項各日與累計總量。工具箱/包場/免招手/蛋糕/福利等非菜單分類不列入。品類色帶＝該品類每日總份數。"
+                        ? "品類＝自訂細分類（湯/沙拉/開胃菜/麵/飯…，跟 POS 分類不同，方便逐品類看排名刪菜單）；菜名旁 $＝單價估算（期間內用銷售額÷份數，有折扣時會略偏離牌價）；Uber 欄＝外送(低價)分類賣出的份數，已併入該品項各日與累計總量。工具箱/包場/免招手/蛋糕/福利等非菜單分類不列入。品類色帶＝該品類每日總份數。"
                         : "套餐內＝期間內該品項在套餐裡賣出的份數（累計，其餘為單點）；每組套餐含飲料一杯，所以「飲料」的套餐內≈套餐組數。品類色帶＝該品類每日總份數。08-10~13 為試營運人工回填資料。"}</div>
                     </div>
                   );
