@@ -36,6 +36,8 @@ const AB_FINE_RULES = [ // 順序重要：特徵強的先比（長島冰茶→�
   [/魷魚|節瓜|青花|烤餅|韃靼|脆片|鷹嘴豆/, "開胃菜"],
 ];
 const abFineCat = (name) => (AB_FINE_RULES.find(([re]) => re.test(name)) || [, "其他"])[1];
+// 「1/4 披薩」＝GROUN:D 試營運切片促銷（無單價、金額0）——張良 2026-08-26：全部畫面/統計都不要出現（原始資料保留，只是不顯示）
+const isQuarterItem = (n) => /^1\/4/.test(String(n).trim());
 // 同品項內用/Uber 名字只差 emoji（☘️瑪格麗特 vs 瑪格麗特）→ 去 emoji/空白後當同一鍵合併
 const abNorm = (name) => String(name).replace(/[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE0F}\u{2B00}-\u{2BFF}]/gu, "").replace(/\s+/g, "");
 
@@ -846,7 +848,7 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
           const hasSum = secs2.some(s => s.title === "總結"); // 真日結信有官方「總結」段＝分類營收用它；試營運回填沒有＝改用品項列加總（同資料不會兩邊都算）
           secs2.forEach(sec => {
             (sec.rows || []).forEach(r => {
-              if (!Array.isArray(r) || typeof r[0] !== "string") return;
+              if (!Array.isArray(r) || typeof r[0] !== "string" || isQuarterItem(r[0])) return;
               const amt = Number(r[r.length - 1]) || 0, qty = Number(r[1]) || 0;
               if (sec.title === "總結") { if (amt > 0) { const c = catAgg[r[0]] = catAgg[r[0]] || { qty: 0, amt: 0 }; c.qty += qty; c.amt += amt; } return; }
               if (sec.title === "套餐") { if (amt > 0) { const c = catAgg["套餐"] = catAgg["套餐"] || { qty: 0, amt: 0 }; c.qty += qty; c.amt += amt; } return; } // 套餐自己算一類（張良 2026-08-16），不混進品項榜
@@ -885,7 +887,7 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
             if (sec.title === "總結") { if (amt > 0) addCatDay(r[0], d.date, amt); return; }
             if (sec.title === "套餐") { if (amt > 0) addCatDay("套餐", d.date, amt); return; }
             if (!hasSum && amt > 0) addCatDay(sec.title, d.date, amt);
-            if (qty > 0) (itemDay[r[0]] = itemDay[r[0]] || {})[d.date] = ((itemDay[r[0]] || {})[d.date] || 0) + qty;
+            if (qty > 0 && !isQuarterItem(r[0])) (itemDay[r[0]] = itemDay[r[0]] || {})[d.date] = ((itemDay[r[0]] || {})[d.date] || 0) + qty;
           }));
         });
         // 期間彙總（日/週/月）
@@ -990,7 +992,7 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
             note: "來源：每日 POS 日結信 Balance Sheet 分頁 → 資料庫 pm_pos（只增不改）",
           };
           if (dr.type === "cat") {
-            const raw = [...days].reverse().flatMap(d => (dayDet(d.date)?.sheets?.[CATSHEET] || []).filter(sec => sec.title === dr.key).flatMap(sec => (sec.rows || []).map(r => ({ date: d.date, name: String(r[0]), cat: dr.key, qty: Number(r[1]) || 0, pct: r[2], amt: Number(r[r.length - 1]) || 0 }))));
+            const raw = [...days].reverse().flatMap(d => (dayDet(d.date)?.sheets?.[CATSHEET] || []).filter(sec => sec.title === dr.key).flatMap(sec => (sec.rows || []).filter(r => !isQuarterItem(r[0])).map(r => ({ date: d.date, name: String(r[0]), cat: dr.key, qty: Number(r[1]) || 0, pct: r[2], amt: Number(r[r.length - 1]) || 0 }))));
             return {
               title: `分類「${dr.key}」逐日商品明細`, cols: ["日期", "品項", "數量", "佔比", "金額"],
               rows: raw.map(x => [x.date, x.name, x.qty, pct1(x.pct), fmt(x.amt)]), raw, pivot: true,
@@ -1006,7 +1008,7 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
             };
           }
           if (dr.type === "allitems") {
-            const raw = [...days].reverse().flatMap(d => (dayDet(d.date)?.sheets?.[CATSHEET] || []).filter(sec => sec.title !== "總結").flatMap(sec => (sec.rows || []).map(r => ({ date: d.date, name: String(r[0]), cat: sec.title, qty: Number(r[1]) || 0, pct: r[2], amt: Number(r[r.length - 1]) || 0 }))));
+            const raw = [...days].reverse().flatMap(d => (dayDet(d.date)?.sheets?.[CATSHEET] || []).filter(sec => sec.title !== "總結").flatMap(sec => (sec.rows || []).filter(r => !isQuarterItem(r[0])).map(r => ({ date: d.date, name: String(r[0]), cat: sec.title, qty: Number(r[1]) || 0, pct: r[2], amt: Number(r[r.length - 1]) || 0 }))));
             return {
               title: "全部品項 × 日期（所有分類）", cols: ["日期", "分類", "品項", "數量", "佔比", "金額"],
               rows: raw.map(x => [x.date, x.cat, x.name, x.qty, pct1(x.pct), fmt(x.amt)]), raw, pivot: true, defaultPivot: true,
@@ -1382,7 +1384,7 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
                       if (!isAB && !catSeen.includes(sec.title)) catSeen.push(sec.title);
                       const ci = (sec.header || []).indexOf("套餐內"); // 欄位用名稱找：真日結信沒這欄＝顯示 —
                       (sec.rows || []).forEach(r => {
-                        if (!Array.isArray(r) || typeof r[0] !== "string") return;
+                        if (!Array.isArray(r) || typeof r[0] !== "string" || isQuarterItem(r[0])) return;
                         const key = isAB ? abNorm(r[0]) : r[0]; // A Beach：內用/Uber 同品項（只差emoji）合併
                         const o = items[key] = items[key] || { n: r[0], cat: isAB ? abFineCat(r[0]) : sec.title, q: {}, cum: 0, comboCum: 0, comboHas: false, uber: 0, amt: 0, aq: 0 };
                         if (!uber) o.n = r[0]; // 顯示名以內用版為準

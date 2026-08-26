@@ -543,7 +543,7 @@ async function loadPosText() {
         if (sec.title === '總結') return
         const sfx = multiStore ? (/groun/i.test(day.store || '') ? '〔GROUN:D〕' : '〔A Beach〕') : '' // 兩店菜單重疊（都賣披薩），品名帶店名分開統計不混算
         ;(sec.rows || []).forEach(r => {
-          if (!Array.isArray(r) || typeof r[0] !== 'string') return
+          if (!Array.isArray(r) || typeof r[0] !== 'string' || /^1\/4/.test(r[0].trim())) return // 1/4披薩=試營運切片，張良 2026-08-26 全部統計排除
           const a = agg[r[0] + sfx] = agg[r[0] + sfx] || { qty: 0, amt: 0, cat: sec.title }
           a.qty += Number(r[1]) || 0; a.amt += Number(r[r.length - 1]) || 0
           // 同名品項各分類分開記（答「哪些是外帶低價版」）
@@ -580,7 +580,7 @@ async function loadPosText() {
         if (sec.title === '總結') return
         const sfx = multiStore ? (/groun/i.test(day.store || '') ? '〔GROUN:D〕' : '〔A Beach〕') : '' // 未售統計也分店記，跟上面彙總同口徑
         ;(sec.rows || []).forEach(r => {
-          if (!Array.isArray(r) || typeof r[0] !== 'string' || (Number(r[1]) || 0) <= 0) return
+          if (!Array.isArray(r) || typeof r[0] !== 'string' || (Number(r[1]) || 0) <= 0 || /^1\/4/.test(r[0].trim())) return // 1/4披薩同上排除
           const dte = (day.date || '').slice(0, 10)
           const nk = r[0] + sfx
           if (dte && (!itemLast[nk] || itemLast[nk] < dte)) { itemLast[nk] = dte; itemCat[nk] = sec.title }
