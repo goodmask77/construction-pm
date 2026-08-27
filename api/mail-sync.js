@@ -349,6 +349,34 @@ export default async function handler(req, res) {
     const days2 = (store.entries || []).filter(e => skOf(e.store) === storeQ).map(e => ({ date: e.date, weekday: new Date(e.date + 'T00:00:00').getDay(), revenue: Number(e.revenue) || 0, discount: Number(e.discount) || 0 })).sort((a, b) => (a.date < b.date ? -1 : 1))
     return res.status(200).json({ ok: true, store: storeQ, n: days2.length, days: days2 })
   }
+  // 【臨時驗證用，驗完即刪】定價還原探針：?priceprobe=<硬編亂數>&store=ground → 每品項「單日 銷售額÷數量」分佈
+  if (req.query?.priceprobe) {
+    if (String(req.query.priceprobe) !== 'vp-8f3ka92mqx71') return res.status(403).json({ ok: false })
+    const storeQ = String(req.query.store || 'ground')
+    const skOf = (n) => /groun/i.test(n || '') ? 'ground' : 'abeach'
+    const lr = await fetch(`${SB_URL}/rest/v1/pm_documents?select=id&id=gte.sp_finance_pm_pos_d_&id=lt.sp_finance_pm_pos_e`, { headers: { apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}` } })
+    const ids = (lr.ok ? await lr.json() : []).map(x => x.id).filter(id => /^sp_finance_pm_pos_d_\d{4}-\d{2}$/.test(id))
+    const items = {}
+    for (const id of ids) {
+      const doc = await kvGet(id); if (!doc?.days) continue
+      for (const day of Object.values(doc.days)) {
+        if (skOf(day.store) !== storeQ) continue
+        for (const s of (day.sheets?.['總銷售額 (以類別分類)'] || [])) {
+          if (s.title === '總結' || s.title === '套餐') continue
+          for (const r of (s.rows || [])) {
+            const qty = Number(r[1]) || 0, amt = Number(r[r.length - 1]) || 0
+            if (qty <= 0 || amt <= 0 || /^1\/4/.test(String(r[0]))) continue
+            const o = items[s.title + '||' + r[0]] || (items[s.title + '||' + r[0]] = { cat: s.title, name: String(r[0]), units: {} })
+            const uk = String(Math.round(amt / qty * 100) / 100)
+            const u = o.units[uk] = o.units[uk] || { d: 0, last: '' }
+            const dt2 = day.date || ''
+            u.d++; if (dt2 > u.last) u.last = dt2
+          }
+        }
+      }
+    }
+    return res.status(200).json({ ok: true, store: storeQ, items: Object.values(items) })
+  }
   // 菜單探針（唯讀＋金鑰保護，回品名/金額 → 沒帶對 MENU_PROBE_KEY 一律 403）：?menuprobe=<key>&store=abeach|ground
   // 用途：把期間內出現過的全部品項按「日結信分類」彙總（品名/數量/套餐內/金額/出現天數），給菜單盤點/試算表用
   if (req.query?.menuprobe) {

@@ -948,11 +948,38 @@ async function handleUnsend(ev) {
 }
 async function getLineProfile(userId) { try { const r = await fetch('https://api.line.me/v2/bot/profile/' + userId, { headers: { authorization: `Bearer ${TOKEN}` } }); if (r.ok) { const d = await r.json(); return d.displayName || '' } } catch (_) {} return '' }
 
-// ── 對話記憶：每個對話(私訊userId或群組id)留最近幾輪，讓 D哥 記得前文、接得上 ──
+// ── 對話記憶：每個對話(私訊userId或群組id)留最近幾輪「逐字」，更舊的滾動濃縮成摘要永久保留 ──
+// 三層記憶：①逐字最近 30 輪 ②滾動摘要（pm_bot_chatsum，舊對話濃縮、不再蒸發＝無限記憶）③長期記事本(pm_bot_memory)
 async function getChatHistory(convId) {
-  const all = asObj((await kvGetMany(['pm_bot_chats']))['pm_bot_chats'])
-  const h = all[convId]
-  return Array.isArray(h) ? h.filter(m => m && (m.role === 'user' || m.role === 'assistant') && m.content).slice(-60) : []
+  const m = await kvGetMany(['pm_bot_chats', 'pm_bot_chatsum'])
+  const all = asObj(m['pm_bot_chats'])
+  const h = Array.isArray(all[convId]) ? all[convId].filter(x => x && (x.role === 'user' || x.role === 'assistant') && x.content).slice(-60) : []
+  const sum = asObj(m['pm_bot_chatsum'])[convId]
+  if (sum) {
+    // 摘要以一問一答塞在最前面，維持 user/assistant 交錯
+    return [
+      { role: 'user', content: '【系統】以下是我們更早之前對話的濃縮摘要（超過逐字記憶範圍、但你仍記得的舊脈絡）：\n' + sum },
+      { role: 'assistant', content: '好，這些舊脈絡我都記得，繼續。' },
+      ...h,
+    ]
+  }
+  return h
+}
+// 舊對話溢出時：把「既有摘要＋要被擠掉的舊對話」合併成新摘要（用便宜的 Haiku；失敗就保留舊摘要，不丟資料）
+async function summarizeOverflow(oldSummary, dropped) {
+  if (!ANTHROPIC || !dropped.length) return oldSummary || ''
+  const convo = dropped.map(x => (x.role === 'user' ? '使用者' : 'DD') + '：' + x.content).join('\n')
+  const prompt = `你在維護一份 LINE 對話的「長期摘要」。把【既有摘要】和【即將被移出逐字記憶的舊對話】合併成更新版摘要：保留仍重要的事實、決定、數字、金額、日期、待辦、使用者偏好與習慣；閒聊丟掉。600字內、條列。只輸出摘要本身，不要開場白。\n\n【既有摘要】\n${oldSummary || '（無）'}\n\n【舊對話】\n${convo}`
+  try {
+    const r = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-api-key': ANTHROPIC, 'anthropic-version': '2023-06-01' },
+      body: JSON.stringify({ model: 'claude-haiku-4-5-20251001', max_tokens: 900, messages: [{ role: 'user', content: prompt }] }),
+    })
+    const d = await r.json().catch(() => ({}))
+    const t = (d.content || []).map(b => b.text || '').join('').trim()
+    return t || oldSummary || ''
+  } catch (_) { return oldSummary || '' }
 }
 async function pushChat(convId, userText, assistantText) {
   try {
@@ -960,7 +987,19 @@ async function pushChat(convId, userText, assistantText) {
     const h = Array.isArray(all[convId]) ? all[convId] : []
     h.push({ role: 'user', content: String(userText || '').slice(0, 900) })
     h.push({ role: 'assistant', content: String(assistantText || '').slice(0, 1400) })
-    all[convId] = h.slice(-60) // 每個對話留最近 30 輪
+    if (h.length > 60) {
+      // 滿 30 輪：最舊的 6 輪不丟掉 → 濃縮進滾動摘要（回覆已送出後才跑，使用者無感）
+      const keep = 48
+      const dropped = h.slice(0, h.length - keep)
+      const sums = asObj((await kvGetMany(['pm_bot_chatsum']))['pm_bot_chatsum'])
+      sums[convId] = (await summarizeOverflow(sums[convId] || '', dropped)).slice(0, 2400)
+      const sk = Object.keys(sums)
+      if (sk.length > 40) for (const k of sk.slice(0, sk.length - 40)) delete sums[k]
+      await kvSet('pm_bot_chatsum', sums)
+      all[convId] = h.slice(-keep)
+    } else {
+      all[convId] = h
+    }
     const keys = Object.keys(all)
     if (keys.length > 40) for (const k of keys.slice(0, keys.length - 40)) delete all[k] // 最多 40 個對話
     await kvSet('pm_bot_chats', all)
