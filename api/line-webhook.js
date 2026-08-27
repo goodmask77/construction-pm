@@ -531,7 +531,7 @@ async function loadPosText() {
   try {
     const now = new Date(Date.now() + 8 * 3600e3)
     const mo = now.toISOString().slice(0, 7)
-    const kv = await kvGetMany(['sp_finance_pm_pos', 'sp_finance_pm_pos_d_' + mo, 'sp_finance_pm_pos_tx_' + mo, 'sp_finance_pm_pos_flags', 'sp_finance_pm_pos_idlecfg', 'sp_finance_pm_pos_hh_' + mo, 'sp_finance_pm_pos_costs'])
+    const kv = await kvGetMany(['sp_finance_pm_pos', 'sp_finance_pm_pos_d_' + mo, 'sp_finance_pm_pos_tx_' + mo, 'sp_finance_pm_pos_flags', 'sp_finance_pm_pos_idlecfg', 'sp_finance_pm_pos_hh_' + mo, 'sp_finance_pm_pos_costs', 'sp_finance_pm_pos_prices'])
     const pos = kv['sp_finance_pm_pos']
     const entries = pos && Array.isArray(pos.entries) ? pos.entries : []
     if (!entries.length) return ''
@@ -567,6 +567,16 @@ async function loadPosText() {
         if (es2.length) cLines.push(`  - ${sk2 === 'ground' ? 'GROUN:D' : 'A Beach'}：` + es2.map(([n2, v]) => `${n2}=${Math.round(Number(v))}`).join('、'))
       }
       if (cLines.length) { lines.push('【品項成本主檔（手填食材成本/份；毛利＝營收−Σ當日份數×成本；沒填的品項當0成本→毛利偏高估要提醒）】'); lines.push(...cLines) }
+    }
+    // 品項定價覆寫（pm_pos_prices＝張良手填牌價，優先於銷售資料推算；GROUN:D 飲料/湯/小點跟套餐拆帳、POS金額≠牌價，答「XX賣多少錢」以此為準；與 App loadSpaceAIContext 同步接）
+    const pricesDoc = kv['sp_finance_pm_pos_prices']
+    if (pricesDoc && Object.keys(pricesDoc).length) {
+      const pLines = []
+      for (const [sk2, m2] of Object.entries(pricesDoc)) {
+        const es2 = Object.entries(m2 || {}).filter(([, v]) => Number(v) > 0)
+        if (es2.length) pLines.push(`  - ${sk2 === 'ground' ? 'GROUN:D' : 'A Beach'}：` + es2.map(([n2, v]) => `${n2}=${Math.round(Number(v))}`).join('、'))
+      }
+      if (pLines.length) { lines.push('【品項定價（老闆手填牌價，比銷售資料推算的準；問「XX賣多少錢」以此為準）】'); lines.push(...pLines) }
     }
     // 當月品項銷售彙總（答「哪些餐賣得好」用）
     const det = kv['sp_finance_pm_pos_d_' + mo]

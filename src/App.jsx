@@ -60,9 +60,9 @@ async function loadSpaceAIContext() {
       } catch (_) { return await g(legacy); }
     };
     const d0 = new Date(); const mo = `${d0.getFullYear()}-${String(d0.getMonth() + 1).padStart(2, "0")}`;
-    const [snapC, snapT, snapK, snapF, tasks, crewRoster, crewOld, pos, posD, posTx, posFlags, posIdleCfgAI, posHHAI, posCostsAI, bank, ctbc, accounts, ledger, conclusions, mailRules, mailLog, supply, supplyOrders, supplyRecipesRaw] = await Promise.all([
+    const [snapC, snapT, snapK, snapF, tasks, crewRoster, crewOld, pos, posD, posTx, posFlags, posIdleCfgAI, posHHAI, posCostsAI, posPricesAI, bank, ctbc, accounts, ledger, conclusions, mailRules, mailLog, supply, supplyOrders, supplyRecipesRaw] = await Promise.all([
       g("pm_bot_context"), g("sp_team_pm_bot_context"), g("sp_crew_pm_bot_context"), g("sp_finance_pm_bot_context"),
-      recs("pm_tasks_v2", "pm_task_", "pm_tasks"), g("sp_crew_kb_roster"), g("sp_crew_kb_360"), g("sp_finance_pm_pos"), g("sp_finance_pm_pos_d_" + mo), g("sp_finance_pm_pos_tx_" + mo), g("sp_finance_pm_pos_flags"), g("sp_finance_pm_pos_idlecfg"), g("sp_finance_pm_pos_hh_" + mo), g("sp_finance_pm_pos_costs"),
+      recs("pm_tasks_v2", "pm_task_", "pm_tasks"), g("sp_crew_kb_roster"), g("sp_crew_kb_360"), g("sp_finance_pm_pos"), g("sp_finance_pm_pos_d_" + mo), g("sp_finance_pm_pos_tx_" + mo), g("sp_finance_pm_pos_flags"), g("sp_finance_pm_pos_idlecfg"), g("sp_finance_pm_pos_hh_" + mo), g("sp_finance_pm_pos_costs"), g("sp_finance_pm_pos_prices"),
       g("sp_finance_pm_bank"), g("sp_finance_pm_ctbc"), g("sp_finance_pm_fin_accounts"), recs("sp_finance_pm_fin_ledger_v2", "sp_finance_pm_fin_tx_", "sp_finance_pm_fin_ledger"),
       g("pm_conclusions"), g("sp_lw_pm_mail_rules"), g("sp_lw_pm_mail_log"), g("sp_supply_pm_supply"),
       g("sp_supply_pm_orders"), getSharedPrefix("sp_supply_pm_recipe_v_"),
@@ -151,6 +151,15 @@ async function loadSpaceAIContext() {
           if (es2.length) cLines.push(`- ${sk2 === "ground" ? "GROUN:D" : "A Beach"}：` + es2.map(([n2, v]) => `${n2}=${Math.round(Number(v))}`).join("、"));
         }
         if (cLines.length) parts.push("【品項成本主檔（手填食材成本/份；毛利＝營收−Σ當日份數×成本；沒填的品項當0成本→毛利偏高估要提醒）】\n" + cLines.join("\n"));
+      }
+      // 品項定價覆寫（pm_pos_prices＝張良手填牌價，優先於自動還原；0＝該品項不顯示價格。GROUN:D 飲料/湯/小點跟套餐拆帳、POS金額≠牌價，答定價以這裡為準；與 D哥 loadPosText 同步接）
+      if (posPricesAI && Object.keys(posPricesAI).length) {
+        const pLines = [];
+        for (const [sk2, m2] of Object.entries(posPricesAI)) {
+          const es2 = Object.entries(m2 || {}).filter(([, v]) => Number(v) > 0);
+          if (es2.length) pLines.push(`- ${sk2 === "ground" ? "GROUN:D" : "A Beach"}：` + es2.map(([n2, v]) => `${n2}=${Math.round(Number(v))}`).join("、"));
+        }
+        if (pLines.length) parts.push("【品項定價（老闆手填牌價，比銷售資料推算的準；問「XX賣多少錢」以此為準）】\n" + pLines.join("\n"));
       }
       // GROUN:D 半小時時段（pm_pos_hh_月檔＝盤中每30分快照，2026-08-28 起累積；答「排人力/尖峰半小時」；對帳以每小時原生資料為準；與 D哥 loadPosText 同步接）
       if (posHHAI?.days && Object.keys(posHHAI.days).length) {

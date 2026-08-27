@@ -109,6 +109,7 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
   const [gdIdle, setGdIdle] = useState(false);              // 品項明細：只看 7天+沒賣（取代原本佔版面的「沒賣預警」大區塊，張良 2026-08-19）
   const [gdCost, setGdCost] = useState(false);              // 品項明細：填成本模式（張良 2026-08-28：每品項成本→總成本/每天毛利）
   const [posCosts, setPosCosts] = useState({});             // 品項成本主檔 {abeach:{品項key:成本}, ground:{…}}——存 DB 一份，兩店分開
+  const [posPrices, setPosPrices] = useState({});           // 品項定價手動覆寫 {abeach:{品項key:定價}, ground:{…}}——手填優先於自動還原；0＝不顯示（張良 2026-08-28）
   const [posPivotCats, setPosPivotCats] = useState(null);   // 矩陣內分類勾選（null=全選）
   const [posPivotSort, setPosPivotSort] = useState(null);   // 矩陣排序 {col, dir}
   const [recon, setRecon] = useState({ links: {}, ignored: [] }); // 補記/忽略標記
@@ -138,6 +139,7 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
     try { const ct = await window.storage.get(K("pm_ctbc"), true); setCtbc(ct && ct.value ? JSON.parse(ct.value) : null); } catch (_) {}
     try { const fl = await window.storage.get(K("pm_pos_flags"), true); setPosFlags(fl && fl.value ? JSON.parse(fl.value) : { items: {} }); } catch (_) { setPosFlags({ items: {} }); }
     try { const pc = await window.storage.get(K("pm_pos_costs"), true); setPosCosts(pc && pc.value ? JSON.parse(pc.value) : {}); } catch (_) { setPosCosts({}); }
+    try { const pp = await window.storage.get(K("pm_pos_prices"), true); setPosPrices(pp && pp.value ? JSON.parse(pp.value) : {}); } catch (_) { setPosPrices({}); }
     try { const ic = await window.storage.get(K("pm_pos_idlecfg"), true); setPosIdleCfg(ic && ic.value ? JSON.parse(ic.value) : { days: 7, exCats: [], exItems: [] }); } catch (_) { setPosIdleCfg({ days: 7, exCats: [], exItems: [] }); }
     try { const rc = await window.storage.get(K("pm_recon"), true); const v = rc && rc.value ? JSON.parse(rc.value) : null; if (v) setRecon({ links: v.links || {}, ignored: v.ignored || [] }); } catch (_) {}
     try { const cd = await window.storage.get("pm_data", true); setConCats(cd && cd.value ? JSON.parse(cd.value) : []); } catch (_) {}
@@ -179,7 +181,8 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
     // 半小時快照入庫也即時跟上（盤中每半小時記一筆——時段圖開著就自己長出新的半小時格）
     const un8 = onSharedChange(K("pm_pos_hh_") + "*", (k, v) => { try { const mo = k.slice(-7); if (v) setPosHH(p => ({ ...p, [mo]: JSON.parse(v) })); } catch (_) {} });
     const un9 = onSharedChange(K("pm_pos_costs"), (_k, v) => { try { setPosCosts(v ? JSON.parse(v) : {}); } catch (_) {} });
-    return () => { un1(); un2(); un3(); un4(); un5(); un6(); un7(); un8(); un9(); };
+    const un10 = onSharedChange(K("pm_pos_prices"), (_k, v) => { try { setPosPrices(v ? JSON.parse(v) : {}); } catch (_) {} });
+    return () => { un1(); un2(); un3(); un4(); un5(); un6(); un7(); un8(); un9(); un10(); };
   }, []); // eslint-disable-line
   const saveRecon = (next) => { setRecon(next); window.storage.set(K("pm_recon"), JSON.stringify(next), true).catch(() => {}); };
   // 品項成本存檔（防抖在 storage 墊片層；廣播讓別台/別分頁即時跟上）
@@ -188,6 +191,16 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
       const next = { ...prev, [storeKey]: { ...(prev[storeKey] || {}) } };
       if (val == null || val === "" || !(Number(val) > 0)) delete next[storeKey][itemKey]; else next[storeKey][itemKey] = Number(val);
       window.storage.set(K("pm_pos_costs"), JSON.stringify(next), true).catch(() => {});
+      return next;
+    });
+  };
+  // 品項定價覆寫存檔：清空＝回自動還原；0＝這品項不顯示價格（跟成本不同，0 要留著）
+  const savePrice = (storeKey, itemKey, val) => {
+    setPosPrices(prev => {
+      const next = { ...prev, [storeKey]: { ...(prev[storeKey] || {}) } };
+      const n = Number(val);
+      if (val == null || val === "" || isNaN(n) || n < 0) delete next[storeKey][itemKey]; else next[storeKey][itemKey] = n;
+      window.storage.set(K("pm_pos_prices"), JSON.stringify(next), true).catch(() => {});
       return next;
     });
   };
@@ -1459,6 +1472,17 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
                     cands.sort((a, b) => a.last === b.last ? (b.d - a.d || b.u - a.u) : (a.last < b.last ? 1 : -1));
                     return cands[0].u;
                   };
+                  // GROUN:D 飲料/湯/小點幾乎都跟 +89 套餐賣：POS 分到的金額＝拆帳零頭，連「最乾淨的一天」也是攤提價
+                  // （番茄蔬菜湯$20、薯條$30 這種假定價，張良 2026-08-28 抓到）→ 這些類自動還原直接關，寧缺勿錯；
+                  // 要顯示就在「💰填成本」把定價手動填進去（手填永遠優先；填 0＝這品項不顯示價格）
+                  const GD_PRICE_NOAUTO = new Set(["湯品", "小點", "奶香飲品", "咖啡飲品", "基礎飲品", "檸檬飲品"]);
+                  const priceMap = posPrices?.[posStore] || {};
+                  const priceOf = (o) => {
+                    const ov = priceMap[o.k];
+                    if (ov !== undefined && ov !== null && ov !== "") return Number(ov) > 0 ? Number(ov) : null; // 手填優先；0＝不顯示
+                    if (!isAB && GD_PRICE_NOAUTO.has(o.cat)) return null;
+                    return listPriceOf(o);
+                  };
                   const rows = Object.values(items).filter(r => gdTab === "全部" || r.cat === gdTab).filter(r => !gdIdle || (idleGap(r) ?? 99) >= 7).sort((a, b) => sv(b) - sv(a) || b.cum - a.cum);
                   // 成本/毛利（張良 2026-08-28：每品項填成本→總成本/每天毛利/平均成本率）
                   // 口徑：成本＝Σ當日份數×品項成本（含套餐內份數）；毛利＝當日POS實收 − 當日成本（與日表同一個營收數字，資料一致）
@@ -1535,13 +1559,17 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
                               const body = g.map(r => (
                                 <tr key={(cat || "") + r.n}>
                                   <td style={{ padding: "5px 8px", fontWeight: 600, color: zero(r) ? C.red : C.text, whiteSpace: "nowrap", position: "sticky", left: 0, background: "#fff", borderTop: "1px solid #f0ead9" }}>
-                                    {r.n}{listPriceOf(r) != null && <span style={{ fontSize: 10.5, fontWeight: 400, color: C.faint, marginLeft: 5 }} title="定價（從無折扣日的單價還原；中途調價會顯示最新價）">${listPriceOf(r).toLocaleString()}</span>}
+                                    {r.n}{priceOf(r) != null && <span style={{ fontSize: 10.5, fontWeight: 400, color: C.faint, marginLeft: 5 }} title={priceMap[r.k] > 0 ? "定價（手動填的）" : "定價（從無折扣日的單價還原；中途調價會顯示最新價）"}>${priceOf(r).toLocaleString()}</span>}
                                     {gdCost && <span style={{ marginLeft: 6, whiteSpace: "nowrap" }} onClick={e => e.stopPropagation()}>
+                                      <span style={{ fontSize: 10, color: C.sub }}>定價</span>
+                                      <input type="number" min="0" inputMode="decimal" value={priceMap[r.k] ?? ""} placeholder={listPriceOf(r) != null ? String(listPriceOf(r)) : "—"} title="留空＝自動還原；填 0＝這品項不顯示價格；填數字＝以你填的為準"
+                                        onChange={e => savePrice(posStore, r.k, e.target.value)}
+                                        style={{ width: 52, marginLeft: 3, marginRight: 6, border: `1px solid ${C.line}`, borderRadius: 6, padding: "2px 5px", fontSize: 11.5, fontFamily: MONOF, color: C.text, background: "#fffdf5", outline: "none" }} />
                                       <span style={{ fontSize: 10, color: C.sub }}>成本</span>
                                       <input type="number" min="0" inputMode="decimal" value={costMap[r.k] ?? ""} placeholder="—"
                                         onChange={e => saveCost(posStore, r.k, e.target.value)}
-                                        style={{ width: 58, marginLeft: 3, border: `1px solid ${C.line}`, borderRadius: 6, padding: "2px 5px", fontSize: 11.5, fontFamily: MONOF, color: C.text, background: "#fffdf5", outline: "none" }} />
-                                      {costOf(r) != null && listPriceOf(r) != null && <span style={{ fontSize: 10, color: C.accent, marginLeft: 4 }} title="毛利/份＝定價−成本">賺{(listPriceOf(r) - costOf(r)).toLocaleString()}</span>}
+                                        style={{ width: 52, marginLeft: 3, border: `1px solid ${C.line}`, borderRadius: 6, padding: "2px 5px", fontSize: 11.5, fontFamily: MONOF, color: C.text, background: "#fffdf5", outline: "none" }} />
+                                      {costOf(r) != null && priceOf(r) != null && <span style={{ fontSize: 10, color: C.accent, marginLeft: 4 }} title="毛利/份＝定價−成本">賺{(priceOf(r) - costOf(r)).toLocaleString()}</span>}
                                     </span>}
                                     {!gdCost && costOf(r) != null && <span style={{ fontSize: 10, color: "#b8ad98", marginLeft: 4 }} title="已填成本（開「💰 填成本」可改）">本${costOf(r).toLocaleString()}</span>}
                                     {surge(r) ? " 🔥" : ""}{zero(r) ? <span style={{ fontSize: 10.5, fontWeight: 800 }}> ⚠0</span> : ""}
@@ -1589,7 +1617,7 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
                       )}
                       <div style={{ fontSize: 10.5, color: C.faint, marginTop: 6 }}>{isAB
                         ? "品類＝自訂細分類（湯/沙拉/開胃菜/麵/飯…，跟 POS 分類不同，方便逐品類看排名刪菜單）；菜名旁 $＝定價（從無折扣日的單價還原，調價自動跟上新價；被套餐/折扣拆帳影響太大的品項不顯示）；Uber 欄＝外送(低價)分類賣出的份數，已併入該品項各日與累計總量。工具箱/包場/免招手/蛋糕/福利等非菜單分類不列入。品類色帶＝該品類每日總份數。"
-                        : "菜名旁 $＝定價（從無折扣日的單價還原，8/26 重開調價後自動顯示新價；飲料等被套餐拆帳影響大的品項不顯示，寧缺勿錯）；套餐內＝期間內該品項在套餐裡賣出的份數（累計，其餘為單點）；每組套餐含飲料一杯，所以「飲料」的套餐內≈套餐組數。品類色帶＝該品類每日總份數。"}</div>
+                        : "菜名旁 $＝定價（主餐類從無折扣日的單價自動還原，8/26 調價後自動顯示新價；飲料/湯/小點跟套餐拆帳金額不可信＝不自動顯示，要顯示請開「💰填成本」手動填定價，手填永遠優先、填 0＝不顯示）；套餐內＝期間內該品項在套餐裡賣出的份數（累計，其餘為單點）；每組套餐含飲料一杯，所以「飲料」的套餐內≈套餐組數。品類色帶＝該品類每日總份數。"}</div>
                     </div>
                   );
                 })()}
