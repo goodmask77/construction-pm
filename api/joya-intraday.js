@@ -1,0 +1,51 @@
+// GROUN:D 盤中更新（張良 2026-08-27：喬亞後台是即時的，指定時間直接更新「今天」＋顯示更新時間）
+// cron 每 30 分打一次（vercel.json，UTC 04-11 點＝台北 12:00-19:30），端點自己核對台北時間在不在名單內：
+//   12:00 12:30 13:00 13:30 14:00 15:00 17:00 18:00 19:00 —— 要改時間改 SLOTS 這行就好
+// 寫入規則：只蓋「今天＋intraday 標記」的記錄，絕不動正式資料；打烊後 mail-sync syncJoya 會把
+// intraday 記錄當缺日重抓成最終值（盤中數字不會凍住）。手動測試：?force=<MENU_PROBE_KEY>
+import { joyaLogin, joyaFetchDay, joyaBuildRecord, taipeiToday } from './_joya.js'
+import { kvGet, kvPut, announceChanged } from './mail-sync.js'
+
+const SLOTS = ['12:00', '12:30', '13:00', '13:30', '14:00', '15:00', '17:00', '18:00', '19:00']
+const WINDOW_MIN = 6 // cron 可能晚幾分鐘觸發，時間點後 6 分鐘內都算數
+
+const taipeiHM = () => new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Taipei', hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date())
+const toMin = (hm) => Number(hm.slice(0, 2)) * 60 + Number(hm.slice(3, 5))
+
+export default async function handler(req, res) {
+  const hm = taipeiHM(), nowM = toMin(hm)
+  const mk = (process.env.MENU_PROBE_KEY || '').trim()
+  const force = mk && String(req.query?.force || '') === mk
+  const hit = SLOTS.some(s => nowM >= toMin(s) && nowM < toMin(s) + WINDOW_MIN)
+  if (!hit && !force) return res.status(200).json({ ok: true, skipped: '非指定時間', taipei: hm })
+  try {
+    const today = taipeiToday()
+    const store = (await kvGet('sp_finance_pm_pos')) || { entries: [] }
+    const isGround = (n) => /groun/i.test(n || '')
+    const cur = store.entries.find(e => e.date === today && isGround(e.store))
+    if (cur && !cur.intraday) return res.status(200).json({ ok: true, skipped: '今天已是打烊後正式資料，不覆蓋', taipei: hm })
+    const cookie = await joyaLogin()
+    const day = await joyaFetchDay(cookie, today)
+    if (day.empty) return res.status(200).json({ ok: true, skipped: '喬亞今天還沒有資料（未開店/公休）', taipei: hm })
+    const rec = joyaBuildRecord(day)
+    rec.intraday = true
+    rec.fetchedAt = hm
+    rec.period = today + '（盤中更新 ' + hm + '）'
+    rec.partial = '盤中更新（' + hm + '，未打烊）：數字之後還會變，打烊後自動換成最終值。' + (rec.partial || '')
+    const { _details, ...summary } = rec
+    // 摘要：整筆換掉今天的盤中記錄（上面擋過正式資料，這裡只會蓋到 intraday 或沒有）
+    store.entries = [...store.entries.filter(e => !(e.date === today && isGround(e.store))), summary].sort((a, b) => (a.date < b.date ? -1 : 1))
+    store.updatedAt = new Date().toISOString()
+    await kvPut('sp_finance_pm_pos', store, '喬亞盤中更新 ' + hm)
+    // 明細月檔：同樣只蓋今天的盤中明細（品項/時段下鑽跟著即時）
+    const did = 'sp_finance_pm_pos_d_' + today.slice(0, 7)
+    const doc = (await kvGet(did)) || { days: {} }
+    doc.days[today + '::ground'] = { date: today, period: rec.period, store: rec.store, sheets: _details, intraday: true }
+    doc.updatedAt = new Date().toISOString()
+    await kvPut(did, doc, '喬亞盤中更新 ' + hm)
+    await announceChanged() // 開著的網頁即刻自動跟上
+    return res.status(200).json({ ok: true, taipei: hm, date: today, revenue: rec.revenue, txCount: rec.txCount })
+  } catch (e) {
+    return res.status(200).json({ ok: false, error: e?.message || String(e), taipei: hm })
+  }
+}

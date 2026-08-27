@@ -16,12 +16,12 @@ const SB_KEY = (process.env.SUPABASE_SERVICE_ROLE_KEY || '').trim()
 const M1U = clean(process.env.MAIL_USER), M1P = clean(process.env.MAIL_PASS)   // goodmask77（中信通知）
 const M2U = clean(process.env.MAIL_USER2), M2P = clean(process.env.MAIL_PASS2) // money@gumgum.club（Eats365）
 
-async function kvGet(id) {
+export async function kvGet(id) { // export：joya-intraday.js（盤中更新）共用
   const r = await fetch(`${SB_URL}/rest/v1/pm_documents?id=eq.${id}&select=data`, { headers: { apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}` } })
   const rows = r.ok ? await r.json() : []
   try { return rows[0]?.data?.v ? JSON.parse(rows[0].data.v) : null } catch (_) { return null }
 }
-async function kvPut(id, obj, editor) {
+export async function kvPut(id, obj, editor) {
   await fetch(`${SB_URL}/rest/v1/pm_documents`, {
     method: 'POST',
     headers: { apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}`, 'content-type': 'application/json', Prefer: 'resolution=merge-duplicates' },
@@ -34,7 +34,7 @@ async function kvPut(id, obj, editor) {
 // 前端 supa.js 訂著 pm-doc-sync 頻道，聽到就自動重抓該 key → 日結信一入庫，
 // 開著的營運報表/對帳頁畫面自己跳新資料，不用手動按更新或重新整理（張良 2026-08-14）
 const CHANGED = new Set()
-async function announceChanged() {
+export async function announceChanged() {
   const keys = [...CHANGED]; CHANGED.clear()
   if (!keys.length) return
   try {
@@ -235,8 +235,21 @@ async function ingestPosRecords(recs, editor) {
 async function syncJoya(daysBack) {
   if (!process.env.JOYA_USER) return { skipped: '未設 JOYA_* 環境變數' }
   const store = (await kvGet('sp_finance_pm_pos')) || { entries: [] }
-  const haveCombo = new Set(store.entries.map(e => e.date + '|' + (/groun/i.test(e.store || '') ? 'ground' : 'abeach')))
   const today = taipeiToday()
+  // 盤中記錄到期清理（joya-intraday.js 寫入的 intraday 記錄）：昨天以前的、或今天已過結帳時間的
+  // → 刪掉當「缺日」由下面正常流程重抓＝盤中數字絕不會凍成最終值
+  const stale = store.entries.filter(e => e.intraday && /groun/i.test(e.store || '') && (e.date < today || (e.date === today && taipeiAfterClose())))
+  if (stale.length) {
+    store.entries = store.entries.filter(e => !stale.includes(e))
+    store.updatedAt = new Date().toISOString()
+    await kvPut('sp_finance_pm_pos', store, '盤中記錄到期換正式值')
+    for (const e of stale) {
+      const did = 'sp_finance_pm_pos_d_' + e.date.slice(0, 7)
+      const doc = (await kvGet(did)) || { days: {} }
+      if (doc.days[e.date + '::ground']?.intraday) { delete doc.days[e.date + '::ground']; doc.updatedAt = new Date().toISOString(); await kvPut(did, doc, '盤中記錄到期換正式值') }
+    }
+  }
+  const haveCombo = new Set(store.entries.map(e => e.date + '|' + (/groun/i.test(e.store || '') ? 'ground' : 'abeach')))
   const t0 = new Date(today + 'T00:00:00Z').getTime()
   const dates = []
   // 張良 2026-08-26：營業 11-19、19:30 可結帳 → 過 19:30 連「今天」一起抓（當天晚上數字就進系統）
@@ -271,7 +284,7 @@ async function syncJoya(daysBack) {
       slotPatched++
     } catch (_) {}
   }
-  return { checked: dates.length, needed: need.length, closedDays: closed, slotPatched, ...out2 }
+  return { checked: dates.length, needed: need.length, closedDays: closed, slotPatched, staleIntraday: stale.length, ...out2 }
 }
 
 export default async function handler(req, res) {

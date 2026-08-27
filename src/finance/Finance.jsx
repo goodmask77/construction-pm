@@ -1216,8 +1216,14 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
                   {kpi("交易數", txSum, null, null, () => openDrill({ type: "days" }))}
                   {txSum > 0 && kpi("每單平均", fmt(Math.round(revSum / txSum)), "營收÷單數", "#3a6ea5", () => openDrill({ type: "days" }))}
                   {kpi("來客(堂食)", guestSum || "—", avgTicket ? "客單 " + fmt(avgTicket) : null, null, () => openDrill({ type: "days" }))}
-                  {kpi("最新一天", fmt(last.revenue), last.date.slice(5), null, () => openDrill({ type: "day", key: last.date }))}
+                  {kpi(last.intraday ? "今天（盤中）" : "最新一天", fmt(last.revenue), last.intraday ? (last.fetchedAt || "") + " 更新" : last.date.slice(5), last.intraday ? "#b3261e" : null, () => openDrill({ type: "day", key: last.date }))}
                 </div>
+                {/* 盤中即時（張良 2026-08-27）：joya-intraday 每半小時~一小時抓「今天」進來，打烊後自動換正式值 */}
+                {last?.intraday && (
+                  <div style={{ background: "#fdecea", border: "1.5px solid #f0b8b1", borderRadius: 8, padding: "7px 12px", marginBottom: 12, fontSize: 12.5, color: "#8c1d18", fontWeight: 600 }}>
+                    🔴 今天是「盤中即時數字」（{last.fetchedAt || "—"} 從喬亞抓的）——還沒打烊，之後還會長大；打烊後自動換成正式結帳數字。
+                  </div>
+                )}
                 {posGran === "day" ? (
                 <div style={{ border: "1.5px solid #c8bca6", borderRadius: 8, background: C.card, overflow: "hidden" }}>
                   <div style={{ overflowX: "auto" }}><div style={{ minWidth: 976 }}>
@@ -1243,7 +1249,7 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
                               <div key={d.id} onClick={() => openDrill({ type: "day", key: d.date })} title="點我看該日完整原始資料" style={{ display: "grid", gridTemplateColumns: GTC, alignItems: "center", minHeight: 32, borderTop: i ? (newWeek ? "2px solid #c8bca6" : "1px solid #f0ead9") : "none", background: rowBg, cursor: "pointer" }}
                                 onMouseEnter={e => e.currentTarget.style.background = "#f4efe5"} onMouseLeave={e => e.currentTarget.style.background = rowBg}>
                                 <div style={{ padding: "0 8px", fontFamily: MONOF, fontSize: 11.5, color: wknd ? "#a97a10" : C.sub, fontWeight: wknd ? 700 : 400 }}>{d.date.slice(2)}（{WD2[gd]}）</div>
-                                <div style={{ padding: "0 8px", fontSize: 11.5, color: C.sub, overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis" }}>{d.store}</div>
+                                <div style={{ padding: "0 8px", fontSize: 11.5, color: C.sub, overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis" }}>{d.store}{d.intraday && <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 700, color: "#b3261e", background: "#fdecea", border: "1px solid #f0b8b1", borderRadius: 5, padding: "1px 5px" }}>盤中 {d.fetchedAt || ""} 更新</span>}</div>
                                 {cell(fmt(d.revenue), { fontWeight: 700, color: C.text })}
                                 {cell(d.txCount)}{cell(d.txCount ? fmt(Math.round(d.revenue / d.txCount)) : "—", { color: "#3a6ea5", fontWeight: 600 })}{cell(d.guests || "—")}{cell(d.guests ? fmt(ticket(d.revenue, d.guests)) : "—")}
                                 {cell(fmt(d.cash || 0))}{cell(fmt(d.card || 0))}{cell(fmt(d.uber || 0))}
