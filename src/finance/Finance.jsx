@@ -1158,13 +1158,13 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
             <div style={{ fontSize: 11, color: C.sub, marginTop: 2 }}>{label}{sub2 ? <span style={{ color: C.faint }}>・{sub2}</span> : null}</div>
           </div>
         );
-        const barRow = (label, amt, total, cl, extra, onClick) => (
+        const barRow = (label, amt, total, cl, extra, onClick, exW) => ( // exW＝右側附註欄寬（時段圖的「單數・單均」比 % 長，要寬欄+不換行才不會擠成三行）
           <div key={label} onClick={onClick} title="點我看組成明細" style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 5, cursor: "pointer", borderRadius: 5, padding: "1px 2px" }}
             onMouseEnter={e => e.currentTarget.style.background = "#f4efe5"} onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
             <span style={{ fontSize: 11.5, color: C.sub, width: 118, overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis" }} title={label}>{label}</span>
             <div style={{ flex: 1, height: 10, background: "#eee5d3", borderRadius: 5, overflow: "hidden" }}><div style={{ width: Math.max(1, amt / total * 100) + "%", height: "100%", background: cl, borderRadius: 5 }} /></div>
             <span style={{ fontFamily: MONOF, fontSize: 11, color: C.text, width: 84, textAlign: "right" }}>{fmt(amt)}</span>
-            {extra != null && <span style={{ fontFamily: MONOF, fontSize: 10, color: C.faint, width: 40, textAlign: "right" }}>{extra}</span>}
+            {extra != null && <span style={{ fontFamily: MONOF, fontSize: 10, color: C.faint, width: exW || 40, textAlign: "right", whiteSpace: "nowrap" }}>{extra}</span>}
           </div>
         );
         const chartBox2 = { background: C.card, border: "1.5px solid #c8bca6", borderRadius: 8, padding: "10px 14px" };
@@ -1525,7 +1525,7 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
                           {[...slotDates].reverse().map(dt => <option key={dt} value={dt}>{dLabel(dt)}</option>)}
                         </select>
                       </div>
-                      {keys.map(k => barRow(k, agg[k].amt, mx, "#3a6ea5", `${agg[k].od}單・單均${agg[k].od ? fmt(Math.round(agg[k].amt / agg[k].od)) : "—"}`))}
+                      {keys.map(k => barRow(k, agg[k].amt, mx, "#3a6ea5", `${agg[k].od} 單｜單均 ${agg[k].od ? fmt(Math.round(agg[k].amt / agg[k].od)) : "—"}`, undefined, 150))}
                     </div>
                   );
                 })()}
