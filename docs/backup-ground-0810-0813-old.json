@@ -1,0 +1,16 @@
+{
+  "note": "2026-08-27 重抓喬亞真值前的舊資料備份（當初截圖回填的營收，張良已同意改以POS實收為準）",
+  "store": "GROUN:D",
+  "old": [
+    { "date": "2026-08-10", "revenue": 18937, "discount": 0 },
+    { "date": "2026-08-11", "revenue": 33509, "discount": 0 },
+    { "date": "2026-08-12", "revenue": 34210, "discount": 8574 },
+    { "date": "2026-08-13", "revenue": 32304, "discount": 8090 }
+  ],
+  "replacedWithJoya": [
+    { "date": "2026-08-10", "revenue": 15250, "tx": 68, "cash": 4059, "card": 11191, "discount": 3821 },
+    { "date": "2026-08-11", "revenue": 26980, "tx": 104, "cash": 5069, "card": 21911, "discount": 6759 },
+    { "date": "2026-08-12", "revenue": 34210, "tx": 125, "cash": 6260, "card": 27950, "discount": 8574 },
+    { "date": "2026-08-13", "revenue": 32304, "tx": 88, "cash": 10409, "card": 21895, "discount": 8090 }
+  ]
+}

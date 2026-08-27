@@ -5,8 +5,9 @@
 import { ImapFlow } from 'imapflow'
 import { simpleParser } from 'mailparser'
 import { parsePosWorkbook, parseTxSheet } from './_pos-parse.js' // 解析器共用模組（前端手動匯入也用同一套）
-import { groundTrialRecords, SEED_VER } from './_ground-seed.js' // GROUN:D 試營運 08-10~13 一次性回填（已入庫自動跳過）
-import { groundManualRecords } from './_ground-manual.js' // GROUN:D 喬亞POS報表手動回填（08-19~21，張良 2026-08-24 截圖）
+// 2026-08-27 退役 _ground-seed.js（試營運 08-10~13 截圖回填）：口徑錯（8/10、8/11 比 POS 實收多，疑未扣完折扣），
+// 且每次同步都會把刪掉的日子塞回來——改由 syncJoya 抓喬亞真值（張良同意四天以 POS 為準）。檔案留檔不再引用。
+import { groundManualRecords } from './_ground-manual.js' // GROUN:D 喬亞POS報表手動回填（08-19~21，張良 2026-08-24 截圖；已驗證與POS一致）
 import { joyaLogin, joyaFetchDay, joyaBuildRecord, taipeiToday, taipeiAfterClose, joyaFetchTimeslots, timeslotSection, TIMESLOT_SHEET } from './_joya.js' // GROUN:D 喬亞行動報表自動抓取（2026-08-26 起全自動）
 
 const clean = (v) => (v || '').trim().replace(/^["']|["']$/g, '').replace(/^[A-Za-z0-9_]+=/, '').trim()
@@ -159,12 +160,8 @@ async function syncPos(days) {
       } catch (_) {}
     }
   })
-  // GROUN:D 試營運 2026-08-10~13 回填（當時日結信未開通，資料來源=試營運儀表板人工彙整）：
-  // 當成「多收到的四封日結信」走同一條只增不改管線——已入庫或未來真信先到，date|store 去重都擋得住
+  // （試營運 08-10~13 種子已退役，見檔頭註記；那四天改由 syncJoya 補真值）
   let seeded = 0
-  for (const rec of groundTrialRecords()) {
-    if (!have.has(rec.id) && !haveCombo.has(rec.date + '|' + storeKeyOf(rec.store)) && !found[rec.id]) { found[rec.id] = rec; seeded++ }
-  }
   // 喬亞POS報表手動回填（同一條只增不改管線；之後真日結信/自動介接來了也不會撞）
   for (const rec of groundManualRecords()) {
     if (!have.has(rec.id) && !haveCombo.has(rec.date + '|' + storeKeyOf(rec.store)) && !found[rec.id]) { found[rec.id] = rec; seeded++ }
@@ -190,26 +187,8 @@ async function syncPos(days) {
     store.updatedAt = new Date().toISOString()
     await kvPut('sp_finance_pm_pos', store, 'POS日結自動收信')
   }
-  // 種子明細版本升級：試營運回填的四天若庫裡是舊版（缺「套餐內」欄等），用新版種子直接替換
-  // 只動 period 帶「試營運手動回填」的日子＝真日結信入的資料絕不會被改
-  let seedUpgraded = 0
-  {
-    const byMo = {}
-    for (const r of groundTrialRecords()) (byMo[r.date.slice(0, 7)] = byMo[r.date.slice(0, 7)] || []).push(r)
-    for (const [mo, recs] of Object.entries(byMo)) {
-      const did = 'sp_finance_pm_pos_d_' + mo
-      const doc = (await kvGet(did)) || { days: {} }
-      let changed = false
-      for (const r of recs) {
-        const dk = r.date + '::' + storeKeyOf(r.store)
-        const cur = doc.days[dk]
-        if (!cur || !/試營運手動回填/.test(cur.period || '') || (cur.seedVer || 1) >= SEED_VER) continue
-        doc.days[dk] = { date: r.date, period: r.period, store: r.store, sheets: r._details, seedVer: SEED_VER }
-        changed = true; seedUpgraded++
-      }
-      if (changed) { doc.updatedAt = new Date().toISOString(); await kvPut(did, doc, 'GROUN:D試營運種子明細升級v' + SEED_VER) }
-    }
-  }
+  // （種子明細版本升級已隨 _ground-seed.js 退役）
+  const seedUpgraded = 0
   // 逐筆交易另存 tx 月檔（sp_finance_pm_pos_tx_YYYY-MM）：跟 _d_ 分開＝前端點下鑽才載、不拖慢日常載入
   // 只增不改：該日已有 tx 就不覆蓋；舊日期只要信還在信箱就會回補
   let txPatched = 0
