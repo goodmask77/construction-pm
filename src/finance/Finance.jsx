@@ -98,6 +98,7 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
   const [posSyncBusy, setPosSyncBusy] = useState(false);    // 營運手動更新中
   const [posMsg, setPosMsg] = useState(null);               // 營運更新結果提示
   const [posGran, setPosGran] = useState("day");            // 比較粒度：day/week/month
+  const [posSlotDay, setPosSlotDay] = useState("all");      // 時段消費看哪天："all"=期間累計（張良 2026-08-27：要能看每天）
   const [posStore, setPosStore] = useState("abeach");       // 分店切換：abeach=A Beach 101 / ground=GROUN:D（營運報表第三層）
   const [posCats, setPosCats] = useState([]);               // 標籤自選：選到的分類做比較（空＝全部）
   const [gdTab, setGdTab] = useState("全部");               // GROUN:D 品項明細：品類籤（張良 2026-08-14 指定試營運儀表板版型）
@@ -1495,19 +1496,28 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
                 {/* ⏰ 時段消費（張良 2026-08-26）：喬亞行動報表時段分析入庫後在這裡彙總；POS 只有每小時粒度（沒有半小時） */}
                 {(() => {
                   const SLOT = "時段分析(每小時)";
-                  const agg = {}; let daysWith = 0;
-                  days.forEach(d => {
-                    const secs = dayDet(d.date)?.sheets?.[SLOT];
-                    if (!Array.isArray(secs) || !secs.length) return;
-                    daysWith++;
-                    secs.forEach(s => (s.rows || []).forEach(r => { if (!Array.isArray(r)) return; const k = String(r[0]); const o = agg[k] = agg[k] || { amt: 0, od: 0 }; o.od += Number(r[1]) || 0; o.amt += Number(r[r.length - 1]) || 0; }));
+                  const slotOf = (date) => { const secs = dayDet(date)?.sheets?.[SLOT]; return Array.isArray(secs) && secs.length ? secs : null; };
+                  const slotDates = days.filter(d => slotOf(d.date)).map(d => d.date); // 期間內有時段資料的日子（舊→新）
+                  if (!slotDates.length) return null;
+                  // 看單天（張良 2026-08-27：只有加總不夠、要能看每天）：下拉選日期；選的日期不在期間內（換店/換期間）自動退回累計
+                  const sel = posSlotDay !== "all" && slotDates.includes(posSlotDay) ? posSlotDay : "all";
+                  const agg = {};
+                  (sel === "all" ? slotDates : [sel]).forEach(date => {
+                    slotOf(date).forEach(s => (s.rows || []).forEach(r => { if (!Array.isArray(r)) return; const k = String(r[0]); const o = agg[k] = agg[k] || { amt: 0, od: 0 }; o.od += Number(r[1]) || 0; o.amt += Number(r[r.length - 1]) || 0; }));
                   });
                   const keys = Object.keys(agg).sort();
                   if (!keys.length) return null;
                   const mx = Math.max(1, ...keys.map(k => agg[k].amt));
+                  const dLabel = (dt) => dt.slice(2) + "（" + WD2[new Date(dt + "T00:00:00").getDay()] + "）";
                   return (
                     <div style={{ ...chartBox2, marginBottom: 10 }}>
-                      <div style={{ fontSize: 11.5, fontWeight: 700, color: C.sub, marginBottom: 8 }}>⏰ 時段消費（期間累計・{daysWith} 天有時段資料）<span style={{ fontWeight: 400, color: C.faint }}>　每列＝營業額｜單數・單均；POS 提供每小時粒度（無半小時）</span></div>
+                      <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 8 }}>
+                        <div style={{ fontSize: 11.5, fontWeight: 700, color: C.sub }}>⏰ 時段消費（{sel === "all" ? `期間累計・${slotDates.length} 天有時段資料` : dLabel(sel)}）<span style={{ fontWeight: 400, color: C.faint }}>　每列＝營業額｜單數・單均；POS 提供每小時粒度（無半小時）</span></div>
+                        <select value={sel} onChange={e => setPosSlotDay(e.target.value)} style={{ border: `1px solid ${C.line}`, borderRadius: 8, padding: "4px 8px", fontSize: 12, background: "#fff", color: C.text, cursor: "pointer" }}>
+                          <option value="all">期間累計（全部天）</option>
+                          {[...slotDates].reverse().map(dt => <option key={dt} value={dt}>{dLabel(dt)}</option>)}
+                        </select>
+                      </div>
                       {keys.map(k => barRow(k, agg[k].amt, mx, "#3a6ea5", `${agg[k].od}單・單均${agg[k].od ? fmt(Math.round(agg[k].amt / agg[k].od)) : "—"}`))}
                     </div>
                   );
