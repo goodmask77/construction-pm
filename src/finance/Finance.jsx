@@ -1409,13 +1409,19 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
                       (sec.rows || []).forEach(r => {
                         if (!Array.isArray(r) || typeof r[0] !== "string" || isQuarterItem(r[0])) return;
                         const key = isAB ? abNorm(r[0]) : r[0]; // A Beach：內用/Uber 同品項（只差emoji）合併
-                        const o = items[key] = items[key] || { n: r[0], cat: isAB ? abFineCat(r[0]) : sec.title, q: {}, cum: 0, comboCum: 0, comboHas: false, uber: 0, amt: 0, aq: 0 };
+                        const o = items[key] = items[key] || { n: r[0], cat: isAB ? abFineCat(r[0]) : sec.title, q: {}, cum: 0, comboCum: 0, comboHas: false, uber: 0, amt: 0, aq: 0, u: {} };
                         if (!uber) o.n = r[0]; // 顯示名以內用版為準
                         o.q[d.date] = (o.q[d.date] || 0) + (Number(r[1]) || 0); o.cum += Number(r[1]) || 0;
                         if (uber) o.uber += Number(r[1]) || 0;
-                        // 單價估算（張良 2026-08-26：菜名後要顯示價格）＝內用銷售額÷份數；Uber 低價與金額0的列（喬亞回填/1/4披薩）不混入
+                        // 定價還原（張良 2026-08-28：只顯示定價，不要折扣後平均）：記下每一天「當日金額÷份數」的分佈，
+                        // 沒折扣的日子這個值＝正好定價 → 顯示時取「最近一次的乾淨單價」（見 listPriceOf）。Uber 低價與金額0的列不混入
                         const amt = Number(r[r.length - 1]) || 0;
-                        if (!uber && amt > 0 && (Number(r[1]) || 0) > 0) { o.amt += amt; o.aq += Number(r[1]) || 0; }
+                        if (!uber && amt > 0 && (Number(r[1]) || 0) > 0) {
+                          o.amt += amt; o.aq += Number(r[1]) || 0;
+                          const uu = Math.round(amt / (Number(r[1]) || 1) * 100) / 100;
+                          const uo = o.u[uu] = o.u[uu] || { d: 0, last: "" };
+                          uo.d++; if (d.date > uo.last) uo.last = d.date;
+                        }
                         if (ci >= 0) { o.comboCum += Number(r[ci]) || 0; o.comboHas = true; } // 套餐內＝期間累計（張良 2026-08-16：跟累計欄同口徑，不再只看排序那天）
                       });
                     });
@@ -1428,6 +1434,18 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
                   // 😴 只看沒賣：最後售出距最新日結 ≥7 天（取代原「沒賣預警」大區塊——同資訊、不佔版面）
                   const lastSold = (o) => { const ds = Object.keys(o.q).filter(dd => o.q[dd] > 0).sort(); return ds[ds.length - 1] || null; };
                   const idleGap = (o) => { const ls = lastSold(o); return ls ? Math.round((new Date(lastD2 + "T00:00:00") - new Date(ls + "T00:00:00")) / 864e5) : null; };
+                  // 定價還原（張良 2026-08-28）：沒折扣的日子「當日金額÷份數」＝正好定價 → 候選＝5的倍數（菜單價一定是）
+                  // 且 ≥期間最高單價的8成（排除套餐拆帳的零頭），取「最近出現」的那個（中途調價會自動跟上新價，例：GROUN:D 8/26 重開調價）；
+                  // 全期間都被折扣/套餐拆帳污染（如飲料）→ 不顯示，寧缺勿錯
+                  const listPriceOf = (o) => {
+                    const es = Object.entries(o.u || {}).map(([uu, v]) => ({ u: Number(uu), d: v.d, last: v.last }));
+                    if (!es.length) return null;
+                    const mx = Math.max(...es.map(e => e.u));
+                    const cands = es.filter(e => e.u > 0 && e.u % 5 === 0 && e.u >= mx * 0.8);
+                    if (!cands.length) return null;
+                    cands.sort((a, b) => a.last === b.last ? (b.d - a.d || b.u - a.u) : (a.last < b.last ? 1 : -1));
+                    return cands[0].u;
+                  };
                   const rows = Object.values(items).filter(r => gdTab === "全部" || r.cat === gdTab).filter(r => !gdIdle || (idleGap(r) ?? 99) >= 7).sort((a, b) => sv(b) - sv(a) || b.cum - a.cum);
                   const zero = (r) => prevD2 && (r.q[prevD2] || 0) > 0 && !(r.q[lastD2] || 0);   // 昨有量今零售（缺貨？沒人要？）
                   const surge = (r) => prevD2 && (r.q[lastD2] || 0) >= 10 && (r.q[lastD2] || 0) >= (r.q[prevD2] || 0) * 1.5; // 熱銷竄升 +50%
@@ -1488,7 +1506,7 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
                               const body = g.map(r => (
                                 <tr key={(cat || "") + r.n}>
                                   <td style={{ padding: "5px 8px", fontWeight: 600, color: zero(r) ? C.red : C.text, whiteSpace: "nowrap", position: "sticky", left: 0, background: "#fff", borderTop: "1px solid #f0ead9" }}>
-                                    {r.n}{r.aq > 0 && <span style={{ fontSize: 10.5, fontWeight: 400, color: C.faint, marginLeft: 5 }} title="單價估算＝期間內用銷售額÷份數（有折扣或多種份量時會偏離牌價；Uber 低價不混入）">${Math.round(r.amt / r.aq).toLocaleString()}</span>}
+                                    {r.n}{listPriceOf(r) != null && <span style={{ fontSize: 10.5, fontWeight: 400, color: C.faint, marginLeft: 5 }} title="定價（從無折扣日的單價還原；中途調價會顯示最新價）">${listPriceOf(r).toLocaleString()}</span>}
                                     {surge(r) ? " 🔥" : ""}{zero(r) ? <span style={{ fontSize: 10.5, fontWeight: 800 }}> ⚠0</span> : ""}
                                     {gdIdle && <span style={{ fontSize: 10, fontWeight: 700, color: C.red, marginLeft: 6 }}>{idleGap(r)}天沒賣・最後 {String(lastSold(r) || "").slice(5)}</span>}</td>
                                   {!gdGroup && <td style={{ padding: "5px 8px", borderTop: "1px solid #f0ead9" }}><span style={{ border: `1px solid ${C.line}`, background: C.bg, color: C.sub, borderRadius: 10, padding: "1px 8px", fontSize: 10.5, fontWeight: 700, whiteSpace: "nowrap" }}>{r.cat}</span></td>}
@@ -1503,8 +1521,8 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
                         </table>
                       </div>
                       <div style={{ fontSize: 10.5, color: C.faint, marginTop: 6 }}>{isAB
-                        ? "品類＝自訂細分類（湯/沙拉/開胃菜/麵/飯…，跟 POS 分類不同，方便逐品類看排名刪菜單）；菜名旁 $＝單價估算（期間內用銷售額÷份數，有折扣時會略偏離牌價）；Uber 欄＝外送(低價)分類賣出的份數，已併入該品項各日與累計總量。工具箱/包場/免招手/蛋糕/福利等非菜單分類不列入。品類色帶＝該品類每日總份數。"
-                        : "套餐內＝期間內該品項在套餐裡賣出的份數（累計，其餘為單點）；每組套餐含飲料一杯，所以「飲料」的套餐內≈套餐組數。品類色帶＝該品類每日總份數。08-10~13 為試營運人工回填資料。"}</div>
+                        ? "品類＝自訂細分類（湯/沙拉/開胃菜/麵/飯…，跟 POS 分類不同，方便逐品類看排名刪菜單）；菜名旁 $＝定價（從無折扣日的單價還原，調價自動跟上新價；被套餐/折扣拆帳影響太大的品項不顯示）；Uber 欄＝外送(低價)分類賣出的份數，已併入該品項各日與累計總量。工具箱/包場/免招手/蛋糕/福利等非菜單分類不列入。品類色帶＝該品類每日總份數。"
+                        : "菜名旁 $＝定價（從無折扣日的單價還原，8/26 重開調價後自動顯示新價；飲料等被套餐拆帳影響大的品項不顯示，寧缺勿錯）；套餐內＝期間內該品項在套餐裡賣出的份數（累計，其餘為單點）；每組套餐含飲料一杯，所以「飲料」的套餐內≈套餐組數。品類色帶＝該品類每日總份數。"}</div>
                     </div>
                   );
                 })()}
