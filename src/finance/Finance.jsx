@@ -99,6 +99,8 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
   const [posMsg, setPosMsg] = useState(null);               // 營運更新結果提示
   const [posGran, setPosGran] = useState("day");            // 比較粒度：day/week/month
   const [posSlotDay, setPosSlotDay] = useState("all");      // 時段消費看哪天："all"=期間累計（張良 2026-08-27：要能看每天）
+  const [posSlotGran, setPosSlotGran] = useState("hour");   // 時段粒度：hour=每小時 / half=半小時（快照推算，張良 2026-08-27：峰值要切半小時）
+  const [posHH, setPosHH] = useState({});                   // 半小時快照月檔 pm_pos_hh_YYYY-MM：{days:{date:[{t,at,rev,tx}]}}
   const [posStore, setPosStore] = useState("abeach");       // 分店切換：abeach=A Beach 101 / ground=GROUN:D（營運報表第三層）
   const [posCats, setPosCats] = useState([]);               // 標籤自選：選到的分類做比較（空＝全部）
   const [gdTab, setGdTab] = useState("全部");               // GROUN:D 品項明細：品類籤（張良 2026-08-14 指定試營運儀表板版型）
@@ -144,6 +146,10 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
     const out = {};
     for (const mo of months) { try { const d = await window.storage.get(K("pm_pos_d_" + mo), true); if (d && d.value) out[mo] = JSON.parse(d.value); } catch (_) {} }
     setPosDet(out);
+    // 半小時快照月檔（時段圖切半小時用；沒有就是空物件，圖上會提示從何時開始累積）
+    const outHH = {};
+    for (const mo of months) { try { const d = await window.storage.get(K("pm_pos_hh_" + mo), true); if (d && d.value) outHH[mo] = JSON.parse(d.value); } catch (_) {} }
+    setPosHH(outHH);
   })(); }, [pos]); // eslint-disable-line
   // 逐筆交易月檔：開「逐筆交易」下鑽才抓那個月（有檔=不重抓；上次抓到空＝每次點都再試一次，後端剛回補完不用重新整理頁面）
   useEffect(() => { (async () => {
@@ -167,7 +173,9 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
     // 明細月檔單獨更新（例：只補明細不動摘要的維護寫入）也要即時跟上——品項明細/分類表不用重新整理（張良 2026-08-14）
     const un6 = onSharedChange(K("pm_pos_d_") + "*", (k, v) => { try { const mo = k.slice(-7); if (v) setPosDet(p => ({ ...p, [mo]: JSON.parse(v) })); } catch (_) {} });
     const un7 = onSharedChange(K("pm_pos_flags"), (_k, v) => { try { setPosFlags(v ? JSON.parse(v) : { items: {} }); } catch (_) {} });
-    return () => { un1(); un2(); un3(); un4(); un5(); un6(); un7(); };
+    // 半小時快照入庫也即時跟上（盤中每半小時記一筆——時段圖開著就自己長出新的半小時格）
+    const un8 = onSharedChange(K("pm_pos_hh_") + "*", (k, v) => { try { const mo = k.slice(-7); if (v) setPosHH(p => ({ ...p, [mo]: JSON.parse(v) })); } catch (_) {} });
+    return () => { un1(); un2(); un3(); un4(); un5(); un6(); un7(); un8(); };
   }, []); // eslint-disable-line
   const saveRecon = (next) => { setRecon(next); window.storage.set(K("pm_recon"), JSON.stringify(next), true).catch(() => {}); };
   const saveBank = (next) => { setBank(next); window.storage.set(K("pm_bank"), JSON.stringify(next), true).catch(() => {}); };
@@ -1158,10 +1166,10 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
             <div style={{ fontSize: 11, color: C.sub, marginTop: 2 }}>{label}{sub2 ? <span style={{ color: C.faint }}>・{sub2}</span> : null}</div>
           </div>
         );
-        const barRow = (label, amt, total, cl, extra, onClick, exW) => ( // exW＝右側附註欄寬（時段圖的「單數・單均」比 % 長，要寬欄+不換行才不會擠成三行）
+        const barRow = (label, amt, total, cl, extra, onClick, exW, lw) => ( // exW＝右側附註欄寬（時段圖「單數・單均」比 % 長）；lw＝左標籤欄寬（半小時模式時間範圍較長）
           <div key={label} onClick={onClick} title="點我看組成明細" style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 5, cursor: "pointer", borderRadius: 5, padding: "1px 2px" }}
             onMouseEnter={e => e.currentTarget.style.background = "#f4efe5"} onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
-            <span style={{ fontSize: 11.5, color: C.sub, width: 118, overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis" }} title={label}>{label}</span>
+            <span style={{ fontSize: 11.5, color: C.sub, width: lw || 118, overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis" }} title={label}>{label}</span>
             <div style={{ flex: 1, height: 10, background: "#eee5d3", borderRadius: 5, overflow: "hidden" }}><div style={{ width: Math.max(1, amt / total * 100) + "%", height: "100%", background: cl, borderRadius: 5 }} /></div>
             <span style={{ fontFamily: MONOF, fontSize: 11, color: C.text, width: 84, textAlign: "right" }}>{fmt(amt)}</span>
             {extra != null && <span style={{ fontFamily: MONOF, fontSize: 10, color: C.faint, width: exW || 40, textAlign: "right", whiteSpace: "nowrap" }}>{extra}</span>}
@@ -1508,35 +1516,62 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
                   if (!slotDates.length) return null;
                   // 看單天（張良 2026-08-27：只有加總不夠、要能看每天）：下拉選日期；選的日期不在期間內（換店/換期間）自動退回累計
                   const sel = posSlotDay !== "all" && slotDates.includes(posSlotDay) ? posSlotDay : "all";
+                  // 半小時（張良 2026-08-27：峰值 12/13 點要切開看）：喬亞只給每小時，半小時＝盤中每 30 分快照相鄰相減推算（2026-08-28 起累積）
+                  const t2m = (t) => Number(t.slice(0, 2)) * 60 + Number(t.slice(3, 5));
+                  const m2t = (m) => String(Math.floor(m / 60)).padStart(2, "0") + ":" + String(m % 60).padStart(2, "0");
+                  const hhOf = (date) => { const arr = posHH[date.slice(0, 7)]?.days?.[date]; return Array.isArray(arr) && arr.length ? arr : null; };
+                  const hhDates = days.filter(d => hhOf(d.date)).map(d => d.date);
+                  const half = posSlotGran === "half";
+                  const useDates = half ? (sel === "all" ? hhDates : hhDates.filter(dt => dt === sel)) : (sel === "all" ? slotDates : [sel]);
                   const agg = {};
-                  (sel === "all" ? slotDates : [sel]).forEach(date => {
-                    slotOf(date).forEach(s => (s.rows || []).forEach(r => { if (!Array.isArray(r)) return; const k = String(r[0]); const o = agg[k] = agg[k] || { amt: 0, od: 0 }; o.od += Number(r[1]) || 0; o.amt += Number(r[r.length - 1]) || 0; }));
-                  });
-                  // 只顯示營業時段 11:00-18:00 列（張良 2026-08-27：營業 11-19，之前 9/10/19 點的零星舊資料隱藏）
-                  const keys = Object.keys(agg).sort().filter(k => { const h = parseInt(k, 10); return h >= 11 && h <= 18; });
-                  if (!keys.length) return null;
-                  const mx = Math.max(1, ...keys.map(k => agg[k].amt));
+                  if (!half) {
+                    useDates.forEach(date => {
+                      slotOf(date).forEach(s => (s.rows || []).forEach(r => { if (!Array.isArray(r)) return; const k = String(r[0]); const o = agg[k] = agg[k] || { amt: 0, od: 0 }; o.od += Number(r[1]) || 0; o.amt += Number(r[r.length - 1]) || 0; }));
+                    });
+                  } else {
+                    useDates.forEach(date => {
+                      const snaps = [...hhOf(date)].sort((a, b) => t2m(a.t) - t2m(b.t));
+                      if (snaps[0] && snaps[0].t !== "11:00" && (Number(snaps[0].rev) || 0) > 0) snaps.unshift({ t: m2t(t2m(snaps[0].t) - 30), rev: 0, tx: 0 }); // 第一張快照前視為 0（開店前沒營收）
+                      for (let i = 1; i < snaps.length; i++) {
+                        const amt = (Number(snaps[i].rev) || 0) - (Number(snaps[i - 1].rev) || 0), od = (Number(snaps[i].tx) || 0) - (Number(snaps[i - 1].tx) || 0);
+                        if (amt < 0 || od < 0) continue; // 快照倒退（理論上不會）保守跳過
+                        const k = snaps[i - 1].t; // 半小時格用「起始時間」當 key：11:30 = 11:30〜12:00
+                        const o = agg[k] = agg[k] || { amt: 0, od: 0 };
+                        o.amt += amt; o.od += od;
+                      }
+                    });
+                  }
+                  // 只顯示營業時段列（張良 2026-08-27：營業 11-19，9/10/19 點零星舊資料隱藏）；半小時模式含 19:00〜19:30 結帳尾
+                  const keys = Object.keys(agg).sort().filter(k => { const m = t2m(k); return m >= 660 && m < (half ? 1170 : 1140); });
                   const dLabel = (dt) => dt.slice(2) + "（" + WD2[new Date(dt + "T00:00:00").getDay()] + "）";
+                  const mx = Math.max(1, ...keys.map(k => agg[k].amt));
+                  const granBtn = (v, l) => (
+                    <button key={v} onClick={() => setPosSlotGran(v)} style={{ padding: "4px 9px", borderRadius: 6, border: `1px solid ${posSlotGran === v ? C.line : "transparent"}`, background: posSlotGran === v ? "#fff" : "transparent", color: posSlotGran === v ? C.text : C.sub, fontSize: 12, fontWeight: posSlotGran === v ? 700 : 400, cursor: "pointer" }}>{l}</button>
+                  );
                   return (
                     <div style={{ ...chartBox2, marginBottom: 10 }}>
                       <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 8 }}>
-                        <div style={{ fontSize: 11.5, fontWeight: 700, color: C.sub }}>⏰ 時段消費（{sel === "all" ? `期間累計・${slotDates.length} 天有時段資料` : dLabel(sel)}）<span style={{ fontWeight: 400, color: C.faint }}>　{sel === "all" ? "每列＝時間｜日均幾單 → 營業額｜共幾單・單均" : "每列＝營業額｜單數・單均"}；營業時段 11:00-19:00；每小時粒度（無半小時）</span></div>
+                        <div style={{ fontSize: 11.5, fontWeight: 700, color: C.sub }}>⏰ 時段消費（{sel === "all" ? `期間累計・${useDates.length} 天` : dLabel(sel)}）<span style={{ fontWeight: 400, color: C.faint }}>　{sel === "all" ? "每列＝時間｜日均幾單 → 營業額｜共幾單・單均" : "每列＝營業額｜單數・單均"}；營業 11:00-19:00</span></div>
+                        <div style={{ display: "inline-flex", background: C.soft, border: `1px solid ${C.line}`, borderRadius: 8, padding: 2, gap: 2 }}>{granBtn("hour", "每小時")}{granBtn("half", "半小時")}</div>
                         <select value={sel} onChange={e => setPosSlotDay(e.target.value)} style={{ border: `1px solid ${C.line}`, borderRadius: 8, padding: "4px 8px", fontSize: 12, background: "#fff", color: C.text, cursor: "pointer" }}>
                           <option value="all">期間累計（全部天）</option>
-                          {[...slotDates].reverse().map(dt => <option key={dt} value={dt}>{dLabel(dt)}</option>)}
+                          {[...(half ? hhDates : slotDates)].reverse().map(dt => <option key={dt} value={dt}>{dLabel(dt)}</option>)}
                         </select>
                       </div>
-                      {keys.map(k => {
+                      {half && !keys.length ? (
+                        <div style={{ fontSize: 12, color: C.faint, padding: "10px 2px" }}>半小時資料從 2026-08-28 開始累積（喬亞 POS 只提供每小時，半小時是系統每 30 分鐘記快照相減算出來的）——之前的日子只有每小時可看。</div>
+                      ) : keys.map(k => {
                         const a = agg[k];
                         const unitAvg = a.od ? fmt(Math.round(a.amt / a.od)) : "—";
-                        // 累計模式加「日均幾單」（張良 2026-08-27：要依每天時段安排人力，只有加總不夠）：單數÷期間天數（沒開單的天也算，才是真的每日平均負載）
-                        const dayAvg = a.od / slotDates.length;
+                        // 「日均幾單」放時間旁邊（張良 2026-08-27：依時段排人力）：單數÷期間天數（沒單的天也算＝真實每日負載）
+                        const dayAvg = a.od / Math.max(1, useDates.length);
                         const dayAvgTxt = dayAvg >= 10 ? Math.round(dayAvg) : Math.round(dayAvg * 10) / 10;
-                        // 日均放時間旁邊一眼看（張良 2026-08-27 二改：日均單移到左邊時間後面）
-                        const label = sel === "all" ? `${k}｜日均 ${dayAvgTxt} 單` : k;
+                        const tLabel = half ? `${k}-${m2t(t2m(k) + 30)}` : k;
+                        const label = sel === "all" ? `${tLabel}｜日均 ${dayAvgTxt} 單` : tLabel;
                         const extra = sel === "all" ? `共 ${a.od} 單・單均 ${unitAvg}` : `${a.od} 單｜單均 ${unitAvg}`;
-                        return barRow(label, a.amt, mx, "#3a6ea5", extra, undefined, 160);
+                        return barRow(label, a.amt, mx, "#3a6ea5", extra, undefined, 160, half ? 178 : 118);
                       })}
+                      {half && keys.length > 0 && <div style={{ fontSize: 10.5, color: C.faint, marginTop: 6 }}>半小時＝盤中每 30 分鐘快照相減推算（2026-08-28 起累積），分鐘級誤差屬正常；要對帳請看每小時（喬亞原生資料）。</div>}
                     </div>
                   );
                 })()}

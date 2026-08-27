@@ -522,7 +522,7 @@ async function loadPosText() {
   try {
     const now = new Date(Date.now() + 8 * 3600e3)
     const mo = now.toISOString().slice(0, 7)
-    const kv = await kvGetMany(['sp_finance_pm_pos', 'sp_finance_pm_pos_d_' + mo, 'sp_finance_pm_pos_tx_' + mo, 'sp_finance_pm_pos_flags', 'sp_finance_pm_pos_idlecfg'])
+    const kv = await kvGetMany(['sp_finance_pm_pos', 'sp_finance_pm_pos_d_' + mo, 'sp_finance_pm_pos_tx_' + mo, 'sp_finance_pm_pos_flags', 'sp_finance_pm_pos_idlecfg', 'sp_finance_pm_pos_hh_' + mo])
     const pos = kv['sp_finance_pm_pos']
     const entries = pos && Array.isArray(pos.entries) ? pos.entries : []
     if (!entries.length) return ''
@@ -535,6 +535,20 @@ async function loadPosText() {
     entries.slice(-30).forEach(e => lines.push(e.partial
       ? `  - ${e.date}${sTag(e)} 營收${nt(e.revenue)}${e.grossSales > e.revenue ? `（牌價${nt(e.grossSales)}·試營運折讓）` : ''}｜${e.partial}`
       : `  - ${e.date}${sTag(e)} 營收${nt(e.revenue)}｜${e.txCount}單｜來客${e.guests || '?'}｜客單${e.guests ? nt(Math.round(e.revenue / e.guests)) : '—'}｜現金${nt(e.cash)}/卡${nt(e.card)}/Uber${nt(e.uber)}｜折扣${nt(e.discount)}`))
+    // GROUN:D 半小時時段（pm_pos_hh_月檔＝盤中每30分快照相減推算，2026-08-28 起；答「排人力/尖峰半小時」；對帳以每小時原生資料為準；與 App loadSpaceAIContext 同步接）
+    const hhDoc = kv['sp_finance_pm_pos_hh_' + mo]
+    if (hhDoc?.days && Object.keys(hhDoc.days).length) {
+      const t2m = (t) => Number(t.slice(0, 2)) * 60 + Number(t.slice(3, 5))
+      const m2t = (m) => String(Math.floor(m / 60)).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0')
+      const hh = {}; let nDays = 0
+      Object.values(hhDoc.days).forEach(snapsRaw => {
+        if (!Array.isArray(snapsRaw) || snapsRaw.length < 2) return
+        const snaps = [...snapsRaw].sort((a, b) => t2m(a.t) - t2m(b.t)); nDays++
+        for (let i = 1; i < snaps.length; i++) { const amt = (Number(snaps[i].rev) || 0) - (Number(snaps[i - 1].rev) || 0), od = (Number(snaps[i].tx) || 0) - (Number(snaps[i - 1].tx) || 0); if (amt < 0 || od < 0) continue; const k = snaps[i - 1].t; const o = hh[k] = hh[k] || { amt: 0, od: 0 }; o.amt += amt; o.od += od }
+      })
+      const ks = Object.keys(hh).sort()
+      if (ks.length) { lines.push(`【GROUN:D 半小時時段（本月快照推算・${nDays} 天；排人力用）】`); ks.forEach(k => lines.push(`  - ${k}-${m2t(t2m(k) + 30)} 共${hh[k].od}單 ${nt(hh[k].amt)}｜日均${(hh[k].od / nDays).toFixed(1)}單`)) }
+    }
     // 當月品項銷售彙總（答「哪些餐賣得好」用）
     const det = kv['sp_finance_pm_pos_d_' + mo]
     if (det && det.days) {

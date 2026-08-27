@@ -60,9 +60,9 @@ async function loadSpaceAIContext() {
       } catch (_) { return await g(legacy); }
     };
     const d0 = new Date(); const mo = `${d0.getFullYear()}-${String(d0.getMonth() + 1).padStart(2, "0")}`;
-    const [snapC, snapT, snapK, snapF, tasks, crewRoster, crewOld, pos, posD, posTx, posFlags, posIdleCfgAI, bank, ctbc, accounts, ledger, conclusions, mailRules, mailLog, supply, supplyOrders, supplyRecipesRaw] = await Promise.all([
+    const [snapC, snapT, snapK, snapF, tasks, crewRoster, crewOld, pos, posD, posTx, posFlags, posIdleCfgAI, posHHAI, bank, ctbc, accounts, ledger, conclusions, mailRules, mailLog, supply, supplyOrders, supplyRecipesRaw] = await Promise.all([
       g("pm_bot_context"), g("sp_team_pm_bot_context"), g("sp_crew_pm_bot_context"), g("sp_finance_pm_bot_context"),
-      recs("pm_tasks_v2", "pm_task_", "pm_tasks"), g("sp_crew_kb_roster"), g("sp_crew_kb_360"), g("sp_finance_pm_pos"), g("sp_finance_pm_pos_d_" + mo), g("sp_finance_pm_pos_tx_" + mo), g("sp_finance_pm_pos_flags"), g("sp_finance_pm_pos_idlecfg"),
+      recs("pm_tasks_v2", "pm_task_", "pm_tasks"), g("sp_crew_kb_roster"), g("sp_crew_kb_360"), g("sp_finance_pm_pos"), g("sp_finance_pm_pos_d_" + mo), g("sp_finance_pm_pos_tx_" + mo), g("sp_finance_pm_pos_flags"), g("sp_finance_pm_pos_idlecfg"), g("sp_finance_pm_pos_hh_" + mo),
       g("sp_finance_pm_bank"), g("sp_finance_pm_ctbc"), g("sp_finance_pm_fin_accounts"), recs("sp_finance_pm_fin_ledger_v2", "sp_finance_pm_fin_tx_", "sp_finance_pm_fin_ledger"),
       g("pm_conclusions"), g("sp_lw_pm_mail_rules"), g("sp_lw_pm_mail_log"), g("sp_supply_pm_supply"),
       g("sp_supply_pm_orders"), getSharedPrefix("sp_supply_pm_recipe_v_"),
@@ -142,6 +142,19 @@ async function loadSpaceAIContext() {
           const idle = Object.entries(per).map(([n, v]) => { const ds = Object.keys(v.days).filter(dd => v.days[dd] > 0).sort(); return ds.length ? { n, cat: v.cat, ld: ds[ds.length - 1], gap: Math.round((new Date(lastD + "T00:00:00") - new Date(ds[ds.length - 1] + "T00:00:00")) / 864e5) } : null; }).filter(x => x && x.gap >= idleDays && !exCats2.includes(x.cat) && !exItems2.includes(x.n.replace(/〔.*〕$/, ""))).sort((a, b) => b.gap - a.gap);
           if (idle.length) parts.push(`【連續未售品項（門檻 ${idleDays} 天＝「沒賣預警」區設定；已排除 ${exCats2.length} 分類/${exItems2.length} 品項；距最新日結 ${lastD}；共 ${idle.length} 項）】\n` + idle.slice(0, 25).map(x => `- ${x.n}［${x.cat}］：${x.gap} 天沒賣（最後售出 ${x.ld}）`).join("\n") + "\n※只看得到本月有賣過的品項；上月就停售的看不到");
         }
+      }
+      // GROUN:D 半小時時段（pm_pos_hh_月檔＝盤中每30分快照，2026-08-28 起累積；答「排人力/尖峰半小時」；對帳以每小時原生資料為準；與 D哥 loadPosText 同步接）
+      if (posHHAI?.days && Object.keys(posHHAI.days).length) {
+        const t2m = t => Number(t.slice(0, 2)) * 60 + Number(t.slice(3, 5));
+        const m2t = m => String(Math.floor(m / 60)).padStart(2, "0") + ":" + String(m % 60).padStart(2, "0");
+        const hh = {}; let nDays = 0;
+        Object.values(posHHAI.days).forEach(snapsRaw => {
+          if (!Array.isArray(snapsRaw) || snapsRaw.length < 2) return;
+          const snaps = [...snapsRaw].sort((a, b) => t2m(a.t) - t2m(b.t)); nDays++;
+          for (let i = 1; i < snaps.length; i++) { const amt = (Number(snaps[i].rev) || 0) - (Number(snaps[i - 1].rev) || 0), od = (Number(snaps[i].tx) || 0) - (Number(snaps[i - 1].tx) || 0); if (amt < 0 || od < 0) continue; const k = snaps[i - 1].t; const o = hh[k] = hh[k] || { amt: 0, od: 0 }; o.amt += amt; o.od += od; }
+        });
+        const ks = Object.keys(hh).sort();
+        if (ks.length) parts.push(`【GROUN:D 半小時時段（本月快照推算・${nDays} 天；排人力用）】\n` + ks.map(k => `- ${k}-${m2t(t2m(k) + 30)} 共${hh[k].od}單 ${nt(hh[k].amt)}｜日均${(hh[k].od / nDays).toFixed(1)}單`).join("\n"));
       }
       // 逐筆交易（日結信 Transaction 附件，pm_pos_tx_月檔）：只濃縮「作廢/退」相關列（100%資料鐵則；答「哪天的 Void 是哪張單」）
       if (posTx?.days) {
