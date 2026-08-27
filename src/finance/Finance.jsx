@@ -1519,13 +1519,21 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
                   return (
                     <div style={{ ...chartBox2, marginBottom: 10 }}>
                       <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 8 }}>
-                        <div style={{ fontSize: 11.5, fontWeight: 700, color: C.sub }}>⏰ 時段消費（{sel === "all" ? `期間累計・${slotDates.length} 天有時段資料` : dLabel(sel)}）<span style={{ fontWeight: 400, color: C.faint }}>　每列＝營業額｜單數・單均；POS 提供每小時粒度（無半小時）</span></div>
+                        <div style={{ fontSize: 11.5, fontWeight: 700, color: C.sub }}>⏰ 時段消費（{sel === "all" ? `期間累計・${slotDates.length} 天有時段資料` : dLabel(sel)}）<span style={{ fontWeight: 400, color: C.faint }}>　每列＝營業額｜{sel === "all" ? "共幾單・日均幾單・單均" : "單數・單均"}；POS 提供每小時粒度（無半小時）</span></div>
                         <select value={sel} onChange={e => setPosSlotDay(e.target.value)} style={{ border: `1px solid ${C.line}`, borderRadius: 8, padding: "4px 8px", fontSize: 12, background: "#fff", color: C.text, cursor: "pointer" }}>
                           <option value="all">期間累計（全部天）</option>
                           {[...slotDates].reverse().map(dt => <option key={dt} value={dt}>{dLabel(dt)}</option>)}
                         </select>
                       </div>
-                      {keys.map(k => barRow(k, agg[k].amt, mx, "#3a6ea5", `${agg[k].od} 單｜單均 ${agg[k].od ? fmt(Math.round(agg[k].amt / agg[k].od)) : "—"}`, undefined, 150))}
+                      {keys.map(k => {
+                        const a = agg[k];
+                        const unitAvg = a.od ? fmt(Math.round(a.amt / a.od)) : "—";
+                        // 累計模式加「日均幾單」（張良 2026-08-27：要依每天時段安排人力，只有加總不夠）：單數÷期間天數（沒開單的天也算，才是真的每日平均負載）
+                        const dayAvg = a.od / slotDates.length;
+                        const dayAvgTxt = dayAvg >= 10 ? Math.round(dayAvg) : Math.round(dayAvg * 10) / 10;
+                        const extra = sel === "all" ? `共 ${a.od} 單・日均 ${dayAvgTxt} 單・單均 ${unitAvg}` : `${a.od} 單｜單均 ${unitAvg}`;
+                        return barRow(k, a.amt, mx, "#3a6ea5", extra, undefined, sel === "all" ? 218 : 150);
+                      })}
                     </div>
                   );
                 })()}
