@@ -175,9 +175,16 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
   const runPosSync = async () => {
     setPosSyncBusy(true);
     try {
+      // 盤中即時（張良 2026-08-27：按更新要立刻反應）：先抓喬亞「現在」的今天數字（後端 3 分鐘冷卻、非營業時間自動略過），再照舊檢查信箱
+      let live = null;
+      try { const lr = await fetch("/api/joya-intraday?manual=1"); live = await lr.json(); } catch (_) {}
       const r = await fetch("/api/mail-sync?days=2"); const d = await r.json();
       const ps = await window.storage.get(K("pm_pos"), true); setPos(ps && ps.value ? JSON.parse(ps.value) : null);
-      const t = d?.pos?.added ? `✓ 更新完成：新入庫 ${d.pos.added} 天日結` : "✓ 已檢查信箱——沒有新的日結信（目前資料已是最新）";
+      const parts = [];
+      if (live?.updated) parts.push(`盤中已更新到 ${live.taipei}：今天 NT$${(Number(live.revenue) || 0).toLocaleString()}・${live.txCount} 單`);
+      else if (live?.skipped && /剛更新過/.test(live.skipped)) parts.push(`盤中${live.skipped}`);
+      if (d?.pos?.added) parts.push(`新入庫 ${d.pos.added} 天日結`);
+      const t = parts.length ? "✓ " + parts.join("；") : "✓ 已檢查——沒有新資料（目前已是最新）";
       setPosMsg(t); setTimeout(() => setPosMsg(m => m === t ? null : m), 8000);
     } catch (e) { setPosMsg("更新失敗：" + e.message); }
     setPosSyncBusy(false);

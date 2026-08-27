@@ -16,14 +16,22 @@ export default async function handler(req, res) {
   const hm = taipeiHM(), nowM = toMin(hm)
   const mk = (process.env.MENU_PROBE_KEY || '').trim()
   const force = mk && String(req.query?.force || '') === mk
+  const manual = String(req.query?.manual || '') === '1' // 前端「🔄 更新」鈕（張良 2026-08-27：按更新要立刻抓現在的數字）
   const hit = SLOTS.some(s => nowM >= toMin(s) && nowM < toMin(s) + WINDOW_MIN)
-  if (!hit && !force) return res.status(200).json({ ok: true, skipped: '非指定時間', taipei: hm })
+  if (!hit && !force && !manual) return res.status(200).json({ ok: true, skipped: '非指定時間', taipei: hm })
+  if (manual && !hit && !force && (nowM < toMin('11:00') || nowM >= toMin('19:30'))) {
+    return res.status(200).json({ ok: true, skipped: '非營業時間（11:00-19:30 才有盤中數字）', taipei: hm })
+  }
   try {
     const today = taipeiToday()
     const store = (await kvGet('sp_finance_pm_pos')) || { entries: [] }
     const isGround = (n) => /groun/i.test(n || '')
     const cur = store.entries.find(e => e.date === today && isGround(e.store))
     if (cur && !cur.intraday) return res.status(200).json({ ok: true, skipped: '今天已是打烊後正式資料，不覆蓋', taipei: hm })
+    // 手動更新冷卻 3 分鐘（端點公開，防連打狂敲喬亞）；排程時間點與金鑰不受限
+    if (manual && !hit && !force && cur?.intraday && cur.fetchedAt && nowM >= toMin(cur.fetchedAt) && nowM - toMin(cur.fetchedAt) < 3) {
+      return res.status(200).json({ ok: true, skipped: '剛更新過（' + cur.fetchedAt + '），3 分鐘內不重抓', taipei: hm, revenue: cur.revenue, txCount: cur.txCount })
+    }
     const cookie = await joyaLogin()
     const day = await joyaFetchDay(cookie, today)
     if (day.empty) return res.status(200).json({ ok: true, skipped: '喬亞今天還沒有資料（未開店/公休）', taipei: hm })
@@ -44,7 +52,7 @@ export default async function handler(req, res) {
     doc.updatedAt = new Date().toISOString()
     await kvPut(did, doc, '喬亞盤中更新 ' + hm)
     await announceChanged() // 開著的網頁即刻自動跟上
-    return res.status(200).json({ ok: true, taipei: hm, date: today, revenue: rec.revenue, txCount: rec.txCount })
+    return res.status(200).json({ ok: true, updated: true, taipei: hm, date: today, revenue: rec.revenue, txCount: rec.txCount })
   } catch (e) {
     return res.status(200).json({ ok: false, error: e?.message || String(e), taipei: hm })
   }
