@@ -108,6 +108,7 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
   const [gdSort, setGdSort] = useState(null);               // GROUN:D 品項明細：排序欄（日期 or "cum"；預設最新一天）
   const [gdIdle, setGdIdle] = useState(false);              // 品項明細：只看 7天+沒賣（取代原本佔版面的「沒賣預警」大區塊，張良 2026-08-19）
   const [gdCost, setGdCost] = useState(false);              // 品項明細：填成本模式（張良 2026-08-28：每品項成本→總成本/每天毛利）
+  const [gdCostDetail, setGdCostDetail] = useState(false);  // 期間彙總：成本明細下鑽（張良 2026-08-28：成本率46%？我需要看到畫面——每品項吃掉多少成本）
   const [posCosts, setPosCosts] = useState({});             // 品項成本主檔 {abeach:{品項key:成本}, ground:{…}}——存 DB 一份，兩店分開
   const [posPrices, setPosPrices] = useState({});           // 品項定價手動覆寫 {abeach:{品項key:定價}, ground:{…}}——手填優先於自動還原；0＝不顯示（張良 2026-08-28）
   const [posPivotCats, setPosPivotCats] = useState(null);   // 矩陣內分類勾選（null=全選）
@@ -1613,8 +1614,51 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
                           <span style={{ fontSize: 12, color: C.text }} title="食材成本 ÷ 營收（餐飲常抓 30~35%）">平均成本率 <b style={{ fontFamily: MONOF }}>{cumRev ? Math.round(cumCost / cumRev * 100) : 0}%</b></span>
                           {covPct < 100 && <span style={{ fontSize: 11, color: C.red, fontWeight: 700 }}>⚠ 還有 {missingCnt} 個品項沒填成本（佔銷量 {100 - covPct}%）→ 成本被低估、毛利偏高，開「💰 填成本」補齊</span>}
                           {covPct >= 100 && <span style={{ fontSize: 11, color: C.accent, fontWeight: 700 }}>✓ 成本已全數填齊</span>}
+                          <button onClick={() => setGdCostDetail(!gdCostDetail)} style={{ border: `1.5px solid ${gdCostDetail ? C.brand : C.line}`, background: gdCostDetail ? C.brand : "#fff", color: gdCostDetail ? "#fff" : C.sub, borderRadius: 13, padding: "2px 11px", fontSize: 11.5, fontWeight: 700, cursor: "pointer" }}>🔍 成本明細</button>
                         </div>
                       )}
+                      {/* 成本明細下鑽（張良 2026-08-28：成本率哪來的要看得到）：每品項 份數×成本＝吃掉多少，由大到小；單份成本率 ≥60% 標紅＝可能填錯 */}
+                      {hasCost && gdCostDetail && (() => {
+                        const costed = allItems.filter(o => costOf(o) != null && o.cum > 0)
+                          .map(o => ({ o, c: costOf(o), sub: o.cum * costOf(o), p: priceOf(o) }))
+                          .sort((a, b) => b.sub - a.sub);
+                        const missing = allItems.filter(o => costOf(o) == null && o.cum > 0).sort((a, b) => b.cum - a.cum);
+                        const rateStyle = (rt) => rt == null ? { color: C.faint } : rt >= 0.6 ? { color: C.red, fontWeight: 800 } : rt >= 0.45 ? { color: C.amber, fontWeight: 700 } : { color: C.accent };
+                        return (
+                          <div style={{ overflowX: "auto", border: `1px solid ${C.line}`, borderRadius: 8, background: "#fff", marginTop: 6 }}>
+                            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
+                              <thead><tr style={{ background: C.head }}>
+                                {["品項", "定價", "成本/份", "單份成本率", "期間份數", "成本小計", "佔總成本"].map((h, i) => <th key={h} style={{ padding: "6px 8px", textAlign: i === 0 ? "left" : "right", fontWeight: 700, fontSize: 11.5, color: C.sub, whiteSpace: "nowrap" }}>{h}</th>)}
+                              </tr></thead>
+                              <tbody>
+                                {costed.map(({ o, c, sub, p }) => {
+                                  const rt = p ? c / p : null;
+                                  return (
+                                    <tr key={o.k}>
+                                      <td style={{ padding: "5px 8px", fontWeight: 600, borderTop: "1px solid #f0ead9", whiteSpace: "nowrap" }}>{o.n}</td>
+                                      <td style={{ ...tdn }}>{p ? "$" + p.toLocaleString() : "—"}</td>
+                                      <td style={{ ...tdn }}>${c.toLocaleString()}</td>
+                                      <td style={{ ...tdn, ...rateStyle(rt) }} title={rt != null && rt >= 0.6 ? "成本超過定價六成——確認一下是不是填錯（例：把定價填進成本欄）" : "成本/份 ÷ 定價"}>{rt != null ? Math.round(rt * 100) + "%" : "—"}{rt != null && rt >= 0.6 ? " ⚠" : ""}</td>
+                                      <td style={{ ...tdn }}>{o.cum}</td>
+                                      <td style={{ ...tdn, fontWeight: 700 }}>{fmt(Math.round(sub))}</td>
+                                      <td style={{ ...tdn, color: C.sub }}>{cumCost ? Math.round(sub / cumCost * 100) : 0}%</td>
+                                    </tr>
+                                  );
+                                })}
+                                <tr style={{ background: C.bg }}>
+                                  <td style={{ padding: "5px 8px", fontWeight: 800 }}>合計</td>
+                                  <td style={{ ...tdn }} /><td style={{ ...tdn }} /><td style={{ ...tdn, fontWeight: 800 }}>{cumRev ? Math.round(cumCost / cumRev * 100) + "%" : "—"}</td>
+                                  <td style={{ ...tdn, fontWeight: 700 }}>{costed.reduce((t, x) => t + x.o.cum, 0)}</td>
+                                  <td style={{ ...tdn, fontWeight: 800 }}>{fmt(Math.round(cumCost))}</td>
+                                  <td style={{ ...tdn, fontWeight: 800 }}>100%</td>
+                                </tr>
+                              </tbody>
+                            </table>
+                            {missing.length > 0 && <div style={{ fontSize: 11, color: C.faint, padding: "6px 10px", borderTop: `1px solid ${C.line}` }}>未填成本（不在上表、當 0 成本）：{missing.slice(0, 20).map(o => `${o.n}×${o.cum}`).join("、")}{missing.length > 20 ? ` …共 ${missing.length} 項` : ""}</div>}
+                            <div style={{ fontSize: 10.5, color: C.faint, padding: "4px 10px 8px" }}>單份成本率＝成本÷定價：🟢＜45%、🟠 45~60%、🔴 ≥60%（可能把定價填進成本欄，開「💰 填成本」改）。合計列的成本率＝總成本÷期間營收（含飲料等沒定價品項的營收）。</div>
+                          </div>
+                        );
+                      })()}
                       <div style={{ fontSize: 10.5, color: C.faint, marginTop: 6 }}>{isAB
                         ? "品類＝自訂細分類（湯/沙拉/開胃菜/麵/飯…，跟 POS 分類不同，方便逐品類看排名刪菜單）；菜名旁 $＝定價（從無折扣日的單價還原，調價自動跟上新價；被套餐/折扣拆帳影響太大的品項不顯示）；Uber 欄＝外送(低價)分類賣出的份數，已併入該品項各日與累計總量。工具箱/包場/免招手/蛋糕/福利等非菜單分類不列入。品類色帶＝該品類每日總份數。"
                         : "菜名旁 $＝定價（主餐類從無折扣日的單價自動還原，8/26 調價後自動顯示新價；飲料/湯/小點跟套餐拆帳金額不可信＝不自動顯示，要顯示請開「💰填成本」手動填定價，手填永遠優先、填 0＝不顯示）；套餐內＝期間內該品項在套餐裡賣出的份數（累計，其餘為單點）；每組套餐含飲料一杯，所以「飲料」的套餐內≈套餐組數。品類色帶＝該品類每日總份數。"}</div>
