@@ -531,7 +531,7 @@ async function loadPosText() {
   try {
     const now = new Date(Date.now() + 8 * 3600e3)
     const mo = now.toISOString().slice(0, 7)
-    const kv = await kvGetMany(['sp_finance_pm_pos', 'sp_finance_pm_pos_d_' + mo, 'sp_finance_pm_pos_tx_' + mo, 'sp_finance_pm_pos_flags', 'sp_finance_pm_pos_idlecfg', 'sp_finance_pm_pos_hh_' + mo])
+    const kv = await kvGetMany(['sp_finance_pm_pos', 'sp_finance_pm_pos_d_' + mo, 'sp_finance_pm_pos_tx_' + mo, 'sp_finance_pm_pos_flags', 'sp_finance_pm_pos_idlecfg', 'sp_finance_pm_pos_hh_' + mo, 'sp_finance_pm_pos_costs'])
     const pos = kv['sp_finance_pm_pos']
     const entries = pos && Array.isArray(pos.entries) ? pos.entries : []
     if (!entries.length) return ''
@@ -557,6 +557,16 @@ async function loadPosText() {
       })
       const ks = Object.keys(hh).sort()
       if (ks.length) { lines.push(`【GROUN:D 半小時時段（本月快照推算・${nDays} 天；排人力用）】`); ks.forEach(k => lines.push(`  - ${k}-${m2t(t2m(k) + 30)} 共${hh[k].od}單 ${nt(hh[k].amt)}｜日均${(hh[k].od / nDays).toFixed(1)}單`)) }
+    }
+    // 品項成本主檔（pm_pos_costs＝張良在品項明細「💰填成本」手填；答「XX成本多少/毛利/成本率」；毛利＝營收−Σ當日份數×成本；與 App loadSpaceAIContext 同步接）
+    const costsDoc = kv['sp_finance_pm_pos_costs']
+    if (costsDoc && Object.keys(costsDoc).length) {
+      const cLines = []
+      for (const [sk2, m2] of Object.entries(costsDoc)) {
+        const es2 = Object.entries(m2 || {}).filter(([, v]) => Number(v) > 0)
+        if (es2.length) cLines.push(`  - ${sk2 === 'ground' ? 'GROUN:D' : 'A Beach'}：` + es2.map(([n2, v]) => `${n2}=${Math.round(Number(v))}`).join('、'))
+      }
+      if (cLines.length) { lines.push('【品項成本主檔（手填食材成本/份；毛利＝營收−Σ當日份數×成本；沒填的品項當0成本→毛利偏高估要提醒）】'); lines.push(...cLines) }
     }
     // 當月品項銷售彙總（答「哪些餐賣得好」用）
     const det = kv['sp_finance_pm_pos_d_' + mo]

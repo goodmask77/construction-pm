@@ -60,9 +60,9 @@ async function loadSpaceAIContext() {
       } catch (_) { return await g(legacy); }
     };
     const d0 = new Date(); const mo = `${d0.getFullYear()}-${String(d0.getMonth() + 1).padStart(2, "0")}`;
-    const [snapC, snapT, snapK, snapF, tasks, crewRoster, crewOld, pos, posD, posTx, posFlags, posIdleCfgAI, posHHAI, bank, ctbc, accounts, ledger, conclusions, mailRules, mailLog, supply, supplyOrders, supplyRecipesRaw] = await Promise.all([
+    const [snapC, snapT, snapK, snapF, tasks, crewRoster, crewOld, pos, posD, posTx, posFlags, posIdleCfgAI, posHHAI, posCostsAI, bank, ctbc, accounts, ledger, conclusions, mailRules, mailLog, supply, supplyOrders, supplyRecipesRaw] = await Promise.all([
       g("pm_bot_context"), g("sp_team_pm_bot_context"), g("sp_crew_pm_bot_context"), g("sp_finance_pm_bot_context"),
-      recs("pm_tasks_v2", "pm_task_", "pm_tasks"), g("sp_crew_kb_roster"), g("sp_crew_kb_360"), g("sp_finance_pm_pos"), g("sp_finance_pm_pos_d_" + mo), g("sp_finance_pm_pos_tx_" + mo), g("sp_finance_pm_pos_flags"), g("sp_finance_pm_pos_idlecfg"), g("sp_finance_pm_pos_hh_" + mo),
+      recs("pm_tasks_v2", "pm_task_", "pm_tasks"), g("sp_crew_kb_roster"), g("sp_crew_kb_360"), g("sp_finance_pm_pos"), g("sp_finance_pm_pos_d_" + mo), g("sp_finance_pm_pos_tx_" + mo), g("sp_finance_pm_pos_flags"), g("sp_finance_pm_pos_idlecfg"), g("sp_finance_pm_pos_hh_" + mo), g("sp_finance_pm_pos_costs"),
       g("sp_finance_pm_bank"), g("sp_finance_pm_ctbc"), g("sp_finance_pm_fin_accounts"), recs("sp_finance_pm_fin_ledger_v2", "sp_finance_pm_fin_tx_", "sp_finance_pm_fin_ledger"),
       g("pm_conclusions"), g("sp_lw_pm_mail_rules"), g("sp_lw_pm_mail_log"), g("sp_supply_pm_supply"),
       g("sp_supply_pm_orders"), getSharedPrefix("sp_supply_pm_recipe_v_"),
@@ -142,6 +142,15 @@ async function loadSpaceAIContext() {
           const idle = Object.entries(per).map(([n, v]) => { const ds = Object.keys(v.days).filter(dd => v.days[dd] > 0).sort(); return ds.length ? { n, cat: v.cat, ld: ds[ds.length - 1], gap: Math.round((new Date(lastD + "T00:00:00") - new Date(ds[ds.length - 1] + "T00:00:00")) / 864e5) } : null; }).filter(x => x && x.gap >= idleDays && !exCats2.includes(x.cat) && !exItems2.includes(x.n.replace(/〔.*〕$/, ""))).sort((a, b) => b.gap - a.gap);
           if (idle.length) parts.push(`【連續未售品項（門檻 ${idleDays} 天＝「沒賣預警」區設定；已排除 ${exCats2.length} 分類/${exItems2.length} 品項；距最新日結 ${lastD}；共 ${idle.length} 項）】\n` + idle.slice(0, 25).map(x => `- ${x.n}［${x.cat}］：${x.gap} 天沒賣（最後售出 ${x.ld}）`).join("\n") + "\n※只看得到本月有賣過的品項；上月就停售的看不到");
         }
+      }
+      // 品項成本主檔（pm_pos_costs＝張良在品項明細「💰填成本」手填；答「XX成本多少/毛利/成本率」；毛利＝營收−Σ份數×成本；與 D哥 loadPosText 同步接）
+      if (posCostsAI && Object.keys(posCostsAI).length) {
+        const cLines = [];
+        for (const [sk2, m2] of Object.entries(posCostsAI)) {
+          const es2 = Object.entries(m2 || {}).filter(([, v]) => Number(v) > 0);
+          if (es2.length) cLines.push(`- ${sk2 === "ground" ? "GROUN:D" : "A Beach"}：` + es2.map(([n2, v]) => `${n2}=${Math.round(Number(v))}`).join("、"));
+        }
+        if (cLines.length) parts.push("【品項成本主檔（手填食材成本/份；毛利＝營收−Σ當日份數×成本；沒填的品項當0成本→毛利偏高估要提醒）】\n" + cLines.join("\n"));
       }
       // GROUN:D 半小時時段（pm_pos_hh_月檔＝盤中每30分快照，2026-08-28 起累積；答「排人力/尖峰半小時」；對帳以每小時原生資料為準；與 D哥 loadPosText 同步接）
       if (posHHAI?.days && Object.keys(posHHAI.days).length) {
