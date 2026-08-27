@@ -1,4 +1,5 @@
 // 後端：LINE Webhook（D哥）。收群組訊息 → 登記群、回答問題（以 pm_bot_context 唯一真相快照為依據）。
+// 2026-08-28 DD變聰明版：純記錄免確認直接執行、prose不再被丟掉（多件事都回）、記憶30輪、讀得到自己記的工作日誌、prompt caching。
 // 需要環境變數：LINE_CHANNEL_SECRET、LINE_CHANNEL_ACCESS_TOKEN（新）；ANTHROPIC_API_KEY、SUPABASE_URL、SUPABASE_SERVICE_ROLE_KEY（本專案已有）。
 // LINE 後台 Webhook URL 設成： https://<本專案網域>/api/line-webhook
 import crypto from 'crypto'
@@ -404,6 +405,7 @@ const BOT_PERSONA = `你是「DD」（舊名 D哥，大家叫哪個都認得）�
 - **先在心裡把資料查完、算完、驗完，才開始寫回覆**。回覆只呈現最終結果——嚴禁把草稿過程寫出來（像「等等這是8月先跳過」「欸不對我重抓一次」這種自我更正實況，觀感很差）。寫錯就整段重寫，不是邊寫邊改。
 - **如果你判斷自己做不到、或資料不足、或對方的要求不在你能力範圍**：直接、清楚地說「我做不到 X，原因是 Y，你可以這樣做 Z」。不要裝懂、不要答非所問、不要假裝完成。
 - 記得上面的對話脈絡，順著聊，不要把每句話都當第一次見面。
+- **一則訊息常常同時有好幾件事**（要記的＋要問的＋要查的，可能用換行或「跟」「還有」分開）。**每一件都要處理到、逐件交代**，絕對不能只做第一件就停：要記錄的照記錄，要問的問題照回答，同一則回覆裡全部給齊。
 - 如果對話中出現「值得長期記住」的重要事實（某人負責什麼、聯絡方式、分工窗口、老闆的偏好或固定要求、專案的重要約定…），在你回覆的「最後」另起一行用這個格式標記：[[記住:該事實]]（可多行、每行一件、寫簡短）。只標真正值得長期記的，瑣事不要標。這個標記使用者看不到，是給系統存進你的長期記事本用的。`
 const SYS_DATA_HEAD = '\n\n────────\n【你目前掌握的即時資料】\n'
 
@@ -474,13 +476,20 @@ async function loadShiftText() {
 // 任務中心（pm_tasks，Task v2 全欄位）→ 文字。D哥 讀任務一律以這份為準（完整、含衍生狀態）
 async function loadTasksText() {
   try {
-    const [m, tR] = await Promise.all([kvGetMany(['pm_data']), kvLoadTasks()])
+    const [m, tR] = await Promise.all([kvGetMany(['pm_data', 'pm_worklog']), kvLoadTasks()])
     const tasks = tR.list
-    if (!tasks.length) return ''
+    const worklog = Array.isArray(m['pm_worklog']) ? m['pm_worklog'] : []
+    if (!tasks.length && !worklog.length) return ''
     const cats = Array.isArray(m['pm_data']) ? m['pm_data'] : []
     const catName = (id) => (!id || id === '__inbox__') ? '收件匣' : ((cats.find(c => c.id === id) || {}).name || '收件匣')
     const SL = { todo: '待辦', doing: '進行中', done: '完成' }
-    const lines = [`\n\n【任務中心（共 ${tasks.length} 件，可用 add_task / update_task 操作）】`]
+    const lines = []
+    // 工作日誌（add_log 記的）：DD 要讀得到自己記過什麼，被問「之前幫我記的在哪」答得出來
+    if (worklog.length) {
+      lines.push(`\n\n【工作日誌（你用 add_log 幫使用者記的都存在這裡＝App「工作日誌」頁；共 ${worklog.length} 則，列最新 30 則）】`)
+      worklog.slice(0, 30).forEach(w => lines.push(`  - ${w.date || ''} ${w.content || ''}${w.author ? `（${w.author}）` : ''}`))
+    }
+    if (tasks.length) lines.push(`\n\n【任務中心（共 ${tasks.length} 件，可用 add_task / update_task 操作）】`)
     tasks.forEach(t => {
       const bits = [`${t.pinned ? '📌' : ''}[${SL[t.status] || t.status}] ${t.title}（${catName(t.catId)}）`]
       if (t.due) bits.push(`截止${t.due}`)
@@ -712,7 +721,8 @@ async function answer(question, snaps, accountsText, financeText, activityText, 
     const r = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: { 'content-type': 'application/json', 'x-api-key': ANTHROPIC, 'anthropic-version': '2023-06-01' },
-      body: JSON.stringify({ model, max_tokens: 1500, system, messages }),
+      // system 標記可快取（5 分鐘內資料沒變就命中快取）→ 連續對話時 Opus 輸入成本大降、回覆更快
+      body: JSON.stringify({ model, max_tokens: 3000, system: [{ type: 'text', text: system, cache_control: { type: 'ephemeral' } }], messages }),
     })
     return { ok: r.ok, d: await r.json().catch(() => ({})) }
   }
@@ -942,7 +952,7 @@ async function getLineProfile(userId) { try { const r = await fetch('https://api
 async function getChatHistory(convId) {
   const all = asObj((await kvGetMany(['pm_bot_chats']))['pm_bot_chats'])
   const h = all[convId]
-  return Array.isArray(h) ? h.filter(m => m && (m.role === 'user' || m.role === 'assistant') && m.content).slice(-40) : []
+  return Array.isArray(h) ? h.filter(m => m && (m.role === 'user' || m.role === 'assistant') && m.content).slice(-60) : []
 }
 async function pushChat(convId, userText, assistantText) {
   try {
@@ -950,7 +960,7 @@ async function pushChat(convId, userText, assistantText) {
     const h = Array.isArray(all[convId]) ? all[convId] : []
     h.push({ role: 'user', content: String(userText || '').slice(0, 900) })
     h.push({ role: 'assistant', content: String(assistantText || '').slice(0, 1400) })
-    all[convId] = h.slice(-40) // 每個對話留最近 20 輪
+    all[convId] = h.slice(-60) // 每個對話留最近 30 輪
     const keys = Object.keys(all)
     if (keys.length > 40) for (const k of keys.slice(0, keys.length - 40)) delete all[k] // 最多 40 個對話
     await kvSet('pm_bot_chats', all)
@@ -1000,7 +1010,12 @@ const BOT_AGENT_GUIDE = `
 - {"type":"add_item","category":"空調工程","name":"主機","qty":1,"unit":"式","unitPrice":150000,"taxType":"未稅"}
 - {"type":"delete_item","category":"空調工程","item":"主機"}
 - {"type":"add_payment","category":"消防工程","amount":63000,"date":"2026-06-22","note":"訂金"}  // 大項新增一筆付款
-數字只放阿拉伯數字、不要逗號或「元」。一次可放多個指令。`
+數字只放阿拉伯數字、不要逗號或「元」。一次可放多個指令。
+
+輸出 json 的同時，**正常文字部分照樣要寫**：回答訊息裡的其他問題、交代你打算記什麼——這段文字使用者看得到，不會被丟掉。
+執行規則（系統自動處理，你只要知道怎麼措辭）：
+- 純記錄類（add_log / add_task / add_todo / add_conclusion）系統會**直接執行**，你可以用「幫你記好了」的語氣。
+- 其他（改資料、刪除、金額類：add_payment / add_finance_tx / add_petty_spend / set_* / update_task / delete_*）會**先請使用者確認**，這類要用「我準備幫你…，等你確認」的語氣，**不要說已完成**。`
 
 const TRIGGERS = ['d哥', 'D哥', '進度', '多少', '還欠', '未付', '已付', '付款', '總額', '預算', '餘額', '報告', '速報', '幾天', '完工', '零用金']
 const triggered = (text) => /[?？]\s*$/.test(text) || TRIGGERS.some((k) => text.includes(k))
@@ -1217,12 +1232,25 @@ export default async function handler(req, res) {
       console.log('answer', JSON.stringify({ snaps: snaps.length, canAct, hist: history.length, mem: memList.length, autoFacts: facts.length, actions: actions.length, replyLen: reply.length }))
 
       if (actions.length) {
-        // 4) 提出操作 → 存待確認 → 請使用者回「確認」
-        // 不放 AI 的 prose（它常會誤寫「已幫你記錄」其實還沒做）；只給明確的待執行清單。
-        await setPending(userId, { actions, ts: new Date().toISOString() })
-        const list = actions.map((a, i) => `${i + 1}. ${describeAction(a)}`).join('\n')
-        const proposeMsg = `🛠 要執行以下操作（還沒做，等你確認）：\n${list}\n\n回「確認」執行、「取消」放棄。`
-        await finish(proposeMsg)
+        // 4) 操作分兩級（張良 2026-08-28）：
+        //    純記錄類 → 直接執行不用確認（小事免卡關）；改資料/刪除/金額類 → 照舊先確認。
+        //    AI 的 prose 一律保留（裡面有對其他問題的回答，以前整段被丟掉＝答非所問的元兇）。
+        const AUTO_TYPES = new Set(['add_log', 'add_task', 'add_todo', 'add_conclusion'])
+        const autoActs = actions.filter(a => AUTO_TYPES.has(a.type))
+        const confirmActs = actions.filter(a => !AUTO_TYPES.has(a.type))
+        const parts = []
+        const prose = stripJson(reply)
+        if (prose) parts.push(prose)
+        if (autoActs.length) {
+          const results = await executeActions(autoActs, op.name)
+          parts.push('✅ 已直接記好：\n' + results.join('\n'))
+        }
+        if (confirmActs.length) {
+          await setPending(userId, { actions: confirmActs, ts: new Date().toISOString() })
+          const list = confirmActs.map((a, i) => `${i + 1}. ${describeAction(a)}`).join('\n')
+          parts.push(`🛠 這些要等你確認才會做：\n${list}\n\n回「確認」執行、「取消」放棄。`)
+        }
+        await finish(parts.join('\n\n'))
       } else {
         await finish(reply)
       }
