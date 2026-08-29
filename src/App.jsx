@@ -109,7 +109,7 @@ async function loadSpaceAIContext() {
       const sTag = e => multiStore ? (isG(e) ? "［GROUN:D］" : "［A Beach］") : "";
       parts.push("【營運日結（" + (multiStore ? "雙店：A Beach＋GROUN:D" : (pos.entries[0].store || "POS")) + "）】\n" + pos.entries.slice(-30).map(e => (e.partial && !e.txCount)
         ? `- ${e.date}${sTag(e)} 營收${nt(e.revenue)}${e.grossSales > e.revenue ? `（牌價${nt(e.grossSales)}·試營運折讓）` : ""}｜${e.partial}`
-        : `- ${e.date}${sTag(e)} 營收${nt(e.revenue)}｜${e.txCount}單｜來客${e.guests || "?"}｜現金${nt(e.cash)}/卡${nt(e.card)}${e.linepay ? `/LINE Pay${nt(e.linepay)}` : ""}${e.payOther ? `/其他${nt(e.payOther)}` : ""}/Uber${nt(e.uber)}｜折扣${nt(e.discount)}`).join("\n"));
+        : `- ${e.date}${sTag(e)} 營收${nt(e.revenue)}｜${e.txCount}單｜來客${e.guests || "?"}｜現金${nt(e.cash)}/卡${nt(e.card)}${e.linepay ? `/LINE Pay${nt(e.linepay)}` : ""}${e.payOther ? `/其他${nt(e.payOther)}` : ""}/Uber${nt(e.uber)}${e.kiosk ? `｜自助點餐${nt(e.kiosk)}(佔${e.revenue ? Math.round(e.kiosk / e.revenue * 100) : 0}%,已含在卡/LINE Pay內)` : ""}｜折扣${nt(e.discount)}`).join("\n"));
       if (posD?.days) {
         const per = {};
         Object.entries(posD.days).forEach(([dkey, day]) => (day.sheets?.["總銷售額 (以類別分類)"] || []).forEach(sec => {

@@ -94,9 +94,11 @@ export function joyaBuildRecord(day) {
   if (set) secs.push({ title: '套餐', header: ['名稱', '數量', '佔比', '銷售額'], rows: [['＋89 套餐', Math.round(Number(set.value_qvalue) || 0), '', num(set.value)]] })
   // 付款逐筆互斥歸類、一毛不漏（張良 2026-08-29：自助點餐的 LINE Pay 之前沒接，現金+卡加總對不上營收）
   // LINE Pay 要先判——「NCCC信用卡(KIOSK)」含「卡」歸信用卡沒問題，但 LINE Pay(APP) 不能被丟掉；剩下歸「其他」（例：預付款沖帳）
-  let cash = 0, card = 0, linepay = 0, payOther = 0
+  // kiosk＝自助點餐通路合計（NCCC信用卡(KIOSK)＋LINE Pay(APP)，2026-08-26 重開始有）——與付款別交疊（機台刷卡也算進 card），是「通路」維度不是加總項
+  let cash = 0, card = 0, linepay = 0, payOther = 0, kiosk = 0
   for (const p of (pays || [])) {
     const n = p.name || '', v = num(p.value)
+    if (/kiosk|\(app\)/i.test(n)) kiosk += v
     if (/line\s*pay/i.test(n)) linepay += v
     else if (/現金/.test(n)) cash += v
     else if (/信用卡|刷卡|卡/.test(n)) card += v
@@ -107,7 +109,7 @@ export function joyaBuildRecord(day) {
     date, period: date + '（喬亞行動報表自動抓取）', store: 'GROUN:D', subject: 'GROUN:D 喬亞行動報表',
     revenue: sum.revenue, grossSales: sum.gross, discount: Math.abs(sum.rounding),
     txCount: sum.txCount, guests: 0, sales: sum.revenue, serviceFee: sum.service, refund: 0,
-    cash, cashCount: null, card, cardCount: null, linepay, payOther, uber: 0, uberCount: null, posSales: 0, apiSales: 0,
+    cash, cashCount: null, card, cardCount: null, linepay, payOther, kiosk, uber: 0, uberCount: null, posSales: 0, apiSales: 0,
     voidItems: 0, returnDish: 0, unsettled: 0, kv: {}, source: 'joya-mobile',
     partial: '喬亞行動報表自動抓取：營收/單數/付款/品項含金額為真值；無來客數、無套餐內拆分、退貨未單列',
     // 時段放獨立分頁鍵（不能塞進分類表——前端會把 11:00 當品項算進熱銷榜）；付款方式原樣入明細（drill 當日原始資料可見）

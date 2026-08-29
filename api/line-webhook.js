@@ -544,7 +544,7 @@ async function loadPosText() {
     const lines = [`\n\n【營運日結（${multiStore ? '雙店：A Beach＋GROUN:D' : (entries[0]?.store || 'POS')}，每日結帳自動入庫，共 ${entries.length} 天）】`]
     entries.slice(-30).forEach(e => lines.push((e.partial && !e.txCount)
       ? `  - ${e.date}${sTag(e)} 營收${nt(e.revenue)}${e.grossSales > e.revenue ? `（牌價${nt(e.grossSales)}·試營運折讓）` : ''}｜${e.partial}`
-      : `  - ${e.date}${sTag(e)} 營收${nt(e.revenue)}｜${e.txCount}單｜來客${e.guests || '?'}｜客單${e.guests ? nt(Math.round(e.revenue / e.guests)) : '—'}｜現金${nt(e.cash)}/卡${nt(e.card)}${e.linepay ? `/LINE Pay${nt(e.linepay)}` : ''}${e.payOther ? `/其他${nt(e.payOther)}` : ''}/Uber${nt(e.uber)}｜折扣${nt(e.discount)}`))
+      : `  - ${e.date}${sTag(e)} 營收${nt(e.revenue)}｜${e.txCount}單｜來客${e.guests || '?'}｜客單${e.guests ? nt(Math.round(e.revenue / e.guests)) : '—'}｜現金${nt(e.cash)}/卡${nt(e.card)}${e.linepay ? `/LINE Pay${nt(e.linepay)}` : ''}${e.payOther ? `/其他${nt(e.payOther)}` : ''}/Uber${nt(e.uber)}${e.kiosk ? `｜自助點餐${nt(e.kiosk)}(佔${e.revenue ? Math.round(e.kiosk / e.revenue * 100) : 0}%,已含在卡/LINE Pay內)` : ''}｜折扣${nt(e.discount)}`))
     // GROUN:D 半小時時段（pm_pos_hh_月檔＝盤中每30分快照相減推算，2026-08-28 起；答「排人力/尖峰半小時」；對帳以每小時原生資料為準；與 App loadSpaceAIContext 同步接）
     const hhDoc = kv['sp_finance_pm_pos_hh_' + mo]
     if (hhDoc?.days && Object.keys(hhDoc.days).length) {
