@@ -102,13 +102,14 @@ async function loadSpaceAIContext() {
     } catch (_) {}
     // 營運日結 + 品項逐日
     if (pos?.entries?.length) {
-      // 雙店（A Beach / GROUN:D）同庫：多店時每行帶店名；partial=人工回填日（只有營收/品項，別答單數/付款拆分）
+      // 雙店（A Beach / GROUN:D）同庫：多店時每行帶店名；partial 且沒單數=人工回填日（只有營收/品項，別答單數/付款拆分）
+      // 喬亞自動抓的日子也帶 partial 但有完整單數/付款 → 走完整行（2026-08-29：不然 AI 答不出 GROUN:D 現金/卡/LINE Pay）
       const isG = e => /groun/i.test(e.store || "");
       const multiStore = new Set(pos.entries.map(e => isG(e) ? "g" : "a")).size > 1;
       const sTag = e => multiStore ? (isG(e) ? "［GROUN:D］" : "［A Beach］") : "";
-      parts.push("【營運日結（" + (multiStore ? "雙店：A Beach＋GROUN:D" : (pos.entries[0].store || "POS")) + "）】\n" + pos.entries.slice(-30).map(e => e.partial
+      parts.push("【營運日結（" + (multiStore ? "雙店：A Beach＋GROUN:D" : (pos.entries[0].store || "POS")) + "）】\n" + pos.entries.slice(-30).map(e => (e.partial && !e.txCount)
         ? `- ${e.date}${sTag(e)} 營收${nt(e.revenue)}${e.grossSales > e.revenue ? `（牌價${nt(e.grossSales)}·試營運折讓）` : ""}｜${e.partial}`
-        : `- ${e.date}${sTag(e)} 營收${nt(e.revenue)}｜${e.txCount}單｜來客${e.guests || "?"}｜現金${nt(e.cash)}/卡${nt(e.card)}/Uber${nt(e.uber)}｜折扣${nt(e.discount)}`).join("\n"));
+        : `- ${e.date}${sTag(e)} 營收${nt(e.revenue)}｜${e.txCount}單｜來客${e.guests || "?"}｜現金${nt(e.cash)}/卡${nt(e.card)}${e.linepay ? `/LINE Pay${nt(e.linepay)}` : ""}${e.payOther ? `/其他${nt(e.payOther)}` : ""}/Uber${nt(e.uber)}｜折扣${nt(e.discount)}`).join("\n"));
       if (posD?.days) {
         const per = {};
         Object.entries(posD.days).forEach(([dkey, day]) => (day.sheets?.["總銷售額 (以類別分類)"] || []).forEach(sec => {
