@@ -920,6 +920,9 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
         const PAL = ["#3a6ea5", "#3f7d4e", "#c98a14", "#b3492f", "#6b4a86", "#2f7d7a", "#9b9384", "#c4582a", "#5a6e3a", "#8a5a44", "#4a6b86", "#7d3f5e"];
         const paySum = { card: sum(days, "card"), cash: sum(days, "cash"), linepay: sum(days, "linepay"), payOther: sum(days, "payOther"), kiosk: sum(days, "kiosk"), uber: sum(days, "uber") }; // linepay 含自助點餐 LINE Pay(APP)；kiosk=自助點餐通路合計（與付款別交疊、非加總項）（2026-08-29）
         const hasKiosk = paySum.kiosk > 0; // 期間內完全沒有自助點餐（A Beach／GROUN:D 8/26 前）→ 整欄隱藏
+        // 自助點餐估算單數＝自助金額÷當日單均（喬亞 15 張報表都沒有付款別筆數、訂單來源篩選實測無效 2026-08-29）——明確標「約」
+        const kioskTx = (d) => (d.kiosk > 0 && d.revenue > 0 && d.txCount > 0) ? Math.round(d.kiosk / (d.revenue / d.txCount)) : 0;
+        const kioskTxSum = days.reduce((t, d) => t + kioskTx(d), 0);
         // 分類×日 / 品項×日（比較與智慧摘要用）
         const catDay = {}, itemDay = {};
         const addCatDay = (k, dd, amt) => { (catDay[k] = catDay[k] || {})[dd] = ((catDay[k] || {})[dd] || 0) + amt; };
@@ -948,9 +951,10 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
           const m = {};
           days.forEach(d => {
             const k = perKey(d.date);
-            const o = m[k] = m[k] || { key: k, nDays: 0, revenue: 0, txCount: 0, guests: 0, cash: 0, card: 0, linepay: 0, kiosk: 0, uber: 0, discount: 0, dates: [] };
+            const o = m[k] = m[k] || { key: k, nDays: 0, revenue: 0, txCount: 0, guests: 0, cash: 0, card: 0, linepay: 0, kiosk: 0, kioskTx: 0, uber: 0, discount: 0, dates: [] };
             o.nDays++; o.dates.push(d.date);
             ["revenue", "txCount", "guests", "cash", "card", "linepay", "kiosk", "uber", "discount"].forEach(f2 => o[f2] += Number(d[f2]) || 0);
+            o.kioskTx += kioskTx(d); // 自助估算單數逐日加總（估）
           });
           return Object.values(m).sort((a, b) => (a.key < b.key ? -1 : 1));
         })();
@@ -1077,8 +1081,8 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
             const K2 = { card: ["card", "cardCount", "信用卡"], cash: ["cash", "cashCount", "現金"], linepay: ["linepay", "linepayCount", "LINE Pay（含自助點餐）"], kiosk: ["kiosk", "kioskCount", "自助點餐（機台刷卡＋LINE Pay(APP)）"], uber: ["uber", "uberCount", "UberEats"] }[dr.key];
             return {
               title: `付款方式「${K2[2]}」逐日`, cols: ["日期", "金額", "筆數", "佔當日營收"],
-              rows: [...days].reverse().map(d => [d.date, fmt(d[K2[0]] || 0), d[K2[1]] ?? "—", d.revenue ? Math.round((d[K2[0]] || 0) / d.revenue * 100) + "%" : "—"]),
-              note: "來源：日結信 Balance Sheet「付款方式」段 → 資料庫 pm_pos",
+              rows: [...days].reverse().map(d => [d.date, fmt(d[K2[0]] || 0), dr.key === "kiosk" ? (kioskTx(d) ? `約${kioskTx(d)}(估)` : "—") : (d[K2[1]] ?? "—"), d.revenue ? Math.round((d[K2[0]] || 0) / d.revenue * 100) + "%" : "—"]),
+              note: dr.key === "kiosk" ? "自助點餐＝機台刷卡＋LINE Pay(APP)，金額已含在信用卡/LINE Pay 內；筆數＝金額÷當日單均的估算值（喬亞行動報表不提供付款別筆數，要真值需向喬亞開通正式後台報表）" : "來源：日結信 Balance Sheet「付款方式」段 → 資料庫 pm_pos",
             };
           }
           if (dr.type === "waste") return {
@@ -1261,7 +1265,7 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
                   {kpi("交易數", txSum, null, null, () => openDrill({ type: "days" }))}
                   {txSum > 0 && kpi("每單平均", fmt(Math.round(revSum / txSum)), "營收÷單數", "#3a6ea5", () => openDrill({ type: "days" }))}
                   {hasGuests && kpi("來客(堂食)", guestSum || "—", avgTicket ? "客單 " + fmt(avgTicket) : null, null, () => openDrill({ type: "days" }))}
-                  {hasKiosk && kpi("自助點餐", fmt(paySum.kiosk), revSum ? "佔營收 " + Math.round(paySum.kiosk / revSum * 100) + "%" : null, "#6b4a86", () => openDrill({ type: "pay", key: "kiosk" }))}
+                  {hasKiosk && kpi("自助點餐", fmt(paySum.kiosk), (revSum ? "佔營收 " + Math.round(paySum.kiosk / revSum * 100) + "%" : "") + (kioskTxSum ? "・約 " + kioskTxSum + " 單(估)" : ""), "#6b4a86", () => openDrill({ type: "pay", key: "kiosk" }))}
                   {kpi(last.intraday ? "今天（盤中）" : "最新一天", fmt(last.revenue), last.intraday ? (last.fetchedAt || "") + " 更新" : last.date.slice(5), last.intraday ? "#b3261e" : null, () => openDrill({ type: "day", key: last.date }))}
                 </div>
                 {/* 盤中即時（張良 2026-08-27）：joya-intraday 每半小時~一小時抓「今天」進來，打烊後自動換正式值 */}
@@ -1272,15 +1276,15 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
                 )}
                 {posGran === "day" ? (
                 <div style={{ border: "1.5px solid #c8bca6", borderRadius: 8, background: C.card, overflow: "hidden" }}>
-                  <div style={{ overflowX: "auto" }}><div style={{ minWidth: (hasGuests ? 1072 : 928) + (hasKiosk ? 110 : 0) }}>
+                  <div style={{ overflowX: "auto" }}><div style={{ minWidth: (hasGuests ? 1072 : 928) + (hasKiosk ? 156 : 0) }}>
                     {(() => {
-                      const GTC = "118px minmax(140px,1fr) 96px 64px 76px " + (hasGuests ? "64px 80px " : "") + "96px 96px 96px 96px 80px" + (hasKiosk ? " 110px" : ""); // 張良 2026-08-26 加「單均」欄；2026-08-27 沒來客資料的店隱藏來客/客單欄；2026-08-29 加 LINE Pay 欄＋自助點餐通路欄（金額·%，與付款別交疊放最右）
+                      const GTC = "118px minmax(140px,1fr) 96px 64px 76px " + (hasGuests ? "64px 80px " : "") + "96px 96px 96px 96px 80px" + (hasKiosk ? " 156px" : ""); // 張良 2026-08-26 加「單均」欄；2026-08-27 沒來客資料的店隱藏來客/客單欄；2026-08-29 加 LINE Pay 欄＋自助點餐通路欄（金額·%·約單數，與付款別交疊放最右）
                       const hc = { fontSize: 10.5, letterSpacing: 0.8, color: C.faint, fontWeight: 700, padding: "7px 8px", whiteSpace: "nowrap" };
                       const cell = (v, extra) => <div style={{ padding: "0 8px", fontFamily: MONOF, fontSize: 11.5, textAlign: "right", color: C.sub, ...extra }}>{v}</div>;
                       return (
                         <>
                           <div style={{ display: "grid", gridTemplateColumns: GTC, background: C.soft, borderBottom: "1.5px solid #c8bca6" }}>
-                            <div style={hc}>日期</div><div style={hc}>店</div><div style={{ ...hc, textAlign: "right" }}>營收</div><div style={{ ...hc, textAlign: "right" }}>單數</div><div style={{ ...hc, textAlign: "right" }}>單均(÷單數)</div>{hasGuests && <><div style={{ ...hc, textAlign: "right" }}>來客</div><div style={{ ...hc, textAlign: "right" }}>客單(÷來客)</div></>}<div style={{ ...hc, textAlign: "right" }}>現金</div><div style={{ ...hc, textAlign: "right" }}>信用卡</div><div style={{ ...hc, textAlign: "right" }}>LINE Pay</div><div style={{ ...hc, textAlign: "right" }}>Uber</div><div style={{ ...hc, textAlign: "right" }}>折扣</div>{hasKiosk && <div style={{ ...hc, textAlign: "right", color: "#6b4a86" }} title="自助點餐機（機台刷卡＋LINE Pay(APP)）——金額已含在信用卡/LINE Pay 內，看通路占比用">自助點餐·%</div>}
+                            <div style={hc}>日期</div><div style={hc}>店</div><div style={{ ...hc, textAlign: "right" }}>營收</div><div style={{ ...hc, textAlign: "right" }}>單數</div><div style={{ ...hc, textAlign: "right" }}>單均(÷單數)</div>{hasGuests && <><div style={{ ...hc, textAlign: "right" }}>來客</div><div style={{ ...hc, textAlign: "right" }}>客單(÷來客)</div></>}<div style={{ ...hc, textAlign: "right" }}>現金</div><div style={{ ...hc, textAlign: "right" }}>信用卡</div><div style={{ ...hc, textAlign: "right" }}>LINE Pay</div><div style={{ ...hc, textAlign: "right" }}>Uber</div><div style={{ ...hc, textAlign: "right" }}>折扣</div>{hasKiosk && <div style={{ ...hc, textAlign: "right", color: "#6b4a86" }} title="自助點餐機（機台刷卡＋LINE Pay(APP)）——金額已含在信用卡/LINE Pay 內，看通路占比用；單數＝金額÷當日單均的估算值（喬亞不提供付款別筆數）">自助點餐·%·約單</div>}
                           </div>
                           <div style={{ maxHeight: "50vh", overflowY: "auto" }}>
                             {(() => {
@@ -1300,7 +1304,7 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
                                 {cell(d.txCount)}{cell(d.txCount ? fmt(Math.round(d.revenue / d.txCount)) : "—", { color: "#3a6ea5", fontWeight: 600 })}{hasGuests && <>{cell(d.guests || "—")}{cell(d.guests ? fmt(ticket(d.revenue, d.guests)) : "—")}</>}
                                 {cell(fmt(d.cash || 0))}{cell(fmt(d.card || 0))}{cell(d.linepay ? fmt(d.linepay) : "—", d.linepay ? undefined : { color: "#d5cbb6" })}{cell(fmt(d.uber || 0))}
                                 {cell(d.discount ? fmt(d.discount) : "—", { color: d.discount ? C.accent : "#d5cbb6" })}
-                                {hasKiosk && cell(d.kiosk ? `${fmt(d.kiosk)}·${d.revenue ? Math.round(d.kiosk / d.revenue * 100) : 0}%` : "—", d.kiosk ? { color: "#6b4a86", fontWeight: 600 } : { color: "#d5cbb6" })}
+                                {hasKiosk && cell(d.kiosk ? `${fmt(d.kiosk)}·${d.revenue ? Math.round(d.kiosk / d.revenue * 100) : 0}%·約${kioskTx(d)}單` : "—", d.kiosk ? { color: "#6b4a86", fontWeight: 600 } : { color: "#d5cbb6" })}
                               </div>
                               );
                               });
@@ -1313,15 +1317,15 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
                 </div>
                 ) : (
                   <div style={{ border: "1.5px solid #c8bca6", borderRadius: 8, background: C.card, overflow: "hidden" }}>
-                    <div style={{ overflowX: "auto" }}><div style={{ minWidth: (hasGuests ? 1032 : 888) + (hasKiosk ? 110 : 0) }}>
+                    <div style={{ overflowX: "auto" }}><div style={{ minWidth: (hasGuests ? 1032 : 888) + (hasKiosk ? 156 : 0) }}>
                       {(() => {
-                        const GTC2 = "110px 56px 110px 104px 64px 76px " + (hasGuests ? "64px 80px " : "") + "100px 100px 96px 96px 84px" + (hasKiosk ? " 110px" : ""); // 加「單均」欄；沒來客資料的店隱藏來客/客單欄；2026-08-29 加 LINE Pay 欄＋自助點餐通路欄
+                        const GTC2 = "110px 56px 110px 104px 64px 76px " + (hasGuests ? "64px 80px " : "") + "100px 100px 96px 96px 84px" + (hasKiosk ? " 156px" : ""); // 加「單均」欄；沒來客資料的店隱藏來客/客單欄；2026-08-29 加 LINE Pay 欄＋自助點餐通路欄（金額·%·約單數）
                         const hc2 = { fontSize: 10.5, letterSpacing: 0.8, color: C.faint, fontWeight: 700, padding: "7px 8px", whiteSpace: "nowrap", textAlign: "right" };
                         const cell2 = (v, extra) => <div style={{ padding: "0 8px", fontFamily: MONOF, fontSize: 11.5, textAlign: "right", color: C.sub, ...extra }}>{v}</div>;
                         return (
                           <>
                             <div style={{ display: "grid", gridTemplateColumns: GTC2, background: C.soft, borderBottom: "1.5px solid #c8bca6" }}>
-                              <div style={{ ...hc2, textAlign: "left" }}>{posGran === "week" ? "週（起始日）" : "月份"}</div><div style={hc2}>天數</div><div style={hc2}>營收</div><div style={hc2}>日均</div><div style={hc2}>單數</div><div style={hc2}>單均</div>{hasGuests && <><div style={hc2}>來客</div><div style={hc2}>客單</div></>}<div style={hc2}>現金</div><div style={hc2}>信用卡</div><div style={hc2}>LINE Pay</div><div style={hc2}>Uber</div><div style={hc2}>折扣</div>{hasKiosk && <div style={{ ...hc2, color: "#6b4a86" }} title="自助點餐機（機台刷卡＋LINE Pay(APP)）——金額已含在信用卡/LINE Pay 內，看通路占比用">自助點餐·%</div>}
+                              <div style={{ ...hc2, textAlign: "left" }}>{posGran === "week" ? "週（起始日）" : "月份"}</div><div style={hc2}>天數</div><div style={hc2}>營收</div><div style={hc2}>日均</div><div style={hc2}>單數</div><div style={hc2}>單均</div>{hasGuests && <><div style={hc2}>來客</div><div style={hc2}>客單</div></>}<div style={hc2}>現金</div><div style={hc2}>信用卡</div><div style={hc2}>LINE Pay</div><div style={hc2}>Uber</div><div style={hc2}>折扣</div>{hasKiosk && <div style={{ ...hc2, color: "#6b4a86" }} title="自助點餐機（機台刷卡＋LINE Pay(APP)）——金額已含在信用卡/LINE Pay 內，看通路占比用；單數＝金額÷當日單均的估算值（喬亞不提供付款別筆數）">自助點餐·%·約單</div>}
                             </div>
                             {[...periods].reverse().map((pp, i) => (
                               <div key={pp.key} style={{ display: "grid", gridTemplateColumns: GTC2, alignItems: "center", minHeight: 32, borderTop: i ? "1px solid #f0ead9" : "none", background: i % 2 ? "#f8f4ea" : C.card }}>
@@ -1333,7 +1337,7 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
                                 {cell2(pp.guests ? fmt(Math.round(pp.revenue / pp.guests)) : "—")}</>}
                                 {cell2(fmt(pp.cash))}{cell2(fmt(pp.card))}{cell2(pp.linepay ? fmt(pp.linepay) : "—", pp.linepay ? undefined : { color: "#d5cbb6" })}{cell2(fmt(pp.uber))}
                                 {cell2(pp.discount ? fmt(pp.discount) : "—", { color: pp.discount ? C.accent : "#d5cbb6" })}
-                                {hasKiosk && cell2(pp.kiosk ? `${fmt(pp.kiosk)}·${pp.revenue ? Math.round(pp.kiosk / pp.revenue * 100) : 0}%` : "—", pp.kiosk ? { color: "#6b4a86", fontWeight: 600 } : { color: "#d5cbb6" })}
+                                {hasKiosk && cell2(pp.kiosk ? `${fmt(pp.kiosk)}·${pp.revenue ? Math.round(pp.kiosk / pp.revenue * 100) : 0}%·約${pp.kioskTx}單` : "—", pp.kiosk ? { color: "#6b4a86", fontWeight: 600 } : { color: "#d5cbb6" })}
                               </div>
                             ))}
                           </>
@@ -1760,8 +1764,8 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
                     {barRow("UberEats", paySum.uber, revSum || 1, "#c98a14", revSum ? Math.round(paySum.uber / revSum * 100) + "%" : "", () => openDrill({ type: "pay", key: "uber" }))}
                     {hasKiosk && <div style={{ borderTop: "1px dashed #d5cbb6", marginTop: 8, paddingTop: 8 }}>
                       <div style={{ fontSize: 11, fontWeight: 700, color: C.sub, marginBottom: 5 }}>通路（自助點餐機）</div>
-                      {barRow("自助點餐", paySum.kiosk, revSum || 1, "#6b4a86", revSum ? Math.round(paySum.kiosk / revSum * 100) + "%" : "", () => openDrill({ type: "pay", key: "kiosk" }))}
-                      <div style={{ fontSize: 10.5, color: C.faint, lineHeight: 1.6 }}>＝機台刷卡＋LINE Pay(APP)，金額已含在上面信用卡/LINE Pay 內（看通路占比用，不能跟上面相加）</div>
+                      {barRow("自助點餐", paySum.kiosk, revSum || 1, "#6b4a86", (revSum ? Math.round(paySum.kiosk / revSum * 100) + "%" : "") + (kioskTxSum ? `·約${kioskTxSum}單` : ""), () => openDrill({ type: "pay", key: "kiosk" }), 78)}
+                      <div style={{ fontSize: 10.5, color: C.faint, lineHeight: 1.6 }}>＝機台刷卡＋LINE Pay(APP)，金額已含在上面信用卡/LINE Pay 內（看通路占比用，不能跟上面相加）；單數＝金額÷單均估算</div>
                     </div>}
                     <div onClick={() => openDrill({ type: "coupon" })} title="點我看優惠券/折扣明細（單號・經手・原因）" style={{ fontSize: 11, color: C.faint, marginTop: 10, lineHeight: 1.8, cursor: "pointer" }}
                       onMouseEnter={e => e.currentTarget.style.color = "#3a6ea5"} onMouseLeave={e => e.currentTarget.style.color = C.faint}>
