@@ -1516,6 +1516,22 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
                   const thd = { padding: "6px 8px", textAlign: "right", fontWeight: 700, whiteSpace: "nowrap", fontSize: 11.5, color: C.sub, cursor: "pointer" };
                   const tdn = { padding: "5px 8px", textAlign: "right", fontFamily: MONOF, fontSize: 12.5, borderTop: "1px solid #f0ead9", whiteSpace: "nowrap" };
                   const chip2 = (label, on, onClick, dashed) => <button key={label} onClick={onClick} style={{ border: `1.5px ${dashed ? "dashed" : "solid"} ${on ? C.brand : C.line}`, background: on ? C.brand : "#fff", color: on ? "#fff" : C.sub, borderRadius: 13, padding: "2px 11px", fontSize: 11.5, fontWeight: 700, cursor: "pointer" }}>{label}</button>;
+                  // ⬇️ 匯出 CSV（張良 2026-08-31：要拿這張表去做菜單規劃）——跟畫面同一份資料直接輸出（全品項、不受分類籤/沒賣篩選影響），
+                  // 欄＝品類/品項/定價/成本/每日份數/累計/Uber(或套餐內)；帶 BOM 讓 Excel/Google 試算表開起來中文不亂碼
+                  const exportCsv = () => {
+                    const esc = (s) => `"${String(s ?? "").replace(/"/g, '""')}"`;
+                    const head = ["品類", "品項", "定價", "成本", ...dts, "累計", isAB ? "Uber" : "套餐內"];
+                    const ordered = catSeen.filter(c => allItems.some(o => o.cat === c)).flatMap(c => allItems.filter(o => o.cat === c).sort((a, b) => b.cum - a.cum));
+                    const lines = [head.map(esc).join(",")];
+                    ordered.forEach(o => {
+                      lines.push([esc(o.cat), esc(o.n), priceOf(o) ?? "", costOf(o) ?? "", ...dts.map(dd => o.q[dd] || 0), o.cum, isAB ? (o.uber || 0) : (o.comboHas ? o.comboCum : "")].join(","));
+                    });
+                    const blob = new Blob(["\ufeff" + lines.join("\r\n")], { type: "text/csv;charset=utf-8" });
+                    const a = document.createElement("a");
+                    a.href = URL.createObjectURL(blob);
+                    a.download = `品項明細_${isAB ? "ABeach" : "GROUND"}_${dts[0] || ""}~${dts[dts.length - 1] || ""}.csv`;
+                    a.click(); URL.revokeObjectURL(a.href);
+                  };
                   return (
                     <div style={{ ...chartBox2, marginBottom: 10 }}>
                       <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", marginBottom: 8 }}>
@@ -1524,6 +1540,7 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
                         {chip2("依品類分組", gdGroup, () => setGdGroup(!gdGroup), true)}
                         {chip2("😴 7天+沒賣", gdIdle, () => setGdIdle(!gdIdle), true)}
                         {canEdit && chip2("💰 填成本", gdCost, () => setGdCost(!gdCost), true)}
+                        {chip2("⬇️ 匯出", false, exportCsv, true)}
                         <span style={{ fontSize: 10.5, color: C.faint }}>點日期/累計欄＝排序；🔥=熱銷竄升(+50%)、紅字⚠0=昨有量今零售</span>
                       </div>
                       <div style={{ overflowX: "auto", border: `1px solid ${C.line}`, borderRadius: 8, background: "#fff" }}>
