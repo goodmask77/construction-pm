@@ -1047,7 +1047,7 @@ async function pushChat(convId, userText, assistantText) {
       all[convId] = h
     }
     const keys = Object.keys(all)
-    if (keys.length > 40) for (const k of keys.slice(0, keys.length - 40)) delete all[k] // 最多 40 個對話
+    if (keys.length > 20) for (const k of keys.slice(0, keys.length - 20)) delete all[k] // 最多 20 個對話（文件太肥每次讀寫都慢）
     await kvSet('pm_bot_chats', all)
   } catch (_) {}
 }
@@ -1101,6 +1101,9 @@ const BOT_AGENT_GUIDE = `
 執行規則（系統自動處理，你只要知道怎麼措辭）：
 - 純記錄類（add_log / add_task / add_todo / add_conclusion）系統會**直接執行**，你可以用「幫你記好了」的語氣。
 - 其他（改資料、刪除、金額類：add_payment / add_finance_tx / add_petty_spend / set_* / update_task / delete_*）會**先請使用者確認**，這類要用「我準備幫你…，等你確認」的語氣，**不要說已完成**。`
+
+// 給 selftest 用的具名匯出（純函式，不碰網路/DB；scripts/test-webhook-parsing.mjs 每次部署前會驗）
+export { parseActions, extractBalancedObjects, describeAction, extractMemoryTags, stripJson }
 
 const TRIGGERS = ['d哥', 'D哥', '進度', '多少', '還欠', '未付', '已付', '付款', '總額', '預算', '餘額', '報告', '速報', '幾天', '完工', '零用金']
 const triggered = (text) => /[?？]\s*$/.test(text) || TRIGGERS.some((k) => text.includes(k))
@@ -1203,7 +1206,7 @@ export default async function handler(req, res) {
       // ── 動作引擎（只在「私訊」進行，群組一律唯讀，較安全）──
       // 1) 授權：私訊「授權:碼」→ 列入操作者白名單
       const mAuth = text.match(/^授權[\s:：]*([^\s]+)/)
-      if (isDM && mAuth) {
+      if (isDM && mAuth && sigOK !== false) { // 簽章驗不過的偽造請求不准拿授權
         if (!OP_CODE) { await send('（系統尚未設定操作密碼 BOT_OP_CODE，目前無法授權操作。請先在 Vercel 設定。）'); continue }
         if (mAuth[1] === OP_CODE) { const name = await getLineProfile(userId); const op = await addOperator(userId, name); await send(`✅ 已授權「${op.name}」為操作者，之後可以直接用對話叫我新增/修改資料（執行前我都會先問你確認）。`) }
         else await send('❌ 授權碼不對。')
@@ -1211,7 +1214,10 @@ export default async function handler(req, res) {
       }
       const operators = await getOperators()
       const op = isDM ? operators[userId] : null
-      const canAct = !!op
+      // 安全（2026-09-01）：LINE 簽章驗不過（sigOK===false）＝可能是偽造請求 → 一律不給操作權限
+      // （密碼庫/記帳/改資料全鎖；一般問答照回，就算真的設定出錯 DD 也不會啞掉）
+      if (sigOK === false && op) console.log('sig FAIL → 拒絕操作權限', userId.slice(-6))
+      const canAct = !!op && sigOK !== false
 
       // 1.4) 檔案庫（私訊操作者 or 被叫名字的群組都能用）：一句話可同時「新增類別／查有哪些類別／把剛傳的檔存進去」
       if ((isDM ? canAct : true) && /檔案庫|相簿/.test(text)) {
@@ -1327,8 +1333,14 @@ export default async function handler(req, res) {
         const prose = stripJson(reply)
         if (prose) parts.push(prose)
         if (autoActs.length) {
-          const results = await executeActions(autoActs, op.name)
-          parts.push('✅ 已直接記好：\n' + results.join('\n'))
+          // 直接執行也要誠實回報：失敗不能默默吞掉讓使用者以為記好了
+          try {
+            const results = await executeActions(autoActs, op.name)
+            parts.push('✅ 已直接記好：\n' + results.join('\n'))
+          } catch (e) {
+            console.log('auto-exec error', e?.message)
+            parts.push('⚠️ 記錄時出錯沒有存成功（' + (e?.message || '未知錯誤') + '），請再說一次或稍後重試。')
+          }
         }
         if (confirmActs.length) {
           await setPending(userId, { actions: confirmActs, ts: new Date().toISOString() })

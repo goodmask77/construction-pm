@@ -114,7 +114,7 @@ export default async function handler(req, res) {
       const body = bodyOf(req)
       if (!checkToken(body.token)) return res.status(400).json({ error: 'QR 已過期，請重新掃打卡站上的最新 QR。' })
       const roster = await loadRoster()
-      const p = roster.people.find(x => x.account === me.name && (x.status || '在職') !== '離職')
+      const p = roster.people.find(x => (x.account === me.name || x.name === me.name) && (x.status || '在職') !== '離職') // 帳號名對不上時退回用本名對，避免改過顯示名就打不了卡
       if (!p) return res.status(403).json({ error: '你的帳號還沒對應到名冊，請聯絡管理員。' })
       const out = await recordPunch(p, 'qr', true)
       return res.status(200).json({ ok: true, name: p.name, ...out })
@@ -125,7 +125,7 @@ export default async function handler(req, res) {
       const me = await whoAmI(req)
       if (!me) return res.status(401).json({ error: '未登入' })
       const roster = await loadRoster()
-      const p = roster.people.find(x => x.account === me.name)
+      const p = roster.people.find(x => x.account === me.name || x.name === me.name)
       if (!p) return res.status(403).json({ error: '帳號未對應名冊' })
       const today = await todayPunchesOf(p.id)
       const last = today[today.length - 1]

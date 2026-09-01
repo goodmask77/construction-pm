@@ -37,12 +37,13 @@ export default async function handler(req, res) {
   // 可選：用 CRON_SECRET 防止外部亂打
   const secret = clean(process.env.CRON_SECRET)
   if (secret && req.headers['authorization'] !== `Bearer ${secret}`) return res.status(401).json({ ok: false })
-  // 對帳中心：每天順手同步一次公司帳務試算表（失敗不影響速報）
-  try { await fetch('https://ground-pm.vercel.app/api/sheet-sync') } catch (_) {}
-  // 自動收信：中信 e-Cash 通知 + Eats365 POS 日結（失敗不影響速報）
-  try { await fetch('https://ground-pm.vercel.app/api/mail-sync?days=10') } catch (_) {}
-  // 信箱管理：依張良設定的規則自動處理新信（LWLWLW 空間）
-  try { await fetch('https://ground-pm.vercel.app/api/mail-manage?action=apply&days=7') } catch (_) {}
+  // 三個資料同步：失敗不影響速報，但要「留下失敗紀錄」（以前默默吞掉＝資料變舊都不知道）
+  const syncErrs = []
+  const syncOne = async (label, url) => { try { const r = await fetch(url); if (!r.ok) syncErrs.push(`${label} ${r.status}`) } catch (e) { syncErrs.push(`${label} ${e?.message || 'fail'}`) } }
+  await syncOne('sheet-sync', 'https://ground-pm.vercel.app/api/sheet-sync') // 對帳中心：公司帳務試算表
+  await syncOne('mail-sync', 'https://ground-pm.vercel.app/api/mail-sync?days=10') // 自動收信：中信 e-Cash + Eats365 POS 日結
+  await syncOne('mail-manage', 'https://ground-pm.vercel.app/api/mail-manage?action=apply&days=7') // 信箱管理規則
+  if (syncErrs.length) console.log('cron-daily sync errors:', syncErrs.join('; '))
   if (!TOKEN) return res.status(200).json({ ok: false, skipped: '未設 LINE_CHANNEL_ACCESS_TOKEN' })
   // 尊重「設定 → LINE 通知」開關（張良 2026-07-18：關了還照發＝bug）；沒勾就只做資料同步、不推播
   const settings = (await kvGet('pm_settings')) || {}

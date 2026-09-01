@@ -231,10 +231,10 @@ export async function handleDDCards(ev, operators) {
     }
     if (kind === 'doc') {
       if (!me) { await reply(txt('請先報到綁定。')); return true }
-      if (a === 'cancel') { await deleteObject(b + (c ? '|' + c : '')); await reply(txt('好，已取消，照片沒有存檔。')); return true }
+      if (a === 'cancel') { const del = b + (c ? '|' + c : ''); if (del.startsWith(`roster/${me.id}/`)) await deleteObject(del); await reply(txt('好，已取消，照片沒有存檔。')); return true } // 只准刪自己的暫存檔
       const tmp = [b, c].filter(Boolean).join('|')
       if (!FIELD_LABEL[a] || !tmp.startsWith(`roster/${me.id}/`)) { await reply(txt('資料對不上，請重傳照片。')); return true }
-      const ext = tmp.split('.').pop()
+      const ext = ((tmp.match(/\.([a-z0-9]{1,8})$/i) || [])[1] || 'bin').toLowerCase()
       const dst = `roster/${me.id}/${a}-${Date.now().toString(36)}.${ext}`
       const ok = await moveObject(tmp, dst)
       if (!ok) { await reply(txt('歸檔失敗，請重傳照片。')); return true }
@@ -281,7 +281,7 @@ export async function handleDDCards(ev, operators) {
   }
 
   // 「回饋」→ 選人卡
-  if (/^(回饋|給回饋)$/.test(text)) {
+  if (/^(給?回饋)[\s啊喔嗎啦~～!！。，]*$/.test(text)) {
     const roster = await loadRoster()
     const me = personByUid(roster, uid)
     if (!me) { await reply(txt('請先報到綁定（輸入「你的本名＋報到」）。')); return true }
@@ -290,7 +290,7 @@ export async function handleDDCards(ev, operators) {
   }
 
   // 「投票」→ 我還沒投的進行中投票
-  if (/^投票$/.test(text)) {
+  if (/^投票[\s啊喔嗎啦~～!！。，]*$/.test(text)) {
     const roster = await loadRoster()
     const me = personByUid(roster, uid)
     if (!me) { await reply(txt('請先報到綁定（輸入「你的本名＋報到」）。')); return true }

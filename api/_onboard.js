@@ -131,7 +131,7 @@ async function bindPerson(uid, roster, p, reply, isNew) {
   const acct = await ensureAccount(usernameOf(p), p.name, 'staff')
   if (acct.error) { await reply('帳號開通失敗：' + acct.error + '，請聯絡管理員。'); return true }
   p.lineUserId = uid
-  p.account = acct.displayName || p.account || p.name // meFromRoster 用 account===display_name 對身分
+  p.account = String(acct.displayName || '').trim() || p.account || p.name // meFromRoster 用 account===display_name 對身分（trim 防空白字串把欄位洗掉）
   await saveRoster(roster)
   const link = await loginLink(acct.email)
   await reply(isNew
