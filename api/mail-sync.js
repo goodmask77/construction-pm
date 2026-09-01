@@ -9,6 +9,7 @@ import { parsePosWorkbook, parseTxSheet } from './_pos-parse.js' // 解析器共
 // 且每次同步都會把刪掉的日子塞回來——改由 syncJoya 抓喬亞真值（張良同意四天以 POS 為準）。檔案留檔不再引用。
 import { groundManualRecords } from './_ground-manual.js' // GROUN:D 喬亞POS報表手動回填（08-19~21，張良 2026-08-24 截圖；已驗證與POS一致）
 import { joyaLogin, joyaFetchDay, joyaBuildRecord, taipeiToday, taipeiAfterClose, joyaFetchTimeslots, timeslotSection, TIMESLOT_SHEET } from './_joya.js' // GROUN:D 喬亞行動報表自動抓取（2026-08-26 起全自動）
+import { syncIchef } from './_ichef.js' // 參考店1/2 每日營業額（iCHEF 後台自動抓取，2026-09-01）
 
 const clean = (v) => (v || '').trim().replace(/^["']|["']$/g, '').replace(/^[A-Za-z0-9_]+=/, '').trim()
 const SB_URL = clean(process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL)
@@ -409,6 +410,7 @@ export default async function handler(req, res) {
   try { out.ctbc = await syncCtbc(days) } catch (e) { out.ctbc = { error: e?.message || String(e) } }
   try { out.pos = await syncPos(days) } catch (e) { out.pos = { error: e?.message || String(e) } }
   try { out.joya = await syncJoya(Math.min(days, 20)) } catch (e) { out.joya = { error: e?.message || String(e) } } // GROUN:D 喬亞自動抓（?days=N 可回補 N 天）
+  try { out.ic = await syncIchef(kvGet, kvPut) } catch (e) { out.ic = { error: e?.message || String(e) } } // 參考店1/2 每日營業額（iCHEF，2026-09-01）
   await announceChanged() // 有新資料入庫→通知所有開著的網頁自動重抓（沒新資料就不發）
   if (req.query?.debug) out.dbg = DBG
   return res.status(200).json(out)

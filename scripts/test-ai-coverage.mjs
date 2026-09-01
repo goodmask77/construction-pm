@@ -13,6 +13,7 @@ const ALLOW = [
   [/^pm_vault/, "密碼金庫＝機密，永不進 AI"],
   [/^pm_role$|^pm_roles$|^pm_perm|^pm_users|^pm_login|^pm_accounts$|^pm_guest_perms$|^pm_known_users$/, "帳號權限/登入名單，非業務資料"],
   [/^pm_bot_(chats|confirm|operators|context|aiusage|groups)$/, "bot 內部狀態/用量/群組設定（快照另由 snapshots 進 AI）"],
+  [/^pm_ichef$/, "參考店1/2每日營業額＝張良指明保密（2026-09-01 不讓其他人知道是哪兩間店）；D哥群組誰都能問→刻意不進 AI，只在財務日表 1/2 欄顯示"],
   [/^pm_(colorder|columns|todo_cats|settings|trash|global_chat)$/, "UI 欄位/分類/設定/垃圾桶/AI對話串本身"],
   [/^pm_(events|journal|plans|seqlogs|worklog)$/, "工序日誌/事件/計畫：工程快照 pm_bot_context 已濃縮進度與問題，逐條屬深查"],
   [/^pm_recon$/, "銀行對帳勾稽記號（連結/忽略），金額本體已在銀行/內帳摘要"],

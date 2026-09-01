@@ -102,6 +102,7 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
   const [posSlotGran, setPosSlotGran] = useState("hour");   // 時段粒度：hour=每小時 / half=半小時（快照推算，張良 2026-08-27：峰值要切半小時）
   const [posSlotHeat, setPosSlotHeat] = useState(false);    // 時段消費逐日熱力圖（張良 2026-09-01：一天一天切下拉太麻煩，要一眼看每時段逐日變化）
   const [posHH, setPosHH] = useState({});                   // 半小時快照月檔 pm_pos_hh_YYYY-MM：{days:{date:[{t,at,rev,tx}]}}
+  const [posExt, setPosExt] = useState(null);               // 參考店1/2每日營業額 pm_ichef：{days:{date:{s1,s2}}}（畫面只標1/2，張良 2026-09-01）
   const [posStore, setPosStore] = useState("abeach");       // 分店切換：abeach=A Beach 101 / ground=GROUN:D（營運報表第三層）
   const [posCats, setPosCats] = useState([]);               // 標籤自選：選到的分類做比較（空＝全部）
   const [gdTab, setGdTab] = useState("全部");               // GROUN:D 品項明細：品類籤（張良 2026-08-14 指定試營運儀表板版型）
@@ -143,6 +144,7 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
     try { const pc = await window.storage.get(K("pm_pos_costs"), true); setPosCosts(pc && pc.value ? JSON.parse(pc.value) : {}); } catch (_) { setPosCosts({}); }
     try { const pp = await window.storage.get(K("pm_pos_prices"), true); setPosPrices(pp && pp.value ? JSON.parse(pp.value) : {}); } catch (_) { setPosPrices({}); }
     try { const ic = await window.storage.get(K("pm_pos_idlecfg"), true); setPosIdleCfg(ic && ic.value ? JSON.parse(ic.value) : { days: 7, exCats: [], exItems: [] }); } catch (_) { setPosIdleCfg({ days: 7, exCats: [], exItems: [] }); }
+    try { const ie = await window.storage.get(K("pm_ichef"), true); setPosExt(ie && ie.value ? JSON.parse(ie.value) : null); } catch (_) {}
     try { const rc = await window.storage.get(K("pm_recon"), true); const v = rc && rc.value ? JSON.parse(rc.value) : null; if (v) setRecon({ links: v.links || {}, ignored: v.ignored || [] }); } catch (_) {}
     try { const cd = await window.storage.get("pm_data", true); setConCats(cd && cd.value ? JSON.parse(cd.value) : []); } catch (_) {}
     try { const pt = await window.storage.get("pm_petty", true); const v = pt && pt.value ? JSON.parse(pt.value) : {}; setConPetty({ spends: v.spends || [] }); } catch (_) {}
@@ -184,7 +186,8 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
     const un8 = onSharedChange(K("pm_pos_hh_") + "*", (k, v) => { try { const mo = k.slice(-7); if (v) setPosHH(p => ({ ...p, [mo]: JSON.parse(v) })); } catch (_) {} });
     const un9 = onSharedChange(K("pm_pos_costs"), (_k, v) => { try { setPosCosts(v ? JSON.parse(v) : {}); } catch (_) {} });
     const un10 = onSharedChange(K("pm_pos_prices"), (_k, v) => { try { setPosPrices(v ? JSON.parse(v) : {}); } catch (_) {} });
-    return () => { un1(); un2(); un3(); un4(); un5(); un6(); un7(); un8(); un9(); un10(); };
+    const un11 = onSharedChange(K("pm_ichef"), (_k, v) => { try { setPosExt(v ? JSON.parse(v) : null); } catch (_) {} });
+    return () => { un1(); un2(); un3(); un4(); un5(); un6(); un7(); un8(); un9(); un10(); un11(); };
   }, []); // eslint-disable-line
   const saveRecon = (next) => { setRecon(next); window.storage.set(K("pm_recon"), JSON.stringify(next), true).catch(() => {}); };
   // 品項成本存檔（防抖在 storage 墊片層；廣播讓別台/別分頁即時跟上）
@@ -921,6 +924,10 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
         const PAL = ["#3a6ea5", "#3f7d4e", "#c98a14", "#b3492f", "#6b4a86", "#2f7d7a", "#9b9384", "#c4582a", "#5a6e3a", "#8a5a44", "#4a6b86", "#7d3f5e"];
         const paySum = { card: sum(days, "card"), cash: sum(days, "cash"), linepay: sum(days, "linepay"), payOther: sum(days, "payOther"), kiosk: sum(days, "kiosk"), uber: sum(days, "uber") }; // linepay 含自助點餐 LINE Pay(APP)；kiosk=自助點餐通路合計（與付款別交疊、非加總項）（2026-08-29）
         const hasKiosk = paySum.kiosk > 0; // 期間內完全沒有自助點餐（A Beach／GROUN:D 8/26 前）→ 整欄隱藏
+        const hasLinepay = paySum.linepay > 0; // 期間內完全沒有 LINE Pay（A Beach 沒開通）→ 整欄隱藏（張良 2026-09-01）
+        // 「1」「2」參考欄（張良 2026-09-01：兩間外部店每日營業額放 A Beach 店名與營收之間；只標 1/2 不露店名）
+        const extDays = posExt?.days || {};
+        const hasExt = posStore === "abeach" && Object.keys(extDays).length > 0;
         // 自助點餐估算單數＝自助金額÷當日單均（喬亞 15 張報表都沒有付款別筆數、訂單來源篩選實測無效 2026-08-29）——明確標「約」
         const kioskTx = (d) => (d.kiosk > 0 && d.revenue > 0 && d.txCount > 0) ? Math.round(d.kiosk / (d.revenue / d.txCount)) : 0;
         const kioskTxSum = days.reduce((t, d) => t + kioskTx(d), 0);
@@ -1277,15 +1284,15 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
                 )}
                 {posGran === "day" ? (
                 <div style={{ border: "1.5px solid #c8bca6", borderRadius: 8, background: C.card, overflow: "hidden" }}>
-                  <div style={{ overflowX: "auto" }}><div style={{ minWidth: (hasGuests ? 1072 : 928) + (hasKiosk ? 156 : 0) }}>
+                  <div style={{ overflowX: "auto" }}><div style={{ minWidth: (hasGuests ? 1072 : 928) + (hasKiosk ? 156 : 0) + (hasExt ? 168 : 0) - (hasLinepay ? 0 : 96) }}>
                     {(() => {
-                      const GTC = "118px minmax(140px,1fr) 96px 64px 76px " + (hasGuests ? "64px 80px " : "") + "96px 96px 96px 96px 80px" + (hasKiosk ? " 156px" : ""); // 張良 2026-08-26 加「單均」欄；2026-08-27 沒來客資料的店隱藏來客/客單欄；2026-08-29 加 LINE Pay 欄＋自助點餐通路欄（金額·%·約單數，與付款別交疊放最右）
+                      const GTC = "118px minmax(140px,1fr) " + (hasExt ? "84px 84px " : "") + "96px 64px 76px " + (hasGuests ? "64px 80px " : "") + "96px 96px " + (hasLinepay ? "96px " : "") + "96px 80px" + (hasKiosk ? " 156px" : ""); // 張良 2026-08-26 加「單均」欄；2026-08-27 沒來客資料的店隱藏來客/客單欄；2026-08-29 加 LINE Pay 欄（2026-09-01 起沒資料的店整欄隱藏）＋自助點餐通路欄；2026-09-01 加「1」「2」參考欄（店名與營收之間）
                       const hc = { fontSize: 10.5, letterSpacing: 0.8, color: C.faint, fontWeight: 700, padding: "7px 8px", whiteSpace: "nowrap" };
                       const cell = (v, extra) => <div style={{ padding: "0 8px", fontFamily: MONOF, fontSize: 11.5, textAlign: "right", color: C.sub, ...extra }}>{v}</div>;
                       return (
                         <>
                           <div style={{ display: "grid", gridTemplateColumns: GTC, background: C.soft, borderBottom: "1.5px solid #c8bca6" }}>
-                            <div style={hc}>日期</div><div style={hc}>店</div><div style={{ ...hc, textAlign: "right" }}>營收</div><div style={{ ...hc, textAlign: "right" }}>單數</div><div style={{ ...hc, textAlign: "right" }}>單均(÷單數)</div>{hasGuests && <><div style={{ ...hc, textAlign: "right" }}>來客</div><div style={{ ...hc, textAlign: "right" }}>客單(÷來客)</div></>}<div style={{ ...hc, textAlign: "right" }}>現金</div><div style={{ ...hc, textAlign: "right" }}>信用卡</div><div style={{ ...hc, textAlign: "right" }}>LINE Pay</div><div style={{ ...hc, textAlign: "right" }}>Uber</div><div style={{ ...hc, textAlign: "right" }}>折扣</div>{hasKiosk && <div style={{ ...hc, textAlign: "right", color: "#6b4a86" }} title="自助點餐機（機台刷卡＋LINE Pay(APP)）——金額已含在信用卡/LINE Pay 內，看通路占比用；單數＝金額÷當日單均的估算值（喬亞不提供付款別筆數）">自助點餐·%·約單</div>}
+                            <div style={hc}>日期</div><div style={hc}>店</div>{hasExt && <><div style={{ ...hc, textAlign: "right", color: "#8a7f6a" }} title="參考數據">1</div><div style={{ ...hc, textAlign: "right", color: "#8a7f6a" }} title="參考數據">2</div></>}<div style={{ ...hc, textAlign: "right" }}>營收</div><div style={{ ...hc, textAlign: "right" }}>單數</div><div style={{ ...hc, textAlign: "right" }}>單均(÷單數)</div>{hasGuests && <><div style={{ ...hc, textAlign: "right" }}>來客</div><div style={{ ...hc, textAlign: "right" }}>客單(÷來客)</div></>}<div style={{ ...hc, textAlign: "right" }}>現金</div><div style={{ ...hc, textAlign: "right" }}>信用卡</div>{hasLinepay && <div style={{ ...hc, textAlign: "right" }}>LINE Pay</div>}<div style={{ ...hc, textAlign: "right" }}>Uber</div><div style={{ ...hc, textAlign: "right" }}>折扣</div>{hasKiosk && <div style={{ ...hc, textAlign: "right", color: "#6b4a86" }} title="自助點餐機（機台刷卡＋LINE Pay(APP)）——金額已含在信用卡/LINE Pay 內，看通路占比用；單數＝金額÷當日單均的估算值（喬亞不提供付款別筆數）">自助點餐·%·約單</div>}
                           </div>
                           <div style={{ maxHeight: "50vh", overflowY: "auto" }}>
                             {(() => {
@@ -1301,9 +1308,10 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
                                 onMouseEnter={e => e.currentTarget.style.background = "#f4efe5"} onMouseLeave={e => e.currentTarget.style.background = rowBg}>
                                 <div style={{ padding: "0 8px", fontFamily: MONOF, fontSize: 11.5, color: wknd ? "#a97a10" : C.sub, fontWeight: wknd ? 700 : 400 }}>{d.date.slice(2)}（{WD2[gd]}）</div>
                                 <div style={{ padding: "0 8px", fontSize: 11.5, color: C.sub, overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis" }}>{d.store}{d.intraday && <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 700, color: "#b3261e", background: "#fdecea", border: "1px solid #f0b8b1", borderRadius: 5, padding: "1px 5px" }}>盤中 {d.fetchedAt || ""} 更新</span>}</div>
+                                {hasExt && <>{cell(extDays[d.date]?.s1 ? fmt(extDays[d.date].s1) : "—", { color: "#8a7f6a" })}{cell(extDays[d.date]?.s2 ? fmt(extDays[d.date].s2) : "—", { color: "#8a7f6a" })}</>}
                                 {cell(fmt(d.revenue), { fontWeight: 700, color: C.text })}
                                 {cell(d.txCount)}{cell(d.txCount ? fmt(Math.round(d.revenue / d.txCount)) : "—", { color: "#3a6ea5", fontWeight: 600 })}{hasGuests && <>{cell(d.guests || "—")}{cell(d.guests ? fmt(ticket(d.revenue, d.guests)) : "—")}</>}
-                                {cell(fmt(d.cash || 0))}{cell(fmt(d.card || 0))}{cell(d.linepay ? fmt(d.linepay) : "—", d.linepay ? undefined : { color: "#d5cbb6" })}{cell(fmt(d.uber || 0))}
+                                {cell(fmt(d.cash || 0))}{cell(fmt(d.card || 0))}{hasLinepay && cell(d.linepay ? fmt(d.linepay) : "—", d.linepay ? undefined : { color: "#d5cbb6" })}{cell(fmt(d.uber || 0))}
                                 {cell(d.discount ? fmt(d.discount) : "—", { color: d.discount ? C.accent : "#d5cbb6" })}
                                 {hasKiosk && cell(d.kiosk ? `${fmt(d.kiosk)}·${d.revenue ? Math.round(d.kiosk / d.revenue * 100) : 0}%·約${kioskTx(d)}單` : "—", d.kiosk ? { color: "#6b4a86", fontWeight: 600 } : { color: "#d5cbb6" })}
                               </div>
@@ -1318,15 +1326,15 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
                 </div>
                 ) : (
                   <div style={{ border: "1.5px solid #c8bca6", borderRadius: 8, background: C.card, overflow: "hidden" }}>
-                    <div style={{ overflowX: "auto" }}><div style={{ minWidth: (hasGuests ? 1032 : 888) + (hasKiosk ? 156 : 0) }}>
+                    <div style={{ overflowX: "auto" }}><div style={{ minWidth: (hasGuests ? 1032 : 888) + (hasKiosk ? 156 : 0) - (hasLinepay ? 0 : 96) }}>
                       {(() => {
-                        const GTC2 = "110px 56px 110px 104px 64px 76px " + (hasGuests ? "64px 80px " : "") + "100px 100px 96px 96px 84px" + (hasKiosk ? " 156px" : ""); // 加「單均」欄；沒來客資料的店隱藏來客/客單欄；2026-08-29 加 LINE Pay 欄＋自助點餐通路欄（金額·%·約單數）
+                        const GTC2 = "110px 56px 110px 104px 64px 76px " + (hasGuests ? "64px 80px " : "") + "100px 100px " + (hasLinepay ? "96px " : "") + "96px 84px" + (hasKiosk ? " 156px" : ""); // 加「單均」欄；沒來客資料的店隱藏來客/客單欄；2026-08-29 加 LINE Pay 欄＋自助點餐通路欄（金額·%·約單數）
                         const hc2 = { fontSize: 10.5, letterSpacing: 0.8, color: C.faint, fontWeight: 700, padding: "7px 8px", whiteSpace: "nowrap", textAlign: "right" };
                         const cell2 = (v, extra) => <div style={{ padding: "0 8px", fontFamily: MONOF, fontSize: 11.5, textAlign: "right", color: C.sub, ...extra }}>{v}</div>;
                         return (
                           <>
                             <div style={{ display: "grid", gridTemplateColumns: GTC2, background: C.soft, borderBottom: "1.5px solid #c8bca6" }}>
-                              <div style={{ ...hc2, textAlign: "left" }}>{posGran === "week" ? "週（起始日）" : "月份"}</div><div style={hc2}>天數</div><div style={hc2}>營收</div><div style={hc2}>日均</div><div style={hc2}>單數</div><div style={hc2}>單均</div>{hasGuests && <><div style={hc2}>來客</div><div style={hc2}>客單</div></>}<div style={hc2}>現金</div><div style={hc2}>信用卡</div><div style={hc2}>LINE Pay</div><div style={hc2}>Uber</div><div style={hc2}>折扣</div>{hasKiosk && <div style={{ ...hc2, color: "#6b4a86" }} title="自助點餐機（機台刷卡＋LINE Pay(APP)）——金額已含在信用卡/LINE Pay 內，看通路占比用；單數＝金額÷當日單均的估算值（喬亞不提供付款別筆數）">自助點餐·%·約單</div>}
+                              <div style={{ ...hc2, textAlign: "left" }}>{posGran === "week" ? "週（起始日）" : "月份"}</div><div style={hc2}>天數</div><div style={hc2}>營收</div><div style={hc2}>日均</div><div style={hc2}>單數</div><div style={hc2}>單均</div>{hasGuests && <><div style={hc2}>來客</div><div style={hc2}>客單</div></>}<div style={hc2}>現金</div><div style={hc2}>信用卡</div>{hasLinepay && <div style={hc2}>LINE Pay</div>}<div style={hc2}>Uber</div><div style={hc2}>折扣</div>{hasKiosk && <div style={{ ...hc2, color: "#6b4a86" }} title="自助點餐機（機台刷卡＋LINE Pay(APP)）——金額已含在信用卡/LINE Pay 內，看通路占比用；單數＝金額÷當日單均的估算值（喬亞不提供付款別筆數）">自助點餐·%·約單</div>}
                             </div>
                             {[...periods].reverse().map((pp, i) => (
                               <div key={pp.key} style={{ display: "grid", gridTemplateColumns: GTC2, alignItems: "center", minHeight: 32, borderTop: i ? "1px solid #f0ead9" : "none", background: i % 2 ? "#f8f4ea" : C.card }}>
@@ -1336,7 +1344,7 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
                                 {cell2(fmt(Math.round(pp.revenue / Math.max(1, pp.nDays))))}
                                 {cell2(pp.txCount)}{cell2(pp.txCount ? fmt(Math.round(pp.revenue / pp.txCount)) : "—", { color: "#3a6ea5", fontWeight: 600 })}{hasGuests && <>{cell2(pp.guests || "—")}
                                 {cell2(pp.guests ? fmt(Math.round(pp.revenue / pp.guests)) : "—")}</>}
-                                {cell2(fmt(pp.cash))}{cell2(fmt(pp.card))}{cell2(pp.linepay ? fmt(pp.linepay) : "—", pp.linepay ? undefined : { color: "#d5cbb6" })}{cell2(fmt(pp.uber))}
+                                {cell2(fmt(pp.cash))}{cell2(fmt(pp.card))}{hasLinepay && cell2(pp.linepay ? fmt(pp.linepay) : "—", pp.linepay ? undefined : { color: "#d5cbb6" })}{cell2(fmt(pp.uber))}
                                 {cell2(pp.discount ? fmt(pp.discount) : "—", { color: pp.discount ? C.accent : "#d5cbb6" })}
                                 {hasKiosk && cell2(pp.kiosk ? `${fmt(pp.kiosk)}·${pp.revenue ? Math.round(pp.kiosk / pp.revenue * 100) : 0}%·約${pp.kioskTx}單` : "—", pp.kiosk ? { color: "#6b4a86", fontWeight: 600 } : { color: "#d5cbb6" })}
                               </div>
