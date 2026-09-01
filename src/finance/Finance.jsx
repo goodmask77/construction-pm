@@ -1738,6 +1738,11 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
                   // 格子顏色＝該時段「自己期間內」的相對強弱（每列各自比，小時段的起伏也看得見）；一眼掃出成長/異常
                   const heatDates = half ? hhDates : slotDates;
                   const perDate = {}; heatDates.forEach(dt => { const m = {}; collect(dt, m); perDate[dt] = m; });
+                  // 日均分母＝「該天有營業到這時段」的天數（張良 2026-09-01：8/26 前只營業到下午 2 點，
+                  // 14:00 以後的時段拿全部天數除會被拉低）。不寫死 8/26：每天用「第一筆〜最後一筆銷售」
+                  // 當營業區間，時段落在區間內那天才算分母——之後改營業時間（提早開/延後收）也自動跟上。
+                  const actWin = {}; heatDates.forEach(dt => { const ms = Object.keys(perDate[dt]).filter(k2 => (perDate[dt][k2]?.amt || 0) > 0).map(t2m); actWin[dt] = ms.length ? [Math.min(...ms), Math.max(...ms)] : null; });
+                  const slotDays = (k) => heatDates.filter(dt => actWin[dt] && t2m(k) >= actWin[dt][0] && t2m(k) <= actWin[dt][1]).length;
                   const heatKeys = [...new Set(heatDates.flatMap(dt => Object.keys(perDate[dt])))].sort().filter(k => inWin(k) || heatDates.some(dt => (perDate[dt][k]?.amt || 0) > 0));
                   // 全日列＝打烊後正式營收（跟日報表/KPI 同一個數字＝資料一致鐵則）；時段加總與它有小差時
                   // 打「＊」＋tooltip 說明（喬亞時段表偶爾含折讓/溢收造成的幾十〜百元差，例 8/10 差 120）
@@ -1772,7 +1777,7 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
                                     );
                                   })}
                                   <td style={{ padding: "4px 7px", textAlign: "right", fontFamily: MONOF, fontSize: 10.5, fontWeight: 700, borderTop: "1px solid #f0ead9", whiteSpace: "nowrap" }}>{fmt(rowSum(k))}</td>
-                                  <td style={{ padding: "4px 7px", textAlign: "right", fontFamily: MONOF, fontSize: 10.5, color: C.sub, borderTop: "1px solid #f0ead9", whiteSpace: "nowrap" }}>{fmt(Math.round(rowSum(k) / Math.max(1, heatDates.length)))}</td>
+                                  <td title={`${slotDays(k)} 天有營業到這時段（每天第一筆〜最後一筆銷售之間算營業中）`} style={{ padding: "4px 7px", textAlign: "right", fontFamily: MONOF, fontSize: 10.5, color: C.sub, borderTop: "1px solid #f0ead9", whiteSpace: "nowrap", cursor: "help" }}>{fmt(Math.round(rowSum(k) / Math.max(1, slotDays(k))))}</td>
                                 </tr>
                               );
                             })}
@@ -1787,7 +1792,7 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
                             </tr>
                           </tbody>
                         </table>
-                        <div style={{ fontSize: 10.5, color: C.faint, padding: "5px 8px" }}>「全日」列＝打烊後正式結帳營收，跟上面日報表、期間營收 KPI 同一個數字；＊＝時段格加總與正式營收有零星小差（折讓/溢收不分時段），滑鼠移上去看差額。</div>
+                        <div style={{ fontSize: 10.5, color: C.faint, padding: "5px 8px" }}>「全日」列＝打烊後正式結帳營收，跟上面日報表、期間營收 KPI 同一個數字；＊＝時段格加總與正式營收有零星小差（折讓/溢收不分時段），滑鼠移上去看差額。日均＝只除「該天有營業到這時段」的天數（例：全天營業 8/26 開始，之前只到 14:00 的日子不算進下午時段的分母）——滑鼠移到日均看天數。</div>
                       </div>
                     );
                   };
@@ -1807,8 +1812,9 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
                       ) : keys.map(k => {
                         const a = agg[k];
                         const unitAvg = a.od ? fmt(Math.round(a.amt / a.od)) : "—";
-                        // 「日均幾單」放時間旁邊（張良 2026-08-27：依時段排人力）：單數÷期間天數（沒單的天也算＝真實每日負載）
-                        const dayAvg = a.od / Math.max(1, useDates.length);
+                        // 「日均幾單」放時間旁邊（張良 2026-08-27：依時段排人力）：分母改「有營業到該時段的天數」
+                        // （張良 2026-09-01：8/26 前只營業到下午 2 點，下午時段除全部天數會失真）；營業中沒單的天照算＝真實負載
+                        const dayAvg = a.od / Math.max(1, sel === "all" ? slotDays(k) : useDates.length);
                         const dayAvgTxt = dayAvg >= 10 ? Math.round(dayAvg) : Math.round(dayAvg * 10) / 10;
                         const tLabel = half ? `${k}-${m2t(t2m(k) + 30)}` : k;
                         const label = sel === "all" ? `${tLabel}｜日均 ${dayAvgTxt} 單` : tLabel;
