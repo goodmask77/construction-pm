@@ -100,6 +100,7 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
   const [posGran, setPosGran] = useState("day");            // 比較粒度：day/week/month
   const [posSlotDay, setPosSlotDay] = useState("all");      // 時段消費看哪天："all"=期間累計（張良 2026-08-27：要能看每天）
   const [posSlotGran, setPosSlotGran] = useState("hour");   // 時段粒度：hour=每小時 / half=半小時（快照推算，張良 2026-08-27：峰值要切半小時）
+  const [posSlotHeat, setPosSlotHeat] = useState(false);    // 時段消費逐日熱力圖（張良 2026-09-01：一天一天切下拉太麻煩，要一眼看每時段逐日變化）
   const [posHH, setPosHH] = useState({});                   // 半小時快照月檔 pm_pos_hh_YYYY-MM：{days:{date:[{t,at,rev,tx}]}}
   const [posStore, setPosStore] = useState("abeach");       // 分店切換：abeach=A Beach 101 / ground=GROUN:D（營運報表第三層）
   const [posCats, setPosCats] = useState([]);               // 標籤自選：選到的分類做比較（空＝全部）
@@ -1705,24 +1706,23 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
                   const hhDates = days.filter(d => hhOf(d.date)).map(d => d.date);
                   const half = posSlotGran === "half";
                   const useDates = half ? (sel === "all" ? hhDates : hhDates.filter(dt => dt === sel)) : (sel === "all" ? slotDates : [sel]);
-                  const agg = {};
-                  if (!half) {
-                    useDates.forEach(date => {
-                      slotOf(date).forEach(s => (s.rows || []).forEach(r => { if (!Array.isArray(r)) return; const k = String(r[0]); const o = agg[k] = agg[k] || { amt: 0, od: 0 }; o.od += Number(r[1]) || 0; o.amt += Number(r[r.length - 1]) || 0; }));
-                    });
-                  } else {
-                    useDates.forEach(date => {
+                  // 單日彙總抽成共用（期間累計＝逐日相加；熱力圖＝逐日各自一欄）
+                  const collect = (date, m) => {
+                    const add = (k, amt, od) => { const o = m[k] = m[k] || { amt: 0, od: 0 }; o.amt += amt; o.od += od; };
+                    if (!half) {
+                      slotOf(date).forEach(s => (s.rows || []).forEach(r => { if (!Array.isArray(r)) return; add(String(r[0]), Number(r[r.length - 1]) || 0, Number(r[1]) || 0); }));
+                    } else {
                       const snaps = [...hhOf(date)].sort((a, b) => t2m(a.t) - t2m(b.t));
                       if (snaps[0] && snaps[0].t !== "11:00" && (Number(snaps[0].rev) || 0) > 0) snaps.unshift({ t: m2t(t2m(snaps[0].t) - 30), rev: 0, tx: 0 }); // 第一張快照前視為 0（開店前沒營收）
                       for (let i = 1; i < snaps.length; i++) {
                         const amt = (Number(snaps[i].rev) || 0) - (Number(snaps[i - 1].rev) || 0), od = (Number(snaps[i].tx) || 0) - (Number(snaps[i - 1].tx) || 0);
                         if (amt < 0 || od < 0) continue; // 快照倒退（理論上不會）保守跳過
-                        const k = snaps[i - 1].t; // 半小時格用「起始時間」當 key：11:30 = 11:30〜12:00
-                        const o = agg[k] = agg[k] || { amt: 0, od: 0 };
-                        o.amt += amt; o.od += od;
+                        add(snaps[i - 1].t, amt, od); // 半小時格用「起始時間」當 key：11:30 = 11:30〜12:00
                       }
-                    });
-                  }
+                    }
+                  };
+                  const agg = {};
+                  useDates.forEach(date => collect(date, agg));
                   // 只顯示營業時段列（張良 2026-08-27：營業 11-19，9/10/19 點零星舊資料隱藏）；半小時模式含 19:00〜19:30 結帳尾
                   const keys = Object.keys(agg).sort().filter(k => { const m = t2m(k); return m >= 660 && m < (half ? 1170 : 1140); });
                   const dLabel = (dt) => dt.slice(2) + "（" + WD2[new Date(dt + "T00:00:00").getDay()] + "）";
@@ -1730,17 +1730,68 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
                   const granBtn = (v, l) => (
                     <button key={v} onClick={() => setPosSlotGran(v)} style={{ padding: "4px 9px", borderRadius: 6, border: `1px solid ${posSlotGran === v ? C.line : "transparent"}`, background: posSlotGran === v ? "#fff" : "transparent", color: posSlotGran === v ? C.text : C.sub, fontSize: 12, fontWeight: posSlotGran === v ? 700 : 400, cursor: "pointer" }}>{l}</button>
                   );
+                  // 📅 逐日熱力圖（張良 2026-09-01：切下拉一天一天看太麻煩）：列＝時段、欄＝日期、
+                  // 格子顏色＝該時段「自己期間內」的相對強弱（每列各自比，小時段的起伏也看得見）；一眼掃出成長/異常
+                  const heatDates = half ? hhDates : slotDates;
+                  const perDate = {}; heatDates.forEach(dt => { const m = {}; collect(dt, m); perDate[dt] = m; });
+                  const heatKeys = [...new Set(heatDates.flatMap(dt => Object.keys(perDate[dt])))].sort().filter(k => { const m = t2m(k); return m >= 660 && m < (half ? 1170 : 1140); });
+                  const heatBody = () => {
+                    const rowMax = {}; heatKeys.forEach(k => { rowMax[k] = Math.max(1, ...heatDates.map(dt => perDate[dt][k]?.amt || 0)); });
+                    const rowSum = (k) => heatDates.reduce((t, dt) => t + (perDate[dt][k]?.amt || 0), 0);
+                    const dayTot = (dt) => heatKeys.reduce((t, k) => t + (perDate[dt][k]?.amt || 0), 0);
+                    const hh3 = { padding: "5px 7px", textAlign: "right", fontWeight: 700, fontSize: 10.5, color: C.sub, whiteSpace: "nowrap", fontFamily: MONOF };
+                    const isWE = (dt) => { const g = new Date(dt + "T00:00:00").getDay(); return g === 0 || g === 6; };
+                    return (
+                      <div style={{ overflowX: "auto", border: `1px solid ${C.line}`, borderRadius: 8, background: "#fff" }}>
+                        <table style={{ borderCollapse: "collapse", fontSize: 11, minWidth: "100%" }}>
+                          <thead><tr style={{ background: C.head }}>
+                            <th style={{ ...hh3, textAlign: "left", position: "sticky", left: 0, background: C.head, zIndex: 1 }}>時段</th>
+                            {heatDates.map(dt => <th key={dt} style={{ ...hh3, color: isWE(dt) ? C.amber : C.sub }}>{Number(dt.slice(5, 7)) + "/" + Number(dt.slice(8))}<br />{WD2[new Date(dt + "T00:00:00").getDay()]}</th>)}
+                            <th style={hh3}>累計</th><th style={hh3}>日均</th>
+                          </tr></thead>
+                          <tbody>
+                            {heatKeys.map(k => {
+                              const tl = half ? `${k}-${m2t(t2m(k) + 30)}` : k;
+                              return (
+                                <tr key={k}>
+                                  <td style={{ padding: "4px 7px", fontFamily: MONOF, fontWeight: 700, fontSize: 11, whiteSpace: "nowrap", position: "sticky", left: 0, background: "#fff", borderTop: "1px solid #f0ead9" }}>{tl}</td>
+                                  {heatDates.map(dt => {
+                                    const c = perDate[dt][k]; const amt = c?.amt || 0; const ratio = amt / rowMax[k];
+                                    return (
+                                      <td key={dt} title={`${dLabel(dt)} ${tl}：NT$${fmt(amt)}・${c?.od || 0} 單`}
+                                        style={{ padding: "4px 7px", textAlign: "right", fontFamily: MONOF, fontSize: 10.5, whiteSpace: "nowrap", borderTop: "1px solid #f0ead9", background: amt > 0 ? `rgba(58,110,165,${(0.06 + 0.72 * ratio).toFixed(2)})` : "transparent", color: amt > 0 ? (ratio > 0.55 ? "#fff" : C.text) : C.faint, fontWeight: ratio > 0.85 ? 800 : 400 }}>
+                                        {amt > 0 ? fmt(amt) : "—"}
+                                      </td>
+                                    );
+                                  })}
+                                  <td style={{ padding: "4px 7px", textAlign: "right", fontFamily: MONOF, fontSize: 10.5, fontWeight: 700, borderTop: "1px solid #f0ead9", whiteSpace: "nowrap" }}>{fmt(rowSum(k))}</td>
+                                  <td style={{ padding: "4px 7px", textAlign: "right", fontFamily: MONOF, fontSize: 10.5, color: C.sub, borderTop: "1px solid #f0ead9", whiteSpace: "nowrap" }}>{fmt(Math.round(rowSum(k) / Math.max(1, heatDates.length)))}</td>
+                                </tr>
+                              );
+                            })}
+                            <tr style={{ background: C.head }}>
+                              <td style={{ padding: "4px 7px", fontWeight: 800, fontSize: 10.5, position: "sticky", left: 0, background: C.head, whiteSpace: "nowrap" }}>全日</td>
+                              {heatDates.map(dt => <td key={dt} style={{ padding: "4px 7px", textAlign: "right", fontFamily: MONOF, fontSize: 10.5, fontWeight: 700, whiteSpace: "nowrap" }}>{fmt(dayTot(dt))}</td>)}
+                              <td style={{ padding: "4px 7px", textAlign: "right", fontFamily: MONOF, fontSize: 10.5, fontWeight: 800, whiteSpace: "nowrap" }}>{fmt(heatDates.reduce((t, dt) => t + dayTot(dt), 0))}</td>
+                              <td style={{ padding: "4px 7px", textAlign: "right", fontFamily: MONOF, fontSize: 10.5, color: C.sub, whiteSpace: "nowrap" }}>{fmt(Math.round(heatDates.reduce((t, dt) => t + dayTot(dt), 0) / Math.max(1, heatDates.length)))}</td>
+                            </tr>
+                          </tbody>
+                        </table>
+                      </div>
+                    );
+                  };
                   return (
                     <div style={{ ...chartBox2, marginBottom: 10 }}>
                       <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 8 }}>
-                        <div style={{ fontSize: 11.5, fontWeight: 700, color: C.sub }}>⏰ 時段消費（{sel === "all" ? `期間累計・${useDates.length} 天` : dLabel(sel)}）<span style={{ fontWeight: 400, color: C.faint }}>　{sel === "all" ? "每列＝時間｜日均幾單 → 營業額｜共幾單・單均" : "每列＝營業額｜單數・單均"}；營業 11:00-19:00</span></div>
+                        <div style={{ fontSize: 11.5, fontWeight: 700, color: C.sub }}>⏰ 時段消費（{posSlotHeat ? `逐日變化・${heatDates.length} 天` : sel === "all" ? `期間累計・${useDates.length} 天` : dLabel(sel)}）<span style={{ fontWeight: 400, color: C.faint }}>　{posSlotHeat ? "列＝時段、欄＝日期；顏色越深＝該時段當期越好（每列各自比）" : sel === "all" ? "每列＝時間｜日均幾單 → 營業額｜共幾單・單均" : "每列＝營業額｜單數・單均"}；營業 11:00-19:00</span></div>
                         <div style={{ display: "inline-flex", background: C.soft, border: `1px solid ${C.line}`, borderRadius: 8, padding: 2, gap: 2 }}>{granBtn("hour", "每小時")}{granBtn("half", "半小時")}</div>
-                        <select value={sel} onChange={e => setPosSlotDay(e.target.value)} style={{ border: `1px solid ${C.line}`, borderRadius: 8, padding: "4px 8px", fontSize: 12, background: "#fff", color: C.text, cursor: "pointer" }}>
+                        <button onClick={() => setPosSlotHeat(!posSlotHeat)} style={{ border: `1.5px dashed ${posSlotHeat ? C.brand : C.line}`, background: posSlotHeat ? C.brand : "#fff", color: posSlotHeat ? "#fff" : C.sub, borderRadius: 13, padding: "3px 11px", fontSize: 11.5, fontWeight: 700, cursor: "pointer" }}>📅 逐日</button>
+                        {!posSlotHeat && <select value={sel} onChange={e => setPosSlotDay(e.target.value)} style={{ border: `1px solid ${C.line}`, borderRadius: 8, padding: "4px 8px", fontSize: 12, background: "#fff", color: C.text, cursor: "pointer" }}>
                           <option value="all">期間累計（全部天）</option>
                           {[...(half ? hhDates : slotDates)].reverse().map(dt => <option key={dt} value={dt}>{dLabel(dt)}</option>)}
-                        </select>
+                        </select>}
                       </div>
-                      {half && !keys.length ? (
+                      {posSlotHeat ? (heatKeys.length ? heatBody() : <div style={{ fontSize: 12, color: C.faint, padding: "10px 2px" }}>{half ? "半小時資料從 2026-08-28 開始累積——之前的日子只有每小時可看。" : "期間內沒有時段資料。"}</div>) : half && !keys.length ? (
                         <div style={{ fontSize: 12, color: C.faint, padding: "10px 2px" }}>半小時資料從 2026-08-28 開始累積（喬亞 POS 只提供每小時，半小時是系統每 30 分鐘記快照相減算出來的）——之前的日子只有每小時可看。</div>
                       ) : keys.map(k => {
                         const a = agg[k];
