@@ -508,6 +508,15 @@ async function loadTasksText() {
       if ((t.tags || []).length) bits.push(`#${t.tags.join(' #')}`)
       lines.push('  - ' + bits.join('｜'))
     })
+    // 其他空間的任務中心（張良 2026-09-01：D哥能 add_task 到團隊/夥伴/財務空間了，讀也要跟上——
+    // 不然「記了但問他又說沒有」重演；100%資料鐵則）。各空間任務獨立，用標題分開列。
+    for (const [nm, pfx] of [['團隊工作', 'sp_team_'], ['夥伴中心', 'sp_crew_'], ['財務報表', 'sp_finance_']]) {
+      const ts2 = await kvGetPrefix(pfx + 'pm_task_')
+      if (!ts2.length) continue
+      ts2.sort((a, b) => (a.ord ?? 0) - (b.ord ?? 0))
+      lines.push(`\n\n【${nm}空間的任務中心（共 ${ts2.length} 件；add_task 帶 "space":"${nm.slice(0, 2)}" 可新增到這裡）】`)
+      ts2.forEach(t => lines.push(`  - ${t.pinned ? '📌' : ''}[${SL[t.status] || t.status}] ${t.title}${t.due ? `｜截止${t.due}` : ''}${t.owner ? `｜負責:${t.owner}` : ''}${(t.tags || []).length ? `｜#${t.tags.join(' #')}` : ''}`))
+    }
     return lines.join('\n')
   } catch (_) { return '' }
 }
@@ -808,7 +817,7 @@ function describeAction(a) {
     case 'set_item': case 'set_item_status': return `更新「${a.category || '?'}／${a.item || a.itemName || '?'}」${a.status ? ` 狀態→${a.status}` : ''}`
     case 'delete_item': return `刪除「${a.category || '?'}」的細項「${a.item || a.itemName || '?'}」`
     case 'add_payment': return `「${a.category || '?'}」新增付款 ${fmtNT(a.amount)}`
-    case 'add_todo': case 'add_task': return `新增任務「${a.desc || a.content || a.title || '?'}」${a.category ? `（歸到 ${a.category}）` : ''}${a.due ? `（交期 ${a.due}）` : ''}${a.owner ? `（負責:${a.owner}）` : ''}${a.estimatedMinutes ? `（預估${a.estimatedMinutes}分）` : ''}`
+    case 'add_todo': case 'add_task': return `新增任務「${a.desc || a.content || a.title || '?'}」${a.space && a.space !== '工程' ? `（→${a.space}空間）` : ''}${a.category ? `（歸到 ${a.category}）` : ''}${a.due ? `（交期 ${a.due}）` : ''}${a.owner ? `（負責:${a.owner}）` : ''}${a.estimatedMinutes ? `（預估${a.estimatedMinutes}分）` : ''}`
     case 'update_task': { const ks = ['status', 'owner', 'waitingFor', 'estimatedMinutes', 'dependsOn', 'due', 'start', 'priority', 'category', 'tags', 'note', 'newTitle'].filter(k => a[k] !== undefined); return `更新任務「${a.task || a.title || '?'}」→ 改 ${ks.join('、') || '?'}` }
     case 'add_conclusion': return `新增公開結論：「${a.topic || a.title || '?'}」→ ${(a.conclusion || a.text || a.content || '').slice(0, 30)}`
     case 'add_petty_spend': return `記零用金花費 ${fmtNT(a.amount)}「${a.content || a.note || ''}」`
@@ -866,6 +875,25 @@ async function executeActions(actions, operator) {
       } else if (t === 'add_todo' || t === 'add_task') {
         // ToDo 已併入「任務中心」(pm_tasks)，所以寫到 tasks，App才看得到
         const title = a.desc || a.content || a.title || ''
+        // 跨空間新增（張良 2026-09-01：14 筆要進「團隊工作」卻被記到工程——以前只會寫工程空間）：
+        // space=工程(預設)/團隊/夥伴/財務 → 各空間任務一筆一檔 sp_<id>_pm_task_*，直接寫該空間、進收件匣
+        const SPACE_PFX = { 工程: '', 團隊: 'sp_team_', 夥伴: 'sp_crew_', 財務: 'sp_finance_' }
+        const spName = Object.keys(SPACE_PFX).find(k => String(a.space || '').includes(k)) || '工程'
+        if (SPACE_PFX[spName]) {
+          const pfx = SPACE_PFX[spName]
+          const others = await kvGetPrefix(pfx + 'pm_task_') // 只為算 ord（新任務排最前，跟 App 一致）
+          let mo = 0; others.forEach(x => { if (typeof x.ord === 'number' && x.ord < mo) mo = x.ord })
+          const nid = 't-' + bid('')
+          const ex2 = {}
+          if (a.owner !== undefined) ex2.owner = a.owner
+          if (a.waitingFor !== undefined) ex2.waitingFor = a.waitingFor
+          if (a.estimatedMinutes !== undefined) ex2.estimatedMinutes = a.estimatedMinutes
+          if (a.pinned !== undefined) ex2.pinned = a.pinned
+          const np2 = normalizePatch(ex2, nid, others)
+          await kvSet(pfx + 'pm_task_' + nid, { id: nid, title, note: '', status: 'todo', catId: '__inbox__', start: '', due: a.due || '', priority: TASK_PRIO[a.priority] || (a.urgent ? 'urgent' : 'normal'), tags: Array.isArray(a.tags) ? normalizePatch({ tags: a.tags }).tags : [], ord: mo - 1, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), ...np2 })
+          results.push(`📝 新增任務「${title.slice(0, 20)}」→ ${spName}空間·收件匣`); audits.push([pfx + 'pm_activity', '新增', `新增任務「${title.slice(0, 20)}」（D哥跨空間）`])
+          continue
+        }
         const tc = a.category ? findCat(cats, a.category) : null
         const newId = 't-' + bid('')
         // Task v2 選填欄位：只納入 Bot 有提供的 key，經 normalizePatch（trim/去重/循環防護/estimate驗證）
@@ -1083,8 +1111,8 @@ const BOT_AGENT_GUIDE = `
 {"actions":[ ... ]}
 \`\`\`
 可用指令：
-- {"type":"add_task","desc":"買水泥3包","category":"消防工程","due":"2026-06-25","owner":"阿哲","waitingFor":"等木工","estimatedMinutes":15,"dependsOn":["確認交期"],"tags":["採購"]}  // 加任務到「任務中心」。owner=負責人、waitingFor=在等誰/什麼、estimatedMinutes=預估分鐘(正整數)、dependsOn=依賴的任務(填任務標題)。全部選填(可省略)；category省略→進收件匣。(「加待辦」也用這個)
-- {"type":"update_task","task":"買水泥","status":"完成","owner":"阿哲","waitingFor":"","estimatedMinutes":30,"dependsOn":[],"pinned":true,"due":"2026-07-20","category":"消防工程","priority":"高","tags":["採購"],"note":"...","newTitle":"..."}  // 更新既有任務；task=用標題找。⚠️只帶「要改的欄位」，沒帶的欄位絕不要帶(會保留原值)；waitingFor 給 ""=清除等待、dependsOn 給 []=清空依賴。狀態:待辦/進行中/完成
+- {"type":"add_task","desc":"買水泥3包","space":"工程","category":"消防工程","due":"2026-06-25","owner":"阿哲","waitingFor":"等木工","estimatedMinutes":15,"dependsOn":["確認交期"],"tags":["採購"]}  // 加任務到「任務中心」。space=記到哪個空間：工程(預設)/團隊/夥伴/財務——使用者說「記到團隊工作」就帶"space":"團隊"，各空間任務各自獨立；空間≠工程時 category/dependsOn 無效(一律進該空間收件匣)。owner=負責人、waitingFor=在等誰/什麼、estimatedMinutes=預估分鐘(正整數)、dependsOn=依賴的任務(填任務標題)。全部選填(可省略)；category省略→進收件匣。(「加待辦」也用這個)
+- {"type":"update_task","task":"買水泥","status":"完成","owner":"阿哲","waitingFor":"","estimatedMinutes":30,"dependsOn":[],"pinned":true,"due":"2026-07-20","category":"消防工程","priority":"高","tags":["採購"],"note":"...","newTitle":"..."}  // 更新既有任務（目前僅限工程空間的任務；別的空間要改請去 App）；task=用標題找。⚠️只帶「要改的欄位」，沒帶的欄位絕不要帶(會保留原值)；waitingFor 給 ""=清除等待、dependsOn 給 []=清空依賴。狀態:待辦/進行中/完成
 - {"type":"add_conclusion","topic":"開幕日","conclusion":"8/10 開幕","reason":"","category":""}  // 加一條「公開結論」(團隊定案)；topic=主題、conclusion=定案內容
 - {"type":"add_log","content":"今天水電進場拉管線","date":"2026-06-22"}  // 工作日誌；date 可省略(預設今天)
 - {"type":"add_petty_spend","amount":390,"content":"工人便當","category":"水電工程"}  // 記零用金花費；category 是歸到哪個工種(可省略)

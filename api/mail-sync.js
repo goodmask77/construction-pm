@@ -319,6 +319,28 @@ export default async function handler(req, res) {
     await announceChanged() // 開著的網頁即刻自動跟上
     return res.status(200).json({ ok: true, ...out2 })
   }
+  // 任務搬移口（同金鑰，張良 2026-09-01：D哥把 14 筆記到工程空間，要搬到團隊工作）：
+  // ?taskmove=<key>&from=ISO&to=ISO[&dry=1] → 把工程空間收件匣、createdAt 落在 [from,to] 的任務
+  // 搬到團隊工作空間（sp_team_pm_task_*），原工程檔刪除。dry=1 只列清單不動資料，先看再搬。
+  if (req.query?.taskmove) {
+    const mk = (process.env.MENU_PROBE_KEY || '').trim()
+    if (!mk || String(req.query.taskmove) !== mk) return res.status(403).json({ ok: false })
+    const from = String(req.query.from || ''), to = String(req.query.to || '')
+    if (!from || !to) return res.status(400).json({ ok: false, error: '要帶 from=ISO&to=ISO（比對任務 createdAt）' })
+    // 撈工程空間逐筆任務：LIKE 的 _ 是萬用字元會誤匹配（pm_tasks）→ 用範圍過濾（'`'＝'_'+1，pm_tasks 的 s 在範圍外）
+    const r = await fetch(`${SB_URL}/rest/v1/pm_documents?id=gte.pm_task_&id=lt.pm_task%60&select=id,data`, { headers: { apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}` } })
+    const rows = r.ok ? await r.json() : []
+    const all = []
+    rows.forEach((row) => { try { const t = JSON.parse(row.data.v); if (t && t.id) all.push({ key: row.id, t }) } catch (_) {} })
+    const hit = all.filter(({ t }) => t.catId === '__inbox__' && t.createdAt >= from && t.createdAt <= to)
+    if (String(req.query.dry || '')) return res.status(200).json({ ok: true, dry: true, n: hit.length, tasks: hit.map(({ t }) => ({ id: t.id, title: t.title, createdAt: t.createdAt, tags: t.tags })) })
+    for (const { key, t } of hit) {
+      await kvPut('sp_team_pm_task_' + t.id, t, '任務搬移口')
+      await fetch(`${SB_URL}/rest/v1/pm_documents?id=eq.${encodeURIComponent(key)}`, { method: 'DELETE', headers: { apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}` } })
+    }
+    await announceChanged()
+    return res.status(200).json({ ok: true, moved: hit.length, titles: hit.map(({ t }) => t.title) })
+  }
   // 清理口（同金鑰）：?delday=<key>&date=YYYY-MM-DD&store=ground → 刪該日摘要＋明細（只用於清誤入資料，例：公休0元日）
   if (req.query?.delday) {
     const mk = (process.env.MENU_PROBE_KEY || '').trim()
