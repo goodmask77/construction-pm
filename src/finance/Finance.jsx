@@ -1741,7 +1741,17 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
                   // 日均分母＝「該天有營業到這時段」的天數（張良 2026-09-01：8/26 前只營業到下午 2 點，
                   // 14:00 以後的時段拿全部天數除會被拉低）。不寫死 8/26：每天用「第一筆〜最後一筆銷售」
                   // 當營業區間，時段落在區間內那天才算分母——之後改營業時間（提早開/延後收）也自動跟上。
-                  const actWin = {}; heatDates.forEach(dt => { const ms = Object.keys(perDate[dt]).filter(k2 => (perDate[dt][k2]?.amt || 0) > 0).map(t2m); actWin[dt] = ms.length ? [Math.min(...ms), Math.max(...ms)] : null; });
+                  const actWin = {}; heatDates.forEach(dt => {
+                    const ms = Object.keys(perDate[dt]).filter(k2 => (perDate[dt][k2]?.amt || 0) > 0).map(t2m).sort((a, b) => a - b);
+                    if (!ms.length) { actWin[dt] = null; return; }
+                    // 切塊（張良 2026-09-01：8/10 試營運中午收攤、晚上又冒 50/20 兩小筆，不能因此把那天當「營業到晚上」）：
+                    // 相鄰有賣時段隔超過 120 分鐘＝斷開，取金額最大的那塊當營業區間——零星塊的格子照顯示、累計照算，只是不撐大日均分母
+                    const blocks = [[ms[0]]];
+                    for (let i = 1; i < ms.length; i++) { if (ms[i] - ms[i - 1] > 120) blocks.push([]); blocks[blocks.length - 1].push(ms[i]); }
+                    const amtOf = (b) => b.reduce((t, m3) => t + (perDate[dt][m2t(m3)]?.amt || 0), 0);
+                    const main = blocks.reduce((best, b) => amtOf(b) > amtOf(best) ? b : best, blocks[0]);
+                    actWin[dt] = [main[0], main[main.length - 1]];
+                  });
                   const slotDays = (k) => heatDates.filter(dt => actWin[dt] && t2m(k) >= actWin[dt][0] && t2m(k) <= actWin[dt][1]).length;
                   const heatKeys = [...new Set(heatDates.flatMap(dt => Object.keys(perDate[dt])))].sort().filter(k => inWin(k) || heatDates.some(dt => (perDate[dt][k]?.amt || 0) > 0));
                   // 全日列＝打烊後正式營收（跟日報表/KPI 同一個數字＝資料一致鐵則）；時段加總與它有小差時
