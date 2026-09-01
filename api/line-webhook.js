@@ -178,7 +178,12 @@ async function registerGroup(gid, src) {
   if (!gid) return
   const cur = (await kvGetMany(['pm_group_seen']))['pm_group_seen'] || {}
   const g = cur[gid] || {}
-  cur[gid] = { ...g, lastActive: new Date().toISOString(), count: (g.count || 0) + 1, src: src || g.src }
+  // 群名沒記過就跟 LINE 要一次（群組訊息流/回收通知都要靠它顯示人看得懂的群名）
+  let name = g.name || ''
+  if (!name) {
+    try { const r = await fetch(`https://api.line.me/v2/bot/group/${gid}/summary`, { headers: { authorization: `Bearer ${TOKEN}` } }); if (r.ok) name = (await r.json()).groupName || '' } catch (_) {}
+  }
+  cur[gid] = { ...g, ...(name ? { name } : {}), lastActive: new Date().toISOString(), count: (g.count || 0) + 1, src: src || g.src }
   await kvSet('pm_group_seen', cur)
 }
 
@@ -732,11 +737,11 @@ async function loadFilelibText() {
   } catch (_) { return '' }
 }
 
-async function answer(question, snaps, accountsText, financeText, activityText, estimatesText, crewText, canAct, history, memoryText, conclusionsText, tasksText, sheetText, posText, catalogText, supplyText, lineQuotaText, filelibText, moneyOK = true) {
+async function answer(question, snaps, accountsText, financeText, activityText, estimatesText, crewText, canAct, history, memoryText, conclusionsText, tasksText, sheetText, posText, catalogText, supplyText, lineQuotaText, filelibText, groupChatText, moneyOK = true) {
   if (!ANTHROPIC) return '（D哥的 AI 金鑰尚未設定。）'
   // 外部群（moneyOK=false）：不給任何金額/財務資料，並下鐵令禁止透露
   const moneyGuard = moneyOK ? '' : '\n\n⚠️【外部群鐵律】這個群是「外部群」，你**絕對禁止**透露任何：金額、預估/已付/未付、單價、報價、成本、營業額、銀行/帳戶餘額、零用金、財務數字、薪資。被問到金額類一律回「這部分金額不方便在這裡提供，我私下跟張哥確認 🙏」，不要旁敲側擊地洩漏。你可以講進度、工序、一般事務、用 web_search 查一般問題。'
-  const system = (canAct ? BOT_AGENT_GUIDE + '\n\n' : '') + BOT_PERSONA + moneyGuard + (memoryText || '') + SYS_DATA_HEAD + snapshotsToContext(snaps, moneyOK) + (tasksText || '') + (moneyOK ? (accountsText || '') : '') + (moneyOK ? (financeText || '') : '') + (activityText || '') + (moneyOK ? (estimatesText || '') : '') + (crewText || '') + (conclusionsText || '') + (sheetText || '') + (moneyOK ? (posText || '') : '') + (moneyOK ? (supplyText || '') : '') + (lineQuotaText || '') + (catalogText || '') + (filelibText || '')
+  const system = (canAct ? BOT_AGENT_GUIDE + '\n\n' : '') + BOT_PERSONA + moneyGuard + (memoryText || '') + SYS_DATA_HEAD + snapshotsToContext(snaps, moneyOK) + (tasksText || '') + (moneyOK ? (accountsText || '') : '') + (moneyOK ? (financeText || '') : '') + (activityText || '') + (moneyOK ? (estimatesText || '') : '') + (crewText || '') + (conclusionsText || '') + (sheetText || '') + (moneyOK ? (posText || '') : '') + (moneyOK ? (supplyText || '') : '') + (lineQuotaText || '') + (catalogText || '') + (filelibText || '') + (moneyOK ? (groupChatText || '') : '')
   const messages = [...(Array.isArray(history) ? history : []), { role: 'user', content: question }]
   const callModel = async (model) => {
     const r = await fetch('https://api.anthropic.com/v1/messages', {
@@ -931,14 +936,34 @@ async function getOperators() { return asObj((await kvGetMany(['pm_bot_operators
 async function addOperator(userId, name) { const ops = await getOperators(); ops[userId] = { name: name || '操作者', ts: new Date().toISOString() }; await kvSet('pm_bot_operators', ops); return ops[userId] }
 async function getPending(userId) { const all = asObj((await kvGetMany(['pm_bot_confirm']))['pm_bot_confirm']); const p = all[userId]; if (!p) return null; if (Date.now() - new Date(p.ts).getTime() > 10 * 60000) return null; return p }
 async function setPending(userId, val) { const all = asObj((await kvGetMany(['pm_bot_confirm']))['pm_bot_confirm']); if (val) all[userId] = val; else delete all[userId]; await kvSet('pm_bot_confirm', all) }
-// ── 回收訊息監控：群訊息滾動快取，有人回收 → 私訊老闆（第一位授權操作者）──
+// ── 回收訊息監控＋群訊息流：群訊息滾動快取（回收監控用；同時餵給 DD 當「群組對話紀錄」能整理會議）──
 async function cacheGroupMsg(ev) {
   try {
     const cache = asObj((await kvGetMany(['pm_bot_msgcache']))['pm_bot_msgcache'])
     const list = Array.isArray(cache.list) ? cache.list : []
-    list.push({ id: ev.message.id, gid: ev.source?.groupId || ev.source?.roomId || '', uid: ev.source?.userId || '', text: (ev.message.text || '').slice(0, 300), ts: ev.timestamp || Date.now() })
-    await kvSet('pm_bot_msgcache', { list: list.slice(-300) })
+    const names = asObj(cache.names)
+    const uid = ev.source?.userId || ''
+    if (uid && !names[uid]) names[uid] = (await getLineProfile(uid)) || uid.slice(-6) // 顯示名稱每人只查一次、之後重用
+    list.push({ id: ev.message.id, gid: ev.source?.groupId || ev.source?.roomId || '', uid, text: (ev.message.text || '').slice(0, 300), ts: ev.timestamp || Date.now() })
+    await kvSet('pm_bot_msgcache', { list: list.slice(-600), names })
   } catch (_) {}
+}
+// 群組訊息流 → 文字（餵給 DD：整理會議、答「昨天某群誰講了什麼」。LINE 不給抓歷史，只有 DD 在場聽到的才有）
+async function loadGroupChatText() {
+  try {
+    const m = await kvGetMany(['pm_bot_msgcache', 'pm_group_seen'])
+    const cache = asObj(m['pm_bot_msgcache'])
+    const list = Array.isArray(cache.list) ? cache.list : []
+    if (!list.length) return ''
+    const names = asObj(cache.names)
+    const seen = asObj(m['pm_group_seen'])
+    const gname = (gid) => (seen[gid] && seen[gid].name) || ('群…' + String(gid).slice(-4))
+    const fmtT = (ts) => new Date(ts).toLocaleString('zh-TW', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Taipei' })
+    const recent = list.slice(-300)
+    const lines = [`\n\n【群組訊息流（你在場的群最近 ${recent.length} 則原文，台北時間 月/日 時:分。被要求「整理會議/重點/採購清單」「昨天某群講了什麼」就用這份，別再說讀不到群組訊息）】`]
+    recent.forEach(x => lines.push(`  - ${fmtT(x.ts)}｜${gname(x.gid)}｜${names[x.uid] || '成員'}：${x.text}`))
+    return lines.join('\n')
+  } catch (_) { return '' }
 }
 async function handleUnsend(ev) {
   try {
@@ -1282,8 +1307,8 @@ export default async function handler(req, res) {
         moneyOK = (gid === 'Cf7940efc6517b0c084ad2ad496b45f30') || (gcfg[gid] && gcfg[gid].money === true)
       }
       // 3) 一般流程：載入資料＋對話記憶＋長期記事本 → 問 AI（操作者才開放下指令）
-      const [snaps, accountsText, financeText, activityText, estimatesText, crewText, history, memList, conclusionsText, tasksText, sheetText, posText, catalogText, supplyText, lineQuotaText, filelibText] = await Promise.all([loadSnapshots(), loadAccounts(), loadFinanceText(), loadActivityText(), loadEstimatesText(), Promise.all([loadCrewText(), loadShiftText(), loadPunchText()]).then(([a, b, c]) => a + b + c), getChatHistory(convId), getMemory(), loadConclusionsText(), loadTasksText(), loadSheetText(), loadPosText(), loadCatalogText(), loadSupplyText(), loadLineQuotaText(), loadFilelibText()])
-      const rawReply = await answer(text, snaps, accountsText, financeText, activityText, estimatesText, crewText, canAct, history, memoryToText(memList), conclusionsText, tasksText, sheetText, posText, catalogText, supplyText, lineQuotaText, filelibText, moneyOK)
+      const [snaps, accountsText, financeText, activityText, estimatesText, crewText, history, memList, conclusionsText, tasksText, sheetText, posText, catalogText, supplyText, lineQuotaText, filelibText, groupChatText] = await Promise.all([loadSnapshots(), loadAccounts(), loadFinanceText(), loadActivityText(), loadEstimatesText(), Promise.all([loadCrewText(), loadShiftText(), loadPunchText()]).then(([a, b, c]) => a + b + c), getChatHistory(convId), getMemory(), loadConclusionsText(), loadTasksText(), loadSheetText(), loadPosText(), loadCatalogText(), loadSupplyText(), loadLineQuotaText(), loadFilelibText(), loadGroupChatText()])
+      const rawReply = await answer(text, snaps, accountsText, financeText, activityText, estimatesText, crewText, canAct, history, memoryToText(memList), conclusionsText, tasksText, sheetText, posText, catalogText, supplyText, lineQuotaText, filelibText, groupChatText, moneyOK)
       // 抓出 D 想長期記住的事（[[記住:...]]）→ 存進記事本(僅操作者)，並把標記從給人看的文字拿掉
       const { facts, clean } = extractMemoryTags(rawReply)
       if (canAct && facts.length) { for (const f of facts) await addMemory(f, 'auto', op?.name) }
