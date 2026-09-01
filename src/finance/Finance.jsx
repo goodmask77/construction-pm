@@ -1723,8 +1723,12 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
                   };
                   const agg = {};
                   useDates.forEach(date => collect(date, agg));
-                  // 只顯示營業時段列（張良 2026-08-27：營業 11-19，9/10/19 點零星舊資料隱藏）；半小時模式含 19:00〜19:30 結帳尾
-                  const keys = Object.keys(agg).sort().filter(k => { const m = t2m(k); return m >= 660 && m < (half ? 1170 : 1140); });
+                  // 顯示哪些時段列：營業時段（11-19）一律顯示；範圍外（9/10/19 點）只要真的有金額也要顯示——
+                  // 張良 2026-09-01：時段累計 364,037 vs 日報表 374,052 對不上，向喬亞抓真值核對＝差額全是
+                  // 10 點/19 點的真實營收（提早開店賣的、最後一批結帳），以前當「零星舊資料」整列藏掉
+                  // 又沒算進全日 → 藏列可以、藏錢不行。0 元的範圍外列（9:00 常見）照舊隱藏。
+                  const inWin = (k) => { const m = t2m(k); return m >= 660 && m < (half ? 1170 : 1140); };
+                  const keys = Object.keys(agg).sort().filter(k => inWin(k) || agg[k].amt > 0);
                   const dLabel = (dt) => dt.slice(2) + "（" + WD2[new Date(dt + "T00:00:00").getDay()] + "）";
                   const mx = Math.max(1, ...keys.map(k => agg[k].amt));
                   const granBtn = (v, l) => (
@@ -1734,7 +1738,10 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
                   // 格子顏色＝該時段「自己期間內」的相對強弱（每列各自比，小時段的起伏也看得見）；一眼掃出成長/異常
                   const heatDates = half ? hhDates : slotDates;
                   const perDate = {}; heatDates.forEach(dt => { const m = {}; collect(dt, m); perDate[dt] = m; });
-                  const heatKeys = [...new Set(heatDates.flatMap(dt => Object.keys(perDate[dt])))].sort().filter(k => { const m = t2m(k); return m >= 660 && m < (half ? 1170 : 1140); });
+                  const heatKeys = [...new Set(heatDates.flatMap(dt => Object.keys(perDate[dt])))].sort().filter(k => inWin(k) || heatDates.some(dt => (perDate[dt][k]?.amt || 0) > 0));
+                  // 全日列＝打烊後正式營收（跟日報表/KPI 同一個數字＝資料一致鐵則）；時段加總與它有小差時
+                  // 打「＊」＋tooltip 說明（喬亞時段表偶爾含折讓/溢收造成的幾十〜百元差，例 8/10 差 120）
+                  const offRev = (dt) => Number((days.find(dd => dd.date === dt) || {}).revenue) || 0;
                   const heatBody = () => {
                     const rowMax = {}; heatKeys.forEach(k => { rowMax[k] = Math.max(1, ...heatDates.map(dt => perDate[dt][k]?.amt || 0)); });
                     const rowSum = (k) => heatDates.reduce((t, dt) => t + (perDate[dt][k]?.amt || 0), 0);
@@ -1771,12 +1778,16 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
                             })}
                             <tr style={{ background: C.head }}>
                               <td style={{ padding: "4px 7px", fontWeight: 800, fontSize: 10.5, position: "sticky", left: 0, background: C.head, whiteSpace: "nowrap" }}>全日</td>
-                              {heatDates.map(dt => <td key={dt} style={{ padding: "4px 7px", textAlign: "right", fontFamily: MONOF, fontSize: 10.5, fontWeight: 700, whiteSpace: "nowrap" }}>{fmt(dayTot(dt))}</td>)}
-                              <td style={{ padding: "4px 7px", textAlign: "right", fontFamily: MONOF, fontSize: 10.5, fontWeight: 800, whiteSpace: "nowrap" }}>{fmt(heatDates.reduce((t, dt) => t + dayTot(dt), 0))}</td>
-                              <td style={{ padding: "4px 7px", textAlign: "right", fontFamily: MONOF, fontSize: 10.5, color: C.sub, whiteSpace: "nowrap" }}>{fmt(Math.round(heatDates.reduce((t, dt) => t + dayTot(dt), 0) / Math.max(1, heatDates.length)))}</td>
+                              {heatDates.map(dt => { const off = offRev(dt) || dayTot(dt); const diff = off - dayTot(dt); return (
+                                <td key={dt} title={diff ? `時段加總 NT$${fmt(dayTot(dt))}、正式結帳營收 NT$${fmt(off)}（差 NT$${fmt(Math.abs(diff))}＝喬亞時段表與結帳金額的折讓/溢收小差）` : undefined}
+                                  style={{ padding: "4px 7px", textAlign: "right", fontFamily: MONOF, fontSize: 10.5, fontWeight: 700, whiteSpace: "nowrap", cursor: diff ? "help" : undefined }}>{fmt(off)}{diff ? "＊" : ""}</td>
+                              ); })}
+                              <td style={{ padding: "4px 7px", textAlign: "right", fontFamily: MONOF, fontSize: 10.5, fontWeight: 800, whiteSpace: "nowrap" }}>{fmt(heatDates.reduce((t, dt) => t + (offRev(dt) || dayTot(dt)), 0))}</td>
+                              <td style={{ padding: "4px 7px", textAlign: "right", fontFamily: MONOF, fontSize: 10.5, color: C.sub, whiteSpace: "nowrap" }}>{fmt(Math.round(heatDates.reduce((t, dt) => t + (offRev(dt) || dayTot(dt)), 0) / Math.max(1, heatDates.length)))}</td>
                             </tr>
                           </tbody>
                         </table>
+                        <div style={{ fontSize: 10.5, color: C.faint, padding: "5px 8px" }}>「全日」列＝打烊後正式結帳營收，跟上面日報表、期間營收 KPI 同一個數字；＊＝時段格加總與正式營收有零星小差（折讓/溢收不分時段），滑鼠移上去看差額。</div>
                       </div>
                     );
                   };
