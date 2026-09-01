@@ -51,6 +51,11 @@ async function kvSet(id, valueObj) {
     })
   } catch (_) {}
 }
+// 刪一筆文件（跨空間刪任務用；App 端刪除也是直接 DELETE 該列，同一套行為）
+async function kvDel(id) {
+  if (!SB_URL || !SB_KEY) return
+  try { await fetch(`${SB_URL}/rest/v1/pm_documents?id=eq.${encodeURIComponent(id)}`, { method: 'DELETE', headers: sbHeaders }) } catch (_) {}
+}
 
 // ── D哥 檔案庫收檔：把 LINE 傳來的檔案下載→上傳 photos 公桶→暫存→依指令存進 App 檔案庫(pm_photos) ──
 const FILECACHE_KEY = 'pm_bot_filecache' // 剛上傳、還沒歸檔的檔案暫存（TTL 60 分）
@@ -494,7 +499,7 @@ async function loadTasksText() {
       lines.push(`\n\n【工作日誌（你用 add_log 幫使用者記的都存在這裡＝App「工作日誌」頁；共 ${worklog.length} 則，列最新 30 則）】`)
       worklog.slice(0, 30).forEach(w => lines.push(`  - ${w.date || ''} ${w.content || ''}${w.author ? `（${w.author}）` : ''}`))
     }
-    if (tasks.length) lines.push(`\n\n【任務中心（共 ${tasks.length} 件，可用 add_task / update_task 操作）】`)
+    if (tasks.length) lines.push(`\n\n【任務中心（共 ${tasks.length} 件，可用 add_task / update_task / delete_task 操作）】`)
     tasks.forEach(t => {
       const bits = [`${t.pinned ? '📌' : ''}[${SL[t.status] || t.status}] ${t.title}（${catName(t.catId)}）`]
       if (t.due) bits.push(`截止${t.due}`)
@@ -514,8 +519,13 @@ async function loadTasksText() {
       const ts2 = await kvGetPrefix(pfx + 'pm_task_')
       if (!ts2.length) continue
       ts2.sort((a, b) => (a.ord ?? 0) - (b.ord ?? 0))
-      lines.push(`\n\n【${nm}空間的任務中心（共 ${ts2.length} 件；add_task 帶 "space":"${nm.slice(0, 2)}" 可新增到這裡）】`)
-      ts2.forEach(t => lines.push(`  - ${t.pinned ? '📌' : ''}[${SL[t.status] || t.status}] ${t.title}${t.due ? `｜截止${t.due}` : ''}${t.owner ? `｜負責:${t.owner}` : ''}${(t.tags || []).length ? `｜#${t.tags.join(' #')}` : ''}`))
+      // 該空間的大項清單也給 D（v2.1.2：add_category/update_task/delete_task 都能跨空間了，D 要知道有哪些分類、任務歸在哪）
+      const cats2raw = (await kvGetMany([pfx + 'pm_data']))[pfx + 'pm_data']
+      const cats2 = Array.isArray(cats2raw) ? cats2raw : []
+      const catName2 = (id) => (!id || id === '__inbox__') ? '收件匣' : (cats2.find(c => c.id === id)?.name || '收件匣')
+      lines.push(`\n\n【${nm}空間的任務中心（共 ${ts2.length} 件；add_task/update_task/delete_task/add_category 帶 "space":"${nm.slice(0, 2)}" 都能操作這裡）】`)
+      if (cats2.length) lines.push(`  大項分類：${cats2.map(c => c.name).join('、')}`)
+      ts2.forEach(t => lines.push(`  - ${t.pinned ? '📌' : ''}[${SL[t.status] || t.status}] ${t.title}（${catName2(t.catId)}）${t.due ? `｜截止${t.due}` : ''}${t.owner ? `｜負責:${t.owner}` : ''}${(t.tags || []).length ? `｜#${t.tags.join(' #')}` : ''}`))
     }
     return lines.join('\n')
   } catch (_) { return '' }
@@ -786,6 +796,10 @@ const findTask = (tasks, q) => { if (!q) return null; return tasks.find(t => t.i
 const resolveDeps = (list, tasks) => (Array.isArray(list) ? list : []).map(q => { const d = findTask(tasks, q); return d ? d.id : null }).filter(Boolean)
 const TASK_STATUS = { '待辦': 'todo', 'todo': 'todo', '進行中': 'doing', '施工中': 'doing', 'doing': 'doing', '完成': 'done', '完工': 'done', 'done': 'done' }
 const TASK_PRIO = { '超急': 'urgent', 'urgent': 'urgent', '高': 'high', 'high': 'high', '一般': 'normal', 'normal': 'normal', '低': 'low', 'low': 'low' }
+// 空間解析（v2.1.2 治本：以前只有 add_task 會跨空間，add_category/update_task/刪除都寫死工程
+// → 張良叫D哥在團隊工作建大項/拆卡/刪合併卡全被「我做不到」擋回。現在四個指令共用這套）
+const SPACE_PFX = { 工程: '', 團隊: 'sp_team_', 夥伴: 'sp_crew_', 財務: 'sp_finance_' }
+const spaceOf = (s) => Object.keys(SPACE_PFX).find(k => String(s || '').includes(k)) || '工程'
 
 function extractBalancedObjects(s) {
   const out = []; let depth = 0, start = -1
@@ -810,7 +824,7 @@ const stripJson = (t) => t.replace(/```(?:json)?[\s\S]*?```/g, '').replace(/\{[\
 // 一句話描述一個 action（給「執行前確認」用）
 function describeAction(a) {
   switch (a.type) {
-    case 'add_category': return `新增大項「${a.name || '?'}」`
+    case 'add_category': return `新增大項「${a.name || '?'}」${a.space && a.space !== '工程' ? `（→${a.space}空間）` : ''}`
     case 'delete_category': return `刪除大項「${a.category || '?'}」`
     case 'set_category_status': return `把大項「${a.category || '?'}」狀態改成 ${a.status || '?'}`
     case 'add_item': return `在「${a.category || '?'}」新增細項「${a.name || '?'}」${a.unitPrice ? `（單價 ${fmtNT(a.unitPrice)}×${a.qty || 1}）` : ''}`
@@ -818,7 +832,8 @@ function describeAction(a) {
     case 'delete_item': return `刪除「${a.category || '?'}」的細項「${a.item || a.itemName || '?'}」`
     case 'add_payment': return `「${a.category || '?'}」新增付款 ${fmtNT(a.amount)}`
     case 'add_todo': case 'add_task': return `新增任務「${a.desc || a.content || a.title || '?'}」${a.space && a.space !== '工程' ? `（→${a.space}空間）` : ''}${a.category ? `（歸到 ${a.category}）` : ''}${a.due ? `（交期 ${a.due}）` : ''}${a.owner ? `（負責:${a.owner}）` : ''}${a.estimatedMinutes ? `（預估${a.estimatedMinutes}分）` : ''}`
-    case 'update_task': { const ks = ['status', 'owner', 'waitingFor', 'estimatedMinutes', 'dependsOn', 'due', 'start', 'priority', 'category', 'tags', 'note', 'newTitle'].filter(k => a[k] !== undefined); return `更新任務「${a.task || a.title || '?'}」→ 改 ${ks.join('、') || '?'}` }
+    case 'update_task': { const ks = ['status', 'owner', 'waitingFor', 'estimatedMinutes', 'dependsOn', 'due', 'start', 'priority', 'category', 'tags', 'note', 'newTitle'].filter(k => a[k] !== undefined); return `更新任務「${a.task || a.title || '?'}」${a.space && a.space !== '工程' ? `（${a.space}空間）` : ''}→ 改 ${ks.join('、') || '?'}` }
+    case 'delete_task': return `刪除任務「${a.task || a.title || '?'}」${a.space && a.space !== '工程' ? `（${a.space}空間）` : ''}`
     case 'add_conclusion': return `新增公開結論：「${a.topic || a.title || '?'}」→ ${(a.conclusion || a.text || a.content || '').slice(0, 30)}`
     case 'add_petty_spend': return `記零用金花費 ${fmtNT(a.amount)}「${a.content || a.note || ''}」`
     case 'add_finance_tx': return `記財務${/收/.test(a.kind || '') ? '收入' : /轉/.test(a.kind || '') ? '轉帳' : '支出'} ${fmtNT(a.amount)}${a.vendor ? `（${a.vendor}）` : ''}`
@@ -853,6 +868,19 @@ async function executeActions(actions, operator) {
     const t = a.type
     try {
       if (t === 'add_category') {
+        // 跨空間建大項（張良 2026-09-01：叫D哥在團隊工作建「採購/營運/表單/SOP」被拒——以前只會寫工程 pm_data）
+        const spName = spaceOf(a.space), pfx = SPACE_PFX[spName]
+        if (pfx) {
+          const key = pfx + 'pm_data'
+          const cur = (await kvGetMany([key]))[key]
+          const list = Array.isArray(cur) ? cur : []
+          const nm = a.name || '新大項'
+          if (list.some(c => c.name === nm)) { results.push(`⚠️ ${spName}空間已有大項「${nm}」，不重複建`); continue }
+          list.push({ id: 'cat-' + bid(''), order: list.length, name: nm, budget: Number(a.budget) || 0, status: 'pending', items: [] })
+          await kvSet(key, list)
+          results.push(`➕ 新增大項「${nm}」→ ${spName}空間`); audits.push([pfx + 'pm_activity', '新增', `新增大項「${nm}」（D哥）`])
+          continue
+        }
         cats.push({ id: 'cat-' + bid(''), order: cats.length, name: a.name || '新大項', budget: Number(a.budget) || 0, status: 'pending', items: [] })
         changed.add('pm_data'); results.push(`➕ 新增大項「${a.name || '新大項'}」`); audits.push(['pm_activity', '新增', `新增大項「${a.name || '新大項'}」`])
       } else if (t === 'delete_category') {
@@ -876,22 +904,25 @@ async function executeActions(actions, operator) {
         // ToDo 已併入「任務中心」(pm_tasks)，所以寫到 tasks，App才看得到
         const title = a.desc || a.content || a.title || ''
         // 跨空間新增（張良 2026-09-01：14 筆要進「團隊工作」卻被記到工程——以前只會寫工程空間）：
-        // space=工程(預設)/團隊/夥伴/財務 → 各空間任務一筆一檔 sp_<id>_pm_task_*，直接寫該空間、進收件匣
-        const SPACE_PFX = { 工程: '', 團隊: 'sp_team_', 夥伴: 'sp_crew_', 財務: 'sp_finance_' }
-        const spName = Object.keys(SPACE_PFX).find(k => String(a.space || '').includes(k)) || '工程'
+        // space=工程(預設)/團隊/夥伴/財務 → 各空間任務一筆一檔 sp_<id>_pm_task_*
+        // v2.1.2：category/dependsOn 跨空間也吃了（用該空間自己的 pm_data 大項與任務清單解析）
+        const spName = spaceOf(a.space)
         if (SPACE_PFX[spName]) {
           const pfx = SPACE_PFX[spName]
-          const others = await kvGetPrefix(pfx + 'pm_task_') // 只為算 ord（新任務排最前，跟 App 一致）
+          const others = await kvGetPrefix(pfx + 'pm_task_') // 算 ord（新任務排最前，跟 App 一致）＋解析 dependsOn
           let mo = 0; others.forEach(x => { if (typeof x.ord === 'number' && x.ord < mo) mo = x.ord })
+          const cats2raw = a.category ? (await kvGetMany([pfx + 'pm_data']))[pfx + 'pm_data'] : null
+          const tc2 = a.category ? findCat(Array.isArray(cats2raw) ? cats2raw : [], a.category) : null
           const nid = 't-' + bid('')
           const ex2 = {}
           if (a.owner !== undefined) ex2.owner = a.owner
           if (a.waitingFor !== undefined) ex2.waitingFor = a.waitingFor
           if (a.estimatedMinutes !== undefined) ex2.estimatedMinutes = a.estimatedMinutes
           if (a.pinned !== undefined) ex2.pinned = a.pinned
+          if (a.dependsOn !== undefined) ex2.dependsOn = resolveDeps(a.dependsOn, others)
           const np2 = normalizePatch(ex2, nid, others)
-          await kvSet(pfx + 'pm_task_' + nid, { id: nid, title, note: '', status: 'todo', catId: '__inbox__', start: '', due: a.due || '', priority: TASK_PRIO[a.priority] || (a.urgent ? 'urgent' : 'normal'), tags: Array.isArray(a.tags) ? normalizePatch({ tags: a.tags }).tags : [], ord: mo - 1, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), ...np2 })
-          results.push(`📝 新增任務「${title.slice(0, 20)}」→ ${spName}空間·收件匣`); audits.push([pfx + 'pm_activity', '新增', `新增任務「${title.slice(0, 20)}」（D哥跨空間）`])
+          await kvSet(pfx + 'pm_task_' + nid, { id: nid, title, note: '', status: 'todo', catId: tc2 ? tc2.id : '__inbox__', start: '', due: a.due || '', priority: TASK_PRIO[a.priority] || (a.urgent ? 'urgent' : 'normal'), tags: Array.isArray(a.tags) ? normalizePatch({ tags: a.tags }).tags : [], ord: mo - 1, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), ...np2 })
+          results.push(`📝 新增任務「${title.slice(0, 20)}」→ ${spName}空間·${tc2 ? tc2.name : '收件匣'}`); audits.push([pfx + 'pm_activity', '新增', `新增任務「${title.slice(0, 20)}」（D哥跨空間）`])
           continue
         }
         const tc = a.category ? findCat(cats, a.category) : null
@@ -908,6 +939,32 @@ async function executeActions(actions, operator) {
         changed.add('pm_tasks'); results.push(`📝 新增任務「${title.slice(0, 20)}」${tc ? '→' + tc.name : ''}`); audits.push(['pm_activity', '新增', `新增任務「${title.slice(0, 20)}」`])
       } else if (t === 'update_task') {
         // Merge Rule：只帶要改的欄位；沒帶的完全不動（{...existing, ...patch}）
+        // v2.1.2 跨空間：space≠工程 → 直接對該空間逐筆檔操作（以前被「僅限工程」擋掉）
+        const spName2 = spaceOf(a.space), pfx2 = SPACE_PFX[spName2]
+        if (pfx2) {
+          const list2 = await kvGetPrefix(pfx2 + 'pm_task_')
+          const tg = findTask(list2, a.task || a.title)
+          if (!tg) { results.push(`⚠️ ${spName2}空間找不到任務「${a.task || a.title || '?'}」`); continue }
+          const patch2 = {}
+          if (a.newTitle != null && String(a.newTitle).trim()) patch2.title = String(a.newTitle).trim()
+          if (a.note !== undefined) patch2.note = a.note || ''
+          if (a.status != null && TASK_STATUS[String(a.status).trim()]) patch2.status = TASK_STATUS[String(a.status).trim()]
+          if (a.due !== undefined) patch2.due = a.due || ''
+          if (a.start !== undefined) patch2.start = a.start || ''
+          if (a.priority != null && TASK_PRIO[String(a.priority).trim()]) patch2.priority = TASK_PRIO[String(a.priority).trim()]
+          if (a.category != null) { const c2raw = (await kvGetMany([pfx2 + 'pm_data']))[pfx2 + 'pm_data']; const c2 = findCat(Array.isArray(c2raw) ? c2raw : [], a.category); if (c2) patch2.catId = c2.id; else if (/收件匣/.test(String(a.category))) patch2.catId = '__inbox__' }
+          if (a.owner !== undefined) patch2.owner = a.owner
+          if (a.waitingFor !== undefined) patch2.waitingFor = a.waitingFor
+          if (a.estimatedMinutes !== undefined) patch2.estimatedMinutes = a.estimatedMinutes
+          if (a.dependsOn !== undefined) patch2.dependsOn = resolveDeps(a.dependsOn, list2)
+          if (a.pinned !== undefined) patch2.pinned = a.pinned
+          if (a.tags !== undefined) patch2.tags = Array.isArray(a.tags) ? a.tags : []
+          await kvSet(pfx2 + 'pm_task_' + tg.id, mergeTask(tg, patch2, list2))
+          const what2 = Object.keys(patch2).join('、') || '（無變更）'
+          results.push(`✏️ 更新任務「${tg.title.slice(0, 20)}」（${spName2}空間）：${what2}`)
+          audits.push([pfx2 + 'pm_activity', '編輯', `更新任務「${tg.title.slice(0, 20)}」(${what2})（D哥）`])
+          continue
+        }
         const target = findTask(tasks, a.task || a.title)
         if (!target) { results.push(`⚠️ 找不到任務「${a.task || a.title || '?'}」`) }
         else {
@@ -930,6 +987,28 @@ async function executeActions(actions, operator) {
           const what = Object.keys(patch).join('、') || '（無變更）'
           results.push(`✏️ 更新任務「${target.title.slice(0, 20)}」：${what}`)
           audits.push(['pm_activity', '編輯', `更新任務「${target.title.slice(0, 20)}」(${what})`])
+        }
+      } else if (t === 'delete_task') {
+        // v2.1.2 新增：刪任務（跨空間）。張良場景：合併卡拆成獨立任務後，原合併卡要刪掉才不重複
+        // ——以前 D哥只能回「請去 App 手動刪」。刪除屬確認類（AUTO_TYPES 之外），使用者按確認才會走到這。
+        const spName3 = spaceOf(a.space), pfx3 = SPACE_PFX[spName3]
+        if (pfx3) {
+          const list3 = await kvGetPrefix(pfx3 + 'pm_task_')
+          const tg3 = findTask(list3, a.task || a.title)
+          if (!tg3) { results.push(`⚠️ ${spName3}空間找不到任務「${a.task || a.title || '?'}」`); continue }
+          await kvDel(pfx3 + 'pm_task_' + tg3.id)
+          // 清掉同空間其他任務對它的 dependsOn 引用（跟 App 的 removeTaskAndRefs 同一套規則）
+          for (const x of list3) if ((x.dependsOn || []).includes(tg3.id)) await kvSet(pfx3 + 'pm_task_' + x.id, { ...x, dependsOn: x.dependsOn.filter(d => d !== tg3.id), updatedAt: new Date().toISOString() })
+          results.push(`🗑️ 刪除任務「${tg3.title.slice(0, 20)}」（${spName3}空間）`)
+          audits.push([pfx3 + 'pm_activity', '刪除', `刪除任務「${tg3.title.slice(0, 20)}」（D哥）`])
+        } else {
+          const tg3 = findTask(tasks, a.task || a.title)
+          if (!tg3) { results.push(`⚠️ 找不到任務「${a.task || a.title || '?'}」`); continue }
+          tasks = tasks.filter(x => x.id !== tg3.id).map(x => (x.dependsOn || []).includes(tg3.id) ? mergeTask(x, { dependsOn: x.dependsOn.filter(d => d !== tg3.id) }, tasks) : x)
+          if (tR.v2) await kvDel('pm_task_' + tg3.id)
+          changed.add('pm_tasks') // v2＝只把「引用被清掉」的那幾筆差異寫回；舊整包＝整包寫回（已含刪除）
+          results.push(`🗑️ 刪除任務「${tg3.title.slice(0, 20)}」`)
+          audits.push(['pm_activity', '刪除', `刪除任務「${tg3.title.slice(0, 20)}」（D哥）`])
         }
       } else if (t === 'add_conclusion') {
         const cc = a.category ? findCat(cats, a.category) : null
@@ -1111,15 +1190,16 @@ const BOT_AGENT_GUIDE = `
 {"actions":[ ... ]}
 \`\`\`
 可用指令：
-- {"type":"add_task","desc":"買水泥3包","space":"工程","category":"消防工程","due":"2026-06-25","owner":"阿哲","waitingFor":"等木工","estimatedMinutes":15,"dependsOn":["確認交期"],"tags":["採購"]}  // 加任務到「任務中心」。space=記到哪個空間：工程(預設)/團隊/夥伴/財務——使用者說「記到團隊工作」就帶"space":"團隊"，各空間任務各自獨立；空間≠工程時 category/dependsOn 無效(一律進該空間收件匣)。owner=負責人、waitingFor=在等誰/什麼、estimatedMinutes=預估分鐘(正整數)、dependsOn=依賴的任務(填任務標題)。全部選填(可省略)；category省略→進收件匣。(「加待辦」也用這個)
-- {"type":"update_task","task":"買水泥","status":"完成","owner":"阿哲","waitingFor":"","estimatedMinutes":30,"dependsOn":[],"pinned":true,"due":"2026-07-20","category":"消防工程","priority":"高","tags":["採購"],"note":"...","newTitle":"..."}  // 更新既有任務（目前僅限工程空間的任務；別的空間要改請去 App）；task=用標題找。⚠️只帶「要改的欄位」，沒帶的欄位絕不要帶(會保留原值)；waitingFor 給 ""=清除等待、dependsOn 給 []=清空依賴。狀態:待辦/進行中/完成
+- {"type":"add_task","desc":"買水泥3包","space":"工程","category":"消防工程","due":"2026-06-25","owner":"阿哲","waitingFor":"等木工","estimatedMinutes":15,"dependsOn":["確認交期"],"tags":["採購"]}  // 加任務到「任務中心」。space=記到哪個空間：工程(預設)/團隊/夥伴/財務——使用者說「記到團隊工作」就帶"space":"團隊"，各空間任務各自獨立；category/dependsOn 每個空間都可用(用該空間自己的大項/任務解析)。owner=負責人、waitingFor=在等誰/什麼、estimatedMinutes=預估分鐘(正整數)、dependsOn=依賴的任務(填任務標題)。全部選填(可省略)；category省略或找不到→進收件匣。(「加待辦」也用這個)
+- {"type":"update_task","task":"買水泥","space":"工程","status":"完成","owner":"阿哲","waitingFor":"","estimatedMinutes":30,"dependsOn":[],"pinned":true,"due":"2026-07-20","category":"消防工程","priority":"高","tags":["採購"],"note":"...","newTitle":"..."}  // 更新既有任務（四個空間都可以，space 帶任務所在空間，預設工程）；task=用標題找。⚠️只帶「要改的欄位」，沒帶的欄位絕不要帶(會保留原值)；waitingFor 給 ""=清除等待、dependsOn 給 []=清空依賴、category=改隸屬大項(歸類用)。狀態:待辦/進行中/完成
+- {"type":"delete_task","task":"溫度探針、推車、碼錶","space":"團隊"}  // 刪除任務（四個空間都可以）；task=用標題找(盡量給完整標題免得刪錯)。典型用法：把合併卡拆成獨立任務後，刪掉原本的合併卡
 - {"type":"add_conclusion","topic":"開幕日","conclusion":"8/10 開幕","reason":"","category":""}  // 加一條「公開結論」(團隊定案)；topic=主題、conclusion=定案內容
 - {"type":"add_log","content":"今天水電進場拉管線","date":"2026-06-22"}  // 工作日誌；date 可省略(預設今天)
 - {"type":"add_petty_spend","amount":390,"content":"工人便當","category":"水電工程"}  // 記零用金花費；category 是歸到哪個工種(可省略)
 - {"type":"add_finance_tx","kind":"expense","amount":12000,"account":"合庫","category":"物料","vendor":"震旦","note":"買桌椅"}  // 財務內帳；kind=expense支出/income收入/transfer轉帳；account=帳戶名
 - {"type":"set_category_status","category":"消防工程","status":"完工"}  // 狀態：待開工/進行中/完工/有問題/暫停
 - {"type":"set_item","category":"消防工程","item":"灑水頭","status":"完工","unitPrice":1200,"qty":10,"assignee":"王師傅"}  // 改細項；欄位都可省略
-- {"type":"add_category","name":"空調工程","budget":300000}
+- {"type":"add_category","name":"空調工程","budget":300000,"space":"工程"}  // 建大項分類（四個空間都可以，space 預設工程；例：在團隊工作建「採購」就帶"space":"團隊"）。任務中心的分類欄位就是這個大項，建好後用 add_task/update_task 的 category 歸類
 - {"type":"add_item","category":"空調工程","name":"主機","qty":1,"unit":"式","unitPrice":150000,"taxType":"未稅"}
 - {"type":"delete_item","category":"空調工程","item":"主機"}
 - {"type":"add_payment","category":"消防工程","amount":63000,"date":"2026-06-22","note":"訂金"}  // 大項新增一筆付款

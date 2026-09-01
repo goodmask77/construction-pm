@@ -34,11 +34,15 @@ const types = [
   { type: 'add_payment', category: '消防', amount: 63000 },
   { type: 'add_finance_tx', kind: 'expense', amount: 500 },
   { type: 'update_task', task: '買水泥', status: '完成' },
+  { type: 'update_task', task: '時鐘', space: '團隊', category: '採購' },
+  { type: 'delete_task', task: '溫度探針、推車、碼錶、計時器、時鐘', space: '團隊' },
+  { type: 'add_category', name: '採購', space: '團隊' },
   { type: 'set_item', category: '消防', item: '灑水頭', status: '完工' },
   { type: 'delete_category', category: '空調' },
   { type: 'no_such_type' },
 ]
 ok('所有動作類型都能描述（含未知型別）', types.every(t => typeof describeAction(t) === 'string' && describeAction(t).length > 0))
+ok('跨空間描述帶空間名（確認時看得出動到哪個空間）', describeAction({ type: 'delete_task', task: 'X', space: '團隊' }).includes('團隊') && describeAction({ type: 'add_category', name: '採購', space: '團隊' }).includes('團隊') && describeAction({ type: 'update_task', task: 'X', space: '團隊', category: '採購' }).includes('團隊'))
 
 console.log('── 記憶標記 ──')
 const m1 = extractMemoryTags('好的沒問題！\n[[記住:老闆偏好條列回覆]]\n[[記住:阿哲負責消防]]')
@@ -53,10 +57,10 @@ ok('json 拿掉、給人看的文字保留', s1.includes('87%') && !s1.includes(
 // 自動執行分流：純記錄類 vs 要確認類（與 line-webhook.js 的 AUTO_TYPES 保持一致）
 console.log('── 自動執行分流 ──')
 const AUTO_TYPES = new Set(['add_log', 'add_task', 'add_todo', 'add_conclusion'])
-const mixed = [{ type: 'add_log' }, { type: 'add_payment' }, { type: 'add_task' }, { type: 'delete_item' }]
+const mixed = [{ type: 'add_log' }, { type: 'add_payment' }, { type: 'add_task' }, { type: 'delete_item' }, { type: 'delete_task' }]
 const auto = mixed.filter(a => AUTO_TYPES.has(a.type))
 const confirm = mixed.filter(a => !AUTO_TYPES.has(a.type))
-ok('記錄類直接執行、危險類留給確認', auto.length === 2 && confirm.length === 2 && confirm.every(a => ['add_payment', 'delete_item'].includes(a.type)))
+ok('記錄類直接執行、危險類留給確認（delete_task 屬確認類）', auto.length === 2 && confirm.length === 3 && confirm.every(a => ['add_payment', 'delete_item', 'delete_task'].includes(a.type)))
 
 if (fails) { console.error(`\n❌ ${fails} 個測試失敗`); process.exit(1) }
 console.log('\n✅ test-webhook-parsing 全過')
