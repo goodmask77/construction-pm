@@ -103,6 +103,7 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
   const [posSlotHeat, setPosSlotHeat] = useState(false);    // 時段消費逐日熱力圖（張良 2026-09-01：一天一天切下拉太麻煩，要一眼看每時段逐日變化）
   const [posHH, setPosHH] = useState({});                   // 半小時快照月檔 pm_pos_hh_YYYY-MM：{days:{date:[{t,at,rev,tx}]}}
   const [posExt, setPosExt] = useState(null);               // 參考店1/2每日營業額 pm_ichef：{days:{date:{s1,s2}}}（畫面只標1/2，張良 2026-09-01）
+  const [abLive, setAbLive] = useState(null);               // AB 今天即時 pm_ablive：{date,revenue,tx,at}（Eats365 後台抓的，張良 2026-09-02）
   const [posStore, setPosStore] = useState("abeach");       // 分店切換：abeach=A Beach 101 / ground=GROUN:D（營運報表第三層）
   const [posCats, setPosCats] = useState([]);               // 標籤自選：選到的分類做比較（空＝全部）
   const [gdTab, setGdTab] = useState("全部");               // GROUN:D 品項明細：品類籤（張良 2026-08-14 指定試營運儀表板版型）
@@ -145,6 +146,7 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
     try { const pp = await window.storage.get(K("pm_pos_prices"), true); setPosPrices(pp && pp.value ? JSON.parse(pp.value) : {}); } catch (_) { setPosPrices({}); }
     try { const ic = await window.storage.get(K("pm_pos_idlecfg"), true); setPosIdleCfg(ic && ic.value ? JSON.parse(ic.value) : { days: 7, exCats: [], exItems: [] }); } catch (_) { setPosIdleCfg({ days: 7, exCats: [], exItems: [] }); }
     try { const ie = await window.storage.get(K("pm_ichef"), true); setPosExt(ie && ie.value ? JSON.parse(ie.value) : null); } catch (_) {}
+    try { const al = await window.storage.get(K("pm_ablive"), true); setAbLive(al && al.value ? JSON.parse(al.value) : null); } catch (_) {}
     try { const rc = await window.storage.get(K("pm_recon"), true); const v = rc && rc.value ? JSON.parse(rc.value) : null; if (v) setRecon({ links: v.links || {}, ignored: v.ignored || [] }); } catch (_) {}
     try { const cd = await window.storage.get("pm_data", true); setConCats(cd && cd.value ? JSON.parse(cd.value) : []); } catch (_) {}
     try { const pt = await window.storage.get("pm_petty", true); const v = pt && pt.value ? JSON.parse(pt.value) : {}; setConPetty({ spends: v.spends || [] }); } catch (_) {}
@@ -187,7 +189,8 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
     const un9 = onSharedChange(K("pm_pos_costs"), (_k, v) => { try { setPosCosts(v ? JSON.parse(v) : {}); } catch (_) {} });
     const un10 = onSharedChange(K("pm_pos_prices"), (_k, v) => { try { setPosPrices(v ? JSON.parse(v) : {}); } catch (_) {} });
     const un11 = onSharedChange(K("pm_ichef"), (_k, v) => { try { setPosExt(v ? JSON.parse(v) : null); } catch (_) {} });
-    return () => { un1(); un2(); un3(); un4(); un5(); un6(); un7(); un8(); un9(); un10(); un11(); };
+    const un12 = onSharedChange(K("pm_ablive"), (_k, v) => { try { setAbLive(v ? JSON.parse(v) : null); } catch (_) {} });
+    return () => { un1(); un2(); un3(); un4(); un5(); un6(); un7(); un8(); un9(); un10(); un11(); un12(); };
   }, []); // eslint-disable-line
   const saveRecon = (next) => { setRecon(next); window.storage.set(K("pm_recon"), JSON.stringify(next), true).catch(() => {}); };
   // 品項成本存檔（防抖在 storage 墊片層；廣播讓別台/別分頁即時跟上）
@@ -223,6 +226,8 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
       if (live?.updated) parts.push(`盤中已更新到 ${live.taipei}：今天 NT$${(Number(live.revenue) || 0).toLocaleString()}・${live.txCount} 單`);
       else if (live?.skipped && /剛更新過/.test(live.skipped)) parts.push(`盤中${live.skipped}`);
       if (d?.ic && !d.ic.error) parts.push("1/2 已同步到現在"); // 參考店即時（iCHEF 後台數字本來就是「到目前為止」）
+      if (d?.ab?.revenue != null) parts.push(`AB 即時 NT$${Number(d.ab.revenue).toLocaleString()}・${d.ab.tx} 單`);
+      else if (d?.ab?.error) parts.push(`AB 即時失敗：${d.ab.error}`);
       if (d?.pos?.added) parts.push(`新入庫 ${d.pos.added} 天日結`);
       const t = parts.length ? "✓ " + parts.join("；") : "✓ 已檢查——沒有新資料（目前已是最新）";
       setPosMsg(t); setTimeout(() => setPosMsg(m => m === t ? null : m), 8000);
@@ -1334,15 +1339,16 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
                               // 但 1/2（🔄更新抓 iCHEF 到目前為止）與 GD（盤中每30分自動）已有今天數字→補一列顯示；明天真日結入庫後自動被真列取代
                               const twToday = new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10);
                               const exT = extDays[twToday] || {}; const gdT = gdByDate[twToday] || 0;
-                              const showLive = abView && inPeriodDate(twToday) && !days.some(d => d.date === twToday) && (exT.s1 || exT.s2 || gdT);
+                              const abT = abLive && abLive.date === twToday && abLive.revenue ? abLive : null; // AB 後台即時（Eats365）
+                              const showLive = abView && inPeriodDate(twToday) && !days.some(d => d.date === twToday) && (exT.s1 || exT.s2 || gdT || abT);
                               const liveRow = showLive ? (() => {
                                 const gdL = new Date(twToday + "T00:00:00").getDay();
                                 const dashN = 2 + (hasGuests ? 2 : 0) + 2 + (hasLinepay ? 1 : 0) + 2 + (hasKiosk ? 1 : 0); // 單數/單均/(來客/客單)/現金/卡/(LINE Pay)/Uber/折扣/(自助)
                                 return (
-                                  <div key="live-today" title="今天的即時參考：1/2＝按「🔄 更新」抓到目前為止、GD＝盤中每30分自動；AB 要等打烊日結信，明天這列會換成正式數字" style={{ display: "grid", gridTemplateColumns: GTC, alignItems: "center", minHeight: 32, background: "#fdf6ec", borderBottom: "1.5px dashed #c8bca6" }}>
+                                  <div key="live-today" title="今天的即時數字：1/2/AB＝按「🔄 更新」抓後台到目前為止、GD＝盤中每30分自動；打烊日結入庫後這列自動換成正式數字" style={{ display: "grid", gridTemplateColumns: GTC, alignItems: "center", minHeight: 32, background: "#fdf6ec", borderBottom: "1.5px dashed #c8bca6" }}>
                                     <div style={{ padding: "0 8px", fontFamily: MONOF, fontSize: 11.5, color: "#b3261e", fontWeight: 700 }}>{twToday.slice(2)}（{WD2[gdL]}）<span style={{ marginLeft: 4, fontSize: 10, fontWeight: 700, background: "#fdecea", border: "1px solid #f0b8b1", borderRadius: 5, padding: "1px 4px" }}>即時</span></div>
                                     {hasExt && <>{cell(exT.s1 ? fmt(exT.s1) : "—", { color: "#8a7f6a" })}{cell(exT.s2 ? fmt(exT.s2) : "—", { color: "#8a7f6a" })}</>}
-                                    {cell("—", { color: "#d5cbb6" })}
+                                    {cell(abT ? <>{fmt(abT.revenue)}<span style={{ fontSize: 9.5, color: C.faint, fontWeight: 400 }}> {abT.at}</span></> : "—", abT ? { color: "#b3261e", fontWeight: 700 } : { color: "#d5cbb6" })}
                                     {cell(gdT ? fmt(gdT) : "—", gdT ? { color: "#b3492f", fontWeight: 600 } : { color: "#d5cbb6" })}
                                     {Array.from({ length: dashN }, (_, j) => <div key={"dz" + j} style={{ padding: "0 8px", fontFamily: MONOF, fontSize: 11.5, textAlign: "right", color: "#d5cbb6" }}>—</div>)}
                                   </div>

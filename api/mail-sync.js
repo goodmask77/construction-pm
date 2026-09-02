@@ -10,6 +10,7 @@ import { parsePosWorkbook, parseTxSheet } from './_pos-parse.js' // 解析器共
 import { groundManualRecords } from './_ground-manual.js' // GROUN:D 喬亞POS報表手動回填（08-19~21，張良 2026-08-24 截圖；已驗證與POS一致）
 import { joyaLogin, joyaFetchDay, joyaBuildRecord, taipeiToday, taipeiAfterClose, joyaFetchTimeslots, timeslotSection, TIMESLOT_SHEET } from './_joya.js' // GROUN:D 喬亞行動報表自動抓取（2026-08-26 起全自動）
 import { syncIchef } from './_ichef.js' // 參考店1/2 每日營業額（iCHEF 後台自動抓取，2026-09-01）
+import { syncEatsLive } from './_eats.js' // AB 今天即時營業額（Eats365 商家後台，2026-09-02）
 
 const clean = (v) => (v || '').trim().replace(/^["']|["']$/g, '').replace(/^[A-Za-z0-9_]+=/, '').trim()
 const SB_URL = clean(process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL)
@@ -412,6 +413,7 @@ export default async function handler(req, res) {
   try { out.joya = await syncJoya(Math.min(days, 20)) } catch (e) { out.joya = { error: e?.message || String(e) } } // GROUN:D 喬亞自動抓（?days=N 可回補 N 天）
   // 參考店1/2（iCHEF，2026-09-01）：後台即時＝今天的數字每次抓都是「到目前為止」→ 手動🔄/每小時 cron 都只掃近3天（快），?days=N 可回補
   try { out.ic = await syncIchef(kvGet, kvPut, Math.min(60, Math.max(3, days))) } catch (e) { out.ic = { error: e?.message || String(e) } }
+  try { out.ab = await syncEatsLive(kvGet, kvPut) } catch (e) { out.ab = { error: e?.message || String(e) } } // AB 即時（白天看今天；日結信到就被正式資料接手）
   await announceChanged() // 有新資料入庫→通知所有開著的網頁自動重抓（沒新資料就不發）
   if (req.query?.debug) out.dbg = DBG
   return res.status(200).json(out)

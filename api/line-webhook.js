@@ -555,7 +555,7 @@ async function loadPosText() {
   try {
     const now = new Date(Date.now() + 8 * 3600e3)
     const mo = now.toISOString().slice(0, 7)
-    const kv = await kvGetMany(['sp_finance_pm_pos', 'sp_finance_pm_pos_d_' + mo, 'sp_finance_pm_pos_tx_' + mo, 'sp_finance_pm_pos_flags', 'sp_finance_pm_pos_idlecfg', 'sp_finance_pm_pos_hh_' + mo, 'sp_finance_pm_pos_costs', 'sp_finance_pm_pos_prices'])
+    const kv = await kvGetMany(['sp_finance_pm_pos', 'sp_finance_pm_pos_d_' + mo, 'sp_finance_pm_pos_tx_' + mo, 'sp_finance_pm_pos_flags', 'sp_finance_pm_pos_idlecfg', 'sp_finance_pm_pos_hh_' + mo, 'sp_finance_pm_pos_costs', 'sp_finance_pm_pos_prices', 'sp_finance_pm_ablive'])
     const pos = kv['sp_finance_pm_pos']
     const entries = pos && Array.isArray(pos.entries) ? pos.entries : []
     if (!entries.length) return ''
@@ -569,6 +569,11 @@ async function loadPosText() {
     entries.slice(-30).forEach(e => lines.push((e.partial && !e.txCount)
       ? `  - ${e.date}${sTag(e)} 營收${nt(e.revenue)}${e.grossSales > e.revenue ? `（牌價${nt(e.grossSales)}·試營運折讓）` : ''}｜${e.partial}`
       : `  - ${e.date}${sTag(e)} 營收${nt(e.revenue)}｜${e.txCount}單｜來客${e.guests || '?'}｜客單${e.guests ? nt(Math.round(e.revenue / e.guests)) : '—'}｜現金${nt(e.cash)}/卡${nt(e.card)}${e.linepay ? `/LINE Pay${nt(e.linepay)}` : ''}${e.payOther ? `/其他${nt(e.payOther)}` : ''}/Uber${nt(e.uber)}${e.kiosk ? `｜自助點餐${nt(e.kiosk)}(佔${e.revenue ? Math.round(e.kiosk / e.revenue * 100) : 0}%,約${e.txCount && e.revenue ? Math.round(e.kiosk / (e.revenue / e.txCount)) : '?'}單估算,已含在卡/LINE Pay內)` : ''}｜折扣${nt(e.discount)}`))
+    // AB 今天即時（pm_ablive＝Eats365 後台儀表板抓的「到目前為止」，張良 2026-09-02；日結信入庫後被正式資料取代——同一天有正式日結就別再引用即時值）
+    const abl = kv['sp_finance_pm_ablive']
+    if (abl?.date === now.toISOString().slice(0, 10) && abl.revenue && !entries.some(e => e.date === abl.date && !isG(e))) {
+      lines.push(`  - ${abl.date}［A Beach］盤中即時（${abl.at} 更新，還沒打烊會再長大）：營收${nt(abl.revenue)}｜${abl.tx}單`)
+    }
     // GROUN:D 半小時時段（pm_pos_hh_月檔＝盤中每30分快照相減推算，2026-08-28 起；答「排人力/尖峰半小時」；對帳以每小時原生資料為準；與 App loadSpaceAIContext 同步接）
     const hhDoc = kv['sp_finance_pm_pos_hh_' + mo]
     if (hhDoc?.days && Object.keys(hhDoc.days).length) {
