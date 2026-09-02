@@ -936,6 +936,23 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
           : true; // 與 days 的期間過濾同一套規則（資料一致）
         const gdByDate = {};
         if (abView) ((pos?.entries) || []).forEach(e => { if (storeKeyOf(e.store) === "ground" && inPeriodDate(e.date)) gdByDate[e.date] = (gdByDate[e.date] || 0) + (Number(e.revenue) || 0); });
+        // 「至14:00」欄（張良 2026-09-02：兩點＝中午餐期結束分水嶺）：時段表加總 <14:00 的小時列＝開店到 14:00 的累計
+        // 與「⏰ 時段消費」同一份資料（sheets 時段分析）＝數字一致；今天盤中列也有（intraday 帶時段明細）
+        const lunchByDate = {};
+        if (!abView) days.forEach(d => {
+          const secs = dayDet(d.date)?.sheets?.["時段分析(每小時)"];
+          if (!Array.isArray(secs) || !secs.length) return;
+          let t = 0, any = false;
+          secs.forEach(sc => (sc.rows || []).forEach(r => {
+            if (!Array.isArray(r)) return;
+            const hh = parseInt(String(r[0]).slice(0, 2), 10);
+            if (!Number.isFinite(hh)) return;
+            any = true;
+            if (hh < 14) t += Number(r[r.length - 1]) || 0;
+          }));
+          if (any) lunchByDate[d.date] = t;
+        });
+        const hasLunch = days.some(d => lunchByDate[d.date] != null);
         // 自助點餐估算單數＝自助金額÷當日單均（喬亞 15 張報表都沒有付款別筆數、訂單來源篩選實測無效 2026-08-29）——明確標「約」
         const kioskTx = (d) => (d.kiosk > 0 && d.revenue > 0 && d.txCount > 0) ? Math.round(d.kiosk / (d.revenue / d.txCount)) : 0;
         const kioskTxSum = days.reduce((t, d) => t + kioskTx(d), 0);
@@ -1298,15 +1315,15 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
                 )}
                 {posGran === "day" ? (
                 <div style={{ border: "1.5px solid #c8bca6", borderRadius: 8, background: C.card, overflow: "hidden" }}>
-                  <div style={{ overflowX: "auto" }}><div style={{ minWidth: (hasGuests ? 1072 : 928) + (hasKiosk ? 156 : 0) + (hasExt ? 168 : 0) - (hasLinepay ? 0 : 96) + (abView ? -44 : 0) }}>
+                  <div style={{ overflowX: "auto" }}><div style={{ minWidth: (hasGuests ? 1072 : 928) + (hasKiosk ? 156 : 0) + (hasExt ? 168 : 0) - (hasLinepay ? 0 : 96) + (abView ? -44 : 0) + (hasLunch ? 116 : 0) }}>
                     {(() => {
-                      const GTC = (abView ? "118px " : "118px minmax(140px,1fr) ") + (hasExt ? "84px 84px " : "") + (abView ? "96px 96px " : "96px ") + "64px 76px " + (hasGuests ? "64px 80px " : "") + "96px 96px " + (hasLinepay ? "96px " : "") + "96px 80px" + (hasKiosk ? " 156px" : ""); // abView：店欄刪除、營收=AB＋右加GD（張良 2026-09-02） // 張良 2026-08-26 加「單均」欄；2026-08-27 沒來客資料的店隱藏來客/客單欄；2026-08-29 加 LINE Pay 欄（2026-09-01 起沒資料的店整欄隱藏）＋自助點餐通路欄；2026-09-01 加「1」「2」參考欄（店名與營收之間）
+                      const GTC = (abView ? "118px " : "118px minmax(140px,1fr) ") + (hasExt ? "84px 84px " : "") + (hasLunch ? "116px " : "") + (abView ? "96px 96px " : "96px ") + "64px 76px " + (hasGuests ? "64px 80px " : "") + "96px 96px " + (hasLinepay ? "96px " : "") + "96px 80px" + (hasKiosk ? " 156px" : ""); // abView：店欄刪除、營收=AB＋右加GD（張良 2026-09-02） // 張良 2026-08-26 加「單均」欄；2026-08-27 沒來客資料的店隱藏來客/客單欄；2026-08-29 加 LINE Pay 欄（2026-09-01 起沒資料的店整欄隱藏）＋自助點餐通路欄；2026-09-01 加「1」「2」參考欄（店名與營收之間）
                       const hc = { fontSize: 10.5, letterSpacing: 0.8, color: C.faint, fontWeight: 700, padding: "7px 8px", whiteSpace: "nowrap" };
                       const cell = (v, extra) => <div style={{ padding: "0 8px", fontFamily: MONOF, fontSize: 11.5, textAlign: "right", color: C.sub, ...extra }}>{v}</div>;
                       return (
                         <>
                           <div style={{ display: "grid", gridTemplateColumns: GTC, background: C.soft, borderBottom: "1.5px solid #c8bca6" }}>
-                            <div style={hc}>日期</div>{!abView && <div style={hc}>店</div>}{hasExt && <><div style={{ ...hc, textAlign: "right", color: "#8a7f6a" }} title="參考數據">1</div><div style={{ ...hc, textAlign: "right", color: "#8a7f6a" }} title="參考數據">2</div></>}<div style={{ ...hc, textAlign: "right" }}>{abView ? "AB" : "營收"}</div>{abView && <div style={{ ...hc, textAlign: "right", color: "#b3492f" }}>GD</div>}<div style={{ ...hc, textAlign: "right" }}>單數</div><div style={{ ...hc, textAlign: "right" }}>單均(÷單數)</div>{hasGuests && <><div style={{ ...hc, textAlign: "right" }}>來客</div><div style={{ ...hc, textAlign: "right" }}>客單(÷來客)</div></>}<div style={{ ...hc, textAlign: "right" }}>現金</div><div style={{ ...hc, textAlign: "right" }}>信用卡</div>{hasLinepay && <div style={{ ...hc, textAlign: "right" }}>LINE Pay</div>}<div style={{ ...hc, textAlign: "right" }}>Uber</div><div style={{ ...hc, textAlign: "right" }}>折扣</div>{hasKiosk && <div style={{ ...hc, textAlign: "right", color: "#6b4a86" }} title="自助點餐機（機台刷卡＋LINE Pay(APP)）——金額已含在信用卡/LINE Pay 內，看通路占比用；單數＝金額÷當日單均的估算值（喬亞不提供付款別筆數）">自助點餐·%·約單</div>}
+                            <div style={hc}>日期</div>{!abView && <div style={hc}>店</div>}{hasExt && <><div style={{ ...hc, textAlign: "right", color: "#8a7f6a" }} title="參考數據">1</div><div style={{ ...hc, textAlign: "right", color: "#8a7f6a" }} title="參考數據">2</div></>}{hasLunch && <div style={{ ...hc, textAlign: "right", color: "#2f6d5a" }} title="開店到 14:00 的累計營業額（中午餐期＝到兩點為止；時段表加總，與時段消費同一份資料）；灰字＝佔全日 %">至14:00</div>}<div style={{ ...hc, textAlign: "right" }}>{abView ? "AB" : "營收"}</div>{abView && <div style={{ ...hc, textAlign: "right", color: "#b3492f" }}>GD</div>}<div style={{ ...hc, textAlign: "right" }}>單數</div><div style={{ ...hc, textAlign: "right" }}>單均(÷單數)</div>{hasGuests && <><div style={{ ...hc, textAlign: "right" }}>來客</div><div style={{ ...hc, textAlign: "right" }}>客單(÷來客)</div></>}<div style={{ ...hc, textAlign: "right" }}>現金</div><div style={{ ...hc, textAlign: "right" }}>信用卡</div>{hasLinepay && <div style={{ ...hc, textAlign: "right" }}>LINE Pay</div>}<div style={{ ...hc, textAlign: "right" }}>Uber</div><div style={{ ...hc, textAlign: "right" }}>折扣</div>{hasKiosk && <div style={{ ...hc, textAlign: "right", color: "#6b4a86" }} title="自助點餐機（機台刷卡＋LINE Pay(APP)）——金額已含在信用卡/LINE Pay 內，看通路占比用；單數＝金額÷當日單均的估算值（喬亞不提供付款別筆數）">自助點餐·%·約單</div>}
                           </div>
                           <div style={{ maxHeight: "50vh", overflowY: "auto" }}>
                             {(() => {
@@ -1341,6 +1358,7 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
                                 <div style={{ padding: "0 8px", fontFamily: MONOF, fontSize: 11.5, color: wknd ? "#a97a10" : C.sub, fontWeight: wknd ? 700 : 400 }}>{d.date.slice(2)}（{WD2[gd]}）</div>
                                 {!abView && <div style={{ padding: "0 8px", fontSize: 11.5, color: C.sub, overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis" }}>{d.store}{d.intraday && <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 700, color: "#b3261e", background: "#fdecea", border: "1px solid #f0b8b1", borderRadius: 5, padding: "1px 5px" }}>盤中 {d.fetchedAt || ""} 更新</span>}</div>}
                                 {hasExt && <>{cell(extDays[d.date]?.s1 ? fmt(extDays[d.date].s1) : "—", { color: "#8a7f6a" })}{cell(extDays[d.date]?.s2 ? fmt(extDays[d.date].s2) : "—", { color: "#8a7f6a" })}</>}
+                                {hasLunch && (() => { const lv = lunchByDate[d.date]; return cell(lv != null ? <>{fmt(lv)}<span style={{ color: C.faint, fontWeight: 400 }}>·{d.revenue ? Math.round(lv / d.revenue * 100) : 0}%</span></> : "—", lv != null ? { color: "#2f6d5a", fontWeight: 600 } : { color: "#d5cbb6" }); })()}
                                 {cell(fmt(d.revenue), { fontWeight: 700, color: C.text })}
                                 {abView && cell(gdByDate[d.date] ? fmt(gdByDate[d.date]) : "—", gdByDate[d.date] ? { color: "#b3492f", fontWeight: 600 } : { color: "#d5cbb6" })}
                                 {cell(d.txCount)}{cell(d.txCount ? fmt(Math.round(d.revenue / d.txCount)) : "—", { color: "#3a6ea5", fontWeight: 600 })}{hasGuests && <>{cell(d.guests || "—")}{cell(d.guests ? fmt(ticket(d.revenue, d.guests)) : "—")}</>}
