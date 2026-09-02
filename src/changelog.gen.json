@@ -1,5 +1,11 @@
 [
  {
+  "date": "2026-09-02",
+  "items": [
+   "A Beach日表改總覽版型+週月彙總補1/2與GD(張良:切週月看不到1/2數字要修;店欄刪掉;營收改AB右邊加GD同步GROUN:D營收)：①週月彙總bucket新增ext1/ext2/gd加總(同perKey歸桶,與日表同一套期間過濾inPeriodDate=資料一致),表頭1/2參考欄+abView顯示 ②A Beach視圖日表刪「店」欄(店籤已選=多餘;GROUN:D視圖保留含盤中紅籤) ③營收欄改「AB」,右加紅字「GD」欄=GROUN:D同日營收(gdByDate,公休日—);週月同款AB/GD ④GROUN:D視圖版型完全不動 v2.1.7"
+  ]
+ },
+ {
   "date": "2026-09-01",
   "items": [
    "日表加參考店1/2營業額欄+無LINE Pay店隱藏該欄(張良:兩間iCHEF店數據放A Beach與營收中間,只標1/2不露店名;A Beach沒LINE Pay拿掉欄位)：①api/_ichef.js=iCHEF後台自動抓取(Django表單登入要Referer+Origin/頁內login_token當Authorization token/analyse API business_situation拿每日營業額),掛mail-sync每小時cron,失敗不影響收信;憑證ICHEF_S1_*/S2_*(Vercel env+.env.local) ②入庫sp_finance_pm_ichef={days:{date:{s1,s2}}}冪等,已回補60天(兩家各59天✓) ③日表店名與營收間插「1」「2」灰欄(僅A Beach視圖,tooltip只寫參考數據),即時廣播跟上 ④LINE Pay欄改hasLinepay資料驅動(期間全0=整欄藏,日表+週月彙總一致;A Beach自動消失,GROUN:D照舊) ⑤pm_ichef加ALLOW豁免AI+寫原因(張良指明保密,D哥群組誰都能問→刻意不接) v2.1.6",

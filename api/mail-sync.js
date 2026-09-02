@@ -410,7 +410,8 @@ export default async function handler(req, res) {
   try { out.ctbc = await syncCtbc(days) } catch (e) { out.ctbc = { error: e?.message || String(e) } }
   try { out.pos = await syncPos(days) } catch (e) { out.pos = { error: e?.message || String(e) } }
   try { out.joya = await syncJoya(Math.min(days, 20)) } catch (e) { out.joya = { error: e?.message || String(e) } } // GROUN:D 喬亞自動抓（?days=N 可回補 N 天）
-  try { out.ic = await syncIchef(kvGet, kvPut) } catch (e) { out.ic = { error: e?.message || String(e) } } // 參考店1/2 每日營業額（iCHEF，2026-09-01）
+  // 參考店1/2（iCHEF，2026-09-01）：後台即時＝今天的數字每次抓都是「到目前為止」→ 手動🔄/每小時 cron 都只掃近3天（快），?days=N 可回補
+  try { out.ic = await syncIchef(kvGet, kvPut, Math.min(60, Math.max(3, days))) } catch (e) { out.ic = { error: e?.message || String(e) } }
   await announceChanged() // 有新資料入庫→通知所有開著的網頁自動重抓（沒新資料就不發）
   if (req.query?.debug) out.dbg = DBG
   return res.status(200).json(out)

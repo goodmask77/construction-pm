@@ -222,6 +222,7 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
       const parts = [];
       if (live?.updated) parts.push(`盤中已更新到 ${live.taipei}：今天 NT$${(Number(live.revenue) || 0).toLocaleString()}・${live.txCount} 單`);
       else if (live?.skipped && /剛更新過/.test(live.skipped)) parts.push(`盤中${live.skipped}`);
+      if (d?.ic && !d.ic.error) parts.push("1/2 已同步到現在"); // 參考店即時（iCHEF 後台數字本來就是「到目前為止」）
       if (d?.pos?.added) parts.push(`新入庫 ${d.pos.added} 天日結`);
       const t = parts.length ? "✓ " + parts.join("；") : "✓ 已檢查——沒有新資料（目前已是最新）";
       setPosMsg(t); setTimeout(() => setPosMsg(m => m === t ? null : m), 8000);
@@ -1312,7 +1313,25 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
                               // 週末辨識（張良 2026-07-24）：六日列淡琥珀底＋日期琥珀字；跨週處畫粗分隔線
                               const monOf = (ds) => { const dt = new Date(ds + "T00:00:00"); dt.setDate(dt.getDate() - ((dt.getDay() + 6) % 7)); return `${dt.getFullYear()}-${dt.getMonth() + 1}-${dt.getDate()}`; };
                               const arr = [...days].reverse();
-                              return arr.map((d, i) => {
+                              // 「今天（即時）」虛擬列（張良 2026-09-02）：AB 日結信打烊才到＝今天沒有列，
+                              // 但 1/2（🔄更新抓 iCHEF 到目前為止）與 GD（盤中每30分自動）已有今天數字→補一列顯示；明天真日結入庫後自動被真列取代
+                              const twToday = new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10);
+                              const exT = extDays[twToday] || {}; const gdT = gdByDate[twToday] || 0;
+                              const showLive = abView && inPeriodDate(twToday) && !days.some(d => d.date === twToday) && (exT.s1 || exT.s2 || gdT);
+                              const liveRow = showLive ? (() => {
+                                const gdL = new Date(twToday + "T00:00:00").getDay();
+                                const dashN = 2 + (hasGuests ? 2 : 0) + 2 + (hasLinepay ? 1 : 0) + 2 + (hasKiosk ? 1 : 0); // 單數/單均/(來客/客單)/現金/卡/(LINE Pay)/Uber/折扣/(自助)
+                                return (
+                                  <div key="live-today" title="今天的即時參考：1/2＝按「🔄 更新」抓到目前為止、GD＝盤中每30分自動；AB 要等打烊日結信，明天這列會換成正式數字" style={{ display: "grid", gridTemplateColumns: GTC, alignItems: "center", minHeight: 32, background: "#fdf6ec", borderBottom: "1.5px dashed #c8bca6" }}>
+                                    <div style={{ padding: "0 8px", fontFamily: MONOF, fontSize: 11.5, color: "#b3261e", fontWeight: 700 }}>{twToday.slice(2)}（{WD2[gdL]}）<span style={{ marginLeft: 4, fontSize: 10, fontWeight: 700, background: "#fdecea", border: "1px solid #f0b8b1", borderRadius: 5, padding: "1px 4px" }}>即時</span></div>
+                                    {hasExt && <>{cell(exT.s1 ? fmt(exT.s1) : "—", { color: "#8a7f6a" })}{cell(exT.s2 ? fmt(exT.s2) : "—", { color: "#8a7f6a" })}</>}
+                                    {cell("—", { color: "#d5cbb6" })}
+                                    {cell(gdT ? fmt(gdT) : "—", gdT ? { color: "#b3492f", fontWeight: 600 } : { color: "#d5cbb6" })}
+                                    {Array.from({ length: dashN }, (_, j) => <div key={"dz" + j} style={{ padding: "0 8px", fontFamily: MONOF, fontSize: 11.5, textAlign: "right", color: "#d5cbb6" }}>—</div>)}
+                                  </div>
+                                );
+                              })() : null;
+                              return [liveRow, ...arr.map((d, i) => {
                               const gd = new Date(d.date + "T00:00:00").getDay(), wknd = gd === 0 || gd === 6;
                               const newWeek = i > 0 && monOf(arr[i - 1].date) !== monOf(d.date);
                               const rowBg = wknd ? "#f6ecd3" : i % 2 ? "#f8f4ea" : C.card;
@@ -1330,7 +1349,7 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
                                 {hasKiosk && cell(d.kiosk ? `${fmt(d.kiosk)}·${d.revenue ? Math.round(d.kiosk / d.revenue * 100) : 0}%·約${kioskTx(d)}單` : "—", d.kiosk ? { color: "#6b4a86", fontWeight: 600 } : { color: "#d5cbb6" })}
                               </div>
                               );
-                              });
+                              })];
                             })()}
                           </div>
                         </>
