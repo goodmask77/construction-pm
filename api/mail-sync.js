@@ -373,6 +373,19 @@ export default async function handler(req, res) {
     const days2 = (store.entries || []).filter(e => skOf(e.store) === storeQ).map(e => ({ date: e.date, weekday: new Date(e.date + 'T00:00:00').getDay(), revenue: Number(e.revenue) || 0, discount: Number(e.discount) || 0 })).sort((a, b) => (a.date < b.date ? -1 : 1))
     return res.status(200).json({ ok: true, store: storeQ, n: days2.length, days: days2 })
   }
+  // 工程資料探針（唯讀＋同金鑰；張良 2026-09-03：問電費要盤點工程總覽裡的空調/設備/燈光等用電項目，
+  // 本機被 RLS 擋 → 走這裡撈大項/細項全清單自己整理）：?catprobe=<key>[&space=team|crew|finance，預設工程]
+  if (req.query?.catprobe) {
+    const mk = (process.env.MENU_PROBE_KEY || '').trim()
+    if (!mk || String(req.query.catprobe) !== mk) return res.status(403).json({ ok: false })
+    const pfx = { team: 'sp_team_', crew: 'sp_crew_', finance: 'sp_finance_' }[String(req.query.space || '')] || ''
+    const cats = (await kvGet(pfx + 'pm_data')) || []
+    const out2 = (Array.isArray(cats) ? cats : []).map(c => ({
+      name: c.name, budget: c.budget, status: c.status,
+      items: (c.items || []).map(i => ({ name: i.name, qty: i.qty, unit: i.unit, unitPrice: i.unitPrice, taxType: i.taxType, assignee: i.assignee, status: i.status, notes: i.notes })),
+    }))
+    return res.status(200).json({ ok: true, space: pfx || 'construction', nCats: out2.length, cats: out2 })
+  }
   // 菜單探針（唯讀＋金鑰保護，回品名/金額 → 沒帶對 MENU_PROBE_KEY 一律 403）：?menuprobe=<key>&store=abeach|ground
   // 用途：把期間內出現過的全部品項按「日結信分類」彙總（品名/數量/套餐內/金額/出現天數），給菜單盤點/試算表用
   if (req.query?.menuprobe) {

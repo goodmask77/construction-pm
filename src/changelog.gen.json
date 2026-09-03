@@ -2,6 +2,7 @@
  {
   "date": "2026-09-02",
   "items": [
+   "AB即時營業額接上(張良:AB還沒顯示)：①api/_eats.js=Eats365商家後台mpphk逆向:sign-in頁meta _csrf+頁內csid雙標頭(X-XSRF-TOKEN/X-XSRF-SESSION缺一靜默失敗)→JSON登入(email OTP驗證一次後30天裝置cookie免驗,cookie滾動存pm_eats_sess自動續期)→report/dashboard/shop拿當日即時 ②口徑=totalNetSales(9/1=30,614與日結信一毛不差✓;totalSales少服務費別用) ③入庫sp_finance_pm_ablive只存今天,掛mail-sync(每小時cron+🔄更新),日結信入庫自動接手 ④前端「今天(即時)」列AB欄紅字顯示金額+更新時間;更新訊息帶「AB即時NT$X・N單」;失敗訊息明講(裝置驗證過期=再收一次email驗證碼) ⑤AI兩邊接pm_ablive(D哥/App顧問答「AB今天目前多少」,有正式日結就不引用),coverage 73/73過;憑證EATS_*進Vercel env+.env.local;正式站實測45,761・24單✓ v2.2.0",
    "GROUN:D日表加「至14:00」欄(張良:兩點=中午餐期結束分水嶺,放店跟營收之間)：每天顯示開店到14:00累計營業額+灰字佔全日%(綠字,時段表<14:00小時列加總=與時段消費同一份資料);今天盤中列一樣有(intraday帶時段明細);沒時段資料的日子顯示—;真值驗算9/1=32,849(79%)對喬亞原生時段表✓;A Beach視圖無時段資料自動不顯示 v2.1.9",
    "今天即時列+更新鈕接1/2(張良:POS後台都看得到目前營業額,按更新能拿即時數據嗎)：①本來就通的講清楚:🔄更新打的mail-sync已含iCHEF同步,iCHEF後台數字天生=「到目前為止」→手動/每小時cron改只掃近3天(快,?days=N仍可回補60) ②A Beach日表補「今天（即時）」虛擬列:AB日結信打烊才到=今天沒列,1/2/GD即時數字沒地方放→有數字就顯示(紅字日期+即時籤/AB=—/虛線分隔/tooltip講明),明天真日結入庫自動換正式列;月/自訂期間不含今天不顯示 ③更新完成訊息加「1/2已同步到現在」 ④AB自家即時要Eats365後台帳密,已向張良要 v2.1.8",
    "A Beach日表改總覽版型+週月彙總補1/2與GD(張良:切週月看不到1/2數字要修;店欄刪掉;營收改AB右邊加GD同步GROUN:D營收)：①週月彙總bucket新增ext1/ext2/gd加總(同perKey歸桶,與日表同一套期間過濾inPeriodDate=資料一致),表頭1/2參考欄+abView顯示 ②A Beach視圖日表刪「店」欄(店籤已選=多餘;GROUN:D視圖保留含盤中紅籤) ③營收欄改「AB」,右加紅字「GD」欄=GROUN:D同日營收(gdByDate,公休日—);週月同款AB/GD ④GROUN:D視圖版型完全不動 v2.1.7"
