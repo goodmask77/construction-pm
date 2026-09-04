@@ -62,7 +62,7 @@ export const SPACE_CONF = {
   supply: {
     showCost: true, // 售價/採購價受「看金額」權限控管（店長層可遮）
     hideTabs: [],
-    tabs: [["svendors", "廠商建檔", "🏭"], ["sproducts", "菜單管理", "📦"], ["singred", "物料清單", "🥬"], ["sorder", "叫貨", "🛒"]], // 順序＝建檔流程：先建廠商→菜單→物料→叫貨（張良 2026-07-20）
+    tabs: [["svendors", "廠商建檔", "🏭"], ["sproducts", "菜單管理", "📦"], ["singred", "物料清單", "🥬"], ["sorder", "叫貨", "🛒"], ["scost", "成本分析", "📊"]], // 順序＝建檔流程：先建廠商→菜單→物料→叫貨→成本分析（張良 2026-09-04：兩店產品成本）
     defaultView: "sproducts",
     hideKpi: true,
     labels: { cat: "類別", item: "品項", overview: "供應鏈", gantt: "—", subtitle: "供應鏈管理（進銷存/採購/比價）" },
@@ -117,6 +117,7 @@ export const PERM_MATRIX = {
     ["sproducts", "菜單管理", { edit: 1, money: 1 }],
     ["singred", "物料清單", { edit: 1, money: 1 }],
     ["sorder", "叫貨", { edit: 1, money: 1 }],
+    ["scost", "成本分析", { edit: 1, money: 1 }],
   ],
 };
 // 舊資料相容：以前的可編輯權限只有 data/files/advisor 三類，對應到各頁

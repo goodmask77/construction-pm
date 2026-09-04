@@ -4,7 +4,7 @@
 // 未來財務負責人接手開發，原則上只動這個資料夾，碰不到工程/總覽。
 import { useState, useEffect, useMemo, useRef } from "react";
 import { fmt } from "../lib/cost.js";
-import { parseNum, blankZero } from "../lib/num.js";
+import { parseNum, blankZero, abNorm } from "../lib/num.js";
 import { loadRecords, diffPersist, subscribeRecords } from "../lib/records.js";
 import { onSharedChange } from "../supa.js";
 import { useIsMobile } from "../lib/theme.jsx"; // 張良 2026-07-26 手機版全面體檢：RWD 斷點 hook
@@ -39,7 +39,7 @@ const abFineCat = (name) => (AB_FINE_RULES.find(([re]) => re.test(name)) || [, "
 // 「1/4 披薩」＝GROUN:D 試營運切片促銷（無單價、金額0）——張良 2026-08-26：全部畫面/統計都不要出現（原始資料保留，只是不顯示）
 const isQuarterItem = (n) => /^1\/4/.test(String(n).trim());
 // 同品項內用/Uber 名字只差 emoji（☘️瑪格麗特 vs 瑪格麗特）→ 去 emoji/空白後當同一鍵合併
-const abNorm = (name) => String(name).replace(/[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE0F}\u{2B00}-\u{2BFF}]/gu, "").replace(/\s+/g, "");
+// abNorm 已抽到 lib/num.js（2026-09-04）：供應鏈成本分析「同步成本」寫 pm_pos_costs 要用同一套 key 算法
 
 // 預設會計科目樹（依張良的公司帳務表；可在「科目」頁自由增刪改）
 function SEED_COA() {

@@ -59,7 +59,9 @@ export const recipeCost = (db, recipes, productId, visited) => {
     sub.missing.forEach(m => missing.push(`（半成品）${m}`));
   });
   const yld = Number(r.yield) > 0 ? Number(r.yield) : 1;
-  let total = batch / yld;
+  // 耗損率%（張良 2026-09-04 食譜表格式）：實得產量打折 → 每單位成本變貴；上限 90 防呆（100 會除以零）
+  const loss = Math.min(Math.max(Number(r.lossPct) || 0, 0), 90);
+  let total = batch / (yld * (1 - loss / 100));
   // 包材：每份各用 1 個（productPackaging 對應），成本＝貨源單顆價
   (db.productPackaging || []).filter(x => x.product_id === productId).forEach(pp => {
     const mat = (db.materials || []).find(m => m.id === pp.packaging_id);

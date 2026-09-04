@@ -1,5 +1,11 @@
 [
  {
+  "date": "2026-09-03",
+  "items": [
+   "工程資料探針catprobe(張良:問電費要盤點工程總覽的空調/設備/燈光用電項目,本機RLS擋→同MENU_PROBE_KEY金鑰唯讀口撈大項/細項全清單,可帶space=team/crew/finance) v2.2.1"
+  ]
+ },
+ {
   "date": "2026-09-02",
   "items": [
    "AB即時營業額接上(張良:AB還沒顯示)：①api/_eats.js=Eats365商家後台mpphk逆向:sign-in頁meta _csrf+頁內csid雙標頭(X-XSRF-TOKEN/X-XSRF-SESSION缺一靜默失敗)→JSON登入(email OTP驗證一次後30天裝置cookie免驗,cookie滾動存pm_eats_sess自動續期)→report/dashboard/shop拿當日即時 ②口徑=totalNetSales(9/1=30,614與日結信一毛不差✓;totalSales少服務費別用) ③入庫sp_finance_pm_ablive只存今天,掛mail-sync(每小時cron+🔄更新),日結信入庫自動接手 ④前端「今天(即時)」列AB欄紅字顯示金額+更新時間;更新訊息帶「AB即時NT$X・N單」;失敗訊息明講(裝置驗證過期=再收一次email驗證碼) ⑤AI兩邊接pm_ablive(D哥/App顧問答「AB今天目前多少」,有正式日結就不引用),coverage 73/73過;憑證EATS_*進Vercel env+.env.local;正式站實測45,761・24單✓ v2.2.0",

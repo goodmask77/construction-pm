@@ -31,6 +31,23 @@ const db3 = { ...db, materials: [{ id: "m1", name: "醬料杯" }], productPackag
   vendorItems: [...db.vendorItems, { id: "v9", vendor_id: "K", matId: "m1", name: "A140醬料杯", packToBase: 2000, last: { price: 1100, ts: "2026-07-17" } }] };
 ok("包材成本 7.6+0.55", Math.abs(recipeCost(db3, recipes, "p1").total - (7.6 + 1100 / 2000)) < 1e-9);
 
+// 半成品＋耗損率（2026-09-04 張良兩店成本計算：半成品=醬料一鍋、成品按 g 引用；耗損率=實得產量打折）
+// 半成品 sB：200g 高麗菜、出成 1000g → 每 g 成本 7.6/1000；成品 pF 用 100g → 0.76
+const recSemi = [
+  { id: "rs", product_id: "sB", ts: "1", ingredients: [{ ingredient_id: "g1", qty: 200 }], yield: 1000, yieldUnit: "g" },
+  { id: "rf", product_id: "pF", ts: "1", ingredients: [], subRecipes: [{ product_id: "sB", qty: 100 }], yield: 1 },
+];
+ok("半成品按出成單位遞迴：0.76", Math.abs(recipeCost(db, recSemi, "pF").total - 0.76) < 1e-9);
+// 耗損率 20%：實得 800g → 每 g 成本 7.6/800，成品用 100g → 0.95
+const recLoss = JSON.parse(JSON.stringify(recSemi)); recLoss[0].lossPct = 20;
+ok("耗損率20%→每單位成本變貴 0.95", Math.abs(recipeCost(db, recLoss, "pF").total - 0.95) < 1e-9);
+// 耗損率防呆：100% 不會除以零（上限 90）
+const recL100 = JSON.parse(JSON.stringify(recSemi)); recL100[0].lossPct = 100;
+ok("耗損率100%防呆不爆", Number.isFinite(recipeCost(db, recL100, "pF").total));
+// 半成品自己缺料 → 成品 missing 帶（半成品）前綴照實回報
+const recMiss = [{ id: "rm", product_id: "sX", ts: "1", ingredients: [{ ingredient_id: "gNone", qty: 5 }], yield: 100 }, { id: "rf2", product_id: "pG", ts: "1", ingredients: [], subRecipes: [{ product_id: "sX", qty: 10 }], yield: 1 }];
+ok("半成品缺料往上帶不靜默", recipeCost(db, recMiss, "pG").missing.some(m => m.includes("半成品")));
+
 // 進價事件：決定性 id＋冪等
 const order = { id: "oX", vendor_id: "A", items: [{ id: "v1", price: 850, qty: 2, unit: "箱" }, { id: "v2", price: "", qty: 1 }], check: { items: { 0: { st: "✓ 正確" } } } };
 const evs = buildPriceEvents(order, db, "2026-07-18T10:00:00Z");

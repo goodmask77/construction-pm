@@ -343,6 +343,90 @@ export default async function handler(req, res) {
     await announceChanged()
     return res.status(200).json({ ok: true, moved: hit.length, titles: hit.map(({ t }) => t.title) })
   }
+  // 供應鏈匯入口（POST＋同金鑰，張良 2026-09-04：兩店產品成本計算——截圖/試算表資料貼給 AI 整理後從這裡灌入，
+  // 不用在 App 一筆筆 keyin）。body={dry, ingredients:[{name,baseUnit,cat}], vendors:[{name,dept}],
+  //   vendorItems:[{vendor,name,spec,unit,price,packToBase,moq,note,ingredient}], recipes:[{product,store:'AB'|'GD'|'semi',
+  //   category,price,posName,ingredients:[{name,qty,unit}],subRecipes:[{name,qty}],steps,yield,yieldUnit,lossPct,keepNote,note}]}
+  // 規則＝App 同一套（資料一致）：物料 normName 同名不重建；品項價格視為最近實付（更新 last，同價只刷時間不誤觸漲價警示）；
+  // 食譜 append-only 存 pm_recipe_v_ 新版本；dry=true 只回報會動什麼不寫入
+  if (req.method === 'POST' && req.query?.supplyingest) {
+    const mk = (process.env.MENU_PROBE_KEY || '').trim()
+    if (!mk || String(req.query.supplyingest) !== mk) return res.status(403).json({ ok: false })
+    const { normName, parseSpec } = await import('../src/supply/inv.js')
+    let body = {}
+    try { body = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) { return res.status(400).json({ ok: false, error: 'body 不是 JSON' }) }
+    const arr = (k) => Array.isArray(body[k]) ? body[k] : []
+    if ([...arr('ingredients'), ...arr('vendors'), ...arr('vendorItems'), ...arr('recipes')].length > 300) return res.status(400).json({ ok: false, error: '一次最多 300 筆，分批送' })
+    const db = (await kvGet('sp_supply_pm_supply')) || { categories: [], products: [], materials: [], vendors: [], vendorItems: [], ingredients: [], matches: [], productPackaging: [] }
+    for (const k of ['categories', 'products', 'vendors', 'vendorItems', 'ingredients']) if (!Array.isArray(db[k])) db[k] = []
+    const rid2 = (p) => p + Math.random().toString(36).slice(2, 8)
+    const now = new Date().toISOString()
+    const rep = { created: [], updated: [], recipes: [], warn: [] }
+    // ① 物料卡 upsert（normName 同名＝同卡）
+    const ingBy = new Map(); db.ingredients.forEach(g => { const k = normName(g.name); if (k && !ingBy.has(k)) ingBy.set(k, g) })
+    const getIng = (name, unit) => {
+      const k = normName(name); if (!k) return null
+      let g = ingBy.get(k)
+      if (!g) {
+        g = { id: rid2('g'), name: String(name).trim(), cat: '', baseUnit: /^(ml|毫升|cc|公升|升|l)$/i.test(String(unit || '')) ? 'ml' : /^(個|张|張|片|顆|支|份|pcs?)$/i.test(String(unit || '')) ? '個' : 'g', countFreq: { type: 'none', days: [], dom: 1, paused: false }, countRole: '', countUnit: '', isKey: false, safeStock: '', note: '', sort: db.ingredients.length, tags: '' }
+        db.ingredients.push(g); ingBy.set(k, g); rep.created.push('物料卡：' + g.name)
+      }
+      return g
+    }
+    arr('ingredients').forEach(x => { if (!x?.name) return; const g = getIng(x.name, x.baseUnit); if (x.baseUnit) g.baseUnit = x.baseUnit; if (x.cat) g.cat = x.cat })
+    // ② 廠商 upsert（同名不重建）
+    const vendBy = new Map(); db.vendors.forEach(v => vendBy.set(normName(v.name), v))
+    const getVend = (name) => {
+      const k = normName(name); if (!k) return null
+      let v = vendBy.get(k)
+      if (!v) { v = { id: rid2('v'), name: String(name).trim(), dept: '共用', official: false }; db.vendors.push(v); vendBy.set(k, v); rep.created.push('廠商：' + v.name) }
+      return v
+    }
+    arr('vendors').forEach(x => { if (!x?.name) return; const v = getVend(x.name); if (x.dept) v.dept = x.dept })
+    // ③ 廠商品項 upsert：價格＝最近實付（同 applyLastPaid 規則：同價只刷時間、變價留 prevPrice 供漲價警示）
+    arr('vendorItems').forEach(x => {
+      if (!x?.name || !x?.vendor) return
+      const v = getVend(x.vendor); if (!v) return
+      let vi = db.vendorItems.find(it => it.vendor_id === v.id && normName(it.name) === normName(x.name))
+      if (!vi) { vi = { id: rid2('vi'), vendor_id: v.id, name: String(x.name).trim(), spec: '', unit: '', price: '', sort: db.vendorItems.length }; db.vendorItems.push(vi); rep.created.push(`品項：${v.name}／${vi.name}`) } else rep.updated.push(`品項：${v.name}／${vi.name}`)
+      if (x.spec != null) vi.spec = String(x.spec)
+      if (x.unit) vi.unit = String(x.unit)
+      if (x.moq != null) vi.moq = Number(x.moq) || vi.moq
+      if (x.note) vi.note = String(x.note)
+      const g = x.ingredient ? getIng(x.ingredient, x.unit) : getIng(x.name, x.unit)
+      if (g && !vi.ingredient_id) vi.ingredient_id = g.id
+      if (Number(x.packToBase) > 0) vi.packToBase = Number(x.packToBase)
+      else if (!Number(vi.packToBase)) { const p2 = parseSpec(vi.spec); if (p2.packToBase) vi.packToBase = p2.packToBase }
+      if (Number(x.price) > 0) {
+        const p = Number(x.price); vi.price = p
+        const cur = vi.last || {}
+        vi.last = Number(cur.price) === p ? { ...cur, ts: now } : { price: p, ts: now, prevPrice: Number(cur.price) || 0, prevTs: cur.ts || '' }
+      }
+      if (!Number(vi.packToBase)) rep.warn.push(`品項「${vi.name}」缺入數換算（規格解析不出）——App 物料頁要補，不然成本算不出`)
+    })
+    // ④ 食譜：產品 upsert（半成品共用/成品分店）＋ 新版本 append 進 pm_recipe_v_
+    const findProd = (name, store) => db.products.find(p => normName(p.name) === normName(name) && (store === 'semi' ? p.semi : (!p.semi && (p.store || 'AB') === store)))
+    const newRecs = []
+    arr('recipes').forEach(x => {
+      if (!x?.product) return
+      const store = x.store === 'GD' ? 'GD' : x.store === 'semi' ? 'semi' : 'AB'
+      let p = findProd(x.product, store)
+      if (!p) {
+        p = { id: rid2('p'), category: x.category || (store === 'semi' ? '半成品' : '未分類'), name: String(x.product).trim(), english_name: '', price: x.price || '', note: x.note || '', is_active: true, sort: db.products.length, unit: '', tags: [], ...(store === 'semi' ? { semi: true } : { store }) }
+        if (x.posName) p.posName = String(x.posName)
+        db.products.push(p); rep.created.push(`產品(${store === 'semi' ? '半成品' : store})：` + p.name)
+      } else { if (x.price != null && x.price !== '') p.price = x.price; if (x.posName) p.posName = String(x.posName); if (x.category) p.category = x.category }
+      const lines = (Array.isArray(x.ingredients) ? x.ingredients : []).map(li => { const g = getIng(li.name, li.unit); return g && Number(li.qty) > 0 ? { ingredient_id: g.id, qty: Number(li.qty) } : null }).filter(Boolean)
+      const subs = (Array.isArray(x.subRecipes) ? x.subRecipes : []).map(sr => { const sp = findProd(sr.name, 'semi'); if (!sp) { rep.warn.push(`食譜「${x.product}」引用的半成品「${sr.name}」不存在（半成品要先建/先送）`); return null } return Number(sr.qty) > 0 ? { product_id: sp.id, qty: Number(sr.qty) } : null }).filter(Boolean)
+      const rec = { id: rid2('rv'), product_id: p.id, ts: now, by: 'AI匯入口', ingredients: lines, subRecipes: subs, steps: Array.isArray(x.steps) ? x.steps : String(x.steps || '').split('\n').map(s => s.trim()).filter(Boolean), yield: Number(x.yield) > 0 ? Number(x.yield) : 1, yieldUnit: String(x.yieldUnit || (store === 'semi' ? 'g' : '份')), lossPct: Number(x.lossPct) > 0 ? Number(x.lossPct) : 0, keepNote: String(x.keepNote || ''), note: String(x.note || '') }
+      newRecs.push(rec); rep.recipes.push(`${p.name}（用料${lines.length}＋半成品${subs.length}）`)
+    })
+    if (body.dry) return res.status(200).json({ ok: true, dry: true, ...rep })
+    await kvPut('sp_supply_pm_supply', db, '供應鏈匯入口')
+    for (const rec of newRecs) await kvPut('sp_supply_pm_recipe_v_' + rec.id, rec, '供應鏈匯入口')
+    await announceChanged()
+    return res.status(200).json({ ok: true, ...rep })
+  }
   // 清理口（同金鑰）：?delday=<key>&date=YYYY-MM-DD&store=ground → 刪該日摘要＋明細（只用於清誤入資料，例：公休0元日）
   if (req.query?.delday) {
     const mk = (process.env.MENU_PROBE_KEY || '').trim()

@@ -5,8 +5,9 @@ import React, { useEffect, useState } from "react";
 import { PenLine, BadgeDollarSign, ReceiptText, Flag } from "lucide-react";
 import IngredientsView from "./Ingredients.jsx";
 import RecipeCard from "./Recipe.jsx";
-import { buildPriceEvents, applyLastPaid, applyQuote, priceAlert, unitCost, quoteUnit, packToBase, srcsOf, lastPaid, latestRecipeOf } from "./inv.js";
+import { buildPriceEvents, applyLastPaid, applyQuote, priceAlert, unitCost, quoteUnit, packToBase, srcsOf, lastPaid, latestRecipeOf, recipeCost } from "./inv.js";
 import { getSharedPrefix } from "../supa.js";
+import { abNorm } from "../lib/num.js";
 
 export const C = {
   text: "#1d1a15", sub: "#5a5247", faint: "#9b9384", line: "#d9cfbd", hard: "#c8bca6",
@@ -41,6 +42,8 @@ export default function SupplyView({ view, K, canEdit, confirm, showMoney, userN
   const [vF, setVF] = useState("");              // 紀錄・對帳：廠商篩選
   const [qv2, setQv2] = useState({});            // 報價分頁：輸入中的報價（viId → 文字，離開欄位才寫入流水）
   const [selRows, setSelRows] = useState({});    // 菜單管理/廠商建檔：批次勾選 id→true
+  const [storeF, setStoreF] = useState("AB");    // 店籤（菜單管理/成本分析共用）：AB / GD / semi=半成品(兩店共用) / all（張良 2026-09-04：原物料半成品共用、成品分店）
+  const [scSort, setScSort] = useState("rate");  // 成本分析排序：rate=成本率高→低 / margin / cost / cat
   const [dragC, setDragC] = useState(null);      // 拖曳中的類別/分類名稱
   const [groups, setGroups] = useState({});     // DD看過的LINE群（pm_group_seen，發送綁定用）
   const flash = (t) => { setMsg(t); setTimeout(() => setMsg(m => (m === t ? null : m)), 6000); };
@@ -928,11 +931,161 @@ export default function SupplyView({ view, K, canEdit, confirm, showMoney, userN
     );
   }
 
+  // ── 成本分析（張良 2026-09-04：AB/GD 兩店所有產品成本計算）──
+  // 口徑：成本＝食譜用料×最近實付價＋半成品遞迴（含耗損率）＋包材，與產品詳情食譜卡同一套算法（inv.recipeCost，資料一致）
+  if (view === "scost") {
+    const STORE_L = { AB: "A Beach", GD: "GROUN:D" };
+    const recs = recipesAll || [];
+    const st = storeF === "all" ? "AB" : storeF; // 成本分析沒有「全部」籤：AB/GD/半成品 三選一
+    const isSemi = st === "semi";
+    const alertPct = Number((db.settings || {}).costAlertPct) > 0 ? Number((db.settings || {}).costAlertPct) : 40;
+    // 各產品最新版食譜（半成品「被誰引用」反查用）
+    const latestBy = {}; recs.forEach(r => { const b = latestBy[r.product_id]; if (!b || (r.ts || "") > (b.ts || "")) latestBy[r.product_id] = r; });
+    const usedBy = (pid) => Object.values(latestBy).filter(r => (r.subRecipes || []).some(s2 => s2.product_id === pid))
+      .map(r => ((db.products || []).find(pp => pp.id === r.product_id) || {}).name).filter(Boolean);
+    const list = (db.products || []).filter(p => (p.name || "").trim() && p.is_active !== false)
+      .filter(p => isSemi ? p.semi : (!p.semi && (p.store || "AB") === st));
+    const rowsC = list.map(p => {
+      const r = latestBy[p.id] || null;
+      const rc = r ? recipeCost(db, recs, p.id) : null;
+      const cost = rc && rc.total > 0 ? rc.total : null;
+      const sell = Number(p.price) || 0;
+      const rate = cost != null && sell > 0 ? cost / sell * 100 : null;
+      return { p, r, rc, cost, sell, rate, margin: rate != null ? 100 - rate : null, yu: (r && r.yieldUnit) || "份", used: isSemi ? usedBy(p.id) : [] };
+    });
+    const sorted = [...rowsC].sort((a, b) => {
+      const nl = (v) => v == null ? -1 : v; // 缺值排最後（降冪時）
+      if (scSort === "rate") return nl(b.rate) - nl(a.rate);
+      if (scSort === "margin") return (a.margin == null ? 999 : a.margin) - (b.margin == null ? 999 : b.margin);
+      if (scSort === "cost") return nl(b.cost) - nl(a.cost);
+      return (a.p.category || "").localeCompare(b.p.category || "", "zh-TW") || nl(b.rate) - nl(a.rate);
+    });
+    const nRec = rowsC.filter(r => r.r).length;
+    const okRows = rowsC.filter(r => r.cost != null && r.rc && !r.rc.missing.length);
+    const nWarn = rowsC.filter(r => r.rate != null && r.rate >= alertPct).length;
+    const avgRate = (() => { const rs = okRows.map(r => r.rate).filter(v => v != null); return rs.length ? rs.reduce((t, v) => t + v, 0) / rs.length : null; })();
+    const d2 = (n) => n == null ? "—" : n >= 100 ? Math.round(n).toLocaleString() : (Math.round(n * 100) / 100).toString();
+    const d4 = (n) => n == null ? "—" : n < 1 ? (Math.round(n * 10000) / 10000).toString() : d2(n);
+    // ⬇️ 匯出 CSV（帶 BOM 中文不亂碼；跟畫面同一份資料）
+    const exportCsv = () => {
+      const esc = (s) => `"${String(s ?? "").replace(/"/g, '""')}"`;
+      const head = isSemi ? ["品項", "每單位成本", "單位", "出成量", "耗損率%", "被引用", "缺料"] : ["類別", "品項", "售價", "一份成本", "毛利", "毛利率%", "成本率%", "缺料"];
+      const lines = [head.map(esc).join(",")];
+      sorted.forEach(r => lines.push((isSemi
+        ? [esc(r.p.name), r.cost != null ? Math.round(r.cost * 10000) / 10000 : "", esc(r.yu), r.r ? r.r.yield || "" : "", r.r && r.r.lossPct ? r.r.lossPct : "", esc(r.used.join("、")), esc(r.rc ? r.rc.missing.join("；") : "尚無食譜")]
+        : [esc(r.p.category || ""), esc(r.p.name), r.sell || "", r.cost != null ? Math.round(r.cost * 100) / 100 : "", r.cost != null && r.sell ? Math.round((r.sell - r.cost) * 100) / 100 : "", r.margin != null ? Math.round(r.margin * 10) / 10 : "", r.rate != null ? Math.round(r.rate * 10) / 10 : "", esc(r.rc ? r.rc.missing.join("；") : "尚無食譜")]).join(",")));
+      const blob = new Blob(["\ufeff" + lines.join("\r\n")], { type: "text/csv;charset=utf-8" });
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = `成本分析_${isSemi ? "半成品" : STORE_L[st]}_${new Date().toISOString().slice(0, 10)}.csv`;
+      a.click(); URL.revokeObjectURL(a.href);
+    };
+    // 💰 同步到營運報表：食譜算出的成本 → sp_finance_pm_pos_costs（品項明細毛利就會用真食譜成本，不用手填兩邊）
+    // key 算法與 Finance 品項明細一致（AB=abNorm 去emoji、GD=POS品名原文）；只同步「成本完整」的，缺料不寫入避免低估
+    const syncToPos = async () => {
+      const all = (db.products || []).filter(p => !p.semi && p.is_active !== false && (p.name || "").trim());
+      const upd2 = { abeach: {}, ground: {} };
+      let n = 0, skip = 0;
+      all.forEach(p => {
+        const r = latestBy[p.id]; if (!r) { skip++; return; }
+        const rc = recipeCost(db, recs, p.id);
+        if (!(rc.total > 0) || rc.missing.length) { skip++; return; }
+        const sk = (p.store || "AB") === "GD" ? "ground" : "abeach";
+        const key = sk === "abeach" ? abNorm(p.posName || p.name) : String(p.posName || p.name).trim();
+        upd2[sk][key] = Math.round(rc.total * 100) / 100; n++;
+      });
+      if (!n) { flash("⚠ 沒有可同步的品項（要有食譜、且成本完整無缺料）"); return; }
+      if (!(await confirm(`把食譜算出的 ${n} 項成本寫進「財務報表→營運報表」的品項成本？\nA Beach ${Object.keys(upd2.abeach).length} 項、GROUN:D ${Object.keys(upd2.ground).length} 項；缺食譜/缺料跳過 ${skip} 項。\n（營運報表同名品項若手填過成本，會被食譜成本覆蓋）`, { confirmLabel: "同步" }))) return;
+      try {
+        const cur = await window.storage.get("sp_finance_pm_pos_costs", true);
+        const doc = cur && cur.value ? JSON.parse(cur.value) : {};
+        const next = { ...doc, abeach: { ...(doc.abeach || {}), ...upd2.abeach }, ground: { ...(doc.ground || {}), ...upd2.ground } };
+        await window.storage.set("sp_finance_pm_pos_costs", JSON.stringify(next), true);
+        flash(`✓ 已同步 ${n} 項成本（營運報表→品項明細的毛利/成本率會改用食譜成本）`);
+      } catch (_) { flash("⚠ 同步失敗，請稍後再試"); }
+    };
+    const thd = (label, key) => (
+      <div onClick={key ? () => setScSort(key) : undefined} style={{ ...vlineS, padding: "7px 9px", fontSize: 10.5, letterSpacing: .6, color: scSort === key ? C.accent : C.sub, fontWeight: 700, justifyContent: label === "品項" || label === "類別" ? "flex-start" : "flex-end", cursor: key ? "pointer" : "default" }} title={key ? "點我依這欄排序" : ""}>{label}{scSort === key ? " ▼" : ""}</div>
+    );
+    const vlineS = { borderRight: "1px solid #e0d6bf", alignSelf: "stretch", display: "flex", alignItems: "center" };
+    const GTC2 = isSemi ? "150px 1fr 110px 100px 70px 220px" : "110px 1fr 76px 84px 84px 76px 76px 200px";
+    const rateColor = (v) => v == null ? C.faint : v >= alertPct ? C.red : v >= alertPct - 8 ? C.amber : C.green;
+    if (!showMoney) return <div style={{ padding: 40, color: C.sub, fontSize: 14 }}>此頁全是成本金額，需要「看金額」權限。</div>;
+    return (
+      <div style={{ maxWidth: 1060, margin: "0 auto" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "6px 0 10px", flexWrap: "wrap" }}>
+          <span style={{ background: C.accent, color: "#fff", fontSize: 11.5, fontWeight: 700, borderRadius: 4, padding: "2px 8px" }}>成本</span>
+          <div style={{ fontSize: 17, fontWeight: 800, color: C.text }}>成本分析</div>
+          <div style={{ display: "inline-flex", background: C.soft, border: `1px solid ${C.line}`, borderRadius: 8, padding: 2, gap: 2 }}>
+            {[["AB", "A Beach"], ["GD", "GROUN:D"], ["semi", "🧪 半成品"]].map(([v, l]) => (
+              <button key={v} onClick={() => setStoreF(v)} style={{ padding: "4px 12px", borderRadius: 6, border: `1px solid ${st === v ? C.line : "transparent"}`, background: st === v ? "#fff" : "transparent", color: st === v ? C.text : C.sub, fontSize: 12.5, fontWeight: st === v ? 700 : 400, cursor: "pointer" }}>{l}</button>
+            ))}
+          </div>
+          <div style={{ flex: 1 }} />
+          {btn("⬇️ 匯出 CSV", exportCsv)}
+          {canEdit && btn("💰 同步成本到營運報表", syncToPos, { background: C.green, color: "#fff", borderColor: C.green })}
+        </div>
+        {msg && <div style={{ background: "#eef5ef", border: `1.5px solid ${C.green}`, borderRadius: 8, padding: "7px 12px", marginBottom: 10, fontSize: 12.5, color: "#2c5a38", fontWeight: 600 }}>{msg}</div>}
+        {/* KPI 摘要列 */}
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
+          {[[isSemi ? "半成品" : "上架產品", `${list.length} 項`, C.text], ["已設食譜", `${nRec}/${list.length}`, nRec < list.length ? C.amber : C.green], ["成本完整", `${okRows.length}/${list.length}`, okRows.length < nRec ? C.amber : C.green],
+            ...(isSemi ? [] : [["平均成本率", avgRate != null ? Math.round(avgRate) + "%" : "—", rateColor(avgRate)], [`成本率≥${alertPct}%`, `${nWarn} 項`, nWarn ? C.red : C.green]])].map(([l, v, c2]) => (
+            <div key={l} style={{ background: C.card, border: `1.5px solid ${C.hard}`, borderRadius: 10, padding: "8px 14px" }}>
+              <div style={{ fontSize: 10.5, color: C.faint, fontWeight: 700 }}>{l}</div>
+              <div style={{ fontSize: 16, fontWeight: 800, fontFamily: MONOF, color: c2 }}>{v}</div>
+            </div>
+          ))}
+          {!isSemi && <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11.5, color: C.sub, marginLeft: "auto" }}>警示線
+            <input defaultValue={alertPct} onBlur={e => { const n = Number(e.target.value); if (n > 0 && n < 100 && n !== alertPct) save({ settings: { ...(db.settings || {}), costAlertPct: n } }); }} disabled={!canEdit} inputMode="numeric" style={{ ...inp, width: 52, padding: "4px 6px", fontFamily: MONOF, textAlign: "center" }} />%
+          </label>}
+        </div>
+        {/* 主表 */}
+        <div style={{ background: "#fff", border: `1.5px solid ${C.hard}`, borderRadius: 4, overflow: "auto" }}>
+          <div style={{ display: "grid", gridTemplateColumns: GTC2, background: "#ece4d6", borderBottom: `1.5px solid ${C.hard}`, alignItems: "stretch", minWidth: isSemi ? 660 : 760 }}>
+            {isSemi ? <>{thd("品項", "")}{thd("出成", "")}{thd("每單位成本", "cost")}{thd("整批成本", "")}{thd("被引用", "")}{thd("狀態", "")}</>
+              : <>{thd("類別", "cat")}{thd("品項", "")}{thd("售價", "")}{thd("一份成本", "cost")}{thd("毛利", "")}{thd("毛利率", "margin")}{thd("成本率", "rate")}{thd("狀態", "")}</>}
+          </div>
+          {sorted.map(({ p, r, rc, cost, sell, rate, margin, yu, used }) => {
+            const stTxt = !r ? "尚無食譜" : rc.missing.length ? rc.missing.join("；") : "";
+            const batch = cost != null && r && Number(r.yield) > 0 ? cost * Number(r.yield) * (1 - Math.min(Math.max(Number(r.lossPct) || 0, 0), 90) / 100) : null;
+            return (
+              <div key={p.id} style={{ display: "grid", gridTemplateColumns: GTC2, alignItems: "stretch", minHeight: 32, borderTop: "1px solid #e0d6bf", minWidth: isSemi ? 660 : 760 }}>
+                {!isSemi && <div style={{ ...vlineS, padding: "0 9px", fontSize: 11.5, color: C.faint, overflow: "hidden", whiteSpace: "nowrap" }}>{p.category || "—"}</div>}
+                <div style={{ ...vlineS, padding: "0 9px", fontSize: 12.5, fontWeight: 600, color: C.text, overflow: "hidden" }}><span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.name}</span></div>
+                {isSemi ? <>
+                  <div style={{ ...vlineS, padding: "0 9px", fontFamily: MONOF, fontSize: 11.5, color: C.sub, justifyContent: "flex-end" }}>{r ? `${r.yield || 1}${yu}${Number(r.lossPct) > 0 ? `（耗損${r.lossPct}%）` : ""}` : "—"}</div>
+                  <div style={{ ...vlineS, padding: "0 9px", fontFamily: MONOF, fontSize: 12, justifyContent: "flex-end", color: C.accent, fontWeight: 700 }}>{cost != null ? `$${d4(cost)}/${yu}` : "—"}</div>
+                  <div style={{ ...vlineS, padding: "0 9px", fontFamily: MONOF, fontSize: 12, justifyContent: "flex-end" }}>{batch != null ? "$" + d2(batch) : "—"}</div>
+                  <div style={{ ...vlineS, padding: "0 9px", fontSize: 11, color: used.length ? C.blue : C.faint, overflow: "hidden" }}><span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={used.join("、")}>{used.length ? `${used.length} 項：${used.join("、")}` : "沒有食譜引用"}</span></div>
+                </> : <>
+                  <div style={{ ...vlineS, padding: "0 9px", fontFamily: MONOF, fontSize: 12, justifyContent: "flex-end", color: sell ? C.text : C.faint }}>{sell ? "$" + d2(sell) : "—"}</div>
+                  <div style={{ ...vlineS, padding: "0 9px", fontFamily: MONOF, fontSize: 12, justifyContent: "flex-end", color: cost != null ? C.accent : C.faint, fontWeight: 700 }}>{cost != null ? "$" + d2(cost) : "—"}</div>
+                  <div style={{ ...vlineS, padding: "0 9px", fontFamily: MONOF, fontSize: 12, justifyContent: "flex-end" }}>{cost != null && sell ? "$" + d2(sell - cost) : "—"}</div>
+                  <div style={{ ...vlineS, padding: "0 9px", fontFamily: MONOF, fontSize: 12, justifyContent: "flex-end", color: margin == null ? C.faint : margin <= 100 - alertPct ? C.red : C.green }}>{margin != null ? Math.round(margin) + "%" : "—"}</div>
+                  <div style={{ ...vlineS, padding: "0 9px", fontFamily: MONOF, fontSize: 12, justifyContent: "flex-end", fontWeight: 700, color: rateColor(rate) }}>{rate != null ? Math.round(rate) + "%" : "—"}</div>
+                </>}
+                <div style={{ display: "flex", alignItems: "center", padding: "0 9px", fontSize: 11, color: stTxt ? C.red : C.green, overflow: "hidden" }}><span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={stTxt}>{stTxt || "✓ 完整"}</span></div>
+              </div>
+            );
+          })}
+          {!sorted.length && <div style={{ padding: 30, textAlign: "center", fontSize: 12.5, color: C.faint }}>{isSemi ? "還沒有半成品——到「菜單管理」切到 🧪半成品 籤新增（例：醬料、備料）" : `${STORE_L[st]} 還沒有產品——到「菜單管理」切到 ${STORE_L[st]} 籤新增`}</div>}
+        </div>
+        <div style={{ fontSize: 11, color: C.faint, marginTop: 8, lineHeight: 1.7 }}>
+          成本＝食譜用料×最近實付進價＋半成品（含耗損率）＋包材，跟產品詳情的食譜卡同一套算法。缺料的品項照實標紅、不當 0 算。<br />
+          「同步成本到營運報表」會把完整成本寫進 財務報表→營運報表 的品項成本（AB/GD 都同步），每天毛利就自動用食譜成本。
+        </div>
+      </div>
+    );
+  }
+
   // ── 產品管理（核心）──
   const cats = [...(db.categories || [])].sort((a, b) => (a.sort || 0) - (b.sort || 0));
+  // 店籤（張良 2026-09-04）：原物料/半成品兩店共用，成品食譜分店（AB=A Beach 餐廳、GD=GROUN:D 速食；舊資料沒 store 欄＝AB）
+  const STORE_L2 = { AB: "A Beach", GD: "GROUN:D" };
+  const storeOk = (x) => storeF === "all" || (storeF === "semi" ? !!x.semi : (!x.semi && (x.store || "AB") === storeF));
   let prods = (db.products || []).filter(x =>
     (!q.trim() || (x.name + (x.english_name || "") + (x.note || "")).toLowerCase().includes(q.trim().toLowerCase())) &&
-    (!catF || x.category === catF) && (!onlyActive || x.is_active !== false) && (!tagF || (x.tags || []).includes(tagF)));
+    (!catF || x.category === catF) && (!onlyActive || x.is_active !== false) && (!tagF || (x.tags || []).includes(tagF)) && storeOk(x));
   const byCat = {};
   prods.forEach(x => { (byCat[x.category || "未分類"] = byCat[x.category || "未分類"] || []).push(x); });
   const catNames = [...cats.map(c => c.name), ...Object.keys(byCat).filter(n => !cats.some(c => c.name === n))].filter(n => byCat[n]?.length);
@@ -942,7 +1095,7 @@ export default function SupplyView({ view, K, canEdit, confirm, showMoney, userN
   const hardBox = { background: "#fff", border: `1.5px solid ${C.hard}`, borderRadius: 4, marginBottom: 12, overflow: "hidden" };
   const addProduct = (catName) => {
     if (!canEdit) return;
-    const np = { id: rid("p"), category: catName || catNames[0] || "未分類", name: "", english_name: "", price: "", note: "", is_active: true, sort: (db.products || []).length, unit: "", tags: [] };
+    const np = { id: rid("p"), category: catName || catNames[0] || "未分類", name: "", english_name: "", price: "", note: "", is_active: true, sort: (db.products || []).length, unit: "", tags: [], ...(storeF === "semi" ? { semi: true } : { store: storeF === "GD" ? "GD" : "AB" }) };
     save({ products: [...db.products, np] }); setSel(np.id);
   };
   const addCategory = () => { if (!canEdit) return; const nm = window.prompt("新類別名稱"); if (!nm || !nm.trim()) return; save({ categories: [...db.categories, { name: nm.trim(), sort: db.categories.length }] }); };
@@ -972,7 +1125,7 @@ export default function SupplyView({ view, K, canEdit, confirm, showMoney, userN
       <div key={x.id} onClick={() => setSel(x.id)} style={{ borderTop: `1px solid #e0d6bf`, padding: "7px 10px", cursor: "pointer", background: x.is_active === false ? "#f2ede1" : "#fff", opacity: x.is_active === false ? .6 : 1 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <input type="checkbox" checked={!!selRows[x.id]} onClick={e => e.stopPropagation()} onChange={e => setSelRows(s => ({ ...s, [x.id]: e.target.checked }))} disabled={!canEdit} style={{ cursor: "pointer", flexShrink: 0 }} />
-          <span style={{ fontSize: 13, fontWeight: 600, color: C.text, flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{x.name || "（未命名）"}</span>
+          <span style={{ fontSize: 13, fontWeight: 600, color: C.text, flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{storeF === "all" && <span style={{ fontSize: 9.5, fontWeight: 700, color: "#fff", background: x.semi ? C.blue : x.store === "GD" ? C.accent : C.green, borderRadius: 3, padding: "1px 4px", marginRight: 5 }}>{x.semi ? "共用" : x.store === "GD" ? "GD" : "AB"}</span>}{x.name || "（未命名）"}</span>
           {showMoney && <span style={{ fontFamily: MONOF, fontSize: 12.5, fontWeight: 700, flexShrink: 0, color: x.price ? C.text : "#d5cbb6" }}>{fmt$(x.price) || "—"}</span>}
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 4, paddingLeft: 21 }}>
@@ -994,7 +1147,7 @@ export default function SupplyView({ view, K, canEdit, confirm, showMoney, userN
         <input type="checkbox" checked={!!selRows[x.id]} onChange={e => setSelRows(s => ({ ...s, [x.id]: e.target.checked }))} disabled={!canEdit} style={{ cursor: "pointer" }} />
       </div>
       {canEdit ? <div draggable onDragStart={e => { e.stopPropagation(); setDragI(x.id); }} onDragEnd={() => setDragI(null)} onClick={e => e.stopPropagation()} title="拖曳排序（拖到別類會換類別）" style={{ ...vline, justifyContent: "center", cursor: "grab", color: "#c8bca6", fontSize: 12 }}>⠿</div> : <div style={vline} />}
-      <div style={{ ...vline, padding: "0 9px", fontSize: 13, fontWeight: 600, color: C.text, overflow: "hidden" }}><span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{x.name || "（未命名）"}</span></div>
+      <div style={{ ...vline, padding: "0 9px", fontSize: 13, fontWeight: 600, color: C.text, overflow: "hidden" }}><span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{storeF === "all" && <span style={{ fontSize: 9.5, fontWeight: 700, color: "#fff", background: x.semi ? C.blue : x.store === "GD" ? C.accent : C.green, borderRadius: 3, padding: "1px 4px", marginRight: 5 }}>{x.semi ? "共用" : x.store === "GD" ? "GD" : "AB"}</span>}{x.name || "（未命名）"}</span></div>
       <div style={{ ...vline, padding: "0 9px", fontSize: 11.5, color: C.faint, overflow: "hidden" }}><span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{x.english_name}</span></div>
       <div style={{ ...vline, padding: "0 9px", fontSize: 11.5, color: C.sub, overflow: "hidden" }}><span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{x.note || "—"}</span></div>
       <div style={{ ...vline, padding: "0 9px", fontSize: 12, color: x.unit ? C.sub : "#d5cbb6" }}>{x.unit || "—"}</div>
@@ -1012,6 +1165,12 @@ export default function SupplyView({ view, K, canEdit, confirm, showMoney, userN
       <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "6px 0 10px", flexWrap: "wrap" }}>
         <span style={{ background: C.accent, color: "#fff", fontSize: 11.5, fontWeight: 700, borderRadius: 4, padding: "2px 8px" }}>菜單</span>
         <div style={{ fontSize: 17, fontWeight: 800, color: C.text }} title={`${db.products.length} 項產品・${cats.length} 類別`}>菜單管理</div>
+        {/* 店籤：成品分店、半成品兩店共用（張良 2026-09-04） */}
+        <div style={{ display: "inline-flex", background: C.soft, border: `1px solid ${C.line}`, borderRadius: 8, padding: 2, gap: 2 }}>
+          {[["AB", "A Beach"], ["GD", "GROUN:D"], ["semi", "🧪 半成品"], ["all", "全部"]].map(([v, l]) => (
+            <button key={v} onClick={() => { setStoreF(v); setSelRows({}); }} style={{ padding: "4px 11px", borderRadius: 6, border: `1px solid ${storeF === v ? C.line : "transparent"}`, background: storeF === v ? "#fff" : "transparent", color: storeF === v ? C.text : C.sub, fontSize: 12, fontWeight: storeF === v ? 700 : 400, cursor: "pointer" }}>{l}</button>
+          ))}
+        </div>
         <div style={{ flex: 1 }} />
         {canEdit && btn("＋ 新增類別", addCategory)}
         {canEdit && btn("＋ 新增產品", () => addProduct(catF || ""), { background: C.accent, color: "#fff", borderColor: C.accent })}
@@ -1044,6 +1203,12 @@ export default function SupplyView({ view, K, canEdit, confirm, showMoney, userN
               <option value="">移到類別…</option>
               {catNames.map(cn => <option key={cn} value={cn}>{cn}</option>)}
             </select>
+            <select defaultValue="" onChange={e => { const v = e.target.value; if (!v) return; batchP(v === "semi" ? { semi: true } : { semi: false, store: v }, v === "semi" ? "設為半成品（共用）" : `移到 ${STORE_L2[v]}`); e.target.value = ""; }} style={{ ...inp, padding: "3px 8px", fontSize: 11.5, width: 110 }}>
+              <option value="">移到店…</option>
+              <option value="AB">A Beach</option>
+              <option value="GD">GROUN:D</option>
+              <option value="semi">🧪 半成品(共用)</option>
+            </select>
             <button onClick={async () => {
               if (!(await confirm(`刪除勾選的 ${selIdsP.length} 項產品？（食譜/包材綁定也會一併移除）`, { confirmLabel: "刪除" }))) return;
               save({ products: db.products.filter(p => !selRows[p.id]), productPackaging: (db.productPackaging || []).filter(x => !selRows[x.product_id]) });
@@ -1058,7 +1223,7 @@ export default function SupplyView({ view, K, canEdit, confirm, showMoney, userN
       })()}
       {/* 缺料總覽（2026-07-22 張良第一性原理：物料需求源自菜單）——沒設食譜的產品算不出成本，紅字盯著補 */}
       {recipesAll && (() => {
-        const act = (db.products || []).filter(p => p.is_active !== false && (p.name || "").trim());
+        const act = (db.products || []).filter(p => p.is_active !== false && (p.name || "").trim()).filter(storeOk);
         const miss = act.filter(p => !latestRecipeOf(recipesAll, p.id));
         if (!miss.length) return null;
         return (
@@ -1120,6 +1285,13 @@ export default function SupplyView({ view, K, canEdit, confirm, showMoney, userN
                 <select value={selP.category || ""} onChange={e => updP(selP.id, { category: e.target.value })} disabled={!canEdit} style={{ ...inp, width: "100%", marginTop: 4 }}>
                   {cats.map(c => <option key={c.name} value={c.name}>{c.name}</option>)}
                   {selP.category && !cats.some(c => c.name === selP.category) && <option value={selP.category}>{selP.category}</option>}
+                </select>
+              </label>
+              <label style={{ display: "block", fontSize: 11, color: C.faint, fontWeight: 600 }}>店別（半成品＝兩店共用）
+                <select value={selP.semi ? "semi" : (selP.store || "AB")} onChange={e => { const v = e.target.value; updP(selP.id, v === "semi" ? { semi: true } : { semi: false, store: v }); }} disabled={!canEdit} style={{ ...inp, width: "100%", marginTop: 4 }}>
+                  <option value="AB">A Beach（成品）</option>
+                  <option value="GD">GROUN:D（成品）</option>
+                  <option value="semi">🧪 半成品（兩店共用）</option>
                 </select>
               </label>
               <label style={{ display: "block", fontSize: 11, color: C.faint, fontWeight: 600 }}>狀態
