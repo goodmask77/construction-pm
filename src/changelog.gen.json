@@ -1,5 +1,11 @@
 [
  {
+  "date": "2026-09-04",
+  "items": [
+   "兩店產品成本計算第一期(張良:AB+GD所有產品成本,原物料半成品共用/成品食譜分店)：①店籤product.store=AB|GD+semi半成品(菜單管理店籤切換/詳情店別/批次移店/全部視角徽章,舊資料=AB) ②半成品介面開放:subRecipes編輯(選半成品+用量,單位跟它的出成單位)+食譜新欄yieldUnit出成單位/lossPct耗損率(實得打折上限90防除零)/keepNote保存——格式照張良Google配方表 ③新分頁scost成本分析:AB/GD/半成品三籤+KPI(食譜覆蓋/成本完整/平均成本率/警示)+警示線可調(預設40%)+欄頭排序+CSV+同步成本到營運報表(寫pm_pos_costs,key算法abNorm抽到lib/num.js與Finance共用,只同步完整成本) ④供應鏈匯入口POST mail-sync?supplyingest=金鑰(dry先看;物料normName同名不重建/品項價=最近實付同applyLastPaid/食譜append流水;api直接import src的inv.js同一套算法) ⑤已灌入645項叫貨最新價(張良「叫貨價格浮動追蹤.html」39廠商5378筆5/1-9/2×配方表物料總表重量欄;289項有換算/356待補;冪等重跑0 created驗證✓) ⑥selftest+5(半成品遞迴/耗損率/防呆/缺料上帶)=44全過 v2.2.2"
+  ]
+ },
+ {
   "date": "2026-09-03",
   "items": [
    "工程資料探針catprobe(張良:問電費要盤點工程總覽的空調/設備/燈光用電項目,本機RLS擋→同MENU_PROBE_KEY金鑰唯讀口撈大項/細項全清單,可帶space=team/crew/finance) v2.2.1"

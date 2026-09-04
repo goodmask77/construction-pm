@@ -1312,12 +1312,7 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
                   {hasKiosk && kpi("自助點餐", fmt(paySum.kiosk), (revSum ? "佔營收 " + Math.round(paySum.kiosk / revSum * 100) + "%" : "") + (kioskTxSum ? "・約 " + kioskTxSum + " 單(估)" : ""), "#6b4a86", () => openDrill({ type: "pay", key: "kiosk" }))}
                   {kpi(last.intraday ? "今天（盤中）" : "最新一天", fmt(last.revenue), last.intraday ? (last.fetchedAt || "") + " 更新" : last.date.slice(5), last.intraday ? "#b3261e" : null, () => openDrill({ type: "day", key: last.date }))}
                 </div>
-                {/* 盤中即時（張良 2026-08-27）：joya-intraday 每半小時~一小時抓「今天」進來，打烊後自動換正式值 */}
-                {last?.intraday && (
-                  <div style={{ background: "#fdecea", border: "1.5px solid #f0b8b1", borderRadius: 8, padding: "7px 12px", marginBottom: 12, fontSize: 12.5, color: "#8c1d18", fontWeight: 600 }}>
-                    🔴 今天是「盤中即時數字」（{last.fetchedAt || "—"} 從喬亞抓的）——還沒打烊，之後還會長大；打烊後自動換成正式結帳數字。
-                  </div>
-                )}
+                {/* 盤中即時（joya-intraday 每半小時抓「今天」，打烊後自動換正式值）——粉紅說明橫幅已拆（張良 2026-09-04：表格列顯示時間即可） */}
                 {posGran === "day" ? (
                 <div style={{ border: "1.5px solid #c8bca6", borderRadius: 8, background: C.card, overflow: "hidden" }}>
                   <div style={{ overflowX: "auto" }}><div style={{ minWidth: (hasGuests ? 1072 : 928) + (hasKiosk ? 156 : 0) + (hasExt ? 168 : 0) - (hasLinepay ? 0 : 96) + (abView ? -44 : 0) + (hasLunch ? 116 : 0) }}>
@@ -1362,7 +1357,7 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
                               <div key={d.id} onClick={() => openDrill({ type: "day", key: d.date })} title="點我看該日完整原始資料" style={{ display: "grid", gridTemplateColumns: GTC, alignItems: "center", minHeight: 32, borderTop: i ? (newWeek ? "2px solid #c8bca6" : "1px solid #f0ead9") : "none", background: rowBg, cursor: "pointer" }}
                                 onMouseEnter={e => e.currentTarget.style.background = "#f4efe5"} onMouseLeave={e => e.currentTarget.style.background = rowBg}>
                                 <div style={{ padding: "0 8px", fontFamily: MONOF, fontSize: 11.5, color: wknd ? "#a97a10" : C.sub, fontWeight: wknd ? 700 : 400 }}>{d.date.slice(2)}（{WD2[gd]}）</div>
-                                {!abView && <div style={{ padding: "0 8px", fontSize: 11.5, color: C.sub, overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis" }}>{d.store}{d.intraday && <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 700, color: "#b3261e", background: "#fdecea", border: "1px solid #f0b8b1", borderRadius: 5, padding: "1px 5px" }}>盤中 {d.fetchedAt || ""} 更新</span>}</div>}
+                                {!abView && <div style={{ padding: "0 8px", fontSize: 11.5, color: C.sub, overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis" }}>{d.store}{d.intraday && <span title="營業中的即時數字，之後還會長大；打烊後自動換成正式結帳數字" style={{ marginLeft: 6, fontSize: 10, fontWeight: 700, color: "#b3261e", background: "#fdecea", border: "1px solid #f0b8b1", borderRadius: 5, padding: "1px 5px" }}>{d.fetchedAt || ""}</span>}</div>}
                                 {hasExt && <>{cell(extDays[d.date]?.s1 ? fmt(extDays[d.date].s1) : "—", { color: "#8a7f6a" })}{cell(extDays[d.date]?.s2 ? fmt(extDays[d.date].s2) : "—", { color: "#8a7f6a" })}</>}
                                 {hasLunch && (() => { const lv = lunchByDate[d.date]; return cell(lv != null ? <>{fmt(lv)}<span style={{ color: C.faint, fontWeight: 400 }}>·{d.revenue ? Math.round(lv / d.revenue * 100) : 0}%</span></> : "—", lv != null ? { color: "#2f6d5a", fontWeight: 600 } : { color: "#d5cbb6" }); })()}
                                 {cell(fmt(d.revenue), { fontWeight: 700, color: C.text })}
