@@ -446,6 +446,27 @@ export default async function handler(req, res) {
     await announceChanged()
     return res.status(200).json({ ok: true, removedSummary: before - store.entries.length, removedDetail: ch })
   }
+  // 資料搜尋探針（唯讀＋同金鑰，2026-09-05）：?docgrep=<key>&q=關鍵字 → 全庫文件（pm_documents.data->>v）ilike 撈出現位置前後文
+  // 用途：張良問「XX有幾台/什麼時候買的/在哪」這類資料問題，本機被 RLS 擋時走這裡；只回片段不回整份文件
+  if (req.query?.docgrep) {
+    const mk = (process.env.MENU_PROBE_KEY || '').trim()
+    if (!mk || String(req.query.docgrep) !== mk) return res.status(403).json({ ok: false })
+    const q = String(req.query.q || '').slice(0, 40)
+    if (!q) return res.status(400).json({ ok: false, error: '要帶 q=關鍵字' })
+    const lr = await fetch(`${SB_URL}/rest/v1/pm_documents?select=id&data->>v=ilike.${encodeURIComponent('*' + q + '*')}&limit=60`, { headers: { apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}` } })
+    const ids = (lr.ok ? await lr.json() : []).map(x => x.id)
+    const out2 = []
+    for (const id of ids.slice(0, 30)) {
+      const r2 = await fetch(`${SB_URL}/rest/v1/pm_documents?id=eq.${encodeURIComponent(id)}&select=data`, { headers: { apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}` } })
+      const rows2 = r2.ok ? await r2.json() : []
+      const txt = rows2[0]?.data?.v || ''
+      const snips = []
+      let i2 = -1
+      while ((i2 = txt.indexOf(q, i2 + 1)) >= 0 && snips.length < 8) { snips.push(txt.slice(Math.max(0, i2 - 90), i2 + 120)); i2 += q.length }
+      out2.push({ id, hits: snips.length, snips })
+    }
+    return res.status(200).json({ ok: true, q, matchedDocs: ids.length, docs: out2 })
+  }
   // 營收探針（唯讀＋同 MENU_PROBE_KEY 金鑰）：?revprobe=<key>&store=abeach|ground → 每日 {date, weekday, revenue}
   // 用途：張良問「某月平日/週末營業額」這類彙總，本機被 RLS 擋時走這裡拿原始日列自己算（同一份 sp_finance_pm_pos）
   if (req.query?.revprobe) {
