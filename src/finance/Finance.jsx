@@ -1543,6 +1543,22 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
                       });
                     });
                   });
+                  // AB「今天即時」欄（張良 2026-09-05：品項明細也要出現今天）——pm_ablive 全品項掛成虛擬日欄，
+                  // 明天官方日結入庫後這欄自動被真資料取代；GD 本來就有（盤中記錄整包走正式管線）
+                  const twD2 = new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10);
+                  const liveD = (isAB && abLive?.date === twD2 && (abLive.items || []).length && !dts.includes(twD2)) ? twD2 : null;
+                  if (liveD) {
+                    dts.push(liveD);
+                    (abLive.items || []).forEach(it => {
+                      if (AB_SKIP_CATS.has(it.c) || isQuarterItem(it.n)) return;
+                      const uber = AB_UBER_CATS.has(it.c);
+                      const key = abNorm(it.n);
+                      const o = items[key] = items[key] || { n: it.n, k: key, cat: abFineCat(it.n), q: {}, cum: 0, comboCum: 0, comboHas: false, uber: 0, amt: 0, aq: 0, u: {} };
+                      o.q[liveD] = (o.q[liveD] || 0) + (Number(it.q) || 0); o.cum += Number(it.q) || 0;
+                      if (uber) o.uber += Number(it.q) || 0;
+                      // 定價還原不吃即時資料（盤中金額仍會變動，寧缺勿錯）
+                    });
+                  }
                   if (!Object.keys(items).length) return null;
                   if (isAB) { AB_FINE_ORDER.forEach(c => { if (Object.values(items).some(o => o.cat === c)) catSeen.push(c); }); Object.values(items).forEach(o => { if (!catSeen.includes(o.cat)) catSeen.push(o.cat); }); }
                   const lastD2 = dts[dts.length - 1], prevD2 = dts[dts.length - 2];
@@ -1582,6 +1598,7 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
                   const costOf = (o) => Number(costMap[o.k]) > 0 ? Number(costMap[o.k]) : null;
                   const allItems = Object.values(items); // 全品項口徑（不受上面分類籤/沒賣篩選影響）
                   const revByDate = {}; days.forEach(d => { revByDate[d.date] = Number(d.revenue) || 0; });
+                  if (liveD) revByDate[liveD] = Number(abLive?.revenue) || 0; // 即時欄毛利用盤中營收算（同一時點口徑）
                   const dayCostOf = (dd) => allItems.reduce((t, o) => { const c = costOf(o); return t + (c != null ? (o.q[dd] || 0) * c : 0); }, 0);
                   const cumCost = dts.reduce((t, dd) => t + dayCostOf(dd), 0);
                   const cumRev = dts.reduce((t, dd) => t + (revByDate[dd] || 0), 0);
@@ -1630,7 +1647,7 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
                           <thead><tr style={{ background: C.head }}>
                             <th style={{ ...thd, textAlign: "left", cursor: "default", position: "sticky", left: 0, background: C.head, zIndex: 1 }}>品項</th>
                             {!gdGroup && <th style={{ ...thd, textAlign: "left", cursor: "default" }}>品類</th>}
-                            {dts.map(dd => <th key={dd} onClick={() => setGdSort(dd)} style={{ ...thd, fontFamily: MONOF, color: sortKey === dd ? C.brand : C.sub }}>{dd.slice(5)}{sortKey === dd ? " ▼" : ""}</th>)}
+                            {dts.map(dd => <th key={dd} onClick={() => setGdSort(dd)} title={dd === liveD ? `今天即時（${abLive?.at || ""} 更新，還會長大；打烊後自動換正式數字）` : undefined} style={{ ...thd, fontFamily: MONOF, color: dd === liveD ? "#b3261e" : sortKey === dd ? C.brand : C.sub }}>{dd.slice(5)}{dd === liveD ? ` ${abLive?.at || "即時"}` : ""}{sortKey === dd ? " ▼" : ""}</th>)}
                             <th onClick={() => setGdSort("cum")} style={{ ...thd, color: sortKey === "cum" ? C.brand : C.sub }}>累計{sortKey === "cum" ? " ▼" : ""}</th>
                             {isAB
                               ? <th style={{ ...thd, cursor: "default" }} title="Uber 外送分類（低價版）賣出的份數——已併入左邊各日與累計的總量，這欄單獨列出其中多少來自 Uber">Uber</th>
