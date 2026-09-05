@@ -453,8 +453,10 @@ export default async function handler(req, res) {
     if (!mk || String(req.query.docgrep) !== mk) return res.status(403).json({ ok: false })
     const q = String(req.query.q || '').slice(0, 40)
     if (!q) return res.status(400).json({ ok: false, error: '要帶 q=關鍵字' })
+    const maxSnips = Math.min(40, Math.max(1, parseInt(req.query.max || '8', 10) || 8)) // &max=N 拉高單文件片段數；&id=xxx 只查某份文件
+    const onlyId = String(req.query.id || '')
     const lr = await fetch(`${SB_URL}/rest/v1/pm_documents?select=id&data->>v=ilike.${encodeURIComponent('*' + q + '*')}&limit=60`, { headers: { apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}` } })
-    const ids = (lr.ok ? await lr.json() : []).map(x => x.id)
+    const ids = (lr.ok ? await lr.json() : []).map(x => x.id).filter(id => !onlyId || id === onlyId)
     const out2 = []
     for (const id of ids.slice(0, 30)) {
       const r2 = await fetch(`${SB_URL}/rest/v1/pm_documents?id=eq.${encodeURIComponent(id)}&select=data`, { headers: { apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}` } })
@@ -462,7 +464,7 @@ export default async function handler(req, res) {
       const txt = rows2[0]?.data?.v || ''
       const snips = []
       let i2 = -1
-      while ((i2 = txt.indexOf(q, i2 + 1)) >= 0 && snips.length < 8) { snips.push(txt.slice(Math.max(0, i2 - 90), i2 + 120)); i2 += q.length }
+      while ((i2 = txt.indexOf(q, i2 + 1)) >= 0 && snips.length < maxSnips) { snips.push(txt.slice(Math.max(0, i2 - 90), i2 + 120)); i2 += q.length }
       out2.push({ id, hits: snips.length, snips })
     }
     return res.status(200).json({ ok: true, q, matchedDocs: ids.length, docs: out2 })
