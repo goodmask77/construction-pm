@@ -61,6 +61,27 @@ async function eatsFetchDay(sess, date) {
   return await r.json()
 }
 
+// 完整品項即時（張良 2026-09-05：「後台不可能只給Top10，找到路徑就能抓全部」——對，找到了）
+// POST /report/dailyReport {startDate,endDate,rCode}＝日結報表同源、盤中就能打：
+//   categorizedOrderSKU＝分類→品項含「sales 金額＋quantity 份數」（驗證：溫泉蛋燉飯 6,720 與後台「銷售報告(商品)」頁一致；總份數=儀表板 totalItemQuantitySold）
+//   detailedCategorizedOrderSKU＝含加料/備註列但品項金額為 0 → 不用；paymentType＝付款別金額＋筆數
+async function eatsFetchDailyItems(sess, date) {
+  const r = await fetch(BASE + '/report/dailyReport', {
+    method: 'POST',
+    headers: { 'User-Agent': UA, Cookie: sess.J.cookieStr(), 'X-XSRF-TOKEN': sess.tok, 'X-XSRF-SESSION': sess.csid, 'EATS365-RESTAURANT-CODE': CTX.rcode, 'EATS365-BRAND-ID': CTX.brand, 'EATS365-ORGANIZATION-ID': CTX.org, 'Content-Type': 'application/json', Accept: 'application/json' },
+    body: JSON.stringify({ startDate: date + ' 00:00:00', endDate: date + ' 23:59:59', rCode: CTX.rcode }),
+  })
+  if (!r.ok) throw new Error('eats: dailyReport ' + r.status)
+  const d = await r.json()
+  const items = []
+  for (const c of (d.categorizedOrderSKU || [])) {
+    const cat = c.catName?.tc || c.catName?.default || c.catName?.en || ''
+    for (const x of (c.orderSKU || [])) items.push({ n: x.dName?.tc || x.dName?.default || x.dName?.en || '', c: cat, q: Number(x.quantity) || 0, a: Math.round(Number(x.sales) || 0) })
+  }
+  items.sort((a, b) => b.a - a.a)
+  return items.slice(0, 300)
+}
+
 // 同步「AB 今天即時」：kvGet/kvPut 由 mail-sync 傳入（共用入庫＋廣播）。回傳 {revenue,tx} 供更新訊息用。
 export async function syncEatsLive(kvGet, kvPut) {
   if (!process.env.EATS_USER || !process.env.EATS_PASS) return null
@@ -78,10 +99,10 @@ export async function syncEatsLive(kvGet, kvPut) {
     tx: Number(d.totalTransaction) || 0,
     at: tw.toISOString().slice(11, 16),
     updatedAt: new Date().toISOString(),
-    // 即時銷售數據（張良 2026-09-05：AB 也要看盤中賣什麼）——同一支 dashboard API 就有，不用多打
+    // 即時銷售數據（張良 2026-09-05：AB 也要看盤中賣什麼）
     guests: Number(d.totalCustomer) || 0,
-    items: (d.topSellingItemList || []).map((x) => ({ n: x.productName?.tc || x.productName?.default || '', c: x.categoryName?.tc || x.categoryName?.default || '', q: Number(x.quantity) || 0, a: Math.round(Number(x.netSales) || 0) })), // ⚠️ Eats365 只給 Top 10（totalItemQuantitySold 才是全份數）
-    itemsQtyTotal: Number(d.totalItemQuantitySold) || 0, // 全日總份數（items 只涵蓋 Top10，佔比用這個算才對）
+    items: await eatsFetchDailyItems(sess, date).catch(() => (d.topSellingItemList || []).map((x) => ({ n: x.productName?.tc || x.productName?.default || '', c: x.categoryName?.tc || x.categoryName?.default || '', q: Number(x.quantity) || 0, a: Math.round(Number(x.netSales) || 0) }))), // 完整品項（dailyReport）；失敗才退回儀表板 Top10
+    itemsQtyTotal: Number(d.totalItemQuantitySold) || 0, // 全日總份數（驗 items 覆蓋是否完整用）
     hourly: Object.values(d.hourlySalesRecordMap || {}).filter((h) => h && (h.netSales > 0 || h.count > 0)).map((h) => [Number(h.hour), Math.round(Number(h.netSales) || 0), Number(h.count) || 0]).sort((a, b) => a[0] - b[0]), // [[時, 營業額, 單數]]
     dineIn: { tx: Number(d.dineInTransaction) || 0, sales: Math.round(Number(d.dineInNetSales) || 0) },
     takeout: { tx: Number(d.takeoutTransaction) || 0, sales: Math.round(Number(d.takeoutNetSales) || 0) },

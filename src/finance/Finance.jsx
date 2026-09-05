@@ -1215,10 +1215,12 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
             };
           }
           if (dr.type === "ablive") {
-            // AB 盤中即時明細（張良 2026-09-05）：pm_ablive 的 Top10 熱銷＋每小時＋內用外帶（Eats365 儀表板同一支 API）
+            // AB 盤中即時明細（張良 2026-09-05）：pm_ablive＝全品項(dailyReport)＋每小時＋內用外帶；v2.2.6 起完整品項（覆蓋自檢，退回Top10會明講）
             const al = abLive || {};
             const rows = [];
-            (al.items || []).forEach(it => rows.push(["🔥 熱銷 Top 10", it.n + (it.c ? `（${it.c}）` : ""), it.q, "", fmt(it.a), ""]));
+            const sumQ = (al.items || []).reduce((t, it) => t + (it.q || 0), 0);
+            const full = al.itemsQtyTotal ? sumQ >= al.itemsQtyTotal : false;
+            (al.items || []).forEach(it => rows.push([full ? "🔥 品項（全・即時累計）" : "🔥 熱銷（僅Top10）", it.n + (it.c ? `（${it.c}）` : ""), it.q, "", fmt(it.a), ""]));
             (al.hourly || []).forEach(([h2, rev2, tx2]) => rows.push(["⏰ 每小時", String(h2).padStart(2, "0") + ":00", tx2, "", fmt(rev2), ""]));
             if (al.dineIn?.tx || al.takeout?.tx) {
               rows.push(["🍽 內用/外帶", "內用", al.dineIn?.tx || 0, "", fmt(al.dineIn?.sales || 0), ""]);
@@ -1227,7 +1229,7 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
             return {
               title: `A Beach 今天盤中即時（${al.at || "—"} 更新・還會長大）`, cols: ["區塊", "名稱", "數量", "", "金額", ""],
               rows,
-              note: `到目前：營收 ${fmt(al.revenue || 0)}・${al.tx || 0} 單・來客 ${al.guests || "—"}。品項是 Eats365 只給的熱銷前 10 名（今天累計共 ${al.itemsQtyTotal || "?"} 份）——完整品項明細打烊後日結信自動入庫。按表頭「🔄 更新」可再抓最新。`,
+              note: `到目前：營收 ${fmt(al.revenue || 0)}・${al.tx || 0} 單・來客 ${al.guests || "—"}・品項 ${(al.items || []).length} 項/${sumQ} 份${full ? "（✓ 完整，與後台「銷售報告(商品)」同源）" : `（⚠ 僅熱銷前10，全日共 ${al.itemsQtyTotal || "?"} 份）`}。正式數字打烊後日結信自動入庫。按表頭「🔄 更新」可再抓最新。`,
             };
           }
           if (dr.type === "day") {

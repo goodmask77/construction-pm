@@ -572,7 +572,7 @@ async function loadPosText() {
     // AB 今天即時（pm_ablive＝Eats365 後台儀表板抓的「到目前為止」，張良 2026-09-02；日結信入庫後被正式資料取代——同一天有正式日結就別再引用即時值）
     const abl = kv['sp_finance_pm_ablive']
     if (abl?.date === now.toISOString().slice(0, 10) && abl.revenue && !entries.some(e => e.date === abl.date && !isG(e))) {
-      lines.push(`  - ${abl.date}［A Beach］盤中即時（${abl.at} 更新，還沒打烊會再長大）：營收${nt(abl.revenue)}｜${abl.tx}單${abl.guests ? `｜來客${abl.guests}` : ''}${abl.dineIn?.tx || abl.takeout?.tx ? `｜內用${abl.dineIn?.tx || 0}單${nt(abl.dineIn?.sales)}/外帶${abl.takeout?.tx || 0}單${nt(abl.takeout?.sales)}` : ''}${(abl.items || []).length ? `｜熱銷Top${Math.min(5, abl.items.length)}:${abl.items.slice(0, 5).map(i => `${i.n}×${i.q}`).join('、')}（品項僅Top10,全日共${abl.itemsQtyTotal || '?'}份）` : ''}`)
+      lines.push(`  - ${abl.date}［A Beach］盤中即時（${abl.at} 更新，還沒打烊會再長大）：營收${nt(abl.revenue)}｜${abl.tx}單${abl.guests ? `｜來客${abl.guests}` : ''}${abl.dineIn?.tx || abl.takeout?.tx ? `｜內用${abl.dineIn?.tx || 0}單${nt(abl.dineIn?.sales)}/外帶${abl.takeout?.tx || 0}單${nt(abl.takeout?.sales)}` : ''}${(abl.items || []).length ? `｜熱銷Top${Math.min(5, abl.items.length)}:${abl.items.slice(0, 5).map(i => `${i.n}×${i.q}`).join('、')}（品項共${abl.items.length}項${abl.items.reduce((t2, i) => t2 + (i.q || 0), 0) >= (abl.itemsQtyTotal || 0) ? ',完整' : ',僅Top10'};要全表問我某品項即可）` : ''}`)
     }
     // GROUN:D 半小時時段（pm_pos_hh_月檔＝盤中每30分快照相減推算，2026-08-28 起；答「排人力/尖峰半小時」；對帳以每小時原生資料為準；與 App loadSpaceAIContext 同步接）
     const hhDoc = kv['sp_finance_pm_pos_hh_' + mo]
