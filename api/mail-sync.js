@@ -419,6 +419,10 @@ export default async function handler(req, res) {
       const lines = (Array.isArray(x.ingredients) ? x.ingredients : []).map(li => { const g = getIng(li.name, li.unit); return g && Number(li.qty) > 0 ? { ingredient_id: g.id, qty: Number(li.qty) } : null }).filter(Boolean)
       const subs = (Array.isArray(x.subRecipes) ? x.subRecipes : []).map(sr => { const sp = findProd(sr.name, 'semi'); if (!sp) { rep.warn.push(`食譜「${x.product}」引用的半成品「${sr.name}」不存在（半成品要先建/先送）`); return null } return Number(sr.qty) > 0 ? { product_id: sp.id, qty: Number(sr.qty) } : null }).filter(Boolean)
       const rec = { id: rid2('rv'), product_id: p.id, ts: now, by: 'AI匯入口', ingredients: lines, subRecipes: subs, steps: Array.isArray(x.steps) ? x.steps : String(x.steps || '').split('\n').map(s => s.trim()).filter(Boolean), yield: Number(x.yield) > 0 ? Number(x.yield) : 1, yieldUnit: String(x.yieldUnit || (store === 'semi' ? 'g' : '份')), lossPct: Number(x.lossPct) > 0 ? Number(x.lossPct) : 0, keepNote: String(x.keepNote || ''), note: String(x.note || '') }
+      // 食譜公版欄位（2026-09-06 張良：照他配方表的完整格式）——有給才寫，不硬塞空值
+      if (Number(x.packW) > 0) rec.packW = Number(x.packW)
+      if (Number(x.packN) > 0) rec.packN = Number(x.packN)
+      for (const k of ['keepType', 'keepPlace', 'expFrozen', 'expChilled', 'stationStock', 'reserveStock']) if (x[k]) rec[k] = String(x[k])
       newRecs.push(rec); rep.recipes.push(`${p.name}（用料${lines.length}＋半成品${subs.length}）`)
     })
     if (body.dry) return res.status(200).json({ ok: true, dry: true, ...rep })
