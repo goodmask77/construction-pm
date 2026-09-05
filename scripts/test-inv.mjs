@@ -44,6 +44,12 @@ ok("耗損率20%→每單位成本變貴 0.95", Math.abs(recipeCost(db, recLoss,
 // 耗損率防呆：100% 不會除以零（上限 90）
 const recL100 = JSON.parse(JSON.stringify(recSemi)); recL100[0].lossPct = 100;
 ok("耗損率100%防呆不爆", Number.isFinite(recipeCost(db, recL100, "pF").total));
+// 零成本物料（水/冰塊 2026-09-06 央廚配方匯入）：量照記、成本0、不列缺價
+const dbW = JSON.parse(JSON.stringify(db)); dbW.ingredients.push({ id: "gWater", name: "水", baseUnit: "g", costFree: true });
+const recW = [{ id: "rw", product_id: "pW", ts: "1", ingredients: [{ ingredient_id: "g1", qty: 200 }, { ingredient_id: "gWater", qty: 430 }], yield: 1 }];
+const cW = recipeCost(dbW, recW, "pW");
+ok("costFree 水：成本不變且無缺價", Math.abs(cW.total - 7.6) < 1e-9 && cW.missing.length === 0);
+
 // 半成品自己缺料 → 成品 missing 帶（半成品）前綴照實回報
 const recMiss = [{ id: "rm", product_id: "sX", ts: "1", ingredients: [{ ingredient_id: "gNone", qty: 5 }], yield: 100 }, { id: "rf2", product_id: "pG", ts: "1", ingredients: [], subRecipes: [{ product_id: "sX", qty: 10 }], yield: 1 }];
 ok("半成品缺料往上帶不靜默", recipeCost(db, recMiss, "pG").missing.some(m => m.includes("半成品")));

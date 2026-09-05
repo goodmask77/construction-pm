@@ -49,6 +49,7 @@ export const recipeCost = (db, recipes, productId, visited) => {
     const ing = (db.ingredients || []).find(g => g.id === li.ingredient_id);
     const qty = Number(li.qty) || 0;
     if (!ing) { missing.push("有一筆用料的物料已被刪除"); return; }
+    if (ing.costFree) return; // 零成本物料（水/冰塊等，2026-09-06）：量照記、成本算 0、不列缺價
     const c = latestCostOfIngredient(db, li.ingredient_id);
     if (!c) { missing.push(`${ing.name}：缺價或貨源未設換算`); return; }
     batch += c.unitCost * qty;

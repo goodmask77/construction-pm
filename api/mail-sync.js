@@ -373,7 +373,7 @@ export default async function handler(req, res) {
       }
       return g
     }
-    arr('ingredients').forEach(x => { if (!x?.name) return; const g = getIng(x.name, x.baseUnit); if (x.baseUnit) g.baseUnit = x.baseUnit; if (x.cat) g.cat = x.cat })
+    arr('ingredients').forEach(x => { if (!x?.name) return; const g = getIng(x.name, x.baseUnit); if (x.baseUnit) g.baseUnit = x.baseUnit; if (x.cat) g.cat = x.cat; if (x.costFree != null) g.costFree = !!x.costFree })
     // ② 廠商 upsert（同名不重建）
     const vendBy = new Map(); db.vendors.forEach(v => vendBy.set(normName(v.name), v))
     const getVend = (name) => {
