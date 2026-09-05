@@ -1214,6 +1214,22 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
               note: "來源：日結信「優惠券」分頁・已自動併列＋依關鍵字分類（客訴/試菜/夥伴/VIP/招待/一般）・（日小計）＝POS 每日總額列不計入彙總・點欄位標題可排序",
             };
           }
+          if (dr.type === "ablive") {
+            // AB 盤中即時明細（張良 2026-09-05）：pm_ablive 的 Top10 熱銷＋每小時＋內用外帶（Eats365 儀表板同一支 API）
+            const al = abLive || {};
+            const rows = [];
+            (al.items || []).forEach(it => rows.push(["🔥 熱銷 Top 10", it.n + (it.c ? `（${it.c}）` : ""), it.q, "", fmt(it.a), ""]));
+            (al.hourly || []).forEach(([h2, rev2, tx2]) => rows.push(["⏰ 每小時", String(h2).padStart(2, "0") + ":00", tx2, "", fmt(rev2), ""]));
+            if (al.dineIn?.tx || al.takeout?.tx) {
+              rows.push(["🍽 內用/外帶", "內用", al.dineIn?.tx || 0, "", fmt(al.dineIn?.sales || 0), ""]);
+              rows.push(["🍽 內用/外帶", "外帶", al.takeout?.tx || 0, "", fmt(al.takeout?.sales || 0), ""]);
+            }
+            return {
+              title: `A Beach 今天盤中即時（${al.at || "—"} 更新・還會長大）`, cols: ["區塊", "名稱", "數量", "", "金額", ""],
+              rows,
+              note: `到目前：營收 ${fmt(al.revenue || 0)}・${al.tx || 0} 單・來客 ${al.guests || "—"}。品項是 Eats365 只給的熱銷前 10 名（今天累計共 ${al.itemsQtyTotal || "?"} 份）——完整品項明細打烊後日結信自動入庫。按表頭「🔄 更新」可再抓最新。`,
+            };
+          }
           if (dr.type === "day") {
             const det = dayDet(dr.key);
             const dEnt = days.find(x => x.date === dr.key) || {};
@@ -1343,7 +1359,8 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
                                   <div key="live-today" title="今天的即時數字：1/2/AB＝按「🔄 更新」抓後台到目前為止、GD＝盤中每30分自動；打烊日結入庫後這列自動換成正式數字" style={{ display: "grid", gridTemplateColumns: GTC, alignItems: "center", minHeight: 32, background: "#fdf6ec", borderBottom: "1.5px dashed #c8bca6" }}>
                                     <div style={{ padding: "0 8px", fontFamily: MONOF, fontSize: 11.5, color: "#b3261e", fontWeight: 700 }}>{twToday.slice(2)}（{WD2[gdL]}）<span style={{ marginLeft: 4, fontSize: 10, fontWeight: 700, background: "#fdecea", border: "1px solid #f0b8b1", borderRadius: 5, padding: "1px 4px" }}>即時</span></div>
                                     {hasExt && <>{cell(exT.s1 ? fmt(exT.s1) : "—", { color: "#8a7f6a" })}{cell(exT.s2 ? fmt(exT.s2) : "—", { color: "#8a7f6a" })}</>}
-                                    {cell(abT ? <>{fmt(abT.revenue)}<span style={{ fontSize: 9.5, color: C.faint, fontWeight: 400 }}> {abT.at}</span></> : "—", abT ? { color: "#b3261e", fontWeight: 700 } : { color: "#d5cbb6" })}
+                                    {abT ? <div onClick={() => openDrill({ type: "ablive" })} title="點我看盤中熱銷品項／每小時／內用外帶" style={{ padding: "0 8px", fontFamily: MONOF, fontSize: 11.5, textAlign: "right", color: "#b3261e", fontWeight: 700, cursor: "pointer" }}
+                                      onMouseEnter={e => e.currentTarget.style.textDecoration = "underline"} onMouseLeave={e => e.currentTarget.style.textDecoration = "none"}>{fmt(abT.revenue)}<span style={{ fontSize: 9.5, color: C.faint, fontWeight: 400 }}> {abT.at}</span></div> : cell("—", { color: "#d5cbb6" })}
                                     {cell(gdT ? fmt(gdT) : "—", gdT ? { color: "#b3492f", fontWeight: 600 } : { color: "#d5cbb6" })}
                                     {Array.from({ length: dashN }, (_, j) => <div key={"dz" + j} style={{ padding: "0 8px", fontFamily: MONOF, fontSize: 11.5, textAlign: "right", color: "#d5cbb6" }}>—</div>)}
                                   </div>

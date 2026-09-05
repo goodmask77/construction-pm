@@ -78,6 +78,13 @@ export async function syncEatsLive(kvGet, kvPut) {
     tx: Number(d.totalTransaction) || 0,
     at: tw.toISOString().slice(11, 16),
     updatedAt: new Date().toISOString(),
+    // 即時銷售數據（張良 2026-09-05：AB 也要看盤中賣什麼）——同一支 dashboard API 就有，不用多打
+    guests: Number(d.totalCustomer) || 0,
+    items: (d.topSellingItemList || []).map((x) => ({ n: x.productName?.tc || x.productName?.default || '', c: x.categoryName?.tc || x.categoryName?.default || '', q: Number(x.quantity) || 0, a: Math.round(Number(x.netSales) || 0) })), // ⚠️ Eats365 只給 Top 10（totalItemQuantitySold 才是全份數）
+    itemsQtyTotal: Number(d.totalItemQuantitySold) || 0, // 全日總份數（items 只涵蓋 Top10，佔比用這個算才對）
+    hourly: Object.values(d.hourlySalesRecordMap || {}).filter((h) => h && (h.netSales > 0 || h.count > 0)).map((h) => [Number(h.hour), Math.round(Number(h.netSales) || 0), Number(h.count) || 0]).sort((a, b) => a[0] - b[0]), // [[時, 營業額, 單數]]
+    dineIn: { tx: Number(d.dineInTransaction) || 0, sales: Math.round(Number(d.dineInNetSales) || 0) },
+    takeout: { tx: Number(d.takeoutTransaction) || 0, sales: Math.round(Number(d.takeoutNetSales) || 0) },
   }
   await kvPut('sp_finance_pm_ablive', doc, 'AB即時')
   return { revenue: doc.revenue, tx: doc.tx }
