@@ -343,6 +343,31 @@ export default async function handler(req, res) {
     await announceChanged()
     return res.status(200).json({ ok: true, moved: hit.length, titles: hit.map(({ t }) => t.title) })
   }
+  // 價格歷史匯入口（POST＋同金鑰，張良 2026-09-06 供應鏈重建 P1：把「叫貨價格浮動追蹤」5,378 筆歷史搬進 App 當活資料）
+  // body={dry, rows:[{d:'YYYY-MM-DD',vendor,item,unit,p,q,src}]}；存月檔 sp_supply_pm_ph_YYYY-MM={rows:[…]}，
+  // 以 d|vendor|item 去重（重送冪等）；之後驗收/匯入的新價自動 append 同一庫——價格追蹤頁全吃這裡
+  if (req.method === 'POST' && req.query?.phingest) {
+    const mk = (process.env.MENU_PROBE_KEY || '').trim()
+    if (!mk || String(req.query.phingest) !== mk) return res.status(403).json({ ok: false })
+    let body = {}
+    try { body = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) { return res.status(400).json({ ok: false, error: 'body 不是 JSON' }) }
+    const rows = Array.isArray(body.rows) ? body.rows : []
+    if (!rows.length || rows.length > 8000) return res.status(400).json({ ok: false, error: 'rows 空或超過 8000 筆' })
+    for (const r of rows) { if (!/^\d{4}-\d{2}-\d{2}$/.test(r?.d || '') || !r?.vendor || !r?.item || !(Number(r?.p) > 0)) return res.status(400).json({ ok: false, error: '每筆要有 d/vendor/item/p', bad: r }) }
+    const byMo = {}
+    rows.forEach(r => { const mo = r.d.slice(0, 7); (byMo[mo] = byMo[mo] || []).push({ d: r.d, vendor: String(r.vendor), item: String(r.item), unit: String(r.unit || ''), p: Number(r.p), q: Number(r.q) || 0, src: String(r.src || 'import') }) })
+    const rep2 = {}
+    for (const mo of Object.keys(byMo)) {
+      const did = 'sp_supply_pm_ph_' + mo
+      const doc = (await kvGet(did)) || { rows: [] }
+      const seen = new Set(doc.rows.map(r => `${r.d}|${r.vendor}|${r.item}`))
+      const add = byMo[mo].filter(r => !seen.has(`${r.d}|${r.vendor}|${r.item}`))
+      rep2[mo] = { had: doc.rows.length, add: add.length }
+      if (!body.dry && add.length) { doc.rows.push(...add); doc.updatedAt = new Date().toISOString(); await kvPut(did, doc, '價格歷史匯入口') }
+    }
+    if (!body.dry) await announceChanged()
+    return res.status(200).json({ ok: true, dry: !!body.dry, months: rep2 })
+  }
   // 供應鏈匯入口（POST＋同金鑰，張良 2026-09-04：兩店產品成本計算——截圖/試算表資料貼給 AI 整理後從這裡灌入，
   // 不用在 App 一筆筆 keyin）。body={dry, ingredients:[{name,baseUnit,cat}], vendors:[{name,dept}],
   //   vendorItems:[{vendor,name,spec,unit,price,packToBase,moq,note,ingredient}], recipes:[{product,store:'AB'|'GD'|'semi',
@@ -384,6 +409,8 @@ export default async function handler(req, res) {
     }
     arr('vendors').forEach(x => { if (!x?.name) return; const v = getVend(x.name); if (x.dept) v.dept = x.dept })
     // ③ 廠商品項 upsert：價格＝最近實付（同 applyLastPaid 規則：同價只刷時間、變價留 prevPrice 供漲價警示）
+    // 變價側錄（張良 2026-09-06）：新價 append 價格歷史月檔＋變價通知＋價差過大（預設±80%且差額≥20）標「疑似有誤」待確認
+    const priceEvents = []   // {vendor,item,unit,from,to,pct|null}
     arr('vendorItems').forEach(x => {
       if (!x?.name || !x?.vendor) return
       const v = getVend(x.vendor); if (!v) return
@@ -398,9 +425,11 @@ export default async function handler(req, res) {
       if (Number(x.packToBase) > 0) vi.packToBase = Number(x.packToBase)
       else if (!Number(vi.packToBase)) { const p2 = parseSpec(vi.spec); if (p2.packToBase) vi.packToBase = p2.packToBase }
       if (Number(x.price) > 0) {
-        const p = Number(x.price); vi.price = p
-        const cur = vi.last || {}
+        const p = Number(x.price); const cur = vi.last || {}
+        const prev = Number(cur.price) || Number(vi.price) || 0
+        vi.price = p
         vi.last = Number(cur.price) === p ? { ...cur, ts: now } : { price: p, ts: now, prevPrice: Number(cur.price) || 0, prevTs: cur.ts || '' }
+        if (p !== prev) priceEvents.push({ vendor: v.name, item: vi.name, unit: vi.unit || '', from: prev, to: p, pct: prev > 0 ? Math.round((p - prev) / prev * 100) : null })
       }
       if (!Number(vi.packToBase)) rep.warn.push(`品項「${vi.name}」缺入數換算（規格解析不出）——App 物料頁要補，不然成本算不出`)
     })
@@ -425,9 +454,47 @@ export default async function handler(req, res) {
       for (const k of ['keepType', 'keepPlace', 'expFrozen', 'expChilled', 'stationStock', 'reserveStock']) if (x[k]) rec[k] = String(x[k])
       newRecs.push(rec); rep.recipes.push(`${p.name}（用料${lines.length}＋半成品${subs.length}）`)
     })
+    // 變價側錄：價差過大＝「疑似資料有誤」進待確認清單（App 價格追蹤頁 highlight，確認後解除）
+    const suspectPct = Number((db.settings || {}).suspectPct) > 0 ? Number((db.settings || {}).suspectPct) : 80
+    const suspects = priceEvents.filter(e => e.pct != null && Math.abs(e.pct) >= suspectPct && Math.abs(e.to - e.from) >= 20)
+    if (priceEvents.length) rep.priceChanges = priceEvents
+    if (suspects.length) rep.suspects = suspects
     if (body.dry) return res.status(200).json({ ok: true, dry: true, ...rep })
     await kvPut('sp_supply_pm_supply', db, '供應鏈匯入口')
     for (const rec of newRecs) await kvPut('sp_supply_pm_recipe_v_' + rec.id, rec, '供應鏈匯入口')
+    if (priceEvents.length) {
+      const today = now.slice(0, 10), mo = today.slice(0, 7)
+      // ① 價格歷史 append（同一天同品項只留一筆＝最新）
+      const did = 'sp_supply_pm_ph_' + mo
+      const doc = (await kvGet(did)) || { rows: [] }
+      priceEvents.forEach(e => {
+        const i = doc.rows.findIndex(r => r.d === today && r.vendor === e.vendor && r.item === e.item)
+        const row = { d: today, vendor: e.vendor, item: e.item, unit: e.unit, p: e.to, q: 0, src: 'ingest' }
+        if (i >= 0) doc.rows[i] = row; else doc.rows.push(row)
+      })
+      doc.updatedAt = now; await kvPut(did, doc, '供應鏈匯入口')
+      // ② 疑似有誤旗標（待張良確認：資料錯→改價；沒錯→按確認解除）
+      if (suspects.length) {
+        const flags = (await kvGet('sp_supply_pm_price_flags')) || {}
+        suspects.forEach(e => { flags[`${e.vendor}||${e.item}`] = { ts: now, from: e.from, to: e.to, pct: e.pct, status: 'pending' } })
+        await kvPut('sp_supply_pm_price_flags', flags, '供應鏈匯入口')
+      }
+      // ③ 編輯歷史（改動都要留痕）
+      const eid = 'sp_supply_pm_editlog_' + mo
+      const el = (await kvGet(eid)) || { rows: [] }
+      priceEvents.forEach(e => el.rows.push({ ts: now, by: 'AI匯入口', kind: 'price', name: `${e.vendor}／${e.item}`, from: e.from, to: e.to }))
+      await kvPut(eid, el, '供應鏈匯入口')
+      // ④ LINE 通知老闆（變價都要知道；疑似有誤特別標）——群外私訊、記額度
+      try {
+        const { linePush } = await import('./_onboard.js')
+        const { logPush } = await import('./push.js')
+        const top = priceEvents.slice(0, 8).map(e => `・${e.item}（${e.vendor}）$${e.from || '—'}→$${e.to}${e.pct != null ? `（${e.pct > 0 ? '+' : ''}${e.pct}%）` : ''}`)
+        const txt = `📈 進價變動 ${priceEvents.length} 項\n${top.join('\n')}${priceEvents.length > 8 ? `\n…等共 ${priceEvents.length} 項` : ''}` +
+          (suspects.length ? `\n\n⚠️ ${suspects.length} 項價差過大（≥${suspectPct}%），疑似資料有誤——已在「價格追蹤」頁標黃待確認` : '')
+        const ops = (await kvGet('pm_bot_operators')) || {}
+        for (const uid of Object.keys(ops)) { if (await linePush(uid, txt)) await logPush(uid, 1, '進價變動通知') }
+      } catch (_) {}
+    }
     await announceChanged()
     return res.status(200).json({ ok: true, ...rep })
   }

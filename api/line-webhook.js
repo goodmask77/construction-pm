@@ -727,11 +727,15 @@ async function loadCatalogText() {
 // 供應鏈（廠商/物料比價/變價/叫貨驗收問題追蹤/食譜成本）→ 文字（與 App 共用 supplyDigest，一處維護兩邊同步）
 async function loadSupplyText() {
   try {
+    const mo = new Date().toISOString().slice(0, 7)
+    const prevMo = new Date(Date.now() - 32 * 864e5).toISOString().slice(0, 7)
     const [kv2, recipes] = await Promise.all([
-      kvGetMany(['sp_supply_pm_supply', 'sp_supply_pm_orders']),
+      kvGetMany(['sp_supply_pm_supply', 'sp_supply_pm_orders', 'sp_supply_pm_price_flags', 'sp_supply_pm_ph_' + mo, 'sp_supply_pm_ph_' + prevMo, 'sp_supply_pm_editlog_' + mo]),
       kvGetPrefix('sp_supply_pm_recipe_v_'),
     ])
-    return supplyDigest({ supply: kv2['sp_supply_pm_supply'], orders: kv2['sp_supply_pm_orders'], recipes })
+    // 價格歷史（pm_ph_月檔近兩個月）/疑似有誤旗標（pm_price_flags）/編輯紀錄（pm_editlog_月檔）——100%資料鐵則，與 App 同接
+    const priceRows = [...(kv2['sp_supply_pm_ph_' + prevMo]?.rows || []), ...(kv2['sp_supply_pm_ph_' + mo]?.rows || [])]
+    return supplyDigest({ supply: kv2['sp_supply_pm_supply'], orders: kv2['sp_supply_pm_orders'], recipes, priceRows, priceFlags: kv2['sp_supply_pm_price_flags'], editRows: kv2['sp_supply_pm_editlog_' + mo]?.rows })
   } catch (_) { return '' }
 }
 

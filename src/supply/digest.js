@@ -2,7 +2,7 @@
 // 【100%資料鐵則】供應鏈新資料域一律加在這裡，兩邊自動同步接上，不准各寫各的
 import { unitCost, lastPaid, srcsOf, latestRecipeOf, recipeCost, packToBase, priceAlert } from "./inv.js";
 
-export function supplyDigest({ supply, orders, recipes }) {
+export function supplyDigest({ supply, orders, recipes, priceRows, priceFlags, editRows }) {
   try {
     const db = supply || {};
     const parts = [];
@@ -26,6 +26,18 @@ export function supplyDigest({ supply, orders, recipes }) {
     // 最近變價（實付 vs 上次實付）
     const chg = (db.vendorItems || []).map(vi => ({ vi, al: priceAlert(vi, 0.01) })).filter(x => x.al);
     if (chg.length) parts.push("▍最近變價（叫貨實付價變動）\n" + chg.slice(0, 20).map(({ vi, al }) => `- ${vi.name}（${vname(vi.vendor_id)}）：$${vi.last.prevPrice}→$${vi.last.price}（${al.up ? "▲+" : "▼-"}${Math.abs(al.pct)}%）`).join("\n"));
+    // 價格歷史（pm_ph_ 月檔＝價格追蹤頁同一份）：問「XX最近多少錢/最近漲什麼」用這裡（2026-09-06 重建 P1）
+    const ph = Array.isArray(priceRows) ? priceRows : [];
+    if (ph.length) {
+      const recent = ph.slice().sort((a, b) => (a.d < b.d ? 1 : -1)).slice(0, 15);
+      parts.push(`▍價格歷史（近兩月 ${ph.length} 筆叫貨價；完整在 App 供應鏈→價格追蹤）\n` + recent.map(r => `- ${String(r.d).slice(5)} ${r.item}（${r.vendor}）$${d3(r.p)}${r.q ? `×${r.q}` : ""}`).join("\n"));
+    }
+    // 價差過大疑似資料有誤（pm_price_flags；pending=待張良在價格追蹤頁按「資料沒錯」或改價）
+    const pend = Object.entries(priceFlags || {}).filter(([, f]) => f && f.status === "pending");
+    if (pend.length) parts.push("▍⚠️價格疑似有誤待確認（提醒張良處理）\n" + pend.slice(0, 10).map(([k, f]) => `- ${k.split("||")[1]}（${k.split("||")[0]}）$${f.from}→$${f.to}（${f.pct > 0 ? "+" : ""}${f.pct}%）`).join("\n"));
+    // 編輯紀錄（pm_editlog_ 月檔；物料/價格/食譜改動留痕——誰改的、改了什麼）
+    const el = Array.isArray(editRows) ? editRows : [];
+    if (el.length) parts.push(`▍供應鏈編輯紀錄（本月 ${el.length} 筆，列最近 10）\n` + el.slice(-10).reverse().map(r => `- ${String(r.ts || "").slice(5, 16).replace("T", " ")} ${r.by}｜${r.name}｜${r.field || r.kind}：${r.from ?? "—"}→${r.to ?? "—"}`).join("\n"));
     // 叫貨紀錄＋驗收問題追蹤
     const ods = Array.isArray(orders) ? orders : [];
     if (ods.length) {

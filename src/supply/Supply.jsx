@@ -5,6 +5,8 @@ import React, { useEffect, useState } from "react";
 import { PenLine, BadgeDollarSign, ReceiptText, Flag } from "lucide-react";
 import IngredientsView from "./Ingredients.jsx";
 import RecipeCard from "./Recipe.jsx";
+import PriceTrack from "./PriceTrack.jsx";
+import Materials, { MatDetail } from "./Materials.jsx";
 import { buildPriceEvents, applyLastPaid, applyQuote, priceAlert, unitCost, quoteUnit, packToBase, srcsOf, lastPaid, latestRecipeOf, recipeCost } from "./inv.js";
 import { getSharedPrefix } from "../supa.js";
 import { abNorm } from "../lib/num.js";
@@ -50,12 +52,51 @@ export default function SupplyView({ view, K, canEdit, confirm, showMoney, userN
   const isMob = typeof window !== "undefined" && window.innerWidth <= 640; // 手機版窄版排版（叫貨下單）
 
   const [recipesAll, setRecipesAll] = useState(null); // 全部食譜版本（缺料總覽用；量小全載）
+  // ── 供應鏈重建 P1（張良 2026-09-06）：價格歷史/疑似有誤旗標/編輯歷史（改動全留痕）──
+  const [phRows, setPhRows] = useState([]);       // pm_ph_YYYY-MM 月檔攤平：{d,vendor,item,unit,p,q,src}
+  const [phFlags, setPhFlags] = useState({});     // pm_price_flags：價差過大疑似資料有誤（pending/ok/fixed）
+  const [editRows, setEditRows] = useState([]);   // pm_editlog_YYYY-MM 月檔攤平：{ts,by,kind,name,field,from,to}
+  const [matDetail, setMatDetail] = useState(null); // 物料詳情（全站共用：物料庫/價格追蹤/食譜點名字都開這裡）
   useEffect(() => { (async () => {
     try { const v = await window.storage.get(K("pm_supply"), true); setDb(v && v.value ? JSON.parse(v.value) : { categories: [], products: [], materials: [], vendors: [], vendorItems: [], ingredients: [], matches: [], productPackaging: [] }); } catch (_) { setDb({ categories: [], products: [], materials: [], vendors: [], vendorItems: [], ingredients: [], matches: [], productPackaging: [] }); }
     try { const o = await window.storage.get(K("pm_orders"), true); setOrders(o && o.value ? JSON.parse(o.value) : []); } catch (_) {}
     try { const g = await window.storage.get("pm_group_seen", true); setGroups(g && g.value ? JSON.parse(g.value) : {}); } catch (_) {}
     try { const rows = await getSharedPrefix(K("pm_recipe_v_")); setRecipesAll(Object.values(rows).map(v => { try { return JSON.parse(v); } catch (_) { return null; } }).filter(Boolean)); } catch (_) { setRecipesAll([]); }
+    try { const ph = await getSharedPrefix(K("pm_ph_")); setPhRows(Object.values(ph).flatMap(v => { try { return JSON.parse(v).rows || []; } catch (_) { return []; } })); } catch (_) {}
+    try { const f = await window.storage.get(K("pm_price_flags"), true); setPhFlags(f && f.value ? JSON.parse(f.value) : {}); } catch (_) {}
+    try { const el = await getSharedPrefix(K("pm_editlog_")); setEditRows(Object.values(el).flatMap(v => { try { return JSON.parse(v).rows || []; } catch (_) { return []; } })); } catch (_) {}
   })(); }, []); // eslint-disable-line
+  // 價格歷史 append（手動改價用）：寫回當月檔＋更新畫面
+  const appendPh = async (row) => {
+    setPhRows(prev => [...prev, row]);
+    try {
+      const did = K("pm_ph_" + row.d.slice(0, 7));
+      const cur = await window.storage.get(did, true);
+      const doc = cur && cur.value ? JSON.parse(cur.value) : { rows: [] };
+      doc.rows = doc.rows.filter(r => !(r.d === row.d && r.vendor === row.vendor && r.item === row.item));
+      doc.rows.push(row); doc.updatedAt = new Date().toISOString();
+      await window.storage.set(did, JSON.stringify(doc), true);
+    } catch (_) {}
+  };
+  // 編輯歷史 append（食譜/物料/配方/成本改動都要留痕——張良 2026-09-06）
+  const logEdit = async (rows2) => {
+    if (!rows2 || !rows2.length) return;
+    setEditRows(prev => [...prev, ...rows2]);
+    try {
+      const eid = K("pm_editlog_" + new Date().toISOString().slice(0, 7));
+      const cur = await window.storage.get(eid, true);
+      const doc = cur && cur.value ? JSON.parse(cur.value) : { rows: [] };
+      doc.rows.push(...rows2); doc.updatedAt = new Date().toISOString();
+      await window.storage.set(eid, JSON.stringify(doc), true);
+    } catch (_) {}
+  };
+  const saveFlags = (next) => { setPhFlags(next); window.storage.set(K("pm_price_flags"), JSON.stringify(next), true).catch(() => {}); };
+  // 全站串連：用 廠商名+品項名 開物料詳情（價格追蹤/食譜點名字用）
+  const openMaterial = (vendorName, itemName) => {
+    const v = (db?.vendors || []).find(x => x.name === vendorName);
+    const vi = (db?.vendorItems || []).find(x => (!v || x.vendor_id === v.id) && x.name === itemName) || (db?.vendorItems || []).find(x => x.name === itemName);
+    if (vi) setMatDetail(vi.id); else flash("⚠ 物料庫找不到「" + itemName + "」");
+  };
 
   if (!db) return <div style={{ padding: 40, color: C.sub, fontSize: 14 }}>載入中…</div>;
   const save = (patch) => { const next = { ...db, ...patch }; setDb(next); window.storage.set(K("pm_supply"), JSON.stringify(next), true).catch(() => {}); };
@@ -70,8 +111,17 @@ export default function SupplyView({ view, K, canEdit, confirm, showMoney, userN
   const WDZ = ["日", "一", "二", "三", "四", "五", "六"];
   const dz = (d) => d ? `${Number(d.slice(5, 7))}/${Number(d.slice(8))}（${WDZ[new Date(d + "T00:00:00").getDay()]}）` : "";
 
+  // 物料詳情 modal（全站共用）：任何供應鏈分頁都能開
+  const matModal = matDetail ? <MatDetail db={db} save={save} canEdit={canEdit} flash={flash} phRows={phRows} logEdit={logEdit} editRows={editRows} viId={matDetail} onClose={() => setMatDetail(null)} recipesAll={recipesAll} /> : null;
+
+  // ── 📦 物料庫（重建 P1）：廠商/品牌/品名/規格/單位/單價/每單位價格 一張大表 ──
+  if (view === "smat") return <>{msg && <div style={{ maxWidth: 1060, margin: "6px auto 0", background: "#eef5ef", border: `1.5px solid ${C.green}`, borderRadius: 8, padding: "7px 12px", fontSize: 12.5, color: "#2c5a38", fontWeight: 600 }}>{msg}</div>}<Materials db={db} save={save} canEdit={canEdit} showMoney={showMoney} flash={flash} phRows={phRows} appendPh={appendPh} logEdit={logEdit} editRows={editRows} flags={phFlags} saveFlags={saveFlags} recipesAll={recipesAll} setDetail={setMatDetail} />{matModal}</>;
+
+  // ── 📈 價格追蹤（重建 P1）：叫貨價格浮動追蹤（KPI/排行榜/趨勢圖＋疑似有誤確認）──
+  if (view === "sprice") return <><PriceTrack phRows={phRows} flags={phFlags} saveFlags={saveFlags} canEdit={canEdit} showMoney={showMoney} openMaterial={openMaterial} />{matModal}</>;
+
   // ── 物料清單（進銷存中控台）：物料主檔＋盤點頻率＋貨源歸戶＋比價 ──
-  if (view === "singred") return <IngredientsView db={db} save={save} canEdit={canEdit} showMoney={showMoney} confirm={confirm} flash={flash} />;
+  if (view === "singred") return <>{matModal}<IngredientsView db={db} save={save} canEdit={canEdit} showMoney={showMoney} confirm={confirm} flash={flash} /></>;
 
   // ── 叫貨：依廠商勾數量 → 叫貨單 → D自動發群 / LINE分享 / 複製 → 紀錄可追狀態 ──
   if (view === "sorder") {

@@ -28,7 +28,7 @@ import { supplyDigest } from "./supply/digest.js"; // 供應鏈 AI 摘要：與 
 const NAV_ICONS = {
   owner: LayoutDashboard, overview: ClipboardList, tasks: CheckSquare, gantt: CalendarDays, conclusions: PinIcon, files: FolderOpen, petty: Wallet, compare: Scale, settings: SettingsIcon,
   // 供應鏈
-  svendors: Factory, sproducts: Package, singred: Leaf, sorder: ShoppingCart, scost: BarChart3,
+  svendors: Factory, sproducts: Package, singred: Leaf, sorder: ShoppingCart, scost: BarChart3, smat: Boxes, sprice: TrendingUp,
   // 夥伴中心
   kb: BookOpen, roster: UsersIcon, shift: CalendarDays, r360: Star, fb: MessageSquare, quest: Gamepad2, poll: Vote, shop: Gift, rank: Trophy,
   // 財務報表
@@ -67,6 +67,10 @@ async function loadSpaceAIContext() {
       g("pm_conclusions"), g("sp_lw_pm_mail_rules"), g("sp_lw_pm_mail_log"), g("sp_supply_pm_supply"),
       g("sp_supply_pm_orders"), getSharedPrefix("sp_supply_pm_recipe_v_"),
     ]);
+    // 供應鏈重建 P1（100%資料鐵則，與 D哥 loadSupplyText 同步接）：價格歷史 pm_ph_ 月檔（近兩月）/疑似有誤 pm_price_flags/編輯紀錄 pm_editlog_
+    const prevMo = new Date(d0.getTime() - 32 * 864e5); const prevMoS = `${prevMo.getFullYear()}-${String(prevMo.getMonth() + 1).padStart(2, "0")}`;
+    const [phA, phB, phFlagsAI, editLogAI] = await Promise.all([g("sp_supply_pm_ph_" + mo), g("sp_supply_pm_ph_" + prevMoS), g("sp_supply_pm_price_flags"), g("sp_supply_pm_editlog_" + mo)]);
+    const supplyPriceRows = [...(phB?.rows || []), ...(phA?.rows || [])];
     const supplyRecipes = Object.values(supplyRecipesRaw || {}).map(v => { try { return JSON.parse(v); } catch (_) { return null; } }).filter(Boolean);
     const crew = (crewRoster && (crewRoster.people || []).length) ? crewRoster : crewOld; // 名冊已分家：優先讀 kb_roster
     if (Array.isArray(tasks)) tasks.sort((a, b) => (a.ord ?? 0) - (b.ord ?? 0));            // 逐筆載入後照手動順序
@@ -205,7 +209,7 @@ async function loadSpaceAIContext() {
     // 信箱管理
     if (mailRules?.rules?.length) parts.push(`【郵件管理（設定內）】規則 ${mailRules.rules.length} 條（每小時自動跑）${mailLog?.items?.[0] ? `；最近一次處理 ${mailLog.items[0].moved} 封` : ""}`);
     // 供應鏈（與 D哥 line-webhook 共用 supplyDigest：廠商/物料比價/變價/叫貨驗收問題追蹤/食譜成本）
-    try { const st = supplyDigest({ supply, orders: supplyOrders, recipes: supplyRecipes }); if (st) parts.push(st.trim()); } catch (_) {}
+    try { const st = supplyDigest({ supply, orders: supplyOrders, recipes: supplyRecipes, priceRows: supplyPriceRows, priceFlags: phFlagsAI, editRows: editLogAI?.rows }); if (st) parts.push(st.trim()); } catch (_) {}
     // 資料總目錄（新功能上線自動出現在這裡）
     try {
       // 帶登入權杖讀（RLS 上鎖後仍可用）；逐筆存的一筆一檔太瑣碎，收斂成一個代表名稱
@@ -1049,7 +1053,7 @@ export default function App() {
           <CompareView canEdit={canEditFiles} requireLogin={denyEdit} onLog={logActivity} />
         )}
         {/* 供應鏈/LWLWLW：進入與編輯全依「帳號權限矩陣」（不另設管理員硬鎖，勾了就看得到） */}
-        {["sproducts", "singred", "svendors", "sorder", "scost"].includes(view) && CURRENT_SPACE === "supply" && (
+        {["sproducts", "singred", "svendors", "sorder", "scost", "smat", "sprice"].includes(view) && CURRENT_SPACE === "supply" && (
           <SupplyView view={view} K={K} canEdit={canEditData} confirm={confirm} showMoney={showMoney()} userName={userName} />
         )}
         {/* 財務報表：第二層直接六分頁（總覽/帳戶/交易明細/科目/對帳/營運報表），view 直傳 FinanceView */}

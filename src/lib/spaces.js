@@ -62,8 +62,8 @@ export const SPACE_CONF = {
   supply: {
     showCost: true, // 售價/採購價受「看金額」權限控管（店長層可遮）
     hideTabs: [],
-    tabs: [["svendors", "廠商建檔", "🏭"], ["sproducts", "菜單管理", "📦"], ["singred", "物料清單", "🥬"], ["sorder", "叫貨", "🛒"], ["scost", "成本分析", "📊"]], // 順序＝建檔流程：先建廠商→菜單→物料→叫貨→成本分析（張良 2026-09-04：兩店產品成本）
-    defaultView: "sproducts",
+    tabs: [["smat", "物料庫", "📦"], ["sprice", "價格追蹤", "📈"], ["sproducts", "菜單管理", "🍽"], ["sorder", "叫貨", "🛒"], ["scost", "成本分析", "📊"], ["svendors", "廠商建檔", "🏭"], ["singred", "物料清單", "🥬"]], // 供應鏈重建 P1（張良 2026-09-06）：物料庫/價格追蹤在前；舊物料清單/廠商建檔殿後，P3 收掉
+    defaultView: "smat", // 重建 P1：進供應鏈先看物料庫
     hideKpi: true,
     labels: { cat: "類別", item: "品項", overview: "供應鏈", gantt: "—", subtitle: "供應鏈管理（進銷存/採購/比價）" },
     aiRole: "你是供應鏈管理助理，協助管理產品主檔、包材/物料、廠商與叫貨採購。請用繁體中文、簡潔務實。",
@@ -118,6 +118,8 @@ export const PERM_MATRIX = {
     ["singred", "物料清單", { edit: 1, money: 1 }],
     ["sorder", "叫貨", { edit: 1, money: 1 }],
     ["scost", "成本分析", { edit: 1, money: 1 }],
+    ["smat", "物料庫", { edit: 1, money: 1 }],
+    ["sprice", "價格追蹤", { edit: 1, money: 1 }],
   ],
 };
 // 舊資料相容：以前的可編輯權限只有 data/files/advisor 三類，對應到各頁
