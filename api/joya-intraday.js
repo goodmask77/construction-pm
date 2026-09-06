@@ -12,7 +12,7 @@ import { syncIchef } from './_ichef.js'   // 參考店 1/2 整點順手同步（
 // 相鄰兩張相減＝那半小時的營業額/單數（喬亞只給每小時，半小時是我們自己用快照推算的）
 const SLOTS = ['11:00', '11:30', '12:00', '12:30', '13:00', '13:30', '14:00', '14:30', '15:00', '15:30', '16:00', '16:30', '17:00', '17:30', '18:00', '18:30', '19:00', '19:30']
 const WINDOW_MIN = 6 // cron 可能晚幾分鐘觸發，時間點後 6 分鐘內都算數
-const AB_OPEN = '11:00', AB_CLOSE = '21:30' // AB 營業比 GD 晚：這段時間內每次 cron（每30分）都更新 AB 即時
+const AB_OPEN = '12:30', AB_CLOSE = '21:30' // 張良 2026-09-06：1/2/AB 一樣每半小時、12:30-21:30
 
 const taipeiHM = () => new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Taipei', hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date())
 const toMin = (hm) => Number(hm.slice(0, 2)) * 60 + Number(hm.slice(3, 5))
@@ -33,9 +33,7 @@ export default async function handler(req, res) {
   const extra = {}
   if (abHit) {
     try { extra.ab = await syncEatsLive(kvGet, kvPut) } catch (e) { extra.ab = { error: e?.message || String(e) } }
-    if (force || hm.slice(3) < '06') { // 只在整點那次（:00~:05）順手抓 1/2，一小時一次就夠
-      try { extra.ic = await syncIchef(kvGet, kvPut, 3) } catch (e) { extra.ic = { error: e?.message || String(e) } }
-    }
+    try { extra.ic = await syncIchef(kvGet, kvPut, 3) } catch (e) { extra.ic = { error: e?.message || String(e) } } // 1/2 跟 AB 同頻：每半小時（張良 2026-09-06）
   }
   if (!hit && !force && !manual) { // 只有 AB 場次（GD 已打烊 19:30 後）：發廣播直接回
     await announceChanged()
