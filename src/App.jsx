@@ -28,7 +28,7 @@ import { supplyDigest } from "./supply/digest.js"; // 供應鏈 AI 摘要：與 
 const NAV_ICONS = {
   owner: LayoutDashboard, overview: ClipboardList, tasks: CheckSquare, gantt: CalendarDays, conclusions: PinIcon, files: FolderOpen, petty: Wallet, compare: Scale, settings: SettingsIcon,
   // 供應鏈
-  svendors: Factory, sproducts: Package, singred: Leaf, sorder: ShoppingCart, scost: BarChart3, smat: Boxes, sprice: TrendingUp,
+  svendors: Factory, sproducts: Package, singred: Leaf, sorder: ShoppingCart, scost: BarChart3, smat: Boxes, sprice: TrendingUp, ssemi: Leaf,
   // 夥伴中心
   kb: BookOpen, roster: UsersIcon, shift: CalendarDays, r360: Star, fb: MessageSquare, quest: Gamepad2, poll: Vote, shop: Gift, rank: Trophy,
   // 財務報表
@@ -1053,7 +1053,7 @@ export default function App() {
           <CompareView canEdit={canEditFiles} requireLogin={denyEdit} onLog={logActivity} />
         )}
         {/* 供應鏈/LWLWLW：進入與編輯全依「帳號權限矩陣」（不另設管理員硬鎖，勾了就看得到） */}
-        {["sproducts", "singred", "svendors", "sorder", "scost", "smat", "sprice"].includes(view) && CURRENT_SPACE === "supply" && (
+        {["sproducts", "singred", "svendors", "sorder", "scost", "smat", "sprice", "ssemi"].includes(view) && CURRENT_SPACE === "supply" && (
           <SupplyView view={view} K={K} canEdit={canEditData} confirm={confirm} showMoney={showMoney()} userName={userName} />
         )}
         {/* 財務報表：第二層直接六分頁（總覽/帳戶/交易明細/科目/對帳/營運報表），view 直傳 FinanceView */}

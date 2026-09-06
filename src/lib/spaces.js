@@ -62,7 +62,9 @@ export const SPACE_CONF = {
   supply: {
     showCost: true, // 售價/採購價受「看金額」權限控管（店長層可遮）
     hideTabs: [],
-    tabs: [["smat", "物料庫", "📦"], ["sprice", "價格追蹤", "📈"], ["sproducts", "菜單管理", "🍽"], ["sorder", "叫貨", "🛒"], ["scost", "成本分析", "📊"], ["svendors", "廠商建檔", "🏭"], ["singred", "物料清單", "🥬"]], // 供應鏈重建 P1（張良 2026-09-06）：物料庫/價格追蹤在前；舊物料清單/廠商建檔殿後，P3 收掉
+    // 供應鏈重建定版（張良 2026-09-06「全部打掉重做，現在結構很亂」）：六籤＝物料庫(含廠商子頁)→價格追蹤→半成品→成品食譜→叫貨→成本分析
+    // 舊 菜單管理→成品食譜、物料清單/廠商建檔 併入物料庫（view 代碼還在但不掛籤）
+    tabs: [["smat", "物料庫", "📦"], ["sprice", "價格追蹤", "📈"], ["ssemi", "半成品", "🧪"], ["sproducts", "成品食譜", "🍽"], ["sorder", "叫貨", "🛒"], ["scost", "成本分析", "📊"]],
     defaultView: "smat", // 重建 P1：進供應鏈先看物料庫
     hideKpi: true,
     labels: { cat: "類別", item: "品項", overview: "供應鏈", gantt: "—", subtitle: "供應鏈管理（進銷存/採購/比價）" },
@@ -113,19 +115,18 @@ export const PERM_MATRIX = {
   ],
   // lw 空間收起：信箱管理改掛在全域「設定」（管理員限定），不再進權限矩陣
   supply: [
-    ["svendors", "廠商建檔", { edit: 1, money: 1 }],
-    ["sproducts", "菜單管理", { edit: 1, money: 1 }],
-    ["singred", "物料清單", { edit: 1, money: 1 }],
-    ["sorder", "叫貨", { edit: 1, money: 1 }],
-    ["scost", "成本分析", { edit: 1, money: 1 }],
     ["smat", "物料庫", { edit: 1, money: 1 }],
     ["sprice", "價格追蹤", { edit: 1, money: 1 }],
+    ["ssemi", "半成品", { edit: 1, money: 1 }],
+    ["sproducts", "成品食譜", { edit: 1, money: 1 }],
+    ["sorder", "叫貨", { edit: 1, money: 1 }],
+    ["scost", "成本分析", { edit: 1, money: 1 }],
   ],
 };
 // 舊資料相容：以前的可編輯權限只有 data/files/advisor 三類，對應到各頁
 export const LEGACY_EDIT = { overview: "data", gantt: "data", petty: "data", issues: "data", owner: "data", groups: "data", kb: "data", r360: "data", fb: "data", quest: "data", poll: "data", shop: "data", rank: "data", reward: "data", finance: "data", files: "files", compare: "files", advisor: "advisor" };
 // 分頁改組相容：新頁 key → 舊頁 key 清單（帳號權限若勾過舊頁，視同勾了新頁）。例：獎勵中心=舊商城+排行榜
-export const VIEW_PERM_ALIAS = { reward: ["shop", "rank"] };
+export const VIEW_PERM_ALIAS = { reward: ["shop", "rank"], smat: ["singred", "svendors"], ssemi: ["sproducts"] }; // 供應鏈重建：舊 物料清單/廠商建檔 權限視同物料庫、半成品頁沿用菜單管理權限
 export const PERM_NONE = "__none__"; // 哨兵：陣列＝[PERM_NONE] 代表「明確全關」(與空陣列＝預設全開 區分)
 // 預設身份範本（連動式）。陣列規則同矩陣：[]＝全開、[PERM_NONE]＝全關、其餘＝明確允許清單。
 export const DEFAULT_ROLES = [
