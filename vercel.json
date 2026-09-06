@@ -3,6 +3,6 @@
     { "path": "/api/cron-daily", "schedule": "0 0 * * *" },
     { "path": "/api/mail-manage", "schedule": "10 * * * *" },
     { "path": "/api/mail-sync", "schedule": "30 13,14,15 * * *" },
-    { "path": "/api/joya-intraday", "schedule": "0,30 3-11 * * *" }
+    { "path": "/api/joya-intraday", "schedule": "0,30 3-13 * * *" }
   ]
 }

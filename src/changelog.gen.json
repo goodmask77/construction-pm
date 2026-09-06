@@ -2,6 +2,7 @@
  {
   "date": "2026-09-06",
   "items": [
+   "食譜卡公版(張良:要完整食譜,先弄公版)：照他Google配方表格式重做RecipeCard——深色標題列+店籤/半成品籤、上排站上/預留庫存/保存方式/位置/冷凍冷藏期限、內容物硬格線表(數量/單位/％佔比/逐列成本,缺價紅字/零成本$0)、半成品引用藍列成本遞迴、SOP步驟區、尾列耗損率+每包重量×配方產量(成品=出成份數)+每包成本/每單位成本/整批成本(成品=一份成本/售價/毛利)+備註；新欄packW/packN/keepType/keepPlace/expFrozen/expChilled/stationStock/reserveStock,舊keepNote自動拆回欄位相容;supplyingest吃公版欄位 v2.2.9",
    "零成本物料costFree(水/冰塊等:量照記/成本0/不列缺價,央廚配方匯入需要)+supplyingest口ingredients吃costFree+selftest45過 v2.2.8"
   ]
  },
