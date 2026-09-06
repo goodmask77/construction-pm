@@ -22,13 +22,13 @@
   
     .pcards{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin-bottom:14px}
     .pcard{background:rgba(255,250,240,.93);border:1px solid var(--line);border-radius:16px;overflow:hidden;display:flex;flex-direction:column;box-shadow:0 10px 26px rgba(69,31,22,.08)}
-    .pcard img{width:100%;aspect-ratio:7/5;object-fit:cover;display:block;border-bottom:1px solid var(--line)}
+    .pcard img{width:100%;height:auto;display:block;border-bottom:1px solid var(--line)}
     .pcard .pbody{padding:16px 20px 18px;display:flex;flex-direction:column;gap:4px}
     .pbadge{align-self:flex-start;background:var(--red);color:var(--cream);font-size:.72rem;font-weight:900;letter-spacing:.22em;padding:4px 10px;border-radius:4px;margin-bottom:6px}
     .pdesc{margin:6px 0 0;font-size:.92rem;color:#6c5148}
     .pcard .why{margin-top:8px}
     .pprice{margin-top:10px;padding-top:10px;border-top:1px solid var(--line);font-family:Georgia,serif;font-size:1.55rem;font-weight:800;color:var(--red)}
-    @media(max-width:720px){.pcards{grid-template-columns:1fr}}
+    @media(max-width:720px){.pcards{grid-template-columns:1fr}.cat-image{aspect-ratio:auto;height:auto;object-fit:contain}}
 </style>
 </head>
 <body>
