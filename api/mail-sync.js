@@ -351,8 +351,10 @@ export default async function handler(req, res) {
     if (!mk || String(req.query.supplyreset) !== mk) return res.status(403).json({ ok: false })
     const dry = !!String(req.query.dry || '')
     const db = (await kvGet('sp_supply_pm_supply')) || {}
+    // 前綴撈列（照 line-webhook kvGetPrefix 的驗證過寫法：LIKE 底線要跳脫，不然 _ 是萬用字元）
     const fetchRange = async (pfx) => {
-      const r = await fetch(`${SB_URL}/rest/v1/pm_documents?id=gte.${pfx}&id=lt.${pfx}%60&select=id,data`, { headers: { apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}` } })
+      const pattern = pfx.replace(/[\\%_]/g, (m) => '\\' + m)
+      const r = await fetch(`${SB_URL}/rest/v1/pm_documents?id=like.${encodeURIComponent(pattern)}*&select=id,data`, { headers: { apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}` } })
       return r.ok ? await r.json() : []
     }
     // 保留集合＝價格歷史出現過的 (廠商,品項)
