@@ -343,6 +343,65 @@ export default async function handler(req, res) {
     await announceChanged()
     return res.status(200).json({ ok: true, moved: hit.length, titles: hit.map(({ t }) => t.title) })
   }
+  // 供應鏈資料重置口（同金鑰，張良 2026-09-07：「不想要之前的版本、包材舊資料也不要，全部刪掉重做」）
+  // 保留＝價格歷史(pm_ph_)出現過的廠商+品項、半成品產品+其食譜+引用到的物料卡、settings/驗收選項；其餘（舊包材庫/包材綁定/舊菜單產品/類別/舊食譜版本/孤兒物料卡/不在叫貨資料的廠商）全清
+  // 安全網：動手前整包舊 db 備份到 sp_supply_pm_supply_bak_<日期>；?dry=1 只回報不動
+  if (req.query?.supplyreset) {
+    const mk = (process.env.MENU_PROBE_KEY || '').trim()
+    if (!mk || String(req.query.supplyreset) !== mk) return res.status(403).json({ ok: false })
+    const dry = !!String(req.query.dry || '')
+    const db = (await kvGet('sp_supply_pm_supply')) || {}
+    const fetchRange = async (pfx) => {
+      const r = await fetch(`${SB_URL}/rest/v1/pm_documents?id=gte.${pfx}&id=lt.${pfx}%60&select=id,data`, { headers: { apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}` } })
+      return r.ok ? await r.json() : []
+    }
+    // 保留集合＝價格歷史出現過的 (廠商,品項)
+    const phDocs = await fetchRange('sp_supply_pm_ph_')
+    const keepPair = new Set(), keepVend = new Set()
+    phDocs.forEach(row => { try { (JSON.parse(row.data.v).rows || []).forEach(x => { keepPair.add(`${x.vendor}||${x.item}`); keepVend.add(x.vendor) }) } catch (_) {} })
+    const vname2 = (vid) => ((db.vendors || []).find(v => v.id === vid) || {}).name || ''
+    const vendors2 = (db.vendors || []).filter(v => keepVend.has(v.name))
+    const vendorItems2 = (db.vendorItems || []).filter(vi => keepPair.has(`${vname2(vi.vendor_id)}||${vi.name}`))
+    const products2 = (db.products || []).filter(p => p.semi)
+    const keepProd = new Set(products2.map(p => p.id))
+    // 食譜版本：半成品的留、舊產品的刪
+    const recRows = await fetchRange('sp_supply_pm_recipe_v_')
+    const recDel = [], refIng = new Set()
+    recRows.forEach(row => {
+      try {
+        const rec = JSON.parse(row.data.v)
+        if (keepProd.has(rec.product_id)) (rec.ingredients || []).forEach(li => refIng.add(li.ingredient_id))
+        else recDel.push(row.id)
+      } catch (_) { recDel.push(row.id) }
+    })
+    ;(vendorItems2 || []).forEach(vi => { if (vi.ingredient_id) refIng.add(vi.ingredient_id) })
+    const ingredients2 = (db.ingredients || []).filter(g => refIng.has(g.id) || g.costFree)
+    const next = {
+      categories: [], products: products2, materials: [], vendors: vendors2, vendorItems: vendorItems2,
+      ingredients: ingredients2, matches: [], productPackaging: [],
+      settings: db.settings || {}, ...(db.inspectOpts ? { inspectOpts: db.inspectOpts } : {}),
+    }
+    const rep0 = {
+      removed: {
+        vendors: (db.vendors || []).length - vendors2.length, vendorItems: (db.vendorItems || []).length - vendorItems2.length,
+        products: (db.products || []).length - products2.length, ingredients: (db.ingredients || []).length - ingredients2.length,
+        materials: (db.materials || []).length, productPackaging: (db.productPackaging || []).length, categories: (db.categories || []).length,
+        recipeVersions: recDel.length,
+      },
+      kept: { vendors: vendors2.length, vendorItems: vendorItems2.length, semiProducts: products2.length, ingredients: ingredients2.length },
+      removedVendors: (db.vendors || []).filter(v => !keepVend.has(v.name)).map(v => v.name),
+    }
+    if (dry) return res.status(200).json({ ok: true, dry: true, ...rep0 })
+    await kvPut('sp_supply_pm_supply_bak_' + new Date().toISOString().slice(0, 10), db, '重置前備份')
+    await kvPut('sp_supply_pm_supply', next, '供應鏈重置口')
+    for (const id of recDel) await fetch(`${SB_URL}/rest/v1/pm_documents?id=eq.${encodeURIComponent(id)}`, { method: 'DELETE', headers: { apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}` } })
+    const eid = 'sp_supply_pm_editlog_' + new Date().toISOString().slice(0, 7)
+    const el = (await kvGet(eid)) || { rows: [] }
+    el.rows.push({ ts: new Date().toISOString(), by: '重置口', kind: 'reset', name: '供應鏈資料重置', from: `${(db.vendorItems || []).length}品項/${(db.products || []).length}產品`, to: `${vendorItems2.length}品項/${products2.length}半成品（備份 bak_${new Date().toISOString().slice(0, 10)}）` })
+    await kvPut(eid, el, '供應鏈重置口')
+    await announceChanged()
+    return res.status(200).json({ ok: true, ...rep0 })
+  }
   // 價格歷史匯入口（POST＋同金鑰，張良 2026-09-06 供應鏈重建 P1：把「叫貨價格浮動追蹤」5,378 筆歷史搬進 App 當活資料）
   // body={dry, rows:[{d:'YYYY-MM-DD',vendor,item,unit,p,q,src}]}；存月檔 sp_supply_pm_ph_YYYY-MM={rows:[…]}，
   // 以 d|vendor|item 去重（重送冪等）；之後驗收/匯入的新價自動 append 同一庫——價格追蹤頁全吃這裡
