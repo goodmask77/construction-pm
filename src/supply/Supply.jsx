@@ -1226,8 +1226,23 @@ export default function SupplyView({ view, K, canEdit, confirm, showMoney, userN
   const byCat = {};
   prods.forEach(x => { (byCat[x.category || "未分類"] = byCat[x.category || "未分類"] || []).push(x); });
   const catNames = [...cats.map(c => c.name), ...Object.keys(byCat).filter(n => !cats.some(c => c.name === n))].filter(n => byCat[n]?.length);
-  // ground-pack 風：緊湊欄寬（固定為主、備註吃剩餘）＋每格直向格線＋方角硬邊框（張良 2026-07-18 指定；07-20 欄寬收窄＋整頁限寬＋勾選/拖曳欄）
-  const GTC = `26px 22px 140px 148px minmax(100px,1fr) 44px ${showMoney ? "72px " : ""}44px 84px 48px 28px`;
+  // ground-pack 風：緊湊欄寬＋每格直向格線＋方角硬邊框
+  // 欄位定版（張良 2026-09-07）：中文｜英文｜售價｜成本｜成本率｜食譜(有/沒有一目瞭然)——點列進完整食譜
+  const GTC = `26px 22px minmax(150px,1.1fr) minmax(130px,1fr) 70px ${showMoney ? "76px 64px " : ""}86px 28px`;
+  // 每列成本＝食譜即時算（與食譜卡同一套 recipeCost；沒食譜/缺料照實標）
+  const recsP = recipesAll || [];
+  const latestByP = {}; recsP.forEach(r => { const b = latestByP[r.product_id]; if (!b || (r.ts || "") > (b.ts || "")) latestByP[r.product_id] = r; });
+  const costInfo = (pid) => {
+    const r = latestByP[pid]; if (!r) return { has: false, cost: null, miss: 0 };
+    const rc = recipeCost(db, recsP, pid);
+    return { has: true, cost: rc.total > 0 ? rc.total : null, miss: rc.missing.length, lines: (r.ingredients || []).length + (r.subRecipes || []).length };
+  };
+  const d2p = (n) => n >= 100 ? Math.round(n).toLocaleString() : (Math.round(n * 100) / 100).toString();
+  // 食譜狀態籤：✓有(綠)/⚠缺料(黃)/✗沒有(紅)——一目瞭然缺什麼要補
+  const recipeBadge = (ci) => !ci.has
+    ? <span style={{ fontSize: 10.5, fontWeight: 800, color: "#fff", background: C.red, borderRadius: 4, padding: "2px 8px" }}>✗ 沒有</span>
+    : ci.miss ? <span style={{ fontSize: 10.5, fontWeight: 800, color: "#8a6410", background: "#fdf6e3", border: `1px solid ${C.amber}`, borderRadius: 4, padding: "1px 7px" }}>⚠ 缺料{ci.miss}</span>
+    : <span style={{ fontSize: 10.5, fontWeight: 800, color: "#fff", background: C.green, borderRadius: 4, padding: "2px 8px" }}>✓ 有</span>;
   const vline = { borderRight: "1px solid #e0d6bf", alignSelf: "stretch", display: "flex", alignItems: "center" };
   const hardBox = { background: "#fff", border: `1.5px solid ${C.hard}`, borderRadius: 4, marginBottom: 12, overflow: "hidden" };
   const addProduct = (catName) => {
@@ -1256,8 +1271,11 @@ export default function SupplyView({ view, K, canEdit, confirm, showMoney, userN
     save({ categories: names.map((name, i2) => ({ name, sort: i2 })) }); setDragC(null);
   };
   const rows = (list) => list.map((x, i) => {
-    // 手機版兩行式（張良 2026-07-26 手機版全面體檢：GTC 固定欄寬總和 656-728px 手機爆版）
-    // 第一行＝勾選＋品名＋售價；第二行＝英文名/單位/備註/標籤＋狀態＋✎；點整列開編輯卡（拖曳排序手機不支援，桌機不變）
+    const ci = costInfo(x.id);
+    const sellN = Number(x.price) || 0;
+    const rate = ci.cost != null && sellN > 0 ? ci.cost / sellN * 100 : null;
+    const rateColorP = rate == null ? "#d5cbb6" : rate >= 40 ? C.red : rate >= 32 ? C.amber : C.green;
+    // 手機版兩行式：第一行＝勾選＋品名＋售價；第二行＝英文＋成本/成本率＋食譜籤；點整列進完整食譜
     if (isMob) return (
       <div key={x.id} onClick={() => setSel(x.id)} style={{ borderTop: `1px solid #e0d6bf`, padding: "7px 10px", cursor: "pointer", background: x.is_active === false ? "#f2ede1" : "#fff", opacity: x.is_active === false ? .6 : 1 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -1265,13 +1283,10 @@ export default function SupplyView({ view, K, canEdit, confirm, showMoney, userN
           <span style={{ fontSize: 13, fontWeight: 600, color: C.text, flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{x.name || "（未命名）"}</span>
           {showMoney && <span style={{ fontFamily: MONOF, fontSize: 12.5, fontWeight: 700, flexShrink: 0, color: x.price ? C.text : "#d5cbb6" }}>{fmt$(x.price) || "—"}</span>}
         </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 4, paddingLeft: 21 }}>
-          <span style={{ fontSize: 11, color: C.sub, flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-            {[x.english_name || "", x.unit || "", x.note || ""].filter(Boolean).join("｜") || "—"}
-            {(x.tags || []).map(t => <span key={t} style={{ fontSize: 10, color: C.accent, background: "#fbeee6", borderRadius: 3, padding: "0 5px", marginLeft: 4 }}>#{t}</span>)}
-          </span>
-          {packCount(x.id) > 0 && <span style={{ fontFamily: MONOF, fontSize: 10.5, color: C.blue, flexShrink: 0 }}>包材{packCount(x.id)}</span>}
-          <span style={{ fontSize: 10.5, fontWeight: 600, flexShrink: 0, color: x.is_active !== false ? C.green : C.faint }}>{x.is_active !== false ? "啟用" : "停用"}</span>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 4, paddingLeft: 21 }}>
+          <span style={{ fontSize: 11, color: C.faint, flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{x.english_name || "—"}</span>
+          {showMoney && ci.cost != null && <span style={{ fontFamily: MONOF, fontSize: 11, color: C.accent, flexShrink: 0 }}>成本${d2p(ci.cost)}{rate != null ? `（${Math.round(rate)}%）` : ""}</span>}
+          {recipeBadge(ci)}
           <span style={{ color: C.faint, fontSize: 12, flexShrink: 0 }}>✎</span>
         </div>
       </div>
@@ -1284,14 +1299,12 @@ export default function SupplyView({ view, K, canEdit, confirm, showMoney, userN
         <input type="checkbox" checked={!!selRows[x.id]} onChange={e => setSelRows(s => ({ ...s, [x.id]: e.target.checked }))} disabled={!canEdit} style={{ cursor: "pointer" }} />
       </div>
       {canEdit ? <div draggable onDragStart={e => { e.stopPropagation(); setDragI(x.id); }} onDragEnd={() => setDragI(null)} onClick={e => e.stopPropagation()} title="拖曳排序（拖到別類會換類別）" style={{ ...vline, justifyContent: "center", cursor: "grab", color: "#c8bca6", fontSize: 12 }}>⠿</div> : <div style={vline} />}
-      <div style={{ ...vline, padding: "0 9px", fontSize: 13, fontWeight: 600, color: C.text, overflow: "hidden" }}><span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{x.name || "（未命名）"}</span></div>
-      <div style={{ ...vline, padding: "0 9px", fontSize: 11.5, color: C.faint, overflow: "hidden" }}><span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{x.english_name}</span></div>
-      <div style={{ ...vline, padding: "0 9px", fontSize: 11.5, color: C.sub, overflow: "hidden" }}><span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{x.note || "—"}</span></div>
-      <div style={{ ...vline, padding: "0 9px", fontSize: 12, color: x.unit ? C.sub : "#d5cbb6" }}>{x.unit || "—"}</div>
+      <div style={{ ...vline, padding: "0 9px", fontSize: 13, fontWeight: 600, color: C.text, overflow: "hidden" }} title={x.note || ""}><span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{x.name || "（未命名）"}</span></div>
+      <div style={{ ...vline, padding: "0 9px", fontSize: 11.5, color: C.faint, overflow: "hidden" }}><span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{x.english_name || "—"}</span></div>
       {showMoney && <div style={{ ...vline, padding: "0 9px", fontFamily: MONOF, fontSize: 12, justifyContent: "flex-end", color: x.price ? C.text : "#d5cbb6" }}>{fmt$(x.price) || "—"}</div>}
-      <div style={{ ...vline, padding: "0 9px", fontFamily: MONOF, fontSize: 12, justifyContent: "center", color: packCount(x.id) ? C.blue : "#d5cbb6" }}>{packCount(x.id) || "—"}</div>
-      <div style={{ ...vline, padding: "0 7px", gap: 3, flexWrap: "wrap" }}>{(x.tags || []).map(t => <span key={t} style={{ fontSize: 10, color: C.accent, background: "#fbeee6", borderRadius: 3, padding: "0 5px" }}>#{t}</span>)}</div>
-      <div style={{ ...vline, padding: "0 7px" }}><span style={{ fontSize: 10.5, fontWeight: 600, color: x.is_active !== false ? C.green : C.faint }}>{x.is_active !== false ? "啟用" : "停用"}</span></div>
+      {showMoney && <div style={{ ...vline, padding: "0 9px", fontFamily: MONOF, fontSize: 12, justifyContent: "flex-end", fontWeight: 700, color: ci.cost != null ? C.accent : "#d5cbb6" }} title={ci.has && ci.miss ? "缺料，成本不完整" : ""}>{ci.cost != null ? "$" + d2p(ci.cost) : "—"}</div>}
+      {showMoney && <div style={{ ...vline, padding: "0 9px", fontFamily: MONOF, fontSize: 12, justifyContent: "flex-end", fontWeight: 800, color: rateColorP }}>{rate != null ? Math.round(rate) + "%" : "—"}</div>}
+      <div style={{ ...vline, padding: "0 7px", justifyContent: "center" }}>{recipeBadge(ci)}</div>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "center", color: C.faint, fontSize: 12 }}>✎</div>
     </div>
     );
@@ -1364,7 +1377,7 @@ export default function SupplyView({ view, K, canEdit, confirm, showMoney, userN
         <div style={hardBox}>
           {/* 表格頭手機版隱藏（列已改兩行式；張良 2026-07-26 手機版全面體檢） */}
           {!isMob && <div style={{ display: "grid", gridTemplateColumns: GTC, background: "#ece4d6", borderBottom: `1.5px solid ${C.hard}`, alignItems: "stretch" }}>
-            {["", "", "品名", "英文名稱", "內容/備註", "單位", ...(showMoney ? ["售價"] : []), "包材", "標籤", "狀態", ""].map((h, i2) => <div key={i2} style={{ ...vline, borderRight: "1px solid #d3c8ac", padding: "7px 9px", fontSize: 10.5, letterSpacing: .6, color: C.sub, fontWeight: 700, justifyContent: h === "售價" ? "flex-end" : h === "包材" ? "center" : "flex-start" }}>{h}</div>)}
+            {["", "", "品名", "英文", ...(showMoney ? ["售價", "成本", "成本率"] : []), "食譜", ""].map((h, i2) => <div key={i2} style={{ ...vline, borderRight: "1px solid #d3c8ac", padding: "7px 9px", fontSize: 10.5, letterSpacing: .6, color: C.sub, fontWeight: 700, justifyContent: /售價|成本/.test(h) ? "flex-end" : h === "食譜" ? "center" : "flex-start" }}>{h}</div>)}
           </div>}
           {rows([...prods].sort((a, b) => (a.sort || 0) - (b.sort || 0)))}
         </div>
@@ -1385,7 +1398,7 @@ export default function SupplyView({ view, K, canEdit, confirm, showMoney, userN
             <>
               {/* 表格頭手機版隱藏（列已改兩行式；張良 2026-07-26 手機版全面體檢） */}
               {!isMob && <div style={{ display: "grid", gridTemplateColumns: GTC, background: C.soft, borderTop: `1px solid ${C.line}`, alignItems: "stretch" }}>
-                {["", "", "品名", "英文名稱", "內容/備註", "單位", ...(showMoney ? ["售價"] : []), "包材", "標籤", "狀態", ""].map((h, i2) => <div key={i2} style={{ ...vline, padding: "5px 9px", fontSize: 10, letterSpacing: .6, color: C.faint, fontWeight: 700, justifyContent: h === "售價" ? "flex-end" : h === "包材" ? "center" : "flex-start" }}>{h}</div>)}
+                {["", "", "品名", "英文", ...(showMoney ? ["售價", "成本", "成本率"] : []), "食譜", ""].map((h, i2) => <div key={i2} style={{ ...vline, padding: "5px 9px", fontSize: 10, letterSpacing: .6, color: C.faint, fontWeight: 700, justifyContent: /售價|成本/.test(h) ? "flex-end" : h === "食譜" ? "center" : "flex-start" }}>{h}</div>)}
               </div>}
               {rows([...byCat[cn]].sort((a, b) => (a.sort || 0) - (b.sort || 0)))}
             </>

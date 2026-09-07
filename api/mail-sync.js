@@ -494,6 +494,27 @@ export default async function handler(req, res) {
       }
       if (!Number(vi.packToBase)) rep.warn.push(`品項「${vi.name}」缺入數換算（規格解析不出）——App 物料頁要補，不然成本算不出`)
     })
+    // ③b 產品主檔 upsert（張良 2026-09-07：成品以正式菜單為準——中文/英文/售價/分類）：
+    // find=舊名（對到既有食譜產品→改名成菜單名）；沒 find 或找不到→用 name 找；都沒有→建新品（沒食譜，表上一目瞭然缺什麼）
+    arr('products').forEach(x => {
+      if (!x?.name) return
+      const byN = (nm) => db.products.find(p => !p.semi && normName(p.name) === normName(nm))
+      const t = (x.find && byN(x.find)) || byN(x.name)
+      if (t) {
+        if (t.name !== x.name) rep.updated.push(`產品改名：${t.name}→${x.name}`)
+        else rep.updated.push('產品：' + x.name)
+        t.name = x.name
+        if (x.en != null) t.english_name = String(x.en)
+        if (x.price != null && x.price !== '') t.price = x.price
+        if (x.category) t.category = x.category
+        if (x.note) t.note = String(x.note)
+      } else {
+        db.products.push({ id: rid2('p'), category: x.category || '未分類', name: String(x.name).trim(), english_name: String(x.en || ''), price: x.price ?? '', note: String(x.note || ''), is_active: true, sort: db.products.length, unit: '', tags: [] })
+        rep.created.push('產品(無食譜)：' + x.name)
+      }
+    })
+    // 分類主檔跟上（菜單分類自動登記，成品食譜頁分組用）
+    arr('products').forEach(x => { if (x?.category && !(db.categories || []).some(c => c.name === x.category)) db.categories.push({ name: x.category, sort: db.categories.length }) })
     // ④ 食譜：產品 upsert（半成品共用/成品分店）＋ 新版本 append 進 pm_recipe_v_
     const findProd = (name, store) => db.products.find(p => normName(p.name) === normName(name) && (store === 'semi' ? p.semi : (!p.semi && (p.store || 'AB') === store)))
     const newRecs = []
