@@ -6,7 +6,7 @@ import { PenLine, BadgeDollarSign, ReceiptText, Flag } from "lucide-react";
 import IngredientsView from "./Ingredients.jsx";
 import RecipeCard from "./Recipe.jsx";
 import PriceTrack from "./PriceTrack.jsx";
-import Materials, { MatDetail } from "./Materials.jsx";
+import Materials, { MatDetail, VendorsPane } from "./Materials.jsx";
 import { buildPriceEvents, applyLastPaid, applyQuote, priceAlert, unitCost, quoteUnit, packToBase, srcsOf, lastPaid, latestRecipeOf, recipeCost } from "./inv.js";
 import { getSharedPrefix } from "../supa.js";
 import { abNorm } from "../lib/num.js";
@@ -125,7 +125,14 @@ export default function SupplyView({ view, K, canEdit, confirm, showMoney, userN
       ))}
     </div>
   );
-  if (view === "smat" && matSub === "items") return <>{msg && <div style={{ maxWidth: 1060, margin: "6px auto 0", background: "#eef5ef", border: `1.5px solid ${C.green}`, borderRadius: 8, padding: "7px 12px", fontSize: 12.5, color: "#2c5a38", fontWeight: 600 }}>{msg}</div>}<div style={{ maxWidth: 1060, margin: "0 auto" }}>{matSubTabs}</div><Materials db={db} save={save} canEdit={canEdit} showMoney={showMoney} flash={flash} phRows={phRows} appendPh={appendPh} logEdit={logEdit} editRows={editRows} flags={phFlags} saveFlags={saveFlags} recipesAll={recipesAll} setDetail={setMatDetail} />{matModal}</>;
+  if (view === "smat") return <>
+    {msg && <div style={{ maxWidth: 1060, margin: "6px auto 0", background: "#eef5ef", border: `1.5px solid ${C.green}`, borderRadius: 8, padding: "7px 12px", fontSize: 12.5, color: "#2c5a38", fontWeight: 600 }}>{msg}</div>}
+    <div style={{ maxWidth: 1060, margin: "0 auto" }}>{matSubTabs}</div>
+    {matSub === "vendors"
+      ? <VendorsPane db={db} save={save} canEdit={canEdit} showMoney={showMoney} flash={flash} phRows={phRows} groups={groups} logEdit={logEdit} />
+      : <Materials db={db} save={save} canEdit={canEdit} showMoney={showMoney} flash={flash} phRows={phRows} appendPh={appendPh} logEdit={logEdit} editRows={editRows} flags={phFlags} saveFlags={saveFlags} recipesAll={recipesAll} setDetail={setMatDetail} />}
+    {matModal}
+  </>;
 
   // ── 📈 價格追蹤（重建 P1）：叫貨價格浮動追蹤（KPI/排行榜/趨勢圖＋疑似有誤確認）──
   if (view === "sprice") return <><PriceTrack phRows={phRows} flags={phFlags} saveFlags={saveFlags} canEdit={canEdit} showMoney={showMoney} openMaterial={openMaterial} />{matModal}</>;
@@ -896,7 +903,7 @@ export default function SupplyView({ view, K, canEdit, confirm, showMoney, userN
 
   // ── 廠商（完整版）：可新增/編輯廠商（部門/標籤/LINE群），展開管理該廠商品項清單 ──
   // ── 廠商建檔（2026-07-20 瘦身）：只管廠商資料本身；品項一律到「物料」頁維護（截圖匯入/手動），不再重複 ──
-  if (view === "svendors" || (view === "smat" && matSub === "vendors")) {
+  if (view === "svendors") { // 舊廠商建檔（已從導覽移除；程式留著，smat 的廠商籤用新版 VendorsPane）
     const DEPTS = ["外場", "內場", "吧檯", "共用"];
     const itemsOf = (vid) => (db.vendorItems || []).filter(x => x.vendor_id === vid);
     const qq = q.trim().toLowerCase();
@@ -915,8 +922,6 @@ export default function SupplyView({ view, K, canEdit, confirm, showMoney, userN
     const selV = sel && sel.startsWith("v:") && db.vendors.find(x => x.id === sel.slice(2));
     return (
       <div style={{ maxWidth: 1060, margin: "0 auto" }}>
-        {view === "smat" && matSubTabs}
-        {matModal}
         <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "6px 0 12px", flexWrap: "wrap" }}>
           <span style={{ background: C.accent, color: "#fff", fontSize: 11.5, fontWeight: 700, borderRadius: 4, padding: "2px 8px" }}>廠商</span>
           <div style={{ fontSize: 17, fontWeight: 800, color: C.text }} title={`${(db.vendors || []).length} 家・建好的廠商會自動出現在物料/叫貨/截圖匯入的選單。品項到「物料清單」頁維護。打勾＝正式供應商（才會進叫貨表）。`}>廠商建檔</div>

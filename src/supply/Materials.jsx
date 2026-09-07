@@ -183,3 +183,76 @@ export function MatDetail({ db, save, canEdit, flash, phRows, logEdit, editRows,
           </div>
         );
       }
+
+// ── 🏭 廠商（重建版，取代舊廠商建檔）：一張乾淨大表——名稱/部門/正式供應商/品項數/期間叫貨金額/最近叫貨/LINE發單/備註
+// 正式供應商打勾＝會出現在叫貨頁；LINE發單＝綁 D哥 看過的群自動發單，不綁＝LINE分享
+export function VendorsPane({ db, save, canEdit, showMoney, flash, phRows, groups, logEdit }) {
+  const [q, setQ] = useState("");
+  const inp = { border: `1px solid ${C.line}`, borderRadius: 7, padding: "7px 10px", fontSize: 13, background: "#fff", color: C.text, outline: "none", boxSizing: "border-box" };
+  const cInp = { border: "none", background: "transparent", width: "100%", fontSize: 12, fontFamily: "inherit", color: C.text, outline: "none", padding: 0 };
+  const stat = useMemo(() => {
+    const m = {};
+    (phRows || []).forEach(r => {
+      const s = m[r.vendor] = m[r.vendor] || { amt: 0, last: "" };
+      s.amt += (Number(r.p) || 0) * (Number(r.q) || 0);
+      if (r.d > s.last) s.last = r.d;
+    });
+    return m;
+  }, [phRows]);
+  const nItems = (vid) => (db.vendorItems || []).filter(x => x.vendor_id === vid).length;
+  const updV = (v, fp, log) => {
+    save({ vendors: (db.vendors || []).map(x => x.id === v.id ? { ...x, ...fp } : x) });
+    if (log) logEdit([{ ts: new Date().toISOString(), by: "App", kind: "vendor", name: v.name, field: Object.keys(fp)[0], from: String(v[Object.keys(fp)[0]] ?? ""), to: String(Object.values(fp)[0] ?? "") }]);
+  };
+  const qq = q.trim().toLowerCase();
+  const list = (db.vendors || [])
+    .filter(v => !qq || `${v.name} ${v.dept || ""} ${v.note || ""}`.toLowerCase().includes(qq))
+    .sort((a, b) => (stat[b.name]?.amt || 0) - (stat[a.name]?.amt || 0));
+  const gList = Object.entries(groups || {});
+  const th = { padding: "7px 9px", fontSize: 10.5, letterSpacing: .6, color: C.sub, fontWeight: 700, whiteSpace: "nowrap", textAlign: "left", background: "#ece4d6", borderBottom: `1.5px solid ${C.hard}`, position: "sticky", top: 0 };
+  const td = { padding: "6px 9px", fontSize: 12.5, borderTop: "1px solid #f0ead9", whiteSpace: "nowrap", verticalAlign: "middle" };
+  return (
+    <div style={{ maxWidth: 1060, margin: "0 auto" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "6px 0 10px", flexWrap: "wrap" }}>
+        <span style={{ background: C.accent, color: "#fff", fontSize: 11.5, fontWeight: 700, borderRadius: 4, padding: "2px 8px" }}>廠商</span>
+        <div style={{ fontSize: 17, fontWeight: 800, color: C.text }}>廠商</div>
+        <span style={{ fontSize: 12, color: C.faint }}>{list.length} 家・按期間叫貨金額排序；✓正式供應商才會出現在叫貨頁</span>
+        <div style={{ flex: 1 }} />
+        <input value={q} onChange={e => setQ(e.target.value)} placeholder="搜尋廠商…" style={{ ...inp, width: 180 }} />
+      </div>
+      <div style={{ background: "#fff", border: `1.5px solid ${C.hard}`, borderRadius: 6, overflow: "auto", maxHeight: "72vh" }}>
+        <table style={{ borderCollapse: "collapse", width: "100%", minWidth: 820 }}>
+          <thead><tr>{["✓叫貨", "廠商", "部門", "品項數", ...(showMoney ? ["期間叫貨金額"] : []), "最近叫貨", "LINE發單", "備註"].map(h => <th key={h} style={{ ...th, textAlign: /金額|品項|最近/.test(h) ? "right" : "left" }}>{h}</th>)}</tr></thead>
+          <tbody>
+            {list.map(v => {
+              const s = stat[v.name] || { amt: 0, last: "" };
+              return (
+                <tr key={v.id}>
+                  <td style={{ ...td, width: 50, textAlign: "center" }}><input type="checkbox" checked={!!v.official} disabled={!canEdit} onChange={e => { updV(v, { official: e.target.checked }, true); flash && flash(e.target.checked ? `✓ ${v.name} 設為正式供應商（會出現在叫貨頁）` : `已把 ${v.name} 移出叫貨頁`); }} title="打勾＝正式供應商，會出現在叫貨頁" style={{ cursor: "pointer" }} /></td>
+                  <td style={{ ...td, fontWeight: 700 }}>{v.name}</td>
+                  <td style={{ ...td, width: 76 }}>
+                    <select value={v.dept || "共用"} onChange={e => updV(v, { dept: e.target.value })} disabled={!canEdit} style={{ ...cInp, cursor: "pointer" }}>
+                      {["外場", "內場", "吧檯", "共用"].map(d => <option key={d} value={d}>{d}</option>)}
+                    </select>
+                  </td>
+                  <td style={{ ...td, textAlign: "right", fontFamily: MONOF }}>{nItems(v.id)}</td>
+                  {showMoney && <td style={{ ...td, textAlign: "right", fontFamily: MONOF, fontWeight: 700 }}>{s.amt ? "NT$" + Math.round(s.amt).toLocaleString() : "—"}</td>}
+                  <td style={{ ...td, textAlign: "right", fontFamily: MONOF, fontSize: 11, color: C.faint }}>{s.last ? s.last.slice(5).replace("-", "/") : "—"}</td>
+                  <td style={{ ...td, width: 150 }}>
+                    <select value={v.lineGroupId || ""} onChange={e => updV(v, { lineGroupId: e.target.value, sendMode: e.target.value ? "auto" : "share" })} disabled={!canEdit} style={{ ...cInp, cursor: "pointer", color: v.lineGroupId ? C.green : C.faint }}>
+                      <option value="">LINE分享（不自動發）</option>
+                      {gList.map(([gid, g]) => <option key={gid} value={gid}>D自動發：{g.name || gid.slice(0, 8)}</option>)}
+                    </select>
+                  </td>
+                  <td style={{ ...td, minWidth: 140 }}><input value={v.note ?? ""} onChange={e => updV(v, { note: e.target.value })} disabled={!canEdit} placeholder="—" style={cInp} /></td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+        {!list.length && <div style={{ padding: 24, fontSize: 12.5, color: C.faint, textAlign: "center" }}>沒有廠商</div>}
+      </div>
+      <div style={{ fontSize: 11, color: C.faint, marginTop: 8 }}>廠商由叫貨資料自動建立；部門/LINE發單/備註直接改。品項與價格在「品項」籤維護。</div>
+    </div>
+  );
+}
