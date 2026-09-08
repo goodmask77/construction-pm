@@ -1,5 +1,6 @@
 // 後端：每日工地速報（由 Vercel Cron 觸發，見 vercel.json）。
 // 讀 pm_bot_context 快照 → 組速報 → 推到工地群。沒設 LINE token 前＝安全 no-op。
+import { buildTaskCards } from './_ddcards.js' // 任務提醒的互動按鈕卡（完成/延1天/改日期/取消）
 const clean = (v) => (v || '').trim().replace(/^["']|["']$/g, '').replace(/^[A-Za-z0-9_]+=/, '').trim()
 const TOKEN = clean(process.env.LINE_CHANNEL_ACCESS_TOKEN)
 const GROUP = clean(process.env.LINE_DEFAULT_GROUP) || 'Cf7940efc6517b0c084ad2ad496b45f30'
@@ -126,7 +127,14 @@ export default async function handler(req, res) {
     const today = tpeToday()
     const txt = buildTaskRemind(open, evening, today)
     if (req.query?.dry) return res.status(200).json({ ok: true, dry: true, evening, openCount: open.length, taskText: txt, teamText: buildTeamRemind(open, today) }) // 乾跑：只回文字不推播
-    if (txt) { taskPushed = await pushTo(BOSS, [{ type: 'text', text: txt }]); try { const { logPush } = await import('./push.js'); await logPush(BOSS, 1, evening ? '任務追蹤' : '任務簡報', 1) } catch (_) {} }
+    if (txt) {
+      // 文字簡報＋互動按鈕卡：卡片只放「該動的」（逾期/今天到期；早班多含超急），一張卡=一件任務
+      const hot = open.filter(t => (t.due && t.due <= today) || (!evening && t.priority === 'urgent'))
+      const msgs = [{ type: 'text', text: txt }]
+      if (hot.length) msgs.push(buildTaskCards(hot, evening ? '還沒結的任務（點按鈕直接處理）' : '今日任務（點按鈕直接處理）', today))
+      taskPushed = await pushTo(BOSS, msgs)
+      try { const { logPush } = await import('./push.js'); await logPush(BOSS, msgs.length, evening ? '任務追蹤' : '任務簡報', 1) } catch (_) {}
+    }
     // 團隊群每人今日工作：預設關，設定勾了 teamTasks「且」總開關沒暫停才發（外發要保守）
     if (!evening && notify.teamTasks === true && !notify.pauseAll) {
       const teamTxt = buildTeamRemind(open, today)

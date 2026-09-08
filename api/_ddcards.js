@@ -195,6 +195,31 @@ export async function attachJournalPhotos(uid, urls) {
 export const buildFbPicker = (people, meId) => personPickerFlex(people, meId, 'fb|to', '💬 給誰回饋？', '點名字 → 選標籤 → 完成（+2分）')
 export const buildPollCard = (poll, people) => pollFlex(poll, people)
 
+// ── 任務提醒卡（2026-09-08 張良：提醒訊息要能直接按 完成/延1天/改日期/取消，別叫我打字）──
+// buildTaskCards 是純函式（today 由外面傳，selftest 會驗）；按鈕走下面 tk| postback 分支，不經 AI。
+const SP_CODE = { '工程': '工', '團隊': '團', '夥伴': '夥', '財務': '財' }
+const TK_PFX = { '工': 'pm_task_', '團': 'sp_team_pm_task_', '夥': 'sp_crew_pm_task_', '財': 'sp_finance_pm_task_' }
+const TK_SP = { '工': '工程', '團': '團隊', '夥': '夥伴', '財': '財務' }
+const dtbtn = (label, data, initial) => ({ type: 'button', style: 'secondary', height: 'sm', margin: 'xs', action: { type: 'datetimepicker', label: String(label).slice(0, 20), data: String(data).slice(0, 290), mode: 'date', ...(initial ? { initial } : {}) } })
+export function buildTaskCards(tasks, title, today) {
+  const bubbles = tasks.slice(0, 10).map(t => {
+    const code = SP_CODE[t.sp] || '工'
+    const late = t.due && t.due < today
+    const sub = [t.sp, t.owner, t.due ? `截止 ${t.due}${late ? '（逾期）' : ''}` : '沒設截止日'].filter(Boolean).join('｜')
+    const short = String(t.title).slice(0, 12)
+    return bubble(String(t.title).slice(0, 40), sub, [
+      btn('✅ 完成', `tk|done|${code}|${t.id}`, `${short} 完成`),
+      btn('⏭ 延 1 天', `tk|d1|${code}|${t.id}`, `${short} 延 1 天`),
+      dtbtn('📅 改日期', `tk|pick|${code}|${t.id}`, t.due && /^\d{4}-\d{2}-\d{2}$/.test(t.due) && t.due >= today ? t.due : today),
+      btn('🗑 取消任務', `tk|del|${code}|${t.id}`, `取消 ${short}`),
+    ], late ? '#B42318' : '#2A5CAA')
+  })
+  return flex(title, bubbles.length === 1 ? bubbles[0] : { type: 'carousel', contents: bubbles })
+}
+const todayTW = () => new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10)
+const addDays = (d, n) => new Date(new Date(d + 'T00:00:00Z').getTime() + n * 86400e3).toISOString().slice(0, 10)
+const delRow = async (key) => { try { await fetch(`${SB_URL}/rest/v1/pm_documents?id=eq.${encodeURIComponent(key)}`, { method: 'DELETE', headers: svc }) } catch (_) {} }
+
 // ── 主入口：回 true＝已消化（webhook 跳過 AI）──
 export async function handleDDCards(ev, operators) {
   if (ev.source?.type !== 'user') return false
@@ -227,6 +252,30 @@ export async function handleDDCards(ev, operators) {
       if (!me) { await reply(txt('請先報到綁定（輸入「你的本名＋報到」）再投票。')); return true }
       const out = await castVote(a, me.id, b)
       await reply(txt(out.error ? out.error : `🗳 投好了！「${out.title}」目前 ${out.n} 票。結果在 App 投票區看得到。`))
+      return true
+    }
+    // ── 任務卡按鈕：完成/延1天/改日期/取消（只限授權操作者；直接寫 App 同一份任務資料）──
+    if (kind === 'tk') {
+      if (!operators?.[uid]) { await reply(txt('這些任務按鈕只有授權操作者能用喔。')); return true }
+      const pfx = TK_PFX[b]
+      if (!pfx || !c) { await reply(txt('按鈕資料對不上，等下一次提醒再操作。')); return true }
+      const key = pfx + c
+      const rec = await kvGet(key)
+      // 工程空間可能還是舊版整包 pm_tasks —— 兩種都支援
+      let legacy = null, legIdx = -1
+      if (!rec && b === '工') { legacy = await kvGet('pm_tasks'); legIdx = Array.isArray(legacy) ? legacy.findIndex(t => t && t.id === c) : -1 }
+      const task = rec || (legIdx >= 0 ? legacy[legIdx] : null)
+      if (!task) { await reply(txt('找不到這件任務（可能已經被刪掉或銷掉了）。')); return true }
+      const save = async (patch) => { const nx = { ...task, ...patch, updatedAt: new Date().toISOString() }; if (rec) await kvSet(key, nx); else { legacy[legIdx] = nx; await kvSet('pm_tasks', legacy) } }
+      const showT = `「${task.title}」（${TK_SP[b]}${task.due ? '｜原截止 ' + task.due : ''}）`
+      // 操作留痕到該空間的活動紀錄（App 活動面板看得到；與 D哥 動作引擎同一格式）
+      const act = async (label, detail) => { try { const akey = b === '工' ? 'pm_activity' : pfx.replace('pm_task_', 'pm_activity'); const cur = await kvGet(akey); const arr = Array.isArray(cur) ? cur : []; await kvSet(akey, [{ ts: new Date().toISOString(), user: (operators[uid]?.name || '操作者') + '(任務按鈕)', action: label, detail }, ...arr].slice(0, 200)) } catch (_) {} }
+      if (a === 'done') { await save({ status: 'done' }); await act('修改', `按鈕完成任務${showT}`); await reply(txt(`✅ 銷掉了：${showT}\n漂亮 👍`)); return true }
+      if (a === 'd1') { const base = task.due && task.due >= todayTW() ? task.due : todayTW(); const nd = addDays(base, 1); await save({ due: nd }); await act('修改', `按鈕延期任務${showT}→${nd}`); await reply(txt(`⏭ 延好了：${showT}\n新截止日：${nd}`)); return true }
+      if (a === 'pick') { const nd = ev.postback?.params?.date; if (!/^\d{4}-\d{2}-\d{2}$/.test(nd || '')) { await reply(txt('沒收到日期，再按一次「📅 改日期」選一下。')); return true } await save({ due: nd }); await act('修改', `按鈕改期任務${showT}→${nd}`); await reply(txt(`📅 改好了：${showT}\n新截止日：${nd}`)); return true }
+      if (a === 'del') { await reply(flex('確定要取消這件任務？', bubble('確定要取消（刪除）？', `${String(task.title).slice(0, 60)}（${TK_SP[b]}）— 刪了 App 也會移除、不再提醒`, [btn('🗑 確定刪除', `tk|del2|${b}|${c}`, `確定刪除 ${String(task.title).slice(0, 12)}`), btn('↩️ 留著好了', `tk|keep|${b}|${c}`, '留著')], '#B42318'))); return true }
+      if (a === 'del2') { if (rec) await delRow(key); else { legacy.splice(legIdx, 1); await kvSet('pm_tasks', legacy) } await act('刪除', `按鈕刪除任務${showT}`); await reply(txt(`🗑 已取消（刪除）：${showT}`)); return true }
+      if (a === 'keep') { await reply(txt(`好，${showT} 留著，我繼續追 💪`)); return true }
       return true
     }
     if (kind === 'doc') {

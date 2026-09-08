@@ -81,5 +81,18 @@ ok('沒任何到期/急件 → 早班也不發', buildTaskRemind([{ title: 'x', 
 const team = buildTeamRemind(sample, T)
 ok('團隊版按負責人分組＋逾期標記', team.includes('阿桑') && team.includes('訂杯子') && team.includes('（未指派）') && team.includes('逾期'))
 
+// 任務互動按鈕卡（_ddcards buildTaskCards）：一卡一任務、postback 資料格式、日曆按鈕
+console.log('── 任務按鈕卡 ──')
+const { buildTaskCards } = await import('../api/_ddcards.js')
+const card = buildTaskCards([
+  { id: 'a1', title: '付消防尾款', sp: '工程', due: '2026-09-05', status: 'todo' },
+  { id: 'b2', title: '訂杯子', sp: '團隊', due: '2026-09-08', owner: '阿桑', status: 'todo' },
+], '今日任務', '2026-09-08')
+const raw = JSON.stringify(card)
+ok('flex 訊息＋2 張卡', card.type === 'flex' && card.contents.type === 'carousel' && card.contents.contents.length === 2)
+ok('四顆按鈕資料格式正確（done/d1/pick/del＋空間碼）', raw.includes('tk|done|工|a1') && raw.includes('tk|d1|工|a1') && raw.includes('tk|pick|團|b2') && raw.includes('tk|del|團|b2'))
+ok('改日期用 datetimepicker（跳日曆）且逾期卡標紅', raw.includes('datetimepicker') && raw.includes('#B42318') && raw.includes('（逾期）'))
+ok('單件任務 → 單卡不是 carousel', buildTaskCards([{ id: 'x', title: 'x', sp: '工程' }], 't', '2026-09-08').contents.type === 'bubble')
+
 if (fails) { console.error(`\n❌ ${fails} 個測試失敗`); process.exit(1) }
 console.log('\n✅ test-webhook-parsing 全過')
