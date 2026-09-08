@@ -62,5 +62,24 @@ const auto = mixed.filter(a => AUTO_TYPES.has(a.type))
 const confirm = mixed.filter(a => !AUTO_TYPES.has(a.type))
 ok('記錄類直接執行、危險類留給確認（delete_task 屬確認類）', auto.length === 2 && confirm.length === 3 && confirm.every(a => ['add_payment', 'delete_item', 'delete_task'].includes(a.type)))
 
+// 每日任務提醒（cron-daily）：早班簡報/晚班追蹤的分組與「沒事就不吵」
+console.log('── 每日任務提醒 ──')
+const { buildTaskRemind, buildTeamRemind } = await import('../api/cron-daily.js')
+const T = '2026-09-08'
+const sample = [
+  { title: '付消防尾款', sp: '工程', due: '2026-09-05', status: 'todo' },                    // 逾期
+  { title: '訂杯子', sp: '團隊', due: '2026-09-08', owner: '阿桑', status: 'todo' },          // 今天
+  { title: '排下月班表', sp: '夥伴', due: '2026-09-10', status: 'todo' },                     // 三天內
+  { title: '找新供應商', sp: '團隊', priority: 'urgent', status: 'todo' },                    // 超急無截止
+]
+const morning = buildTaskRemind(sample, false, T)
+ok('早班簡報含 逾期/今天/超急/三天內 四組', morning.includes('逾期') && morning.includes('付消防尾款') && morning.includes('今天到期') && morning.includes('訂杯子') && morning.includes('超急') && morning.includes('三天內'))
+const eve = buildTaskRemind(sample, true, T)
+ok('晚班只追 逾期＋今天，不含三天內', eve.includes('付消防尾款') && eve.includes('訂杯子') && !eve.includes('排下月班表'))
+ok('晚班：今天/逾期都清了 → null 不吵', buildTaskRemind([{ title: 'x', sp: '工程', due: '2026-09-10', status: 'todo' }], true, T) === null)
+ok('沒任何到期/急件 → 早班也不發', buildTaskRemind([{ title: 'x', sp: '工程', status: 'todo' }], false, T) === null)
+const team = buildTeamRemind(sample, T)
+ok('團隊版按負責人分組＋逾期標記', team.includes('阿桑') && team.includes('訂杯子') && team.includes('（未指派）') && team.includes('逾期'))
+
 if (fails) { console.error(`\n❌ ${fails} 個測試失敗`); process.exit(1) }
 console.log('\n✅ test-webhook-parsing 全過')

@@ -413,11 +413,14 @@ const BOT_PERSONA = `你是「DD」（舊名 D哥，大家叫哪個都認得）�
 - 資料裡真的沒有的（搜過確認），才說「這個我手上沒有資料」。
 - **你「會」操作 App 檔案庫**：使用者傳檔案給你、說「存到檔案庫〔類別名〕」你就會把檔案存進去；說「檔案庫新增類別〔名〕」你會建立新類別；類別是自訂的（可任意命名，如設計檔案／LOGO），存好後在 App 檔案庫頁看得到。**絕對不要說「我沒有新增檔案庫類別的能力／開不了類別／存不了檔案」**——你有。若對方說「沒看到剛建的類別」，提醒他：空類別要在 App 檔案庫頁上方「類別📁」篩選才看得到，或傳個檔案進去就會顯示（不要否認自己建過）。
 - **先在心裡把資料查完、算完、驗完，才開始寫回覆**。回覆只呈現最終結果——嚴禁把草稿過程寫出來（像「等等這是8月先跳過」「欸不對我重抓一次」這種自我更正實況，觀感很差）。寫錯就整段重寫，不是邊寫邊改。
+- **你「有」每日主動提醒功能**：系統每天早上 8:00 自動把「今日任務簡報」（逾期/今天到期/急件/三天內）私訊給張良，傍晚 5:30 若今天的任務還沒完成會再追一次。**絕對不要說「我不會主動提醒/我沒辦法定時推播/要你自己來問我」**——定時推播是系統既有功能。要調整提醒的內容或時間，請對方跟張良講一聲就能改。
+- **幫使用者記任務時要動腦，不是當打字員**：對方隨手打一段工作內容，你要主動（1）判斷歸哪個空間/大項、（2）把「明天/週五/月底」換算成實際日期填 due（今天日期在下面資料區開頭）、（3）判斷輕重緩急——急的、影響營運的帶 priority 超急、（4）有提到人就填 owner。一次丟好幾件就逐件記。記完之後如果對方在安排工作，主動給一句優先順序建議（先做哪個、為什麼）。
 - **如果你判斷自己做不到、或資料不足、或對方的要求不在你能力範圍**：直接、清楚地說「我做不到 X，原因是 Y，你可以這樣做 Z」。不要裝懂、不要答非所問、不要假裝完成。
 - 記得上面的對話脈絡，順著聊，不要把每句話都當第一次見面。
 - **一則訊息常常同時有好幾件事**（要記的＋要問的＋要查的，可能用換行或「跟」「還有」分開）。**每一件都要處理到、逐件交代**，絕對不能只做第一件就停：要記錄的照記錄，要問的問題照回答，同一則回覆裡全部給齊。
 - 如果對話中出現「值得長期記住」的重要事實（某人負責什麼、聯絡方式、分工窗口、老闆的偏好或固定要求、專案的重要約定…），在你回覆的「最後」另起一行用這個格式標記：[[記住:該事實]]（可多行、每行一件、寫簡短）。只標真正值得長期記的，瑣事不要標。這個標記使用者看不到，是給系統存進你的長期記事本用的。`
-const SYS_DATA_HEAD = '\n\n────────\n【你目前掌握的即時資料】\n'
+// 今天日期＋星期（台北時間）放資料區開頭：換算「明天/週五」設任務截止日要用（張良 2026-09-08）
+const sysDataHead = () => { const d = new Date(Date.now() + 8 * 3600e3); return `\n\n────────\n【你目前掌握的即時資料】（今天是 ${d.toISOString().slice(0, 10)} 星期${'日一二三四五六'[d.getUTCDay()]}，台北時間）\n` }
 
 // 排班系統（夥伴中心・排班）→ 文字。【100%資料鐵則】問「某人某天上什麼班」一律以此為準。
 // 出勤打卡（今日）：誰上班中/已下班、LINE備援未審核筆數（100%資料鐵則——打卡新資料域）
@@ -769,7 +772,7 @@ async function answer(question, snaps, accountsText, financeText, activityText, 
   if (!ANTHROPIC) return '（D哥的 AI 金鑰尚未設定。）'
   // 外部群（moneyOK=false）：不給任何金額/財務資料，並下鐵令禁止透露
   const moneyGuard = moneyOK ? '' : '\n\n⚠️【外部群鐵律】這個群是「外部群」，你**絕對禁止**透露任何：金額、預估/已付/未付、單價、報價、成本、營業額、銀行/帳戶餘額、零用金、財務數字、薪資。被問到金額類一律回「這部分金額不方便在這裡提供，我私下跟張哥確認 🙏」，不要旁敲側擊地洩漏。你可以講進度、工序、一般事務、用 web_search 查一般問題。'
-  const system = (canAct ? BOT_AGENT_GUIDE + '\n\n' : '') + BOT_PERSONA + moneyGuard + (memoryText || '') + SYS_DATA_HEAD + snapshotsToContext(snaps, moneyOK) + (tasksText || '') + (moneyOK ? (accountsText || '') : '') + (moneyOK ? (financeText || '') : '') + (activityText || '') + (moneyOK ? (estimatesText || '') : '') + (crewText || '') + (conclusionsText || '') + (sheetText || '') + (moneyOK ? (posText || '') : '') + (moneyOK ? (supplyText || '') : '') + (lineQuotaText || '') + (catalogText || '') + (filelibText || '') + (moneyOK ? (groupChatText || '') : '')
+  const system = (canAct ? BOT_AGENT_GUIDE + '\n\n' : '') + BOT_PERSONA + moneyGuard + (memoryText || '') + sysDataHead() + snapshotsToContext(snaps, moneyOK) + (tasksText || '') + (moneyOK ? (accountsText || '') : '') + (moneyOK ? (financeText || '') : '') + (activityText || '') + (moneyOK ? (estimatesText || '') : '') + (crewText || '') + (conclusionsText || '') + (sheetText || '') + (moneyOK ? (posText || '') : '') + (moneyOK ? (supplyText || '') : '') + (lineQuotaText || '') + (catalogText || '') + (filelibText || '') + (moneyOK ? (groupChatText || '') : '')
   const messages = [...(Array.isArray(history) ? history : []), { role: 'user', content: question }]
   const callModel = async (model) => {
     const r = await fetch('https://api.anthropic.com/v1/messages', {
