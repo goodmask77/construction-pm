@@ -216,6 +216,13 @@ export function buildTaskCards(tasks, title, today) {
   })
   return flex(title, bubbles.length === 1 ? bubbles[0] : { type: 'carousel', contents: bubbles })
 }
+// 確認卡（2026-09-08：改資料/金額類操作不用打「確認」，按按鈕就好）：cf|ok / cf|no 由 webhook 主檔處理（那邊有 executeActions）
+export function buildConfirmCard(sub) {
+  return flex('要執行這些操作嗎？', bubble('要執行嗎？', String(sub || '').slice(0, 100), [
+    btn('✅ 確認執行', 'cf|ok', '確認'),
+    btn('❌ 取消', 'cf|no', '取消'),
+  ], '#2A5CAA'))
+}
 const todayTW = () => new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10)
 const addDays = (d, n) => new Date(new Date(d + 'T00:00:00Z').getTime() + n * 86400e3).toISOString().slice(0, 10)
 const delRow = async (key) => { try { await fetch(`${SB_URL}/rest/v1/pm_documents?id=eq.${encodeURIComponent(key)}`, { method: 'DELETE', headers: svc }) } catch (_) {} }

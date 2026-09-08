@@ -67,6 +67,28 @@ export function buildTaskRemind(tasks, evening, today) {
   L.push('建議先清 🔴 再做 ⏰。回我「XX完成」直接銷任務 👌')
   return L.join('\n')
 }
+// 下週規劃（張良 2026-09-08「都做」）：每週日傍晚取代晚班追蹤，把下週 7 天任務按日排好送過來
+export function buildWeeklyPlan(tasks, today) {
+  const day = (o) => new Date(new Date(today + 'T00:00:00Z').getTime() + o * 86400e3).toISOString().slice(0, 10)
+  const end = day(7)
+  const wd = (d) => '日一二三四五六'[new Date(d + 'T00:00:00Z').getUTCDay()]
+  const md = (d) => d.slice(5).replace('-', '/')
+  const overdue = tasks.filter(t => t.due && t.due <= today) // 逾期＋今天沒結的
+  const week = tasks.filter(t => t.due && t.due > today && t.due <= end)
+  const urgent = tasks.filter(t => t.priority === 'urgent' && !(t.due && t.due <= end))
+  const noDue = tasks.filter(t => !t.due && t.priority !== 'urgent')
+  if (!overdue.length && !week.length && !urgent.length) return null
+  const L = [`🗓 下週任務規劃（${md(day(1))}〜${md(end)}）`]
+  if (overdue.length) { L.push(`🔴 先清舊帳（${overdue.length} 件逾期/今天未結）：`); overdue.slice(0, 8).forEach(t => L.push(tline(t))) }
+  const byDay = {}
+  week.forEach(t => { (byDay[t.due] = byDay[t.due] || []).push(t) })
+  Object.keys(byDay).sort().forEach(d => { L.push(`▫️ ${md(d)}（${wd(d)}）：`); byDay[d].slice(0, 6).forEach(t => L.push(`  ・${t.title}（${t.sp}${t.owner ? '·' + t.owner : ''}）`)) })
+  if (urgent.length) { L.push(`🔥 沒排日期但標超急（${urgent.length}）：`); urgent.slice(0, 6).forEach(t => L.push(tline(t))) }
+  if (noDue.length) L.push(`💤 另有 ${noDue.length} 件沒設截止日（想排進來就跟我說「XX排到幾號」）`)
+  L.push('建議：週初先清 🔴 和 🔥，其餘照日期走。要調整直接按卡片按鈕或跟我說 👌')
+  return L.join('\n')
+}
+
 // 團隊群每人今日工作（張良要的「未來功能」：預設關、settings.lineNotify.teamTasks===true 才發）
 export function buildTeamRemind(tasks, today) {
   const hot = tasks.filter(t => (t.due && t.due <= today) || t.priority === 'urgent')
@@ -125,16 +147,19 @@ export default async function handler(req, res) {
   if (notify.taskRemind !== false) {
     const open = await loadOpenTasks()
     const today = tpeToday()
-    const txt = buildTaskRemind(open, evening, today)
-    if (req.query?.dry) return res.status(200).json({ ok: true, dry: true, evening, openCount: open.length, taskText: txt, teamText: buildTeamRemind(open, today) }) // 乾跑：只回文字不推播
+    // 週日傍晚 → 晚班改送「下週規劃」（?mode=weekly 可手動觸發）
+    const weekly = req.query?.mode === 'weekly' || (evening && new Date(Date.now() + 8 * 3600e3).getUTCDay() === 0)
+    const txt = weekly ? buildWeeklyPlan(open, today) : buildTaskRemind(open, evening, today)
+    if (req.query?.dry) return res.status(200).json({ ok: true, dry: true, evening, weekly, openCount: open.length, taskText: txt, teamText: buildTeamRemind(open, today) }) // 乾跑：只回文字不推播
     if (txt) {
-      // 文字簡報＋互動按鈕卡：卡片只放「該動的」（逾期/今天到期；早班多含超急），一張卡=一件任務
-      const hot = open.filter(t => (t.due && t.due <= today) || (!evening && t.priority === 'urgent'))
+      // 文字簡報＋互動按鈕卡：卡片只放「該動的」（逾期/今天到期；早班和週規劃多含超急），一張卡=一件任務
+      const hot = open.filter(t => (t.due && t.due <= today) || ((weekly || !evening) && t.priority === 'urgent'))
       const msgs = [{ type: 'text', text: txt }]
-      if (hot.length) msgs.push(buildTaskCards(hot, evening ? '還沒結的任務（點按鈕直接處理）' : '今日任務（點按鈕直接處理）', today))
+      if (hot.length) msgs.push(buildTaskCards(hot, weekly ? '下週規劃・先處理這些（點按鈕）' : evening ? '還沒結的任務（點按鈕直接處理）' : '今日任務（點按鈕直接處理）', today))
       taskPushed = await pushTo(BOSS, msgs)
-      try { const { logPush } = await import('./push.js'); await logPush(BOSS, msgs.length, evening ? '任務追蹤' : '任務簡報', 1) } catch (_) {}
+      try { const { logPush } = await import('./push.js'); await logPush(BOSS, msgs.length, weekly ? '下週規劃' : evening ? '任務追蹤' : '任務簡報', 1) } catch (_) {}
     }
+    if (req.query?.mode === 'weekly') return res.status(200).json({ ok: true, weekly: true, taskPushed })
     // 團隊群每人今日工作：預設關，設定勾了 teamTasks「且」總開關沒暫停才發（外發要保守）
     if (!evening && notify.teamTasks === true && !notify.pauseAll) {
       const teamTxt = buildTeamRemind(open, today)

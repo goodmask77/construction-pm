@@ -94,5 +94,25 @@ ok('四顆按鈕資料格式正確（done/d1/pick/del＋空間碼）', raw.inclu
 ok('改日期用 datetimepicker（跳日曆）且逾期卡標紅', raw.includes('datetimepicker') && raw.includes('#B42318') && raw.includes('（逾期）'))
 ok('單件任務 → 單卡不是 carousel', buildTaskCards([{ id: 'x', title: 'x', sp: '工程' }], 't', '2026-09-08').contents.type === 'bubble')
 
+// 下週規劃（週日傍晚送）：逾期優先、按日分組、超急/沒日期另列、沒事回 null
+console.log('── 下週規劃 ──')
+const { buildWeeklyPlan } = await import('../api/cron-daily.js')
+const wk = buildWeeklyPlan([
+  { id: '1', title: '付消防尾款', sp: '工程', due: '2026-09-05', status: 'todo' },
+  { id: '2', title: '訂杯子', sp: '團隊', due: '2026-09-09', owner: '阿桑', status: 'todo' },
+  { id: '3', title: '排班表', sp: '夥伴', due: '2026-09-11', status: 'todo' },
+  { id: '4', title: '找新供應商', sp: '團隊', priority: 'urgent', status: 'todo' },
+  { id: '5', title: '慢慢想', sp: '工程', status: 'todo' },
+], '2026-09-06') // 週日
+ok('週規劃：先清舊帳＋按日分組＋週幾正確', wk.includes('先清舊帳') && wk.includes('付消防尾款') && wk.includes('09/09（三）') && wk.includes('09/11（五）') && wk.includes('排班表'))
+ok('週規劃：超急無日期、沒截止日另列', wk.includes('超急') && wk.includes('找新供應商') && wk.includes('1 件沒設截止日'))
+ok('週規劃：完全沒事 → null', buildWeeklyPlan([{ id: 'x', title: 'x', sp: '工程', status: 'todo' }], '2026-09-06') === null)
+
+// 確認卡（cf|ok / cf|no）
+console.log('── 確認按鈕卡 ──')
+const { buildConfirmCard } = await import('../api/_ddcards.js')
+const cf = JSON.stringify(buildConfirmCard('共 2 個操作'))
+ok('確認卡帶 cf|ok 與 cf|no 按鈕', cf.includes('"cf|ok"') && cf.includes('"cf|no"') && cf.includes('確認執行') && cf.includes('取消'))
+
 if (fails) { console.error(`\n❌ ${fails} 個測試失敗`); process.exit(1) }
 console.log('\n✅ test-webhook-parsing 全過')

@@ -10,7 +10,7 @@ import { supplyDigest } from '../src/supply/digest.js'
 // 入職 2.0：LINE 申請/報到綁定（固定表單流程、證件直存私有桶，「不經 AI」）
 import { handleOnboardEvent } from './_onboard.js'
 // DD 互動卡片：照片歸檔/回饋卡/投票卡（Flex+postback，固定指令不經 AI，答案直接寫回 App 同一份資料）
-import { handleDDCards, handleJournalText, attachJournalPhotos } from './_ddcards.js'
+import { handleDDCards, handleJournalText, attachJournalPhotos, buildConfirmCard, buildTaskCards } from './_ddcards.js'
 
 const clean = (v) => (v || '').trim().replace(/^["']|["']$/g, '').replace(/^[A-Za-z0-9_]+=/, '').trim()
 const SECRET = clean(process.env.LINE_CHANNEL_SECRET)
@@ -192,12 +192,13 @@ async function registerGroup(gid, src) {
   await kvSet('pm_group_seen', cur)
 }
 
-async function lineReply(replyToken, text) {
+async function lineReply(replyToken, text, extra) {
+  // extra＝附加訊息物件（Flex 按鈕卡等），跟文字一起回（LINE 一次最多 5 則）
   try {
     const r = await fetch('https://api.line.me/v2/bot/message/reply', {
       method: 'POST',
       headers: { 'content-type': 'application/json', authorization: `Bearer ${TOKEN}` },
-      body: JSON.stringify({ replyToken, messages: [{ type: 'text', text: String(text).slice(0, 4900) }] }),
+      body: JSON.stringify({ replyToken, messages: [{ type: 'text', text: String(text).slice(0, 4900) }, ...(Array.isArray(extra) ? extra.slice(0, 4) : [])] }),
     })
     if (!r.ok) { const d = await r.text().catch(() => ''); console.log('LINE reply FAILED', r.status, d.slice(0, 300)) }
     else console.log('LINE reply OK')
@@ -413,7 +414,7 @@ const BOT_PERSONA = `你是「DD」（舊名 D哥，大家叫哪個都認得）�
 - 資料裡真的沒有的（搜過確認），才說「這個我手上沒有資料」。
 - **你「會」操作 App 檔案庫**：使用者傳檔案給你、說「存到檔案庫〔類別名〕」你就會把檔案存進去；說「檔案庫新增類別〔名〕」你會建立新類別；類別是自訂的（可任意命名，如設計檔案／LOGO），存好後在 App 檔案庫頁看得到。**絕對不要說「我沒有新增檔案庫類別的能力／開不了類別／存不了檔案」**——你有。若對方說「沒看到剛建的類別」，提醒他：空類別要在 App 檔案庫頁上方「類別📁」篩選才看得到，或傳個檔案進去就會顯示（不要否認自己建過）。
 - **先在心裡把資料查完、算完、驗完，才開始寫回覆**。回覆只呈現最終結果——嚴禁把草稿過程寫出來（像「等等這是8月先跳過」「欸不對我重抓一次」這種自我更正實況，觀感很差）。寫錯就整段重寫，不是邊寫邊改。
-- **你「有」每日主動提醒功能**：系統每天早上 8:00 自動把「今日任務簡報」（逾期/今天到期/急件/三天內）私訊給張良，傍晚 5:30 若今天的任務還沒完成會再追一次；提醒附**互動按鈕卡**（每件任務可直接按 ✅完成／⏭延1天／📅改日期／🗑取消，不用打字）。**絕對不要說「我不會主動提醒/我沒辦法定時推播/要你自己來問我」**——定時推播是系統既有功能。要調整提醒的內容或時間，請對方跟張良講一聲就能改。
+- **你「有」每日主動提醒功能**：系統每天早上 8:00 自動把「今日任務簡報」（逾期/今天到期/急件/三天內）私訊給張良，傍晚 5:30 若今天的任務還沒完成會再追一次；提醒附**互動按鈕卡**（每件任務可直接按 ✅完成／⏭延1天／📅改日期／🗑取消，不用打字）。**絕對不要說「我不會主動提醒/我沒辦法定時推播/要你自己來問我」**——定時推播是系統既有功能。另外：每週日傍晚會送「下週任務規劃」（7 天按日排好）；張良隨時打「**今日任務**」就會秒回當日簡報＋按鈕卡。改資料/金額類操作等確認時也有 ✅確認/❌取消 按鈕（打字照樣有效）。要調整提醒的內容或時間，請對方跟張良講一聲就能改。
 - **幫使用者記任務時要動腦，不是當打字員**：對方隨手打一段工作內容，你要主動（1）判斷歸哪個空間/大項、（2）把「明天/週五/月底」換算成實際日期填 due（今天日期在下面資料區開頭）、（3）判斷輕重緩急——急的、影響營運的帶 priority 超急、（4）有提到人就填 owner。一次丟好幾件就逐件記。記完之後如果對方在安排工作，主動給一句優先順序建議（先做哪個、為什麼）。
 - **如果你判斷自己做不到、或資料不足、或對方的要求不在你能力範圍**：直接、清楚地說「我做不到 X，原因是 Y，你可以這樣做 Z」。不要裝懂、不要答非所問、不要假裝完成。
 - 記得上面的對話脈絡，順著聊，不要把每句話都當第一次見面。
@@ -1262,6 +1263,28 @@ export default async function handler(req, res) {
       // 簽章驗不過＝偽造請求 → 按鈕一律不理（按鈕會寫資料/刪任務，跟操作權同一套防線）
       if (ev.type === 'postback' && ev.source?.type === 'user') {
         if (sigOK === false) { console.log('sig FAIL → 拒絕 postback', (ev.source.userId || '').slice(-6)) ; continue }
+        // 確認卡按鈕（cf|ok / cf|no）：跟打字「確認/取消」同一條路，在這裡處理（executeActions 在本檔）
+        const pdata = String(ev.postback?.data || '')
+        if (pdata === 'cf|ok' || pdata === 'cf|no') {
+          const uid0 = ev.source.userId
+          const op0 = (await getOperators())[uid0]
+          const rep0 = (t) => ev.replyToken ? lineReply(ev.replyToken, t) : Promise.resolve()
+          if (!op0) { await rep0('這按鈕只有授權操作者能用喔。'); continue }
+          const pend0 = await getPending(uid0)
+          if (!pend0) { await rep0('沒有等待確認的操作（可能超過 10 分鐘失效了）。要做什麼再跟我說一次 🙏'); continue }
+          if (pdata === 'cf|ok') {
+            try {
+              const results = await executeActions(pend0.actions, op0.name)
+              await setPending(uid0, null)
+              const done = '✅ 搞定！\n' + results.join('\n')
+              await rep0(done); await pushChat('dm_' + uid0, '（按了確認按鈕）', done)
+            } catch (e) { console.log('cf exec error', e?.message); await rep0('⚠️ 執行出錯（' + (e?.message || '未知錯誤') + '），沒有完成，請再試一次。') }
+          } else {
+            await setPending(uid0, null)
+            await rep0('好，取消了，沒有做任何更動。'); await pushChat('dm_' + uid0, '（按了取消按鈕）', '好，取消了，沒有做任何更動。')
+          }
+          continue
+        }
         try { await handleDDCards(ev, await getOperators()) } catch (e) { console.log('ddcards postback error', e?.message) }
         continue
       }
@@ -1321,9 +1344,9 @@ export default async function handler(req, res) {
       if (!isDM && !named) continue // 私訊一律回；群組必須被點名（@本帳號 或 講「D哥」）
       const userId = ev.source?.userId || ''
       const convId = isDM ? ('dm_' + userId) : ('g_' + gid) // 對話記憶的識別
-      const send = (t) => ev.replyToken ? lineReply(ev.replyToken, t) : Promise.resolve()
+      const send = (t, extra) => ev.replyToken ? lineReply(ev.replyToken, t, extra) : Promise.resolve()
       // finish＝回覆＋把這輪存進對話記憶（讓 D哥 記得前文）；授權訊息不用 finish(含密碼，不留紀錄)
-      const finish = async (t) => { await send(t); await pushChat(convId, text, t) }
+      const finish = async (t, extra) => { await send(t, extra); await pushChat(convId, text, t) }
 
       // ── 動作引擎（只在「私訊」進行，群組一律唯讀，較安全）──
       // 1) 授權：私訊「授權:碼」→ 列入操作者白名單
@@ -1428,6 +1451,18 @@ export default async function handler(req, res) {
         }
       }
 
+      // 2.5) 今日任務卡（固定指令、不經 AI、秒回）：隨時召喚今日任務簡報＋互動按鈕卡（張良 2026-09-08）
+      if (isDM && canAct && /^(今日|今天)(的)?任務|^任務卡$/.test(text)) {
+        const { loadOpenTasks, buildTaskRemind } = await import('./cron-daily.js')
+        const open = await loadOpenTasks()
+        const today = new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10)
+        const brief = buildTaskRemind(open, false, today)
+        if (!brief) { await finish(`今天沒有到期或急件任務 🎉（未完成總共 ${open.length} 件，要看全部就問我「所有任務」）`); continue }
+        const hot = open.filter(t => (t.due && t.due <= today) || t.priority === 'urgent')
+        await finish(brief.replace(/^☀️ 早安！/, '📋 '), hot.length ? [buildTaskCards(hot, '今日任務（點按鈕直接處理）', today)] : undefined)
+        continue
+      }
+
       // 金額/財務權限：私訊(操作者)可看；群組只有「內部群(預設群) 或 設定 money:true」才可看金額，外部群一律擋
       let moneyOK = true
       if (!isDM) {
@@ -1467,7 +1502,10 @@ export default async function handler(req, res) {
         if (confirmActs.length) {
           await setPending(userId, { actions: confirmActs, ts: new Date().toISOString() })
           const list = confirmActs.map((a, i) => `${i + 1}. ${describeAction(a)}`).join('\n')
-          parts.push(`🛠 這些要等你確認才會做：\n${list}\n\n回「確認」執行、「取消」放棄。`)
+          parts.push(`🛠 這些要等你確認才會做：\n${list}`)
+          // 附確認按鈕卡（打字「確認/取消」也照樣有效）
+          await finish(parts.join('\n\n'), [buildConfirmCard(`共 ${confirmActs.length} 個操作，內容如上`)])
+          continue
         }
         await finish(parts.join('\n\n'))
       } else {
