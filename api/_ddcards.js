@@ -216,6 +216,21 @@ export function buildTaskCards(tasks, title, today) {
   })
   return flex(title, bubbles.length === 1 ? bubbles[0] : { type: 'carousel', contents: bubbles })
 }
+// 快速設定卡（2026-09-08 張良：記完任務要能點按鈕補 分類/截止日/超急/負責人，別叫他打字）
+// 記完任務馬上附上；按鈕走 tk| 分支（pick 重用改日期、urg/cat/own 是新 op）
+export function buildTaskSetupCards(created, today) {
+  const bubbles = created.slice(0, 5).map(t => {
+    const code = SP_CODE[t.sp] || '工'
+    return bubble(`⚙️ ${String(t.title).slice(0, 30)}`, '剛記好 — 順手補個設定？（不補也行）', [
+      dtbtn('📅 設截止日', `tk|pick|${code}|${t.id}`, today),
+      btn('🏷 選分類', `tk|cat|${code}|${t.id}`, `${String(t.title).slice(0, 10)} 選分類`),
+      btn('👤 設負責人', `tk|own|${code}|${t.id}`, `${String(t.title).slice(0, 10)} 設負責人`),
+      btn('🔥 標超急', `tk|urg|${code}|${t.id}`, `${String(t.title).slice(0, 10)} 標超急`),
+    ], '#5A7D2A')
+  })
+  return flex('順手補個設定？', bubbles.length === 1 ? bubbles[0] : { type: 'carousel', contents: bubbles })
+}
+
 // 確認卡（2026-09-08：改資料/金額類操作不用打「確認」，按按鈕就好）：cf|ok / cf|no 由 webhook 主檔處理（那邊有 executeActions）
 export function buildConfirmCard(sub) {
   return flex('要執行這些操作嗎？', bubble('要執行嗎？', String(sub || '').slice(0, 100), [
@@ -238,7 +253,7 @@ export async function handleDDCards(ev, operators) {
     const data = String(ev.postback?.data || '')
     const roster = await loadRoster()
     const me = personByUid(roster, uid)
-    const [kind, a, b, c] = data.split('|')
+    const [kind, a, b, c, d] = data.split('|')
     if (kind === 'fb') {
       if (!me) { await reply(txt('請先報到綁定（輸入「你的本名＋報到」）再給回饋。')); return true }
       if (a === 'to') { const to = roster.people.find(p => p.id === b); if (!to) { await reply(txt('找不到這位夥伴。')); return true } await reply(tagFlex(to.id, to.name)); return true }
@@ -283,6 +298,35 @@ export async function handleDDCards(ev, operators) {
       if (a === 'del') { await reply(flex('確定要取消這件任務？', bubble('確定要取消（刪除）？', `${String(task.title).slice(0, 60)}（${TK_SP[b]}）— 刪了 App 也會移除、不再提醒`, [btn('🗑 確定刪除', `tk|del2|${b}|${c}`, `確定刪除 ${String(task.title).slice(0, 12)}`), btn('↩️ 留著好了', `tk|keep|${b}|${c}`, '留著')], '#B42318'))); return true }
       if (a === 'del2') { if (rec) await delRow(key); else { legacy.splice(legIdx, 1); await kvSet('pm_tasks', legacy) } await act('刪除', `按鈕刪除任務${showT}`); await reply(txt(`🗑 已取消（刪除）：${showT}`)); return true }
       if (a === 'keep') { await reply(txt(`好，${showT} 留著，我繼續追 💪`)); return true }
+      // ── 快速設定：標超急 / 選分類（跳大項按鈕）/ 設負責人（跳夥伴按鈕）──
+      if (a === 'urg') { await save({ priority: 'urgent' }); await act('修改', `按鈕標超急${showT}`); await reply(txt(`🔥 標好超急：${showT}\n每天早上簡報會置頂追這件。`)); return true }
+      if (a === 'cat' || a === 'cat2') {
+        const dkey = b === '工' ? 'pm_data' : pfx.replace('pm_task_', 'pm_data')
+        const cats = await kvGet(dkey)
+        const list = Array.isArray(cats) ? cats : []
+        if (a === 'cat') {
+          if (!list.length) { await reply(txt(`${TK_SP[b]}空間還沒有大項分類，先跟我說「在${TK_SP[b]}建大項 XX」。`)); return true }
+          await reply(flex('選分類', bubble(`🏷 「${String(task.title).slice(0, 24)}」歸哪類？`, `${TK_SP[b]}空間的大項`, list.slice(0, 10).map(cx => btn(cx.name, `tk|cat2|${b}|${c}|${cx.id}`, `歸到 ${cx.name}`)))))
+          return true
+        }
+        const cx = list.find(x => x.id === d)
+        if (!cx) { await reply(txt('找不到這個分類了，再按一次「🏷 選分類」。')); return true }
+        await save({ catId: cx.id }); await act('修改', `按鈕歸類${showT}→${cx.name}`)
+        await reply(txt(`🏷 歸好了：${showT} → ${cx.name}`)); return true
+      }
+      if (a === 'own' || a === 'own2') {
+        const roster2 = await loadRoster()
+        const people = (roster2.people || []).filter(p => (p.status || '在職') === '在職' && !p.onboarding)
+        if (a === 'own') {
+          if (!people.length) { await reply(txt('名冊裡沒有在職夥伴可選。')); return true }
+          await reply(flex('設負責人', bubble(`👤 「${String(task.title).slice(0, 24)}」誰負責？`, '', people.slice(0, 10).map(p => btn(p.name + (p.nick ? `（${p.nick}）` : ''), `tk|own2|${b}|${c}|${p.id}`, `${p.name} 負責`)))))
+          return true
+        }
+        const p = people.find(x => x.id === d)
+        if (!p) { await reply(txt('找不到這位夥伴，再按一次「👤 設負責人」。')); return true }
+        await save({ owner: p.name }); await act('修改', `按鈕設負責人${showT}→${p.name}`)
+        await reply(txt(`👤 設好了：${showT} → ${p.name} 負責`)); return true
+      }
       return true
     }
     if (kind === 'doc') {

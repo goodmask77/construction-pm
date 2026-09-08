@@ -114,5 +114,15 @@ const { buildConfirmCard } = await import('../api/_ddcards.js')
 const cf = JSON.stringify(buildConfirmCard('共 2 個操作'))
 ok('確認卡帶 cf|ok 與 cf|no 按鈕', cf.includes('"cf|ok"') && cf.includes('"cf|no"') && cf.includes('確認執行') && cf.includes('取消'))
 
+// 快速設定卡（記完任務馬上附：截止日/分類/負責人/超急）
+console.log('── 快速設定卡 ──')
+const { buildTaskSetupCards } = await import('../api/_ddcards.js')
+const su = JSON.stringify(buildTaskSetupCards([
+  { id: 'n1', title: '快樂甜圈球－找代工廠', sp: '團隊' },
+  { id: 'n2', title: '蜂蜜奶油玉米麵包－找代工廠', sp: '團隊' },
+], '2026-09-08'))
+ok('設定卡：四顆按鈕資料格式（pick/cat/own/urg＋團隊碼）', su.includes('tk|pick|團|n1') && su.includes('tk|cat|團|n1') && su.includes('tk|own|團|n2') && su.includes('tk|urg|團|n2'))
+ok('設定卡：日曆按鈕＋兩張卡', su.includes('datetimepicker') && JSON.parse(su).contents.contents.length === 2)
+
 if (fails) { console.error(`\n❌ ${fails} 個測試失敗`); process.exit(1) }
 console.log('\n✅ test-webhook-parsing 全過')

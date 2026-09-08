@@ -10,7 +10,7 @@ import { supplyDigest } from '../src/supply/digest.js'
 // 入職 2.0：LINE 申請/報到綁定（固定表單流程、證件直存私有桶，「不經 AI」）
 import { handleOnboardEvent } from './_onboard.js'
 // DD 互動卡片：照片歸檔/回饋卡/投票卡（Flex+postback，固定指令不經 AI，答案直接寫回 App 同一份資料）
-import { handleDDCards, handleJournalText, attachJournalPhotos, buildConfirmCard, buildTaskCards } from './_ddcards.js'
+import { handleDDCards, handleJournalText, attachJournalPhotos, buildConfirmCard, buildTaskCards, buildTaskSetupCards } from './_ddcards.js'
 
 const clean = (v) => (v || '').trim().replace(/^["']|["']$/g, '').replace(/^[A-Za-z0-9_]+=/, '').trim()
 const SECRET = clean(process.env.LINE_CHANNEL_SECRET)
@@ -416,6 +416,7 @@ const BOT_PERSONA = `你是「DD」（舊名 D哥，大家叫哪個都認得）�
 - **先在心裡把資料查完、算完、驗完，才開始寫回覆**。回覆只呈現最終結果——嚴禁把草稿過程寫出來（像「等等這是8月先跳過」「欸不對我重抓一次」這種自我更正實況，觀感很差）。寫錯就整段重寫，不是邊寫邊改。
 - **你「有」每日主動提醒功能**：系統每天早上 8:00 自動把「今日任務簡報」（逾期/今天到期/急件/三天內）私訊給張良，傍晚 5:30 若今天的任務還沒完成會再追一次；提醒附**互動按鈕卡**（每件任務可直接按 ✅完成／⏭延1天／📅改日期／🗑取消，不用打字）。**絕對不要說「我不會主動提醒/我沒辦法定時推播/要你自己來問我」**——定時推播是系統既有功能。另外：每週日傍晚會送「下週任務規劃」（7 天按日排好）；張良隨時打「**今日任務**」就會秒回當日簡報＋按鈕卡。改資料/金額類操作等確認時也有 ✅確認/❌取消 按鈕（打字照樣有效）。要調整提醒的內容或時間，請對方跟張良講一聲就能改。
 - **幫使用者記任務時要動腦，不是當打字員**：對方隨手打一段工作內容，你要主動（1）判斷歸哪個空間/大項、（2）把「明天/週五/月底」換算成實際日期填 due（今天日期在下面資料區開頭）、（3）判斷輕重緩急——急的、影響營運的帶 priority 超急、（4）有提到人就填 owner。一次丟好幾件就逐件記。記完之後如果對方在安排工作，主動給一句優先順序建議（先做哪個、為什麼）。
+- **記完任務系統會自動附「快速設定卡」**（每件新任務一張，按鈕：📅設截止日跳日曆／🏷選分類跳大項按鈕／👤設負責人跳夥伴按鈕／🔥標超急）。所以**不要說「聊天框變不出選單/按鈕」**——有，而且是自動附的；你只要正常記任務就好，不用叫使用者打字補設定。
 - **如果你判斷自己做不到、或資料不足、或對方的要求不在你能力範圍**：直接、清楚地說「我做不到 X，原因是 Y，你可以這樣做 Z」。不要裝懂、不要答非所問、不要假裝完成。
 - 記得上面的對話脈絡，順著聊，不要把每句話都當第一次見面。
 - **一則訊息常常同時有好幾件事**（要記的＋要問的＋要查的，可能用換行或「跟」「還有」分開）。**每一件都要處理到、逐件交代**，絕對不能只做第一件就停：要記錄的照記錄，要問的問題照回答，同一則回覆裡全部給齊。
@@ -877,6 +878,7 @@ async function executeActions(actions, operator) {
   const today = new Date().toISOString().slice(0, 10)
   const by = 'D哥(' + operator + ')'
   const results = [], changed = new Set(), audits = []
+  results.created = [] // 這輪新建的任務（掛在陣列屬性上，不影響 join；給「快速設定卡」用）
   for (const a of actions) {
     const t = a.type
     try {
@@ -936,6 +938,7 @@ async function executeActions(actions, operator) {
           const np2 = normalizePatch(ex2, nid, others)
           await kvSet(pfx + 'pm_task_' + nid, { id: nid, title, note: '', status: 'todo', catId: tc2 ? tc2.id : '__inbox__', start: '', due: a.due || '', priority: TASK_PRIO[a.priority] || (a.urgent ? 'urgent' : 'normal'), tags: Array.isArray(a.tags) ? normalizePatch({ tags: a.tags }).tags : [], ord: mo - 1, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), ...np2 })
           results.push(`📝 新增任務「${title.slice(0, 20)}」→ ${spName}空間·${tc2 ? tc2.name : '收件匣'}`); audits.push([pfx + 'pm_activity', '新增', `新增任務「${title.slice(0, 20)}」（D哥跨空間）`])
+          results.created.push({ id: nid, title, sp: spName })
           continue
         }
         const tc = a.category ? findCat(cats, a.category) : null
@@ -950,6 +953,7 @@ async function executeActions(actions, operator) {
         const np = normalizePatch(extra, newId, tasks)
         tasks = [{ id: newId, title, note: '', status: 'todo', catId: tc ? tc.id : '__inbox__', start: '', due: a.due || '', priority: TASK_PRIO[a.priority] || (a.urgent ? 'urgent' : 'normal'), tags: Array.isArray(a.tags) ? normalizePatch({ tags: a.tags }).tags : [], createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), ...np }, ...tasks]
         changed.add('pm_tasks'); results.push(`📝 新增任務「${title.slice(0, 20)}」${tc ? '→' + tc.name : ''}`); audits.push(['pm_activity', '新增', `新增任務「${title.slice(0, 20)}」`])
+        results.created.push({ id: newId, title, sp: '工程' })
       } else if (t === 'update_task') {
         // Merge Rule：只帶要改的欄位；沒帶的完全不動（{...existing, ...patch}）
         // v2.1.2 跨空間：space≠工程 → 直接對該空間逐筆檔操作（以前被「僅限工程」擋掉）
@@ -1489,25 +1493,30 @@ export default async function handler(req, res) {
         const parts = []
         const prose = stripJson(reply)
         if (prose) parts.push(prose)
+        let createdTasks = []
         if (autoActs.length) {
           // 直接執行也要誠實回報：失敗不能默默吞掉讓使用者以為記好了
           try {
             const results = await executeActions(autoActs, op.name)
+            createdTasks = results.created || []
             parts.push('✅ 已直接記好：\n' + results.join('\n'))
           } catch (e) {
             console.log('auto-exec error', e?.message)
             parts.push('⚠️ 記錄時出錯沒有存成功（' + (e?.message || '未知錯誤') + '），請再說一次或稍後重試。')
           }
         }
+        // 剛記好的任務附「快速設定卡」：📅截止日/🏷分類/👤負責人/🔥超急 直接按（張良 2026-09-08）
+        const todayTPE = new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10)
+        const setupCards = createdTasks.length ? [buildTaskSetupCards(createdTasks, todayTPE)] : []
         if (confirmActs.length) {
           await setPending(userId, { actions: confirmActs, ts: new Date().toISOString() })
           const list = confirmActs.map((a, i) => `${i + 1}. ${describeAction(a)}`).join('\n')
           parts.push(`🛠 這些要等你確認才會做：\n${list}`)
           // 附確認按鈕卡（打字「確認/取消」也照樣有效）
-          await finish(parts.join('\n\n'), [buildConfirmCard(`共 ${confirmActs.length} 個操作，內容如上`)])
+          await finish(parts.join('\n\n'), [buildConfirmCard(`共 ${confirmActs.length} 個操作，內容如上`), ...setupCards])
           continue
         }
-        await finish(parts.join('\n\n'))
+        await finish(parts.join('\n\n'), setupCards.length ? setupCards : undefined)
       } else {
         await finish(reply)
       }
