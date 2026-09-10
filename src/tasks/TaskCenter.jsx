@@ -5,7 +5,7 @@
 // 視覺：依 docs/DESIGN_SPEC.md（Linear/Stripe 儀表板風）— 中性灰白 + 單一藍色主色 +
 //       lucide 細線圖示 + 狀態小圓點；1px 淺灰邊框、8px 圓角、無陰影、大量留白。
 import { useState, useEffect, useRef } from "react";
-import { Inbox, LayoutGrid, Columns3, List, CalendarDays, ChartGantt, Network, Plus, X, Check, Flame, Calendar, Clock, CircleAlert, ListTodo, Search, Home, Zap, Hourglass, CirclePlay, Coffee, Pin, ArrowUpDown, FolderPlus, Sun } from "lucide-react";
+import { Inbox, LayoutGrid, Columns3, List, CalendarDays, ChartGantt, Network, Plus, X, Check, Flame, Calendar, Clock, CircleAlert, ListTodo, Search, Home, Zap, Hourglass, CirclePlay, Coffee, Pin, ArrowUpDown, FolderPlus, Sun, GripVertical } from "lucide-react";
 import { isWaiting, isBlocked, missingDeps, wouldCycle, mergeTask, removeTaskAndRefs, isQuickWin, QUICK_WIN_MAX_MINUTES, orderTasks } from "./taskModel.js";
 import { uploadPhoto } from "../supa.js";
 import { loadRecords, migrateRecords, diffPersist, subscribeRecords } from "../lib/records.js";
@@ -81,7 +81,7 @@ const Pill = ({ color, label }) => (
   </span>
 );
 
-export default function TaskCenter({ K, confirm, canEdit, cats, onLog, onAddCat, onRenameCat, waitHint = "例：等對方回覆、等報價、等主管確認" }) {
+export default function TaskCenter({ K, confirm, canEdit, cats, onLog, onAddCat, onRenameCat, onReorderCat, waitHint = "例：等對方回覆、等報價、等主管確認" }) {
   const [tasks, setTasks] = useState(null);
   const [view, setView] = useState("today"); // today(Home 落地頁) | group | board | list | timeline | gantt | mind
   const [quick, setQuick] = useState("");
@@ -96,6 +96,8 @@ export default function TaskCenter({ K, confirm, canEdit, cats, onLog, onAddCat,
   const [sortMode, setSortMode] = useState("manual"); // manual(手動/拖曳順序) | due(日期) | prio(重要度)
   const [newCatIn, setNewCatIn] = useState(""); // 依大項視角「新增大項」輸入
   const [editCat, setEditCat] = useState(null); // 大項改名中：{id, name}（張良 2026-09-10：採購大項名稱要可編輯）
+  const [dragCat, setDragCat] = useState(null); // 拖曳中的大項 id（張良 2026-09-10：大項要能拖曳排序像 Trello/Keep）
+  const [overCat, setOverCat] = useState(null); // 大項拖曳目前懸停的目標
   const isMobile = useIsMobile(); // 手機(<640px)排版切換（張良 2026-07-26 手機版全面體檢）
 
   // 任務逐筆存（2026-07-18）：一件任務＝一份文件 pm_task_<id>（含 ord＝手動排序位置），
@@ -211,7 +213,7 @@ export default function TaskCenter({ K, confirm, canEdit, cats, onLog, onAddCat,
     </div>
   );
 
-  const groups = [{ id: INBOX, name: "收件匣" }, ...(cats || []).filter(c => !c.nonProject).map(c => ({ id: c.id, name: c.name }))];
+  const groups = [{ id: INBOX, name: "收件匣" }, ...(cats || []).filter(c => !c.nonProject).slice().sort((a, b) => (a.order ?? 0) - (b.order ?? 0)).map(c => ({ id: c.id, name: c.name }))]; // 照 order 排＝拖曳排序後全視角一致
   const tasksOf = (catId) => tasks.filter(t => (t.catId || INBOX) === catId);
   const open = tasks.filter(t => t.status !== "done");
   const matchQ = (t) => !q.trim() || (t.title + (t.note || "") + (t.tags || []).join("")).toLowerCase().includes(q.trim().toLowerCase());
@@ -230,26 +232,26 @@ export default function TaskCenter({ K, confirm, canEdit, cats, onLog, onAddCat,
         onClick={() => setSel(t.id)}
         style={done
           // 已完成：沉下去（透明底＋虛線框＋降透明度、無陰影）——跟待辦一眼分開
-          ? { background: "transparent", border: `1px dashed ${C.line}`, borderRadius: 8, padding: "9px 11px", marginBottom: 8, cursor: canEdit ? "grab" : "pointer", opacity: drag === t.id ? 0.4 : 0.6 }
-          // 待辦：浮起來（白底/色底＋硬框＋紙感陰影，懸停再浮一點）
-          : { background: t.color || "#fff", border: "1.5px solid #c8bca6", borderRadius: 8, padding: "9px 11px", marginBottom: 8, cursor: canEdit ? "grab" : "pointer", opacity: drag === t.id ? 0.4 : 1, boxShadow: "0 1px 3px rgba(29,26,21,.10)", transition: "box-shadow .12s, transform .12s" }}
+          ? { background: "transparent", border: `1px dashed ${C.line}`, borderRadius: 8, padding: "5px 8px", marginBottom: 5, cursor: canEdit ? "grab" : "pointer", opacity: drag === t.id ? 0.4 : 0.6 }
+          // 待辦：浮起來（白底/色底＋硬框＋紙感陰影，懸停再浮一點）；2026-09-10 緊湊化（張良：卡片空白越少越好）
+          : { background: t.color || "#fff", border: "1.5px solid #c8bca6", borderRadius: 8, padding: "5px 8px", marginBottom: 5, cursor: canEdit ? "grab" : "pointer", opacity: drag === t.id ? 0.4 : 1, boxShadow: "0 1px 3px rgba(29,26,21,.10)", transition: "box-shadow .12s, transform .12s" }}
         onMouseEnter={e => { if (!done) { e.currentTarget.style.boxShadow = "0 3px 10px rgba(29,26,21,.16)"; e.currentTarget.style.transform = "translateY(-1px)"; } }}
         onMouseLeave={e => { if (!done) { e.currentTarget.style.boxShadow = "0 1px 3px rgba(29,26,21,.10)"; e.currentTarget.style.transform = "none"; } }}>
         <div style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
           <button onClick={e => { e.stopPropagation(); if (guard()) upd(t.id, { status: done ? "todo" : "done" }); }}
             title="切換完成" style={{ flexShrink: 0, width: 16, height: 16, marginTop: 2, borderRadius: 4, border: `1px solid ${done ? C.green : "#c8bca6"}`, background: done ? C.green : "#fff", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", padding: 0 }}>{done && <Check size={11} color="#fff" strokeWidth={3} />}</button>
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 13, color: done ? C.faint : C.text, textDecoration: done ? "line-through" : "none", lineHeight: 1.45, wordBreak: "break-word" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 12.5, color: done ? C.faint : C.text, textDecoration: done ? "line-through" : "none", lineHeight: 1.35, wordBreak: "break-word" }}>
               {t.priority === "urgent" && <Flame size={12} color={C.red} style={{ flexShrink: 0 }} />}{t.title}
             </div>
-            <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", marginTop: 5 }}>
+            <div style={{ display: "flex", gap: 4, flexWrap: "wrap", alignItems: "center", marginTop: 2 }}>
               {view !== "group" && <span style={{ fontSize: 11, color: C.faint, maxWidth: 120, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{catName(t.catId)}</span>}
               {t.due && <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 11, fontVariantNumeric: "tabular-nums", color: (!done && t.due < today()) ? C.red : C.sub }}><Calendar size={11} />{t.due}{wdOf(t.due)}</span>}
               {(t.files || []).length > 0 && <span title={`${t.files.length} 個附件`} style={{ fontSize: 11, color: C.sub }}>📎{t.files.length}</span>}
               {view !== "board" && <Pill color={sColor(t.status)} label={sLabel(t.status)} />}
               {isWaiting(t) && !done && <Pill color={C.amber} label={`等：${t.waitingFor}`} />}
               {isBlocked(t, tasks) && !done && <Pill color={C.red} label="被前置卡住" />}
-              {(t.tags || []).map(tg => <span key={tg} style={{ fontSize: 11, color: C.sub, background: C.soft, borderRadius: 999, padding: "1px 8px" }}>{tg}</span>)}
+              {(t.tags || []).map(tg => <span key={tg} style={{ fontSize: 10.5, color: C.sub, background: C.soft, borderRadius: 999, padding: "0 6px" }}>{tg}</span>)}
             </div>
           </div>
           {canEdit && !done && (t.due === today()
@@ -465,35 +467,57 @@ export default function TaskCenter({ K, confirm, canEdit, cats, onLog, onAddCat,
           return <div title={editable ? "點我改大項名稱" : undefined} onClick={editable ? () => setEditCat({ id: g.id, name: g.name }) : undefined}
             style={{ fontSize: slim ? 12.5 : 13, fontWeight: 600, color: g.id === INBOX ? C.accent : slim ? C.sub : C.text, whiteSpace: "nowrap", cursor: editable ? "text" : "default" }}>{g.name}</div>;
         };
+        // 大項拖曳排序（張良 2026-09-10：像 Trello/Keep）：拖標題列＝搬整個大項；放到別的大項上＝插到它前面
+        const canDragCat = (g) => canEdit && onReorderCat && g.id !== INBOX;
+        const catWrap = (g, inner, extraStyle) => (
+          <div key={g.id}
+            onDragOver={e => { if (dragCat && dragCat !== g.id && g.id !== INBOX) { e.preventDefault(); setOverCat(g.id); } }}
+            onDragLeave={() => setOverCat(k => k === g.id ? null : k)}
+            onDrop={e => { if (dragCat && dragCat !== g.id && g.id !== INBOX) { e.preventDefault(); onReorderCat(dragCat, g.id); setDragCat(null); setOverCat(null); } }}
+            style={{ ...extraStyle, opacity: dragCat === g.id ? 0.4 : 1, outline: dragCat && overCat === g.id ? `2px dashed ${C.accent}` : "none", outlineOffset: 2, borderRadius: 8 }}>
+            {inner}
+          </div>
+        );
+        const catHead = (g, items) => (
+          <div draggable={canDragCat(g)}
+            onDragStart={e => { if (!canDragCat(g)) return; e.stopPropagation(); setDragCat(g.id); e.dataTransfer.effectAllowed = "move"; }}
+            onDragEnd={() => { setDragCat(null); setOverCat(null); }}
+            title={canDragCat(g) ? "拖我＝搬整個大項排序" : undefined}
+            style={{ display: "flex", alignItems: "center", gap: 5, marginBottom: 7, padding: "0 2px", cursor: canDragCat(g) ? "grab" : "default" }}>
+            {g.id === INBOX ? <Inbox size={13} strokeWidth={1.75} color={C.accent} /> : (canDragCat(g) && <GripVertical size={12} strokeWidth={1.75} color={C.faint} style={{ flexShrink: 0 }} />)}
+            {gName(g, false)}
+            <span style={{ fontSize: 11.5, color: C.faint, fontVariantNumeric: "tabular-nums" }}>{items.length}</span>
+          </div>
+        );
         return (
           <div>
-            {/* 主區：有任務的大項（+收件匣），CSS columns 瀑布流 */}
-            <div style={{ columns: "300px", columnGap: 12 }}>
-              {filled.map(({ g, items }) => DropZone({ keyId: g.id, onDropHere: () => moveTo(drag, { catId: g.id }),
-                style: { background: C.card, border: `1px solid ${C.line}`, borderRadius: 8, padding: 12, breakInside: "avoid", marginBottom: 12 },
+            {/* 主區：有任務的大項（+收件匣），CSS columns 瀑布流；2026-09-10 欄寬 300→232（張良：一次容納更多欄） */}
+            <div style={{ columns: "232px", columnGap: 10 }}>
+              {filled.map(({ g, items }) => catWrap(g, DropZone({ keyId: g.id, onDropHere: () => moveTo(drag, { catId: g.id }),
+                style: { background: C.card, border: `1px solid ${C.line}`, borderRadius: 8, padding: 8 },
                 children: <>
-                  <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 10, padding: "0 2px" }}>
-                    {g.id === INBOX && <Inbox size={13} strokeWidth={1.75} color={C.accent} />}
-                    {gName(g, false)}
-                    <span style={{ fontSize: 11.5, color: C.faint, fontVariantNumeric: "tabular-nums" }}>{items.length}</span>
-                  </div>
+                  {catHead(g, items)}
                   {items.map(t => Card({ t, dropBefore: true }))}
                   {gInput(g.id, false)}
-                </> }))}
+                </> }), { breakInside: "avoid", marginBottom: 10 }))}
             </div>
             {/* 下方：沒有任務的大項（縮成一行、仍可拖入/新增）＋ 新增大項 */}
             {(empties.length > 0 || (canEdit && onAddCat)) && (
               <div style={{ marginTop: 16 }}>
                 <div style={{ fontSize: 11, letterSpacing: 0.5, fontWeight: 500, color: C.faint, marginBottom: 8 }}>沒有任務的大項（拖進來或直接輸入就會出現在上面）</div>
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(240px,1fr))", gap: 8 }}>
-                  {empties.map(({ g }) => DropZone({ keyId: g.id, onDropHere: () => moveTo(drag, { catId: g.id }),
+                  {empties.map(({ g }) => catWrap(g, DropZone({ keyId: g.id, onDropHere: () => moveTo(drag, { catId: g.id }),
                     style: { background: C.card, border: `1px solid ${C.line}`, borderRadius: 8, padding: "8px 10px" },
                     children: (
-                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <div draggable={canDragCat(g)}
+                        onDragStart={e => { if (!canDragCat(g)) return; e.stopPropagation(); setDragCat(g.id); e.dataTransfer.effectAllowed = "move"; }}
+                        onDragEnd={() => { setDragCat(null); setOverCat(null); }}
+                        style={{ display: "flex", alignItems: "center", gap: 8, cursor: canDragCat(g) ? "grab" : "default" }}>
+                        {canDragCat(g) && <GripVertical size={12} strokeWidth={1.75} color={C.faint} style={{ flexShrink: 0 }} />}
                         {gName(g, true)}
                         {gInput(g.id, true) || <span style={{ fontSize: 11.5, color: C.faint }}>0</span>}
                       </div>
-                    ) }))}
+                    ) })))}
                   {/* 直接新增大項（會同步建立到總覽的工程大項） */}
                   {canEdit && onAddCat && (
                     <div style={{ border: `1px dashed ${C.line}`, borderRadius: 8, padding: "8px 10px", display: "flex", alignItems: "center", gap: 8 }}>
