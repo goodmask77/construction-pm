@@ -103,6 +103,9 @@ export default function TaskCenter({ K, confirm, canEdit, cats, onLog, onAddCat,
   const [overCat, setOverCat] = useState(null); // 大項拖曳目前懸停的目標
   const [showDone, setShowDone] = useState(false); // 完成的任務預設隱藏封存（張良 2026-09-10），點「已完成」切換顯示
   const [colorCat, setColorCat] = useState(null); // 大項調色盤開啟中的大項 id（張良 2026-09-10：大項也要能編輯顏色好辨識區塊）
+  // 滑鼠停在卡片上直接 Cmd+V 貼照片（張良 2026-09-10：每個卡片要可以貼上照片）——不用開卡；開著詳情彈窗時讓彈窗自己接
+  const hoverCardRef = useRef(null);
+  const selRef = useRef(null);
   const [vw, setVw] = useState(() => (typeof window !== "undefined" ? window.innerWidth : 1280)); // 視窗寬（後備用）
   useEffect(() => { const f = () => setVw(window.innerWidth); window.addEventListener("resize", f); return () => window.removeEventListener("resize", f); }, []);
   // 瀑布流用「實際容器寬」算欄數（張良 2026-09-10：字被壓縮＝欄算太多；ResizeObserver 量到多寬就排幾欄）
@@ -195,6 +198,27 @@ export default function TaskCenter({ K, confirm, canEdit, cats, onLog, onAddCat,
   };
   // Merge Rule：一律 {...existing, ...patch}（normalize 只動 patch 有的 key），絕不重建 task
   const upd = (id, patch) => { save((tasks || []).map(t => t.id === id ? mergeTask(t, patch, tasks) : t)); };
+  // 全域貼上：滑鼠停在某張卡上（且沒開詳情彈窗）→ 剪貼簿的圖直接進那張卡的附件（張良 2026-09-10）
+  useEffect(() => { selRef.current = sel; }, [sel]);
+  const tasksRef = useRef(tasks); useEffect(() => { tasksRef.current = tasks; }, [tasks]);
+  useEffect(() => {
+    if (!canEdit) return;
+    const onPaste = async (e) => {
+      const tid = hoverCardRef.current;
+      if (!tid || selRef.current) return; // 沒停在卡上不管；開著詳情由 TaskAttach 自己接
+      const imgs = [...(e.clipboardData?.items || [])].filter(it => it.type?.startsWith("image/")).map(it => it.getAsFile()).filter(Boolean);
+      if (!imgs.length) return;
+      e.preventDefault();
+      const out = [];
+      for (const f of imgs) { try { const { url, path } = await uploadPhoto(f); out.push({ id: "tf" + Math.random().toString(36).slice(2, 7), url, path, name: f.name || "貼上的照片", isImage: true }); } catch (_) {} }
+      if (out.length) {
+        const t = (tasksRef.current || []).find(x => x.id === tid);
+        if (t) save((tasksRef.current || []).map(x => x.id === tid ? mergeTask(x, { files: [...(x.files || []), ...out] }, tasksRef.current) : x));
+      }
+    };
+    document.addEventListener("paste", onPaste);
+    return () => document.removeEventListener("paste", onPaste);
+  }, [canEdit]);
   // 刪除：同一次寫回完成「刪任務 + 清掉所有 dependsOn 引用」，不留中間態
   const del = async (id) => { if (!guard()) return; const t = (tasks || []).find(x => x.id === id); if (!(await confirm(`刪除任務「${t?.title || ""}」？`, { confirmLabel: "刪除" }))) return; save(removeTaskAndRefs(tasks, id)); setSel(null); onLog?.("刪除", `刪除任務「${(t?.title || "").slice(0, 20)}」`); };
 
@@ -252,8 +276,8 @@ export default function TaskCenter({ K, confirm, canEdit, cats, onLog, onAddCat,
           ? { background: "transparent", border: `1px dashed ${C.line}`, borderRadius: 8, padding: "5px 8px", marginBottom: 5, cursor: canEdit ? "grab" : "pointer", opacity: drag === t.id ? 0.4 : 0.6 }
           // 待辦：浮起來（白底/色底＋硬框＋紙感陰影，懸停再浮一點）；2026-09-10 緊湊化（張良：卡片空白越少越好）；今日必處理＝紅框紅光
           : { background: t.color || "#fff", border: hot ? "1.5px solid #d4161d" : "1.5px solid #c8bca6", borderRadius: 8, padding: "5px 8px", marginBottom: 5, cursor: canEdit ? "grab" : "pointer", opacity: drag === t.id ? 0.4 : 1, boxShadow: baseShadow, transition: "box-shadow .12s, transform .12s" }}
-        onMouseEnter={e => { if (!done) { e.currentTarget.style.boxShadow = hot ? "0 0 0 2px rgba(212,22,29,.28), 0 4px 14px rgba(212,22,29,.4)" : "0 3px 10px rgba(29,26,21,.16)"; e.currentTarget.style.transform = "translateY(-1px)"; } }}
-        onMouseLeave={e => { if (!done) { e.currentTarget.style.boxShadow = baseShadow; e.currentTarget.style.transform = "none"; } }}>
+        onMouseEnter={e => { hoverCardRef.current = t.id; if (!done) { e.currentTarget.style.boxShadow = hot ? "0 0 0 2px rgba(212,22,29,.28), 0 4px 14px rgba(212,22,29,.4)" : "0 3px 10px rgba(29,26,21,.16)"; e.currentTarget.style.transform = "translateY(-1px)"; } }}
+        onMouseLeave={e => { if (hoverCardRef.current === t.id) hoverCardRef.current = null; if (!done) { e.currentTarget.style.boxShadow = baseShadow; e.currentTarget.style.transform = "none"; } }}>
         <div style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
           <button onClick={e => { e.stopPropagation(); if (guard()) upd(t.id, { status: done ? "todo" : "done" }); }}
             title="切換完成" style={{ flexShrink: 0, width: 16, height: 16, marginTop: 2, borderRadius: 4, border: `1px solid ${done ? C.green : "#c8bca6"}`, background: done ? C.green : "#fff", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", padding: 0 }}>{done && <Check size={11} color="#fff" strokeWidth={3} />}</button>
@@ -270,6 +294,21 @@ export default function TaskCenter({ K, confirm, canEdit, cats, onLog, onAddCat,
               {isBlocked(t, tasks) && !done && <Pill color={C.red} label="被前置卡住" />}
               {(t.tags || []).map(tg => <span key={tg} style={{ fontSize: 10.5, color: C.sub, background: C.soft, borderRadius: 999, padding: "0 6px", whiteSpace: "nowrap" }}>{tg}</span>)}
             </div>
+            {/* 卡上照片（張良 2026-09-10：貼上就要看得到）：第一張當封面、其餘小縮圖；已完成不佔版面 */}
+            {!done && (t.files || []).some(f => f.isImage) && (() => {
+              const imgs = (t.files || []).filter(f => f.isImage);
+              return (
+                <div style={{ marginTop: 5 }}>
+                  <img src={imgs[0].url} alt="" loading="lazy" style={{ width: "100%", maxHeight: 120, objectFit: "cover", borderRadius: 6, border: `1px solid ${C.line}`, display: "block" }} />
+                  {imgs.length > 1 && (
+                    <div style={{ display: "flex", gap: 4, marginTop: 4, alignItems: "center" }}>
+                      {imgs.slice(1, 4).map(f => <img key={f.id} src={f.url} alt="" loading="lazy" style={{ width: 34, height: 34, objectFit: "cover", borderRadius: 5, border: `1px solid ${C.line}` }} />)}
+                      {imgs.length > 4 && <span style={{ fontSize: 10.5, color: C.faint }}>+{imgs.length - 4}</span>}
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
           </div>
           {canEdit && !done && (t.due === today()
             ? <button onClick={e => { e.stopPropagation(); if (guard()) upd(t.id, { due: t.prevDue !== undefined ? t.prevDue : "", prevDue: undefined }); }} title={`退出今天必處理${t.prevDue ? `（恢復原截止日 ${t.prevDue}）` : "（清空截止日）"}`} style={{ flexShrink: 0, background: "none", border: "none", cursor: "pointer", lineHeight: 1, padding: "2px", color: C.red }}><Sun size={13} fill={C.red} /></button>
