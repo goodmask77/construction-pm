@@ -529,12 +529,15 @@ export default function TaskCenter({ K, confirm, canEdit, cats, onLog, onAddCat,
         };
         // 大項拖曳排序（張良 2026-09-10：像 Trello/Keep）：拖標題列＝搬整個大項；放到別的大項上＝插到它前面
         const canDragCat = (g) => canEdit && onMoveCat && g.id !== INBOX;
+        // 拖到目標「上半部＝排它上面、下半部＝排它下面」（張良 2026-09-10：要能拖去任何想放的地方）；插入位置顯示紅色提示線
+        const dropPos = (e) => { const r = e.currentTarget.getBoundingClientRect(); return e.clientY < r.top + r.height / 2 ? "b" : "a"; };
         const catWrap = (g, inner, extraStyle) => (
           <div key={g.id}
-            onDragOver={e => { if (dragCat && dragCat !== g.id && g.id !== INBOX) { e.preventDefault(); setOverCat(g.id); } }}
-            onDragLeave={() => setOverCat(k => k === g.id ? null : k)}
-            onDrop={e => { if (dragCat && dragCat !== g.id && g.id !== INBOX) { e.preventDefault(); onMoveCat(dragCat, { afterId: g.id, col: colOfRef.current[g.id] }); setDragCat(null); setOverCat(null); } }}
-            style={{ ...extraStyle, opacity: dragCat === g.id ? 0.4 : 1, outline: dragCat && overCat === g.id ? `2px dashed ${C.accent}` : "none", outlineOffset: 2, borderRadius: 8 }}>
+            onDragOver={e => { if (dragCat && dragCat !== g.id && g.id !== INBOX) { e.preventDefault(); e.stopPropagation(); setOverCat(g.id + ":" + dropPos(e)); } }}
+            onDragLeave={() => setOverCat(k => (k || "").startsWith(g.id + ":") ? null : k)}
+            onDrop={e => { if (dragCat && dragCat !== g.id && g.id !== INBOX) { e.preventDefault(); e.stopPropagation(); const p = dropPos(e); onMoveCat(dragCat, { [p === "b" ? "beforeId" : "afterId"]: g.id, col: colOfRef.current[g.id] }); setDragCat(null); setOverCat(null); } }}
+            style={{ ...extraStyle, opacity: dragCat === g.id ? 0.4 : 1, borderRadius: 8,
+              boxShadow: dragCat && overCat === g.id + ":b" ? `0 -4px 0 0 ${C.accent}` : dragCat && overCat === g.id + ":a" ? `0 4px 0 0 ${C.accent}` : "none" }}>
             {inner}
           </div>
         );
