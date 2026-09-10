@@ -81,7 +81,7 @@ const Pill = ({ color, label }) => (
   </span>
 );
 
-export default function TaskCenter({ K, confirm, canEdit, cats, onLog, onAddCat, waitHint = "例：等對方回覆、等報價、等主管確認" }) {
+export default function TaskCenter({ K, confirm, canEdit, cats, onLog, onAddCat, onRenameCat, waitHint = "例：等對方回覆、等報價、等主管確認" }) {
   const [tasks, setTasks] = useState(null);
   const [view, setView] = useState("today"); // today(Home 落地頁) | group | board | list | timeline | gantt | mind
   const [quick, setQuick] = useState("");
@@ -95,6 +95,7 @@ export default function TaskCenter({ K, confirm, canEdit, cats, onLog, onAddCat,
   const [showAllDone, setShowAllDone] = useState(false); // 看板「完成」欄預設只列最近幾件
   const [sortMode, setSortMode] = useState("manual"); // manual(手動/拖曳順序) | due(日期) | prio(重要度)
   const [newCatIn, setNewCatIn] = useState(""); // 依大項視角「新增大項」輸入
+  const [editCat, setEditCat] = useState(null); // 大項改名中：{id, name}（張良 2026-09-10：採購大項名稱要可編輯）
   const isMobile = useIsMobile(); // 手機(<640px)排版切換（張良 2026-07-26 手機版全面體檢）
 
   // 任務逐筆存（2026-07-18）：一件任務＝一份文件 pm_task_<id>（含 ord＝手動排序位置），
@@ -454,6 +455,16 @@ export default function TaskCenter({ K, confirm, canEdit, cats, onLog, onAddCat,
         const filled = withItems.filter(x => x.items.length > 0 || x.g.id === INBOX); // 收件匣固定在主區
         const empties = withItems.filter(x => x.items.length === 0 && x.g.id !== INBOX);
         const gInput = (gid, slim) => canEdit && <input value={gnew[gid] || ""} onChange={e => setGnew(p => ({ ...p, [gid]: e.target.value }))} onKeyDown={e => { if (e.key === "Enter" && !e.nativeEvent.isComposing && e.keyCode !== 229) addToGroup(gid); }} placeholder={slim ? "＋ 新增或拖到這裡…" : "＋ 直接在此大項新增…"} style={{ flex: slim ? 1 : undefined, width: slim ? undefined : "100%", minWidth: 0, boxSizing: "border-box", border: `1px dashed ${C.line}`, borderRadius: 8, padding: slim ? "4px 9px" : "6px 10px", fontSize: slim ? 12 : 12.5, background: "transparent", color: C.text, outline: "none", marginTop: slim ? 0 : 4 }} />;
+        // 大項名稱可編輯（點名稱＝改名；收件匣除外）：Enter/失焦儲存、Esc 取消
+        const commitCatName = () => { if (editCat && editCat.name.trim() && onRenameCat) onRenameCat(editCat.id, editCat.name.trim()); setEditCat(null); };
+        const gName = (g, slim) => {
+          if (editCat?.id === g.id) return <input autoFocus value={editCat.name} onChange={e => setEditCat({ ...editCat, name: e.target.value })}
+            onKeyDown={e => { if (e.key === "Enter" && !e.nativeEvent.isComposing && e.keyCode !== 229) commitCatName(); if (e.key === "Escape") setEditCat(null); }} onBlur={commitCatName}
+            style={{ fontSize: slim ? 12.5 : 13, fontWeight: 600, color: C.text, border: `1px solid ${C.line}`, borderRadius: 6, padding: "1px 6px", background: "#fff", outline: "none", minWidth: 0, width: 130 }} />;
+          const editable = canEdit && onRenameCat && g.id !== INBOX;
+          return <div title={editable ? "點我改大項名稱" : undefined} onClick={editable ? () => setEditCat({ id: g.id, name: g.name }) : undefined}
+            style={{ fontSize: slim ? 12.5 : 13, fontWeight: 600, color: g.id === INBOX ? C.accent : slim ? C.sub : C.text, whiteSpace: "nowrap", cursor: editable ? "text" : "default" }}>{g.name}</div>;
+        };
         return (
           <div>
             {/* 主區：有任務的大項（+收件匣），CSS columns 瀑布流 */}
@@ -463,7 +474,7 @@ export default function TaskCenter({ K, confirm, canEdit, cats, onLog, onAddCat,
                 children: <>
                   <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 10, padding: "0 2px" }}>
                     {g.id === INBOX && <Inbox size={13} strokeWidth={1.75} color={C.accent} />}
-                    <div style={{ fontSize: 13, fontWeight: 600, color: g.id === INBOX ? C.accent : C.text }}>{g.name}</div>
+                    {gName(g, false)}
                     <span style={{ fontSize: 11.5, color: C.faint, fontVariantNumeric: "tabular-nums" }}>{items.length}</span>
                   </div>
                   {items.map(t => Card({ t, dropBefore: true }))}
@@ -479,7 +490,7 @@ export default function TaskCenter({ K, confirm, canEdit, cats, onLog, onAddCat,
                     style: { background: C.card, border: `1px solid ${C.line}`, borderRadius: 8, padding: "8px 10px" },
                     children: (
                       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                        <div style={{ fontSize: 12.5, fontWeight: 600, color: C.sub, whiteSpace: "nowrap" }}>{g.name}</div>
+                        {gName(g, true)}
                         {gInput(g.id, true) || <span style={{ fontSize: 11.5, color: C.faint }}>0</span>}
                       </div>
                     ) }))}
