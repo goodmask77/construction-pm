@@ -1868,6 +1868,7 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
                             <th style={{ ...hh3, textAlign: "left", position: "sticky", left: 0, background: C.head, zIndex: 1 }}>時段</th>
                             {heatDates.map(dt => <th key={dt} style={{ ...hh3, color: isWE(dt) ? C.amber : C.sub }}>{Number(dt.slice(5, 7)) + "/" + Number(dt.slice(8))}<br />{WD2[new Date(dt + "T00:00:00").getDay()]}</th>)}
                             <th style={hh3}>累計</th><th style={hh3}>日均</th>
+                            <th style={{ ...hh3, position: "sticky", right: 0, background: C.head, zIndex: 1 }}>時段</th>{/* 右側再放一欄時段（張良 2026-09-10：看到最右邊離左邊太遠不好對） */}
                           </tr></thead>
                           <tbody>
                             {heatKeys.map(k => {
@@ -1886,6 +1887,7 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
                                   })}
                                   <td style={{ padding: "4px 7px", textAlign: "right", fontFamily: MONOF, fontSize: 10.5, fontWeight: 700, borderTop: "1px solid #f0ead9", whiteSpace: "nowrap" }}>{fmt(rowSum(k))}</td>
                                   <td title={`${slotDays(k)} 天有營業到這時段（每天第一筆〜最後一筆銷售之間算營業中）`} style={{ padding: "4px 7px", textAlign: "right", fontFamily: MONOF, fontSize: 10.5, color: C.sub, borderTop: "1px solid #f0ead9", whiteSpace: "nowrap", cursor: "help" }}>{fmt(Math.round(rowSum(k) / Math.max(1, slotDays(k))))}</td>
+                                  <td style={{ padding: "4px 7px", fontFamily: MONOF, fontWeight: 700, fontSize: 11, whiteSpace: "nowrap", position: "sticky", right: 0, background: "#fff", borderTop: "1px solid #f0ead9", textAlign: "right" }}>{tl}</td>
                                 </tr>
                               );
                             })}
@@ -1897,6 +1899,7 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
                               ); })}
                               <td style={{ padding: "4px 7px", textAlign: "right", fontFamily: MONOF, fontSize: 10.5, fontWeight: 800, whiteSpace: "nowrap" }}>{fmt(heatDates.reduce((t, dt) => t + (offRev(dt) || dayTot(dt)), 0))}</td>
                               <td style={{ padding: "4px 7px", textAlign: "right", fontFamily: MONOF, fontSize: 10.5, color: C.sub, whiteSpace: "nowrap" }}>{fmt(Math.round(heatDates.reduce((t, dt) => t + (offRev(dt) || dayTot(dt)), 0) / Math.max(1, heatDates.length)))}</td>
+                              <td style={{ padding: "4px 7px", fontWeight: 800, fontSize: 10.5, position: "sticky", right: 0, background: C.head, whiteSpace: "nowrap", textAlign: "right" }}>全日</td>
                             </tr>
                           </tbody>
                         </table>
