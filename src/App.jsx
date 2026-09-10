@@ -1040,12 +1040,13 @@ export default function App() {
             waitHint={CURRENT_SPACE === "construction" ? "例：等木工、等房東、等設計圖" : "例：等對方回覆、等報價、等主管確認"}
             onAddCat={(name) => guardedSetCats(prev => [...prev, { id: "cat-" + Date.now(), order: prev.length, name, budget: 0, status: "pending", items: [] }])}
             onRenameCat={(id, name) => guardedSetCats(prev => prev.map(c => c.id === id ? { ...c, name } : c))}
-            onReorderCat={(fromId, toId) => guardedSetCats(prev => { // 拖到目標大項上＝插到它「下方」（張良 2026-09-10：要能自由排列）
+            onMoveCat={(fromId, { afterId, col } = {}) => guardedSetCats(prev => { // 拖大項＝插到目標下方＋記住欄位 tcol（張良 2026-09-10：放哪就釘哪、不回彈）
               const arr = [...prev].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
               const fi = arr.findIndex(c => c.id === fromId); if (fi < 0) return prev;
               const [m] = arr.splice(fi, 1);
-              const ti = arr.findIndex(c => c.id === toId);
-              arr.splice(ti < 0 ? arr.length : ti + 1, 0, m);
+              const m2 = col === undefined ? m : { ...m, tcol: col };
+              if (afterId) { const ti = arr.findIndex(c => c.id === afterId); arr.splice(ti < 0 ? arr.length : ti + 1, 0, m2); }
+              else arr.push(m2);
               return arr.map((c, i) => ({ ...c, order: i }));
             })}
             onSetCatColor={(id, color) => guardedSetCats(prev => prev.map(c => c.id === id ? { ...c, color } : c))} />

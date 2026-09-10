@@ -84,7 +84,7 @@ const Pill = ({ color, label }) => (
 // 卡片/大項共用色盤（張良 2026-09-10：視覺分類）
 const PALETTE = [["", "白"], ["#fde8e6", "紅"], ["#fdf1dd", "杏"], ["#faf6d8", "黃"], ["#e9f2e4", "綠"], ["#e6eef6", "藍"], ["#efe8f6", "紫"]];
 
-export default function TaskCenter({ K, confirm, canEdit, cats, onLog, onAddCat, onRenameCat, onReorderCat, onSetCatColor, waitHint = "例：等對方回覆、等報價、等主管確認" }) {
+export default function TaskCenter({ K, confirm, canEdit, cats, onLog, onAddCat, onRenameCat, onMoveCat, onSetCatColor, waitHint = "例：等對方回覆、等報價、等主管確認" }) {
   const [tasks, setTasks] = useState(null);
   const [view, setView] = useState("today"); // today(Home 落地頁) | group | board | list | timeline | gantt | mind
   const [quick, setQuick] = useState("");
@@ -101,6 +101,7 @@ export default function TaskCenter({ K, confirm, canEdit, cats, onLog, onAddCat,
   const [editCat, setEditCat] = useState(null); // 大項改名中：{id, name}（張良 2026-09-10：採購大項名稱要可編輯）
   const [dragCat, setDragCat] = useState(null); // 拖曳中的大項 id（張良 2026-09-10：大項要能拖曳排序像 Trello/Keep）
   const [overCat, setOverCat] = useState(null); // 大項拖曳目前懸停的目標
+  const colOfRef = useRef({}); // 本次渲染各大項實際落在第幾欄（拖放時用來算 tcol）
   const [showDone, setShowDone] = useState(false); // 完成的任務預設隱藏封存（張良 2026-09-10），點「已完成」切換顯示
   const [colorCat, setColorCat] = useState(null); // 大項調色盤開啟中的大項 id（張良 2026-09-10：大項也要能編輯顏色好辨識區塊）
   // 滑鼠停在卡片上直接 Cmd+V 貼照片（張良 2026-09-10：每個卡片要可以貼上照片）——不用開卡；開著詳情彈窗時讓彈窗自己接
@@ -199,8 +200,7 @@ export default function TaskCenter({ K, confirm, canEdit, cats, onLog, onAddCat,
   // Merge Rule：一律 {...existing, ...patch}（normalize 只動 patch 有的 key），絕不重建 task
   const upd = (id, patch) => { save((tasks || []).map(t => t.id === id ? mergeTask(t, patch, tasks) : t)); };
   // 全域貼上：滑鼠停在某張卡上（且沒開詳情彈窗）→ 剪貼簿的圖直接進那張卡的附件（張良 2026-09-10）
-  useEffect(() => { selRef.current = sel; }, [sel]);
-  const tasksRef = useRef(tasks); useEffect(() => { tasksRef.current = tasks; }, [tasks]);
+  useEffect(() => { selRef.current = sel; }, [sel]); // tasksRef 用上面既有那顆（save/undo 已同步維護）
   useEffect(() => {
     if (!canEdit) return;
     const onPaste = async (e) => {
@@ -252,7 +252,7 @@ export default function TaskCenter({ K, confirm, canEdit, cats, onLog, onAddCat,
     </div>
   );
 
-  const groups = [{ id: INBOX, name: "收件匣" }, ...(cats || []).filter(c => !c.nonProject).slice().sort((a, b) => (a.order ?? 0) - (b.order ?? 0)).map(c => ({ id: c.id, name: c.name, color: c.color || "" }))]; // 照 order 排＝拖曳排序後全視角一致；color=大項底色
+  const groups = [{ id: INBOX, name: "收件匣" }, ...(cats || []).filter(c => !c.nonProject).slice().sort((a, b) => (a.order ?? 0) - (b.order ?? 0)).map(c => ({ id: c.id, name: c.name, color: c.color || "", tcol: c.tcol }))]; // 照 order 排＝拖曳排序後全視角一致；color=大項底色
   const tasksOf = (catId) => tasks.filter(t => (t.catId || INBOX) === catId);
   const open = tasks.filter(t => t.status !== "done");
   const matchQ = (t) => !q.trim() || (t.title + (t.note || "") + (t.tags || []).join("")).toLowerCase().includes(q.trim().toLowerCase());
@@ -528,12 +528,12 @@ export default function TaskCenter({ K, confirm, canEdit, cats, onLog, onAddCat,
             style={{ fontSize: slim ? 12.5 : 13, fontWeight: 600, color: g.id === INBOX ? C.accent : slim ? C.sub : C.text, whiteSpace: "nowrap", cursor: editable ? "text" : "default" }}>{g.name}</div>;
         };
         // 大項拖曳排序（張良 2026-09-10：像 Trello/Keep）：拖標題列＝搬整個大項；放到別的大項上＝插到它前面
-        const canDragCat = (g) => canEdit && onReorderCat && g.id !== INBOX;
+        const canDragCat = (g) => canEdit && onMoveCat && g.id !== INBOX;
         const catWrap = (g, inner, extraStyle) => (
           <div key={g.id}
             onDragOver={e => { if (dragCat && dragCat !== g.id && g.id !== INBOX) { e.preventDefault(); setOverCat(g.id); } }}
             onDragLeave={() => setOverCat(k => k === g.id ? null : k)}
-            onDrop={e => { if (dragCat && dragCat !== g.id && g.id !== INBOX) { e.preventDefault(); onReorderCat(dragCat, g.id); setDragCat(null); setOverCat(null); } }}
+            onDrop={e => { if (dragCat && dragCat !== g.id && g.id !== INBOX) { e.preventDefault(); onMoveCat(dragCat, { afterId: g.id, col: colOfRef.current[g.id] }); setDragCat(null); setOverCat(null); } }}
             style={{ ...extraStyle, opacity: dragCat === g.id ? 0.4 : 1, outline: dragCat && overCat === g.id ? `2px dashed ${C.accent}` : "none", outlineOffset: 2, borderRadius: 8 }}>
             {inner}
           </div>
@@ -610,18 +610,20 @@ export default function TaskCenter({ K, confirm, canEdit, cats, onLog, onAddCat,
             </div>
           </div>
         );
-        // 佈局改「照順序由左往右填欄」（張良 2026-09-10：拖到哪就要在哪，不能被演算法亂丟）：
-        // 收件匣＋空大項固定最前，之後大項照你拖的順序排——上一欄放到均高就換下一欄 → 拖「表單」到「營運」上＝表單出現在營運正下方
-        const flow = [];
-        flow.push({ node: <div key="inbox">{groupCard(inboxX)}</div>, w: 2.5 + vis(inboxX.items).length });
-        if (emptiesBlock) flow.push({ node: emptiesBlock, w: 2 + empties.length * 0.6 });
-        for (const x of filled) flow.push({ node: <div key={x.g.id}>{groupCard(x)}</div>, w: 2.2 + vis(x.items).length });
-        const totalW = flow.reduce((s, f) => s + f.w, 0), targetW = totalW / NCOL;
-        let ci = 0;
-        for (const f of flow) {
-          if (ci < NCOL - 1 && cols[ci].w > 0 && cols[ci].w + f.w / 2 > targetW) ci++;
-          cols[ci].nodes.push(f.node); cols[ci].w += f.w;
-        }
+        // 佈局三版（張良 2026-09-10：放哪就「釘」哪、不回彈）：每個大項把自己在第幾欄存進 tcol——
+        // 拖到某大項上＝繼承那一欄＋排它下方，永久固定；沒拖過的自動補到最矮欄；欄數變少時 tcol 自動夾回範圍
+        colOfRef.current = {};
+        const orderIdx = {}; groups.forEach((g, i) => { orderIdx[g.id] = i; });
+        const wOf = (x) => 2.2 + vis(x.items).length;
+        cols[0].nodes.push(<div key="inbox">{groupCard(inboxX)}</div>);
+        cols[0].w += 2.5 + vis(inboxX.items).length;
+        if (emptiesBlock) { cols[0].nodes.push(emptiesBlock); cols[0].w += 2 + empties.length * 0.6; }
+        const colEntries = Array.from({ length: NCOL }, () => []);
+        const pinnedX = filled.filter(x => Number.isInteger(x.g.tcol));
+        const autosX = filled.filter(x => !Number.isInteger(x.g.tcol));
+        for (const x of pinnedX) { const k = Math.min(Math.max(0, x.g.tcol), NCOL - 1); colEntries[k].push(x); cols[k].w += wOf(x); colOfRef.current[x.g.id] = k; }
+        for (const x of autosX) { let k = 0; for (let i = 1; i < NCOL; i++) if (cols[i].w < cols[k].w) k = i; colEntries[k].push(x); cols[k].w += wOf(x); colOfRef.current[x.g.id] = k; }
+        colEntries.forEach((list, k) => { list.sort((a, b) => orderIdx[a.g.id] - orderIdx[b.g.id]); list.forEach(x => cols[k].nodes.push(<div key={x.g.id}>{groupCard(x)}</div>)); });
         return (
           <div ref={groupWrapRef}>
             {/* 已完成＝封存：預設隱藏，這裡切換（張良 2026-09-10） */}
@@ -632,9 +634,17 @@ export default function TaskCenter({ K, confirm, canEdit, cats, onLog, onAddCat,
                 </button>
               </div>
             )}
-            {/* 每欄至少 250：欄數用實測寬度算，不夠寬就少排幾欄，字不再被壓縮 */}
+            {/* 每欄至少 250；拖大項到某欄空白處＝釘到那一欄最下面 */}
             <div style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
-              {cols.map((c, i) => <div key={i} style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 10 }}>{c.nodes}</div>)}
+              {cols.map((c, i) => (
+                <div key={i}
+                  onDragOver={e => { if (dragCat) { e.preventDefault(); setOverCat("col-" + i); } }}
+                  onDragLeave={() => setOverCat(k => k === "col-" + i ? null : k)}
+                  onDrop={e => { if (dragCat) { e.preventDefault(); onMoveCat(dragCat, { col: i }); setDragCat(null); setOverCat(null); } }}
+                  style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 10, minHeight: dragCat ? 220 : undefined, borderRadius: 8, outline: dragCat && overCat === "col-" + i ? `2px dashed ${C.accent}` : "none", outlineOffset: 2 }}>
+                  {c.nodes}
+                </div>
+              ))}
             </div>
           </div>
         );
