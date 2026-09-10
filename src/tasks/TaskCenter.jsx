@@ -325,8 +325,8 @@ export default function TaskCenter({ K, confirm, canEdit, cats, onLog, onAddCat,
         {(view === "board" || view === "list") && (
           <div style={{ display: "inline-flex", alignItems: "center", background: C.soft, border: `1px solid ${C.line}`, borderRadius: 8, padding: 2, gap: 2 }}>
             <ArrowUpDown size={12} color={C.faint} style={{ margin: "0 2px 0 7px" }} />
-            {(view === "board" ? [["manual", "手動"], ["due", "日期"], ["prio", "重要度"]] : [["due", "日期"], ["prio", "重要度"]]).map(([k, l]) => {
-              const act = sortMode === k || (view === "list" && sortMode === "manual" && k === "due");
+            {[["manual", "手動"], ["due", "日期"], ["prio", "重要度"]].map(([k, l]) => { // 清單也開放手動拖曳排序（張良 2026-09-10）
+              const act = sortMode === k;
               return <button key={k} onClick={() => setSortMode(k)} style={{ padding: "5px 10px", borderRadius: 6, border: `1px solid ${act ? C.line : "transparent"}`, background: act ? "#fff" : "transparent", color: act ? C.text : C.sub, fontSize: 12, fontWeight: act ? 600 : 400, cursor: "pointer" }}>{l}</button>;
             })}
           </div>
@@ -571,14 +571,17 @@ export default function TaskCenter({ K, confirm, canEdit, cats, onLog, onAddCat,
             </div>
           </div>
         );
-        // 第 0 欄：收件匣＋空大項；權重灌高一點讓有任務的大項優先往右邊排
-        cols[0].nodes.push(<div key="inbox">{groupCard(inboxX)}</div>);
-        cols[0].w += 2 + vis(inboxX.items).length + (empties.length * 0.7) + 2;
-        if (emptiesBlock) cols[0].nodes.push(emptiesBlock);
-        for (const x of filled) {
-          const c = cols.reduce((m, cc) => cc.w < m.w ? cc : m, cols[0]);
-          c.nodes.push(<div key={x.g.id}>{groupCard(x)}</div>);
-          c.w += 2 + vis(x.items).length;
+        // 佈局改「照順序由左往右填欄」（張良 2026-09-10：拖到哪就要在哪，不能被演算法亂丟）：
+        // 收件匣＋空大項固定最前，之後大項照你拖的順序排——上一欄放到均高就換下一欄 → 拖「表單」到「營運」上＝表單出現在營運正下方
+        const flow = [];
+        flow.push({ node: <div key="inbox">{groupCard(inboxX)}</div>, w: 2.5 + vis(inboxX.items).length });
+        if (emptiesBlock) flow.push({ node: emptiesBlock, w: 2 + empties.length * 0.6 });
+        for (const x of filled) flow.push({ node: <div key={x.g.id}>{groupCard(x)}</div>, w: 2.2 + vis(x.items).length });
+        const totalW = flow.reduce((s, f) => s + f.w, 0), targetW = totalW / NCOL;
+        let ci = 0;
+        for (const f of flow) {
+          if (ci < NCOL - 1 && cols[ci].w > 0 && cols[ci].w + f.w / 2 > targetW) ci++;
+          cols[ci].nodes.push(f.node); cols[ci].w += f.w;
         }
         return (
           <div ref={groupWrapRef}>
@@ -626,7 +629,7 @@ export default function TaskCenter({ K, confirm, canEdit, cats, onLog, onAddCat,
       {/* ── 清單 ── */}
       {view === "list" && (() => {
         let rows = tasks.filter(matchQ).filter(t => fStatus === "all" || (fStatus === "open" ? t.status !== "done" : t.status === fStatus));
-        rows = orderTasks(rows, sortMode === "prio" ? "prio" : "due"); // 清單依 日期/重要度；釘選最前
+        rows = orderTasks(rows, sortMode); // 清單依 手動(可拖曳)/日期/重要度；釘選最前
         return (
           <div>
             <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 10, flexWrap: "wrap" }}>
@@ -659,8 +662,14 @@ export default function TaskCenter({ K, confirm, canEdit, cats, onLog, onAddCat,
                             const pm = pMeta(t.priority);
                             return (
                               <div key={t.id} onClick={() => setSel(t.id)}
+                                draggable={canEdit && sortMode === "manual"}
+                                onDragStart={e => { setDrag(t.id); e.dataTransfer.effectAllowed = "move"; }}
+                                onDragEnd={() => { setDrag(null); setOverKey(null); }}
+                                onDragOver={e => { if (drag && sortMode === "manual") e.preventDefault(); }}
+                                onDrop={e => { if (drag && sortMode === "manual") { e.preventDefault(); moveTo(drag, { beforeId: t.id }); setDrag(null); setOverKey(null); } }}
+                                title={canEdit && sortMode === "manual" ? "拖我排序（丟到目標列＝排到它上面）" : undefined}
                                 onMouseEnter={e => e.currentTarget.style.background = t.color || C.bg} onMouseLeave={e => e.currentTarget.style.background = t.color || C.card}
-                                style={{ display: "grid", gridTemplateColumns: GTC, alignItems: "center", height: 36, borderTop: i ? `1px solid ${C.line}` : "none", cursor: "pointer", background: t.color || C.card }}>
+                                style={{ display: "grid", gridTemplateColumns: GTC, alignItems: "center", height: 36, borderTop: i ? `1px solid ${C.line}` : "none", cursor: canEdit && sortMode === "manual" ? "grab" : "pointer", background: t.color || C.card, opacity: drag === t.id ? 0.4 : 1 }}>
                                 <div style={{ display: "flex", justifyContent: "center" }}>
                                   <button onClick={e => { e.stopPropagation(); if (guard()) upd(t.id, { status: done ? "todo" : "done" }); }} style={{ width: 15, height: 15, borderRadius: 4, border: `1px solid ${done ? C.green : "#c8bca6"}`, background: done ? C.green : "#fff", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", padding: 0 }}>{done && <Check size={10} color="#fff" strokeWidth={3} />}</button>
                                 </div>
