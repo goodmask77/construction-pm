@@ -1040,7 +1040,8 @@ export default function App() {
             waitHint={CURRENT_SPACE === "construction" ? "例：等木工、等房東、等設計圖" : "例：等對方回覆、等報價、等主管確認"}
             onAddCat={(name) => guardedSetCats(prev => [...prev, { id: "cat-" + Date.now(), order: prev.length, name, budget: 0, status: "pending", items: [] }])}
             onRenameCat={(id, name) => guardedSetCats(prev => prev.map(c => c.id === id ? { ...c, name } : c))}
-            onReorderCat={seqReorder} />
+            onReorderCat={seqReorder}
+            onSetCatColor={(id, color) => guardedSetCats(prev => prev.map(c => c.id === id ? { ...c, color } : c))} />
         )}
         {view === "conclusions" && (
           <Conclusions K={K} confirm={confirm} canEdit={canEditData} cats={cats} userName={userName} onLog={logActivity} />
