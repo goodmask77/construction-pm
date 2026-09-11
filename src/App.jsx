@@ -32,7 +32,7 @@ const NAV_ICONS = {
   // 夥伴中心
   kb: BookOpen, roster: UsersIcon, shift: CalendarDays, r360: Star, fb: MessageSquare, quest: Gamepad2, poll: Vote, shop: Gift, rank: Trophy,
   // 財務報表
-  fin_ov: BarChart3, fin_acct: Landmark, fin_ledger: Receipt, fin_coa: FolderTree, fin_recon: RefreshCw, fin_pos: TrendingUp,
+  fin_ov: BarChart3, fin_acct: Landmark, fin_ledger: Receipt, fin_coa: FolderTree, fin_recon: RefreshCw, fin_pos: TrendingUp, fin_labor: UsersIcon,
   // 其他
   mail: MailIcon,
 };
@@ -60,9 +60,9 @@ async function loadSpaceAIContext() {
       } catch (_) { return await g(legacy); }
     };
     const d0 = new Date(); const mo = `${d0.getFullYear()}-${String(d0.getMonth() + 1).padStart(2, "0")}`;
-    const [snapC, snapT, snapK, snapF, tasks, crewRoster, crewOld, pos, posD, posTx, posFlags, posIdleCfgAI, posHHAI, posCostsAI, posPricesAI, posAbLiveAI, bank, ctbc, accounts, ledger, conclusions, mailRules, mailLog, supply, supplyOrders, supplyRecipesRaw] = await Promise.all([
+    const [snapC, snapT, snapK, snapF, tasks, crewRoster, crewOld, pos, posD, posTx, posFlags, posIdleCfgAI, posHHAI, posCostsAI, posPricesAI, posAbLiveAI, posLaborAI, bank, ctbc, accounts, ledger, conclusions, mailRules, mailLog, supply, supplyOrders, supplyRecipesRaw] = await Promise.all([
       g("pm_bot_context"), g("sp_team_pm_bot_context"), g("sp_crew_pm_bot_context"), g("sp_finance_pm_bot_context"),
-      recs("pm_tasks_v2", "pm_task_", "pm_tasks"), g("sp_crew_kb_roster"), g("sp_crew_kb_360"), g("sp_finance_pm_pos"), g("sp_finance_pm_pos_d_" + mo), g("sp_finance_pm_pos_tx_" + mo), g("sp_finance_pm_pos_flags"), g("sp_finance_pm_pos_idlecfg"), g("sp_finance_pm_pos_hh_" + mo), g("sp_finance_pm_pos_costs"), g("sp_finance_pm_pos_prices"), g("sp_finance_pm_ablive"),
+      recs("pm_tasks_v2", "pm_task_", "pm_tasks"), g("sp_crew_kb_roster"), g("sp_crew_kb_360"), g("sp_finance_pm_pos"), g("sp_finance_pm_pos_d_" + mo), g("sp_finance_pm_pos_tx_" + mo), g("sp_finance_pm_pos_flags"), g("sp_finance_pm_pos_idlecfg"), g("sp_finance_pm_pos_hh_" + mo), g("sp_finance_pm_pos_costs"), g("sp_finance_pm_pos_prices"), g("sp_finance_pm_ablive"), g("sp_finance_pm_labor"),
       g("sp_finance_pm_bank"), g("sp_finance_pm_ctbc"), g("sp_finance_pm_fin_accounts"), recs("sp_finance_pm_fin_ledger_v2", "sp_finance_pm_fin_tx_", "sp_finance_pm_fin_ledger"),
       g("pm_conclusions"), g("sp_lw_pm_mail_rules"), g("sp_lw_pm_mail_log"), g("sp_supply_pm_supply"),
       g("sp_supply_pm_orders"), getSharedPrefix("sp_supply_pm_recipe_v_"),
@@ -171,6 +171,15 @@ async function loadSpaceAIContext() {
         const twD = new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10);
         const hasOfficial = (pos?.entries || []).some(e => e.date === twD && !/groun/i.test(e.store || ""));
         if (posAbLiveAI?.date === twD && posAbLiveAI.revenue && !hasOfficial) parts.push(`【A Beach 今天盤中即時（${posAbLiveAI.at} 更新，還沒打烊會再長大；打烊後以日結為準）】\n- ${posAbLiveAI.date} 營收NT$${Math.round(posAbLiveAI.revenue).toLocaleString()}｜${posAbLiveAI.tx}單${posAbLiveAI.guests ? `｜來客${posAbLiveAI.guests}` : ""}${posAbLiveAI.dineIn?.tx || posAbLiveAI.takeout?.tx ? `｜內用${posAbLiveAI.dineIn?.tx || 0}單/外帶${posAbLiveAI.takeout?.tx || 0}單` : ""}${(posAbLiveAI.items || []).length ? `｜熱銷Top${Math.min(5, posAbLiveAI.items.length)}:${posAbLiveAI.items.slice(0, 5).map(i => `${i.n}×${i.q}`).join("、")}（品項共${posAbLiveAI.items.length}項${posAbLiveAI.items.reduce((t2, i) => t2 + (i.q || 0), 0) >= (posAbLiveAI.itemsQtyTotal || 0) ? ",完整" : ",僅Top10"}）` : ""}`);
+      }
+      // 人力配置（pm_labor 財務·人力成本分頁，張良 2026-09-11；與 D哥 loadPosText 同步接）
+      if (posLaborAI?.stations?.length) {
+        const w = Number(posLaborAI.wage) || 300;
+        const cnt2 = (h, sid) => Number(posLaborAI.grid?.[h]?.[sid]) || 0;
+        const hrs2 = Array.from({ length: 10 }, (_, i) => 10 + i);
+        const rows2 = hrs2.map(h => { const n = posLaborAI.stations.reduce((t, st) => t + cnt2(h, st.id), 0); return n ? `${h}-${h + 1}點${n}人(${posLaborAI.stations.filter(st => cnt2(h, st.id)).map(st => st.name + (cnt2(h, st.id) > 1 ? "×" + cnt2(h, st.id) : "")).join("/")})` : null; }).filter(Boolean);
+        const tn2 = hrs2.reduce((t, h) => t + posLaborAI.stations.reduce((x, st) => x + cnt2(h, st.id), 0), 0);
+        parts.push(`【GROUN:D 人力配置（財務·人力成本分頁；時薪${w}）】\n- ${rows2.join("、")}\n- 全日 ${tn2} 人時＝每日人力成本 NT$${(tn2 * w).toLocaleString()}｜站別品類對應：${posLaborAI.stations.map(st => st.name + ((st.cats || []).length ? `(${st.cats.join("/")})` : "(全店共用)")).join("、")}`);
       }
       // GROUN:D 半小時時段（pm_pos_hh_月檔＝盤中每30分快照，2026-08-28 起累積；答「排人力/尖峰半小時」；對帳以每小時原生資料為準；與 D哥 loadPosText 同步接）
       if (posHHAI?.days && Object.keys(posHHAI.days).length) {
@@ -1069,7 +1078,7 @@ export default function App() {
           <SupplyView view={view} K={K} canEdit={canEditData} confirm={confirm} showMoney={showMoney()} userName={userName} />
         )}
         {/* 財務報表：第二層直接六分頁（總覽/帳戶/交易明細/科目/對帳/營運報表），view 直傳 FinanceView */}
-        {["fin_ov", "fin_acct", "fin_ledger", "fin_coa", "fin_recon", "fin_pos"].includes(view) && CURRENT_SPACE === "finance" && (showMoney() ? (
+        {["fin_ov", "fin_acct", "fin_ledger", "fin_coa", "fin_recon", "fin_pos", "fin_labor"].includes(view) && CURRENT_SPACE === "finance" && (showMoney() ? (
           <FinanceView view={view} K={K} confirm={confirm} canEdit={canEditData} ReceiptUploader={ReceiptUploader} onLog={logActivity} />
         ) : (
           <div style={{ padding: 40, textAlign: "center", color: SUB, fontSize: 14, background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: 12, margin: "8px 0" }}>🔒 財務報表含金額，你沒有看金額的權限。</div>

@@ -560,7 +560,7 @@ async function loadPosText() {
   try {
     const now = new Date(Date.now() + 8 * 3600e3)
     const mo = now.toISOString().slice(0, 7)
-    const kv = await kvGetMany(['sp_finance_pm_pos', 'sp_finance_pm_pos_d_' + mo, 'sp_finance_pm_pos_tx_' + mo, 'sp_finance_pm_pos_flags', 'sp_finance_pm_pos_idlecfg', 'sp_finance_pm_pos_hh_' + mo, 'sp_finance_pm_pos_costs', 'sp_finance_pm_pos_prices', 'sp_finance_pm_ablive'])
+    const kv = await kvGetMany(['sp_finance_pm_pos', 'sp_finance_pm_pos_d_' + mo, 'sp_finance_pm_pos_tx_' + mo, 'sp_finance_pm_pos_flags', 'sp_finance_pm_pos_idlecfg', 'sp_finance_pm_pos_hh_' + mo, 'sp_finance_pm_pos_costs', 'sp_finance_pm_pos_prices', 'sp_finance_pm_ablive', 'sp_finance_pm_labor'])
     const pos = kv['sp_finance_pm_pos']
     const entries = pos && Array.isArray(pos.entries) ? pos.entries : []
     if (!entries.length) return ''
@@ -575,6 +575,16 @@ async function loadPosText() {
       ? `  - ${e.date}${sTag(e)} 營收${nt(e.revenue)}${e.grossSales > e.revenue ? `（牌價${nt(e.grossSales)}·試營運折讓）` : ''}｜${e.partial}`
       : `  - ${e.date}${sTag(e)} 營收${nt(e.revenue)}｜${e.txCount}單｜來客${e.guests || '?'}｜客單${e.guests ? nt(Math.round(e.revenue / e.guests)) : '—'}｜現金${nt(e.cash)}/卡${nt(e.card)}${e.linepay ? `/LINE Pay${nt(e.linepay)}` : ''}${e.payOther ? `/其他${nt(e.payOther)}` : ''}/Uber${nt(e.uber)}${e.kiosk ? `｜自助點餐${nt(e.kiosk)}(佔${e.revenue ? Math.round(e.kiosk / e.revenue * 100) : 0}%,約${e.txCount && e.revenue ? Math.round(e.kiosk / (e.revenue / e.txCount)) : '?'}單估算,已含在卡/LINE Pay內)` : ''}｜折扣${nt(e.discount)}`))
     // AB 今天即時（pm_ablive＝Eats365 後台儀表板抓的「到目前為止」，張良 2026-09-02；日結信入庫後被正式資料取代——同一天有正式日結就別再引用即時值）
+    // 人力配置（財務·人力成本分頁 pm_labor，張良 2026-09-11）：答「幾點幾個人/人力成本/哪站幾人」
+    const lbr = kv['sp_finance_pm_labor']
+    if (lbr?.stations?.length) {
+      const w = Number(lbr.wage) || 300
+      const cnt = (h, sid) => Number(lbr.grid?.[h]?.[sid]) || 0
+      const hrs = Array.from({ length: 10 }, (_, i) => 10 + i)
+      const rowTx = hrs.map(h => { const n = lbr.stations.reduce((t, st) => t + cnt(h, st.id), 0); return n ? `${h}-${h + 1}點${n}人(${lbr.stations.filter(st => cnt(h, st.id)).map(st => st.name + (cnt(h, st.id) > 1 ? '×' + cnt(h, st.id) : '')).join('/')})` : null }).filter(Boolean)
+      const totalN = hrs.reduce((t, h) => t + lbr.stations.reduce((x, st) => x + cnt(h, st.id), 0), 0)
+      lines.push(`\n【GROUN:D 人力配置（財務·人力成本分頁；時薪${w}）】\n  - ${rowTx.join('、')}\n  - 全日 ${totalN} 人時＝每日人力成本 NT$${(totalN * w).toLocaleString()}｜站別品類對應：${lbr.stations.map(st => st.name + ((st.cats || []).length ? `(${st.cats.join('/')})` : '(全店共用)')).join('、')}`)
+    }
     const abl = kv['sp_finance_pm_ablive']
     if (abl?.date === now.toISOString().slice(0, 10) && abl.revenue && !entries.some(e => e.date === abl.date && !isG(e))) {
       lines.push(`  - ${abl.date}［A Beach］盤中即時（${abl.at} 更新，還沒打烊會再長大）：營收${nt(abl.revenue)}｜${abl.tx}單${abl.guests ? `｜來客${abl.guests}` : ''}${abl.dineIn?.tx || abl.takeout?.tx ? `｜內用${abl.dineIn?.tx || 0}單${nt(abl.dineIn?.sales)}/外帶${abl.takeout?.tx || 0}單${nt(abl.takeout?.sales)}` : ''}${(abl.items || []).length ? `｜熱銷Top${Math.min(5, abl.items.length)}:${abl.items.slice(0, 5).map(i => `${i.n}×${i.q}`).join('、')}（品項共${abl.items.length}項${abl.items.reduce((t2, i) => t2 + (i.q || 0), 0) >= (abl.itemsQtyTotal || 0) ? ',完整' : ',僅Top10'};要全表問我某品項即可）` : ''}`)

@@ -70,7 +70,7 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
   const lastLog = useRef({});
   const logT = (action, detail, ms = 8000) => { if (!onLog) return; const now = Date.now(); if (lastLog.current[detail] && now - lastLog.current[detail] < ms) return; lastLog.current[detail] = now; onLog(action, detail); };
   // 分頁改由外層第二層導覽決定（財務報表攤平，不再有內部第三層）；view=fin_* 直接映射
-  const tab = ({ fin_ov: "overview", fin_acct: "accounts", fin_ledger: "ledger", fin_coa: "coa", fin_recon: "recon", fin_pos: "pos" })[view] || "overview";
+  const tab = ({ fin_ov: "overview", fin_acct: "accounts", fin_ledger: "ledger", fin_coa: "coa", fin_recon: "recon", fin_pos: "pos", fin_labor: "labor" })[view] || "overview";
   const [accounts, setAccounts] = useState(null); // null=載入中
   const [ledger, setLedger] = useState(null);
   const [q, setQ] = useState(""); const [fKind, setFKind] = useState("all"); const [fAcc, setFAcc] = useState("all");
@@ -104,6 +104,7 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
   const [posHH, setPosHH] = useState({});                   // 半小時快照月檔 pm_pos_hh_YYYY-MM：{days:{date:[{t,at,rev,tx}]}}
   const [posExt, setPosExt] = useState(null);               // 參考店1/2每日營業額 pm_ichef：{days:{date:{s1,s2}}}（畫面只標1/2，張良 2026-09-01）
   const [abLive, setAbLive] = useState(null);               // AB 今天即時 pm_ablive：{date,revenue,tx,at}（Eats365 後台抓的，張良 2026-09-02）
+  const [labor, setLabor] = useState(null);                 // 人力成本設定 pm_labor：{wage,stations[{id,name,cats[]}],grid{時:{站:人數}}}（張良 2026-09-11）
   const [posStore, setPosStore] = useState("abeach");       // 分店切換：abeach=A Beach 101 / ground=GROUN:D（營運報表第三層）
   const [posCats, setPosCats] = useState([]);               // 標籤自選：選到的分類做比較（空＝全部）
   const [gdTab, setGdTab] = useState("全部");               // GROUN:D 品項明細：品類籤（張良 2026-08-14 指定試營運儀表板版型）
@@ -147,6 +148,7 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
     try { const ic = await window.storage.get(K("pm_pos_idlecfg"), true); setPosIdleCfg(ic && ic.value ? JSON.parse(ic.value) : { days: 7, exCats: [], exItems: [] }); } catch (_) { setPosIdleCfg({ days: 7, exCats: [], exItems: [] }); }
     try { const ie = await window.storage.get(K("pm_ichef"), true); setPosExt(ie && ie.value ? JSON.parse(ie.value) : null); } catch (_) {}
     try { const al = await window.storage.get(K("pm_ablive"), true); setAbLive(al && al.value ? JSON.parse(al.value) : null); } catch (_) {}
+    try { const lb = await window.storage.get(K("pm_labor"), true); setLabor(lb && lb.value ? JSON.parse(lb.value) : null); } catch (_) {}
     try { const rc = await window.storage.get(K("pm_recon"), true); const v = rc && rc.value ? JSON.parse(rc.value) : null; if (v) setRecon({ links: v.links || {}, ignored: v.ignored || [] }); } catch (_) {}
     try { const cd = await window.storage.get("pm_data", true); setConCats(cd && cd.value ? JSON.parse(cd.value) : []); } catch (_) {}
     try { const pt = await window.storage.get("pm_petty", true); const v = pt && pt.value ? JSON.parse(pt.value) : {}; setConPetty({ spends: v.spends || [] }); } catch (_) {}
@@ -190,7 +192,8 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
     const un10 = onSharedChange(K("pm_pos_prices"), (_k, v) => { try { setPosPrices(v ? JSON.parse(v) : {}); } catch (_) {} });
     const un11 = onSharedChange(K("pm_ichef"), (_k, v) => { try { setPosExt(v ? JSON.parse(v) : null); } catch (_) {} });
     const un12 = onSharedChange(K("pm_ablive"), (_k, v) => { try { setAbLive(v ? JSON.parse(v) : null); } catch (_) {} });
-    return () => { un1(); un2(); un3(); un4(); un5(); un6(); un7(); un8(); un9(); un10(); un11(); un12(); };
+    const unLb = onSharedChange(K("pm_labor"), (_k, v) => { try { setLabor(v ? JSON.parse(v) : null); } catch (_) {} });
+    return () => { un1(); un2(); un3(); un4(); un5(); un6(); un7(); un8(); un9(); un10(); un11(); un12(); unLb(); };
   }, []); // eslint-disable-line
   const saveRecon = (next) => { setRecon(next); window.storage.set(K("pm_recon"), JSON.stringify(next), true).catch(() => {}); };
   // 品項成本存檔（防抖在 storage 墊片層；廣播讓別台/別分頁即時跟上）
@@ -874,6 +877,170 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
       })()}
 
       {/* ── 營運（Eats365 POS 日結：所有數字都從原始資料算、點任何數字下鑽到明細資料庫）── */}
+      {/* ── 人力成本（張良 2026-09-11）：每小時×站別人力配置＋GROUN:D 銷售資料算人力成本率 ── */}
+      {tab === "labor" && (() => {
+        // 預設值（照張良描述：櫃檯/控單打包/飲料/披薩・三明治同邊/漢堡・義麵含煎炸台；10點備料、11-19營業、12-13&13-14午峰、~20收班）
+        const DEF = { wage: 300, stations: [
+          { id: "s1", name: "櫃檯", cats: [] },
+          { id: "s2", name: "控單打包", cats: [] },
+          { id: "s3", name: "飲料", cats: ["奶香飲品", "咖啡飲品", "基礎飲品", "檸檬飲品"] },
+          { id: "s4", name: "披薩・三明治", cats: ["披薩", "越法三明治"] },
+          { id: "s5", name: "漢堡・義麵(煎炸)", cats: ["漢堡", "義大利麵", "小點", "湯品", "甜點"] },
+        ], grid: { 10: { s1: 1, s4: 1, s5: 1 }, 11: { s1: 1, s2: 1, s3: 1, s4: 1, s5: 2 }, 12: { s1: 1, s2: 1, s3: 1, s4: 2, s5: 2 }, 13: { s1: 1, s2: 1, s3: 1, s4: 2, s5: 2 }, 14: { s1: 1, s4: 1, s5: 1 }, 15: { s1: 1, s4: 1, s5: 1 }, 16: { s1: 1, s4: 1, s5: 1 }, 17: { s1: 1, s4: 1, s5: 1 }, 18: { s1: 1, s2: 1, s3: 1, s4: 1, s5: 2 }, 19: { s2: 1, s3: 1, s4: 1, s5: 1 } } };
+        const L = labor || DEF;
+        const saveL = (next) => { setLabor(next); window.storage.set(K("pm_labor"), JSON.stringify(next), true).catch(() => {}); logT("編輯", "人力成本設定"); };
+        const HOURS = [10, 11, 12, 13, 14, 15, 16, 17, 18, 19];
+        const hLabel = (h) => `${h}-${h + 1}` + (h === 10 ? "（備料設站）" : h === 19 ? "（收班）" : "");
+        const wage = Number(L.wage) || 300;
+        const cnt = (h, sid) => Number(L.grid?.[h]?.[sid]) || 0;
+        const rowN = (h) => L.stations.reduce((t, st) => t + cnt(h, st.id), 0);
+        const colCost = (sid) => HOURS.reduce((t, h) => t + cnt(h, sid), 0) * wage;
+        const totalN = HOURS.reduce((t, h) => t + rowN(h), 0);
+        const totalCost = totalN * wage;
+        const setCell = (h, sid, v) => { const g = { ...(L.grid || {}) }; g[h] = { ...(g[h] || {}) }; const n = Math.max(0, Math.min(9, parseInt(v || "0", 10) || 0)); if (n) g[h][sid] = n; else delete g[h][sid]; saveL({ ...L, grid: g }); };
+        // ── GROUN:D 銷售資料（跟營運報表/熱力圖同一份：pm_pos＋pm_pos_d_月檔時段分析）──
+        const gdDays = (pos?.entries || []).filter(e => /groun/i.test(e.store || "") && !e.intraday && Number(e.revenue) > 0).sort((a, b) => (a.date < b.date ? -1 : 1));
+        const gdDet = (date) => { const m = posDet[(date || "").slice(0, 7)]?.days; if (!m) return undefined; const nd = m[`${date}::ground`]; if (nd) return nd; const od = m[date]; return od && /groun/i.test(od.store || "") ? od : undefined; };
+        const hourSum = {}; let slotDayN = 0;
+        const catSum = {}; let catDayN = 0;
+        gdDays.forEach(d => {
+          const det = gdDet(d.date);
+          const slots = det?.sheets?.["時段分析(每小時)"];
+          if (Array.isArray(slots) && slots.length) { slotDayN++; slots.forEach(sec => (sec.rows || []).forEach(r => { const h = parseInt(String(r[0]).slice(0, 2), 10); const amt = Number(r[r.length - 1]) || 0; if (h >= 0) hourSum[h] = (hourSum[h] || 0) + amt; })); }
+          const secs = det?.sheets?.["總銷售額 (以類別分類)"];
+          if (Array.isArray(secs)) { catDayN++; const sum = secs.find(x => x.title === "總結"); (sum?.rows || []).forEach(r => { if (Array.isArray(r) && typeof r[0] === "string") catSum[r[0]] = (catSum[r[0]] || 0) + (Number(r[r.length - 1]) || 0); }); const st = secs.find(x => x.title === "套餐"); (st?.rows || []).forEach(r => { catSum["套餐"] = (catSum["套餐"] || 0) + (Number(r[r.length - 1]) || 0); }); }
+        });
+        const hourAvg = (h) => slotDayN ? Math.round((hourSum[h] || 0) / slotDayN) : 0;
+        const allCats = Object.keys(catSum).sort((a, b) => catSum[b] - catSum[a]);
+        const catAvg = (c) => catDayN ? Math.round((catSum[c] || 0) / catDayN) : 0;
+        const dayRevAvg = gdDays.length ? Math.round(gdDays.reduce((t, d) => t + (Number(d.revenue) || 0), 0) / gdDays.length) : 0;
+        const stRevAvg = (st) => (st.cats || []).reduce((t, c) => t + catAvg(c), 0);
+        const mappedCost = L.stations.filter(st => (st.cats || []).length).reduce((t, st) => t + colCost(st.id), 0);
+        const commonCost = totalCost - mappedCost; // 櫃檯/控單這種全店共用站 → 按各站營收占比分攤
+        const mappedRev = L.stations.reduce((t, st) => t + stRevAvg(st), 0);
+        const pct = (cost, rev) => rev > 0 ? Math.round(cost / rev * 100) : null;
+        const pctCell = (v) => v == null ? <span style={{ color: C.faint }}>—</span> : <b style={{ color: v >= 50 ? C.red : v >= 30 ? C.amber : C.accent }}>{v}%</b>;
+        const th2 = { padding: "6px 8px", textAlign: "right", fontWeight: 700, whiteSpace: "nowrap", fontSize: 11.5, color: C.sub };
+        const td2 = { padding: "5px 8px", textAlign: "right", fontFamily: MONOF, fontSize: 12, borderTop: "1px solid #f0ead9", whiteSpace: "nowrap" };
+        const box = { background: C.card, border: "1.5px solid #c8bca6", borderRadius: 8, padding: "12px 14px", marginBottom: 12 };
+        const addStation = () => { const name = window.prompt("新站名稱？"); if (!name || !name.trim()) return; saveL({ ...L, stations: [...L.stations, { id: "st" + Date.now(), name: name.trim(), cats: [] }] }); };
+        const delStation = (sid) => { if (!window.confirm("刪除這個站？（該站排班一併移除）")) return; const g = {}; Object.entries(L.grid || {}).forEach(([h, m]) => { const mm = { ...m }; delete mm[sid]; g[h] = mm; }); saveL({ ...L, stations: L.stations.filter(x => x.id !== sid), grid: g }); };
+        const renameStation = (sid, name) => saveL({ ...L, stations: L.stations.map(x => x.id === sid ? { ...x, name } : x) });
+        const toggleCat = (sid, c) => saveL({ ...L, stations: L.stations.map(x => x.id === sid ? { ...x, cats: (x.cats || []).includes(c) ? x.cats.filter(y => y !== c) : [...(x.cats || []), c] } : x) });
+        return (
+          <div>
+            <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", marginBottom: 12 }}>
+              <span style={{ background: "#6b4a86", color: "#fff", fontSize: 11.5, fontWeight: 700, borderRadius: 4, padding: "2px 8px", letterSpacing: 1 }}>人力成本</span>
+              <span style={{ fontSize: 12, color: C.sub }}>GROUN:D・營業 11:00–19:00・10 點備料、收班到 20 點</span>
+              <span style={{ fontSize: 12.5, color: C.text, marginLeft: "auto" }}>時薪
+                <input type="number" min="0" value={wage} disabled={!canEdit} onChange={e => saveL({ ...L, wage: Math.max(0, parseInt(e.target.value || "0", 10) || 0) })}
+                  style={{ width: 64, marginLeft: 6, border: `1px solid ${C.line}`, borderRadius: 6, padding: "3px 6px", fontSize: 12.5, fontFamily: MONOF, background: "#fff", color: C.text }} /> 元
+              </span>
+            </div>
+            {/* ① 每小時人力配置（格子＝該站該小時人數，可編輯；空=0） */}
+            <div style={box}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8, flexWrap: "wrap" }}>
+                <span style={{ fontSize: 11.5, fontWeight: 700, color: C.sub }}>🧑‍🍳 每小時人力配置</span>
+                <span style={{ fontSize: 10.5, color: C.faint }}>格子＝人數（0-9），直接改；站名可改、×刪站</span>
+                {canEdit && <button onClick={addStation} style={{ marginLeft: "auto", border: `1px dashed ${C.line}`, background: "#fff", color: C.sub, borderRadius: 8, padding: "3px 10px", fontSize: 11.5, fontWeight: 700, cursor: "pointer" }}>＋ 新增站</button>}
+              </div>
+              <div style={{ overflowX: "auto", border: `1px solid ${C.line}`, borderRadius: 8, background: "#fff" }}>
+                <table style={{ borderCollapse: "collapse", fontSize: 12, minWidth: "100%" }}>
+                  <thead><tr style={{ background: C.head }}>
+                    <th style={{ ...th2, textAlign: "left" }}>時段</th><th style={th2}>人數</th>
+                    {L.stations.map(st => (
+                      <th key={st.id} style={{ ...th2, textAlign: "center", minWidth: 88 }}>
+                        <input value={st.name} disabled={!canEdit} onChange={e => renameStation(st.id, e.target.value)}
+                          style={{ width: 84, border: "none", background: "transparent", textAlign: "center", fontWeight: 700, fontSize: 11.5, color: C.text, outline: "none" }} />
+                        {canEdit && <button onClick={() => delStation(st.id)} title="刪站" style={{ border: "none", background: "none", color: C.faint, cursor: "pointer", fontSize: 11, padding: 0 }}>×</button>}
+                      </th>
+                    ))}
+                    <th style={th2}>時段小計</th>
+                  </tr></thead>
+                  <tbody>
+                    {HOURS.map(h => (
+                      <tr key={h} style={{ background: (h === 12 || h === 13) ? "#fdf6ec" : undefined }}>
+                        <td style={{ ...td2, textAlign: "left", fontWeight: 700 }}>{hLabel(h)}</td>
+                        <td style={{ ...td2, fontWeight: 700 }}>{rowN(h)}</td>
+                        {L.stations.map(st => (
+                          <td key={st.id} style={{ ...td2, textAlign: "center", padding: "2px 4px" }}>
+                            <input type="number" min="0" max="9" value={cnt(h, st.id) || ""} placeholder="—" disabled={!canEdit}
+                              onChange={e => setCell(h, st.id, e.target.value)}
+                              style={{ width: 44, border: `1px solid ${cnt(h, st.id) ? C.line : "#eee5d3"}`, borderRadius: 6, padding: "3px 4px", textAlign: "center", fontSize: 12, fontFamily: MONOF, background: cnt(h, st.id) ? "#fff" : "transparent", color: C.text }} />
+                          </td>
+                        ))}
+                        <td style={{ ...td2, fontWeight: 700 }}>{rowN(h) ? fmt(rowN(h) * wage) : "—"}</td>
+                      </tr>
+                    ))}
+                    <tr style={{ background: C.head }}>
+                      <td style={{ ...td2, textAlign: "left", fontWeight: 800 }}>合計</td>
+                      <td style={{ ...td2, fontWeight: 800 }}>{totalN} 人時</td>
+                      {L.stations.map(st => <td key={st.id} style={{ ...td2, textAlign: "center", fontWeight: 700 }}>{colCost(st.id) ? fmt(colCost(st.id)) : "—"}</td>)}
+                      <td style={{ ...td2, fontWeight: 800, color: C.red }}>{fmt(totalCost)}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+            {/* ② 時段營收 vs 人力成本（銷售資料＝營運報表時段分析日均） */}
+            <div style={box}>
+              <div style={{ fontSize: 11.5, fontWeight: 700, color: C.sub, marginBottom: 8 }}>⏰ 時段營收 vs 人力成本 <span style={{ fontWeight: 400, color: C.faint }}>日均營收＝近 {slotDayN} 個營業日時段資料平均；成本率＝該小時人力成本 ÷ 日均營收</span></div>
+              <div style={{ overflowX: "auto", border: `1px solid ${C.line}`, borderRadius: 8, background: "#fff" }}>
+                <table style={{ borderCollapse: "collapse", fontSize: 12, minWidth: "100%" }}>
+                  <thead><tr style={{ background: C.head }}>
+                    <th style={{ ...th2, textAlign: "left" }}>時段</th><th style={th2}>日均營收</th><th style={th2}>人力</th><th style={th2}>人力成本</th><th style={th2}>人力成本率</th>
+                  </tr></thead>
+                  <tbody>
+                    {HOURS.map(h => { const rev = hourAvg(h); const cost = rowN(h) * wage; return (
+                      <tr key={h} style={{ background: (h === 12 || h === 13) ? "#fdf6ec" : undefined }}>
+                        <td style={{ ...td2, textAlign: "left", fontWeight: 700 }}>{hLabel(h)}</td>
+                        <td style={td2}>{rev ? fmt(rev) : <span style={{ color: C.faint }}>{h === 10 ? "備料" : h === 19 ? "收班" : "—"}</span>}</td>
+                        <td style={td2}>{rowN(h) || "—"}</td>
+                        <td style={td2}>{cost ? fmt(cost) : "—"}</td>
+                        <td style={td2}>{pctCell(rev > 0 && cost ? Math.round(cost / rev * 100) : null)}</td>
+                      </tr>
+                    ); })}
+                    <tr style={{ background: C.head }}>
+                      <td style={{ ...td2, textAlign: "left", fontWeight: 800 }}>全日</td>
+                      <td style={{ ...td2, fontWeight: 800 }}>{fmt(dayRevAvg)}</td>
+                      <td style={{ ...td2, fontWeight: 800 }}>{totalN} 人時</td>
+                      <td style={{ ...td2, fontWeight: 800 }}>{fmt(totalCost)}</td>
+                      <td style={td2}>{pctCell(pct(totalCost, dayRevAvg))}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+              <div style={{ fontSize: 10.5, color: C.faint, marginTop: 6 }}>備料/收班時段沒有營收是正常的——它們的成本已算進「全日」整體成本率。</div>
+            </div>
+            {/* ③ 每站分析：站的負責品類（點品類籤切換歸屬）→ 日均銷售額 vs 該站人力成本 */}
+            <div style={box}>
+              <div style={{ fontSize: 11.5, fontWeight: 700, color: C.sub, marginBottom: 8 }}>🏷 每站人力成本率 <span style={{ fontWeight: 400, color: C.faint }}>點品類籤＝指給這個站；櫃檯/控單這類全店共用站不掛品類，成本按營收占比分攤（灰字）</span></div>
+              {L.stations.map(st => { const rev = stRevAvg(st); const cost = colCost(st.id); const share = mappedRev > 0 && commonCost > 0 && rev > 0 ? Math.round(commonCost * rev / mappedRev) : 0; return (
+                <div key={st.id} style={{ border: `1px solid ${C.line}`, borderRadius: 8, padding: "8px 12px", marginBottom: 8, background: "#fff" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                    <b style={{ fontSize: 13, color: C.text }}>{st.name}</b>
+                    <span style={{ fontSize: 11.5, color: C.sub }}>每日人力 {fmt(cost)}{share ? <span style={{ color: C.faint }}>＋分攤 {fmt(share)}</span> : ""}</span>
+                    {(st.cats || []).length > 0 && <span style={{ fontSize: 11.5, color: C.sub }}>日均銷售 {fmt(rev)}</span>}
+                    {(st.cats || []).length > 0 && <span style={{ fontSize: 12 }}>{pctCell(pct(cost + share, rev))}</span>}
+                    {(st.cats || []).length === 0 && <span style={{ fontSize: 11, color: C.faint }}>全店共用站（不掛品類）</span>}
+                  </div>
+                  {canEdit && (
+                    <div style={{ display: "flex", gap: 5, flexWrap: "wrap", marginTop: 6 }}>
+                      {allCats.map(c => { const on = (st.cats || []).includes(c); return (
+                        <button key={c} onClick={() => toggleCat(st.id, c)} style={{ border: `1px solid ${on ? "#6b4a86" : C.line}`, background: on ? "#6b4a86" : "transparent", color: on ? "#fff" : C.faint, borderRadius: 10, padding: "1px 8px", fontSize: 10.5, fontWeight: 600, cursor: "pointer" }}>{c}<span style={{ opacity: 0.7, marginLeft: 3 }}>{fmt(catAvg(c))}</span></button>
+                      ); })}
+                    </div>
+                  )}
+                </div>
+              ); })}
+              <div style={{ fontSize: 11.5, color: C.sub, padding: "6px 2px" }}>
+                整體：日均營收 <b style={{ fontFamily: MONOF }}>{fmt(dayRevAvg)}</b>・全日人力 <b style={{ fontFamily: MONOF }}>{fmt(totalCost)}</b>（{totalN} 人時 × {wage}）・整體人力成本率 {pctCell(pct(totalCost, dayRevAvg))}
+                <span style={{ color: C.faint }}>　品類日均取近 {catDayN} 個營業日；＋89 套餐營收未掛站（要掛點上面的籤）。</span>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
       {tab === "pos" && (() => {
         const MONOF = "'IBM Plex Mono', ui-monospace, Menlo, monospace";
         // 分店切換：依店名判斷歸屬（GROUN:D 的日結信開始寄進來後，這裡自動就有資料）
