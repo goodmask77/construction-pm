@@ -879,6 +879,7 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
       {/* ── 營運（Eats365 POS 日結：所有數字都從原始資料算、點任何數字下鑽到明細資料庫）── */}
       {/* ── 人力成本（張良 2026-09-11）：每小時×站別人力配置＋GROUN:D 銷售資料算人力成本率 ── */}
       {tab === "labor" && (() => {
+        const MONOF = "'IBM Plex Mono', ui-monospace, Menlo, monospace"; // 別的分頁是各自內層宣告，這裡也要自己一份（v2.5.1 首發忘了→整頁白屏）
         // 預設值（照張良描述：櫃檯/控單打包/飲料/披薩・三明治同邊/漢堡・義麵含煎炸台；10點備料、11-19營業、12-13&13-14午峰、~20收班）
         const DEF = { wage: 300, stations: [
           { id: "s1", name: "櫃檯", cats: [] },
@@ -886,7 +887,7 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
           { id: "s3", name: "飲料", cats: ["奶香飲品", "咖啡飲品", "基礎飲品", "檸檬飲品"] },
           { id: "s4", name: "披薩・三明治", cats: ["披薩", "越法三明治"] },
           { id: "s5", name: "漢堡・義麵(煎炸)", cats: ["漢堡", "義大利麵", "小點", "湯品", "甜點"] },
-        ], grid: { 10: { s1: 1, s4: 1, s5: 1 }, 11: { s1: 1, s2: 1, s3: 1, s4: 1, s5: 2 }, 12: { s1: 1, s2: 1, s3: 1, s4: 2, s5: 2 }, 13: { s1: 1, s2: 1, s3: 1, s4: 2, s5: 2 }, 14: { s1: 1, s4: 1, s5: 1 }, 15: { s1: 1, s4: 1, s5: 1 }, 16: { s1: 1, s4: 1, s5: 1 }, 17: { s1: 1, s4: 1, s5: 1 }, 18: { s1: 1, s2: 1, s3: 1, s4: 1, s5: 2 }, 19: { s2: 1, s3: 1, s4: 1, s5: 1 } } };
+        ], grid: { 10: { s4: 1, s5: 1 }, 11: { s1: 1, s2: 1, s3: 1, s4: 1, s5: 2 }, 12: { s1: 1, s2: 1, s3: 1, s4: 2, s5: 2 }, 13: { s1: 1, s2: 1, s3: 1, s4: 2, s5: 2 }, 14: { s1: 1, s4: 1, s5: 1 }, 15: { s1: 1, s4: 1, s5: 1 }, 16: { s1: 1, s4: 1, s5: 1 }, 17: { s1: 1, s4: 1, s5: 1 }, 18: { s1: 1, s2: 1, s3: 1, s4: 1, s5: 2 }, 19: { s2: 1, s3: 1, s4: 1, s5: 1 } } };
         const L = labor || DEF;
         const saveL = (next) => { setLabor(next); window.storage.set(K("pm_labor"), JSON.stringify(next), true).catch(() => {}); logT("編輯", "人力成本設定"); };
         const HOURS = [10, 11, 12, 13, 14, 15, 16, 17, 18, 19];
