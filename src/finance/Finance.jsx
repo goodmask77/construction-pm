@@ -884,9 +884,9 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
         const DEF = { wage: 300, stations: [
           { id: "s1", name: "櫃檯", cats: [] },
           { id: "s2", name: "控單打包", cats: [] },
-          { id: "s3", name: "飲料", cats: ["奶香飲品", "咖啡飲品", "基礎飲品", "檸檬飲品"] },
+          { id: "s3", name: "飲料", cats: ["飲品"] },
           { id: "s4", name: "披薩・三明治", cats: ["披薩", "越法三明治"] },
-          { id: "s5", name: "漢堡・義麵(煎炸)", cats: ["漢堡", "義大利麵", "小點", "湯品", "甜點"] },
+          { id: "s5", name: "漢堡・義麵(煎炸)", cats: ["漢堡", "義大利麵", "小點・甜點"] },
         ], grid: { 10: { s4: 1, s5: 1 }, 11: { s1: 1, s2: 1, s3: 1, s4: 1, s5: 2 }, 12: { s1: 1, s2: 1, s3: 1, s4: 2, s5: 2 }, 13: { s1: 1, s2: 1, s3: 1, s4: 2, s5: 2 }, 14: { s1: 1, s4: 1, s5: 1 }, 15: { s1: 1, s4: 1, s5: 1 }, 16: { s1: 1, s4: 1, s5: 1 }, 17: { s1: 1, s4: 1, s5: 1 }, 18: { s1: 1, s2: 1, s3: 1, s4: 1, s5: 2 }, 19: { s2: 1, s3: 1, s4: 1, s5: 1 } } };
         const L = labor || DEF;
         const saveL = (next) => { setLabor(next); window.storage.set(K("pm_labor"), JSON.stringify(next), true).catch(() => {}); logT("編輯", "人力成本設定"); };
@@ -912,11 +912,15 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
           if (Array.isArray(secs)) { catDayN++; const sum = secs.find(x => x.title === "總結"); (sum?.rows || []).forEach(r => { if (Array.isArray(r) && typeof r[0] === "string") catSum[r[0]] = (catSum[r[0]] || 0) + (Number(r[r.length - 1]) || 0); }); const st = secs.find(x => x.title === "套餐"); (st?.rows || []).forEach(r => { catSum["套餐"] = (catSum["套餐"] || 0) + (Number(r[r.length - 1]) || 0); }); }
         });
         const hourAvg = (h) => slotDayN ? Math.round((hourSum[h] || 0) / slotDayN) : 0;
-        const allCats = Object.keys(catSum).sort((a, b) => catSum[b] - catSum[a]);
-        const catAvg = (c) => catDayN ? Math.round((catSum[c] || 0) / catDayN) : 0;
+        // 大品類彙總（張良 2026-09-11：不要那麼細）：四類飲品→「飲品」、小點/湯/甜點→「小點・甜點」、工具箱雜項不顯示
+        const BIG = (c) => /工具/.test(c) ? null : /咖啡|基礎|奶香|檸檬/.test(c) || c === "飲品類" ? "飲品" : /^(小點|湯品|甜點)$/.test(c) ? "小點・甜點" : c;
+        const bigSum = {}; Object.entries(catSum).forEach(([c, v]) => { const b = BIG(c); if (b && v > 50) bigSum[b] = (bigSum[b] || 0) + v; });
+        const allCats = Object.keys(bigSum).sort((a, b) => bigSum[b] - bigSum[a]);
+        const catAvg = (c) => catDayN ? Math.round((bigSum[c] || 0) / catDayN) : 0;
+        const normCats = (st) => [...new Set((st.cats || []).map(BIG).filter(Boolean))]; // 舊資料存細品類→即時折成大品類
         const dayRevAvg = gdDays.length ? Math.round(gdDays.reduce((t, d) => t + (Number(d.revenue) || 0), 0) / gdDays.length) : 0;
-        const stRevAvg = (st) => (st.cats || []).reduce((t, c) => t + catAvg(c), 0);
-        const mappedCost = L.stations.filter(st => (st.cats || []).length).reduce((t, st) => t + colCost(st.id), 0);
+        const stRevAvg = (st) => normCats(st).reduce((t, c) => t + catAvg(c), 0);
+        const mappedCost = L.stations.filter(st => normCats(st).length).reduce((t, st) => t + colCost(st.id), 0);
         const commonCost = totalCost - mappedCost; // 櫃檯/控單這種全店共用站 → 按各站營收占比分攤
         const mappedRev = L.stations.reduce((t, st) => t + stRevAvg(st), 0);
         const pct = (cost, rev) => rev > 0 ? Math.round(cost / rev * 100) : null;
@@ -927,7 +931,7 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
         const addStation = () => { const name = window.prompt("新站名稱？"); if (!name || !name.trim()) return; saveL({ ...L, stations: [...L.stations, { id: "st" + Date.now(), name: name.trim(), cats: [] }] }); };
         const delStation = (sid) => { if (!window.confirm("刪除這個站？（該站排班一併移除）")) return; const g = {}; Object.entries(L.grid || {}).forEach(([h, m]) => { const mm = { ...m }; delete mm[sid]; g[h] = mm; }); saveL({ ...L, stations: L.stations.filter(x => x.id !== sid), grid: g }); };
         const renameStation = (sid, name) => saveL({ ...L, stations: L.stations.map(x => x.id === sid ? { ...x, name } : x) });
-        const toggleCat = (sid, c) => saveL({ ...L, stations: L.stations.map(x => x.id === sid ? { ...x, cats: (x.cats || []).includes(c) ? x.cats.filter(y => y !== c) : [...(x.cats || []), c] } : x) });
+        const toggleCat = (sid, c) => saveL({ ...L, stations: L.stations.map(x => { if (x.id !== sid) return x; const cur = normCats(x); return { ...x, cats: cur.includes(c) ? cur.filter(y => y !== c) : [...cur, c] }; }) });
         return (
           <div>
             <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", marginBottom: 12 }}>
@@ -938,80 +942,109 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
                   style={{ width: 64, marginLeft: 6, border: `1px solid ${C.line}`, borderRadius: 6, padding: "3px 6px", fontSize: 12.5, fontFamily: MONOF, background: "#fff", color: C.text }} /> 元
               </span>
             </div>
-            {/* ① 每小時人力配置（格子＝該站該小時人數，可編輯；空=0） */}
+            {/* ①＋② 合併：每小時人力配置 × 時段營收（張良 2026-09-11：兩表合併、俐落表格）*/}
             <div style={box}>
-              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8, flexWrap: "wrap" }}>
-                <span style={{ fontSize: 11.5, fontWeight: 700, color: C.sub }}>🧑‍🍳 每小時人力配置</span>
-                <span style={{ fontSize: 10.5, color: C.faint }}>格子＝人數（0-9），直接改；站名可改、×刪站</span>
-                {canEdit && <button onClick={addStation} style={{ marginLeft: "auto", border: `1px dashed ${C.line}`, background: "#fff", color: C.sub, borderRadius: 8, padding: "3px 10px", fontSize: 11.5, fontWeight: 700, cursor: "pointer" }}>＋ 新增站</button>}
+              <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10, flexWrap: "wrap" }}>
+                <span style={{ fontSize: 12.5, fontWeight: 700, color: C.text, letterSpacing: 0.3 }}>每小時人力配置 × 營收</span>
+                <span style={{ fontSize: 11, color: C.faint }}>格子＝人數，直接改；日均營收＝近 {slotDayN} 個營業日平均；成本率＝人力成本 ÷ 日均營收</span>
+                {canEdit && <button onClick={addStation} style={{ marginLeft: "auto", border: `1px solid ${C.line}`, background: "#fff", color: C.sub, borderRadius: 6, padding: "3px 10px", fontSize: 11.5, fontWeight: 600, cursor: "pointer" }}>＋ 新增站</button>}
               </div>
-              <div style={{ overflowX: "auto", border: `1px solid ${C.line}`, borderRadius: 8, background: "#fff" }}>
-                <table style={{ borderCollapse: "collapse", fontSize: 12, minWidth: "100%" }}>
-                  <thead><tr style={{ background: C.head }}>
-                    <th style={{ ...th2, textAlign: "left" }}>時段</th><th style={th2}>人數</th>
-                    {L.stations.map(st => (
-                      <th key={st.id} style={{ ...th2, textAlign: "center", minWidth: 88 }}>
-                        <input value={st.name} disabled={!canEdit} onChange={e => renameStation(st.id, e.target.value)}
-                          style={{ width: 84, border: "none", background: "transparent", textAlign: "center", fontWeight: 700, fontSize: 11.5, color: C.text, outline: "none" }} />
-                        {canEdit && <button onClick={() => delStation(st.id)} title="刪站" style={{ border: "none", background: "none", color: C.faint, cursor: "pointer", fontSize: 11, padding: 0 }}>×</button>}
-                      </th>
-                    ))}
-                    <th style={th2}>時段小計</th>
-                  </tr></thead>
-                  <tbody>
-                    {HOURS.map(h => (
-                      <tr key={h} style={{ background: (h === 12 || h === 13) ? "#fdf6ec" : undefined }}>
-                        <td style={{ ...td2, textAlign: "left", fontWeight: 700 }}>{hLabel(h)}</td>
-                        <td style={{ ...td2, fontWeight: 700 }}>{rowN(h)}</td>
+              {(() => {
+                const NUM = { fontFamily: MONOF, fontVariantNumeric: "tabular-nums" };
+                const TH = { padding: "7px 10px", textAlign: "right", fontWeight: 600, whiteSpace: "nowrap", fontSize: 10.5, color: C.faint, letterSpacing: 0.6, borderBottom: `1.5px solid ${C.line}` };
+                const TD = { padding: "5px 10px", textAlign: "right", fontSize: 12, borderTop: "1px solid #f0ead9", whiteSpace: "nowrap", ...NUM };
+                const cellInp = (h, sid) => (
+                  <input type="number" min="0" max="9" value={cnt(h, sid) || ""} placeholder="·" disabled={!canEdit}
+                    onChange={e => setCell(h, sid, e.target.value)}
+                    style={{ width: 34, border: "1px solid transparent", borderRadius: 5, padding: "2px 0", textAlign: "center", fontSize: 12.5, fontWeight: cnt(h, sid) ? 700 : 400, ...NUM, background: "transparent", color: cnt(h, sid) ? C.text : "#cfc5b0", outline: "none", cursor: canEdit ? "text" : "default" }}
+                    onFocus={e => { e.target.style.border = `1px solid ${C.blue}`; e.target.style.background = "#fff"; }}
+                    onBlur={e => { e.target.style.border = "1px solid transparent"; e.target.style.background = "transparent"; }} />
+                );
+                return (
+                  <div style={{ overflowX: "auto", border: `1px solid ${C.line}`, borderRadius: 8, background: "#fff" }}>
+                    <table style={{ borderCollapse: "collapse", fontSize: 12, minWidth: "100%" }}>
+                      <thead><tr style={{ background: C.head }}>
+                        <th style={{ ...TH, textAlign: "left" }}>時段</th>
                         {L.stations.map(st => (
-                          <td key={st.id} style={{ ...td2, textAlign: "center", padding: "2px 4px" }}>
-                            <input type="number" min="0" max="9" value={cnt(h, st.id) || ""} placeholder="—" disabled={!canEdit}
-                              onChange={e => setCell(h, st.id, e.target.value)}
-                              style={{ width: 44, border: `1px solid ${cnt(h, st.id) ? C.line : "#eee5d3"}`, borderRadius: 6, padding: "3px 4px", textAlign: "center", fontSize: 12, fontFamily: MONOF, background: cnt(h, st.id) ? "#fff" : "transparent", color: C.text }} />
-                          </td>
+                          <th key={st.id} style={{ ...TH, textAlign: "center", minWidth: 76 }}>
+                            <input value={st.name} disabled={!canEdit} onChange={e => renameStation(st.id, e.target.value)}
+                              style={{ width: Math.max(56, st.name.length * 11), maxWidth: 120, border: "none", background: "transparent", textAlign: "center", fontWeight: 600, fontSize: 11, color: C.sub, outline: "none", letterSpacing: 0.4 }} />
+                            {canEdit && <button onClick={() => delStation(st.id)} title="刪站" style={{ border: "none", background: "none", color: "#cfc5b0", cursor: "pointer", fontSize: 10, padding: 0, verticalAlign: "top" }}>×</button>}
+                          </th>
                         ))}
-                        <td style={{ ...td2, fontWeight: 700 }}>{rowN(h) ? fmt(rowN(h) * wage) : "—"}</td>
-                      </tr>
-                    ))}
-                    <tr style={{ background: C.head }}>
-                      <td style={{ ...td2, textAlign: "left", fontWeight: 800 }}>合計</td>
-                      <td style={{ ...td2, fontWeight: 800 }}>{totalN} 人時</td>
-                      {L.stations.map(st => <td key={st.id} style={{ ...td2, textAlign: "center", fontWeight: 700 }}>{colCost(st.id) ? fmt(colCost(st.id)) : "—"}</td>)}
-                      <td style={{ ...td2, fontWeight: 800, color: C.red }}>{fmt(totalCost)}</td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
+                        <th style={TH}>人數</th><th style={TH}>人力成本</th><th style={TH}>日均營收</th><th style={TH}>成本率</th>
+                      </tr></thead>
+                      <tbody>
+                        {HOURS.map(h => { const rev = hourAvg(h); const cost = rowN(h) * wage; return (
+                          <tr key={h} style={{ background: (h === 12 || h === 13) ? "#fbf5e9" : undefined }}>
+                            <td style={{ ...TD, textAlign: "left", fontWeight: 700, color: C.text }}>{hLabel(h)}</td>
+                            {L.stations.map(st => <td key={st.id} style={{ ...TD, textAlign: "center", padding: "2px 6px" }}>{cellInp(h, st.id)}</td>)}
+                            <td style={{ ...TD, fontWeight: 700 }}>{rowN(h) || "—"}</td>
+                            <td style={TD}>{cost ? fmt(cost) : "—"}</td>
+                            <td style={{ ...TD, color: rev ? C.text : C.faint }}>{rev ? fmt(rev) : (h === 10 ? "備料" : h === 19 ? "收班" : "—")}</td>
+                            <td style={TD}>{pctCell(rev > 0 && cost ? Math.round(cost / rev * 100) : null)}</td>
+                          </tr>
+                        ); })}
+                        <tr style={{ background: C.head, borderTop: `1.5px solid ${C.line}` }}>
+                          <td style={{ ...TD, textAlign: "left", fontWeight: 800, borderTop: `1.5px solid ${C.line}` }}>合計</td>
+                          {L.stations.map(st => <td key={st.id} style={{ ...TD, textAlign: "center", fontWeight: 600, color: C.sub, borderTop: `1.5px solid ${C.line}`, fontSize: 11 }}>{colCost(st.id) ? fmt(colCost(st.id)) : "—"}</td>)}
+                          <td style={{ ...TD, fontWeight: 800, borderTop: `1.5px solid ${C.line}` }}>{totalN}</td>
+                          <td style={{ ...TD, fontWeight: 800, color: C.red, borderTop: `1.5px solid ${C.line}` }}>{fmt(totalCost)}</td>
+                          <td style={{ ...TD, fontWeight: 800, borderTop: `1.5px solid ${C.line}` }}>{fmt(dayRevAvg)}</td>
+                          <td style={{ ...TD, borderTop: `1.5px solid ${C.line}` }}>{pctCell(pct(totalCost, dayRevAvg))}</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                );
+              })()}
+              <div style={{ fontSize: 10.5, color: C.faint, marginTop: 6 }}>備料/收班沒有營收是正常的——成本已算進「合計」整體成本率；合計列站別欄＝該站每日人力成本。</div>
             </div>
-            {/* ② 時段營收 vs 人力成本（銷售資料＝營運報表時段分析日均） */}
+            {/* ②.5 正職 vs PT 建議配置（張良 2026-09-11）：底盤人力=正職、尖峰增援=PT */}
             <div style={box}>
-              <div style={{ fontSize: 11.5, fontWeight: 700, color: C.sub, marginBottom: 8 }}>⏰ 時段營收 vs 人力成本 <span style={{ fontWeight: 400, color: C.faint }}>日均營收＝近 {slotDayN} 個營業日時段資料平均；成本率＝該小時人力成本 ÷ 日均營收</span></div>
-              <div style={{ overflowX: "auto", border: `1px solid ${C.line}`, borderRadius: 8, background: "#fff" }}>
-                <table style={{ borderCollapse: "collapse", fontSize: 12, minWidth: "100%" }}>
-                  <thead><tr style={{ background: C.head }}>
-                    <th style={{ ...th2, textAlign: "left" }}>時段</th><th style={th2}>日均營收</th><th style={th2}>人力</th><th style={th2}>人力成本</th><th style={th2}>人力成本率</th>
-                  </tr></thead>
-                  <tbody>
-                    {HOURS.map(h => { const rev = hourAvg(h); const cost = rowN(h) * wage; return (
-                      <tr key={h} style={{ background: (h === 12 || h === 13) ? "#fdf6ec" : undefined }}>
-                        <td style={{ ...td2, textAlign: "left", fontWeight: 700 }}>{hLabel(h)}</td>
-                        <td style={td2}>{rev ? fmt(rev) : <span style={{ color: C.faint }}>{h === 10 ? "備料" : h === 19 ? "收班" : "—"}</span>}</td>
-                        <td style={td2}>{rowN(h) || "—"}</td>
-                        <td style={td2}>{cost ? fmt(cost) : "—"}</td>
-                        <td style={td2}>{pctCell(rev > 0 && cost ? Math.round(cost / rev * 100) : null)}</td>
-                      </tr>
-                    ); })}
-                    <tr style={{ background: C.head }}>
-                      <td style={{ ...td2, textAlign: "left", fontWeight: 800 }}>全日</td>
-                      <td style={{ ...td2, fontWeight: 800 }}>{fmt(dayRevAvg)}</td>
-                      <td style={{ ...td2, fontWeight: 800 }}>{totalN} 人時</td>
-                      <td style={{ ...td2, fontWeight: 800 }}>{fmt(totalCost)}</td>
-                      <td style={td2}>{pctCell(pct(totalCost, dayRevAvg))}</td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-              <div style={{ fontSize: 10.5, color: C.faint, marginTop: 6 }}>備料/收班時段沒有營收是正常的——它們的成本已算進「全日」整體成本率。</div>
+              {(() => {
+                const staffedMin = Math.min(...HOURS.map(h => rowN(h)).filter(n => n > 0));
+                const ft = Math.max(0, Math.min(9, Number(L.ft ?? (Number.isFinite(staffedMin) ? staffedMin : 2)) || 0));
+                const FT_HOURS = 10; // 正職班：10:00 備料到 20:00 收班
+                const ftMH = ft * FT_HOURS;
+                const ptRows = HOURS.map(h => ({ h, extra: Math.max(0, rowN(h) - ft) })).filter(x => x.extra > 0);
+                const ptMH = ptRows.reduce((t, x) => t + x.extra, 0);
+                const idle = HOURS.filter(h => rowN(h) > 0 && rowN(h) < ft);
+                // 連續同增援數的時段併成一段（例：12-14 +5）
+                const segs = []; let cur = null;
+                ptRows.forEach(({ h, extra }) => { if (cur && cur.end === h && cur.extra === extra) cur.end = h + 1; else { cur = { start: h, end: h + 1, extra }; segs.push(cur); } });
+                return (
+                  <>
+                    <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 8 }}>
+                      <span style={{ fontSize: 12.5, fontWeight: 700, color: C.text, letterSpacing: 0.3 }}>正職 vs PT 建議配置</span>
+                      <span style={{ fontSize: 11, color: C.faint }}>正職＝10-20 全程底盤人力；超出底盤的時段＝PT 增援</span>
+                      <span style={{ fontSize: 12, color: C.text, marginLeft: "auto" }}>正職
+                        <input type="number" min="0" max="9" value={ft} disabled={!canEdit} onChange={e => saveL({ ...L, ft: Math.max(0, Math.min(9, parseInt(e.target.value || "0", 10) || 0)) })}
+                          style={{ width: 44, margin: "0 4px", border: `1px solid ${C.line}`, borderRadius: 6, padding: "3px 6px", textAlign: "center", fontSize: 12.5, fontFamily: MONOF, background: "#fff", color: C.text }} /> 人
+                      </span>
+                    </div>
+                    <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                      <div style={{ flex: "1 1 220px", border: `1px solid ${C.line}`, borderRadius: 8, padding: "10px 14px", background: "#fff" }}>
+                        <div style={{ fontSize: 11, color: C.faint, fontWeight: 600, letterSpacing: 0.5 }}>正職（底盤）</div>
+                        <div style={{ fontSize: 19, fontWeight: 800, color: C.text, fontFamily: MONOF, marginTop: 2 }}>{ft} 人 × 10h ＝ {ftMH} 人時</div>
+                        <div style={{ fontSize: 11, color: C.sub, marginTop: 3 }}>10:00 備料 → 20:00 收班全程在場；建議放「櫃檯」「漢堡・義麵」這種整天都要的站</div>
+                      </div>
+                      <div style={{ flex: "1 1 220px", border: `1px solid ${C.line}`, borderRadius: 8, padding: "10px 14px", background: "#fff" }}>
+                        <div style={{ fontSize: 11, color: C.faint, fontWeight: 600, letterSpacing: 0.5 }}>PT（尖峰增援）</div>
+                        <div style={{ fontSize: 19, fontWeight: 800, color: C.blue, fontFamily: MONOF, marginTop: 2 }}>{ptMH} 人時 ＝ {fmt(ptMH * wage)}/日</div>
+                        <div style={{ fontSize: 11, color: C.sub, marginTop: 3 }}>{segs.length ? segs.map(sg => `${sg.start}-${sg.end}點 +${sg.extra}人`).join("、") : "目前配置不需要 PT"}</div>
+                      </div>
+                      <div style={{ flex: "1 1 220px", border: `1px solid ${C.line}`, borderRadius: 8, padding: "10px 14px", background: "#fff" }}>
+                        <div style={{ fontSize: 11, color: C.faint, fontWeight: 600, letterSpacing: 0.5 }}>對照</div>
+                        <div style={{ fontSize: 12, color: C.sub, marginTop: 4, lineHeight: 1.7 }}>
+                          配置表需求 {totalN} 人時／正職＋PT 供給 {ftMH + ptMH} 人時{ftMH + ptMH > totalN ? <span style={{ color: C.amber }}>（正職離峰多出 {ftMH + ptMH - totalN} 人時＝備餐/清潔/訓練緩衝）</span> : " ✓"}
+                          {idle.length > 0 && <span style={{ color: C.amber }}>；{idle.map(h => `${h}-${h + 1}`).join("、")} 排的人比正職少——正職在場就順店，不用再排 PT</span>}
+                        </div>
+                      </div>
+                    </div>
+                  </>
+                );
+              })()}
             </div>
             {/* ③ 每站分析：站的負責品類（點品類籤切換歸屬）→ 日均銷售額 vs 該站人力成本 */}
             <div style={box}>
@@ -1021,13 +1054,13 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
                   <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
                     <b style={{ fontSize: 13, color: C.text }}>{st.name}</b>
                     <span style={{ fontSize: 11.5, color: C.sub }}>每日人力 {fmt(cost)}{share ? <span style={{ color: C.faint }}>＋分攤 {fmt(share)}</span> : ""}</span>
-                    {(st.cats || []).length > 0 && <span style={{ fontSize: 11.5, color: C.sub }}>日均銷售 {fmt(rev)}</span>}
-                    {(st.cats || []).length > 0 && <span style={{ fontSize: 12 }}>{pctCell(pct(cost + share, rev))}</span>}
-                    {(st.cats || []).length === 0 && <span style={{ fontSize: 11, color: C.faint }}>全店共用站（不掛品類）</span>}
+                    {normCats(st).length > 0 && <span style={{ fontSize: 11.5, color: C.sub }}>日均銷售 {fmt(rev)}</span>}
+                    {normCats(st).length > 0 && <span style={{ fontSize: 12 }}>{pctCell(pct(cost + share, rev))}</span>}
+                    {normCats(st).length === 0 && <span style={{ fontSize: 11, color: C.faint }}>全店共用站（不掛品類）</span>}
                   </div>
                   {canEdit && (
                     <div style={{ display: "flex", gap: 5, flexWrap: "wrap", marginTop: 6 }}>
-                      {allCats.map(c => { const on = (st.cats || []).includes(c); return (
+                      {allCats.map(c => { const on = normCats(st).includes(c); return (
                         <button key={c} onClick={() => toggleCat(st.id, c)} style={{ border: `1px solid ${on ? "#6b4a86" : C.line}`, background: on ? "#6b4a86" : "transparent", color: on ? "#fff" : C.faint, borderRadius: 10, padding: "1px 8px", fontSize: 10.5, fontWeight: 600, cursor: "pointer" }}>{c}<span style={{ opacity: 0.7, marginLeft: 3 }}>{fmt(catAvg(c))}</span></button>
                       ); })}
                     </div>
