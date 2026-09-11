@@ -1883,6 +1883,18 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
                                   {dcols.map(dd => <td key={dd} style={{ ...tdn, borderTop: "none", color: "#fff", fontWeight: 700 }}>{g.reduce((t, r) => t + (r.q[dd] || 0), 0)}</td>)}
                                 </tr>
                               );
+                              // 雞肉/牛肉分開小計（張良 2026-09-11）：漢堡色帶(合併)照舊，下面補兩條小計列
+                              const subRows = cat === "漢堡" ? [["雞肉堡小計", (r) => !/牛肉/.test(r.n)], ["牛肉堡小計", (r) => /牛肉/.test(r.n)]].map(([lb, filt]) => {
+                                const gg = g.filter(filt); if (!gg.length) return null;
+                                return (
+                                  <tr key={"sub-" + lb} style={{ background: "#f3ead9" }}>
+                                    <td style={{ padding: "4px 8px", fontWeight: 700, fontSize: 11.5, color: "#8a5a2e", position: "sticky", left: 0, background: "#f3ead9", whiteSpace: "nowrap" }}>├ {lb}</td>
+                                    <td style={{ ...tdn, fontWeight: 800, color: "#8a5a2e" }}>{gg.reduce((t, r) => t + r.cum, 0)}</td>
+                                    <td style={{ ...tdn, color: "#b08d63" }}>{gg.some(r => cb(r) != null) ? gg.reduce((t, r) => t + (cb(r) || 0), 0) : "—"}</td>
+                                    {dcols.map(dd => <td key={dd} style={{ ...tdn, color: "#8a5a2e", fontWeight: 600 }}>{gg.reduce((t, r) => t + (r.q[dd] || 0), 0)}</td>)}
+                                  </tr>
+                                );
+                              }).filter(Boolean) : [];
                               const body = g.map(r => (
                                 <tr key={(cat || "") + r.n}>
                                   <td style={{ padding: "5px 8px", fontWeight: 600, color: zero(r) ? C.red : C.text, whiteSpace: "nowrap", position: "sticky", left: 0, background: "#fff", borderTop: "1px solid #f0ead9" }}>
@@ -1907,7 +1919,7 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
                                   {dcols.map(dd => <td key={dd} style={{ ...tdn, fontWeight: sortKey === dd ? 800 : 400, color: sortKey === dd ? C.brand : C.sub }}>{r.q[dd] || 0}</td>)}
                                 </tr>
                               ));
-                              return [band, ...body].filter(Boolean);
+                              return [band, ...subRows, ...body].filter(Boolean);
                             })}
                             {/* 成本/毛利列（張良 2026-08-28）：填了成本才出現；全品項口徑，不受分類籤篩選影響 */}
                             {hasCost && (
@@ -2145,7 +2157,15 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
                     <div style={{ fontSize: 11.5, fontWeight: 700, color: C.sub, marginBottom: 8 }}>各類別營收佔比（期間累計）</div>
                     {(() => { const catTot = catArr2.reduce((t, [, v]) => t + v.amt, 0) || 1;
                       // 版面（張良 2026-08-16）：一行搞定——名稱・份數｜長條｜金額｜佔比%（金額欄 barRow 本來就有，不重複塞）
-                      return catArr2.length ? catArr2.map(([k, v], i) => barRow(`${k}・${v.qty}${k === "套餐" ? "組" : "份"}`, v.amt, catMax2, PAL[i % PAL.length], `${Math.round(v.amt / catTot * 100)}%`, () => openDrill({ type: "cat", key: k }))) : <div style={{ fontSize: 12, color: C.faint }}>無明細資料</div>; })()}
+                      return catArr2.length ? catArr2.flatMap(([k, v], i) => {
+                        const rows = [barRow(`${k}・${v.qty}${k === "套餐" ? "組" : "份"}`, v.amt, catMax2, PAL[i % PAL.length], `${Math.round(v.amt / catTot * 100)}%`, () => openDrill({ type: "cat", key: k }))];
+                        if (k === "漢堡") { // 雞肉/牛肉分開小計（張良 2026-09-11），合併列照舊在上面
+                          const sub = { "雞肉堡": { qty: 0, amt: 0 }, "牛肉堡": { qty: 0, amt: 0 } };
+                          Object.entries(itemAgg).forEach(([n2, it2]) => { if (it2.cat === "漢堡") { const t2 = /牛肉/.test(n2) ? "牛肉堡" : "雞肉堡"; sub[t2].qty += it2.qty; sub[t2].amt += it2.amt; } });
+                          [["雞肉堡", "#6b8e4e"], ["牛肉堡", "#8a5a44"]].forEach(([sk2, col2]) => { const sv = sub[sk2]; if (sv.qty > 0) rows.push(barRow(`　├ ${sk2}・${sv.qty}份`, sv.amt, catMax2, col2, `${Math.round(sv.amt / catTot * 100)}%`, () => openDrill({ type: "cat", key: k }))); });
+                        }
+                        return rows;
+                      }) : <div style={{ fontSize: 12, color: C.faint }}>無明細資料</div>; })()}
                   </div>
                   <div style={chartBox2}>
                     <div style={{ display: "flex", alignItems: "center", marginBottom: 8 }}>
