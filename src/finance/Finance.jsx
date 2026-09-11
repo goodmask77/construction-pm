@@ -1562,6 +1562,7 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
                   if (!Object.keys(items).length) return null;
                   if (isAB) { AB_FINE_ORDER.forEach(c => { if (Object.values(items).some(o => o.cat === c)) catSeen.push(c); }); Object.values(items).forEach(o => { if (!catSeen.includes(o.cat)) catSeen.push(o.cat); }); }
                   const lastD2 = dts[dts.length - 1], prevD2 = dts[dts.length - 2];
+                  const dcols = [...dts].reverse(); // 顯示順序：最新日在最左（張良 2026-09-11：不用往右滑到底）；CSV 匯出照舊時間序
                   const sortKey = gdSort && (dts.includes(gdSort) || gdSort === "cum") ? gdSort : lastD2;
                   const sv = (o) => sortKey === "cum" ? o.cum : (o.q[sortKey] || 0);
                   // 😴 只看沒賣：最後售出距最新日結 ≥7 天（取代原「沒賣預警」大區塊——同資訊、不佔版面）
@@ -1647,11 +1648,11 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
                           <thead><tr style={{ background: C.head }}>
                             <th style={{ ...thd, textAlign: "left", cursor: "default", position: "sticky", left: 0, background: C.head, zIndex: 1 }}>品項</th>
                             {!gdGroup && <th style={{ ...thd, textAlign: "left", cursor: "default" }}>品類</th>}
-                            {dts.map(dd => <th key={dd} onClick={() => setGdSort(dd)} title={dd === liveD ? `今天即時（${abLive?.at || ""} 更新，還會長大；打烊後自動換正式數字）` : undefined} style={{ ...thd, fontFamily: MONOF, color: dd === liveD ? "#b3261e" : sortKey === dd ? C.brand : C.sub }}>{dd.slice(5)}{dd === liveD ? ` ${abLive?.at || "即時"}` : ""}{sortKey === dd ? " ▼" : ""}</th>)}
                             <th onClick={() => setGdSort("cum")} style={{ ...thd, color: sortKey === "cum" ? C.brand : C.sub }}>累計{sortKey === "cum" ? " ▼" : ""}</th>
                             {isAB
                               ? <th style={{ ...thd, cursor: "default" }} title="Uber 外送分類（低價版）賣出的份數——已併入左邊各日與累計的總量，這欄單獨列出其中多少來自 Uber">Uber</th>
                               : <th style={{ ...thd, cursor: "default" }} title="期間內該品項在套餐裡賣出的份數（累計口徑，跟「累計」欄一致）">套餐內</th>}
+                            {dcols.map(dd => <th key={dd} onClick={() => setGdSort(dd)} title={dd === liveD ? `今天即時（${abLive?.at || ""} 更新，還會長大；打烊後自動換正式數字）` : undefined} style={{ ...thd, fontFamily: MONOF, color: dd === liveD ? "#b3261e" : sortKey === dd ? C.brand : C.sub }}>{dd.slice(5)}{dd === liveD ? ` ${abLive?.at || "即時"}` : ""}{sortKey === dd ? " ▼" : ""}</th>)}
                           </tr></thead>
                           <tbody>
                             {/* 套餐列（張良 2026-08-16：不要另外一條橫幅，進表格跟日期欄對齊，日子多了跟表一起捲）：上=組數、下小字=金額 */}
@@ -1659,26 +1660,26 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
                               <tr style={{ background: C.bg }}>
                                 <td style={{ padding: "5px 8px", fontWeight: 800, color: C.text, whiteSpace: "nowrap", position: "sticky", left: 0, background: C.bg }}>套餐（主餐+89 加價購）</td>
                                 {!gdGroup && <td style={{ borderTop: "1px solid #f0ead9" }} />}
-                                {dts.map(dd => (
-                                  <td key={dd} style={{ ...tdn, lineHeight: 1.25 }}>
-                                    <div style={{ fontWeight: 700 }}>{setDay[dd]?.qty || 0} <span style={{ fontSize: 10, fontWeight: 400, color: C.faint }}>組</span></div>
-                                    <div style={{ fontSize: 10, color: C.faint }}>{setDay[dd]?.amt ? fmt(setDay[dd].amt) : ""}</div>
-                                  </td>
-                                ))}
                                 <td style={{ ...tdn, lineHeight: 1.25 }}>
                                   <div style={{ fontWeight: 800, color: C.brand }}>{setQty} <span style={{ fontSize: 10, fontWeight: 400, color: C.faint }}>組</span></div>
                                   <div style={{ fontSize: 10, color: C.brand }}>{fmt(setAmt)}</div>
                                 </td>
                                 <td style={{ ...tdn, color: C.faint }}>—</td>
+                                {dcols.map(dd => (
+                                  <td key={dd} style={{ ...tdn, lineHeight: 1.25 }}>
+                                    <div style={{ fontWeight: 700 }}>{setDay[dd]?.qty || 0} <span style={{ fontSize: 10, fontWeight: 400, color: C.faint }}>組</span></div>
+                                    <div style={{ fontSize: 10, color: C.faint }}>{setDay[dd]?.amt ? fmt(setDay[dd].amt) : ""}</div>
+                                  </td>
+                                ))}
                               </tr>
                             )}
                             {groups.flatMap(([cat, g]) => {
                               const band = cat != null && (
                                 <tr key={"band-" + cat} style={{ background: C.brand }}>
                                   <td style={{ padding: "5px 8px", color: "#fff", fontWeight: 800, fontSize: 12, letterSpacing: 2, position: "sticky", left: 0, background: C.brand, whiteSpace: "nowrap" }}>{cat}</td>
-                                  {dts.map(dd => <td key={dd} style={{ ...tdn, borderTop: "none", color: "#fff", fontWeight: 700 }}>{g.reduce((t, r) => t + (r.q[dd] || 0), 0)}</td>)}
                                   <td style={{ ...tdn, borderTop: "none", color: "#fff", fontWeight: 800 }}>{g.reduce((t, r) => t + r.cum, 0)}</td>
                                   <td style={{ ...tdn, borderTop: "none", color: "#ffe0cf", fontWeight: 700 }}>{isAB ? (g.reduce((t, r) => t + r.uber, 0) || "—") : (g.some(r => cb(r) != null) ? g.reduce((t, r) => t + (cb(r) || 0), 0) : "—")}</td>
+                                  {dcols.map(dd => <td key={dd} style={{ ...tdn, borderTop: "none", color: "#fff", fontWeight: 700 }}>{g.reduce((t, r) => t + (r.q[dd] || 0), 0)}</td>)}
                                 </tr>
                               );
                               const body = g.map(r => (
@@ -1700,9 +1701,9 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
                                     {surge(r) ? " 🔥" : ""}{zero(r) ? <span style={{ fontSize: 10.5, fontWeight: 800 }}> ⚠0</span> : ""}
                                     {gdIdle && <span style={{ fontSize: 10, fontWeight: 700, color: C.red, marginLeft: 6 }}>{idleGap(r)}天沒賣・最後 {String(lastSold(r) || "").slice(5)}</span>}</td>
                                   {!gdGroup && <td style={{ padding: "5px 8px", borderTop: "1px solid #f0ead9" }}><span style={{ border: `1px solid ${C.line}`, background: C.bg, color: C.sub, borderRadius: 10, padding: "1px 8px", fontSize: 10.5, fontWeight: 700, whiteSpace: "nowrap" }}>{r.cat}</span></td>}
-                                  {dts.map(dd => <td key={dd} style={{ ...tdn, fontWeight: sortKey === dd ? 800 : 400, color: sortKey === dd ? C.brand : C.sub }}>{r.q[dd] || 0}</td>)}
                                   <td style={{ ...tdn, fontWeight: sortKey === "cum" ? 800 : 600, color: sortKey === "cum" ? C.brand : C.text }}>{r.cum}</td>
                                   <td style={{ ...tdn, color: C.faint }}>{isAB ? (r.uber || "—") : (cb(r) != null ? cb(r) : "—")}</td>
+                                  {dcols.map(dd => <td key={dd} style={{ ...tdn, fontWeight: sortKey === dd ? 800 : 400, color: sortKey === dd ? C.brand : C.sub }}>{r.q[dd] || 0}</td>)}
                                 </tr>
                               ));
                               return [band, ...body].filter(Boolean);
@@ -1712,18 +1713,18 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
                               <tr style={{ background: "#fdf6ec" }}>
                                 <td style={{ padding: "5px 8px", fontWeight: 800, color: C.amber, whiteSpace: "nowrap", position: "sticky", left: 0, background: "#fdf6ec" }} title="Σ 當日份數×品項成本（含套餐內份數；未填成本的品項當 0）">食材成本</td>
                                 {!gdGroup && <td style={{ borderTop: "1px solid #f0ead9" }} />}
-                                {dts.map(dd => <td key={dd} style={{ ...tdn, color: C.amber, fontWeight: 700 }}>{fmt(Math.round(dayCostOf(dd)))}</td>)}
                                 <td style={{ ...tdn, color: C.amber, fontWeight: 800 }}>{fmt(Math.round(cumCost))}</td>
                                 <td style={{ ...tdn, color: C.faint }}>—</td>
+                                {dcols.map(dd => <td key={dd} style={{ ...tdn, color: C.amber, fontWeight: 700 }}>{fmt(Math.round(dayCostOf(dd)))}</td>)}
                               </tr>
                             )}
                             {hasCost && (
                               <tr style={{ background: "#eef5ee" }}>
                                 <td style={{ padding: "5px 8px", fontWeight: 800, color: C.accent, whiteSpace: "nowrap", position: "sticky", left: 0, background: "#eef5ee" }} title="當日 POS 實收 − 當日食材成本（成本沒填齊時會偏高估）">毛利</td>
                                 {!gdGroup && <td style={{ borderTop: "1px solid #f0ead9" }} />}
-                                {dts.map(dd => { const g2 = (revByDate[dd] || 0) - dayCostOf(dd); return <td key={dd} style={{ ...tdn, color: g2 < 0 ? C.red : C.accent, fontWeight: 700 }} title={`營收 ${fmt(revByDate[dd] || 0)} − 成本 ${fmt(Math.round(dayCostOf(dd)))}`}>{fmt(Math.round(g2))}</td>; })}
                                 <td style={{ ...tdn, color: C.accent, fontWeight: 800 }}>{fmt(Math.round(cumRev - cumCost))}</td>
                                 <td style={{ ...tdn, color: C.faint }}>—</td>
+                                {dcols.map(dd => { const g2 = (revByDate[dd] || 0) - dayCostOf(dd); return <td key={dd} style={{ ...tdn, color: g2 < 0 ? C.red : C.accent, fontWeight: 700 }} title={`營收 ${fmt(revByDate[dd] || 0)} − 成本 ${fmt(Math.round(dayCostOf(dd)))}`}>{fmt(Math.round(g2))}</td>; })}
                               </tr>
                             )}
                           </tbody>
@@ -1856,6 +1857,7 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
                   // 打「＊」＋tooltip 說明（喬亞時段表偶爾含折讓/溢收造成的幾十〜百元差，例 8/10 差 120）
                   const offRev = (dt) => Number((days.find(dd => dd.date === dt) || {}).revenue) || 0;
                   const heatBody = () => {
+                    const hdcols = [...heatDates].reverse(); // 最新日在左（張良 2026-09-11）
                     const rowMax = {}; heatKeys.forEach(k => { rowMax[k] = Math.max(1, ...heatDates.map(dt => perDate[dt][k]?.amt || 0)); });
                     const rowSum = (k) => heatDates.reduce((t, dt) => t + (perDate[dt][k]?.amt || 0), 0);
                     const dayTot = (dt) => heatKeys.reduce((t, k) => t + (perDate[dt][k]?.amt || 0), 0);
@@ -1866,8 +1868,8 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
                         <table style={{ borderCollapse: "collapse", fontSize: 11, minWidth: "100%" }}>
                           <thead><tr style={{ background: C.head }}>
                             <th style={{ ...hh3, textAlign: "left", position: "sticky", left: 0, background: C.head, zIndex: 1 }}>時段</th>
-                            {heatDates.map(dt => <th key={dt} style={{ ...hh3, color: isWE(dt) ? C.amber : C.sub }}>{Number(dt.slice(5, 7)) + "/" + Number(dt.slice(8))}<br />{WD2[new Date(dt + "T00:00:00").getDay()]}</th>)}
                             <th style={hh3}>累計</th><th style={hh3}>日均</th>
+                            {hdcols.map(dt => <th key={dt} style={{ ...hh3, color: isWE(dt) ? C.amber : C.sub }}>{Number(dt.slice(5, 7)) + "/" + Number(dt.slice(8))}<br />{WD2[new Date(dt + "T00:00:00").getDay()]}</th>)}
                             <th style={{ ...hh3, position: "sticky", right: 0, background: C.head, zIndex: 1 }}>時段</th>{/* 右側再放一欄時段（張良 2026-09-10：看到最右邊離左邊太遠不好對） */}
                           </tr></thead>
                           <tbody>
@@ -1876,7 +1878,9 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
                               return (
                                 <tr key={k}>
                                   <td style={{ padding: "4px 7px", fontFamily: MONOF, fontWeight: 700, fontSize: 11, whiteSpace: "nowrap", position: "sticky", left: 0, background: "#fff", borderTop: "1px solid #f0ead9" }}>{tl}</td>
-                                  {heatDates.map(dt => {
+                                  <td style={{ padding: "4px 7px", textAlign: "right", fontFamily: MONOF, fontSize: 10.5, fontWeight: 700, borderTop: "1px solid #f0ead9", whiteSpace: "nowrap" }}>{fmt(rowSum(k))}</td>
+                                  <td title={`${slotDays(k)} 天有營業到這時段（每天第一筆〜最後一筆銷售之間算營業中）`} style={{ padding: "4px 7px", textAlign: "right", fontFamily: MONOF, fontSize: 10.5, color: C.sub, borderTop: "1px solid #f0ead9", whiteSpace: "nowrap", cursor: "help" }}>{fmt(Math.round(rowSum(k) / Math.max(1, slotDays(k))))}</td>
+                                  {hdcols.map(dt => {
                                     const c = perDate[dt][k]; const amt = c?.amt || 0; const ratio = amt / rowMax[k];
                                     return (
                                       <td key={dt} title={`${dLabel(dt)} ${tl}：NT$${fmt(amt)}・${c?.od || 0} 單`}
@@ -1885,20 +1889,18 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
                                       </td>
                                     );
                                   })}
-                                  <td style={{ padding: "4px 7px", textAlign: "right", fontFamily: MONOF, fontSize: 10.5, fontWeight: 700, borderTop: "1px solid #f0ead9", whiteSpace: "nowrap" }}>{fmt(rowSum(k))}</td>
-                                  <td title={`${slotDays(k)} 天有營業到這時段（每天第一筆〜最後一筆銷售之間算營業中）`} style={{ padding: "4px 7px", textAlign: "right", fontFamily: MONOF, fontSize: 10.5, color: C.sub, borderTop: "1px solid #f0ead9", whiteSpace: "nowrap", cursor: "help" }}>{fmt(Math.round(rowSum(k) / Math.max(1, slotDays(k))))}</td>
                                   <td style={{ padding: "4px 7px", fontFamily: MONOF, fontWeight: 700, fontSize: 11, whiteSpace: "nowrap", position: "sticky", right: 0, background: "#fff", borderTop: "1px solid #f0ead9", textAlign: "right" }}>{tl}</td>
                                 </tr>
                               );
                             })}
                             <tr style={{ background: C.head }}>
                               <td style={{ padding: "4px 7px", fontWeight: 800, fontSize: 10.5, position: "sticky", left: 0, background: C.head, whiteSpace: "nowrap" }}>全日</td>
-                              {heatDates.map(dt => { const off = offRev(dt) || dayTot(dt); const diff = off - dayTot(dt); return (
+                              <td style={{ padding: "4px 7px", textAlign: "right", fontFamily: MONOF, fontSize: 10.5, fontWeight: 800, whiteSpace: "nowrap" }}>{fmt(heatDates.reduce((t, dt) => t + (offRev(dt) || dayTot(dt)), 0))}</td>
+                              <td style={{ padding: "4px 7px", textAlign: "right", fontFamily: MONOF, fontSize: 10.5, color: C.sub, whiteSpace: "nowrap" }}>{fmt(Math.round(heatDates.reduce((t, dt) => t + (offRev(dt) || dayTot(dt)), 0) / Math.max(1, heatDates.length)))}</td>
+                              {hdcols.map(dt => { const off = offRev(dt) || dayTot(dt); const diff = off - dayTot(dt); return (
                                 <td key={dt} title={diff ? `時段加總 NT$${fmt(dayTot(dt))}、正式結帳營收 NT$${fmt(off)}（差 NT$${fmt(Math.abs(diff))}＝喬亞時段表與結帳金額的折讓/溢收小差）` : undefined}
                                   style={{ padding: "4px 7px", textAlign: "right", fontFamily: MONOF, fontSize: 10.5, fontWeight: 700, whiteSpace: "nowrap", cursor: diff ? "help" : undefined }}>{fmt(off)}{diff ? "＊" : ""}</td>
                               ); })}
-                              <td style={{ padding: "4px 7px", textAlign: "right", fontFamily: MONOF, fontSize: 10.5, fontWeight: 800, whiteSpace: "nowrap" }}>{fmt(heatDates.reduce((t, dt) => t + (offRev(dt) || dayTot(dt)), 0))}</td>
-                              <td style={{ padding: "4px 7px", textAlign: "right", fontFamily: MONOF, fontSize: 10.5, color: C.sub, whiteSpace: "nowrap" }}>{fmt(Math.round(heatDates.reduce((t, dt) => t + (offRev(dt) || dayTot(dt)), 0) / Math.max(1, heatDates.length)))}</td>
                               <td style={{ padding: "4px 7px", fontWeight: 800, fontSize: 10.5, position: "sticky", right: 0, background: C.head, whiteSpace: "nowrap", textAlign: "right" }}>全日</td>
                             </tr>
                           </tbody>
