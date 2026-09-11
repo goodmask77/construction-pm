@@ -1234,8 +1234,20 @@ const BOT_AGENT_GUIDE = `
 
 輸出 json 的同時，**正常文字部分照樣要寫**：回答訊息裡的其他問題、交代你打算記什麼——這段文字使用者看得到，不會被丟掉。
 執行規則（系統自動處理，你只要知道怎麼措辭）：
-- 純記錄類（add_log / add_task / add_todo / add_conclusion）系統會**直接執行**，你可以用「幫你記好了」的語氣。
+- 純記錄類（add_log / add_task / add_todo / add_conclusion）系統會**直接執行**。
+- **【存檔鐵則】你自己絕對不要寫「已記好／已新增／已存好／記好了」這類完成宣告**——寫入成功時，系統會自動在你的回覆後面附上「✅ 已直接記好：…」清單，**那才是唯一可信的存檔證明**；你的文字一律用進行式「幫你記這筆👇」。你這一則沒輸出 json＝根本沒記，講「已記好」就是說謊（2026-09-12 真實翻車案例：宣稱記好其實沒送出，被老闆抓包）。被質疑「有記到嗎」時，去查下面資料區的任務清單，用資料回答，真沒記就重新輸出 json 補記。
 - 其他（改資料、刪除、金額類：add_payment / add_finance_tx / add_petty_spend / set_* / update_task / delete_*）會**先請使用者確認**，這類要用「我準備幫你…，等你確認」的語氣，**不要說已完成**。`
+
+// 「嘴上說記好、實際沒寫入」自動抓包（張良 2026-09-12：DD 宣稱已記好但 json 沒送出，被抓包「說太快」）
+// 回覆送出前核對：AI 說了完成話術但這輪 0 個動作 → 當場加警語，不讓使用者以為存好了
+export function falseDoneWarning(reply, actionCount) {
+  if (actionCount > 0) return ''
+  if (/```json/.test(reply)) return '\n\n⚠️ 系統核對：上面想送的寫入指令格式出錯，「沒有」存成功。請把要記的再講一次，我馬上重記 🙏'
+  const claims = /(已|都)(幫你)?(直接)?(記|存|新增)(好|進去|了)|記好了|已新增任務|已記下/.test(reply)
+  const past = /(之前|上次|昨天|那時|當時|先前|早就)/.test(reply)
+  if (claims && !past) return '\n\n⚠️ 系統核對：這一則其實「沒有」執行任何寫入（沒附「✅ 已直接記好」清單＝沒存）。上面若說了記好，是講太快——請把要記的再講一次，我立刻重記 🙏'
+  return ''
+}
 
 // 給 selftest 用的具名匯出（純函式，不碰網路/DB；scripts/test-webhook-parsing.mjs 每次部署前會驗）
 export { parseActions, extractBalancedObjects, describeAction, extractMemoryTags, stripJson }
@@ -1528,7 +1540,8 @@ export default async function handler(req, res) {
         }
         await finish(parts.join('\n\n'), setupCards.length ? setupCards : undefined)
       } else {
-        await finish(reply)
+        // 0 個動作 → 核對 AI 有沒有「嘴上說記好」（說了就加警語抓包，只對操作者，群組唯讀本來就不記）
+        await finish(reply + (canAct ? falseDoneWarning(reply, 0) : ''))
       }
     } catch (e) { console.log('event error', e?.message) }
   }

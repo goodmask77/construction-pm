@@ -535,7 +535,7 @@ export default function TaskCenter({ K, confirm, canEdit, cats, onLog, onAddCat,
           <div key={g.id}
             onDragOver={e => { if (dragCat && dragCat !== g.id && g.id !== INBOX) { e.preventDefault(); e.stopPropagation(); setOverCat(g.id + ":" + dropPos(e)); } }}
             onDragLeave={() => setOverCat(k => (k || "").startsWith(g.id + ":") ? null : k)}
-            onDrop={e => { if (dragCat && dragCat !== g.id && g.id !== INBOX) { e.preventDefault(); e.stopPropagation(); const p = dropPos(e); onMoveCat(dragCat, { [p === "b" ? "beforeId" : "afterId"]: g.id, col: colOfRef.current[g.id] }); setDragCat(null); setOverCat(null); } }}
+            onDrop={e => { if (dragCat && dragCat !== g.id && g.id !== INBOX) { e.preventDefault(); e.stopPropagation(); const p = dropPos(e); onMoveCat(dragCat, { [p === "b" ? "beforeId" : "afterId"]: g.id, col: colOfRef.current[g.id], freeze: { ...colOfRef.current } }); setDragCat(null); setOverCat(null); } }}
             style={{ ...extraStyle, opacity: dragCat === g.id ? 0.4 : 1, borderRadius: 8,
               boxShadow: dragCat && overCat === g.id + ":b" ? `0 -4px 0 0 ${C.accent}` : dragCat && overCat === g.id + ":a" ? `0 4px 0 0 ${C.accent}` : "none" }}>
             {inner}
@@ -643,7 +643,7 @@ export default function TaskCenter({ K, confirm, canEdit, cats, onLog, onAddCat,
                 <div key={i}
                   onDragOver={e => { if (dragCat) { e.preventDefault(); setOverCat("col-" + i); } }}
                   onDragLeave={() => setOverCat(k => k === "col-" + i ? null : k)}
-                  onDrop={e => { if (dragCat) { e.preventDefault(); onMoveCat(dragCat, { col: i }); setDragCat(null); setOverCat(null); } }}
+                  onDrop={e => { if (dragCat) { e.preventDefault(); onMoveCat(dragCat, { col: i, freeze: { ...colOfRef.current } }); setDragCat(null); setOverCat(null); } }}
                   style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 10, minHeight: dragCat ? 220 : undefined, borderRadius: 8, outline: dragCat && overCat === "col-" + i ? `2px dashed ${C.accent}` : "none", outlineOffset: 2 }}>
                   {c.nodes}
                 </div>

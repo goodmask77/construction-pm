@@ -124,5 +124,14 @@ const su = JSON.stringify(buildTaskSetupCards([
 ok('設定卡：四顆按鈕資料格式（pick/cat/own/urg＋團隊碼）', su.includes('tk|pick|團|n1') && su.includes('tk|cat|團|n1') && su.includes('tk|own|團|n2') && su.includes('tk|urg|團|n2'))
 ok('設定卡：日曆按鈕＋兩張卡', su.includes('datetimepicker') && JSON.parse(su).contents.contents.length === 2)
 
+// 「說記好但沒寫入」自動抓包（2026-09-12 翻車案例的防呆）
+console.log('── 假完成抓包 ──')
+const { falseDoneWarning } = await import('../api/line-webhook.js')
+ok('說「已記好」但 0 動作 → 加警語', falseDoneWarning('好，設備更換電磁爐評估已記好，你到 App 看得到 👌', 0).includes('沒有'))
+ok('json 區塊壞掉沒解析出動作 → 加警語', falseDoneWarning('幫你記！```json\n{壞掉}\n```', 0).includes('格式出錯'))
+ok('講「上次已記好」（回顧過去）→ 不誤判', falseDoneWarning('上次那筆已記好了，在採購大項裡。', 0) === '')
+ok('一般回答 → 不加警語', falseDoneWarning('今天進度 87%，目前沒有逾期任務。', 0) === '')
+ok('真的有執行動作 → 不加警語', falseDoneWarning('幫你記這筆👇', 2) === '')
+
 if (fails) { console.error(`\n❌ ${fails} 個測試失敗`); process.exit(1) }
 console.log('\n✅ test-webhook-parsing 全過')

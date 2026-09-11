@@ -1049,8 +1049,10 @@ export default function App() {
             waitHint={CURRENT_SPACE === "construction" ? "例：等木工、等房東、等設計圖" : "例：等對方回覆、等報價、等主管確認"}
             onAddCat={(name) => guardedSetCats(prev => [...prev, { id: "cat-" + Date.now(), order: prev.length, name, budget: 0, status: "pending", items: [] }])}
             onRenameCat={(id, name) => guardedSetCats(prev => prev.map(c => c.id === id ? { ...c, name } : c))}
-            onMoveCat={(fromId, { afterId, beforeId, col } = {}) => guardedSetCats(prev => { // 拖大項＝放到任何位置（目標上半=排它上面/下半=排它下面）＋記住欄位 tcol（張良 2026-09-10）
-              const arr = [...prev].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+            onMoveCat={(fromId, { afterId, beforeId, col, freeze } = {}) => guardedSetCats(prev => { // 拖大項＝放到任何位置＋記住欄位 tcol；freeze=放手瞬間把「所有」大項當下欄位一併寫死（張良 2026-09-12：只動我拖的那張，其他不准自動重排）
+              let base = prev;
+              if (freeze) base = prev.map(c => (c.tcol === undefined || c.tcol === null) && freeze[c.id] !== undefined ? { ...c, tcol: freeze[c.id] } : c);
+              const arr = [...base].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
               const fi = arr.findIndex(c => c.id === fromId); if (fi < 0) return prev;
               const [m] = arr.splice(fi, 1);
               const m2 = col === undefined ? m : { ...m, tcol: col };
