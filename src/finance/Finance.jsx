@@ -879,7 +879,7 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
       {/* ── 營運（Eats365 POS 日結：所有數字都從原始資料算、點任何數字下鑽到明細資料庫）── */}
       {/* ── 人力成本（張良 2026-09-11）：每小時×站別人力配置＋GROUN:D 銷售資料算人力成本率 ── */}
       {tab === "labor" && (() => {
-        const MONOF = "'IBM Plex Mono', ui-monospace, Menlo, monospace"; // 別的分頁是各自內層宣告，這裡也要自己一份（v2.5.1 首發忘了→整頁白屏）
+        const MONOF = '-apple-system,"SF Pro Text","Segoe UI","Noto Sans TC",sans-serif'; // 俐落字型（張良 2026-09-11）：無襯線＋下面全配 tabular-nums 數字等寬對齊，不再用打字機字體
         // 預設值（照張良描述：櫃檯/控單打包/飲料/披薩・三明治同邊/漢堡・義麵含煎炸台；10點備料、11-19營業、12-13&13-14午峰、~20收班）
         const DEF = { wage: 300, stations: [
           { id: "s1", name: "櫃檯", cats: [] },
@@ -937,39 +937,39 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
             <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", marginBottom: 12 }}>
               <span style={{ background: "#6b4a86", color: "#fff", fontSize: 11.5, fontWeight: 700, borderRadius: 4, padding: "2px 8px", letterSpacing: 1 }}>人力成本</span>
               <span style={{ fontSize: 12, color: C.sub }}>GROUN:D・營業 11:00–19:00・10 點備料、收班到 20 點</span>
-              <span style={{ fontSize: 12.5, color: C.text, marginLeft: "auto" }}>時薪
+              <span style={{ fontSize: 14, color: C.text, marginLeft: "auto", fontWeight: 600 }}>時薪
                 <input type="number" min="0" value={wage} disabled={!canEdit} onChange={e => saveL({ ...L, wage: Math.max(0, parseInt(e.target.value || "0", 10) || 0) })}
-                  style={{ width: 64, marginLeft: 6, border: `1px solid ${C.line}`, borderRadius: 6, padding: "3px 6px", fontSize: 12.5, fontFamily: MONOF, background: "#fff", color: C.text }} /> 元
+                  style={{ width: 76, marginLeft: 6, border: `1px solid ${C.line}`, borderRadius: 8, padding: "6px 8px", fontSize: 14.5, fontWeight: 700, fontFamily: MONOF, fontVariantNumeric: "tabular-nums", background: "#fff", color: C.text }} /> 元
               </span>
             </div>
             {/* ①＋② 合併：每小時人力配置 × 時段營收（張良 2026-09-11：兩表合併、俐落表格）*/}
             <div style={box}>
               <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10, flexWrap: "wrap" }}>
-                <span style={{ fontSize: 12.5, fontWeight: 700, color: C.text, letterSpacing: 0.3 }}>每小時人力配置 × 營收</span>
-                <span style={{ fontSize: 11, color: C.faint }}>格子＝人數，直接改；日均營收＝近 {slotDayN} 個營業日平均；成本率＝人力成本 ÷ 日均營收</span>
-                {canEdit && <button onClick={addStation} style={{ marginLeft: "auto", border: `1px solid ${C.line}`, background: "#fff", color: C.sub, borderRadius: 6, padding: "3px 10px", fontSize: 11.5, fontWeight: 600, cursor: "pointer" }}>＋ 新增站</button>}
+                <span style={{ fontSize: 14.5, fontWeight: 800, color: C.text, letterSpacing: 0.3 }}>每小時人力配置 × 營收</span>
+                <span style={{ fontSize: 12.5, color: C.faint }}>格子＝人數，直接改；日均營收＝近 {slotDayN} 個營業日平均；成本率＝人力成本 ÷ 日均營收</span>
+                {canEdit && <button onClick={addStation} style={{ marginLeft: "auto", border: `1px solid ${C.line}`, background: "#fff", color: C.text, borderRadius: 8, padding: "7px 16px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>＋ 新增站</button>}
               </div>
               {(() => {
                 const NUM = { fontFamily: MONOF, fontVariantNumeric: "tabular-nums" };
-                const TH = { padding: "7px 10px", textAlign: "right", fontWeight: 600, whiteSpace: "nowrap", fontSize: 10.5, color: C.faint, letterSpacing: 0.6, borderBottom: `1.5px solid ${C.line}` };
-                const TD = { padding: "5px 10px", textAlign: "right", fontSize: 12, borderTop: "1px solid #f0ead9", whiteSpace: "nowrap", ...NUM };
+                const TH = { padding: "8px 14px", textAlign: "right", fontWeight: 700, whiteSpace: "nowrap", fontSize: 12.5, color: C.sub, letterSpacing: 0.4, borderBottom: `1.5px solid ${C.line}` };
+                const TD = { padding: "8px 14px", textAlign: "right", fontSize: 14, borderTop: "1px solid #f0ead9", whiteSpace: "nowrap", ...NUM };
                 const cellInp = (h, sid) => (
                   <input type="number" min="0" max="9" value={cnt(h, sid) || ""} placeholder="·" disabled={!canEdit}
                     onChange={e => setCell(h, sid, e.target.value)}
-                    style={{ width: 34, border: "1px solid transparent", borderRadius: 5, padding: "2px 0", textAlign: "center", fontSize: 12.5, fontWeight: cnt(h, sid) ? 700 : 400, ...NUM, background: "transparent", color: cnt(h, sid) ? C.text : "#cfc5b0", outline: "none", cursor: canEdit ? "text" : "default" }}
+                    style={{ width: 52, border: `1px solid ${cnt(h, sid) ? "#e7ddc9" : "transparent"}`, borderRadius: 6, padding: "5px 0", textAlign: "center", fontSize: 15, fontWeight: cnt(h, sid) ? 800 : 400, ...NUM, background: cnt(h, sid) ? "#fffdf6" : "transparent", color: cnt(h, sid) ? C.text : "#cfc5b0", outline: "none", cursor: canEdit ? "text" : "default" }}
                     onFocus={e => { e.target.style.border = `1px solid ${C.blue}`; e.target.style.background = "#fff"; }}
                     onBlur={e => { e.target.style.border = "1px solid transparent"; e.target.style.background = "transparent"; }} />
                 );
                 return (
-                  <div style={{ overflowX: "auto", border: `1px solid ${C.line}`, borderRadius: 8, background: "#fff" }}>
-                    <table style={{ borderCollapse: "collapse", fontSize: 12, minWidth: "100%" }}>
+                  <div style={{ overflowX: "auto" }}><div style={{ display: "inline-block", minWidth: 0, maxWidth: "100%", border: `1px solid ${C.line}`, borderRadius: 8, background: "#fff", overflow: "hidden" }}>
+                    <table style={{ borderCollapse: "collapse", fontSize: 14 }}>
                       <thead><tr style={{ background: C.head }}>
                         <th style={{ ...TH, textAlign: "left" }}>時段</th>
                         {L.stations.map(st => (
                           <th key={st.id} style={{ ...TH, textAlign: "center", minWidth: 76 }}>
                             <input value={st.name} disabled={!canEdit} onChange={e => renameStation(st.id, e.target.value)}
-                              style={{ width: Math.max(56, st.name.length * 11), maxWidth: 120, border: "none", background: "transparent", textAlign: "center", fontWeight: 600, fontSize: 11, color: C.sub, outline: "none", letterSpacing: 0.4 }} />
-                            {canEdit && <button onClick={() => delStation(st.id)} title="刪站" style={{ border: "none", background: "none", color: "#cfc5b0", cursor: "pointer", fontSize: 10, padding: 0, verticalAlign: "top" }}>×</button>}
+                              style={{ width: Math.max(64, st.name.length * 14), maxWidth: 150, border: "none", background: "transparent", textAlign: "center", fontWeight: 700, fontSize: 12.5, color: C.text, outline: "none", letterSpacing: 0.3 }} />
+                            {canEdit && <button onClick={() => delStation(st.id)} title="刪站" style={{ border: "none", background: "none", color: "#cfc5b0", cursor: "pointer", fontSize: 12, padding: "0 2px", verticalAlign: "top" }}>×</button>}
                           </th>
                         ))}
                         <th style={TH}>人數</th><th style={TH}>人力成本</th><th style={TH}>日均營收</th><th style={TH}>成本率</th>
@@ -995,10 +995,10 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
                         </tr>
                       </tbody>
                     </table>
-                  </div>
+                  </div></div>
                 );
               })()}
-              <div style={{ fontSize: 10.5, color: C.faint, marginTop: 6 }}>備料/收班沒有營收是正常的——成本已算進「合計」整體成本率；合計列站別欄＝該站每日人力成本。</div>
+              <div style={{ fontSize: 12, color: C.faint, marginTop: 8 }}>備料/收班沒有營收是正常的——成本已算進「合計」整體成本率；合計列站別欄＝該站每日人力成本。</div>
             </div>
             {/* ②.5 正職 vs PT 建議配置（張良 2026-09-11）：底盤人力=正職、尖峰增援=PT */}
             <div style={box}>
@@ -1016,27 +1016,27 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
                 return (
                   <>
                     <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 8 }}>
-                      <span style={{ fontSize: 12.5, fontWeight: 700, color: C.text, letterSpacing: 0.3 }}>正職 vs PT 建議配置</span>
-                      <span style={{ fontSize: 11, color: C.faint }}>正職＝10-20 全程底盤人力；超出底盤的時段＝PT 增援</span>
-                      <span style={{ fontSize: 12, color: C.text, marginLeft: "auto" }}>正職
+                      <span style={{ fontSize: 14.5, fontWeight: 800, color: C.text, letterSpacing: 0.3 }}>正職 vs PT 建議配置</span>
+                      <span style={{ fontSize: 12.5, color: C.faint }}>正職＝10-20 全程底盤人力；超出底盤的時段＝PT 增援</span>
+                      <span style={{ fontSize: 14, color: C.text, marginLeft: "auto", fontWeight: 600 }}>正職
                         <input type="number" min="0" max="9" value={ft} disabled={!canEdit} onChange={e => saveL({ ...L, ft: Math.max(0, Math.min(9, parseInt(e.target.value || "0", 10) || 0)) })}
-                          style={{ width: 44, margin: "0 4px", border: `1px solid ${C.line}`, borderRadius: 6, padding: "3px 6px", textAlign: "center", fontSize: 12.5, fontFamily: MONOF, background: "#fff", color: C.text }} /> 人
+                          style={{ width: 56, margin: "0 6px", border: `1px solid ${C.line}`, borderRadius: 8, padding: "6px 6px", textAlign: "center", fontSize: 15, fontWeight: 700, fontFamily: MONOF, fontVariantNumeric: "tabular-nums", background: "#fff", color: C.text }} /> 人
                       </span>
                     </div>
                     <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
                       <div style={{ flex: "1 1 220px", border: `1px solid ${C.line}`, borderRadius: 8, padding: "10px 14px", background: "#fff" }}>
-                        <div style={{ fontSize: 11, color: C.faint, fontWeight: 600, letterSpacing: 0.5 }}>正職（底盤）</div>
-                        <div style={{ fontSize: 19, fontWeight: 800, color: C.text, fontFamily: MONOF, marginTop: 2 }}>{ft} 人 × 10h ＝ {ftMH} 人時</div>
-                        <div style={{ fontSize: 11, color: C.sub, marginTop: 3 }}>10:00 備料 → 20:00 收班全程在場；建議放「櫃檯」「漢堡・義麵」這種整天都要的站</div>
+                        <div style={{ fontSize: 12, color: C.faint, fontWeight: 700, letterSpacing: 0.5 }}>正職（底盤）</div>
+                        <div style={{ fontSize: 21, fontWeight: 800, color: C.text, fontFamily: MONOF, marginTop: 2 }}>{ft} 人 × 10h ＝ {ftMH} 人時</div>
+                        <div style={{ fontSize: 12.5, color: C.sub, marginTop: 4, lineHeight: 1.6 }}>10:00 備料 → 20:00 收班全程在場；建議放「櫃檯」「漢堡・義麵」這種整天都要的站</div>
                       </div>
                       <div style={{ flex: "1 1 220px", border: `1px solid ${C.line}`, borderRadius: 8, padding: "10px 14px", background: "#fff" }}>
-                        <div style={{ fontSize: 11, color: C.faint, fontWeight: 600, letterSpacing: 0.5 }}>PT（尖峰增援）</div>
-                        <div style={{ fontSize: 19, fontWeight: 800, color: C.blue, fontFamily: MONOF, marginTop: 2 }}>{ptMH} 人時 ＝ {fmt(ptMH * wage)}/日</div>
-                        <div style={{ fontSize: 11, color: C.sub, marginTop: 3 }}>{segs.length ? segs.map(sg => `${sg.start}-${sg.end}點 +${sg.extra}人`).join("、") : "目前配置不需要 PT"}</div>
+                        <div style={{ fontSize: 12, color: C.faint, fontWeight: 700, letterSpacing: 0.5 }}>PT（尖峰增援）</div>
+                        <div style={{ fontSize: 21, fontWeight: 800, color: C.blue, fontFamily: MONOF, marginTop: 2 }}>{ptMH} 人時 ＝ {fmt(ptMH * wage)}/日</div>
+                        <div style={{ fontSize: 12.5, color: C.sub, marginTop: 4, lineHeight: 1.6 }}>{segs.length ? segs.map(sg => `${sg.start}-${sg.end}點 +${sg.extra}人`).join("、") : "目前配置不需要 PT"}</div>
                       </div>
                       <div style={{ flex: "1 1 220px", border: `1px solid ${C.line}`, borderRadius: 8, padding: "10px 14px", background: "#fff" }}>
-                        <div style={{ fontSize: 11, color: C.faint, fontWeight: 600, letterSpacing: 0.5 }}>對照</div>
-                        <div style={{ fontSize: 12, color: C.sub, marginTop: 4, lineHeight: 1.7 }}>
+                        <div style={{ fontSize: 12, color: C.faint, fontWeight: 700, letterSpacing: 0.5 }}>對照</div>
+                        <div style={{ fontSize: 12.5, color: C.sub, marginTop: 4, lineHeight: 1.7 }}>
                           配置表需求 {totalN} 人時／正職＋PT 供給 {ftMH + ptMH} 人時{ftMH + ptMH > totalN ? <span style={{ color: C.amber }}>（正職離峰多出 {ftMH + ptMH - totalN} 人時＝備餐/清潔/訓練緩衝）</span> : " ✓"}
                           {idle.length > 0 && <span style={{ color: C.amber }}>；{idle.map(h => `${h}-${h + 1}`).join("、")} 排的人比正職少——正職在場就順店，不用再排 PT</span>}
                         </div>
@@ -1048,26 +1048,26 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
             </div>
             {/* ③ 每站分析：站的負責品類（點品類籤切換歸屬）→ 日均銷售額 vs 該站人力成本 */}
             <div style={box}>
-              <div style={{ fontSize: 11.5, fontWeight: 700, color: C.sub, marginBottom: 8 }}>🏷 每站人力成本率 <span style={{ fontWeight: 400, color: C.faint }}>點品類籤＝指給這個站；櫃檯/控單這類全店共用站不掛品類，成本按營收占比分攤（灰字）</span></div>
+              <div style={{ fontSize: 14.5, fontWeight: 800, color: C.text, marginBottom: 8 }}>每站人力成本率 <span style={{ fontWeight: 400, color: C.faint }}>點品類籤＝指給這個站；櫃檯/控單這類全店共用站不掛品類，成本按營收占比分攤（灰字）</span></div>
               {L.stations.map(st => { const rev = stRevAvg(st); const cost = colCost(st.id); const share = mappedRev > 0 && commonCost > 0 && rev > 0 ? Math.round(commonCost * rev / mappedRev) : 0; return (
                 <div key={st.id} style={{ border: `1px solid ${C.line}`, borderRadius: 8, padding: "8px 12px", marginBottom: 8, background: "#fff" }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-                    <b style={{ fontSize: 13, color: C.text }}>{st.name}</b>
-                    <span style={{ fontSize: 11.5, color: C.sub }}>每日人力 {fmt(cost)}{share ? <span style={{ color: C.faint }}>＋分攤 {fmt(share)}</span> : ""}</span>
-                    {normCats(st).length > 0 && <span style={{ fontSize: 11.5, color: C.sub }}>日均銷售 {fmt(rev)}</span>}
+                    <b style={{ fontSize: 14.5, color: C.text }}>{st.name}</b>
+                    <span style={{ fontSize: 13, color: C.sub }}>每日人力 {fmt(cost)}{share ? <span style={{ color: C.faint }}>＋分攤 {fmt(share)}</span> : ""}</span>
+                    {normCats(st).length > 0 && <span style={{ fontSize: 13, color: C.sub }}>日均銷售 {fmt(rev)}</span>}
                     {normCats(st).length > 0 && <span style={{ fontSize: 12 }}>{pctCell(pct(cost + share, rev))}</span>}
                     {normCats(st).length === 0 && <span style={{ fontSize: 11, color: C.faint }}>全店共用站（不掛品類）</span>}
                   </div>
                   {canEdit && (
                     <div style={{ display: "flex", gap: 5, flexWrap: "wrap", marginTop: 6 }}>
                       {allCats.map(c => { const on = normCats(st).includes(c); return (
-                        <button key={c} onClick={() => toggleCat(st.id, c)} style={{ border: `1px solid ${on ? "#6b4a86" : C.line}`, background: on ? "#6b4a86" : "transparent", color: on ? "#fff" : C.faint, borderRadius: 10, padding: "1px 8px", fontSize: 10.5, fontWeight: 600, cursor: "pointer" }}>{c}<span style={{ opacity: 0.7, marginLeft: 3 }}>{fmt(catAvg(c))}</span></button>
+                        <button key={c} onClick={() => toggleCat(st.id, c)} style={{ border: `1px solid ${on ? "#6b4a86" : C.line}`, background: on ? "#6b4a86" : "transparent", color: on ? "#fff" : C.faint, borderRadius: 12, padding: "4px 12px", fontSize: 12.5, fontWeight: 600, cursor: "pointer" }}>{c}<span style={{ opacity: 0.7, marginLeft: 3 }}>{fmt(catAvg(c))}</span></button>
                       ); })}
                     </div>
                   )}
                 </div>
               ); })}
-              <div style={{ fontSize: 11.5, color: C.sub, padding: "6px 2px" }}>
+              <div style={{ fontSize: 13, color: C.sub, padding: "8px 2px" }}>
                 整體：日均營收 <b style={{ fontFamily: MONOF }}>{fmt(dayRevAvg)}</b>・全日人力 <b style={{ fontFamily: MONOF }}>{fmt(totalCost)}</b>（{totalN} 人時 × {wage}）・整體人力成本率 {pctCell(pct(totalCost, dayRevAvg))}
                 <span style={{ color: C.faint }}>　品類日均取近 {catDayN} 個營業日；＋89 套餐營收未掛站（要掛點上面的籤）。</span>
               </div>
