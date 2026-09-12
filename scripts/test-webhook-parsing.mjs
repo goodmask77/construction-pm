@@ -132,6 +132,11 @@ ok('json 區塊壞掉沒解析出動作 → 加警語', falseDoneWarning('幫你
 ok('講「上次已記好」（回顧過去）→ 不誤判', falseDoneWarning('上次那筆已記好了，在採購大項裡。', 0) === '')
 ok('一般回答 → 不加警語', falseDoneWarning('今天進度 87%，目前沒有逾期任務。', 0) === '')
 ok('真的有執行動作 → 不加警語', falseDoneWarning('幫你記這筆👇', 2) === '')
+// 仿冒「✅ 已直接記好」→ 消毒改標假清單（二次翻車防呆）
+const { sanitizeFakeDone } = await import('../api/line-webhook.js')
+const fake = sanitizeFakeDone('好，確實送出一次👇\n✅ 已直接記好（團隊工作·採購）：\n📝 12吋披薩圓盒')
+ok('仿冒系統核可章 → 改標 ❌ 假清單', fake.includes('❌') && fake.includes('假清單') && !fake.includes('✅ 已直接記好'))
+ok('沒仿冒 → 原文不動', sanitizeFakeDone('今天進度 87%') === '今天進度 87%')
 
 if (fails) { console.error(`\n❌ ${fails} 個測試失敗`); process.exit(1) }
 console.log('\n✅ test-webhook-parsing 全過')

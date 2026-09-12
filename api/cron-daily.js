@@ -122,6 +122,21 @@ export default async function handler(req, res) {
   // 可選：用 CRON_SECRET 防止外部亂打
   const secret = clean(process.env.CRON_SECRET)
   if (secret && req.headers['authorization'] !== `Bearer ${secret}`) return res.status(401).json({ ok: false })
+  // 一次性補建（2026-09-12 DD 假完成翻車的漏網任務；內容寫死無注入面、防重複，建完下批部署移除）
+  if (req.query?.seed === 'pizza12') {
+    const kvSet = async (id, obj) => { const r = await fetch(`${SB_URL}/rest/v1/pm_documents`, { method: 'POST', headers: { apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}`, 'content-type': 'application/json', Prefer: 'resolution=merge-duplicates' }, body: JSON.stringify({ id, data: { v: JSON.stringify(obj) }, editor: 'claude-seed', updated_at: new Date().toISOString() }) }); return r.ok }
+    const title = '12吋披薩圓盒', url = 'https://www.bagasseproduct.com/'
+    const existing = await listPrefix('sp_team_pm_task_')
+    if (existing.some(t => t && t.title === title)) return res.status(200).json({ ok: true, skipped: '已存在，不重建' })
+    const catsRaw = await kvGet('sp_team_pm_data')
+    const cats = Array.isArray(catsRaw) ? catsRaw : []
+    const cat = cats.find(c => c.name === '採購-包材') || cats.find(c => /採購/.test(c.name || ''))
+    const id = 't-seed' + Date.now().toString(36)
+    const now = new Date().toISOString()
+    const okw = await kvSet('sp_team_pm_task_' + id, { id, title, note: url, status: 'todo', catId: cat ? cat.id : '__inbox__', start: '', due: '', priority: 'normal', tags: ['包材'], ord: Math.min(0, ...existing.map(t => t?.ord ?? 0)) - 1, createdAt: now, updatedAt: now })
+    try { const cur = await kvGet('sp_team_pm_activity'); const arr = Array.isArray(cur) ? cur : []; await kvSet('sp_team_pm_activity', [{ ts: now, user: 'Claude(補建)', action: '新增', detail: `補建任務「${title}」（DD 假完成翻車補救，備註放連結）` }, ...arr].slice(0, 200)) } catch (_) {}
+    return res.status(200).json({ ok: okw, cat: cat?.name || '收件匣', id })
+  }
   // 同一支 cron 跑兩班：台北中午前＝早班（同步＋速報＋任務簡報）、中午後＝晚班（只追未完成任務）
   const tpeHour = Number(new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Taipei', hour: '2-digit', hour12: false }).format(new Date()))
   const evening = req.query?.mode === 'evening' || (req.query?.mode !== 'morning' && tpeHour >= 12)

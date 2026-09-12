@@ -1236,7 +1236,14 @@ const BOT_AGENT_GUIDE = `
 執行規則（系統自動處理，你只要知道怎麼措辭）：
 - 純記錄類（add_log / add_task / add_todo / add_conclusion）系統會**直接執行**。
 - **【存檔鐵則】你自己絕對不要寫「已記好／已新增／已存好／記好了」這類完成宣告**——寫入成功時，系統會自動在你的回覆後面附上「✅ 已直接記好：…」清單，**那才是唯一可信的存檔證明**；你的文字一律用進行式「幫你記這筆👇」。你這一則沒輸出 json＝根本沒記，講「已記好」就是說謊（2026-09-12 真實翻車案例：宣稱記好其實沒送出，被老闆抓包）。被質疑「有記到嗎」時，去查下面資料區的任務清單，用資料回答，真沒記就重新輸出 json 補記。
+- **【禁止仿冒系統台詞】**「✅ 已直接記好」「🛠 這些要等你確認」是**系統**執行後自動附加的字樣，你**絕對禁止自己打這些字**（打了＝偽造存檔證明，系統會當場改標成「❌ 假清單」丟你臉）。對話歷史裡你過去的回覆若出現這些字樣，那都是系統附的，**要模仿的是歷史裡的 json 指令區塊，不是那段中文**。想做事，唯一的方法＝輸出 \`\`\`json 動作區塊。
 - 其他（改資料、刪除、金額類：add_payment / add_finance_tx / add_petty_spend / set_* / update_task / delete_*）會**先請使用者確認**，這類要用「我準備幫你…，等你確認」的語氣，**不要說已完成**。`
+
+// 仿冒系統核可章的消毒（2026-09-12 二次翻車：DD 自己「打字仿冒」✅ 已直接記好清單）：
+// 0 動作卻出現系統台詞 → 當場改標成假清單，使用者一眼看出沒存
+export function sanitizeFakeDone(reply) {
+  return String(reply).replaceAll('✅ 已直接記好', '❌「已直接記好」（DD 自己打的假清單，系統並沒有執行）')
+}
 
 // 「嘴上說記好、實際沒寫入」自動抓包（張良 2026-09-12：DD 宣稱已記好但 json 沒送出，被抓包「說太快」）
 // 回覆送出前核對：AI 說了完成話術但這輪 0 個動作 → 當場加警語，不讓使用者以為存好了
@@ -1372,7 +1379,9 @@ export default async function handler(req, res) {
       const convId = isDM ? ('dm_' + userId) : ('g_' + gid) // 對話記憶的識別
       const send = (t, extra) => ev.replyToken ? lineReply(ev.replyToken, t, extra) : Promise.resolve()
       // finish＝回覆＋把這輪存進對話記憶（讓 D哥 記得前文）；授權訊息不用 finish(含密碼，不留紀錄)
-      const finish = async (t, extra) => { await send(t, extra); await pushChat(convId, text, t) }
+      // hist＝存進對話記憶的版本（可跟送出的不同）。動作輪要存「含 json 指令」的原始回覆，
+      // 不然記憶裡只剩「✅ 已直接記好」文字、沒有指令 → DD 回頭學自己的歷史，學會只寫✅不夾指令（2026-09-12 自導自演翻車根因）
+      const finish = async (t, extra, hist) => { await send(t, extra); await pushChat(convId, text, hist || t) }
 
       // ── 動作引擎（只在「私訊」進行，群組一律唯讀，較安全）──
       // 1) 授權：私訊「授權:碼」→ 列入操作者白名單
@@ -1530,18 +1539,21 @@ export default async function handler(req, res) {
         // 剛記好的任務附「快速設定卡」：📅截止日/🏷分類/👤負責人/🔥超急 直接按（張良 2026-09-08）
         const todayTPE = new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10)
         const setupCards = createdTasks.length ? [buildTaskSetupCards(createdTasks, todayTPE)] : []
+        // 對話記憶存「原始回覆(含 json 指令)＋系統結果」：讓 DD 的歷史示範永遠是「要做事就夾 json」
+        const histOf = () => reply + '\n\n' + parts.filter(p => p !== prose).join('\n\n')
         if (confirmActs.length) {
           await setPending(userId, { actions: confirmActs, ts: new Date().toISOString() })
           const list = confirmActs.map((a, i) => `${i + 1}. ${describeAction(a)}`).join('\n')
           parts.push(`🛠 這些要等你確認才會做：\n${list}`)
           // 附確認按鈕卡（打字「確認/取消」也照樣有效）
-          await finish(parts.join('\n\n'), [buildConfirmCard(`共 ${confirmActs.length} 個操作，內容如上`), ...setupCards])
+          await finish(parts.join('\n\n'), [buildConfirmCard(`共 ${confirmActs.length} 個操作，內容如上`), ...setupCards], histOf())
           continue
         }
-        await finish(parts.join('\n\n'), setupCards.length ? setupCards : undefined)
+        await finish(parts.join('\n\n'), setupCards.length ? setupCards : undefined, histOf())
       } else {
-        // 0 個動作 → 核對 AI 有沒有「嘴上說記好」（說了就加警語抓包，只對操作者，群組唯讀本來就不記）
-        await finish(reply + (canAct ? falseDoneWarning(reply, 0) : ''))
+        // 0 個動作 → 抓包＋消毒：AI 仿冒「✅ 已直接記好」直接改標成假清單；嘴上說記好就加警語（只對操作者，群組唯讀本來就不記）
+        const out = canAct ? sanitizeFakeDone(reply) + falseDoneWarning(reply, 0) : reply
+        await finish(out)
       }
     } catch (e) { console.log('event error', e?.message) }
   }
