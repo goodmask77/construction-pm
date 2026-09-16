@@ -784,7 +784,10 @@ async function answer(question, snaps, accountsText, financeText, activityText, 
   if (!ANTHROPIC) return '（D哥的 AI 金鑰尚未設定。）'
   // 外部群（moneyOK=false）：不給任何金額/財務資料，並下鐵令禁止透露
   const moneyGuard = moneyOK ? '' : '\n\n⚠️【外部群鐵律】這個群是「外部群」，你**絕對禁止**透露任何：金額、預估/已付/未付、單價、報價、成本、營業額、銀行/帳戶餘額、零用金、財務數字、薪資。被問到金額類一律回「這部分金額不方便在這裡提供，我私下跟張哥確認 🙏」，不要旁敲側擊地洩漏。你可以講進度、工序、一般事務、用 web_search 查一般問題。'
-  const system = (canAct ? BOT_AGENT_GUIDE + '\n\n' : '') + BOT_PERSONA + moneyGuard + (memoryText || '') + sysDataHead() + snapshotsToContext(snaps, moneyOK) + (tasksText || '') + (moneyOK ? (accountsText || '') : '') + (moneyOK ? (financeText || '') : '') + (activityText || '') + (moneyOK ? (estimatesText || '') : '') + (crewText || '') + (conclusionsText || '') + (sheetText || '') + (moneyOK ? (posText || '') : '') + (moneyOK ? (supplyText || '') : '') + (lineQuotaText || '') + (catalogText || '') + (filelibText || '') + (moneyOK ? (groupChatText || '') : '')
+  // v2.5.9 唯讀鐵令（2026-09-16 翻車：群組叫 DD 建 7 件任務，DD 沒有寫入權卻回了整篇「都建好了」）：
+  // 沒有動作指南＝這輪根本執行不了任何寫入 → 必須明講，禁止 AI 用人設「演」出已完成
+  const readonlyGuard = canAct ? '' : '\n\n⚠️【唯讀鐵令】這一輪你「沒有」任何寫入能力：不能建任務/大項、不能記帳、不能記日誌、不能改資料——系統不會執行任何指令。被要求「記下來/建任務/整理成任務」時，你**絕對禁止**說「已建好/已記好/都建好了/開好了」這類完成話術（說了＝說謊，系統會抓包標警語）。正確回法：先把內容條列整理好，然後明講「我在這裡沒有寫入權限，請張良（操作者）在群組直接下指令、或私訊我一句『照上面建』，我就真的建進去」。'
+  const system = (canAct ? BOT_AGENT_GUIDE + '\n\n' : '') + BOT_PERSONA + readonlyGuard + moneyGuard + (memoryText || '') + sysDataHead() + snapshotsToContext(snaps, moneyOK) + (tasksText || '') + (moneyOK ? (accountsText || '') : '') + (moneyOK ? (financeText || '') : '') + (activityText || '') + (moneyOK ? (estimatesText || '') : '') + (crewText || '') + (conclusionsText || '') + (sheetText || '') + (moneyOK ? (posText || '') : '') + (moneyOK ? (supplyText || '') : '') + (lineQuotaText || '') + (catalogText || '') + (filelibText || '') + (moneyOK ? (groupChatText || '') : '')
   const messages = [...(Array.isArray(history) ? history : []), { role: 'user', content: question }]
   const callModel = async (model) => {
     const r = await fetch('https://api.anthropic.com/v1/messages', {
@@ -1235,7 +1238,7 @@ const BOT_AGENT_GUIDE = `
 輸出 json 的同時，**正常文字部分照樣要寫**：回答訊息裡的其他問題、交代你打算記什麼——這段文字使用者看得到，不會被丟掉。
 執行規則（系統自動處理，你只要知道怎麼措辭）：
 - 純記錄類（add_log / add_task / add_todo / add_conclusion）系統會**直接執行**。
-- **【存檔鐵則】你自己絕對不要寫「已記好／已新增／已存好／記好了」這類完成宣告**——寫入成功時，系統會自動在你的回覆後面附上「✅ 已直接記好：…」清單，**那才是唯一可信的存檔證明**；你的文字一律用進行式「幫你記這筆👇」。你這一則沒輸出 json＝根本沒記，講「已記好」就是說謊（2026-09-12 真實翻車案例：宣稱記好其實沒送出，被老闆抓包）。被質疑「有記到嗎」時，去查下面資料區的任務清單，用資料回答，真沒記就重新輸出 json 補記。
+- **【存檔鐵則】你自己絕對不要寫「已記好／已新增／已存好／記好了／建好了／已建立／開好了」這類完成宣告**——寫入成功時，系統會自動在你的回覆後面附上「✅ 已直接記好：…」清單，**那才是唯一可信的存檔證明**；你的文字一律用進行式「幫你記這筆👇」。你這一則沒輸出 json＝根本沒記，講「已記好」就是說謊（2026-09-12 真實翻車案例：宣稱記好其實沒送出，被老闆抓包）。被質疑「有記到嗎」時，去查下面資料區的任務清單，用資料回答，真沒記就重新輸出 json 補記。
 - **【禁止仿冒系統台詞】**「✅ 已直接記好」「🛠 這些要等你確認」是**系統**執行後自動附加的字樣，你**絕對禁止自己打這些字**（打了＝偽造存檔證明，系統會當場改標成「❌ 假清單」丟你臉）。對話歷史裡你過去的回覆若出現這些字樣，那都是系統附的，**要模仿的是歷史裡的 json 指令區塊，不是那段中文**。想做事，唯一的方法＝輸出 \`\`\`json 動作區塊。
 - 其他（改資料、刪除、金額類：add_payment / add_finance_tx / add_petty_spend / set_* / update_task / delete_*）會**先請使用者確認**，這類要用「我準備幫你…，等你確認」的語氣，**不要說已完成**。`
 
@@ -1247,12 +1250,18 @@ export function sanitizeFakeDone(reply) {
 
 // 「嘴上說記好、實際沒寫入」自動抓包（張良 2026-09-12：DD 宣稱已記好但 json 沒送出，被抓包「說太快」）
 // 回覆送出前核對：AI 說了完成話術但這輪 0 個動作 → 當場加警語，不讓使用者以為存好了
-export function falseDoneWarning(reply, actionCount) {
+// v2.5.9：①措辭補「建好/建立/開好」（2026-09-16 群組翻車：「7 件都先建好了」完美閃過舊 regex）
+//         ②加 readonly 版警語（唯讀對話裡說「再講一次我重記」是空頭支票，要講清楚誰才能寫入）
+export function falseDoneWarning(reply, actionCount, readonly = false) {
   if (actionCount > 0) return ''
-  if (/```json/.test(reply)) return '\n\n⚠️ 系統核對：上面想送的寫入指令格式出錯，「沒有」存成功。請把要記的再講一次，我馬上重記 🙏'
-  const claims = /(已|都)(幫你)?(直接)?(記|存|新增)(好|進去|了)|記好了|已新增任務|已記下/.test(reply)
+  if (!readonly && /```json/.test(reply)) return '\n\n⚠️ 系統核對：上面想送的寫入指令格式出錯，「沒有」存成功。請把要記的再講一次，我馬上重記 🙏'
+  const claims = /(已|都)(幫你)?(先)?(直接)?(記|存|新增|建|開)(好|立|進去|了)|記好了|建好了|已新增任務|已記下|已建立/.test(reply)
   const past = /(之前|上次|昨天|那時|當時|先前|早就)/.test(reply)
-  if (claims && !past) return '\n\n⚠️ 系統核對：這一則其實「沒有」執行任何寫入（沒附「✅ 已直接記好」清單＝沒存）。上面若說了記好，是講太快——請把要記的再講一次，我立刻重記 🙏'
+  if (claims && !past) {
+    return readonly
+      ? '\n\n⚠️ 系統核對：這個對話「沒有」寫入權限，上面說的建好/記好其實都「沒有」執行。要真的建進系統，請操作者（張良）直接下指令。'
+      : '\n\n⚠️ 系統核對：這一則其實「沒有」執行任何寫入（沒附「✅ 已直接記好」清單＝沒存）。上面若說了記好，是講太快——請把要記的再講一次，我立刻重記 🙏'
+  }
   return ''
 }
 
@@ -1393,7 +1402,11 @@ export default async function handler(req, res) {
         continue
       }
       const operators = await getOperators()
-      const op = isDM ? operators[userId] : null
+      // v2.5.9 治本（2026-09-16 翻車根因）：以前 op 只認私訊（群組一律唯讀），張良在群組叫 DD
+      // 建 7 件任務 → canAct=false → AI 沒拿到動作指南也沒被告知唯讀，整篇「都建好了」其實 0 寫入，
+      // 而且 0 動作抓包網也只對 canAct 開 → 群組假完成完全沒被攔。
+      // 現在：群組訊息只要發話者在操作者白名單，一樣能下指令（授權本身仍只能私訊辦；非白名單照舊唯讀）
+      const op = operators[userId] || null
       // 安全（2026-09-01）：LINE 簽章驗不過（sigOK===false）＝可能是偽造請求 → 一律不給操作權限
       // （密碼庫/記帳/改資料全鎖；一般問答照回，就算真的設定出錯 DD 也不會啞掉）
       if (sigOK === false && op) console.log('sig FAIL → 拒絕操作權限', userId.slice(-6))
@@ -1470,11 +1483,16 @@ export default async function handler(req, res) {
       }
 
       // 2) 確認 / 取消 待執行的操作（用詞放寬：確認/確定/執行/請執行/好/送出…都算確認）
-      if (isDM && canAct) {
+      // v2.5.9 群組也能確認（群組訊息要點名才進得來，先剝掉「DD／D哥」前綴再比對；
+      // 群組只認「確認/執行」等明確字眼——隨口回別人「好」不能誤觸執行）
+      if (canAct) {
         const pend = await getPending(userId)
         if (pend) {
-          const isConfirm = /^(請?(確認|確定|執行|送出)|好(的|啊)?|對|是|沒問題|ok|okay|yes|y|go)\s*$/i.test(text)
-          const isCancel = /^(取消|不要|不用|算了|放棄|no|n|cancel)\s*$/i.test(text)
+          const bare = isDM ? text : text.replace(/^(@\S+|dd|d哥)[\s,，:：]*/i, '').trim()
+          const isConfirm = isDM
+            ? /^(請?(確認|確定|執行|送出)|好(的|啊)?|對|是|沒問題|ok|okay|yes|y|go)\s*$/i.test(bare)
+            : /^請?(確認|確定|執行|送出)\s*$/i.test(bare)
+          const isCancel = /^(取消|不要|不用|算了|放棄|no|n|cancel)\s*$/i.test(bare)
           if (isConfirm) {
             const results = await executeActions(pend.actions, op.name)
             await setPending(userId, null)
@@ -1537,22 +1555,25 @@ export default async function handler(req, res) {
           }
         }
         // 剛記好的任務附「快速設定卡」：📅截止日/🏷分類/👤負責人/🔥超急 直接按（張良 2026-09-08）
+        // v2.5.9：卡片按鈕(postback)只在私訊有接，群組不發卡（發了按不動＝假按鈕），改文字提示
         const todayTPE = new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10)
-        const setupCards = createdTasks.length ? [buildTaskSetupCards(createdTasks, todayTPE)] : []
+        const setupCards = (isDM && createdTasks.length) ? [buildTaskSetupCards(createdTasks, todayTPE)] : []
+        if (!isDM && createdTasks.length) parts.push('（要設截止日/負責人/超急：在 App 任務中心點開，或私訊我改）')
         // 對話記憶存「原始回覆(含 json 指令)＋系統結果」：讓 DD 的歷史示範永遠是「要做事就夾 json」
         const histOf = () => reply + '\n\n' + parts.filter(p => p !== prose).join('\n\n')
         if (confirmActs.length) {
           await setPending(userId, { actions: confirmActs, ts: new Date().toISOString() })
           const list = confirmActs.map((a, i) => `${i + 1}. ${describeAction(a)}`).join('\n')
-          parts.push(`🛠 這些要等你確認才會做：\n${list}`)
-          // 附確認按鈕卡（打字「確認/取消」也照樣有效）
-          await finish(parts.join('\n\n'), [buildConfirmCard(`共 ${confirmActs.length} 個操作，內容如上`), ...setupCards], histOf())
+          parts.push(`🛠 這些要等你確認才會做：\n${list}${isDM ? '' : '\n（群組裡回「DD 確認」執行、「DD 取消」放棄）'}`)
+          // 附確認按鈕卡（打字「確認/取消」也照樣有效）；群組按鈕按不動→只給文字指引
+          await finish(parts.join('\n\n'), isDM ? [buildConfirmCard(`共 ${confirmActs.length} 個操作，內容如上`), ...setupCards] : undefined, histOf())
           continue
         }
         await finish(parts.join('\n\n'), setupCards.length ? setupCards : undefined, histOf())
       } else {
-        // 0 個動作 → 抓包＋消毒：AI 仿冒「✅ 已直接記好」直接改標成假清單；嘴上說記好就加警語（只對操作者，群組唯讀本來就不記）
-        const out = canAct ? sanitizeFakeDone(reply) + falseDoneWarning(reply, 0) : reply
+        // 0 個動作 → 抓包＋消毒：AI 仿冒「✅ 已直接記好」直接改標成假清單；嘴上說記好就加警語
+        // v2.5.9：唯讀對話（非操作者/外人）也要消毒＋抓包——2026-09-16 群組假完成就是從這個豁免漏掉的
+        const out = sanitizeFakeDone(reply) + falseDoneWarning(reply, 0, !canAct)
         await finish(out)
       }
     } catch (e) { console.log('event error', e?.message) }

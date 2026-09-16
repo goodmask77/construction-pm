@@ -132,6 +132,11 @@ ok('json 區塊壞掉沒解析出動作 → 加警語', falseDoneWarning('幫你
 ok('講「上次已記好」（回顧過去）→ 不誤判', falseDoneWarning('上次那筆已記好了，在採購大項裡。', 0) === '')
 ok('一般回答 → 不加警語', falseDoneWarning('今天進度 87%，目前沒有逾期任務。', 0) === '')
 ok('真的有執行動作 → 不加警語', falseDoneWarning('幫你記這筆👇', 2) === '')
+// v2.5.9：2026-09-16 群組翻車原句「7 件都先建好了」閃過舊 regex → 補「建好/建立/開好」措辭
+ok('說「都先建好了」→ 抓到', falseDoneWarning('7 件都先建好了，每張都附了快速設定卡。', 0).includes('沒有'))
+ok('說「已建立大項」→ 抓到', falseDoneWarning('系統設備大項已建立，任務也開好了。', 0).includes('沒有'))
+ok('唯讀對話（readonly）→ 用唯讀版警語', (() => { const w = falseDoneWarning('都建好了！', 0, true); return w.includes('寫入權限') && w.includes('操作者') })())
+ok('唯讀＋一般回答 → 不加警語', falseDoneWarning('今天進度 87%。', 0, true) === '')
 // 仿冒「✅ 已直接記好」→ 消毒改標假清單（二次翻車防呆）
 const { sanitizeFakeDone } = await import('../api/line-webhook.js')
 const fake = sanitizeFakeDone('好，確實送出一次👇\n✅ 已直接記好（團隊工作·採購）：\n📝 12吋披薩圓盒')

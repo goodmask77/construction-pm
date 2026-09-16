@@ -343,6 +343,45 @@ export default async function handler(req, res) {
     await announceChanged()
     return res.status(200).json({ ok: true, moved: hit.length, titles: hit.map(({ t }) => t.title) })
   }
+  // 任務補建口（同金鑰，張良 2026-09-17：DD 在群組「假完成」7 件任務——群組唯讀但 AI 演成建好了。
+  // webhook 已治本；這口把當天答應的 7 件補真的建進團隊空間）：?taskfill=<key>[&dry=1]，用標題去重可重跑
+  if (req.query?.taskfill) {
+    const mk = (process.env.MENU_PROBE_KEY || '').trim()
+    if (!mk || String(req.query.taskfill) !== mk) return res.status(403).json({ ok: false })
+    const bid2 = (p) => p + Date.now().toString(36) + Math.random().toString(36).slice(2, 6)
+    const cats = (await kvGet('sp_team_pm_data')) || []
+    let sysCat = cats.find(c => c.name === '系統設備')
+    const dry = !!String(req.query.dry || '')
+    if (!sysCat && !dry) { sysCat = { id: 'cat-' + bid2(''), order: cats.length, name: '系統設備', budget: 0, status: 'pending', items: [] }; cats.push(sysCat); await kvPut('sp_team_pm_data', cats, '任務補建口') }
+    const toolCat = cats.find(c => c.name === '採購-器具'), formCat = cats.find(c => c.name === '表單')
+    const FILL = [
+      { title: 'KDS 是否導入（待討論）', note: '缺細節：哪間店、卡點（成本／POS整合／流程）。可等 POS 延遲/退單釐清後一起評估，KDS 可能就是解法之一。', cat: sysCat },
+      { title: 'POS 退單問題', note: '退單會出另一張不同號碼的單、KDS 也會顯示；正餐期炸單容易誤做到退單、貼紙已出要人進去撕。待討論更好的處理方式（9/15 小夏、Zoey 提的）。', cat: sysCat },
+      { title: 'POS 系統延遲', note: '法蘭回饋。待確認是硬體還是系統問題、廠商是否處理中。直接拖累正餐期出餐與退單誤做，建議優先。', cat: sysCat, priority: 'urgent' },
+      { title: 'POS 套餐點法', note: '是否一定要預設餐點再改。', cat: sysCat },
+      { title: '出單機／叫料提醒', note: '「單子沒了不會叫，打開機器才叫」。待張良確認是出單機紙張還是叫貨庫存提醒。', cat: sysCat },
+      { title: '奶油滾輪改刷子', note: '缺規格/數量/店別。', cat: toolCat },
+      { title: '廁所告示說明', note: 'owner 夏傳程；缺店別/數量。', cat: formCat, owner: '夏傳程' },
+    ]
+    const pat2 = 'sp_team_pm_task_'.replace(/[\\%_]/g, (m) => '\\' + m) // LIKE 的 _ 是萬用字元要跳脫（同 supplyreset 寫法）
+    const r2 = await fetch(`${SB_URL}/rest/v1/pm_documents?id=like.${encodeURIComponent(pat2)}*&select=id,data`, { headers: { apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}` } })
+    const rows2 = r2.ok ? await r2.json() : []
+    const exist = []; rows2.forEach(row => { try { exist.push(JSON.parse(row.data.v)) } catch (_) {} })
+    const have = new Set(exist.map(t => t.title))
+    let mo = 0; exist.forEach(x => { if (typeof x.ord === 'number' && x.ord < mo) mo = x.ord })
+    const made = [], skipped = []
+    for (const f of FILL) {
+      if (have.has(f.title)) { skipped.push(f.title); continue }
+      if (dry) { made.push(f.title); continue }
+      const nid = 't-' + bid2(''); mo -= 1
+      const row = { id: nid, title: f.title, note: f.note || '', status: 'todo', catId: f.cat ? f.cat.id : '__inbox__', start: '', due: '', priority: f.priority || 'normal', tags: [], ord: mo, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }
+      if (f.owner) row.owner = f.owner
+      await kvPut('sp_team_pm_task_' + nid, row, '任務補建口')
+      made.push(`${f.title} → ${f.cat ? f.cat.name : '收件匣'}`)
+    }
+    if (!dry) await announceChanged()
+    return res.status(200).json({ ok: true, dry, made, skipped, taskTotal: exist.length + (dry ? 0 : made.length) })
+  }
   // 供應鏈資料重置口（同金鑰，張良 2026-09-07：「不想要之前的版本、包材舊資料也不要，全部刪掉重做」）
   // 保留＝價格歷史(pm_ph_)出現過的廠商+品項、半成品產品+其食譜+引用到的物料卡、settings/驗收選項；其餘（舊包材庫/包材綁定/舊菜單產品/類別/舊食譜版本/孤兒物料卡/不在叫貨資料的廠商）全清
   // 安全網：動手前整包舊 db 備份到 sp_supply_pm_supply_bak_<日期>；?dry=1 只回報不動
