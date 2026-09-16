@@ -47,7 +47,7 @@ async function ichefFetchRange(sess, from, to) {
 // 同步入庫：kvGet/kvPut 由 mail-sync 傳入（共用同一條入庫＋廣播管線）。回傳 {s1:天數, s2:天數} 供 log。
 export async function syncIchef(kvGet, kvPut, days = 60) {
   const stores = [
-    ['s1', process.env.ICHEF_S1_STORE, process.env.ICHEF_S1_USER, process.env.ICHEF_S1_PASS],
+    // s1 參考店 2026-09-16 合約到期（張良確認）→ 停抓；歷史 s1 資料留在 pm_ichef 不清
     ['s2', process.env.ICHEF_S2_STORE, process.env.ICHEF_S2_USER, process.env.ICHEF_S2_PASS],
   ].filter(([, sid, acc, pw]) => sid && acc && pw)
   if (!stores.length) return null
