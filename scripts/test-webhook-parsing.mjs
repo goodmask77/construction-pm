@@ -143,5 +143,15 @@ const fake = sanitizeFakeDone('好，確實送出一次👇\n✅ 已直接記好
 ok('仿冒系統核可章 → 改標 ❌ 假清單', fake.includes('❌') && fake.includes('假清單') && !fake.includes('✅ 已直接記好'))
 ok('沒仿冒 → 原文不動', sanitizeFakeDone('今天進度 87%') === '今天進度 87%')
 
+// 年資計算（2026-09-18 翻車防呆：AI 目測年份判滿一年 → 改由程式算好餵給它）
+console.log('── 年資計算 ──')
+const { tenureOf } = await import('../api/line-webhook.js')
+const NOW = Date.UTC(2026, 8, 18) // 固定在 2026-09-18（台北）測
+ok('2025-04-02 → 1年5個月（翻車案例本人）', tenureOf('2025-04-02', NOW) === '1年5個月')
+ok('2025-09-18 → 整整1年（當天滿）', tenureOf('2025-09-18', NOW) === '1年')
+ok('2025-09-19 → 11個月（差一天不滿）', tenureOf('2025-09-19', NOW) === '11個月')
+ok('2022-01-17 → 4年8個月', tenureOf('2022-01-17', NOW) === '4年8個月')
+ok('壞日期 → 空字串不炸', tenureOf('不明', NOW) === '' && tenureOf('', NOW) === '')
+
 if (fails) { console.error(`\n❌ ${fails} 個測試失敗`); process.exit(1) }
 console.log('\n✅ test-webhook-parsing 全過')

@@ -685,6 +685,23 @@ export default async function handler(req, res) {
     }))
     return res.status(200).json({ ok: true, space: pfx || 'construction', nCats: out2.length, cats: out2 })
   }
+  // 名冊探針（唯讀＋同金鑰；張良 2026-09-18：問「入職超過一年的正職名單」，本機被 RLS 擋 →
+  // 走這裡撈名冊公開欄位自己算。刻意不回機密欄：薪資/身分證/保險/銀行/證件）：?rosterprobe=<key>
+  if (req.query?.rosterprobe) {
+    const mk = (process.env.MENU_PROBE_KEY || '').trim()
+    if (!mk || String(req.query.rosterprobe) !== mk) return res.status(403).json({ ok: false })
+    const rd = (await kvGet('sp_crew_kb_roster')) || {}
+    // 回「全部非機密欄位」（名冊欄位是動態自訂的，寫死清單會漏——第一版就漏了「職稱」）：
+    // 黑名單制擋機密：身分證/銀行/保險/薪資/投保/生日碼/檔案欄
+    const BLOCK = /身分證|銀行|薪轉|保險|投保|勞保|健保|團保|生日碼|本薪|薪資|補助|津貼/
+    const fs2 = (Array.isArray(rd.fields) ? rd.fields : []).filter(f => f.type !== 'file' && !BLOCK.test(f.label || ''))
+    const ppl = (Array.isArray(rd.people) ? rd.people : []).map(p => {
+      const o = { name: p.name, nick: p.nick || '', status: p.status || '' }
+      fs2.forEach(f => { const v = p[f.key]; if (v != null && String(v).trim()) o[f.key] = v })
+      return o
+    })
+    return res.status(200).json({ ok: true, n: ppl.length, fields: fs2.map(f => ({ key: f.key, label: f.label })), people: ppl })
+  }
   // 菜單探針（唯讀＋金鑰保護，回品名/金額 → 沒帶對 MENU_PROBE_KEY 一律 403）：?menuprobe=<key>&store=abeach|ground
   // 用途：把期間內出現過的全部品項按「日結信分類」彙總（品名/數量/套餐內/金額/出現天數），給菜單盤點/試算表用
   if (req.query?.menuprobe) {
