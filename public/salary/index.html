@@ -6,146 +6,297 @@
 <title>A Beach 360 評鑑分潤制度｜GROUN:D</title>
 <meta name="description" content="你的每一分成長，都看得見、也都算得進薪水裡——A Beach 360 評鑑分潤制度：規則、設計過程、完整公開。" />
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@600;800&family=Noto+Sans+TC:wght@400;500;700;900&family=IBM+Plex+Mono:wght@500;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@700;800;900&family=Noto+Sans+TC:wght@400;500;700;900&family=IBM+Plex+Mono:wght@500;700&display=swap" rel="stylesheet">
 <style>
-  :root{ --brand:#c5281e; --accent:#c4582a; --ink:#1d1a15; --sub:#5a5247; --paper:#f4efe5; --card:#fbf8f1; --line:#d9cfbd; --line2:#c8bca6; --soft:#fbeee6; --green:#3f7d4e; --red:#b3261e; }
-  *{ box-sizing:border-box; margin:0; padding:0; }
-  body{ background:var(--paper); color:var(--ink); font-family:'Noto Sans TC',-apple-system,sans-serif; line-height:1.75; font-size:15px; }
-  .wrap{ max-width:860px; margin:0 auto; padding:28px 18px 80px; }
-  .disp{ font-family:'Montserrat','Noto Sans TC',sans-serif; }
-  .mono{ font-family:'IBM Plex Mono',monospace; }
-  header{ text-align:center; padding:34px 10px 26px; }
-  .logo{ font-family:'Montserrat',sans-serif; font-weight:800; font-size:15px; letter-spacing:3px; color:var(--brand); }
-  h1{ font-size:clamp(24px,5vw,36px); font-weight:900; margin:14px 0 6px; letter-spacing:-.5px; }
-  .slogan{ font-size:clamp(16px,3.5vw,21px); font-weight:900; color:var(--accent); margin-top:14px; }
-  .sub{ color:var(--sub); font-size:13.5px; margin-top:8px; }
-  .tag{ display:inline-block; background:var(--accent); color:#fff; font-size:12px; font-weight:700; border-radius:4px; padding:2px 10px; letter-spacing:2px; margin-bottom:10px; }
-  section{ background:var(--card); border:1.5px solid var(--line2); border-radius:10px; padding:22px 20px; margin-top:22px; }
-  h2{ font-size:19px; font-weight:900; margin-bottom:12px; letter-spacing:-.3px; }
-  h3{ font-size:15.5px; font-weight:700; margin:16px 0 6px; }
-  p{ margin:8px 0; }
-  table{ border-collapse:collapse; width:100%; margin:12px 0; font-size:13.5px; }
-  th{ background:var(--soft); font-weight:700; font-size:12.5px; text-align:left; }
-  th,td{ border:1px solid var(--line); padding:7px 10px; vertical-align:top; }
-  tr:nth-child(even) td{ background:#fdfaf4; }
-  .num{ font-family:'IBM Plex Mono',monospace; text-align:right; white-space:nowrap; }
-  .good{ color:var(--green); font-weight:700; } .bad{ color:var(--red); font-weight:700; } .hl{ color:var(--accent); font-weight:800; }
-  .formula{ background:var(--soft); border:1.5px solid var(--line2); border-radius:8px; padding:14px 16px; font-weight:700; text-align:center; font-size:15.5px; margin:12px 0; }
-  .quote{ border-left:4px solid var(--accent); padding:6px 14px; margin:10px 0; color:var(--sub); font-size:13.5px; background:#fdfaf4; }
-  .foot{ text-align:center; color:var(--sub); font-size:12px; margin-top:40px; }
-  .big3{ font-size:16px; font-weight:800; line-height:2.2; }
-  ol,ul{ padding-left:22px; } li{ margin:6px 0; }
-  .small{ font-size:12.5px; color:var(--sub); }
-  @media(max-width:600px){ section{ padding:16px 12px; } th,td{ padding:6px 6px; } table{ font-size:12.5px; } }
+  :root{
+    --bg:#F5F3EE; --surface:#FFFFFF; --surface-warm:#F0ECE3;
+    --ink:#171714; --muted:#706C63; --line:#D8D3C8;
+    --brand:#B83A2F; --brand-dark:#872B24; --brand-soft:#F4E2DD;
+    --positive:#27734A; --positive-soft:#E6F1EA; --warning:#A85C26;
+    --dark:#1F1E1A; --dark-ink:#F7F4EC;
+    --sans:"Noto Sans TC","PingFang TC",sans-serif;
+    --disp:"Montserrat",sans-serif;
+    --mono:"IBM Plex Mono",monospace;
+    --radius:12px;
+    --shadow:0 8px 30px rgba(30,25,15,.05);
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{-webkit-text-size-adjust:100%}
+  body{background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:16px;line-height:1.8;font-weight:400}
+  .wrap{max-width:1040px;margin:0 auto;padding:0 32px}
+  .prose{max-width:720px}
+  a{color:var(--brand)}
+  a:focus-visible,summary:focus-visible{outline:2px solid var(--brand);outline-offset:2px;border-radius:4px}
+
+  /* ── Hero ── */
+  .hero{padding:84px 0 72px}
+  .logo{font-family:var(--disp);font-weight:800;font-size:14px;letter-spacing:.18em;color:var(--brand)}
+  h1{font-family:var(--sans);font-size:48px;font-weight:900;line-height:1.1;letter-spacing:-.04em;margin:22px 0 0}
+  .slogan{font-size:22px;font-weight:700;line-height:1.5;margin-top:22px}
+  .badge{display:inline-block;border:1px solid var(--line);border-radius:999px;padding:3px 14px;font-size:12px;font-weight:700;letter-spacing:.06em;color:var(--muted);margin-top:20px;background:var(--surface)}
+  .kw{display:flex;align-items:center;gap:0;margin-top:34px;flex-wrap:wrap}
+  .kw span{font-size:15px;font-weight:700;padding:2px 22px;border-left:1px solid var(--line)}
+  .kw span:first-child{border-left:0;padding-left:0}
+  .kw-sub{margin-top:10px;font-size:13px;font-weight:500;line-height:1.65;color:var(--muted)}
+
+  /* ── 章節 ── */
+  .eyebrow{font-family:var(--disp);font-size:12px;font-weight:800;letter-spacing:.12em;margin-bottom:12px}
+  .eyebrow b{color:var(--brand);font-weight:800}
+  .eyebrow span{color:var(--muted);margin-left:10px;font-family:var(--sans)}
+  h2{font-size:26px;font-weight:900;line-height:1.25;letter-spacing:-.025em;margin-bottom:14px}
+  h3{font-size:18px;font-weight:800;line-height:1.4;margin:0 0 8px}
+  p{margin:12px 0}
+  .small{font-size:13px;font-weight:500;line-height:1.65;color:var(--muted)}
+  .card{background:var(--surface);border-radius:var(--radius);box-shadow:var(--shadow);padding:40px 36px;margin-top:32px}
+  .plain{margin-top:32px;padding:36px 0 0;border-top:1px solid var(--line)}
+
+  /* ── 公式卡 ── */
+  .formula{background:var(--brand-soft);border-left:4px solid var(--brand);border-radius:var(--radius);padding:18px 22px;margin:14px 0 0;font-size:19px;font-weight:700;line-height:1.7;font-family:var(--mono),var(--sans)}
+  .formula + p{margin-top:16px}
+  .formula .note{display:inline-block;font-family:var(--sans);font-size:12px;font-weight:700;color:var(--brand-dark);background:var(--surface);border-radius:999px;padding:0 10px;margin-left:6px;vertical-align:2px}
+  .formula-gap{height:12px}
+
+  /* ── 表格 ── */
+  .tblwrap{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);overflow:hidden;margin:16px 0}
+  table{width:100%;border-collapse:separate;border-spacing:0}
+  th{background:var(--surface-warm);color:var(--ink);font-size:13px;font-weight:700;text-align:left;padding:12px 14px;height:44px;letter-spacing:.02em}
+  td{padding:12px 14px;font-size:14px;border-top:1px solid var(--line);vertical-align:top;line-height:1.7}
+  tbody tr:hover td{background:#FAF8F3}
+  .num{font-family:var(--mono);text-align:right;white-space:nowrap}
+  .good{color:var(--positive);font-weight:700}
+  .bad{color:var(--brand-dark);font-weight:700}
+  .decide{background:var(--positive-soft);color:var(--positive);font-weight:700}
+  .col-ours{background:#FBF3F1}
+  td.rowhead{font-weight:700;white-space:nowrap}
+
+  /* 橫向滑動表（寬問答表） */
+  .t-scroll{position:relative;border-radius:var(--radius)}
+  .t-scroll .scroller{overflow-x:auto;-webkit-overflow-scrolling:touch;border-radius:var(--radius)}
+  .t-scroll table{min-width:680px}
+  .t-scroll::after{content:"";position:absolute;top:0;right:0;bottom:0;width:28px;border-radius:0 var(--radius) var(--radius) 0;background:linear-gradient(to left,rgba(245,243,238,.9),rgba(245,243,238,0));pointer-events:none}
+
+  /* ── 設計過程 step ── */
+  .step{display:flex;gap:18px;margin-top:32px}
+  .stepno{font-family:var(--disp);font-size:40px;font-weight:800;line-height:1;color:var(--line);flex-shrink:0;padding-top:2px;min-width:58px}
+  .step-body{flex:1;min-width:0}
+  details{margin-top:4px}
+  summary{cursor:pointer;font-size:13px;font-weight:700;color:var(--muted);list-style:none;user-select:none}
+  summary::before{content:"▾ ";color:var(--brand)}
+  details:not([open]) summary::before{content:"▸ "}
+
+  /* ── 深色 quote ── */
+  .quote-dark{background:var(--dark);color:var(--dark-ink);border-radius:var(--radius);padding:32px 32px 28px;margin-top:32px;position:relative;overflow:hidden}
+  .quote-dark::before{content:"\201C";position:absolute;top:-6px;left:18px;font-family:var(--disp);font-size:88px;font-weight:800;color:rgba(247,244,236,.14);line-height:1}
+  .quote-dark p{font-size:17px;font-weight:700;line-height:1.75;margin:0;position:relative}
+  .quote-dark .exp{font-size:14px;font-weight:400;color:rgba(247,244,236,.75);margin-top:12px}
+
+  /* ── 研究清單 ── */
+  .refs{margin:16px 0 0;padding:0;list-style:none;counter-reset:ref}
+  .refs li{counter-increment:ref;padding:16px 0 16px 44px;position:relative;border-top:1px solid var(--line);font-size:15px}
+  .refs li::before{content:counter(ref,decimal-leading-zero);position:absolute;left:0;top:18px;font-family:var(--disp);font-size:14px;font-weight:800;color:var(--brand)}
+
+  /* ── 深色結尾 ── */
+  .finale{background:var(--dark);color:var(--dark-ink);width:100vw;margin-left:calc(50% - 50vw);margin-top:64px;padding:72px 0}
+  .finale h2{color:var(--dark-ink)}
+  .finale .eyebrow span{color:rgba(247,244,236,.55)}
+  .frow{display:flex;gap:26px;align-items:flex-start;padding:26px 0;border-top:1px solid rgba(247,244,236,.14)}
+  .frow:first-of-type{border-top:0;margin-top:14px}
+  .fno{font-family:var(--disp);font-size:38px;font-weight:800;line-height:1;color:rgba(247,244,236,.28);min-width:72px}
+  .ftext{font-size:18px;font-weight:800;line-height:1.7;padding-top:4px}
+  .ftext .hl{color:#E8C07D}
+
+  .foot{text-align:center;color:var(--muted);font-size:12px;font-weight:500;padding:40px 18px 48px}
+
+  /* ── 進場動畫（極輕） ── */
+  .reveal{opacity:0;transform:translateY(8px);transition:opacity .22s ease,transform .22s ease}
+  .reveal.in{opacity:1;transform:none}
+  @media (prefers-reduced-motion: reduce){
+    *{animation:none!important;transition:none!important}
+    .reveal{opacity:1;transform:none}
+  }
+
+  /* ══ 手機 ══ */
+  @media (max-width:640px){
+    .wrap{padding:0 18px}
+    body{font-size:15px}
+    .hero{padding:72px 0 56px}
+    h1{font-size:34px}
+    .slogan{font-size:18px}
+    h2{font-size:22px}
+    .card{padding:22px 18px}
+    .kw span{padding:2px 14px;font-size:14px}
+    td{font-size:13px}
+    .formula{font-size:16px;padding:16px 16px}
+    .stepno{font-size:30px;min-width:44px}
+    .quote-dark{padding:22px 20px}
+    .finale{padding:56px 0}
+    .frow{gap:14px;flex-direction:column;padding:20px 0}
+    .fno{min-width:0;font-size:28px}
+    .ftext{font-size:16px;padding-top:0}
+    /* 卡片式表格：thead 隱藏、每列一張卡、欄名變小 label */
+    .t-cards .tblwrap{background:var(--surface)}
+    .t-cards thead{display:none}
+    .t-cards tr{display:block;padding:14px 14px 12px;border-top:1px solid var(--line)}
+    .t-cards tbody tr:first-child{border-top:0}
+    .t-cards td{display:block;border:0;padding:3px 0;font-size:13px}
+    .t-cards td.rowhead{font-size:15px;padding-bottom:4px}
+    .t-cards td[data-th]::before{content:attr(data-th);display:block;font-size:11px;font-weight:700;letter-spacing:.08em;color:var(--muted);margin-bottom:1px}
+    .t-cards tbody tr:hover td{background:transparent}
+    .t-cards .num{text-align:left}
+  }
 </style>
 </head>
 <body>
 <div class="wrap">
 
-<header>
-  <div class="logo">GROUN:D · A BEACH</div>
-  <h1 class="disp">360 評鑑分潤制度</h1>
-  <div class="slogan">「你的每一分成長，都看得見、也都算得進薪水裡。」</div>
-  <div class="sub">評鑑權在團隊・獎金隨獲利・薪資透明——真名公開、全員可查、規則與設計過程完整公開（2026 年 9 月版）</div>
+<!-- ── Hero ── -->
+<header class="hero">
+  <div class="logo">GROUN:D × A BEACH</div>
+  <h1>360 評鑑分潤制度</h1>
+  <div class="slogan">你的每一分成長，<br>都看得見、也都算得進薪水裡。</div>
+  <div><span class="badge">2026 年 9 月版</span></div>
+  <div class="kw"><span>評鑑權在團隊</span><span>獎金隨獲利</span><span>薪資透明</span></div>
+  <div class="kw-sub">真名公開、全員可查、規則與設計過程完整公開</div>
 </header>
 
-<section>
-  <span class="tag">制度總覽</span>
+<!-- ── 01 制度總覽 ── -->
+<section class="card reveal">
+  <div class="eyebrow"><b>01</b><span>制度總覽</span></div>
   <h2>你的薪水怎麼組成</h2>
-  <div class="formula">總薪資 ＝ 保底薪資（固定，不會少） ＋ 獎金（公司賺多少 × 你做多少）</div>
-  <p><b>獎金池跟公司經營直接連動、沒有上限：</b></p>
-  <div class="formula">獎金池 ＝ 淨利 ×（淨利率 × 放大係數）</div>
-  <p>營收越高 → 淨利越高；淨利率越高 → 分潤<b>比例</b>也跟著變高——<span class="hl">雙重放大、指數成長</span>。生意好的月份，池子不是多一點，是跳一級。公司損益數字公開在系統儀表板，大家一起看、一起衝。</p>
-  <p><b>個人怎麼分：</b>全員投票的票數獎金 × 六項係數<b>連乘</b>。係數「三固定二浮動」：</p>
-  <table>
-    <tr><th style="width:80px">指標</th><th>怎麼算</th><th>性質</th></tr>
-    <tr><td><b>天賦</b></td><td>年齡自動計算：20 歲最高、40 歲歸零——年輕就是資產</td><td>🔒 客觀自動</td></tr>
-    <tr><td><b>資歷</b></td><td>到職日自動計算、48 個月封頂——待得久也是資產，中堅力量公司記得你</td><td>🔒 客觀自動</td></tr>
-    <tr><td><b>貢獻</b></td><td>會幾個工作站（內場 9＋外場 11＝20 站）——多學一站終身有效、可輪調的人最值錢</td><td>🔒 客觀紀錄</td></tr>
-    <tr><td><b>第一</b></td><td>五大面向投票，每拿一個面向的第一名 +0.1</td><td>🌊 投票浮動</td></tr>
-    <tr><td><b>學習</b></td><td>S~D 五級（見下表）——跟老闆聊一本書、一堂課，用出來就升級</td><td>🌊 行為浮動</td></tr>
-    <tr><td><b>產能</b></td><td>第二期上線：備料/工作流 App 的完成紀錄自動量化</td><td>⏳ 敬請期待</td></tr>
-  </table>
-  <p class="small">為什麼用「乘」不用「加」？乘法之下<b>任何一項擺爛都會拖累全部</b>——偏科沒有用，公司要的是均衡發展的人才。</p>
+  <div class="formula">總薪資 ＝ 保底薪資 ＋ 獎金<span class="note">保底固定，不會少</span><span class="note">獎金＝公司賺多少 × 你做多少</span></div>
+  <div class="formula-gap"></div>
+  <div class="formula">獎金池 ＝ 淨利 ×（淨利率 × 放大係數）<span class="note">沒有上限</span></div>
+  <div class="prose">
+    <p>獎金池跟公司經營直接連動、沒有上限：營收越高 → 淨利越高；淨利率越高 → 分潤<b>比例</b>也跟著變高——<b style="color:var(--brand)">雙重放大、指數成長</b>。生意好的月份，池子不是多一點，是跳一級。公司損益數字公開在系統儀表板，大家一起看、一起衝。</p>
+    <p><b>個人怎麼分：</b>全員投票的票數獎金 × 六項係數<b>連乘</b>。係數「三固定二浮動」：</p>
+  </div>
+  <div class="t-cards"><div class="tblwrap"><table>
+    <thead><tr><th style="width:80px">指標</th><th>怎麼算</th><th style="width:110px">性質</th></tr></thead>
+    <tbody>
+      <tr><td class="rowhead">天賦</td><td data-th="怎麼算">年齡自動計算：20 歲最高、40 歲歸零——年輕就是資產</td><td data-th="性質">🔒 客觀自動</td></tr>
+      <tr><td class="rowhead">資歷</td><td data-th="怎麼算">到職日自動計算、48 個月封頂——待得久也是資產，中堅力量公司記得你</td><td data-th="性質">🔒 客觀自動</td></tr>
+      <tr><td class="rowhead">貢獻</td><td data-th="怎麼算">會幾個工作站（內場 9＋外場 11＝20 站）——多學一站終身有效、可輪調的人最值錢</td><td data-th="性質">🔒 客觀紀錄</td></tr>
+      <tr><td class="rowhead">第一</td><td data-th="怎麼算">五大面向投票，每拿一個面向的第一名 +0.1</td><td data-th="性質">🌊 投票浮動</td></tr>
+      <tr><td class="rowhead">學習</td><td data-th="怎麼算">S~D 五級（見下表）——把學到的書、課程、觀念真的用出來，就升級</td><td data-th="性質">🌊 行為浮動</td></tr>
+      <tr><td class="rowhead">產能</td><td data-th="怎麼算">第二期上線：備料/工作流 App 的完成紀錄自動量化</td><td data-th="性質">⏳ 敬請期待</td></tr>
+    </tbody>
+  </table></div></div>
+  <p class="small prose">為什麼用「乘」不用「加」？乘法之下<b>任何一項擺爛都會拖累全部</b>——偏科沒有用，公司要的是均衡發展的人才。</p>
 </section>
 
-<section>
-  <span class="tag">學習等級</span>
+<!-- ── 02 學習等級 ── -->
+<section class="card reveal">
+  <div class="eyebrow"><b>02</b><span>學習等級</span></div>
   <h2>學習加權 S~D 表（最快的加薪按鈕）</h2>
-  <table>
-    <tr><th>等級</th><th class="num">係數</th><th>具體行為</th></tr>
-    <tr><td><b>S 積極學習者</b></td><td class="num good">1.3 倍</td><td>主動進修＆學以致用：每月 2 次以上學習活動、取得認可證書、可指導他人並實際應用成果</td></tr>
-    <tr><td><b>A 穩定學習者</b></td><td class="num good">1.2 倍</td><td>定期參加課程（每月至少 1 次）、有進修計畫、願意接受測驗驗證</td></tr>
-    <tr><td><b>B 一般學習者</b></td><td class="num">1.1 倍</td><td>參與內部培訓但沒有主動進修習慣、技能提升有限</td></tr>
-    <tr><td><b>C 消極學習者</b></td><td class="num">1.0 倍</td><td>只在被要求時參加、無法證明學習成效（無加權）</td></tr>
-    <tr><td><b>D 抗拒學習者</b></td><td class="num bad">0.8 倍</td><td>拒絕培訓、影響團隊學習氛圍（懲罰性加權——落到 D 會先安排面談）</td></tr>
-  </table>
+  <div class="t-cards"><div class="tblwrap"><table>
+    <thead><tr><th style="width:150px">等級</th><th style="width:80px">係數</th><th>具體行為</th></tr></thead>
+    <tbody>
+      <tr><td class="rowhead">S 積極學習者</td><td class="num good" data-th="係數">1.3 倍</td><td data-th="具體行為">主動進修＆學以致用：每月 2 次以上學習活動、取得認可證書、可指導他人並實際應用成果</td></tr>
+      <tr><td class="rowhead">A 穩定學習者</td><td class="num good" data-th="係數">1.2 倍</td><td data-th="具體行為">定期參加課程（每月至少 1 次）、有進修計畫、願意接受測驗驗證</td></tr>
+      <tr><td class="rowhead">B 一般學習者</td><td class="num" data-th="係數">1.1 倍</td><td data-th="具體行為">參與內部培訓但沒有主動進修習慣、技能提升有限</td></tr>
+      <tr><td class="rowhead">C 消極學習者</td><td class="num" data-th="係數">1.0 倍</td><td data-th="具體行為">只在被要求時參加、無法證明學習成效（無加權）</td></tr>
+      <tr><td class="rowhead">D 抗拒學習者</td><td class="num bad" data-th="係數">0.8 倍</td><td data-th="具體行為">拒絕培訓、影響團隊學習氛圍（懲罰性加權——落到 D 會先安排面談）</td></tr>
+    </tbody>
+  </table></div></div>
 </section>
 
-<section>
-  <span class="tag">投票規則</span>
+<!-- ── 03 投票規則 ── -->
+<section class="card reveal">
+  <div class="eyebrow"><b>03</b><span>投票規則</span></div>
   <h2>五大面向・全員 360 度互投</h2>
-  <p>面向：<b>專業技術／品質細節／團隊合作／責任穩定／改善創新</b>（品質細節內外場對等：內場＝餐點品質、出餐穩定、衛生；外場＝服務品質、桌況、客訴處理）。</p>
-  <ul>
-    <li>每個人都可以投每個人——全員 360 度，每人 10 票、可以投自己</li>
-    <li>合夥人／專業等級的票有加權（等級與票值公開設定）</li>
-    <li>每個面向的第一名獲得「第一加成」——把一件事做到全店第一，大家會投給你</li>
-  </ul>
+  <div class="prose">
+    <p>面向：<b>專業技術／品質細節／團隊合作／責任穩定／改善創新</b>（品質細節內外場對等：內場＝餐點品質、出餐穩定、衛生；外場＝服務品質、桌況、客訴處理）。</p>
+    <ul style="padding-left:22px">
+      <li style="margin:6px 0">每個人都可以投每個人——全員 360 度，每人 10 票、可以投自己</li>
+      <li style="margin:6px 0">合夥人／專業等級的票有加權（等級與票值公開設定）</li>
+      <li style="margin:6px 0">每個面向的第一名獲得「第一加成」——把一件事做到全店第一，大家會投給你</li>
+    </ul>
+  </div>
 </section>
 
-<section>
-  <span class="tag">設計過程</span>
+<!-- ── 04 設計過程 ── -->
+<section class="plain reveal">
+  <div class="eyebrow"><b>04</b><span>設計過程</span></div>
   <h2>這套制度不是拍腦袋出來的</h2>
-  <p>2026 年 9 月，老闆拿出自己做的分配試算表，跟 AI 來回問答、跑數字模擬、逐條修正。以下完整公開。</p>
+  <p class="prose">2026 年 9 月，這套制度從一張分配試算表開始，經過來回問答、數字模擬、逐條修正才定案。以下完整公開。</p>
 
-  <h3>第一步｜原始試算表發現的 5 個問題</h3>
-  <table>
-    <tr><th style="width:120px">問題</th><th>說明</th></tr>
-    <tr><td><b>連乘失控</b></td><td>六個係數相乘、乘數差 31 倍，一個人拿走池子 72%，8 人裡 6 人比純投票拿更少</td></tr>
-    <tr><td><b>投票被架空</b></td><td>重分配後結果幾乎由係數決定——投了跟沒投一樣</td></tr>
-    <tr><td><b>二次計分</b></td><td>票數已是同事評價，係數又乘在票數獎金上，人緣好被放大兩次</td></tr>
-    <tr><td><b>係數界線不清</b></td><td>概念重疊可能重複計分；刻度不一致，誰的刻度大誰主宰結果</td></tr>
-    <tr><td><b>資歷方向反了</b></td><td>入職越久係數越低（確認是 key 錯，已改正：做越久越高）</td></tr>
-  </table>
+  <div class="step">
+    <div class="stepno">01</div>
+    <div class="step-body">
+      <h3>原始試算表發現的 5 個問題</h3>
+      <div class="t-cards"><div class="tblwrap"><table>
+        <thead><tr><th style="width:130px">問題</th><th>說明</th></tr></thead>
+        <tbody>
+          <tr><td class="rowhead">連乘失控</td><td data-th="說明">六個係數相乘、乘數差 31 倍，一個人拿走池子 72%，8 人裡 6 人比純投票拿更少</td></tr>
+          <tr><td class="rowhead">投票被架空</td><td data-th="說明">重分配後結果幾乎由係數決定——投了跟沒投一樣</td></tr>
+          <tr><td class="rowhead">二次計分</td><td data-th="說明">票數已是同事評價，係數又乘在票數獎金上，人緣好被放大兩次</td></tr>
+          <tr><td class="rowhead">係數界線不清</td><td data-th="說明">概念重疊可能重複計分；刻度不一致，誰的刻度大誰主宰結果</td></tr>
+          <tr><td class="rowhead">資歷方向反了</td><td data-th="說明">入職越久係數越低（確認是 key 錯，已改正：做越久越高）</td></tr>
+        </tbody>
+      </table></div></div>
+    </div>
+  </div>
 
-  <h3>第二步｜逐條問答（老闆親口定的規則）</h3>
-  <table>
-    <tr><th style="width:105px">AI 問</th><th>老闆答（原話摘要）</th><th style="width:120px">定案</th></tr>
-    <tr><td>天賦是什麼？</td><td>「20 歲的人就可以做到 30 歲的事，即天賦。20~40 區間，越年輕越高，40 歲歸零。」</td><td class="good">年齡自動算</td></tr>
-    <tr><td>資歷越久越低？</td><td>「那是 key 錯。資歷就如其名——做越久分數越高，給中堅力量的鼓勵、支持、感謝。」</td><td class="good">方向改正、48月封頂</td></tr>
-    <tr><td>貢獻怎麼算？</td><td>「會多少工作站。內場 9＋外場 11 共 20 站，鼓勵跨站學習、不分內外、可輪調。」</td><td class="good">會站數÷總站數</td></tr>
-    <tr><td>「第一加成」？</td><td>「投票設五大面向，某面向第一就有加成，越多第一、加成越多。」</td><td class="good">每個第一 +0.1</td></tr>
-    <tr><td>「全面加權」？</td><td>「有點忘記當時的設定了，可以先刪除。」</td><td class="good">刪除 ✂️</td></tr>
-    <tr><td>學習怎麼認定？</td><td>「有跟我溝通——討論某本書、課程、觀念，去學習後回來討論，真的有改善進步。」</td><td class="good">S~D 五級表</td></tr>
-    <tr><td>誰打分？</td><td>「不是誰打，是基於客觀事實：年齡、入職時間、會幾站大家都知道、投票排行榜。只有學習經過我的主觀認定＋對方的客觀行為。」</td><td class="good">五項自動、一項半主觀</td></tr>
-    <tr><td>連乘會失控，改加法？</td><td>「用乘的確實有很大問題，run 一下跑跑看怎麼乘會穩定。用＋的有點不公平——有些人會專攻某項而失去均衡發展。設定及引導，鼓勵及暗喻公司要的文化跟人才方向。」</td><td class="good">保留連乘、每項壓縮 1.0~1.5</td></tr>
-    <tr><td>要設個人上限？</td><td>「有上限不會造成努力＆潛力也設了上限？我支持能者多得、贏者全拿。」</td><td class="good">不設上限</td></tr>
-    <tr><td>池子固定或浮動？</td><td>「淨利率＝固定獎金 nono。淨利率是個指標、營收也是個指標，都是相對動態＆指數型變化。營收越高、淨利越高、大家獎金越高，不要限制。」</td><td class="good">動態雙重放大、無上限</td></tr>
-    <tr><td>投票怎麼投？</td><td>「每個人都可以投每個人，全員 360 度。每人 10 票、當然能投自己。主管或某些人會有加權。」</td><td class="good">360＋票值等級</td></tr>
-    <tr><td>保底因人而異？</td><td>「保底一樣。但每個人的基準本來就不同——年紀、資歷、工作站貢獻是基礎體質；會變的是第一＆學習。三固定二浮動。」</td><td class="good">架構定案</td></tr>
-    <tr><td>要匿名嗎？</td><td>「會是真名對應，大家隨時都可查看自己與別人——形成內部良性競爭，也給面試者看到我們真正落實能者多得、薪資透明化。就是要看到真的東西，不是玩玩假裝畫大餅。」</td><td class="good">真名公開</td></tr>
-    <tr><td>服務態度內場投不了？</td><td>「對，可再提個建議，其他四個很均衡很棒。」</td><td class="good">改為「品質細節」</td></tr>
-  </table>
+  <div class="step">
+    <div class="stepno">02</div>
+    <div class="step-body">
+      <h3>逐條問答，每一條規則的由來</h3>
+      <details open>
+        <summary>展開／收合完整問答</summary>
+        <div class="t-scroll"><div class="scroller"><div class="tblwrap" style="margin:12px 0"><table>
+          <thead><tr><th style="width:120px">提問</th><th>當時的回答（原話摘要）</th><th style="width:150px">定案</th></tr></thead>
+          <tbody>
+            <tr><td class="rowhead">天賦是什麼？</td><td>「20 歲的人就可以做到 30 歲的事，即天賦。20~40 區間，越年輕越高，40 歲歸零。」</td><td class="decide">年齡自動算</td></tr>
+            <tr><td class="rowhead">資歷越久越低？</td><td>「那是 key 錯。資歷就如其名——做越久分數越高，給中堅力量的鼓勵、支持、感謝。」</td><td class="decide">方向改正、48月封頂</td></tr>
+            <tr><td class="rowhead">貢獻怎麼算？</td><td>「會多少工作站。內場 9＋外場 11 共 20 站，鼓勵跨站學習、不分內外、可輪調。」</td><td class="decide">會站數÷總站數</td></tr>
+            <tr><td class="rowhead">「第一加成」？</td><td>「投票設五大面向，某面向第一就有加成，越多第一、加成越多。」</td><td class="decide">每個第一 +0.1</td></tr>
+            <tr><td class="rowhead">「全面加權」？</td><td>「有點忘記當時的設定了，可以先刪除。」</td><td class="decide">刪除 ✂️</td></tr>
+            <tr><td class="rowhead">學習怎麼認定？</td><td>「有跟我溝通——討論某本書、課程、觀念，去學習後回來討論，真的有改善進步。」</td><td class="decide">S~D 五級表</td></tr>
+            <tr><td class="rowhead">誰打分？</td><td>「不是誰打，是基於客觀事實：年齡、入職時間、會幾站大家都知道、投票排行榜。只有學習經過我的主觀認定＋對方的客觀行為。」</td><td class="decide">五項自動、一項半主觀</td></tr>
+            <tr><td class="rowhead">連乘會失控，改加法？</td><td>「用乘的確實有很大問題，run 一下跑跑看怎麼乘會穩定。用＋的有點不公平——有些人會專攻某項而失去均衡發展。設定及引導，鼓勵及暗喻公司要的文化跟人才方向。」</td><td class="decide">保留連乘、每項壓縮 1.0~1.5</td></tr>
+            <tr><td class="rowhead">要設個人上限？</td><td>「有上限不會造成努力＆潛力也設了上限？我支持能者多得、贏者全拿。」</td><td class="decide">不設上限</td></tr>
+            <tr><td class="rowhead">池子固定或浮動？</td><td>「淨利率＝固定獎金 nono。淨利率是個指標、營收也是個指標，都是相對動態＆指數型變化。營收越高、淨利越高、大家獎金越高，不要限制。」</td><td class="decide">動態雙重放大、無上限</td></tr>
+            <tr><td class="rowhead">投票怎麼投？</td><td>「每個人都可以投每個人，全員 360 度。每人 10 票、當然能投自己。主管或某些人會有加權。」</td><td class="decide">360＋票值等級</td></tr>
+            <tr><td class="rowhead">保底因人而異？</td><td>「保底一樣。但每個人的基準本來就不同——年紀、資歷、工作站貢獻是基礎體質；會變的是第一＆學習。三固定二浮動。」</td><td class="decide">架構定案</td></tr>
+            <tr><td class="rowhead">要匿名嗎？</td><td>「會是真名對應，大家隨時都可查看自己與別人——形成內部良性競爭，也給面試者看到我們真正落實能者多得、薪資透明化。就是要看到真的東西，不是玩玩假裝畫大餅。」</td><td class="decide">真名公開</td></tr>
+            <tr><td class="rowhead">服務態度內場投不了？</td><td>「對，可再提個建議，其他四個很均衡很棒。」</td><td class="decide">改為「品質細節」</td></tr>
+          </tbody>
+        </table></div></div></div>
+      </details>
+    </div>
+  </div>
 
-  <h3>第三步｜跑數字驗證</h3>
-  <p>用原表 8 人的真實票數/年齡/月資模擬：<b>原版</b>乘數差距 6~185（31 倍），最高分者拿走池子 <span class="bad">72%</span>；<b>壓縮後</b>（每項 1.0~1.5）乘數收斂到 1.3~3.4，最高分者拿 <span class="good">39%</span>——能者依然多得，但不會把其他人吸乾。</p>
-  <div class="quote">老闆在設計時說過一句話：「不要問我你能賺多少，問你自己想要賺多少。」——意思不是不談薪水，而是把決定權交還給你：規則全公開、路徑全公開，你心裡想到哪個數字，照著路徑走就到得了。</div>
+  <div class="step">
+    <div class="stepno">03</div>
+    <div class="step-body">
+      <h3>跑數字驗證</h3>
+      <p class="prose">用原表 8 人的真實票數/年齡/月資模擬：<b>原版</b>乘數差距 6~185（31 倍），最高分者拿走池子 <span class="bad">72%</span>；<b>壓縮後</b>（每項 1.0~1.5）乘數收斂到 1.3~3.4，最高分者拿 <span class="good">39%</span>——能者依然多得，但不會把其他人吸乾。</p>
+    </div>
+  </div>
+
+  <div class="quote-dark">
+    <p>不要問我你能賺多少，<br>問你自己想要賺多少。</p>
+    <div class="exp">設計過程中留下的一句話。意思不是不談薪水，而是把決定權交還給你：規則全公開、路徑全公開，你心裡想到哪個數字，照著路徑走就到得了。</div>
+  </div>
 </section>
 
-<section>
-  <span class="tag">為什麼 360</span>
-  <h2>360 度評鑑 vs 傳統制度（老闆的五個理由）</h2>
-  <table>
-    <tr><th style="width:86px"></th><th>傳統制度</th><th>我們的 360</th></tr>
-    <tr><td><b>評鑑權</b></td><td>上對下單向評分——勞資對立、猜忌、不公平</td><td><b>把評鑑的權利還給團隊每一個人</b>：天天一起工作的夥伴，比任何主管更知道你做得好不好</td></tr>
-    <tr><td><b>成本結構</b></td><td>固定調薪一路疊加——調上去就下不來</td><td><b>動態彈性</b>：公司賺，池子大家分；薪資跟著表現與經營成果走</td></tr>
-    <tr><td><b>衡量方式</b></td><td>KPI 定義不明確、廣度不足——量不到態度、合作、學習</td><td>五大面向投票＋客觀係數——看得全、講得清楚</td></tr>
-    <tr><td><b>管理半徑</b></td><td>老闆一人，一間店就看不到全部，第二間店更不可能</td><td><b>每個人都是我們的眼睛</b>：制度自動運轉，開十間店規則都一樣公平</td></tr>
-    <tr><td><b>中間層風險</b></td><td>一個有問題的主管就能堵死好員工的路——劣幣驅逐良幣</td><td>多評分者稀釋單一偏見；<b>主管也被大家評</b>——沒有人能一手遮天</td></tr>
-  </table>
+<!-- ── 05 為什麼 360 ── -->
+<section class="plain reveal">
+  <div class="eyebrow"><b>05</b><span>為什麼 360</span></div>
+  <h2>360 度評鑑 vs 傳統制度</h2>
+  <div class="t-cards"><div class="tblwrap"><table>
+    <thead><tr><th style="width:96px"></th><th>傳統制度</th><th class="col-ours" style="width:44%">我們的 360</th></tr></thead>
+    <tbody>
+      <tr><td class="rowhead">評鑑權</td><td data-th="傳統制度">上對下單向評分——勞資對立、猜忌、不公平</td><td class="col-ours" data-th="我們的 360"><b>把評鑑的權利還給團隊每一個人</b>：天天一起工作的夥伴，比任何主管更知道你做得好不好</td></tr>
+      <tr><td class="rowhead">成本結構</td><td data-th="傳統制度">固定調薪一路疊加——調上去就下不來</td><td class="col-ours" data-th="我們的 360"><b>動態彈性</b>：公司賺，池子大家分；薪資跟著表現與經營成果走</td></tr>
+      <tr><td class="rowhead">衡量方式</td><td data-th="傳統制度">KPI 定義不明確、廣度不足——量不到態度、合作、學習</td><td class="col-ours" data-th="我們的 360">五大面向投票＋客觀係數——看得全、講得清楚</td></tr>
+      <tr><td class="rowhead">管理半徑</td><td data-th="傳統制度">管理者一個人，一間店就看不到全部，第二間店更不可能</td><td class="col-ours" data-th="我們的 360"><b>每個人都是我們的眼睛</b>：制度自動運轉，開十間店規則都一樣公平</td></tr>
+      <tr><td class="rowhead">中間層風險</td><td data-th="傳統制度">一個有問題的主管就能堵死好員工的路——劣幣驅逐良幣</td><td class="col-ours" data-th="我們的 360">多評分者稀釋單一偏見；<b>主管也被大家評</b>——沒有人能一手遮天</td></tr>
+    </tbody>
+  </table></div></div>
 
-  <h3>研究怎麼說（不是我們自己說爽的）</h3>
-  <ol>
+  <h3 style="margin-top:28px">研究怎麼說（不是我們自己說爽的）</h3>
+  <ol class="refs">
     <li><b>薪資差異「講不清楚」才傷士氣——透明是解藥。</b>經濟學頂刊 QJE 的田野實驗（Breza, Kaur &amp; Shamdasani, 2018）：員工<b>看不出薪資差異理由</b>時，產出下降、出勤少 12%、合作變差；當差異對應到<b>大家看得見的實際表現</b>時，負面效應完全消失。——這就是我們全部公開的原因：差多少可以，但每個人要看得懂為什麼。</li>
     <li><b>多來源回饋有效，前提是跟發展掛鉤。</b>Personnel Psychology 統合分析（Smither, London &amp; Reilly, 2005，彙整 24 個長期研究）：360 回饋整體帶來正向改善，把回饋連到具體目標的人改善最大。——所以學習加權要求「學了要用出來」。</li>
     <li><b>多評分者稀釋個人偏見。</b>單一評分者的月暈效應、寬鬆／嚴苛偏誤，在多位評分者平均後大幅抵消；不同角色看到不同行為面向，加總比任何單一視角完整。</li>
@@ -153,17 +304,36 @@
   </ol>
 </section>
 
-<section>
-  <span class="tag">三句話</span>
-  <h2>記住這套制度</h2>
-  <div class="big3">
-    1. <span class="hl">天花板不在老闆手上，在你自己手上——想賺多少，自己決定。</span><br />
-    2. 公司越賺、池子越大、無上限——把餅做大才是全贏。<br />
-    3. 因為看見，所以相信——所有數字、規則、設計過程，全部公開。
+</div><!-- /wrap -->
+
+<!-- ── 06 三句話（全寬深色結尾） ── -->
+<section class="finale reveal">
+  <div class="wrap">
+    <div class="eyebrow"><b>06</b><span>三句話</span></div>
+    <h2>記住這套制度</h2>
+    <div class="frow"><div class="fno">01</div><div class="ftext"><span class="hl">天花板不在別人手上，在你自己手上</span>——想賺多少，自己決定。</div></div>
+    <div class="frow"><div class="fno">02</div><div class="ftext">公司越賺、池子越大、無上限——把餅做大才是全贏。</div></div>
+    <div class="frow"><div class="fno">03</div><div class="ftext">因為看見，所以相信——所有數字、規則、設計過程，全部公開。</div></div>
   </div>
 </section>
 
 <div class="foot">GROUN:D — A Beach 360 評鑑分潤制度 · 2026.09 · 制度內容以系統「360分潤」頁為準，本頁為公開說明版</div>
-</div>
+
+<script>
+(function(){
+  if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    document.querySelectorAll('.reveal').forEach(function(el){ el.classList.add('in'); });
+    return;
+  }
+  if (!('IntersectionObserver' in window)) {
+    document.querySelectorAll('.reveal').forEach(function(el){ el.classList.add('in'); });
+    return;
+  }
+  var io = new IntersectionObserver(function(es){
+    es.forEach(function(e){ if (e.isIntersecting) { e.target.classList.add('in'); io.unobserve(e.target); } });
+  }, { rootMargin: '0px 0px -8% 0px' });
+  document.querySelectorAll('.reveal').forEach(function(el){ io.observe(el); });
+})();
+</script>
 </body>
 </html>

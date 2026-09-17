@@ -41,7 +41,7 @@ const STORY_QA = [
   ["貢獻加成跟天賦差在哪？", "貢獻指的是會多少工作站。內場 9＋外場 11 共 20 站，鼓勵大家跨站學習、不分內外、可輪調。", "會站數 ÷ 總站數，客觀有紀錄可依"],
   ["「第一加成」是什麼意思？", "投票設五大面向，某人在某面向第一就有加成，越多第一、加成越多。", "每拿一個面向第一 +0.1"],
   ["「全面加權」的定義？", "有點忘記當時的設定了，可以先刪除。", "刪除 ✂️"],
-  ["「學習加權」怎麼認定？", "有跟我溝通——討論某本書、某個課程、某個觀念，去學習後回來討論，真的有改善進步。", "採 S~D 五級表（老闆提供），S 1.3 倍～D 0.8 倍懲罰性"],
+  ["「學習加權」怎麼認定？", "有跟我溝通——討論某本書、某個課程、某個觀念，去學習後回來討論，真的有改善進步。", "採 S~D 五級表，S 1.3 倍～D 0.8 倍懲罰性"],
   ["產能欄空著要接嗎？", "之後用 App 的備料/日常工作流程，每個人按完成會記錄名字，就能量化每人的產能。", "第二期接自動資料，欄位保留"],
   ["六項指標誰打分？", "不是誰打，是基於客觀事實：天賦＝真實年齡、資歷＝入職時間、貢獻＝會幾站大家都知道、第一＝投票排行榜。只有學習經過我的主觀認定＋對方的客觀行為。", "五項全自動、一項半主觀——最大程度去人治"],
   ["係數用乘的會失控，要改加法嗎？", "用乘的確實會有很大問題，所以 run 一下跑跑看怎麼乘會穩定。用＋的有點不公平——有些人會專攻某項而失去均衡發展。設定及引導、鼓勵及暗喻公司要的文化跟人才方向。", "保留連乘（偏科沒用、均衡才贏），但每項壓縮到 1.0~1.5——模擬驗證：原版最高分者拿走池子 72%，壓縮後降到 39%"],
@@ -315,7 +315,7 @@ export default function SalaryView({ me: account, userName }) {
               ["資歷", `到職日自動計算：做滿 ${S.tenureCapM} 個月封頂`, "待得久也是資產——中堅力量公司記得你"],
               ["貢獻", `會幾個工作站（內場 ${S.stationsIn}＋外場 ${S.stationsOut}＝${(Number(S.stationsIn) || 0) + (Number(S.stationsOut) || 0)} 站）`, "多學一站、終身有效；內外場都學、可輪調的人最值錢"],
               ["第一", `五大面向投票（${(S.facets || []).join("、")}），每拿一個面向第一 +${S.firstStep}`, "把一件事做到全店第一，大家會投給你"],
-              ["學習", "S~D 五級（見下表），跟老闆聊一本書、一堂課，用出來就升級", "學習升一級、下月生效——最快的加薪按鈕"],
+              ["學習", "S~D 五級（見下表），把學到的書、課程、觀念真的用出來，就升級", "學習升一級、下月生效——最快的加薪按鈕"],
               ["產能", "第二期上線：備料/工作流 App 按完成的量化紀錄", "（敬請期待）"],
             ].map((r, i) => <tr key={i}><td style={{ ...cell, fontWeight: 700 }}>{r[0]}</td><td style={cell}>{r[1]}</td><td style={{ ...cell, whiteSpace: "normal" }}>{r[2]}</td></tr>)}</tbody>
           </table>
@@ -349,7 +349,7 @@ export default function SalaryView({ me: account, userName }) {
         <Card>
           <div style={{ fontFamily: DISP, fontSize: 17, fontWeight: 800, color: TEXT }}>這套制度不是拍腦袋出來的。</div>
           <div style={{ fontSize: 13.5, color: TEXT, marginTop: 8, lineHeight: 1.8 }}>
-            2026 年 9 月，老闆拿出一張自己做的薪資分配試算表，跟 AI 來回問答、跑數字模擬、逐條修正——這一頁把<b>完整過程</b>公開：原始版本哪裡有問題、每個規則為什麼這樣定、老闆親口的回答。看懂了，你就知道怎麼讓自己加薪。
+            2026 年 9 月，這套制度從一張分配試算表開始，經過來回問答、數字模擬、逐條修正才定案——這一頁把<b>完整過程</b>公開：原始版本哪裡有問題、每個規則為什麼這樣定、當時的回答原話。看懂了，你就知道怎麼讓自己加薪。
           </div>
         </Card>
         <Card title="第一步｜原始試算表（8 人代號 G~H 試算）長什麼樣">
@@ -363,9 +363,9 @@ export default function SalaryView({ me: account, userName }) {
               <td style={{ ...cell, whiteSpace: "normal", fontSize: 12.5 }}>{r[1]}</td></tr>)}</tbody>
           </table>
         </Card>
-        <Card title="第二步｜逐條問答：規則的每一條，都是老闆親口定的">
+        <Card title="第二步｜逐條問答：每一條規則的由來">
           <table style={{ borderCollapse: "collapse", width: "100%" }}>
-            <thead><tr>{["AI 問", "老闆答（原話摘要）", "定案"].map((h) => <th key={h} style={th}>{h}</th>)}</tr></thead>
+            <thead><tr>{["提問", "當時的回答（原話摘要）", "定案"].map((h) => <th key={h} style={th}>{h}</th>)}</tr></thead>
             <tbody>{STORY_QA.map((r, i) => <tr key={i} style={{ background: i % 2 ? "#fff" : "#fdfaf4" }}>
               <td style={{ ...cell, whiteSpace: "normal", fontWeight: 700, fontSize: 12.5, minWidth: 90 }}>{r[0]}</td>
               <td style={{ ...cell, whiteSpace: "normal", fontSize: 12.5, lineHeight: 1.7 }}>「{r[1]}」</td>
@@ -374,18 +374,18 @@ export default function SalaryView({ me: account, userName }) {
         </Card>
         <Card title="第三步｜跑數字驗證：連乘保留、但把係數壓進安全範圍">
           <div style={{ fontSize: 13.5, lineHeight: 1.8 }}>
-            用原表 8 人的真實票數/年齡/月資模擬：<b>原版</b>乘數差距 6~185（31 倍），最高分者拿走池子 <b style={{ color: SEM.red }}>72%</b>；<b>壓縮後</b>（每項 1.0~1.5）乘數收斂到 1.3~3.4，最高分者拿 <b style={{ color: SEM.green }}>39%</b>——能者依然多得、但不會把其他人吸乾。為什麼不改加法？老闆的原話在上表：加法會讓人「專攻某項而失去均衡發展」；乘法之下<b>任何一項擺爛都拖累全部</b>，這正是公司要的人才方向。
-            <div style={{ borderLeft: `4px solid ${ACCENT}`, background: "#fdfaf4", padding: "6px 14px", marginTop: 10, color: SUB, fontSize: 13 }}>老闆在設計時說過一句話：「不要問我你能賺多少，問你自己想要賺多少。」——意思不是不談薪水，而是把決定權交還給你：規則全公開、路徑全公開，你心裡想到哪個數字，照著路徑走就到得了。</div>
+            用原表 8 人的真實票數/年齡/月資模擬：<b>原版</b>乘數差距 6~185（31 倍），最高分者拿走池子 <b style={{ color: SEM.red }}>72%</b>；<b>壓縮後</b>（每項 1.0~1.5）乘數收斂到 1.3~3.4，最高分者拿 <b style={{ color: SEM.green }}>39%</b>——能者依然多得、但不會把其他人吸乾。為什麼不改加法？原話在上表：加法會讓人「專攻某項而失去均衡發展」；乘法之下<b>任何一項擺爛都拖累全部</b>，這正是公司要的人才方向。
+            <div style={{ borderLeft: `4px solid ${ACCENT}`, background: "#fdfaf4", padding: "6px 14px", marginTop: 10, color: SUB, fontSize: 13 }}>設計過程中留下的一句話：「不要問我你能賺多少，問你自己想要賺多少。」——意思不是不談薪水，而是把決定權交還給你：規則全公開、路徑全公開，你心裡想到哪個數字，照著路徑走就到得了。</div>
           </div>
         </Card>
-        <Card title="為什麼是 360 度評鑑，不是主管說了算？（老闆的五個理由）">
+        <Card title="為什麼是 360 度評鑑，不是主管說了算？">
           <table style={{ borderCollapse: "collapse", width: "100%" }}>
             <thead><tr>{["", "傳統制度", "我們的 360 制度"].map((h, i) => <th key={i} style={th}>{h}</th>)}</tr></thead>
             <tbody>{[
               ["評鑑權", "上對下單向評分——勞資雙方對立、猜忌、不公平", "把評鑑的權利還給團隊的每一個人：你天天一起工作的夥伴，比任何主管更知道你做得好不好"],
               ["成本結構", "固定調薪一路疊加——調上去就下不來，變成公司的固定成本包袱", "動態彈性：公司賺，池子大家分；公司難，一起撐——薪資跟著實際表現與經營成果走"],
               ["衡量方式", "傳統 KPI 定義不明確、廣度不足——只量得到數字的，量不到態度、合作、學習", "五大面向投票＋客觀係數（年齡/月資/會站數自動算）——看得全，也講得清楚"],
-              ["管理半徑", "老闆一個人，一間店就看不到全部，第二間店更不可能管得到", "每個人都是我們的眼睛：制度自動運轉，開十間店規則都一樣公平"],
+              ["管理半徑", "管理者一個人，一間店就看不到全部，第二間店更不可能管得到", "每個人都是我們的眼睛：制度自動運轉，開十間店規則都一樣公平"],
               ["中間層風險", "一個有問題的主管就能堵死好員工的路——劣幣驅逐良幣", "多評分者稀釋單一偏見；主管也被大家評——沒有人能一手遮天"],
             ].map((r, i) => <tr key={i} style={{ background: i % 2 ? "#fff" : "#fdfaf4" }}>
               <td style={{ ...cell, fontWeight: 700, whiteSpace: "nowrap" }}>{r[0]}</td>
@@ -403,7 +403,7 @@ export default function SalaryView({ me: account, userName }) {
         </Card>
         <Card title="最後｜三句話記住這套制度">
           <div style={{ fontSize: 14, lineHeight: 2, fontWeight: 700 }}>
-            1. <span style={{ color: ACCENT }}>天花板不在老闆手上，在你自己手上——想賺多少，自己決定。</span><br />
+            1. <span style={{ color: ACCENT }}>天花板不在別人手上，在你自己手上——想賺多少，自己決定。</span><br />
             2. 公司越賺、池子越大、無上限——把餅做大才是全贏。<br />
             3. 因為看見，所以相信——所有數字、所有規則、這整頁設計過程，全部公開。
           </div>
