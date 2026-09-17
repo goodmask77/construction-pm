@@ -167,7 +167,7 @@ export default function SalaryView({ me: account, userName }) {
   const TABS = [["table", "分配總表"], ["pnl", "損益儀表板"], ["sim", "前後對照"], ["guide", "說明"], ["story", "設計過程"], ...(mgr ? [["set", "設定"]] : [])];
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-      <SecHead tag="薪資透明" title="不要問我你能賺多少，問你自己想要賺多少" right={
+      <SecHead tag="薪資透明" title="你的每一分成長，都看得見、也都算得進薪水裡" right={
         <span style={{ fontSize: 12, color: SUB }}>公司賺越多・大家分越多・無上限</span>} />
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
         {TABS.map(([k, l]) => <Btn key={k} on={tab === k} onClick={() => setTab(k)}>{l}</Btn>)}
@@ -302,7 +302,7 @@ export default function SalaryView({ me: account, userName }) {
       {/* ── 說明（淺顯易懂：對自己的好處）── */}
       {tab === "guide" && (<>
         <Card>
-          <div style={{ fontFamily: DISP, fontSize: 18, fontWeight: 800, color: ACCENT }}>不要問我你能賺多少，問你自己想要賺多少。</div>
+          <div style={{ fontFamily: DISP, fontSize: 18, fontWeight: 800, color: ACCENT }}>你的每一分成長，都看得見、也都算得進薪水裡。</div>
           <div style={{ fontSize: 13.5, color: TEXT, marginTop: 8, lineHeight: 1.7 }}>
             這一頁真名公開、全員可查——規則透明、能者多得。你的薪水＝<b>保底</b>（不會少）＋<b>獎金</b>（看公司賺多少、看你做多少）。公司賺越多池子越大、沒有上限；你成長越多，分到的比例越高。
           </div>
@@ -375,6 +375,7 @@ export default function SalaryView({ me: account, userName }) {
         <Card title="第三步｜跑數字驗證：連乘保留、但把係數壓進安全範圍">
           <div style={{ fontSize: 13.5, lineHeight: 1.8 }}>
             用原表 8 人的真實票數/年齡/月資模擬：<b>原版</b>乘數差距 6~185（31 倍），最高分者拿走池子 <b style={{ color: SEM.red }}>72%</b>；<b>壓縮後</b>（每項 1.0~1.5）乘數收斂到 1.3~3.4，最高分者拿 <b style={{ color: SEM.green }}>39%</b>——能者依然多得、但不會把其他人吸乾。為什麼不改加法？老闆的原話在上表：加法會讓人「專攻某項而失去均衡發展」；乘法之下<b>任何一項擺爛都拖累全部</b>，這正是公司要的人才方向。
+            <div style={{ borderLeft: `4px solid ${ACCENT}`, background: "#fdfaf4", padding: "6px 14px", marginTop: 10, color: SUB, fontSize: 13 }}>老闆在設計時說過一句話：「不要問我你能賺多少，問你自己想要賺多少。」——意思不是不談薪水，而是把決定權交還給你：規則全公開、路徑全公開，你心裡想到哪個數字，照著路徑走就到得了。</div>
           </div>
         </Card>
         <Card title="為什麼是 360 度評鑑，不是主管說了算？（老闆的五個理由）">
@@ -402,7 +403,7 @@ export default function SalaryView({ me: account, userName }) {
         </Card>
         <Card title="最後｜三句話記住這套制度">
           <div style={{ fontSize: 14, lineHeight: 2, fontWeight: 700 }}>
-            1. <span style={{ color: ACCENT }}>不要問我你能賺多少，問你自己想要賺多少。</span><br />
+            1. <span style={{ color: ACCENT }}>天花板不在老闆手上，在你自己手上——想賺多少，自己決定。</span><br />
             2. 公司越賺、池子越大、無上限——把餅做大才是全贏。<br />
             3. 因為看見，所以相信——所有數字、所有規則、這整頁設計過程，全部公開。
           </div>
