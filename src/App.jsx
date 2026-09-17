@@ -15,6 +15,7 @@ import { LayoutDashboard, ClipboardList, CheckSquare, CalendarDays, Pin as PinIc
 import { BRAND, ACCENT, PRIMARY, BG, SURFACE, BORDER, LINE2, TEXT, SUB, ACCENT_SOFT, DARKCHIP, MONO, DISP, SEM, GOLD, HEAD_BG, HEAD_LINE, HEAD_SUB, HEAD_CHIP, SecHead, MOBILE_BP, useIsMobile } from "./lib/theme.jsx";
 import { GLOBAL_KEYS, CURRENT_SPACE, K, switchSpace, CURRENT_USER, setCurrentUser, auditLog, conf, CAN_VIEW_MONEY, setCanViewMoney, showMoney, ADMIN_USER, maskAccount, L } from "./lib/runtime.js";
 import { KnowledgeBaseView, RosterView, Review360View, FeedbackView, QuestView, PollView, RewardCenterView, CrewTodayView, JournalBoardView, PunchView, PayView } from "./crew/CrewViews.jsx";
+import SalaryView from "./crew/SalaryView.jsx"; // 薪資透明（A Beach 分潤試算，2026-09-18）
 import { STATUS_MAP, markCatDone } from "./lib/status.js";
 import { DEFAULT_LINE_GROUP, notifyLineEvent } from "./lib/line.js";
 import { callAI } from "./lib/ai.js";
@@ -1012,6 +1013,9 @@ export default function App() {
         )}
         {view === "pay" && (
           <PayView me={account} userName={userName} />
+        )}
+        {view === "salary" && (
+          <SalaryView me={account} userName={userName} />
         )}
         {view === "r360" && (
           <Review360View canEdit={canEditData} requireLogin={denyEdit} confirm={confirm} isAdmin={isAdmin} userName={userName} />
