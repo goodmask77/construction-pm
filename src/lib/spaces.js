@@ -34,7 +34,7 @@ export const SPACE_CONF = {
       ["g_sop", "SOP與訓練", "📚", ["kb", "quest"]],
       ["g_grow", "成長與文化", "🌱", ["r360", "fb", "poll", "reward"]],
     ],
-    tabs: [["ctoday", "今日", "🏠"], ["cjournal", "工作日誌", "📝"], ["roster", "名冊", "👥"], ["shift", "排班", "📅"], ["punch", "出勤", "⏱"], ["pay", "薪資試算", "💰"], ["salary", "薪資透明", "💎"], ["kb", "SOP知識庫", "📚"], ["quest", "闖關", "🎮"], ["r360", "360評鑑", "⭐"], ["fb", "回饋", "💬"], ["poll", "投票", "🗳"], ["reward", "獎勵中心", "🏆"]], // 商城＋排行榜合併成「獎勵中心」；資料庫改名「SOP知識庫」
+    tabs: [["ctoday", "今日", "🏠"], ["cjournal", "工作日誌", "📝"], ["roster", "名冊", "👥"], ["shift", "排班", "📅"], ["punch", "出勤", "⏱"], ["pay", "薪資試算", "💰"], ["salary", "360分潤", "💎"], ["kb", "SOP知識庫", "📚"], ["quest", "闖關", "🎮"], ["r360", "360評鑑", "⭐"], ["fb", "回饋", "💬"], ["poll", "投票", "🗳"], ["reward", "獎勵中心", "🏆"]], // 商城＋排行榜合併成「獎勵中心」；資料庫改名「SOP知識庫」
     defaultView: "ctoday", // 一進來先看「今天與我有關的事」，不再落在空資料庫
     hideKpi: true, // 夥伴中心頂部不顯示工程 KPI
     labels: { cat: "項目", item: "項目", overview: "SOP知識庫", gantt: "進度", subtitle: "夥伴中心" },
@@ -99,7 +99,7 @@ export const PERM_MATRIX = {
     ["shift", "排班", { edit: 1 }],
     ["punch", "出勤", { edit: 1 }],
     ["pay", "薪資試算", { edit: 1 }],
-    ["salary", "薪資透明", { edit: 1 }],
+    ["salary", "360分潤", { edit: 1 }],
     ["r360", "360評鑑", { edit: 1 }],
     ["fb", "回饋", { edit: 1 }],
     ["quest", "闖關", { edit: 1 }],

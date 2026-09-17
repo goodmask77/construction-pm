@@ -167,7 +167,7 @@ export default function SalaryView({ me: account, userName }) {
   const TABS = [["table", "分配總表"], ["pnl", "損益儀表板"], ["sim", "前後對照"], ["guide", "說明"], ["story", "設計過程"], ...(mgr ? [["set", "設定"]] : [])];
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-      <SecHead tag="薪資透明" title="你的每一分成長，都看得見、也都算得進薪水裡" right={
+      <SecHead tag="360評鑑分潤" title="你的每一分成長，都看得見、也都算得進薪水裡" right={
         <span style={{ fontSize: 12, color: SUB }}>公司賺越多・大家分越多・無上限</span>} />
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
         {TABS.map(([k, l]) => <Btn key={k} on={tab === k} onClick={() => setTab(k)}>{l}</Btn>)}
