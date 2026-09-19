@@ -25,6 +25,8 @@ const AB_UBER_CATS = new Set(["Pizza披薩", "主餐＆早午餐", "沙拉＆湯
 // 非菜單分類：不進品項明細表（工具箱/包場/免招手/蛋糕/福利=服務性按鍵，不是餐點）
 const AB_SKIP_CATS = new Set(["⚡️工具箱", "包場大訂", "免招手", "收蛋糕", "慶生沒蛋糕", "♥️福利♥️", "自訂食品", "總結", "套餐", "商品分類銷售分析"]);
 const AB_FINE_ORDER = ["披薩", "排餐", "麵", "飯", "堡・早午餐", "沙拉", "開胃菜", "湯", "炸物", "甜點", "果昔", "茶飲", "咖啡", "熱茶", "調酒", "啤酒", "瓶裝酒"];
+// GROUN:D 品類固定排序（張良 2026-09-20 指定；清單外的類別排在後面照資料出現順序）
+const GD_CAT_ORDER = ["披薩", "漢堡", "越法三明治", "義大利麵", "小點", "湯品", "基礎飲品", "咖啡飲品", "奶香飲品", "檸檬飲品"];
 const AB_FINE_RULES = [ // 順序重要：特徵強的先比（長島冰茶→調酒不是茶飲、熱紅酒→調酒不是瓶裝酒、燉飯→飯不是開胃菜的青花）
   [/披薩/, "披薩"], [/燉飯/, "飯"], [/麵/, "麵"], [/牛排|肋眼|豬排|雞胸堡/, "排餐"], // 雞胸堡歸排餐（張良 2026-09-20）
   [/法式吐司/, "甜點"], // 法式吐司歸甜點（張良 2026-09-20；要放在堡・早午餐規則前面）
@@ -1784,6 +1786,7 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
                   }
                   if (!Object.keys(items).length) return null;
                   if (isAB) { AB_FINE_ORDER.forEach(c => { if (Object.values(items).some(o => o.cat === c)) catSeen.push(c); }); Object.values(items).forEach(o => { if (!catSeen.includes(o.cat)) catSeen.push(o.cat); }); }
+                  else catSeen.sort((a, b) => { const ia = GD_CAT_ORDER.indexOf(a), ib = GD_CAT_ORDER.indexOf(b); return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib); }); // GD 固定品類順序（清單外的排後面、保持原相對順序）
                   const lastD2 = dts[dts.length - 1], prevD2 = dts[dts.length - 2];
                   const dcols = [...dts].reverse(); // 顯示順序：最新日在最左（張良 2026-09-11：不用往右滑到底）；CSV 匯出照舊時間序
                   // 近30日均＆vs上期（張良 2026-09-19）：口徑錨定「全店最新日結日」，近30=往前30個日曆天、
