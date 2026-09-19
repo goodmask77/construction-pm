@@ -573,7 +573,7 @@ async function loadPosText() {
   try {
     const now = new Date(Date.now() + 8 * 3600e3)
     const mo = now.toISOString().slice(0, 7)
-    const kv = await kvGetMany(['sp_finance_pm_pos', 'sp_finance_pm_pos_d_' + mo, 'sp_finance_pm_pos_tx_' + mo, 'sp_finance_pm_pos_flags', 'sp_finance_pm_pos_idlecfg', 'sp_finance_pm_pos_hh_' + mo, 'sp_finance_pm_pos_costs', 'sp_finance_pm_pos_prices', 'sp_finance_pm_ablive', 'sp_finance_pm_labor'])
+    const kv = await kvGetMany(['sp_finance_pm_pos', 'sp_finance_pm_pos_d_' + mo, 'sp_finance_pm_pos_tx_' + mo, 'sp_finance_pm_pos_flags', 'sp_finance_pm_pos_idlecfg', 'sp_finance_pm_pos_hh_' + mo, 'sp_finance_pm_pos_costs', 'sp_finance_pm_pos_prices', 'sp_finance_pm_pos_hidden', 'sp_finance_pm_ablive', 'sp_finance_pm_labor'])
     const pos = kv['sp_finance_pm_pos']
     const entries = pos && Array.isArray(pos.entries) ? pos.entries : []
     if (!entries.length) return ''
@@ -635,6 +635,16 @@ async function loadPosText() {
         if (es2.length) pLines.push(`  - ${sk2 === 'ground' ? 'GROUN:D' : 'A Beach'}：` + es2.map(([n2, v]) => `${n2}=${Math.round(Number(v))}`).join('、'))
       }
       if (pLines.length) { lines.push('【品項定價（老闆手填牌價，比銷售資料推算的準；問「XX賣多少錢」以此為準）】'); lines.push(...pLines) }
+    }
+    // 下架品項隱藏清單（pm_pos_hidden＝品項明細「🙈隱藏管理」勾的；分析銷售時銷量歸零是下架不是賣不動，要排除別誤判；與 App loadSpaceAIContext 同步接）
+    const hiddenDoc = kv['sp_finance_pm_pos_hidden']
+    if (hiddenDoc && Object.keys(hiddenDoc).length) {
+      const hLines = []
+      for (const [sk2, m2] of Object.entries(hiddenDoc)) {
+        const ks2 = Object.keys(m2 || {})
+        if (ks2.length) hLines.push(`  - ${sk2 === 'ground' ? 'GROUN:D' : 'A Beach'}：${ks2.join('、')}`)
+      }
+      if (hLines.length) { lines.push('【已下架/隱藏品項（老闆在品項明細標的；銷量歸零是下架不是賣不動，分析時要排除）】'); lines.push(...hLines) }
     }
     // 當月品項銷售彙總（答「哪些餐賣得好」用）
     const det = kv['sp_finance_pm_pos_d_' + mo]
