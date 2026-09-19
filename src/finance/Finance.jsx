@@ -26,8 +26,9 @@ const AB_UBER_CATS = new Set(["Pizza披薩", "主餐＆早午餐", "沙拉＆湯
 const AB_SKIP_CATS = new Set(["⚡️工具箱", "包場大訂", "免招手", "收蛋糕", "慶生沒蛋糕", "♥️福利♥️", "自訂食品", "總結", "套餐", "商品分類銷售分析"]);
 const AB_FINE_ORDER = ["披薩", "排餐", "麵", "飯", "堡・早午餐", "沙拉", "開胃菜", "湯", "炸物", "甜點", "果昔", "茶飲", "咖啡", "熱茶", "調酒", "啤酒", "瓶裝酒"];
 const AB_FINE_RULES = [ // 順序重要：特徵強的先比（長島冰茶→調酒不是茶飲、熱紅酒→調酒不是瓶裝酒、燉飯→飯不是開胃菜的青花）
-  [/披薩/, "披薩"], [/燉飯/, "飯"], [/麵/, "麵"], [/牛排|肋眼|豬排/, "排餐"],
-  [/塔可|漢堡|堡|早餐|法式吐司|班尼迪克|歐姆蛋|布里歐/, "堡・早午餐"], // 張良 2026-08-26：堡塔可＋早午餐併一類
+  [/披薩/, "披薩"], [/燉飯/, "飯"], [/麵/, "麵"], [/牛排|肋眼|豬排|雞胸堡/, "排餐"], // 雞胸堡歸排餐（張良 2026-09-20）
+  [/法式吐司/, "甜點"], // 法式吐司歸甜點（張良 2026-09-20；要放在堡・早午餐規則前面）
+  [/塔可|漢堡|堡|早餐|班尼迪克|歐姆蛋|布里歐/, "堡・早午餐"], // 張良 2026-08-26：堡塔可＋早午餐併一類
   [/沙拉/, "沙拉"], [/湯/, "湯"], [/薯條|雞翅|生蠔|炸物|酥炸/, "炸物"],
   [/提拉米蘇|蛋糕|檸檬派/, "甜點"], [/果昔/, "果昔"], [/咖啡/, "咖啡"],
   [/莫西多|桑格利亞|長島|貝里斯|熱紅酒|鳥居|A ?Beach/i, "調酒"],
@@ -1812,7 +1813,8 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
                   }
                   const sortKey = gdSort && (dts.includes(gdSort) || ["cum", "avg30", "grow"].includes(gdSort)) ? gdSort : lastD2;
                   // 排序值：avg30/grow 也能排（張良 2026-09-19）；grow：新品排最前、無上期資料排最後
-                  const growNum = (o) => { const c = q30[o.k] || 0, p = qPrev[o.k] || 0; if (!nPrev) return -1e9; if (!p) return c > 0 ? 1e9 : -1e9; return (c - p) / p; };
+                  // 比較口徑（張良 2026-09-20 指定）：近30天「日均」 vs 近60天「日均」（60天窗含近30；兩邊都除以各自營業日數，GD 前期資料少也不會灌水）
+                  const growNum = (o) => { const c = q30[o.k] || 0, p = qPrev[o.k] || 0; if (!nPrev) return -1e9; if (!p) return c > 0 ? 1e9 : -1e9; const a30 = c / n30, a60 = (c + p) / (n30 + nPrev); return a60 ? (a30 - a60) / a60 : 0; };
                   const sv = (o) => sortKey === "cum" ? o.cum : sortKey === "avg30" ? (q30[o.k] || 0) : sortKey === "grow" ? growNum(o) : (o.q[sortKey] || 0);
                   // 😴 只看沒賣：最後售出距最新日結 ≥7 天（取代原「沒賣預警」大區塊——同資訊、不佔版面）
                   const lastSold = (o) => { const ds = Object.keys(o.q).filter(dd => o.q[dd] > 0).sort(); return ds[ds.length - 1] || null; };
@@ -1845,13 +1847,15 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
                   const hidCnt = Object.values(items).filter(r => hiddenMap[r.k]).length;
                   const rows = Object.values(items).filter(r => gdTab === "全部" || r.cat === gdTab).filter(r => !gdIdle || (idleGap(r) ?? 99) >= 7).filter(r => gdHideMode || !hiddenMap[r.k]).sort((a, b) => sv(b) - sv(a) || b.cum - a.cum);
                   const avg30Txt = (ks) => { if (!n30) return "—"; const v = ks.reduce((t, k) => t + (q30[k] || 0), 0) / n30; return v ? (v >= 10 ? String(Math.round(v)) : v.toFixed(1)) : "0"; };
-                  // vs上期＝近30天總量 vs 前30天總量；上期0本期有=「新」；沒有上期資料（開店未滿60天）=「—」
+                  // vs近60＝近30天日均 vs 近60天日均（張良 2026-09-20 指定區間；跟「30日均」同一套日均口徑）
+                  // 60天窗的前半(31~60天前)完全沒賣、近30有賣=「新」；資料未滿30天以上=「—」
                   const growTxt = (ks) => {
-                    if (!nPrev) return { t: "—", col: C.faint, ti: "還沒有完整的上一個30天資料" };
+                    if (!nPrev) return { t: "—", col: C.faint, ti: "資料還沒累積到 30 天以前，沒有可比較的基期" };
                     const c = ks.reduce((t, k) => t + (q30[k] || 0), 0), p = ks.reduce((t, k) => t + (qPrev[k] || 0), 0);
-                    if (!p) return c > 0 ? { t: "新", col: C.accent, ti: "上期沒賣、近30天開賣" } : { t: "—", col: C.faint, ti: "兩期都沒賣" };
-                    const pc = Math.round((c - p) / p * 100);
-                    return { t: (pc >= 0 ? "+" : "") + pc + "%", col: pc >= 0 ? C.accent : C.red, ti: `近30天 ${c} 份 vs 上期 ${p} 份` };
+                    if (!p) return c > 0 ? { t: "新", col: C.accent, ti: "60天窗的前半沒賣、近30天開賣" } : { t: "—", col: C.faint, ti: "近60天都沒賣" };
+                    const a30 = c / n30, a60 = (c + p) / (n30 + nPrev);
+                    const pc = Math.round((a30 - a60) / a60 * 100);
+                    return { t: (pc >= 0 ? "+" : "") + pc + "%", col: pc >= 0 ? C.accent : C.red, ti: `近30天日均 ${a30.toFixed(1)} 份 vs 近60天日均 ${a60.toFixed(1)} 份` };
                   };
                   const growCell = (ks, extra) => { const g = growTxt(ks); return <td style={{ ...tdn, color: g.col, fontWeight: 700, ...extra }} title={g.ti}>{g.t}</td>; };
                   // 成本/毛利（張良 2026-08-28：每品項填成本→總成本/每天毛利/平均成本率）
@@ -1908,7 +1912,7 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
                         {canEdit && chip2("💰 填成本", gdCost, () => setGdCost(!gdCost), true)}
                         {canEdit && chip2(`🙈 隱藏管理${hidCnt ? `（${hidCnt}）` : ""}`, gdHideMode, () => setGdHideMode(!gdHideMode), true)}
                         {chip2("⬇️ 匯出", false, exportCsv, true)}
-                        <span style={{ fontSize: 10.5, color: C.faint }}>點日期/累計/30日均/vs上期欄＝排序；點品類色帶＝摺疊；🔥=熱銷竄升(+50%)、紅字⚠0=昨有量今零售</span>
+                        <span style={{ fontSize: 10.5, color: C.faint }}>點日期/累計/30日均/vs近60欄＝排序；點品類色帶＝摺疊；🔥=熱銷竄升(+50%)、紅字⚠0=昨有量今零售</span>
                       </div>
                       <div style={{ overflowX: "auto", border: `1px solid ${C.line}`, borderRadius: 8, background: "#fff" }}>
                         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
@@ -1916,7 +1920,7 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
                             <th style={{ ...thd, textAlign: "left", cursor: "default", position: "sticky", left: 0, background: C.head, zIndex: 1 }}>品項</th>
                             {!gdGroup && <th style={{ ...thd, textAlign: "left", cursor: "default" }}>品類</th>}
                             <th onClick={() => setGdSort("avg30")} style={{ ...thd, color: sortKey === "avg30" ? C.brand : C.sub }} title={`近30個日曆天（${n30} 個營業日）平均每日賣出份數——固定看全店最新資料，不受期間選擇影響；點一下排序`}>30日均{sortKey === "avg30" ? " ▼" : ""}</th>
-                            <th onClick={() => setGdSort("grow")} style={{ ...thd, color: sortKey === "grow" ? C.brand : C.sub }} title="近30天總份數 vs 前一個30天總份數的成長率；「新」=上期沒賣近期開賣；點一下排序（新品排最前）">vs上期{sortKey === "grow" ? " ▼" : ""}</th>
+                            <th onClick={() => setGdSort("grow")} style={{ ...thd, color: sortKey === "grow" ? C.brand : C.sub }} title="近30天日均 vs 近60天日均 的成長率（同一套日均口徑）；「新」=60天窗前半沒賣近期開賣；點一下排序（新品排最前）">vs近60{sortKey === "grow" ? " ▼" : ""}</th>
                             <th onClick={() => setGdSort("cum")} style={{ ...thd, color: sortKey === "cum" ? C.brand : C.sub }}>累計{sortKey === "cum" ? " ▼" : ""}</th>
                             {isAB
                               ? <th style={{ ...thd, cursor: "default" }} title="Uber 外送分類（低價版）賣出的份數——已併入左邊各日與累計的總量，這欄單獨列出其中多少來自 Uber">Uber</th>
