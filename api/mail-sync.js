@@ -8,7 +8,7 @@ import { parsePosWorkbook, parseTxSheet } from './_pos-parse.js' // 解析器共
 // 2026-08-27 退役 _ground-seed.js（試營運 08-10~13 截圖回填）：口徑錯（8/10、8/11 比 POS 實收多，疑未扣完折扣），
 // 且每次同步都會把刪掉的日子塞回來——改由 syncJoya 抓喬亞真值（張良同意四天以 POS 為準）。檔案留檔不再引用。
 import { groundManualRecords } from './_ground-manual.js' // GROUN:D 喬亞POS報表手動回填（08-19~21，張良 2026-08-24 截圖；已驗證與POS一致）
-import { joyaLogin, joyaFetchDay, joyaBuildRecord, taipeiToday, taipeiAfterClose, joyaFetchTimeslots, timeslotSection, TIMESLOT_SHEET } from './_joya.js' // GROUN:D 喬亞行動報表自動抓取（2026-08-26 起全自動）
+import { joyaLogin, joyaFetchDay, joyaBuildRecord, taipeiToday, taipeiAfterClose, joyaFetchTimeslots, timeslotSection, TIMESLOT_SHEET, joyaFetchSalesMethod, parseSalesMethod } from './_joya.js' // GROUN:D POS行動報表自動抓取（2026-08-26 起全自動）
 import { syncIchef } from './_ichef.js' // 參考店1/2 每日營業額（iCHEF 後台自動抓取，2026-09-01）
 import { syncEatsLive } from './_eats.js' // AB 今天即時營業額（Eats365 商家後台，2026-09-02）
 
@@ -701,6 +701,22 @@ export default async function handler(req, res) {
       return o
     })
     return res.status(200).json({ ok: true, n: ppl.length, fields: fs2.map(f => ({ key: f.key, label: f.label })), people: ppl })
+  }
+  // 內用/外帶歷史回補口（同金鑰，張良 2026-09-20 內外帶接進報表）：?dinefill=<key>[&dry=1]
+  // 把 GROUN:D 已入庫、還沒有 dineTx 欄的日子逐日抓 salesMethod 補上（新日子入庫時已自動帶）
+  if (req.query?.dinefill) {
+    const mk = (process.env.MENU_PROBE_KEY || '').trim()
+    if (!mk || String(req.query.dinefill) !== mk) return res.status(403).json({ ok: false })
+    const store = (await kvGet('sp_finance_pm_pos')) || { entries: [] }
+    const targets = (store.entries || []).filter(e => /groun/i.test(e.store || '') && e.dineTx === undefined)
+    if (String(req.query.dry || '')) return res.status(200).json({ ok: true, dry: true, n: targets.length, dates: targets.map(e => e.date) })
+    const cookie = await joyaLogin()
+    const done = [], fail = []
+    for (const e of targets) {
+      try { const ms = await joyaFetchSalesMethod(cookie, e.date); Object.assign(e, parseSalesMethod(ms)); done.push(e.date) } catch (_) { fail.push(e.date) }
+    }
+    if (done.length) { store.updatedAt = new Date().toISOString(); await kvPut('sp_finance_pm_pos', store, '內外帶回補口'); await announceChanged() }
+    return res.status(200).json({ ok: true, done: done.length, fail })
   }
   // 品項改名對照管理口（同金鑰，張良 2026-09-19 菜名更新要合併歷史數據）：
   // GET  ?aliasget=<key>                          → 看目前對照表

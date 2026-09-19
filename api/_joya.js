@@ -59,11 +59,26 @@ export async function joyaFetchDay(cookie, date) {
     service: labelVal(txt, '服務費'), revenue: labelVal(txt, '實收金額'), txCount: labelVal(txt, '交易筆數'), qty: labelVal(txt, '銷售數量'),
   }
   if (!sum.revenue) return { date, sum, empty: true } // 公休/沒營業（實收0；就算有test單活動也算沒開）：不入庫，免得0元日拉低日均
-  const [cats, items, pays, slots] = await Promise.all([
+  const [cats, items, pays, slots, methods] = await Promise.all([
     get('categorySalesAmount').then(dataList), get('productSalesAmount').then(dataList), get('payment').then(dataList),
     get('period_time_report').then(parseTimeslots).catch(() => []),
+    get('salesMethod').then(dataList).catch(() => []), // 內用/外帶（單數口徑；張良 2026-09-20 要接進報表）
   ])
-  return { date, sum, cats, items, pays, slots, empty: false }
+  return { date, sum, cats, items, pays, slots, methods, empty: false }
+}
+
+// 只抓內用/外帶（歷史回補用；salesMethod 回 [{name:'內用',value},{name:'$$外帶',value}]，value=單數）
+export async function joyaFetchSalesMethod(cookie, date) {
+  const sd = await jFetch('/api/date', { method: 'POST', body: JSON.stringify({ startDate: date, endDate: date }) }, cookie)
+  if (!sd.ok) throw new Error('設日期失敗 ' + sd.status)
+  const r = await jFetch('/salesMethod', {}, cookie); if (!r.ok) throw new Error('salesMethod ' + r.status)
+  return dataList(await r.text())
+}
+// methods → {dineTx, takeTx}（名稱含「外帶」歸外帶、其餘（內用）歸內用；喬亞的外帶鍵叫「$$外帶」）
+export const parseSalesMethod = (methods) => {
+  let dineTx = 0, takeTx = 0
+  for (const m of (methods || [])) { const v = num(m.value); if (/外帶/.test(m.name || '')) takeTx += v; else dineTx += v }
+  return { dineTx, takeTx }
 }
 
 // 只抓時段（給「舊日子補時段」用：日子已入庫但當時沒抓時段 → 只補這張表，不動其他資料）
@@ -111,6 +126,7 @@ export function joyaBuildRecord(day) {
     txCount: sum.txCount, guests: 0, sales: sum.revenue, serviceFee: sum.service, refund: 0,
     cash, cashCount: null, card, cardCount: null, linepay, payOther, kiosk, uber: 0, uberCount: null, posSales: 0, apiSales: 0,
     voidItems: 0, returnDish: 0, unsettled: 0, kv: {}, source: 'joya-mobile',
+    ...parseSalesMethod(day.methods), // dineTx/takeTx 內用外帶單數（2026-09-20 起；舊日子用 dinefill 口回補）
     partial: '喬亞行動報表自動抓取：營收/單數/付款/品項含金額為真值；無來客數、無套餐內拆分、退貨未單列',
     // 時段放獨立分頁鍵（不能塞進分類表——前端會把 11:00 當品項算進熱銷榜）；付款方式原樣入明細（drill 當日原始資料可見）
     _details: {
