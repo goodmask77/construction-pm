@@ -702,6 +702,31 @@ export default async function handler(req, res) {
     })
     return res.status(200).json({ ok: true, n: ppl.length, fields: fs2.map(f => ({ key: f.key, label: f.label })), people: ppl })
   }
+  // 品項改名對照管理口（同金鑰，張良 2026-09-19 菜名更新要合併歷史數據）：
+  // GET  ?aliasget=<key>                          → 看目前對照表
+  // POST ?aliasset=<key>  body={store:"abeach"|"ground", set:{舊key:新key,…}, del:[舊key,…]}
+  // key 規則：A Beach 用 abNorm 後的 key（去 emoji/空白）、GROUN:D 用品項原名；前端品項明細/30日均/AI 都吃這份
+  if (req.query?.aliasget) {
+    const mk = (process.env.MENU_PROBE_KEY || '').trim()
+    if (!mk || String(req.query.aliasget) !== mk) return res.status(403).json({ ok: false })
+    return res.status(200).json({ ok: true, alias: (await kvGet('sp_finance_pm_pos_alias')) || {} })
+  }
+  if (req.method === 'POST' && req.query?.aliasset) {
+    const mk = (process.env.MENU_PROBE_KEY || '').trim()
+    if (!mk || String(req.query.aliasset) !== mk) return res.status(403).json({ ok: false })
+    let body2 = {}
+    try { body2 = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
+    const st2 = body2.store === 'ground' ? 'ground' : body2.store === 'abeach' ? 'abeach' : null
+    if (!st2) return res.status(400).json({ ok: false, error: 'store 要是 abeach 或 ground' })
+    const cur2 = (await kvGet('sp_finance_pm_pos_alias')) || {}
+    const m3 = { ...(cur2[st2] || {}) }
+    for (const [o3, n3] of Object.entries(body2.set || {})) { if (typeof n3 === 'string' && n3.trim()) m3[o3] = n3 }
+    for (const o3 of (Array.isArray(body2.del) ? body2.del : [])) delete m3[o3]
+    const next2 = { ...cur2, [st2]: m3 }
+    await kvPut('sp_finance_pm_pos_alias', next2, '改名對照口')
+    await announceChanged() // 開著的營運報表即刻套用合併
+    return res.status(200).json({ ok: true, store: st2, n: Object.keys(m3).length, alias: next2 })
+  }
   // 菜單探針（唯讀＋金鑰保護，回品名/金額 → 沒帶對 MENU_PROBE_KEY 一律 403）：?menuprobe=<key>&store=abeach|ground
   // 用途：把期間內出現過的全部品項按「日結信分類」彙總（品名/數量/套餐內/金額/出現天數），給菜單盤點/試算表用
   if (req.query?.menuprobe) {

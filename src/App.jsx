@@ -61,9 +61,9 @@ async function loadSpaceAIContext() {
       } catch (_) { return await g(legacy); }
     };
     const d0 = new Date(); const mo = `${d0.getFullYear()}-${String(d0.getMonth() + 1).padStart(2, "0")}`;
-    const [snapC, snapT, snapK, snapF, tasks, crewRoster, crewOld, pos, posD, posTx, posFlags, posIdleCfgAI, posHHAI, posCostsAI, posPricesAI, posHiddenAI, posAbLiveAI, posLaborAI, bank, ctbc, accounts, ledger, conclusions, mailRules, mailLog, supply, supplyOrders, supplyRecipesRaw] = await Promise.all([
+    const [snapC, snapT, snapK, snapF, tasks, crewRoster, crewOld, pos, posD, posTx, posFlags, posIdleCfgAI, posHHAI, posCostsAI, posPricesAI, posHiddenAI, posAliasAI, posAbLiveAI, posLaborAI, bank, ctbc, accounts, ledger, conclusions, mailRules, mailLog, supply, supplyOrders, supplyRecipesRaw] = await Promise.all([
       g("pm_bot_context"), g("sp_team_pm_bot_context"), g("sp_crew_pm_bot_context"), g("sp_finance_pm_bot_context"),
-      recs("pm_tasks_v2", "pm_task_", "pm_tasks"), g("sp_crew_kb_roster"), g("sp_crew_kb_360"), g("sp_finance_pm_pos"), g("sp_finance_pm_pos_d_" + mo), g("sp_finance_pm_pos_tx_" + mo), g("sp_finance_pm_pos_flags"), g("sp_finance_pm_pos_idlecfg"), g("sp_finance_pm_pos_hh_" + mo), g("sp_finance_pm_pos_costs"), g("sp_finance_pm_pos_prices"), g("sp_finance_pm_pos_hidden"), g("sp_finance_pm_ablive"), g("sp_finance_pm_labor"),
+      recs("pm_tasks_v2", "pm_task_", "pm_tasks"), g("sp_crew_kb_roster"), g("sp_crew_kb_360"), g("sp_finance_pm_pos"), g("sp_finance_pm_pos_d_" + mo), g("sp_finance_pm_pos_tx_" + mo), g("sp_finance_pm_pos_flags"), g("sp_finance_pm_pos_idlecfg"), g("sp_finance_pm_pos_hh_" + mo), g("sp_finance_pm_pos_costs"), g("sp_finance_pm_pos_prices"), g("sp_finance_pm_pos_hidden"), g("sp_finance_pm_pos_alias"), g("sp_finance_pm_ablive"), g("sp_finance_pm_labor"),
       g("sp_finance_pm_bank"), g("sp_finance_pm_ctbc"), g("sp_finance_pm_fin_accounts"), recs("sp_finance_pm_fin_ledger_v2", "sp_finance_pm_fin_tx_", "sp_finance_pm_fin_ledger"),
       g("pm_conclusions"), g("sp_lw_pm_mail_rules"), g("sp_lw_pm_mail_log"), g("sp_supply_pm_supply"),
       g("sp_supply_pm_orders"), getSharedPrefix("sp_supply_pm_recipe_v_"),
@@ -175,6 +175,15 @@ async function loadSpaceAIContext() {
           if (ks2.length) hLines.push(`- ${sk2 === "ground" ? "GROUN:D" : "A Beach"}：${ks2.join("、")}`);
         }
         if (hLines.length) parts.push("【已下架/隱藏品項（老闆在品項明細標的；銷量歸零是下架不是賣不動，分析時要排除）】\n" + hLines.join("\n"));
+      }
+      // 品項改名對照（pm_pos_alias＝菜名更新後歷史數據合併到最新名；舊名=同一個商品別當兩個菜；與 D哥 loadPosText 同步接）
+      if (posAliasAI && Object.keys(posAliasAI).length) {
+        const aLines = [];
+        for (const [sk2, m2] of Object.entries(posAliasAI)) {
+          const es2 = Object.entries(m2 || {});
+          if (es2.length) aLines.push(`- ${sk2 === "ground" ? "GROUN:D" : "A Beach"}：` + es2.map(([o2, n2]) => `${o2}→${n2}`).join("、"));
+        }
+        if (aLines.length) parts.push("【品項改名對照（舊菜名→最新名；同一個商品，統計/回答都用最新名合併算）】\n" + aLines.join("\n"));
       }
       // AB 今天即時（pm_ablive＝Eats365 後台「到目前為止」，張良 2026-09-02；同一天已有正式日結就不引用；與 D哥 loadPosText 同步接）
       {

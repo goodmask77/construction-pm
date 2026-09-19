@@ -573,7 +573,7 @@ async function loadPosText() {
   try {
     const now = new Date(Date.now() + 8 * 3600e3)
     const mo = now.toISOString().slice(0, 7)
-    const kv = await kvGetMany(['sp_finance_pm_pos', 'sp_finance_pm_pos_d_' + mo, 'sp_finance_pm_pos_tx_' + mo, 'sp_finance_pm_pos_flags', 'sp_finance_pm_pos_idlecfg', 'sp_finance_pm_pos_hh_' + mo, 'sp_finance_pm_pos_costs', 'sp_finance_pm_pos_prices', 'sp_finance_pm_pos_hidden', 'sp_finance_pm_ablive', 'sp_finance_pm_labor'])
+    const kv = await kvGetMany(['sp_finance_pm_pos', 'sp_finance_pm_pos_d_' + mo, 'sp_finance_pm_pos_tx_' + mo, 'sp_finance_pm_pos_flags', 'sp_finance_pm_pos_idlecfg', 'sp_finance_pm_pos_hh_' + mo, 'sp_finance_pm_pos_costs', 'sp_finance_pm_pos_prices', 'sp_finance_pm_pos_hidden', 'sp_finance_pm_pos_alias', 'sp_finance_pm_ablive', 'sp_finance_pm_labor'])
     const pos = kv['sp_finance_pm_pos']
     const entries = pos && Array.isArray(pos.entries) ? pos.entries : []
     if (!entries.length) return ''
@@ -645,6 +645,16 @@ async function loadPosText() {
         if (ks2.length) hLines.push(`  - ${sk2 === 'ground' ? 'GROUN:D' : 'A Beach'}：${ks2.join('、')}`)
       }
       if (hLines.length) { lines.push('【已下架/隱藏品項（老闆在品項明細標的；銷量歸零是下架不是賣不動，分析時要排除）】'); lines.push(...hLines) }
+    }
+    // 品項改名對照（pm_pos_alias＝菜名更新後歷史數據合併到最新名；分析品項時舊名=同一個商品，別當兩個菜；與 App loadSpaceAIContext 同步接）
+    const aliasDoc = kv['sp_finance_pm_pos_alias']
+    if (aliasDoc && Object.keys(aliasDoc).length) {
+      const aLines = []
+      for (const [sk2, m2] of Object.entries(aliasDoc)) {
+        const es2 = Object.entries(m2 || {})
+        if (es2.length) aLines.push(`  - ${sk2 === 'ground' ? 'GROUN:D' : 'A Beach'}：` + es2.map(([o2, n2]) => `${o2}→${n2}`).join('、'))
+      }
+      if (aLines.length) { lines.push('【品項改名對照（舊菜名→最新名；同一個商品，統計/回答都用最新名合併算）】'); lines.push(...aLines) }
     }
     // 當月品項銷售彙總（答「哪些餐賣得好」用）
     const det = kv['sp_finance_pm_pos_d_' + mo]

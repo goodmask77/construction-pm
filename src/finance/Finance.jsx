@@ -116,6 +116,7 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
   const [posCosts, setPosCosts] = useState({});             // 品項成本主檔 {abeach:{品項key:成本}, ground:{…}}——存 DB 一份，兩店分開
   const [posPrices, setPosPrices] = useState({});           // 品項定價手動覆寫 {abeach:{品項key:定價}, ground:{…}}——手填優先於自動還原；0＝不顯示（張良 2026-08-28）
   const [posHidden, setPosHidden] = useState({});           // 下架品項隱藏清單 {abeach:{品項key:1}, ground:{…}}——存 DB 全裝置同步（張良 2026-09-19）
+  const [posAlias, setPosAlias] = useState({});             // 品項改名對照 {abeach:{舊key:新key}, ground:{…}}——菜名更新後歷史數據合併到最新名（張良 2026-09-19；AB 的 key 是 abNorm 後、GD 是原名）
   const [gdFold, setGdFold] = useState({});                 // 品項明細：收合中的品類 {品類名:true}（張良 2026-09-19 摺疊功能）
   const [gdHideMode, setGdHideMode] = useState(false);      // 品項明細：隱藏管理模式（開＝顯示全部含已隱藏、每列有隱藏/恢復鈕）
   const [posPivotCats, setPosPivotCats] = useState(null);   // 矩陣內分類勾選（null=全選）
@@ -149,6 +150,7 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
     try { const pc = await window.storage.get(K("pm_pos_costs"), true); setPosCosts(pc && pc.value ? JSON.parse(pc.value) : {}); } catch (_) { setPosCosts({}); }
     try { const pp = await window.storage.get(K("pm_pos_prices"), true); setPosPrices(pp && pp.value ? JSON.parse(pp.value) : {}); } catch (_) { setPosPrices({}); }
     try { const ph = await window.storage.get(K("pm_pos_hidden"), true); setPosHidden(ph && ph.value ? JSON.parse(ph.value) : {}); } catch (_) { setPosHidden({}); }
+    try { const pa = await window.storage.get(K("pm_pos_alias"), true); setPosAlias(pa && pa.value ? JSON.parse(pa.value) : {}); } catch (_) { setPosAlias({}); }
     try { const ic = await window.storage.get(K("pm_pos_idlecfg"), true); setPosIdleCfg(ic && ic.value ? JSON.parse(ic.value) : { days: 7, exCats: [], exItems: [] }); } catch (_) { setPosIdleCfg({ days: 7, exCats: [], exItems: [] }); }
     try { const ie = await window.storage.get(K("pm_ichef"), true); setPosExt(ie && ie.value ? JSON.parse(ie.value) : null); } catch (_) {}
     try { const al = await window.storage.get(K("pm_ablive"), true); setAbLive(al && al.value ? JSON.parse(al.value) : null); } catch (_) {}
@@ -195,10 +197,11 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
     const un9 = onSharedChange(K("pm_pos_costs"), (_k, v) => { try { setPosCosts(v ? JSON.parse(v) : {}); } catch (_) {} });
     const un10 = onSharedChange(K("pm_pos_prices"), (_k, v) => { try { setPosPrices(v ? JSON.parse(v) : {}); } catch (_) {} });
     const un10b = onSharedChange(K("pm_pos_hidden"), (_k, v) => { try { setPosHidden(v ? JSON.parse(v) : {}); } catch (_) {} });
+    const un10c = onSharedChange(K("pm_pos_alias"), (_k, v) => { try { setPosAlias(v ? JSON.parse(v) : {}); } catch (_) {} });
     const un11 = onSharedChange(K("pm_ichef"), (_k, v) => { try { setPosExt(v ? JSON.parse(v) : null); } catch (_) {} });
     const un12 = onSharedChange(K("pm_ablive"), (_k, v) => { try { setAbLive(v ? JSON.parse(v) : null); } catch (_) {} });
     const unLb = onSharedChange(K("pm_labor"), (_k, v) => { try { setLabor(v ? JSON.parse(v) : null); } catch (_) {} });
-    return () => { un1(); un2(); un3(); un4(); un5(); un6(); un7(); un8(); un9(); un10(); un10b(); un11(); un12(); unLb(); };
+    return () => { un1(); un2(); un3(); un4(); un5(); un6(); un7(); un8(); un9(); un10(); un10b(); un10c(); un11(); un12(); unLb(); };
   }, []); // eslint-disable-line
   const saveRecon = (next) => { setRecon(next); window.storage.set(K("pm_recon"), JSON.stringify(next), true).catch(() => {}); };
   // 品項成本存檔（防抖在 storage 墊片層；廣播讓別台/別分頁即時跟上）
@@ -1728,6 +1731,10 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
                 {/* 品項明細（張良 2026-08-14 GD 版型；2026-08-19 A Beach 也接上——POS 分類太粗，改細品類（湯/沙拉/開胃菜/麵/飯…）看排名決定刪菜單；Uber 低價分類併同品項另立欄） */}
                 {(() => {
                   const isAB = posStore === "abeach";
+                  // 品項改名合併（張良 2026-09-19）：舊菜名的數據全部併到最新名稱（pm_pos_alias 對照表，DB 同步）
+                  // 顯示名會自動變最新（逐日照時間序處理，最後出現的名字＝最新菜名蓋掉舊的）
+                  const aliasMap = posAlias?.[posStore] || {};
+                  const aliasOf = (k) => aliasMap[k] || k;
                   const dts = days.map(d => d.date); // 期間內有日結的日子＝表格日欄
                   const items = {}; const catSeen = []; const setDay = {}; // setDay＝套餐每日 組數/金額（張良 2026-08-16：+89套餐的數量金額要看得到）
                   days.forEach(d => {
@@ -1740,7 +1747,7 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
                       const ci = (sec.header || []).indexOf("套餐內"); // 欄位用名稱找：真日結信沒這欄＝顯示 —
                       (sec.rows || []).forEach(r => {
                         if (!Array.isArray(r) || typeof r[0] !== "string" || isQuarterItem(r[0])) return;
-                        const key = isAB ? abNorm(r[0]) : r[0]; // A Beach：內用/Uber 同品項（只差emoji）合併
+                        const key = aliasOf(isAB ? abNorm(r[0]) : r[0]); // A Beach：內用/Uber 同品項（只差emoji）合併；再過改名對照
                         const o = items[key] = items[key] || { n: r[0], k: key, cat: isAB ? abFineCat(r[0]) : sec.title, q: {}, cum: 0, comboCum: 0, comboHas: false, uber: 0, amt: 0, aq: 0, u: {} };
                         if (!uber) o.n = r[0]; // 顯示名以內用版為準
                         o.q[d.date] = (o.q[d.date] || 0) + (Number(r[1]) || 0); o.cum += Number(r[1]) || 0;
@@ -1767,7 +1774,7 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
                     (abLive.items || []).forEach(it => {
                       if (AB_SKIP_CATS.has(it.c) || isQuarterItem(it.n)) return;
                       const uber = AB_UBER_CATS.has(it.c);
-                      const key = abNorm(it.n);
+                      const key = aliasOf(abNorm(it.n));
                       const o = items[key] = items[key] || { n: it.n, k: key, cat: abFineCat(it.n), q: {}, cum: 0, comboCum: 0, comboHas: false, uber: 0, amt: 0, aq: 0, u: {} };
                       o.q[liveD] = (o.q[liveD] || 0) + (Number(it.q) || 0); o.cum += Number(it.q) || 0;
                       if (uber) o.uber += Number(it.q) || 0;
@@ -1795,7 +1802,7 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
                           if (isAB && AB_SKIP_CATS.has(sec.title)) return;
                           (sec.rows || []).forEach(r => {
                             if (!Array.isArray(r) || typeof r[0] !== "string" || isQuarterItem(r[0])) return;
-                            const key = isAB ? abNorm(r[0]) : r[0];
+                            const key = aliasOf(isAB ? abNorm(r[0]) : r[0]);
                             const tgt = inCur ? q30 : qPrev;
                             tgt[key] = (tgt[key] || 0) + (Number(r[1]) || 0);
                           });
