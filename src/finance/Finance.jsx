@@ -115,6 +115,9 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
   const [gdCostDetail, setGdCostDetail] = useState(false);  // 期間彙總：成本明細下鑽（張良 2026-08-28：成本率46%？我需要看到畫面——每品項吃掉多少成本）
   const [posCosts, setPosCosts] = useState({});             // 品項成本主檔 {abeach:{品項key:成本}, ground:{…}}——存 DB 一份，兩店分開
   const [posPrices, setPosPrices] = useState({});           // 品項定價手動覆寫 {abeach:{品項key:定價}, ground:{…}}——手填優先於自動還原；0＝不顯示（張良 2026-08-28）
+  const [posHidden, setPosHidden] = useState({});           // 下架品項隱藏清單 {abeach:{品項key:1}, ground:{…}}——存 DB 全裝置同步（張良 2026-09-19）
+  const [gdFold, setGdFold] = useState({});                 // 品項明細：收合中的品類 {品類名:true}（張良 2026-09-19 摺疊功能）
+  const [gdHideMode, setGdHideMode] = useState(false);      // 品項明細：隱藏管理模式（開＝顯示全部含已隱藏、每列有隱藏/恢復鈕）
   const [posPivotCats, setPosPivotCats] = useState(null);   // 矩陣內分類勾選（null=全選）
   const [posPivotSort, setPosPivotSort] = useState(null);   // 矩陣排序 {col, dir}
   const [recon, setRecon] = useState({ links: {}, ignored: [] }); // 補記/忽略標記
@@ -145,6 +148,7 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
     try { const fl = await window.storage.get(K("pm_pos_flags"), true); setPosFlags(fl && fl.value ? JSON.parse(fl.value) : { items: {} }); } catch (_) { setPosFlags({ items: {} }); }
     try { const pc = await window.storage.get(K("pm_pos_costs"), true); setPosCosts(pc && pc.value ? JSON.parse(pc.value) : {}); } catch (_) { setPosCosts({}); }
     try { const pp = await window.storage.get(K("pm_pos_prices"), true); setPosPrices(pp && pp.value ? JSON.parse(pp.value) : {}); } catch (_) { setPosPrices({}); }
+    try { const ph = await window.storage.get(K("pm_pos_hidden"), true); setPosHidden(ph && ph.value ? JSON.parse(ph.value) : {}); } catch (_) { setPosHidden({}); }
     try { const ic = await window.storage.get(K("pm_pos_idlecfg"), true); setPosIdleCfg(ic && ic.value ? JSON.parse(ic.value) : { days: 7, exCats: [], exItems: [] }); } catch (_) { setPosIdleCfg({ days: 7, exCats: [], exItems: [] }); }
     try { const ie = await window.storage.get(K("pm_ichef"), true); setPosExt(ie && ie.value ? JSON.parse(ie.value) : null); } catch (_) {}
     try { const al = await window.storage.get(K("pm_ablive"), true); setAbLive(al && al.value ? JSON.parse(al.value) : null); } catch (_) {}
@@ -190,10 +194,11 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
     const un8 = onSharedChange(K("pm_pos_hh_") + "*", (k, v) => { try { const mo = k.slice(-7); if (v) setPosHH(p => ({ ...p, [mo]: JSON.parse(v) })); } catch (_) {} });
     const un9 = onSharedChange(K("pm_pos_costs"), (_k, v) => { try { setPosCosts(v ? JSON.parse(v) : {}); } catch (_) {} });
     const un10 = onSharedChange(K("pm_pos_prices"), (_k, v) => { try { setPosPrices(v ? JSON.parse(v) : {}); } catch (_) {} });
+    const un10b = onSharedChange(K("pm_pos_hidden"), (_k, v) => { try { setPosHidden(v ? JSON.parse(v) : {}); } catch (_) {} });
     const un11 = onSharedChange(K("pm_ichef"), (_k, v) => { try { setPosExt(v ? JSON.parse(v) : null); } catch (_) {} });
     const un12 = onSharedChange(K("pm_ablive"), (_k, v) => { try { setAbLive(v ? JSON.parse(v) : null); } catch (_) {} });
     const unLb = onSharedChange(K("pm_labor"), (_k, v) => { try { setLabor(v ? JSON.parse(v) : null); } catch (_) {} });
-    return () => { un1(); un2(); un3(); un4(); un5(); un6(); un7(); un8(); un9(); un10(); un11(); un12(); unLb(); };
+    return () => { un1(); un2(); un3(); un4(); un5(); un6(); un7(); un8(); un9(); un10(); un10b(); un11(); un12(); unLb(); };
   }, []); // eslint-disable-line
   const saveRecon = (next) => { setRecon(next); window.storage.set(K("pm_recon"), JSON.stringify(next), true).catch(() => {}); };
   // 品項成本存檔（防抖在 storage 墊片層；廣播讓別台/別分頁即時跟上）
@@ -212,6 +217,15 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
       const n = Number(val);
       if (val == null || val === "" || isNaN(n) || n < 0) delete next[storeKey][itemKey]; else next[storeKey][itemKey] = n;
       window.storage.set(K("pm_pos_prices"), JSON.stringify(next), true).catch(() => {});
+      return next;
+    });
+  };
+  // 下架品項隱藏/恢復（張良 2026-09-19）：跟成本/定價同一套 KV 廣播模式，兩店分開、全裝置同步
+  const saveHidden = (storeKey, itemKey, hide) => {
+    setPosHidden(prev => {
+      const next = { ...prev, [storeKey]: { ...(prev[storeKey] || {}) } };
+      if (hide) next[storeKey][itemKey] = 1; else delete next[storeKey][itemKey];
+      window.storage.set(K("pm_pos_hidden"), JSON.stringify(next), true).catch(() => {});
       return next;
     });
   };
@@ -1764,8 +1778,35 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
                   if (isAB) { AB_FINE_ORDER.forEach(c => { if (Object.values(items).some(o => o.cat === c)) catSeen.push(c); }); Object.values(items).forEach(o => { if (!catSeen.includes(o.cat)) catSeen.push(o.cat); }); }
                   const lastD2 = dts[dts.length - 1], prevD2 = dts[dts.length - 2];
                   const dcols = [...dts].reverse(); // 顯示順序：最新日在最左（張良 2026-09-11：不用往右滑到底）；CSV 匯出照舊時間序
-                  const sortKey = gdSort && (dts.includes(gdSort) || gdSort === "cum") ? gdSort : lastD2;
-                  const sv = (o) => sortKey === "cum" ? o.cum : (o.q[sortKey] || 0);
+                  // 近30日均＆vs上期（張良 2026-09-19）：口徑錨定「全店最新日結日」，近30=往前30個日曆天、
+                  // 上期=再往前30天——用全店資料算，不受期間選擇影響；日均分母＝窗內有日結的營業日數
+                  const q30 = {}, qPrev = {}; let n30 = 0, nPrev = 0;
+                  {
+                    const anchor = (all[all.length - 1] || {}).date;
+                    if (anchor) {
+                      const dOf = (base, off) => { const d0 = new Date(base + "T00:00:00Z"); d0.setUTCDate(d0.getUTCDate() + off); return d0.toISOString().slice(0, 10); };
+                      const from30 = dOf(anchor, -29), fromPrev = dOf(anchor, -59);
+                      for (const e of all) {
+                        const dd2 = e.date; if (!dd2 || dd2 < fromPrev || dd2 > anchor) continue;
+                        const inCur = dd2 >= from30;
+                        if (inCur) n30++; else nPrev++;
+                        (dayDet(dd2)?.sheets?.[CATSHEET] || []).forEach(sec => {
+                          if (sec.title === "總結" || sec.title === "套餐") return;
+                          if (isAB && AB_SKIP_CATS.has(sec.title)) return;
+                          (sec.rows || []).forEach(r => {
+                            if (!Array.isArray(r) || typeof r[0] !== "string" || isQuarterItem(r[0])) return;
+                            const key = isAB ? abNorm(r[0]) : r[0];
+                            const tgt = inCur ? q30 : qPrev;
+                            tgt[key] = (tgt[key] || 0) + (Number(r[1]) || 0);
+                          });
+                        });
+                      }
+                    }
+                  }
+                  const sortKey = gdSort && (dts.includes(gdSort) || ["cum", "avg30", "grow"].includes(gdSort)) ? gdSort : lastD2;
+                  // 排序值：avg30/grow 也能排（張良 2026-09-19）；grow：新品排最前、無上期資料排最後
+                  const growNum = (o) => { const c = q30[o.k] || 0, p = qPrev[o.k] || 0; if (!nPrev) return -1e9; if (!p) return c > 0 ? 1e9 : -1e9; return (c - p) / p; };
+                  const sv = (o) => sortKey === "cum" ? o.cum : sortKey === "avg30" ? (q30[o.k] || 0) : sortKey === "grow" ? growNum(o) : (o.q[sortKey] || 0);
                   // 😴 只看沒賣：最後售出距最新日結 ≥7 天（取代原「沒賣預警」大區塊——同資訊、不佔版面）
                   const lastSold = (o) => { const ds = Object.keys(o.q).filter(dd => o.q[dd] > 0).sort(); return ds[ds.length - 1] || null; };
                   const idleGap = (o) => { const ls = lastSold(o); return ls ? Math.round((new Date(lastD2 + "T00:00:00") - new Date(ls + "T00:00:00")) / 864e5) : null; };
@@ -1792,33 +1833,10 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
                     if (!isAB && GD_PRICE_NOAUTO.has(o.cat)) return null;
                     return listPriceOf(o);
                   };
-                  const rows = Object.values(items).filter(r => gdTab === "全部" || r.cat === gdTab).filter(r => !gdIdle || (idleGap(r) ?? 99) >= 7).sort((a, b) => sv(b) - sv(a) || b.cum - a.cum);
-                  // 近30日均＆vs上期（張良 2026-09-19：累計左邊要看得到近況與趨勢）
-                  // 口徑：錨定「全店最新一個日結日」，近30=往前30個日曆天、上期=再往前30天——用全店資料算，
-                  // 不受上面「期間」選擇影響（切到舊月份，這兩欄照樣顯示最新趨勢）；日均分母＝窗內有日結的營業日數
-                  const q30 = {}, qPrev = {}; let n30 = 0, nPrev = 0;
-                  {
-                    const anchor = (all[all.length - 1] || {}).date;
-                    if (anchor) {
-                      const dOf = (base, off) => { const d0 = new Date(base + "T00:00:00Z"); d0.setUTCDate(d0.getUTCDate() + off); return d0.toISOString().slice(0, 10); };
-                      const from30 = dOf(anchor, -29), fromPrev = dOf(anchor, -59);
-                      for (const e of all) {
-                        const dd2 = e.date; if (!dd2 || dd2 < fromPrev || dd2 > anchor) continue;
-                        const inCur = dd2 >= from30;
-                        if (inCur) n30++; else nPrev++;
-                        (dayDet(dd2)?.sheets?.[CATSHEET] || []).forEach(sec => {
-                          if (sec.title === "總結" || sec.title === "套餐") return;
-                          if (isAB && AB_SKIP_CATS.has(sec.title)) return;
-                          (sec.rows || []).forEach(r => {
-                            if (!Array.isArray(r) || typeof r[0] !== "string" || isQuarterItem(r[0])) return;
-                            const key = isAB ? abNorm(r[0]) : r[0];
-                            const tgt = inCur ? q30 : qPrev;
-                            tgt[key] = (tgt[key] || 0) + (Number(r[1]) || 0);
-                          });
-                        });
-                      }
-                    }
-                  }
+                  // 下架品項隱藏（張良 2026-09-19）：正常模式濾掉；「🙈 隱藏管理」開＝全部顯示（含已隱藏、變淡）＋每列隱藏/恢復鈕
+                  const hiddenMap = posHidden?.[posStore] || {};
+                  const hidCnt = Object.values(items).filter(r => hiddenMap[r.k]).length;
+                  const rows = Object.values(items).filter(r => gdTab === "全部" || r.cat === gdTab).filter(r => !gdIdle || (idleGap(r) ?? 99) >= 7).filter(r => gdHideMode || !hiddenMap[r.k]).sort((a, b) => sv(b) - sv(a) || b.cum - a.cum);
                   const avg30Txt = (ks) => { if (!n30) return "—"; const v = ks.reduce((t, k) => t + (q30[k] || 0), 0) / n30; return v ? (v >= 10 ? String(Math.round(v)) : v.toFixed(1)) : "0"; };
                   // vs上期＝近30天總量 vs 前30天總量；上期0本期有=「新」；沒有上期資料（開店未滿60天）=「—」
                   const growTxt = (ks) => {
@@ -1835,6 +1853,10 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
                   const costMap = posCosts?.[posStore] || {};
                   const costOf = (o) => Number(costMap[o.k]) > 0 ? Number(costMap[o.k]) : null;
                   const allItems = Object.values(items); // 全品項口徑（不受上面分類籤/沒賣篩選影響）
+                  // 金額＋整體佔比（張良 2026-09-19：品類旁/品項旁都要）：分母＝期間全品項金額合計（品項拆帳口徑，Uber 低價金額不列入）
+                  const totalAmt = allItems.reduce((t, o) => t + (o.amt || 0), 0);
+                  const pctTxt = (a) => { if (!totalAmt || !a) return ""; const p = a / totalAmt * 100; return p >= 9.95 ? Math.round(p) + "%" : p.toFixed(1) + "%"; };
+                  const amt$ = (n) => "$" + Math.round(n || 0).toLocaleString();
                   const revByDate = {}; days.forEach(d => { revByDate[d.date] = Number(d.revenue) || 0; });
                   if (liveD) revByDate[liveD] = Number(abLive?.revenue) || 0; // 即時欄毛利用盤中營收算（同一時點口徑）
                   const dayCostOf = (dd) => allItems.reduce((t, o) => { const c = costOf(o); return t + (c != null ? (o.q[dd] || 0) * c : 0); }, 0);
@@ -1877,16 +1899,17 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
                         {chip2("依品類分組", gdGroup, () => setGdGroup(!gdGroup), true)}
                         {chip2("😴 7天+沒賣", gdIdle, () => setGdIdle(!gdIdle), true)}
                         {canEdit && chip2("💰 填成本", gdCost, () => setGdCost(!gdCost), true)}
+                        {canEdit && chip2(`🙈 隱藏管理${hidCnt ? `（${hidCnt}）` : ""}`, gdHideMode, () => setGdHideMode(!gdHideMode), true)}
                         {chip2("⬇️ 匯出", false, exportCsv, true)}
-                        <span style={{ fontSize: 10.5, color: C.faint }}>點日期/累計欄＝排序；🔥=熱銷竄升(+50%)、紅字⚠0=昨有量今零售</span>
+                        <span style={{ fontSize: 10.5, color: C.faint }}>點日期/累計/30日均/vs上期欄＝排序；點品類色帶＝摺疊；🔥=熱銷竄升(+50%)、紅字⚠0=昨有量今零售</span>
                       </div>
                       <div style={{ overflowX: "auto", border: `1px solid ${C.line}`, borderRadius: 8, background: "#fff" }}>
                         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
                           <thead><tr style={{ background: C.head }}>
                             <th style={{ ...thd, textAlign: "left", cursor: "default", position: "sticky", left: 0, background: C.head, zIndex: 1 }}>品項</th>
                             {!gdGroup && <th style={{ ...thd, textAlign: "left", cursor: "default" }}>品類</th>}
-                            <th style={{ ...thd, cursor: "default" }} title={`近30個日曆天（${n30} 個營業日）平均每日賣出份數——固定看全店最新資料，不受期間選擇影響`}>30日均</th>
-                            <th style={{ ...thd, cursor: "default" }} title="近30天總份數 vs 前一個30天總份數的成長率；「新」=上期沒賣近期開賣">vs上期</th>
+                            <th onClick={() => setGdSort("avg30")} style={{ ...thd, color: sortKey === "avg30" ? C.brand : C.sub }} title={`近30個日曆天（${n30} 個營業日）平均每日賣出份數——固定看全店最新資料，不受期間選擇影響；點一下排序`}>30日均{sortKey === "avg30" ? " ▼" : ""}</th>
+                            <th onClick={() => setGdSort("grow")} style={{ ...thd, color: sortKey === "grow" ? C.brand : C.sub }} title="近30天總份數 vs 前一個30天總份數的成長率；「新」=上期沒賣近期開賣；點一下排序（新品排最前）">vs上期{sortKey === "grow" ? " ▼" : ""}</th>
                             <th onClick={() => setGdSort("cum")} style={{ ...thd, color: sortKey === "cum" ? C.brand : C.sub }}>累計{sortKey === "cum" ? " ▼" : ""}</th>
                             {isAB
                               ? <th style={{ ...thd, cursor: "default" }} title="Uber 外送分類（低價版）賣出的份數——已併入左邊各日與累計的總量，這欄單獨列出其中多少來自 Uber">Uber</th>
@@ -1916,9 +1939,15 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
                               </tr>
                             )}
                             {groups.flatMap(([cat, g]) => {
+                              const folded = cat != null && !!gdFold[cat];
+                              const catAmt = g.reduce((t, r) => t + (r.amt || 0), 0);
                               const band = cat != null && (
                                 <tr key={"band-" + cat} style={{ background: C.brand }}>
-                                  <td style={{ padding: "5px 8px", color: "#fff", fontWeight: 800, fontSize: 12, letterSpacing: 2, position: "sticky", left: 0, background: C.brand, whiteSpace: "nowrap" }}>{cat}</td>
+                                  {/* 點品類名＝摺疊/展開（張良 2026-09-19）；旁邊帶品類總金額＋整體佔比 */}
+                                  <td onClick={() => setGdFold(f => ({ ...f, [cat]: !f[cat] }))} title={folded ? "點一下展開品項" : "點一下收合品項"} style={{ padding: "5px 8px", color: "#fff", fontWeight: 800, fontSize: 12, letterSpacing: 2, position: "sticky", left: 0, background: C.brand, whiteSpace: "nowrap", cursor: "pointer" }}>
+                                    {folded ? "▸" : "▾"} {cat}
+                                    {catAmt > 0 && <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 700, letterSpacing: 0, color: "#ffd9c4" }}>{amt$(catAmt)}{pctTxt(catAmt) ? `・${pctTxt(catAmt)}` : ""}</span>}
+                                  </td>
                                   <td style={{ ...tdn, borderTop: "none", color: "#ffe0cf", fontWeight: 700 }}>{avg30Txt(g.map(r => r.k))}</td>
                                   {growCell(g.map(r => r.k), { borderTop: "none", color: "#fff" })}
                                   <td style={{ ...tdn, borderTop: "none", color: "#fff", fontWeight: 800 }}>{g.reduce((t, r) => t + r.cum, 0)}</td>
@@ -1941,9 +1970,11 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
                                 );
                               }).filter(Boolean) : [];
                               const body = g.map(r => (
-                                <tr key={(cat || "") + r.n}>
+                                <tr key={(cat || "") + r.n} style={gdHideMode && hiddenMap[r.k] ? { opacity: 0.42 } : undefined}>
                                   <td style={{ padding: "5px 8px", fontWeight: 600, color: zero(r) ? C.red : C.text, whiteSpace: "nowrap", position: "sticky", left: 0, background: "#fff", borderTop: "1px solid #f0ead9" }}>
+                                    {gdHideMode && <button onClick={(e) => { e.stopPropagation(); saveHidden(posStore, r.k, !hiddenMap[r.k]); }} title={hiddenMap[r.k] ? "恢復顯示這個品項" : "隱藏這個品項（已下架用；隨時可從「🙈 隱藏管理」恢復）"} style={{ border: `1px solid ${hiddenMap[r.k] ? C.accent : C.line}`, background: hiddenMap[r.k] ? "#eef5ee" : "#fff", color: hiddenMap[r.k] ? C.accent : C.sub, borderRadius: 8, padding: "0 7px", fontSize: 10, fontWeight: 700, cursor: "pointer", marginRight: 6 }}>{hiddenMap[r.k] ? "恢復" : "隱藏"}</button>}
                                     {r.n}{priceOf(r) != null && <span style={{ fontSize: 10.5, fontWeight: 400, color: C.faint, marginLeft: 5 }} title={priceMap[r.k] > 0 ? "定價（手動填的）" : "定價（從無折扣日的單價還原；中途調價會顯示最新價）"}>${priceOf(r).toLocaleString()}</span>}
+                                    {(r.amt || 0) > 0 && <span style={{ fontSize: 10, fontWeight: 700, color: "#a89a7f", marginLeft: 5 }} title="期間銷售金額・佔全品項金額比">{amt$(r.amt)}{pctTxt(r.amt) ? `・${pctTxt(r.amt)}` : ""}</span>}
                                     {gdCost && <span style={{ marginLeft: 6, whiteSpace: "nowrap" }} onClick={e => e.stopPropagation()}>
                                       <span style={{ fontSize: 10, color: C.sub }}>定價</span>
                                       <input type="number" min="0" inputMode="decimal" value={priceMap[r.k] ?? ""} placeholder={listPriceOf(r) != null ? String(listPriceOf(r)) : "—"} title="留空＝自動還原；填 0＝這品項不顯示價格；填數字＝以你填的為準"
@@ -1966,7 +1997,7 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
                                   {dcols.map(dd => <td key={dd} style={{ ...tdn, fontWeight: sortKey === dd ? 800 : 400, color: sortKey === dd ? C.brand : C.sub }}>{r.q[dd] || 0}</td>)}
                                 </tr>
                               ));
-                              return [band, ...subRows, ...body].filter(Boolean);
+                              return [band, ...(folded ? [] : [...subRows, ...body])].filter(Boolean);
                             })}
                             {/* 成本/毛利列（張良 2026-08-28）：填了成本才出現；全品項口徑，不受分類籤篩選影響 */}
                             {hasCost && (
