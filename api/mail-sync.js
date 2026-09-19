@@ -720,6 +720,9 @@ export default async function handler(req, res) {
         if (skOf(day.store) !== storeQ) continue
         const secs = (day.sheets || {})['總銷售額 (以類別分類)']; if (!Array.isArray(secs)) continue
         const date = day.date || dk.slice(0, 10)
+        // 區間過濾（張良 2026-09-19 飲品成長率分析：要能只撈近30天 vs 前30天）：?from=YYYY-MM-DD&to=YYYY-MM-DD 選填
+        if (req.query.from && date < String(req.query.from)) continue
+        if (req.query.to && date > String(req.query.to)) continue
         dayCnt++; if (!from || date < from) from = date; if (date > to) to = date
         for (const s of secs) {
           const ci = (s.header || []).indexOf('套餐內')

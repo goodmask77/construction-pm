@@ -1793,6 +1793,42 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
                     return listPriceOf(o);
                   };
                   const rows = Object.values(items).filter(r => gdTab === "全部" || r.cat === gdTab).filter(r => !gdIdle || (idleGap(r) ?? 99) >= 7).sort((a, b) => sv(b) - sv(a) || b.cum - a.cum);
+                  // 近30日均＆vs上期（張良 2026-09-19：累計左邊要看得到近況與趨勢）
+                  // 口徑：錨定「全店最新一個日結日」，近30=往前30個日曆天、上期=再往前30天——用全店資料算，
+                  // 不受上面「期間」選擇影響（切到舊月份，這兩欄照樣顯示最新趨勢）；日均分母＝窗內有日結的營業日數
+                  const q30 = {}, qPrev = {}; let n30 = 0, nPrev = 0;
+                  {
+                    const anchor = (all[all.length - 1] || {}).date;
+                    if (anchor) {
+                      const dOf = (base, off) => { const d0 = new Date(base + "T00:00:00Z"); d0.setUTCDate(d0.getUTCDate() + off); return d0.toISOString().slice(0, 10); };
+                      const from30 = dOf(anchor, -29), fromPrev = dOf(anchor, -59);
+                      for (const e of all) {
+                        const dd2 = e.date; if (!dd2 || dd2 < fromPrev || dd2 > anchor) continue;
+                        const inCur = dd2 >= from30;
+                        if (inCur) n30++; else nPrev++;
+                        (dayDet(dd2)?.sheets?.[CATSHEET] || []).forEach(sec => {
+                          if (sec.title === "總結" || sec.title === "套餐") return;
+                          if (isAB && AB_SKIP_CATS.has(sec.title)) return;
+                          (sec.rows || []).forEach(r => {
+                            if (!Array.isArray(r) || typeof r[0] !== "string" || isQuarterItem(r[0])) return;
+                            const key = isAB ? abNorm(r[0]) : r[0];
+                            const tgt = inCur ? q30 : qPrev;
+                            tgt[key] = (tgt[key] || 0) + (Number(r[1]) || 0);
+                          });
+                        });
+                      }
+                    }
+                  }
+                  const avg30Txt = (ks) => { if (!n30) return "—"; const v = ks.reduce((t, k) => t + (q30[k] || 0), 0) / n30; return v ? (v >= 10 ? String(Math.round(v)) : v.toFixed(1)) : "0"; };
+                  // vs上期＝近30天總量 vs 前30天總量；上期0本期有=「新」；沒有上期資料（開店未滿60天）=「—」
+                  const growTxt = (ks) => {
+                    if (!nPrev) return { t: "—", col: C.faint, ti: "還沒有完整的上一個30天資料" };
+                    const c = ks.reduce((t, k) => t + (q30[k] || 0), 0), p = ks.reduce((t, k) => t + (qPrev[k] || 0), 0);
+                    if (!p) return c > 0 ? { t: "新", col: C.accent, ti: "上期沒賣、近30天開賣" } : { t: "—", col: C.faint, ti: "兩期都沒賣" };
+                    const pc = Math.round((c - p) / p * 100);
+                    return { t: (pc >= 0 ? "+" : "") + pc + "%", col: pc >= 0 ? C.accent : C.red, ti: `近30天 ${c} 份 vs 上期 ${p} 份` };
+                  };
+                  const growCell = (ks, extra) => { const g = growTxt(ks); return <td style={{ ...tdn, color: g.col, fontWeight: 700, ...extra }} title={g.ti}>{g.t}</td>; };
                   // 成本/毛利（張良 2026-08-28：每品項填成本→總成本/每天毛利/平均成本率）
                   // 口徑：成本＝Σ當日份數×品項成本（含套餐內份數）；毛利＝當日POS實收 − 當日成本（與日表同一個營收數字，資料一致）
                   // 覆蓋率＝已填成本品項的份數佔比——沒填的當 0 成本，覆蓋率不足時毛利會偏高估，彙總列直接標警告不靜默
@@ -1849,11 +1885,14 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
                           <thead><tr style={{ background: C.head }}>
                             <th style={{ ...thd, textAlign: "left", cursor: "default", position: "sticky", left: 0, background: C.head, zIndex: 1 }}>品項</th>
                             {!gdGroup && <th style={{ ...thd, textAlign: "left", cursor: "default" }}>品類</th>}
+                            <th style={{ ...thd, cursor: "default" }} title={`近30個日曆天（${n30} 個營業日）平均每日賣出份數——固定看全店最新資料，不受期間選擇影響`}>30日均</th>
+                            <th style={{ ...thd, cursor: "default" }} title="近30天總份數 vs 前一個30天總份數的成長率；「新」=上期沒賣近期開賣">vs上期</th>
                             <th onClick={() => setGdSort("cum")} style={{ ...thd, color: sortKey === "cum" ? C.brand : C.sub }}>累計{sortKey === "cum" ? " ▼" : ""}</th>
                             {isAB
                               ? <th style={{ ...thd, cursor: "default" }} title="Uber 外送分類（低價版）賣出的份數——已併入左邊各日與累計的總量，這欄單獨列出其中多少來自 Uber">Uber</th>
                               : <th style={{ ...thd, cursor: "default" }} title="期間內該品項在套餐裡賣出的份數（累計口徑，跟「累計」欄一致）">套餐內</th>}
-                            {dcols.map(dd => <th key={dd} onClick={() => setGdSort(dd)} title={dd === liveD ? `今天即時（${abLive?.at || ""} 更新，還會長大；打烊後自動換正式數字）` : undefined} style={{ ...thd, fontFamily: MONOF, color: dd === liveD ? "#b3261e" : sortKey === dd ? C.brand : C.sub }}>{dd.slice(5)}{dd === liveD ? ` ${abLive?.at || "即時"}` : ""}{sortKey === dd ? " ▼" : ""}</th>)}
+                            {/* 日期欄只顯示日期（張良 2026-09-19：不用出現時間）；即時欄仍紅字＋tooltip 標更新時間 */}
+                            {dcols.map(dd => <th key={dd} onClick={() => setGdSort(dd)} title={dd === liveD ? `今天即時（${abLive?.at || ""} 更新，還會長大；打烊後自動換正式數字）` : undefined} style={{ ...thd, fontFamily: MONOF, color: dd === liveD ? "#b3261e" : sortKey === dd ? C.brand : C.sub }}>{dd.slice(5)}{sortKey === dd ? " ▼" : ""}</th>)}
                           </tr></thead>
                           <tbody>
                             {/* 套餐列（張良 2026-08-16：不要另外一條橫幅，進表格跟日期欄對齊，日子多了跟表一起捲）：上=組數、下小字=金額 */}
@@ -1861,6 +1900,8 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
                               <tr style={{ background: C.bg }}>
                                 <td style={{ padding: "5px 8px", fontWeight: 800, color: C.text, whiteSpace: "nowrap", position: "sticky", left: 0, background: C.bg }}>套餐（主餐+89 加價購）</td>
                                 {!gdGroup && <td style={{ borderTop: "1px solid #f0ead9" }} />}
+                                <td style={{ ...tdn, color: C.faint }}>—</td>
+                                <td style={{ ...tdn, color: C.faint }}>—</td>
                                 <td style={{ ...tdn, lineHeight: 1.25 }}>
                                   <div style={{ fontWeight: 800, color: C.brand }}>{setQty} <span style={{ fontSize: 10, fontWeight: 400, color: C.faint }}>組</span></div>
                                   <div style={{ fontSize: 10, color: C.brand }}>{fmt(setAmt)}</div>
@@ -1878,6 +1919,8 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
                               const band = cat != null && (
                                 <tr key={"band-" + cat} style={{ background: C.brand }}>
                                   <td style={{ padding: "5px 8px", color: "#fff", fontWeight: 800, fontSize: 12, letterSpacing: 2, position: "sticky", left: 0, background: C.brand, whiteSpace: "nowrap" }}>{cat}</td>
+                                  <td style={{ ...tdn, borderTop: "none", color: "#ffe0cf", fontWeight: 700 }}>{avg30Txt(g.map(r => r.k))}</td>
+                                  {growCell(g.map(r => r.k), { borderTop: "none", color: "#fff" })}
                                   <td style={{ ...tdn, borderTop: "none", color: "#fff", fontWeight: 800 }}>{g.reduce((t, r) => t + r.cum, 0)}</td>
                                   <td style={{ ...tdn, borderTop: "none", color: "#ffe0cf", fontWeight: 700 }}>{isAB ? (g.reduce((t, r) => t + r.uber, 0) || "—") : (g.some(r => cb(r) != null) ? g.reduce((t, r) => t + (cb(r) || 0), 0) : "—")}</td>
                                   {dcols.map(dd => <td key={dd} style={{ ...tdn, borderTop: "none", color: "#fff", fontWeight: 700 }}>{g.reduce((t, r) => t + (r.q[dd] || 0), 0)}</td>)}
@@ -1889,6 +1932,8 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
                                 return (
                                   <tr key={"sub-" + lb} style={{ background: "#f3ead9" }}>
                                     <td style={{ padding: "4px 8px", fontWeight: 700, fontSize: 11.5, color: "#8a5a2e", position: "sticky", left: 0, background: "#f3ead9", whiteSpace: "nowrap" }}>├ {lb}</td>
+                                    <td style={{ ...tdn, color: "#b08d63", fontWeight: 700 }}>{avg30Txt(gg.map(r => r.k))}</td>
+                                    {growCell(gg.map(r => r.k), { color: "#8a5a2e" })}
                                     <td style={{ ...tdn, fontWeight: 800, color: "#8a5a2e" }}>{gg.reduce((t, r) => t + r.cum, 0)}</td>
                                     <td style={{ ...tdn, color: "#b08d63" }}>{gg.some(r => cb(r) != null) ? gg.reduce((t, r) => t + (cb(r) || 0), 0) : "—"}</td>
                                     {dcols.map(dd => <td key={dd} style={{ ...tdn, color: "#8a5a2e", fontWeight: 600 }}>{gg.reduce((t, r) => t + (r.q[dd] || 0), 0)}</td>)}
@@ -1914,6 +1959,8 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
                                     {surge(r) ? " 🔥" : ""}{zero(r) ? <span style={{ fontSize: 10.5, fontWeight: 800 }}> ⚠0</span> : ""}
                                     {gdIdle && <span style={{ fontSize: 10, fontWeight: 700, color: C.red, marginLeft: 6 }}>{idleGap(r)}天沒賣・最後 {String(lastSold(r) || "").slice(5)}</span>}</td>
                                   {!gdGroup && <td style={{ padding: "5px 8px", borderTop: "1px solid #f0ead9" }}><span style={{ border: `1px solid ${C.line}`, background: C.bg, color: C.sub, borderRadius: 10, padding: "1px 8px", fontSize: 10.5, fontWeight: 700, whiteSpace: "nowrap" }}>{r.cat}</span></td>}
+                                  <td style={{ ...tdn, color: C.text, fontWeight: 600 }}>{avg30Txt([r.k])}</td>
+                                  {growCell([r.k])}
                                   <td style={{ ...tdn, fontWeight: sortKey === "cum" ? 800 : 600, color: sortKey === "cum" ? C.brand : C.text }}>{r.cum}</td>
                                   <td style={{ ...tdn, color: C.faint }}>{isAB ? (r.uber || "—") : (cb(r) != null ? cb(r) : "—")}</td>
                                   {dcols.map(dd => <td key={dd} style={{ ...tdn, fontWeight: sortKey === dd ? 800 : 400, color: sortKey === dd ? C.brand : C.sub }}>{r.q[dd] || 0}</td>)}
@@ -1926,6 +1973,8 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
                               <tr style={{ background: "#fdf6ec" }}>
                                 <td style={{ padding: "5px 8px", fontWeight: 800, color: C.amber, whiteSpace: "nowrap", position: "sticky", left: 0, background: "#fdf6ec" }} title="Σ 當日份數×品項成本（含套餐內份數；未填成本的品項當 0）">食材成本</td>
                                 {!gdGroup && <td style={{ borderTop: "1px solid #f0ead9" }} />}
+                                <td style={{ ...tdn, color: C.faint }}>—</td>
+                                <td style={{ ...tdn, color: C.faint }}>—</td>
                                 <td style={{ ...tdn, color: C.amber, fontWeight: 800 }}>{fmt(Math.round(cumCost))}</td>
                                 <td style={{ ...tdn, color: C.faint }}>—</td>
                                 {dcols.map(dd => <td key={dd} style={{ ...tdn, color: C.amber, fontWeight: 700 }}>{fmt(Math.round(dayCostOf(dd)))}</td>)}
@@ -1935,6 +1984,8 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
                               <tr style={{ background: "#eef5ee" }}>
                                 <td style={{ padding: "5px 8px", fontWeight: 800, color: C.accent, whiteSpace: "nowrap", position: "sticky", left: 0, background: "#eef5ee" }} title="當日 POS 實收 − 當日食材成本（成本沒填齊時會偏高估）">毛利</td>
                                 {!gdGroup && <td style={{ borderTop: "1px solid #f0ead9" }} />}
+                                <td style={{ ...tdn, color: C.faint }}>—</td>
+                                <td style={{ ...tdn, color: C.faint }}>—</td>
                                 <td style={{ ...tdn, color: C.accent, fontWeight: 800 }}>{fmt(Math.round(cumRev - cumCost))}</td>
                                 <td style={{ ...tdn, color: C.faint }}>—</td>
                                 {dcols.map(dd => { const g2 = (revByDate[dd] || 0) - dayCostOf(dd); return <td key={dd} style={{ ...tdn, color: g2 < 0 ? C.red : C.accent, fontWeight: 700 }} title={`營收 ${fmt(revByDate[dd] || 0)} − 成本 ${fmt(Math.round(dayCostOf(dd)))}`}>{fmt(Math.round(g2))}</td>; })}
