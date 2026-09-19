@@ -1883,8 +1883,10 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
                   const cb = (r) => r.comboHas ? r.comboCum : null;
                   const setQty = dts.reduce((t, dd) => t + (setDay[dd]?.qty || 0), 0), setAmt = dts.reduce((t, dd) => t + (setDay[dd]?.amt || 0), 0);
                   const groups = gdGroup ? catSeen.filter(c => rows.some(r => r.cat === c)).map(c => [c, rows.filter(r => r.cat === c)]) : [[null, rows]];
-                  const thd = { padding: "6px 8px", textAlign: "right", fontWeight: 700, whiteSpace: "nowrap", fontSize: 11.5, color: C.sub, cursor: "pointer" };
-                  const tdn = { padding: "5px 8px", textAlign: "right", fontFamily: MONOF, fontSize: 12.5, borderTop: "1px solid #f0ead9", whiteSpace: "nowrap" };
+                  const thd = { padding: isMobile ? "5px 5px" : "6px 8px", textAlign: "right", fontWeight: 700, whiteSpace: "nowrap", fontSize: 11.5, color: C.sub, cursor: "pointer" };
+                  const tdn = { padding: isMobile ? "4px 5px" : "5px 8px", textAlign: "right", fontFamily: MONOF, fontSize: 12.5, borderTop: "1px solid #f0ead9", whiteSpace: "nowrap" };
+                  // 手機：品項凍結欄設寬度上限＋超長菜名裁切（張良 2026-09-20：名字欄太寬把右邊數據全擠出螢幕）
+                  const stickyCap = isMobile ? { maxWidth: "46vw", overflow: "hidden", textOverflow: "ellipsis" } : {};
                   const chip2 = (label, on, onClick, dashed) => <button key={label} onClick={onClick} style={{ border: `1.5px ${dashed ? "dashed" : "solid"} ${on ? C.brand : C.line}`, background: on ? C.brand : "#fff", color: on ? "#fff" : C.sub, borderRadius: 13, padding: "2px 11px", fontSize: 11.5, fontWeight: 700, cursor: "pointer" }}>{label}</button>;
                   // ⬇️ 匯出 CSV（張良 2026-08-31：要拿這張表去做菜單規劃）——跟畫面同一份資料直接輸出（全品項、不受分類籤/沒賣篩選影響），
                   // 欄＝品類/品項/定價/成本/每日份數/累計/Uber(或套餐內)；帶 BOM 讓 Excel/Google 試算表開起來中文不亂碼
@@ -1933,7 +1935,7 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
                             {/* 套餐列（張良 2026-08-16：不要另外一條橫幅，進表格跟日期欄對齊，日子多了跟表一起捲）：上=組數、下小字=金額 */}
                             {setQty > 0 && (
                               <tr style={{ background: C.bg }}>
-                                <td style={{ padding: "5px 8px", fontWeight: 800, color: C.text, whiteSpace: "nowrap", position: "sticky", left: 0, background: C.bg }}>套餐（主餐+89 加價購）</td>
+                                <td style={{ padding: isMobile ? "4px 6px" : "5px 8px", fontWeight: 800, color: C.text, whiteSpace: "nowrap", position: "sticky", left: 0, background: C.bg, ...stickyCap }}>套餐（主餐+89 加價購）</td>
                                 {!gdGroup && <td style={{ borderTop: "1px solid #f0ead9" }} />}
                                 <td style={{ ...tdn, color: C.faint }}>—</td>
                                 <td style={{ ...tdn, color: C.faint }}>—</td>
@@ -1956,7 +1958,7 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
                               const band = cat != null && (
                                 <tr key={"band-" + cat} style={{ background: C.brand }}>
                                   {/* 點品類名＝摺疊/展開（張良 2026-09-19）；旁邊帶品類總金額＋整體佔比 */}
-                                  <td onClick={() => setGdFold(f => ({ ...f, [cat]: !f[cat] }))} title={folded ? "點一下展開品項" : "點一下收合品項"} style={{ padding: "5px 8px", color: "#fff", fontWeight: 800, fontSize: 12, letterSpacing: 2, position: "sticky", left: 0, background: C.brand, whiteSpace: "nowrap", cursor: "pointer" }}>
+                                  <td onClick={() => setGdFold(f => ({ ...f, [cat]: !f[cat] }))} title={folded ? "點一下展開品項" : "點一下收合品項"} style={{ padding: isMobile ? "4px 6px" : "5px 8px", color: "#fff", fontWeight: 800, fontSize: 12, letterSpacing: isMobile ? 0.5 : 2, position: "sticky", left: 0, background: C.brand, whiteSpace: "nowrap", cursor: "pointer", ...stickyCap }}>
                                     {folded ? "▸" : "▾"} {cat}
                                     {catAmt > 0 && <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 700, letterSpacing: 0, color: "#ffd9c4" }}>{amt$(catAmt)}{pctTxt(catAmt) ? `・${pctTxt(catAmt)}` : ""}</span>}
                                   </td>
@@ -1972,7 +1974,7 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
                                 const gg = g.filter(filt); if (!gg.length) return null;
                                 return (
                                   <tr key={"sub-" + lb} style={{ background: "#f3ead9" }}>
-                                    <td style={{ padding: "4px 8px", fontWeight: 700, fontSize: 11.5, color: "#8a5a2e", position: "sticky", left: 0, background: "#f3ead9", whiteSpace: "nowrap" }}>├ {lb}</td>
+                                    <td style={{ padding: isMobile ? "4px 6px" : "4px 8px", fontWeight: 700, fontSize: 11.5, color: "#8a5a2e", position: "sticky", left: 0, background: "#f3ead9", whiteSpace: "nowrap", ...stickyCap }}>├ {lb}</td>
                                     <td style={{ ...tdn, color: "#b08d63", fontWeight: 700 }}>{avg30Txt(gg.map(r => r.k))}</td>
                                     {growCell(gg.map(r => r.k), { color: "#8a5a2e" })}
                                     <td style={{ ...tdn, fontWeight: 800, color: "#8a5a2e" }}>{gg.reduce((t, r) => t + r.cum, 0)}</td>
@@ -1983,10 +1985,10 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
                               }).filter(Boolean) : [];
                               const body = g.map(r => (
                                 <tr key={(cat || "") + r.n} style={gdHideMode && hiddenMap[r.k] ? { opacity: 0.42 } : undefined}>
-                                  <td style={{ padding: "5px 8px", fontWeight: 600, color: zero(r) ? C.red : C.text, whiteSpace: "nowrap", position: "sticky", left: 0, background: "#fff", borderTop: "1px solid #f0ead9" }}>
+                                  <td title={r.n} style={{ padding: isMobile ? "4px 6px" : "5px 8px", fontWeight: 600, color: zero(r) ? C.red : C.text, whiteSpace: "nowrap", position: "sticky", left: 0, background: "#fff", borderTop: "1px solid #f0ead9", ...stickyCap }}>
                                     {gdHideMode && <button onClick={(e) => { e.stopPropagation(); saveHidden(posStore, r.k, !hiddenMap[r.k]); }} title={hiddenMap[r.k] ? "恢復顯示這個品項" : "隱藏這個品項（已下架用；隨時可從「🙈 隱藏管理」恢復）"} style={{ border: `1px solid ${hiddenMap[r.k] ? C.accent : C.line}`, background: hiddenMap[r.k] ? "#eef5ee" : "#fff", color: hiddenMap[r.k] ? C.accent : C.sub, borderRadius: 8, padding: "0 7px", fontSize: 10, fontWeight: 700, cursor: "pointer", marginRight: 6 }}>{hiddenMap[r.k] ? "恢復" : "隱藏"}</button>}
                                     {r.n}{priceOf(r) != null && <span style={{ fontSize: 10.5, fontWeight: 400, color: C.faint, marginLeft: 5 }} title={priceMap[r.k] > 0 ? "定價（手動填的）" : "定價（從無折扣日的單價還原；中途調價會顯示最新價）"}>${priceOf(r).toLocaleString()}</span>}
-                                    {(r.amt || 0) > 0 && <span style={{ fontSize: 10, fontWeight: 700, color: "#a89a7f", marginLeft: 5 }} title="期間銷售金額・佔全品項金額比">{amt$(r.amt)}{pctTxt(r.amt) ? `・${pctTxt(r.amt)}` : ""}</span>}
+                                    {!isMobile && (r.amt || 0) > 0 && <span style={{ fontSize: 10, fontWeight: 700, color: "#a89a7f", marginLeft: 5 }} title="期間銷售金額・佔全品項金額比">{amt$(r.amt)}{pctTxt(r.amt) ? `・${pctTxt(r.amt)}` : ""}</span>}
                                     {gdCost && <span style={{ marginLeft: 6, whiteSpace: "nowrap" }} onClick={e => e.stopPropagation()}>
                                       <span style={{ fontSize: 10, color: C.sub }}>定價</span>
                                       <input type="number" min="0" inputMode="decimal" value={priceMap[r.k] ?? ""} placeholder={listPriceOf(r) != null ? String(listPriceOf(r)) : "—"} title="留空＝自動還原；填 0＝這品項不顯示價格；填數字＝以你填的為準"
@@ -2014,7 +2016,7 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
                             {/* 成本/毛利列（張良 2026-08-28）：填了成本才出現；全品項口徑，不受分類籤篩選影響 */}
                             {hasCost && (
                               <tr style={{ background: "#fdf6ec" }}>
-                                <td style={{ padding: "5px 8px", fontWeight: 800, color: C.amber, whiteSpace: "nowrap", position: "sticky", left: 0, background: "#fdf6ec" }} title="Σ 當日份數×品項成本（含套餐內份數；未填成本的品項當 0）">食材成本</td>
+                                <td style={{ padding: isMobile ? "4px 6px" : "5px 8px", fontWeight: 800, color: C.amber, whiteSpace: "nowrap", position: "sticky", left: 0, background: "#fdf6ec", ...stickyCap }} title="Σ 當日份數×品項成本（含套餐內份數；未填成本的品項當 0）">食材成本</td>
                                 {!gdGroup && <td style={{ borderTop: "1px solid #f0ead9" }} />}
                                 <td style={{ ...tdn, color: C.faint }}>—</td>
                                 <td style={{ ...tdn, color: C.faint }}>—</td>
@@ -2025,7 +2027,7 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
                             )}
                             {hasCost && (
                               <tr style={{ background: "#eef5ee" }}>
-                                <td style={{ padding: "5px 8px", fontWeight: 800, color: C.accent, whiteSpace: "nowrap", position: "sticky", left: 0, background: "#eef5ee" }} title="當日 POS 實收 − 當日食材成本（成本沒填齊時會偏高估）">毛利</td>
+                                <td style={{ padding: isMobile ? "4px 6px" : "5px 8px", fontWeight: 800, color: C.accent, whiteSpace: "nowrap", position: "sticky", left: 0, background: "#eef5ee", ...stickyCap }} title="當日 POS 實收 − 當日食材成本（成本沒填齊時會偏高估）">毛利</td>
                                 {!gdGroup && <td style={{ borderTop: "1px solid #f0ead9" }} />}
                                 <td style={{ ...tdn, color: C.faint }}>—</td>
                                 <td style={{ ...tdn, color: C.faint }}>—</td>
