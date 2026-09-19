@@ -1869,9 +1869,12 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
                   const pctTxt = (a) => { if (!totalAmt || !a) return ""; const p = a / totalAmt * 100; return p >= 9.95 ? Math.round(p) + "%" : p.toFixed(1) + "%"; };
                   const amt$ = (n) => "$" + Math.round(n || 0).toLocaleString();
                   const revByDate = {}; days.forEach(d => { revByDate[d.date] = Number(d.revenue) || 0; });
-                  // 套餐附加率（張良 2026-09-20：套餐組數要跟總單數對比%，看多少單有+套餐；一單可多組所以可能>100%）
-                  const txByDate = {}; days.forEach(d => { txByDate[d.date] = Number(d.txCount) || 0; });
-                  const setPct = (q, tx) => tx > 0 ? Math.round(q / tx * 100) + "%" : null;
+                  // 套餐附加率（張良 2026-09-20；用「總單數」當分母會>100%被抓包——GD一單=一桌可配多組套餐，
+                  // 改分母=當日「主餐份數」（漢堡/披薩/義大利麵/越法三明治），真正回答「多少主餐有+套餐」）
+                  const GD_MAIN_CATS = new Set(["漢堡", "披薩", "義大利麵", "越法三明治"]);
+                  const mainsByDate = {};
+                  Object.values(items).forEach(o => { if (GD_MAIN_CATS.has(o.cat)) Object.entries(o.q).forEach(([dd3, q3]) => { mainsByDate[dd3] = (mainsByDate[dd3] || 0) + (Number(q3) || 0); }); });
+                  const setPct = (q, mains) => mains > 0 ? Math.round(q / mains * 100) + "%" : null;
                   if (liveD) revByDate[liveD] = Number(abLive?.revenue) || 0; // 即時欄毛利用盤中營收算（同一時點口徑）
                   const dayCostOf = (dd) => allItems.reduce((t, o) => { const c = costOf(o); return t + (c != null ? (o.q[dd] || 0) * c : 0); }, 0);
                   const cumCost = dts.reduce((t, dd) => t + dayCostOf(dd), 0);
@@ -1942,13 +1945,13 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
                                 {!gdGroup && <td style={{ borderTop: "1px solid #f0ead9" }} />}
                                 <td style={{ ...tdn, color: C.faint }}>—</td>
                                 <td style={{ ...tdn, color: C.faint }}>—</td>
-                                <td style={{ ...tdn, lineHeight: 1.25 }} title="套餐組數 ÷ 期間總單數＝附加率（多少單有+套餐；一單可多組可能>100%）">
-                                  <div style={{ fontWeight: 800, color: C.brand }}>{setQty} <span style={{ fontSize: 10, fontWeight: 400, color: C.faint }}>組</span>{(() => { const p = setPct(setQty, dts.reduce((t, dd) => t + (txByDate[dd] || 0), 0)); return p ? <span style={{ fontSize: 10, fontWeight: 700, color: C.amber }}> {p}</span> : null; })()}</div>
+                                <td style={{ ...tdn, lineHeight: 1.25 }} title="套餐組數 ÷ 期間主餐份數（漢堡/披薩/義大利麵/越法三明治）＝多少主餐有+套餐">
+                                  <div style={{ fontWeight: 800, color: C.brand }}>{setQty} <span style={{ fontSize: 10, fontWeight: 400, color: C.faint }}>組</span>{(() => { const p = setPct(setQty, dts.reduce((t, dd) => t + (mainsByDate[dd] || 0), 0)); return p ? <span style={{ fontSize: 10, fontWeight: 700, color: C.amber }}> {p}</span> : null; })()}</div>
                                   <div style={{ fontSize: 10, color: C.brand }}>{fmt(setAmt)}</div>
                                 </td>
                                 <td style={{ ...tdn, color: C.faint }}>—</td>
-                                {dcols.map(dd => { const p = setPct(setDay[dd]?.qty || 0, txByDate[dd] || 0); return (
-                                  <td key={dd} style={{ ...tdn, lineHeight: 1.25 }} title={p ? `套餐 ${setDay[dd]?.qty || 0} 組 ÷ 當日 ${txByDate[dd]} 單＝${p} 的單有+套餐` : undefined}>
+                                {dcols.map(dd => { const p = setPct(setDay[dd]?.qty || 0, mainsByDate[dd] || 0); return (
+                                  <td key={dd} style={{ ...tdn, lineHeight: 1.25 }} title={p ? `套餐 ${setDay[dd]?.qty || 0} 組 ÷ 當日主餐 ${mainsByDate[dd]} 份＝${p} 的主餐有+套餐` : undefined}>
                                     <div style={{ fontWeight: 700 }}>{setDay[dd]?.qty || 0} <span style={{ fontSize: 10, fontWeight: 400, color: C.faint }}>組</span>{p && <span style={{ fontSize: 10, fontWeight: 700, color: C.amber }}> {p}</span>}</div>
                                     <div style={{ fontSize: 10, color: C.faint }}>{setDay[dd]?.amt ? fmt(setDay[dd].amt) : ""}</div>
                                   </td>
