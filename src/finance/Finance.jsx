@@ -1908,6 +1908,7 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
                         <span style={{ fontSize: 11.5, fontWeight: 700, color: C.sub }}>🍽 品項明細</span>
                         {["全部", ...catSeen].map(t => chip2(t, gdTab === t, () => setGdTab(gdTab === t ? "全部" : t)))}
                         {chip2("依品類分組", gdGroup, () => setGdGroup(!gdGroup), true)}
+                        {gdGroup && chip2(Object.keys(gdFold).length ? "⊞ 全部展開" : "⊟ 全部收合", false, () => setGdFold(Object.keys(gdFold).length ? {} : Object.fromEntries(catSeen.map(c => [c, true]))), true)}
                         {chip2("😴 7天+沒賣", gdIdle, () => setGdIdle(!gdIdle), true)}
                         {canEdit && chip2("💰 填成本", gdCost, () => setGdCost(!gdCost), true)}
                         {canEdit && chip2(`🙈 隱藏管理${hidCnt ? `（${hidCnt}）` : ""}`, gdHideMode, () => setGdHideMode(!gdHideMode), true)}
