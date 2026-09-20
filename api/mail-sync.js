@@ -718,14 +718,14 @@ export default async function handler(req, res) {
     const from60 = dOf(anchor, -59), from30 = dOf(anchor, -29)
     const win = entries.filter(e => e.date >= from60)
     const w30 = win.filter(e => e.date >= from30)
-    // 品項：撈涵蓋 60 天窗的明細月檔
-    const mos = [...new Set(win.map(e => e.date.slice(0, 7)))]
+    // 品項：撈全部歷史明細月檔（張良 2026-09-20：跟 App 一樣顯示全部歷史，不只近期）
+    const mos = [...new Set(entries.map(e => e.date.slice(0, 7)))]
     const dets = {}
     for (const mo2 of mos) dets[mo2] = await kvGet('sp_finance_pm_pos_d_' + mo2)
     const dayDet2 = (date) => { const m = (dets[date.slice(0, 7)] || {}).days; if (!m) return undefined; return m[`${date}::${storeQ}`] || (m[date] && skOf2(m[date].store) === storeQ ? m[date] : undefined) }
     // 日表（近20個營業日；核心夥伴全開＝付款明細/至14:00/單均都給——張良 2026-09-20「都是核心夥伴」）
     const WD = ['日', '一', '二', '三', '四', '五', '六']
-    const days2 = win.slice(-20).map(e => {
+    const days2 = entries.map(e => {
       const tk = Number(e.takeTx) || 0, dn = Number(e.dineTx) || 0
       const rev2 = Number(e.revenue) || 0, tx2 = Number(e.txCount) || 0
       // 至14:00＝時段表 <14 點小時列加總（與 App 同一份資料）
@@ -749,9 +749,9 @@ export default async function handler(req, res) {
     const hiddenMap2 = ((hiddenDoc2 || {})[storeQ]) || {}
     const items2 = {}; const catOrder2 = []; const setByDate = {}
     let n30 = 0, nPrev = 0
-    for (const e of win) {
-      const inCur = e.date >= from30
-      if (inCur) n30++; else nPrev++
+    for (const e of entries) {
+      const inCur = e.date >= from30, inPrev = !inCur && e.date >= from60
+      if (inCur) n30++; else if (inPrev) nPrev++
       const secs = ((dayDet2(e.date) || {}).sheets || {})['總銷售額 (以類別分類)']
       if (!Array.isArray(secs)) continue
       for (const s of secs) {
@@ -768,11 +768,12 @@ export default async function handler(req, res) {
           const o = items2[key2] || (items2[key2] = { n: r[0], cat: s.title, q: {}, q30: 0, qPrev: 0, amt30: 0 })
           o.n = r[0]; o.cat = s.title // 最新出現的名字/分類為準
           const qv = Number(r[1]) || 0
-          if (inCur) { o.q30 += qv; o.q[e.date] = (o.q[e.date] || 0) + qv; if (!uberCat) o.amt30 += Number(r[r.length - 1]) || 0 } else o.qPrev += qv
+          o.q[e.date] = (o.q[e.date] || 0) + qv // 全歷史逐日
+          if (inCur) { o.q30 += qv; if (!uberCat) o.amt30 += Number(r[r.length - 1]) || 0 } else if (inPrev) o.qPrev += qv
         }
       }
     }
-    const dates14 = win.slice(-14).map(e => e.date)
+    const datesAll = entries.map(e => e.date)
     const GD_ORDER2 = ['披薩', '漢堡', '越法三明治', '義大利麵', '小點', '湯品', '基礎飲品', '咖啡飲品', '奶香飲品', '檸檬飲品', '甜點']
     const catsAll = [...new Set(Object.values(items2).map(o => o.cat))]
     catsAll.sort((a, b) => { const ia = GD_ORDER2.indexOf(a), ib = GD_ORDER2.indexOf(b); return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib) })
@@ -782,8 +783,49 @@ export default async function handler(req, res) {
       name: cn,
       amt30: Math.round(Object.values(items2).filter(o => o.cat === cn).reduce((t, o) => t + (o.amt30 || 0), 0)),
       items: Object.values(items2).filter(o => o.cat === cn && (o.q30 > 0 || o.qPrev > 0)).sort((a, b) => b.q30 - a.q30)
-        .map(o => ({ n: o.n, avg30: n30 ? Math.round(o.q30 / n30 * 10) / 10 : null, cum30: o.q30, grow: growOf2(o), amt30: Math.round(o.amt30 || 0), pct: totalAmt30 ? Math.round((o.amt30 || 0) / totalAmt30 * 1000) / 10 : null, q: dates14.map(dd => o.q[dd] || 0) })),
+        .map(o => ({ n: o.n, avg30: n30 ? Math.round(o.q30 / n30 * 10) / 10 : null, cum30: o.q30, grow: growOf2(o), amt30: Math.round(o.amt30 || 0), pct: totalAmt30 ? Math.round((o.amt30 || 0) / totalAmt30 * 1000) / 10 : null, q: datesAll.map(dd => o.q[dd] || 0) })),
     })).filter(c => c.items.length)
+    // 品類彙總（30日均/vs近60/30天累計/全歷史逐日）＋漢堡子小計＋預估備料（張良 2026-09-20）
+    const aggOf = (list) => {
+      const q = datesAll.map(dd => list.reduce((t, o) => t + (o.q[dd] || 0), 0))
+      const q30s = list.reduce((t, o) => t + o.q30, 0), qPs = list.reduce((t, o) => t + o.qPrev, 0)
+      let grow = null
+      if (nPrev) { if (!qPs) grow = q30s > 0 ? '新' : null; else { const a30 = q30s / n30, a60 = (q30s + qPs) / (n30 + nPrev); grow = Math.round((a30 - a60) / a60 * 100) } }
+      return { avg30: n30 ? Math.round(q30s / n30 * 10) / 10 : null, cum30: q30s, grow, q }
+    }
+    cats2.forEach(c => { c.agg = aggOf(Object.values(items2).filter(o => o.cat === c.name)) })
+    if (!isAB2) {
+      const burg = Object.values(items2).filter(o => o.cat === '漢堡')
+      const c = cats2.find(x => x.name === '漢堡')
+      if (c && burg.length) {
+        const mk2 = (label, filt) => ({ n: label, ...aggOf(burg.filter(filt)) })
+        c.subs = [
+          mk2('├ 雞肉堡小計', o => !/牛肉/.test(o.n)),
+          mk2('│　├ 炸雞腿堡', o => /雞腿堡/.test(o.n) && /炸/.test(o.n)),
+          mk2('│　└ 煎雞腿堡', o => /雞腿堡/.test(o.n) && !/炸/.test(o.n)),
+          mk2('├ 牛肉堡小計', o => /牛肉/.test(o.n)),
+        ]
+      }
+    }
+    // 預估備料量（GD；張良 2026-09-20 指定站別彙總）：平日/週末分開日均＝實際備量抓數
+    const wkDates = new Set(w30.filter(e => { const d2 = new Date(e.date + 'T00:00:00Z').getUTCDay(); return d2 >= 1 && d2 <= 5 }).map(e => e.date))
+    const weDates = new Set(w30.filter(e => !wkDates.has(e.date)).map(e => e.date))
+    const prepAgg = (filt, mult = 1) => {
+      const list = Object.values(items2).filter(filt)
+      const sumIn = (ds) => list.reduce((t, o) => t + Object.entries(o.q).reduce((t2, [dd, qv]) => t2 + (ds.has(dd) ? qv : 0), 0), 0) * mult
+      const tot = list.reduce((t, o) => t + o.q30, 0) * mult
+      return { avg: n30 ? Math.round(tot / n30 * 10) / 10 : null, wk: wkDates.size ? Math.round(sumIn(wkDates) / wkDates.size * 10) / 10 : null, we: weDates.size ? Math.round(sumIn(weDates) / weDates.size * 10) / 10 : null }
+    }
+    const prep = isAB2 ? null : [
+      { grp: '炸台', name: '無骨煎雞腿', ...prepAgg(o => o.cat === '漢堡' && /雞腿堡/.test(o.n) && !/炸/.test(o.n)) },
+      { grp: '炸台', name: '無骨炸雞腿', ...prepAgg(o => o.cat === '漢堡' && /雞腿堡/.test(o.n) && /炸/.test(o.n)) },
+      { grp: '炸台', name: '帶骨炸雞（支）', ...prepAgg(o => o.cat === '小點' && /玻璃脆殼|川味微辣炸雞/.test(o.n), 2) },
+      { grp: '沙拉', name: '小洋芋', ...prepAgg(o => o.cat === '小點' && /洋芋/.test(o.n)) },
+      { grp: '沙拉', name: '沙拉杯', ...prepAgg(o => o.cat === '小點' && /沙拉杯/.test(o.n)) },
+      { grp: '吧檯', name: '四季春烏龍', ...prepAgg(o => o.cat === '基礎飲品' && /四季春/.test(o.n)) },
+      { grp: '吧檯', name: '台灣有機紅茶', ...prepAgg(o => o.cat === '基礎飲品' && /有機紅茶/.test(o.n)) },
+      { grp: '吧檯', name: '南非國寶茶', ...prepAgg(o => o.cat === '基礎飲品' && /國寶茶/.test(o.n)) },
+    ]
     // 套餐附加率（GD）：組數÷主餐份數
     const MAIN2 = new Set(['漢堡', '披薩', '義大利麵', '越法三明治'])
     const setDays = days2.map(d => {
@@ -808,7 +850,7 @@ export default async function handler(req, res) {
     return res.status(200).json({
       ok: true, store: storeQ, updatedAt: new Date().toISOString(), anchor,
       kpi: { rev30, days30: w30.length, avgRev: w30.length ? Math.round(rev30 / w30.length) : 0, tx30: w30.reduce((t, e) => t + (Number(e.txCount) || 0), 0) },
-      days: days2.reverse(), setPcts: setDays.reverse(), dates14, cats: cats2, slots: (slots2.wk.length || slots2.we.length) ? slots2 : null,
+      n30, prep, days: days2.reverse(), setPcts: setDays.reverse(), dates: datesAll, cats: cats2, slots: (slots2.wk.length || slots2.we.length) ? slots2 : null,
     })
   }
   // 內用/外帶歷史回補口（同金鑰，張良 2026-09-20 內外帶接進報表）：?dinefill=<key>[&dry=1]

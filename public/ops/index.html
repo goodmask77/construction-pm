@@ -57,7 +57,7 @@
   <div class="foot">資料每天自動同步（打開即最新）・僅供內部參考與備料使用，請勿外傳連結</div>
 </div>
 <script>
-const K = new URLSearchParams(location.search).get('k') || (location.hash || '').replace(/^#k?=?/, '')
+const K = new URLSearchParams(location.search).get('k') || (location.hash || '').replace(/^#k?=?/, '') || '7ea362bae1f0274372d4ec7b27c78852' // 內建看板唯讀金鑰（短網址 /prep 用；與管理金鑰分開）
 const fmt = n => 'NT$' + Math.round(n || 0).toLocaleString()
 const app = document.getElementById('app')
 async function load(store){
@@ -76,23 +76,40 @@ async function load(store){
     <div class="kpi"><div class="l">日均營收</div><div class="v">${fmt(d.kpi.avgRev)}</div></div>
     <div class="kpi"><div class="l">近30天單數</div><div class="v">${(d.kpi.tx30||0).toLocaleString()}</div></div>
   </div>`
-  // 日表（核心夥伴全開：付款明細/至14:00/單均都在）
+  // 備料卡（GD：炸台/沙拉/吧檯，平日與週末分開日均）
+  if (d.prep) {
+    const grps = [...new Set(d.prep.map(p=>p.grp))]
+    h += `<section><h2>預估備料量 <span class="hint">近30天平均，平日／週末分開看（份/日）</span></h2><div class="scroll"><table><thead><tr><th>項目</th><th>平日均</th><th>週末均</th><th>30日均</th></tr></thead><tbody>`
+    grps.forEach(g=>{
+      h += `<tr class="catband"><td colspan="4">${g}</td></tr>`
+      d.prep.filter(p=>p.grp===g).forEach(p=>{
+        h += `<tr><td style="font-weight:700;color:var(--ink)">${p.name}</td><td class="avg">${p.wk!=null?p.wk:'—'}</td><td class="avg" style="color:#A85C26">${p.we!=null?p.we:'—'}</td><td>${p.avg!=null?p.avg:'—'}</td></tr>`
+      })
+    })
+    h += `</tbody></table></div></section>`
+  }
+  // 日表（核心夥伴全開：付款明細/至14:00/單均都在；全部歷史）
   const isGD = d.store === 'ground'
-  h += `<section><h2>近 20 個營業日</h2><div class="scroll"><table><thead><tr><th>日期</th>${isGD?'<th>至14:00</th>':''}<th>營收</th><th>單數</th><th>單均</th><th>現金</th><th>信用卡</th><th>LINE Pay</th><th>Uber</th><th>折扣</th>${isGD?'<th>自助%</th><th>外帶%</th><th>套餐/主餐%</th>':''}</tr></thead><tbody>`
+  h += `<section><h2>每日數據（全部歷史）</h2><div class="scroll" style="max-height:62vh;overflow-y:auto"><table><thead><tr><th>日期</th>${isGD?'<th>至14:00</th>':''}<th>營收</th><th>單數</th><th>單均</th><th>現金</th><th>信用卡</th><th>LINE Pay</th><th>Uber</th><th>折扣</th>${isGD?'<th>自助%</th><th>外帶%</th><th>套餐/主餐%</th>':''}</tr></thead><tbody>`
   d.days.forEach((x,i)=>{
     const wknd = x.wd==='六'||x.wd==='日'
     h += `<tr><td style="font-weight:${wknd?800:500};color:${wknd?'#A85C26':'inherit'}">${x.date.slice(5)}（${x.wd}）</td>${isGD?`<td>${x.lunchPct!=null?x.lunchPct+'%':'—'}</td>`:''}<td style="font-weight:700">${fmt(x.rev)}</td><td>${x.tx||'—'}</td><td>${x.avg!=null?fmt(x.avg):'—'}</td><td>${fmt(x.cash)}</td><td>${fmt(x.card)}</td><td>${x.linepay?fmt(x.linepay):'—'}</td><td>${x.uber?fmt(x.uber):'—'}</td><td>${x.discount?fmt(x.discount):'—'}</td>${isGD?`<td>${x.kioskPct!=null?x.kioskPct+'%':'—'}</td><td>${x.takePct!=null?x.takePct+'%':'—'}</td><td>${d.setPcts[i]!=null?d.setPcts[i]+'%':'—'}</td>`:''}</tr>`
   })
   h += `</tbody></table></div></section>`
-  // 品項備料表
-  const dts = d.dates14.map(s=>s.slice(5))
-  h += `<section><h2>品項備料表 <span class="hint">30日均＝近30天每營業日平均份數（抓備料量看這欄）；vs近60＝趨勢；右側＝近14天逐日</span></h2><div class="scroll"><table><thead><tr><th style="position:sticky;left:0;background:#F1F6F9;z-index:1">品項</th><th>30日均</th><th>vs近60</th>${dts.map(t=>'<th>'+t+'</th>').reverse().join('')}</tr></thead><tbody>`
+  // 品項備料表（全歷史逐日；品類彙總列＋漢堡子小計）
+  const dts = d.dates.map(s=>s.slice(5))
+  const growCell = gr => gr==null?'<span class="mut">—</span>':gr==='新'?'<span class="up">新</span>':`<span class="${gr>=0?'up':'dn'}">${gr>=0?'+':''}${gr}%</span>`
+  const qCells = q => [...q].reverse().map(v=>'<td>'+(v||0)+'</td>').join('')
+  h += `<section><h2>品項明細 <span class="hint">30日均＝近30天每營業日平均份數（抓備料量看這欄）；vs近60＝趨勢；累計＝近30天總份數；右側＝逐日全歷史（最新在左）</span></h2><div class="scroll" style="max-height:70vh;overflow-y:auto"><table><thead><tr><th style="position:sticky;left:0;background:#F1F6F9;z-index:2">品項</th><th>30日均</th><th>vs近60</th><th>累計</th>${dts.map(t=>'<th>'+t+'</th>').reverse().join('')}</tr></thead><tbody>`
   d.cats.forEach(c=>{
-    h += `<tr class="catband"><td style="position:sticky;left:0;background:var(--psoft);z-index:1">${c.name}${c.amt30?` <span style="font-weight:700;font-size:11px">${fmt(c.amt30)}</span>`:''}</td><td colspan="${2+dts.length}"></td></tr>`
+    const a = c.agg || {}
+    h += `<tr class="catband"><td style="position:sticky;left:0;background:var(--psoft);z-index:1">${c.name}${c.amt30?` <span style="font-weight:700;font-size:11px">${fmt(c.amt30)}</span>`:''}</td><td style="font-weight:900">${a.avg30!=null?a.avg30:''}</td><td>${a.grow!=null?growCell(a.grow):''}</td><td style="font-weight:900">${a.cum30!=null?a.cum30:''}</td>${a.q?qCells(a.q):`<td colspan="${dts.length}"></td>`}</tr>`
+    ;(c.subs||[]).forEach(s=>{
+      h += `<tr style="background:#FBF6EA"><td style="position:sticky;left:0;background:#FBF6EA;z-index:1;font-weight:700;color:#8a5a2e;white-space:pre">${s.n}</td><td style="font-weight:800;color:#8a5a2e">${s.avg30!=null?s.avg30:'—'}</td><td>${growCell(s.grow)}</td><td style="font-weight:800;color:#8a5a2e">${s.cum30}</td>${qCells(s.q)}</tr>`
+    })
     c.items.forEach(it=>{
-      const g = it.grow==null?'<span class="mut">—</span>':it.grow==='新'?'<span class="up">新</span>':`<span class="${it.grow>=0?'up':'dn'}">${it.grow>=0?'+':''}${it.grow}%</span>`
       const amt = it.amt30?`<div style="font-size:10px;color:var(--muted);font-weight:500">${fmt(it.amt30)}${it.pct!=null?'・'+it.pct+'%':''}</div>`:''
-      h += `<tr><td class="iname" style="position:sticky;left:0;background:#fff;z-index:1" title="${it.n}">${it.n}${amt}</td><td class="avg">${it.avg30!=null?it.avg30:'—'}</td><td>${g}</td>${[...it.q].reverse().map(q=>'<td>'+(q||0)+'</td>').join('')}</tr>`
+      h += `<tr><td class="iname" style="position:sticky;left:0;background:#fff;z-index:1" title="${it.n}">${it.n}${amt}</td><td class="avg">${it.avg30!=null?it.avg30:'—'}</td><td>${growCell(it.grow)}</td><td>${it.cum30}</td>${qCells(it.q)}</tr>`
     })
   })
   h += `</tbody></table></div></section>`
