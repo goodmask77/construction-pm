@@ -84,16 +84,18 @@ async function load(store){
   // 備料卡（GD：炸台/沙拉/吧檯；總平均＋每週幾平均＋峰值/低值——張良 2026-09-20 取消時段拆分，一早備好）
   if (d.prep) {
     const grps = [...new Set(d.prep.map(p=>p.grp))]
-    const today = new Date(); const tw = today.getDay() // 今天星期幾（1~5高亮）
+    let tw = new Date().getDay() // 今天星期幾（1~5發光）
+    if (tw === 0 || tw === 6) tw = 1 // 週六日（GD公休）打開＝在準備週一的量 → 發光週一（張良 2026-09-20 抓到週日沒東西亮）
     h += `<section><h2>預估備料量 <span class="hint">份/日</span></h2>`
     h += `<div class="scroll"><table><thead><tr><th>項目</th><th>總平均</th>${['一','二','三','四','五'].map((w,i)=>`<th${tw===i+1?' class="todaycol"':''}>週${w}${tw===i+1?' ★':''}</th>`).join('')}<th>峰值</th><th>低值</th></tr></thead><tbody>`
     grps.forEach(g=>{
       h += `<tr class="catband"><td colspan="9">${g}</td></tr>`
       d.prep.filter(p=>p.grp===g).forEach(p=>{
         const wds = (p.byWd||[]).map((v,i)=>{
-          if(v==null||p.wk==null||!p.wk) return `<td>—</td>`
-          const diff = Math.round((v-p.wk)/p.wk*100)
-          const badge = Math.abs(diff)>=10 ? `<div style="font-size:9.5px;font-weight:800;color:${diff>0?'var(--pdark)':'var(--muted)'}">${diff>0?'+':''}${diff}%</div>` : ''
+          if(v==null||p.avg==null||!p.avg) return `<td>—</td>`
+          // 每一格都顯示 %（高度一致，張良 2026-09-20）；與總平均的差
+          const diff = Math.round((v-p.avg)/p.avg*100)
+          const badge = `<div style="font-size:9.5px;font-weight:800;color:${diff>0?'var(--pdark)':diff<0?'var(--muted)':'#B9C4D0'}">${diff>0?'+':''}${diff}%</div>`
           return `<td${tw===i+1?' class="todaycol"':''}><b>${v}</b>${badge}</td>`
         }).join('')
         h += `<tr${p.sub?' class="subrow"':''}><td style="font-weight:${p.sub?800:700};color:${p.sub?'#8a5a2e':'var(--ink)'}">${p.sub?'└ ':''}${p.name}</td><td class="avg">${p.avg!=null?p.avg:'—'}</td>${wds}<td style="font-weight:800;color:#A85C26">${p.peak!=null?p.peak:'—'}</td><td class="mut">${p.low!=null?p.low:'—'}</td></tr>`
