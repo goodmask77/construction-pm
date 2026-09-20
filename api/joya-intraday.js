@@ -75,7 +75,11 @@ export default async function handler(req, res) {
       const hdoc = (await kvGet(hid)) || { days: {} }
       const arr = hdoc.days[today] = hdoc.days[today] || []
       if (!arr.some(s => s.t === slotHit)) {
-        arr.push({ t: slotHit, at: hm, rev: rec.revenue, tx: rec.txCount })
+        // 品項累計快照（張良 2026-09-21 預做要「每半小時×品項」）：存當下全品項累計份數，
+        // 相鄰兩格相減＝那半小時各品項賣幾份。喬亞實測不吃時分（帶時間回空白）→ 歷史回補不了，只能從今起收。
+        const itemQ = {}
+        for (const it of (day.items || [])) { const q = Math.round(Number(it.value_qvalue) || 0); if (q > 0) itemQ[it.name] = q }
+        arr.push({ t: slotHit, at: hm, rev: rec.revenue, tx: rec.txCount, items: itemQ })
         hdoc.updatedAt = new Date().toISOString()
         await kvPut(hid, hdoc, '喬亞半小時快照 ' + slotHit)
       }
