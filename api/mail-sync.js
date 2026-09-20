@@ -1165,6 +1165,7 @@ export default async function handler(req, res) {
     if (!it9) return res.status(404).json({ ok: false })
     const approvers9 = ((defD9 || {}).ground || {}).approvers || ['張良瑋']
     it9.doneBy = who9.name; it9.doneTs = new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 16).replace('T', ' ')
+    if (it9.claimAt) it9.durMin = Math.max(1, Math.round((Date.now() - it9.claimAt) / 60000)) // 認領→解決耗時（分）
     it9.status = approvers9.includes(who9.name) ? 'done' : 'pending'
     await kvPut('sp_finance_pm_sop_issues', d9, '看板問題解決' + (it9.status === 'pending' ? '送審' : '') + '(' + who9.name + ')')
     if (it9.status === 'pending') { // DD 私訊審核人（找名冊 lineUserId）
@@ -1177,6 +1178,34 @@ export default async function handler(req, res) {
       } catch (_) {}
     }
     return res.status(200).json({ ok: true, status: it9.status })
+  }
+  // 問題卡片操作口（張良 2026-09-21 卡片式看板）：POST ?sopissue= {id, op, val, token}
+  // op=claim(我來解決:記名+開始計時)/unclaim(本人或審核人可放棄)/flag(標記)/due(排定處理時間,自由文字)
+  if (req.method === 'POST' && req.query?.sopissue) {
+    const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
+    if (!ok2 || String(req.query.sopissue) !== ok2) return res.status(403).json({ ok: false })
+    let bi = {}
+    try { bi = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
+    const whoI = await sopWho(bi.token)
+    if (!whoI) return res.status(403).json({ ok: false, error: '要先跟 DD 說「綁定GD」' })
+    const [docI, defI] = await Promise.all([kvGet('sp_finance_pm_sop_issues'), kvGet('sp_finance_pm_sop_def')])
+    const dI = docI || { list: [] }
+    const itI = (dI.list || []).find(x => x.id === bi.id)
+    if (!itI) return res.status(404).json({ ok: false })
+    const apprI = (((defI || {}).ground || {}).approvers || ['張良瑋'])
+    if (bi.op === 'claim') {
+      if (itI.claimBy && itI.claimBy !== whoI.name) return res.status(400).json({ ok: false, error: `已由 ${itI.claimBy} 認領處理中` })
+      itI.claimBy = whoI.name; itI.claimAt = Date.now(); itI.claimTs = new Date(Date.now() + 8 * 3600e3).toISOString().slice(5, 16).replace('T', ' ')
+    } else if (bi.op === 'unclaim') {
+      if (itI.claimBy !== whoI.name && !apprI.includes(whoI.name)) return res.status(403).json({ ok: false, error: '只有認領人或審核人能放棄' })
+      delete itI.claimBy; delete itI.claimAt; delete itI.claimTs
+    } else if (bi.op === 'flag') {
+      if (bi.val) itI.flag = 1; else delete itI.flag
+    } else if (bi.op === 'due') {
+      itI.due = String(bi.val || '').slice(0, 30); if (!itI.due) delete itI.due
+    } else return res.status(400).json({ ok: false, error: 'op?' })
+    await kvPut('sp_finance_pm_sop_issues', dI, '問題卡' + bi.op + '(' + whoI.name + ')')
+    return res.status(200).json({ ok: true, issue: itI })
   }
   // 審核口（只有審核人）：POST ?sopreview= {id, pass:true/false, token} → 核准=done；退回=回 open 清除解決人
   if (req.method === 'POST' && req.query?.sopreview) {

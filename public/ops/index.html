@@ -240,7 +240,9 @@ function sopRender(){
         <b style="color:${pend?'#A85C26':'var(--red)'}">${pend?'🕐':'⚠️'} ${x.text||'（附件）'}</b>
         <div class="hint">${x.by}・${x.ts}${(x.media||[]).map((m,i)=>` <a href="${m}" target="_blank">📎附件${i+1}</a>`).join('')}</div>
         ${pend?`<div class="hint" style="color:#A85C26;font-weight:700">🕐 ${x.doneBy} 已處理・等老闆審核</div>`:''}
+        ${!pend&&x.claimBy?`<div style="color:var(--pdark);font-weight:800;font-size:12px">🔧 ${x.claimBy} 處理中・已 ${lbElapsed(x.claimAt)}</div>`:''}
         ${pend&&me&&me.approver?`<span><button class="mini on" style="margin-top:4px" onclick="sopReview('${x.id}',1)">✅ 核准</button><button class="mini" style="margin-top:4px;color:var(--red)" onclick="sopReview('${x.id}',0)">↩︎ 退回</button></span>`:''}
+        ${!pend&&me&&!x.claimBy?`<button class="mini on" style="margin-top:4px" onclick="lbOp('${x.id}','claim')">🙋 我來解決</button>`:''}
         ${!pend&&me?`<button class="mini" style="margin-top:4px" onclick="sopResolve('${x.id}')">✅ 已解決${me.approver?'':'（送審核）'}</button>`:''}</div>`
     })
     if (sopEditSt === st) { s += sopEditor(st); return }
@@ -399,13 +401,14 @@ async function sopResolve(id){
   if (!confirm('標記這個問題已解決？（會送老闆審核）')) return
   const r = await fetch('/api/mail-sync?sopresolve=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ id, token: TK() }) })
   const d = await r.json().catch(()=>null)
-  if (d && d.ok) { if (d.status === 'pending') alert('已送出，等老闆審核 ✅'); sopLoad() } else alert((d&&d.error)||'失敗（要先跟 DD 綁定GD）')
+  if (d && d.ok) { if (d.status === 'pending') alert('已送出，等老闆審核 ✅'); refreshView() } else alert((d&&d.error)||'失敗（要先跟 DD 綁定GD）')
 }
+function refreshView(){ if (curStore === 'lb') loadLB(); else sopLoad() }
 async function sopReview(id, pass){
   if (!confirm(pass ? '核准這筆解決？' : '退回（狀態回到未解決）？')) return
   const r = await fetch('/api/mail-sync?sopreview=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ id, pass: !!pass, token: TK() }) })
   const d = await r.json().catch(()=>null)
-  if (d && d.ok) sopLoad(); else alert((d&&d.error)||'失敗')
+  if (d && d.ok) refreshView(); else alert((d&&d.error)||'失敗')
 }
 // ── SOP 編輯（張良 2026-09-21 拍板：不設站長，綁定者全站可編；時間/姓名/改前內容全留痕）──
 function sopEdit(st){ sopEditSt = (sopEditSt === st) ? null : st; sopRender() }
@@ -473,18 +476,61 @@ async function loadLB(){
   })
   h += `</tbody></table></div></section>`
   h += `<section><details><summary style="font-weight:900;color:var(--ink);font-size:15px;cursor:pointer">📏 L1~L10 評分定義（點開看）</summary><div class="scroll" style="margin-top:8px"><table><thead><tr><th>等級</th><th style="text-align:left">名稱</th><th style="text-align:left">定義</th></tr></thead><tbody>${LVLS.map(l=>`<tr><td style="font-weight:900;color:var(--pdark)">L${l[0]}</td><td style="text-align:left;font-weight:700">${l[1]}</td><td style="text-align:left">${l[2]}</td></tr>`).join('')}</tbody></table></div></details></section>`
-  h += `<section><h2>📋 事件列表 <span class="hint">${meN?`點 L1~L10 幫「發現」與「解決」評分（可改票、不能評自己）`:'跟 DD 說「綁定GD」之後就能評分'}</span></h2>`
-  if (!d.issues.length) h += `<div class="mut">還沒有回報事件</div>`
-  d.issues.forEach(x=>{
-    h += `<div style="border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin-bottom:10px;background:${x.status==='done'?'#F6FBF8':'#FFF'}">
-      <div><b style="color:${x.status==='done'?'var(--green)':'var(--red)'}">${x.status==='done'?'✅':'⚠️'} 【${x.st}】${x.text||'（附件）'}</b>${(x.media||[]).map((m,i)=>` <a href="${m}" target="_blank">📎${i+1}</a>`).join('')}</div>
-      <div class="hint">發現：${x.by}・${x.ts}${x.status==='done'?`　→　解決：${x.doneBy}・${x.doneTs}`:''}</div>
-      ${lbRateRow(x,'find','🔍 發現評分', x.by, meN)}
-      ${x.status==='done'?lbRateRow(x,'fix','🔧 解決評分', x.doneBy, meN):''}
-    </div>`
-  })
+  // 📋 問題看板（張良 2026-09-21：任務中心式卡片——按站分欄、排序、🚩標記、⏰排時間、🙋我來解決＋計時）
+  h += `<section><h2>📋 問題看板 <span class="hint">${meN?'🙋認領計時・🚩標記・⏰排時間・評分都在卡片上':'跟 DD 說「綁定GD」之後可認領/標記/評分'}</span></h2>`
+  if (!d.issues.length) h += `<div class="mut">還沒有回報事件——在店面分頁按「⚠️ 回報」</div>`
+  else {
+    const stCols = [...new Set(d.issues.map(x=>x.st))]
+    const ord = x => (x.flag?0:100) + (x.status==='open' ? (x.claimBy?1:2) : x.status==='pending'?3:4)
+    h += `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:10px;align-items:start">`
+    stCols.forEach(st=>{
+      const cards = d.issues.filter(x=>x.st===st).sort((a,b)=>ord(a)-ord(b)||(b.ts<a.ts?-1:1))
+      h += `<div style="background:var(--soft);border:1px solid var(--line);border-radius:12px;padding:8px">
+        <div style="font-weight:900;color:var(--pdark);padding:2px 6px 6px">${st} <span class="hint">${cards.filter(x=>x.status!=='done').length} 未結</span></div>`
+      cards.forEach(x=>{ h += lbCard(x, meN, d.me) })
+      h += `</div>`
+    })
+    h += `</div>`
+  }
   h += `</section>`
   app.innerHTML = h
+}
+function lbElapsed(at){ if(!at) return ''; const m=Math.floor((Date.now()-at)/60000); return m<60?`${m}分`:`${Math.floor(m/60)}時${m%60}分` }
+function lbCard(x, meN, me){
+  const stColor = x.status==='done'?'var(--green)':x.status==='pending'?'#A85C26':'var(--red)'
+  const border = x.flag?'#E8B931':x.status==='done'?'#BBE3CC':x.status==='pending'?'#E8D089':'#F0B8B1'
+  let s = `<div style="background:#fff;border:1.5px solid ${border};border-radius:10px;padding:9px 10px;margin-bottom:8px;font-size:12.5px">
+    <div><b style="color:${stColor}">${x.flag?'🚩 ':''}${x.status==='done'?'✅':x.status==='pending'?'🕐':'⚠️'} ${x.text||'（附件）'}</b>${(x.media||[]).map((m,i)=>` <a href="${m}" target="_blank">📎${i+1}</a>`).join('')}</div>
+    <div class="hint">發現：${x.by}・${x.ts}</div>`
+  if (x.due) s += `<div class="hint" style="color:#A85C26;font-weight:700">⏰ 排定：${x.due}</div>`
+  if (x.status==='open' && x.claimBy) s += `<div style="color:var(--pdark);font-weight:800">🔧 ${x.claimBy} 處理中・已 ${lbElapsed(x.claimAt)}</div>`
+  if (x.status==='pending') s += `<div style="color:#A85C26;font-weight:700">🕐 ${x.doneBy} 已處理・等審核</div>`
+  if (x.status==='done') s += `<div style="color:var(--green);font-weight:700">✅ ${x.doneBy}・${x.doneTs}${x.durMin?`・耗時${x.durMin}分`:''}</div>`
+  // 動作列
+  if (meN) {
+    s += `<div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:6px">`
+    if (x.status==='open' && !x.claimBy) s += `<button class="mini on" onclick="lbOp('${x.id}','claim')">🙋 我來解決</button>`
+    if (x.status==='open' && x.claimBy===meN) s += `<button class="mini on" onclick="sopResolve('${x.id}')">✅ 解決了</button><button class="mini" onclick="lbOp('${x.id}','unclaim')">放棄</button>`
+    if (x.status==='open' && x.claimBy && x.claimBy!==meN) s += `<button class="mini" onclick="sopResolve('${x.id}')">✅ 已解決</button>`
+    if (x.status==='open' && !x.claimBy) s += `<button class="mini" onclick="sopResolve('${x.id}')">✅ 已解決</button>`
+    if (x.status==='pending' && me && me.approver) s += `<button class="mini on" onclick="sopReview('${x.id}',1)">✅ 核准</button><button class="mini" style="color:var(--red)" onclick="sopReview('${x.id}',0)">↩︎ 退回</button>`
+    if (x.status!=='done') s += `<button class="mini" onclick="lbOp('${x.id}','flag',${x.flag?0:1})">${x.flag?'取消🚩':'🚩標記'}</button><button class="mini" onclick="lbDue('${x.id}','${(x.due||'').replace(/'/g,'')}')">⏰排時間</button>`
+    s += `</div>`
+  }
+  s += lbRateRow(x,'find','🔍 發現', x.by, meN)
+  if (x.status==='done') s += lbRateRow(x,'fix','🔧 解決', x.doneBy, meN)
+  s += `</div>`
+  return s
+}
+async function lbOp(id, op, val){
+  const r = await fetch('/api/mail-sync?sopissue=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ id, op, val, token: TK() }) })
+  const d = await r.json().catch(()=>null)
+  if (d && d.ok) refreshView(); else alert((d&&d.error)||'失敗')
+}
+function lbDue(id, cur){
+  const v = prompt('排定處理時間（自由填，例：今天16:00前／9-22 中午；留空=清除）', cur||'')
+  if (v === null) return
+  lbOp(id, 'due', v.trim())
 }
 function lbRateRow(x, aspect, label, target, meN){
   const r = (x.ratings||{})[aspect]||{}
