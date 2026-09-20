@@ -2,6 +2,7 @@
  {
   "date": "2026-09-21",
   "items": [
+   "綁定一步到位+預做表完整菜單分類隱藏 v2.9.8(張良2026-09-21)：①「綁定GD 本名」一句話連身分帶連結完成(不再導去主App報到流程,同防冒名規則:已綁他人LINE擋下) ②預做節奏表=完整菜單照品類分組(cats2全items含k,bucket對key,沒資料顯示0) ③🙈隱藏管理:pm_prep_hide(ALLOW=UI設定),prephide口需綁定,隱藏清單走sop口不吃快取即時生效,sopLoad後預做表重畫 ④舊rSwitch移除防蓋新版",
    "看板提速三刀 v2.9.7(張良2026-09-21:讀取10秒太慢)：①月檔/15分快照檔全改Promise.all平行抓(原逐檔串行=元兇) ②opsboard加s-maxage=300邊緣快取(同網址5分內吃CDN不進函式,SWR 30分) ③前端stale-first:localStorage快取先渲染秒開+背景fetch無感刷新(切店防蓋回);SOP口保持即時不快取",
    "看板身分綁定+全員編輯+問題回報 v2.9.6(張良2026-09-21)：①DD私訊「綁定GD」(舊詞綁定看板相容;BIND_APPS可擴充多app,一bot多app身分token共用)→用入職lineUserId對名冊本人→發/prep?me=token個人連結,打卡自動本人不能冒名(pm_prep_bind,ALLOW豁免=token機密) ②SOP編輯:不設站長,綁定者全站可編,每次編輯留時間/姓名/改前快照(edits cap30) ③問題回報:站別旁⚠️→文字+照片影片(影片走Supabase簽名直傳破4.5MB限制,80MB上限6檔)→DD發內部群→頁面紅卡顯示→綁定者可標已解決(pm_sop_issues,AI雙邊已接82域全過)",
    "v2.9.5 版號(部署SOP+PWA)",

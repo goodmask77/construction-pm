@@ -963,6 +963,45 @@ export default async function handler(req, res) {
     const issues = ((issuesDoc || {}).list || []).filter(x => x.status === 'open').slice(0, 30)
     return res.status(200).json({ ok: true, date: dt2, def: { items: gdef.items || [], edits: (gdef.edits || []).slice(0, 10) }, log: logDoc || { items: {} }, names, me: me4, issues, prepHide: (hideDoc || {}).keys || {} })
   }
+  // ── 發現/解決問題排行榜（張良 2026-09-21）：全員對每件回報的「發現」與「解決」評 L1~L10，平均分進個人積分 ──
+  // GET  ?lb=<OPS_BOARD_KEY>&me=token → 事件列表(含評分)+排行榜；POST ?soprate= {id, aspect:'find'|'fix', level:1-10, token}
+  if (req.query?.lb) {
+    const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
+    if (!ok2 || String(req.query.lb) !== ok2) return res.status(403).json({ ok: false })
+    const [issDoc, meL] = await Promise.all([kvGet('sp_finance_pm_sop_issues'), sopWho(req.query.me)])
+    const list = ((issDoc || {}).list || []).slice(0, 60)
+    const avgOf = (o) => { const vs = Object.values(o || {}).map(Number).filter(v => v >= 1); return vs.length ? Math.round(vs.reduce((a, b) => a + b, 0) / vs.length * 10) / 10 : null }
+    const board = {}
+    const P = (nm) => board[nm] || (board[nm] = { name: nm, findPts: 0, fixPts: 0, nFind: 0, nFix: 0 })
+    for (const x of list) {
+      const fA = avgOf((x.ratings || {}).find), xA = avgOf((x.ratings || {}).fix)
+      if (x.by && x.by !== '匿名') { const p = P(x.by); p.nFind++; if (fA) p.findPts += fA }
+      if (x.doneBy) { const p = P(x.doneBy); p.nFix++; if (xA) p.fixPts += xA }
+      x.findAvg = fA; x.fixAvg = xA
+    }
+    const rank = Object.values(board).map(p => ({ ...p, findPts: Math.round(p.findPts * 10) / 10, fixPts: Math.round(p.fixPts * 10) / 10, total: Math.round((p.findPts + p.fixPts) * 10) / 10 })).sort((a, b) => b.total - a.total || (b.nFind + b.nFix) - (a.nFind + a.nFix))
+    return res.status(200).json({ ok: true, me: meL ? { name: meL.name } : null, rank, issues: list })
+  }
+  if (req.method === 'POST' && req.query?.soprate) {
+    const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
+    if (!ok2 || String(req.query.soprate) !== ok2) return res.status(403).json({ ok: false })
+    let br = {}
+    try { br = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
+    const whoR = await sopWho(br.token)
+    if (!whoR) return res.status(403).json({ ok: false, error: '要先跟 DD 說「綁定GD」才能評分' })
+    const lv = Math.round(Number(br.level))
+    if (!br.id || !['find', 'fix'].includes(br.aspect) || !(lv >= 1 && lv <= 10)) return res.status(400).json({ ok: false, error: '參數不對' })
+    const docR = (await kvGet('sp_finance_pm_sop_issues')) || { list: [] }
+    const itR = (docR.list || []).find(x => x.id === br.id)
+    if (!itR) return res.status(404).json({ ok: false })
+    if (br.aspect === 'fix' && itR.status !== 'done') return res.status(400).json({ ok: false, error: '還沒解決，不能評解決分' })
+    const target = br.aspect === 'find' ? itR.by : itR.doneBy
+    if (target === whoR.name) return res.status(400).json({ ok: false, error: '不能評自己的分 😄' })
+    itR.ratings = itR.ratings || {}; itR.ratings[br.aspect] = itR.ratings[br.aspect] || {}
+    itR.ratings[br.aspect][whoR.name] = lv // 一人一票、可改票
+    await kvPut('sp_finance_pm_sop_issues', docR, '排行榜評分(' + whoR.name + ')')
+    return res.status(200).json({ ok: true })
+  }
   // 預做節奏表隱藏設定（張良 2026-09-21：有些品項不用看預做）：POST ?prephide=<OPS_BOARD_KEY> {key, hide, token}
   if (req.method === 'POST' && req.query?.prephide) {
     const ok2 = (process.env.OPS_BOARD_KEY || '').trim()

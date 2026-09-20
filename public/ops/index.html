@@ -67,6 +67,7 @@
   <div class="tabs">
     <button id="tab-ground" class="on" onclick="load('ground')">GROUN:D</button>
     <button id="tab-abeach" onclick="load('abeach')">A Beach</button>
+    <button id="tab-lb" onclick="loadLB()">🏆 排行榜</button>
   </div>
   <div id="app"></div>
   <div class="foot">資料每天自動同步（打開即最新）・僅供內部參考與備料使用，請勿外傳連結</div>
@@ -76,10 +77,10 @@ const K = new URLSearchParams(location.search).get('k') || (location.hash || '')
 const fmt = n => 'NT$' + Math.round(n || 0).toLocaleString()
 const app = document.getElementById('app')
 let curStore = 'ground'
+function setTabs(k){ ['ground','abeach','lb'].forEach(t => { const b = document.getElementById('tab-' + (t==='lb'?'lb':t)); if (b) b.className = (t===k) ? 'on' : '' }) }
 async function load(store){
   curStore = store
-  document.getElementById('tab-ground').className = store === 'ground' ? 'on' : ''
-  document.getElementById('tab-abeach').className = store === 'abeach' ? 'on' : ''
+  setTabs(store)
   if (!K) { app.innerHTML = '<div class="err">網址缺少金鑰，請跟店長要完整連結</div>'; return }
   // ⚡ 快取先上（打開秒出畫面）、背景抓最新無感刷新（張良 2026-09-21：讀取太慢）
   const ck = 'obc_' + store
@@ -370,6 +371,60 @@ async function sopEdSave(){
     if (d && d.ok) { sopEditSt = null; sopLoad() }
     else alert(d && d.error ? d.error : '儲存失敗')
   } catch(e){ alert('連線失敗，再試一次') }
+}
+// ── 🏆 發現/解決問題排行榜（全員 L1~L10 評分，平均分進個人積分）──
+const LVLS = [
+  [1,'小提醒','順手講一聲就好'],[2,'小問題','幾分鐘能處理'],[3,'效率小狀況','影響作業流暢'],
+  [4,'品質/速度','影響出餐品質或速度'],[5,'客訴等級','放著會造成客訴'],[6,'營收影響','影響當日營業額'],
+  [7,'安全衛生','安全/衛生隱患'],[8,'停業風險','重大營運中斷風險'],[9,'重大止損','避免設備/食安重大損失'],[10,'救了全店','防止重大事故']
+]
+async function loadLB(){
+  curStore = 'lb'; setTabs('lb')
+  app.innerHTML = '<section>載入中…</section>'
+  let d
+  try { const r = await fetch('/api/mail-sync?lb=' + encodeURIComponent(K) + (TK() ? '&me=' + encodeURIComponent(TK()) : '')); d = await r.json() } catch(e){}
+  if (!d || !d.ok) { app.innerHTML = '<div class="err">讀不到排行榜資料</div>'; return }
+  document.getElementById('upd').textContent = '🏆 發現問題＆解決問題排行榜・全員可評分'
+  const meN = d.me && d.me.name
+  let h = ''
+  h += `<section><h2>🏆 積分排行榜 <span class="hint">積分＝每件「發現」與「解決」的全員評分平均加總（L1~L10）</span></h2>
+  <div class="scroll"><table><thead><tr><th>#</th><th style="text-align:left">夥伴</th><th>發現分</th><th>解決分</th><th>總積分</th><th>發現次</th><th>解決次</th></tr></thead><tbody>`
+  if (!d.rank.length) h += `<tr><td colspan="7" style="text-align:center" class="mut">還沒有回報事件——在店面分頁按「⚠️ 回報」開始累積</td></tr>`
+  d.rank.forEach((p,i)=>{
+    const medal = i===0?'🥇':i===1?'🥈':i===2?'🥉':(i+1)
+    h += `<tr style="${meN===p.name?'background:#E5F3FA':''}"><td style="font-weight:900">${medal}</td><td style="text-align:left;font-weight:800;color:var(--ink)">${p.name}</td><td>${p.findPts||0}</td><td>${p.fixPts||0}</td><td class="avg">${p.total||0}</td><td class="mut">${p.nFind}</td><td class="mut">${p.nFix}</td></tr>`
+  })
+  h += `</tbody></table></div></section>`
+  h += `<section><details><summary style="font-weight:900;color:var(--ink);font-size:15px;cursor:pointer">📏 L1~L10 評分定義（點開看）</summary><div class="scroll" style="margin-top:8px"><table><thead><tr><th>等級</th><th style="text-align:left">名稱</th><th style="text-align:left">定義</th></tr></thead><tbody>${LVLS.map(l=>`<tr><td style="font-weight:900;color:var(--pdark)">L${l[0]}</td><td style="text-align:left;font-weight:700">${l[1]}</td><td style="text-align:left">${l[2]}</td></tr>`).join('')}</tbody></table></div></details></section>`
+  h += `<section><h2>📋 事件列表 <span class="hint">${meN?`點 L1~L10 幫「發現」與「解決」評分（可改票、不能評自己）`:'跟 DD 說「綁定GD」之後就能評分'}</span></h2>`
+  if (!d.issues.length) h += `<div class="mut">還沒有回報事件</div>`
+  d.issues.forEach(x=>{
+    h += `<div style="border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin-bottom:10px;background:${x.status==='done'?'#F6FBF8':'#FFF'}">
+      <div><b style="color:${x.status==='done'?'var(--green)':'var(--red)'}">${x.status==='done'?'✅':'⚠️'} 【${x.st}】${x.text||'（附件）'}</b>${(x.media||[]).map((m,i)=>` <a href="${m}" target="_blank">📎${i+1}</a>`).join('')}</div>
+      <div class="hint">發現：${x.by}・${x.ts}${x.status==='done'?`　→　解決：${x.doneBy}・${x.doneTs}`:''}</div>
+      ${lbRateRow(x,'find','🔍 發現評分', x.by, meN)}
+      ${x.status==='done'?lbRateRow(x,'fix','🔧 解決評分', x.doneBy, meN):''}
+    </div>`
+  })
+  h += `</section>`
+  app.innerHTML = h
+}
+function lbRateRow(x, aspect, label, target, meN){
+  const r = (x.ratings||{})[aspect]||{}
+  const avg = aspect==='find'?x.findAvg:x.fixAvg
+  const myV = meN ? r[meN] : null
+  const n = Object.keys(r).length
+  const canVote = meN && meN !== target
+  return `<div style="display:flex;align-items:center;gap:4px;flex-wrap:wrap;margin-top:6px">
+    <span style="font-size:12px;font-weight:700;width:86px">${label}</span>
+    <span class="avg" style="width:52px">${avg!=null?avg:'—'}</span><span class="hint" style="width:44px">${n}票</span>
+    ${canVote?LVLS.map(l=>`<button class="mini${myV===l[0]?' on':''}" style="padding:3px 7px;font-size:11px" title="L${l[0]} ${l[1]}：${l[2]}" onclick="lbRate('${x.id}','${aspect}',${l[0]})">${l[0]}</button>`).join(''):(meN===target?'<span class="hint">（自己的不能評）</span>':'')}
+  </div>`
+}
+async function lbRate(id, aspect, lv){
+  const r = await fetch('/api/mail-sync?soprate=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ id, aspect, level: lv, token: TK() }) })
+  const d = await r.json().catch(()=>null)
+  if (d && d.ok) loadLB(); else alert((d&&d.error)||'評分失敗')
 }
 load('ground')
 </script>
