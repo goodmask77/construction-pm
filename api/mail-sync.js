@@ -1008,42 +1008,67 @@ export default async function handler(req, res) {
   }
   // ── 發現/解決問題排行榜（張良 2026-09-21）：全員對每件回報的「發現」與「解決」評 L1~L10，平均分進個人積分 ──
   // GET  ?lb=<OPS_BOARD_KEY>&me=token → 事件列表(含評分)+排行榜；POST ?soprate= {id, aspect:'find'|'fix', level:1-10, token}
+  // 五大面向星星評分（張良 2026-09-21 拍板：取代 L1~L10 投票——面向沿用薪資360同語彙，1~5星直覺免看定義；
+  // 效率不用人評=認領計時 durMin 客觀數據）。stars 結構：issue.stars[find|fix][面向key][評分人]=1~5
+  const FACETS = ['專業', '品質', '團隊', '負責', '創新']
   if (req.query?.lb) {
     const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
     if (!ok2 || String(req.query.lb) !== ok2) return res.status(403).json({ ok: false })
     const [issDoc, meL] = await Promise.all([kvGet('sp_finance_pm_sop_issues'), sopWho(req.query.me)])
     const list = ((issDoc || {}).list || []).slice(0, 60)
-    const avgOf = (o) => { const vs = Object.values(o || {}).map(Number).filter(v => v >= 1); return vs.length ? Math.round(vs.reduce((a, b) => a + b, 0) / vs.length * 10) / 10 : null }
     const board = {}
-    const P = (nm) => board[nm] || (board[nm] = { name: nm, findPts: 0, fixPts: 0, nFind: 0, nFix: 0 })
+    const P = (nm) => board[nm] || (board[nm] = { name: nm, findPts: 0, fixPts: 0, nFind: 0, nFix: 0, fc: {} })
     for (const x of list) {
-      const fA = avgOf((x.ratings || {}).find), xA = avgOf((x.ratings || {}).fix)
-      if (x.by && x.by !== '匿名') { const p = P(x.by); p.nFind++; if (fA) p.findPts += fA }
-      if (x.doneBy && x.status === 'done') { const p = P(x.doneBy); p.nFix++; if (xA) p.fixPts += xA } // 待審核不算積分（張良 2026-09-21：解決要經審核）
-      x.findAvg = fA; x.fixAvg = xA
+      for (const aspect of ['find', 'fix']) {
+        if (aspect === 'fix' && x.status !== 'done') continue // 待審不計
+        const target = aspect === 'find' ? x.by : x.doneBy
+        if (!target || target === '匿名') continue
+        const p = P(target)
+        if (aspect === 'find') p.nFind++; else p.nFix++
+        const st = (x.stars || {})[aspect] || {}
+        let all = []
+        for (const f of FACETS) {
+          const vs = Object.values(st[f] || {}).map(Number).filter(v => v >= 1)
+          if (vs.length) { const fo = p.fc[f] || (p.fc[f] = { sum: 0, n: 0 }); fo.sum += vs.reduce((a, b) => a + b, 0); fo.n += vs.length; all = all.concat(vs) }
+        }
+        const evAvg = all.length ? all.reduce((a, b) => a + b, 0) / all.length : 0 // 該事件該面的整體星平均
+        if (aspect === 'find') p.findPts += evAvg; else p.fixPts += evAvg
+        x[aspect + 'Avg'] = all.length ? Math.round(evAvg * 10) / 10 : null
+      }
     }
-    const rank = Object.values(board).map(p => ({ ...p, findPts: Math.round(p.findPts * 10) / 10, fixPts: Math.round(p.fixPts * 10) / 10, total: Math.round((p.findPts + p.fixPts) * 10) / 10 })).sort((a, b) => b.total - a.total || (b.nFind + b.nFix) - (a.nFind + a.nFix))
-    return res.status(200).json({ ok: true, me: meL ? { name: meL.name } : null, rank, issues: list })
+    const rank = Object.values(board).map(p => ({
+      name: p.name, nFind: p.nFind, nFix: p.nFix,
+      findPts: Math.round(p.findPts * 10) / 10, fixPts: Math.round(p.fixPts * 10) / 10,
+      total: Math.round((p.findPts + p.fixPts) * 10) / 10,
+      facets: Object.fromEntries(FACETS.map(f => [f, p.fc[f] ? { avg: Math.round(p.fc[f].sum / p.fc[f].n * 10) / 10, n: p.fc[f].n } : null])),
+    })).sort((a, b) => b.total - a.total || (b.nFind + b.nFix) - (a.nFind + a.nFix))
+    // ○○之星榮耀榜：每面向平均星最高者（至少 3 票才上榜，避免一票封神）
+    const stars5 = Object.fromEntries(FACETS.map(f => {
+      const cand = rank.filter(p => p.facets[f] && p.facets[f].n >= 3).sort((a, b) => b.facets[f].avg - a.facets[f].avg || b.facets[f].n - a.facets[f].n)
+      return [f, cand[0] ? { name: cand[0].name, avg: cand[0].facets[f].avg, n: cand[0].facets[f].n } : null]
+    }))
+    return res.status(200).json({ ok: true, me: meL ? { name: meL.name } : null, facets: FACETS, rank, stars5, issues: list })
   }
   if (req.method === 'POST' && req.query?.soprate) {
+    // v2：面向星星（1~5）。body={id, aspect:'find'|'fix', facet:五面向之一, stars:1-5}
     const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
     if (!ok2 || String(req.query.soprate) !== ok2) return res.status(403).json({ ok: false })
     let br = {}
     try { br = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
     const whoR = await sopWho(br.token)
     if (!whoR) return res.status(403).json({ ok: false, error: '要先跟 DD 說「綁定GD」才能評分' })
-    const lv = Math.round(Number(br.level))
-    if (!br.id || !['find', 'fix'].includes(br.aspect) || !(lv >= 1 && lv <= 10)) return res.status(400).json({ ok: false, error: '參數不對' })
+    const sv = Math.round(Number(br.stars))
+    if (!br.id || !['find', 'fix'].includes(br.aspect) || !FACETS.includes(br.facet) || !(sv >= 1 && sv <= 5)) return res.status(400).json({ ok: false, error: '參數不對' })
     const docR = (await kvGet('sp_finance_pm_sop_issues')) || { list: [] }
     const itR = (docR.list || []).find(x => x.id === br.id)
     if (!itR) return res.status(404).json({ ok: false })
-    if (br.aspect === 'fix' && itR.status !== 'done') return res.status(400).json({ ok: false, error: '還沒解決，不能評解決分' })
+    if (br.aspect === 'fix' && itR.status !== 'done') return res.status(400).json({ ok: false, error: '還沒核准解決，先不能評解決星' })
     const target = br.aspect === 'find' ? itR.by : itR.doneBy
-    if (target === whoR.name) return res.status(400).json({ ok: false, error: '不能評自己的分 😄' })
-    itR.ratings = itR.ratings || {}; itR.ratings[br.aspect] = itR.ratings[br.aspect] || {}
-    itR.ratings[br.aspect][whoR.name] = lv // 一人一票、可改票
-    await kvPut('sp_finance_pm_sop_issues', docR, '排行榜評分(' + whoR.name + ')')
-    return res.status(200).json({ ok: true })
+    if (target === whoR.name) return res.status(400).json({ ok: false, error: '不能評自己的星 😄' })
+    itR.stars = itR.stars || {}; itR.stars[br.aspect] = itR.stars[br.aspect] || {}; itR.stars[br.aspect][br.facet] = itR.stars[br.aspect][br.facet] || {}
+    itR.stars[br.aspect][br.facet][whoR.name] = sv // 一人每面向一票、可改
+    await kvPut('sp_finance_pm_sop_issues', docR, '面向評星(' + whoR.name + ')')
+    return res.status(200).json({ ok: true, stars: itR.stars })
   }
   // 預做節奏表隱藏設定（張良 2026-09-21：有些品項不用看預做）：POST ?prephide=<OPS_BOARD_KEY> {key, hide, token}
   if (req.method === 'POST' && req.query?.prephide) {

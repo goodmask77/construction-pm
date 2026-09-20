@@ -2,6 +2,7 @@
  {
   "date": "2026-09-21",
   "items": [
+   "問題看板卡片式+我來解決計時 v3.0.5(張良2026-09-21:像任務中心)：①排行榜事件列表改看板:按站分欄(grid auto-fill 260px)、排序=🚩標記→處理中→未解決→待審→已解決 ②卡片:🙋我來解決(sopissue口claim=記名+claimAt開始計時,他人已認領擋)/放棄(本人或審核人)/✅解決(耗時durMin自動算)/🚩標記/⏰排時間(自由文字)/評分列照舊 ③SOP分頁站卡同步加我來解決+處理中計時 ④refreshView統一刷新(lb/sop兩視圖)",
    "解決審核制 v3.0.4(張良2026-09-21:已解決要經我審核不能隨便按掉)：①兩段式:夥伴按已解決=pending送審(黃卡🕐+DD私訊審核人lineUserId)、審核人自己按=直接done ②sopreview口:核准=done留reviewedBy/退回=回open清doneBy ③approvers存def.ground(預設張良瑋,sopset可改)、me.approver旗標、頁面核准/退回鈕 ④排行榜fix積分只算done(待審不計)、解決評分本來就限done",
    "GD App icon+名稱 v3.0.3(張良2026-09-21)：/prep PWA icon改:D紅標(512/192/180 png,sips từ張良提供原圖)、manifest與apple-title/瀏覽器分頁title/favicon全改「GD」",
    "SOP完成紀錄預覽 v3.0.2(張良2026-09-21)：完成列=✓時間+人+42px照片縮圖(點任一處開預覽);撤銷從列表移除防誤點→只在預覽視窗內(↩︎撤銷完成+confirm);無照片項目預覽顯示完成資訊",

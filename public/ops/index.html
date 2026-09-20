@@ -452,32 +452,41 @@ async function sopEdSave(){
     else alert(d && d.error ? d.error : '儲存失敗')
   } catch(e){ alert('連線失敗，再試一次') }
 }
-// ── 🏆 發現/解決問題排行榜（全員 L1~L10 評分，平均分進個人積分）──
-const LVLS = [
-  [1,'小提醒','順手講一聲就好'],[2,'小問題','幾分鐘能處理'],[3,'效率小狀況','影響作業流暢'],
-  [4,'品質/速度','影響出餐品質或速度'],[5,'客訴等級','放著會造成客訴'],[6,'營收影響','影響當日營業額'],
-  [7,'安全衛生','安全/衛生隱患'],[8,'停業風險','重大營運中斷風險'],[9,'重大止損','避免設備/食安重大損失'],[10,'救了全店','防止重大事故']
-]
+// ── 🏆 發現/解決問題排行榜（五大面向 1~5⭐，同薪資360語彙；效率=計時客觀數據不用人評）──
+let lbOpen = new Set()
 async function loadLB(){
   curStore = 'lb'; setTabs('lb')
   app.innerHTML = '<section>載入中…</section>'
   let d
   try { const r = await fetch('/api/mail-sync?lb=' + encodeURIComponent(K) + (TK() ? '&me=' + encodeURIComponent(TK()) : '')); d = await r.json() } catch(e){}
   if (!d || !d.ok) { app.innerHTML = '<div class="err">讀不到排行榜資料</div>'; return }
-  document.getElementById('upd').textContent = '🏆 發現問題＆解決問題排行榜・全員可評分'
+  window._lbD = d
+  lbRender()
+}
+function lbRender(){
+  const d = window._lbD; if (!d || curStore !== 'lb') return
+  document.getElementById('upd').textContent = '🏆 發現問題＆解決問題排行榜・五大面向評星'
   const meN = d.me && d.me.name
   let h = ''
-  h += `<section><h2>🏆 積分排行榜 <span class="hint">積分＝每件「發現」與「解決」的全員評分平均加總（L1~L10）</span></h2>
-  <div class="scroll"><table><thead><tr><th>#</th><th style="text-align:left">夥伴</th><th>發現分</th><th>解決分</th><th>總積分</th><th>發現次</th><th>解決次</th></tr></thead><tbody>`
-  if (!d.rank.length) h += `<tr><td colspan="7" style="text-align:center" class="mut">還沒有回報事件——在店面分頁按「⚠️ 回報」開始累積</td></tr>`
+  // 🌟 榮耀榜
+  h += `<section><h2>🌟 ○○之星 榮耀榜 <span class="hint">各面向平均星最高（至少 3 票上榜）</span></h2>
+  <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px">` +
+  d.facets.map(f=>{ const w = d.stars5[f]
+    return `<div style="background:${w?'#FFF9E8':'var(--soft)'};border:1px solid ${w?'#E8D089':'var(--line)'};border-radius:12px;padding:10px;text-align:center">
+      <div style="font-size:12px;font-weight:800;color:var(--pdark)">${f}之星</div>
+      ${w?`<div style="font-size:17px;font-weight:900;color:var(--ink)">👑 ${w.name}</div><div class="hint">⭐${w.avg}・${w.n}票</div>`:`<div class="mut" style="font-size:13px;padding:4px 0">虛位以待</div><div class="hint">滿3票上榜</div>`}
+    </div>`}).join('') + `</div></section>`
+  // 積分排行榜
+  h += `<section><h2>🏆 積分排行榜 <span class="hint">積分＝每件「發現」與「解決」的全員評星平均加總（1~5⭐）</span></h2>
+  <div class="scroll"><table><thead><tr><th>#</th><th style="text-align:left">夥伴</th><th>發現分</th><th>解決分</th><th>總積分</th>${d.facets.map(f=>'<th>'+f+'</th>').join('')}<th>發現次</th><th>解決次</th></tr></thead><tbody>`
+  if (!d.rank.length) h += `<tr><td colspan="${7+d.facets.length}" style="text-align:center" class="mut">還沒有評分——回報問題、認領解決、幫別人評星開始累積</td></tr>`
   d.rank.forEach((p,i)=>{
     const medal = i===0?'🥇':i===1?'🥈':i===2?'🥉':(i+1)
-    h += `<tr style="${meN===p.name?'background:#E5F3FA':''}"><td style="font-weight:900">${medal}</td><td style="text-align:left;font-weight:800;color:var(--ink)">${p.name}</td><td>${p.findPts||0}</td><td>${p.fixPts||0}</td><td class="avg">${p.total||0}</td><td class="mut">${p.nFind}</td><td class="mut">${p.nFix}</td></tr>`
+    h += `<tr style="${meN===p.name?'background:#E5F3FA':''}"><td style="font-weight:900">${medal}</td><td style="text-align:left;font-weight:800;color:var(--ink)">${p.name}</td><td>${p.findPts||0}</td><td>${p.fixPts||0}</td><td class="avg">${p.total||0}</td>${d.facets.map(f=>'<td>'+(p.facets[f]?('⭐'+p.facets[f].avg):'—')+'</td>').join('')}<td class="mut">${p.nFind}</td><td class="mut">${p.nFix}</td></tr>`
   })
   h += `</tbody></table></div></section>`
-  h += `<section><details><summary style="font-weight:900;color:var(--ink);font-size:15px;cursor:pointer">📏 L1~L10 評分定義（點開看）</summary><div class="scroll" style="margin-top:8px"><table><thead><tr><th>等級</th><th style="text-align:left">名稱</th><th style="text-align:left">定義</th></tr></thead><tbody>${LVLS.map(l=>`<tr><td style="font-weight:900;color:var(--pdark)">L${l[0]}</td><td style="text-align:left;font-weight:700">${l[1]}</td><td style="text-align:left">${l[2]}</td></tr>`).join('')}</tbody></table></div></details></section>`
-  // 📋 問題看板（張良 2026-09-21：任務中心式卡片——按站分欄、排序、🚩標記、⏰排時間、🙋我來解決＋計時）
-  h += `<section><h2>📋 問題看板 <span class="hint">${meN?'🙋認領計時・🚩標記・⏰排時間・評分都在卡片上':'跟 DD 說「綁定GD」之後可認領/標記/評分'}</span></h2>`
+  // 📋 問題看板
+  h += `<section><h2>📋 問題看板 <span class="hint">${meN?'🙋認領計時・🚩標記・⏰排時間・⭐評星都在卡片上':'跟 DD 說「綁定GD」之後可認領/標記/評星'}</span></h2>`
   if (!d.issues.length) h += `<div class="mut">還沒有回報事件——在店面分頁按「⚠️ 回報」</div>`
   else {
     const stCols = [...new Set(d.issues.map(x=>x.st))]
@@ -506,7 +515,6 @@ function lbCard(x, meN, me){
   if (x.status==='open' && x.claimBy) s += `<div style="color:var(--pdark);font-weight:800">🔧 ${x.claimBy} 處理中・已 ${lbElapsed(x.claimAt)}</div>`
   if (x.status==='pending') s += `<div style="color:#A85C26;font-weight:700">🕐 ${x.doneBy} 已處理・等審核</div>`
   if (x.status==='done') s += `<div style="color:var(--green);font-weight:700">✅ ${x.doneBy}・${x.doneTs}${x.durMin?`・耗時${x.durMin}分`:''}</div>`
-  // 動作列
   if (meN) {
     s += `<div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:6px">`
     if (x.status==='open' && !x.claimBy) s += `<button class="mini on" onclick="lbOp('${x.id}','claim')">🙋 我來解決</button>`
@@ -522,6 +530,33 @@ function lbCard(x, meN, me){
   s += `</div>`
   return s
 }
+// 五大面向評星（收合式：按⭐評分展開五面向各1~5星；一人每面向一票可改）
+function lbRateRow(x, aspect, label, target, meN){
+  const d = window._lbD
+  const st = (x.stars||{})[aspect]||{}
+  const avg = aspect==='find'?x.findAvg:x.fixAvg
+  const nAll = Object.values(st).reduce((t,f)=>t+Object.keys(f||{}).length,0)
+  const key = x.id+aspect
+  const canVote = meN && meN!==target
+  let s = `<div style="margin-top:6px;font-size:12px"><span style="font-weight:700">${label}</span> <span class="avg">${avg!=null?('⭐'+avg):'—'}</span> <span class="hint">${nAll}票</span>`
+  if (canVote) s += ` <button class="mini" onclick="lbTog('${key}')">${lbOpen.has(key)?'收合':'⭐ 評分'}</button>`
+  else if (meN===target) s += ` <span class="hint">（自己的不能評）</span>`
+  s += `</div>`
+  if (lbOpen.has(key) && canVote) {
+    s += `<div style="background:var(--soft);border-radius:8px;padding:6px 8px;margin-top:4px">` + d.facets.map(f=>{
+      const mine = (st[f]||{})[meN] || 0
+      return `<div style="display:flex;align-items:center;gap:5px;padding:2px 0"><span style="width:36px;font-size:12px;font-weight:700">${f}</span>` +
+        [1,2,3,4,5].map(v=>`<span style="cursor:pointer;font-size:19px;color:${mine>=v?'#E8B931':'#C7D4E0'}" onclick="lbRate('${x.id}','${aspect}','${f}',${v})">${mine>=v?'★':'☆'}</span>`).join('') + `</div>`
+    }).join('') + `<div class="hint">點星星＝評分（每面向一票、點別顆可改）；不熟的面向可以不評</div></div>`
+  }
+  return s
+}
+function lbTog(k){ if (lbOpen.has(k)) lbOpen.delete(k); else lbOpen.add(k); lbRender() }
+async function lbRate(id, aspect, facet, stars){
+  const r = await fetch('/api/mail-sync?soprate=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ id, aspect, facet, stars, token: TK() }) })
+  const d = await r.json().catch(()=>null)
+  if (d && d.ok) loadLB(); else alert((d&&d.error)||'評分失敗')
+}
 async function lbOp(id, op, val){
   const r = await fetch('/api/mail-sync?sopissue=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ id, op, val, token: TK() }) })
   const d = await r.json().catch(()=>null)
@@ -531,23 +566,6 @@ function lbDue(id, cur){
   const v = prompt('排定處理時間（自由填，例：今天16:00前／9-22 中午；留空=清除）', cur||'')
   if (v === null) return
   lbOp(id, 'due', v.trim())
-}
-function lbRateRow(x, aspect, label, target, meN){
-  const r = (x.ratings||{})[aspect]||{}
-  const avg = aspect==='find'?x.findAvg:x.fixAvg
-  const myV = meN ? r[meN] : null
-  const n = Object.keys(r).length
-  const canVote = meN && meN !== target
-  return `<div style="display:flex;align-items:center;gap:4px;flex-wrap:wrap;margin-top:6px">
-    <span style="font-size:12px;font-weight:700;width:86px">${label}</span>
-    <span class="avg" style="width:52px">${avg!=null?avg:'—'}</span><span class="hint" style="width:44px">${n}票</span>
-    ${canVote?LVLS.map(l=>`<button class="mini${myV===l[0]?' on':''}" style="padding:3px 7px;font-size:11px" title="L${l[0]} ${l[1]}：${l[2]}" onclick="lbRate('${x.id}','${aspect}',${l[0]})">${l[0]}</button>`).join(''):(meN===target?'<span class="hint">（自己的不能評）</span>':'')}
-  </div>`
-}
-async function lbRate(id, aspect, lv){
-  const r = await fetch('/api/mail-sync?soprate=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ id, aspect, level: lv, token: TK() }) })
-  const d = await r.json().catch(()=>null)
-  if (d && d.ok) loadLB(); else alert((d&&d.error)||'評分失敗')
 }
 load('ground')
 </script>
