@@ -1980,12 +1980,18 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
                                   {dcols.map(dd => <td key={dd} style={{ ...tdn, borderTop: "none", color: "#fff", fontWeight: 700 }}>{g.reduce((t, r) => t + (r.q[dd] || 0), 0)}</td>)}
                                 </tr>
                               );
-                              // 雞肉/牛肉分開小計（張良 2026-09-11）：漢堡色帶(合併)照舊，下面補兩條小計列
-                              const subRows = cat === "漢堡" ? [["雞肉堡小計", (r) => !/牛肉/.test(r.n)], ["牛肉堡小計", (r) => /牛肉/.test(r.n)]].map(([lb, filt]) => {
+                              // 雞肉/牛肉分開小計（張良 2026-09-11）；雞肉再拆 炸/煎 雞腿堡（張良 2026-09-20）——
+                              // 炸=名字含「炸」的雞腿堡、煎=其餘雞腿堡（香煎去骨/大阪燒煎）；漢堡色帶(合併)照舊
+                              const subRows = cat === "漢堡" ? [
+                                ["├ 雞肉堡小計", (r) => !/牛肉/.test(r.n)],
+                                ["│　├ 炸雞腿堡", (r) => /雞腿堡/.test(r.n) && /炸/.test(r.n)],
+                                ["│　└ 煎雞腿堡", (r) => /雞腿堡/.test(r.n) && !/炸/.test(r.n)],
+                                ["├ 牛肉堡小計", (r) => /牛肉/.test(r.n)],
+                              ].map(([lb, filt]) => {
                                 const gg = g.filter(filt); if (!gg.length) return null;
                                 return (
                                   <tr key={"sub-" + lb} style={{ background: "#f3ead9" }}>
-                                    <td style={{ padding: isMobile ? "4px 6px" : "4px 8px", fontWeight: 700, fontSize: 11.5, color: "#8a5a2e", position: "sticky", left: 0, background: "#f3ead9", whiteSpace: "nowrap", ...stickyCap }}>├ {lb}</td>
+                                    <td style={{ padding: isMobile ? "4px 6px" : "4px 8px", fontWeight: 700, fontSize: 11.5, color: "#8a5a2e", position: "sticky", left: 0, background: "#f3ead9", whiteSpace: "nowrap", ...stickyCap }}>{lb}</td>
                                     <td style={{ ...tdn, color: "#b08d63", fontWeight: 700 }}>{avg30Txt(gg.map(r => r.k))}</td>
                                     {growCell(gg.map(r => r.k), { color: "#8a5a2e" })}
                                     <td style={{ ...tdn, fontWeight: 800, color: "#8a5a2e" }}>{gg.reduce((t, r) => t + r.cum, 0)}</td>
