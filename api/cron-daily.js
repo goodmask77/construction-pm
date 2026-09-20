@@ -122,8 +122,8 @@ export default async function handler(req, res) {
   // 可選：用 CRON_SECRET 防止外部亂打
   const secret = clean(process.env.CRON_SECRET)
   if (secret && req.headers['authorization'] !== `Bearer ${secret}`) return res.status(401).json({ ok: false })
-  // 一次性補建（2026-09-12 DD 假完成翻車的漏網任務；內容寫死無注入面、防重複，建完下批部署移除）
-  if (req.query?.seed === 'pizza12') {
+  // 一次性補建（已於 2026-09-12 使用完畢；防重複所以留著也無害，佔位待清）
+  if (false && req.query?.seed === 'pizza12') {
     const kvSet = async (id, obj) => { const r = await fetch(`${SB_URL}/rest/v1/pm_documents`, { method: 'POST', headers: { apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}`, 'content-type': 'application/json', Prefer: 'resolution=merge-duplicates' }, body: JSON.stringify({ id, data: { v: JSON.stringify(obj) }, editor: 'claude-seed', updated_at: new Date().toISOString() }) }); return r.ok }
     const title = '12吋披薩圓盒', url = 'https://www.bagasseproduct.com/'
     const existing = await listPrefix('sp_team_pm_task_')
@@ -137,9 +137,46 @@ export default async function handler(req, res) {
     try { const cur = await kvGet('sp_team_pm_activity'); const arr = Array.isArray(cur) ? cur : []; await kvSet('sp_team_pm_activity', [{ ts: now, user: 'Claude(補建)', action: '新增', detail: `補建任務「${title}」（DD 假完成翻車補救，備註放連結）` }, ...arr].slice(0, 200)) } catch (_) {}
     return res.status(200).json({ ok: okw, cat: cat?.name || '收件匣', id })
   }
-  // 同一支 cron 跑兩班：台北中午前＝早班（同步＋速報＋任務簡報）、中午後＝晚班（只追未完成任務）
+  // 同一支 cron 跑三班：台北 8 點=早班（同步＋速報＋任務簡報）、9:30=備料班（發 GROUN:D Family 群）、中午後=晚班（只追未完成任務）
   const tpeHour = Number(new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Taipei', hour: '2-digit', hour12: false }).format(new Date()))
-  const evening = req.query?.mode === 'evening' || (req.query?.mode !== 'morning' && tpeHour >= 12)
+  const evening = req.query?.mode === 'evening' || (req.query?.mode !== 'morning' && req.query?.mode !== 'prep' && tpeHour >= 12)
+  // ── 每日 09:30 備料訊息（張良 2026-09-21：DD 在 GROUN:D Family 群發「今天各站備多少」）──
+  // cron 30 1 * * *（台北 09:30）；手動試發：?mode=prep&force=<MENU_PROBE_KEY>[&wd=1..5]
+  if (req.query?.mode === 'prep' || (!req.query?.mode && !req.query?.dry && tpeHour === 9)) {
+    const mk = (process.env.MENU_PROBE_KEY || '').trim()
+    const forced = mk && String(req.query?.force || '') === mk
+    if (!forced && tpeHour !== 9) return res.status(200).json({ ok: false, skipped: '非 09:30 時段（試發要帶 force 金鑰）' })
+    const tpd = new Date(Date.now() + 8 * 3600e3)
+    let wd = Number(req.query?.wd); if (!(wd >= 1 && wd <= 5)) wd = tpd.getUTCDay()
+    if (wd === 0 || wd === 6) return res.status(200).json({ ok: true, skipped: '週末公休不發備料' })
+    if (!TOKEN) return res.status(200).json({ ok: false, skipped: '未設 LINE token' })
+    const st = (await kvGet('pm_settings')) || {}
+    if ((st.lineNotify || {}).prepRemind === false) return res.status(200).json({ ok: true, skipped: '備料訊息已關（prepRemind=false）' })
+    // 備料數字直接吃 /prep 看板同一個資料口（資料一致鐵則：不另算一套）
+    const okey = clean(process.env.OPS_BOARD_KEY) || '7ea362bae1f0274372d4ec7b27c78852'
+    const rr = await fetch('https://ground-pm.vercel.app/api/mail-sync?opsboard=' + encodeURIComponent(okey) + '&store=ground')
+    const dd = await rr.json().catch(() => null)
+    if (!dd || !dd.ok || !Array.isArray(dd.prep)) return res.status(200).json({ ok: false, error: '拿不到備料資料' })
+    const L = [`🍳 早安！今天（週${'日一二三四五六'[wd]}）備料建議 👇`]
+    let g0 = ''
+    for (const p of dd.prep) {
+      if (p.grp !== g0) { g0 = p.grp; L.push(`▍${g0}`) }
+      const v = Array.isArray(p.byWd) && p.byWd[wd - 1] != null ? p.byWd[wd - 1] : p.avg
+      if (v == null) continue
+      L.push(`${p.sub ? '　└ ' : '・'}${p.name}：${v}${p.avg != null && v !== p.avg ? `（總平均 ${p.avg}）` : ''}${p.peak != null ? `｜峰值 ${p.peak}` : ''}`)
+    }
+    L.push('')
+    L.push(`數字＝週${'日一二三四五六'[wd]}近幾週平均（已進位往上抓）；訂位多、活動日往「峰值」抓。詳細：ground-pm.vercel.app/prep`)
+    // 目標群：env LINE_PREP_GROUP 優先，否則從群組登記表找名字含 Family 的群
+    let tgt = clean(process.env.LINE_PREP_GROUP)
+    if (!tgt) { const seen = (await kvGet('pm_group_seen')) || {}; for (const [gid2, gg] of Object.entries(seen)) if (/family/i.test(gg?.name || '')) { tgt = gid2; break } }
+    if (!tgt) return res.status(200).json({ ok: false, error: '找不到 GROUN:D Family 群（讓 DD 在群裡看到一則訊息就會登記群名，或設 LINE_PREP_GROUP）' })
+    try {
+      const pr = await fetch('https://api.line.me/v2/bot/message/push', { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${TOKEN}` }, body: JSON.stringify({ to: tgt, messages: [{ type: 'text', text: L.join('\n') }] }) })
+      if (pr.ok) { try { const { logPush, groupMembers } = await import('./push.js'); await logPush(tgt, 1, '備料建議', await groupMembers(tgt)) } catch (_) {} }
+      return res.status(200).json({ ok: pr.ok, prep: true, wd, to: tgt.slice(-6), lines: L.length })
+    } catch (e) { return res.status(200).json({ ok: false, error: e?.message }) }
+  }
   // 三個資料同步（只在早班跑）：失敗不影響速報，但要「留下失敗紀錄」（以前默默吞掉＝資料變舊都不知道）
   const syncErrs = []
   if (!evening && !req.query?.dry) {
