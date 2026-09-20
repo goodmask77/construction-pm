@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>營運看板｜GROUN:D × A BEACH</title>
+<meta name="robots" content="noindex" />
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700;900&display=swap" rel="stylesheet">
+<style>
+  :root{ --bg:#F3F7FA; --card:#FFF; --soft:#F7FAFC; --ink:#10182B; --text:#25324A; --muted:#66758E;
+    --primary:#087EBA; --pdark:#075F91; --psoft:#E5F3FA; --line:#D8E1EA; --green:#079447; --red:#C83E3E;
+    --shadow:0 8px 20px rgba(28,48,70,.08),0 2px 5px rgba(28,48,70,.05); }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--bg);color:var(--text);font-family:"Noto Sans TC","PingFang TC",system-ui,sans-serif;font-size:14px;line-height:1.6}
+  .wrap{max-width:980px;margin:0 auto;padding:18px 14px 60px}
+  .brand{font-weight:900;font-size:13px;letter-spacing:.08em;color:var(--primary)}
+  h1{font-size:24px;font-weight:900;color:var(--ink);letter-spacing:-.02em;margin-top:4px}
+  .sub{font-size:12px;color:var(--muted);margin-top:2px}
+  .tabs{display:flex;gap:8px;margin:14px 0}
+  .tabs button{border:1px solid var(--line);background:#fff;border-radius:9px;padding:7px 18px;font-size:14px;font-weight:800;color:var(--muted);cursor:pointer}
+  .tabs button.on{background:var(--primary);border-color:var(--primary);color:#fff}
+  .kpis{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:12px 0}
+  .kpi{background:var(--card);border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow);padding:12px 14px}
+  .kpi .l{font-size:11.5px;font-weight:700;color:var(--muted)}
+  .kpi .v{font-size:22px;font-weight:900;color:var(--pdark);letter-spacing:-.03em;margin-top:2px;font-variant-numeric:tabular-nums}
+  section{background:var(--card);border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow);padding:16px 14px;margin-top:14px;overflow:hidden}
+  h2{font-size:16px;font-weight:900;color:var(--ink);margin-bottom:8px}
+  .hint{font-size:11.5px;color:var(--muted);font-weight:500}
+  table{width:100%;border-collapse:separate;border-spacing:0;font-size:13px}
+  th{background:#F1F6F9;color:var(--muted);font-size:11.5px;font-weight:700;text-align:right;padding:8px 8px;white-space:nowrap;position:sticky;top:0}
+  th:first-child,td:first-child{text-align:left}
+  td{padding:7px 8px;border-top:1px solid var(--line);text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
+  tbody tr:nth-child(even) td{background:#FAFCFD}
+  .scroll{overflow-x:auto;-webkit-overflow-scrolling:touch;border:1px solid var(--line);border-radius:10px}
+  .catband td{background:var(--psoft)!important;color:var(--pdark);font-weight:900;font-size:12.5px}
+  .iname{max-width:40vw;overflow:hidden;text-overflow:ellipsis;font-weight:700;color:var(--ink)}
+  .avg{font-weight:900;color:var(--pdark);font-size:14px}
+  .up{color:var(--green);font-weight:800} .dn{color:var(--red);font-weight:800} .mut{color:var(--muted)}
+  .bar{display:inline-block;background:var(--primary);border-radius:2px 2px 0 0;width:14px;vertical-align:bottom}
+  .slotrow{display:flex;align-items:flex-end;gap:6px;padding:6px 2px 0}
+  .slot{display:flex;flex-direction:column;align-items:center;gap:2px;font-size:10.5px;color:var(--muted)}
+  .foot{text-align:center;font-size:11.5px;color:var(--muted);margin-top:22px}
+  .err{background:#FCEAEA;color:#C83E3E;border-radius:10px;padding:14px;font-weight:700;margin-top:20px}
+  @media(max-width:480px){ .kpi .v{font-size:18px} h1{font-size:21px} }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="brand">GROUN:D × A BEACH</div>
+  <h1>營運看板</h1>
+  <div class="sub" id="upd">載入中…</div>
+  <div class="tabs">
+    <button id="tab-ground" class="on" onclick="load('ground')">GROUN:D</button>
+    <button id="tab-abeach" onclick="load('abeach')">A Beach</button>
+  </div>
+  <div id="app"></div>
+  <div class="foot">資料每天自動同步（打開即最新）・僅供內部參考與備料使用，請勿外傳連結</div>
+</div>
+<script>
+const K = new URLSearchParams(location.search).get('k') || (location.hash || '').replace(/^#k?=?/, '')
+const fmt = n => 'NT$' + Math.round(n || 0).toLocaleString()
+const app = document.getElementById('app')
+async function load(store){
+  document.getElementById('tab-ground').className = store === 'ground' ? 'on' : ''
+  document.getElementById('tab-abeach').className = store === 'abeach' ? 'on' : ''
+  app.innerHTML = '<section>載入中…</section>'
+  if (!K) { app.innerHTML = '<div class="err">網址缺少金鑰，請跟店長要完整連結</div>'; return }
+  let d
+  try { const r = await fetch('/api/mail-sync?opsboard=' + encodeURIComponent(K) + '&store=' + store); d = await r.json() } catch(e){}
+  if (!d || !d.ok) { app.innerHTML = '<div class="err">讀不到資料（金鑰錯誤或連線問題），請跟店長要新連結</div>'; return }
+  document.getElementById('upd').textContent = '最新日結：' + (d.anchor || '—') + '・打開頁面即同步最新資料'
+  let h = ''
+  // KPI
+  h += `<div class="kpis">
+    <div class="kpi"><div class="l">近30天營收（${d.kpi.days30} 個營業日）</div><div class="v">${fmt(d.kpi.rev30)}</div></div>
+    <div class="kpi"><div class="l">日均營收</div><div class="v">${fmt(d.kpi.avgRev)}</div></div>
+    <div class="kpi"><div class="l">近30天單數</div><div class="v">${(d.kpi.tx30||0).toLocaleString()}</div></div>
+  </div>`
+  // 日表（核心夥伴全開：付款明細/至14:00/單均都在）
+  const isGD = d.store === 'ground'
+  h += `<section><h2>近 20 個營業日</h2><div class="scroll"><table><thead><tr><th>日期</th>${isGD?'<th>至14:00</th>':''}<th>營收</th><th>單數</th><th>單均</th><th>現金</th><th>信用卡</th><th>LINE Pay</th><th>Uber</th><th>折扣</th>${isGD?'<th>自助%</th><th>外帶%</th><th>套餐/主餐%</th>':''}</tr></thead><tbody>`
+  d.days.forEach((x,i)=>{
+    const wknd = x.wd==='六'||x.wd==='日'
+    h += `<tr><td style="font-weight:${wknd?800:500};color:${wknd?'#A85C26':'inherit'}">${x.date.slice(5)}（${x.wd}）</td>${isGD?`<td>${x.lunchPct!=null?x.lunchPct+'%':'—'}</td>`:''}<td style="font-weight:700">${fmt(x.rev)}</td><td>${x.tx||'—'}</td><td>${x.avg!=null?fmt(x.avg):'—'}</td><td>${fmt(x.cash)}</td><td>${fmt(x.card)}</td><td>${x.linepay?fmt(x.linepay):'—'}</td><td>${x.uber?fmt(x.uber):'—'}</td><td>${x.discount?fmt(x.discount):'—'}</td>${isGD?`<td>${x.kioskPct!=null?x.kioskPct+'%':'—'}</td><td>${x.takePct!=null?x.takePct+'%':'—'}</td><td>${d.setPcts[i]!=null?d.setPcts[i]+'%':'—'}</td>`:''}</tr>`
+  })
+  h += `</tbody></table></div></section>`
+  // 品項備料表
+  const dts = d.dates14.map(s=>s.slice(5))
+  h += `<section><h2>品項備料表 <span class="hint">30日均＝近30天每營業日平均份數（抓備料量看這欄）；vs近60＝趨勢；右側＝近14天逐日</span></h2><div class="scroll"><table><thead><tr><th style="position:sticky;left:0;background:#F1F6F9;z-index:1">品項</th><th>30日均</th><th>vs近60</th>${dts.map(t=>'<th>'+t+'</th>').reverse().join('')}</tr></thead><tbody>`
+  d.cats.forEach(c=>{
+    h += `<tr class="catband"><td style="position:sticky;left:0;background:var(--psoft);z-index:1">${c.name}${c.amt30?` <span style="font-weight:700;font-size:11px">${fmt(c.amt30)}</span>`:''}</td><td colspan="${2+dts.length}"></td></tr>`
+    c.items.forEach(it=>{
+      const g = it.grow==null?'<span class="mut">—</span>':it.grow==='新'?'<span class="up">新</span>':`<span class="${it.grow>=0?'up':'dn'}">${it.grow>=0?'+':''}${it.grow}%</span>`
+      const amt = it.amt30?`<div style="font-size:10px;color:var(--muted);font-weight:500">${fmt(it.amt30)}${it.pct!=null?'・'+it.pct+'%':''}</div>`:''
+      h += `<tr><td class="iname" style="position:sticky;left:0;background:#fff;z-index:1" title="${it.n}">${it.n}${amt}</td><td class="avg">${it.avg30!=null?it.avg30:'—'}</td><td>${g}</td>${[...it.q].reverse().map(q=>'<td>'+(q||0)+'</td>').join('')}</tr>`
+    })
+  })
+  h += `</tbody></table></div></section>`
+  // 時段
+  if (d.slots) {
+    const draw = (label, arr) => {
+      if (!arr.length) return ''
+      const mx = Math.max(...arr.map(a=>a[1]), 1)
+      return `<h2 style="margin-top:12px">${label} <span class="hint">近30天每小時平均單數</span></h2><div class="slotrow">` +
+        arr.map(a=>`<div class="slot"><span style="font-size:10px;font-weight:700;color:var(--pdark)">${a[1]}</span><span class="bar" style="height:${Math.max(4, a[1]/mx*56)}px"></span><span>${a[0]}時</span></div>`).join('') + '</div>'
+    }
+    h += `<section>${draw('平日時段', d.slots.wk)}${draw('週末時段', d.slots.we)}</section>`
+  }
+  app.innerHTML = h
+}
+load('ground')
+</script>
+</body>
+</html>

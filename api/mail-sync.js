@@ -702,6 +702,115 @@ export default async function handler(req, res) {
     })
     return res.status(200).json({ ok: true, n: ppl.length, fields: fs2.map(f => ({ key: f.key, label: f.label })), people: ppl })
   }
+  // 夥伴營運看板資料口（獨立金鑰 OPS_BOARD_KEY——跟管理金鑰分開，外流也只能唯讀看板資料；張良 2026-09-20）：
+  // ?opsboard=<OPS_BOARD_KEY>&store=ground|abeach → 給 /ops/ 靜態頁用：日表(營收/單數/外帶%/套餐%)＋
+  // 品項備料表(30日均/vs近60/近14天逐日,套 alias 合併+hidden 過濾)＋時段平均。刻意不含：付款明細/成本/毛利/定價
+  if (req.query?.opsboard) {
+    const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
+    if (!ok2 || String(req.query.opsboard) !== ok2) return res.status(403).json({ ok: false })
+    const storeQ = String(req.query.store || 'ground') === 'abeach' ? 'abeach' : 'ground'
+    const skOf2 = (n) => /groun/i.test(n || '') ? 'ground' : 'abeach'
+    const [posDoc, aliasDoc2, hiddenDoc2] = await Promise.all([kvGet('sp_finance_pm_pos'), kvGet('sp_finance_pm_pos_alias'), kvGet('sp_finance_pm_pos_hidden')])
+    const entries = ((posDoc || {}).entries || []).filter(e => skOf2(e.store) === storeQ).sort((a, b) => (a.date < b.date ? -1 : 1))
+    if (!entries.length) return res.status(200).json({ ok: true, store: storeQ, empty: true })
+    const anchor = entries[entries.length - 1].date
+    const dOf = (base, off) => { const d0 = new Date(base + 'T00:00:00Z'); d0.setUTCDate(d0.getUTCDate() + off); return d0.toISOString().slice(0, 10) }
+    const from60 = dOf(anchor, -59), from30 = dOf(anchor, -29)
+    const win = entries.filter(e => e.date >= from60)
+    const w30 = win.filter(e => e.date >= from30)
+    // 品項：撈涵蓋 60 天窗的明細月檔
+    const mos = [...new Set(win.map(e => e.date.slice(0, 7)))]
+    const dets = {}
+    for (const mo2 of mos) dets[mo2] = await kvGet('sp_finance_pm_pos_d_' + mo2)
+    const dayDet2 = (date) => { const m = (dets[date.slice(0, 7)] || {}).days; if (!m) return undefined; return m[`${date}::${storeQ}`] || (m[date] && skOf2(m[date].store) === storeQ ? m[date] : undefined) }
+    // 日表（近20個營業日；核心夥伴全開＝付款明細/至14:00/單均都給——張良 2026-09-20「都是核心夥伴」）
+    const WD = ['日', '一', '二', '三', '四', '五', '六']
+    const days2 = win.slice(-20).map(e => {
+      const tk = Number(e.takeTx) || 0, dn = Number(e.dineTx) || 0
+      const rev2 = Number(e.revenue) || 0, tx2 = Number(e.txCount) || 0
+      // 至14:00＝時段表 <14 點小時列加總（與 App 同一份資料）
+      let lunch = null
+      const ts = ((dayDet2(e.date) || {}).sheets || {})['時段分析(每小時)']
+      const trows = Array.isArray(ts) && ts[0] ? (ts[0].rows || []) : []
+      if (trows.length) { lunch = 0; for (const r of trows) { const hh2 = parseInt(r[0]); if (!isNaN(hh2) && hh2 < 14) lunch += Number(r[2]) || 0 } }
+      return {
+        date: e.date, wd: WD[new Date(e.date + 'T00:00:00Z').getUTCDay()], rev: rev2, tx: tx2,
+        avg: tx2 ? Math.round(rev2 / tx2) : null, lunchPct: lunch != null && rev2 ? Math.round(lunch / rev2 * 100) : null,
+        cash: Number(e.cash) || 0, card: Number(e.card) || 0, linepay: Number(e.linepay) || 0, uber: Number(e.uber) || 0,
+        kioskPct: e.kiosk > 0 && rev2 ? Math.round(e.kiosk / rev2 * 100) : null, discount: Number(e.discount) || 0,
+        takePct: tk + dn > 0 ? Math.round(tk / (tk + dn) * 100) : null,
+      }
+    })
+    const AB_SKIP2 = new Set(['⚡️工具箱', '包場大訂', '免招手', '收蛋糕', '慶生沒蛋糕', '♥️福利♥️', '自訂食品', '總結', '套餐', '商品分類銷售分析'])
+    const GD_SKIP2 = new Set(['財務工具箱', '財務工具', '現場工具箱', '保存期限工具箱'])
+    const isAB2 = storeQ === 'abeach'
+    const norm2 = (s) => isAB2 ? String(s).replace(/[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE0F}\u{2B00}-\u{2BFF}]/gu, '').replace(/\s+/g, '') : String(s)
+    const aliasMap2 = ((aliasDoc2 || {})[storeQ]) || {}
+    const hiddenMap2 = ((hiddenDoc2 || {})[storeQ]) || {}
+    const items2 = {}; const catOrder2 = []; const setByDate = {}
+    let n30 = 0, nPrev = 0
+    for (const e of win) {
+      const inCur = e.date >= from30
+      if (inCur) n30++; else nPrev++
+      const secs = ((dayDet2(e.date) || {}).sheets || {})['總銷售額 (以類別分類)']
+      if (!Array.isArray(secs)) continue
+      for (const s of secs) {
+        if (s.title === '總結') continue
+        if (s.title === '套餐') { for (const r of (s.rows || [])) if (Array.isArray(r)) setByDate[e.date] = (setByDate[e.date] || 0) + (Number(r[1]) || 0); continue }
+        if (isAB2 && AB_SKIP2.has(s.title)) continue
+        if (!isAB2 && GD_SKIP2.has(s.title)) continue
+        if (!isAB2 && !catOrder2.includes(s.title)) catOrder2.push(s.title)
+        const uberCat = isAB2 && ['Pizza披薩', '主餐＆早午餐', '沙拉＆湯', '炸物＆前菜', '飲品'].includes(s.title) // AB Uber 低價分類：份數併入、金額不算（與 App 同口徑）
+        for (const r of (s.rows || [])) {
+          if (!Array.isArray(r) || typeof r[0] !== 'string' || /^1\/4/.test(r[0].trim())) continue
+          let key2 = norm2(r[0]); key2 = aliasMap2[key2] || key2
+          if (hiddenMap2[key2]) continue
+          const o = items2[key2] || (items2[key2] = { n: r[0], cat: s.title, q: {}, q30: 0, qPrev: 0, amt30: 0 })
+          o.n = r[0]; o.cat = s.title // 最新出現的名字/分類為準
+          const qv = Number(r[1]) || 0
+          if (inCur) { o.q30 += qv; o.q[e.date] = (o.q[e.date] || 0) + qv; if (!uberCat) o.amt30 += Number(r[r.length - 1]) || 0 } else o.qPrev += qv
+        }
+      }
+    }
+    const dates14 = win.slice(-14).map(e => e.date)
+    const GD_ORDER2 = ['披薩', '漢堡', '越法三明治', '義大利麵', '小點', '湯品', '基礎飲品', '咖啡飲品', '奶香飲品', '檸檬飲品', '甜點']
+    const catsAll = [...new Set(Object.values(items2).map(o => o.cat))]
+    catsAll.sort((a, b) => { const ia = GD_ORDER2.indexOf(a), ib = GD_ORDER2.indexOf(b); return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib) })
+    const growOf2 = (o) => { if (!nPrev) return null; const p = o.qPrev; if (!p) return o.q30 > 0 ? '新' : null; const a30 = o.q30 / n30, a60 = (o.q30 + p) / (n30 + nPrev); return Math.round((a30 - a60) / a60 * 100) }
+    const totalAmt30 = Object.values(items2).reduce((t, o) => t + (o.amt30 || 0), 0)
+    const cats2 = catsAll.map(cn => ({
+      name: cn,
+      amt30: Math.round(Object.values(items2).filter(o => o.cat === cn).reduce((t, o) => t + (o.amt30 || 0), 0)),
+      items: Object.values(items2).filter(o => o.cat === cn && (o.q30 > 0 || o.qPrev > 0)).sort((a, b) => b.q30 - a.q30)
+        .map(o => ({ n: o.n, avg30: n30 ? Math.round(o.q30 / n30 * 10) / 10 : null, cum30: o.q30, grow: growOf2(o), amt30: Math.round(o.amt30 || 0), pct: totalAmt30 ? Math.round((o.amt30 || 0) / totalAmt30 * 1000) / 10 : null, q: dates14.map(dd => o.q[dd] || 0) })),
+    })).filter(c => c.items.length)
+    // 套餐附加率（GD）：組數÷主餐份數
+    const MAIN2 = new Set(['漢堡', '披薩', '義大利麵', '越法三明治'])
+    const setDays = days2.map(d => {
+      const sq = setByDate[d.date] || 0
+      const mains = Object.values(items2).filter(o => MAIN2.has(o.cat)).reduce((t, o) => t + (o.q[d.date] || 0), 0)
+      return sq && mains ? Math.round(sq / mains * 100) : null
+    })
+    // 時段平均（近30天，分平日/週末；GD 才有）
+    const hourAgg = { wk: {}, we: {} }, hourN = { wk: 0, we: 0 }
+    for (const e of w30) {
+      const sheet = ((dayDet2(e.date) || {}).sheets || {})['時段分析(每小時)']
+      const rows2 = Array.isArray(sheet) && sheet[0] ? (sheet[0].rows || []) : []
+      if (!rows2.length) continue
+      const wd2 = new Date(e.date + 'T00:00:00Z').getUTCDay()
+      const kk = (wd2 === 0 || wd2 === 6) ? 'we' : 'wk'
+      hourN[kk]++
+      for (const r of rows2) { const h = parseInt(r[0]); if (!isNaN(h)) hourAgg[kk][h] = (hourAgg[kk][h] || 0) + (Number(r[1]) || 0) }
+    }
+    const slots2 = {}
+    for (const kk of ['wk', 'we']) slots2[kk] = Object.entries(hourAgg[kk]).map(([h, t]) => [Number(h), Math.round(t / Math.max(1, hourN[kk]) * 10) / 10]).sort((a, b) => a[0] - b[0])
+    const rev30 = w30.reduce((t, e) => t + (Number(e.revenue) || 0), 0)
+    return res.status(200).json({
+      ok: true, store: storeQ, updatedAt: new Date().toISOString(), anchor,
+      kpi: { rev30, days30: w30.length, avgRev: w30.length ? Math.round(rev30 / w30.length) : 0, tx30: w30.reduce((t, e) => t + (Number(e.txCount) || 0), 0) },
+      days: days2.reverse(), setPcts: setDays.reverse(), dates14, cats: cats2, slots: (slots2.wk.length || slots2.we.length) ? slots2 : null,
+    })
+  }
   // 內用/外帶歷史回補口（同金鑰，張良 2026-09-20 內外帶接進報表）：?dinefill=<key>[&dry=1]
   // 把 GROUN:D 已入庫、還沒有 dineTx 欄的日子逐日抓 salesMethod 補上（新日子入庫時已自動帶）
   if (req.query?.dinefill) {
