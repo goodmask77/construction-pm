@@ -75,15 +75,26 @@
 const K = new URLSearchParams(location.search).get('k') || (location.hash || '').replace(/^#k?=?/, '') || '7ea362bae1f0274372d4ec7b27c78852' // 內建看板唯讀金鑰（短網址 /prep 用；與管理金鑰分開）
 const fmt = n => 'NT$' + Math.round(n || 0).toLocaleString()
 const app = document.getElementById('app')
+let curStore = 'ground'
 async function load(store){
+  curStore = store
   document.getElementById('tab-ground').className = store === 'ground' ? 'on' : ''
   document.getElementById('tab-abeach').className = store === 'abeach' ? 'on' : ''
-  app.innerHTML = '<section>載入中…</section>'
   if (!K) { app.innerHTML = '<div class="err">網址缺少金鑰，請跟店長要完整連結</div>'; return }
+  // ⚡ 快取先上（打開秒出畫面）、背景抓最新無感刷新（張良 2026-09-21：讀取太慢）
+  const ck = 'obc_' + store
+  let hadCache = false
+  try { const c = localStorage.getItem(ck); if (c) { renderBoard(JSON.parse(c), store); hadCache = true; document.getElementById('upd').textContent = '⚡ 快取畫面・背景更新最新資料中…' } } catch(e){}
+  if (!hadCache) app.innerHTML = '<section>載入中…</section>'
   let d
   try { const r = await fetch('/api/mail-sync?opsboard=' + encodeURIComponent(K) + '&store=' + store); d = await r.json() } catch(e){}
-  if (!d || !d.ok) { app.innerHTML = '<div class="err">讀不到資料（金鑰錯誤或連線問題），請跟店長要新連結</div>'; return }
-  document.getElementById('upd').textContent = '最新日結：' + (d.anchor || '—') + '・打開頁面即同步最新資料'
+  if (!d || !d.ok) { if (!hadCache) app.innerHTML = '<div class="err">讀不到資料（金鑰錯誤或連線問題），請跟店長要新連結</div>'; return }
+  try { localStorage.setItem(ck, JSON.stringify(d)) } catch(e){}
+  if (curStore !== store) return // 使用者已切到別店，別把畫面蓋回來
+  renderBoard(d, store)
+}
+function renderBoard(d, store){
+  document.getElementById('upd').textContent = '最新日結：' + (d.anchor || '—') + '・資料自動同步'
   let h = ''
   // KPI
   h += `<div class="kpis">

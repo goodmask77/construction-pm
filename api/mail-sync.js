@@ -721,7 +721,7 @@ export default async function handler(req, res) {
     // 品項：撈全部歷史明細月檔（張良 2026-09-20：跟 App 一樣顯示全部歷史，不只近期）
     const mos = [...new Set(entries.map(e => e.date.slice(0, 7)))]
     const dets = {}
-    for (const mo2 of mos) dets[mo2] = await kvGet('sp_finance_pm_pos_d_' + mo2)
+    await Promise.all(mos.map(async mo2 => { dets[mo2] = await kvGet('sp_finance_pm_pos_d_' + mo2) })) // 平行抓（串行是 10 秒慢的元兇之一，張良 2026-09-21）
     const dayDet2 = (date) => { const m = (dets[date.slice(0, 7)] || {}).days; if (!m) return undefined; return m[`${date}::${storeQ}`] || (m[date] && skOf2(m[date].store) === storeQ ? m[date] : undefined) }
     // 日表（近20個營業日；核心夥伴全開＝付款明細/至14:00/單均都給——張良 2026-09-20「都是核心夥伴」）
     const WD = ['日', '一', '二', '三', '四', '五', '六']
@@ -864,11 +864,10 @@ export default async function handler(req, res) {
     if (!isAB2) {
       const RSLOTS = []
       for (let t = 11 * 60; t <= 19 * 60 + 15; t += 15) RSLOTS.push(String(Math.floor(t / 60)).padStart(2, '0') + ':' + String(t % 60).padStart(2, '0')) // 桶＝起始時刻；19:30 快照的差分落在 19:15 桶
-      const qdocs = []
-      for (let i = datesAll.length - 1; i >= 0 && qdocs.length < 7; i--) { // 從最新往回找最多 7 個有快照的營業日
-        const qd = await kvGet('sp_finance_pm_pos_q_' + datesAll[i]).catch(() => null)
-        if (qd && Array.isArray(qd.slots) && qd.slots.length > 1) qdocs.push(qd)
-      }
+      // 平行抓最新 10 個營業日的快照檔、留有料的前 7 個（原本逐日串行＝慢；快照 9/22 起才有，早期日子抓了也是空）
+      const qcand = datesAll.slice(-10).reverse()
+      const qall = await Promise.all(qcand.map(dd4 => kvGet('sp_finance_pm_pos_q_' + dd4).catch(() => null)))
+      const qdocs = qall.filter(qd => qd && Array.isArray(qd.slots) && qd.slots.length > 1).slice(0, 7)
       const bucket = {}
       for (const qd of qdocs) {
         const sl = [...qd.slots].sort((a, b) => (a.t < b.t ? -1 : 1))
@@ -891,6 +890,8 @@ export default async function handler(req, res) {
         .sort((a, b) => b.tot - a.tot).slice(0, 18)
       rhythm = { slots: RSLOTS, days: nD, items: rows3 }
     }
+    // Vercel 邊緣快取 5 分鐘（張良 2026-09-21 嫌慢）：同網址請求直接吃 CDN 不進函式重算；資料本來 15 分一更，5 分快取無感
+    res.setHeader('Cache-Control', 's-maxage=300, stale-while-revalidate=1800')
     return res.status(200).json({
       ok: true, store: storeQ, updatedAt: new Date().toISOString(), anchor,
       kpi: { rev30, days30: w30.length, avgRev: w30.length ? Math.round(rev30 / w30.length) : 0, tx30: w30.reduce((t, e) => t + (Number(e.txCount) || 0), 0) },

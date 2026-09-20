@@ -2,6 +2,7 @@
  {
   "date": "2026-09-21",
   "items": [
+   "看板身分綁定+全員編輯+問題回報 v2.9.6(張良2026-09-21)：①DD私訊「綁定GD」(舊詞綁定看板相容;BIND_APPS可擴充多app,一bot多app身分token共用)→用入職lineUserId對名冊本人→發/prep?me=token個人連結,打卡自動本人不能冒名(pm_prep_bind,ALLOW豁免=token機密) ②SOP編輯:不設站長,綁定者全站可編,每次編輯留時間/姓名/改前快照(edits cap30) ③問題回報:站別旁⚠️→文字+照片影片(影片走Supabase簽名直傳破4.5MB限制,80MB上限6檔)→DD發內部群→頁面紅卡顯示→綁定者可標已解決(pm_sop_issues,AI雙邊已接82域全過)",
    "v2.9.5 版號(部署SOP+PWA)",
    "prep看板PWA化+GD每日SOP系統(張良2026-09-21)：①PWA manifest+iOS meta(加入主畫面=全螢幕App) ②SOP三口:sop=看板金鑰(今日清單+狀態+名冊姓名)/sopdone=打卡撤銷+照片壓縮上傳Supabase photos/sop//sopset=管理金鑰整份定義 ③/prep「✅今日SOP」區:站別分組/📷拍照(canvas壓1280)/完成記時+名字(localStorage記住)/撤銷/超時紅字/公休預覽 ④joya-intraday每15分順路查超時→DD發內部群一則彙整(每項每日一次,發送成功才標記) ⑤AI雙邊接pm_sop_def+pm_sop_g_(81資料域全過)；不含另session未完成的cron-daily/vercel.json/package.json",
    "每日0930備料訊息：cron-daily加prep班(週一~五發GROUN:D Family群,吃/prep同一資料口,byWd當日星期值+峰值;prepRemind可關;?mode=prep&force試發) v2.9.4",
