@@ -2,6 +2,10 @@
  {
   "date": "2026-09-21",
   "items": [
+   "v2.9.5 版號(部署SOP+PWA)",
+   "prep看板PWA化+GD每日SOP系統(張良2026-09-21)：①PWA manifest+iOS meta(加入主畫面=全螢幕App) ②SOP三口:sop=看板金鑰(今日清單+狀態+名冊姓名)/sopdone=打卡撤銷+照片壓縮上傳Supabase photos/sop//sopset=管理金鑰整份定義 ③/prep「✅今日SOP」區:站別分組/📷拍照(canvas壓1280)/完成記時+名字(localStorage記住)/撤銷/超時紅字/公休預覽 ④joya-intraday每15分順路查超時→DD發內部群一則彙整(每項每日一次,發送成功才標記) ⑤AI雙邊接pm_sop_def+pm_sop_g_(81資料域全過)；不含另session未完成的cron-daily/vercel.json/package.json",
+   "每日0930備料訊息：cron-daily加prep班(週一~五發GROUN:D Family群,吃/prep同一資料口,byWd當日星期值+峰值;prepRemind可關;?mode=prep&force試發) v2.9.4",
+   "prep預做節奏表畫面：15分/30分切換、無資料以熱銷品項0佔位；opsboard回rhythm(15分快照差分近7日平均) v2.9.3",
    "15分鐘快照：cron改每15分、GD含品項完整快照存每日檔pm_pos_q_(月檔維持30分口徑不動)、AB維持每30分 v2.9.2",
    "半小時×品項快照：joya-intraday 快照加全品項累計份數(相鄰相減=每半小時各品項銷量,預做節奏用;喬亞實測不吃時分無法回補歷史) v2.9.1",
    "累計欄命名分窗：/prep改「30天累計」、App改「期間累計」＋雙向tooltip說明——同名不同窗造成數字對不上的誤會 v2.9.0"

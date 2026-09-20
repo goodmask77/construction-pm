@@ -944,13 +944,20 @@ export default async function handler(req, res) {
   // POST ?sopdone=<OPS_BOARD_KEY> body={itemId,by,undo,photo(dataURL)} → 打卡/撤銷；照片傳 Supabase photos/sop/
   // POST ?sopset=<MENU_PROBE_KEY> body={items:[…]} → 整份覆蓋定義（跟我用對話增刪改）
   const sopToday = () => new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10)
+  // 綁定 token → 本人（LINE「綁定看板」發的個人連結；打卡/編輯身分都以此為準，前端傳的名字只是備援）
+  const sopWho = async (tk3) => { if (!tk3) return null; const b = (await kvGet('sp_finance_pm_prep_bind')) || {}; return (b.tokens || {})[tk3] || null }
   if (req.query?.sop) {
     const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
     if (!ok2 || String(req.query.sop) !== ok2) return res.status(403).json({ ok: false })
     const dt2 = sopToday()
-    const [defDoc, logDoc, rosterDoc] = await Promise.all([kvGet('sp_finance_pm_sop_def'), kvGet('sp_finance_pm_sop_g_' + dt2), kvGet('sp_crew_kb_roster')])
+    const [defDoc, logDoc, rosterDoc, me3] = await Promise.all([kvGet('sp_finance_pm_sop_def'), kvGet('sp_finance_pm_sop_g_' + dt2), kvGet('sp_crew_kb_roster'), sopWho(req.query.me)])
     const names = ((rosterDoc || {}).people || []).filter(p => !p.endDate && p.status !== '離職').map(p => p.name)
-    return res.status(200).json({ ok: true, date: dt2, def: (defDoc || {}).ground || { items: [] }, log: logDoc || { items: {} }, names })
+    const gdef = (defDoc || {}).ground || { items: [] }
+    // me＝綁定者（張良 2026-09-21 拍板：不設站長，綁定的人全站都能編，靠歷史紀錄留痕）
+    const me4 = me3 ? { name: me3.name, canEdit: true } : null
+    const issuesDoc = await kvGet('sp_finance_pm_sop_issues')
+    const issues = ((issuesDoc || {}).list || []).filter(x => x.status === 'open').slice(0, 30)
+    return res.status(200).json({ ok: true, date: dt2, def: { items: gdef.items || [], edits: (gdef.edits || []).slice(0, 10) }, log: logDoc || { items: {} }, names, me: me4, issues })
   }
   if (req.method === 'POST' && req.query?.sopdone) {
     const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
@@ -973,7 +980,8 @@ export default async function handler(req, res) {
         } catch (_) {}
       }
       const hm4 = new Date(Date.now() + 8 * 3600e3).toISOString().slice(11, 16)
-      slog.items[b4.itemId] = { done: 1, ts: hm4, by: String(b4.by || '').slice(0, 20), ...(photoUrl ? { photo: photoUrl } : {}) }
+      const who4 = await sopWho(b4.token) // 有綁定 token＝以本人為準（不能冒名）；沒有才用手填名字
+      slog.items[b4.itemId] = { done: 1, ts: hm4, by: who4 ? who4.name : String(b4.by || '').slice(0, 20), ...(photoUrl ? { photo: photoUrl } : {}) }
     }
     await kvPut(dk2, slog, 'SOP打卡')
     return res.status(200).json({ ok: true, log: slog })
@@ -983,11 +991,78 @@ export default async function handler(req, res) {
     if (!mk || String(req.query.sopset) !== mk) return res.status(403).json({ ok: false })
     let b5 = {}
     try { b5 = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
-    if (!Array.isArray(b5.items)) return res.status(400).json({ ok: false, error: 'items 要是陣列' })
     const cur5 = (await kvGet('sp_finance_pm_sop_def')) || {}
-    cur5.ground = { items: b5.items }
+    const g5 = cur5.ground || {}
+    if (Array.isArray(b5.items)) g5.items = b5.items
+    if (b5.owners && typeof b5.owners === 'object') g5.owners = { ...(g5.owners || {}), ...b5.owners } // 站長制：{站名:[名字,…]}，給空陣列=清掉該站站長
+    cur5.ground = g5
     await kvPut('sp_finance_pm_sop_def', cur5, 'SOP定義口')
-    return res.status(200).json({ ok: true, n: b5.items.length })
+    return res.status(200).json({ ok: true, n: (g5.items || []).length, owners: g5.owners || {} })
+  }
+  // 站長編輯口（看板金鑰＋個人token；只能改自己當站長的那一站）：POST ?sopedit=<OPS_BOARD_KEY> body={token, st, items:[…該站全部項目…]}
+  if (req.method === 'POST' && req.query?.sopedit) {
+    const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
+    if (!ok2 || String(req.query.sopedit) !== ok2) return res.status(403).json({ ok: false })
+    let b6 = {}
+    try { b6 = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
+    const who6 = await sopWho(b6.token)
+    if (!who6) return res.status(403).json({ ok: false, error: '要先跟 DD 說「綁定看板」拿到個人連結才能編輯' })
+    if (!b6.st || !Array.isArray(b6.items)) return res.status(400).json({ ok: false, error: '缺 st 或 items' })
+    const cur6 = (await kvGet('sp_finance_pm_sop_def')) || {}
+    const g6 = cur6.ground || { items: [] }
+    const prev6 = (g6.items || []).filter(it => it.st === b6.st) // 改前快照＝歷史紀錄可回溯
+    const clean6 = b6.items.filter(it => it && it.title).slice(0, 30).map((it, i) => ({ id: it.id || ('u' + Date.now().toString(36) + i), st: b6.st, title: String(it.title).slice(0, 60), due: /^\d{2}:\d{2}$/.test(it.due || '') ? it.due : '11:00', photo: !!it.photo }))
+    g6.items = [...(g6.items || []).filter(it => it.st !== b6.st), ...clean6]
+    g6.edits = [{ ts: new Date().toISOString(), by: who6.name, st: b6.st, n: clean6.length, prev: prev6 }, ...(g6.edits || [])].slice(0, 30) // 留痕：時間/姓名/改前內容
+    cur6.ground = g6
+    await kvPut('sp_finance_pm_sop_def', cur6, 'SOP編輯(' + who6.name + ')')
+    return res.status(200).json({ ok: true, items: g6.items })
+  }
+  // 問題回報（張良 2026-09-21：站別旁⚠️回報，文字+照片影片；DD發內部群、可標已解決）
+  // 影片太大不能過 Vercel（4.5MB 限制）→ 用簽名直傳：先要 ?sopsign 拿上傳位址、前端直傳 Supabase，再送 ?sopreport 帶路徑
+  if (req.method === 'POST' && req.query?.sopsign) {
+    const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
+    if (!ok2 || String(req.query.sopsign) !== ok2) return res.status(403).json({ ok: false })
+    let b7 = {}
+    try { b7 = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
+    const ext7 = String(b7.ext || 'jpg').replace(/[^a-z0-9]/gi, '').slice(0, 5) || 'jpg'
+    const path7 = `sop/issues/${sopToday()}/${Date.now()}_${Math.random().toString(36).slice(2, 6)}.${ext7}`
+    const sr = await fetch(`${SB_URL}/storage/v1/object/upload/sign/photos/${path7}`, { method: 'POST', headers: { apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}` } })
+    if (!sr.ok) return res.status(500).json({ ok: false, error: '簽名失敗 ' + sr.status })
+    const sj = await sr.json()
+    return res.status(200).json({ ok: true, uploadUrl: `${SB_URL}/storage/v1${sj.url}`, publicUrl: `${SB_URL}/storage/v1/object/public/photos/${path7}` })
+  }
+  if (req.method === 'POST' && req.query?.sopreport) {
+    const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
+    if (!ok2 || String(req.query.sopreport) !== ok2) return res.status(403).json({ ok: false })
+    let b8 = {}
+    try { b8 = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
+    if (!b8.st || !(b8.text || (b8.media || []).length)) return res.status(400).json({ ok: false, error: '至少要有文字或照片/影片' })
+    const who8 = await sopWho(b8.token)
+    const doc8 = (await kvGet('sp_finance_pm_sop_issues')) || { list: [] }
+    const iss = { id: 'is' + Date.now().toString(36), st: String(b8.st).slice(0, 20), text: String(b8.text || '').slice(0, 500), media: (Array.isArray(b8.media) ? b8.media : []).slice(0, 6), by: who8 ? who8.name : String(b8.by || '匿名').slice(0, 20), ts: new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 16).replace('T', ' '), status: 'open' }
+    doc8.list = [iss, ...(doc8.list || [])].slice(0, 200)
+    await kvPut('sp_finance_pm_sop_issues', doc8, '看板問題回報(' + iss.by + ')')
+    // DD 通知內部群（不設站長→群裡大家看得到、認領解決）
+    try {
+      const tk8 = (process.env.LINE_CHANNEL_ACCESS_TOKEN || '').trim()
+      if (tk8) await fetch('https://api.line.me/v2/bot/message/push', { method: 'POST', headers: { 'content-type': 'application/json', Authorization: 'Bearer ' + tk8 }, body: JSON.stringify({ to: 'Cf7940efc6517b0c084ad2ad496b45f30', messages: [{ type: 'text', text: `⚠️ 看板問題回報【${iss.st}】\n${iss.text || '（見附件）'}\n— ${iss.by}${iss.media.length ? `・附 ${iss.media.length} 個檔案` : ''}\n處理完到 ground-pm.vercel.app/prep 按「已解決」` }] }) })
+    } catch (_) {}
+    return res.status(200).json({ ok: true, issue: iss })
+  }
+  if (req.method === 'POST' && req.query?.sopresolve) {
+    const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
+    if (!ok2 || String(req.query.sopresolve) !== ok2) return res.status(403).json({ ok: false })
+    let b9 = {}
+    try { b9 = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
+    const who9 = await sopWho(b9.token)
+    if (!who9) return res.status(403).json({ ok: false, error: '要先綁定看板才能標記解決' })
+    const doc9 = (await kvGet('sp_finance_pm_sop_issues')) || { list: [] }
+    const it9 = (doc9.list || []).find(x => x.id === b9.id)
+    if (!it9) return res.status(404).json({ ok: false })
+    it9.status = 'done'; it9.doneBy = who9.name; it9.doneTs = new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 16).replace('T', ' ')
+    await kvPut('sp_finance_pm_sop_issues', doc9, '看板問題解決(' + who9.name + ')')
+    return res.status(200).json({ ok: true })
   }
   // 名冊更新口（同管理金鑰，張良 2026-09-20：用 Google Sheet 夥伴名單更新 kb_roster）：
   // POST ?rosterset=<key>[&dry=1] body={addFields:[{key,label,type}], updates:[{name,set:{…}}], adds:[{name,…}]}

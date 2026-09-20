@@ -573,7 +573,7 @@ async function loadPosText() {
   try {
     const now = new Date(Date.now() + 8 * 3600e3)
     const mo = now.toISOString().slice(0, 7)
-    const kv = await kvGetMany(['sp_finance_pm_pos', 'sp_finance_pm_pos_d_' + mo, 'sp_finance_pm_pos_tx_' + mo, 'sp_finance_pm_pos_flags', 'sp_finance_pm_pos_idlecfg', 'sp_finance_pm_pos_hh_' + mo, 'sp_finance_pm_pos_costs', 'sp_finance_pm_pos_prices', 'sp_finance_pm_pos_hidden', 'sp_finance_pm_pos_alias', 'sp_finance_pm_sop_def', 'sp_finance_pm_sop_g_' + now.toISOString().slice(0, 10), 'sp_finance_pm_ablive', 'sp_finance_pm_labor'])
+    const kv = await kvGetMany(['sp_finance_pm_pos', 'sp_finance_pm_pos_d_' + mo, 'sp_finance_pm_pos_tx_' + mo, 'sp_finance_pm_pos_flags', 'sp_finance_pm_pos_idlecfg', 'sp_finance_pm_pos_hh_' + mo, 'sp_finance_pm_pos_costs', 'sp_finance_pm_pos_prices', 'sp_finance_pm_pos_hidden', 'sp_finance_pm_pos_alias', 'sp_finance_pm_sop_def', 'sp_finance_pm_sop_g_' + now.toISOString().slice(0, 10), 'sp_finance_pm_sop_issues', 'sp_finance_pm_ablive', 'sp_finance_pm_labor'])
     const pos = kv['sp_finance_pm_pos']
     const entries = pos && Array.isArray(pos.entries) ? pos.entries : []
     if (!entries.length) return ''
@@ -663,6 +663,13 @@ async function loadPosText() {
       const sopLog = (kv['sp_finance_pm_sop_g_' + now.toISOString().slice(0, 10)] || {}).items || {}
       const sLines = sopItems.map(it => { const lg = sopLog[it.id]; return `  - ${it.st}｜${it.title}（${it.due} 前${it.photo ? '・要拍照' : ''}）：${lg && lg.done ? `✅ ${lg.ts} ${lg.by || ''}完成` : '未完成'}` })
       lines.push(`【GD 每日SOP（今日 ${now.toISOString().slice(5, 10)} 執行狀況；夥伴在 /prep 看板打卡；超時未完成 cron 會發群提醒）】`); lines.push(...sLines)
+    }
+    // 看板問題回報（pm_sop_issues＝夥伴在 /prep 站別旁⚠️回報的問題，附照片影片；與 App loadSpaceAIContext 同步接）
+    const issDoc = kv['sp_finance_pm_sop_issues']
+    const issOpen = ((issDoc || {}).list || []).filter(x => x.status === 'open')
+    if (issOpen.length) {
+      lines.push(`【看板問題回報（未解決 ${issOpen.length} 件；夥伴在 /prep 回報、解決後標記）】`)
+      issOpen.slice(0, 10).forEach(x => lines.push(`  - 【${x.st}】${x.text || '（附件）'}（${x.by}・${x.ts}${(x.media || []).length ? `・附${x.media.length}檔` : ''}）`))
     }
     // 當月品項銷售彙總（答「哪些餐賣得好」用）
     const det = kv['sp_finance_pm_pos_d_' + mo]
@@ -1453,6 +1460,30 @@ export default async function handler(req, res) {
       if (sigOK === false && op) console.log('sig FAIL → 拒絕操作權限', userId.slice(-6))
       const canAct = !!op && sigOK !== false
 
+      // 1.35) App 身分綁定（張良 2026-09-21：夥伴打卡不用手填名字）：任何夥伴私訊「綁定GD」→
+      // 用入職系統綁好的 lineUserId 對到名冊本人 → 發個人專屬連結（/prep?me=token，手機點開就永遠是他）。
+      // 一個 bot 可掛多個 app：之後「綁定AB」等指令加進 BIND_APPS 就好，身分 token 各 app 共用（本人只有一個）
+      const BIND_APPS = { GD: 'https://ground-pm.vercel.app/prep', 看板: 'https://ground-pm.vercel.app/prep' } // 舊詞「綁定看板」相容
+      const mBind = isDM && text.match(/^綁定\s*(GD|看板|AB)$/i)
+      if (mBind) {
+        const appKey = mBind[1].toUpperCase() === 'AB' ? 'AB' : (mBind[1] === '看板' ? '看板' : 'GD')
+        if (!BIND_APPS[appKey]) { await send('「' + appKey + '」的 App 還沒開通，目前可以綁定：GD（營運看板）。'); continue }
+        try {
+          const kvb = await kvGetMany(['sp_crew_kb_roster', 'sp_finance_pm_prep_bind'])
+          const rp = ((kvb['sp_crew_kb_roster'] || {}).people || []).find(p => p.lineUserId === userId && !p.endDate)
+          if (!rp) { await send('你的 LINE 還沒綁定名冊。先輸入「你的本名＋報到」完成綁定（例：王小明報到），再回來跟我說「綁定GD」。'); continue }
+          const bind = kvb['sp_finance_pm_prep_bind'] || { byUid: {}, tokens: {} }
+          let tk2 = bind.byUid[userId]
+          if (!tk2) {
+            tk2 = 'pv' + Date.now().toString(36) + Math.random().toString(36).slice(2, 10)
+            bind.byUid[userId] = tk2
+            bind.tokens[tk2] = { name: rp.name, rid: rp.id, uid: userId, ts: new Date().toISOString() }
+            await kvSet('sp_finance_pm_prep_bind', bind)
+          }
+          await send(`✅ ${rp.name}，這是你的 GD 看板專屬連結（點開一次，這支手機之後打卡/編輯都自動是你）：\n${BIND_APPS[appKey]}?me=${tk2}\n\n建議點開後用瀏覽器「加入主畫面」變成 App。連結不要轉給別人——那會變成用你的名字操作。`)
+        } catch (e) { await send('綁定出了點問題，稍後再試一次 🙏') }
+        continue
+      }
       // 1.4) 檔案庫（私訊操作者 or 被叫名字的群組都能用）：一句話可同時「新增類別／查有哪些類別／把剛傳的檔存進去」
       if ((isDM ? canAct : true) && /檔案庫|相簿/.test(text)) {
         // 新增類別（可多個）：兩種語序都接——「新增〔名〕類別」與「新增類別〔名〕」

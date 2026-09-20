@@ -169,10 +169,13 @@ async function load(store){
   if (store === 'ground') sopLoad()
 }
 // ── 今日SOP（每站每天：拍照＋完成打卡；超時 DD 會通知群）──
-let sopData = null, sopPhotos = {} // itemId -> dataURL（待送出的照片）
+// 個人身分：跟 DD 說「綁定看板」拿到 /prep?me=token 連結 → 存這支手機，打卡自動是本人、站長可編輯自己的站
+;(function(){ const m = new URLSearchParams(location.search).get('me'); if (m) { localStorage.setItem('prepToken', m); history.replaceState(null, '', location.pathname) } })()
+const TK = () => localStorage.getItem('prepToken') || ''
+let sopData = null, sopPhotos = {}, sopEditSt = null // itemId -> dataURL（待送出的照片）；編輯中的站
 async function sopLoad(){
   const el = document.getElementById('sop'); if (!el) return
-  try { const r = await fetch('/api/mail-sync?sop=' + encodeURIComponent(K)); sopData = await r.json() } catch(e){}
+  try { const r = await fetch('/api/mail-sync?sop=' + encodeURIComponent(K) + (TK() ? '&me=' + encodeURIComponent(TK()) : '')); sopData = await r.json() } catch(e){}
   if (!sopData || !sopData.ok) { el.innerHTML = ''; return }
   sopRender()
 }
@@ -185,10 +188,23 @@ function sopRender(){
   const wd = new Date().getDay()
   const sts = [...new Set(items.map(i => i.st))]
   const doneN = items.filter(i => log[i.id] && log[i.id].done).length
+  const me = sopData.me
   let s = `<section><h2>✅ 今日 SOP（${sopData.date.slice(5)}）<span class="hint" style="float:right;font-weight:900;color:${doneN===items.length?'var(--green)':'var(--pdark)'}">${doneN}/${items.length}</span></h2>`
+  s += me ? `<div class="hint" style="margin-bottom:6px">👤 <b style="color:var(--pdark)">${me.name}</b>（打卡自動記你的名字・可編輯各站 SOP，改動會留姓名時間紀錄）</div>`
+          : `<div class="hint" style="margin-bottom:6px">💡 加官方 DD 好友私訊「<b>綁定看板</b>」→ 拿個人連結：打卡不用打名字、可編輯 SOP、可標記問題解決</div>`
   if (wd === 0 || wd === 6) s += `<div class="hint" style="margin-bottom:8px">今天公休——這是清單預覽，打卡留給營業日。</div>`
   sts.forEach(st => {
-    s += `<div style="background:var(--psoft);border-radius:8px;padding:4px 10px;font-weight:900;color:var(--pdark);font-size:12.5px;margin:10px 0 4px">${st}</div>`
+    const canEd = me && me.canEdit
+    const stIss = (sopData.issues||[]).filter(x => x.st === st)
+    s += `<div style="background:var(--psoft);border-radius:8px;padding:4px 10px;font-weight:900;color:var(--pdark);font-size:12.5px;margin:10px 0 4px">${st}
+      <span style="float:right"><button class="mini" style="color:#A85C26" onclick="sopReport('${st}')">⚠️ 回報</button>${canEd?`<button class="mini" onclick="sopEdit('${st}')">${sopEditSt===st?'放棄':'✏️ 編輯'}</button>`:''}</span></div>`
+    stIss.forEach(x => {
+      s += `<div style="background:#FCEAEA;border:1px solid #F0B8B1;border-radius:8px;padding:8px 10px;margin:4px 0;font-size:12.5px">
+        <b style="color:var(--red)">⚠️ ${x.text||'（附件）'}</b>
+        <div class="hint">${x.by}・${x.ts}${(x.media||[]).map((m,i)=>` <a href="${m}" target="_blank">📎附件${i+1}</a>`).join('')}</div>
+        ${me?`<button class="mini" style="margin-top:4px" onclick="sopResolve('${x.id}')">✅ 已解決</button>`:''}</div>`
+    })
+    if (sopEditSt === st) { s += sopEditor(st); return }
     items.filter(i => i.st === st).forEach(it => {
       const lg = log[it.id]
       const overdue = !lg && it.due && it.due <= now && wd >= 1 && wd <= 5
@@ -228,13 +244,17 @@ function sopPick(id){
 async function sopDo(id, undo){
   const it = (sopData.def.items||[]).find(x => x.id === id)
   if (!undo && it && it.photo && !sopPhotos[id]) { alert('這一項要先拍照再按完成 📷'); return }
-  let by = localStorage.getItem('sopName') || ''
-  if (!undo && !by) {
-    by = prompt('你的名字？（記住之後不再問）\n' + (sopData.names||[]).join('、')) || ''
-    if (!by) return
-    localStorage.setItem('sopName', by.trim())
+  let by = ''
+  if (sopData.me) by = sopData.me.name // 已綁定：本人，不用問（伺服器也以 token 為準）
+  else {
+    by = localStorage.getItem('sopName') || ''
+    if (!undo && !by) {
+      by = prompt('你的名字？（記住之後不再問；建議跟 DD 說「綁定看板」以後全自動）\n' + (sopData.names||[]).join('、')) || ''
+      if (!by) return
+      localStorage.setItem('sopName', by.trim())
+    }
   }
-  const body = { itemId: id, by: (by||'').trim(), undo: !!undo }
+  const body = { itemId: id, by: (by||'').trim(), undo: !!undo, token: TK() }
   if (!undo && sopPhotos[id]) body.photo = sopPhotos[id]
   try {
     const r = await fetch('/api/mail-sync?sopdone=' + encodeURIComponent(K), { method: 'POST', headers: {'content-type':'application/json'}, body: JSON.stringify(body) })
@@ -242,6 +262,78 @@ async function sopDo(id, undo){
     if (d && d.ok) { sopData.log = d.log; delete sopPhotos[id]; sopRender() }
     else alert('存檔失敗，再按一次試試')
   } catch(e){ alert('連線失敗，再按一次試試') }
+}
+// ── 問題回報（⚠️：文字＋照片/影片；影片走簽名直傳不受大小限制；DD 通知內部群）──
+async function sopReport(st){
+  const text = prompt(`【${st}】要回報什麼問題？（文字說明；按確定後可再選照片/影片）`)
+  if (text === null) return
+  const inp = document.createElement('input'); inp.type = 'file'; inp.accept = 'image/*,video/*'; inp.multiple = true
+  let picked = false
+  inp.onchange = async () => { picked = true; await sopReportSend(st, text, [...(inp.files||[])]) }
+  // 不選檔也能送：給 1.2 秒等使用者決定要不要選檔（取消選檔視窗＝純文字回報）
+  inp.click()
+  setTimeout(async () => { if (!picked && text.trim()) { if (confirm('不附照片/影片，直接送出文字回報？')) await sopReportSend(st, text, []) } }, 1200)
+}
+async function sopReportSend(st, text, files){
+  const media = []
+  for (const f of files.slice(0, 6)) {
+    try {
+      if (f.size > 80 * 1024 * 1024) { alert(`${f.name} 超過 80MB，跳過（影片請拍短一點）`); continue }
+      const ext = (f.name.split('.').pop() || (f.type.includes('video') ? 'mp4' : 'jpg')).toLowerCase()
+      const sr = await fetch('/api/mail-sync?sopsign=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ ext }) })
+      const sd = await sr.json()
+      if (!sd || !sd.ok) { alert('取得上傳位址失敗'); continue }
+      const ur = await fetch(sd.uploadUrl, { method: 'PUT', headers: { 'content-type': f.type || 'application/octet-stream' }, body: f })
+      if (ur.ok) media.push(sd.publicUrl); else alert(`${f.name} 上傳失敗`)
+    } catch(e){ alert(`${f.name} 上傳失敗`) }
+  }
+  let by = sopData.me ? sopData.me.name : (localStorage.getItem('sopName') || prompt('你的名字？') || '匿名')
+  const r = await fetch('/api/mail-sync?sopreport=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ st, text, media, by, token: TK() }) })
+  const d = await r.json().catch(()=>null)
+  if (d && d.ok) { alert('回報已送出，DD 已通知群裡 ✅'); sopLoad() } else alert((d&&d.error)||'送出失敗，再試一次')
+}
+async function sopResolve(id){
+  if (!confirm('標記這個問題已解決？')) return
+  const r = await fetch('/api/mail-sync?sopresolve=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ id, token: TK() }) })
+  const d = await r.json().catch(()=>null)
+  if (d && d.ok) sopLoad(); else alert((d&&d.error)||'失敗（要先跟 DD 綁定看板）')
+}
+// ── SOP 編輯（張良 2026-09-21 拍板：不設站長，綁定者全站可編；時間/姓名/改前內容全留痕）──
+function sopEdit(st){ sopEditSt = (sopEditSt === st) ? null : st; sopRender() }
+function sopEditor(st){
+  const rows = (sopData.def.items||[]).filter(i => i.st === st)
+  let s = `<div id="sopEd" data-st="${st}" style="border:1.5px dashed var(--primary);border-radius:10px;padding:10px;margin-bottom:6px">`
+  rows.forEach(it => { s += sopEdRow(it) })
+  s += `<button class="mini" onclick="sopEdAdd()">＋ 加一項</button>
+  <div style="margin-top:8px;text-align:right"><button class="mini on" style="padding:8px 18px" onclick="sopEdSave()">💾 儲存這一站</button></div></div>`
+  return s
+}
+function sopEdRow(it){
+  return `<div class="sopEdRow" data-id="${it.id||''}" style="display:flex;gap:6px;align-items:center;margin-bottom:6px;flex-wrap:wrap">
+    <input class="edT" value="${(it.title||'').replace(/"/g,'&quot;')}" placeholder="項目名稱" style="flex:1;min-width:150px;border:1px solid var(--line);border-radius:7px;padding:6px 8px;font-size:13px">
+    <input class="edD" value="${it.due||'11:00'}" type="time" style="border:1px solid var(--line);border-radius:7px;padding:5px 6px;font-size:13px">
+    <label style="font-size:12px;white-space:nowrap"><input class="edP" type="checkbox" ${it.photo?'checked':''}> 📷</label>
+    <button class="mini" onclick="this.parentElement.remove()">刪</button></div>`
+}
+function sopEdAdd(){
+  const box = document.getElementById('sopEd')
+  const div = document.createElement('div'); div.innerHTML = sopEdRow({ due:'11:00' })
+  box.insertBefore(div.firstChild, box.querySelector('button.mini'))
+}
+async function sopEdSave(){
+  const box = document.getElementById('sopEd'); if (!box) return
+  const items = [...box.querySelectorAll('.sopEdRow')].map(r => ({
+    id: r.dataset.id || undefined,
+    title: r.querySelector('.edT').value.trim(),
+    due: r.querySelector('.edD').value || '11:00',
+    photo: r.querySelector('.edP').checked,
+  })).filter(x => x.title)
+  try {
+    const r = await fetch('/api/mail-sync?sopedit=' + encodeURIComponent(K), { method: 'POST', headers: {'content-type':'application/json'}, body: JSON.stringify({ token: TK(), st: box.dataset.st, items }) })
+    const d = await r.json()
+    if (d && d.ok) { sopEditSt = null; sopLoad() }
+    else alert(d && d.error ? d.error : '儲存失敗')
+  } catch(e){ alert('連線失敗，再試一次') }
 }
 // 預做節奏表 15分/30分 切換
 function rSwitch(m){

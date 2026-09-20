@@ -20,6 +20,7 @@ const ALLOW = [
   [/^pm_mail_(accounts|reviews|scan)$/, "信箱帳號/審閱/掃描內部狀態，郵件摘要已收 rules/log"],
   [/^pm_estimates_an$/, "估價單 AI 解析快取，estimatesText 已收原始估價"],
   [/^pm_group_seen$/, "LINE 群清單，webhook 本來就在用"],
+  [/^pm_prep_bind$/, "看板個人綁定 token＝機密（拿到=可冒名打卡），不進 AI；名字身分已在名冊"],
   [/^pm_ui_|_prefs$|_collapsed$/, "純 UI 偏好"],
   [/^pm_advisor|^pm_ai_|^pm_line_notify|^pm_mail_(rules|log)$/, "AI/通知/郵件設定，App 端已以摘要收錄"],
   [/^pm_changelog|^pm_conclusion_drafts/, "更新紀錄/草稿"],
