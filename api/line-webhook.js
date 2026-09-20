@@ -1427,6 +1427,36 @@ export default async function handler(req, res) {
           }
           continue
         }
+        if (/^pi\|/.test(pdata)) { // /prep 問題回報審核發布（張良 2026-09-22：發布/保留/刪除按鈕）
+          const [, piId, piOp] = pdata.split('|')
+          const uidP = ev.source.userId
+          const repP = (t2) => ev.replyToken ? lineReply(ev.replyToken, t2) : Promise.resolve()
+          try {
+            const kvP = await kvGetMany(['sp_finance_pm_sop_issues', 'sp_finance_pm_sop_def', 'sp_crew_kb_roster'])
+            const aprP = (((kvP['sp_finance_pm_sop_def'] || {}).ground || {}).approvers || ['張良瑋'])
+            const meP = ((kvP['sp_crew_kb_roster'] || {}).people || []).find(p2 => p2.lineUserId === uidP)
+            if (!meP || !aprP.includes(meP.name)) { await repP('這按鈕只有審核人能用喔。'); continue }
+            const docP = kvP['sp_finance_pm_sop_issues'] || { list: [] }
+            const itP = (docP.list || []).find(x => x.id === piId)
+            if (!itP) { await repP('找不到這筆回報（可能已處理或刪除）。'); continue }
+            const headP = `【${itP.st}】${(itP.text || '（附件）').slice(0, 40)}`
+            if (piOp === 'go') {
+              itP.pub = 'ok'
+              await kvSet('sp_finance_pm_sop_issues', docP)
+              try { await fetch('https://api.line.me/v2/bot/message/push', { method: 'POST', headers: { 'content-type': 'application/json', Authorization: 'Bearer ' + TOKEN }, body: JSON.stringify({ to: 'Cf7940efc6517b0c084ad2ad496b45f30', messages: [{ type: 'text', text: `⚠️ 看板問題回報【${itP.st}】\n${itP.text || '（見附件）'}\n— ${itP.by}${(itP.media || []).length ? `・附 ${itP.media.length} 個檔案` : ''}\n處理完到 ground-pm.vercel.app/prep 按「已解決」` }] }) }) } catch (_) {}
+              await repP(`✅ 已發布到內部群：${headP}`)
+            } else if (piOp === 'hold') {
+              itP.pub = 'hold'
+              await kvSet('sp_finance_pm_sop_issues', docP)
+              await repP(`📥 已保留（不進群，看板上仍看得到）：${headP}`)
+            } else if (piOp === 'del') {
+              docP.list = (docP.list || []).filter(x => x.id !== piId)
+              await kvSet('sp_finance_pm_sop_issues', docP)
+              await repP(`🗑 已刪除：${headP}`)
+            }
+          } catch (e) { console.log('pub issue postback error', e?.message); await repP('⚠️ 處理出錯，再按一次或到 /prep 任務分頁操作。') }
+          continue
+        }
         try { await handleDDCards(ev, await getOperators()) } catch (e) { console.log('ddcards postback error', e?.message) }
         continue
       }

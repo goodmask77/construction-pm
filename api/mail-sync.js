@@ -1220,7 +1220,7 @@ export default async function handler(req, res) {
     if (sb2.op === 'save') {
       const i2 = sb2.item || {}
       if (!String(i2.name || '').trim() || !/^\d{4}-\d{2}-\d{2}$/.test(i2.date) || !/^\d{1,2}:\d{2}$/.test(i2.start) || !/^\d{1,2}:\d{2}$/.test(i2.end)) return res.status(400).json({ ok: false, error: '姓名/日期/時間沒填齊' })
-      const it = { id: i2.id || 'sh' + Date.now().toString(36), name: String(i2.name).trim().slice(0, 20), date: i2.date, start: String(i2.start).padStart(5, '0'), end: String(i2.end).padStart(5, '0'), break: Math.max(0, Math.min(240, Number(i2.break) || 0)), by: whoS.name }
+      const it = { id: i2.id || 'sh' + Date.now().toString(36), name: String(i2.name).trim().slice(0, 20), date: i2.date, start: String(i2.start).padStart(5, '0'), end: String(i2.end).padStart(5, '0'), break: Math.max(0, Math.min(240, Number(i2.break) || 0)), pos: String(i2.pos || '').trim().slice(0, 20), by: whoS.name }
       doc.list = [...(doc.list || []).filter(x => x.id !== it.id), it].sort((a, b) => (a.date + a.start).localeCompare(b.date + b.start)).slice(-1000)
     } else if (sb2.op === 'del') {
       doc.list = (doc.list || []).filter(x => x.id !== sb2.id)
@@ -1492,13 +1492,22 @@ export default async function handler(req, res) {
     if (!b8.st || !(b8.text || (b8.media || []).length)) return res.status(400).json({ ok: false, error: '至少要有文字或照片/影片' })
     const who8 = await sopWho(b8.token)
     const doc8 = (await kvGet('sp_finance_pm_sop_issues')) || { list: [] }
-    const iss = { id: 'is' + Date.now().toString(36), st: String(b8.st).slice(0, 20), text: String(b8.text || '').slice(0, 500), media: (Array.isArray(b8.media) ? b8.media : []).slice(0, 6), by: who8 ? who8.name : String(b8.by || '匿名').slice(0, 20), ts: new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 16).replace('T', ' '), status: 'open' }
+    const iss = { id: 'is' + Date.now().toString(36), st: String(b8.st).slice(0, 20), text: String(b8.text || '').slice(0, 500), media: (Array.isArray(b8.media) ? b8.media : []).slice(0, 6), by: who8 ? who8.name : String(b8.by || '匿名').slice(0, 20), ts: new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 16).replace('T', ' '), status: 'open', pub: 'pending' }
     doc8.list = [iss, ...(doc8.list || [])].slice(0, 200)
     await kvPut('sp_finance_pm_sop_issues', doc8, '看板問題回報(' + iss.by + ')')
-    // DD 通知內部群（不設站長→群裡大家看得到、認領解決）
+    // 審核發布制（張良 2026-09-22：不直接進群——DD 先私訊老闆帶【發布/保留/刪除】按鈕，確認完才到群裡；/prep 任務分頁也能按）
     try {
       const tk8 = (process.env.LINE_CHANNEL_ACCESS_TOKEN || '').trim()
-      if (tk8) await fetch('https://api.line.me/v2/bot/message/push', { method: 'POST', headers: { 'content-type': 'application/json', Authorization: 'Bearer ' + tk8 }, body: JSON.stringify({ to: 'Cf7940efc6517b0c084ad2ad496b45f30', messages: [{ type: 'text', text: `⚠️ 看板問題回報【${iss.st}】\n${iss.text || '（見附件）'}\n— ${iss.by}${iss.media.length ? `・附 ${iss.media.length} 個檔案` : ''}\n處理完到 ground-pm.vercel.app/prep 按「已解決」` }] }) })
+      const [defD8, rosterD8] = await Promise.all([kvGet('sp_finance_pm_sop_def'), kvGet('sp_crew_kb_roster')])
+      const apr8 = (((defD8 || {}).ground || {}).approvers || ['張良瑋'])
+      for (const an of apr8) {
+        const ap = ((rosterD8 || {}).people || []).find(p => p.name === an && p.lineUserId)
+        if (tk8 && ap) await fetch('https://api.line.me/v2/bot/message/push', { method: 'POST', headers: { 'content-type': 'application/json', Authorization: 'Bearer ' + tk8 }, body: JSON.stringify({ to: ap.lineUserId, messages: [{ type: 'template', altText: `⚠️ 問題回報待確認【${iss.st}】${(iss.text || '').slice(0, 30)}`, template: { type: 'buttons', title: `⚠️ 問題回報【${iss.st}】`.slice(0, 40), text: `${(iss.text || '（見附件）').slice(0, 100)}\n— ${iss.by}${iss.media.length ? `・附${iss.media.length}檔(看板可看)` : ''}`.slice(0, 160), actions: [
+          { type: 'postback', label: '✅ 發布到群', data: `pi|${iss.id}|go` },
+          { type: 'postback', label: '📥 保留（不進群）', data: `pi|${iss.id}|hold` },
+          { type: 'postback', label: '🗑 刪除', data: `pi|${iss.id}|del` },
+        ] } }] }) })
+      }
     } catch (_) {}
     return res.status(200).json({ ok: true, issue: iss })
   }
@@ -1565,6 +1574,17 @@ export default async function handler(req, res) {
       if (bi.val) itI.flag = 1; else delete itI.flag
     } else if (bi.op === 'due') {
       itI.due = String(bi.val || '').slice(0, 30); if (!itI.due) delete itI.due
+    } else if (bi.op === 'pub') { // 審核發布（張良限定：go=發布到群 / hold=保留 / del=刪除）
+      if (!apprI.includes(whoI.name)) return res.status(403).json({ ok: false, error: '只有審核人能確認發布' })
+      if (bi.val === 'go') {
+        itI.pub = 'ok'
+        try {
+          const tkP = (process.env.LINE_CHANNEL_ACCESS_TOKEN || '').trim()
+          if (tkP) await fetch('https://api.line.me/v2/bot/message/push', { method: 'POST', headers: { 'content-type': 'application/json', Authorization: 'Bearer ' + tkP }, body: JSON.stringify({ to: 'Cf7940efc6517b0c084ad2ad496b45f30', messages: [{ type: 'text', text: `⚠️ 看板問題回報【${itI.st}】\n${itI.text || '（見附件）'}\n— ${itI.by}${(itI.media || []).length ? `・附 ${itI.media.length} 個檔案` : ''}\n處理完到 ground-pm.vercel.app/prep 按「已解決」` }] }) })
+        } catch (_) {}
+      } else if (bi.val === 'hold') { itI.pub = 'hold' }
+      else if (bi.val === 'del') { dI.list = (dI.list || []).filter(x => x.id !== bi.id) }
+      else return res.status(400).json({ ok: false })
     } else if (bi.op === 'own') { // 指派/清除負責人（清除＝val 空字串）
       const nm = String(bi.val || '').trim().slice(0, 20)
       if (nm) { itI.claimBy = nm; itI.claimAt = itI.claimAt || Date.now(); itI.claimTs = itI.claimTs || new Date(Date.now() + 8 * 3600e3).toISOString().slice(5, 16).replace('T', ' ') }
