@@ -33,6 +33,7 @@
   tbody tr:nth-child(even) td{background:#FAFCFD}
   .scroll{overflow-x:auto;-webkit-overflow-scrolling:touch;border:1px solid var(--line);border-radius:10px}
   .catband td{background:var(--psoft)!important;color:var(--pdark);font-weight:900;font-size:12.5px}
+  .subrow td{background:#FBF6EA!important} /* 小計列琥珀底——用 !important 蓋過斑馬紋，不然偶數列會被蓋掉 */
   .iname{max-width:40vw;overflow:hidden;text-overflow:ellipsis;font-weight:700;color:var(--ink)}
   .avg{font-weight:900;color:var(--pdark);font-size:14px}
   .up{color:var(--green);font-weight:800} .dn{color:var(--red);font-weight:800} .mut{color:var(--muted)}
@@ -118,7 +119,7 @@ async function load(store){
     const a = c.agg || {}
     h += `<tr class="catband"><td style="position:sticky;left:0;background:var(--psoft);z-index:1">${c.name}${c.amt30?` <span style="font-weight:700;font-size:11px">${fmt(c.amt30)}</span>`:''}</td><td style="font-weight:900">${a.avg30!=null?a.avg30:''}</td><td>${a.grow!=null?growCell(a.grow):''}</td><td style="font-weight:900">${a.cum30!=null?a.cum30:''}</td>${a.q?qCells(a.q):`<td colspan="${dts.length}"></td>`}</tr>`
     ;(c.subs||[]).forEach(s=>{
-      h += `<tr style="background:#FBF6EA"><td style="position:sticky;left:0;background:#FBF6EA;z-index:1;font-weight:700;color:#8a5a2e;white-space:pre">${s.n}</td><td style="font-weight:800;color:#8a5a2e">${s.avg30!=null?s.avg30:'—'}</td><td>${growCell(s.grow)}</td><td style="font-weight:800;color:#8a5a2e">${s.cum30}</td>${qCells(s.q)}</tr>`
+      h += `<tr class="subrow"><td style="position:sticky;left:0;background:#FBF6EA;z-index:1;font-weight:700;color:#8a5a2e;white-space:pre">${s.n}</td><td style="font-weight:800;color:#8a5a2e">${s.avg30!=null?s.avg30:'—'}</td><td>${growCell(s.grow)}</td><td style="font-weight:800;color:#8a5a2e">${s.cum30}</td>${qCells(s.q)}</tr>`
     })
     c.items.forEach(it=>{
       const amt = it.amt30?`<div style="font-size:10px;color:var(--muted);font-weight:500">${fmt(it.amt30)}${it.pct!=null?'・'+it.pct+'%':''}</div>`:''
