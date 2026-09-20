@@ -961,7 +961,49 @@ export default async function handler(req, res) {
     const me4 = me3 ? { name: me3.name, canEdit: true } : null
     const issuesDoc = await kvGet('sp_finance_pm_sop_issues')
     const issues = ((issuesDoc || {}).list || []).filter(x => x.status === 'open').slice(0, 30)
-    return res.status(200).json({ ok: true, date: dt2, def: { items: gdef.items || [], edits: (gdef.edits || []).slice(0, 10) }, log: logDoc || { items: {} }, names, me: me4, issues, prepHide: (hideDoc || {}).keys || {} })
+    const stations = (gdef.stations && gdef.stations.length) ? gdef.stations : [...new Set((gdef.items || []).map(i => i.st))]
+    const trash = (gdef.trash || []).map(t => ({ id: t.id, st: t.st, n: (t.items || []).length, ts: t.ts, by: t.by }))
+    return res.status(200).json({ ok: true, date: dt2, def: { items: gdef.items || [], stations, edits: (gdef.edits || []).slice(0, 10) }, trash, log: logDoc || { items: {} }, names, me: me4, issues, prepHide: (hideDoc || {}).keys || {} })
+  }
+  // 站別管理（張良 2026-09-21：站可新增/改名/刪除；誤刪可復原→軟刪進回收站）：POST ?sopst=<OPS_BOARD_KEY> {token, op, st, newName, trashId}
+  if (req.method === 'POST' && req.query?.sopst) {
+    const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
+    if (!ok2 || String(req.query.sopst) !== ok2) return res.status(403).json({ ok: false })
+    let bs = {}
+    try { bs = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
+    const whoS = await sopWho(bs.token)
+    if (!whoS) return res.status(403).json({ ok: false, error: '要先跟 DD 說「綁定GD」才能管理站別' })
+    const curS = (await kvGet('sp_finance_pm_sop_def')) || {}
+    const gS = curS.ground || { items: [] }
+    gS.stations = (gS.stations && gS.stations.length) ? gS.stations : [...new Set((gS.items || []).map(i => i.st))]
+    const nmS = String(bs.st || '').trim().slice(0, 20)
+    if (bs.op === 'add') {
+      if (!nmS) return res.status(400).json({ ok: false, error: '要給站名' })
+      if (gS.stations.includes(nmS)) return res.status(400).json({ ok: false, error: '已經有這個站了' })
+      gS.stations.push(nmS)
+    } else if (bs.op === 'rename') {
+      const nn = String(bs.newName || '').trim().slice(0, 20)
+      if (!nmS || !nn) return res.status(400).json({ ok: false, error: '要給舊站名與新站名' })
+      if (gS.stations.includes(nn)) return res.status(400).json({ ok: false, error: '新站名已存在' })
+      gS.stations = gS.stations.map(s => s === nmS ? nn : s)
+      gS.items = (gS.items || []).map(it => it.st === nmS ? { ...it, st: nn } : it)
+    } else if (bs.op === 'del') {
+      if (!gS.stations.includes(nmS)) return res.status(400).json({ ok: false, error: '找不到這個站' })
+      const moved = (gS.items || []).filter(it => it.st === nmS)
+      gS.items = (gS.items || []).filter(it => it.st !== nmS)
+      gS.stations = gS.stations.filter(s => s !== nmS)
+      gS.trash = [{ id: 'tr' + Date.now().toString(36), ts: new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 16).replace('T', ' '), by: whoS.name, st: nmS, items: moved }, ...(gS.trash || [])].slice(0, 20)
+    } else if (bs.op === 'restore') {
+      const tr = (gS.trash || []).find(t => t.id === bs.trashId)
+      if (!tr) return res.status(404).json({ ok: false, error: '回收站找不到' })
+      if (!gS.stations.includes(tr.st)) gS.stations.push(tr.st)
+      gS.items = [...(gS.items || []).filter(it => it.st !== tr.st || !(tr.items || []).some(x => x.id === it.id)), ...(tr.items || [])]
+      gS.trash = (gS.trash || []).filter(t => t.id !== bs.trashId)
+    } else return res.status(400).json({ ok: false, error: 'op 要是 add/rename/del/restore' })
+    gS.edits = [{ ts: new Date().toISOString(), by: whoS.name, st: nmS || (bs.trashId || ''), op: bs.op }, ...(gS.edits || [])].slice(0, 30)
+    curS.ground = gS
+    await kvPut('sp_finance_pm_sop_def', curS, 'SOP站別' + bs.op + '(' + whoS.name + ')')
+    return res.status(200).json({ ok: true })
   }
   // ── 發現/解決問題排行榜（張良 2026-09-21）：全員對每件回報的「發現」與「解決」評 L1~L10，平均分進個人積分 ──
   // GET  ?lb=<OPS_BOARD_KEY>&me=token → 事件列表(含評分)+排行榜；POST ?soprate= {id, aspect:'find'|'fix', level:1-10, token}

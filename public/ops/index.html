@@ -216,11 +216,12 @@ async function sopLoad(){
 function sopRender(){
   const el = document.getElementById('sop'); if (!el || !sopData) return
   const items = (sopData.def.items || [])
-  if (!items.length) { el.innerHTML = ''; return }
   const log = sopData.log.items || {}
   const now = new Date(Date.now() + 8*3600e3).toISOString().slice(11,16)
   const wd = new Date().getDay()
-  const sts = [...new Set(items.map(i => i.st))]
+  // 站別清單＝伺服器的 stations 順序（可含空站）＋任何漏網的 item 站
+  const sts = [...(sopData.def.stations || []), ...new Set(items.map(i => i.st).filter(s => !(sopData.def.stations || []).includes(s)))]
+  if (!sts.length) { el.innerHTML = ''; return }
   const doneN = items.filter(i => log[i.id] && log[i.id].done).length
   const me = sopData.me
   let s = `<section><h2>✅ 今日 SOP（${sopData.date.slice(5)}）<span class="hint" style="float:right;font-weight:900;color:${doneN===items.length?'var(--green)':'var(--pdark)'}">${doneN}/${items.length}</span></h2>`
@@ -239,6 +240,7 @@ function sopRender(){
         ${me?`<button class="mini" style="margin-top:4px" onclick="sopResolve('${x.id}')">✅ 已解決</button>`:''}</div>`
     })
     if (sopEditSt === st) { s += sopEditor(st); return }
+    if (!items.some(i => i.st === st)) s += `<div class="hint" style="padding:6px 4px">（這一站還沒有 SOP 項目——按「✏️ 編輯」新增）</div>`
     items.filter(i => i.st === st).forEach(it => {
       const lg = log[it.id]
       const overdue = !lg && it.due && it.due <= now && wd >= 1 && wd <= 5
@@ -257,9 +259,29 @@ function sopRender(){
       s += `</div>`
     })
   })
+  if (me) {
+    s += `<div style="margin-top:10px"><button class="mini" onclick="sopStAdd()">＋ 新增站</button>`
+    if ((sopData.trash||[]).length) s += `<button class="mini" onclick="sopTrashOpen=!sopTrashOpen;sopRender()">🗂 回收站（${sopData.trash.length}）</button>`
+    s += `</div>`
+    if (sopTrashOpen && (sopData.trash||[]).length) {
+      s += `<div style="border:1px dashed var(--line);border-radius:10px;padding:8px 10px;margin-top:6px">` +
+        sopData.trash.map(t=>`<div style="display:flex;align-items:center;gap:8px;padding:4px 0"><span style="flex:1;font-size:12.5px">🗑 <b>${t.st}</b>（${t.n} 項）<span class="hint">${t.by}・${t.ts} 刪除</span></span><button class="mini on" onclick="sopStOp({op:'restore',trashId:'${t.id}'})">復原</button></div>`).join('') + `</div>`
+    }
+  }
   s += `<div class="hint" style="margin-top:8px">按「完成」記錄時間與名字；要拍照的先按 📷。超過時限沒完成，DD 會在群裡提醒。</div></section>`
   el.innerHTML = s
 }
+// ── 站別管理：新增/改名/刪除(進回收站可復原)——全部留姓名時間紀錄 ──
+let sopTrashOpen = false
+async function sopStOp(body){
+  body.token = TK()
+  const r = await fetch('/api/mail-sync?sopst=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify(body) })
+  const d = await r.json().catch(()=>null)
+  if (d && d.ok) { sopEditSt = null; sopLoad() } else alert((d&&d.error)||'失敗')
+}
+function sopStAdd(){ const nm = prompt('新站名？（例：甜點站）'); if (nm && nm.trim()) sopStOp({ op:'add', st: nm.trim() }) }
+function sopStRename(st){ const inp = document.getElementById('edStName'); const nn = inp && inp.value.trim(); if (!nn || nn === st) return alert('輸入新站名再按改名'); sopStOp({ op:'rename', st, newName: nn }) }
+function sopStDel(st){ if (confirm(`刪除「${st}」整站？（項目會進回收站，可隨時復原）`)) sopStOp({ op:'del', st }) }
 function sopPick(id){
   const inp = document.createElement('input'); inp.type = 'file'; inp.accept = 'image/*'; inp.capture = 'environment'
   inp.onchange = () => {
@@ -339,7 +361,12 @@ async function sopResolve(id){
 function sopEdit(st){ sopEditSt = (sopEditSt === st) ? null : st; sopRender() }
 function sopEditor(st){
   const rows = (sopData.def.items||[]).filter(i => i.st === st)
-  let s = `<div id="sopEd" data-st="${st}" style="border:1.5px dashed var(--primary);border-radius:10px;padding:10px;margin-bottom:6px">`
+  let s = `<div id="sopEd" data-st="${st}" style="border:1.5px dashed var(--primary);border-radius:10px;padding:10px;margin-bottom:6px">
+  <div style="display:flex;gap:6px;align-items:center;margin-bottom:8px;flex-wrap:wrap">
+    <span class="hint">站名</span><input id="edStName" value="${st}" style="border:1px solid var(--line);border-radius:7px;padding:5px 8px;font-size:13px;width:120px">
+    <button class="mini" onclick="sopStRename('${st}')">改名</button>
+    <button class="mini" style="color:var(--red)" onclick="sopStDel('${st}')">🗑 刪除此站</button>
+  </div>`
   rows.forEach(it => { s += sopEdRow(it) })
   s += `<button class="mini" onclick="sopEdAdd()">＋ 加一項</button>
   <div style="margin-top:8px;text-align:right"><button class="mini on" style="padding:8px 18px" onclick="sopEdSave()">💾 儲存這一站</button></div></div>`
