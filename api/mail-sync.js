@@ -818,7 +818,9 @@ export default async function handler(req, res) {
       const sumIn = (ds) => list.reduce((t, o) => t + Object.entries(o.q).reduce((t2, [dd, qv]) => t2 + (ds.has(dd) ? qv : 0), 0), 0) * mult
       const tot = list.reduce((t, o) => t + o.q30, 0) * mult
       const byWd = [1, 2, 3, 4, 5].map(w => { const ds = wdSets2[w]; return ds && ds.size ? Math.round(sumIn(ds) / ds.size * 10) / 10 : null })
-      return { avg: n30 ? Math.round(tot / n30 * 10) / 10 : null, wk: wkDates.size ? Math.round(sumIn(wkDates) / wkDates.size * 10) / 10 : null, we: weDates.size ? Math.round(sumIn(weDates) / weDates.size * 10) / 10 : null, byWd }
+      // 峰值/低值＝近30天單日最高/最低（張良 2026-09-20：大日小日的備量參考）
+      const dayVals = w30.map(e => list.reduce((t, o) => t + (o.q[e.date] || 0), 0) * mult)
+      return { avg: n30 ? Math.round(tot / n30 * 10) / 10 : null, wk: wkDates.size ? Math.round(sumIn(wkDates) / wkDates.size * 10) / 10 : null, we: weDates.size ? Math.round(sumIn(weDates) / weDates.size * 10) / 10 : null, byWd, peak: dayVals.length ? Math.max(...dayVals) : null, low: dayVals.length ? Math.min(...dayVals) : null }
     }
     const prep = isAB2 ? null : [
       { grp: '炸台', name: '無骨煎雞腿', ...prepAgg(o => o.cat === '漢堡' && /雞腿堡/.test(o.n) && !/炸/.test(o.n)) },

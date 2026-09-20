@@ -77,17 +77,14 @@ async function load(store){
     <div class="kpi"><div class="l">日均營收</div><div class="v">${fmt(d.kpi.avgRev)}</div></div>
     <div class="kpi"><div class="l">近30天單數</div><div class="v">${(d.kpi.tx30||0).toLocaleString()}</div></div>
   </div>`
-  // 備料卡（GD：炸台/沙拉/吧檯；星期一~五各自平均＋微調%＋早備/午後補節奏）
+  // 備料卡（GD：炸台/沙拉/吧檯；總平均＋每週幾平均＋峰值/低值——張良 2026-09-20 取消時段拆分，一早備好）
   if (d.prep) {
     const grps = [...new Set(d.prep.map(p=>p.grp))]
-    const s14 = d.share14
-    const morning = s14!=null ? Math.min(95, s14+10) : null // 早備=14點前單量佔比+10%緩衝
     const today = new Date(); const tw = today.getDay() // 今天星期幾（1~5高亮）
     h += `<section><h2>預估備料量 <span class="hint">份/日</span></h2>`
-    if (morning!=null) h += `<div style="background:var(--psoft);border-radius:10px;padding:10px 12px;font-size:12.5px;margin-bottom:10px"><b style="color:var(--pdark)">⏰ 備料節奏建議：</b>平日 14:00 前約佔 <b>${s14}%</b> 的單量 → 開店前備各項的 <b style="color:var(--pdark)">${morning}%</b>（含 10% 緩衝）就夠撐過午餐，<b style="color:var(--pdark)">14:00 後再補其餘</b>，保持新鮮。<span class="hint">（品項沒有分時資料，比例用全店時段單量分佈推估）</span></div>`
-    h += `<div class="scroll"><table><thead><tr><th>項目</th>${['一','二','三','四','五'].map((w,i)=>`<th style="${tw===i+1?'color:var(--pdark);background:#E5F3FA':''}">週${w}</th>`).join('')}<th>平日均</th><th>早備｜午補</th></tr></thead><tbody>`
+    h += `<div class="scroll"><table><thead><tr><th>項目</th>${['一','二','三','四','五'].map((w,i)=>`<th style="${tw===i+1?'color:var(--pdark);background:#E5F3FA':''}">週${w}</th>`).join('')}<th>總平均</th><th>峰值</th><th>低值</th></tr></thead><tbody>`
     grps.forEach(g=>{
-      h += `<tr class="catband"><td colspan="8">${g}</td></tr>`
+      h += `<tr class="catband"><td colspan="9">${g}</td></tr>`
       d.prep.filter(p=>p.grp===g).forEach(p=>{
         const wds = (p.byWd||[]).map((v,i)=>{
           if(v==null||p.wk==null||!p.wk) return `<td>—</td>`
@@ -95,12 +92,10 @@ async function load(store){
           const badge = Math.abs(diff)>=10 ? `<div style="font-size:9.5px;font-weight:800;color:${diff>0?'var(--pdark)':'var(--muted)'}">${diff>0?'+':''}${diff}%</div>` : ''
           return `<td style="${tw===i+1?'background:#F0F8FC':''}"><b>${v}</b>${badge}</td>`
         }).join('')
-        const early = morning!=null&&p.wk!=null ? Math.ceil(p.wk*morning/100) : null
-        const later = early!=null ? Math.max(0, Math.ceil(p.wk)-early) : null
-        h += `<tr><td style="font-weight:700;color:var(--ink)">${p.name}</td>${wds}<td class="avg">${p.wk!=null?p.wk:'—'}</td><td>${early!=null?`<b style="color:var(--pdark)">${early}</b><span class="mut">｜${later}</span>`:'—'}</td></tr>`
+        h += `<tr><td style="font-weight:700;color:var(--ink)">${p.name}</td>${wds}<td class="avg">${p.avg!=null?p.avg:'—'}</td><td style="font-weight:800;color:#A85C26">${p.peak!=null?p.peak:'—'}</td><td class="mut">${p.low!=null?p.low:'—'}</td></tr>`
       })
     })
-    h += `</tbody></table></div><div class="hint" style="margin-top:8px">怎麼用：①看今天星期幾那欄（藍底）＝該星期近幾週的平均銷量，數字下的 ±% 是跟平日均的差（超過 ±10% 才顯示，多備或少備就看它）②「早備｜午補」＝把平日均按時段比例拆兩段，開店前備左邊、14:00 後視現場再補右邊；生意特別好的日子（如週五 +%）兩段等比例加碼。</div></section>`
+    h += `</tbody></table></div><div class="hint" style="margin-top:8px">怎麼用：①看今天星期幾那欄（藍底）＝該星期近幾週的平均銷量，數字下的 ±% 是跟總平均的差（超過 ±10% 才顯示，多備或少備看它）②峰值/低值＝近30天單日最高/最低——大日抓峰值、保守抓平均，低於低值就太少了。</div></section>`
   }
   // 日表（核心夥伴全開：付款明細/至14:00/單均都在；全部歷史）
   const isGD = d.store === 'ground'
