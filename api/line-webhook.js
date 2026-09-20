@@ -573,7 +573,7 @@ async function loadPosText() {
   try {
     const now = new Date(Date.now() + 8 * 3600e3)
     const mo = now.toISOString().slice(0, 7)
-    const kv = await kvGetMany(['sp_finance_pm_pos', 'sp_finance_pm_pos_d_' + mo, 'sp_finance_pm_pos_tx_' + mo, 'sp_finance_pm_pos_flags', 'sp_finance_pm_pos_idlecfg', 'sp_finance_pm_pos_hh_' + mo, 'sp_finance_pm_pos_costs', 'sp_finance_pm_pos_prices', 'sp_finance_pm_pos_hidden', 'sp_finance_pm_pos_alias', 'sp_finance_pm_sop_def', 'sp_finance_pm_sop_g_' + now.toISOString().slice(0, 10), 'sp_finance_pm_sop_issues', 'sp_finance_pm_inv', 'sp_finance_pm_ablive', 'sp_finance_pm_labor'])
+    const kv = await kvGetMany(['sp_finance_pm_pos', 'sp_finance_pm_pos_d_' + mo, 'sp_finance_pm_pos_tx_' + mo, 'sp_finance_pm_pos_flags', 'sp_finance_pm_pos_idlecfg', 'sp_finance_pm_pos_hh_' + mo, 'sp_finance_pm_pos_costs', 'sp_finance_pm_pos_prices', 'sp_finance_pm_pos_hidden', 'sp_finance_pm_pos_alias', 'sp_finance_pm_sop_def', 'sp_finance_pm_sop_g_' + now.toISOString().slice(0, 10), 'sp_finance_pm_sop_issues', 'sp_finance_pm_inv', 'sp_finance_pm_buy', 'sp_finance_pm_ablive', 'sp_finance_pm_labor'])
     const pos = kv['sp_finance_pm_pos']
     const entries = pos && Array.isArray(pos.entries) ? pos.entries : []
     if (!entries.length) return ''
@@ -676,6 +676,13 @@ async function loadPosText() {
         }
       }
       lines.push('【盤點/包材庫存（/prep 盤點分頁；預估現量=盤點量−盤後銷售×用量，低於低標 cron 每日開店前發群提醒）】'); lines.push(...invL)
+    }
+    // 採購需求（pm_buy＝/prep 採購分頁：大家提要買的東西附圖/連結；與 App loadSpaceAIContext 同步接）
+    const buyDoc = kv['sp_finance_pm_buy']
+    const buyOpen = ((buyDoc || {}).list || []).filter(x => x.status === 'open')
+    if (buyOpen.length) {
+      lines.push(`【採購需求（未購買 ${buyOpen.length} 件；/prep 採購分頁，買好按已購買）】`)
+      buyOpen.slice(0, 10).forEach(x => lines.push(`  - ${x.text || '（附件）'}（${x.by}・${x.ts}${x.url ? '・附連結' : ''}）`))
     }
     // 看板問題回報（pm_sop_issues＝夥伴在 /prep 站別旁⚠️回報的問題，附照片影片；與 App loadSpaceAIContext 同步接）
     const issDoc = kv['sp_finance_pm_sop_issues']

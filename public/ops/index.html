@@ -77,6 +77,7 @@
     <button id="tab-lb" onclick="loadLB()">🏆 排行榜</button>
     <button id="tab-food" onclick="invLoad('food')">🥩 盤點</button>
     <button id="tab-pack" onclick="invLoad('pack')">📦 包材</button>
+    <button id="tab-buy" onclick="buyLoad()">🛒 採購</button>
   </div>
   <div id="app"></div>
   <div class="foot">資料每天自動同步（打開即最新）・僅供內部參考與備料使用，請勿外傳連結</div>
@@ -88,7 +89,7 @@ const app = document.getElementById('app')
 let curStore = 'ground'
 let lastStore = 'ground'
 function setTabs(k){
-  ['lb','food','pack'].forEach(t => { const b = document.getElementById('tab-' + t); if (b) b.className = (t===k) ? 'on' : '' })
+  ['lb','food','pack','buy'].forEach(t => { const b = document.getElementById('tab-' + t); if (b) b.className = (t===k) ? 'on' : '' })
   const hb = document.getElementById('tab-home'); if (hb) hb.className = (k==='ground'||k==='abeach') ? 'on' : '' // 🏠=回店面（張良 2026-09-21：怕有人不知道怎麼回去）
   if (k === 'ground' || k === 'abeach') lastStore = k
   const g = document.getElementById('bs-ground'), a = document.getElementById('bs-abeach')
@@ -99,6 +100,7 @@ function setTabs(k){
 function hardRefresh(){
   if (curStore === 'lb') loadLB()
   else if (curStore === 'food' || curStore === 'pack') invLoad(curStore)
+  else if (curStore === 'buy') buyLoad()
   else load(curStore, true)
 }
 // 🔑 輸入綁定碼（iPhone 加入主畫面的 App 跟 Safari 儲存分開→token 帶不過去；貼一次 DD 給的連結/代碼即可）
@@ -756,6 +758,78 @@ async function invDel(id){
   const r = await fetch('/api/mail-sync?invset=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ kind: window._invD.kind, op:'del', id, token: TK() }) })
   const dd = await r.json().catch(()=>null)
   if (dd && dd.ok) { document.getElementById('invOv').remove(); invLoad(window._invD.kind) } else alert((dd&&dd.error)||'失敗')
+}
+// ── 🛒 採購需求（張良 2026-09-21：大家隨時提要買的東西，附圖片＆連結；DD通知群、可標已購買）──
+async function buyLoad(){
+  curStore = 'buy'; setTabs('buy')
+  app.innerHTML = '<section>載入中…</section>'
+  let d
+  try { const r = await fetch('/api/mail-sync?buy=' + encodeURIComponent(K) + (TK() ? '&me=' + encodeURIComponent(TK()) : '')); d = await r.json() } catch(e){}
+  if (!d || !d.ok) { app.innerHTML = '<div class="err">讀不到資料</div>'; return }
+  window._buyD = d
+  document.getElementById('upd').textContent = '🛒 採購需求・想到要買什麼隨時丟上來'
+  const meN = d.me && d.me.name
+  const open = d.list.filter(x=>x.status==='open'), done = d.list.filter(x=>x.status==='done')
+  const card = x => `<div style="background:#fff;border:1.5px solid ${x.status==='done'?'#BBE3CC':'var(--line)'};border-radius:10px;padding:9px 11px;margin-bottom:8px;font-size:13px">
+    <div style="font-weight:800;color:${x.status==='done'?'var(--green)':'var(--ink)'}">${x.status==='done'?'✅ ':'🛒 '}${x.text||'（附件）'}</div>
+    <div class="hint">${x.by}・${x.ts}${x.url?` <a href="${x.url}" target="_blank">🔗 連結</a>`:''}${(x.media||[]).map((m,i)=>` <a href="${m}" target="_blank">📎圖${i+1}</a>`).join('')}</div>
+    ${x.status==='done'?`<div class="hint" style="color:var(--green);font-weight:700">已購買・${x.doneBy}・${x.doneTs}</div>`:''}
+    ${meN?`<div style="margin-top:5px">${x.status==='open'?`<button class="mini on" onclick="buyOp('${x.id}','done')">✅ 已購買</button>`:`<button class="mini" onclick="buyOp('${x.id}','undone')">↩︎ 還沒買</button>`}${(d.me.approver||x.by===meN)?`<button class="mini" style="color:var(--red)" onclick="if(confirm('刪除這筆需求？'))buyOp('${x.id}','del')">🗑</button>`:''}</div>`:''}
+  </div>`
+  let h = `<section><h2>🛒 待採購（${open.length}） <span class="hint">${meN?'':'未綁定：'+BIND_HINT}</span></h2>
+    <div style="margin-bottom:10px"><button class="mini on" style="padding:9px 18px" onclick="buyNew()">＋ 我要提需求</button></div>`
+  h += open.length ? open.map(card).join('') : '<div class="mut">目前沒有待採購——缺什麼按上面提出來</div>'
+  h += `</section>`
+  if (done.length) h += `<section><details><summary style="font-weight:900;cursor:pointer">✅ 已購買（${done.length}）</summary><div style="margin-top:8px">${done.slice(0,20).map(card).join('')}</div></details></section>`
+  app.innerHTML = h
+}
+let buyFiles = []
+function buyNew(){
+  buyFiles = []
+  const ov = document.createElement('div'); ov.id='buyOv'
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(16,24,43,.45);z-index:50;display:flex;align-items:center;justify-content:center;padding:16px'
+  ov.innerHTML = `<div style="background:#fff;border-radius:14px;max-width:430px;width:100%;padding:16px" onclick="event.stopPropagation()">
+    <div style="font-weight:900;margin-bottom:8px">🛒 提出採購需求</div>
+    <textarea id="buyTxt" rows="2" placeholder="要買什麼？（品名/規格/數量）" style="width:100%;border:1px solid var(--line);border-radius:8px;padding:8px;font-size:14px;font-family:inherit"></textarea>
+    <input id="buyUrl" placeholder="🔗 商品連結（選填，貼網址）" style="width:100%;border:1px solid var(--line);border-radius:8px;padding:8px;font-size:13px;margin-top:6px">
+    <div id="buyList" class="hint" style="margin:6px 0"></div>
+    <div style="display:flex;gap:8px;justify-content:space-between;margin-top:8px;flex-wrap:wrap">
+      <button class="mini" style="padding:9px 12px" onclick="buyPick()">📷 加圖片</button>
+      <span><button class="mini" style="padding:9px 12px" onclick="document.getElementById('buyOv').remove()">取消</button>
+      <button class="mini on" style="padding:9px 18px" onclick="buySend()">送出</button></span>
+    </div></div>`
+  ov.onclick = () => ov.remove()
+  document.body.appendChild(ov)
+}
+function buyPick(){
+  const inp = document.createElement('input'); inp.type='file'; inp.accept='image/*'; inp.multiple=true
+  inp.onchange = () => { buyFiles = [...buyFiles, ...inp.files].slice(0,6); const el=document.getElementById('buyList'); if(el) el.innerHTML = buyFiles.map((f,i)=>`📎 ${(f.name||'圖'+(i+1)).slice(0,28)}`).join('<br>') }
+  inp.click()
+}
+async function buySend(){
+  const text = (document.getElementById('buyTxt')||{}).value||''
+  const url = (document.getElementById('buyUrl')||{}).value||''
+  if (!text.trim() && !buyFiles.length) { alert('至少寫要買什麼'); return }
+  document.querySelectorAll('#buyOv button').forEach(b=>b.disabled=true)
+  const media = []
+  for (const f of buyFiles) {
+    try {
+      const ext = ((f.name||'').split('.').pop()||'jpg').toLowerCase()
+      const sr = await fetch('/api/mail-sync?sopsign=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ ext }) })
+      const sd = await sr.json()
+      if (sd && sd.ok) { const ur = await fetch(sd.uploadUrl, { method:'PUT', headers:{'content-type': f.type||'image/jpeg'}, body: f }); if (ur.ok) media.push(sd.publicUrl) }
+    } catch(e){}
+  }
+  let by = (window._buyD && window._buyD.me) ? window._buyD.me.name : (localStorage.getItem('sopName') || prompt('你的名字？') || '匿名')
+  const r = await fetch('/api/mail-sync?buyadd=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ text, url, media, by, token: TK() }) })
+  const d = await r.json().catch(()=>null)
+  const o = document.getElementById('buyOv'); if (o) o.remove()
+  if (d && d.ok) { buyLoad() } else alert((d&&d.error)||'送出失敗')
+}
+async function buyOp(id, op){
+  const r = await fetch('/api/mail-sync?buyop=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ id, op, token: TK() }) })
+  const d = await r.json().catch(()=>null)
+  if (d && d.ok) buyLoad(); else alert((d&&d.error)||'失敗')
 }
 load('ground')
 </script>

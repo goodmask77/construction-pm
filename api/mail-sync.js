@@ -1334,6 +1334,53 @@ export default async function handler(req, res) {
     await kvPut('sp_finance_pm_sop_issues', dI, '問題卡' + bi.op + '(' + whoI.name + ')')
     return res.status(200).json({ ok: true, issue: itI })
   }
+  // ── 採購需求（張良 2026-09-21：大家隨時提要買的東西，可附圖片＆連結）──
+  // GET ?buy=<OPS>&me=；POST ?buyadd= {text,url,media,by,token}（圖走 sopsign 簽名直傳）；POST ?buyop= {id,op:done|undone|del,token}
+  if (req.query?.buy) {
+    const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
+    if (!ok2 || String(req.query.buy) !== ok2) return res.status(403).json({ ok: false })
+    const [bd, meB] = await Promise.all([kvGet('sp_finance_pm_buy'), sopWho(req.query.me)])
+    const defB = await kvGet('sp_finance_pm_sop_def')
+    const apprB = (((defB || {}).ground || {}).approvers || ['張良瑋'])
+    return res.status(200).json({ ok: true, list: ((bd || {}).list || []).slice(0, 100), me: meB ? { name: meB.name, approver: apprB.includes(meB.name) } : null })
+  }
+  if (req.method === 'POST' && req.query?.buyadd) {
+    const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
+    if (!ok2 || String(req.query.buyadd) !== ok2) return res.status(403).json({ ok: false })
+    let bb = {}
+    try { bb = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
+    if (!(bb.text || '').trim() && !(bb.media || []).length) return res.status(400).json({ ok: false, error: '至少寫要買什麼' })
+    const whoB = await sopWho(bb.token)
+    const doc = (await kvGet('sp_finance_pm_buy')) || { list: [] }
+    const it = { id: 'by' + Date.now().toString(36), text: String(bb.text || '').slice(0, 300), url: String(bb.url || '').slice(0, 500), media: (Array.isArray(bb.media) ? bb.media : []).slice(0, 6), by: whoB ? whoB.name : String(bb.by || '匿名').slice(0, 20), ts: new Date(Date.now() + 8 * 3600e3).toISOString().slice(5, 16).replace('T', ' '), status: 'open' }
+    doc.list = [it, ...(doc.list || [])].slice(0, 200)
+    await kvPut('sp_finance_pm_buy', doc, '採購需求(' + it.by + ')')
+    try { // DD 通知內部群
+      const tkB = (process.env.LINE_CHANNEL_ACCESS_TOKEN || '').trim()
+      if (tkB) await fetch('https://api.line.me/v2/bot/message/push', { method: 'POST', headers: { 'content-type': 'application/json', Authorization: 'Bearer ' + tkB }, body: JSON.stringify({ to: 'Cf7940efc6517b0c084ad2ad496b45f30', messages: [{ type: 'text', text: `🛒 採購需求：${it.text || '（見附件）'}\n— ${it.by}${it.url ? '\n🔗 ' + it.url : ''}${it.media.length ? `・附${it.media.length}圖` : ''}\n處理完到 /prep 採購分頁按「已購買」` }] }) })
+    } catch (_) {}
+    return res.status(200).json({ ok: true, item: it })
+  }
+  if (req.method === 'POST' && req.query?.buyop) {
+    const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
+    if (!ok2 || String(req.query.buyop) !== ok2) return res.status(403).json({ ok: false })
+    let bo = {}
+    try { bo = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
+    const whoO = await sopWho(bo.token)
+    if (!whoO) return res.status(403).json({ ok: false, error: '要先跟 DD 說「綁定GD」' })
+    const doc = (await kvGet('sp_finance_pm_buy')) || { list: [] }
+    const it = (doc.list || []).find(x => x.id === bo.id)
+    if (!it) return res.status(404).json({ ok: false })
+    if (bo.op === 'done') { it.status = 'done'; it.doneBy = whoO.name; it.doneTs = new Date(Date.now() + 8 * 3600e3).toISOString().slice(5, 16).replace('T', ' ') }
+    else if (bo.op === 'undone') { it.status = 'open'; delete it.doneBy; delete it.doneTs }
+    else if (bo.op === 'del') {
+      const defO = await kvGet('sp_finance_pm_sop_def')
+      if (!((((defO || {}).ground || {}).approvers) || ['張良瑋']).includes(whoO.name) && it.by !== whoO.name) return res.status(403).json({ ok: false, error: '只有提出者或審核人可以刪' })
+      doc.list = doc.list.filter(x => x.id !== bo.id)
+    } else return res.status(400).json({ ok: false })
+    await kvPut('sp_finance_pm_buy', doc, '採購' + bo.op + '(' + whoO.name + ')')
+    return res.status(200).json({ ok: true })
+  }
   // SOP 總編輯整份儲存（張良 2026-09-21：拖曳排序後一次存）：POST ?sopfull= {token, stations:[名], items:[{id,st,title,due,photo}]}
   // 站與項目順序＝陣列順序；改前整份存進 edits.prev 可回溯；回收站 trash 不動
   if (req.method === 'POST' && req.query?.sopfull) {
