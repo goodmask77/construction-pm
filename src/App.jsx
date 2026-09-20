@@ -61,9 +61,9 @@ async function loadSpaceAIContext() {
       } catch (_) { return await g(legacy); }
     };
     const d0 = new Date(); const mo = `${d0.getFullYear()}-${String(d0.getMonth() + 1).padStart(2, "0")}`;
-    const [snapC, snapT, snapK, snapF, tasks, crewRoster, crewOld, pos, posD, posTx, posFlags, posIdleCfgAI, posHHAI, posCostsAI, posPricesAI, posHiddenAI, posAliasAI, sopDefAI, sopLogAI, sopIssAI, invAI, buyAI, meetAI, shiftGAI, posAbLiveAI, posLaborAI, bank, ctbc, accounts, ledger, conclusions, mailRules, mailLog, supply, supplyOrders, supplyRecipesRaw] = await Promise.all([
+    const [snapC, snapT, snapK, snapF, tasks, crewRoster, crewOld, pos, posD, posTx, posFlags, posIdleCfgAI, posHHAI, posCostsAI, posPricesAI, posHiddenAI, posAliasAI, sopDefAI, sopLogAI, sopIssAI, invAI, buyAI, meetAI, shiftGAI, fbAI, posAbLiveAI, posLaborAI, bank, ctbc, accounts, ledger, conclusions, mailRules, mailLog, supply, supplyOrders, supplyRecipesRaw] = await Promise.all([
       g("pm_bot_context"), g("sp_team_pm_bot_context"), g("sp_crew_pm_bot_context"), g("sp_finance_pm_bot_context"),
-      recs("pm_tasks_v2", "pm_task_", "pm_tasks"), g("sp_crew_kb_roster"), g("sp_crew_kb_360"), g("sp_finance_pm_pos"), g("sp_finance_pm_pos_d_" + mo), g("sp_finance_pm_pos_tx_" + mo), g("sp_finance_pm_pos_flags"), g("sp_finance_pm_pos_idlecfg"), g("sp_finance_pm_pos_hh_" + mo), g("sp_finance_pm_pos_costs"), g("sp_finance_pm_pos_prices"), g("sp_finance_pm_pos_hidden"), g("sp_finance_pm_pos_alias"), g("sp_finance_pm_sop_def"), g("sp_finance_pm_sop_g_" + new Intl.DateTimeFormat("sv-SE", { timeZone: "Asia/Taipei" }).format(new Date()).slice(0, 10)), g("sp_finance_pm_sop_issues"), g("sp_finance_pm_inv"), g("sp_finance_pm_buy"), g("sp_finance_pm_meet"), g("sp_finance_pm_shift_g"), g("sp_finance_pm_ablive"), g("sp_finance_pm_labor"),
+      recs("pm_tasks_v2", "pm_task_", "pm_tasks"), g("sp_crew_kb_roster"), g("sp_crew_kb_360"), g("sp_finance_pm_pos"), g("sp_finance_pm_pos_d_" + mo), g("sp_finance_pm_pos_tx_" + mo), g("sp_finance_pm_pos_flags"), g("sp_finance_pm_pos_idlecfg"), g("sp_finance_pm_pos_hh_" + mo), g("sp_finance_pm_pos_costs"), g("sp_finance_pm_pos_prices"), g("sp_finance_pm_pos_hidden"), g("sp_finance_pm_pos_alias"), g("sp_finance_pm_sop_def"), g("sp_finance_pm_sop_g_" + new Intl.DateTimeFormat("sv-SE", { timeZone: "Asia/Taipei" }).format(new Date()).slice(0, 10)), g("sp_finance_pm_sop_issues"), g("sp_finance_pm_inv"), g("sp_finance_pm_buy"), g("sp_finance_pm_meet"), g("sp_finance_pm_shift_g"), g("sp_finance_pm_fb"), g("sp_finance_pm_ablive"), g("sp_finance_pm_labor"),
       g("sp_finance_pm_bank"), g("sp_finance_pm_ctbc"), g("sp_finance_pm_fin_accounts"), recs("sp_finance_pm_fin_ledger_v2", "sp_finance_pm_fin_tx_", "sp_finance_pm_fin_ledger"),
       g("pm_conclusions"), g("sp_lw_pm_mail_rules"), g("sp_lw_pm_mail_log"), g("sp_supply_pm_supply"),
       g("sp_supply_pm_orders"), getSharedPrefix("sp_supply_pm_recipe_v_"),
@@ -205,6 +205,11 @@ async function loadSpaceAIContext() {
           }
         }
         parts.push("【盤點/包材庫存（/prep 盤點分頁；預估現量=盤點量−盤後銷售×用量，低於低標每日開店前發群提醒）】\n" + invL.join("\n"));
+      }
+      // 每日回饋（pm_fb；與 D哥 loadPosText 同步接）
+      {
+        const fbL = ((fbAI || {}).list || []);
+        if (fbL.length) parts.push(`【每日回饋（近8則）】\n` + fbL.slice(0, 8).map(x => `- ${x.date} ${x.by}→${x.target}${x.stars ? "⭐" + x.stars : ""}：${String(x.text || "").replace(/\n/g, " ").slice(0, 50)}`).join("\n"));
       }
       // 會議紀錄＋GD班表（pm_meet/pm_shift_g；與 D哥 loadPosText 同步接）
       {

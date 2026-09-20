@@ -1046,6 +1046,44 @@ export default async function handler(req, res) {
     await kvPut('sp_finance_pm_pos_hidden', doc, '品項隱藏(' + whoH.name + ')')
     return res.status(200).json({ ok: true })
   }
+  // ── 💬 每日回饋（張良 2026-09-22：每天對有上班的人做文字回饋＋評分1~5星；一人一天對一人一則可改）──
+  if (req.query?.fb) {
+    const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
+    if (!ok2 || String(req.query.fb) !== ok2) return res.status(403).json({ ok: false })
+    const dtF = /^\d{4}-\d{2}-\d{2}$/.test(String(req.query.date || '')) ? String(req.query.date) : new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10)
+    const [fbDoc, meF, rosterF] = await Promise.all([kvGet('sp_finance_pm_fb'), sopWho(req.query.me), kvGet('sp_crew_kb_roster')])
+    const pjF = await import('./punch.js')
+    let pchF = []
+    try { pchF = await pjF.listPunches('sp_crew_pch_' + dtF.replace(/-/g, '')) } catch (_) {}
+    const workers = [...new Set(pchF.map(p2 => p2.name))].filter(Boolean)
+    const namesF = (((rosterF || {}).people) || []).filter(p2 => (p2.status || '在職') !== '離職').map(p2 => p2.name).filter(Boolean)
+    const fbs = ((fbDoc || {}).list || []).filter(x => x.date === dtF)
+    return res.status(200).json({ ok: true, date: dtF, workers, names: namesF, fbs, me: meF ? { name: meF.name } : null })
+  }
+  if (req.method === 'POST' && req.query?.fbset) {
+    const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
+    if (!ok2 || String(req.query.fbset) !== ok2) return res.status(403).json({ ok: false })
+    let fbB = {}
+    try { fbB = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
+    const whoF = await sopWho(fbB.token)
+    if (!whoF) return res.status(403).json({ ok: false, error: '要先跟 DD 說「綁定GD」' })
+    const dtF = /^\d{4}-\d{2}-\d{2}$/.test(String(fbB.date || '')) ? String(fbB.date) : new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10)
+    const tgF = String(fbB.target || '').trim().slice(0, 20)
+    const svF = Math.round(Number(fbB.stars))
+    if (!tgF) return res.status(400).json({ ok: false, error: '要選對象' })
+    if (tgF === whoF.name) return res.status(400).json({ ok: false, error: '不能回饋自己 😄' })
+    if (!(svF >= 1 && svF <= 5) && !String(fbB.text || '').trim()) return res.status(400).json({ ok: false, error: '評分或文字至少一樣' })
+    const doc = (await kvGet('sp_finance_pm_fb')) || { list: [] }
+    doc.list = doc.list || []
+    let it = doc.list.find(x => x.date === dtF && x.target === tgF && x.by === whoF.name)
+    if (!it) { it = { id: 'fb' + Date.now().toString(36), date: dtF, target: tgF, by: whoF.name }; doc.list.unshift(it) }
+    if (svF >= 1 && svF <= 5) it.stars = svF
+    it.text = String(fbB.text || '').slice(0, 1000)
+    it.ts = new Date(Date.now() + 8 * 3600e3).toISOString().slice(5, 16).replace('T', ' ')
+    doc.list = doc.list.slice(0, 1000)
+    await kvPut('sp_finance_pm_fb', doc, '每日回饋(' + whoF.name + '→' + tgF + ')')
+    return res.status(200).json({ ok: true, item: it })
+  }
   // ── 📋 會議紀錄（張良 2026-09-21：班前會議/營運會議，類型可自訂、紀錄可新增刪改）──
   if (req.query?.meet) {
     const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
@@ -1255,7 +1293,8 @@ export default async function handler(req, res) {
   if (req.query?.lb) {
     const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
     if (!ok2 || String(req.query.lb) !== ok2) return res.status(403).json({ ok: false })
-    const [issDoc, meL] = await Promise.all([kvGet('sp_finance_pm_sop_issues'), sopWho(req.query.me)])
+    const [issDoc, meL, rosterL] = await Promise.all([kvGet('sp_finance_pm_sop_issues'), sopWho(req.query.me), kvGet('sp_crew_kb_roster')])
+    const namesL = (((rosterL || {}).people) || []).filter(p2 => (p2.status || '在職') !== '離職').map(p2 => p2.name).filter(Boolean)
     const list = ((issDoc || {}).list || []).slice(0, 60)
     const board = {}
     const P = (nm) => board[nm] || (board[nm] = { name: nm, findPts: 0, fixPts: 0, nFind: 0, nFix: 0, fc: {} })
@@ -1288,7 +1327,7 @@ export default async function handler(req, res) {
       const cand = rank.filter(p => p.facets[f] && p.facets[f].n >= 3).sort((a, b) => b.facets[f].avg - a.facets[f].avg || b.facets[f].n - a.facets[f].n)
       return [f, cand[0] ? { name: cand[0].name, avg: cand[0].facets[f].avg, n: cand[0].facets[f].n } : null]
     }))
-    return res.status(200).json({ ok: true, me: meL ? { name: meL.name } : null, facets: FACETS, rank, stars5, issues: list })
+    return res.status(200).json({ ok: true, me: meL ? { name: meL.name } : null, facets: FACETS, rank, stars5, issues: list, names: namesL })
   }
   if (req.method === 'POST' && req.query?.soprate) {
     // v2：面向星星（1~5）。body={id, aspect:'find'|'fix', facet:五面向之一, stars:1-5}
@@ -1459,6 +1498,17 @@ export default async function handler(req, res) {
     const itI = (dI.list || []).find(x => x.id === bi.id)
     if (!itI) return res.status(404).json({ ok: false })
     const apprI = (((defI || {}).ground || {}).approvers || ['張良瑋'])
+    if (bi.op === 'new') { // 直接新增任務（張良 2026-09-22：比照任務中心——標題/類別/負責人/時間；checklist 建卡後用 ckadd）
+      const v = bi.val || {}
+      if (!String(v.text || '').trim()) return res.status(400).json({ ok: false, error: '任務要寫標題' })
+      const now8I = new Date(Date.now() + 8 * 3600e3).toISOString().slice(5, 16).replace('T', ' ')
+      const it2 = { id: 'is' + Date.now().toString(36), st: String(v.st || '一般').trim().slice(0, 20) || '一般', text: String(v.text).slice(0, 300), media: [], by: whoI.name, ts: now8I, status: 'open' }
+      if (String(v.owner || '').trim()) { it2.claimBy = String(v.owner).trim().slice(0, 20); it2.claimAt = Date.now(); it2.claimTs = now8I }
+      if (String(v.due || '').trim()) it2.due = String(v.due).slice(0, 30)
+      dI.list = [it2, ...(dI.list || [])].slice(0, 200)
+      await kvPut('sp_finance_pm_sop_issues', dI, '任務新增(' + whoI.name + ')')
+      return res.status(200).json({ ok: true, issue: it2 })
+    }
     if (bi.op === 'claim') {
       if (itI.claimBy && itI.claimBy !== whoI.name) return res.status(400).json({ ok: false, error: `已由 ${itI.claimBy} 認領處理中` })
       itI.claimBy = whoI.name; itI.claimAt = Date.now(); itI.claimTs = new Date(Date.now() + 8 * 3600e3).toISOString().slice(5, 16).replace('T', ' ')
@@ -1469,6 +1519,10 @@ export default async function handler(req, res) {
       if (bi.val) itI.flag = 1; else delete itI.flag
     } else if (bi.op === 'due') {
       itI.due = String(bi.val || '').slice(0, 30); if (!itI.due) delete itI.due
+    } else if (bi.op === 'own') { // 指派/清除負責人（清除＝val 空字串）
+      const nm = String(bi.val || '').trim().slice(0, 20)
+      if (nm) { itI.claimBy = nm; itI.claimAt = itI.claimAt || Date.now(); itI.claimTs = itI.claimTs || new Date(Date.now() + 8 * 3600e3).toISOString().slice(5, 16).replace('T', ' ') }
+      else { delete itI.claimBy; delete itI.claimAt; delete itI.claimTs }
     } else if (bi.op === 'ckadd') { // 階段性 checklist：文字＋圖片（張良 2026-09-22）
       const v = bi.val || {}
       if (!String(v.t || '').trim() && !v.img) return res.status(400).json({ ok: false, error: '寫一下這一步要做什麼' })
