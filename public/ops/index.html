@@ -28,8 +28,8 @@
   .bseg.on{opacity:1;border-bottom:2.5px solid var(--primary)}
   h1{font-size:24px;font-weight:900;color:var(--ink);letter-spacing:-.02em;margin-top:4px}
   .sub{font-size:12px;color:var(--muted);margin-top:2px}
-  .tabs{display:flex;gap:8px;margin:14px 0}
-  .tabs button{border:1px solid var(--line);background:#fff;border-radius:9px;padding:7px 18px;font-size:14px;font-weight:800;color:var(--muted);cursor:pointer}
+  .tabs{display:flex;gap:8px;margin:14px 0;overflow-x:auto;-webkit-overflow-scrolling:touch;padding-bottom:2px}
+  .tabs button{border:1px solid var(--line);background:#fff;border-radius:9px;padding:7px 14px;font-size:14px;font-weight:800;color:var(--muted);cursor:pointer;white-space:nowrap;flex:0 0 auto}
   .tabs button.on{background:var(--primary);border-color:var(--primary);color:#fff}
   .kpis{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:12px 0}
   .kpi{background:var(--card);border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow);padding:12px 14px}
@@ -65,19 +65,23 @@
 </head>
 <body>
 <div class="wrap">
-  <!-- 品牌字標＝切店（張良 2026-09-21）；右上=🔄重新整理（不用重開App） -->
+  <!-- 品牌字標＝切店（張良 2026-09-21）；右上=⏰打卡＋🔄更新App（張良 2026-09-22：🔄不是只抓數據，是整個App重開、連新功能一起拿最新版） -->
   <div class="brand" style="display:flex;align-items:center;justify-content:space-between">
     <span><span id="bs-ground" class="bseg on" onclick="load('ground')">GROUN:D</span> × <span id="bs-abeach" class="bseg" onclick="load('abeach')">A BEACH</span></span>
-    <button class="mini" style="font-size:14px;padding:5px 12px" onclick="hardRefresh()" title="抓最新資料">🔄</button>
+    <button class="mini" style="font-size:14px;padding:5px 12px" onclick="punchNow()" title="上下班打卡">⏰</button>
+    <button class="mini" style="font-size:14px;padding:5px 12px" onclick="hardRefresh()" title="更新App到最新版">🔄</button>
   </div>
   <h1>營運看板</h1>
   <div class="sub" id="upd">載入中…</div>
   <div class="tabs">
     <button id="tab-home" onclick="load(lastStore)" title="回營運看板" style="padding:7px 13px;font-size:16px">🏠</button>
+    <button id="tab-task" onclick="taskLoad()">🛠 任務</button>
     <button id="tab-lb" onclick="loadLB()">🏆 排行榜</button>
     <button id="tab-food" onclick="invLoad('food')">🥩 盤點</button>
     <button id="tab-pack" onclick="invLoad('pack')">📦 包材</button>
     <button id="tab-buy" onclick="buyLoad()">🛒 採購</button>
+    <button id="tab-meet" onclick="meetLoad()">📋 會議</button>
+    <button id="tab-shift" onclick="shiftLoad()">📅 班表</button>
   </div>
   <div id="app"></div>
   <div class="foot">資料每天自動同步（打開即最新）・僅供內部參考與備料使用，請勿外傳連結</div>
@@ -89,18 +93,23 @@ const app = document.getElementById('app')
 let curStore = 'ground'
 let lastStore = 'ground'
 function setTabs(k){
-  ['lb','food','pack','buy'].forEach(t => { const b = document.getElementById('tab-' + t); if (b) b.className = (t===k) ? 'on' : '' })
+  ['task','lb','food','pack','buy','meet','shift'].forEach(t => { const b = document.getElementById('tab-' + t); if (b) b.className = (t===k) ? 'on' : '' })
   const hb = document.getElementById('tab-home'); if (hb) hb.className = (k==='ground'||k==='abeach') ? 'on' : '' // 🏠=回店面（張良 2026-09-21：怕有人不知道怎麼回去）
   if (k === 'ground' || k === 'abeach') lastStore = k
   const g = document.getElementById('bs-ground'), a = document.getElementById('bs-abeach')
   if (g) g.className = 'bseg' + (lastStore==='ground' ? ' on' : '')
   if (a) a.className = 'bseg' + (lastStore==='abeach' ? ' on' : '')
 }
-// 🔄 重新整理（不用重開App）：目前視圖抓最新；店面資料帶 r=時間戳穿透 CDN 快取
-function hardRefresh(){
-  if (curStore === 'lb') loadLB()
+// 🔄 更新App（張良 2026-09-22：不是只抓數據——整個 App 重開、連新功能一起拿最新版；r=時戳穿透 CDN 快取）
+function hardRefresh(){ location.replace(location.pathname + '?r=' + Date.now()) }
+// 依目前分頁重畫（綁定後/操作後用）
+function goView(){
+  if (curStore === 'task') taskLoad()
+  else if (curStore === 'lb') loadLB()
   else if (curStore === 'food' || curStore === 'pack') invLoad(curStore)
   else if (curStore === 'buy') buyLoad()
+  else if (curStore === 'meet') meetLoad()
+  else if (curStore === 'shift') shiftLoad()
   else load(curStore, true)
 }
 // 🔑 輸入綁定碼（iPhone 加入主畫面的 App 跟 Safari 儲存分開→token 帶不過去；貼一次 DD 給的連結/代碼即可）
@@ -111,7 +120,7 @@ function bindPrompt(){
   if (!m) { alert('看不懂這串，請完整貼上 DD 給的連結'); return }
   localStorage.setItem('prepToken', m[1])
   alert('綁定完成 ✅')
-  if (curStore === 'lb') loadLB(); else if (curStore === 'food' || curStore === 'pack') invLoad(curStore); else load(curStore)
+  goView()
 }
 const BIND_HINT = `跟 DD 說「綁定GD」拿個人連結；已加入主畫面的 App 請按 <button class="mini" onclick="bindPrompt()">🔑 輸入綁定碼</button>`
 async function load(store, fresh){
@@ -168,31 +177,31 @@ function renderBoard(d, store){
     window._rhy = d.rhythm
     h += `<section><h2>🍳 預做節奏表 <span style="float:right;white-space:nowrap"><button class="mini on" id="rb15" onclick="rSwitch(15)">15分</button><button class="mini" id="rb30" onclick="rSwitch(30)">30分</button><button class="mini" id="rbMng" onclick="rMng()">🙈 隱藏管理</button></span><br><span class="hint">${d.rhythm.days ? `近 ${d.rhythm.days} 個營業日平均・每格＝該時段平均賣幾份（·＝不到0.5份）——照表預做、尖峰前先備` : '⏳ 資料從 9/22（一）11:00 起每 15 分鐘自動累積——現在先看得到版面，之後開始長數字'}</span></h2><div id="rhyBody"></div></section>`
   }
-  // 日表（核心夥伴全開：付款明細/至14:00/單均都在；全部歷史）
+  // 日表（核心夥伴全開；張良 2026-09-22：日期欄凍結、至14:00=14點前營收金額(小字%)、營收改稱總營收、表頭下方加「平均」列、對齊拉直）
   const isGD = d.store === 'ground'
-  h += `<section><h2>每日數據（全部歷史）</h2><div class="scroll" style="max-height:62vh;overflow-y:auto"><table><thead><tr><th>日期</th>${isGD?'<th>至14:00</th>':''}<th>營收</th><th>單數</th><th>單均</th><th>現金</th><th>信用卡</th><th>LINE Pay</th><th>Uber</th><th>折扣</th>${isGD?'<th>自助%</th><th>外帶%</th><th>套餐/主餐%</th>':''}</tr></thead><tbody>`
+  const dv = d.days.filter(x=>x.rev>0) // 平均只算有營業的日子
+  const mean = f => { const a = dv.map(f).filter(v=>v!=null&&isFinite(v)); return a.length ? a.reduce((s2,v)=>s2+v,0)/a.length : null }
+  const luOf = x => x.lunchRev!=null ? x.lunchRev : (x.lunchPct!=null&&x.rev ? x.rev*x.lunchPct/100 : null)
+  const avR = mean(x=>x.rev), avLu = isGD?mean(luOf):null, avTx = mean(x=>x.tx||null)
+  const avAvg = (()=>{ const tr=dv.reduce((s2,x)=>s2+(x.rev||0),0), tt=dv.reduce((s2,x)=>s2+(x.tx||0),0); return tt?tr/tt:null })()
+  const avCash = mean(x=>x.cash), avCard = mean(x=>x.card), avLp = mean(x=>x.linepay||null), avUb = mean(x=>x.uber||null), avDis = mean(x=>x.discount||null)
+  const avKp = isGD?mean(x=>x.kioskPct):null, avTk = isGD?mean(x=>x.takePct):null
+  const avSet = isGD?(()=>{ const a=(d.setPcts||[]).filter(v=>v!=null); return a.length?a.reduce((s2,v)=>s2+v,0)/a.length:null })():null
+  const fA = v => v!=null?fmt(Math.round(v)):'—'
+  const fP = v => v!=null?Math.round(v)+'%':'—'
+  h += `<section><h2>每日數據（全部歷史） <span class="hint">平均＝只算有營業的日子</span></h2><div class="scroll" style="max-height:62vh;overflow-y:auto"><table><thead><tr><th style="position:sticky;left:0;z-index:3;text-align:left">日期</th>${isGD?'<th>至14:00</th>':''}<th>總營收</th><th>單數</th><th>單均</th><th>現金</th><th>信用卡</th><th>LINE Pay</th><th>Uber</th><th>折扣</th>${isGD?'<th>自助%</th><th>外帶%</th><th>套餐/主餐%</th>':''}</tr></thead><tbody>`
+  const avBg = 'background:var(--psoft);font-weight:800;color:var(--pdark)'
+  h += `<tr><td style="position:sticky;left:0;z-index:1;${avBg};font-weight:900">平均</td>${isGD?`<td style="${avBg}">${fA(avLu)}</td>`:''}<td style="${avBg};font-weight:900">${fA(avR)}</td><td style="${avBg}">${avTx!=null?Math.round(avTx):'—'}</td><td style="${avBg}">${fA(avAvg)}</td><td style="${avBg}">${fA(avCash)}</td><td style="${avBg}">${fA(avCard)}</td><td style="${avBg}">${fA(avLp)}</td><td style="${avBg}">${fA(avUb)}</td><td style="${avBg}">${fA(avDis)}</td>${isGD?`<td style="${avBg}">${fP(avKp)}</td><td style="${avBg}">${fP(avTk)}</td><td style="${avBg}">${fP(avSet)}</td>`:''}</tr>`
   d.days.forEach((x,i)=>{
     const wknd = x.wd==='六'||x.wd==='日'
-    h += `<tr><td style="font-weight:${wknd?800:500};color:${wknd?'#A85C26':'inherit'}">${x.date.slice(5)}（${x.wd}）</td>${isGD?`<td>${x.lunchPct!=null?x.lunchPct+'%':'—'}</td>`:''}<td style="font-weight:700">${fmt(x.rev)}</td><td>${x.tx||'—'}</td><td>${x.avg!=null?fmt(x.avg):'—'}</td><td>${fmt(x.cash)}</td><td>${fmt(x.card)}</td><td>${x.linepay?fmt(x.linepay):'—'}</td><td>${x.uber?fmt(x.uber):'—'}</td><td>${x.discount?fmt(x.discount):'—'}</td>${isGD?`<td>${x.kioskPct!=null?x.kioskPct+'%':'—'}</td><td>${x.takePct!=null?x.takePct+'%':'—'}</td><td>${d.setPcts[i]!=null?d.setPcts[i]+'%':'—'}</td>`:''}</tr>`
+    const zb = (i%2===0) ? '#FAFCFD' : '#fff' // 凍結欄要自帶底色蓋住捲動內容（跟斑馬紋對齊：平均列佔第1列）
+    const lu = luOf(x)
+    h += `<tr><td style="position:sticky;left:0;z-index:1;background:${zb};text-align:left;font-weight:${wknd?800:500};color:${wknd?'#A85C26':'inherit'}">${x.date.slice(5)}（${x.wd}）</td>${isGD?`<td>${lu!=null?fmt(Math.round(lu)):'—'}${x.lunchPct!=null?`<div style="font-size:9.5px;color:var(--muted)">${x.lunchPct}%</div>`:''}</td>`:''}<td style="font-weight:700">${fmt(x.rev)}</td><td>${x.tx||'—'}</td><td>${x.avg!=null?fmt(x.avg):'—'}</td><td>${fmt(x.cash)}</td><td>${fmt(x.card)}</td><td>${x.linepay?fmt(x.linepay):'—'}</td><td>${x.uber?fmt(x.uber):'—'}</td><td>${x.discount?fmt(x.discount):'—'}</td>${isGD?`<td>${x.kioskPct!=null?x.kioskPct+'%':'—'}</td><td>${x.takePct!=null?x.takePct+'%':'—'}</td><td>${d.setPcts[i]!=null?d.setPcts[i]+'%':'—'}</td>`:''}</tr>`
   })
   h += `</tbody></table></div></section>`
-  // 品項備料表（全歷史逐日；品類彙總列＋漢堡子小計）
-  const dts = d.dates.map(s=>s.slice(5))
-  const growCell = gr => gr==null?'<span class="mut">—</span>':gr==='新'?'<span class="up">新</span>':`<span class="${gr>=0?'up':'dn'}">${gr>=0?'+':''}${gr}%</span>`
-  const qCells = q => [...q].reverse().map(v=>'<td>'+(v||0)+'</td>').join('')
-  h += `<section><h2>品項明細 <span class="hint">30日均＝近30天每營業日平均份數（抓備料量看這欄）；vs近60＝趨勢；30天累計＝近30天總份數（App 的「期間累計」窗口不同）；右側＝逐日全歷史（最新在左）</span></h2><div class="scroll" style="max-height:70vh;overflow-y:auto"><table><thead><tr><th style="position:sticky;left:0;background:#F1F6F9;z-index:2">品項</th><th>30日均</th><th>vs近60</th><th title="近30天總份數（App 品項明細的「期間累計」跟著期間選擇走，窗口不同、數字本來就不同）">30天累計</th>${dts.map(t=>'<th>'+t+'</th>').reverse().join('')}</tr></thead><tbody>`
-  d.cats.forEach(c=>{
-    const a = c.agg || {}
-    h += `<tr class="catband"><td style="position:sticky;left:0;background:var(--psoft);z-index:1">${c.name}${c.amt30?` <span style="font-weight:700;font-size:11px">${fmt(c.amt30)}</span>`:''}</td><td style="font-weight:900">${a.avg30!=null?a.avg30:''}</td><td>${a.grow!=null?growCell(a.grow):''}</td><td style="font-weight:900">${a.cum30!=null?a.cum30:''}</td>${a.q?qCells(a.q):`<td colspan="${dts.length}"></td>`}</tr>`
-    ;(c.subs||[]).forEach(s=>{
-      h += `<tr class="subrow"><td style="position:sticky;left:0;background:#FBF6EA;z-index:1;font-weight:700;color:#8a5a2e;white-space:pre">${s.n}</td><td style="font-weight:800;color:#8a5a2e">${s.avg30!=null?s.avg30:'—'}</td><td>${growCell(s.grow)}</td><td style="font-weight:800;color:#8a5a2e">${s.cum30}</td>${qCells(s.q)}</tr>`
-    })
-    c.items.forEach(it=>{
-      const amt = it.amt30?`<div style="font-size:10px;color:var(--muted);font-weight:500">${fmt(it.amt30)}${it.pct!=null?'・'+it.pct+'%':''}</div>`:''
-      h += `<tr><td class="iname" style="position:sticky;left:0;background:#fff;z-index:1" title="${it.n}">${it.n}${amt}</td><td class="avg">${it.avg30!=null?it.avg30:'—'}</td><td>${growCell(it.grow)}</td><td>${it.cum30}</td>${qCells(it.q)}</tr>`
-    })
-  })
-  h += `</tbody></table></div></section>`
+  // 品項明細（張良 2026-09-22 v2：互動區塊——全部/分類/依品類分組＋欄位排序＋售價＋%欄＋🙈隱藏管理；itemsRender 畫）
+  window._bd = d
+  h += `<div id="itemsec"></div>`
   // 時段
   if (d.slots) {
     const draw = (label, arr) => {
@@ -205,6 +214,7 @@ function renderBoard(d, store){
   }
   app.innerHTML = h
   rhythmRender()
+  itemsRender()
   if (store === 'ground') sopLoad()
 }
 // ── 預做節奏表渲染（完整菜單＋品類分組＋隱藏；隱藏清單在 sopData.prepHide，sopLoad 後會再畫一次）──
@@ -504,7 +514,7 @@ async function sopResolve(id){
   const d = await r.json().catch(()=>null)
   if (d && d.ok) { if (d.status === 'pending') alert('已送出，等老闆審核 ✅'); refreshView() } else alert((d&&d.error)||'失敗（要先跟 DD 綁定GD）')
 }
-function refreshView(){ if (curStore === 'lb') loadLB(); else sopLoad() }
+function refreshView(){ if (curStore === 'task' || curStore === 'lb') { lbFetch().then(()=>{ curStore==='task' ? taskRender() : lbRender() }) } else sopLoad() }
 async function sopReview(id, pass){
   if (!confirm(pass ? '核准這筆解決？' : '退回（狀態回到未解決）？')) return
   const r = await fetch('/api/mail-sync?sopreview=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ id, pass: !!pass, token: TK() }) })
@@ -553,23 +563,45 @@ async function sopEdSave(){
     else alert(d && d.error ? d.error : '儲存失敗')
   } catch(e){ alert('連線失敗，再試一次') }
 }
-// ── 🏆 發現/解決問題排行榜（五大面向 1~5⭐，同薪資360語彙；效率=計時客觀數據不用人評）──
-let lbOpen = new Set()
-async function loadLB(){
-  curStore = 'lb'; setTabs('lb')
-  app.innerHTML = '<section>載入中…</section>'
+// ── 🛠 任務看板 ＋ 🏆 排行榜（張良 2026-09-22 拆分：未完成任務在「任務」分頁＋階段性checklist；
+//    完成經審核後到排行榜給大家評分——評星改「拉桿」就地送出不再閃白、1~5星帶等級說明；
+//    評完自動往下封存（可打開看/改票）；沒評完就留在自己頁面上=每個人清單不一樣）──
+const LVLTXT = { 1:'1★ 有待加強：還要人帶著做', 2:'2★ 基本達標：交代的有做到', 3:'3★ 稱職：穩定可靠、不用盯', 4:'4★ 超出期待：主動補位、做得比要求多', 5:'5★ 標竿：可以當範本教別人' }
+let lbSkip = new Set(JSON.parse(localStorage.getItem('lbSkip')||'[]'))
+async function lbFetch(){
   let d
   try { const r = await fetch('/api/mail-sync?lb=' + encodeURIComponent(K) + (TK() ? '&me=' + encodeURIComponent(TK()) : '')); d = await r.json() } catch(e){}
-  if (!d || !d.ok) { app.innerHTML = '<div class="err">讀不到排行榜資料</div>'; return }
-  window._lbD = d
-  lbRender()
+  if (d && d.ok) window._lbD = d
+  return window._lbD
+}
+async function loadLB(){
+  curStore = 'lb'; setTabs('lb')
+  if (!window._lbD) app.innerHTML = '<section>載入中…</section>'
+  await lbFetch(); lbRender()
+}
+async function taskLoad(){
+  curStore = 'task'; setTabs('task')
+  if (!window._lbD) app.innerHTML = '<section>載入中…</section>'
+  await lbFetch(); taskRender()
+}
+// 我對這件事的每個「可評面」已評了幾個面向
+function lbMyRated(x, meN){
+  const out = []
+  for (const a of ['find','fix']){
+    const target = a==='find' ? x.by : x.doneBy
+    if (!target || target==='匿名' || target===meN) continue
+    const st = (x.stars||{})[a]||{}
+    out.push({ a, n: window._lbD.facets.filter(f=>((st[f]||{})[meN])>=1).length })
+  }
+  return out
 }
 function lbRender(){
-  const d = window._lbD; if (!d || curStore !== 'lb') return
-  document.getElementById('upd').textContent = '🏆 發現問題＆解決問題排行榜・五大面向評星'
+  const d = window._lbD
+  if (!d) { app.innerHTML = '<div class="err">讀不到排行榜資料</div>'; return }
+  if (curStore !== 'lb') return
+  document.getElementById('upd').textContent = '🏆 排行榜・完成的任務在這給大家評星'
   const meN = d.me && d.me.name
   let h = ''
-  // 🌟 榮耀榜
   h += `<section><h2>🌟 GD之星 榮耀榜 <span class="hint">各面向平均星最高（至少 3 票上榜）</span></h2>
   <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px">` +
   d.facets.map(f=>{ const w = d.stars5[f]
@@ -577,7 +609,6 @@ function lbRender(){
       <div style="font-size:12px;font-weight:800;color:var(--pdark)">${f}之星</div>
       ${w?`<div style="font-size:17px;font-weight:900;color:var(--ink)">👑 ${w.name}</div><div class="hint">⭐${w.avg}・${w.n}票</div>`:`<div class="mut" style="font-size:13px;padding:4px 0">虛位以待</div><div class="hint">滿3票上榜</div>`}
     </div>`}).join('') + `</div></section>`
-  // 積分排行榜
   h += `<section><h2>🏆 積分排行榜 <span class="hint">積分＝每件「發現」與「解決」的全員評星平均加總（1~5⭐）</span></h2>
   <div class="scroll"><table><thead><tr><th>#</th><th style="text-align:left">夥伴</th><th>發現分</th><th>解決分</th><th>總積分</th>${d.facets.map(f=>'<th>'+f+'</th>').join('')}<th>發現次</th><th>解決次</th></tr></thead><tbody>`
   if (!d.rank.length) h += `<tr><td colspan="${7+d.facets.length}" style="text-align:center" class="mut">還沒有評分——回報問題、認領解決、幫別人評星開始累積</td></tr>`
@@ -586,18 +617,84 @@ function lbRender(){
     h += `<tr style="${meN===p.name?'background:#E5F3FA':''}"><td style="font-weight:900">${medal}</td><td style="text-align:left;font-weight:800;color:var(--ink)">${p.name}</td><td>${p.findPts||0}</td><td>${p.fixPts||0}</td><td class="avg">${p.total||0}</td>${d.facets.map(f=>'<td>'+(p.facets[f]?('⭐'+p.facets[f].avg):'—')+'</td>').join('')}<td class="mut">${p.nFind}</td><td class="mut">${p.nFix}</td></tr>`
   })
   h += `</tbody></table></div></section>`
-  // 📋 問題看板
-  h += `<section><h2>📋 問題看板 <span class="hint">${meN?'🙋認領計時・🚩標記・⏰排時間・⭐評星都在卡片上':'未綁定：'+BIND_HINT}</span></h2>`
-  if (!d.issues.length) h += `<div class="mut">還沒有回報事件——在店面分頁按「⚠️ 回報」</div>`
+  // ⭐ 待你評分（個人化）＋ 📦 封存
+  const doneL = (d.issues||[]).filter(x=>x.status==='done')
+  const toRate = [], arch = []
+  doneL.forEach(x=>{
+    if (!meN) { arch.push(x); return }
+    const rl = lbMyRated(x, meN)
+    if (!rl.length || rl.every(o=>o.n >= d.facets.length) || lbSkip.has(x.id)) arch.push(x); else toRate.push(x)
+  })
+  h += `<section><h2>⭐ 待你評分（${toRate.length}） <span class="hint">${meN?'完成的任務等你打星——每個人看到的清單不一樣':'綁定後這裡會出現等你評分的任務：'+BIND_HINT}</span></h2>`
+  h += toRate.length ? toRate.map(x=>rateCard(x,meN,false)).join('') : `<div class="mut">目前沒有等你評分的任務 🎉</div>`
+  h += `</section>`
+  if (arch.length) h += `<section><details><summary style="font-weight:900;cursor:pointer">📦 封存（${arch.length}）｜評完／略過的收在這，點開可看可改票</summary><div style="margin-top:8px">${arch.map(x=>rateCard(x,meN,true)).join('')}</div></details></section>`
+  app.innerHTML = h
+}
+// 完成任務卡（排行榜評分用）：拉桿評星＋等級說明，onchange 就地送出
+function rateCard(x, meN, archived){
+  const d = window._lbD
+  let s = `<div style="background:#fff;border:1.5px solid ${archived?'var(--line)':'#BBE3CC'};border-radius:12px;padding:10px 12px;margin-bottom:10px;font-size:13px">
+    <div><b>✅ ${x.text||'（附件）'}</b>${(x.media||[]).map((m,i)=>` <a href="${m}" target="_blank">📎${i+1}</a>`).join('')}</div>
+    <div class="hint">${x.st||''}・發現：${x.by}・${x.ts}｜解決：${x.doneBy||'—'}${x.doneTs?'・'+x.doneTs:''}${x.durMin?`・耗時${x.durMin}分`:''}</div>`
+  for (const a of ['find','fix']){
+    const target = a==='find' ? x.by : x.doneBy
+    if (!target || target==='匿名') continue
+    const avg = a==='find' ? x.findAvg : x.fixAvg
+    const st = (x.stars||{})[a]||{}
+    const nAll = Object.values(st).reduce((t2,f)=>t2+Object.keys(f||{}).length,0)
+    const canVote = meN && meN!==target
+    s += `<div style="margin-top:8px;font-weight:800;font-size:12.5px">${a==='find'?'🔍 發現':'🔧 解決'}｜${target} <span class="avg">${avg!=null?'⭐'+avg:'—'}</span> <span class="hint">${nAll}票${canVote?'':(meN===target?'（自己的不能評）':'')}</span></div>`
+    if (canVote){
+      s += `<div style="background:var(--soft);border-radius:10px;padding:7px 10px;margin-top:4px">`
+      s += d.facets.map(f=>{ const mine = (st[f]||{})[meN]||0
+        return `<div style="display:flex;align-items:center;gap:8px;padding:3px 0"><span style="width:34px;font-size:12px;font-weight:700;flex:0 0 auto">${f}</span><input type="range" min="1" max="5" step="1" value="${mine||3}" style="flex:1;accent-color:#E8B931;min-width:80px" oninput="lbSlide(this,'${x.id}','${a}','${f}')" onchange="lbRate(this,'${x.id}','${a}','${f}')"><span class="lbst" style="width:78px;text-align:right;font-size:14px;color:#E8B931;flex:0 0 auto">${mine?'★'.repeat(mine)+'☆'.repeat(5-mine):'<span class="mut" style="font-size:11px">未評</span>'}</span></div>`
+      }).join('')
+      s += `<div id="fd_${x.id}_${a}" class="hint" style="margin-top:3px">拉一下拉桿：星數＋等級說明會即時顯示，放開手＝送出（每面向一票、可改）；不熟的面向可以不評</div></div>`
+    }
+  }
+  if (!archived && meN) s += `<div style="margin-top:6px;display:flex;justify-content:flex-end;gap:8px;align-items:center"><span class="hint">兩邊面向都評完會自動收進封存</span><button class="mini" onclick="lbSkipFn('${x.id}')">先收起</button></div>`
+  s += `</div>`
+  return s
+}
+function lbSlide(el, id, aspect, facet){
+  const v = +el.value
+  const sp = el.parentElement.querySelector('.lbst'); if (sp) sp.innerHTML = '★'.repeat(v)+'☆'.repeat(5-v)
+  const fd = document.getElementById('fd_'+id+'_'+aspect); if (fd) fd.textContent = facet+'｜'+LVLTXT[v]
+}
+async function lbRate(el, id, aspect, facet){
+  const stars = +el.value
+  const r = await fetch('/api/mail-sync?soprate=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ id, aspect, facet, stars, token: TK() }) })
+  const d = await r.json().catch(()=>null)
+  if (!d || !d.ok) { alert((d&&d.error)||'評分失敗'); return }
+  const x = (window._lbD.issues||[]).find(i=>i.id===id)
+  if (x) x.stars = d.stars
+  const sp = el.parentElement.querySelector('.lbst'); if (sp) sp.innerHTML = '★'.repeat(stars)+'☆'.repeat(5-stars)
+  const fd = document.getElementById('fd_'+id+'_'+aspect); if (fd) fd.textContent = '✅ 已送出｜'+facet+'｜'+LVLTXT[stars]
+  const meN = window._lbD.me && window._lbD.me.name
+  const rl = x ? lbMyRated(x, meN) : []
+  if (rl.length && rl.every(o=>o.n >= window._lbD.facets.length)) lbRender() // 全評完→自動往下封存
+}
+function lbSkipFn(id){ lbSkip.add(id); localStorage.setItem('lbSkip', JSON.stringify([...lbSkip])); lbRender() }
+// 🛠 任務看板（未完成的都在這；含階段性 checklist）
+function taskRender(){
+  const d = window._lbD
+  if (!d) { app.innerHTML = '<div class="err">讀不到任務資料</div>'; return }
+  if (curStore !== 'task') return
+  document.getElementById('upd').textContent = '🛠 任務看板・完成送審核，核准後到排行榜評星'
+  const meN = d.me && d.me.name
+  const open = (d.issues||[]).filter(x=>x.status!=='done')
+  let h = `<section><h2>🛠 任務看板 <span class="hint">${meN?'🙋認領計時・📝加步驟・🚩標記・⏰排時間':'未綁定：'+BIND_HINT}</span></h2>`
+  if (!open.length) h += `<div class="mut">沒有未完成的任務——在店面分頁「⚠️ 回報」新增</div>`
   else {
-    const stCols = [...new Set(d.issues.map(x=>x.st))]
-    const ord = x => (x.flag?0:100) + (x.status==='open' ? (x.claimBy?1:2) : x.status==='pending'?3:4)
-    h += `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:10px;align-items:start">`
+    const stCols = [...new Set(open.map(x=>x.st))]
+    const ord = x => (x.flag?0:100) + (x.claimBy?1:2) + (x.status==='pending'?3:0)
+    h += `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(270px,1fr));gap:10px;align-items:start">`
     stCols.forEach(st=>{
-      const cards = d.issues.filter(x=>x.st===st).sort((a,b)=>ord(a)-ord(b)||(b.ts<a.ts?-1:1))
+      const cards = open.filter(x=>x.st===st).sort((a,b)=>ord(a)-ord(b)||(b.ts<a.ts?-1:1))
       h += `<div style="background:var(--soft);border:1px solid var(--line);border-radius:12px;padding:8px">
-        <div style="font-weight:900;color:var(--pdark);padding:2px 6px 6px">${st} <span class="hint">${cards.filter(x=>x.status!=='done').length} 未結</span></div>`
-      cards.forEach(x=>{ h += lbCard(x, meN, d.me) })
+        <div style="font-weight:900;color:var(--pdark);padding:2px 6px 6px">${st} <span class="hint">${cards.length} 未結</span></div>`
+      cards.forEach(x=>{ h += taskCard(x, meN, d.me) })
       h += `</div>`
     })
     h += `</div>`
@@ -606,16 +703,29 @@ function lbRender(){
   app.innerHTML = h
 }
 function lbElapsed(at){ if(!at) return ''; const m=Math.floor((Date.now()-at)/60000); return m<60?`${m}分`:`${Math.floor(m/60)}時${m%60}分` }
-function lbCard(x, meN, me){
-  const stColor = x.status==='done'?'var(--green)':x.status==='pending'?'#A85C26':'var(--red)'
-  const border = x.flag?'#E8B931':x.status==='done'?'#BBE3CC':x.status==='pending'?'#E8D089':'#F0B8B1'
+function taskCard(x, meN, me){
+  const stColor = x.status==='pending'?'#A85C26':'var(--red)'
+  const border = x.flag?'#E8B931':x.status==='pending'?'#E8D089':'#F0B8B1'
   let s = `<div style="background:#fff;border:1.5px solid ${border};border-radius:10px;padding:9px 10px;margin-bottom:8px;font-size:12.5px">
-    <div><b style="color:${stColor}">${x.flag?'🚩 ':''}${x.status==='done'?'✅':x.status==='pending'?'🕐':'⚠️'} ${x.text||'（附件）'}</b>${(x.media||[]).map((m,i)=>` <a href="${m}" target="_blank">📎${i+1}</a>`).join('')}</div>
+    <div><b style="color:${stColor}">${x.flag?'🚩 ':''}${x.status==='pending'?'🕐':'⚠️'} ${x.text||'（附件）'}</b>${(x.media||[]).map((m,i)=>` <a href="${m}" target="_blank">📎${i+1}</a>`).join('')}</div>
     <div class="hint">發現：${x.by}・${x.ts}</div>`
   if (x.due) s += `<div class="hint" style="color:#A85C26;font-weight:700">⏰ 排定：${x.due}</div>`
   if (x.status==='open' && x.claimBy) s += `<div style="color:var(--pdark);font-weight:800">🔧 ${x.claimBy} 處理中・已 ${lbElapsed(x.claimAt)}</div>`
   if (x.status==='pending') s += `<div style="color:#A85C26;font-weight:700">🕐 ${x.doneBy} 已處理・等審核</div>`
-  if (x.status==='done') s += `<div style="color:var(--green);font-weight:700">✅ ${x.doneBy}・${x.doneTs}${x.durMin?`・耗時${x.durMin}分`:''}</div>`
+  // 📝 階段性 checklist（文字＋圖片；張良 2026-09-22）
+  const ck = x.ck||[]
+  if (ck.length || meN) {
+    const dn = ck.filter(c=>c.done).length
+    s += `<div style="margin-top:6px;border-top:1px dashed var(--line);padding-top:5px">`
+    if (ck.length) s += `<div style="font-size:12px;font-weight:800">📝 步驟 ${dn}/${ck.length}</div>`
+    ck.forEach(c=>{ s += `<div style="display:flex;gap:6px;align-items:flex-start;font-size:12.5px;padding:2px 0">
+      ${meN?`<input type="checkbox" ${c.done?'checked':''} style="margin-top:2px" onclick="ckOp('${x.id}','cktog','${c.id}')">`:(c.done?'☑':'☐')}
+      <span style="flex:1;${c.done?'text-decoration:line-through;color:var(--muted)':''}">${(c.t||'').replace(/</g,'&lt;')}${c.img?` <a href="${c.img}" target="_blank">📎圖</a>`:''}${c.done&&c.doneBy?` <span class="hint">${c.doneBy}</span>`:''}</span>
+      ${meN?`<button class="mini" style="padding:1px 6px;color:var(--red)" onclick="if(confirm('刪除這個步驟？'))ckOp('${x.id}','ckdel','${c.id}')">✕</button>`:''}
+    </div>` })
+    if (meN) s += `<button class="mini" onclick="ckAdd('${x.id}')">＋ 加步驟</button>`
+    s += `</div>`
+  }
   if (meN) {
     s += `<div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:6px">`
     if (x.status==='open' && !x.claimBy) s += `<button class="mini on" onclick="lbOp('${x.id}','claim')">🙋 我來解決</button>`
@@ -623,40 +733,57 @@ function lbCard(x, meN, me){
     if (x.status==='open' && x.claimBy && x.claimBy!==meN) s += `<button class="mini" onclick="sopResolve('${x.id}')">✅ 已解決</button>`
     if (x.status==='open' && !x.claimBy) s += `<button class="mini" onclick="sopResolve('${x.id}')">✅ 已解決</button>`
     if (x.status==='pending' && me && me.approver) s += `<button class="mini on" onclick="sopReview('${x.id}',1)">✅ 核准</button><button class="mini" style="color:var(--red)" onclick="sopReview('${x.id}',0)">↩︎ 退回</button>`
-    if (x.status!=='done') s += `<button class="mini" onclick="lbOp('${x.id}','flag',${x.flag?0:1})">${x.flag?'取消🚩':'🚩標記'}</button><button class="mini" onclick="lbDue('${x.id}','${(x.due||'').replace(/'/g,'')}')">⏰排時間</button>`
+    s += `<button class="mini" onclick="lbOp('${x.id}','flag',${x.flag?0:1})">${x.flag?'取消🚩':'🚩標記'}</button><button class="mini" onclick="lbDue('${x.id}','${(x.due||'').replace(/'/g,'')}')">⏰排時間</button>`
     s += `</div>`
   }
-  s += lbRateRow(x,'find','🔍 發現', x.by, meN)
-  if (x.status==='done') s += lbRateRow(x,'fix','🔧 解決', x.doneBy, meN)
   s += `</div>`
   return s
 }
-// 五大面向評星（收合式：按⭐評分展開五面向各1~5星；一人每面向一票可改）
-function lbRateRow(x, aspect, label, target, meN){
-  const d = window._lbD
-  const st = (x.stars||{})[aspect]||{}
-  const avg = aspect==='find'?x.findAvg:x.fixAvg
-  const nAll = Object.values(st).reduce((t,f)=>t+Object.keys(f||{}).length,0)
-  const key = x.id+aspect
-  const canVote = meN && meN!==target
-  let s = `<div style="margin-top:6px;font-size:12px"><span style="font-weight:700">${label}</span> <span class="avg">${avg!=null?('⭐'+avg):'—'}</span> <span class="hint">${nAll}票</span>`
-  if (canVote) s += ` <button class="mini" onclick="lbTog('${key}')">${lbOpen.has(key)?'收合':'⭐ 評分'}</button>`
-  else if (meN===target) s += ` <span class="hint">（自己的不能評）</span>`
-  s += `</div>`
-  if (lbOpen.has(key) && canVote) {
-    s += `<div style="background:var(--soft);border-radius:8px;padding:6px 8px;margin-top:4px">` + d.facets.map(f=>{
-      const mine = (st[f]||{})[meN] || 0
-      return `<div style="display:flex;align-items:center;gap:5px;padding:2px 0"><span style="width:36px;font-size:12px;font-weight:700">${f}</span>` +
-        [1,2,3,4,5].map(v=>`<span style="cursor:pointer;font-size:19px;color:${mine>=v?'#E8B931':'#C7D4E0'}" onclick="lbRate('${x.id}','${aspect}','${f}',${v})">${mine>=v?'★':'☆'}</span>`).join('') + `</div>`
-    }).join('') + `<div class="hint">點星星＝評分（每面向一票、點別顆可改）；不熟的面向可以不評</div></div>`
+let ckFile = null
+function ckAdd(id){
+  ckFile = null
+  const ov = document.createElement('div'); ov.id='ckOv'
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(16,24,43,.45);z-index:50;display:flex;align-items:center;justify-content:center;padding:16px'
+  ov.innerHTML = `<div style="background:#fff;border-radius:14px;max-width:420px;width:100%;padding:16px" onclick="event.stopPropagation()">
+    <div style="font-weight:900;margin-bottom:8px">📝 加一個步驟</div>
+    <textarea id="ckTxt" rows="2" placeholder="這一步要做什麼？" style="width:100%;border:1px solid var(--line);border-radius:8px;padding:8px;font-size:14px;font-family:inherit"></textarea>
+    <div id="ckImgName" class="hint" style="margin:6px 0"></div>
+    <div style="display:flex;gap:8px;justify-content:space-between;margin-top:8px">
+      <button class="mini" style="padding:9px 12px" onclick="ckPick()">📷 加圖片</button>
+      <span><button class="mini" style="padding:9px 12px" onclick="document.getElementById('ckOv').remove()">取消</button>
+      <button class="mini on" style="padding:9px 18px" onclick="ckSend('${id}')">加入</button></span>
+    </div></div>`
+  ov.onclick = () => ov.remove()
+  document.body.appendChild(ov)
+}
+function ckPick(){
+  const inp = document.createElement('input'); inp.type='file'; inp.accept='image/*'
+  inp.onchange = () => { ckFile = inp.files[0]||null; const el=document.getElementById('ckImgName'); if(el&&ckFile) el.textContent='📎 '+(ckFile.name||'圖片').slice(0,30) }
+  inp.click()
+}
+async function ckSend(id){
+  const t2 = (document.getElementById('ckTxt')||{}).value||''
+  if (!t2.trim() && !ckFile) { alert('寫一下這一步要做什麼'); return }
+  document.querySelectorAll('#ckOv button').forEach(b=>b.disabled=true)
+  let img = ''
+  if (ckFile) {
+    try {
+      const ext = ((ckFile.name||'').split('.').pop()||'jpg').toLowerCase()
+      const sr = await fetch('/api/mail-sync?sopsign=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ ext }) })
+      const sd = await sr.json()
+      if (sd && sd.ok) { const ur = await fetch(sd.uploadUrl, { method:'PUT', headers:{'content-type': ckFile.type||'image/jpeg'}, body: ckFile }); if (ur.ok) img = sd.publicUrl }
+    } catch(e){}
   }
-  return s
+  const o = document.getElementById('ckOv'); if (o) o.remove()
+  ckOp(id, 'ckadd', { t: t2.trim(), img })
 }
-function lbTog(k){ if (lbOpen.has(k)) lbOpen.delete(k); else lbOpen.add(k); lbRender() }
-async function lbRate(id, aspect, facet, stars){
-  const r = await fetch('/api/mail-sync?soprate=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ id, aspect, facet, stars, token: TK() }) })
+async function ckOp(id, op, val){
+  const r = await fetch('/api/mail-sync?sopissue=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ id, op, val, token: TK() }) })
   const d = await r.json().catch(()=>null)
-  if (d && d.ok) loadLB(); else alert((d&&d.error)||'評分失敗')
+  if (!d || !d.ok) { alert((d&&d.error)||'失敗'); return }
+  const x = (window._lbD && window._lbD.issues||[]).find(i=>i.id===id)
+  if (x && d.issue) Object.assign(x, d.issue)
+  curStore==='task' ? taskRender() : lbRender()
 }
 async function lbOp(id, op, val){
   const r = await fetch('/api/mail-sync?sopissue=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ id, op, val, token: TK() }) })
@@ -830,6 +957,285 @@ async function buyOp(id, op){
   const r = await fetch('/api/mail-sync?buyop=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ id, op, token: TK() }) })
   const d = await r.json().catch(()=>null)
   if (d && d.ok) buyLoad(); else alert((d&&d.error)||'失敗')
+}
+// ── ⏰ 打卡（張良 2026-09-22：/prep 一鍵打卡，寫進既有出勤系統法定逐筆檔；自動判上下班、5分內可修方向）──
+let _lastPunch = null
+async function punchNow(){
+  if (!TK()) { alert('要先綁定才能打卡：跟 DD 說「綁定GD」拿個人連結（已加入主畫面的 App 用「🔑 輸入綁定碼」）'); return }
+  if (_lastPunch && Date.now() - _lastPunch.at < 5*60000) {
+    if (confirm(`剛剛 ${_lastPunch.hm} 打了「${_lastPunch.dir==='in'?'上班':'下班'}」卡。\n\n確定＝修正方向（打錯了）\n取消＝不動作`)) {
+      const r = await fetch('/api/mail-sync?punchfix=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ token: TK() }) })
+      const d = await r.json().catch(()=>null)
+      if (d && d.ok) { _lastPunch.dir = d.dir; alert(`✅ 已改成「${d.dir==='in'?'上班':'下班'}」`) } else alert((d&&d.error)||'修正失敗，找管理員處理')
+    }
+    return
+  }
+  if (!confirm('現在打卡？（自動判斷上班/下班）')) return
+  const r = await fetch('/api/mail-sync?punchme=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ token: TK() }) })
+  const d = await r.json().catch(()=>null)
+  if (!d || !d.ok) { alert((d&&d.error)||'打卡失敗'); return }
+  const hm = new Date(d.ts).toLocaleTimeString('en-GB',{hour12:false,timeZone:'Asia/Taipei'}).slice(0,5)
+  _lastPunch = { at: Date.now(), dir: d.dir, hm }
+  alert(`✅ ${d.name}「${d.dir==='in'?'上班':'下班'}」打卡 ${hm}${d.dir==='out'?`・今天累計 ${d.todayHours} 小時`:''}\n（打錯方向？5 分鐘內再按一次 ⏰ 可以修正）`)
+}
+// ── 📋 會議（張良 2026-09-22：班前會議/營運會議紀錄——類型可自訂、紀錄可新增刪改，全留姓名時間）──
+function todayTpe(){ return new Date(Date.now()+8*3600e3).toISOString().slice(0,10) }
+async function meetLoad(){
+  curStore = 'meet'; setTabs('meet')
+  app.innerHTML = '<section>載入中…</section>'
+  let d
+  try { const r = await fetch('/api/mail-sync?meet=' + encodeURIComponent(K) + (TK() ? '&me=' + encodeURIComponent(TK()) : '')); d = await r.json() } catch(e){}
+  if (!d || !d.ok) { app.innerHTML = '<div class="err">讀不到資料</div>'; return }
+  window._meetD = d
+  document.getElementById('upd').textContent = '📋 會議紀錄'
+  const meN = d.me && d.me.name
+  const mc = x => `<div style="background:#fff;border:1.5px solid var(--line);border-radius:10px;padding:9px 11px;margin-bottom:8px;font-size:13px">
+    <div style="font-weight:800">${x.date}</div>
+    <div style="white-space:pre-wrap;margin:3px 0">${(x.text||'').replace(/</g,'&lt;')}</div>
+    <div class="hint">${x.by}・${x.ts}${x.editedBy?`・改：${x.editedBy} ${x.editedTs}`:''}</div>
+    ${meN?`<div style="margin-top:5px"><button class="mini" onclick="meetForm('${x.id}')">✏️ 編輯</button> <button class="mini" style="color:var(--red)" onclick="if(confirm('刪除這筆會議紀錄？'))meetOp('del','${x.id}')">🗑</button></div>`:''}
+  </div>`
+  let h = `<section><h2>📋 會議紀錄 <span class="hint">${meN?'':'看得到；要新增/編輯先綁定——'+BIND_HINT}</span></h2>
+    ${meN?`<div style="margin-bottom:10px;display:flex;gap:8px;flex-wrap:wrap"><button class="mini on" style="padding:9px 18px" onclick="meetForm()">＋ 新增紀錄</button><button class="mini" style="padding:9px 12px" onclick="meetTypes()">⚙️ 會議類型</button></div>`:''}`
+  for (const tp of d.types) {
+    const rows = d.list.filter(x => x.type === tp)
+    h += `<div style="font-weight:900;margin:12px 0 6px;color:var(--pdark)">${tp}（${rows.length}）</div>`
+    h += rows.length ? rows.map(mc).join('') : `<div class="mut" style="font-size:13px;margin-bottom:6px">還沒有紀錄</div>`
+  }
+  const orphan = d.list.filter(x => !d.types.includes(x.type))
+  if (orphan.length) h += `<div style="font-weight:900;margin:12px 0 6px">其他（${orphan.length}）</div>` + orphan.map(mc).join('')
+  h += `</section>`
+  app.innerHTML = h
+}
+function meetForm(id){
+  const d = window._meetD, it = id ? d.list.find(x=>x.id===id) : null
+  const ov = document.createElement('div'); ov.id='meetOv'
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(16,24,43,.45);z-index:50;display:flex;align-items:center;justify-content:center;padding:16px'
+  const ip = 'width:100%;border:1px solid var(--line);border-radius:8px;padding:8px;font-size:14px;font-family:inherit;margin-bottom:6px'
+  ov.innerHTML = `<div style="background:#fff;border-radius:14px;max-width:460px;width:100%;padding:16px;max-height:86vh;overflow:auto" onclick="event.stopPropagation()">
+    <div style="font-weight:900;margin-bottom:8px">${it?'✏️ 編輯':'📋 新增'}會議紀錄</div>
+    <select id="mtType" style="${ip}">${d.types.map(t2=>`<option${it&&it.type===t2?' selected':''}>${t2}</option>`).join('')}</select>
+    <input id="mtDate" type="date" value="${it?it.date:todayTpe()}" style="${ip}">
+    <textarea id="mtText" rows="7" placeholder="會議內容／決議／待辦…" style="${ip}">${it?(it.text||'').replace(/</g,'&lt;'):''}</textarea>
+    <div style="display:flex;gap:8px;justify-content:flex-end"><button class="mini" style="padding:9px 12px" onclick="document.getElementById('meetOv').remove()">取消</button>
+    <button class="mini on" style="padding:9px 18px" onclick="meetSave('${id||''}')">儲存</button></div></div>`
+  ov.onclick = () => ov.remove()
+  document.body.appendChild(ov)
+}
+async function meetSave(id){
+  const type = (document.getElementById('mtType')||{}).value||''
+  const date = (document.getElementById('mtDate')||{}).value||''
+  const text = (document.getElementById('mtText')||{}).value||''
+  if (!text.trim()) { alert('內容空的'); return }
+  const r = await fetch('/api/mail-sync?meetset=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ op: id?'edit':'add', id, type, date, text, token: TK() }) })
+  const d = await r.json().catch(()=>null)
+  const o = document.getElementById('meetOv'); if (o) o.remove()
+  if (d && d.ok) meetLoad(); else alert((d&&d.error)||'儲存失敗')
+}
+async function meetOp(op, id){
+  const r = await fetch('/api/mail-sync?meetset=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ op, id, token: TK() }) })
+  const d = await r.json().catch(()=>null)
+  if (d && d.ok) meetLoad(); else alert((d&&d.error)||'失敗')
+}
+function meetTypes(){
+  const d = window._meetD
+  const v = prompt('會議類型（用「、」分隔，可自行增減改名）', d.types.join('、'))
+  if (v == null) return
+  fetch('/api/mail-sync?meetset=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ op:'types', types: v.split(/[、,，]/).map(s=>s.trim()).filter(Boolean), token: TK() }) })
+    .then(r=>r.json()).then(d2=>{ if(d2&&d2.ok) meetLoad(); else alert((d2&&d2.error)||'失敗') })
+}
+// ── 📅 班表 × 打卡（張良 2026-09-22：排班可增刪改；對照打卡算工時——口徑同薪資引擎 src/shift/payroll.js：
+//    正常8h/日、加班前2h×1.34、之後×1.67（勞基法§24）；單日>12h（§32）、月加班>46h（§32）、連上7天（§36七休一）標紅；遲到寬限5分）──
+let shiftYm = null
+function shiftNav(n){ const t2 = new Date(shiftYm + '-15'); t2.setMonth(t2.getMonth()+n); shiftLoad(t2.toISOString().slice(0,7)) }
+async function shiftLoad(ym){
+  curStore = 'shift'; setTabs('shift')
+  shiftYm = (typeof ym === 'string' && ym) || shiftYm || todayTpe().slice(0,7)
+  app.innerHTML = '<section>載入中…</section>'
+  let d
+  try { const r = await fetch('/api/mail-sync?shift=' + encodeURIComponent(K) + '&ym=' + shiftYm + (TK() ? '&me=' + encodeURIComponent(TK()) : '')); d = await r.json() } catch(e){}
+  if (!d || !d.ok) { app.innerHTML = '<div class="err">讀不到資料</div>'; return }
+  window._shiftD = d
+  document.getElementById('upd').textContent = '📅 班表 × 打卡・' + shiftYm
+  const meN = d.me && d.me.name
+  const tmin = hm => { const a=String(hm||'').split(':'); return (+a[0]||0)*60+(+a[1]||0) }
+  const fhm = m => String(Math.floor(m/60)).padStart(2,'0')+':'+String(m%60).padStart(2,'0')
+  const today = todayTpe()
+  // 打卡整理：人+日 → 事件列（台北時區）
+  const pd = {}
+  for (const p2 of d.punches){
+    const t3 = new Date(p2.ts)
+    const dt = t3.toLocaleDateString('sv-SE',{timeZone:'Asia/Taipei'})
+    const tm = t3.toLocaleTimeString('en-GB',{hour12:false,timeZone:'Asia/Taipei'})
+    const k2 = p2.name+'|'+dt
+    ;(pd[k2]=pd[k2]||[]).push({ m: (+tm.slice(0,2))*60+(+tm.slice(3,5)), dir: p2.dir })
+  }
+  Object.values(pd).forEach(a=>a.sort((x,y)=>x.m-y.m))
+  // 逐「人日」：工時＋狀態
+  const rows = []
+  const keys = new Set([...d.sched.map(s=>s.name+'|'+s.date), ...Object.keys(pd)])
+  for (const k2 of keys){
+    const [name, date] = k2.split('|')
+    if (!date || !date.startsWith(shiftYm)) continue
+    const s = d.sched.find(x=>x.name===name && x.date===date)
+    const ev = pd[k2]||[]
+    let ms = 0, working = false
+    for (let i=0;i<ev.length;i++){ if (ev[i].dir==='in'){ if (ev[i+1] && ev[i+1].dir==='out'){ ms += ev[i+1].m - ev[i].m; i++ } else if (date===today) working = true } }
+    let workedMin = ms
+    if (workedMin>0 && ev.length<=2 && s && s.break) workedMin = Math.max(0, workedMin - (+s.break||0)) // 只打上下班各一次→扣班表休息
+    const firstIn = ev.find(e=>e.dir==='in'), lastOut = [...ev].reverse().find(e=>e.dir==='out')
+    const st = []
+    if (s){
+      if (firstIn){ if (firstIn.m > tmin(s.start)+5) st.push('遲到'+(firstIn.m-tmin(s.start))+'分') }
+      else if (date < today) st.push('未到')
+      if (lastOut && lastOut.m < tmin(s.end) && !working) st.push('早退'+(tmin(s.end)-lastOut.m)+'分')
+    } else if (ev.length) st.push('未排班出勤')
+    if (working) st.push('上班中')
+    const h2 = workedMin/60
+    rows.push({ date, name, s, firstIn: firstIn?fhm(firstIn.m):'', lastOut: lastOut?fhm(lastOut.m):'', working, h: h2, ot1: Math.max(0,Math.min(h2-8,2)), ot2: Math.max(0,h2-10), over12: h2>12, st })
+  }
+  // 人員月統計＋勞基法旗標
+  const per = {}
+  rows.forEach(r=>{ const p3 = per[r.name] = per[r.name]||{ h:0, ot1:0, ot2:0, days:[], flags:new Set() }
+    p3.h+=r.h; p3.ot1+=r.ot1; p3.ot2+=r.ot2
+    if (r.h>0) p3.days.push(r.date)
+    if (r.over12) p3.flags.add('單日>12h('+r.date.slice(5)+')') })
+  Object.values(per).forEach(p3=>{
+    if (p3.ot1+p3.ot2 > 46) p3.flags.add('月加班'+(Math.round((p3.ot1+p3.ot2)*10)/10)+'h＞46h上限')
+    const ds = [...new Set(p3.days)].sort(); let run = 1
+    for (let i=1;i<ds.length;i++){ const gap = (new Date(ds[i])-new Date(ds[i-1]))/86400e3; run = gap===1 ? run+1 : 1; if (run>6){ p3.flags.add('連上超過6天（七休一）'); break } }
+  })
+  const r1 = x => Math.round(x*10)/10
+  let h = `<section><h2>📅 班表 × 打卡 <span class="hint">${meN?'':BIND_HINT}</span></h2>
+   <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px">
+     <button class="mini" onclick="shiftNav(-1)">‹</button><b style="font-size:15px">${shiftYm}</b><button class="mini" onclick="shiftNav(1)">›</button>
+     ${meN?`<button class="mini on" style="margin-left:auto;padding:8px 16px" onclick="shiftForm()">＋ 排班</button>`:''}
+   </div>
+   <div class="hint" style="margin-bottom:10px">工時＝打卡配對（只打上下班各一次時，扣掉班表的休息分鐘）；遲到寬限 5 分。加班口徑同薪資引擎：前 2 小時 ×1.34、之後 ×1.67（勞基法§24）；單日＞12h、月加班＞46h、連上 7 天會標紅（§32／§36）。試算參考用，正式發薪以人工核定為準。</div>`
+  const pn = Object.keys(per).sort()
+  if (pn.length){
+    h += `<div class="scroll"><table><thead><tr><th style="text-align:left">夥伴</th><th>總工時</th><th>正常</th><th>加班×1.34</th><th>加班×1.67</th><th style="text-align:left">⚠️ 勞基法檢查</th></tr></thead><tbody>`
+    pn.forEach(nm=>{ const p3 = per[nm]
+      const flags = [...p3.flags]
+      h += `<tr style="${meN===nm?'background:#E5F3FA':''}"><td style="text-align:left;font-weight:800;color:var(--ink)">${nm}</td><td class="avg">${r1(p3.h)}</td><td>${r1(p3.h-p3.ot1-p3.ot2)}</td><td>${p3.ot1?r1(p3.ot1):'—'}</td><td>${p3.ot2?r1(p3.ot2):'—'}</td><td style="text-align:left;${flags.length?'color:var(--red);font-weight:700':''}">${flags.length?flags.join('、'):'✓ 正常'}</td></tr>`
+    })
+    h += `</tbody></table></div>`
+  } else h += `<div class="mut">這個月還沒有班表或打卡——${meN?'按右上「＋ 排班」開始':'綁定後可以排班'}；上班用最上面 ⏰ 打卡</div>`
+  h += `</section><section><h2>🗓 明細</h2>`
+  const byDate = {}
+  rows.forEach(r=>{ (byDate[r.date]=byDate[r.date]||[]).push(r) })
+  const wd = ['日','一','二','三','四','五','六']
+  const dts = Object.keys(byDate).sort().reverse()
+  if (!dts.length) h += `<div class="mut">沒有資料</div>`
+  dts.forEach(dt=>{
+    h += `<div style="font-weight:900;margin:10px 0 4px;color:var(--pdark)">${dt.slice(5)}（${wd[new Date(dt).getDay()]}）${dt===today?'・今天':''}</div>`
+    byDate[dt].sort((a,b)=>a.name.localeCompare(b.name)).forEach(r=>{
+      const bad = r.st.some(x=>x!=='上班中')
+      h += `<div style="background:#fff;border:1.5px solid ${r.over12?'var(--red)':'var(--line)'};border-radius:10px;padding:7px 10px;margin-bottom:6px;font-size:13px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+        <b style="min-width:56px">${r.name}</b>
+        <span class="hint">班表 ${r.s?`${r.s.start}-${r.s.end}${r.s.break?`(休${r.s.break})`:''}`:'—'}</span>
+        <span class="hint">打卡 ${r.firstIn||'—'}${r.lastOut?'~'+r.lastOut:(r.working?'~上班中':'')}</span>
+        <span style="font-weight:800;color:${r.over12?'var(--red)':'var(--ink)'}">${r.h?r1(r.h)+'h':''}</span>
+        ${r.st.map(x=>`<span style="font-size:11.5px;font-weight:800;color:${x==='上班中'?'var(--green)':'var(--red)'};background:${x==='上班中'?'#E8F6EE':'#FCEEEC'};border-radius:6px;padding:1px 7px">${x}</span>`).join('')}
+        ${meN&&r.s?`<span style="margin-left:auto"><button class="mini" onclick="shiftForm('${r.s.id}')">✏️</button> <button class="mini" style="color:var(--red)" onclick="if(confirm('刪除 ${r.name} ${dt} 的班？'))shiftDel('${r.s.id}')">🗑</button></span>`:''}
+      </div>`
+    })
+  })
+  h += `</section>`
+  app.innerHTML = h
+}
+function shiftForm(id){
+  const d = window._shiftD, it = id ? d.sched.find(x=>x.id===id) : null
+  const ov = document.createElement('div'); ov.id='shOv'
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(16,24,43,.45);z-index:50;display:flex;align-items:center;justify-content:center;padding:16px'
+  const ip = 'border:1px solid var(--line);border-radius:8px;padding:8px;font-size:14px;font-family:inherit'
+  ov.innerHTML = `<div style="background:#fff;border-radius:14px;max-width:420px;width:100%;padding:16px" onclick="event.stopPropagation()">
+    <div style="font-weight:900;margin-bottom:10px">${it?'✏️ 編輯':'📅 新增'}排班</div>
+    <div style="display:grid;grid-template-columns:64px 1fr;gap:8px;align-items:center;font-size:13px">
+      <span>夥伴</span><span><input id="shName" list="shNames" value="${it?it.name:''}" placeholder="名字" style="${ip};width:100%"><datalist id="shNames">${(d.names||[]).map(n=>`<option>${n}</option>`).join('')}</datalist></span>
+      <span>日期</span><input id="shDate" type="date" value="${it?it.date:todayTpe()}" style="${ip}">
+      <span>上班</span><input id="shStart" type="time" value="${it?it.start:'11:00'}" style="${ip}">
+      <span>下班</span><input id="shEnd" type="time" value="${it?it.end:'20:00'}" style="${ip}">
+      <span>休息(分)</span><input id="shBreak" type="number" value="${it?(it.break||0):60}" min="0" max="240" style="${ip}">
+    </div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px"><button class="mini" style="padding:9px 12px" onclick="document.getElementById('shOv').remove()">取消</button>
+    <button class="mini on" style="padding:9px 18px" onclick="shiftSave('${id||''}')">儲存</button></div></div>`
+  ov.onclick = () => ov.remove()
+  document.body.appendChild(ov)
+}
+async function shiftSave(id){
+  const g2 = x => (document.getElementById(x)||{}).value||''
+  const item = { id: id||undefined, name: g2('shName').trim(), date: g2('shDate'), start: g2('shStart'), end: g2('shEnd'), break: +g2('shBreak')||0 }
+  if (!item.name || !item.date || !item.start || !item.end) { alert('姓名/日期/時間要填齊'); return }
+  const r = await fetch('/api/mail-sync?shiftset=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ op:'save', item, token: TK() }) })
+  const d = await r.json().catch(()=>null)
+  const o = document.getElementById('shOv'); if (o) o.remove()
+  if (d && d.ok) shiftLoad(); else alert((d&&d.error)||'儲存失敗')
+}
+async function shiftDel(id){
+  const r = await fetch('/api/mail-sync?shiftset=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ op:'del', id, token: TK() }) })
+  const d = await r.json().catch(()=>null)
+  if (d && d.ok) shiftLoad(); else alert((d&&d.error)||'失敗')
+}
+// ── 品項明細 v2（張良 2026-09-22：①全部/各分類/依品類分組切換 ②30日均/vs近60/累計點欄頭排序（分組模式=組內排）
+//    ③累積金額取消→售價（手填牌價優先、無則30日金額÷份數湊5倍數）④%佔比獨立欄放30日均左邊 ⑤🙈隱藏管理＝App 同一份 pm_pos_hidden 全裝置同步）──
+let itmView = 'group', itmSort = { c:'avg30', d:-1 }, itmMng = false
+function itmSetView(v){ itmView = v; itemsRender() }
+function itmSetSort(c){ itmSort = (itmSort.c===c) ? { c, d:-itmSort.d } : { c, d:-1 }; itemsRender() }
+function itmMngTog(){ itmMng = !itmMng; itemsRender() }
+async function posHide(kEnc, hide){
+  if (!TK()) { alert('要先綁定才能改隱藏：跟 DD 說「綁定GD」'); return }
+  const r = await fetch('/api/mail-sync?poshide=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ store: (window._bd||{}).store, key: decodeURIComponent(kEnc), hide, token: TK() }) })
+  const d = await r.json().catch(()=>null)
+  if (d && d.ok) load(curStore, true); else alert((d&&d.error)||'失敗')
+}
+function itemsRender(){
+  const d = window._bd, el = document.getElementById('itemsec')
+  if (!d || !el || !d.cats) return
+  const dts = d.dates.map(s=>s.slice(5))
+  const growCell = gr => gr==null?'<span class="mut">—</span>':gr==='新'?'<span class="up">新</span>':`<span class="${gr>=0?'up':'dn'}">${gr>=0?'+':''}${gr}%</span>`
+  const qCells = q => [...q].reverse().map(v=>'<td>'+(v||0)+'</td>').join('')
+  d.cats.forEach(c=>c.items.forEach(o=>{ o.cat = c.name }))
+  const sv = o => itmSort.c==='grow' ? (o.grow==='新'?9e9:(o.grow==null||typeof o.grow!=='number'?-9e9:o.grow)) : (o[itmSort.c]!=null?o[itmSort.c]:-9e9)
+  const srt = list => [...list].sort((a,b)=>(sv(a)-sv(b))*itmSort.d)
+  const catNames = d.cats.map(c=>c.name)
+  const totalAmt = d.cats.reduce((t2,c)=>t2+(c.amt30||0),0)
+  const hid = d.hidden || []
+  const chip = (lb,v) => `<button class="mini${itmView===v?' on':''}" style="padding:5px 12px" onclick="itmSetView('${v}')">${lb}</button>`
+  let s = `<section><h2>品項明細 <span class="hint">30日均＝近30天每營業日平均份數；名字旁 $＝售價（老闆手填優先）；%＝30天金額佔比；點欄頭排序</span></h2>
+  <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px;align-items:center">
+    ${chip('依品類分組','group')}${chip('全部','all')}${catNames.map(cn=>chip(cn,cn)).join('')}
+    <button class="mini${itmMng?' on':''}" style="padding:5px 12px;margin-left:auto" onclick="itmMngTog()">🙈 隱藏管理${hid.length?`（${hid.length}）`:''}</button>
+  </div>`
+  const arrow = c => itmSort.c===c ? (itmSort.d===-1?' ▼':' ▲') : ''
+  const flat = itmView !== 'group'
+  const th3 = `<th style="cursor:pointer;white-space:nowrap" onclick="itmSetSort('avg30')">30日均${arrow('avg30')}</th><th style="cursor:pointer;white-space:nowrap" onclick="itmSetSort('grow')">vs近60${arrow('grow')}</th><th style="cursor:pointer;white-space:nowrap" onclick="itmSetSort('cum30')">30天累計${arrow('cum30')}</th>`
+  const nCols = 2 + (flat?1:0) + 3 + dts.length // 品項+(品類)+%+三欄+日
+  s += `<div class="scroll" style="max-height:70vh;overflow-y:auto"><table><thead><tr><th style="position:sticky;left:0;background:#F1F6F9;z-index:2;text-align:left">品項</th>${flat?'<th>品類</th>':''}<th>%</th>${th3}${dts.map(t2=>'<th>'+t2+'</th>').reverse().join('')}</tr></thead><tbody>`
+  const nameCell = (o,bg) => `<td class="iname" style="position:sticky;left:0;background:${bg};z-index:1${o.hid?';opacity:.5':''}" title="${o.n}">${o.n}${o.price?` <span style="font-size:10px;color:var(--muted);font-weight:600">$${o.price}</span>`:''}${itmMng?` <button class="mini" style="padding:1px 7px" onclick="posHide('${encodeURIComponent(o.k)}',${o.hid?0:1})">${o.hid?'恢復':'隱藏'}</button>`:''}</td>`
+  const itemRow = o => `<tr style="${o.hid?'opacity:.6':''}">${nameCell(o,o.hid?'#F5F5F5':'#fff')}${flat?`<td><span style="font-size:10.5px;border:1px solid var(--line);border-radius:8px;padding:1px 7px;white-space:nowrap">${o.cat||''}</span></td>`:''}<td class="mut">${o.pct!=null?o.pct+'%':'—'}</td><td class="avg">${o.avg30!=null?o.avg30:'—'}</td><td>${growCell(o.grow)}</td><td>${o.cum30!=null?o.cum30:'—'}</td>${o.q?qCells(o.q):`<td colspan="${dts.length}"></td>`}</tr>`
+  const hidRow = o => itemRow({ ...o, hid:1, pct:null, avg30:null, grow:null, q:null })
+  if (!flat) {
+    d.cats.forEach(c=>{
+      const a = c.agg || {}
+      const cPct = totalAmt && c.amt30!=null ? Math.round(c.amt30/totalAmt*1000)/10 : null
+      s += `<tr class="catband"><td style="position:sticky;left:0;background:var(--psoft);z-index:1">${c.name}${c.amt30?` <span style="font-weight:700;font-size:11px">${fmt(c.amt30)}</span>`:''}</td><td style="font-weight:800">${cPct!=null?cPct+'%':''}</td><td style="font-weight:900">${a.avg30!=null?a.avg30:''}</td><td>${a.grow!=null?growCell(a.grow):''}</td><td style="font-weight:900">${a.cum30!=null?a.cum30:''}</td>${a.q?qCells(a.q):`<td colspan="${dts.length}"></td>`}</tr>`
+      ;(c.subs||[]).forEach(sb=>{
+        s += `<tr class="subrow"><td style="position:sticky;left:0;background:#FBF6EA;z-index:1;font-weight:700;color:#8a5a2e;white-space:pre">${sb.n}</td><td></td><td style="font-weight:800;color:#8a5a2e">${sb.avg30!=null?sb.avg30:'—'}</td><td>${growCell(sb.grow)}</td><td style="font-weight:800;color:#8a5a2e">${sb.cum30}</td>${qCells(sb.q)}</tr>`
+      })
+      srt(c.items).forEach(o=>{ s += itemRow(o) })
+      if (itmMng) hid.filter(o2=>o2.cat===c.name).forEach(o2=>{ s += hidRow(o2) })
+    })
+    if (itmMng) { const orph = hid.filter(o2=>!catNames.includes(o2.cat)); if (orph.length){ s += `<tr class="catband"><td style="position:sticky;left:0;background:var(--psoft);z-index:1">已隱藏（其他）</td><td colspan="${nCols-1}"></td></tr>`; orph.forEach(o2=>{ s += hidRow(o2) }) } }
+  } else {
+    let rows = d.cats.flatMap(c=>c.items)
+    if (itmView !== 'all') rows = rows.filter(o=>o.cat===itmView)
+    srt(rows).forEach(o=>{ s += itemRow(o) })
+    if (itmMng) hid.filter(o2=>itmView==='all'||o2.cat===itmView).forEach(o2=>{ s += hidRow(o2) })
+    if (!rows.length) s += `<tr><td colspan="${nCols}" class="mut" style="text-align:center">這一類沒有資料</td></tr>`
+  }
+  s += `</tbody></table></div>${itmMng?`<div class="hint" style="margin-top:6px">🙈 隱藏＝已下架品項：不進 30 日均/累計/備料/預做的統計，跟主 App 的隱藏是同一份設定、會同步。</div>`:''}</section>`
+  el.innerHTML = s
 }
 load('ground')
 </script>

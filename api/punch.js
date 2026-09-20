@@ -45,7 +45,7 @@ const tpeDate = (d = new Date()) => new Intl.DateTimeFormat('sv-SE', { timeZone:
 const dayKey = () => tpeDate().replace(/-/g, '')
 
 // 逐筆讀某人某日打卡（LIKE 前綴；底線要跳脫——踩過的坑）
-async function listPunches(prefix) {
+export async function listPunches(prefix) { // mail-sync 班表分頁撈整月共用
   const esc = prefix.replace(/_/g, '\\_')
   const r = await fetch(`${SB_URL}/rest/v1/pm_documents?id=like.${encodeURIComponent(esc + '%')}&select=id,data&order=id`, { headers: svc })
   const rows = r.ok ? await r.json() : []

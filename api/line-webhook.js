@@ -573,7 +573,7 @@ async function loadPosText() {
   try {
     const now = new Date(Date.now() + 8 * 3600e3)
     const mo = now.toISOString().slice(0, 7)
-    const kv = await kvGetMany(['sp_finance_pm_pos', 'sp_finance_pm_pos_d_' + mo, 'sp_finance_pm_pos_tx_' + mo, 'sp_finance_pm_pos_flags', 'sp_finance_pm_pos_idlecfg', 'sp_finance_pm_pos_hh_' + mo, 'sp_finance_pm_pos_costs', 'sp_finance_pm_pos_prices', 'sp_finance_pm_pos_hidden', 'sp_finance_pm_pos_alias', 'sp_finance_pm_sop_def', 'sp_finance_pm_sop_g_' + now.toISOString().slice(0, 10), 'sp_finance_pm_sop_issues', 'sp_finance_pm_inv', 'sp_finance_pm_buy', 'sp_finance_pm_ablive', 'sp_finance_pm_labor'])
+    const kv = await kvGetMany(['sp_finance_pm_pos', 'sp_finance_pm_pos_d_' + mo, 'sp_finance_pm_pos_tx_' + mo, 'sp_finance_pm_pos_flags', 'sp_finance_pm_pos_idlecfg', 'sp_finance_pm_pos_hh_' + mo, 'sp_finance_pm_pos_costs', 'sp_finance_pm_pos_prices', 'sp_finance_pm_pos_hidden', 'sp_finance_pm_pos_alias', 'sp_finance_pm_sop_def', 'sp_finance_pm_sop_g_' + now.toISOString().slice(0, 10), 'sp_finance_pm_sop_issues', 'sp_finance_pm_inv', 'sp_finance_pm_buy', 'sp_finance_pm_meet', 'sp_finance_pm_shift_g', 'sp_finance_pm_ablive', 'sp_finance_pm_labor'])
     const pos = kv['sp_finance_pm_pos']
     const entries = pos && Array.isArray(pos.entries) ? pos.entries : []
     if (!entries.length) return ''
@@ -676,6 +676,20 @@ async function loadPosText() {
         }
       }
       lines.push('【盤點/包材庫存（/prep 盤點分頁；預估現量=盤點量−盤後銷售×用量，低於低標 cron 每日開店前發群提醒）】'); lines.push(...invL)
+    }
+    // 會議紀錄＋GD班表（pm_meet/pm_shift_g＝/prep 會議、班表分頁；打卡本體走既有 sp_crew_pch_；與 App loadSpaceAIContext 同步接）
+    const meetL = ((kv['sp_finance_pm_meet'] || {}).list || [])
+    if (meetL.length) {
+      lines.push('【會議紀錄（近5筆；/prep 會議分頁，類型可自訂）】')
+      meetL.slice(0, 5).forEach(x => lines.push(`  - ${x.type}｜${x.date}｜${x.by}：${String(x.text || '').replace(/\n/g, ' ').slice(0, 60)}`))
+    }
+    const shGL = ((kv['sp_finance_pm_shift_g'] || {}).list || [])
+    if (shGL.length) {
+      const tdS = new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10)
+      const soonS = shGL.filter(x => x.date >= tdS).slice(0, 8)
+      lines.push(`【GD班表（/prep 班表分頁；共${shGL.length}筆，工時對照打卡、加班1.34/1.67口徑同薪資引擎）】`)
+      soonS.forEach(x => lines.push(`  - ${x.date} ${x.name} ${x.start}-${x.end}${x.break ? `(休${x.break}分)` : ''}`))
+      if (!soonS.length) lines.push('  （近期沒有排班）')
     }
     // 採購需求（pm_buy＝/prep 採購分頁：大家提要買的東西附圖/連結；與 App loadSpaceAIContext 同步接）
     const buyDoc = kv['sp_finance_pm_buy']

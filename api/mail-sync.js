@@ -765,7 +765,7 @@ export default async function handler(req, res) {
     if (!ok2 || String(req.query.opsboard) !== ok2) return res.status(403).json({ ok: false })
     const storeQ = String(req.query.store || 'ground') === 'abeach' ? 'abeach' : 'ground'
     const skOf2 = (n) => /groun/i.test(n || '') ? 'ground' : 'abeach'
-    const [posDoc, aliasDoc2, hiddenDoc2] = await Promise.all([kvGet('sp_finance_pm_pos'), kvGet('sp_finance_pm_pos_alias'), kvGet('sp_finance_pm_pos_hidden')])
+    const [posDoc, aliasDoc2, hiddenDoc2, pricesDoc2] = await Promise.all([kvGet('sp_finance_pm_pos'), kvGet('sp_finance_pm_pos_alias'), kvGet('sp_finance_pm_pos_hidden'), kvGet('sp_finance_pm_pos_prices')])
     const entries = ((posDoc || {}).entries || []).filter(e => skOf2(e.store) === storeQ).sort((a, b) => (a.date < b.date ? -1 : 1))
     if (!entries.length) return res.status(200).json({ ok: true, store: storeQ, empty: true })
     const anchor = entries[entries.length - 1].date
@@ -790,7 +790,7 @@ export default async function handler(req, res) {
       if (trows.length) { lunch = 0; for (const r of trows) { const hh2 = parseInt(r[0]); if (!isNaN(hh2) && hh2 < 14) lunch += Number(r[2]) || 0 } }
       return {
         date: e.date, wd: WD[new Date(e.date + 'T00:00:00Z').getUTCDay()], rev: rev2, tx: tx2,
-        avg: tx2 ? Math.round(rev2 / tx2) : null, lunchPct: lunch != null && rev2 ? Math.round(lunch / rev2 * 100) : null,
+        avg: tx2 ? Math.round(rev2 / tx2) : null, lunchPct: lunch != null && rev2 ? Math.round(lunch / rev2 * 100) : null, lunchRev: lunch != null ? Math.round(lunch) : null,
         cash: Number(e.cash) || 0, card: Number(e.card) || 0, linepay: Number(e.linepay) || 0, uber: Number(e.uber) || 0,
         kioskPct: e.kiosk > 0 && rev2 ? Math.round(e.kiosk / rev2 * 100) : null, discount: Number(e.discount) || 0,
         takePct: tk + dn > 0 ? Math.round(tk / (tk + dn) * 100) : null,
@@ -802,7 +802,8 @@ export default async function handler(req, res) {
     const norm2 = (s) => isAB2 ? String(s).replace(/[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE0F}\u{2B00}-\u{2BFF}]/gu, '').replace(/\s+/g, '') : String(s)
     const aliasMap2 = ((aliasDoc2 || {})[storeQ]) || {}
     const hiddenMap2 = ((hiddenDoc2 || {})[storeQ]) || {}
-    const items2 = {}; const catOrder2 = []; const setByDate = {}
+    const priceMap2 = ((pricesDoc2 || {})[storeQ]) || {} // 張良手填牌價優先；0=不顯示（與 App 同口徑）
+    const items2 = {}; const itemsH2 = {}; const catOrder2 = []; const setByDate = {}
     let n30 = 0, nPrev = 0
     for (const e of entries) {
       const inCur = e.date >= from30, inPrev = !inCur && e.date >= from60
@@ -819,7 +820,11 @@ export default async function handler(req, res) {
         for (const r of (s.rows || [])) {
           if (!Array.isArray(r) || typeof r[0] !== 'string' || /^1\/4/.test(r[0].trim())) continue
           let key2 = norm2(r[0]); key2 = aliasMap2[key2] || key2
-          if (hiddenMap2[key2]) continue
+          if (hiddenMap2[key2]) { // 已下架：不進任何統計，只收進隱藏管理清單（張良 2026-09-22 /prep 也要隱藏管理）
+            const oH = itemsH2[key2] || (itemsH2[key2] = { n: r[0], k: key2, cat: s.title, q30: 0 })
+            if (inCur) oH.q30 += Number(r[1]) || 0
+            continue
+          }
           const o = items2[key2] || (items2[key2] = { n: r[0], k: key2, cat: s.title, q: {}, q30: 0, qPrev: 0, amt30: 0 })
           o.n = r[0]; o.cat = s.title // 最新出現的名字/分類為準
           const qv = Number(r[1]) || 0
@@ -838,7 +843,9 @@ export default async function handler(req, res) {
       name: cn,
       amt30: Math.round(Object.values(items2).filter(o => o.cat === cn).reduce((t, o) => t + (o.amt30 || 0), 0)),
       items: Object.values(items2).filter(o => o.cat === cn && (o.q30 > 0 || o.qPrev > 0)).sort((a, b) => b.q30 - a.q30)
-        .map(o => ({ n: o.n, k: o.k, avg30: n30 ? Math.round(o.q30 / n30 * 10) / 10 : null, cum30: o.q30, grow: growOf2(o), amt30: Math.round(o.amt30 || 0), pct: totalAmt30 ? Math.round((o.amt30 || 0) / totalAmt30 * 1000) / 10 : null, q: datesAll.map(dd => o.q[dd] || 0) })),
+        .map(o => { const ov = priceMap2[o.k] != null ? priceMap2[o.k] : priceMap2[o.n]
+          const price = ov != null ? (Number(ov) || null) : (o.q30 > 0 && o.amt30 > 0 ? Math.round(o.amt30 / o.q30 / 5) * 5 : null)
+          return { n: o.n, k: o.k, avg30: n30 ? Math.round(o.q30 / n30 * 10) / 10 : null, cum30: o.q30, grow: growOf2(o), amt30: Math.round(o.amt30 || 0), pct: totalAmt30 ? Math.round((o.amt30 || 0) / totalAmt30 * 1000) / 10 : null, price, q: datesAll.map(dd => o.q[dd] || 0) } }),
     })).filter(c => c.items.length)
     // 品類彙總（30日均/vs近60/30天累計/全歷史逐日）＋漢堡子小計＋預估備料（張良 2026-09-20）
     const aggOf = (list) => {
@@ -953,7 +960,7 @@ export default async function handler(req, res) {
     return res.status(200).json({
       ok: true, store: storeQ, updatedAt: new Date().toISOString(), anchor,
       kpi: { rev30, days30: w30.length, avgRev: w30.length ? Math.round(rev30 / w30.length) : 0, tx30: w30.reduce((t, e) => t + (Number(e.txCount) || 0), 0) },
-      n30, prep, share14, rhythm, days: days2.reverse(), setPcts: setDays.reverse(), dates: datesAll, cats: cats2, slots: (slots2.wk.length || slots2.we.length) ? slots2 : null,
+      n30, prep, share14, rhythm, days: days2.reverse(), setPcts: setDays.reverse(), dates: datesAll, cats: cats2, hidden: Object.values(itemsH2).map(o => ({ n: o.n, k: o.k, cat: o.cat, cum30: o.q30 })), slots: (slots2.wk.length || slots2.we.length) ? slots2 : null,
     })
   }
   // 內用/外帶歷史回補口（同金鑰，張良 2026-09-20 內外帶接進報表）：?dinefill=<key>[&dry=1]
@@ -1005,6 +1012,121 @@ export default async function handler(req, res) {
   const sopToday = () => new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10)
   // 綁定 token → 本人（LINE「綁定看板」發的個人連結；打卡/編輯身分都以此為準，前端傳的名字只是備援）
   const sopWho = async (tk3) => { if (!tk3) return null; const b = (await kvGet('sp_finance_pm_prep_bind')) || {}; return (b.tokens || {})[tk3] || null }
+  // ── 🙈 品項隱藏切換（張良 2026-09-22：/prep 品項明細也要隱藏管理；同 App 的 pm_pos_hidden，KV 廣播全裝置同步）──
+  if (req.method === 'POST' && req.query?.poshide) {
+    const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
+    if (!ok2 || String(req.query.poshide) !== ok2) return res.status(403).json({ ok: false })
+    let ph = {}
+    try { ph = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
+    const whoH = await sopWho(ph.token)
+    if (!whoH) return res.status(403).json({ ok: false, error: '要先跟 DD 說「綁定GD」' })
+    const stH = ph.store === 'abeach' ? 'abeach' : 'ground'
+    const keyH = String(ph.key || '').slice(0, 80)
+    if (!keyH) return res.status(400).json({ ok: false })
+    const doc = (await kvGet('sp_finance_pm_pos_hidden')) || {}
+    doc[stH] = doc[stH] || {}
+    if (ph.hide) doc[stH][keyH] = 1; else delete doc[stH][keyH]
+    await kvPut('sp_finance_pm_pos_hidden', doc, '品項隱藏(' + whoH.name + ')')
+    return res.status(200).json({ ok: true })
+  }
+  // ── 📋 會議紀錄（張良 2026-09-21：班前會議/營運會議，類型可自訂、紀錄可新增刪改）──
+  if (req.query?.meet) {
+    const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
+    if (!ok2 || String(req.query.meet) !== ok2) return res.status(403).json({ ok: false })
+    const [md, meM] = await Promise.all([kvGet('sp_finance_pm_meet'), sopWho(req.query.me)])
+    return res.status(200).json({ ok: true, types: ((md || {}).types || ['班前會議', '營運會議']), list: ((md || {}).list || []).slice(0, 200), me: meM ? { name: meM.name } : null })
+  }
+  if (req.method === 'POST' && req.query?.meetset) {
+    const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
+    if (!ok2 || String(req.query.meetset) !== ok2) return res.status(403).json({ ok: false })
+    let mb = {}
+    try { mb = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
+    const whoM = await sopWho(mb.token)
+    if (!whoM) return res.status(403).json({ ok: false, error: '要先跟 DD 說「綁定GD」' })
+    const doc = (await kvGet('sp_finance_pm_meet')) || { types: ['班前會議', '營運會議'], list: [] }
+    if (!Array.isArray(doc.types) || !doc.types.length) doc.types = ['班前會議', '營運會議']
+    const now8 = () => new Date(Date.now() + 8 * 3600e3).toISOString().slice(5, 16).replace('T', ' ')
+    if (mb.op === 'add') {
+      const it = { id: 'mt' + Date.now().toString(36), type: String(mb.type || doc.types[0]).slice(0, 20), date: /^\d{4}-\d{2}-\d{2}$/.test(mb.date) ? mb.date : new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10), text: String(mb.text || '').slice(0, 4000), by: whoM.name, ts: now8() }
+      doc.list = [it, ...(doc.list || [])].slice(0, 500)
+    } else if (mb.op === 'edit') {
+      const it = (doc.list || []).find(x => x.id === mb.id)
+      if (!it) return res.status(404).json({ ok: false })
+      if (mb.type) it.type = String(mb.type).slice(0, 20)
+      if (/^\d{4}-\d{2}-\d{2}$/.test(mb.date)) it.date = mb.date
+      it.text = String(mb.text || '').slice(0, 4000)
+      it.editedBy = whoM.name; it.editedTs = now8()
+    } else if (mb.op === 'del') {
+      doc.list = (doc.list || []).filter(x => x.id !== mb.id)
+    } else if (mb.op === 'types') { // 類型自己增刪改名（整份存）
+      const ts2 = (Array.isArray(mb.types) ? mb.types : []).map(s => String(s).trim().slice(0, 20)).filter(Boolean).slice(0, 10)
+      if (!ts2.length) return res.status(400).json({ ok: false, error: '至少留一種會議類型' })
+      doc.types = ts2
+    } else return res.status(400).json({ ok: false })
+    await kvPut('sp_finance_pm_meet', doc, '會議' + mb.op + '(' + whoM.name + ')')
+    return res.status(200).json({ ok: true })
+  }
+  // ── ⏰ /prep 一鍵打卡（張良 2026-09-21：綁定者直接打卡，寫進既有出勤系統 sp_crew_pch_ 法定逐筆檔＝與 iPad QR/LINE 備援同一套；自動判上下班、5分內可修方向）──
+  if (req.method === 'POST' && req.query?.punchme) {
+    const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
+    if (!ok2 || String(req.query.punchme) !== ok2) return res.status(403).json({ ok: false })
+    let pb = {}
+    try { pb = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
+    const whoP = await sopWho(pb.token)
+    if (!whoP || !whoP.rid) return res.status(403).json({ ok: false, error: '要先跟 DD 說「綁定GD」才能打卡' })
+    const { recordPunch } = await import('./punch.js')
+    const out = await recordPunch({ id: whoP.rid, name: whoP.name }, 'prep', true)
+    return res.status(200).json({ ok: true, name: whoP.name, ...out })
+  }
+  if (req.method === 'POST' && req.query?.punchfix) {
+    const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
+    if (!ok2 || String(req.query.punchfix) !== ok2) return res.status(403).json({ ok: false })
+    let pb = {}
+    try { pb = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
+    const whoP = await sopWho(pb.token)
+    if (!whoP || !whoP.rid) return res.status(403).json({ ok: false, error: '未綁定' })
+    const pj2 = await import('./punch.js')
+    const oj2 = await import('./_onboard.js')
+    const todayP = await pj2.todayPunchesOf(whoP.rid)
+    const lastP = todayP[todayP.length - 1]
+    if (!lastP) return res.status(400).json({ ok: false, error: '今天還沒有打卡紀錄' })
+    if (Date.now() - new Date(lastP.ts).getTime() > 5 * 60000) return res.status(400).json({ ok: false, error: '超過 5 分鐘，請找管理員處理' })
+    const dirF = lastP.dir === 'in' ? 'out' : 'in'
+    await oj2.kvSet(lastP.key, { ...lastP, key: undefined, dir: dirF, fixedAt: new Date().toISOString() })
+    return res.status(200).json({ ok: true, dir: dirF })
+  }
+  // ── 📅 班表（張良 2026-09-21：/prep 排班＋整月打卡對照；工時/加班試算在前端、倍率口徑同 src/shift/payroll.js 1.34/1.67）──
+  if (req.query?.shift) {
+    const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
+    if (!ok2 || String(req.query.shift) !== ok2) return res.status(403).json({ ok: false })
+    const ym = /^\d{4}-\d{2}$/.test(String(req.query.ym || '')) ? String(req.query.ym) : new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 7)
+    const [sd, meS] = await Promise.all([kvGet('sp_finance_pm_shift_g'), sopWho(req.query.me)])
+    const pj2 = await import('./punch.js')
+    let pchs = []
+    try { pchs = await pj2.listPunches('sp_crew_pch_' + ym.replace('-', '')) } catch (_) {}
+    const schedL = ((sd || {}).list || []).filter(x => String(x.date || '').startsWith(ym))
+    const namesU = [...new Set([...((((sd || {}).list) || []).map(x => x.name)), ...pchs.map(p => p.name)])].filter(Boolean)
+    return res.status(200).json({ ok: true, ym, sched: schedL, punches: pchs.map(p => ({ name: p.name, ts: p.ts, dir: p.dir, src: p.src })), names: namesU, me: meS ? { name: meS.name } : null })
+  }
+  if (req.method === 'POST' && req.query?.shiftset) {
+    const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
+    if (!ok2 || String(req.query.shiftset) !== ok2) return res.status(403).json({ ok: false })
+    let sb2 = {}
+    try { sb2 = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
+    const whoS = await sopWho(sb2.token)
+    if (!whoS) return res.status(403).json({ ok: false, error: '要先跟 DD 說「綁定GD」' })
+    const doc = (await kvGet('sp_finance_pm_shift_g')) || { list: [] }
+    if (sb2.op === 'save') {
+      const i2 = sb2.item || {}
+      if (!String(i2.name || '').trim() || !/^\d{4}-\d{2}-\d{2}$/.test(i2.date) || !/^\d{1,2}:\d{2}$/.test(i2.start) || !/^\d{1,2}:\d{2}$/.test(i2.end)) return res.status(400).json({ ok: false, error: '姓名/日期/時間沒填齊' })
+      const it = { id: i2.id || 'sh' + Date.now().toString(36), name: String(i2.name).trim().slice(0, 20), date: i2.date, start: String(i2.start).padStart(5, '0'), end: String(i2.end).padStart(5, '0'), break: Math.max(0, Math.min(240, Number(i2.break) || 0)), by: whoS.name }
+      doc.list = [...(doc.list || []).filter(x => x.id !== it.id), it].sort((a, b) => (a.date + a.start).localeCompare(b.date + b.start)).slice(-1000)
+    } else if (sb2.op === 'del') {
+      doc.list = (doc.list || []).filter(x => x.id !== sb2.id)
+    } else return res.status(400).json({ ok: false })
+    await kvPut('sp_finance_pm_shift_g', doc, '班表' + sb2.op + '(' + whoS.name + ')')
+    return res.status(200).json({ ok: true })
+  }
   // ── 盤點/包材（張良 2026-09-21）：品項自建＋盤點紀錄＋照銷售自動扣除＋低水位提醒（cron 每日開店前查）──
   if (req.query?.inv) {
     const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
@@ -1307,7 +1429,7 @@ export default async function handler(req, res) {
     return res.status(200).json({ ok: true, status: it9.status })
   }
   // 問題卡片操作口（張良 2026-09-21 卡片式看板）：POST ?sopissue= {id, op, val, token}
-  // op=claim(我來解決:記名+開始計時)/unclaim(本人或審核人可放棄)/flag(標記)/due(排定處理時間,自由文字)
+  // op=claim(我來解決:記名+開始計時)/unclaim(本人或審核人可放棄)/flag(標記)/due(排定處理時間,自由文字)/ckadd·cktog·ckdel(階段性checklist 文字+圖片)
   if (req.method === 'POST' && req.query?.sopissue) {
     const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
     if (!ok2 || String(req.query.sopissue) !== ok2) return res.status(403).json({ ok: false })
@@ -1330,6 +1452,18 @@ export default async function handler(req, res) {
       if (bi.val) itI.flag = 1; else delete itI.flag
     } else if (bi.op === 'due') {
       itI.due = String(bi.val || '').slice(0, 30); if (!itI.due) delete itI.due
+    } else if (bi.op === 'ckadd') { // 階段性 checklist：文字＋圖片（張良 2026-09-22）
+      const v = bi.val || {}
+      if (!String(v.t || '').trim() && !v.img) return res.status(400).json({ ok: false, error: '寫一下這一步要做什麼' })
+      itI.ck = itI.ck || []
+      if (itI.ck.length >= 20) return res.status(400).json({ ok: false, error: '步驟最多 20 個' })
+      itI.ck.push({ id: 'ck' + Date.now().toString(36), t: String(v.t || '').slice(0, 200), img: String(v.img || '').slice(0, 500), by: whoI.name })
+    } else if (bi.op === 'cktog') {
+      const c = (itI.ck || []).find(c2 => c2.id === bi.val)
+      if (!c) return res.status(404).json({ ok: false })
+      if (c.done) { delete c.done; delete c.doneBy; delete c.doneTs } else { c.done = 1; c.doneBy = whoI.name; c.doneTs = new Date(Date.now() + 8 * 3600e3).toISOString().slice(5, 16).replace('T', ' ') }
+    } else if (bi.op === 'ckdel') {
+      itI.ck = (itI.ck || []).filter(c2 => c2.id !== bi.val)
     } else return res.status(400).json({ ok: false, error: 'op?' })
     await kvPut('sp_finance_pm_sop_issues', dI, '問題卡' + bi.op + '(' + whoI.name + ')')
     return res.status(200).json({ ok: true, issue: itI })
