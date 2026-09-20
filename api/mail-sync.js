@@ -810,11 +810,15 @@ export default async function handler(req, res) {
     // 預估備料量（GD；張良 2026-09-20 指定站別彙總）：平日/週末分開日均＝實際備量抓數
     const wkDates = new Set(w30.filter(e => { const d2 = new Date(e.date + 'T00:00:00Z').getUTCDay(); return d2 >= 1 && d2 <= 5 }).map(e => e.date))
     const weDates = new Set(w30.filter(e => !wkDates.has(e.date)).map(e => e.date))
+    // 星期別集合（全歷史；GD 週末公休所以主要是週一~五各自平均——備料微調建議用）
+    const wdSets2 = {}
+    for (const e of entries) { const w = new Date(e.date + 'T00:00:00Z').getUTCDay(); (wdSets2[w] = wdSets2[w] || new Set()).add(e.date) }
     const prepAgg = (filt, mult = 1) => {
       const list = Object.values(items2).filter(filt)
       const sumIn = (ds) => list.reduce((t, o) => t + Object.entries(o.q).reduce((t2, [dd, qv]) => t2 + (ds.has(dd) ? qv : 0), 0), 0) * mult
       const tot = list.reduce((t, o) => t + o.q30, 0) * mult
-      return { avg: n30 ? Math.round(tot / n30 * 10) / 10 : null, wk: wkDates.size ? Math.round(sumIn(wkDates) / wkDates.size * 10) / 10 : null, we: weDates.size ? Math.round(sumIn(weDates) / weDates.size * 10) / 10 : null }
+      const byWd = [1, 2, 3, 4, 5].map(w => { const ds = wdSets2[w]; return ds && ds.size ? Math.round(sumIn(ds) / ds.size * 10) / 10 : null })
+      return { avg: n30 ? Math.round(tot / n30 * 10) / 10 : null, wk: wkDates.size ? Math.round(sumIn(wkDates) / wkDates.size * 10) / 10 : null, we: weDates.size ? Math.round(sumIn(weDates) / weDates.size * 10) / 10 : null, byWd }
     }
     const prep = isAB2 ? null : [
       { grp: '炸台', name: '無骨煎雞腿', ...prepAgg(o => o.cat === '漢堡' && /雞腿堡/.test(o.n) && !/炸/.test(o.n)) },
@@ -846,11 +850,14 @@ export default async function handler(req, res) {
     }
     const slots2 = {}
     for (const kk of ['wk', 'we']) slots2[kk] = Object.entries(hourAgg[kk]).map(([h, t]) => [Number(h), Math.round(t / Math.max(1, hourN[kk]) * 10) / 10]).sort((a, b) => a[0] - b[0])
+    // 14:00 前的單量佔比（平日；備料節奏推估用——品項無分時資料，用全店時段分佈當比例）
+    const wkTot2 = slots2.wk.reduce((t, a) => t + a[1], 0)
+    const share14 = wkTot2 ? Math.round(slots2.wk.filter(a => a[0] < 14).reduce((t, a) => t + a[1], 0) / wkTot2 * 100) : null
     const rev30 = w30.reduce((t, e) => t + (Number(e.revenue) || 0), 0)
     return res.status(200).json({
       ok: true, store: storeQ, updatedAt: new Date().toISOString(), anchor,
       kpi: { rev30, days30: w30.length, avgRev: w30.length ? Math.round(rev30 / w30.length) : 0, tx30: w30.reduce((t, e) => t + (Number(e.txCount) || 0), 0) },
-      n30, prep, days: days2.reverse(), setPcts: setDays.reverse(), dates: datesAll, cats: cats2, slots: (slots2.wk.length || slots2.we.length) ? slots2 : null,
+      n30, prep, share14, days: days2.reverse(), setPcts: setDays.reverse(), dates: datesAll, cats: cats2, slots: (slots2.wk.length || slots2.we.length) ? slots2 : null,
     })
   }
   // 內用/外帶歷史回補口（同金鑰，張良 2026-09-20 內外帶接進報表）：?dinefill=<key>[&dry=1]
