@@ -765,7 +765,7 @@ export default async function handler(req, res) {
           if (!Array.isArray(r) || typeof r[0] !== 'string' || /^1\/4/.test(r[0].trim())) continue
           let key2 = norm2(r[0]); key2 = aliasMap2[key2] || key2
           if (hiddenMap2[key2]) continue
-          const o = items2[key2] || (items2[key2] = { n: r[0], cat: s.title, q: {}, q30: 0, qPrev: 0, amt30: 0 })
+          const o = items2[key2] || (items2[key2] = { n: r[0], k: key2, cat: s.title, q: {}, q30: 0, qPrev: 0, amt30: 0 })
           o.n = r[0]; o.cat = s.title // 最新出現的名字/分類為準
           const qv = Number(r[1]) || 0
           o.q[e.date] = (o.q[e.date] || 0) + qv // 全歷史逐日
@@ -783,7 +783,7 @@ export default async function handler(req, res) {
       name: cn,
       amt30: Math.round(Object.values(items2).filter(o => o.cat === cn).reduce((t, o) => t + (o.amt30 || 0), 0)),
       items: Object.values(items2).filter(o => o.cat === cn && (o.q30 > 0 || o.qPrev > 0)).sort((a, b) => b.q30 - a.q30)
-        .map(o => ({ n: o.n, avg30: n30 ? Math.round(o.q30 / n30 * 10) / 10 : null, cum30: o.q30, grow: growOf2(o), amt30: Math.round(o.amt30 || 0), pct: totalAmt30 ? Math.round((o.amt30 || 0) / totalAmt30 * 1000) / 10 : null, q: datesAll.map(dd => o.q[dd] || 0) })),
+        .map(o => ({ n: o.n, k: o.k, avg30: n30 ? Math.round(o.q30 / n30 * 10) / 10 : null, cum30: o.q30, grow: growOf2(o), amt30: Math.round(o.amt30 || 0), pct: totalAmt30 ? Math.round((o.amt30 || 0) / totalAmt30 * 1000) / 10 : null, q: datesAll.map(dd => o.q[dd] || 0) })),
     })).filter(c => c.items.length)
     // 品類彙總（30日均/vs近60/30天累計/全歷史逐日）＋漢堡子小計＋預估備料（張良 2026-09-20）
     const aggOf = (list) => {
@@ -886,8 +886,11 @@ export default async function handler(req, res) {
         }
       }
       const nD = qdocs.length
-      const rows3 = Object.values(bucket).map(o => ({ n: o.n, tot: Object.values(o.s).reduce((t, v) => t + v, 0), q: RSLOTS.map(t => (nD ? Math.round((o.s[t] || 0) / nD * 10) / 10 : 0)) }))
-        .sort((a, b) => b.tot - a.tot).slice(0, 18)
+      // 完整菜單＋分類（張良 2026-09-21：不要只有 Top18）：照品項明細的品類順序全列，沒快照資料的顯示 0；隱藏另由 pm_prep_hide 前端過濾
+      const rows3 = cats2.flatMap(c => c.items.map(it => {
+        const b = bucket[it.k]
+        return { n: it.n, k: it.k, cat: c.name, q: RSLOTS.map(t => (b && nD ? Math.round((b.s[t] || 0) / nD * 10) / 10 : 0)) }
+      }))
       rhythm = { slots: RSLOTS, days: nD, items: rows3 }
     }
     // Vercel 邊緣快取 5 分鐘（張良 2026-09-21 嫌慢）：同網址請求直接吃 CDN 不進函式重算；資料本來 15 分一更，5 分快取無感
@@ -951,14 +954,29 @@ export default async function handler(req, res) {
     const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
     if (!ok2 || String(req.query.sop) !== ok2) return res.status(403).json({ ok: false })
     const dt2 = sopToday()
-    const [defDoc, logDoc, rosterDoc, me3] = await Promise.all([kvGet('sp_finance_pm_sop_def'), kvGet('sp_finance_pm_sop_g_' + dt2), kvGet('sp_crew_kb_roster'), sopWho(req.query.me)])
+    const [defDoc, logDoc, rosterDoc, me3, hideDoc] = await Promise.all([kvGet('sp_finance_pm_sop_def'), kvGet('sp_finance_pm_sop_g_' + dt2), kvGet('sp_crew_kb_roster'), sopWho(req.query.me), kvGet('sp_finance_pm_prep_hide')])
     const names = ((rosterDoc || {}).people || []).filter(p => !p.endDate && p.status !== '離職').map(p => p.name)
     const gdef = (defDoc || {}).ground || { items: [] }
     // me＝綁定者（張良 2026-09-21 拍板：不設站長，綁定的人全站都能編，靠歷史紀錄留痕）
     const me4 = me3 ? { name: me3.name, canEdit: true } : null
     const issuesDoc = await kvGet('sp_finance_pm_sop_issues')
     const issues = ((issuesDoc || {}).list || []).filter(x => x.status === 'open').slice(0, 30)
-    return res.status(200).json({ ok: true, date: dt2, def: { items: gdef.items || [], edits: (gdef.edits || []).slice(0, 10) }, log: logDoc || { items: {} }, names, me: me4, issues })
+    return res.status(200).json({ ok: true, date: dt2, def: { items: gdef.items || [], edits: (gdef.edits || []).slice(0, 10) }, log: logDoc || { items: {} }, names, me: me4, issues, prepHide: (hideDoc || {}).keys || {} })
+  }
+  // 預做節奏表隱藏設定（張良 2026-09-21：有些品項不用看預做）：POST ?prephide=<OPS_BOARD_KEY> {key, hide, token}
+  if (req.method === 'POST' && req.query?.prephide) {
+    const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
+    if (!ok2 || String(req.query.prephide) !== ok2) return res.status(403).json({ ok: false })
+    let bh = {}
+    try { bh = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
+    const whoH = await sopWho(bh.token)
+    if (!whoH) return res.status(403).json({ ok: false, error: '要先跟 DD 說「綁定GD」才能改隱藏設定' })
+    if (!bh.key) return res.status(400).json({ ok: false, error: '缺 key' })
+    const hd = (await kvGet('sp_finance_pm_prep_hide')) || { keys: {} }
+    hd.keys = hd.keys || {}
+    if (bh.hide) hd.keys[bh.key] = 1; else delete hd.keys[bh.key]
+    await kvPut('sp_finance_pm_prep_hide', hd, '預做隱藏(' + whoH.name + ')')
+    return res.status(200).json({ ok: true, prepHide: hd.keys })
   }
   if (req.method === 'POST' && req.query?.sopdone) {
     const ok2 = (process.env.OPS_BOARD_KEY || '').trim()

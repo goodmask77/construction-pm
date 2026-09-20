@@ -1464,14 +1464,25 @@ export default async function handler(req, res) {
       // 用入職系統綁好的 lineUserId 對到名冊本人 → 發個人專屬連結（/prep?me=token，手機點開就永遠是他）。
       // 一個 bot 可掛多個 app：之後「綁定AB」等指令加進 BIND_APPS 就好，身分 token 各 app 共用（本人只有一個）
       const BIND_APPS = { GD: 'https://ground-pm.vercel.app/prep', 看板: 'https://ground-pm.vercel.app/prep' } // 舊詞「綁定看板」相容
-      const mBind = isDM && text.match(/^綁定\s*(GD|看板|AB)$/i)
+      // 一步到位（張良 2026-09-21：別叫人先走主App的「報到」流程重複設定）：
+      // 「綁定GD」→ LINE已對到名冊＝直接給連結；還沒對到＝教他「綁定GD 本名」一句話連身分帶連結一次完成
+      const mBind = isDM && text.match(/^綁定\s*(GD|看板|AB)(?:\s+(\S{2,10}))?$/i)
       if (mBind) {
         const appKey = mBind[1].toUpperCase() === 'AB' ? 'AB' : (mBind[1] === '看板' ? '看板' : 'GD')
         if (!BIND_APPS[appKey]) { await send('「' + appKey + '」的 App 還沒開通，目前可以綁定：GD（營運看板）。'); continue }
         try {
           const kvb = await kvGetMany(['sp_crew_kb_roster', 'sp_finance_pm_prep_bind'])
-          const rp = ((kvb['sp_crew_kb_roster'] || {}).people || []).find(p => p.lineUserId === userId && !p.endDate)
-          if (!rp) { await send('你的 LINE 還沒綁定名冊。先輸入「你的本名＋報到」完成綁定（例：王小明報到），再回來跟我說「綁定GD」。'); continue }
+          const rosterDoc2 = kvb['sp_crew_kb_roster'] || { people: [] }
+          let rp = (rosterDoc2.people || []).find(p => p.lineUserId === userId && !p.endDate)
+          if (!rp && mBind[2]) { // 帶名字版：綁定GD 王小明 → 直接認名冊本人（同「報到」的防冒名規則）
+            const cand = (rosterDoc2.people || []).find(p => p.name === mBind[2].trim() && !p.endDate)
+            if (!cand) { await send(`名冊裡找不到「${mBind[2].trim()}」。確認是名冊上的本名，或請店長先把你加進名冊。`); continue }
+            if (cand.lineUserId && cand.lineUserId !== userId) { await send('這個名字已經綁定過其他 LINE 帳號。如果是你本人換帳號，請聯絡店長解除舊綁定。'); continue }
+            cand.lineUserId = userId
+            await kvSet('sp_crew_kb_roster', rosterDoc2)
+            rp = cand
+          }
+          if (!rp) { await send('直接回我一句：「綁定GD 你的本名」（例：綁定GD 王小明），我就把連結給你。'); continue }
           const bind = kvb['sp_finance_pm_prep_bind'] || { byUid: {}, tokens: {} }
           let tk2 = bind.byUid[userId]
           if (!tk2) {
