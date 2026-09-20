@@ -14,6 +14,7 @@
 <meta name="apple-mobile-web-app-title" content="GD" />
 <meta name="theme-color" content="#087EBA" />
 <link rel="apple-touch-icon" href="/ops/icon-180.png" />
+<script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700;900&display=swap" rel="stylesheet">
 <style>
   :root{ --bg:#F3F7FA; --card:#FFF; --soft:#F7FAFC; --ink:#10182B; --text:#25324A; --muted:#66758E;
@@ -72,9 +73,10 @@
   <h1>營運看板</h1>
   <div class="sub" id="upd">載入中…</div>
   <div class="tabs">
+    <button id="tab-home" onclick="load(lastStore)" title="回營運看板" style="padding:7px 13px;font-size:16px">🏠</button>
     <button id="tab-lb" onclick="loadLB()">🏆 排行榜</button>
     <button id="tab-food" onclick="invLoad('food')">🥩 盤點</button>
-    <button id="tab-pack" onclick="invLoad('pack')">📦 叫貨</button>
+    <button id="tab-pack" onclick="invLoad('pack')">📦 包材</button>
   </div>
   <div id="app"></div>
   <div class="foot">資料每天自動同步（打開即最新）・僅供內部參考與備料使用，請勿外傳連結</div>
@@ -87,6 +89,7 @@ let curStore = 'ground'
 let lastStore = 'ground'
 function setTabs(k){
   ['lb','food','pack'].forEach(t => { const b = document.getElementById('tab-' + t); if (b) b.className = (t===k) ? 'on' : '' })
+  const hb = document.getElementById('tab-home'); if (hb) hb.className = (k==='ground'||k==='abeach') ? 'on' : '' // 🏠=回店面（張良 2026-09-21：怕有人不知道怎麼回去）
   if (k === 'ground' || k === 'abeach') lastStore = k
   const g = document.getElementById('bs-ground'), a = document.getElementById('bs-abeach')
   if (g) g.className = 'bseg' + (lastStore==='ground' ? ' on' : '')
@@ -246,6 +249,7 @@ async function sopLoad(){
 }
 function sopRender(){
   const el = document.getElementById('sop'); if (!el || !sopData) return
+  if (sopMasterOn) { sopMaster(el); return }
   const items = (sopData.def.items || [])
   const log = sopData.log.items || {}
   const now = new Date(Date.now() + 8*3600e3).toISOString().slice(11,16)
@@ -263,7 +267,7 @@ function sopRender(){
     const canEd = me && me.canEdit
     const stIss = (sopData.issues||[]).filter(x => x.st === st)
     s += `<div style="background:var(--psoft);border-radius:8px;padding:4px 10px;font-weight:900;color:var(--pdark);font-size:12.5px;margin:10px 0 4px">${st}
-      <span style="float:right"><button class="mini" style="color:#A85C26" onclick="sopReport('${st}')">⚠️ 回報</button>${canEd?`<button class="mini" onclick="sopEdit('${st}')">${sopEditSt===st?'放棄':'✏️ 編輯'}</button>`:''}</span></div>`
+      <span style="float:right"><button class="mini" style="color:#A85C26" onclick="sopReport('${st}')">⚠️ 回報</button></span></div>`
     stIss.forEach(x => {
       const pend = x.status === 'pending'
       s += `<div style="background:${pend?'#FFF8E6':'#FCEAEA'};border:1px solid ${pend?'#E8D089':'#F0B8B1'};border-radius:8px;padding:8px 10px;margin:4px 0;font-size:12.5px">
@@ -275,8 +279,7 @@ function sopRender(){
         ${!pend&&me&&!x.claimBy?`<button class="mini on" style="margin-top:4px" onclick="lbOp('${x.id}','claim')">🙋 我來解決</button>`:''}
         ${!pend&&me?`<button class="mini" style="margin-top:4px" onclick="sopResolve('${x.id}')">✅ 已解決${me.approver?'':'（送審核）'}</button>`:''}</div>`
     })
-    if (sopEditSt === st) { s += sopEditor(st); return }
-    if (!items.some(i => i.st === st)) s += `<div class="hint" style="padding:6px 4px">（這一站還沒有 SOP 項目——按「✏️ 編輯」新增）</div>`
+    if (!items.some(i => i.st === st)) s += `<div class="hint" style="padding:6px 4px">（這一站還沒有 SOP 項目——開「⚙️ 總編輯」新增）</div>`
     items.filter(i => i.st === st).forEach(it => {
       const lg = log[it.id]
       const overdue = !lg && it.due && it.due <= now && wd >= 1 && wd <= 5
@@ -296,18 +299,84 @@ function sopRender(){
       s += `</div>`
     })
   })
-  if (me) {
-    s += `<div style="margin-top:10px"><button class="mini" onclick="sopStAdd()">＋ 新增站</button>`
-    if ((sopData.trash||[]).length) s += `<button class="mini" onclick="sopTrashOpen=!sopTrashOpen;sopRender()">🗂 回收站（${sopData.trash.length}）</button>`
-    s += `</div>`
-    if (sopTrashOpen && (sopData.trash||[]).length) {
-      s += `<div style="border:1px dashed var(--line);border-radius:10px;padding:8px 10px;margin-top:6px">` +
-        sopData.trash.map(t=>`<div style="display:flex;align-items:center;gap:8px;padding:4px 0"><span style="flex:1;font-size:12.5px">🗑 <b>${t.st}</b>（${t.n} 項）<span class="hint">${t.by}・${t.ts} 刪除</span></span><button class="mini on" onclick="sopStOp({op:'restore',trashId:'${t.id}'})">復原</button></div>`).join('') + `</div>`
-    }
-  }
+  if (me) s += `<div style="margin-top:10px"><button class="mini on" style="padding:8px 16px" onclick="sopMasterOn=true;sopRender()">⚙️ SOP 總編輯</button></div>`
   s += `<div class="hint" style="margin-top:8px">按「完成」記錄時間與名字；要拍照的先按 📷。超過時限沒完成，DD 會在群裡提醒。</div></section>`
   el.innerHTML = s
 }
+// ── ⚙️ SOP 總編輯（張良 2026-09-21：站/項目拖曳排序、站名直接改、不再跳系統視窗）──
+let sopMasterOn = false
+function msItemHtml(it){
+  return `<div class="msItem" data-id="${it.id||''}" style="display:flex;gap:5px;align-items:center;background:#fff;border:1px solid var(--line);border-radius:8px;padding:5px 7px;margin-bottom:5px">
+    <span class="mih" style="cursor:grab;color:var(--muted);font-size:15px;touch-action:none">☰</span>
+    <input class="miT" value="${(it.title||'').replace(/"/g,'&quot;')}" placeholder="項目名稱" style="flex:1;min-width:110px;border:1px solid var(--line);border-radius:6px;padding:5px 7px;font-size:13px">
+    <input class="miD" type="time" value="${it.due||'11:00'}" style="border:1px solid var(--line);border-radius:6px;padding:4px 5px;font-size:13px">
+    <label style="font-size:12px;white-space:nowrap"><input class="miP" type="checkbox" ${it.photo?'checked':''}>📷</label>
+    <button class="mini" onclick="this.closest('.msItem').remove()">✕</button></div>`
+}
+function msCardHtml(st, items){
+  return `<div class="msCard" data-st="${st}" style="background:var(--soft);border:1px solid var(--line);border-radius:12px;padding:8px;margin-bottom:10px">
+    <div style="display:flex;gap:6px;align-items:center;margin-bottom:6px">
+      <span class="msh" style="cursor:grab;color:var(--pdark);font-size:17px;touch-action:none">☰</span>
+      <input class="msName" value="${st}" placeholder="站名" style="font-weight:900;color:var(--pdark);border:1px solid var(--line);border-radius:7px;padding:5px 8px;width:130px">
+      <span style="flex:1"></span>
+      <button class="mini" style="color:var(--red)" onclick="msDelSt(this)">🗑 刪站</button>
+    </div>
+    <div class="msItems" style="min-height:8px">${items.map(msItemHtml).join('')}</div>
+    <button class="mini" onclick="this.previousElementSibling.insertAdjacentHTML('beforeend', msItemHtml({due:'11:00'}))">＋ 加項目</button>
+  </div>`
+}
+function sopMaster(el){
+  const items = sopData.def.items || []
+  const sts = [...(sopData.def.stations || []), ...new Set(items.map(i=>i.st).filter(s=>!(sopData.def.stations||[]).includes(s)))]
+  let s = `<section><h2>⚙️ SOP 總編輯 <span class="hint">拖 ☰ 排序（項目可拖到別的站）・站名直接改字・改完按儲存</span></h2>
+    <div id="msSt">${sts.map(st=>msCardHtml(st, items.filter(i=>i.st===st))).join('')}</div>
+    <div style="display:flex;gap:6px;align-items:center;margin:8px 0">
+      <input id="msNew" placeholder="新站名（例：甜點站）" style="border:1px solid var(--line);border-radius:8px;padding:7px 9px;font-size:13px">
+      <button class="mini" onclick="msAddSt()">＋ 新增站</button>
+    </div>`
+  if ((sopData.trash||[]).length) {
+    s += `<div style="border:1px dashed var(--line);border-radius:10px;padding:8px 10px;margin:6px 0"><b style="font-size:12.5px">🗂 回收站</b>` +
+      sopData.trash.map(tr=>`<div style="display:flex;align-items:center;gap:8px;padding:3px 0"><span style="flex:1;font-size:12.5px">🗑 ${tr.st}（${tr.n}項）<span class="hint">${tr.by}・${tr.ts}</span></span><button class="mini on" onclick="sopStOp({op:'restore',trashId:'${tr.id}'})">復原</button></div>`).join('') + `</div>`
+  }
+  s += `<div style="display:flex;justify-content:space-between;margin-top:10px">
+      <button class="mini" onclick="if(confirm('放棄未儲存的修改？')){sopMasterOn=false;sopRender()}">離開</button>
+      <button class="mini on" style="padding:9px 20px" onclick="msSave()">💾 全部儲存</button>
+    </div></section>`
+  el.innerHTML = s
+  if (window.Sortable) {
+    new Sortable(document.getElementById('msSt'), { handle: '.msh', animation: 150 })
+    document.querySelectorAll('.msItems').forEach(x => new Sortable(x, { group: 'msi', handle: '.mih', animation: 150 }))
+  }
+}
+function msAddSt(){
+  const inp = document.getElementById('msNew'); const nm = inp.value.trim()
+  if (!nm) { alert('輸入站名'); return }
+  document.getElementById('msSt').insertAdjacentHTML('beforeend', msCardHtml(nm, []))
+  if (window.Sortable) document.querySelectorAll('.msItems').forEach(x => { if (!x._sorted) { new Sortable(x, { group: 'msi', handle: '.mih', animation: 150 }); x._sorted = 1 } })
+  inp.value = ''
+}
+function msDelSt(btn){
+  const card = btn.closest('.msCard'); const st = card.querySelector('.msName').value.trim() || card.dataset.st
+  if (!confirm(`刪除「${st}」整站？（現有項目進回收站可復原）`)) return
+  if (card.dataset.st) sopStOp({ op:'del', st: card.dataset.st }) // 伺服器軟刪（已存在的站）
+  card.remove()
+}
+async function msSave(){
+  const stations = [], items = []
+  document.querySelectorAll('#msSt .msCard').forEach(card=>{
+    const st = card.querySelector('.msName').value.trim() || card.dataset.st
+    if (!st || stations.includes(st)) return
+    stations.push(st)
+    card.querySelectorAll('.msItem').forEach(r=>{
+      const title = r.querySelector('.miT').value.trim()
+      if (title) items.push({ id: r.dataset.id || undefined, st, title, due: r.querySelector('.miD').value || '11:00', photo: r.querySelector('.miP').checked })
+    })
+  })
+  const r = await fetch('/api/mail-sync?sopfull=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ token: TK(), stations, items }) })
+  const d = await r.json().catch(()=>null)
+  if (d && d.ok) { sopMasterOn = false; sopLoad() } else alert((d&&d.error)||'儲存失敗')
+}
+// 完成紀錄預覽（點✓或縮圖）
 // 完成紀錄預覽（點✓或縮圖）：大圖＋資訊＋撤銷（撤銷只在這裡，防誤點）
 function sopView(id){
   const it = (sopData.def.items||[]).find(x => x.id === id)

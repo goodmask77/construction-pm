@@ -1334,6 +1334,27 @@ export default async function handler(req, res) {
     await kvPut('sp_finance_pm_sop_issues', dI, '問題卡' + bi.op + '(' + whoI.name + ')')
     return res.status(200).json({ ok: true, issue: itI })
   }
+  // SOP 總編輯整份儲存（張良 2026-09-21：拖曳排序後一次存）：POST ?sopfull= {token, stations:[名], items:[{id,st,title,due,photo}]}
+  // 站與項目順序＝陣列順序；改前整份存進 edits.prev 可回溯；回收站 trash 不動
+  if (req.method === 'POST' && req.query?.sopfull) {
+    const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
+    if (!ok2 || String(req.query.sopfull) !== ok2) return res.status(403).json({ ok: false })
+    let bf = {}
+    try { bf = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
+    const whoF = await sopWho(bf.token)
+    if (!whoF) return res.status(403).json({ ok: false, error: '要先跟 DD 說「綁定GD」' })
+    if (!Array.isArray(bf.stations) || !Array.isArray(bf.items)) return res.status(400).json({ ok: false, error: '缺 stations/items' })
+    const stCl = [...new Set(bf.stations.map(s => String(s || '').trim().slice(0, 20)).filter(Boolean))].slice(0, 20)
+    const itCl = bf.items.slice(0, 200).map((it, i) => ({ id: it.id || ('u' + Date.now().toString(36) + i), st: String(it.st || '').trim().slice(0, 20), title: String(it.title || '').trim().slice(0, 60), due: /^\d{2}:\d{2}$/.test(it.due || '') ? it.due : '11:00', photo: !!it.photo })).filter(it => it.title && stCl.includes(it.st))
+    const curF = (await kvGet('sp_finance_pm_sop_def')) || {}
+    const gF = curF.ground || {}
+    gF.edits = [{ ts: new Date().toISOString(), by: whoF.name, op: 'full', prev: { stations: gF.stations || [], items: gF.items || [] } }, ...(gF.edits || [])].slice(0, 15)
+    gF.stations = stCl
+    gF.items = itCl
+    curF.ground = gF
+    await kvPut('sp_finance_pm_sop_def', curF, 'SOP總編輯(' + whoF.name + ')')
+    return res.status(200).json({ ok: true, n: itCl.length })
+  }
   // 審核口（只有審核人）：POST ?sopreview= {id, pass:true/false, token} → 核准=done；退回=回 open 清除解決人
   if (req.method === 'POST' && req.query?.sopreview) {
     const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
