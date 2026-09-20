@@ -905,6 +905,35 @@ export default async function handler(req, res) {
     await announceChanged() // 開著的營運報表即刻套用合併
     return res.status(200).json({ ok: true, store: st2, n: Object.keys(m3).length, alias: next2 })
   }
+  // 名冊更新口（同管理金鑰，張良 2026-09-20：用 Google Sheet 夥伴名單更新 kb_roster）：
+  // POST ?rosterset=<key>[&dry=1] body={addFields:[{key,label,type}], updates:[{name,set:{…}}], adds:[{name,…}]}
+  // 以姓名比對；updates 只動 set 給的欄位、adds 同名跳過不重複建；動完廣播讓開著的 App 即時跟上
+  if (req.method === 'POST' && req.query?.rosterset) {
+    const mk = (process.env.MENU_PROBE_KEY || '').trim()
+    if (!mk || String(req.query.rosterset) !== mk) return res.status(403).json({ ok: false })
+    let b3 = {}
+    try { b3 = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
+    const doc = (await kvGet('sp_crew_kb_roster')) || { people: [], fields: [] }
+    doc.people = doc.people || []; doc.fields = doc.fields || []
+    const dry = !!String(req.query.dry || '')
+    const out3 = { fieldAdded: [], updated: [], added: [], skipped: [], notFound: [] }
+    for (const f of (b3.addFields || [])) {
+      if (!doc.fields.some(x => x.key === f.key)) { if (!dry) doc.fields.push({ key: f.key, label: f.label || f.key, type: f.type || 'text', show: f.show !== false }); out3.fieldAdded.push(f.label || f.key) }
+    }
+    for (const u of (b3.updates || [])) {
+      const p = doc.people.find(x => x.name === u.name)
+      if (!p) { out3.notFound.push(u.name); continue }
+      const chg = Object.keys(u.set || {}).filter(k => String(p[k] ?? '') !== String(u.set[k] ?? ''))
+      if (chg.length) { if (!dry) Object.assign(p, u.set); out3.updated.push(u.name + '(' + chg.join(',') + ')') }
+    }
+    for (const a of (b3.adds || [])) {
+      if (!a.name || doc.people.some(x => x.name === a.name)) { out3.skipped.push(a.name); continue }
+      if (!dry) doc.people.push({ id: 'p' + Date.now() + Math.random().toString(36).slice(2, 6), role: 'staff', status: '在職', ...a })
+      out3.added.push(a.name)
+    }
+    if (!dry) { await kvPut('sp_crew_kb_roster', doc, '名冊更新口'); await announceChanged() }
+    return res.status(200).json({ ok: true, dry, ...out3, total: doc.people.length })
+  }
   // 菜單探針（唯讀＋金鑰保護，回品名/金額 → 沒帶對 MENU_PROBE_KEY 一律 403）：?menuprobe=<key>&store=abeach|ground
   // 用途：把期間內出現過的全部品項按「日結信分類」彙總（品名/數量/套餐內/金額/出現天數），給菜單盤點/試算表用
   if (req.query?.menuprobe) {
