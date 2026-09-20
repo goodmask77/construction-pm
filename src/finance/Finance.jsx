@@ -1935,7 +1935,7 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
                             {!gdGroup && <th style={{ ...thd, textAlign: "left", cursor: "default" }}>品類</th>}
                             <th onClick={() => setGdSort("avg30")} style={{ ...thd, color: sortKey === "avg30" ? C.brand : C.sub }} title={`近30個日曆天（${n30} 個營業日）平均每日賣出份數——固定看全店最新資料，不受期間選擇影響；點一下排序`}>30日均{sortKey === "avg30" ? " ▼" : ""}</th>
                             <th onClick={() => setGdSort("grow")} style={{ ...thd, color: sortKey === "grow" ? C.brand : C.sub }} title="近30天日均 vs 近60天日均 的成長率（同一套日均口徑）；「新」=60天窗前半沒賣近期開賣；點一下排序（新品排最前）">vs近60{sortKey === "grow" ? " ▼" : ""}</th>
-                            <th onClick={() => setGdSort("cum")} style={{ ...thd, color: sortKey === "cum" ? C.brand : C.sub }}>累計{sortKey === "cum" ? " ▼" : ""}</th>
+                            <th onClick={() => setGdSort("cum")} style={{ ...thd, color: sortKey === "cum" ? C.brand : C.sub }} title="所選期間的總份數（跟上方期間選擇連動）；/prep 備料看板的「30天累計」固定近30天——窗口不同、數字本來就不同">期間累計{sortKey === "cum" ? " ▼" : ""}</th>
                             {isAB
                               ? <th style={{ ...thd, cursor: "default" }} title="Uber 外送分類（低價版）賣出的份數——已併入左邊各日與累計的總量，這欄單獨列出其中多少來自 Uber">Uber</th>
                               : <th style={{ ...thd, cursor: "default" }} title="期間內該品項在套餐裡賣出的份數（累計口徑，跟「累計」欄一致）">套餐內</th>}

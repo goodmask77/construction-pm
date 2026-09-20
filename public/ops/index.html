@@ -115,7 +115,7 @@ async function load(store){
   const dts = d.dates.map(s=>s.slice(5))
   const growCell = gr => gr==null?'<span class="mut">—</span>':gr==='新'?'<span class="up">新</span>':`<span class="${gr>=0?'up':'dn'}">${gr>=0?'+':''}${gr}%</span>`
   const qCells = q => [...q].reverse().map(v=>'<td>'+(v||0)+'</td>').join('')
-  h += `<section><h2>品項明細 <span class="hint">30日均＝近30天每營業日平均份數（抓備料量看這欄）；vs近60＝趨勢；累計＝近30天總份數；右側＝逐日全歷史（最新在左）</span></h2><div class="scroll" style="max-height:70vh;overflow-y:auto"><table><thead><tr><th style="position:sticky;left:0;background:#F1F6F9;z-index:2">品項</th><th>30日均</th><th>vs近60</th><th>累計</th>${dts.map(t=>'<th>'+t+'</th>').reverse().join('')}</tr></thead><tbody>`
+  h += `<section><h2>品項明細 <span class="hint">30日均＝近30天每營業日平均份數（抓備料量看這欄）；vs近60＝趨勢；30天累計＝近30天總份數（App 的「期間累計」窗口不同）；右側＝逐日全歷史（最新在左）</span></h2><div class="scroll" style="max-height:70vh;overflow-y:auto"><table><thead><tr><th style="position:sticky;left:0;background:#F1F6F9;z-index:2">品項</th><th>30日均</th><th>vs近60</th><th title="近30天總份數（App 品項明細的「期間累計」跟著期間選擇走，窗口不同、數字本來就不同）">30天累計</th>${dts.map(t=>'<th>'+t+'</th>').reverse().join('')}</tr></thead><tbody>`
   d.cats.forEach(c=>{
     const a = c.agg || {}
     h += `<tr class="catband"><td style="position:sticky;left:0;background:var(--psoft);z-index:1">${c.name}${c.amt30?` <span style="font-weight:700;font-size:11px">${fmt(c.amt30)}</span>`:''}</td><td style="font-weight:900">${a.avg30!=null?a.avg30:''}</td><td>${a.grow!=null?growCell(a.grow):''}</td><td style="font-weight:900">${a.cum30!=null?a.cum30:''}</td>${a.q?qCells(a.q):`<td colspan="${dts.length}"></td>`}</tr>`
