@@ -92,7 +92,7 @@ async function load(store){
           const badge = Math.abs(diff)>=10 ? `<div style="font-size:9.5px;font-weight:800;color:${diff>0?'var(--pdark)':'var(--muted)'}">${diff>0?'+':''}${diff}%</div>` : ''
           return `<td style="${tw===i+1?'background:#F0F8FC':''}"><b>${v}</b>${badge}</td>`
         }).join('')
-        h += `<tr><td style="font-weight:700;color:var(--ink)">${p.name}</td>${wds}<td class="avg">${p.avg!=null?p.avg:'—'}</td><td style="font-weight:800;color:#A85C26">${p.peak!=null?p.peak:'—'}</td><td class="mut">${p.low!=null?p.low:'—'}</td></tr>`
+        h += `<tr${p.sub?' class="subrow"':''}><td style="font-weight:${p.sub?800:700};color:${p.sub?'#8a5a2e':'var(--ink)'}">${p.sub?'└ ':''}${p.name}</td>${wds}<td class="avg">${p.avg!=null?p.avg:'—'}</td><td style="font-weight:800;color:#A85C26">${p.peak!=null?p.peak:'—'}</td><td class="mut">${p.low!=null?p.low:'—'}</td></tr>`
       })
     })
     h += `</tbody></table></div><div class="hint" style="margin-top:8px">怎麼用：①看今天星期幾那欄（藍底）＝該星期近幾週的平均銷量，數字下的 ±% 是跟總平均的差（超過 ±10% 才顯示，多備或少備看它）②峰值/低值＝近30天單日最高/最低——大日抓峰值、保守抓平均，低於低值就太少了。</div></section>`

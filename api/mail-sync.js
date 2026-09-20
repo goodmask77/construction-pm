@@ -825,6 +825,7 @@ export default async function handler(req, res) {
     const prep = isAB2 ? null : [
       { grp: '炸台', name: '無骨煎雞腿', ...prepAgg(o => o.cat === '漢堡' && /雞腿堡/.test(o.n) && !/炸/.test(o.n)) },
       { grp: '炸台', name: '無骨炸雞腿', ...prepAgg(o => o.cat === '漢堡' && /雞腿堡/.test(o.n) && /炸/.test(o.n)) },
+      { grp: '炸台', name: '無骨雞腿合計', sub: 1, ...prepAgg(o => o.cat === '漢堡' && /雞腿堡/.test(o.n)) }, // 煎+炸加總小計（張良 2026-09-20；峰低值=兩者同日合計的最高/最低，不是峰值相加）
       { grp: '炸台', name: '帶骨炸雞（支）', ...prepAgg(o => o.cat === '小點' && /玻璃脆殼|川味微辣炸雞/.test(o.n), 2) },
       { grp: '沙拉', name: '小洋芋', ...prepAgg(o => o.cat === '小點' && /洋芋/.test(o.n)) },
       { grp: '沙拉', name: '沙拉杯', ...prepAgg(o => o.cat === '小點' && /沙拉杯/.test(o.n)) },
