@@ -1,6 +1,6 @@
 // GROUN:D 盤中更新（張良 2026-08-27：喬亞後台是即時的，指定時間直接更新「今天」＋顯示更新時間）
-// cron 每 30 分打一次（vercel.json，UTC 04-11 點＝台北 12:00-19:30），端點自己核對台北時間在不在名單內：
-//   12:00 12:30 13:00 13:30 14:00 15:00 17:00 18:00 19:00 —— 要改時間改 SLOTS 這行就好
+// cron 每 15 分打一次（vercel.json，UTC 3-13 點＝台北 11:00-21:45），端點自己核對台北時間在不在名單內；
+//   GD 快照格＝SLOTS（11:00-19:30 每 15 分自動生成），AB/1/2 只在整/半點跑——要改時間改 SLOTS 那行就好
 // 寫入規則：只蓋「今天＋intraday 標記」的記錄，絕不動正式資料；打烊後 mail-sync syncJoya 會把
 // intraday 記錄當缺日重抓成最終值（盤中數字不會凍住）。手動測試：?force=<MENU_PROBE_KEY>
 import { joyaLogin, joyaFetchDay, joyaBuildRecord, taipeiToday } from './_joya.js'
@@ -8,9 +8,12 @@ import { kvGet, kvPut, announceChanged } from './mail-sync.js'
 import { syncEatsLive } from './_eats.js' // AB 盤中定時更新（張良 2026-09-06：不用等人按🔄）
 import { syncIchef } from './_ichef.js'   // 參考店 1/2 整點順手同步（iCHEF 數字本來就是「到目前為止」）
 
-// 2026-08-27 二版（張良：峰值要能切半小時看）：11:00-19:30 每半小時都抓——每次快照存 {t,rev,tx}，
-// 相鄰兩張相減＝那半小時的營業額/單數（喬亞只給每小時，半小時是我們自己用快照推算的）
-const SLOTS = ['11:00', '11:30', '12:00', '12:30', '13:00', '13:30', '14:00', '14:30', '15:00', '15:30', '16:00', '16:30', '17:00', '17:30', '18:00', '18:30', '19:00', '19:30']
+// 2026-08-27 二版（張良：峰值要能切半小時看）：快照相鄰兩張相減＝該時段營業額/單數（喬亞只給每小時，細粒度是快照推算的）
+// 2026-09-21 三版（張良：每 15 分記錄一次，版面之後做週期切換）：GD 11:00-19:30 每 15 分一格。
+//   月檔 pm_pos_hh 只收整/半點 {t,rev,tx}（既有半小時圖與 DD 口徑完全不動）；
+//   15 分完整快照（含全品項累計）存每日檔 pm_pos_q_<日期>——相鄰相減=每15分各品項銷量，30/60分由前端聚合。
+const SLOTS = []
+for (let t = 11 * 60; t <= 19 * 60 + 30; t += 15) SLOTS.push(String(Math.floor(t / 60)).padStart(2, '0') + ':' + String(t % 60).padStart(2, '0'))
 const WINDOW_MIN = 6 // cron 可能晚幾分鐘觸發，時間點後 6 分鐘內都算數
 const AB_OPEN = '12:30', AB_CLOSE = '21:30' // 張良 2026-09-06：1/2/AB 一樣每半小時、12:30-21:30
 
@@ -24,7 +27,7 @@ export default async function handler(req, res) {
   const manual = String(req.query?.manual || '') === '1' // 前端「🔄 更新」鈕（張良 2026-08-27：按更新要立刻抓現在的數字）
   const hit = SLOTS.some(s => nowM >= toMin(s) && nowM < toMin(s) + WINDOW_MIN)
   // AB 定時更新（張良 2026-09-06）：手動不在這跑（🔄 鈕本來就會打 mail-sync 抓 AB，避免連打 Eats365 兩次）
-  const abHit = !manual && (force || (nowM >= toMin(AB_OPEN) && nowM < toMin(AB_CLOSE)))
+  const abHit = !manual && (force || (nowM >= toMin(AB_OPEN) && nowM < toMin(AB_CLOSE) && (nowM % 30) < WINDOW_MIN)) // AB/1/2 維持每30分（cron 變 15 分別跟著加倍打人家後台）
   if (!hit && !abHit && !force && !manual) return res.status(200).json({ ok: true, skipped: '非指定時間', taipei: hm })
   if (manual && !hit && !force && (nowM < toMin('11:00') || nowM >= toMin('19:30'))) {
     return res.status(200).json({ ok: true, skipped: '非營業時間（11:00-19:30 才有盤中數字）', taipei: hm })
@@ -68,20 +71,30 @@ export default async function handler(req, res) {
     doc.days[today + '::ground'] = { date: today, period: rec.period, store: rec.store, sheets: _details, intraday: true }
     doc.updatedAt = new Date().toISOString()
     await kvPut(did, doc, '喬亞盤中更新 ' + hm)
-    // 半小時快照：整點/半點視窗內的抓取記一筆 {t:時間格, at:實際抓取時刻, rev, tx}（視窗外的手動更新不記，資料格線才乾淨；同格重複抓不重記）
+    // 快照（視窗外的手動更新不記，資料格線才乾淨；同格重複抓不重記）
     const slotHit = SLOTS.find(s => nowM >= toMin(s) && nowM < toMin(s) + WINDOW_MIN)
     if (slotHit) {
-      const hid = 'sp_finance_pm_pos_hh_' + today.slice(0, 7)
-      const hdoc = (await kvGet(hid)) || { days: {} }
-      const arr = hdoc.days[today] = hdoc.days[today] || []
-      if (!arr.some(s => s.t === slotHit)) {
-        // 品項累計快照（張良 2026-09-21 預做要「每半小時×品項」）：存當下全品項累計份數，
-        // 相鄰兩格相減＝那半小時各品項賣幾份。喬亞實測不吃時分（帶時間回空白）→ 歷史回補不了，只能從今起收。
-        const itemQ = {}
-        for (const it of (day.items || [])) { const q = Math.round(Number(it.value_qvalue) || 0); if (q > 0) itemQ[it.name] = q }
-        arr.push({ t: slotHit, at: hm, rev: rec.revenue, tx: rec.txCount, items: itemQ })
-        hdoc.updatedAt = new Date().toISOString()
-        await kvPut(hid, hdoc, '喬亞半小時快照 ' + slotHit)
+      // ① 15 分完整快照（含全品項累計）→ 每日檔（張良 2026-09-21：預做節奏＋之後版面切 15/30/60 分）
+      //    喬亞實測不吃時分（帶時間回空白）→ 歷史回補不了，只能從部署日起收。
+      const itemQ = {}
+      for (const it of (day.items || [])) { const q = Math.round(Number(it.value_qvalue) || 0); if (q > 0) itemQ[it.name] = q }
+      const qid = 'sp_finance_pm_pos_q_' + today
+      const qdoc = (await kvGet(qid)) || { date: today, slots: [] }
+      if (!qdoc.slots.some(s => s.t === slotHit)) {
+        qdoc.slots.push({ t: slotHit, at: hm, rev: rec.revenue, tx: rec.txCount, items: itemQ })
+        qdoc.updatedAt = new Date().toISOString()
+        await kvPut(qid, qdoc, '喬亞15分快照 ' + slotHit)
+      }
+      // ② 整/半點 {t,rev,tx} → 月檔（既有半小時圖與 DD 的口徑不動、檔案不變肥）
+      if (/:(00|30)$/.test(slotHit)) {
+        const hid = 'sp_finance_pm_pos_hh_' + today.slice(0, 7)
+        const hdoc = (await kvGet(hid)) || { days: {} }
+        const arr = hdoc.days[today] = hdoc.days[today] || []
+        if (!arr.some(s => s.t === slotHit)) {
+          arr.push({ t: slotHit, at: hm, rev: rec.revenue, tx: rec.txCount })
+          hdoc.updatedAt = new Date().toISOString()
+          await kvPut(hid, hdoc, '喬亞半小時快照 ' + slotHit)
+        }
       }
     }
     await announceChanged() // 開著的網頁即刻自動跟上
