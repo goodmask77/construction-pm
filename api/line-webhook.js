@@ -573,7 +573,7 @@ async function loadPosText() {
   try {
     const now = new Date(Date.now() + 8 * 3600e3)
     const mo = now.toISOString().slice(0, 7)
-    const kv = await kvGetMany(['sp_finance_pm_pos', 'sp_finance_pm_pos_d_' + mo, 'sp_finance_pm_pos_tx_' + mo, 'sp_finance_pm_pos_flags', 'sp_finance_pm_pos_idlecfg', 'sp_finance_pm_pos_hh_' + mo, 'sp_finance_pm_pos_costs', 'sp_finance_pm_pos_prices', 'sp_finance_pm_pos_hidden', 'sp_finance_pm_pos_alias', 'sp_finance_pm_sop_def', 'sp_finance_pm_sop_g_' + now.toISOString().slice(0, 10), 'sp_finance_pm_sop_issues', 'sp_finance_pm_inv', 'sp_finance_pm_buy', 'sp_finance_pm_meet', 'sp_finance_pm_shift_g', 'sp_finance_pm_fb', 'sp_finance_pm_ablive', 'sp_finance_pm_labor'])
+    const kv = await kvGetMany(['sp_finance_pm_pos', 'sp_finance_pm_pos_d_' + mo, 'sp_finance_pm_pos_tx_' + mo, 'sp_finance_pm_pos_flags', 'sp_finance_pm_pos_idlecfg', 'sp_finance_pm_pos_hh_' + mo, 'sp_finance_pm_pos_costs', 'sp_finance_pm_pos_prices', 'sp_finance_pm_pos_hidden', 'sp_finance_pm_pos_alias', 'sp_finance_pm_sop_def', 'sp_finance_pm_sop_g_' + now.toISOString().slice(0, 10), 'sp_finance_pm_sop_issues', 'sp_finance_pm_inv', 'sp_finance_pm_buy', 'sp_finance_pm_meet', 'sp_finance_pm_shift_g', 'sp_finance_pm_fb', 'sp_finance_pm_menu', 'sp_finance_pm_ablive', 'sp_finance_pm_labor'])
     const pos = kv['sp_finance_pm_pos']
     const entries = pos && Array.isArray(pos.entries) ? pos.entries : []
     if (!entries.length) return ''
@@ -676,6 +676,18 @@ async function loadPosText() {
         }
       }
       lines.push('【盤點/包材庫存（/prep 盤點分頁；預估現量=盤點量−盤後銷售×用量，低於低標 cron 每日開店前發群提醒）】'); lines.push(...invL)
+    }
+    // 新菜單編輯（pm_menu＝/prep 菜單分頁：base=既有菜單、draft=新菜單協作稿；與 App loadSpaceAIContext 同步接）
+    const mnDoc = kv['sp_finance_pm_menu']
+    if (mnDoc && mnDoc.base) {
+      const flat = (m2) => { const o2 = {}; (m2.sections || []).forEach(s2 => (s2.items || []).forEach(i2 => { o2[i2.id] = { ...i2, sec: s2.name } })); return o2 }
+      const bF = flat(mnDoc.base), dF = flat(mnDoc.draft || mnDoc.base)
+      const add2 = Object.keys(dF).filter(k2 => !bF[k2]), del2 = Object.keys(bF).filter(k2 => !dF[k2])
+      const chg2 = Object.keys(dF).filter(k2 => bF[k2] && (bF[k2].name !== dF[k2].name || bF[k2].price !== dF[k2].price))
+      lines.push(`【新菜單協作稿（/prep 菜單分頁；對比既有菜單：新增${add2.length}、刪${del2.length}、改${chg2.length}）】`)
+      add2.slice(0, 8).forEach(k2 => lines.push(`  + ${dF[k2].sec}｜${dF[k2].name} $${dF[k2].price}`))
+      del2.slice(0, 8).forEach(k2 => lines.push(`  - ${bF[k2].name}（原$${bF[k2].price}）`))
+      chg2.slice(0, 8).forEach(k2 => lines.push(`  ~ ${bF[k2].name} $${bF[k2].price} → ${dF[k2].name} $${dF[k2].price}`))
     }
     // 每日回饋（pm_fb＝/prep 回饋分頁：每天對有上班的人文字回饋+1~5星；與 App loadSpaceAIContext 同步接）
     const fbL = ((kv['sp_finance_pm_fb'] || {}).list || [])

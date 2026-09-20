@@ -1046,6 +1046,52 @@ export default async function handler(req, res) {
     await kvPut('sp_finance_pm_pos_hidden', doc, '品項隱藏(' + whoH.name + ')')
     return res.status(200).json({ ok: true })
   }
+  // ── 🍔 菜單編輯（張良 2026-09-22：base=既有菜單凍結快照、draft=新菜單大家協作編輯；diff 給夥伴看動了什麼）──
+  if (req.query?.menu) {
+    const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
+    if (!ok2 || String(req.query.menu) !== ok2) return res.status(403).json({ ok: false })
+    const [mdoc0, meM2] = await Promise.all([kvGet('sp_finance_pm_menu'), sopWho(req.query.me)])
+    let mdoc = mdoc0
+    if (!mdoc || !mdoc.base) { // 首次：把既有菜單（2026-09 紙本）種進去，base 之後不動、draft 開放編輯
+      const S = (nm, note, items) => ({ name: nm, note: note || '', items })
+      const I = (id, nm, pr, note) => ({ id, name: nm, price: pr, note: note || '' })
+      const seed = { note: '套餐玩法 +89 元＝任一主餐 ＋ 副食A區 ＋ 飲品B區', sections: [
+        S('PIZZA 披薩', '主餐', [I('m01','經典瑪格麗特',330,'全日'), I('m02','蜂蜜五起司綜合堅果',380,'周一'), I('m03','辣楓糖臘腸培根',390,'周二'), I('m04','煙燻BBQ雞肉',360,'周三'), I('m05','松露菌菇',400,'周四'), I('m06','菠菜培根溫泉蛋',360,'周五')]),
+        S('BURGERS 漢堡堡', '主餐', [I('m11','香煎去骨雞腿堡',180), I('m12','大阪燒煎雞腿堡',200), I('m13','美式牧場炸雞腿堡',180), I('m14','松露菌菇炸雞腿堡',200), I('m15','泰式椒麻炸雞腿堡',200), I('m16','川味微辣炸雞腿堡',200), I('m17','4oz 100%純牛肉起司堡',200), I('m18','8oz 雙層純牛肉起司堡',260)]),
+        S('ROLLS 越法三明治', '主餐', [I('m21','生菜煎蛋越南三明治',120), I('m22','烤雞胸越南三明治',180), I('m23','BBQ烤豬肉越南三明治',180), I('m24','爐烤牛排越南三明治',260), I('m25','酥炸雞腿越南三明治',200)]),
+        S('FAST IDEAS 輕鬆選', '前四項可當主餐', [I('m31','川味微辣炸雞 x2',160,'主餐'), I('m32','玻璃脆殼炸雞 x2',160,'主餐'), I('m33','松露菌菇義大利麵',160,'主餐'), I('m34','經典番茄肉醬義大利麵',160,'主餐'), I('m35','松露/肉醬薯條',90), I('m36','雙醬薯條',120), I('m37','費洛蒙起司薯條',160), I('m38','肉醬起司小洋芋',120), I('m39','烤地瓜海鹽焦糖冰淇淋',120)]),
+        S('A區 套餐副食', '4選1（可單點）', [I('m41','可愛沙拉杯',60), I('m42','薯條',60), I('m43','番茄蔬菜湯',60), I('m44','酸奶油香煎小洋芋',80)]),
+        S('B區 套餐飲品', '4選1（可單點）', [I('m51','可口可樂 原味/ZERO',50), I('m52','南非國寶茶',50,'#無咖啡因'), I('m53','自然四季春烏龍',60,'#日月老茶廠'), I('m54','台灣有機紅茶',60,'#自然農法')]),
+        S('咖啡・其他飲品', '', [I('m61','美式咖啡',75,'冰/熱'), I('m62','國寶鮮奶茶',90,'#無咖啡因'), I('m63','經典拿鐵',90,'冰/熱'), I('m64','抹茶/可可拿鐵',100)]),
+      ] }
+      mdoc = { base: seed, draft: JSON.parse(JSON.stringify(seed)), edits: [] }
+      await kvPut('sp_finance_pm_menu', mdoc, '菜單種子(既有菜單2026-09)')
+    }
+    return res.status(200).json({ ok: true, base: mdoc.base, draft: mdoc.draft, edits: (mdoc.edits || []).slice(0, 15), me: meM2 ? { name: meM2.name } : null })
+  }
+  if (req.method === 'POST' && req.query?.menuset) {
+    const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
+    if (!ok2 || String(req.query.menuset) !== ok2) return res.status(403).json({ ok: false })
+    let mb2 = {}
+    try { mb2 = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
+    const whoM2 = await sopWho(mb2.token)
+    if (!whoM2) return res.status(403).json({ ok: false, error: '要先跟 DD 說「綁定GD」' })
+    const doc = (await kvGet('sp_finance_pm_menu')) || {}
+    if (!doc.base) return res.status(400).json({ ok: false, error: '先開一次菜單分頁讓系統種既有菜單' })
+    const dr = mb2.draft || {}
+    if (!Array.isArray(dr.sections)) return res.status(400).json({ ok: false, error: '格式不對' })
+    // 消毒＋上限（名稱80字/註記40字/價格0~9999/分類20個/品項每類60個）
+    doc.draft = { note: String(dr.note || '').slice(0, 200), sections: dr.sections.slice(0, 20).map(s2 => ({
+      name: String(s2.name || '').slice(0, 80), note: String(s2.note || '').slice(0, 60),
+      items: (Array.isArray(s2.items) ? s2.items : []).slice(0, 60).map(i2 => ({
+        id: String(i2.id || ('mn' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5))).slice(0, 20),
+        name: String(i2.name || '').slice(0, 80), price: Math.max(0, Math.min(9999, Math.round(Number(i2.price) || 0))), note: String(i2.note || '').slice(0, 40),
+      })).filter(i2 => i2.name),
+    })).filter(s2 => s2.name) }
+    doc.edits = [{ by: whoM2.name, ts: new Date(Date.now() + 8 * 3600e3).toISOString().slice(5, 16).replace('T', ' '), what: String(mb2.what || '').slice(0, 80) }, ...(doc.edits || [])].slice(0, 30)
+    await kvPut('sp_finance_pm_menu', doc, '新菜單編輯(' + whoM2.name + ')')
+    return res.status(200).json({ ok: true })
+  }
   // ── 💬 每日回饋（張良 2026-09-22：每天對有上班的人做文字回饋＋評分1~5星；一人一天對一人一則可改）──
   if (req.query?.fb) {
     const ok2 = (process.env.OPS_BOARD_KEY || '').trim()

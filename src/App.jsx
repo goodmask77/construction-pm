@@ -61,9 +61,9 @@ async function loadSpaceAIContext() {
       } catch (_) { return await g(legacy); }
     };
     const d0 = new Date(); const mo = `${d0.getFullYear()}-${String(d0.getMonth() + 1).padStart(2, "0")}`;
-    const [snapC, snapT, snapK, snapF, tasks, crewRoster, crewOld, pos, posD, posTx, posFlags, posIdleCfgAI, posHHAI, posCostsAI, posPricesAI, posHiddenAI, posAliasAI, sopDefAI, sopLogAI, sopIssAI, invAI, buyAI, meetAI, shiftGAI, fbAI, posAbLiveAI, posLaborAI, bank, ctbc, accounts, ledger, conclusions, mailRules, mailLog, supply, supplyOrders, supplyRecipesRaw] = await Promise.all([
+    const [snapC, snapT, snapK, snapF, tasks, crewRoster, crewOld, pos, posD, posTx, posFlags, posIdleCfgAI, posHHAI, posCostsAI, posPricesAI, posHiddenAI, posAliasAI, sopDefAI, sopLogAI, sopIssAI, invAI, buyAI, meetAI, shiftGAI, fbAI, menuAI, posAbLiveAI, posLaborAI, bank, ctbc, accounts, ledger, conclusions, mailRules, mailLog, supply, supplyOrders, supplyRecipesRaw] = await Promise.all([
       g("pm_bot_context"), g("sp_team_pm_bot_context"), g("sp_crew_pm_bot_context"), g("sp_finance_pm_bot_context"),
-      recs("pm_tasks_v2", "pm_task_", "pm_tasks"), g("sp_crew_kb_roster"), g("sp_crew_kb_360"), g("sp_finance_pm_pos"), g("sp_finance_pm_pos_d_" + mo), g("sp_finance_pm_pos_tx_" + mo), g("sp_finance_pm_pos_flags"), g("sp_finance_pm_pos_idlecfg"), g("sp_finance_pm_pos_hh_" + mo), g("sp_finance_pm_pos_costs"), g("sp_finance_pm_pos_prices"), g("sp_finance_pm_pos_hidden"), g("sp_finance_pm_pos_alias"), g("sp_finance_pm_sop_def"), g("sp_finance_pm_sop_g_" + new Intl.DateTimeFormat("sv-SE", { timeZone: "Asia/Taipei" }).format(new Date()).slice(0, 10)), g("sp_finance_pm_sop_issues"), g("sp_finance_pm_inv"), g("sp_finance_pm_buy"), g("sp_finance_pm_meet"), g("sp_finance_pm_shift_g"), g("sp_finance_pm_fb"), g("sp_finance_pm_ablive"), g("sp_finance_pm_labor"),
+      recs("pm_tasks_v2", "pm_task_", "pm_tasks"), g("sp_crew_kb_roster"), g("sp_crew_kb_360"), g("sp_finance_pm_pos"), g("sp_finance_pm_pos_d_" + mo), g("sp_finance_pm_pos_tx_" + mo), g("sp_finance_pm_pos_flags"), g("sp_finance_pm_pos_idlecfg"), g("sp_finance_pm_pos_hh_" + mo), g("sp_finance_pm_pos_costs"), g("sp_finance_pm_pos_prices"), g("sp_finance_pm_pos_hidden"), g("sp_finance_pm_pos_alias"), g("sp_finance_pm_sop_def"), g("sp_finance_pm_sop_g_" + new Intl.DateTimeFormat("sv-SE", { timeZone: "Asia/Taipei" }).format(new Date()).slice(0, 10)), g("sp_finance_pm_sop_issues"), g("sp_finance_pm_inv"), g("sp_finance_pm_buy"), g("sp_finance_pm_meet"), g("sp_finance_pm_shift_g"), g("sp_finance_pm_fb"), g("sp_finance_pm_menu"), g("sp_finance_pm_ablive"), g("sp_finance_pm_labor"),
       g("sp_finance_pm_bank"), g("sp_finance_pm_ctbc"), g("sp_finance_pm_fin_accounts"), recs("sp_finance_pm_fin_ledger_v2", "sp_finance_pm_fin_tx_", "sp_finance_pm_fin_ledger"),
       g("pm_conclusions"), g("sp_lw_pm_mail_rules"), g("sp_lw_pm_mail_log"), g("sp_supply_pm_supply"),
       g("sp_supply_pm_orders"), getSharedPrefix("sp_supply_pm_recipe_v_"),
@@ -205,6 +205,17 @@ async function loadSpaceAIContext() {
           }
         }
         parts.push("【盤點/包材庫存（/prep 盤點分頁；預估現量=盤點量−盤後銷售×用量，低於低標每日開店前發群提醒）】\n" + invL.join("\n"));
+      }
+      // 新菜單協作稿（pm_menu；與 D哥 loadPosText 同步接）
+      if (menuAI && menuAI.base) {
+        const flat = (m2) => { const o2 = {}; (m2.sections || []).forEach(s2 => (s2.items || []).forEach(i2 => { o2[i2.id] = { ...i2, sec: s2.name } })); return o2 };
+        const bF = flat(menuAI.base), dF = flat(menuAI.draft || menuAI.base);
+        const add2 = Object.keys(dF).filter(k2 => !bF[k2]), del2 = Object.keys(bF).filter(k2 => !dF[k2]);
+        const chg2 = Object.keys(dF).filter(k2 => bF[k2] && (bF[k2].name !== dF[k2].name || bF[k2].price !== dF[k2].price));
+        parts.push(`【新菜單協作稿（對比既有：新增${add2.length}、刪${del2.length}、改${chg2.length}）】\n` +
+          [...add2.slice(0, 8).map(k2 => `+ ${dF[k2].sec}｜${dF[k2].name} $${dF[k2].price}`),
+           ...del2.slice(0, 8).map(k2 => `- ${bF[k2].name}（原$${bF[k2].price}）`),
+           ...chg2.slice(0, 8).map(k2 => `~ ${bF[k2].name} $${bF[k2].price} → ${dF[k2].name} $${dF[k2].price}`)].join("\n"));
       }
       // 每日回饋（pm_fb；與 D哥 loadPosText 同步接）
       {

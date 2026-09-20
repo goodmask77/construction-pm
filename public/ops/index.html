@@ -28,7 +28,7 @@
   .bseg.on{opacity:1;border-bottom:2.5px solid var(--primary)}
   h1{font-size:24px;font-weight:900;color:var(--ink);letter-spacing:-.02em;margin-top:4px}
   .sub{font-size:12px;color:var(--muted);margin-top:2px}
-  .tabs{display:flex;gap:8px;margin:14px 0;overflow-x:auto;-webkit-overflow-scrolling:touch;padding-bottom:2px}
+  .tabs{display:flex;gap:8px;margin:14px 0;flex-wrap:wrap}
   .tabs button{border:1px solid var(--line);background:#fff;border-radius:9px;padding:7px 14px;font-size:14px;font-weight:800;color:var(--muted);cursor:pointer;white-space:nowrap;flex:0 0 auto}
   .tabs button.on{background:var(--primary);border-color:var(--primary);color:#fff}
   .kpis{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:12px 0}
@@ -82,6 +82,7 @@
     <button id="tab-meet" onclick="meetLoad()">📋 會議</button>
     <button id="tab-shift" onclick="shiftLoad()">📅 班表</button>
     <button id="tab-fb" onclick="fbLoad()">💬 回饋</button>
+    <button id="tab-menu" onclick="menuLoad()">🍔 菜單</button>
   </div>
   <div id="app"></div>
   <div class="foot">資料每天自動同步（打開即最新）・僅供內部參考與備料使用，請勿外傳連結</div>
@@ -93,7 +94,7 @@ const app = document.getElementById('app')
 let curStore = 'ground'
 let lastStore = 'ground'
 function setTabs(k){
-  ['task','lb','food','pack','buy','meet','shift','fb'].forEach(t => { const b = document.getElementById('tab-' + t); if (b) b.className = (t===k) ? 'on' : '' })
+  ['task','lb','food','pack','buy','meet','shift','fb','menu'].forEach(t => { const b = document.getElementById('tab-' + t); if (b) b.className = (t===k) ? 'on' : '' })
   const hb = document.getElementById('tab-home'); if (hb) hb.className = (k==='ground'||k==='abeach') ? 'on' : '' // 🏠=回店面（張良 2026-09-21：怕有人不知道怎麼回去）
   if (k === 'ground' || k === 'abeach') lastStore = k
   const g = document.getElementById('bs-ground'), a = document.getElementById('bs-abeach')
@@ -111,6 +112,7 @@ function goView(){
   else if (curStore === 'meet') meetLoad()
   else if (curStore === 'shift') shiftLoad()
   else if (curStore === 'fb') fbLoad()
+  else if (curStore === 'menu') menuLoad()
   else load(curStore, true)
 }
 // 🔑 輸入綁定碼（iPhone 加入主畫面的 App 跟 Safari 儲存分開→token 帶不過去；貼一次 DD 給的連結/代碼即可）
@@ -587,6 +589,7 @@ async function prefetchTabs(){
   q('/api/mail-sync?meet=' + encodeURIComponent(K) + me, 'meet').then(d2=>{ if(d2 && !window._meetD) window._meetD = d2 })
   q('/api/mail-sync?shift=' + encodeURIComponent(K) + '&ym=' + todayTpe().slice(0,7) + me, 'shift_' + todayTpe().slice(0,7)).then(d2=>{ if(d2 && !window._shiftD) window._shiftD = d2 })
   q('/api/mail-sync?fb=' + encodeURIComponent(K) + '&date=' + todayTpe() + me, 'fb_' + todayTpe()).then(d2=>{ if(d2 && !window._fbD) window._fbD = d2 })
+  q('/api/mail-sync?menu=' + encodeURIComponent(K) + me, 'menu').then(d2=>{ if(d2 && !window._menuD) window._menuD = d2 })
 }
 async function lbFetch(){
   let d
@@ -1413,6 +1416,161 @@ function fbOtherGo(){
   if (!v) return
   window._fbD.workers = [...(window._fbD.workers||[]), v]
   fbRender()
+}
+// ── 🍔 菜單分頁（張良 2026-09-22：base=既有菜單凍結、draft=新菜單協作編輯；diff 標新增/刪除/修改給大家看；可切「對照原菜單」雙欄）──
+let menuMode = 'edit'
+async function menuLoad(){
+  curStore = 'menu'; setTabs('menu')
+  if (!window._menuD) { const c = tcGet('menu'); if (c) window._menuD = c }
+  if (window._menuD) menuRender(); else app.innerHTML = '<section>載入中…</section>'
+  let d
+  try { const r = await fetch('/api/mail-sync?menu=' + encodeURIComponent(K) + (TK() ? '&me=' + encodeURIComponent(TK()) : '')); d = await r.json() } catch(e){}
+  if (!d || !d.ok) { if (!window._menuD) app.innerHTML = '<div class="err">讀不到資料</div>'; return }
+  window._menuD = d; tcSet('menu', d)
+  if (curStore === 'menu') menuRender()
+}
+function menuFlat(m2){ const o2 = {}; (m2.sections||[]).forEach((s2,si)=>(s2.items||[]).forEach(i2=>{ o2[i2.id] = { ...i2, sec: s2.name, si } })); return o2 }
+function menuDiff(){
+  const d = window._menuD
+  const bF = menuFlat(d.base), dF = menuFlat(d.draft||d.base)
+  return { bF, dF,
+    add: Object.keys(dF).filter(k=>!bF[k]),
+    del: Object.keys(bF).filter(k=>!dF[k]),
+    chg: Object.keys(dF).filter(k=>bF[k] && (bF[k].name!==dF[k].name || bF[k].price!==dF[k].price || (bF[k].note||'')!==(dF[k].note||''))) }
+}
+function menuRender(){
+  const d = window._menuD; if (!d || curStore !== 'menu') return
+  document.getElementById('upd').textContent = '🍔 新菜單協作・既有菜單已先上、直接改'
+  const meN = d.me && d.me.name
+  const df = menuDiff()
+  const seg = (lb,v) => `<button style="border:none;padding:6px 14px;font-size:13px;font-weight:800;cursor:pointer;${menuMode===v?'background:var(--primary);color:#fff':'background:#fff;color:var(--primary)'}" onclick="menuMode='${v}';menuRender()">${lb}</button>`
+  let h = `<section><h2>🍔 新菜單 <span class="hint">${meN?'直接在上面改，大家都看得到動了什麼':'看得到；要編輯先綁定——'+BIND_HINT}</span></h2>
+  <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px">
+    <span style="display:inline-flex;border:1.5px solid var(--primary);border-radius:9px;overflow:hidden">${seg('✏️ 新菜單','edit')}${seg('🆚 對照原菜單','cmp')}</span>
+    ${meN&&menuMode==='edit'?`<button class="mini" onclick="menuSecForm()">＋ 新增分類</button>`:''}
+  </div>`
+  // 變更總覽（協作人員一眼看懂）
+  if (df.add.length || df.del.length || df.chg.length) {
+    h += `<div style="background:#FFF9E8;border:1.5px solid #E8D089;border-radius:12px;padding:10px 12px;margin-bottom:10px;font-size:12.5px">
+      <div style="font-weight:900">📌 跟原菜單比：<span class="up">新增 ${df.add.length}</span>・<span style="color:var(--red);font-weight:800">刪除 ${df.del.length}</span>・<span style="color:#A85C26;font-weight:800">修改 ${df.chg.length}</span></div>`
+    df.add.forEach(k=>{ h += `<div class="up">＋ ${df.dF[k].sec}｜${df.dF[k].name} $${df.dF[k].price}</div>` })
+    df.del.forEach(k=>{ h += `<div style="color:var(--red)">－ ${df.bF[k].sec}｜<s>${df.bF[k].name} $${df.bF[k].price}</s></div>` })
+    df.chg.forEach(k=>{ const b=df.bF[k], n=df.dF[k]; h += `<div style="color:#A85C26">～ ${b.name}${b.name!==n.name?` → ${n.name}`:''}${b.price!==n.price?`｜$${b.price} → $${n.price}`:''}${(b.note||'')!==(n.note||'')?`｜註記：${b.note||'無'} → ${n.note||'無'}`:''}</div>` })
+    h += `</div>`
+  } else h += `<div class="mut" style="margin-bottom:10px;font-size:12.5px">還沒有改動——跟原菜單一模一樣</div>`
+  h += `<div style="background:#fff;border:1.5px solid var(--line);border-radius:10px;padding:8px 11px;margin-bottom:10px;font-size:13px"><b>套餐規則：</b>${(d.draft.note||'').replace(/</g,'&lt;')} ${meN&&menuMode==='edit'?`<button class="mini" onclick="menuNoteEdit()">✏️</button>`:''}</div>`
+  if (menuMode === 'edit') {
+    (d.draft.sections||[]).forEach((s2,si)=>{
+      h += `<div style="background:var(--soft);border:1px solid var(--line);border-radius:12px;padding:9px 11px;margin-bottom:10px">
+        <div style="font-weight:900;color:var(--pdark)">${s2.name} ${s2.note?`<span class="hint">${s2.note}</span>`:''}
+        ${meN?` <button class="mini" onclick="menuSecForm(${si})">✏️</button> <button class="mini" onclick="menuItemForm(${si})">＋品項</button> <button class="mini" style="color:var(--red)" onclick="if(confirm('刪掉整個分類「${s2.name}」？（品項會標成刪除）'))menuSecDel(${si})">🗑</button>`:''}</div>`
+      ;(s2.items||[]).forEach(i2=>{
+        const b = df.bF[i2.id]
+        const isNew = !b, isChg = b && (b.name!==i2.name || b.price!==i2.price || (b.note||'')!==(i2.note||''))
+        h += `<div style="display:flex;gap:8px;align-items:center;background:${isNew?'#E8F6EE':isChg?'#FFF4DE':'#fff'};border:1px solid ${isNew?'#BBE3CC':isChg?'#E8D089':'var(--line)'};border-radius:9px;padding:6px 10px;margin-top:6px;font-size:13px">
+          <span style="flex:1"><b>${i2.name}</b>${i2.note?` <span class="hint">${i2.note}</span>`:''}${isNew?' <span class="up" style="font-size:11px;font-weight:800">新增</span>':''}${isChg?` <span style="font-size:11px;color:#A85C26;font-weight:800">改（原 ${b.name}·$${b.price}）</span>`:''}</span>
+          <b>$${i2.price}</b>
+          ${meN?`<span><button class="mini" onclick="menuItemForm(${si},'${i2.id}')">✏️</button><button class="mini" style="color:var(--red)" onclick="if(confirm('刪掉「${i2.name}」？'))menuItemDel(${si},'${i2.id}')">🗑</button></span>`:''}
+        </div>`
+      })
+      // 這分類底下被刪掉的（原菜單有、新菜單沒了）→ 灰底刪除線＋復原
+      df.del.filter(k=>df.bF[k].sec===s2.name).forEach(k=>{ const b = df.bF[k]
+        h += `<div style="display:flex;gap:8px;align-items:center;background:#F5F5F5;border:1px dashed #D8C7C4;border-radius:9px;padding:6px 10px;margin-top:6px;font-size:13px;opacity:.75">
+          <span style="flex:1;color:var(--red)"><s>${b.name} $${b.price}</s> <span style="font-size:11px;font-weight:800">已刪除</span></span>
+          ${meN?`<button class="mini" onclick="menuItemRestore('${k}')">↩︎ 復原</button>`:''}</div>` })
+      h += `</div>`
+    })
+    // 整個分類被刪掉的
+    const delSecs = (d.base.sections||[]).filter(bs=>!(d.draft.sections||[]).some(s2=>s2.name===bs.name) && df.del.some(k=>df.bF[k].sec===bs.name))
+    delSecs.forEach(bs=>{
+      h += `<div style="background:#F5F5F5;border:1px dashed #D8C7C4;border-radius:12px;padding:9px 11px;margin-bottom:10px;opacity:.75">
+        <div style="font-weight:900;color:var(--red)"><s>${bs.name}</s> 已整類刪除</div>` +
+        df.del.filter(k=>df.bF[k].sec===bs.name).map(k=>`<div style="font-size:13px;color:var(--red);margin-top:4px"><s>${df.bF[k].name} $${df.bF[k].price}</s> ${meN?`<button class="mini" onclick="menuItemRestore('${k}')">↩︎ 復原</button>`:''}</div>`).join('') + `</div>`
+    })
+  } else { // 🆚 對照模式：左原右新
+    const secNames = [...new Set([...(d.base.sections||[]).map(s2=>s2.name), ...(d.draft.sections||[]).map(s2=>s2.name)])]
+    secNames.forEach(nm=>{
+      const bs = (d.base.sections||[]).find(s2=>s2.name===nm), ds = (d.draft.sections||[]).find(s2=>s2.name===nm)
+      h += `<div style="background:var(--soft);border:1px solid var(--line);border-radius:12px;padding:9px 11px;margin-bottom:10px">
+        <div style="font-weight:900;color:var(--pdark)">${nm}${!bs?' <span class="up" style="font-size:11px">新分類</span>':''}${!ds?' <span style="color:var(--red);font-size:11px;font-weight:800">整類刪除</span>':''}</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:6px;font-size:12.5px">
+          <div><div class="hint" style="font-weight:800">原菜單</div>${bs?(bs.items||[]).map(i2=>{ const gone=!df.dF[i2.id]; const chg=df.chg.includes(i2.id); return `<div style="padding:2px 0;${gone?'color:var(--red);text-decoration:line-through':chg?'color:#A85C26':''}">${i2.name} $${i2.price}</div>` }).join(''):'<div class="mut">—</div>'}</div>
+          <div><div class="hint" style="font-weight:800">新菜單</div>${ds?(ds.items||[]).map(i2=>{ const isNew=!df.bF[i2.id]; const chg=df.chg.includes(i2.id); return `<div style="padding:2px 0;${isNew?'color:var(--green);font-weight:700':chg?'color:#A85C26;font-weight:700':''}">${i2.name} $${i2.price}${i2.note?` <span class="hint">${i2.note}</span>`:''}</div>` }).join(''):'<div class="mut">—</div>'}</div>
+        </div></div>`
+    })
+  }
+  if ((d.edits||[]).length) h += `<details style="margin-top:6px"><summary class="hint" style="cursor:pointer">✍️ 編輯紀錄（${d.edits.length}）</summary>${d.edits.map(e=>`<div class="hint">${e.ts}・${e.by}${e.what?'・'+e.what:''}</div>`).join('')}</details>`
+  h += `</section>`
+  app.innerHTML = h
+}
+async function menuSave(what){
+  const d = window._menuD
+  const r = await fetch('/api/mail-sync?menuset=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ draft: d.draft, what, token: TK() }) })
+  const j = await r.json().catch(()=>null)
+  if (!j || !j.ok) { alert((j&&j.error)||'儲存失敗'); menuLoad(); return }
+  tcSet('menu', d); menuRender(); menuLoad() // 樂觀更新＋背景校正
+}
+function menuItemForm(si, id){
+  const d = window._menuD, s2 = d.draft.sections[si], it = id ? (s2.items||[]).find(x=>x.id===id) : null
+  const ov = document.createElement('div'); ov.id='mnOv'
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(16,24,43,.45);z-index:50;display:flex;align-items:center;justify-content:center;padding:16px'
+  const ip = 'width:100%;border:1px solid var(--line);border-radius:8px;padding:8px;font-size:14px;font-family:inherit;margin-bottom:6px'
+  ov.innerHTML = `<div style="background:#fff;border-radius:14px;max-width:400px;width:100%;padding:16px" onclick="event.stopPropagation()">
+    <div style="font-weight:900;margin-bottom:8px">${it?'✏️ 編輯':'＋ 新增'}品項｜${s2.name}</div>
+    <input id="mnName" placeholder="品名" value="${it?it.name.replace(/"/g,'&quot;'):''}" style="${ip}">
+    <input id="mnPrice" type="number" placeholder="價格" value="${it?it.price:''}" style="${ip}">
+    <input id="mnNote" placeholder="註記（周一/主餐/#無咖啡因…可空）" value="${it?(it.note||'').replace(/"/g,'&quot;'):''}" style="${ip}">
+    <div style="display:flex;gap:8px;justify-content:flex-end"><button class="mini" style="padding:9px 12px" onclick="document.getElementById('mnOv').remove()">取消</button>
+    <button class="mini on" style="padding:9px 18px" onclick="menuItemSave(${si},'${id||''}')">儲存</button></div></div>`
+  ov.onclick = () => ov.remove()
+  document.body.appendChild(ov)
+}
+function menuItemSave(si, id){
+  const g2 = x => (document.getElementById(x)||{}).value||''
+  const name = g2('mnName').trim(), price = +g2('mnPrice')||0, note = g2('mnNote').trim()
+  if (!name) { alert('品名空的'); return }
+  const s2 = window._menuD.draft.sections[si]
+  const o = document.getElementById('mnOv'); if (o) o.remove()
+  if (id) { const it = (s2.items||[]).find(x=>x.id===id); if (it) { it.name=name; it.price=price; it.note=note } }
+  else s2.items = [...(s2.items||[]), { id: 'mn'+Date.now().toString(36), name, price, note }]
+  menuSave((id?'改 ':'加 ')+name)
+}
+function menuItemDel(si, id){
+  const s2 = window._menuD.draft.sections[si]
+  const it = (s2.items||[]).find(x=>x.id===id)
+  s2.items = (s2.items||[]).filter(x=>x.id!==id)
+  menuSave('刪 '+(it?it.name:''))
+}
+function menuItemRestore(id){
+  const d = window._menuD
+  const b = menuFlat(d.base)[id]
+  if (!b) return
+  let s2 = d.draft.sections.find(x=>x.name===b.sec)
+  if (!s2) { s2 = { name: b.sec, note: (d.base.sections.find(x=>x.name===b.sec)||{}).note||'', items: [] }; d.draft.sections.push(s2) }
+  s2.items.push({ id: b.id, name: b.name, price: b.price, note: b.note||'' })
+  menuSave('復原 '+b.name)
+}
+function menuSecForm(si){
+  const d = window._menuD, s2 = si!=null ? d.draft.sections[si] : null
+  const nm = prompt(s2?'分類名稱':'新分類名稱', s2?s2.name:'')
+  if (nm==null || !nm.trim()) return
+  const note = prompt('分類註記（可空，例：主餐／4選1）', s2?(s2.note||''):'')
+  if (s2) { s2.name = nm.trim(); s2.note = (note||'').trim() }
+  else d.draft.sections.push({ name: nm.trim(), note: (note||'').trim(), items: [] })
+  menuSave((s2?'改分類 ':'新分類 ')+nm.trim())
+}
+function menuSecDel(si){
+  const d = window._menuD
+  const nm = d.draft.sections[si].name
+  d.draft.sections.splice(si,1)
+  menuSave('刪分類 '+nm)
+}
+function menuNoteEdit(){
+  const d = window._menuD
+  const v = prompt('套餐規則／菜單說明', d.draft.note||'')
+  if (v==null) return
+  d.draft.note = v.trim()
+  menuSave('改套餐規則')
 }
 load('ground')
 </script>
