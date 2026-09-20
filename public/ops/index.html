@@ -34,6 +34,10 @@
   .scroll{overflow-x:auto;-webkit-overflow-scrolling:touch;border:1px solid var(--line);border-radius:10px}
   .catband td{background:var(--psoft)!important;color:var(--pdark);font-weight:900;font-size:12.5px}
   .subrow td{background:#FBF6EA!important} /* 小計列琥珀底——用 !important 蓋過斑馬紋，不然偶數列會被蓋掉 */
+  /* 今天星期幾的欄位發光（張良 2026-09-20）：亮藍內框＋呼吸光暈 */
+  .todaycol{background:#E5F3FA!important;color:var(--pdark)!important;animation:glowp 2s ease-in-out infinite;position:relative}
+  @keyframes glowp{0%,100%{box-shadow:inset 0 0 0 1.5px #24AFE1,0 0 5px rgba(36,175,225,.35)}50%{box-shadow:inset 0 0 0 1.5px #24AFE1,0 0 13px rgba(36,175,225,.8)}}
+  @media (prefers-reduced-motion:reduce){.todaycol{animation:none;box-shadow:inset 0 0 0 1.5px #24AFE1}}
   .iname{max-width:40vw;overflow:hidden;text-overflow:ellipsis;font-weight:700;color:var(--ink)}
   .avg{font-weight:900;color:var(--pdark);font-size:14px}
   .up{color:var(--green);font-weight:800} .dn{color:var(--red);font-weight:800} .mut{color:var(--muted)}
@@ -82,7 +86,7 @@ async function load(store){
     const grps = [...new Set(d.prep.map(p=>p.grp))]
     const today = new Date(); const tw = today.getDay() // 今天星期幾（1~5高亮）
     h += `<section><h2>預估備料量 <span class="hint">份/日</span></h2>`
-    h += `<div class="scroll"><table><thead><tr><th>項目</th>${['一','二','三','四','五'].map((w,i)=>`<th style="${tw===i+1?'color:var(--pdark);background:#E5F3FA':''}">週${w}</th>`).join('')}<th>總平均</th><th>峰值</th><th>低值</th></tr></thead><tbody>`
+    h += `<div class="scroll"><table><thead><tr><th>項目</th><th>總平均</th>${['一','二','三','四','五'].map((w,i)=>`<th${tw===i+1?' class="todaycol"':''}>週${w}${tw===i+1?' ★':''}</th>`).join('')}<th>峰值</th><th>低值</th></tr></thead><tbody>`
     grps.forEach(g=>{
       h += `<tr class="catband"><td colspan="9">${g}</td></tr>`
       d.prep.filter(p=>p.grp===g).forEach(p=>{
@@ -90,9 +94,9 @@ async function load(store){
           if(v==null||p.wk==null||!p.wk) return `<td>—</td>`
           const diff = Math.round((v-p.wk)/p.wk*100)
           const badge = Math.abs(diff)>=10 ? `<div style="font-size:9.5px;font-weight:800;color:${diff>0?'var(--pdark)':'var(--muted)'}">${diff>0?'+':''}${diff}%</div>` : ''
-          return `<td style="${tw===i+1?'background:#F0F8FC':''}"><b>${v}</b>${badge}</td>`
+          return `<td${tw===i+1?' class="todaycol"':''}><b>${v}</b>${badge}</td>`
         }).join('')
-        h += `<tr${p.sub?' class="subrow"':''}><td style="font-weight:${p.sub?800:700};color:${p.sub?'#8a5a2e':'var(--ink)'}">${p.sub?'└ ':''}${p.name}</td>${wds}<td class="avg">${p.avg!=null?p.avg:'—'}</td><td style="font-weight:800;color:#A85C26">${p.peak!=null?p.peak:'—'}</td><td class="mut">${p.low!=null?p.low:'—'}</td></tr>`
+        h += `<tr${p.sub?' class="subrow"':''}><td style="font-weight:${p.sub?800:700};color:${p.sub?'#8a5a2e':'var(--ink)'}">${p.sub?'└ ':''}${p.name}</td><td class="avg">${p.avg!=null?p.avg:'—'}</td>${wds}<td style="font-weight:800;color:#A85C26">${p.peak!=null?p.peak:'—'}</td><td class="mut">${p.low!=null?p.low:'—'}</td></tr>`
       })
     })
     h += `</tbody></table></div><div class="hint" style="margin-top:8px">怎麼用：①看今天星期幾那欄（藍底）＝該星期近幾週的平均銷量，數字下的 ±% 是跟總平均的差（超過 ±10% 才顯示，多備或少備看它）②峰值/低值＝近30天單日最高/最低——大日抓峰值、保守抓平均，低於低值就太少了。</div></section>`
