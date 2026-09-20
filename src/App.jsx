@@ -61,9 +61,9 @@ async function loadSpaceAIContext() {
       } catch (_) { return await g(legacy); }
     };
     const d0 = new Date(); const mo = `${d0.getFullYear()}-${String(d0.getMonth() + 1).padStart(2, "0")}`;
-    const [snapC, snapT, snapK, snapF, tasks, crewRoster, crewOld, pos, posD, posTx, posFlags, posIdleCfgAI, posHHAI, posCostsAI, posPricesAI, posHiddenAI, posAliasAI, sopDefAI, sopLogAI, sopIssAI, posAbLiveAI, posLaborAI, bank, ctbc, accounts, ledger, conclusions, mailRules, mailLog, supply, supplyOrders, supplyRecipesRaw] = await Promise.all([
+    const [snapC, snapT, snapK, snapF, tasks, crewRoster, crewOld, pos, posD, posTx, posFlags, posIdleCfgAI, posHHAI, posCostsAI, posPricesAI, posHiddenAI, posAliasAI, sopDefAI, sopLogAI, sopIssAI, invAI, posAbLiveAI, posLaborAI, bank, ctbc, accounts, ledger, conclusions, mailRules, mailLog, supply, supplyOrders, supplyRecipesRaw] = await Promise.all([
       g("pm_bot_context"), g("sp_team_pm_bot_context"), g("sp_crew_pm_bot_context"), g("sp_finance_pm_bot_context"),
-      recs("pm_tasks_v2", "pm_task_", "pm_tasks"), g("sp_crew_kb_roster"), g("sp_crew_kb_360"), g("sp_finance_pm_pos"), g("sp_finance_pm_pos_d_" + mo), g("sp_finance_pm_pos_tx_" + mo), g("sp_finance_pm_pos_flags"), g("sp_finance_pm_pos_idlecfg"), g("sp_finance_pm_pos_hh_" + mo), g("sp_finance_pm_pos_costs"), g("sp_finance_pm_pos_prices"), g("sp_finance_pm_pos_hidden"), g("sp_finance_pm_pos_alias"), g("sp_finance_pm_sop_def"), g("sp_finance_pm_sop_g_" + new Intl.DateTimeFormat("sv-SE", { timeZone: "Asia/Taipei" }).format(new Date()).slice(0, 10)), g("sp_finance_pm_sop_issues"), g("sp_finance_pm_ablive"), g("sp_finance_pm_labor"),
+      recs("pm_tasks_v2", "pm_task_", "pm_tasks"), g("sp_crew_kb_roster"), g("sp_crew_kb_360"), g("sp_finance_pm_pos"), g("sp_finance_pm_pos_d_" + mo), g("sp_finance_pm_pos_tx_" + mo), g("sp_finance_pm_pos_flags"), g("sp_finance_pm_pos_idlecfg"), g("sp_finance_pm_pos_hh_" + mo), g("sp_finance_pm_pos_costs"), g("sp_finance_pm_pos_prices"), g("sp_finance_pm_pos_hidden"), g("sp_finance_pm_pos_alias"), g("sp_finance_pm_sop_def"), g("sp_finance_pm_sop_g_" + new Intl.DateTimeFormat("sv-SE", { timeZone: "Asia/Taipei" }).format(new Date()).slice(0, 10)), g("sp_finance_pm_sop_issues"), g("sp_finance_pm_inv"), g("sp_finance_pm_ablive"), g("sp_finance_pm_labor"),
       g("sp_finance_pm_bank"), g("sp_finance_pm_ctbc"), g("sp_finance_pm_fin_accounts"), recs("sp_finance_pm_fin_ledger_v2", "sp_finance_pm_fin_tx_", "sp_finance_pm_fin_ledger"),
       g("pm_conclusions"), g("sp_lw_pm_mail_rules"), g("sp_lw_pm_mail_log"), g("sp_supply_pm_supply"),
       g("sp_supply_pm_orders"), getSharedPrefix("sp_supply_pm_recipe_v_"),
@@ -193,6 +193,18 @@ async function loadSpaceAIContext() {
           const sLines = sopItems.map(it => { const lg = sopLog[it.id]; return `- ${it.st}｜${it.title}（${it.due} 前${it.photo ? "・要拍照" : ""}）：${lg && lg.done ? `✅ ${lg.ts} ${lg.by || ""}完成` : "未完成"}`; });
           parts.push("【GD 每日SOP（今日執行狀況；夥伴在 /prep 看板打卡；超時未完成 cron 會發群提醒）】\n" + sLines.join("\n"));
         }
+      }
+      // 盤點/包材（pm_inv；與 D哥 loadPosText 同步接）
+      if (invAI && (((invAI.food || {}).items || []).length || ((invAI.pack || {}).items || []).length)) {
+        const invL = [];
+        for (const [kk, lb2] of [["food", "食材"], ["pack", "包材"]]) {
+          const kd2 = invAI[kk] || {};
+          for (const it2 of (kd2.items || [])) {
+            const last2 = ((kd2.counts || {})[it2.id] || [])[0];
+            invL.push(`- [${lb2}] ${it2.name}（單位${it2.unit || "?"}・低標${it2.min}）最後盤點：${last2 ? `${last2.qty} @${last2.ts}(${last2.by})` : "還沒盤過"}`);
+          }
+        }
+        parts.push("【盤點/包材庫存（/prep 盤點分頁；預估現量=盤點量−盤後銷售×用量，低於低標每日開店前發群提醒）】\n" + invL.join("\n"));
       }
       // 看板問題回報（pm_sop_issues；與 D哥 loadPosText 同步接）
       {

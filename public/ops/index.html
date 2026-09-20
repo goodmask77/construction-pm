@@ -23,6 +23,8 @@
   body{background:var(--bg);color:var(--text);font-family:"Noto Sans TC","PingFang TC",system-ui,sans-serif;font-size:14px;line-height:1.6}
   .wrap{max-width:980px;margin:0 auto;padding:18px 14px 60px}
   .brand{font-weight:900;font-size:13px;letter-spacing:.08em;color:var(--primary)}
+  .bseg{cursor:pointer;opacity:.35;padding-bottom:2px}
+  .bseg.on{opacity:1;border-bottom:2.5px solid var(--primary)}
   h1{font-size:24px;font-weight:900;color:var(--ink);letter-spacing:-.02em;margin-top:4px}
   .sub{font-size:12px;color:var(--muted);margin-top:2px}
   .tabs{display:flex;gap:8px;margin:14px 0}
@@ -62,13 +64,17 @@
 </head>
 <body>
 <div class="wrap">
-  <div class="brand">GROUN:D × A BEACH</div>
+  <!-- 品牌字標＝切店（張良 2026-09-21）；右上=🔄重新整理（不用重開App） -->
+  <div class="brand" style="display:flex;align-items:center;justify-content:space-between">
+    <span><span id="bs-ground" class="bseg on" onclick="load('ground')">GROUN:D</span> × <span id="bs-abeach" class="bseg" onclick="load('abeach')">A BEACH</span></span>
+    <button class="mini" style="font-size:14px;padding:5px 12px" onclick="hardRefresh()" title="抓最新資料">🔄</button>
+  </div>
   <h1>營運看板</h1>
   <div class="sub" id="upd">載入中…</div>
   <div class="tabs">
-    <button id="tab-ground" class="on" onclick="load('ground')">GROUN:D</button>
-    <button id="tab-abeach" onclick="load('abeach')">A Beach</button>
     <button id="tab-lb" onclick="loadLB()">🏆 排行榜</button>
+    <button id="tab-food" onclick="invLoad('food')">🥩 盤點</button>
+    <button id="tab-pack" onclick="invLoad('pack')">📦 叫貨</button>
   </div>
   <div id="app"></div>
   <div class="foot">資料每天自動同步（打開即最新）・僅供內部參考與備料使用，請勿外傳連結</div>
@@ -78,8 +84,32 @@ const K = new URLSearchParams(location.search).get('k') || (location.hash || '')
 const fmt = n => 'NT$' + Math.round(n || 0).toLocaleString()
 const app = document.getElementById('app')
 let curStore = 'ground'
-function setTabs(k){ ['ground','abeach','lb'].forEach(t => { const b = document.getElementById('tab-' + (t==='lb'?'lb':t)); if (b) b.className = (t===k) ? 'on' : '' }) }
-async function load(store){
+let lastStore = 'ground'
+function setTabs(k){
+  ['lb','food','pack'].forEach(t => { const b = document.getElementById('tab-' + t); if (b) b.className = (t===k) ? 'on' : '' })
+  if (k === 'ground' || k === 'abeach') lastStore = k
+  const g = document.getElementById('bs-ground'), a = document.getElementById('bs-abeach')
+  if (g) g.className = 'bseg' + (lastStore==='ground' ? ' on' : '')
+  if (a) a.className = 'bseg' + (lastStore==='abeach' ? ' on' : '')
+}
+// 🔄 重新整理（不用重開App）：目前視圖抓最新；店面資料帶 r=時間戳穿透 CDN 快取
+function hardRefresh(){
+  if (curStore === 'lb') loadLB()
+  else if (curStore === 'food' || curStore === 'pack') invLoad(curStore)
+  else load(curStore, true)
+}
+// 🔑 輸入綁定碼（iPhone 加入主畫面的 App 跟 Safari 儲存分開→token 帶不過去；貼一次 DD 給的連結/代碼即可）
+function bindPrompt(){
+  const v = prompt('貼上 DD 給你的「個人連結」或綁定碼（跟 DD 說「綁定GD」拿）')
+  if (!v) return
+  const m = v.match(/me=([a-z0-9]+)/i) || v.match(/(pv[a-z0-9]{8,})/i)
+  if (!m) { alert('看不懂這串，請完整貼上 DD 給的連結'); return }
+  localStorage.setItem('prepToken', m[1])
+  alert('綁定完成 ✅')
+  if (curStore === 'lb') loadLB(); else if (curStore === 'food' || curStore === 'pack') invLoad(curStore); else load(curStore)
+}
+const BIND_HINT = `跟 DD 說「綁定GD」拿個人連結；已加入主畫面的 App 請按 <button class="mini" onclick="bindPrompt()">🔑 輸入綁定碼</button>`
+async function load(store, fresh){
   curStore = store
   setTabs(store)
   if (!K) { app.innerHTML = '<div class="err">網址缺少金鑰，請跟店長要完整連結</div>'; return }
@@ -89,7 +119,7 @@ async function load(store){
   try { const c = localStorage.getItem(ck); if (c) { renderBoard(JSON.parse(c), store); hadCache = true; document.getElementById('upd').textContent = '⚡ 快取畫面・背景更新最新資料中…' } } catch(e){}
   if (!hadCache) app.innerHTML = '<section>載入中…</section>'
   let d
-  try { const r = await fetch('/api/mail-sync?opsboard=' + encodeURIComponent(K) + '&store=' + store); d = await r.json() } catch(e){}
+  try { const r = await fetch('/api/mail-sync?opsboard=' + encodeURIComponent(K) + '&store=' + store + (fresh ? '&r=' + Date.now() : '')); d = await r.json() } catch(e){}
   if (!d || !d.ok) { if (!hadCache) app.innerHTML = '<div class="err">讀不到資料（金鑰錯誤或連線問題），請跟店長要新連結</div>'; return }
   try { localStorage.setItem(ck, JSON.stringify(d)) } catch(e){}
   if (curStore !== store) return // 使用者已切到別店，別把畫面蓋回來
@@ -227,7 +257,7 @@ function sopRender(){
   const me = sopData.me
   let s = `<section><h2>✅ 今日 SOP（${sopData.date.slice(5)}）<span class="hint" style="float:right;font-weight:900;color:${doneN===items.length?'var(--green)':'var(--pdark)'}">${doneN}/${items.length}</span></h2>`
   s += me ? `<div class="hint" style="margin-bottom:6px">👤 <b style="color:var(--pdark)">${me.name}</b>（打卡自動記你的名字・可編輯各站 SOP，改動會留姓名時間紀錄）</div>`
-          : `<div class="hint" style="margin-bottom:6px">💡 加官方 DD 好友私訊「<b>綁定看板</b>」→ 拿個人連結：打卡不用打名字、可編輯 SOP、可標記問題解決</div>`
+          : `<div class="hint" style="margin-bottom:6px">💡 ${BIND_HINT}——打卡不用打名字、可編輯 SOP、認領問題</div>`
   if (wd === 0 || wd === 6) s += `<div class="hint" style="margin-bottom:8px">今天公休——這是清單預覽，打卡留給營業日。</div>`
   sts.forEach(st => {
     const canEd = me && me.canEdit
@@ -486,7 +516,7 @@ function lbRender(){
   })
   h += `</tbody></table></div></section>`
   // 📋 問題看板
-  h += `<section><h2>📋 問題看板 <span class="hint">${meN?'🙋認領計時・🚩標記・⏰排時間・⭐評星都在卡片上':'跟 DD 說「綁定GD」之後可認領/標記/評星'}</span></h2>`
+  h += `<section><h2>📋 問題看板 <span class="hint">${meN?'🙋認領計時・🚩標記・⏰排時間・⭐評星都在卡片上':'未綁定：'+BIND_HINT}</span></h2>`
   if (!d.issues.length) h += `<div class="mut">還沒有回報事件——在店面分頁按「⚠️ 回報」</div>`
   else {
     const stCols = [...new Set(d.issues.map(x=>x.st))]
@@ -566,6 +596,97 @@ function lbDue(id, cur){
   const v = prompt('排定處理時間（自由填，例：今天16:00前／9-22 中午；留空=清除）', cur||'')
   if (v === null) return
   lbOp(id, 'due', v.trim())
+}
+// ── 🥩 盤點 / 📦 包材（品項自建＋盤點紀錄＋照銷售自動扣＋低水位；張良 2026-09-21）──
+async function invLoad(kind){
+  curStore = kind; setTabs(kind)
+  app.innerHTML = '<section>載入中…</section>'
+  let d
+  try { const r = await fetch('/api/mail-sync?inv=' + encodeURIComponent(K) + '&kind=' + kind + (TK() ? '&me=' + encodeURIComponent(TK()) : '')); d = await r.json() } catch(e){}
+  if (!d || !d.ok) { app.innerHTML = '<div class="err">讀不到資料</div>'; return }
+  window._invD = d
+  invRender()
+}
+function invRender(){
+  const d = window._invD; if (!d || (curStore !== 'food' && curStore !== 'pack')) return
+  const lbl = d.kind === 'pack' ? '包材' : '食材'
+  document.getElementById('upd').textContent = `${d.kind==='pack'?'📦':'🥩'} ${lbl}盤點・預估現量＝最後盤點 − 盤後銷售×每份用量`
+  const meN = d.me && d.me.name
+  const lows = d.items.filter(x => x.low)
+  let h = ''
+  if (lows.length) h += `<section style="border:1.5px solid #F0B8B1"><h2 style="color:var(--red)">📉 低水位警報（${lows.length}）</h2>` + lows.map(x=>`<div style="font-weight:800;color:var(--red)">・${x.name}：估剩 ${x.est}${x.unit||''}（低標 ${x.min}）</div>`).join('') + `<div class="hint" style="margin-top:4px">每天開店前 DD 也會在群裡提醒</div></section>`
+  h += `<section><h2>${d.kind==='pack'?'📦':'🥩'} ${lbl}清單 <span class="hint">${meN?'📋盤點＝輸入現在數量；✏️可改品項/用量連結':'未綁定：'+BIND_HINT}</span></h2>`
+  if (!d.items.length) h += `<div class="mut">還沒有品項——按下面「＋新增品項」開始建（名稱／單位／最低水位／連結哪些菜品扣多少）</div>`
+  else {
+    h += `<div class="scroll"><table><thead><tr><th style="text-align:left">品項</th><th>預估現量</th><th>低標</th><th>已扣銷售</th><th style="text-align:left">最後盤點</th><th></th></tr></thead><tbody>`
+    d.items.forEach(x=>{
+      h += `<tr>
+        <td style="text-align:left;font-weight:800;color:var(--ink)">${x.low?'📉 ':''}${x.name}<div class="hint">${(x.links||[]).map(l=>`${l.type==='cat'?'類:':''}${l.key}×${l.per}`).join('、')||'（沒設銷售連結，不會自動扣）'}</div></td>
+        <td style="font-weight:900;font-size:15px;color:${x.low?'var(--red)':'var(--pdark)'}">${x.est!=null?x.est:'—'}${x.unit||''}</td>
+        <td>${x.min||'—'}</td><td class="mut">${x.used!=null?x.used:'—'}</td>
+        <td style="text-align:left" class="hint">${x.last?`${x.last.qty}${x.unit||''}・${x.last.ts}<br>${x.last.by}`:'還沒盤過'}</td>
+        <td>${meN?`<button class="mini on" onclick="invCount('${x.id}','${x.name.replace(/'/g,'')}')">📋 盤點</button><button class="mini" onclick="invEdit('${x.id}')">✏️</button>`:''}</td></tr>`
+    })
+    h += `</tbody></table></div>`
+  }
+  if (meN) h += `<div style="margin-top:10px"><button class="mini on" style="padding:8px 16px" onclick="invEdit(null)">＋ 新增品項</button></div>`
+  h += `<div class="hint" style="margin-top:8px">盤點時機：開店前盤＝當天銷售會繼續扣；打烊後盤＝從隔天開始扣（系統照盤點時間自動判斷）。</div></section>`
+  app.innerHTML = h
+}
+async function invCount(id, name){
+  const v = prompt(`「${name}」現在實際數量？（純數字）`)
+  if (v === null) return
+  const qv = Number(v)
+  if (isNaN(qv) || qv < 0) { alert('請輸入數字'); return }
+  const r = await fetch('/api/mail-sync?invcount=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ kind: window._invD.kind, id, qty: qv, token: TK() }) })
+  const dd = await r.json().catch(()=>null)
+  if (dd && dd.ok) invLoad(window._invD.kind); else alert((dd&&dd.error)||'失敗')
+}
+function invEdit(id){
+  const d = window._invD
+  const it = id ? d.items.find(x=>x.id===id) : { name:'', unit:'', min:0, links:[] }
+  let menuNames = [], catNames = []
+  try { const c = JSON.parse(localStorage.getItem('obc_ground')||'null'); if (c) { catNames = c.cats.map(x=>x.name); menuNames = c.cats.flatMap(x=>x.items.map(i=>i.n)) } } catch(e){}
+  const ov = document.createElement('div'); ov.id='invOv'
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(16,24,43,.5);z-index:50;display:flex;align-items:center;justify-content:center;padding:14px;overflow:auto'
+  const linkRow = (l) => `<div class="invLink" style="display:flex;gap:4px;margin-bottom:4px;align-items:center">
+    <select class="lt" style="border:1px solid var(--line);border-radius:7px;padding:5px"><option value="item"${l&&l.type!=='cat'?' selected':''}>菜品</option><option value="cat"${l&&l.type==='cat'?' selected':''}>品類</option></select>
+    <input class="lk" list="menuDL" value="${l?l.key:''}" placeholder="名稱（可挑選）" style="flex:1;min-width:100px;border:1px solid var(--line);border-radius:7px;padding:5px">
+    <input class="lp" type="number" step="0.1" value="${l?l.per:''}" placeholder="每份用量" style="width:82px;border:1px solid var(--line);border-radius:7px;padding:5px">
+    <button class="mini" onclick="this.parentElement.remove()">刪</button></div>`
+  ov.innerHTML = `<div style="background:#fff;border-radius:14px;max-width:470px;width:100%;padding:16px" onclick="event.stopPropagation()">
+    <div style="font-weight:900;margin-bottom:8px">${id?'✏️ 編輯':'＋ 新增'}${d.kind==='pack'?'包材':'食材'}品項</div>
+    <datalist id="menuDL">${[...catNames,...menuNames].map(n=>`<option value="${n}">`).join('')}</datalist>
+    <div style="display:flex;gap:6px;margin-bottom:6px">
+      <input id="ivName" value="${it.name}" placeholder="名稱（例：無骨雞腿）" style="flex:1;min-width:120px;border:1px solid var(--line);border-radius:8px;padding:7px">
+      <input id="ivUnit" value="${it.unit||''}" placeholder="單位" style="width:62px;border:1px solid var(--line);border-radius:8px;padding:7px">
+      <input id="ivMin" type="number" value="${it.min||''}" placeholder="低標" style="width:62px;border:1px solid var(--line);border-radius:8px;padding:7px">
+    </div>
+    <div style="font-size:12px;font-weight:700;margin-bottom:4px">銷售連結（每賣一份要扣多少）：</div>
+    <div id="ivLinks">${(it.links||[]).map(linkRow).join('')}</div>
+    <button class="mini" onclick="document.getElementById('ivLinks').insertAdjacentHTML('beforeend', window._invLinkRow())">＋ 加連結</button>
+    <div style="display:flex;justify-content:space-between;margin-top:12px;flex-wrap:wrap;gap:6px">
+      <span>${id?`<button class="mini" style="color:var(--red)" onclick="invDel('${id}')">🗑 刪除品項</button>`:''}</span>
+      <span><button class="mini" onclick="document.getElementById('invOv').remove()">取消</button>
+      <button class="mini on" style="padding:8px 16px" onclick="invSave('${id||''}')">💾 儲存</button></span>
+    </div></div>`
+  window._invLinkRow = () => linkRow(null)
+  ov.onclick = () => ov.remove()
+  document.body.appendChild(ov)
+}
+async function invSave(id){
+  const links = [...document.querySelectorAll('#invOv .invLink')].map(r=>({ type: r.querySelector('.lt').value, key: r.querySelector('.lk').value.trim(), per: Number(r.querySelector('.lp').value)||0 })).filter(l=>l.key&&l.per>0)
+  const item = { id: id||undefined, name: document.getElementById('ivName').value.trim(), unit: document.getElementById('ivUnit').value.trim(), min: Number(document.getElementById('ivMin').value)||0, links }
+  if (!item.name) { alert('要有名稱'); return }
+  const r = await fetch('/api/mail-sync?invset=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ kind: window._invD.kind, op:'save', item, token: TK() }) })
+  const dd = await r.json().catch(()=>null)
+  if (dd && dd.ok) { document.getElementById('invOv').remove(); invLoad(window._invD.kind) } else alert((dd&&dd.error)||'失敗')
+}
+async function invDel(id){
+  if (!confirm('刪除這個品項？（盤點紀錄一併看不到）')) return
+  const r = await fetch('/api/mail-sync?invset=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ kind: window._invD.kind, op:'del', id, token: TK() }) })
+  const dd = await r.json().catch(()=>null)
+  if (dd && dd.ok) { document.getElementById('invOv').remove(); invLoad(window._invD.kind) } else alert((dd&&dd.error)||'失敗')
 }
 load('ground')
 </script>

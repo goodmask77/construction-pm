@@ -23,6 +23,61 @@ export async function kvGet(id) { // export：joya-intraday.js（盤中更新）
   const rows = r.ok ? await r.json() : []
   try { return rows[0]?.data?.v ? JSON.parse(rows[0].data.v) : null } catch (_) { return null }
 }
+// ── 盤點/包材理論庫存（張良 2026-09-21）：預估現量＝最後盤點量 −（盤點後的銷售×每份用量）
+// 盤點時間 <11:00（開店前）→ 含盤點當天的銷售；否則（打烊後）→ 從隔天起算。export 給 joya-intraday 低水位提醒共用
+export async function invStatus(kind) {
+  const doc = (await kvGet('sp_finance_pm_inv')) || {}
+  const kd = doc[kind] || { items: [], counts: {} }
+  const items = kd.items || []
+  if (!items.length) return { items: [] }
+  const counts = kd.counts || {}
+  let minDate = null
+  for (const it of items) { const last = (counts[it.id] || [])[0]; if (last) { const d0 = last.ts.slice(0, 10); if (!minDate || d0 < minDate) minDate = d0 } }
+  const salesByKey = {}, catSales = {}
+  if (minDate) {
+    const pos = (await kvGet('sp_finance_pm_pos')) || { entries: [] }
+    const dates = (pos.entries || []).filter(e => /groun/i.test(e.store || '') && e.date >= minDate).map(e => e.date)
+    const mos = [...new Set(dates.map(d => d.slice(0, 7)))]
+    const dets = {}
+    await Promise.all(mos.map(async m => { dets[m] = await kvGet('sp_finance_pm_pos_d_' + m) }))
+    const amap = ((await kvGet('sp_finance_pm_pos_alias')) || {}).ground || {}
+    for (const dd of dates) {
+      const dmap = (dets[dd.slice(0, 7)] || {}).days || {}
+      const day = dmap[`${dd}::ground`] || dmap[dd]
+      const secs = day && day.sheets && day.sheets['總銷售額 (以類別分類)']
+      if (!Array.isArray(secs)) continue
+      for (const s of secs) {
+        if (s.title === '總結' || s.title === '套餐') continue
+        for (const r of (s.rows || [])) {
+          if (!Array.isArray(r) || typeof r[0] !== 'string' || /^1\/4/.test(r[0].trim())) continue
+          const k = amap[r[0]] || r[0]
+          const q = Number(r[1]) || 0
+          ;(salesByKey[k] = salesByKey[k] || {})[dd] = (salesByKey[k][dd] || 0) + q
+          ;(catSales[s.title] = catSales[s.title] || {})[dd] = (catSales[s.title][dd] || 0) + q
+        }
+      }
+    }
+  }
+  const out = items.map(it => {
+    const last = (counts[it.id] || [])[0] || null
+    let used = null, est = null
+    if (last) {
+      const cd = last.ts.slice(0, 10), hh = Number(last.ts.slice(11, 13) || 99)
+      const inclSame = hh < 11 // 開店前盤點→盤點當天的銷售也要扣
+      used = 0
+      for (const ln of (it.links || [])) {
+        const src = ln.type === 'cat' ? catSales[ln.key] : salesByKey[ln.key]
+        if (!src) continue
+        for (const [dd, q] of Object.entries(src)) { if (dd > cd || (inclSame && dd === cd)) used += q * (Number(ln.per) || 0) }
+      }
+      used = Math.round(used * 10) / 10
+      est = Math.round(((Number(last.qty) || 0) - used) * 10) / 10
+    }
+    return { ...it, last, used, est, low: est != null && it.min > 0 && est <= it.min }
+  })
+  return { items: out }
+}
+
 export async function kvPut(id, obj, editor) {
   await fetch(`${SB_URL}/rest/v1/pm_documents`, {
     method: 'POST',
@@ -950,6 +1005,53 @@ export default async function handler(req, res) {
   const sopToday = () => new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10)
   // 綁定 token → 本人（LINE「綁定看板」發的個人連結；打卡/編輯身分都以此為準，前端傳的名字只是備援）
   const sopWho = async (tk3) => { if (!tk3) return null; const b = (await kvGet('sp_finance_pm_prep_bind')) || {}; return (b.tokens || {})[tk3] || null }
+  // ── 盤點/包材（張良 2026-09-21）：品項自建＋盤點紀錄＋照銷售自動扣除＋低水位提醒（cron 每日開店前查）──
+  if (req.query?.inv) {
+    const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
+    if (!ok2 || String(req.query.inv) !== ok2) return res.status(403).json({ ok: false })
+    const kind = String(req.query.kind) === 'pack' ? 'pack' : 'food'
+    const [st, meV] = await Promise.all([invStatus(kind), sopWho(req.query.me)])
+    return res.status(200).json({ ok: true, kind, items: st.items, me: meV ? { name: meV.name } : null })
+  }
+  if (req.method === 'POST' && req.query?.invset) { // 品項增改刪：{kind, op:'save'|'del', item}
+    const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
+    if (!ok2 || String(req.query.invset) !== ok2) return res.status(403).json({ ok: false })
+    let bn = {}
+    try { bn = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
+    const whoN = await sopWho(bn.token)
+    if (!whoN) return res.status(403).json({ ok: false, error: '要先跟 DD 說「綁定GD」' })
+    const kind = bn.kind === 'pack' ? 'pack' : 'food'
+    const doc = (await kvGet('sp_finance_pm_inv')) || {}
+    const kd = doc[kind] || (doc[kind] = { items: [], counts: {}, edits: [] })
+    if (bn.op === 'del') kd.items = (kd.items || []).filter(x => x.id !== bn.id)
+    else {
+      const it = bn.item || {}
+      const clean = { id: it.id || ('iv' + Date.now().toString(36)), name: String(it.name || '').slice(0, 30), unit: String(it.unit || '').slice(0, 8), min: Number(it.min) || 0, links: (Array.isArray(it.links) ? it.links : []).slice(0, 10).map(l => ({ type: l.type === 'cat' ? 'cat' : 'item', key: String(l.key || '').slice(0, 40), per: Number(l.per) || 0 })).filter(l => l.key && l.per > 0) }
+      if (!clean.name) return res.status(400).json({ ok: false, error: '要有名稱' })
+      const i0 = (kd.items || []).findIndex(x => x.id === clean.id)
+      if (i0 >= 0) kd.items[i0] = clean; else kd.items.push(clean)
+    }
+    kd.edits = [{ ts: new Date().toISOString(), by: whoN.name, op: bn.op, name: (bn.item || {}).name || bn.id }, ...(kd.edits || [])].slice(0, 30)
+    await kvPut('sp_finance_pm_inv', doc, '盤點品項' + bn.op + '(' + whoN.name + ')')
+    return res.status(200).json({ ok: true })
+  }
+  if (req.method === 'POST' && req.query?.invcount) { // 盤點：{kind, id, qty}
+    const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
+    if (!ok2 || String(req.query.invcount) !== ok2) return res.status(403).json({ ok: false })
+    let bc = {}
+    try { bc = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
+    const whoC = await sopWho(bc.token)
+    if (!whoC) return res.status(403).json({ ok: false, error: '要先跟 DD 說「綁定GD」' })
+    const qv = Number(bc.qty)
+    if (!bc.id || isNaN(qv) || qv < 0) return res.status(400).json({ ok: false, error: '數量不對' })
+    const kind = bc.kind === 'pack' ? 'pack' : 'food'
+    const doc = (await kvGet('sp_finance_pm_inv')) || {}
+    const kd = doc[kind] || (doc[kind] = { items: [], counts: {} })
+    kd.counts = kd.counts || {}
+    kd.counts[bc.id] = [{ ts: new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 16).replace('T', ' '), qty: qv, by: whoC.name }, ...(kd.counts[bc.id] || [])].slice(0, 30)
+    await kvPut('sp_finance_pm_inv', doc, '盤點紀錄(' + whoC.name + ')')
+    return res.status(200).json({ ok: true })
+  }
   if (req.query?.sop) {
     const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
     if (!ok2 || String(req.query.sop) !== ok2) return res.status(403).json({ ok: false })

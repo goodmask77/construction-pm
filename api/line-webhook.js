@@ -573,7 +573,7 @@ async function loadPosText() {
   try {
     const now = new Date(Date.now() + 8 * 3600e3)
     const mo = now.toISOString().slice(0, 7)
-    const kv = await kvGetMany(['sp_finance_pm_pos', 'sp_finance_pm_pos_d_' + mo, 'sp_finance_pm_pos_tx_' + mo, 'sp_finance_pm_pos_flags', 'sp_finance_pm_pos_idlecfg', 'sp_finance_pm_pos_hh_' + mo, 'sp_finance_pm_pos_costs', 'sp_finance_pm_pos_prices', 'sp_finance_pm_pos_hidden', 'sp_finance_pm_pos_alias', 'sp_finance_pm_sop_def', 'sp_finance_pm_sop_g_' + now.toISOString().slice(0, 10), 'sp_finance_pm_sop_issues', 'sp_finance_pm_ablive', 'sp_finance_pm_labor'])
+    const kv = await kvGetMany(['sp_finance_pm_pos', 'sp_finance_pm_pos_d_' + mo, 'sp_finance_pm_pos_tx_' + mo, 'sp_finance_pm_pos_flags', 'sp_finance_pm_pos_idlecfg', 'sp_finance_pm_pos_hh_' + mo, 'sp_finance_pm_pos_costs', 'sp_finance_pm_pos_prices', 'sp_finance_pm_pos_hidden', 'sp_finance_pm_pos_alias', 'sp_finance_pm_sop_def', 'sp_finance_pm_sop_g_' + now.toISOString().slice(0, 10), 'sp_finance_pm_sop_issues', 'sp_finance_pm_inv', 'sp_finance_pm_ablive', 'sp_finance_pm_labor'])
     const pos = kv['sp_finance_pm_pos']
     const entries = pos && Array.isArray(pos.entries) ? pos.entries : []
     if (!entries.length) return ''
@@ -663,6 +663,19 @@ async function loadPosText() {
       const sopLog = (kv['sp_finance_pm_sop_g_' + now.toISOString().slice(0, 10)] || {}).items || {}
       const sLines = sopItems.map(it => { const lg = sopLog[it.id]; return `  - ${it.st}｜${it.title}（${it.due} 前${it.photo ? '・要拍照' : ''}）：${lg && lg.done ? `✅ ${lg.ts} ${lg.by || ''}完成` : '未完成'}` })
       lines.push(`【GD 每日SOP（今日 ${now.toISOString().slice(5, 10)} 執行狀況；夥伴在 /prep 看板打卡；超時未完成 cron 會發群提醒）】`); lines.push(...sLines)
+    }
+    // 盤點/包材（pm_inv＝/prep 盤點分頁：品項/最後盤點/銷售連結；預估現量要即時算太重，AI 給定義+最後盤點，低水位由 cron 提醒；與 App loadSpaceAIContext 同步接）
+    const invDoc = kv['sp_finance_pm_inv']
+    if (invDoc && (((invDoc.food || {}).items || []).length || ((invDoc.pack || {}).items || []).length)) {
+      const invL = []
+      for (const [kk, lb2] of [['food', '食材'], ['pack', '包材']]) {
+        const kd2 = invDoc[kk] || {}
+        for (const it2 of (kd2.items || [])) {
+          const last2 = ((kd2.counts || {})[it2.id] || [])[0]
+          invL.push(`  - [${lb2}] ${it2.name}（單位${it2.unit || '?'}・低標${it2.min}）最後盤點：${last2 ? `${last2.qty} @${last2.ts}(${last2.by})` : '還沒盤過'}`)
+        }
+      }
+      lines.push('【盤點/包材庫存（/prep 盤點分頁；預估現量=盤點量−盤後銷售×用量，低於低標 cron 每日開店前發群提醒）】'); lines.push(...invL)
     }
     // 看板問題回報（pm_sop_issues＝夥伴在 /prep 站別旁⚠️回報的問題，附照片影片；與 App loadSpaceAIContext 同步接）
     const issDoc = kv['sp_finance_pm_sop_issues']
@@ -1491,7 +1504,7 @@ export default async function handler(req, res) {
             bind.tokens[tk2] = { name: rp.name, rid: rp.id, uid: userId, ts: new Date().toISOString() }
             await kvSet('sp_finance_pm_prep_bind', bind)
           }
-          await send(`✅ ${rp.name}，這是你的 GD 看板專屬連結（點開一次，這支手機之後打卡/編輯都自動是你）：\n${BIND_APPS[appKey]}?me=${tk2}\n\n建議點開後用瀏覽器「加入主畫面」變成 App。連結不要轉給別人——那會變成用你的名字操作。`)
+          await send(`✅ ${rp.name}，這是你的 GD 看板專屬連結（點開一次，這支手機之後打卡/編輯都自動是你）：\n${BIND_APPS[appKey]}?me=${tk2}\n\n已經把 GD 加到主畫面的話：打開 App → 按「🔑 輸入綁定碼」→ 把上面整串連結貼進去就好（iPhone 的主畫面 App 跟 Safari 是分開的，要各綁一次）。\n\n連結不要轉給別人——那會變成用你的名字操作。`)
         } catch (e) { await send('綁定出了點問題，稍後再試一次 🙏') }
         continue
       }

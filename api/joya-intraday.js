@@ -4,7 +4,7 @@
 // 寫入規則：只蓋「今天＋intraday 標記」的記錄，絕不動正式資料；打烊後 mail-sync syncJoya 會把
 // intraday 記錄當缺日重抓成最終值（盤中數字不會凍住）。手動測試：?force=<MENU_PROBE_KEY>
 import { joyaLogin, joyaFetchDay, joyaBuildRecord, taipeiToday } from './_joya.js'
-import { kvGet, kvPut, announceChanged } from './mail-sync.js'
+import { kvGet, kvPut, announceChanged, invStatus } from './mail-sync.js'
 import { syncEatsLive } from './_eats.js' // AB 盤中定時更新（張良 2026-09-06：不用等人按🔄）
 import { syncIchef } from './_ichef.js'   // 參考店 1/2 整點順手同步（iCHEF 數字本來就是「到目前為止」）
 
@@ -51,6 +51,27 @@ export default async function handler(req, res) {
       }
     }
   } catch (e) { console.log('sop check err', e?.message) }
+  // ── 盤點/包材低水位提醒（張良 2026-09-21）：每天第一輪（11:00 場次）查一次，低於最低水位 → DD 發內部群一則彙整 ──
+  try {
+    const tpe2 = new Date(Date.now() + 8 * 3600e3)
+    const wd2 = tpe2.getUTCDay(), todayInv = tpe2.toISOString().slice(0, 10)
+    if (wd2 >= 1 && wd2 <= 5 && hm >= '11:00' && hm < '11:20') {
+      const invDoc = (await kvGet('sp_finance_pm_inv')) || {}
+      invDoc.notified = invDoc.notified || {}
+      if (!invDoc.notified[todayInv]) {
+        const [f2, p2] = await Promise.all([invStatus('food'), invStatus('pack')])
+        const lows = [...f2.items.filter(x => x.low).map(x => ({ ...x, _k: '食材' })), ...p2.items.filter(x => x.low).map(x => ({ ...x, _k: '包材' }))]
+        if (lows.length) {
+          const txt2 = '📉 庫存低水位提醒：\n' + lows.map(x => `・[${x._k}] ${x.name}：估剩 ${x.est}${x.unit || ''}（低標 ${x.min}）`).join('\n') + '\n\n請盡快叫貨/補盤點：ground-pm.vercel.app/prep'
+          const tk2 = (process.env.LINE_CHANNEL_ACCESS_TOKEN || '').trim()
+          if (tk2) {
+            const pr2 = await fetch('https://api.line.me/v2/bot/message/push', { method: 'POST', headers: { 'content-type': 'application/json', Authorization: 'Bearer ' + tk2 }, body: JSON.stringify({ to: 'Cf7940efc6517b0c084ad2ad496b45f30', messages: [{ type: 'text', text: txt2 }] }) })
+            if (pr2.ok) { invDoc.notified = { [todayInv]: 1 }; await kvPut('sp_finance_pm_inv', invDoc, '低水位提醒') } // 只留今天鍵，一天一次
+          }
+        } else { invDoc.notified = { [todayInv]: 1 }; await kvPut('sp_finance_pm_inv', invDoc, '低水位檢查(無警報)') }
+      }
+    }
+  } catch (e) { console.log('inv check err', e?.message) }
   if (!hit && !abHit && !force && !manual) return res.status(200).json({ ok: true, skipped: '非指定時間', taipei: hm })
   if (manual && !hit && !force && (nowM < toMin('11:00') || nowM >= toMin('19:30'))) {
     return res.status(200).json({ ok: true, skipped: '非營業時間（11:00-19:30 才有盤中數字）', taipei: hm })
