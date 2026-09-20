@@ -1623,7 +1623,7 @@ export default async function handler(req, res) {
     if (!(bb.text || '').trim() && !(bb.media || []).length) return res.status(400).json({ ok: false, error: '至少寫要買什麼' })
     const whoB = await sopWho(bb.token)
     const doc = (await kvGet('sp_finance_pm_buy')) || { list: [] }
-    const it = { id: 'by' + Date.now().toString(36), text: String(bb.text || '').slice(0, 300), url: String(bb.url || '').slice(0, 500), media: (Array.isArray(bb.media) ? bb.media : []).slice(0, 6), by: whoB ? whoB.name : String(bb.by || '匿名').slice(0, 20), ts: new Date(Date.now() + 8 * 3600e3).toISOString().slice(5, 16).replace('T', ' '), status: 'open' }
+    const it = { id: 'by' + Date.now().toString(36), text: String(bb.text || '').slice(0, 300), cat: String(bb.cat || '').trim().slice(0, 20), url: String(bb.url || '').slice(0, 500), media: (Array.isArray(bb.media) ? bb.media : []).slice(0, 6), by: whoB ? whoB.name : String(bb.by || '匿名').slice(0, 20), ts: new Date(Date.now() + 8 * 3600e3).toISOString().slice(5, 16).replace('T', ' '), status: 'open' }
     doc.list = [it, ...(doc.list || [])].slice(0, 200)
     await kvPut('sp_finance_pm_buy', doc, '採購需求(' + it.by + ')')
     try { // DD 通知內部群
@@ -1642,7 +1642,13 @@ export default async function handler(req, res) {
     const doc = (await kvGet('sp_finance_pm_buy')) || { list: [] }
     const it = (doc.list || []).find(x => x.id === bo.id)
     if (!it) return res.status(404).json({ ok: false })
-    if (bo.op === 'done') { it.status = 'done'; it.doneBy = whoO.name; it.doneTs = new Date(Date.now() + 8 * 3600e3).toISOString().slice(5, 16).replace('T', ' ') }
+    if (bo.op === 'cat') { it.cat = String(bo.val || '').trim().slice(0, 20) } // 改分類（張良 2026-09-22）
+    else if (bo.op === 'done') { it.status = 'bought'; it.doneBy = whoO.name; it.doneTs = new Date(Date.now() + 8 * 3600e3).toISOString().slice(5, 16).replace('T', ' ') } // 已購買→進待收貨區
+    else if (bo.op === 'recv') { // 確認收貨（張良 2026-09-22：要拍照上傳＋記日期時間）
+      const md = (Array.isArray(bo.media) ? bo.media : []).slice(0, 4)
+      if (!md.length) return res.status(400).json({ ok: false, error: '收貨要拍照存證' })
+      it.status = 'received'; it.recvBy = whoO.name; it.recvTs = new Date(Date.now() + 8 * 3600e3).toISOString().slice(5, 16).replace('T', ' '); it.recvMedia = md
+    }
     else if (bo.op === 'undone') { it.status = 'open'; delete it.doneBy; delete it.doneTs }
     else if (bo.op === 'del') {
       const defO = await kvGet('sp_finance_pm_sop_def')

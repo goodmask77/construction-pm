@@ -145,12 +145,8 @@ async function load(store, fresh){
 function renderBoard(d, store){
   document.getElementById('upd').textContent = '最新日結：' + (d.anchor || '—') + '・資料自動同步'
   let h = ''
-  // KPI
-  h += `<div class="kpis">
-    <div class="kpi"><div class="l">近30天營收（${d.kpi.days30} 個營業日）</div><div class="v">${fmt(d.kpi.rev30)}</div></div>
-    <div class="kpi"><div class="l">日均營收</div><div class="v">${fmt(d.kpi.avgRev)}</div></div>
-    <div class="kpi"><div class="l">近30天單數</div><div class="v">${(d.kpi.tx30||0).toLocaleString()}</div></div>
-  </div>`
+  // 📌 今日事項（張良 2026-09-22：最上面＝今天該做的事——任務/收貨/班表；資料來自各分頁快取，todayRender 畫）
+  h += `<div id="todaysec"></div>`
   // 備料卡（GD：炸台/沙拉/吧檯；總平均＋每週幾平均＋峰值/低值——張良 2026-09-20 取消時段拆分，一早備好）
   if (d.prep) {
     const grps = [...new Set(d.prep.map(p=>p.grp))]
@@ -180,6 +176,12 @@ function renderBoard(d, store){
     window._rhy = d.rhythm
     h += `<section><h2>🍳 預做節奏表 <span style="float:right;white-space:nowrap"><button class="mini on" id="rb15" onclick="rSwitch(15)">15分</button><button class="mini" id="rb30" onclick="rSwitch(30)">30分</button><button class="mini" id="rbMng" onclick="rMng()">🙈 隱藏管理</button></span><br><span class="hint">${d.rhythm.days ? `近 ${d.rhythm.days} 個營業日平均・每格＝該時段平均賣幾份（·＝不到0.5份）——照表預做、尖峰前先備` : '⏳ 資料從 9/22（一）11:00 起每 15 分鐘自動累積——現在先看得到版面，之後開始長數字'}</span></h2><div id="rhyBody"></div></section>`
   }
+  // KPI（張良 2026-09-22：搬到每日數據上面）
+  h += `<div class="kpis">
+    <div class="kpi"><div class="l">近30天營收（${d.kpi.days30} 個營業日）</div><div class="v">${fmt(d.kpi.rev30)}</div></div>
+    <div class="kpi"><div class="l">日均營收</div><div class="v">${fmt(d.kpi.avgRev)}</div></div>
+    <div class="kpi"><div class="l">近30天單數</div><div class="v">${(d.kpi.tx30||0).toLocaleString()}</div></div>
+  </div>`
   // 日表（張良 2026-09-22 v3：去NT簡化版面、日期欄凍結、至14:00=14點前營收、總營收、表頭下平均列、高低於平均用色階（綠=高於、紅=低於，深淺=差多少））
   const isGD = d.store === 'ground'
   const dv = d.days.filter(x=>x.rev>0) // 平均只算有營業的日子
@@ -221,6 +223,7 @@ function renderBoard(d, store){
   app.innerHTML = h
   rhythmRender()
   itemsRender()
+  todayRender()
   if (store === 'ground') sopLoad()
   if (!window._pf) { window._pf = 1; setTimeout(prefetchTabs, 800) } // 背景預抓其他分頁（切換秒開）
 }
@@ -582,12 +585,12 @@ const tcSet = (k,d) => { try { localStorage.setItem('obt_'+k, JSON.stringify(d))
 async function prefetchTabs(){
   const q = async (url, key) => { try { const r = await fetch(url); const d2 = await r.json(); if (d2 && d2.ok) { tcSet(key, d2); return d2 } } catch(e){} }
   const me = TK() ? '&me=' + encodeURIComponent(TK()) : ''
-  q('/api/mail-sync?lb=' + encodeURIComponent(K) + me, 'lb').then(d2=>{ if(d2 && !window._lbD) window._lbD = d2 })
+  q('/api/mail-sync?lb=' + encodeURIComponent(K) + me, 'lb').then(d2=>{ if(d2){ if(!window._lbD) window._lbD = d2; todayRender() } })
   q('/api/mail-sync?inv=' + encodeURIComponent(K) + '&kind=food' + me, 'inv_food')
   q('/api/mail-sync?inv=' + encodeURIComponent(K) + '&kind=pack' + me, 'inv_pack')
-  q('/api/mail-sync?buy=' + encodeURIComponent(K) + me, 'buy').then(d2=>{ if(d2 && !window._buyD) window._buyD = d2 })
+  q('/api/mail-sync?buy=' + encodeURIComponent(K) + me, 'buy').then(d2=>{ if(d2){ if(!window._buyD) window._buyD = d2; todayRender() } })
   q('/api/mail-sync?meet=' + encodeURIComponent(K) + me, 'meet').then(d2=>{ if(d2 && !window._meetD) window._meetD = d2 })
-  q('/api/mail-sync?shift=' + encodeURIComponent(K) + '&ym=' + todayTpe().slice(0,7) + me, 'shift_' + todayTpe().slice(0,7)).then(d2=>{ if(d2 && !window._shiftD) window._shiftD = d2 })
+  q('/api/mail-sync?shift=' + encodeURIComponent(K) + '&ym=' + todayTpe().slice(0,7) + me, 'shift_' + todayTpe().slice(0,7)).then(d2=>{ if(d2){ if(!window._shiftD) window._shiftD = d2; todayRender() } })
   q('/api/mail-sync?fb=' + encodeURIComponent(K) + '&date=' + todayTpe() + me, 'fb_' + todayTpe()).then(d2=>{ if(d2 && !window._fbD) window._fbD = d2 })
   q('/api/mail-sync?menu=' + encodeURIComponent(K) + me, 'menu').then(d2=>{ if(d2 && !window._menuD) window._menuD = d2 })
 }
@@ -929,21 +932,77 @@ async function buyLoad(){
 }
 function buyRender(){
   const d = window._buyD; if (!d || curStore !== 'buy') return
-  document.getElementById('upd').textContent = '🛒 採購需求・想到要買什麼隨時丟上來'
+  document.getElementById('upd').textContent = '🛒 採購・提需求 → 已購買 → 收貨拍照'
   const meN = d.me && d.me.name
-  const open = d.list.filter(x=>x.status==='open'), done = d.list.filter(x=>x.status==='done')
-  const card = x => `<div style="background:#fff;border:1.5px solid ${x.status==='done'?'#BBE3CC':'var(--line)'};border-radius:10px;padding:9px 11px;margin-bottom:8px;font-size:13px">
-    <div style="font-weight:800;color:${x.status==='done'?'var(--green)':'var(--ink)'}">${x.status==='done'?'✅ ':'🛒 '}${x.text||'（附件）'}</div>
-    <div class="hint">${x.by}・${x.ts}${x.url?` <a href="${x.url}" target="_blank">🔗 連結</a>`:''}${(x.media||[]).map((m,i)=>` <a href="${m}" target="_blank">📎圖${i+1}</a>`).join('')}</div>
-    ${x.status==='done'?`<div class="hint" style="color:var(--green);font-weight:700">已購買・${x.doneBy}・${x.doneTs}</div>`:''}
-    ${meN?`<div style="margin-top:5px">${x.status==='open'?`<button class="mini on" onclick="buyOp('${x.id}','done')">✅ 已購買</button>`:`<button class="mini" onclick="buyOp('${x.id}','undone')">↩︎ 還沒買</button>`}${(d.me.approver||x.by===meN)?`<button class="mini" style="color:var(--red)" onclick="if(confirm('刪除這筆需求？'))buyOp('${x.id}','del')">🗑</button>`:''}</div>`:''}
-  </div>`
+  const stOf = x => x.status==='done' ? 'bought' : x.status // 舊資料 done=已購買(待收貨)
+  const open = d.list.filter(x=>stOf(x)==='open'), bought = d.list.filter(x=>stOf(x)==='bought'), recvd = d.list.filter(x=>stOf(x)==='received')
+  const thumbs = (arr) => (arr||[]).length ? `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:5px">${arr.map(m=>`<img src="${m}" style="width:58px;height:58px;object-fit:cover;border-radius:8px;border:1px solid var(--line);cursor:pointer" onclick="imgView('${m}')">`).join('')}</div>` : ''
+  const card = x => { const st = stOf(x)
+    const bc = st==='received'?'#BBE3CC':st==='bought'?'#E8D089':'var(--line)'
+    const ic = st==='received'?'✅':st==='bought'?'📦':'🛒'
+    return `<div style="background:#fff;border:1.5px solid ${bc};border-radius:10px;padding:9px 11px;margin-bottom:8px;font-size:13px">
+    <div style="font-weight:800;color:${st==='received'?'var(--green)':st==='bought'?'#A85C26':'var(--ink)'}">${ic} ${x.text||'（附件）'}${meN?` <span style="cursor:pointer;font-size:11px" class="hint" onclick="buyCat('${x.id}','${(x.cat||'').replace(/'/g,'')}')">🏷${x.cat||'設分類'}</span>`:(x.cat?` <span class="hint" style="font-size:11px">🏷${x.cat}</span>`:'')}</div>
+    <div class="hint">${x.by}・${x.ts}${x.url?` <a href="${x.url}" target="_blank">🔗 連結</a>`:''}</div>
+    ${thumbs(x.media)}
+    ${st!=='open'?`<div class="hint" style="color:#A85C26;font-weight:700">🛍 已購買・${x.doneBy||''}・${x.doneTs||''}</div>`:''}
+    ${st==='received'?`<div class="hint" style="color:var(--green);font-weight:700">📬 已收貨・${x.recvBy}・${x.recvTs}</div>${thumbs(x.recvMedia)}`:''}
+    ${meN?`<div style="margin-top:5px">${st==='open'?`<button class="mini on" onclick="buyOp('${x.id}','done')">✅ 已購買</button>`:''}${st==='bought'?`<button class="mini on" onclick="buyRecv('${x.id}')">📬 確認收貨（拍照）</button><button class="mini" onclick="buyOp('${x.id}','undone')">↩︎ 還沒買</button>`:''}${(d.me.approver||x.by===meN)?`<button class="mini" style="color:var(--red)" onclick="if(confirm('刪除這筆需求？'))buyOp('${x.id}','del')">🗑</button>`:''}</div>`:''}
+  </div>` }
   let h = `<section><h2>🛒 待採購（${open.length}） <span class="hint">${meN?'':'未綁定：'+BIND_HINT}</span></h2>
     <div style="margin-bottom:10px"><button class="mini on" style="padding:9px 18px" onclick="buyNew()">＋ 我要提需求</button></div>`
-  h += open.length ? open.map(card).join('') : '<div class="mut">目前沒有待採購——缺什麼按上面提出來</div>'
+  if (open.length) { // 按分類分組（張良 2026-09-22）
+    const catsB = [...new Set(open.map(x=>x.cat||'未分類'))]
+    catsB.forEach(cb=>{
+      if (catsB.length>1 || cb!=='未分類') h += `<div style="font-weight:900;color:var(--pdark);margin:10px 0 4px">🏷 ${cb}（${open.filter(x=>(x.cat||'未分類')===cb).length}）</div>`
+      h += open.filter(x=>(x.cat||'未分類')===cb).map(card).join('')
+    })
+  } else h += '<div class="mut">目前沒有待採購——缺什麼按上面提出來</div>'
   h += `</section>`
-  if (done.length) h += `<section><details><summary style="font-weight:900;cursor:pointer">✅ 已購買（${done.length}）</summary><div style="margin-top:8px">${done.slice(0,20).map(card).join('')}</div></details></section>`
+  // 📦 待收貨（張良 2026-09-22：已購買的在這等收貨——收的人按確認+拍照，記日期時間）
+  h += `<section><h2>📦 待收貨（${bought.length}）</h2>${bought.length?bought.map(card).join(''):'<div class="mut">沒有在途的採購</div>'}</section>`
+  if (recvd.length) h += `<section><details><summary style="font-weight:900;cursor:pointer">✅ 已收貨（${recvd.length}）</summary><div style="margin-top:8px">${recvd.slice(0,30).map(card).join('')}</div></details></section>`
   app.innerHTML = h
+}
+// 📬 確認收貨：拍照必附＋日期時間自動記
+let recvFiles = []
+function buyRecv(id){
+  recvFiles = []
+  const ov = document.createElement('div'); ov.id='rcvOv'
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(16,24,43,.45);z-index:50;display:flex;align-items:center;justify-content:center;padding:16px'
+  ov.innerHTML = `<div style="background:#fff;border-radius:14px;max-width:400px;width:100%;padding:16px" onclick="event.stopPropagation()">
+    <div style="font-weight:900;margin-bottom:8px">📬 確認收貨</div>
+    <div class="hint" style="margin-bottom:8px">拍一張收到的貨（必拍）——會記你的名字＋日期時間</div>
+    <div id="rcvList" class="hint" style="margin:6px 0"></div>
+    <div style="display:flex;gap:8px;justify-content:space-between;margin-top:8px">
+      <button class="mini" style="padding:9px 12px" onclick="recvPick()">📷 拍照/選圖</button>
+      <span><button class="mini" style="padding:9px 12px" onclick="document.getElementById('rcvOv').remove()">取消</button>
+      <button class="mini on" style="padding:9px 18px" onclick="recvSend('${id}')">確認收貨</button></span>
+    </div></div>`
+  ov.onclick = () => ov.remove()
+  document.body.appendChild(ov)
+}
+function recvPick(){
+  const inp = document.createElement('input'); inp.type='file'; inp.accept='image/*'; inp.multiple=true
+  inp.onchange = () => { recvFiles = [...recvFiles, ...inp.files].slice(0,4); const el=document.getElementById('rcvList'); if(el) el.innerHTML = recvFiles.map((f,i)=>`📎 ${(f.name||'照'+(i+1)).slice(0,28)}`).join('<br>') }
+  inp.click()
+}
+async function recvSend(id){
+  if (!recvFiles.length) { alert('收貨要拍照存證'); return }
+  document.querySelectorAll('#rcvOv button').forEach(b=>b.disabled=true)
+  const media = []
+  for (const f of recvFiles) {
+    try {
+      const ext = ((f.name||'').split('.').pop()||'jpg').toLowerCase()
+      const sr = await fetch('/api/mail-sync?sopsign=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ ext }) })
+      const sd = await sr.json()
+      if (sd && sd.ok) { const ur = await fetch(sd.uploadUrl, { method:'PUT', headers:{'content-type': f.type||'image/jpeg'}, body: f }); if (ur.ok) media.push(sd.publicUrl) }
+    } catch(e){}
+  }
+  const o = document.getElementById('rcvOv'); if (o) o.remove()
+  if (!media.length) { alert('照片上傳失敗，再試一次'); return }
+  const r = await fetch('/api/mail-sync?buyop=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ id, op:'recv', media, token: TK() }) })
+  const d = await r.json().catch(()=>null)
+  if (d && d.ok) buyLoad(); else alert((d&&d.error)||'失敗')
 }
 let buyFiles = []
 function buyNew(){
@@ -954,6 +1013,7 @@ function buyNew(){
     <div style="font-weight:900;margin-bottom:8px">🛒 提出採購需求</div>
     <textarea id="buyTxt" rows="2" placeholder="要買什麼？（品名/規格/數量）" style="width:100%;border:1px solid var(--line);border-radius:8px;padding:8px;font-size:14px;font-family:inherit"></textarea>
     <input id="buyUrl" placeholder="🔗 商品連結（選填，貼網址）" style="width:100%;border:1px solid var(--line);border-radius:8px;padding:8px;font-size:13px;margin-top:6px">
+    <input id="buyCatIn" list="buyCats" placeholder="🏷 分類（選填，例：包材/器具/設備）" style="width:100%;border:1px solid var(--line);border-radius:8px;padding:8px;font-size:13px;margin-top:6px"><datalist id="buyCats">${[...new Set(((window._buyD||{}).list||[]).map(x=>x.cat).filter(Boolean))].map(c=>`<option>${c}</option>`).join('')}</datalist>
     <div id="buyList" class="hint" style="margin:6px 0"></div>
     <div style="display:flex;gap:8px;justify-content:space-between;margin-top:8px;flex-wrap:wrap">
       <button class="mini" style="padding:9px 12px" onclick="buyPick()">📷 加圖片</button>
@@ -983,10 +1043,17 @@ async function buySend(){
     } catch(e){}
   }
   let by = (window._buyD && window._buyD.me) ? window._buyD.me.name : (localStorage.getItem('sopName') || prompt('你的名字？') || '匿名')
-  const r = await fetch('/api/mail-sync?buyadd=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ text, url, media, by, token: TK() }) })
+  const cat = (document.getElementById('buyCatIn')||{}).value||''
+  const r = await fetch('/api/mail-sync?buyadd=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ text, url, media, by, cat, token: TK() }) })
   const d = await r.json().catch(()=>null)
   const o = document.getElementById('buyOv'); if (o) o.remove()
   if (d && d.ok) { buyLoad() } else alert((d&&d.error)||'送出失敗')
+}
+function buyCat(id, cur){
+  const v = prompt('分類（例：包材／器具／設備；留空=清除）', cur||'')
+  if (v == null) return
+  fetch('/api/mail-sync?buyop=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ id, op:'cat', val: v.trim(), token: TK() }) })
+    .then(r=>r.json()).then(d2=>{ if(d2&&d2.ok) buyLoad(); else alert((d2&&d2.error)||'失敗') })
 }
 async function buyOp(id, op){
   const r = await fetch('/api/mail-sync?buyop=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ id, op, token: TK() }) })
@@ -1601,6 +1668,35 @@ function menuNoteEdit(){
   if (v==null) return
   d.draft.note = v.trim()
   menuSave('改套餐規則')
+}
+// ── 圖片小圖預覽（張良 2026-09-22：不開新分頁——縮圖點了頁內放大，再點關閉）──
+function imgView(u){
+  const ov = document.createElement('div')
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(10,16,30,.82);z-index:60;display:flex;align-items:center;justify-content:center;padding:14px'
+  ov.innerHTML = `<img src="${u}" style="max-width:94vw;max-height:88vh;border-radius:12px;box-shadow:0 8px 40px rgba(0,0,0,.5)">`
+  ov.onclick = () => ov.remove()
+  document.body.appendChild(ov)
+}
+// ── 📌 今日事項（張良 2026-09-22：看板最上面＝今天該做的事——任務(排今天/🚩/處理中)、待收貨、今天班表；點行跳分頁）──
+function todayRender(){
+  const el = document.getElementById('todaysec'); if (!el) return
+  const today = todayTpe(), md = today.slice(5)
+  const lb = window._lbD || tcGet('lb'), buy = window._buyD || tcGet('buy'), sh = (window._shiftD && window._shiftD.ym===today.slice(0,7)) ? window._shiftD : tcGet('shift_'+today.slice(0,7))
+  const rows = []
+  const openIss = ((lb||{}).issues||[]).filter(x=>x.status!=='done')
+  openIss.filter(x=>x.due && (x.due.includes(md)||x.due.includes(today)||/今天|今日/.test(x.due))).forEach(x=>rows.push({ic:'⏰',tx:`任務排今天：${x.text||'（附件）'}${x.claimBy?`（${x.claimBy}）`:''}`,go:"taskLoad()"}))
+  openIss.filter(x=>x.flag && !(x.due&&(x.due.includes(md)||x.due.includes(today)))).forEach(x=>rows.push({ic:'🚩',tx:`重點任務：${x.text||'（附件）'}${x.claimBy?`（${x.claimBy}）`:''}`,go:"taskLoad()"}))
+  const pendPub = openIss.filter(x=>x.pub==='pending').length
+  if (pendPub && lb && lb.me) rows.push({ic:'🕐',tx:`${pendPub} 筆回報等老闆確認發布`,go:"taskLoad()"})
+  const inbound = ((buy||{}).list||[]).filter(x=>x.status==='bought'||x.status==='done')
+  inbound.forEach(x=>rows.push({ic:'📦',tx:`待收貨：${x.text||'（附件）'}${x.doneBy?`（${x.doneBy}買的）`:''}——收到請拍照確認`,go:"buyLoad()"}))
+  const shToday = ((sh||{}).sched||[]).filter(x=>x.date===today)
+  if (shToday.length) rows.push({ic:'📅',tx:`今天班表：${shToday.map(x=>`${x.name} ${x.start}-${x.end}${x.pos?`(${x.pos})`:''}`).join('、')}`,go:"shiftLoad()"})
+  let s = `<section style="border:1.5px solid var(--primary);"><h2>📌 今日事項 <span class="hint">${today.slice(5)}・今天該做的都在這</span></h2>`
+  s += rows.length ? rows.map(r=>`<div onclick="${r.go}" style="cursor:pointer;display:flex;gap:8px;align-items:flex-start;background:var(--soft);border-radius:9px;padding:7px 10px;margin-top:6px;font-size:13px"><span>${r.ic}</span><span style="flex:1;font-weight:600">${r.tx}</span><span class="hint">›</span></div>`).join('')
+    : `<div class="mut" style="font-size:13px">今天沒有排定事項 🎉（任務排時間/採購已購買/今天班表 會自動出現在這）</div>`
+  s += `</section>`
+  el.innerHTML = s
 }
 load('ground')
 </script>
