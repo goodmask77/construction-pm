@@ -247,8 +247,9 @@ function sopRender(){
       s += `<div style="display:flex;align-items:center;gap:8px;padding:9px 4px;border-bottom:1px solid var(--line)">`
       s += `<div style="flex:1;min-width:0"><div style="font-weight:700;color:${overdue?'var(--red)':'var(--ink)'}">${it.title}${overdue?' ⚠️':''}</div><div class="hint">${it.due} 前${it.photo?'・📷 要拍照':''}</div></div>`
       if (lg && lg.done) {
-        s += `<div style="text-align:right"><div style="color:var(--green);font-weight:900">✓ ${lg.ts}</div><div class="hint">${lg.by||''}${lg.photo?` <a href="${lg.photo}" target="_blank">📷照片</a>`:''}</div></div>`
-        s += `<button class="mini" onclick="sopDo('${it.id}',1)">撤銷</button>`
+        // 完成狀態：縮圖直接顯示、點整塊開預覽；撤銷藏在預覽裡（張良 2026-09-21：列表上的撤銷容易誤點）
+        s += `<div style="text-align:right;cursor:pointer" onclick="sopView('${it.id}')"><div style="color:var(--green);font-weight:900">✓ ${lg.ts}</div><div class="hint">${lg.by||''}</div></div>`
+        s += lg.photo ? `<img src="${lg.photo}" onclick="sopView('${it.id}')" style="width:42px;height:42px;object-fit:cover;border-radius:8px;border:1.5px solid var(--green);cursor:pointer">` : ``
       } else {
         if (it.photo) s += sopPhotos[it.id]
           ? `<img src="${sopPhotos[it.id]}" style="width:38px;height:38px;object-fit:cover;border-radius:6px;border:2px solid var(--green)" onclick="sopPick('${it.id}')">`
@@ -270,6 +271,24 @@ function sopRender(){
   }
   s += `<div class="hint" style="margin-top:8px">按「完成」記錄時間與名字；要拍照的先按 📷。超過時限沒完成，DD 會在群裡提醒。</div></section>`
   el.innerHTML = s
+}
+// 完成紀錄預覽（點✓或縮圖）：大圖＋資訊＋撤銷（撤銷只在這裡，防誤點）
+function sopView(id){
+  const it = (sopData.def.items||[]).find(x => x.id === id)
+  const lg = (sopData.log.items||{})[id]
+  if (!it || !lg) return
+  const ov = document.createElement('div'); ov.id = 'viewOv'
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(16,24,43,.6);z-index:50;display:flex;align-items:center;justify-content:center;padding:16px'
+  ov.innerHTML = `<div style="background:#fff;border-radius:14px;max-width:460px;width:100%;padding:14px;text-align:center" onclick="event.stopPropagation()">
+    <div style="font-weight:900;color:var(--ink);margin-bottom:6px">${it.title}</div>
+    <div class="hint" style="margin-bottom:8px">✓ ${lg.ts} 完成・${lg.by||''}</div>
+    ${lg.photo?`<img src="${lg.photo}" style="max-width:100%;max-height:62vh;border-radius:10px;border:1px solid var(--line)">`:'<div class="hint">（這一項沒有照片）</div>'}
+    <div style="display:flex;justify-content:space-between;margin-top:12px">
+      <button class="mini" style="padding:9px 14px;color:var(--red)" onclick="if(confirm('撤銷這筆完成紀錄？')){document.getElementById('viewOv').remove();sopDo('${id}',1)}">↩︎ 撤銷完成</button>
+      <button class="mini on" style="padding:9px 18px" onclick="document.getElementById('viewOv').remove()">關閉</button>
+    </div></div>`
+  ov.onclick = () => ov.remove()
+  document.body.appendChild(ov)
 }
 // ── 站別管理：新增/改名/刪除(進回收站可復原)——全部留姓名時間紀錄 ──
 let sopTrashOpen = false
