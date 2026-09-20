@@ -220,6 +220,7 @@ function renderBoard(d, store){
   rhythmRender()
   itemsRender()
   if (store === 'ground') sopLoad()
+  if (!window._pf) { window._pf = 1; setTimeout(prefetchTabs, 800) } // 背景預抓其他分頁（切換秒開）
 }
 // ── 預做節奏表渲染（完整菜單＋品類分組＋隱藏；隱藏清單在 sopData.prepHide，sopLoad 後會再畫一次）──
 let rhyMode = 15, rhyMngOn = false
@@ -572,21 +573,38 @@ async function sopEdSave(){
 //    評完自動往下封存（可打開看/改票）；沒評完就留在自己頁面上=每個人清單不一樣）──
 const LVLTXT = { 1:'1★ 有待加強：還要人帶著做', 2:'2★ 基本達標：交代的有做到', 3:'3★ 稱職：穩定可靠、不用盯', 4:'4★ 超出期待：主動補位、做得比要求多', 5:'5★ 標竿：可以當範本教別人' }
 let lbSkip = new Set(JSON.parse(localStorage.getItem('lbSkip')||'[]'))
+// ── 分頁切換提速（張良 2026-09-22「切換有點卡頓」）：stale-first——點分頁先畫上次資料(記憶體+localStorage)、
+//    背景抓新的回來再重畫；首次進站 0.8 秒後背景預抓全部分頁 → 之後切哪一頁都秒開 ──
+const tcGet = k => { try { return JSON.parse(localStorage.getItem('obt_'+k)) } catch(e){ return null } }
+const tcSet = (k,d) => { try { localStorage.setItem('obt_'+k, JSON.stringify(d)) } catch(e){} }
+async function prefetchTabs(){
+  const q = async (url, key) => { try { const r = await fetch(url); const d2 = await r.json(); if (d2 && d2.ok) { tcSet(key, d2); return d2 } } catch(e){} }
+  const me = TK() ? '&me=' + encodeURIComponent(TK()) : ''
+  q('/api/mail-sync?lb=' + encodeURIComponent(K) + me, 'lb').then(d2=>{ if(d2 && !window._lbD) window._lbD = d2 })
+  q('/api/mail-sync?inv=' + encodeURIComponent(K) + '&kind=food' + me, 'inv_food')
+  q('/api/mail-sync?inv=' + encodeURIComponent(K) + '&kind=pack' + me, 'inv_pack')
+  q('/api/mail-sync?buy=' + encodeURIComponent(K) + me, 'buy').then(d2=>{ if(d2 && !window._buyD) window._buyD = d2 })
+  q('/api/mail-sync?meet=' + encodeURIComponent(K) + me, 'meet').then(d2=>{ if(d2 && !window._meetD) window._meetD = d2 })
+  q('/api/mail-sync?shift=' + encodeURIComponent(K) + '&ym=' + todayTpe().slice(0,7) + me, 'shift_' + todayTpe().slice(0,7)).then(d2=>{ if(d2 && !window._shiftD) window._shiftD = d2 })
+  q('/api/mail-sync?fb=' + encodeURIComponent(K) + '&date=' + todayTpe() + me, 'fb_' + todayTpe()).then(d2=>{ if(d2 && !window._fbD) window._fbD = d2 })
+}
 async function lbFetch(){
   let d
   try { const r = await fetch('/api/mail-sync?lb=' + encodeURIComponent(K) + (TK() ? '&me=' + encodeURIComponent(TK()) : '')); d = await r.json() } catch(e){}
-  if (d && d.ok) window._lbD = d
+  if (d && d.ok) { window._lbD = d; tcSet('lb', d) }
   return window._lbD
 }
 async function loadLB(){
   curStore = 'lb'; setTabs('lb')
-  if (!window._lbD) app.innerHTML = '<section>載入中…</section>'
-  await lbFetch(); lbRender()
+  if (!window._lbD) { const c = tcGet('lb'); if (c) window._lbD = c }
+  if (window._lbD) lbRender(); else app.innerHTML = '<section>載入中…</section>'
+  await lbFetch(); if (curStore === 'lb') lbRender()
 }
 async function taskLoad(){
   curStore = 'task'; setTabs('task')
-  if (!window._lbD) app.innerHTML = '<section>載入中…</section>'
-  await lbFetch(); taskRender()
+  if (!window._lbD) { const c = tcGet('lb'); if (c) window._lbD = c }
+  if (window._lbD) taskRender(); else app.innerHTML = '<section>載入中…</section>'
+  await lbFetch(); if (curStore === 'task') taskRender()
 }
 // 我對這件事的每個「可評面」已評了幾個面向
 function lbMyRated(x, meN){
@@ -803,12 +821,13 @@ function lbDue(id, cur){
 // ── 🥩 盤點 / 📦 包材（品項自建＋盤點紀錄＋照銷售自動扣＋低水位；張良 2026-09-21）──
 async function invLoad(kind){
   curStore = kind; setTabs(kind)
-  app.innerHTML = '<section>載入中…</section>'
+  if (!window._invD || window._invD.kind !== kind) { const c = tcGet('inv_'+kind); if (c) window._invD = c }
+  if (window._invD && window._invD.kind === kind) invRender(); else app.innerHTML = '<section>載入中…</section>'
   let d
   try { const r = await fetch('/api/mail-sync?inv=' + encodeURIComponent(K) + '&kind=' + kind + (TK() ? '&me=' + encodeURIComponent(TK()) : '')); d = await r.json() } catch(e){}
-  if (!d || !d.ok) { app.innerHTML = '<div class="err">讀不到資料</div>'; return }
-  window._invD = d
-  invRender()
+  if (!d || !d.ok) { if (!window._invD) app.innerHTML = '<div class="err">讀不到資料</div>'; return }
+  window._invD = d; tcSet('inv_'+kind, d)
+  if (curStore === kind) invRender()
 }
 function invRender(){
   const d = window._invD; if (!d || (curStore !== 'food' && curStore !== 'pack')) return
@@ -894,11 +913,16 @@ async function invDel(id){
 // ── 🛒 採購需求（張良 2026-09-21：大家隨時提要買的東西，附圖片＆連結；DD通知群、可標已購買）──
 async function buyLoad(){
   curStore = 'buy'; setTabs('buy')
-  app.innerHTML = '<section>載入中…</section>'
+  if (!window._buyD) { const c = tcGet('buy'); if (c) window._buyD = c }
+  if (window._buyD) buyRender(); else app.innerHTML = '<section>載入中…</section>'
   let d
   try { const r = await fetch('/api/mail-sync?buy=' + encodeURIComponent(K) + (TK() ? '&me=' + encodeURIComponent(TK()) : '')); d = await r.json() } catch(e){}
-  if (!d || !d.ok) { app.innerHTML = '<div class="err">讀不到資料</div>'; return }
-  window._buyD = d
+  if (!d || !d.ok) { if (!window._buyD) app.innerHTML = '<div class="err">讀不到資料</div>'; return }
+  window._buyD = d; tcSet('buy', d)
+  if (curStore === 'buy') buyRender()
+}
+function buyRender(){
+  const d = window._buyD; if (!d || curStore !== 'buy') return
   document.getElementById('upd').textContent = '🛒 採購需求・想到要買什麼隨時丟上來'
   const meN = d.me && d.me.name
   const open = d.list.filter(x=>x.status==='open'), done = d.list.filter(x=>x.status==='done')
@@ -987,11 +1011,16 @@ async function punchNow(){
 function todayTpe(){ return new Date(Date.now()+8*3600e3).toISOString().slice(0,10) }
 async function meetLoad(){
   curStore = 'meet'; setTabs('meet')
-  app.innerHTML = '<section>載入中…</section>'
+  if (!window._meetD) { const c = tcGet('meet'); if (c) window._meetD = c }
+  if (window._meetD) meetRender(); else app.innerHTML = '<section>載入中…</section>'
   let d
   try { const r = await fetch('/api/mail-sync?meet=' + encodeURIComponent(K) + (TK() ? '&me=' + encodeURIComponent(TK()) : '')); d = await r.json() } catch(e){}
-  if (!d || !d.ok) { app.innerHTML = '<div class="err">讀不到資料</div>'; return }
-  window._meetD = d
+  if (!d || !d.ok) { if (!window._meetD) app.innerHTML = '<div class="err">讀不到資料</div>'; return }
+  window._meetD = d; tcSet('meet', d)
+  if (curStore === 'meet') meetRender()
+}
+function meetRender(){
+  const d = window._meetD; if (!d || curStore !== 'meet') return
   document.getElementById('upd').textContent = '📋 會議紀錄'
   const meN = d.me && d.me.name
   const mc = x => `<div style="background:#fff;border:1.5px solid var(--line);border-radius:10px;padding:9px 11px;margin-bottom:8px;font-size:13px">
@@ -1056,11 +1085,16 @@ function shiftNav(n){ const t2 = new Date(shiftYm + '-15'); t2.setMonth(t2.getMo
 async function shiftLoad(ym){
   curStore = 'shift'; setTabs('shift')
   shiftYm = (typeof ym === 'string' && ym) || shiftYm || todayTpe().slice(0,7)
-  app.innerHTML = '<section>載入中…</section>'
+  if (!window._shiftD || window._shiftD.ym !== shiftYm) { const c = tcGet('shift_'+shiftYm); if (c) window._shiftD = c }
+  if (window._shiftD && window._shiftD.ym === shiftYm) shiftRender(); else app.innerHTML = '<section>載入中…</section>'
   let d
   try { const r = await fetch('/api/mail-sync?shift=' + encodeURIComponent(K) + '&ym=' + shiftYm + (TK() ? '&me=' + encodeURIComponent(TK()) : '')); d = await r.json() } catch(e){}
-  if (!d || !d.ok) { app.innerHTML = '<div class="err">讀不到資料</div>'; return }
-  window._shiftD = d
+  if (!d || !d.ok) { if (!window._shiftD) app.innerHTML = '<div class="err">讀不到資料</div>'; return }
+  window._shiftD = d; tcSet('shift_'+shiftYm, d)
+  if (curStore === 'shift') shiftRender()
+}
+function shiftRender(){
+  const d = window._shiftD; if (!d || curStore !== 'shift') return
   document.getElementById('upd').textContent = '📅 班表 × 打卡・' + shiftYm
   const meN = d.me && d.me.name
   const tmin = hm => { const a=String(hm||'').split(':'); return (+a[0]||0)*60+(+a[1]||0) }
@@ -1301,13 +1335,14 @@ function fbNav(n){ const t2 = new Date(fbDate); t2.setDate(t2.getDate()+n); fbLo
 async function fbLoad(date){
   curStore = 'fb'; setTabs('fb')
   fbDate = (typeof date === 'string' && date) || fbDate || todayTpe()
-  app.innerHTML = '<section>載入中…</section>'
+  if (!window._fbD || window._fbD.date !== fbDate) { const c = tcGet('fb_'+fbDate); if (c) window._fbD = c }
+  if (window._fbD && window._fbD.date === fbDate) { document.getElementById('upd').textContent = '💬 每日回饋・' + fbDate; fbRender() } else app.innerHTML = '<section>載入中…</section>'
   let d
   try { const r = await fetch('/api/mail-sync?fb=' + encodeURIComponent(K) + '&date=' + fbDate + (TK() ? '&me=' + encodeURIComponent(TK()) : '')); d = await r.json() } catch(e){}
-  if (!d || !d.ok) { app.innerHTML = '<div class="err">讀不到資料</div>'; return }
-  window._fbD = d
+  if (!d || !d.ok) { if (!window._fbD) app.innerHTML = '<div class="err">讀不到資料</div>'; return }
+  window._fbD = d; tcSet('fb_'+fbDate, d)
   document.getElementById('upd').textContent = '💬 每日回饋・' + d.date
-  fbRender()
+  if (curStore === 'fb') fbRender()
 }
 function fbRender(){
   const d = window._fbD; if (!d || curStore !== 'fb') return
