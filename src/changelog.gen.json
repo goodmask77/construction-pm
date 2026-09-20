@@ -1,5 +1,13 @@
 [
  {
+  "date": "2026-09-21",
+  "items": [
+   "15分鐘快照：cron改每15分、GD含品項完整快照存每日檔pm_pos_q_(月檔維持30分口徑不動)、AB維持每30分 v2.9.2",
+   "半小時×品項快照：joya-intraday 快照加全品項累計份數(相鄰相減=每半小時各品項銷量,預做節奏用;喬亞實測不吃時分無法回補歷史) v2.9.1",
+   "累計欄命名分窗：/prep改「30天累計」、App改「期間累計」＋雙向tooltip說明——同名不同窗造成數字對不上的誤會 v2.9.0"
+  ]
+ },
+ {
   "date": "2026-09-20",
   "items": [
    "名冊更新口 v2.8.9(張良2026-09-20:Google Sheet夥伴名單更新kb_roster)：POST ?rosterset=金鑰(dry=1先看)——addFields補欄位(同key跳過)/updates按姓名合併只動給的欄位/adds同名跳過;動完announceChanged;新欄位:體檢healthChk/投保到職日insureStart",

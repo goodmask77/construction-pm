@@ -858,10 +858,43 @@ export default async function handler(req, res) {
     const wkTot2 = slots2.wk.reduce((t, a) => t + a[1], 0)
     const share14 = wkTot2 ? Math.round(slots2.wk.filter(a => a[0] < 14).reduce((t, a) => t + a[1], 0) / wkTot2 * 100) : null
     const rev30 = w30.reduce((t, e) => t + (Number(e.revenue) || 0), 0)
+    // 預做節奏表（張良 2026-09-21：每15分×品項）：pm_pos_q_每日檔（joya-intraday 15分快照）相鄰差分 → 近7個營業日平均
+    // 喬亞不給歷史時分 → 資料 2026-09-22 起累積；沒資料時 rhythm.days=0（前端顯示 0 佔位）
+    let rhythm = null
+    if (!isAB2) {
+      const RSLOTS = []
+      for (let t = 11 * 60; t <= 19 * 60 + 15; t += 15) RSLOTS.push(String(Math.floor(t / 60)).padStart(2, '0') + ':' + String(t % 60).padStart(2, '0')) // 桶＝起始時刻；19:30 快照的差分落在 19:15 桶
+      const qdocs = []
+      for (let i = datesAll.length - 1; i >= 0 && qdocs.length < 7; i--) { // 從最新往回找最多 7 個有快照的營業日
+        const qd = await kvGet('sp_finance_pm_pos_q_' + datesAll[i]).catch(() => null)
+        if (qd && Array.isArray(qd.slots) && qd.slots.length > 1) qdocs.push(qd)
+      }
+      const bucket = {}
+      for (const qd of qdocs) {
+        const sl = [...qd.slots].sort((a, b) => (a.t < b.t ? -1 : 1))
+        for (let i = 0; i < sl.length; i++) {
+          const prevI = i ? (sl[i - 1].items || {}) : {}
+          const bucketT = i ? sl[i - 1].t : '11:00' // 差分歸「前一格起始」桶；首張快照＝開店至該刻的量歸 11:00
+          for (const [nm, qv] of Object.entries(sl[i].items || {})) {
+            const dq = Math.max(0, (Number(qv) || 0) - (Number(prevI[nm]) || 0))
+            if (!dq) continue
+            let k3 = norm2(nm); k3 = aliasMap2[k3] || k3
+            if (hiddenMap2[k3]) continue
+            const o = bucket[k3] || (bucket[k3] = { n: nm, s: {} })
+            o.n = nm
+            o.s[bucketT] = (o.s[bucketT] || 0) + dq
+          }
+        }
+      }
+      const nD = qdocs.length
+      const rows3 = Object.values(bucket).map(o => ({ n: o.n, tot: Object.values(o.s).reduce((t, v) => t + v, 0), q: RSLOTS.map(t => (nD ? Math.round((o.s[t] || 0) / nD * 10) / 10 : 0)) }))
+        .sort((a, b) => b.tot - a.tot).slice(0, 18)
+      rhythm = { slots: RSLOTS, days: nD, items: rows3 }
+    }
     return res.status(200).json({
       ok: true, store: storeQ, updatedAt: new Date().toISOString(), anchor,
       kpi: { rev30, days30: w30.length, avgRev: w30.length ? Math.round(rev30 / w30.length) : 0, tx30: w30.reduce((t, e) => t + (Number(e.txCount) || 0), 0) },
-      n30, prep, share14, days: days2.reverse(), setPcts: setDays.reverse(), dates: datesAll, cats: cats2, slots: (slots2.wk.length || slots2.we.length) ? slots2 : null,
+      n30, prep, share14, rhythm, days: days2.reverse(), setPcts: setDays.reverse(), dates: datesAll, cats: cats2, slots: (slots2.wk.length || slots2.we.length) ? slots2 : null,
     })
   }
   // 內用/外帶歷史回補口（同金鑰，張良 2026-09-20 內外帶接進報表）：?dinefill=<key>[&dry=1]

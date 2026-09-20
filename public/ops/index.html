@@ -24,6 +24,8 @@
   .kpi .l{font-size:11.5px;font-weight:700;color:var(--muted)}
   .kpi .v{font-size:22px;font-weight:900;color:var(--pdark);letter-spacing:-.03em;margin-top:2px;font-variant-numeric:tabular-nums}
   section{background:var(--card);border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow);padding:16px 14px;margin-top:14px;overflow:hidden}
+  .mini{border:1px solid var(--line);background:#fff;border-radius:8px;padding:3px 10px;font-size:12px;font-weight:700;color:var(--muted);cursor:pointer;margin-left:4px}
+  .mini.on{background:var(--pdark);color:#fff;border-color:var(--pdark)}
   h2{font-size:16px;font-weight:900;color:var(--ink);margin-bottom:8px}
   .hint{font-size:11.5px;color:var(--muted);font-weight:500}
   table{width:100%;border-collapse:separate;border-spacing:0;font-size:13px}
@@ -103,6 +105,21 @@ async function load(store){
     })
     h += `</tbody></table></div><div class="hint" style="margin-top:8px">怎麼用：①看今天星期幾那欄（藍底）＝該星期近幾週的平均銷量，數字下的 ±% 是跟總平均的差（超過 ±10% 才顯示，多備或少備看它）②峰值/低值＝近30天單日最高/最低——大日抓峰值、保守抓平均，低於低值就太少了。</div></section>`
   }
+  // 🍳 預做節奏表（張良 2026-09-21）：15分快照的近7營業日平均；資料 9/22 起累積，沒資料先用熱銷品項擺 0 佔位
+  if (d.rhythm) {
+    const R = d.rhythm
+    let rows15 = R.items.map(o => ({ n: o.n, q: o.q }))
+    if (!rows15.length) { // 佔位：拿品項明細的 Top12（30日均排序）全 0
+      const tops = (d.cats || []).flatMap(c => c.items).sort((a, b) => (b.avg30 || 0) - (a.avg30 || 0)).slice(0, 12)
+      rows15 = tops.map(o => ({ n: o.n, q: R.slots.map(() => 0) }))
+    }
+    const slots30 = R.slots.filter((_, i) => i % 2 === 0)
+    const rows30 = rows15.map(o => ({ n: o.n, q: slots30.map((_, i) => Math.round(((o.q[i * 2] || 0) + (o.q[i * 2 + 1] || 0)) * 10) / 10) }))
+    const cell = v => v >= 0.5 ? '<b>' + (Math.round(v * 10) / 10) + '</b>' : (v > 0 ? '·' : '<span class="mut">0</span>')
+    const tbl = (slots, rows) => `<div class="scroll"><table><thead><tr><th style="position:sticky;left:0;background:#F1F6F9;z-index:2">品項</th>${slots.map(t => '<th>' + t + '</th>').join('')}</tr></thead><tbody>${rows.map(o => `<tr><td class="iname" style="position:sticky;left:0;background:#fff;z-index:1" title="${o.n}">${o.n}</td>${o.q.map(v => '<td>' + cell(v) + '</td>').join('')}</tr>`).join('')}</tbody></table></div>`
+    h += `<section><h2>🍳 預做節奏表 <span style="float:right;white-space:nowrap"><button class="mini on" id="rb15" onclick="rSwitch(15)">15分</button><button class="mini" id="rb30" onclick="rSwitch(30)">30分</button></span><br><span class="hint">${R.days ? `近 ${R.days} 個營業日平均・每格＝該時段平均賣幾份（·＝不到0.5份）——照表預做、尖峰前先備` : '⏳ 資料從 9/22（一）11:00 起每 15 分鐘自動累積——現在先看得到版面，明天開始長數字'}</span></h2>
+      <div id="rt15">${tbl(R.slots, rows15)}</div><div id="rt30" style="display:none">${tbl(slots30, rows30)}</div></section>`
+  }
   // 日表（核心夥伴全開：付款明細/至14:00/單均都在；全部歷史）
   const isGD = d.store === 'ground'
   h += `<section><h2>每日數據（全部歷史）</h2><div class="scroll" style="max-height:62vh;overflow-y:auto"><table><thead><tr><th>日期</th>${isGD?'<th>至14:00</th>':''}<th>營收</th><th>單數</th><th>單均</th><th>現金</th><th>信用卡</th><th>LINE Pay</th><th>Uber</th><th>折扣</th>${isGD?'<th>自助%</th><th>外帶%</th><th>套餐/主餐%</th>':''}</tr></thead><tbody>`
@@ -139,6 +156,15 @@ async function load(store){
     h += `<section>${draw('平日時段', d.slots.wk)}${draw('週末時段', d.slots.we)}</section>`
   }
   app.innerHTML = h
+}
+// 預做節奏表 15分/30分 切換
+function rSwitch(m){
+  const t15 = document.getElementById('rt15'), t30 = document.getElementById('rt30')
+  if (!t15 || !t30) return
+  t15.style.display = m === 15 ? '' : 'none'
+  t30.style.display = m === 30 ? '' : 'none'
+  document.getElementById('rb15').className = 'mini' + (m === 15 ? ' on' : '')
+  document.getElementById('rb30').className = 'mini' + (m === 30 ? ' on' : '')
 }
 load('ground')
 </script>
