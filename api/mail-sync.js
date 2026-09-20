@@ -958,9 +958,10 @@ export default async function handler(req, res) {
     const names = ((rosterDoc || {}).people || []).filter(p => !p.endDate && p.status !== '離職').map(p => p.name)
     const gdef = (defDoc || {}).ground || { items: [] }
     // me＝綁定者（張良 2026-09-21 拍板：不設站長，綁定的人全站都能編，靠歷史紀錄留痕）
-    const me4 = me3 ? { name: me3.name, canEdit: true } : null
+    const approvers = ((defDoc || {}).ground || {}).approvers || ['張良瑋'] // 解決審核人（張良 2026-09-21：已解決要經我審核）
+    const me4 = me3 ? { name: me3.name, canEdit: true, approver: approvers.includes(me3.name) } : null
     const issuesDoc = await kvGet('sp_finance_pm_sop_issues')
-    const issues = ((issuesDoc || {}).list || []).filter(x => x.status === 'open').slice(0, 30)
+    const issues = ((issuesDoc || {}).list || []).filter(x => x.status === 'open' || x.status === 'pending').slice(0, 30)
     const stations = (gdef.stations && gdef.stations.length) ? gdef.stations : [...new Set((gdef.items || []).map(i => i.st))]
     const trash = (gdef.trash || []).map(t => ({ id: t.id, st: t.st, n: (t.items || []).length, ts: t.ts, by: t.by }))
     return res.status(200).json({ ok: true, date: dt2, def: { items: gdef.items || [], stations, edits: (gdef.edits || []).slice(0, 10) }, trash, log: logDoc || { items: {} }, names, me: me4, issues, prepHide: (hideDoc || {}).keys || {} })
@@ -1018,7 +1019,7 @@ export default async function handler(req, res) {
     for (const x of list) {
       const fA = avgOf((x.ratings || {}).find), xA = avgOf((x.ratings || {}).fix)
       if (x.by && x.by !== '匿名') { const p = P(x.by); p.nFind++; if (fA) p.findPts += fA }
-      if (x.doneBy) { const p = P(x.doneBy); p.nFix++; if (xA) p.fixPts += xA }
+      if (x.doneBy && x.status === 'done') { const p = P(x.doneBy); p.nFix++; if (xA) p.fixPts += xA } // 待審核不算積分（張良 2026-09-21：解決要經審核）
       x.findAvg = fA; x.fixAvg = xA
     }
     const rank = Object.values(board).map(p => ({ ...p, findPts: Math.round(p.findPts * 10) / 10, fixPts: Math.round(p.fixPts * 10) / 10, total: Math.round((p.findPts + p.fixPts) * 10) / 10 })).sort((a, b) => b.total - a.total || (b.nFind + b.nFix) - (a.nFind + a.nFix))
@@ -1151,17 +1152,48 @@ export default async function handler(req, res) {
     return res.status(200).json({ ok: true, issue: iss })
   }
   if (req.method === 'POST' && req.query?.sopresolve) {
+    // 兩段式（張良 2026-09-21：已解決要經審核不能隨便按掉）：夥伴按=pending 送審＋DD私訊審核人；審核人自己按=直接 done
     const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
     if (!ok2 || String(req.query.sopresolve) !== ok2) return res.status(403).json({ ok: false })
     let b9 = {}
     try { b9 = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
     const who9 = await sopWho(b9.token)
     if (!who9) return res.status(403).json({ ok: false, error: '要先綁定看板才能標記解決' })
-    const doc9 = (await kvGet('sp_finance_pm_sop_issues')) || { list: [] }
-    const it9 = (doc9.list || []).find(x => x.id === b9.id)
+    const [doc9, defD9, rosterD9] = await Promise.all([kvGet('sp_finance_pm_sop_issues'), kvGet('sp_finance_pm_sop_def'), kvGet('sp_crew_kb_roster')])
+    const d9 = doc9 || { list: [] }
+    const it9 = (d9.list || []).find(x => x.id === b9.id)
     if (!it9) return res.status(404).json({ ok: false })
-    it9.status = 'done'; it9.doneBy = who9.name; it9.doneTs = new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 16).replace('T', ' ')
-    await kvPut('sp_finance_pm_sop_issues', doc9, '看板問題解決(' + who9.name + ')')
+    const approvers9 = ((defD9 || {}).ground || {}).approvers || ['張良瑋']
+    it9.doneBy = who9.name; it9.doneTs = new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 16).replace('T', ' ')
+    it9.status = approvers9.includes(who9.name) ? 'done' : 'pending'
+    await kvPut('sp_finance_pm_sop_issues', d9, '看板問題解決' + (it9.status === 'pending' ? '送審' : '') + '(' + who9.name + ')')
+    if (it9.status === 'pending') { // DD 私訊審核人（找名冊 lineUserId）
+      try {
+        const tk9 = (process.env.LINE_CHANNEL_ACCESS_TOKEN || '').trim()
+        for (const an of approvers9) {
+          const ap = ((rosterD9 || {}).people || []).find(p => p.name === an && p.lineUserId)
+          if (tk9 && ap) await fetch('https://api.line.me/v2/bot/message/push', { method: 'POST', headers: { 'content-type': 'application/json', Authorization: 'Bearer ' + tk9 }, body: JSON.stringify({ to: ap.lineUserId, messages: [{ type: 'text', text: `🕐 待你審核：【${it9.st}】${it9.text || '（附件）'}\n${who9.name} 說已解決。\n到 ground-pm.vercel.app/prep 該站卡片按「核准／退回」。` }] }) })
+        }
+      } catch (_) {}
+    }
+    return res.status(200).json({ ok: true, status: it9.status })
+  }
+  // 審核口（只有審核人）：POST ?sopreview= {id, pass:true/false, token} → 核准=done；退回=回 open 清除解決人
+  if (req.method === 'POST' && req.query?.sopreview) {
+    const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
+    if (!ok2 || String(req.query.sopreview) !== ok2) return res.status(403).json({ ok: false })
+    let bv = {}
+    try { bv = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
+    const whoV = await sopWho(bv.token)
+    if (!whoV) return res.status(403).json({ ok: false, error: '要先綁定' })
+    const [docV, defV] = await Promise.all([kvGet('sp_finance_pm_sop_issues'), kvGet('sp_finance_pm_sop_def')])
+    if (!(((defV || {}).ground || {}).approvers || ['張良瑋']).includes(whoV.name)) return res.status(403).json({ ok: false, error: '只有審核人可以核准/退回' })
+    const dV = docV || { list: [] }
+    const itV = (dV.list || []).find(x => x.id === bv.id)
+    if (!itV || itV.status !== 'pending') return res.status(404).json({ ok: false, error: '不是待審核狀態' })
+    if (bv.pass) { itV.status = 'done'; itV.reviewedBy = whoV.name; itV.reviewedTs = new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 16).replace('T', ' ') }
+    else { itV.status = 'open'; itV.rejectedBy = whoV.name; delete itV.doneBy; delete itV.doneTs }
+    await kvPut('sp_finance_pm_sop_issues', dV, '看板問題審核' + (bv.pass ? '核准' : '退回') + '(' + whoV.name + ')')
     return res.status(200).json({ ok: true })
   }
   // 名冊更新口（同管理金鑰，張良 2026-09-20：用 Google Sheet 夥伴名單更新 kb_roster）：

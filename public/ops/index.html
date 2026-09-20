@@ -235,10 +235,13 @@ function sopRender(){
     s += `<div style="background:var(--psoft);border-radius:8px;padding:4px 10px;font-weight:900;color:var(--pdark);font-size:12.5px;margin:10px 0 4px">${st}
       <span style="float:right"><button class="mini" style="color:#A85C26" onclick="sopReport('${st}')">⚠️ 回報</button>${canEd?`<button class="mini" onclick="sopEdit('${st}')">${sopEditSt===st?'放棄':'✏️ 編輯'}</button>`:''}</span></div>`
     stIss.forEach(x => {
-      s += `<div style="background:#FCEAEA;border:1px solid #F0B8B1;border-radius:8px;padding:8px 10px;margin:4px 0;font-size:12.5px">
-        <b style="color:var(--red)">⚠️ ${x.text||'（附件）'}</b>
+      const pend = x.status === 'pending'
+      s += `<div style="background:${pend?'#FFF8E6':'#FCEAEA'};border:1px solid ${pend?'#E8D089':'#F0B8B1'};border-radius:8px;padding:8px 10px;margin:4px 0;font-size:12.5px">
+        <b style="color:${pend?'#A85C26':'var(--red)'}">${pend?'🕐':'⚠️'} ${x.text||'（附件）'}</b>
         <div class="hint">${x.by}・${x.ts}${(x.media||[]).map((m,i)=>` <a href="${m}" target="_blank">📎附件${i+1}</a>`).join('')}</div>
-        ${me?`<button class="mini" style="margin-top:4px" onclick="sopResolve('${x.id}')">✅ 已解決</button>`:''}</div>`
+        ${pend?`<div class="hint" style="color:#A85C26;font-weight:700">🕐 ${x.doneBy} 已處理・等老闆審核</div>`:''}
+        ${pend&&me&&me.approver?`<span><button class="mini on" style="margin-top:4px" onclick="sopReview('${x.id}',1)">✅ 核准</button><button class="mini" style="margin-top:4px;color:var(--red)" onclick="sopReview('${x.id}',0)">↩︎ 退回</button></span>`:''}
+        ${!pend&&me?`<button class="mini" style="margin-top:4px" onclick="sopResolve('${x.id}')">✅ 已解決${me.approver?'':'（送審核）'}</button>`:''}</div>`
     })
     if (sopEditSt === st) { s += sopEditor(st); return }
     if (!items.some(i => i.st === st)) s += `<div class="hint" style="padding:6px 4px">（這一站還沒有 SOP 項目——按「✏️ 編輯」新增）</div>`
@@ -393,10 +396,16 @@ async function repSend(st){
   if (d && d.ok) { alert('回報已送出，DD 已通知群裡 ✅'); sopLoad() } else alert((d&&d.error)||'送出失敗，再試一次')
 }
 async function sopResolve(id){
-  if (!confirm('標記這個問題已解決？')) return
+  if (!confirm('標記這個問題已解決？（會送老闆審核）')) return
   const r = await fetch('/api/mail-sync?sopresolve=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ id, token: TK() }) })
   const d = await r.json().catch(()=>null)
-  if (d && d.ok) sopLoad(); else alert((d&&d.error)||'失敗（要先跟 DD 綁定看板）')
+  if (d && d.ok) { if (d.status === 'pending') alert('已送出，等老闆審核 ✅'); sopLoad() } else alert((d&&d.error)||'失敗（要先跟 DD 綁定GD）')
+}
+async function sopReview(id, pass){
+  if (!confirm(pass ? '核准這筆解決？' : '退回（狀態回到未解決）？')) return
+  const r = await fetch('/api/mail-sync?sopreview=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ id, pass: !!pass, token: TK() }) })
+  const d = await r.json().catch(()=>null)
+  if (d && d.ok) sopLoad(); else alert((d&&d.error)||'失敗')
 }
 // ── SOP 編輯（張良 2026-09-21 拍板：不設站長，綁定者全站可編；時間/姓名/改前內容全留痕）──
 function sopEdit(st){ sopEditSt = (sopEditSt === st) ? null : st; sopRender() }
