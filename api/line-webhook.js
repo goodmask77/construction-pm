@@ -573,7 +573,7 @@ async function loadPosText() {
   try {
     const now = new Date(Date.now() + 8 * 3600e3)
     const mo = now.toISOString().slice(0, 7)
-    const kv = await kvGetMany(['sp_finance_pm_pos', 'sp_finance_pm_pos_d_' + mo, 'sp_finance_pm_pos_tx_' + mo, 'sp_finance_pm_pos_flags', 'sp_finance_pm_pos_idlecfg', 'sp_finance_pm_pos_hh_' + mo, 'sp_finance_pm_pos_costs', 'sp_finance_pm_pos_prices', 'sp_finance_pm_pos_hidden', 'sp_finance_pm_pos_alias', 'sp_finance_pm_ablive', 'sp_finance_pm_labor'])
+    const kv = await kvGetMany(['sp_finance_pm_pos', 'sp_finance_pm_pos_d_' + mo, 'sp_finance_pm_pos_tx_' + mo, 'sp_finance_pm_pos_flags', 'sp_finance_pm_pos_idlecfg', 'sp_finance_pm_pos_hh_' + mo, 'sp_finance_pm_pos_costs', 'sp_finance_pm_pos_prices', 'sp_finance_pm_pos_hidden', 'sp_finance_pm_pos_alias', 'sp_finance_pm_sop_def', 'sp_finance_pm_sop_g_' + now.toISOString().slice(0, 10), 'sp_finance_pm_ablive', 'sp_finance_pm_labor'])
     const pos = kv['sp_finance_pm_pos']
     const entries = pos && Array.isArray(pos.entries) ? pos.entries : []
     if (!entries.length) return ''
@@ -655,6 +655,14 @@ async function loadPosText() {
         if (es2.length) aLines.push(`  - ${sk2 === 'ground' ? 'GROUN:D' : 'A Beach'}：` + es2.map(([o2, n2]) => `${o2}→${n2}`).join('、'))
       }
       if (aLines.length) { lines.push('【品項改名對照（舊菜名→最新名；同一個商品，統計/回答都用最新名合併算）】'); lines.push(...aLines) }
+    }
+    // GD 每日 SOP（pm_sop_def 定義＋pm_sop_g_今日紀錄；夥伴在 /prep 看板打卡、拍照，超時 cron 會發群提醒；與 App loadSpaceAIContext 同步接）
+    const sopDef = kv['sp_finance_pm_sop_def']
+    const sopItems = (sopDef && sopDef.ground && Array.isArray(sopDef.ground.items)) ? sopDef.ground.items : []
+    if (sopItems.length) {
+      const sopLog = (kv['sp_finance_pm_sop_g_' + now.toISOString().slice(0, 10)] || {}).items || {}
+      const sLines = sopItems.map(it => { const lg = sopLog[it.id]; return `  - ${it.st}｜${it.title}（${it.due} 前${it.photo ? '・要拍照' : ''}）：${lg && lg.done ? `✅ ${lg.ts} ${lg.by || ''}完成` : '未完成'}` })
+      lines.push(`【GD 每日SOP（今日 ${now.toISOString().slice(5, 10)} 執行狀況；夥伴在 /prep 看板打卡；超時未完成 cron 會發群提醒）】`); lines.push(...sLines)
     }
     // 當月品項銷售彙總（答「哪些餐賣得好」用）
     const det = kv['sp_finance_pm_pos_d_' + mo]

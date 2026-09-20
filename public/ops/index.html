@@ -5,6 +5,14 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>營運看板｜GROUN:D × A BEACH</title>
 <meta name="robots" content="noindex" />
+<!-- PWA（張良 2026-09-21 幹成App）：手機瀏覽器「加入主畫面」→ 全螢幕獨立視窗＋icon -->
+<link rel="manifest" href="/ops/manifest.json" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="default" />
+<meta name="apple-mobile-web-app-title" content="營運看板" />
+<meta name="theme-color" content="#087EBA" />
+<link rel="apple-touch-icon" href="/icon.svg" />
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700;900&display=swap" rel="stylesheet">
 <style>
   :root{ --bg:#F3F7FA; --card:#FFF; --soft:#F7FAFC; --ink:#10182B; --text:#25324A; --muted:#66758E;
@@ -105,6 +113,8 @@ async function load(store){
     })
     h += `</tbody></table></div><div class="hint" style="margin-top:8px">怎麼用：①看今天星期幾那欄（藍底）＝該星期近幾週的平均銷量，數字下的 ±% 是跟總平均的差（超過 ±10% 才顯示，多備或少備看它）②峰值/低值＝近30天單日最高/最低——大日抓峰值、保守抓平均，低於低值就太少了。</div></section>`
   }
+  // ✅ 今日SOP（張良 2026-09-21）：每站每天SOP＋拍照＋完成記時；先放佔位div，資料另外抓（sopLoad）
+  if (store === 'ground') h += `<div id="sop"></div>`
   // 🍳 預做節奏表（張良 2026-09-21）：15分快照的近7營業日平均；資料 9/22 起累積，沒資料先用熱銷品項擺 0 佔位
   if (d.rhythm) {
     const R = d.rhythm
@@ -156,6 +166,82 @@ async function load(store){
     h += `<section>${draw('平日時段', d.slots.wk)}${draw('週末時段', d.slots.we)}</section>`
   }
   app.innerHTML = h
+  if (store === 'ground') sopLoad()
+}
+// ── 今日SOP（每站每天：拍照＋完成打卡；超時 DD 會通知群）──
+let sopData = null, sopPhotos = {} // itemId -> dataURL（待送出的照片）
+async function sopLoad(){
+  const el = document.getElementById('sop'); if (!el) return
+  try { const r = await fetch('/api/mail-sync?sop=' + encodeURIComponent(K)); sopData = await r.json() } catch(e){}
+  if (!sopData || !sopData.ok) { el.innerHTML = ''; return }
+  sopRender()
+}
+function sopRender(){
+  const el = document.getElementById('sop'); if (!el || !sopData) return
+  const items = (sopData.def.items || [])
+  if (!items.length) { el.innerHTML = ''; return }
+  const log = sopData.log.items || {}
+  const now = new Date(Date.now() + 8*3600e3).toISOString().slice(11,16)
+  const wd = new Date().getDay()
+  const sts = [...new Set(items.map(i => i.st))]
+  const doneN = items.filter(i => log[i.id] && log[i.id].done).length
+  let s = `<section><h2>✅ 今日 SOP（${sopData.date.slice(5)}）<span class="hint" style="float:right;font-weight:900;color:${doneN===items.length?'var(--green)':'var(--pdark)'}">${doneN}/${items.length}</span></h2>`
+  if (wd === 0 || wd === 6) s += `<div class="hint" style="margin-bottom:8px">今天公休——這是清單預覽，打卡留給營業日。</div>`
+  sts.forEach(st => {
+    s += `<div style="background:var(--psoft);border-radius:8px;padding:4px 10px;font-weight:900;color:var(--pdark);font-size:12.5px;margin:10px 0 4px">${st}</div>`
+    items.filter(i => i.st === st).forEach(it => {
+      const lg = log[it.id]
+      const overdue = !lg && it.due && it.due <= now && wd >= 1 && wd <= 5
+      s += `<div style="display:flex;align-items:center;gap:8px;padding:9px 4px;border-bottom:1px solid var(--line)">`
+      s += `<div style="flex:1;min-width:0"><div style="font-weight:700;color:${overdue?'var(--red)':'var(--ink)'}">${it.title}${overdue?' ⚠️':''}</div><div class="hint">${it.due} 前${it.photo?'・📷 要拍照':''}</div></div>`
+      if (lg && lg.done) {
+        s += `<div style="text-align:right"><div style="color:var(--green);font-weight:900">✓ ${lg.ts}</div><div class="hint">${lg.by||''}${lg.photo?` <a href="${lg.photo}" target="_blank">📷照片</a>`:''}</div></div>`
+        s += `<button class="mini" onclick="sopDo('${it.id}',1)">撤銷</button>`
+      } else {
+        if (it.photo) s += sopPhotos[it.id]
+          ? `<img src="${sopPhotos[it.id]}" style="width:38px;height:38px;object-fit:cover;border-radius:6px;border:2px solid var(--green)" onclick="sopPick('${it.id}')">`
+          : `<button class="mini" style="font-size:16px;padding:6px 10px" onclick="sopPick('${it.id}')">📷</button>`
+        const need = it.photo && !sopPhotos[it.id]
+        s += `<button class="mini ${need?'':'on'}" style="padding:8px 14px" onclick="sopDo('${it.id}')" ${need?'title="要先拍照"':''}>完成</button>`
+      }
+      s += `</div>`
+    })
+  })
+  s += `<div class="hint" style="margin-top:8px">按「完成」記錄時間與名字；要拍照的先按 📷。超過時限沒完成，DD 會在群裡提醒。</div></section>`
+  el.innerHTML = s
+}
+function sopPick(id){
+  const inp = document.createElement('input'); inp.type = 'file'; inp.accept = 'image/*'; inp.capture = 'environment'
+  inp.onchange = () => {
+    const f = inp.files && inp.files[0]; if (!f) return
+    const img = new Image()
+    img.onload = () => { // 壓縮到長邊1280、jpeg 0.75（原圖幾MB會超過上傳限制）
+      const sc = Math.min(1, 1280 / Math.max(img.width, img.height))
+      const cv = document.createElement('canvas'); cv.width = Math.round(img.width*sc); cv.height = Math.round(img.height*sc)
+      cv.getContext('2d').drawImage(img, 0, 0, cv.width, cv.height)
+      sopPhotos[id] = cv.toDataURL('image/jpeg', 0.75); sopRender()
+    }
+    img.src = URL.createObjectURL(f)
+  }
+  inp.click()
+}
+async function sopDo(id, undo){
+  const it = (sopData.def.items||[]).find(x => x.id === id)
+  if (!undo && it && it.photo && !sopPhotos[id]) { alert('這一項要先拍照再按完成 📷'); return }
+  let by = localStorage.getItem('sopName') || ''
+  if (!undo && !by) {
+    by = prompt('你的名字？（記住之後不再問）\n' + (sopData.names||[]).join('、')) || ''
+    if (!by) return
+    localStorage.setItem('sopName', by.trim())
+  }
+  const body = { itemId: id, by: (by||'').trim(), undo: !!undo }
+  if (!undo && sopPhotos[id]) body.photo = sopPhotos[id]
+  try {
+    const r = await fetch('/api/mail-sync?sopdone=' + encodeURIComponent(K), { method: 'POST', headers: {'content-type':'application/json'}, body: JSON.stringify(body) })
+    const d = await r.json()
+    if (d && d.ok) { sopData.log = d.log; delete sopPhotos[id]; sopRender() }
+    else alert('存檔失敗，再按一次試試')
+  } catch(e){ alert('連線失敗，再按一次試試') }
 }
 // 預做節奏表 15分/30分 切換
 function rSwitch(m){

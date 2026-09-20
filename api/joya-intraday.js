@@ -28,6 +28,29 @@ export default async function handler(req, res) {
   const hit = SLOTS.some(s => nowM >= toMin(s) && nowM < toMin(s) + WINDOW_MIN)
   // AB 定時更新（張良 2026-09-06）：手動不在這跑（🔄 鈕本來就會打 mail-sync 抓 AB，避免連打 Eats365 兩次）
   const abHit = !manual && (force || (nowM >= toMin(AB_OPEN) && nowM < toMin(AB_CLOSE) && (nowM % 30) < WINDOW_MIN)) // AB/1/2 維持每30分（cron 變 15 分別跟著加倍打人家後台）
+  // ── GD 每日 SOP 超時檢查（張良 2026-09-21）：每次 cron 順路查，過時限未完成 → DD 發內部群一則彙整（每項每日只提醒一次）──
+  try {
+    const tpe = new Date(Date.now() + 8 * 3600e3)
+    const wd = tpe.getUTCDay(), todaySop = tpe.toISOString().slice(0, 10)
+    if (wd >= 1 && wd <= 5) { // GD 週末公休不吵
+      const defDoc = await kvGet('sp_finance_pm_sop_def')
+      const items = (defDoc && defDoc.ground && Array.isArray(defDoc.ground.items)) ? defDoc.ground.items : []
+      if (items.length) {
+        const dk = 'sp_finance_pm_sop_g_' + todaySop
+        const slog = (await kvGet(dk)) || { items: {}, notified: {} }
+        slog.items = slog.items || {}; slog.notified = slog.notified || {}
+        const over = items.filter(it => it.due && it.due <= hm && !(slog.items[it.id] && slog.items[it.id].done) && !slog.notified[it.id])
+        if (over.length) {
+          const txt = '⏰ GD SOP 超時未完成：\n' + over.map(it => `・${it.st}｜${it.title}（${it.due} 前${it.photo ? '・要拍照' : ''}）`).join('\n') + '\n\n完成後到 ground-pm.vercel.app/prep 按「完成」打卡 🙏'
+          const tk = (process.env.LINE_CHANNEL_ACCESS_TOKEN || '').trim()
+          if (tk) {
+            const pr = await fetch('https://api.line.me/v2/bot/message/push', { method: 'POST', headers: { 'content-type': 'application/json', Authorization: 'Bearer ' + tk }, body: JSON.stringify({ to: 'Cf7940efc6517b0c084ad2ad496b45f30', messages: [{ type: 'text', text: txt }] }) })
+            if (pr.ok) { over.forEach(it => { slog.notified[it.id] = 1 }); await kvPut(dk, slog, 'SOP超時通知') } // 發送成功才標記，失敗下一輪重試
+          }
+        }
+      }
+    }
+  } catch (e) { console.log('sop check err', e?.message) }
   if (!hit && !abHit && !force && !manual) return res.status(200).json({ ok: true, skipped: '非指定時間', taipei: hm })
   if (manual && !hit && !force && (nowM < toMin('11:00') || nowM >= toMin('19:30'))) {
     return res.status(200).json({ ok: true, skipped: '非營業時間（11:00-19:30 才有盤中數字）', taipei: hm })

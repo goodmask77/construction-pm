@@ -938,6 +938,57 @@ export default async function handler(req, res) {
     await announceChanged() // 開著的營運報表即刻套用合併
     return res.status(200).json({ ok: true, store: st2, n: Object.keys(m3).length, alias: next2 })
   }
+  // ── GD 每日 SOP（張良 2026-09-21 /prep 幹成 App）：每站每天 SOP＋拍照上傳＋完成記時；超時通知在 joya-intraday cron ──
+  // 定義存 sp_finance_pm_sop_def={ground:{items:[{id,st,title,due:"HH:MM",photo}]}}；每日紀錄 sp_finance_pm_sop_g_<日期>={items:{id:{done,ts,by,photo}},notified:{}}
+  // GET  ?sop=<OPS_BOARD_KEY>     → 今日清單＋完成狀態＋名冊姓名（打卡選人用）
+  // POST ?sopdone=<OPS_BOARD_KEY> body={itemId,by,undo,photo(dataURL)} → 打卡/撤銷；照片傳 Supabase photos/sop/
+  // POST ?sopset=<MENU_PROBE_KEY> body={items:[…]} → 整份覆蓋定義（跟我用對話增刪改）
+  const sopToday = () => new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10)
+  if (req.query?.sop) {
+    const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
+    if (!ok2 || String(req.query.sop) !== ok2) return res.status(403).json({ ok: false })
+    const dt2 = sopToday()
+    const [defDoc, logDoc, rosterDoc] = await Promise.all([kvGet('sp_finance_pm_sop_def'), kvGet('sp_finance_pm_sop_g_' + dt2), kvGet('sp_crew_kb_roster')])
+    const names = ((rosterDoc || {}).people || []).filter(p => !p.endDate && p.status !== '離職').map(p => p.name)
+    return res.status(200).json({ ok: true, date: dt2, def: (defDoc || {}).ground || { items: [] }, log: logDoc || { items: {} }, names })
+  }
+  if (req.method === 'POST' && req.query?.sopdone) {
+    const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
+    if (!ok2 || String(req.query.sopdone) !== ok2) return res.status(403).json({ ok: false })
+    let b4 = {}
+    try { b4 = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
+    if (!b4.itemId) return res.status(400).json({ ok: false, error: '缺 itemId' })
+    const dt2 = sopToday(); const dk2 = 'sp_finance_pm_sop_g_' + dt2
+    const slog = (await kvGet(dk2)) || { items: {}, notified: {} }
+    slog.items = slog.items || {}
+    if (b4.undo) delete slog.items[b4.itemId]
+    else {
+      let photoUrl = null
+      if (typeof b4.photo === 'string' && b4.photo.startsWith('data:image')) {
+        try {
+          const buf = Buffer.from(b4.photo.split(',')[1], 'base64')
+          const path4 = `sop/${dt2}/${b4.itemId}_${Date.now()}.jpg`
+          const ur = await fetch(`${SB_URL}/storage/v1/object/photos/${path4}`, { method: 'POST', headers: { apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}`, 'content-type': 'image/jpeg', 'x-upsert': 'true' }, body: buf })
+          if (ur.ok) photoUrl = `${SB_URL}/storage/v1/object/public/photos/${path4}`
+        } catch (_) {}
+      }
+      const hm4 = new Date(Date.now() + 8 * 3600e3).toISOString().slice(11, 16)
+      slog.items[b4.itemId] = { done: 1, ts: hm4, by: String(b4.by || '').slice(0, 20), ...(photoUrl ? { photo: photoUrl } : {}) }
+    }
+    await kvPut(dk2, slog, 'SOP打卡')
+    return res.status(200).json({ ok: true, log: slog })
+  }
+  if (req.method === 'POST' && req.query?.sopset) {
+    const mk = (process.env.MENU_PROBE_KEY || '').trim()
+    if (!mk || String(req.query.sopset) !== mk) return res.status(403).json({ ok: false })
+    let b5 = {}
+    try { b5 = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
+    if (!Array.isArray(b5.items)) return res.status(400).json({ ok: false, error: 'items 要是陣列' })
+    const cur5 = (await kvGet('sp_finance_pm_sop_def')) || {}
+    cur5.ground = { items: b5.items }
+    await kvPut('sp_finance_pm_sop_def', cur5, 'SOP定義口')
+    return res.status(200).json({ ok: true, n: b5.items.length })
+  }
   // 名冊更新口（同管理金鑰，張良 2026-09-20：用 Google Sheet 夥伴名單更新 kb_roster）：
   // POST ?rosterset=<key>[&dry=1] body={addFields:[{key,label,type}], updates:[{name,set:{…}}], adds:[{name,…}]}
   // 以姓名比對；updates 只動 set 給的欄位、adds 同名跳過不重複建；動完廣播讓開著的 App 即時跟上
