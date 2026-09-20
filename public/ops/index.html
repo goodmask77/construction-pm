@@ -322,23 +322,43 @@ async function sopDo(id, undo){
 // sop 資料到手後，預做表也重畫一次（隱藏清單/身分在 sopData 裡）
 const _sopLoad0 = sopLoad
 sopLoad = async function(){ await _sopLoad0(); rhythmRender() }
-// ── 問題回報（⚠️：文字＋照片/影片；影片走簽名直傳不受大小限制；DD 通知內部群）──
-async function sopReport(st){
-  const text = prompt(`【${st}】要回報什麼問題？（文字說明；按確定後可再選照片/影片）`)
-  if (text === null) return
-  const inp = document.createElement('input'); inp.type = 'file'; inp.accept = 'image/*,video/*'; inp.multiple = true
-  let picked = false
-  inp.onchange = async () => { picked = true; await sopReportSend(st, text, [...(inp.files||[])]) }
-  // 不選檔也能送：給 1.2 秒等使用者決定要不要選檔（取消選檔視窗＝純文字回報）
-  inp.click()
-  setTimeout(async () => { if (!picked && text.trim()) { if (confirm('不附照片/影片，直接送出文字回報？')) await sopReportSend(st, text, []) } }, 1200)
+// ── 問題回報 v2（張良 2026-09-21 抓包連環彈窗）：正式回報視窗——先打字，附檔自己按📷，不附檔直接送出＝純文字回報 ──
+let repFiles = []
+function sopReport(st){
+  repFiles = []
+  const ov = document.createElement('div'); ov.id = 'repOv'
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(16,24,43,.45);z-index:50;display:flex;align-items:center;justify-content:center;padding:16px'
+  ov.innerHTML = `<div style="background:#fff;border-radius:14px;max-width:430px;width:100%;padding:16px" onclick="event.stopPropagation()">
+    <div style="font-weight:900;color:var(--ink);margin-bottom:8px">⚠️ 回報問題【${st}】</div>
+    <textarea id="repTxt" rows="3" placeholder="發生什麼事？（只寫文字也可以送出）" style="width:100%;border:1px solid var(--line);border-radius:8px;padding:8px;font-size:14px;font-family:inherit"></textarea>
+    <div id="repList" class="hint" style="margin:6px 0"></div>
+    <div style="display:flex;gap:8px;justify-content:space-between;margin-top:8px;flex-wrap:wrap">
+      <button class="mini" style="padding:9px 12px" onclick="repPick()">📷 加照片/影片</button>
+      <span><button class="mini" style="padding:9px 12px" onclick="repClose()">取消</button>
+      <button class="mini on" style="padding:9px 18px" onclick="repSend('${st.replace(/'/g,'')}')">送出回報</button></span>
+    </div></div>`
+  ov.onclick = () => repClose()
+  document.body.appendChild(ov)
 }
-async function sopReportSend(st, text, files){
+function repClose(){ const o = document.getElementById('repOv'); if (o) o.remove() }
+function repPick(){
+  const inp = document.createElement('input'); inp.type = 'file'; inp.accept = 'image/*,video/*'; inp.multiple = true
+  inp.onchange = () => { repFiles = [...repFiles, ...inp.files].slice(0, 6); repListRender() }
+  inp.click()
+}
+function repListRender(){
+  const el = document.getElementById('repList')
+  if (el) el.innerHTML = repFiles.map((f, i) => `📎 ${(f.name || '檔案' + (i + 1)).slice(0, 30)} <a href="#" onclick="repFiles.splice(${i},1);repListRender();return false" style="color:var(--red)">✕移除</a>`).join('<br>')
+}
+async function repSend(st){
+  const txt = (document.getElementById('repTxt') || {}).value || ''
+  if (!txt.trim() && !repFiles.length) { alert('至少寫一句話或附一個檔案'); return }
+  const btns = document.querySelectorAll('#repOv button'); btns.forEach(b => b.disabled = true)
   const media = []
-  for (const f of files.slice(0, 6)) {
+  for (const f of repFiles) {
     try {
       if (f.size > 80 * 1024 * 1024) { alert(`${f.name} 超過 80MB，跳過（影片請拍短一點）`); continue }
-      const ext = (f.name.split('.').pop() || (f.type.includes('video') ? 'mp4' : 'jpg')).toLowerCase()
+      const ext = ((f.name || '').split('.').pop() || (f.type.includes('video') ? 'mp4' : 'jpg')).toLowerCase()
       const sr = await fetch('/api/mail-sync?sopsign=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ ext }) })
       const sd = await sr.json()
       if (!sd || !sd.ok) { alert('取得上傳位址失敗'); continue }
@@ -346,9 +366,10 @@ async function sopReportSend(st, text, files){
       if (ur.ok) media.push(sd.publicUrl); else alert(`${f.name} 上傳失敗`)
     } catch(e){ alert(`${f.name} 上傳失敗`) }
   }
-  let by = sopData.me ? sopData.me.name : (localStorage.getItem('sopName') || prompt('你的名字？') || '匿名')
-  const r = await fetch('/api/mail-sync?sopreport=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ st, text, media, by, token: TK() }) })
+  let by = sopData && sopData.me ? sopData.me.name : (localStorage.getItem('sopName') || prompt('你的名字？') || '匿名')
+  const r = await fetch('/api/mail-sync?sopreport=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ st, text: txt, media, by, token: TK() }) })
   const d = await r.json().catch(()=>null)
+  repClose()
   if (d && d.ok) { alert('回報已送出，DD 已通知群裡 ✅'); sopLoad() } else alert((d&&d.error)||'送出失敗，再試一次')
 }
 async function sopResolve(id){
