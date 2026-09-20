@@ -844,7 +844,8 @@ export default async function handler(req, res) {
       amt30: Math.round(Object.values(items2).filter(o => o.cat === cn).reduce((t, o) => t + (o.amt30 || 0), 0)),
       items: Object.values(items2).filter(o => o.cat === cn && (o.q30 > 0 || o.qPrev > 0)).sort((a, b) => b.q30 - a.q30)
         .map(o => { const ov = priceMap2[o.k] != null ? priceMap2[o.k] : priceMap2[o.n]
-          const price = ov != null ? (Number(ov) || null) : (o.q30 > 0 && o.amt30 > 0 ? Math.round(o.amt30 / o.q30 / 5) * 5 : null)
+          // 售價：手填/灌檔牌價優先；GD 不用金額÷份數估（套餐拆帳會拉低＝張良 2026-09-22 抓包「菜單金額不對」），AB 才估
+          const price = ov != null ? (Number(ov) || null) : (isAB2 && o.q30 > 0 && o.amt30 > 0 ? Math.round(o.amt30 / o.q30 / 5) * 5 : null)
           return { n: o.n, k: o.k, avg30: n30 ? Math.round(o.q30 / n30 * 10) / 10 : null, cum30: o.q30, grow: growOf2(o), amt30: Math.round(o.amt30 || 0), pct: totalAmt30 ? Math.round((o.amt30 || 0) / totalAmt30 * 1000) / 10 : null, price, q: datesAll.map(dd => o.q[dd] || 0) } }),
     })).filter(c => c.items.length)
     // 品類彙總（30日均/vs近60/30天累計/全歷史逐日）＋漢堡子小計＋預估備料（張良 2026-09-20）
@@ -981,6 +982,22 @@ export default async function handler(req, res) {
   }
   // 品項改名對照管理口（同金鑰，張良 2026-09-19 菜名更新要合併歷史數據）：
   // GET  ?aliasget=<key>                          → 看目前對照表
+  // POST ?priceset=<MENU_PROBE_KEY> body={store, set:{品名:牌價,…}, del:[品名,…]}——灌/改牌價（pm_pos_prices 手填優先那份；張良 2026-09-22 菜單牌價灌檔用）
+  if (req.method === 'POST' && req.query?.priceset) {
+    const mk = (process.env.MENU_PROBE_KEY || '').trim()
+    if (!mk || String(req.query.priceset) !== mk) return res.status(403).json({ ok: false })
+    let pb2 = {}
+    try { pb2 = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
+    const stP = pb2.store === 'abeach' ? 'abeach' : 'ground'
+    const doc = (await kvGet('sp_finance_pm_pos_prices')) || {}
+    doc[stP] = doc[stP] || {}
+    let nSet = 0, nDel = 0
+    for (const [k3, v3] of Object.entries(pb2.set || {})) { const nv = Number(v3); if (isFinite(nv)) { doc[stP][String(k3)] = nv; nSet++ } }
+    for (const k3 of (pb2.del || [])) if (doc[stP][k3] != null) { delete doc[stP][k3]; nDel++ }
+    await kvPut('sp_finance_pm_pos_prices', doc, '牌價灌檔(priceset)')
+    await announceChanged()
+    return res.status(200).json({ ok: true, set: nSet, del: nDel, total: Object.keys(doc[stP]).length })
+  }
   // POST ?aliasset=<key>  body={store:"abeach"|"ground", set:{舊key:新key,…}, del:[舊key,…]}
   // key 規則：A Beach 用 abNorm 後的 key（去 emoji/空白）、GROUN:D 用品項原名；前端品項明細/30日均/AI 都吃這份
   if (req.query?.aliasget) {
