@@ -568,7 +568,7 @@ function lbRender(){
   const meN = d.me && d.me.name
   let h = ''
   // 🌟 榮耀榜
-  h += `<section><h2>🌟 ○○之星 榮耀榜 <span class="hint">各面向平均星最高（至少 3 票上榜）</span></h2>
+  h += `<section><h2>🌟 GD之星 榮耀榜 <span class="hint">各面向平均星最高（至少 3 票上榜）</span></h2>
   <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px">` +
   d.facets.map(f=>{ const w = d.stars5[f]
     return `<div style="background:${w?'#FFF9E8':'var(--soft)'};border:1px solid ${w?'#E8D089':'var(--line)'};border-radius:12px;padding:10px;text-align:center">
