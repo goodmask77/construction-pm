@@ -895,6 +895,15 @@ function OnboardReviewSection({ pending, fields, progressOf, mgr, confirm, refre
 }
 
 export function RosterView({ canEdit, confirm, me, ReceiptUploader }) {
+  // GD App 綁定狀態（張良 2026-09-21：名冊要看得到誰綁了 /prep）——讀 pm_prep_bind（finance 空間 key，直接用完整 key）
+  const [gdBind, setGdBind] = useState({});
+  useEffect(() => { (async () => { try {
+    const r = await window.storage.get("sp_finance_pm_prep_bind", true);
+    const d = r && r.value ? JSON.parse(r.value) : null;
+    const m = {};
+    Object.values(d?.tokens || {}).forEach(t2 => { if (t2.rid) m[t2.rid] = 1; if (t2.uid) m["u_" + t2.uid] = 1; });
+    setGdBind(m);
+  } catch (_) {} })(); }, []);
   const isMobile = useIsMobile(); // 張良 2026-07-26 手機版全面體檢：夥伴詳情彈窗手機改單欄（主表維持橫滑）
   const [data, setData] = useState(null);
   const [q, setQ] = useState("");
@@ -1042,7 +1051,7 @@ export function RosterView({ canEdit, confirm, me, ReceiptUploader }) {
                   onMouseEnter={e => e.currentTarget.style.background = "#f4efe5"} onMouseLeave={e => e.currentTarget.style.background = st === "離職" ? "#f2ede1" : "#fff"}
                   style={{ display: "grid", gridTemplateColumns: GTC, alignItems: "center", height: 40, borderTop: i ? `1px solid #f0ead9` : "none", cursor: "pointer", background: st === "離職" ? "#f2ede1" : "#fff", opacity: st === "離職" ? .72 : 1 }}>
                   <div style={{ display: "flex", justifyContent: "center" }}><span style={{ width: 24, height: 24, borderRadius: "50%", background: "#fbeee6", color: ACCENT, fontSize: 11, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center" }}>{(pp.name || "?")[0]}</span></div>
-                  <div style={{ padding: "0 8px", fontSize: 13, fontWeight: 600, color: TEXT, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{pp.name || "（未命名）"}{pp.nick && <span style={{ color: "#9b9384", fontWeight: 400 }}>（{pp.nick}）</span>}{thisMonth && " 🎂"}{canOpen(pp) ? "" : " "}{!canOpen(pp) && <span style={{ fontSize: 10, color: "#c8bca6" }}>🔒</span>}</div>
+                  <div style={{ padding: "0 8px", fontSize: 13, fontWeight: 600, color: TEXT, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{pp.name || "（未命名）"}{pp.nick && <span style={{ color: "#9b9384", fontWeight: 400 }}>（{pp.nick}）</span>}{(gdBind[pp.id] || (pp.lineUserId && gdBind["u_" + pp.lineUserId])) && <span title="已綁定 GD 夥伴 App" style={{ fontSize: 9.5, fontWeight: 800, color: "#1a7f4b", background: "#e6f5ec", border: "1px solid #bbe3cc", borderRadius: 6, padding: "1px 5px", marginLeft: 4, verticalAlign: "1px" }}>GD✓</span>}{thisMonth && " 🎂"}{canOpen(pp) ? "" : " "}{!canOpen(pp) && <span style={{ fontSize: 10, color: "#c8bca6" }}>🔒</span>}</div>
                   {showCols.flatMap(f => {
                     if (f.key === "bday") {
                       const dLeft = nextBdayDays(pp.bday);

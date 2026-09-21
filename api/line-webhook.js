@@ -1548,32 +1548,44 @@ export default async function handler(req, res) {
       const BIND_APPS = { GD: 'https://ground-pm.vercel.app/prep', 看板: 'https://ground-pm.vercel.app/prep' } // 舊詞「綁定看板」相容
       // 一步到位（張良 2026-09-21：別叫人先走主App的「報到」流程重複設定）：
       // 「綁定GD」→ LINE已對到名冊＝直接給連結；還沒對到＝教他「綁定GD 本名」一句話連身分帶連結一次完成
-      const mBind = isDM && text.match(/^綁定\s*(GD|看板|AB)(?:\s+(\S{2,10}))?$/i)
+      // 「綁定GD」就好（張良 2026-09-21 Zoey 綁不上抓包）：不逼人打本名——自動抓 LINE 名稱，
+      // 先對名冊(本名或綽號、含大小寫寬鬆)，對到＝用名冊本名＋補 lineUserId；對不到＝直接用 LINE 名稱綁（照樣能用，打卡對不到名冊時再補）。
+      // 「綁定GD 名字」仍可用（本名或綽號都認）；帶名字比對放寬到綽號是因為名冊「姓名（綽號）」兩欄都是大家的慣用稱呼。
+      const mBind = isDM && text.match(/^綁定\s*(GD|看板|AB)\s*(\S{1,12})?\s*$/i)
       if (mBind) {
         const appKey = mBind[1].toUpperCase() === 'AB' ? 'AB' : (mBind[1] === '看板' ? '看板' : 'GD')
         if (!BIND_APPS[appKey]) { await send('「' + appKey + '」的 App 還沒開通，目前可以綁定：GD（營運看板）。'); continue }
         try {
           const kvb = await kvGetMany(['sp_crew_kb_roster', 'sp_finance_pm_prep_bind'])
           const rosterDoc2 = kvb['sp_crew_kb_roster'] || { people: [] }
-          let rp = (rosterDoc2.people || []).find(p => p.lineUserId === userId && !p.endDate)
-          if (!rp && mBind[2]) { // 帶名字版：綁定GD 王小明 → 直接認名冊本人（同「報到」的防冒名規則）
-            const cand = (rosterDoc2.people || []).find(p => p.name === mBind[2].trim() && !p.endDate)
-            if (!cand) { await send(`名冊裡找不到「${mBind[2].trim()}」。確認是名冊上的本名，或請店長先把你加進名冊。`); continue }
+          const ppl = (rosterDoc2.people || []).filter(p => !p.endDate)
+          const byNameOrNick = (s) => { const q = String(s || '').trim().toLowerCase(); return q ? ppl.find(p => (p.name || '').toLowerCase() === q || (p.nick || '').toLowerCase() === q) : null }
+          let rp = ppl.find(p => p.lineUserId === userId)
+          let note2 = ''
+          if (!rp && mBind[2]) { // 帶名字版：本名或綽號都認
+            const cand = byNameOrNick(mBind[2])
+            if (!cand) { await send(`名冊裡找不到「${mBind[2].trim()}」（本名或綽號都可以）。也可以直接打「綁定GD」就好，我會用你的 LINE 名稱幫你綁。`); continue }
             if (cand.lineUserId && cand.lineUserId !== userId) { await send('這個名字已經綁定過其他 LINE 帳號。如果是你本人換帳號，請聯絡店長解除舊綁定。'); continue }
             cand.lineUserId = userId
             await kvSet('sp_crew_kb_roster', rosterDoc2)
             rp = cand
           }
-          if (!rp) { await send('直接回我一句：「綁定GD 你的本名」（例：綁定GD 王小明），我就把連結給你。'); continue }
+          if (!rp) { // 一句「綁定GD」→ 自動用 LINE 名稱
+            const ln = await getLineProfile(userId)
+            const cand = byNameOrNick(ln)
+            if (cand && (!cand.lineUserId || cand.lineUserId === userId)) { cand.lineUserId = userId; await kvSet('sp_crew_kb_roster', rosterDoc2); rp = cand }
+            else if (ln) { rp = { name: ln.slice(0, 20), id: undefined }; note2 = `\n\n（我先用你的 LINE 名稱「${ln}」綁；名冊之後對上會自動用本名，不影響使用。）` }
+            else { await send('讀不到你的 LINE 名稱，回我一句「綁定GD 你的名字」就好。'); continue }
+          }
           const bind = kvb['sp_finance_pm_prep_bind'] || { byUid: {}, tokens: {} }
           let tk2 = bind.byUid[userId]
           if (!tk2) {
             tk2 = 'pv' + Date.now().toString(36) + Math.random().toString(36).slice(2, 10)
             bind.byUid[userId] = tk2
-            bind.tokens[tk2] = { name: rp.name, rid: rp.id, uid: userId, ts: new Date().toISOString() }
-            await kvSet('sp_finance_pm_prep_bind', bind)
           }
-          await send(`✅ ${rp.name}，這是你的 GD 看板專屬連結（點開一次，這支手機之後打卡/編輯都自動是你）：\n${BIND_APPS[appKey]}?me=${tk2}\n\n已經把 GD 加到主畫面的話：打開 App → 按「🔑 輸入綁定碼」→ 把上面整串連結貼進去就好（iPhone 的主畫面 App 跟 Safari 是分開的，要各綁一次）。\n\n連結不要轉給別人——那會變成用你的名字操作。`)
+          bind.tokens[tk2] = { ...(bind.tokens[tk2] || {}), name: rp.name, rid: rp.id, uid: userId, ts: bind.tokens[tk2]?.ts || new Date().toISOString() }
+          await kvSet('sp_finance_pm_prep_bind', bind)
+          await send(`✅ ${rp.name}，這是你的 GD 看板專屬連結（點開一次，這支手機之後打卡/編輯都自動是你）：\n${BIND_APPS[appKey]}?me=${tk2}\n\n已經把 GD 加到主畫面的話：打開 App → 按「🔑 輸入綁定碼」→ 把上面整串連結貼進去就好（iPhone 的主畫面 App 跟 Safari 是分開的，要各綁一次）。\n\n連結不要轉給別人——那會變成用你的名字操作。${note2}`)
         } catch (e) { await send('綁定出了點問題，稍後再試一次 🙏') }
         continue
       }
