@@ -240,15 +240,26 @@ function rhythmRender(){
   const slots = rhyMode === 30 ? R.slots.filter((_,i)=>i%2===0) : R.slots
   const qOf = o => rhyMode === 30 ? slots.map((_,i)=>Math.round(((o.q[i*2]||0)+(o.q[i*2+1]||0))*10)/10) : o.q
   const cell = v => v >= 0.5 ? '<b>'+(Math.round(v*10)/10)+'</b>' : (v>0?'·':'<span class="mut">0</span>')
-  const rows = R.items.filter(o => rhyMngOn || !hide[o.k])
+  // 備料導向重分類（張良 2026-09-21：漢堡拆牛肉/煎雞/炸雞、小點拆炸雞(×2=支數)/薯條——同備法放一起、每類帶時段加總抓量）
+  const rhyCatOf = o => {
+    if (o.cat === '漢堡') return /牛肉/.test(o.n) ? '🥩 牛肉堡' : (/炸雞/.test(o.n) ? '🍗 炸雞堡' : '🍳 煎雞堡')
+    if (o.cat === '小點') return /炸雞/.test(o.n) ? '🍗 單點炸雞' : (/薯/.test(o.n) ? '🍟 薯條類' : '🥔 其他小點')
+    return o.cat
+  }
+  const rhyMult = o => (o.cat === '小點' && /炸雞/.test(o.n)) ? 2 : 1 // 目前炸雞一份=2支→×2顯示個數（以後有單點炸雞照名字歸類）
+  const rows = R.items.filter(o => rhyMngOn || !hide[o.k]).map(o => ({ ...o, _rc: rhyCatOf(o), _m: rhyMult(o) }))
   const hidCnt = R.items.filter(o => hide[o.k]).length
-  const cats = [...new Set(rows.map(o=>o.cat))]
+  const CAT_ORDER = ['披薩', '🥩 牛肉堡', '🍳 煎雞堡', '🍗 炸雞堡', '越法三明治', '🍗 單點炸雞', '🍟 薯條類', '🥔 其他小點']
+  const cats = [...new Set(rows.map(o=>o._rc))].sort((a,b)=>{ const ia = CAT_ORDER.indexOf(a), ib = CAT_ORDER.indexOf(b); return (ia<0?99:ia)-(ib<0?99:ib) })
   let s = `<div class="scroll" style="max-height:70vh;overflow-y:auto"><table><thead><tr><th style="position:sticky;left:0;background:#F1F6F9;z-index:2">品項${hidCnt&&!rhyMngOn?`<span class="hint">（隱藏${hidCnt}項）</span>`:''}</th>${rhyMngOn?'<th></th>':''}${slots.map(t=>'<th>'+t+'</th>').join('')}</tr></thead><tbody>`
   cats.forEach(c=>{
-    s += `<tr class="catband"><td style="position:sticky;left:0;background:var(--psoft);z-index:1">${c}</td><td colspan="${slots.length+(rhyMngOn?1:0)}"></td></tr>`
-    rows.filter(o=>o.cat===c).forEach(o=>{
+    const grp = rows.filter(o=>o._rc===c)
+    const live = grp.filter(o=>!hide[o.k]) // 加總不含隱藏
+    const sums = slots.map((_,i)=>live.reduce((t2,o)=>t2+(qOf(o)[i]||0)*o._m,0))
+    s += `<tr class="catband"><td style="position:sticky;left:0;background:var(--psoft);z-index:1">${c}${c==='🍗 單點炸雞'?' <span style="font-weight:600;font-size:10.5px">×2=支</span>':''}</td>${rhyMngOn?'<td></td>':''}${sums.map(v=>`<td style="font-weight:900">${v>=0.5?Math.round(v*10)/10:(v>0?'·':'<span style=\"opacity:.35\">0</span>')}</td>`).join('')}</tr>`
+    grp.forEach(o=>{
       const hid = hide[o.k]
-      s += `<tr style="${rhyMngOn&&hid?'opacity:.42':''}"><td class="iname" style="position:sticky;left:0;background:#fff;z-index:1" title="${o.n}">${o.n}</td>${rhyMngOn?`<td><button class="mini" onclick="rHide('${encodeURIComponent(o.k)}',${hid?0:1})">${hid?'恢復':'隱藏'}</button></td>`:''}${qOf(o).map(v=>'<td>'+cell(v)+'</td>').join('')}</tr>`
+      s += `<tr style="${rhyMngOn&&hid?'opacity:.42':''}"><td class="iname" style="position:sticky;left:0;background:#fff;z-index:1" title="${o.n}">${o.n}${o._m>1?' <span class="hint">×2</span>':''}</td>${rhyMngOn?`<td><button class="mini" onclick="rHide('${encodeURIComponent(o.k)}',${hid?0:1})">${hid?'恢復':'隱藏'}</button></td>`:''}${qOf(o).map(v=>'<td>'+cell(v*o._m)+'</td>').join('')}</tr>`
     })
   })
   s += `</tbody></table></div>${rhyMngOn?'<div class="hint" style="margin-top:6px">點「隱藏」的品項不會出現在預做表（要綁定過才能改；再按🙈可恢復）</div>':''}`
