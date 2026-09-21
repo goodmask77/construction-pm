@@ -1231,6 +1231,7 @@ function shiftRender(){
      <button class="mini" onclick="shiftNav(-1)">‹</button><b style="font-size:15px">${shiftYm}</b><button class="mini" onclick="shiftNav(1)">›</button>
      ${meN?`<button class="mini on" style="margin-left:auto;padding:8px 16px" onclick="shiftForm()">＋ 排班</button>`:''}
    </div>
+   <div style="background:#fff;border:1.5px solid var(--line);border-radius:10px;padding:7px 11px;margin-bottom:8px;font-size:12.5px"><b>👥 GD 人員</b>：${(d.names||[]).map(n=>`<span style="border:1px solid var(--line);border-radius:8px;padding:1px 8px;margin-right:4px;white-space:nowrap;display:inline-block;margin-top:2px">${n}</span>`).join('')||'—'} <span class="hint">（在主 App 名冊點名字旁的「GD」標記管理；排班/任務/回饋的選人都用這份）</span></div>
    <div class="hint" style="margin-bottom:10px">工時＝打卡配對（只打上下班各一次時，扣掉班表的休息分鐘）；遲到寬限 5 分。加班口徑同薪資引擎：前 2 小時 ×1.34、之後 ×1.67（勞基法§24）；單日＞12h、月加班＞46h、連上 7 天會標紅（§32／§36）。試算參考用，正式發薪以人工核定為準。</div>`
   // 📅 一週班表（張良 2026-09-22：崗位×星期——每格=人名+時間）
   if (!window._shiftWk) { const t0 = new Date(todayTpe()); t0.setDate(t0.getDate() - ((t0.getDay()+6)%7)); window._shiftWk = t0.toISOString().slice(0,10) }

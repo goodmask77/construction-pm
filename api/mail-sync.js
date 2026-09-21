@@ -1029,6 +1029,12 @@ export default async function handler(req, res) {
   const sopToday = () => new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10)
   // 綁定 token → 本人（LINE「綁定看板」發的個人連結；打卡/編輯身分都以此為準，前端傳的名字只是備援）
   const sopWho = async (tk3) => { if (!tk3) return null; const b = (await kvGet('sp_finance_pm_prep_bind')) || {}; return (b.tokens || {})[tk3] || null }
+  // GD 人員名單（張良 2026-09-21：主App名冊標記 p.gd 的人＝排班/任務/回饋下拉選單；沒標任何人時退回在職全員）
+  const gdNames = (rosterDoc) => {
+    const alive = (((rosterDoc || {}).people) || []).filter(p2 => !p2.endDate && (p2.status || '在職') !== '離職')
+    const gd = alive.filter(p2 => p2.gd).map(p2 => p2.name).filter(Boolean)
+    return gd.length ? gd : alive.map(p2 => p2.name).filter(Boolean)
+  }
   // ── 🔖 分頁自訂（張良 2026-09-22：分頁名稱＋排序可編輯，全裝置同步；pm_prep_tabs=UI設定）──
   if (req.query?.tabcfg) {
     const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
@@ -1124,7 +1130,7 @@ export default async function handler(req, res) {
     let pchF = []
     try { pchF = await pjF.listPunches('sp_crew_pch_' + dtF.replace(/-/g, '')) } catch (_) {}
     const workers = [...new Set(pchF.map(p2 => p2.name))].filter(Boolean)
-    const namesF = (((rosterF || {}).people) || []).filter(p2 => (p2.status || '在職') !== '離職').map(p2 => p2.name).filter(Boolean)
+    const namesF = gdNames(rosterF)
     const fbs = ((fbDoc || {}).list || []).filter(x => x.date === dtF)
     return res.status(200).json({ ok: true, date: dtF, workers, names: namesF, fbs, me: meF ? { name: meF.name } : null })
   }
@@ -1223,12 +1229,12 @@ export default async function handler(req, res) {
     const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
     if (!ok2 || String(req.query.shift) !== ok2) return res.status(403).json({ ok: false })
     const ym = /^\d{4}-\d{2}$/.test(String(req.query.ym || '')) ? String(req.query.ym) : new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 7)
-    const [sd, meS] = await Promise.all([kvGet('sp_finance_pm_shift_g'), sopWho(req.query.me)])
+    const [sd, meS, rosterS] = await Promise.all([kvGet('sp_finance_pm_shift_g'), sopWho(req.query.me), kvGet('sp_crew_kb_roster')])
     const pj2 = await import('./punch.js')
     let pchs = []
     try { pchs = await pj2.listPunches('sp_crew_pch_' + ym.replace('-', '')) } catch (_) {}
     const schedL = ((sd || {}).list || []).filter(x => String(x.date || '').startsWith(ym))
-    const namesU = [...new Set([...((((sd || {}).list) || []).map(x => x.name)), ...pchs.map(p => p.name)])].filter(Boolean)
+    const namesU = [...new Set([...gdNames(rosterS), ...((((sd || {}).list) || []).map(x => x.name)), ...pchs.map(p => p.name)])].filter(Boolean)
     return res.status(200).json({ ok: true, ym, sched: schedL, punches: pchs.map(p => ({ name: p.name, ts: p.ts, dir: p.dir, src: p.src })), names: namesU, me: meS ? { name: meS.name } : null })
   }
   if (req.method === 'POST' && req.query?.shiftset) {
@@ -1362,7 +1368,7 @@ export default async function handler(req, res) {
     const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
     if (!ok2 || String(req.query.lb) !== ok2) return res.status(403).json({ ok: false })
     const [issDoc, meL, rosterL] = await Promise.all([kvGet('sp_finance_pm_sop_issues'), sopWho(req.query.me), kvGet('sp_crew_kb_roster')])
-    const namesL = (((rosterL || {}).people) || []).filter(p2 => (p2.status || '在職') !== '離職').map(p2 => p2.name).filter(Boolean)
+    const namesL = gdNames(rosterL)
     const list = ((issDoc || {}).list || []).slice(0, 60)
     const board = {}
     const P = (nm) => board[nm] || (board[nm] = { name: nm, findPts: 0, fixPts: 0, nFind: 0, nFix: 0, fc: {} })

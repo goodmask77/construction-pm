@@ -1577,8 +1577,13 @@ export default async function handler(req, res) {
             else if (ln) { rp = { name: ln.slice(0, 20), id: undefined }; note2 = `\n\n（我先用你的 LINE 名稱「${ln}」綁；名冊之後對上會自動用本名，不影響使用。）` }
             else { await send('讀不到你的 LINE 名稱，回我一句「綁定GD 你的名字」就好。'); continue }
           }
+          if (rp.id) { // 綁定的人自動標成 GD 人員（名冊可再取消；張良 2026-09-21）
+            const pgd = (rosterDoc2.people || []).find(p => p.id === rp.id)
+            if (pgd && !pgd.gd) { pgd.gd = 1; await kvSet('sp_crew_kb_roster', rosterDoc2) }
+          }
           const bind = kvb['sp_finance_pm_prep_bind'] || { byUid: {}, tokens: {} }
           let tk2 = bind.byUid[userId]
+          const isNewBind = !tk2
           if (!tk2) {
             tk2 = 'pv' + Date.now().toString(36) + Math.random().toString(36).slice(2, 10)
             bind.byUid[userId] = tk2
@@ -1586,6 +1591,16 @@ export default async function handler(req, res) {
           bind.tokens[tk2] = { ...(bind.tokens[tk2] || {}), name: rp.name, rid: rp.id, uid: userId, ts: bind.tokens[tk2]?.ts || new Date().toISOString() }
           await kvSet('sp_finance_pm_prep_bind', bind)
           await send(`✅ ${rp.name}，這是你的 GD 看板專屬連結（點開一次，這支手機之後打卡/編輯都自動是你）：\n${BIND_APPS[appKey]}?me=${tk2}\n\n已經把 GD 加到主畫面的話：打開 App → 按「🔑 輸入綁定碼」→ 把上面整串連結貼進去就好（iPhone 的主畫面 App 跟 Safari 是分開的，要各綁一次）。\n\n連結不要轉給別人——那會變成用你的名字操作。${note2}`)
+          if (isNewBind) { // 新綁定→DD 通知老闆（張良 2026-09-21：任何人綁定完成要跟我說）
+            try {
+              const defB2 = await kvGetMany(['sp_finance_pm_sop_def'])
+              const aprB2 = (((defB2['sp_finance_pm_sop_def'] || {}).ground || {}).approvers || ['張良瑋'])
+              for (const an of aprB2) {
+                const ap = (rosterDoc2.people || []).find(p => p.name === an && p.lineUserId)
+                if (ap && ap.lineUserId !== userId) await fetch('https://api.line.me/v2/bot/message/push', { method: 'POST', headers: { 'content-type': 'application/json', Authorization: 'Bearer ' + TOKEN }, body: JSON.stringify({ to: ap.lineUserId, messages: [{ type: 'text', text: `🔗 綁定通知：${rp.name} 剛完成 GD 綁定${rp.id ? '（名冊已對上）' : '（用 LINE 名稱綁，名冊還沒對上）'}。名冊上會顯示 GD✓。` }] }) })
+              }
+            } catch (_) {}
+          }
         } catch (e) { await send('綁定出了點問題，稍後再試一次 🙏') }
         continue
       }
