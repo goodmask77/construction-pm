@@ -349,6 +349,9 @@ function sopRender(){
       s += `</div>`
     })
   })
+  // ✍️ 編輯紀錄（張良 2026-09-21：SOP 誰改的、什麼時候——一直有留檔，這裡顯示出來）
+  const eds = (sopData.def.edits || [])
+  if (eds.length) s += `<details style="margin-top:8px"><summary class="hint" style="cursor:pointer;font-weight:800">✍️ SOP 編輯紀錄（${eds.length}）</summary>${eds.map(e=>{ const t8 = e.ts ? new Date(new Date(e.ts).getTime()+8*3600e3).toISOString().slice(5,16).replace('T',' ') : ''; return `<div class="hint" style="padding:2px 0">${t8}・<b>${e.by||'？'}</b>・${e.op==='full'?'總編輯整份儲存':(e.st?`改「${e.st}」站`:'編輯')}</div>` }).join('')}</details>`
   if (me) s += `<div style="margin-top:10px"><button class="mini on" style="padding:8px 16px" onclick="sopMasterOn=true;sopRender()">⚙️ SOP 總編輯</button></div>`
   s += `<div class="hint" style="margin-top:8px">按「完成」記錄時間與名字；要拍照的先按 📷。超過時限沒完成，DD 會在群裡提醒。</div></section>`
   el.innerHTML = s
@@ -359,7 +362,7 @@ function msItemHtml(it){
   return `<div class="msItem" data-id="${it.id||''}" style="display:flex;gap:5px;align-items:center;background:#fff;border:1px solid var(--line);border-radius:8px;padding:5px 7px;margin-bottom:5px">
     <span class="mih" style="cursor:grab;color:var(--muted);font-size:15px;touch-action:none">☰</span>
     <input class="miT" value="${(it.title||'').replace(/"/g,'&quot;')}" placeholder="項目名稱" style="flex:1;min-width:110px;border:1px solid var(--line);border-radius:6px;padding:5px 7px;font-size:13px">
-    <input class="miD" type="time" value="${it.due||'11:00'}" style="border:1px solid var(--line);border-radius:6px;padding:4px 5px;font-size:13px">
+    ${t24c('miD', it.due||'11:00')}
     <label style="font-size:12px;white-space:nowrap"><input class="miP" type="checkbox" ${it.photo?'checked':''}>📷</label>
     <button class="mini" onclick="this.closest('.msItem').remove()">✕</button></div>`
 }
@@ -419,7 +422,7 @@ async function msSave(){
     stations.push(st)
     card.querySelectorAll('.msItem').forEach(r=>{
       const title = r.querySelector('.miT').value.trim()
-      if (title) items.push({ id: r.dataset.id || undefined, st, title, due: r.querySelector('.miD').value || '11:00', photo: r.querySelector('.miP').checked })
+      if (title) items.push({ id: r.dataset.id || undefined, st, title, due: t24read(r, 'miD') || '11:00', photo: r.querySelector('.miP').checked })
     })
   })
   const r = await fetch('/api/mail-sync?sopfull=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ token: TK(), stations, items }) })
@@ -577,7 +580,7 @@ function sopEditor(st){
 function sopEdRow(it){
   return `<div class="sopEdRow" data-id="${it.id||''}" data-ref="${it.ref||''}" style="display:flex;gap:6px;align-items:center;margin-bottom:6px;flex-wrap:wrap">
     <input class="edT" value="${(it.title||'').replace(/"/g,'&quot;')}" placeholder="項目名稱" style="flex:1;min-width:150px;border:1px solid var(--line);border-radius:7px;padding:6px 8px;font-size:13px">
-    <input class="edD" value="${it.due||'11:00'}" type="time" style="border:1px solid var(--line);border-radius:7px;padding:5px 6px;font-size:13px">
+    ${t24c('edD', it.due||'11:00')}
     <label style="font-size:12px;white-space:nowrap"><input class="edP" type="checkbox" ${it.photo?'checked':''}> 📷</label>
     <button class="mini edRef" style="${it.ref?'color:var(--primary);font-weight:800':''}" onclick="edRefPick(this)" title="上傳標準照（示範照片，大家點名字就看得到）">🖼${it.ref?'✓':''}</button>
     <button class="mini" onclick="this.parentElement.remove()">刪</button></div>`
@@ -608,7 +611,7 @@ async function sopEdSave(){
   const items = [...box.querySelectorAll('.sopEdRow')].map(r => ({
     id: r.dataset.id || undefined,
     title: r.querySelector('.edT').value.trim(),
-    due: r.querySelector('.edD').value || '11:00',
+    due: t24read(r, 'edD') || '11:00',
     photo: r.querySelector('.edP').checked,
     ref: r.dataset.ref || undefined, // 標準照
   })).filter(x => x.title)
@@ -1340,8 +1343,8 @@ function shiftForm(id){
       <span>夥伴</span><span><input id="shName" list="shNames" value="${it?it.name:''}" placeholder="名字" style="${ip};width:100%"><datalist id="shNames">${(d.names||[]).map(n=>`<option>${n}</option>`).join('')}</datalist></span>
       <span>崗位</span><span><input id="shPos" list="shPoss" value="${it?(it.pos||''):''}" placeholder="例：炸台/吧檯/外場（可空）" style="${ip};width:100%"><datalist id="shPoss">${[...new Set((d.sched||[]).map(x=>x.pos).filter(Boolean))].map(n=>`<option>${n}</option>`).join('')}</datalist></span>
       <span>日期</span><input id="shDate" type="date" value="${it?it.date:todayTpe()}" style="${ip}">
-      <span>上班</span><input id="shStart" type="time" value="${it?it.start:'11:00'}" style="${ip}">
-      <span>下班</span><input id="shEnd" type="time" value="${it?it.end:'20:00'}" style="${ip}">
+      <span>上班</span><span>${t24c('shS', it?it.start:'11:00')}</span>
+      <span>下班</span><span>${t24c('shE', it?it.end:'20:00')}</span>
       <span>休息(分)</span><input id="shBreak" type="number" value="${it?(it.break||0):60}" min="0" max="240" style="${ip}">
     </div>
     <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px"><button class="mini" style="padding:9px 12px" onclick="document.getElementById('shOv').remove()">取消</button>
@@ -1351,7 +1354,8 @@ function shiftForm(id){
 }
 async function shiftSave(id){
   const g2 = x => (document.getElementById(x)||{}).value||''
-  const item = { id: id||undefined, name: g2('shName').trim(), date: g2('shDate'), start: g2('shStart'), end: g2('shEnd'), break: +g2('shBreak')||0, pos: g2('shPos').trim() }
+  const ovS = document.getElementById('shOv')
+  const item = { id: id||undefined, name: g2('shName').trim(), date: g2('shDate'), start: t24read(ovS,'shS'), end: t24read(ovS,'shE'), break: +g2('shBreak')||0, pos: g2('shPos').trim() }
   if (!item.name || !item.date || !item.start || !item.end) { alert('姓名/日期/時間要填齊'); return }
   const r = await fetch('/api/mail-sync?shiftset=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ op:'save', item, token: TK() }) })
   const d = await r.json().catch(()=>null)
@@ -1831,6 +1835,16 @@ async function notifySave(){
   const d = await r.json().catch(()=>null)
   if (d && d.ok) alert('✅ 通知開關已更新'); else alert((d&&d.error)||'儲存失敗')
 }
+// 24小時制時間選擇（張良 2026-09-21：原生 time 輸入會跟著系統顯示上午/下午——改成 00~23 時＋分兩個下拉）
+function t24c(cls, v){
+  const [h,m] = String(v||'11:00').split(':')
+  const H = [...Array(24)].map((_,i)=>String(i).padStart(2,'0'))
+  let M = ['00','05','10','15','20','25','30','35','40','45','50','55']
+  if (m && !M.includes(m)) M = [...M, m].sort()
+  const sS = 'border:1px solid var(--line);border-radius:6px;padding:4px 3px;font-size:13px;background:#fff'
+  return `<span style="display:inline-flex;gap:2px;align-items:center;white-space:nowrap"><select class="${cls}h" style="${sS}">${H.map(x=>`<option${x===h?' selected':''}>${x}</option>`).join('')}</select>:<select class="${cls}m" style="${sS}">${M.map(x=>`<option${x===m?' selected':''}>${x}</option>`).join('')}</select></span>`
+}
+const t24read = (root, cls) => `${root.querySelector('.'+cls+'h').value}:${root.querySelector('.'+cls+'m').value}`
 load('ground')
 </script>
 </body>
