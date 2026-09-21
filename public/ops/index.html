@@ -256,7 +256,7 @@ function rhythmRender(){
     const grp = rows.filter(o=>o._rc===c)
     const live = grp.filter(o=>!hide[o.k]) // 加總不含隱藏
     const sums = slots.map((_,i)=>live.reduce((t2,o)=>t2+(qOf(o)[i]||0)*o._m,0))
-    s += `<tr class="catband"><td style="position:sticky;left:0;background:var(--psoft);z-index:1">${c}${c==='🍗 單點炸雞'?' <span style="font-weight:600;font-size:10.5px">×2=支</span>':''}</td>${rhyMngOn?'<td></td>':''}${sums.map(v=>`<td style="font-weight:900">${v>=0.5?Math.round(v*10)/10:(v>0?'·':'<span style=\"opacity:.35\">0</span>')}</td>`).join('')}</tr>`
+    s += `<tr class="catband"><td style="position:sticky;left:0;background:var(--psoft);z-index:1">${c}${c==='🍗 單點炸雞'?' <span style="font-weight:600;font-size:10.5px">×2=支</span>':''}</td>${rhyMngOn?'<td></td>':''}${sums.map(v=>`<td style="font-weight:900;font-size:13px;color:#C2410C">${v>=0.5?Math.round(v*10)/10:(v>0?'·':'<span style=\"opacity:.3;font-size:11px\">0</span>')}</td>`).join('')}</tr>`
     grp.forEach(o=>{
       const hid = hide[o.k]
       s += `<tr style="${rhyMngOn&&hid?'opacity:.42':''}"><td class="iname" style="position:sticky;left:0;background:#fff;z-index:1" title="${o.n}">${o.n}${o._m>1?' <span class="hint">×2</span>':''}</td>${rhyMngOn?`<td><button class="mini" onclick="rHide('${encodeURIComponent(o.k)}',${hid?0:1})">${hid?'恢復':'隱藏'}</button></td>`:''}${qOf(o).map(v=>'<td>'+cell(v*o._m)+'</td>').join('')}</tr>`
@@ -275,7 +275,11 @@ async function rHide(kEnc, hideV){
 // 個人身分：跟 DD 說「綁定看板」拿到 /prep?me=token 連結 → 存這支手機，打卡自動是本人、站長可編輯自己的站
 ;(function(){ const m = new URLSearchParams(location.search).get('me'); if (m) { localStorage.setItem('prepToken', m); history.replaceState(null, '', location.pathname) } })()
 const TK = () => localStorage.getItem('prepToken') || ''
-let sopData = null, sopPhotos = {}, sopEditSt = null // itemId -> dataURL（待送出的照片）；編輯中的站
+let sopData = null, sopPhotos = {}, sopEditSt = null
+let sopPin = new Set(JSON.parse(localStorage.getItem('sopPin')||'[]')) // 📌 釘選的站（存本機＝每個人自己的）
+let sopFilter = localStorage.getItem('sopFilter') || ''
+function sopFset(v){ sopFilter = v; localStorage.setItem('sopFilter', v); sopRender() }
+function sopPinT(st){ if (sopPin.has(st)) sopPin.delete(st); else sopPin.add(st); localStorage.setItem('sopPin', JSON.stringify([...sopPin])); if (!sopPin.size && sopFilter==='pin') sopFset('all'); else sopRender() } // itemId -> dataURL（待送出的照片）；編輯中的站
 async function sopLoad(){
   const el = document.getElementById('sop'); if (!el) return
   try { const r = await fetch('/api/mail-sync?sop=' + encodeURIComponent(K) + (TK() ? '&me=' + encodeURIComponent(TK()) : '')); sopData = await r.json() } catch(e){}
@@ -298,7 +302,17 @@ function sopRender(){
   s += me ? `<div class="hint" style="margin-bottom:6px">👤 <b style="color:var(--pdark)">${me.name}</b>（打卡自動記你的名字・可編輯各站 SOP，改動會留姓名時間紀錄）</div>`
           : `<div class="hint" style="margin-bottom:6px">💡 ${BIND_HINT}——打卡不用打名字、可編輯 SOP、認領問題</div>`
   if (wd === 0 || wd === 6) s += `<div class="hint" style="margin-bottom:8px">今天公休——這是清單預覽，打卡留給營業日。</div>`
-  sts.forEach(st => {
+  // 站別篩選＋📌釘選（張良 2026-09-21：SOP 站多，每人點自己要看的；釘選存在自己手機）
+  const view = sopFilter || (sopPin.size ? 'pin' : 'all')
+  const chipS = (on) => `border:1px solid ${on?'var(--primary)':'var(--line)'};background:${on?'var(--primary)':'#fff'};color:${on?'#fff':'var(--muted)'};border-radius:9px;padding:4px 10px;font-size:12.5px;font-weight:800;cursor:pointer;white-space:nowrap`
+  s += `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px;align-items:center">
+    ${sopPin.size?`<span style="${chipS(view==='pin')}" onclick="sopFset('pin')">📌 我的釘選（${sopPin.size}）</span>`:''}
+    <span style="${chipS(view==='all')}" onclick="sopFset('all')">全部</span>
+    ${sts.map(st2=>`<span style="${chipS(view===st2)};display:inline-flex;gap:5px;align-items:center"><span onclick="sopFset('${st2}')">${st2}</span><span onclick="sopPinT('${st2}')" title="釘選/取消釘選" style="opacity:${sopPin.has(st2)?1:.35}">📌</span></span>`).join('')}
+  </div>`
+  const shown = sts.filter(st2 => view==='all' ? true : (view==='pin' ? sopPin.has(st2) : st2===view))
+  if (!shown.length) s += `<div class="mut" style="font-size:13px">釘選的站不見了（可能被改名）——按「全部」重新釘。</div>`
+  shown.forEach(st => {
     const canEd = me && me.canEdit
     const stIss = (sopData.issues||[]).filter(x => x.st === st)
     s += `<div style="background:var(--psoft);border-radius:8px;padding:4px 10px;font-weight:900;color:var(--pdark);font-size:12.5px;margin:10px 0 4px">${st}
@@ -320,7 +334,7 @@ function sopRender(){
       const lg = log[it.id]
       const overdue = !lg && it.due && it.due <= now && wd >= 1 && wd <= 5
       s += `<div style="display:flex;align-items:center;gap:8px;padding:9px 4px;border-bottom:1px solid var(--line)">`
-      s += `<div style="flex:1;min-width:0"><div style="font-weight:700;color:${overdue?'var(--red)':'var(--ink)'}">${it.title}${overdue?' ⚠️':''}</div><div class="hint">${it.due} 前${it.photo?'・📷 要拍照':''}</div></div>`
+      s += `<div style="flex:1;min-width:0"><div style="font-weight:700;color:${overdue?'var(--red)':(it.ref?'var(--primary)':'var(--ink)')}${it.ref?';cursor:pointer;text-decoration:underline':''}" ${it.ref?`onclick="imgView('${it.ref}')" title="點看標準照片"`:''}>${it.title}${overdue?' ⚠️':''}</div><div class="hint">${it.due} 前${it.photo?'・📷 要拍照':''}${it.ref?'・🖼 有標準照':''}</div></div>`
       if (lg && lg.done) {
         // 完成狀態：縮圖直接顯示、點整塊開預覽；撤銷藏在預覽裡（張良 2026-09-21：列表上的撤銷容易誤點）
         s += `<div style="text-align:right;cursor:pointer" onclick="sopView('${it.id}')"><div style="color:var(--green);font-weight:900">✓ ${lg.ts}</div><div class="hint">${lg.by||''}</div></div>`
@@ -561,11 +575,28 @@ function sopEditor(st){
   return s
 }
 function sopEdRow(it){
-  return `<div class="sopEdRow" data-id="${it.id||''}" style="display:flex;gap:6px;align-items:center;margin-bottom:6px;flex-wrap:wrap">
+  return `<div class="sopEdRow" data-id="${it.id||''}" data-ref="${it.ref||''}" style="display:flex;gap:6px;align-items:center;margin-bottom:6px;flex-wrap:wrap">
     <input class="edT" value="${(it.title||'').replace(/"/g,'&quot;')}" placeholder="項目名稱" style="flex:1;min-width:150px;border:1px solid var(--line);border-radius:7px;padding:6px 8px;font-size:13px">
     <input class="edD" value="${it.due||'11:00'}" type="time" style="border:1px solid var(--line);border-radius:7px;padding:5px 6px;font-size:13px">
     <label style="font-size:12px;white-space:nowrap"><input class="edP" type="checkbox" ${it.photo?'checked':''}> 📷</label>
+    <button class="mini edRef" style="${it.ref?'color:var(--primary);font-weight:800':''}" onclick="edRefPick(this)" title="上傳標準照（示範照片，大家點名字就看得到）">🖼${it.ref?'✓':''}</button>
     <button class="mini" onclick="this.parentElement.remove()">刪</button></div>`
+}
+// 標準照上傳：選圖 → sopsign 簽名直傳 → 存進該列 data-ref（按「儲存這一站」才寫入定義）
+function edRefPick(btn){
+  const inp = document.createElement('input'); inp.type='file'; inp.accept='image/*'
+  inp.onchange = async () => {
+    const f = inp.files[0]; if (!f) return
+    btn.textContent = '⏳'
+    try {
+      const ext = ((f.name||'').split('.').pop()||'jpg').toLowerCase()
+      const sr = await fetch('/api/mail-sync?sopsign=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ ext }) })
+      const sd = await sr.json()
+      if (sd && sd.ok) { const ur = await fetch(sd.uploadUrl, { method:'PUT', headers:{'content-type': f.type||'image/jpeg'}, body: f }); if (ur.ok) { btn.closest('.sopEdRow').dataset.ref = sd.publicUrl; btn.innerHTML = '🖼✓'; btn.style.color='var(--primary)'; btn.style.fontWeight='800'; return } }
+      btn.innerHTML = '🖼'; alert('上傳失敗，再試一次')
+    } catch(e){ btn.innerHTML = '🖼'; alert('上傳失敗') }
+  }
+  inp.click()
 }
 function sopEdAdd(){
   const box = document.getElementById('sopEd')
@@ -579,6 +610,7 @@ async function sopEdSave(){
     title: r.querySelector('.edT').value.trim(),
     due: r.querySelector('.edD').value || '11:00',
     photo: r.querySelector('.edP').checked,
+    ref: r.dataset.ref || undefined, // 標準照
   })).filter(x => x.title)
   try {
     const r = await fetch('/api/mail-sync?sopedit=' + encodeURIComponent(K), { method: 'POST', headers: {'content-type':'application/json'}, body: JSON.stringify({ token: TK(), st: box.dataset.st, items }) })
