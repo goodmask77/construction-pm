@@ -1522,8 +1522,14 @@ export default async function handler(req, res) {
     const cur6 = (await kvGet('sp_finance_pm_sop_def')) || {}
     const g6 = cur6.ground || { items: [] }
     const prev6 = (g6.items || []).filter(it => it.st === b6.st) // 改前快照＝歷史紀錄可回溯
-    const prevRef6 = {}; ((cur6.ground || {}).items || []).forEach(it => { if (it.ref) prevRef6[it.id] = it.ref }) // 標準照不因編輯掉失（張良 2026-09-21）
-    const clean6 = b6.items.filter(it => it && it.title).slice(0, 30).map((it, i) => { const o6 = { id: it.id || ('u' + Date.now().toString(36) + i), st: b6.st, title: String(it.title).slice(0, 60), due: /^\d{2}:\d{2}$/.test(it.due || '') ? it.due : '11:00', photo: !!it.photo }; const rf = String(it.ref || prevRef6[o6.id] || '').slice(0, 500); if (rf) o6.ref = rf; return o6 })
+    const prevIt6 = {}; ((cur6.ground || {}).items || []).forEach(it => { prevIt6[it.id] = it })
+    const now86 = new Date(Date.now() + 8 * 3600e3).toISOString().slice(5, 16).replace('T', ' ')
+    // 逐條編輯歸屬（張良 2026-09-21：每一條 SOP 顯示最後編輯者＋時間，之後統計每人編輯量）：有改才蓋名字，沒改保留原編輯者
+    const clean6 = b6.items.filter(it => it && it.title).slice(0, 30).map((it, i) => { const o6 = { id: it.id || ('u' + Date.now().toString(36) + i), st: b6.st, title: String(it.title).slice(0, 60), due: /^\d{2}:\d{2}$/.test(it.due || '') ? it.due : '11:00', photo: !!it.photo }; const pv = prevIt6[o6.id]; const rf = String(it.ref || (pv && pv.ref) || '').slice(0, 500); if (rf) o6.ref = rf
+      const chg = !pv || pv.title !== o6.title || pv.due !== o6.due || !!pv.photo !== o6.photo || (pv.ref || '') !== (o6.ref || '') || pv.st !== o6.st
+      o6.editBy = chg ? who6.name : (pv.editBy || pv && pv.editBy || undefined); o6.editTs = chg ? now86 : (pv ? pv.editTs : undefined)
+      if (!o6.editBy) { o6.editBy = who6.name; o6.editTs = o6.editTs || now86 }
+      return o6 })
     g6.items = [...(g6.items || []).filter(it => it.st !== b6.st), ...clean6]
     g6.edits = [{ ts: new Date().toISOString(), by: who6.name, st: b6.st, n: clean6.length, prev: prev6 }, ...(g6.edits || [])].slice(0, 30) // 留痕：時間/姓名/改前內容
     cur6.ground = g6
@@ -1731,8 +1737,13 @@ export default async function handler(req, res) {
     if (!Array.isArray(bf.stations) || !Array.isArray(bf.items)) return res.status(400).json({ ok: false, error: '缺 stations/items' })
     const stCl = [...new Set(bf.stations.map(s => String(s || '').trim().slice(0, 20)).filter(Boolean))].slice(0, 20)
     const curF = (await kvGet('sp_finance_pm_sop_def')) || {}
-    const prevRefF = {}; ((curF.ground || {}).items || []).forEach(it => { if (it.ref) prevRefF[it.id] = it.ref }) // 標準照不因整份儲存掉失
-    const itCl = bf.items.slice(0, 200).map((it, i) => { const oF = { id: it.id || ('u' + Date.now().toString(36) + i), st: String(it.st || '').trim().slice(0, 20), title: String(it.title || '').trim().slice(0, 60), due: /^\d{2}:\d{2}$/.test(it.due || '') ? it.due : '11:00', photo: !!it.photo }; const rf = String(it.ref || prevRefF[oF.id] || '').slice(0, 500); if (rf) oF.ref = rf; return oF }).filter(it => it.title && stCl.includes(it.st))
+    const prevItF = {}; ((curF.ground || {}).items || []).forEach(it => { prevItF[it.id] = it })
+    const now8F = new Date(Date.now() + 8 * 3600e3).toISOString().slice(5, 16).replace('T', ' ')
+    const itCl = bf.items.slice(0, 200).map((it, i) => { const oF = { id: it.id || ('u' + Date.now().toString(36) + i), st: String(it.st || '').trim().slice(0, 20), title: String(it.title || '').trim().slice(0, 60), due: /^\d{2}:\d{2}$/.test(it.due || '') ? it.due : '11:00', photo: !!it.photo }; const pv = prevItF[oF.id]; const rf = String(it.ref || (pv && pv.ref) || '').slice(0, 500); if (rf) oF.ref = rf
+      const chg = !pv || pv.title !== oF.title || pv.due !== oF.due || !!pv.photo !== oF.photo || (pv.ref || '') !== (oF.ref || '') || pv.st !== oF.st
+      oF.editBy = chg ? whoF.name : (pv ? pv.editBy : undefined); oF.editTs = chg ? now8F : (pv ? pv.editTs : undefined)
+      if (!oF.editBy) { oF.editBy = whoF.name; oF.editTs = oF.editTs || now8F }
+      return oF }).filter(it => it.title && stCl.includes(it.st))
     const gF = curF.ground || {}
     gF.edits = [{ ts: new Date().toISOString(), by: whoF.name, op: 'full', prev: { stations: gF.stations || [], items: gF.items || [] } }, ...(gF.edits || [])].slice(0, 15)
     gF.stations = stCl

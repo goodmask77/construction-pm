@@ -334,7 +334,7 @@ function sopRender(){
       const lg = log[it.id]
       const overdue = !lg && it.due && it.due <= now && wd >= 1 && wd <= 5
       s += `<div style="display:flex;align-items:center;gap:8px;padding:9px 4px;border-bottom:1px solid var(--line)">`
-      s += `<div style="flex:1;min-width:0"><div style="font-weight:700;color:${overdue?'var(--red)':(it.ref?'var(--primary)':'var(--ink)')}${it.ref?';cursor:pointer;text-decoration:underline':''}" ${it.ref?`onclick="imgView('${it.ref}')" title="點看標準照片"`:''}>${it.title}${overdue?' ⚠️':''}</div><div class="hint">${it.due} 前${it.photo?'・📷 要拍照':''}${it.ref?'・🖼 有標準照':''}</div></div>`
+      s += `<div style="flex:1;min-width:0"><div style="font-weight:700;color:${overdue?'var(--red)':(it.ref?'var(--primary)':'var(--ink)')}${it.ref?';cursor:pointer;text-decoration:underline':''}" ${it.ref?`onclick="imgView('${it.ref}')" title="點看標準照片"`:''}>${it.title}${overdue?' ⚠️':''}</div><div class="hint">${it.due} 前${it.photo?'・📷 要拍照':''}${it.ref?'・🖼 有標準照':''}${it.editBy?`・✏️ ${it.editBy} ${it.editTs||''}`:''}</div></div>`
       if (lg && lg.done) {
         // 完成狀態：縮圖直接顯示、點整塊開預覽；撤銷藏在預覽裡（張良 2026-09-21：列表上的撤銷容易誤點）
         s += `<div style="text-align:right;cursor:pointer" onclick="sopView('${it.id}')"><div style="color:var(--green);font-weight:900">✓ ${lg.ts}</div><div class="hint">${lg.by||''}</div></div>`
@@ -351,7 +351,8 @@ function sopRender(){
   })
   // ✍️ 編輯紀錄（張良 2026-09-21：SOP 誰改的、什麼時候——一直有留檔，這裡顯示出來）
   const eds = (sopData.def.edits || [])
-  if (eds.length) s += `<details style="margin-top:8px"><summary class="hint" style="cursor:pointer;font-weight:800">✍️ SOP 編輯紀錄（${eds.length}）</summary>${eds.map(e=>{ const t8 = e.ts ? new Date(new Date(e.ts).getTime()+8*3600e3).toISOString().slice(5,16).replace('T',' ') : ''; return `<div class="hint" style="padding:2px 0">${t8}・<b>${e.by||'？'}</b>・${e.op==='full'?'總編輯整份儲存':(e.st?`改「${e.st}」站`:'編輯')}</div>` }).join('')}</details>`
+  if (eds.length) { const cntE = {}; eds.forEach(e=>{ cntE[e.by||'？'] = (cntE[e.by||'？']||0)+1 }); (sopData.def.items||[]).forEach(it=>{ if(it.editBy) cntE[it.editBy] = cntE[it.editBy]||0 })
+  s += `<details style="margin-top:8px"><summary class="hint" style="cursor:pointer;font-weight:800">✍️ SOP 編輯紀錄（${eds.length}）｜${Object.entries(cntE).map(([n,c])=>`${n} ${c}次`).join('、')}</summary>${eds.map(e=>{ const t8 = e.ts ? new Date(new Date(e.ts).getTime()+8*3600e3).toISOString().slice(5,16).replace('T',' ') : ''; return `<div class="hint" style="padding:2px 0">${t8}・<b>${e.by||'？'}</b>・${e.op==='full'?'總編輯整份儲存':(e.st?`改「${e.st}」站`:'編輯')}</div>` }).join('')}</details>` }
   if (me) s += `<div style="margin-top:10px"><button class="mini on" style="padding:8px 16px" onclick="sopMasterOn=true;sopRender()">⚙️ SOP 總編輯</button></div>`
   s += `<div class="hint" style="margin-top:8px">按「完成」記錄時間與名字；要拍照的先按 📷。超過時限沒完成，DD 會在群裡提醒。</div></section>`
   el.innerHTML = s
