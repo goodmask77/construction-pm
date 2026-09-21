@@ -1189,6 +1189,20 @@ export default async function handler(req, res) {
     await kvPut('sp_finance_pm_fb', doc, '每日回饋(' + whoF.name + '→' + tgF + ')')
     return res.status(200).json({ ok: true, item: it })
   }
+  // 一次性回填（張良 2026-09-21：既有 SOP 條目補 editBy/editTs＝最近一次儲存者；之後逐條照實記）：GET ?sopstamp=<MENU_PROBE_KEY>
+  if (req.query?.sopstamp) {
+    const mk = (process.env.MENU_PROBE_KEY || '').trim()
+    if (!mk || String(req.query.sopstamp) !== mk) return res.status(403).json({ ok: false })
+    const doc = (await kvGet('sp_finance_pm_sop_def')) || {}
+    const g = doc.ground || {}
+    const lastEd = (g.edits || [])[0] || {}
+    const by0 = lastEd.by || '張良瑋'
+    const ts0 = lastEd.ts ? new Date(new Date(lastEd.ts).getTime() + 8 * 3600e3).toISOString().slice(5, 16).replace('T', ' ') : new Date(Date.now() + 8 * 3600e3).toISOString().slice(5, 16).replace('T', ' ')
+    let n = 0
+    for (const it of (g.items || [])) if (!it.editBy) { it.editBy = by0; it.editTs = ts0; n++ }
+    if (n) { doc.ground = g; await kvPut('sp_finance_pm_sop_def', doc, 'SOP編輯者回填') }
+    return res.status(200).json({ ok: true, stamped: n, by: by0 })
+  }
   // ── 📋 會議紀錄（張良 2026-09-21：班前會議/營運會議，類型可自訂、紀錄可新增刪改）──
   if (req.query?.meet) {
     const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
