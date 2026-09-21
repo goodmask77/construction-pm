@@ -83,6 +83,7 @@
     <button id="tab-shift" onclick="shiftLoad()">📅 班表</button>
     <button id="tab-fb" onclick="fbLoad()">💬 回饋</button>
     <button id="tab-menu" onclick="menuLoad()">🍔 菜單</button>
+    <button id="tab-gear" onclick="tabsEdit()" title="編輯分頁名稱/排序" style="padding:7px 10px">⚙️</button>
   </div>
   <div id="app"></div>
   <div class="foot">資料每天自動同步（打開即最新）・僅供內部參考與備料使用，請勿外傳連結</div>
@@ -1698,6 +1699,67 @@ function todayRender(){
   s += `</section>`
   el.innerHTML = s
 }
+// ── 🔖 分頁自訂（張良 2026-09-22：名稱＋排序可編輯，存 pm_prep_tabs 全裝置同步）──
+const TAB_DEF = { task:'🛠 任務', lb:'🏆 排行榜', food:'🥩 盤點', pack:'📦 包材', buy:'🛒 採購', meet:'📋 會議', shift:'📅 班表', fb:'💬 回饋', menu:'🍔 菜單' }
+function applyTabs(cfg){
+  if (!cfg) return
+  window._tabCfg = cfg
+  const bar = document.querySelector('.tabs'), gear = document.getElementById('tab-gear')
+  const order = (cfg.order && cfg.order.length ? cfg.order : Object.keys(TAB_DEF)).filter(k=>TAB_DEF[k])
+  Object.keys(TAB_DEF).forEach(k=>{ if (!order.includes(k)) order.push(k) })
+  order.forEach(k=>{ const b = document.getElementById('tab-'+k); if (b && bar && gear) { b.textContent = (cfg.names||{})[k] || TAB_DEF[k]; bar.insertBefore(b, gear) } })
+}
+async function tabsInit(){
+  const c = tcGet('tabcfg'); if (c) applyTabs(c)
+  try { const r = await fetch('/api/mail-sync?tabcfg=' + encodeURIComponent(K)); const d = await r.json(); if (d && d.ok) { tcSet('tabcfg', d); applyTabs(d) } } catch(e){}
+}
+function tabsEdit(){
+  if (!TK()) { alert('要先綁定才能改分頁：跟 DD 說「綁定GD」'); return }
+  const cfg = window._tabCfg || tcGet('tabcfg') || {}
+  const order = (cfg.order && cfg.order.length ? cfg.order : Object.keys(TAB_DEF)).filter(k=>TAB_DEF[k])
+  Object.keys(TAB_DEF).forEach(k=>{ if (!order.includes(k)) order.push(k) })
+  const ov = document.createElement('div'); ov.id='tbOv'
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(16,24,43,.45);z-index:50;display:flex;align-items:center;justify-content:center;padding:16px'
+  const row = k => `<div class="tbRow" data-k="${k}" style="display:flex;gap:6px;align-items:center;margin-bottom:6px">
+    <button class="mini" style="padding:4px 9px" onclick="tabMv(this,-1)">↑</button><button class="mini" style="padding:4px 9px" onclick="tabMv(this,1)">↓</button>
+    <input class="tbName" value="${((cfg.names||{})[k]||TAB_DEF[k]).replace(/"/g,'&quot;')}" style="flex:1;border:1px solid var(--line);border-radius:8px;padding:7px 9px;font-size:14px">
+  </div>`
+  ov.innerHTML = `<div style="background:#fff;border-radius:14px;max-width:380px;width:100%;padding:16px;max-height:86vh;overflow:auto" onclick="event.stopPropagation()">
+    <div style="font-weight:900;margin-bottom:8px">⚙️ 分頁名稱／排序</div>
+    <div class="hint" style="margin-bottom:8px">↑↓ 調順序、直接改名字（含表情符號）；存了全裝置同步</div>
+    <div id="tbList">${order.map(row).join('')}</div>
+    <div style="display:flex;gap:8px;justify-content:space-between;margin-top:10px">
+      <button class="mini" style="padding:9px 12px" onclick="tabsReset()">還原預設</button>
+      <span><button class="mini" style="padding:9px 12px" onclick="document.getElementById('tbOv').remove()">取消</button>
+      <button class="mini on" style="padding:9px 18px" onclick="tabsSave()">儲存</button></span>
+    </div></div>`
+  ov.onclick = () => ov.remove()
+  document.body.appendChild(ov)
+}
+function tabMv(btn, n){
+  const row = btn.closest('.tbRow'), list = row.parentElement
+  if (n < 0 && row.previousElementSibling) list.insertBefore(row, row.previousElementSibling)
+  if (n > 0 && row.nextElementSibling) list.insertBefore(row.nextElementSibling, row)
+}
+async function tabsSave(){
+  const rows = [...document.querySelectorAll('#tbList .tbRow')]
+  const order = rows.map(r=>r.dataset.k)
+  const names = {}
+  rows.forEach(r=>{ const v = r.querySelector('.tbName').value.trim(); if (v && v !== TAB_DEF[r.dataset.k]) names[r.dataset.k] = v })
+  const o = document.getElementById('tbOv'); if (o) o.remove()
+  const cfg = { order, names }
+  applyTabs(cfg); tcSet('tabcfg', { ok:true, ...cfg })
+  const r = await fetch('/api/mail-sync?tabset=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ ...cfg, token: TK() }) })
+  const d = await r.json().catch(()=>null)
+  if (!d || !d.ok) alert((d&&d.error)||'儲存失敗（畫面已先套用，重新整理會還原）')
+}
+async function tabsReset(){
+  const o = document.getElementById('tbOv'); if (o) o.remove()
+  const cfg = { order: Object.keys(TAB_DEF), names: {} }
+  applyTabs(cfg); tcSet('tabcfg', { ok:true, ...cfg })
+  await fetch('/api/mail-sync?tabset=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ ...cfg, token: TK() }) }).catch(()=>{})
+}
+tabsInit()
 load('ground')
 </script>
 </body>

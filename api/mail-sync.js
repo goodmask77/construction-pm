@@ -1029,6 +1029,28 @@ export default async function handler(req, res) {
   const sopToday = () => new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10)
   // 綁定 token → 本人（LINE「綁定看板」發的個人連結；打卡/編輯身分都以此為準，前端傳的名字只是備援）
   const sopWho = async (tk3) => { if (!tk3) return null; const b = (await kvGet('sp_finance_pm_prep_bind')) || {}; return (b.tokens || {})[tk3] || null }
+  // ── 🔖 分頁自訂（張良 2026-09-22：分頁名稱＋排序可編輯，全裝置同步；pm_prep_tabs=UI設定）──
+  if (req.query?.tabcfg) {
+    const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
+    if (!ok2 || String(req.query.tabcfg) !== ok2) return res.status(403).json({ ok: false })
+    const cfg = (await kvGet('sp_finance_pm_prep_tabs')) || {}
+    return res.status(200).json({ ok: true, order: cfg.order || null, names: cfg.names || {} })
+  }
+  if (req.method === 'POST' && req.query?.tabset) {
+    const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
+    if (!ok2 || String(req.query.tabset) !== ok2) return res.status(403).json({ ok: false })
+    let tb = {}
+    try { tb = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
+    const whoT = await sopWho(tb.token)
+    if (!whoT) return res.status(403).json({ ok: false, error: '要先跟 DD 說「綁定GD」' })
+    const KEYS = ['task', 'lb', 'food', 'pack', 'buy', 'meet', 'shift', 'fb', 'menu']
+    const order = (Array.isArray(tb.order) ? tb.order : []).filter(k2 => KEYS.includes(k2))
+    KEYS.forEach(k2 => { if (!order.includes(k2)) order.push(k2) }) // 漏掉的補在後面
+    const names = {}
+    for (const k2 of KEYS) { const v2 = String((tb.names || {})[k2] || '').trim().slice(0, 12); if (v2) names[k2] = v2 }
+    await kvPut('sp_finance_pm_prep_tabs', { order, names, by: whoT.name, ts: new Date(Date.now() + 8 * 3600e3).toISOString().slice(5, 16).replace('T', ' ') }, '分頁自訂(' + whoT.name + ')')
+    return res.status(200).json({ ok: true })
+  }
   // ── 🙈 品項隱藏切換（張良 2026-09-22：/prep 品項明細也要隱藏管理；同 App 的 pm_pos_hidden，KV 廣播全裝置同步）──
   if (req.method === 'POST' && req.query?.poshide) {
     const ok2 = (process.env.OPS_BOARD_KEY || '').trim()

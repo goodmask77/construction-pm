@@ -22,6 +22,7 @@ const ALLOW = [
   [/^pm_group_seen$/, "LINE 群清單，webhook 本來就在用"],
   [/^pm_prep_bind$/, "看板個人綁定 token＝機密（拿到=可冒名打卡），不進 AI；名字身分已在名冊"],
   [/^pm_prep_hide$/, "看板預做表隱藏清單＝UI 顯示設定，非業務資料"],
+  [/^pm_prep_tabs$/, "夥伴看板分頁名稱/排序＝UI設定，非業務資料"],
   [/^pm_ui_|_prefs$|_collapsed$/, "純 UI 偏好"],
   [/^pm_advisor|^pm_ai_|^pm_line_notify|^pm_mail_(rules|log)$/, "AI/通知/郵件設定，App 端已以摘要收錄"],
   [/^pm_changelog|^pm_conclusion_drafts/, "更新紀錄/草稿"],
