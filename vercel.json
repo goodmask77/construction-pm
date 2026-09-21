@@ -1,13 +1,38 @@
 {
   "rewrites": [
-    { "source": "/prep", "destination": "/ops/index.html" }
+    {
+      "source": "/prep",
+      "destination": "/ops/index.html"
+    }
   ],
   "crons": [
-    { "path": "/api/cron-daily", "schedule": "0 0 * * *" },
-    { "path": "/api/cron-daily", "schedule": "30 9 * * *" },
-    { "path": "/api/cron-daily", "schedule": "30 1 * * 1-5" },
-    { "path": "/api/mail-manage", "schedule": "10 * * * *" },
-    { "path": "/api/mail-sync", "schedule": "30 13,14,15 * * *" },
-    { "path": "/api/joya-intraday", "schedule": "0,15,30,45 3-13 * * *" }
+    {
+      "path": "/api/cron-daily",
+      "schedule": "0 0 * * *"
+    },
+    {
+      "path": "/api/cron-daily",
+      "schedule": "30 9 * * *"
+    },
+    {
+      "path": "/api/cron-daily",
+      "schedule": "30 1 * * 1-5"
+    },
+    {
+      "path": "/api/mail-manage",
+      "schedule": "10 * * * *"
+    },
+    {
+      "path": "/api/mail-sync",
+      "schedule": "30 13,14,15 * * *"
+    },
+    {
+      "path": "/api/joya-intraday",
+      "schedule": "0,15,30,45 3-13 * * *"
+    },
+    {
+      "path": "/api/boss-sync",
+      "schedule": "7 * * * *"
+    }
   ]
 }

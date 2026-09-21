@@ -24,6 +24,7 @@ const ALLOW = [
   [/^pm_prep_hide$/, "看板預做表隱藏清單＝UI 顯示設定，非業務資料"],
   [/^pm_prep_tabs$/, "夥伴看板分頁名稱/排序＝UI設定，非業務資料"],
   [/^pm_notify$/, "群組通知開關＝設定，非業務資料"],
+  [/^pm_boss_/, "boss-api 同步原始層（A Beach 營收/叫貨/HR/事件）＝內部資料；張良指示先進庫、頁面與AI接入另案（🔴不可進 /prep 共用金鑰頁）"],
   [/^pm_ui_|_prefs$|_collapsed$/, "純 UI 偏好"],
   [/^pm_advisor|^pm_ai_|^pm_line_notify|^pm_mail_(rules|log)$/, "AI/通知/郵件設定，App 端已以摘要收錄"],
   [/^pm_changelog|^pm_conclusion_drafts/, "更新紀錄/草稿"],
