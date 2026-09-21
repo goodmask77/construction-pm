@@ -303,7 +303,8 @@ function sopRender(){
         ${!pend&&me?`<button class="mini" style="margin-top:4px" onclick="sopResolve('${x.id}')">✅ 已解決${me.approver?'':'（送審核）'}</button>`:''}</div>`
     })
     if (!items.some(i => i.st === st)) s += `<div class="hint" style="padding:6px 4px">（這一站還沒有 SOP 項目——開「⚙️ 總編輯」新增）</div>`
-    items.filter(i => i.st === st).forEach(it => {
+    // 照設定時間自動排序（張良 2026-09-21：早的在上面；沒設時間的排最後）
+    items.filter(i => i.st === st).sort((a,b)=>String(a.due||'99:99').localeCompare(String(b.due||'99:99'))).forEach(it => {
       const lg = log[it.id]
       const overdue = !lg && it.due && it.due <= now && wd >= 1 && wd <= 5
       s += `<div style="display:flex;align-items:center;gap:8px;padding:9px 4px;border-bottom:1px solid var(--line)">`
