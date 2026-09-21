@@ -349,10 +349,29 @@ function sopRender(){
       s += `</div>`
     })
   })
-  // ✍️ 編輯紀錄（張良 2026-09-21：SOP 誰改的、什麼時候——一直有留檔，這裡顯示出來）
+  // ✍️ 編輯紀錄 v2（張良 2026-09-22「這紀錄沒用」→ 每筆算出「改了什麼」：改前快照 vs 下一版逐條 diff）
   const eds = (sopData.def.edits || [])
-  if (eds.length) { const cntE = {}; eds.forEach(e=>{ cntE[e.by||'？'] = (cntE[e.by||'？']||0)+1 }); (sopData.def.items||[]).forEach(it=>{ if(it.editBy) cntE[it.editBy] = cntE[it.editBy]||0 })
-  s += `<details style="margin-top:8px"><summary class="hint" style="cursor:pointer;font-weight:800">✍️ SOP 編輯紀錄（${eds.length}）｜${Object.entries(cntE).map(([n,c])=>`${n} ${c}次`).join('、')}</summary>${eds.map(e=>{ const t8 = e.ts ? new Date(new Date(e.ts).getTime()+8*3600e3).toISOString().slice(5,16).replace('T',' ') : ''; return `<div class="hint" style="padding:2px 0">${t8}・<b>${e.by||'？'}</b>・${e.op==='full'?'總編輯整份儲存':(e.st?`改「${e.st}」站`:'編輯')}</div>` }).join('')}</details>` }
+  if (eds.length) {
+    const cntE = {}; eds.forEach(e=>{ cntE[e.by||'？'] = (cntE[e.by||'？']||0)+1 })
+    // 每筆的「改後狀態」＝上一筆(更新的那筆)的 prev；最新一筆的改後＝現在的 def
+    const itemsOf = (e) => !e ? (sopData.def.items||[]) : (Array.isArray(e.prev) ? e.prev : ((e.prev||{}).items||null))
+    const diffOf = (i) => {
+      const before = itemsOf(eds[i]); let after = itemsOf(eds[i-1] || null)
+      if (!before || !after) return null
+      const stE = eds[i].st // 站存檔：只比那一站
+      const A = stE ? after.filter(x=>x.st===stE) : after, B = before
+      const bm = Object.fromEntries(B.map(x=>[x.id,x])), am = Object.fromEntries(A.map(x=>[x.id,x]))
+      const add = A.filter(x=>!bm[x.id]).map(x=>x.title)
+      const del = B.filter(x=>!am[x.id]).map(x=>x.title)
+      const chg = A.filter(x=>{ const b=bm[x.id]; return b && (b.title!==x.title || b.due!==x.due || !!b.photo!==!!x.photo || (b.ref||'')!==(x.ref||'') || b.st!==x.st) })
+        .map(x=>{ const b=bm[x.id]; const w=[]; if(b.title!==x.title)w.push(`改名「${b.title}→${x.title}」`); if(b.due!==x.due)w.push(`時間${b.due}→${x.due}`); if(!!b.photo!==!!x.photo)w.push(x.photo?'加要拍照':'取消拍照'); if((b.ref||'')!==(x.ref||''))w.push('換標準照'); if(b.st!==x.st)w.push(`搬到${x.st}`); return `${b.title}（${w.join('、')}）` })
+      const parts2 = []
+      if (add.length) parts2.push(`<span class="up">＋${add.join('、')}</span>`)
+      if (del.length) parts2.push(`<span style="color:var(--red)">－${del.join('、')}</span>`)
+      if (chg.length) parts2.push(`<span style="color:#A85C26">～${chg.join('；')}</span>`)
+      return parts2.length ? parts2.join('　') : '（沒有內容變動——可能只是重新排序）'
+    }
+    s += `<details style="margin-top:8px"><summary class="hint" style="cursor:pointer;font-weight:800">✍️ SOP 編輯紀錄（${eds.length}）｜${Object.entries(cntE).map(([n,c])=>`${n} ${c}次`).join('、')}</summary>${eds.map((e,i)=>{ const t8 = e.ts ? new Date(new Date(e.ts).getTime()+8*3600e3).toISOString().slice(5,16).replace('T',' ') : ''; const df2 = diffOf(i); return `<div class="hint" style="padding:3px 0;border-bottom:1px dashed var(--line)">${t8}・<b>${e.by||'？'}</b>${e.st?`・「${e.st}」站`:''}${df2?`<div style="padding-left:10px">${df2}</div>`:''}</div>` }).join('')}</details>` }
   if (me) s += `<div style="margin-top:10px"><button class="mini on" style="padding:8px 16px" onclick="sopMasterOn=true;sopRender()">⚙️ SOP 總編輯</button></div>`
   s += `<div class="hint" style="margin-top:8px">按「完成」記錄時間與名字；要拍照的先按 📷。超過時限沒完成，DD 會在群裡提醒。</div></section>`
   el.innerHTML = s
