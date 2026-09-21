@@ -152,6 +152,8 @@ export default async function handler(req, res) {
     if (!TOKEN) return res.status(200).json({ ok: false, skipped: '未設 LINE token' })
     const st = (await kvGet('pm_settings')) || {}
     if ((st.lineNotify || {}).prepRemind === false) return res.status(200).json({ ok: true, skipped: '備料訊息已關（prepRemind=false）' })
+    const ncfgP = (await kvGet('sp_finance_pm_notify')) || {} // 統一通知開關（張良 2026-09-21：預設關，/prep 🔔 開）
+    if (ncfgP.prep0930 !== 1 && !forced) return res.status(200).json({ ok: true, skipped: '備料群訊未開（/prep 🔔 通知開關）' })
     // 備料數字直接吃 /prep 看板同一個資料口（資料一致鐵則：不另算一套）
     const okey = clean(process.env.OPS_BOARD_KEY) || '7ea362bae1f0274372d4ec7b27c78852'
     const rr = await fetch('https://ground-pm.vercel.app/api/mail-sync?opsboard=' + encodeURIComponent(okey) + '&store=ground')

@@ -84,6 +84,7 @@
     <button id="tab-fb" onclick="fbLoad()">💬 回饋</button>
     <button id="tab-menu" onclick="menuLoad()">🍔 菜單</button>
     <button id="tab-gear" onclick="tabsEdit()" title="編輯分頁名稱/排序" style="padding:7px 10px">⚙️</button>
+    <button id="tab-bell" onclick="notifyEdit()" title="群組通知開關" style="padding:7px 10px">🔔</button>
   </div>
   <div id="app"></div>
   <div class="foot">資料每天自動同步（打開即最新）・僅供內部參考與備料使用，請勿外傳連結</div>
@@ -154,7 +155,7 @@ function renderBoard(d, store){
     let tw = new Date().getDay() // 今天星期幾（1~5發光）
     if (tw === 0 || tw === 6) tw = 1 // 週六日（GD公休）打開＝在準備週一的量 → 發光週一（張良 2026-09-20 抓到週日沒東西亮）
     h += `<section><h2>預估備料量 <span class="hint">份/日</span></h2>`
-    h += `<div class="scroll"><table><thead><tr><th>項目</th><th>總平均</th>${['一','二','三','四','五'].map((w,i)=>`<th${tw===i+1?' class="todaycol"':''}>週${w}${tw===i+1?' ★':''}</th>`).join('')}<th>峰值</th><th>低值</th></tr></thead><tbody>`
+    h += `<div class="scroll"><table><thead><tr><th>項目</th><th>平均</th>${['一','二','三','四','五'].map((w,i)=>`<th${tw===i+1?' class="todaycol"':''}>週${w}${tw===i+1?' ★':''}</th>`).join('')}<th>峰值</th><th>低值</th></tr></thead><tbody>`
     grps.forEach(g=>{
       h += `<tr class="catband"><td colspan="9">${g}</td></tr>`
       d.prep.filter(p=>p.grp===g).forEach(p=>{
@@ -168,7 +169,7 @@ function renderBoard(d, store){
         h += `<tr${p.sub?' class="subrow"':''}><td style="font-weight:${p.sub?800:700};color:${p.sub?'#8a5a2e':'var(--ink)'}">${p.sub?'└ ':''}${p.name}</td><td class="avg">${p.avg!=null?p.avg:'—'}</td>${wds}<td style="font-weight:800;color:#A85C26">${p.peak!=null?p.peak:'—'}</td><td class="mut">${p.low!=null?p.low:'—'}</td></tr>`
       })
     })
-    h += `</tbody></table></div><div class="hint" style="margin-top:8px">怎麼用：①看今天星期幾那欄（藍底）＝該星期近幾週的平均銷量，數字下的 ±% 是跟總平均的差（超過 ±10% 才顯示，多備或少備看它）②峰值/低值＝近30天單日最高/最低——大日抓峰值、保守抓平均，低於低值就太少了。</div></section>`
+    h += `</tbody></table></div><div class="hint" style="margin-top:8px">怎麼用：①平均＝近30天「去掉最高/最低各一天」的截尾平均（颱風日/異常日不拉偏；樣本不足8天不截）②看今天星期幾那欄（藍底）＝該星期的截尾平均，±% 是跟平均的差（超過 ±10% 才顯示）③峰值/低值＝近30天單日最高/最低（極端值特意保留在這兩欄）——大日抓峰值、保守抓平均，低於低值就太少了。</div></section>`
   }
   // ✅ 今日SOP（張良 2026-09-21）：每站每天SOP＋拍照＋完成記時；先放佔位div，資料另外抓（sopLoad）
   if (store === 'ground') h += `<div id="sop"></div>`
@@ -1762,6 +1763,31 @@ async function tabsReset(){
   await fetch('/api/mail-sync?tabset=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ ...cfg, token: TK() }) }).catch(()=>{})
 }
 tabsInit()
+// ── 🔔 群組通知開關（張良 2026-09-21：主動群通知先全關；審核人在這裡逐項開）──
+const NOTIFY_DEF = [ ['buy','🛒 採購需求→內部群'], ['sopLate','⏰ SOP 超時未完成→內部群'], ['lowStock','📉 庫存低水位→內部群'], ['prep0930','🥩 每日 09:30 備料量→Family 群'] ]
+async function notifyEdit(){
+  let d
+  try { const r = await fetch('/api/mail-sync?notifycfg=' + encodeURIComponent(K) + (TK() ? '&me=' + encodeURIComponent(TK()) : '')); d = await r.json() } catch(e){}
+  if (!d || !d.ok) { alert('讀不到通知設定'); return }
+  const ov = document.createElement('div'); ov.id='ntOv'
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(16,24,43,.45);z-index:50;display:flex;align-items:center;justify-content:center;padding:16px'
+  ov.innerHTML = `<div style="background:#fff;border-radius:14px;max-width:400px;width:100%;padding:16px" onclick="event.stopPropagation()">
+    <div style="font-weight:900;margin-bottom:4px">🔔 群組通知開關</div>
+    <div class="hint" style="margin-bottom:10px">預設全關（不主動打擾群組）。${d.canEdit?'點開要的：':'只有審核人能改，目前狀態：'}<br>問題回報不在這裡——那個走你的「發布」審核，你按了才進群。</div>
+    ${NOTIFY_DEF.map(([k,lb])=>`<label style="display:flex;gap:8px;align-items:center;padding:7px 4px;border-bottom:1px solid var(--line);font-size:13.5px;font-weight:600"><input type="checkbox" data-nk="${k}" ${d.cfg[k]===1?'checked':''} ${d.canEdit?'':'disabled'} style="width:18px;height:18px"> ${lb}</label>`).join('')}
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:10px"><button class="mini" style="padding:9px 12px" onclick="document.getElementById('ntOv').remove()">關閉</button>
+    ${d.canEdit?`<button class="mini on" style="padding:9px 18px" onclick="notifySave()">儲存</button>`:''}</div></div>`
+  ov.onclick = () => ov.remove()
+  document.body.appendChild(ov)
+}
+async function notifySave(){
+  const cfg = {}
+  document.querySelectorAll('#ntOv input[data-nk]').forEach(i2=>{ cfg[i2.dataset.nk] = i2.checked ? 1 : 0 })
+  const o = document.getElementById('ntOv'); if (o) o.remove()
+  const r = await fetch('/api/mail-sync?notifyset=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ cfg, token: TK() }) })
+  const d = await r.json().catch(()=>null)
+  if (d && d.ok) alert('✅ 通知開關已更新'); else alert((d&&d.error)||'儲存失敗')
+}
 load('ground')
 </script>
 </body>

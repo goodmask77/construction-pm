@@ -878,13 +878,19 @@ export default async function handler(req, res) {
     for (const e of entries) { const w = new Date(e.date + 'T00:00:00Z').getUTCDay(); (wdSets2[w] = wdSets2[w] || new Set()).add(e.date) }
     const prepAgg = (filt, mult = 1) => {
       const list = Object.values(items2).filter(filt)
-      const sumIn = (ds) => list.reduce((t, o) => t + Object.entries(o.q).reduce((t2, [dd, qv]) => t2 + (ds.has(dd) ? qv : 0), 0), 0) * mult
-      const tot = list.reduce((t, o) => t + o.q30, 0) * mult
-      // 備料數字一律無條件進位取整（張良 2026-09-20：備料要往上抓，不要小數點）
-      const byWd = [1, 2, 3, 4, 5].map(w => { const ds = wdSets2[w]; return ds && ds.size ? Math.ceil(sumIn(ds) / ds.size) : null })
-      // 峰值/低值＝近30天單日最高/最低（大日小日的備量參考）
-      const dayVals = w30.map(e => list.reduce((t, o) => t + (o.q[e.date] || 0), 0) * mult)
-      return { avg: n30 ? Math.ceil(tot / n30) : null, wk: wkDates.size ? Math.ceil(sumIn(wkDates) / wkDates.size) : null, we: weDates.size ? Math.ceil(sumIn(weDates) / weDates.size) : null, byWd, peak: dayVals.length ? Math.max(...dayVals) : null, low: dayVals.length ? Math.min(...dayVals) : null }
+      const dayVal = (dd) => list.reduce((t, o) => t + (o.q[dd] || 0), 0) * mult
+      // 截尾平均（張良 2026-09-21 統計學抓包採納：樣本≥8天就去掉最高/最低各1天再平均——颱風日/異常日不再拉偏；
+      // 備料數字照舊無條件進位取整）。峰值/低值本來就是要看極端，不截。
+      const tmean = (vals) => {
+        const v2 = vals.filter(v => v != null)
+        if (!v2.length) return null
+        let a = [...v2].sort((x, y) => x - y)
+        if (a.length >= 8) a = a.slice(1, -1)
+        return Math.ceil(a.reduce((t, v) => t + v, 0) / a.length)
+      }
+      const w30Vals = w30.map(e => dayVal(e.date))
+      const byWd = [1, 2, 3, 4, 5].map(w => { const ds = wdSets2[w]; return ds && ds.size ? tmean([...ds].map(dayVal)) : null })
+      return { avg: w30Vals.length ? tmean(w30Vals) : null, wk: wkDates.size ? tmean([...wkDates].map(dayVal)) : null, we: weDates.size ? tmean([...weDates].map(dayVal)) : null, byWd, peak: w30Vals.length ? Math.max(...w30Vals) : null, low: w30Vals.length ? Math.min(...w30Vals) : null }
     }
     const prep = isAB2 ? null : [
       { grp: '炸台', name: '無骨煎雞腿', ...prepAgg(o => o.cat === '漢堡' && /雞腿堡/.test(o.n) && !/炸/.test(o.n)) },
@@ -1034,6 +1040,31 @@ export default async function handler(req, res) {
     const alive = (((rosterDoc || {}).people) || []).filter(p2 => !p2.endDate && (p2.status || '在職') !== '離職')
     const gd = alive.filter(p2 => p2.gd).map(p2 => p2.name).filter(Boolean)
     return gd.length ? gd : alive.map(p2 => p2.name).filter(Boolean)
+  }
+  // ── 🔔 群組通知開關（張良 2026-09-21：主動群通知先全關，每項獨立開關；審核人可改）──
+  // keys：buy=採購需求 / sopLate=SOP超時 / lowStock=庫存低水位 / prep0930=每日09:30備料訊息
+  if (req.query?.notifycfg) {
+    const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
+    if (!ok2 || String(req.query.notifycfg) !== ok2) return res.status(403).json({ ok: false })
+    const [cfgN, meN2] = await Promise.all([kvGet('sp_finance_pm_notify'), sopWho(req.query.me)])
+    const defN = await kvGet('sp_finance_pm_sop_def')
+    const aprN = (((defN || {}).ground || {}).approvers || ['張良瑋'])
+    return res.status(200).json({ ok: true, cfg: cfgN || {}, canEdit: !!(meN2 && aprN.includes(meN2.name)) })
+  }
+  if (req.method === 'POST' && req.query?.notifyset) {
+    const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
+    if (!ok2 || String(req.query.notifyset) !== ok2) return res.status(403).json({ ok: false })
+    let nb = {}
+    try { nb = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
+    const whoN2 = await sopWho(nb.token)
+    const defN = await kvGet('sp_finance_pm_sop_def')
+    const aprN = (((defN || {}).ground || {}).approvers || ['張良瑋'])
+    if (!whoN2 || !aprN.includes(whoN2.name)) return res.status(403).json({ ok: false, error: '只有審核人能改通知開關' })
+    const KEYSN = ['buy', 'sopLate', 'lowStock', 'prep0930']
+    const doc = (await kvGet('sp_finance_pm_notify')) || {}
+    for (const k2 of KEYSN) if (nb.cfg && k2 in nb.cfg) doc[k2] = nb.cfg[k2] ? 1 : 0
+    await kvPut('sp_finance_pm_notify', doc, '通知開關(' + whoN2.name + ')')
+    return res.status(200).json({ ok: true, cfg: doc })
   }
   // ── 🔖 分頁自訂（張良 2026-09-22：分頁名稱＋排序可編輯，全裝置同步；pm_prep_tabs=UI設定）──
   if (req.query?.tabcfg) {
@@ -1654,9 +1685,10 @@ export default async function handler(req, res) {
     const it = { id: 'by' + Date.now().toString(36), text: String(bb.text || '').slice(0, 300), cat: String(bb.cat || '').trim().slice(0, 20), url: String(bb.url || '').slice(0, 500), media: (Array.isArray(bb.media) ? bb.media : []).slice(0, 6), by: whoB ? whoB.name : String(bb.by || '匿名').slice(0, 20), ts: new Date(Date.now() + 8 * 3600e3).toISOString().slice(5, 16).replace('T', ' '), status: 'open' }
     doc.list = [it, ...(doc.list || [])].slice(0, 200)
     await kvPut('sp_finance_pm_buy', doc, '採購需求(' + it.by + ')')
-    try { // DD 通知內部群
+    try { // DD 通知內部群（張良 2026-09-21：掛通知開關 pm_notify.buy，預設關）
+      const ncfg = (await kvGet('sp_finance_pm_notify')) || {}
       const tkB = (process.env.LINE_CHANNEL_ACCESS_TOKEN || '').trim()
-      if (tkB) await fetch('https://api.line.me/v2/bot/message/push', { method: 'POST', headers: { 'content-type': 'application/json', Authorization: 'Bearer ' + tkB }, body: JSON.stringify({ to: 'Cf7940efc6517b0c084ad2ad496b45f30', messages: [{ type: 'text', text: `🛒 採購需求：${it.text || '（見附件）'}\n— ${it.by}${it.url ? '\n🔗 ' + it.url : ''}${it.media.length ? `・附${it.media.length}圖` : ''}\n處理完到 /prep 採購分頁按「已購買」` }] }) })
+      if (ncfg.buy === 1 && tkB) await fetch('https://api.line.me/v2/bot/message/push', { method: 'POST', headers: { 'content-type': 'application/json', Authorization: 'Bearer ' + tkB }, body: JSON.stringify({ to: 'Cf7940efc6517b0c084ad2ad496b45f30', messages: [{ type: 'text', text: `🛒 採購需求：${it.text || '（見附件）'}\n— ${it.by}${it.url ? '\n🔗 ' + it.url : ''}${it.media.length ? `・附${it.media.length}圖` : ''}\n處理完到 /prep 採購分頁按「已購買」` }] }) })
     } catch (_) {}
     return res.status(200).json({ ok: true, item: it })
   }

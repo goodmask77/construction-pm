@@ -42,7 +42,8 @@ export default async function handler(req, res) {
         const over = items.filter(it => it.due && it.due <= hm && !(slog.items[it.id] && slog.items[it.id].done) && !slog.notified[it.id])
         if (over.length) {
           const txt = '⏰ GD SOP 超時未完成：\n' + over.map(it => `・${it.st}｜${it.title}（${it.due} 前${it.photo ? '・要拍照' : ''}）`).join('\n') + '\n\n完成後到 ground-pm.vercel.app/prep 按「完成」打卡 🙏'
-          const tk = (process.env.LINE_CHANNEL_ACCESS_TOKEN || '').trim()
+          const ncfg = (await kvGet('sp_finance_pm_notify')) || {} // 通知開關（張良 2026-09-21：預設關，/prep 🔔 開）
+          const tk = ncfg.sopLate === 1 ? (process.env.LINE_CHANNEL_ACCESS_TOKEN || '').trim() : ''
           if (tk) {
             const pr = await fetch('https://api.line.me/v2/bot/message/push', { method: 'POST', headers: { 'content-type': 'application/json', Authorization: 'Bearer ' + tk }, body: JSON.stringify({ to: 'Cf7940efc6517b0c084ad2ad496b45f30', messages: [{ type: 'text', text: txt }] }) })
             if (pr.ok) { over.forEach(it => { slog.notified[it.id] = 1 }); await kvPut(dk, slog, 'SOP超時通知') } // 發送成功才標記，失敗下一輪重試
@@ -63,7 +64,8 @@ export default async function handler(req, res) {
         const lows = [...f2.items.filter(x => x.low).map(x => ({ ...x, _k: '食材' })), ...p2.items.filter(x => x.low).map(x => ({ ...x, _k: '包材' }))]
         if (lows.length) {
           const txt2 = '📉 庫存低水位提醒：\n' + lows.map(x => `・[${x._k}] ${x.name}：估剩 ${x.est}${x.unit || ''}（低標 ${x.min}）`).join('\n') + '\n\n請盡快叫貨/補盤點：ground-pm.vercel.app/prep'
-          const tk2 = (process.env.LINE_CHANNEL_ACCESS_TOKEN || '').trim()
+          const ncfg2 = (await kvGet('sp_finance_pm_notify')) || {}
+          const tk2 = ncfg2.lowStock === 1 ? (process.env.LINE_CHANNEL_ACCESS_TOKEN || '').trim() : ''
           if (tk2) {
             const pr2 = await fetch('https://api.line.me/v2/bot/message/push', { method: 'POST', headers: { 'content-type': 'application/json', Authorization: 'Bearer ' + tk2 }, body: JSON.stringify({ to: 'Cf7940efc6517b0c084ad2ad496b45f30', messages: [{ type: 'text', text: txt2 }] }) })
             if (pr2.ok) { invDoc.notified = { [todayInv]: 1 }; await kvPut('sp_finance_pm_inv', invDoc, '低水位提醒') } // 只留今天鍵，一天一次
