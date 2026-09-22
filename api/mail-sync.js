@@ -961,6 +961,22 @@ export default async function handler(req, res) {
         return { n: it.n, k: it.k, cat: c.name, q: RSLOTS.map(t => (b && nD ? Math.round((b.s[t] || 0) / nD * 10) / 10 : 0)) }
       }))
       rhythm = { slots: RSLOTS, days: nD, items: rows3 }
+    } else { // AB（張良 2026-09-22）：eats-rhythm 每天打烊後直接逐15分窗撈（pm_pos_q_ab_，值=該窗實賣，不用差分）
+      const RS2 = []
+      for (let t2 = 11 * 60 + 30; t2 <= 21 * 60 + 15; t2 += 15) RS2.push(String(Math.floor(t2 / 60)).padStart(2, '0') + ':' + String(t2 % 60).padStart(2, '0'))
+      const qcand2 = datesAll.slice(-10).reverse()
+      const qall2 = await Promise.all(qcand2.map(dd4 => kvGet('sp_finance_pm_pos_q_ab_' + dd4).catch(() => null)))
+      const qdocs2 = qall2.filter(qd => qd && Array.isArray(qd.slots) && qd.slots.length > 0).slice(0, 7)
+      const bucket2 = {}
+      for (const qd of qdocs2) for (const sl of qd.slots) for (const [nm, qv] of Object.entries(sl.items || {})) {
+        let k3 = norm2(nm); k3 = aliasMap2[k3] || k3
+        if (hiddenMap2[k3]) continue
+        const o = bucket2[k3] || (bucket2[k3] = { s: {} })
+        o.s[sl.t] = (o.s[sl.t] || 0) + (Number(qv) || 0)
+      }
+      const nD2 = qdocs2.length
+      const rows4 = cats2.flatMap(c => c.items.map(it => { const b = bucket2[it.k]; return { n: it.n, k: it.k, cat: c.name, q: RS2.map(t2 => (b && nD2 ? Math.round((b.s[t2] || 0) / nD2 * 10) / 10 : 0)) } }))
+      rhythm = { slots: RS2, days: nD2, items: rows4 }
     }
     // Vercel 邊緣快取 5 分鐘（張良 2026-09-21 嫌慢）：同網址請求直接吃 CDN 不進函式重算；資料本來 15 分一更，5 分快取無感
     res.setHeader('Cache-Control', 's-maxage=300, stale-while-revalidate=1800')
@@ -1202,6 +1218,25 @@ export default async function handler(req, res) {
     for (const it of (g.items || [])) if (!it.editBy) { it.editBy = by0; it.editTs = ts0; n++ }
     if (n) { doc.ground = g; await kvPut('sp_finance_pm_sop_def', doc, 'SOP編輯者回填') }
     return res.status(200).json({ ok: true, stamped: n, by: by0 })
+  }
+  // ── 🖼 SOP 標準照直改（張良 2026-09-22：列表點條目直接上傳，不用進總編輯）：POST ?sopref= {itemId, ref, token}
+  if (req.method === 'POST' && req.query?.sopref) {
+    const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
+    if (!ok2 || String(req.query.sopref) !== ok2) return res.status(403).json({ ok: false })
+    let bR = {}
+    try { bR = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
+    const whoR2 = await sopWho(bR.token)
+    if (!whoR2) return res.status(403).json({ ok: false, error: '要先跟 DD 說「綁定GD」' })
+    const doc = (await kvGet('sp_finance_pm_sop_def')) || {}
+    const g = doc.ground || {}
+    const it = (g.items || []).find(x => x.id === bR.itemId)
+    if (!it) return res.status(404).json({ ok: false })
+    const rf = String(bR.ref || '').slice(0, 500)
+    if (rf) it.ref = rf; else delete it.ref
+    it.editBy = whoR2.name; it.editTs = new Date(Date.now() + 8 * 3600e3).toISOString().slice(5, 16).replace('T', ' ')
+    doc.ground = g
+    await kvPut('sp_finance_pm_sop_def', doc, 'SOP標準照(' + whoR2.name + ')')
+    return res.status(200).json({ ok: true, ref: it.ref || null })
   }
   // ── 📋 會議紀錄（張良 2026-09-21：班前會議/營運會議，類型可自訂、紀錄可新增刪改）──
   if (req.query?.meet) {

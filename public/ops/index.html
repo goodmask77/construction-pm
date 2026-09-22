@@ -176,7 +176,7 @@ function renderBoard(d, store){
   // 🍳 預做節奏表（張良 2026-09-21）：完整菜單＋品類分組＋隱藏設定；內容由 rhythmRender 畫（隱藏清單走即時的 sop 口）
   if (d.rhythm) {
     window._rhy = d.rhythm
-    h += `<section><h2>🍳 預做節奏表 <span style="float:right;white-space:nowrap"><button class="mini on" id="rb15" onclick="rSwitch(15)">15分</button><button class="mini" id="rb30" onclick="rSwitch(30)">30分</button><button class="mini" id="rbMng" onclick="rMng()">🙈 隱藏管理</button></span><br><span class="hint">${d.rhythm.days ? `近 ${d.rhythm.days} 個營業日平均・每格＝該時段平均賣幾份（·＝不到0.5份）——照表預做、尖峰前先備` : '⏳ 快照每 15 分鐘自動累積中（2026-09-21 一 開始收）——要兩張以上快照才算得出差分，開店後約 45 分鐘內開始長數字；顯示的是近 7 個營業日平均，跑幾天會越來越準'}</span></h2><div id="rhyBody"></div></section>`
+    h += `<section><h2>🍳 預做節奏表 <span style="float:right;white-space:nowrap"><button class="mini on" id="rb15" onclick="rSwitch(15)">15分</button><button class="mini" id="rb30" onclick="rSwitch(30)">30分</button><button class="mini" id="rbMng" onclick="rMng()">🙈 隱藏管理</button></span><br><span class="hint">${d.rhythm.days ? `近 ${d.rhythm.days} 個營業日平均・每格＝該時段平均賣幾份（·＝不到0.5份）——照表預做、尖峰前先備` : '⏳ 資料累積中（GD 從 2026-09-21 起、AB 從 2026-09-22 起含歷史回補）——顯示近 7 個營業日平均，跑幾天會越來越準'}</span></h2><div id="rhyBody"></div></section>`
   }
   // KPI（張良 2026-09-22：搬到每日數據上面）
   h += `<div class="kpis">
@@ -334,7 +334,7 @@ function sopRender(){
       const lg = log[it.id]
       const overdue = !lg && it.due && it.due <= now && wd >= 1 && wd <= 5
       s += `<div style="display:flex;align-items:center;gap:8px;padding:9px 4px;border-bottom:1px solid var(--line)">`
-      s += `<div style="flex:1;min-width:0"><div style="font-weight:700;color:${overdue?'var(--red)':(it.ref?'var(--primary)':'var(--ink)')}${it.ref?';cursor:pointer;text-decoration:underline':''}" ${it.ref?`onclick="imgView('${it.ref}')" title="點看標準照片"`:''}>${it.title}${overdue?' ⚠️':''}</div><div class="hint">${it.due} 前${it.photo?'・📷 要拍照':''}${it.ref?'・🖼 有標準照':''}${it.editBy?`・✏️ ${it.editBy} ${it.editTs||''}`:''}</div></div>`
+      s += `<div style="flex:1;min-width:0"><div style="font-weight:700;cursor:pointer;color:${overdue?'var(--red)':(it.ref?'var(--primary)':'var(--ink)')}${it.ref?';text-decoration:underline':''}" onclick="sopRefOpen('${it.id}')" title="${it.ref?'點看標準照片':'點我上傳標準照'}">${it.title}${overdue?' ⚠️':''}</div><div class="hint">${it.due} 前${it.photo?'・📷 要拍照':''}${it.ref?'・🖼 有標準照':(me?'・🖼＋可傳標準照':'')}${it.editBy?`・✏️ ${it.editBy} ${it.editTs||''}`:''}</div></div>`
       if (lg && lg.done) {
         // 完成狀態：縮圖直接顯示、點整塊開預覽；撤銷藏在預覽裡（張良 2026-09-21：列表上的撤銷容易誤點）
         s += `<div style="text-align:right;cursor:pointer" onclick="sopView('${it.id}')"><div style="color:var(--green);font-weight:900">✓ ${lg.ts}</div><div class="hint">${lg.by||''}</div></div>`
@@ -402,7 +402,7 @@ function sopMaster(el){
   const items = sopData.def.items || []
   const sts = [...(sopData.def.stations || []), ...new Set(items.map(i=>i.st).filter(s=>!(sopData.def.stations||[]).includes(s)))]
   let s = `<section><h2>⚙️ SOP 總編輯 <span class="hint">拖 ☰ 排序（項目可拖到別的站）・站名直接改字・改完按儲存</span></h2>
-    <div id="msSt">${sts.map(st=>msCardHtml(st, items.filter(i=>i.st===st))).join('')}</div>
+    <div id="msSt">${sts.map(st=>msCardHtml(st, items.filter(i=>i.st===st).sort((a,b)=>String(a.due||'99:99').localeCompare(String(b.due||'99:99'))))).join('')}</div>
     <div style="display:flex;gap:6px;align-items:center;margin:8px 0">
       <input id="msNew" placeholder="新站名（例：甜點站）" style="border:1px solid var(--line);border-radius:8px;padding:7px 9px;font-size:13px">
       <button class="mini" onclick="msAddSt()">＋ 新增站</button>
@@ -585,7 +585,7 @@ async function sopReview(id, pass){
 // ── SOP 編輯（張良 2026-09-21 拍板：不設站長，綁定者全站可編；時間/姓名/改前內容全留痕）──
 function sopEdit(st){ sopEditSt = (sopEditSt === st) ? null : st; sopRender() }
 function sopEditor(st){
-  const rows = (sopData.def.items||[]).filter(i => i.st === st)
+  const rows = (sopData.def.items||[]).filter(i => i.st === st).sort((a,b)=>String(a.due||'99:99').localeCompare(String(b.due||'99:99'))) // 自動照時間排（張良 2026-09-22）
   let s = `<div id="sopEd" data-st="${st}" style="border:1.5px dashed var(--primary);border-radius:10px;padding:10px;margin-bottom:6px">
   <div style="display:flex;gap:6px;align-items:center;margin-bottom:8px;flex-wrap:wrap">
     <span class="hint">站名</span><input id="edStName" value="${st}" style="border:1px solid var(--line);border-radius:7px;padding:5px 8px;font-size:13px;width:120px">
@@ -1865,6 +1865,59 @@ function t24c(cls, v){
   return `<span style="display:inline-flex;gap:2px;align-items:center;white-space:nowrap"><select class="${cls}h" style="${sS}">${H.map(x=>`<option${x===h?' selected':''}>${x}</option>`).join('')}</select>:<select class="${cls}m" style="${sS}">${M.map(x=>`<option${x===m?' selected':''}>${x}</option>`).join('')}</select></span>`
 }
 const t24read = (root, cls) => `${root.querySelector('.'+cls+'h').value}:${root.querySelector('.'+cls+'m').value}`
+// ── 🖼 SOP 標準照（張良 2026-09-22：列表點條目→看標準照＋直接上傳/更換，不用進總編輯）──
+function sopRefOpen(itemId){
+  const it = ((sopData && sopData.def.items)||[]).find(x=>x.id===itemId)
+  if (!it) return
+  const canUp = !!(sopData && sopData.me)
+  const ov = document.createElement('div'); ov.id='srOv'
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(10,16,30,.82);z-index:60;display:flex;align-items:center;justify-content:center;padding:14px'
+  ov.innerHTML = `<div style="background:#fff;border-radius:14px;max-width:480px;width:100%;padding:14px;text-align:center" onclick="event.stopPropagation()">
+    <div style="font-weight:900;margin-bottom:8px">🖼 ${it.title}</div>
+    ${it.ref?`<img src="${it.ref}" style="max-width:100%;max-height:60vh;border-radius:10px;border:1px solid var(--line)">`:`<div class="mut" style="padding:24px 0">還沒有標準照——${canUp?'按下面上傳，或直接 Cmd/Ctrl+V 貼截圖':'綁定後可以上傳'}</div>`}
+    <div style="display:flex;gap:8px;justify-content:center;margin-top:10px;flex-wrap:wrap">
+      ${canUp?`<button class="mini on" style="padding:9px 16px" onclick="sopRefUp('${it.id}')">📷 ${it.ref?'更換':'上傳'}標準照</button><button class="mini" style="padding:9px 14px" onclick="sopRefPaste('${it.id}')">📋 貼截圖</button>`:''}
+      ${canUp&&it.ref?`<button class="mini" style="color:var(--red);padding:9px 12px" onclick="if(confirm('移除標準照？'))sopRefSave('${it.id}','')">移除</button>`:''}
+      <button class="mini" style="padding:9px 12px" onclick="document.getElementById('srOv').remove()">關閉</button>
+    </div></div>`
+  window._srItem = itemId
+  ov.onclick = () => ov.remove()
+  document.body.appendChild(ov)
+}
+async function sopRefBlob(itemId, blob, mime){ // 共用上傳（選檔/貼截圖都走這）
+  try {
+    const ext = (mime||blob.type||'image/png').split('/')[1].replace('jpeg','jpg') || 'png'
+    const sr = await fetch('/api/mail-sync?sopsign=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ ext }) })
+    const sd = await sr.json()
+    if (sd && sd.ok) { const ur = await fetch(sd.uploadUrl, { method:'PUT', headers:{'content-type': blob.type||'image/png'}, body: blob }); if (ur.ok) { sopRefSave(itemId, sd.publicUrl); return } }
+    alert('上傳失敗，再試一次')
+  } catch(e){ alert('上傳失敗') }
+}
+function sopRefUp(itemId){
+  const inp = document.createElement('input'); inp.type='file'; inp.accept='image/*'
+  inp.onchange = () => { const f = inp.files[0]; if (f) sopRefBlob(itemId, f, f.type) }
+  inp.click()
+}
+// 📋 截圖直接貼（張良 2026-09-22）：按鈕讀剪貼簿；視窗開著時 Cmd/Ctrl+V 也直接貼
+async function sopRefPaste(itemId){
+  try {
+    const cs = await navigator.clipboard.read()
+    for (const ci of cs) { const ty = ci.types.find(x=>x.startsWith('image/')); if (ty) { const b = await ci.getType(ty); sopRefBlob(itemId, b, ty); return } }
+    alert('剪貼簿裡沒有圖片——先截圖再按這顆')
+  } catch(e){ alert('瀏覽器不給讀剪貼簿——直接按 Cmd/Ctrl+V 貼，或用「上傳」選檔') }
+}
+document.addEventListener('paste', (e) => {
+  if (!document.getElementById('srOv') || !window._srItem) return
+  const it = [...((e.clipboardData||{}).items||[])].find(x=>x.type&&x.type.startsWith('image/'))
+  if (it) { e.preventDefault(); sopRefBlob(window._srItem, it.getAsFile(), it.type) }
+})
+async function sopRefSave(itemId, ref){
+  const r = await fetch('/api/mail-sync?sopref=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ itemId, ref, token: TK() }) })
+  const d = await r.json().catch(()=>null)
+  if (!d || !d.ok) { alert((d&&d.error)||'儲存失敗'); return }
+  const o = document.getElementById('srOv'); if (o) o.remove()
+  sopLoad()
+}
 load('ground')
 </script>
 </body>

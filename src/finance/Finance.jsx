@@ -1570,6 +1570,20 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
                               // 週末辨識（張良 2026-07-24）：六日列淡琥珀底＋日期琥珀字；跨週處畫粗分隔線
                               const monOf = (ds) => { const dt = new Date(ds + "T00:00:00"); dt.setDate(dt.getDate() - ((dt.getDay() + 6) % 7)); return `${dt.getFullYear()}-${dt.getMonth() + 1}-${dt.getDate()}`; };
                               const arr = [...days].reverse();
+                              // 平均列＋色階（張良 2026-09-22：跟 /prep 每日數據一樣——紅=高於平均、綠=低於，±3%內不上色；平均只算有營業的日子）
+                              const dvA = arr.filter(d => d.revenue > 0);
+                              const meanA = (f) => { const a = dvA.map(f).filter(v => v != null && isFinite(v)); return a.length ? a.reduce((s, v) => s + v, 0) / a.length : null; };
+                              const AV = {
+                                ext: meanA(d => extDays[d.date]?.s2 || null), lunch: meanA(d => lunchByDate[d.date] ?? null), rev: meanA(d => d.revenue),
+                                gdcol: meanA(d => gdByDate[d.date] || null), tx: meanA(d => d.txCount || null),
+                                avgT: (() => { const tr = dvA.reduce((s, d) => s + (d.revenue || 0), 0), tt = dvA.reduce((s, d) => s + (d.txCount || 0), 0); return tt ? tr / tt : null; })(),
+                                guests: meanA(d => d.guests || null), ticket: meanA(d => d.guests ? d.revenue / d.guests : null),
+                                cash: meanA(d => d.cash || null), card: meanA(d => d.card || null), lp: meanA(d => d.linepay || null), uber: meanA(d => d.uber || null), disc: meanA(d => d.discount || null),
+                                takePct: meanA(d => { const tk = Number(d.takeTx) || 0, dn = Number(d.dineTx) || 0; return tk + dn > 0 ? tk / (tk + dn) * 100 : null; }),
+                                kiosk: meanA(d => d.kiosk || null),
+                              };
+                              const heatA = (v, avg) => { if (v == null || !avg || !isFinite(v)) return undefined; let x = (v - avg) / avg; if (Math.abs(x) < 0.03) return undefined; x = Math.max(-0.5, Math.min(0.5, x)); return `rgba(${x > 0 ? "190,60,45" : "47,109,90"},${Math.min(0.2, Math.abs(x) * 0.42).toFixed(2)})`; };
+                              const hs = (v, avg, st) => ({ ...(st || {}), background: heatA(v, avg) });
                               // 「今天（即時）」虛擬列（張良 2026-09-02）：AB 日結信打烊才到＝今天沒有列，
                               // 但 1/2（🔄更新抓 iCHEF 到目前為止）與 GD（盤中每30分自動）已有今天數字→補一列顯示；明天真日結入庫後自動被真列取代
                               const twToday = new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10);
@@ -1590,7 +1604,27 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
                                   </div>
                                 );
                               })() : null;
-                              return [liveRow, ...arr.map((d, i) => {
+                              const avgRow = (
+                                <div key="avg-row" style={{ display: "grid", gridTemplateColumns: GTC, alignItems: "center", minHeight: 30, background: "#efe7d6", borderBottom: "2px solid #c8bca6" }}>
+                                  <div style={{ padding: "0 8px", fontFamily: MONOF, fontSize: 11.5, fontWeight: 800, color: "#6b5b3e" }}>平均<span style={{ fontWeight: 400, fontSize: 10, marginLeft: 3 }}>營業日</span></div>
+                                  {!abView && <div />}
+                                  {hasExt && cell(AV.ext != null ? fmt(Math.round(AV.ext)) : "—", { fontWeight: 700, color: "#8a7f6a" })}
+                                  {hasLunch && cell(AV.lunch != null ? fmt(Math.round(AV.lunch)) : "—", { fontWeight: 700, color: "#2f6d5a" })}
+                                  {cell(AV.rev != null ? fmt(Math.round(AV.rev)) : "—", { fontWeight: 800, color: C.text })}
+                                  {abView && cell(AV.gdcol != null ? fmt(Math.round(AV.gdcol)) : "—", { fontWeight: 700, color: "#b3492f" })}
+                                  {cell(AV.tx != null ? Math.round(AV.tx) : "—", { fontWeight: 700 })}
+                                  {cell(AV.avgT != null ? fmt(Math.round(AV.avgT)) : "—", { fontWeight: 700, color: "#3a6ea5" })}
+                                  {hasGuests && <>{cell(AV.guests != null ? Math.round(AV.guests) : "—", { fontWeight: 700 })}{cell(AV.ticket != null ? fmt(Math.round(AV.ticket)) : "—", { fontWeight: 700 })}</>}
+                                  {cell(AV.cash != null ? fmt(Math.round(AV.cash)) : "—", { fontWeight: 700 })}
+                                  {cell(AV.card != null ? fmt(Math.round(AV.card)) : "—", { fontWeight: 700 })}
+                                  {hasLinepay && cell(AV.lp != null ? fmt(Math.round(AV.lp)) : "—", { fontWeight: 700 })}
+                                  {cell(AV.uber != null ? fmt(Math.round(AV.uber)) : "—", { fontWeight: 700 })}
+                                  {cell(AV.disc != null ? fmt(Math.round(AV.disc)) : "—", { fontWeight: 700, color: C.accent })}
+                                  {hasTakeout && cell(AV.takePct != null ? Math.round(AV.takePct) + "%" : "—", { fontWeight: 700, color: "#2a6b6b" })}
+                                  {hasKiosk && cell(AV.kiosk != null ? fmt(Math.round(AV.kiosk)) + "·均" : "—", { fontWeight: 700, color: "#6b4a86" })}
+                                </div>
+                              );
+                              return [avgRow, liveRow, ...arr.map((d, i) => {
                               const gd = new Date(d.date + "T00:00:00").getDay(), wknd = gd === 0 || gd === 6;
                               const newWeek = i > 0 && monOf(arr[i - 1].date) !== monOf(d.date);
                               const rowBg = wknd ? "#f6ecd3" : i % 2 ? "#f8f4ea" : C.card;
@@ -1599,15 +1633,15 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
                                 onMouseEnter={e => e.currentTarget.style.background = "#f4efe5"} onMouseLeave={e => e.currentTarget.style.background = rowBg}>
                                 <div style={{ padding: "0 8px", fontFamily: MONOF, fontSize: 11.5, color: wknd ? "#a97a10" : C.sub, fontWeight: wknd ? 700 : 400 }}>{d.date.slice(2)}（{WD2[gd]}）</div>
                                 {!abView && <div style={{ padding: "0 8px", fontSize: 11.5, color: C.sub, overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis" }}>{d.store}{d.intraday && <span title="營業中的即時數字，之後還會長大；打烊後自動換成正式結帳數字" style={{ marginLeft: 6, fontSize: 10, fontWeight: 700, color: "#b3261e", background: "#fdecea", border: "1px solid #f0b8b1", borderRadius: 5, padding: "1px 5px" }}>{d.fetchedAt || ""}</span>}</div>}
-                                {hasExt && cell(extDays[d.date]?.s2 ? fmt(extDays[d.date].s2) : "—", { color: "#8a7f6a" })}
-                                {hasLunch && (() => { const lv = lunchByDate[d.date]; return cell(lv != null ? <>{fmt(lv)}<span style={{ color: C.faint, fontWeight: 400 }}>·{d.revenue ? Math.round(lv / d.revenue * 100) : 0}%</span></> : "—", lv != null ? { color: "#2f6d5a", fontWeight: 600 } : { color: "#d5cbb6" }); })()}
-                                {cell(fmt(d.revenue), { fontWeight: 700, color: C.text })}
-                                {abView && cell(gdByDate[d.date] ? fmt(gdByDate[d.date]) : "—", gdByDate[d.date] ? { color: "#b3492f", fontWeight: 600 } : { color: "#d5cbb6" })}
-                                {cell(d.txCount)}{cell(d.txCount ? fmt(Math.round(d.revenue / d.txCount)) : "—", { color: "#3a6ea5", fontWeight: 600 })}{hasGuests && <>{cell(d.guests || "—")}{cell(d.guests ? fmt(ticket(d.revenue, d.guests)) : "—")}</>}
-                                {cell(fmt(d.cash || 0))}{cell(fmt(d.card || 0))}{hasLinepay && cell(d.linepay ? fmt(d.linepay) : "—", d.linepay ? undefined : { color: "#d5cbb6" })}{cell(fmt(d.uber || 0))}
-                                {cell(d.discount ? fmt(d.discount) : "—", { color: d.discount ? C.accent : "#d5cbb6" })}
-                                {hasTakeout && (() => { const tk = Number(d.takeTx) || 0, dn = Number(d.dineTx) || 0; return cell(tk + dn > 0 ? `${tk}·${Math.round(tk / (tk + dn) * 100)}%` : "—", tk + dn > 0 ? { color: "#2a6b6b", fontWeight: 600 } : { color: "#d5cbb6" }); })()}
-                                {hasKiosk && cell(d.kiosk ? `${fmt(d.kiosk)}·${d.revenue ? Math.round(d.kiosk / d.revenue * 100) : 0}%·約${kioskTx(d)}單` : "—", d.kiosk ? { color: "#6b4a86", fontWeight: 600 } : { color: "#d5cbb6" })}
+                                {hasExt && cell(extDays[d.date]?.s2 ? fmt(extDays[d.date].s2) : "—", hs(extDays[d.date]?.s2, AV.ext, { color: "#8a7f6a" }))}
+                                {hasLunch && (() => { const lv = lunchByDate[d.date]; return cell(lv != null ? <>{fmt(lv)}<span style={{ color: C.faint, fontWeight: 400 }}>·{d.revenue ? Math.round(lv / d.revenue * 100) : 0}%</span></> : "—", hs(lv, AV.lunch, lv != null ? { color: "#2f6d5a", fontWeight: 600 } : { color: "#d5cbb6" })); })()}
+                                {cell(fmt(d.revenue), hs(d.revenue, AV.rev, { fontWeight: 700, color: C.text }))}
+                                {abView && cell(gdByDate[d.date] ? fmt(gdByDate[d.date]) : "—", hs(gdByDate[d.date] || null, AV.gdcol, gdByDate[d.date] ? { color: "#b3492f", fontWeight: 600 } : { color: "#d5cbb6" }))}
+                                {cell(d.txCount, hs(d.txCount, AV.tx))}{cell(d.txCount ? fmt(Math.round(d.revenue / d.txCount)) : "—", hs(d.txCount ? d.revenue / d.txCount : null, AV.avgT, { color: "#3a6ea5", fontWeight: 600 }))}{hasGuests && <>{cell(d.guests || "—", hs(d.guests || null, AV.guests))}{cell(d.guests ? fmt(ticket(d.revenue, d.guests)) : "—", hs(d.guests ? d.revenue / d.guests : null, AV.ticket))}</>}
+                                {cell(fmt(d.cash || 0), hs(d.cash || null, AV.cash))}{cell(fmt(d.card || 0), hs(d.card || null, AV.card))}{hasLinepay && cell(d.linepay ? fmt(d.linepay) : "—", hs(d.linepay || null, AV.lp, d.linepay ? undefined : { color: "#d5cbb6" }))}{cell(fmt(d.uber || 0), hs(d.uber || null, AV.uber))}
+                                {cell(d.discount ? fmt(d.discount) : "—", hs(d.discount || null, AV.disc, { color: d.discount ? C.accent : "#d5cbb6" }))}
+                                {hasTakeout && (() => { const tk = Number(d.takeTx) || 0, dn = Number(d.dineTx) || 0; return cell(tk + dn > 0 ? `${tk}·${Math.round(tk / (tk + dn) * 100)}%` : "—", hs(tk + dn > 0 ? tk / (tk + dn) * 100 : null, AV.takePct, tk + dn > 0 ? { color: "#2a6b6b", fontWeight: 600 } : { color: "#d5cbb6" })); })()}
+                                {hasKiosk && cell(d.kiosk ? `${fmt(d.kiosk)}·${d.revenue ? Math.round(d.kiosk / d.revenue * 100) : 0}%·約${kioskTx(d)}單` : "—", hs(d.kiosk || null, AV.kiosk, d.kiosk ? { color: "#6b4a86", fontWeight: 600 } : { color: "#d5cbb6" }))}
                               </div>
                               );
                               })];

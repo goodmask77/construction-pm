@@ -30,7 +30,7 @@ const pickCsrf = (html) => ({
   csid: (html.match(/var csid = "([^"]+)"/) || [])[1],
 })
 
-async function eatsSession(deviceCookie) {
+export async function eatsSession(deviceCookie) { // export：eats-rhythm.js（AB 節奏表）共用
   const J = makeJar(deviceCookie)
   let r = await fetch(BASE + '/sign-in', { headers: { 'User-Agent': UA, Cookie: J.cookieStr() } })
   J.capture(r)
@@ -109,4 +109,23 @@ export async function syncEatsLive(kvGet, kvPut) {
   }
   await kvPut('sp_finance_pm_ablive', doc, 'AB即時')
   return { revenue: doc.revenue, tx: doc.tx }
+}
+
+// AB 時段品項（張良 2026-09-22 實測 dailyReport 吃任意時間區段 → 節奏表不用快照、可回補歷史）
+// 回 {品名: 份數}；start/end 形如 'YYYY-MM-DD HH:MM:SS'
+export async function eatsItemsRange(sess, start, end) {
+  const r = await fetch(BASE + '/report/dailyReport', {
+    method: 'POST',
+    headers: { 'User-Agent': UA, Cookie: sess.J.cookieStr(), 'X-XSRF-TOKEN': sess.tok, 'X-XSRF-SESSION': sess.csid, 'EATS365-RESTAURANT-CODE': CTX.rcode, 'EATS365-BRAND-ID': CTX.brand, 'EATS365-ORGANIZATION-ID': CTX.org, 'Content-Type': 'application/json', Accept: 'application/json' },
+    body: JSON.stringify({ startDate: start, endDate: end, rCode: CTX.rcode }),
+  })
+  if (!r.ok) throw new Error('eats: range ' + r.status)
+  const d = await r.json()
+  const out = {}
+  for (const c of (d.categorizedOrderSKU || [])) for (const x of (c.orderSKU || [])) {
+    const nm = x.dName?.tc || x.dName?.default || x.dName?.en || ''
+    const q = Number(x.quantity) || 0
+    if (nm && q > 0) out[nm] = (out[nm] || 0) + q
+  }
+  return out
 }
