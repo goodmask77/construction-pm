@@ -1172,14 +1172,41 @@ export default async function handler(req, res) {
     const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
     if (!ok2 || String(req.query.fb) !== ok2) return res.status(403).json({ ok: false })
     const dtF = /^\d{4}-\d{2}-\d{2}$/.test(String(req.query.date || '')) ? String(req.query.date) : new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10)
-    const [fbDoc, meF, rosterF] = await Promise.all([kvGet('sp_finance_pm_fb'), sopWho(req.query.me), kvGet('sp_crew_kb_roster')])
+    const [fbDoc, meF, rosterF, fbjDoc, defFb] = await Promise.all([kvGet('sp_finance_pm_fb'), sopWho(req.query.me), kvGet('sp_crew_kb_roster'), kvGet('sp_finance_pm_fbj'), kvGet('sp_finance_pm_sop_def')])
     const pjF = await import('./punch.js')
     let pchF = []
     try { pchF = await pjF.listPunches('sp_crew_pch_' + dtF.replace(/-/g, '')) } catch (_) {}
     const workers = [...new Set(pchF.map(p2 => p2.name))].filter(Boolean)
     const namesF = gdNames(rosterF)
     const fbs = ((fbDoc || {}).list || []).filter(x => x.date === dtF)
-    return res.status(200).json({ ok: true, date: dtF, workers, names: namesF, fbs, me: meF ? { name: meF.name } : null })
+    // 每日回饋紀錄（張良 2026-09-22：每人每天發現問題要發——文字/照片/影片、可多則、選站別）
+    const jn = ((fbjDoc || {}).list || []).filter(x => x.date === dtF)
+    const stationsF = (((defFb || {}).ground || {}).stations || [])
+    return res.status(200).json({ ok: true, date: dtF, workers, names: namesF, fbs, jn, stations: stationsF, me: meF ? { name: meF.name } : null })
+  }
+  // 每日回饋紀錄：POST ?fbj= {op:'add', date?, st, text, media[]} / {op:'del', id}（本人或審核人可刪）
+  if (req.method === 'POST' && req.query?.fbj) {
+    const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
+    if (!ok2 || String(req.query.fbj) !== ok2) return res.status(403).json({ ok: false })
+    let jb = {}
+    try { jb = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
+    const whoJ = await sopWho(jb.token)
+    if (!whoJ) return res.status(403).json({ ok: false, error: '要先跟 DD 說「綁定GD」' })
+    const doc = (await kvGet('sp_finance_pm_fbj')) || { list: [] }
+    if (jb.op === 'add') {
+      if (!String(jb.text || '').trim() && !(jb.media || []).length) return res.status(400).json({ ok: false, error: '寫點文字或附照片/影片' })
+      const it = { id: 'fj' + Date.now().toString(36), date: /^\d{4}-\d{2}-\d{2}$/.test(jb.date || '') ? jb.date : new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10), st: String(jb.st || '').slice(0, 20), text: String(jb.text || '').slice(0, 1000), media: (Array.isArray(jb.media) ? jb.media : []).slice(0, 6), by: whoJ.name, ts: new Date(Date.now() + 8 * 3600e3).toISOString().slice(11, 16) }
+      doc.list = [it, ...(doc.list || [])].slice(0, 800)
+    } else if (jb.op === 'del') {
+      const defJ = await kvGet('sp_finance_pm_sop_def')
+      const aprJ = (((defJ || {}).ground || {}).approvers || ['張良瑋'])
+      const it = (doc.list || []).find(x => x.id === jb.id)
+      if (!it) return res.status(404).json({ ok: false })
+      if (it.by !== whoJ.name && !aprJ.includes(whoJ.name)) return res.status(403).json({ ok: false, error: '只能刪自己的' })
+      doc.list = doc.list.filter(x => x.id !== jb.id)
+    } else return res.status(400).json({ ok: false })
+    await kvPut('sp_finance_pm_fbj', doc, '每日回饋紀錄(' + whoJ.name + ')')
+    return res.status(200).json({ ok: true })
   }
   if (req.method === 'POST' && req.query?.fbset) {
     const ok2 = (process.env.OPS_BOARD_KEY || '').trim()

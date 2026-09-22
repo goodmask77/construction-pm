@@ -1524,6 +1524,21 @@ function fbRender(){
       <button class="mini" onclick="fbNav(-1)">‹</button><b style="font-size:15px">${d.date.slice(5)}（${wd}）${d.date===todayTpe()?'・今天':''}</b><button class="mini" onclick="fbNav(1)">›</button>
       ${meN?`<button class="mini" style="margin-left:auto" onclick="fbOther()">＋ 對其他人回饋</button>`:''}
     </div>`
+  // 📝 每日回饋紀錄（張良 2026-09-22：每人每天要發現問題——文字/照片/影片、可多則、選站別、按日期分）
+  const jn = d.jn || []
+  const jnBy = [...new Set(jn.map(x=>x.by))]
+  const undone = (d.workers||[]).filter(n=>!jnBy.includes(n))
+  h += `<div style="background:#fff;border:1.5px solid var(--primary);border-radius:12px;padding:10px 12px;margin-bottom:12px">
+    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><b>📝 每日回饋紀錄</b><span class="hint">每人每天把發現的問題交上來（可多則）</span>
+    ${meN?`<button class="mini on" style="margin-left:auto;padding:8px 16px" onclick="fbjNew()">＋ 我要回饋</button>`:''}</div>
+    ${(d.workers||[]).length?`<div class="hint" style="margin-top:4px">今日已交：${jnBy.length?jnBy.map(n=>`<b style="color:var(--green)">${n}</b>`).join('、'):'—'}${undone.length?`｜未交：<span style="color:var(--red);font-weight:700">${undone.join('、')}</span>`:''}</div>`:''}
+    ${jn.length?jn.map(x=>`<div style="background:var(--soft);border-radius:9px;padding:7px 10px;margin-top:6px;font-size:13px">
+      <b>${x.by}</b>${x.st?` <span style="font-size:11px;border:1px solid var(--line);border-radius:7px;padding:1px 7px">${x.st}</span>`:''} <span class="hint">${x.ts||''}</span>
+      ${x.text?`<div style="white-space:pre-wrap;margin-top:2px">${(x.text||'').replace(/</g,'&lt;')}</div>`:''}
+      ${(x.media||[]).length?`<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:5px">${x.media.map(m=>/\.(mp4|mov|webm|m4v)(\?|$)/i.test(m)?`<a href="${m}" target="_blank" style="font-size:12px;border:1px solid var(--line);border-radius:8px;padding:4px 9px">🎬 影片</a>`:`<img src="${m}" style="width:58px;height:58px;object-fit:cover;border-radius:8px;border:1px solid var(--line);cursor:pointer" onclick="imgView('${m}')">`).join('')}</div>`:''}
+      ${meN&&(x.by===meN)?`<div style="margin-top:4px"><button class="mini" style="color:var(--red);padding:2px 8px" onclick="if(confirm('刪除這則回饋？'))fbjDel('${x.id}')">🗑</button></div>`:''}
+    </div>`).join(''):`<div class="mut" style="font-size:13px;margin-top:6px">這天還沒有人交回饋</div>`}
+  </div>`
   const targets = [...new Set([...(d.workers||[]), ...(d.fbs||[]).map(x=>x.target)])]
   if (!targets.length) h += `<div class="mut">這天沒有打卡紀錄——右上「＋ 對其他人回饋」可以直接選人</div>`
   targets.forEach(nm=>{
@@ -1917,6 +1932,56 @@ async function sopRefSave(itemId, ref){
   if (!d || !d.ok) { alert((d&&d.error)||'儲存失敗'); return }
   const o = document.getElementById('srOv'); if (o) o.remove()
   sopLoad()
+}
+// ── 📝 每日回饋紀錄（張良 2026-09-22）：站別＋文字＋照片/影片（sopsign 直傳）──
+let fbjFiles = []
+function fbjNew(){
+  fbjFiles = []
+  const d = window._fbD
+  const ov = document.createElement('div'); ov.id='fbjOv'
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(16,24,43,.45);z-index:50;display:flex;align-items:center;justify-content:center;padding:16px'
+  const ip = 'width:100%;border:1px solid var(--line);border-radius:8px;padding:8px;font-size:14px;font-family:inherit;margin-bottom:6px'
+  ov.innerHTML = `<div style="background:#fff;border-radius:14px;max-width:440px;width:100%;padding:16px" onclick="event.stopPropagation()">
+    <div style="font-weight:900;margin-bottom:8px">📝 每日回饋（${d.date.slice(5)}）</div>
+    <select id="fbjSt" style="${ip}"><option value="">— 選站別（可空）—</option>${(d.stations||[]).map(s2=>`<option>${s2}</option>`).join('')}<option>其他</option></select>
+    <textarea id="fbjTxt" rows="4" placeholder="今天發現什麼問題／可以更好的地方？" style="${ip}"></textarea>
+    <div id="fbjList" class="hint" style="margin:4px 0"></div>
+    <div style="display:flex;gap:8px;justify-content:space-between;margin-top:6px">
+      <button class="mini" style="padding:9px 12px" onclick="fbjPick()">📷 照片/影片</button>
+      <span><button class="mini" style="padding:9px 12px" onclick="document.getElementById('fbjOv').remove()">取消</button>
+      <button class="mini on" style="padding:9px 18px" onclick="fbjSend()">送出</button></span>
+    </div></div>`
+  ov.onclick = () => ov.remove()
+  document.body.appendChild(ov)
+}
+function fbjPick(){
+  const inp = document.createElement('input'); inp.type='file'; inp.accept='image/*,video/*'; inp.multiple=true
+  inp.onchange = () => { fbjFiles = [...fbjFiles, ...inp.files].slice(0,6); const el=document.getElementById('fbjList'); if(el) el.innerHTML = fbjFiles.map((f,i)=>`📎 ${(f.name||'檔'+(i+1)).slice(0,28)}`).join('<br>') }
+  inp.click()
+}
+async function fbjSend(){
+  const st = (document.getElementById('fbjSt')||{}).value||''
+  const text = (document.getElementById('fbjTxt')||{}).value||''
+  if (!text.trim() && !fbjFiles.length) { alert('寫點文字或附照片/影片'); return }
+  document.querySelectorAll('#fbjOv button').forEach(b=>b.disabled=true)
+  const media = []
+  for (const f of fbjFiles) {
+    try {
+      const ext = ((f.name||'').split('.').pop()||'jpg').toLowerCase()
+      const sr = await fetch('/api/mail-sync?sopsign=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ ext }) })
+      const sd = await sr.json()
+      if (sd && sd.ok) { const ur = await fetch(sd.uploadUrl, { method:'PUT', headers:{'content-type': f.type||'application/octet-stream'}, body: f }); if (ur.ok) media.push(sd.publicUrl) }
+    } catch(e){}
+  }
+  const r = await fetch('/api/mail-sync?fbj=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ op:'add', date: window._fbD.date, st, text, media, token: TK() }) })
+  const dd = await r.json().catch(()=>null)
+  const o = document.getElementById('fbjOv'); if (o) o.remove()
+  if (dd && dd.ok) fbLoad(window._fbD.date); else alert((dd&&dd.error)||'送出失敗')
+}
+async function fbjDel(id){
+  const r = await fetch('/api/mail-sync?fbj=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ op:'del', id, token: TK() }) })
+  const d = await r.json().catch(()=>null)
+  if (d && d.ok) fbLoad(window._fbD.date); else alert((d&&d.error)||'失敗')
 }
 load('ground')
 </script>

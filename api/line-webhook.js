@@ -573,7 +573,7 @@ async function loadPosText() {
   try {
     const now = new Date(Date.now() + 8 * 3600e3)
     const mo = now.toISOString().slice(0, 7)
-    const kv = await kvGetMany(['sp_finance_pm_pos', 'sp_finance_pm_pos_d_' + mo, 'sp_finance_pm_pos_tx_' + mo, 'sp_finance_pm_pos_flags', 'sp_finance_pm_pos_idlecfg', 'sp_finance_pm_pos_hh_' + mo, 'sp_finance_pm_pos_costs', 'sp_finance_pm_pos_prices', 'sp_finance_pm_pos_hidden', 'sp_finance_pm_pos_alias', 'sp_finance_pm_sop_def', 'sp_finance_pm_sop_g_' + now.toISOString().slice(0, 10), 'sp_finance_pm_sop_issues', 'sp_finance_pm_inv', 'sp_finance_pm_buy', 'sp_finance_pm_meet', 'sp_finance_pm_shift_g', 'sp_finance_pm_fb', 'sp_finance_pm_menu', 'sp_finance_pm_ablive', 'sp_finance_pm_labor'])
+    const kv = await kvGetMany(['sp_finance_pm_pos', 'sp_finance_pm_pos_d_' + mo, 'sp_finance_pm_pos_tx_' + mo, 'sp_finance_pm_pos_flags', 'sp_finance_pm_pos_idlecfg', 'sp_finance_pm_pos_hh_' + mo, 'sp_finance_pm_pos_costs', 'sp_finance_pm_pos_prices', 'sp_finance_pm_pos_hidden', 'sp_finance_pm_pos_alias', 'sp_finance_pm_sop_def', 'sp_finance_pm_sop_g_' + now.toISOString().slice(0, 10), 'sp_finance_pm_sop_issues', 'sp_finance_pm_inv', 'sp_finance_pm_buy', 'sp_finance_pm_meet', 'sp_finance_pm_shift_g', 'sp_finance_pm_fb', 'sp_finance_pm_fbj', 'sp_finance_pm_menu', 'sp_finance_pm_ablive', 'sp_finance_pm_labor'])
     const pos = kv['sp_finance_pm_pos']
     const entries = pos && Array.isArray(pos.entries) ? pos.entries : []
     if (!entries.length) return ''
@@ -676,6 +676,12 @@ async function loadPosText() {
         }
       }
       lines.push('【盤點/包材庫存（/prep 盤點分頁；預估現量=盤點量−盤後銷售×用量，低於低標 cron 每日開店前發群提醒）】'); lines.push(...invL)
+    }
+    // 每日回饋紀錄（pm_fbj＝/prep 回饋分頁：每人每天發現問題的文字/照片/影片紀錄；與 App loadSpaceAIContext 同步接）
+    const fbjL = ((kv['sp_finance_pm_fbj'] || {}).list || [])
+    if (fbjL.length) {
+      lines.push('【每日回饋紀錄（近8則；每人每天要交發現的問題）】')
+      fbjL.slice(0, 8).forEach(x => lines.push(`  - ${x.date} ${x.ts || ''} ${x.by}${x.st ? '【' + x.st + '】' : ''}：${String(x.text || '（附件）').replace(/\n/g, ' ').slice(0, 50)}${(x.media || []).length ? '・附' + x.media.length + '檔' : ''}`))
     }
     // 新菜單編輯（pm_menu＝/prep 菜單分頁：base=既有菜單、draft=新菜單協作稿；與 App loadSpaceAIContext 同步接）
     const mnDoc = kv['sp_finance_pm_menu']
