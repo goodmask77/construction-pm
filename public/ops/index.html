@@ -273,7 +273,7 @@ async function rHide(kEnc, hideV){
 }
 // ── 今日SOP（每站每天：拍照＋完成打卡；超時 DD 會通知群）──
 // 個人身分：跟 DD 說「綁定看板」拿到 /prep?me=token 連結 → 存這支手機，打卡自動是本人、站長可編輯自己的站
-;(function(){ const m = new URLSearchParams(location.search).get('me'); if (m) { localStorage.setItem('prepToken', m); history.replaceState(null, '', location.pathname) } })()
+;(function(){ const sp = new URLSearchParams(location.search); const m = sp.get('me'); if (m) localStorage.setItem('prepToken', m); if (m || sp.has('r')) history.replaceState(null, '', location.pathname) })() // r=🔄的快取時間戳，進站就清掉（張良 2026-09-24：網址多一段）
 const TK = () => localStorage.getItem('prepToken') || ''
 let sopData = null, sopPhotos = {}, sopEditSt = null
 let sopPin = new Set(JSON.parse(localStorage.getItem('sopPin')||'[]')) // 📌 釘選的站（存本機＝每個人自己的）
