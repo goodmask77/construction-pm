@@ -1094,6 +1094,10 @@ export default async function handler(req, res) {
     const rosterG = (await kvGet('sp_crew_kb_roster')) || { people: [] }
     const pG = (rosterG.people || []).find(p2 => p2.name === String(gb.name || '').trim() && !p2.endDate)
     if (!pG) return res.status(404).json({ ok: false, error: '名冊裡找不到這個人（先在主 App 名冊新增）' })
+    // 首次操作落地（張良 2026-09-24「刪除沒反應」根因：沒人標記時名單=在職全員fallback，刪不存在的標記當然沒反應）
+    // → 第一次增刪先把「目前顯示的全員名單」寫成正式標記，之後增刪才有東西可動
+    const alive = (rosterG.people || []).filter(p2 => !p2.endDate && (p2.status || '在職') !== '離職')
+    if (!alive.some(p2 => p2.gd)) alive.forEach(p2 => { p2.gd = 1 })
     if (gb.op === 'add') pG.gd = 1
     else if (gb.op === 'del') delete pG.gd
     else return res.status(400).json({ ok: false })
