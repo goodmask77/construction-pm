@@ -2,6 +2,7 @@
  {
   "date": "2026-09-24",
   "items": [
+   "單色線條icon+去彩emoji v3.4.9(張良2026-09-24「小圖再一致、不要彩色emoji」)：①TAB_ICONS=12顆手刻stroke SVG(同Beach Ops線條風,currentColor跟字色走)——側欄/分頁/⚙️/🔔/打卡/更新鈕全換 ②applyTabs改innerHTML=icon+文字並stripEmoji(自訂分頁名帶emoji也剝掉) ③27處標題/區塊/upd文案的彩色emoji拿掉(今日事項/節奏表/SOP/排行榜/採購/會議/班表/回饋/菜單/任務中心等) ④今日事項列emoji bullet移除 ⑤hint字級11.5→12、tabs按鈕flex含icon間距",
    "GD介面換Beach Ops皮 v3.4.8(張良2026-09-24)：/prep全站視覺對齊beachops——色板(bg#F2F6FA/主藍#1677D9漸層#2493EF→#1266C8/深藍墨#0E2A47/線#E2E9F2)、字型系統PingFang+字重800、卡片radius16淡影、分頁與.mini改膠囊(active=藍漸層+光暈)、表格淡格線、間距放大；桌機≥920px=左側欄版型(分頁固定左欄216px active漸層,內容右移max1200)；類名全不動純換皮零行為變更",
    "參考店1/2全面退役 v3.4.7(張良2026-09-24「刪除相關設定及數據不用再抓」)：①刪api/_ichef.js+joya-intraday/mail-sync的syncIchef呼叫(停抓) ②Vercel env六個ICHEF_S1/S2_*已刪+本機.env.local清掉 ③?ichefpurge=管理金鑰一次性DELETE sp_finance_pm_ichef——已執行,數據刪除 ④Finance.jsx移除pm_ichef讀取/訂閱(N欄v3.4.6已下架);要復活得重新拿憑證+重建抓取",
    "財務日表N欄下架 v3.4.6(張良2026-09-24)：hasExt寫死false——參考店只剩一間沒對照意義;iCHEF資料照抓留庫,要恢復改回原判斷式即可",
