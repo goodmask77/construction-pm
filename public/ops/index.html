@@ -1390,7 +1390,7 @@ function shiftRender(){
      <button class="mini" onclick="shiftNav(-1)">‹</button><b style="font-size:15px">${shiftYm}</b><button class="mini" onclick="shiftNav(1)">›</button>
      ${meN?`<button class="mini on" style="margin-left:auto;padding:8px 16px" onclick="shiftForm()">＋ 排班</button>`:''}
    </div>
-   <div style="background:#fff;border:1.5px solid var(--line);border-radius:10px;padding:7px 11px;margin-bottom:8px;font-size:12.5px"><b>👥 GD 人員</b>：${(d.names||[]).map(n=>`<span style="border:1px solid var(--line);border-radius:8px;padding:1px 8px;margin-right:4px;white-space:nowrap;display:inline-block;margin-top:2px">${n}</span>`).join('')||'—'} <span class="hint">（在主 App 名冊點名字旁的「GD」標記管理；排班/任務/回饋的選人都用這份）</span></div>
+   <div style="background:#fff;border:1.5px solid var(--line);border-radius:10px;padding:7px 11px;margin-bottom:8px;font-size:12.5px"><b>👥 GD 人員</b>：${(d.names||[]).map(n=>`<span style="border:1px solid var(--line);border-radius:8px;padding:1px 4px 1px 8px;margin-right:4px;white-space:nowrap;display:inline-block;margin-top:2px">${n}${meN?` <span style="cursor:pointer;color:var(--red);font-weight:800" title="移出 GD 人員" onclick="gdStaffOp('del','${n}')">✕</span>`:''}</span>`).join('')||'—'} ${meN?`<button class="mini" style="padding:2px 10px" onclick="gdStaffAdd()">＋ 加人</button>`:''} <span class="hint">（＝主 App 名冊的 GD 標記，兩邊同步；排班/任務/回饋的選人都用這份）</span></div>
    <div class="hint" style="margin-bottom:10px">工時＝打卡配對（只打上下班各一次時，扣掉班表的休息分鐘）；遲到寬限 5 分。加班口徑同薪資引擎：前 2 小時 ×1.34、之後 ×1.67（勞基法§24）；單日＞12h、月加班＞46h、連上 7 天會標紅（§32／§36）。試算參考用，正式發薪以人工核定為準。</div>`
   // 📅 一週班表（張良 2026-09-22：崗位×星期——每格=人名+時間）
   if (!window._shiftWk) { const t0 = new Date(todayTpe()); t0.setDate(t0.getDate() - ((t0.getDay()+6)%7)); window._shiftWk = t0.toISOString().slice(0,10) }
@@ -1399,7 +1399,7 @@ function shiftRender(){
   const wkEnts = d.sched.filter(x=>wkDays.includes(x.date))
   const posList = [...new Set(wkEnts.map(x=>x.pos||'未分崗'))]
   h += `<div style="display:flex;gap:8px;align-items:center;margin:2px 0 6px">
-    <span style="font-weight:900">🗓 一週班表</span>
+    <span style="font-weight:900">🗓 一週班表</span>${meN?`<button class="mini" style="padding:3px 10px" onclick="shiftPosEdit()">⚙️ 崗位</button>`:''}
     <button class="mini" onclick="shiftWkNav(-1)">‹</button><span class="hint" style="font-weight:800">${wkDays[0].slice(5)} ~ ${wkDays[6].slice(5)}</span><button class="mini" onclick="shiftWkNav(1)">›</button>
   </div>
   <div class="scroll" style="margin-bottom:12px"><table><thead><tr><th style="text-align:left;position:sticky;left:0;background:#F1F6F9;z-index:2">崗位</th>${wkDays.map((dt,i)=>`<th style="${dt===today?'color:var(--primary)':''}">${dt.slice(5)}<br>（${wdN[i]}）</th>`).join('')}</tr></thead><tbody>`
@@ -1453,7 +1453,7 @@ function shiftForm(id){
     <div style="font-weight:900;margin-bottom:10px">${it?'✏️ 編輯':'📅 新增'}排班</div>
     <div style="display:grid;grid-template-columns:64px 1fr;gap:8px;align-items:center;font-size:13px">
       <span>夥伴</span><span><input id="shName" list="shNames" value="${it?it.name:''}" placeholder="名字" style="${ip};width:100%"><datalist id="shNames">${(d.names||[]).map(n=>`<option>${n}</option>`).join('')}</datalist></span>
-      <span>崗位</span><span><input id="shPos" list="shPoss" value="${it?(it.pos||''):''}" placeholder="例：炸台/吧檯/外場（可空）" style="${ip};width:100%"><datalist id="shPoss">${[...new Set((d.sched||[]).map(x=>x.pos).filter(Boolean))].map(n=>`<option>${n}</option>`).join('')}</datalist></span>
+      <span>崗位</span><span><input id="shPos" list="shPoss" value="${it?(it.pos||''):''}" placeholder="例：炸台/吧檯/外場（可空）" style="${ip};width:100%"><datalist id="shPoss">${(d.posList&&d.posList.length?d.posList:[...new Set((d.sched||[]).map(x=>x.pos).filter(Boolean))]).map(n=>`<option>${n}</option>`).join('')}</datalist></span>
       <span>日期</span><input id="shDate" type="date" value="${it?it.date:todayTpe()}" style="${ip}">
       <span>上班</span><span>${t24c('shS', it?it.start:'11:00')}</span>
       <span>下班</span><span>${t24c('shE', it?it.end:'20:00')}</span>
@@ -2074,6 +2074,42 @@ async function fbjDel(id){
   const r = await fetch('/api/mail-sync?fbj=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ op:'del', id, token: TK() }) })
   const d = await r.json().catch(()=>null)
   if (d && d.ok) fbLoad(window._fbD.date); else alert((d&&d.error)||'失敗')
+}
+// ── 👥 GD 人員直編＋⚙️ 崗位清單（張良 2026-09-24：班表頁直接管理，跟主 App 名冊 GD 標記同一份）──
+async function gdStaffOp(op, name){
+  if (op==='del' && !confirm(`把 ${name} 移出 GD 人員？（排班/任務/回饋選單就不會出現他；名冊本體不動）`)) return
+  const r = await fetch('/api/mail-sync?gdstaff=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ op, name, token: TK() }) })
+  const d = await r.json().catch(()=>null)
+  if (d && d.ok) shiftLoad(); else alert((d&&d.error)||'失敗')
+}
+function gdStaffAdd(){
+  const d = window._shiftD
+  const pool = (d.namesAll||[]).filter(n=>!(d.names||[]).includes(n))
+  if (!pool.length) { alert('名冊在職的人都已經在 GD 人員裡了；新人先到主 App 名冊建檔'); return }
+  const ov = document.createElement('div'); ov.id='gsOv'
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(16,24,43,.45);z-index:50;display:flex;align-items:center;justify-content:center;padding:16px'
+  ov.innerHTML = `<div style="background:#fff;border-radius:14px;max-width:360px;width:100%;padding:16px" onclick="event.stopPropagation()">
+    <div style="font-weight:900;margin-bottom:8px">＋ 加入 GD 人員</div>
+    <select id="gsSel" style="width:100%;border:1px solid var(--line);border-radius:8px;padding:8px;font-size:14px;margin-bottom:10px">${pool.map(n=>`<option>${n}</option>`).join('')}</select>
+    <div class="hint" style="margin-bottom:8px">名單來自主 App 名冊在職夥伴；加入後排班/任務/回饋選單都會出現。</div>
+    <div style="display:flex;gap:8px;justify-content:flex-end"><button class="mini" style="padding:9px 12px" onclick="document.getElementById('gsOv').remove()">取消</button>
+    <button class="mini on" style="padding:9px 18px" onclick="gdStaffGo()">加入</button></div></div>`
+  ov.onclick = () => ov.remove()
+  document.body.appendChild(ov)
+}
+function gdStaffGo(){
+  const v = (document.getElementById('gsSel')||{}).value||''
+  const o = document.getElementById('gsOv'); if (o) o.remove()
+  if (v) gdStaffOp('add', v)
+}
+function shiftPosEdit(){
+  const d = window._shiftD
+  const cur = (d.posList||[]).join('、')
+  const v = prompt('崗位清單（用「、」分隔，可增刪改名；排班時的崗位選單用這份）', cur || '炸台、吧檯、外場、廚房')
+  if (v == null) return
+  const list = v.split(/[、,，]/).map(s2=>s2.trim()).filter(Boolean)
+  fetch('/api/mail-sync?shiftset=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ op:'pos', list, token: TK() }) })
+    .then(r=>r.json()).then(d2=>{ if(d2&&d2.ok) shiftLoad(); else alert((d2&&d2.error)||'失敗') })
 }
 load('ground')
 </script>

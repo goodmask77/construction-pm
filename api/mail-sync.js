@@ -1084,6 +1084,23 @@ export default async function handler(req, res) {
     await kvPut('sp_finance_pm_notify', doc, '通知開關(' + whoN2.name + ')')
     return res.status(200).json({ ok: true, cfg: doc })
   }
+  // ── 👥 GD 人員直編（張良 2026-09-24：班表頁加人/移除＝改名冊 p.gd 標記，主App同步）：POST ?gdstaff= {op:'add'|'del', name, token}
+  if (req.method === 'POST' && req.query?.gdstaff) {
+    const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
+    if (!ok2 || String(req.query.gdstaff) !== ok2) return res.status(403).json({ ok: false })
+    let gb = {}
+    try { gb = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
+    const whoG = await sopWho(gb.token)
+    if (!whoG) return res.status(403).json({ ok: false, error: '要先跟 DD 說「綁定GD」' })
+    const rosterG = (await kvGet('sp_crew_kb_roster')) || { people: [] }
+    const pG = (rosterG.people || []).find(p2 => p2.name === String(gb.name || '').trim() && !p2.endDate)
+    if (!pG) return res.status(404).json({ ok: false, error: '名冊裡找不到這個人（先在主 App 名冊新增）' })
+    if (gb.op === 'add') pG.gd = 1
+    else if (gb.op === 'del') delete pG.gd
+    else return res.status(400).json({ ok: false })
+    await kvPut('sp_crew_kb_roster', rosterG, 'GD人員' + gb.op + '(' + whoG.name + ')')
+    return res.status(200).json({ ok: true })
+  }
   // ── 🔖 分頁自訂（張良 2026-09-22：分頁名稱＋排序可編輯，全裝置同步；pm_prep_tabs=UI設定）──
   if (req.query?.tabcfg) {
     const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
@@ -1344,7 +1361,9 @@ export default async function handler(req, res) {
     try { pchs = await pj2.listPunches('sp_crew_pch_' + ym.replace('-', '')) } catch (_) {}
     const schedL = ((sd || {}).list || []).filter(x => String(x.date || '').startsWith(ym))
     const namesU = [...new Set([...gdNames(rosterS), ...((((sd || {}).list) || []).map(x => x.name)), ...pchs.map(p => p.name)])].filter(Boolean)
-    return res.status(200).json({ ok: true, ym, sched: schedL, punches: pchs.map(p => ({ name: p.name, ts: p.ts, dir: p.dir, src: p.src })), names: namesU, me: meS ? { name: meS.name } : null })
+    const namesAll = (((rosterS || {}).people) || []).filter(p2 => !p2.endDate && (p2.status || '在職') !== '離職').map(p2 => p2.name).filter(Boolean)
+    const posList = [...new Set([...(((sd || {}).pos) || []), ...(((sd || {}).list) || []).map(x => x.pos).filter(Boolean)])]
+    return res.status(200).json({ ok: true, ym, sched: schedL, punches: pchs.map(p => ({ name: p.name, ts: p.ts, dir: p.dir, src: p.src })), names: namesU, namesAll, posList, me: meS ? { name: meS.name } : null })
   }
   if (req.method === 'POST' && req.query?.shiftset) {
     const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
@@ -1361,6 +1380,8 @@ export default async function handler(req, res) {
       doc.list = [...(doc.list || []).filter(x => x.id !== it.id), it].sort((a, b) => (a.date + a.start).localeCompare(b.date + b.start)).slice(-1000)
     } else if (sb2.op === 'del') {
       doc.list = (doc.list || []).filter(x => x.id !== sb2.id)
+    } else if (sb2.op === 'pos') { // 崗位清單管理（張良 2026-09-24：班表頁直接編輯）
+      doc.pos = (Array.isArray(sb2.list) ? sb2.list : []).map(s3 => String(s3).trim().slice(0, 20)).filter(Boolean).slice(0, 30)
     } else return res.status(400).json({ ok: false })
     await kvPut('sp_finance_pm_shift_g', doc, '班表' + sb2.op + '(' + whoS.name + ')')
     return res.status(200).json({ ok: true })
