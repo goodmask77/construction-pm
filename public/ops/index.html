@@ -828,7 +828,7 @@ function taskRender(){
   <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px">
     <h2 style="margin:0">🛠 任務中心 <span class="hint">${open.length} 件待辦・共 ${all.length} 件</span></h2>
     <input id="tkQ" value="${q.replace(/"/g,'&quot;')}" oninput="tkSearch(this)" placeholder="🔍 搜尋任務…" style="margin-left:auto;border:1px solid var(--line);border-radius:9px;padding:7px 11px;font-size:13px;width:150px">
-    <span style="display:inline-flex;border:1.5px solid var(--primary);border-radius:9px;overflow:hidden">${vtab('🏠 今日','today')}${vtab('依大項','cat')}${vtab('看板','board')}${vtab('清單','list')}</span>
+    <span style="display:inline-flex;border:1.5px solid var(--primary);border-radius:9px;overflow:hidden">${vtab('🏠 今日','today')}${vtab('依大項','cat')}${vtab('依負責人','owner')}${vtab('看板','board')}${vtab('清單','list')}</span>
   </div>
   ${meN?`<div style="display:flex;gap:8px;margin-bottom:12px">
     <input id="tkQuick" placeholder="隨手丟一句任務…（先進收件匣，之後再整理）按 Enter 新增" onkeydown="tkQuickKey(event)" style="flex:1;border:1.5px solid var(--line);border-radius:10px;padding:10px 12px;font-size:13.5px">
@@ -872,6 +872,13 @@ function taskRender(){
       })
       h += `</div>`
     }
+  } else if (taskView === 'owner') { // 依負責人（張良 2026-09-24）：每人一欄＋未指派
+    const owners = [...new Set(open.filter(x=>x.claimBy).map(x=>x.claimBy))].sort()
+    const cols = [...owners.map(o=>[`👤 ${o}`, open.filter(x=>x.claimBy===o)]), ['❔ 未指派', open.filter(x=>!x.claimBy)]]
+    h += `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:10px;align-items:start">`
+    cols.forEach(([lb, arr])=>{ if (!arr.length && lb!=='❔ 未指派') return
+      h += `<div style="background:var(--soft);border:1px solid var(--line);border-radius:12px;padding:8px"><div style="font-weight:900;color:var(--pdark);padding:2px 6px 6px">${lb} <span class="hint">${arr.length}</span></div>${arr.sort((a,b)=>String(a.due||'9999').localeCompare(String(b.due||'9999'))).map(x=>tkMini(x,meN,d.me)).join('')||'<div class="mut" style="font-size:12px;padding:4px">—（卡片按 👤 指派給人）</div>'}</div>` })
+    h += `</div>`
   } else if (taskView === 'board') {
     const cols = [['📥 待辦', open.filter(x=>x.status==='open'&&!x.claimBy)], ['🔧 處理中', doing], ['🕐 待審核', pend], ['✅ 已完成', doneL.slice(0,10)]]
     h += `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;align-items:start">`
