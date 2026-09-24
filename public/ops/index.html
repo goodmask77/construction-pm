@@ -277,6 +277,9 @@ async function rHide(kEnc, hideV){
 const TK = () => localStorage.getItem('prepToken') || ''
 let sopData = null, sopPhotos = {}, sopEditSt = null
 let sopPin = new Set(JSON.parse(localStorage.getItem('sopPin')||'[]')) // 📌 釘選的站（存本機＝每個人自己的）
+let sopColl = new Set(JSON.parse(localStorage.getItem('sopColl')||'[]')) // ⏷ 收合的站（張良 2026-09-24：可全部收合打開；存本機）
+function sopCollT(st){ if (sopColl.has(st)) sopColl.delete(st); else sopColl.add(st); localStorage.setItem('sopColl', JSON.stringify([...sopColl])); sopRender() }
+function sopCollAll(sts2){ const allC = sts2.every(s2=>sopColl.has(s2)); if (allC) sts2.forEach(s2=>sopColl.delete(s2)); else sts2.forEach(s2=>sopColl.add(s2)); localStorage.setItem('sopColl', JSON.stringify([...sopColl])); sopRender() }
 let sopFilter = localStorage.getItem('sopFilter') || ''
 function sopFset(v){ sopFilter = v; localStorage.setItem('sopFilter', v); sopRender() }
 function sopPinT(st){ if (sopPin.has(st)) sopPin.delete(st); else sopPin.add(st); localStorage.setItem('sopPin', JSON.stringify([...sopPin])); if (!sopPin.size && sopFilter==='pin') sopFset('all'); else sopRender() } // itemId -> dataURL（待送出的照片）；編輯中的站
@@ -304,19 +307,26 @@ function sopRender(){
   if (wd === 0 || wd === 6) s += `<div class="hint" style="margin-bottom:8px">今天公休——這是清單預覽，打卡留給營業日。</div>`
   // 站別篩選＋📌釘選（張良 2026-09-21：SOP 站多，每人點自己要看的；釘選存在自己手機）
   const view = sopFilter || (sopPin.size ? 'pin' : 'all')
+  const shown0 = sts.filter(st2 => view==='all' ? true : (view==='pin' ? sopPin.has(st2) : st2===view))
+  const allColl = shown0.length > 0 && shown0.every(s2=>sopColl.has(s2))
   const chipS = (on) => `border:1px solid ${on?'var(--primary)':'var(--line)'};background:${on?'var(--primary)':'#fff'};color:${on?'#fff':'var(--muted)'};border-radius:9px;padding:4px 10px;font-size:12.5px;font-weight:800;cursor:pointer;white-space:nowrap`
   s += `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px;align-items:center">
     ${sopPin.size?`<span style="${chipS(view==='pin')}" onclick="sopFset('pin')">📌 我的釘選（${sopPin.size}）</span>`:''}
     <span style="${chipS(view==='all')}" onclick="sopFset('all')">全部</span>
     ${sts.map(st2=>`<span style="${chipS(view===st2)};display:inline-flex;gap:5px;align-items:center"><span onclick="sopFset('${st2}')">${st2}</span><span onclick="sopPinT('${st2}')" title="釘選/取消釘選" style="opacity:${sopPin.has(st2)?1:.35}">📌</span></span>`).join('')}
+    <span style="${chipS(false)};margin-left:auto" onclick="sopCollAll(${JSON.stringify(shown0).replace(/"/g,'&quot;')})">${allColl?'⏵ 全部展開':'⏷ 全部收合'}</span>
   </div>`
   const shown = sts.filter(st2 => view==='all' ? true : (view==='pin' ? sopPin.has(st2) : st2===view))
   if (!shown.length) s += `<div class="mut" style="font-size:13px">釘選的站不見了（可能被改名）——按「全部」重新釘。</div>`
   shown.forEach(st => {
     const canEd = me && me.canEdit
     const stIss = (sopData.issues||[]).filter(x => x.st === st)
-    s += `<div style="background:var(--psoft);border-radius:8px;padding:4px 10px;font-weight:900;color:var(--pdark);font-size:12.5px;margin:10px 0 4px">${st}
-      <span style="float:right"><button class="mini" style="color:#A85C26" onclick="sopReport('${st}')">⚠️ 回報</button></span></div>`
+    const stItems = items.filter(i => i.st === st)
+    const stDone = stItems.filter(i => log[i.id] && log[i.id].done).length
+    const coll = sopColl.has(st)
+    s += `<div onclick="sopCollT('${st}')" style="cursor:pointer;background:var(--psoft);border-radius:8px;padding:4px 10px;font-weight:900;color:var(--pdark);font-size:12.5px;margin:10px 0 4px">${coll?'⏵':'⏷'} ${st} <span class="hint" style="font-weight:700">${stDone}/${stItems.length}${stIss.length?`・⚠️${stIss.length}`:''}</span>
+      <span style="float:right" onclick="event.stopPropagation()"><button class="mini" style="color:#A85C26" onclick="sopReport('${st}')">⚠️ 回報</button></span></div>`
+    if (coll) return
     stIss.forEach(x => {
       const pend = x.status === 'pending'
       s += `<div style="background:${pend?'#FFF8E6':'#FCEAEA'};border:1px solid ${pend?'#E8D089':'#F0B8B1'};border-radius:8px;padding:8px 10px;margin:4px 0;font-size:12.5px">
