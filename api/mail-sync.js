@@ -766,7 +766,9 @@ export default async function handler(req, res) {
     const storeQ = String(req.query.store || 'ground') === 'abeach' ? 'abeach' : 'ground'
     const skOf2 = (n) => /groun/i.test(n || '') ? 'ground' : 'abeach'
     const [posDoc, aliasDoc2, hiddenDoc2, pricesDoc2] = await Promise.all([kvGet('sp_finance_pm_pos'), kvGet('sp_finance_pm_pos_alias'), kvGet('sp_finance_pm_pos_hidden'), kvGet('sp_finance_pm_pos_prices')])
-    const entries = ((posDoc || {}).entries || []).filter(e => skOf2(e.store) === storeQ).sort((a, b) => (a.date < b.date ? -1 : 1))
+    // 排除「盤中未完整日」（張良 2026-09-24 抓包：今天的半天資料 11:00 起混進統計，把當天星期的平均拉低
+    // → 看板白天數字一直變、跟 09:30 備料訊息對不上。統計只吃打烊後的正式日結；日表那段照樣顯示今天盤中）
+    const entries = ((posDoc || {}).entries || []).filter(e => skOf2(e.store) === storeQ && !e.intraday).sort((a, b) => (a.date < b.date ? -1 : 1))
     if (!entries.length) return res.status(200).json({ ok: true, store: storeQ, empty: true })
     const anchor = entries[entries.length - 1].date
     const dOf = (base, off) => { const d0 = new Date(base + 'T00:00:00Z'); d0.setUTCDate(d0.getUTCDate() + off); return d0.toISOString().slice(0, 10) }
@@ -1693,7 +1695,7 @@ export default async function handler(req, res) {
     const [docI, defI] = await Promise.all([kvGet('sp_finance_pm_sop_issues'), kvGet('sp_finance_pm_sop_def')])
     const dI = docI || { list: [] }
     const itI = (dI.list || []).find(x => x.id === bi.id)
-    if (!itI) return res.status(404).json({ ok: false })
+    if (bi.op !== 'new' && !itI) return res.status(404).json({ ok: false }) // 新增本來就沒 id——別擋（張良 2026-09-24「無法建立」抓包：404 guard 放在 new 分支前害新增永遠失敗）
     const apprI = (((defI || {}).ground || {}).approvers || ['張良瑋'])
     if (bi.op === 'new') { // 直接新增任務（張良 2026-09-22：比照任務中心——標題/類別/負責人/時間；checklist 建卡後用 ckadd）
       const v = bi.val || {}

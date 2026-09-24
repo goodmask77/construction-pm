@@ -137,17 +137,19 @@ export default async function handler(req, res) {
     try { const cur = await kvGet('sp_team_pm_activity'); const arr = Array.isArray(cur) ? cur : []; await kvSet('sp_team_pm_activity', [{ ts: now, user: 'Claude(補建)', action: '新增', detail: `補建任務「${title}」（DD 假完成翻車補救，備註放連結）` }, ...arr].slice(0, 200)) } catch (_) {}
     return res.status(200).json({ ok: okw, cat: cat?.name || '收件匣', id })
   }
-  // 同一支 cron 跑三班：台北 8 點=早班（同步＋速報＋任務簡報）、9:30=備料班（發 GROUN:D Family 群）、中午後=晚班（只追未完成任務）
+  // 同一支 cron 跑三班：台北 8 點=早班（同步＋速報＋任務簡報）、21:00=備料班（發 GROUN:D Family 群「明天」的量）、17:30=晚班（只追未完成任務）
   const tpeHour = Number(new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Taipei', hour: '2-digit', hour12: false }).format(new Date()))
-  const evening = req.query?.mode === 'evening' || (req.query?.mode !== 'morning' && req.query?.mode !== 'prep' && tpeHour >= 12)
-  // ── 每日 09:30 備料訊息（張良 2026-09-21：DD 在 GROUN:D Family 群發「今天各站備多少」）──
-  // cron 30 1 * * *（台北 09:30）；手動試發：?mode=prep&force=<MENU_PROBE_KEY>[&wd=1..5]
-  if (req.query?.mode === 'prep' || (!req.query?.mode && !req.query?.dry && tpeHour === 9)) {
+  const evening = req.query?.mode === 'evening' || (req.query?.mode !== 'morning' && req.query?.mode !== 'prep' && tpeHour >= 12 && tpeHour !== 21)
+  // ── 每晚 21:00 備料訊息（張良 2026-09-24 改晚上發：晚上先知道「明天」各站備多少）──
+  // cron 0 13 * * 0-4（台北週日〜週四 21:00 → 對應週一〜週五的量）；手動試發：?mode=prep&force=<MENU_PROBE_KEY>[&wd=1..5]
+  if (req.query?.mode === 'prep' || (!req.query?.mode && !req.query?.dry && tpeHour === 21)) {
     const mk = (process.env.MENU_PROBE_KEY || '').trim()
     const forced = mk && String(req.query?.force || '') === mk
-    if (!forced && tpeHour !== 9) return res.status(200).json({ ok: false, skipped: '非 09:30 時段（試發要帶 force 金鑰）' })
+    if (!forced && tpeHour !== 21) return res.status(200).json({ ok: false, skipped: '非 21:00 時段（試發要帶 force 金鑰）' })
+    // 先把「今天」的正式日結收進來（打烊 19:00 後喬亞已是最終值）→ 訊息數字＝明天看板數字，100% 一致
+    try { await fetch('https://ground-pm.vercel.app/api/mail-sync?days=3') } catch (_) {}
     const tpd = new Date(Date.now() + 8 * 3600e3)
-    let wd = Number(req.query?.wd); if (!(wd >= 1 && wd <= 5)) wd = tpd.getUTCDay()
+    let wd = Number(req.query?.wd); if (!(wd >= 1 && wd <= 5)) wd = (tpd.getUTCDay() + 1) % 7 // 預設＝「明天」星期幾
     if (wd === 0 || wd === 6) return res.status(200).json({ ok: true, skipped: '週末公休不發備料' })
     if (!TOKEN) return res.status(200).json({ ok: false, skipped: '未設 LINE token' })
     const st = (await kvGet('pm_settings')) || {}
@@ -159,7 +161,7 @@ export default async function handler(req, res) {
     const rr = await fetch('https://ground-pm.vercel.app/api/mail-sync?opsboard=' + encodeURIComponent(okey) + '&store=ground')
     const dd = await rr.json().catch(() => null)
     if (!dd || !dd.ok || !Array.isArray(dd.prep)) return res.status(200).json({ ok: false, error: '拿不到備料資料' })
-    const L = [`🍳 早安！今天（週${'日一二三四五六'[wd]}）備料建議 👇`]
+    const L = [`🍳 晚上好！明天（週${'日一二三四五六'[wd]}）備料建議 👇`]
     let g0 = ''
     for (const p of dd.prep) {
       if (p.grp !== g0) { g0 = p.grp; L.push(`▍${g0}`) }
