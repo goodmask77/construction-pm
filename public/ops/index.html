@@ -783,29 +783,104 @@ async function lbRate(el, id, aspect, facet){
   if (rl.length && rl.every(o=>o.n >= window._lbD.facets.length)) lbRender() // 全評完→自動往下封存
 }
 function lbSkipFn(id){ lbSkip.add(id); localStorage.setItem('lbSkip', JSON.stringify([...lbSkip])); lbRender() }
-// 🛠 任務看板（未完成的都在這；含階段性 checklist）
+// 🛠 任務中心（張良 2026-09-24「做成跟主App任務中心一樣」：搜尋/快速新增/今日儀表板/依大項/看板/清單/各大項一眼）
+let taskView = localStorage.getItem('taskView') || 'today'
+let taskQ = ''
+function taskVset(v){ taskView = v; localStorage.setItem('taskView', v); taskRender() }
+function tkSearch(el){ taskQ = el.value; taskRender(); const el2 = document.getElementById('tkQ'); if (el2){ el2.focus(); el2.setSelectionRange(el2.value.length, el2.value.length) } }
+function tkQuickKey(ev){ if (ev.key === 'Enter') tkQuickAdd() }
+async function tkQuickAdd(){
+  const el = document.getElementById('tkQuick'); const v = (el&&el.value||'').trim()
+  if (!v) return
+  const r = await fetch('/api/mail-sync?sopissue=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ op:'new', val:{ text:v, st:'收件匣' }, token: TK() }) })
+  const d = await r.json().catch(()=>null)
+  if (d && d.ok) { el.value=''; await lbFetch(); taskRender() } else alert((d&&d.error)||'新增失敗（要先綁定）')
+}
+function tkMini(x, meN, me){ // 小卡（今日/看板/清單共用）
+  const done = x.status==='done'
+  return `<div style="background:#fff;border:1.5px solid ${x.flag?'#E8B931':done?'#BBE3CC':'var(--line)'};border-radius:10px;padding:8px 10px;font-size:12.5px;margin-bottom:6px">
+    <div style="display:flex;gap:7px;align-items:flex-start">
+      ${meN&&!done?`<input type="checkbox" style="margin-top:2px;width:15px;height:15px" onclick="this.checked=false;sopResolve('${x.id}')" title="完成（送審核）">`:(done?'<span>✅</span>':'')}
+      <div style="flex:1;min-width:0"><b style="${done?'color:var(--green)':''}">${x.flag?'🚩 ':''}${x.text||'（附件）'}</b>
+      <div class="hint">${x.st||''}${x.due?`・<span style="color:var(--red);font-weight:700">📅 ${x.due}</span>`:''}${x.claimBy?`・👤 ${x.claimBy}`:''}${x.status==='pending'?'・🕐 待審核':''}${(x.ck||[]).length?`・☑ ${(x.ck||[]).filter(c=>c.done).length}/${x.ck.length}`:''}</div></div>
+      ${meN&&!done?`<span style="cursor:pointer" title="指派負責人" onclick="taskOwn('${x.id}')">👤</span>`:''}
+    </div></div>`
+}
 function taskRender(){
   const d = window._lbD
   if (!d) { app.innerHTML = '<div class="err">讀不到任務資料</div>'; return }
   if (curStore !== 'task') return
-  document.getElementById('upd').textContent = '🛠 任務看板・完成送審核，核准後到排行榜評星'
+  document.getElementById('upd').textContent = '🛠 任務中心・完成送審核，核准後到排行榜評星'
   const meN = d.me && d.me.name
-  const open = (d.issues||[]).filter(x=>x.status!=='done')
-  let h = `<section><h2>🛠 任務看板 <span class="hint">${meN?'🙋認領計時・📝加步驟・🚩標記・⏰排時間・👤指派':'未綁定：'+BIND_HINT}</span></h2>
-  ${meN?`<div style="margin-bottom:10px"><button class="mini on" style="padding:9px 18px" onclick="taskNew()">＋ 新增任務</button></div>`:''}`
-  if (!open.length) h += `<div class="mut">沒有未完成的任務——在店面分頁「⚠️ 回報」新增</div>`
-  else {
-    const stCols = [...new Set(open.map(x=>x.st))]
-    const ord = x => (x.flag?0:100) + (x.claimBy?1:2) + (x.status==='pending'?3:0)
-    h += `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(270px,1fr));gap:10px;align-items:start">`
-    stCols.forEach(st=>{
-      const cards = open.filter(x=>x.st===st).sort((a,b)=>ord(a)-ord(b)||(b.ts<a.ts?-1:1))
-      h += `<div style="background:var(--soft);border:1px solid var(--line);border-radius:12px;padding:8px">
-        <div style="font-weight:900;color:var(--pdark);padding:2px 6px 6px">${st} <span class="hint">${cards.length} 未結</span></div>`
-      cards.forEach(x=>{ h += taskCard(x, meN, d.me) })
-      h += `</div>`
+  const all0 = d.issues || []
+  const q = taskQ.trim()
+  const all = q ? all0.filter(x=>((x.text||'')+(x.st||'')+(x.claimBy||'')+(x.by||'')).includes(q)) : all0
+  const open = all.filter(x=>x.status!=='done'), doneL = all.filter(x=>x.status==='done')
+  const today = todayTpe(), md = today.slice(5)
+  const isToday = x => x.due && (x.due.includes(today)||x.due.includes(md)||/今天|今日/.test(x.due))
+  const isOver = x => x.due && !isToday(x) && /\d{4}-\d{2}-\d{2}/.test(x.due) && x.due.slice(0,10) < today
+  const must = [...open.filter(isOver), ...open.filter(isToday)]
+  const flagged = open.filter(x=>x.flag)
+  const doing = open.filter(x=>x.status==='open'&&x.claimBy)
+  const pend = open.filter(x=>x.status==='pending')
+  const vtab = (lb,v) => `<button style="border:none;padding:6px 13px;font-size:12.5px;font-weight:800;cursor:pointer;${taskView===v?'background:var(--primary);color:#fff':'background:#fff;color:var(--primary)'}" onclick="taskVset('${v}')">${lb}</button>`
+  let h = `<section>
+  <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px">
+    <h2 style="margin:0">🛠 任務中心 <span class="hint">${open.length} 件待辦・共 ${all.length} 件</span></h2>
+    <input id="tkQ" value="${q.replace(/"/g,'&quot;')}" oninput="tkSearch(this)" placeholder="🔍 搜尋任務…" style="margin-left:auto;border:1px solid var(--line);border-radius:9px;padding:7px 11px;font-size:13px;width:150px">
+    <span style="display:inline-flex;border:1.5px solid var(--primary);border-radius:9px;overflow:hidden">${vtab('🏠 今日','today')}${vtab('依大項','cat')}${vtab('看板','board')}${vtab('清單','list')}</span>
+  </div>
+  ${meN?`<div style="display:flex;gap:8px;margin-bottom:12px">
+    <input id="tkQuick" placeholder="隨手丟一句任務…（先進收件匣，之後再整理）按 Enter 新增" onkeydown="tkQuickKey(event)" style="flex:1;border:1.5px solid var(--line);border-radius:10px;padding:10px 12px;font-size:13.5px">
+    <button class="mini on" style="padding:10px 18px;white-space:nowrap" onclick="taskNew()">＋ 新增</button>
+  </div>`:`<div class="hint" style="margin-bottom:10px">未綁定：${BIND_HINT}</div>`}`
+  if (taskView === 'today') {
+    const stat = (n,lb,c) => `<div style="flex:1;min-width:130px;background:#fff;border:1.5px solid var(--line);border-radius:12px;padding:12px 14px"><div style="font-size:24px;font-weight:900;color:${n?c:'var(--muted)'}">${n}</div><div class="hint" style="font-weight:700">● ${lb}</div></div>`
+    h += `<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px">${stat(must.length,'今天必處理','var(--red)')}${stat(flagged.length,'🚩 重點','#A85C26')}${stat(doing.length,'處理中','var(--pdark)')}${stat(pend.length,'待你審核','#A85C26')}</div>`
+    h += `<div style="background:var(--soft);border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin-bottom:12px">
+      <div style="font-weight:900;margin-bottom:6px;color:var(--red)">⊙ 今天必處理 <span class="hint">逾期與今天到期</span></div>
+      ${must.length?`<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:8px">${must.map(x=>tkMini(x,meN,d.me)).join('')}</div>`:'<div class="mut" style="font-size:13px">今天沒有到期任務 🎉（卡片按 ⏰排時間 就會排進來）</div>'}
+    </div>`
+    // 各大項一眼
+    const cats = [...new Set(all.map(x=>x.st||'一般'))]
+    h += `<div style="background:var(--soft);border:1px solid var(--line);border-radius:12px;padding:10px 12px"><div style="font-weight:900;margin-bottom:6px">▦ 各大項一眼 <span class="hint">完成度・今天・待審</span></div>`
+    cats.forEach(c=>{
+      const tot = all.filter(x=>(x.st||'一般')===c), dn = tot.filter(x=>x.status==='done').length
+      const tdN = tot.filter(x=>x.status!=='done'&&(isToday(x)||isOver(x))).length
+      const pdN = tot.filter(x=>x.status==='pending').length
+      const pct = tot.length?Math.round(dn/tot.length*100):0
+      h += `<div style="display:flex;gap:10px;align-items:center;padding:4px 0;font-size:12.5px">
+        <span style="width:90px;font-weight:800;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${c}</span>
+        <span style="flex:1;height:8px;background:#E3EAF2;border-radius:4px;overflow:hidden"><span style="display:block;height:100%;width:${pct}%;background:var(--primary)"></span></span>
+        <span style="width:36px;text-align:right;font-weight:800">${pct}%</span><span style="width:44px;text-align:right" class="hint">${dn}/${tot.length}</span>
+        <span style="width:52px;text-align:right;${tdN?'color:var(--red);font-weight:800':''}">今天 ${tdN}</span><span style="width:52px;text-align:right;${pdN?'color:#A85C26;font-weight:800':''}">待審 ${pdN}</span></div>`
     })
     h += `</div>`
+  } else if (taskView === 'cat') {
+    if (!open.length) h += `<div class="mut">沒有未完成的任務——上面丟一句就建立</div>`
+    else {
+      const stCols = [...new Set(open.map(x=>x.st))]
+      const ord = x => (x.flag?0:100) + (x.claimBy?1:2) + (x.status==='pending'?3:0)
+      h += `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(270px,1fr));gap:10px;align-items:start">`
+      stCols.forEach(st=>{
+        const cards = open.filter(x=>x.st===st).sort((a,b)=>ord(a)-ord(b)||(b.ts<a.ts?-1:1))
+        h += `<div style="background:var(--soft);border:1px solid var(--line);border-radius:12px;padding:8px">
+          <div style="font-weight:900;color:var(--pdark);padding:2px 6px 6px">${st} <span class="hint">${cards.length} 未結</span></div>`
+        cards.forEach(x=>{ h += taskCard(x, meN, d.me) })
+        if (meN) h += `<button class="mini" style="width:100%;border-style:dashed" onclick="taskNew('${st.replace(/'/g,'')}')">＋ 直接在此大項新增…</button>`
+        h += `</div>`
+      })
+      h += `</div>`
+    }
+  } else if (taskView === 'board') {
+    const cols = [['📥 待辦', open.filter(x=>x.status==='open'&&!x.claimBy)], ['🔧 處理中', doing], ['🕐 待審核', pend], ['✅ 已完成', doneL.slice(0,10)]]
+    h += `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;align-items:start">`
+    cols.forEach(([lb, arr])=>{ h += `<div style="background:var(--soft);border:1px solid var(--line);border-radius:12px;padding:8px"><div style="font-weight:900;color:var(--pdark);padding:2px 6px 6px">${lb} <span class="hint">${arr.length}</span></div>${arr.map(x=>tkMini(x,meN,d.me)).join('')||'<div class="mut" style="font-size:12px;padding:4px">—</div>'}</div>` })
+    h += `</div>`
+  } else { // 清單
+    const rows = [...open].sort((a,b)=>String(a.due||'9999').localeCompare(String(b.due||'9999')))
+    h += rows.map(x=>tkMini(x,meN,d.me)).join('') || `<div class="mut">沒有未完成的任務</div>`
+    if (doneL.length) h += `<details style="margin-top:8px"><summary class="hint" style="cursor:pointer;font-weight:800">✅ 已完成（${doneL.length}）</summary>${doneL.slice(0,20).map(x=>tkMini(x,meN,d.me)).join('')}</details>`
   }
   h += `</section>`
   app.innerHTML = h
@@ -1460,9 +1535,9 @@ function itemsRender(){
   el.innerHTML = s
 }
 // ── ＋新增任務／👤指派負責人（張良 2026-09-22：比照任務中心——類別(可新)/負責人/時間；步驟清單建卡後「＋加步驟」）──
-function taskNew(){
+function taskNew(preSt){
   const d = window._lbD
-  const cats = [...new Set((d.issues||[]).map(x=>x.st).filter(Boolean))]
+  const cats = [...new Set([...(d.issues||[]).map(x=>x.st).filter(Boolean), ...(preSt?[preSt]:[])])]
   const ov = document.createElement('div'); ov.id='tkOv'
   ov.style.cssText = 'position:fixed;inset:0;background:rgba(16,24,43,.45);z-index:50;display:flex;align-items:center;justify-content:center;padding:16px'
   const ip = 'width:100%;border:1px solid var(--line);border-radius:8px;padding:8px;font-size:14px;font-family:inherit;margin-bottom:6px'
@@ -1470,7 +1545,7 @@ function taskNew(){
     <div style="font-weight:900;margin-bottom:8px">🛠 新增任務</div>
     <textarea id="tkTxt" rows="2" placeholder="任務標題／要做什麼" style="${ip}"></textarea>
     <div class="hint">類別</div>
-    <select id="tkCat" style="${ip}" onchange="document.getElementById('tkCatNew').style.display=this.value==='__new'?'block':'none'">${cats.map(c=>`<option>${c}</option>`).join('')}<option value="__new">＋ 新類別…</option></select>
+    <select id="tkCat" style="${ip}" onchange="document.getElementById('tkCatNew').style.display=this.value==='__new'?'block':'none'">${cats.map(c=>`<option${preSt===c?' selected':''}>${c}</option>`).join('')}<option value="__new">＋ 新類別…</option></select>
     <input id="tkCatNew" placeholder="新類別名稱" style="${ip};display:${cats.length?'none':'block'}">
     <div class="hint">負責人（可先不指定，之後認領或👤指派）</div>
     <select id="tkOwn" style="${ip}"><option value="">— 不指定 —</option>${(d.names||[]).map(n=>`<option>${n}</option>`).join('')}</select>
