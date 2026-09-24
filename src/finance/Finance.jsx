@@ -1155,7 +1155,7 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
         const hasLinepay = paySum.linepay > 0; // 期間內完全沒有 LINE Pay（A Beach 沒開通）→ 整欄隱藏（張良 2026-09-01）
         // 「N」參考欄（張良 2026-09-01 兩間→2026-09-16 店1合約到期移除、店2改標N；只標代號不露店名）
         const extDays = posExt?.days || {};
-        const hasExt = posStore === "abeach" && Object.keys(extDays).length > 0;
+        const hasExt = false; // 參考店 N 欄拿掉（張良 2026-09-24：只剩一間參考店沒對照意義；資料照抓留庫，要回來把這行改回 posStore === "abeach" && Object.keys(extDays).length > 0）
         // A Beach 視圖改「總覽版型」（張良 2026-09-02）：店欄刪掉（籤已選店＝多餘）、營收欄改「AB」、右邊加「GD」欄＝GROUN:D 同日營收
         const abView = posStore === "abeach";
         const inPeriodDate = (dt) => posPeriod.mode === "month" && posPeriod.month ? (dt || "").slice(0, 7) === posPeriod.month
