@@ -31,7 +31,7 @@
   h1{font-size:26px;font-weight:800;color:var(--ink);letter-spacing:-.02em;margin-top:6px}
   .sub{font-size:12.5px;color:var(--muted);margin-top:3px}
   .tabs{display:flex;gap:8px;margin:16px 0;flex-wrap:wrap}
-  .tabs button{border:1px solid var(--line);background:#fff;border-radius:999px;padding:8px 16px;font-size:13.5px;font-weight:700;color:#33475E;cursor:pointer;white-space:nowrap;flex:0 0 auto;transition:background .15s}
+  .tabs button{border:1px solid var(--line);background:#fff;border-radius:999px;padding:8px 15px;font-size:13.5px;font-weight:700;color:#33475E;cursor:pointer;white-space:nowrap;flex:0 0 auto;transition:background .15s;display:inline-flex;gap:7px;align-items:center}
   .tabs button:hover{background:#EEF4FB}
   .tabs button.on{background:var(--grad);border-color:transparent;color:#fff;box-shadow:0 4px 12px rgba(18,102,200,.30)}
   .kpis{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:14px 0}
@@ -43,7 +43,7 @@
   .mini:hover{background:#EEF4FB}
   .mini.on{background:var(--grad);color:#fff;border-color:transparent;box-shadow:0 3px 9px rgba(18,102,200,.28)}
   h2{font-size:16px;font-weight:800;color:var(--ink);margin-bottom:10px;letter-spacing:-.01em}
-  .hint{font-size:11.5px;color:var(--muted);font-weight:500}
+  .hint{font-size:12px;color:var(--muted);font-weight:500}
   table{width:100%;border-collapse:separate;border-spacing:0;font-size:13px}
   th{background:#F4F8FC;color:var(--muted);font-size:11.5px;font-weight:700;text-align:right;padding:9px 8px;white-space:nowrap;position:sticky;top:0}
   th:first-child,td:first-child{text-align:left}
@@ -81,7 +81,7 @@
   <!-- 品牌字標＝切店（張良 2026-09-21）；右上=⏰打卡＋🔄更新App（張良 2026-09-22：🔄不是只抓數據，是整個App重開、連新功能一起拿最新版） -->
   <div class="brand" style="display:flex;align-items:center;justify-content:space-between">
     <span><span id="bs-ground" class="bseg on" onclick="load('ground')">GROUN:D</span> × <span id="bs-abeach" class="bseg" onclick="load('abeach')">A BEACH</span></span>
-    <span style="display:flex;gap:6px"><button class="mini" style="font-size:13px;padding:5px 11px;font-weight:800" onclick="punchNow()" title="上下班打卡">⏰ 打卡</button><button class="mini" style="font-size:14px;padding:5px 12px" onclick="hardRefresh()" title="更新App到最新版">🔄</button></span>
+    <span style="display:flex;gap:6px"><button class="mini" style="font-size:13px;padding:5px 12px;font-weight:700;display:inline-flex;gap:5px;align-items:center" onclick="punchNow()" title="上下班打卡"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/></svg>打卡</button><button class="mini" style="padding:5px 10px;display:inline-flex;align-items:center" onclick="hardRefresh()" title="更新App到最新版"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M20 12a8 8 0 1 1-2.34-5.66"/><path d="M20 3v4h-4"/></svg></button></span>
   </div>
   <h1>營運看板</h1>
   <div class="sub" id="upd">載入中…</div>
@@ -160,7 +160,7 @@ async function load(store, fresh){
 function renderBoard(d, store){
   document.getElementById('upd').textContent = '最新日結：' + (d.anchor || '—') + '・資料自動同步'
   let h = ''
-  // 📌 今日事項（張良 2026-09-22：最上面＝今天該做的事——任務/收貨/班表；資料來自各分頁快取，todayRender 畫）
+  // 今日事項（張良 2026-09-22：最上面＝今天該做的事——任務/收貨/班表；資料來自各分頁快取，todayRender 畫）
   h += `<div id="todaysec"></div>`
   // 備料卡（GD：炸台/沙拉/吧檯；總平均＋每週幾平均＋峰值/低值——張良 2026-09-20 取消時段拆分，一早備好）
   if (d.prep) {
@@ -186,10 +186,10 @@ function renderBoard(d, store){
   }
   // ✅ 今日SOP（張良 2026-09-21）：每站每天SOP＋拍照＋完成記時；先放佔位div，資料另外抓（sopLoad）
   if (store === 'ground') h += `<div id="sop"></div>`
-  // 🍳 預做節奏表（張良 2026-09-21）：完整菜單＋品類分組＋隱藏設定；內容由 rhythmRender 畫（隱藏清單走即時的 sop 口）
+  // 預做節奏表（張良 2026-09-21）：完整菜單＋品類分組＋隱藏設定；內容由 rhythmRender 畫（隱藏清單走即時的 sop 口）
   if (d.rhythm) {
     window._rhy = d.rhythm
-    h += `<section><h2>🍳 預做節奏表 <span style="float:right;white-space:nowrap"><button class="mini on" id="rb15" onclick="rSwitch(15)">15分</button><button class="mini" id="rb30" onclick="rSwitch(30)">30分</button><button class="mini" id="rbMng" onclick="rMng()">🙈 隱藏管理</button></span><br><span class="hint">${d.rhythm.days ? `近 ${d.rhythm.days} 個營業日平均・每格＝該時段平均賣幾份（·＝不到0.5份）——照表預做、尖峰前先備` : '⏳ 資料累積中（GD 從 2026-09-21 起、AB 從 2026-09-22 起含歷史回補）——顯示近 7 個營業日平均，跑幾天會越來越準'}</span></h2><div id="rhyBody"></div></section>`
+    h += `<section><h2>預做節奏表 <span style="float:right;white-space:nowrap"><button class="mini on" id="rb15" onclick="rSwitch(15)">15分</button><button class="mini" id="rb30" onclick="rSwitch(30)">30分</button><button class="mini" id="rbMng" onclick="rMng()">🙈 隱藏管理</button></span><br><span class="hint">${d.rhythm.days ? `近 ${d.rhythm.days} 個營業日平均・每格＝該時段平均賣幾份（·＝不到0.5份）——照表預做、尖峰前先備` : '⏳ 資料累積中（GD 從 2026-09-21 起、AB 從 2026-09-22 起含歷史回補）——顯示近 7 個營業日平均，跑幾天會越來越準'}</span></h2><div id="rhyBody"></div></section>`
   }
   // KPI（張良 2026-09-22：搬到每日數據上面）
   h += `<div class="kpis">
@@ -314,7 +314,7 @@ function sopRender(){
   if (!sts.length) { el.innerHTML = ''; return }
   const doneN = items.filter(i => log[i.id] && log[i.id].done).length
   const me = sopData.me
-  let s = `<section><h2>✅ 今日 SOP（${sopData.date.slice(5)}）<span class="hint" style="float:right;font-weight:900;color:${doneN===items.length?'var(--green)':'var(--pdark)'}">${doneN}/${items.length}</span></h2>`
+  let s = `<section><h2>今日 SOP（${sopData.date.slice(5)}）<span class="hint" style="float:right;font-weight:900;color:${doneN===items.length?'var(--green)':'var(--pdark)'}">${doneN}/${items.length}</span></h2>`
   s += me ? `<div class="hint" style="margin-bottom:6px">👤 <b style="color:var(--pdark)">${me.name}</b>（打卡自動記你的名字・可編輯各站 SOP，改動會留姓名時間紀錄）</div>`
           : `<div class="hint" style="margin-bottom:6px">💡 ${BIND_HINT}——打卡不用打名字、可編輯 SOP、認領問題</div>`
   if (wd === 0 || wd === 6) s += `<div class="hint" style="margin-bottom:8px">今天公休——這是清單預覽，打卡留給營業日。</div>`
@@ -719,17 +719,17 @@ function lbRender(){
   const d = window._lbD
   if (!d) { app.innerHTML = '<div class="err">讀不到排行榜資料</div>'; return }
   if (curStore !== 'lb') return
-  document.getElementById('upd').textContent = '🏆 排行榜・完成的任務在這給大家評星'
+  document.getElementById('upd').textContent = '排行榜・完成的任務在這給大家評星'
   const meN = d.me && d.me.name
   let h = ''
-  h += `<section><h2>🌟 GD之星 榮耀榜 <span class="hint">各面向平均星最高（至少 3 票上榜）</span></h2>
+  h += `<section><h2>GD之星 榮耀榜 <span class="hint">各面向平均星最高（至少 3 票上榜）</span></h2>
   <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px">` +
   d.facets.map(f=>{ const w = d.stars5[f]
     return `<div style="background:${w?'#FFF9E8':'var(--soft)'};border:1px solid ${w?'#E8D089':'var(--line)'};border-radius:12px;padding:10px;text-align:center">
       <div style="font-size:12px;font-weight:800;color:var(--pdark)">${f}之星</div>
       ${w?`<div style="font-size:17px;font-weight:900;color:var(--ink)">👑 ${w.name}</div><div class="hint">⭐${w.avg}・${w.n}票</div>`:`<div class="mut" style="font-size:13px;padding:4px 0">虛位以待</div><div class="hint">滿3票上榜</div>`}
     </div>`}).join('') + `</div></section>`
-  h += `<section><h2>🏆 積分排行榜 <span class="hint">積分＝每件「發現」與「解決」的全員評星平均加總（1~5⭐）</span></h2>
+  h += `<section><h2>積分排行榜 <span class="hint">積分＝每件「發現」與「解決」的全員評星平均加總（1~5⭐）</span></h2>
   <div class="scroll"><table><thead><tr><th>#</th><th style="text-align:left">夥伴</th><th>發現分</th><th>解決分</th><th>總積分</th>${d.facets.map(f=>'<th>'+f+'</th>').join('')}<th>發現次</th><th>解決次</th></tr></thead><tbody>`
   if (!d.rank.length) h += `<tr><td colspan="${7+d.facets.length}" style="text-align:center" class="mut">還沒有評分——回報問題、認領解決、幫別人評星開始累積</td></tr>`
   d.rank.forEach((p,i)=>{
@@ -737,7 +737,7 @@ function lbRender(){
     h += `<tr style="${meN===p.name?'background:#E5F3FA':''}"><td style="font-weight:900">${medal}</td><td style="text-align:left;font-weight:800;color:var(--ink)">${p.name}</td><td>${p.findPts||0}</td><td>${p.fixPts||0}</td><td class="avg">${p.total||0}</td>${d.facets.map(f=>'<td>'+(p.facets[f]?('⭐'+p.facets[f].avg):'—')+'</td>').join('')}<td class="mut">${p.nFind}</td><td class="mut">${p.nFix}</td></tr>`
   })
   h += `</tbody></table></div></section>`
-  // ⭐ 待你評分（個人化）＋ 📦 封存
+  // 待你評分（個人化）＋ 📦 封存
   const doneL = (d.issues||[]).filter(x=>x.status==='done')
   const toRate = [], arch = []
   doneL.forEach(x=>{
@@ -745,7 +745,7 @@ function lbRender(){
     const rl = lbMyRated(x, meN)
     if (!rl.length || rl.every(o=>o.n >= d.facets.length) || lbSkip.has(x.id)) arch.push(x); else toRate.push(x)
   })
-  h += `<section><h2>⭐ 待你評分（${toRate.length}） <span class="hint">${meN?'完成的任務等你打星——每個人看到的清單不一樣':'綁定後這裡會出現等你評分的任務：'+BIND_HINT}</span></h2>`
+  h += `<section><h2>待你評分（${toRate.length}） <span class="hint">${meN?'完成的任務等你打星——每個人看到的清單不一樣':'綁定後這裡會出現等你評分的任務：'+BIND_HINT}</span></h2>`
   h += toRate.length ? toRate.map(x=>rateCard(x,meN,false)).join('') : `<div class="mut">目前沒有等你評分的任務 🎉</div>`
   h += `</section>`
   if (arch.length) h += `<section><details><summary style="font-weight:900;cursor:pointer">📦 封存（${arch.length}）｜評完／略過的收在這，點開可看可改票</summary><div style="margin-top:8px">${arch.map(x=>rateCard(x,meN,true)).join('')}</div></details></section>`
@@ -823,7 +823,7 @@ function taskRender(){
   const d = window._lbD
   if (!d) { app.innerHTML = '<div class="err">讀不到任務資料</div>'; return }
   if (curStore !== 'task') return
-  document.getElementById('upd').textContent = '🛠 任務中心・完成送審核，核准後到排行榜評星'
+  document.getElementById('upd').textContent = '任務中心・完成送審核，核准後到排行榜評星'
   const meN = d.me && d.me.name
   const all0 = d.issues || []
   const q = taskQ.trim()
@@ -839,7 +839,7 @@ function taskRender(){
   const vtab = (lb,v) => `<button style="border:none;padding:6px 13px;font-size:12.5px;font-weight:800;cursor:pointer;${taskView===v?'background:var(--primary);color:#fff':'background:#fff;color:var(--primary)'}" onclick="taskVset('${v}')">${lb}</button>`
   let h = `<section>
   <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px">
-    <h2 style="margin:0">🛠 任務中心 <span class="hint">${open.length} 件待辦・共 ${all.length} 件</span></h2>
+    <h2 style="margin:0">任務中心 <span class="hint">${open.length} 件待辦・共 ${all.length} 件</span></h2>
     <input id="tkQ" value="${q.replace(/"/g,'&quot;')}" oninput="tkSearch(this)" placeholder="🔍 搜尋任務…" style="margin-left:auto;border:1px solid var(--line);border-radius:9px;padding:7px 11px;font-size:13px;width:150px">
     <span style="display:inline-flex;border:1.5px solid var(--primary);border-radius:9px;overflow:hidden">${vtab('🏠 今日','today')}${vtab('依大項','cat')}${vtab('依負責人','owner')}${vtab('看板','board')}${vtab('清單','list')}</span>
   </div>
@@ -851,12 +851,12 @@ function taskRender(){
     const stat = (n,lb,c) => `<div style="flex:1;min-width:130px;background:#fff;border:1.5px solid var(--line);border-radius:12px;padding:12px 14px"><div style="font-size:24px;font-weight:900;color:${n?c:'var(--muted)'}">${n}</div><div class="hint" style="font-weight:700">● ${lb}</div></div>`
     h += `<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px">${stat(must.length,'今天必處理','var(--red)')}${stat(flagged.length,'🚩 重點','#A85C26')}${stat(doing.length,'處理中','var(--pdark)')}${stat(pend.length,'待你審核','#A85C26')}</div>`
     h += `<div style="background:var(--soft);border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin-bottom:12px">
-      <div style="font-weight:900;margin-bottom:6px;color:var(--red)">⊙ 今天必處理 <span class="hint">逾期與今天到期</span></div>
+      <div style="font-weight:900;margin-bottom:6px;color:var(--red)">今天必處理 <span class="hint">逾期與今天到期</span></div>
       ${must.length?`<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:8px">${must.map(x=>tkMini(x,meN,d.me)).join('')}</div>`:'<div class="mut" style="font-size:13px">今天沒有到期任務 🎉（卡片按 ⏰排時間 就會排進來）</div>'}
     </div>`
     // 各大項一眼
     const cats = [...new Set(all.map(x=>x.st||'一般'))]
-    h += `<div style="background:var(--soft);border:1px solid var(--line);border-radius:12px;padding:10px 12px"><div style="font-weight:900;margin-bottom:6px">▦ 各大項一眼 <span class="hint">完成度・今天・待審</span></div>`
+    h += `<div style="background:var(--soft);border:1px solid var(--line);border-radius:12px;padding:10px 12px"><div style="font-weight:900;margin-bottom:6px">各大項一眼 <span class="hint">完成度・今天・待審</span></div>`
     cats.forEach(c=>{
       const tot = all.filter(x=>(x.st||'一般')===c), dn = tot.filter(x=>x.status==='done').length
       const tdN = tot.filter(x=>x.status!=='done'&&(isToday(x)||isOver(x))).length
@@ -1106,7 +1106,7 @@ async function buyLoad(){
 }
 function buyRender(){
   const d = window._buyD; if (!d || curStore !== 'buy') return
-  document.getElementById('upd').textContent = '🛒 採購・提需求 → 已購買 → 收貨拍照'
+  document.getElementById('upd').textContent = '採購・提需求 → 已購買 → 收貨拍照'
   const meN = d.me && d.me.name
   const stOf = x => x.status==='done' ? 'bought' : x.status // 舊資料 done=已購買(待收貨)
   const open = d.list.filter(x=>stOf(x)==='open'), bought = d.list.filter(x=>stOf(x)==='bought'), recvd = d.list.filter(x=>stOf(x)==='received')
@@ -1122,7 +1122,7 @@ function buyRender(){
     ${st==='received'?`<div class="hint" style="color:var(--green);font-weight:700">📬 已收貨・${x.recvBy}・${x.recvTs}</div>${thumbs(x.recvMedia)}`:''}
     ${meN?`<div style="margin-top:5px">${st==='open'?`<button class="mini on" onclick="buyOp('${x.id}','done')">✅ 已購買</button>`:''}${st==='bought'?`<button class="mini on" onclick="buyRecv('${x.id}')">📬 確認收貨（拍照）</button><button class="mini" onclick="buyOp('${x.id}','undone')">↩︎ 還沒買</button>`:''}${(d.me.approver||x.by===meN)?`<button class="mini" style="color:var(--red)" onclick="if(confirm('刪除這筆需求？'))buyOp('${x.id}','del')">🗑</button>`:''}</div>`:''}
   </div>` }
-  let h = `<section><h2>🛒 待採購（${open.length}） <span class="hint">${meN?'':'未綁定：'+BIND_HINT}</span></h2>
+  let h = `<section><h2>待採購（${open.length}） <span class="hint">${meN?'':'未綁定：'+BIND_HINT}</span></h2>
     <div style="margin-bottom:10px"><button class="mini on" style="padding:9px 18px" onclick="buyNew()">＋ 我要提需求</button></div>`
   if (open.length) { // 按分類分組（張良 2026-09-22）
     const catsB = [...new Set(open.map(x=>x.cat||'未分類'))]
@@ -1132,9 +1132,9 @@ function buyRender(){
     })
   } else h += '<div class="mut">目前沒有待採購——缺什麼按上面提出來</div>'
   h += `</section>`
-  // 📦 待收貨（張良 2026-09-22：已購買的在這等收貨——收的人按確認+拍照，記日期時間）
-  h += `<section><h2>📦 待收貨（${bought.length}）</h2>${bought.length?bought.map(card).join(''):'<div class="mut">沒有在途的採購</div>'}</section>`
-  if (recvd.length) h += `<section><details><summary style="font-weight:900;cursor:pointer">✅ 已收貨（${recvd.length}）</summary><div style="margin-top:8px">${recvd.slice(0,30).map(card).join('')}</div></details></section>`
+  // 待收貨（張良 2026-09-22：已購買的在這等收貨——收的人按確認+拍照，記日期時間）
+  h += `<section><h2>待收貨（${bought.length}）</h2>${bought.length?bought.map(card).join(''):'<div class="mut">沒有在途的採購</div>'}</section>`
+  if (recvd.length) h += `<section><details><summary style="font-weight:900;cursor:pointer">已收貨（${recvd.length}）</summary><div style="margin-top:8px">${recvd.slice(0,30).map(card).join('')}</div></details></section>`
   app.innerHTML = h
 }
 // 📬 確認收貨：拍照必附＋日期時間自動記
@@ -1268,7 +1268,7 @@ async function meetLoad(){
 }
 function meetRender(){
   const d = window._meetD; if (!d || curStore !== 'meet') return
-  document.getElementById('upd').textContent = '📋 會議紀錄'
+  document.getElementById('upd').textContent = '會議紀錄'
   const meN = d.me && d.me.name
   const mc = x => `<div style="background:#fff;border:1.5px solid var(--line);border-radius:10px;padding:9px 11px;margin-bottom:8px;font-size:13px">
     <div style="font-weight:800">${x.date}</div>
@@ -1276,7 +1276,7 @@ function meetRender(){
     <div class="hint">${x.by}・${x.ts}${x.editedBy?`・改：${x.editedBy} ${x.editedTs}`:''}</div>
     ${meN?`<div style="margin-top:5px"><button class="mini" onclick="meetForm('${x.id}')">✏️ 編輯</button> <button class="mini" style="color:var(--red)" onclick="if(confirm('刪除這筆會議紀錄？'))meetOp('del','${x.id}')">🗑</button></div>`:''}
   </div>`
-  let h = `<section><h2>📋 會議紀錄 <span class="hint">${meN?'':'看得到；要新增/編輯先綁定——'+BIND_HINT}</span></h2>
+  let h = `<section><h2>會議紀錄 <span class="hint">${meN?'':'看得到；要新增/編輯先綁定——'+BIND_HINT}</span></h2>
     ${meN?`<div style="margin-bottom:10px;display:flex;gap:8px;flex-wrap:wrap"><button class="mini on" style="padding:9px 18px" onclick="meetForm()">＋ 新增紀錄</button><button class="mini" style="padding:9px 12px" onclick="meetTypes()">⚙️ 會議類型</button></div>`:''}`
   for (const tp of d.types) {
     const rows = d.list.filter(x => x.type === tp)
@@ -1348,7 +1348,7 @@ async function shiftLoad(ym){
 }
 function shiftRender(){
   const d = window._shiftD; if (!d || curStore !== 'shift') return
-  document.getElementById('upd').textContent = '📅 班表 × 打卡・' + shiftYm
+  document.getElementById('upd').textContent = '班表 × 打卡・' + shiftYm
   const meN = d.me && d.me.name
   const tmin = hm => { const a=String(hm||'').split(':'); return (+a[0]||0)*60+(+a[1]||0) }
   const fhm = m => String(Math.floor(m/60)).padStart(2,'0')+':'+String(m%60).padStart(2,'0')
@@ -1398,12 +1398,12 @@ function shiftRender(){
     for (let i=1;i<ds.length;i++){ const gap = (new Date(ds[i])-new Date(ds[i-1]))/86400e3; run = gap===1 ? run+1 : 1; if (run>6){ p3.flags.add('連上超過6天（七休一）'); break } }
   })
   const r1 = x => Math.round(x*10)/10
-  let h = `<section><h2>📅 班表 × 打卡 <span class="hint">${meN?'':BIND_HINT}</span></h2>
+  let h = `<section><h2>班表 × 打卡 <span class="hint">${meN?'':BIND_HINT}</span></h2>
    <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px">
      <button class="mini" onclick="shiftNav(-1)">‹</button><b style="font-size:15px">${shiftYm}</b><button class="mini" onclick="shiftNav(1)">›</button>
      ${meN?`<button class="mini on" style="margin-left:auto;padding:8px 16px" onclick="shiftForm()">＋ 排班</button>`:''}
    </div>
-   <div style="background:#fff;border:1.5px solid var(--line);border-radius:10px;padding:7px 11px;margin-bottom:8px;font-size:12.5px"><b>👥 GD 人員</b>：${(d.names||[]).map(n=>`<span style="border:1px solid var(--line);border-radius:8px;padding:1px 4px 1px 8px;margin-right:4px;white-space:nowrap;display:inline-block;margin-top:2px">${n}${meN?` <span style="cursor:pointer;color:var(--red);font-weight:800" title="移出 GD 人員" onclick="gdStaffOp('del','${n}')">✕</span>`:''}</span>`).join('')||'—'} ${meN?`<button class="mini" style="padding:2px 10px" onclick="gdStaffAdd()">＋ 加人</button>`:''} <span class="hint">（＝主 App 名冊的 GD 標記，兩邊同步；排班/任務/回饋的選人都用這份）</span></div>
+   <div style="background:#fff;border:1.5px solid var(--line);border-radius:10px;padding:7px 11px;margin-bottom:8px;font-size:12.5px"><b>GD 人員</b>：${(d.names||[]).map(n=>`<span style="border:1px solid var(--line);border-radius:8px;padding:1px 4px 1px 8px;margin-right:4px;white-space:nowrap;display:inline-block;margin-top:2px">${n}${meN?` <span style="cursor:pointer;color:var(--red);font-weight:800" title="移出 GD 人員" onclick="gdStaffOp('del','${n}')">✕</span>`:''}</span>`).join('')||'—'} ${meN?`<button class="mini" style="padding:2px 10px" onclick="gdStaffAdd()">＋ 加人</button>`:''} <span class="hint">（＝主 App 名冊的 GD 標記，兩邊同步；排班/任務/回饋的選人都用這份）</span></div>
    <div class="hint" style="margin-bottom:10px">工時＝打卡配對（只打上下班各一次時，扣掉班表的休息分鐘）；遲到寬限 5 分。加班口徑同薪資引擎：前 2 小時 ×1.34、之後 ×1.67（勞基法§24）；單日＞12h、月加班＞46h、連上 7 天會標紅（§32／§36）。試算參考用，正式發薪以人工核定為準。</div>`
   // 📅 一週班表（張良 2026-09-22：崗位×星期——每格=人名+時間）
   if (!window._shiftWk) { const t0 = new Date(todayTpe()); t0.setDate(t0.getDate() - ((t0.getDay()+6)%7)); window._shiftWk = t0.toISOString().slice(0,10) }
@@ -1412,7 +1412,7 @@ function shiftRender(){
   const wkEnts = d.sched.filter(x=>wkDays.includes(x.date))
   const posList = [...new Set(wkEnts.map(x=>x.pos||'未分崗'))]
   h += `<div style="display:flex;gap:8px;align-items:center;margin:2px 0 6px">
-    <span style="font-weight:900">🗓 一週班表</span>${meN?`<button class="mini" style="padding:3px 10px" onclick="shiftPosEdit()">⚙️ 崗位</button>`:''}
+    <span style="font-weight:900">一週班表</span>${meN?`<button class="mini" style="padding:3px 10px" onclick="shiftPosEdit()">⚙️ 崗位</button>`:''}
     <button class="mini" onclick="shiftWkNav(-1)">‹</button><span class="hint" style="font-weight:800">${wkDays[0].slice(5)} ~ ${wkDays[6].slice(5)}</span><button class="mini" onclick="shiftWkNav(1)">›</button>
   </div>
   <div class="scroll" style="margin-bottom:12px"><table><thead><tr><th style="text-align:left;position:sticky;left:0;background:#F1F6F9;z-index:2">崗位</th>${wkDays.map((dt,i)=>`<th style="${dt===today?'color:var(--primary)':''}">${dt.slice(5)}<br>（${wdN[i]}）</th>`).join('')}</tr></thead><tbody>`
@@ -1434,7 +1434,7 @@ function shiftRender(){
     })
     h += `</tbody></table></div>`
   } else h += `<div class="mut">這個月還沒有班表或打卡——${meN?'按右上「＋ 排班」開始':'綁定後可以排班'}；上班用最上面 ⏰ 打卡</div>`
-  h += `</section><section><h2>🗓 明細</h2>`
+  h += `</section><section><h2>明細</h2>`
   const byDate = {}
   rows.forEach(r=>{ (byDate[r.date]=byDate[r.date]||[]).push(r) })
   const wd = ['日','一','二','三','四','五','六']
@@ -1612,19 +1612,19 @@ async function fbLoad(date){
   curStore = 'fb'; setTabs('fb')
   fbDate = (typeof date === 'string' && date) || fbDate || todayTpe()
   if (!window._fbD || window._fbD.date !== fbDate) { const c = tcGet('fb_'+fbDate); if (c) window._fbD = c }
-  if (window._fbD && window._fbD.date === fbDate) { document.getElementById('upd').textContent = '💬 每日回饋・' + fbDate; fbRender() } else app.innerHTML = '<section>載入中…</section>'
+  if (window._fbD && window._fbD.date === fbDate) { document.getElementById('upd').textContent = '每日回饋・' + fbDate; fbRender() } else app.innerHTML = '<section>載入中…</section>'
   let d
   try { const r = await fetch('/api/mail-sync?fb=' + encodeURIComponent(K) + '&date=' + fbDate + (TK() ? '&me=' + encodeURIComponent(TK()) : '')); d = await r.json() } catch(e){}
   if (!d || !d.ok) { if (!window._fbD) app.innerHTML = '<div class="err">讀不到資料</div>'; return }
   window._fbD = d; tcSet('fb_'+fbDate, d)
-  document.getElementById('upd').textContent = '💬 每日回饋・' + d.date
+  document.getElementById('upd').textContent = '每日回饋・' + d.date
   if (curStore === 'fb') fbRender()
 }
 function fbRender(){
   const d = window._fbD; if (!d || curStore !== 'fb') return
   const meN = d.me && d.me.name
   const wd = ['日','一','二','三','四','五','六'][new Date(d.date).getDay()]
-  let h = `<section><h2>💬 每日回饋 <span class="hint">${meN?'對今天有上班的夥伴留評分＋一句話回饋':'看得到；要回饋先綁定——'+BIND_HINT}</span></h2>
+  let h = `<section><h2>每日回饋 <span class="hint">${meN?'對今天有上班的夥伴留評分＋一句話回饋':'看得到；要回饋先綁定——'+BIND_HINT}</span></h2>
     <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px">
       <button class="mini" onclick="fbNav(-1)">‹</button><b style="font-size:15px">${d.date.slice(5)}（${wd}）${d.date===todayTpe()?'・今天':''}</b><button class="mini" onclick="fbNav(1)">›</button>
       ${meN?`<button class="mini" style="margin-left:auto" onclick="fbOther()">＋ 對其他人回饋</button>`:''}
@@ -1634,7 +1634,7 @@ function fbRender(){
   const jnBy = [...new Set(jn.map(x=>x.by))]
   const undone = (d.workers||[]).filter(n=>!jnBy.includes(n))
   h += `<div style="background:#fff;border:1.5px solid var(--primary);border-radius:12px;padding:10px 12px;margin-bottom:12px">
-    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><b>📝 每日回饋紀錄</b><span class="hint">每人每天把發現的問題交上來（可多則）</span>
+    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><b>每日回饋紀錄</b><span class="hint">每人每天把發現的問題交上來（可多則）</span>
     ${meN?`<button class="mini on" style="margin-left:auto;padding:8px 16px" onclick="fbjNew()">＋ 我要回饋</button>`:''}</div>
     ${(d.workers||[]).length?`<div class="hint" style="margin-top:4px">今日已交：${jnBy.length?jnBy.map(n=>`<b style="color:var(--green)">${n}</b>`).join('、'):'—'}${undone.length?`｜未交：<span style="color:var(--red);font-weight:700">${undone.join('、')}</span>`:''}</div>`:''}
     ${jn.length?jn.map(x=>`<div style="background:var(--soft);border-radius:9px;padding:7px 10px;margin-top:6px;font-size:13px">
@@ -1728,11 +1728,11 @@ function menuDiff(){
 }
 function menuRender(){
   const d = window._menuD; if (!d || curStore !== 'menu') return
-  document.getElementById('upd').textContent = '🍔 新菜單協作・既有菜單已先上、直接改'
+  document.getElementById('upd').textContent = '新菜單協作・既有菜單已先上、直接改'
   const meN = d.me && d.me.name
   const df = menuDiff()
   const seg = (lb,v) => `<button style="border:none;padding:6px 14px;font-size:13px;font-weight:800;cursor:pointer;${menuMode===v?'background:var(--primary);color:#fff':'background:#fff;color:var(--primary)'}" onclick="menuMode='${v}';menuRender()">${lb}</button>`
-  let h = `<section><h2>🍔 新菜單 <span class="hint">${meN?'直接在上面改，大家都看得到動了什麼':'看得到；要編輯先綁定——'+BIND_HINT}</span></h2>
+  let h = `<section><h2>新菜單 <span class="hint">${meN?'直接在上面改，大家都看得到動了什麼':'看得到；要編輯先綁定——'+BIND_HINT}</span></h2>
   <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px">
     <span style="display:inline-flex;border:1.5px solid var(--primary);border-radius:9px;overflow:hidden">${seg('✏️ 新菜單','edit')}${seg('🆚 對照原菜單','cmp')}</span>
     ${meN&&menuMode==='edit'?`<button class="mini" onclick="menuSecForm()">＋ 新增分類</button>`:''}
@@ -1868,7 +1868,7 @@ function imgView(u){
   ov.onclick = () => ov.remove()
   document.body.appendChild(ov)
 }
-// ── 📌 今日事項（張良 2026-09-22：看板最上面＝今天該做的事——任務(排今天/🚩/處理中)、待收貨、今天班表；點行跳分頁）──
+// ── 今日事項（張良 2026-09-22：看板最上面＝今天該做的事——任務(排今天/🚩/處理中)、待收貨、今天班表；點行跳分頁）──
 function todayRender(){
   const el = document.getElementById('todaysec'); if (!el) return
   const today = todayTpe(), md = today.slice(5)
@@ -1883,24 +1883,44 @@ function todayRender(){
   inbound.forEach(x=>rows.push({ic:'📦',tx:`待收貨：${x.text||'（附件）'}${x.doneBy?`（${x.doneBy}買的）`:''}——收到請拍照確認`,go:"buyLoad()"}))
   const shToday = ((sh||{}).sched||[]).filter(x=>x.date===today)
   if (shToday.length) rows.push({ic:'📅',tx:`今天班表：${shToday.map(x=>`${x.name} ${x.start}-${x.end}${x.pos?`(${x.pos})`:''}`).join('、')}`,go:"shiftLoad()"})
-  let s = `<section style="border:1.5px solid var(--primary);"><h2>📌 今日事項 <span class="hint">${today.slice(5)}・今天該做的都在這</span></h2>`
-  s += rows.length ? rows.map(r=>`<div onclick="${r.go}" style="cursor:pointer;display:flex;gap:8px;align-items:flex-start;background:var(--soft);border-radius:9px;padding:7px 10px;margin-top:6px;font-size:13px"><span>${r.ic}</span><span style="flex:1;font-weight:600">${r.tx}</span><span class="hint">›</span></div>`).join('')
+  let s = `<section style="border:1.5px solid var(--primary);"><h2>今日事項 <span class="hint">${today.slice(5)}・今天該做的都在這</span></h2>`
+  s += rows.length ? rows.map(r=>`<div onclick="${r.go}" style="cursor:pointer;display:flex;gap:8px;align-items:flex-start;background:var(--soft);border-radius:9px;padding:8px 11px;margin-top:6px;font-size:13px"><span style="flex:1;font-weight:600">${r.tx}</span><span class="hint">›</span></div>`).join('')
     : `<div class="mut" style="font-size:13px">今天沒有排定事項 🎉（任務排時間/採購已購買/今天班表 會自動出現在這）</div>`
   s += `</section>`
   el.innerHTML = s
 }
 // ── 🔖 分頁自訂（張良 2026-09-22：名稱＋排序可編輯，存 pm_prep_tabs 全裝置同步）──
 const TAB_DEF = { task:'🛠 任務', lb:'🏆 排行榜', food:'🥩 盤點', pack:'📦 包材', buy:'🛒 採購', meet:'📋 會議', shift:'📅 班表', fb:'💬 回饋', menu:'🍔 菜單' }
+// ── 單色線條 icon（張良 2026-09-24：不要彩色 emoji——同 Beach Ops 的 stroke 線條圖）──
+const _I = (d) => `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex:0 0 auto;vertical-align:-3px">${d}</svg>`
+const TAB_ICONS = {
+  home: _I('<path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V21h14V9.5"/>'),
+  meet: _I('<rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 2v4M15 2v4M8.5 11h7M8.5 15h5"/>'),
+  task: _I('<path d="M14.7 6.3a4.5 4.5 0 0 0-6 5.6L3 17.6V21h3.4l5.7-5.7a4.5 4.5 0 0 0 5.6-6l-3 3-2.8-.7-.7-2.8Z"/>'),
+  lb: _I('<path d="M8 21h8M12 17v4M7 4h10v5a5 5 0 0 1-10 0Z"/><path d="M7 6H4v2a3 3 0 0 0 3 3M17 6h3v2a3 3 0 0 1-3 3"/>'),
+  food: _I('<path d="M4 7h16l-1.5 13h-13Z"/><path d="M8 7a4 4 0 0 1 8 0"/>'),
+  pack: _I('<path d="M21 8 12 3 3 8v8l9 5 9-5Z"/><path d="M3 8l9 5 9-5M12 13v8"/>'),
+  buy: _I('<circle cx="9" cy="20" r="1.6"/><circle cx="17" cy="20" r="1.6"/><path d="M3 4h2l2.4 11h10.2L20 8H6"/>'),
+  shift: _I('<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M8 3v4M16 3v4M3 10h18"/>'),
+  fb: _I('<path d="M21 12a8 8 0 0 1-8 8H4l2-3a8 8 0 1 1 15-5Z"/>'),
+  menu: _I('<path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v15H6.5A2.5 2.5 0 0 0 4 20.5Z"/><path d="M4 20.5V5.5M8 7h8M8 11h6"/>'),
+  gear: _I('<circle cx="12" cy="12" r="3.2"/><path d="M12 2.8v2.6M12 18.6v2.6M4.9 4.9l1.9 1.9M17.2 17.2l1.9 1.9M2.8 12h2.6M18.6 12h2.6M4.9 19.1l1.9-1.9M17.2 6.8l1.9-1.9"/>'),
+  bell: _I('<path d="M6 9a6 6 0 1 1 12 0c0 5 2 6.5 2 6.5H4S6 14 6 9Z"/><path d="M10 20a2.2 2.2 0 0 0 4 0"/>'),
+}
+const stripEmoji = (s) => String(s||'').replace(/[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE0F}\u{2B00}-\u{2BFF}\u{2190}-\u{21FF}⭐★☆✅✏️📌]/gu,'').trim()
 function applyTabs(cfg){
-  if (!cfg) return
+  cfg = cfg || {}
   window._tabCfg = cfg
   const bar = document.querySelector('.tabs'), gear = document.getElementById('tab-gear')
   const order = (cfg.order && cfg.order.length ? cfg.order : Object.keys(TAB_DEF)).filter(k=>TAB_DEF[k])
   Object.keys(TAB_DEF).forEach(k=>{ if (!order.includes(k)) order.push(k) })
-  order.forEach(k=>{ const b = document.getElementById('tab-'+k); if (b && bar && gear) { b.textContent = (cfg.names||{})[k] || TAB_DEF[k]; bar.insertBefore(b, gear) } })
+  order.forEach(k=>{ const b = document.getElementById('tab-'+k); if (b && bar && gear) { const lb = stripEmoji((cfg.names||{})[k] || TAB_DEF[k]); b.innerHTML = (TAB_ICONS[k]||'') + '<span>' + lb + '</span>'; bar.insertBefore(b, gear) } })
+  const hb = document.getElementById('tab-home'); if (hb) hb.innerHTML = TAB_ICONS.home
+  const gb = document.getElementById('tab-gear'); if (gb) gb.innerHTML = TAB_ICONS.gear
+  const bb = document.getElementById('tab-bell'); if (bb) bb.innerHTML = TAB_ICONS.bell
 }
 async function tabsInit(){
-  const c = tcGet('tabcfg'); if (c) applyTabs(c)
+  applyTabs(tcGet('tabcfg') || {})
   try { const r = await fetch('/api/mail-sync?tabcfg=' + encodeURIComponent(K)); const d = await r.json(); if (d && d.ok) { tcSet('tabcfg', d); applyTabs(d) } } catch(e){}
 }
 function tabsEdit(){
