@@ -701,6 +701,8 @@ async function loadPosText() {
       lines.push('【每日回饋（近8則；/prep 回饋分頁）】')
       fbL.slice(0, 8).forEach(x => lines.push(`  - ${x.date} ${x.by}→${x.target}${x.stars ? '⭐' + x.stars : ''}：${String(x.text || '').replace(/\n/g, ' ').slice(0, 50)}`))
     }
+    // GD 夥伴 App 綁定小抄（張良 2026-09-24：夥伴問「輸入綁定碼在哪」DD 要答得出來）
+    lines.push('【GD夥伴App(/prep)綁定小抄】跟DD說「綁定GD」→發個人連結，手機點開一次即綁定。已加到主畫面的App：打開App→頁面「右上角」有「輸入綁定碼」按鈕（未綁定時才顯示，在「打卡」鈕左邊）→把整串個人連結貼進去。iPhone主畫面App與Safari儲存分開要各綁一次。連結不可轉給別人。')
     // 會議紀錄＋GD班表（pm_meet/pm_shift_g＝/prep 會議、班表分頁；打卡本體走既有 sp_crew_pch_；與 App loadSpaceAIContext 同步接）
     const meetL = ((kv['sp_finance_pm_meet'] || {}).list || [])
     if (meetL.length) {
