@@ -2,6 +2,7 @@
  {
   "date": "2026-09-24",
   "items": [
+   "參考店1/2全面退役 v3.4.7(張良2026-09-24「刪除相關設定及數據不用再抓」)：①刪api/_ichef.js+joya-intraday/mail-sync的syncIchef呼叫(停抓) ②Vercel env六個ICHEF_S1/S2_*已刪+本機.env.local清掉 ③?ichefpurge=管理金鑰一次性DELETE sp_finance_pm_ichef——已執行,數據刪除 ④Finance.jsx移除pm_ichef讀取/訂閱(N欄v3.4.6已下架);要復活得重新拿憑證+重建抓取",
    "財務日表N欄下架 v3.4.6(張良2026-09-24)：hasExt寫死false——參考店只剩一間沒對照意義;iCHEF資料照抓留庫,要恢復改回原判斷式即可",
    "班表人員崗位直編 v3.4.5(張良2026-09-24)：①GD人員chips加✕移除+「＋加人」modal(名單=名冊在職未標記者;gdstaff口改名冊p.gd,主App GD✓徽章同步) ②⚙️崗位清單管理(prompt用、分隔,存pm_shift_g.pos;排班modal崗位datalist改吃這份∪既有值) ③shift口回namesAll/posList",
    "網址清乾淨 v3.4.4(張良2026-09-24)：?r=快取時間戳(🔄更新App用)進站後自動history.replaceState清掉,網址恢復乾淨的/prep;?me=綁定參數本來就會清,合併同一段處理",
