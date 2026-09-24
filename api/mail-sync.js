@@ -9,7 +9,6 @@ import { parsePosWorkbook, parseTxSheet } from './_pos-parse.js' // 解析器共
 // 且每次同步都會把刪掉的日子塞回來——改由 syncJoya 抓喬亞真值（張良同意四天以 POS 為準）。檔案留檔不再引用。
 import { groundManualRecords } from './_ground-manual.js' // GROUN:D 喬亞POS報表手動回填（08-19~21，張良 2026-08-24 截圖；已驗證與POS一致）
 import { joyaLogin, joyaFetchDay, joyaBuildRecord, taipeiToday, taipeiAfterClose, joyaFetchTimeslots, timeslotSection, TIMESLOT_SHEET, joyaFetchSalesMethod, parseSalesMethod } from './_joya.js' // GROUN:D POS行動報表自動抓取（2026-08-26 起全自動）
-import { syncIchef } from './_ichef.js' // 參考店1/2 每日營業額（iCHEF 後台自動抓取，2026-09-01）
 import { syncEatsLive } from './_eats.js' // AB 今天即時營業額（Eats365 商家後台，2026-09-02）
 
 const clean = (v) => (v || '').trim().replace(/^["']|["']$/g, '').replace(/^[A-Za-z0-9_]+=/, '').trim()
@@ -1101,6 +1100,13 @@ export default async function handler(req, res) {
     await kvPut('sp_crew_kb_roster', rosterG, 'GD人員' + gb.op + '(' + whoG.name + ')')
     return res.status(200).json({ ok: true })
   }
+  // 一次性：刪參考店數據（張良 2026-09-24 指示「刪除相關設定及數據」）：GET ?ichefpurge=<MENU_PROBE_KEY>
+  if (req.query?.ichefpurge) {
+    const mk = (process.env.MENU_PROBE_KEY || '').trim()
+    if (!mk || String(req.query.ichefpurge) !== mk) return res.status(403).json({ ok: false })
+    const r2 = await fetch(`${SB_URL}/rest/v1/pm_documents?id=eq.sp_finance_pm_ichef`, { method: 'DELETE', headers: { apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}` } })
+    return res.status(200).json({ ok: r2.ok, deleted: 'sp_finance_pm_ichef' })
+  }
   // ── 🔖 分頁自訂（張良 2026-09-22：分頁名稱＋排序可編輯，全裝置同步；pm_prep_tabs=UI設定）──
   if (req.query?.tabcfg) {
     const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
@@ -1940,7 +1946,7 @@ export default async function handler(req, res) {
   try { out.pos = await syncPos(days) } catch (e) { out.pos = { error: e?.message || String(e) } }
   try { out.joya = await syncJoya(Math.min(days, 20)) } catch (e) { out.joya = { error: e?.message || String(e) } } // GROUN:D 喬亞自動抓（?days=N 可回補 N 天）
   // 參考店1/2（iCHEF，2026-09-01）：後台即時＝今天的數字每次抓都是「到目前為止」→ 手動🔄/每小時 cron 都只掃近3天（快），?days=N 可回補
-  try { out.ic = await syncIchef(kvGet, kvPut, Math.min(60, Math.max(3, days))) } catch (e) { out.ic = { error: e?.message || String(e) } }
+  // 參考店 1/2 已退役（張良 2026-09-24）——iCHEF 停抓、數據已刪
   try { out.ab = await syncEatsLive(kvGet, kvPut) } catch (e) { out.ab = { error: e?.message || String(e) } } // AB 即時（白天看今天；日結信到就被正式資料接手）
   await announceChanged() // 有新資料入庫→通知所有開著的網頁自動重抓（沒新資料就不發）
   if (req.query?.debug) out.dbg = DBG

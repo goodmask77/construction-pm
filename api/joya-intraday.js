@@ -6,7 +6,6 @@
 import { joyaLogin, joyaFetchDay, joyaBuildRecord, taipeiToday } from './_joya.js'
 import { kvGet, kvPut, announceChanged, invStatus } from './mail-sync.js'
 import { syncEatsLive } from './_eats.js' // AB 盤中定時更新（張良 2026-09-06：不用等人按🔄）
-import { syncIchef } from './_ichef.js'   // 參考店 1/2 整點順手同步（iCHEF 數字本來就是「到目前為止」）
 
 // 2026-08-27 二版（張良：峰值要能切半小時看）：快照相鄰兩張相減＝該時段營業額/單數（喬亞只給每小時，細粒度是快照推算的）
 // 2026-09-21 三版（張良：每 15 分記錄一次，版面之後做週期切換）：GD 11:00-19:30 每 15 分一格。
@@ -82,7 +81,7 @@ export default async function handler(req, res) {
   const extra = {}
   if (abHit) {
     try { extra.ab = await syncEatsLive(kvGet, kvPut) } catch (e) { extra.ab = { error: e?.message || String(e) } }
-    try { extra.ic = await syncIchef(kvGet, kvPut, 3) } catch (e) { extra.ic = { error: e?.message || String(e) } } // 1/2 跟 AB 同頻：每半小時（張良 2026-09-06）
+    // 參考店 1/2 已退役（張良 2026-09-24：停抓＋刪設定與數據）
   }
   if (!hit && !force && !manual) { // 只有 AB 場次（GD 已打烊 19:30 後）：發廣播直接回
     await announceChanged()

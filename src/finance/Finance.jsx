@@ -155,7 +155,7 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
     try { const ph = await window.storage.get(K("pm_pos_hidden"), true); setPosHidden(ph && ph.value ? JSON.parse(ph.value) : {}); } catch (_) { setPosHidden({}); }
     try { const pa = await window.storage.get(K("pm_pos_alias"), true); setPosAlias(pa && pa.value ? JSON.parse(pa.value) : {}); } catch (_) { setPosAlias({}); }
     try { const ic = await window.storage.get(K("pm_pos_idlecfg"), true); setPosIdleCfg(ic && ic.value ? JSON.parse(ic.value) : { days: 7, exCats: [], exItems: [] }); } catch (_) { setPosIdleCfg({ days: 7, exCats: [], exItems: [] }); }
-    try { const ie = await window.storage.get(K("pm_ichef"), true); setPosExt(ie && ie.value ? JSON.parse(ie.value) : null); } catch (_) {}
+    // 參考店 pm_ichef 已退役（2026-09-24 刪數據停抓）
     try { const al = await window.storage.get(K("pm_ablive"), true); setAbLive(al && al.value ? JSON.parse(al.value) : null); } catch (_) {}
     try { const lb = await window.storage.get(K("pm_labor"), true); setLabor(lb && lb.value ? JSON.parse(lb.value) : null); } catch (_) {}
     try { const rc = await window.storage.get(K("pm_recon"), true); const v = rc && rc.value ? JSON.parse(rc.value) : null; if (v) setRecon({ links: v.links || {}, ignored: v.ignored || [] }); } catch (_) {}
@@ -201,7 +201,7 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
     const un10 = onSharedChange(K("pm_pos_prices"), (_k, v) => { try { setPosPrices(v ? JSON.parse(v) : {}); } catch (_) {} });
     const un10b = onSharedChange(K("pm_pos_hidden"), (_k, v) => { try { setPosHidden(v ? JSON.parse(v) : {}); } catch (_) {} });
     const un10c = onSharedChange(K("pm_pos_alias"), (_k, v) => { try { setPosAlias(v ? JSON.parse(v) : {}); } catch (_) {} });
-    const un11 = onSharedChange(K("pm_ichef"), (_k, v) => { try { setPosExt(v ? JSON.parse(v) : null); } catch (_) {} });
+    const un11 = () => {}; // pm_ichef 退役
     const un12 = onSharedChange(K("pm_ablive"), (_k, v) => { try { setAbLive(v ? JSON.parse(v) : null); } catch (_) {} });
     const unLb = onSharedChange(K("pm_labor"), (_k, v) => { try { setLabor(v ? JSON.parse(v) : null); } catch (_) {} });
     return () => { un1(); un2(); un3(); un4(); un5(); un6(); un7(); un8(); un9(); un10(); un10b(); un10c(); un11(); un12(); unLb(); };
