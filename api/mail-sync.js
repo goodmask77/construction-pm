@@ -1051,7 +1051,17 @@ export default async function handler(req, res) {
   // POST ?sopset=<MENU_PROBE_KEY> body={items:[…]} → 整份覆蓋定義（跟我用對話增刪改）
   const sopToday = () => new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10)
   // 綁定 token → 本人（LINE「綁定看板」發的個人連結；打卡/編輯身分都以此為準，前端傳的名字只是備援）
-  const sopWho = async (tk3) => { if (!tk3) return null; const b = (await kvGet('sp_finance_pm_prep_bind')) || {}; return (b.tokens || {})[tk3] || null }
+  // 權限模型（張良 2026-09-25 拍板）：訪客=只能看／綁定=一般(記名操作)／名冊 gdRole 可設 主管/停權；停權=所有寫入自動擋
+  const sopWho = async (tk3) => {
+    if (!tk3) return null
+    const b = (await kvGet('sp_finance_pm_prep_bind')) || {}
+    const w = (b.tokens || {})[tk3]
+    if (!w) return null
+    let role = '一般'
+    try { const r5 = (await kvGet('sp_crew_kb_roster')) || {}; const p5 = (r5.people || []).find(x => x.id === w.rid); if (p5 && p5.gdRole) role = p5.gdRole } catch (_) {}
+    if (role === '停權') return null
+    return { ...w, role }
+  }
   // GD 人員名單（張良 2026-09-21：主App名冊標記 p.gd 的人＝排班/任務/回饋下拉選單；沒標任何人時退回在職全員）
   const gdNames = (rosterDoc) => {
     const alive = (((rosterDoc || {}).people) || []).filter(p2 => !p2.endDate && (p2.status || '在職') !== '離職')
@@ -1091,6 +1101,7 @@ export default async function handler(req, res) {
     try { gb = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
     const whoG = await sopWho(gb.token)
     if (!whoG) return res.status(403).json({ ok: false, error: '要先跟 DD 說「綁定GD」' })
+    { const defG = await kvGet('sp_finance_pm_sop_def'); const aprG = (((defG || {}).ground || {}).approvers || ['張良瑋']); if (whoG.role !== '主管' && !aprG.includes(whoG.name)) return res.status(403).json({ ok: false, error: '人員名單由主管/審核人管理' }) }
     const rosterG = (await kvGet('sp_crew_kb_roster')) || { people: [] }
     const pG = (rosterG.people || []).find(p2 => p2.name === String(gb.name || '').trim() && !p2.endDate)
     if (!pG) return res.status(404).json({ ok: false, error: '名冊裡找不到這個人（先在主 App 名冊新增）' })
@@ -1110,6 +1121,25 @@ export default async function handler(req, res) {
     if (!mk || String(req.query.ichefpurge) !== mk) return res.status(403).json({ ok: false })
     const r2 = await fetch(`${SB_URL}/rest/v1/pm_documents?id=eq.sp_finance_pm_ichef`, { method: 'DELETE', headers: { apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}` } })
     return res.status(200).json({ ok: r2.ok, deleted: 'sp_finance_pm_ichef' })
+  }
+  // ── 🎚 權限設定（張良 2026-09-25：人員名單可設每人權限）：POST ?gdrole= {name, role:一般|主管|停權, token}（主管/審核人限定）
+  if (req.method === 'POST' && req.query?.gdrole) {
+    const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
+    if (!ok2 || String(req.query.gdrole) !== ok2) return res.status(403).json({ ok: false })
+    let rb = {}
+    try { rb = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
+    const whoR3 = await sopWho(rb.token)
+    const defR3 = await kvGet('sp_finance_pm_sop_def')
+    const aprR3 = (((defR3 || {}).ground || {}).approvers || ['張良瑋'])
+    if (!whoR3 || (whoR3.role !== '主管' && !aprR3.includes(whoR3.name))) return res.status(403).json({ ok: false, error: '權限由主管/審核人設定' })
+    if (!['一般', '主管', '停權'].includes(rb.role)) return res.status(400).json({ ok: false })
+    const rosterR = (await kvGet('sp_crew_kb_roster')) || { people: [] }
+    const pR = (rosterR.people || []).find(p2 => p2.name === String(rb.name || '').trim() && !p2.endDate)
+    if (!pR) return res.status(404).json({ ok: false, error: '名冊找不到' })
+    if (aprR3.includes(pR.name) && rb.role === '停權') return res.status(400).json({ ok: false, error: '審核人不能停權自己人 😄' })
+    if (rb.role === '一般') delete pR.gdRole; else pR.gdRole = rb.role
+    await kvPut('sp_crew_kb_roster', rosterR, 'GD權限(' + whoR3.name + '→' + pR.name + '=' + rb.role + ')')
+    return res.status(200).json({ ok: true })
   }
   // ── 🔖 分頁自訂（張良 2026-09-22：分頁名稱＋排序可編輯，全裝置同步；pm_prep_tabs=UI設定）──
   if (req.query?.tabcfg) {
@@ -1365,7 +1395,7 @@ export default async function handler(req, res) {
     const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
     if (!ok2 || String(req.query.shift) !== ok2) return res.status(403).json({ ok: false })
     const ym = /^\d{4}-\d{2}$/.test(String(req.query.ym || '')) ? String(req.query.ym) : new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 7)
-    const [sd, meS, rosterS] = await Promise.all([kvGet('sp_finance_pm_shift_g'), sopWho(req.query.me), kvGet('sp_crew_kb_roster')])
+    const [sd, meS, rosterS, bindS, defS] = await Promise.all([kvGet('sp_finance_pm_shift_g'), sopWho(req.query.me), kvGet('sp_crew_kb_roster'), kvGet('sp_finance_pm_prep_bind'), kvGet('sp_finance_pm_sop_def')])
     const pj2 = await import('./punch.js')
     let pchs = []
     try { pchs = await pj2.listPunches('sp_crew_pch_' + ym.replace('-', '')) } catch (_) {}
@@ -1373,7 +1403,12 @@ export default async function handler(req, res) {
     const namesU = [...new Set([...gdNames(rosterS), ...((((sd || {}).list) || []).map(x => x.name)), ...pchs.map(p => p.name)])].filter(Boolean)
     const namesAll = (((rosterS || {}).people) || []).filter(p2 => !p2.endDate && (p2.status || '在職') !== '離職').map(p2 => p2.name).filter(Boolean)
     const posList = [...new Set([...(((sd || {}).pos) || []), ...(((sd || {}).list) || []).map(x => x.pos).filter(Boolean)])]
-    return res.status(200).json({ ok: true, ym, sched: schedL, punches: pchs.map(p => ({ name: p.name, ts: p.ts, dir: p.dir, src: p.src })), names: namesU, namesAll, posList, me: meS ? { name: meS.name } : null })
+    const boundRids = new Set(Object.values(((bindS || {}).tokens) || {}).map(w => w.rid).filter(Boolean))
+    const aprS = (((defS || {}).ground || {}).approvers || ['張良瑋'])
+    const aliveS = (((rosterS || {}).people) || []).filter(p2 => !p2.endDate && (p2.status || '在職') !== '離職')
+    const gdOn = aliveS.some(p2 => p2.gd)
+    const staff = aliveS.filter(p2 => !gdOn || p2.gd).map(p2 => ({ n: p2.name, role: aprS.includes(p2.name) ? '審核人' : (p2.gdRole || '一般'), bound: boundRids.has(p2.id) }))
+    return res.status(200).json({ ok: true, ym, sched: schedL, punches: pchs.map(p => ({ name: p.name, ts: p.ts, dir: p.dir, src: p.src })), names: namesU, namesAll, posList, staff, me: meS ? { name: meS.name, role: meS.role, approver: aprS.includes(meS.name) } : null })
   }
   if (req.method === 'POST' && req.query?.shiftset) {
     const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
@@ -1600,8 +1635,9 @@ export default async function handler(req, res) {
         } catch (_) {}
       }
       const hm4 = new Date(Date.now() + 8 * 3600e3).toISOString().slice(11, 16)
-      const who4 = await sopWho(b4.token) // 有綁定 token＝以本人為準（不能冒名）；沒有才用手填名字
-      slog.items[b4.itemId] = { done: 1, ts: hm4, by: who4 ? who4.name : String(b4.by || '').slice(0, 20), ...(photoUrl ? { photo: photoUrl } : {}) }
+      const who4 = await sopWho(b4.token)
+      if (!who4) return res.status(403).json({ ok: false, error: '訪客只能看——打卡請先綁定（右上「輸入綁定碼」）' }) // 張良 2026-09-25：不再收手填名字
+      slog.items[b4.itemId] = { done: 1, ts: hm4, by: who4.name, ...(photoUrl ? { photo: photoUrl } : {}) }
     }
     await kvPut(dk2, slog, 'SOP打卡')
     return res.status(200).json({ ok: true, log: slog })
@@ -1666,8 +1702,9 @@ export default async function handler(req, res) {
     try { b8 = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
     if (!b8.st || !(b8.text || (b8.media || []).length)) return res.status(400).json({ ok: false, error: '至少要有文字或照片/影片' })
     const who8 = await sopWho(b8.token)
+    if (!who8) return res.status(403).json({ ok: false, error: '訪客只能看——要回報請先綁定（右上「輸入綁定碼」）' }) // 張良 2026-09-25：訪客唯讀
     const doc8 = (await kvGet('sp_finance_pm_sop_issues')) || { list: [] }
-    const iss = { id: 'is' + Date.now().toString(36), st: String(b8.st).slice(0, 20), text: String(b8.text || '').slice(0, 500), media: (Array.isArray(b8.media) ? b8.media : []).slice(0, 6), by: who8 ? who8.name : String(b8.by || '匿名').slice(0, 20), ts: new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 16).replace('T', ' '), status: 'open', pub: 'pending' }
+    const iss = { id: 'is' + Date.now().toString(36), st: String(b8.st).slice(0, 20), text: String(b8.text || '').slice(0, 500), media: (Array.isArray(b8.media) ? b8.media : []).slice(0, 6), by: who8.name, ts: new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 16).replace('T', ' '), status: 'open', pub: 'pending' }
     doc8.list = [iss, ...(doc8.list || [])].slice(0, 200)
     await kvPut('sp_finance_pm_sop_issues', doc8, '看板問題回報(' + iss.by + ')')
     // 審核發布制（張良 2026-09-22：不直接進群——DD 先私訊老闆帶【發布/保留/刪除】按鈕，確認完才到群裡；/prep 任務分頁也能按）
@@ -1797,8 +1834,9 @@ export default async function handler(req, res) {
     try { bb = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
     if (!(bb.text || '').trim() && !(bb.media || []).length) return res.status(400).json({ ok: false, error: '至少寫要買什麼' })
     const whoB = await sopWho(bb.token)
+    if (!whoB) return res.status(403).json({ ok: false, error: '訪客只能看——要提需求請先綁定（右上「輸入綁定碼」）' })
     const doc = (await kvGet('sp_finance_pm_buy')) || { list: [] }
-    const it = { id: 'by' + Date.now().toString(36), text: String(bb.text || '').slice(0, 300), cat: String(bb.cat || '').trim().slice(0, 20), url: String(bb.url || '').slice(0, 500), media: (Array.isArray(bb.media) ? bb.media : []).slice(0, 6), by: whoB ? whoB.name : String(bb.by || '匿名').slice(0, 20), ts: new Date(Date.now() + 8 * 3600e3).toISOString().slice(5, 16).replace('T', ' '), status: 'open' }
+    const it = { id: 'by' + Date.now().toString(36), text: String(bb.text || '').slice(0, 300), cat: String(bb.cat || '').trim().slice(0, 20), url: String(bb.url || '').slice(0, 500), media: (Array.isArray(bb.media) ? bb.media : []).slice(0, 6), by: whoB.name, ts: new Date(Date.now() + 8 * 3600e3).toISOString().slice(5, 16).replace('T', ' '), status: 'open' }
     doc.list = [it, ...(doc.list || [])].slice(0, 200)
     await kvPut('sp_finance_pm_buy', doc, '採購需求(' + it.by + ')')
     try { // DD 通知內部群（張良 2026-09-21：掛通知開關 pm_notify.buy，預設關）

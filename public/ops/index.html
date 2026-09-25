@@ -522,26 +522,14 @@ function sopPick(id){
   inp.click()
 }
 async function sopDo(id, undo){
-  const it = (sopData.def.items||[]).find(x => x.id === id)
-  if (!undo && it && it.photo && !sopPhotos[id]) { alert('這一項要先拍照再按完成 📷'); return }
-  let by = ''
-  if (sopData.me) by = sopData.me.name // 已綁定：本人，不用問（伺服器也以 token 為準）
-  else {
-    by = localStorage.getItem('sopName') || ''
-    if (!undo && !by) {
-      by = prompt('你的名字？（記住之後不再問；建議跟 DD 說「綁定看板」以後全自動）\n' + (sopData.names||[]).join('、')) || ''
-      if (!by) return
-      localStorage.setItem('sopName', by.trim())
-    }
-  }
-  const body = { itemId: id, by: (by||'').trim(), undo: !!undo, token: TK() }
-  if (!undo && sopPhotos[id]) body.photo = sopPhotos[id]
+  if (!TK()) { alert('訪客只能看——打卡請先綁定：右上「輸入綁定碼」（跟 DD 說「綁定GD」拿連結）'); return }
+  const it = (sopData.def.items||[]).find(x=>x.id===id)
+  if (!undo && it && it.photo && !sopPhotos[id]) { alert('這項要拍照——先按 📷'); return }
   try {
-    const r = await fetch('/api/mail-sync?sopdone=' + encodeURIComponent(K), { method: 'POST', headers: {'content-type':'application/json'}, body: JSON.stringify(body) })
+    const r = await fetch('/api/mail-sync?sopdone=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ itemId:id, undo:!!undo, photo: sopPhotos[id]||undefined, token: TK() }) })
     const d = await r.json()
-    if (d && d.ok) { sopData.log = d.log; delete sopPhotos[id]; sopRender() }
-    else alert('存檔失敗，再按一次試試')
-  } catch(e){ alert('連線失敗，再按一次試試') }
+    if (d && d.ok) { delete sopPhotos[id]; sopData.log = d.log; sopRender() } else alert((d&&d.error)||'失敗')
+  } catch(e){ alert('連線失敗，再試一次') }
 }
 // sop 資料到手後，預做表也重畫一次（隱藏清單/身分在 sopData 裡）
 const _sopLoad0 = sopLoad
@@ -549,6 +537,7 @@ sopLoad = async function(){ await _sopLoad0(); rhythmRender() }
 // ── 問題回報 v2（張良 2026-09-21 抓包連環彈窗）：正式回報視窗——先打字，附檔自己按📷，不附檔直接送出＝純文字回報 ──
 let repFiles = []
 function sopReport(st){
+  if (!TK()) { alert('訪客只能看——要回報請先綁定：右上「輸入綁定碼」'); return }
   repFiles = []
   const ov = document.createElement('div'); ov.id = 'repOv'
   ov.style.cssText = 'position:fixed;inset:0;background:rgba(16,24,43,.45);z-index:50;display:flex;align-items:center;justify-content:center;padding:16px'
@@ -1220,7 +1209,8 @@ async function buySend(){
       if (sd && sd.ok) { const ur = await fetch(sd.uploadUrl, { method:'PUT', headers:{'content-type': f.type||'image/jpeg'}, body: f }); if (ur.ok) media.push(sd.publicUrl) }
     } catch(e){}
   }
-  let by = (window._buyD && window._buyD.me) ? window._buyD.me.name : (localStorage.getItem('sopName') || prompt('你的名字？') || '匿名')
+  if (!TK()) { alert('訪客只能看——要提需求請先綁定：右上「輸入綁定碼」'); return }
+  const by = ''
   const cat = (document.getElementById('buyCatIn')||{}).value||''
   const r = await fetch('/api/mail-sync?buyadd=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ text, url, media, by, cat, token: TK() }) })
   const d = await r.json().catch(()=>null)
@@ -1407,7 +1397,11 @@ function shiftRender(){
      <button class="mini" onclick="shiftNav(-1)">‹</button><b style="font-size:15px">${shiftYm}</b><button class="mini" onclick="shiftNav(1)">›</button>
      ${meN?`<button class="mini on" style="margin-left:auto;padding:8px 16px" onclick="shiftForm()">＋ 排班</button>`:''}
    </div>
-   <div style="background:#fff;border:1.5px solid var(--line);border-radius:10px;padding:7px 11px;margin-bottom:8px;font-size:14px"><b>GD 人員</b>：${(d.names||[]).map(n=>`<span style="border:1px solid var(--line);border-radius:8px;padding:1px 4px 1px 8px;margin-right:4px;white-space:nowrap;display:inline-block;margin-top:2px">${n}${meN?` <span style="cursor:pointer;color:var(--red);font-weight:800" title="移出 GD 人員" onclick="gdStaffOp('del','${n}')">✕</span>`:''}</span>`).join('')||'—'} ${meN?`<button class="mini" style="padding:2px 10px" onclick="gdStaffAdd()">＋ 加人</button>`:''} <span class="hint">（＝主 App 名冊的 GD 標記，兩邊同步；排班/任務/回饋的選人都用這份）</span></div>
+   ${(()=>{ // 人員名單＋權限（張良 2026-09-25：訪客看/綁定一般/名單設權限）
+     const canMgr = d.me && (d.me.approver || d.me.role==='主管')
+     const chip = s2 => `<span style="border:1px solid ${s2.role==='停權'?'#E0D2D2':'var(--line)'};border-radius:8px;padding:1px 8px;margin-right:4px;white-space:nowrap;display:inline-block;margin-top:2px;${s2.role==='停權'?'opacity:.5;text-decoration:line-through;':''}${canMgr?'cursor:pointer':''}" ${canMgr?`onclick="gdRoleModal('${s2.n}','${s2.role}')" title="點我設定權限"`:''}>${s2.n}${s2.bound?' <span style="color:var(--green);font-weight:800">✓</span>':''}${s2.role==='主管'?' <span style="color:var(--primary);font-weight:800;font-size:12px">主管</span>':''}${s2.role==='審核人'?' <span style="color:#A85C26;font-weight:800;font-size:12px">審核</span>':''}</span>`
+     return `<div style="background:#fff;border:1.5px solid var(--line);border-radius:10px;padding:8px 11px;margin-bottom:8px;font-size:14px"><b>GD 人員</b>：${(d.staff||[]).map(chip).join('')||'—'} ${canMgr?`<button class="mini" style="padding:2px 10px" onclick="gdStaffAdd()">＋ 加人</button>`:''}
+     <div class="hint" style="margin-top:3px">✓＝已綁定；${canMgr?'點名字＝設「一般／主管／停權」或移出名單；':''}訪客拿連結只能看、綁定後才能操作（記名）</div></div>` })()}
    <div class="hint" style="margin-bottom:10px">工時＝打卡配對（只打上下班各一次時，扣掉班表的休息分鐘）；遲到寬限 5 分。加班口徑同薪資引擎：前 2 小時 ×1.34、之後 ×1.67（勞基法§24）；單日＞12h、月加班＞46h、連上 7 天會標紅（§32／§36）。試算參考用，正式發薪以人工核定為準。</div>`
   // 📅 一週班表（張良 2026-09-22：崗位×星期——每格=人名+時間）
   if (!window._shiftWk) { const t0 = new Date(todayTpe()); t0.setDate(t0.getDate() - ((t0.getDay()+6)%7)); window._shiftWk = t0.toISOString().slice(0,10) }
@@ -2148,6 +2142,30 @@ function shiftPosEdit(){
   const list = v.split(/[、,，]/).map(s2=>s2.trim()).filter(Boolean)
   fetch('/api/mail-sync?shiftset=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ op:'pos', list, token: TK() }) })
     .then(r=>r.json()).then(d2=>{ if(d2&&d2.ok) shiftLoad(); else alert((d2&&d2.error)||'失敗') })
+}
+// ── 🎚 權限 modal（張良 2026-09-25：訪客看/綁定一般/名單設權限）──
+function gdRoleModal(name, role){
+  const ov = document.createElement('div'); ov.id='grOv'
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(16,24,43,.45);z-index:50;display:flex;align-items:center;justify-content:center;padding:16px'
+  const opt = (v,desc) => `<label style="display:flex;gap:8px;align-items:center;padding:8px 6px;border-bottom:1px solid var(--line);cursor:pointer"><input type="radio" name="grR" value="${v}" ${role===v?'checked':''}> <b>${v}</b> <span class="hint">${desc}</span></label>`
+  ov.innerHTML = `<div style="background:#fff;border-radius:14px;max-width:380px;width:100%;padding:16px" onclick="event.stopPropagation()">
+    <div style="font-weight:800;margin-bottom:8px">${name} 的權限</div>
+    ${role==='審核人'?'<div class="hint" style="margin-bottom:8px">審核人——權限最高（核准/發布/通知開關），這裡不能改。</div>':opt('一般','看＋操作（打卡/回報/任務/評分…記名）')+opt('主管','一般＋管理人員名單與權限')+opt('停權','綁定保留，但所有操作被擋')}
+    <div style="display:flex;gap:8px;justify-content:space-between;margin-top:10px">
+      <button class="mini" style="color:var(--red);padding:8px 12px" onclick="if(confirm('把 ${name} 移出 GD 人員名單？')){document.getElementById('grOv').remove();gdStaffOp('del','${name}')}">移出名單</button>
+      <span><button class="mini" style="padding:8px 12px" onclick="document.getElementById('grOv').remove()">取消</button>
+      ${role!=='審核人'?`<button class="mini on" style="padding:8px 16px" onclick="gdRoleSave('${name}')">儲存</button>`:''}</span>
+    </div></div>`
+  ov.onclick = () => ov.remove()
+  document.body.appendChild(ov)
+}
+async function gdRoleSave(name){
+  const v = (document.querySelector('#grOv input[name=grR]:checked')||{}).value
+  const o = document.getElementById('grOv'); if (o) o.remove()
+  if (!v) return
+  const r = await fetch('/api/mail-sync?gdrole=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ name, role: v, token: TK() }) })
+  const d = await r.json().catch(()=>null)
+  if (d && d.ok) shiftLoad(); else alert((d&&d.error)||'失敗')
 }
 load('ground')
 </script>
