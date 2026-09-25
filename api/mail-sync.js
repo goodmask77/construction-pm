@@ -1163,19 +1163,89 @@ export default async function handler(req, res) {
     const accOf = (nDays) => {
       const ds = days2.slice(0, nDays)
       let aeS = 0, aeB = 0, act = 0, overS = 0, underS = 0, overB = 0, underB = 0, aeSI = 0, aeBI = 0, actI = 0, winS = 0, winB = 0
+      let aeF = 0
       ds.forEach(([, s]) => {
         const a = s.actual.total
-        act += a; aeS += Math.abs(s.sysStore - a); aeB += Math.abs((s.baseStore || 0) - a)
+        const fin = s.finalStore != null ? s.finalStore : s.sysStore
+        act += a; aeS += Math.abs(s.sysStore - a); aeB += Math.abs((s.baseStore || 0) - a); aeF += Math.abs(fin - a)
         if (s.sysStore > a) overS += s.sysStore - a; else underS += a - s.sysStore
         if ((s.baseStore || 0) > a) overB += (s.baseStore || 0) - a; else underB += a - (s.baseStore || 0)
         if (Math.abs(s.sysStore - a) < Math.abs((s.baseStore || 0) - a)) winS++; else if (Math.abs(s.sysStore - a) > Math.abs((s.baseStore || 0) - a)) winB++
         const ks = new Set([...Object.keys(s.items || {}), ...Object.keys(s.actual.items || {}), ...Object.keys(s.baseItems || {})])
         ks.forEach(k => { const ai = s.actual.items[k] || 0; actI += ai; aeSI += Math.abs((s.items[k] || 0) - ai); aeBI += Math.abs(Math.round(s.baseItems ? (s.baseItems[k] || 0) : 0) - ai) })
       })
-      return { days: ds.length, act, store: { wapeS: act ? Math.round(aeS / act * 1000) / 10 : null, wapeB: act ? Math.round(aeB / act * 1000) / 10 : null, overS, underS, overB, underB, winS, winB }, item: { wapeS: actI ? Math.round(aeSI / actI * 1000) / 10 : null, wapeB: actI ? Math.round(aeBI / actI * 1000) / 10 : null } }
+      return { days: ds.length, act, store: { wapeF: act ? Math.round(aeF / act * 1000) / 10 : null, wapeS: act ? Math.round(aeS / act * 1000) / 10 : null, wapeB: act ? Math.round(aeB / act * 1000) / 10 : null, overS, underS, overB, underB, winS, winB }, item: { wapeS: actI ? Math.round(aeSI / actI * 1000) / 10 : null, wapeB: actI ? Math.round(aeBI / actI * 1000) / 10 : null } }
     }
     const daily = days2.slice(0, 14).map(([ds, s]) => ({ date: ds, actual: s.actual.total, sys: s.sysStore, base: s.baseStore || 0 }))
-    return res.status(200).json({ ok: true, today: today2, fc: out, acc7: accOf(7), acc28: accOf(28), daily, snapDays: days2.length })
+    const todaySnap = allSnap[today2] || null
+    return res.status(200).json({ ok: true, today: today2, fc: out, acc7: accOf(7), acc28: accOf(28), daily, snapDays: days2.length,
+      special: cfgF.special || {}, adj: cfgF.adj || {}, todaySoldout: todaySnap ? (todaySnap.soldout || []) : null })
+  }
+  // ── P2 輸入口（張良 2026-09-26）──
+  // 今日賣完勾選（收班時；綁定者都能勾＝現場的人才知道）：GET ?fcso= 列表；POST {k,on}
+  if (req.query?.fcso) {
+    const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
+    if (!ok2 || String(req.query.fcso) !== ok2) return res.status(403).json({ ok: false })
+    const today2 = new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10)
+    const mk2 = 'sp_finance_pm_fc_' + today2.slice(0, 7).replace('-', '')
+    const doc = (await kvGet(mk2)) || { days: {} }
+    const snap = doc.days[today2]
+    if (req.method !== 'POST') {
+      if (!snap) return res.status(200).json({ ok: true, none: '今天沒有預測快照（假日或還沒 11:00）' })
+      return res.status(200).json({ ok: true, date: today2, items: Object.entries(snap.names || {}).map(([k, n]) => ({ k, n, so: (snap.soldout || []).includes(k) })) })
+    }
+    let sb3 = {}
+    try { sb3 = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
+    const whoSo = await sopWho(sb3.token)
+    if (!whoSo) return res.status(403).json({ ok: false, error: '要先綁定才能勾賣完' })
+    if (!snap) return res.status(400).json({ ok: false, error: '今天沒有預測快照' })
+    snap.soldout = snap.soldout || []
+    const has = snap.soldout.includes(sb3.k)
+    if (sb3.on && !has) snap.soldout.push(sb3.k)
+    if (!sb3.on && has) snap.soldout = snap.soldout.filter(x => x !== sb3.k)
+    snap.soldoutBy = whoSo.name; snap.soldoutTs = new Date(Date.now() + 8 * 3600e3).toISOString().slice(5, 16).replace('T', ' ')
+    await kvPut(mk2, doc, '賣完勾選(' + whoSo.name + ')')
+    return res.status(200).json({ ok: true, soldout: snap.soldout })
+  }
+  // 特殊日標記（主管/審核人）：POST ?fcsp= {date, note, del}
+  if (req.method === 'POST' && req.query?.fcsp) {
+    const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
+    if (!ok2 || String(req.query.fcsp) !== ok2) return res.status(403).json({ ok: false })
+    let pb3 = {}
+    try { pb3 = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
+    const whoSp = await sopWho(pb3.token)
+    const defSp = await kvGet('sp_finance_pm_sop_def')
+    const aprSp = (((defSp || {}).ground || {}).approvers || ['張良瑋'])
+    if (!whoSp || (whoSp.role !== '主管' && !aprSp.includes(whoSp.name))) return res.status(403).json({ ok: false, error: '特殊日由主管/審核人標記' })
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(pb3.date || '')) return res.status(400).json({ ok: false })
+    const cfgD = (await kvGet('sp_finance_pm_fc_cfg')) || {}
+    cfgD.special = cfgD.special || {}
+    if (pb3.del) delete cfgD.special[pb3.date]
+    else cfgD.special[pb3.date] = String(pb3.note || '特殊日').slice(0, 40) + '（' + whoSp.name + '）'
+    await kvPut('sp_finance_pm_fc_cfg', cfgD, '特殊日(' + whoSp.name + ')')
+    return res.status(200).json({ ok: true, special: cfgD.special })
+  }
+  // 人工預測調整（主管/審核人；必填原因；影響「還沒鎖定」的日子）：POST ?fcadj= {date, k, n, why}
+  if (req.method === 'POST' && req.query?.fcadj) {
+    const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
+    if (!ok2 || String(req.query.fcadj) !== ok2) return res.status(403).json({ ok: false })
+    let ab3 = {}
+    try { ab3 = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
+    const whoAd = await sopWho(ab3.token)
+    const defAd = await kvGet('sp_finance_pm_sop_def')
+    const aprAd = (((defAd || {}).ground || {}).approvers || ['張良瑋'])
+    if (!whoAd || (whoAd.role !== '主管' && !aprAd.includes(whoAd.name))) return res.status(403).json({ ok: false, error: '人工調整由主管/審核人設定' })
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(ab3.date || '') || !ab3.k) return res.status(400).json({ ok: false })
+    const nAdj = Math.round(Number(ab3.n) || 0)
+    if (nAdj !== 0 && !String(ab3.why || '').trim()) return res.status(400).json({ ok: false, error: '人工調整必填原因（規格）' })
+    const cfgA = (await kvGet('sp_finance_pm_fc_cfg')) || {}
+    cfgA.adj = cfgA.adj || {}
+    cfgA.adj[ab3.date] = cfgA.adj[ab3.date] || {}
+    if (!nAdj) delete cfgA.adj[ab3.date][ab3.k]
+    else cfgA.adj[ab3.date][ab3.k] = { n: nAdj, why: String(ab3.why).slice(0, 60), by: whoAd.name }
+    if (!Object.keys(cfgA.adj[ab3.date]).length) delete cfgA.adj[ab3.date]
+    await kvPut('sp_finance_pm_fc_cfg', cfgA, '預測人工調整(' + whoAd.name + ')')
+    return res.status(200).json({ ok: true })
   }
   // 手動觸發快照/回填（管理金鑰）：GET ?fcrun=<MENU_PROBE_KEY>
   if (req.query?.fcrun) {
