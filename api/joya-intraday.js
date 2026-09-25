@@ -51,6 +51,15 @@ export default async function handler(req, res) {
       }
     }
   } catch (e) { console.log('sop check err', e?.message) }
+  // ── 📈 銷量預測每日快照（張良 2026-09-25 P1）：11:00 場次鎖定當日預測＋回填昨天實績（fcDaily 冪等，已鎖不重寫）──
+  try {
+    const tpeF = new Date(Date.now() + 8 * 3600e3)
+    const wdF = tpeF.getUTCDay()
+    if (wdF >= 1 && wdF <= 5 && hm >= '11:00' && hm < '11:20') {
+      const { fcDaily } = await import('./_fc.js')
+      await fcDaily(kvGet, kvPut, tpeF.toISOString().slice(0, 10))
+    }
+  } catch (e) { console.log('fc snapshot err', e?.message) }
   // ── 盤點/包材低水位提醒（張良 2026-09-21）：每天第一輪（11:00 場次）查一次，低於最低水位 → DD 發內部群一則彙整 ──
   try {
     const tpe2 = new Date(Date.now() + 8 * 3600e3)

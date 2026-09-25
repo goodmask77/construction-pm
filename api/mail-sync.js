@@ -1141,6 +1141,52 @@ export default async function handler(req, res) {
     await kvPut('sp_crew_kb_roster', rosterR, 'GD權限(' + whoR3.name + '→' + pR.name + '=' + rb.role + ')')
     return res.status(200).json({ ok: true })
   }
+  // ── 📈 銷量預測 P1（張良 2026-09-25「開工」）：?fc=<OPS>&me=token 檢視（主管/審核人限定——夥伴只看備料卡一個數字）──
+  if (req.query?.fc) {
+    const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
+    if (!ok2 || String(req.query.fc) !== ok2) return res.status(403).json({ ok: false })
+    const meF2 = await sopWho(req.query.me)
+    const defF2 = await kvGet('sp_finance_pm_sop_def')
+    const aprF2 = (((defF2 || {}).ground || {}).approvers || ['張良瑋'])
+    if (!meF2 || (meF2.role !== '主管' && !aprF2.includes(meF2.name))) return res.status(403).json({ ok: false, error: '預測驗證區只開放主管/審核人' })
+    const { fcLoadData, fcCompute } = await import('./_fc.js')
+    const today2 = new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10)
+    const cfgF = (await kvGet('sp_finance_pm_fc_cfg')) || {}
+    const mkeys = [...new Set([ 'sp_finance_pm_fc_' + new Date(Date.now() - 32 * 86400e3 + 8 * 3600e3).toISOString().slice(0, 7).replace('-', ''), 'sp_finance_pm_fc_' + today2.slice(0, 7).replace('-', '') ])]
+    const snapDocs = await Promise.all(mkeys.map(m => kvGet(m)))
+    const allSnap = Object.assign({}, ...snapDocs.map(d => (d || {}).days || {}))
+    const snaps = Object.entries(allSnap).map(([ds, s]) => ({ date: ds, preCalStore: s.preCalStore, actualStore: s.actual ? s.actual.total : null, selloutPre: 0 }))
+    const data = await fcLoadData(kvGet, today2)
+    const out = fcCompute(data, snaps, cfgF, today2)
+    // 準確度（快照有實績的日子）：新模型 vs 舊法，全店＋品項層 WAPE、高低估、逐日勝負
+    const days2 = Object.entries(allSnap).filter(([, s]) => s.actual).sort((a, b) => (a[0] < b[0] ? 1 : -1))
+    const accOf = (nDays) => {
+      const ds = days2.slice(0, nDays)
+      let aeS = 0, aeB = 0, act = 0, overS = 0, underS = 0, overB = 0, underB = 0, aeSI = 0, aeBI = 0, actI = 0, winS = 0, winB = 0
+      ds.forEach(([, s]) => {
+        const a = s.actual.total
+        act += a; aeS += Math.abs(s.sysStore - a); aeB += Math.abs((s.baseStore || 0) - a)
+        if (s.sysStore > a) overS += s.sysStore - a; else underS += a - s.sysStore
+        if ((s.baseStore || 0) > a) overB += (s.baseStore || 0) - a; else underB += a - (s.baseStore || 0)
+        if (Math.abs(s.sysStore - a) < Math.abs((s.baseStore || 0) - a)) winS++; else if (Math.abs(s.sysStore - a) > Math.abs((s.baseStore || 0) - a)) winB++
+        const ks = new Set([...Object.keys(s.items || {}), ...Object.keys(s.actual.items || {}), ...Object.keys(s.baseItems || {})])
+        ks.forEach(k => { const ai = s.actual.items[k] || 0; actI += ai; aeSI += Math.abs((s.items[k] || 0) - ai); aeBI += Math.abs(Math.round(s.baseItems ? (s.baseItems[k] || 0) : 0) - ai) })
+      })
+      return { days: ds.length, act, store: { wapeS: act ? Math.round(aeS / act * 1000) / 10 : null, wapeB: act ? Math.round(aeB / act * 1000) / 10 : null, overS, underS, overB, underB, winS, winB }, item: { wapeS: actI ? Math.round(aeSI / actI * 1000) / 10 : null, wapeB: actI ? Math.round(aeBI / actI * 1000) / 10 : null } }
+    }
+    const daily = days2.slice(0, 14).map(([ds, s]) => ({ date: ds, actual: s.actual.total, sys: s.sysStore, base: s.baseStore || 0 }))
+    return res.status(200).json({ ok: true, today: today2, fc: out, acc7: accOf(7), acc28: accOf(28), daily, snapDays: days2.length })
+  }
+  // 手動觸發快照/回填（管理金鑰）：GET ?fcrun=<MENU_PROBE_KEY>
+  if (req.query?.fcrun) {
+    const mk = (process.env.MENU_PROBE_KEY || '').trim()
+    if (!mk || String(req.query.fcrun) !== mk) return res.status(403).json({ ok: false })
+    const { fcDaily } = await import('./_fc.js')
+    const today2 = new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10)
+    const r6 = await fcDaily(kvGet, kvPut, today2)
+    await announceChanged()
+    return res.status(200).json({ ok: true, snapped: r6.snapped, backfilled: r6.backfilled, futureStore: r6.forecast.future.map(f => f.date + ':' + f.sys).join(' '), level: r6.forecast.level, calib: r6.forecast.calib })
+  }
   // ── 🔖 分頁自訂（張良 2026-09-22：分頁名稱＋排序可編輯，全裝置同步；pm_prep_tabs=UI設定）──
   if (req.query?.tabcfg) {
     const ok2 = (process.env.OPS_BOARD_KEY || '').trim()

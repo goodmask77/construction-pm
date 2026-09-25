@@ -183,7 +183,7 @@ function renderBoard(d, store){
     h += `</tbody></table></div><div class="hint" style="margin-top:8px">怎麼用：①平均＝近30天「去掉最高/最低各一天」的截尾平均（颱風日/異常日不拉偏；樣本不足8天不截）②看今天星期幾那欄（藍底）＝該星期的截尾平均，照這個數備。</div></section>`
   }
   // ✅ 今日SOP（張良 2026-09-21）：每站每天SOP＋拍照＋完成記時；先放佔位div，資料另外抓（sopLoad）
-  if (store === 'ground') h += `<div id="sop"></div>`
+  if (store === 'ground') h += `<div id="sop"></div><div id="fcsec"></div>`
   // 預做節奏表（張良 2026-09-21）：完整菜單＋品類分組＋隱藏設定；內容由 rhythmRender 畫（隱藏清單走即時的 sop 口）
   if (d.rhythm) {
     window._rhy = d.rhythm
@@ -237,7 +237,7 @@ function renderBoard(d, store){
   rhythmRender()
   itemsRender()
   todayRender()
-  if (store === 'ground') sopLoad()
+  if (store === 'ground') { sopLoad(); fcLoad() }
   if (!window._pf) { window._pf = 1; setTimeout(prefetchTabs, 800) } // 背景預抓其他分頁（切換秒開）
 }
 // ── 預做節奏表渲染（完整菜單＋品類分組＋隱藏；隱藏清單在 sopData.prepHide，sopLoad 後會再畫一次）──
@@ -2163,6 +2163,34 @@ async function gdRoleSave(name){
   const r = await fetch('/api/mail-sync?gdrole=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ name, role: v, token: TK() }) })
   const d = await r.json().catch(()=>null)
   if (d && d.ok) shiftLoad(); else alert((d&&d.error)||'失敗')
+}
+// ── 📈 銷量預測驗證區 P1（張良 2026-09-25：夥伴只看備料卡一個數字——這區只有主管/審核人看得到）──
+async function fcLoad(){
+  const el = document.getElementById('fcsec'); if (!el || !TK()) return
+  let d
+  try { const r = await fetch('/api/mail-sync?fc=' + encodeURIComponent(K) + '&me=' + encodeURIComponent(TK())); d = await r.json() } catch(e){}
+  if (!d || !d.ok) { el.innerHTML = ''; return } // 403（非主管）靜默
+  const f = d.fc
+  const wdN = ['日','一','二','三','四','五','六']
+  const accRow = (lb, a) => a.days ? `<tr><td>${lb}（${a.days}天）</td><td class="avg">${a.store.wapeS!=null?a.store.wapeS+'%':'—'}</td><td>${a.store.wapeB!=null?a.store.wapeB+'%':'—'}</td><td>${a.item.wapeS!=null?a.item.wapeS+'%':'—'}</td><td>${a.item.wapeB!=null?a.item.wapeB+'%':'—'}</td><td>${a.store.winS}勝${a.store.winB}負</td><td class="hint">新+${a.store.overS}/−${a.store.underS}｜舊+${a.store.overB}/−${a.store.underB}</td></tr>` : ''
+  let h = `<section style="border:1.5px dashed var(--primary)"><details><summary style="font-weight:800;cursor:pointer;color:var(--pdark)">銷量預測（測試中）｜近28天快照 ${d.snapDays} 天 <span class="hint">只有主管/審核人看得到；夥伴照舊看備料卡</span></summary>
+  <div class="hint" style="margin:8px 0">水準 ${f.level} 份/日・成長 ×${f.growth}${f.growthRate!=null?`（近7vs前7 ${f.growthRate>0?'+':''}${Math.round(f.growthRate*100)}%）`:''}・校正 ×${f.calib}（樣本 ${f.calibMeta.n} 天${f.calibMeta.R?'，R='+f.calibMeta.R:''}）・正常營業日 ${f.normalDays} 天（${f.dataFrom||''}~${f.dataTo||''}）${f.notes.length?'<br>⚠ '+f.notes.join('；'):''}</div>
+  <div class="scroll"><table><thead><tr><th>日期</th><th>週幾比例</th><th>校正前</th><th>系統預測</th><th>舊法(備料卡)</th></tr></thead><tbody>
+  ${f.future.map(x=>`<tr><td>${x.date.slice(5)}（${wdN[x.wd]}）</td><td>${x.ratio}</td><td class="mut">${x.preCal}</td><td class="avg">${x.sys}</td><td>${f.baseStoreByWd[x.wd]||'—'}</td></tr>`).join('')}
+  </tbody></table></div>
+  <details style="margin-top:8px"><summary class="hint" style="cursor:pointer;font-weight:700">明日品項預測（前 20）＋佔比</summary>
+  <div class="scroll" style="margin-top:6px"><table><thead><tr><th>品項</th><th>佔比</th><th>明日預測</th><th>舊法</th></tr></thead><tbody>
+  ${(()=>{ const fi=(f.futureItems[0]||{}).items||{}; const wd0=f.future[0]?f.future[0].wd:1
+    return f.shares.slice(0,20).map(s=>`<tr><td class="iname">${s.n}</td><td>${Math.round(s.share*1000)/10}%</td><td class="avg">${fi[s.k]||0}</td><td>${Math.round((f.baseItems[s.k]||{})[wd0]||0)}</td></tr>`).join('') })()}
+  </tbody></table></div></details>
+  <details style="margin-top:8px"><summary class="hint" style="cursor:pointer;font-weight:700">準確度（新模型 vs 舊法）＋逐日</summary>
+  ${d.snapDays?`<div class="scroll" style="margin-top:6px"><table><thead><tr><th>期間</th><th>全店WAPE新</th><th>舊</th><th>品項WAPE新</th><th>舊</th><th>逐日勝負</th><th>高/低估</th></tr></thead><tbody>${accRow('近7天',d.acc7)}${accRow('近28天',d.acc28)}</tbody></table></div>
+  <div class="scroll" style="margin-top:6px"><table><thead><tr><th>日期</th><th>實際</th><th>新預測</th><th>舊法</th></tr></thead><tbody>${d.daily.map(x=>`<tr><td>${x.date.slice(5)}</td><td class="avg">${x.actual}</td><td style="${Math.abs(x.sys-x.actual)<=Math.abs(x.base-x.actual)?'color:var(--green);font-weight:800':''}">${x.sys}</td><td style="${Math.abs(x.base-x.actual)<Math.abs(x.sys-x.actual)?'color:var(--green);font-weight:800':''}">${x.base}</td></tr>`).join('')}</tbody></table></div>`:'<div class="mut" style="margin-top:6px">還沒有快照實績——每天 11:00 自動鎖當日預測，明天起開始累積成績單</div>'}
+  </details>
+  <details style="margin-top:8px"><summary class="hint" style="cursor:pointer;font-weight:700">中間值（星期比例／有效週）</summary>
+  <div class="hint" style="margin-top:6px">星期比例：${[1,2,3,4,5].map(w=>`週${wdN[w]} ${f.ratios[w]||1}`).join('・')}<br>有效週：${f.weekMeta.map(w=>`${w.week.slice(5)}起${w.days}天${w.valid?'✓':'✗'}`).join('｜')}</div></details>
+  </details></section>`
+  el.innerHTML = h
 }
 load('ground')
 </script>

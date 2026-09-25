@@ -2,6 +2,7 @@
  {
   "date": "2026-09-25",
   "items": [
+   "備料卡精簡 v3.5.6(張良2026-09-25)：峰值/低值兩欄+週幾格±%小字全部拿掉——只留平均與週一~五截尾平均;hint同步改(後端peak/low照算沒刪,要回來加回render即可)",
    "今天列badge改顯示更新時刻 v3.5.5(張良2026-09-25)：財務日表今天虛擬列的「即時」字樣→實際最後抓取時間XX:XX(AB用ablive.at,GD用盤中entry.fetchedAt新收gdAtByDate,都沒有顯示—);tooltip註明AB每30分/GD每15分自動更新",
    "權限模型v1 v3.5.4(張良2026-09-25拍板)：①訪客=連結唯讀——sopreport/buyadd/sopdone匿名手填口全封(前後端都擋,引導右上輸入綁定碼) ②綁定=一般權限記名操作;sopWho v2附角色(名冊gdRole),停權者所有寫入自動擋(回null) ③人員名單=權限管理台:chips顯示✓已綁/主管/審核徽章,主管與審核人點名字開modal設「一般/主管/停權」或移出(gdrole口;gdstaff限主管+;審核人不可被停權) ④shift口回staff明細(role/bound)+me帶role/approver"
   ]

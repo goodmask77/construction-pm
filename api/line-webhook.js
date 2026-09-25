@@ -573,7 +573,7 @@ async function loadPosText() {
   try {
     const now = new Date(Date.now() + 8 * 3600e3)
     const mo = now.toISOString().slice(0, 7)
-    const kv = await kvGetMany(['sp_finance_pm_pos', 'sp_finance_pm_pos_d_' + mo, 'sp_finance_pm_pos_tx_' + mo, 'sp_finance_pm_pos_flags', 'sp_finance_pm_pos_idlecfg', 'sp_finance_pm_pos_hh_' + mo, 'sp_finance_pm_pos_costs', 'sp_finance_pm_pos_prices', 'sp_finance_pm_pos_hidden', 'sp_finance_pm_pos_alias', 'sp_finance_pm_sop_def', 'sp_finance_pm_sop_g_' + now.toISOString().slice(0, 10), 'sp_finance_pm_sop_issues', 'sp_finance_pm_inv', 'sp_finance_pm_buy', 'sp_finance_pm_meet', 'sp_finance_pm_shift_g', 'sp_finance_pm_fb', 'sp_finance_pm_fbj', 'sp_finance_pm_menu', 'sp_finance_pm_ablive', 'sp_finance_pm_labor'])
+    const kv = await kvGetMany(['sp_finance_pm_pos', 'sp_finance_pm_pos_d_' + mo, 'sp_finance_pm_pos_tx_' + mo, 'sp_finance_pm_pos_flags', 'sp_finance_pm_pos_idlecfg', 'sp_finance_pm_pos_hh_' + mo, 'sp_finance_pm_pos_costs', 'sp_finance_pm_pos_prices', 'sp_finance_pm_pos_hidden', 'sp_finance_pm_pos_alias', 'sp_finance_pm_sop_def', 'sp_finance_pm_sop_g_' + now.toISOString().slice(0, 10), 'sp_finance_pm_sop_issues', 'sp_finance_pm_inv', 'sp_finance_pm_buy', 'sp_finance_pm_meet', 'sp_finance_pm_shift_g', 'sp_finance_pm_fb', 'sp_finance_pm_fbj', 'sp_finance_pm_menu', 'sp_finance_pm_fc_' + now.toISOString().slice(0, 7).replace('-', ''), 'sp_finance_pm_ablive', 'sp_finance_pm_labor'])
     const pos = kv['sp_finance_pm_pos']
     const entries = pos && Array.isArray(pos.entries) ? pos.entries : []
     if (!entries.length) return ''
@@ -676,6 +676,13 @@ async function loadPosText() {
         }
       }
       lines.push('【盤點/包材庫存（/prep 盤點分頁；預估現量=盤點量−盤後銷售×用量，低於低標 cron 每日開店前發群提醒）】'); lines.push(...invL)
+    }
+    // 銷量預測快照（pm_fc_月檔＝每天11:00鎖定的全店/品項預測與實績；與 App loadSpaceAIContext 同步接）
+    const fcDoc = kv['sp_finance_pm_fc_' + now.toISOString().slice(0, 7).replace('-', '')]
+    const fcDays = Object.entries((fcDoc || {}).days || {}).sort((a, b) => (a[0] < b[0] ? 1 : -1))
+    if (fcDays.length) {
+      const [fd, fs] = fcDays[0]
+      lines.push(`【GD銷量預測（測試中；最新快照 ${fd}）】系統預測全店 ${fs.sysStore} 份（校正前${fs.preCalStore}×係數）｜舊法備料卡口徑 ${fs.baseStore} 份${fs.actual ? `｜實際 ${fs.actual.total} 份` : ''}`)
     }
     // 每日回饋紀錄（pm_fbj＝/prep 回饋分頁：每人每天發現問題的文字/照片/影片紀錄；與 App loadSpaceAIContext 同步接）
     const fbjL = ((kv['sp_finance_pm_fbj'] || {}).list || [])
