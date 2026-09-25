@@ -76,7 +76,9 @@ export async function fcLoadData(kvGet, todayISO) {
 export function fcCompute(data, snaps, cfg, todayISO) {
   const C = { ...FC_DEF, ...(cfg || {}) }
   const openWd = [1, 2, 3, 4, 5].filter(w => !C.closedWd.includes(w))
-  const special = new Set((cfg && cfg.special) || [])
+  const sp0 = (cfg && cfg.special) || {}
+  const special = new Set(Array.isArray(sp0) ? sp0 : Object.keys(sp0))
+  const snapMap = Object.fromEntries((snaps || []).map(s => [s.date, s]))
   const normal = data.days.filter(d => openWd.includes(d.wd) && !special.has(d.date)) // 正常營業日（升冪）
   const notes = []
 
@@ -128,7 +130,8 @@ export function fcCompute(data, snaps, cfg, todayISO) {
     .sort((a, b) => (a.date < b.date ? 1 : -1)).slice(0, C.calibDays)
   const kept = []
   usable.forEach(s => {
-    if ((s.selloutPre || 0) >= s.preCalStore * C.selloutPct && s.actualStore < s.preCalStore) { calibMeta.excluded.push({ date: s.date, why: '賣完截斷' }); return }
+    const soPre = (s.soldout || []).reduce((t2, k) => t2 + s.preCalStore * ((s.shares || {})[k] || 0), 0)
+    if (soPre >= s.preCalStore * C.selloutPct && s.actualStore < s.preCalStore) { calibMeta.excluded.push({ date: s.date, why: '賣完截斷' }); return }
     kept.push(s)
   })
   if (kept.length) {
@@ -154,7 +157,15 @@ export function fcCompute(data, snaps, cfg, todayISO) {
     const ds = normal.slice(-win)
     const sum = {}, sold = {}
     let tot = 0
-    ds.forEach(d => { for (const [k, q] of Object.entries(d.items)) { sum[k] = (sum[k] || 0) + q; sold[k] = (sold[k] || 0) + 1; tot += q } })
+    ds.forEach(d => {
+      const sn = snapMap[d.date]
+      const soSet = new Set((sn && sn.soldout) || [])
+      for (const [k, q] of Object.entries(d.items)) {
+        let eff = q
+        if (soSet.has(k) && sn && sn.preCalStore) eff = Math.max(q, Math.round(sn.preCalStore * ((sn.shares || {})[k] || 0))) // 賣完＝需求下限，補到校正前預測（只用於佔比，不回寫實際）
+        sum[k] = (sum[k] || 0) + eff; sold[k] = (sold[k] || 0) + 1; tot += eff
+      }
+    })
     return { sum, sold, tot, days: ds.length }
   }
   const s14 = shareOf(C.shareDays), s28 = shareOf(C.shareDaysFB)
@@ -208,17 +219,21 @@ export async function fcDaily(kvGet, kvPut, todayISO) {
   for (const [ds, snap] of Object.entries(allSnap)) {
     if (snap.actual == null && byDate[ds]) { snap.actual = { total: byDate[ds].total, items: byDate[ds].items }; touched.add(mkey(ds)) }
   }
-  const snaps = Object.entries(allSnap).map(([ds, s]) => ({ date: ds, preCalStore: s.preCalStore, actualStore: s.actual ? s.actual.total : null, selloutPre: 0 }))
+  const snaps = Object.entries(allSnap).map(([ds, s]) => ({ date: ds, preCalStore: s.preCalStore, actualStore: s.actual ? s.actual.total : null, soldout: s.soldout || [], shares: s.shares || {} }))
   const out = fcCompute(data, snaps, cfg, todayISO)
   // 當日快照（營業日且未存過才寫＝鎖定）
   const wd = wdOf(todayISO)
   if (!C.closedWd.includes(wd) && !allSnap[todayISO] && out.future.length && out.future[0].date === todayISO) {
     const f0 = out.future[0]
     const mk = mkey(todayISO)
+    const adjDay = ((cfg.adj || {})[todayISO]) || {} // 人工調整（P2）：{品項key:{n:±份數, why}}——鎖定時凍結進快照
+    const adjStore = Object.values(adjDay).reduce((t2, a) => t2 + (Number(a.n) || 0), 0)
     docs[mk].days[todayISO] = {
       lockedAt: new Date().toISOString(), params: { level: out.level, ratio: f0.ratio, growth: out.growth, calib: out.calib },
       preCalStore: f0.preCal, sysStore: f0.sys, items: (out.futureItems[0] || {}).items || {},
       shares: Object.fromEntries(out.shares.slice(0, 60).map(s => [s.k, s.share])),
+      names: Object.fromEntries(out.shares.slice(0, 60).map(s => [s.k, s.n])),
+      adj: adjDay, adjStore, finalStore: f0.sys + adjStore,
       baseStore: out.baseStoreByWd[wd] || 0, baseItems: Object.fromEntries(Object.entries(out.baseItems).map(([k, m]) => [k, m[wd] || 0])),
     }
     touched.add(mk)

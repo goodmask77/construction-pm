@@ -183,7 +183,7 @@ function renderBoard(d, store){
     h += `</tbody></table></div><div class="hint" style="margin-top:8px">怎麼用：①平均＝近30天「去掉最高/最低各一天」的截尾平均（颱風日/異常日不拉偏；樣本不足8天不截）②看今天星期幾那欄（藍底）＝該星期的截尾平均，照這個數備。</div></section>`
   }
   // ✅ 今日SOP（張良 2026-09-21）：每站每天SOP＋拍照＋完成記時；先放佔位div，資料另外抓（sopLoad）
-  if (store === 'ground') h += `<div id="sop"></div><div id="fcsec"></div>`
+  if (store === 'ground') h += `<div id="sop"></div>`
   // 預做節奏表（張良 2026-09-21）：完整菜單＋品類分組＋隱藏設定；內容由 rhythmRender 畫（隱藏清單走即時的 sop 口）
   if (d.rhythm) {
     window._rhy = d.rhythm
@@ -233,6 +233,7 @@ function renderBoard(d, store){
     }
     h += `<section>${draw('平日時段', d.slots.wk)}${draw('週末時段', d.slots.we)}</section>`
   }
+  if (store === 'ground') h += `<div id="fcsec"></div>` // 銷量預測驗證區＝整頁最底（張良 2026-09-26：說好在最底下結果放中間——修正）
   app.innerHTML = h
   rhythmRender()
   itemsRender()
