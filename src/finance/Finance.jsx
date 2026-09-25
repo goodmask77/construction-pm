@@ -1161,8 +1161,8 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
         const inPeriodDate = (dt) => posPeriod.mode === "month" && posPeriod.month ? (dt || "").slice(0, 7) === posPeriod.month
           : posPeriod.mode === "custom" ? (!posPeriod.from || dt >= posPeriod.from) && (!posPeriod.to || dt <= posPeriod.to)
           : true; // 與 days 的期間過濾同一套規則（資料一致）
-        const gdByDate = {};
-        if (abView) ((pos?.entries) || []).forEach(e => { if (storeKeyOf(e.store) === "ground" && inPeriodDate(e.date)) gdByDate[e.date] = (gdByDate[e.date] || 0) + (Number(e.revenue) || 0); });
+        const gdByDate = {}; const gdAtByDate = {}; // gdAtByDate＝GD 盤中最後抓取時刻（張良 2026-09-25：badge 顯示 XX:XX 不寫「即時」）
+        if (abView) ((pos?.entries) || []).forEach(e => { if (storeKeyOf(e.store) === "ground" && inPeriodDate(e.date)) { gdByDate[e.date] = (gdByDate[e.date] || 0) + (Number(e.revenue) || 0); if (e.fetchedAt) gdAtByDate[e.date] = e.fetchedAt; } });
         // 「至14:00」欄（張良 2026-09-02：兩點＝中午餐期結束分水嶺）：時段表加總 <14:00 的小時列＝開店到 14:00 的累計
         // 與「⏰ 時段消費」同一份資料（sheets 時段分析）＝數字一致；今天盤中列也有（intraday 帶時段明細）
         const lunchByDate = {};
@@ -1595,7 +1595,7 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
                                 const dashN = 2 + (hasGuests ? 2 : 0) + 2 + (hasLinepay ? 1 : 0) + 2 + (hasTakeout ? 1 : 0) + (hasKiosk ? 1 : 0); // 單數/單均/(來客/客單)/現金/卡/(LINE Pay)/Uber/折扣/(外帶)/(自助)
                                 return (
                                   <div key="live-today" title="今天的即時數字：1/2/AB/GD 每 30 分自動更新（12:30-21:30）；打烊日結入庫後這列自動換成正式數字" style={{ display: "grid", gridTemplateColumns: GTC, alignItems: "center", minHeight: 32, background: "#fdf6ec", borderBottom: "1.5px dashed #c8bca6" }}>
-                                    <div style={{ padding: "0 8px", fontFamily: MONOF, fontSize: 11.5, color: "#b3261e", fontWeight: 700 }}>{twToday.slice(2)}（{WD2[gdL]}）<span title="最新一次抓資料的時間（每30分自動更新）" style={{ marginLeft: 4, fontSize: 10, fontWeight: 700, background: "#fdecea", border: "1px solid #f0b8b1", borderRadius: 5, padding: "1px 4px" }}>{abT?.at || "即時"}</span></div>
+                                    <div style={{ padding: "0 8px", fontFamily: MONOF, fontSize: 11.5, color: "#b3261e", fontWeight: 700 }}>{twToday.slice(2)}（{WD2[gdL]}）<span title="最新一次抓資料的時間（AB 每 30 分、GD 每 15 分自動更新）" style={{ marginLeft: 4, fontSize: 10, fontWeight: 700, background: "#fdecea", border: "1px solid #f0b8b1", borderRadius: 5, padding: "1px 4px" }}>{abT?.at || gdAtByDate[twToday] || "—"}</span></div>
                                     {hasExt && cell(exT.s2 ? fmt(exT.s2) : "—", { color: "#8a7f6a" })}
                                     {abT ? <div onClick={() => openDrill({ type: "ablive" })} title="點我看盤中熱銷品項／每小時／內用外帶" style={{ padding: "0 8px", fontFamily: MONOF, fontSize: 11.5, textAlign: "right", color: "#b3261e", fontWeight: 700, cursor: "pointer" }}
                                       onMouseEnter={e => e.currentTarget.style.textDecoration = "underline"} onMouseLeave={e => e.currentTarget.style.textDecoration = "none"}>{fmt(abT.revenue)}</div> : cell("—", { color: "#d5cbb6" })}
