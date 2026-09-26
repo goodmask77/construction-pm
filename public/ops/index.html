@@ -547,6 +547,7 @@ function sopReport(st){
     <div id="repList" class="hint" style="margin:6px 0"></div>
     <div style="display:flex;gap:8px;justify-content:space-between;margin-top:8px;flex-wrap:wrap">
       <button class="mini" style="padding:9px 12px" onclick="repPick()">📷 加照片/影片</button>
+      <button class="mini" style="padding:9px 12px" onclick="repPaste()">📋 貼截圖</button>
       <span><button class="mini" style="padding:9px 12px" onclick="repClose()">取消</button>
       <button class="mini on" style="padding:9px 18px" onclick="repSend('${st.replace(/'/g,'')}')">送出回報</button></span>
     </div></div>`
@@ -554,6 +555,19 @@ function sopReport(st){
   document.body.appendChild(ov)
 }
 function repClose(){ const o = document.getElementById('repOv'); if (o) o.remove() }
+// 截圖貼上（張良 2026-09-26）：按鈕讀剪貼簿；modal 開著時 Cmd/Ctrl+V 也直接進附件
+async function repPaste(){
+  try {
+    const cs = await navigator.clipboard.read()
+    for (const ci of cs) { const ty = ci.types.find(x=>x.startsWith('image/')); if (ty) { const b = await ci.getType(ty); const f = new File([b], '截圖.' + (ty.split('/')[1]||'png'), { type: ty }); repFiles = [...repFiles, f].slice(0,6); repListRender(); return } }
+    alert('剪貼簿裡沒有圖片——先截圖再按')
+  } catch(e){ alert('瀏覽器不給讀剪貼簿——直接按 Cmd/Ctrl+V 貼也可以') }
+}
+document.addEventListener('paste', (e) => {
+  if (!document.getElementById('repOv')) return
+  const it = [...((e.clipboardData||{}).items||[])].find(x=>x.type&&x.type.startsWith('image/'))
+  if (it) { e.preventDefault(); const f = it.getAsFile(); if (f) { repFiles = [...repFiles, f].slice(0,6); repListRender() } }
+})
 function repPick(){
   const inp = document.createElement('input'); inp.type = 'file'; inp.accept = 'image/*,video/*'; inp.multiple = true
   inp.onchange = () => { repFiles = [...repFiles, ...inp.files].slice(0, 6); repListRender() }
@@ -722,6 +736,14 @@ function lbRender(){
       <div style="font-size:13px;font-weight:800;color:var(--pdark)">${f}之星</div>
       ${w?`<div style="font-size:17px;font-weight:900;color:var(--ink)">👑 ${w.name}</div><div class="hint">⭐${w.avg}・${w.n}票</div>`:`<div class="mut" style="font-size:14px;padding:4px 0">虛位以待</div><div class="hint">滿3票上榜</div>`}
     </div>`}).join('') + `</div></section>`
+  // 🔍 發現王（張良 2026-09-26）：發現問題次數排行，點名字看他發現過的每一件
+  const finders = {}
+  ;(d.issues||[]).forEach(x=>{ if (x.by && x.by!=='匿名') (finders[x.by]=finders[x.by]||[]).push(x) })
+  const fRank = Object.entries(finders).sort((a,b)=>b[1].length-a[1].length)
+  h += `<section><h2>🔍 發現王排行榜 <span class="hint">發現問題次數——點名字看他發現了什麼</span></h2>
+  <div style="display:flex;gap:8px;flex-wrap:wrap">${fRank.length?fRank.slice(0,12).map(([nm,arr],i)=>`<div onclick="lbFinder('${nm}')" style="cursor:pointer;background:${i===0?'#FFF9E8':'var(--soft)'};border:1.5px solid ${i===0?'#E8D089':'var(--line)'};border-radius:12px;padding:10px 16px;text-align:center;min-width:96px">
+    <div style="font-size:13px;font-weight:700;color:var(--muted)">${i===0?'👑 ':''}#${i+1}</div><div style="font-weight:800;color:var(--ink)">${nm}</div><div style="font-size:20px;font-weight:800;color:var(--pdark)">${arr.length}<span style="font-size:12px"> 件</span></div>
+  </div>`).join(''):'<div class="mut">還沒有人回報過問題</div>'}</div></section>`
   h += `<section><h2>積分排行榜 <span class="hint">積分＝每件「發現」與「解決」的全員評星平均加總（1~5⭐）</span></h2>
   <div class="scroll"><table><thead><tr><th>#</th><th style="text-align:left">夥伴</th><th>發現分</th><th>解決分</th><th>總積分</th>${d.facets.map(f=>'<th>'+f+'</th>').join('')}<th>發現次</th><th>解決次</th></tr></thead><tbody>`
   if (!d.rank.length) h += `<tr><td colspan="${7+d.facets.length}" style="text-align:center" class="mut">還沒有評分——回報問題、認領解決、幫別人評星開始累積</td></tr>`
@@ -2290,6 +2312,22 @@ async function errsView(){
       </details></section>`
   } catch(e){}
   if (curStore === 'errs') app.innerHTML = h
+}
+// 🔍 發現王明細（張良 2026-09-26）
+function lbFinder(nm){
+  const d = window._lbD
+  const arr = (d.issues||[]).filter(x=>x.by===nm)
+  const ov = document.createElement('div'); ov.id='fdOv'
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(16,24,43,.45);z-index:50;display:flex;align-items:center;justify-content:center;padding:16px'
+  ov.innerHTML = `<div style="background:#fff;border-radius:14px;max-width:520px;width:100%;padding:16px;max-height:84vh;overflow:auto" onclick="event.stopPropagation()">
+    <div style="font-weight:800;margin-bottom:8px">🔍 ${nm} 發現的問題（${arr.length} 件）</div>
+    ${arr.map(x=>`<div style="border-bottom:1px dashed var(--line);padding:7px 0;font-size:14px">
+      <b>${x.text||'（附件）'}</b> ${x.status==='done'?'<span style="color:var(--green);font-weight:800">✅</span>':x.status==='pending'?'<span style="color:#A85C26">🕐</span>':''}
+      <div class="hint">${x.st||''}・${x.ts}${x.findAvg!=null?`・發現評分 ⭐${x.findAvg}`:''}${(x.media||[]).map((m,i)=>` <a href="${m}" target="_blank">📎${i+1}</a>`).join('')}</div>
+    </div>`).join('')||'<div class="mut">—</div>'}
+    <div style="text-align:right;margin-top:10px"><button class="mini" style="padding:8px 14px" onclick="document.getElementById('fdOv').remove()">關閉</button></div></div>`
+  ov.onclick = () => ov.remove()
+  document.body.appendChild(ov)
 }
 load('ground')
 </script>
