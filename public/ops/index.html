@@ -2269,7 +2269,8 @@ async function errsView(){
   try { const r = await fetch('/api/mail-sync?errs=' + encodeURIComponent(K) + '&me=' + encodeURIComponent(TK())); d = await r.json() } catch(e){}
   document.getElementById('upd').textContent = 'App 錯誤日誌・自動偵測＋人工回報'
   if (!d || !d.ok) { app.innerHTML = '<div class="err">這頁只開放主管/審核人</div>'; return }
-  app.innerHTML = `<section><h2>App 錯誤日誌 <span class="hint">自動偵測（程式報錯）會自己進來；夥伴的「⚠️ 回報」在任務分頁。同一種錯誤當天只通知你一次。</span></h2>
+  app.innerHTML = `<section><h2>App 錯誤日誌 <span class="hint">自動偵測（程式報錯）自己進來；同一種錯誤當天只通知你一次。</span></h2>
+  <div style="margin-bottom:10px"><button class="mini on" style="padding:9px 18px" onclick="sopReport('App問題')">＋ 回報 App 問題（文字＋照片/影片）</button> <span class="hint">會進任務看板「App問題」類＋走你的發布審核；夥伴在各站的「⚠️ 回報」也通</span></div>
   ${d.list.length ? d.list.map(x=>`<div style="background:#fff;border:1.5px solid var(--line);border-radius:10px;padding:9px 11px;margin-bottom:8px;font-size:14px">
     <b style="color:var(--red)">${x.msg}</b>
     <div class="hint">頁面 ${x.page||'?'}・v${x.ver||'?'}・${x.by}・首見 ${x.day} ${x.ts}・累計 <b>${x.n}</b> 次${x.src?`・${x.src}`:''}</div>
