@@ -1257,6 +1257,51 @@ export default async function handler(req, res) {
     await announceChanged()
     return res.status(200).json({ ok: true, snapped: r6.snapped, backfilled: r6.backfilled, futureStore: r6.forecast.future.map(f => f.date + ':' + f.sys).join(' '), level: r6.forecast.level, calib: r6.forecast.calib })
   }
+  // ── 🐞 App 錯誤自動回報 L1（張良 2026-09-26）：前端全域捕捉＋後端都打這口；同指紋去重、當日首見 DD 私訊審核人 ──
+  if (req.method === 'POST' && req.query?.errlog) {
+    const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
+    if (!ok2 || String(req.query.errlog) !== ok2) return res.status(403).json({ ok: false })
+    let eb = {}
+    try { eb = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
+    const whoE = await sopWho(eb.token).catch(() => null)
+    const doc = (await kvGet('sp_finance_pm_errlog')) || { list: [] }
+    const msg = String(eb.msg || '').slice(0, 300)
+    if (!msg) return res.status(400).json({ ok: false })
+    const fp = (msg + '|' + String(eb.src || '').slice(0, 80)).slice(0, 200) // 指紋＝訊息+來源
+    const today3 = new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10)
+    let it = doc.list.find(x => x.fp === fp)
+    if (it) { it.n = (it.n || 1) + 1; it.lastTs = new Date(Date.now() + 8 * 3600e3).toISOString().slice(5, 16).replace('T', ' '); it.lastBy = whoE ? whoE.name : (it.lastBy || '訪客') }
+    else {
+      it = { id: 'er' + Date.now().toString(36), fp, msg, src: String(eb.src || '').slice(0, 120), page: String(eb.page || '').slice(0, 60), ver: String(eb.ver || '').slice(0, 20), stack: String(eb.stack || '').slice(0, 600), by: whoE ? whoE.name : '訪客', ts: new Date(Date.now() + 8 * 3600e3).toISOString().slice(5, 16).replace('T', ' '), day: today3, n: 1 }
+      doc.list = [it, ...doc.list].slice(0, 200)
+    }
+    const notifyKey = fp + '|' + today3
+    doc.notified = doc.notified || {}
+    if (!doc.notified[notifyKey]) { // 同錯誤一天通知一次
+      doc.notified = Object.fromEntries(Object.entries(doc.notified).filter(([k2]) => k2.endsWith(today3))) // 只留今天的鍵
+      doc.notified[notifyKey] = 1
+      try {
+        const tkE = (process.env.LINE_CHANNEL_ACCESS_TOKEN || '').trim()
+        const [defE, rosterE] = await Promise.all([kvGet('sp_finance_pm_sop_def'), kvGet('sp_crew_kb_roster')])
+        for (const an of (((defE || {}).ground || {}).approvers || ['張良瑋'])) {
+          const ap = ((rosterE || {}).people || []).find(p2 => p2.name === an && p2.lineUserId)
+          if (tkE && ap) await fetch('https://api.line.me/v2/bot/message/push', { method: 'POST', headers: { 'content-type': 'application/json', Authorization: 'Bearer ' + tkE }, body: JSON.stringify({ to: ap.lineUserId, messages: [{ type: 'text', text: `🐞 App 錯誤回報\n頁面：${it.page || '?'}（v${it.ver || '?'}）\n${it.msg}\n— ${it.by}・累計 ${it.n} 次\n（同錯誤今天不再通知；細節問 DD 或看 /prep 錯誤日誌）` }] }) })
+        }
+      } catch (_) {}
+    }
+    await kvPut('sp_finance_pm_errlog', doc, 'App錯誤回報')
+    return res.status(200).json({ ok: true })
+  }
+  if (req.query?.errs) { // 檢視（主管/審核人）
+    const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
+    if (!ok2 || String(req.query.errs) !== ok2) return res.status(403).json({ ok: false })
+    const meE2 = await sopWho(req.query.me)
+    const defE2 = await kvGet('sp_finance_pm_sop_def')
+    const aprE2 = (((defE2 || {}).ground || {}).approvers || ['張良瑋'])
+    if (!meE2 || (meE2.role !== '主管' && !aprE2.includes(meE2.name))) return res.status(403).json({ ok: false })
+    const doc = (await kvGet('sp_finance_pm_errlog')) || { list: [] }
+    return res.status(200).json({ ok: true, list: doc.list.slice(0, 50) })
+  }
   // ── 🔖 分頁自訂（張良 2026-09-22：分頁名稱＋排序可編輯，全裝置同步；pm_prep_tabs=UI設定）──
   if (req.query?.tabcfg) {
     const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
