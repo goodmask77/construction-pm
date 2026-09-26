@@ -98,7 +98,7 @@
     <button id="tab-menu" onclick="menuLoad()">🍔 菜單</button>
     <button id="tab-gear" onclick="tabsEdit()" title="編輯分頁名稱/排序" style="padding:7px 10px">⚙️</button>
     <button id="tab-bell" onclick="notifyEdit()" title="群組通知開關" style="padding:7px 10px">🔔</button>
-    <button id="tab-errs" onclick="errsView()" title="App 錯誤日誌" style="padding:7px 10px;display:none">🐞</button>
+    <button id="tab-errs" onclick="errsView()" title="問題回報・功能許願" style="padding:7px 10px">🐞</button>
   </div>
   <div id="app"></div>
   <div class="foot">資料每天自動同步（打開即最新）・僅供內部參考與備料使用，請勿外傳連結</div>
@@ -2261,28 +2261,36 @@ function errReport(msg, src, stack){
 }
 window.addEventListener('error', (e) => { errReport(e.message || '未知錯誤', (e.filename||'') + ':' + (e.lineno||''), e.error && e.error.stack) })
 window.addEventListener('unhandledrejection', (e) => { const r = e.reason || {}; errReport('未處理的Promise：' + (r.message || String(r)).slice(0,200), 'promise', r.stack) })
-// 🐞 App 錯誤日誌專頁（張良 2026-09-26「應該在左邊」——側欄獨立入口，主管/審核人才看得到按鈕）
+// 🐞 問題回報・功能許願（張良 2026-09-26：全員入口——使用問題/想要的新功能，圖片影片文字直接說明給老闆；技術錯誤日誌只有主管看得到）
 async function errsView(){
   curStore = 'errs'; setTabs('errs')
-  app.innerHTML = '<section>載入中…</section>'
-  let d
-  try { const r = await fetch('/api/mail-sync?errs=' + encodeURIComponent(K) + '&me=' + encodeURIComponent(TK())); d = await r.json() } catch(e){}
-  document.getElementById('upd').textContent = 'App 錯誤日誌・自動偵測＋人工回報'
-  if (!d || !d.ok) { app.innerHTML = '<div class="err">這頁只開放主管/審核人</div>'; return }
-  app.innerHTML = `<section><h2>App 錯誤日誌 <span class="hint">自動偵測（程式報錯）自己進來；同一種錯誤當天只通知你一次。</span></h2>
-  <div style="margin-bottom:10px"><button class="mini on" style="padding:9px 18px" onclick="sopReport('App問題')">＋ 回報 App 問題（文字＋照片/影片）</button> <span class="hint">會進任務看板「App問題」類＋走你的發布審核；夥伴在各站的「⚠️ 回報」也通</span></div>
-  ${d.list.length ? d.list.map(x=>`<div style="background:#fff;border:1.5px solid var(--line);border-radius:10px;padding:9px 11px;margin-bottom:8px;font-size:14px">
-    <b style="color:var(--red)">${x.msg}</b>
-    <div class="hint">頁面 ${x.page||'?'}・v${x.ver||'?'}・${x.by}・首見 ${x.day} ${x.ts}・累計 <b>${x.n}</b> 次${x.src?`・${x.src}`:''}</div>
-    ${x.stack?`<details><summary class="hint" style="cursor:pointer">技術細節</summary><pre style="font-size:11.5px;white-space:pre-wrap;color:var(--muted)">${(x.stack||'').replace(/</g,'&lt;')}</pre></details>`:''}
-  </div>`).join('') : '<div class="mut">目前沒有錯誤紀錄 🎉</div>'}
+  if (!window._lbD) app.innerHTML = '<section>載入中…</section>'
+  await lbFetch()
+  document.getElementById('upd').textContent = '問題回報・功能許願'
+  const d = window._lbD || {}
+  const meN = d.me && d.me.name
+  const mine = (d.issues||[]).filter(x=>['App問題','功能許願'].includes(x.st))
+  const badge = x => x.status==='done' ? '<span style="color:var(--green);font-weight:800">✅ 已完成</span>' : x.status==='pending' ? '<span style="color:#A85C26;font-weight:800">🕐 待審核</span>' : (x.claimBy ? `<span style="color:var(--pdark);font-weight:800">處理中（${x.claimBy}）</span>` : '<span class="hint">已收到</span>')
+  let h = `<section><h2>問題回報・功能許願 <span class="hint">用得不順、想要新功能——文字＋照片＋影片直接說明，老闆看得到</span></h2>
+  <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
+    <button class="mini on" style="padding:10px 18px" onclick="sopReport('App問題')">回報使用問題</button>
+    <button class="mini on" style="padding:10px 18px" onclick="sopReport('功能許願')">許願新功能</button>
+  </div>
+  ${mine.length ? mine.map(x=>`<div style="background:#fff;border:1.5px solid ${x.status==='done'?'#BBE3CC':'var(--line)'};border-radius:10px;padding:9px 11px;margin-bottom:8px;font-size:14px">
+    <b>${x.st==='功能許願'?'💡':'🐞'} ${x.text||'（附件）'}</b>${(x.media||[]).length?`<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:5px">${x.media.map(m=>/\.(mp4|mov|webm|m4v)(\?|$)/i.test(m)?`<a href="${m}" target="_blank" style="font-size:12px;border:1px solid var(--line);border-radius:8px;padding:4px 9px">🎬 影片</a>`:`<img src="${m}" style="width:52px;height:52px;object-fit:cover;border-radius:8px;border:1px solid var(--line);cursor:pointer" onclick="imgView('${m}')">`).join('')}</div>`:''}
+    <div class="hint">${x.by}・${x.ts}・${badge(x)}</div>
+  </div>`).join('') : '<div class="mut">還沒有回報——上面兩顆按鈕隨時丟</div>'}
   </section>`
+  // 主管/審核人附：自動偵測技術日誌
+  try {
+    const r2 = await fetch('/api/mail-sync?errs=' + encodeURIComponent(K) + '&me=' + encodeURIComponent(TK()))
+    const d2 = await r2.json()
+    if (d2 && d2.ok) h += `<section><details><summary style="font-weight:800;cursor:pointer">自動偵測錯誤日誌（${d2.list.length}）<span class="hint">程式報錯自動抓；同錯當天只通知一次</span></summary>
+      ${d2.list.length?d2.list.map(x=>`<div style="padding:6px 0;border-bottom:1px dashed var(--line);font-size:14px"><b style="color:var(--red)">${x.msg}</b><div class="hint">頁面 ${x.page||'?'}・v${x.ver||'?'}・${x.by}・首見 ${x.day} ${x.ts}・累計 ${x.n} 次</div></div>`).join(''):'<div class="mut" style="margin-top:6px">沒有錯誤紀錄 🎉</div>'}
+      </details></section>`
+  } catch(e){}
+  if (curStore === 'errs') app.innerHTML = h
 }
-async function errsTabSync(){ // 主管/審核人才亮 🐞（用 ?errs 權限探測）
-  if (!TK()) return
-  try { const r = await fetch('/api/mail-sync?errs=' + encodeURIComponent(K) + '&me=' + encodeURIComponent(TK())); const d = await r.json(); if (d && d.ok) { const b = document.getElementById('tab-errs'); if (b) b.style.display = '' } } catch(e){}
-}
-errsTabSync()
 load('ground')
 </script>
 </body>
