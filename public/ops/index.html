@@ -2283,17 +2283,14 @@ function errReport(msg, src, stack){
 }
 window.addEventListener('error', (e) => { errReport(e.message || '未知錯誤', (e.filename||'') + ':' + (e.lineno||''), e.error && e.error.stack) })
 window.addEventListener('unhandledrejection', (e) => { const r = e.reason || {}; errReport('未處理的Promise：' + (r.message || String(r)).slice(0,200), 'promise', r.stack) })
-// 🐞 問題回報・功能許願（張良 2026-09-26：全員入口——使用問題/想要的新功能，圖片影片文字直接說明給老闆；技術錯誤日誌只有主管看得到）
-async function errsView(){
-  curStore = 'errs'; setTabs('errs')
-  if (!window._lbD) app.innerHTML = '<section>載入中…</section>'
-  await lbFetch()
+// 🐞 問題回報・功能許願（張良 2026-09-26 全員入口；09-26晚抓包「切過去明顯慢」→改 stale-first：先畫快取秒開、背景更新；技術日誌另外非同步塞進來）
+function errsRender(){
+  if (curStore !== 'errs') return
   document.getElementById('upd').textContent = '問題回報・功能許願'
   const d = window._lbD || {}
-  const meN = d.me && d.me.name
   const mine = (d.issues||[]).filter(x=>['App問題','功能許願'].includes(x.st))
   const badge = x => x.status==='done' ? '<span style="color:var(--green);font-weight:800">✅ 已完成</span>' : x.status==='pending' ? '<span style="color:#A85C26;font-weight:800">🕐 待審核</span>' : (x.claimBy ? `<span style="color:var(--pdark);font-weight:800">處理中（${x.claimBy}）</span>` : '<span class="hint">已收到</span>')
-  let h = `<section><h2>問題回報・功能許願 <span class="hint">用得不順、想要新功能——文字＋照片＋影片直接說明，老闆看得到</span></h2>
+  app.innerHTML = `<section><h2>問題回報・功能許願 <span class="hint">用得不順、想要新功能——文字＋照片＋影片直接說明，老闆看得到</span></h2>
   <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
     <button class="mini on" style="padding:10px 18px" onclick="sopReport('App問題')">回報使用問題</button>
     <button class="mini on" style="padding:10px 18px" onclick="sopReport('功能許願')">許願新功能</button>
@@ -2302,16 +2299,27 @@ async function errsView(){
     <b>${x.st==='功能許願'?'💡':'🐞'} ${x.text||'（附件）'}</b>${(x.media||[]).length?`<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:5px">${x.media.map(m=>/\.(mp4|mov|webm|m4v)(\?|$)/i.test(m)?`<a href="${m}" target="_blank" style="font-size:12px;border:1px solid var(--line);border-radius:8px;padding:4px 9px">🎬 影片</a>`:`<img src="${m}" style="width:52px;height:52px;object-fit:cover;border-radius:8px;border:1px solid var(--line);cursor:pointer" onclick="imgView('${m}')">`).join('')}</div>`:''}
     <div class="hint">${x.by}・${x.ts}・${badge(x)}</div>
   </div>`).join('') : '<div class="mut">還沒有回報——上面兩顆按鈕隨時丟</div>'}
-  </section>`
-  // 主管/審核人附：自動偵測技術日誌
+  </section><div id="errTech"></div>`
+  errsTech() // 技術日誌（主管）非同步補進來，不擋畫面
+}
+async function errsView(){
+  curStore = 'errs'; setTabs('errs')
+  if (!window._lbD) { const c = tcGet('lb'); if (c) window._lbD = c }
+  if (window._lbD) errsRender(); else app.innerHTML = '<section>載入中…</section>'
+  await lbFetch()
+  errsRender()
+}
+async function errsTech(){
+  const el = document.getElementById('errTech'); if (!el || !TK()) return
   try {
     const r2 = await fetch('/api/mail-sync?errs=' + encodeURIComponent(K) + '&me=' + encodeURIComponent(TK()))
     const d2 = await r2.json()
-    if (d2 && d2.ok) h += `<section><details><summary style="font-weight:800;cursor:pointer">自動偵測錯誤日誌（${d2.list.length}）<span class="hint">程式報錯自動抓；同錯當天只通知一次</span></summary>
+    if (!d2 || !d2.ok) return
+    const el2 = document.getElementById('errTech'); if (!el2 || curStore !== 'errs') return
+    el2.innerHTML = `<section><details><summary style="font-weight:800;cursor:pointer">自動偵測錯誤日誌（${d2.list.length}）<span class="hint">程式報錯自動抓；同錯當天只通知一次</span></summary>
       ${d2.list.length?d2.list.map(x=>`<div style="padding:6px 0;border-bottom:1px dashed var(--line);font-size:14px"><b style="color:var(--red)">${x.msg}</b><div class="hint">頁面 ${x.page||'?'}・v${x.ver||'?'}・${x.by}・首見 ${x.day} ${x.ts}・累計 ${x.n} 次</div></div>`).join(''):'<div class="mut" style="margin-top:6px">沒有錯誤紀錄 🎉</div>'}
       </details></section>`
   } catch(e){}
-  if (curStore === 'errs') app.innerHTML = h
 }
 // 🔍 發現王明細（張良 2026-09-26）
 function lbFinder(nm){
