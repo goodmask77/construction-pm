@@ -2202,7 +2202,11 @@ async function soLoad(){
   const el = document.getElementById('sosec'); if (!el) return
   let d
   try { const r = await fetch('/api/mail-sync?fcso=' + encodeURIComponent(K)); d = await r.json() } catch(e){}
-  if (!d || !d.ok || d.none) { el.innerHTML = ''; return }
+  if (!d || !d.ok) { el.innerHTML = ''; return }
+  if (d.none) { // 公休/未到11:00：區塊照樣顯示位置＋說明（張良 2026-09-26「沒看到在哪」——藏起來反而找不到）
+    el.innerHTML = `<section><div style="font-weight:800;color:var(--muted)">今日賣完回報 <span class="hint">${d.none}——營業日 11:00 後這裡會出現品項清單，收班時把賣完的勾一勾</span></div></section>`
+    return
+  }
   const soN = d.items.filter(x=>x.so).length
   el.innerHTML = `<section><details><summary style="font-weight:800;cursor:pointer">今日賣完回報（收班勾）${soN?`<span style="color:var(--red);font-weight:800">・已勾 ${soN} 項</span>`:''} <span class="hint">哪些品項今天賣完了？收班時勾一下——預測會把它當「需求下限」不會誤判賣不動</span></summary>
     <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:6px;margin-top:8px">
