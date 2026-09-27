@@ -1216,12 +1216,14 @@ export default async function handler(req, res) {
     const whoSp = await sopWho(pb3.token)
     const defSp = await kvGet('sp_finance_pm_sop_def')
     const aprSp = (((defSp || {}).ground || {}).approvers || ['張良瑋'])
-    if (!whoSp || (whoSp.role !== '主管' && !aprSp.includes(whoSp.name))) return res.status(403).json({ ok: false, error: '特殊日由主管/審核人標記' })
+    const mkSp = (process.env.MENU_PROBE_KEY || '').trim()
+    const byAdmin = mkSp && String(pb3.force || '') === mkSp // 管理金鑰（後台維運標記用，留痕=系統）
+    if (!byAdmin && (!whoSp || (whoSp.role !== '主管' && !aprSp.includes(whoSp.name)))) return res.status(403).json({ ok: false, error: '特殊日由主管/審核人標記' })
     if (!/^\d{4}-\d{2}-\d{2}$/.test(pb3.date || '')) return res.status(400).json({ ok: false })
     const cfgD = (await kvGet('sp_finance_pm_fc_cfg')) || {}
     cfgD.special = cfgD.special || {}
     if (pb3.del) delete cfgD.special[pb3.date]
-    else cfgD.special[pb3.date] = String(pb3.note || '特殊日').slice(0, 40) + '（' + whoSp.name + '）'
+    else cfgD.special[pb3.date] = String(pb3.note || '特殊日').slice(0, 40) + '（' + (whoSp ? whoSp.name : '系統') + '）'
     await kvPut('sp_finance_pm_fc_cfg', cfgD, '特殊日(' + whoSp.name + ')')
     return res.status(200).json({ ok: true, special: cfgD.special })
   }

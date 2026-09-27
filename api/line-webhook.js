@@ -760,6 +760,23 @@ async function loadPosText() {
         arr.slice(0, 25).forEach(([n, v], i) => lines.push(`  ${i + 1}. ${n}［${v.cat}］ ${v.qty}份 ${nt(v.amt)}`))
         if (arr.length > 35) { lines.push('  …（中段略）…'); arr.slice(-10).forEach(([n, v]) => lines.push(`  末段: ${n}［${v.cat}］ ${v.qty}份 ${nt(v.amt)}`)) }
       }
+      // 單日品項明細（張良 2026-09-27：DD 被問「9/25 各品項賣幾份」答不出→帶最近 3 個營業日/店的逐品項；更早的單日在庫但不塞進對話）
+      const dayKeys2 = Object.keys(det.days).sort().reverse()
+      const perStore2 = { ground: [], abeach: [] }
+      for (const k2 of dayKeys2) { const st2 = /groun/i.test(det.days[k2].store || '') ? 'ground' : 'abeach'; if (perStore2[st2].length < 3) perStore2[st2].push(k2) }
+      const dayLine2 = (k2) => {
+        const items2 = []
+        ;(det.days[k2].sheets?.['總銷售額 (以類別分類)'] || []).forEach(sec => {
+          if (sec.title === '總結' || sec.title === '套餐') return
+          ;(sec.rows || []).forEach(r => { if (!Array.isArray(r) || typeof r[0] !== 'string' || /^1\/4/.test(r[0].trim())) return; const q = Number(r[1]) || 0; if (q > 0) items2.push([r[0], q]) })
+        })
+        items2.sort((a, b) => b[1] - a[1])
+        const head2 = items2.slice(0, 40).map(([n2, q]) => `${n2}×${q}`).join('、')
+        const rest2 = items2.slice(40)
+        return head2 + (rest2.length ? `…另 ${rest2.length} 項共 ${rest2.reduce((t2, x) => t2 + x[1], 0)} 份` : '')
+      }
+      lines.push('【單日品項明細（最近 3 個營業日/店；更早的單日請張良從 App 品項明細查）】')
+      for (const st2 of ['ground', 'abeach']) for (const k2 of perStore2[st2]) lines.push(`  - ${k2.slice(0, 10)} ${st2 === 'ground' ? 'GROUN:D' : 'A Beach'}：${dayLine2(k2)}`)
       // 同名品項分類價差（張良 2026-07-26：賣很少+單價低=外帶類別版本，DD 要認得）
       const dupes = Object.entries(agg).map(([n, v]) => {
         const cats = Object.entries(v.byCat || {}).filter(([, b]) => b.qty > 0).map(([c2, b]) => ({ c: c2, qty: b.qty, unit: Math.round(b.amt / b.qty) }))
