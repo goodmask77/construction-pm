@@ -1224,7 +1224,7 @@ export default async function handler(req, res) {
     cfgD.special = cfgD.special || {}
     if (pb3.del) delete cfgD.special[pb3.date]
     else cfgD.special[pb3.date] = String(pb3.note || '特殊日').slice(0, 40) + '（' + (whoSp ? whoSp.name : '系統') + '）'
-    await kvPut('sp_finance_pm_fc_cfg', cfgD, '特殊日(' + whoSp.name + ')')
+    await kvPut('sp_finance_pm_fc_cfg', cfgD, '特殊日(' + (whoSp ? whoSp.name : '系統') + ')')
     return res.status(200).json({ ok: true, special: cfgD.special })
   }
   // 人工預測調整（主管/審核人；必填原因；影響「還沒鎖定」的日子）：POST ?fcadj= {date, k, n, why}
