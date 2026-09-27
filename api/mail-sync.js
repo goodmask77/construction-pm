@@ -1333,14 +1333,16 @@ export default async function handler(req, res) {
     let ph = {}
     try { ph = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
     const whoH = await sopWho(ph.token)
-    if (!whoH) return res.status(403).json({ ok: false, error: '要先跟 DD 說「綁定GD」' })
+    const mkH = (process.env.MENU_PROBE_KEY || '').trim()
+    const byAdminH = mkH && String(ph.force || '') === mkH // 管理金鑰（後台維運下架用）
+    if (!whoH && !byAdminH) return res.status(403).json({ ok: false, error: '要先跟 DD 說「綁定GD」' })
     const stH = ph.store === 'abeach' ? 'abeach' : 'ground'
     const keyH = String(ph.key || '').slice(0, 80)
     if (!keyH) return res.status(400).json({ ok: false })
     const doc = (await kvGet('sp_finance_pm_pos_hidden')) || {}
     doc[stH] = doc[stH] || {}
     if (ph.hide) doc[stH][keyH] = 1; else delete doc[stH][keyH]
-    await kvPut('sp_finance_pm_pos_hidden', doc, '品項隱藏(' + whoH.name + ')')
+    await kvPut('sp_finance_pm_pos_hidden', doc, '品項隱藏(' + (whoH ? whoH.name : '系統') + ')')
     return res.status(200).json({ ok: true })
   }
   // ── 🍔 菜單編輯（張良 2026-09-22：base=既有菜單凍結快照、draft=新菜單大家協作編輯；diff 給夥伴看動了什麼）──
