@@ -1261,6 +1261,28 @@ async function handleUnsend(ev) {
     try { const { logPush } = await import('./push.js'); await logPush(boss, 1, '回收訊息通知') } catch (_) {}
   } catch (_) {}
 }
+// 🔎 DD 資料代查工具（張良 2026-09-27「一直出現一樣的問題,可以根除嗎」——根除法：不再靠預塞摘要,AI 需要什麼自己下指令查庫）
+async function queryPosDay(date, store) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return '（日期格式要 YYYY-MM-DD）'
+  const st = /ab|beach/i.test(store || '') ? 'abeach' : 'ground'
+  const kv2 = await kvGetMany(['sp_finance_pm_pos', 'sp_finance_pm_pos_d_' + date.slice(0, 7)])
+  const ent = (((kv2['sp_finance_pm_pos'] || {}).entries) || []).find(e => e.date === date && ((/groun/i.test(e.store || '') ? 'ground' : 'abeach') === st))
+  const day = (((kv2['sp_finance_pm_pos_d_' + date.slice(0, 7)] || {}).days) || {})[date + '::' + st]
+  if (!ent && !day) return `（${date} ${st === 'ground' ? 'GROUN:D' : 'A Beach'} 沒有入庫資料——可能公休或還沒進來）`
+  const L = [`◆ ${date} ${st === 'ground' ? 'GROUN:D' : 'A Beach'} 單日完整明細（系統代查）`]
+  if (ent) L.push(`營收 NT$${ent.revenue}｜單數 ${ent.txCount || '?'}｜現金 ${ent.cash || 0}｜卡 ${ent.card || 0}｜LINE Pay ${ent.linepay || 0}｜Uber ${ent.uber || 0}｜折扣 ${ent.discount || 0}`)
+  const secs = ((day || {}).sheets || {})['總銷售額 (以類別分類)']
+  if (Array.isArray(secs)) {
+    const items = []
+    secs.forEach(sec => { if (sec.title === '總結') return; (sec.rows || []).forEach(r => { if (!Array.isArray(r) || typeof r[0] !== 'string' || /^1\/4/.test(r[0].trim())) return; const q = Number(r[1]) || 0; if (q > 0) items.push([r[0], sec.title, q, Math.round(Number(r[r.length - 1]) || 0)]) }) })
+    items.sort((a, b) => b[2] - a[2])
+    L.push(`逐品項（${items.length} 項，份數降冪）：`)
+    items.forEach(x => L.push(`  - ${x[0]}［${x[1]}］×${x[2]}｜NT$${x[3]}`))
+  }
+  const slot = ((day || {}).sheets || {})['時段分析(每小時)']
+  if (Array.isArray(slot) && slot[0]) { L.push('時段（每小時營業額）：'); (slot[0].rows || []).forEach(r => { if (Array.isArray(r) && r.length) L.push(`  ${r[0]}時 NT$${Math.round(Number(r[r.length - 1]) || Number(r[1]) || 0)}`) }) }
+  return L.join('\n')
+}
 async function getLineProfile(userId) { try { const r = await fetch('https://api.line.me/v2/bot/profile/' + userId, { headers: { authorization: `Bearer ${TOKEN}` } }); if (r.ok) { const d = await r.json(); return d.displayName || '' } } catch (_) {} return '' }
 
 // ── 對話記憶：每個對話(私訊userId或群組id)留最近幾輪「逐字」，更舊的滾動濃縮成摘要永久保留 ──
@@ -1362,6 +1384,7 @@ const BOT_AGENT_GUIDE = `
 - {"type":"set_category_status","category":"消防工程","status":"完工"}  // 狀態：待開工/進行中/完工/有問題/暫停
 - {"type":"set_item","category":"消防工程","item":"灑水頭","status":"完工","unitPrice":1200,"qty":10,"assignee":"王師傅"}  // 改細項；欄位都可省略
 - {"type":"add_category","name":"空調工程","budget":300000,"space":"工程"}  // 建大項分類（四個空間都可以，space 預設工程；例：在團隊工作建「採購」就帶"space":"團隊"）。任務中心的分類欄位就是這個大項，建好後用 add_task/update_task 的 category 歸類
+- {"type":"query_pos_day","date":"2026-09-25","store":"ground"}  // 🔎資料代查（唯讀,不用確認,誰問都能用）：查某天某店「完整」銷售明細=逐品項份數金額+時段表+付款別。使用者問單日的品項/時段/細節而你手上摘要沒有那天資料時,輸出這個指令(可附一句「我查一下」),系統會代查回填後你再答——**不要**再回「資料沒帶到/請找張良接」。store=ground|abeach。
 - {"type":"add_item","category":"空調工程","name":"主機","qty":1,"unit":"式","unitPrice":150000,"taxType":"未稅"}
 - {"type":"delete_item","category":"空調工程","item":"主機"}
 - {"type":"add_payment","category":"消防工程","amount":63000,"date":"2026-06-22","note":"訂金"}  // 大項新增一筆付款
@@ -1748,7 +1771,16 @@ export default async function handler(req, res) {
       }
       // 3) 一般流程：載入資料＋對話記憶＋長期記事本 → 問 AI（操作者才開放下指令）
       const [snaps, accountsText, financeText, activityText, estimatesText, crewText, history, memList, conclusionsText, tasksText, sheetText, posText, catalogText, supplyText, lineQuotaText, filelibText, groupChatText] = await Promise.all([loadSnapshots(), loadAccounts(), loadFinanceText(), loadActivityText(), loadEstimatesText(), Promise.all([loadCrewText(), loadShiftText(), loadPunchText()]).then(([a, b, c]) => a + b + c), getChatHistory(convId), getMemory(), loadConclusionsText(), loadTasksText(), loadSheetText(), loadPosText(), loadCatalogText(), loadSupplyText(), loadLineQuotaText(), loadFilelibText(), loadGroupChatText()])
-      const rawReply = await answer(text, snaps, accountsText, financeText, activityText, estimatesText, crewText, canAct, history, memoryToText(memList), conclusionsText, tasksText, sheetText, posText, catalogText, supplyText, lineQuotaText, filelibText, groupChatText, moneyOK)
+      let rawReply = await answer(text, snaps, accountsText, financeText, activityText, estimatesText, crewText, canAct, history, memoryToText(memList), conclusionsText, tasksText, sheetText, posText, catalogText, supplyText, lineQuotaText, filelibText, groupChatText, moneyOK)
+      // 🔎 資料代查迴圈（張良 2026-09-27 根除）：AI 輸出 query_pos_day → 系統查庫 → 資料回填再答一輪（唯讀自動執行,不經確認）
+      try {
+        const qms = [...rawReply.matchAll(/\{[^{}]*"type"\s*:\s*"query_pos_day"[^{}]*\}/g)].slice(0, 2)
+        if (qms.length) {
+          let dataTxt = ''
+          for (const m of qms) { try { const q = JSON.parse(m[0]); dataTxt += await queryPosDay(String(q.date || ''), String(q.store || 'ground')) + '\n\n' } catch (e) { dataTxt += '（查詢指令解析失敗）\n' } }
+          rawReply = await answer(text + '\n\n【系統代查結果（依你剛才的 query_pos_day）——請直接據此回答使用者,不要再輸出查詢指令,也不要說資料沒帶到】\n' + dataTxt, snaps, accountsText, financeText, activityText, estimatesText, crewText, canAct, history, memoryToText(memList), conclusionsText, tasksText, sheetText, posText, catalogText, supplyText, lineQuotaText, filelibText, groupChatText, moneyOK)
+        }
+      } catch (e) { console.log('query tool err', e?.message) }
       // 抓出 D 想長期記住的事（[[記住:...]]）→ 存進記事本(僅操作者)，並把標記從給人看的文字拿掉
       const { facts, clean } = extractMemoryTags(rawReply)
       if (canAct && facts.length) { for (const f of facts) await addMemory(f, 'auto', op?.name) }
