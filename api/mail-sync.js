@@ -1087,7 +1087,7 @@ export default async function handler(req, res) {
     const defN = await kvGet('sp_finance_pm_sop_def')
     const aprN = (((defN || {}).ground || {}).approvers || ['張良瑋'])
     if (!whoN2 || !aprN.includes(whoN2.name)) return res.status(403).json({ ok: false, error: '只有審核人能改通知開關' })
-    const KEYSN = ['buy', 'sopLate', 'lowStock', 'prep0930']
+    const KEYSN = ['buy', 'sopLate', 'lowStock', 'prep0930', 'staleItem']
     const doc = (await kvGet('sp_finance_pm_notify')) || {}
     for (const k2 of KEYSN) if (nb.cfg && k2 in nb.cfg) doc[k2] = nb.cfg[k2] ? 1 : 0
     await kvPut('sp_finance_pm_notify', doc, '通知開關(' + whoN2.name + ')')

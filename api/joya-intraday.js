@@ -51,6 +51,65 @@ export default async function handler(req, res) {
       }
     }
   } catch (e) { console.log('sop check err', e?.message) }
+  // ── 🕵️ 品項停售盯梢（張良 2026-09-27：超過 5 個營業日沒販售 → DD 發 happy337 群請張良確認 斷貨/下架/產品問題）──
+  try {
+    if (hm >= '11:00' && hm < '11:20') {
+      const todayS = new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10)
+      const staleDoc = (await kvGet('sp_finance_pm_stale')) || { notified: {} }
+      const ncfgS = (await kvGet('sp_finance_pm_notify')) || {}
+      if (staleDoc.day !== todayS && ncfgS.staleItem !== 0) { // 一天查一次；開關預設開（張良指定要的）
+        staleDoc.day = todayS
+        const mo1 = todayS.slice(0, 7), mo0 = new Date(Date.now() + 8 * 3600e3 - 32 * 86400e3).toISOString().slice(0, 7)
+        const [posD, dM1, dM0, aliasD, hiddenD] = await Promise.all([kvGet('sp_finance_pm_pos'), kvGet('sp_finance_pm_pos_d_' + mo1), mo0 !== mo1 ? kvGet('sp_finance_pm_pos_d_' + mo0) : null, kvGet('sp_finance_pm_pos_alias'), kvGet('sp_finance_pm_pos_hidden')])
+        const daysAll = Object.assign({}, ((dM0 || {}).days) || {}, ((dM1 || {}).days) || {})
+        const alerts = []
+        for (const stq of ['ground', 'abeach']) {
+          const alias = ((aliasD || {})[stq]) || {}, hidden = ((hiddenD || {})[stq]) || {}
+          const bdays = ((posD || {}).entries || []).filter(e => ((/groun/i.test(e.store || '') ? 'ground' : 'abeach') === stq) && e.revenue > 0 && !e.intraday && e.date < todayS).map(e => e.date).sort().reverse().slice(0, 30)
+          if (bdays.length < 8) continue
+          const recent5 = new Set(bdays.slice(0, 5))
+          const last = {}, nm = {}
+          for (const dt of bdays) {
+            const secs = ((daysAll[dt + '::' + stq] || {}).sheets || {})['總銷售額 (以類別分類)']
+            if (!Array.isArray(secs)) continue
+            for (const sec of secs) {
+              if (sec.title === '總結' || sec.title === '套餐') continue
+              for (const r of (sec.rows || [])) {
+                if (!Array.isArray(r) || typeof r[0] !== 'string' || /^1\/4/.test(r[0].trim())) continue
+                let k = String(r[0]); k = alias[k] || k
+                if (hidden[k]) continue
+                if ((Number(r[1]) || 0) <= 0) continue
+                if (!last[k] || dt > last[k]) { last[k] = dt; nm[k] = r[0] }
+              }
+            }
+          }
+          for (const [k, dt] of Object.entries(last)) {
+            if (recent5.has(dt)) continue
+            const gap = bdays.indexOf(dt) // 最後販售之後過了幾個營業日
+            const key = stq + '|' + k
+            if (staleDoc.notified[key] === dt) continue // 已通知過且期間沒再賣→不重複吵
+            staleDoc.notified[key] = dt
+            alerts.push(`・[${stq === 'ground' ? 'GD' : 'AB'}] ${nm[k]}（最後販售 ${dt.slice(5)}，已 ${gap} 個營業日沒賣）`)
+          }
+        }
+        if (alerts.length) {
+          const seen = (await kvGet('pm_group_seen')) || {}
+          const gidS = (Object.entries(seen).find(([, v]) => /happy\s*337/i.test((v && v.name) || '')) || [])[0]
+          const txtS = `🕵️ 品項停售提醒（超過 5 個營業日沒賣出）\n${alerts.slice(0, 15).join('\n')}${alerts.length > 15 ? `\n…共 ${alerts.length} 項` : ''}\n\n請確認：斷貨？下架？產品有問題？要下架的跟 DD 說品名。`
+          const tkS = (process.env.LINE_CHANNEL_ACCESS_TOKEN || '').trim()
+          if (tkS && gidS) await fetch('https://api.line.me/v2/bot/message/push', { method: 'POST', headers: { 'content-type': 'application/json', Authorization: 'Bearer ' + tkS }, body: JSON.stringify({ to: gidS, messages: [{ type: 'text', text: txtS }] }) })
+          else if (tkS) { // 找不到 happy337 群→退回私訊審核人（至少不漏）
+            const [defS2, rosterS2] = await Promise.all([kvGet('sp_finance_pm_sop_def'), kvGet('sp_crew_kb_roster')])
+            for (const an of (((defS2 || {}).ground || {}).approvers || ['張良瑋'])) {
+              const ap = ((rosterS2 || {}).people || []).find(p2 => p2.name === an && p2.lineUserId)
+              if (ap) await fetch('https://api.line.me/v2/bot/message/push', { method: 'POST', headers: { 'content-type': 'application/json', Authorization: 'Bearer ' + tkS }, body: JSON.stringify({ to: ap.lineUserId, messages: [{ type: 'text', text: txtS + '\n\n（找不到 happy337 群——請在群裡跟 DD 講句話讓它記到群名後，之後會發群）' }] }) })
+            }
+          }
+        }
+        await kvPut('sp_finance_pm_stale', staleDoc, '停售盯梢')
+      }
+    }
+  } catch (e) { console.log('stale err', e?.message) }
   // ── 📈 銷量預測每日快照（張良 2026-09-25 P1）：11:00 場次鎖定當日預測＋回填昨天實績（fcDaily 冪等，已鎖不重寫）──
   try {
     const tpeF = new Date(Date.now() + 8 * 3600e3)
