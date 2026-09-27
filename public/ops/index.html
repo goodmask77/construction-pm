@@ -1994,7 +1994,7 @@ async function tabsReset(){
 tabsInit()
 bindBtnSync()
 // ── 🔔 群組通知開關（張良 2026-09-21：主動群通知先全關；審核人在這裡逐項開）──
-const NOTIFY_DEF = [ ['buy','🛒 採購需求→內部群'], ['sopLate','⏰ SOP 超時未完成→內部群'], ['lowStock','📉 庫存低水位→內部群'], ['prep0930','🥩 每日 09:30 備料量→Family 群'] ]
+const NOTIFY_DEF = [ ['buy','採購需求→內部群'], ['sopLate','SOP 超時未完成→內部群'], ['lowStock','庫存低水位→內部群'], ['prep0930','每日 09:30 備料量→Family 群'], ['staleItem','品項超過5個營業日沒販售→happy337 群（預設開）', 1] ]
 async function notifyEdit(){
   let d
   try { const r = await fetch('/api/mail-sync?notifycfg=' + encodeURIComponent(K) + (TK() ? '&me=' + encodeURIComponent(TK()) : '')); d = await r.json() } catch(e){}
@@ -2004,7 +2004,7 @@ async function notifyEdit(){
   ov.innerHTML = `<div style="background:#fff;border-radius:14px;max-width:400px;width:100%;padding:16px" onclick="event.stopPropagation()">
     <div style="font-weight:900;margin-bottom:4px">🔔 群組通知開關</div>
     <div class="hint" style="margin-bottom:10px">預設全關（不主動打擾群組）。${d.canEdit?'點開要的：':'只有審核人能改，目前狀態：'}<br>問題回報不在這裡——那個走你的「發布」審核，你按了才進群。</div>
-    ${NOTIFY_DEF.map(([k,lb])=>`<label style="display:flex;gap:8px;align-items:center;padding:7px 4px;border-bottom:1px solid var(--line);font-size:15px;font-weight:600"><input type="checkbox" data-nk="${k}" ${d.cfg[k]===1?'checked':''} ${d.canEdit?'':'disabled'} style="width:18px;height:18px"> ${lb}</label>`).join('')}
+    ${NOTIFY_DEF.map(([k,lb,defOn])=>`<label style="display:flex;gap:8px;align-items:center;padding:7px 4px;border-bottom:1px solid var(--line);font-size:15px;font-weight:600"><input type="checkbox" data-nk="${k}" ${(defOn ? d.cfg[k]!==0 : d.cfg[k]===1)?'checked':''} ${d.canEdit?'':'disabled'} style="width:18px;height:18px"> ${lb}</label>`).join('')}
     <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:10px"><button class="mini" style="padding:9px 12px" onclick="document.getElementById('ntOv').remove()">關閉</button>
     ${d.canEdit?`<button class="mini on" style="padding:9px 18px" onclick="notifySave()">儲存</button>`:''}</div></div>`
   ov.onclick = () => ov.remove()
