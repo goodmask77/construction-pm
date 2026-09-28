@@ -5,7 +5,7 @@
 // intraday 記錄當缺日重抓成最終值（盤中數字不會凍住）。手動測試：?force=<MENU_PROBE_KEY>
 import { joyaLogin, joyaFetchDay, joyaBuildRecord, taipeiToday } from './_joya.js'
 import { kvGet, kvPut, announceChanged, invStatus } from './mail-sync.js'
-import { syncEatsLive } from './_eats.js' // AB 盤中定時更新（張良 2026-09-06：不用等人按🔄）
+import { syncEatsLive, eatsSession, eatsItemList } from './_eats.js' // AB 盤中定時更新（張良 2026-09-06：不用等人按🔄）
 
 // 2026-08-27 二版（張良：峰值要能切半小時看）：快照相鄰兩張相減＝該時段營業額/單數（喬亞只給每小時，細粒度是快照推算的）
 // 2026-09-21 三版（張良：每 15 分記錄一次，版面之後做週期切換）：GD 11:00-19:30 每 15 分一格。
@@ -51,6 +51,42 @@ export default async function handler(req, res) {
       }
     }
   } catch (e) { console.log('sop check err', e?.message) }
+  // ── 🚫 AB 停售即時偵測（張良 2026-09-29：每天及時知道誰停售＋大概時間）──
+  // 每 30 分（AB 營業窗）撈 getItemList，品名 🚫 前綴＝團隊停售慣例；出現/消失 → happy337 即時通知＋記當日時間線
+  try {
+    if (abHit && (await kvGet('sp_finance_pm_notify') || {}).soldoutAB !== 0) {
+      const todaySo = new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10)
+      const soDoc = (await kvGet('sp_finance_pm_absoldout')) || { current: {}, log: [] }
+      const sessDoc = (await kvGet('sp_finance_pm_eats_sess')) || {}
+      const sess = await eatsSession(sessDoc.device || process.env.EATS_DEVICE_COOKIE || '')
+      const devN = Object.keys(sess.J.jar).find((k) => k.endsWith('|'))
+      if (devN) await kvPut('sp_finance_pm_eats_sess', { device: devN + '=' + sess.J.jar[devN], updatedAt: new Date().toISOString() }, 'AB停售偵測')
+      const items = await eatsItemList(sess)
+      const nowSo = {}
+      for (const it of items) if (/🚫/.test(it.n)) nowSo[it.n.replace(/🚫/g, '').trim()] = 1
+      const prev = soDoc.current || {}
+      const added = Object.keys(nowSo).filter(n => !(n in prev))
+      const removed = Object.keys(prev).filter(n => !(n in nowSo))
+      if (added.length || removed.length) {
+        soDoc.current = Object.fromEntries(Object.keys(nowSo).map(n => [n, prev[n] || hm]))
+        added.forEach(n => { soDoc.current[n] = hm; soDoc.log.unshift({ d: todaySo, t: hm, n, op: '停售' }) })
+        removed.forEach(n => soDoc.log.unshift({ d: todaySo, t: hm, n, op: '恢復' }))
+        soDoc.log = soDoc.log.slice(0, 300)
+        await kvPut('sp_finance_pm_absoldout', soDoc, 'AB停售變化')
+        const seenG = (await kvGet('pm_group_seen')) || {}
+        const gidSo = (Object.entries(seenG).find(([, v]) => /happy\s*337/i.test((v && v.name) || '')) || [])[0]
+        const lines2 = []
+        added.forEach(n => lines2.push(`🚫 ${n} 停售了（約 ${hm}）`))
+        removed.forEach(n => lines2.push(`✅ ${n} 恢復販售（約 ${hm}）`))
+        const txtSo = `🔔 A Beach 停售異動\n${lines2.join('\n')}\n目前停售中：${Object.keys(soDoc.current).length ? Object.keys(soDoc.current).join('、') : '無'}`
+        const tkSo = (process.env.LINE_CHANNEL_ACCESS_TOKEN || '').trim()
+        if (tkSo && gidSo) await fetch('https://api.line.me/v2/bot/message/push', { method: 'POST', headers: { 'content-type': 'application/json', Authorization: 'Bearer ' + tkSo }, body: JSON.stringify({ to: gidSo, messages: [{ type: 'text', text: txtSo }] }) })
+      } else if (!soDoc.day || soDoc.day !== todaySo) { // 每天首輪落個檔（沒變化也記狀態基準）
+        soDoc.day = todaySo
+        await kvPut('sp_finance_pm_absoldout', soDoc, 'AB停售基準')
+      }
+    }
+  } catch (e) { console.log('absoldout err', e?.message) }
   // ── 🕵️ 品項停售盯梢（張良 2026-09-27：超過 5 個營業日沒販售 → DD 發 happy337 群請張良確認 斷貨/下架/產品問題）──
   try {
     if (hm >= '11:00' && hm < '11:20') {

@@ -129,3 +129,22 @@ export async function eatsItemsRange(sess, start, end) {
   }
   return out
 }
+
+// AB 品項清單（張良 2026-09-29 停售即時偵測）：/menusetup/portal/getItemList——品名含🚫＝團隊停售命名慣例
+export async function eatsItemList(sess) {
+  const out = []
+  for (let page = 1; page <= 3; page++) {
+    const r = await fetch(BASE + '/menusetup/portal/getItemList?rCode=' + CTX.rcode, {
+      method: 'POST',
+      headers: { 'User-Agent': UA, Cookie: sess.J.cookieStr(), 'X-XSRF-TOKEN': sess.tok, 'X-XSRF-SESSION': sess.csid, 'EATS365-RESTAURANT-CODE': CTX.rcode, 'EATS365-BRAND-ID': CTX.brand, 'EATS365-ORGANIZATION-ID': CTX.org, 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify({ rCode: CTX.rcode, locale: 'zh', displayNum: 200, start: 1, page }),
+    })
+    if (!r.ok) throw new Error('eats: itemList ' + r.status)
+    const d = await r.json()
+    for (const it of (d.item_list || [])) {
+      try { const nm = JSON.parse(it.display_name || '{}'); out.push({ uid: it.item_uid, n: nm.tc || nm.default || nm.en || '' }) } catch (_) {}
+    }
+    if (page >= (d.total_page || 1)) break
+  }
+  return out
+}
