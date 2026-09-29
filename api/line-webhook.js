@@ -1298,7 +1298,7 @@ async function ddTranslate(text, mode) {
     const r = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: { 'content-type': 'application/json', 'x-api-key': ANTHROPIC, 'anthropic-version': '2023-06-01' },
-      body: JSON.stringify({ model, max_tokens: 600, system: `你是即時口譯。把使用者訊息${dir}。只輸出譯文本身：不要解釋、不要加引號、不要前綴。保留語氣與敬語程度；專有名詞（品牌名、人名）保留原文。這是面試對話情境，語氣自然口語。`, messages: [{ role: 'user', content: text }] }),
+      body: JSON.stringify({ model, max_tokens: Math.min(500, Math.max(80, text.length * 3)), system: `即時口譯：把訊息${dir}。只輸出譯文，不解釋不加引號。保留語氣敬語；人名品牌保留原文。`, messages: [{ role: 'user', content: text }] }),
     })
     const d = await r.json()
     return r.ok ? (d.content || []).map(c => c.text || '').join('') : null
@@ -1449,6 +1449,7 @@ const TRIGGERS = ['d哥', 'D哥', '進度', '多少', '還欠', '未付', '已�
 const triggered = (text) => /[?？]\s*$/.test(text) || TRIGGERS.some((k) => text.includes(k))
 
 export default async function handler(req, res) {
+  if (req.query?.warm) return res.status(200).json({ ok: true }) // 保溫 ping（翻譯秒回用：函式常駐不冷啟）
   // 診斷探針（唯讀）：/api/line-webhook?probe=crew → 回 D 實際拿到的夥伴中心文字開頭
   if (req.method === 'GET' && req.query?.probe === 'crew') {
     const t = (await loadCrewText()) + (await loadShiftText())
@@ -1576,13 +1577,24 @@ export default async function handler(req, res) {
         continue
       }
       if (ev.type !== 'message' || ev.message?.type !== 'text') continue
-      // 群組文字訊息先快取（回收監控用；私訊不快取）
-      if (ev.source?.type !== 'user') await cacheGroupMsg(ev)
       const gid = ev.source?.groupId || ev.source?.roomId || ev.source?.userId
-      // 只登記「群組/聊天室」到群組頁；私訊(user)不是群，登記進去會在群組頁出現「未命名群」
-      if (ev.source?.type !== 'user') await registerGroup(gid, ev.source?.type)
       const text = (ev.message.text || '').trim()
       const isDM = ev.source?.type === 'user' // 一對一私訊
+      // 🌐 翻譯模式快速通道（張良 2026-09-30「能不能秒翻」）：翻譯群第一時間翻、其他紀錄射後不理
+      if (!isDM && !/^(關翻譯|(?:DD\s*)?開翻譯)/i.test(text)) {
+        const trDocF = (await kvGetMany(['pm_bot_translate']))['pm_bot_translate'] || {}
+        const trCfgF = trDocF[gid]
+        if (trCfgF && trCfgF.mode && Date.now() - (trCfgF.on || 0) <= 12 * 3600e3) {
+          cacheGroupMsg(ev).catch(() => {}) // 不等
+          try { const tr = await ddTranslate(text, trCfgF.mode); if (tr && ev.replyToken) await lineReply(ev.replyToken, '🌐 ' + tr) } catch (e) { console.log('translate err', e?.message) }
+          continue
+        }
+        if (trCfgF && Date.now() - (trCfgF.on || 0) > 12 * 3600e3) { delete trDocF[gid]; kvSet('pm_bot_translate', trDocF).catch(() => {}) }
+      }
+      // 群組文字訊息先快取（回收監控用；私訊不快取）
+      if (ev.source?.type !== 'user') await cacheGroupMsg(ev)
+      // 只登記「群組/聊天室」到群組頁；私訊(user)不是群，登記進去會在群組頁出現「未命名群」
+      if (ev.source?.type !== 'user') await registerGroup(gid, ev.source?.type)
       // ── 🌐 翻譯模式（張良 2026-09-29）：群裡「開翻譯 中英/中韓」（操作者限定）→ 該群每句話自動雙向翻到「關翻譯」為止（12小時自動關保險）──
       if (!isDM) {
         const trM = text.match(/^(?:DD\s*)?開翻譯\s*(中英|中韓)?$/i)
@@ -1597,15 +1609,6 @@ export default async function handler(req, res) {
             await kvSet('pm_bot_translate', trDoc)
             await lineReply(ev.replyToken, md === 'zh-ko' ? '🌐 翻譯模式 ON（中⇄韓）：這個群每句話我都會自動翻譯，直到說「關翻譯」。\n🌐 통역 모드 시작: 이 방의 모든 메시지를 자동으로 번역합니다.' : '🌐 翻譯模式 ON（中⇄英）：這個群每句話我都會自動翻譯，直到說「關翻譯」。\n🌐 Translation mode ON: I will translate every message in this chat automatically.')
             continue
-          }
-        }
-        const trDoc2 = (await kvGetMany(['pm_bot_translate']))['pm_bot_translate'] || {}
-        const trCfg = trDoc2[gid]
-        if (trCfg && trCfg.mode) {
-          if (Date.now() - (trCfg.on || 0) > 12 * 3600e3) { delete trDoc2[gid]; await kvSet('pm_bot_translate', trDoc2) } // 12小時自動關（防忘記燒額度）
-          else if (text.length >= 1 && !/^(關翻譯|開翻譯)/.test(text)) {
-            try { const tr = await ddTranslate(text, trCfg.mode); if (tr && ev.replyToken) await lineReply(ev.replyToken, '🌐 ' + tr) } catch (e) { console.log('translate err', e?.message) }
-            continue // 翻譯群裡不再走 AI 主流程（點名 DD 也是翻譯優先）
           }
         }
       }

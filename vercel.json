@@ -37,6 +37,10 @@
     {
       "path": "/api/eats-rhythm",
       "schedule": "50 13 * * *"
+    },
+    {
+      "path": "/api/line-webhook?warm=1",
+      "schedule": "*/5 * * * *"
     }
   ]
 }

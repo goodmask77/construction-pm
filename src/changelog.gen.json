@@ -2,6 +2,7 @@
  {
   "date": "2026-09-29",
   "items": [
+   "DD即時翻譯模式 v3.7.4(張良2026-09-29外國面試者溝通)：群裡操作者說「開翻譯 中英/中韓」→該群每句話自動雙向翻(中文→外文/外文→繁中台灣用語,語言偵測漢字/諺文,Haiku快譯失敗退Sonnet,口譯風格只出譯文保留語氣敬語)不用點名;「關翻譯」關閉;12小時自動關防忘記;開啟時附雙語說明;翻譯群優先於AI主流程;pm_bot_translate狀態(pm_bot_*已在ALLOW家族)",
    "AB停售即時偵測 v3.7.3(張良2026-09-29「每天及時知道停售產品+大概時間點」)：破案=🚫是團隊改品名慣例非系統欄位→①_eats.js新eatsItemList(/menusetup/portal/getItemList逆向,分頁200筆;getLogList菜單修改紀錄端點也已驗通含original/updated diff秒級留檔) ②joya-intraday每30分AB窗掃品名🚫diff——新停售/恢復→happy337即時通知(約半小時精度)+pm_absoldout{current:{品名:起始時間},log時間線cap300} ③🔔開關soldoutAB預設開 ④pm_absoldout接AI雙邊過91域"
   ]
  },
