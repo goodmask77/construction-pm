@@ -1288,6 +1288,23 @@ async function queryPosDay(date, store) {
   if (Array.isArray(slot) && slot[0]) { L.push('時段（每小時營業額）：'); (slot[0].rows || []).forEach(r => { if (Array.isArray(r) && r.length) L.push(`  ${r[0]}時 NT$${Math.round(Number(r[r.length - 1]) || Number(r[1]) || 0)}`) }) }
   return L.join('\n')
 }
+// 🌐 即時翻譯模式（張良 2026-09-29：外國面試者溝通——群裡每句自動雙向翻，不用點名）
+async function ddTranslate(text, mode) {
+  const pair = mode === 'zh-ko' ? { fo: '韓文', foName: 'Korean' } : { fo: '英文', foName: 'English' }
+  const hasHan = /[\u4e00-\u9fff]/.test(text)
+  const hasHangul = /[\uac00-\ud7af]/.test(text)
+  const dir = hasHan ? `翻成${pair.fo}` : (hasHangul || !hasHan ? '翻成繁體中文（台灣用語）' : `翻成${pair.fo}`)
+  const call = async (model) => {
+    const r = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-api-key': ANTHROPIC, 'anthropic-version': '2023-06-01' },
+      body: JSON.stringify({ model, max_tokens: 600, system: `你是即時口譯。把使用者訊息${dir}。只輸出譯文本身：不要解釋、不要加引號、不要前綴。保留語氣與敬語程度；專有名詞（品牌名、人名）保留原文。這是面試對話情境，語氣自然口語。`, messages: [{ role: 'user', content: text }] }),
+    })
+    const d = await r.json()
+    return r.ok ? (d.content || []).map(c => c.text || '').join('') : null
+  }
+  return (await call('claude-haiku-4-5-20251001')) || (await call('claude-sonnet-4-6')) || '（翻譯暫時失敗，再說一次）'
+}
 async function getLineProfile(userId) { try { const r = await fetch('https://api.line.me/v2/bot/profile/' + userId, { headers: { authorization: `Bearer ${TOKEN}` } }); if (r.ok) { const d = await r.json(); return d.displayName || '' } } catch (_) {} return '' }
 
 // ── 對話記憶：每個對話(私訊userId或群組id)留最近幾輪「逐字」，更舊的滾動濃縮成摘要永久保留 ──
@@ -1566,6 +1583,32 @@ export default async function handler(req, res) {
       if (ev.source?.type !== 'user') await registerGroup(gid, ev.source?.type)
       const text = (ev.message.text || '').trim()
       const isDM = ev.source?.type === 'user' // 一對一私訊
+      // ── 🌐 翻譯模式（張良 2026-09-29）：群裡「開翻譯 中英/中韓」（操作者限定）→ 該群每句話自動雙向翻到「關翻譯」為止（12小時自動關保險）──
+      if (!isDM) {
+        const trM = text.match(/^(?:DD\s*)?開翻譯\s*(中英|中韓)?$/i)
+        const trOff = /^(?:DD\s*)?關翻譯$/i.test(text)
+        if (trM || trOff) {
+          const ops0 = await getOperators()
+          if (!ops0[ev.source?.userId || '']) { /* 非操作者的開關指令當一般訊息 */ } else {
+            const trDoc = (await kvGetMany(['pm_bot_translate']))['pm_bot_translate'] || {}
+            if (trOff) { delete trDoc[gid]; await kvSet('pm_bot_translate', trDoc); await lineReply(ev.replyToken, '🌐 翻譯模式已關閉。'); continue }
+            const md = trM[1] === '中韓' ? 'zh-ko' : 'zh-en'
+            trDoc[gid] = { mode: md, on: Date.now(), by: ev.source?.userId }
+            await kvSet('pm_bot_translate', trDoc)
+            await lineReply(ev.replyToken, md === 'zh-ko' ? '🌐 翻譯模式 ON（中⇄韓）：這個群每句話我都會自動翻譯，直到說「關翻譯」。\n🌐 통역 모드 시작: 이 방의 모든 메시지를 자동으로 번역합니다.' : '🌐 翻譯模式 ON（中⇄英）：這個群每句話我都會自動翻譯，直到說「關翻譯」。\n🌐 Translation mode ON: I will translate every message in this chat automatically.')
+            continue
+          }
+        }
+        const trDoc2 = (await kvGetMany(['pm_bot_translate']))['pm_bot_translate'] || {}
+        const trCfg = trDoc2[gid]
+        if (trCfg && trCfg.mode) {
+          if (Date.now() - (trCfg.on || 0) > 12 * 3600e3) { delete trDoc2[gid]; await kvSet('pm_bot_translate', trDoc2) } // 12小時自動關（防忘記燒額度）
+          else if (text.length >= 1 && !/^(關翻譯|開翻譯)/.test(text)) {
+            try { const tr = await ddTranslate(text, trCfg.mode); if (tr && ev.replyToken) await lineReply(ev.replyToken, '🌐 ' + tr) } catch (e) { console.log('translate err', e?.message) }
+            continue // 翻譯群裡不再走 AI 主流程（點名 DD 也是翻譯優先）
+          }
+        }
+      }
       // 只在「真的被 @到本帳號」(排除 @All/@他人) 或「明確叫到 D哥」時才回。
       // 移除舊的 /@d/：它會誤中別人的 @Doris、@David… 導致 D 插嘴。
       const mentionees = ev.message?.mention?.mentionees || []

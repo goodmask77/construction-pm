@@ -1,5 +1,11 @@
 [
  {
+  "date": "2026-09-29",
+  "items": [
+   "AB停售即時偵測 v3.7.3(張良2026-09-29「每天及時知道停售產品+大概時間點」)：破案=🚫是團隊改品名慣例非系統欄位→①_eats.js新eatsItemList(/menusetup/portal/getItemList逆向,分頁200筆;getLogList菜單修改紀錄端點也已驗通含original/updated diff秒級留檔) ②joya-intraday每30分AB窗掃品名🚫diff——新停售/恢復→happy337即時通知(約半小時精度)+pm_absoldout{current:{品名:起始時間},log時間線cap300} ③🔔開關soldoutAB預設開 ④pm_absoldout接AI雙邊過91域"
+  ]
+ },
+ {
   "date": "2026-09-27",
   "items": [
    "停售盯梢開關補齊 v3.7.2：🔔清單加staleItem(預設開,checkbox支援defOn語意)+pm_stale入ALLOW——v3.7.1鏈裡錨點沒對上漏套的部分",
