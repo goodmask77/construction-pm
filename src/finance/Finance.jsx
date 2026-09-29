@@ -2345,18 +2345,18 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
                 {abView && abSoldout && (() => { // 🚫 AB 停售動態（張良 2026-09-30：放最下方好找；每30分自動掃、變化通知 happy337）
                   const cur = Object.entries(abSoldout.current || {}).sort((a, b) => (a[1] < b[1] ? 1 : -1));
                   const log = (abSoldout.log || []).slice(0, 120);
-                  const thS = { padding: "6px 10px", fontSize: 11.5, color: SUB, fontWeight: 700, textAlign: "left", background: "#f2ede1" };
+                  const thS = { padding: "6px 10px", fontSize: 11.5, color: C.sub, fontWeight: 700, textAlign: "left", background: "#f2ede1" };
                   const tdS = { padding: "6px 10px", fontSize: 12.5, borderTop: "1px solid #f0ead9" };
                   return (
-                    <div style={{ background: C.card, border: `1px solid ${BORDER}`, borderRadius: 12, padding: 16, marginTop: 14 }}>
-                      <div style={{ fontWeight: 800, color: TEXT, marginBottom: 4 }}>停售動態 <span style={{ fontSize: 11.5, color: SUB, fontWeight: 500 }}>品名🚫自動偵測・營業時間每 30 分更新・變化即時通知 happy337 群</span></div>
+                    <div style={{ background: C.card, border: `1px solid ${C.line}`, borderRadius: 12, padding: 16, marginTop: 14 }}>
+                      <div style={{ fontWeight: 800, color: C.text, marginBottom: 4 }}>停售動態 <span style={{ fontSize: 11.5, color: C.sub, fontWeight: 500 }}>品名🚫自動偵測・營業時間每 30 分更新・變化即時通知 happy337 群</span></div>
                       <div style={{ fontWeight: 700, fontSize: 13, margin: "6px 0" }}>目前停售中（{cur.length}）</div>
                       {cur.length ? (
                         <div style={{ maxHeight: 260, overflowY: "auto", border: "1px solid #f0ead9", borderRadius: 8 }}>
                           <table style={{ width: "100%", borderCollapse: "collapse" }}><thead><tr><th style={thS}>品項</th><th style={{ ...thS, width: 130 }}>停售自</th></tr></thead>
-                            <tbody>{cur.map(([n, ts]) => (<tr key={n}><td style={{ ...tdS, fontWeight: 700 }}>{n}</td><td style={{ ...tdS, color: SUB, fontVariantNumeric: "tabular-nums" }}>{ts}</td></tr>))}</tbody></table>
+                            <tbody>{cur.map(([n, ts]) => (<tr key={n}><td style={{ ...tdS, fontWeight: 700 }}>{n}</td><td style={{ ...tdS, color: C.sub, fontVariantNumeric: "tabular-nums" }}>{ts}</td></tr>))}</tbody></table>
                         </div>
-                      ) : <div style={{ fontSize: 12.5, color: SUB }}>目前沒有停售品項 🎉</div>}
+                      ) : <div style={{ fontSize: 12.5, color: C.sub }}>目前沒有停售品項 🎉</div>}
                       {log.length > 0 && (
                         <details style={{ marginTop: 10 }}>
                           <summary style={{ fontWeight: 700, fontSize: 13, cursor: "pointer" }}>歷史紀錄（{log.length}）</summary>
