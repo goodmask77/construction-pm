@@ -191,6 +191,16 @@ function renderBoard(d, store){
     window._rhy = d.rhythm
     h += `<section><h2>預做節奏表 <span style="float:right;white-space:nowrap"><button class="mini on" id="rb15" onclick="rSwitch(15)">15分</button><button class="mini" id="rb30" onclick="rSwitch(30)">30分</button><button class="mini" id="rbMng" onclick="rMng()">🙈 隱藏管理</button></span><br><span class="hint">${d.rhythm.days ? `近 ${d.rhythm.days} 個營業日平均・每格＝該時段平均賣幾份（·＝不到0.5份）——照表預做、尖峰前先備` : '⏳ 資料累積中（GD 從 2026-09-21 起、AB 從 2026-09-22 起含歷史回補）——顯示近 7 個營業日平均，跑幾天會越來越準'}</span></h2><div id="rhyBody"></div></section>`
   }
+  // 🚫 AB 停售動態（張良 2026-09-30：頁面表格隨時查——現在＋歷史；資料每30分自動掃）
+  if (d.soldout) {
+    const cur = Object.entries(d.soldout.current || {})
+    h += `<section><h2>停售動態 <span class="hint">品名🚫自動偵測・每 30 分更新・變化即時通知 happy337</span></h2>
+    <div style="font-weight:800;margin-bottom:6px">目前停售中（${cur.length}）</div>
+    ${cur.length ? `<div class="scroll"><table><thead><tr><th style="text-align:left">品項</th><th>停售自</th></tr></thead><tbody>${cur.sort((a,b)=>(a[1]<b[1]?1:-1)).map(([n,ts])=>`<tr><td style="text-align:left;font-weight:700">${n}</td><td class="mut">${ts}</td></tr>`).join('')}</tbody></table></div>` : '<div class="mut">目前沒有停售品項 🎉</div>'}
+    ${(d.soldout.log||[]).length ? `<details style="margin-top:10px"><summary style="font-weight:800;cursor:pointer">歷史紀錄（${d.soldout.log.length}）</summary>
+    <div class="scroll" style="margin-top:6px"><table><thead><tr><th>日期</th><th>時間</th><th style="text-align:left">品項</th><th>動作</th></tr></thead><tbody>${d.soldout.log.map(x=>`<tr><td>${(x.d||'').slice(5)}</td><td>${x.t||''}</td><td style="text-align:left">${x.n}</td><td>${x.op==='停售'?'<span style="color:var(--red);font-weight:800">🚫 停售</span>':'<span style="color:var(--green);font-weight:800">✅ 恢復</span>'}</td></tr>`).join('')}</tbody></table></div></details>` : ''}
+    </section>`
+  }
   // KPI（張良 2026-09-22：搬到每日數據上面）
   h += `<div class="kpis">
     <div class="kpi"><div class="l">近30天營收（${d.kpi.days30} 個營業日）</div><div class="v">${fmt(d.kpi.rev30)}</div></div>

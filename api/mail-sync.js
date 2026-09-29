@@ -979,12 +979,15 @@ export default async function handler(req, res) {
       const rows4 = cats2.flatMap(c => c.items.map(it => { const b = bucket2[it.k]; return { n: it.n, k: it.k, cat: c.name, q: RS2.map(t2 => (b && nD2 ? Math.round((b.s[t2] || 0) / nD2 * 10) / 10 : 0)) } }))
       rhythm = { slots: RS2, days: nD2, items: rows4 }
     }
+    // AB 停售動態（張良 2026-09-30：不只通知——看板要能隨時查現在+歷史）
+    let soldout = null
+    if (isAB2) { const soD = await kvGet('sp_finance_pm_absoldout'); if (soD) soldout = { current: soD.current || {}, log: (soD.log || []).slice(0, 150) } }
     // Vercel 邊緣快取 5 分鐘（張良 2026-09-21 嫌慢）：同網址請求直接吃 CDN 不進函式重算；資料本來 15 分一更，5 分快取無感
     res.setHeader('Cache-Control', 's-maxage=300, stale-while-revalidate=1800')
     return res.status(200).json({
       ok: true, store: storeQ, updatedAt: new Date().toISOString(), anchor,
       kpi: { rev30, days30: w30.length, avgRev: w30.length ? Math.round(rev30 / w30.length) : 0, tx30: w30.reduce((t, e) => t + (Number(e.txCount) || 0), 0) },
-      n30, prep, share14, rhythm, days: days2.reverse(), setPcts: setDays.reverse(), dates: datesAll, cats: cats2, hidden: Object.values(itemsH2).map(o => ({ n: o.n, k: o.k, cat: o.cat, cum30: o.q30 })), slots: (slots2.wk.length || slots2.we.length) ? slots2 : null,
+      n30, prep, share14, rhythm, soldout, days: days2.reverse(), setPcts: setDays.reverse(), dates: datesAll, cats: cats2, hidden: Object.values(itemsH2).map(o => ({ n: o.n, k: o.k, cat: o.cat, cum30: o.q30 })), slots: (slots2.wk.length || slots2.we.length) ? slots2 : null,
     })
   }
   // 內用/外帶歷史回補口（同金鑰，張良 2026-09-20 內外帶接進報表）：?dinefill=<key>[&dry=1]
@@ -1303,6 +1306,32 @@ export default async function handler(req, res) {
     if (!meE2 || (meE2.role !== '主管' && !aprE2.includes(meE2.name))) return res.status(403).json({ ok: false })
     const doc = (await kvGet('sp_finance_pm_errlog')) || { list: [] }
     return res.status(200).json({ ok: true, list: doc.list.slice(0, 50) })
+  }
+  // AB 停售手動掃描（張良 2026-09-30 基準灌檔/除錯）：GET ?abscan=<MENU_PROBE_KEY>——只更新狀態不發通知
+  if (req.query?.abscan) {
+    const mk = (process.env.MENU_PROBE_KEY || '').trim()
+    if (!mk || String(req.query.abscan) !== mk) return res.status(403).json({ ok: false })
+    const { eatsSession, eatsItemList } = await import('./_eats.js')
+    const sessDoc = (await kvGet('sp_finance_pm_eats_sess')) || {}
+    const sess = await eatsSession(sessDoc.device || process.env.EATS_DEVICE_COOKIE || '')
+    const devN = Object.keys(sess.J.jar).find((k) => k.endsWith('|'))
+    if (devN) await kvPut('sp_finance_pm_eats_sess', { device: devN + '=' + sess.J.jar[devN], updatedAt: new Date().toISOString() }, 'AB停售掃描')
+    const items = await eatsItemList(sess)
+    const hm2 = new Date(Date.now() + 8 * 3600e3).toISOString().slice(11, 16)
+    const today2 = new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10)
+    const soDoc = (await kvGet('sp_finance_pm_absoldout')) || { current: {}, log: [] }
+    const prev = soDoc.current || {}
+    const nowSo = {}
+    for (const it of items) if (/🚫/.test(it.n)) nowSo[it.n.replace(/🚫/g, '').trim()] = 1
+    const added = Object.keys(nowSo).filter(n => !(n in prev)), removed = Object.keys(prev).filter(n => !(n in nowSo))
+    soDoc.current = Object.fromEntries(Object.keys(nowSo).map(n => [n, prev[n] || (today2 + ' ' + hm2)]))
+    added.forEach(n => { soDoc.current[n] = today2 + ' ' + hm2; soDoc.log.unshift({ d: today2, t: hm2, n, op: '停售' }) })
+    removed.forEach(n => soDoc.log.unshift({ d: today2, t: hm2, n, op: '恢復' }))
+    soDoc.log = soDoc.log.slice(0, 300)
+    soDoc.day = today2
+    await kvPut('sp_finance_pm_absoldout', soDoc, 'AB停售手動掃描')
+    await announceChanged()
+    return res.status(200).json({ ok: true, current: Object.keys(soDoc.current).length, added: added.length, removed: removed.length })
   }
   // ── 🔖 分頁自訂（張良 2026-09-22：分頁名稱＋排序可編輯，全裝置同步；pm_prep_tabs=UI設定）──
   if (req.query?.tabcfg) {
