@@ -56,12 +56,13 @@ export default function HrView() {
   const td = { padding: "6px 9px", fontSize: 12.5, borderTop: "1px solid #f0ead9", whiteSpace: "nowrap", verticalAlign: "middle" };
   const badge = (r) => {
     const fx = [];
-    if (r.absent) fx.push(["曠職", C.red]);
+    // NUEiP 判曠職但有打卡＝補卡/修改還沒核准（2026-09-30 張良問「有打卡為何曠職」查明）——標出來提醒去 NUEiP 簽核
+    if (r.absent) fx.push([(r.on.length || r.off.length) ? "曠職·補卡待核?" : "曠職", C.red, (r.on.length || r.off.length) ? "NUEiP 判曠職但有打卡紀錄＝補卡/修改尚未核准。到 NUEiP 簽核通過後，回來按「從 NUEiP 更新」就會變正常" : ""]);
     if (r.miss) fx.push(["缺卡", C.amber]);
     if (r.late) fx.push([`遲到${r.late}分`, C.red]);
     if (r.early) fx.push([`早退${r.early}分`, C.amber]);
     if (!fx.length) return <span style={{ fontSize: 11, fontWeight: 700, color: C.green }}>OK</span>;
-    return fx.map(([t, c], i) => <span key={i} style={{ fontSize: 10.5, fontWeight: 800, color: "#fff", background: c, borderRadius: 4, padding: "1px 7px", marginRight: 4 }}>{t}</span>);
+    return fx.map(([t, c, tip], i) => <span key={i} title={tip || ""} style={{ fontSize: 10.5, fontWeight: 800, color: "#fff", background: c, borderRadius: 4, padding: "1px 7px", marginRight: 4, cursor: tip ? "help" : "default" }}>{t}</span>);
   };
   const durTxt = (m) => m ? `${Math.floor(m / 60)}h${String(m % 60).padStart(2, "0")}` : "—";
   const wd = (d) => "日一二三四五六"[new Date(d + "T00:00:00").getDay()];
