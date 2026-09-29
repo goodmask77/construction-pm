@@ -45,6 +45,10 @@
     {
       "path": "/api/hr",
       "schedule": "40 14 * * *"
+    },
+    {
+      "path": "/api/hr",
+      "schedule": "*/20 1-13 * * *"
     }
   ]
 }

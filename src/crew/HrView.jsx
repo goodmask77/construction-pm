@@ -13,6 +13,7 @@ export default function HrView() {
   const [onlyBad, setOnlyBad] = useState(false);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
+  const [hrTab, setHrTab] = useState("att"); // 第三層：att=出勤紀錄 / pay=薪資（NUEiP 二次密碼解鎖後接資料）
 
   const load = async (m) => {
     setDoc(null);
@@ -70,6 +71,12 @@ export default function HrView() {
       <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "6px 0 10px", flexWrap: "wrap" }}>
         <span style={{ background: C.blue, color: "#fff", fontSize: 11.5, fontWeight: 700, borderRadius: 4, padding: "2px 8px" }}>人資</span>
         <div style={{ fontSize: 17, fontWeight: 800, color: C.text }}>人資系統</div>
+        {/* 第三層子分頁（張良 2026-09-30）：之後薪資/請假/加班都掛這排 */}
+        <div style={{ display: "inline-flex", background: C.soft, border: `1px solid ${C.line}`, borderRadius: 8, padding: 2, gap: 2 }}>
+          {[["att", "⏱ 出勤紀錄"], ["pay", "💰 薪資"]].map(([v, l]) => (
+            <button key={v} onClick={() => setHrTab(v)} style={{ padding: "4px 12px", borderRadius: 6, border: `1px solid ${hrTab === v ? C.line : "transparent"}`, background: hrTab === v ? "#fff" : "transparent", color: hrTab === v ? C.text : C.sub, fontSize: 12, fontWeight: hrTab === v ? 700 : 400, cursor: "pointer" }}>{l}</button>
+          ))}
+        </div>
         <span style={{ fontSize: 12, color: C.faint }}>NUEiP 出勤紀錄・每天 22:40 自動同步，異常 D哥直接通知</span>
         <div style={{ flex: 1 }} />
         <input type="month" value={mo} onChange={e => setMo(e.target.value)} style={inp} />
@@ -83,6 +90,13 @@ export default function HrView() {
         <button onClick={syncNow} disabled={busy} style={{ border: "none", background: C.blue, color: "#fff", borderRadius: 8, padding: "7px 14px", fontSize: 12.5, fontWeight: 700, cursor: busy ? "default" : "pointer", opacity: busy ? .6 : 1 }}>{busy ? "抓取中…" : "🔄 從 NUEiP 更新"}</button>
       </div>
       {msg && <div style={{ background: msg.startsWith("✓") ? "#eef5ef" : "#fdf0ef", border: `1.5px solid ${msg.startsWith("✓") ? C.green : C.red}`, borderRadius: 8, padding: "7px 12px", marginBottom: 10, fontSize: 12.5, fontWeight: 600, color: msg.startsWith("✓") ? "#2c5a38" : C.red }}>{msg}</div>}
+      {hrTab === "pay" && (
+        <div style={{ background: "#fff", border: `1.5px solid #c8bca6`, borderRadius: 10, padding: "26px 20px", textAlign: "center", fontSize: 13, color: C.sub }}>
+          💰 薪資分頁建置中——NUEiP 的工資發放明細有<b>二次密碼</b>鎖，等老闆提供解鎖後就接資料進來（薪資屬機密，這頁只開給有權限的帳號）。
+        </div>
+      )}
+      {hrTab === "att" && <>
+      {/* 個人摘要（選了人才出現）：本月統計 KPI＋白話總結（張良 2026-09-30） */}
       {/* 個人摘要（選了人才出現）：本月統計 KPI＋白話總結（張良 2026-09-30） */}
       {pF && doc && (() => {
         const recs = days.flatMap(d => Object.values(doc.days[d]).filter(r => r.name === pF).map(r => ({ ...r, d })));
@@ -191,7 +205,8 @@ export default function HrView() {
           </table>
         </div>
       )}
-      <div style={{ fontSize: 11, color: C.faint, marginTop: 8 }}>資料來源：NUEiP（每天 22:40 自動抓當天；補歷史選月份按更新）。打卡含 GPS/IP 原始資料在 NUEiP 後台，這裡呈現重點。</div>
+      </>}
+      <div style={{ fontSize: 11, color: C.faint, marginTop: 8 }}>資料來源：NUEiP（營業時間每 20 分自動掃＝遲到即時通知；22:40 收班總結；補歷史選月份按更新）。打卡含 GPS/IP 原始資料在 NUEiP 後台，這裡呈現重點。</div>
     </div>
   );
 }

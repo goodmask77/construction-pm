@@ -104,19 +104,30 @@ export default async function handler(req, res) {
     const days = await fetchAttendance(from, to)
     const rep = await store(days)
     let n = 0; for (const d of Object.keys(days)) n += Object.keys(days[d]).length
-    // 每日 cron（收班後）：今天的異常 → D哥 LINE 通知老闆（記推播額度）
+    // cron 分兩種（張良 2026-09-30「遲到打卡要即時通知」）：
+    // ①營業時間每20分掃：誰打卡被判遲到→馬上通知（同人同天只推一次，pm_hr_notif 去重）②22:40 收班：全日異常總結
     let notified = 0
     if (isCron && days[today]) {
-      const lines = anomalies(days[today])
-      if (lines.length) {
-        try {
-          const { linePush } = await import('./_onboard.js')
-          const { logPush } = await import('./push.js')
-          const ops = (await kvGet('pm_bot_operators')) || {}
-          const txt = `🕐 NUEiP 出勤異常 ${today.slice(5).replace('-', '/')}\n${lines.slice(0, 15).join('\n')}${lines.length > 15 ? `\n…共 ${lines.length} 筆` : ''}\n（詳細：夥伴中心 → 人資系統）`
-          for (const uid of Object.keys(ops)) { if (await linePush(uid, txt)) { await logPush(uid, 1, 'NUEiP出勤異常'); notified++ } }
-        } catch (_) {}
-      }
+      const hourTW = tz.getUTCHours() // tz 已 +8，取小時=台北時間
+      try {
+        const { linePush } = await import('./_onboard.js')
+        const { logPush } = await import('./push.js')
+        const ops = (await kvGet('pm_bot_operators')) || {}
+        const push = async (txt, src) => { for (const uid of Object.keys(ops)) { if (await linePush(uid, txt)) { await logPush(uid, 1, src); notified++ } } }
+        if (hourTW >= 22) {
+          const lines = anomalies(days[today])
+          if (lines.length) await push(`🕐 NUEiP 出勤異常 ${today.slice(5).replace('-', '/')}\n${lines.slice(0, 15).join('\n')}${lines.length > 15 ? `\n…共 ${lines.length} 筆` : ''}\n（詳細：夥伴中心 → 人資系統）`, 'NUEiP出勤異常')
+        } else {
+          const nd = (await kvGet('sp_crew_pm_hr_notif')) || {}
+          if (nd.date !== today) { nd.date = today; nd.keys = {} }
+          const fresh = Object.values(days[today]).filter(r => r.late > 0 && !nd.keys[r.name + '|late'])
+          if (fresh.length) {
+            await push(`⏰ 遲到打卡（即時）\n${fresh.map(r => `・${r.name}（${r.dept}）班 ${r.work}｜上班卡 ${(r.on || [])[0] || '—'}｜遲到 ${r.late} 分`).join('\n')}`, 'NUEiP遲到即時')
+            fresh.forEach(r => { nd.keys[r.name + '|late'] = 1 })
+            await kvPut('sp_crew_pm_hr_notif', nd, '遲到即時通知去重')
+          }
+        }
+      } catch (_) {}
     }
     return res.status(200).json({ ok: true, from, to, personDays: n, months: rep, notified })
   } catch (e) {
