@@ -2,6 +2,7 @@
  {
   "date": "2026-09-30",
   "items": [
+   "人資系統NUEiP串接上線(張良:夥伴中心建「人資系統」頁呈現出勤紀錄每人每天+每日自動抓異常通知)：①api/hr.js=純HTTP登入cloud.nueip.com/login/index/param免驗證碼→打卡竅門(條件先POST表單進session再打attendance_record/ajax分批)→正規化存sp_crew_pm_hr_att_月檔(班表/上下卡/時數/遲到分/早退/缺卡/曠職,冪等) ②vercel cron每天22:40台北抓當天,異常→D哥LINE通知老闆(記額度) ③夥伴中心新頁hr「人資系統」(人員與排班群組):月份選擇/人員篩選/只看異常/本月異常統計條/🔄手動更新(manual=1回填任意月份),日期分組硬格線表 ④AI兩邊接loadHrText+App內嵌(最近2天逐人+本月異常統計,coverage 92/92) ⑤NUEIP_*env已上Vercel;探勘用playwright --no-save不進依賴 v3.8.0",
    "停售動態硬格線 v3.7.9(張良2026-09-30「表格化顯示可以嗎」)：兩張表th/td全邊框硬格線+表頭C.head底色,對齊報表頁其他表格樣式(UI慣例)",
    "白屏急修 v3.7.8(張良2026-09-30「重新整理畫面跳掉變空白」)：v3.7.7停售動態卡用了不存在的SUB/TEXT/BORDER變數→ReferenceError整頁白;全改C.sub/C.text/C.line;教訓=抄樣式要先確認該檔調色盤變數名",
    "主App報表頁停售動態 v3.7.7(張良2026-09-30「沒看到,放最下方好找」——他看的是主App營運報表非/prep)：Finance.jsx AB視圖最下方(資料來源上)新停售動態卡——目前停售中表(品項/停售自)+歷史紀錄收合表(日期/時間/品項/🚫✅);讀pm_absoldout+onSharedChange即時同步(un13進cleanup);/prep AB看板的版本保留",
