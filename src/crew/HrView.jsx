@@ -13,7 +13,7 @@ export default function HrView({ tab }) { // tab 由第三層分頁決定：att=
   const [onlyBad, setOnlyBad] = useState(false);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
-  const hrTab = tab === "pay" ? "pay" : "att";
+  const hrTab = tab === "pay" ? "pay" : tab === "shift" ? "shift" : "att";
 
   const load = async (m) => {
     setDoc(null);
@@ -71,7 +71,7 @@ export default function HrView({ tab }) { // tab 由第三層分頁決定：att=
     <div style={{ maxWidth: 1060, margin: "0 auto" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "6px 0 10px", flexWrap: "wrap" }}>
         <span style={{ background: C.blue, color: "#fff", fontSize: 11.5, fontWeight: 700, borderRadius: 4, padding: "2px 8px" }}>人資</span>
-        <div style={{ fontSize: 17, fontWeight: 800, color: C.text }}>{hrTab === "pay" ? "薪資" : "出勤紀錄"}</div>
+        <div style={{ fontSize: 17, fontWeight: 800, color: C.text }}>{hrTab === "pay" ? "薪資" : hrTab === "shift" ? "班表" : "出勤紀錄"}</div>
         <span style={{ fontSize: 12, color: C.faint }}>NUEiP 出勤紀錄・每天 22:40 自動同步，異常 D哥直接通知</span>
         <div style={{ flex: 1 }} />
         <input type="month" value={mo} onChange={e => setMo(e.target.value)} style={inp} />
@@ -85,6 +85,42 @@ export default function HrView({ tab }) { // tab 由第三層分頁決定：att=
         <button onClick={syncNow} disabled={busy} style={{ border: "none", background: C.blue, color: "#fff", borderRadius: 8, padding: "7px 14px", fontSize: 12.5, fontWeight: 700, cursor: busy ? "default" : "pointer", opacity: busy ? .6 : 1 }}>{busy ? "抓取中…" : "🔄 從 NUEiP 更新"}</button>
       </div>
       {msg && <div style={{ background: msg.startsWith("✓") ? "#eef5ef" : "#fdf0ef", border: `1.5px solid ${msg.startsWith("✓") ? C.green : C.red}`, borderRadius: 8, padding: "7px 12px", marginBottom: 10, fontSize: 12.5, fontWeight: 600, color: msg.startsWith("✓") ? "#2c5a38" : C.red }}>{msg}</div>}
+      {/* 📅 班表（張良 2026-09-30：照排班模組表格化）＝人×日月曆格；資料同月檔 work 欄（NUEiP 班表） */}
+      {hrTab === "shift" && doc && (() => {
+        const dayN = new Date(Number(mo.slice(0, 4)), Number(mo.slice(5, 7)), 0).getDate();
+        const dList = [...Array(dayN)].map((_, i) => `${mo}-${String(i + 1).padStart(2, "0")}`);
+        const byP = {};
+        Object.entries(doc.days || {}).forEach(([d, users]) => Object.values(users).forEach(r => {
+          if (!pF || r.name === pF) { const o = byP[r.name] = byP[r.name] || { dept: r.dept, cells: {}, n: 0, min: 0 }; if (r.work) { o.cells[d] = r.work; o.n++; } o.min += r.durmin || 0; }
+        }));
+        const names = Object.keys(byP).sort((a, b) => (byP[a].dept + a).localeCompare(byP[b].dept + b, "zh-TW"));
+        const short = (w) => w.replace(/：/g, ":").replace(/(\d{2}):(\d{2})～(\d{2}):(\d{2})/, (m, h1, m1, h2, m2) => `${Number(h1)}${m1 !== "00" ? ":" + m1 : ""}-${Number(h2)}${m2 !== "00" ? ":" + m2 : ""}`);
+        const hue = (w) => /^0?9|^10/.test(w) ? "#eaf2fa" : /^11/.test(w) ? "#eef5ef" : "#fdf6e3"; // 早班藍/中班綠/午晚黃（照開始時間粗分）
+        const cellW = 52;
+        return (
+          <div style={{ background: "#fff", border: "1.5px solid #c8bca6", borderRadius: 8, overflow: "auto", maxHeight: "74vh" }}>
+            <table style={{ borderCollapse: "collapse", minWidth: 140 + dayN * cellW }}>
+              <thead><tr>
+                <th style={{ ...th, position: "sticky", left: 0, zIndex: 3, minWidth: 110 }}>夥伴</th>
+                <th style={{ ...th, textAlign: "center" }}>班數</th>
+                {dList.map(d => { const w = new Date(d + "T00:00:00").getDay(); return <th key={d} style={{ ...th, textAlign: "center", minWidth: cellW, background: w === 0 || w === 6 ? "#e3d9c3" : th.background }}>{Number(d.slice(8))}<div style={{ fontSize: 9, fontWeight: 400 }}>{"日一二三四五六"[w]}</div></th>; })}
+              </tr></thead>
+              <tbody>
+                {names.map(n => { const o = byP[n]; return (
+                  <tr key={n}>
+                    <td style={{ ...td, position: "sticky", left: 0, background: "#fff", zIndex: 2, fontWeight: 700, borderRight: "1.5px solid #c8bca6" }}>{n}<div style={{ fontSize: 9.5, color: C.faint, fontWeight: 400 }}>{o.dept}</div></td>
+                    <td style={{ ...td, textAlign: "center", fontFamily: MONOF, fontSize: 11.5 }}>{o.n}</td>
+                    {dList.map(d => { const w = o.cells[d]; return (
+                      <td key={d} title={w ? `${n} ${d} ${w}` : ""} style={{ ...td, padding: "3px 3px", textAlign: "center", fontFamily: MONOF, fontSize: 10, background: w ? hue(w) : (new Date(d + "T00:00:00").getDay() % 6 === 0 ? "#faf7f0" : undefined), color: w ? C.text : "#e0d6bf" }}>{w ? short(w) : "·"}</td>
+                    ); })}
+                  </tr>
+                ); })}
+              </tbody>
+            </table>
+            {!names.length && <div style={{ padding: 24, fontSize: 12.5, color: C.faint, textAlign: "center" }}>這個月沒有班表資料——按右上「🔄 從 NUEiP 更新」</div>}
+          </div>
+        );
+      })()}
       {hrTab === "pay" && (
         <div style={{ background: "#fff", border: `1.5px solid #c8bca6`, borderRadius: 10, padding: "26px 20px", textAlign: "center", fontSize: 13, color: C.sub }}>
           💰 薪資分頁建置中——NUEiP 的工資發放明細有<b>二次密碼</b>鎖，等老闆提供解鎖後就接資料進來（薪資屬機密，這頁只開給有權限的帳號）。

@@ -30,12 +30,12 @@ export const SPACE_CONF = {
     // 分頁不再全部平鋪一排（人事/訓練/激勵混在一起會越加越長）。groups: [id, 名稱, icon, [第二層 view keys]]
     groups: [
       ["g_today", "今日", "🏠", ["ctoday", "cjournal"]],
-      ["g_hr", "人資系統", "🕐", ["hr", "hrpay"]], // 張良 2026-09-30：人資系統升第二層（今日右邊），第三層=出勤紀錄/薪資
+      ["g_hr", "人資系統", "🕐", ["hr", "hrshift", "hrpay"]], // 張良 2026-09-30：人資系統升第二層（今日右邊），第三層=出勤紀錄/薪資
       ["g_people", "人員與排班", "👥", ["roster", "shift", "punch", "pay", "salary"]],
       ["g_sop", "SOP與訓練", "📚", ["kb", "quest"]],
       ["g_grow", "成長與文化", "🌱", ["r360", "fb", "poll", "reward"]],
     ],
-    tabs: [["ctoday", "今日", "🏠"], ["cjournal", "工作日誌", "📝"], ["roster", "名冊", "👥"], ["shift", "排班", "📅"], ["punch", "出勤", "⏱"], ["hr", "出勤紀錄", "⏱"], ["hrpay", "薪資", "💰"], ["pay", "薪資試算", "💰"], ["salary", "360分潤", "💎"], ["kb", "SOP知識庫", "📚"], ["quest", "闖關", "🎮"], ["r360", "360評鑑", "⭐"], ["fb", "回饋", "💬"], ["poll", "投票", "🗳"], ["reward", "獎勵中心", "🏆"]], // 商城＋排行榜合併成「獎勵中心」；資料庫改名「SOP知識庫」
+    tabs: [["ctoday", "今日", "🏠"], ["cjournal", "工作日誌", "📝"], ["roster", "名冊", "👥"], ["shift", "排班", "📅"], ["punch", "出勤", "⏱"], ["hr", "出勤紀錄", "⏱"], ["hrshift", "班表", "📅"], ["hrpay", "薪資", "💰"], ["pay", "薪資試算", "💰"], ["salary", "360分潤", "💎"], ["kb", "SOP知識庫", "📚"], ["quest", "闖關", "🎮"], ["r360", "360評鑑", "⭐"], ["fb", "回饋", "💬"], ["poll", "投票", "🗳"], ["reward", "獎勵中心", "🏆"]], // 商城＋排行榜合併成「獎勵中心」；資料庫改名「SOP知識庫」
     defaultView: "ctoday", // 一進來先看「今天與我有關的事」，不再落在空資料庫
     hideKpi: true, // 夥伴中心頂部不顯示工程 KPI
     labels: { cat: "項目", item: "項目", overview: "SOP知識庫", gantt: "進度", subtitle: "夥伴中心" },
@@ -100,6 +100,7 @@ export const PERM_MATRIX = {
     ["shift", "排班", { edit: 1 }],
     ["punch", "出勤", { edit: 1 }],
     ["hr", "人資出勤紀錄", {}],
+    ["hrshift", "人資班表", {}],
     ["hrpay", "人資薪資", {}],
     ["pay", "薪資試算", { edit: 1 }],
     ["salary", "360分潤", { edit: 1 }],
@@ -131,7 +132,7 @@ export const PERM_MATRIX = {
 // 舊資料相容：以前的可編輯權限只有 data/files/advisor 三類，對應到各頁
 export const LEGACY_EDIT = { overview: "data", gantt: "data", petty: "data", issues: "data", owner: "data", groups: "data", kb: "data", r360: "data", fb: "data", quest: "data", poll: "data", shop: "data", rank: "data", reward: "data", finance: "data", files: "files", compare: "files", advisor: "advisor" };
 // 分頁改組相容：新頁 key → 舊頁 key 清單（帳號權限若勾過舊頁，視同勾了新頁）。例：獎勵中心=舊商城+排行榜
-export const VIEW_PERM_ALIAS = { reward: ["shop", "rank"], smat: ["singred", "svendors"], ssemi: ["sproducts"], hrpay: ["hr"] }; // 供應鏈重建：舊 物料清單/廠商建檔 權限視同物料庫、半成品頁沿用菜單管理權限
+export const VIEW_PERM_ALIAS = { reward: ["shop", "rank"], smat: ["singred", "svendors"], ssemi: ["sproducts"], hrpay: ["hr"], hrshift: ["hr"] }; // 供應鏈重建：舊 物料清單/廠商建檔 權限視同物料庫、半成品頁沿用菜單管理權限
 export const PERM_NONE = "__none__"; // 哨兵：陣列＝[PERM_NONE] 代表「明確全關」(與空陣列＝預設全開 區分)
 // 預設身份範本（連動式）。陣列規則同矩陣：[]＝全開、[PERM_NONE]＝全關、其餘＝明確允許清單。
 export const DEFAULT_ROLES = [
