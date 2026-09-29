@@ -16,6 +16,7 @@ import { BRAND, ACCENT, PRIMARY, BG, SURFACE, BORDER, LINE2, TEXT, SUB, ACCENT_S
 import { GLOBAL_KEYS, CURRENT_SPACE, K, switchSpace, CURRENT_USER, setCurrentUser, auditLog, conf, CAN_VIEW_MONEY, setCanViewMoney, showMoney, ADMIN_USER, maskAccount, L } from "./lib/runtime.js";
 import { KnowledgeBaseView, RosterView, Review360View, FeedbackView, QuestView, PollView, RewardCenterView, CrewTodayView, JournalBoardView, PunchView, PayView } from "./crew/CrewViews.jsx";
 import SalaryView from "./crew/SalaryView.jsx"; // 薪資透明（A Beach 分潤試算，2026-09-18）
+import HrView from "./crew/HrView.jsx"; // 人資系統（NUEiP 出勤同步，2026-09-30）
 import { STATUS_MAP, markCatDone } from "./lib/status.js";
 import { DEFAULT_LINE_GROUP, notifyLineEvent } from "./lib/line.js";
 import { callAI } from "./lib/ai.js";
@@ -86,6 +87,18 @@ async function loadSpaceAIContext() {
     if (tk.length) parts.push("【未完成任務（" + tk.length + " 件）】\n" + tk.slice(0, 40).map(t => `- ${t.title}${t.due ? "｜期限" + t.due : ""}${t.prio ? "｜" + t.prio : ""}${t.owner ? "｜負責:" + t.owner : ""}${t.waitingFor ? "｜等:" + t.waitingFor : ""}`).join("\n"));
     // 夥伴名冊（不含薪資/身分證等機密——App 內 AI 所有登入者都能問，機密只給 D哥 私訊老闆）
     if (crew?.people?.length) parts.push("【夥伴名冊（" + crew.people.length + " 人）】\n" + crew.people.map(pp => `- ${pp.name}${pp.nick ? "（" + pp.nick + "）" : ""}｜生日${pp.bday || "?"}｜到職${pp.startDate || "?"}${pp.dept ? "｜" + pp.dept : ""}｜${pp.status || "在職"}`).join("\n"));
+    // NUEiP 人資出勤（sp_crew_pm_hr_att_ 月檔＝夥伴中心「人資系統」頁；與 D哥 loadHrText 同步接，100%資料鐵則）
+    try {
+      const hrDoc = await g("sp_crew_pm_hr_att_" + mo);
+      const hrDays = Object.keys(hrDoc?.days || {}).sort();
+      if (hrDays.length) {
+        const lastD = hrDays[hrDays.length - 1];
+        const rows = Object.values(hrDoc.days[lastD]).map(r => `${r.name} 上${(r.on || []).join("/") || "—"} 下${(r.off || []).join("/") || "—"}${r.late ? ` 遲到${r.late}分` : ""}${r.miss ? " 缺卡" : ""}${r.absent ? " 曠職" : ""}`);
+        const st = {}; hrDays.forEach(d => Object.values(hrDoc.days[d]).forEach(r => { const s2 = st[r.name] = st[r.name] || { late: 0, miss: 0, ab: 0 }; if (r.late) s2.late++; if (r.miss) s2.miss++; if (r.absent) s2.ab++; }));
+        const bad = Object.entries(st).filter(([, s2]) => s2.late || s2.miss || s2.ab).map(([n, s2]) => `${n}${s2.late ? `遲到${s2.late}次` : ""}${s2.miss ? `缺卡${s2.miss}次` : ""}${s2.ab ? `曠職${s2.ab}次` : ""}`);
+        parts.push(`【NUEiP 人資出勤（本月 ${hrDays.length} 天；最新 ${lastD}）】\n` + rows.map(x => "- " + x).join("\n") + (bad.length ? `\n本月異常：${bad.join("、")}` : ""));
+      }
+    } catch (_) {}
     // 排班（100%資料鐵則：問誰哪天上什麼班以此為準；與 D哥 loadShiftText 同步接上）
     try {
       const [stf, tpl, idx] = await Promise.all([g("sp_crew_shift_staff"), g("sp_crew_shift_templates"), g("sp_crew_shift_sched_index")]);
@@ -1095,6 +1108,7 @@ export default function App() {
         {view === "punch" && (
           <PunchView me={account} userName={userName} />
         )}
+        {view === "hr" && CURRENT_SPACE === "crew" && <HrView />}
         {view === "pay" && (
           <PayView me={account} userName={userName} />
         )}

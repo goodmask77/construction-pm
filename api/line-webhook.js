@@ -439,6 +439,27 @@ const sysDataHead = () => { const d = new Date(Date.now() + 8 * 3600e3); return 
 
 // 排班系統（夥伴中心・排班）→ 文字。【100%資料鐵則】問「某人某天上什麼班」一律以此為準。
 // 出勤打卡（今日）：誰上班中/已下班、LINE備援未審核筆數（100%資料鐵則——打卡新資料域）
+// NUEiP 人資出勤（sp_crew_pm_hr_att_ 月檔＝App 夥伴中心「人資系統」頁同一份；api/hr.js 每日 22:40 同步）
+// 問「誰今天幾點打卡/這個月誰常遲到」用這裡；與 App loadSpaceAIContext 同步接（100%資料鐵則）
+async function loadHrText() {
+  try {
+    const mo = new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 7)
+    const doc = await kvGetMany(['sp_crew_pm_hr_att_' + mo]).then(m => m['sp_crew_pm_hr_att_' + mo])
+    if (!doc || !doc.days) return ''
+    const days = Object.keys(doc.days).sort()
+    if (!days.length) return ''
+    const out = [`\n\n【NUEiP 人資出勤（本月 ${days.length} 天；App→夥伴中心→人資系統）】`]
+    days.slice(-2).forEach(d => {
+      const rows = Object.values(doc.days[d]).map(r => `${r.name}${r.work ? ` 班${r.work}` : ''} 上${(r.on || []).join('/') || '—'} 下${(r.off || []).join('/') || '—'}${r.late ? ` 遲到${r.late}分` : ''}${r.early ? ` 早退${r.early}分` : ''}${r.miss ? ' 缺卡' : ''}${r.absent ? ' 曠職' : ''}`)
+      out.push(`▍${d}\n` + rows.map(x => '- ' + x).join('\n'))
+    })
+    const st = {}
+    days.forEach(d => Object.values(doc.days[d]).forEach(r => { const s2 = st[r.name] = st[r.name] || { late: 0, lm: 0, miss: 0, ab: 0 }; if (r.late) { s2.late++; s2.lm += r.late } if (r.miss) s2.miss++; if (r.absent) s2.ab++ }))
+    const bad = Object.entries(st).filter(([, s2]) => s2.late || s2.miss || s2.ab)
+    if (bad.length) out.push('▍本月異常統計\n' + bad.map(([n, s2]) => `- ${n}：${[s2.late ? `遲到${s2.late}次(${s2.lm}分)` : '', s2.miss ? `缺卡${s2.miss}次` : '', s2.ab ? `曠職${s2.ab}次` : ''].filter(Boolean).join('、')}`).join('\n'))
+    return out.join('\n')
+  } catch (_) { return '' }
+}
 async function loadPunchText() {
   try {
     const { todayPunchesAll } = await import('./punch.js')
@@ -1452,7 +1473,7 @@ export default async function handler(req, res) {
   if (req.query?.warm) return res.status(200).json({ ok: true }) // 保溫 ping（翻譯秒回用：函式常駐不冷啟）
   // 診斷探針（唯讀）：/api/line-webhook?probe=crew → 回 D 實際拿到的夥伴中心文字開頭
   if (req.method === 'GET' && req.query?.probe === 'crew') {
-    const t = (await loadCrewText()) + (await loadShiftText())
+    const t = (await loadCrewText()) + (await loadShiftText()) + (await loadHrText())
     return res.status(200).json({ len: t.length, head: t.slice(0, 800), shiftHead: t.includes('【排班系統') ? t.slice(t.indexOf('【排班系統'), t.indexOf('【排班系統') + 600) : '（無排班段落）' })
   }
   if (req.method !== 'POST') return res.status(405).end()
@@ -1821,7 +1842,7 @@ export default async function handler(req, res) {
         moneyOK = (gid === 'Cf7940efc6517b0c084ad2ad496b45f30') || (gcfg[gid] && gcfg[gid].money === true)
       }
       // 3) 一般流程：載入資料＋對話記憶＋長期記事本 → 問 AI（操作者才開放下指令）
-      const [snaps, accountsText, financeText, activityText, estimatesText, crewText, history, memList, conclusionsText, tasksText, sheetText, posText, catalogText, supplyText, lineQuotaText, filelibText, groupChatText] = await Promise.all([loadSnapshots(), loadAccounts(), loadFinanceText(), loadActivityText(), loadEstimatesText(), Promise.all([loadCrewText(), loadShiftText(), loadPunchText()]).then(([a, b, c]) => a + b + c), getChatHistory(convId), getMemory(), loadConclusionsText(), loadTasksText(), loadSheetText(), loadPosText(), loadCatalogText(), loadSupplyText(), loadLineQuotaText(), loadFilelibText(), loadGroupChatText()])
+      const [snaps, accountsText, financeText, activityText, estimatesText, crewText, history, memList, conclusionsText, tasksText, sheetText, posText, catalogText, supplyText, lineQuotaText, filelibText, groupChatText] = await Promise.all([loadSnapshots(), loadAccounts(), loadFinanceText(), loadActivityText(), loadEstimatesText(), Promise.all([loadCrewText(), loadShiftText(), loadPunchText(), loadHrText()]).then(([a, b, c, d]) => a + b + c + d), getChatHistory(convId), getMemory(), loadConclusionsText(), loadTasksText(), loadSheetText(), loadPosText(), loadCatalogText(), loadSupplyText(), loadLineQuotaText(), loadFilelibText(), loadGroupChatText()])
       let rawReply = await answer(text, snaps, accountsText, financeText, activityText, estimatesText, crewText, canAct, history, memoryToText(memList), conclusionsText, tasksText, sheetText, posText, catalogText, supplyText, lineQuotaText, filelibText, groupChatText, moneyOK)
       // 🔎 資料代查迴圈（張良 2026-09-27 根除）：AI 輸出 query_pos_day → 系統查庫 → 資料回填再答一輪（唯讀自動執行,不經確認）
       try {

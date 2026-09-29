@@ -41,6 +41,10 @@
     {
       "path": "/api/line-webhook?warm=1",
       "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/hr",
+      "schedule": "40 14 * * *"
     }
   ]
 }
