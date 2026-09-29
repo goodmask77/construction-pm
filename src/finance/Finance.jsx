@@ -106,6 +106,7 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
   const [posSlotHeat, setPosSlotHeat] = useState(false);    // 時段消費逐日熱力圖（張良 2026-09-01：一天一天切下拉太麻煩，要一眼看每時段逐日變化）
   const [posHH, setPosHH] = useState({});                   // 半小時快照月檔 pm_pos_hh_YYYY-MM：{days:{date:[{t,at,rev,tx}]}}
   const [posExt, setPosExt] = useState(null);               // 參考店1/2每日營業額 pm_ichef：{days:{date:{s1,s2}}}（畫面只標1/2，張良 2026-09-01）
+  const [abSoldout, setAbSoldout] = useState(null);         // AB 停售動態 pm_absoldout：{current:{品名:自何時}, log:[{d,t,n,op}]}（張良 2026-09-30 報表頁最下方要能查）
   const [abLive, setAbLive] = useState(null);               // AB 今天即時 pm_ablive：{date,revenue,tx,at}（Eats365 後台抓的，張良 2026-09-02）
   const [labor, setLabor] = useState(null);                 // 人力成本設定 pm_labor：{wage,stations[{id,name,cats[]}],grid{時:{站:人數}}}（張良 2026-09-11）
   const [posStore, setPosStore] = useState("abeach");       // 分店切換：abeach=A Beach 101 / ground=GROUN:D（營運報表第三層）
@@ -156,6 +157,7 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
     try { const pa = await window.storage.get(K("pm_pos_alias"), true); setPosAlias(pa && pa.value ? JSON.parse(pa.value) : {}); } catch (_) { setPosAlias({}); }
     try { const ic = await window.storage.get(K("pm_pos_idlecfg"), true); setPosIdleCfg(ic && ic.value ? JSON.parse(ic.value) : { days: 7, exCats: [], exItems: [] }); } catch (_) { setPosIdleCfg({ days: 7, exCats: [], exItems: [] }); }
     // 參考店 pm_ichef 已退役（2026-09-24 刪數據停抓）
+    try { const so = await window.storage.get(K("pm_absoldout"), true); setAbSoldout(so && so.value ? JSON.parse(so.value) : null); } catch (_) {}
     try { const al = await window.storage.get(K("pm_ablive"), true); setAbLive(al && al.value ? JSON.parse(al.value) : null); } catch (_) {}
     try { const lb = await window.storage.get(K("pm_labor"), true); setLabor(lb && lb.value ? JSON.parse(lb.value) : null); } catch (_) {}
     try { const rc = await window.storage.get(K("pm_recon"), true); const v = rc && rc.value ? JSON.parse(rc.value) : null; if (v) setRecon({ links: v.links || {}, ignored: v.ignored || [] }); } catch (_) {}
@@ -202,9 +204,10 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
     const un10b = onSharedChange(K("pm_pos_hidden"), (_k, v) => { try { setPosHidden(v ? JSON.parse(v) : {}); } catch (_) {} });
     const un10c = onSharedChange(K("pm_pos_alias"), (_k, v) => { try { setPosAlias(v ? JSON.parse(v) : {}); } catch (_) {} });
     const un11 = () => {}; // pm_ichef 退役
+    const un13 = onSharedChange(K("pm_absoldout"), (_k, v) => { try { setAbSoldout(v ? JSON.parse(v) : null); } catch (_) {} });
     const un12 = onSharedChange(K("pm_ablive"), (_k, v) => { try { setAbLive(v ? JSON.parse(v) : null); } catch (_) {} });
     const unLb = onSharedChange(K("pm_labor"), (_k, v) => { try { setLabor(v ? JSON.parse(v) : null); } catch (_) {} });
-    return () => { un1(); un2(); un3(); un4(); un5(); un6(); un7(); un8(); un9(); un10(); un10b(); un10c(); un11(); un12(); unLb(); };
+    return () => { un1(); un2(); un3(); un4(); un5(); un6(); un7(); un8(); un9(); un10(); un10b(); un10c(); un11(); un12(); un13(); unLb(); };
   }, []); // eslint-disable-line
   const saveRecon = (next) => { setRecon(next); window.storage.set(K("pm_recon"), JSON.stringify(next), true).catch(() => {}); };
   // 品項成本存檔（防抖在 storage 墊片層；廣播讓別台/別分頁即時跟上）
@@ -2339,6 +2342,33 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
                     </div>
                   </div>
                 </div>
+                {abView && abSoldout && (() => { // 🚫 AB 停售動態（張良 2026-09-30：放最下方好找；每30分自動掃、變化通知 happy337）
+                  const cur = Object.entries(abSoldout.current || {}).sort((a, b) => (a[1] < b[1] ? 1 : -1));
+                  const log = (abSoldout.log || []).slice(0, 120);
+                  const thS = { padding: "6px 10px", fontSize: 11.5, color: SUB, fontWeight: 700, textAlign: "left", background: "#f2ede1" };
+                  const tdS = { padding: "6px 10px", fontSize: 12.5, borderTop: "1px solid #f0ead9" };
+                  return (
+                    <div style={{ background: C.card, border: `1px solid ${BORDER}`, borderRadius: 12, padding: 16, marginTop: 14 }}>
+                      <div style={{ fontWeight: 800, color: TEXT, marginBottom: 4 }}>停售動態 <span style={{ fontSize: 11.5, color: SUB, fontWeight: 500 }}>品名🚫自動偵測・營業時間每 30 分更新・變化即時通知 happy337 群</span></div>
+                      <div style={{ fontWeight: 700, fontSize: 13, margin: "6px 0" }}>目前停售中（{cur.length}）</div>
+                      {cur.length ? (
+                        <div style={{ maxHeight: 260, overflowY: "auto", border: "1px solid #f0ead9", borderRadius: 8 }}>
+                          <table style={{ width: "100%", borderCollapse: "collapse" }}><thead><tr><th style={thS}>品項</th><th style={{ ...thS, width: 130 }}>停售自</th></tr></thead>
+                            <tbody>{cur.map(([n, ts]) => (<tr key={n}><td style={{ ...tdS, fontWeight: 700 }}>{n}</td><td style={{ ...tdS, color: SUB, fontVariantNumeric: "tabular-nums" }}>{ts}</td></tr>))}</tbody></table>
+                        </div>
+                      ) : <div style={{ fontSize: 12.5, color: SUB }}>目前沒有停售品項 🎉</div>}
+                      {log.length > 0 && (
+                        <details style={{ marginTop: 10 }}>
+                          <summary style={{ fontWeight: 700, fontSize: 13, cursor: "pointer" }}>歷史紀錄（{log.length}）</summary>
+                          <div style={{ maxHeight: 300, overflowY: "auto", border: "1px solid #f0ead9", borderRadius: 8, marginTop: 6 }}>
+                            <table style={{ width: "100%", borderCollapse: "collapse" }}><thead><tr><th style={{ ...thS, width: 70 }}>日期</th><th style={{ ...thS, width: 60 }}>時間</th><th style={thS}>品項</th><th style={{ ...thS, width: 80 }}>動作</th></tr></thead>
+                              <tbody>{log.map((x, i) => (<tr key={i}><td style={{ ...tdS, fontVariantNumeric: "tabular-nums" }}>{(x.d || "").slice(5)}</td><td style={{ ...tdS, fontVariantNumeric: "tabular-nums" }}>{x.t}</td><td style={tdS}>{x.n}</td><td style={{ ...tdS, fontWeight: 800, color: x.op === "停售" ? "#b3261e" : "#2f6d5a" }}>{x.op === "停售" ? "🚫 停售" : "✅ 恢復"}</td></tr>))}</tbody></table>
+                          </div>
+                        </details>
+                      )}
+                    </div>
+                  );
+                })()}
                 <div style={{ fontSize: 11.5, color: C.faint, marginTop: 8 }}>資料來源：Eats365 日結信六個分頁全數入庫（摘要 pm_pos＋明細 pm_pos_d_月份＋逐筆交易 pm_pos_tx_月份，只增不改）。之後接：週/月彙總、POS信用卡 ↔ 銀行入帳核對、進銷存成本對照。</div>
               </>
             )}
