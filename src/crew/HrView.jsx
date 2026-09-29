@@ -5,7 +5,7 @@ import React, { useEffect, useState } from "react";
 const C = { text: "#1d1a15", sub: "#5a5247", faint: "#9b9384", line: "#e3ddd0", card: "#fff", soft: "#f4efe5", green: "#3f7d4e", red: "#b3261e", amber: "#c98a14", blue: "#3a6ea5" };
 const MONOF = "'IBM Plex Mono', ui-monospace, Menlo, monospace";
 
-export default function HrView() {
+export default function HrView({ tab }) { // tab 由第三層分頁決定：att=出勤紀錄 / pay=薪資（張良 2026-09-30 升層）
   const nowMo = new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 7);
   const [mo, setMo] = useState(nowMo);
   const [doc, setDoc] = useState(null);
@@ -13,7 +13,7 @@ export default function HrView() {
   const [onlyBad, setOnlyBad] = useState(false);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
-  const [hrTab, setHrTab] = useState("att"); // 第三層：att=出勤紀錄 / pay=薪資（NUEiP 二次密碼解鎖後接資料）
+  const hrTab = tab === "pay" ? "pay" : "att";
 
   const load = async (m) => {
     setDoc(null);
@@ -71,13 +71,7 @@ export default function HrView() {
     <div style={{ maxWidth: 1060, margin: "0 auto" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "6px 0 10px", flexWrap: "wrap" }}>
         <span style={{ background: C.blue, color: "#fff", fontSize: 11.5, fontWeight: 700, borderRadius: 4, padding: "2px 8px" }}>人資</span>
-        <div style={{ fontSize: 17, fontWeight: 800, color: C.text }}>人資系統</div>
-        {/* 第三層子分頁（張良 2026-09-30）：之後薪資/請假/加班都掛這排 */}
-        <div style={{ display: "inline-flex", background: C.soft, border: `1px solid ${C.line}`, borderRadius: 8, padding: 2, gap: 2 }}>
-          {[["att", "⏱ 出勤紀錄"], ["pay", "💰 薪資"]].map(([v, l]) => (
-            <button key={v} onClick={() => setHrTab(v)} style={{ padding: "4px 12px", borderRadius: 6, border: `1px solid ${hrTab === v ? C.line : "transparent"}`, background: hrTab === v ? "#fff" : "transparent", color: hrTab === v ? C.text : C.sub, fontSize: 12, fontWeight: hrTab === v ? 700 : 400, cursor: "pointer" }}>{l}</button>
-          ))}
-        </div>
+        <div style={{ fontSize: 17, fontWeight: 800, color: C.text }}>{hrTab === "pay" ? "薪資" : "出勤紀錄"}</div>
         <span style={{ fontSize: 12, color: C.faint }}>NUEiP 出勤紀錄・每天 22:40 自動同步，異常 D哥直接通知</span>
         <div style={{ flex: 1 }} />
         <input type="month" value={mo} onChange={e => setMo(e.target.value)} style={inp} />

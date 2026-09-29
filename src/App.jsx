@@ -1108,7 +1108,8 @@ export default function App() {
         {view === "punch" && (
           <PunchView me={account} userName={userName} />
         )}
-        {view === "hr" && CURRENT_SPACE === "crew" && <HrView />}
+        {view === "hr" && CURRENT_SPACE === "crew" && <HrView tab="att" />}
+        {view === "hrpay" && CURRENT_SPACE === "crew" && <HrView tab="pay" />}
         {view === "pay" && (
           <PayView me={account} userName={userName} />
         )}
