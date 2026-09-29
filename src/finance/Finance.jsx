@@ -2345,14 +2345,14 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
                 {abView && abSoldout && (() => { // 🚫 AB 停售動態（張良 2026-09-30：放最下方好找；每30分自動掃、變化通知 happy337）
                   const cur = Object.entries(abSoldout.current || {}).sort((a, b) => (a[1] < b[1] ? 1 : -1));
                   const log = (abSoldout.log || []).slice(0, 120);
-                  const thS = { padding: "6px 10px", fontSize: 11.5, color: C.sub, fontWeight: 700, textAlign: "left", background: "#f2ede1" };
-                  const tdS = { padding: "6px 10px", fontSize: 12.5, borderTop: "1px solid #f0ead9" };
+                  const thS = { padding: "6px 10px", fontSize: 11.5, color: C.sub, fontWeight: 700, textAlign: "left", background: C.head, border: `1px solid ${C.line}` };
+                  const tdS = { padding: "6px 10px", fontSize: 12.5, border: `1px solid ${C.line}`, background: C.card };
                   return (
                     <div style={{ background: C.card, border: `1px solid ${C.line}`, borderRadius: 12, padding: 16, marginTop: 14 }}>
                       <div style={{ fontWeight: 800, color: C.text, marginBottom: 4 }}>停售動態 <span style={{ fontSize: 11.5, color: C.sub, fontWeight: 500 }}>品名🚫自動偵測・營業時間每 30 分更新・變化即時通知 happy337 群</span></div>
                       <div style={{ fontWeight: 700, fontSize: 13, margin: "6px 0" }}>目前停售中（{cur.length}）</div>
                       {cur.length ? (
-                        <div style={{ maxHeight: 260, overflowY: "auto", border: "1px solid #f0ead9", borderRadius: 8 }}>
+                        <div style={{ maxHeight: 300, overflowY: "auto" }}>
                           <table style={{ width: "100%", borderCollapse: "collapse" }}><thead><tr><th style={thS}>品項</th><th style={{ ...thS, width: 130 }}>停售自</th></tr></thead>
                             <tbody>{cur.map(([n, ts]) => (<tr key={n}><td style={{ ...tdS, fontWeight: 700 }}>{n}</td><td style={{ ...tdS, color: C.sub, fontVariantNumeric: "tabular-nums" }}>{ts}</td></tr>))}</tbody></table>
                         </div>
@@ -2360,7 +2360,7 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
                       {log.length > 0 && (
                         <details style={{ marginTop: 10 }}>
                           <summary style={{ fontWeight: 700, fontSize: 13, cursor: "pointer" }}>歷史紀錄（{log.length}）</summary>
-                          <div style={{ maxHeight: 300, overflowY: "auto", border: "1px solid #f0ead9", borderRadius: 8, marginTop: 6 }}>
+                          <div style={{ maxHeight: 340, overflowY: "auto", marginTop: 6 }}>
                             <table style={{ width: "100%", borderCollapse: "collapse" }}><thead><tr><th style={{ ...thS, width: 70 }}>日期</th><th style={{ ...thS, width: 60 }}>時間</th><th style={thS}>品項</th><th style={{ ...thS, width: 80 }}>動作</th></tr></thead>
                               <tbody>{log.map((x, i) => (<tr key={i}><td style={{ ...tdS, fontVariantNumeric: "tabular-nums" }}>{(x.d || "").slice(5)}</td><td style={{ ...tdS, fontVariantNumeric: "tabular-nums" }}>{x.t}</td><td style={tdS}>{x.n}</td><td style={{ ...tdS, fontWeight: 800, color: x.op === "停售" ? "#b3261e" : "#2f6d5a" }}>{x.op === "停售" ? "🚫 停售" : "✅ 恢復"}</td></tr>))}</tbody></table>
                           </div>
