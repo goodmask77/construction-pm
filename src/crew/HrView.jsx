@@ -13,6 +13,7 @@ export default function HrView({ tab }) { // tab 由第三層分頁決定：att=
   const [onlyBad, setOnlyBad] = useState(false);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
+  const [expBoard, setExpBoard] = useState(""); // 排行榜展開完整名單（張良 2026-09-30：不是只顯示五個人）
   const hrTab = tab === "pay" ? "pay" : tab === "shift" ? "shift" : "att";
 
   const load = async (m) => {
@@ -190,15 +191,51 @@ export default function HrView({ tab }) { // tab 由第三層分頁決定：att=
             {!rows.length && <div style={{ fontSize: 11.5, color: C.faint }}>—</div>}
           </div>
         );
-        return (
+        const BOARDS = [
+          ["⏱ 時數王（總工時）", [...es].sort((a, b) => b[1].min - a[1].min), (s) => `${Math.floor(s.min / 60)}h${String(s.min % 60).padStart(2, "0")}`],
+          ["✅ 準時率（出勤≥5天）", es.filter(([, s]) => s.worked >= 5).sort((a, b) => (b[1].ok / b[1].worked) - (a[1].ok / a[1].worked) || b[1].worked - a[1].worked), (s) => `${Math.round(s.ok / s.worked * 100)}%・${s.worked}天`],
+          ["🐓 早鳥（平均上班卡）", es.filter(([, s]) => s.onN >= 3).sort((a, b) => (a[1].onSum / a[1].onN) - (b[1].onSum / b[1].onN)), (s) => m2t0(s.onSum / s.onN)],
+          ["😴 遲到榜", es.filter(([, s]) => s.late).sort((a, b) => b[1].lateMin - a[1].lateMin || b[1].late - a[1].late), (s) => `${s.late}次/${s.lateMin}分`],
+          ["❓ 缺卡榜", es.filter(([, s]) => s.miss).sort((a, b) => b[1].miss - a[1].miss), (s) => `${s.miss}次`],
+        ];
+        const exp = BOARDS.find(([t]) => t === expBoard);
+        return (<>
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 10 }}>
-            {board("⏱ 時數王（總工時）", [...es].sort((a, b) => b[1].min - a[1].min), s => `${Math.floor(s.min / 60)}h`)}
-            {board("✅ 準時率（出勤≥5天）", es.filter(([, s]) => s.worked >= 5).sort((a, b) => (b[1].ok / b[1].worked) - (a[1].ok / a[1].worked) || b[1].worked - a[1].worked), s => `${Math.round(s.ok / s.worked * 100)}%・${s.worked}天`)}
-            {board("🐓 早鳥（平均上班卡）", es.filter(([, s]) => s.onN >= 3).sort((a, b) => (a[1].onSum / a[1].onN) - (b[1].onSum / b[1].onN)), s => m2t0(s.onSum / s.onN))}
-            {board("😴 遲到榜", es.filter(([, s]) => s.late).sort((a, b) => b[1].lateMin - a[1].lateMin), s => `${s.late}次/${s.lateMin}分`)}
-            {board("❓ 缺卡榜", es.filter(([, s]) => s.miss).sort((a, b) => b[1].miss - a[1].miss), s => `${s.miss}次`)}
+            {BOARDS.map(([title, rows, fmt]) => (
+              <div key={title} style={{ display: "flex", flexDirection: "column", flex: 1, minWidth: 180 }}>
+                {board(title, rows, fmt)}
+                {rows.length > 0 && <button onClick={() => setExpBoard(expBoard === title ? "" : title)} style={{ border: "none", background: "none", color: expBoard === title ? C.text : C.blue, fontSize: 11.5, fontWeight: 700, cursor: "pointer", padding: "4px 0 0", textAlign: "left" }}>{expBoard === title ? "▾ 收合" : `看全部 ${rows.length} 人 ▸`}</button>}
+              </div>
+            ))}
           </div>
-        );
+          {exp && (
+            <div style={{ background: "#fff", border: "1.5px solid #c8bca6", borderRadius: 10, marginBottom: 10, overflow: "hidden" }}>
+              <div style={{ display: "flex", alignItems: "center", padding: "9px 14px", background: "#ece4d6", borderBottom: "1.5px solid #c8bca6" }}>
+                <b style={{ fontSize: 13 }}>{exp[0]}｜完整排名（{exp[1].length} 人）</b>
+                <div style={{ flex: 1 }} />
+                <button onClick={() => setExpBoard("")} style={{ border: "none", background: "none", fontSize: 16, cursor: "pointer", color: C.sub }}>×</button>
+              </div>
+              <table style={{ borderCollapse: "collapse", width: "100%" }}>
+                <thead><tr>{["#", "姓名", "部門", "數值", "出勤天數", "總時數", "遲到", "缺卡", "曠職"].map(h => <th key={h} style={{ ...th, position: "static" }}>{h}</th>)}</tr></thead>
+                <tbody>
+                  {exp[1].map(([n, s2], i) => (
+                    <tr key={n} style={{ background: i < 3 ? "#fdf9ef" : undefined }}>
+                      <td style={{ ...td, fontFamily: MONOF, width: 40 }}>{["🥇", "🥈", "🥉"][i] || i + 1}</td>
+                      <td style={td}><button onClick={() => { setPF(n); setExpBoard(""); }} style={{ border: "none", background: "none", color: C.blue, fontWeight: 700, cursor: "pointer", padding: 0, fontSize: 12.5, textDecoration: "underline" }}>{n}</button></td>
+                      <td style={{ ...td, fontSize: 11.5, color: C.faint }}>{s2.dept}</td>
+                      <td style={{ ...td, fontFamily: MONOF, fontWeight: 800 }}>{exp[2](s2)}</td>
+                      <td style={{ ...td, fontFamily: MONOF }}>{s2.worked}</td>
+                      <td style={{ ...td, fontFamily: MONOF }}>{Math.floor(s2.min / 60)}h</td>
+                      <td style={{ ...td, fontFamily: MONOF, color: s2.late ? C.red : C.faint }}>{s2.late ? `${s2.late}次/${s2.lateMin}分` : "—"}</td>
+                      <td style={{ ...td, fontFamily: MONOF, color: s2.miss ? C.amber : C.faint }}>{s2.miss || "—"}</td>
+                      <td style={{ ...td, fontFamily: MONOF, color: s2.absent ? C.red : C.faint }}>{s2.absent || "—"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </>);
       })()}
       {/* 本月異常統計 */}
       {!pF && badPeople.length > 0 && (
