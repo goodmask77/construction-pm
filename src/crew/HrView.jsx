@@ -14,7 +14,7 @@ export default function HrView({ tab }) { // tab 由第三層分頁決定：att=
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
   const [expBoard, setExpBoard] = useState(""); // 排行榜展開完整名單（張良 2026-09-30：不是只顯示五個人）
-  const hrTab = tab === "pay" ? "pay" : tab === "shift" ? "shift" : "att";
+  const hrTab = tab === "pay" ? "pay" : tab === "shift" ? "shift" : tab === "rank" ? "rank" : "att";
 
   const load = async (m) => {
     setDoc(null);
@@ -47,7 +47,7 @@ export default function HrView({ tab }) { // tab 由第三層分頁決定：att=
     const s = stats[r.name] = stats[r.name] || { late: 0, lateMin: 0, miss: 0, absent: 0, days: 0, worked: 0, ok: 0, min: 0, onSum: 0, onN: 0, dept: r.dept };
     s.days++; s.min += r.durmin || 0;
     if (r.on.length || r.off.length) { s.worked++; if (!isBad(r)) s.ok++; }
-    if (r.on.length) { s.onSum += t2m0(r.on[0]); s.onN++; }
+    if (r.on.length) { const m0 = t2m0(r.on[0]); s.onSum += m0; s.onN++; if (!s.onMin || m0 < s.onMin) s.onMin = m0; }
     if (r.late) { s.late++; s.lateMin += r.late; } if (r.miss) s.miss++; if (r.absent) s.absent++;
   }));
   const badPeople = Object.entries(stats).filter(([, s]) => s.late || s.miss || s.absent).sort((a, b) => (b[1].late + b[1].miss + b[1].absent) - (a[1].late + a[1].miss + a[1].absent));
@@ -72,7 +72,7 @@ export default function HrView({ tab }) { // tab 由第三層分頁決定：att=
     <div style={{ maxWidth: 1060, margin: "0 auto" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "6px 0 10px", flexWrap: "wrap" }}>
         <span style={{ background: C.blue, color: "#fff", fontSize: 11.5, fontWeight: 700, borderRadius: 4, padding: "2px 8px" }}>人資</span>
-        <div style={{ fontSize: 17, fontWeight: 800, color: C.text }}>{hrTab === "pay" ? "薪資" : hrTab === "shift" ? "班表" : "出勤紀錄"}</div>
+        <div style={{ fontSize: 17, fontWeight: 800, color: C.text }}>{hrTab === "pay" ? "薪資" : hrTab === "shift" ? "班表" : hrTab === "rank" ? "排行榜" : "出勤紀錄"}</div>
         <span style={{ fontSize: 12, color: C.faint }}>NUEiP 出勤紀錄・每天 22:40 自動同步，異常 D哥直接通知</span>
         <div style={{ flex: 1 }} />
         <input type="month" value={mo} onChange={e => setMo(e.target.value)} style={inp} />
@@ -86,6 +86,49 @@ export default function HrView({ tab }) { // tab 由第三層分頁決定：att=
         <button onClick={syncNow} disabled={busy} style={{ border: "none", background: C.blue, color: "#fff", borderRadius: 8, padding: "7px 14px", fontSize: 12.5, fontWeight: 700, cursor: busy ? "default" : "pointer", opacity: busy ? .6 : 1 }}>{busy ? "抓取中…" : "🔄 從 NUEiP 更新"}</button>
       </div>
       {msg && <div style={{ background: msg.startsWith("✓") ? "#eef5ef" : "#fdf0ef", border: `1.5px solid ${msg.startsWith("✓") ? C.green : C.red}`, borderRadius: 8, padding: "7px 12px", marginBottom: 10, fontSize: 12.5, fontWeight: 600, color: msg.startsWith("✓") ? "#2c5a38" : C.red }}>{msg}</div>}
+      {/* 🏆 排行榜（獨立分頁，張良 2026-09-30：每個榜只顯示對應數據，不要全部一樣） */}
+      {hrTab === "rank" && doc && !pF && (() => {
+        const es = Object.entries(stats).filter(([, s2]) => s2.worked > 0);
+        const hM = (m) => `${Math.floor(m / 60)}h${String(m % 60).padStart(2, "0")}`;
+        const BOARDS = {
+          hours: { icon: "⏱", name: "時數王", rows: [...es].sort((a, b) => b[1].min - a[1].min),
+            cols: [["總工時", (s2) => hM(s2.min), 1], ["出勤天數", (s2) => s2.worked + " 天"], ["平均每班", (s2) => (Math.round(s2.min / s2.worked / 6) / 10) + "h"]] },
+          ontime: { icon: "✅", name: "準時率", note: "出勤 ≥5 天才入榜", rows: es.filter(([, s2]) => s2.worked >= 5).sort((a, b) => (b[1].ok / b[1].worked) - (a[1].ok / a[1].worked) || b[1].worked - a[1].worked),
+            cols: [["準時率", (s2) => Math.round(s2.ok / s2.worked * 100) + "%", 1], ["出勤天數", (s2) => s2.worked + " 天"], ["異常次數", (s2) => (s2.late + s2.miss + s2.absent) || "0"]] },
+          early: { icon: "🐓", name: "早鳥", note: "有上班卡 ≥3 天", rows: es.filter(([, s2]) => s2.onN >= 3).sort((a, b) => (a[1].onSum / a[1].onN) - (b[1].onSum / b[1].onN)),
+            cols: [["平均上班卡", (s2) => m2t0(s2.onSum / s2.onN), 1], ["最早一次", (s2) => m2t0(s2.onMin)], ["打卡天數", (s2) => s2.onN + " 天"]] },
+          late: { icon: "😴", name: "遲到榜", rows: es.filter(([, s2]) => s2.late).sort((a, b) => b[1].lateMin - a[1].lateMin || b[1].late - a[1].late),
+            cols: [["累計分鐘", (s2) => s2.lateMin + " 分", 1], ["次數", (s2) => s2.late + " 次"], ["平均每次", (s2) => Math.round(s2.lateMin / s2.late) + " 分"]] },
+          miss: { icon: "❓", name: "缺卡榜", rows: es.filter(([, s2]) => s2.miss || s2.absent).sort((a, b) => (b[1].miss + b[1].absent) - (a[1].miss + a[1].absent)),
+            cols: [["缺卡", (s2) => s2.miss ? s2.miss + " 次" : "—", 1], ["曠職", (s2) => s2.absent ? s2.absent + " 次" : "—"], ["出勤天數", (s2) => s2.worked + " 天"]] },
+        };
+        const bk = BOARDS[expBoard] ? expBoard : "hours";
+        const B = BOARDS[bk];
+        return (<>
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 10 }}>
+            {Object.entries(BOARDS).map(([k, b]) => (
+              <button key={k} onClick={() => setExpBoard(k)} style={{ border: `1.5px solid ${bk === k ? C.blue : C.line}`, background: bk === k ? C.blue : "#fff", color: bk === k ? "#fff" : C.sub, borderRadius: 18, padding: "6px 16px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>{b.icon} {b.name}{bk === k ? `（${b.rows.length} 人）` : ""}</button>
+            ))}
+          </div>
+          {B.note && <div style={{ fontSize: 11.5, color: C.faint, marginBottom: 8 }}>{B.note}</div>}
+          <div style={{ background: "#fff", border: "1.5px solid #c8bca6", borderRadius: 8, overflow: "auto", maxHeight: "70vh" }}>
+            <table style={{ borderCollapse: "collapse", width: "100%", minWidth: 560 }}>
+              <thead><tr>{["#", "姓名", "部門", ...B.cols.map(c => c[0])].map(h => <th key={h} style={th}>{h}</th>)}</tr></thead>
+              <tbody>
+                {B.rows.map(([n, s2], i) => (
+                  <tr key={n} style={{ background: i < 3 ? "#fdf9ef" : undefined }}>
+                    <td style={{ ...td, fontFamily: MONOF, width: 44, fontSize: 14 }}>{["🥇", "🥈", "🥉"][i] || i + 1}</td>
+                    <td style={td}><button onClick={() => setPF(n)} style={{ border: "none", background: "none", color: C.blue, fontWeight: 700, cursor: "pointer", padding: 0, fontSize: 13, textDecoration: "underline" }}>{n}</button></td>
+                    <td style={{ ...td, fontSize: 11.5, color: C.faint }}>{s2.dept}</td>
+                    {B.cols.map(([h, get, main]) => <td key={h} style={{ ...td, fontFamily: MONOF, fontWeight: main ? 800 : 400, fontSize: main ? 13.5 : 12.5, color: main ? C.text : C.sub }}>{get(s2)}</td>)}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {!B.rows.length && <div style={{ padding: 24, fontSize: 12.5, color: C.faint, textAlign: "center" }}>這個榜這個月沒有人 🎉</div>}
+          </div>
+        </>);
+      })()}
       {/* 📅 班表（張良 2026-09-30：照排班模組表格化）＝人×日月曆格；資料同月檔 work 欄（NUEiP 班表） */}
       {hrTab === "shift" && doc && (() => {
         const dayN = new Date(Number(mo.slice(0, 4)), Number(mo.slice(5, 7)), 0).getDate();
@@ -127,10 +170,8 @@ export default function HrView({ tab }) { // tab 由第三層分頁決定：att=
           💰 薪資分頁建置中——NUEiP 的工資發放明細有<b>二次密碼</b>鎖，等老闆提供解鎖後就接資料進來（薪資屬機密，這頁只開給有權限的帳號）。
         </div>
       )}
-      {hrTab === "att" && <>
-      {/* 個人摘要（選了人才出現）：本月統計 KPI＋白話總結（張良 2026-09-30） */}
-      {/* 個人摘要（選了人才出現）：本月統計 KPI＋白話總結（張良 2026-09-30） */}
-      {pF && doc && (() => {
+      {/* 個人摘要（出勤紀錄/排行榜共用：排行榜點名字也看得到） */}
+      {(hrTab === "att" || hrTab === "rank") && pF && doc && (() => {
         const recs = days.flatMap(d => Object.values(doc.days[d]).filter(r => r.name === pF).map(r => ({ ...r, d })));
         if (!recs.length) return <div style={{ background: "#fff", border: `1.5px solid #c8bca6`, borderRadius: 10, padding: "12px 16px", marginBottom: 10, fontSize: 12.5, color: C.faint }}>{pF} 這個月沒有出勤資料</div>;
         const worked = recs.filter(r => r.on.length || r.off.length);
@@ -173,70 +214,7 @@ export default function HrView({ tab }) { // tab 由第三層分頁決定：att=
           </div>
         );
       })()}
-      {/* 🏆 各類排名（總覽模式；點名字→個人摘要）（張良 2026-09-30） */}
-      {!pF && days.length > 0 && (() => {
-        const es = Object.entries(stats).filter(([, s]) => s.worked > 0);
-        const medal = ["🥇", "🥈", "🥉", "4.", "5."];
-        const nameBtn = (n) => <button onClick={() => setPF(n)} style={{ border: "none", background: "none", color: C.blue, fontWeight: 700, cursor: "pointer", padding: 0, fontSize: 12, textDecoration: "underline" }}>{n}</button>;
-        const board = (title, rows, fmt) => (
-          <div key={title} style={{ background: "#fff", border: `1.5px solid #c8bca6`, borderRadius: 10, padding: "10px 14px", minWidth: 180, flex: 1 }}>
-            <div style={{ fontSize: 12.5, fontWeight: 800, color: C.text, marginBottom: 6 }}>{title}</div>
-            {rows.slice(0, 5).map(([n, s], i) => (
-              <div key={n} style={{ display: "flex", alignItems: "center", gap: 6, padding: "2px 0", fontSize: 12 }}>
-                <span style={{ width: 22, flexShrink: 0 }}>{medal[i]}</span>{nameBtn(n)}
-                <div style={{ flex: 1 }} />
-                <span style={{ fontFamily: MONOF, fontSize: 11.5, color: C.sub }}>{fmt(s)}</span>
-              </div>
-            ))}
-            {!rows.length && <div style={{ fontSize: 11.5, color: C.faint }}>—</div>}
-          </div>
-        );
-        const BOARDS = [
-          ["⏱ 時數王（總工時）", [...es].sort((a, b) => b[1].min - a[1].min), (s) => `${Math.floor(s.min / 60)}h${String(s.min % 60).padStart(2, "0")}`],
-          ["✅ 準時率（出勤≥5天）", es.filter(([, s]) => s.worked >= 5).sort((a, b) => (b[1].ok / b[1].worked) - (a[1].ok / a[1].worked) || b[1].worked - a[1].worked), (s) => `${Math.round(s.ok / s.worked * 100)}%・${s.worked}天`],
-          ["🐓 早鳥（平均上班卡）", es.filter(([, s]) => s.onN >= 3).sort((a, b) => (a[1].onSum / a[1].onN) - (b[1].onSum / b[1].onN)), (s) => m2t0(s.onSum / s.onN)],
-          ["😴 遲到榜", es.filter(([, s]) => s.late).sort((a, b) => b[1].lateMin - a[1].lateMin || b[1].late - a[1].late), (s) => `${s.late}次/${s.lateMin}分`],
-          ["❓ 缺卡榜", es.filter(([, s]) => s.miss).sort((a, b) => b[1].miss - a[1].miss), (s) => `${s.miss}次`],
-        ];
-        const exp = BOARDS.find(([t]) => t === expBoard);
-        return (<>
-          <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 10 }}>
-            {BOARDS.map(([title, rows, fmt]) => (
-              <div key={title} style={{ display: "flex", flexDirection: "column", flex: 1, minWidth: 180 }}>
-                {board(title, rows, fmt)}
-                {rows.length > 0 && <button onClick={() => setExpBoard(expBoard === title ? "" : title)} style={{ border: "none", background: "none", color: expBoard === title ? C.text : C.blue, fontSize: 11.5, fontWeight: 700, cursor: "pointer", padding: "4px 0 0", textAlign: "left" }}>{expBoard === title ? "▾ 收合" : `看全部 ${rows.length} 人 ▸`}</button>}
-              </div>
-            ))}
-          </div>
-          {exp && (
-            <div style={{ background: "#fff", border: "1.5px solid #c8bca6", borderRadius: 10, marginBottom: 10, overflow: "hidden" }}>
-              <div style={{ display: "flex", alignItems: "center", padding: "9px 14px", background: "#ece4d6", borderBottom: "1.5px solid #c8bca6" }}>
-                <b style={{ fontSize: 13 }}>{exp[0]}｜完整排名（{exp[1].length} 人）</b>
-                <div style={{ flex: 1 }} />
-                <button onClick={() => setExpBoard("")} style={{ border: "none", background: "none", fontSize: 16, cursor: "pointer", color: C.sub }}>×</button>
-              </div>
-              <table style={{ borderCollapse: "collapse", width: "100%" }}>
-                <thead><tr>{["#", "姓名", "部門", "數值", "出勤天數", "總時數", "遲到", "缺卡", "曠職"].map(h => <th key={h} style={{ ...th, position: "static" }}>{h}</th>)}</tr></thead>
-                <tbody>
-                  {exp[1].map(([n, s2], i) => (
-                    <tr key={n} style={{ background: i < 3 ? "#fdf9ef" : undefined }}>
-                      <td style={{ ...td, fontFamily: MONOF, width: 40 }}>{["🥇", "🥈", "🥉"][i] || i + 1}</td>
-                      <td style={td}><button onClick={() => { setPF(n); setExpBoard(""); }} style={{ border: "none", background: "none", color: C.blue, fontWeight: 700, cursor: "pointer", padding: 0, fontSize: 12.5, textDecoration: "underline" }}>{n}</button></td>
-                      <td style={{ ...td, fontSize: 11.5, color: C.faint }}>{s2.dept}</td>
-                      <td style={{ ...td, fontFamily: MONOF, fontWeight: 800 }}>{exp[2](s2)}</td>
-                      <td style={{ ...td, fontFamily: MONOF }}>{s2.worked}</td>
-                      <td style={{ ...td, fontFamily: MONOF }}>{Math.floor(s2.min / 60)}h</td>
-                      <td style={{ ...td, fontFamily: MONOF, color: s2.late ? C.red : C.faint }}>{s2.late ? `${s2.late}次/${s2.lateMin}分` : "—"}</td>
-                      <td style={{ ...td, fontFamily: MONOF, color: s2.miss ? C.amber : C.faint }}>{s2.miss || "—"}</td>
-                      <td style={{ ...td, fontFamily: MONOF, color: s2.absent ? C.red : C.faint }}>{s2.absent || "—"}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </>);
-      })()}
+      {hrTab === "att" && <>
       {/* 本月異常統計 */}
       {!pF && badPeople.length > 0 && (
         <div style={{ background: "#fdf6e3", border: `1.5px solid ${C.amber}`, borderRadius: 10, padding: "9px 14px", marginBottom: 10, fontSize: 12.5 }}>

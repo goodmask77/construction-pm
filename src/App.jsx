@@ -1111,6 +1111,7 @@ export default function App() {
         {view === "hr" && CURRENT_SPACE === "crew" && <HrView tab="att" />}
         {view === "hrpay" && CURRENT_SPACE === "crew" && <HrView tab="pay" />}
         {view === "hrshift" && CURRENT_SPACE === "crew" && <HrView tab="shift" />}
+        {view === "hrrank" && CURRENT_SPACE === "crew" && <HrView tab="rank" />}
         {view === "pay" && (
           <PayView me={account} userName={userName} />
         )}
