@@ -117,6 +117,7 @@ function setTabs(k){
   const g = document.getElementById('bs-ground'), a = document.getElementById('bs-abeach')
   if (g) g.className = 'bseg' + (lastStore==='ground' ? ' on' : '')
   if (a) a.className = 'bseg' + (lastStore==='abeach' ? ' on' : '')
+  try { sessionStorage.setItem('prepView', curStore) } catch(_) {} // v4.4.0（張良 2026-10-02：重新整理留在原頁面）
 }
 // 🔄 更新App（張良 2026-09-22：不是只抓數據——整個 App 重開、連新功能一起拿最新版；r=時戳穿透 CDN 快取）
 function hardRefresh(){ location.replace(location.pathname + '?r=' + Date.now()) }
@@ -2698,7 +2699,12 @@ function lbFinder(nm){
   ov.onclick = () => ov.remove()
   document.body.appendChild(ov)
 }
-load('ground')
+// 開場：重新整理留在原分頁（張良 2026-10-02）；沒紀錄才回首頁
+(function(){
+  let v = null; try { v = sessionStorage.getItem('prepView') } catch(_) {}
+  const R = { lb: loadLB, buy: buyLoad, meet: meetLoad, shift: shiftLoad, fb: fbLoad, menu: menuLoad, errs: errsView, sop: sopPage, settings: settingsLoad, food: ()=>invLoad('food'), pack: ()=>invLoad('pack'), abeach: ()=>load('abeach') }
+  if (v && R[v]) R[v](); else load('ground')
+})()
 </script>
 </body>
 </html>
