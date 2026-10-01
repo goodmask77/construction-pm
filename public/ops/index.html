@@ -1480,11 +1480,14 @@ function shiftRender(){
   const BD = 'border:1px solid var(--line);'
   h += `<div class="scroll" style="margin-bottom:12px"><table style="table-layout:fixed;width:100%;min-width:760px;border-collapse:collapse">
   <colgroup><col style="width:88px">${wkDays.map(()=>'<col>').join('')}</colgroup>
-  <thead><tr><th style="${BD}text-align:left;position:sticky;left:0;background:var(--soft);z-index:2">崗位</th>${wkDays.map((dt,i)=>`<th onclick="dayClick('${dt}')" title="點我看當日時段細表" style="${BD}text-align:center;cursor:pointer;${dt===today?'color:var(--primary);background:var(--psoft)':'background:var(--soft)'}">${dt.slice(5)}<br>（${wdN[i]}）</th>`).join('')}</tr></thead><tbody>`
+  <thead><tr><th style="${BD}text-align:left;position:sticky;left:0;background:var(--soft);z-index:2">崗位</th>${wkDays.map((dt,i)=>`<th onclick="dayClick('${dt}')" title="點我看當日時段細表" style="${BD}text-align:center;cursor:pointer;font-size:13.5px;${dt===today?'color:var(--primary);background:var(--psoft)':'color:#F2F5F9;background:var(--soft)'}">${dt.slice(5)}<br>（${wdN[i]}）</th>`).join('')}</tr></thead><tbody>`
   if (!posList.length) h += `<tr><td colspan="8" class="mut" style="${BD}text-align:center">先按上面「⚙️ 崗位」建崗位清單，左側就會列出、點格子直接排人</td></tr>`
+  let prevGrp = null // v4.8.4（張良）：三大區塊換組時整列粗線分隔，延伸到最右
   posList.forEach(ps=>{
     const g = GC[posGrp(ps)]
-    h += `<tr><td style="${BD}text-align:left;font-weight:800;color:${g.ink};position:sticky;left:0;background:${g.bg};z-index:1">${ps}</td>` + wkDays.map(dt=>{
+    const gb = (prevGrp !== null && posGrp(ps) !== prevGrp) ? `border-top:3px solid ${g.ink}AA;` : ''
+    prevGrp = posGrp(ps)
+    h += `<tr><td style="${BD}${gb}text-align:left;font-weight:800;color:${g.ink};position:sticky;left:0;background:${g.bg};z-index:1">${ps}</td>` + wkDays.map(dt=>{
       const es = wkEnts.filter(x=>(x.pos||'未分崗')===ps && x.date===dt)
       const cellOps = meN ? ` onclick="cellClick('${ps}','${dt}')" ondragover="event.preventDefault();this.style.outline='2px solid var(--primary)'" ondragleave="this.style.outline=''" ondrop="shiftDrop(event,'${ps}','${dt}')"` : ''
       const ents = es.map(e=>{
@@ -1493,7 +1496,7 @@ function shiftRender(){
         const bg2 = e.tr ? `background:linear-gradient(90deg,${PB[pi]} 52%,${PB[ti]} 52%);` : `background:${PB[pi]};`
         return `<div ${meN?`draggable="true" ondragstart="event.stopPropagation();event.dataTransfer.setData('text/plain','${e.id}')" onclick="event.stopPropagation();shiftForm('${e.id}')"`:''} style="font-size:13px;line-height:1.7;${meN?'cursor:grab;':''}${bg2}border:${e.tr?'2px dashed rgba(255,255,255,.85)':'none'};border-radius:6px;padding:${e.tr?'3px 7px':'5px 8px'};margin:2px 0"><b style="color:${PT[pi]};font-weight:600">${e.name}</b>${e.tr?` <span style="color:${PT[ti]};font-weight:600;font-size:12px;white-space:nowrap">🎓${e.tr}</span>`:''}</div>`
       }).join('')
-      return `<td${cellOps} style="${BD}${dt===today?'background:var(--psoft);':''}text-align:left;${meN?'cursor:pointer;':''}vertical-align:top;overflow:hidden">${ents || (meN?'<span class="mut">＋</span>':'<span class="mut">—</span>')}</td>`
+      return `<td${cellOps} style="${BD}${gb}${dt===today?'background:var(--psoft);':''}text-align:left;${meN?'cursor:pointer;':''}vertical-align:top;overflow:hidden">${ents || (meN?'<span class="mut">＋</span>':'<span class="mut">—</span>')}</td>`
     }).join('') + `</tr>`
   })
   h += `</tbody></table>`
@@ -2712,6 +2715,32 @@ const _PAL = ()=>[ // v4.8.0 深色主題→寶石色原版（黑灰底上正好
   {n:'葡萄紫',g:'紫系',bg:'#7B3F8C',tx:'#FFFFFF'},
   {n:'可可棕',g:'中性系',bg:'#6B4A3A',tx:'#FFFFFF'},
   {n:'石墨',g:'中性系',bg:'#3A3F47',tx:'#FFFFFF'},
+  // v4.8.4 擴充（張良「更多顏色 深到淺 亮到暗 黑到白」）：id 16起追加，既有16色編號不動
+  {n:'酒紅',g:'紅系',bg:'#7A2230',tx:'#FFFFFF'},
+  {n:'亮紅',g:'紅系',bg:'#E34B5F',tx:'#FFFFFF'},
+  {n:'玫瑰粉',g:'紅系',bg:'#E98FA4',tx:'#47101E'},
+  {n:'淺粉',g:'紅系',bg:'#EDB8CA',tx:'#47101E'},
+  {n:'深焦糖',g:'橘黃系',bg:'#9A5A14',tx:'#FFFFFF'},
+  {n:'亮橘',g:'橘黃系',bg:'#F2A541',tx:'#3A2503'},
+  {n:'淺杏',g:'橘黃系',bg:'#F2CE94',tx:'#3A2503'},
+  {n:'檸檬黃',g:'橘黃系',bg:'#E8D44D',tx:'#2E2804'},
+  {n:'墨綠',g:'綠系',bg:'#123B2E',tx:'#9FD6BC'},
+  {n:'亮綠',g:'綠系',bg:'#4CAF6D',tx:'#07230F'},
+  {n:'青瓷',g:'綠系',bg:'#7FBFA0',tx:'#11302A'},
+  {n:'淺抹茶',g:'綠系',bg:'#BBD6A2',tx:'#263A12'},
+  {n:'午夜藍',g:'青藍系',bg:'#152A4A',tx:'#A9C7F0'},
+  {n:'亮天藍',g:'青藍系',bg:'#3BA7DD',tx:'#07243A'},
+  {n:'冰藍',g:'青藍系',bg:'#8FC3E0',tx:'#0C2436'},
+  {n:'淺粉藍',g:'青藍系',bg:'#C0D8EA',tx:'#132A3E'},
+  {n:'深茄紫',g:'紫系',bg:'#43275B',tx:'#D9C6F2'},
+  {n:'亮紫羅蘭',g:'紫系',bg:'#8B6CD9',tx:'#FFFFFF'},
+  {n:'薰衣草',g:'紫系',bg:'#B9A7E0',tx:'#241744'},
+  {n:'淺藕紫',g:'紫系',bg:'#D8C9E8',tx:'#30204A'},
+  {n:'純黑',g:'中性系',bg:'#0B0D11',tx:'#E8ECF2'},
+  {n:'深灰',g:'中性系',bg:'#23272E',tx:'#C9D1DC'},
+  {n:'中灰',g:'中性系',bg:'#6B7280',tx:'#FFFFFF'},
+  {n:'淺灰',g:'中性系',bg:'#B5BCC6',tx:'#1A1E24'},
+  {n:'純白',g:'中性系',bg:'#F5F7FA',tx:'#14181E'},
 ]
 const _PBX = ()=>_PAL().map(x=>x.bg) // 實色底
 const _PTX = ()=>_PAL().map(x=>x.tx) // 文字色
@@ -2728,15 +2757,13 @@ function odRender(){
     const off = window._offTmp.has(n)
     const sw = `<button title="點我換色" style="width:30px;height:24px;border-radius:6px;border:none;background:${B[ci]};cursor:pointer" onclick="window._colOpen=window._colOpen==='${n}'?null:'${n}';odRender()"></button>`
     let pal = ''
-    if (window._colOpen === n) { // v4.7.0：選色面板照色系分組；選中=白圈+色框；被別人用=角落白點
-      let lastG = ''
-      pal = '<div style="padding:6px 0 4px">'
-      PALX.forEach((c2, ci2)=>{
-        if (c2.g !== lastG) { pal += `${lastG?'</div>':''}<div class="hint" style="font-weight:800;margin:5px 0 3px">${c2.g}</div><div style="display:flex;gap:6px;flex-wrap:wrap">`; lastG = c2.g }
+    if (window._colOpen === n) { // v4.8.4：同色系跨段落歸同組（深→亮→淺一排）；選中=白圈+色框；被別人用=角落白點
+      const grps = []
+      PALX.forEach((c2, ci2)=>{ let g2 = grps.find(x=>x.g===c2.g); if (!g2) { g2 = { g: c2.g, items: [] }; grps.push(g2) } g2.items.push([c2, ci2]) })
+      pal = '<div style="padding:6px 0 4px">' + grps.map(g2=>`<div class="hint" style="font-weight:800;margin:5px 0 3px">${g2.g}</div><div style="display:flex;gap:6px;flex-wrap:wrap">` + g2.items.map(([c2, ci2])=>{
         const used = Object.entries(window._colTmp).some(([k2,v2])=>k2!==n && (v2%B.length)===ci2)
-        pal += `<button title="${c2.n}${used?'（有人在用）':''}" style="width:32px;height:26px;border-radius:6px;border:none;background:${c2.bg};cursor:pointer;position:relative;${ci2===ci?`box-shadow:0 0 0 2px #fff,0 0 0 4px ${c2.bg};`:''}" onclick="window._colTmp['${n}']=${ci2};window._colOpen=null;odRender()">${used?'<span style="position:absolute;top:3px;right:3px;width:6px;height:6px;border-radius:50%;background:var(--card);opacity:.95"></span>':''}</button>`
-      })
-      pal += '</div></div>'
+        return `<button title="${c2.n}${used?'（有人在用）':''}" style="width:32px;height:26px;border-radius:6px;border:none;background:${c2.bg};cursor:pointer;position:relative;box-shadow:inset 0 0 0 1px rgba(255,255,255,.18)${ci2===ci?`,0 0 0 2px #fff,0 0 0 4px ${c2.bg}`:''}" onclick="window._colTmp['${n}']=${ci2};window._colOpen=null;odRender()">${used?'<span style="position:absolute;top:3px;right:3px;width:6px;height:6px;border-radius:50%;background:#fff;opacity:.95"></span>':''}</button>`
+      }).join('') + '</div>').join('') + '</div>'
     }
     return `<div style="border-bottom:1px solid var(--line)"><div style="display:flex;gap:6px;align-items:center;padding:4px 0">
       <span style="flex:1;font-weight:800;color:${off?'#9CA3AF':B[ci]};${off?'text-decoration:line-through;':''}">${n}</span>${sw}

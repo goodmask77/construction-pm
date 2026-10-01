@@ -1783,7 +1783,7 @@ export default async function handler(req, res) {
     try { bC = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
     const docC = (await kvGet('sp_finance_pm_shift_g')) || { list: [] }
     docC.colors = { ...(docC.colors || {}) }
-    for (const [nm, ci] of Object.entries(bC.map || {})) docC.colors[String(nm).slice(0, 20)] = Math.max(0, Math.min(15, Number(ci) || 0))
+    for (const [nm, ci] of Object.entries(bC.map || {})) docC.colors[String(nm).slice(0, 20)] = Math.max(0, Math.min(39, Number(ci) || 0))
     await kvPut('sp_finance_pm_shift_g', docC, '人員色號校正')
     return res.status(200).json({ ok: true, colors: docC.colors })
   }
@@ -1854,7 +1854,7 @@ export default async function handler(req, res) {
       doc.staffOrd = (Array.isArray(sb2.list) ? sb2.list : []).map(s3 => String(s3).trim().slice(0, 20)).filter(Boolean).slice(0, 50)
     } else if (sb2.op === 'colors') { // 🎨人員自選色（張良 2026-10-02「讓我自己選擇編輯」）
       doc.colors = { ...(doc.colors || {}) }
-      for (const [nm, ci] of Object.entries(sb2.map || {})) doc.colors[String(nm).slice(0, 20)] = Math.max(0, Math.min(15, Number(ci) || 0))
+      for (const [nm, ci] of Object.entries(sb2.map || {})) doc.colors[String(nm).slice(0, 20)] = Math.max(0, Math.min(39, Number(ci) || 0))
     } else if (sb2.op === 'off') { // ✕非常態排班人員（張良 2026-10-02）：沉底+不進快選選單+不列每日未排
       doc.offStaff = (Array.isArray(sb2.list) ? sb2.list : []).map(s3 => String(s3).trim().slice(0, 20)).filter(Boolean).slice(0, 50)
     } else if (sb2.op === 'cfg') { // 設定五合一（v4.8.3 提速：⚙️儲存原本連發5個POST排隊寫同一份doc→合成一發）
@@ -1862,7 +1862,7 @@ export default async function handler(req, res) {
       if (Array.isArray(sb2.pos)) doc.pos = nm20(sb2.pos).slice(0, 30)
       if (Array.isArray(sb2.slots)) doc.slots = sb2.slots.map(s3 => ({ n: String(s3.n || '').trim().slice(0, 10), s: String(s3.s || '').slice(0, 5), e: String(s3.e || '').slice(0, 5) })).filter(x => x.n && /^\d{1,2}:\d{2}$/.test(x.s) && /^\d{1,2}:\d{2}$/.test(x.e)).slice(0, 10)
       if (Array.isArray(sb2.ord)) doc.staffOrd = nm20(sb2.ord)
-      if (sb2.colors && typeof sb2.colors === 'object') { doc.colors = { ...(doc.colors || {}) }; for (const [nm, ci] of Object.entries(sb2.colors)) doc.colors[String(nm).slice(0, 20)] = Math.max(0, Math.min(15, Number(ci) || 0)) }
+      if (sb2.colors && typeof sb2.colors === 'object') { doc.colors = { ...(doc.colors || {}) }; for (const [nm, ci] of Object.entries(sb2.colors)) doc.colors[String(nm).slice(0, 20)] = Math.max(0, Math.min(39, Number(ci) || 0)) }
       if (Array.isArray(sb2.off)) doc.offStaff = nm20(sb2.off)
     } else return res.status(400).json({ ok: false })
     await kvPut('sp_finance_pm_shift_g', doc, '班表' + sb2.op + '(' + whoS.name + ')')
