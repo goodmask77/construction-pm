@@ -1456,18 +1456,21 @@ function shiftRender(){
   const wkDays = [...Array(7)].map((_,i)=>{ const t2 = new Date(window._shiftWk); t2.setDate(t2.getDate()+i); return t2.toISOString().slice(0,10) })
   const wdN = ['一','二','三','四','五','六','日']
   const wkEnts = d.sched.filter(x=>wkDays.includes(x.date))
-  const posList = [...new Set(wkEnts.map(x=>x.pos||'未分崗'))]
+  // v4.3.3（張良 2026-10-02）：崗位列=⚙️清單固定列出（沒排班也顯示），點格子直選人名、拖曳換天/換崗
+  const posList = (d.posList||[]).slice()
+  wkEnts.forEach(x=>{ const p4=x.pos||'未分崗'; if(!posList.includes(p4)) posList.push(p4) })
   h += `<div style="display:flex;gap:8px;align-items:center;margin:2px 0 6px">
     <span style="font-weight:900">一週班表</span>${meN?`<button class="mini" style="padding:3px 10px" onclick="shiftPosEdit()">⚙️ 崗位</button>`:''}
     <button class="mini" onclick="shiftWkNav(-1)">‹</button><span class="hint" style="font-weight:800">${wkDays[0].slice(5)} ~ ${wkDays[6].slice(5)}</span><button class="mini" onclick="shiftWkNav(1)">›</button>
   </div>
   <div class="scroll" style="margin-bottom:12px"><table><thead><tr><th style="text-align:left;position:sticky;left:0;background:#F1F6F9;z-index:2">崗位</th>${wkDays.map((dt,i)=>`<th style="${dt===today?'color:var(--primary)':''}">${dt.slice(5)}<br>（${wdN[i]}）</th>`).join('')}</tr></thead><tbody>`
-  if (!posList.length) h += `<tr><td colspan="8" class="mut" style="text-align:center">這週還沒排班——按「＋ 排班」開始（排班時可填崗位）</td></tr>`
+  if (!posList.length) h += `<tr><td colspan="8" class="mut" style="text-align:center">先按上面「⚙️ 崗位」建崗位清單，左側就會列出、點格子直接排人</td></tr>`
   posList.forEach(ps=>{
     h += `<tr><td style="text-align:left;font-weight:800;color:var(--pdark);position:sticky;left:0;background:#fff;z-index:1">${ps}</td>` + wkDays.map(dt=>{
       const es = wkEnts.filter(x=>(x.pos||'未分崗')===ps && x.date===dt)
-      if (!es.length) return `<td class="mut">—</td>`
-      return `<td style="${dt===today?'background:#E5F3FA;':''}text-align:left;white-space:nowrap">${es.map(e=>`<div style="font-size:13px"><b>${e.name}</b> <span class="hint">${e.start}-${e.end}</span>${meN?` <span style="cursor:pointer" onclick="shiftForm('${e.id}')">✏️</span>`:''}</div>`).join('')}</td>`
+      const cellOps = meN ? ` onclick="shiftQuick('${ps}','${dt}')" ondragover="event.preventDefault();this.style.outline='2px solid var(--primary)'" ondragleave="this.style.outline=''" ondrop="shiftDrop(event,'${ps}','${dt}')"` : ''
+      const ents = es.map(e=>`<div ${meN?`draggable="true" ondragstart="event.stopPropagation();event.dataTransfer.setData('text/plain','${e.id}')" onclick="event.stopPropagation();shiftForm('${e.id}')"`:''} style="font-size:13px;${meN?'cursor:grab;border:1px solid var(--line);border-radius:7px;padding:2px 6px;margin:1px 0;background:#F7FAFC':''}"><b>${e.name}</b> <span class="hint">${e.start}-${e.end}</span></div>`).join('')
+      return `<td${cellOps} style="${dt===today?'background:#E5F3FA;':''}text-align:left;white-space:nowrap;${meN?'cursor:pointer;':''}min-width:84px;vertical-align:top">${ents || (meN?'<span class="mut">＋</span>':'<span class="mut">—</span>')}</td>`
     }).join('') + `</tr>`
   })
   h += `</tbody></table></div>`
@@ -1537,6 +1540,47 @@ async function shiftDel(id){
   const r = await fetch('/api/mail-sync?shiftset=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ op:'del', id, token: TK() }) })
   const d = await r.json().catch(()=>null)
   if (d && d.ok) shiftLoad(); else alert((d&&d.error)||'失敗')
+}
+// ── 週表直排（張良 2026-10-02「點擊直接選人名、可拖曳」）──
+function shiftQuick(pos, dt){
+  const d = window._shiftD
+  // 預設時間：同崗位最近一筆 → 整體最近一筆 → 11:00-20:00
+  const byNew = (a,b)=>b.date.localeCompare(a.date)
+  const last = [...d.sched].filter(x=>(x.pos||'未分崗')===pos).sort(byNew)[0] || [...d.sched].sort(byNew)[0]
+  const defS = last?last.start:'11:00', defE = last?last.end:'20:00', defB = last?(last.break==null?60:last.break):60
+  const busy = new Set(d.sched.filter(x=>x.date===dt).map(x=>x.name)) // 當天已有班的人標示
+  const wdN2 = ['日','一','二','三','四','五','六']
+  const ov = document.createElement('div'); ov.id='qkOv'
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(16,24,43,.45);z-index:50;display:flex;align-items:center;justify-content:center;padding:16px'
+  ov.innerHTML = `<div style="background:#fff;border-radius:14px;max-width:420px;width:100%;padding:16px;max-height:80vh;overflow:auto" onclick="event.stopPropagation()">
+    <div style="font-weight:900;margin-bottom:8px">📅 ${dt.slice(5)}（${wdN2[new Date(dt).getDay()]}）・${pos}</div>
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:14px;margin-bottom:10px">
+      <span>上班</span>${t24c('qkS', defS)}<span>下班</span>${t24c('qkE', defE)}
+      <span>休(分)</span><input id="qkB" type="number" value="${defB}" min="0" max="240" style="border:1px solid var(--line);border-radius:8px;padding:7px;font-size:15px;width:62px">
+    </div>
+    <div class="hint" style="margin-bottom:6px">點名字＝直接排進去（✓＝當天已有班）</div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap">${(d.names||[]).map(n=>`<button class="mini" style="padding:9px 13px;font-size:15px${busy.has(n)?';opacity:.55':''}" onclick="shiftQuickGo('${n}','${pos}','${dt}')">${n}${busy.has(n)?' ✓':''}</button>`).join('')||'<span class="mut">GD 人員是空的——先在上面「＋ 加人」</span>'}</div>
+    <div style="display:flex;justify-content:flex-end;margin-top:12px"><button class="mini" style="padding:9px 12px" onclick="document.getElementById('qkOv').remove()">取消</button></div></div>`
+  ov.onclick = () => ov.remove()
+  document.body.appendChild(ov)
+}
+async function shiftQuickGo(name, pos, dt){
+  const ovQ = document.getElementById('qkOv')
+  const item = { name, date: dt, start: t24read(ovQ,'qkS'), end: t24read(ovQ,'qkE'), break: +((document.getElementById('qkB')||{}).value||0), pos }
+  if (ovQ) ovQ.remove()
+  const r = await fetch('/api/mail-sync?shiftset=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ op:'save', item, token: TK() }) })
+  const d = await r.json().catch(()=>null)
+  if (d && d.ok) shiftLoad(); else alert((d&&d.error)||'儲存失敗')
+}
+async function shiftDrop(ev, pos, dt){
+  ev.preventDefault(); ev.stopPropagation(); ev.currentTarget.style.outline = ''
+  const id = ev.dataTransfer.getData('text/plain'); if (!id) return
+  const d = window._shiftD, it = d.sched.find(x=>x.id===id); if (!it) return
+  if (it.date === dt && (it.pos||'未分崗') === pos) return
+  it.date = dt; it.pos = (pos==='未分崗'?'':pos); shiftRender() // 先畫再存（樂觀更新）
+  const r = await fetch('/api/mail-sync?shiftset=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ op:'save', item: it, token: TK() }) })
+  const d2 = await r.json().catch(()=>null)
+  if (!d2 || !d2.ok) { alert((d2&&d2.error)||'移動失敗'); shiftLoad() } else shiftLoad()
 }
 // ── 品項明細 v2（張良 2026-09-22：①全部/各分類/依品類分組切換 ②30日均/vs近60/累計點欄頭排序（分組模式=組內排）
 //    ③累積金額取消→售價（手填牌價優先、無則30日金額÷份數湊5倍數）④%佔比獨立欄放30日均左邊 ⑤🙈隱藏管理＝App 同一份 pm_pos_hidden 全裝置同步）──
