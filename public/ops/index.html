@@ -750,7 +750,7 @@ function lbRender(){
   if (!d) { app.innerHTML = '<div class="err">讀不到排行榜資料</div>'; return }
   if (curStore !== 'lb') return
   document.getElementById('upd').textContent = '排行榜・完成的任務在這給大家評星'
-  const meN = d.me && d.me.canEdit ? d.me.name : null // 審核制（張良 2026-10-01 開工）：核准才有編輯權
+  const meN = d.me ? d.me.name : null // 2026-10-02 全面修：只有菜單口有 canEdit 欄位，整檔替換誤傷各分頁→按鈕全滅；顯示層=綁定即可，真正權限由伺服器端守門
   let h = ''
   h += `<section><h2>GD之星 榮耀榜 <span class="hint">各面向平均星最高（至少 3 票上榜）</span></h2>
   <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px">` +
@@ -1054,7 +1054,7 @@ function invRender(){
   const d = window._invD; if (!d || (curStore !== 'food' && curStore !== 'pack')) return
   const lbl = d.kind === 'pack' ? '包材' : '食材'
   document.getElementById('upd').textContent = `${d.kind==='pack'?'📦':'🥩'} ${lbl}盤點・預估現量＝最後盤點 − 盤後銷售×每份用量`
-  const meN = d.me && d.me.canEdit ? d.me.name : null // 審核制（張良 2026-10-01 開工）：核准才有編輯權
+  const meN = d.me ? d.me.name : null // 2026-10-02 全面修：只有菜單口有 canEdit 欄位，整檔替換誤傷各分頁→按鈕全滅；顯示層=綁定即可，真正權限由伺服器端守門
   const lows = d.items.filter(x => x.low)
   let h = ''
   if (lows.length) h += `<section style="border:1.5px solid #F0B8B1"><h2 style="color:var(--red)">📉 低水位警報（${lows.length}）</h2>` + lows.map(x=>`<div style="font-weight:800;color:var(--red)">・${x.name}：估剩 ${x.est}${x.unit||''}（低標 ${x.min}）</div>`).join('') + `<div class="hint" style="margin-top:4px">每天開店前 DD 也會在群裡提醒</div></section>`
@@ -1145,7 +1145,7 @@ async function buyLoad(){
 function buyRender(){
   const d = window._buyD; if (!d || curStore !== 'buy') return
   document.getElementById('upd').textContent = '採購・提需求 → 已購買 → 收貨拍照'
-  const meN = d.me && d.me.canEdit ? d.me.name : null // 審核制（張良 2026-10-01 開工）：核准才有編輯權
+  const meN = d.me ? d.me.name : null // 2026-10-02 全面修：只有菜單口有 canEdit 欄位，整檔替換誤傷各分頁→按鈕全滅；顯示層=綁定即可，真正權限由伺服器端守門
   const stOf = x => x.status==='done' ? 'bought' : x.status // 舊資料 done=已購買(待收貨)
   const open = d.list.filter(x=>stOf(x)==='open'), bought = d.list.filter(x=>stOf(x)==='bought'), recvd = d.list.filter(x=>stOf(x)==='received')
   const thumbs = (arr) => (arr||[]).length ? `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:5px">${arr.map(m=>`<img src="${m}" style="width:58px;height:58px;object-fit:cover;border-radius:8px;border:1px solid var(--line);cursor:pointer" onclick="imgView('${m}')">`).join('')}</div>` : ''
@@ -1308,7 +1308,7 @@ async function meetLoad(){
 function meetRender(){
   const d = window._meetD; if (!d || curStore !== 'meet') return
   document.getElementById('upd').textContent = '會議紀錄'
-  const meN = d.me && d.me.canEdit ? d.me.name : null // 審核制（張良 2026-10-01 開工）：核准才有編輯權
+  const meN = d.me ? d.me.name : null // 2026-10-02 全面修：只有菜單口有 canEdit 欄位，整檔替換誤傷各分頁→按鈕全滅；顯示層=綁定即可，真正權限由伺服器端守門
   const mc = x => `<div style="background:#fff;border:1.5px solid var(--line);border-radius:10px;padding:9px 11px;margin-bottom:8px;font-size:14px">
     <div style="font-weight:800">${x.date}</div>
     <div style="white-space:pre-wrap;margin:3px 0">${(x.text||'').replace(/</g,'&lt;')}</div>
@@ -1388,7 +1388,7 @@ async function shiftLoad(ym){
 function shiftRender(){
   const d = window._shiftD; if (!d || curStore !== 'shift') return
   document.getElementById('upd').textContent = '班表 × 打卡・' + shiftYm
-  const meN = d.me && d.me.canEdit ? d.me.name : null // 審核制（張良 2026-10-01 開工）：核准才有編輯權
+  const meN = d.me ? d.me.name : null // 2026-10-02 全面修：只有菜單口有 canEdit 欄位，整檔替換誤傷各分頁→按鈕全滅；顯示層=綁定即可，真正權限由伺服器端守門
   const tmin = hm => { const a=String(hm||'').split(':'); return (+a[0]||0)*60+(+a[1]||0) }
   const fhm = m => String(Math.floor(m/60)).padStart(2,'0')+':'+String(m%60).padStart(2,'0')
   const today = todayTpe()
@@ -1665,7 +1665,7 @@ async function fbLoad(date){
 }
 function fbRender(){
   const d = window._fbD; if (!d || curStore !== 'fb') return
-  const meN = d.me && d.me.canEdit ? d.me.name : null // 審核制（張良 2026-10-01 開工）：核准才有編輯權
+  const meN = d.me ? d.me.name : null // 2026-10-02 全面修：只有菜單口有 canEdit 欄位，整檔替換誤傷各分頁→按鈕全滅；顯示層=綁定即可，真正權限由伺服器端守門
   const wd = ['日','一','二','三','四','五','六'][new Date(d.date).getDay()]
   let h = `<section><h2>每日回饋 <span class="hint">${meN?'對今天有上班的夥伴留評分＋一句話回饋':'看得到；要回饋先綁定——'+BIND_HINT}</span></h2>
     <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px">
@@ -1773,7 +1773,7 @@ function menuDiff(){
 function menuRender(){
   const d = window._menuD; if (!d || curStore !== 'menu') return
   document.getElementById('upd').textContent = '新菜單協作・既有菜單已先上、直接改'
-  const meN = d.me && d.me.canEdit ? d.me.name : null // 審核制（張良 2026-10-01 開工）：核准才有編輯權
+  const meN = d.me ? d.me.name : null // 2026-10-02 全面修：只有菜單口有 canEdit 欄位，整檔替換誤傷各分頁→按鈕全滅；顯示層=綁定即可，真正權限由伺服器端守門
   const df = menuDiff()
   const seg = (lb,v) => `<button style="border:none;padding:6px 14px;font-size:14px;font-weight:800;cursor:pointer;${menuMode===v?'background:var(--primary);color:#fff':'background:#fff;color:var(--primary)'}" onclick="menuMode='${v}';menuRender()">${lb}</button>`
   let h = `<section><h2>新菜單 <span class="hint">${meN?'直接在上面改，大家都看得到動了什麼':'看得到；要編輯先綁定——'+BIND_HINT}</span></h2>
