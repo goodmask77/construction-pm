@@ -1897,6 +1897,29 @@ export default async function handler(req, res) {
       pm.mode = 'approve'
       await kvPut('sp_finance_pm_prep_perm', pm, '權限種子')
     }
+    if (op === 'fixbind') { // 綁定身分改正口（張良 2026-10-01：小夏用LINE名稱綁了→直接改正不用重綁）
+      const match = String(req.query.match || ''), nm = String(req.query.name || '')
+      const bd = (await kvGet('sp_finance_pm_prep_bind')) || { byUid: {}, tokens: {} }
+      const roster = (await kvGet('sp_crew_kb_roster')) || {}
+      const person = (roster.people || []).find(p2 => p2.name === nm || String(p2.nick || '').includes(nm))
+      let fixed = []
+      for (const t of Object.values(bd.tokens || {})) {
+        if (!match || !((t.name || '').includes(match) || t.uid === match)) continue
+        const oldKey = t.rid || t.uid
+        t.name = person ? person.name : nm
+        if (person) { t.rid = person.id; if (t.uid) { person.lineUserId = person.lineUserId || t.uid; person.gd = 1 } }
+        const newKey = t.rid || t.uid
+        // 待審/已核准名單同步改名＋換鍵
+        for (const bag of ['pending', 'users']) {
+          if (pm[bag] && pm[bag][oldKey]) { const v = pm[bag][oldKey]; delete pm[bag][oldKey]; pm[bag][newKey] = { ...v, name: t.name } }
+        }
+        fixed.push(t.name)
+      }
+      await kvPut('sp_finance_pm_prep_bind', bd, '綁定改正口')
+      if (person) await kvPut('sp_crew_kb_roster', roster, '綁定改正口')
+      await kvPut('sp_finance_pm_prep_perm', pm, '綁定改正口')
+      return res.status(200).json({ ok: true, fixed, pending: Object.values(pm.pending || {}).map(v => v.name), users: Object.values(pm.users || {}).map(v => v.name) })
+    }
     if (op === 'approve') { const rid = String(req.query.rid || ''); const nm = String(req.query.name || ''); const hit = rid ? [[rid, pm.pending[rid]]] : Object.entries(pm.pending).filter(([, v]) => v.name.includes(nm)); for (const [r, v] of hit) { if (v) { pm.users[r] = { name: v.name, edit: 1, by: 'AI代操', ts: v.ts }; delete pm.pending[r]
       try { const { linePush } = await import('./_onboard.js'); const { logPush } = await import('./push.js'); let uidA = v.uid; if (!uidA) { const bd = (await kvGet('sp_finance_pm_prep_bind')) || {}; uidA = (Object.values(bd.tokens || {}).find(t => t.rid === r || t.uid === r) || {}).uid } if (uidA && await linePush(uidA, `✅ 你的 /prep 編輯權限審核通過了！重新整理頁面就能編輯。`)) await logPush(uidA, 1, 'prep編輯權核准') } catch (_) {}
     } } await kvPut('sp_finance_pm_prep_perm', pm, '權限核准(AI代操)') }
