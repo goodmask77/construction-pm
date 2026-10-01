@@ -1388,6 +1388,7 @@ async function shiftLoad(ym){
   try { const r = await fetch('/api/mail-sync?shift=' + encodeURIComponent(K) + '&ym=' + shiftYm + (TK() ? '&me=' + encodeURIComponent(TK()) : '')); d = await r.json() } catch(e){}
   if (!d || !d.ok) { if (!window._shiftD) app.innerHTML = '<div class="err">讀不到資料</div>'; return }
   window._shiftD = d; tcSet('shift_'+shiftYm, d)
+  if ((window._shiftTmpQ||[]).length) d.sched.push(...window._shiftTmpQ) // 還在排隊的樂觀卡補回畫面（v4.4.7）
   if (curStore === 'shift') shiftRender()
 }
 function shiftRender(){
@@ -1555,22 +1556,41 @@ async function shiftSave(id){
   const item = { id: id||undefined, name: g2('shName').trim(), date: g2('shDate'), start: t24read(ovS,'shS'), end: t24read(ovS,'shE'), break: +g2('shBreak')||0, pos: g2('shPos').trim(), tr: g2('shTr').trim() }
   if (item.tr === item.name) item.tr = ''
   if (!item.name || !item.date || !item.start || !item.end) { alert('姓名/日期/時間要填齊'); return }
-  const r = await fetch('/api/mail-sync?shiftset=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ op:'save', item, token: TK() }) })
-  const d = await r.json().catch(()=>null)
   const o = document.getElementById('shOv'); if (o) o.remove()
-  if (d && d.ok) shiftLoad(); else alert((d&&d.error)||'儲存失敗')
+  // 樂觀＋排隊（v4.4.7）：畫面先改，寫入排隊不互蓋
+  const dL = window._shiftD
+  if (item.id) { const old = dL.sched.find(x=>x.id===item.id); if (old) Object.assign(old, item) } else { const tmp = { ...item, id: 'tmp' + Math.random().toString(36).slice(2) }; window._shiftTmpQ.push(tmp); dL.sched.push(tmp); item._tmpId = tmp.id }
+  shiftRender()
+  shQueue(async ()=>{
+    const tmpId = item._tmpId; delete item._tmpId
+    let send = item
+    if (tmpId) { const t2 = window._shiftTmpQ.find(x=>x.id===tmpId); if (t2) { send = { ...t2 }; delete send.id } }
+    const d = await shPost({ op:'save', item: send, token: TK() })
+    if (tmpId) window._shiftTmpQ = window._shiftTmpQ.filter(x=>x.id!==tmpId)
+    if (!(d && d.ok)) alert((d&&d.error)||'儲存失敗')
+  })
 }
 async function shiftDel(id){
   const r = await fetch('/api/mail-sync?shiftset=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ op:'del', id, token: TK() }) })
   const d = await r.json().catch(()=>null)
   if (d && d.ok) shiftLoad(); else { alert((d&&d.error)||'失敗'); shiftLoad() }
 }
-function shiftDelFast(id){ // 樂觀刪除：卡片先消失，背景送刪
+function shiftDelFast(id){ // 樂觀刪除：卡片先消失，背景排隊送刪
   const d = window._shiftD
   d.sched = d.sched.filter(x=>x.id!==id); shiftRender()
-  shiftDel(id)
+  window._shiftTmpQ = window._shiftTmpQ.filter(x=>x.id!==id)
+  if (String(id).startsWith('tmp')) return
+  shQueue(async ()=>{ const d2 = await shPost({ op:'del', id, token: TK() }); if (!(d2&&d2.ok)) alert((d2&&d2.error)||'刪除失敗') })
 }
 // ── 週表直排（張良 2026-10-02「點擊直接選人名、可拖曳」）──
+// v4.4.7 連點掉卡治本：存檔改「排隊逐筆送」——同時多筆寫入會在伺服器端互蓋（整份清單讀改寫）；
+// 樂觀卡記在 _shiftTmpQ，重載時補回畫面，等整條隊伍跑完才正式重載一次
+window._shQ = Promise.resolve(); window._shQn = 0; window._shiftTmpQ = []
+function shQueue(fn){
+  window._shQn++
+  window._shQ = window._shQ.then(fn).catch(()=>{}).then(()=>{ window._shQn--; if (window._shQn === 0) shiftLoad() })
+}
+const shPost = body => fetch('/api/mail-sync?shiftset=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify(body) }).then(r=>r.json()).catch(()=>null)
 const SLOT_DEF = [{n:'午峰',s:'11:00',e:'14:30'},{n:'離峰',s:'14:30',e:'17:30'},{n:'晚峰',s:'17:30',e:'20:00'},{n:'全日',s:'11:00',e:'20:00'}] // 預設照近30天單量尖峰切；⚙️可自訂
 function t24set(cls, v){
   const ov = document.getElementById('qkOv'); if (!ov) return
@@ -1634,13 +1654,16 @@ async function shiftQuickGo(name, pos, dt){
   const item = { name, date: dt, start: t24read(ovQ,'qkS'), end: t24read(ovQ,'qkE'), break: +((document.getElementById('qkB')||{}).value||0), pos, tr: (document.getElementById('qkTr')||{}).value||'' }
   if (item.tr === name) item.tr = ''
   if (ovQ) ovQ.remove()
-  // 樂觀更新（張良 2026-10-02「很慢才出現」）：先畫上去再背景存檔，失敗才回滾
+  // 樂觀更新＋排隊存檔（v4.4.7）：卡片馬上出現、存檔一筆一筆送不互蓋
   const d = window._shiftD, tmp = { ...item, id: 'tmp' + Math.random().toString(36).slice(2) }
+  window._shiftTmpQ.push(tmp)
   d.sched.push(tmp); shiftRender()
-  const r = await fetch('/api/mail-sync?shiftset=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ op:'save', item, token: TK() }) })
-  const d2 = await r.json().catch(()=>null)
-  if (d2 && d2.ok) shiftLoad()
-  else { d.sched = d.sched.filter(x=>x.id!==tmp.id); shiftRender(); alert((d2&&d2.error)||'儲存失敗') }
+  shQueue(async ()=>{
+    const send = { ...tmp }; delete send.id // 送出前抄 tmp 現狀——排隊期間被拖曳過也算數
+    const d2 = await shPost({ op:'save', item: send, token: TK() })
+    window._shiftTmpQ = window._shiftTmpQ.filter(x=>x.id!==tmp.id)
+    if (!(d2 && d2.ok)) { const dd = window._shiftD; dd.sched = dd.sched.filter(x=>x.id!==tmp.id); shiftRender(); alert((d2&&d2.error)||'儲存失敗：'+item.name) }
+  })
 }
 async function shiftDrop(ev, pos, dt){
   ev.preventDefault(); ev.stopPropagation(); ev.currentTarget.style.outline = ''
@@ -1648,9 +1671,8 @@ async function shiftDrop(ev, pos, dt){
   const d = window._shiftD, it = d.sched.find(x=>x.id===id); if (!it) return
   if (it.date === dt && (it.pos||'未分崗') === pos) return
   it.date = dt; it.pos = (pos==='未分崗'?'':pos); shiftRender() // 先畫再存（樂觀更新）
-  const r = await fetch('/api/mail-sync?shiftset=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ op:'save', item: it, token: TK() }) })
-  const d2 = await r.json().catch(()=>null)
-  if (!d2 || !d2.ok) { alert((d2&&d2.error)||'移動失敗'); shiftLoad() } else shiftLoad()
+  if (String(id).startsWith('tmp')) return // 還在排隊的卡只改畫面，真正寫入由隊伍那筆帶 pos/date
+  shQueue(async ()=>{ const d2 = await shPost({ op:'save', item: it, token: TK() }); if (!(d2&&d2.ok)) alert((d2&&d2.error)||'移動失敗') })
 }
 // ── 品項明細 v2（張良 2026-09-22：①全部/各分類/依品類分組切換 ②30日均/vs近60/累計點欄頭排序（分組模式=組內排）
 //    ③累積金額取消→售價（手填牌價優先、無則30日金額÷份數湊5倍數）④%佔比獨立欄放30日均左邊 ⑤🙈隱藏管理＝App 同一份 pm_pos_hidden 全裝置同步）──
