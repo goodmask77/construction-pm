@@ -504,6 +504,7 @@ export default async function handler(req, res) {
     let mb = {}; try { mb = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
     const map = mb.map || {}
     const doc = (await kvGet('sp_finance_pm_menu')) || {}
+    if (Array.isArray(mb.imgs)) doc.imgs = mb.imgs.slice(0, 4) // 菜單設計圖四格（張良 2026-10-02）
     let n = 0, missed = []
     for (const s2 of ((doc.draft || {}).sections || [])) for (const i2 of (s2.items || [])) {
       const en = map[i2.name] || map[(i2.name || '').trim()]
@@ -1434,7 +1435,21 @@ export default async function handler(req, res) {
     const pmM = (await kvGet('sp_finance_pm_prep_perm')) || { mode: 'open', users: {}, pending: {} }
     const meU = meM2 ? pmM.users[meM2.rid || meM2.uid] : null
     const meOut = meM2 ? { name: meM2.name, canEdit: pmM.mode !== 'approve' || !!(meU && meU.edit), admin: !!(meU && meU.admin), pendingMe: !!pmM.pending[meM2.rid || meM2.uid] } : null
-    return res.status(200).json({ ok: true, base: mdoc.base, draft: mdoc.draft, edits: (mdoc.edits || []).slice(0, 15), me: meOut, perm: meOut && meOut.admin ? { mode: pmM.mode, users: Object.entries(pmM.users).map(([r, v]) => ({ rid: r, ...v })), pending: Object.entries(pmM.pending).map(([r, v]) => ({ rid: r, ...v })) } : null })
+    return res.status(200).json({ ok: true, imgs: mdoc.imgs || [], base: mdoc.base, draft: mdoc.draft, edits: (mdoc.edits || []).slice(0, 15), me: meOut, perm: meOut && meOut.admin ? { mode: pmM.mode, users: Object.entries(pmM.users).map(([r, v]) => ({ rid: r, ...v })), pending: Object.entries(pmM.pending).map(([r, v]) => ({ rid: r, ...v })) } : null })
+  }
+  // 菜單設計圖換圖（張良 2026-10-02：菜單頁頂四格圖，點看大圖、可各自換新圖）：POST ?menuimgset=<OPS_BOARD_KEY> {idx,url,token}
+  if (req.method === 'POST' && req.query?.menuimgset) {
+    const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
+    if (!ok2 || String(req.query.menuimgset) !== ok2) return res.status(403).json({ ok: false })
+    let bi = {}; try { bi = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
+    const whoI = await sopWho(bi.token)
+    if (!whoI) return res.status(403).json({ ok: false, error: '要先綁定才能換圖' })
+    const idx = Math.max(0, Math.min(3, Number(bi.idx) || 0))
+    const doc = (await kvGet('sp_finance_pm_menu')) || {}
+    doc.imgs = doc.imgs || []; doc.imgs[idx] = String(bi.url || '').slice(0, 300)
+    doc.edits = [{ by: whoI.name, ts: new Date(Date.now() + 8 * 3600e3).toISOString().slice(5, 16).replace('T', ' '), what: '換菜單圖' + (idx + 1) }, ...(doc.edits || [])].slice(0, 30)
+    await kvPut('sp_finance_pm_menu', doc, '菜單圖(' + whoI.name + ')')
+    return res.status(200).json({ ok: true, imgs: doc.imgs })
   }
   if (req.method === 'POST' && req.query?.menuset) {
     const ok2 = (process.env.OPS_BOARD_KEY || '').trim()

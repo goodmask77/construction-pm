@@ -1786,6 +1786,15 @@ function menuRender(){
     ${!d.me?`<span class="hint">看得到；要編輯先綁定＋申請</span>`:''}
   </div>`
 
+  // 菜單設計圖四格（張良 2026-10-02：照順序、點看大圖、各格可換圖）
+  const imgs = d.imgs || []
+  h += `<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:12px">` + [0,1,2,3].map(i=>{
+    const u = imgs[i]
+    return `<div style="position:relative;border:1.5px solid var(--line);border-radius:10px;overflow:hidden;background:#FFF4E4;aspect-ratio:16/9">
+      ${u?`<img src="${u}" onclick="mnImgView('${u}')" style="width:100%;height:100%;object-fit:cover;cursor:zoom-in">`:`<div class="mut" style="display:flex;align-items:center;justify-content:center;height:100%">第 ${i+1} 格</div>`}
+      ${meN?`<button class="mini" style="position:absolute;right:4px;bottom:4px;background:#fff" onclick="mnImgPick(${i})">📷</button>`:''}
+    </div>`
+  }).join('') + `</div>`
   // 變更總覽（協作人員一眼看懂）
   if (df.add.length || df.del.length || df.chg.length) {
     h += `<div style="background:#FFF9E8;border:1.5px solid #E8D089;border-radius:12px;padding:10px 12px;margin-bottom:10px;font-size:14px">
@@ -1878,6 +1887,27 @@ function menuExport(kind){ // 匯出完整菜單（張良 2026-10-02）：txt=�
     g.fillText(ln, pad, pad + lh * i + 22)
   })
   cv.toBlob(bl => { const a2 = document.createElement('a'); a2.href = URL.createObjectURL(bl); a2.download = 'GROUND菜單_' + todayTpe() + '.png'; a2.click(); URL.revokeObjectURL(a2.href) }, 'image/png')
+}
+function mnImgView(u){
+  const ov=document.createElement('div')
+  ov.style.cssText='position:fixed;inset:0;background:rgba(10,16,28,.88);z-index:90;display:flex;align-items:center;justify-content:center;padding:12px;cursor:zoom-out'
+  ov.innerHTML=`<img src="${u}" style="max-width:98vw;max-height:96vh;border-radius:10px">`
+  ov.onclick=()=>ov.remove(); document.body.appendChild(ov)
+}
+function mnImgPick(i){
+  const inp=document.createElement('input'); inp.type='file'; inp.accept='image/*'
+  inp.onchange=async()=>{
+    const f=inp.files[0]; if(!f) return
+    try{
+      const sg=await (await fetch('/api/mail-sync?sopsign='+encodeURIComponent(K),{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({ext:(f.name.split('.').pop()||'jpg').toLowerCase()})})).json()
+      if(!sg.ok) throw 0
+      await fetch(sg.uploadUrl,{method:'PUT',headers:{'content-type':f.type||'image/jpeg'},body:f})
+      const r=await (await fetch('/api/mail-sync?menuimgset='+encodeURIComponent(K),{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({idx:i,url:sg.publicUrl,token:TK()})})).json()
+      if(!r.ok){alert(r.error||'換圖失敗');return}
+      window._menuD.imgs=r.imgs; menuRender()
+    }catch(e){alert('上傳失敗，再試一次')}
+  }
+  inp.click()
 }
 function permPanelHtml(perm){
   return `<div style="background:#F3F7FB;border:1.5px solid #B9D2E8;border-radius:12px;padding:10px 12px;font-size:14px">
