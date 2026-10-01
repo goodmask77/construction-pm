@@ -1464,7 +1464,7 @@ function shiftRender(){
   h += `<div style="display:flex;gap:8px;align-items:center;margin:2px 0 6px">
     <span style="font-weight:900">一週班表</span>${meN?`<button class="mini" style="padding:3px 10px" onclick="shiftPosEdit()">⚙️ 設定（崗位/時段/人員排序・顏色）</button>`:''}
     <button class="mini" onclick="shiftWkNav(-1)">‹</button><button class="mini" style="font-weight:800" onclick="shiftWkToday()">今天</button><button class="mini" onclick="shiftWkNav(1)">›</button><span class="hint" style="font-weight:800">${wkDays[0].slice(5)} ~ ${wkDays[6].slice(5)}</span>
-    ${meN?`<button class="mini" style="padding:3px 10px" onclick="copyWeekNext()">⧉ 本週→下週</button>`:''}
+    ${meN?`<button class="mini" style="padding:3px 10px" onclick="copyWeekNext()">⧉ 本週→下週</button><button class="mini" style="padding:3px 10px;color:var(--red)" onclick="clearWeek()">🗑 清空本週</button>`:''}
   </div>`
   // v4.3.5（張良 2026-10-02）：①欄寬固定+硬格線=日期與格子切齊 ②崗位三組配色(櫃檯/飲料/中控・漢堡/煎炸麵・披薩/三明治) ③同人同天兼多崗位→班卡同色標記
   const posGrp = ps => /櫃檯|飲料|中控/.test(ps) ? 0 : /漢堡|煎炸|炸麵/.test(ps) ? 1 : /披薩|三明治/.test(ps) ? 2 : 3
@@ -1500,7 +1500,7 @@ function shiftRender(){
     <div class="hint" style="font-weight:800;padding:2px 4px">未排</div>` + wkDays.map(dt=>{
     const onDay = new Set(wkEnts.filter(x=>x.date===dt).flatMap(x=>[x.name, x.tr].filter(Boolean))) // v4.6.2：被帶訓的人也算有班
     const rest = regStaff.filter(s2=>!onDay.has(s2.n))
-    return `<div style="padding:2px 4px">${rest.map(s2=>`<span ${meN?`draggable="true" ondragstart="event.dataTransfer.setData('text/plain','u|${s2.n}')" title="拖上去格子＝直接排班"`:''} style="display:block;width:max-content;${meN?'cursor:grab;':''}border:1.5px solid ${PB[pcIdx(s2.n)]};background:${PG[pcIdx(s2.n)]};color:${PB[pcIdx(s2.n)]};border-radius:7px;padding:3px 6px;margin:2px 0;font-size:13px;font-weight:800;line-height:1.6">${s2.n}</span>`).join('')||'<span class="hint" style="font-size:12px">✓</span>'}</div>`
+    return `<div ${meN?`ondragover="event.preventDefault();this.style.outline='2px dashed var(--red)'" ondragleave="this.style.outline=''" ondrop="unschedDrop(event)"`:''} style="padding:2px 4px;min-height:34px;border-radius:8px">${rest.map(s2=>`<span ${meN?`draggable="true" ondragstart="event.dataTransfer.setData('text/plain','u|${s2.n}')" title="拖上去格子＝直接排班"`:''} style="display:block;width:max-content;${meN?'cursor:grab;':''}border:1.5px solid ${PB[pcIdx(s2.n)]};background:${PG[pcIdx(s2.n)]};color:${PB[pcIdx(s2.n)]};border-radius:7px;padding:3px 6px;margin:2px 0;font-size:13px;font-weight:800;line-height:1.6">${s2.n}</span>`).join('')||'<span class="hint" style="font-size:12px">✓</span>'}</div>`
   }).join('') + `</div></div>`
   const pn = Object.keys(per).sort()
   if (pn.length){
@@ -1645,10 +1645,43 @@ function pasteApply(pos, dt){
     exist.add([it.name, dt, p2].join('|'))
     const tmp = { name: it.name, date: dt, start: it.start, end: it.end, break: it.break, pos: p2, id: 'tmp' + Math.random().toString(36).slice(2) }
     if (it.tr) tmp.tr = it.tr
+    ;(window._lastCopy = window._lastCopy || []).push(tmp) // 可復原（v4.6.4）
     queueSaveTmp(tmp); n++
   })
   shiftRender()
   if (!n) alert('目標已經有一樣的班，沒有新增')
+}
+// 班卡拖下來丟回未排區＝取消排班（張良 2026-10-02「也要可以拉回去」）
+function unschedDrop(ev){
+  ev.preventDefault(); ev.stopPropagation(); ev.currentTarget.style.outline = ''
+  const id = ev.dataTransfer.getData('text/plain')
+  if (!id || id.startsWith('u|')) return
+  shiftDelFast(id)
+}
+// ↩️ 復原上一次複製（張良 2026-10-02「複製了但我不要了」）
+function undoLastCopy(){
+  const L = window._lastCopy || [], d = window._shiftD
+  L.forEach(x=>{
+    d.sched = d.sched.filter(y=>y!==x)
+    if (String(x.id).startsWith('tmp')) { x._del = 1 } // 還在排隊＝取消不送
+    else shQueue(async ()=>{ const r = await shPost({ op:'del', id: x.id, token: TK() }); if (!(r&&r.ok)) alert('復原失敗：'+x.name) })
+  })
+  window._lastCopy = []
+  pasteOff(); shiftRender()
+}
+// 🗑 清空本週（班表，打卡紀錄不動）
+function clearWeek(){
+  const d = window._shiftD
+  const days = [...Array(7)].map((_,i)=>{ const t2 = new Date(window._shiftWk); t2.setDate(t2.getDate()+i); return t2.toISOString().slice(0,10) })
+  const ents = d.sched.filter(x=>days.includes(x.date))
+  if (!ents.length) { alert('本週沒班可清'); return }
+  if (!confirm(`把這一週（${days[0].slice(5)}~${days[6].slice(5)}）的 ${ents.length} 筆班全部刪除？打卡紀錄不會動。`)) return
+  ents.forEach(x=>{
+    d.sched = d.sched.filter(y=>y!==x)
+    if (String(x.id).startsWith('tmp')) { const t2 = window._shiftTmpQ.find(q=>q.id===x.id); if (t2) t2._del = 1 }
+    else shQueue(async ()=>{ const r = await shPost({ op:'del', id: x.id, token: TK() }); if (!(r&&r.ok)) alert('刪除失敗：'+x.name) })
+  })
+  shiftRender()
 }
 async function copyWeekNext(){
   const d = window._shiftD
@@ -1658,16 +1691,23 @@ async function copyWeekNext(){
   if (!confirm(`把本週 ${ents.length} 筆班複製到下週同一天？（下週已有的會自動跳過）`)) return
   const exist = new Set(d.sched.map(x=>[x.name, x.date, x.pos||''].join('|')))
   let n = 0
+  window._lastCopy = []
   ents.forEach(x=>{
     const t2 = new Date(x.date); t2.setDate(t2.getDate()+7); const nd = t2.toISOString().slice(0,10)
     if (exist.has([x.name, nd, x.pos||''].join('|'))) return
     exist.add([x.name, nd, x.pos||''].join('|'))
     const tmp = { name: x.name, date: nd, start: x.start, end: x.end, break: x.break||0, pos: x.pos||'', id: 'tmp' + Math.random().toString(36).slice(2) }
     if (x.tr) tmp.tr = x.tr
+    window._lastCopy.push(tmp)
     queueSaveTmp(tmp); n++
   })
   shiftRender()
-  alert(n ? `已複製 ${n} 筆到下週（按 › 看下週）` : '下週已經都有了，沒新增')
+  if (!n) { alert('下週已經都有了，沒新增'); return }
+  pasteOff(1)
+  const b = document.createElement('div'); b.id = 'pasteBar'
+  b.style.cssText = 'position:fixed;bottom:18px;left:50%;transform:translateX(-50%);z-index:60;background:#10182B;color:#fff;border-radius:12px;padding:10px 14px;display:flex;gap:10px;align-items:center;font-size:14px;box-shadow:0 4px 14px rgba(0,0,0,.3)'
+  b.innerHTML = `<span>✓ 已複製 ${n} 筆到下週</span><button class="mini" style="padding:6px 12px" onclick="undoLastCopy()">↩️ 復原</button><button class="mini" style="padding:6px 12px" onclick="pasteOff()">好</button>`
+  document.body.appendChild(b)
 }
 function pasteBar(msg){
   pasteOff(1)
