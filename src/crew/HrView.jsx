@@ -16,9 +16,21 @@ export default function HrView({ tab }) { // tab 由第三層分頁決定：att=
   const [expBoard, setExpBoard] = useState(""); // 排行榜展開完整名單（張良 2026-09-30：不是只顯示五個人）
   const hrTab = tab === "pay" ? "pay" : tab === "shift" ? "shift" : tab === "rank" ? "rank" : "att";
 
+  const autoRef = React.useRef(false);
   const load = async (m) => {
     setDoc(null);
-    try { const v = await window.storage.get("sp_crew_pm_hr_att_" + m, true); setDoc(v && v.value ? JSON.parse(v.value) : { days: {} }); } catch (_) { setDoc({ days: {} }); }
+    let d = { days: {} };
+    try { const v = await window.storage.get("sp_crew_pm_hr_att_" + m, true); d = v && v.value ? JSON.parse(v.value) : { days: {} }; } catch (_) {}
+    setDoc(d);
+    // 雙保險（張良 2026-10-01「怎麼還沒更新」）：看本月但今天還沒資料 → 自動補抓一次，不乾等 cron
+    const today = new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10);
+    if (m === nowMo && !d.days[today] && !autoRef.current) {
+      autoRef.current = true;
+      try {
+        const r = await fetch(`/api/hr?manual=1`); const j = await r.json();
+        if (j.ok && j.personDays) { const v2 = await window.storage.get("sp_crew_pm_hr_att_" + m, true); if (v2 && v2.value) setDoc(JSON.parse(v2.value)); setMsg(`✓ 已自動補抓今天（${j.personDays} 筆）`); }
+      } catch (_) {}
+    }
   };
   useEffect(() => { load(mo); }, [mo]);
 
@@ -73,7 +85,7 @@ export default function HrView({ tab }) { // tab 由第三層分頁決定：att=
       <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "6px 0 10px", flexWrap: "wrap" }}>
         <span style={{ background: C.blue, color: "#fff", fontSize: 11.5, fontWeight: 700, borderRadius: 4, padding: "2px 8px" }}>人資</span>
         <div style={{ fontSize: 17, fontWeight: 800, color: C.text }}>{hrTab === "pay" ? "薪資" : hrTab === "shift" ? "班表" : hrTab === "rank" ? "排行榜" : "出勤紀錄"}</div>
-        <span style={{ fontSize: 12, color: C.faint }}>NUEiP 出勤紀錄・每天 22:40 自動同步，異常 D哥直接通知</span>
+        <span style={{ fontSize: 12, color: C.faint }}>NUEiP・營業時間每20分自動掃{doc?.updatedAt ? `・最後同步 ${new Date(doc.updatedAt).toLocaleString("zh-TW", { hour12: false }).slice(5, -3)}` : ""}</span>
         <div style={{ flex: 1 }} />
         <input type="month" value={mo} onChange={e => setMo(e.target.value)} style={inp} />
         <select value={pF} onChange={e => setPF(e.target.value)} style={inp}>
@@ -150,7 +162,11 @@ export default function HrView({ tab }) { // tab 由第三層分頁決定：att=
                 {dList.map(d => { const w = new Date(d + "T00:00:00").getDay(); return <th key={d} style={{ ...th, textAlign: "center", minWidth: cellW, background: w === 0 || w === 6 ? "#e3d9c3" : th.background }}>{Number(d.slice(8))}<div style={{ fontSize: 9, fontWeight: 400 }}>{"日一二三四五六"[w]}</div></th>; })}
               </tr></thead>
               <tbody>
-                {names.map(n => { const o = byP[n]; return (
+                {names.flatMap((n, ni) => { const o = byP[n];
+                  const hdr = ni === 0 || byP[names[ni - 1]].dept !== o.dept
+                    ? [<tr key={"h" + o.dept}><td colSpan={2 + dayN} style={{ padding: "5px 9px", background: "#d9cfbd", fontSize: 11.5, fontWeight: 800, color: "#5a5247", position: "sticky", left: 0 }}>{o.dept}</td></tr>]
+                    : [];
+                  return [...hdr, (
                   <tr key={n}>
                     <td style={{ ...td, position: "sticky", left: 0, background: "#fff", zIndex: 2, fontWeight: 700, borderRight: "1.5px solid #c8bca6" }}>{n}<div style={{ fontSize: 9.5, color: C.faint, fontWeight: 400 }}>{o.dept}</div></td>
                     <td style={{ ...td, textAlign: "center", fontFamily: MONOF, fontSize: 11.5 }}>{o.n}</td>
@@ -158,7 +174,7 @@ export default function HrView({ tab }) { // tab 由第三層分頁決定：att=
                       <td key={d} title={w ? `${n} ${d} ${w}` : ""} style={{ ...td, padding: "3px 3px", textAlign: "center", fontFamily: MONOF, fontSize: 10, background: w ? hue(w) : (new Date(d + "T00:00:00").getDay() % 6 === 0 ? "#faf7f0" : undefined), color: w ? C.text : "#e0d6bf" }}>{w ? short(w) : "·"}</td>
                     ); })}
                   </tr>
-                ); })}
+                )]; })}
               </tbody>
             </table>
             {!names.length && <div style={{ padding: 24, fontSize: 12.5, color: C.faint, textAlign: "center" }}>這個月沒有班表資料——按右上「🔄 從 NUEiP 更新」</div>}
