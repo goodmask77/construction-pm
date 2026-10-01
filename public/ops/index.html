@@ -1484,7 +1484,7 @@ function shiftRender(){
       const ents = es.map(e=>{
         const di = dupCnt[e.date+'|'+e.name]>1 ? dupNames.indexOf(e.name)%DUPC.length : -1
         const chipC = di>=0 ? `border:1.5px solid ${DUPB[di]};background:${DUPC[di]};` : (e.tr ? 'border:1.5px dashed #B45309;background:#FDF1E3;' : 'border:1px solid var(--line);background:#F7FAFC;')
-        return `<div ${meN?`draggable="true" ondragstart="event.stopPropagation();event.dataTransfer.setData('text/plain','${e.id}')" onclick="event.stopPropagation();shiftForm('${e.id}')"`:''} style="font-size:13px;${meN?'cursor:grab;':''}${chipC}border-radius:7px;padding:2px 6px;margin:1px 0"><b${di>=0?` style="color:${DUPB[di]}"`:''}>${e.name}</b>${e.tr?` <span style="color:#B45309;font-weight:800">🎓${e.tr}</span>`:''} <span class="hint">${e.start}-${e.end}</span></div>`
+        return `<div ${meN?`draggable="true" ondragstart="event.stopPropagation();event.dataTransfer.setData('text/plain','${e.id}')" onclick="event.stopPropagation();shiftForm('${e.id}')"`:''} style="font-size:13px;line-height:1.5;${meN?'cursor:grab;':''}${chipC}border-radius:7px;padding:2px 6px;margin:1px 0"><b${di>=0?` style="color:${DUPB[di]}"`:''}>${e.name}</b>${e.tr?`<span style="display:block;color:#B45309;font-weight:800;font-size:12px">🎓帶 ${e.tr}</span>`:''}<span class="hint" style="display:block">${e.start}-${e.end}</span></div>`
       }).join('')
       return `<td${cellOps} style="${BD}${dt===today?'background:#F0F8FD;':''}text-align:left;${meN?'cursor:pointer;':''}vertical-align:top;overflow:hidden">${ents || (meN?'<span class="mut">＋</span>':'<span class="mut">—</span>')}</td>`
     }).join('') + `</tr>`
@@ -1624,9 +1624,13 @@ async function shiftQuickGo(name, pos, dt){
   const item = { name, date: dt, start: t24read(ovQ,'qkS'), end: t24read(ovQ,'qkE'), break: +((document.getElementById('qkB')||{}).value||0), pos, tr: (document.getElementById('qkTr')||{}).value||'' }
   if (item.tr === name) item.tr = ''
   if (ovQ) ovQ.remove()
+  // 樂觀更新（張良 2026-10-02「很慢才出現」）：先畫上去再背景存檔，失敗才回滾
+  const d = window._shiftD, tmp = { ...item, id: 'tmp' + Math.random().toString(36).slice(2) }
+  d.sched.push(tmp); shiftRender()
   const r = await fetch('/api/mail-sync?shiftset=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ op:'save', item, token: TK() }) })
-  const d = await r.json().catch(()=>null)
-  if (d && d.ok) shiftLoad(); else alert((d&&d.error)||'儲存失敗')
+  const d2 = await r.json().catch(()=>null)
+  if (d2 && d2.ok) shiftLoad()
+  else { d.sched = d.sched.filter(x=>x.id!==tmp.id); shiftRender(); alert((d2&&d2.error)||'儲存失敗') }
 }
 async function shiftDrop(ev, pos, dt){
   ev.preventDefault(); ev.stopPropagation(); ev.currentTarget.style.outline = ''
