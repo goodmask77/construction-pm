@@ -55,8 +55,19 @@ const writeDB = () => supabase || dataClient
 export const CLIENT_ID =
   Math.random().toString(36).slice(2) + Date.now().toString(36)
 
+
+// ── OPS 代理模式（2026-10-02 /prep×任務中心整併）：window.__OPS_PROXY__={key,token} 有設時，
+// 共用儲存全改走 mail-sync?kvproxy（OPS金鑰＋綁定者守門），讓無登入的 /prep 也能跑主App元件；主App沒旗標＝原路不動 ──
+const _OPS = () => (typeof window !== 'undefined' && window.__OPS_PROXY__) || null
+async function _opsKV(body) {
+  const o = _OPS()
+  const r = await fetch('/api/mail-sync?kvproxy=' + encodeURIComponent(o.key), { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ...body, token: o.token }) })
+  return await r.json().catch(() => ({ ok: false }))
+}
+
 // shared=true → 全體協作者共用（Supabase）；shared=false → 本機個人（localStorage）
 async function getShared(k) {
+  if (_OPS()) { const r = await _opsKV({ op: 'get', key: k }); return r && r.value != null ? { value: r.value } : null }
   if (!dataClient) {
     const v = localStorage.getItem(k)
     return v != null ? { value: v } : null
@@ -84,6 +95,7 @@ export async function getSharedMany(keys) {
 
 // 前綴掃描：一次抓「prefix 開頭」的所有文件（逐筆存集合用：一筆交易/任務＝一份文件）
 export async function getSharedPrefix(prefix) {
+  if (_OPS()) { const r = await _opsKV({ op: 'getPrefix', key: prefix }); return (r && r.rows) || {} }
   if (!dataClient) {
     const out = {}
     try { for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i); if (k && k.startsWith(prefix)) out[k] = localStorage.getItem(k) } } catch (_) {}
@@ -102,6 +114,7 @@ export async function getSharedPrefix(prefix) {
 // 批次寫入（逐筆遷移/批量匯入用）：一次 upsert 多筆，分包避免單一請求過大。回傳是否全部成功。
 export async function setSharedMany(pairs) {
   if (!pairs?.length) return true
+  if (_OPS()) { for (const [k, v] of pairs) { const r = await _opsKV({ op: 'set', key: k, value: v }); if (!r || !r.ok) return false } return true }
   if (!dataClient) { try { pairs.forEach(([k, v]) => localStorage.setItem(k, v)) } catch (_) {} ; return true }
   const now = new Date().toISOString()
   for (let i = 0; i < pairs.length; i += 100) {
@@ -124,6 +137,7 @@ export async function listSharedIds() {
 }
 
 async function setShared(k, value) {
+  if (_OPS()) { await _opsKV({ op: 'set', key: k, value }); return }
   if (!dataClient) { try { localStorage.setItem(k, value) } catch (_) {} ; return }
   try {
     const { error } = await writeDB().from('pm_documents').upsert({
@@ -195,12 +209,14 @@ function _handleRemote(key) {
 }
 // 訂閱：pattern＝完整 key，或 'prefix*'（逐筆存集合）。回呼收 (key, 字串值|null=已刪)。回傳退訂函式。
 export function onSharedChange(pattern, cb) {
+  if (_OPS()) return () => {} // OPS 模式先無即時訂閱（重整拿最新）
   const w = { pattern, cb }
   _watchers.add(w)
   return () => _watchers.delete(w)
 }
 // 手動廣播（批次寫入後用；一次太多鍵就不廣播，避免洗頻道——對方重整就會看到）
 export function announceShared(keys) {
+  if (_OPS()) return
   if (!Array.isArray(keys) || keys.length > 20) return
   keys.forEach(k => announce(k, false))
 }
@@ -233,6 +249,7 @@ export function installStorageShim() {
     },
     async delete(key, shared = true) {
       const p = _pend.get(key); if (p) { clearTimeout(p.timer); _pend.delete(key) } // 刪除前先取消排隊中的寫入，避免死而復生
+      if (_OPS()) { await _opsKV({ op: 'del', key }); return }
       if (shared && dataClient) {
         try { await writeDB().from('pm_documents').delete().eq('id', key); announce(key, true) } catch (_) {}
       } else { try { localStorage.removeItem(key) } catch (_) {} }
