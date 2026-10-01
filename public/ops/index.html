@@ -1508,7 +1508,8 @@ function shiftRender(){
         // v4.9.4（張良「手機帶訓卡名字被切」）：帶訓卡改上下切色各一行——再窄名字都完整
         const bg2 = e.tr ? `background:linear-gradient(180deg,${PB[pi]} 50%,${PB[ti]} 50%);` : `background:${PB[pi]};`
         const exp = ((d.posStats||{})[e.name]||{})[ps] || 0 // v4.9.0 生手標記：這崗位排過≤1次
-        return `<div ${meN?`draggable="true" ondragstart="event.stopPropagation();event.dataTransfer.setData('text/plain','${e.id}')" onclick="event.stopPropagation();shiftForm('${e.id}')"`:''} style="font-size:13px;line-height:1.7;${meN?'cursor:grab;':''}${bg2}border:${e.tr?'2px dashed rgba(255,255,255,.85)':'none'};border-radius:6px;padding:${e.tr?'2px 7px':'5px 8px'};margin:2px 0">${exp<=1&&ps!=='未分崗'&&!e.tr?`<span title="這崗位只排過 ${exp} 次，建議搭帶訓" style="font-size:12px">⚠️</span> `:''}<b style="color:${PT[pi]};font-weight:600">${e.name}</b>${e.tr?`<span style="display:block;color:${PT[ti]};font-weight:600;font-size:12.5px">🎓${e.tr}</span>`:''}</div>`
+        const trExp = e.tr ? (((d.posStats||{})[e.tr]||{})[ps] || 0) : 0 // v4.9.6 卡上直接顯示該站次數
+        return `<div ${meN?`draggable="true" ondragstart="event.stopPropagation();event.dataTransfer.setData('text/plain','${e.id}')" onclick="event.stopPropagation();shiftForm('${e.id}')"`:''} style="font-size:13px;line-height:1.7;${meN?'cursor:grab;':''}${bg2}border:${e.tr?'2px dashed rgba(255,255,255,.85)':'none'};border-radius:6px;padding:${e.tr?'2px 7px':'5px 8px'};margin:2px 0">${exp<=1&&ps!=='未分崗'&&!e.tr?`<span title="這崗位只排過 ${exp} 次，建議搭帶訓" style="font-size:12px">⚠️</span> `:''}<b style="color:${PT[pi]};font-weight:600">${e.name}</b>${ps!=='未分崗'?` <span style="font-size:11px;color:${PT[pi]};opacity:.75;font-weight:700">${exp}</span>`:''}${e.tr?`<span style="display:block;color:${PT[ti]};font-weight:600;font-size:12.5px">🎓${e.tr} <span style="font-size:11px;opacity:.75">${trExp}</span></span>`:''}</div>`
       }).join('')
       return `<td${cellOps} style="${BD}${gb}${dt===today?'background:#1B3356;':''}text-align:left;${meN?'cursor:pointer;':''}vertical-align:top;overflow:hidden">${ents || (meN?'<span class="mut">＋</span>':'<span class="mut">—</span>')}</td>`
     }).join('') + `</tr>`
@@ -1568,7 +1569,7 @@ function shiftForm(id){
       <span>上班</span><span>${t24c('shS', it?it.start:'11:00')}</span>
       <span>下班</span><span>${t24c('shE', it?it.end:'20:00')}</span>
       <span>休息(分)</span><input id="shBreak" type="number" value="${it?(it.break||0):60}" min="0" max="240" style="${ip}">
-      <span>🎓帶訓</span><span><select id="shTr" style="${ip};width:100%"><option value="">無</option>${(d.names||[]).map(n=>`<option${it&&it.tr===n?' selected':''}>${n}</option>`).join('')}</select></span>
+      <span>🎓帶訓</span><span><select id="shTr" style="${ip};width:100%"><option value="">無</option>${(d.names||[]).map(n=>{const c9=it&&it.pos?(((d.posStats||{})[n]||{})[it.pos]||0):0;return `<option value="${n}"${it&&it.tr===n?' selected':''}>${n}${it&&it.pos?`｜${c9?c9+'次':'新'}`:''}</option>`}).join('')}</select></span>
     </div>
     <div style="display:flex;gap:8px;justify-content:space-between;margin-top:12px">
     <span>${it?`<button class="mini" style="padding:9px 12px;color:var(--red)" onclick="if(confirm('刪除 ${it.name} ${it.date} 這個班？')){document.getElementById('shOv').remove();shiftDelFast('${it.id}')}">🗑 刪除</button>`:''}</span>
@@ -1817,7 +1818,7 @@ function shiftQuick(pos, dt){
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:14px;margin-bottom:10px">
       <span>上班</span>${t24c('qkS', defS)}<span>下班</span>${t24c('qkE', defE)}
       <span>休(分)</span><input id="qkB" type="number" value="${defB}" min="0" max="240" style="border:1px solid var(--line);border-radius:8px;padding:7px;font-size:15px;width:62px">
-      <span>🎓帶訓</span><select id="qkTr" style="border:1px solid var(--line);border-radius:8px;padding:7px;font-size:14px"><option value="">無</option>${(d.names||[]).map(n=>`<option>${n}</option>`).join('')}</select>
+      <span>🎓帶訓</span><select id="qkTr" onchange="qkTrChange(this.value)" style="border:1px solid var(--line);border-radius:8px;padding:7px;font-size:14px"><option value="">無</option>${(d.names||[]).map(n=>{const c9=((d.posStats||{})[n]||{})[pos]||0;return `<option value="${n}">${n}｜${c9?c9+'次':'新'}</option>`}).join('')}</select>
     </div>
     <div class="hint" style="margin-bottom:6px">點名字＝直接排進去；名字旁數字＝<b>排過這崗位幾次</b>（照次數排序）；「新」＝沒排過建議搭帶訓；✓＝當天已有班可兼第二崗</div>
     ${(()=>{ // v4.9.0 熟練度（張良）：次數徽章+照次數大到小排；0次標「新」；被帶訓另標🎓n
@@ -1836,6 +1837,7 @@ function shiftQuick(pos, dt){
   ov.onclick = () => ov.remove()
   document.body.appendChild(ov)
   // v4.9.1 連排（張良「時間功能變有用」）：排完不關窗——保留剛選的時段/帶訓，一格分段班連續排
+  if (!window._qkKeep) window._qkLast = null // 新開窗＝沒有「剛排的那筆」
   const kp = window._qkKeep
   if (kp) { window._qkKeep = null
     t24set('qkS', kp.s); t24set('qkE', kp.e)
@@ -1843,6 +1845,17 @@ function shiftQuick(pos, dt){
     const qt = document.getElementById('qkTr'); if (qt && kp.tr) qt.value = kp.tr
     const mg = document.getElementById('qkMsg'); if (mg) { mg.textContent = kp.msg; mg.style.display = 'block' }
   }
+}
+// v4.9.6（張良「選了帶訓沒出現」）：先點人、後選帶訓＝直接補到剛排的那筆（原本只對之後點的人生效）
+function qkTrChange(v){
+  const t2 = window._qkLast
+  if (!t2) return // 還沒點人：照舊，等點名字時一起帶上
+  if (v && v === t2.name) { alert('不能自己帶自己'); return }
+  if (v) t2.tr = v; else delete t2.tr
+  shiftRender()
+  const mg = document.getElementById('qkMsg'); if (mg) { mg.textContent = v ? `✔ 已幫 ${t2.name} 補上帶訓 ${v}` : `已移除 ${t2.name} 的帶訓`; mg.style.display = 'block' }
+  if (!String(t2.id).startsWith('tmp')) shQueue(async ()=>{ const d2 = await shPost({ op:'save', item: { ...t2 }, token: TK() }); if (!(d2&&d2.ok)) alert('帶訓更新失敗') })
+  // 還是 tmp＝原本排隊那筆會帶最終狀態寫入，不用再送
 }
 async function shiftQuickGo(name, pos, dt){
   const ovQ = document.getElementById('qkOv')
@@ -1854,6 +1867,7 @@ async function shiftQuickGo(name, pos, dt){
   window._shiftTmpQ.push(tmp)
   d.sched.push(tmp); shiftRender()
   // v4.9.1 連排：重開快選窗（✓即時更新），時段/休息/帶訓都保留
+  window._qkLast = tmp // v4.9.6：剛排的這筆——之後才選帶訓也能直接補上
   window._qkKeep = { s: item.start, e: item.end, b: item.break, tr: item.tr, msg: `✔ 已排 ${name}（${item.start}–${item.end}）——可以繼續點下一位，或按「完成」` }
   shiftQuick(pos, dt)
   shQueue(async ()=>{
