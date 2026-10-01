@@ -102,24 +102,25 @@ export default function HrView({ tab }) { // tab 由第三層分頁決定：att=
       {hrTab === "rank" && doc && !pF && (() => {
         const es = Object.entries(stats).filter(([, s2]) => s2.worked > 0);
         const hM = (m) => `${Math.floor(m / 60)}h${String(m % 60).padStart(2, "0")}`;
+        // 全員都上榜（張良 2026-10-01：沒遲到的也列出來，排行榜是所有人都要在上面）——零值排最後、數值顯示 0/—
         const BOARDS = {
           hours: { icon: "⏱", name: "時數王", rows: [...es].sort((a, b) => b[1].min - a[1].min),
             cols: [["總工時", (s2) => hM(s2.min), 1], ["出勤天數", (s2) => s2.worked + " 天"], ["平均每班", (s2) => (Math.round(s2.min / s2.worked / 6) / 10) + "h"]] },
-          ontime: { icon: "✅", name: "準時率", note: "出勤 ≥5 天才入榜", rows: es.filter(([, s2]) => s2.worked >= 5).sort((a, b) => (b[1].ok / b[1].worked) - (a[1].ok / a[1].worked) || b[1].worked - a[1].worked),
+          ontime: { icon: "✅", name: "準時率", rows: [...es].sort((a, b) => (b[1].ok / b[1].worked) - (a[1].ok / a[1].worked) || b[1].worked - a[1].worked),
             cols: [["準時率", (s2) => Math.round(s2.ok / s2.worked * 100) + "%", 1], ["出勤天數", (s2) => s2.worked + " 天"], ["異常次數", (s2) => (s2.late + s2.miss + s2.absent) || "0"]] },
-          early: { icon: "🐓", name: "早鳥", note: "有上班卡 ≥3 天", rows: es.filter(([, s2]) => s2.onN >= 3).sort((a, b) => (a[1].onSum / a[1].onN) - (b[1].onSum / b[1].onN)),
-            cols: [["平均上班卡", (s2) => m2t0(s2.onSum / s2.onN), 1], ["最早一次", (s2) => m2t0(s2.onMin)], ["打卡天數", (s2) => s2.onN + " 天"]] },
-          late: { icon: "😴", name: "遲到榜", rows: es.filter(([, s2]) => s2.late).sort((a, b) => b[1].lateMin - a[1].lateMin || b[1].late - a[1].late),
-            cols: [["累計分鐘", (s2) => s2.lateMin + " 分", 1], ["次數", (s2) => s2.late + " 次"], ["平均每次", (s2) => Math.round(s2.lateMin / s2.late) + " 分"]] },
-          miss: { icon: "❓", name: "缺卡榜", rows: es.filter(([, s2]) => s2.miss || s2.absent).sort((a, b) => (b[1].miss + b[1].absent) - (a[1].miss + a[1].absent)),
-            cols: [["缺卡", (s2) => s2.miss ? s2.miss + " 次" : "—", 1], ["曠職", (s2) => s2.absent ? s2.absent + " 次" : "—"], ["出勤天數", (s2) => s2.worked + " 天"]] },
+          early: { icon: "🐓", name: "早鳥", note: "平均上班卡＝實際打卡「時刻」的平均（中午班的人自然比較晚，跟遲到無關——遲到是跟各自班表比）", rows: [...es].sort((a, b) => (a[1].onN ? a[1].onSum / a[1].onN : 9e9) - (b[1].onN ? b[1].onSum / b[1].onN : 9e9)),
+            cols: [["平均上班卡", (s2) => s2.onN ? m2t0(s2.onSum / s2.onN) : "—", 1], ["最早一次", (s2) => s2.onN ? m2t0(s2.onMin) : "—"], ["打卡天數", (s2) => s2.onN + " 天"]] },
+          late: { icon: "😴", name: "遲到榜", note: "0 分＝本月零遲到 👏", rows: [...es].sort((a, b) => b[1].lateMin - a[1].lateMin || b[1].late - a[1].late),
+            cols: [["累計分鐘", (s2) => s2.lateMin + " 分", 1], ["次數", (s2) => s2.late + " 次"], ["平均每次", (s2) => s2.late ? Math.round(s2.lateMin / s2.late) + " 分" : "—"]] },
+          miss: { icon: "❓", name: "缺卡榜", rows: [...es].sort((a, b) => (b[1].miss + b[1].absent) - (a[1].miss + a[1].absent) || b[1].worked - a[1].worked),
+            cols: [["缺卡", (s2) => s2.miss ? s2.miss + " 次" : "0", 1], ["曠職", (s2) => s2.absent ? s2.absent + " 次" : "0"], ["出勤天數", (s2) => s2.worked + " 天"]] },
         };
         const bk = BOARDS[expBoard] ? expBoard : "hours";
         const B = BOARDS[bk];
         return (<>
           <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 10 }}>
             {Object.entries(BOARDS).map(([k, b]) => (
-              <button key={k} onClick={() => setExpBoard(k)} style={{ border: `1.5px solid ${bk === k ? C.blue : C.line}`, background: bk === k ? C.blue : "#fff", color: bk === k ? "#fff" : C.sub, borderRadius: 18, padding: "6px 16px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>{b.icon} {b.name}{bk === k ? `（${b.rows.length} 人）` : ""}</button>
+              <button key={k} onClick={() => setExpBoard(k)} style={{ border: `1.5px solid ${bk === k ? C.blue : C.line}`, background: bk === k ? C.blue : "#fff", color: bk === k ? "#fff" : C.sub, borderRadius: 18, padding: "6px 16px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>{b.icon} {b.name}{bk === k ? `（全員 ${b.rows.length} 人）` : ""}</button>
             ))}
           </div>
           {B.note && <div style={{ fontSize: 11.5, color: C.faint, marginBottom: 8 }}>{B.note}</div>}
@@ -230,7 +231,7 @@ export default function HrView({ tab }) { // tab 由第三層分頁決定：att=
           </div>
         );
       })()}
-      {hrTab === "att" && <>
+      {(hrTab === "att" || (hrTab === "rank" && pF)) && <>
       {/* 本月異常統計 */}
       {!pF && badPeople.length > 0 && (
         <div style={{ background: "#fdf6e3", border: `1.5px solid ${C.amber}`, borderRadius: 10, padding: "9px 14px", marginBottom: 10, fontSize: 12.5 }}>
