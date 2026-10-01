@@ -1467,7 +1467,7 @@ function shiftRender(){
   h += `<div style="display:flex;gap:8px;align-items:center;margin:2px 0 6px">
     <span style="font-weight:900">一週班表</span>${meN?`<button class="mini" style="padding:3px 10px" onclick="shiftPosEdit()">⚙️ 設定（崗位/時段/人員排序・顏色）</button>`:''}
     <button class="mini" onclick="shiftWkNav(-1)">‹</button><button class="mini" style="font-weight:800" onclick="shiftWkToday()">今天</button><button class="mini" onclick="shiftWkNav(1)">›</button><span class="hint" style="font-weight:800">${wkDays[0].slice(5)} ~ ${wkDays[6].slice(5)}</span>
-    ${meN?`<button class="mini" style="padding:3px 10px" onclick="copyWeekNext()">⧉ 本週→下週</button><button class="mini" style="padding:3px 10px;color:var(--red)" onclick="clearWeek()">🗑 清空本週</button>`:''}
+    <button class="mini" style="padding:3px 10px" onclick="shiftSkill()">📊 熟練度</button>${meN?`<button class="mini" style="padding:3px 10px" onclick="copyWeekNext()">⧉ 本週→下週</button><button class="mini" style="padding:3px 10px;color:var(--red)" onclick="clearWeek()">🗑 清空本週</button>`:''}
   </div>`
   // v4.3.5（張良 2026-10-02）：①欄寬固定+硬格線=日期與格子切齊 ②崗位三組配色(櫃檯/飲料/中控・漢堡/煎炸麵・披薩/三明治) ③同人同天兼多崗位→班卡同色標記
   const posGrp = ps => /櫃檯|飲料|中控/.test(ps) ? 0 : /漢堡|煎炸|炸麵/.test(ps) ? 1 : /披薩|三明治/.test(ps) ? 2 : 3
@@ -1480,7 +1480,7 @@ function shiftRender(){
   const BD = 'border:1px solid var(--line);'
   h += `<div class="scroll" style="margin-bottom:12px"><table style="table-layout:fixed;width:100%;min-width:760px;border-collapse:collapse">
   <colgroup><col style="width:88px">${wkDays.map(()=>'<col>').join('')}</colgroup>
-  <thead><tr><th style="${BD}text-align:left;position:sticky;left:0;background:var(--soft);z-index:2">崗位</th>${wkDays.map((dt,i)=>`<th onclick="dayClick('${dt}')" title="點我看當日時段細表" style="${BD}text-align:center;cursor:pointer;font-size:13.5px;${dt===today?'color:var(--primary);background:var(--psoft)':'color:#F2F5F9;background:var(--soft)'}">${dt.slice(5)}<br>（${wdN[i]}）</th>`).join('')}</tr></thead><tbody>`
+  <thead><tr><th style="${BD}text-align:left;position:sticky;left:0;background:var(--soft);z-index:2">崗位</th>${wkDays.map((dt,i)=>`<th onclick="dayClick('${dt}')" title="點我看當日時段細表" style="${BD}text-align:center;cursor:pointer;font-size:13.5px;${dt===today?'color:#FFFFFF;background:#1F4068;box-shadow:inset 0 -3px 0 var(--primary)':'color:#F2F5F9;background:var(--soft)'}">${dt.slice(5)}<br>（${wdN[i]}）</th>`).join('')}</tr></thead><tbody>`
   if (!posList.length) h += `<tr><td colspan="8" class="mut" style="${BD}text-align:center">先按上面「⚙️ 崗位」建崗位清單，左側就會列出、點格子直接排人</td></tr>`
   let prevGrp = null // v4.8.4（張良）：三大區塊換組時整列粗線分隔，延伸到最右
   posList.forEach(ps=>{
@@ -1494,9 +1494,10 @@ function shiftRender(){
         const pi = pcIdx(e.name), ti = e.tr ? pcIdx(e.tr) : -1
         // v4.7.0 寶石色：實色填滿無外框；帶訓卡=左右兩人實色各半+白虛線框
         const bg2 = e.tr ? `background:linear-gradient(90deg,${PB[pi]} 52%,${PB[ti]} 52%);` : `background:${PB[pi]};`
-        return `<div ${meN?`draggable="true" ondragstart="event.stopPropagation();event.dataTransfer.setData('text/plain','${e.id}')" onclick="event.stopPropagation();shiftForm('${e.id}')"`:''} style="font-size:13px;line-height:1.7;${meN?'cursor:grab;':''}${bg2}border:${e.tr?'2px dashed rgba(255,255,255,.85)':'none'};border-radius:6px;padding:${e.tr?'3px 7px':'5px 8px'};margin:2px 0"><b style="color:${PT[pi]};font-weight:600">${e.name}</b>${e.tr?` <span style="color:${PT[ti]};font-weight:600;font-size:12px;white-space:nowrap">🎓${e.tr}</span>`:''}</div>`
+        const exp = ((d.posStats||{})[e.name]||{})[ps] || 0 // v4.9.0 生手標記：這崗位排過≤1次
+        return `<div ${meN?`draggable="true" ondragstart="event.stopPropagation();event.dataTransfer.setData('text/plain','${e.id}')" onclick="event.stopPropagation();shiftForm('${e.id}')"`:''} style="font-size:13px;line-height:1.7;${meN?'cursor:grab;':''}${bg2}border:${e.tr?'2px dashed rgba(255,255,255,.85)':'none'};border-radius:6px;padding:${e.tr?'3px 7px':'5px 8px'};margin:2px 0">${exp<=1&&ps!=='未分崗'&&!e.tr?`<span title="這崗位只排過 ${exp} 次，建議搭帶訓" style="font-size:12px">⚠️</span> `:''}<b style="color:${PT[pi]};font-weight:600">${e.name}</b>${e.tr?` <span style="color:${PT[ti]};font-weight:600;font-size:12px;white-space:nowrap">🎓${e.tr}</span>`:''}</div>`
       }).join('')
-      return `<td${cellOps} style="${BD}${gb}${dt===today?'background:var(--psoft);':''}text-align:left;${meN?'cursor:pointer;':''}vertical-align:top;overflow:hidden">${ents || (meN?'<span class="mut">＋</span>':'<span class="mut">—</span>')}</td>`
+      return `<td${cellOps} style="${BD}${gb}${dt===today?'background:#1B3356;':''}text-align:left;${meN?'cursor:pointer;':''}vertical-align:top;overflow:hidden">${ents || (meN?'<span class="mut">＋</span>':'<span class="mut">—</span>')}</td>`
     }).join('') + `</tr>`
   })
   h += `</tbody></table>`
@@ -1723,6 +1724,28 @@ function pasteBar(msg){
   document.body.appendChild(b)
 }
 function pasteOff(keep){ const b = document.getElementById('pasteBar'); if (b) b.remove(); if (!keep && window._shiftCopy) window._shiftCopy.on = 0 }
+// 📊 人×崗位熟練度矩陣（張良 2026-10-02：訓練/排崗位安排）——次數熱力格，空白=該訓練
+function shiftSkill(){
+  const d = window._shiftD, PS = d.posStats || {}
+  const cols = (d.posList||[])
+  if (!cols.length) { alert('先建崗位清單'); return }
+  const ppl = (d.staff||[])
+  let max = 1
+  ppl.forEach(s2=>cols.forEach(p2=>{ const c2=(PS[s2.n]||{})[p2]||0; if (c2>max) max=c2 }))
+  const cell = (n,p2)=>{ const c2=(PS[n]||{})[p2]||0, t2=(PS[n]||{})['🎓'+p2]||0
+    const al = c2 ? (0.15+0.7*c2/max).toFixed(2) : 0
+    return `<td style="text-align:center;border:1px solid var(--line);padding:6px 4px;background:rgba(77,163,255,${al});font-weight:800;color:${c2?'#fff':'var(--muted)'}">${c2||'·'}${t2?`<span style="font-size:10.5px;opacity:.9"> 🎓${t2}</span>`:''}</td>` }
+  const row = s2 => `<tr${s2.off?' style="opacity:.55"':''}><td style="text-align:left;border:1px solid var(--line);padding:6px 8px;font-weight:800;color:${_PBX()[((d.colors||{})[s2.n]??0)%_PBX().length]}">${s2.n}${s2.off?' <span class="hint" style="font-size:11px">非常態</span>':''}</td>${cols.map(p2=>cell(s2.n,p2)).join('')}</tr>`
+  const ov = document.createElement('div'); ov.id='skOv'
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:50;display:flex;align-items:center;justify-content:center;padding:16px'
+  ov.innerHTML = `<div style="background:var(--card);border-radius:14px;width:min(880px,94vw);max-height:90vh;overflow:auto;padding:18px" onclick="event.stopPropagation()">
+    <div style="font-weight:900;font-size:16px;margin-bottom:4px">📊 崗位熟練度（排過幾次）</div>
+    <div class="hint" style="margin-bottom:10px">只算今天以前的班；顏色越深＝次數越多；「·」＝沒排過（該訓練的空格）；🎓n＝被帶訓次數。</div>
+    <div class="scroll"><table style="border-collapse:collapse;min-width:560px"><thead><tr><th style="border:1px solid var(--line);text-align:left;padding:6px 8px">夥伴</th>${cols.map(p2=>`<th style="border:1px solid var(--line);padding:6px 4px;text-align:center">${p2}</th>`).join('')}</tr></thead><tbody>${ppl.map(row).join('')}</tbody></table></div>
+    <div style="display:flex;justify-content:flex-end;margin-top:12px"><button class="mini" style="padding:9px 14px" onclick="document.getElementById('skOv').remove()">關閉</button></div></div>`
+  ov.onclick = () => ov.remove()
+  document.body.appendChild(ov)
+}
 function shiftWkToday(){ // 回到本週（張良 2026-10-02「按今天就會回到當周」）
   const t0 = new Date(todayTpe()); t0.setDate(t0.getDate() - ((t0.getDay()+6)%7))
   window._shiftWk = t0.toISOString().slice(0,10)
@@ -1781,11 +1804,16 @@ function shiftQuick(pos, dt){
       <span>休(分)</span><input id="qkB" type="number" value="${defB}" min="0" max="240" style="border:1px solid var(--line);border-radius:8px;padding:7px;font-size:15px;width:62px">
       <span>🎓帶訓</span><select id="qkTr" style="border:1px solid var(--line);border-radius:8px;padding:7px;font-size:14px"><option value="">無</option>${(d.names||[]).map(n=>`<option>${n}</option>`).join('')}</select>
     </div>
-    <div class="hint" style="margin-bottom:6px">點名字＝直接排進去；✓＝當天已有班，<b>可以再點</b>＝同天兼第二個崗位；有選帶訓＝卡片標 🎓</div>
-    ${(()=>{ // v4.6.2：名單跟⚙️排序一致；非常態放分隔線下面、一樣可以點
-      const btn = n => `<button class="mini" style="padding:9px 13px;font-size:15px" onclick="shiftQuickGo('${n}','${pos}','${dt}')">${n}${busy.has(n)?' <span style="color:var(--green);font-weight:800">✓</span>':''}</button>`
-      const regQ = (d.staff||[]).filter(s2=>!s2.off).map(s2=>s2.n)
-      const offQ = (d.staff||[]).filter(s2=>s2.off).map(s2=>s2.n)
+    <div class="hint" style="margin-bottom:6px">點名字＝直接排進去；名字旁數字＝<b>排過這崗位幾次</b>（照次數排序）；「新」＝沒排過建議搭帶訓；✓＝當天已有班可兼第二崗</div>
+    ${(()=>{ // v4.9.0 熟練度（張良）：次數徽章+照次數大到小排；0次標「新」；被帶訓另標🎓n
+      const PS = d.posStats || {}
+      const cntOf = n => (PS[n]||{})[pos] || 0
+      const trOf = n => (PS[n]||{})['🎓'+pos] || 0
+      const btn = n => { const c2 = cntOf(n), t2 = trOf(n)
+        return `<button class="mini" style="padding:9px 13px;font-size:15px" onclick="shiftQuickGo('${n}','${pos}','${dt}')">${n} ${c2?`<b style="color:var(--pdark)">${c2}</b>`:'<span style="color:#E8A657;font-weight:800;font-size:12px">新</span>'}${t2?` <span style="font-size:12px" title="被帶訓${t2}次">🎓${t2}</span>`:''}${busy.has(n)?' <span style="color:var(--green);font-weight:800">✓</span>':''}</button>` }
+      const bySkill = (a,b) => cntOf(b)-cntOf(a) || trOf(b)-trOf(a)
+      const regQ = (d.staff||[]).filter(s2=>!s2.off).map(s2=>s2.n).sort(bySkill)
+      const offQ = (d.staff||[]).filter(s2=>s2.off).map(s2=>s2.n).sort(bySkill)
       if (!regQ.length && !offQ.length) return `<div style="display:flex;gap:6px;flex-wrap:wrap">${(d.names||[]).map(btn).join('')||'<span class="mut">GD 人員是空的——先在上面「＋ 加人」</span>'}</div>`
       return `<div style="display:flex;gap:6px;flex-wrap:wrap">${regQ.map(btn).join('')}</div>` + (offQ.length?`<div class="hint" style="border-top:1.5px dashed var(--line);margin:10px 0 6px;padding-top:6px;font-weight:700">非常態</div><div style="display:flex;gap:6px;flex-wrap:wrap">${offQ.map(btn).join('')}</div>`:'')
     })()}

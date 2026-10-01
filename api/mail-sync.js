@@ -1773,7 +1773,16 @@ export default async function handler(req, res) {
     const usedC = new Set(Object.values(colMap))
     for (const s3 of staff) { if (colMap[s3.n] == null) { let ci = 0; while (usedC.has(ci) && ci < 16) ci++; colMap[s3.n] = ci % 16; usedC.add(colMap[s3.n]); colDirty = true } }
     if (colDirty && sd) { sd.colors = colMap; await kvPut('sp_finance_pm_shift_g', sd, '人員配色固定') }
-    return res.status(200).json({ ok: true, ym, sched: schedL, punches: pchs.map(p => ({ name: p.name, ts: p.ts, dir: p.dir, src: p.src })), names: namesU, namesAll, posList, slots: (sd || {}).slots || null, colors: colMap, staff, me: meS ? { name: meS.name, role: meS.role, approver: aprS.includes(meS.name) } : null })
+    // v4.9.0 崗位熟練度（張良 2026-10-02：訓練/排班安排）：每人×崗位排過幾次（只算今天含以前；被帶訓另計 🎓 前綴鍵）
+    const todayS9 = new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10)
+    const posStats = {}
+    for (const x of ((sd || {}).list || [])) {
+      if (!x.pos || String(x.date || '') > todayS9) continue
+      const stN = posStats[x.name] = posStats[x.name] || {}
+      stN[x.pos] = (stN[x.pos] || 0) + 1
+      if (x.tr) { const stT = posStats[x.tr] = posStats[x.tr] || {}; stT['🎓' + x.pos] = (stT['🎓' + x.pos] || 0) + 1 }
+    }
+    return res.status(200).json({ ok: true, ym, sched: schedL, punches: pchs.map(p => ({ name: p.name, ts: p.ts, dir: p.dir, src: p.src })), names: namesU, namesAll, posList, slots: (sd || {}).slots || null, colors: colMap, posStats, staff, me: meS ? { name: meS.name, role: meS.role, approver: aprS.includes(meS.name) } : null })
   }
   // 人員色號管理口：POST ?shiftcolor=管理金鑰 {map:{名字:色號}} 合併寫入（固定/校正專屬色用）
   if (req.method === 'POST' && req.query?.shiftcolor) {
