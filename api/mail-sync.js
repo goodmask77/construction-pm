@@ -1782,7 +1782,15 @@ export default async function handler(req, res) {
       stN[x.pos] = (stN[x.pos] || 0) + 1
       if (x.tr) { const stT = posStats[x.tr] = posStats[x.tr] || {}; stT['🎓' + x.pos] = (stT['🎓' + x.pos] || 0) + 1 }
     }
-    return res.status(200).json({ ok: true, ym, sched: schedL, punches: pchs.map(p => ({ name: p.name, ts: p.ts, dir: p.dir, src: p.src })), names: namesU, namesAll, posList, slots: (sd || {}).slots || null, colors: colMap, posStats, staff, me: meS ? { name: meS.name, role: meS.role, approver: aprS.includes(meS.name) } : null })
+    // v4.9.7（張良「不要全部一樣次數,是第幾次」）：全歷史照日期排序逐筆編號——每張班卡=該人該站第幾次（未來的班順著遞增）
+    const seqMap = {}, trSeqMap = {}
+    const c1 = {}, c2 = {}
+    for (const x of [...((sd || {}).list || [])].sort((a, b) => (a.date + (a.start || '')).localeCompare(b.date + (b.start || '')))) {
+      if (!x.pos) continue
+      const k1 = x.name + '|' + x.pos; c1[k1] = (c1[k1] || 0) + 1; seqMap[x.id] = c1[k1]
+      if (x.tr) { const k2 = x.tr + '|' + x.pos; c2[k2] = (c2[k2] || 0) + 1; trSeqMap[x.id] = c2[k2] }
+    }
+    return res.status(200).json({ ok: true, ym, sched: schedL.map(x => ({ ...x, seq: seqMap[x.id], trSeq: trSeqMap[x.id] })), punches: pchs.map(p => ({ name: p.name, ts: p.ts, dir: p.dir, src: p.src })), names: namesU, namesAll, posList, slots: (sd || {}).slots || null, colors: colMap, posStats, staff, me: meS ? { name: meS.name, role: meS.role, approver: aprS.includes(meS.name) } : null })
   }
   // 人員色號管理口：POST ?shiftcolor=管理金鑰 {map:{名字:色號}} 合併寫入（固定/校正專屬色用）
   if (req.method === 'POST' && req.query?.shiftcolor) {
