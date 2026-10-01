@@ -497,6 +497,24 @@ export default async function handler(req, res) {
     await announceChanged()
     return res.status(200).json({ ok: true, ...rep0 })
   }
+  // 菜單品項搬分類口（同金鑰；張良用對話叫 AI 搬，例：湯移到飲料區）：?menumv=<key>&item=品名&to=目標分類（模糊比對）
+  if (req.query?.menumv) {
+    const mk = (process.env.MENU_PROBE_KEY || '').trim()
+    if (!mk || String(req.query.menumv) !== mk) return res.status(403).json({ ok: false })
+    const itemQ = String(req.query.item || ''), toQ = String(req.query.to || '')
+    const doc = (await kvGet('sp_finance_pm_menu')) || {}
+    const secs = ((doc.draft || {}).sections) || []
+    let moved = null
+    const tgt = secs.find(s2 => (s2.name || '').includes(toQ))
+    if (!tgt) return res.status(400).json({ ok: false, error: '找不到目標分類', sections: secs.map(s2 => s2.name) })
+    for (const s2 of secs) {
+      const i = (s2.items || []).findIndex(i2 => (i2.name || '').includes(itemQ))
+      if (i >= 0 && s2 !== tgt) { moved = s2.items.splice(i, 1)[0]; tgt.items = tgt.items || []; tgt.items.push(moved); break }
+    }
+    if (!moved) return res.status(400).json({ ok: false, error: '找不到品項或已在目標分類' })
+    await kvPut('sp_finance_pm_menu', doc, '菜單搬移口(AI代操)')
+    return res.status(200).json({ ok: true, moved: moved.name, to: tgt.name })
+  }
   // 價格歷史匯入口（POST＋同金鑰，張良 2026-09-06 供應鏈重建 P1：把「叫貨價格浮動追蹤」5,378 筆歷史搬進 App 當活資料）
   // body={dry, rows:[{d:'YYYY-MM-DD',vendor,item,unit,p,q,src}]}；存月檔 sp_supply_pm_ph_YYYY-MM={rows:[…]}，
   // 以 d|vendor|item 去重（重送冪等）；之後驗收/匯入的新價自動 append 同一庫——價格追蹤頁全吃這裡
