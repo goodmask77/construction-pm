@@ -1756,7 +1756,7 @@ export default async function handler(req, res) {
     const aliveS = (((rosterS || {}).people) || []).filter(p2 => !p2.endDate && (p2.status || '在職') !== '離職')
     const gdOn = aliveS.some(p2 => p2.gd)
     const staff = aliveS.filter(p2 => !gdOn || p2.gd).map(p2 => ({ n: p2.name, role: aprS.includes(p2.name) ? '審核人' : (p2.gdRole || '一般'), bound: boundRids.has(p2.id) }))
-    return res.status(200).json({ ok: true, ym, sched: schedL, punches: pchs.map(p => ({ name: p.name, ts: p.ts, dir: p.dir, src: p.src })), names: namesU, namesAll, posList, staff, me: meS ? { name: meS.name, role: meS.role, approver: aprS.includes(meS.name) } : null })
+    return res.status(200).json({ ok: true, ym, sched: schedL, punches: pchs.map(p => ({ name: p.name, ts: p.ts, dir: p.dir, src: p.src })), names: namesU, namesAll, posList, slots: (sd || {}).slots || null, staff, me: meS ? { name: meS.name, role: meS.role, approver: aprS.includes(meS.name) } : null })
   }
   if (req.method === 'POST' && req.query?.shiftset) {
     const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
@@ -1770,11 +1770,14 @@ export default async function handler(req, res) {
       const i2 = sb2.item || {}
       if (!String(i2.name || '').trim() || !/^\d{4}-\d{2}-\d{2}$/.test(i2.date) || !/^\d{1,2}:\d{2}$/.test(i2.start) || !/^\d{1,2}:\d{2}$/.test(i2.end)) return res.status(400).json({ ok: false, error: '姓名/日期/時間沒填齊' })
       const it = { id: i2.id || 'sh' + Date.now().toString(36), name: String(i2.name).trim().slice(0, 20), date: i2.date, start: String(i2.start).padStart(5, '0'), end: String(i2.end).padStart(5, '0'), break: Math.max(0, Math.min(240, Number(i2.break) || 0)), pos: String(i2.pos || '').trim().slice(0, 20), by: whoS.name }
+      const trV = String(i2.tr || '').trim().slice(0, 20); if (trV) it.tr = trV // 🎓帶訓對象（張良 2026-10-02）
       doc.list = [...(doc.list || []).filter(x => x.id !== it.id), it].sort((a, b) => (a.date + a.start).localeCompare(b.date + b.start)).slice(-1000)
     } else if (sb2.op === 'del') {
       doc.list = (doc.list || []).filter(x => x.id !== sb2.id)
     } else if (sb2.op === 'pos') { // 崗位清單管理（張良 2026-09-24：班表頁直接編輯）
       doc.pos = (Array.isArray(sb2.list) ? sb2.list : []).map(s3 => String(s3).trim().slice(0, 20)).filter(Boolean).slice(0, 30)
+    } else if (sb2.op === 'slots') { // ⏱時段快捷（張良 2026-10-02：照尖峰切時段，一鍵帶時間）
+      doc.slots = (Array.isArray(sb2.list) ? sb2.list : []).map(s3 => ({ n: String(s3.n || '').trim().slice(0, 10), s: String(s3.s || '').slice(0, 5), e: String(s3.e || '').slice(0, 5) })).filter(x => x.n && /^\d{1,2}:\d{2}$/.test(x.s) && /^\d{1,2}:\d{2}$/.test(x.e)).slice(0, 10)
     } else return res.status(400).json({ ok: false })
     await kvPut('sp_finance_pm_shift_g', doc, '班表' + sb2.op + '(' + whoS.name + ')')
     return res.status(200).json({ ok: true })

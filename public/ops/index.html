@@ -1474,7 +1474,7 @@ function shiftRender(){
   const BD = 'border:1px solid #D6DEE8;'
   h += `<div class="scroll" style="margin-bottom:12px"><table style="table-layout:fixed;width:100%;min-width:760px;border-collapse:collapse">
   <colgroup><col style="width:88px">${wkDays.map(()=>'<col>').join('')}</colgroup>
-  <thead><tr><th style="${BD}text-align:left;position:sticky;left:0;background:#F1F6F9;z-index:2">崗位</th>${wkDays.map((dt,i)=>`<th style="${BD}${dt===today?'color:var(--primary);background:#E5F3FA':'background:#F1F6F9'}">${dt.slice(5)}<br>（${wdN[i]}）</th>`).join('')}</tr></thead><tbody>`
+  <thead><tr><th style="${BD}text-align:left;position:sticky;left:0;background:#F1F6F9;z-index:2">崗位</th>${wkDays.map((dt,i)=>`<th onclick="shiftDay('${dt}')" title="點我看當日時段細表" style="${BD}text-align:center;cursor:pointer;${dt===today?'color:var(--primary);background:#E5F3FA':'background:#F1F6F9'}">${dt.slice(5)}<br>（${wdN[i]}）</th>`).join('')}</tr></thead><tbody>`
   if (!posList.length) h += `<tr><td colspan="8" class="mut" style="${BD}text-align:center">先按上面「⚙️ 崗位」建崗位清單，左側就會列出、點格子直接排人</td></tr>`
   posList.forEach(ps=>{
     const g = GC[posGrp(ps)]
@@ -1483,8 +1483,8 @@ function shiftRender(){
       const cellOps = meN ? ` onclick="shiftQuick('${ps}','${dt}')" ondragover="event.preventDefault();this.style.outline='2px solid var(--primary)'" ondragleave="this.style.outline=''" ondrop="shiftDrop(event,'${ps}','${dt}')"` : ''
       const ents = es.map(e=>{
         const di = dupCnt[e.date+'|'+e.name]>1 ? dupNames.indexOf(e.name)%DUPC.length : -1
-        const chipC = di>=0 ? `border:1.5px solid ${DUPB[di]};background:${DUPC[di]};` : 'border:1px solid var(--line);background:#F7FAFC;'
-        return `<div ${meN?`draggable="true" ondragstart="event.stopPropagation();event.dataTransfer.setData('text/plain','${e.id}')" onclick="event.stopPropagation();shiftForm('${e.id}')"`:''} style="font-size:13px;${meN?'cursor:grab;':''}${chipC}border-radius:7px;padding:2px 6px;margin:1px 0"><b${di>=0?` style="color:${DUPB[di]}"`:''}>${e.name}</b> <span class="hint">${e.start}-${e.end}</span></div>`
+        const chipC = di>=0 ? `border:1.5px solid ${DUPB[di]};background:${DUPC[di]};` : (e.tr ? 'border:1.5px dashed #B45309;background:#FDF1E3;' : 'border:1px solid var(--line);background:#F7FAFC;')
+        return `<div ${meN?`draggable="true" ondragstart="event.stopPropagation();event.dataTransfer.setData('text/plain','${e.id}')" onclick="event.stopPropagation();shiftForm('${e.id}')"`:''} style="font-size:13px;${meN?'cursor:grab;':''}${chipC}border-radius:7px;padding:2px 6px;margin:1px 0"><b${di>=0?` style="color:${DUPB[di]}"`:''}>${e.name}</b>${e.tr?` <span style="color:#B45309;font-weight:800">🎓${e.tr}</span>`:''} <span class="hint">${e.start}-${e.end}</span></div>`
       }).join('')
       return `<td${cellOps} style="${BD}${dt===today?'background:#F0F8FD;':''}text-align:left;${meN?'cursor:pointer;':''}vertical-align:top;overflow:hidden">${ents || (meN?'<span class="mut">＋</span>':'<span class="mut">—</span>')}</td>`
     }).join('') + `</tr>`
@@ -1537,6 +1537,7 @@ function shiftForm(id){
       <span>上班</span><span>${t24c('shS', it?it.start:'11:00')}</span>
       <span>下班</span><span>${t24c('shE', it?it.end:'20:00')}</span>
       <span>休息(分)</span><input id="shBreak" type="number" value="${it?(it.break||0):60}" min="0" max="240" style="${ip}">
+      <span>🎓帶訓</span><span><input id="shTr" list="shNames" value="${it?(it.tr||''):''}" placeholder="被帶的人（可空）" style="${ip};width:100%"></span>
     </div>
     <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px"><button class="mini" style="padding:9px 12px" onclick="document.getElementById('shOv').remove()">取消</button>
     <button class="mini on" style="padding:9px 18px" onclick="shiftSave('${id||''}')">儲存</button></div></div>`
@@ -1546,7 +1547,8 @@ function shiftForm(id){
 async function shiftSave(id){
   const g2 = x => (document.getElementById(x)||{}).value||''
   const ovS = document.getElementById('shOv')
-  const item = { id: id||undefined, name: g2('shName').trim(), date: g2('shDate'), start: t24read(ovS,'shS'), end: t24read(ovS,'shE'), break: +g2('shBreak')||0, pos: g2('shPos').trim() }
+  const item = { id: id||undefined, name: g2('shName').trim(), date: g2('shDate'), start: t24read(ovS,'shS'), end: t24read(ovS,'shE'), break: +g2('shBreak')||0, pos: g2('shPos').trim(), tr: g2('shTr').trim() }
+  if (item.tr === item.name) item.tr = ''
   if (!item.name || !item.date || !item.start || !item.end) { alert('姓名/日期/時間要填齊'); return }
   const r = await fetch('/api/mail-sync?shiftset=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ op:'save', item, token: TK() }) })
   const d = await r.json().catch(()=>null)
@@ -1559,6 +1561,39 @@ async function shiftDel(id){
   if (d && d.ok) shiftLoad(); else alert((d&&d.error)||'失敗')
 }
 // ── 週表直排（張良 2026-10-02「點擊直接選人名、可拖曳」）──
+const SLOT_DEF = [{n:'午峰',s:'11:00',e:'14:30'},{n:'離峰',s:'14:30',e:'17:30'},{n:'晚峰',s:'17:30',e:'20:00'},{n:'全日',s:'11:00',e:'20:00'}] // 預設照近30天單量尖峰切；⚙️可自訂
+function t24set(cls, v){
+  const ov = document.getElementById('qkOv'); if (!ov) return
+  const [h,m] = String(v).split(':')
+  const sh = ov.querySelector('.'+cls+'h'), sm = ov.querySelector('.'+cls+'m')
+  if (sh) sh.value = h
+  if (sm){ if (![...sm.options].some(o=>o.value===m)) sm.add(new Option(m,m)); sm.value = m }
+}
+// 📋 當日細表（張良 2026-10-02：時段×崗位、一鍵複製成文字發群組）
+function shiftDay(dt){
+  const d = window._shiftD
+  const wdN2 = ['日','一','二','三','四','五','六']
+  const es = d.sched.filter(x=>x.date===dt)
+  const posIdx = p2 => { const i = (d.posList||[]).indexOf(p2); return i<0 ? 99 : i }
+  const grp = {}
+  es.forEach(e=>{ const k2 = e.start+'–'+e.end; (grp[k2]=grp[k2]||[]).push(e) })
+  const keys = Object.keys(grp).sort()
+  keys.forEach(k2=>grp[k2].sort((a,b)=>posIdx(a.pos||'')-posIdx(b.pos||'')))
+  const title = `📅 ${dt.slice(5)}（${wdN2[new Date(dt).getDay()]}）班表`
+  const txt = title + '\n' + (keys.length ? keys.map(k2=>`\n${k2}\n`+grp[k2].map(e=>`${e.pos||'—'}：${e.name}${e.tr?`（帶${e.tr}）`:''}`).join('\n')).join('\n') : '\n（還沒排班）')
+  window._dayTxt = txt
+  const ov = document.createElement('div'); ov.id='sdOv'
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(16,24,43,.45);z-index:50;display:flex;align-items:center;justify-content:center;padding:16px'
+  ov.innerHTML = `<div style="background:#fff;border-radius:14px;max-width:400px;width:100%;padding:16px;max-height:80vh;overflow:auto" onclick="event.stopPropagation()">
+    <div style="font-weight:900;margin-bottom:8px">${title}</div>
+    ${keys.length ? keys.map(k2=>`<div style="font-weight:800;color:var(--primary);margin:8px 0 3px">${k2}</div>`+grp[k2].map(e=>`<div style="display:flex;gap:8px;font-size:14px;padding:3px 0;border-bottom:1px solid var(--line)"><span style="min-width:84px;font-weight:700;color:var(--pdark)">${e.pos||'—'}</span><span>${e.name}${e.tr?` <span style="color:#B45309;font-weight:800">🎓帶${e.tr}</span>`:''}</span></div>`).join('')).join('') : '<div class="mut">這天還沒排班</div>'}
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px">
+      <button class="mini" style="padding:9px 12px" onclick="document.getElementById('sdOv').remove()">關閉</button>
+      ${keys.length?`<button class="mini on" style="padding:9px 16px" onclick="navigator.clipboard.writeText(window._dayTxt).then(()=>{this.textContent='✓ 已複製';setTimeout(()=>{const o=document.getElementById('sdOv');if(o)o.remove()},700)})">📋 複製文字（貼群組）</button>`:''}
+    </div></div>`
+  ov.onclick = () => ov.remove()
+  document.body.appendChild(ov)
+}
 function shiftQuick(pos, dt){
   const d = window._shiftD
   // 預設時間：同崗位最近一筆 → 整體最近一筆 → 11:00-20:00
@@ -1569,13 +1604,16 @@ function shiftQuick(pos, dt){
   const wdN2 = ['日','一','二','三','四','五','六']
   const ov = document.createElement('div'); ov.id='qkOv'
   ov.style.cssText = 'position:fixed;inset:0;background:rgba(16,24,43,.45);z-index:50;display:flex;align-items:center;justify-content:center;padding:16px'
+  const slots = (d.slots && d.slots.length) ? d.slots : SLOT_DEF
   ov.innerHTML = `<div style="background:#fff;border-radius:14px;max-width:420px;width:100%;padding:16px;max-height:80vh;overflow:auto" onclick="event.stopPropagation()">
     <div style="font-weight:900;margin-bottom:8px">📅 ${dt.slice(5)}（${wdN2[new Date(dt).getDay()]}）・${pos}</div>
+    <div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:8px">${slots.map(sl=>`<button class="mini" style="padding:5px 10px" onclick="t24set('qkS','${sl.s}');t24set('qkE','${sl.e}')">${sl.n} ${sl.s}–${sl.e}</button>`).join('')}</div>
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:14px;margin-bottom:10px">
       <span>上班</span>${t24c('qkS', defS)}<span>下班</span>${t24c('qkE', defE)}
       <span>休(分)</span><input id="qkB" type="number" value="${defB}" min="0" max="240" style="border:1px solid var(--line);border-radius:8px;padding:7px;font-size:15px;width:62px">
+      <span>🎓帶訓</span><select id="qkTr" style="border:1px solid var(--line);border-radius:8px;padding:7px;font-size:14px"><option value="">無</option>${(d.names||[]).map(n=>`<option>${n}</option>`).join('')}</select>
     </div>
-    <div class="hint" style="margin-bottom:6px">點名字＝直接排進去；✓＝當天已有班，<b>可以再點</b>＝同天兼第二個崗位</div>
+    <div class="hint" style="margin-bottom:6px">點名字＝直接排進去；✓＝當天已有班，<b>可以再點</b>＝同天兼第二個崗位；有選帶訓＝卡片標 🎓</div>
     <div style="display:flex;gap:6px;flex-wrap:wrap">${(d.names||[]).map(n=>`<button class="mini" style="padding:9px 13px;font-size:15px" onclick="shiftQuickGo('${n}','${pos}','${dt}')">${n}${busy.has(n)?' <span style="color:var(--green);font-weight:800">✓</span>':''}</button>`).join('')||'<span class="mut">GD 人員是空的——先在上面「＋ 加人」</span>'}</div>
     <div style="display:flex;justify-content:flex-end;margin-top:12px"><button class="mini" style="padding:9px 12px" onclick="document.getElementById('qkOv').remove()">取消</button></div></div>`
   ov.onclick = () => ov.remove()
@@ -1583,7 +1621,8 @@ function shiftQuick(pos, dt){
 }
 async function shiftQuickGo(name, pos, dt){
   const ovQ = document.getElementById('qkOv')
-  const item = { name, date: dt, start: t24read(ovQ,'qkS'), end: t24read(ovQ,'qkE'), break: +((document.getElementById('qkB')||{}).value||0), pos }
+  const item = { name, date: dt, start: t24read(ovQ,'qkS'), end: t24read(ovQ,'qkE'), break: +((document.getElementById('qkB')||{}).value||0), pos, tr: (document.getElementById('qkTr')||{}).value||'' }
+  if (item.tr === name) item.tr = ''
   if (ovQ) ovQ.remove()
   const r = await fetch('/api/mail-sync?shiftset=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ op:'save', item, token: TK() }) })
   const d = await r.json().catch(()=>null)
@@ -2439,12 +2478,26 @@ function shiftPosEdit(){ // v4.3.2（張良 2026-10-02「這樣很難弄」）�
     <div class="hint" style="margin-bottom:10px">排班時的崗位選單用這份；直接改名、✕ 刪除、↑↓ 調順序。</div>
     <div id="psRows"></div>
     <button class="mini" style="margin-top:8px;padding:8px 12px" onclick="window._posTmp.push('');posRender();setTimeout(()=>{const ii=document.querySelectorAll('#psRows input');if(ii.length)ii[ii.length-1].focus()},50)">＋ 新增崗位</button>
+    <div style="font-weight:900;margin:14px 0 2px">⏱ 時段快捷</div>
+    <div class="hint" style="margin-bottom:6px">排班快選窗的一鍵時段（照店裡尖峰自訂）。</div>
+    <div id="slRows"></div>
+    <button class="mini" style="margin-top:8px;padding:8px 12px" onclick="window._slotTmp.push({n:'',s:'11:00',e:'20:00'});slRender()">＋ 新增時段</button>
     <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px">
       <button class="mini" style="padding:9px 12px" onclick="document.getElementById('psOv').remove()">取消</button>
       <button class="mini on" style="padding:9px 18px" onclick="posSave()">儲存</button></div></div>`
   ov.onclick = () => ov.remove()
+  window._slotTmp = ((d.slots && d.slots.length) ? d.slots : SLOT_DEF).map(x=>({n:x.n,s:x.s,e:x.e}))
   document.body.appendChild(ov)
-  posRender()
+  posRender(); slRender()
+}
+function slRender(){
+  const box = document.getElementById('slRows'); if (!box) return
+  box.innerHTML = window._slotTmp.map((sl,i)=>`<div style="display:flex;gap:6px;align-items:center;padding:4px 0;border-bottom:1px solid var(--line)">
+    <input value="${String(sl.n).replace(/"/g,'&quot;')}" placeholder="名稱" oninput="window._slotTmp[${i}].n=this.value" style="width:72px;border:1px solid var(--line);border-radius:8px;padding:8px;font-size:14px">
+    <input type="time" value="${sl.s}" onchange="window._slotTmp[${i}].s=this.value" style="border:1px solid var(--line);border-radius:8px;padding:7px;font-size:14px">
+    <span>–</span>
+    <input type="time" value="${sl.e}" onchange="window._slotTmp[${i}].e=this.value" style="border:1px solid var(--line);border-radius:8px;padding:7px;font-size:14px">
+    <button class="mini" style="padding:7px 9px;color:var(--red);margin-left:auto" onclick="window._slotTmp.splice(${i},1);slRender()">✕</button></div>`).join('')
 }
 function posRender(){
   const box = document.getElementById('psRows'); if (!box) return
@@ -2454,12 +2507,15 @@ function posRender(){
     <button class="mini" style="padding:7px 9px" ${i===window._posTmp.length-1?'disabled':''} onclick="const a=window._posTmp;[a[${i}+1],a[${i}]]=[a[${i}],a[${i}+1]];posRender()">↓</button>
     <button class="mini" style="padding:7px 9px;color:var(--red)" onclick="window._posTmp.splice(${i},1);posRender()">✕</button></div>`).join('')
 }
-function posSave(){
+async function posSave(){
   const list = window._posTmp.map(s2=>String(s2).trim()).filter(Boolean)
   if (!list.length) { alert('至少留一個崗位'); return }
+  const slots = window._slotTmp.map(x=>({n:String(x.n).trim(),s:x.s,e:x.e})).filter(x=>x.n&&x.s&&x.e)
   const o = document.getElementById('psOv'); if (o) o.remove()
-  fetch('/api/mail-sync?shiftset=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ op:'pos', list, token: TK() }) })
-    .then(r=>r.json()).then(d2=>{ if(d2&&d2.ok) shiftLoad(); else alert((d2&&d2.error)||'失敗') })
+  const post = body => fetch('/api/mail-sync?shiftset=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify(body) }).then(r=>r.json()).catch(()=>null)
+  const d1 = await post({ op:'pos', list, token: TK() })
+  const d2 = await post({ op:'slots', list: slots, token: TK() })
+  if (d1&&d1.ok&&d2&&d2.ok) shiftLoad(); else alert((d1&&d1.error)||(d2&&d2.error)||'失敗')
 }
 // ── 🎚 權限 modal（張良 2026-09-25：訪客看/綁定一般/名單設權限）──
 function gdRoleModal(name, role){
