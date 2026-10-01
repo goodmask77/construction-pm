@@ -1447,12 +1447,13 @@ export default async function handler(req, res) {
     if (!doc.base) return res.status(400).json({ ok: false, error: '先開一次菜單分頁讓系統種既有菜單' })
     const dr = mb2.draft || {}
     if (!Array.isArray(dr.sections)) return res.status(400).json({ ok: false, error: '格式不對' })
+    const oldEn = {}; for (const s0 of ((doc.draft || {}).sections || [])) for (const i0 of (s0.items || [])) if (i0.en) oldEn[i0.id] = i0.en // 英文防蓋（2026-10-01：舊分頁整份存檔會把剛灌的英文清空）
     // 消毒＋上限（名稱80字/註記40字/價格0~9999/分類20個/品項每類60個）
     doc.draft = { note: String(dr.note || '').slice(0, 200), sections: dr.sections.slice(0, 20).map(s2 => ({
       name: String(s2.name || '').slice(0, 80), note: String(s2.note || '').slice(0, 60),
       items: (Array.isArray(s2.items) ? s2.items : []).slice(0, 60).map(i2 => ({
         id: String(i2.id || ('mn' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5))).slice(0, 20),
-        name: String(i2.name || '').slice(0, 80), en: String(i2.en || '').slice(0, 80), price: Math.max(0, Math.min(9999, Math.round(Number(i2.price) || 0))), note: String(i2.note || '').slice(0, 40),
+        name: String(i2.name || '').slice(0, 80), en: String(i2.en || oldEn[i2.id] || '').slice(0, 80), price: Math.max(0, Math.min(9999, Math.round(Number(i2.price) || 0))), note: String(i2.note || '').slice(0, 40),
       })).filter(i2 => i2.name),
     })).filter(s2 => s2.name) }
     doc.edits = [{ by: whoM2.name, ts: new Date(Date.now() + 8 * 3600e3).toISOString().slice(5, 16).replace('T', ' '), what: String(mb2.what || '').slice(0, 80) }, ...(doc.edits || [])].slice(0, 30)
