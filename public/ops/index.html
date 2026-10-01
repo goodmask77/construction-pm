@@ -2368,12 +2368,35 @@ function gdStaffGo(){
   const o = document.getElementById('gsOv'); if (o) o.remove()
   if (v) gdStaffOp('add', v)
 }
-function shiftPosEdit(){
+function shiftPosEdit(){ // v4.3.2（張良 2026-10-02「這樣很難弄」）：prompt 換正式視窗——一崗位一列、直接改名、✕刪、＋新增、↑↓排序
   const d = window._shiftD
-  const cur = (d.posList||[]).join('、')
-  const v = prompt('崗位清單（用「、」分隔，可增刪改名；排班時的崗位選單用這份）', cur || '炸台、吧檯、外場、廚房')
-  if (v == null) return
-  const list = v.split(/[、,，]/).map(s2=>s2.trim()).filter(Boolean)
+  window._posTmp = (d.posList && d.posList.length) ? d.posList.slice() : ['炸台','吧檯','外場','廚房']
+  const ov = document.createElement('div'); ov.id='psOv'
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(16,24,43,.45);z-index:50;display:flex;align-items:center;justify-content:center;padding:16px'
+  ov.innerHTML = `<div style="background:#fff;border-radius:14px;max-width:380px;width:100%;padding:16px;max-height:80vh;overflow:auto" onclick="event.stopPropagation()">
+    <div style="font-weight:900;margin-bottom:4px">⚙️ 崗位清單</div>
+    <div class="hint" style="margin-bottom:10px">排班時的崗位選單用這份；直接改名、✕ 刪除、↑↓ 調順序。</div>
+    <div id="psRows"></div>
+    <button class="mini" style="margin-top:8px;padding:8px 12px" onclick="window._posTmp.push('');posRender();setTimeout(()=>{const ii=document.querySelectorAll('#psRows input');if(ii.length)ii[ii.length-1].focus()},50)">＋ 新增崗位</button>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px">
+      <button class="mini" style="padding:9px 12px" onclick="document.getElementById('psOv').remove()">取消</button>
+      <button class="mini on" style="padding:9px 18px" onclick="posSave()">儲存</button></div></div>`
+  ov.onclick = () => ov.remove()
+  document.body.appendChild(ov)
+  posRender()
+}
+function posRender(){
+  const box = document.getElementById('psRows'); if (!box) return
+  box.innerHTML = window._posTmp.map((p,i)=>`<div style="display:flex;gap:6px;align-items:center;padding:4px 0;border-bottom:1px solid var(--line)">
+    <input value="${String(p).replace(/"/g,'&quot;')}" oninput="window._posTmp[${i}]=this.value" style="flex:1;min-width:0;border:1px solid var(--line);border-radius:8px;padding:8px;font-size:15px">
+    <button class="mini" style="padding:7px 9px" ${i===0?'disabled':''} onclick="const a=window._posTmp;[a[${i}-1],a[${i}]]=[a[${i}],a[${i}-1]];posRender()">↑</button>
+    <button class="mini" style="padding:7px 9px" ${i===window._posTmp.length-1?'disabled':''} onclick="const a=window._posTmp;[a[${i}+1],a[${i}]]=[a[${i}],a[${i}+1]];posRender()">↓</button>
+    <button class="mini" style="padding:7px 9px;color:var(--red)" onclick="window._posTmp.splice(${i},1);posRender()">✕</button></div>`).join('')
+}
+function posSave(){
+  const list = window._posTmp.map(s2=>String(s2).trim()).filter(Boolean)
+  if (!list.length) { alert('至少留一個崗位'); return }
+  const o = document.getElementById('psOv'); if (o) o.remove()
   fetch('/api/mail-sync?shiftset=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ op:'pos', list, token: TK() }) })
     .then(r=>r.json()).then(d2=>{ if(d2&&d2.ok) shiftLoad(); else alert((d2&&d2.error)||'失敗') })
 }
