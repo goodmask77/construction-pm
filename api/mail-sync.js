@@ -1760,6 +1760,11 @@ export default async function handler(req, res) {
     const aliveS = (((rosterS || {}).people) || []).filter(p2 => !p2.endDate && (p2.status || '在職') !== '離職')
     const gdOn = aliveS.some(p2 => p2.gd)
     const staff = aliveS.filter(p2 => !gdOn || p2.gd).map(p2 => ({ n: p2.name, role: aprS.includes(p2.name) ? '審核人' : (p2.gdRole || '一般'), bound: boundRids.has(p2.id) }))
+    // v4.5.2 人員排序：staffOrd 名單優先、沒列到的排後面（staff=顏色/chips、names=快選按鈕 吃同一順序）
+    const ordA = (sd || {}).staffOrd || []
+    const oIdx = n => { const i = ordA.indexOf(n); return i < 0 ? 999 : i }
+    staff.sort((a, b) => oIdx(a.n) - oIdx(b.n))
+    namesU.sort((a, b) => oIdx(a) - oIdx(b))
     return res.status(200).json({ ok: true, ym, sched: schedL, punches: pchs.map(p => ({ name: p.name, ts: p.ts, dir: p.dir, src: p.src })), names: namesU, namesAll, posList, slots: (sd || {}).slots || null, staff, me: meS ? { name: meS.name, role: meS.role, approver: aprS.includes(meS.name) } : null })
   }
   // 班表批次回補口（張良 2026-10-02「貼LINE班表幫我灌」）：POST ?shiftfill=管理金鑰 {list:[{name,date,start,end,break,pos,tr}]}——同(人+日+崗位)已存在就跳過
@@ -1825,6 +1830,8 @@ export default async function handler(req, res) {
       doc.pos = (Array.isArray(sb2.list) ? sb2.list : []).map(s3 => String(s3).trim().slice(0, 20)).filter(Boolean).slice(0, 30)
     } else if (sb2.op === 'slots') { // ⏱時段快捷（張良 2026-10-02：照尖峰切時段，一鍵帶時間）
       doc.slots = (Array.isArray(sb2.list) ? sb2.list : []).map(s3 => ({ n: String(s3.n || '').trim().slice(0, 10), s: String(s3.s || '').slice(0, 5), e: String(s3.e || '').slice(0, 5) })).filter(x => x.n && /^\d{1,2}:\d{2}$/.test(x.s) && /^\d{1,2}:\d{2}$/.test(x.e)).slice(0, 10)
+    } else if (sb2.op === 'ord') { // 👥人員排序（張良 2026-10-02：順序=專屬色+快選排列）
+      doc.staffOrd = (Array.isArray(sb2.list) ? sb2.list : []).map(s3 => String(s3).trim().slice(0, 20)).filter(Boolean).slice(0, 50)
     } else return res.status(400).json({ ok: false })
     await kvPut('sp_finance_pm_shift_g', doc, '班表' + sb2.op + '(' + whoS.name + ')')
     return res.status(200).json({ ok: true })

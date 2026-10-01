@@ -2519,22 +2519,43 @@ function shiftPosEdit(){ // v4.3.2（張良 2026-10-02「這樣很難弄」）�
   window._posTmp = (d.posList && d.posList.length) ? d.posList.slice() : ['炸台','吧檯','外場','廚房']
   const ov = document.createElement('div'); ov.id='psOv'
   ov.style.cssText = 'position:fixed;inset:0;background:rgba(16,24,43,.45);z-index:50;display:flex;align-items:center;justify-content:center;padding:16px'
-  ov.innerHTML = `<div style="background:#fff;border-radius:14px;max-width:380px;width:100%;padding:16px;max-height:80vh;overflow:auto" onclick="event.stopPropagation()">
-    <div style="font-weight:900;margin-bottom:4px">⚙️ 崗位清單</div>
-    <div class="hint" style="margin-bottom:10px">排班時的崗位選單用這份；直接改名、✕ 刪除、↑↓ 調順序。</div>
-    <div id="psRows"></div>
-    <button class="mini" style="margin-top:8px;padding:8px 12px" onclick="window._posTmp.push('');posRender();setTimeout(()=>{const ii=document.querySelectorAll('#psRows input');if(ii.length)ii[ii.length-1].focus()},50)">＋ 新增崗位</button>
-    <div style="font-weight:900;margin:14px 0 2px">⏱ 時段快捷</div>
-    <div class="hint" style="margin-bottom:6px">排班快選窗的一鍵時段（照店裡尖峰自訂）。</div>
-    <div id="slRows"></div>
-    <button class="mini" style="margin-top:8px;padding:8px 12px" onclick="window._slotTmp.push({n:'',s:'11:00',e:'20:00'});slRender()">＋ 新增時段</button>
-    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px">
+  // v4.5.2（張良「視窗大一點自適應」+「人員給我可以排序」）：寬螢幕三欄並排、窄螢幕自動疊；新增人員排序區（順序=專屬色+快選排列）
+  ov.innerHTML = `<div style="background:#fff;border-radius:14px;width:min(900px,94vw);padding:18px;max-height:90vh;overflow:auto" onclick="event.stopPropagation()">
+    <div style="font-weight:900;font-size:16px;margin-bottom:10px">⚙️ 班表設定</div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:18px">
+      <div>
+        <div style="font-weight:900;margin-bottom:2px">📋 崗位清單</div>
+        <div class="hint" style="margin-bottom:6px">排班選單用這份；改名、✕ 刪、↑↓ 排。</div>
+        <div id="psRows"></div>
+        <button class="mini" style="margin-top:8px;padding:8px 12px" onclick="window._posTmp.push('');posRender();setTimeout(()=>{const ii=document.querySelectorAll('#psRows input');if(ii.length)ii[ii.length-1].focus()},50)">＋ 新增崗位</button>
+      </div>
+      <div>
+        <div style="font-weight:900;margin-bottom:2px">⏱ 時段快捷</div>
+        <div class="hint" style="margin-bottom:6px">排班快選窗的一鍵時段（照尖峰自訂）。</div>
+        <div id="slRows"></div>
+        <button class="mini" style="margin-top:8px;padding:8px 12px" onclick="window._slotTmp.push({n:'',s:'11:00',e:'20:00'});slRender()">＋ 新增時段</button>
+      </div>
+      <div>
+        <div style="font-weight:900;margin-bottom:2px">👥 人員排序</div>
+        <div class="hint" style="margin-bottom:6px">順序＝專屬顏色與快選窗的排列。</div>
+        <div id="odRows"></div>
+      </div>
+    </div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px">
       <button class="mini" style="padding:9px 12px" onclick="document.getElementById('psOv').remove()">取消</button>
       <button class="mini on" style="padding:9px 18px" onclick="posSave()">儲存</button></div></div>`
   ov.onclick = () => ov.remove()
   window._slotTmp = ((d.slots && d.slots.length) ? d.slots : SLOT_DEF).map(x=>({n:x.n,s:x.s,e:x.e}))
+  window._ordTmp = (d.staff||[]).map(s2=>s2.n)
   document.body.appendChild(ov)
-  posRender(); slRender()
+  posRender(); slRender(); odRender()
+}
+function odRender(){
+  const box = document.getElementById('odRows'); if (!box) return
+  box.innerHTML = window._ordTmp.map((n,i)=>`<div style="display:flex;gap:6px;align-items:center;padding:4px 0;border-bottom:1px solid var(--line)">
+    <span style="flex:1;font-weight:700">${n}</span>
+    <button class="mini" style="padding:7px 9px" ${i===0?'disabled':''} onclick="const a=window._ordTmp;[a[${i}-1],a[${i}]]=[a[${i}],a[${i}-1]];odRender()">↑</button>
+    <button class="mini" style="padding:7px 9px" ${i===window._ordTmp.length-1?'disabled':''} onclick="const a=window._ordTmp;[a[${i}+1],a[${i}]]=[a[${i}],a[${i}+1]];odRender()">↓</button></div>`).join('')
 }
 function slRender(){
   const box = document.getElementById('slRows'); if (!box) return
@@ -2561,7 +2582,8 @@ async function posSave(){
   const post = body => fetch('/api/mail-sync?shiftset=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify(body) }).then(r=>r.json()).catch(()=>null)
   const d1 = await post({ op:'pos', list, token: TK() })
   const d2 = await post({ op:'slots', list: slots, token: TK() })
-  if (d1&&d1.ok&&d2&&d2.ok) shiftLoad(); else alert((d1&&d1.error)||(d2&&d2.error)||'失敗')
+  const d3 = await post({ op:'ord', list: window._ordTmp, token: TK() })
+  if (d1&&d1.ok&&d2&&d2.ok&&d3&&d3.ok) shiftLoad(); else alert((d1&&d1.error)||(d2&&d2.error)||(d3&&d3.error)||'失敗')
 }
 // ── 🎚 權限 modal（張良 2026-09-25：訪客看/綁定一般/名單設權限）──
 function gdRoleModal(name, role){
