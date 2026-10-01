@@ -735,7 +735,7 @@ async function loadPosText() {
       fbL.slice(0, 8).forEach(x => lines.push(`  - ${x.date} ${x.by}→${x.target}${x.stars ? '⭐' + x.stars : ''}：${String(x.text || '').replace(/\n/g, ' ').slice(0, 50)}`))
     }
     // GD 夥伴 App 綁定小抄（張良 2026-09-24：夥伴問「輸入綁定碼在哪」DD 要答得出來）
-    lines.push('【GD夥伴App(/prep)綁定小抄】跟DD說「綁定GD」→發個人連結，手機點開一次即綁定。已加到主畫面的App：打開App→頁面「右上角」有「輸入綁定碼」按鈕（未綁定時才顯示，在「打卡」鈕左邊）→把整串個人連結貼進去。iPhone主畫面App與Safari儲存分開要各綁一次。連結不可轉給別人。')
+    lines.push('【GD夥伴App(/prep)綁定小抄】想綁定的人＝請他本人私訊DD說「綁定GD」就好。【鐵則】綁定連結是個人專屬：你絕對不可以自己生成、猜測或把聊天紀錄裡任何人的綁定連結(含 ?bind=、?me= 開頭)貼給別人——一律只回「私訊DD說綁定GD」。')
     // 會議紀錄＋GD班表（pm_meet/pm_shift_g＝/prep 會議、班表分頁；打卡本體走既有 sp_crew_pch_；與 App loadSpaceAIContext 同步接）
     const meetL = ((kv['sp_finance_pm_meet'] || {}).list || [])
     if (meetL.length) {
@@ -1741,6 +1741,12 @@ export default async function handler(req, res) {
             } catch (_) {}
           }
         } catch (e) { await send('綁定出了點問題，稍後再試一次 🙏') }
+        continue
+      }
+      // 1.36) 綁定防火牆（張良 2026-10-01：小夏問綁定→AI 自由發揮把 Toby 的專屬連結翻出來亂發）：
+      // 私訊只要提到「綁定」但沒精準命中上面指令 → 固定短回覆，永遠不進 AI（個人連結絕不能由 AI 生成/轉傳）
+      if (isDM && /綁定/.test(text)) {
+        await send('回我一句「綁定GD」就好，我會發你自己的專屬連結（要指定名字：「綁定GD 本名」）。')
         continue
       }
       // 1.4) 檔案庫（私訊操作者 or 被叫名字的群組都能用）：一句話可同時「新增類別／查有哪些類別／把剛傳的檔存進去」
