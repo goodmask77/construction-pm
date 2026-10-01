@@ -784,7 +784,7 @@ function lbRender(){
     const rl = lbMyRated(x, meN)
     if (!rl.length || rl.every(o=>o.n >= d.facets.length) || lbSkip.has(x.id)) arch.push(x); else toRate.push(x)
   })
-  h += `<section><h2>待你評分（${toRate.length}） <span class="hint">${meN?'完成的任務等你打星——每個人看到的清單不一樣':'綁定後這裡會出現等你評分的任務：'+BIND_HINT}</span></h2>`
+  h += `<section><h2>待你評分（${toRate.length}） <span class="hint">${meN?'完成的任務等你打星——每個人看到的清單不一樣':'綁定後這裡會出現等你評分的任務'}</span></h2>`
   h += toRate.length ? toRate.map(x=>rateCard(x,meN,false)).join('') : `<div class="mut">目前沒有等你評分的任務 🎉</div>`
   h += `</section>`
   if (arch.length) h += `<section><details><summary style="font-weight:900;cursor:pointer">📦 封存（${arch.length}）｜評完／略過的收在這，點開可看可改票</summary><div style="margin-top:8px">${arch.map(x=>rateCard(x,meN,true)).join('')}</div></details></section>`
@@ -885,7 +885,7 @@ function taskRender(){
   ${meN?`<div style="display:flex;gap:8px;margin-bottom:12px">
     <input id="tkQuick" placeholder="隨手丟一句任務…（先進收件匣，之後再整理）按 Enter 新增" onkeydown="tkQuickKey(event)" style="flex:1;border:1.5px solid var(--line);border-radius:10px;padding:10px 12px;font-size:15px">
     <button class="mini on" style="padding:10px 18px;white-space:nowrap" onclick="taskNew()">＋ 新增</button>
-  </div>`:`<div class="hint" style="margin-bottom:10px">未綁定：${BIND_HINT}</div>`}`
+  </div>`:''}`
   if (taskView === 'today') {
     const stat = (n,lb,c) => `<div style="flex:1;min-width:130px;background:#fff;border:1.5px solid var(--line);border-radius:12px;padding:12px 14px"><div style="font-size:24px;font-weight:900;color:${n?c:'var(--muted)'}">${n}</div><div class="hint" style="font-weight:700">● ${lb}</div></div>`
     h += `<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px">${stat(must.length,'今天必處理','var(--red)')}${stat(flagged.length,'🚩 重點','#A85C26')}${stat(doing.length,'處理中','var(--pdark)')}${stat(pend.length,'待你審核','#A85C26')}</div>`
@@ -1059,7 +1059,7 @@ function invRender(){
   const lows = d.items.filter(x => x.low)
   let h = ''
   if (lows.length) h += `<section style="border:1.5px solid #F0B8B1"><h2 style="color:var(--red)">📉 低水位警報（${lows.length}）</h2>` + lows.map(x=>`<div style="font-weight:800;color:var(--red)">・${x.name}：估剩 ${x.est}${x.unit||''}（低標 ${x.min}）</div>`).join('') + `<div class="hint" style="margin-top:4px">每天開店前 DD 也會在群裡提醒</div></section>`
-  h += `<section><h2>${d.kind==='pack'?'📦':'🥩'} ${lbl}清單 <span class="hint">${meN?'📋盤點＝輸入現在數量；✏️可改品項/用量連結':'未綁定：'+BIND_HINT}</span></h2>`
+  h += `<section><h2>${d.kind==='pack'?'📦':'🥩'} ${lbl}清單 <span class="hint">${meN?'📋盤點＝輸入現在數量；✏️可改品項/用量連結':''}</span></h2>`
   if (!d.items.length) h += `<div class="mut">還沒有品項——按下面「＋新增品項」開始建（名稱／單位／最低水位／連結哪些菜品扣多少）</div>`
   else {
     h += `<div class="scroll"><table><thead><tr><th style="text-align:left">品項</th><th>預估現量</th><th>低標</th><th>已扣銷售</th><th style="text-align:left">最後盤點</th><th></th></tr></thead><tbody>`
@@ -1161,7 +1161,7 @@ function buyRender(){
     ${st==='received'?`<div class="hint" style="color:var(--green);font-weight:700">📬 已收貨・${x.recvBy}・${x.recvTs}</div>${thumbs(x.recvMedia)}`:''}
     ${meN?`<div style="margin-top:5px">${st==='open'?`<button class="mini on" onclick="buyOp('${x.id}','done')">✅ 已購買</button>`:''}${st==='bought'?`<button class="mini on" onclick="buyRecv('${x.id}')">📬 確認收貨（拍照）</button><button class="mini" onclick="buyOp('${x.id}','undone')">↩︎ 還沒買</button>`:''}${(d.me.approver||x.by===meN)?`<button class="mini" style="color:var(--red)" onclick="if(confirm('刪除這筆需求？'))buyOp('${x.id}','del')">🗑</button>`:''}</div>`:''}
   </div>` }
-  let h = `<section><h2>待採購（${open.length}） <span class="hint">${meN?'':'未綁定：'+BIND_HINT}</span></h2>
+  let h = `<section><h2>待採購（${open.length}） <span class="hint"></span></h2>
     <div style="margin-bottom:10px"><button class="mini on" style="padding:9px 18px" onclick="buyNew()">＋ 我要提需求</button></div>`
   if (open.length) { // 按分類分組（張良 2026-09-22）
     const catsB = [...new Set(open.map(x=>x.cat||'未分類'))]
