@@ -1432,8 +1432,8 @@ export default async function handler(req, res) {
       await kvPut('sp_finance_pm_menu', mdoc, '菜單種子(既有菜單2026-09)')
     }
     const pmM = (await kvGet('sp_finance_pm_prep_perm')) || { mode: 'open', users: {}, pending: {} }
-    const meU = meM2 ? pmM.users[meM2.rid] : null
-    const meOut = meM2 ? { name: meM2.name, canEdit: pmM.mode !== 'approve' || !!(meU && meU.edit), admin: !!(meU && meU.admin), pendingMe: !!pmM.pending[meM2.rid] } : null
+    const meU = meM2 ? pmM.users[meM2.rid || meM2.uid] : null
+    const meOut = meM2 ? { name: meM2.name, canEdit: pmM.mode !== 'approve' || !!(meU && meU.edit), admin: !!(meU && meU.admin), pendingMe: !!pmM.pending[meM2.rid || meM2.uid] } : null
     return res.status(200).json({ ok: true, base: mdoc.base, draft: mdoc.draft, edits: (mdoc.edits || []).slice(0, 15), me: meOut, perm: meOut && meOut.admin ? { mode: pmM.mode, users: Object.entries(pmM.users).map(([r, v]) => ({ rid: r, ...v })), pending: Object.entries(pmM.pending).map(([r, v]) => ({ rid: r, ...v })) } : null })
   }
   if (req.method === 'POST' && req.query?.menuset) {
@@ -1441,7 +1441,7 @@ export default async function handler(req, res) {
     if (!ok2 || String(req.query.menuset) !== ok2) return res.status(403).json({ ok: false })
     let mb2 = {}
     try { mb2 = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
-    const whoM2 = (await (async () => { const pm = (await kvGet('sp_finance_pm_prep_perm')) || { mode: 'open', users: {} }; const w = await sopWho(mb2.token); if (pm.mode !== 'approve') return w || { name: '現場(未綁定)' }; const u = w && pm.users[w.rid]; return (u && u.edit && (u.admin || !u.tabs || u.tabs['menu'] !== 0)) ? w : null })())
+    const whoM2 = (await (async () => { const pm = (await kvGet('sp_finance_pm_prep_perm')) || { mode: 'open', users: {} }; const w = await sopWho(mb2.token); if (pm.mode !== 'approve') return w || { name: '現場(未綁定)' }; const u = w && pm.users[w.rid || w.uid]; return (u && u.edit && (u.admin || !u.tabs || u.tabs['menu'] !== 0)) ? w : null })())
     if (!whoM2) return res.status(403).json({ ok: false, error: '要有編輯權限——/prep 右上申請，老闆核准即可' })
     const doc = (await kvGet('sp_finance_pm_menu')) || {}
     if (!doc.base) return res.status(400).json({ ok: false, error: '先開一次菜單分頁讓系統種既有菜單' })
@@ -1846,8 +1846,9 @@ export default async function handler(req, res) {
     const who = await sopWho(bp.token)
     if (!who) return res.status(403).json({ ok: false, error: '要先綁定 GD 身分才能申請（跟 DD 說「綁定GD」）' })
     const pm = (await kvGet('sp_finance_pm_prep_perm')) || { mode: 'approve', users: {}, pending: {} }
-    if (pm.users[who.rid]?.edit) return res.status(200).json({ ok: true, already: true })
-    pm.pending = pm.pending || {}; pm.pending[who.rid] = { name: who.name, ts: new Date(Date.now() + 8 * 3600e3).toISOString().slice(5, 16).replace('T', ' ') }
+    const pKey = who.rid || who.uid
+    if (pm.users[pKey]?.edit) return res.status(200).json({ ok: true, already: true })
+    pm.pending = pm.pending || {}; pm.pending[pKey] = { name: who.name, uid: who.uid, ts: new Date(Date.now() + 8 * 3600e3).toISOString().slice(5, 16).replace('T', ' ') }
     await kvPut('sp_finance_pm_prep_perm', pm, '編輯權申請(' + who.name + ')')
     try {
       const { linePush } = await import('./_onboard.js'); const { logPush } = await import('./push.js')
@@ -1864,9 +1865,19 @@ export default async function handler(req, res) {
     let bp = {}; try { bp = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
     const who = await sopWho(bp.token)
     const pm = (await kvGet('sp_finance_pm_prep_perm')) || { mode: 'approve', users: {}, pending: {} }
-    if (!who || !pm.users[who.rid]?.admin) return res.status(403).json({ ok: false, error: '只有管理者能改權限' })
+    if (!who || !pm.users[who.rid || who.uid]?.admin) return res.status(403).json({ ok: false, error: '只有管理者能改權限' })
     const rid = String(bp.rid || '')
-    if (bp.op === 'approve' && pm.pending[rid]) { pm.users[rid] = { name: pm.pending[rid].name, edit: 1, by: who.name, ts: pm.pending[rid].ts }; delete pm.pending[rid] }
+    if (bp.op === 'approve' && pm.pending[rid]) {
+      const appr = pm.pending[rid]
+      pm.users[rid] = { name: appr.name, edit: 1, by: who.name, ts: appr.ts }
+      delete pm.pending[rid]
+      try { // 核准→DD 通知當事人（張良 2026-10-01）
+        const { linePush } = await import('./_onboard.js'); const { logPush } = await import('./push.js')
+        let uidA = appr.uid
+        if (!uidA) { const bd = (await kvGet('sp_finance_pm_prep_bind')) || {}; uidA = (Object.values(bd.tokens || {}).find(t => t.rid === rid || t.uid === rid) || {}).uid }
+        if (uidA && await linePush(uidA, `✅ 你的 /prep 編輯權限審核通過了！重新整理頁面就能編輯。`)) await logPush(uidA, 1, 'prep編輯權核准')
+      } catch (_) {}
+    }
     else if (bp.op === 'reject') delete pm.pending[rid]
     else if (bp.op === 'revoke' && pm.users[rid] && !pm.users[rid].admin) delete pm.users[rid]
     else if (bp.op === 'mode') pm.mode = bp.mode === 'open' ? 'open' : 'approve'
@@ -1886,7 +1897,9 @@ export default async function handler(req, res) {
       pm.mode = 'approve'
       await kvPut('sp_finance_pm_prep_perm', pm, '權限種子')
     }
-    if (op === 'approve') { const rid = String(req.query.rid || ''); const nm = String(req.query.name || ''); const hit = rid ? [[rid, pm.pending[rid]]] : Object.entries(pm.pending).filter(([, v]) => v.name.includes(nm)); for (const [r, v] of hit) { if (v) { pm.users[r] = { name: v.name, edit: 1, by: 'AI代操', ts: v.ts }; delete pm.pending[r] } } await kvPut('sp_finance_pm_prep_perm', pm, '權限核准(AI代操)') }
+    if (op === 'approve') { const rid = String(req.query.rid || ''); const nm = String(req.query.name || ''); const hit = rid ? [[rid, pm.pending[rid]]] : Object.entries(pm.pending).filter(([, v]) => v.name.includes(nm)); for (const [r, v] of hit) { if (v) { pm.users[r] = { name: v.name, edit: 1, by: 'AI代操', ts: v.ts }; delete pm.pending[r]
+      try { const { linePush } = await import('./_onboard.js'); const { logPush } = await import('./push.js'); let uidA = v.uid; if (!uidA) { const bd = (await kvGet('sp_finance_pm_prep_bind')) || {}; uidA = (Object.values(bd.tokens || {}).find(t => t.rid === r || t.uid === r) || {}).uid } if (uidA && await linePush(uidA, `✅ 你的 /prep 編輯權限審核通過了！重新整理頁面就能編輯。`)) await logPush(uidA, 1, 'prep編輯權核准') } catch (_) {}
+    } } await kvPut('sp_finance_pm_prep_perm', pm, '權限核准(AI代操)') }
     if (op === 'revoke') { const nm = String(req.query.name || ''); for (const [r, v] of Object.entries(pm.users)) if (v.name.includes(nm) && !v.admin) delete pm.users[r]; await kvPut('sp_finance_pm_prep_perm', pm, '權限移除(AI代操)') }
     if (op === 'mode') { pm.mode = String(req.query.mode) === 'open' ? 'open' : 'approve'; await kvPut('sp_finance_pm_prep_perm', pm, '權限模式(AI代操)') }
     return res.status(200).json({ ok: true, mode: pm.mode, users: Object.entries(pm.users).map(([r, v]) => ({ rid: r, ...v })), pending: Object.entries(pm.pending).map(([r, v]) => ({ rid: r, ...v })) })
@@ -1897,7 +1910,7 @@ export default async function handler(req, res) {
     if (!ok2 || String(req.query.prepact) !== ok2) return res.status(403).json({ ok: false })
     let ba = {}
     try { ba = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
-    const whoA = (await (async () => { const pm = (await kvGet('sp_finance_pm_prep_perm')) || { mode: 'open', users: {} }; const w = await sopWho(ba.token); if (pm.mode !== 'approve') return w || { name: '現場(未綁定)' }; const u = w && pm.users[w.rid]; return (u && u.edit && (u.admin || !u.tabs || u.tabs['board'] !== 0)) ? w : null })())
+    const whoA = (await (async () => { const pm = (await kvGet('sp_finance_pm_prep_perm')) || { mode: 'open', users: {} }; const w = await sopWho(ba.token); if (pm.mode !== 'approve') return w || { name: '現場(未綁定)' }; const u = w && pm.users[w.rid || w.uid]; return (u && u.edit && (u.admin || !u.tabs || u.tabs['board'] !== 0)) ? w : null })())
     if (!whoA) return res.status(403).json({ ok: false, error: '要有編輯權限——/prep 右上申請，老闆核准即可' })
     if (!ba.item) return res.status(400).json({ ok: false, error: '缺 item' })
     const dA = new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10)
@@ -1916,7 +1929,7 @@ export default async function handler(req, res) {
     if (!ok2 || String(req.query.prephide) !== ok2) return res.status(403).json({ ok: false })
     let bh = {}
     try { bh = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
-    const whoH = (await (async () => { const pm = (await kvGet('sp_finance_pm_prep_perm')) || { mode: 'open', users: {} }; const w = await sopWho(bh.token); if (pm.mode !== 'approve') return w || { name: '現場(未綁定)' }; const u = w && pm.users[w.rid]; return (u && u.edit && (u.admin || !u.tabs || u.tabs['board'] !== 0)) ? w : null })())
+    const whoH = (await (async () => { const pm = (await kvGet('sp_finance_pm_prep_perm')) || { mode: 'open', users: {} }; const w = await sopWho(bh.token); if (pm.mode !== 'approve') return w || { name: '現場(未綁定)' }; const u = w && pm.users[w.rid || w.uid]; return (u && u.edit && (u.admin || !u.tabs || u.tabs['board'] !== 0)) ? w : null })())
     if (!whoH) return res.status(403).json({ ok: false, error: '要有編輯權限——/prep 右上申請，老闆核准即可' })
     if (!bh.key) return res.status(400).json({ ok: false, error: '缺 key' })
     const hd = (await kvGet('sp_finance_pm_prep_hide')) || { keys: {} }

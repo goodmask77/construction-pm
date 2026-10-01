@@ -1717,14 +1717,26 @@ export default async function handler(req, res) {
           }
           bind.tokens[tk2] = { ...(bind.tokens[tk2] || {}), name: rp.name, rid: rp.id, uid: userId, ts: bind.tokens[tk2]?.ts || new Date().toISOString() }
           await kvSet('sp_finance_pm_prep_bind', bind)
-          await send(`✅ ${rp.name}，這是你的 GD 看板專屬連結（點開一次，這支手機之後打卡/編輯都自動是你）：\n${BIND_APPS[appKey]}?me=${tk2}\n\n已經把 GD 加到主畫面的話：打開 App → 按「🔑 輸入綁定碼」→ 把上面整串連結貼進去就好（iPhone 的主畫面 App 跟 Safari 是分開的，要各綁一次）。\n\n連結不要轉給別人——那會變成用你的名字操作。${note2}`)
+          // 綁定即自動申請編輯權限（張良 2026-10-01：不要廢話；綁完=等待審核，核准後 DD 通知當事人）
+          let pendTxt = ''
+          try {
+            const permB = (await kvGetMany(['sp_finance_pm_prep_perm']))['sp_finance_pm_prep_perm'] || { mode: 'approve', users: {}, pending: {} }
+            const pKey = rp.id || userId
+            if (permB.mode === 'approve' && !(permB.users[pKey] && permB.users[pKey].edit)) {
+              permB.pending = permB.pending || {}
+              permB.pending[pKey] = { name: rp.name, uid: userId, ts: new Date(Date.now() + 8 * 3600e3).toISOString().slice(5, 16).replace('T', ' ') }
+              await kvSet('sp_finance_pm_prep_perm', permB)
+              pendTxt = '\n已自動幫你申請編輯權限，老闆核准後我會通知你。'
+            }
+          } catch (_) {}
+          await send(`✅ ${rp.name} 綁定完成！點一下啟用👇\n${BIND_APPS[appKey]}?me=${tk2}${pendTxt}${note2}`)
           if (isNewBind) { // 新綁定→DD 通知老闆（張良 2026-09-21：任何人綁定完成要跟我說）
             try {
               const defB2 = await kvGetMany(['sp_finance_pm_sop_def'])
               const aprB2 = (((defB2['sp_finance_pm_sop_def'] || {}).ground || {}).approvers || ['張良瑋'])
               for (const an of aprB2) {
                 const ap = (rosterDoc2.people || []).find(p => p.name === an && p.lineUserId)
-                if (ap && ap.lineUserId !== userId) await fetch('https://api.line.me/v2/bot/message/push', { method: 'POST', headers: { 'content-type': 'application/json', Authorization: 'Bearer ' + TOKEN }, body: JSON.stringify({ to: ap.lineUserId, messages: [{ type: 'text', text: `🔗 綁定通知：${rp.name} 剛完成 GD 綁定${rp.id ? '（名冊已對上）' : '（用 LINE 名稱綁，名冊還沒對上）'}。名冊上會顯示 GD✓。` }] }) })
+                if (ap && ap.lineUserId !== userId) await fetch('https://api.line.me/v2/bot/message/push', { method: 'POST', headers: { 'content-type': 'application/json', Authorization: 'Bearer ' + TOKEN }, body: JSON.stringify({ to: ap.lineUserId, messages: [{ type: 'text', text: `🙋 ${rp.name} 綁定完成，正在等待審核編輯權限。\n核准：/prep → 設定 → 🔐權限設定 按 ✅，或跟 Claude 說「核准 ${rp.name}」` }] }) })
               }
             } catch (_) {}
           }
