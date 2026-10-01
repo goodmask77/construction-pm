@@ -345,6 +345,24 @@ async function syncJoya(daysBack) {
 
 export default async function handler(req, res) {
   if (!SB_URL || !SB_KEY) return res.status(200).json({ ok: false, error: '缺 Supabase 設定' })
+  const sopWho = async (tk3) => {
+    if (!tk3) return null
+    const b = (await kvGet('sp_finance_pm_prep_bind')) || {}
+    const w = (b.tokens || {})[tk3]
+    if (!w) return null
+    let role = '一般'
+    try { const r5 = (await kvGet('sp_crew_kb_roster')) || {}; const p5 = (r5.people || []).find(x => x.id === w.rid); if (p5 && p5.gdRole) role = p5.gdRole } catch (_) {}
+    if (role === '停權') return null
+    return { ...w, role }
+  }
+  // 編輯守門（張良 2026-10-02：趙以棠還沒核准就能編 SOP——全部寫入端點掛上）：approve 模式要「已核准＋該分頁有勾」
+  const permWho = async (tk9, tab9) => {
+    const pm9 = (await kvGet('sp_finance_pm_prep_perm')) || { mode: 'open', users: {} }
+    const w9 = await sopWho(tk9)
+    if (pm9.mode !== 'approve') return w9 || { name: '現場(未綁定)' }
+    const u9 = w9 && pm9.users[w9.rid || w9.uid]
+    return (u9 && u9.edit && (u9.admin || !u9.tabs || u9.tabs[tab9] !== 0)) ? w9 : null
+  }
   // 診斷探針（只回結構統計，不回金額/內容——端點公開，保守）：?txprobe=YYYY-MM-DD
   if (req.query?.txprobe) {
     const dt = String(req.query.txprobe)
@@ -794,6 +812,37 @@ export default async function handler(req, res) {
   // 夥伴營運看板資料口（獨立金鑰 OPS_BOARD_KEY——跟管理金鑰分開，外流也只能唯讀看板資料；張良 2026-09-20）：
   // ?opsboard=<OPS_BOARD_KEY>&store=ground|abeach → 給 /ops/ 靜態頁用：日表(營收/單數/外帶%/套餐%)＋
   // 品項備料表(30日均/vs近60/近14天逐日,套 alias 合併+hidden 過濾)＋時段平均。刻意不含：付款明細/成本/毛利/定價
+  // 任務中心代理口（/prep 掛主App TaskCenter 用；張良 2026-10-02 整併開工）：POST ?kvproxy=<OPS_BOARD_KEY>
+  // body={op:'get'|'set'|'getPrefix'|'del', key, value, token}；只准團隊空間任務相關 key；寫入須 permWho(token,'task') 留痕
+  if (req.method === 'POST' && req.query?.kvproxy) {
+    const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
+    if (!ok2 || String(req.query.kvproxy) !== ok2) return res.status(403).json({ ok: false })
+    let kb = {}; try { kb = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
+    const key = String(kb.key || '')
+    const ALLOW_RE = /^sp_team_pm_(task_[A-Za-z0-9_-]+|tasks_v2|data|activity)$/
+    const ALLOW_PFX = /^sp_team_pm_task_$/
+    const op = String(kb.op || '')
+    if (op === 'getPrefix') {
+      if (!ALLOW_PFX.test(key)) return res.status(403).json({ ok: false, error: 'key 不在白名單' })
+      const pattern = key.replace(/[\\%_]/g, (m) => '\\' + m)
+      const r = await fetch(`${SB_URL}/rest/v1/pm_documents?id=like.${encodeURIComponent(pattern)}*&select=id,data`, { headers: { apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}` } })
+      const rows = r.ok ? await r.json() : []
+      const out = {}; rows.forEach(row => { if (row?.data?.v) out[row.id] = row.data.v })
+      return res.status(200).json({ ok: true, rows: out })
+    }
+    if (!ALLOW_RE.test(key)) return res.status(403).json({ ok: false, error: 'key 不在白名單' })
+    if (op === 'get') { const v = await kvGet(key); return res.status(200).json({ ok: true, value: v == null ? null : JSON.stringify(v) }) }
+    if (op === 'set' || op === 'del') {
+      const w = await permWho(kb.token, 'task')
+      if (!w) return res.status(403).json({ ok: false, error: '要有任務編輯權限（綁定＋核准）' })
+      if (op === 'del') { await fetch(`${SB_URL}/rest/v1/pm_documents?id=eq.${encodeURIComponent(key)}`, { method: 'DELETE', headers: { apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}` } }); return res.status(200).json({ ok: true }) }
+      let val; try { val = JSON.parse(String(kb.value)) } catch (_) { return res.status(400).json({ ok: false, error: 'value 要是 JSON 字串' }) }
+      await kvPut(key, val, '/prep任務(' + w.name + ')')
+      await announceChanged()
+      return res.status(200).json({ ok: true })
+    }
+    return res.status(400).json({ ok: false, error: '未知 op' })
+  }
   // 我是誰（側欄底部身分膠囊用；張良 2026-10-02）：GET ?whoami=<OPS_BOARD_KEY>&me=token
   if (req.query?.whoami) {
     const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
@@ -1102,24 +1151,7 @@ export default async function handler(req, res) {
   const sopToday = () => new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10)
   // 綁定 token → 本人（LINE「綁定看板」發的個人連結；打卡/編輯身分都以此為準，前端傳的名字只是備援）
   // 權限模型（張良 2026-09-25 拍板）：訪客=只能看／綁定=一般(記名操作)／名冊 gdRole 可設 主管/停權；停權=所有寫入自動擋
-  const sopWho = async (tk3) => {
-    if (!tk3) return null
-    const b = (await kvGet('sp_finance_pm_prep_bind')) || {}
-    const w = (b.tokens || {})[tk3]
-    if (!w) return null
-    let role = '一般'
-    try { const r5 = (await kvGet('sp_crew_kb_roster')) || {}; const p5 = (r5.people || []).find(x => x.id === w.rid); if (p5 && p5.gdRole) role = p5.gdRole } catch (_) {}
-    if (role === '停權') return null
-    return { ...w, role }
-  }
-  // 編輯守門（張良 2026-10-02：趙以棠還沒核准就能編 SOP——全部寫入端點掛上）：approve 模式要「已核准＋該分頁有勾」
-  const permWho = async (tk9, tab9) => {
-    const pm9 = (await kvGet('sp_finance_pm_prep_perm')) || { mode: 'open', users: {} }
-    const w9 = await sopWho(tk9)
-    if (pm9.mode !== 'approve') return w9 || { name: '現場(未綁定)' }
-    const u9 = w9 && pm9.users[w9.rid || w9.uid]
-    return (u9 && u9.edit && (u9.admin || !u9.tabs || u9.tabs[tab9] !== 0)) ? w9 : null
-  }
+  // （sopWho/permWho 已上移到 handler 開頭——2026-10-02 修 TDZ：kvproxy/whoami 跑在宣告前會炸＝身分膠囊訪客真因）
   // GD 人員名單（張良 2026-09-21：主App名冊標記 p.gd 的人＝排班/任務/回饋下拉選單；沒標任何人時退回在職全員）
   const gdNames = (rosterDoc) => {
     const alive = (((rosterDoc || {}).people) || []).filter(p2 => !p2.endDate && (p2.status || '在職') !== '離職')
