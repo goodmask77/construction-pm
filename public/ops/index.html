@@ -2692,23 +2692,23 @@ function shiftPosEdit(){ // v4.3.2（張良 2026-10-02「這樣很難弄」）�
   posRender(); slRender(); odRender()
 }
 // v4.7.0 寶石色系（張良 2026-10-02 定稿規格）：飽和+明度壓低、實色填滿+白字；繽紛靠色相拉開、質感靠「深」
-const _PAL = ()=>[
-  {n:'寶石紅',g:'紅系',bg:'#B23A48',tx:'#FFFFFF'},
-  {n:'珊瑚紅',g:'紅系',bg:'#D9634C',tx:'#FFFFFF'},
-  {n:'莓果紅',g:'紅系',bg:'#B83A72',tx:'#FFFFFF'},
-  {n:'琥珀橘',g:'橘黃系',bg:'#D9822B',tx:'#FFFFFF'},
-  {n:'赭金',g:'橘黃系',bg:'#D4A72C',tx:'#2B2000'},
-  {n:'萊姆綠',g:'綠系',bg:'#8DA33B',tx:'#1E2608'},
-  {n:'翡翠綠',g:'綠系',bg:'#2E8B57',tx:'#FFFFFF'},
-  {n:'松綠',g:'綠系',bg:'#1F6E5A',tx:'#FFFFFF'},
-  {n:'孔雀藍',g:'青藍系',bg:'#138A8A',tx:'#FFFFFF'},
-  {n:'湖水藍',g:'青藍系',bg:'#2A9DB5',tx:'#FFFFFF'},
-  {n:'鈷藍',g:'青藍系',bg:'#2F5FB3',tx:'#FFFFFF'},
-  {n:'海軍藍',g:'青藍系',bg:'#23395D',tx:'#FFFFFF'},
-  {n:'靛紫',g:'紫系',bg:'#5B4BA8',tx:'#FFFFFF'},
-  {n:'葡萄紫',g:'紫系',bg:'#7B3F8C',tx:'#FFFFFF'},
-  {n:'可可棕',g:'中性系',bg:'#6B4A3A',tx:'#FFFFFF'},
-  {n:'石墨',g:'中性系',bg:'#3A3F47',tx:'#FFFFFF'},
+const _PAL = ()=>[ // v4.7.1 白底鮮豔版（黑底的寶石色放白底會悶→同色系拉高飽和/亮度一階）
+  {n:'寶石紅',g:'紅系',bg:'#E0314F',tx:'#FFFFFF'},
+  {n:'珊瑚紅',g:'紅系',bg:'#F2613D',tx:'#FFFFFF'},
+  {n:'莓果紅',g:'紅系',bg:'#DB2D86',tx:'#FFFFFF'},
+  {n:'琥珀橘',g:'橘黃系',bg:'#F28C14',tx:'#FFFFFF'},
+  {n:'赭金',g:'橘黃系',bg:'#EAB308',tx:'#2B2000'},
+  {n:'萊姆綠',g:'綠系',bg:'#84CC16',tx:'#1A2E05'},
+  {n:'翡翠綠',g:'綠系',bg:'#16A34A',tx:'#FFFFFF'},
+  {n:'松綠',g:'綠系',bg:'#0F766E',tx:'#FFFFFF'},
+  {n:'孔雀藍',g:'青藍系',bg:'#0D9488',tx:'#FFFFFF'},
+  {n:'湖水藍',g:'青藍系',bg:'#0EA5E9',tx:'#FFFFFF'},
+  {n:'鈷藍',g:'青藍系',bg:'#2563EB',tx:'#FFFFFF'},
+  {n:'海軍藍',g:'青藍系',bg:'#1E3A8A',tx:'#FFFFFF'},
+  {n:'靛紫',g:'紫系',bg:'#7C3AED',tx:'#FFFFFF'},
+  {n:'葡萄紫',g:'紫系',bg:'#C026D3',tx:'#FFFFFF'},
+  {n:'可可棕',g:'中性系',bg:'#A16207',tx:'#FFFFFF'},
+  {n:'石墨',g:'中性系',bg:'#475569',tx:'#FFFFFF'},
 ]
 const _PBX = ()=>_PAL().map(x=>x.bg) // 實色底
 const _PTX = ()=>_PAL().map(x=>x.tx) // 文字色
