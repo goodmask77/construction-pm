@@ -1765,7 +1765,13 @@ export default async function handler(req, res) {
     const oIdx = n => { const i = ordA.indexOf(n); return i < 0 ? 999 : i }
     staff.sort((a, b) => oIdx(a.n) - oIdx(b.n))
     namesU.sort((a, b) => oIdx(a) - oIdx(b))
-    return res.status(200).json({ ok: true, ym, sched: schedL, punches: pchs.map(p => ({ name: p.name, ts: p.ts, dir: p.dir, src: p.src })), names: namesU, namesAll, posList, slots: (sd || {}).slots || null, staff, me: meS ? { name: meS.name, role: meS.role, approver: aprS.includes(meS.name) } : null })
+    // v4.5.3（張良「顏色一直在變」）：配色永久固定——每人第一次出現配一個沒人用的色號存檔，之後不隨排序/名單進出變動
+    const colMap = ((sd || {}).colors) || {}
+    let colDirty = false
+    const usedC = new Set(Object.values(colMap))
+    for (const s3 of staff) { if (colMap[s3.n] == null) { let ci = 0; while (usedC.has(ci) && ci < 12) ci++; colMap[s3.n] = ci % 12; usedC.add(colMap[s3.n]); colDirty = true } }
+    if (colDirty && sd) { sd.colors = colMap; await kvPut('sp_finance_pm_shift_g', sd, '人員配色固定') }
+    return res.status(200).json({ ok: true, ym, sched: schedL, punches: pchs.map(p => ({ name: p.name, ts: p.ts, dir: p.dir, src: p.src })), names: namesU, namesAll, posList, slots: (sd || {}).slots || null, colors: colMap, staff, me: meS ? { name: meS.name, role: meS.role, approver: aprS.includes(meS.name) } : null })
   }
   // 班表批次回補口（張良 2026-10-02「貼LINE班表幫我灌」）：POST ?shiftfill=管理金鑰 {list:[{name,date,start,end,break,pos,tr}]}——同(人+日+崗位)已存在就跳過
   if (req.method === 'POST' && req.query?.shiftfill) {

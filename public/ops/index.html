@@ -1473,8 +1473,8 @@ function shiftRender(){
   // v4.4.5（張良「搞個綠色灰色白色分開一點」）：12色強對比——紫/橘/綠/藍/粉/棕/深灰/紅/青/草綠/白(黑框)/金黃，不再有紫藍靛擠一起
   const PB = ['#7C3AED','#EA580C','#15803D','#1D4ED8','#DB2777','#92400E','#374151','#DC2626','#0E7490','#65A30D','#111827','#CA8A04']
   const PG = ['#F3E8FF','#FFEDD5','#DCFCE7','#DBEAFE','#FCE7F3','#FEF3C7','#E5E7EB','#FEE2E2','#CFFAFE','#F7FEE7','#FFFFFF','#FEF9C3']
-  const pplOrder = (d.staff||[]).map(s2=>s2.n)
-  const pcIdx = n => { let i = pplOrder.indexOf(n); if (i<0){ i=0; for(const c2 of String(n)) i=(i*31+c2.charCodeAt(0))%997 } return i % PB.length }
+  // v4.5.3 顏色吃伺服器永久色號（d.colors），不再照名單順序——排序/進出都不變色
+  const pcIdx = n => { const c2 = (d.colors||{})[n]; if (c2 != null) return c2 % PB.length; let i = 0; for(const ch of String(n)) i=(i*31+ch.charCodeAt(0))%997; return i % PB.length }
   const BD = 'border:1px solid #D6DEE8;'
   h += `<div class="scroll" style="margin-bottom:12px"><table style="table-layout:fixed;width:100%;min-width:760px;border-collapse:collapse">
   <colgroup><col style="width:88px">${wkDays.map(()=>'<col>').join('')}</colgroup>
