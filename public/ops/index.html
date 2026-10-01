@@ -1486,8 +1486,10 @@ function shiftRender(){
       const es = wkEnts.filter(x=>(x.pos||'未分崗')===ps && x.date===dt)
       const cellOps = meN ? ` onclick="shiftQuick('${ps}','${dt}')" ondragover="event.preventDefault();this.style.outline='2px solid var(--primary)'" ondragleave="this.style.outline=''" ondrop="shiftDrop(event,'${ps}','${dt}')"` : ''
       const ents = es.map(e=>{
-        const pi = pcIdx(e.name)
-        return `<div ${meN?`draggable="true" ondragstart="event.stopPropagation();event.dataTransfer.setData('text/plain','${e.id}')" onclick="event.stopPropagation();shiftForm('${e.id}')"`:''} style="font-size:13px;line-height:1.5;${meN?'cursor:grab;':''}border:1.5px ${e.tr?'dashed':'solid'} ${PB[pi]};background:${PG[pi]};border-radius:7px;padding:2px 6px;margin:1px 0${e.tr?`;--gc:${PB[pi]}88;animation:trGlow 1.6s ease-in-out infinite`:''}"><b style="color:${PB[pi]}">${e.name}</b>${e.tr?` <span style="color:${PB[pcIdx(e.tr)]};font-weight:800;font-size:12px;white-space:nowrap">🎓${e.tr}</span>`:''}<span class="hint" style="display:block">${e.start}-${e.end}</span></div>`
+        const pi = pcIdx(e.name), ti = e.tr ? pcIdx(e.tr) : -1
+        // v4.4.9（張良）：帶訓卡底色切一半=左帶訓者色/右被帶者色；卡上不顯示時間（點卡可看改）
+        const bg2 = e.tr ? `background:linear-gradient(90deg,${PG[pi]} 50%,${PG[ti]} 50%);` : `background:${PG[pi]};`
+        return `<div ${meN?`draggable="true" ondragstart="event.stopPropagation();event.dataTransfer.setData('text/plain','${e.id}')" onclick="event.stopPropagation();shiftForm('${e.id}')"`:''} style="font-size:13px;line-height:1.6;${meN?'cursor:grab;':''}border:1.5px ${e.tr?'dashed':'solid'} ${PB[pi]};${bg2}border-radius:7px;padding:3px 6px;margin:1px 0${e.tr?`;--gc:${PB[pi]}88;animation:trGlow 1.6s ease-in-out infinite`:''}"><b style="color:${PB[pi]}">${e.name}</b>${e.tr?` <span style="color:${PB[ti]};font-weight:800;font-size:12px;white-space:nowrap">🎓${e.tr}</span>`:''}</div>`
       }).join('')
       return `<td${cellOps} style="${BD}${dt===today?'background:#F0F8FD;':''}text-align:left;${meN?'cursor:pointer;':''}vertical-align:top;overflow:hidden">${ents || (meN?'<span class="mut">＋</span>':'<span class="mut">—</span>')}</td>`
     }).join('') + `</tr>`
