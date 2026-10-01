@@ -1467,11 +1467,11 @@ function shiftRender(){
   // v4.3.5（張良 2026-10-02）：①欄寬固定+硬格線=日期與格子切齊 ②崗位三組配色(櫃檯/飲料/中控・漢堡/煎炸麵・披薩/三明治) ③同人同天兼多崗位→班卡同色標記
   const posGrp = ps => /櫃檯|飲料|中控/.test(ps) ? 0 : /漢堡|煎炸|炸麵/.test(ps) ? 1 : /披薩|三明治/.test(ps) ? 2 : 3
   const GC = [{bg:'#EAF1FD',ink:'#1D4ED8'},{bg:'#FDF1E3',ink:'#B45309'},{bg:'#E9F7EE',ink:'#15803D'},{bg:'#F4F4F5',ink:'var(--pdark)'}]
-  const dupCnt = {}
-  wkEnts.forEach(x=>{ dupCnt[x.date+'|'+x.name]=(dupCnt[x.date+'|'+x.name]||0)+1 })
-  const dupNames = [...new Set(wkEnts.filter(x=>dupCnt[x.date+'|'+x.name]>1).map(x=>x.name))]
-  const DUPC = ['#F3E8FF','#FFEDD5','#FFE4E6','#D1FAE5','#E0E7FF']
-  const DUPB = ['#9333EA','#C2410C','#E11D48','#059669','#4F46E5']
+  // v4.4.1（張良 2026-10-02）：每個人固定一個顏色（照 GD 人員名單順序配，超過輪替）——跨崗位/跨天同色快速辨識
+  const PB = ['#7C3AED','#DB2777','#DC2626','#EA580C','#B45309','#4D7C0F','#059669','#0D9488','#0284C7','#4F46E5','#E11D48','#6D28D9']
+  const PG = ['#F3E8FF','#FCE7F3','#FEE2E2','#FFEDD5','#FEF3C7','#ECFCCB','#D1FAE5','#CCFBF1','#E0F2FE','#E0E7FF','#FFE4E6','#EDE9FE']
+  const pplOrder = (d.staff||[]).map(s2=>s2.n)
+  const pcIdx = n => { let i = pplOrder.indexOf(n); if (i<0){ i=0; for(const c2 of String(n)) i=(i*31+c2.charCodeAt(0))%997 } return i % PB.length }
   const BD = 'border:1px solid #D6DEE8;'
   h += `<div class="scroll" style="margin-bottom:12px"><table style="table-layout:fixed;width:100%;min-width:760px;border-collapse:collapse">
   <colgroup><col style="width:88px">${wkDays.map(()=>'<col>').join('')}</colgroup>
@@ -1483,15 +1483,15 @@ function shiftRender(){
       const es = wkEnts.filter(x=>(x.pos||'未分崗')===ps && x.date===dt)
       const cellOps = meN ? ` onclick="shiftQuick('${ps}','${dt}')" ondragover="event.preventDefault();this.style.outline='2px solid var(--primary)'" ondragleave="this.style.outline=''" ondrop="shiftDrop(event,'${ps}','${dt}')"` : ''
       const ents = es.map(e=>{
-        const di = dupCnt[e.date+'|'+e.name]>1 ? dupNames.indexOf(e.name)%DUPC.length : -1
-        const chipC = di>=0 ? `border:1.5px solid ${DUPB[di]};background:${DUPC[di]};` : (e.tr ? 'border:1.5px dashed #B45309;background:#FDF1E3;' : 'border:1px solid var(--line);background:#F7FAFC;')
-        return `<div ${meN?`draggable="true" ondragstart="event.stopPropagation();event.dataTransfer.setData('text/plain','${e.id}')" onclick="event.stopPropagation();shiftForm('${e.id}')"`:''} style="font-size:13px;line-height:1.5;${meN?'cursor:grab;':''}${chipC}border-radius:7px;padding:2px 6px;margin:1px 0"><b${di>=0?` style="color:${DUPB[di]}"`:''}>${e.name}</b>${e.tr?`<span style="display:block;color:#B45309;font-weight:800;font-size:12px">🎓帶 ${e.tr}</span>`:''}<span class="hint" style="display:block">${e.start}-${e.end}</span></div>`
+        const pi = pcIdx(e.name)
+        return `<div ${meN?`draggable="true" ondragstart="event.stopPropagation();event.dataTransfer.setData('text/plain','${e.id}')" onclick="event.stopPropagation();shiftForm('${e.id}')"`:''} style="font-size:13px;line-height:1.5;${meN?'cursor:grab;':''}border:1.5px solid ${PB[pi]};background:${PG[pi]};border-radius:7px;padding:2px 6px;margin:1px 0"><b style="color:${PB[pi]}">${e.name}</b>${e.tr?`<span style="display:block;color:${PB[pcIdx(e.tr)]};font-weight:800;font-size:12px">🎓帶 ${e.tr}</span>`:''}<span class="hint" style="display:block">${e.start}-${e.end}</span></div>`
       }).join('')
       return `<td${cellOps} style="${BD}${dt===today?'background:#F0F8FD;':''}text-align:left;${meN?'cursor:pointer;':''}vertical-align:top;overflow:hidden">${ents || (meN?'<span class="mut">＋</span>':'<span class="mut">—</span>')}</td>`
     }).join('') + `</tr>`
   })
+  const wkPpl = [...new Set(wkEnts.map(x=>x.name))]
   h += `</tbody></table></div>
-  ${dupNames.length?`<div class="hint" style="margin:-6px 0 10px">兼多崗位：${dupNames.map((n,i)=>`<span style="border:1.5px solid ${DUPB[i%DUPB.length]};background:${DUPC[i%DUPC.length]};color:${DUPB[i%DUPB.length]};border-radius:6px;padding:0 6px;font-weight:800">${n}</span>`).join(' ')}（同色＝同一人）</div>`:''}`
+  ${wkPpl.length?`<div class="hint" style="margin:-6px 0 10px">本週人員：${wkPpl.map(n=>`<span style="border:1.5px solid ${PB[pcIdx(n)]};background:${PG[pcIdx(n)]};color:${PB[pcIdx(n)]};border-radius:6px;padding:0 6px;font-weight:800">${n}</span>`).join(' ')}（一人一色，跨崗位同色）</div>`:''}`
   const pn = Object.keys(per).sort()
   if (pn.length){
     h += `<div class="scroll"><table><thead><tr><th style="text-align:left">夥伴</th><th>總工時</th><th>正常</th><th>加班×1.34</th><th>加班×1.67</th><th style="text-align:left">⚠️ 勞基法檢查</th></tr></thead><tbody>`
