@@ -630,7 +630,7 @@ async function sopResolve(id){
   const d = await r.json().catch(()=>null)
   if (d && d.ok) { if (d.status === 'pending') alert('已送出，等老闆審核 ✅'); refreshView() } else alert((d&&d.error)||'失敗（要先跟 DD 綁定GD）')
 }
-function refreshView(){ if (curStore === 'task' || curStore === 'lb') { lbFetch().then(()=>{ curStore==='task' ? taskRender() : lbRender() }) } else sopLoad() }
+function refreshView(){ if (curStore === 'task' || curStore === 'lb') { lbFetch(1).then(()=>{ curStore==='task' ? taskRender() : lbRender() }) } else sopLoad() } // 操作後重抓一律跳過快取
 async function sopReview(id, pass){
   if (!confirm(pass ? '核准這筆解決？' : '退回（狀態回到未解決）？')) return
   const r = await fetch('/api/mail-sync?sopreview=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ id, pass: !!pass, token: TK() }) })
@@ -718,9 +718,9 @@ async function prefetchTabs(){
   q('/api/mail-sync?fb=' + encodeURIComponent(K) + '&date=' + todayTpe() + me, 'fb_' + todayTpe()).then(d2=>{ if(d2 && !window._fbD) window._fbD = d2 })
   q('/api/mail-sync?menu=' + encodeURIComponent(K) + me, 'menu').then(d2=>{ if(d2 && !window._menuD) window._menuD = d2 })
 }
-async function lbFetch(){
+async function lbFetch(fresh){
   let d
-  try { const r = await fetch('/api/mail-sync?lb=' + encodeURIComponent(K) + '&v=2' + (TK() ? '&me=' + encodeURIComponent(TK()) : '')); d = await r.json() } catch(e){}
+  try { const r = await fetch('/api/mail-sync?lb=' + encodeURIComponent(K) + '&v=2' + (fresh ? '&r=' + Date.now() : '') + (TK() ? '&me=' + encodeURIComponent(TK()) : '')); d = await r.json() } catch(e){}
   if (d && d.ok) { window._lbD = d; tcSet('lb', d) }
   return window._lbD
 }
