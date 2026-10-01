@@ -1824,10 +1824,18 @@ function menuRender(){
       const bs = (d.base.sections||[]).find(s2=>s2.name===nm), ds = (d.draft.sections||[]).find(s2=>s2.name===nm)
       h += `<div style="background:var(--soft);border:1px solid var(--line);border-radius:12px;padding:9px 11px;margin-bottom:10px">
         <div style="font-weight:900;color:var(--pdark)">${nm}${!bs?' <span class="up" style="font-size:13px">新分類</span>':''}${!ds?' <span style="color:var(--red);font-size:13px;font-weight:800">整類刪除</span>':''}</div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:6px;font-size:14px">
-          <div><div class="hint" style="font-weight:800">原菜單</div>${bs?(bs.items||[]).map(i2=>{ const gone=!df.dF[i2.id]; const chg=df.chg.includes(i2.id); return `<div style="padding:2px 0;${gone?'color:var(--red);text-decoration:line-through':chg?'color:#A85C26':''}">${i2.name} $${i2.price}</div>` }).join(''):'<div class="mut">—</div>'}</div>
-          <div><div class="hint" style="font-weight:800">新菜單</div>${ds?(ds.items||[]).map(i2=>{ const isNew=!df.bF[i2.id]; const chg=df.chg.includes(i2.id); return `<div style="padding:2px 0;${isNew?'color:var(--green);font-weight:700':chg?'color:#A85C26;font-weight:700':''}">${i2.name} $${i2.price}${i2.note?` <span class="hint">${i2.note}</span>`:''}</div>` }).join(''):'<div class="mut">—</div>'}</div>
-        </div></div>`
+        ${(()=>{ // 左右同列對齊（張良 2026-10-01：快速辨識）＋刪除的全部放最下面
+          const row=(l,r,bd)=>`<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:3px 0;border-top:1px dashed ${bd||'#E3EAF2'}">${l}${r}</div>`
+          let rs = row('<div class="hint" style="font-weight:800">原菜單</div>','<div class="hint" style="font-weight:800">新菜單</div>','transparent')
+          ;(ds?(ds.items||[]):[]).forEach(i2=>{ const b=df.bF[i2.id]; const isNew=!b; const chg=df.chg.includes(i2.id)
+            rs += row(`<div style="${chg?'color:#A85C26':''}">${b?`${b.name} $${b.price}`:'<span class="mut">—</span>'}</div>`,
+              `<div style="${isNew?'color:var(--green);font-weight:700':chg?'color:#A85C26;font-weight:700':''}">${i2.name} $${i2.price}${i2.note?` <span class="hint">${i2.note}</span>`:''}${isNew?' <span class="up" style="font-size:12px;font-weight:800">新增</span>':''}</div>`)
+          })
+          const delK = df.del.filter(k=>df.bF[k].sec===nm)
+          if(delK.length){ rs += `<div style="margin-top:8px;font-weight:800;color:var(--red);font-size:13px">🗑 已刪除（${delK.length}）</div>`
+            delK.forEach(k=>{ const b=df.bF[k]; rs += row(`<div style="color:var(--red);text-decoration:line-through">${b.name} $${b.price}</div>`,'<div class="mut">—</div>','#F0DADA') }) }
+          return `<div style="margin-top:6px;font-size:14px">${rs}</div>`
+        })()}</div>`
     })
   }
   if ((d.edits||[]).length) h += `<details style="margin-top:6px"><summary class="hint" style="cursor:pointer">✍️ 編輯紀錄（${d.edits.length}）</summary>${d.edits.map(e=>`<div class="hint">${e.ts}・${e.by}${e.what?'・'+e.what:''}</div>`).join('')}</details>`
