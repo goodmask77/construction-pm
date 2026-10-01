@@ -1780,6 +1780,8 @@ function menuRender(){
   <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px">
     <span style="display:inline-flex;border:1.5px solid var(--primary);border-radius:9px;overflow:hidden">${seg('✏️ 新菜單','edit')}${seg('🆚 對照原菜單','cmp')}</span>
     ${meN&&menuMode==='edit'?`<button class="mini" onclick="menuSecForm()">＋ 新增分類</button>`:''}
+    <button class="mini" onclick="menuExport('txt')">⬇️ 匯出文字</button>
+    <button class="mini" onclick="menuExport('img')">🖼 匯出圖片</button>
     ${d.me&&!d.me.canEdit?(d.me.pendingMe?`<span class="hint">🕐 編輯權審核中（已通知老闆）</span>`:`<button class="mini on" onclick="prepApply()">🙋 申請編輯權限</button>`):''}
     ${!d.me?`<span class="hint">看得到；要編輯先綁定＋申請</span>`:''}
   </div>`
@@ -1790,7 +1792,7 @@ function menuRender(){
       <div style="font-weight:900">📌 跟原菜單比：<span class="up">新增 ${df.add.length}</span>・<span style="color:var(--red);font-weight:800">刪除 ${df.del.length}</span>・<span style="color:#A85C26;font-weight:800">修改 ${df.chg.length}</span></div>`
     df.add.forEach(k=>{ h += `<div class="up">＋ ${df.dF[k].sec}｜${df.dF[k].name} $${df.dF[k].price}</div>` })
     df.del.forEach(k=>{ h += `<div style="color:var(--red)">－ ${df.bF[k].sec}｜<s>${df.bF[k].name} $${df.bF[k].price}</s></div>` })
-    df.chg.forEach(k=>{ const b=df.bF[k], n=df.dF[k]; h += `<div style="color:#A85C26">～ ${b.name}${b.name!==n.name?` → ${n.name}`:''}${b.price!==n.price?`｜$${b.price} → $${n.price}`:''}${(b.note||'')!==(n.note||'')?`｜註記：${b.note||'無'} → ${n.note||'無'}`:''}</div>` })
+    // ～修改明細不逐條列（張良 2026-10-02：保留的菜單不用顯示在這）——數字在上面那行就夠
     h += `</div>`
   } else h += `<div class="mut" style="margin-bottom:10px;font-size:14px">還沒有改動——跟原菜單一模一樣</div>`
   h += `<div style="background:#fff;border:1.5px solid var(--line);border-radius:10px;padding:8px 11px;margin-bottom:10px;font-size:14px"><b>套餐規則：</b>${(d.draft.note||'').replace(/</g,'&lt;')} ${meN&&menuMode==='edit'?`<button class="mini" onclick="menuNoteEdit()">✏️</button>`:''}</div>`
@@ -1846,6 +1848,36 @@ function menuRender(){
   if ((d.edits||[]).length) h += `<details style="margin-top:6px"><summary class="hint" style="cursor:pointer">✍️ 編輯紀錄（${d.edits.length}）</summary>${d.edits.map(e=>`<div class="hint">${e.ts}・${e.by}${e.what?'・'+e.what:''}</div>`).join('')}</details>`
   h += `</section>`
   app.innerHTML = h
+}
+function menuExport(kind){ // 匯出完整菜單（張良 2026-10-02）：txt=文字檔 / img=圖片檔；只含現行菜單（刪除的不進）
+  const d = window._menuD; if (!d) return
+  const L = []
+  L.push('GROUN:D 菜單 ' + todayTpe())
+  if (d.draft.note) L.push(d.draft.note)
+  ;(d.draft.sections||[]).forEach(s2=>{
+    L.push('')
+    L.push('【' + s2.name + '】' + (s2.note ? '（' + s2.note + '）' : ''))
+    ;(s2.items||[]).forEach(i2=>{
+      L.push('・' + i2.name + (i2.en ? '｜' + i2.en : '') + '｜$' + i2.price + (i2.np ? '（新售價 $' + i2.np + '）' : '') + (i2.note ? '｜' + i2.note : ''))
+    })
+  })
+  if (kind === 'txt') {
+    const blob = new Blob(['\ufeff' + L.join('\n')], { type: 'text/plain;charset=utf-8' })
+    const a2 = document.createElement('a'); a2.href = URL.createObjectURL(blob); a2.download = 'GROUND菜單_' + todayTpe() + '.txt'; a2.click(); URL.revokeObjectURL(a2.href)
+    return
+  }
+  // 圖片：canvas 畫整份
+  const pad = 40, lh = 34, W = 1000
+  const cv = document.createElement('canvas'); cv.width = W; cv.height = pad * 2 + lh * L.length
+  const g = cv.getContext('2d')
+  g.fillStyle = '#FFF9EF'; g.fillRect(0, 0, cv.width, cv.height)
+  L.forEach((ln, i) => {
+    const isTitle = i === 0, isSec = ln.startsWith('【')
+    g.fillStyle = isTitle ? '#B3261E' : isSec ? '#1d4e79' : '#22303f'
+    g.font = (isTitle ? '900 30px' : isSec ? '800 24px' : '500 20px') + ' "PingFang TC",system-ui,sans-serif'
+    g.fillText(ln, pad, pad + lh * i + 22)
+  })
+  cv.toBlob(bl => { const a2 = document.createElement('a'); a2.href = URL.createObjectURL(bl); a2.download = 'GROUND菜單_' + todayTpe() + '.png'; a2.click(); URL.revokeObjectURL(a2.href) }, 'image/png')
 }
 function permPanelHtml(perm){
   return `<div style="background:#F3F7FB;border:1.5px solid #B9D2E8;border-radius:12px;padding:10px 12px;font-size:14px">
