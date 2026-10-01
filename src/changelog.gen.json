@@ -2,6 +2,7 @@
  {
   "date": "2026-10-02",
   "items": [
+   "任務口跳舊快取(張良:還是沒看到按鈕)：lb回應有5分鐘邊緣快取,approver修正被舊快取擋住→前端lb網址加v=2換鍵立即吃新回應 v4.1.2",
    "任務審核鈕修復(張良:還是沒按鈕可操作)：根因=lb資料口me只回{name}漏approver→taskCard的📣發布/📥保留/🗑刪除/✅核准鈕條件me.approver永遠false對誰都不出現;補role+approver(主管或sop_def審核人) v4.1.1"
   ]
  },

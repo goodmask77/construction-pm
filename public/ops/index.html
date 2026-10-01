@@ -1806,7 +1806,7 @@ function menuRender(){
         const isNew = !b, isChg = b && (b.name!==i2.name || b.price!==i2.price || (b.note||'')!==(i2.note||'') || (b.en||'')!==(i2.en||''))
         const edOn = meN && menuEditSec[si]
         const cell=(f,v,st)=> edOn ? `<td style="padding:3px 4px;border:1px solid #D9E4EF"><input value="${String(v??'').replace(/"/g,'&quot;')}" onchange="menuCell(${si},'${i2.id}','${f}',this.value)" style="width:100%;box-sizing:border-box;border:1px solid var(--line);border-radius:7px;padding:6px;font-size:14px;background:#fff;${st||''}"></td>` : `<td style="padding:6px 7px;border:1px solid #D9E4EF;${st||''}">${String(v??'')!==''?String(v).replace(/</g,'&lt;'):'<span class="mut">—</span>'}</td>`
-        h += `<tr style="background:${isNew?'#E8F6EE':isChg?'#FFF4DE':'transparent'}">${cell('name',i2.name,'font-weight:700;min-width:120px')}${cell('en',i2.en,'min-width:110px')}${edOn?`<td style="padding:3px 4px;border:1px solid #D9E4EF"><input inputmode="numeric" value="${i2.price}" onchange="menuCell(${si},'${i2.id}','price',this.value)" style="width:64px;border:1px solid var(--line);border-radius:7px;padding:6px;font-size:14px;text-align:right;font-weight:800;background:#fff"></td>`:`<td style="padding:6px 7px;border:1px solid #D9E4EF;text-align:right;font-weight:800">$${i2.price}</td>`}${cell('note',i2.note,'min-width:90px')}<td style="white-space:nowrap;border:1px solid #D9E4EF;padding:3px 5px">${isNew?'<span class="up" style="font-size:12px;font-weight:800">新增</span> ':''}${edOn?`<button class="mini" style="color:var(--red)" onclick="if(confirm('刪掉「${i2.name}」？'))menuItemDel(${si},'${i2.id}')">🗑</button>`:''}</td></tr>`
+        h += `<tr style="background:${isNew?'#E8F6EE':isChg?'#FFF4DE':'transparent'}">${cell('name',i2.name,'font-weight:700;min-width:120px')}${cell('en',i2.en,'min-width:110px')}${edOn?`<td style="padding:3px 4px;border:1px solid #D9E4EF"><input inputmode="numeric" value="${i2.price}" onchange="menuCell(${si},'${i2.id}','price',this.value)" style="width:64px;border:1px solid var(--line);border-radius:7px;padding:6px;font-size:14px;text-align:right;font-weight:800;background:#fff"></td>`:`<td style="padding:6px 7px;border:1px solid #D9E4EF;text-align:right;font-weight:800">$${i2.price}</td>`}${cell('note',i2.note,'min-width:90px')}<td style="white-space:nowrap;border:1px solid #D9E4EF;padding:3px 5px">${isNew?'<span class="up" style="font-size:12px;font-weight:800">新增</span> ':''}${edOn?`<button class="mini" onclick="menuItemShift(${si},'${i2.id}',-1)">↑</button><button class="mini" onclick="menuItemShift(${si},'${i2.id}',1)">↓</button><button class="mini" style="color:var(--red)" onclick="if(confirm('刪掉「${i2.name}」？'))menuItemDel(${si},'${i2.id}')">🗑</button>`:''}</td></tr>`
       })
       h += `</tbody></table></div>`
       // 這分類底下被刪掉的（原菜單有、新菜單沒了）→ 灰底刪除線＋復原
@@ -1898,6 +1898,13 @@ function menuItemPurge(id){ // 永久刪除：連原菜單一起移除，不再�
   ;(d.base.sections||[]).forEach(s2=>{ s2.items=(s2.items||[]).filter(x=>x.id!==id) })
   ;(d.draft.sections||[]).forEach(s2=>{ s2.items=(s2.items||[]).filter(x=>x.id!==id) })
   menuSave('永久刪除品項', [id])
+}
+function menuItemShift(si, id, dir){ // 品項 ↑↓ 排序（張良 2026-10-02）
+  const items = window._menuD.draft.sections[si].items || []
+  const i = items.findIndex(x=>x.id===id), j = i + dir
+  if (i < 0 || j < 0 || j >= items.length) return
+  const [mv] = items.splice(i, 1); items.splice(j, 0, mv)
+  menuSave('搬 ' + (mv.name || '品項'))
 }
 function menuSecShift(si, dir){ // ↑↓ 搬分類（張良 2026-10-01：拖曳在手機/iPad不順→按鈕最穩）
   const ss = window._menuD.draft.sections, j = si + dir
