@@ -1762,6 +1762,28 @@ export default async function handler(req, res) {
     const staff = aliveS.filter(p2 => !gdOn || p2.gd).map(p2 => ({ n: p2.name, role: aprS.includes(p2.name) ? '審核人' : (p2.gdRole || '一般'), bound: boundRids.has(p2.id) }))
     return res.status(200).json({ ok: true, ym, sched: schedL, punches: pchs.map(p => ({ name: p.name, ts: p.ts, dir: p.dir, src: p.src })), names: namesU, namesAll, posList, slots: (sd || {}).slots || null, staff, me: meS ? { name: meS.name, role: meS.role, approver: aprS.includes(meS.name) } : null })
   }
+  // 班表批次回補口（張良 2026-10-02「貼LINE班表幫我灌」）：POST ?shiftfill=管理金鑰 {list:[{name,date,start,end,break,pos,tr}]}——同(人+日+崗位)已存在就跳過
+  if (req.method === 'POST' && req.query?.shiftfill) {
+    const okF = (process.env.MENU_PROBE_KEY || '').trim()
+    if (!okF || String(req.query.shiftfill) !== okF) return res.status(403).json({ ok: false })
+    let bF = {}
+    try { bF = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
+    const docF = (await kvGet('sp_finance_pm_shift_g')) || { list: [] }
+    const hasK = new Set((docF.list || []).map(x => [x.name, x.date, x.pos || ''].join('|')))
+    let added = 0, skipped = 0
+    for (const i2 of (Array.isArray(bF.list) ? bF.list : [])) {
+      if (!String(i2.name || '').trim() || !/^\d{4}-\d{2}-\d{2}$/.test(i2.date)) { skipped++; continue }
+      const k2 = [String(i2.name).trim(), i2.date, String(i2.pos || '').trim()].join('|')
+      if (hasK.has(k2)) { skipped++; continue }
+      hasK.add(k2)
+      const it = { id: 'sh' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5), name: String(i2.name).trim().slice(0, 20), date: i2.date, start: String(i2.start || '11:00').padStart(5, '0'), end: String(i2.end || '20:00').padStart(5, '0'), break: Math.max(0, Math.min(240, Number(i2.break) || 60)), pos: String(i2.pos || '').trim().slice(0, 20), by: 'AI回補' }
+      const trF = String(i2.tr || '').trim().slice(0, 20); if (trF) it.tr = trF
+      docF.list.push(it); added++
+    }
+    docF.list.sort((a, b) => (a.date + a.start).localeCompare(b.date + b.start))
+    if (added) await kvPut('sp_finance_pm_shift_g', docF, '班表AI回補(' + added + '筆)')
+    return res.status(200).json({ ok: true, added, skipped })
+  }
   // 一次性清班表重複（2026-10-02 跨月bug期間連點產生的分身）：?shiftdedup=管理金鑰[&dry=1]——同(人+日+起迄+崗位)只留一筆
   if (req.query?.shiftdedup) {
     const okD = (process.env.MENU_PROBE_KEY || '').trim()
@@ -1791,6 +1813,7 @@ export default async function handler(req, res) {
     if (sb2.op === 'save') {
       const i2 = sb2.item || {}
       if (!String(i2.name || '').trim() || !/^\d{4}-\d{2}-\d{2}$/.test(i2.date) || !/^\d{1,2}:\d{2}$/.test(i2.start) || !/^\d{1,2}:\d{2}$/.test(i2.end)) return res.status(400).json({ ok: false, error: '姓名/日期/時間沒填齊' })
+      if (String(i2.id || '').startsWith('tmp')) delete i2.id // 舊版前端會把暫存id送上來→一律換發正式id（v4.5.1 防線）
       const it = { id: i2.id || 'sh' + Date.now().toString(36), name: String(i2.name).trim().slice(0, 20), date: i2.date, start: String(i2.start).padStart(5, '0'), end: String(i2.end).padStart(5, '0'), break: Math.max(0, Math.min(240, Number(i2.break) || 0)), pos: String(i2.pos || '').trim().slice(0, 20), by: whoS.name }
       const trV = String(i2.tr || '').trim().slice(0, 20); if (trV) it.tr = trV // 🎓帶訓對象（張良 2026-10-02）
       doc.list = [...(doc.list || []).filter(x => x.id !== it.id), it].sort((a, b) => (a.date + a.start).localeCompare(b.date + b.start)).slice(-1000)
