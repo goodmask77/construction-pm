@@ -1112,6 +1112,14 @@ export default async function handler(req, res) {
     if (role === '停權') return null
     return { ...w, role }
   }
+  // 編輯守門（張良 2026-10-02：趙以棠還沒核准就能編 SOP——全部寫入端點掛上）：approve 模式要「已核准＋該分頁有勾」
+  const permWho = async (tk9, tab9) => {
+    const pm9 = (await kvGet('sp_finance_pm_prep_perm')) || { mode: 'open', users: {} }
+    const w9 = await sopWho(tk9)
+    if (pm9.mode !== 'approve') return w9 || { name: '現場(未綁定)' }
+    const u9 = w9 && pm9.users[w9.rid || w9.uid]
+    return (u9 && u9.edit && (u9.admin || !u9.tabs || u9.tabs[tab9] !== 0)) ? w9 : null
+  }
   // GD 人員名單（張良 2026-09-21：主App名冊標記 p.gd 的人＝排班/任務/回饋下拉選單；沒標任何人時退回在職全員）
   const gdNames = (rosterDoc) => {
     const alive = (((rosterDoc || {}).people) || []).filter(p2 => !p2.endDate && (p2.status || '在職') !== '離職')
@@ -1452,7 +1460,7 @@ export default async function handler(req, res) {
     const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
     if (!ok2 || String(req.query.menuimgset) !== ok2) return res.status(403).json({ ok: false })
     let bi = {}; try { bi = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
-    const whoI = await sopWho(bi.token)
+    const whoI = await permWho(bi.token, 'menu')
     if (!whoI) return res.status(403).json({ ok: false, error: '要先綁定才能換圖' })
     const idx = Math.max(0, Math.min(3, Number(bi.idx) || 0))
     const doc = (await kvGet('sp_finance_pm_menu')) || {}
@@ -1521,7 +1529,7 @@ export default async function handler(req, res) {
     if (!ok2 || String(req.query.fbj) !== ok2) return res.status(403).json({ ok: false })
     let jb = {}
     try { jb = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
-    const whoJ = await sopWho(jb.token)
+    const whoJ = await permWho(jb.token, 'fb')
     if (!whoJ) return res.status(403).json({ ok: false, error: '要先跟 DD 說「綁定GD」' })
     const doc = (await kvGet('sp_finance_pm_fbj')) || { list: [] }
     if (jb.op === 'add') {
@@ -1544,7 +1552,7 @@ export default async function handler(req, res) {
     if (!ok2 || String(req.query.fbset) !== ok2) return res.status(403).json({ ok: false })
     let fbB = {}
     try { fbB = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
-    const whoF = await sopWho(fbB.token)
+    const whoF = await permWho(fbB.token, 'fb')
     if (!whoF) return res.status(403).json({ ok: false, error: '要先跟 DD 說「綁定GD」' })
     const dtF = /^\d{4}-\d{2}-\d{2}$/.test(String(fbB.date || '')) ? String(fbB.date) : new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10)
     const tgF = String(fbB.target || '').trim().slice(0, 20)
@@ -1583,7 +1591,7 @@ export default async function handler(req, res) {
     if (!ok2 || String(req.query.sopref) !== ok2) return res.status(403).json({ ok: false })
     let bR = {}
     try { bR = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
-    const whoR2 = await sopWho(bR.token)
+    const whoR2 = await permWho(bR.token, 'board')
     if (!whoR2) return res.status(403).json({ ok: false, error: '要先跟 DD 說「綁定GD」' })
     const doc = (await kvGet('sp_finance_pm_sop_def')) || {}
     const g = doc.ground || {}
@@ -1608,7 +1616,7 @@ export default async function handler(req, res) {
     if (!ok2 || String(req.query.meetset) !== ok2) return res.status(403).json({ ok: false })
     let mb = {}
     try { mb = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
-    const whoM = await sopWho(mb.token)
+    const whoM = await permWho(mb.token, 'meet')
     if (!whoM) return res.status(403).json({ ok: false, error: '要先跟 DD 說「綁定GD」' })
     const doc = (await kvGet('sp_finance_pm_meet')) || { types: ['班前會議', '營運會議'], list: [] }
     if (!Array.isArray(doc.types) || !doc.types.length) doc.types = ['班前會議', '營運會議']
@@ -1687,7 +1695,7 @@ export default async function handler(req, res) {
     if (!ok2 || String(req.query.shiftset) !== ok2) return res.status(403).json({ ok: false })
     let sb2 = {}
     try { sb2 = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
-    const whoS = await sopWho(sb2.token)
+    const whoS = await permWho(sb2.token, 'shift')
     if (!whoS) return res.status(403).json({ ok: false, error: '要先跟 DD 說「綁定GD」' })
     const doc = (await kvGet('sp_finance_pm_shift_g')) || { list: [] }
     if (sb2.op === 'save') {
@@ -1716,7 +1724,7 @@ export default async function handler(req, res) {
     if (!ok2 || String(req.query.invset) !== ok2) return res.status(403).json({ ok: false })
     let bn = {}
     try { bn = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
-    const whoN = await sopWho(bn.token)
+    const whoN = await permWho(bn.token, (bn.kind === 'pack' ? 'pack' : 'food'))
     if (!whoN) return res.status(403).json({ ok: false, error: '要先跟 DD 說「綁定GD」' })
     const kind = bn.kind === 'pack' ? 'pack' : 'food'
     const doc = (await kvGet('sp_finance_pm_inv')) || {}
@@ -1738,7 +1746,7 @@ export default async function handler(req, res) {
     if (!ok2 || String(req.query.invcount) !== ok2) return res.status(403).json({ ok: false })
     let bc = {}
     try { bc = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
-    const whoC = await sopWho(bc.token)
+    const whoC = await permWho(bc.token, (bc.kind === 'pack' ? 'pack' : 'food'))
     if (!whoC) return res.status(403).json({ ok: false, error: '要先跟 DD 說「綁定GD」' })
     const qv = Number(bc.qty)
     if (!bc.id || isNaN(qv) || qv < 0) return res.status(400).json({ ok: false, error: '數量不對' })
@@ -1772,7 +1780,7 @@ export default async function handler(req, res) {
     if (!ok2 || String(req.query.sopst) !== ok2) return res.status(403).json({ ok: false })
     let bs = {}
     try { bs = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
-    const whoS = await sopWho(bs.token)
+    const whoS = await permWho(bs.token, 'board')
     if (!whoS) return res.status(403).json({ ok: false, error: '要先跟 DD 說「綁定GD」才能管理站別' })
     const curS = (await kvGet('sp_finance_pm_sop_def')) || {}
     const gS = curS.ground || { items: [] }
@@ -2019,7 +2027,7 @@ export default async function handler(req, res) {
         } catch (_) {}
       }
       const hm4 = new Date(Date.now() + 8 * 3600e3).toISOString().slice(11, 16)
-      const who4 = await sopWho(b4.token)
+      const who4 = await permWho(b4.token, 'board')
       if (!who4) return res.status(403).json({ ok: false, error: '訪客只能看——打卡請先綁定（右上「輸入綁定碼」）' }) // 張良 2026-09-25：不再收手填名字
       slog.items[b4.itemId] = { done: 1, ts: hm4, by: who4.name, ...(photoUrl ? { photo: photoUrl } : {}) }
     }
@@ -2045,7 +2053,7 @@ export default async function handler(req, res) {
     if (!ok2 || String(req.query.sopedit) !== ok2) return res.status(403).json({ ok: false })
     let b6 = {}
     try { b6 = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
-    const who6 = await sopWho(b6.token)
+    const who6 = await permWho(b6.token, 'board')
     if (!who6) return res.status(403).json({ ok: false, error: '要先跟 DD 說「綁定看板」拿到個人連結才能編輯' })
     if (!b6.st || !Array.isArray(b6.items)) return res.status(400).json({ ok: false, error: '缺 st 或 items' })
     const cur6 = (await kvGet('sp_finance_pm_sop_def')) || {}
@@ -2142,7 +2150,7 @@ export default async function handler(req, res) {
     if (!ok2 || String(req.query.sopissue) !== ok2) return res.status(403).json({ ok: false })
     let bi = {}
     try { bi = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
-    const whoI = await sopWho(bi.token)
+    const whoI = await permWho(bi.token, 'task')
     if (!whoI) return res.status(403).json({ ok: false, error: '要先跟 DD 說「綁定GD」' })
     const [docI, defI] = await Promise.all([kvGet('sp_finance_pm_sop_issues'), kvGet('sp_finance_pm_sop_def')])
     const dI = docI || { list: [] }
@@ -2206,7 +2214,7 @@ export default async function handler(req, res) {
   if (req.query?.buy) {
     const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
     if (!ok2 || String(req.query.buy) !== ok2) return res.status(403).json({ ok: false })
-    const [bd, meB] = await Promise.all([kvGet('sp_finance_pm_buy'), sopWho(req.query.me)])
+    const [bd, meB] = await Promise.all([kvGet('sp_finance_pm_buy'), permWho(req.query.me, 'buy')])
     const defB = await kvGet('sp_finance_pm_sop_def')
     const apprB = (((defB || {}).ground || {}).approvers || ['張良瑋'])
     return res.status(200).json({ ok: true, list: ((bd || {}).list || []).slice(0, 100), me: meB ? { name: meB.name, approver: apprB.includes(meB.name) } : null })
@@ -2263,7 +2271,7 @@ export default async function handler(req, res) {
     if (!ok2 || String(req.query.sopfull) !== ok2) return res.status(403).json({ ok: false })
     let bf = {}
     try { bf = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
-    const whoF = await sopWho(bf.token)
+    const whoF = await permWho(bf.token, 'board')
     if (!whoF) return res.status(403).json({ ok: false, error: '要先跟 DD 說「綁定GD」' })
     if (!Array.isArray(bf.stations) || !Array.isArray(bf.items)) return res.status(400).json({ ok: false, error: '缺 stations/items' })
     const stCl = [...new Set(bf.stations.map(s => String(s || '').trim().slice(0, 20)).filter(Boolean))].slice(0, 20)
