@@ -94,9 +94,10 @@ const anomalies = (users) => Object.entries(users || {}).flatMap(([no, r]) => {
 export default async function handler(req, res) {
   const tz = new Date(Date.now() + 8 * 3600e3) // 台北
   const today = tz.toISOString().slice(0, 10)
-  const isCron = !!req.headers['x-vercel-cron']
+  // 2026-10-01 治本（張良：為什麼都沒自動更新）：Vercel 排程請求「沒有」x-vercel-cron 標頭——
+  // 之前只認標頭＝排程每20分打進來全被擋在門口。改跟 joya-intraday 同款：裸呼叫（沒帶 manual）＝排程，照樣同步；通知只在裸呼叫發（手動更新不觸發通知）
   const manual = String(req.query?.manual || '')
-  if (!isCron && !manual) return res.status(200).json({ ok: false, hint: '要手動同步帶 ?manual=1[&from=YYYY-MM-DD&to=YYYY-MM-DD]' })
+  const isCron = !manual
   try {
     const from = String(req.query?.from || '') || today
     const to = String(req.query?.to || '') || today
