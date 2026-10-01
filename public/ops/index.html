@@ -1798,7 +1798,8 @@ function shiftQuick(pos, dt){
   const slots = (d.slots && d.slots.length) ? d.slots : SLOT_DEF
   ov.innerHTML = `<div style="background:var(--card);border-radius:14px;max-width:420px;width:100%;padding:16px;max-height:80vh;overflow:auto" onclick="event.stopPropagation()">
     <div style="font-weight:900;margin-bottom:8px;display:flex;align-items:center;gap:8px">📅 ${dt.slice(5)}（${wdN2[new Date(dt).getDay()]}）・${pos}${d.sched.some(x=>x.date===dt&&(x.pos||'未分崗')===pos)?`<button class="mini" style="margin-left:auto;padding:4px 10px" onclick="copyCell('${pos}','${dt}')">⧉ 複製這格</button>`:''}</div>
-    <div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:8px">${slots.map(sl=>`<button class="mini" style="padding:5px 10px" onclick="t24set('qkS','${sl.s}');t24set('qkE','${sl.e}')">${sl.n} ${sl.s}–${sl.e}</button>`).join('')}</div>
+    <div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:8px">${slots.map(sl=>`<button class="mini" style="padding:5px 10px" onclick="t24set('qkS','${sl.s}');t24set('qkE','${sl.e}');this.parentNode.querySelectorAll('button').forEach(b=>b.classList.remove('on'));this.classList.add('on')">${sl.n} ${sl.s}–${sl.e}</button>`).join('')}</div>
+    <div id="qkMsg" style="display:none;color:var(--green);font-weight:800;margin-bottom:6px"></div>
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:14px;margin-bottom:10px">
       <span>上班</span>${t24c('qkS', defS)}<span>下班</span>${t24c('qkE', defE)}
       <span>休(分)</span><input id="qkB" type="number" value="${defB}" min="0" max="240" style="border:1px solid var(--line);border-radius:8px;padding:7px;font-size:15px;width:62px">
@@ -1817,9 +1818,17 @@ function shiftQuick(pos, dt){
       if (!regQ.length && !offQ.length) return `<div style="display:flex;gap:6px;flex-wrap:wrap">${(d.names||[]).map(btn).join('')||'<span class="mut">GD 人員是空的——先在上面「＋ 加人」</span>'}</div>`
       return `<div style="display:flex;gap:6px;flex-wrap:wrap">${regQ.map(btn).join('')}</div>` + (offQ.length?`<div class="hint" style="border-top:1.5px dashed var(--line);margin:10px 0 6px;padding-top:6px;font-weight:700">非常態</div><div style="display:flex;gap:6px;flex-wrap:wrap">${offQ.map(btn).join('')}</div>`:'')
     })()}
-    <div style="display:flex;justify-content:flex-end;margin-top:12px"><button class="mini" style="padding:9px 12px" onclick="document.getElementById('qkOv').remove()">取消</button></div></div>`
+    <div style="display:flex;justify-content:flex-end;margin-top:12px"><button class="mini on" style="padding:9px 16px" onclick="document.getElementById('qkOv').remove()">完成</button></div></div>`
   ov.onclick = () => ov.remove()
   document.body.appendChild(ov)
+  // v4.9.1 連排（張良「時間功能變有用」）：排完不關窗——保留剛選的時段/帶訓，一格分段班連續排
+  const kp = window._qkKeep
+  if (kp) { window._qkKeep = null
+    t24set('qkS', kp.s); t24set('qkE', kp.e)
+    const qb = document.getElementById('qkB'); if (qb) qb.value = kp.b
+    const qt = document.getElementById('qkTr'); if (qt && kp.tr) qt.value = kp.tr
+    const mg = document.getElementById('qkMsg'); if (mg) { mg.textContent = kp.msg; mg.style.display = 'block' }
+  }
 }
 async function shiftQuickGo(name, pos, dt){
   const ovQ = document.getElementById('qkOv')
@@ -1830,6 +1839,9 @@ async function shiftQuickGo(name, pos, dt){
   const d = window._shiftD, tmp = { ...item, id: 'tmp' + Math.random().toString(36).slice(2) }
   window._shiftTmpQ.push(tmp)
   d.sched.push(tmp); shiftRender()
+  // v4.9.1 連排：重開快選窗（✓即時更新），時段/休息/帶訓都保留
+  window._qkKeep = { s: item.start, e: item.end, b: item.break, tr: item.tr, msg: `✔ 已排 ${name}（${item.start}–${item.end}）——可以繼續點下一位，或按「完成」` }
+  shiftQuick(pos, dt)
   shQueue(async ()=>{
     if (tmp._del) { window._shiftTmpQ = window._shiftTmpQ.filter(x=>x!==tmp); return } // 排隊中被刪＝不送
     const send = { ...tmp }; delete send.id; delete send._del // 送出前抄 tmp 現狀——排隊期間被拖曳/編輯過也算數
