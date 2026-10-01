@@ -1767,7 +1767,7 @@ function menuDiff(){
   return { bF, dF,
     add: Object.keys(dF).filter(k=>!bF[k]),
     del: Object.keys(bF).filter(k=>!dF[k]),
-    chg: Object.keys(dF).filter(k=>bF[k] && (bF[k].name!==dF[k].name || bF[k].price!==dF[k].price || (bF[k].note||'')!==(dF[k].note||''))) }
+    chg: Object.keys(dF).filter(k=>bF[k] && (bF[k].name!==dF[k].name || bF[k].price!==dF[k].price || (bF[k].note||'')!==(dF[k].note||'') || (bF[k].en||'')!==(dF[k].en||''))) }
 }
 function menuRender(){
   const d = window._menuD; if (!d || curStore !== 'menu') return
@@ -1792,18 +1792,18 @@ function menuRender(){
   h += `<div style="background:#fff;border:1.5px solid var(--line);border-radius:10px;padding:8px 11px;margin-bottom:10px;font-size:14px"><b>套餐規則：</b>${(d.draft.note||'').replace(/</g,'&lt;')} ${meN&&menuMode==='edit'?`<button class="mini" onclick="menuNoteEdit()">✏️</button>`:''}</div>`
   if (menuMode === 'edit') {
     (d.draft.sections||[]).forEach((s2,si)=>{
-      h += `<div style="background:var(--soft);border:1px solid var(--line);border-radius:12px;padding:9px 11px;margin-bottom:10px">
-        <div style="font-weight:900;color:var(--pdark)">${s2.name} ${s2.note?`<span class="hint">${s2.note}</span>`:''}
+      h += `<div ondragover="event.preventDefault()" ondrop="menuSecDrop(${si})" style="background:var(--soft);border:1px solid var(--line);border-radius:12px;padding:9px 11px;margin-bottom:10px">
+        <div style="font-weight:900;color:var(--pdark)">${meN?`<span draggable="true" ondragstart="mnDragS=${si}" title="拖曳排序分類" style="cursor:grab;color:#9fb0c6">⠿ </span>`:''}${s2.name} ${s2.note?`<span class="hint">${s2.note}</span>`:''}
         ${meN?` <button class="mini" onclick="menuSecForm(${si})">✏️</button> <button class="mini" onclick="menuItemForm(${si})">＋品項</button> <button class="mini" style="color:var(--red)" onclick="if(confirm('刪掉整個分類「${s2.name}」？（品項會標成刪除）'))menuSecDel(${si})">🗑</button>`:''}</div>`
+      // 表格化＋每格直接編輯（張良 2026-10-01：中文/英文/售價/備註四欄全 inline 改）
+      h += `<div class="scroll"><table style="width:100%;border-collapse:collapse;margin-top:6px"><thead><tr>${['中文','英文','售價','備註',''].map(x=>`<th style="text-align:left;font-size:12px;color:#6b7a90;padding:2px 5px;white-space:nowrap">${x}</th>`).join('')}</tr></thead><tbody>`
       ;(s2.items||[]).forEach(i2=>{
         const b = df.bF[i2.id]
-        const isNew = !b, isChg = b && (b.name!==i2.name || b.price!==i2.price || (b.note||'')!==(i2.note||''))
-        h += `<div style="display:flex;gap:8px;align-items:center;background:${isNew?'#E8F6EE':isChg?'#FFF4DE':'#fff'};border:1px solid ${isNew?'#BBE3CC':isChg?'#E8D089':'var(--line)'};border-radius:9px;padding:6px 10px;margin-top:6px;font-size:14px">
-          <span style="flex:1"><b>${i2.name}</b>${i2.note?` <span class="hint">${i2.note}</span>`:''}${isNew?' <span class="up" style="font-size:13px;font-weight:800">新增</span>':''}${isChg?` <span style="font-size:13px;color:#A85C26;font-weight:800">改（原 ${b.name}·$${b.price}）</span>`:''}</span>
-          <b>$${i2.price}</b>
-          ${meN?`<span><button class="mini" onclick="menuItemForm(${si},'${i2.id}')">✏️</button><button class="mini" style="color:var(--red)" onclick="if(confirm('刪掉「${i2.name}」？'))menuItemDel(${si},'${i2.id}')">🗑</button></span>`:''}
-        </div>`
+        const isNew = !b, isChg = b && (b.name!==i2.name || b.price!==i2.price || (b.note||'')!==(i2.note||'') || (b.en||'')!==(i2.en||''))
+        const cell=(f,v,st)=>`<td style="padding:3px 4px"><input ${meN?'':'disabled'} value="${String(v??'').replace(/"/g,'&quot;')}" onchange="menuCell(${si},'${i2.id}','${f}',this.value)" style="width:100%;box-sizing:border-box;border:1px solid var(--line);border-radius:7px;padding:6px;font-size:14px;background:#fff;${st||''}"></td>`
+        h += `<tr style="background:${isNew?'#E8F6EE':isChg?'#FFF4DE':'transparent'}">${cell('name',i2.name,'font-weight:700;min-width:120px')}${cell('en',i2.en,'min-width:110px')}<td style="padding:3px 4px;width:70px"><input ${meN?'':'disabled'} inputmode="numeric" value="${i2.price}" onchange="menuCell(${si},'${i2.id}','price',this.value)" style="width:64px;border:1px solid var(--line);border-radius:7px;padding:6px;font-size:14px;text-align:right;font-weight:800;background:#fff"></td>${cell('note',i2.note,'min-width:90px')}<td style="white-space:nowrap">${isNew?'<span class="up" style="font-size:12px;font-weight:800">新增</span> ':''}${meN?`<button class="mini" style="color:var(--red)" onclick="if(confirm('刪掉「${i2.name}」？'))menuItemDel(${si},'${i2.id}')">🗑</button>`:''}</td></tr>`
       })
+      h += `</tbody></table></div>`
       // 這分類底下被刪掉的（原菜單有、新菜單沒了）→ 灰底刪除線＋復原
       df.del.filter(k=>df.bF[k].sec===s2.name).forEach(k=>{ const b = df.bF[k]
         h += `<div style="display:flex;gap:8px;align-items:center;background:#F5F5F5;border:1px dashed #D8C7C4;border-radius:9px;padding:6px 10px;margin-top:6px;font-size:14px;opacity:.75">
@@ -1842,6 +1842,18 @@ function menuRender(){
   h += `</section>`
   app.innerHTML = h
 }
+let mnDragS = null
+function menuCell(si, id, f, v){ // 表格每格直接改（onchange=離開格子就存）
+  const it = (window._menuD.draft.sections[si].items||[]).find(x=>x.id===id); if(!it) return
+  it[f] = f==='price' ? (+String(v).replace(/[^0-9]/g,'')||0) : String(v).trim()
+  menuSave('改 '+it.name+' '+({name:'中文',en:'英文',price:'售價',note:'備註'}[f]||f))
+}
+function menuSecDrop(to){ // 分類拖曳排序
+  if (mnDragS==null || mnDragS===to) { mnDragS=null; return }
+  const ss = window._menuD.draft.sections
+  const [mv] = ss.splice(mnDragS,1); ss.splice(to,0,mv); mnDragS=null
+  menuSave('搬分類 '+mv.name)
+}
 async function menuSave(what){
   const d = window._menuD
   const r = await fetch('/api/mail-sync?menuset=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ draft: d.draft, what, token: TK() }) })
@@ -1857,6 +1869,7 @@ function menuItemForm(si, id){
   ov.innerHTML = `<div style="background:#fff;border-radius:14px;max-width:400px;width:100%;padding:16px" onclick="event.stopPropagation()">
     <div style="font-weight:900;margin-bottom:8px">${it?'✏️ 編輯':'＋ 新增'}品項｜${s2.name}</div>
     <input id="mnName" placeholder="品名" value="${it?it.name.replace(/"/g,'&quot;'):''}" style="${ip}">
+    <input id="mnEn" placeholder="英文（可空）" value="${it?(it.en||'').replace(/"/g,'&quot;'):''}" style="${ip}">
     <input id="mnPrice" type="number" placeholder="價格" value="${it?it.price:''}" style="${ip}">
     <input id="mnNote" placeholder="註記（周一/主餐/#無咖啡因…可空）" value="${it?(it.note||'').replace(/"/g,'&quot;'):''}" style="${ip}">
     <div style="display:flex;gap:8px;justify-content:flex-end"><button class="mini" style="padding:9px 12px" onclick="document.getElementById('mnOv').remove()">取消</button>
@@ -1866,12 +1879,12 @@ function menuItemForm(si, id){
 }
 function menuItemSave(si, id){
   const g2 = x => (document.getElementById(x)||{}).value||''
-  const name = g2('mnName').trim(), price = +g2('mnPrice')||0, note = g2('mnNote').trim()
+  const name = g2('mnName').trim(), en = g2('mnEn').trim(), price = +g2('mnPrice')||0, note = g2('mnNote').trim()
   if (!name) { alert('品名空的'); return }
   const s2 = window._menuD.draft.sections[si]
   const o = document.getElementById('mnOv'); if (o) o.remove()
-  if (id) { const it = (s2.items||[]).find(x=>x.id===id); if (it) { it.name=name; it.price=price; it.note=note } }
-  else s2.items = [...(s2.items||[]), { id: 'mn'+Date.now().toString(36), name, price, note }]
+  if (id) { const it = (s2.items||[]).find(x=>x.id===id); if (it) { it.name=name; it.en=en; it.price=price; it.note=note } }
+  else s2.items = [...(s2.items||[]), { id: 'mn'+Date.now().toString(36), name, en, price, note }]
   menuSave((id?'改 ':'加 ')+name)
 }
 function menuItemDel(si, id){
