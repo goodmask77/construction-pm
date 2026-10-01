@@ -1762,6 +1762,19 @@ export default async function handler(req, res) {
     const staff = aliveS.filter(p2 => !gdOn || p2.gd).map(p2 => ({ n: p2.name, role: aprS.includes(p2.name) ? '審核人' : (p2.gdRole || '一般'), bound: boundRids.has(p2.id) }))
     return res.status(200).json({ ok: true, ym, sched: schedL, punches: pchs.map(p => ({ name: p.name, ts: p.ts, dir: p.dir, src: p.src })), names: namesU, namesAll, posList, slots: (sd || {}).slots || null, staff, me: meS ? { name: meS.name, role: meS.role, approver: aprS.includes(meS.name) } : null })
   }
+  // 一次性清班表重複（2026-10-02 跨月bug期間連點產生的分身）：?shiftdedup=管理金鑰[&dry=1]——同(人+日+起迄+崗位)只留一筆
+  if (req.query?.shiftdedup) {
+    const okD = (process.env.MENU_PROBE_KEY || '').trim()
+    if (!okD || String(req.query.shiftdedup) !== okD) return res.status(403).json({ ok: false })
+    const docD = (await kvGet('sp_finance_pm_shift_g')) || { list: [] }
+    const seenD = new Set(); const keep = []; const dropped = []
+    for (const x of (docD.list || [])) {
+      const k2 = [x.name, x.date, x.start, x.end, x.pos || ''].join('|')
+      if (seenD.has(k2)) dropped.push({ id: x.id, k: k2 }); else { seenD.add(k2); keep.push(x) }
+    }
+    if (!req.query.dry && dropped.length) { docD.list = keep; await kvPut('sp_finance_pm_shift_g', docD, '班表去重(' + dropped.length + '筆)') }
+    return res.status(200).json({ ok: true, dry: !!req.query.dry, kept: keep.length, dropped })
+  }
   if (req.method === 'POST' && req.query?.shiftset) {
     const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
     if (!ok2 || String(req.query.shiftset) !== ok2) return res.status(403).json({ ok: false })
