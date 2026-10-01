@@ -1505,9 +1505,10 @@ function shiftRender(){
       const ents = es.map(e=>{
         const pi = pcIdx(e.name), ti = e.tr ? pcIdx(e.tr) : -1
         // v4.7.0 寶石色：實色填滿無外框；帶訓卡=左右兩人實色各半+白虛線框
-        const bg2 = e.tr ? `background:linear-gradient(90deg,${PB[pi]} 52%,${PB[ti]} 52%);` : `background:${PB[pi]};`
+        // v4.9.4（張良「手機帶訓卡名字被切」）：帶訓卡改上下切色各一行——再窄名字都完整
+        const bg2 = e.tr ? `background:linear-gradient(180deg,${PB[pi]} 50%,${PB[ti]} 50%);` : `background:${PB[pi]};`
         const exp = ((d.posStats||{})[e.name]||{})[ps] || 0 // v4.9.0 生手標記：這崗位排過≤1次
-        return `<div ${meN?`draggable="true" ondragstart="event.stopPropagation();event.dataTransfer.setData('text/plain','${e.id}')" onclick="event.stopPropagation();shiftForm('${e.id}')"`:''} style="font-size:13px;line-height:1.7;${meN?'cursor:grab;':''}${bg2}border:${e.tr?'2px dashed rgba(255,255,255,.85)':'none'};border-radius:6px;padding:${e.tr?'3px 7px':'5px 8px'};margin:2px 0">${exp<=1&&ps!=='未分崗'&&!e.tr?`<span title="這崗位只排過 ${exp} 次，建議搭帶訓" style="font-size:12px">⚠️</span> `:''}<b style="color:${PT[pi]};font-weight:600">${e.name}</b>${e.tr?` <span style="color:${PT[ti]};font-weight:600;font-size:12px;white-space:nowrap">🎓${e.tr}</span>`:''}</div>`
+        return `<div ${meN?`draggable="true" ondragstart="event.stopPropagation();event.dataTransfer.setData('text/plain','${e.id}')" onclick="event.stopPropagation();shiftForm('${e.id}')"`:''} style="font-size:13px;line-height:1.7;${meN?'cursor:grab;':''}${bg2}border:${e.tr?'2px dashed rgba(255,255,255,.85)':'none'};border-radius:6px;padding:${e.tr?'2px 7px':'5px 8px'};margin:2px 0">${exp<=1&&ps!=='未分崗'&&!e.tr?`<span title="這崗位只排過 ${exp} 次，建議搭帶訓" style="font-size:12px">⚠️</span> `:''}<b style="color:${PT[pi]};font-weight:600">${e.name}</b>${e.tr?`<span style="display:block;color:${PT[ti]};font-weight:600;font-size:12.5px">🎓${e.tr}</span>`:''}</div>`
       }).join('')
       return `<td${cellOps} style="${BD}${gb}${dt===today?'background:#1B3356;':''}text-align:left;${meN?'cursor:pointer;':''}vertical-align:top;overflow:hidden">${ents || (meN?'<span class="mut">＋</span>':'<span class="mut">—</span>')}</td>`
     }).join('') + `</tr>`
@@ -1747,13 +1748,14 @@ function shiftSkill(){
   const cell = (n,p2)=>{ const c2=(PS[n]||{})[p2]||0, t2=(PS[n]||{})['🎓'+p2]||0
     const al = c2 ? (0.15+0.7*c2/max).toFixed(2) : 0
     return `<td style="text-align:center;border:1px solid var(--line);padding:6px 4px;background:rgba(77,163,255,${al});font-weight:800;color:${c2?'#fff':'var(--muted)'}">${c2||'·'}${t2?`<span style="font-size:10.5px;opacity:.9"> 🎓${t2}</span>`:''}</td>` }
-  const row = s2 => `<tr${s2.off?' style="opacity:.55"':''}><td style="text-align:left;border:1px solid var(--line);padding:6px 8px;font-weight:800;color:${_PBX()[((d.colors||{})[s2.n]??0)%_PBX().length]}">${s2.n}${s2.off?' <span class="hint" style="font-size:11px">非常態</span>':''}</td>${cols.map(p2=>cell(s2.n,p2)).join('')}</tr>`
+  // v4.9.4（張良）：名字欄凍結(手機橫滑不消失)+窄欄+不寫「非常態」(淡化就夠)
+  const row = s2 => `<tr${s2.off?' style="opacity:.55"':''}><td style="text-align:left;border:1px solid var(--line);padding:6px 6px;font-weight:800;white-space:nowrap;position:sticky;left:0;background:#222B38;z-index:1;color:${_PBX()[((d.colors||{})[s2.n]??0)%_PBX().length]}">${s2.n}</td>${cols.map(p2=>cell(s2.n,p2)).join('')}</tr>`
   const ov = document.createElement('div'); ov.id='skOv'
   ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:50;display:flex;align-items:center;justify-content:center;padding:16px'
   ov.innerHTML = `<div style="background:#222B38;border:1px solid #3B4654;box-shadow:0 18px 50px rgba(0,0,0,.55);border-radius:14px;width:min(880px,94vw);max-height:90vh;overflow:auto;padding:18px" onclick="event.stopPropagation()">
     <div style="font-weight:900;font-size:16px;margin-bottom:4px">📊 崗位熟練度（排過幾次）</div>
     <div class="hint" style="margin-bottom:10px">只算今天以前的班；顏色越深＝次數越多；「·」＝沒排過（該訓練的空格）；🎓n＝被帶訓次數。</div>
-    <div class="scroll"><table style="border-collapse:collapse;min-width:560px"><thead><tr><th style="border:1px solid var(--line);text-align:left;padding:6px 8px">夥伴</th>${cols.map(p2=>`<th style="border:1px solid var(--line);padding:6px 4px;text-align:center">${p2}</th>`).join('')}</tr></thead><tbody>${ppl.map(row).join('')}</tbody></table></div>
+    <div class="scroll"><table style="border-collapse:collapse;min-width:560px"><thead><tr><th style="border:1px solid var(--line);text-align:left;padding:6px 6px;position:sticky;left:0;background:#222B38;z-index:2">夥伴</th>${cols.map(p2=>`<th style="border:1px solid var(--line);padding:6px 4px;text-align:center">${p2}</th>`).join('')}</tr></thead><tbody>${ppl.map(row).join('')}</tbody></table></div>
     <div style="display:flex;justify-content:flex-end;margin-top:12px"><button class="mini" style="padding:9px 14px" onclick="document.getElementById('skOv').remove()">關閉</button></div></div>`
   ov.onclick = () => ov.remove()
   document.body.appendChild(ov)
