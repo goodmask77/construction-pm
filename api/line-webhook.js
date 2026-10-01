@@ -1701,8 +1701,8 @@ export default async function handler(req, res) {
             const ln = await getLineProfile(userId)
             const cand = byNameOrNick(ln)
             if (cand && (!cand.lineUserId || cand.lineUserId === userId)) { cand.lineUserId = userId; await kvSet('sp_crew_kb_roster', rosterDoc2); rp = cand }
-            else if (ln) { rp = { name: ln.slice(0, 20), id: undefined }; note2 = `\n\n（我先用你的 LINE 名稱「${ln}」綁；名冊之後對上會自動用本名，不影響使用。）` }
-            else { await send('讀不到你的 LINE 名稱，回我一句「綁定GD 你的名字」就好。'); continue }
+            // LINE 名稱對不到名冊＝不再將就綁（張良 2026-10-01：夏👌這種名字辨識不了誰是誰）→ 要求帶本名
+            else { await send('為了確認你是誰，回我「綁定GD 你的本名」就好（例：綁定GD 張良瑋）。'); continue }
           }
           if (rp.id) { // 綁定的人自動標成 GD 人員（名冊可再取消；張良 2026-09-21）
             const pgd = (rosterDoc2.people || []).find(p => p.id === rp.id)
