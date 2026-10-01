@@ -1471,7 +1471,7 @@ function shiftRender(){
   const GC = [{bg:'#EAF1FD',ink:'#1D4ED8'},{bg:'#FDF1E3',ink:'#B45309'},{bg:'#E9F7EE',ink:'#15803D'},{bg:'#F4F4F5',ink:'var(--pdark)'}]
   // v4.4.1（張良 2026-10-02）：每個人固定一個顏色（照 GD 人員名單順序配，超過輪替）——跨崗位/跨天同色快速辨識
   // v4.4.5（張良「搞個綠色灰色白色分開一點」）：12色強對比——紫/橘/綠/藍/粉/棕/深灰/紅/青/草綠/白(黑框)/金黃，不再有紫藍靛擠一起
-  const PB = _PBX(), PG = _PGX() // v4.6.2 共用 20 色盤（底色加深對比）
+  const PB = _PBX(), PT = _PTX() // v4.7.0 寶石色：實色填滿+白字
   // v4.5.3 顏色吃伺服器永久色號（d.colors），不再照名單順序——排序/進出都不變色
   const pcIdx = n => { const c2 = (d.colors||{})[n]; if (c2 != null) return c2 % PB.length; let i = 0; for(const ch of String(n)) i=(i*31+ch.charCodeAt(0))%997; return i % PB.length }
   const BD = 'border:1px solid #D6DEE8;'
@@ -1486,9 +1486,9 @@ function shiftRender(){
       const cellOps = meN ? ` onclick="cellClick('${ps}','${dt}')" ondragover="event.preventDefault();this.style.outline='2px solid var(--primary)'" ondragleave="this.style.outline=''" ondrop="shiftDrop(event,'${ps}','${dt}')"` : ''
       const ents = es.map(e=>{
         const pi = pcIdx(e.name), ti = e.tr ? pcIdx(e.tr) : -1
-        // v4.4.9（張良）：帶訓卡底色切一半=左帶訓者色/右被帶者色；卡上不顯示時間（點卡可看改）
-        const bg2 = e.tr ? `background:linear-gradient(90deg,${PG[pi]} 50%,${PG[ti]} 50%);` : `background:${PG[pi]};`
-        return `<div ${meN?`draggable="true" ondragstart="event.stopPropagation();event.dataTransfer.setData('text/plain','${e.id}')" onclick="event.stopPropagation();shiftForm('${e.id}')"`:''} style="font-size:13px;line-height:1.6;${meN?'cursor:grab;':''}border:${e.tr?`2.5px dashed ${PB[pi]}`:`1.5px solid ${PB[pi]}`};${bg2}border-radius:7px;padding:3px 6px;margin:1px 0"><b style="color:${PB[pi]}">${e.name}</b>${e.tr?` <span style="color:${PB[ti]};font-weight:800;font-size:12px;white-space:nowrap">🎓${e.tr}</span>`:''}</div>`
+        // v4.7.0 寶石色：實色填滿無外框；帶訓卡=左右兩人實色各半+白虛線框
+        const bg2 = e.tr ? `background:linear-gradient(90deg,${PB[pi]} 52%,${PB[ti]} 52%);` : `background:${PB[pi]};`
+        return `<div ${meN?`draggable="true" ondragstart="event.stopPropagation();event.dataTransfer.setData('text/plain','${e.id}')" onclick="event.stopPropagation();shiftForm('${e.id}')"`:''} style="font-size:13px;line-height:1.7;${meN?'cursor:grab;':''}${bg2}border:${e.tr?'2px dashed rgba(255,255,255,.85)':'none'};border-radius:6px;padding:${e.tr?'3px 7px':'5px 8px'};margin:2px 0"><b style="color:${PT[pi]};font-weight:600">${e.name}</b>${e.tr?` <span style="color:${PT[ti]};font-weight:600;font-size:12px;white-space:nowrap">🎓${e.tr}</span>`:''}</div>`
       }).join('')
       return `<td${cellOps} style="${BD}${dt===today?'background:#F0F8FD;':''}text-align:left;${meN?'cursor:pointer;':''}vertical-align:top;overflow:hidden">${ents || (meN?'<span class="mut">＋</span>':'<span class="mut">—</span>')}</td>`
     }).join('') + `</tr>`
@@ -1500,7 +1500,7 @@ function shiftRender(){
     <div class="hint" style="font-weight:800;padding:2px 4px">未排</div>` + wkDays.map(dt=>{
     const onDay = new Set(wkEnts.filter(x=>x.date===dt).flatMap(x=>[x.name, x.tr].filter(Boolean))) // v4.6.2：被帶訓的人也算有班
     const rest = regStaff.filter(s2=>!onDay.has(s2.n))
-    return `<div ${meN?`ondragover="event.preventDefault();this.style.outline='2px dashed var(--red)'" ondragleave="this.style.outline=''" ondrop="unschedDrop(event)"`:''} style="padding:2px 4px;min-height:34px;border-radius:8px">${rest.map(s2=>`<span ${meN?`draggable="true" ondragstart="event.dataTransfer.setData('text/plain','u|${s2.n}')" title="拖上去格子＝直接排班"`:''} style="display:block;width:max-content;${meN?'cursor:grab;':''}border:1.5px solid ${PB[pcIdx(s2.n)]};background:${PG[pcIdx(s2.n)]};color:${PB[pcIdx(s2.n)]};border-radius:7px;padding:3px 6px;margin:2px 0;font-size:13px;font-weight:800;line-height:1.6">${s2.n}</span>`).join('')||'<span class="hint" style="font-size:12px">✓</span>'}</div>`
+    return `<div ${meN?`ondragover="event.preventDefault();this.style.outline='2px dashed var(--red)'" ondragleave="this.style.outline=''" ondrop="unschedDrop(event)"`:''} style="padding:2px 4px;min-height:34px;border-radius:8px">${rest.map(s2=>`<span ${meN?`draggable="true" ondragstart="event.dataTransfer.setData('text/plain','u|${s2.n}')" title="拖上去格子＝直接排班"`:''} style="display:flex;align-items:center;gap:5px;width:max-content;${meN?'cursor:grab;':''}border:1px solid #D6DEE8;background:#fff;color:#374151;border-radius:6px;padding:4px 8px 4px 6px;margin:2px 0;font-size:13px;font-weight:600;line-height:1.5"><span style="width:8px;height:8px;border-radius:50%;background:${PB[pcIdx(s2.n)]};flex:none"></span>${s2.n}</span>`).join('')||'<span class="hint" style="font-size:12px">✓</span>'}</div>`
   }).join('') + `</div></div>`
   const pn = Object.keys(per).sort()
   if (pn.length){
@@ -2691,22 +2691,50 @@ function shiftPosEdit(){ // v4.3.2（張良 2026-10-02「這樣很難弄」）�
   document.body.appendChild(ov)
   posRender(); slRender(); odRender()
 }
-// v4.6.2（張良「對比高一點、更多選擇、照顏色分類」）：20 色、底色加深；色號 0-15 色系不變只加深（人員既有色不亂跳）
-const _PBX = ()=>['#7C3AED','#EA580C','#15803D','#1D4ED8','#DB2777','#92400E','#374151','#DC2626','#0E7490','#65A30D','#111827','#CA8A04','#9F1239','#4338CA','#155E75','#3F6212','#0369A1','#A21CAF','#047857','#1E3A8A']
-const _PGX = ()=>['#DDD6FE','#FDBA74','#86EFAC','#93C5FD','#F9A8D4','#FDE68A','#D1D5DB','#FCA5A5','#67E8F9','#BEF264','#FFFFFF','#FDE047','#FDA4AF','#A5B4FC','#99F6E4','#D9F99D','#7DD3FC','#F0ABFC','#6EE7B7','#C7D2FE']
-const _CORD = ()=>[7,12,4,17,1,11,5,9,2,18,15,8,14,16,3,13,19,0,6,10] // 選色盤顯示順序：紅系→橘黃→綠系→藍青→紫→灰白
+// v4.7.0 寶石色系（張良 2026-10-02 定稿規格）：飽和+明度壓低、實色填滿+白字；繽紛靠色相拉開、質感靠「深」
+const _PAL = ()=>[
+  {n:'寶石紅',g:'紅系',bg:'#B23A48',tx:'#FFFFFF'},
+  {n:'珊瑚紅',g:'紅系',bg:'#D9634C',tx:'#FFFFFF'},
+  {n:'莓果紅',g:'紅系',bg:'#B83A72',tx:'#FFFFFF'},
+  {n:'琥珀橘',g:'橘黃系',bg:'#D9822B',tx:'#FFFFFF'},
+  {n:'赭金',g:'橘黃系',bg:'#D4A72C',tx:'#2B2000'},
+  {n:'萊姆綠',g:'綠系',bg:'#8DA33B',tx:'#1E2608'},
+  {n:'翡翠綠',g:'綠系',bg:'#2E8B57',tx:'#FFFFFF'},
+  {n:'松綠',g:'綠系',bg:'#1F6E5A',tx:'#FFFFFF'},
+  {n:'孔雀藍',g:'青藍系',bg:'#138A8A',tx:'#FFFFFF'},
+  {n:'湖水藍',g:'青藍系',bg:'#2A9DB5',tx:'#FFFFFF'},
+  {n:'鈷藍',g:'青藍系',bg:'#2F5FB3',tx:'#FFFFFF'},
+  {n:'海軍藍',g:'青藍系',bg:'#23395D',tx:'#FFFFFF'},
+  {n:'靛紫',g:'紫系',bg:'#5B4BA8',tx:'#FFFFFF'},
+  {n:'葡萄紫',g:'紫系',bg:'#7B3F8C',tx:'#FFFFFF'},
+  {n:'可可棕',g:'中性系',bg:'#6B4A3A',tx:'#FFFFFF'},
+  {n:'石墨',g:'中性系',bg:'#3A3F47',tx:'#FFFFFF'},
+]
+const _PBX = ()=>_PAL().map(x=>x.bg) // 實色底
+const _PTX = ()=>_PAL().map(x=>x.tx) // 文字色
 function odRender(){
   const box = document.getElementById('odRows'); if (!box) return
-  const B = _PBX(), G = _PGX()
+  const B = _PBX()
   const regs = window._ordTmp.filter(n=>!window._offTmp.has(n))
   const offs = window._ordTmp.filter(n=>window._offTmp.has(n))
   window._ordTmp = regs.concat(offs) // 非常態永遠沉底
+  const PALX = _PAL()
   const row = (n, gi, glen) => {
     const i = window._ordTmp.indexOf(n)
     const ci = window._colTmp[n] != null ? window._colTmp[n] % B.length : i % B.length
     const off = window._offTmp.has(n)
-    const sw = `<button title="點我換色" style="width:30px;height:24px;border-radius:7px;border:2.5px solid ${B[ci]};background:${G[ci]};cursor:pointer" onclick="window._colOpen=window._colOpen==='${n}'?null:'${n}';odRender()"></button>`
-    const pal = window._colOpen===n ? `<div style="display:flex;gap:4px;flex-wrap:wrap;padding:6px 0 4px">${_CORD().map(ci2=>`<button style="width:26px;height:22px;border-radius:6px;border:2px solid ${B[ci2]};background:${G[ci2]};cursor:pointer;${ci2===ci?'outline:2.5px solid #10182B;outline-offset:1px;':''}" onclick="window._colTmp['${n}']=${ci2};window._colOpen=null;odRender()"></button>`).join('')}</div>` : ''
+    const sw = `<button title="點我換色" style="width:30px;height:24px;border-radius:6px;border:none;background:${B[ci]};cursor:pointer" onclick="window._colOpen=window._colOpen==='${n}'?null:'${n}';odRender()"></button>`
+    let pal = ''
+    if (window._colOpen === n) { // v4.7.0：選色面板照色系分組；選中=白圈+色框；被別人用=角落白點
+      let lastG = ''
+      pal = '<div style="padding:6px 0 4px">'
+      PALX.forEach((c2, ci2)=>{
+        if (c2.g !== lastG) { pal += `${lastG?'</div>':''}<div class="hint" style="font-weight:800;margin:5px 0 3px">${c2.g}</div><div style="display:flex;gap:6px;flex-wrap:wrap">`; lastG = c2.g }
+        const used = Object.entries(window._colTmp).some(([k2,v2])=>k2!==n && (v2%B.length)===ci2)
+        pal += `<button title="${c2.n}${used?'（有人在用）':''}" style="width:32px;height:26px;border-radius:6px;border:none;background:${c2.bg};cursor:pointer;position:relative;${ci2===ci?`box-shadow:0 0 0 2px #fff,0 0 0 4px ${c2.bg};`:''}" onclick="window._colTmp['${n}']=${ci2};window._colOpen=null;odRender()">${used?'<span style="position:absolute;top:3px;right:3px;width:6px;height:6px;border-radius:50%;background:#fff;opacity:.95"></span>':''}</button>`
+      })
+      pal += '</div></div>'
+    }
     return `<div style="border-bottom:1px solid var(--line)"><div style="display:flex;gap:6px;align-items:center;padding:4px 0">
       <span style="flex:1;font-weight:800;color:${off?'#9CA3AF':B[ci]};${off?'text-decoration:line-through;':''}">${n}</span>${sw}
       <button class="mini" title="${off?'恢復常態排班':'標為非常態（沉底＋排班選單沉底＋不列未排）'}" style="padding:7px 9px;${off?'':'color:var(--red)'}" onclick="odOff('${n}')">${off?'↺':'✕'}</button>

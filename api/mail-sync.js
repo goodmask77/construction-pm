@@ -1771,7 +1771,7 @@ export default async function handler(req, res) {
     const colMap = ((sd || {}).colors) || {}
     let colDirty = false
     const usedC = new Set(Object.values(colMap))
-    for (const s3 of staff) { if (colMap[s3.n] == null) { let ci = 0; while (usedC.has(ci) && ci < 20) ci++; colMap[s3.n] = ci % 20; usedC.add(colMap[s3.n]); colDirty = true } }
+    for (const s3 of staff) { if (colMap[s3.n] == null) { let ci = 0; while (usedC.has(ci) && ci < 16) ci++; colMap[s3.n] = ci % 16; usedC.add(colMap[s3.n]); colDirty = true } }
     if (colDirty && sd) { sd.colors = colMap; await kvPut('sp_finance_pm_shift_g', sd, '人員配色固定') }
     return res.status(200).json({ ok: true, ym, sched: schedL, punches: pchs.map(p => ({ name: p.name, ts: p.ts, dir: p.dir, src: p.src })), names: namesU, namesAll, posList, slots: (sd || {}).slots || null, colors: colMap, staff, me: meS ? { name: meS.name, role: meS.role, approver: aprS.includes(meS.name) } : null })
   }
@@ -1783,7 +1783,7 @@ export default async function handler(req, res) {
     try { bC = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
     const docC = (await kvGet('sp_finance_pm_shift_g')) || { list: [] }
     docC.colors = { ...(docC.colors || {}) }
-    for (const [nm, ci] of Object.entries(bC.map || {})) docC.colors[String(nm).slice(0, 20)] = Math.max(0, Math.min(19, Number(ci) || 0))
+    for (const [nm, ci] of Object.entries(bC.map || {})) docC.colors[String(nm).slice(0, 20)] = Math.max(0, Math.min(15, Number(ci) || 0))
     await kvPut('sp_finance_pm_shift_g', docC, '人員色號校正')
     return res.status(200).json({ ok: true, colors: docC.colors })
   }
@@ -1854,7 +1854,7 @@ export default async function handler(req, res) {
       doc.staffOrd = (Array.isArray(sb2.list) ? sb2.list : []).map(s3 => String(s3).trim().slice(0, 20)).filter(Boolean).slice(0, 50)
     } else if (sb2.op === 'colors') { // 🎨人員自選色（張良 2026-10-02「讓我自己選擇編輯」）
       doc.colors = { ...(doc.colors || {}) }
-      for (const [nm, ci] of Object.entries(sb2.map || {})) doc.colors[String(nm).slice(0, 20)] = Math.max(0, Math.min(19, Number(ci) || 0))
+      for (const [nm, ci] of Object.entries(sb2.map || {})) doc.colors[String(nm).slice(0, 20)] = Math.max(0, Math.min(15, Number(ci) || 0))
     } else if (sb2.op === 'off') { // ✕非常態排班人員（張良 2026-10-02）：沉底+不進快選選單+不列每日未排
       doc.offStaff = (Array.isArray(sb2.list) ? sb2.list : []).map(s3 => String(s3).trim().slice(0, 20)).filter(Boolean).slice(0, 50)
     } else return res.status(400).json({ ok: false })
