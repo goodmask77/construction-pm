@@ -155,6 +155,7 @@ async function load(store, fresh){
   if (!hadCache) app.innerHTML = '<section>載入中…</section>'
   let d
   try { const r = await fetch('/api/mail-sync?opsboard=' + encodeURIComponent(K) + '&store=' + store + (fresh ? '&r=' + Date.now() : '')); d = await r.json() } catch(e){}
+  if (d && d.prepAct) window._prepAct = d.prepAct
   if (!d || !d.ok) { if (!hadCache) app.innerHTML = '<div class="err">讀不到資料（金鑰錯誤或連線問題），請跟店長要新連結</div>'; return }
   try { localStorage.setItem(ck, JSON.stringify(d)) } catch(e){}
   if (curStore !== store) return // 使用者已切到別店，別把畫面蓋回來
@@ -171,15 +172,17 @@ function renderBoard(d, store){
     let tw = new Date().getDay() // 今天星期幾（1~5發光）
     if (tw === 0 || tw === 6) tw = 1 // 週六日（GD公休）打開＝在準備週一的量 → 發光週一（張良 2026-09-20 抓到週日沒東西亮）
     h += `<section><h2>預估備料量 <span class="hint">份/日</span></h2>`
-    h += `<div class="scroll"><table><thead><tr><th>項目</th><th>平均</th>${['一','二','三','四','五'].map((w,i)=>`<th${tw===i+1?' class="todaycol"':''}>週${w}${tw===i+1?' ★':''}</th>`).join('')}</tr></thead><tbody>`
+    h += `<div class="scroll"><table><thead><tr><th>項目</th><th class="todaycol">今日實備✏️</th><th>平均</th>${['一','二','三','四','五'].map((w,i)=>`<th${tw===i+1?' class="todaycol"':''}>週${w}${tw===i+1?' ★':''}</th>`).join('')}</tr></thead><tbody>`
     grps.forEach(g=>{
-      h += `<tr class="catband"><td colspan="9">${g}</td></tr>`
+      h += `<tr class="catband"><td colspan="10">${g}</td></tr>`
       d.prep.filter(p=>p.grp===g).forEach(p=>{
         const wds = (p.byWd||[]).map((v,i)=>{
           if(v==null) return `<td>—</td>`
           return `<td${tw===i+1?' class="todaycol"':''}><b>${v}</b></td>` // ±%與峰低值取消（張良 2026-09-25：版面乾淨）
         }).join('')
-        h += `<tr${p.sub?' class="subrow"':''}><td style="font-weight:${p.sub?800:700};color:${p.sub?'#8a5a2e':'var(--ink)'}">${p.sub?'└ ':''}${p.name}</td><td class="avg">${p.avg!=null?p.avg:'—'}</td>${wds}</tr>`
+        const av=(window._prepAct||{})[p.name]
+        const actTd = p.sub ? `<td class="todaycol mut">—</td>` : `<td class="todaycol"><input inputmode="numeric" value="${av!=null?av:''}" placeholder="填" style="width:52px;padding:4px;border:1.5px solid #9ec5e8;border-radius:6px;text-align:center;font-weight:800;font-size:14px" onchange="actSave('${p.name.replace(/'/g,"\\'")}',this.value)"></td>`
+        h += `<tr${p.sub?' class="subrow"':''}><td style="font-weight:${p.sub?800:700};color:${p.sub?'#8a5a2e':'var(--ink)'}">${p.sub?'└ ':''}${p.name}</td>${actTd}<td class="avg">${p.avg!=null?p.avg:'—'}</td>${wds}</tr>`
       })
     })
     h += `</tbody></table></div><div class="hint" style="margin-top:8px">怎麼用：①平均＝近30天「去掉最高/最低各一天」的截尾平均（颱風日/異常日不拉偏；樣本不足8天不截）②看今天星期幾那欄（藍底）＝該星期的截尾平均，照這個數備。</div></section>`
@@ -252,6 +255,16 @@ function renderBoard(d, store){
   todayRender()
   if (store === 'ground') { sopLoad(); fcLoad(); soLoad() }
   if (!window._pf) { window._pf = 1; setTimeout(prefetchTabs, 800) } // 背景預抓其他分頁（切換秒開）
+}
+// 實際備料填寫（張良 2026-10-01：每天留紀錄做分析；要綁定GD身分才能填）
+window._prepAct = {}
+async function actSave(item, val){
+  try{
+    const r = await fetch('/api/mail-sync?prepact=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ item, qty: val, token: TK() }) })
+    const j = await r.json()
+    if(!j.ok){ alert(j.error || '儲存失敗'); return }
+    window._prepAct = j.act || {}
+  }catch(e){ alert('儲存失敗，再試一次') }
 }
 // ── 預做節奏表渲染（完整菜單＋品類分組＋隱藏；隱藏清單在 sopData.prepHide，sopLoad 後會再畫一次）──
 let rhyMode = 15, rhyMngOn = false

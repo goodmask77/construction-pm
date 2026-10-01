@@ -765,6 +765,8 @@ export default async function handler(req, res) {
     const storeQ = String(req.query.store || 'ground') === 'abeach' ? 'abeach' : 'ground'
     const skOf2 = (n) => /groun/i.test(n || '') ? 'ground' : 'abeach'
     const [posDoc, aliasDoc2, hiddenDoc2, pricesDoc2] = await Promise.all([kvGet('sp_finance_pm_pos'), kvGet('sp_finance_pm_pos_alias'), kvGet('sp_finance_pm_pos_hidden'), kvGet('sp_finance_pm_pos_prices')])
+    const todayAct = new Date(Date.now()+8*3600e3).toISOString().slice(0,10)
+    const actDoc = (await kvGet('sp_finance_pm_prep_act_'+todayAct.slice(0,7))) || { days:{} } // 實際備料（張良 2026-10-01：每天可填、留紀錄做分析）
     // 排除「盤中未完整日」（張良 2026-09-24 抓包：今天的半天資料 11:00 起混進統計，把當天星期的平均拉低
     // → 看板白天數字一直變、跟 09:30 備料訊息對不上。統計只吃打烊後的正式日結；日表那段照樣顯示今天盤中）
     const entries = ((posDoc || {}).entries || []).filter(e => skOf2(e.store) === storeQ && !e.intraday).sort((a, b) => (a.date < b.date ? -1 : 1))
@@ -987,7 +989,7 @@ export default async function handler(req, res) {
     return res.status(200).json({
       ok: true, store: storeQ, updatedAt: new Date().toISOString(), anchor,
       kpi: { rev30, days30: w30.length, avgRev: w30.length ? Math.round(rev30 / w30.length) : 0, tx30: w30.reduce((t, e) => t + (Number(e.txCount) || 0), 0) },
-      n30, prep, share14, rhythm, soldout, days: days2.reverse(), setPcts: setDays.reverse(), dates: datesAll, cats: cats2, hidden: Object.values(itemsH2).map(o => ({ n: o.n, k: o.k, cat: o.cat, cum30: o.q30 })), slots: (slots2.wk.length || slots2.we.length) ? slots2 : null,
+      n30, prep, prepAct: Object.fromEntries(Object.entries((actDoc.days || {})[todayAct] || {}).map(([k, v]) => [k, v.q])), prepActDate: todayAct, share14, rhythm, soldout, days: days2.reverse(), setPcts: setDays.reverse(), dates: datesAll, cats: cats2, hidden: Object.values(itemsH2).map(o => ({ n: o.n, k: o.k, cat: o.cat, cum30: o.q30 })), slots: (slots2.wk.length || slots2.we.length) ? slots2 : null,
     })
   }
   // 內用/外帶歷史回補口（同金鑰，張良 2026-09-20 內外帶接進報表）：?dinefill=<key>[&dry=1]
@@ -1792,6 +1794,25 @@ export default async function handler(req, res) {
     itR.stars[br.aspect][br.facet][whoR.name] = sv // 一人每面向一票、可改
     await kvPut('sp_finance_pm_sop_issues', docR, '面向評星(' + whoR.name + ')')
     return res.status(200).json({ ok: true, stars: itR.stars })
+  }
+  // 實際備料填寫（張良 2026-10-01：備料表每天旁邊可填實備數字，逐日留痕做分析）：POST ?prepact=<OPS_BOARD_KEY> {item, qty, token}
+  if (req.method === 'POST' && req.query?.prepact) {
+    const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
+    if (!ok2 || String(req.query.prepact) !== ok2) return res.status(403).json({ ok: false })
+    let ba = {}
+    try { ba = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
+    const whoA = await sopWho(ba.token)
+    if (!whoA) return res.status(403).json({ ok: false, error: '要先跟 DD 說「綁定GD」才能填實備' })
+    if (!ba.item) return res.status(400).json({ ok: false, error: '缺 item' })
+    const dA = new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10)
+    const idA = 'sp_finance_pm_prep_act_' + dA.slice(0, 7)
+    const docA = (await kvGet(idA)) || { days: {} }
+    docA.days[dA] = docA.days[dA] || {}
+    const qn = Number(ba.qty)
+    if (ba.qty === '' || ba.qty == null || !(qn >= 0)) delete docA.days[dA][ba.item]
+    else docA.days[dA][ba.item] = { q: qn, by: whoA.name, ts: new Date().toISOString() }
+    await kvPut(idA, docA, '實際備料(' + whoA.name + ')')
+    return res.status(200).json({ ok: true, date: dA, act: Object.fromEntries(Object.entries(docA.days[dA]).map(([k, v]) => [k, v.q])) })
   }
   // 預做節奏表隱藏設定（張良 2026-09-21：有些品項不用看預做）：POST ?prephide=<OPS_BOARD_KEY> {key, hide, token}
   if (req.method === 'POST' && req.query?.prephide) {
