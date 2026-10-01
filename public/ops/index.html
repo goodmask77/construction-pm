@@ -44,6 +44,8 @@
   section{background:var(--card);border:1px solid var(--line);border-radius:16px;box-shadow:var(--shadow);padding:18px 16px;margin-top:16px;overflow:hidden}
   .mini{border:1px solid var(--line);background:var(--card);border-radius:999px;padding:4px 12px;font-size:13px;font-weight:700;color:#A9C3E2;cursor:pointer;margin-left:4px;transition:background .15s}
   .mini:hover{background:#232B36}
+  .mini{white-space:nowrap}
+  .wopt{display:inline} @media(max-width:760px){.wopt{display:none}}
   .mini.on{background:var(--grad);color:#fff;border-color:transparent;box-shadow:0 3px 9px rgba(18,102,200,.28)}
   h2{font-size:17px;font-weight:800;color:var(--ink);margin-bottom:10px;letter-spacing:-.01em}
   .hint{font-size:13px;color:var(--muted);font-weight:500}
@@ -85,7 +87,7 @@
   <!-- 品牌字標＝切店（張良 2026-09-21）；右上=⏰打卡＋🔄更新App（張良 2026-09-22：🔄不是只抓數據，是整個App重開、連新功能一起拿最新版） -->
   <div class="brand" style="display:flex;align-items:center;justify-content:space-between">
     <span><span id="bs-ground" class="bseg on" onclick="load('ground')">GROUN:D</span> × <span id="bs-abeach" class="bseg" onclick="load('abeach')">A BEACH</span></span>
-    <span style="display:flex;gap:6px"><button id="bindBtn" class="mini" style="display:none;font-size:14px;padding:5px 12px;font-weight:700" onclick="bindPrompt()" title="貼上 DD 給的個人連結">輸入綁定碼</button><button class="mini" style="font-size:14px;padding:5px 12px;font-weight:700;display:inline-flex;gap:5px;align-items:center" onclick="punchNow()" title="上下班打卡"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/></svg>打卡</button><button class="mini" style="padding:5px 10px;display:inline-flex;align-items:center" onclick="hardRefresh()" title="更新App到最新版"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M20 12a8 8 0 1 1-2.34-5.66"/><path d="M20 3v4h-4"/></svg></button></span>
+    <span style="display:flex;gap:6px"><button id="bindBtn" class="mini" style="display:none;font-size:14px;padding:5px 12px;font-weight:700" onclick="bindPrompt()" title="貼上 DD 給的個人連結">輸入綁定碼</button><button class="mini" style="font-size:14px;padding:5px 12px;font-weight:700;display:inline-flex;gap:5px;align-items:center" onclick="punchNow()" title="上下班打卡"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/></svg>打卡</button><button class="mini" style="padding:5px 10px;display:inline-flex;align-items:center" onclick="mobilePreview()" title="手機版畫面預覽">📱</button><button class="mini" style="padding:5px 10px;display:inline-flex;align-items:center" onclick="hardRefresh()" title="更新App到最新版"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M20 12a8 8 0 1 1-2.34-5.66"/><path d="M20 3v4h-4"/></svg></button></span>
   </div>
   <h1>營運看板</h1>
   <div class="sub" id="upd">載入中…</div>
@@ -124,6 +126,16 @@ function setTabs(k){
   try { sessionStorage.setItem('prepView', curStore) } catch(_) {} // v4.4.0（張良 2026-10-02：重新整理留在原頁面）
 }
 // 🔄 更新App（張良 2026-09-22：不是只抓數據——整個 App 重開、連新功能一起拿最新版；r=時戳穿透 CDN 快取）
+// 📱 手機版預覽（張良 2026-10-02：每頁右上隨時切手機寬度檢查排版）——iframe 實機 390px 寬載同一頁
+function mobilePreview(){
+  const ov = document.createElement('div'); ov.id='mpOv'
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:70;display:flex;align-items:center;justify-content:center;padding:12px'
+  ov.innerHTML = `<div style="background:#222B38;border:1px solid #3B4654;border-radius:18px;padding:10px;box-shadow:0 18px 50px rgba(0,0,0,.55)" onclick="event.stopPropagation()">
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:0 4px 8px"><b>📱 手機版預覽（390px）</b><button class="mini" style="padding:5px 12px" onclick="document.getElementById('mpOv').remove()">關閉</button></div>
+    <iframe src="${location.pathname}" style="width:390px;height:min(78vh,760px);border:1px solid #3B4654;border-radius:12px;background:var(--bg)"></iframe></div>`
+  ov.onclick = () => ov.remove()
+  document.body.appendChild(ov)
+}
 function hardRefresh(){ location.replace(location.pathname + '?r=' + Date.now()) }
 // 依目前分頁重畫（綁定後/操作後用）
 function goView(){
@@ -514,7 +526,7 @@ function sopView(id){
   if (!it || !lg) return
   const ov = document.createElement('div'); ov.id = 'viewOv'
   ov.style.cssText = 'position:fixed;inset:0;background:rgba(16,24,43,.6);z-index:50;display:flex;align-items:center;justify-content:center;padding:16px'
-  ov.innerHTML = `<div style="background:var(--card);border-radius:14px;max-width:460px;width:100%;padding:14px;text-align:center" onclick="event.stopPropagation()">
+  ov.innerHTML = `<div style="background:#222B38;border:1px solid #3B4654;box-shadow:0 18px 50px rgba(0,0,0,.55);border-radius:14px;max-width:460px;width:100%;padding:14px;text-align:center" onclick="event.stopPropagation()">
     <div style="font-weight:900;color:var(--ink);margin-bottom:6px">${it.title}</div>
     <div class="hint" style="margin-bottom:8px">✓ ${lg.ts} 完成・${lg.by||''}</div>
     ${lg.photo?`<img src="${lg.photo}" style="max-width:100%;max-height:62vh;border-radius:10px;border:1px solid var(--line)">`:'<div class="hint">（這一項沒有照片）</div>'}
@@ -571,7 +583,7 @@ function sopReport(st){
   repFiles = []
   const ov = document.createElement('div'); ov.id = 'repOv'
   ov.style.cssText = 'position:fixed;inset:0;background:rgba(16,24,43,.45);z-index:50;display:flex;align-items:center;justify-content:center;padding:16px'
-  ov.innerHTML = `<div style="background:var(--card);border-radius:14px;max-width:430px;width:100%;padding:16px" onclick="event.stopPropagation()">
+  ov.innerHTML = `<div style="background:#222B38;border:1px solid #3B4654;box-shadow:0 18px 50px rgba(0,0,0,.55);border-radius:14px;max-width:430px;width:100%;padding:16px" onclick="event.stopPropagation()">
     <div style="font-weight:900;color:var(--ink);margin-bottom:8px">⚠️ 回報問題【${st}】</div>
     <textarea id="repTxt" rows="3" placeholder="發生什麼事？（只寫文字也可以送出）" style="width:100%;border:1px solid var(--line);border-radius:8px;padding:8px;font-size:15px;font-family:inherit"></textarea>
     <div id="repList" class="hint" style="margin:6px 0"></div>
@@ -996,7 +1008,7 @@ function ckAdd(id){
   ckFile = null
   const ov = document.createElement('div'); ov.id='ckOv'
   ov.style.cssText = 'position:fixed;inset:0;background:rgba(16,24,43,.45);z-index:50;display:flex;align-items:center;justify-content:center;padding:16px'
-  ov.innerHTML = `<div style="background:var(--card);border-radius:14px;max-width:420px;width:100%;padding:16px" onclick="event.stopPropagation()">
+  ov.innerHTML = `<div style="background:#222B38;border:1px solid #3B4654;box-shadow:0 18px 50px rgba(0,0,0,.55);border-radius:14px;max-width:420px;width:100%;padding:16px" onclick="event.stopPropagation()">
     <div style="font-weight:900;margin-bottom:8px">📝 加一個步驟</div>
     <textarea id="ckTxt" rows="2" placeholder="這一步要做什麼？" style="width:100%;border:1px solid var(--line);border-radius:8px;padding:8px;font-size:15px;font-family:inherit"></textarea>
     <div id="ckImgName" class="hint" style="margin:6px 0"></div>
@@ -1105,7 +1117,7 @@ function invEdit(id){
     <input class="lk" list="menuDL" value="${l?l.key:''}" placeholder="名稱（可挑選）" style="flex:1;min-width:100px;border:1px solid var(--line);border-radius:7px;padding:5px">
     <input class="lp" type="number" step="0.1" value="${l?l.per:''}" placeholder="每份用量" style="width:82px;border:1px solid var(--line);border-radius:7px;padding:5px">
     <button class="mini" onclick="this.parentElement.remove()">刪</button></div>`
-  ov.innerHTML = `<div style="background:var(--card);border-radius:14px;max-width:470px;width:100%;padding:16px" onclick="event.stopPropagation()">
+  ov.innerHTML = `<div style="background:#222B38;border:1px solid #3B4654;box-shadow:0 18px 50px rgba(0,0,0,.55);border-radius:14px;max-width:470px;width:100%;padding:16px" onclick="event.stopPropagation()">
     <div style="font-weight:900;margin-bottom:8px">${id?'✏️ 編輯':'＋ 新增'}${d.kind==='pack'?'包材':'食材'}品項</div>
     <datalist id="menuDL">${[...catNames,...menuNames].map(n=>`<option value="${n}">`).join('')}</datalist>
     <div style="display:flex;gap:6px;margin-bottom:6px">
@@ -1189,7 +1201,7 @@ function buyRecv(id){
   recvFiles = []
   const ov = document.createElement('div'); ov.id='rcvOv'
   ov.style.cssText = 'position:fixed;inset:0;background:rgba(16,24,43,.45);z-index:50;display:flex;align-items:center;justify-content:center;padding:16px'
-  ov.innerHTML = `<div style="background:var(--card);border-radius:14px;max-width:400px;width:100%;padding:16px" onclick="event.stopPropagation()">
+  ov.innerHTML = `<div style="background:#222B38;border:1px solid #3B4654;box-shadow:0 18px 50px rgba(0,0,0,.55);border-radius:14px;max-width:400px;width:100%;padding:16px" onclick="event.stopPropagation()">
     <div style="font-weight:900;margin-bottom:8px">📬 確認收貨</div>
     <div class="hint" style="margin-bottom:8px">拍一張收到的貨（必拍）——會記你的名字＋日期時間</div>
     <div id="rcvList" class="hint" style="margin:6px 0"></div>
@@ -1229,7 +1241,7 @@ function buyNew(){
   buyFiles = []
   const ov = document.createElement('div'); ov.id='buyOv'
   ov.style.cssText = 'position:fixed;inset:0;background:rgba(16,24,43,.45);z-index:50;display:flex;align-items:center;justify-content:center;padding:16px'
-  ov.innerHTML = `<div style="background:var(--card);border-radius:14px;max-width:430px;width:100%;padding:16px" onclick="event.stopPropagation()">
+  ov.innerHTML = `<div style="background:#222B38;border:1px solid #3B4654;box-shadow:0 18px 50px rgba(0,0,0,.55);border-radius:14px;max-width:430px;width:100%;padding:16px" onclick="event.stopPropagation()">
     <div style="font-weight:900;margin-bottom:8px">🛒 提出採購需求</div>
     <textarea id="buyTxt" rows="2" placeholder="要買什麼？（品名/規格/數量）" style="width:100%;border:1px solid var(--line);border-radius:8px;padding:8px;font-size:15px;font-family:inherit"></textarea>
     <input id="buyUrl" placeholder="🔗 商品連結（選填，貼網址）" style="width:100%;border:1px solid var(--line);border-radius:8px;padding:8px;font-size:14px;margin-top:6px">
@@ -1340,7 +1352,7 @@ function meetForm(id){
   const ov = document.createElement('div'); ov.id='meetOv'
   ov.style.cssText = 'position:fixed;inset:0;background:rgba(16,24,43,.45);z-index:50;display:flex;align-items:center;justify-content:center;padding:16px'
   const ip = 'width:100%;border:1px solid var(--line);border-radius:8px;padding:8px;font-size:15px;font-family:inherit;margin-bottom:6px'
-  ov.innerHTML = `<div style="background:var(--card);border-radius:14px;max-width:460px;width:100%;padding:16px;max-height:86vh;overflow:auto" onclick="event.stopPropagation()">
+  ov.innerHTML = `<div style="background:#222B38;border:1px solid #3B4654;box-shadow:0 18px 50px rgba(0,0,0,.55);border-radius:14px;max-width:460px;width:100%;padding:16px;max-height:86vh;overflow:auto" onclick="event.stopPropagation()">
     <div style="font-weight:900;margin-bottom:8px">${it?'✏️ 編輯':'📋 新增'}會議紀錄</div>
     <select id="mtType" style="${ip}">${d.types.map(t2=>`<option${it&&it.type===t2?' selected':''}>${t2}</option>`).join('')}</select>
     <input id="mtDate" type="date" value="${it?it.date:todayTpe()}" style="${ip}">
@@ -1465,7 +1477,7 @@ function shiftRender(){
   const posList = (d.posList||[]).slice()
   wkEnts.forEach(x=>{ const p4=x.pos||'未分崗'; if(!posList.includes(p4)) posList.push(p4) })
   h += `<div style="display:flex;gap:8px;align-items:center;margin:2px 0 6px">
-    <span style="font-weight:900">一週班表</span>${meN?`<button class="mini" style="padding:3px 10px" onclick="shiftPosEdit()">⚙️ 設定（崗位/時段/人員排序・顏色）</button>`:''}
+    <span style="font-weight:900">一週班表</span>${meN?`<button class="mini" style="padding:3px 10px" onclick="shiftPosEdit()">⚙️ 設定<span class="wopt">（崗位/時段/人員排序・顏色）</span></button>`:''}
     <button class="mini" onclick="shiftWkNav(-1)">‹</button><button class="mini" style="font-weight:800" onclick="shiftWkToday()">今天</button><button class="mini" onclick="shiftWkNav(1)">›</button><span class="hint" style="font-weight:800">${wkDays[0].slice(5)} ~ ${wkDays[6].slice(5)}</span>
     <button class="mini" style="padding:3px 10px" onclick="shiftSkill()">📊 熟練度</button>${meN?`<button class="mini" style="padding:3px 10px" onclick="copyWeekNext()">⧉ 本週→下週</button><button class="mini" style="padding:3px 10px;color:var(--red)" onclick="clearWeek()">🗑 清空本週</button>`:''}
   </div>`
@@ -1546,7 +1558,7 @@ function shiftForm(id){
   const ov = document.createElement('div'); ov.id='shOv'
   ov.style.cssText = 'position:fixed;inset:0;background:rgba(16,24,43,.45);z-index:50;display:flex;align-items:center;justify-content:center;padding:16px'
   const ip = 'border:1px solid var(--line);border-radius:8px;padding:8px;font-size:15px;font-family:inherit'
-  ov.innerHTML = `<div style="background:var(--card);border-radius:14px;max-width:420px;width:100%;padding:16px" onclick="event.stopPropagation()">
+  ov.innerHTML = `<div style="background:#222B38;border:1px solid #3B4654;box-shadow:0 18px 50px rgba(0,0,0,.55);border-radius:14px;max-width:420px;width:100%;padding:16px" onclick="event.stopPropagation()">
     <div style="font-weight:900;margin-bottom:10px">${it?'✏️ 編輯':'📅 新增'}排班</div>
     <div style="display:grid;grid-template-columns:64px 1fr;gap:8px;align-items:center;font-size:14px">
       <span>夥伴</span><span><select id="shName" style="${ip};width:100%">${(it&&it.name&&!(d.names||[]).includes(it.name)?[it.name,...(d.names||[])]:(d.names||[])).map(n=>`<option${it&&it.name===n?' selected':''}>${n}</option>`).join('')}</select></span>
@@ -1738,7 +1750,7 @@ function shiftSkill(){
   const row = s2 => `<tr${s2.off?' style="opacity:.55"':''}><td style="text-align:left;border:1px solid var(--line);padding:6px 8px;font-weight:800;color:${_PBX()[((d.colors||{})[s2.n]??0)%_PBX().length]}">${s2.n}${s2.off?' <span class="hint" style="font-size:11px">非常態</span>':''}</td>${cols.map(p2=>cell(s2.n,p2)).join('')}</tr>`
   const ov = document.createElement('div'); ov.id='skOv'
   ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:50;display:flex;align-items:center;justify-content:center;padding:16px'
-  ov.innerHTML = `<div style="background:var(--card);border-radius:14px;width:min(880px,94vw);max-height:90vh;overflow:auto;padding:18px" onclick="event.stopPropagation()">
+  ov.innerHTML = `<div style="background:#222B38;border:1px solid #3B4654;box-shadow:0 18px 50px rgba(0,0,0,.55);border-radius:14px;width:min(880px,94vw);max-height:90vh;overflow:auto;padding:18px" onclick="event.stopPropagation()">
     <div style="font-weight:900;font-size:16px;margin-bottom:4px">📊 崗位熟練度（排過幾次）</div>
     <div class="hint" style="margin-bottom:10px">只算今天以前的班；顏色越深＝次數越多；「·」＝沒排過（該訓練的空格）；🎓n＝被帶訓次數。</div>
     <div class="scroll"><table style="border-collapse:collapse;min-width:560px"><thead><tr><th style="border:1px solid var(--line);text-align:left;padding:6px 8px">夥伴</th>${cols.map(p2=>`<th style="border:1px solid var(--line);padding:6px 4px;text-align:center">${p2}</th>`).join('')}</tr></thead><tbody>${ppl.map(row).join('')}</tbody></table></div>
@@ -1775,7 +1787,7 @@ function shiftDay(dt){
   window._dayTxt = txt
   const ov = document.createElement('div'); ov.id='sdOv'
   ov.style.cssText = 'position:fixed;inset:0;background:rgba(16,24,43,.45);z-index:50;display:flex;align-items:center;justify-content:center;padding:16px'
-  ov.innerHTML = `<div style="background:var(--card);border-radius:14px;max-width:400px;width:100%;padding:16px;max-height:80vh;overflow:auto" onclick="event.stopPropagation()">
+  ov.innerHTML = `<div style="background:#222B38;border:1px solid #3B4654;box-shadow:0 18px 50px rgba(0,0,0,.55);border-radius:14px;max-width:400px;width:100%;padding:16px;max-height:80vh;overflow:auto" onclick="event.stopPropagation()">
     <div style="font-weight:900;margin-bottom:8px">${title}</div>
     ${keys.length ? keys.map(k2=>`<div style="font-weight:800;color:var(--primary);margin:8px 0 3px">${k2}</div>`+grp[k2].map(e=>`<div style="display:flex;gap:8px;font-size:14px;padding:3px 0;border-bottom:1px solid var(--line)"><span style="min-width:84px;font-weight:700;color:var(--pdark)">${e.pos||'—'}</span><span>${e.name}${e.tr?` <span style="color:#B45309;font-weight:800">🎓帶${e.tr}</span>`:''}</span></div>`).join('')).join('') : '<div class="mut">這天還沒排班</div>'}
     <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px;flex-wrap:wrap">
@@ -1796,7 +1808,7 @@ function shiftQuick(pos, dt){
   const ov = document.createElement('div'); ov.id='qkOv'
   ov.style.cssText = 'position:fixed;inset:0;background:rgba(16,24,43,.45);z-index:50;display:flex;align-items:center;justify-content:center;padding:16px'
   const slots = (d.slots && d.slots.length) ? d.slots : SLOT_DEF
-  ov.innerHTML = `<div style="background:var(--card);border-radius:14px;max-width:420px;width:100%;padding:16px;max-height:80vh;overflow:auto" onclick="event.stopPropagation()">
+  ov.innerHTML = `<div style="background:#222B38;border:1px solid #3B4654;box-shadow:0 18px 50px rgba(0,0,0,.55);border-radius:14px;max-width:420px;width:100%;padding:16px;max-height:80vh;overflow:auto" onclick="event.stopPropagation()">
     <div style="font-weight:900;margin-bottom:8px;display:flex;align-items:center;gap:8px">📅 ${dt.slice(5)}（${wdN2[new Date(dt).getDay()]}）・${pos}${d.sched.some(x=>x.date===dt&&(x.pos||'未分崗')===pos)?`<button class="mini" style="margin-left:auto;padding:4px 10px" onclick="copyCell('${pos}','${dt}')">⧉ 複製這格</button>`:''}</div>
     <div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:8px">${slots.map(sl=>`<button class="mini" style="padding:5px 10px" onclick="t24set('qkS','${sl.s}');t24set('qkE','${sl.e}');this.parentNode.querySelectorAll('button').forEach(b=>b.classList.remove('on'));this.classList.add('on')">${sl.n} ${sl.s}–${sl.e}</button>`).join('')}</div>
     <div id="qkMsg" style="display:none;color:var(--green);font-weight:800;margin-bottom:6px"></div>
@@ -1937,7 +1949,7 @@ function taskNew(preSt){
   const ov = document.createElement('div'); ov.id='tkOv'
   ov.style.cssText = 'position:fixed;inset:0;background:rgba(16,24,43,.45);z-index:50;display:flex;align-items:center;justify-content:center;padding:16px'
   const ip = 'width:100%;border:1px solid var(--line);border-radius:8px;padding:8px;font-size:15px;font-family:inherit;margin-bottom:6px'
-  ov.innerHTML = `<div style="background:var(--card);border-radius:14px;max-width:440px;width:100%;padding:16px;max-height:86vh;overflow:auto" onclick="event.stopPropagation()">
+  ov.innerHTML = `<div style="background:#222B38;border:1px solid #3B4654;box-shadow:0 18px 50px rgba(0,0,0,.55);border-radius:14px;max-width:440px;width:100%;padding:16px;max-height:86vh;overflow:auto" onclick="event.stopPropagation()">
     <div style="font-weight:900;margin-bottom:8px">🛠 新增任務</div>
     <textarea id="tkTxt" rows="2" placeholder="任務標題／要做什麼" style="${ip}"></textarea>
     <div class="hint">類別</div>
@@ -1968,7 +1980,7 @@ function taskOwn(id){
   const x = (d.issues||[]).find(i=>i.id===id)
   const ov = document.createElement('div'); ov.id='ownOv'
   ov.style.cssText = 'position:fixed;inset:0;background:rgba(16,24,43,.45);z-index:50;display:flex;align-items:center;justify-content:center;padding:16px'
-  ov.innerHTML = `<div style="background:var(--card);border-radius:14px;max-width:380px;width:100%;padding:16px" onclick="event.stopPropagation()">
+  ov.innerHTML = `<div style="background:#222B38;border:1px solid #3B4654;box-shadow:0 18px 50px rgba(0,0,0,.55);border-radius:14px;max-width:380px;width:100%;padding:16px" onclick="event.stopPropagation()">
     <div style="font-weight:900;margin-bottom:8px">👤 指派負責人</div>
     <select id="ownSel" style="width:100%;border:1px solid var(--line);border-radius:8px;padding:8px;font-size:15px;margin-bottom:10px"><option value="">— 清除負責人 —</option>${(d.names||[]).map(n=>`<option${x&&x.claimBy===n?' selected':''}>${n}</option>`).join('')}</select>
     <div style="display:flex;gap:8px;justify-content:flex-end"><button class="mini" style="padding:9px 12px" onclick="document.getElementById('ownOv').remove()">取消</button>
@@ -2066,7 +2078,7 @@ function fbOther(){
   const pool = (d.names||[]).filter(n=>!(d.workers||[]).includes(n) && n!==(d.me&&d.me.name))
   const ov = document.createElement('div'); ov.id='fboOv'
   ov.style.cssText = 'position:fixed;inset:0;background:rgba(16,24,43,.45);z-index:50;display:flex;align-items:center;justify-content:center;padding:16px'
-  ov.innerHTML = `<div style="background:var(--card);border-radius:14px;max-width:360px;width:100%;padding:16px" onclick="event.stopPropagation()">
+  ov.innerHTML = `<div style="background:#222B38;border:1px solid #3B4654;box-shadow:0 18px 50px rgba(0,0,0,.55);border-radius:14px;max-width:360px;width:100%;padding:16px" onclick="event.stopPropagation()">
     <div style="font-weight:900;margin-bottom:8px">＋ 對其他人回饋</div>
     <select id="fboSel" style="width:100%;border:1px solid var(--line);border-radius:8px;padding:8px;font-size:15px;margin-bottom:10px">${pool.map(n=>`<option>${n}</option>`).join('')}</select>
     <div style="display:flex;gap:8px;justify-content:flex-end"><button class="mini" style="padding:9px 12px" onclick="document.getElementById('fboOv').remove()">取消</button>
@@ -2338,7 +2350,7 @@ function menuItemForm(si, id){
   const ov = document.createElement('div'); ov.id='mnOv'
   ov.style.cssText = 'position:fixed;inset:0;background:rgba(16,24,43,.45);z-index:50;display:flex;align-items:center;justify-content:center;padding:16px'
   const ip = 'width:100%;border:1px solid var(--line);border-radius:8px;padding:8px;font-size:15px;font-family:inherit;margin-bottom:6px'
-  ov.innerHTML = `<div style="background:var(--card);border-radius:14px;max-width:400px;width:100%;padding:16px" onclick="event.stopPropagation()">
+  ov.innerHTML = `<div style="background:#222B38;border:1px solid #3B4654;box-shadow:0 18px 50px rgba(0,0,0,.55);border-radius:14px;max-width:400px;width:100%;padding:16px" onclick="event.stopPropagation()">
     <div style="font-weight:900;margin-bottom:8px">${it?'✏️ 編輯':'＋ 新增'}品項｜${s2.name}</div>
     <input id="mnName" placeholder="品名" value="${it?it.name.replace(/"/g,'&quot;'):''}" style="${ip}">
     <input id="mnEn" placeholder="英文（可空）" value="${it?(it.en||'').replace(/"/g,'&quot;'):''}" style="${ip}">
@@ -2496,7 +2508,7 @@ function tabsEdit(){
     <button class="mini" style="padding:4px 9px" onclick="tabMv(this,-1)">↑</button><button class="mini" style="padding:4px 9px" onclick="tabMv(this,1)">↓</button>
     <input class="tbName" value="${((cfg.names||{})[k]||TAB_DEF[k]).replace(/"/g,'&quot;')}" style="flex:1;border:1px solid var(--line);border-radius:8px;padding:7px 9px;font-size:15px">
   </div>`
-  ov.innerHTML = `<div style="background:var(--card);border-radius:14px;max-width:380px;width:100%;padding:16px;max-height:86vh;overflow:auto" onclick="event.stopPropagation()">
+  ov.innerHTML = `<div style="background:#222B38;border:1px solid #3B4654;box-shadow:0 18px 50px rgba(0,0,0,.55);border-radius:14px;max-width:380px;width:100%;padding:16px;max-height:86vh;overflow:auto" onclick="event.stopPropagation()">
     <div style="font-weight:900;margin-bottom:8px">⚙️ 分頁名稱／排序</div>
     <div class="hint" style="margin-bottom:8px">↑↓ 調順序、直接改名字（含表情符號）；存了全裝置同步</div>
     <div id="tbList">${order.map(row).join('')}</div>
@@ -2541,7 +2553,7 @@ async function notifyEdit(){
   if (!d || !d.ok) { alert('讀不到通知設定'); return }
   const ov = document.createElement('div'); ov.id='ntOv'
   ov.style.cssText = 'position:fixed;inset:0;background:rgba(16,24,43,.45);z-index:50;display:flex;align-items:center;justify-content:center;padding:16px'
-  ov.innerHTML = `<div style="background:var(--card);border-radius:14px;max-width:400px;width:100%;padding:16px" onclick="event.stopPropagation()">
+  ov.innerHTML = `<div style="background:#222B38;border:1px solid #3B4654;box-shadow:0 18px 50px rgba(0,0,0,.55);border-radius:14px;max-width:400px;width:100%;padding:16px" onclick="event.stopPropagation()">
     <div style="font-weight:900;margin-bottom:4px">🔔 群組通知開關</div>
     <div class="hint" style="margin-bottom:10px">預設全關（不主動打擾群組）。${d.canEdit?'點開要的：':'只有審核人能改，目前狀態：'}<br>問題回報不在這裡——那個走你的「發布」審核，你按了才進群。</div>
     ${NOTIFY_DEF.map(([k,lb,defOn])=>`<label style="display:flex;gap:8px;align-items:center;padding:7px 4px;border-bottom:1px solid var(--line);font-size:15px;font-weight:600"><input type="checkbox" data-nk="${k}" ${(defOn ? d.cfg[k]!==0 : d.cfg[k]===1)?'checked':''} ${d.canEdit?'':'disabled'} style="width:18px;height:18px"> ${lb}</label>`).join('')}
@@ -2575,7 +2587,7 @@ function sopRefOpen(itemId){
   const canUp = !!(sopData && sopData.me)
   const ov = document.createElement('div'); ov.id='srOv'
   ov.style.cssText = 'position:fixed;inset:0;background:rgba(10,16,30,.82);z-index:60;display:flex;align-items:center;justify-content:center;padding:14px'
-  ov.innerHTML = `<div style="background:var(--card);border-radius:14px;max-width:480px;width:100%;padding:14px;text-align:center" onclick="event.stopPropagation()">
+  ov.innerHTML = `<div style="background:#222B38;border:1px solid #3B4654;box-shadow:0 18px 50px rgba(0,0,0,.55);border-radius:14px;max-width:480px;width:100%;padding:14px;text-align:center" onclick="event.stopPropagation()">
     <div style="font-weight:900;margin-bottom:8px">🖼 ${it.title}</div>
     ${it.ref?`<img src="${it.ref}" style="max-width:100%;max-height:60vh;border-radius:10px;border:1px solid var(--line)">`:`<div class="mut" style="padding:24px 0">還沒有標準照——${canUp?'按下面上傳，或直接 Cmd/Ctrl+V 貼截圖':'綁定後可以上傳'}</div>`}
     <div style="display:flex;gap:8px;justify-content:center;margin-top:10px;flex-wrap:wrap">
@@ -2629,7 +2641,7 @@ function fbjNew(){
   const ov = document.createElement('div'); ov.id='fbjOv'
   ov.style.cssText = 'position:fixed;inset:0;background:rgba(16,24,43,.45);z-index:50;display:flex;align-items:center;justify-content:center;padding:16px'
   const ip = 'width:100%;border:1px solid var(--line);border-radius:8px;padding:8px;font-size:15px;font-family:inherit;margin-bottom:6px'
-  ov.innerHTML = `<div style="background:var(--card);border-radius:14px;max-width:440px;width:100%;padding:16px" onclick="event.stopPropagation()">
+  ov.innerHTML = `<div style="background:#222B38;border:1px solid #3B4654;box-shadow:0 18px 50px rgba(0,0,0,.55);border-radius:14px;max-width:440px;width:100%;padding:16px" onclick="event.stopPropagation()">
     <div style="font-weight:900;margin-bottom:8px">📝 每日回饋（${d.date.slice(5)}）</div>
     <select id="fbjSt" style="${ip}"><option value="">— 選站別（可空）—</option>${(d.stations||[]).map(s2=>`<option>${s2}</option>`).join('')}<option>其他</option></select>
     <textarea id="fbjTxt" rows="4" placeholder="今天發現什麼問題／可以更好的地方？" style="${ip}"></textarea>
@@ -2684,7 +2696,7 @@ function gdStaffAdd(){
   if (!pool.length) { alert('名冊在職的人都已經在 GD 人員裡了；新人先到主 App 名冊建檔'); return }
   const ov = document.createElement('div'); ov.id='gsOv'
   ov.style.cssText = 'position:fixed;inset:0;background:rgba(16,24,43,.45);z-index:50;display:flex;align-items:center;justify-content:center;padding:16px'
-  ov.innerHTML = `<div style="background:var(--card);border-radius:14px;max-width:360px;width:100%;padding:16px" onclick="event.stopPropagation()">
+  ov.innerHTML = `<div style="background:#222B38;border:1px solid #3B4654;box-shadow:0 18px 50px rgba(0,0,0,.55);border-radius:14px;max-width:360px;width:100%;padding:16px" onclick="event.stopPropagation()">
     <div style="font-weight:900;margin-bottom:8px">＋ 加入 GD 人員</div>
     <select id="gsSel" style="width:100%;border:1px solid var(--line);border-radius:8px;padding:8px;font-size:15px;margin-bottom:10px">${pool.map(n=>`<option>${n}</option>`).join('')}</select>
     <div class="hint" style="margin-bottom:8px">名單來自主 App 名冊在職夥伴；加入後排班/任務/回饋選單都會出現。</div>
@@ -2704,7 +2716,7 @@ function shiftPosEdit(){ // v4.3.2（張良 2026-10-02「這樣很難弄」）�
   const ov = document.createElement('div'); ov.id='psOv'
   ov.style.cssText = 'position:fixed;inset:0;background:rgba(16,24,43,.45);z-index:50;display:flex;align-items:center;justify-content:center;padding:16px'
   // v4.5.2（張良「視窗大一點自適應」+「人員給我可以排序」）：寬螢幕三欄並排、窄螢幕自動疊；新增人員排序區（順序=專屬色+快選排列）
-  ov.innerHTML = `<div style="background:var(--card);border-radius:14px;width:min(900px,94vw);padding:18px;max-height:90vh;overflow:auto" onclick="event.stopPropagation()">
+  ov.innerHTML = `<div style="background:#222B38;border:1px solid #3B4654;box-shadow:0 18px 50px rgba(0,0,0,.55);border-radius:14px;width:min(900px,94vw);padding:18px;max-height:90vh;overflow:auto" onclick="event.stopPropagation()">
     <div style="font-weight:900;font-size:16px;margin-bottom:10px">⚙️ 班表設定</div>
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:22px">
       <div>
@@ -2863,7 +2875,7 @@ function gdRoleModal(name, role){
   const ov = document.createElement('div'); ov.id='grOv'
   ov.style.cssText = 'position:fixed;inset:0;background:rgba(16,24,43,.45);z-index:50;display:flex;align-items:center;justify-content:center;padding:16px'
   const opt = (v,desc) => `<label style="display:flex;gap:8px;align-items:center;padding:8px 6px;border-bottom:1px solid var(--line);cursor:pointer"><input type="radio" name="grR" value="${v}" ${role===v?'checked':''}> <b>${v}</b> <span class="hint">${desc}</span></label>`
-  ov.innerHTML = `<div style="background:var(--card);border-radius:14px;max-width:380px;width:100%;padding:16px" onclick="event.stopPropagation()">
+  ov.innerHTML = `<div style="background:#222B38;border:1px solid #3B4654;box-shadow:0 18px 50px rgba(0,0,0,.55);border-radius:14px;max-width:380px;width:100%;padding:16px" onclick="event.stopPropagation()">
     <div style="font-weight:800;margin-bottom:8px">${name} 的權限</div>
     ${role==='審核人'?'<div class="hint" style="margin-bottom:8px">審核人——權限最高（核准/發布/通知開關），這裡不能改。</div>':opt('一般','看＋操作（打卡/回報/任務/評分…記名）')+opt('主管','一般＋管理人員名單與權限')+opt('停權','綁定保留，但所有操作被擋')}
     <div style="display:flex;gap:8px;justify-content:space-between;margin-top:10px">
@@ -3018,7 +3030,7 @@ function lbFinder(nm){
   const arr = (d.issues||[]).filter(x=>x.by===nm)
   const ov = document.createElement('div'); ov.id='fdOv'
   ov.style.cssText = 'position:fixed;inset:0;background:rgba(16,24,43,.45);z-index:50;display:flex;align-items:center;justify-content:center;padding:16px'
-  ov.innerHTML = `<div style="background:var(--card);border-radius:14px;max-width:520px;width:100%;padding:16px;max-height:84vh;overflow:auto" onclick="event.stopPropagation()">
+  ov.innerHTML = `<div style="background:#222B38;border:1px solid #3B4654;box-shadow:0 18px 50px rgba(0,0,0,.55);border-radius:14px;max-width:520px;width:100%;padding:16px;max-height:84vh;overflow:auto" onclick="event.stopPropagation()">
     <div style="font-weight:800;margin-bottom:8px">🔍 ${nm} 發現的問題（${arr.length} 件）</div>
     ${arr.map(x=>`<div style="border-bottom:1px dashed var(--line);padding:7px 0;font-size:14px">
       <b>${x.text||'（附件）'}</b> ${x.status==='done'?'<span style="color:var(--green);font-weight:800">✅</span>':x.status==='pending'?'<span style="color:#A85C26">🕐</span>':''}
