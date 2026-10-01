@@ -1468,9 +1468,9 @@ function shiftRender(){
   const posGrp = ps => /櫃檯|飲料|中控/.test(ps) ? 0 : /漢堡|煎炸|炸麵/.test(ps) ? 1 : /披薩|三明治/.test(ps) ? 2 : 3
   const GC = [{bg:'#EAF1FD',ink:'#1D4ED8'},{bg:'#FDF1E3',ink:'#B45309'},{bg:'#E9F7EE',ink:'#15803D'},{bg:'#F4F4F5',ink:'var(--pdark)'}]
   // v4.4.1（張良 2026-10-02）：每個人固定一個顏色（照 GD 人員名單順序配，超過輪替）——跨崗位/跨天同色快速辨識
-  // v4.4.3：色序重排——相鄰的人色系拉開（粉/紅不再排一起）
-  const PB = ['#7C3AED','#EA580C','#059669','#0284C7','#DB2777','#B45309','#0D9488','#4F46E5','#DC2626','#4D7C0F','#0891B2','#6B7280']
-  const PG = ['#F3E8FF','#FFEDD5','#D1FAE5','#E0F2FE','#FCE7F3','#FEF3C7','#CCFBF1','#E0E7FF','#FEE2E2','#ECFCCB','#CFFAFE','#F3F4F6']
+  // v4.4.5（張良「搞個綠色灰色白色分開一點」）：12色強對比——紫/橘/綠/藍/粉/棕/深灰/紅/青/草綠/白(黑框)/金黃，不再有紫藍靛擠一起
+  const PB = ['#7C3AED','#EA580C','#15803D','#1D4ED8','#DB2777','#92400E','#374151','#DC2626','#0E7490','#65A30D','#111827','#CA8A04']
+  const PG = ['#F3E8FF','#FFEDD5','#DCFCE7','#DBEAFE','#FCE7F3','#FEF3C7','#E5E7EB','#FEE2E2','#CFFAFE','#F7FEE7','#FFFFFF','#FEF9C3']
   const pplOrder = (d.staff||[]).map(s2=>s2.n)
   const pcIdx = n => { let i = pplOrder.indexOf(n); if (i<0){ i=0; for(const c2 of String(n)) i=(i*31+c2.charCodeAt(0))%997 } return i % PB.length }
   const BD = 'border:1px solid #D6DEE8;'
