@@ -1747,7 +1747,11 @@ export default async function handler(req, res) {
     const pj2 = await import('./punch.js')
     let pchs = []
     try { pchs = await pj2.listPunches('sp_crew_pch_' + ym.replace('-', '')) } catch (_) {}
-    const schedL = ((sd || {}).list || []).filter(x => String(x.date || '').startsWith(ym))
+    // v4.4.2（張良 2026-10-02「排9/30過幾秒自動消失」）：週表會跨月——只回當月資料害跨月那幾天存了也不見；改回傳當月±6天
+    const mo0 = new Date(ym + '-01T00:00:00Z')
+    const loS = new Date(mo0.getTime() - 6 * 86400e3).toISOString().slice(0, 10)
+    const hiS = new Date(Date.UTC(mo0.getUTCFullYear(), mo0.getUTCMonth() + 1, 1) + 6 * 86400e3).toISOString().slice(0, 10)
+    const schedL = ((sd || {}).list || []).filter(x => { const dd = String(x.date || ''); return dd >= loS && dd <= hiS })
     const namesU = [...new Set([...gdNames(rosterS), ...((((sd || {}).list) || []).map(x => x.name)), ...pchs.map(p => p.name)])].filter(Boolean)
     const namesAll = (((rosterS || {}).people) || []).filter(p2 => !p2.endDate && (p2.status || '在職') !== '離職').map(p2 => p2.name).filter(Boolean)
     const posList = [...new Set([...(((sd || {}).pos) || []), ...(((sd || {}).list) || []).map(x => x.pos).filter(Boolean)])]
