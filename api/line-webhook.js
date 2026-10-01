@@ -1726,7 +1726,7 @@ export default async function handler(req, res) {
               permB.pending = permB.pending || {}
               permB.pending[pKey] = { name: rp.name, uid: userId, ts: new Date(Date.now() + 8 * 3600e3).toISOString().slice(5, 16).replace('T', ' ') }
               await kvSet('sp_finance_pm_prep_perm', permB)
-              pendTxt = '\n已自動幫你申請編輯權限，老闆核准後我會通知你。'
+              pendTxt = '\n已自動幫你申請編輯權限，核准後我會通知你。'
             }
           } catch (_) {}
           await send(`✅ ${rp.name} 綁定完成！點一下啟用👇\n${BIND_APPS[appKey]}?me=${tk2}${pendTxt}${note2}`)
