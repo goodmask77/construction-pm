@@ -1843,7 +1843,7 @@ function shiftQuick(pos, dt){
     t24set('qkS', kp.s); t24set('qkE', kp.e)
     const qb = document.getElementById('qkB'); if (qb) qb.value = kp.b
     const qt = document.getElementById('qkTr'); if (qt && kp.tr) qt.value = kp.tr
-    const mg = document.getElementById('qkMsg'); if (mg) { mg.textContent = kp.msg; mg.style.display = 'block' }
+    const mg = document.getElementById('qkMsg'); if (mg) { mg.textContent = kp.msg; mg.style.display = 'block'; mg.style.color = 'var(--green)' }
   }
 }
 // 帶訓下拉共用選項（v4.9.8 張良：非常態放最下面用 optgroup 區隔）：常態照排序→「── 非常態 ──」群組
@@ -1868,6 +1868,11 @@ function qkTrChange(v){
 }
 async function shiftQuickGo(name, pos, dt){
   const ovQ = document.getElementById('qkOv')
+  // v4.10.1（張良）：同一格同一人擋重複
+  if ((window._shiftD.sched||[]).some(x=>x.name===name && x.date===dt && (x.pos||'未分崗')===pos)) {
+    const mg = document.getElementById('qkMsg'); if (mg) { mg.textContent = `⚠️ ${name} 已經在這格了，沒有重複加`; mg.style.display = 'block'; mg.style.color = 'var(--red)' }
+    return
+  }
   const item = { name, date: dt, start: t24read(ovQ,'qkS'), end: t24read(ovQ,'qkE'), break: +((document.getElementById('qkB')||{}).value||0), pos, tr: (document.getElementById('qkTr')||{}).value||'' }
   if (item.tr === name) item.tr = ''
   if (ovQ) ovQ.remove()
