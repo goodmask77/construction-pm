@@ -839,10 +839,11 @@ let taskView = localStorage.getItem('taskView') || 'today'
 let taskQ = ''
 function taskVset(v){ taskView = v; localStorage.setItem('taskView', v); taskRender() }
 function tkSearch(el){ taskQ = el.value; taskRender(); const el2 = document.getElementById('tkQ'); if (el2){ el2.focus(); el2.setSelectionRange(el2.value.length, el2.value.length) } }
-function tkQuickKey(ev){ if (ev.key === 'Enter') tkQuickAdd() }
+function tkQuickKey(ev){ if (ev.isComposing || ev.keyCode === 229) return; if (ev.key === 'Enter') tkQuickAdd() } // 中文輸入法選字Enter不送出（2026-10-02 張良打到一半跑出兩筆）
 async function tkQuickAdd(){
   const el = document.getElementById('tkQuick'); const v = (el&&el.value||'').trim()
   if (!v) return
+  if (window._tkBusy) return; window._tkBusy = 1; setTimeout(()=>{ window._tkBusy = 0 }, 1500) // 防連點/重複送出
   const r = await fetch('/api/mail-sync?sopissue=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ op:'new', val:{ text:v, st:'收件匣' }, token: TK() }) })
   const d = await r.json().catch(()=>null)
   if (d && d.ok) { el.value=''; await lbFetch(); taskRender() } else alert((d&&d.error)||'新增失敗（要先綁定）')
