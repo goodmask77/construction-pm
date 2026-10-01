@@ -1798,7 +1798,7 @@ function menuRender(){
     (d.draft.sections||[]).forEach((s2,si)=>{
       h += `<div ondragover="event.preventDefault()" ondrop="menuSecDrop(${si})" style="background:var(--soft);border:1px solid var(--line);border-radius:12px;padding:9px 11px;margin-bottom:10px">
         <div style="font-weight:900;color:var(--pdark)">${meN&&menuEditSec[si]?`<span draggable="true" ondragstart="mnDragS=${si}" title="拖曳排序分類" style="cursor:grab;color:#9fb0c6">⠿ </span>`:''}${s2.name} ${s2.note?`<span class="hint">${s2.note}</span>`:''}
-        ${meN?` <button class="mini ${menuEditSec[si]?'on':''}" onclick="menuEditSec[${si}]=!menuEditSec[${si}];menuRender()">${menuEditSec[si]?'完成':'編輯'}</button>`:''}${meN&&menuEditSec[si]?` <button class="mini" onclick="menuSecForm(${si})">改名</button> <button class="mini" onclick="menuItemForm(${si})">＋品項</button> <button class="mini" style="color:var(--red)" onclick="if(confirm('刪掉整個分類「${s2.name}」？（品項會標成刪除）'))menuSecDel(${si})">刪分類</button>`:''}</div>`
+        ${meN?` <button class="mini ${menuEditSec[si]?'on':''}" onclick="menuEditSec[${si}]=!menuEditSec[${si}];menuRender()">${menuEditSec[si]?'完成':'編輯'}</button>`:''}${meN&&menuEditSec[si]?` <button class="mini" onclick="menuSecShift(${si},-1)">↑</button><button class="mini" onclick="menuSecShift(${si},1)">↓</button> <button class="mini" onclick="menuSecForm(${si})">改名</button> <button class="mini" onclick="menuItemForm(${si})">＋品項</button> <button class="mini" style="color:var(--red)" onclick="if(confirm('刪掉整個分類「${s2.name}」？（品項會標成刪除）'))menuSecDel(${si})">刪分類</button>`:''}</div>`
       // 表格化＋每格直接編輯（張良 2026-10-01：中文/英文/售價/備註四欄全 inline 改）
       h += `<div class="scroll"><table style="width:100%;border-collapse:collapse;margin-top:6px;table-layout:fixed"><colgroup><col style="width:30%"><col style="width:30%"><col style="width:12%"><col style="width:18%"><col style="width:10%"></colgroup><thead><tr>${['中文','英文','售價','備註','操作'].map(x=>`<th style="text-align:left;font-size:12px;color:#6b7a90;padding:5px 7px;border:1px solid #D9E4EF;background:#F2F6FA">${x}</th>`).join('')}</tr></thead><tbody>`
       ;(s2.items||[]).forEach(i2=>{
@@ -1880,6 +1880,13 @@ async function permSet(op, rid, mode){
   if (curStore === 'settings') settingsLoad(); else menuLoad()
 }
 let mnDragS = null
+function menuSecShift(si, dir){ // ↑↓ 搬分類（張良 2026-10-01：拖曳在手機/iPad不順→按鈕最穩）
+  const ss = window._menuD.draft.sections, j = si + dir
+  if (j < 0 || j >= ss.length) return
+  const [mv] = ss.splice(si, 1); ss.splice(j, 0, mv)
+  menuEditSec = {}; menuEditSec[j] = true
+  menuSave('搬分類 ' + mv.name)
+}
 function menuCell(si, id, f, v){ // 表格每格直接改（onchange=離開格子就存）
   const it = (window._menuD.draft.sections[si].items||[]).find(x=>x.id===id); if(!it) return
   it[f] = f==='price' ? (+String(v).replace(/[^0-9]/g,'')||0) : String(v).trim()
