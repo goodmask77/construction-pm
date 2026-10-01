@@ -1531,13 +1531,13 @@ function shiftForm(id){
   ov.innerHTML = `<div style="background:#fff;border-radius:14px;max-width:420px;width:100%;padding:16px" onclick="event.stopPropagation()">
     <div style="font-weight:900;margin-bottom:10px">${it?'✏️ 編輯':'📅 新增'}排班</div>
     <div style="display:grid;grid-template-columns:64px 1fr;gap:8px;align-items:center;font-size:14px">
-      <span>夥伴</span><span><input id="shName" list="shNames" value="${it?it.name:''}" placeholder="名字" style="${ip};width:100%"><datalist id="shNames">${(d.names||[]).map(n=>`<option>${n}</option>`).join('')}</datalist></span>
-      <span>崗位</span><span><input id="shPos" list="shPoss" value="${it?(it.pos||''):''}" placeholder="例：炸台/吧檯/外場（可空）" style="${ip};width:100%"><datalist id="shPoss">${(d.posList&&d.posList.length?d.posList:[...new Set((d.sched||[]).map(x=>x.pos).filter(Boolean))]).map(n=>`<option>${n}</option>`).join('')}</datalist></span>
+      <span>夥伴</span><span><select id="shName" style="${ip};width:100%">${(it&&it.name&&!(d.names||[]).includes(it.name)?[it.name,...(d.names||[])]:(d.names||[])).map(n=>`<option${it&&it.name===n?' selected':''}>${n}</option>`).join('')}</select></span>
+      <span>崗位</span><span><select id="shPos" style="${ip};width:100%">${(()=>{const pl=(d.posList&&d.posList.length?d.posList:[...new Set((d.sched||[]).map(x=>x.pos).filter(Boolean))]);const cur=it?(it.pos||''):'';const all=cur&&!pl.includes(cur)?[cur,...pl]:pl;return `<option value="">（不分崗）</option>`+all.map(n=>`<option${cur===n?' selected':''}>${n}</option>`).join('')})()}</select></span>
       <span>日期</span><input id="shDate" type="date" value="${it?it.date:todayTpe()}" style="${ip}">
       <span>上班</span><span>${t24c('shS', it?it.start:'11:00')}</span>
       <span>下班</span><span>${t24c('shE', it?it.end:'20:00')}</span>
       <span>休息(分)</span><input id="shBreak" type="number" value="${it?(it.break||0):60}" min="0" max="240" style="${ip}">
-      <span>🎓帶訓</span><span><input id="shTr" list="shNames" value="${it?(it.tr||''):''}" placeholder="被帶的人（可空）" style="${ip};width:100%"></span>
+      <span>🎓帶訓</span><span><select id="shTr" style="${ip};width:100%"><option value="">無</option>${(d.names||[]).map(n=>`<option${it&&it.tr===n?' selected':''}>${n}</option>`).join('')}</select></span>
     </div>
     <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px"><button class="mini" style="padding:9px 12px" onclick="document.getElementById('shOv').remove()">取消</button>
     <button class="mini on" style="padding:9px 18px" onclick="shiftSave('${id||''}')">儲存</button></div></div>`
