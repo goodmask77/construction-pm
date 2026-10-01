@@ -1500,7 +1500,7 @@ function shiftRender(){
     <div class="hint" style="font-weight:800;padding:2px 4px">未排</div>` + wkDays.map(dt=>{
     const onDay = new Set(wkEnts.filter(x=>x.date===dt).flatMap(x=>[x.name, x.tr].filter(Boolean))) // v4.6.2：被帶訓的人也算有班
     const rest = regStaff.filter(s2=>!onDay.has(s2.n))
-    return `<div style="padding:2px 4px">${rest.map(s2=>`<span style="display:block;width:max-content;border:1.5px solid ${PB[pcIdx(s2.n)]};background:${PG[pcIdx(s2.n)]};color:${PB[pcIdx(s2.n)]};border-radius:6px;padding:0 6px;margin:2px 0;font-size:12px;font-weight:800">${s2.n}</span>`).join('')||'<span class="hint" style="font-size:12px">✓</span>'}</div>`
+    return `<div style="padding:2px 4px">${rest.map(s2=>`<span ${meN?`draggable="true" ondragstart="event.dataTransfer.setData('text/plain','u|${s2.n}')" title="拖上去格子＝直接排班"`:''} style="display:block;width:max-content;${meN?'cursor:grab;':''}border:1.5px solid ${PB[pcIdx(s2.n)]};background:${PG[pcIdx(s2.n)]};color:${PB[pcIdx(s2.n)]};border-radius:7px;padding:3px 6px;margin:2px 0;font-size:13px;font-weight:800;line-height:1.6">${s2.n}</span>`).join('')||'<span class="hint" style="font-size:12px">✓</span>'}</div>`
   }).join('') + `</div></div>`
   const pn = Object.keys(per).sort()
   if (pn.length){
@@ -1768,6 +1768,14 @@ async function shiftQuickGo(name, pos, dt){
 async function shiftDrop(ev, pos, dt){
   ev.preventDefault(); ev.stopPropagation(); ev.currentTarget.style.outline = ''
   const id = ev.dataTransfer.getData('text/plain'); if (!id) return
+  if (id.startsWith('u|')) { // v4.6.3（張良）：未排名片拖進格子＝直接排班（時間帶同崗位最近一筆）
+    const nm = id.slice(2), d0 = window._shiftD
+    if (d0.sched.some(x=>x.date===dt && (x.pos||'未分崗')===pos && x.name===nm)) return
+    const byNew = (a,b)=>b.date.localeCompare(a.date)
+    const last = [...d0.sched].filter(x=>(x.pos||'未分崗')===pos).sort(byNew)[0] || [...d0.sched].sort(byNew)[0]
+    const tmp = { name: nm, date: dt, start: last?last.start:'11:00', end: last?last.end:'20:00', break: last?(last.break==null?60:last.break):60, pos: (pos==='未分崗'?'':pos), id: 'tmp' + Math.random().toString(36).slice(2) }
+    queueSaveTmp(tmp); shiftRender(); return
+  }
   const d = window._shiftD, it = d.sched.find(x=>x.id===id); if (!it) return
   if (it.date === dt && (it.pos||'未分崗') === pos) return
   it.date = dt; it.pos = (pos==='未分崗'?'':pos); shiftRender() // 先畫再存（樂觀更新）
