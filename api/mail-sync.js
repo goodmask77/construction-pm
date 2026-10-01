@@ -1814,7 +1814,10 @@ export default async function handler(req, res) {
       const cand = rank.filter(p => p.facets[f] && p.facets[f].n >= 3).sort((a, b) => b.facets[f].avg - a.facets[f].avg || b.facets[f].n - a.facets[f].n)
       return [f, cand[0] ? { name: cand[0].name, avg: cand[0].facets[f].avg, n: cand[0].facets[f].n } : null]
     }))
-    return res.status(200).json({ ok: true, me: meL ? { name: meL.name } : null, facets: FACETS, rank, stars5, issues: list, names: namesL })
+    // 2026-10-02 治本（張良：還是沒按鈕）：lb 口的 me 漏了 approver → taskCard 的 📣發布/✅核准 鈕對誰都不出現
+    const defL = await kvGet('sp_finance_pm_sop_def')
+    const aprL = (((defL || {}).ground || {}).approvers || ['張良瑋'])
+    return res.status(200).json({ ok: true, me: meL ? { name: meL.name, role: meL.role, approver: meL.role === '主管' || aprL.includes(meL.name) } : null, facets: FACETS, rank, stars5, issues: list, names: namesL })
   }
   if (req.method === 'POST' && req.query?.soprate) {
     // v2：面向星星（1~5）。body={id, aspect:'find'|'fix', facet:五面向之一, stars:1-5}
