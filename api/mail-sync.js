@@ -1119,7 +1119,7 @@ export default async function handler(req, res) {
     return res.status(200).json({
       ok: true, store: storeQ, updatedAt: new Date().toISOString(), anchor,
       kpi: { rev30, days30: w30.length, avgRev: w30.length ? Math.round(rev30 / w30.length) : 0, tx30: w30.reduce((t, e) => t + (Number(e.txCount) || 0), 0) },
-      n30, prep, prepAct: Object.fromEntries(Object.entries((actDoc.days || {})[todayAct] || {}).map(([k, v]) => [k, v.q])), prepActDate: todayAct, share14, rhythm, soldout, days: days2.reverse(), setPcts: setDays.reverse(), dates: datesAll, cats: cats2, hidden: Object.values(itemsH2).map(o => ({ n: o.n, k: o.k, cat: o.cat, cum30: o.q30 })), slots: (slots2.wk.length || slots2.we.length) ? slots2 : null,
+      n30, prep, prepAct: Object.fromEntries(Object.entries((actDoc.days || {})[todayAct] || {}).filter(([, v]) => v.q != null).map(([k, v]) => [k, v.q])), prepS86: Object.fromEntries(Object.entries((actDoc.days || {})[todayAct] || {}).filter(([, v]) => v.s86 && v.s86.on).map(([k]) => [k, 1])), prepActDate: todayAct, share14, rhythm, soldout, days: days2.reverse(), setPcts: setDays.reverse(), dates: datesAll, cats: cats2, hidden: Object.values(itemsH2).map(o => ({ n: o.n, k: o.k, cat: o.cat, cum30: o.q30 })), slots: (slots2.wk.length || slots2.we.length) ? slots2 : null,
     })
   }
   // 內用/外帶歷史回補口（同金鑰，張良 2026-09-20 內外帶接進報表）：?dinefill=<key>[&dry=1]
@@ -1790,7 +1790,7 @@ export default async function handler(req, res) {
       const k1 = x.name + '|' + x.pos; c1[k1] = (c1[k1] || 0) + 1; seqMap[x.id] = c1[k1]
       if (x.tr) { const k2 = x.tr + '|' + x.pos; c2[k2] = (c2[k2] || 0) + 1; trSeqMap[x.id] = c2[k2] }
     }
-    return res.status(200).json({ ok: true, ym, sched: schedL.map(x => ({ ...x, seq: seqMap[x.id], trSeq: trSeqMap[x.id] })), punches: pchs.map(p => ({ name: p.name, ts: p.ts, dir: p.dir, src: p.src })), names: namesU, namesAll, posList, slots: (sd || {}).slots || null, colors: colMap, posStats, staff, me: meS ? { name: meS.name, role: meS.role, approver: aprS.includes(meS.name) } : null })
+    return res.status(200).json({ ok: true, ym, sched: schedL.map(x => ({ ...x, seq: seqMap[x.id], trSeq: trSeqMap[x.id] })), punches: pchs.map(p => ({ name: p.name, ts: p.ts, dir: p.dir, src: p.src })), names: namesU, namesAll, posList, slots: (sd || {}).slots || null, colors: colMap, posStats, hist: ((sd || {}).hist || []).slice(-200).reverse(), lockEdit: (sd || {}).lockEdit ? 1 : 0, staff, me: meS ? { name: meS.name, role: meS.role, approver: aprS.includes(meS.name) } : null })
   }
   // 人員色號管理口：POST ?shiftcolor=管理金鑰 {map:{名字:色號}} 合併寫入（固定/校正專屬色用）
   if (req.method === 'POST' && req.query?.shiftcolor) {
@@ -1852,16 +1852,25 @@ export default async function handler(req, res) {
     const whoS = await permWho(sb2.token, 'shift')
     if (!whoS) return res.status(403).json({ ok: false, error: '要先跟 DD 說「綁定GD」' })
     const doc = (await kvGet('sp_finance_pm_shift_g')) || { list: [] }
+    // v4.12.0 班表鎖（張良：不要讓其他人動班表）＋修改紀錄（誰/時間/做了什麼）
+    let mgrS = null
+    const isMgr = async () => { if (mgrS != null) return mgrS; const [defL, rosL] = await Promise.all([kvGet('sp_finance_pm_sop_def'), kvGet('sp_crew_kb_roster')]); const aprL = ((defL || {}).ground || {}).approvers || ['張良瑋']; const pL = (((rosL || {}).people) || []).find(p2 => p2.name === whoS.name); mgrS = aprL.includes(whoS.name) || (pL && pL.gdRole === '主管') ? 1 : 0; return mgrS }
+    if (doc.lockEdit && !(await isMgr())) return res.status(403).json({ ok: false, error: '🔒 班表已鎖定——只有審核人／主管能編輯' })
+    const pushH = d9 => { doc.hist = [...(doc.hist || []).slice(-499), { ts: new Date().toISOString(), by: whoS.name, d: d9 }] }
     if (sb2.op === 'save') {
       const i2 = sb2.item || {}
       if (!String(i2.name || '').trim() || !/^\d{4}-\d{2}-\d{2}$/.test(i2.date) || !/^\d{1,2}:\d{2}$/.test(i2.start) || !/^\d{1,2}:\d{2}$/.test(i2.end)) return res.status(400).json({ ok: false, error: '姓名/日期/時間沒填齊' })
       if (String(i2.id || '').startsWith('tmp')) delete i2.id // 舊版前端會把暫存id送上來→一律換發正式id（v4.5.1 防線）
       const it = { id: i2.id || 'sh' + Date.now().toString(36), name: String(i2.name).trim().slice(0, 20), date: i2.date, start: String(i2.start).padStart(5, '0'), end: String(i2.end).padStart(5, '0'), break: Math.max(0, Math.min(240, Number(i2.break) || 0)), pos: String(i2.pos || '').trim().slice(0, 20), by: whoS.name }
       const trV = String(i2.tr || '').trim().slice(0, 20); if (trV) it.tr = trV // 🎓帶訓對象（張良 2026-10-02）
+      const hadS = (doc.list || []).some(x => x.id === it.id)
+      pushH((hadS ? '改' : '排') + ' ' + it.name + ' ' + it.date + ' ' + (it.pos || '未分崗') + ' ' + it.start + '-' + it.end + (it.tr ? '（帶' + it.tr + '）' : ''))
       doc.list = [...(doc.list || []).filter(x => x.id !== it.id), it].sort((a, b) => (a.date + a.start).localeCompare(b.date + b.start)).slice(-1000)
       await kvPut('sp_finance_pm_shift_g', doc, '班表save(' + whoS.name + ')')
       return res.status(200).json({ ok: true, id: it.id }) // 回正式id——前端把暫存卡換正身（v4.4.8 分身治本）
     } else if (sb2.op === 'del') {
+      const deE = (doc.list || []).find(x => x.id === sb2.id)
+      if (deE) pushH('刪 ' + deE.name + ' ' + deE.date + ' ' + (deE.pos || '未分崗'))
       doc.list = (doc.list || []).filter(x => x.id !== sb2.id)
     } else if (sb2.op === 'pos') { // 崗位清單管理（張良 2026-09-24：班表頁直接編輯）
       doc.pos = (Array.isArray(sb2.list) ? sb2.list : []).map(s3 => String(s3).trim().slice(0, 20)).filter(Boolean).slice(0, 30)
@@ -1881,6 +1890,8 @@ export default async function handler(req, res) {
       if (Array.isArray(sb2.ord)) doc.staffOrd = nm20(sb2.ord)
       if (sb2.colors && typeof sb2.colors === 'object') { doc.colors = { ...(doc.colors || {}) }; for (const [nm, ci] of Object.entries(sb2.colors)) doc.colors[String(nm).slice(0, 20)] = Math.max(0, Math.min(39, Number(ci) || 0)) }
       if (Array.isArray(sb2.off)) doc.offStaff = nm20(sb2.off)
+      if ('lock' in sb2 && (await isMgr())) { const nv = sb2.lock ? 1 : 0; if (nv !== (doc.lockEdit ? 1 : 0)) pushH(nv ? '🔒 鎖定班表（只有審核人/主管能編輯）' : '🔓 解除班表鎖定') ; doc.lockEdit = nv }
+      pushH('改班表設定')
     } else return res.status(400).json({ ok: false })
     await kvPut('sp_finance_pm_shift_g', doc, '班表' + sb2.op + '(' + whoS.name + ')')
     return res.status(200).json({ ok: true })
@@ -2155,15 +2166,46 @@ export default async function handler(req, res) {
     const whoA = (await (async () => { const pm = (await kvGet('sp_finance_pm_prep_perm')) || { mode: 'open', users: {} }; const w = await sopWho(ba.token); if (pm.mode !== 'approve') return w || { name: '現場(未綁定)' }; const u = w && pm.users[w.rid || w.uid]; return (u && u.edit && (u.admin || !u.tabs || u.tabs['board'] !== 0)) ? w : null })())
     if (!whoA) return res.status(403).json({ ok: false, error: '要有編輯權限——/prep 右上申請，老闆核准即可' })
     if (!ba.item) return res.status(400).json({ ok: false, error: '缺 item' })
+    // v4.11.0（張良 2026-10-02）：每筆都留痕（誰/時間）＋追加＋耗損＋86停售；log 永遠只加不刪
     const dA = new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10)
     const idA = 'sp_finance_pm_prep_act_' + dA.slice(0, 7)
     const docA = (await kvGet(idA)) || { days: {} }
     docA.days[dA] = docA.days[dA] || {}
+    const cur = docA.days[dA][ba.item] || { q: null, log: [] }
+    cur.log = cur.log || []
+    const tsA = new Date().toISOString()
+    const opA = String(ba.op || 'set')
     const qn = Number(ba.qty)
-    if (ba.qty === '' || ba.qty == null || !(qn >= 0)) delete docA.days[dA][ba.item]
-    else docA.days[dA][ba.item] = { q: qn, by: whoA.name, ts: new Date().toISOString() }
-    await kvPut(idA, docA, '實際備料(' + whoA.name + ')')
-    return res.status(200).json({ ok: true, date: dA, act: Object.fromEntries(Object.entries(docA.days[dA]).map(([k, v]) => [k, v.q])) })
+    const rsn = String(ba.reason || '').slice(0, 60)
+    if (opA === 'add') {
+      if (!(qn > 0)) return res.status(400).json({ ok: false, error: '追加數量要大於 0' })
+      cur.q = (Number(cur.q) || 0) + qn
+      cur.log.push({ t: '追加', q: qn, by: whoA.name, ts: tsA })
+    } else if (opA === 'loss') {
+      if (!(qn > 0)) return res.status(400).json({ ok: false, error: '耗損數量要大於 0' })
+      cur.loss = [...(cur.loss || []), { q: qn, r: rsn, by: whoA.name, ts: tsA }]
+      cur.log.push({ t: '耗損', q: qn, r: rsn, by: whoA.name, ts: tsA })
+    } else if (opA === '86') {
+      const on86 = ba.on ? 1 : 0
+      if (on86) cur.s86 = { on: 1, r: rsn, by: whoA.name, ts: tsA }; else delete cur.s86
+      cur.log.push({ t: on86 ? '86停售' : '回賣', r: rsn, by: whoA.name, ts: tsA })
+    } else { // set＝直接填總數
+      if (ba.qty === '' || ba.qty == null || !(qn >= 0)) { cur.q = null; cur.log.push({ t: '清除', by: whoA.name, ts: tsA }) }
+      else { cur.q = qn; cur.log.push({ t: '填', q: qn, by: whoA.name, ts: tsA }) }
+    }
+    cur.by = whoA.name; cur.ts = tsA
+    docA.days[dA][ba.item] = cur
+    await kvPut(idA, docA, '備料' + opA + '(' + whoA.name + ')')
+    const dayE = Object.entries(docA.days[dA])
+    return res.status(200).json({ ok: true, date: dA, act: Object.fromEntries(dayE.filter(([, v]) => v.q != null).map(([k, v]) => [k, v.q])), s86: Object.fromEntries(dayE.filter(([, v]) => v.s86 && v.s86.on).map(([k]) => [k, 1])) })
+  }
+  // 📜 備料歷史查詢（v4.11.0）：?preplog=<OPS_BOARD_KEY>&ym=YYYY-MM → 整月逐日逐品項留痕
+  if (req.query?.preplog) {
+    const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
+    if (!ok2 || String(req.query.preplog) !== ok2) return res.status(403).json({ ok: false })
+    const ymL = /^\d{4}-\d{2}$/.test(String(req.query.ym || '')) ? String(req.query.ym) : new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 7)
+    const docL = (await kvGet('sp_finance_pm_prep_act_' + ymL)) || { days: {} }
+    return res.status(200).json({ ok: true, ym: ymL, days: docL.days || {} })
   }
   // 預做節奏表隱藏設定（張良 2026-09-21：有些品項不用看預做）：POST ?prephide=<OPS_BOARD_KEY> {key, hide, token}
   if (req.method === 'POST' && req.query?.prephide) {

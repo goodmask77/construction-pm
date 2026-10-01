@@ -200,8 +200,11 @@ function renderBoard(d, store){
           return `<td${tw===i+1?' class="todaycol"':''}><b>${v}</b></td>` // ±%與峰低值取消（張良 2026-09-25：版面乾淨）
         }).join('')
         const av=(window._prepAct||{})[p.name]
-        const actTd = p.sub ? `<td class="todaycol mut">—</td>` : `<td class="todaycol"><input inputmode="numeric" value="${av!=null?av:''}" placeholder="填" style="width:52px;padding:4px;border:1.5px solid #9ec5e8;border-radius:6px;text-align:center;font-weight:800;font-size:14px" onchange="actSave('${p.name.replace(/'/g,"\\'")}',this.value)"></td>`
-        h += `<tr${p.sub?' class="subrow"':''}><td style="font-weight:${p.sub?800:700};color:${p.sub?'#8a5a2e':'var(--ink)'}">${p.sub?'└ ':''}${p.name}</td>${actTd}<td class="avg">${p.avg!=null?p.avg:'—'}</td>${wds}</tr>`
+        const s86 = (window._prepS86||{})[p.name]
+        const nmE = p.name.replace(/'/g,"\\'")
+        const tb = 'font-size:10.5px;padding:1px 5px;border:1px solid var(--line);border-radius:6px;background:var(--card);cursor:pointer;color:var(--text)'
+        const actTd = p.sub ? `<td class="todaycol mut">—</td>` : `<td class="todaycol"><input inputmode="numeric" value="${av!=null?av:''}" placeholder="填" style="width:52px;padding:4px;border:1.5px solid #9EC5E8;border-radius:6px;text-align:center;font-weight:800;font-size:14px" onchange="actSave('${nmE}',this.value)"><div style="display:flex;gap:2px;justify-content:center;margin-top:2px"><button title="追加（又備了幾份）" style="${tb}" onclick="actAdd('${nmE}')">＋</button><button title="耗損記錄" style="${tb}" onclick="actLoss('${nmE}')">耗</button><button title="86停售/回賣" style="${tb};${s86?'color:var(--red);border-color:var(--red);font-weight:800':''}" onclick="act86('${nmE}',${s86?1:0})">86</button></div></td>`
+        h += `<tr${p.sub?' class="subrow"':''}><td style="font-weight:${p.sub?800:700};color:${p.sub?'#8a5a2e':'var(--ink)'}">${p.sub?'└ ':''}${p.name}${s86?' <span style="color:var(--red);font-weight:900;font-size:12px;border:1.5px solid var(--red);border-radius:5px;padding:0 4px">86</span>':''}</td>${actTd}<td class="avg">${p.avg!=null?p.avg:'—'}</td>${wds}</tr>`
       })
     })
     h += `</tbody></table></div><div class="hint" style="margin-top:8px">怎麼用：①平均＝近30天「去掉最高/最低各一天」的截尾平均（颱風日/異常日不拉偏；樣本不足8天不截）②看今天星期幾那欄（藍底）＝該星期的截尾平均，照這個數備。</div></section>`
@@ -1479,7 +1482,7 @@ function shiftRender(){
   h += `<div style="display:flex;gap:8px;align-items:center;margin:2px 0 6px;flex-wrap:wrap">
     <span style="font-weight:900;white-space:nowrap">一週班表</span>${meN?`<button class="mini" style="padding:3px 10px" onclick="shiftPosEdit()" title="崗位/時段/人員排序・顏色">⚙️ 設定</button>`:''}
     <button class="mini" onclick="shiftWkNav(-1)">‹</button><button class="mini" style="font-weight:800" onclick="shiftWkToday()">今天</button><button class="mini" onclick="shiftWkNav(1)">›</button><span class="hint" style="font-weight:800;white-space:nowrap">${wkDays[0].slice(5)} ~ ${wkDays[6].slice(5)}</span>
-    <button class="mini" style="padding:3px 10px" onclick="shiftSkill()">📊 熟練度</button>${meN?`<button class="mini" style="padding:3px 10px" onclick="copyWeekNext()">⧉ 本週→下週</button><button class="mini" style="padding:3px 10px;color:var(--red)" onclick="clearWeek()">🗑 清空本週</button>`:''}
+    <button class="mini" style="padding:3px 10px" onclick="shiftSkill()">📊 熟練度</button><button class="mini" style="padding:3px 10px" onclick="shiftHist()">📝 紀錄</button>${meN?`<button class="mini" style="padding:3px 10px" onclick="copyWeekNext()">⧉ 本週→下週</button><button class="mini" style="padding:3px 10px;color:var(--red)" onclick="clearWeek()">🗑 清空本週</button>`:''}
   </div>`
   // v4.3.5（張良 2026-10-02）：①欄寬固定+硬格線=日期與格子切齊 ②崗位三組配色(櫃檯/飲料/中控・漢堡/煎炸麵・披薩/三明治) ③同人同天兼多崗位→班卡同色標記
   const posGrp = ps => /櫃檯|飲料|中控/.test(ps) ? 0 : /漢堡|煎炸|炸麵/.test(ps) ? 1 : /披薩|三明治/.test(ps) ? 2 : 3
@@ -1509,7 +1512,7 @@ function shiftRender(){
         const bg2 = e.tr ? `background:linear-gradient(180deg,${PB[pi]} 50%,${PB[ti]} 50%);` : `background:${PB[pi]};`
         const exp = ((d.posStats||{})[e.name]||{})[ps] || 0 // v4.9.0 生手標記：這崗位排過≤1次
         const trExp = e.tr ? (((d.posStats||{})[e.tr]||{})[ps] || 0) : 0 // v4.9.6 卡上直接顯示該站次數
-        return `<div ${meN?`draggable="true" ondragstart="event.stopPropagation();event.dataTransfer.setData('text/plain','${e.id}');window._shiftDragId='${e.id}'" ondragend="window._shiftDragId=null" onclick="event.stopPropagation();shiftForm('${e.id}')"`:''} style="font-size:13px;line-height:1.7;${meN?'cursor:grab;':''}${bg2}border:${e.tr?'2px dashed rgba(255,255,255,.85)':'none'};border-radius:6px;padding:${e.tr?'2px 7px':'5px 8px'};margin:2px 0">${exp<=1&&ps!=='未分崗'&&!e.tr?`<span title="這崗位只排過 ${exp} 次，建議搭帶訓" style="font-size:12px">⚠️</span> `:''}<b style="color:${PT[pi]};font-weight:600">${e.name}</b>${ps!=='未分崗'?` <span title="這是他第 ${e.seq||exp+1} 次站${ps}" style="font-size:11px;color:${PT[pi]};opacity:.75;font-weight:700">${e.seq||exp+1}</span>`:''}${e.tr?`<span style="display:block;color:${PT[ti]};font-weight:600;font-size:12.5px">🎓${e.tr} <span style="font-size:11px;opacity:.75">${e.trSeq||trExp+1}</span></span>`:''}</div>`
+        return `<div ${meN?`draggable="true" ondragstart="event.stopPropagation();event.dataTransfer.setData('text/plain','${e.id}');window._shiftDragId='${e.id}'" ondragend="window._shiftDragId=null" onclick="event.stopPropagation();shiftForm('${e.id}')"`:''} style="font-size:13px;line-height:1.7;${meN?'cursor:grab;':''}${bg2}border:${e.tr?'2px dashed rgba(255,255,255,.95)':'none'};${e.tr?'outline:2px dashed rgba(255,255,255,.5);outline-offset:2px;':''}border-radius:6px;padding:${e.tr?'3px 8px':'5px 8px'};margin:${e.tr?'4px 2px':'2px 0'}">${exp<=1&&ps!=='未分崗'&&!e.tr?`<span title="這崗位只排過 ${exp} 次，建議搭帶訓" style="font-size:12px">⚠️</span> `:''}<b style="color:${PT[pi]};font-weight:600">${e.name}</b>${ps!=='未分崗'?` <span title="這是他第 ${e.seq||exp+1} 次站${ps}" style="font-size:11px;color:${PT[pi]};opacity:.75;font-weight:700">${e.seq||exp+1}</span>`:''}${e.tr?`<span style="display:block;color:${PT[ti]};font-weight:600;font-size:12.5px">🎓${e.tr} <span style="font-size:11px;opacity:.75">${e.trSeq||trExp+1}</span></span>`:''}</div>`
       }).join('')
       return `<td${cellOps} style="${BD}${gb}${dt===today?'background:#1B3356;':''}text-align:left;${meN?'cursor:pointer;':''}vertical-align:top;overflow:hidden">${ents || (meN?'<span class="mut">＋</span>':'<span class="mut">—</span>')}</td>`
     }).join('') + `</tr>`
@@ -1705,12 +1708,25 @@ function clearWeek(){
   const ents = d.sched.filter(x=>days.includes(x.date))
   if (!ents.length) { alert('本週沒班可清'); return }
   if (!confirm(`把這一週（${days[0].slice(5)}~${days[6].slice(5)}）的 ${ents.length} 筆班全部刪除？打卡紀錄不會動。`)) return
+  window._lastClear = ents.map(x=>({ ...x })) // v4.12.0 可復原
   ents.forEach(x=>{
     d.sched = d.sched.filter(y=>y!==x)
     if (String(x.id).startsWith('tmp')) { const t2 = window._shiftTmpQ.find(q=>q.id===x.id); if (t2) t2._del = 1 }
     else shQueue(async ()=>{ const r = await shPost({ op:'del', id: x.id, token: TK() }); if (!(r&&r.ok)) alert('刪除失敗：'+x.name) })
   })
   shiftRender()
+  pasteOff(1)
+  const b9 = document.createElement('div'); b9.id = 'pasteBar'
+  b9.style.cssText = 'position:fixed;bottom:18px;left:50%;transform:translateX(-50%);z-index:60;background:#10182B;color:#fff;border-radius:12px;padding:10px 14px;display:flex;gap:10px;align-items:center;font-size:14px;box-shadow:0 4px 14px rgba(0,0,0,.3)'
+  b9.innerHTML = `<span>🗑 已清空 ${ents.length} 筆</span><button class="mini" style="padding:6px 12px" onclick="undoClear()">↩️ 復原</button><button class="mini" style="padding:6px 12px" onclick="pasteOff()">好</button>`
+  document.body.appendChild(b9)
+}
+function undoClear(){ // 清空本週復原（張良 2026-10-02「不小心清空」）：原班原樣補回（新id）
+  const L = window._lastClear || []
+  if (!L.length) { pasteOff(); return }
+  L.forEach(x=>{ const tmp = { name: x.name, date: x.date, start: x.start, end: x.end, break: x.break||0, pos: x.pos||'', id: 'tmp' + Math.random().toString(36).slice(2) }; if (x.tr) tmp.tr = x.tr; queueSaveTmp(tmp) })
+  window._lastClear = []
+  pasteOff(); shiftRender()
 }
 async function copyWeekNext(){
   const d = window._shiftD
@@ -1766,6 +1782,18 @@ function shiftSkill(){
     <div class="hint" style="margin-bottom:10px">只算今天以前的班；顏色越深＝次數越多；「·」＝沒排過（該訓練的空格）；🎓n＝被帶訓次數。</div>
     <div class="scroll"><table style="border-collapse:collapse;min-width:560px"><thead><tr><th style="border:1px solid var(--line);text-align:left;padding:6px 6px;position:sticky;left:0;background:#222B38;z-index:2">夥伴</th>${cols.map(p2=>`<th style="border:1px solid var(--line);padding:6px 4px;text-align:center">${p2}</th>`).join('')}</tr></thead><tbody>${ppl.map(row).join('')}</tbody></table></div>
     <div style="display:flex;justify-content:flex-end;margin-top:12px"><button class="mini" style="padding:9px 14px" onclick="document.getElementById('skOv').remove()">關閉</button></div></div>`
+  ov.onclick = () => ov.remove()
+  document.body.appendChild(ov)
+}
+// 📝 班表修改紀錄（v4.12.0 張良：誰在什麼時間動了什麼）
+function shiftHist(){
+  const d = window._shiftD, H = d.hist || []
+  const tpe = ts => { try { const t2 = new Date(ts); return t2.toLocaleDateString('sv-SE',{timeZone:'Asia/Taipei'}).slice(5) + ' ' + t2.toLocaleTimeString('en-GB',{hour12:false,timeZone:'Asia/Taipei',hour:'2-digit',minute:'2-digit'}) } catch(e){ return '' } }
+  const ov = document.createElement('div'); ov.id='shHov'
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:60;display:flex;align-items:center;justify-content:center;padding:14px'
+  ov.innerHTML = `<div style="background:#222B38;border:1px solid #3B4654;border-radius:14px;width:min(560px,94vw);max-height:88vh;overflow:auto;padding:16px" onclick="event.stopPropagation()">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><b style="font-size:16px">📝 班表修改紀錄</b><button class="mini" style="padding:7px 12px" onclick="document.getElementById('shHov').remove()">關閉</button></div>
+    ${H.length ? H.map(x=>`<div style="display:flex;gap:9px;font-size:13.5px;padding:4px 0;border-bottom:1px solid var(--line)"><span class="hint" style="min-width:86px;white-space:nowrap">${tpe(x.ts)}</span><span style="min-width:56px;font-weight:800">${x.by||''}</span><span>${x.d||''}</span></div>`).join('') : '<div class="mut">還沒有紀錄（從現在起每筆排班/修改/刪除都會記）</div>'}</div>`
   ov.onclick = () => ov.remove()
   document.body.appendChild(ov)
 }
@@ -2762,6 +2790,7 @@ function shiftPosEdit(){ // v4.3.2（張良 2026-10-02「這樣很難弄」）�
   // v4.5.2（張良「視窗大一點自適應」+「人員給我可以排序」）：寬螢幕三欄並排、窄螢幕自動疊；新增人員排序區（順序=專屬色+快選排列）
   ov.innerHTML = `<div style="background:#222B38;border:1px solid #3B4654;box-shadow:0 18px 50px rgba(0,0,0,.55);border-radius:14px;width:min(900px,94vw);padding:18px;max-height:90vh;overflow:auto" onclick="event.stopPropagation()">
     <div style="font-weight:900;font-size:16px;margin-bottom:10px">⚙️ 班表設定</div>
+    ${(d.me&&(d.me.approver||d.me.role==='主管'))?`<label style="display:flex;gap:8px;align-items:center;margin:-4px 0 12px;font-weight:700;cursor:pointer"><input type="checkbox" id="psLock" ${d.lockEdit?'checked':''} style="width:17px;height:17px"> 🔒 鎖定班表——只有審核人／主管能編輯</label>`:''}
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:22px">
       <div>
         <div style="font-weight:900;margin-bottom:2px">📋 崗位清單</div>
@@ -2911,7 +2940,7 @@ async function posSave(){
     d.staff = window._ordTmp.map(n=>{ const s2 = (d.staff||[]).find(x=>x.n===n) || { n, role:'一般' }; const o2 = { ...s2 }; if (offS.has(n)) o2.off = 1; else delete o2.off; return o2 })
     shiftRender()
   }
-  const r = await fetch('/api/mail-sync?shiftset=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ op:'cfg', pos: list, slots, ord: window._ordTmp, colors: window._colTmp, off: [...window._offTmp], token: TK() }) }).then(r2=>r2.json()).catch(()=>null)
+  const r = await fetch('/api/mail-sync?shiftset=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ op:'cfg', pos: list, slots, ord: window._ordTmp, colors: window._colTmp, off: [...window._offTmp], ...(document.getElementById('psLock')?{lock:document.getElementById('psLock').checked?1:0}:{}), token: TK() }) }).then(r2=>r2.json()).catch(()=>null)
   if (r && r.ok) shiftLoad(); else { alert((r&&r.error)||'儲存失敗'); shiftLoad() }
 }
 // ── 🎚 權限 modal（張良 2026-09-25：訪客看/綁定一般/名單設權限）──
