@@ -2,6 +2,7 @@
  {
   "date": "2026-10-02",
   "items": [
+   "快速新增IME治本(張良:輸入後點一下不順跑出2個)：中文輸入法選字Enter(keyCode229/isComposing)被當送出→打一半先送一筆;全檔Enter輸入框加IME防護+送出1.5s防連點 v4.1.9",
    "菜單頁頂四格設計圖(張良:四張圖照順序放最上面、點看大圖、四格可換圖)：①四張設計圖(ROLLS/BURGERS/FAST IDEAS/DRINKS)已上傳photos桶並種進menu doc.imgs ②菜單頁頂4格16:9縮圖grid,點圖lightbox看大圖(點任意處關) ③每格📷鈕(綁定者)=選圖→sopsign直傳→menuimgset換圖留痕;menuen口可種imgs v4.1.8",
    "按鈕全滅一類掃完(修bug鐵律)：canEdit誤傷共8處(任務/盤點/包材/採購/會議/班表/評分/菜單)——只有菜單口真的回canEdit其餘口沒有→7個分頁按鈕對全員消失;全改回綁定即顯示,實際權限靠伺服器守門(approve模式照擋) v4.1.7",
    "任務按鈕真兇+英文靠左補刀(張良:到底)：①v3.9.5整檔replace把任務頁meN也改成吃canEdit,但lb口沒這欄→meN永遠null全按鈕消失;改回綁定即可+標題顯示身分(名字/審核人/未綁定)好診斷 ②英文備註唯讀格text-align:left上次無聲失敗這次帶assert修進去 v4.1.6",
