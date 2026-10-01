@@ -9,6 +9,7 @@ const walk = (dir) => fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) =
 
 // ── 不需給 AI 的 key（每條都要寫原因；沒理由就不准加）──
 const ALLOW = [
+  [/^sp_finance_pm_prep_perm$/, "/prep 編輯權限名單（2026-10-01 審核制）＝權限資料非業務資料"],
   [/^sp_finance_pm_prep_act_/, "實際備料逐日流水（2026-10-01）——先累積，分析功能上了再接 AI"],
   [/^pm_hist_|_v\d$|_v\d_/, "還原點/遷移旗標，非業務資料"],
   [/^pm_vault/, "密碼金庫＝機密，永不進 AI"],
