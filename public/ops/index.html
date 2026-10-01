@@ -861,8 +861,8 @@ function taskRender(){
   const d = window._lbD
   if (!d) { app.innerHTML = '<div class="err">讀不到任務資料</div>'; return }
   if (curStore !== 'task') return
-  document.getElementById('upd').textContent = '任務中心・完成送審核，核准後到排行榜評星'
-  const meN = d.me && d.me.canEdit ? d.me.name : null // 審核制（張良 2026-10-01 開工）：核准才有編輯權
+  document.getElementById('upd').textContent = '任務中心' + (d.me ? '・' + d.me.name + (d.me.approver ? '（審核人）' : '') : '・未綁定（看得到；要操作先綁定）')
+  const meN = d.me ? d.me.name : null // 2026-10-02 修：lb 口沒有 canEdit 欄位，之前整檔替換誤傷這行→按鈕全滅；任務操作=綁定即可
   const all0 = d.issues || []
   const q = taskQ.trim()
   const all = q ? all0.filter(x=>((x.text||'')+(x.st||'')+(x.claimBy||'')+(x.by||'')).includes(q)) : all0
@@ -1807,7 +1807,7 @@ function menuRender(){
         const b = df.bF[i2.id]
         const isNew = !b, isChg = b && (b.name!==i2.name || b.price!==i2.price || (b.note||'')!==(i2.note||'') || (b.en||'')!==(i2.en||''))
         const edOn = meN && menuEditSec[si]
-        const cell=(f,v,st)=> edOn ? `<td style="padding:3px 4px;border:1px solid #D9E4EF"><input value="${String(v??'').replace(/"/g,'&quot;')}" onchange="menuCell(${si},'${i2.id}','${f}',this.value)" style="width:100%;box-sizing:border-box;border:1px solid var(--line);border-radius:7px;padding:6px;font-size:14px;background:#fff;${st||''}"></td>` : `<td style="padding:6px 7px;border:1px solid #D9E4EF;${st||''}">${String(v??'')!==''?String(v).replace(/</g,'&lt;'):'<span class="mut">—</span>'}</td>`
+        const cell=(f,v,st)=> edOn ? `<td style="padding:3px 4px;border:1px solid #D9E4EF"><input value="${String(v??'').replace(/"/g,'&quot;')}" onchange="menuCell(${si},'${i2.id}','${f}',this.value)" style="width:100%;box-sizing:border-box;border:1px solid var(--line);border-radius:7px;padding:6px;font-size:14px;background:#fff;${st||''}"></td>` : `<td style="padding:6px 7px;border:1px solid #D9E4EF;text-align:left;${st||''}">${String(v??'')!==''?String(v).replace(/</g,'&lt;'):'<span class="mut">—</span>'}</td>`
         h += `<tr style="background:${isNew?'#E8F6EE':isChg?'#FFF4DE':'transparent'}">${cell('name',i2.name,'font-weight:700;min-width:120px')}${cell('en',i2.en,'min-width:110px')}${edOn?`<td style="padding:3px 4px;border:1px solid #D9E4EF"><input inputmode="numeric" value="${i2.price}" onchange="menuCell(${si},'${i2.id}','price',this.value)" style="width:64px;border:1px solid var(--line);border-radius:7px;padding:6px;font-size:14px;text-align:right;font-weight:800;background:#fff"></td>`:`<td style="padding:6px 7px;border:1px solid #D9E4EF;text-align:right;font-weight:800">$${i2.price}</td>`}${edOn?`<td style="padding:3px 4px;border:1px solid #D9E4EF"><input inputmode="numeric" value="${i2.np||''}" placeholder="—" onchange="menuCell(${si},'${i2.id}','np',this.value)" style="width:64px;border:1px solid var(--line);border-radius:7px;padding:6px;font-size:14px;text-align:right;font-weight:800;background:#fff;color:#A85C26"></td>`:`<td style="padding:6px 7px;border:1px solid #D9E4EF;text-align:right;font-weight:800;color:#A85C26">${i2.np?'$'+i2.np:'—'}</td>`}${cell('note',i2.note,'min-width:90px')}<td style="white-space:nowrap;border:1px solid #D9E4EF;padding:3px 5px">${isNew?'<span class="up" style="font-size:12px;font-weight:800">新增</span> ':''}${edOn?`<button class="mini" onclick="menuItemShift(${si},'${i2.id}',-1)">↑</button><button class="mini" onclick="menuItemShift(${si},'${i2.id}',1)">↓</button><button class="mini" style="color:var(--red)" onclick="if(confirm('刪掉「${i2.name}」？'))menuItemDel(${si},'${i2.id}')">🗑</button>`:''}</td></tr>`
       })
       h += `</tbody></table></div>`
