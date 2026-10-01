@@ -794,6 +794,16 @@ export default async function handler(req, res) {
   // 夥伴營運看板資料口（獨立金鑰 OPS_BOARD_KEY——跟管理金鑰分開，外流也只能唯讀看板資料；張良 2026-09-20）：
   // ?opsboard=<OPS_BOARD_KEY>&store=ground|abeach → 給 /ops/ 靜態頁用：日表(營收/單數/外帶%/套餐%)＋
   // 品項備料表(30日均/vs近60/近14天逐日,套 alias 合併+hidden 過濾)＋時段平均。刻意不含：付款明細/成本/毛利/定價
+  // 我是誰（側欄底部身分膠囊用；張良 2026-10-02）：GET ?whoami=<OPS_BOARD_KEY>&me=token
+  if (req.query?.whoami) {
+    const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
+    if (!ok2 || String(req.query.whoami) !== ok2) return res.status(403).json({ ok: false })
+    const w = await sopWho(req.query.me)
+    if (!w) return res.status(200).json({ ok: true, me: null })
+    const defW = await kvGet('sp_finance_pm_sop_def')
+    const aprW = (((defW || {}).ground || {}).approvers || ['張良瑋'])
+    return res.status(200).json({ ok: true, me: { name: w.name, role: w.role, approver: w.role === '主管' || aprW.includes(w.name) } })
+  }
   if (req.query?.opsboard) {
     const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
     if (!ok2 || String(req.query.opsboard) !== ok2) return res.status(403).json({ ok: false })
