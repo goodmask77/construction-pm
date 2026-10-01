@@ -2521,7 +2521,7 @@ function shiftPosEdit(){ // v4.3.2（張良 2026-10-02「這樣很難弄」）�
   // v4.5.2（張良「視窗大一點自適應」+「人員給我可以排序」）：寬螢幕三欄並排、窄螢幕自動疊；新增人員排序區（順序=專屬色+快選排列）
   ov.innerHTML = `<div style="background:#fff;border-radius:14px;width:min(900px,94vw);padding:18px;max-height:90vh;overflow:auto" onclick="event.stopPropagation()">
     <div style="font-weight:900;font-size:16px;margin-bottom:10px">⚙️ 班表設定</div>
-    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:18px">
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:22px">
       <div>
         <div style="font-weight:900;margin-bottom:2px">📋 崗位清單</div>
         <div class="hint" style="margin-bottom:6px">排班選單用這份；改名、✕ 刪、↑↓ 排。</div>
@@ -2568,11 +2568,11 @@ function odRender(){
 }
 function slRender(){
   const box = document.getElementById('slRows'); if (!box) return
-  box.innerHTML = window._slotTmp.map((sl,i)=>`<div style="display:flex;gap:6px;align-items:center;padding:4px 0;border-bottom:1px solid var(--line)">
-    <input value="${String(sl.n).replace(/"/g,'&quot;')}" placeholder="名稱" oninput="window._slotTmp[${i}].n=this.value" style="width:72px;border:1px solid var(--line);border-radius:8px;padding:8px;font-size:14px">
-    <input type="time" value="${sl.s}" onchange="window._slotTmp[${i}].s=this.value" style="border:1px solid var(--line);border-radius:8px;padding:7px;font-size:14px">
+  box.innerHTML = window._slotTmp.map((sl,i)=>`<div style="display:flex;gap:5px;align-items:center;flex-wrap:wrap;padding:4px 0;border-bottom:1px solid var(--line)">
+    <input value="${String(sl.n).replace(/"/g,'&quot;')}" placeholder="名稱" oninput="window._slotTmp[${i}].n=this.value" style="width:56px;min-width:0;border:1px solid var(--line);border-radius:8px;padding:7px 6px;font-size:14px">
+    <input type="time" value="${sl.s}" onchange="window._slotTmp[${i}].s=this.value" style="width:102px;min-width:0;border:1px solid var(--line);border-radius:8px;padding:6px 4px;font-size:13px">
     <span>–</span>
-    <input type="time" value="${sl.e}" onchange="window._slotTmp[${i}].e=this.value" style="border:1px solid var(--line);border-radius:8px;padding:7px;font-size:14px">
+    <input type="time" value="${sl.e}" onchange="window._slotTmp[${i}].e=this.value" style="width:102px;min-width:0;border:1px solid var(--line);border-radius:8px;padding:6px 4px;font-size:13px">
     <button class="mini" style="padding:7px 9px;color:var(--red);margin-left:auto" onclick="window._slotTmp.splice(${i},1);slRender()">✕</button></div>`).join('')
 }
 function posRender(){
