@@ -1477,7 +1477,7 @@ function shiftRender(){
   const posList = (d.posList||[]).slice()
   wkEnts.forEach(x=>{ const p4=x.pos||'未分崗'; if(!posList.includes(p4)) posList.push(p4) })
   h += `<div style="display:flex;gap:8px;align-items:center;margin:2px 0 6px">
-    <span style="font-weight:900">一週班表</span>${meN?`<button class="mini" style="padding:3px 10px" onclick="shiftPosEdit()">⚙️ 設定<span class="wopt">（崗位/時段/人員排序・顏色）</span></button>`:''}
+    <span style="font-weight:900">一週班表</span>${meN?`<button class="mini" style="padding:3px 10px" onclick="shiftPosEdit()" title="崗位/時段/人員排序・顏色">⚙️ 設定</button>`:''}
     <button class="mini" onclick="shiftWkNav(-1)">‹</button><button class="mini" style="font-weight:800" onclick="shiftWkToday()">今天</button><button class="mini" onclick="shiftWkNav(1)">›</button><span class="hint" style="font-weight:800">${wkDays[0].slice(5)} ~ ${wkDays[6].slice(5)}</span>
     <button class="mini" style="padding:3px 10px" onclick="shiftSkill()">📊 熟練度</button>${meN?`<button class="mini" style="padding:3px 10px" onclick="copyWeekNext()">⧉ 本週→下週</button><button class="mini" style="padding:3px 10px;color:var(--red)" onclick="clearWeek()">🗑 清空本週</button>`:''}
   </div>`
