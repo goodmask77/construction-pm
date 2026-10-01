@@ -1852,7 +1852,11 @@ function permPanelHtml(perm){
     <div style="font-weight:900">🔐 編輯權限管理 <span class="hint">模式：${perm.mode==='open'?'全開（人人可編）':'審核制（申請→老闆核准）'}</span>
     <button class="mini" onclick="permSet('mode',null,'${perm.mode==='open'?'approve':'open'}')">切成${perm.mode==='open'?'審核制':'全開'}</button></div>
     ${(perm.pending||[]).length?`<div style="margin-top:6px;font-weight:800">待審核：</div>`+perm.pending.map(u=>`<div style="padding:3px 0">🙋 ${u.name} <span class="hint">${u.ts||''}</span> <button class="mini on" onclick="permSet('approve','${u.rid}')">✅ 核准</button> <button class="mini" onclick="permSet('reject','${u.rid}')">✖</button></div>`).join(''):'<div class="hint" style="margin-top:6px">目前沒有待審核的申請</div>'}
-    <details style="margin-top:6px" open><summary class="hint" style="cursor:pointer">已核准（${(perm.users||[]).length}）</summary>${(perm.users||[]).map(u=>`<div style="padding:2px 0">${u.admin?'👑 ':''}${u.name}${u.admin?'':` <button class="mini" onclick="permSet('revoke','${u.rid}')">移除</button>`}</div>`).join('')}</details></div>`
+    <details style="margin-top:6px" open><summary class="hint" style="cursor:pointer">已核准（${(perm.users||[]).length}）——每人可勾「哪些分頁能編」</summary>${(perm.users||[]).map(u=>{
+      const TABS=[['menu','菜單'],['board','備料/看板'],['task','任務'],['meet','會議'],['food','盤點'],['pack','包材'],['buy','採購'],['shift','班表'],['fb','回饋']]
+      const cks=u.admin?'<span class="hint">管理者＝全部分頁</span>':TABS.map(([k,lb])=>`<label style="margin-right:10px;white-space:nowrap"><input type="checkbox" ${(!u.tabs||u.tabs[k]!==0)?'checked':''} onchange="permSet('tab','${u.rid}',null,'${k}',this.checked)">${lb}</label>`).join('')
+      return `<div style="padding:6px 0;border-top:1px dashed #D9E4EF"><div style="font-weight:800">${u.admin?'👑 ':''}${u.name}${u.admin?'':` <button class="mini" onclick="permSet('revoke','${u.rid}')">移除</button>`}</div><div style="margin-top:3px">${cks}</div></div>`
+    }).join('')}</details></div>`
 }
 async function settingsLoad(){ // ⚙️ 設定頁（張良 2026-10-01：分頁管理/通知開關/權限管理集中這裡）
   curStore = 'settings'; setTabs('')
@@ -1862,10 +1866,12 @@ async function settingsLoad(){ // ⚙️ 設定頁（張良 2026-10-01：分頁�
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
       <button class="mini" style="padding:10px 16px" onclick="tabsEdit()">🗂 分頁名稱／排序</button>
       <button class="mini" style="padding:10px 16px" onclick="notifyEdit()">🔔 群組通知開關</button>
-    </div><div id="permBox" class="hint">權限資料載入中…</div></section>`
+      <button class="mini" style="padding:10px 16px" onclick="const b=document.getElementById('permBox');b.style.display=b.style.display==='none'?'':'none'">🔐 權限設定</button>
+    </div><div id="permBox" class="hint" style="display:none">權限資料載入中…</div></section>`
   let d; try{ const r = await fetch('/api/mail-sync?menu=' + encodeURIComponent(K) + (TK() ? '&me=' + encodeURIComponent(TK()) : '')); d = await r.json() }catch(e){}
   const box = document.getElementById('permBox'); if (!box) return
   box.innerHTML = (d && d.me && d.me.admin && d.perm) ? permPanelHtml(d.perm) : '<div class="hint">🔐 編輯權限管理：僅管理者（老闆）看得到</div>'
+  if (window._permKeepOpen) { box.style.display = ''; window._permKeepOpen = 0 }
 }
 async function prepApply(){
   const r = await fetch('/api/mail-sync?prepapply=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ token: TK() }) })
@@ -1873,11 +1879,11 @@ async function prepApply(){
   alert(j&&j.ok ? (j.already?'你已經有編輯權限了':'已送出申請，老闆核准後就能編輯') : (j&&j.error)||'申請失敗')
   menuLoad()
 }
-async function permSet(op, rid, mode){
-  const r = await fetch('/api/mail-sync?preppermset=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ token: TK(), op, rid, mode }) })
+async function permSet(op, rid, mode, tab, val){
+  const r = await fetch('/api/mail-sync?preppermset=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ token: TK(), op, rid, mode, tab, val }) })
   const j = await r.json().catch(()=>null)
   if (!j || !j.ok) alert((j&&j.error)||'操作失敗')
-  if (curStore === 'settings') settingsLoad(); else menuLoad()
+  if (curStore === 'settings') { window._permKeepOpen = 1; settingsLoad() } else menuLoad()
 }
 let mnDragS = null
 function menuItemAdd(si){ // 不開視窗：直接在該分類表格長出一列空欄位，填了中文就自動存（張良 2026-10-01）
