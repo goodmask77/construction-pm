@@ -1569,7 +1569,7 @@ function shiftForm(id){
       <span>上班</span><span>${t24c('shS', it?it.start:'11:00')}</span>
       <span>下班</span><span>${t24c('shE', it?it.end:'20:00')}</span>
       <span>休息(分)</span><input id="shBreak" type="number" value="${it?(it.break||0):60}" min="0" max="240" style="${ip}">
-      <span>🎓帶訓</span><span><select id="shTr" style="${ip};width:100%"><option value="">無</option>${(d.names||[]).map(n=>{const c9=it&&it.pos?(((d.posStats||{})[n]||{})[it.pos]||0):0;return `<option value="${n}"${it&&it.tr===n?' selected':''}>${n}${it&&it.pos?`｜${c9?c9+'次':'新'}`:''}</option>`}).join('')}</select></span>
+      <span>🎓帶訓</span><span><select id="shTr" style="${ip};width:100%">${trOpts(d, it?(it.pos||''):'', it?(it.tr||''):'')}</select></span>
     </div>
     <div style="display:flex;gap:8px;justify-content:space-between;margin-top:12px">
     <span>${it?`<button class="mini" style="padding:9px 12px;color:var(--red)" onclick="if(confirm('刪除 ${it.name} ${it.date} 這個班？')){document.getElementById('shOv').remove();shiftDelFast('${it.id}')}">🗑 刪除</button>`:''}</span>
@@ -1818,7 +1818,7 @@ function shiftQuick(pos, dt){
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:14px;margin-bottom:10px">
       <span>上班</span>${t24c('qkS', defS)}<span>下班</span>${t24c('qkE', defE)}
       <span>休(分)</span><input id="qkB" type="number" value="${defB}" min="0" max="240" style="border:1px solid var(--line);border-radius:8px;padding:7px;font-size:15px;width:62px">
-      <span>🎓帶訓</span><select id="qkTr" onchange="qkTrChange(this.value)" style="border:1px solid var(--line);border-radius:8px;padding:7px;font-size:14px"><option value="">無</option>${(d.names||[]).map(n=>{const c9=((d.posStats||{})[n]||{})[pos]||0;return `<option value="${n}">${n}｜${c9?c9+'次':'新'}</option>`}).join('')}</select>
+      <span>🎓帶訓</span><select id="qkTr" onchange="qkTrChange(this.value)" style="border:1px solid var(--line);border-radius:8px;padding:7px;font-size:14px">${trOpts(d, pos, '')}</select>
     </div>
     <div class="hint" style="margin-bottom:6px">點名字＝直接排進去；名字旁數字＝<b>排過這崗位幾次</b>（照次數排序）；「新」＝沒排過建議搭帶訓；✓＝當天已有班可兼第二崗</div>
     ${(()=>{ // v4.9.0 熟練度（張良）：次數徽章+照次數大到小排；0次標「新」；被帶訓另標🎓n
@@ -1845,6 +1845,15 @@ function shiftQuick(pos, dt){
     const qt = document.getElementById('qkTr'); if (qt && kp.tr) qt.value = kp.tr
     const mg = document.getElementById('qkMsg'); if (mg) { mg.textContent = kp.msg; mg.style.display = 'block' }
   }
+}
+// 帶訓下拉共用選項（v4.9.8 張良：非常態放最下面用 optgroup 區隔）：常態照排序→「── 非常態 ──」群組
+function trOpts(d, pos, sel){
+  const cnt9 = n => pos ? (((d.posStats||{})[n]||{})[pos]||0) : 0
+  const opt = n => `<option value="${n}"${sel===n?' selected':''}>${n}${pos?`｜${cnt9(n)?cnt9(n)+'次':'新'}`:''}</option>`
+  const reg = (d.staff||[]).filter(s2=>!s2.off).map(s2=>s2.n)
+  const off = (d.staff||[]).filter(s2=>s2.off).map(s2=>s2.n)
+  if (!reg.length && !off.length) return `<option value="">無</option>` + (d.names||[]).map(opt).join('')
+  return `<option value="">無</option>${reg.map(opt).join('')}${off.length?`<optgroup label="── 非常態 ──">${off.map(opt).join('')}</optgroup>`:''}`
 }
 // v4.9.6（張良「選了帶訓沒出現」）：先點人、後選帶訓＝直接補到剛排的那筆（原本只對之後點的人生效）
 function qkTrChange(v){
