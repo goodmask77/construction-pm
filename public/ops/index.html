@@ -332,12 +332,15 @@ async function prepLogView(ym){
   const tpe = ts => { try { return new Date(ts).toLocaleTimeString('en-GB',{hour12:false,timeZone:'Asia/Taipei',hour:'2-digit',minute:'2-digit'}) } catch(e){ return '' } }
   const dts = Object.keys(d2.days||{}).sort().reverse()
   const body = dts.length ? dts.map(dt=>{
-    const items = Object.entries(d2.days[dt])
-    return `<div style="font-weight:900;color:var(--pdark);margin:12px 0 4px">${dt.slice(5)}（${['日','一','二','三','四','五','六'][new Date(dt).getDay()]}）</div>` + items.map(([nm,v])=>{
-      const lines = (v.log||[]).map(l2=>`<div style="display:flex;gap:8px;font-size:13.5px;padding:2px 0"><span class="hint" style="min-width:40px">${tpe(l2.ts)}</span><span style="min-width:52px;font-weight:800;color:${(l2.t==='耗損'||l2.t==='86停售')?'var(--red)':l2.t==='回賣'?'var(--green)':'var(--text)'}">${l2.t}</span><span>${l2.q!=null?l2.q+' 份':''}${l2.r?'・'+l2.r:''}</span><span class="hint" style="margin-left:auto">${l2.by||''}</span></div>`).join('')
-      const lossSum = (v.loss||[]).reduce((t2,x2)=>t2+(x2.q||0),0)
-      return `<div style="background:var(--soft);border:1px solid var(--line);border-radius:10px;padding:7px 10px;margin-bottom:6px"><div style="font-weight:800">${nm} <span class="hint">實備 ${v.q!=null?v.q:'—'}${lossSum?`・耗損 ${lossSum}`:''}${v.s86&&v.s86.on?'・<span style="color:var(--red);font-weight:900">86中</span>':''}</span></div>${lines}</div>`
-    }).join('')
+    const rows = []
+    Object.entries(d2.days[dt]).forEach(([nm,v])=>{
+      const lg = (v.log && v.log.length) ? v.log : [{ t:'填', q: v.q, by: v.by, ts: v.ts }] // 舊格式沒log也顯示
+      lg.forEach(l2=>rows.push({ nm, ...l2 }))
+    })
+    rows.sort((a2,b2)=>String(a2.ts||'').localeCompare(String(b2.ts||'')))
+    const cl = t2 => (t2==='耗損'||t2==='86停售') ? 'var(--red)' : t2==='回賣' ? 'var(--green)' : t2==='追加' ? 'var(--pdark)' : 'var(--text)'
+    return `<div style="font-weight:900;color:var(--pdark);margin:12px 0 4px">${dt.slice(5)}（${['日','一','二','三','四','五','六'][new Date(dt).getDay()]}）</div>
+    <div class="scroll"><table style="min-width:500px;border-collapse:collapse"><thead><tr>${['品項','時間','動作','數量','原因','人'].map((x2,i2)=>`<th style="border:1px solid var(--line);padding:5px 7px;${i2===0||i2===4||i2===5?'text-align:left':'text-align:center'}">${x2}</th>`).join('')}</tr></thead><tbody>${rows.map(r2=>`<tr><td style="border:1px solid var(--line);padding:5px 7px;text-align:left;font-weight:700">${r2.nm}</td><td style="border:1px solid var(--line);padding:5px 7px;text-align:center">${tpe(r2.ts)}</td><td style="border:1px solid var(--line);padding:5px 7px;text-align:center;font-weight:800;color:${cl(r2.t)}">${r2.t}</td><td style="border:1px solid var(--line);padding:5px 7px;text-align:center;font-weight:800">${r2.q!=null?r2.q:'—'}</td><td style="border:1px solid var(--line);padding:5px 7px;text-align:left">${r2.r||'—'}</td><td style="border:1px solid var(--line);padding:5px 7px;text-align:left">${r2.by||'—'}</td></tr>`).join('')}</tbody></table></div>`
   }).join('') : '<div class="mut">這個月還沒有紀錄</div>'
   const ov = document.createElement('div'); ov.id='plOv'
   ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:60;display:flex;align-items:center;justify-content:center;padding:14px'
@@ -1872,14 +1875,35 @@ function tplView(){
   ov.innerHTML = `<div style="background:#222B38;border:1px solid #3B4654;border-radius:14px;width:min(520px,94vw);max-height:88vh;overflow:auto;padding:16px" onclick="event.stopPropagation()">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><b style="font-size:16px">📂 班表版本</b><button class="mini" style="padding:7px 12px" onclick="document.getElementById('tpOv').remove()">關閉</button></div>
     <div class="hint" style="margin-bottom:8px">套用＝鋪到「目前看的這一週」（照週一~週日對應；已有的班自動跳過）。</div>
-    ${T.length ? T.map(t2=>`<div style="display:flex;gap:8px;align-items:center;background:var(--soft);border:1px solid var(--line);border-radius:10px;padding:8px 10px;margin-bottom:6px"><div style="flex:1;min-width:0"><b>${t2.name}</b> <span class="hint">${t2.items.length} 筆</span><div class="hint" style="font-size:12px">${t2.by}・${tpe(t2.ts)}</div></div><button class="mini on" style="padding:7px 12px" onclick="tplApply('${t2.id}')">套用</button><button class="mini" style="padding:7px 10px;color:var(--red)" onclick="if(confirm('刪除版本「${t2.name}」？'))tplDel('${t2.id}')">🗑</button></div>`).join('') : '<div class="mut">還沒有存過版本——排好一週按「💾 存版本」</div>'}</div>`
+    ${T.length ? T.map(t2=>`<div style="display:flex;gap:8px;align-items:center;background:var(--soft);border:1px solid var(--line);border-radius:10px;padding:8px 10px;margin-bottom:6px"><div style="flex:1;min-width:0"><b>${t2.name}</b> <span class="hint">${t2.items.length} 筆</span><div class="hint" style="font-size:12px">${t2.by}・${tpe(t2.ts)}</div></div><button class="mini on" style="padding:7px 12px" onclick="tplPreview('${t2.id}')">👁 預覽</button><button class="mini" style="padding:7px 10px;color:var(--red)" onclick="if(confirm('刪除版本「${t2.name}」？'))tplDel('${t2.id}')">🗑</button></div>`).join('') : '<div class="mut">還沒有存過版本——排好一週按「💾 存版本」</div>'}</div>`
   ov.onclick = () => ov.remove()
   document.body.appendChild(ov)
 }
-function tplApply(id){
+function tplPreview(id){ // 👁 先預覽確認再套用（張良 2026-10-02）
   const d = window._shiftD, tp = (d.tpls||[]).find(x=>x.id===id); if (!tp) return
   const days = [...Array(7)].map((_,i)=>{ const t2 = new Date(window._shiftWk); t2.setDate(t2.getDate()+i); return t2.toISOString().slice(0,10) })
-  if (!confirm(`把「${tp.name}」套用到 ${days[0].slice(5)}~${days[6].slice(5)}？（已有的班會跳過）`)) return
+  const wdN3 = ['一','二','三','四','五','六','日']
+  const exist = new Set(d.sched.map(x=>[x.name, x.date, x.pos||''].join('|')))
+  let addN = 0
+  const cols = days.map((dt,i)=>{
+    const its = tp.items.filter(x=>(x.wd||0)===i)
+    return `<div style="min-width:120px;flex:1"><div style="font-weight:800;color:var(--pdark);border-bottom:1px solid var(--line);padding-bottom:3px;margin-bottom:4px">${dt.slice(5)}（${wdN3[i]}）</div>${its.map(x=>{ const dup = exist.has([x.name, dt, x.pos||''].join('|')); if (!dup) addN++; return `<div style="font-size:13px;padding:1px 0;${dup?'opacity:.45;text-decoration:line-through':''}">${x.pos||'—'}：${x.name}${x.tr?` 🎓${x.tr}`:''}</div>` }).join('')||'<div class="hint">—</div>'}</div>`
+  }).join('')
+  const o0 = document.getElementById('tpOv'); if (o0) o0.remove()
+  const ov = document.createElement('div'); ov.id='tpPv'
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:61;display:flex;align-items:center;justify-content:center;padding:14px'
+  ov.innerHTML = `<div style="background:#222B38;border:1px solid #3B4654;border-radius:14px;width:min(900px,96vw);max-height:88vh;overflow:auto;padding:16px" onclick="event.stopPropagation()">
+    <div style="font-weight:900;font-size:16px;margin-bottom:6px">👁 預覽「${tp.name}」→ ${days[0].slice(5)}~${days[6].slice(5)}</div>
+    <div class="hint" style="margin-bottom:8px">劃掉＝這週已有同班會跳過；確認沒問題再按套用。</div>
+    <div style="display:flex;gap:10px;overflow-x:auto">${cols}</div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px"><button class="mini" style="padding:9px 12px" onclick="document.getElementById('tpPv').remove()">取消</button><button class="mini on" style="padding:9px 18px" onclick="document.getElementById('tpPv').remove();tplApply('${id}',1)">✅ 套用（新增 ${addN} 筆）</button></div></div>`
+  ov.onclick = () => ov.remove()
+  document.body.appendChild(ov)
+}
+function tplApply(id, skip){
+  const d = window._shiftD, tp = (d.tpls||[]).find(x=>x.id===id); if (!tp) return
+  const days = [...Array(7)].map((_,i)=>{ const t2 = new Date(window._shiftWk); t2.setDate(t2.getDate()+i); return t2.toISOString().slice(0,10) })
+  if (!skip && !confirm(`把「${tp.name}」套用到 ${days[0].slice(5)}~${days[6].slice(5)}？（已有的班會跳過）`)) return
   const exist = new Set(d.sched.map(x=>[x.name, x.date, x.pos||''].join('|')))
   let n = 0
   tp.items.forEach(x=>{

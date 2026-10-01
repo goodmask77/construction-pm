@@ -4,16 +4,24 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
 <meta name="robots" content="noindex" />
-<meta name="theme-color" content="#087EBA" />
+<meta name="theme-color" content="#0E1217" />
 <title>GD 任務中心</title>
 <script>
 // OPS 代理模式（/prep × 主App 任務中心整併 2026-10-02）：金鑰=看板內建公開金鑰、token=/prep 綁定身分（同網域共用 localStorage）
 window.__OPS_PROXY__ = { key: '7ea362bae1f0274372d4ec7b27c78852', token: localStorage.getItem('prepToken') || '' }
 </script>
-<style>body{margin:0;background:#F4F7FB;font-family:"PingFang TC",system-ui,sans-serif}</style>
+<style>
+/* v4.14.0 深色皮（張良 2026-10-02「風格改成一樣,主App不動」）：/prep同款黑灰底；
+   TaskCenter=主App元件整份反色+色相轉回——淺變深、彩色不變調，功能內容完全同步不分叉 */
+html{background:#0E1217}
+body{margin:0;background:#0E1217;font-family:"PingFang TC",system-ui,sans-serif}
+#root{filter:invert(.92) hue-rotate(180deg);background:#101317;min-height:100vh}
+#root img,#root video{filter:invert(1) hue-rotate(180deg)}
+#loadhint{color:#8C98A8;font-size:15px;padding:40px;text-align:center;font-weight:700}
+</style>
 </head>
 <body>
-<div id="root"></div>
+<div id="root"><div id="loadhint">任務中心載入中…</div></div>
 <script type="module" src="/src/opsTasks.jsx"></script>
 </body>
 </html>
