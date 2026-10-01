@@ -96,9 +96,8 @@
     <button id="tab-shift" onclick="shiftLoad()">📅 班表</button>
     <button id="tab-fb" onclick="fbLoad()">💬 回饋</button>
     <button id="tab-menu" onclick="menuLoad()">🍔 菜單</button>
-    <button id="tab-gear" onclick="tabsEdit()" title="編輯分頁名稱/排序" style="padding:7px 10px">⚙️</button>
-    <button id="tab-bell" onclick="notifyEdit()" title="群組通知開關" style="padding:7px 10px">🔔</button>
-    <button id="tab-errs" onclick="errsView()" title="問題回報・功能許願" style="padding:7px 10px">🐞</button>
+    <button id="tab-gear" onclick="settingsLoad()" title="設定">⚙️ 設定</button>
+    <button id="tab-errs" onclick="errsView()" title="問題回報・功能許願">🐞 問題回報</button>
   </div>
   <div id="app"></div>
   <div class="foot">資料每天自動同步（打開即最新）・僅供內部參考與備料使用，請勿外傳連結</div>
@@ -1785,14 +1784,7 @@ function menuRender(){
     ${d.me&&!d.me.canEdit?(d.me.pendingMe?`<span class="hint">🕐 編輯權審核中（已通知老闆）</span>`:`<button class="mini on" onclick="prepApply()">🙋 申請編輯權限</button>`):''}
     ${!d.me?`<span class="hint">看得到；要編輯先綁定＋申請</span>`:''}
   </div>`
-  // 權限管理面板（admin＝老闆才看得到）：待審核准/拒絕、已核准移除、模式切換
-  if (d.me && d.me.admin && d.perm) {
-    h += `<div style="background:#F3F7FB;border:1.5px solid #B9D2E8;border-radius:12px;padding:10px 12px;margin-bottom:10px;font-size:14px">
-      <div style="font-weight:900">🔐 編輯權限管理 <span class="hint">模式：${d.perm.mode==='open'?'全開（人人可編）':'審核制'}</span>
-      <button class="mini" onclick="permSet('mode',null,'${d.perm.mode==='open'?'approve':'open'}')">切成${d.perm.mode==='open'?'審核制':'全開'}</button></div>
-      ${(d.perm.pending||[]).length?`<div style="margin-top:6px;font-weight:800">待審核：</div>`+d.perm.pending.map(u=>`<div style="padding:3px 0">🙋 ${u.name} <span class="hint">${u.ts||''}</span> <button class="mini on" onclick="permSet('approve','${u.rid}')">✅ 核准</button> <button class="mini" onclick="permSet('reject','${u.rid}')">✖</button></div>`).join(''):''}
-      <details style="margin-top:6px"><summary class="hint" style="cursor:pointer">已核准（${(d.perm.users||[]).length}）</summary>${(d.perm.users||[]).map(u=>`<div style="padding:2px 0">${u.admin?'👑 ':''}${u.name}${u.admin?'':` <button class="mini" onclick="permSet('revoke','${u.rid}')">移除</button>`}</div>`).join('')}</details></div>`
-  }
+
   // 變更總覽（協作人員一眼看懂）
   if (df.add.length || df.del.length || df.chg.length) {
     h += `<div style="background:#FFF9E8;border:1.5px solid #E8D089;border-radius:12px;padding:10px 12px;margin-bottom:10px;font-size:14px">
@@ -1856,6 +1848,26 @@ function menuRender(){
   h += `</section>`
   app.innerHTML = h
 }
+function permPanelHtml(perm){
+  return `<div style="background:#F3F7FB;border:1.5px solid #B9D2E8;border-radius:12px;padding:10px 12px;font-size:14px">
+    <div style="font-weight:900">🔐 編輯權限管理 <span class="hint">模式：${perm.mode==='open'?'全開（人人可編）':'審核制（申請→老闆核准）'}</span>
+    <button class="mini" onclick="permSet('mode',null,'${perm.mode==='open'?'approve':'open'}')">切成${perm.mode==='open'?'審核制':'全開'}</button></div>
+    ${(perm.pending||[]).length?`<div style="margin-top:6px;font-weight:800">待審核：</div>`+perm.pending.map(u=>`<div style="padding:3px 0">🙋 ${u.name} <span class="hint">${u.ts||''}</span> <button class="mini on" onclick="permSet('approve','${u.rid}')">✅ 核准</button> <button class="mini" onclick="permSet('reject','${u.rid}')">✖</button></div>`).join(''):'<div class="hint" style="margin-top:6px">目前沒有待審核的申請</div>'}
+    <details style="margin-top:6px" open><summary class="hint" style="cursor:pointer">已核准（${(perm.users||[]).length}）</summary>${(perm.users||[]).map(u=>`<div style="padding:2px 0">${u.admin?'👑 ':''}${u.name}${u.admin?'':` <button class="mini" onclick="permSet('revoke','${u.rid}')">移除</button>`}</div>`).join('')}</details></div>`
+}
+async function settingsLoad(){ // ⚙️ 設定頁（張良 2026-10-01：分頁管理/通知開關/權限管理集中這裡）
+  curStore = 'settings'; setTabs('')
+  const gb = document.getElementById('tab-gear'); if (gb) gb.className = 'on'
+  document.getElementById('upd').textContent = '設定'
+  app.innerHTML = `<section><h2>⚙️ 設定</h2>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
+      <button class="mini" style="padding:10px 16px" onclick="tabsEdit()">🗂 分頁名稱／排序</button>
+      <button class="mini" style="padding:10px 16px" onclick="notifyEdit()">🔔 群組通知開關</button>
+    </div><div id="permBox" class="hint">權限資料載入中…</div></section>`
+  let d; try{ const r = await fetch('/api/mail-sync?menu=' + encodeURIComponent(K) + (TK() ? '&me=' + encodeURIComponent(TK()) : '')); d = await r.json() }catch(e){}
+  const box = document.getElementById('permBox'); if (!box) return
+  box.innerHTML = (d && d.me && d.me.admin && d.perm) ? permPanelHtml(d.perm) : '<div class="hint">🔐 編輯權限管理：僅管理者（老闆）看得到</div>'
+}
 async function prepApply(){
   const r = await fetch('/api/mail-sync?prepapply=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ token: TK() }) })
   const j = await r.json().catch(()=>null)
@@ -1866,7 +1878,7 @@ async function permSet(op, rid, mode){
   const r = await fetch('/api/mail-sync?preppermset=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ token: TK(), op, rid, mode }) })
   const j = await r.json().catch(()=>null)
   if (!j || !j.ok) alert((j&&j.error)||'操作失敗')
-  menuLoad()
+  if (curStore === 'settings') settingsLoad(); else menuLoad()
 }
 let mnDragS = null
 function menuCell(si, id, f, v){ // 表格每格直接改（onchange=離開格子就存）
@@ -2006,10 +2018,10 @@ function applyTabs(cfg){
   const order = (cfg.order && cfg.order.length ? cfg.order : Object.keys(TAB_DEF)).filter(k=>TAB_DEF[k])
   Object.keys(TAB_DEF).forEach(k=>{ if (!order.includes(k)) order.push(k) })
   order.forEach(k=>{ const b = document.getElementById('tab-'+k); if (b && bar && gear) { const lb = stripEmoji((cfg.names||{})[k] || TAB_DEF[k]); b.innerHTML = (TAB_ICONS[k]||'') + '<span>' + lb + '</span>'; bar.insertBefore(b, gear) } })
-  const hb = document.getElementById('tab-home'); if (hb) hb.innerHTML = TAB_ICONS.home
-  const gb = document.getElementById('tab-gear'); if (gb) gb.innerHTML = TAB_ICONS.gear
-  const bb = document.getElementById('tab-bell'); if (bb) bb.innerHTML = TAB_ICONS.bell
-  const eb2 = document.getElementById('tab-errs'); if (eb2) eb2.innerHTML = TAB_ICONS.errs
+  // 沒文字的補上文字（張良 2026-10-01：首頁/設定/問題回報）
+  const hb = document.getElementById('tab-home'); if (hb) hb.innerHTML = TAB_ICONS.home + '<span>首頁</span>'
+  const gb = document.getElementById('tab-gear'); if (gb) gb.innerHTML = TAB_ICONS.gear + '<span>設定</span>'
+  const eb2 = document.getElementById('tab-errs'); if (eb2) eb2.innerHTML = TAB_ICONS.errs + '<span>問題回報</span>'
 }
 async function tabsInit(){
   applyTabs(tcGet('tabcfg') || {})
