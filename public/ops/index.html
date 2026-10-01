@@ -1530,7 +1530,7 @@ function shiftRender(){
         <span class="hint">打卡 ${r.firstIn||'—'}${r.lastOut?'~'+r.lastOut:(r.working?'~上班中':'')}</span>
         <span style="font-weight:800;color:${r.over12?'var(--red)':'var(--ink)'}">${r.h?r1(r.h)+'h':''}</span>
         ${r.st.map(x=>`<span style="font-size:13px;font-weight:800;color:${x==='上班中'?'var(--green)':'var(--red)'};background:${x==='上班中'?'#1C3326':'#3A2023'};border-radius:6px;padding:1px 7px">${x}</span>`).join('')}
-        ${meN&&r.s?`<span style="margin-left:auto"><button class="mini" onclick="shiftForm('${r.s.id}')">✏️</button> <button class="mini" style="color:var(--red)" onclick="if(confirm('刪除 ${r.name} ${dt} 的班？'))shiftDel('${r.s.id}')">🗑</button></span>`:''}
+        ${meN&&r.s?`<span style="margin-left:auto"><button class="mini" onclick="shiftForm('${r.s.id}')">✏️</button> <button class="mini" style="color:var(--red)" onclick="if(confirm('刪除 ${r.name} ${dt} 的班？'))shiftDelFast('${r.s.id}')">🗑</button></span>`:''}
       </div>`
     })
   })
@@ -2780,13 +2780,16 @@ async function posSave(){
   if (!list.length) { alert('至少留一個崗位'); return }
   const slots = window._slotTmp.map(x=>({n:String(x.n).trim(),s:x.s,e:x.e})).filter(x=>x.n&&x.s&&x.e)
   const o = document.getElementById('psOv'); if (o) o.remove()
-  const post = body => fetch('/api/mail-sync?shiftset=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify(body) }).then(r=>r.json()).catch(()=>null)
-  const d1 = await post({ op:'pos', list, token: TK() })
-  const d2 = await post({ op:'slots', list: slots, token: TK() })
-  const d3 = await post({ op:'ord', list: window._ordTmp, token: TK() })
-  const d4 = await post({ op:'colors', map: window._colTmp, token: TK() })
-  const d5 = await post({ op:'off', list: [...window._offTmp], token: TK() })
-  if (d1&&d1.ok&&d2&&d2.ok&&d3&&d3.ok&&d4&&d4.ok&&d5&&d5.ok) shiftLoad(); else alert((d1&&d1.error)||(d2&&d2.error)||(d3&&d3.error)||(d4&&d4.error)||(d5&&d5.error)||'失敗')
+  // v4.8.3 提速：畫面先套用（顏色/排序/非常態/崗位/時段立即重畫）＋設定五合一一發寫入（原本5連發排隊=5~7秒才變）
+  const d = window._shiftD
+  if (d) {
+    d.posList = list.slice(); d.slots = slots.slice(); d.colors = { ...window._colTmp }
+    const offS = window._offTmp
+    d.staff = window._ordTmp.map(n=>{ const s2 = (d.staff||[]).find(x=>x.n===n) || { n, role:'一般' }; const o2 = { ...s2 }; if (offS.has(n)) o2.off = 1; else delete o2.off; return o2 })
+    shiftRender()
+  }
+  const r = await fetch('/api/mail-sync?shiftset=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ op:'cfg', pos: list, slots, ord: window._ordTmp, colors: window._colTmp, off: [...window._offTmp], token: TK() }) }).then(r2=>r2.json()).catch(()=>null)
+  if (r && r.ok) shiftLoad(); else { alert((r&&r.error)||'儲存失敗'); shiftLoad() }
 }
 // ── 🎚 權限 modal（張良 2026-09-25：訪客看/綁定一般/名單設權限）──
 function gdRoleModal(name, role){
