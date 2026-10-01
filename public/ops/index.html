@@ -1539,8 +1539,10 @@ function shiftForm(id){
       <span>休息(分)</span><input id="shBreak" type="number" value="${it?(it.break||0):60}" min="0" max="240" style="${ip}">
       <span>🎓帶訓</span><span><select id="shTr" style="${ip};width:100%"><option value="">無</option>${(d.names||[]).map(n=>`<option${it&&it.tr===n?' selected':''}>${n}</option>`).join('')}</select></span>
     </div>
-    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px"><button class="mini" style="padding:9px 12px" onclick="document.getElementById('shOv').remove()">取消</button>
-    <button class="mini on" style="padding:9px 18px" onclick="shiftSave('${id||''}')">儲存</button></div></div>`
+    <div style="display:flex;gap:8px;justify-content:space-between;margin-top:12px">
+    <span>${it?`<button class="mini" style="padding:9px 12px;color:var(--red)" onclick="if(confirm('刪除 ${it.name} ${it.date} 這個班？')){document.getElementById('shOv').remove();shiftDelFast('${it.id}')}">🗑 刪除</button>`:''}</span>
+    <span style="display:flex;gap:8px"><button class="mini" style="padding:9px 12px" onclick="document.getElementById('shOv').remove()">取消</button>
+    <button class="mini on" style="padding:9px 18px" onclick="shiftSave('${id||''}')">儲存</button></span></div></div>`
   ov.onclick = () => ov.remove()
   document.body.appendChild(ov)
 }
@@ -1558,7 +1560,12 @@ async function shiftSave(id){
 async function shiftDel(id){
   const r = await fetch('/api/mail-sync?shiftset=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ op:'del', id, token: TK() }) })
   const d = await r.json().catch(()=>null)
-  if (d && d.ok) shiftLoad(); else alert((d&&d.error)||'失敗')
+  if (d && d.ok) shiftLoad(); else { alert((d&&d.error)||'失敗'); shiftLoad() }
+}
+function shiftDelFast(id){ // 樂觀刪除：卡片先消失，背景送刪
+  const d = window._shiftD
+  d.sched = d.sched.filter(x=>x.id!==id); shiftRender()
+  shiftDel(id)
 }
 // ── 週表直排（張良 2026-10-02「點擊直接選人名、可拖曳」）──
 const SLOT_DEF = [{n:'午峰',s:'11:00',e:'14:30'},{n:'離峰',s:'14:30',e:'17:30'},{n:'晚峰',s:'17:30',e:'20:00'},{n:'全日',s:'11:00',e:'20:00'}] // 預設照近30天單量尖峰切；⚙️可自訂
