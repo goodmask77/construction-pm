@@ -80,6 +80,9 @@
     .tabs button.on{background:var(--grad);color:#fff;box-shadow:0 4px 12px rgba(18,102,200,.32)}
   }
 @keyframes trGlow{0%,100%{box-shadow:0 0 2px 0 var(--gc)}50%{box-shadow:0 0 10px 2.5px var(--gc)}} /* 🎓帶訓卡發光（張良 2026-10-02） */
+@keyframes goldGlow{0%,100%{box-shadow:0 0 0 2px #D4A72C,0 0 6px 2px rgba(212,167,44,.35)}50%{box-shadow:0 0 0 3px #F2CE60,0 0 22px 7px rgba(242,206,96,.75)}} /* 🔗deep link 跳轉定位閃光（v4.16.0） */
+.glowgold{animation:goldGlow 1s ease-in-out 4;border-radius:8px}
+.lnkbtn{opacity:.35;cursor:pointer;font-size:12px} .lnkbtn:hover{opacity:1}
 </style>
 </head>
 <body>
@@ -547,7 +550,7 @@ function sopRender(){
     items.filter(i => i.st === st).sort((a,b)=>String(a.due||'99:99').localeCompare(String(b.due||'99:99'))).forEach(it => {
       const lg = log[it.id]
       const overdue = !lg && it.due && it.due <= now && wd >= 1 && wd <= 5
-      s += `<div style="display:flex;align-items:center;gap:8px;padding:9px 4px;border-bottom:1px solid var(--line)">`
+      s += `<div id="sopit-${it.id}" style="display:flex;align-items:center;gap:8px;padding:9px 4px;border-bottom:1px solid var(--line)"><span class="lnkbtn" title="複製這條 SOP 的連結（可貼到會議宣達）" onclick="event.stopPropagation();copyLink('#sop=${it.id}')">🔗</span>`
       s += `<div style="flex:1;min-width:0"><div style="font-weight:700;cursor:pointer;color:${overdue?'var(--red)':(it.ref?'var(--primary)':'var(--ink)')}${it.ref?';text-decoration:underline':''}" onclick="sopRefOpen('${it.id}')" title="${it.ref?'點看標準照片':'點我上傳標準照'}">${it.title}${overdue?' ⚠️':''}</div><div class="hint">${it.due} 前${it.editBy?`・✏️ ${it.editBy} ${it.editTs||''}`:''}</div></div>`
       if (lg && lg.done) {
         // 完成狀態：縮圖直接顯示、點整塊開預覽；撤銷藏在預覽裡（張良 2026-09-21：列表上的撤銷容易誤點）
@@ -1474,12 +1477,29 @@ function meetRender(){
   const d = window._meetD; if (!d || curStore !== 'meet') return
   document.getElementById('upd').textContent = '會議紀錄'
   const meN = d.me ? d.me.name : null // 2026-10-02 全面修：只有菜單口有 canEdit 欄位，整檔替換誤傷各分頁→按鈕全滅；顯示層=綁定即可，真正權限由伺服器端守門
-  const mc = x => `<div style="background:var(--card);border:1.5px solid var(--line);border-radius:10px;padding:9px 11px;margin-bottom:8px;font-size:14px">
-    <div style="font-weight:800">${x.date}</div>
-    <div style="white-space:pre-wrap;margin:3px 0">${(x.text||'').replace(/</g,'&lt;')}</div>
-    <div class="hint">${x.by}・${x.ts}${x.editedBy?`・改：${x.editedBy} ${x.editedTs}`:''}</div>
+  // v4.16.0 宣達簽收（張良：條列+全員簽收+發問串+附件連結+🔗）
+  const canAns = d.me && (d.me.approver || d.me.role === '主管')
+  const mc = x => {
+    const ver = x.ver || 1
+    const names = x.ackNames || d.regNames || []
+    const acked = Object.entries(x.acks||{}).filter(([,v])=>v && v.ver===ver).map(([n])=>n)
+    const missing = names.filter(n=>!acked.includes(n))
+    const itemsX = (x.items && x.items.length) ? x.items : String(x.text||'').split('\n').map(t=>t.trim()).filter(Boolean).map((t,i)=>({id:'tx'+i,t}))
+    const myRow = meN && names.includes(meN)
+    const myAck = meN && acked.includes(meN)
+    const lnk = l => { const inT = /^https?:\/\/[^/]*ground-pm|^\/prep|^#/.test(l.url); const href = l.url.startsWith('#') ? ('/prep'+l.url) : l.url
+      return `<a href="${href}" ${inT?'':'target="_blank"'} onclick="meetMop({op:'view',id:'${x.id}'},1)" style="color:var(--primary);font-weight:700;margin-right:10px">🔗 ${l.label||l.url.slice(0,40)}</a>` }
+    return `<div id="mt-${x.id}" style="background:var(--card);border:1.5px solid var(--line);border-radius:10px;padding:9px 11px;margin-bottom:8px;font-size:14px">
+    <div style="font-weight:800;display:flex;gap:8px;align-items:center">${x.date}${ver>1?` <span style="color:#E8A657;font-size:12px;font-weight:800">v${ver} 已改版要重簽</span>`:''}<span class="lnkbtn" title="複製這則連結" onclick="copyLink('#meet=${x.id}')">🔗</span></div>
+    ${itemsX.length?`<table style="width:100%;border-collapse:collapse;margin:5px 0">${itemsX.map((it2,i)=>`<tr><td style="border:1px solid var(--line);padding:5px 8px;width:30px;text-align:center;color:var(--muted);font-weight:800">${i+1}</td><td style="border:1px solid var(--line);padding:5px 8px;text-align:left">${String(it2.t).replace(/</g,'&lt;')}</td></tr>`).join('')}</table>`:''}
+    ${(x.media||[]).length?`<div style="display:flex;gap:6px;flex-wrap:wrap;margin:4px 0">${x.media.map(u=>`<a href="${u}" target="_blank" onclick="meetMop({op:'view',id:'${x.id}'},1)"><img src="${u}" style="width:56px;height:56px;object-fit:cover;border-radius:8px;border:1px solid var(--line)" onerror="this.outerHTML='📎 附件'"></a>`).join('')}</div>`:''}
+    ${(x.links||[]).length?`<div style="margin:4px 0">${x.links.map(lnk).join('')}</div>`:''}
+    ${names.length?`<div style="margin:6px 0 2px;font-size:13px"><b style="color:${missing.length?'var(--red)':'var(--green)'}">✅ 已熟知 ${acked.length}/${names.length}</b>${missing.length?`　<span style="color:var(--red)">未簽：${missing.join('、')}</span>`:' 🎉 全員完成'}</div>`:''}
+    ${myRow?(myAck?`<div style="color:var(--green);font-weight:800;font-size:13px">✓ 你已簽收（${(x.acks[meN]||{}).ts||''}）</div>`:`<button class="mini on" style="padding:8px 16px;margin:3px 0" onclick="ackWin('${x.id}')">📩 我讀完了（簽收）</button>`):''}
+    ${(x.asks||[]).length?`<div style="margin-top:6px;border-top:1px dashed var(--line);padding-top:5px">${x.asks.map(a2=>`<div style="font-size:13px;margin-bottom:4px"><b>❓ ${String(a2.q).replace(/</g,'&lt;')}</b> <span class="hint">${a2.by}・${a2.ts}</span>${a2.ans?`<div style="color:var(--pdark)">💬 ${String(a2.ans).replace(/</g,'&lt;')} <span class="hint">${a2.ansBy}・${a2.ansTs}</span></div>`:(canAns?` <button class="mini" style="padding:4px 10px" onclick="meetAnswer('${x.id}','${a2.id}')">回覆</button>`:' <span class="hint">（等回覆）</span>')}</div>`).join('')}</div>`:''}
+    <div class="hint" style="margin-top:3px">${x.by}・${x.ts}${x.editedBy?`・改：${x.editedBy} ${x.editedTs}`:''}</div>
     ${meN?`<div style="margin-top:5px"><button class="mini" onclick="meetForm('${x.id}')">✏️ 編輯</button> <button class="mini" style="color:var(--red)" onclick="if(confirm('刪除這筆會議紀錄？'))meetOp('del','${x.id}')">🗑</button></div>`:''}
-  </div>`
+  </div>` }
   let h = `<section><h2>會議紀錄 <span class="hint">${meN?'':'看得到；要新增/編輯先綁定——'+BIND_HINT}</span></h2>
     ${meN?`<div style="margin-bottom:10px;display:flex;gap:8px;flex-wrap:wrap"><button class="mini on" style="padding:9px 18px" onclick="meetForm()">＋ 新增紀錄</button><button class="mini" style="padding:9px 12px" onclick="meetTypes()">⚙️ 會議類型</button></div>`:''}`
   for (const tp of d.types) {
@@ -1501,21 +1521,72 @@ function meetForm(id){
     <div style="font-weight:900;margin-bottom:8px">${it?'✏️ 編輯':'📋 新增'}會議紀錄</div>
     <select id="mtType" style="${ip}">${d.types.map(t2=>`<option${it&&it.type===t2?' selected':''}>${t2}</option>`).join('')}</select>
     <input id="mtDate" type="date" value="${it?it.date:todayTpe()}" style="${ip}">
-    <textarea id="mtText" rows="7" placeholder="會議內容／決議／待辦…" style="${ip}">${it?(it.text||'').replace(/</g,'&lt;'):''}</textarea>
+    <textarea id="mtText" rows="7" placeholder="一行＝一條（會自動變成條列表格）" style="${ip}">${it?(it.text||'').replace(/</g,'&lt;'):''}</textarea>
+    <div class="hint" style="margin:-2px 0 4px">📎 附照片：<input type="file" id="mtFile" accept="image/*" multiple style="font-size:13px" onchange="mtUpload(this.files)"><span id="mtUpN">${it&&(it.media||[]).length?`已有 ${it.media.length} 張`:''}</span></div>
+    <textarea id="mtLinks" rows="2" placeholder="🔗 連結（一行一個：標題|網址，或直接貼網址；SOP連結用每條旁的🔗複製來貼）" style="${ip}">${it?(it.links||[]).map(l2=>l2.label?`${l2.label}|${l2.url}`:l2.url).join('\n'):''}</textarea>
     <div style="display:flex;gap:8px;justify-content:flex-end"><button class="mini" style="padding:9px 12px" onclick="document.getElementById('meetOv').remove()">取消</button>
     <button class="mini on" style="padding:9px 18px" onclick="meetSave('${id||''}')">儲存</button></div></div>`
   ov.onclick = () => ov.remove()
+  window._mtMedia = it ? [...(it.media||[])] : []
   document.body.appendChild(ov)
+}
+async function mtUpload(files){ // 📎 宣達附照（sopsign 簽名直傳，與回報同管道）
+  const nEl = document.getElementById('mtUpN'); if (nEl) nEl.textContent = '上傳中…'
+  for (const f of files) {
+    try {
+      const ext = ((f.name||'').split('.').pop()||'jpg').toLowerCase()
+      const sr = await fetch('/api/mail-sync?sopsign=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ ext }) })
+      const sd = await sr.json()
+      if (!sd || !sd.ok) continue
+      const ur = await fetch(sd.uploadUrl, { method:'PUT', headers:{'content-type': f.type||'application/octet-stream'}, body: f })
+      if (ur.ok) window._mtMedia.push(sd.publicUrl)
+    } catch(e){}
+  }
+  if (nEl) nEl.textContent = `已附 ${window._mtMedia.length} 張 ✓`
 }
 async function meetSave(id){
   const type = (document.getElementById('mtType')||{}).value||''
   const date = (document.getElementById('mtDate')||{}).value||''
   const text = (document.getElementById('mtText')||{}).value||''
   if (!text.trim()) { alert('內容空的'); return }
-  const r = await fetch('/api/mail-sync?meetset=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ op: id?'edit':'add', id, type, date, text, token: TK() }) })
+  const links = ((document.getElementById('mtLinks')||{}).value||'').split('\n').map(x=>x.trim()).filter(Boolean).map(x=>{ const i2 = x.indexOf('|'); return i2>0 ? { label: x.slice(0,i2).trim(), url: x.slice(i2+1).trim() } : { label:'', url: x } })
+  const r = await fetch('/api/mail-sync?meetset=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ op: id?'edit':'add', id, type, date, text, media: window._mtMedia||[], links, token: TK() }) })
   const d = await r.json().catch(()=>null)
   const o = document.getElementById('meetOv'); if (o) o.remove()
   if (d && d.ok) meetLoad(); else alert((d&&d.error)||'儲存失敗')
+}
+// ── v4.16.0 簽收/發問/回覆 ──
+async function meetMop(body, silent){
+  const r = await fetch('/api/mail-sync?meetset=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ ...body, token: TK() }) }).catch(()=>null)
+  if (silent) return
+  const d = r && await r.json().catch(()=>null)
+  if (d && d.ok) meetLoad(); else alert((d&&d.error)||'失敗')
+}
+function ackWin(id){
+  const ov = document.createElement('div'); ov.id='akOv'
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:65;display:flex;align-items:center;justify-content:center;padding:16px'
+  ov.innerHTML = `<div style="background:#222B38;border:1px solid #3B4654;border-radius:14px;width:min(340px,92vw);padding:18px" onclick="event.stopPropagation()">
+    <div style="font-weight:900;font-size:16px;margin-bottom:12px">這則宣達你都清楚了嗎？</div>
+    <button class="mini on" style="width:100%;padding:12px;font-size:15px;margin-bottom:8px" onclick="document.getElementById('akOv').remove();meetMop({op:'ack',id:'${id}'})">✅ 確認熟知（完成簽收）</button>
+    <button class="mini" style="width:100%;padding:12px;font-size:15px" onclick="document.getElementById('akOv').remove();prepAsk('❓ 我想發問',0,1,(q,r2)=>{if(!r2){alert('要寫問題');return}meetMop({op:'ask',id:'${id}',q:r2})},'問題會通知老闆並記錄時間')">❓ 我想發問</button>
+    <div class="hint" style="margin-top:8px">發問不算簽收——老闆回覆後再按確認熟知。</div></div>`
+  ov.onclick = () => ov.remove()
+  document.body.appendChild(ov)
+}
+function meetAnswer(id, askId){ prepAsk('💬 回覆這個發問', 0, 1, (q, r2)=>{ if (!r2) return; meetMop({ op:'answer', id, askId, ans: r2 }) }, '回覆內容（會 DD 通知提問人）') }
+function copyLink(h){
+  const url = location.origin + '/prep' + h
+  try { navigator.clipboard.writeText(url) } catch(e) { prompt('複製這個連結', url); return }
+  const b = document.createElement('div'); b.id = 'cpToast'
+  const old = document.getElementById('cpToast'); if (old) old.remove()
+  b.style.cssText = 'position:fixed;bottom:18px;left:50%;transform:translateX(-50%);z-index:80;background:#10182B;color:#fff;border-radius:10px;padding:8px 16px;font-size:14px;white-space:nowrap'
+  b.textContent = '🔗 連結已複製'
+  document.body.appendChild(b); setTimeout(()=>b.remove(), 1200)
+}
+function glowWait(elId, tries){ // deep link 目標閃金光定位
+  const el = document.getElementById(elId)
+  if (el) { el.scrollIntoView({ behavior:'smooth', block:'center' }); el.classList.add('glowgold'); return }
+  if ((tries||0) < 40) setTimeout(()=>glowWait(elId, (tries||0)+1), 400)
 }
 async function meetOp(op, id){
   const r = await fetch('/api/mail-sync?meetset=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ op, id, token: TK() }) })
@@ -1963,16 +2034,16 @@ function tplPreview(id){ // 👁 先預覽確認再套用（張良 2026-10-02）
   let addN = 0
   const cols = days.map((dt,i)=>{
     const its = tp.items.filter(x=>(x.wd||0)===i)
-    return `<div style="min-width:120px;flex:1"><div style="font-weight:800;color:var(--pdark);border-bottom:1px solid var(--line);padding-bottom:3px;margin-bottom:4px">${dt.slice(5)}（${wdN3[i]}）</div>${its.map(x=>{ const dup = exist.has([x.name, dt, x.pos||''].join('|')); if (!dup) addN++; return `<div style="font-size:13px;padding:1px 0;${dup?'opacity:.45;text-decoration:line-through':''}">${x.pos||'—'}：${x.name}${x.tr?` 🎓${x.tr}`:''}</div>` }).join('')||'<div class="hint">—</div>'}</div>`
+    return `<div style="min-width:120px;flex:1"><div style="font-weight:800;color:var(--pdark);border-bottom:1px solid var(--line);padding-bottom:3px;margin-bottom:4px">${dt.slice(5)}（${wdN3[i]}）</div>${its.map(x=>{ const dup = exist.has([x.name, dt, x.pos||''].join('|')); if (!dup) addN++; return `<div style="font-size:13px;padding:1px 0;${dup?'opacity:.5':''}">${x.pos||'—'}：${x.name}${x.tr?` 🎓${x.tr}`:''}${dup?' <span class="hint" style="font-size:11px">已存在</span>':''}</div>` }).join('')||'<div class="hint">—</div>'}</div>`
   }).join('')
   const o0 = document.getElementById('tpOv'); if (o0) o0.remove()
   const ov = document.createElement('div'); ov.id='tpPv'
   ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:61;display:flex;align-items:center;justify-content:center;padding:14px'
   ov.innerHTML = `<div style="background:#222B38;border:1px solid #3B4654;border-radius:14px;width:min(900px,96vw);max-height:88vh;overflow:auto;padding:16px" onclick="event.stopPropagation()">
     <div style="font-weight:900;font-size:16px;margin-bottom:6px">👁 預覽「${tp.name}」→ ${days[0].slice(5)}~${days[6].slice(5)}</div>
-    <div class="hint" style="margin-bottom:8px">劃掉＝這週已有同班會跳過；確認沒問題再按套用。</div>
+    <div class="hint" style="margin-bottom:8px">「已存在」＝這週已有同一筆會跳過、只會新增缺的；確認沒問題再按套用。</div>
     <div style="display:flex;gap:10px;overflow-x:auto">${cols}</div>
-    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px"><button class="mini" style="padding:9px 12px" onclick="document.getElementById('tpPv').remove()">取消</button><button class="mini on" style="padding:9px 18px" onclick="document.getElementById('tpPv').remove();tplApply('${id}',1)">✅ 套用（新增 ${addN} 筆）</button></div></div>`
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px"><button class="mini" style="padding:9px 12px" onclick="document.getElementById('tpPv').remove()">取消</button>${addN?`<button class="mini on" style="padding:9px 18px" onclick="document.getElementById('tpPv').remove();tplApply('${id}',1)">✅ 套用（新增 ${addN} 筆）</button>`:`<span class="hint" style="align-self:center">這一週已經有一模一樣的班了——先用 ‹ › 翻到要套用的那一週，再開預覽</span>`}</div></div>`
   ov.onclick = () => ov.remove()
   document.body.appendChild(ov)
 }
@@ -3323,11 +3394,21 @@ function lbFinder(nm){
   ov.onclick = () => ov.remove()
   document.body.appendChild(ov)
 }
-// 開場：重新整理留在原分頁（張良 2026-10-02）；沒紀錄才回首頁
+// 開場：深層連結(#meet=/#sop=/#tab=)優先→重新整理留在原分頁→首頁（v4.16.0）
 (function(){
   let v = null; try { v = sessionStorage.getItem('prepView') } catch(_) {}
   const R = { lb: loadLB, buy: buyLoad, meet: meetLoad, shift: shiftLoad, fb: fbLoad, menu: menuLoad, errs: errsView, sop: sopPage, settings: settingsLoad, food: ()=>invLoad('food'), pack: ()=>invLoad('pack'), abeach: ()=>load('abeach') }
-  if (v && R[v]) R[v](); else load('ground')
+  const hs = location.hash || ''
+  const mS2 = hs.match(/sop=([A-Za-z0-9_-]+)/), mM = hs.match(/meet=([A-Za-z0-9]+)/), mT = hs.match(/tab=([a-z]+)/)
+  if (mS2) { sopPage(); glowWait('sopit-' + mS2[1]) }
+  else if (mM) { meetLoad(); glowWait('mt-' + mM[1]); setTimeout(()=>{ if (TK()) meetMop({ op:'view', id: mM[1] }, 1) }, 1500) }
+  else if (mT && R[mT[1]]) R[mT[1]]()
+  else if (v && R[v]) R[v](); else load('ground')
+  // 側欄每個分頁小🔗（張良：這裡旁邊都建立複製連結）
+  try { document.querySelectorAll('.tabs button[id^="tab-"]').forEach(b=>{ const k2 = b.id.slice(4); if (k2 === 'home') return
+    const sp = document.createElement('span'); sp.className = 'lnkbtn'; sp.title = '複製此分頁連結'; sp.textContent = '🔗'; sp.style.marginLeft = 'auto'
+    sp.addEventListener('click', e2=>{ e2.stopPropagation(); if (k2 === 'task') { try { navigator.clipboard.writeText(location.origin + '/ops-tasks.html') } catch(_) {} const t3 = document.createElement('div'); t3.style.cssText = 'position:fixed;bottom:18px;left:50%;transform:translateX(-50%);z-index:80;background:#10182B;color:#fff;border-radius:10px;padding:8px 16px;font-size:14px'; t3.textContent = '🔗 連結已複製'; document.body.appendChild(t3); setTimeout(()=>t3.remove(), 1200) } else copyLink('#tab=' + k2) })
+    b.appendChild(sp) }) } catch(_) {}
 })()
 </script>
 </body>

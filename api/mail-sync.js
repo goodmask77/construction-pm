@@ -1676,8 +1676,13 @@ export default async function handler(req, res) {
   if (req.query?.meet) {
     const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
     if (!ok2 || String(req.query.meet) !== ok2) return res.status(403).json({ ok: false })
-    const [md, meM] = await Promise.all([kvGet('sp_finance_pm_meet'), sopWho(req.query.me)])
-    return res.status(200).json({ ok: true, types: ((md || {}).types || ['班前會議', '營運會議']), list: ((md || {}).list || []).slice(0, 200), me: meM ? { name: meM.name } : null })
+    const [md, meM, shM, defM] = await Promise.all([kvGet('sp_finance_pm_meet'), sopWho(req.query.me), kvGet('sp_finance_pm_shift_g'), kvGet('sp_finance_pm_sop_def')])
+    // v4.16.0 簽收名單=常態人員（照班表⚙️排序-非常態）
+    const rosM = await kvGet('sp_crew_kb_roster')
+    const offM = new Set((shM || {}).offStaff || [])
+    const regM = gdNames(rosM).filter(n => !offM.has(n))
+    const aprM = (((defM || {}).ground || {}).approvers) || ['張良瑋']
+    return res.status(200).json({ ok: true, types: ((md || {}).types || ['班前會議', '營運會議']), list: ((md || {}).list || []).slice(0, 200), regNames: regM, me: meM ? { name: meM.name, role: meM.role || '', approver: aprM.includes(meM.name) } : null })
   }
   if (req.method === 'POST' && req.query?.meetset) {
     const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
@@ -1689,16 +1694,63 @@ export default async function handler(req, res) {
     const doc = (await kvGet('sp_finance_pm_meet')) || { types: ['班前會議', '營運會議'], list: [] }
     if (!Array.isArray(doc.types) || !doc.types.length) doc.types = ['班前會議', '營運會議']
     const now8 = () => new Date(Date.now() + 8 * 3600e3).toISOString().slice(5, 16).replace('T', ' ')
-    if (mb.op === 'add') {
-      const it = { id: 'mt' + Date.now().toString(36), type: String(mb.type || doc.types[0]).slice(0, 20), date: /^\d{4}-\d{2}-\d{2}$/.test(mb.date) ? mb.date : new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10), text: String(mb.text || '').slice(0, 4000), by: whoM.name, ts: now8() }
+    const mkItems = t2 => String(t2 || '').split('\n').map(x => x.trim()).filter(Boolean).slice(0, 40).map((t3, i) => ({ id: 'mi' + Date.now().toString(36) + i, t: t3.slice(0, 200) }))
+    const mkLinks = L => (Array.isArray(L) ? L : []).slice(0, 10).map(x => ({ label: String(x.label || '').slice(0, 40), url: String(x.url || '').slice(0, 300) })).filter(x => x.url)
+    if (mb.op === 'add') { // v4.16.0 宣達：條列+附件+連結+簽收快照
+      const shA = await kvGet('sp_finance_pm_shift_g')
+      const rosA = await kvGet('sp_crew_kb_roster')
+      const offA = new Set((shA || {}).offStaff || [])
+      const ackNames = gdNames(rosA).filter(n => !offA.has(n))
+      const it = { id: 'mt' + Date.now().toString(36), type: String(mb.type || doc.types[0]).slice(0, 20), date: /^\d{4}-\d{2}-\d{2}$/.test(mb.date) ? mb.date : new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10), text: String(mb.text || '').slice(0, 4000), items: mkItems(mb.text), media: (Array.isArray(mb.media) ? mb.media : []).slice(0, 10).map(u => String(u).slice(0, 300)), links: mkLinks(mb.links), ver: 1, pubTs: Date.now(), ackNames, acks: {}, views: {}, asks: [], remind: {}, by: whoM.name, ts: now8() }
       doc.list = [it, ...(doc.list || [])].slice(0, 500)
     } else if (mb.op === 'edit') {
       const it = (doc.list || []).find(x => x.id === mb.id)
       if (!it) return res.status(404).json({ ok: false })
       if (mb.type) it.type = String(mb.type).slice(0, 20)
       if (/^\d{4}-\d{2}-\d{2}$/.test(mb.date)) it.date = mb.date
+      const chgM = String(mb.text || '') !== String(it.text || '')
       it.text = String(mb.text || '').slice(0, 4000)
+      it.items = mkItems(it.text)
+      if (Array.isArray(mb.media)) it.media = mb.media.slice(0, 10).map(u => String(u).slice(0, 300))
+      if (Array.isArray(mb.links)) it.links = mkLinks(mb.links)
+      if (chgM && it.ackNames) { it.ver = (it.ver || 1) + 1; it.remind = {} } // 內容改了=v+1 要重簽（舊簽收留档但不算數）
       it.editedBy = whoM.name; it.editedTs = now8()
+    } else if (mb.op === 'ack') { // ✅ 確認熟知
+      const it = (doc.list || []).find(x => x.id === mb.id)
+      if (!it) return res.status(404).json({ ok: false })
+      it.acks = it.acks || {}; it.acks[whoM.name] = { ts: now8(), ver: it.ver || 1 }
+    } else if (mb.op === 'view') { // 點過連結/看過
+      const it = (doc.list || []).find(x => x.id === mb.id)
+      if (it) { it.views = it.views || {}; it.views[whoM.name] = now8() }
+    } else if (mb.op === 'ask') { // ❓ 我想發問 → DD通知老闆+收件匣任務
+      const it = (doc.list || []).find(x => x.id === mb.id)
+      if (!it) return res.status(404).json({ ok: false })
+      const qT = String(mb.q || '').trim().slice(0, 300)
+      if (!qT) return res.status(400).json({ ok: false, error: '要寫問題' })
+      it.asks = [...(it.asks || []), { id: 'ak' + Date.now().toString(36), q: qT, by: whoM.name, ts: now8(), status: 'open' }]
+      try { // DD 私訊老闆群操作者
+        const tkQ = (process.env.LINE_CHANNEL_ACCESS_TOKEN || '').trim()
+        const opsQ = (await kvGet('pm_bot_operators')) || {}
+        const { logPush } = await import('./push.js')
+        for (const uid of Object.keys(opsQ)) { if (tkQ) { await fetch('https://api.line.me/v2/bot/message/push', { method: 'POST', headers: { 'content-type': 'application/json', Authorization: 'Bearer ' + tkQ }, body: JSON.stringify({ to: uid, messages: [{ type: 'text', text: '❓ 會議宣達發問【' + it.type + ' ' + it.date + '】\n' + whoM.name + '：' + qT + '\n到 /prep → 會議 回覆（他會收到通知）' }] }) }); await logPush(uid, 1, '會議發問通知') } }
+      } catch (_) {}
+      try { // 收件匣任務（主App任務中心同步可見）
+        await kvPut('sp_team_pm_task_mq' + Date.now().toString(36), { id: 'mq' + Date.now().toString(36), title: '❓會議發問：' + qT.slice(0, 40) + '（' + whoM.name + '）', note: '【' + it.type + ' ' + it.date + '】' + qT, status: 'todo', catId: '__inbox__', priority: 'normal', tags: ['會議'], by: whoM.name, createdAt: new Date().toISOString() }, '會議發問(' + whoM.name + ')')
+      } catch (_) {}
+    } else if (mb.op === 'answer') { // 老闆/主管回覆 → DD 通知提問人
+      const it = (doc.list || []).find(x => x.id === mb.id)
+      const ak = it && (it.asks || []).find(x => x.id === mb.askId)
+      if (!ak) return res.status(404).json({ ok: false })
+      const defQ = await kvGet('sp_finance_pm_sop_def')
+      const aprQ = (((defQ || {}).ground || {}).approvers) || ['張良瑋']
+      if (!(aprQ.includes(whoM.name) || whoM.role === '主管')) return res.status(403).json({ ok: false, error: '只有審核人／主管能回覆' })
+      ak.ans = String(mb.ans || '').trim().slice(0, 500); ak.ansBy = whoM.name; ak.ansTs = now8(); ak.status = 'done'
+      try {
+        const tkA = (process.env.LINE_CHANNEL_ACCESS_TOKEN || '').trim()
+        const rosQ = await kvGet('sp_crew_kb_roster')
+        const poQ = (((rosQ || {}).people) || []).find(p2 => p2.name === ak.by && p2.lineUserId)
+        if (tkA && poQ) { await fetch('https://api.line.me/v2/bot/message/push', { method: 'POST', headers: { 'content-type': 'application/json', Authorization: 'Bearer ' + tkA }, body: JSON.stringify({ to: poQ.lineUserId, messages: [{ type: 'text', text: '💬 你的會議發問有回覆了【' + it.type + ' ' + it.date + '】\nQ：' + ak.q + '\nA：' + ak.ans + '（' + whoM.name + '）' }] }) }); const { logPush } = await import('./push.js'); await logPush(poQ.lineUserId, 1, '會議發問回覆') }
+      } catch (_) {}
     } else if (mb.op === 'del') {
       doc.list = (doc.list || []).filter(x => x.id !== mb.id)
     } else if (mb.op === 'types') { // 類型自己增刪改名（整份存）

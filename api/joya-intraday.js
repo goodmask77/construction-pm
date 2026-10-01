@@ -51,6 +51,44 @@ export default async function handler(req, res) {
       }
     }
   } catch (e) { console.log('sop check err', e?.message) }
+  // ── 📣 會議宣達未簽收追提醒（v4.16.0 張良：24h/48h/72h DD私訊、3次不理→大群點名；cron每15分隨機命中=時點不固定）──
+  try {
+    const meetDoc = await kvGet('sp_finance_pm_meet')
+    const listM = (meetDoc && meetDoc.list) ? meetDoc.list.slice(0, 30) : []
+    const tkM = (process.env.LINE_CHANNEL_ACCESS_TOKEN || '').trim()
+    if (tkM && listM.length) {
+      const rosM = await kvGet('sp_crew_kb_roster')
+      const pplM = ((rosM || {}).people) || []
+      const { logPush } = await import('./push.js')
+      let dirtyM = false
+      for (const it of listM) {
+        if (!it.ackNames || !it.pubTs) continue
+        const ageH = (Date.now() - it.pubTs) / 3600e3
+        if (ageH < 24 || ageH > 14 * 24) continue
+        const verM = it.ver || 1
+        const missing = it.ackNames.filter(n => !(it.acks && it.acks[n] && it.acks[n].ver === verM))
+        if (!missing.length) continue
+        it.remind = it.remind || {}
+        const stage = ageH >= 72 ? 3 : ageH >= 48 ? 2 : 1
+        for (const nm of missing) {
+          const r0 = it.remind[nm] || { n: 0 }
+          if (r0.n >= stage) continue
+          if (Math.random() > 0.25) continue // 隨機 tick 命中＝提醒時間不固定（張良習慣）
+          const po = pplM.find(p2 => p2.name === nm && p2.lineUserId)
+          if (po) {
+            const pr = await fetch('https://api.line.me/v2/bot/message/push', { method: 'POST', headers: { 'content-type': 'application/json', Authorization: 'Bearer ' + tkM }, body: JSON.stringify({ to: po.lineUserId, messages: [{ type: 'text', text: `📣 會議宣達還沒簽收（第 ${r0.n + 1} 次提醒）\n【${it.type}・${it.date}】\n看完到 ground-pm.vercel.app/prep → 會議 按「✅ 確認熟知」，有問題按「❓ 我想發問」` }] }) })
+            if (pr.ok) { await logPush(po.lineUserId, 1, '宣達未簽提醒'); it.remind[nm] = { n: r0.n + 1, last: Date.now() }; dirtyM = true }
+          } else { it.remind[nm] = { n: stage, last: Date.now() }; dirtyM = true } // 沒LINE的直接記階段，等大群點名
+        }
+        const dead = missing.filter(nm => (it.remind[nm] || {}).n >= 3)
+        if (dead.length && !it.remind.__grp && ageH >= 96) {
+          const pg = await fetch('https://api.line.me/v2/bot/message/push', { method: 'POST', headers: { 'content-type': 'application/json', Authorization: 'Bearer ' + tkM }, body: JSON.stringify({ to: 'Cf7940efc6517b0c084ad2ad496b45f30', messages: [{ type: 'text', text: `📣 會議宣達【${it.type}・${it.date}】提醒 3 次還沒簽收：${dead.join('、')}\n麻煩今天到 /prep → 會議 簽收 🙏` }] }) })
+          if (pg.ok) { it.remind.__grp = 1; dirtyM = true }
+        }
+      }
+      if (dirtyM) await kvPut('sp_finance_pm_meet', meetDoc, '宣達追提醒')
+    }
+  } catch (e) { console.log('meet remind err', e?.message) }
   // ── 🚫 AB 停售即時偵測（張良 2026-09-29：每天及時知道誰停售＋大概時間）──
   // 每 30 分（AB 營業窗）撈 getItemList，品名 🚫 前綴＝團隊停售慣例；出現/消失 → happy337 即時通知＋記當日時間線
   try {
