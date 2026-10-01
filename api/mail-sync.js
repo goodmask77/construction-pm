@@ -1155,7 +1155,7 @@ export default async function handler(req, res) {
     const { fcLoadData, fcCompute } = await import('./_fc.js')
     const today2 = new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10)
     const cfgF = (await kvGet('sp_finance_pm_fc_cfg')) || {}
-    const mkeys = [...new Set([ 'sp_finance_pm_fc_' + new Date(Date.now() - 32 * 86400e3 + 8 * 3600e3).toISOString().slice(0, 7).replace('-', ''), 'sp_finance_pm_fc_' + today2.slice(0, 7).replace('-', '') ])]
+    const mkeys = [...new Set([ 'sp_finance_pm_fc_' + (() => { const m = today2.slice(0, 7); return `${Number(m.slice(0, 4)) - (m.slice(5) === '01' ? 1 : 0)}${String(((Number(m.slice(5, 7)) + 10) % 12) + 1).padStart(2, '0')}` })(), 'sp_finance_pm_fc_' + today2.slice(0, 7).replace('-', '') ])]
     const snapDocs = await Promise.all(mkeys.map(m => kvGet(m)))
     const allSnap = Object.assign({}, ...snapDocs.map(d => (d || {}).days || {}))
     const snaps = Object.entries(allSnap).map(([ds, s]) => ({ date: ds, preCalStore: s.preCalStore, actualStore: s.actual ? s.actual.total : null, selloutPre: 0 }))

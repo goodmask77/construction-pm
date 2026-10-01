@@ -95,7 +95,7 @@ export default async function handler(req, res) {
       const ncfgS = (await kvGet('sp_finance_pm_notify')) || {}
       if (staleDoc.day !== todayS && ncfgS.staleItem !== 0) { // 一天查一次；開關預設開（張良指定要的）
         staleDoc.day = todayS
-        const mo1 = todayS.slice(0, 7), mo0 = new Date(Date.now() + 8 * 3600e3 - 32 * 86400e3).toISOString().slice(0, 7)
+        const mo1 = todayS.slice(0, 7), mo0 = `${Number(mo1.slice(0, 4)) - (mo1.slice(5) === '01' ? 1 : 0)}-${String(((Number(mo1.slice(5, 7)) + 10) % 12) + 1).padStart(2, '0')}` // 上個日曆月（舊寫法今天−32天：每月1-2號會跳過整個上月→9月被跳過誤報64項全停售，2026-10-01張良抓包）
         const [posD, dM1, dM0, aliasD, hiddenD] = await Promise.all([kvGet('sp_finance_pm_pos'), kvGet('sp_finance_pm_pos_d_' + mo1), mo0 !== mo1 ? kvGet('sp_finance_pm_pos_d_' + mo0) : null, kvGet('sp_finance_pm_pos_alias'), kvGet('sp_finance_pm_pos_hidden')])
         const daysAll = Object.assign({}, ((dM0 || {}).days) || {}, ((dM1 || {}).days) || {})
         const alerts = []

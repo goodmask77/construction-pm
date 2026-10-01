@@ -901,7 +901,7 @@ async function loadCatalogText() {
 async function loadSupplyText() {
   try {
     const mo = new Date().toISOString().slice(0, 7)
-    const prevMo = new Date(Date.now() - 32 * 864e5).toISOString().slice(0, 7)
+    const prevMo = `${Number(mo.slice(0, 4)) - (mo.slice(5) === '01' ? 1 : 0)}-${String(((Number(mo.slice(5, 7)) + 10) % 12) + 1).padStart(2, '0')}` // 上個日曆月（−32天在月初會跳月）
     const [kv2, recipes] = await Promise.all([
       kvGetMany(['sp_supply_pm_supply', 'sp_supply_pm_orders', 'sp_supply_pm_price_flags', 'sp_supply_pm_ph_' + mo, 'sp_supply_pm_ph_' + prevMo, 'sp_supply_pm_editlog_' + mo]),
       kvGetPrefix('sp_supply_pm_recipe_v_'),

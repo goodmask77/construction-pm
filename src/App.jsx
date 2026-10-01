@@ -70,7 +70,7 @@ async function loadSpaceAIContext() {
       g("sp_supply_pm_orders"), getSharedPrefix("sp_supply_pm_recipe_v_"),
     ]);
     // 供應鏈重建 P1（100%資料鐵則，與 D哥 loadSupplyText 同步接）：價格歷史 pm_ph_ 月檔（近兩月）/疑似有誤 pm_price_flags/編輯紀錄 pm_editlog_
-    const prevMo = new Date(d0.getTime() - 32 * 864e5); const prevMoS = `${prevMo.getFullYear()}-${String(prevMo.getMonth() + 1).padStart(2, "0")}`;
+    const prevMo = new Date(d0.getFullYear(), d0.getMonth() - 1, 1); const prevMoS = `${prevMo.getFullYear()}-${String(prevMo.getMonth() + 1).padStart(2, "0")}`; // 上個日曆月（−32天在月初會跳月）
     const [phA, phB, phFlagsAI, editLogAI] = await Promise.all([g("sp_supply_pm_ph_" + mo), g("sp_supply_pm_ph_" + prevMoS), g("sp_supply_pm_price_flags"), g("sp_supply_pm_editlog_" + mo)]);
     const supplyPriceRows = [...(phB?.rows || []), ...(phA?.rows || [])];
     const supplyRecipes = Object.values(supplyRecipesRaw || {}).map(v => { try { return JSON.parse(v); } catch (_) { return null; } }).filter(Boolean);
