@@ -2570,9 +2570,9 @@ function slRender(){
   const box = document.getElementById('slRows'); if (!box) return
   box.innerHTML = window._slotTmp.map((sl,i)=>`<div style="display:flex;gap:5px;align-items:center;flex-wrap:wrap;padding:4px 0;border-bottom:1px solid var(--line)">
     <input value="${String(sl.n).replace(/"/g,'&quot;')}" placeholder="名稱" oninput="window._slotTmp[${i}].n=this.value" style="width:56px;min-width:0;border:1px solid var(--line);border-radius:8px;padding:7px 6px;font-size:14px">
-    <input type="time" value="${sl.s}" onchange="window._slotTmp[${i}].s=this.value" style="width:102px;min-width:0;border:1px solid var(--line);border-radius:8px;padding:6px 4px;font-size:13px">
+    <input type="time" value="${sl.s}" onchange="window._slotTmp[${i}].s=this.value" style="width:132px;min-width:0;border:1px solid var(--line);border-radius:8px;padding:6px 4px;font-size:13px">
     <span>–</span>
-    <input type="time" value="${sl.e}" onchange="window._slotTmp[${i}].e=this.value" style="width:102px;min-width:0;border:1px solid var(--line);border-radius:8px;padding:6px 4px;font-size:13px">
+    <input type="time" value="${sl.e}" onchange="window._slotTmp[${i}].e=this.value" style="width:132px;min-width:0;border:1px solid var(--line);border-radius:8px;padding:6px 4px;font-size:13px">
     <button class="mini" style="padding:7px 9px;color:var(--red);margin-left:auto" onclick="window._slotTmp.splice(${i},1);slRender()">✕</button></div>`).join('')
 }
 function posRender(){
