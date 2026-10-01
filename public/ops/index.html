@@ -1446,7 +1446,6 @@ function shiftRender(){
   let h = `<section><h2>班表 × 打卡 <span class="hint">${meN?'':BIND_HINT}</span></h2>
    <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px">
      <button class="mini" onclick="shiftNav(-1)">‹</button><b style="font-size:15px">${shiftYm}</b><button class="mini" onclick="shiftNav(1)">›</button>
-     ${meN?`<button class="mini on" style="margin-left:auto;padding:8px 16px" onclick="shiftForm()">＋ 排班</button>`:''}
    </div>
    ${(()=>{ // 人員名單＋權限（張良 2026-09-25：訪客看/綁定一般/名單設權限）
      const canMgr = d.me && (d.me.approver || d.me.role==='主管')
@@ -1463,7 +1462,7 @@ function shiftRender(){
   const posList = (d.posList||[]).slice()
   wkEnts.forEach(x=>{ const p4=x.pos||'未分崗'; if(!posList.includes(p4)) posList.push(p4) })
   h += `<div style="display:flex;gap:8px;align-items:center;margin:2px 0 6px">
-    <span style="font-weight:900">一週班表</span>${meN?`<button class="mini" style="padding:3px 10px" onclick="shiftPosEdit()">⚙️ 崗位</button>`:''}
+    <span style="font-weight:900">一週班表</span>${meN?`<button class="mini" style="padding:3px 10px" onclick="shiftPosEdit()">⚙️ 設定（崗位/時段/人員排序・顏色）</button>`:''}
     <button class="mini" onclick="shiftWkNav(-1)">‹</button><span class="hint" style="font-weight:800">${wkDays[0].slice(5)} ~ ${wkDays[6].slice(5)}</span><button class="mini" onclick="shiftWkNav(1)">›</button>
   </div>`
   // v4.3.5（張良 2026-10-02）：①欄寬固定+硬格線=日期與格子切齊 ②崗位三組配色(櫃檯/飲料/中控・漢堡/煎炸麵・披薩/三明治) ③同人同天兼多崗位→班卡同色標記
