@@ -1962,12 +1962,16 @@ export default async function handler(req, res) {
     const gdef = (defDoc || {}).ground || { items: [] }
     // me＝綁定者（張良 2026-09-21 拍板：不設站長，綁定的人全站都能編，靠歷史紀錄留痕）
     const approvers = ((defDoc || {}).ground || {}).approvers || ['張良瑋'] // 解決審核人（張良 2026-09-21：已解決要經我審核）
-    const me4 = me3 ? { name: me3.name, canEdit: true, approver: approvers.includes(me3.name) } : null
+    const me4 = me3 ? { name: me3.name, canEdit: true, approver: approvers.includes(me3.name), role: me3.role || '' } : null
     const issuesDoc = await kvGet('sp_finance_pm_sop_issues')
     const issues = ((issuesDoc || {}).list || []).filter(x => x.status === 'open' || x.status === 'pending').slice(0, 30)
     const stations = (gdef.stations && gdef.stations.length) ? gdef.stations : [...new Set((gdef.items || []).map(i => i.st))]
     const trash = (gdef.trash || []).map(t => ({ id: t.id, st: t.st, n: (t.items || []).length, ts: t.ts, by: t.by }))
-    return res.status(200).json({ ok: true, date: dt2, def: { items: gdef.items || [], stations, edits: (gdef.edits || []).slice(0, 10) }, trash, log: logDoc || { items: {} }, names, me: me4, issues, prepHide: (hideDoc || {}).keys || {} })
+    // v4.15.0 SOP分層+負責人（張良 2026-10-02）
+    const sugsD0 = await kvGet('sp_finance_pm_sop_sugs')
+    const sugOpen = {}
+    ;(((sugsD0 || {}).list) || []).forEach(x => { if (x.status === 'open') sugOpen[x.st] = (sugOpen[x.st] || 0) + 1 })
+    return res.status(200).json({ ok: true, date: dt2, def: { items: gdef.items || [], stations, edits: (gdef.edits || []).slice(0, 10), cats: gdef.catOrder || [], stCat: gdef.stCat || {}, stOwner: gdef.stOwner || {} }, sugOpen, trash, log: logDoc || { items: {} }, names, me: me4, issues, prepHide: (hideDoc || {}).keys || {} })
   }
   // 站別管理（張良 2026-09-21：站可新增/改名/刪除；誤刪可復原→軟刪進回收站）：POST ?sopst=<OPS_BOARD_KEY> {token, op, st, newName, trashId}
   if (req.method === 'POST' && req.query?.sopst) {
@@ -1991,11 +1995,15 @@ export default async function handler(req, res) {
       if (gS.stations.includes(nn)) return res.status(400).json({ ok: false, error: '新站名已存在' })
       gS.stations = gS.stations.map(s => s === nmS ? nn : s)
       gS.items = (gS.items || []).map(it => it.st === nmS ? { ...it, st: nn } : it)
+      if ((gS.stCat || {})[nmS] != null) { gS.stCat = { ...gS.stCat, [nn]: gS.stCat[nmS] }; delete gS.stCat[nmS] }
+      if ((gS.stOwner || {})[nmS] != null) { gS.stOwner = { ...gS.stOwner, [nn]: gS.stOwner[nmS] }; delete gS.stOwner[nmS] }
     } else if (bs.op === 'del') {
       if (!gS.stations.includes(nmS)) return res.status(400).json({ ok: false, error: '找不到這個站' })
       const moved = (gS.items || []).filter(it => it.st === nmS)
       gS.items = (gS.items || []).filter(it => it.st !== nmS)
       gS.stations = gS.stations.filter(s => s !== nmS)
+      if (gS.stCat) delete gS.stCat[nmS]
+      if (gS.stOwner) delete gS.stOwner[nmS]
       gS.trash = [{ id: 'tr' + Date.now().toString(36), ts: new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 16).replace('T', ' '), by: whoS.name, st: nmS, items: moved }, ...(gS.trash || [])].slice(0, 20)
     } else if (bs.op === 'restore') {
       const tr = (gS.trash || []).find(t => t.id === bs.trashId)
@@ -2003,11 +2011,93 @@ export default async function handler(req, res) {
       if (!gS.stations.includes(tr.st)) gS.stations.push(tr.st)
       gS.items = [...(gS.items || []).filter(it => it.st !== tr.st || !(tr.items || []).some(x => x.id === it.id)), ...(tr.items || [])]
       gS.trash = (gS.trash || []).filter(t => t.id !== bs.trashId)
-    } else return res.status(400).json({ ok: false, error: 'op 要是 add/rename/del/restore' })
+    } else if (bs.op === 'catadd') { // v4.15.0 分類層
+      const cn = String(bs.cat || '').trim().slice(0, 20); if (!cn) return res.status(400).json({ ok: false, error: '要給分類名' })
+      gS.catOrder = gS.catOrder || []; if (!gS.catOrder.includes(cn)) gS.catOrder.push(cn)
+    } else if (bs.op === 'catren') {
+      const co = String(bs.cat || '').trim(), cn = String(bs.newName || '').trim().slice(0, 20)
+      if (!co || !cn) return res.status(400).json({ ok: false, error: '要給舊名與新名' })
+      gS.catOrder = (gS.catOrder || []).map(c2 => c2 === co ? cn : c2)
+      gS.stCat = Object.fromEntries(Object.entries(gS.stCat || {}).map(([k, v]) => [k, v === co ? cn : v]))
+    } else if (bs.op === 'catdel') {
+      const cn = String(bs.cat || '').trim()
+      gS.catOrder = (gS.catOrder || []).filter(c2 => c2 !== cn)
+      gS.stCat = Object.fromEntries(Object.entries(gS.stCat || {}).filter(([, v]) => v !== cn))
+    } else if (bs.op === 'catord') {
+      gS.catOrder = (Array.isArray(bs.list) ? bs.list : []).map(c2 => String(c2).trim().slice(0, 20)).filter(Boolean).slice(0, 20)
+    } else if (bs.op === 'catset') { // 站歸到哪個分類（空=未分類）
+      if (!nmS) return res.status(400).json({ ok: false, error: '要給站名' })
+      gS.stCat = { ...(gS.stCat || {}) }
+      const cn = String(bs.cat || '').trim().slice(0, 20)
+      if (cn) { gS.stCat[nmS] = cn; gS.catOrder = gS.catOrder || []; if (!gS.catOrder.includes(cn)) gS.catOrder.push(cn) } else delete gS.stCat[nmS]
+    } else if (bs.op === 'ownset') { // 負責人（只有審核人/主管能指定）
+      const aprO = (curS.ground || {}).approvers || ['張良瑋']
+      if (!(aprO.includes(whoS.name) || whoS.role === '主管')) return res.status(403).json({ ok: false, error: '負責人由審核人／主管指定' })
+      if (!nmS) return res.status(400).json({ ok: false, error: '要給站名' })
+      gS.stOwner = { ...(gS.stOwner || {}) }
+      const on2 = String(bs.owner || '').trim().slice(0, 20)
+      if (on2) gS.stOwner[nmS] = on2; else delete gS.stOwner[nmS]
+    } else return res.status(400).json({ ok: false, error: 'op 不認得' })
     gS.edits = [{ ts: new Date().toISOString(), by: whoS.name, st: nmS || (bs.trashId || ''), op: bs.op }, ...(gS.edits || [])].slice(0, 30)
     curS.ground = gS
     await kvPut('sp_finance_pm_sop_def', curS, 'SOP站別' + bs.op + '(' + whoS.name + ')')
     return res.status(200).json({ ok: true })
+  }
+  // 💡 SOP 建議（v4.15.0 張良：非負責人提建議→負責人審核；通過加分留記錄、駁回歸檔不吃案）
+  if (req.query?.sopsug && req.method !== 'POST') {
+    const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
+    if (!ok2 || String(req.query.sopsug) !== ok2) return res.status(403).json({ ok: false })
+    const dG = (await kvGet('sp_finance_pm_sop_sugs')) || { list: [] }
+    let L = dG.list || []
+    const stQ = String(req.query.st || '')
+    if (stQ) L = L.filter(x => x.st === stQ)
+    return res.status(200).json({ ok: true, list: L.slice(0, 100) })
+  }
+  if (req.method === 'POST' && req.query?.sopsugset) {
+    const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
+    if (!ok2 || String(req.query.sopsugset) !== ok2) return res.status(403).json({ ok: false })
+    let bG = {}
+    try { bG = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
+    const whoG2 = await sopWho(bG.token)
+    if (!whoG2) return res.status(403).json({ ok: false, error: '要先跟 DD 說「綁定GD」' })
+    const docG = (await kvGet('sp_finance_pm_sop_sugs')) || { list: [] }
+    const nowG = new Date(Date.now() + 8 * 3600e3).toISOString().slice(5, 16).replace('T', ' ')
+    if (bG.op === 'add') {
+      const stG = String(bG.st || '').trim().slice(0, 20), txG = String(bG.text || '').trim().slice(0, 300)
+      if (!stG || !txG) return res.status(400).json({ ok: false, error: '要寫建議內容' })
+      docG.list = [{ id: 'sg' + Date.now().toString(36), st: stG, text: txG, by: whoG2.name, ts: nowG, status: 'open' }, ...(docG.list || [])].slice(0, 300)
+      await kvPut('sp_finance_pm_sop_sugs', docG, 'SOP建議(' + whoG2.name + ')')
+      try { // DD 私訊負責人
+        const defX = await kvGet('sp_finance_pm_sop_def')
+        const ow = (((defX || {}).ground || {}).stOwner || {})[stG]
+        if (ow) {
+          const ros = await kvGet('sp_crew_kb_roster')
+          const po = (((ros || {}).people) || []).find(p2 => p2.name === ow && p2.lineUserId)
+          const tk = (process.env.LINE_CHANNEL_ACCESS_TOKEN || '').trim()
+          if (po && tk) { await fetch('https://api.line.me/v2/bot/message/push', { method: 'POST', headers: { 'content-type': 'application/json', Authorization: 'Bearer ' + tk }, body: JSON.stringify({ to: po.lineUserId, messages: [{ type: 'text', text: '💡 ' + whoG2.name + ' 對你負責的 SOP【' + stG + '】提了建議：\n' + txG + '\n到 /prep → SOP 按「💡 建議」審核（通過他會加分）' }] }) }); const { logPush } = await import('./push.js'); await logPush(po.lineUserId, 1, 'SOP建議通知') }
+        }
+      } catch (_) {}
+    } else if (bG.op === 'decide') {
+      const sg = (docG.list || []).find(x => x.id === bG.id)
+      if (!sg || sg.status !== 'open') return res.status(400).json({ ok: false, error: '找不到或已處理' })
+      const defX = await kvGet('sp_finance_pm_sop_def')
+      const gX = (defX || {}).ground || {}
+      const ow = (gX.stOwner || {})[sg.st]
+      const aprX = gX.approvers || ['張良瑋']
+      if (!(whoG2.name === ow || aprX.includes(whoG2.name) || whoG2.role === '主管')) return res.status(403).json({ ok: false, error: '只有該站負責人／審核人能審' })
+      const pass = !!bG.pass
+      const note = String(bG.note || '').trim().slice(0, 200)
+      if (!pass && !note) return res.status(400).json({ ok: false, error: '駁回一定要寫原因——會歸檔，不能吃案' })
+      sg.status = pass ? 'ok' : 'no'; sg.decBy = whoG2.name; sg.decTs = nowG; if (note) sg.note = note; if (pass) sg.pts = 1
+      await kvPut('sp_finance_pm_sop_sugs', docG, 'SOP建議審核(' + whoG2.name + ')')
+      try { // DD 通知申請人
+        const ros = await kvGet('sp_crew_kb_roster')
+        const po = (((ros || {}).people) || []).find(p2 => p2.name === sg.by && p2.lineUserId)
+        const tk = (process.env.LINE_CHANNEL_ACCESS_TOKEN || '').trim()
+        if (po && tk) { await fetch('https://api.line.me/v2/bot/message/push', { method: 'POST', headers: { 'content-type': 'application/json', Authorization: 'Bearer ' + tk }, body: JSON.stringify({ to: po.lineUserId, messages: [{ type: 'text', text: pass ? ('✅ 你對 SOP【' + sg.st + '】的建議通過了（' + whoG2.name + ' 核）——記你 1 分！') : ('📁 你對 SOP【' + sg.st + '】的建議未採納（' + whoG2.name + '）：' + note + '\n已歸檔留紀錄。') }] }) }); const { logPush } = await import('./push.js'); await logPush(po.lineUserId, 1, 'SOP建議結果') }
+      } catch (_) {}
+    } else return res.status(400).json({ ok: false })
+    return res.status(200).json({ ok: true, list: (docG.list || []).slice(0, 100) })
   }
   // ── 發現/解決問題排行榜（張良 2026-09-21）：全員對每件回報的「發現」與「解決」評 L1~L10，平均分進個人積分 ──
   // GET  ?lb=<OPS_BOARD_KEY>&me=token → 事件列表(含評分)+排行榜；POST ?soprate= {id, aspect:'find'|'fix', level:1-10, token}
@@ -2284,6 +2374,11 @@ export default async function handler(req, res) {
     if (!b6.st || !Array.isArray(b6.items)) return res.status(400).json({ ok: false, error: '缺 st 或 items' })
     const cur6 = (await kvGet('sp_finance_pm_sop_def')) || {}
     const g6 = cur6.ground || { items: [] }
+    { // v4.15.0 站負責人：有主的站只有負責人/審核人/主管能編
+      const own6 = (g6.stOwner || {})[b6.st]
+      const apr6 = g6.approvers || ['張良瑋']
+      if (own6 && own6 !== who6.name && !apr6.includes(who6.name) && who6.role !== '主管') return res.status(403).json({ ok: false, error: '「' + b6.st + '」由 ' + own6 + ' 負責——想改請按站名旁「💡 提建議」，通過會記你一分' })
+    }
     const prev6 = (g6.items || []).filter(it => it.st === b6.st) // 改前快照＝歷史紀錄可回溯
     const prevIt6 = {}; ((cur6.ground || {}).items || []).forEach(it => { prevIt6[it.id] = it })
     const now86 = new Date(Date.now() + 8 * 3600e3).toISOString().slice(5, 16).replace('T', ' ')
@@ -2518,6 +2613,19 @@ export default async function handler(req, res) {
       if (!oF.editBy) { oF.editBy = whoF.name; oF.editTs = oF.editTs || now8F }
       return oF }).filter(it => it.title && stCl.includes(it.st))
     const gF = curF.ground || {}
+    { // v4.15.0 站負責人：非負責人在總編輯動到有主的站→整包擋下
+      const aprF = gF.approvers || ['張良瑋']
+      const mgrF = aprF.includes(whoF.name) || whoF.role === '主管'
+      if (!mgrF) {
+        const keyF = it => JSON.stringify([it.title, it.due || '', !!it.photo, it.ref || ''])
+        for (const [stO, ow] of Object.entries(gF.stOwner || {})) {
+          if (ow === whoF.name) continue
+          const aT = (gF.items || []).filter(i => i.st === stO).map(keyF).sort().join('|')
+          const bT = itCl.filter(i => i.st === stO).map(keyF).sort().join('|')
+          if (aT !== bT) return res.status(403).json({ ok: false, error: '「' + stO + '」由 ' + ow + ' 負責——這站的修改請用「💡 提建議」' })
+        }
+      }
+    }
     gF.edits = [{ ts: new Date().toISOString(), by: whoF.name, op: 'full', prev: { stations: gF.stations || [], items: gF.items || [] } }, ...(gF.edits || [])].slice(0, 15)
     gF.stations = stCl
     gF.items = itCl

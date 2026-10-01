@@ -406,6 +406,65 @@ function bindBtnSync(){ const b = document.getElementById('bindBtn'); if (b) b.s
 let sopData = null, sopPhotos = {}, sopEditSt = null
 let sopPin = new Set(JSON.parse(localStorage.getItem('sopPin')||'[]')) // 📌 釘選的站（存本機＝每個人自己的）
 let sopColl = new Set(JSON.parse(localStorage.getItem('sopColl')||'[]')) // ⏷ 收合的站（張良 2026-09-24：可全部收合打開；存本機）
+// ── v4.15.0 SOP 分層＋負責人＋建議審核 ──
+async function sopstOp(body){
+  const r = await fetch('/api/mail-sync?sopst=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ ...body, token: TK() }) })
+  const j = await r.json().catch(()=>null)
+  if (j && j.ok) { await sopLoad() } else alert((j&&j.error)||'失敗')
+}
+function sopCatMng(){ // 🗂 分類管理：分類增刪改排序＋每站歸類＋負責人
+  const def = sopData.def, cats = def.cats||[], sts9 = [...(def.stations||[])]
+  const mgr = sopData.me && (sopData.me.approver || sopData.me.role==='主管')
+  const catsJ = JSON.stringify(cats).replace(/"/g,'&quot;')
+  const ov = document.createElement('div'); ov.id='scOv'
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:60;display:flex;align-items:center;justify-content:center;padding:14px'
+  const catRow = (c2,i)=>`<div style="display:flex;gap:6px;align-items:center;padding:4px 0;border-bottom:1px solid var(--line)"><b style="flex:1">${c2}</b>
+    <button class="mini" style="padding:6px 9px" ${i===0?'disabled':''} onclick="catMove(${i},-1,${catsJ})">↑</button>
+    <button class="mini" style="padding:6px 9px" ${i===cats.length-1?'disabled':''} onclick="catMove(${i},1,${catsJ})">↓</button>
+    <button class="mini" style="padding:6px 9px" onclick="document.getElementById('scOv').remove();prepAsk('改名「${c2}」',0,1,(q,r)=>{if(r)sopstOp({op:'catren',cat:'${c2}',newName:r})},'新名稱')">✏️</button>
+    <button class="mini" style="padding:6px 9px;color:var(--red)" onclick="if(confirm('刪除分類「${c2}」？站會變未分類，不會刪站')){document.getElementById('scOv').remove();sopstOp({op:'catdel',cat:'${c2}'})}">✕</button></div>`
+  const stRow = st2 => `<div style="display:flex;gap:6px;align-items:center;padding:4px 0;border-bottom:1px solid var(--line)"><b style="flex:1;min-width:0">${st2}</b>
+    <select onchange="sopstOp({op:'catset',st:'${st2}',cat:this.value})" style="border:1px solid var(--line);border-radius:7px;padding:6px;font-size:13px;max-width:110px"><option value="">未分類</option>${cats.map(c2=>`<option${(def.stCat||{})[st2]===c2?' selected':''}>${c2}</option>`).join('')}</select>
+    <select ${mgr?'':'disabled title="負責人由審核人/主管指定"'} onchange="sopstOp({op:'ownset',st:'${st2}',owner:this.value})" style="border:1px solid var(--line);border-radius:7px;padding:6px;font-size:13px;max-width:110px"><option value="">無負責人</option>${(sopData.names||[]).map(n=>`<option${(def.stOwner||{})[st2]===n?' selected':''}>${n}</option>`).join('')}</select></div>`
+  ov.innerHTML = `<div style="background:#222B38;border:1px solid #3B4654;border-radius:14px;width:min(560px,94vw);max-height:88vh;overflow:auto;padding:16px" onclick="event.stopPropagation()">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><b style="font-size:16px">🗂 SOP 分類（組織架構）</b><button class="mini" style="padding:7px 12px" onclick="document.getElementById('scOv').remove()">關閉</button></div>
+    <div class="hint" style="margin-bottom:8px">三層：分類 → 站 → 條目。右邊兩個選單＝每站「歸哪類」「誰負責」（有負責人的站，別人要改得走 💡 提建議）。</div>
+    <div style="font-weight:900;margin:6px 0 2px">分類</div>${cats.map(catRow).join('')||'<div class="hint">還沒有分類——按下面新增（例：備料／設站／清潔）</div>'}
+    <button class="mini" style="margin:8px 0;padding:8px 12px" onclick="document.getElementById('scOv').remove();prepAsk('＋ 新增分類',0,1,(q,r)=>{if(r)sopstOp({op:'catadd',cat:r})},'分類名稱（例：備料/設站/清潔）')">＋ 新增分類</button>
+    <div style="font-weight:900;margin:10px 0 2px">站 → 分類・負責人</div>${sts9.map(stRow).join('')}</div>`
+  ov.onclick = () => ov.remove()
+  document.body.appendChild(ov)
+}
+function catMove(i, dir, arr){ const a = [...arr]; const j = i + dir; if (j<0||j>=a.length) return; [a[i],a[j]]=[a[j],a[i]]; const o=document.getElementById('scOv'); if(o)o.remove(); sopstOp({ op:'catord', list:a }) }
+function sugAdd(st){
+  prepAsk(`💡 對「${st}」SOP 提建議`, 0, 1, (q, r)=>{
+    if (!r) { alert('要寫建議內容'); return }
+    fetch('/api/mail-sync?sopsugset=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ op:'add', st, text: r, token: TK() }) }).then(r2=>r2.json()).then(j=>{ if (j&&j.ok) { alert('已送出給負責人審核——通過會記你一分'); sopLoad() } else alert((j&&j.error)||'失敗') })
+  }, '想怎麼改？寫具體一點')
+}
+async function sugView(st){
+  let j = null
+  try { const r = await fetch('/api/mail-sync?sopsug=' + encodeURIComponent(K) + '&st=' + encodeURIComponent(st) + '&r=' + Date.now()); j = await r.json() } catch(e){}
+  if (!j || !j.ok) { alert('讀不到'); return }
+  const me9 = sopData.me, ow9 = (sopData.def.stOwner||{})[st]
+  const canDec = me9 && (me9.name===ow9 || me9.approver || me9.role==='主管')
+  const open = (j.list||[]).filter(x=>x.status==='open')
+  const arch = (j.list||[]).filter(x=>x.status!=='open')
+  const old = document.getElementById('sgOv'); if (old) old.remove()
+  const ov = document.createElement('div'); ov.id='sgOv'
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:60;display:flex;align-items:center;justify-content:center;padding:14px'
+  ov.innerHTML = `<div style="background:#222B38;border:1px solid #3B4654;border-radius:14px;width:min(560px,94vw);max-height:88vh;overflow:auto;padding:16px" onclick="event.stopPropagation()">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><b style="font-size:16px">💡「${st}」SOP 建議</b><span><button class="mini" style="padding:7px 10px" onclick="document.getElementById('sgOv').remove();sugAdd('${st}')">＋ 我也要提</button><button class="mini" style="padding:7px 12px" onclick="document.getElementById('sgOv').remove()">關閉</button></span></div>
+    <div style="font-weight:900;margin:6px 0 4px">待審核（${open.length}）</div>
+    ${open.map(x=>`<div style="background:var(--soft);border:1px solid #E8D089;border-radius:10px;padding:8px 10px;margin-bottom:6px"><div>${x.text}</div><div class="hint">${x.by}・${x.ts}</div>${canDec?`<div style="margin-top:5px"><button class="mini on" style="padding:6px 12px" onclick="sugDecide('${x.id}',1,'${st}','')">✅ 通過（他加1分）</button><button class="mini" style="padding:6px 12px;color:var(--red)" onclick="document.getElementById('sgOv').remove();prepAsk('駁回原因（會歸檔，不能吃案）',0,1,(q2,r2)=>{if(!r2){alert('一定要寫原因');return}sugDecide('${x.id}',0,'${st}',r2)},'為什麼不採納')">❌ 駁回</button></div>`:''}</div>`).join('')||'<div class="mut">沒有待審的建議</div>'}
+    <div style="font-weight:900;margin:12px 0 4px">歸檔（${arch.length}）<span class="hint" style="font-weight:600">全部留存、人人可查——不會吃案</span></div>
+    ${arch.map(x=>`<div style="background:var(--soft);border:1px solid var(--line);border-radius:10px;padding:7px 10px;margin-bottom:5px"><div>${x.status==='ok'?'✅':'📁'} ${x.text}</div><div class="hint">${x.by}・${x.ts} → ${x.status==='ok'?`通過（${x.decBy}・${x.decTs}）＋1分`:`未採納（${x.decBy}・${x.decTs}）：${x.note||''}`}</div></div>`).join('')||'<div class="mut">還沒有歸檔紀錄</div>'}</div>`
+  ov.onclick = () => ov.remove()
+  document.body.appendChild(ov)
+}
+function sugDecide(id, pass, st, note){
+  fetch('/api/mail-sync?sopsugset=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ op:'decide', id, pass: !!pass, note: note||'', token: TK() }) }).then(r=>r.json()).then(j=>{ if (j&&j.ok) { sopLoad(); sugView(st) } else alert((j&&j.error)||'失敗') })
+}
 function sopCollT(st){ if (sopColl.has(st)) sopColl.delete(st); else sopColl.add(st); localStorage.setItem('sopColl', JSON.stringify([...sopColl])); sopRender() }
 function sopCollAll(sts2){ const allC = sts2.every(s2=>sopColl.has(s2)); if (allC) sts2.forEach(s2=>sopColl.delete(s2)); else sts2.forEach(s2=>sopColl.add(s2)); localStorage.setItem('sopColl', JSON.stringify([...sopColl])); sopRender() }
 let sopFilter = localStorage.getItem('sopFilter') || ''
@@ -442,18 +501,35 @@ function sopRender(){
     ${sopPin.size?`<span style="${chipS(view==='pin')}" onclick="sopFset('pin')">📌 我的釘選（${sopPin.size}）</span>`:''}
     <span style="${chipS(view==='all')}" onclick="sopFset('all')">全部</span>
     ${sts.map(st2=>`<span style="${chipS(view===st2)};display:inline-flex;gap:5px;align-items:center"><span onclick="sopFset('${st2}')">${st2}</span><span onclick="sopPinT('${st2}')" title="釘選/取消釘選" style="opacity:${sopPin.has(st2)?1:.35}">📌</span></span>`).join('')}
+    ${me?`<span style="${chipS(false)}" onclick="sopCatMng()">🗂 分類</span>`:''}
     <span style="${chipS(false)};margin-left:auto" onclick="sopCollAll(${JSON.stringify(shown0).replace(/"/g,'&quot;')})">${allColl?'⏵ 全部展開':'⏷ 全部收合'}</span>
   </div>`
   const shown = sts.filter(st2 => view==='all' ? true : (view==='pin' ? sopPin.has(st2) : st2===view))
   if (!shown.length) s += `<div class="mut" style="font-size:14px">釘選的站不見了（可能被改名）——按「全部」重新釘。</div>`
-  shown.forEach(st => {
+  // v4.15.0 SOP 分層（張良：分類→站→條目像組織架構）：全部檢視時照分類分組、未分類墊底
+  let seqS = shown
+  if (view === 'all' && ((sopData.def.cats||[]).length)) {
+    const scM = sopData.def.stCat || {}
+    seqS = []
+    ;(sopData.def.cats||[]).forEach(cg=>{ const in1 = shown.filter(x=>scM[x]===cg); if (in1.length) seqS.push('⟦H⟧'+cg, ...in1) })
+    const restS = shown.filter(x=>!scM[x] || !(sopData.def.cats||[]).includes(scM[x]))
+    if (restS.length) seqS.push('⟦H⟧未分類', ...restS)
+  }
+  seqS.forEach(st => {
+    if (typeof st === 'string' && st.startsWith('⟦H⟧')) { s += `<div style="font-weight:900;font-size:15px;color:var(--ink);margin:16px 0 2px;padding-bottom:4px;border-bottom:2px solid var(--line)">🗂 ${st.slice(3)}</div>`; return }
     const canEd = me && me.canEdit
     const stIss = (sopData.issues||[]).filter(x => x.st === st)
     const stItems = items.filter(i => i.st === st)
     const stDone = stItems.filter(i => log[i.id] && log[i.id].done).length
     const coll = sopColl.has(st)
-    s += `<div onclick="sopCollT('${st}')" style="cursor:pointer;background:var(--psoft);border-radius:8px;padding:4px 10px;font-weight:900;color:var(--pdark);font-size:14px;margin:10px 0 4px">${coll?'⏵':'⏷'} ${st} <span class="hint" style="font-weight:700">${stDone}/${stItems.length}${stIss.length?`・⚠️${stIss.length}`:''}</span>
-      <span style="float:right" onclick="event.stopPropagation()"><button class="mini" style="color:#A85C26" onclick="sopReport('${st}')">⚠️ 回報</button></span></div>`
+    const own9 = (sopData.def.stOwner||{})[st]
+    const mgr9 = me && (me.approver || me.role === '主管')
+    const sug9 = (sopData.sugOpen||{})[st] || 0
+    const sugBtn = own9 && me ? ((me.name===own9 || mgr9)
+      ? `<button class="mini" style="color:${sug9?'var(--primary)':'var(--muted)'}" onclick="sugView('${st}')">💡 建議${sug9?`(${sug9})`:''}</button>`
+      : `<button class="mini" style="color:var(--primary)" onclick="sugAdd('${st}')">💡 提建議</button>`) : (own9 ? `<button class="mini" onclick="sugView('${st}')">💡${sug9?`(${sug9})`:''}</button>` : '')
+    s += `<div onclick="sopCollT('${st}')" style="cursor:pointer;background:var(--psoft);border-radius:8px;padding:4px 10px;font-weight:900;color:var(--pdark);font-size:14px;margin:10px 0 4px">${coll?'⏵':'⏷'} ${st}${own9?` <span style="font-weight:700;font-size:12px;color:#D4A72C">👑${own9}</span>`:''} <span class="hint" style="font-weight:700">${stDone}/${stItems.length}${stIss.length?`・⚠️${stIss.length}`:''}</span>
+      <span style="float:right" onclick="event.stopPropagation()">${sugBtn}<button class="mini" style="color:#A85C26" onclick="sopReport('${st}')">⚠️ 回報</button></span></div>`
     if (coll) return
     stIss.forEach(x => {
       const pend = x.status === 'pending'
