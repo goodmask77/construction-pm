@@ -1422,8 +1422,7 @@ export default async function handler(req, res) {
     if (!ok2 || String(req.query.menuset) !== ok2) return res.status(403).json({ ok: false })
     let mb2 = {}
     try { mb2 = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
-    const whoM2 = await sopWho(mb2.token)
-    if (!whoM2) return res.status(403).json({ ok: false, error: '要先跟 DD 說「綁定GD」' })
+    const whoM2 = (await sopWho(mb2.token)) || { name: '現場(未綁定)' } // 張良 2026-10-01：先全開編輯，之後做審核制權限頁
     const doc = (await kvGet('sp_finance_pm_menu')) || {}
     if (!doc.base) return res.status(400).json({ ok: false, error: '先開一次菜單分頁讓系統種既有菜單' })
     const dr = mb2.draft || {}
@@ -1819,8 +1818,7 @@ export default async function handler(req, res) {
     if (!ok2 || String(req.query.prepact) !== ok2) return res.status(403).json({ ok: false })
     let ba = {}
     try { ba = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
-    const whoA = await sopWho(ba.token)
-    if (!whoA) return res.status(403).json({ ok: false, error: '要先跟 DD 說「綁定GD」才能填實備' })
+    const whoA = (await sopWho(ba.token)) || { name: '現場(未綁定)' } // 先全開（張良 2026-10-01）
     if (!ba.item) return res.status(400).json({ ok: false, error: '缺 item' })
     const dA = new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10)
     const idA = 'sp_finance_pm_prep_act_' + dA.slice(0, 7)
@@ -1838,8 +1836,7 @@ export default async function handler(req, res) {
     if (!ok2 || String(req.query.prephide) !== ok2) return res.status(403).json({ ok: false })
     let bh = {}
     try { bh = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
-    const whoH = await sopWho(bh.token)
-    if (!whoH) return res.status(403).json({ ok: false, error: '要先跟 DD 說「綁定GD」才能改隱藏設定' })
+    const whoH = (await sopWho(bh.token)) || { name: '現場(未綁定)' } // 先全開（張良 2026-10-01）
     if (!bh.key) return res.status(400).json({ ok: false, error: '缺 key' })
     const hd = (await kvGet('sp_finance_pm_prep_hide')) || { keys: {} }
     hd.keys = hd.keys || {}
