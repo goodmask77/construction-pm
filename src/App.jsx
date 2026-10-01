@@ -1150,7 +1150,7 @@ export default function App() {
           />
         )}
         {view === "tasks" && (
-          <TaskCenter K={K} confirm={confirm} canEdit={canEditData} cats={cats} onLog={logActivity}
+          <TaskCenter K={K} confirm={confirm} canEdit={canEditData} cats={cats} onLog={logActivity} userName={userName}
             waitHint={CURRENT_SPACE === "construction" ? "例：等木工、等房東、等設計圖" : "例：等對方回覆、等報價、等主管確認"}
             onAddCat={(name) => guardedSetCats(prev => [...prev, { id: "cat-" + Date.now(), order: prev.length, name, budget: 0, status: "pending", items: [] }])}
             onRenameCat={(id, name) => guardedSetCats(prev => prev.map(c => c.id === id ? { ...c, name } : c))}

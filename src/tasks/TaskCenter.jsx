@@ -84,7 +84,7 @@ const Pill = ({ color, label }) => (
 // 卡片/大項共用色盤（張良 2026-09-10：視覺分類）
 const PALETTE = [["", "白"], ["#fde8e6", "紅"], ["#fdf1dd", "杏"], ["#faf6d8", "黃"], ["#e9f2e4", "綠"], ["#e6eef6", "藍"], ["#efe8f6", "紫"]];
 
-export default function TaskCenter({ K, confirm, canEdit, cats, onLog, onAddCat, onRenameCat, onMoveCat, onSetCatColor, waitHint = "例：等對方回覆、等報價、等主管確認" }) {
+export default function TaskCenter({ K, confirm, canEdit, cats, onLog, onAddCat, onRenameCat, onMoveCat, onSetCatColor, waitHint = "例：等對方回覆、等報價、等主管確認", userName = "" }) { // userName：/prep 整併（2026-10-02）我來解決/計時 記名用
   const [tasks, setTasks] = useState(null);
   const [view, setView] = useState("today"); // today(Home 落地頁) | group | board | list | timeline | gantt | mind
   const [quick, setQuick] = useState("");
@@ -293,6 +293,13 @@ export default function TaskCenter({ K, confirm, canEdit, cats, onLog, onAddCat,
               {isWaiting(t) && !done && <Pill color={C.amber} label={`等：${t.waitingFor}`} />}
               {isBlocked(t, tasks) && !done && <Pill color={C.red} label="被前置卡住" />}
               {(t.tags || []).map(tg => <span key={tg} style={{ fontSize: 10.5, color: C.sub, background: C.soft, borderRadius: 999, padding: "0 6px", whiteSpace: "nowrap" }}>{tg}</span>)}
+              {/* /prep 特色（2026-10-02 整併保留）：發現者/我來解決＋計時/審核/發布 */}
+              {t.by && <span title="發現/回報者" style={{ fontSize: 10.5, color: C.faint, whiteSpace: "nowrap" }}>👁 {t.by}</span>}
+              {t.claimBy && !done && <span title="處理中" style={{ fontSize: 10.5, color: "#1d4e79", fontWeight: 700, whiteSpace: "nowrap" }}>🔧 {t.claimBy}{t.claimAt ? `・已${Math.max(0, Math.floor((Date.now() - t.claimAt) / 60000))}分` : ""}</span>}
+              {t.prepPending === 1 && !done && <Pill color={C.amber} label="🕐 待審核" />}
+              {t.prepPub === "pending" && <Pill color={C.amber} label="等發布" />}
+              {canEdit && !done && !t.claimBy && userName && <button onClick={e => { e.stopPropagation(); if (guard()) upd(t.id, { claimBy: userName, claimAt: Date.now(), status: "doing" }); }} style={{ border: "1px solid #9ec5e8", background: "#eaf2fa", color: "#1d4e79", borderRadius: 999, padding: "0 8px", fontSize: 10.5, fontWeight: 700, cursor: "pointer" }}>🙋 我來解決</button>}
+              {canEdit && !done && t.claimBy === userName && userName && <button onClick={e => { e.stopPropagation(); if (guard()) upd(t.id, { claimBy: "", claimAt: null, status: "todo" }); }} style={{ border: "1px solid #d9cfbd", background: "#fff", color: "#8a7a5e", borderRadius: 999, padding: "0 8px", fontSize: 10.5, cursor: "pointer" }}>放棄</button>}
             </div>
             {/* 卡上照片（張良 2026-09-10：貼上就要看得到）：第一張當封面、其餘小縮圖；已完成不佔版面 */}
             {!done && (t.files || []).some(f => f.isImage) && (() => {

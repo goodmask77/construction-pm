@@ -812,6 +812,42 @@ export default async function handler(req, res) {
   // 夥伴營運看板資料口（獨立金鑰 OPS_BOARD_KEY——跟管理金鑰分開，外流也只能唯讀看板資料；張良 2026-09-20）：
   // ?opsboard=<OPS_BOARD_KEY>&store=ground|abeach → 給 /ops/ 靜態頁用：日表(營收/單數/外帶%/套餐%)＋
   // 品項備料表(30日均/vs近60/近14天逐日,套 alias 合併+hidden 過濾)＋時段平均。刻意不含：付款明細/成本/毛利/定價
+  // /prep 舊任務搬家口（整併步驟5，張良 2026-10-02）：?prepmigrate=<MENU_PROBE_KEY>[&dry=1]
+  // sp_finance_pm_sop_issues → sp_team_pm_task_<id>（title/status/catId 對應；prep 特色欄 by/claimBy/claimAt/prepPub 原樣帶）
+  if (req.query?.prepmigrate) {
+    const mk = (process.env.MENU_PROBE_KEY || '').trim()
+    if (!mk || String(req.query.prepmigrate) !== mk) return res.status(403).json({ ok: false })
+    const dry = !!String(req.query.dry || '')
+    const iss = ((await kvGet('sp_finance_pm_sop_issues')) || {}).list || []
+    const data = (await kvGet('sp_team_pm_data')) || []
+    const catByName = new Map((Array.isArray(data) ? data : []).map(c => [c.name, c]))
+    const newCats = []
+    const catIdOf = (nm) => {
+      const name = nm || '收件匣'
+      if (name === '收件匣') return '__inbox__'
+      let c = catByName.get(name)
+      if (!c) { c = { id: 'cat-gd-' + Math.random().toString(36).slice(2, 8), order: (data.length + newCats.length), name, budget: 0, status: 'pending', items: [] }; catByName.set(name, c); newCats.push(c) }
+      return c.id
+    }
+    const rep = { moved: [], cats: [] }
+    const tasks = iss.map((x, i) => ({
+      id: 'gdiss-' + (x.id || i),
+      title: String(x.text || '（附件）').slice(0, 120),
+      note: (x.media || []).length ? '附件：' + x.media.join(' ') : '',
+      status: x.status === 'done' ? 'done' : (x.claimBy ? 'doing' : 'todo'),
+      catId: catIdOf(x.st), due: x.due || '', priority: x.flag ? 'high' : '',
+      by: x.by || '', claimBy: x.claimBy || '', claimAt: x.claimAt || null,
+      prepPending: x.status === 'pending' ? 1 : 0, prepPub: x.pub || '', ck: x.ck || [],
+      createdAt: x.ts || '', updatedAt: new Date().toISOString(), src: 'prep搬家',
+    }))
+    rep.moved = tasks.map(t => t.title); rep.cats = newCats.map(c => c.name)
+    if (!dry) {
+      if (newCats.length) await kvPut('sp_team_pm_data', [...data, ...newCats], 'prep任務搬家')
+      for (const t of tasks) await kvPut('sp_team_pm_task_' + t.id, t, 'prep任務搬家')
+      await announceChanged()
+    }
+    return res.status(200).json({ ok: true, dry, n: tasks.length, ...rep })
+  }
   // 任務中心代理口（/prep 掛主App TaskCenter 用；張良 2026-10-02 整併開工）：POST ?kvproxy=<OPS_BOARD_KEY>
   // body={op:'get'|'set'|'getPrefix'|'del', key, value, token}；只准團隊空間任務相關 key；寫入須 permWho(token,'task') 留痕
   if (req.method === 'POST' && req.query?.kvproxy) {
@@ -2216,7 +2252,7 @@ export default async function handler(req, res) {
         itI.pub = 'ok'
         try {
           const tkP = (process.env.LINE_CHANNEL_ACCESS_TOKEN || '').trim()
-          if (tkP) await fetch('https://api.line.me/v2/bot/message/push', { method: 'POST', headers: { 'content-type': 'application/json', Authorization: 'Bearer ' + tkP }, body: JSON.stringify({ to: 'Cf7940efc6517b0c084ad2ad496b45f30', messages: [{ type: 'text', text: `⚠️ 看板問題回報【${itI.st}】\n${itI.text || '（見附件）'}\n— ${itI.by}${(itI.media || []).length ? `・附 ${itI.media.length} 個檔案` : ''}\n處理完到 ground-pm.vercel.app/prep 按「已解決」` }] }) })
+          if (tkP) await fetch('https://api.line.me/v2/bot/message/push', { method: 'POST', headers: { 'content-type': 'application/json', Authorization: 'Bearer ' + tkP }, body: JSON.stringify({ to: 'Cf7940efc6517b0c084ad2ad496b45f30', messages: [{ type: 'text', text: `📢 問題發布【${itI.st}】${itI.text || '（見附件）'}\n發現：${itI.by}${(itI.media || []).length ? `・附件${itI.media.length}` : ''}\n能處理的人 → /prep 按「🙋 我來解決」` }] }) })
         } catch (_) {}
       } else if (bi.val === 'hold') { itI.pub = 'hold' }
       else if (bi.val === 'del') { dI.list = (dI.list || []).filter(x => x.id !== bi.id) }
@@ -2224,6 +2260,14 @@ export default async function handler(req, res) {
     } else if (bi.op === 'own') { // 指派/清除負責人（清除＝val 空字串）
       const nm = String(bi.val || '').trim().slice(0, 20)
       if (nm) { itI.claimBy = nm; itI.claimAt = itI.claimAt || Date.now(); itI.claimTs = itI.claimTs || new Date(Date.now() + 8 * 3600e3).toISOString().slice(5, 16).replace('T', ' ') }
+      if (nm) { // 指派→DD 私訊被指派者本人（張良 2026-10-02：回報群播沒鳥用，改通知該負責的人）
+        try {
+          const tkO = (process.env.LINE_CHANNEL_ACCESS_TOKEN || '').trim()
+          const rosterO = (await kvGet('sp_crew_kb_roster')) || {}
+          const po = (rosterO.people || []).find(p2 => p2.name === nm && p2.lineUserId)
+          if (tkO && po) { await fetch('https://api.line.me/v2/bot/message/push', { method: 'POST', headers: { 'content-type': 'application/json', Authorization: 'Bearer ' + tkO }, body: JSON.stringify({ to: po.lineUserId, messages: [{ type: 'text', text: `📌 ${whoI.name} 指派給你：【${itI.st || '任務'}】${itI.text || ''}\n完成後到 /prep 按「已解決」` }] }) }); const { logPush } = await import('./push.js'); await logPush(po.lineUserId, 1, '任務指派通知') }
+        } catch (_) {}
+      }
       else { delete itI.claimBy; delete itI.claimAt; delete itI.claimTs }
     } else if (bi.op === 'ckadd') { // 階段性 checklist：文字＋圖片（張良 2026-09-22）
       const v = bi.val || {}

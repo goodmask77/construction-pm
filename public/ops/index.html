@@ -625,7 +625,7 @@ async function repSend(st){
   if (d && d.ok) { alert('回報已送出，DD 已通知群裡 ✅'); sopLoad() } else alert((d&&d.error)||'送出失敗，再試一次')
 }
 async function sopResolve(id){
-  if (!confirm('標記這個問題已解決？（會送老闆審核）')) return
+  if (!confirm('標記已解決？（審核人按＝直接完成；夥伴按＝送審核，核准後才算完成）')) return
   const r = await fetch('/api/mail-sync?sopresolve=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ id, token: TK() }) })
   const d = await r.json().catch(()=>null)
   if (d && d.ok) { if (d.status === 'pending') alert('已送出，等老闆審核 ✅'); refreshView() } else alert((d&&d.error)||'失敗（要先跟 DD 綁定GD）')
