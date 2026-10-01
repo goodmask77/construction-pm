@@ -175,6 +175,7 @@ async function load(store, fresh){
   let d
   try { const r = await fetch('/api/mail-sync?opsboard=' + encodeURIComponent(K) + '&store=' + store + (fresh ? '&r=' + Date.now() : '')); d = await r.json() } catch(e){}
   if (d && d.prepAct) window._prepAct = d.prepAct
+  if (d && d.prepS86) window._prepS86 = d.prepS86
   if (!d || !d.ok) { if (!hadCache) app.innerHTML = '<div class="err">讀不到資料（金鑰錯誤或連線問題），請跟店長要新連結</div>'; return }
   try { localStorage.setItem(ck, JSON.stringify(d)) } catch(e){}
   if (curStore !== store) return // 使用者已切到別店，別把畫面蓋回來
@@ -190,7 +191,7 @@ function renderBoard(d, store){
     const grps = [...new Set(d.prep.map(p=>p.grp))]
     let tw = new Date().getDay() // 今天星期幾（1~5發光）
     if (tw === 0 || tw === 6) tw = 1 // 週六日（GD公休）打開＝在準備週一的量 → 發光週一（張良 2026-09-20 抓到週日沒東西亮）
-    h += `<section><h2>預估備料量 <span class="hint">份/日</span></h2>`
+    h += `<section><h2>預估備料量 <span class="hint">份/日</span><button class="mini" style="float:right" onclick="prepLogView()">📜 紀錄</button></h2>`
     h += `<div class="scroll"><table><thead><tr><th>項目</th><th class="todaycol">今日實備✏️</th><th>平均</th>${['一','二','三','四','五'].map((w,i)=>`<th${tw===i+1?' class="todaycol"':''}>週${w}${tw===i+1?' ★':''}</th>`).join('')}</tr></thead><tbody>`
     grps.forEach(g=>{
       h += `<tr class="catband"><td colspan="10">${g}</td></tr>`
@@ -214,7 +215,7 @@ function renderBoard(d, store){
   // 預做節奏表（張良 2026-09-21）：完整菜單＋品類分組＋隱藏設定；內容由 rhythmRender 畫（隱藏清單走即時的 sop 口）
   if (d.rhythm) {
     window._rhy = d.rhythm
-    h += `<section><h2>預做節奏表 <span style="float:right;white-space:nowrap"><button class="mini on" id="rb15" onclick="rSwitch(15)">15分</button><button class="mini" id="rb30" onclick="rSwitch(30)">30分</button><button class="mini" id="rbMng" onclick="rMng()">🙈 隱藏管理</button></span><br><span class="hint">${d.rhythm.days ? `近 ${d.rhythm.days} 個營業日平均・每格＝該時段平均賣幾份（·＝不到0.5份）——照表預做、尖峰前先備` : '⏳ 資料累積中（GD 從 2026-09-21 起、AB 從 2026-09-22 起含歷史回補）——顯示近 7 個營業日平均，跑幾天會越來越準'}</span></h2><div id="rhyBody"></div></section>`
+    h += `<section><h2>預做節奏表 <span style="float:right;white-space:nowrap"><button class="mini${rhyMode===15?' on':''}" id="rb15" onclick="rSwitch(15)">15分</button><button class="mini${rhyMode===30?' on':''}" id="rb30" onclick="rSwitch(30)">30分</button><button class="mini" id="rbMng" onclick="rMng()">🙈 隱藏管理</button></span><br><span class="hint">${d.rhythm.days ? `近 ${d.rhythm.days} 個營業日平均・每格＝該時段平均賣幾份（·＝不到0.5份）——照表預做、尖峰前先備` : '⏳ 資料累積中（GD 從 2026-09-21 起、AB 從 2026-09-22 起含歷史回補）——顯示近 7 個營業日平均，跑幾天會越來越準'}</span></h2><div id="rhyBody"></div></section>`
   }
   // 🚫 AB 停售動態（張良 2026-09-30：頁面表格隨時查——現在＋歷史；資料每30分自動掃）
   if (d.soldout) {
@@ -286,11 +287,73 @@ async function actSave(item, val){
     const j = await r.json()
     if(!j.ok){ alert(j.error || '儲存失敗'); return }
     window._prepAct = j.act || {}
+    window._prepS86 = j.s86 || {}
   }catch(e){ alert('儲存失敗，再試一次') }
 }
+// v4.13.0（張良）：追加/耗損/86——每筆記誰+時間(+原因)
+async function actOp(body){
+  const r = await fetch('/api/mail-sync?prepact=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ ...body, token: TK() }) })
+  const j = await r.json().catch(()=>null)
+  if (j && j.ok) { window._prepAct = j.act || {}; window._prepS86 = j.s86 || {}; if (curStore==='ground'||curStore==='abeach') load(lastStore, true) }
+  else alert((j&&j.error)||'失敗')
+}
+function prepAsk(title, withQty, withReason, cb, ph){
+  const ov = document.createElement('div'); ov.id='paOv'
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:70;display:flex;align-items:center;justify-content:center;padding:16px'
+  ov.innerHTML = `<div style="background:#222B38;border:1px solid #3B4654;border-radius:14px;width:min(340px,92vw);padding:16px" onclick="event.stopPropagation()">
+    <div style="font-weight:900;margin-bottom:10px">${title}</div>
+    ${withQty?`<input id="paQ" inputmode="numeric" placeholder="數量" style="width:100%;border:1px solid var(--line);border-radius:8px;padding:9px;font-size:16px;margin-bottom:8px">`:''}
+    ${withReason?`<input id="paR" placeholder="${ph||'原因（例：做壞/掉了/賣完）'}" style="width:100%;border:1px solid var(--line);border-radius:8px;padding:9px;font-size:15px;margin-bottom:8px">`:''}
+    <div style="display:flex;gap:8px;justify-content:flex-end"><button class="mini" style="padding:8px 12px" onclick="document.getElementById('paOv').remove()">取消</button><button class="mini on" style="padding:8px 16px" onclick="paGo()">確定</button></div></div>`
+  ov.onclick = () => ov.remove()
+  window._paCb = cb
+  document.body.appendChild(ov)
+  setTimeout(()=>{ const i2 = document.getElementById('paQ')||document.getElementById('paR'); if (i2) i2.focus() }, 60)
+}
+function paGo(){
+  const q = Number(((document.getElementById('paQ')||{}).value||'').trim())
+  const r = ((document.getElementById('paR')||{}).value||'').trim()
+  const cb = window._paCb; window._paCb = null
+  const o = document.getElementById('paOv'); if (o) o.remove()
+  if (cb) cb(q, r)
+}
+function actAdd(item){ prepAsk(`＋ 追加備料：${item}`, 1, 0, (q)=>{ if (!(q>0)) { alert('數量要大於 0'); return } actOp({ op:'add', item, qty: q }) }) }
+function actLoss(item){ prepAsk(`耗損記錄：${item}`, 1, 1, (q, r)=>{ if (!(q>0)) { alert('數量要大於 0'); return } actOp({ op:'loss', item, qty: q, reason: r }) }) }
+function act86(item, on){
+  if (on) { if (confirm(`「${item}」恢復販售？`)) actOp({ op:'86', item, on: 0 }) }
+  else prepAsk(`86 停售：${item}`, 0, 1, (q, r)=>{ actOp({ op:'86', item, on: 1, reason: r }) })
+}
+async function prepLogView(ym){
+  window._plYm = ym || window._plYm || todayTpe().slice(0,7)
+  let d2 = null
+  try { const r = await fetch('/api/mail-sync?preplog=' + encodeURIComponent(K) + '&ym=' + window._plYm + '&r=' + Date.now()); d2 = await r.json() } catch(e){}
+  if (!d2 || !d2.ok) { alert('讀不到紀錄'); return }
+  const old = document.getElementById('plOv'); if (old) old.remove()
+  const tpe = ts => { try { return new Date(ts).toLocaleTimeString('en-GB',{hour12:false,timeZone:'Asia/Taipei',hour:'2-digit',minute:'2-digit'}) } catch(e){ return '' } }
+  const dts = Object.keys(d2.days||{}).sort().reverse()
+  const body = dts.length ? dts.map(dt=>{
+    const items = Object.entries(d2.days[dt])
+    return `<div style="font-weight:900;color:var(--pdark);margin:12px 0 4px">${dt.slice(5)}（${['日','一','二','三','四','五','六'][new Date(dt).getDay()]}）</div>` + items.map(([nm,v])=>{
+      const lines = (v.log||[]).map(l2=>`<div style="display:flex;gap:8px;font-size:13.5px;padding:2px 0"><span class="hint" style="min-width:40px">${tpe(l2.ts)}</span><span style="min-width:52px;font-weight:800;color:${(l2.t==='耗損'||l2.t==='86停售')?'var(--red)':l2.t==='回賣'?'var(--green)':'var(--text)'}">${l2.t}</span><span>${l2.q!=null?l2.q+' 份':''}${l2.r?'・'+l2.r:''}</span><span class="hint" style="margin-left:auto">${l2.by||''}</span></div>`).join('')
+      const lossSum = (v.loss||[]).reduce((t2,x2)=>t2+(x2.q||0),0)
+      return `<div style="background:var(--soft);border:1px solid var(--line);border-radius:10px;padding:7px 10px;margin-bottom:6px"><div style="font-weight:800">${nm} <span class="hint">實備 ${v.q!=null?v.q:'—'}${lossSum?`・耗損 ${lossSum}`:''}${v.s86&&v.s86.on?'・<span style="color:var(--red);font-weight:900">86中</span>':''}</span></div>${lines}</div>`
+    }).join('')
+  }).join('') : '<div class="mut">這個月還沒有紀錄</div>'
+  const ov = document.createElement('div'); ov.id='plOv'
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:60;display:flex;align-items:center;justify-content:center;padding:14px'
+  ov.innerHTML = `<div style="background:#222B38;border:1px solid #3B4654;border-radius:14px;width:min(640px,94vw);max-height:88vh;overflow:auto;padding:16px" onclick="event.stopPropagation()">
+    <div style="display:flex;gap:8px;align-items:center;margin-bottom:4px"><b style="font-size:16px">📜 備料紀錄</b>
+      <button class="mini" onclick="prepLogView(prevYm(window._plYm))">‹</button><b>${window._plYm}</b><button class="mini" onclick="prepLogView(nextYm(window._plYm))">›</button>
+      <button class="mini" style="margin-left:auto;padding:7px 12px" onclick="document.getElementById('plOv').remove()">關閉</button></div>
+    <div class="hint" style="margin-bottom:6px">每一筆填數/追加/耗損/86 都記誰＋時間＋原因。</div>${body}</div>`
+  ov.onclick = () => ov.remove()
+  document.body.appendChild(ov)
+}
+const prevYm = ym => { const t2 = new Date(ym + '-15'); t2.setMonth(t2.getMonth()-1); return t2.toISOString().slice(0,7) }
+const nextYm = ym => { const t2 = new Date(ym + '-15'); t2.setMonth(t2.getMonth()+1); return t2.toISOString().slice(0,7) }
 // ── 預做節奏表渲染（完整菜單＋品類分組＋隱藏；隱藏清單在 sopData.prepHide，sopLoad 後會再畫一次）──
-let rhyMode = 15, rhyMngOn = false
-function rSwitch(m){ rhyMode = m; document.getElementById('rb15').className = 'mini' + (m===15?' on':''); document.getElementById('rb30').className = 'mini' + (m===30?' on':''); rhythmRender() }
+let rhyMode = +(localStorage.getItem('rhyMode')||30), rhyMngOn = false // 預設30分（張良 2026-10-02）
+function rSwitch(m){ rhyMode = m; try{localStorage.setItem('rhyMode',m)}catch(_){} document.getElementById('rb15').className = 'mini' + (m===15?' on':''); document.getElementById('rb30').className = 'mini' + (m===30?' on':''); rhythmRender() }
 function rMng(){ rhyMngOn = !rhyMngOn; const b = document.getElementById('rbMng'); if (b) b.className = 'mini' + (rhyMngOn?' on':''); rhythmRender() }
 function rhythmRender(){
   const R = window._rhy, el = document.getElementById('rhyBody'); if (!R || !el) return
@@ -1482,7 +1545,7 @@ function shiftRender(){
   h += `<div style="display:flex;gap:8px;align-items:center;margin:2px 0 6px;flex-wrap:wrap">
     <span style="font-weight:900;white-space:nowrap">一週班表</span>${meN?`<button class="mini" style="padding:3px 10px" onclick="shiftPosEdit()" title="崗位/時段/人員排序・顏色">⚙️ 設定</button>`:''}
     <button class="mini" onclick="shiftWkNav(-1)">‹</button><button class="mini" style="font-weight:800" onclick="shiftWkToday()">今天</button><button class="mini" onclick="shiftWkNav(1)">›</button><span class="hint" style="font-weight:800;white-space:nowrap">${wkDays[0].slice(5)} ~ ${wkDays[6].slice(5)}</span>
-    <button class="mini" style="padding:3px 10px" onclick="shiftSkill()">📊 熟練度</button><button class="mini" style="padding:3px 10px" onclick="shiftHist()">📝 紀錄</button>${meN?`<button class="mini" style="padding:3px 10px" onclick="copyWeekNext()">⧉ 本週→下週</button><button class="mini" style="padding:3px 10px;color:var(--red)" onclick="clearWeek()">🗑 清空本週</button>`:''}
+    <button class="mini" style="padding:3px 10px" onclick="shiftSkill()">📊 熟練度</button><button class="mini" style="padding:3px 10px" onclick="shiftHist()">📝 紀錄</button>${meN?`<button class="mini" style="padding:3px 10px" onclick="tplSave()">💾 存版本</button><button class="mini" style="padding:3px 10px" onclick="tplView()">📂 版本</button>`:``}${meN?`<button class="mini" style="padding:3px 10px" onclick="copyWeekNext()">⧉ 本週→下週</button><button class="mini" style="padding:3px 10px;color:var(--red)" onclick="clearWeek()">🗑 清空本週</button>${(()=>{ try { const sv = JSON.parse(localStorage.getItem('shiftLastClear')||'null'); return (sv && Date.now()-sv.ts < 48*3600e3) ? `<button class="mini" style="padding:3px 10px" onclick="undoClear()">↩️ 復原清空</button>` : '' } catch(_) { return '' } })()}`:''}
   </div>`
   // v4.3.5（張良 2026-10-02）：①欄寬固定+硬格線=日期與格子切齊 ②崗位三組配色(櫃檯/飲料/中控・漢堡/煎炸麵・披薩/三明治) ③同人同天兼多崗位→班卡同色標記
   const posGrp = ps => /櫃檯|飲料|中控/.test(ps) ? 0 : /漢堡|煎炸|炸麵/.test(ps) ? 1 : /披薩|三明治/.test(ps) ? 2 : 3
@@ -1709,6 +1772,7 @@ function clearWeek(){
   if (!ents.length) { alert('本週沒班可清'); return }
   if (!confirm(`把這一週（${days[0].slice(5)}~${days[6].slice(5)}）的 ${ents.length} 筆班全部刪除？打卡紀錄不會動。`)) return
   window._lastClear = ents.map(x=>({ ...x })) // v4.12.0 可復原
+  try { localStorage.setItem('shiftLastClear', JSON.stringify({ ts: Date.now(), list: window._lastClear })) } catch(_) {} // 按過「好」也能復原（48h）
   ents.forEach(x=>{
     d.sched = d.sched.filter(y=>y!==x)
     if (String(x.id).startsWith('tmp')) { const t2 = window._shiftTmpQ.find(q=>q.id===x.id); if (t2) t2._del = 1 }
@@ -1718,14 +1782,17 @@ function clearWeek(){
   pasteOff(1)
   const b9 = document.createElement('div'); b9.id = 'pasteBar'
   b9.style.cssText = 'position:fixed;bottom:18px;left:50%;transform:translateX(-50%);z-index:60;background:#10182B;color:#fff;border-radius:12px;padding:10px 14px;display:flex;gap:10px;align-items:center;font-size:14px;box-shadow:0 4px 14px rgba(0,0,0,.3)'
-  b9.innerHTML = `<span>🗑 已清空 ${ents.length} 筆</span><button class="mini" style="padding:6px 12px" onclick="undoClear()">↩️ 復原</button><button class="mini" style="padding:6px 12px" onclick="pasteOff()">好</button>`
+  b9.innerHTML = `<span style="white-space:nowrap">🗑 已清空 ${ents.length} 筆</span><button class="mini" style="padding:6px 12px" onclick="undoClear()">↩️ 復原</button><button class="mini" style="padding:6px 12px" onclick="pasteOff()">好</button>`
   document.body.appendChild(b9)
 }
-function undoClear(){ // 清空本週復原（張良 2026-10-02「不小心清空」）：原班原樣補回（新id）
-  const L = window._lastClear || []
-  if (!L.length) { pasteOff(); return }
+function undoClear(){ // 清空本週復原：原班原樣補回（新id）；按過「好」也能從 localStorage 撈（48h）
+  let L = window._lastClear || []
+  if (!L.length) { try { const sv = JSON.parse(localStorage.getItem('shiftLastClear')||'null'); if (sv && Date.now()-sv.ts < 48*3600e3) L = sv.list||[] } catch(_) {} }
+  if (!L.length) { alert('沒有可復原的清空紀錄'); pasteOff(); return }
+  if (!confirm(`把上次清空的 ${L.length} 筆班補回來？`)) return
   L.forEach(x=>{ const tmp = { name: x.name, date: x.date, start: x.start, end: x.end, break: x.break||0, pos: x.pos||'', id: 'tmp' + Math.random().toString(36).slice(2) }; if (x.tr) tmp.tr = x.tr; queueSaveTmp(tmp) })
   window._lastClear = []
+  try { localStorage.removeItem('shiftLastClear') } catch(_) {}
   pasteOff(); shiftRender()
 }
 async function copyWeekNext(){
@@ -1751,14 +1818,14 @@ async function copyWeekNext(){
   pasteOff(1)
   const b = document.createElement('div'); b.id = 'pasteBar'
   b.style.cssText = 'position:fixed;bottom:18px;left:50%;transform:translateX(-50%);z-index:60;background:#10182B;color:#fff;border-radius:12px;padding:10px 14px;display:flex;gap:10px;align-items:center;font-size:14px;box-shadow:0 4px 14px rgba(0,0,0,.3)'
-  b.innerHTML = `<span>✓ 已複製 ${n} 筆到下週</span><button class="mini" style="padding:6px 12px" onclick="undoLastCopy()">↩️ 復原</button><button class="mini" style="padding:6px 12px" onclick="pasteOff()">好</button>`
+  b.innerHTML = `<span style="white-space:nowrap">✓ 已複製 ${n} 筆到下週</span><button class="mini" style="padding:6px 12px" onclick="undoLastCopy()">↩️ 復原</button><button class="mini" style="padding:6px 12px" onclick="pasteOff()">好</button>`
   document.body.appendChild(b)
 }
 function pasteBar(msg){
   pasteOff(1)
   const b = document.createElement('div'); b.id = 'pasteBar'
   b.style.cssText = 'position:fixed;bottom:18px;left:50%;transform:translateX(-50%);z-index:60;background:#10182B;color:#fff;border-radius:12px;padding:10px 14px;display:flex;gap:10px;align-items:center;font-size:14px;box-shadow:0 4px 14px rgba(0,0,0,.3);max-width:92vw'
-  b.innerHTML = `<span>⧉ ${msg}</span><button class="mini" style="padding:6px 14px" onclick="pasteOff()">完成</button>`
+  b.innerHTML = `<span style="white-space:nowrap;max-width:68vw;overflow:hidden;text-overflow:ellipsis">⧉ ${msg}</span><button class="mini" style="padding:6px 14px" onclick="pasteOff()">完成</button>`
   document.body.appendChild(b)
 }
 function pasteOff(keep){ const b = document.getElementById('pasteBar'); if (b) b.remove(); if (!keep && window._shiftCopy) window._shiftCopy.on = 0 }
@@ -1785,6 +1852,49 @@ function shiftSkill(){
   ov.onclick = () => ov.remove()
   document.body.appendChild(ov)
 }
+// 💾 班表版本模組（v4.13.0 張良：排好存成版本可命名,自動記姓名時間,之後套用到任何一週）
+function tplSave(){
+  const d = window._shiftD
+  const days = [...Array(7)].map((_,i)=>{ const t2 = new Date(window._shiftWk); t2.setDate(t2.getDate()+i); return t2.toISOString().slice(0,10) })
+  const ents = d.sched.filter(x=>days.includes(x.date))
+  if (!ents.length) { alert('本週沒班可存'); return }
+  prepAsk(`💾 儲存班表版本（本週 ${ents.length} 筆）`, 0, 1, (q, r)=>{
+    if (!r) { alert('要取個名字'); return }
+    const items = ents.map(x=>({ name: x.name, wd: Math.round((new Date(x.date) - new Date(window._shiftWk)) / 86400e3), start: x.start, end: x.end, break: x.break||0, pos: x.pos||'', tr: x.tr||'' }))
+    shQueue(async ()=>{ const d2 = await shPost({ op:'tplsave', name: r, items, token: TK() }); if (!(d2&&d2.ok)) alert((d2&&d2.error)||'儲存失敗') })
+  }, '版本名稱（例：標準週班／暑期班）')
+}
+function tplView(){
+  const d = window._shiftD, T = (d.tpls||[]).slice().reverse()
+  const tpe = ts => { try { const t2 = new Date(ts); return t2.toLocaleDateString('sv-SE',{timeZone:'Asia/Taipei'}).slice(5) + ' ' + t2.toLocaleTimeString('en-GB',{hour12:false,timeZone:'Asia/Taipei',hour:'2-digit',minute:'2-digit'}) } catch(e){ return '' } }
+  const ov = document.createElement('div'); ov.id='tpOv'
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:60;display:flex;align-items:center;justify-content:center;padding:14px'
+  ov.innerHTML = `<div style="background:#222B38;border:1px solid #3B4654;border-radius:14px;width:min(520px,94vw);max-height:88vh;overflow:auto;padding:16px" onclick="event.stopPropagation()">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><b style="font-size:16px">📂 班表版本</b><button class="mini" style="padding:7px 12px" onclick="document.getElementById('tpOv').remove()">關閉</button></div>
+    <div class="hint" style="margin-bottom:8px">套用＝鋪到「目前看的這一週」（照週一~週日對應；已有的班自動跳過）。</div>
+    ${T.length ? T.map(t2=>`<div style="display:flex;gap:8px;align-items:center;background:var(--soft);border:1px solid var(--line);border-radius:10px;padding:8px 10px;margin-bottom:6px"><div style="flex:1;min-width:0"><b>${t2.name}</b> <span class="hint">${t2.items.length} 筆</span><div class="hint" style="font-size:12px">${t2.by}・${tpe(t2.ts)}</div></div><button class="mini on" style="padding:7px 12px" onclick="tplApply('${t2.id}')">套用</button><button class="mini" style="padding:7px 10px;color:var(--red)" onclick="if(confirm('刪除版本「${t2.name}」？'))tplDel('${t2.id}')">🗑</button></div>`).join('') : '<div class="mut">還沒有存過版本——排好一週按「💾 存版本」</div>'}</div>`
+  ov.onclick = () => ov.remove()
+  document.body.appendChild(ov)
+}
+function tplApply(id){
+  const d = window._shiftD, tp = (d.tpls||[]).find(x=>x.id===id); if (!tp) return
+  const days = [...Array(7)].map((_,i)=>{ const t2 = new Date(window._shiftWk); t2.setDate(t2.getDate()+i); return t2.toISOString().slice(0,10) })
+  if (!confirm(`把「${tp.name}」套用到 ${days[0].slice(5)}~${days[6].slice(5)}？（已有的班會跳過）`)) return
+  const exist = new Set(d.sched.map(x=>[x.name, x.date, x.pos||''].join('|')))
+  let n = 0
+  tp.items.forEach(x=>{
+    const dt = days[Math.max(0, Math.min(6, x.wd||0))]
+    if (exist.has([x.name, dt, x.pos||''].join('|'))) return
+    exist.add([x.name, dt, x.pos||''].join('|'))
+    const tmp = { name: x.name, date: dt, start: x.start, end: x.end, break: x.break||0, pos: x.pos||'', id: 'tmp' + Math.random().toString(36).slice(2) }
+    if (x.tr) tmp.tr = x.tr
+    queueSaveTmp(tmp); n++
+  })
+  const o = document.getElementById('tpOv'); if (o) o.remove()
+  shiftRender()
+  alert(n ? `已套用 ${n} 筆` : '這週已經都有了，沒新增')
+}
+function tplDel(id){ shQueue(async ()=>{ const d2 = await shPost({ op:'tpldel', id, token: TK() }); if (!(d2&&d2.ok)) alert('刪除失敗') }) }
 // 📝 班表修改紀錄（v4.12.0 張良：誰在什麼時間動了什麼）
 function shiftHist(){
   const d = window._shiftD, H = d.hist || []

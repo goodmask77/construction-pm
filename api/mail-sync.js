@@ -1790,7 +1790,7 @@ export default async function handler(req, res) {
       const k1 = x.name + '|' + x.pos; c1[k1] = (c1[k1] || 0) + 1; seqMap[x.id] = c1[k1]
       if (x.tr) { const k2 = x.tr + '|' + x.pos; c2[k2] = (c2[k2] || 0) + 1; trSeqMap[x.id] = c2[k2] }
     }
-    return res.status(200).json({ ok: true, ym, sched: schedL.map(x => ({ ...x, seq: seqMap[x.id], trSeq: trSeqMap[x.id] })), punches: pchs.map(p => ({ name: p.name, ts: p.ts, dir: p.dir, src: p.src })), names: namesU, namesAll, posList, slots: (sd || {}).slots || null, colors: colMap, posStats, hist: ((sd || {}).hist || []).slice(-200).reverse(), lockEdit: (sd || {}).lockEdit ? 1 : 0, staff, me: meS ? { name: meS.name, role: meS.role, approver: aprS.includes(meS.name) } : null })
+    return res.status(200).json({ ok: true, ym, sched: schedL.map(x => ({ ...x, seq: seqMap[x.id], trSeq: trSeqMap[x.id] })), punches: pchs.map(p => ({ name: p.name, ts: p.ts, dir: p.dir, src: p.src })), names: namesU, namesAll, posList, slots: (sd || {}).slots || null, colors: colMap, posStats, hist: ((sd || {}).hist || []).slice(-200).reverse(), lockEdit: (sd || {}).lockEdit ? 1 : 0, tpls: (sd || {}).tpls || [], staff, me: meS ? { name: meS.name, role: meS.role, approver: aprS.includes(meS.name) } : null })
   }
   // 人員色號管理口：POST ?shiftcolor=管理金鑰 {map:{名字:色號}} 合併寫入（固定/校正專屬色用）
   if (req.method === 'POST' && req.query?.shiftcolor) {
@@ -1892,6 +1892,16 @@ export default async function handler(req, res) {
       if (Array.isArray(sb2.off)) doc.offStaff = nm20(sb2.off)
       if ('lock' in sb2 && (await isMgr())) { const nv = sb2.lock ? 1 : 0; if (nv !== (doc.lockEdit ? 1 : 0)) pushH(nv ? '🔒 鎖定班表（只有審核人/主管能編輯）' : '🔓 解除班表鎖定') ; doc.lockEdit = nv }
       pushH('改班表設定')
+    } else if (sb2.op === 'tplsave') { // 💾 班表版本（v4.13.0）：命名+自動記姓名時間
+      const nmT = String(sb2.name || '').trim().slice(0, 30)
+      if (!nmT) return res.status(400).json({ ok: false, error: '版本要取名字' })
+      const itemsT = (Array.isArray(sb2.items) ? sb2.items : []).slice(0, 200).map(x => { const o2 = { name: String(x.name || '').trim().slice(0, 20), wd: Math.max(0, Math.min(6, Number(x.wd) || 0)), start: String(x.start || '11:00').slice(0, 5), end: String(x.end || '20:00').slice(0, 5), break: Math.max(0, Math.min(240, Number(x.break) || 0)), pos: String(x.pos || '').trim().slice(0, 20) }; const trT = String(x.tr || '').trim().slice(0, 20); if (trT) o2.tr = trT; return o2 }).filter(x => x.name)
+      doc.tpls = [...(doc.tpls || []), { id: 'tp' + Date.now().toString(36), name: nmT, by: whoS.name, ts: new Date().toISOString(), items: itemsT }].slice(-20)
+      pushH('💾 存版本「' + nmT + '」(' + itemsT.length + '筆)')
+    } else if (sb2.op === 'tpldel') {
+      const tpD = (doc.tpls || []).find(x => x.id === sb2.id)
+      doc.tpls = (doc.tpls || []).filter(x => x.id !== sb2.id)
+      if (tpD) pushH('刪版本「' + tpD.name + '」')
     } else return res.status(400).json({ ok: false })
     await kvPut('sp_finance_pm_shift_g', doc, '班表' + sb2.op + '(' + whoS.name + ')')
     return res.status(200).json({ ok: true })
