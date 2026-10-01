@@ -1763,7 +1763,9 @@ export default async function handler(req, res) {
     // v4.5.2 人員排序：staffOrd 名單優先、沒列到的排後面（staff=顏色/chips、names=快選按鈕 吃同一順序）
     const ordA = (sd || {}).staffOrd || []
     const oIdx = n => { const i = ordA.indexOf(n); return i < 0 ? 999 : i }
-    staff.sort((a, b) => oIdx(a.n) - oIdx(b.n))
+    const offSet = new Set((sd || {}).offStaff || []) // ✕非常態：沉底+踢出快選
+    staff.forEach(s3 => { if (offSet.has(s3.n)) s3.off = 1 })
+    staff.sort((a, b) => ((a.off ? 1 : 0) - (b.off ? 1 : 0)) || (oIdx(a.n) - oIdx(b.n)))
     namesU.sort((a, b) => oIdx(a) - oIdx(b))
     // v4.5.3（張良「顏色一直在變」）：配色永久固定——每人第一次出現配一個沒人用的色號存檔，之後不隨排序/名單進出變動
     const colMap = ((sd || {}).colors) || {}
@@ -1771,7 +1773,7 @@ export default async function handler(req, res) {
     const usedC = new Set(Object.values(colMap))
     for (const s3 of staff) { if (colMap[s3.n] == null) { let ci = 0; while (usedC.has(ci) && ci < 16) ci++; colMap[s3.n] = ci % 16; usedC.add(colMap[s3.n]); colDirty = true } }
     if (colDirty && sd) { sd.colors = colMap; await kvPut('sp_finance_pm_shift_g', sd, '人員配色固定') }
-    return res.status(200).json({ ok: true, ym, sched: schedL, punches: pchs.map(p => ({ name: p.name, ts: p.ts, dir: p.dir, src: p.src })), names: namesU, namesAll, posList, slots: (sd || {}).slots || null, colors: colMap, staff, me: meS ? { name: meS.name, role: meS.role, approver: aprS.includes(meS.name) } : null })
+    return res.status(200).json({ ok: true, ym, sched: schedL, punches: pchs.map(p => ({ name: p.name, ts: p.ts, dir: p.dir, src: p.src })), names: namesU.filter(n => !offSet.has(n)), namesAll, posList, slots: (sd || {}).slots || null, colors: colMap, staff, me: meS ? { name: meS.name, role: meS.role, approver: aprS.includes(meS.name) } : null })
   }
   // 人員色號管理口：POST ?shiftcolor=管理金鑰 {map:{名字:色號}} 合併寫入（固定/校正專屬色用）
   if (req.method === 'POST' && req.query?.shiftcolor) {
@@ -1853,6 +1855,8 @@ export default async function handler(req, res) {
     } else if (sb2.op === 'colors') { // 🎨人員自選色（張良 2026-10-02「讓我自己選擇編輯」）
       doc.colors = { ...(doc.colors || {}) }
       for (const [nm, ci] of Object.entries(sb2.map || {})) doc.colors[String(nm).slice(0, 20)] = Math.max(0, Math.min(15, Number(ci) || 0))
+    } else if (sb2.op === 'off') { // ✕非常態排班人員（張良 2026-10-02）：沉底+不進快選選單+不列每日未排
+      doc.offStaff = (Array.isArray(sb2.list) ? sb2.list : []).map(s3 => String(s3).trim().slice(0, 20)).filter(Boolean).slice(0, 50)
     } else return res.status(400).json({ ok: false })
     await kvPut('sp_finance_pm_shift_g', doc, '班表' + sb2.op + '(' + whoS.name + ')')
     return res.status(200).json({ ok: true })

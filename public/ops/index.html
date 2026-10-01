@@ -1463,7 +1463,8 @@ function shiftRender(){
   wkEnts.forEach(x=>{ const p4=x.pos||'未分崗'; if(!posList.includes(p4)) posList.push(p4) })
   h += `<div style="display:flex;gap:8px;align-items:center;margin:2px 0 6px">
     <span style="font-weight:900">一週班表</span>${meN?`<button class="mini" style="padding:3px 10px" onclick="shiftPosEdit()">⚙️ 設定（崗位/時段/人員排序・顏色）</button>`:''}
-    <button class="mini" onclick="shiftWkNav(-1)">‹</button><span class="hint" style="font-weight:800">${wkDays[0].slice(5)} ~ ${wkDays[6].slice(5)}</span><button class="mini" onclick="shiftWkNav(1)">›</button>
+    <button class="mini" onclick="shiftWkNav(-1)">‹</button><button class="mini" style="font-weight:800" onclick="shiftWkToday()">今天</button><button class="mini" onclick="shiftWkNav(1)">›</button><span class="hint" style="font-weight:800">${wkDays[0].slice(5)} ~ ${wkDays[6].slice(5)}</span>
+    ${meN?`<button class="mini" style="padding:3px 10px" onclick="copyWeekNext()">⧉ 本週→下週</button>`:''}
   </div>`
   // v4.3.5（張良 2026-10-02）：①欄寬固定+硬格線=日期與格子切齊 ②崗位三組配色(櫃檯/飲料/中控・漢堡/煎炸麵・披薩/三明治) ③同人同天兼多崗位→班卡同色標記
   const posGrp = ps => /櫃檯|飲料|中控/.test(ps) ? 0 : /漢堡|煎炸|炸麵/.test(ps) ? 1 : /披薩|三明治/.test(ps) ? 2 : 3
@@ -1477,13 +1478,13 @@ function shiftRender(){
   const BD = 'border:1px solid #D6DEE8;'
   h += `<div class="scroll" style="margin-bottom:12px"><table style="table-layout:fixed;width:100%;min-width:760px;border-collapse:collapse">
   <colgroup><col style="width:88px">${wkDays.map(()=>'<col>').join('')}</colgroup>
-  <thead><tr><th style="${BD}text-align:left;position:sticky;left:0;background:#F1F6F9;z-index:2">崗位</th>${wkDays.map((dt,i)=>`<th onclick="shiftDay('${dt}')" title="點我看當日時段細表" style="${BD}text-align:center;cursor:pointer;${dt===today?'color:var(--primary);background:#E5F3FA':'background:#F1F6F9'}">${dt.slice(5)}<br>（${wdN[i]}）</th>`).join('')}</tr></thead><tbody>`
+  <thead><tr><th style="${BD}text-align:left;position:sticky;left:0;background:#F1F6F9;z-index:2">崗位</th>${wkDays.map((dt,i)=>`<th onclick="dayClick('${dt}')" title="點我看當日時段細表" style="${BD}text-align:center;cursor:pointer;${dt===today?'color:var(--primary);background:#E5F3FA':'background:#F1F6F9'}">${dt.slice(5)}<br>（${wdN[i]}）</th>`).join('')}</tr></thead><tbody>`
   if (!posList.length) h += `<tr><td colspan="8" class="mut" style="${BD}text-align:center">先按上面「⚙️ 崗位」建崗位清單，左側就會列出、點格子直接排人</td></tr>`
   posList.forEach(ps=>{
     const g = GC[posGrp(ps)]
     h += `<tr><td style="${BD}text-align:left;font-weight:800;color:${g.ink};position:sticky;left:0;background:${g.bg};z-index:1">${ps}</td>` + wkDays.map(dt=>{
       const es = wkEnts.filter(x=>(x.pos||'未分崗')===ps && x.date===dt)
-      const cellOps = meN ? ` onclick="shiftQuick('${ps}','${dt}')" ondragover="event.preventDefault();this.style.outline='2px solid var(--primary)'" ondragleave="this.style.outline=''" ondrop="shiftDrop(event,'${ps}','${dt}')"` : ''
+      const cellOps = meN ? ` onclick="cellClick('${ps}','${dt}')" ondragover="event.preventDefault();this.style.outline='2px solid var(--primary)'" ondragleave="this.style.outline=''" ondrop="shiftDrop(event,'${ps}','${dt}')"` : ''
       const ents = es.map(e=>{
         const pi = pcIdx(e.name), ti = e.tr ? pcIdx(e.tr) : -1
         // v4.4.9（張良）：帶訓卡底色切一半=左帶訓者色/右被帶者色；卡上不顯示時間（點卡可看改）
@@ -1493,9 +1494,14 @@ function shiftRender(){
       return `<td${cellOps} style="${BD}${dt===today?'background:#F0F8FD;':''}text-align:left;${meN?'cursor:pointer;':''}vertical-align:top;overflow:hidden">${ents || (meN?'<span class="mut">＋</span>':'<span class="mut">—</span>')}</td>`
     }).join('') + `</tr>`
   })
-  const wkPpl = [...new Set(wkEnts.map(x=>x.name))]
-  h += `</tbody></table></div>
-  ${wkPpl.length?`<div class="hint" style="margin:-6px 0 10px">本週人員：${wkPpl.map(n=>`<span style="border:1.5px solid ${PB[pcIdx(n)]};background:${PG[pcIdx(n)]};color:${PB[pcIdx(n)]};border-radius:6px;padding:0 6px;font-weight:800">${n}</span>`).join(' ')}（一人一色，跨崗位同色）</div>`:''}`
+  // v4.6.0（張良）：每日「未排」列——常態人員沒排到班的留在該天下方，排了就消失（取代本週人員圖例）
+  const regStaff = (d.staff||[]).filter(s2=>!s2.off)
+  h += `<tr><td style="${BD}text-align:left;font-weight:800;color:var(--hint,#8A93A6);position:sticky;left:0;background:#F7F8FA;z-index:1">未排</td>` + wkDays.map(dt=>{
+    const onDay = new Set(wkEnts.filter(x=>x.date===dt).map(x=>x.name))
+    const rest = regStaff.filter(s2=>!onDay.has(s2.n))
+    return `<td style="${BD}vertical-align:top;text-align:left;background:#FAFBFC">${rest.map(s2=>`<span style="display:inline-block;border:1.5px solid ${PB[pcIdx(s2.n)]};background:${PG[pcIdx(s2.n)]};color:${PB[pcIdx(s2.n)]};border-radius:6px;padding:0 5px;margin:1px;font-size:12px;font-weight:800">${s2.n}</span>`).join('')||'<span class="hint" style="font-size:12px">全員已排 ✓</span>'}</td>`
+  }).join('') + `</tr>`
+  h += `</tbody></table></div>`
   const pn = Object.keys(per).sort()
   if (pn.length){
     h += `<div class="scroll"><table><thead><tr><th style="text-align:left">夥伴</th><th>總工時</th><th>正常</th><th>加班×1.34</th><th>加班×1.67</th><th style="text-align:left">⚠️ 勞基法檢查</th></tr></thead><tbody>`
@@ -1598,6 +1604,85 @@ function shQueue(fn){
   window._shQ = window._shQ.then(fn).catch(()=>{}).then(()=>{ window._shQn--; if (window._shQn === 0) shiftLoad() })
 }
 const shPost = body => fetch('/api/mail-sync?shiftset=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify(body) }).then(r=>r.json()).catch(()=>null)
+// ── ⧉ 複製功能（張良 2026-10-02：複製一格/一天/一週）──
+function queueSaveTmp(tmp){ // 樂觀卡入列＋排隊寫入（成功換正式id）
+  window._shiftTmpQ.push(tmp); window._shiftD.sched.push(tmp)
+  shQueue(async ()=>{
+    if (tmp._del) { window._shiftTmpQ = window._shiftTmpQ.filter(x=>x!==tmp); return }
+    const send = { ...tmp }; delete send.id; delete send._del
+    const d2 = await shPost({ op:'save', item: send, token: TK() })
+    window._shiftTmpQ = window._shiftTmpQ.filter(x=>x!==tmp)
+    if (d2 && d2.ok) { if (d2.id) tmp.id = d2.id }
+    else { const dd = window._shiftD; dd.sched = dd.sched.filter(x=>x!==tmp); shiftRender(); alert('寫入失敗：'+tmp.name) }
+  })
+}
+function cellClick(pos, dt){ if (window._shiftCopy && window._shiftCopy.on) { pasteApply(pos, dt); return } shiftQuick(pos, dt) }
+function dayClick(dt){ if (window._shiftCopy && window._shiftCopy.on) { pasteApply(null, dt); return } shiftDay(dt) }
+function copyCell(pos, dt){
+  const d = window._shiftD
+  const items = d.sched.filter(x=>x.date===dt && (x.pos||'未分崗')===pos)
+  if (!items.length) { alert('這格沒班可複製'); return }
+  window._shiftCopy = { on:1, type:'cell', items: items.map(x=>({ name:x.name, start:x.start, end:x.end, break:x.break||0, pos:x.pos||'', tr:x.tr||'' })) }
+  const o = document.getElementById('qkOv'); if (o) o.remove()
+  pasteBar('已複製這格——點要貼上的格子（可連貼好幾格），貼完按「完成」')
+}
+function copyDay(dt){
+  const d = window._shiftD
+  const items = d.sched.filter(x=>x.date===dt)
+  if (!items.length) { alert('這天沒班可複製'); return }
+  window._shiftCopy = { on:1, type:'day', items: items.map(x=>({ name:x.name, start:x.start, end:x.end, break:x.break||0, pos:x.pos||'', tr:x.tr||'' })) }
+  const o = document.getElementById('sdOv'); if (o) o.remove()
+  pasteBar('已複製整天——點目標日期的「表頭」貼上，貼完按「完成」')
+}
+function pasteApply(pos, dt){
+  const c = window._shiftCopy, d = window._shiftD
+  if (c.type === 'day' && pos !== null) { alert('整天複製要點日期「表頭」貼上'); return }
+  const exist = new Set(d.sched.map(x=>[x.name, x.date, x.pos||''].join('|')))
+  let n = 0
+  c.items.forEach(it=>{
+    const p2 = c.type === 'cell' ? (pos === '未分崗' ? '' : pos) : (it.pos || '')
+    if (exist.has([it.name, dt, p2].join('|'))) return
+    exist.add([it.name, dt, p2].join('|'))
+    const tmp = { name: it.name, date: dt, start: it.start, end: it.end, break: it.break, pos: p2, id: 'tmp' + Math.random().toString(36).slice(2) }
+    if (it.tr) tmp.tr = it.tr
+    queueSaveTmp(tmp); n++
+  })
+  shiftRender()
+  if (!n) alert('目標已經有一樣的班，沒有新增')
+}
+async function copyWeekNext(){
+  const d = window._shiftD
+  const days = [...Array(7)].map((_,i)=>{ const t2 = new Date(window._shiftWk); t2.setDate(t2.getDate()+i); return t2.toISOString().slice(0,10) })
+  const ents = d.sched.filter(x=>days.includes(x.date))
+  if (!ents.length) { alert('本週沒班可複製'); return }
+  if (!confirm(`把本週 ${ents.length} 筆班複製到下週同一天？（下週已有的會自動跳過）`)) return
+  const exist = new Set(d.sched.map(x=>[x.name, x.date, x.pos||''].join('|')))
+  let n = 0
+  ents.forEach(x=>{
+    const t2 = new Date(x.date); t2.setDate(t2.getDate()+7); const nd = t2.toISOString().slice(0,10)
+    if (exist.has([x.name, nd, x.pos||''].join('|'))) return
+    exist.add([x.name, nd, x.pos||''].join('|'))
+    const tmp = { name: x.name, date: nd, start: x.start, end: x.end, break: x.break||0, pos: x.pos||'', id: 'tmp' + Math.random().toString(36).slice(2) }
+    if (x.tr) tmp.tr = x.tr
+    queueSaveTmp(tmp); n++
+  })
+  shiftRender()
+  alert(n ? `已複製 ${n} 筆到下週（按 › 看下週）` : '下週已經都有了，沒新增')
+}
+function pasteBar(msg){
+  pasteOff(1)
+  const b = document.createElement('div'); b.id = 'pasteBar'
+  b.style.cssText = 'position:fixed;bottom:18px;left:50%;transform:translateX(-50%);z-index:60;background:#10182B;color:#fff;border-radius:12px;padding:10px 14px;display:flex;gap:10px;align-items:center;font-size:14px;box-shadow:0 4px 14px rgba(0,0,0,.3);max-width:92vw'
+  b.innerHTML = `<span>⧉ ${msg}</span><button class="mini" style="padding:6px 14px" onclick="pasteOff()">完成</button>`
+  document.body.appendChild(b)
+}
+function pasteOff(keep){ const b = document.getElementById('pasteBar'); if (b) b.remove(); if (!keep && window._shiftCopy) window._shiftCopy.on = 0 }
+function shiftWkToday(){ // 回到本週（張良 2026-10-02「按今天就會回到當周」）
+  const t0 = new Date(todayTpe()); t0.setDate(t0.getDate() - ((t0.getDay()+6)%7))
+  window._shiftWk = t0.toISOString().slice(0,10)
+  const ym2 = todayTpe().slice(0,7)
+  if (ym2 !== shiftYm) shiftLoad(ym2); else shiftRender()
+}
 const SLOT_DEF = [{n:'午峰',s:'11:00',e:'14:30'},{n:'離峰',s:'14:30',e:'17:30'},{n:'晚峰',s:'17:30',e:'20:00'},{n:'全日',s:'11:00',e:'20:00'}] // 預設照近30天單量尖峰切；⚙️可自訂
 function t24set(cls, v){
   const ov = document.getElementById('qkOv'); if (!ov) return
@@ -1624,9 +1709,9 @@ function shiftDay(dt){
   ov.innerHTML = `<div style="background:#fff;border-radius:14px;max-width:400px;width:100%;padding:16px;max-height:80vh;overflow:auto" onclick="event.stopPropagation()">
     <div style="font-weight:900;margin-bottom:8px">${title}</div>
     ${keys.length ? keys.map(k2=>`<div style="font-weight:800;color:var(--primary);margin:8px 0 3px">${k2}</div>`+grp[k2].map(e=>`<div style="display:flex;gap:8px;font-size:14px;padding:3px 0;border-bottom:1px solid var(--line)"><span style="min-width:84px;font-weight:700;color:var(--pdark)">${e.pos||'—'}</span><span>${e.name}${e.tr?` <span style="color:#B45309;font-weight:800">🎓帶${e.tr}</span>`:''}</span></div>`).join('')).join('') : '<div class="mut">這天還沒排班</div>'}
-    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px">
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px;flex-wrap:wrap">
       <button class="mini" style="padding:9px 12px" onclick="document.getElementById('sdOv').remove()">關閉</button>
-      ${keys.length?`<button class="mini on" style="padding:9px 16px" onclick="navigator.clipboard.writeText(window._dayTxt).then(()=>{this.textContent='✓ 已複製';setTimeout(()=>{const o=document.getElementById('sdOv');if(o)o.remove()},700)})">📋 複製文字（貼群組）</button>`:''}
+      ${keys.length?`<button class="mini" style="padding:9px 12px" onclick="copyDay('${dt}')">⧉ 複製這天</button><button class="mini on" style="padding:9px 16px" onclick="navigator.clipboard.writeText(window._dayTxt).then(()=>{this.textContent='✓ 已複製';setTimeout(()=>{const o=document.getElementById('sdOv');if(o)o.remove()},700)})">📋 複製文字（貼群組）</button>`:''}
     </div></div>`
   ov.onclick = () => ov.remove()
   document.body.appendChild(ov)
@@ -1643,7 +1728,7 @@ function shiftQuick(pos, dt){
   ov.style.cssText = 'position:fixed;inset:0;background:rgba(16,24,43,.45);z-index:50;display:flex;align-items:center;justify-content:center;padding:16px'
   const slots = (d.slots && d.slots.length) ? d.slots : SLOT_DEF
   ov.innerHTML = `<div style="background:#fff;border-radius:14px;max-width:420px;width:100%;padding:16px;max-height:80vh;overflow:auto" onclick="event.stopPropagation()">
-    <div style="font-weight:900;margin-bottom:8px">📅 ${dt.slice(5)}（${wdN2[new Date(dt).getDay()]}）・${pos}</div>
+    <div style="font-weight:900;margin-bottom:8px;display:flex;align-items:center;gap:8px">📅 ${dt.slice(5)}（${wdN2[new Date(dt).getDay()]}）・${pos}${d.sched.some(x=>x.date===dt&&(x.pos||'未分崗')===pos)?`<button class="mini" style="margin-left:auto;padding:4px 10px" onclick="copyCell('${pos}','${dt}')">⧉ 複製這格</button>`:''}</div>
     <div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:8px">${slots.map(sl=>`<button class="mini" style="padding:5px 10px" onclick="t24set('qkS','${sl.s}');t24set('qkE','${sl.e}')">${sl.n} ${sl.s}–${sl.e}</button>`).join('')}</div>
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:14px;margin-bottom:10px">
       <span>上班</span>${t24c('qkS', defS)}<span>下班</span>${t24c('qkE', defE)}
@@ -2548,6 +2633,7 @@ function shiftPosEdit(){ // v4.3.2（張良 2026-10-02「這樣很難弄」）�
   window._ordTmp = (d.staff||[]).map(s2=>s2.n)
   window._colTmp = { ...(d.colors||{}) }
   window._colOpen = null
+  window._offTmp = new Set((d.staff||[]).filter(s2=>s2.off).map(s2=>s2.n))
   document.body.appendChild(ov)
   posRender(); slRender(); odRender()
 }
@@ -2558,10 +2644,12 @@ function odRender(){
   const B = _PBX(), G = _PGX()
   box.innerHTML = window._ordTmp.map((n,i)=>{
     const ci = window._colTmp[n] != null ? window._colTmp[n] % B.length : i % B.length
+    const off = window._offTmp.has(n)
     const sw = `<button title="點我換色" style="width:30px;height:24px;border-radius:7px;border:2.5px solid ${B[ci]};background:${G[ci]};cursor:pointer" onclick="window._colOpen=window._colOpen==='${n}'?null:'${n}';odRender()"></button>`
     const pal = window._colOpen===n ? `<div style="display:flex;gap:4px;flex-wrap:wrap;padding:6px 0 4px">${B.map((b,ci2)=>`<button style="width:26px;height:22px;border-radius:6px;border:2px solid ${b};background:${G[ci2]};cursor:pointer;${ci2===ci?'outline:2.5px solid var(--ink);outline-offset:1px;':''}" onclick="window._colTmp['${n}']=${ci2};window._colOpen=null;odRender()"></button>`).join('')}</div>` : ''
     return `<div style="border-bottom:1px solid var(--line)"><div style="display:flex;gap:6px;align-items:center;padding:4px 0">
-      <span style="flex:1;font-weight:800;color:${B[ci]}">${n}</span>${sw}
+      <span style="flex:1;font-weight:800;color:${off?'#9CA3AF':B[ci]};${off?'text-decoration:line-through;':''}">${n}${off?' <span style="font-size:11px;font-weight:700;color:#9CA3AF;text-decoration:none">非常態</span>':''}</span>${sw}
+      <button class="mini" title="${off?'恢復常態排班':'標為非常態（沉底＋不進快選選單）'}" style="padding:7px 9px;${off?'':'color:var(--red)'}" onclick="const S=window._offTmp;S.has('${n}')?S.delete('${n}'):S.add('${n}');odRender()">${off?'↺':'✕'}</button>
       <button class="mini" style="padding:7px 9px" ${i===0?'disabled':''} onclick="const a=window._ordTmp;[a[${i}-1],a[${i}]]=[a[${i}],a[${i}-1]];odRender()">↑</button>
       <button class="mini" style="padding:7px 9px" ${i===window._ordTmp.length-1?'disabled':''} onclick="const a=window._ordTmp;[a[${i}+1],a[${i}]]=[a[${i}],a[${i}+1]];odRender()">↓</button></div>${pal}</div>`
   }).join('')
@@ -2593,7 +2681,8 @@ async function posSave(){
   const d2 = await post({ op:'slots', list: slots, token: TK() })
   const d3 = await post({ op:'ord', list: window._ordTmp, token: TK() })
   const d4 = await post({ op:'colors', map: window._colTmp, token: TK() })
-  if (d1&&d1.ok&&d2&&d2.ok&&d3&&d3.ok&&d4&&d4.ok) shiftLoad(); else alert((d1&&d1.error)||(d2&&d2.error)||(d3&&d3.error)||(d4&&d4.error)||'失敗')
+  const d5 = await post({ op:'off', list: [...window._offTmp], token: TK() })
+  if (d1&&d1.ok&&d2&&d2.ok&&d3&&d3.ok&&d4&&d4.ok&&d5&&d5.ok) shiftLoad(); else alert((d1&&d1.error)||(d2&&d2.error)||(d3&&d3.error)||(d4&&d4.error)||(d5&&d5.error)||'失敗')
 }
 // ── 🎚 權限 modal（張良 2026-09-25：訪客看/綁定一般/名單設權限）──
 function gdRoleModal(name, role){
