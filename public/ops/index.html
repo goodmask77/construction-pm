@@ -1798,7 +1798,7 @@ function menuRender(){
     (d.draft.sections||[]).forEach((s2,si)=>{
       h += `<div ondragover="event.preventDefault()" ondrop="menuSecDrop(${si})" style="background:var(--soft);border:1px solid var(--line);border-radius:12px;padding:9px 11px;margin-bottom:10px">
         <div style="font-weight:900;color:var(--pdark)">${meN&&menuEditSec[si]?`<span draggable="true" ondragstart="mnDragS=${si}" title="拖曳排序分類" style="cursor:grab;color:#9fb0c6">⠿ </span>`:''}${s2.name} ${s2.note?`<span class="hint">${s2.note}</span>`:''}
-        ${meN?` <button class="mini ${menuEditSec[si]?'on':''}" onclick="menuEditSec[${si}]=!menuEditSec[${si}];menuRender()">${menuEditSec[si]?'完成':'編輯'}</button>`:''}${meN&&menuEditSec[si]?` <button class="mini" onclick="menuSecShift(${si},-1)">↑</button><button class="mini" onclick="menuSecShift(${si},1)">↓</button> <button class="mini" onclick="menuSecForm(${si})">改名</button> <button class="mini" onclick="menuItemForm(${si})">＋品項</button> <button class="mini" style="color:var(--red)" onclick="if(confirm('刪掉整個分類「${s2.name}」？（品項會標成刪除）'))menuSecDel(${si})">刪分類</button>`:''}</div>`
+        ${meN?` <button class="mini ${menuEditSec[si]?'on':''}" onclick="menuEditSec[${si}]=!menuEditSec[${si}];menuRender()">${menuEditSec[si]?'完成':'編輯'}</button>`:''}${meN&&menuEditSec[si]?` <button class="mini" onclick="menuSecShift(${si},-1)">↑</button><button class="mini" onclick="menuSecShift(${si},1)">↓</button> <button class="mini" onclick="menuSecForm(${si})">改名</button> <button class="mini" onclick="menuItemAdd(${si})">＋品項</button> <button class="mini" style="color:var(--red)" onclick="if(confirm('刪掉整個分類「${s2.name}」？（品項會標成刪除）'))menuSecDel(${si})">刪分類</button>`:''}</div>`
       // 表格化＋每格直接編輯（張良 2026-10-01：中文/英文/售價/備註四欄全 inline 改）
       h += `<div class="scroll"><table style="width:100%;border-collapse:collapse;margin-top:6px;table-layout:fixed"><colgroup><col style="width:30%"><col style="width:30%"><col style="width:12%"><col style="width:18%"><col style="width:10%"></colgroup><thead><tr>${['中文','英文','售價','備註','操作'].map(x=>`<th style="text-align:left;font-size:12px;color:#6b7a90;padding:5px 7px;border:1px solid #D9E4EF;background:#F2F6FA">${x}</th>`).join('')}</tr></thead><tbody>`
       ;(s2.items||[]).forEach(i2=>{
@@ -1813,7 +1813,7 @@ function menuRender(){
       df.del.filter(k=>df.bF[k].sec===s2.name).forEach(k=>{ const b = df.bF[k]
         h += `<div style="display:flex;gap:8px;align-items:center;background:#F5F5F5;border:1px dashed #D8C7C4;border-radius:9px;padding:6px 10px;margin-top:6px;font-size:14px;opacity:.75">
           <span style="flex:1;color:var(--red)"><s>${b.name} $${b.price}</s> <span style="font-size:13px;font-weight:800">已刪除</span></span>
-          ${meN?`<button class="mini" onclick="menuItemRestore('${k}')">↩︎ 復原</button>`:''}</div>` })
+          ${meN?`<button class="mini" onclick="menuItemRestore('${k}')">↩︎ 復原</button> <button class="mini" style="color:var(--red)" onclick="if(confirm('永久刪除「${b.name}」？不會再出現在菜單頁'))menuItemPurge('${k}')">永久刪除</button>`:''}</div>` })
       h += `</div>`
     })
     // 整個分類被刪掉的
@@ -1880,6 +1880,19 @@ async function permSet(op, rid, mode){
   if (curStore === 'settings') settingsLoad(); else menuLoad()
 }
 let mnDragS = null
+function menuItemAdd(si){ // 不開視窗：直接在該分類表格長出一列空欄位，填了中文就自動存（張良 2026-10-01）
+  const s2 = window._menuD.draft.sections[si]
+  s2.items = [...(s2.items||[]), { id: 'mn'+Date.now().toString(36), name: '', en: '', price: 0, note: '' }]
+  menuEditSec[si] = true
+  menuRender()
+  setTimeout(()=>{ const tb=document.querySelectorAll('section table tbody'); },50)
+}
+function menuItemPurge(id){ // 永久刪除：連原菜單一起移除，不再出現在已刪除區
+  const d = window._menuD
+  ;(d.base.sections||[]).forEach(s2=>{ s2.items=(s2.items||[]).filter(x=>x.id!==id) })
+  ;(d.draft.sections||[]).forEach(s2=>{ s2.items=(s2.items||[]).filter(x=>x.id!==id) })
+  menuSave('永久刪除品項', [id])
+}
 function menuSecShift(si, dir){ // ↑↓ 搬分類（張良 2026-10-01：拖曳在手機/iPad不順→按鈕最穩）
   const ss = window._menuD.draft.sections, j = si + dir
   if (j < 0 || j >= ss.length) return
@@ -1898,9 +1911,9 @@ function menuSecDrop(to){ // 分類拖曳排序
   const [mv] = ss.splice(mnDragS,1); ss.splice(to,0,mv); mnDragS=null
   menuSave('搬分類 '+mv.name)
 }
-async function menuSave(what){
+async function menuSave(what, purge){
   const d = window._menuD
-  const r = await fetch('/api/mail-sync?menuset=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ draft: d.draft, what, token: TK() }) })
+  const r = await fetch('/api/mail-sync?menuset=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ draft: d.draft, what, token: TK(), ...(purge&&purge.length?{purge}:{}) }) })
   const j = await r.json().catch(()=>null)
   if (!j || !j.ok) { alert((j&&j.error)||'儲存失敗'); menuLoad(); return }
   tcSet('menu', d); menuRender(); menuLoad() // 樂觀更新＋背景校正

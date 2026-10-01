@@ -1456,6 +1456,10 @@ export default async function handler(req, res) {
         name: String(i2.name || '').slice(0, 80), en: String(i2.en || oldEn[i2.id] || '').slice(0, 80), price: Math.max(0, Math.min(9999, Math.round(Number(i2.price) || 0))), note: String(i2.note || '').slice(0, 40),
       })).filter(i2 => i2.name),
     })).filter(s2 => s2.name) }
+    if (Array.isArray(mb2.purge) && mb2.purge.length) { // 永久刪除（張良 2026-10-01：不留在菜單上）
+      const pg = new Set(mb2.purge.map(String))
+      for (const s0 of ((doc.base || {}).sections || [])) s0.items = (s0.items || []).filter(i0 => !pg.has(String(i0.id)))
+    }
     doc.edits = [{ by: whoM2.name, ts: new Date(Date.now() + 8 * 3600e3).toISOString().slice(5, 16).replace('T', ' '), what: String(mb2.what || '').slice(0, 80) }, ...(doc.edits || [])].slice(0, 30)
     await kvPut('sp_finance_pm_menu', doc, '新菜單編輯(' + whoM2.name + ')')
     return res.status(200).json({ ok: true })
