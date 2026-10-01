@@ -707,7 +707,7 @@ const tcSet = (k,d) => { try { localStorage.setItem('obt_'+k, JSON.stringify(d))
 async function prefetchTabs(){
   const q = async (url, key) => { try { const r = await fetch(url); const d2 = await r.json(); if (d2 && d2.ok) { tcSet(key, d2); return d2 } } catch(e){} }
   const me = TK() ? '&me=' + encodeURIComponent(TK()) : ''
-  q('/api/mail-sync?lb=' + encodeURIComponent(K) + me, 'lb').then(d2=>{ if(d2){ if(!window._lbD) window._lbD = d2; todayRender() } })
+  q('/api/mail-sync?lb=' + encodeURIComponent(K) + '&v=2' + me, 'lb').then(d2=>{ if(d2){ if(!window._lbD) window._lbD = d2; todayRender() } })
   q('/api/mail-sync?inv=' + encodeURIComponent(K) + '&kind=food' + me, 'inv_food')
   q('/api/mail-sync?inv=' + encodeURIComponent(K) + '&kind=pack' + me, 'inv_pack')
   q('/api/mail-sync?buy=' + encodeURIComponent(K) + me, 'buy').then(d2=>{ if(d2){ if(!window._buyD) window._buyD = d2; todayRender() } })
@@ -718,7 +718,7 @@ async function prefetchTabs(){
 }
 async function lbFetch(){
   let d
-  try { const r = await fetch('/api/mail-sync?lb=' + encodeURIComponent(K) + (TK() ? '&me=' + encodeURIComponent(TK()) : '')); d = await r.json() } catch(e){}
+  try { const r = await fetch('/api/mail-sync?lb=' + encodeURIComponent(K) + '&v=2' + (TK() ? '&me=' + encodeURIComponent(TK()) : '')); d = await r.json() } catch(e){}
   if (d && d.ok) { window._lbD = d; tcSet('lb', d) }
   return window._lbD
 }
