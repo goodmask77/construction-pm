@@ -1769,9 +1769,21 @@ export default async function handler(req, res) {
     const colMap = ((sd || {}).colors) || {}
     let colDirty = false
     const usedC = new Set(Object.values(colMap))
-    for (const s3 of staff) { if (colMap[s3.n] == null) { let ci = 0; while (usedC.has(ci) && ci < 12) ci++; colMap[s3.n] = ci % 12; usedC.add(colMap[s3.n]); colDirty = true } }
+    for (const s3 of staff) { if (colMap[s3.n] == null) { let ci = 0; while (usedC.has(ci) && ci < 16) ci++; colMap[s3.n] = ci % 16; usedC.add(colMap[s3.n]); colDirty = true } }
     if (colDirty && sd) { sd.colors = colMap; await kvPut('sp_finance_pm_shift_g', sd, '人員配色固定') }
     return res.status(200).json({ ok: true, ym, sched: schedL, punches: pchs.map(p => ({ name: p.name, ts: p.ts, dir: p.dir, src: p.src })), names: namesU, namesAll, posList, slots: (sd || {}).slots || null, colors: colMap, staff, me: meS ? { name: meS.name, role: meS.role, approver: aprS.includes(meS.name) } : null })
+  }
+  // 人員色號管理口：POST ?shiftcolor=管理金鑰 {map:{名字:色號}} 合併寫入（固定/校正專屬色用）
+  if (req.method === 'POST' && req.query?.shiftcolor) {
+    const okC = (process.env.MENU_PROBE_KEY || '').trim()
+    if (!okC || String(req.query.shiftcolor) !== okC) return res.status(403).json({ ok: false })
+    let bC = {}
+    try { bC = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
+    const docC = (await kvGet('sp_finance_pm_shift_g')) || { list: [] }
+    docC.colors = { ...(docC.colors || {}) }
+    for (const [nm, ci] of Object.entries(bC.map || {})) docC.colors[String(nm).slice(0, 20)] = Math.max(0, Math.min(15, Number(ci) || 0))
+    await kvPut('sp_finance_pm_shift_g', docC, '人員色號校正')
+    return res.status(200).json({ ok: true, colors: docC.colors })
   }
   // 班表批次回補口（張良 2026-10-02「貼LINE班表幫我灌」）：POST ?shiftfill=管理金鑰 {list:[{name,date,start,end,break,pos,tr}]}——同(人+日+崗位)已存在就跳過
   if (req.method === 'POST' && req.query?.shiftfill) {
@@ -1836,8 +1848,11 @@ export default async function handler(req, res) {
       doc.pos = (Array.isArray(sb2.list) ? sb2.list : []).map(s3 => String(s3).trim().slice(0, 20)).filter(Boolean).slice(0, 30)
     } else if (sb2.op === 'slots') { // ⏱時段快捷（張良 2026-10-02：照尖峰切時段，一鍵帶時間）
       doc.slots = (Array.isArray(sb2.list) ? sb2.list : []).map(s3 => ({ n: String(s3.n || '').trim().slice(0, 10), s: String(s3.s || '').slice(0, 5), e: String(s3.e || '').slice(0, 5) })).filter(x => x.n && /^\d{1,2}:\d{2}$/.test(x.s) && /^\d{1,2}:\d{2}$/.test(x.e)).slice(0, 10)
-    } else if (sb2.op === 'ord') { // 👥人員排序（張良 2026-10-02：順序=專屬色+快選排列）
+    } else if (sb2.op === 'ord') { // 👥人員排序（張良 2026-10-02：順序=快選排列）
       doc.staffOrd = (Array.isArray(sb2.list) ? sb2.list : []).map(s3 => String(s3).trim().slice(0, 20)).filter(Boolean).slice(0, 50)
+    } else if (sb2.op === 'colors') { // 🎨人員自選色（張良 2026-10-02「讓我自己選擇編輯」）
+      doc.colors = { ...(doc.colors || {}) }
+      for (const [nm, ci] of Object.entries(sb2.map || {})) doc.colors[String(nm).slice(0, 20)] = Math.max(0, Math.min(15, Number(ci) || 0))
     } else return res.status(400).json({ ok: false })
     await kvPut('sp_finance_pm_shift_g', doc, '班表' + sb2.op + '(' + whoS.name + ')')
     return res.status(200).json({ ok: true })

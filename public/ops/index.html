@@ -1471,8 +1471,8 @@ function shiftRender(){
   const GC = [{bg:'#EAF1FD',ink:'#1D4ED8'},{bg:'#FDF1E3',ink:'#B45309'},{bg:'#E9F7EE',ink:'#15803D'},{bg:'#F4F4F5',ink:'var(--pdark)'}]
   // v4.4.1（張良 2026-10-02）：每個人固定一個顏色（照 GD 人員名單順序配，超過輪替）——跨崗位/跨天同色快速辨識
   // v4.4.5（張良「搞個綠色灰色白色分開一點」）：12色強對比——紫/橘/綠/藍/粉/棕/深灰/紅/青/草綠/白(黑框)/金黃，不再有紫藍靛擠一起
-  const PB = ['#7C3AED','#EA580C','#15803D','#1D4ED8','#DB2777','#92400E','#374151','#DC2626','#0E7490','#65A30D','#111827','#CA8A04']
-  const PG = ['#F3E8FF','#FFEDD5','#DCFCE7','#DBEAFE','#FCE7F3','#FEF3C7','#E5E7EB','#FEE2E2','#CFFAFE','#F7FEE7','#FFFFFF','#FEF9C3']
+  const PB = ['#7C3AED','#EA580C','#15803D','#1D4ED8','#DB2777','#92400E','#374151','#DC2626','#0E7490','#65A30D','#111827','#CA8A04','#9F1239','#4338CA','#155E75','#3F6212']
+  const PG = ['#F3E8FF','#FFEDD5','#DCFCE7','#DBEAFE','#FCE7F3','#FEF3C7','#E5E7EB','#FEE2E2','#CFFAFE','#F7FEE7','#FFFFFF','#FEF9C3','#FFE4E6','#E0E7FF','#E0F2FE','#ECFCCB']
   // v4.5.3 顏色吃伺服器永久色號（d.colors），不再照名單順序——排序/進出都不變色
   const pcIdx = n => { const c2 = (d.colors||{})[n]; if (c2 != null) return c2 % PB.length; let i = 0; for(const ch of String(n)) i=(i*31+ch.charCodeAt(0))%997; return i % PB.length }
   const BD = 'border:1px solid #D6DEE8;'
@@ -2536,8 +2536,8 @@ function shiftPosEdit(){ // v4.3.2（張良 2026-10-02「這樣很難弄」）�
         <button class="mini" style="margin-top:8px;padding:8px 12px" onclick="window._slotTmp.push({n:'',s:'11:00',e:'20:00'});slRender()">＋ 新增時段</button>
       </div>
       <div>
-        <div style="font-weight:900;margin-bottom:2px">👥 人員排序</div>
-        <div class="hint" style="margin-bottom:6px">順序＝專屬顏色與快選窗的排列。</div>
+        <div style="font-weight:900;margin-bottom:2px">👥 人員排序＆顏色</div>
+        <div class="hint" style="margin-bottom:6px">↑↓ 調快選排列；點色塊幫每個人選專屬色。</div>
         <div id="odRows"></div>
       </div>
     </div>
@@ -2547,15 +2547,25 @@ function shiftPosEdit(){ // v4.3.2（張良 2026-10-02「這樣很難弄」）�
   ov.onclick = () => ov.remove()
   window._slotTmp = ((d.slots && d.slots.length) ? d.slots : SLOT_DEF).map(x=>({n:x.n,s:x.s,e:x.e}))
   window._ordTmp = (d.staff||[]).map(s2=>s2.n)
+  window._colTmp = { ...(d.colors||{}) }
+  window._colOpen = null
   document.body.appendChild(ov)
   posRender(); slRender(); odRender()
 }
+const _PBX = ()=>['#7C3AED','#EA580C','#15803D','#1D4ED8','#DB2777','#92400E','#374151','#DC2626','#0E7490','#65A30D','#111827','#CA8A04','#9F1239','#4338CA','#155E75','#3F6212']
+const _PGX = ()=>['#F3E8FF','#FFEDD5','#DCFCE7','#DBEAFE','#FCE7F3','#FEF3C7','#E5E7EB','#FEE2E2','#CFFAFE','#F7FEE7','#FFFFFF','#FEF9C3','#FFE4E6','#E0E7FF','#E0F2FE','#ECFCCB']
 function odRender(){
   const box = document.getElementById('odRows'); if (!box) return
-  box.innerHTML = window._ordTmp.map((n,i)=>`<div style="display:flex;gap:6px;align-items:center;padding:4px 0;border-bottom:1px solid var(--line)">
-    <span style="flex:1;font-weight:700">${n}</span>
-    <button class="mini" style="padding:7px 9px" ${i===0?'disabled':''} onclick="const a=window._ordTmp;[a[${i}-1],a[${i}]]=[a[${i}],a[${i}-1]];odRender()">↑</button>
-    <button class="mini" style="padding:7px 9px" ${i===window._ordTmp.length-1?'disabled':''} onclick="const a=window._ordTmp;[a[${i}+1],a[${i}]]=[a[${i}],a[${i}+1]];odRender()">↓</button></div>`).join('')
+  const B = _PBX(), G = _PGX()
+  box.innerHTML = window._ordTmp.map((n,i)=>{
+    const ci = window._colTmp[n] != null ? window._colTmp[n] % B.length : i % B.length
+    const sw = `<button title="點我換色" style="width:30px;height:24px;border-radius:7px;border:2.5px solid ${B[ci]};background:${G[ci]};cursor:pointer" onclick="window._colOpen=window._colOpen==='${n}'?null:'${n}';odRender()"></button>`
+    const pal = window._colOpen===n ? `<div style="display:flex;gap:4px;flex-wrap:wrap;padding:6px 0 4px">${B.map((b,ci2)=>`<button style="width:26px;height:22px;border-radius:6px;border:2px solid ${b};background:${G[ci2]};cursor:pointer;${ci2===ci?'outline:2.5px solid var(--ink);outline-offset:1px;':''}" onclick="window._colTmp['${n}']=${ci2};window._colOpen=null;odRender()"></button>`).join('')}</div>` : ''
+    return `<div style="border-bottom:1px solid var(--line)"><div style="display:flex;gap:6px;align-items:center;padding:4px 0">
+      <span style="flex:1;font-weight:800;color:${B[ci]}">${n}</span>${sw}
+      <button class="mini" style="padding:7px 9px" ${i===0?'disabled':''} onclick="const a=window._ordTmp;[a[${i}-1],a[${i}]]=[a[${i}],a[${i}-1]];odRender()">↑</button>
+      <button class="mini" style="padding:7px 9px" ${i===window._ordTmp.length-1?'disabled':''} onclick="const a=window._ordTmp;[a[${i}+1],a[${i}]]=[a[${i}],a[${i}+1]];odRender()">↓</button></div>${pal}</div>`
+  }).join('')
 }
 function slRender(){
   const box = document.getElementById('slRows'); if (!box) return
@@ -2583,7 +2593,8 @@ async function posSave(){
   const d1 = await post({ op:'pos', list, token: TK() })
   const d2 = await post({ op:'slots', list: slots, token: TK() })
   const d3 = await post({ op:'ord', list: window._ordTmp, token: TK() })
-  if (d1&&d1.ok&&d2&&d2.ok&&d3&&d3.ok) shiftLoad(); else alert((d1&&d1.error)||(d2&&d2.error)||(d3&&d3.error)||'失敗')
+  const d4 = await post({ op:'colors', map: window._colTmp, token: TK() })
+  if (d1&&d1.ok&&d2&&d2.ok&&d3&&d3.ok&&d4&&d4.ok) shiftLoad(); else alert((d1&&d1.error)||(d2&&d2.error)||(d3&&d3.error)||(d4&&d4.error)||'失敗')
 }
 // ── 🎚 權限 modal（張良 2026-09-25：訪客看/綁定一般/名單設權限）──
 function gdRoleModal(name, role){
