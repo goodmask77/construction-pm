@@ -1559,14 +1559,21 @@ async function shiftSave(id){
   const o = document.getElementById('shOv'); if (o) o.remove()
   // 樂觀＋排隊（v4.4.7）：畫面先改，寫入排隊不互蓋
   const dL = window._shiftD
+  if (item.id && String(item.id).startsWith('tmp')) { // v4.4.8 分身治本：編輯排隊中的暫存卡＝只改暫存卡內容，由原本排隊那筆帶最終狀態寫入，不另開一筆
+    const t2 = window._shiftTmpQ.find(x=>x.id===item.id)
+    const old = dL.sched.find(x=>x.id===item.id)
+    if (old) Object.assign(old, item)
+    if (t2 && t2 !== old) Object.assign(t2, item, { id: t2.id })
+    shiftRender(); return
+  }
   if (item.id) { const old = dL.sched.find(x=>x.id===item.id); if (old) Object.assign(old, item) } else { const tmp = { ...item, id: 'tmp' + Math.random().toString(36).slice(2) }; window._shiftTmpQ.push(tmp); dL.sched.push(tmp); item._tmpId = tmp.id }
   shiftRender()
   shQueue(async ()=>{
     const tmpId = item._tmpId; delete item._tmpId
-    let send = item
-    if (tmpId) { const t2 = window._shiftTmpQ.find(x=>x.id===tmpId); if (t2) { send = { ...t2 }; delete send.id } }
+    let send = item, t2 = null
+    if (tmpId) { t2 = window._shiftTmpQ.find(x=>x.id===tmpId); if (t2) { if (t2._del) { window._shiftTmpQ = window._shiftTmpQ.filter(x=>x!==t2); return } send = { ...t2 }; delete send.id; delete send._del } }
     const d = await shPost({ op:'save', item: send, token: TK() })
-    if (tmpId) window._shiftTmpQ = window._shiftTmpQ.filter(x=>x.id!==tmpId)
+    if (t2) { window._shiftTmpQ = window._shiftTmpQ.filter(x=>x!==t2); if (d && d.ok && d.id) t2.id = d.id }
     if (!(d && d.ok)) alert((d&&d.error)||'儲存失敗')
   })
 }
@@ -1578,8 +1585,7 @@ async function shiftDel(id){
 function shiftDelFast(id){ // 樂觀刪除：卡片先消失，背景排隊送刪
   const d = window._shiftD
   d.sched = d.sched.filter(x=>x.id!==id); shiftRender()
-  window._shiftTmpQ = window._shiftTmpQ.filter(x=>x.id!==id)
-  if (String(id).startsWith('tmp')) return
+  if (String(id).startsWith('tmp')) { const t2 = window._shiftTmpQ.find(x=>x.id===id); if (t2) t2._del = 1; return } // 標記取消——排隊那筆看到就不送（v4.4.8）
   shQueue(async ()=>{ const d2 = await shPost({ op:'del', id, token: TK() }); if (!(d2&&d2.ok)) alert((d2&&d2.error)||'刪除失敗') })
 }
 // ── 週表直排（張良 2026-10-02「點擊直接選人名、可拖曳」）──
@@ -1659,10 +1665,12 @@ async function shiftQuickGo(name, pos, dt){
   window._shiftTmpQ.push(tmp)
   d.sched.push(tmp); shiftRender()
   shQueue(async ()=>{
-    const send = { ...tmp }; delete send.id // 送出前抄 tmp 現狀——排隊期間被拖曳過也算數
+    if (tmp._del) { window._shiftTmpQ = window._shiftTmpQ.filter(x=>x!==tmp); return } // 排隊中被刪＝不送
+    const send = { ...tmp }; delete send.id; delete send._del // 送出前抄 tmp 現狀——排隊期間被拖曳/編輯過也算數
     const d2 = await shPost({ op:'save', item: send, token: TK() })
-    window._shiftTmpQ = window._shiftTmpQ.filter(x=>x.id!==tmp.id)
-    if (!(d2 && d2.ok)) { const dd = window._shiftD; dd.sched = dd.sched.filter(x=>x.id!==tmp.id); shiftRender(); alert((d2&&d2.error)||'儲存失敗：'+item.name) }
+    window._shiftTmpQ = window._shiftTmpQ.filter(x=>x!==tmp)
+    if (d2 && d2.ok) { if (d2.id) tmp.id = d2.id } // 暫存卡換正式id——之後編輯/刪除對得上（v4.4.8 分身治本）
+    else { const dd = window._shiftD; dd.sched = dd.sched.filter(x=>x!==tmp); shiftRender(); alert((d2&&d2.error)||'儲存失敗：'+item.name) }
   })
 }
 async function shiftDrop(ev, pos, dt){

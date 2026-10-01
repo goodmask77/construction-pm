@@ -1768,12 +1768,17 @@ export default async function handler(req, res) {
     if (!okD || String(req.query.shiftdedup) !== okD) return res.status(403).json({ ok: false })
     const docD = (await kvGet('sp_finance_pm_shift_g')) || { list: [] }
     const seenD = new Set(); const keep = []; const dropped = []
+    const byK = new Map(); let idFixed = 0
     for (const x of (docD.list || [])) {
+      if (String(x.id || '').startsWith('tmp')) { x.id = 'sh' + Math.random().toString(36).slice(2, 10); idFixed++ } // 暫存id轉正
       const k2 = [x.name, x.date, x.start, x.end, x.pos || ''].join('|')
-      if (seenD.has(k2)) dropped.push({ id: x.id, k: k2 }); else { seenD.add(k2); keep.push(x) }
+      const prev = byK.get(k2)
+      if (!prev) { byK.set(k2, x); keep.push(x) }
+      else if (!prev.tr && x.tr) { dropped.push({ id: prev.id, k: k2 }); keep[keep.indexOf(prev)] = x; byK.set(k2, x) } // 同班留有帶訓那筆
+      else dropped.push({ id: x.id, k: k2 })
     }
-    if (!req.query.dry && dropped.length) { docD.list = keep; await kvPut('sp_finance_pm_shift_g', docD, '班表去重(' + dropped.length + '筆)') }
-    return res.status(200).json({ ok: true, dry: !!req.query.dry, kept: keep.length, dropped })
+    if (!req.query.dry && (dropped.length || idFixed)) { docD.list = keep; await kvPut('sp_finance_pm_shift_g', docD, '班表去重(' + dropped.length + '筆/轉正' + idFixed + ')') }
+    return res.status(200).json({ ok: true, dry: !!req.query.dry, kept: keep.length, idFixed, dropped })
   }
   if (req.method === 'POST' && req.query?.shiftset) {
     const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
@@ -1789,6 +1794,8 @@ export default async function handler(req, res) {
       const it = { id: i2.id || 'sh' + Date.now().toString(36), name: String(i2.name).trim().slice(0, 20), date: i2.date, start: String(i2.start).padStart(5, '0'), end: String(i2.end).padStart(5, '0'), break: Math.max(0, Math.min(240, Number(i2.break) || 0)), pos: String(i2.pos || '').trim().slice(0, 20), by: whoS.name }
       const trV = String(i2.tr || '').trim().slice(0, 20); if (trV) it.tr = trV // 🎓帶訓對象（張良 2026-10-02）
       doc.list = [...(doc.list || []).filter(x => x.id !== it.id), it].sort((a, b) => (a.date + a.start).localeCompare(b.date + b.start)).slice(-1000)
+      await kvPut('sp_finance_pm_shift_g', doc, '班表save(' + whoS.name + ')')
+      return res.status(200).json({ ok: true, id: it.id }) // 回正式id——前端把暫存卡換正身（v4.4.8 分身治本）
     } else if (sb2.op === 'del') {
       doc.list = (doc.list || []).filter(x => x.id !== sb2.id)
     } else if (sb2.op === 'pos') { // 崗位清單管理（張良 2026-09-24：班表頁直接編輯）
