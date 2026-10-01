@@ -2244,10 +2244,16 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
                                   <td style={{ padding: "4px 7px", textAlign: "right", fontFamily: MONOF, fontSize: 10.5, fontWeight: 700, borderTop: "1px solid #f0ead9", whiteSpace: "nowrap" }}>{fmt(rowSum(k))}</td>
                                   <td title={`${slotDays(k)} 天有營業到這時段（每天第一筆〜最後一筆銷售之間算營業中）`} style={{ padding: "4px 7px", textAlign: "right", fontFamily: MONOF, fontSize: 10.5, color: C.sub, borderTop: "1px solid #f0ead9", whiteSpace: "nowrap", cursor: "help" }}>{fmt(Math.round(rowSum(k) / Math.max(1, slotDays(k))))}</td>
                                   {hdcols.map(dt => {
-                                    const c = perDate[dt][k]; const amt = c?.amt || 0; const ratio = amt / rowMax[k];
+                                    const c = perDate[dt][k]; const amt = c?.amt || 0;
+                                    // 紅綠色階（張良 2026-10-01）：高於該時段日均＝紅、低於＝綠（±3% 不上色），差越多越深（2倍/歸零＝最深）
+                                    const avgK = rowSum(k) / Math.max(1, slotDays(k));
+                                    const dev = avgK > 0 ? amt / avgK : 1;
+                                    const hot = dev > 1.03, cold = dev < 0.97;
+                                    const a = hot ? Math.min(0.72, 0.1 + 0.62 * Math.min(1, dev - 1)) : cold ? Math.min(0.72, 0.1 + 0.62 * Math.min(1, 1 - dev)) : 0;
+                                    const bg = amt > 0 ? (hot ? `rgba(179,38,30,${a.toFixed(2)})` : cold ? `rgba(63,125,78,${a.toFixed(2)})` : "#f6f3ea") : "transparent";
                                     return (
-                                      <td key={dt} title={`${dLabel(dt)} ${tl}：NT$${fmt(amt)}・${c?.od || 0} 單`}
-                                        style={{ padding: "4px 7px", textAlign: "right", fontFamily: MONOF, fontSize: 10.5, whiteSpace: "nowrap", borderTop: "1px solid #f0ead9", background: amt > 0 ? `rgba(58,110,165,${(0.06 + 0.72 * ratio).toFixed(2)})` : "transparent", color: amt > 0 ? (ratio > 0.55 ? "#fff" : C.text) : C.faint, fontWeight: ratio > 0.85 ? 800 : 400 }}>
+                                      <td key={dt} title={`${dLabel(dt)} ${tl}：NT$${fmt(amt)}・${c?.od || 0} 單｜日均 NT$${fmt(Math.round(avgK))}（${dev > 1 ? "+" : ""}${Math.round((dev - 1) * 100)}%）`}
+                                        style={{ padding: "4px 7px", textAlign: "right", fontFamily: MONOF, fontSize: 10.5, whiteSpace: "nowrap", borderTop: "1px solid #f0ead9", background: bg, color: amt > 0 ? (a > 0.42 ? "#fff" : C.text) : C.faint, fontWeight: a > 0.55 ? 800 : 400 }}>
                                         {amt > 0 ? fmt(amt) : "—"}
                                       </td>
                                     );
@@ -2260,9 +2266,13 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
                               <td style={{ padding: "4px 7px", fontWeight: 800, fontSize: 10.5, position: "sticky", left: 0, background: C.head, whiteSpace: "nowrap" }}>全日</td>
                               <td style={{ padding: "4px 7px", textAlign: "right", fontFamily: MONOF, fontSize: 10.5, fontWeight: 800, whiteSpace: "nowrap" }}>{fmt(heatDates.reduce((t, dt) => t + (offRev(dt) || dayTot(dt)), 0))}</td>
                               <td style={{ padding: "4px 7px", textAlign: "right", fontFamily: MONOF, fontSize: 10.5, color: C.sub, whiteSpace: "nowrap" }}>{fmt(Math.round(heatDates.reduce((t, dt) => t + (offRev(dt) || dayTot(dt)), 0) / Math.max(1, heatDates.length)))}</td>
-                              {hdcols.map(dt => { const off = offRev(dt) || dayTot(dt); const diff = off - dayTot(dt); return (
-                                <td key={dt} title={diff ? `時段加總 NT$${fmt(dayTot(dt))}、正式結帳營收 NT$${fmt(off)}（差 NT$${fmt(Math.abs(diff))}＝喬亞時段表與結帳金額的折讓/溢收小差）` : undefined}
-                                  style={{ padding: "4px 7px", textAlign: "right", fontFamily: MONOF, fontSize: 10.5, fontWeight: 700, whiteSpace: "nowrap", cursor: diff ? "help" : undefined }}>{fmt(off)}{diff ? "＊" : ""}</td>
+                              {hdcols.map(dt => { const off = offRev(dt) || dayTot(dt); const diff = off - dayTot(dt);
+                                const avgD = heatDates.reduce((t, d2) => t + (offRev(d2) || dayTot(d2)), 0) / Math.max(1, heatDates.length);
+                                const dev = avgD > 0 ? off / avgD : 1; const hot = dev > 1.03, cold = dev < 0.97;
+                                const a = hot ? Math.min(0.72, 0.1 + 0.62 * Math.min(1, dev - 1)) : cold ? Math.min(0.72, 0.1 + 0.62 * Math.min(1, 1 - dev)) : 0;
+                                return (
+                                <td key={dt} title={`${diff ? `時段加總 NT$${fmt(dayTot(dt))}、正式結帳營收 NT$${fmt(off)}（差 NT$${fmt(Math.abs(diff))}＝喬亞時段表與結帳金額的折讓/溢收小差）｜` : ""}日均 NT$${fmt(Math.round(avgD))}（${dev > 1 ? "+" : ""}${Math.round((dev - 1) * 100)}%）`}
+                                  style={{ padding: "4px 7px", textAlign: "right", fontFamily: MONOF, fontSize: 10.5, fontWeight: 700, whiteSpace: "nowrap", cursor: "help", background: off > 0 ? (hot ? `rgba(179,38,30,${a.toFixed(2)})` : cold ? `rgba(63,125,78,${a.toFixed(2)})` : "transparent") : "transparent", color: a > 0.42 ? "#fff" : undefined }}>{fmt(off)}{diff ? "＊" : ""}</td>
                               ); })}
                               <td style={{ padding: "4px 7px", fontWeight: 800, fontSize: 10.5, position: "sticky", right: 0, background: C.head, whiteSpace: "nowrap", textAlign: "right" }}>全日</td>
                             </tr>
@@ -2275,7 +2285,7 @@ export default function FinanceView({ view, K, confirm, canEdit, ReceiptUploader
                   return (
                     <div style={{ ...chartBox2, marginBottom: 10 }}>
                       <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 8 }}>
-                        <div style={{ fontSize: 11.5, fontWeight: 700, color: C.sub }}>⏰ 時段消費（{posSlotHeat ? `逐日變化・${heatDates.length} 天` : sel === "all" ? `期間累計・${useDates.length} 天` : dLabel(sel)}）<span style={{ fontWeight: 400, color: C.faint }}>　{posSlotHeat ? "列＝時段、欄＝日期；顏色越深＝該時段當期越好（每列各自比）" : sel === "all" ? "每列＝時間｜日均幾單 → 營業額｜共幾單・單均" : "每列＝營業額｜單數・單均"}；營業 11:00-19:00</span></div>
+                        <div style={{ fontSize: 11.5, fontWeight: 700, color: C.sub }}>⏰ 時段消費（{posSlotHeat ? `逐日變化・${heatDates.length} 天` : sel === "all" ? `期間累計・${useDates.length} 天` : dLabel(sel)}）<span style={{ fontWeight: 400, color: C.faint }}>　{posSlotHeat ? "列＝時段、欄＝日期；🔴紅＝高於該時段日均、🟢綠＝低於日均（差越多越深，±3% 不上色）" : sel === "all" ? "每列＝時間｜日均幾單 → 營業額｜共幾單・單均" : "每列＝營業額｜單數・單均"}；營業 11:00-19:00</span></div>
                         <div style={{ display: "inline-flex", background: C.soft, border: `1px solid ${C.line}`, borderRadius: 8, padding: 2, gap: 2 }}>{granBtn("hour", "每小時")}{granBtn("half", "半小時")}</div>
                         <button onClick={() => setPosSlotHeat(!posSlotHeat)} style={{ border: `1.5px dashed ${posSlotHeat ? C.brand : C.line}`, background: posSlotHeat ? C.brand : "#fff", color: posSlotHeat ? "#fff" : C.sub, borderRadius: 13, padding: "3px 11px", fontSize: 11.5, fontWeight: 700, cursor: "pointer" }}>📅 逐日</button>
                         {!posSlotHeat && <select value={sel} onChange={e => setPosSlotDay(e.target.value)} style={{ border: `1px solid ${C.line}`, borderRadius: 8, padding: "4px 8px", fontSize: 12, background: "#fff", color: C.text, cursor: "pointer" }}>
