@@ -1558,8 +1558,8 @@ function shiftQuick(pos, dt){
       <span>上班</span>${t24c('qkS', defS)}<span>下班</span>${t24c('qkE', defE)}
       <span>休(分)</span><input id="qkB" type="number" value="${defB}" min="0" max="240" style="border:1px solid var(--line);border-radius:8px;padding:7px;font-size:15px;width:62px">
     </div>
-    <div class="hint" style="margin-bottom:6px">點名字＝直接排進去（✓＝當天已有班）</div>
-    <div style="display:flex;gap:6px;flex-wrap:wrap">${(d.names||[]).map(n=>`<button class="mini" style="padding:9px 13px;font-size:15px${busy.has(n)?';opacity:.55':''}" onclick="shiftQuickGo('${n}','${pos}','${dt}')">${n}${busy.has(n)?' ✓':''}</button>`).join('')||'<span class="mut">GD 人員是空的——先在上面「＋ 加人」</span>'}</div>
+    <div class="hint" style="margin-bottom:6px">點名字＝直接排進去；✓＝當天已有班，<b>可以再點</b>＝同天兼第二個崗位</div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap">${(d.names||[]).map(n=>`<button class="mini" style="padding:9px 13px;font-size:15px" onclick="shiftQuickGo('${n}','${pos}','${dt}')">${n}${busy.has(n)?' <span style="color:var(--green);font-weight:800">✓</span>':''}</button>`).join('')||'<span class="mut">GD 人員是空的——先在上面「＋ 加人」</span>'}</div>
     <div style="display:flex;justify-content:flex-end;margin-top:12px"><button class="mini" style="padding:9px 12px" onclick="document.getElementById('qkOv').remove()">取消</button></div></div>`
   ov.onclick = () => ov.remove()
   document.body.appendChild(ov)
