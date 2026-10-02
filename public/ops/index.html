@@ -2325,6 +2325,10 @@ let laborCur = null, _lbFill = null, _lbSaveT = null, _lbUndo = []
 const LB_HOURS = [...Array(14)].map((_,i)=>String(8+i).padStart(2,'0')) // 08..21（8-22區間）
 // v4.28.4（張良「欄改成跟班表崗位一樣」）：欄位=班表崗位清單自動同步＋同款三組配色
 const LB_GRP = ps => /櫃檯|飲料|中控/.test(ps) ? 0 : /漢堡|煎炸|炸麵/.test(ps) ? 1 : /披薩|三明治/.test(ps) ? 2 : 3
+// v4.28.8（張良「直接跳出選單 200 220 250 280 300 不同數字顏色能分辨」）
+const LB_AMTS = [200,220,250,280,300]
+const LB_AC = {200:'#B07CC6',220:'#4DB6AC',250:'#66BB6A',280:'#FFA726',300:'#4DA3FF'} // 選單/數字色
+const LB_AB = {200:'#271A30',220:'#122B28',250:'#152B17',280:'#2F2210',300:'#13283E'} // 格底色
 const LB_GC = [{bg:'#17233A',ink:'#7FB5F5'},{bg:'#2C2012',ink:'#E8A657'},{bg:'#152719',ink:'#6FCF8F'},{bg:'#1C222B',ink:'#93A0B2'}]
 async function laborMount(){
   const el = document.getElementById('lbSec'); if (!el) return
@@ -2369,7 +2373,7 @@ function laborRender(){
   const fmtN = n2 => n2 ? n2.toLocaleString('en-US') : ''
   let h = `<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:8px">
     ${(d2.sheets||[]).map(x=>`<button class="mini${x.id===laborCur?' on':''}" style="padding:6px 14px;font-weight:800" onclick="lbSwitch('${x.id}')">${x.name}</button>`).join('')}
-    ${meN?`<button class="mini" style="padding:6px 12px" onclick="lbNew()">＋ 新方案</button><button class="mini" style="padding:6px 12px" onclick="lbCopy()">⧉ 複製目前</button><button class="mini" style="padding:6px 12px" onclick="lbRen()">✏️ 改名</button><button class="mini" style="padding:6px 12px" onclick="lbUndo()">↩️ 復原</button><button class="mini" style="padding:6px 12px" onclick="lbClearAll()">🧹 清空整表</button><span style="display:inline-flex;align-items:center;gap:4px;border:1px solid var(--line);border-radius:9px;padding:4px 10px;font-size:13px;font-weight:700">💰 時薪 <input value="${sh.wage||300}" inputmode="numeric" style="width:46px;border:none;background:transparent;color:var(--ink);font-size:13px;font-weight:800;text-align:center;outline:none;border-bottom:1.5px solid var(--primary)" onchange="lbWageSet(this.value)"></span>${(d2.sheets||[]).length>1?`<button class="mini" style="padding:6px 12px;color:var(--red)" onclick="lbDel()">🗑 刪方案</button>`:''}`:'<span class="hint">綁定後才能編輯</span>'}
+    ${meN?`<button class="mini" style="padding:6px 12px" onclick="lbNew()">＋ 新方案</button><button class="mini" style="padding:6px 12px" onclick="lbCopy()">⧉ 複製目前</button><button class="mini" style="padding:6px 12px" onclick="lbRen()">✏️ 改名</button><button class="mini" style="padding:6px 12px" onclick="lbUndo()">↩️ 復原</button><button class="mini" style="padding:6px 12px" onclick="lbClearAll()">🧹 清空整表</button><button class="mini" style="padding:6px 12px;font-weight:800" onmousedown="event.stopPropagation()" onclick="lbWageMenu(event)">💰 時薪 ${sh.wage||300} ▾</button>${(d2.sheets||[]).length>1?`<button class="mini" style="padding:6px 12px;color:var(--red)" onclick="lbDel()">🗑 刪方案</button>`:''}`:'<span class="hint">綁定後才能編輯</span>'}
   </div>
   <div class="scroll"><table id="lbTbl" style="border-collapse:collapse;user-select:none">
   <thead><tr><th style="padding:6px 10px;text-align:left;position:sticky;left:0;background:var(--soft);z-index:2">時段</th>
@@ -2379,21 +2383,21 @@ function laborRender(){
     h += `<tr><td style="padding:4px 10px;text-align:left;font-weight:800;position:sticky;left:0;background:var(--card);z-index:1;white-space:nowrap;${meN?'cursor:pointer':''}" ${meN?`onclick="lbRowClear('${hh}')" title="點我＝清空這一列"`:''}>${+hh}-${+hh+1}</td>`
     cols.forEach((_,ci)=>{
       const v = lbV(sh,hh,ci)
-      h += `<td id="lc_${hh}_${ci}" style="padding:0;text-align:center;min-width:86px;border:1px solid var(--line);${meN?'cursor:cell;':''}font-variant-numeric:tabular-nums"
-        ${meN?`onmousedown="lbDown(event,'${hh}',${ci})" onmouseenter="lbEnter('${hh}',${ci})"`:''}><div style="padding:6px 8px;min-height:19px">${fmtN(v)}</div></td>`
+      h += `<td id="lc_${hh}_${ci}" style="padding:0;text-align:center;min-width:86px;border:1px solid var(--line);${v?`background:${LB_AB[v]||'#1E2630'};`:''}${meN?'cursor:cell;':''}font-variant-numeric:tabular-nums"
+        ${meN?`onmousedown="lbDown(event,'${hh}',${ci})" onmouseenter="lbEnter('${hh}',${ci})"`:''}><div style="padding:6px 8px;min-height:19px;font-weight:800;color:${v?(LB_AC[v]||'var(--ink)'):'var(--ink)'}">${fmtN(v)}</div></td>`
     })
-    h += `<td style="padding:4px 10px;text-align:right;font-weight:900;white-space:nowrap">${fmtN(rowSum(hh))}${rowSum(hh)?`<span class="hint" style="font-weight:700;font-size:11px"> ${Math.round(rowSum(hh)/(Number(sh.wage)||300)*10)/10}人</span>`:''}</td></tr>`
+    h += `<td style="padding:4px 10px;text-align:right;font-weight:900;white-space:nowrap">${fmtN(rowSum(hh))}${rowSum(hh)?`<span class="hint" style="font-weight:700;font-size:11px"> ${cols.reduce((a,_,ci)=>a+(lbV(sh,hh,ci)?1:0),0)}人</span>`:''}</td></tr>`
   })
   h += `<tr><td style="padding:6px 10px;text-align:left;font-weight:900;position:sticky;left:0;background:var(--soft);z-index:1">合計</td>
-  ${cols.map((_,ci)=>`<td style="padding:6px 8px;text-align:center;font-weight:900;background:var(--soft);white-space:nowrap">${fmtN(colSum(ci))}${colSum(ci)?`<div class="hint" style="font-weight:700;font-size:10.5px">${Math.round(colSum(ci)/(Number(sh.wage)||300)*10)/10}小時</div>`:''}</td>`).join('')}
-  <td style="padding:6px 10px;text-align:right;font-weight:900;color:var(--red);background:var(--soft);font-size:15px;white-space:nowrap">${fmtN(grand)}${grand?`<div class="hint" style="font-weight:700;font-size:10.5px">${Math.round(grand/(Number(sh.wage)||300)*10)/10}小時</div>`:''}</td></tr>`
+  ${cols.map((_,ci)=>`<td style="padding:6px 8px;text-align:center;font-weight:900;background:var(--soft);white-space:nowrap">${fmtN(colSum(ci))}${colSum(ci)?`<div class="hint" style="font-weight:700;font-size:10.5px">${LB_HOURS.reduce((a,h2)=>a+(lbV(sh,h2,ci)?1:0),0)}小時</div>`:''}</td>`).join('')}
+  <td style="padding:6px 10px;text-align:right;font-weight:900;color:var(--red);background:var(--soft);font-size:15px;white-space:nowrap">${fmtN(grand)}${grand?`<div class="hint" style="font-weight:700;font-size:10.5px">${LB_HOURS.reduce((a,h2)=>a+cols.reduce((b,_,ci)=>b+(lbV(sh,h2,ci)?1:0),0),0)}小時</div>`:''}</td></tr>`
   h += `</tbody></table></div>
   <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;background:var(--card);border:1.5px solid var(--line);border-radius:10px;padding:8px 12px;margin-top:8px;font-size:14px;font-weight:800">
-    <span>💰 總人事 <span style="color:var(--red)">${fmtN(grand)||0}</span><span class="hint" style="font-weight:700">（${Math.round(grand/(Number(sh.wage)||300)*10)/10} 小時）</span></span>
+    <span>💰 總人事 <span style="color:var(--red)">${fmtN(grand)||0}</span><span class="hint" style="font-weight:700">（${LB_HOURS.reduce((a,h2)=>a+cols.reduce((b,_,ci)=>b+(lbV(sh,h2,ci)?1:0),0),0)} 小時）</span></span>
     <span style="display:inline-flex;align-items:center;gap:4px">🎯 人事成本 <input value="${sh.pct||20}" inputmode="numeric" style="width:34px;border:none;background:transparent;color:var(--ink);font-size:14px;font-weight:900;text-align:center;outline:none;border-bottom:1.5px solid var(--primary)" onchange="lbPctSet(this.value)">%</span>
     <span>→ 營業額要做到 <span style="color:var(--green);font-size:16px">${grand?('NT$'+fmtN(Math.ceil(grand/((Number(sh.pct)||20)/100)))):'—'}</span></span>
   </div>
-  <div class="hint" style="margin-top:4px">點格一下＝加 1 人（到 5 人再點＝清空）・按住拖＝複製・點欄頭/列頭＝清整欄/整列・↩️ 復原；欄位＝班表崗位（⚙️ 設定改）</div>`
+  <div class="hint" style="margin-top:4px">點格＝跳時薪選單（200~300 顏色分檔，✕＝清空）・按住拖＝複製・點欄頭/列頭＝清整欄/整列・↩️ 復原；欄位＝班表崗位（⚙️ 設定改）</div>`
   el.className = ''
   el.innerHTML = h
 }
@@ -2425,19 +2429,35 @@ function lbHL(){ const f=_lbFill; if(!f) return
 document.addEventListener('mouseup', ()=>{
   const f=_lbFill; if(!f) return; _lbFill=null
   const sh=lbSheet(); if(!sh) return
-  if(!f.moved){ lbCycle(f.h,f.c); return }
+  if(!f.moved){ lbAmtMenu(f.h,f.c); return }
   lbPushUndo()
   const v = lbV(sh,f.h,f.c)
   const hA=Math.min(+f.h,+f.h2), hB=Math.max(+f.h,+f.h2), cA=Math.min(f.c,f.c2), cB=Math.max(f.c,f.c2)
   for(let hh=hA;hh<=hB;hh++) for(let cc=cA;cc<=cB;cc++) lbSetV(sh,String(hh).padStart(2,'0'),cc,v)
   laborRender(); lbSave()
 })
-function lbCycle(h,c){ // v4.28.6（張良「不想key數字 也討厭跳出視窗」）：點一下=加1人,到5人再點=清空——零視窗零打字循環
-  const sh=lbSheet(); const w=Number(sh.wage)||300; const cur=lbV(sh,h,c)
-  const n2=Math.round(cur/w); const next=cur===0?1:(n2>=5?0:n2+1)
-  lbPushUndo(); lbSetV(sh,h,c,next*w); laborRender(); lbSave()
+function lbMnClose(){ const m=document.getElementById('lbMn'); if(m) m.remove() }
+document.addEventListener('mousedown', e2=>{ const m=document.getElementById('lbMn'); if(m && !m.contains(e2.target)) m.remove() })
+function lbMnShow(anchorEl, btnsHtml){ // 貼著目標的小浮選單（張良「討厭跳出視窗」）
+  lbMnClose()
+  const r2 = anchorEl.getBoundingClientRect()
+  const m = document.createElement('div'); m.id='lbMn'
+  m.style.cssText = `position:fixed;left:${Math.min(r2.left, window.innerWidth-320)}px;top:${r2.bottom+4}px;z-index:70;background:#222B38;border:1px solid #3B4654;border-radius:10px;box-shadow:0 10px 30px rgba(0,0,0,.5);padding:6px;display:flex;gap:5px;align-items:center`
+  m.innerHTML = btnsHtml
+  document.body.appendChild(m)
 }
-function lbWageSet(v){ const sh=lbSheet(); sh.wage=Math.max(1,Math.min(9999,Number(v)||300)); laborRender(); lbSave() }
+const lbAmtBtn = (v,fn) => `<button style="border:none;border-radius:8px;padding:8px 11px;font-weight:900;font-size:14px;cursor:pointer;background:${LB_AB[v]};color:${LB_AC[v]};border:1.5px solid ${LB_AC[v]}" onmousedown="event.stopPropagation()" onclick="${fn}">${v}</button>`
+function lbAmtMenu(h,c){ // 點格＝原地跳金額選單
+  const td = document.getElementById('lc_'+h+'_'+c); if(!td) return
+  lbMnShow(td, LB_AMTS.map(v=>lbAmtBtn(v,`lbAmtPick('${h}',${c},${v})`)).join('') + `<button style="border:1px solid var(--line);border-radius:8px;padding:8px 10px;font-weight:800;font-size:13px;cursor:pointer;background:transparent;color:var(--red)" onmousedown="event.stopPropagation()" onclick="lbAmtPick('${h}',${c},0)">✕</button>`)
+}
+function lbAmtPick(h,c,v){ lbMnClose(); lbPushUndo(); lbSetV(lbSheet(),h,c,v); laborRender(); lbSave() }
+function lbWageMenu(ev){ // 時薪選單：選了=整張表全部變該數字
+  lbMnShow(ev.currentTarget, LB_AMTS.map(v=>lbAmtBtn(v,`lbWagePick(${v})`)).join(''))
+}
+function lbWagePick(v){ lbMnClose(); const sh=lbSheet(); lbPushUndo(); sh.wage=v
+  for(const h2 of Object.keys(sh.rows||{})) for(const k2 of Object.keys(sh.rows[h2])) sh.rows[h2][k2]=v // 全表非零格=該數字
+  laborRender(); lbSave() }
 function lbPctSet(v){ const sh=lbSheet(); sh.pct=Math.max(1,Math.min(99,Number(v)||20)); laborRender(); lbSave() } // 🎯 人事成本%→反推營業額（張良 2026-10-03）
 const SLOT_DEF = [{n:'午峰',s:'11:00',e:'14:30'},{n:'離峰',s:'14:30',e:'17:30'},{n:'晚峰',s:'17:30',e:'20:00'},{n:'全日',s:'11:00',e:'20:00'}] // 預設照近30天單量尖峰切；⚙️可自訂
 function t24set(cls, v){
