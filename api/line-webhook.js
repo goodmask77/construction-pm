@@ -1260,6 +1260,17 @@ async function loadGroupChatText() {
     return lines.join('\n')
   } catch (_) { return '' }
 }
+// DD 最近主動發給這位的通知（v4.22.0 張良「DD 不會知道我在問上一句話」）：使用者針對通知追問時接得上
+async function loadPushLogText(convId) {
+  try {
+    const arr = asObj((await kvGetMany(['pm_bot_pushlog']))['pm_bot_pushlog'])[convId] || []
+    const cut = Date.now() - 12 * 3600e3
+    const recent = arr.filter(x => x && x.ts > cut).slice(-10)
+    if (!recent.length) return ''
+    const fmtT = (ts) => new Date(ts).toLocaleString('zh-TW', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Taipei' })
+    return '\n\n【你最近主動發給這位的通知（台北時間 月/日 時:分，最新在後）——他現在很可能在針對這些追問（例如對「遲到通知」問「是打幾點的卡」就是問通知裡那個人）。先把他的話當成接續這些通知的對話，別當成全新問題重頭猜：\n' + recent.map(x => `  - ${fmtT(x.ts)}：${String(x.text).replace(/\n/g, ' ／ ')}`).join('\n') + '】'
+  } catch (_) { return '' }
+}
 async function handleUnsend(ev) {
   try {
     const mid = ev.unsend?.messageId
@@ -1862,7 +1873,7 @@ export default async function handler(req, res) {
         moneyOK = (gid === 'Cf7940efc6517b0c084ad2ad496b45f30') || (gcfg[gid] && gcfg[gid].money === true)
       }
       // 3) 一般流程：載入資料＋對話記憶＋長期記事本 → 問 AI（操作者才開放下指令）
-      const [snaps, accountsText, financeText, activityText, estimatesText, crewText, history, memList, conclusionsText, tasksText, sheetText, posText, catalogText, supplyText, lineQuotaText, filelibText, groupChatText] = await Promise.all([loadSnapshots(), loadAccounts(), loadFinanceText(), loadActivityText(), loadEstimatesText(), Promise.all([loadCrewText(), loadShiftText(), loadPunchText(), loadHrText()]).then(([a, b, c, d]) => a + b + c + d), getChatHistory(convId), getMemory(), loadConclusionsText(), loadTasksText(), loadSheetText(), loadPosText(), loadCatalogText(), loadSupplyText(), loadLineQuotaText(), loadFilelibText(), loadGroupChatText()])
+      const [snaps, accountsText, financeText, activityText, estimatesText, crewText, history, memList, conclusionsText, tasksText, sheetText, posText, catalogText, supplyText, lineQuotaText, filelibText, groupChatText] = await Promise.all([loadSnapshots(), loadAccounts(), loadFinanceText(), loadActivityText(), loadEstimatesText(), Promise.all([loadCrewText(), loadShiftText(), loadPunchText(), loadHrText()]).then(([a, b, c, d]) => a + b + c + d), getChatHistory(convId), getMemory(), loadConclusionsText(), loadTasksText(), loadSheetText(), loadPosText(), loadCatalogText(), loadSupplyText(), loadLineQuotaText(), loadFilelibText(), loadGroupChatText().then(async g => g + await loadPushLogText(convId))])
       let rawReply = await answer(text, snaps, accountsText, financeText, activityText, estimatesText, crewText, canAct, history, memoryToText(memList), conclusionsText, tasksText, sheetText, posText, catalogText, supplyText, lineQuotaText, filelibText, groupChatText, moneyOK)
       // 🔎 資料代查迴圈（張良 2026-09-27 根除）：AI 輸出 query_pos_day → 系統查庫 → 資料回填再答一輪（唯讀自動執行,不經確認）
       try {

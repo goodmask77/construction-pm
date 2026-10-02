@@ -36,8 +36,21 @@ export async function linePush(to, text) {
       method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${LINE_TOKEN}` },
       body: JSON.stringify({ to, messages: [{ type: 'text', text: String(text).slice(0, 4900) }] }),
     })
+    if (r.ok) { try { await logBotPush(to, text) } catch (_) {} } // v4.22.0 主動推播進對話脈絡（張良：DD 要認得自己剛發的通知、接得上追問）
     return r.ok
   } catch (_) { return false }
+}
+// DD 主動發給「某人私訊」的通知記一份近期 log——webhook 答題時帶進脈絡，使用者針對通知追問就接得上
+async function logBotPush(to, text) {
+  if (!to || to[0] !== 'U') return // 只記私訊（群組有群訊流）
+  const all = (await kvGet('pm_bot_pushlog')) || {}
+  const cid = 'dm_' + to
+  const arr = Array.isArray(all[cid]) ? all[cid] : []
+  arr.push({ ts: Date.now(), text: String(text).slice(0, 400) })
+  const cut = Date.now() - 48 * 3600e3
+  all[cid] = arr.filter(x => x.ts > cut).slice(-20)
+  const ks = Object.keys(all); if (ks.length > 50) for (const k of ks.slice(0, ks.length - 50)) delete all[k]
+  await kvSet('pm_bot_pushlog', all)
 }
 export async function notifyOps(text) { // 每次報到/簽約都讓老闆知道（不帶機密）
   try { const ops = (await kvGet('pm_bot_operators')) || {}; for (const uid of Object.keys(ops)) await linePush(uid, text) } catch (_) {}
