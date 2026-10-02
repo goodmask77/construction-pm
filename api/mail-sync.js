@@ -914,8 +914,12 @@ export default async function handler(req, res) {
     const actDoc = (await kvGet('sp_finance_pm_prep_act_'+todayAct.slice(0,7))) || { days:{} } // 實際備料（張良 2026-10-01：每天可填、留紀錄做分析）
     // 排除「盤中未完整日」（張良 2026-09-24 抓包：今天的半天資料 11:00 起混進統計，把當天星期的平均拉低
     // → 看板白天數字一直變、跟 09:30 備料訊息對不上。統計只吃打烊後的正式日結；日表那段照樣顯示今天盤中）
-    const entries = ((posDoc || {}).entries || []).filter(e => skOf2(e.store) === storeQ && !e.intraday).sort((a, b) => (a.date < b.date ? -1 : 1))
+    const entriesAll9 = ((posDoc || {}).entries || []).filter(e => skOf2(e.store) === storeQ).sort((a, b) => (a.date < b.date ? -1 : 1))
+    const entries = entriesAll9.filter(e => !e.intraday)
     if (!entries.length) return res.status(200).json({ ok: true, store: storeQ, empty: true })
+    // v4.18.2（張良：每日數據要跟主App一樣有今天盤中）：統計照舊只吃正式日結；日表額外掛上今天的盤中列(live=1)
+    const today18 = new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10)
+    const liveE9 = entriesAll9.filter(e => e.intraday && e.date === today18 && !entries.some(x => x.date === e.date)).slice(-1)
     const anchor = entries[entries.length - 1].date
     const dOf = (base, off) => { const d0 = new Date(base + 'T00:00:00Z'); d0.setUTCDate(d0.getUTCDate() + off); return d0.toISOString().slice(0, 10) }
     const from60 = dOf(anchor, -59), from30 = dOf(anchor, -29)
@@ -928,7 +932,7 @@ export default async function handler(req, res) {
     const dayDet2 = (date) => { const m = (dets[date.slice(0, 7)] || {}).days; if (!m) return undefined; return m[`${date}::${storeQ}`] || (m[date] && skOf2(m[date].store) === storeQ ? m[date] : undefined) }
     // 日表（近20個營業日；核心夥伴全開＝付款明細/至14:00/單均都給——張良 2026-09-20「都是核心夥伴」）
     const WD = ['日', '一', '二', '三', '四', '五', '六']
-    const days2 = entries.map(e => {
+    const days2 = [...entries, ...liveE9].map(e => {
       const tk = Number(e.takeTx) || 0, dn = Number(e.dineTx) || 0
       const rev2 = Number(e.revenue) || 0, tx2 = Number(e.txCount) || 0
       // 至14:00＝時段表 <14 點小時列加總（與 App 同一份資料）
@@ -937,6 +941,7 @@ export default async function handler(req, res) {
       const trows = Array.isArray(ts) && ts[0] ? (ts[0].rows || []) : []
       if (trows.length) { lunch = 0; for (const r of trows) { const hh2 = parseInt(r[0]); if (!isNaN(hh2) && hh2 < 14) lunch += Number(r[2]) || 0 } }
       return {
+        live: e.intraday ? 1 : 0,
         date: e.date, wd: WD[new Date(e.date + 'T00:00:00Z').getUTCDay()], rev: rev2, tx: tx2,
         avg: tx2 ? Math.round(rev2 / tx2) : null, lunchPct: lunch != null && rev2 ? Math.round(lunch / rev2 * 100) : null, lunchRev: lunch != null ? Math.round(lunch) : null,
         cash: Number(e.cash) || 0, card: Number(e.card) || 0, linepay: Number(e.linepay) || 0, uber: Number(e.uber) || 0,
