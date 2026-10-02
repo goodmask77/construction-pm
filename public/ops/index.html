@@ -2048,18 +2048,33 @@ function tplPreview(id){ // 👁 先預覽確認再套用（張良 2026-10-02）
   const days = [...Array(7)].map((_,i)=>{ const t2 = new Date(window._shiftWk); t2.setDate(t2.getDate()+i); return t2.toISOString().slice(0,10) })
   const wdN3 = ['一','二','三','四','五','六','日']
   const exist = new Set(d.sched.map(x=>[x.name, x.date, x.pos||''].join('|')))
+  const PBp = _PBX(), PTp = _PTX()
+  const cIdx = n => { const c2 = ((d.colors||{})[n]); if (c2 != null) return c2 % PBp.length; let i2 = 0; for (const ch of String(n)) i2 = (i2*31+ch.charCodeAt(0)) % 997; return i2 % PBp.length }
+  // 快照格子＝跟班表同一個長相（張良 2026-10-02「就像這樣快照一個版本不就好了」）
+  const posOrd = [...(d.posList||[])]
+  tp.items.forEach(x=>{ const p2 = x.pos||'未分崗'; if (!posOrd.includes(p2)) posOrd.push(p2) })
   let addN = 0
-  const cols = days.map((dt,i)=>{
-    const its = tp.items.filter(x=>(x.wd||0)===i)
-    return `<div style="min-width:120px;flex:1"><div style="font-weight:800;color:var(--pdark);border-bottom:1px solid var(--line);padding-bottom:3px;margin-bottom:4px">${dt.slice(5)}（${wdN3[i]}）</div>${its.map(x=>{ const dup = exist.has([x.name, dt, x.pos||''].join('|')); if (!dup) addN++; return `<div style="font-size:13px;padding:1px 0;${dup?'opacity:.5':''}">${x.pos||'—'}：${x.name}${x.tr?` 🎓${x.tr}`:''}${dup?' <span class="hint" style="font-size:11px">已存在</span>':''}</div>` }).join('')||'<div class="hint">—</div>'}</div>`
-  }).join('')
+  const BDp = 'border:1px solid var(--line);'
+  const cell9 = (ps, i) => {
+    const its = tp.items.filter(x=>(x.wd||0)===i && (x.pos||'未分崗')===ps)
+    return `<td style="${BDp}text-align:left;vertical-align:top;padding:3px">${its.map(x=>{
+      const dup = exist.has([x.name, days[i], x.pos||''].join('|'))
+      if (!dup) addN++
+      const pi = cIdx(x.name), ti = x.tr ? cIdx(x.tr) : -1
+      const bg2 = x.tr ? `background:linear-gradient(180deg,${PBp[pi]} 50%,${PBp[ti]} 50%);` : `background:${PBp[pi]};`
+      return `<div style="font-size:12.5px;line-height:1.6;${bg2}border:${x.tr?'2px dashed rgba(255,255,255,.9)':'none'};border-radius:6px;padding:3px 7px;margin:2px 0;${dup?'opacity:.4':''}"><b style="color:${PTp[pi]};font-weight:600">${x.name}</b>${x.tr?`<span style="display:block;color:${PTp[ti]};font-weight:600;font-size:11.5px">🎓${x.tr}</span>`:''}${dup?'<span style="display:block;font-size:10px;color:#fff;opacity:.9">已存在·跳過</span>':''}</div>`
+    }).join('')||'<span class="mut" style="font-size:12px">—</span>'}</td>`
+  }
+  const cols = `<div class="scroll"><table style="table-layout:fixed;width:100%;min-width:720px;border-collapse:collapse"><colgroup><col style="width:80px">${days.map(()=>'<col>').join('')}</colgroup>
+  <thead><tr><th style="${BDp}text-align:left;background:var(--soft)">崗位</th>${days.map((dt,i)=>`<th style="${BDp}text-align:center;background:var(--soft);color:#F2F5F9">${dt.slice(5)}<br>（${wdN3[i]}）</th>`).join('')}</tr></thead>
+  <tbody>${posOrd.map(ps=>`<tr><td style="${BDp}text-align:left;font-weight:800;color:var(--pdark)">${ps}</td>${days.map((_,i)=>cell9(ps,i)).join('')}</tr>`).join('')}</tbody></table></div>`
   const o0 = document.getElementById('tpOv'); if (o0) o0.remove()
   const ov = document.createElement('div'); ov.id='tpPv'
   ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:61;display:flex;align-items:center;justify-content:center;padding:14px'
   ov.innerHTML = `<div style="background:#222B38;border:1px solid #3B4654;border-radius:14px;width:min(900px,96vw);max-height:88vh;overflow:auto;padding:16px" onclick="event.stopPropagation()">
     <div style="font-weight:900;font-size:16px;margin-bottom:6px">👁 預覽「${tp.name}」→ ${days[0].slice(5)}~${days[6].slice(5)}</div>
     <div class="hint" style="margin-bottom:8px">「已存在」＝這週已有同一筆會跳過、只會新增缺的；確認沒問題再按套用。</div>
-    <div style="display:flex;gap:10px;overflow-x:auto">${cols}</div>
+    ${cols}
     <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px"><button class="mini" style="padding:9px 12px" onclick="document.getElementById('tpPv').remove()">取消</button>${addN?`<button class="mini on" style="padding:9px 18px" onclick="document.getElementById('tpPv').remove();tplApply('${id}',1)">✅ 套用（新增 ${addN} 筆）</button>`:`<span class="hint" style="align-self:center">這一週已經有一模一樣的班了——先用 ‹ › 翻到要套用的那一週，再開預覽</span>`}</div></div>`
   ov.onclick = () => ov.remove()
   document.body.appendChild(ov)
