@@ -369,8 +369,9 @@ export default function TaskCenter({ K, confirm, canEdit, cats, onLog, onAddCat,
 
   return (
     <div style={{ maxWidth: 1240, margin: "6px auto", padding: 16, background: C.bg, border: `1px solid ${C.line}`, borderRadius: 12 }}>
-      {/* 標題 + 視角切換 */}
-      <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 16 }}>
+      {/* 標題 + 視角切換（2026-10-02 張良「選不同檢視版面會跑」治本：固定兩行——
+           第一行=標題/搜尋/今日、第二行=視角分頁+排序；排序鈕永遠佔位(不適用的視角隱形)，切檢視零位移） */}
+      <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 10 }}>
         <ListTodo size={18} strokeWidth={1.75} color={C.sub} />
         <div style={{ fontSize: 17, fontWeight: 600, color: C.text }}>任務中心</div>
         <span style={{ fontSize: 12, color: C.faint, fontVariantNumeric: "tabular-nums" }}>{open.length} 件待辦・共 {tasks.length} 件</span>
@@ -381,22 +382,23 @@ export default function TaskCenter({ K, confirm, canEdit, cats, onLog, onAddCat,
           <input value={q} onChange={e => setQ(e.target.value)} placeholder="搜尋任務…" style={{ ...inp, width: 170, padding: "6px 10px 6px 28px", fontSize: 12.5 }} />
           {q && <button onClick={() => setQ("")} style={{ position: "absolute", right: 6, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", color: C.faint, cursor: "pointer", padding: 0, display: "flex" }}><X size={13} /></button>}
         </div>
-        {/* 排序切換：看板/清單可切 手動(拖曳)/日期/重要度；釘選永遠最前 */}
-        {(view === "board" || view === "list") && (
-          <div style={{ display: "inline-flex", alignItems: "center", background: C.soft, border: `1px solid ${C.line}`, borderRadius: 8, padding: 2, gap: 2 }}>
-            <ArrowUpDown size={12} color={C.faint} style={{ margin: "0 2px 0 7px" }} />
-            {[["manual", "手動"], ["due", "日期"], ["prio", "重要度"]].map(([k, l]) => { // 清單也開放手動拖曳排序（張良 2026-09-10）
-              const act = sortMode === k;
-              return <button key={k} onClick={() => setSortMode(k)} style={{ padding: "5px 10px", borderRadius: 6, border: `1px solid ${act ? C.line : "transparent"}`, background: act ? WHT : "transparent", color: act ? C.text : C.sub, fontSize: 12, fontWeight: act ? 600 : 400, cursor: "pointer" }}>{l}</button>;
-            })}
-          </div>
-        )}
         {/* Today 是 Home（落地頁），不是第七個並列視角 → 獨立按鈕放在視角切換器外面 */}
         <button onClick={() => setView("today")} style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "7px 14px", borderRadius: 8, border: `1px solid ${view === "today" ? C.accent : C.line}`, background: view === "today" ? C.accent : WHT, color: view === "today" ? "#fff" : C.sub, fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
           <Home size={14} strokeWidth={1.75} />今日
         </button>
+      </div>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 16 }}>
         <div style={{ display: "inline-flex", background: C.soft, border: `1px solid ${C.line}`, borderRadius: 8, padding: 2, gap: 2, flexWrap: "wrap" }}>
           {TABS.map(([k, l, I]) => Tab(k, l, I))}
+        </div>
+        <div style={{ flex: 1 }} />
+        {/* 排序切換：看板/清單可切 手動(拖曳)/日期/重要度；釘選永遠最前；其他視角隱形佔位＝版面不跑 */}
+        <div style={{ display: "inline-flex", alignItems: "center", background: C.soft, border: `1px solid ${C.line}`, borderRadius: 8, padding: 2, gap: 2, visibility: (view === "board" || view === "list") ? "visible" : "hidden" }}>
+          <ArrowUpDown size={12} color={C.faint} style={{ margin: "0 2px 0 7px" }} />
+          {[["manual", "手動"], ["due", "日期"], ["prio", "重要度"]].map(([k, l]) => { // 清單也開放手動拖曳排序（張良 2026-09-10）
+            const act = sortMode === k;
+            return <button key={k} onClick={() => setSortMode(k)} style={{ padding: "5px 10px", borderRadius: 6, border: `1px solid ${act ? C.line : "transparent"}`, background: act ? WHT : "transparent", color: act ? C.text : C.sub, fontSize: 12, fontWeight: act ? 600 : 400, cursor: "pointer" }}>{l}</button>;
+          })}
         </div>
       </div>
 
