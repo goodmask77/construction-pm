@@ -56,6 +56,8 @@
   td{padding:8px 8px;border-top:1px solid #222A35;text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
   tbody tr:nth-child(even) td{background:#191F28}
   .scroll{overflow-x:auto;-webkit-overflow-scrolling:touch;border:1px solid var(--line);border-radius:12px}
+  table.tight th{padding:5px 6px}
+  table.tight td{padding:3px 6px;font-size:13px} /* v4.28.2 張良「縮小版面」：備料表緊湊版 */
   .catband td{background:var(--psoft)!important;color:var(--pdark);font-weight:800;font-size:14px}
   .subrow td{background:#2A2415!important}
   .todaycol{background:var(--psoft)!important;color:var(--pdark)!important;animation:glowp 2s ease-in-out infinite;position:relative}
@@ -208,7 +210,7 @@ function renderBoard(d, store){
     let tw = new Date().getDay() // 今天星期幾（1~5發光）
     if (tw === 0 || tw === 6) tw = 1 // 週六日（GD公休）打開＝在準備週一的量 → 發光週一（張良 2026-09-20 抓到週日沒東西亮）
     h += `<section><h2>預估備料量 <span class="hint">份/日</span><button class="mini" style="float:right" onclick="prepLogView()">📜 紀錄</button></h2>`
-    h += `<div class="scroll"><table><thead><tr><th>項目</th><th class="todaycol">今日實備✏️</th><th>平均</th>${['一','二','三','四','五'].map((w,i)=>`<th${tw===i+1?' class="todaycol"':''}>週${w}${tw===i+1?' ★':''}</th>`).join('')}</tr></thead><tbody>`
+    h += `<div class="scroll"><table class="tight"><thead><tr><th>項目</th><th class="todaycol">今日實備✏️</th><th>平均</th>${['一','二','三','四','五'].map((w,i)=>`<th${tw===i+1?' class="todaycol"':''}>週${w}${tw===i+1?' ★':''}</th>`).join('')}</tr></thead><tbody>`
     grps.forEach(g=>{
       h += `<tr class="catband"><td colspan="10">${g}</td></tr>`
       d.prep.filter(p=>p.grp===g).forEach(p=>{
@@ -220,7 +222,7 @@ function renderBoard(d, store){
         const s86 = (window._prepS86||{})[p.name]
         const nmE = p.name.replace(/'/g,"\\'")
         const tb = 'font-size:10.5px;padding:1px 5px;border:1px solid var(--line);border-radius:6px;background:var(--card);cursor:pointer;color:var(--text)'
-        const actTd = p.sub ? `<td class="todaycol mut">—</td>` : `<td class="todaycol"><input inputmode="numeric" value="${av!=null?av:''}" placeholder="填" style="width:52px;padding:4px;border:1.5px solid #9EC5E8;border-radius:6px;text-align:center;font-weight:800;font-size:14px" onchange="actSave('${nmE}',this.value)"><div style="display:flex;gap:2px;justify-content:center;margin-top:2px"><button title="追加（又備了幾份）" style="${tb}" onclick="actAdd('${nmE}')">＋</button><button title="耗損記錄" style="${tb}" onclick="actLoss('${nmE}')">耗</button><button title="86停售/回賣" style="${tb};${s86?'color:var(--red);border-color:var(--red);font-weight:800':''}" onclick="act86('${nmE}',${s86?1:0})">86</button></div></td>`
+        const actTd = p.sub ? `<td class="todaycol mut">—</td>` : `<td class="todaycol"><div style="display:inline-flex;gap:3px;align-items:center;white-space:nowrap"><input inputmode="numeric" value="${av!=null?av:''}" placeholder="填" style="width:42px;padding:2px;border:1.5px solid #9EC5E8;border-radius:6px;text-align:center;font-weight:800;font-size:13px" onchange="actSave('${nmE}',this.value)"><button title="追加（又備了幾份）" style="${tb}" onclick="actAdd('${nmE}')">＋</button><button title="耗損記錄" style="${tb}" onclick="actLoss('${nmE}')">耗</button><button title="86停售/回賣" style="${tb};${s86?'color:var(--red);border-color:var(--red);font-weight:800':''}" onclick="act86('${nmE}',${s86?1:0})">86</button></div></td>`
         h += `<tr${p.sub?' class="subrow"':''}><td style="font-weight:${p.sub?800:700};color:${p.sub?'#8a5a2e':'var(--ink)'}">${p.sub?'└ ':''}${p.name}${s86?' <span style="color:var(--red);font-weight:900;font-size:12px;border:1.5px solid var(--red);border-radius:5px;padding:0 4px">86</span>':''}</td>${actTd}<td class="avg">${p.avg!=null?p.avg:'—'}</td>${wds}</tr>`
       })
     })
