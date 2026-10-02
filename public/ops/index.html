@@ -26,6 +26,7 @@
   *{box-sizing:border-box;margin:0;padding:0}
   :root{color-scheme:dark}
   input,select,textarea{background:var(--soft);color:var(--ink)}
+  html,body{overscroll-behavior-x:none} /* 擋瀏覽器橫滑返回上一頁（張良 2026-10-02） */
   body{background:var(--bg);color:var(--text);font-family:-apple-system,"PingFang TC","Noto Sans TC",system-ui,sans-serif;font-size:15px;line-height:1.7}
   .wrap{max-width:980px;margin:0 auto;padding:18px 14px 60px}
   .brand{font-weight:800;font-size:15px;letter-spacing:.04em;color:var(--primary)}
@@ -1731,14 +1732,15 @@ function shSwTE(e){
   else if (dx<0 && window._shSl>=window._shMax) shiftWkNav(1) // 在最右、往左滑＝下一週
 }
 function shSwWheel(e){
-  if (Math.abs(e.deltaX)<Math.abs(e.deltaY)) return // 直向滾不管
+  if (Math.abs(e.deltaX)<Math.abs(e.deltaY)+2) return // 直向滾不管
   const w=e.currentTarget, max=w.scrollWidth-w.clientWidth-2
   const atL=w.scrollLeft<=0, atR=w.scrollLeft>=max
-  if ((e.deltaX<0&&atL)||(e.deltaX>0&&atR)) {
-    window._shAcc=(window._shAcc||0)+e.deltaX
-    if (Math.abs(window._shAcc)>80) { e.preventDefault(); const d=window._shAcc>0?1:-1; window._shAcc=0; clearTimeout(window._shAccT); shiftWkNav(d) }
-    window._shAccT=setTimeout(()=>{window._shAcc=0},200)
-  } else window._shAcc=0
+  if (!((e.deltaX<0&&atL)||(e.deltaX>0&&atR))) { window._shAcc=0; return } // 還能捲就讓它捲
+  e.preventDefault()
+  if (window._shCool) return // 冷卻中，避免 trackpad 慣性連翻好幾週
+  window._shAcc=(window._shAcc||0)+e.deltaX
+  if (Math.abs(window._shAcc)>110) { const d=window._shAcc>0?1:-1; window._shAcc=0; window._shCool=1; setTimeout(()=>{window._shCool=0},550); shiftWkNav(d) }
+  clearTimeout(window._shAccT); window._shAccT=setTimeout(()=>{window._shAcc=0},180)
 }
 async function shiftLoad(ym){
   curStore = 'shift'; setTabs('shift')
