@@ -2023,7 +2023,7 @@ export default async function handler(req, res) {
     const sugsD0 = await kvGet('sp_finance_pm_sop_sugs')
     const sugOpen = {}
     ;(((sugsD0 || {}).list) || []).forEach(x => { if (x.status === 'open') sugOpen[x.st] = (sugOpen[x.st] || 0) + 1 })
-    return res.status(200).json({ ok: true, date: dt2, def: { items: gdef.items || [], stations, edits: (gdef.edits || []).slice(0, 10), cats: gdef.catOrder || [], stCat: gdef.stCat || {}, stOwner: gdef.stOwner || {} }, sugOpen, trash, log: logDoc || { items: {} }, names, me: me4, issues, prepHide: (hideDoc || {}).keys || {} })
+    return res.status(200).json({ ok: true, date: dt2, def: { items: gdef.items || [], stations, edits: (gdef.edits || []).slice(0, 10), cats: gdef.catOrder || [], stCat: gdef.stCat || {}, stOwner: gdef.stOwner || {}, catOwner: gdef.catOwner || {} }, sugOpen, trash, log: logDoc || { items: {} }, names, me: me4, issues, prepHide: (hideDoc || {}).keys || {} })
   }
   // 站別管理（張良 2026-09-21：站可新增/改名/刪除；誤刪可復原→軟刪進回收站）：POST ?sopst=<OPS_BOARD_KEY> {token, op, st, newName, trashId}
   if (req.method === 'POST' && req.query?.sopst) {
@@ -2071,10 +2071,12 @@ export default async function handler(req, res) {
       if (!co || !cn) return res.status(400).json({ ok: false, error: '要給舊名與新名' })
       gS.catOrder = (gS.catOrder || []).map(c2 => c2 === co ? cn : c2)
       gS.stCat = Object.fromEntries(Object.entries(gS.stCat || {}).map(([k, v]) => [k, v === co ? cn : v]))
+      if ((gS.catOwner || {})[co] != null) { gS.catOwner = { ...gS.catOwner, [cn]: gS.catOwner[co] }; delete gS.catOwner[co] }
     } else if (bs.op === 'catdel') {
       const cn = String(bs.cat || '').trim()
       gS.catOrder = (gS.catOrder || []).filter(c2 => c2 !== cn)
       gS.stCat = Object.fromEntries(Object.entries(gS.stCat || {}).filter(([, v]) => v !== cn))
+      if (gS.catOwner) delete gS.catOwner[cn]
     } else if (bs.op === 'catord') {
       gS.catOrder = (Array.isArray(bs.list) ? bs.list : []).map(c2 => String(c2).trim().slice(0, 20)).filter(Boolean).slice(0, 20)
     } else if (bs.op === 'catset') { // 站歸到哪個分類（空=未分類）
@@ -2082,6 +2084,14 @@ export default async function handler(req, res) {
       gS.stCat = { ...(gS.stCat || {}) }
       const cn = String(bs.cat || '').trim().slice(0, 20)
       if (cn) { gS.stCat[nmS] = cn; gS.catOrder = gS.catOrder || []; if (!gS.catOrder.includes(cn)) gS.catOrder.push(cn) } else delete gS.stCat[nmS]
+    } else if (bs.op === 'catown') { // 分類負責人（v4.17.0 張良：每個類別設負責人編輯權限）
+      const aprO = (curS.ground || {}).approvers || ['張良瑋']
+      if (!(aprO.includes(whoS.name) || whoS.role === '主管')) return res.status(403).json({ ok: false, error: '負責人由審核人／主管指定' })
+      const cnO = String(bs.cat || '').trim().slice(0, 20)
+      if (!cnO) return res.status(400).json({ ok: false, error: '要給分類' })
+      gS.catOwner = { ...(gS.catOwner || {}) }
+      const onC = String(bs.owner || '').trim().slice(0, 20)
+      if (onC) gS.catOwner[cnO] = onC; else delete gS.catOwner[cnO]
     } else if (bs.op === 'ownset') { // 負責人（只有審核人/主管能指定）
       const aprO = (curS.ground || {}).approvers || ['張良瑋']
       if (!(aprO.includes(whoS.name) || whoS.role === '主管')) return res.status(403).json({ ok: false, error: '負責人由審核人／主管指定' })
@@ -2121,7 +2131,8 @@ export default async function handler(req, res) {
       await kvPut('sp_finance_pm_sop_sugs', docG, 'SOP建議(' + whoG2.name + ')')
       try { // DD 私訊負責人
         const defX = await kvGet('sp_finance_pm_sop_def')
-        const ow = (((defX || {}).ground || {}).stOwner || {})[stG]
+        const gDX = ((defX || {}).ground || {})
+        const ow = (gDX.stOwner || {})[stG] || (gDX.catOwner || {})[(gDX.stCat || {})[stG]]
         if (ow) {
           const ros = await kvGet('sp_crew_kb_roster')
           const po = (((ros || {}).people) || []).find(p2 => p2.name === ow && p2.lineUserId)
@@ -2134,7 +2145,7 @@ export default async function handler(req, res) {
       if (!sg || sg.status !== 'open') return res.status(400).json({ ok: false, error: '找不到或已處理' })
       const defX = await kvGet('sp_finance_pm_sop_def')
       const gX = (defX || {}).ground || {}
-      const ow = (gX.stOwner || {})[sg.st]
+      const ow = (gX.stOwner || {})[sg.st] || (gX.catOwner || {})[(gX.stCat || {})[sg.st]]
       const aprX = gX.approvers || ['張良瑋']
       if (!(whoG2.name === ow || aprX.includes(whoG2.name) || whoG2.role === '主管')) return res.status(403).json({ ok: false, error: '只有該站負責人／審核人能審' })
       const pass = !!bG.pass
@@ -2426,8 +2437,8 @@ export default async function handler(req, res) {
     if (!b6.st || !Array.isArray(b6.items)) return res.status(400).json({ ok: false, error: '缺 st 或 items' })
     const cur6 = (await kvGet('sp_finance_pm_sop_def')) || {}
     const g6 = cur6.ground || { items: [] }
-    { // v4.15.0 站負責人：有主的站只有負責人/審核人/主管能編
-      const own6 = (g6.stOwner || {})[b6.st]
+    { // v4.17.0 有效負責人=站負責人||分類負責人：有主的只有負責人/審核人/主管能編
+      const own6 = (g6.stOwner || {})[b6.st] || (g6.catOwner || {})[(g6.stCat || {})[b6.st]]
       const apr6 = g6.approvers || ['張良瑋']
       if (own6 && own6 !== who6.name && !apr6.includes(who6.name) && who6.role !== '主管') return res.status(403).json({ ok: false, error: '「' + b6.st + '」由 ' + own6 + ' 負責——想改請按站名旁「💡 提建議」，通過會記你一分' })
     }
@@ -2670,7 +2681,9 @@ export default async function handler(req, res) {
       const mgrF = aprF.includes(whoF.name) || whoF.role === '主管'
       if (!mgrF) {
         const keyF = it => JSON.stringify([it.title, it.due || '', !!it.photo, it.ref || ''])
-        for (const [stO, ow] of Object.entries(gF.stOwner || {})) {
+        const effOwn = {}
+        ;(gF.stations || []).forEach(stX => { const o2 = (gF.stOwner || {})[stX] || (gF.catOwner || {})[(gF.stCat || {})[stX]]; if (o2) effOwn[stX] = o2 })
+        for (const [stO, ow] of Object.entries(effOwn)) {
           if (ow === whoF.name) continue
           const aT = (gF.items || []).filter(i => i.st === stO).map(keyF).sort().join('|')
           const bT = itCl.filter(i => i.st === stO).map(keyF).sort().join('|')
