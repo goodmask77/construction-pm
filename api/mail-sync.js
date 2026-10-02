@@ -532,6 +532,21 @@ export default async function handler(req, res) {
     await kvPut('sp_finance_pm_menu', doc, '菜單英文批次(AI代操)')
     return res.status(200).json({ ok: true, set: n, missed })
   }
+  // 菜單分類備註清理口（張良 2026-10-02「主餐文字那些備註都消失」）：POST ?menunote=<key> {clear:1}=全清 或 {map:{分類名:新備註}}
+  if (req.method === 'POST' && req.query?.menunote) {
+    const mk = (process.env.MENU_PROBE_KEY || '').trim()
+    if (!mk || String(req.query.menunote) !== mk) return res.status(403).json({ ok: false })
+    let nb = {}; try { nb = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
+    const doc = (await kvGet('sp_finance_pm_menu')) || {}
+    let nC = 0
+    for (const s2 of ((doc.draft || {}).sections || [])) {
+      if (nb.clear) { if (s2.note) { s2.note = ''; nC++ } }
+      else if (nb.map && nb.map[s2.name] != null) { s2.note = String(nb.map[s2.name]).slice(0, 60); nC++ }
+    }
+    doc.edits = [{ by: 'AI代操', ts: new Date(Date.now() + 8 * 3600e3).toISOString().slice(5, 16).replace('T', ' '), what: '分類備註清理 ' + nC + ' 類' }, ...(doc.edits || [])].slice(0, 30)
+    await kvPut('sp_finance_pm_menu', doc, '菜單備註清理(AI代操)')
+    return res.status(200).json({ ok: true, n: nC })
+  }
   // 菜單品項搬分類口（同金鑰；張良用對話叫 AI 搬，例：湯移到飲料區）：?menumv=<key>&item=品名&to=目標分類（模糊比對）
   if (req.query?.menumv) {
     const mk = (process.env.MENU_PROBE_KEY || '').trim()
