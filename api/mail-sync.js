@@ -2037,7 +2037,27 @@ export default async function handler(req, res) {
     const me4 = me3 ? { name: me3.name, canEdit: true, approver: approvers.includes(me3.name), role: me3.role || '' } : null
     const issuesDoc = await kvGet('sp_finance_pm_sop_issues')
     const issues = ((issuesDoc || {}).list || []).filter(x => x.status === 'open' || x.status === 'pending').slice(0, 30)
-    const stations = (gdef.stations && gdef.stations.length) ? gdef.stations : [...new Set((gdef.items || []).map(i => i.st))]
+    // v4.18.0 hashtag 模型遷移（張良 2026-10-02：#階段 × #產品 雙標籤取代樹狀分身）——一次性自動轉
+    let mig18 = false
+    gdef.items = gdef.items || []
+    gdef.stations = (gdef.stations && gdef.stations.length) ? gdef.stations : [...new Set(gdef.items.map(i => i.st))]
+    for (const stX of [...gdef.stations]) {
+      if (String(stX).includes('｜')) { // 樹狀分身「分類｜站」→ 拆回標籤
+        const parts18 = String(stX).split('｜'), cg18 = parts18[0], pd18 = parts18[1]
+        gdef.items.forEach(it => { if (it.st === stX) { it.st = pd18; if (!it.tg) it.tg = cg18 } })
+        if (!gdef.stations.includes(pd18)) gdef.stations.push(pd18)
+        gdef.stations = gdef.stations.filter(x => x !== stX)
+        if (gdef.stCat) delete gdef.stCat[stX]
+        if (gdef.stOwner && gdef.stOwner[stX]) { gdef.stOwner[pd18] = gdef.stOwner[pd18] || gdef.stOwner[stX]; delete gdef.stOwner[stX] }
+        mig18 = true
+      }
+    }
+    for (const [stX, cg18] of Object.entries(gdef.stCat || {})) { // 整站歸類 → 條目打階段標籤
+      gdef.items.forEach(it => { if (it.st === stX && !it.tg) { it.tg = cg18; mig18 = true } })
+    }
+    if (gdef.stCat && Object.keys(gdef.stCat).length) { gdef.stCat = {}; mig18 = true }
+    if (mig18) { defDoc.ground = gdef; await kvPut('sp_finance_pm_sop_def', defDoc, 'SOP hashtag遷移') }
+    const stations = gdef.stations
     const trash = (gdef.trash || []).map(t => ({ id: t.id, st: t.st, n: (t.items || []).length, ts: t.ts, by: t.by }))
     // v4.15.0 SOP分層+負責人（張良 2026-10-02）
     const sugsD0 = await kvGet('sp_finance_pm_sop_sugs')
@@ -2091,11 +2111,13 @@ export default async function handler(req, res) {
       if (!co || !cn) return res.status(400).json({ ok: false, error: '要給舊名與新名' })
       gS.catOrder = (gS.catOrder || []).map(c2 => c2 === co ? cn : c2)
       gS.stCat = Object.fromEntries(Object.entries(gS.stCat || {}).map(([k, v]) => [k, v === co ? cn : v]))
+      ;(gS.items || []).forEach(it => { if (it.tg === co) it.tg = cn })
       if ((gS.catOwner || {})[co] != null) { gS.catOwner = { ...gS.catOwner, [cn]: gS.catOwner[co] }; delete gS.catOwner[co] }
     } else if (bs.op === 'catdel') {
       const cn = String(bs.cat || '').trim()
       gS.catOrder = (gS.catOrder || []).filter(c2 => c2 !== cn)
       gS.stCat = Object.fromEntries(Object.entries(gS.stCat || {}).filter(([, v]) => v !== cn))
+      ;(gS.items || []).forEach(it => { if (it.tg === cn) delete it.tg })
       if (gS.catOwner) delete gS.catOwner[cn]
     } else if (bs.op === 'catord') {
       gS.catOrder = (Array.isArray(bs.list) ? bs.list : []).map(c2 => String(c2).trim().slice(0, 20)).filter(Boolean).slice(0, 20)
@@ -2467,7 +2489,8 @@ export default async function handler(req, res) {
     const now86 = new Date(Date.now() + 8 * 3600e3).toISOString().slice(5, 16).replace('T', ' ')
     // 逐條編輯歸屬（張良 2026-09-21：每一條 SOP 顯示最後編輯者＋時間，之後統計每人編輯量）：有改才蓋名字，沒改保留原編輯者
     const clean6 = b6.items.filter(it => it && it.title).slice(0, 30).map((it, i) => { const o6 = { id: it.id || ('u' + Date.now().toString(36) + i), st: b6.st, title: String(it.title).slice(0, 60), due: /^\d{2}:\d{2}$/.test(it.due || '') ? it.due : '11:00', photo: !!it.photo }; const pv = prevIt6[o6.id]; const rf = String(it.ref || (pv && pv.ref) || '').slice(0, 500); if (rf) o6.ref = rf
-      const chg = !pv || pv.title !== o6.title || pv.due !== o6.due || !!pv.photo !== o6.photo || (pv.ref || '') !== (o6.ref || '') || pv.st !== o6.st
+      const tg6 = String(it.tg || (pv && pv.tg) || '').trim().slice(0, 20); if (tg6) o6.tg = tg6
+      const chg = !pv || pv.title !== o6.title || pv.due !== o6.due || !!pv.photo !== o6.photo || (pv.ref || '') !== (o6.ref || '') || pv.st !== o6.st || ((pv.tg || '') !== (o6.tg || ''))
       o6.editBy = chg ? who6.name : (pv.editBy || pv && pv.editBy || undefined); o6.editTs = chg ? now86 : (pv ? pv.editTs : undefined)
       if (!o6.editBy) { o6.editBy = who6.name; o6.editTs = o6.editTs || now86 }
       return o6 })
@@ -2691,7 +2714,8 @@ export default async function handler(req, res) {
     const prevItF = {}; ((curF.ground || {}).items || []).forEach(it => { prevItF[it.id] = it })
     const now8F = new Date(Date.now() + 8 * 3600e3).toISOString().slice(5, 16).replace('T', ' ')
     const itCl = bf.items.slice(0, 200).map((it, i) => { const oF = { id: it.id || ('u' + Date.now().toString(36) + i), st: String(it.st || '').trim().slice(0, 20), title: String(it.title || '').trim().slice(0, 60), due: /^\d{2}:\d{2}$/.test(it.due || '') ? it.due : '11:00', photo: !!it.photo }; const pv = prevItF[oF.id]; const rf = String(it.ref || (pv && pv.ref) || '').slice(0, 500); if (rf) oF.ref = rf
-      const chg = !pv || pv.title !== oF.title || pv.due !== oF.due || !!pv.photo !== oF.photo || (pv.ref || '') !== (oF.ref || '') || pv.st !== oF.st
+      const tgF = String(it.tg || '').trim().slice(0, 20); if (tgF) oF.tg = tgF // v4.18.0 #階段標籤
+      const chg = !pv || pv.title !== oF.title || pv.due !== oF.due || !!pv.photo !== oF.photo || (pv.ref || '') !== (oF.ref || '') || pv.st !== oF.st || ((pv.tg || '') !== (oF.tg || ''))
       oF.editBy = chg ? whoF.name : (pv ? pv.editBy : undefined); oF.editTs = chg ? now8F : (pv ? pv.editTs : undefined)
       if (!oF.editBy) { oF.editBy = whoF.name; oF.editTs = oF.editTs || now8F }
       return oF }).filter(it => it.title && stCl.includes(it.st))
@@ -2700,9 +2724,15 @@ export default async function handler(req, res) {
       const aprF = gF.approvers || ['張良瑋']
       const mgrF = aprF.includes(whoF.name) || whoF.role === '主管'
       if (!mgrF) {
-        const keyF = it => JSON.stringify([it.title, it.due || '', !!it.photo, it.ref || ''])
+        const keyF = it => JSON.stringify([it.title, it.due || '', !!it.photo, it.ref || '', it.tg || '', it.st || ''])
         const effOwn = {}
         ;(gF.stations || []).forEach(stX => { const o2 = (gF.stOwner || {})[stX] || (gF.catOwner || {})[(gF.stCat || {})[stX]]; if (o2) effOwn[stX] = o2 })
+        for (const [tgO, owT] of Object.entries(gF.catOwner || {})) { // v4.18.0 #階段負責人守門
+          if (owT === whoF.name) continue
+          const aT2 = ((curF.ground || {}).items || []).filter(i => (i.tg || '') === tgO).map(keyF).sort().join('|')
+          const bT2 = itCl.filter(i => (i.tg || '') === tgO).map(keyF).sort().join('|')
+          if (aT2 !== bT2) return res.status(403).json({ ok: false, error: '「#' + tgO + '」由 ' + owT + ' 負責——這個階段的修改請用「💡 提建議」' })
+        }
         for (const [stO, ow] of Object.entries(effOwn)) {
           if (ow === whoF.name) continue
           const aT = (gF.items || []).filter(i => i.st === stO).map(keyF).sort().join('|')

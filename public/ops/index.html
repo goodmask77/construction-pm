@@ -428,7 +428,8 @@ function sopItemEdit(id, newSt){ // 單條 SOP 編輯/新增（取代總編輯�
     <div style="font-weight:900;margin-bottom:10px">⚙️ 編輯 SOP 條目</div>
     <input id="sieT" value="${String(it.title||'').replace(/"/g,'&quot;')}" placeholder="內容" style="${ip9}">
     <div style="display:flex;gap:10px;align-items:center;margin-bottom:8px"><span class="hint">時限</span><input id="sieD" type="time" value="${it.due||''}" style="border:1px solid var(--line);border-radius:8px;padding:8px;font-size:15px"><label style="font-size:14px"><input id="sieP" type="checkbox" ${it.photo?'checked':''}> 📷 要拍照</label></div>
-    <div style="display:flex;gap:10px;align-items:center;margin-bottom:8px"><span class="hint">站</span><select id="sieS" style="flex:1;border:1px solid var(--line);border-radius:8px;padding:8px;font-size:14px">${stsE.map(s9=>`<option value="${s9}"${it.st===s9?' selected':''}>${stDispE(s9)}</option>`).join('')}</select></div>
+    <div style="display:flex;gap:10px;align-items:center;margin-bottom:8px"><span class="hint">#階段</span><select id="sieG" style="flex:1;border:1px solid var(--line);border-radius:8px;padding:8px;font-size:14px"><option value="">未分階段</option>${(sopData.def.cats||[]).map(c9=>`<option value="${c9}"${(it.tg||(id?'':window._sopTg||''))===c9?' selected':''}>${c9}</option>`).join('')}</select></div>
+    <div style="display:flex;gap:10px;align-items:center;margin-bottom:8px"><span class="hint">產品</span><select id="sieS" style="flex:1;border:1px solid var(--line);border-radius:8px;padding:8px;font-size:14px">${stsE.map(s9=>`<option value="${s9}"${it.st===s9?' selected':''}>${stDispE(s9)}</option>`).join('')}</select></div>
     <div style="display:flex;gap:8px;justify-content:space-between;margin-top:10px">
       ${id?`<button class="mini" style="color:var(--red);padding:9px 12px" onclick="if(confirm('刪除這一條？')){document.getElementById('sieOv').remove();sopItemSave('${id}',1)}">🗑 刪除</button>`:'<span></span>'}
       <span style="display:flex;gap:8px"><button class="mini" style="padding:9px 12px" onclick="document.getElementById('sieOv').remove()">取消</button>
@@ -445,28 +446,23 @@ async function sopItemSave(id, del){
     const d9 = (document.getElementById('sieD')||{}).value||''
     const p9 = !!((document.getElementById('sieP')||{}).checked)
     const s9 = (document.getElementById('sieS')||{}).value||''
-    if (id) items = items.map(x=>x.id===id?{ ...x, title:t9, due:d9, photo:p9, st:s9 }:x)
-    else items = [...items, { id: 'u' + Date.now().toString(36), title: t9, due: d9, photo: p9, st: s9 }]
+    const g9 = (document.getElementById('sieG')||{}).value||''
+    if (id) items = items.map(x=>{ if (x.id!==id) return x; const nx = { ...x, title:t9, due:d9, photo:p9, st:s9 }; if (g9) nx.tg = g9; else delete nx.tg; return nx })
+    else { const nx = { id: 'u' + Date.now().toString(36), title: t9, due: d9, photo: p9, st: s9 }; if (g9) nx.tg = g9; items = [...items, nx] }
     const o9 = document.getElementById('sieOv'); if (o9) o9.remove()
   }
   const r = await fetch('/api/mail-sync?sopfull=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ stations: [...(sopData.def.stations||[])], items, token: TK() }) })
   const j = await r.json().catch(()=>null)
   if (j && j.ok) sopLoad(); else alert((j&&j.error)||'儲存失敗')
 }
-function sopCatAdd(){ prepAsk('＋ 新增分類',0,1,(q,r)=>{ if (r) sopstOp({op:'catadd',cat:r}).then(()=>{ window._sopCat=r; sopRender() }) },'分類名稱（例：清潔／備料／設站／開班／收班）') }
-function sopStAdd(cat){
-  prepAsk(`＋ 在「${cat}」新增站`,0,1,async (q,r)=>{
-    r = String(r||'').trim() // v4.17.4：去空白——尾巴帶空格會閃過同名檢查害後端撞名
+function sopCatAdd(){ prepAsk('＋ 新增階段',0,1,(q,r)=>{ if (r) sopstOp({op:'catadd',cat:r}).then(()=>{ window._sopTg=r; sopRender() }) },'階段名（例：開班／備料／出餐／收班）') }
+function sopStAdd(){ // ＋ 產品（hashtag 模型：產品是全域的，不綁階段）
+  prepAsk('＋ 新增產品站',0,1,(q,r)=>{
+    r = String(r||'').trim()
     if (!r) return
-    const sts9 = [...(sopData.def.stations||[])]
-    const scM9 = sopData.def.stCat || {}
-    if (sts9.includes(cat+'｜'+r) || sts9.some(x=>x===r && scM9[x]===cat)) { alert(`「${cat}」已經有「${r}」了`); return }
-    const nm9 = sts9.includes(r) ? (cat+'｜'+r) : r // 同名站在別類已存在→用「分類｜站名」讓兩邊是不同清單
-    const r1 = await fetch('/api/mail-sync?sopst=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ op:'add', st:nm9, token: TK() }) }).then(x=>x.json()).catch(()=>null)
-    if (!(r1&&r1.ok)) { alert((r1&&r1.error)||'失敗'); return }
-    await fetch('/api/mail-sync?sopst=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ op:'catset', st:nm9, cat, token: TK() }) })
-    await sopLoad()
-  },'站名（例：披薩／漢堡／飲料）')
+    if ((sopData.def.stations||[]).includes(r)) { alert(`已經有「${r}」了`); return }
+    sopstOp({ op:'add', st: r })
+  },'產品名（例：漢堡／披薩／飲料）')
 }
 function sopStRen(st){
   const pre = String(st).includes('｜') ? String(st).split('｜')[0]+'｜' : ''
@@ -506,7 +502,7 @@ async function sugView(st){
   let j = null
   try { const r = await fetch('/api/mail-sync?sopsug=' + encodeURIComponent(K) + '&st=' + encodeURIComponent(st) + '&r=' + Date.now()); j = await r.json() } catch(e){}
   if (!j || !j.ok) { alert('讀不到'); return }
-  const me9 = sopData.me, ow9 = (sopData.def.stOwner||{})[st] || (sopData.def.catOwner||{})[(sopData.def.stCat||{})[st]]
+  const me9 = sopData.me, ow9 = (sopData.def.stOwner||{})[st]
   const canDec = me9 && (me9.name===ow9 || me9.approver || me9.role==='主管')
   const open = (j.list||[]).filter(x=>x.status==='open')
   const arch = (j.list||[]).filter(x=>x.status!=='open')
@@ -528,7 +524,7 @@ function sugDecide(id, pass, st, note){
 function sopCollT(st){ if (sopColl.has(st)) sopColl.delete(st); else sopColl.add(st); localStorage.setItem('sopColl', JSON.stringify([...sopColl])); sopRender() }
 function sopCollAll(sts2){ const allC = sts2.every(s2=>sopColl.has(s2)); if (allC) sts2.forEach(s2=>sopColl.delete(s2)); else sts2.forEach(s2=>sopColl.add(s2)); localStorage.setItem('sopColl', JSON.stringify([...sopColl])); sopRender() }
 let sopFilter = localStorage.getItem('sopFilter') || ''
-function sopCatSet(c){ window._sopCat = c; sopFilter = 'all'; sopRender() } // 第一層分類切換（v4.16.1）
+function sopCatSet(c){ window._sopTg = c; sopFilter = 'all'; sopRender() } // #階段切換（v4.18.0）
 function sopFset(v){ sopFilter = v; localStorage.setItem('sopFilter', v); sopRender() }
 function sopPinT(st){ if (sopPin.has(st)) sopPin.delete(st); else sopPin.add(st); localStorage.setItem('sopPin', JSON.stringify([...sopPin])); if (!sopPin.size && sopFilter==='pin') sopFset('all'); else sopRender() } // itemId -> dataURL（待送出的照片）；編輯中的站
 async function sopLoad(){
@@ -554,75 +550,66 @@ function sopRender(){
           : `<div class="hint" style="margin-bottom:6px">💡 ${BIND_HINT}——打卡不用打名字、可編輯 SOP、認領問題</div>`
   if (wd === 0 || wd === 6) s += `<div class="hint" style="margin-bottom:8px">今天公休——這是清單預覽，打卡留給營業日。</div>`
   // 站別篩選＋📌釘選（張良 2026-09-21：SOP 站多，每人點自己要看的；釘選存在自己手機）
-  // v4.17.0（張良拍板版）：三層按鈕式導覽——分類→站→條目；管理全部就地按鈕化（＋/✏️/🗑/👑），設定視窗退役
+  // v4.18.0 #hashtag 雙標籤（張良拍板）：#階段 × #產品 兩排篩選——點產品看全程、點階段看跨產品、都點=交集
   const stDisp = st9 => String(st9).includes('｜') ? String(st9).split('｜').pop() : st9
   const catsN = sopData.def.cats || []
-  const scN = sopData.def.stCat || {}
   const coN = sopData.def.catOwner || {}
-  const hasNone = sts.some(x=>!scN[x] || !catsN.includes(scN[x]))
-  let curCat = window._sopCat ?? null
-  if (curCat && curCat !== '__none' && !catsN.includes(curCat)) curCat = window._sopCat = null
-  const baseSts = !catsN.length || !curCat ? sts : (curCat === '__none' ? sts.filter(x=>!scN[x] || !catsN.includes(scN[x])) : sts.filter(x=>scN[x] === curCat))
-  const view = sopFilter && baseSts.concat('pin','all').includes(sopFilter) ? sopFilter : (sopFilter==='all'||sopFilter==='pin' ? sopFilter : (sopPin.size && !curCat ? 'pin' : 'all'))
-  const shown0 = baseSts.filter(st2 => view==='all' ? true : (view==='pin' ? sopPin.has(st2) : st2===view))
+  const soN = sopData.def.stOwner || {}
+  let curTg = window._sopTg ?? null
+  if (curTg && !catsN.includes(curTg)) curTg = window._sopTg = null
+  const itemsAll = items
+  const tgOf = it9 => it9.tg && catsN.includes(it9.tg) ? it9.tg : ''
+  const itemsF = itemsAll.filter(it9 => !curTg || tgOf(it9) === curTg) // 階段篩選後的條目
+  const view = (sopFilter==='all'||sopFilter==='pin'||sts.includes(sopFilter)) ? sopFilter : (sopPin.size && !curTg ? 'pin' : 'all')
+  const shown0 = sts.filter(st2 => view==='all' ? true : (view==='pin' ? sopPin.has(st2) : st2===view)).filter(st2 => !curTg || itemsF.some(i9=>i9.st===st2) || view===st2)
   const allColl = shown0.length > 0 && shown0.every(s2=>sopColl.has(s2))
   const chipS = (on) => `border:1px solid ${on?'var(--primary)':'var(--line)'};background:${on?'var(--primary)':'var(--card)'};color:${on?'#fff':'var(--muted)'};border-radius:9px;padding:4px 10px;font-size:14px;font-weight:800;cursor:pointer;white-space:nowrap`
   const catBtn = (on) => `border:1.5px solid ${on?'var(--primary)':'var(--line)'};background:${on?'var(--grad)':'var(--soft)'};color:${on?'#fff':'var(--text)'};border-radius:10px;padding:8px 16px;font-size:15px;font-weight:900;cursor:pointer;white-space:nowrap`
-  // 第一層：分類大按鈕（＋分類直接長在旁邊）
+  // 第一排：#階段
   s += `<div style="display:flex;gap:7px;flex-wrap:wrap;margin-bottom:8px;align-items:center">
-    <span style="${catBtn(!curCat)}" onclick="sopCatSet(null)">全部</span>
-    ${catsN.map(cg=>`<span style="${catBtn(curCat===cg)}" onclick="sopCatSet('${cg}')">${cg}<span style="margin-left:5px;font-weight:700;font-size:12px;color:${curCat===cg?'#DCEBFF':'var(--muted)'}">${sts.filter(x=>scN[x]===cg).length}</span></span>`).join('')}
-    ${hasNone&&catsN.length?`<span style="${catBtn(curCat==='__none')}" onclick="sopCatSet('__none')">未分類</span>`:''}
-    ${me&&window._sopMng?`<span style="${chipS(false)}" onclick="sopCatAdd()">＋ 分類</span>`:''}
+    <span style="${catBtn(!curTg)}" onclick="sopCatSet(null)">全部</span>
+    ${catsN.map(cg=>`<span style="${catBtn(curTg===cg)}" onclick="sopCatSet('${cg}')"># ${cg}<span style="margin-left:5px;font-weight:700;font-size:12px;color:${curTg===cg?'#DCEBFF':'var(--muted)'}">${itemsAll.filter(i9=>tgOf(i9)===cg).length}</span></span>`).join('')}
+    ${me&&window._sopMng?`<span style="${chipS(false)}" onclick="sopCatAdd()">＋ 階段</span>`:''}
     ${me?`<span style="${chipS(!!window._sopMng)};margin-left:auto" onclick="sopMngT()">⚙️ 設定</span>`:''}
   </div>`
-  // 第二層管理列：選了分類→改名/刪/負責人/＋站（就地按鈕，張良 2026-10-02「直覺新增刪減編輯分層」）
-  if (curCat && curCat !== '__none' && me && window._sopMng) {
+  // 階段管理列（設定模式）
+  if (curTg && me && window._sopMng) {
     const mgrC = me.approver || me.role === '主管'
     s += `<div style="display:flex;gap:6px;flex-wrap:wrap;margin:-2px 0 8px;align-items:center;font-size:13px">
-      <span class="hint" style="font-weight:800">「${curCat}」：</span>
-      <button class="mini" onclick="prepAsk('改分類名「${curCat}」',0,1,(q,r)=>{if(r)sopstOp({op:'catren',cat:'${curCat}',newName:r}).then(()=>{window._sopCat=r})},'新名稱')">✏️ 改名</button>
-      <button class="mini" style="color:var(--red)" onclick="if(confirm('刪除分類「${curCat}」？裡面的站會回到未分類，不會刪站'))sopstOp({op:'catdel',cat:'${curCat}'}).then(()=>{window._sopCat=null})">🗑 刪分類</button>
-      ${mgrC?`<span class="hint">👑 負責人</span><select onchange="sopstOp({op:'catown',cat:'${curCat}',owner:this.value})" style="border:1px solid var(--line);border-radius:7px;padding:5px;font-size:13px"><option value="">無</option>${(sopData.names||[]).map(n=>`<option${coN[curCat]===n?' selected':''}>${n}</option>`).join('')}</select>`:(coN[curCat]?`<span style="color:#D4A72C;font-weight:800">👑 ${coN[curCat]}</span>`:'')}
-      <button class="mini on" onclick="sopStAdd('${curCat}')">＋ 新增站</button>
+      <span class="hint" style="font-weight:800">「#${curTg}」：</span>
+      <button class="mini" onclick="prepAsk('改階段名「${curTg}」',0,1,(q,r)=>{if(r)sopstOp({op:'catren',cat:'${curTg}',newName:r}).then(()=>{window._sopTg=r})},'新名稱')">✏️ 改名</button>
+      <button class="mini" style="color:var(--red)" onclick="if(confirm('刪除階段「#${curTg}」？條目會變未分階段，不會刪條目'))sopstOp({op:'catdel',cat:'${curTg}'}).then(()=>{window._sopTg=null})">🗑 刪階段</button>
+      ${mgrC?`<span class="hint">👑 負責人</span><select onchange="sopstOp({op:'catown',cat:'${curTg}',owner:this.value})" style="border:1px solid var(--line);border-radius:7px;padding:5px;font-size:13px"><option value="">無</option>${(sopData.names||[]).map(n=>`<option${coN[curTg]===n?' selected':''}>${n}</option>`).join('')}</select>`:(coN[curTg]?`<span style="color:#D4A72C;font-weight:800">👑 ${coN[curTg]}</span>`:'')}
     </div>`
   }
-  // 第二層：站按鈕
+  // 第二排：#產品
   s += `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px;align-items:center">
-    ${sopPin.size&&!curCat?`<span style="${chipS(view==='pin')}" onclick="sopFset('pin')">📌 我的釘選（${sopPin.size}）</span>`:''}
-    <span style="${chipS(view==='all')}" onclick="sopFset('all')">${curCat&&curCat!=='__none'?curCat+' 全部':'全部站'}</span>
-    ${baseSts.map(st2=>`<span style="${chipS(view===st2)};display:inline-flex;gap:5px;align-items:center"><span onclick="sopFset('${st2}')">${stDisp(st2)}</span><span onclick="sopPinT('${st2}')" title="釘選/取消釘選" style="opacity:${sopPin.has(st2)?1:.35}">📌</span></span>`).join('')}
+    ${sopPin.size&&!curTg?`<span style="${chipS(view==='pin')}" onclick="sopFset('pin')">📌 我的釘選（${sopPin.size}）</span>`:''}
+    <span style="${chipS(view==='all')}" onclick="sopFset('all')">全部產品</span>
+    ${sts.map(st2=>`<span style="${chipS(view===st2)};display:inline-flex;gap:5px;align-items:center"><span onclick="sopFset('${st2}')">${stDisp(st2)}</span><span onclick="sopPinT('${st2}')" title="釘選/取消釘選" style="opacity:${sopPin.has(st2)?1:.35}">📌</span></span>`).join('')}
+    ${me&&window._sopMng?`<span style="${chipS(false)}" onclick="sopStAdd()">＋ 產品</span>`:''}
     <span style="${chipS(false)};margin-left:auto" onclick="sopCollAll(${JSON.stringify(shown0).replace(/"/g,'&quot;')})">${allColl?'⏵ 全部展開':'⏷ 全部收合'}</span>
   </div>`
-  // 選了某一站→站管理列（改名/刪/搬分類）
-  if (me && window._sopMng && view !== 'all' && view !== 'pin' && baseSts.includes(view)) {
+  // 產品管理列（設定模式＋選中某產品）
+  if (me && window._sopMng && view !== 'all' && view !== 'pin' && sts.includes(view)) {
+    const mgrC2 = me.approver || me.role === '主管'
     s += `<div style="display:flex;gap:6px;flex-wrap:wrap;margin:-2px 0 8px;align-items:center;font-size:13px">
       <span class="hint" style="font-weight:800">「${stDisp(view)}」：</span>
-      <button class="mini" onclick="sopStRen('${view}')">✏️ 改站名</button>
-      <button class="mini" style="color:var(--red)" onclick="if(confirm('刪除站「${stDisp(view)}」？條目會進回收站可復原'))sopstOp({op:'del',st:'${view}'}).then(()=>{sopFilter='all'})">🗑 刪站</button>
+      <button class="mini" onclick="sopStRen('${view}')">✏️ 改名</button>
+      <button class="mini" style="color:var(--red)" onclick="if(confirm('刪除產品「${stDisp(view)}」？條目會進回收站可復原'))sopstOp({op:'del',st:'${view}'}).then(()=>{sopFilter='all'})">🗑 刪產品</button>
+      ${mgrC2?`<span class="hint">👑 負責人</span><select onchange="sopstOp({op:'ownset',st:'${view}',owner:this.value})" style="border:1px solid var(--line);border-radius:7px;padding:5px;font-size:13px"><option value="">無</option>${(sopData.names||[]).map(n=>`<option${soN[view]===n?' selected':''}>${n}</option>`).join('')}</select>`:''}
       <button class="mini on" onclick="sopItemEdit(null,'${view}')">＋ 新增條目</button>
-      ${catsN.length?`<span class="hint">搬到</span><select onchange="sopstOp({op:'catset',st:'${view}',cat:this.value})" style="border:1px solid var(--line);border-radius:7px;padding:5px;font-size:13px"><option value="">未分類</option>${catsN.map(c2=>`<option${scN[view]===c2?' selected':''}>${c2}</option>`).join('')}</select>`:''}
     </div>`
   }
   const shown = shown0
-  if (!shown.length) s += `<div class="mut" style="font-size:14px">${curCat?'這個分類還沒有站——按上面「＋ 新增站」':'釘選的站不見了（可能被改名）——按「全部」重新釘。'}</div>`
-  // v4.15.0 SOP 分層（張良：分類→站→條目像組織架構）：全部檢視時照分類分組、未分類墊底
-  let seqS = shown
-  if (view === 'all' && !window._sopCat && ((sopData.def.cats||[]).length)) { // 選了分類層就不再重複分組
-    const scM = sopData.def.stCat || {}
-    seqS = []
-    ;(sopData.def.cats||[]).forEach(cg=>{ const in1 = shown.filter(x=>scM[x]===cg); if (in1.length) seqS.push('⟦H⟧'+cg, ...in1) })
-    const restS = shown.filter(x=>!scM[x] || !(sopData.def.cats||[]).includes(scM[x]))
-    if (restS.length) seqS.push('⟦H⟧未分類', ...restS)
-  }
-  seqS.forEach(st => {
-    if (typeof st === 'string' && st.startsWith('⟦H⟧')) { s += `<div style="font-weight:900;font-size:15px;color:var(--ink);margin:16px 0 2px;padding-bottom:4px;border-bottom:2px solid var(--line)">🗂 ${st.slice(3)}</div>`; return }
+  if (!shown.length) s += `<div class="mut" style="font-size:14px">${curTg?`「#${curTg}」還沒有條目——點某個產品的 ⚙️ 幫條目掛上這個階段`:'釘選的站不見了（可能被改名）——按「全部」重新釘。'}</div>`
+  shown.forEach(st => {
     const canEd = me && me.canEdit
     const stIss = (sopData.issues||[]).filter(x => x.st === st)
-    const stItems = items.filter(i => i.st === st)
+    const stItems = itemsF.filter(i => i.st === st)
     const stDone = stItems.filter(i => log[i.id] && log[i.id].done).length
     const coll = sopColl.has(st)
-    const own9 = (sopData.def.stOwner||{})[st] || (sopData.def.catOwner||{})[(sopData.def.stCat||{})[st]]
+    const own9 = (sopData.def.stOwner||{})[st]
     const mgr9 = me && (me.approver || me.role === '主管')
     const sug9 = (sopData.sugOpen||{})[st] || 0
     const sugBtn = own9 && me ? ((me.name===own9 || mgr9)
@@ -644,10 +631,14 @@ function sopRender(){
     })
     if (!items.some(i => i.st === st)) s += `<div class="hint" style="padding:6px 4px">（這一站還沒有 SOP 項目——想加：點某一條旁的 ⚙️，或先按右上「⚙️ 設定」）</div>`
     // 照設定時間自動排序（張良 2026-09-21：早的在上面；沒設時間的排最後）
-    items.filter(i => i.st === st).sort((a,b)=>String(a.due||'99:99').localeCompare(String(b.due||'99:99'))).forEach(it => {
+    const grpMode = (view === st) && !curTg && catsN.length // 看單一產品全程→照階段分組
+    const stList = itemsF.filter(i => i.st === st).sort((a,b)=> grpMode ? ((catsN.indexOf(tgOf(a))+99*(tgOf(a)===''))-(catsN.indexOf(tgOf(b))+99*(tgOf(b)===''))) || String(a.due||'99:99').localeCompare(String(b.due||'99:99')) : String(a.due||'99:99').localeCompare(String(b.due||'99:99')))
+    let lastTg9 = '⟪init⟫'
+    stList.forEach(it => {
+      if (grpMode) { const g9 = tgOf(it) || '未分階段'; if (g9 !== lastTg9) { lastTg9 = g9; s += `<div style="font-weight:900;font-size:13px;color:var(--pdark);margin:8px 0 2px"># ${g9}</div>` } }
       const lg = log[it.id]
       const overdue = !lg && it.due && it.due <= now && wd >= 1 && wd <= 5
-      s += `<div id="sopit-${it.id}" style="display:flex;align-items:center;gap:8px;padding:9px 4px;border-bottom:1px solid var(--line)"><span class="lnkbtn" title="複製這條 SOP 的連結（可貼到會議宣達）" onclick="event.stopPropagation();copyLink('#sop=${it.id}')">🔗</span>${me&&window._sopMng?`<span class="lnkbtn" title="編輯這一條" onclick="event.stopPropagation();sopItemEdit('${it.id}')">⚙️</span>`:''}`
+      s += `<div id="sopit-${it.id}" style="display:flex;align-items:center;gap:8px;padding:9px 4px;border-bottom:1px solid var(--line)"><span class="lnkbtn" title="複製這條 SOP 的連結（可貼到會議宣達）" onclick="event.stopPropagation();copyLink('#sop=${it.id}')">🔗</span>${it.tg&&!window._sopTg?`<span class="hint" style="font-size:11px;white-space:nowrap">#${it.tg}</span>`:''}${me&&window._sopMng?`<span class="lnkbtn" title="編輯這一條" onclick="event.stopPropagation();sopItemEdit('${it.id}')">⚙️</span>`:''}`
       s += `<div style="flex:1;min-width:0"><div style="font-weight:700;cursor:pointer;color:${overdue?'var(--red)':(it.ref?'var(--primary)':'var(--ink)')}${it.ref?';text-decoration:underline':''}" onclick="sopRefOpen('${it.id}')" title="${it.ref?'點看標準照片':'點我上傳標準照'}">${it.title}${overdue?' ⚠️':''}</div><div class="hint">${it.due} 前${it.editBy?`・✏️ ${it.editBy} ${it.editTs||''}`:''}</div></div>`
       if (lg && lg.done) {
         // 完成狀態：縮圖直接顯示、點整塊開預覽；撤銷藏在預覽裡（張良 2026-09-21：列表上的撤銷容易誤點）
@@ -790,7 +781,7 @@ async function sopStOp(body){
   const d = await r.json().catch(()=>null)
   if (d && d.ok) { sopEditSt = null; sopLoad() } else alert((d&&d.error)||'失敗')
 }
-function sopStAdd(){ const nm = prompt('新站名？（例：甜點站）'); if (nm && nm.trim()) sopStOp({ op:'add', st: nm.trim() }) }
+// （legacy sopStAdd 已併入 hashtag 版）
 function sopStRename(st){ const inp = document.getElementById('edStName'); const nn = inp && inp.value.trim(); if (!nn || nn === st) return alert('輸入新站名再按改名'); sopStOp({ op:'rename', st, newName: nn }) }
 function sopStDel(st){ if (confirm(`刪除「${st}」整站？（項目會進回收站，可隨時復原）`)) sopStOp({ op:'del', st }) }
 function sopPick(id){
