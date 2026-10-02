@@ -2839,7 +2839,7 @@ function permPanelHtml(perm){
     <div style="font-weight:900">🔐 編輯權限管理 <span class="hint">模式：${perm.mode==='open'?'全開（人人可編）':'審核制（申請→老闆核准）'}</span>
     <button class="mini" onclick="permSet('mode',null,'${perm.mode==='open'?'approve':'open'}')">切成${perm.mode==='open'?'審核制':'全開'}</button></div>
     ${(perm.pending||[]).length?`<div style="margin-top:6px;font-weight:800">待審核：</div>`+perm.pending.map(u=>`<div style="padding:3px 0">🙋 ${u.name} <span class="hint">${u.ts||''}</span> <button class="mini on" onclick="permSet('approve','${u.rid}')">✅ 核准</button> <button class="mini" onclick="permSet('reject','${u.rid}')">✖</button></div>`).join(''):'<div class="hint" style="margin-top:6px">目前沒有待審核的申請</div>'}
-    ${(()=>{ // v4.26.3（張良「表格化＋每頁看不看得見＋一鍵勾選所有人」）：列=人、欄=分頁(完全對照側欄順序名稱)；每格 👁看得見/✏️能編輯；欄頭勾=全員一起
+    ${(()=>{ // v4.26.4（張良「太多小圖很醜沒質感」）：乾淨表格——每分頁拆「看/編」兩小欄、純勾選框無emoji；欄頭勾=全員一起
       const cfgT = window._tabCfg || {}
       const ordT = (cfgT.order && cfgT.order.length ? cfgT.order.slice() : Object.keys(TAB_DEF)).filter(k=>TAB_DEF[k])
       Object.keys(TAB_DEF).forEach(k=>{ if (!ordT.includes(k)) ordT.unshift(k) })
@@ -2848,16 +2848,18 @@ function permPanelHtml(perm){
       const normal=users.filter(u=>!u.admin)
       const allSee=k=>normal.length&&normal.every(u=>!(u.hide&&u.hide[k]))
       const allEdit=k=>normal.length&&normal.every(u=>!u.tabs||u.tabs[k]!==0)
-      const cb=(ck,fn,tip)=>`<input type="checkbox" ${ck?'checked':''} onchange="${fn}" title="${tip}" style="width:15px;height:15px;cursor:pointer">`
-      let t=`<div style="margin-top:8px;font-weight:800">已核准（${users.length}）<span class="hint" style="font-weight:600">👁＝看得見・✏️＝能編輯</span></div>
-      <div class="scroll" style="margin-top:4px"><table style="border-collapse:collapse"><thead><tr>
-        <th style="text-align:left;position:sticky;left:0;background:var(--soft);z-index:2;padding:6px 8px">夥伴</th>
-        ${TABS.map(([k,lb])=>`<th style="padding:5px 6px;text-align:center;font-size:12px;white-space:nowrap">${lb}<br><span style="font-weight:600">👁${cb(allSee(k),`permSet('taball',null,null,'${k}',this.checked,'see')`,'全員 看得見 '+lb)} ✏️${cb(allEdit(k),`permSet('taball',null,null,'${k}',this.checked,'edit')`,'全員 能編輯 '+lb)}</span></th>`).join('')}
-      </tr></thead><tbody>`
+      const cb=(ck,fn,tip)=>`<input type="checkbox" ${ck?'checked':''} onchange="${fn}" title="${tip}" style="width:15px;height:15px;cursor:pointer;accent-color:var(--primary)">`
+      const SEP='border-left:1px solid var(--line);'
+      let t=`<div style="margin-top:8px;font-weight:800">已核准（${users.length}）</div>
+      <div class="scroll" style="margin-top:4px"><table style="border-collapse:collapse"><thead>
+      <tr><th rowspan="2" style="text-align:left;position:sticky;left:0;background:var(--soft);z-index:2;padding:6px 10px;vertical-align:bottom">夥伴</th>
+        ${TABS.map(([k,lb])=>`<th colspan="2" style="${SEP}padding:5px 8px 2px;text-align:center;font-size:12.5px;white-space:nowrap">${lb}</th>`).join('')}</tr>
+      <tr>${TABS.map(([k,lb])=>`<th style="${SEP}padding:2px 5px 6px;text-align:center;font-size:11px;font-weight:600">看<br>${cb(allSee(k),`permSet('taball',null,null,'${k}',this.checked,'see')`,'全員看得見 '+lb)}</th><th style="padding:2px 5px 6px;text-align:center;font-size:11px;font-weight:600">編<br>${cb(allEdit(k),`permSet('taball',null,null,'${k}',this.checked,'edit')`,'全員能編輯 '+lb)}</th>`).join('')}</tr>
+      </thead><tbody>`
       users.forEach(u=>{
-        t+=`<tr><td style="text-align:left;font-weight:800;position:sticky;left:0;background:var(--card);z-index:1;padding:5px 8px;white-space:nowrap">${u.admin?'👑 ':''}${u.name}${u.admin?'':` <button class="mini" style="padding:1px 8px" onclick="permSet('revoke','${u.rid}')">移除</button>`}</td>`
-        if(u.admin){ t+=`<td colspan="${TABS.length}" class="hint" style="text-align:left;padding:5px 8px">管理者＝全部看得見、全部能編輯</td>` }
-        else TABS.forEach(([k])=>{ t+=`<td style="padding:4px 6px;text-align:center;white-space:nowrap">👁${cb(!(u.hide&&u.hide[k]),`permSet('see','${u.rid}',null,'${k}',this.checked)`,u.name+' 看得見')} ✏️${cb(!u.tabs||u.tabs[k]!==0,`permSet('tab','${u.rid}',null,'${k}',this.checked)`,u.name+' 能編輯')}</td>` })
+        t+=`<tr><td style="text-align:left;font-weight:800;position:sticky;left:0;background:var(--card);z-index:1;padding:5px 10px;white-space:nowrap">${u.admin?'👑 ':''}${u.name}${u.admin?'':` <button class="mini" style="padding:1px 8px;margin-left:4px" onclick="permSet('revoke','${u.rid}')">移除</button>`}</td>`
+        if(u.admin){ t+=`<td colspan="${TABS.length*2}" class="hint" style="text-align:left;padding:5px 10px">管理者＝全部看得見、全部能編輯</td>` }
+        else TABS.forEach(([k])=>{ t+=`<td style="${SEP}padding:4px 5px;text-align:center">${cb(!(u.hide&&u.hide[k]),`permSet('see','${u.rid}',null,'${k}',this.checked)`,u.name+' 看得見')}</td><td style="padding:4px 5px;text-align:center">${cb(!u.tabs||u.tabs[k]!==0,`permSet('tab','${u.rid}',null,'${k}',this.checked)`,u.name+' 能編輯')}</td>` })
         t+=`</tr>`
       })
       return t+`</tbody></table></div>`
@@ -2875,7 +2877,8 @@ async function settingsLoad(){ // ⚙️ 設定頁（張良 2026-10-01：分頁�
     </div><div id="permBox" class="hint" style="display:none">權限資料載入中…</div></section>`
   let d; try{ const r = await fetch('/api/mail-sync?menu=' + encodeURIComponent(K) + (TK() ? '&me=' + encodeURIComponent(TK()) : '')); d = await r.json() }catch(e){}
   const box = document.getElementById('permBox'); if (!box) return
-  box.innerHTML = (d && d.me && d.me.admin && d.perm) ? permPanelHtml(d.perm) : '<div class="hint">🔐 編輯權限管理：僅管理者（老闆）看得到</div>'
+  window._permD = (d && d.me && d.me.admin && d.perm) ? d.perm : null // v4.26.4 樂觀更新用的本地快照
+  box.innerHTML = window._permD ? permPanelHtml(window._permD) : '<div class="hint">🔐 編輯權限管理：僅管理者（老闆）看得到</div>'
   if (window._permKeepOpen) { box.style.display = ''; window._permKeepOpen = 0 }
 }
 async function prepApply(){
@@ -2885,6 +2888,18 @@ async function prepApply(){
   menuLoad()
 }
 async function permSet(op, rid, mode, tab, val, kind){
+  // v4.26.4（張良「勾選會卡頓+畫面閃退」治本）：勾選類＝樂觀更新本地立即重畫表格，背景存檔——不再整頁重載(重載會重抓整份菜單資料=卡,permBox又收合=畫面消失)
+  const pm = window._permD
+  if (pm && (op==='tab' || op==='see' || op==='taball')){
+    const upd1 = u => { if (op==='tab' || (op==='taball' && kind==='edit')) { u.tabs = u.tabs || {}; u.tabs[tab] = val ? 1 : 0 } else { u.hide = u.hide || {}; if (val) delete u.hide[tab]; else u.hide[tab] = 1 } }
+    if (op==='taball') (pm.users||[]).forEach(u=>{ if (!u.admin) upd1(u) })
+    else { const u = (pm.users||[]).find(x=>x.rid===rid); if (u) upd1(u) }
+    const box = document.getElementById('permBox'); if (box) { box.innerHTML = permPanelHtml(pm); box.style.display = '' }
+    const r = await fetch('/api/mail-sync?preppermset=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ token: TK(), op, rid, mode, tab, val, kind }) })
+    const j = await r.json().catch(()=>null)
+    if (!j || !j.ok) { alert((j&&j.error)||'沒存成功，畫面退回原狀'); window._permKeepOpen = 1; settingsLoad() }
+    return
+  }
   const r = await fetch('/api/mail-sync?preppermset=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ token: TK(), op, rid, mode, tab, val, kind }) })
   const j = await r.json().catch(()=>null)
   if (!j || !j.ok) alert((j&&j.error)||'操作失敗')
