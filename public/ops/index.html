@@ -2398,14 +2398,16 @@ function laborRender(){
   <td style="padding:6px 10px;text-align:right;font-weight:900;background:var(--soft)">${LB_HOURS.reduce((a,h2)=>a+cols.reduce((b,_,ci)=>b+(lbV(sh,h2,ci)?1:0),0),0)||''}</td><td style="background:var(--soft)"></td></tr>`
   h += `</tbody></table></div>
   ${(()=>{ // 反推營業額（張良 2026-10-03；v4.29.0 去emoji表格化：固定成本/變動比率兩欄+結果列）
-    const fin = sh.fin || { rent:0, util:0, misc:0, days:26, food:35, tax:5, pay:2, ins:12 }
+    const fin = sh.fin || { rent:0, util:0, misc:0, days:26, food:35, tax:5, pay:2, ins:12, profit:0 }
     const hrs = LB_HOURS.reduce((a,h2)=>a+cols.reduce((b,_,ci)=>b+(lbV(sh,h2,ci)?1:0),0),0)
     const mLabor = Math.round(grand * (fin.days||26) * (1 + (fin.ins||0)/100))
     const fixed = (fin.rent||0) + (fin.util||0) + (fin.misc||0) + mLabor
     const varP = (fin.food||0) + (fin.tax||0) + (fin.pay||0)
-    const R = varP < 100 ? Math.ceil(fixed / (1 - varP/100)) : 0
+    const allP = varP + (fin.profit||0)
+    const R = allP < 100 ? Math.ceil(fixed / (1 - allP/100)) : 0
     const daily = R && fin.days ? Math.ceil(R / fin.days) : 0
-    const lp = R ? Math.round(mLabor / R * 1000)/10 : 0
+    const pc = v => R ? Math.round(v / R * 1000)/10 : 0 // 佔比（以目標營業額為分母）
+    const lp = pc(mLabor)
     const inp2 = (sf,v,w2)=>`<input value="${v}" inputmode="numeric" style="width:${w2}px;border:none;background:transparent;color:var(--ink);font-size:13.5px;font-weight:800;text-align:right;outline:none;border-bottom:1.5px solid var(--primary);font-variant-numeric:tabular-nums" onchange="lbFinSet('${sf}',this.value)">`
     const TL='padding:6px 12px;text-align:left;color:var(--muted);font-weight:700;font-size:13px;border-top:1px solid var(--line);white-space:nowrap'
     const TR='padding:6px 12px;text-align:right;font-weight:800;border-top:1px solid var(--line);font-variant-numeric:tabular-nums;white-space:nowrap'
@@ -2427,15 +2429,26 @@ function laborRender(){
         <tr><td style="${TL}">稅費</td><td style="${TR}">${inp2('tax',fin.tax||0,26)} %</td></tr>
         <tr><td style="${TL}">金流／外送手續</td><td style="${TR}">${inp2('pay',fin.pay||0,26)} %</td></tr>
         <tr><td style="${TL}">勞健保附加（乘人事）</td><td style="${TR}">${inp2('ins',fin.ins||0,26)} %</td></tr>
-        <tr><td style="${TL}">變動合計</td><td style="${TR}">${varP}%</td></tr>
+        <tr><td style="${TL}">目標淨利（0＝損益兩平）</td><td style="${TR}">${inp2('profit',fin.profit||0,26)} %</td></tr>
+        <tr><td style="${TL}">變動＋淨利合計</td><td style="${TR}">${allP}%</td></tr>
       </table>
     </div>
     <div style="border-top:1px solid var(--line);background:var(--soft);padding:9px 12px;display:flex;gap:18px;flex-wrap:wrap;align-items:baseline;font-weight:800;font-size:13.5px">
       <span>固定成本／月 <span style="font-variant-numeric:tabular-nums">${fmtN(fixed)}</span></span>
       <span>每月要做 <span style="color:var(--green);font-size:17px;font-variant-numeric:tabular-nums">${R?'NT$'+fmtN(R):'—'}</span></span>
       <span>平均每天 <span style="color:var(--green);font-size:15px;font-variant-numeric:tabular-nums">${daily?'NT$'+fmtN(daily):'—'}</span></span>
-      <span class="hint" style="font-weight:700">人事佔比 ${lp}%</span>
-    </div></div>`
+    </div>
+    ${R?`<div style="border-top:1px solid var(--line);padding:8px 12px;display:flex;gap:6px 14px;flex-wrap:wrap;font-size:12.5px;font-weight:700;color:var(--muted)">
+      <span>佔營業額：</span>
+      <span>人事 <b style="color:var(--ink)">${lp}%</b></span>
+      <span>食材 <b style="color:var(--ink)">${fin.food||0}%</b></span>
+      <span>租金 <b style="color:var(--ink)">${pc(fin.rent||0)}%</b></span>
+      <span>水電 <b style="color:var(--ink)">${pc(fin.util||0)}%</b></span>
+      <span>雜支 <b style="color:var(--ink)">${pc(fin.misc||0)}%</b></span>
+      <span>稅費 <b style="color:var(--ink)">${fin.tax||0}%</b></span>
+      <span>金流／外送 <b style="color:var(--ink)">${fin.pay||0}%</b></span>
+      <span>淨利 <b style="color:var(--green)">${fin.profit||0}%</b></span>
+    </div>`:''}</div>`
   })()}
   <div class="hint" style="margin-top:4px">點格＝跳時薪選單（200~300 顏色分檔，✕＝清空）・按住拖＝複製・點欄頭/列頭＝清整欄/整列・↩️ 復原；欄位＝班表崗位（⚙️ 設定改）</div>`
   el.className = ''
@@ -2499,9 +2512,9 @@ function lbWagePick(v){ lbMnClose(); const sh=lbSheet(); lbPushUndo(); sh.wage=v
   for(const h2 of Object.keys(sh.rows||{})) for(const k2 of Object.keys(sh.rows[h2])) sh.rows[h2][k2]=v // 全表非零格=該數字
   laborRender(); lbSave() }
 function lbPctSet(v){ const sh=lbSheet(); sh.pct=Math.max(1,Math.min(99,Number(v)||20)); laborRender(); lbSave() }
-function lbFinSet(k,v){ const sh=lbSheet(); sh.fin=sh.fin||{ rent:0, util:0, misc:0, days:26, food:35, tax:5, pay:2, ins:12 }
+function lbFinSet(k,v){ const sh=lbSheet(); sh.fin=sh.fin||{ rent:0, util:0, misc:0, days:26, food:35, tax:5, pay:2, ins:12, profit:0 }
   const n2=Number(v)||0
-  sh.fin[k] = k==='days' ? Math.max(1,Math.min(31,n2)) : (['food','tax','pay','ins'].includes(k) ? Math.max(0,Math.min(99,n2)) : Math.max(0,Math.min(9999999,n2)))
+  sh.fin[k] = k==='days' ? Math.max(1,Math.min(31,n2)) : (['food','tax','pay','ins','profit'].includes(k) ? Math.max(0,Math.min(99,n2)) : Math.max(0,Math.min(9999999,n2)))
   laborRender(); lbSave() } // 🧾 反推參數（張良 2026-10-03）
 const SLOT_DEF = [{n:'午峰',s:'11:00',e:'14:30'},{n:'離峰',s:'14:30',e:'17:30'},{n:'晚峰',s:'17:30',e:'20:00'},{n:'全日',s:'11:00',e:'20:00'}] // 預設照近30天單量尖峰切；⚙️可自訂
 function t24set(cls, v){
