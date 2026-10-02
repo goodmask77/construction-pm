@@ -231,6 +231,14 @@ export function buildTaskSetupCards(created, today) {
   return flex('順手補個設定？', bubbles.length === 1 ? bubbles[0] : { type: 'carousel', contents: bubbles })
 }
 
+// 綁定審核卡（2026-10-03 張良：綁定通知改按鈕卡「按了就過」）：bd|ok / bd|no 由 webhook 主檔處理
+export function buildBindApproveCard(name, rid) {
+  return flex(`🙋 ${name} 綁定完成，等待審核`, bubble(`🙋 ${name} 綁定完成`, '正在等待審核 /prep 編輯權限', [
+    btn('✅ 核准', `bd|ok|${rid}|${name}`, `核准 ${name}`),
+    btn('❌ 拒絕', `bd|no|${rid}|${name}`, `拒絕 ${name}`),
+  ], '#2A5CAA'))
+}
+
 // 確認卡（2026-09-08：改資料/金額類操作不用打「確認」，按按鈕就好）：cf|ok / cf|no 由 webhook 主檔處理（那邊有 executeActions）
 export function buildConfirmCard(sub) {
   return flex('要執行這些操作嗎？', bubble('要執行嗎？', String(sub || '').slice(0, 100), [

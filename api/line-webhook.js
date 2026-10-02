@@ -1567,6 +1567,36 @@ export default async function handler(req, res) {
           } catch (e) { console.log('pub issue postback error', e?.message); await repP('⚠️ 處理出錯，再按一次或到 /prep 任務分頁操作。') }
           continue
         }
+        if (/^bd\|/.test(pdata)) { // 綁定審核按鈕（張良 2026-10-03「按了就過」）：bd|ok|rid|名 核准、bd|no|rid|名 拒絕——只有審核人能按
+          const [, bdOp, bdRid, bdNm] = pdata.split('|')
+          const uidB = ev.source.userId
+          const repB = (t2) => ev.replyToken ? lineReply(ev.replyToken, t2) : Promise.resolve()
+          try {
+            const kvB = await kvGetMany(['sp_finance_pm_prep_perm', 'sp_finance_pm_sop_def', 'sp_crew_kb_roster', 'sp_finance_pm_prep_bind'])
+            const aprB = (((kvB['sp_finance_pm_sop_def'] || {}).ground || {}).approvers || ['張良瑋'])
+            const meB = ((kvB['sp_crew_kb_roster'] || {}).people || []).find(p2 => p2.lineUserId === uidB)
+            if (!meB || !aprB.includes(meB.name)) { await repB('這按鈕只有審核人能用喔。'); continue }
+            const pmB = kvB['sp_finance_pm_prep_perm'] || { mode: 'approve', users: {}, pending: {} }
+            const pd = (pmB.pending || {})[bdRid]
+            if (!pd) { await repB((pmB.users || {})[bdRid]?.edit ? `✅ ${bdNm} 已經核准過了。` : `找不到 ${bdNm} 的待審申請（可能已處理）。`); continue }
+            if (bdOp === 'ok') {
+              pmB.users[bdRid] = { name: pd.name, edit: 1, by: meB.name, ts: pd.ts }
+              delete pmB.pending[bdRid]
+              await kvSet('sp_finance_pm_prep_perm', pmB)
+              try { // 核准→DD 通知當事人（同 /prep 權限設定 ✅ 的通知）
+                let uidA = pd.uid
+                if (!uidA) { const bdDoc = kvB['sp_finance_pm_prep_bind'] || {}; uidA = (Object.values(bdDoc.tokens || {}).find(t2 => t2.rid === bdRid || t2.uid === bdRid) || {}).uid }
+                if (uidA) await fetch('https://api.line.me/v2/bot/message/push', { method: 'POST', headers: { 'content-type': 'application/json', Authorization: 'Bearer ' + TOKEN }, body: JSON.stringify({ to: uidA, messages: [{ type: 'text', text: '✅ 你的 /prep 編輯權限審核通過了！重新整理頁面就能編輯。' }] }) })
+              } catch (_) {}
+              await repB(`✅ 已核准 ${pd.name}，他現在可以編輯了（我也通知他了）。`)
+            } else {
+              delete pmB.pending[bdRid]
+              await kvSet('sp_finance_pm_prep_perm', pmB)
+              await repB(`❌ 已拒絕 ${pd.name} 的編輯權限申請（沒有通知他）。`)
+            }
+          } catch (e) { console.log('bind approve postback error', e?.message); await repB('⚠️ 處理出錯，再按一次，或到 /prep → 設定 → 🔐權限設定 操作。') }
+          continue
+        }
         try { await handleDDCards(ev, await getOperators()) } catch (e) { console.log('ddcards postback error', e?.message) }
         continue
       }
@@ -1747,7 +1777,8 @@ export default async function handler(req, res) {
               const aprB2 = (((defB2['sp_finance_pm_sop_def'] || {}).ground || {}).approvers || ['張良瑋'])
               for (const an of aprB2) {
                 const ap = (rosterDoc2.people || []).find(p => p.name === an && p.lineUserId)
-                if (ap && ap.lineUserId !== userId) await fetch('https://api.line.me/v2/bot/message/push', { method: 'POST', headers: { 'content-type': 'application/json', Authorization: 'Bearer ' + TOKEN }, body: JSON.stringify({ to: ap.lineUserId, messages: [{ type: 'text', text: `🙋 ${rp.name} 綁定完成，正在等待審核編輯權限。\n核准：/prep → 設定 → 🔐權限設定 按 ✅，或跟 Claude 說「核准 ${rp.name}」` }] }) })
+                // v4.26.0（張良 2026-10-03：綁定審核改按鈕卡「按了就過」）：✅核准/❌拒絕 postback bd|，不用再打字或進 /prep
+                if (ap && ap.lineUserId !== userId) { const { buildBindApproveCard } = await import('./_ddcards.js'); await fetch('https://api.line.me/v2/bot/message/push', { method: 'POST', headers: { 'content-type': 'application/json', Authorization: 'Bearer ' + TOKEN }, body: JSON.stringify({ to: ap.lineUserId, messages: [buildBindApproveCard(rp.name, rp.id || userId)] }) }) }
               }
             } catch (_) {}
           }
