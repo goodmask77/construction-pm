@@ -1810,16 +1810,14 @@ function shiftRender(){
    ${(()=>{ // 人員名單＋權限（張良 2026-09-25：訪客看/綁定一般/名單設權限）
      const canMgr = d.me && (d.me.approver || d.me.role==='主管')
      const chip = s2 => `<span style="border:1px solid ${s2.role==='停權'?'#5A4646':'var(--line)'};border-radius:8px;padding:1px 8px;margin-right:4px;white-space:nowrap;display:inline-block;margin-top:2px;${s2.role==='停權'?'opacity:.5;text-decoration:line-through;':''}${canMgr?'cursor:pointer':''}" ${canMgr?`onclick="gdRoleModal('${s2.n}','${s2.role}')" title="點我設定權限"`:''}>${s2.n}${s2.bound?' <span style="color:var(--green);font-weight:800">✓</span>':''}${s2.role==='主管'?' <span style="color:var(--primary);font-weight:800;font-size:12px">主管</span>':''}${s2.role==='審核人'?' <span style="color:#A85C26;font-weight:800;font-size:12px">審核</span>':''}</span>`
-     return `<div style="background:var(--card);border:1.5px solid var(--line);border-radius:10px;padding:8px 11px;margin-bottom:8px;font-size:14px"><b>GD 人員</b>：${(d.staff||[]).map(chip).join('')||'—'} ${canMgr?`<button class="mini" style="padding:2px 10px" onclick="gdStaffAdd()">＋ 加人</button>`:''}
-     <div class="hint" style="margin-top:3px">✓＝已綁定；${canMgr?'點名字＝設「一般／主管／停權」或移出名單；':''}訪客拿連結只能看、綁定後才能操作（記名）</div></div>` })()}
-   <div class="hint" style="margin-bottom:10px">工時＝打卡配對（只打上下班各一次時，扣掉班表的休息分鐘）；遲到寬限 5 分。加班口徑同薪資引擎：前 2 小時 ×1.34、之後 ×1.67（勞基法§24）；單日＞12h、月加班＞46h、連上 7 天會標紅（§32／§36）。試算參考用，正式發薪以人工核定為準。</div>`
+     return `<div style="background:var(--card);border:1.5px solid var(--line);border-radius:10px;padding:8px 11px;margin-bottom:8px;font-size:14px"><b>GD 人員</b>：${(d.staff||[]).map(chip).join('')||'—'} ${canMgr?`<button class="mini" style="padding:2px 10px" onclick="gdStaffAdd()">＋ 加人</button>`:''}</div>` })()}`
   // 📅 一週班表（張良 2026-09-22：崗位×星期——每格=人名+時間）
   if (!window._shiftWk) { const t0 = new Date(todayTpe()); t0.setDate(t0.getDate() - ((t0.getDay()+6)%7)); window._shiftWk = t0.toISOString().slice(0,10); window._shScrollTo = todayTpe() }
   const wkDays = [...Array(7)].map((_,i)=>{ const t2 = new Date(window._shiftWk); t2.setDate(t2.getDate()+i); return t2.toISOString().slice(0,10) })
   const wdN = ['一','二','三','四','五','六','日']
   h += `<div style="display:flex;gap:8px;align-items:center;margin:2px 0 6px;flex-wrap:wrap">
     <span style="font-weight:900;white-space:nowrap">一週班表</span>${meN?`<button class="mini" style="padding:3px 10px" onclick="shiftPosEdit()" title="崗位/時段/人員排序・顏色">⚙️ 設定</button>`:''}
-    <button class="mini" onclick="shiftWkNav(-1)">‹</button><button class="mini" onclick="shiftWkNav(1)">›</button><span class="hint" style="font-weight:800;white-space:nowrap">選取週 ${wkDays[0].slice(5)} ~ ${wkDays[6].slice(5)}</span><span class="hint" style="white-space:nowrap">（金底線那週＝清空／複製／套用的對象；整張表左右一直滑看不到盡頭、滑到邊自動多載，下面未排名單點人可標請假）</span>
+    <button class="mini" onclick="shiftWkNav(-1)">‹</button><button class="mini" onclick="shiftWkNav(1)">›</button><span class="hint" style="font-weight:800;white-space:nowrap">選取週 ${wkDays[0].slice(5)} ~ ${wkDays[6].slice(5)}</span>
     <button class="mini" style="padding:3px 10px" onclick="shiftSkill()">📊 熟練度</button><button class="mini" style="padding:3px 10px" onclick="shiftHist()">📝 紀錄</button>${meN?`<button class="mini" style="padding:3px 10px" onclick="tplSave()">💾 存版本</button><button class="mini" style="padding:3px 10px" onclick="tplView()">📂 版本</button>`:``}${meN?`<button class="mini" style="padding:3px 10px" onclick="copyWeekNext()">⧉ 本週→下週</button><button class="mini" style="padding:3px 10px;color:var(--red)" onclick="clearWeek()">🗑 清空本週</button>${(()=>{ try { const sv = JSON.parse(localStorage.getItem('shiftLastClear')||'null'); return (sv && Date.now()-sv.ts < 48*3600e3) ? `<button class="mini" style="padding:3px 10px" onclick="undoClear()">↩️ 復原清空</button>` : '' } catch(_) { return '' } })()}`:''}
   </div>`
   // v4.3.5（張良 2026-10-02）：①欄寬固定+硬格線=日期與格子切齊 ②崗位三組配色(櫃檯/飲料/中控・漢堡/煎炸麵・披薩/三明治) ③同人同天兼多崗位→班卡同色標記
@@ -2842,7 +2840,11 @@ function permPanelHtml(perm){
     <button class="mini" onclick="permSet('mode',null,'${perm.mode==='open'?'approve':'open'}')">切成${perm.mode==='open'?'審核制':'全開'}</button></div>
     ${(perm.pending||[]).length?`<div style="margin-top:6px;font-weight:800">待審核：</div>`+perm.pending.map(u=>`<div style="padding:3px 0">🙋 ${u.name} <span class="hint">${u.ts||''}</span> <button class="mini on" onclick="permSet('approve','${u.rid}')">✅ 核准</button> <button class="mini" onclick="permSet('reject','${u.rid}')">✖</button></div>`).join(''):'<div class="hint" style="margin-top:6px">目前沒有待審核的申請</div>'}
     <details style="margin-top:6px" open><summary class="hint" style="cursor:pointer">已核准（${(perm.users||[]).length}）——每人可勾「哪些分頁能編」</summary>${(perm.users||[]).map(u=>{
-      const TABS=[['menu','菜單'],['board','備料/看板'],['task','任務'],['meet','會議'],['food','盤點'],['pack','包材'],['buy','採購'],['shift','班表'],['fb','回饋']]
+      // v4.26.2（張良「權限編輯完全對照左列名稱＆順序」）：動態吃側欄自訂的順序＋名稱；「首頁」=權限key board
+      const cfgT = window._tabCfg || {}
+      const ordT = (cfgT.order && cfgT.order.length ? cfgT.order.slice() : Object.keys(TAB_DEF)).filter(k=>TAB_DEF[k])
+      Object.keys(TAB_DEF).forEach(k=>{ if (!ordT.includes(k)) ordT.unshift(k) })
+      const TABS=[['board','首頁'], ...ordT.map(k=>[k, stripEmoji((cfgT.names||{})[k] || TAB_DEF[k])])]
       const cks=u.admin?'<span class="hint">管理者＝全部分頁</span>':TABS.map(([k,lb])=>`<label style="margin-right:10px;white-space:nowrap"><input type="checkbox" ${(!u.tabs||u.tabs[k]!==0)?'checked':''} onchange="permSet('tab','${u.rid}',null,'${k}',this.checked)">${lb}</label>`).join('')
       return `<div style="padding:6px 0;border-top:1px dashed var(--line)"><div style="font-weight:800">${u.admin?'👑 ':''}${u.name}${u.admin?'':` <button class="mini" onclick="permSet('revoke','${u.rid}')">移除</button>`}</div><div style="margin-top:3px">${cks}</div></div>`
     }).join('')}</details></div>`
