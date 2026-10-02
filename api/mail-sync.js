@@ -1865,7 +1865,8 @@ export default async function handler(req, res) {
       if (x.tr) { const k2 = x.tr + '|' + x.pos; c2[k2] = (c2[k2] || 0) + 1; trSeqMap[x.id] = c2[k2] }
     }
     const leaveM = {}; for (const dt of Object.keys(((sd || {}).leave) || {})) { if (dt >= loS && dt <= hiS) leaveM[dt] = sd.leave[dt] } // 🏖 當月範圍請假標記
-    return res.status(200).json({ ok: true, ym, sched: schedL.map(x => ({ ...x, seq: seqMap[x.id], trSeq: trSeqMap[x.id] })), punches: pchs.map(p => ({ name: p.name, ts: p.ts, dir: p.dir, src: p.src })), names: namesU, namesAll, posList, slots: (sd || {}).slots || null, colors: colMap, posStats, leave: leaveM, hist: ((sd || {}).hist || []).slice(-200).reverse(), lockEdit: (sd || {}).lockEdit ? 1 : 0, tpls: (sd || {}).tpls || [], staff, me: meS ? { name: meS.name, role: meS.role, approver: aprS.includes(meS.name) } : null })
+    const hourlyL = (((sd || {}).hourly) || []).filter(x => String(x.date || '') >= loS && String(x.date || '') <= hiS) // 🕐 時段排班（v4.27.0）
+    return res.status(200).json({ ok: true, ym, hourly: hourlyL, sched: schedL.map(x => ({ ...x, seq: seqMap[x.id], trSeq: trSeqMap[x.id] })), punches: pchs.map(p => ({ name: p.name, ts: p.ts, dir: p.dir, src: p.src })), names: namesU, namesAll, posList, slots: (sd || {}).slots || null, colors: colMap, posStats, leave: leaveM, hist: ((sd || {}).hist || []).slice(-200).reverse(), lockEdit: (sd || {}).lockEdit ? 1 : 0, tpls: (sd || {}).tpls || [], staff, me: meS ? { name: meS.name, role: meS.role, approver: aprS.includes(meS.name) } : null })
   }
   // 人員色號管理口：POST ?shiftcolor=管理金鑰 {map:{名字:色號}} 合併寫入（固定/校正專屬色用）
   if (req.method === 'POST' && req.query?.shiftcolor) {
@@ -1977,6 +1978,22 @@ export default async function handler(req, res) {
       const tpD = (doc.tpls || []).find(x => x.id === sb2.id)
       doc.tpls = (doc.tpls || []).filter(x => x.id !== sb2.id)
       if (tpD) pushH('刪版本「' + tpD.name + '」')
+    } else if (sb2.op === 'hsave') { // 🕐 時段排班（張良 2026-10-03：週表同款樣板,欄=08:00-22:00每半小時）
+      const i2 = sb2.item || {}
+      const tOk = /^([01]\d|2[0-1]):(00|30)$/.test(String(i2.t || '')) && i2.t >= '08:00' && i2.t <= '21:30'
+      if (!String(i2.name || '').trim() || !/^\d{4}-\d{2}-\d{2}$/.test(i2.date) || !tOk) return res.status(400).json({ ok: false, error: '姓名/日期/時段沒填齊' })
+      if (String(i2.id || '').startsWith('tmp')) delete i2.id
+      const it = { id: i2.id || 'hr' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5), name: String(i2.name).trim().slice(0, 20), date: i2.date, t: i2.t, pos: String(i2.pos || '').trim().slice(0, 20), by: whoS.name }
+      const trV = String(i2.tr || '').trim().slice(0, 20); if (trV) it.tr = trV
+      const hadS = (doc.hourly || []).some(x => x.id === it.id)
+      pushH((hadS ? '改' : '排') + '時段 ' + it.name + ' ' + it.date + ' ' + it.t + ' ' + (it.pos || ''))
+      doc.hourly = [...(doc.hourly || []).filter(x => x.id !== it.id), it].sort((a, b) => (a.date + a.t).localeCompare(b.date + b.t)).slice(-3000)
+      await kvPut('sp_finance_pm_shift_g', doc, '時段排班(' + whoS.name + ')')
+      return res.status(200).json({ ok: true, id: it.id })
+    } else if (sb2.op === 'hdel') {
+      const deE = (doc.hourly || []).find(x => x.id === sb2.id)
+      if (deE) pushH('刪時段 ' + deE.name + ' ' + deE.date + ' ' + deE.t)
+      doc.hourly = (doc.hourly || []).filter(x => x.id !== sb2.id)
     } else if (sb2.op === 'leave') { // 🏖 請假標記（張良 2026-10-02：未排名單點人反黑劃掉＝那天不能排班；休/特/病/事/國/婚/喪/產/公）
       const dt9 = String(sb2.date || ''); const nm9 = String(sb2.name || '').trim().slice(0, 20); const tp9 = String(sb2.type || '').trim().slice(0, 2)
       if (!/^\d{4}-\d{2}-\d{2}$/.test(dt9) || !nm9) return res.status(400).json({ ok: false, error: '日期或姓名錯誤' })

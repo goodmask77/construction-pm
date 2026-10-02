@@ -1817,7 +1817,7 @@ function shiftRender(){
   const wdN = ['一','二','三','四','五','六','日']
   h += `<div style="display:flex;gap:8px;align-items:center;margin:2px 0 6px;flex-wrap:wrap">
     <span style="font-weight:900;white-space:nowrap">一週班表</span>${meN?`<button class="mini" style="padding:3px 10px" onclick="shiftPosEdit()" title="崗位/時段/人員排序・顏色">⚙️ 設定</button>`:''}
-    <button class="mini" onclick="shiftWkNav(-1)">‹</button><button class="mini" onclick="shiftWkNav(1)">›</button><span class="hint" style="font-weight:800;white-space:nowrap">選取週 ${wkDays[0].slice(5)} ~ ${wkDays[6].slice(5)}</span>
+    ${window._shMode==='hr'?`<button class="mini" onclick="hrNav(-1)">‹</button><button class="mini" onclick="hrNav(1)">›</button><span class="hint" style="font-weight:800;white-space:nowrap">${(window._shHrDate||today).slice(5)}（${'日一二三四五六'[new Date(window._shHrDate||today).getDay()]}）</span>`:`<button class="mini" onclick="shiftWkNav(-1)">‹</button><button class="mini" onclick="shiftWkNav(1)">›</button><span class="hint" style="font-weight:800;white-space:nowrap">選取週 ${wkDays[0].slice(5)} ~ ${wkDays[6].slice(5)}</span>`}<button class="mini${window._shMode==='hr'?' on':''}" style="padding:3px 10px" onclick="shModeTog()">🕐 時段排班</button>
     <button class="mini" style="padding:3px 10px" onclick="shiftSkill()">📊 熟練度</button><button class="mini" style="padding:3px 10px" onclick="shiftHist()">📝 紀錄</button>${meN?`<button class="mini" style="padding:3px 10px" onclick="tplSave()">💾 存版本</button><button class="mini" style="padding:3px 10px" onclick="tplView()">📂 版本</button>`:``}${meN?`<button class="mini" style="padding:3px 10px" onclick="copyWeekNext()">⧉ 本週→下週</button><button class="mini" style="padding:3px 10px;color:var(--red)" onclick="clearWeek()">🗑 清空本週</button>${(()=>{ try { const sv = JSON.parse(localStorage.getItem('shiftLastClear')||'null'); return (sv && Date.now()-sv.ts < 48*3600e3) ? `<button class="mini" style="padding:3px 10px" onclick="undoClear()">↩️ 復原清空</button>` : '' } catch(_) { return '' } })()}`:''}
   </div>`
   // v4.3.5（張良 2026-10-02）：①欄寬固定+硬格線=日期與格子切齊 ②崗位三組配色(櫃檯/飲料/中控・漢堡/煎炸麵・披薩/三明治) ③同人同天兼多崗位→班卡同色標記
@@ -1874,9 +1874,32 @@ function shiftRender(){
     hh += `</tbody></table>`
     return hh
   }
+  // v4.27.0（張良「一模一樣的樣板做專門排模組的：日期變成24h制 8-22每半小時一格」）：🕐 時段排班——一次排一天，欄=08:00~21:30共28格
+  const buildHourGrid = (dt0) => {
+    const times=[]; for(let m2=8*60;m2<22*60;m2+=30){ times.push(String(Math.floor(m2/60)).padStart(2,'0')+':'+String(m2%60).padStart(2,'0')) }
+    const he=(d.hourly||[]).filter(x=>x.date===dt0)
+    const pl2=(d.posList||[]).slice(); he.forEach(x=>{ const p4=x.pos||'未分崗'; if(!pl2.includes(p4)) pl2.push(p4) })
+    const sepT=t=>t.endsWith(':00')?'border-left:2px solid var(--line);':'' // 整點粗線
+    let hh=`<table style="border-collapse:collapse"><thead><tr><th style="${BD}padding:5px 6px;text-align:center;position:sticky;left:0;top:0;background:var(--soft);z-index:4;white-space:nowrap;font-size:11.5px;font-weight:800">${dt0.slice(5)}</th>${times.map(t=>`<th style="${BD}${sepT(t)}min-width:70px;padding:4px 3px;text-align:center;font-size:11px;white-space:nowrap;position:sticky;top:0;z-index:2;color:#F2F5F9;background:var(--soft)">${t}</th>`).join('')}</tr></thead><tbody>`
+    if(!pl2.length) hh+=`<tr><td colspan="${times.length+1}" class="mut" style="${BD}text-align:center">先按「⚙️ 設定」建崗位</td></tr>`
+    let pg=null
+    pl2.forEach(ps=>{
+      const g=GC[posGrp(ps)]; const gb=(pg!==null&&posGrp(ps)!==pg)?`border-top:3px solid ${g.ink}AA;`:''; pg=posGrp(ps)
+      hh+=`<tr><td style="${BD}${gb}padding:3px 6px;text-align:left;font-weight:800;font-size:11px;color:${g.ink};position:sticky;left:0;background:${g.bg};z-index:1;white-space:nowrap">${ps}</td>`+times.map(t=>{
+        const es=he.filter(x=>(x.pos||'未分崗')===ps&&x.t===t)
+        const cellOps=meN?` onclick="hrQuick('${ps}','${t}')" ondragover="event.preventDefault();this.style.outline='2px solid var(--primary)'" ondragleave="this.style.outline=''" ondrop="hrDrop(event,'${ps}','${t}')"`:''
+        const ents=es.map(e=>{ const pi=pcIdx(e.name),ti=e.tr?pcIdx(e.tr):-1
+          const bg2=e.tr?`background:linear-gradient(180deg,${PB[pi]} 50%,${PB[ti]} 50%);`:`background:${PB[pi]};`
+          return `<div ${meN?`draggable="true" ondragstart="event.stopPropagation();event.dataTransfer.setData('text/plain','${e.id}');window._shHrDragId='${e.id}'" ondragend="window._shHrDragId=null" onclick="event.stopPropagation();hrEdit('${e.id}')"`:''} style="font-size:12px;line-height:1.45;white-space:nowrap;${meN?'cursor:grab;':''}${bg2}border:${e.tr?'1.5px dashed rgba(255,255,255,.95)':'none'};border-radius:5px;padding:1px 4px;margin:1.5px 0"><b style="color:${PT[pi]};font-weight:600">${e.name}</b>${e.tr?`<span style="display:block;color:${PT[ti]};font-weight:600;font-size:11px">🎓${e.tr}</span>`:''}</div>`
+        }).join('')
+        return `<td${cellOps} style="${BD}${sepT(t)}${gb}padding:2px 3px;text-align:left;${meN?'cursor:pointer;':''}vertical-align:top">${ents||(meN?'<span class="mut">＋</span>':'<span class="mut">—</span>')}</td>`
+      }).join('')+`</tr>`
+    })
+    return hh+`</tbody></table>`
+  }
   // v4.25.0：無限時間軸——連續日期範圍(預設±2月)一長排，放品項明細同款四向捲動盒；滑到邊緣自動多載(shOnScroll)，月份 ‹ › 跳月，開啟自動捲到今天
   shInitRange(); shRangeInclude(shiftYm)
-  h += `<div id="shBox" class="scroll" style="max-height:72vh;overflow:auto;margin-bottom:12px;-webkit-overflow-scrolling:touch">${buildGrid(shRangeDays())}</div>`
+  h += `<div id="shBox" class="scroll" style="max-height:72vh;overflow:auto;margin-bottom:12px;-webkit-overflow-scrolling:touch">${window._shMode==='hr'?buildHourGrid(window._shHrDate||today):buildGrid(shRangeDays())}</div>`
   const pn = Object.keys(per).sort()
   if (pn.length){
     h += `<div class="scroll"><table><thead><tr><th style="text-align:left">夥伴</th><th>總工時</th><th>正常</th><th>加班×1.34</th><th>加班×1.67</th><th style="text-align:left">⚠️ 勞基法檢查</th></tr></thead><tbody>`
@@ -1910,9 +1933,9 @@ function shiftRender(){
   app.innerHTML = h
   window._shDir = null // 動畫方向用完即清
   window._shBuildGrid = buildGrid // 給 shGridOnly（邊緣多載/補資料）重畫格子用，吃最新的 d/權限/選取週
-  const _box = document.getElementById('shBox'); if (_box) _box.onscroll = shOnScroll
+  const _box = document.getElementById('shBox'); if (_box) _box.onscroll = (window._shMode==='hr' ? null : shOnScroll)
   // 捲動位置三段式（v4.25.6）：①有目標(開啟/翻月/翻週/今天鈕)→捲目標 ②沒目標但重畫前有位置→還原原位(編輯存檔不亂跳) ③都沒有(重新整理第一次畫)→預設捲到今天
-  { const tgtDate = window._shScrollTo ? (window._shScrollTo==='today' ? today : window._shScrollTo) : null; window._shScrollTo = null
+  if (window._shMode !== 'hr') { const tgtDate = window._shScrollTo ? (window._shScrollTo==='today' ? today : window._shScrollTo) : null; window._shScrollTo = null
     requestAnimationFrame(()=>{ try{ const box=document.getElementById('shBox'); if(!box)return
       if (!tgtDate && _prevAnchor){ const thP=box.querySelector('th[data-d="'+_prevAnchor.date+'"]'); if(thP){ box.scrollLeft += thP.getBoundingClientRect().left - box.getBoundingClientRect().left - _prevAnchor.vx; box.scrollTop = _prevTop; return } }
       const th=box.querySelector('th[data-d="'+(tgtDate||today)+'"]')||box.querySelector('th[data-d="'+today+'"]')
@@ -2044,8 +2067,10 @@ function pasteApply(pos, dt){
   if (!n) alert('目標已經有一樣的班，沒有新增')
 }
 // v4.10.2（張良）：班卡拖到班表「外面」放掉＝直接刪除（格子/未排區各自攔截，掉到其他地方=丟掉）
-document.addEventListener('dragover', e2 => { if (window._shiftDragId) e2.preventDefault() })
+document.addEventListener('dragover', e2 => { if (window._shiftDragId || window._shHrDragId) e2.preventDefault() })
 document.addEventListener('drop', e2 => {
+  const idH = window._shHrDragId
+  if (idH) { e2.preventDefault(); window._shHrDragId = null; hrDel(idH); return } // 時段卡拖到外面=刪（同週表慣例）
   const id = window._shiftDragId; if (!id) return
   e2.preventDefault(); window._shiftDragId = null
   if (String(id).startsWith('u|')) return // 未排名片丟外面＝不做事
@@ -2300,6 +2325,69 @@ async function shLeaveSet(name, date, type){
   const box = document.getElementById('shBox'); if (box) window._shAnchor = shLeftAnchor(box); shGridOnly()
   const r = await shPost({ op:'leave', date, name, type, token: TK() })
   if (!r || !r.ok) alert((r&&r.error) || '請假標記沒存起來，請重試')
+}
+// ── v4.27.0 🕐 時段排班操作（張良 2026-10-03：週表同款互動——點格選人/點卡編輯/拖曳搬格/拖出去刪）──
+function shModeTog(){ window._shMode = window._shMode==='hr' ? 'week' : 'hr'; if (!window._shHrDate) window._shHrDate = todayTpe(); if (window._shMode !== 'hr') window._shScrollTo = 'today'; shiftRender() }
+function hrNav(n){ const t2 = new Date(window._shHrDate||todayTpe()); t2.setDate(t2.getDate()+n); window._shHrDate = t2.toISOString().slice(0,10); const ym2 = window._shHrDate.slice(0,7); if (ym2 !== shiftYm) shiftLoad(ym2); else shiftRender() }
+function hrQuick(pos, t){
+  const d = window._shiftD; if (!(d && d.me)) return
+  const dt = window._shHrDate || todayTpe()
+  const PBq = _PBX(), PTq = _PTX()
+  const pcq = n => { const c2=(d.colors||{})[n]; if (c2!=null) return c2%PBq.length; let i=0; for(const ch of String(n)) i=(i*31+ch.charCodeAt(0))%997; return i%PBq.length }
+  const names = (d.staff||[]).filter(s2=>!s2.off&&s2.role!=='停權').map(s2=>s2.n)
+  const ov = document.createElement('div'); ov.id='hrOv'
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(16,24,43,.5);z-index:60;display:flex;align-items:center;justify-content:center;padding:16px'
+  ov.innerHTML = `<div style="background:#222B38;border:1px solid #3B4654;box-shadow:0 18px 50px rgba(0,0,0,.55);border-radius:14px;max-width:420px;width:100%;padding:16px" onclick="event.stopPropagation()">
+    <div style="font-weight:900;margin-bottom:8px">🕐 ${pos}・${dt.slice(5)} ${t}</div>
+    <div style="display:flex;flex-wrap:wrap;gap:6px">${names.map(n=>`<button class="mini" style="padding:7px 12px;background:${PBq[pcq(n)]};color:${PTq[pcq(n)]};border:none;font-weight:700" onclick="hrAssign('${pos}','${t}','${n}')">${n}</button>`).join('')||'<span class="hint">名單是空的——先在班表頁加 GD 人員</span>'}</div>
+    <div style="display:flex;justify-content:flex-end;margin-top:10px"><button class="mini" style="padding:7px 14px" onclick="document.getElementById('hrOv').remove()">關閉</button></div></div>`
+  ov.onclick = () => ov.remove(); document.body.appendChild(ov)
+}
+async function hrAssign(pos, t, name){
+  const o = document.getElementById('hrOv'); if (o) o.remove()
+  const d = window._shiftD, dt = window._shHrDate || todayTpe()
+  if ((d.hourly||[]).some(x=>x.date===dt&&x.t===t&&(x.pos||'未分崗')===pos&&x.name===name)) { alert(name+' 已經在這格了'); return }
+  const tmp = { id:'tmp'+Math.random().toString(36).slice(2), date:dt, t, pos:(pos==='未分崗'?'':pos), name }
+  d.hourly = [...(d.hourly||[]), tmp]; shiftRender()
+  const r = await shPost({ op:'hsave', item:{ date:tmp.date, t:tmp.t, pos:tmp.pos, name:tmp.name }, token:TK() })
+  if (r && r.ok && r.id) tmp.id = r.id
+  else { d.hourly = d.hourly.filter(x=>x!==tmp); shiftRender(); alert((r&&r.error)||'存檔失敗') }
+}
+function hrEdit(id){
+  const d = window._shiftD; if (!(d && d.me)) return
+  const it = (d.hourly||[]).find(x=>x.id===id); if (!it) return
+  const names = (d.staff||[]).filter(s2=>!s2.off&&s2.role!=='停權').map(s2=>s2.n)
+  const ov = document.createElement('div'); ov.id='hrOv'
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(16,24,43,.5);z-index:60;display:flex;align-items:center;justify-content:center;padding:16px'
+  ov.innerHTML = `<div style="background:#222B38;border:1px solid #3B4654;box-shadow:0 18px 50px rgba(0,0,0,.55);border-radius:14px;max-width:420px;width:100%;padding:16px" onclick="event.stopPropagation()">
+    <div style="font-weight:900;margin-bottom:8px">${it.name}・${it.pos||'未分崗'}・${it.t}${it.tr?`（🎓${it.tr}）`:''}</div>
+    <div class="hint" style="margin-bottom:4px">🎓 帶訓對象（點名字＝設定／再點＝取消）</div>
+    <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px">${names.filter(n=>n!==it.name).map(n=>`<button class="mini${it.tr===n?' on':''}" style="padding:6px 10px" onclick="hrSetTr('${id}','${it.tr===n?'':n}')">${n}</button>`).join('')}</div>
+    <div style="display:flex;gap:8px;justify-content:space-between"><button class="mini" style="padding:8px 14px;color:var(--red)" onclick="hrDel('${id}')">🗑 刪除</button><button class="mini" style="padding:8px 14px" onclick="document.getElementById('hrOv').remove()">關閉</button></div></div>`
+  ov.onclick = () => ov.remove(); document.body.appendChild(ov)
+}
+async function hrSetTr(id, tr){
+  const o = document.getElementById('hrOv'); if (o) o.remove()
+  const d = window._shiftD, it = (d.hourly||[]).find(x=>x.id===id); if (!it) return
+  if (tr) it.tr = tr; else delete it.tr
+  shiftRender()
+  const r = await shPost({ op:'hsave', item:{ ...it }, token:TK() })
+  if (!r || !r.ok) alert((r&&r.error)||'存檔失敗')
+}
+async function hrDel(id){
+  const o = document.getElementById('hrOv'); if (o) o.remove()
+  const d = window._shiftD; if (!d) return
+  d.hourly = (d.hourly||[]).filter(x=>x.id!==id); shiftRender()
+  const r = await shPost({ op:'hdel', id, token:TK() })
+  if (!r || !r.ok) alert('刪除沒成功，重新整理看看')
+}
+async function hrDrop(ev, pos, t){
+  ev.preventDefault(); ev.stopPropagation(); ev.currentTarget.style.outline = ''
+  const id = ev.dataTransfer.getData('text/plain'); window._shHrDragId = null
+  const d = window._shiftD, it = (d.hourly||[]).find(x=>x.id===id); if (!it) return
+  it.pos = (pos==='未分崗'?'':pos); it.t = t; shiftRender()
+  const r = await shPost({ op:'hsave', item:{ ...it }, token:TK() })
+  if (!r || !r.ok) alert((r&&r.error)||'移動沒存成功')
 }
 const SLOT_DEF = [{n:'午峰',s:'11:00',e:'14:30'},{n:'離峰',s:'14:30',e:'17:30'},{n:'晚峰',s:'17:30',e:'20:00'},{n:'全日',s:'11:00',e:'20:00'}] // 預設照近30天單量尖峰切；⚙️可自訂
 function t24set(cls, v){
