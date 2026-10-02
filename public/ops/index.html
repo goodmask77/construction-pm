@@ -2348,7 +2348,7 @@ function lbUndo(){ const sn=_lbUndo.pop(); if(!sn){ alert('沒有可復原的步
   sh.cols=o.cols; sh.rows=o.rows; laborCur=o.id; laborRender(); lbSave() }
 function lbSave(){ clearTimeout(_lbSaveT); _lbSaveT = setTimeout(async()=>{
   const sh = lbSheet(); if (!sh) return
-  const r = await fetch('/api/mail-sync?laborset=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ op:'save', sheet:{ id:sh.id, name:sh.name, cols:sh.cols, rows:sh.rows||{}, wage:sh.wage||300, pct:sh.pct||20 }, token: TK() }) }).then(r2=>r2.json()).catch(()=>null)
+  const r = await fetch('/api/mail-sync?laborset=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ op:'save', sheet:{ id:sh.id, name:sh.name, cols:sh.cols, rows:sh.rows||{}, wage:sh.wage||300, pct:sh.pct||20, fin:sh.fin||null }, token: TK() }) }).then(r2=>r2.json()).catch(()=>null)
   if (!r || !r.ok) alert((r&&r.error)||'工時成本沒存成功——確認有綁定/權限後再改一次')
 }, 600) }
 function laborRender(){
@@ -2392,11 +2392,32 @@ function laborRender(){
   ${cols.map((_,ci)=>`<td style="padding:6px 8px;text-align:center;font-weight:900;background:var(--soft);white-space:nowrap">${fmtN(colSum(ci))}${colSum(ci)?`<div class="hint" style="font-weight:700;font-size:10.5px">${LB_HOURS.reduce((a,h2)=>a+(lbV(sh,h2,ci)?1:0),0)}小時</div>`:''}</td>`).join('')}
   <td style="padding:6px 10px;text-align:right;font-weight:900;color:var(--red);background:var(--soft);font-size:15px;white-space:nowrap">${fmtN(grand)}${grand?`<div class="hint" style="font-weight:700;font-size:10.5px">${LB_HOURS.reduce((a,h2)=>a+cols.reduce((b,_,ci)=>b+(lbV(sh,h2,ci)?1:0),0),0)}小時</div>`:''}</td></tr>`
   h += `</tbody></table></div>
-  <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;background:var(--card);border:1.5px solid var(--line);border-radius:10px;padding:8px 12px;margin-top:8px;font-size:14px;font-weight:800">
-    <span>💰 總人事 <span style="color:var(--red)">${fmtN(grand)||0}</span><span class="hint" style="font-weight:700">（${LB_HOURS.reduce((a,h2)=>a+cols.reduce((b,_,ci)=>b+(lbV(sh,h2,ci)?1:0),0),0)} 小時）</span></span>
-    <span style="display:inline-flex;align-items:center;gap:4px">🎯 人事成本 <input value="${sh.pct||20}" inputmode="numeric" style="width:34px;border:none;background:transparent;color:var(--ink);font-size:14px;font-weight:900;text-align:center;outline:none;border-bottom:1.5px solid var(--primary)" onchange="lbPctSet(this.value)">%</span>
-    <span>→ 營業額要做到 <span style="color:var(--green);font-size:16px">${grand?('NT$'+fmtN(Math.ceil(grand/((Number(sh.pct)||20)/100)))):'—'}</span></span>
-  </div>
+  ${(()=>{ // 🧾 成本反推（張良 2026-10-03：租金/電費/食材成本/稅金…反推營業額要做多少）
+    const fin = sh.fin || { rent:0, util:0, misc:0, days:26, food:35, tax:5, pay:2, ins:12 }
+    const hrs = LB_HOURS.reduce((a,h2)=>a+cols.reduce((b,_,ci)=>b+(lbV(sh,h2,ci)?1:0),0),0)
+    const mLabor = Math.round(grand * (fin.days||26) * (1 + (fin.ins||0)/100))
+    const fixed = (fin.rent||0) + (fin.util||0) + (fin.misc||0) + mLabor
+    const varP = (fin.food||0) + (fin.tax||0) + (fin.pay||0)
+    const R = varP < 100 ? Math.ceil(fixed / (1 - varP/100)) : 0
+    const daily = R && fin.days ? Math.ceil(R / fin.days) : 0
+    const lp = R ? Math.round(mLabor / R * 1000)/10 : 0
+    const ip = (k,v,w2,sf)=>`<span style="display:inline-flex;align-items:center;gap:3px;white-space:nowrap">${k} <input value="${v}" inputmode="numeric" style="width:${w2}px;border:none;background:transparent;color:var(--ink);font-size:13.5px;font-weight:900;text-align:center;outline:none;border-bottom:1.5px solid var(--primary)" onchange="lbFinSet('${sf}',this.value)">${sf==='days'?'天':(['food','tax','pay','ins'].includes(sf)?'%':'')}</span>`
+    return `<div style="background:var(--card);border:1.5px solid var(--line);border-radius:10px;padding:10px 12px;margin-top:8px;font-size:13.5px;font-weight:700;display:flex;flex-direction:column;gap:7px">
+    <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:center">
+      <b>🧾 反推營業額</b>
+      <span>💰 日人事 <b style="color:var(--red)">${fmtN(grand)||0}</b><span class="hint">（${hrs}小時）</span></span>
+      ${ip('🏠 月租金',fin.rent||0,66,'rent')} ${ip('⚡ 月水電',fin.util||0,56,'util')} ${ip('🔧 月雜支',fin.misc||0,56,'misc')} ${ip('📅 營業',fin.days||26,30,'days')}
+    </div>
+    <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:center">
+      ${ip('🥩 食材成本',fin.food||0,30,'food')}<span class="hint">（毛利 ${100-(fin.food||0)}%）</span> ${ip('🧾 稅費',fin.tax||0,26,'tax')} ${ip('💳 金流/外送',fin.pay||0,26,'pay')} ${ip('🛡 勞健保附加',fin.ins||0,26,'ins')}
+    </div>
+    <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:center;border-top:1px dashed var(--line);padding-top:7px">
+      <span>月人事(含勞健保) <b>${fmtN(mLabor)}</b></span>
+      <span>固定成本/月 <b>${fmtN(fixed)}</b></span>
+      <span style="font-size:15px">→ 每月要做 <b style="color:var(--green);font-size:17px">${R?'NT$'+fmtN(R):'—'}</b>・平均每天 <b style="color:var(--green);font-size:16px">${daily?'NT$'+fmtN(daily):'—'}</b></span>
+      <span class="hint" style="font-weight:700">人事佔比 ${lp}%</span>
+    </div></div>`
+  })()}
   <div class="hint" style="margin-top:4px">點格＝跳時薪選單（200~300 顏色分檔，✕＝清空）・按住拖＝複製・點欄頭/列頭＝清整欄/整列・↩️ 復原；欄位＝班表崗位（⚙️ 設定改）</div>`
   el.className = ''
   el.innerHTML = h
@@ -2458,7 +2479,11 @@ function lbWageMenu(ev){ // 時薪選單：選了=整張表全部變該數字
 function lbWagePick(v){ lbMnClose(); const sh=lbSheet(); lbPushUndo(); sh.wage=v
   for(const h2 of Object.keys(sh.rows||{})) for(const k2 of Object.keys(sh.rows[h2])) sh.rows[h2][k2]=v // 全表非零格=該數字
   laborRender(); lbSave() }
-function lbPctSet(v){ const sh=lbSheet(); sh.pct=Math.max(1,Math.min(99,Number(v)||20)); laborRender(); lbSave() } // 🎯 人事成本%→反推營業額（張良 2026-10-03）
+function lbPctSet(v){ const sh=lbSheet(); sh.pct=Math.max(1,Math.min(99,Number(v)||20)); laborRender(); lbSave() }
+function lbFinSet(k,v){ const sh=lbSheet(); sh.fin=sh.fin||{ rent:0, util:0, misc:0, days:26, food:35, tax:5, pay:2, ins:12 }
+  const n2=Number(v)||0
+  sh.fin[k] = k==='days' ? Math.max(1,Math.min(31,n2)) : (['food','tax','pay','ins'].includes(k) ? Math.max(0,Math.min(99,n2)) : Math.max(0,Math.min(9999999,n2)))
+  laborRender(); lbSave() } // 🧾 反推參數（張良 2026-10-03）
 const SLOT_DEF = [{n:'午峰',s:'11:00',e:'14:30'},{n:'離峰',s:'14:30',e:'17:30'},{n:'晚峰',s:'17:30',e:'20:00'},{n:'全日',s:'11:00',e:'20:00'}] // 預設照近30天單量尖峰切；⚙️可自訂
 function t24set(cls, v){
   const ov = document.getElementById('qkOv'); if (!ov) return
