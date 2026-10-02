@@ -456,8 +456,11 @@ async function sopItemSave(id, del){
 function sopCatAdd(){ prepAsk('＋ 新增分類',0,1,(q,r)=>{ if (r) sopstOp({op:'catadd',cat:r}).then(()=>{ window._sopCat=r; sopRender() }) },'分類名稱（例：清潔／備料／設站／開班／收班）') }
 function sopStAdd(cat){
   prepAsk(`＋ 在「${cat}」新增站`,0,1,async (q,r)=>{
+    r = String(r||'').trim() // v4.17.4：去空白——尾巴帶空格會閃過同名檢查害後端撞名
     if (!r) return
     const sts9 = [...(sopData.def.stations||[])]
+    const scM9 = sopData.def.stCat || {}
+    if (sts9.includes(cat+'｜'+r) || sts9.some(x=>x===r && scM9[x]===cat)) { alert(`「${cat}」已經有「${r}」了`); return }
     const nm9 = sts9.includes(r) ? (cat+'｜'+r) : r // 同名站在別類已存在→用「分類｜站名」讓兩邊是不同清單
     const r1 = await fetch('/api/mail-sync?sopst=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ op:'add', st:nm9, token: TK() }) }).then(x=>x.json()).catch(()=>null)
     if (!(r1&&r1.ok)) { alert((r1&&r1.error)||'失敗'); return }
