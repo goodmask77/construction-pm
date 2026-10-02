@@ -5,7 +5,7 @@
 // 視覺：依 docs/DESIGN_SPEC.md（Linear/Stripe 儀表板風）— 中性灰白 + 單一藍色主色 +
 //       lucide 細線圖示 + 狀態小圓點；1px 淺灰邊框、8px 圓角、無陰影、大量留白。
 import { useState, useEffect, useRef } from "react";
-import { Inbox, LayoutGrid, Columns3, List, CalendarDays, ChartGantt, Network, Plus, X, Check, Flame, Calendar, Clock, CircleAlert, ListTodo, Search, Home, Zap, Hourglass, CirclePlay, Coffee, Pin, ArrowUpDown, FolderPlus, Sun, GripVertical } from "lucide-react";
+import { Inbox, LayoutGrid, Columns3, List, CalendarDays, ChartGantt, Network, Plus, X, Check, Flame, Calendar, Clock, CircleAlert, ListTodo, Search, Home, Zap, Hourglass, CirclePlay, Coffee, Pin, ArrowUpDown, FolderPlus, Sun, GripVertical, Users } from "lucide-react";
 import { isWaiting, isBlocked, missingDeps, wouldCycle, mergeTask, removeTaskAndRefs, isQuickWin, QUICK_WIN_MAX_MINUTES, orderTasks } from "./taskModel.js";
 import { uploadPhoto } from "../supa.js";
 import { loadRecords, migrateRecords, diffPersist, subscribeRecords } from "../lib/records.js";
@@ -353,7 +353,7 @@ export default function TaskCenter({ K, confirm, canEdit, cats, onLog, onAddCat,
     </div>
   );
 
-  const TABS = [["group", "依大項", LayoutGrid], ["board", "看板", Columns3], ["list", "清單", List], ["timeline", "時間軸", CalendarDays], ["gantt", "甘特", ChartGantt], ["mind", "心智圖", Network]];
+  const TABS = [["group", "依大項", LayoutGrid], ["board", "看板", Columns3], ["owner", "負責人", Users], ["list", "清單", List], ["timeline", "時間軸", CalendarDays], ["gantt", "甘特", ChartGantt], ["mind", "心智圖", Network]];
   const Tab = (k, l, Icon) => (
     <button key={k} onClick={() => setView(k)} style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "6px 12px", borderRadius: 6, border: `1px solid ${view === k ? C.line : "transparent"}`, background: view === k ? WHT : "transparent", color: view === k ? C.text : C.sub, fontSize: 13, fontWeight: view === k ? 600 : 400, cursor: "pointer" }}>
       <Icon size={14} strokeWidth={1.75} />{l}
@@ -393,7 +393,7 @@ export default function TaskCenter({ K, confirm, canEdit, cats, onLog, onAddCat,
         </div>
         <div style={{ flex: 1 }} />
         {/* 排序切換：看板/清單可切 手動(拖曳)/日期/重要度；釘選永遠最前；其他視角隱形佔位＝版面不跑 */}
-        <div style={{ display: "inline-flex", alignItems: "center", background: C.soft, border: `1px solid ${C.line}`, borderRadius: 8, padding: 2, gap: 2, visibility: (view === "board" || view === "list") ? "visible" : "hidden" }}>
+        <div style={{ display: "inline-flex", alignItems: "center", background: C.soft, border: `1px solid ${C.line}`, borderRadius: 8, padding: 2, gap: 2, visibility: (view === "board" || view === "list" || view === "owner") ? "visible" : "hidden" }}>
           <ArrowUpDown size={12} color={C.faint} style={{ margin: "0 2px 0 7px" }} />
           {[["manual", "手動"], ["due", "日期"], ["prio", "重要度"]].map(([k, l]) => { // 清單也開放手動拖曳排序（張良 2026-09-10）
             const act = sortMode === k;
@@ -700,6 +700,31 @@ export default function TaskCenter({ K, confirm, canEdit, cats, onLog, onAddCat,
           })}
         </div>
       )}
+
+      {/* ── 負責人（2026-10-02 張良：視角分頁加「負責人分類」）：欄=每個負責人＋未指派；拖卡到人欄＝指派給他 ── */}
+      {view === "owner" && (() => {
+        const openO = tasks.filter(t => t.status !== "done").filter(matchQ);
+        const owners = [...new Set(openO.map(t => t.claimBy).filter(Boolean))].sort((a, b) => a.localeCompare(b, "zh-Hant"));
+        const cols = [["", "未指派"], ...owners.map(n => [n, n])];
+        return (
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(240px,1fr))", gap: 12, alignItems: "start" }}>
+            {cols.map(([nm, label]) => {
+              const items = orderTasks(openO.filter(t => (t.claimBy || "") === nm), sortMode);
+              return DropZone({ keyId: "ow-" + (nm || "none"), onDropHere: () => { if (drag && canEdit) upd(drag, nm ? { claimBy: nm, claimAt: Date.now(), status: "doing" } : { claimBy: "", claimAt: null, status: "todo" }); },
+                style: { background: C.card, border: `1px solid ${C.line}`, borderRadius: 8, padding: 12, minHeight: 120 },
+                children: <>
+                  <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 10 }}>
+                    {nm ? <span style={{ fontSize: 13 }}>🔧</span> : <span style={{ width: 7, height: 7, borderRadius: "50%", background: C.faint }} />}
+                    <div style={{ fontSize: 13, fontWeight: 600, color: C.text }}>{label}</div>
+                    <span style={{ fontSize: 11.5, color: C.faint, fontVariantNumeric: "tabular-nums" }}>{items.length}</span>
+                  </div>
+                  {items.map(t => Card({ t, dropBefore: false }))}
+                  {items.length === 0 && <Empty icon={Users} text={nm ? "拖任務過來＝指派給他" : "沒有未指派的任務"} />}
+                </> });
+            })}
+          </div>
+        );
+      })()}
 
       {/* ── 清單 ── */}
       {view === "list" && (() => {
