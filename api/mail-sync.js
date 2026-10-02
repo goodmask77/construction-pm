@@ -2338,6 +2338,26 @@ export default async function handler(req, res) {
     await kvPut('sp_finance_pm_prep_perm', pm, '權限管理(' + who.name + ')')
     return res.status(200).json({ ok: true, perm: pm })
   }
+  // 補發綁定審核按鈕卡（MENU_PROBE_KEY；張良 2026-10-03「這兩個請DD傳給我試試看」）：?bindcard=<key> 把待審核名單逐一發按鈕卡給審核人
+  if (req.query?.bindcard) {
+    const mkB = (process.env.MENU_PROBE_KEY || '').trim()
+    if (!mkB || String(req.query.bindcard) !== mkB) return res.status(403).json({ ok: false })
+    const tkB = (process.env.LINE_CHANNEL_ACCESS_TOKEN || '').trim()
+    const [pmB, defB, rosB] = await Promise.all([kvGet('sp_finance_pm_prep_perm'), kvGet('sp_finance_pm_sop_def'), kvGet('sp_crew_kb_roster')])
+    const aprB = (((defB || {}).ground || {}).approvers || ['張良瑋'])
+    const pend = Object.entries(((pmB || {}).pending) || {})
+    if (!pend.length) return res.status(200).json({ ok: true, sent: 0, note: '沒有待審核的申請' })
+    const { buildBindApproveCard } = await import('./_ddcards.js')
+    let sent = 0
+    for (const an of aprB) {
+      const ap = (((rosB || {}).people) || []).find(p2 => p2.name === an && p2.lineUserId)
+      if (!ap) continue
+      const msgs = pend.slice(0, 5).map(([rid9, pd9]) => buildBindApproveCard(pd9.name, rid9))
+      const r9 = await fetch('https://api.line.me/v2/bot/message/push', { method: 'POST', headers: { 'content-type': 'application/json', Authorization: 'Bearer ' + tkB }, body: JSON.stringify({ to: ap.lineUserId, messages: msgs }) })
+      if (r9.ok) sent += msgs.length
+    }
+    return res.status(200).json({ ok: true, sent, pending: pend.map(([r9, p9]) => p9.name) })
+  }
   // 老闆/AI 指令口（MENU_PROBE_KEY）：?prepperm=<key>&op=list|seed|approve|revoke|mode&rid=&name=&mode=
   if (req.query?.prepperm) {
     const mk = (process.env.MENU_PROBE_KEY || '').trim()
