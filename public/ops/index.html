@@ -415,6 +415,42 @@ async function sopstOp(body){
   const j = await r.json().catch(()=>null)
   if (j && j.ok) { await sopLoad() } else alert((j&&j.error)||'失敗')
 }
+function sopMngT(){ window._sopMng = !window._sopMng; sopRender() } // ⚙️ 設定模式（張良 2026-10-02：平常乾淨,按了才出現編輯的東西）
+function sopItemEdit(id){ // 單條 SOP 編輯（取代總編輯）
+  const it = (sopData.def.items||[]).find(x=>x.id===id); if (!it) return
+  const stsE = [...(sopData.def.stations||[])]
+  const stDispE = s9 => String(s9).includes('｜') ? String(s9).split('｜').pop() : s9
+  const ov = document.createElement('div'); ov.id='sieOv'
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:65;display:flex;align-items:center;justify-content:center;padding:16px'
+  const ip9 = 'width:100%;border:1px solid var(--line);border-radius:8px;padding:9px;font-size:15px;margin-bottom:8px'
+  ov.innerHTML = `<div style="background:#222B38;border:1px solid #3B4654;border-radius:14px;width:min(400px,94vw);padding:16px" onclick="event.stopPropagation()">
+    <div style="font-weight:900;margin-bottom:10px">⚙️ 編輯 SOP 條目</div>
+    <input id="sieT" value="${String(it.title||'').replace(/"/g,'&quot;')}" placeholder="內容" style="${ip9}">
+    <div style="display:flex;gap:10px;align-items:center;margin-bottom:8px"><span class="hint">時限</span><input id="sieD" type="time" value="${it.due||''}" style="border:1px solid var(--line);border-radius:8px;padding:8px;font-size:15px"><label style="font-size:14px"><input id="sieP" type="checkbox" ${it.photo?'checked':''}> 📷 要拍照</label></div>
+    <div style="display:flex;gap:10px;align-items:center;margin-bottom:8px"><span class="hint">站</span><select id="sieS" style="flex:1;border:1px solid var(--line);border-radius:8px;padding:8px;font-size:14px">${stsE.map(s9=>`<option value="${s9}"${it.st===s9?' selected':''}>${stDispE(s9)}</option>`).join('')}</select></div>
+    <div style="display:flex;gap:8px;justify-content:space-between;margin-top:10px">
+      <button class="mini" style="color:var(--red);padding:9px 12px" onclick="if(confirm('刪除這一條？')){document.getElementById('sieOv').remove();sopItemSave('${id}',1)}">🗑 刪除</button>
+      <span style="display:flex;gap:8px"><button class="mini" style="padding:9px 12px" onclick="document.getElementById('sieOv').remove()">取消</button>
+      <button class="mini on" style="padding:9px 16px" onclick="sopItemSave('${id}')">儲存</button></span></div></div>`
+  ov.onclick = () => ov.remove()
+  document.body.appendChild(ov)
+}
+async function sopItemSave(id, del){
+  let items = [...(sopData.def.items||[])]
+  if (del) items = items.filter(x=>x.id!==id)
+  else {
+    const t9 = ((document.getElementById('sieT')||{}).value||'').trim()
+    if (!t9) { alert('內容不能空'); return }
+    const d9 = (document.getElementById('sieD')||{}).value||''
+    const p9 = !!((document.getElementById('sieP')||{}).checked)
+    const s9 = (document.getElementById('sieS')||{}).value||''
+    items = items.map(x=>x.id===id?{ ...x, title:t9, due:d9, photo:p9, st:s9 }:x)
+    const o9 = document.getElementById('sieOv'); if (o9) o9.remove()
+  }
+  const r = await fetch('/api/mail-sync?sopfull=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ stations: [...(sopData.def.stations||[])], items, token: TK() }) })
+  const j = await r.json().catch(()=>null)
+  if (j && j.ok) sopLoad(); else alert((j&&j.error)||'儲存失敗')
+}
 function sopCatAdd(){ prepAsk('＋ 新增分類',0,1,(q,r)=>{ if (r) sopstOp({op:'catadd',cat:r}).then(()=>{ window._sopCat=r; sopRender() }) },'分類名稱（例：清潔／備料／設站／開班／收班）') }
 function sopStAdd(cat){
   prepAsk(`＋ 在「${cat}」新增站`,0,1,async (q,r)=>{
@@ -532,10 +568,11 @@ function sopRender(){
     <span style="${catBtn(!curCat)}" onclick="sopCatSet(null)">全部</span>
     ${catsN.map(cg=>`<span style="${catBtn(curCat===cg)}" onclick="sopCatSet('${cg}')">${cg}<span style="margin-left:5px;font-weight:700;font-size:12px;color:${curCat===cg?'#DCEBFF':'var(--muted)'}">${sts.filter(x=>scN[x]===cg).length}</span></span>`).join('')}
     ${hasNone&&catsN.length?`<span style="${catBtn(curCat==='__none')}" onclick="sopCatSet('__none')">未分類</span>`:''}
-    ${me?`<span style="${chipS(false)}" onclick="sopCatAdd()">＋ 分類</span>`:''}
+    ${me&&window._sopMng?`<span style="${chipS(false)}" onclick="sopCatAdd()">＋ 分類</span>`:''}
+    ${me?`<span style="${chipS(!!window._sopMng)};margin-left:auto" onclick="sopMngT()">⚙️ 設定</span>`:''}
   </div>`
   // 第二層管理列：選了分類→改名/刪/負責人/＋站（就地按鈕，張良 2026-10-02「直覺新增刪減編輯分層」）
-  if (curCat && curCat !== '__none' && me) {
+  if (curCat && curCat !== '__none' && me && window._sopMng) {
     const mgrC = me.approver || me.role === '主管'
     s += `<div style="display:flex;gap:6px;flex-wrap:wrap;margin:-2px 0 8px;align-items:center;font-size:13px">
       <span class="hint" style="font-weight:800">「${curCat}」：</span>
@@ -553,7 +590,7 @@ function sopRender(){
     <span style="${chipS(false)};margin-left:auto" onclick="sopCollAll(${JSON.stringify(shown0).replace(/"/g,'&quot;')})">${allColl?'⏵ 全部展開':'⏷ 全部收合'}</span>
   </div>`
   // 選了某一站→站管理列（改名/刪/搬分類）
-  if (me && view !== 'all' && view !== 'pin' && baseSts.includes(view)) {
+  if (me && window._sopMng && view !== 'all' && view !== 'pin' && baseSts.includes(view)) {
     s += `<div style="display:flex;gap:6px;flex-wrap:wrap;margin:-2px 0 8px;align-items:center;font-size:13px">
       <span class="hint" style="font-weight:800">「${stDisp(view)}」：</span>
       <button class="mini" onclick="sopStRen('${view}')">✏️ 改站名</button>
@@ -604,7 +641,7 @@ function sopRender(){
     items.filter(i => i.st === st).sort((a,b)=>String(a.due||'99:99').localeCompare(String(b.due||'99:99'))).forEach(it => {
       const lg = log[it.id]
       const overdue = !lg && it.due && it.due <= now && wd >= 1 && wd <= 5
-      s += `<div id="sopit-${it.id}" style="display:flex;align-items:center;gap:8px;padding:9px 4px;border-bottom:1px solid var(--line)"><span class="lnkbtn" title="複製這條 SOP 的連結（可貼到會議宣達）" onclick="event.stopPropagation();copyLink('#sop=${it.id}')">🔗</span>`
+      s += `<div id="sopit-${it.id}" style="display:flex;align-items:center;gap:8px;padding:9px 4px;border-bottom:1px solid var(--line)"><span class="lnkbtn" title="複製這條 SOP 的連結（可貼到會議宣達）" onclick="event.stopPropagation();copyLink('#sop=${it.id}')">🔗</span>${me&&window._sopMng?`<span class="lnkbtn" title="編輯這一條" onclick="event.stopPropagation();sopItemEdit('${it.id}')">⚙️</span>`:''}`
       s += `<div style="flex:1;min-width:0"><div style="font-weight:700;cursor:pointer;color:${overdue?'var(--red)':(it.ref?'var(--primary)':'var(--ink)')}${it.ref?';text-decoration:underline':''}" onclick="sopRefOpen('${it.id}')" title="${it.ref?'點看標準照片':'點我上傳標準照'}">${it.title}${overdue?' ⚠️':''}</div><div class="hint">${it.due} 前${it.editBy?`・✏️ ${it.editBy} ${it.editTs||''}`:''}</div></div>`
       if (lg && lg.done) {
         // 完成狀態：縮圖直接顯示、點整塊開預覽；撤銷藏在預覽裡（張良 2026-09-21：列表上的撤銷容易誤點）
@@ -643,7 +680,6 @@ function sopRender(){
       return parts2.length ? parts2.join('　') : '（沒有內容變動——可能只是重新排序）'
     }
     s += `<details style="margin-top:8px"><summary class="hint" style="cursor:pointer;font-weight:800">✍️ SOP 編輯紀錄（${eds.length}）｜${Object.entries(cntE).map(([n,c])=>`${n} ${c}次`).join('、')}</summary>${eds.map((e,i)=>{ const t8 = e.ts ? new Date(new Date(e.ts).getTime()+8*3600e3).toISOString().slice(5,16).replace('T',' ') : ''; const df2 = diffOf(i); return `<div class="hint" style="padding:3px 0;border-bottom:1px dashed var(--line)">${t8}・<b>${e.by||'？'}</b>${e.st?`・「${e.st}」站`:''}${df2?`<div style="padding-left:10px">${df2}</div>`:''}</div>` }).join('')}</details>` }
-  if (me) s += `<div style="margin-top:10px"><button class="mini on" style="padding:8px 16px" onclick="sopMasterOn=true;sopRender()">⚙️ SOP 總編輯</button></div>`
   s += `<div class="hint" style="margin-top:8px">按「完成」記錄時間與名字；要拍照的先按 📷。超過時限沒完成，DD 會在群裡提醒。</div></section>`
   el.innerHTML = s
 }

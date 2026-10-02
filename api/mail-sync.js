@@ -2024,8 +2024,13 @@ export default async function handler(req, res) {
     const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
     if (!ok2 || String(req.query.sop) !== ok2) return res.status(403).json({ ok: false })
     const dt2 = sopToday()
-    const [defDoc, logDoc, rosterDoc, me3, hideDoc] = await Promise.all([kvGet('sp_finance_pm_sop_def'), kvGet('sp_finance_pm_sop_g_' + dt2), kvGet('sp_crew_kb_roster'), sopWho(req.query.me), kvGet('sp_finance_pm_prep_hide')])
-    const names = ((rosterDoc || {}).people || []).filter(p => !p.endDate && p.status !== '離職').map(p => p.name)
+    const [defDoc, logDoc, rosterDoc, me3, hideDoc, shDoc9] = await Promise.all([kvGet('sp_finance_pm_sop_def'), kvGet('sp_finance_pm_sop_g_' + dt2), kvGet('sp_crew_kb_roster'), sopWho(req.query.me), kvGet('sp_finance_pm_prep_hide'), kvGet('sp_finance_pm_shift_g')])
+    // v4.17.2 負責人名單=只有GD人員、照班表⚙️排序（常態在前、非常態墊底）
+    const ordN9 = (shDoc9 || {}).staffOrd || []
+    const offN9 = new Set((shDoc9 || {}).offStaff || [])
+    const gdAll9 = gdNames(rosterDoc)
+    const oI9 = n => { const i = ordN9.indexOf(n); return i < 0 ? 999 : i }
+    const names = [...gdAll9.filter(n => !offN9.has(n)).sort((x, y) => oI9(x) - oI9(y)), ...gdAll9.filter(n => offN9.has(n)).sort((x, y) => oI9(x) - oI9(y))]
     const gdef = (defDoc || {}).ground || { items: [] }
     // me＝綁定者（張良 2026-09-21 拍板：不設站長，綁定的人全站都能編，靠歷史紀錄留痕）
     const approvers = ((defDoc || {}).ground || {}).approvers || ['張良瑋'] // 解決審核人（張良 2026-09-21：已解決要經我審核）
