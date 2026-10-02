@@ -1887,7 +1887,7 @@ function shiftRender(){
   shInitRange(); shRangeInclude(shiftYm)
   h += `<div id="shBox" class="scroll" style="max-height:72vh;overflow:auto;margin-bottom:12px;-webkit-overflow-scrolling:touch">${buildGrid(shRangeDays())}</div>`
   // v4.28.1（張良「不要放左側 放班表下面就好」）：🧮 工時成本試算掛在週班表下面
-  h += `<div style="font-weight:900;margin:12px 0 6px;font-size:16px">🧮 工時成本試算</div><div id="lbSec" class="hint">載入中…</div>`
+  h += `<div style="font-weight:900;margin:12px 0 6px;font-size:16px">人力時數配置表</div><div id="lbSec" class="hint">載入中…</div>`
   const pn = Object.keys(per).sort()
   if (pn.length){
     h += `<div class="scroll"><table><thead><tr><th style="text-align:left">夥伴</th><th>總工時</th><th>正常</th><th>加班×1.34</th><th>加班×1.67</th><th style="text-align:left">⚠️ 勞基法檢查</th></tr></thead><tbody>`
