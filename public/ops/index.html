@@ -1720,7 +1720,14 @@ function shInitRange(){ if(window._shRangeStart) return; const [y,m]=todayTpe().
 function shRangeInclude(ym){ shInitRange(); if(ym<window._shRangeStart) window._shRangeStart=ym; if(ym>window._shRangeEnd) window._shRangeEnd=ym }
 function shRangeYms(){ shInitRange(); const out=[]; let [y,m]=window._shRangeStart.split('-').map(Number); const [ey,em]=window._shRangeEnd.split('-').map(Number); while(y<ey||(y===ey&&m<=em)){ out.push(y+'-'+String(m).padStart(2,'0')); if(++m>12){m=1;y++} } return out }
 function shRangeDays(){ shInitRange(); const days=[]; const [sy,sm]=window._shRangeStart.split('-').map(Number); const [ey,em]=window._shRangeEnd.split('-').map(Number); const cur=new Date(sy,sm-1,1), end=new Date(ey,em,0); while(cur<=end){ days.push(cur.getFullYear()+'-'+String(cur.getMonth()+1).padStart(2,'0')+'-'+String(cur.getDate()).padStart(2,'0')); cur.setDate(cur.getDate()+1) } return days }
-function shMergedSched(){ const out=[], seen=new Set(); const add=a=>(a||[]).forEach(x=>{ const k=x.id||(x.name+'|'+x.date+'|'+(x.pos||'')); if(!seen.has(k)){seen.add(k);out.push(x)} }); if(window._shiftD&&window._shiftD.sched) add(window._shiftD.sched); (window._shLoaded||[]).forEach(y=>{ if(y===shiftYm)return; const c=tcGet('shift_'+y); if(c)add(c.sched) }); add(window._shiftTmpQ); return out }
+function shMergedSched(){ const out=[], seen=new Set(); const add=a=>(a||[]).forEach(x=>{ const k=x.id||(x.name+'|'+x.date+'|'+(x.pos||'')); if(!seen.has(k)){seen.add(k);out.push(x)} })
+  // v4.28.6 治殘影幽靈卡（張良「點9/29的卡跳成新增、拉不下去也刪不掉」）：當月回傳範圍(ym±6天)內一律以最新 d.sched 為準，舊月快取同範圍的卡不疊進來
+  const ymD = shiftYm || todayTpe().slice(0,7); const mo0 = new Date(ymD + '-01T00:00:00Z')
+  const lo = new Date(mo0.getTime() - 6*86400e3).toISOString().slice(0,10)
+  const hi = new Date(Date.UTC(mo0.getUTCFullYear(), mo0.getUTCMonth()+1, 1) + 6*86400e3).toISOString().slice(0,10)
+  if(window._shiftD&&window._shiftD.sched) add(window._shiftD.sched)
+  ;(window._shLoaded||[]).forEach(y=>{ if(y===shiftYm)return; const c=tcGet('shift_'+y); if(c) add((c.sched||[]).filter(x=>String(x.date||'')<lo||String(x.date||'')>hi)) })
+  add(window._shiftTmpQ); return out }
 function shMergedLeave(){ const out={}; const addL=l=>{ if(!l)return; for(const dt in l){ out[dt]=Object.assign(out[dt]||{}, l[dt]) } }; if(window._shiftD) addL(window._shiftD.leave); (window._shLoaded||[]).forEach(y=>{ if(y===shiftYm)return; const c=tcGet('shift_'+y); if(c) addL(c.leave) }); return out }
 async function shEnsure(yms){ window._shLoaded=window._shLoaded||[]; await Promise.all(yms.map(async y=>{ if(window._shLoaded.includes(y))return; const c=tcGet('shift_'+y); if(c){ window._shLoaded.push(y); return } try{ const r=await fetch('/api/mail-sync?shift='+encodeURIComponent(K)+'&ym='+y+(TK()?'&me='+encodeURIComponent(TK()):'')); const dd=await r.json(); if(dd&&dd.ok){ tcSet('shift_'+y,dd); if(!window._shLoaded.includes(y))window._shLoaded.push(y) } }catch(_){} })) }
 function shLeftAnchor(box){ const ths=box.querySelectorAll('th[data-d]'); const bx=box.getBoundingClientRect(); const edge=bx.left+100; for(const th of ths){ const r=th.getBoundingClientRect(); if(r.right>edge) return {date:th.getAttribute('data-d'), vx:r.left-bx.left} } return null }
@@ -1935,7 +1942,7 @@ function shiftRender(){
   if (_need.length){ shEnsure(shRangeYms()).then(()=>{ if(curStore!=='shift')return; const box=document.getElementById('shBox'); if(box) window._shAnchor=shLeftAnchor(box); shGridOnly() }) }
 }
 function shiftForm(id){
-  const d = window._shiftD, it = id ? d.sched.find(x=>x.id===id) : null
+  const d = window._shiftD, it = id ? shMergedSched().find(x=>x.id===id) : null // v4.28.6 跨月找——舊月的卡也點得開
   const ov = document.createElement('div'); ov.id='shOv'
   ov.style.cssText = 'position:fixed;inset:0;background:rgba(16,24,43,.45);z-index:50;display:flex;align-items:center;justify-content:center;padding:16px'
   const ip = 'border:1px solid var(--line);border-radius:8px;padding:8px;font-size:15px;font-family:inherit'
@@ -1991,7 +1998,9 @@ async function shiftDel(id){
 }
 function shiftDelFast(id){ // 樂觀刪除：卡片先消失，背景排隊送刪
   const d = window._shiftD
-  d.sched = d.sched.filter(x=>x.id!==id); shiftRender()
+  d.sched = d.sched.filter(x=>x.id!==id)
+  ;(window._shLoaded||[]).forEach(y=>{ try{ const c=tcGet('shift_'+y); if(c&&(c.sched||[]).some(x=>x.id===id)){ c.sched=c.sched.filter(x=>x.id!==id); tcSet('shift_'+y,c) } }catch(_){} }) // v4.28.6 舊月快取一起清
+  shiftRender()
   if (String(id).startsWith('tmp')) { const t2 = window._shiftTmpQ.find(x=>x.id===id); if (t2) t2._del = 1; return } // 標記取消——排隊那筆看到就不送（v4.4.8）
   shQueue(async ()=>{ const d2 = await shPost({ op:'del', id, token: TK() }); if (!(d2&&d2.ok)) alert((d2&&d2.error)||'刪除失敗') })
 }
@@ -2360,7 +2369,7 @@ function laborRender(){
   const fmtN = n2 => n2 ? n2.toLocaleString('en-US') : ''
   let h = `<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:8px">
     ${(d2.sheets||[]).map(x=>`<button class="mini${x.id===laborCur?' on':''}" style="padding:6px 14px;font-weight:800" onclick="lbSwitch('${x.id}')">${x.name}</button>`).join('')}
-    ${meN?`<button class="mini" style="padding:6px 12px" onclick="lbNew()">＋ 新方案</button><button class="mini" style="padding:6px 12px" onclick="lbCopy()">⧉ 複製目前</button><button class="mini" style="padding:6px 12px" onclick="lbRen()">✏️ 改名</button><button class="mini" style="padding:6px 12px" onclick="lbUndo()">↩️ 復原</button><button class="mini" style="padding:6px 12px" onclick="lbClearAll()">🧹 清空整表</button><button class="mini" style="padding:6px 12px" onclick="lbWage()">💰 時薪 ${sh.wage||300}</button>${(d2.sheets||[]).length>1?`<button class="mini" style="padding:6px 12px;color:var(--red)" onclick="lbDel()">🗑 刪方案</button>`:''}`:'<span class="hint">綁定後才能編輯</span>'}
+    ${meN?`<button class="mini" style="padding:6px 12px" onclick="lbNew()">＋ 新方案</button><button class="mini" style="padding:6px 12px" onclick="lbCopy()">⧉ 複製目前</button><button class="mini" style="padding:6px 12px" onclick="lbRen()">✏️ 改名</button><button class="mini" style="padding:6px 12px" onclick="lbUndo()">↩️ 復原</button><button class="mini" style="padding:6px 12px" onclick="lbClearAll()">🧹 清空整表</button><span style="display:inline-flex;align-items:center;gap:4px;border:1px solid var(--line);border-radius:9px;padding:4px 10px;font-size:13px;font-weight:700">💰 時薪 <input value="${sh.wage||300}" inputmode="numeric" style="width:46px;border:none;background:transparent;color:var(--ink);font-size:13px;font-weight:800;text-align:center;outline:none;border-bottom:1.5px solid var(--primary)" onchange="lbWageSet(this.value)"></span>${(d2.sheets||[]).length>1?`<button class="mini" style="padding:6px 12px;color:var(--red)" onclick="lbDel()">🗑 刪方案</button>`:''}`:'<span class="hint">綁定後才能編輯</span>'}
   </div>
   <div class="scroll"><table id="lbTbl" style="border-collapse:collapse;user-select:none">
   <thead><tr><th style="padding:6px 10px;text-align:left;position:sticky;left:0;background:var(--soft);z-index:2">時段</th>
@@ -2373,13 +2382,13 @@ function laborRender(){
       h += `<td id="lc_${hh}_${ci}" style="padding:0;text-align:center;min-width:86px;border:1px solid var(--line);${meN?'cursor:cell;':''}font-variant-numeric:tabular-nums"
         ${meN?`onmousedown="lbDown(event,'${hh}',${ci})" onmouseenter="lbEnter('${hh}',${ci})"`:''}><div style="padding:6px 8px;min-height:19px">${fmtN(v)}</div></td>`
     })
-    h += `<td style="padding:4px 10px;text-align:right;font-weight:900">${fmtN(rowSum(hh))}</td></tr>`
+    h += `<td style="padding:4px 10px;text-align:right;font-weight:900;white-space:nowrap">${fmtN(rowSum(hh))}${rowSum(hh)?`<span class="hint" style="font-weight:700;font-size:11px"> ${Math.round(rowSum(hh)/(Number(sh.wage)||300)*10)/10}人</span>`:''}</td></tr>`
   })
   h += `<tr><td style="padding:6px 10px;text-align:left;font-weight:900;position:sticky;left:0;background:var(--soft);z-index:1">合計</td>
-  ${cols.map((_,ci)=>`<td style="padding:6px 8px;text-align:center;font-weight:900;background:var(--soft)">${fmtN(colSum(ci))}</td>`).join('')}
-  <td style="padding:6px 10px;text-align:right;font-weight:900;color:var(--red);background:var(--soft);font-size:15px">${fmtN(grand)}</td></tr>`
+  ${cols.map((_,ci)=>`<td style="padding:6px 8px;text-align:center;font-weight:900;background:var(--soft);white-space:nowrap">${fmtN(colSum(ci))}${colSum(ci)?`<div class="hint" style="font-weight:700;font-size:10.5px">${Math.round(colSum(ci)/(Number(sh.wage)||300)*10)/10}小時</div>`:''}</td>`).join('')}
+  <td style="padding:6px 10px;text-align:right;font-weight:900;color:var(--red);background:var(--soft);font-size:15px;white-space:nowrap">${fmtN(grand)}${grand?`<div class="hint" style="font-weight:700;font-size:10.5px">${Math.round(grand/(Number(sh.wage)||300)*10)/10}小時</div>`:''}</td></tr>`
   h += `</tbody></table></div>
-  <div class="hint" style="margin-top:4px">點格＝選排幾人（自動算錢，不用打字）・按住拖＝複製（從空白格拖＝整片清空）・點欄頭/列頭＝清整欄/整列・↩️ 可復原；欄位＝班表崗位（⚙️ 設定改）</div>`
+  <div class="hint" style="margin-top:4px">點格一下＝加 1 人（到 5 人再點＝清空）・按住拖＝複製・點欄頭/列頭＝清整欄/整列・↩️ 復原；欄位＝班表崗位（⚙️ 設定改）</div>`
   el.className = ''
   el.innerHTML = h
 }
@@ -2411,27 +2420,19 @@ function lbHL(){ const f=_lbFill; if(!f) return
 document.addEventListener('mouseup', ()=>{
   const f=_lbFill; if(!f) return; _lbFill=null
   const sh=lbSheet(); if(!sh) return
-  if(!f.moved){ lbEditCell(f.h,f.c); return }
+  if(!f.moved){ lbCycle(f.h,f.c); return }
   lbPushUndo()
   const v = lbV(sh,f.h,f.c)
   const hA=Math.min(+f.h,+f.h2), hB=Math.max(+f.h,+f.h2), cA=Math.min(f.c,f.c2), cB=Math.max(f.c,f.c2)
   for(let hh=hA;hh<=hB;hh++) for(let cc=cA;cc<=cB;cc++) lbSetV(sh,String(hh).padStart(2,'0'),cc,v)
   laborRender(); lbSave()
 })
-function lbEditCell(h,c){ // v4.28.5（張良「點上下鍵沒用 我也不想輸入數字」）：點格=人數快選,一點就填好
+function lbCycle(h,c){ // v4.28.6（張良「不想key數字 也討厭跳出視窗」）：點一下=加1人,到5人再點=清空——零視窗零打字循環
   const sh=lbSheet(); const w=Number(sh.wage)||300; const cur=lbV(sh,h,c)
-  const ov=document.createElement('div'); ov.id='lcOv'
-  ov.style.cssText='position:fixed;inset:0;background:rgba(16,24,43,.5);z-index:60;display:flex;align-items:center;justify-content:center;padding:16px'
-  ov.innerHTML=`<div style="background:#222B38;border:1px solid #3B4654;box-shadow:0 18px 50px rgba(0,0,0,.55);border-radius:14px;max-width:360px;width:100%;padding:16px" onclick="event.stopPropagation()">
-    <div style="font-weight:900;margin-bottom:2px">${sh.cols[c]||''}・${+h}-${+h+1} 點${cur?`<span class="hint" style="font-weight:600">（目前 ${cur}）</span>`:''}</div>
-    <div class="hint" style="margin-bottom:10px">排幾個人？（時薪 ${w}，自動算錢）</div>
-    <div style="display:flex;flex-wrap:wrap;gap:7px;margin-bottom:12px">${[1,2,3,4,5].map(n2=>`<button class="mini${cur===n2*w?' on':''}" style="padding:10px 15px;font-weight:900;font-size:15px" onclick="lbPick('${h}',${c},${n2*w})">${n2}人<div style="font-size:11px;opacity:.75;font-weight:700">${(n2*w).toLocaleString()}</div></button>`).join('')}</div>
-    <div style="display:flex;gap:8px;justify-content:space-between"><span style="display:flex;gap:8px"><button class="mini" style="padding:8px 14px;color:var(--red)" onclick="lbPick('${h}',${c},0)">✕ 清空</button><button class="mini" style="padding:8px 14px" onclick="lbCustom('${h}',${c})">✏️ 其他金額</button></span><button class="mini" style="padding:8px 14px" onclick="document.getElementById('lcOv').remove()">關閉</button></div></div>`
-  ov.onclick=()=>ov.remove(); document.body.appendChild(ov)
+  const n2=Math.round(cur/w); const next=cur===0?1:(n2>=5?0:n2+1)
+  lbPushUndo(); lbSetV(sh,h,c,next*w); laborRender(); lbSave()
 }
-function lbPick(h,c,v){ const o=document.getElementById('lcOv'); if(o) o.remove(); lbPushUndo(); lbSetV(lbSheet(),h,c,v); laborRender(); lbSave() }
-function lbCustom(h,c){ const v=prompt('金額（空白=清空）', lbV(lbSheet(),h,c)||''); if(v==null) return; lbPick(h,c,Number(v)||0) }
-function lbWage(){ const sh=lbSheet(); const v=prompt('基準時薪（人數快選鈕用這個算）', sh.wage||300); if(v==null) return; sh.wage=Math.max(1,Math.min(9999,Number(v)||300)); laborRender(); lbSave() }
+function lbWageSet(v){ const sh=lbSheet(); sh.wage=Math.max(1,Math.min(9999,Number(v)||300)); laborRender(); lbSave() }
 const SLOT_DEF = [{n:'午峰',s:'11:00',e:'14:30'},{n:'離峰',s:'14:30',e:'17:30'},{n:'晚峰',s:'17:30',e:'20:00'},{n:'全日',s:'11:00',e:'20:00'}] // 預設照近30天單量尖峰切；⚙️可自訂
 function t24set(cls, v){
   const ov = document.getElementById('qkOv'); if (!ov) return
@@ -2571,7 +2572,9 @@ async function shiftDrop(ev, pos, dt){
     const tmp = { name: nm, date: dt, start: last?last.start:'11:00', end: last?last.end:'20:00', break: last?(last.break==null?60:last.break):60, pos: (pos==='未分崗'?'':pos), id: 'tmp' + Math.random().toString(36).slice(2) }
     queueSaveTmp(tmp); shiftRender(); return
   }
-  const d = window._shiftD, it = d.sched.find(x=>x.id===id); if (!it) return
+  const d = window._shiftD; let it = d.sched.find(x=>x.id===id)
+  if (!it) { it = shMergedSched().find(x=>x.id===id); if (it) d.sched.push(it) } // v4.28.6 舊月的卡也拖得動
+  if (!it) return
   if (it.date === dt && (it.pos||'未分崗') === pos) return
   it.date = dt; it.pos = (pos==='未分崗'?'':pos); shiftRender() // 先畫再存（樂觀更新）
   if (String(id).startsWith('tmp')) return // 還在排隊的卡只改畫面，真正寫入由隊伍那筆帶 pos/date
