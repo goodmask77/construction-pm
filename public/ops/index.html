@@ -416,8 +416,9 @@ async function sopstOp(body){
   if (j && j.ok) { await sopLoad() } else alert((j&&j.error)||'失敗')
 }
 function sopMngT(){ window._sopMng = !window._sopMng; sopRender() } // ⚙️ 設定模式（張良 2026-10-02：平常乾淨,按了才出現編輯的東西）
-function sopItemEdit(id){ // 單條 SOP 編輯（取代總編輯）
-  const it = (sopData.def.items||[]).find(x=>x.id===id); if (!it) return
+function sopItemEdit(id, newSt){ // 單條 SOP 編輯/新增（取代總編輯）
+  const it = id ? (sopData.def.items||[]).find(x=>x.id===id) : { title:'', due:'', photo:false, st:newSt||'' }
+  if (!it) return
   const stsE = [...(sopData.def.stations||[])]
   const stDispE = s9 => String(s9).includes('｜') ? String(s9).split('｜').pop() : s9
   const ov = document.createElement('div'); ov.id='sieOv'
@@ -429,9 +430,9 @@ function sopItemEdit(id){ // 單條 SOP 編輯（取代總編輯）
     <div style="display:flex;gap:10px;align-items:center;margin-bottom:8px"><span class="hint">時限</span><input id="sieD" type="time" value="${it.due||''}" style="border:1px solid var(--line);border-radius:8px;padding:8px;font-size:15px"><label style="font-size:14px"><input id="sieP" type="checkbox" ${it.photo?'checked':''}> 📷 要拍照</label></div>
     <div style="display:flex;gap:10px;align-items:center;margin-bottom:8px"><span class="hint">站</span><select id="sieS" style="flex:1;border:1px solid var(--line);border-radius:8px;padding:8px;font-size:14px">${stsE.map(s9=>`<option value="${s9}"${it.st===s9?' selected':''}>${stDispE(s9)}</option>`).join('')}</select></div>
     <div style="display:flex;gap:8px;justify-content:space-between;margin-top:10px">
-      <button class="mini" style="color:var(--red);padding:9px 12px" onclick="if(confirm('刪除這一條？')){document.getElementById('sieOv').remove();sopItemSave('${id}',1)}">🗑 刪除</button>
+      ${id?`<button class="mini" style="color:var(--red);padding:9px 12px" onclick="if(confirm('刪除這一條？')){document.getElementById('sieOv').remove();sopItemSave('${id}',1)}">🗑 刪除</button>`:'<span></span>'}
       <span style="display:flex;gap:8px"><button class="mini" style="padding:9px 12px" onclick="document.getElementById('sieOv').remove()">取消</button>
-      <button class="mini on" style="padding:9px 16px" onclick="sopItemSave('${id}')">儲存</button></span></div></div>`
+      <button class="mini on" style="padding:9px 16px" onclick="sopItemSave(${id?`'${id}'`:'null'})">儲存</button></span></div></div>`
   ov.onclick = () => ov.remove()
   document.body.appendChild(ov)
 }
@@ -444,7 +445,8 @@ async function sopItemSave(id, del){
     const d9 = (document.getElementById('sieD')||{}).value||''
     const p9 = !!((document.getElementById('sieP')||{}).checked)
     const s9 = (document.getElementById('sieS')||{}).value||''
-    items = items.map(x=>x.id===id?{ ...x, title:t9, due:d9, photo:p9, st:s9 }:x)
+    if (id) items = items.map(x=>x.id===id?{ ...x, title:t9, due:d9, photo:p9, st:s9 }:x)
+    else items = [...items, { id: 'u' + Date.now().toString(36), title: t9, due: d9, photo: p9, st: s9 }]
     const o9 = document.getElementById('sieOv'); if (o9) o9.remove()
   }
   const r = await fetch('/api/mail-sync?sopfull=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ stations: [...(sopData.def.stations||[])], items, token: TK() }) })
@@ -595,6 +597,7 @@ function sopRender(){
       <span class="hint" style="font-weight:800">「${stDisp(view)}」：</span>
       <button class="mini" onclick="sopStRen('${view}')">✏️ 改站名</button>
       <button class="mini" style="color:var(--red)" onclick="if(confirm('刪除站「${stDisp(view)}」？條目會進回收站可復原'))sopstOp({op:'del',st:'${view}'}).then(()=>{sopFilter='all'})">🗑 刪站</button>
+      <button class="mini on" onclick="sopItemEdit(null,'${view}')">＋ 新增條目</button>
       ${catsN.length?`<span class="hint">搬到</span><select onchange="sopstOp({op:'catset',st:'${view}',cat:this.value})" style="border:1px solid var(--line);border-radius:7px;padding:5px;font-size:13px"><option value="">未分類</option>${catsN.map(c2=>`<option${scN[view]===c2?' selected':''}>${c2}</option>`).join('')}</select>`:''}
     </div>`
   }
@@ -700,6 +703,7 @@ function msCardHtml(st, items){
       <input class="msName" value="${st}" placeholder="站名" style="font-weight:900;color:var(--pdark);border:1px solid var(--line);border-radius:7px;padding:5px 8px;width:130px">
       <span style="flex:1"></span>
       <button class="mini" style="color:var(--red)" onclick="msDelSt(this)">🗑 刪站</button>
+      <button class="mini on" onclick="sopItemEdit(null,'${view}')">＋ 新增條目</button>
     </div>
     <div class="msItems" style="min-height:8px">${items.map(msItemHtml).join('')}</div>
     <button class="mini" onclick="this.previousElementSibling.insertAdjacentHTML('beforeend', msItemHtml({due:'11:00'}))">＋ 加項目</button>
