@@ -2119,6 +2119,10 @@ export default async function handler(req, res) {
       gS.stCat = Object.fromEntries(Object.entries(gS.stCat || {}).filter(([, v]) => v !== cn))
       ;(gS.items || []).forEach(it => { if (it.tg === cn) delete it.tg })
       if (gS.catOwner) delete gS.catOwner[cn]
+    } else if (bs.op === 'stord') { // v4.18.1 產品排序
+      const want = (Array.isArray(bs.list) ? bs.list : []).map(x => String(x).trim().slice(0, 20)).filter(Boolean)
+      const keep9 = want.filter(x => gS.stations.includes(x))
+      gS.stations = [...keep9, ...gS.stations.filter(x => !keep9.includes(x))]
     } else if (bs.op === 'catord') {
       gS.catOrder = (Array.isArray(bs.list) ? bs.list : []).map(c2 => String(c2).trim().slice(0, 20)).filter(Boolean).slice(0, 20)
     } else if (bs.op === 'catset') { // 站歸到哪個分類（空=未分類）

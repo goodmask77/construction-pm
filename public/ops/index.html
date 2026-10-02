@@ -415,6 +415,13 @@ async function sopstOp(body){
   const j = await r.json().catch(()=>null)
   if (j && j.ok) { await sopLoad() } else alert((j&&j.error)||'失敗')
 }
+function sopOrdMove(kind, name, dir){ // ◀▶ 排序（v4.18.1 張良「讓我可以排序」）
+  const arr = kind==='cat' ? [...(sopData.def.cats||[])] : [...(sopData.def.stations||[])]
+  const i = arr.indexOf(name), j = i + dir
+  if (i < 0 || j < 0 || j >= arr.length) return
+  ;[arr[i], arr[j]] = [arr[j], arr[i]]
+  sopstOp(kind==='cat' ? { op:'catord', list: arr } : { op:'stord', list: arr })
+}
 function sopMngT(){ window._sopMng = !window._sopMng; sopRender() } // ⚙️ 設定模式（張良 2026-10-02：平常乾淨,按了才出現編輯的東西）
 function sopItemEdit(id, newSt){ // 單條 SOP 編輯/新增（取代總編輯）
   const it = id ? (sopData.def.items||[]).find(x=>x.id===id) : { title:'', due:'', photo:false, st:newSt||'' }
@@ -579,6 +586,7 @@ function sopRender(){
       <span class="hint" style="font-weight:800">「#${curTg}」：</span>
       <button class="mini" onclick="prepAsk('改階段名「${curTg}」',0,1,(q,r)=>{if(r)sopstOp({op:'catren',cat:'${curTg}',newName:r}).then(()=>{window._sopTg=r})},'新名稱')">✏️ 改名</button>
       <button class="mini" style="color:var(--red)" onclick="if(confirm('刪除階段「#${curTg}」？條目會變未分階段，不會刪條目'))sopstOp({op:'catdel',cat:'${curTg}'}).then(()=>{window._sopTg=null})">🗑 刪階段</button>
+      <button class="mini" onclick="sopOrdMove('cat','${curTg}',-1)">◀</button><button class="mini" onclick="sopOrdMove('cat','${curTg}',1)">▶</button>
       ${mgrC?`<span class="hint">👑 負責人</span><select onchange="sopstOp({op:'catown',cat:'${curTg}',owner:this.value})" style="border:1px solid var(--line);border-radius:7px;padding:5px;font-size:13px"><option value="">無</option>${(sopData.names||[]).map(n=>`<option${coN[curTg]===n?' selected':''}>${n}</option>`).join('')}</select>`:(coN[curTg]?`<span style="color:#D4A72C;font-weight:800">👑 ${coN[curTg]}</span>`:'')}
     </div>`
   }
@@ -597,6 +605,7 @@ function sopRender(){
       <span class="hint" style="font-weight:800">「${stDisp(view)}」：</span>
       <button class="mini" onclick="sopStRen('${view}')">✏️ 改名</button>
       <button class="mini" style="color:var(--red)" onclick="if(confirm('刪除產品「${stDisp(view)}」？條目會進回收站可復原'))sopstOp({op:'del',st:'${view}'}).then(()=>{sopFilter='all'})">🗑 刪產品</button>
+      <button class="mini" onclick="sopOrdMove('st','${view}',-1)">◀</button><button class="mini" onclick="sopOrdMove('st','${view}',1)">▶</button>
       ${mgrC2?`<span class="hint">👑 負責人</span><select onchange="sopstOp({op:'ownset',st:'${view}',owner:this.value})" style="border:1px solid var(--line);border-radius:7px;padding:5px;font-size:13px"><option value="">無</option>${(sopData.names||[]).map(n=>`<option${soN[view]===n?' selected':''}>${n}</option>`).join('')}</select>`:''}
       <button class="mini on" onclick="sopItemEdit(null,'${view}')">＋ 新增條目</button>
     </div>`
