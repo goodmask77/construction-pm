@@ -2314,6 +2314,9 @@ async function shLeaveSet(name, date, type){
 // ── 🧮 工時成本試算（張良 2026-10-03：每小時×崗位填金額、右/下自動加總、Excel拖曳複製、方案=版本切換比較；v4.28.1 掛班表下面＋↩️復原）──
 let laborCur = null, _lbFill = null, _lbSaveT = null, _lbUndo = []
 const LB_HOURS = [...Array(14)].map((_,i)=>String(8+i).padStart(2,'0')) // 08..21（8-22區間）
+// v4.28.4（張良「欄改成跟班表崗位一樣」）：欄位=班表崗位清單自動同步＋同款三組配色
+const LB_GRP = ps => /櫃檯|飲料|中控/.test(ps) ? 0 : /漢堡|煎炸|炸麵/.test(ps) ? 1 : /披薩|三明治/.test(ps) ? 2 : 3
+const LB_GC = [{bg:'#17233A',ink:'#7FB5F5'},{bg:'#2C2012',ink:'#E8A657'},{bg:'#152719',ink:'#6FCF8F'},{bg:'#1C222B',ink:'#93A0B2'}]
 async function laborMount(){
   const el = document.getElementById('lbSec'); if (!el) return
   if (!window._laborD) { try { const r = await fetch('/api/mail-sync?labor=' + encodeURIComponent(K) + (TK() ? '&me=' + encodeURIComponent(TK()) : '')); const d2 = await r.json(); if (d2 && d2.ok) window._laborD = d2 } catch(e){} }
@@ -2340,6 +2343,16 @@ function laborRender(){
   if (!el || !d2) return
   const meN = d2.me ? d2.me.name : null
   const sh = lbSheet(); if (!sh) { el.innerHTML = '沒有方案'; return }
+  // 欄位＝班表崗位（⚙️ 設定改崗位這邊自動跟）；換欄時按名字搬舊數字
+  const posCols = (window._shiftD && (window._shiftD.posList||[]).length) ? window._shiftD.posList.slice() : null
+  if (posCols && (sh.cols||[]).join('|') !== posCols.join('|')) {
+    const old = sh.cols || []; const map = {}
+    old.forEach((nm,oi)=>{ const ni = posCols.indexOf(nm); if (ni >= 0) map[oi] = ni })
+    const nr = {}
+    for (const [h2,ro] of Object.entries(sh.rows||{})) { const r2 = {}; for (const [k2,v2] of Object.entries(ro)) { if (map[k2] != null) r2[map[k2]] = v2 } if (Object.keys(r2).length) nr[h2] = r2 }
+    sh.rows = nr; sh.cols = posCols.slice()
+    if (meN) lbSave()
+  }
   const cols = sh.cols || []
   const rowSum = h => cols.reduce((a,_,ci)=>a+lbV(sh,h,ci),0)
   const colSum = ci => LB_HOURS.reduce((a,h)=>a+lbV(sh,h,ci),0)
@@ -2347,27 +2360,26 @@ function laborRender(){
   const fmtN = n2 => n2 ? n2.toLocaleString('en-US') : ''
   let h = `<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:8px">
     ${(d2.sheets||[]).map(x=>`<button class="mini${x.id===laborCur?' on':''}" style="padding:6px 14px;font-weight:800" onclick="lbSwitch('${x.id}')">${x.name}</button>`).join('')}
-    ${meN?`<button class="mini" style="padding:6px 12px" onclick="lbNew()">＋ 新方案</button><button class="mini" style="padding:6px 12px" onclick="lbCopy()">⧉ 複製目前</button><button class="mini" style="padding:6px 12px" onclick="lbRen()">✏️ 改名</button><button class="mini" style="padding:6px 12px" onclick="lbUndo()">↩️ 復原</button>${(d2.sheets||[]).length>1?`<button class="mini" style="padding:6px 12px;color:var(--red)" onclick="lbDel()">🗑 刪方案</button>`:''}`:'<span class="hint">綁定後才能編輯</span>'}
+    ${meN?`<button class="mini" style="padding:6px 12px" onclick="lbNew()">＋ 新方案</button><button class="mini" style="padding:6px 12px" onclick="lbCopy()">⧉ 複製目前</button><button class="mini" style="padding:6px 12px" onclick="lbRen()">✏️ 改名</button><button class="mini" style="padding:6px 12px" onclick="lbUndo()">↩️ 復原</button><button class="mini" style="padding:6px 12px" onclick="lbClearAll()">🧹 清空整表</button>${(d2.sheets||[]).length>1?`<button class="mini" style="padding:6px 12px;color:var(--red)" onclick="lbDel()">🗑 刪方案</button>`:''}`:'<span class="hint">綁定後才能編輯</span>'}
   </div>
   <div class="scroll"><table id="lbTbl" style="border-collapse:collapse;user-select:none">
   <thead><tr><th style="padding:6px 10px;text-align:left;position:sticky;left:0;background:var(--soft);z-index:2">時段</th>
-  ${cols.map((c,ci)=>`<th style="padding:6px 8px;text-align:center;min-width:86px;white-space:nowrap;${meN?'cursor:pointer':''}" ${meN?`onclick="lbColMenu(${ci})" title="點我改名/搬移/刪除"`:''}>${c}</th>`).join('')}
-  ${meN?`<th style="padding:6px 8px"><button class="mini" style="padding:2px 10px" onclick="lbColAdd()">＋欄</button></th>`:'<th></th>'}
+  ${cols.map((c,ci)=>{ const g=LB_GC[LB_GRP(c)]; return `<th style="padding:6px 8px;text-align:center;min-width:86px;white-space:nowrap;background:${g.bg};color:${g.ink};font-weight:800;${meN?'cursor:pointer':''}" ${meN?`onclick="lbColClear(${ci})" title="點我＝清空這一欄"`:''}>${c}</th>` }).join('')}
   <th style="padding:6px 10px;text-align:right;font-weight:900">小計</th></tr></thead><tbody>`
   LB_HOURS.forEach(hh=>{
-    h += `<tr><td style="padding:4px 10px;text-align:left;font-weight:800;position:sticky;left:0;background:var(--card);z-index:1;white-space:nowrap">${+hh}-${+hh+1}</td>`
+    h += `<tr><td style="padding:4px 10px;text-align:left;font-weight:800;position:sticky;left:0;background:var(--card);z-index:1;white-space:nowrap;${meN?'cursor:pointer':''}" ${meN?`onclick="lbRowClear('${hh}')" title="點我＝清空這一列"`:''}>${+hh}-${+hh+1}</td>`
     cols.forEach((_,ci)=>{
       const v = lbV(sh,hh,ci)
       h += `<td id="lc_${hh}_${ci}" style="padding:0;text-align:center;min-width:86px;border:1px solid var(--line);${meN?'cursor:cell;':''}font-variant-numeric:tabular-nums"
         ${meN?`onmousedown="lbDown(event,'${hh}',${ci})" onmouseenter="lbEnter('${hh}',${ci})"`:''}><div style="padding:6px 8px;min-height:19px">${fmtN(v)}</div></td>`
     })
-    h += `<td></td><td style="padding:4px 10px;text-align:right;font-weight:900">${fmtN(rowSum(hh))}</td></tr>`
+    h += `<td style="padding:4px 10px;text-align:right;font-weight:900">${fmtN(rowSum(hh))}</td></tr>`
   })
   h += `<tr><td style="padding:6px 10px;text-align:left;font-weight:900;position:sticky;left:0;background:var(--soft);z-index:1">合計</td>
   ${cols.map((_,ci)=>`<td style="padding:6px 8px;text-align:center;font-weight:900;background:var(--soft)">${fmtN(colSum(ci))}</td>`).join('')}
-  <td style="background:var(--soft)"></td><td style="padding:6px 10px;text-align:right;font-weight:900;color:var(--red);background:var(--soft);font-size:15px">${fmtN(grand)}</td></tr>`
+  <td style="padding:6px 10px;text-align:right;font-weight:900;color:var(--red);background:var(--soft);font-size:15px">${fmtN(grand)}</td></tr>`
   h += `</tbody></table></div>
-  <div class="hint" style="margin-top:4px">點格子填金額（清空＝刪掉）・按住拖過去＝複製（像 Excel）・填錯按 ↩️ 復原</div>`
+  <div class="hint" style="margin-top:4px">點格填金額・按住拖＝複製（從空白格拖過去＝整片清空）・點欄頭/列頭＝清整欄/整列・↩️ 可復原；欄位＝班表崗位（去 ⚙️ 設定改）</div>`
   el.className = ''
   el.innerHTML = h
 }
@@ -2382,21 +2394,12 @@ function lbRen(){ const cur = lbSheet(); if(!cur) return; const nm = prompt('方
 async function lbDel(){ const cur = lbSheet(); if(!cur) return; if(!confirm('刪除方案「'+cur.name+'」？')) return
   window._laborD.sheets = window._laborD.sheets.filter(x=>x.id!==cur.id); laborCur = (window._laborD.sheets[0]||{}).id; laborRender()
   await fetch('/api/mail-sync?laborset=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ op:'del', id:cur.id, token: TK() }) }) }
-function lbColAdd(){ const nm = prompt('新崗位欄名稱'); if(!nm) return; lbPushUndo(); lbSheet().cols.push(nm.trim().slice(0,12)); laborRender(); lbSave() }
-function lbColMenu(ci){
-  const sh = lbSheet(); const nm = sh.cols[ci]
-  const act = prompt('崗位「'+nm+'」：直接改字＝改名；輸入 < 或 > ＝左/右搬；輸入 del ＝刪除整欄', nm)
-  if (act==null) return
-  const a2 = act.trim()
-  lbPushUndo()
-  if (a2==='del') { if(!confirm('刪除「'+nm+'」整欄（含數字）？')) { _lbUndo.pop(); return }
-    sh.cols.splice(ci,1); for(const h2 of Object.keys(sh.rows||{})){ const ro=sh.rows[h2], nr={}; for(const [k2,v2] of Object.entries(ro)){ const n3=+k2; if(n3<ci) nr[n3]=v2; else if(n3>ci) nr[n3-1]=v2 } sh.rows[h2]=nr }
-  } else if (a2==='<'||a2==='>') { const j2 = ci + (a2==='<'?-1:1); if(j2<0||j2>=sh.cols.length) { _lbUndo.pop(); return }
-    ;[sh.cols[ci],sh.cols[j2]]=[sh.cols[j2],sh.cols[ci]]
-    for(const h2 of Object.keys(sh.rows||{})){ const ro=sh.rows[h2]; const t2=ro[ci]; if(ro[j2]!=null) ro[ci]=ro[j2]; else delete ro[ci]; if(t2!=null) ro[j2]=t2; else delete ro[j2] }
-  } else if (a2) sh.cols[ci] = a2.slice(0,12)
-  laborRender(); lbSave()
-}
+function lbColClear(ci){ const sh=lbSheet(); if(!confirm('清空「'+sh.cols[ci]+'」整欄的數字？（↩️ 可復原）')) return
+  lbPushUndo(); for(const h2 of Object.keys(sh.rows||{})){ delete sh.rows[h2][ci]; if(!Object.keys(sh.rows[h2]).length) delete sh.rows[h2] } laborRender(); lbSave() }
+function lbRowClear(h){ const sh=lbSheet(); if(!confirm('清空 '+(+h)+'-'+(+h+1)+' 整列的數字？（↩️ 可復原）')) return
+  lbPushUndo(); delete (sh.rows||{})[h]; laborRender(); lbSave() }
+function lbClearAll(){ const sh=lbSheet(); if(!confirm('清空「'+sh.name+'」整張表的數字？（↩️ 可復原）')) return
+  lbPushUndo(); sh.rows={}; laborRender(); lbSave() }
 // Excel 式：mousedown 起點→拖過範圍高亮→放開=把起點值複製到整個矩形；原地放開=編輯那格
 function lbDown(ev,h,c){ ev.preventDefault(); _lbFill = { h, c, h2:h, c2:c, moved:false }; lbHL() }
 function lbEnter(h,c){ if(!_lbFill) return; _lbFill.h2=h; _lbFill.c2=c; _lbFill.moved=true; lbHL() }
