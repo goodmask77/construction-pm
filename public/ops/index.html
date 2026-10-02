@@ -35,7 +35,7 @@
   h1{font-size:23px;font-weight:800;color:var(--ink);letter-spacing:-.02em;margin-top:6px}
   .sub{font-size:14px;color:var(--muted);margin-top:3px}
   .tabs{display:flex;gap:8px;margin:16px 0;flex-wrap:wrap}
-  .tabs button{border:1px solid var(--line);background:var(--card);border-radius:999px;padding:8px 15px;font-size:15px;font-weight:700;color:#33475E;cursor:pointer;white-space:nowrap;flex:0 0 auto;transition:background .15s;display:inline-flex;gap:7px;align-items:center}
+  .tabs button{border:1px solid var(--line);background:var(--card);border-radius:999px;padding:8px 15px;font-size:15px;font-weight:700;color:#C3CEDC;cursor:pointer;white-space:nowrap;flex:0 0 auto;transition:background .15s;display:inline-flex;gap:7px;align-items:center}
   .tabs button:hover{background:#232B36}
   .tabs button.on{background:var(--grad);border-color:transparent;color:#fff;box-shadow:0 4px 12px rgba(18,102,200,.30)}
   .kpis{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:14px 0}
@@ -2839,15 +2839,29 @@ function permPanelHtml(perm){
     <div style="font-weight:900">🔐 編輯權限管理 <span class="hint">模式：${perm.mode==='open'?'全開（人人可編）':'審核制（申請→老闆核准）'}</span>
     <button class="mini" onclick="permSet('mode',null,'${perm.mode==='open'?'approve':'open'}')">切成${perm.mode==='open'?'審核制':'全開'}</button></div>
     ${(perm.pending||[]).length?`<div style="margin-top:6px;font-weight:800">待審核：</div>`+perm.pending.map(u=>`<div style="padding:3px 0">🙋 ${u.name} <span class="hint">${u.ts||''}</span> <button class="mini on" onclick="permSet('approve','${u.rid}')">✅ 核准</button> <button class="mini" onclick="permSet('reject','${u.rid}')">✖</button></div>`).join(''):'<div class="hint" style="margin-top:6px">目前沒有待審核的申請</div>'}
-    <details style="margin-top:6px" open><summary class="hint" style="cursor:pointer">已核准（${(perm.users||[]).length}）——每人可勾「哪些分頁能編」</summary>${(perm.users||[]).map(u=>{
-      // v4.26.2（張良「權限編輯完全對照左列名稱＆順序」）：動態吃側欄自訂的順序＋名稱；「首頁」=權限key board
+    ${(()=>{ // v4.26.3（張良「表格化＋每頁看不看得見＋一鍵勾選所有人」）：列=人、欄=分頁(完全對照側欄順序名稱)；每格 👁看得見/✏️能編輯；欄頭勾=全員一起
       const cfgT = window._tabCfg || {}
       const ordT = (cfgT.order && cfgT.order.length ? cfgT.order.slice() : Object.keys(TAB_DEF)).filter(k=>TAB_DEF[k])
       Object.keys(TAB_DEF).forEach(k=>{ if (!ordT.includes(k)) ordT.unshift(k) })
       const TABS=[['board','首頁'], ...ordT.map(k=>[k, stripEmoji((cfgT.names||{})[k] || TAB_DEF[k])])]
-      const cks=u.admin?'<span class="hint">管理者＝全部分頁</span>':TABS.map(([k,lb])=>`<label style="margin-right:10px;white-space:nowrap"><input type="checkbox" ${(!u.tabs||u.tabs[k]!==0)?'checked':''} onchange="permSet('tab','${u.rid}',null,'${k}',this.checked)">${lb}</label>`).join('')
-      return `<div style="padding:6px 0;border-top:1px dashed var(--line)"><div style="font-weight:800">${u.admin?'👑 ':''}${u.name}${u.admin?'':` <button class="mini" onclick="permSet('revoke','${u.rid}')">移除</button>`}</div><div style="margin-top:3px">${cks}</div></div>`
-    }).join('')}</details></div>`
+      const users=(perm.users||[])
+      const normal=users.filter(u=>!u.admin)
+      const allSee=k=>normal.length&&normal.every(u=>!(u.hide&&u.hide[k]))
+      const allEdit=k=>normal.length&&normal.every(u=>!u.tabs||u.tabs[k]!==0)
+      const cb=(ck,fn,tip)=>`<input type="checkbox" ${ck?'checked':''} onchange="${fn}" title="${tip}" style="width:15px;height:15px;cursor:pointer">`
+      let t=`<div style="margin-top:8px;font-weight:800">已核准（${users.length}）<span class="hint" style="font-weight:600">👁＝看得見・✏️＝能編輯</span></div>
+      <div class="scroll" style="margin-top:4px"><table style="border-collapse:collapse"><thead><tr>
+        <th style="text-align:left;position:sticky;left:0;background:var(--soft);z-index:2;padding:6px 8px">夥伴</th>
+        ${TABS.map(([k,lb])=>`<th style="padding:5px 6px;text-align:center;font-size:12px;white-space:nowrap">${lb}<br><span style="font-weight:600">👁${cb(allSee(k),`permSet('taball',null,null,'${k}',this.checked,'see')`,'全員 看得見 '+lb)} ✏️${cb(allEdit(k),`permSet('taball',null,null,'${k}',this.checked,'edit')`,'全員 能編輯 '+lb)}</span></th>`).join('')}
+      </tr></thead><tbody>`
+      users.forEach(u=>{
+        t+=`<tr><td style="text-align:left;font-weight:800;position:sticky;left:0;background:var(--card);z-index:1;padding:5px 8px;white-space:nowrap">${u.admin?'👑 ':''}${u.name}${u.admin?'':` <button class="mini" style="padding:1px 8px" onclick="permSet('revoke','${u.rid}')">移除</button>`}</td>`
+        if(u.admin){ t+=`<td colspan="${TABS.length}" class="hint" style="text-align:left;padding:5px 8px">管理者＝全部看得見、全部能編輯</td>` }
+        else TABS.forEach(([k])=>{ t+=`<td style="padding:4px 6px;text-align:center;white-space:nowrap">👁${cb(!(u.hide&&u.hide[k]),`permSet('see','${u.rid}',null,'${k}',this.checked)`,u.name+' 看得見')} ✏️${cb(!u.tabs||u.tabs[k]!==0,`permSet('tab','${u.rid}',null,'${k}',this.checked)`,u.name+' 能編輯')}</td>` })
+        t+=`</tr>`
+      })
+      return t+`</tbody></table></div>`
+    })()}</div>`
 }
 async function settingsLoad(){ // ⚙️ 設定頁（張良 2026-10-01：分頁管理/通知開關/權限管理集中這裡）
   curStore = 'settings'; setTabs('')
@@ -2870,8 +2884,8 @@ async function prepApply(){
   alert(j&&j.ok ? (j.already?'你已經有編輯權限了':'已送出申請，老闆核准後就能編輯') : (j&&j.error)||'申請失敗')
   menuLoad()
 }
-async function permSet(op, rid, mode, tab, val){
-  const r = await fetch('/api/mail-sync?preppermset=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ token: TK(), op, rid, mode, tab, val }) })
+async function permSet(op, rid, mode, tab, val, kind){
+  const r = await fetch('/api/mail-sync?preppermset=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ token: TK(), op, rid, mode, tab, val, kind }) })
   const j = await r.json().catch(()=>null)
   if (!j || !j.ok) alert((j&&j.error)||'操作失敗')
   if (curStore === 'settings') { window._permKeepOpen = 1; settingsLoad() } else menuLoad()
@@ -3062,6 +3076,8 @@ async function meChipInit(){ // 側欄底部＝登入身分（張良 2026-10-02�
   const role = me ? (me.approver ? '審核人' : (me.role === '主管' ? '主管' : '夥伴')) : '無編輯權限'
   el.innerHTML = `<div style="width:42px;height:42px;border-radius:50%;background:${me?'var(--grad)':'#3A4452'};color:#fff;display:flex;align-items:center;justify-content:center;font-weight:900;font-size:17px;flex:0 0 auto">${nm.slice(0,1)}</div>
     <div style="min-width:0"><div style="font-weight:800;font-size:16px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${nm}</div><div class="hint" style="font-size:12.5px">${role}</div></div>`
+  // v4.26.3（張良：設定每個頁面看不看得見）：被關掉的分頁直接從側欄藏起來（board=首頁）
+  if (me && !me.approver && Array.isArray(me.hideTabs)) me.hideTabs.forEach(k=>{ const b = document.getElementById(k==='board' ? 'tab-home' : 'tab-'+k); if (b) b.style.display = 'none' })
 }
 function sopPage(){ // ✅ SOP 獨立分頁（張良 2026-10-02：從首頁拆出）
   curStore = 'sop'; setTabs('sop')

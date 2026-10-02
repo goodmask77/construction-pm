@@ -900,9 +900,11 @@ export default async function handler(req, res) {
     if (!ok2 || String(req.query.whoami) !== ok2) return res.status(403).json({ ok: false })
     const w = await sopWho(req.query.me)
     if (!w) return res.status(200).json({ ok: true, me: null })
-    const defW = await kvGet('sp_finance_pm_sop_def')
+    const [defW, pmW] = await Promise.all([kvGet('sp_finance_pm_sop_def'), kvGet('sp_finance_pm_prep_perm')])
     const aprW = (((defW || {}).ground || {}).approvers || ['張良瑋'])
-    return res.status(200).json({ ok: true, me: { name: w.name, role: w.role, approver: w.role === '主管' || aprW.includes(w.name) } })
+    const uW = ((pmW || {}).users || {})[w.rid || w.uid]
+    const hideW = (uW && !uW.admin && uW.hide) ? Object.keys(uW.hide).filter(k => uW.hide[k]) : [] // v4.26.3 每頁看不看得見
+    return res.status(200).json({ ok: true, me: { name: w.name, role: w.role, approver: w.role === '主管' || aprW.includes(w.name), hideTabs: hideW } })
   }
   if (req.query?.opsboard) {
     const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
@@ -2335,6 +2337,15 @@ export default async function handler(req, res) {
     else if (bp.op === 'revoke' && pm.users[rid] && !pm.users[rid].admin) delete pm.users[rid]
     else if (bp.op === 'mode') pm.mode = bp.mode === 'open' ? 'open' : 'approve'
     else if (bp.op === 'tab' && pm.users[rid]) { pm.users[rid].tabs = pm.users[rid].tabs || {}; pm.users[rid].tabs[String(bp.tab)] = bp.val ? 1 : 0 } // 分頁細部權限（張良 2026-10-01）
+    else if (bp.op === 'see' && pm.users[rid]) { const u9 = pm.users[rid]; u9.hide = u9.hide || {}; if (bp.val) delete u9.hide[String(bp.tab)]; else u9.hide[String(bp.tab)] = 1 } // v4.26.3 每頁看不看得見（hide[tab]=1=隱藏）
+    else if (bp.op === 'taball') { // v4.26.3 一鍵勾選所有人（kind: edit|see）
+      const kindT = bp.kind === 'see' ? 'see' : 'edit'
+      for (const u9 of Object.values(pm.users)) {
+        if (u9.admin) continue
+        if (kindT === 'edit') { u9.tabs = u9.tabs || {}; u9.tabs[String(bp.tab)] = bp.val ? 1 : 0 }
+        else { u9.hide = u9.hide || {}; if (bp.val) delete u9.hide[String(bp.tab)]; else u9.hide[String(bp.tab)] = 1 }
+      }
+    }
     await kvPut('sp_finance_pm_prep_perm', pm, '權限管理(' + who.name + ')')
     return res.status(200).json({ ok: true, perm: pm })
   }
