@@ -471,6 +471,7 @@ function sugDecide(id, pass, st, note){
 function sopCollT(st){ if (sopColl.has(st)) sopColl.delete(st); else sopColl.add(st); localStorage.setItem('sopColl', JSON.stringify([...sopColl])); sopRender() }
 function sopCollAll(sts2){ const allC = sts2.every(s2=>sopColl.has(s2)); if (allC) sts2.forEach(s2=>sopColl.delete(s2)); else sts2.forEach(s2=>sopColl.add(s2)); localStorage.setItem('sopColl', JSON.stringify([...sopColl])); sopRender() }
 let sopFilter = localStorage.getItem('sopFilter') || ''
+function sopCatSet(c){ window._sopCat = c; sopFilter = 'all'; sopRender() } // 第一層分類切換（v4.16.1）
 function sopFset(v){ sopFilter = v; localStorage.setItem('sopFilter', v); sopRender() }
 function sopPinT(st){ if (sopPin.has(st)) sopPin.delete(st); else sopPin.add(st); localStorage.setItem('sopPin', JSON.stringify([...sopPin])); if (!sopPin.size && sopFilter==='pin') sopFset('all'); else sopRender() } // itemId -> dataURL（待送出的照片）；編輯中的站
 async function sopLoad(){
@@ -496,22 +497,38 @@ function sopRender(){
           : `<div class="hint" style="margin-bottom:6px">💡 ${BIND_HINT}——打卡不用打名字、可編輯 SOP、認領問題</div>`
   if (wd === 0 || wd === 6) s += `<div class="hint" style="margin-bottom:8px">今天公休——這是清單預覽，打卡留給營業日。</div>`
   // 站別篩選＋📌釘選（張良 2026-09-21：SOP 站多，每人點自己要看的；釘選存在自己手機）
-  const view = sopFilter || (sopPin.size ? 'pin' : 'all')
-  const shown0 = sts.filter(st2 => view==='all' ? true : (view==='pin' ? sopPin.has(st2) : st2===view))
+  // v4.16.1（張良「像網站一二三層,點了出現對應的,直接按鈕」）：第一層分類大按鈕→第二層該類的站→第三層條目
+  const catsN = sopData.def.cats || []
+  const scN = sopData.def.stCat || {}
+  const hasNone = sts.some(x=>!scN[x] || !catsN.includes(scN[x]))
+  let curCat = window._sopCat ?? null
+  if (curCat && curCat !== '__none' && !catsN.includes(curCat)) curCat = window._sopCat = null
+  const baseSts = !catsN.length || !curCat ? sts : (curCat === '__none' ? sts.filter(x=>!scN[x] || !catsN.includes(scN[x])) : sts.filter(x=>scN[x] === curCat))
+  const view = sopFilter && baseSts.concat('pin','all').includes(sopFilter) ? sopFilter : (sopFilter==='all'||sopFilter==='pin' ? sopFilter : (sopPin.size && !curCat ? 'pin' : 'all'))
+  const shown0 = baseSts.filter(st2 => view==='all' ? true : (view==='pin' ? sopPin.has(st2) : st2===view))
   const allColl = shown0.length > 0 && shown0.every(s2=>sopColl.has(s2))
   const chipS = (on) => `border:1px solid ${on?'var(--primary)':'var(--line)'};background:${on?'var(--primary)':'var(--card)'};color:${on?'#fff':'var(--muted)'};border-radius:9px;padding:4px 10px;font-size:14px;font-weight:800;cursor:pointer;white-space:nowrap`
+  const catBtn = (on) => `border:1.5px solid ${on?'var(--primary)':'var(--line)'};background:${on?'var(--grad)':'var(--soft)'};color:${on?'#fff':'var(--text)'};border-radius:10px;padding:8px 16px;font-size:15px;font-weight:900;cursor:pointer;white-space:nowrap`
+  if (catsN.length) { // 第一層：分類
+    s += `<div style="display:flex;gap:7px;flex-wrap:wrap;margin-bottom:8px;align-items:center">
+      <span style="${catBtn(!curCat)}" onclick="sopCatSet(null)">全部</span>
+      ${catsN.map(cg=>`<span style="${catBtn(curCat===cg)}" onclick="sopCatSet('${cg}')">🗂 ${cg}<span class="hint" style="margin-left:5px;font-weight:700;color:${curCat===cg?'#DCEBFF':'var(--muted)'}">${sts.filter(x=>scN[x]===cg).length}</span></span>`).join('')}
+      ${hasNone?`<span style="${catBtn(curCat==='__none')}" onclick="sopCatSet('__none')">未分類</span>`:''}
+      ${me?`<span style="${chipS(false)}" onclick="sopCatMng()">⚙️ 編輯分層</span>`:''}
+    </div>`
+  }
   s += `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px;align-items:center">
-    ${sopPin.size?`<span style="${chipS(view==='pin')}" onclick="sopFset('pin')">📌 我的釘選（${sopPin.size}）</span>`:''}
-    <span style="${chipS(view==='all')}" onclick="sopFset('all')">全部</span>
-    ${sts.map(st2=>`<span style="${chipS(view===st2)};display:inline-flex;gap:5px;align-items:center"><span onclick="sopFset('${st2}')">${st2}</span><span onclick="sopPinT('${st2}')" title="釘選/取消釘選" style="opacity:${sopPin.has(st2)?1:.35}">📌</span></span>`).join('')}
-    ${me?`<span style="${chipS(false)}" onclick="sopCatMng()">🗂 分類</span>`:''}
+    ${sopPin.size&&!curCat?`<span style="${chipS(view==='pin')}" onclick="sopFset('pin')">📌 我的釘選（${sopPin.size}）</span>`:''}
+    <span style="${chipS(view==='all')}" onclick="sopFset('all')">${curCat&&curCat!=='__none'?curCat+' 全部':'全部站'}</span>
+    ${baseSts.map(st2=>`<span style="${chipS(view===st2)};display:inline-flex;gap:5px;align-items:center"><span onclick="sopFset('${st2}')">${st2}</span><span onclick="sopPinT('${st2}')" title="釘選/取消釘選" style="opacity:${sopPin.has(st2)?1:.35}">📌</span></span>`).join('')}
+    ${me&&!catsN.length?`<span style="${chipS(false)}" onclick="sopCatMng()">🗂 分類</span>`:''}
     <span style="${chipS(false)};margin-left:auto" onclick="sopCollAll(${JSON.stringify(shown0).replace(/"/g,'&quot;')})">${allColl?'⏵ 全部展開':'⏷ 全部收合'}</span>
   </div>`
-  const shown = sts.filter(st2 => view==='all' ? true : (view==='pin' ? sopPin.has(st2) : st2===view))
+  const shown = shown0
   if (!shown.length) s += `<div class="mut" style="font-size:14px">釘選的站不見了（可能被改名）——按「全部」重新釘。</div>`
   // v4.15.0 SOP 分層（張良：分類→站→條目像組織架構）：全部檢視時照分類分組、未分類墊底
   let seqS = shown
-  if (view === 'all' && ((sopData.def.cats||[]).length)) {
+  if (view === 'all' && !window._sopCat && ((sopData.def.cats||[]).length)) { // 選了分類層就不再重複分組
     const scM = sopData.def.stCat || {}
     seqS = []
     ;(sopData.def.cats||[]).forEach(cg=>{ const in1 = shown.filter(x=>scM[x]===cg); if (in1.length) seqS.push('⟦H⟧'+cg, ...in1) })
