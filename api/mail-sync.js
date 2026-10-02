@@ -2366,6 +2366,40 @@ export default async function handler(req, res) {
     await kvPut('sp_finance_pm_prep_perm', pm, '權限管理(' + who.name + ')')
     return res.status(200).json({ ok: true, perm: pm })
   }
+  // ── 🧮 工時成本試算（張良 2026-10-03：每小時×崗位填金額、右/下自動加總、方案制可存版本切換比較）──
+  if (req.query?.labor) {
+    const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
+    if (!ok2 || String(req.query.labor) !== ok2) return res.status(403).json({ ok: false })
+    const [docL, meL] = await Promise.all([kvGet('sp_finance_pm_labor'), sopWho(req.query.me)])
+    return res.status(200).json({ ok: true, sheets: (docL || {}).sheets || [], me: meL ? { name: meL.name } : null })
+  }
+  if (req.method === 'POST' && req.query?.laborset) {
+    const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
+    if (!ok2 || String(req.query.laborset) !== ok2) return res.status(403).json({ ok: false })
+    let bl = {}; try { bl = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
+    const whoL = await permWho(bl.token, 'cost')
+    if (!whoL) return res.status(403).json({ ok: false, error: '要先跟 DD 說「綁定GD」' })
+    const doc = (await kvGet('sp_finance_pm_labor')) || { sheets: [] }
+    if (bl.op === 'save') {
+      const shIn = bl.sheet || {}
+      const rowsC = {}
+      for (const [h, ro] of Object.entries(shIn.rows || {})) {
+        if (!/^\d{2}$/.test(h)) continue
+        const r2 = {}
+        for (const [ci, v] of Object.entries(ro || {})) { const n2 = Number(v) || 0; if (n2) r2[ci] = Math.max(0, Math.min(999999, n2)) }
+        if (Object.keys(r2).length) rowsC[h] = r2
+      }
+      const clean = { id: shIn.id || 'lb' + Date.now().toString(36), name: String(shIn.name || '方案').slice(0, 20), cols: (Array.isArray(shIn.cols) ? shIn.cols : []).map(c => String(c).trim().slice(0, 12)).filter(Boolean).slice(0, 20), rows: rowsC, by: whoL.name, ts: new Date().toISOString() }
+      doc.sheets = [...(doc.sheets || []).filter(x => x.id !== clean.id), clean].slice(-20)
+      await kvPut('sp_finance_pm_labor', doc, '工時成本 ' + clean.name + '(' + whoL.name + ')')
+      return res.status(200).json({ ok: true, id: clean.id })
+    } else if (bl.op === 'del') {
+      doc.sheets = (doc.sheets || []).filter(x => x.id !== bl.id)
+      await kvPut('sp_finance_pm_labor', doc, '工時成本刪方案(' + whoL.name + ')')
+      return res.status(200).json({ ok: true })
+    }
+    return res.status(400).json({ ok: false })
+  }
   // 補發綁定審核按鈕卡（MENU_PROBE_KEY；張良 2026-10-03「這兩個請DD傳給我試試看」）：?bindcard=<key> 把待審核名單逐一發按鈕卡給審核人
   if (req.query?.bindcard) {
     const mkB = (process.env.MENU_PROBE_KEY || '').trim()
