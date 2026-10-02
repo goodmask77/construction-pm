@@ -592,7 +592,7 @@ function sopRender(){
       <button class="mini" onclick="prepAsk('改階段名「${curTg}」',0,1,(q,r)=>{if(r)sopstOp({op:'catren',cat:'${curTg}',newName:r}).then(()=>{window._sopTg=r})},'新名稱')">✏️ 改名</button>
       <button class="mini" style="color:var(--red)" onclick="if(confirm('刪除階段「#${curTg}」？條目會變未分階段，不會刪條目'))sopstOp({op:'catdel',cat:'${curTg}'}).then(()=>{window._sopTg=null})">🗑 刪階段</button>
       <button class="mini" onclick="sopOrdMove('cat','${curTg}',-1)">◀</button><button class="mini" onclick="sopOrdMove('cat','${curTg}',1)">▶</button>
-      ${mgrC?`<span class="hint">👑 負責人</span><select onchange="sopstOp({op:'catown',cat:'${curTg}',owner:this.value})" style="border:1px solid var(--line);border-radius:7px;padding:5px;font-size:13px"><option value="">無</option>${(sopData.names||[]).map(n=>`<option${coN[curTg]===n?' selected':''}>${n}</option>`).join('')}</select>`:(coN[curTg]?`<span style="color:#D4A72C;font-weight:800">👑 ${coN[curTg]}</span>`:'')}
+      ${mgrC?`<span class="hint">⭐ 負責人</span><select onchange="sopstOp({op:'catown',cat:'${curTg}',owner:this.value})" style="border:1px solid var(--line);border-radius:7px;padding:5px;font-size:13px"><option value="">無</option>${(sopData.names||[]).map(n=>`<option${coN[curTg]===n?' selected':''}>${n}</option>`).join('')}</select>`:(coN[curTg]?`<span style="color:#D4A72C;font-weight:800">⭐ ${coN[curTg]}</span>`:'')}
     </div>`
   }
   // 第二排：#產品
@@ -611,7 +611,7 @@ function sopRender(){
       <button class="mini" onclick="sopStRen('${view}')">✏️ 改名</button>
       <button class="mini" style="color:var(--red)" onclick="if(confirm('刪除產品「${stDisp(view)}」？條目會進回收站可復原'))sopstOp({op:'del',st:'${view}'}).then(()=>{sopFilter='all'})">🗑 刪產品</button>
       <button class="mini" onclick="sopOrdMove('st','${view}',-1)">◀</button><button class="mini" onclick="sopOrdMove('st','${view}',1)">▶</button>
-      ${mgrC2?`<span class="hint">👑 負責人</span><select onchange="sopstOp({op:'ownset',st:'${view}',owner:this.value})" style="border:1px solid var(--line);border-radius:7px;padding:5px;font-size:13px"><option value="">無</option>${(sopData.names||[]).map(n=>`<option${soN[view]===n?' selected':''}>${n}</option>`).join('')}</select>`:''}
+      ${mgrC2?`<span class="hint">⭐ 負責人</span><select onchange="sopstOp({op:'ownset',st:'${view}',owner:this.value})" style="border:1px solid var(--line);border-radius:7px;padding:5px;font-size:13px"><option value="">無</option>${(sopData.names||[]).map(n=>`<option${soN[view]===n?' selected':''}>${n}</option>`).join('')}</select>`:''}
       <button class="mini on" onclick="sopItemEdit(null,'${view}')">＋ 新增條目</button>
     </div>`
   }
@@ -629,7 +629,7 @@ function sopRender(){
     const sugBtn = own9 && me ? ((me.name===own9 || mgr9)
       ? `<button class="mini" style="color:${sug9?'var(--primary)':'var(--muted)'}" onclick="sugView('${st}')">💡 建議${sug9?`(${sug9})`:''}</button>`
       : `<button class="mini" style="color:var(--primary)" onclick="sugAdd('${st}')">💡 提建議</button>`) : (own9 ? `<button class="mini" onclick="sugView('${st}')">💡${sug9?`(${sug9})`:''}</button>` : '')
-    s += `<div onclick="sopCollT('${st}')" style="cursor:pointer;background:var(--psoft);border-radius:8px;padding:4px 10px;font-weight:900;color:var(--pdark);font-size:14px;margin:10px 0 4px">${coll?'⏵':'⏷'} ${stDisp(st)}${own9?` <span style="font-weight:700;font-size:12px;color:#D4A72C">👑${own9}</span>`:''} <span class="hint" style="font-weight:700">${stDone}/${stItems.length}${stIss.length?`・⚠️${stIss.length}`:''}</span>
+    s += `<div onclick="sopCollT('${st}')" style="cursor:pointer;background:var(--psoft);border-radius:8px;padding:4px 10px;font-weight:900;color:var(--pdark);font-size:14px;margin:10px 0 4px">${coll?'⏵':'⏷'} ${stDisp(st)}${own9?` <span style="font-weight:700;font-size:12px;color:#D4A72C">⭐${own9}</span>`:''} <span class="hint" style="font-weight:700">${stDone}/${stItems.length}${stIss.length?`・⚠️${stIss.length}`:''}</span>
       <span style="float:right" onclick="event.stopPropagation()">${sugBtn}<button class="mini" style="color:#A85C26" onclick="sopReport('${st}')">⚠️ 回報</button></span></div>`
     if (coll) return
     stIss.forEach(x => {
