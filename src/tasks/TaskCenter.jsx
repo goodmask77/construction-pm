@@ -115,6 +115,10 @@ export default function TaskCenter({ K, confirm, canEdit, cats, onLog, onAddCat,
   const [editCat, setEditCat] = useState(null); // 大項改名中：{id, name}（張良 2026-09-10：採購大項名稱要可編輯）
   const [dragCat, setDragCat] = useState(null); // 拖曳中的大項 id（張良 2026-09-10：大項要能拖曳排序像 Trello/Keep）
   const [overCat, setOverCat] = useState(null); // 大項拖曳目前懸停的目標
+  const [gdNames, setGdNames] = useState([]);   // 負責人選單名單（2026-10-02 張良「負責人為選單不是自己填」）：/prep 抓 GD 人員
+  useEffect(() => { if (!OPS_DARK) return; const k = window.__OPS_PROXY__ && window.__OPS_PROXY__.key; if (!k) return;
+    fetch("/api/mail-sync?shift=" + encodeURIComponent(k) + "&ym=" + today().slice(0, 7)).then(r => r.json()).then(d => { if (d && d.ok) setGdNames((d.staff || []).filter(s => !s.off && s.role !== "停權").map(s => s.n)); }).catch(() => {});
+  }, []);
   const colOfRef = useRef({}); // 本次渲染各大項實際落在第幾欄（拖放時用來算 tcol）
   const [showDone, setShowDone] = useState(false); // 完成的任務預設隱藏封存（張良 2026-09-10），點「已完成」切換顯示
   const [colorCat, setColorCat] = useState(null); // 大項調色盤開啟中的大項 id（張良 2026-09-10：大項也要能編輯顏色好辨識區塊）
@@ -950,7 +954,16 @@ export default function TaskCenter({ K, confirm, canEdit, cats, onLog, onAddCat,
                 {F("優先級", <select value={t.priority || "normal"} onChange={e => upd(t.id, { priority: e.target.value })} disabled={!canEdit} style={{ ...inp, width: "100%" }}>{PRIO.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select>)}
                 {F("截止日", <input type="date" value={dnorm(t.due)} onChange={e => upd(t.id, { due: e.target.value })} disabled={!canEdit} style={{ ...dateInp, width: "100%" }} />)}
                 {F("開始日", <input type="date" value={dnorm(t.start)} onChange={e => upd(t.id, { start: e.target.value })} disabled={!canEdit} style={{ ...dateInp, width: "100%" }} />)}
-                {F("負責人", <input key={t.id + "-ow"} defaultValue={t.owner || ""} onBlur={e => upd(t.id, { owner: e.target.value })} disabled={!canEdit} placeholder="誰負責完成（自由填）" style={{ ...inp, width: "100%" }} />)}
+                {F("負責人", (() => { // 2026-10-02 張良「負責人為選單不是自己填」：GD人員＋任務裡出現過的人合成選單；仍留「✏️ 自訂…」備用
+                  const pool = [...new Set([...gdNames, ...tasks.flatMap(x => [x.owner, x.claimBy]).filter(Boolean), ...(t.owner ? [t.owner] : [])])].sort((a, b) => a.localeCompare(b, "zh-Hant"));
+                  return <select key={t.id + "-ow"} value={pool.includes(t.owner) ? t.owner : (t.owner ? t.owner : "")} disabled={!canEdit}
+                    onChange={e => { const v = e.target.value; if (v === "__custom") { const nm = window.prompt("輸入負責人名字"); if (nm && nm.trim()) upd(t.id, { owner: nm.trim() }); } else upd(t.id, { owner: v }); }}
+                    style={{ ...inp, width: "100%", cursor: canEdit ? "pointer" : "default" }}>
+                    <option value="">— 未指定 —</option>
+                    {pool.map(n => <option key={n} value={n}>{n}</option>)}
+                    <option value="__custom">✏️ 自訂…</option>
+                  </select>;
+                })())}
                 {F("等待中（等誰 / 等什麼）", <input key={t.id + "-wf"} defaultValue={t.waitingFor || ""} onBlur={e => upd(t.id, { waitingFor: e.target.value })} disabled={!canEdit} placeholder={waitHint} style={{ ...inp, width: "100%" }} />)}
                 {F("預估時間（分鐘）", <input type="number" min={1} step={1} value={t.estimatedMinutes ?? ""} onChange={e => upd(t.id, { estimatedMinutes: e.target.value })} disabled={!canEdit} placeholder="未估算" style={{ ...inp, width: "100%", fontVariantNumeric: "tabular-nums" }} />)}
                 {F("卡片顏色（視覺分類）", <div style={{ display: "flex", gap: 7, alignItems: "center", flexWrap: "wrap", paddingTop: 3 }}>
