@@ -81,6 +81,8 @@
   }
 @keyframes trGlow{0%,100%{box-shadow:0 0 2px 0 var(--gc)}50%{box-shadow:0 0 10px 2.5px var(--gc)}} /* 🎓帶訓卡發光（張良 2026-10-02） */
 @keyframes goldGlow{0%,100%{box-shadow:0 0 0 2px #D4A72C,0 0 6px 2px rgba(212,167,44,.35)}50%{box-shadow:0 0 0 3px #F2CE60,0 0 22px 7px rgba(242,206,96,.75)}} /* 🔗deep link 跳轉定位閃光（v4.16.0） */
+@keyframes shSlideL{from{transform:translateX(44px);opacity:.35}to{transform:none;opacity:1}} /* 週表左右滑動（張良 2026-10-02） */
+@keyframes shSlideR{from{transform:translateX(-44px);opacity:.35}to{transform:none;opacity:1}}
 .glowgold{animation:goldGlow 1s ease-in-out 4;border-radius:8px}
 .lnkbtn{opacity:.35;cursor:pointer;font-size:12px} .lnkbtn:hover{opacity:1}
 </style>
@@ -1712,10 +1714,31 @@ function meetTypes(){
 let shiftYm = null
 function shiftNav(n){ const t2 = new Date(shiftYm + '-15'); t2.setMonth(t2.getMonth()+n); shiftLoad(t2.toISOString().slice(0,7)) }
 function shiftWkNav(n){
+  window._shDir = n > 0 ? 'R' : 'L' // 絲滑動畫方向（下一週從右進=R，上一週從左進=L）
   const t2 = new Date(window._shiftWk); t2.setDate(t2.getDate()+n*7)
   window._shiftWk = t2.toISOString().slice(0,10)
   const ym2 = window._shiftWk.slice(0,7)
   if (ym2 !== shiftYm) shiftLoad(ym2); else shiftRender()
+}
+// 左右滑動切週（張良 2026-10-02「絲滑滑動」）：手機捲到邊緣再滑＝翻週；trackpad 橫滾到邊緣翻週
+function shSwTS(e){ const w=e.currentTarget; window._shSx=e.touches[0].clientX; window._shSy=e.touches[0].clientY; window._shSl=w.scrollLeft; window._shMax=w.scrollWidth-w.clientWidth-2 }
+function shSwTE(e){
+  if (window._shSx==null) return
+  const dx=e.changedTouches[0].clientX-window._shSx, dy=e.changedTouches[0].clientY-window._shSy
+  window._shSx=null
+  if (Math.abs(dx)<60 || Math.abs(dx)<Math.abs(dy)*1.3) return // 要夠水平
+  if (dx>0 && window._shSl<=0) shiftWkNav(-1)            // 在最左、往右滑＝上一週
+  else if (dx<0 && window._shSl>=window._shMax) shiftWkNav(1) // 在最右、往左滑＝下一週
+}
+function shSwWheel(e){
+  if (Math.abs(e.deltaX)<Math.abs(e.deltaY)) return // 直向滾不管
+  const w=e.currentTarget, max=w.scrollWidth-w.clientWidth-2
+  const atL=w.scrollLeft<=0, atR=w.scrollLeft>=max
+  if ((e.deltaX<0&&atL)||(e.deltaX>0&&atR)) {
+    window._shAcc=(window._shAcc||0)+e.deltaX
+    if (Math.abs(window._shAcc)>80) { e.preventDefault(); const d=window._shAcc>0?1:-1; window._shAcc=0; clearTimeout(window._shAccT); shiftWkNav(d) }
+    window._shAccT=setTimeout(()=>{window._shAcc=0},200)
+  } else window._shAcc=0
 }
 async function shiftLoad(ym){
   curStore = 'shift'; setTabs('shift')
@@ -1813,7 +1836,7 @@ function shiftRender(){
   // v4.5.3 顏色吃伺服器永久色號（d.colors），不再照名單順序——排序/進出都不變色
   const pcIdx = n => { const c2 = (d.colors||{})[n]; if (c2 != null) return c2 % PB.length; let i = 0; for(const ch of String(n)) i=(i*31+ch.charCodeAt(0))%997; return i % PB.length }
   const BD = 'border:1px solid var(--line);'
-  h += `<div class="scroll" style="margin-bottom:12px"><table style="table-layout:fixed;width:100%;min-width:760px;border-collapse:collapse">
+  h += `<div id="shWkWrap" class="scroll" style="margin-bottom:12px${window._shDir?`;animation:shSlide${window._shDir} .22s ease`:''}" ontouchstart="shSwTS(event)" ontouchend="shSwTE(event)" onwheel="shSwWheel(event)"><table style="table-layout:fixed;width:100%;min-width:760px;border-collapse:collapse">
   <colgroup><col style="width:88px">${wkDays.map(()=>'<col>').join('')}</colgroup>
   <thead><tr><th style="${BD}text-align:left;position:sticky;left:0;background:var(--soft);z-index:2">崗位</th>${wkDays.map((dt,i)=>`<th onclick="dayClick('${dt}')" title="點我看當日時段細表" style="${BD}text-align:center;cursor:pointer;font-size:13.5px;${dt===today?'color:#FFFFFF;background:#1F4068;box-shadow:inset 0 -3px 0 var(--primary)':'color:#F2F5F9;background:var(--soft)'}">${dt.slice(5)}<br>（${wdN[i]}）</th>`).join('')}</tr></thead><tbody>`
   if (!posList.length) h += `<tr><td colspan="8" class="mut" style="${BD}text-align:center">先按上面「⚙️ 崗位」建崗位清單，左側就會列出、點格子直接排人</td></tr>`
@@ -1877,6 +1900,7 @@ function shiftRender(){
   })
   h += `</section>`
   app.innerHTML = h
+  window._shDir = null // 動畫方向用完即清（排班重畫不再觸發滑動動畫）
 }
 function shiftForm(id){
   const d = window._shiftD, it = id ? d.sched.find(x=>x.id===id) : null
