@@ -3515,12 +3515,16 @@ function lbFinder(nm){
 (function(){
   let v = null; try { v = sessionStorage.getItem('prepView') } catch(_) {}
   const R = { lb: loadLB, buy: buyLoad, meet: meetLoad, shift: shiftLoad, fb: fbLoad, menu: menuLoad, errs: errsView, sop: sopPage, settings: settingsLoad, food: ()=>invLoad('food'), pack: ()=>invLoad('pack'), abeach: ()=>load('abeach') }
-  const hs = location.hash || ''
-  const mS2 = hs.match(/sop=([A-Za-z0-9_-]+)/), mM = hs.match(/meet=([A-Za-z0-9]+)/), mT = hs.match(/tab=([a-z]+)/)
-  if (mS2) { sopPage(); glowWait('sopit-' + mS2[1]) }
-  else if (mM) { meetLoad(); glowWait('mt-' + mM[1]); setTimeout(()=>{ if (TK()) meetMop({ op:'view', id: mM[1] }, 1) }, 1500) }
-  else if (mT && R[mT[1]]) R[mT[1]]()
-  else if (v && R[v]) R[v](); else load('ground')
+  const routeHash = () => { // v4.18.5：頁內點深層連結也要動（原本只在開頁時解析）
+    const hs = location.hash || ''
+    const mS2 = hs.match(/sop=([A-Za-z0-9_-]+)/), mM = hs.match(/meet=([A-Za-z0-9]+)/), mT = hs.match(/tab=([a-z]+)/)
+    if (mS2) { sopPage(); glowWait('sopit-' + mS2[1]); return true }
+    if (mM) { meetLoad(); glowWait('mt-' + mM[1]); setTimeout(()=>{ if (TK()) meetMop({ op:'view', id: mM[1] }, 1) }, 1500); return true }
+    if (mT && R[mT[1]]) { R[mT[1]](); return true }
+    return false
+  }
+  window.addEventListener('hashchange', routeHash)
+  if (!routeHash()) { if (v && R[v]) R[v](); else load('ground') }
   // 側欄每個分頁小🔗（張良：這裡旁邊都建立複製連結）
   try { document.querySelectorAll('.tabs button[id^="tab-"]').forEach(b=>{ const k2 = b.id.slice(4); if (k2 === 'home') return
     const sp = document.createElement('span'); sp.className = 'lnkbtn'; sp.title = '複製此分頁連結'; sp.textContent = '🔗'; sp.style.marginLeft = 'auto'
