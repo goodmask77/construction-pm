@@ -97,7 +97,7 @@
   <div class="tabs">
     <button id="tab-home" onclick="load(lastStore)" title="回營運看板" style="padding:7px 13px;font-size:16px">🏠</button>
     <button id="tab-sop" onclick="sopPage()">✅ SOP</button>
-    <button id="tab-task" onclick="location.href='/ops-tasks.html'">🛠 任務</button> <!-- 2026-10-02 整併：改掛主App任務中心（同團隊空間雙向同步） -->
+    <button id="tab-task" onclick="taskEmbed()">🛠 任務</button> <!-- 2026-10-02 整併：改掛主App任務中心（同團隊空間雙向同步） -->
     <button id="tab-lb" onclick="loadLB()">🏆 排行榜</button>
     <button id="tab-food" onclick="invLoad('food')">🥩 盤點</button>
     <button id="tab-pack" onclick="invLoad('pack')">📦 包材</button>
@@ -146,6 +146,11 @@ async function posFresh(){ // 跟主App同款：手動叫喬亞抓一次盤中�
 }
 function hardRefresh(){ location.replace(location.pathname + '?r=' + Date.now()) }
 // 依目前分頁重畫（綁定後/操作後用）
+function taskEmbed(){ // 任務原地切換（張良 2026-10-02：不要像開新分頁）——iframe 內嵌，側欄照舊
+  curStore = 'taskx'; setTabs('task')
+  document.getElementById('upd').textContent = '任務中心・與主 App 同步'
+  app.innerHTML = `<iframe src="/ops-tasks.html" style="width:100%;height:calc(100vh - 150px);min-height:560px;border:none;border-radius:14px;background:var(--bg)"></iframe>`
+}
 function goView(){
   if (curStore === 'task') taskLoad()
   else if (curStore === 'lb') loadLB()
@@ -1958,6 +1963,7 @@ function queueSaveTmp(tmp){ // 樂觀卡入列＋排隊寫入（成功換正式i
 function cellClick(pos, dt){ if (window._shiftCopy && window._shiftCopy.on) { pasteApply(pos, dt); return } shiftQuick(pos, dt) }
 function dayClick(dt){ if (window._shiftCopy && window._shiftCopy.on) { pasteApply(null, dt); return } shiftDay(dt) }
 function copyCell(pos, dt){
+  window._lastCopy = []
   const d = window._shiftD
   const items = d.sched.filter(x=>x.date===dt && (x.pos||'未分崗')===pos)
   if (!items.length) { alert('這格沒班可複製'); return }
@@ -1966,6 +1972,7 @@ function copyCell(pos, dt){
   pasteBar('已複製這格——點要貼上的格子（可連貼好幾格），貼完按「完成」')
 }
 function copyDay(dt){
+  window._lastCopy = []
   const d = window._shiftD
   const items = d.sched.filter(x=>x.date===dt)
   if (!items.length) { alert('這天沒班可複製'); return }
@@ -2015,6 +2022,26 @@ function undoLastCopy(){
   })
   window._lastCopy = []
   pasteOff(); shiftRender()
+}
+// 🗑 清空某一天（張良 2026-10-02「要怎麼消除整天」）——跟清空本週同一套復原機制
+function clearDay(dt){
+  const d = window._shiftD
+  const ents = d.sched.filter(x=>x.date===dt)
+  if (!ents.length) { alert('這天沒班'); return }
+  if (!confirm(`把 ${dt.slice(5)} 的 ${ents.length} 筆班全部刪除？`)) return
+  window._lastClear = ents.map(x=>({ ...x }))
+  try { localStorage.setItem('shiftLastClear', JSON.stringify({ ts: Date.now(), list: window._lastClear })) } catch(_) {}
+  ents.forEach(x=>{
+    d.sched = d.sched.filter(y=>y!==x)
+    if (String(x.id).startsWith('tmp')) { const t2 = window._shiftTmpQ.find(q=>q.id===x.id); if (t2) t2._del = 1 }
+    else shQueue(async ()=>{ const r = await shPost({ op:'del', id: x.id, token: TK() }); if (!(r&&r.ok)) alert('刪除失敗：'+x.name) })
+  })
+  shiftRender()
+  pasteOff(1)
+  const b9 = document.createElement('div'); b9.id = 'pasteBar'
+  b9.style.cssText = 'position:fixed;bottom:18px;left:50%;transform:translateX(-50%);z-index:60;background:#10182B;color:#fff;border-radius:12px;padding:10px 14px;display:flex;gap:10px;align-items:center;font-size:14px'
+  b9.innerHTML = `<span style="white-space:nowrap">🗑 已清空 ${dt.slice(5)}（${ents.length} 筆）</span><button class="mini" style="padding:6px 12px" onclick="undoClear()">↩️ 復原</button><button class="mini" style="padding:6px 12px" onclick="pasteOff()">好</button>`
+  document.body.appendChild(b9)
 }
 // 🗑 清空本週（班表，打卡紀錄不動）
 function clearWeek(){
@@ -2212,6 +2239,7 @@ function t24set(cls, v){
 // 📋 當日細表（張良 2026-10-02：時段×崗位、一鍵複製成文字發群組）
 function shiftDay(dt){
   const d = window._shiftD
+  const meN2 = d.me ? d.me.name : null
   const wdN2 = ['日','一','二','三','四','五','六']
   const es = d.sched.filter(x=>x.date===dt)
   const posIdx = p2 => { const i = (d.posList||[]).indexOf(p2); return i<0 ? 99 : i }
@@ -2229,6 +2257,7 @@ function shiftDay(dt){
     ${keys.length ? keys.map(k2=>`<div style="font-weight:800;color:var(--primary);margin:8px 0 3px">${k2}</div>`+grp[k2].map(e=>`<div style="display:flex;gap:8px;font-size:14px;padding:3px 0;border-bottom:1px solid var(--line)"><span style="min-width:84px;font-weight:700;color:var(--pdark)">${e.pos||'—'}</span><span>${e.name}${e.tr?` <span style="color:#B45309;font-weight:800">🎓帶${e.tr}</span>`:''}</span></div>`).join('')).join('') : '<div class="mut">這天還沒排班</div>'}
     <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px;flex-wrap:wrap">
       <button class="mini" style="padding:9px 12px" onclick="document.getElementById('sdOv').remove()">關閉</button>
+      ${keys.length&&meN2?`<button class="mini" style="padding:9px 12px;color:var(--red)" onclick="document.getElementById('sdOv').remove();clearDay('${dt}')">🗑 清空這天</button>`:''}
       ${keys.length?`<button class="mini" style="padding:9px 12px" onclick="copyDay('${dt}')">⧉ 複製這天</button><button class="mini on" style="padding:9px 16px" onclick="navigator.clipboard.writeText(window._dayTxt).then(()=>{this.textContent='✓ 已複製';setTimeout(()=>{const o=document.getElementById('sdOv');if(o)o.remove()},700)})">📋 複製文字（貼群組）</button>`:''}
     </div></div>`
   ov.onclick = () => ov.remove()
@@ -3514,7 +3543,7 @@ function lbFinder(nm){
 // 開場：深層連結(#meet=/#sop=/#tab=)優先→重新整理留在原分頁→首頁（v4.16.0）
 (function(){
   let v = null; try { v = sessionStorage.getItem('prepView') } catch(_) {}
-  const R = { lb: loadLB, buy: buyLoad, meet: meetLoad, shift: shiftLoad, fb: fbLoad, menu: menuLoad, errs: errsView, sop: sopPage, settings: settingsLoad, food: ()=>invLoad('food'), pack: ()=>invLoad('pack'), abeach: ()=>load('abeach') }
+  const R = { lb: loadLB, buy: buyLoad, meet: meetLoad, shift: shiftLoad, fb: fbLoad, menu: menuLoad, errs: errsView, sop: sopPage, settings: settingsLoad, taskx: ()=>taskEmbed(), food: ()=>invLoad('food'), pack: ()=>invLoad('pack'), abeach: ()=>load('abeach') }
   const routeHash = () => { // v4.18.5：頁內點深層連結也要動（原本只在開頁時解析）
     const hs = location.hash || ''
     const mS2 = hs.match(/sop=([A-Za-z0-9_-]+)/), mM = hs.match(/meet=([A-Za-z0-9]+)/), mT = hs.match(/tab=([a-z]+)/)

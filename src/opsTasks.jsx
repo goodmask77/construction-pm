@@ -18,12 +18,13 @@ function OpsTasks() {
   const saveCats = (up) => setCats(prev => { const next = up(prev || []); window.storage.set(K("pm_data"), JSON.stringify(next), true).catch(() => {}); return next; });
   const confirm = async (msg) => window.confirm(typeof msg === "string" ? msg : "確定？");
   if (cats === null) return <div style={{ padding: 40, color: "#5a6b85", fontSize: 15 }}>任務載入中…</div>;
+  const embedded = typeof window !== "undefined" && window.self !== window.top; // /prep 內嵌 iframe＝側欄還在，不用回看板列
   return (
     <div style={{ maxWidth: 1280, margin: "0 auto", padding: "10px 14px 40px" }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "6px 2px 10px" }}>
-        <a href="/prep" style={{ textDecoration: "none", fontWeight: 800, fontSize: 14, color: "#1266C8", border: "1.5px solid #C9DCF2", borderRadius: 10, padding: "7px 14px", background: "#fff" }}>← 回看板</a>
-        <div style={{ fontWeight: 900, fontSize: 17, color: "#16263D" }}>任務中心 <span style={{ fontSize: 12, color: "#8395AC", fontWeight: 400 }}>與主 App 團隊工作空間完全同步</span></div>
-      </div>
+      {!embedded && <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "6px 2px 10px" }}>
+        <a href="/prep" style={{ textDecoration: "none", fontWeight: 800, fontSize: 14, color: "#4DA3FF", border: "1.5px solid #2A3240", borderRadius: 10, padding: "7px 14px", background: "#161B22" }}>← 回看板</a>
+        <div style={{ fontWeight: 900, fontSize: 17, color: "#F2F5F9" }}>任務中心 <span style={{ fontSize: 12, color: "#8C98A8", fontWeight: 400 }}>與主 App 團隊工作空間完全同步</span></div>
+      </div>}
       <TaskCenter K={K} confirm={confirm} canEdit={true} cats={cats || []} onLog={() => {}} userName={meName}
         waitHint="例：等對方回覆、等報價、等主管確認"
         onAddCat={(name) => saveCats(prev => [...prev, { id: "cat-" + Date.now(), order: prev.length, name, budget: 0, status: "pending", items: [] }])}

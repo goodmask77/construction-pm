@@ -49,7 +49,13 @@ function TaskAttach({ files = [], onChange, canEdit, C, line }) {
 const TASK_COLORS = ["", "#fef2f2", "#fff7ed", "#fefce8", "#f0fdf4", "#eff6ff", "#faf5ff", "#f5f5f5"];
 const MONO = "'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace"; // 數字專用（gpack）
 
-const C = {
+const OPS_DARK = typeof window !== "undefined" && !!window.__OPS_PROXY__; // /prep 深色皮（2026-10-02 張良：風格要跟看板一致）；主 App 照舊米色
+const C = OPS_DARK ? {
+  text: "#F2F5F9", sub: "#C7D0DB", faint: "#8C98A8",
+  line: "#2A3240", soft: "#1C222B", bg: "#0E1217", card: "#161B22",
+  accent: "#4DA3FF", accentSoft: "#1A2940",
+  green: "#3DBE6C", amber: "#E8A657", red: "#F07373",
+} : {
   text: "#1d1a15",       // 墨黑（gpack ink）
   sub: "#5a5247",        // 次要文字
   faint: "#9b9384",      // 小標籤
