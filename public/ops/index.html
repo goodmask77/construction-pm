@@ -1721,27 +1721,7 @@ function shiftWkNav(n){
   const ym2 = window._shiftWk.slice(0,7)
   if (ym2 !== shiftYm) shiftLoad(ym2); else shiftRender()
 }
-// 左右滑動切週（張良 2026-10-02「絲滑滑動」）：手機捲到邊緣再滑＝翻週；trackpad 橫滾到邊緣翻週
-function shSwTS(e){ const w=e.currentTarget; window._shSx=e.touches[0].clientX; window._shSy=e.touches[0].clientY; window._shSl=w.scrollLeft; window._shMax=w.scrollWidth-w.clientWidth-2 }
-function shSwTE(e){
-  if (window._shSx==null) return
-  const dx=e.changedTouches[0].clientX-window._shSx, dy=e.changedTouches[0].clientY-window._shSy
-  window._shSx=null
-  if (Math.abs(dx)<60 || Math.abs(dx)<Math.abs(dy)*1.3) return // 要夠水平
-  if (dx>0 && window._shSl<=0) shiftWkNav(-1)            // 在最左、往右滑＝上一週
-  else if (dx<0 && window._shSl>=window._shMax) shiftWkNav(1) // 在最右、往左滑＝下一週
-}
-function shSwWheel(e){
-  if (Math.abs(e.deltaX)<Math.abs(e.deltaY)+2) return // 直向滾不管
-  const w=e.currentTarget, max=w.scrollWidth-w.clientWidth-2
-  const atL=w.scrollLeft<=0, atR=w.scrollLeft>=max
-  if (!((e.deltaX<0&&atL)||(e.deltaX>0&&atR))) { window._shAcc=0; return } // 還能捲就讓它捲
-  e.preventDefault()
-  if (window._shCool) return // 冷卻中，避免 trackpad 慣性連翻好幾週
-  window._shAcc=(window._shAcc||0)+e.deltaX
-  if (Math.abs(window._shAcc)>110) { const d=window._shAcc>0?1:-1; window._shAcc=0; window._shCool=1; setTimeout(()=>{window._shCool=0},550); shiftWkNav(d) }
-  clearTimeout(window._shAccT); window._shAccT=setTimeout(()=>{window._shAcc=0},180)
-}
+// （手勢切週已移除 v4.20.2：張良「固定視窗原生捲動很滑順，用這個就好」——班表容器維持原生捲動看七天，切週用 ‹ › 今天 按鈕＋滑入動畫）
 async function shiftLoad(ym){
   curStore = 'shift'; setTabs('shift')
   shiftYm = (typeof ym === 'string' && ym) || shiftYm || todayTpe().slice(0,7)
@@ -1838,7 +1818,7 @@ function shiftRender(){
   // v4.5.3 顏色吃伺服器永久色號（d.colors），不再照名單順序——排序/進出都不變色
   const pcIdx = n => { const c2 = (d.colors||{})[n]; if (c2 != null) return c2 % PB.length; let i = 0; for(const ch of String(n)) i=(i*31+ch.charCodeAt(0))%997; return i % PB.length }
   const BD = 'border:1px solid var(--line);'
-  h += `<div id="shWkWrap" class="scroll" style="margin-bottom:12px${window._shDir?`;animation:shSlide${window._shDir} .22s ease`:''}" ontouchstart="shSwTS(event)" ontouchend="shSwTE(event)" onwheel="shSwWheel(event)"><table style="table-layout:fixed;width:100%;min-width:760px;border-collapse:collapse">
+  h += `<div id="shWkWrap" class="scroll" style="margin-bottom:12px${window._shDir?`;animation:shSlide${window._shDir} .22s ease`:''}"><table style="table-layout:fixed;width:100%;min-width:760px;border-collapse:collapse">
   <colgroup><col style="width:88px">${wkDays.map(()=>'<col>').join('')}</colgroup>
   <thead><tr><th style="${BD}text-align:left;position:sticky;left:0;background:var(--soft);z-index:2">崗位</th>${wkDays.map((dt,i)=>`<th onclick="dayClick('${dt}')" title="點我看當日時段細表" style="${BD}text-align:center;cursor:pointer;font-size:13.5px;${dt===today?'color:#FFFFFF;background:#1F4068;box-shadow:inset 0 -3px 0 var(--primary)':'color:#F2F5F9;background:var(--soft)'}">${dt.slice(5)}<br>（${wdN[i]}）</th>`).join('')}</tr></thead><tbody>`
   if (!posList.length) h += `<tr><td colspan="8" class="mut" style="${BD}text-align:center">先按上面「⚙️ 崗位」建崗位清單，左側就會列出、點格子直接排人</td></tr>`
