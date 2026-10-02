@@ -2377,7 +2377,7 @@ export default async function handler(req, res) {
     const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
     if (!ok2 || String(req.query.laborset) !== ok2) return res.status(403).json({ ok: false })
     let bl = {}; try { bl = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
-    const whoL = await permWho(bl.token, 'cost')
+    const whoL = await permWho(bl.token, 'shift') // v4.28.1 掛班表下面=吃班表權限
     if (!whoL) return res.status(403).json({ ok: false, error: '要先跟 DD 說「綁定GD」' })
     const doc = (await kvGet('sp_finance_pm_labor')) || { sheets: [] }
     if (bl.op === 'save') {
