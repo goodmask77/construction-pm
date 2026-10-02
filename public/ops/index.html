@@ -2799,10 +2799,11 @@ function menuExport(kind){ // 匯出完整菜單（張良 2026-10-02）：txt=�
   const pad = 40, lh = 34, W = 1000
   const cv = document.createElement('canvas'); cv.width = W; cv.height = pad * 2 + lh * L.length
   const g = cv.getContext('2d')
-  g.fillStyle = '#2E2814'; g.fillRect(0, 0, cv.width, cv.height)
+  // v4.25.7（張良「匯出的圖片沒辦法看」）：匯出圖=給人看/印的，固定白底深字不跟深色主題——底色曾被深色改版誤掃成#2E2814深底深字
+  g.fillStyle = '#FFFFFF'; g.fillRect(0, 0, cv.width, cv.height)
   L.forEach((ln, i) => {
     const isTitle = i === 0, isSec = ln.startsWith('【')
-    g.fillStyle = isTitle ? '#B3261E' : isSec ? '#1d4e79' : '#22303f'
+    g.fillStyle = isTitle ? '#F92A1B' : isSec ? '#1d4e79' : '#22303f'
     g.font = (isTitle ? '900 30px' : isSec ? '800 24px' : '500 20px') + ' "PingFang TC",system-ui,sans-serif'
     g.fillText(ln, pad, pad + lh * i + 22)
   })
