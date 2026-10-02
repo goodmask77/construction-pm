@@ -35,11 +35,11 @@ function TaskAttach({ files = [], onChange, canEdit, C, line }) {
         <span key={r.id} style={{ position: "relative", display: "inline-flex" }}>
           {r.isImage
             ? <img src={r.url} alt="" onClick={() => setLb(r)} style={{ width: 52, height: 52, objectFit: "cover", borderRadius: 6, border: `1px solid ${line}`, cursor: "zoom-in" }} />
-            : <a href={r.url} target="_blank" rel="noreferrer" title={r.name} style={{ display: "inline-flex", flexDirection: "column", alignItems: "center", justifyContent: "center", width: 52, height: 52, borderRadius: 6, border: `1px solid ${line}`, textDecoration: "none", fontSize: 18 }}>📄<span style={{ fontSize: 8.5, color: "#8a8171", maxWidth: 46, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.name}</span></a>}
+            : <a href={r.url} target="_blank" rel="noreferrer" title={r.name} style={{ display: "inline-flex", flexDirection: "column", alignItems: "center", justifyContent: "center", width: 52, height: 52, borderRadius: 6, border: `1px solid ${line}`, textDecoration: "none", fontSize: 18 }}>📄<span style={{ fontSize: 8.5, color: OPS_DARK ? "#8C98A8" : "#8a8171", maxWidth: 46, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.name}</span></a>}
           {canEdit && <button onClick={() => { if (window.confirm("移除這個附件？")) onChange((files || []).filter(x => x.id !== r.id)); }} style={{ position: "absolute", top: -6, right: -6, width: 17, height: 17, borderRadius: 9, border: "1.5px solid #fff", background: "#b3261e", color: "#fff", fontSize: 11, lineHeight: "14px", cursor: "pointer", padding: 0 }}>×</button>}
         </span>
       ))}
-      {canEdit && <button onClick={() => inputRef.current?.click()} title="點選檔上傳；或直接 Cmd+V 貼截圖" style={{ border: `1.5px dashed ${line}`, background: "#fff", color: "#8a8171", borderRadius: 6, width: 52, height: 52, fontSize: 12, cursor: "pointer", lineHeight: 1.3 }}>{busy ? "…" : <>＋<br />貼/傳</>}</button>}
+      {canEdit && <button onClick={() => inputRef.current?.click()} title="點選檔上傳；或直接 Cmd+V 貼截圖" style={{ border: `1.5px dashed ${line}`, background: OPS_DARK ? "#1C232E" : "#fff", color: OPS_DARK ? "#8C98A8" : "#8a8171", borderRadius: 6, width: 52, height: 52, fontSize: 12, cursor: "pointer", lineHeight: 1.3 }}>{busy ? "…" : <>＋<br />貼/傳</>}</button>}
       {lb && <div onClick={() => setLb(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.85)", zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center", padding: 20, cursor: "zoom-out" }}><img src={lb.url} alt={lb.name} style={{ maxWidth: "95%", maxHeight: "95%", objectFit: "contain", borderRadius: 8 }} /></div>}
     </div>
   );
@@ -67,6 +67,14 @@ const C = OPS_DARK ? {
   accentSoft: "#fbeee6",
   green: "#3f7d4e", amber: "#c98a14", red: "#b3261e",
 };
+// /prep 深色治本（2026-10-02 張良「切進任務頁先卡住出現以前的黃底」）：骨架/白底/淡色標籤全在源頭做深色對應，不再靠 ops-tasks.html 執行期改色器掃
+const DARKMAP = { "#fef2f2": "#2A181A", "#fff7ed": "#2A2012", "#fefce8": "#2A2612", "#f0fdf4": "#142414", "#eff6ff": "#13202E", "#faf5ff": "#211A2E", "#f5f5f5": "#1F242B", "#fde8e6": "#2A181A", "#fdf1dd": "#2A2012", "#faf6d8": "#2A2612", "#e9f2e4": "#142414", "#e6eef6": "#13202E", "#efe8f6": "#211A2E" };
+const tcolMap = (c) => (OPS_DARK && c ? (DARKMAP[String(c).toLowerCase()] || c) : (c || "")); // 存檔的淡色底→同色系深色
+const WHT = OPS_DARK ? "#1C232E" : "#fff";    // 原本寫死白底的卡片/按鈕/輸入框
+const MOD = OPS_DARK ? "#222B38" : "#fff";    // 彈窗面板（跟看板彈窗同色）
+const CBR = OPS_DARK ? "#3B4654" : "#c8bca6"; // 小卡邊框
+const PTX = OPS_DARK ? "#C7D0DB" : "#404040"; // pill 文字
+const FNT = OPS_DARK ? "#8C98A8" : "#8a8171"; // 淡字（附件名/貼傳鈕）
 const STATUS = [["todo", "待辦", "#9b9384"], ["doing", "進行中", "#3a6ea5"], ["done", "完成", "#3f7d4e"]];
 const PRIO = [["urgent", "超急", "#b3261e"], ["high", "高", "#c98a14"], ["normal", "一般", "#5a5247"], ["low", "低", "#9b9384"]];
 const sLabel = (s) => (STATUS.find(x => x[0] === s) || STATUS[0])[1];
@@ -76,13 +84,13 @@ const INBOX = "__inbox__";
 const rid = () => "t-" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
 const today = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; }; // 本地日期（不能用 toISOString＝UTC，台灣早上會慢一天）
 const dnorm = (v) => String(v ?? "").replace(/\//g, "-").slice(0, 10);
-const inp = { border: `1px solid ${C.line}`, borderRadius: 8, padding: "7px 10px", fontSize: 13, background: "#fff", color: C.text, boxSizing: "border-box", outline: "none" };
-const dateInp = { ...inp, colorScheme: "light", fontFamily: "'Noto Sans TC',sans-serif", cursor: "pointer" };
+const inp = { border: `1px solid ${C.line}`, borderRadius: 8, padding: "7px 10px", fontSize: 13, background: WHT, color: C.text, boxSizing: "border-box", outline: "none" };
+const dateInp = { ...inp, colorScheme: OPS_DARK ? "dark" : "light", fontFamily: "'Noto Sans TC',sans-serif", cursor: "pointer" };
 // 欄位小標：小號、加字距、淺灰（規格招牌手法）
 const lbl = { display: "block", fontSize: 11, letterSpacing: 0.5, color: C.faint, fontWeight: 500, marginBottom: 10 };
 // 狀態徽章：灰底 + 彩色小圓點 + 文字（不用大色塊）
 const Pill = ({ color, label }) => (
-  <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 11, color: "#404040", background: C.soft, borderRadius: 999, padding: "2px 8px", whiteSpace: "nowrap" }}>
+  <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 11, color: PTX, background: C.soft, borderRadius: 999, padding: "2px 8px", whiteSpace: "nowrap" }}>
     <span style={{ width: 6, height: 6, borderRadius: "50%", background: color, flexShrink: 0 }} />{label}
   </span>
 );
@@ -254,7 +262,7 @@ export default function TaskCenter({ K, confirm, canEdit, cats, onLog, onAddCat,
   // 載入中：skeleton（規格：淺灰佔位塊，不用轉圈）
   if (tasks === null) return (
     <div style={{ maxWidth: 1240, margin: "6px auto", padding: "0 4px" }}>
-      {[38, 120, 120].map((h, i) => <div key={i} style={{ height: h, background: "#e6ddc9", borderRadius: 8, marginBottom: 12 }} />)}
+      {[38, 120, 120].map((h, i) => <div key={i} style={{ height: h, background: OPS_DARK ? "#1C222B" : "#e6ddc9", borderRadius: 8, marginBottom: 12 }} />)}
     </div>
   );
 
@@ -281,12 +289,12 @@ export default function TaskCenter({ K, confirm, canEdit, cats, onLog, onAddCat,
           // 已完成：沉下去（透明底＋虛線框＋降透明度、無陰影）——跟待辦一眼分開
           ? { background: "transparent", border: `1px dashed ${C.line}`, borderRadius: 8, padding: "5px 8px", marginBottom: 5, cursor: canEdit ? "grab" : "pointer", opacity: drag === t.id ? 0.4 : 0.6 }
           // 待辦：浮起來（白底/色底＋硬框＋紙感陰影，懸停再浮一點）；2026-09-10 緊湊化（張良：卡片空白越少越好）；今日必處理＝紅框紅光
-          : { background: t.color || "#fff", border: hot ? "1.5px solid #d4161d" : "1.5px solid #c8bca6", borderRadius: 8, padding: "5px 8px", marginBottom: 5, cursor: canEdit ? "grab" : "pointer", opacity: drag === t.id ? 0.4 : 1, boxShadow: baseShadow, transition: "box-shadow .12s, transform .12s" }}
+          : { background: tcolMap(t.color) || WHT, border: hot ? "1.5px solid #d4161d" : `1.5px solid ${CBR}`, borderRadius: 8, padding: "5px 8px", marginBottom: 5, cursor: canEdit ? "grab" : "pointer", opacity: drag === t.id ? 0.4 : 1, boxShadow: baseShadow, transition: "box-shadow .12s, transform .12s" }}
         onMouseEnter={e => { hoverCardRef.current = t.id; if (!done) { e.currentTarget.style.boxShadow = hot ? "0 0 0 2px rgba(212,22,29,.28), 0 4px 14px rgba(212,22,29,.4)" : "0 3px 10px rgba(29,26,21,.16)"; e.currentTarget.style.transform = "translateY(-1px)"; } }}
         onMouseLeave={e => { if (hoverCardRef.current === t.id) hoverCardRef.current = null; if (!done) { e.currentTarget.style.boxShadow = baseShadow; e.currentTarget.style.transform = "none"; } }}>
         <div style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
           <button onClick={e => { e.stopPropagation(); if (guard()) upd(t.id, { status: done ? "todo" : "done" }); }}
-            title="切換完成" style={{ flexShrink: 0, width: 16, height: 16, marginTop: 2, borderRadius: 4, border: `1px solid ${done ? C.green : "#c8bca6"}`, background: done ? C.green : "#fff", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", padding: 0 }}>{done && <Check size={11} color="#fff" strokeWidth={3} />}</button>
+            title="切換完成" style={{ flexShrink: 0, width: 16, height: 16, marginTop: 2, borderRadius: 4, border: `1px solid ${done ? C.green : CBR}`, background: done ? C.green : WHT, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", padding: 0 }}>{done && <Check size={11} color="#fff" strokeWidth={3} />}</button>
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 12.5, color: done ? C.faint : C.text, textDecoration: done ? "line-through" : "none", lineHeight: 1.35, wordBreak: "break-word" }}>
               {t.priority === "urgent" && <Flame size={12} color={C.red} style={{ flexShrink: 0 }} />}{t.title}
@@ -305,7 +313,7 @@ export default function TaskCenter({ K, confirm, canEdit, cats, onLog, onAddCat,
               {t.prepPending === 1 && !done && <Pill color={C.amber} label="🕐 待審核" />}
               {t.prepPub === "pending" && <Pill color={C.amber} label="等發布" />}
               {canEdit && !done && !t.claimBy && userName && <button onClick={e => { e.stopPropagation(); if (guard()) upd(t.id, { claimBy: userName, claimAt: Date.now(), status: "doing" }); }} style={{ border: "1px solid #9ec5e8", background: "#eaf2fa", color: "#1d4e79", borderRadius: 999, padding: "0 8px", fontSize: 10.5, fontWeight: 700, cursor: "pointer" }}>🙋 我來解決</button>}
-              {canEdit && !done && t.claimBy === userName && userName && <button onClick={e => { e.stopPropagation(); if (guard()) upd(t.id, { claimBy: "", claimAt: null, status: "todo" }); }} style={{ border: "1px solid #d9cfbd", background: "#fff", color: "#8a7a5e", borderRadius: 999, padding: "0 8px", fontSize: 10.5, cursor: "pointer" }}>放棄</button>}
+              {canEdit && !done && t.claimBy === userName && userName && <button onClick={e => { e.stopPropagation(); if (guard()) upd(t.id, { claimBy: "", claimAt: null, status: "todo" }); }} style={{ border: `1px solid ${C.line}`, background: WHT, color: FNT, borderRadius: 999, padding: "0 8px", fontSize: 10.5, cursor: "pointer" }}>放棄</button>}
             </div>
             {/* 卡上照片（張良 2026-09-10：貼上就要看得到）：第一張當封面、其餘小縮圖；已完成不佔版面 */}
             {!done && (t.files || []).some(f => f.isImage) && (() => {
@@ -347,7 +355,7 @@ export default function TaskCenter({ K, confirm, canEdit, cats, onLog, onAddCat,
 
   const TABS = [["group", "依大項", LayoutGrid], ["board", "看板", Columns3], ["list", "清單", List], ["timeline", "時間軸", CalendarDays], ["gantt", "甘特", ChartGantt], ["mind", "心智圖", Network]];
   const Tab = (k, l, Icon) => (
-    <button key={k} onClick={() => setView(k)} style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "6px 12px", borderRadius: 6, border: `1px solid ${view === k ? C.line : "transparent"}`, background: view === k ? "#fff" : "transparent", color: view === k ? C.text : C.sub, fontSize: 13, fontWeight: view === k ? 600 : 400, cursor: "pointer" }}>
+    <button key={k} onClick={() => setView(k)} style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "6px 12px", borderRadius: 6, border: `1px solid ${view === k ? C.line : "transparent"}`, background: view === k ? WHT : "transparent", color: view === k ? C.text : C.sub, fontSize: 13, fontWeight: view === k ? 600 : 400, cursor: "pointer" }}>
       <Icon size={14} strokeWidth={1.75} />{l}
     </button>
   );
@@ -379,12 +387,12 @@ export default function TaskCenter({ K, confirm, canEdit, cats, onLog, onAddCat,
             <ArrowUpDown size={12} color={C.faint} style={{ margin: "0 2px 0 7px" }} />
             {[["manual", "手動"], ["due", "日期"], ["prio", "重要度"]].map(([k, l]) => { // 清單也開放手動拖曳排序（張良 2026-09-10）
               const act = sortMode === k;
-              return <button key={k} onClick={() => setSortMode(k)} style={{ padding: "5px 10px", borderRadius: 6, border: `1px solid ${act ? C.line : "transparent"}`, background: act ? "#fff" : "transparent", color: act ? C.text : C.sub, fontSize: 12, fontWeight: act ? 600 : 400, cursor: "pointer" }}>{l}</button>;
+              return <button key={k} onClick={() => setSortMode(k)} style={{ padding: "5px 10px", borderRadius: 6, border: `1px solid ${act ? C.line : "transparent"}`, background: act ? WHT : "transparent", color: act ? C.text : C.sub, fontSize: 12, fontWeight: act ? 600 : 400, cursor: "pointer" }}>{l}</button>;
             })}
           </div>
         )}
         {/* Today 是 Home（落地頁），不是第七個並列視角 → 獨立按鈕放在視角切換器外面 */}
-        <button onClick={() => setView("today")} style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "7px 14px", borderRadius: 8, border: `1px solid ${view === "today" ? C.accent : C.line}`, background: view === "today" ? C.accent : "#fff", color: view === "today" ? "#fff" : C.sub, fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
+        <button onClick={() => setView("today")} style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "7px 14px", borderRadius: 8, border: `1px solid ${view === "today" ? C.accent : C.line}`, background: view === "today" ? C.accent : WHT, color: view === "today" ? "#fff" : C.sub, fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
           <Home size={14} strokeWidth={1.75} />今日
         </button>
         <div style={{ display: "inline-flex", background: C.soft, border: `1px solid ${C.line}`, borderRadius: 8, padding: 2, gap: 2, flexWrap: "wrap" }}>
@@ -503,7 +511,7 @@ export default function TaskCenter({ K, confirm, canEdit, cats, onLog, onAddCat,
                     {rows.map(r => (
                       <div key={r.c.id} style={{ display: "flex", alignItems: "center", gap: 10 }}>
                         <span style={{ width: 130, flexShrink: 0, fontSize: 12.5, fontWeight: 600, color: C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.c.name}</span>
-                        <div style={{ flex: 1, height: 8, background: "#e6ddc9", borderRadius: 6, overflow: "hidden" }}>
+                        <div style={{ flex: 1, height: 8, background: OPS_DARK ? "#1C222B" : "#e6ddc9", borderRadius: 6, overflow: "hidden" }}>
                           <div style={{ width: r.pct + "%", height: "100%", background: r.pct === 100 ? C.green : "#3a6ea5", borderRadius: 6 }} />
                         </div>
                         <span style={{ fontFamily: MONO, fontSize: 12, fontWeight: 700, color: C.text, width: 44, textAlign: "right", flexShrink: 0 }}>{r.pct}%</span>
@@ -535,7 +543,7 @@ export default function TaskCenter({ K, confirm, canEdit, cats, onLog, onAddCat,
         const gName = (g, slim) => {
           if (editCat?.id === g.id) return <input autoFocus value={editCat.name} onChange={e => setEditCat({ ...editCat, name: e.target.value })}
             onKeyDown={e => { if (e.key === "Enter" && !e.nativeEvent.isComposing && e.keyCode !== 229) commitCatName(); if (e.key === "Escape") setEditCat(null); }} onBlur={commitCatName}
-            style={{ fontSize: slim ? 12.5 : 13, fontWeight: 600, color: C.text, border: `1px solid ${C.line}`, borderRadius: 6, padding: "1px 6px", background: "#fff", outline: "none", minWidth: 0, width: 130 }} />;
+            style={{ fontSize: slim ? 12.5 : 13, fontWeight: 600, color: C.text, border: `1px solid ${C.line}`, borderRadius: 6, padding: "1px 6px", background: WHT, outline: "none", minWidth: 0, width: 130 }} />;
           const editable = canEdit && onRenameCat && g.id !== INBOX;
           return <div title={editable ? "點我改大項名稱" : undefined} onClick={editable ? () => setEditCat({ id: g.id, name: g.name }) : undefined}
             style={{ fontSize: slim ? 12.5 : 13, fontWeight: 600, color: g.id === INBOX ? C.accent : slim ? C.sub : C.text, whiteSpace: "nowrap", cursor: editable ? "text" : "default" }}>{g.name}</div>;
@@ -557,13 +565,13 @@ export default function TaskCenter({ K, confirm, canEdit, cats, onLog, onAddCat,
         // 大項調色鈕（張良 2026-09-10）：點小圓點→展開 7 色，同色＝同區塊好辨識（例：採購-廚房、採購-器具都選杏）
         const catColorBtn = (g) => canEdit && onSetCatColor && g.id !== INBOX && (
           <button onClick={e => { e.stopPropagation(); setColorCat(colorCat === g.id ? null : g.id); }} title="大項顏色"
-            style={{ marginLeft: "auto", flexShrink: 0, width: 15, height: 15, borderRadius: "50%", background: g.color || "#fff", border: `1.5px solid ${C.line}`, cursor: "pointer", padding: 0 }} />
+            style={{ marginLeft: "auto", flexShrink: 0, width: 15, height: 15, borderRadius: "50%", background: tcolMap(g.color) || WHT, border: `1.5px solid ${C.line}`, cursor: "pointer", padding: 0 }} />
         );
         const catPalette = (g) => colorCat === g.id && (
           <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap", margin: "2px 2px 8px" }}>
             {PALETTE.map(([cv, cl]) => (
               <button key={cl} title={cl} onClick={e => { e.stopPropagation(); onSetCatColor(g.id, cv); setColorCat(null); }}
-                style={{ width: 21, height: 21, borderRadius: "50%", background: cv || "#fff", cursor: "pointer", padding: 0,
+                style={{ width: 21, height: 21, borderRadius: "50%", background: cv || WHT, cursor: "pointer", padding: 0,
                   border: (g.color || "") === cv ? "2.5px solid #d4161d" : `1.5px solid ${C.line}` }} />
             ))}
           </div>
@@ -582,7 +590,7 @@ export default function TaskCenter({ K, confirm, canEdit, cats, onLog, onAddCat,
         );
         // 大項卡（照片牆用同一顆）
         const groupCard = ({ g, items }) => catWrap(g, DropZone({ keyId: g.id, onDropHere: () => moveTo(drag, { catId: g.id }),
-          style: { background: g.color || C.card, border: `1px solid ${C.line}`, borderRadius: 8, padding: 8 },
+          style: { background: tcolMap(g.color) || C.card, border: `1px solid ${C.line}`, borderRadius: 8, padding: 8 },
           children: <>
             {catHead(g, vis(items))}
             {catPalette(g)}
@@ -600,7 +608,7 @@ export default function TaskCenter({ K, confirm, canEdit, cats, onLog, onAddCat,
             <div style={{ fontSize: 10.5, letterSpacing: 0.5, fontWeight: 500, color: C.faint, marginBottom: 6, padding: "0 2px" }}>沒有任務的大項（拖任務進來就會長出去）</div>
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
               {empties.map(({ g, items }) => catWrap(g, DropZone({ keyId: g.id, onDropHere: () => moveTo(drag, { catId: g.id }),
-                style: { background: g.color || C.card, border: `1px solid ${C.line}`, borderRadius: 8, padding: "6px 8px" },
+                style: { background: tcolMap(g.color) || C.card, border: `1px solid ${C.line}`, borderRadius: 8, padding: "6px 8px" },
                 children: (<>
                   <div draggable={canDragCat(g)}
                     onDragStart={e => { if (!canDragCat(g)) return; e.stopPropagation(); setDragCat(g.id); e.dataTransfer.effectAllowed = "move"; }}
@@ -645,7 +653,7 @@ export default function TaskCenter({ K, confirm, canEdit, cats, onLog, onAddCat,
             {/* 已完成＝封存：預設隱藏，這裡切換（張良 2026-09-10） */}
             {(doneTotal > 0 || showDone) && (
               <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 8 }}>
-                <button onClick={() => setShowDone(!showDone)} style={{ display: "inline-flex", alignItems: "center", gap: 5, border: `1px solid ${showDone ? C.green : C.line}`, background: showDone ? "#eef4ee" : "#fff", color: showDone ? C.green : C.sub, borderRadius: 999, padding: "3px 12px", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
+                <button onClick={() => setShowDone(!showDone)} style={{ display: "inline-flex", alignItems: "center", gap: 5, border: `1px solid ${showDone ? C.green : C.line}`, background: showDone ? (OPS_DARK ? "#16281C" : "#eef4ee") : WHT, color: showDone ? C.green : C.sub, borderRadius: 999, padding: "3px 12px", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
                   <Check size={12} strokeWidth={2.5} />已完成 {doneTotal}{showDone ? "・點我收起" : "・點我顯示"}
                 </button>
               </div>
@@ -700,7 +708,7 @@ export default function TaskCenter({ K, confirm, canEdit, cats, onLog, onAddCat,
             <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 10, flexWrap: "wrap" }}>
               <div style={{ display: "inline-flex", background: C.soft, border: `1px solid ${C.line}`, borderRadius: 8, padding: 2, gap: 2 }}>
                 {[["open", "未完成"], ["all", "全部"], ["done", "已完成"]].map(([k, l]) => (
-                  <button key={k} onClick={() => setFStatus(k)} style={{ padding: "5px 12px", borderRadius: 6, border: `1px solid ${fStatus === k ? C.line : "transparent"}`, background: fStatus === k ? "#fff" : "transparent", color: fStatus === k ? C.text : C.sub, fontSize: 12.5, fontWeight: fStatus === k ? 600 : 400, cursor: "pointer" }}>{l}</button>
+                  <button key={k} onClick={() => setFStatus(k)} style={{ padding: "5px 12px", borderRadius: 6, border: `1px solid ${fStatus === k ? C.line : "transparent"}`, background: fStatus === k ? WHT : "transparent", color: fStatus === k ? C.text : C.sub, fontSize: 12.5, fontWeight: fStatus === k ? 600 : 400, cursor: "pointer" }}>{l}</button>
                 ))}
               </div>
             </div>
@@ -733,10 +741,10 @@ export default function TaskCenter({ K, confirm, canEdit, cats, onLog, onAddCat,
                                 onDragOver={e => { if (drag && sortMode === "manual") e.preventDefault(); }}
                                 onDrop={e => { if (drag && sortMode === "manual") { e.preventDefault(); moveTo(drag, { beforeId: t.id }); setDrag(null); setOverKey(null); } }}
                                 title={canEdit && sortMode === "manual" ? "拖我排序（丟到目標列＝排到它上面）" : undefined}
-                                onMouseEnter={e => e.currentTarget.style.background = t.color || C.bg} onMouseLeave={e => e.currentTarget.style.background = t.color || C.card}
-                                style={{ display: "grid", gridTemplateColumns: GTC, alignItems: "center", height: 36, borderTop: i ? `1px solid ${C.line}` : "none", cursor: canEdit && sortMode === "manual" ? "grab" : "pointer", background: t.color || C.card, opacity: drag === t.id ? 0.4 : 1 }}>
+                                onMouseEnter={e => e.currentTarget.style.background = tcolMap(t.color) || C.bg} onMouseLeave={e => e.currentTarget.style.background = tcolMap(t.color) || C.card}
+                                style={{ display: "grid", gridTemplateColumns: GTC, alignItems: "center", height: 36, borderTop: i ? `1px solid ${C.line}` : "none", cursor: canEdit && sortMode === "manual" ? "grab" : "pointer", background: tcolMap(t.color) || C.card, opacity: drag === t.id ? 0.4 : 1 }}>
                                 <div style={{ display: "flex", justifyContent: "center" }}>
-                                  <button onClick={e => { e.stopPropagation(); if (guard()) upd(t.id, { status: done ? "todo" : "done" }); }} style={{ width: 15, height: 15, borderRadius: 4, border: `1px solid ${done ? C.green : "#c8bca6"}`, background: done ? C.green : "#fff", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", padding: 0 }}>{done && <Check size={10} color="#fff" strokeWidth={3} />}</button>
+                                  <button onClick={e => { e.stopPropagation(); if (guard()) upd(t.id, { status: done ? "todo" : "done" }); }} style={{ width: 15, height: 15, borderRadius: 4, border: `1px solid ${done ? C.green : CBR}`, background: done ? C.green : WHT, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", padding: 0 }}>{done && <Check size={10} color="#fff" strokeWidth={3} />}</button>
                                 </div>
                                 <div style={{ display: "flex", alignItems: "center", gap: 5, padding: "0 8px", fontSize: 13, color: done ? C.faint : C.text, textDecoration: done ? "line-through" : "none", overflow: "hidden", whiteSpace: "nowrap" }}>
                                   {t.pinned && <Pin size={11} color={C.accent} fill={C.accent} style={{ flexShrink: 0 }} />}
@@ -834,8 +842,8 @@ export default function TaskCenter({ K, confirm, canEdit, cats, onLog, onAddCat,
                   const left = Math.min(s, e), width = Math.abs(e - s) + 1;
                   return (
                     <div key={t.id} onClick={() => setSel(t.id)}
-                      onMouseEnter={ev => ev.currentTarget.style.background = t.color || C.bg} onMouseLeave={ev => ev.currentTarget.style.background = t.color || "#fff"}
-                      style={{ display: "flex", alignItems: "center", borderTop: i ? `1px solid ${C.soft}` : "none", cursor: "pointer", background: t.color || "#fff" }}>
+                      onMouseEnter={ev => ev.currentTarget.style.background = tcolMap(t.color) || C.bg} onMouseLeave={ev => ev.currentTarget.style.background = tcolMap(t.color) || WHT}
+                      style={{ display: "flex", alignItems: "center", borderTop: i ? `1px solid ${C.soft}` : "none", cursor: "pointer", background: tcolMap(t.color) || WHT }}>
                       {/* 張良 2026-07-26 手機版全面體檢：手機左欄縮窄、任務名縮字並用 span 包住才吃得到 ellipsis；手機省略「・大項」後綴 */}
                       <div style={{ width: nameW, flexShrink: 0, borderRight: `1px solid ${C.line}`, padding: "7px 10px", fontSize: isMobile ? 11 : 12.5, color: t.status === "done" ? C.faint : C.text, overflow: "hidden", whiteSpace: "nowrap", display: "flex", alignItems: "center", gap: 4, position: "sticky", left: 0, background: "inherit", zIndex: 2 }}>{t.priority === "urgent" && <Flame size={11} color={C.red} style={{ flexShrink: 0 }} />}<span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>{t.title}</span>{!isMobile && <span style={{ fontSize: 10.5, color: C.faint, flexShrink: 0 }}>・{catName(t.catId)}</span>}</div>
                       <div style={{ position: "relative", height: 30, flex: 1 }}>
@@ -876,7 +884,7 @@ export default function TaskCenter({ K, confirm, canEdit, cats, onLog, onAddCat,
                     <div style={{ width: 1, height: 10, background: C.line }} />
                     <div style={{ display: "flex", flexDirection: "column", gap: 7, width: "100%" }}>
                       {items.map(t => (
-                        <div key={t.id} onClick={() => setSel(t.id)} style={{ display: "flex", alignItems: "center", gap: 5, background: t.color || C.card, border: `1px solid ${C.line}`, borderRadius: 8, padding: "6px 10px", fontSize: 12.5, color: t.status === "done" ? C.faint : C.text, textDecoration: t.status === "done" ? "line-through" : "none", cursor: "pointer" }}>
+                        <div key={t.id} onClick={() => setSel(t.id)} style={{ display: "flex", alignItems: "center", gap: 5, background: tcolMap(t.color) || C.card, border: `1px solid ${C.line}`, borderRadius: 8, padding: "6px 10px", fontSize: 12.5, color: t.status === "done" ? C.faint : C.text, textDecoration: t.status === "done" ? "line-through" : "none", cursor: "pointer" }}>
                           <span style={{ width: 6, height: 6, borderRadius: "50%", background: sColor(t.status), flexShrink: 0 }} />
                           {t.pinned && <Pin size={11} color={C.accent} fill={C.accent} style={{ flexShrink: 0 }} />}
                           {t.priority === "urgent" && <Flame size={11} color={C.red} style={{ flexShrink: 0 }} />}{t.title}
@@ -897,7 +905,7 @@ export default function TaskCenter({ K, confirm, canEdit, cats, onLog, onAddCat,
         const F = (label, node) => <label style={lbl}>{label}<div style={{ marginTop: 5 }}>{node}</div></label>;
         return (
           <div onClick={e => e.target === e.currentTarget && setSel(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.35)", zIndex: 700, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
-            <div style={{ background: "#fff", border: `1px solid ${C.line}`, borderRadius: 12, padding: 24, width: "min(560px,96vw)", maxHeight: "90vh", overflowY: "auto" }}>
+            <div style={{ background: MOD, border: `1px solid ${C.line}`, borderRadius: 12, padding: 24, width: "min(560px,96vw)", maxHeight: "90vh", overflowY: "auto" }}>
               <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16 }}>
                 <div style={{ fontSize: 15, fontWeight: 600, color: C.text }}>任務詳情</div>
                 <div style={{ flex: 1 }} />
@@ -921,7 +929,7 @@ export default function TaskCenter({ K, confirm, canEdit, cats, onLog, onAddCat,
                 {F("卡片顏色（視覺分類）", <div style={{ display: "flex", gap: 7, alignItems: "center", flexWrap: "wrap", paddingTop: 3 }}>
                   {[["", "白"], ["#fde8e6", "紅"], ["#fdf1dd", "杏"], ["#faf6d8", "黃"], ["#e9f2e4", "綠"], ["#e6eef6", "藍"], ["#efe8f6", "紫"]].map(([cv, cl]) => (
                     <button key={cl} title={cl} disabled={!canEdit} onClick={() => upd(t.id, { color: cv })}
-                      style={{ width: 24, height: 24, borderRadius: "50%", background: cv || "#fff", cursor: canEdit ? "pointer" : "default", padding: 0,
+                      style={{ width: 24, height: 24, borderRadius: "50%", background: cv || WHT, cursor: canEdit ? "pointer" : "default", padding: 0,
                         border: (t.color || "") === cv ? "2.5px solid #d4161d" : `1.5px solid ${C.line}`, boxShadow: (t.color || "") === cv ? "0 0 0 2px rgba(212,22,29,.15)" : "none" }} />
                   ))}
                 </div>)}
@@ -936,7 +944,7 @@ export default function TaskCenter({ K, confirm, canEdit, cats, onLog, onAddCat,
                         const d = tasks.find(x => x.id === id);
                         const isMissing = !d;
                         return (
-                          <span key={id} style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 12, color: isMissing ? C.red : "#404040", background: isMissing ? "#fef2f2" : C.soft, border: `1px solid ${isMissing ? "#fecaca" : C.line}`, borderRadius: 999, padding: "3px 10px" }}>
+                          <span key={id} style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 12, color: isMissing ? C.red : PTX, background: isMissing ? (OPS_DARK ? "#2A181A" : "#fef2f2") : C.soft, border: `1px solid ${isMissing ? (OPS_DARK ? "#5A3A3A" : "#fecaca") : C.line}`, borderRadius: 999, padding: "3px 10px" }}>
                             {isMissing ? <><CircleAlert size={12} />失效依賴</> : <>{d.status === "done" ? <Check size={12} color={C.green} /> : <span style={{ width: 6, height: 6, borderRadius: "50%", background: sColor(d.status) }} />}{d.title}</>}
                             {canEdit && <button onClick={() => upd(t.id, { dependsOn: deps.filter(x => x !== id) })} style={{ background: "none", border: "none", cursor: "pointer", color: C.faint, padding: 0, display: "flex" }}><X size={12} /></button>}
                           </span>
@@ -963,7 +971,7 @@ export default function TaskCenter({ K, confirm, canEdit, cats, onLog, onAddCat,
                 <div>
                   <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: (t.tags || []).length ? 8 : 0 }}>
                     {(t.tags || []).map(tg => (
-                      <span key={tg} style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 12, color: "#404040", background: C.soft, border: `1px solid ${C.line}`, borderRadius: 999, padding: "3px 10px" }}>
+                      <span key={tg} style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 12, color: PTX, background: C.soft, border: `1px solid ${C.line}`, borderRadius: 999, padding: "3px 10px" }}>
                         {tg}{canEdit && <button onClick={() => upd(t.id, { tags: (t.tags || []).filter(x => x !== tg) })} style={{ background: "none", border: "none", cursor: "pointer", color: C.faint, padding: 0, display: "flex" }}><X size={12} /></button>}
                       </span>
                     ))}
@@ -976,7 +984,7 @@ export default function TaskCenter({ K, confirm, canEdit, cats, onLog, onAddCat,
                   {TASK_COLORS.map(c => {
                     const sel = (t.color || "") === c;
                     return <button key={c || "none"} disabled={!canEdit} onClick={() => upd(t.id, { color: c })} title={c ? "" : "無顏色"}
-                      style={{ width: 26, height: 26, borderRadius: "50%", cursor: canEdit ? "pointer" : "default", background: c || "#fff", border: `2px solid ${sel ? C.accent : C.line}`, display: "flex", alignItems: "center", justifyContent: "center", padding: 0 }}>
+                      style={{ width: 26, height: 26, borderRadius: "50%", cursor: canEdit ? "pointer" : "default", background: c || WHT, border: `2px solid ${sel ? C.accent : C.line}`, display: "flex", alignItems: "center", justifyContent: "center", padding: 0 }}>
                       {!c && <X size={11} color={C.faint} />}{c && sel && <Check size={12} color={C.accent} strokeWidth={3} />}
                     </button>;
                   })}
