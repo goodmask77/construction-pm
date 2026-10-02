@@ -2389,7 +2389,7 @@ export default async function handler(req, res) {
         for (const [ci, v] of Object.entries(ro || {})) { const n2 = Number(v) || 0; if (n2) r2[ci] = Math.max(0, Math.min(999999, n2)) }
         if (Object.keys(r2).length) rowsC[h] = r2
       }
-      const clean = { wage: Math.max(1, Math.min(9999, Number(shIn.wage) || 300)), id: shIn.id || 'lb' + Date.now().toString(36), name: String(shIn.name || '方案').slice(0, 20), cols: (Array.isArray(shIn.cols) ? shIn.cols : []).map(c => String(c).trim().slice(0, 12)).filter(Boolean).slice(0, 20), rows: rowsC, by: whoL.name, ts: new Date().toISOString() }
+      const clean = { wage: Math.max(1, Math.min(9999, Number(shIn.wage) || 300)), pct: Math.max(1, Math.min(99, Number(shIn.pct) || 20)), id: shIn.id || 'lb' + Date.now().toString(36), name: String(shIn.name || '方案').slice(0, 20), cols: (Array.isArray(shIn.cols) ? shIn.cols : []).map(c => String(c).trim().slice(0, 12)).filter(Boolean).slice(0, 20), rows: rowsC, by: whoL.name, ts: new Date().toISOString() }
       doc.sheets = [...(doc.sheets || []).filter(x => x.id !== clean.id), clean].slice(-20)
       await kvPut('sp_finance_pm_labor', doc, '工時成本 ' + clean.name + '(' + whoL.name + ')')
       return res.status(200).json({ ok: true, id: clean.id })

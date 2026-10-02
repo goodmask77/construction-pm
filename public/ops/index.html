@@ -2344,7 +2344,7 @@ function lbUndo(){ const sn=_lbUndo.pop(); if(!sn){ alert('沒有可復原的步
   sh.cols=o.cols; sh.rows=o.rows; laborCur=o.id; laborRender(); lbSave() }
 function lbSave(){ clearTimeout(_lbSaveT); _lbSaveT = setTimeout(async()=>{
   const sh = lbSheet(); if (!sh) return
-  const r = await fetch('/api/mail-sync?laborset=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ op:'save', sheet:{ id:sh.id, name:sh.name, cols:sh.cols, rows:sh.rows||{}, wage:sh.wage||300 }, token: TK() }) }).then(r2=>r2.json()).catch(()=>null)
+  const r = await fetch('/api/mail-sync?laborset=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ op:'save', sheet:{ id:sh.id, name:sh.name, cols:sh.cols, rows:sh.rows||{}, wage:sh.wage||300, pct:sh.pct||20 }, token: TK() }) }).then(r2=>r2.json()).catch(()=>null)
   if (!r || !r.ok) alert((r&&r.error)||'工時成本沒存成功——確認有綁定/權限後再改一次')
 }, 600) }
 function laborRender(){
@@ -2388,6 +2388,11 @@ function laborRender(){
   ${cols.map((_,ci)=>`<td style="padding:6px 8px;text-align:center;font-weight:900;background:var(--soft);white-space:nowrap">${fmtN(colSum(ci))}${colSum(ci)?`<div class="hint" style="font-weight:700;font-size:10.5px">${Math.round(colSum(ci)/(Number(sh.wage)||300)*10)/10}小時</div>`:''}</td>`).join('')}
   <td style="padding:6px 10px;text-align:right;font-weight:900;color:var(--red);background:var(--soft);font-size:15px;white-space:nowrap">${fmtN(grand)}${grand?`<div class="hint" style="font-weight:700;font-size:10.5px">${Math.round(grand/(Number(sh.wage)||300)*10)/10}小時</div>`:''}</td></tr>`
   h += `</tbody></table></div>
+  <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;background:var(--card);border:1.5px solid var(--line);border-radius:10px;padding:8px 12px;margin-top:8px;font-size:14px;font-weight:800">
+    <span>💰 總人事 <span style="color:var(--red)">${fmtN(grand)||0}</span><span class="hint" style="font-weight:700">（${Math.round(grand/(Number(sh.wage)||300)*10)/10} 小時）</span></span>
+    <span style="display:inline-flex;align-items:center;gap:4px">🎯 人事成本 <input value="${sh.pct||20}" inputmode="numeric" style="width:34px;border:none;background:transparent;color:var(--ink);font-size:14px;font-weight:900;text-align:center;outline:none;border-bottom:1.5px solid var(--primary)" onchange="lbPctSet(this.value)">%</span>
+    <span>→ 營業額要做到 <span style="color:var(--green);font-size:16px">${grand?('NT$'+fmtN(Math.ceil(grand/((Number(sh.pct)||20)/100)))):'—'}</span></span>
+  </div>
   <div class="hint" style="margin-top:4px">點格一下＝加 1 人（到 5 人再點＝清空）・按住拖＝複製・點欄頭/列頭＝清整欄/整列・↩️ 復原；欄位＝班表崗位（⚙️ 設定改）</div>`
   el.className = ''
   el.innerHTML = h
@@ -2433,6 +2438,7 @@ function lbCycle(h,c){ // v4.28.6（張良「不想key數字 也討厭跳出視�
   lbPushUndo(); lbSetV(sh,h,c,next*w); laborRender(); lbSave()
 }
 function lbWageSet(v){ const sh=lbSheet(); sh.wage=Math.max(1,Math.min(9999,Number(v)||300)); laborRender(); lbSave() }
+function lbPctSet(v){ const sh=lbSheet(); sh.pct=Math.max(1,Math.min(99,Number(v)||20)); laborRender(); lbSave() } // 🎯 人事成本%→反推營業額（張良 2026-10-03）
 const SLOT_DEF = [{n:'午峰',s:'11:00',e:'14:30'},{n:'離峰',s:'14:30',e:'17:30'},{n:'晚峰',s:'17:30',e:'20:00'},{n:'全日',s:'11:00',e:'20:00'}] // 預設照近30天單量尖峰切；⚙️可自訂
 function t24set(cls, v){
   const ov = document.getElementById('qkOv'); if (!ov) return
