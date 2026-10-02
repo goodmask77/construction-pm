@@ -1920,8 +1920,13 @@ function shiftRender(){
   { const tgtDate = window._shScrollTo ? (window._shScrollTo==='today' ? today : window._shScrollTo) : null; window._shScrollTo = null
     requestAnimationFrame(()=>{ try{ const box=document.getElementById('shBox'); if(!box)return
       if (!tgtDate && _prevAnchor){ const thP=box.querySelector('th[data-d="'+_prevAnchor.date+'"]'); if(thP){ box.scrollLeft += thP.getBoundingClientRect().left - box.getBoundingClientRect().left - _prevAnchor.vx; box.scrollTop = _prevTop; return } }
-      const th=box.querySelector('th[data-d="'+(tgtDate||today)+'"]')||box.querySelector('th[data-d="'+today+'"]')
-      if(th){ box.scrollLeft += th.getBoundingClientRect().left - box.getBoundingClientRect().left - 96 }
+      // v4.28.3（張良）：初始定位——手機=目標日的「昨天」靠左（回看昨天+看到今天）、電腦=往前四天開始
+      const base = tgtDate || today
+      const bk = new Date(base); bk.setDate(bk.getDate() - (window.innerWidth < 920 ? 1 : 4))
+      const bd = bk.toISOString().slice(0,10)
+      const th = box.querySelector('th[data-d="'+bd+'"]') || box.querySelector('th[data-d="'+base+'"]') || box.querySelector('th[data-d="'+today+'"]')
+      const stW = ((box.querySelector('thead th')||{}).offsetWidth) || 90 // 崗位凍結欄寬：目標欄貼齊它右邊
+      if(th){ box.scrollLeft += th.getBoundingClientRect().left - box.getBoundingClientRect().left - stW }
       if(_prevTop) box.scrollTop = _prevTop
     }catch(_){} })
   }
