@@ -2357,7 +2357,7 @@ function laborRender(){
   const meN = d2.me ? d2.me.name : null
   const sh = lbSheet(); if (!sh) { el.innerHTML = '沒有方案'; return }
   // 欄位＝班表崗位（⚙️ 設定改崗位這邊自動跟）；換欄時按名字搬舊數字
-  const posCols = (window._shiftD && (window._shiftD.posList||[]).length) ? window._shiftD.posList.slice() : null
+  const posCols = (window._shiftD && (window._shiftD.posList||[]).length) ? window._shiftD.posList.filter(c=>!/開班|收班/.test(c)) : null // v4.29.2 張良：開班/收班不進成本表
   if (posCols && (sh.cols||[]).join('|') !== posCols.join('|')) {
     const old = sh.cols || []; const map = {}
     old.forEach((nm,oi)=>{ const ni = posCols.indexOf(nm); if (ni >= 0) map[oi] = ni })
