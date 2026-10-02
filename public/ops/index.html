@@ -2392,7 +2392,7 @@ function laborRender(){
   ${cols.map((_,ci)=>`<td style="padding:6px 8px;text-align:center;font-weight:900;background:var(--soft);white-space:nowrap">${fmtN(colSum(ci))}${colSum(ci)?`<div class="hint" style="font-weight:700;font-size:10.5px">${LB_HOURS.reduce((a,h2)=>a+(lbV(sh,h2,ci)?1:0),0)}小時</div>`:''}</td>`).join('')}
   <td style="padding:6px 10px;text-align:right;font-weight:900;color:var(--red);background:var(--soft);font-size:15px;white-space:nowrap">${fmtN(grand)}${grand?`<div class="hint" style="font-weight:700;font-size:10.5px">${LB_HOURS.reduce((a,h2)=>a+cols.reduce((b,_,ci)=>b+(lbV(sh,h2,ci)?1:0),0),0)}小時</div>`:''}</td></tr>`
   h += `</tbody></table></div>
-  ${(()=>{ // 🧾 成本反推（張良 2026-10-03：租金/電費/食材成本/稅金…反推營業額要做多少）
+  ${(()=>{ // 反推營業額（張良 2026-10-03；v4.29.0 去emoji表格化：固定成本/變動比率兩欄+結果列）
     const fin = sh.fin || { rent:0, util:0, misc:0, days:26, food:35, tax:5, pay:2, ins:12 }
     const hrs = LB_HOURS.reduce((a,h2)=>a+cols.reduce((b,_,ci)=>b+(lbV(sh,h2,ci)?1:0),0),0)
     const mLabor = Math.round(grand * (fin.days||26) * (1 + (fin.ins||0)/100))
@@ -2401,20 +2401,34 @@ function laborRender(){
     const R = varP < 100 ? Math.ceil(fixed / (1 - varP/100)) : 0
     const daily = R && fin.days ? Math.ceil(R / fin.days) : 0
     const lp = R ? Math.round(mLabor / R * 1000)/10 : 0
-    const ip = (k,v,w2,sf)=>`<span style="display:inline-flex;align-items:center;gap:3px;white-space:nowrap">${k} <input value="${v}" inputmode="numeric" style="width:${w2}px;border:none;background:transparent;color:var(--ink);font-size:13.5px;font-weight:900;text-align:center;outline:none;border-bottom:1.5px solid var(--primary)" onchange="lbFinSet('${sf}',this.value)">${sf==='days'?'天':(['food','tax','pay','ins'].includes(sf)?'%':'')}</span>`
-    return `<div style="background:var(--card);border:1.5px solid var(--line);border-radius:10px;padding:10px 12px;margin-top:8px;font-size:13.5px;font-weight:700;display:flex;flex-direction:column;gap:7px">
-    <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:center">
-      <b>🧾 反推營業額</b>
-      <span>💰 日人事 <b style="color:var(--red)">${fmtN(grand)||0}</b><span class="hint">（${hrs}小時）</span></span>
-      ${ip('🏠 月租金',fin.rent||0,66,'rent')} ${ip('⚡ 月水電',fin.util||0,56,'util')} ${ip('🔧 月雜支',fin.misc||0,56,'misc')} ${ip('📅 營業',fin.days||26,30,'days')}
+    const inp2 = (sf,v,w2)=>`<input value="${v}" inputmode="numeric" style="width:${w2}px;border:none;background:transparent;color:var(--ink);font-size:13.5px;font-weight:800;text-align:right;outline:none;border-bottom:1.5px solid var(--primary);font-variant-numeric:tabular-nums" onchange="lbFinSet('${sf}',this.value)">`
+    const TL='padding:6px 12px;text-align:left;color:var(--muted);font-weight:700;font-size:13px;border-top:1px solid var(--line);white-space:nowrap'
+    const TR='padding:6px 12px;text-align:right;font-weight:800;border-top:1px solid var(--line);font-variant-numeric:tabular-nums;white-space:nowrap'
+    return `<div style="border:1.5px solid var(--line);border-radius:10px;margin-top:8px;overflow:hidden;background:var(--card)">
+    <div style="padding:7px 12px;font-weight:900;font-size:13.5px;background:var(--soft);letter-spacing:.4px">反推營業額</div>
+    <div style="display:flex;flex-wrap:wrap">
+      <table style="flex:1;min-width:252px;border-collapse:collapse">
+        <tr><td style="${TL};border-top:none">固定成本（每月）</td><td style="${TR};border-top:none"></td></tr>
+        <tr><td style="${TL}">日人事（上表）</td><td style="${TR}"><span style="color:var(--red)">${fmtN(grand)||0}</span> <span class="hint" style="font-weight:700">${hrs}小時</span></td></tr>
+        <tr><td style="${TL}">營業天數／月</td><td style="${TR}">${inp2('days',fin.days||26,34)} 天</td></tr>
+        <tr><td style="${TL}">月租金</td><td style="${TR}">${inp2('rent',fin.rent||0,76)}</td></tr>
+        <tr><td style="${TL}">月水電</td><td style="${TR}">${inp2('util',fin.util||0,66)}</td></tr>
+        <tr><td style="${TL}">月雜支（耗材／維修）</td><td style="${TR}">${inp2('misc',fin.misc||0,66)}</td></tr>
+        <tr><td style="${TL}">月人事（含勞健保）</td><td style="${TR}">${fmtN(mLabor)}</td></tr>
+      </table>
+      <table style="flex:1;min-width:232px;border-collapse:collapse;border-left:1px solid var(--line)">
+        <tr><td style="${TL};border-top:none">變動比率（抽營業額）</td><td style="${TR};border-top:none"></td></tr>
+        <tr><td style="${TL}">食材成本</td><td style="${TR}">${inp2('food',fin.food||0,30)} % <span class="hint" style="font-weight:700">毛利 ${100-(fin.food||0)}%</span></td></tr>
+        <tr><td style="${TL}">稅費</td><td style="${TR}">${inp2('tax',fin.tax||0,26)} %</td></tr>
+        <tr><td style="${TL}">金流／外送手續</td><td style="${TR}">${inp2('pay',fin.pay||0,26)} %</td></tr>
+        <tr><td style="${TL}">勞健保附加（乘人事）</td><td style="${TR}">${inp2('ins',fin.ins||0,26)} %</td></tr>
+        <tr><td style="${TL}">變動合計</td><td style="${TR}">${varP}%</td></tr>
+      </table>
     </div>
-    <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:center">
-      ${ip('🥩 食材成本',fin.food||0,30,'food')}<span class="hint">（毛利 ${100-(fin.food||0)}%）</span> ${ip('🧾 稅費',fin.tax||0,26,'tax')} ${ip('💳 金流/外送',fin.pay||0,26,'pay')} ${ip('🛡 勞健保附加',fin.ins||0,26,'ins')}
-    </div>
-    <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:center;border-top:1px dashed var(--line);padding-top:7px">
-      <span>月人事(含勞健保) <b>${fmtN(mLabor)}</b></span>
-      <span>固定成本/月 <b>${fmtN(fixed)}</b></span>
-      <span style="font-size:15px">→ 每月要做 <b style="color:var(--green);font-size:17px">${R?'NT$'+fmtN(R):'—'}</b>・平均每天 <b style="color:var(--green);font-size:16px">${daily?'NT$'+fmtN(daily):'—'}</b></span>
+    <div style="border-top:1px solid var(--line);background:var(--soft);padding:9px 12px;display:flex;gap:18px;flex-wrap:wrap;align-items:baseline;font-weight:800;font-size:13.5px">
+      <span>固定成本／月 <span style="font-variant-numeric:tabular-nums">${fmtN(fixed)}</span></span>
+      <span>每月要做 <span style="color:var(--green);font-size:17px;font-variant-numeric:tabular-nums">${R?'NT$'+fmtN(R):'—'}</span></span>
+      <span>平均每天 <span style="color:var(--green);font-size:15px;font-variant-numeric:tabular-nums">${daily?'NT$'+fmtN(daily):'—'}</span></span>
       <span class="hint" style="font-weight:700">人事佔比 ${lp}%</span>
     </div></div>`
   })()}
