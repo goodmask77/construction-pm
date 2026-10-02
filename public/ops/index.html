@@ -149,7 +149,7 @@ function hardRefresh(){ location.replace(location.pathname + '?r=' + Date.now())
 function taskEmbed(){ // 任務原地切換（張良 2026-10-02：不要像開新分頁）——iframe 內嵌，側欄照舊
   curStore = 'taskx'; setTabs('task')
   document.getElementById('upd').textContent = '任務中心・與主 App 同步'
-  app.innerHTML = `<iframe src="/ops-tasks.html" style="width:100%;height:calc(100vh - 150px);min-height:560px;border:none;border-radius:14px;background:var(--bg)"></iframe>`
+  app.innerHTML = `<iframe src="/ops-tasks.html?v=${Date.now()}" style="width:100%;height:calc(100vh - 150px);min-height:560px;border:none;border-radius:14px;background:var(--bg)"></iframe>`
 }
 function goView(){
   if (curStore === 'task') taskLoad()
