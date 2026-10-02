@@ -106,7 +106,7 @@
     <button id="tab-pack" onclick="invLoad('pack')">📦 包材</button>
     <button id="tab-buy" onclick="buyLoad()">🛒 採購</button>
     <button id="tab-meet" onclick="meetLoad()">📋 會議</button>
-    <button id="tab-shift" onclick="shiftLoad()">📅 班表</button>
+    <button id="tab-shift" onclick="window._shScrollReq=true;shiftLoad()">📅 班表</button>
     <button id="tab-fb" onclick="fbLoad()">💬 回饋</button>
     <button id="tab-menu" onclick="menuLoad()">🍔 菜單</button>
     <button id="tab-gear" onclick="settingsLoad()" title="設定">⚙️ 設定</button>
@@ -1713,11 +1713,11 @@ function meetTypes(){
 // ── 📅 班表 × 打卡（張良 2026-09-22：排班可增刪改；對照打卡算工時——口徑同薪資引擎 src/shift/payroll.js：
 //    正常8h/日、加班前2h×1.34、之後×1.67（勞基法§24）；單日>12h（§32）、月加班>46h（§32）、連上7天（§36七休一）標紅；遲到寬限5分）──
 let shiftYm = null
-function shiftNav(n){ const t2 = new Date(shiftYm + '-15'); t2.setMonth(t2.getMonth()+n); shiftLoad(t2.toISOString().slice(0,7)) }
+function shiftNav(n){ const t2 = new Date(shiftYm + '-15'); t2.setMonth(t2.getMonth()+n); window._shScrollReq = true; shiftLoad(t2.toISOString().slice(0,7)) }
 function shiftWkNav(n){
-  window._shDir = n > 0 ? 'R' : 'L' // 絲滑動畫方向（下一週從右進=R，上一週從左進=L）
   const t2 = new Date(window._shiftWk); t2.setDate(t2.getDate()+n*7)
   window._shiftWk = t2.toISOString().slice(0,10)
+  window._shScrollReq = true // 翻週＝捲到那一週
   const ym2 = window._shiftWk.slice(0,7)
   if (ym2 !== shiftYm) shiftLoad(ym2); else shiftRender()
 }
@@ -1797,12 +1797,12 @@ function shiftRender(){
      <div class="hint" style="margin-top:3px">✓＝已綁定；${canMgr?'點名字＝設「一般／主管／停權」或移出名單；':''}訪客拿連結只能看、綁定後才能操作（記名）</div></div>` })()}
    <div class="hint" style="margin-bottom:10px">工時＝打卡配對（只打上下班各一次時，扣掉班表的休息分鐘）；遲到寬限 5 分。加班口徑同薪資引擎：前 2 小時 ×1.34、之後 ×1.67（勞基法§24）；單日＞12h、月加班＞46h、連上 7 天會標紅（§32／§36）。試算參考用，正式發薪以人工核定為準。</div>`
   // 📅 一週班表（張良 2026-09-22：崗位×星期——每格=人名+時間）
-  if (!window._shiftWk) { const t0 = new Date(todayTpe()); t0.setDate(t0.getDate() - ((t0.getDay()+6)%7)); window._shiftWk = t0.toISOString().slice(0,10) }
+  if (!window._shiftWk) { const t0 = new Date(todayTpe()); t0.setDate(t0.getDate() - ((t0.getDay()+6)%7)); window._shiftWk = t0.toISOString().slice(0,10); window._shScrollReq = true }
   const wkDays = [...Array(7)].map((_,i)=>{ const t2 = new Date(window._shiftWk); t2.setDate(t2.getDate()+i); return t2.toISOString().slice(0,10) })
   const wdN = ['一','二','三','四','五','六','日']
   h += `<div style="display:flex;gap:8px;align-items:center;margin:2px 0 6px;flex-wrap:wrap">
     <span style="font-weight:900;white-space:nowrap">一週班表</span>${meN?`<button class="mini" style="padding:3px 10px" onclick="shiftPosEdit()" title="崗位/時段/人員排序・顏色">⚙️ 設定</button>`:''}
-    <button class="mini" onclick="shiftWkNav(-1)">‹</button><button class="mini" style="font-weight:800" onclick="shiftWkToday()">今天</button><button class="mini" onclick="shiftWkNav(1)">›</button><span class="hint" style="font-weight:800;white-space:nowrap">${wkDays[0].slice(5)} ~ ${wkDays[6].slice(5)}</span>
+    <button class="mini" onclick="shiftWkNav(-1)">‹</button><button class="mini" style="font-weight:800" onclick="shiftWkToday()">今天</button><button class="mini" onclick="shiftWkNav(1)">›</button><span class="hint" style="font-weight:800;white-space:nowrap">選取週 ${wkDays[0].slice(5)} ~ ${wkDays[6].slice(5)}</span><span class="hint" style="white-space:nowrap">（金底線那週＝清空／複製／套用的對象；整張表可直接左右上下滑，月份用最上面 ‹ ›）</span>
     <button class="mini" style="padding:3px 10px" onclick="shiftSkill()">📊 熟練度</button><button class="mini" style="padding:3px 10px" onclick="shiftHist()">📝 紀錄</button>${meN?`<button class="mini" style="padding:3px 10px" onclick="tplSave()">💾 存版本</button><button class="mini" style="padding:3px 10px" onclick="tplView()">📂 版本</button>`:``}${meN?`<button class="mini" style="padding:3px 10px" onclick="copyWeekNext()">⧉ 本週→下週</button><button class="mini" style="padding:3px 10px;color:var(--red)" onclick="clearWeek()">🗑 清空本週</button>${(()=>{ try { const sv = JSON.parse(localStorage.getItem('shiftLastClear')||'null'); return (sv && Date.now()-sv.ts < 48*3600e3) ? `<button class="mini" style="padding:3px 10px" onclick="undoClear()">↩️ 復原清空</button>` : '' } catch(_) { return '' } })()}`:''}
   </div>`
   // v4.3.5（張良 2026-10-02）：①欄寬固定+硬格線=日期與格子切齊 ②崗位三組配色(櫃檯/飲料/中控・漢堡/煎炸麵・披薩/三明治) ③同人同天兼多崗位→班卡同色標記
@@ -1816,15 +1816,18 @@ function shiftRender(){
   const BD = 'border:1px solid var(--line);'
   const regStaff = (d.staff||[]).filter(s2=>!s2.off)
   // v4.21.0（張良「固定視窗原生捲動滑順翻週」）：三週並排 scroll-snap——原生橫滑一次吸一週，七天壓進一螢幕
-  const buildWeekBlock = (wkStart) => {
-    const wd2 = [...Array(7)].map((_,i)=>{ const t2=new Date(wkStart); t2.setDate(t2.getDate()+i); return t2.toISOString().slice(0,10) })
+  // v4.24.0（張良「左右往前往後無限延伸」）：一次畫整個月的每一天＝一長排日期欄，左右原生橫捲順順滑過整月；
+  // 月份用上面 ‹ › 一直往前往後翻＝等於無限延伸；表頭凍結在上、崗位欄凍結在左；週一加分隔線；選取的那一週(清空/複製/套用的作用對象)header 畫金底線
+  const buildGrid = (wd2) => {
     const we2 = d.sched.filter(x=>wd2.includes(x.date))
     const pl2 = (d.posList||[]).slice(); we2.forEach(x=>{ const p4=x.pos||'未分崗'; if(!pl2.includes(p4)) pl2.push(p4) })
-    // v4.23.0（張良「照品項明細那張表就好」）：欄寬讓內容自己撐開（不鎖 width:100%/table-layout:fixed、不 overflow:hidden 切字），
-    // 整張表天生比手機寬→原生橫捲滑順看七天、名字完整；第一欄 sticky 凍結；未排併進同一張表→欄位永遠對齊、一起捲
+    const foc = new Set(wkDays)
     const dayW = 'min-width:94px'
-    let hh = `<table style="border-collapse:collapse"><thead><tr><th style="${BD}text-align:left;position:sticky;left:0;background:var(--soft);z-index:2;font-size:13px;white-space:nowrap">崗位</th>${wd2.map((dt,i)=>`<th onclick="dayClick('${dt}')" title="點我看當日時段細表" style="${BD}${dayW};text-align:center;cursor:pointer;font-size:13.5px;white-space:nowrap;${dt===today?'color:#FFFFFF;background:#1F4068;box-shadow:inset 0 -3px 0 var(--primary)':'color:#F2F5F9;background:var(--soft)'}">${dt.slice(5)}<br>（${wdN[i]}）</th>`).join('')}</tr></thead><tbody>`
-    if (!pl2.length) hh += `<tr><td colspan="8" class="mut" style="${BD}text-align:center">先按「⚙️ 設定」建崗位</td></tr>`
+    const wdOf = dt => wdN[(new Date(dt).getDay()+6)%7]
+    const sepOf = dt => (new Date(dt).getDay()===1 ? 'border-left:2px solid var(--line);' : '') // 週一＝上一週／這一週的分隔
+    const focHdr = dt => (foc.has(dt) && dt!==today ? 'box-shadow:inset 0 -3px 0 #C9A227;' : '')
+    let hh = `<table style="border-collapse:collapse"><thead><tr><th style="${BD}text-align:left;position:sticky;left:0;top:0;background:var(--soft);z-index:4;font-size:13px;white-space:nowrap">崗位</th>${wd2.map(dt=>`<th id="${dt===today?'shTodayCol':(dt===wkDays[0]?'shFocCol':'')}" onclick="dayClick('${dt}')" title="點我看當日時段細表" style="${BD}${sepOf(dt)}${dayW};text-align:center;cursor:pointer;font-size:13px;white-space:nowrap;position:sticky;top:0;z-index:2;${dt===today?'color:#FFFFFF;background:#1F4068;box-shadow:inset 0 -3px 0 var(--primary)':'color:#F2F5F9;background:var(--soft);'+focHdr(dt)}">${dt.slice(5)}<br>（${wdOf(dt)}）</th>`).join('')}</tr></thead><tbody>`
+    if (!pl2.length) hh += `<tr><td colspan="${wd2.length+1}" class="mut" style="${BD}text-align:center">先按「⚙️ 設定」建崗位</td></tr>`
     let pg=null
     pl2.forEach(ps=>{
       const g=GC[posGrp(ps)]; const gb=(pg!==null&&posGrp(ps)!==pg)?`border-top:3px solid ${g.ink}AA;`:''; pg=posGrp(ps)
@@ -1837,20 +1840,23 @@ function shiftRender(){
           const exp=((d.posStats||{})[e.name]||{})[ps]||0, trExp=e.tr?(((d.posStats||{})[e.tr]||{})[ps]||0):0
           return `<div ${meN?`draggable="true" ondragstart="event.stopPropagation();event.dataTransfer.setData('text/plain','${e.id}');window._shiftDragId='${e.id}'" ondragend="window._shiftDragId=null" onclick="event.stopPropagation();shiftForm('${e.id}')"`:''} style="font-size:13px;line-height:1.6;white-space:nowrap;${meN?'cursor:grab;':''}${bg2}border:${e.tr?'1.5px dashed rgba(255,255,255,.95)':'none'};border-radius:5px;padding:${e.tr?'2px 4px':'3px 5px'};margin:2px 0">${(e.seq||exp+1)<=2&&dt>=today&&ps!=='未分崗'&&!e.tr?'⚠️':''}<b style="color:${PT[pi]};font-weight:600">${e.name}</b>${ps!=='未分崗'?` <span style="font-size:10px;color:${PT[pi]};opacity:.7;font-weight:700">${e.seq||exp+1}</span>`:''}${e.tr?`<span style="display:block;color:${PT[ti]};font-weight:600;font-size:12.5px">🎓${e.tr} <span style="font-size:9.5px;opacity:.7">${e.trSeq||trExp+1}</span></span>`:''}</div>`
         }).join('')
-        return `<td${cellOps} style="${BD}${gb}${dt===today?'background:#1B3356;':''}text-align:left;${meN?'cursor:pointer;':''}vertical-align:top">${ents||(meN?'<span class="mut">＋</span>':'<span class="mut">—</span>')}</td>`
+        return `<td${cellOps} style="${BD}${sepOf(dt)}${gb}${dt===today?'background:#1B3356;':''}text-align:left;${meN?'cursor:pointer;':''}vertical-align:top">${ents||(meN?'<span class="mut">＋</span>':'<span class="mut">—</span>')}</td>`
       }).join('')+`</tr>`
     })
-    // 未排：併進同一張表的最後一列（崗位欄沿用 sticky 凍結，七天格跟上面對齊）
+    // 未排：併進同一張表的最後一列（崗位欄沿用 sticky 凍結，日期欄跟上面對齊）
     hh += `<tr><td style="${BD}border-top:3px solid var(--line);text-align:left;font-weight:800;font-size:12px;color:var(--muted);position:sticky;left:0;background:var(--soft);z-index:1;white-space:nowrap">未排</td>`+wd2.map(dt=>{
       const onDay=new Set(we2.filter(x=>x.date===dt).flatMap(x=>[x.name,x.tr].filter(Boolean)))
       const rest=regStaff.filter(s2=>!onDay.has(s2.n))
-      return `<td ${meN?`ondragover="event.preventDefault();this.style.outline='2px dashed var(--red)'" ondragleave="this.style.outline=''" ondrop="unschedDrop(event)"`:''} style="${BD}border-top:3px solid var(--line);vertical-align:top;text-align:left">${rest.map(s2=>`<span ${meN?`draggable="true" ondragstart="event.dataTransfer.setData('text/plain','u|${s2.n}')" title="拖上去格子＝排班"`:''} style="display:flex;align-items:center;gap:4px;width:max-content;white-space:nowrap;${meN?'cursor:grab;':''}border:1px solid var(--line);background:var(--card);color:var(--text);border-radius:6px;padding:2px 5px 2px 4px;margin:2px 0;font-size:13px;font-weight:600"><span style="width:8px;height:8px;border-radius:50%;background:${PB[pcIdx(s2.n)]};flex:none"></span>${s2.n}</span>`).join('')||'<span class="hint" style="font-size:12px">✓</span>'}</td>`
+      return `<td ${meN?`ondragover="event.preventDefault();this.style.outline='2px dashed var(--red)'" ondragleave="this.style.outline=''" ondrop="unschedDrop(event)"`:''} style="${BD}${sepOf(dt)}border-top:3px solid var(--line);vertical-align:top;text-align:left">${rest.map(s2=>`<span ${meN?`draggable="true" ondragstart="event.dataTransfer.setData('text/plain','u|${s2.n}')" title="拖上去格子＝排班"`:''} style="display:flex;align-items:center;gap:4px;width:max-content;white-space:nowrap;${meN?'cursor:grab;':''}border:1px solid var(--line);background:var(--card);color:var(--text);border-radius:6px;padding:2px 5px 2px 4px;margin:2px 0;font-size:13px;font-weight:600"><span style="width:8px;height:8px;border-radius:50%;background:${PB[pcIdx(s2.n)]};flex:none"></span>${s2.n}</span>`).join('')||'<span class="hint" style="font-size:12px">✓</span>'}</td>`
     }).join('')+`</tr>`
     hh += `</tbody></table>`
     return hh
   }
-  // v4.23.1（張良「裝跟品項明細一樣的元件，上下左右都有卷軸順暢」）：外框=品項明細同款捲動盒 max-height:70vh+overflow-y:auto，四向原生捲動
-  h += `<div class="scroll" style="max-height:70vh;overflow-y:auto;margin-bottom:12px;-webkit-overflow-scrolling:touch">${buildWeekBlock(window._shiftWk)}</div>`
+  // v4.24.0：畫整個月的每一天＝一長排日期欄，放品項明細同款四向捲動盒；左右滑過整月、月份 ‹ › 無限往前往後；開啟自動捲到今天
+  const _ym = shiftYm.split('-').map(Number)
+  const _dim = new Date(_ym[0], _ym[1], 0).getDate()
+  const monDays = [...Array(_dim)].map((_,i)=> `${shiftYm}-${String(i+1).padStart(2,'0')}`)
+  h += `<div id="shBox" class="scroll" style="max-height:72vh;overflow:auto;margin-bottom:12px;-webkit-overflow-scrolling:touch">${buildGrid(monDays)}</div>`
   const pn = Object.keys(per).sort()
   if (pn.length){
     h += `<div class="scroll"><table><thead><tr><th style="text-align:left">夥伴</th><th>總工時</th><th>正常</th><th>加班×1.34</th><th>加班×1.67</th><th style="text-align:left">⚠️ 勞基法檢查</th></tr></thead><tbody>`
@@ -1883,6 +1889,10 @@ function shiftRender(){
   h += `</section>`
   app.innerHTML = h
   window._shDir = null // 動畫方向用完即清
+  // v4.24.0：只在開啟／翻月／翻週／今天時，把捲動盒捲到今天(沒有今天就捲到選取週)——編輯存檔的重畫不捲，避免亂跳
+  if (window._shScrollReq){ window._shScrollReq = false
+    requestAnimationFrame(()=>{ try{ const box=document.getElementById('shBox'); const tgt=document.getElementById('shTodayCol')||document.getElementById('shFocCol'); if(box&&tgt){ box.scrollLeft += tgt.getBoundingClientRect().left - box.getBoundingClientRect().left - 96 } }catch(_){} })
+  }
 }
 function shiftForm(id){
   const d = window._shiftD, it = id ? d.sched.find(x=>x.id===id) : null
@@ -2231,6 +2241,7 @@ function shiftHist(){
 function shiftWkToday(){ // 回到本週（張良 2026-10-02「按今天就會回到當周」）
   const t0 = new Date(todayTpe()); t0.setDate(t0.getDate() - ((t0.getDay()+6)%7))
   window._shiftWk = t0.toISOString().slice(0,10)
+  window._shScrollReq = true // 捲回今天
   const ym2 = todayTpe().slice(0,7)
   if (ym2 !== shiftYm) shiftLoad(ym2); else shiftRender()
 }
