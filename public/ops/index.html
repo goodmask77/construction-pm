@@ -106,7 +106,7 @@
     <button id="tab-pack" onclick="invLoad('pack')">📦 包材</button>
     <button id="tab-buy" onclick="buyLoad()">🛒 採購</button>
     <button id="tab-meet" onclick="meetLoad()">📋 會議</button>
-    <button id="tab-shift" onclick="window._shScrollReq=true;shiftLoad()">📅 班表</button>
+    <button id="tab-shift" onclick="window._shScrollTo='today';shiftLoad()">📅 班表</button>
     <button id="tab-fb" onclick="fbLoad()">💬 回饋</button>
     <button id="tab-menu" onclick="menuLoad()">🍔 菜單</button>
     <button id="tab-gear" onclick="settingsLoad()" title="設定">⚙️ 設定</button>
@@ -1713,12 +1713,24 @@ function meetTypes(){
 // ── 📅 班表 × 打卡（張良 2026-09-22：排班可增刪改；對照打卡算工時——口徑同薪資引擎 src/shift/payroll.js：
 //    正常8h/日、加班前2h×1.34、之後×1.67（勞基法§24）；單日>12h（§32）、月加班>46h（§32）、連上7天（§36七休一）標紅；遲到寬限5分）──
 let shiftYm = null
-function shiftNav(n){ const t2 = new Date(shiftYm + '-15'); t2.setMonth(t2.getMonth()+n); window._shScrollReq = true; shiftLoad(t2.toISOString().slice(0,7)) }
+// ── v4.25.0 班表「無限時間軸」（張良「不要限制時間週期」）：日期欄連續不斷，左右一直滑；滑到左/右邊緣自動多載上/下個月，看不到盡頭 ──
+function shInitRange(){ if(window._shRangeStart) return; const [y,m]=todayTpe().slice(0,7).split('-').map(Number); const b=new Date(y,m-1-2,1), f=new Date(y,m-1+2,1); window._shRangeStart=b.getFullYear()+'-'+String(b.getMonth()+1).padStart(2,'0'); window._shRangeEnd=f.getFullYear()+'-'+String(f.getMonth()+1).padStart(2,'0') }
+function shRangeInclude(ym){ shInitRange(); if(ym<window._shRangeStart) window._shRangeStart=ym; if(ym>window._shRangeEnd) window._shRangeEnd=ym }
+function shRangeYms(){ shInitRange(); const out=[]; let [y,m]=window._shRangeStart.split('-').map(Number); const [ey,em]=window._shRangeEnd.split('-').map(Number); while(y<ey||(y===ey&&m<=em)){ out.push(y+'-'+String(m).padStart(2,'0')); if(++m>12){m=1;y++} } return out }
+function shRangeDays(){ shInitRange(); const days=[]; const [sy,sm]=window._shRangeStart.split('-').map(Number); const [ey,em]=window._shRangeEnd.split('-').map(Number); const cur=new Date(sy,sm-1,1), end=new Date(ey,em,0); while(cur<=end){ days.push(cur.getFullYear()+'-'+String(cur.getMonth()+1).padStart(2,'0')+'-'+String(cur.getDate()).padStart(2,'0')); cur.setDate(cur.getDate()+1) } return days }
+function shMergedSched(){ const out=[], seen=new Set(); const add=a=>(a||[]).forEach(x=>{ const k=x.id||(x.name+'|'+x.date+'|'+(x.pos||'')); if(!seen.has(k)){seen.add(k);out.push(x)} }); if(window._shiftD&&window._shiftD.sched) add(window._shiftD.sched); (window._shLoaded||[]).forEach(y=>{ if(y===shiftYm)return; const c=tcGet('shift_'+y); if(c)add(c.sched) }); add(window._shiftTmpQ); return out }
+function shMergedLeave(){ const out={}; const addL=l=>{ if(!l)return; for(const dt in l){ out[dt]=Object.assign(out[dt]||{}, l[dt]) } }; if(window._shiftD) addL(window._shiftD.leave); (window._shLoaded||[]).forEach(y=>{ if(y===shiftYm)return; const c=tcGet('shift_'+y); if(c) addL(c.leave) }); return out }
+async function shEnsure(yms){ window._shLoaded=window._shLoaded||[]; await Promise.all(yms.map(async y=>{ if(window._shLoaded.includes(y))return; const c=tcGet('shift_'+y); if(c){ window._shLoaded.push(y); return } try{ const r=await fetch('/api/mail-sync?shift='+encodeURIComponent(K)+'&ym='+y+(TK()?'&me='+encodeURIComponent(TK()):'')); const dd=await r.json(); if(dd&&dd.ok){ tcSet('shift_'+y,dd); if(!window._shLoaded.includes(y))window._shLoaded.push(y) } }catch(_){} })) }
+function shLeftAnchor(box){ const ths=box.querySelectorAll('th[data-d]'); const bx=box.getBoundingClientRect(); const edge=bx.left+100; for(const th of ths){ const r=th.getBoundingClientRect(); if(r.right>edge) return {date:th.getAttribute('data-d'), vx:r.left-bx.left} } return null }
+function shGridOnly(){ const box=document.getElementById('shBox'); if(!box||!window._shBuildGrid)return; const keep=box.scrollLeft; const a=window._shAnchor; window._shAnchor=null; box.innerHTML=window._shBuildGrid(shRangeDays()); box.onscroll=shOnScroll; if(a){ const th=box.querySelector('th[data-d="'+a.date+'"]'); if(th){ box.scrollLeft+=(th.getBoundingClientRect().left-box.getBoundingClientRect().left)-a.vx } } else box.scrollLeft=keep }
+function shOnScroll(){ const box=document.getElementById('shBox'); if(!box||window._shExtBusy)return; const nearL=box.scrollLeft<240, nearR=box.scrollLeft>box.scrollWidth-box.clientWidth-240; if(!nearL&&!nearR)return; window._shExtBusy=true; window._shAnchor=shLeftAnchor(box); if(nearL){ let [y,m]=window._shRangeStart.split('-').map(Number); if(--m<1){m=12;y--} window._shRangeStart=y+'-'+String(m).padStart(2,'0') } if(nearR){ let [y,m]=window._shRangeEnd.split('-').map(Number); if(++m>12){m=1;y++} window._shRangeEnd=y+'-'+String(m).padStart(2,'0') } shEnsure(shRangeYms()).then(()=>{ if(curStore==='shift') shGridOnly(); window._shExtBusy=false }) }
+function shiftNav(n){ const t2 = new Date(shiftYm + '-15'); t2.setMonth(t2.getMonth()+n); const ym2 = t2.toISOString().slice(0,7); window._shScrollTo = (ym2===todayTpe().slice(0,7)?todayTpe():ym2+'-01'); shRangeInclude(ym2); shiftLoad(ym2) }
 function shiftWkNav(n){
   const t2 = new Date(window._shiftWk); t2.setDate(t2.getDate()+n*7)
   window._shiftWk = t2.toISOString().slice(0,10)
-  window._shScrollReq = true // 翻週＝捲到那一週
+  window._shScrollTo = window._shiftWk // 翻週＝捲到那一週
   const ym2 = window._shiftWk.slice(0,7)
+  shRangeInclude(ym2)
   if (ym2 !== shiftYm) shiftLoad(ym2); else shiftRender()
 }
 // （手勢切週已移除 v4.20.2：張良「固定視窗原生捲動很滑順，用這個就好」——班表容器維持原生捲動看七天，切週用 ‹ › 今天 按鈕＋滑入動畫）
@@ -1731,6 +1743,7 @@ async function shiftLoad(ym){
   try { const r = await fetch('/api/mail-sync?shift=' + encodeURIComponent(K) + '&ym=' + shiftYm + (TK() ? '&me=' + encodeURIComponent(TK()) : '')); d = await r.json() } catch(e){}
   if (!d || !d.ok) { if (!window._shiftD) app.innerHTML = '<div class="err">讀不到資料</div>'; return }
   window._shiftD = d; tcSet('shift_'+shiftYm, d)
+  window._shLoaded = window._shLoaded || []; if (!window._shLoaded.includes(shiftYm)) window._shLoaded.push(shiftYm) // 無限軸：記下已載月份
   if ((window._shiftTmpQ||[]).length) d.sched.push(...window._shiftTmpQ) // 還在排隊的樂觀卡補回畫面（v4.4.7）
   if (curStore === 'shift') shiftRender()
 }
@@ -1797,12 +1810,12 @@ function shiftRender(){
      <div class="hint" style="margin-top:3px">✓＝已綁定；${canMgr?'點名字＝設「一般／主管／停權」或移出名單；':''}訪客拿連結只能看、綁定後才能操作（記名）</div></div>` })()}
    <div class="hint" style="margin-bottom:10px">工時＝打卡配對（只打上下班各一次時，扣掉班表的休息分鐘）；遲到寬限 5 分。加班口徑同薪資引擎：前 2 小時 ×1.34、之後 ×1.67（勞基法§24）；單日＞12h、月加班＞46h、連上 7 天會標紅（§32／§36）。試算參考用，正式發薪以人工核定為準。</div>`
   // 📅 一週班表（張良 2026-09-22：崗位×星期——每格=人名+時間）
-  if (!window._shiftWk) { const t0 = new Date(todayTpe()); t0.setDate(t0.getDate() - ((t0.getDay()+6)%7)); window._shiftWk = t0.toISOString().slice(0,10); window._shScrollReq = true }
+  if (!window._shiftWk) { const t0 = new Date(todayTpe()); t0.setDate(t0.getDate() - ((t0.getDay()+6)%7)); window._shiftWk = t0.toISOString().slice(0,10); window._shScrollTo = todayTpe() }
   const wkDays = [...Array(7)].map((_,i)=>{ const t2 = new Date(window._shiftWk); t2.setDate(t2.getDate()+i); return t2.toISOString().slice(0,10) })
   const wdN = ['一','二','三','四','五','六','日']
   h += `<div style="display:flex;gap:8px;align-items:center;margin:2px 0 6px;flex-wrap:wrap">
     <span style="font-weight:900;white-space:nowrap">一週班表</span>${meN?`<button class="mini" style="padding:3px 10px" onclick="shiftPosEdit()" title="崗位/時段/人員排序・顏色">⚙️ 設定</button>`:''}
-    <button class="mini" onclick="shiftWkNav(-1)">‹</button><button class="mini" style="font-weight:800" onclick="shiftWkToday()">今天</button><button class="mini" onclick="shiftWkNav(1)">›</button><span class="hint" style="font-weight:800;white-space:nowrap">選取週 ${wkDays[0].slice(5)} ~ ${wkDays[6].slice(5)}</span><span class="hint" style="white-space:nowrap">（金底線那週＝清空／複製／套用的對象；整張表可直接左右上下滑，月份用最上面 ‹ ›）</span>
+    <button class="mini" onclick="shiftWkNav(-1)">‹</button><button class="mini" style="font-weight:800" onclick="shiftWkToday()">今天</button><button class="mini" onclick="shiftWkNav(1)">›</button><span class="hint" style="font-weight:800;white-space:nowrap">選取週 ${wkDays[0].slice(5)} ~ ${wkDays[6].slice(5)}</span><span class="hint" style="white-space:nowrap">（金底線那週＝清空／複製／套用的對象；整張表左右一直滑看不到盡頭、滑到邊自動多載，下面未排名單點人可標請假）</span>
     <button class="mini" style="padding:3px 10px" onclick="shiftSkill()">📊 熟練度</button><button class="mini" style="padding:3px 10px" onclick="shiftHist()">📝 紀錄</button>${meN?`<button class="mini" style="padding:3px 10px" onclick="tplSave()">💾 存版本</button><button class="mini" style="padding:3px 10px" onclick="tplView()">📂 版本</button>`:``}${meN?`<button class="mini" style="padding:3px 10px" onclick="copyWeekNext()">⧉ 本週→下週</button><button class="mini" style="padding:3px 10px;color:var(--red)" onclick="clearWeek()">🗑 清空本週</button>${(()=>{ try { const sv = JSON.parse(localStorage.getItem('shiftLastClear')||'null'); return (sv && Date.now()-sv.ts < 48*3600e3) ? `<button class="mini" style="padding:3px 10px" onclick="undoClear()">↩️ 復原清空</button>` : '' } catch(_) { return '' } })()}`:''}
   </div>`
   // v4.3.5（張良 2026-10-02）：①欄寬固定+硬格線=日期與格子切齊 ②崗位三組配色(櫃檯/飲料/中控・漢堡/煎炸麵・披薩/三明治) ③同人同天兼多崗位→班卡同色標記
@@ -1819,14 +1832,15 @@ function shiftRender(){
   // v4.24.0（張良「左右往前往後無限延伸」）：一次畫整個月的每一天＝一長排日期欄，左右原生橫捲順順滑過整月；
   // 月份用上面 ‹ › 一直往前往後翻＝等於無限延伸；表頭凍結在上、崗位欄凍結在左；週一加分隔線；選取的那一週(清空/複製/套用的作用對象)header 畫金底線
   const buildGrid = (wd2) => {
-    const we2 = d.sched.filter(x=>wd2.includes(x.date))
+    const we2 = shMergedSched().filter(x=>wd2.includes(x.date)) // 無限軸：吃所有已載月份合併後的班
+    const leave = shMergedLeave() // 請假標記 { 日期: { 姓名: 假別 } }
     const pl2 = (d.posList||[]).slice(); we2.forEach(x=>{ const p4=x.pos||'未分崗'; if(!pl2.includes(p4)) pl2.push(p4) })
     const foc = new Set(wkDays)
     const dayW = 'min-width:94px'
     const wdOf = dt => wdN[(new Date(dt).getDay()+6)%7]
     const sepOf = dt => (new Date(dt).getDay()===1 ? 'border-left:2px solid var(--line);' : '') // 週一＝上一週／這一週的分隔
     const focHdr = dt => (foc.has(dt) && dt!==today ? 'box-shadow:inset 0 -3px 0 #C9A227;' : '')
-    let hh = `<table style="border-collapse:collapse"><thead><tr><th style="${BD}text-align:left;position:sticky;left:0;top:0;background:var(--soft);z-index:4;font-size:13px;white-space:nowrap">崗位</th>${wd2.map(dt=>`<th id="${dt===today?'shTodayCol':(dt===wkDays[0]?'shFocCol':'')}" onclick="dayClick('${dt}')" title="點我看當日時段細表" style="${BD}${sepOf(dt)}${dayW};text-align:center;cursor:pointer;font-size:13px;white-space:nowrap;position:sticky;top:0;z-index:2;${dt===today?'color:#FFFFFF;background:#1F4068;box-shadow:inset 0 -3px 0 var(--primary)':'color:#F2F5F9;background:var(--soft);'+focHdr(dt)}">${dt.slice(5)}<br>（${wdOf(dt)}）</th>`).join('')}</tr></thead><tbody>`
+    let hh = `<table style="border-collapse:collapse"><thead><tr><th style="${BD}text-align:left;position:sticky;left:0;top:0;background:var(--soft);z-index:4;font-size:13px;white-space:nowrap">崗位</th>${wd2.map(dt=>`<th data-d="${dt}" id="${dt===today?'shTodayCol':(dt===wkDays[0]?'shFocCol':'')}" onclick="dayClick('${dt}')" title="點我看當日時段細表" style="${BD}${sepOf(dt)}${dayW};text-align:center;cursor:pointer;font-size:13px;white-space:nowrap;position:sticky;top:0;z-index:2;${dt===today?'color:#FFFFFF;background:#1F4068;box-shadow:inset 0 -3px 0 var(--primary)':'color:#F2F5F9;background:var(--soft);'+focHdr(dt)}">${dt.slice(5)}<br>（${wdOf(dt)}）</th>`).join('')}</tr></thead><tbody>`
     if (!pl2.length) hh += `<tr><td colspan="${wd2.length+1}" class="mut" style="${BD}text-align:center">先按「⚙️ 設定」建崗位</td></tr>`
     let pg=null
     pl2.forEach(ps=>{
@@ -1843,20 +1857,22 @@ function shiftRender(){
         return `<td${cellOps} style="${BD}${sepOf(dt)}${gb}${dt===today?'background:#1B3356;':''}text-align:left;${meN?'cursor:pointer;':''}vertical-align:top">${ents||(meN?'<span class="mut">＋</span>':'<span class="mut">—</span>')}</td>`
       }).join('')+`</tr>`
     })
-    // 未排：併進同一張表的最後一列（崗位欄沿用 sticky 凍結，日期欄跟上面對齊）
-    hh += `<tr><td style="${BD}border-top:3px solid var(--line);text-align:left;font-weight:800;font-size:12px;color:var(--muted);position:sticky;left:0;background:var(--soft);z-index:1;white-space:nowrap">未排</td>`+wd2.map(dt=>{
+    // 未排：併進同一張表的最後一列（崗位欄沿用 sticky 凍結，日期欄跟上面對齊）；點人名可標請假(反黑劃掉+假別)＝當天不能排班
+    hh += `<tr><td style="${BD}border-top:3px solid var(--line);text-align:left;font-weight:800;font-size:12px;color:var(--muted);position:sticky;left:0;background:var(--soft);z-index:1;white-space:nowrap">未排<br><span class="hint" style="font-weight:600;font-size:10px">點人標請假</span></td>`+wd2.map(dt=>{
       const onDay=new Set(we2.filter(x=>x.date===dt).flatMap(x=>[x.name,x.tr].filter(Boolean)))
       const rest=regStaff.filter(s2=>!onDay.has(s2.n))
-      return `<td ${meN?`ondragover="event.preventDefault();this.style.outline='2px dashed var(--red)'" ondragleave="this.style.outline=''" ondrop="unschedDrop(event)"`:''} style="${BD}${sepOf(dt)}border-top:3px solid var(--line);vertical-align:top;text-align:left">${rest.map(s2=>`<span ${meN?`draggable="true" ondragstart="event.dataTransfer.setData('text/plain','u|${s2.n}')" title="拖上去格子＝排班"`:''} style="display:flex;align-items:center;gap:4px;width:max-content;white-space:nowrap;${meN?'cursor:grab;':''}border:1px solid var(--line);background:var(--card);color:var(--text);border-radius:6px;padding:2px 5px 2px 4px;margin:2px 0;font-size:13px;font-weight:600"><span style="width:8px;height:8px;border-radius:50%;background:${PB[pcIdx(s2.n)]};flex:none"></span>${s2.n}</span>`).join('')||'<span class="hint" style="font-size:12px">✓</span>'}</td>`
+      return `<td ${meN?`ondragover="event.preventDefault();this.style.outline='2px dashed var(--red)'" ondragleave="this.style.outline=''" ondrop="unschedDrop(event)"`:''} style="${BD}${sepOf(dt)}border-top:3px solid var(--line);vertical-align:top;text-align:left">${rest.map(s2=>{
+        const lv=(leave[dt]||{})[s2.n]
+        if(lv) return `<span ${meN?`onclick="shLeaveMenu('${s2.n}','${dt}')" style="cursor:pointer;"`:'style=""'} title="${s2.n} 請${lv}假${meN?'（點我改/取消）':''}"><span style="display:flex;align-items:center;gap:4px;width:max-content;white-space:nowrap;border:1px solid #5A3A3A;background:#2A1A1A;border-radius:6px;padding:2px 5px 2px 4px;margin:2px 0;font-size:13px;font-weight:700"><span style="width:8px;height:8px;border-radius:50%;background:#7A5A5A;flex:none"></span><span style="text-decoration:line-through;opacity:.65;color:#C7A0A0">${s2.n}</span><span style="background:var(--red);color:#fff;border-radius:4px;padding:0 5px;font-size:11px;font-weight:900">${lv}</span></span></span>`
+        return `<span ${meN?`draggable="true" ondragstart="event.dataTransfer.setData('text/plain','u|${s2.n}')" onclick="shLeaveMenu('${s2.n}','${dt}')" title="拖上去格子＝排班・點我標請假"`:''} style="display:flex;align-items:center;gap:4px;width:max-content;white-space:nowrap;${meN?'cursor:pointer;':''}border:1px solid var(--line);background:var(--card);color:var(--text);border-radius:6px;padding:2px 5px 2px 4px;margin:2px 0;font-size:13px;font-weight:600"><span style="width:8px;height:8px;border-radius:50%;background:${PB[pcIdx(s2.n)]};flex:none"></span>${s2.n}</span>`
+      }).join('')||'<span class="hint" style="font-size:12px">✓</span>'}</td>`
     }).join('')+`</tr>`
     hh += `</tbody></table>`
     return hh
   }
-  // v4.24.0：畫整個月的每一天＝一長排日期欄，放品項明細同款四向捲動盒；左右滑過整月、月份 ‹ › 無限往前往後；開啟自動捲到今天
-  const _ym = shiftYm.split('-').map(Number)
-  const _dim = new Date(_ym[0], _ym[1], 0).getDate()
-  const monDays = [...Array(_dim)].map((_,i)=> `${shiftYm}-${String(i+1).padStart(2,'0')}`)
-  h += `<div id="shBox" class="scroll" style="max-height:72vh;overflow:auto;margin-bottom:12px;-webkit-overflow-scrolling:touch">${buildGrid(monDays)}</div>`
+  // v4.25.0：無限時間軸——連續日期範圍(預設±2月)一長排，放品項明細同款四向捲動盒；滑到邊緣自動多載(shOnScroll)，月份 ‹ › 跳月，開啟自動捲到今天
+  shInitRange(); shRangeInclude(shiftYm)
+  h += `<div id="shBox" class="scroll" style="max-height:72vh;overflow:auto;margin-bottom:12px;-webkit-overflow-scrolling:touch">${buildGrid(shRangeDays())}</div>`
   const pn = Object.keys(per).sort()
   if (pn.length){
     h += `<div class="scroll"><table><thead><tr><th style="text-align:left">夥伴</th><th>總工時</th><th>正常</th><th>加班×1.34</th><th>加班×1.67</th><th style="text-align:left">⚠️ 勞基法檢查</th></tr></thead><tbody>`
@@ -1889,10 +1905,15 @@ function shiftRender(){
   h += `</section>`
   app.innerHTML = h
   window._shDir = null // 動畫方向用完即清
-  // v4.24.0：只在開啟／翻月／翻週／今天時，把捲動盒捲到今天(沒有今天就捲到選取週)——編輯存檔的重畫不捲，避免亂跳
-  if (window._shScrollReq){ window._shScrollReq = false
-    requestAnimationFrame(()=>{ try{ const box=document.getElementById('shBox'); const tgt=document.getElementById('shTodayCol')||document.getElementById('shFocCol'); if(box&&tgt){ box.scrollLeft += tgt.getBoundingClientRect().left - box.getBoundingClientRect().left - 96 } }catch(_){} })
+  window._shBuildGrid = buildGrid // 給 shGridOnly（邊緣多載/補資料）重畫格子用，吃最新的 d/權限/選取週
+  const _box = document.getElementById('shBox'); if (_box) _box.onscroll = shOnScroll
+  // 只在開啟／翻月／翻週／今天時捲到目標日期(找不到退回今天)——編輯存檔的重畫不捲，避免亂跳
+  if (window._shScrollTo){ let tgtDate = window._shScrollTo==='today' ? today : window._shScrollTo; window._shScrollTo = null
+    requestAnimationFrame(()=>{ try{ const box=document.getElementById('shBox'); if(!box)return; let th=box.querySelector('th[data-d="'+tgtDate+'"]')||box.querySelector('th[data-d="'+today+'"]'); if(th){ box.scrollLeft += th.getBoundingClientRect().left - box.getBoundingClientRect().left - 96 } }catch(_){} })
   }
+  // 無限軸：確保範圍內各月份資料都載入(未載的欄先空白，載到再補)——只在有缺時跑
+  const _need = shRangeYms().filter(y=>!(window._shLoaded||[]).includes(y))
+  if (_need.length){ shEnsure(shRangeYms()).then(()=>{ if(curStore!=='shift')return; const box=document.getElementById('shBox'); if(box) window._shAnchor=shLeftAnchor(box); shGridOnly() }) }
 }
 function shiftForm(id){
   const d = window._shiftD, it = id ? d.sched.find(x=>x.id===id) : null
@@ -2241,9 +2262,35 @@ function shiftHist(){
 function shiftWkToday(){ // 回到本週（張良 2026-10-02「按今天就會回到當周」）
   const t0 = new Date(todayTpe()); t0.setDate(t0.getDate() - ((t0.getDay()+6)%7))
   window._shiftWk = t0.toISOString().slice(0,10)
-  window._shScrollReq = true // 捲回今天
+  window._shScrollTo = todayTpe() // 捲回今天
   const ym2 = todayTpe().slice(0,7)
+  shRangeInclude(ym2)
   if (ym2 !== shiftYm) shiftLoad(ym2); else shiftRender()
+}
+// ── v4.25.0 請假標記（張良「未排名單點人反黑劃掉＝那天休假請假不能排班，選 休/病/事/特/國 等假別」）──
+const LEAVE_TYPES = [['休','排休/例假'],['特','特休'],['病','病假'],['事','事假'],['國','國定假'],['婚','婚假'],['喪','喪假'],['產','產假/陪產'],['公','公假']]
+function shLeaveMenu(name, date){
+  if (!(window._shiftD && window._shiftD.me)) return // 只有綁定者可改
+  const cur = ((shMergedLeave()[date]||{})[name]) || ''
+  const ov = document.createElement('div'); ov.id='lvOv'
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(16,24,43,.5);z-index:60;display:flex;align-items:center;justify-content:center;padding:16px'
+  ov.innerHTML = `<div style="background:#222B38;border:1px solid #3B4654;box-shadow:0 18px 50px rgba(0,0,0,.55);border-radius:14px;max-width:360px;width:100%;padding:16px" onclick="event.stopPropagation()">
+    <div style="font-weight:900;margin-bottom:4px">🏖 ${name}・${date.slice(5)} 請假</div>
+    <div class="hint" style="margin-bottom:10px">標了＝那天休假／請假，排班時會劃掉提醒不能排</div>
+    <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px">${LEAVE_TYPES.map(t=>`<button class="mini${cur===t[0]?' on':''}" style="padding:8px 12px;font-size:15px" onclick="shLeaveSet('${name}','${date}','${t[0]}')" title="${t[1]}">${t[0]}<span style="font-size:11px;opacity:.7;margin-left:3px">${t[1]}</span></button>`).join('')}</div>
+    <div style="display:flex;gap:8px;justify-content:space-between;align-items:center">${cur?`<button class="mini" style="padding:8px 14px;color:var(--red)" onclick="shLeaveSet('${name}','${date}','')">✕ 取消請假</button>`:'<span></span>'}<button class="mini" style="padding:8px 14px" onclick="document.getElementById('lvOv').remove()">關閉</button></div></div>`
+  ov.onclick = () => ov.remove()
+  document.body.appendChild(ov)
+}
+async function shLeaveSet(name, date, type){
+  const ov = document.getElementById('lvOv'); if (ov) ov.remove()
+  const ym = date.slice(0,7)
+  const patch = o => { if(!o) return; o.leave = o.leave || {}; o.leave[date] = o.leave[date] || {}; if(type) o.leave[date][name] = type; else { delete o.leave[date][name]; if(!Object.keys(o.leave[date]).length) delete o.leave[date] } }
+  if (ym === shiftYm) patch(window._shiftD) // 樂觀更新
+  const cc = tcGet('shift_'+ym); if (cc) { patch(cc); tcSet('shift_'+ym, cc) }
+  const box = document.getElementById('shBox'); if (box) window._shAnchor = shLeftAnchor(box); shGridOnly()
+  const r = await shPost({ op:'leave', date, name, type, token: TK() })
+  if (!r || !r.ok) alert((r&&r.error) || '請假標記沒存起來，請重試')
 }
 const SLOT_DEF = [{n:'午峰',s:'11:00',e:'14:30'},{n:'離峰',s:'14:30',e:'17:30'},{n:'晚峰',s:'17:30',e:'20:00'},{n:'全日',s:'11:00',e:'20:00'}] // 預設照近30天單量尖峰切；⚙️可自訂
 function t24set(cls, v){

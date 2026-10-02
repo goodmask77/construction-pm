@@ -1862,7 +1862,8 @@ export default async function handler(req, res) {
       const k1 = x.name + '|' + x.pos; c1[k1] = (c1[k1] || 0) + 1; seqMap[x.id] = c1[k1]
       if (x.tr) { const k2 = x.tr + '|' + x.pos; c2[k2] = (c2[k2] || 0) + 1; trSeqMap[x.id] = c2[k2] }
     }
-    return res.status(200).json({ ok: true, ym, sched: schedL.map(x => ({ ...x, seq: seqMap[x.id], trSeq: trSeqMap[x.id] })), punches: pchs.map(p => ({ name: p.name, ts: p.ts, dir: p.dir, src: p.src })), names: namesU, namesAll, posList, slots: (sd || {}).slots || null, colors: colMap, posStats, hist: ((sd || {}).hist || []).slice(-200).reverse(), lockEdit: (sd || {}).lockEdit ? 1 : 0, tpls: (sd || {}).tpls || [], staff, me: meS ? { name: meS.name, role: meS.role, approver: aprS.includes(meS.name) } : null })
+    const leaveM = {}; for (const dt of Object.keys(((sd || {}).leave) || {})) { if (dt >= loS && dt <= hiS) leaveM[dt] = sd.leave[dt] } // 🏖 當月範圍請假標記
+    return res.status(200).json({ ok: true, ym, sched: schedL.map(x => ({ ...x, seq: seqMap[x.id], trSeq: trSeqMap[x.id] })), punches: pchs.map(p => ({ name: p.name, ts: p.ts, dir: p.dir, src: p.src })), names: namesU, namesAll, posList, slots: (sd || {}).slots || null, colors: colMap, posStats, leave: leaveM, hist: ((sd || {}).hist || []).slice(-200).reverse(), lockEdit: (sd || {}).lockEdit ? 1 : 0, tpls: (sd || {}).tpls || [], staff, me: meS ? { name: meS.name, role: meS.role, approver: aprS.includes(meS.name) } : null })
   }
   // 人員色號管理口：POST ?shiftcolor=管理金鑰 {map:{名字:色號}} 合併寫入（固定/校正專屬色用）
   if (req.method === 'POST' && req.query?.shiftcolor) {
@@ -1974,6 +1975,14 @@ export default async function handler(req, res) {
       const tpD = (doc.tpls || []).find(x => x.id === sb2.id)
       doc.tpls = (doc.tpls || []).filter(x => x.id !== sb2.id)
       if (tpD) pushH('刪版本「' + tpD.name + '」')
+    } else if (sb2.op === 'leave') { // 🏖 請假標記（張良 2026-10-02：未排名單點人反黑劃掉＝那天不能排班；休/特/病/事/國/婚/喪/產/公）
+      const dt9 = String(sb2.date || ''); const nm9 = String(sb2.name || '').trim().slice(0, 20); const tp9 = String(sb2.type || '').trim().slice(0, 2)
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(dt9) || !nm9) return res.status(400).json({ ok: false, error: '日期或姓名錯誤' })
+      const OKT = ['休', '特', '病', '事', '國', '婚', '喪', '產', '公']
+      doc.leave = doc.leave || {}; doc.leave[dt9] = doc.leave[dt9] || {}
+      if (tp9 && OKT.includes(tp9)) { doc.leave[dt9][nm9] = tp9; pushH('🏖 ' + nm9 + ' ' + dt9 + ' 請' + tp9 + '假') }
+      else { if (doc.leave[dt9][nm9]) pushH('取消 ' + nm9 + ' ' + dt9 + ' 請假'); delete doc.leave[dt9][nm9] }
+      if (!Object.keys(doc.leave[dt9]).length) delete doc.leave[dt9]
     } else return res.status(400).json({ ok: false })
     await kvPut('sp_finance_pm_shift_g', doc, '班表' + sb2.op + '(' + whoS.name + ')')
     return res.status(200).json({ ok: true })
