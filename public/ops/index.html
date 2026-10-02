@@ -1800,10 +1800,6 @@ function shiftRender(){
   if (!window._shiftWk) { const t0 = new Date(todayTpe()); t0.setDate(t0.getDate() - ((t0.getDay()+6)%7)); window._shiftWk = t0.toISOString().slice(0,10) }
   const wkDays = [...Array(7)].map((_,i)=>{ const t2 = new Date(window._shiftWk); t2.setDate(t2.getDate()+i); return t2.toISOString().slice(0,10) })
   const wdN = ['一','二','三','四','五','六','日']
-  const wkEnts = d.sched.filter(x=>wkDays.includes(x.date))
-  // v4.3.3（張良 2026-10-02）：崗位列=⚙️清單固定列出（沒排班也顯示），點格子直選人名、拖曳換天/換崗
-  const posList = (d.posList||[]).slice()
-  wkEnts.forEach(x=>{ const p4=x.pos||'未分崗'; if(!posList.includes(p4)) posList.push(p4) })
   h += `<div style="display:flex;gap:8px;align-items:center;margin:2px 0 6px;flex-wrap:wrap">
     <span style="font-weight:900;white-space:nowrap">一週班表</span>${meN?`<button class="mini" style="padding:3px 10px" onclick="shiftPosEdit()" title="崗位/時段/人員排序・顏色">⚙️ 設定</button>`:''}
     <button class="mini" onclick="shiftWkNav(-1)">‹</button><button class="mini" style="font-weight:800" onclick="shiftWkToday()">今天</button><button class="mini" onclick="shiftWkNav(1)">›</button><span class="hint" style="font-weight:800;white-space:nowrap">${wkDays[0].slice(5)} ~ ${wkDays[6].slice(5)}</span>
@@ -1818,39 +1814,43 @@ function shiftRender(){
   // v4.5.3 顏色吃伺服器永久色號（d.colors），不再照名單順序——排序/進出都不變色
   const pcIdx = n => { const c2 = (d.colors||{})[n]; if (c2 != null) return c2 % PB.length; let i = 0; for(const ch of String(n)) i=(i*31+ch.charCodeAt(0))%997; return i % PB.length }
   const BD = 'border:1px solid var(--line);'
-  h += `<div id="shWkWrap" class="scroll" style="margin-bottom:12px${window._shDir?`;animation:shSlide${window._shDir} .22s ease`:''}"><table style="table-layout:fixed;width:100%;min-width:760px;border-collapse:collapse">
-  <colgroup><col style="width:88px">${wkDays.map(()=>'<col>').join('')}</colgroup>
-  <thead><tr><th style="${BD}text-align:left;position:sticky;left:0;background:var(--soft);z-index:2">崗位</th>${wkDays.map((dt,i)=>`<th onclick="dayClick('${dt}')" title="點我看當日時段細表" style="${BD}text-align:center;cursor:pointer;font-size:13.5px;${dt===today?'color:#FFFFFF;background:#1F4068;box-shadow:inset 0 -3px 0 var(--primary)':'color:#F2F5F9;background:var(--soft)'}">${dt.slice(5)}<br>（${wdN[i]}）</th>`).join('')}</tr></thead><tbody>`
-  if (!posList.length) h += `<tr><td colspan="8" class="mut" style="${BD}text-align:center">先按上面「⚙️ 崗位」建崗位清單，左側就會列出、點格子直接排人</td></tr>`
-  let prevGrp = null // v4.8.4（張良）：三大區塊換組時整列粗線分隔，延伸到最右
-  posList.forEach(ps=>{
-    const g = GC[posGrp(ps)]
-    const gb = (prevGrp !== null && posGrp(ps) !== prevGrp) ? `border-top:3px solid ${g.ink}AA;` : ''
-    prevGrp = posGrp(ps)
-    h += `<tr><td style="${BD}${gb}text-align:left;font-weight:800;color:${g.ink};position:sticky;left:0;background:${g.bg};z-index:1">${ps}</td>` + wkDays.map(dt=>{
-      const es = wkEnts.filter(x=>(x.pos||'未分崗')===ps && x.date===dt)
-      const cellOps = meN ? ` onclick="cellClick('${ps}','${dt}')" ondragover="event.preventDefault();this.style.outline='2px solid var(--primary)'" ondragleave="this.style.outline=''" ondrop="shiftDrop(event,'${ps}','${dt}')"` : ''
-      const ents = es.map(e=>{
-        const pi = pcIdx(e.name), ti = e.tr ? pcIdx(e.tr) : -1
-        // v4.7.0 寶石色：實色填滿無外框；帶訓卡=左右兩人實色各半+白虛線框
-        // v4.9.4（張良「手機帶訓卡名字被切」）：帶訓卡改上下切色各一行——再窄名字都完整
-        const bg2 = e.tr ? `background:linear-gradient(180deg,${PB[pi]} 50%,${PB[ti]} 50%);` : `background:${PB[pi]};`
-        const exp = ((d.posStats||{})[e.name]||{})[ps] || 0 // v4.9.0 生手標記：這崗位排過≤1次
-        const trExp = e.tr ? (((d.posStats||{})[e.tr]||{})[ps] || 0) : 0 // v4.9.6 卡上直接顯示該站次數
-        return `<div ${meN?`draggable="true" ondragstart="event.stopPropagation();event.dataTransfer.setData('text/plain','${e.id}');window._shiftDragId='${e.id}'" ondragend="window._shiftDragId=null" onclick="event.stopPropagation();shiftForm('${e.id}')"`:''} style="font-size:13px;line-height:1.7;${meN?'cursor:grab;':''}${bg2}border:${e.tr?'2px dashed rgba(255,255,255,.95)':'none'};${e.tr?'outline:2px dashed rgba(255,255,255,.5);outline-offset:2px;':''}border-radius:6px;padding:${e.tr?'3px 8px':'5px 8px'};margin:${e.tr?'4px 2px':'2px 0'}">${(e.seq||exp+1)<=2&&dt>=today&&ps!=='未分崗'&&!e.tr?`<span title="這是他第 ${e.seq||exp+1} 次站${ps}，建議搭帶訓" style="font-size:12px">⚠️</span> `:''}<b style="color:${PT[pi]};font-weight:600">${e.name}</b>${ps!=='未分崗'?` <span title="這是他第 ${e.seq||exp+1} 次站${ps}" style="font-size:11px;color:${PT[pi]};opacity:.75;font-weight:700">${e.seq||exp+1}</span>`:''}${e.tr?`<span style="display:block;color:${PT[ti]};font-weight:600;font-size:12.5px">🎓${e.tr} <span style="font-size:11px;opacity:.75">${e.trSeq||trExp+1}</span></span>`:''}</div>`
-      }).join('')
-      return `<td${cellOps} style="${BD}${gb}${dt===today?'background:#1B3356;':''}text-align:left;${meN?'cursor:pointer;':''}vertical-align:top;overflow:hidden">${ents || (meN?'<span class="mut">＋</span>':'<span class="mut">—</span>')}</td>`
-    }).join('') + `</tr>`
-  })
-  h += `</tbody></table>`
-  // v4.6.1（張良「直的排、在表格外」）：未排名單移到表格下方、每天一欄直向堆疊（欄寬跟表格對齊）
   const regStaff = (d.staff||[]).filter(s2=>!s2.off)
-  h += `<div style="display:grid;grid-template-columns:88px repeat(7,1fr);min-width:760px;margin-top:6px">
-    <div class="hint" style="font-weight:800;padding:2px 4px">未排</div>` + wkDays.map(dt=>{
-    const onDay = new Set(wkEnts.filter(x=>x.date===dt).flatMap(x=>[x.name, x.tr].filter(Boolean))) // v4.6.2：被帶訓的人也算有班
-    const rest = regStaff.filter(s2=>!onDay.has(s2.n))
-    return `<div ${meN?`ondragover="event.preventDefault();this.style.outline='2px dashed var(--red)'" ondragleave="this.style.outline=''" ondrop="unschedDrop(event)"`:''} style="padding:2px 4px;min-height:34px;border-radius:8px">${rest.map(s2=>`<span ${meN?`draggable="true" ondragstart="event.dataTransfer.setData('text/plain','u|${s2.n}')" title="拖上去格子＝直接排班"`:''} style="display:flex;align-items:center;gap:5px;width:max-content;${meN?'cursor:grab;':''}border:1px solid var(--line);background:var(--card);color:var(--text);border-radius:6px;padding:4px 8px 4px 6px;margin:2px 0;font-size:13px;font-weight:600;line-height:1.5"><span style="width:8px;height:8px;border-radius:50%;background:${PB[pcIdx(s2.n)]};flex:none"></span>${s2.n}</span>`).join('')||'<span class="hint" style="font-size:12px">✓</span>'}</div>`
-  }).join('') + `</div></div>`
+  // v4.21.0（張良「固定視窗原生捲動滑順翻週」）：三週並排 scroll-snap——原生橫滑一次吸一週，七天壓進一螢幕
+  const buildWeekBlock = (wkStart) => {
+    const wd2 = [...Array(7)].map((_,i)=>{ const t2=new Date(wkStart); t2.setDate(t2.getDate()+i); return t2.toISOString().slice(0,10) })
+    const we2 = d.sched.filter(x=>wd2.includes(x.date))
+    const pl2 = (d.posList||[]).slice(); we2.forEach(x=>{ const p4=x.pos||'未分崗'; if(!pl2.includes(p4)) pl2.push(p4) })
+    let hh = `<table style="table-layout:fixed;width:100%;border-collapse:collapse"><colgroup><col style="width:62px">${wd2.map(()=>'<col>').join('')}</colgroup><thead><tr><th style="${BD}text-align:left;position:sticky;left:0;background:var(--soft);z-index:2;font-size:11px">崗位</th>${wd2.map((dt,i)=>`<th onclick="dayClick('${dt}')" title="點我看當日時段細表" style="${BD}text-align:center;cursor:pointer;font-size:11.5px;${dt===today?'color:#FFFFFF;background:#1F4068;box-shadow:inset 0 -3px 0 var(--primary)':'color:#F2F5F9;background:var(--soft)'}">${dt.slice(5)}<br>（${wdN[i]}）</th>`).join('')}</tr></thead><tbody>`
+    if (!pl2.length) hh += `<tr><td colspan="8" class="mut" style="${BD}text-align:center">先按「⚙️ 設定」建崗位</td></tr>`
+    let pg=null
+    pl2.forEach(ps=>{
+      const g=GC[posGrp(ps)]; const gb=(pg!==null&&posGrp(ps)!==pg)?`border-top:3px solid ${g.ink}AA;`:''; pg=posGrp(ps)
+      hh += `<tr><td style="${BD}${gb}text-align:left;font-weight:800;font-size:11.5px;color:${g.ink};position:sticky;left:0;background:${g.bg};z-index:1">${ps}</td>` + wd2.map(dt=>{
+        const es=we2.filter(x=>(x.pos||'未分崗')===ps&&x.date===dt)
+        const cellOps=meN?` onclick="cellClick('${ps}','${dt}')" ondragover="event.preventDefault();this.style.outline='2px solid var(--primary)'" ondragleave="this.style.outline=''" ondrop="shiftDrop(event,'${ps}','${dt}')"`:''
+        const ents=es.map(e=>{
+          const pi=pcIdx(e.name),ti=e.tr?pcIdx(e.tr):-1
+          const bg2=e.tr?`background:linear-gradient(180deg,${PB[pi]} 50%,${PB[ti]} 50%);`:`background:${PB[pi]};`
+          const exp=((d.posStats||{})[e.name]||{})[ps]||0, trExp=e.tr?(((d.posStats||{})[e.tr]||{})[ps]||0):0
+          return `<div ${meN?`draggable="true" ondragstart="event.stopPropagation();event.dataTransfer.setData('text/plain','${e.id}');window._shiftDragId='${e.id}'" ondragend="window._shiftDragId=null" onclick="event.stopPropagation();shiftForm('${e.id}')"`:''} style="font-size:11.5px;line-height:1.45;${meN?'cursor:grab;':''}${bg2}border:${e.tr?'1.5px dashed rgba(255,255,255,.95)':'none'};border-radius:5px;padding:${e.tr?'2px 4px':'3px 5px'};margin:2px 0">${(e.seq||exp+1)<=2&&dt>=today&&ps!=='未分崗'&&!e.tr?'⚠️':''}<b style="color:${PT[pi]};font-weight:600">${e.name}</b>${ps!=='未分崗'?` <span style="font-size:10px;color:${PT[pi]};opacity:.7;font-weight:700">${e.seq||exp+1}</span>`:''}${e.tr?`<span style="display:block;color:${PT[ti]};font-weight:600;font-size:10.5px">🎓${e.tr} <span style="font-size:9.5px;opacity:.7">${e.trSeq||trExp+1}</span></span>`:''}</div>`
+        }).join('')
+        return `<td${cellOps} style="${BD}${gb}${dt===today?'background:#1B3356;':''}text-align:left;${meN?'cursor:pointer;':''}vertical-align:top;overflow:hidden">${ents||(meN?'<span class="mut">＋</span>':'<span class="mut">—</span>')}</td>`
+      }).join('')+`</tr>`
+    })
+    hh += `</tbody></table>`
+    hh += `<div style="display:grid;grid-template-columns:62px repeat(7,1fr);margin-top:6px"><div class="hint" style="font-weight:800;padding:2px 3px;font-size:10.5px">未排</div>`+wd2.map(dt=>{
+      const onDay=new Set(we2.filter(x=>x.date===dt).flatMap(x=>[x.name,x.tr].filter(Boolean)))
+      const rest=regStaff.filter(s2=>!onDay.has(s2.n))
+      return `<div ${meN?`ondragover="event.preventDefault();this.style.outline='2px dashed var(--red)'" ondragleave="this.style.outline=''" ondrop="unschedDrop(event)"`:''} style="padding:2px 3px;min-height:26px;border-radius:8px">${rest.map(s2=>`<span ${meN?`draggable="true" ondragstart="event.dataTransfer.setData('text/plain','u|${s2.n}')" title="拖上去格子＝排班"`:''} style="display:flex;align-items:center;gap:4px;width:max-content;${meN?'cursor:grab;':''}border:1px solid var(--line);background:var(--card);color:var(--text);border-radius:6px;padding:2px 5px 2px 4px;margin:2px 0;font-size:10.5px;font-weight:600"><span style="width:7px;height:7px;border-radius:50%;background:${PB[pcIdx(s2.n)]};flex:none"></span>${s2.n}</span>`).join('')||'<span class="hint" style="font-size:10.5px">✓</span>'}</div>`
+    }).join('')+`</div>`
+    return hh
+  }
+  const mkWS = off => { const t2=new Date(window._shiftWk); t2.setDate(t2.getDate()+off*7); return t2.toISOString().slice(0,10) }
+  h += `<div id="shSnap" style="display:flex;overflow-x:auto;scroll-snap-type:x mandatory;overscroll-behavior-x:contain;margin-bottom:12px;-webkit-overflow-scrolling:touch;scrollbar-width:none">
+    <div style="flex:0 0 100%;scroll-snap-align:center;box-sizing:border-box;padding-right:3px">${buildWeekBlock(mkWS(-1))}</div>
+    <div style="flex:0 0 100%;scroll-snap-align:center;box-sizing:border-box;padding:0 3px">${buildWeekBlock(mkWS(0))}</div>
+    <div style="flex:0 0 100%;scroll-snap-align:center;box-sizing:border-box;padding-left:3px">${buildWeekBlock(mkWS(1))}</div>
+  </div>`
   const pn = Object.keys(per).sort()
   if (pn.length){
     h += `<div class="scroll"><table><thead><tr><th style="text-align:left">夥伴</th><th>總工時</th><th>正常</th><th>加班×1.34</th><th>加班×1.67</th><th style="text-align:left">⚠️ 勞基法檢查</th></tr></thead><tbody>`
@@ -1882,7 +1882,17 @@ function shiftRender(){
   })
   h += `</section>`
   app.innerHTML = h
-  window._shDir = null // 動畫方向用完即清（排班重畫不再觸發滑動動畫）
+  window._shDir = null
+  // v4.21.0 三週 scroll-snap：開場捲到中間（本週），滑到左/右 panel 吸附後自動翻週
+  const sn = document.getElementById('shSnap')
+  if (sn) {
+    sn.scrollLeft = sn.clientWidth
+    let _snt
+    sn.addEventListener('scroll', () => { clearTimeout(_snt); _snt = setTimeout(() => {
+      const w = sn.clientWidth || 1, idx = Math.round(sn.scrollLeft / w)
+      if (idx === 0) shiftWkNav(-1); else if (idx >= 2) shiftWkNav(1)
+    }, 150) })
+  }
 }
 function shiftForm(id){
   const d = window._shiftD, it = id ? d.sched.find(x=>x.id===id) : null
