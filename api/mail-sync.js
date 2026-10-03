@@ -2457,6 +2457,26 @@ export default async function handler(req, res) {
     await kvPut('sp_finance_pm_prep_perm', pm, '權限管理(' + who.name + ')')
     return res.status(200).json({ ok: true, perm: pm })
   }
+  // 測試口（v4.33.1 張良：先發一則會議提醒給我測連結帶不帶身分）：?meetping=<MENU_PROBE_KEY>&name=張良
+  // 原樣複製 joya-intraday 追簽提醒的訊息格式：有綁定→個人連結?me=token#meet=最新一則；同時發 GD 推播（有開🔔才收得到）
+  if (req.query?.meetping) {
+    const mk = (process.env.MENU_PROBE_KEY || '').trim()
+    if (!mk || String(req.query.meetping) !== mk) return res.status(403).json({ ok: false })
+    const nmT = String(req.query.name || '張良')
+    const [rosT, meetT, bdT] = await Promise.all([kvGet('sp_crew_kb_roster'), kvGet('sp_finance_pm_meet'), kvGet('sp_finance_pm_prep_bind')])
+    const poT = ((rosT || {}).people || []).find(p => (p.name || '').includes(nmT) && p.lineUserId)
+    if (!poT) return res.status(404).json({ ok: false, error: '名冊找不到有LINE的 ' + nmT })
+    const itT = (((meetT || {}).list) || []).find(x => x.pubTs) || (((meetT || {}).list) || [])[0]
+    if (!itT) return res.status(404).json({ ok: false, error: '沒有會議紀錄可以測' })
+    const tkPT = ((bdT || {}).byUid || {})[poT.lineUserId]
+    const { prepLink, wpPushUids } = await import('./_webpush.js')
+    const lnkT = tkPT ? `https://ground-pm.vercel.app/prep?me=${tkPT}#meet=${itT.id}` : prepLink('meet=' + itT.id)
+    const tkLT = (process.env.LINE_CHANNEL_ACCESS_TOKEN || '').trim()
+    if (!tkLT) return res.status(500).json({ ok: false, error: '沒有 LINE token' })
+    const prT = await fetch('https://api.line.me/v2/bot/message/push', { method: 'POST', headers: { 'content-type': 'application/json', Authorization: 'Bearer ' + tkLT }, body: JSON.stringify({ to: poT.lineUserId, messages: [{ type: 'text', text: `📣 會議宣達還沒簽收（測試）\n【${itT.type}・${itT.date}】\n點下面連結直達這則，看完按「✅ 確認熟知」，有問題按「❓ 我想發問」👇\n${lnkT}` }] }) })
+    let wpT = 0; try { wpT = await wpPushUids([poT.lineUserId], { title: '📣 會議簽收提醒（測試）', body: `【${itT.type}・${itT.date}】點開直達這則`, url: '/prep#meet=' + itT.id }) } catch (_) {}
+    return res.status(200).json({ ok: prT.ok, to: poT.name, meet: itT.id, linkType: tkPT ? '個人連結(自動帶身分)' : 'LIFF/https(未綁定)', webpushSent: wpT })
+  }
   // ── 🔔 Web Push＋LIFF（v4.33.0 張良：點通知直接打開主畫面GD+本人身分；LINE群組連結點開自動認人不再是訪客）──
   // 設定口（公開資訊）：GET ?webpushcfg=1 → VAPID 公鑰 + LIFF id（公鑰本來就是公開的，LIFF id 也是）
   if (req.query?.webpushcfg) {
