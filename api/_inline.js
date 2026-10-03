@@ -59,11 +59,21 @@ function trimResv(x) {
 export const STATE_TXT = { 1: '已確認', 2: '已取消', 4: '已入座', 5: '未出席' }
 
 // 抓一天的全部訂位（day=訂位日 YYYY-MM-DD）→ 瘦身後陣列（依時間排序）
+// ⚠️坑（2026-10-03 實測）：空日（無任何訂位的日子）inline 後端會「吊 60 秒」才回 0 筆（有資料日 <1 秒）
+//   → 6 秒逾時當「跳過」丟 TIMEOUT 錯，呼叫端別把逾時日當空日去刪舊資料
 export async function inlineFetchDay(token, day) {
   const u = `https://host-web-api.inline.app/v2/reservations/dailyUpdated?companyId=${encodeURIComponent(INLINE_COMPANY)}&branchId=${INLINE_BRANCH}&day=${day}&timestamp=0`
-  const r = await fetch(u, { headers: { authorization: token, accept: 'application/json' } })
-  if (!r.ok) throw new Error(`inline: fetchDay ${day} ${r.status}`)
-  const txt = await r.text()
+  const ctrl = new AbortController()
+  const timer = setTimeout(() => ctrl.abort(), 6000)
+  let r, txt
+  try {
+    r = await fetch(u, { headers: { authorization: token, accept: 'application/json' }, signal: ctrl.signal })
+    if (!r.ok) throw new Error(`inline: fetchDay ${day} ${r.status}`)
+    txt = await r.text()
+  } catch (e) {
+    if (e?.name === 'AbortError' || /abort/i.test(e?.message || '')) { const err = new Error(`inline: fetchDay ${day} TIMEOUT(空日慢回)`); err.isTimeout = true; throw err }
+    throw e
+  } finally { clearTimeout(timer) }
   const rows = txt.split('\n').filter(Boolean).map((l) => { try { return JSON.parse(l) } catch (_) { return null } }).filter(Boolean)
   return rows.map(trimResv).sort((a, b) => (a.t || '99') < (b.t || '99') ? -1 : 1)
 }

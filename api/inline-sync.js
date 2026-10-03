@@ -18,14 +18,19 @@ function dateRange(from, to) {
   return out
 }
 
-// 同步一段日期：登入一次、5 併發抓、按月整批寫回
+// 同步一段日期：登入一次、8 併發抓、按月整批寫回
+// 空日逾時（_inline.js 6 秒坑）→ 跳過該日不動舊資料；skipped 回報出來（通常=公休/無訂位日，本來就空）
 async function syncRange(from, to) {
   const days = dateRange(from, to)
   if (days.length > 150) throw new Error(`一次最多 150 天（現在 ${days.length}）`)
   const token = await inlineLogin()
   const byDay = {}
-  for (let i = 0; i < days.length; i += 5) {
-    await Promise.all(days.slice(i, i + 5).map(async (d) => { byDay[d] = await inlineFetchDay(token, d) }))
+  const skipped = []
+  for (let i = 0; i < days.length; i += 8) {
+    await Promise.all(days.slice(i, i + 8).map(async (d) => {
+      try { byDay[d] = await inlineFetchDay(token, d) }
+      catch (e) { if (e?.isTimeout) { byDay[d] = null; skipped.push(d) } else throw e }
+    }))
   }
   // 按月合併寫回（讀舊檔→覆蓋抓到的日→寫回；沒動到的日保留）
   const byMo = {}
@@ -36,6 +41,7 @@ async function syncRange(from, to) {
     const key = 'sp_finance_pm_inline_' + mo
     const doc = (await kvGet(key)) || { days: {} }
     for (const d of ds) {
+      if (byDay[d] == null) continue // 逾時跳過：不動舊資料
       if (byDay[d].length) { doc.days[d] = byDay[d]; resv += byDay[d].length }
       else delete doc.days[d] // 空日不佔空間（公休/無訂位）
     }
@@ -48,7 +54,7 @@ async function syncRange(from, to) {
   sum.lastSync = new Date().toISOString()
   await kvPut('sp_finance_pm_inline', sum, 'inline訂位同步')
   await announceChanged()
-  return { days: days.length, resv }
+  return { days: days.length, resv, skipped }
 }
 
 export default async function handler(req, res) {
