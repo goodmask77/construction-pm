@@ -75,14 +75,26 @@ export default async function handler(req, res) {
     if (q0) rows0 = rows0.filter(r => JSON.stringify(r).includes(q0))
     return res.status(200).json({ ok: true, id: id0, total: Object.keys(doc0.rows || {}).length, matched: rows0.length, rows: rows0.slice(0, 30) })
   }
-  // 一次性回填（張良 2026-10-03：「7/1 前營收頁沒 AB 資料，用阿桑 API 補完」）：
+  // 歷史回填重啟口（張良 2026-10-04「阿桑OPS已更新2021年營業資料,更新」）：
+  // ?histfill=<MENU_PROBE_KEY>&slugs=revd,sett&from=2021-01-01 → 把指定端點的回填起點撥回去，
+  // 之後每跑一次同步（cron 或 ?force）吃一段 366 天，分幾輪自動拉完；不動其他端點
+  if (req.query?.histfill) {
+    if (!mk || String(req.query.histfill) !== mk) return res.status(403).json({ ok: false })
+    const from0 = /^\d{4}-\d{2}-\d{2}$/.test(String(req.query.from || '')) ? String(req.query.from) : '2021-01-01'
+    const slugs = String(req.query.slugs || 'revd,sett').split(',').map(s => s.trim()).filter(s => EPS.some(E => E.slug === s))
+    const st0 = (await kvGet('sp_finance_pm_boss_state')) || { bf: {}, rot: 0, res: {} }
+    for (const s of slugs) st0.bf[s] = from0
+    await kvPut('sp_finance_pm_boss_state', st0, 'boss歷史回填重啟')
+    return res.status(200).json({ ok: true, slugs, from: from0, hint: '之後每跑一次同步吃一段366天，?force 催跑到 bf 顯示 done' })
+  }
+  // 一次性回填（張良 2026-10-03「7/1 前營收頁沒 AB 資料」→ 2026-10-04 放寬到 2021 起全史）：
   // boss revd（營收/單數/折扣/服務費/來客）＋ sett（現金/刷卡/Uber）→ 營收頁 pos entries；
   // 只補 2026-07-01 前、且該日尚無 AB 列的日子（ingestPosRecords 本身就 date|店 去重，7/1 起日結信為準不會被蓋）
   if (req.query?.fillpos) {
     const pk = (process.env.PARTNER_API_KEY || '').trim()
     if (!pk || String(req.query.fillpos) !== pk) return res.status(403).json({ ok: false })
     const recs = []
-    for (const m of ['2026-01', '2026-02', '2026-03', '2026-04', '2026-05', '2026-06']) {
+    for (const m of monthsBetween('2021-01-01', '2026-06-30')) {
       const ym = m.replace('-', '')
       const [revD, settD] = await Promise.all([kvGet(`sp_finance_pm_boss_revd_${ym}`), kvGet(`sp_finance_pm_boss_sett_${ym}`)])
       const settRows = (settD || {}).rows || {}
