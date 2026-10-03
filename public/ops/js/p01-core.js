@@ -112,8 +112,9 @@ function renderBoard(d, store, view){
   // 🌞 今日營收大卡（v4.42.0 今日為王：進來先回答「今天怎麼樣」）：營業中=盤中即時、打烊=最新日結；vs 近7個營業日全日均（紅=高 同色階習慣）
   {
     const ds0 = d.days || []
-    const lv0 = ds0.filter(x=>x.live).slice(-1)[0]
-    const of0 = ds0.filter(x=>!x.live && (Number(x.rev)||0)>0)
+    const lv0 = ds0.filter(x=>x.live).sort((a,b)=>String(a.date)<String(b.date)?-1:1).slice(-1)[0]
+    // v4.42.1 治本（張良「怎麼會顯示8/10」）：d.days 不保證照日期排（跨月合併）→明確照日期排序取最大，不再吃陣列順序
+    const of0 = ds0.filter(x=>!x.live && (Number(x.rev)||0)>0).slice().sort((a,b)=>String(a.date)<String(b.date)?-1:1)
     const shown = lv0 || of0[of0.length-1]
     if (shown) {
       const base7 = of0.filter(x=>x.date!==shown.date).slice(-7)
@@ -270,9 +271,7 @@ function renderBoard(d, store, view){
   // 有日結的月份=日結加總（跟上表/KPI 同口徑），更早=阿桑系統 /revenue/monthly
   // v4.37.3：獨立「歷史月營收」區塊退役——已整合進上面「每日數據」的年▸月▸日三層樹（全部模式）
   // 品項明細（張良 2026-09-22 v2：互動區塊——全部/分類/依品類分組＋欄位排序＋售價＋%欄＋🙈隱藏管理；itemsRender 畫）
-  window._bd = d
-  // v4.42.0（張良「太佔畫面」）：品項明細收成一行標題、點開才展（itemsRender 照畫進 itemsec）
-  h += `<details style="margin-top:16px"><summary style="cursor:pointer;list-style-position:inside;background:var(--card);border:1px solid var(--line);border-radius:16px;box-shadow:var(--shadow);padding:15px 16px;font-weight:800;font-size:17px;color:var(--ink)">品項明細 <span class="hint">每個品項賣幾份/排序/佔比——點開看</span></summary><div id="itemsec"></div></details>`
+  window._bd = d // v4.42.1 品項明細搬「銷售數據」分頁（張良）；_bd 留著給每日數據期間切換用
   // 時段
   if (d.slots) {
     const draw = (label, arr) => {
@@ -284,14 +283,14 @@ function renderBoard(d, store, view){
     h += `<section>${draw('平日時段', d.slots.wk)}${draw('週末時段', d.slots.we)}</section>`
   }
   app.innerHTML = h
-  itemsRender()
   todayRender()
   if (store === 'ground') { sopLoad(); soLoad() } // 銷量預測驗證區 fcsec 隨備料搬家（v4.42.0）
   if (!window._pf) { window._pf = 1; setTimeout(prefetchTabs, 800) } // 背景預抓其他分頁（切換秒開）
 }
 // ── 🍳 備料分頁（v4.42.0 張良拍板：預估備料量+預做節奏表從首頁搬家；App 當初就是為備料而生，現在升格獨立分頁） ──
-function renderPrep(d, store){
-  document.getElementById('upd').textContent = '備料・照「今天星期幾」那欄的量備'
+function renderPrep(d, store){ // v4.42.1 分頁改名「銷售數據」＝備料量+節奏表+品項明細（張良）
+  document.getElementById('upd').textContent = '銷售數據・備料照「今天星期幾」那欄的量'
+  window._bd = d // 品項明細（itemsRender）吃這份
   let h = ''
   // 備料卡（GD：炸台/沙拉/吧檯；總平均＋每週幾平均——張良 2026-09-20 取消時段拆分，一早備好）
   if (d.prep) {
@@ -323,9 +322,11 @@ function renderPrep(d, store){
     h += `<section><h2>預做節奏表 <span style="float:right;white-space:nowrap"><button class="mini${rhyMode===15?' on':''}" id="rb15" onclick="rSwitch(15)">15分</button><button class="mini${rhyMode===30?' on':''}" id="rb30" onclick="rSwitch(30)">30分</button><button class="mini" id="rbMng" onclick="rMng()">🙈 隱藏管理</button></span><br><span class="hint">${d.rhythm.days ? `近 ${d.rhythm.days} 個營業日平均・每格＝該時段平均賣幾份（·＝不到0.5份）——照表預做、尖峰前先備` : '⏳ 資料累積中（GD 從 2026-09-21 起、AB 從 2026-09-22 起含歷史回補）——顯示近 7 個營業日平均，跑幾天會越來越準'}</span></h2><div id="rhyBody"></div></section>`
   }
   if (!d.prep && !d.rhythm) h += `<section class="mut">這家店還沒有備料資料</section>`
+  h += `<div id="itemsec"></div>` // 品項明細（v4.42.1 從首頁搬來；itemsRender 畫）
   if (store === 'ground') h += `<div id="fcsec"></div>` // 銷量預測驗證區（主管限定）跟著備料走
   app.innerHTML = h
   rhythmRender()
+  itemsRender()
   if (store === 'ground') fcLoad()
 }
 async function prepPage(fresh){ // 備料分頁入口：跟首頁同一包 opsboard 資料、同快取（stale-first 秒開）
