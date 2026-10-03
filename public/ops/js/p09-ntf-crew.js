@@ -290,7 +290,8 @@ async function favSave(sel){
   favRender()
   if (TK()) { try { await fetch('/api/mail-sync?prepfav=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ token: TK(), list: sel }) }) } catch(_){} } // 綁定者同步伺服器＝換裝置也在
 }
-function favEdit(){ // 編輯彈層：點=加入/移除、數字=顯示順序(照點的先後)、滿5個再點=擠掉最早的
+function favEdit(){ // 編輯彈層：點=加入/移除、數字=顯示順序(照點的先後)
+  // v4.40.6（張良「完成旁邊要有取消」「滿了按新的自動擠掉最早的=邏輯有問題」）：滿5=不自動擠、紅字提示先移除；＋取消鈕不存直接關
   let sel = favGet().filter(k => favAll().includes(k)).slice(0, FAV_MAX)
   const ov = document.createElement('div'); ov.id = 'favOv'
   ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:60;display:flex;align-items:flex-end;justify-content:center'
@@ -300,11 +301,21 @@ function favEdit(){ // 編輯彈層：點=加入/移除、數字=顯示順序(�
   const draw = () => {
     box.innerHTML = `<h2 style="margin-bottom:4px">我的常用清單</h2><div class="hint" style="margin-bottom:10px">點一下＝加入/移除，數字＝顯示順序（最多 ${FAV_MAX} 個）${TK()?'・跟著你的身分走，換手機也在':'・先綁定身分，換手機清單才會跟著'}</div>
       <div id="favList" style="display:grid;grid-template-columns:repeat(4,1fr);gap:9px">${favAll().map(k => { const i = sel.indexOf(k); return `<button class="favchip${i>=0?' on':''}" data-k="${k}">${TAB_ICONS[k]||''}<span>${favLabel(k)}</span>${i>=0?`<b class="fno">${i+1}</b>`:''}</button>` }).join('')}</div>
-      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px"><button class="mini" style="padding:9px 16px" id="favReset">回預設</button><button class="mini on" style="padding:9px 22px;font-size:15px" id="favOk">✓ 完成</button></div>`
+      <div id="favWarn" style="min-height:19px;margin-top:8px;font-size:13px;font-weight:700;color:var(--red)"></div>
+      <div style="display:flex;gap:8px;align-items:center;margin-top:6px"><button class="mini" style="padding:9px 16px" id="favReset">回預設</button><button class="mini" style="padding:9px 18px;margin-left:auto" id="favCancel">取消</button><button class="mini on" style="padding:9px 22px;font-size:15px" id="favOk">✓ 完成</button></div>`
     box.querySelectorAll('.favchip').forEach(b => b.addEventListener('click', () => { const k = b.dataset.k; const i = sel.indexOf(k)
-      if (i >= 0) sel.splice(i, 1); else { if (sel.length >= FAV_MAX) sel.shift(); sel.push(k) }
+      if (i >= 0) sel.splice(i, 1)
+      else {
+        if (sel.length >= FAV_MAX) { // 滿了不自動擠（會默默弄丟別的）——提示自己挑一個移除
+          const w = box.querySelector('#favWarn'); if (w) w.textContent = `已滿 ${FAV_MAX} 個——先點掉一個，再加「${favLabel(k)}」`
+          b.style.transition = 'transform .08s'; b.style.transform = 'translateX(4px)'; setTimeout(()=>{ b.style.transform = '' }, 120) // 輕晃提示按到了但加不進去
+          return
+        }
+        sel.push(k)
+      }
       draw() }))
     box.querySelector('#favReset').addEventListener('click', () => { sel = FAV_DEFAULT.slice(); draw() })
+    box.querySelector('#favCancel').addEventListener('click', () => ov.remove()) // 不存直接關
     box.querySelector('#favOk').addEventListener('click', () => { favSave(sel.length ? sel : FAV_DEFAULT.slice()); ov.remove() })
   }
   draw(); ov.appendChild(box); document.body.appendChild(ov)
