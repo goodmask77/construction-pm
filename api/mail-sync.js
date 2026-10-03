@@ -1991,7 +1991,28 @@ export default async function handler(req, res) {
         .filter(x => x.status !== 'cancelled' && String(x.work_date || '') >= loS && String(x.work_date || '') <= hiS)
         .map(x => ({ date: x.work_date, name: fullOf(idName[x.staff_id] || x.staff_name), code: x.shift_code || x.role_code || '', dept: x.dept || '', start: hm(x.start_at), end: hm(x.end_at), day: x.day_type || '' }))
     } catch (_) {}
-    return res.status(200).json({ ok: true, ym, ab: abSched, hourly: hourlyL, sched: schedL.map(x => ({ ...x, seq: seqMap[x.id], trSeq: trSeqMap[x.id] })), punches: pchs.map(p => ({ name: p.name, ts: p.ts, dir: p.dir, src: p.src })), names: namesU, namesAll, posList, slots: (sd || {}).slots || null, colors: colMap, posStats, leave: leaveM, hist: ((sd || {}).hist || []).slice(-200).reverse(), lockEdit: (sd || {}).lockEdit ? 1 : 0, tpls: (sd || {}).tpls || [], staff, me: meS ? { name: meS.name, role: meS.role, approver: aprS.includes(meS.name) } : null })
+    // AB inline 訂位彙總（張良 2026-10-03「班表下方同日期對齊,時段 12-13/13-17/18-19/19後」）：
+    // 每天×時段 {g組,p人,big:[≥20人大組]}；有效=state∉{2,5}；12-13含更早(11點包場)、13-17含17點、候位(沒時間)不計
+    let resvDays = {}
+    try {
+      const moSet2 = [...new Set([loS.slice(0, 7), ym, hiS.slice(0, 7)])]
+      const inlDocs = await Promise.all(moSet2.map((m) => kvGet('sp_finance_pm_inline_' + m))) // ⚠️ pm_inline_ 月檔 key 含破折號（跟 boss_sched 不同）
+      const slotOf = (t) => (t < '13:00' ? 'a' : t < '18:00' ? 'b' : t < '19:00' ? 'c' : 'd')
+      for (const d9 of inlDocs) {
+        for (const [dt, arr] of Object.entries((d9 || {}).days || {})) {
+          if (dt < loS || dt > hiS) continue
+          for (const r9 of arr) {
+            if (r9.st === 2 || r9.st === 5 || !r9.t) continue
+            const sl = slotOf(r9.t)
+            const dd9 = resvDays[dt] = resvDays[dt] || {}
+            const cell = dd9[sl] = dd9[sl] || { g: 0, p: 0 }
+            cell.g++; cell.p += r9.n || 0
+            if ((r9.n || 0) >= 20) (cell.big = cell.big || []).push({ t: r9.t, name: r9.name, n: r9.n })
+          }
+        }
+      }
+    } catch (_) {}
+    return res.status(200).json({ ok: true, ym, ab: abSched, resv: resvDays, hourly: hourlyL, sched: schedL.map(x => ({ ...x, seq: seqMap[x.id], trSeq: trSeqMap[x.id] })), punches: pchs.map(p => ({ name: p.name, ts: p.ts, dir: p.dir, src: p.src })), names: namesU, namesAll, posList, slots: (sd || {}).slots || null, colors: colMap, posStats, leave: leaveM, hist: ((sd || {}).hist || []).slice(-200).reverse(), lockEdit: (sd || {}).lockEdit ? 1 : 0, tpls: (sd || {}).tpls || [], staff, me: meS ? { name: meS.name, role: meS.role, approver: aprS.includes(meS.name) } : null })
   }
   // 人員色號管理口：POST ?shiftcolor=管理金鑰 {map:{名字:色號}} 合併寫入（固定/校正專屬色用）
   if (req.method === 'POST' && req.query?.shiftcolor) {

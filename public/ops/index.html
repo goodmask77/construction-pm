@@ -1993,6 +1993,23 @@ function shiftRender(){
         })
       })
     }
+    // v4.37.0（張良「inline訂位也顯示在班表下方,左邊時段/上面日期對齊班表,12-13/13-17/18-19/19後」）：
+    // 訂位四列併同一張表=日期欄完全對齊；格=組·人數、≥20人大組附名(🎉)；資料=inline每小時自動同步、唯讀
+    if (d.resv && Object.keys(d.resv).length){
+      const RSL = [['a','12-13'],['b','13-17'],['c','18-19'],['d','19後']]
+      const RC = {ink:'#5FD3A6',bg:'#10211A'}
+      hh += `<tr><td colspan="${wd2.length+1}" style="${BD}border-top:4px solid var(--line);padding:6px 8px;text-align:left;font-weight:900;font-size:13px;background:var(--soft);position:sticky;left:0">🍴 A Beach 訂位 <span class="hint" style="font-weight:600;font-size:10.5px">inline 自動同步・唯讀・組數/人數（不含已取消；12-13含更早、13-17含17點）</span></td></tr>`
+      RSL.forEach(([k9,lb9],ri)=>{
+        hh += `<tr><td style="${BD}${ri===0?`border-top:3px solid ${RC.ink}AA;`:''}padding:3px 6px;text-align:left;font-weight:800;font-size:11px;color:${RC.ink};position:sticky;left:0;background:${RC.bg};z-index:1;white-space:nowrap">${lb9}</td>`
+        hh += wd2.map(dt=>{
+          const v9 = (d.resv[dt]||{})[k9]
+          const base = `${BD}${ri===0?`border-top:3px solid ${RC.ink}AA;`:''}${sepOf(dt)}${wkndBg(dt)}${dt===today?'background:#16263C;':''}`
+          if (!v9) return `<td style="${base}"></td>`
+          const big = (v9.big||[]).map(b9=>`<div style="font-size:9.5px;color:#F2C94C;font-weight:800;white-space:nowrap" title="${b9.t} ${b9.name} ${b9.n}人">🎉${b9.name.slice(0,6)}×${b9.n}</div>`).join('')
+          return `<td style="${base}padding:2px 3px;text-align:center;vertical-align:top" title="${dt} ${lb9}：${v9.g}組 ${v9.p}人"><span style="font-size:11px;font-weight:800;color:${RC.ink};white-space:nowrap">${v9.g}組</span><span class="hint" style="font-size:10px;white-space:nowrap">·${v9.p}人</span>${big}</td>`
+        }).join('') + `</tr>`
+      })
+    }
     hh += `</tbody></table>`
     return hh
   }
