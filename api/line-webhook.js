@@ -950,7 +950,8 @@ async function loadBossText() {
       const byY = {}
       revm.forEach(m => { const y = m.month.slice(0, 4); const o = byY[y] = byY[y] || { rev: 0, mo: 0 }; o.rev += Number(m.revenue) || 0; o.mo++ })
       lines.push(`  ◇ AB 歷史月營收（${revm[0].month} 開店起共 ${revm.length} 個月；2026-04 前只有月彙總無日明細）：年合計 ` + Object.entries(byY).map(([y, o]) => `${y}=${nt(o.rev)}(${o.mo}月)`).join('、'))
-      lines.push('    逐月（月:萬）：' + revm.map(m => `${m.month.slice(2).replace('-', '/')}:${Math.round((Number(m.revenue) || 0) / 1e4)}`).join('、'))
+      // v4.38.4 改餵精確值（2026-10-04 DD 看到我們進位的「723」就跟張良瞎掰「資料顆粒度只到萬」；源頭 revm 存的是精確值=App每日數據同數）
+      lines.push('    逐月（精確值,=App每日數據同數；⚠️這些舊月只有月彙總,query_pos_day 撈不到逐日,月營收以本行為準）：' + revm.map(m => `${m.month.slice(2).replace('-', '/')}:${Math.round(Number(m.revenue) || 0).toLocaleString()}`).join('、'))
     }
     // 每日結帳對帳：現金差/刷卡差/與POS差額（eats365_synced=false=還沒對帳不是差0）
     const sett = rowsOf(K('sett', ym), K('sett', prevYm)).sort((a, b) => (a.date < b.date ? 1 : -1))
@@ -1470,7 +1471,7 @@ async function queryPosDay(date, store) {
 }
 // 🔎 訂位代查（inline 全檔；張良 2026-10-03「資料都串了為什麼摘要限制45天/20人」→治本：
 //   背景摘要只是快取，任何日期/區間（2021-02 開店～未來）都能用這支當場撈完整明細＋當日備註）
-async function queryResvDay(from, to) {
+async function queryResvDay(from, to, kw) {
   let f = String(from || ''), t2 = String(to || '')
   if (!/^\d{4}-\d{2}(-\d{2})?$/.test(f)) return '（日期格式要 YYYY-MM-DD 或 YYYY-MM 整月；可加 to 查區間）'
   if (/^\d{4}-\d{2}$/.test(f)) { if (!t2) t2 = f + '-31'; f = f + '-01' }
@@ -1483,6 +1484,27 @@ async function queryResvDay(from, to) {
   const kv3 = await kvGetMany(mos.map((m) => 'sp_finance_pm_inline_' + m).concat(['sp_finance_pm_inline_notes']))
   const notes = ((kv3['sp_finance_pm_inline_notes'] || {}).days) || {}
   const ST = { 1: '已確認', 2: '已取消', 3: '待確認', 4: '已入座', 5: '已取消', 6: '已確認' }
+  // v4.38.4 關鍵字過濾（張良「用搜尋功能就能找到我要的資料跟數量,不是嗎」）：kw=只回「姓名/客註/店註/當日備註」命中的筆,先在資料庫端篩完才給AI,不整月硬塞
+  const kw9 = String(kw || '').trim()
+  if (kw9) {
+    const Lk = [`◆ A Beach 訂位 ${f}${t2 !== f ? `~${t2}` : ''} 關鍵字「${kw9}」（系統代查=搜姓名/客註/店註）`]
+    let nHit = 0
+    for (const m of mos) {
+      const days = ((kv3['sp_finance_pm_inline_' + m] || {}).days) || {}
+      for (const d of Object.keys(days).sort()) {
+        if (d < f || d > t2) continue
+        for (const r of days[d]) {
+          if (![r.name, r.note, r.inote].some(x => String(x || '').includes(kw9))) continue
+          nHit++
+          Lk.push(`  - ${d} ${r.t || '未填'} ${r.name} ${r.n}人｜${ST[r.st] || r.st}${r.phone ? `｜${r.phone}` : ''}${r.note ? `｜客註:${String(r.note).slice(0, 60)}` : ''}${r.inote ? `｜店註:${String(r.inote).slice(0, 60)}` : ''}`)
+        }
+      }
+    }
+    const dnK = Object.keys(notes).filter(d => d >= f && d <= t2 && (notes[d] || []).some(n => String(n.note || '').includes(kw9))).sort()
+    if (dnK.length) { Lk.push('當日備註命中：'); dnK.forEach(d => (notes[d] || []).filter(n => String(n.note || '').includes(kw9)).forEach(n => Lk.push(`  - ${d} ${String(n.note).replace(/\s+/g, ' ').slice(0, 80)}`))) }
+    Lk.splice(1, 0, `共命中 ${nHit} 筆訂位＋${dnK.length} 天備註（0 筆=這段期間沒有任何含「${kw9}」的訂位/備註；婚禮包場也可能只寫在備註沒寫關鍵字,保險起見可再用不帶 kw 的整月精簡模式掃大組）`)
+    return Lk.join('\n')
+  }
   // v4.38.3 大區間精簡模式（2026-10-04 真實翻車：代查九月=1182筆逐筆全塞,AI輸入爆掉回「AI 回應失敗」兩次）：
   // >7天=每天一行統計+只逐列「≥20人大組 或 有客註/店註」的訂位（婚禮/包場線索都在備註,一筆不漏）；要完整逐筆用單日再查
   const compact = (new Date(t2) - new Date(f)) / 86400e3 > 7
@@ -1749,7 +1771,7 @@ const BOT_AGENT_GUIDE = `
 - {"type":"set_item","category":"消防工程","item":"灑水頭","status":"完工","unitPrice":1200,"qty":10,"assignee":"王師傅"}  // 改細項；欄位都可省略
 - {"type":"add_category","name":"空調工程","budget":300000,"space":"工程"}  // 建大項分類（四個空間都可以，space 預設工程；例：在團隊工作建「採購」就帶"space":"團隊"）。任務中心的分類欄位就是這個大項，建好後用 add_task/update_task 的 category 歸類
 - {"type":"query_pos_day","date":"2026-09-25","store":"ground"}  // 🔎資料代查（唯讀,不用確認,誰問都能用）：查某天某店「完整」銷售明細=逐品項份數金額+時段表+付款別。date 也可以只給月份 "2026-09"＝查整月（回每日營收+月合計,問某月總額/要補一段日期時用這個,**不要**一天一天查）。使用者問的資料你手上摘要沒有時,輸出這個指令(可附一句「我查一下」),系統會代查回填後你再答——**不要**回「資料沒帶到/請自己看App/請找張良接」。store=ground|abeach。
-- {"type":"query_resv","date":"2024-07-15","to":"2024-07-20"}  // 🔎A Beach 訂位代查（唯讀,不用確認）：任何日期的訂位「逐筆完整明細」（姓名/電話/人數/時間/狀態/客註/店註）＋當日備註（⚠️包場/公休註記），2021-02 開店～未來全查得到。date=YYYY-MM-DD 或 YYYY-MM 整月；to 選填查區間（一次最多 4 個月）。摘要裡只有彙總數字、使用者要「某天是誰訂的/電話/歷史某天明細/**兒童椅要幾張**」就用這個（回覆有🪑兒童椅合計＋誰要幾張）；問空檔也可以用（回「空檔」=確定沒被訂）。
+- {"type":"query_resv","date":"2024-07-15","to":"2024-07-20"}  // 🔎A Beach 訂位代查（唯讀,不用確認）：任何日期的訂位「逐筆完整明細」（姓名/電話/人數/時間/狀態/客註/店註）＋當日備註（⚠️包場/公休註記），2021-02 開店～未來全查得到。date=YYYY-MM-DD 或 YYYY-MM 整月；to 選填查區間（一次最多 4 個月）；加 "kw":"婚" =資料庫端先搜關鍵字（姓名/客註/店註/當日備註）只回命中的筆——問「某段期間所有婚禮/包場/慶生」這種主題式問題**優先用 kw**,比整月硬掃又準又省。摘要裡只有彙總數字、使用者要「某天是誰訂的/電話/歷史某天明細/**兒童椅要幾張**」就用這個（回覆有🪑兒童椅合計＋誰要幾張）；問空檔也可以用（回「空檔」=確定沒被訂）。
 - {"type":"query_resv","name":"OD"}  // 🔎A Beach 訂位「關鍵字」代查（唯讀,不用確認）：用「客人姓名/電話片段」直搜 inline 全史（=後台搜尋框同源），回每筆日期+姓名+人數+狀態+**電話**。使用者問「客人XX的電話/XX上次什麼時候來/XX訂過幾次」這種用名字問的就用這個（不知道日期時不要用 date 亂猜）。
 - {"type":"query_resv","top":10}  // 🔎A Beach 常客排行代查（唯讀,不用確認）：掃 2021 開店～今全史，回「實際入座次數」最多的前 N 名（姓名/入座次數/累計人次/訂過幾次含取消/最近來店/電話）。使用者問「常客前十名/來最多次的客人/回頭客」就用這個。
 - {"type":"query_hr","month":"2026-08"}  // 🔎NUEiP人資代查（唯讀,不用確認）：任意月「出勤統計(每人出勤天數/遲到/早退/缺卡/曠職)+班表(每人排班天數)」。加 "date":"2026-08-15" =改看單日逐筆打卡+當日班表。摘要只有本月近況,問歷史月/某人某月統計就用這個。
@@ -2260,7 +2282,7 @@ export default async function handler(req, res) {
           if (!qms.length && !qrs.length && !qhs.length && !qfs.length) return null
           let dataTxt = ''
           for (const m of qms) { try { const q = JSON.parse(m[0]); dataTxt += await queryPosDay(String(q.date || ''), String(q.store || 'ground')) + '\n\n' } catch (e) { dataTxt += '（查詢指令解析失敗）\n' } }
-          for (const m of qrs) { try { const q = JSON.parse(m[0]); dataTxt += (q.top ? await queryResvTop(q.top) : q.name ? await queryResvName(q.name) : await queryResvDay(String(q.date || ''), String(q.to || ''))) + '\n\n' } catch (e) { dataTxt += '（訂位查詢指令解析失敗）\n' } }
+          for (const m of qrs) { try { const q = JSON.parse(m[0]); dataTxt += (q.top ? await queryResvTop(q.top) : q.name ? await queryResvName(q.name) : await queryResvDay(String(q.date || ''), String(q.to || ''), String(q.kw || ''))) + '\n\n' } catch (e) { dataTxt += '（訂位查詢指令解析失敗）\n' } }
           for (const m of qhs) { try { const q = JSON.parse(m[0]); dataTxt += await queryHrMonth(q.month, q.date) + '\n\n' } catch (e) { dataTxt += '（人資查詢指令解析失敗）\n' } }
           for (const m of qfs) { try { const q = JSON.parse(m[0]); dataTxt += await queryFinMonth(q.month) + '\n\n' } catch (e) { dataTxt += '（財務查詢指令解析失敗）\n' } }
           // v4.38.3 保險絲（九月1182筆爆AI輸入翻車）：代查結果超長一律截斷,寧可請AI縮範圍也不能整則掛掉
