@@ -2398,12 +2398,13 @@ function laborRender(){
   ${cols.map((c,ci)=>{ const g=LB_GC[LB_GRP(c)]; return `<th style="padding:6px 8px;text-align:center;min-width:86px;white-space:nowrap;background:${g.bg};color:${g.ink};font-weight:800;${meN?'cursor:pointer':''}" ${meN?`onclick="lbColClear(${ci})" title="點我＝清空這一欄"`:''}>${c}</th>` }).join('')}
   <th style="padding:6px 10px;text-align:right;font-weight:900">小計</th><th style="padding:6px 10px;text-align:right;font-weight:900">人數</th></tr></thead><tbody>`
   LB_HOURS.forEach(hh=>{
-    const meal = hh==='12'||hh==='13'||hh==='18' // v4.30.2 張良：12-14/18-19=餐期 微色呈現
-    const mealBg = meal ? 'background:#262012;' : ''
-    h += `<tr><td style="padding:4px 10px;text-align:left;font-weight:800;position:sticky;left:0;${meal?'background:#262012;color:#E8C967;':'background:var(--card);'}z-index:1;white-space:nowrap;${meN?'cursor:pointer':''}" ${meN?`onclick="lbRowClear('${hh}')" title="點我＝清空這一列"`:''}>${+hh}-${+hh+1}</td>`
+    const meal = hh==='12'||hh==='13'||hh==='18' // v4.30.3 張良「再明顯一點 每個格子跟數字都看得出來」：整列每格淡金描邊+底色加亮
+    const mealBg = meal ? 'background:#2E2614;box-shadow:inset 0 0 0 1px rgba(232,201,103,.45);' : ''
+    const mealLn = meal ? 'box-shadow:inset 0 0 0 1px rgba(232,201,103,.45);' : ''
+    h += `<tr><td style="padding:4px 10px;text-align:left;font-weight:800;position:sticky;left:0;${meal?'background:#2E2614;color:#F2D06B;box-shadow:inset 0 0 0 1px rgba(232,201,103,.45);':'background:var(--card);'}z-index:1;white-space:nowrap;${meN?'cursor:pointer':''}" ${meN?`onclick="lbRowClear('${hh}')" title="點我＝清空這一列"`:''}>${+hh}-${+hh+1}</td>`
     cols.forEach((_,ci)=>{
       const v = lbV(sh,hh,ci)
-      h += `<td id="lc_${hh}_${ci}" style="padding:0;text-align:center;min-width:86px;border:1px solid var(--line);${v?`background:${LB_AB[v]||'#1E2630'};`:(meal?'background:#201B10;':'')}${meN?'cursor:cell;':''}font-variant-numeric:tabular-nums"
+      h += `<td id="lc_${hh}_${ci}" style="padding:0;text-align:center;min-width:86px;border:1px solid var(--line);${v?`background:${LB_AB[v]||'#1E2630'};`:(meal?'background:#2A2414;':'')}${mealLn}${meN?'cursor:cell;':''}font-variant-numeric:tabular-nums"
         ${meN?`onmousedown="lbDown(event,'${hh}',${ci})" onmouseenter="lbEnter('${hh}',${ci})"`:''}><div style="padding:6px 8px;min-height:19px;font-weight:800;color:${v?(LB_AC[v]||'var(--ink)'):'var(--ink)'}">${fmtN(v)}</div></td>`
     })
     const ppl = cols.reduce((a,_,ci)=>a+(lbV(sh,hh,ci)?1:0),0)
