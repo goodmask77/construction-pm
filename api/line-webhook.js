@@ -193,13 +193,33 @@ async function registerGroup(gid, src) {
   await kvSet('pm_group_seen', cur)
 }
 
+// 📊 額度查詢（v4.41.1 張良「每次發訊息最下方顯示消耗幾則＋使用/總則數」）：LINE 官方口=本月已用/方案上限；60秒快取少打API
+let _qC = { t: 0, used: -1, total: -1 }
+async function lineQuota() {
+  if (Date.now() - _qC.t < 60e3) return _qC
+  try {
+    const H9 = { authorization: `Bearer ${TOKEN}` }
+    const [q9, c9] = await Promise.all([
+      fetch('https://api.line.me/v2/bot/message/quota', { headers: H9 }).then(r => r.json()),
+      fetch('https://api.line.me/v2/bot/message/quota/consumption', { headers: H9 }).then(r => r.json()),
+    ])
+    _qC = { t: Date.now(), used: (c9 && c9.totalUsage != null) ? c9.totalUsage : -1, total: (q9 && q9.type === 'limited') ? q9.value : -1 }
+  } catch (_) {}
+  return _qC
+}
+async function quotaFoot(billed) { // billed=本次計費則數（回覆=0 免費）
+  const q = await lineQuota()
+  if (q.used < 0) return ''
+  return `\n\n📊 本次 ${billed} 則${billed === 0 ? '（回覆不計費）' : ''}｜本月 ${q.used + billed}${q.total > 0 ? '/' + q.total : ''} 則`
+}
 async function lineReply(replyToken, text, extra) {
   // extra＝附加訊息物件（Flex 按鈕卡等），跟文字一起回（LINE 一次最多 5 則）
   try {
+    const foot9 = await quotaFoot(0) // v4.41.1 回覆免費＝本次0則，照樣顯示本月用量
     const r = await fetch('https://api.line.me/v2/bot/message/reply', {
       method: 'POST',
       headers: { 'content-type': 'application/json', authorization: `Bearer ${TOKEN}` },
-      body: JSON.stringify({ replyToken, messages: [{ type: 'text', text: String(text).slice(0, 4900) }, ...(Array.isArray(extra) ? extra.slice(0, 4) : [])] }),
+      body: JSON.stringify({ replyToken, messages: [{ type: 'text', text: String(text).slice(0, 4800) + foot9 }, ...(Array.isArray(extra) ? extra.slice(0, 4) : [])] }),
     })
     if (!r.ok) { const d = await r.text().catch(() => ''); console.log('LINE reply FAILED', r.status, d.slice(0, 300)) }
     else console.log('LINE reply OK')

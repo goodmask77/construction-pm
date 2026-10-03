@@ -44,6 +44,22 @@ export default async function handler(req, res) {
       ? body.messages.slice(0, 5)
       : [{ type: 'text', text: String(body.text || '').slice(0, 4900) || '（空訊息）' }]
 
+    // 📊 v4.41.1（張良「每次發訊息最下方顯示消耗幾則＋使用/總則數」）：先查人數＋額度，把用量寫進訊息尾端再發
+    const members = await groupMembers(to)
+    const billed = messages.length * members
+    try {
+      const H9 = { authorization: `Bearer ${TOKEN}` }
+      const [q9, c9] = await Promise.all([
+        fetch('https://api.line.me/v2/bot/message/quota', { headers: H9 }).then((x) => x.json()),
+        fetch('https://api.line.me/v2/bot/message/quota/consumption', { headers: H9 }).then((x) => x.json()),
+      ])
+      const used9 = (c9 && c9.totalUsage != null) ? c9.totalUsage : -1
+      const total9 = (q9 && q9.type === 'limited') ? q9.value : -1
+      if (used9 >= 0) {
+        const last9 = [...messages].reverse().find((m) => m.type === 'text')
+        if (last9) last9.text = String(last9.text).slice(0, 4800) + `\n\n📊 本次 ${billed} 則｜本月 ${used9 + billed}${total9 > 0 ? '/' + total9 : ''} 則`
+      }
+    } catch (_) {}
     const r = await fetch('https://api.line.me/v2/bot/message/push', {
       method: 'POST',
       headers: { 'content-type': 'application/json', authorization: `Bearer ${TOKEN}` },
@@ -53,8 +69,6 @@ export default async function handler(req, res) {
       const d = await r.json().catch(() => ({}))
       return res.status(400).json({ ok: false, error: d?.message || `LINE 回應 ${r.status}` })
     }
-    const members = await groupMembers(to)
-    const billed = messages.length * members
     await logPush(to, messages.length, body.src || 'App推播(叫貨單/D發群)', members)
     return res.status(200).json({ ok: true, members, billed })
   } catch (e) {
