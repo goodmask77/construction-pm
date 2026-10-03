@@ -1478,8 +1478,9 @@ async function queryResvDay(from, to) {
       const slot9 = (t9) => (t9 < '13:00' ? '12-13' : t9 < '18:00' ? '13-17' : t9 < '19:00' ? '18-19' : '19後')
       const agg9 = {}
       ok9.forEach((r) => { const s9 = slot9(r.t); const a9 = agg9[s9] = agg9[s9] || { g: 0, p: 0, k: 0, pend: 0 }; a9.g++; a9.p += r.n || 0; a9.k += (r.kc || 0) + (r.ks || 0); if (r.st === 3) a9.pend++ })
-      const tp = ok9.reduce((t9, r) => t9 + (r.n || 0), 0), tk = ok9.reduce((t9, r) => t9 + (r.kc || 0) + (r.ks || 0), 0), tpd = ok9.filter((r) => r.st === 3).length
-      L.push(`  ＝${d} 系統合計（回答以此為準，別自己加總）：有效 ${ok9.length}組 ${tp}人${tk ? `+${tk}小孩` : ''}${tpd ? `（含待確認${tpd}組）` : ''}｜` + Object.entries(agg9).map(([s9, a9]) => `${s9}:${a9.g}組${a9.p}人${a9.k ? `+${a9.k}小` : ''}`).join('、') + `｜⚠️ inline iPad 時間軸人數=大人+小孩`)
+      const tp = ok9.reduce((t9, r) => t9 + (r.n || 0), 0), tkc = ok9.reduce((t9, r) => t9 + (r.kc || 0), 0), tks = ok9.reduce((t9, r) => t9 + (r.ks || 0), 0), tpd = ok9.filter((r) => r.st === 3).length
+      const kcWho = tkc ? ok9.filter((r) => r.kc).map((r) => `${r.name}${r.kc}張`).join('、') : ''
+      L.push(`  ＝${d} 系統合計（回答以此為準，別自己加總）：有效 ${ok9.length}組 ${tp}人${tkc || tks ? `＋小孩${tkc + tks}` : ''}${tpd ? `（含待確認${tpd}組）` : ''}｜` + Object.entries(agg9).map(([s9, a9]) => `${s9}:${a9.g}組${a9.p}人${a9.k ? `+${a9.k}小` : ''}`).join('、') + (tkc ? `｜🪑兒童椅共${tkc}張（${kcWho}）` : '') + (tks ? `｜兒童座${tks}個` : '') + `｜⚠️ inline iPad 時間軸人數=大人+小孩`)
     }
   }
   const dn = Object.keys(notes).filter((d) => d >= f && d <= t2).sort()
@@ -1670,7 +1671,7 @@ const BOT_AGENT_GUIDE = `
 - {"type":"set_item","category":"消防工程","item":"灑水頭","status":"完工","unitPrice":1200,"qty":10,"assignee":"王師傅"}  // 改細項；欄位都可省略
 - {"type":"add_category","name":"空調工程","budget":300000,"space":"工程"}  // 建大項分類（四個空間都可以，space 預設工程；例：在團隊工作建「採購」就帶"space":"團隊"）。任務中心的分類欄位就是這個大項，建好後用 add_task/update_task 的 category 歸類
 - {"type":"query_pos_day","date":"2026-09-25","store":"ground"}  // 🔎資料代查（唯讀,不用確認,誰問都能用）：查某天某店「完整」銷售明細=逐品項份數金額+時段表+付款別。date 也可以只給月份 "2026-09"＝查整月（回每日營收+月合計,問某月總額/要補一段日期時用這個,**不要**一天一天查）。使用者問的資料你手上摘要沒有時,輸出這個指令(可附一句「我查一下」),系統會代查回填後你再答——**不要**回「資料沒帶到/請自己看App/請找張良接」。store=ground|abeach。
-- {"type":"query_resv","date":"2024-07-15","to":"2024-07-20"}  // 🔎A Beach 訂位代查（唯讀,不用確認）：任何日期的訂位「逐筆完整明細」（姓名/電話/人數/時間/狀態/客註/店註）＋當日備註（⚠️包場/公休註記），2021-02 開店～未來全查得到。date=YYYY-MM-DD 或 YYYY-MM 整月；to 選填查區間（一次最多 4 個月）。摘要裡只有彙總數字、使用者要「某天是誰訂的/電話/歷史某天明細」就用這個；問空檔也可以用（回「空檔」=確定沒被訂）。
+- {"type":"query_resv","date":"2024-07-15","to":"2024-07-20"}  // 🔎A Beach 訂位代查（唯讀,不用確認）：任何日期的訂位「逐筆完整明細」（姓名/電話/人數/時間/狀態/客註/店註）＋當日備註（⚠️包場/公休註記），2021-02 開店～未來全查得到。date=YYYY-MM-DD 或 YYYY-MM 整月；to 選填查區間（一次最多 4 個月）。摘要裡只有彙總數字、使用者要「某天是誰訂的/電話/歷史某天明細/**兒童椅要幾張**」就用這個（回覆有🪑兒童椅合計＋誰要幾張）；問空檔也可以用（回「空檔」=確定沒被訂）。
 - {"type":"query_resv","name":"OD"}  // 🔎A Beach 訂位「關鍵字」代查（唯讀,不用確認）：用「客人姓名/電話片段」直搜 inline 全史（=後台搜尋框同源），回每筆日期+姓名+人數+狀態+**電話**。使用者問「客人XX的電話/XX上次什麼時候來/XX訂過幾次」這種用名字問的就用這個（不知道日期時不要用 date 亂猜）。
 - {"type":"query_resv","top":10}  // 🔎A Beach 常客排行代查（唯讀,不用確認）：掃 2021 開店～今全史，回「實際入座次數」最多的前 N 名（姓名/入座次數/累計人次/訂過幾次含取消/最近來店/電話）。使用者問「常客前十名/來最多次的客人/回頭客」就用這個。
 - {"type":"add_item","category":"空調工程","name":"主機","qty":1,"unit":"式","unitPrice":150000,"taxType":"未稅"}
