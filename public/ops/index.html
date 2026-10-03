@@ -1963,36 +1963,42 @@ function shiftRender(){
         return `<span ${meN?`draggable="true" ondragstart="event.dataTransfer.setData('text/plain','u|${s2.n}')" onclick="shLeaveMenu('${s2.n}','${dt}')" title="拖上去格子＝排班・點我標請假"`:''} style="display:flex;align-items:center;gap:4px;width:max-content;white-space:nowrap;${meN?'cursor:pointer;':''}border:1px solid var(--line);background:var(--card);color:var(--text);border-radius:6px;padding:1px 4px 1px 3px;margin:1.5px 0;font-size:11.5px;font-weight:600"><span style="width:7px;height:7px;border-radius:50%;background:${PB[pcIdx(s2.n)]};flex:none"></span>${s2.n}</span>`
       }).join('')||'<span class="hint" style="font-size:12px">✓</span>'}</td>`
     }).join('')+`</tr>`
+    // v4.36.1（張良「班表日期要對照一起；內外場像崗位一樣用顏色區隔」）：AB 班表併進同一張表＝共用日期欄完全對齊、左右捲動同步
+    if ((d.ab||[]).length){
+      const abByN = {}, deptOf = {}, cnt = {}
+      d.ab.forEach(x=>{ if(!x.name) return; (abByN[x.name]=abByN[x.name]||{})[x.date]=x; if(x.dept&&!deptOf[x.name]) deptOf[x.name]=x.dept; cnt[x.name]=(cnt[x.name]||0)+1 })
+      const DEPT_C = { '內場':{ink:'#F0A050',bg:'#241A10',chipB:'#7A5A2A',chipBg:'#241A10'}, '外場':{ink:'#6EB1FF',bg:'#101A26',chipB:'#2A4A7A',chipBg:'#101A26'} }
+      const OTH_C = {ink:'#9AA4B2',bg:'var(--soft)',chipB:'var(--line)',chipBg:'var(--card)'}
+      const grpOf = n => DEPT_C[deptOf[n]] ? deptOf[n] : '其他'
+      const names9 = Object.keys(abByN)
+      const order9 = ['內場','外場','其他']
+      hh += `<tr><td colspan="${wd2.length+1}" style="${BD}border-top:4px solid var(--line);padding:6px 8px;text-align:left;font-weight:900;font-size:13px;background:var(--soft);position:sticky;left:0">🅰 A Beach 班表 <span class="hint" style="font-weight:600;font-size:10.5px">阿桑系統自動同步・唯讀・調度參考</span></td></tr>`
+      order9.forEach(gp=>{
+        const mem = names9.filter(n=>grpOf(n)===gp).sort((a,b)=>(cnt[b]||0)-(cnt[a]||0))
+        if (!mem.length) return
+        const c9 = DEPT_C[gp] || OTH_C
+        mem.forEach((nm,mi)=>{
+          const gb9 = mi===0 ? `border-top:3px solid ${c9.ink}AA;` : ''
+          hh += `<tr><td style="${BD}${gb9}padding:3px 6px;text-align:left;font-weight:800;font-size:11px;color:${c9.ink};position:sticky;left:0;background:${c9.bg};z-index:1;white-space:nowrap">${nm}${mi===0?` <span style="font-size:9px;font-weight:900;border:1px solid ${c9.ink}66;border-radius:4px;padding:0 3px">${gp==='其他'?'AB':gp}</span>`:''}</td>`
+          hh += wd2.map(dt=>{
+            const x = (abByN[nm]||{})[dt]
+            if (!x) return `<td style="${BD}${gb9}${sepOf(dt)}${wkndBg(dt)}${dt===today?'background:#16263C;':''}"></td>`
+            const code = x.code || ''
+            const tip = `${nm} ${dt} ${code||'排休'}${x.start?` ${x.start}-${x.end}`:''}${x.dept?`（${x.dept}）`:''}`
+            const chip = code && code!=='●'
+              ? `<span style="display:inline-block;border:1px solid ${c9.chipB};background:${c9.chipBg};color:${c9.ink};border-radius:6px;padding:1px 6px;font-size:11px;font-weight:800;white-space:nowrap">${code}</span>${x.start?`<div class="hint" style="font-size:9px;white-space:nowrap">${x.start}-${x.end}</div>`:''}`
+              : `<span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:#3A4454" title="排休/未排"></span>`
+            return `<td style="${BD}${gb9}${sepOf(dt)}${wkndBg(dt)}${dt===today?'background:#16263C;':''}padding:2px 3px;text-align:center" title="${tip}">${chip}</td>`
+          }).join('') + `</tr>`
+        })
+      })
+    }
     hh += `</tbody></table>`
     return hh
   }
   // v4.25.0：無限時間軸——連續日期範圍(預設±2月)一長排，放品項明細同款四向捲動盒；滑到邊緣自動多載(shOnScroll)，月份 ‹ › 跳月，開啟自動捲到今天
   shInitRange(); shRangeInclude(shiftYm)
   h += `<div id="shBox" class="scroll" style="max-height:72vh;overflow:auto;margin-bottom:12px;-webkit-overflow-scrolling:touch">${buildGrid(shRangeDays())}</div>`
-  // v4.36.0（張良 2026-10-03「AB班表加在GD班表下方,知道兩間店有誰上班方便調度;左邊崗位變人名」）：
-  // AB 班表（阿桑 OPS 系統，boss-api 每小時自動同步）＝唯讀；列=人名、欄=日期、格=班別代碼（起訖時間掛 title）
-  if ((d.ab||[]).length){
-    const abByN = {}
-    d.ab.forEach(x=>{ if(x.name) (abByN[x.name]=abByN[x.name]||{})[x.date] = x })
-    const abDays = [...new Set(d.ab.map(x=>x.date))].sort()
-    const abNames = Object.keys(abByN).sort((a,b)=>Object.keys(abByN[b]).length-Object.keys(abByN[a]).length)
-    const BD2='border:1px solid var(--line);'
-    const wd9=['日','一','二','三','四','五','六']
-    let ah = `<div style="font-weight:900;margin:12px 0 6px;font-size:16px">A Beach 班表 <span class="hint" style="font-weight:600;font-size:11px">（阿桑系統自動同步・唯讀・調度參考）</span></div>`
-    ah += `<div class="scroll" style="max-height:60vh;overflow:auto;-webkit-overflow-scrolling:touch"><table style="border-collapse:collapse;min-width:max-content"><thead><tr><th style="${BD2}position:sticky;left:0;top:0;z-index:3;background:var(--soft);padding:4px 8px;text-align:left">夥伴</th>`
-    ah += abDays.map(dt=>{ const w9=new Date(dt+'T00:00:00').getDay(); return `<th style="${BD2}position:sticky;top:0;z-index:2;background:${dt===today?'var(--psoft)':'var(--soft)'};padding:4px 6px;font-size:11.5px;white-space:nowrap;${(w9===0||w9===6)?'color:var(--pdark);':''}">${dt.slice(5)}<br>${wd9[w9]}${dt===today?'・今':''}</th>` }).join('') + `</tr></thead><tbody>`
-    abNames.forEach(nm=>{
-      ah += `<tr><td style="${BD2}position:sticky;left:0;z-index:1;background:var(--card);padding:3px 8px;font-weight:800;white-space:nowrap">${nm}</td>`
-      ah += abDays.map(dt=>{
-        const x = abByN[nm][dt]
-        if (!x) return `<td style="${BD2}${dt===today?'background:var(--psoft);':''}"></td>`
-        const tip = `${nm} ${dt} ${x.code||''}${x.start?` ${x.start}-${x.end}`:''}${x.dept?`（${x.dept}）`:''}`
-        return `<td style="${BD2}${dt===today?'background:var(--psoft);':''}padding:2px 4px;text-align:center" title="${tip}"><span style="display:inline-block;border:1px solid var(--line);background:var(--card);border-radius:6px;padding:1px 6px;font-size:11.5px;font-weight:700;white-space:nowrap">${x.code||'●'}</span>${x.start?`<div class="hint" style="font-size:9.5px;white-space:nowrap">${x.start}-${x.end}</div>`:''}</td>`
-      }).join('') + `</tr>`
-    })
-    ah += `</tbody></table></div>`
-    h += ah
-  }
   // v4.28.1（張良「不要放左側 放班表下面就好」）：🧮 工時成本試算掛在週班表下面
   h += `<div style="font-weight:900;margin:12px 0 6px;font-size:16px">人力時數配置表</div><div id="lbSec" class="hint">載入中…</div>`
   const pn = Object.keys(per).sort()
