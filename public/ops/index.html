@@ -176,7 +176,7 @@ function bindPrompt(){
   // 🔢 四位數登入碼（v4.31.3 張良：要更簡單＝打4個數字就好）
   if (/^\d{4}$/.test(v.trim())) {
     fetch('/api/mail-sync?bindcode=' + v.trim()).then(r => r.json()).then(j => {
-      if (j.ok && j.me) { localStorage.setItem('prepToken', j.me); bindBtnSync(); try { maniSync() } catch(_){}; alert('登入完成 ✅'); goView() }
+      if (j.ok && j.me) { localStorage.setItem('prepToken', j.me); try { simWipe() } catch(_){}; alert('登入完成 ✅'); hardRefresh() } // v4.31.4 清訪客快取+整個App重開＝名字/權限/分頁即時變（張良：登入完畫面還是訪客要手動刷）
       else alert(j.error || '登入碼錯誤或過期——私訊 DD「登入碼」再拿一組新的')
     }).catch(() => alert('網路不穩，再試一次'))
     return
@@ -185,10 +185,9 @@ function bindPrompt(){
   const m = v.match(/me=([a-z0-9]+)/i) || v.match(/(pv[a-z0-9]{8,})/i)
   if (!m) { alert('看不懂這串——輸入 DD 給的 4 位數登入碼，或完整貼上個人連結'); return }
   localStorage.setItem('prepToken', m[1])
-  bindBtnSync()
-  try { maniSync() } catch(_){} // 綁完立刻換個人化 manifest——之後再加主畫面就自帶身分
+  try { simWipe() } catch(_){} // 清掉訪客身分抓的畫面快取
   alert('綁定完成 ✅')
-  goView()
+  hardRefresh() // v4.31.4 整個App重開＝名字/權限/分頁即時變（manifest 個人化 maniSync 重開後自動跑）
 }
 const BIND_HINT = `私訊 DD「登入碼」拿 4 位數 → 按 <button class="mini" onclick="bindPrompt()">🔑 登入</button> 填入（沒綁定過先跟 DD 說「綁定GD 本名」）`
 async function load(store, fresh){
