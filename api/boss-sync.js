@@ -75,6 +75,16 @@ export default async function handler(req, res) {
     if (q0) rows0 = rows0.filter(r => JSON.stringify(r).includes(q0))
     return res.status(200).json({ ok: true, id: id0, total: Object.keys(doc0.rows || {}).length, matched: rows0.length, rows: rows0.slice(0, 30) })
   }
+  // 原始透傳探針（除錯用；?bossraw=<MENU_PROBE_KEY>&ep=revenue/daily&from=&to=）：直接打上游看原始回應
+  if (req.query?.bossraw) {
+    if (!force && String(req.query.bossraw) !== mk) return res.status(403).json({ ok: false })
+    try {
+      const p = { limit: 50 }
+      if (req.query.from) { p.from = String(req.query.from); p.to = String(req.query.to || req.query.from) }
+      const j = await call(String(req.query.ep || 'revenue/daily'), p)
+      return res.status(200).json({ ok: true, count: (j.data || []).length, meta: j.meta || null, sample: (j.data || []).slice(0, 3) })
+    } catch (e) { return res.status(200).json({ ok: false, error: e.message }) }
+  }
   // 歷史回填重啟口（張良 2026-10-04「阿桑OPS已更新2021年營業資料,更新」）：
   // ?histfill=<MENU_PROBE_KEY>&slugs=revd,sett&from=2021-01-01 → 把指定端點的回填起點撥回去，
   // 之後每跑一次同步（cron 或 ?force）吃一段 366 天，分幾輪自動拉完；不動其他端點
