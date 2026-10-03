@@ -356,6 +356,23 @@ export default async function handler(req, res) {
     try { const r5 = (await kvGet('sp_crew_kb_roster')) || {}; const p5 = (r5.people || []).find(x => x.id === w.rid); if (p5 && p5.gdRole) role = p5.gdRole } catch (_) {}
     if (role === '停權') return null
     _lastBound = true
+    // v4.32.0 模擬檢視（張良：切換不同使用者，確認每人看到的畫面/權限都對）：管理者 GET 帶 &as=rid ＝用「那個人」的身分讀資料
+    // 只收 GET＝只能看不能改（寫入都是 POST，永遠用本人身分守門）；as=guest 模擬未綁定訪客；非管理者帶 as 一律當沒看到
+    const as9 = req.method === 'GET' ? String(req.query?.as || '') : ''
+    if (as9) {
+      const pmS = (await kvGet('sp_finance_pm_prep_perm')) || { users: {} }
+      const uS = (pmS.users || {})[w.rid || w.uid]
+      if (uS && uS.admin) {
+        if (as9 === 'guest') { _lastBound = false; return null }
+        const t9 = Object.values(b.tokens || {}).find(x => (x.rid || x.uid) === as9)
+        const nm9 = (t9 && t9.name) || ((pmS.users || {})[as9] || {}).name
+        if (nm9) {
+          let role9 = '一般'
+          try { const r9 = (await kvGet('sp_crew_kb_roster')) || {}; const p9 = (r9.people || []).find(x => x.id === as9); if (p9 && p9.gdRole) role9 = p9.gdRole } catch (_) {}
+          return { ...(t9 || {}), rid: as9, name: nm9, role: role9 }
+        }
+      }
+    }
     return { ...w, role }
   }
   // v4.31.0 擋人時的話要講對（張良抓包：已綁定的人被擋還叫他「綁定GD」很莫名）：

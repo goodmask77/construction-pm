@@ -436,6 +436,25 @@ async function rHide(kEnc, hideV){
 // 個人身分：跟 DD 說「綁定看板」拿到 /prep?me=token 連結 → 存這支手機，打卡自動是本人、站長可編輯自己的站
 ;(function(){ const sp = new URLSearchParams(location.search); const m = sp.get('me'); if (m) localStorage.setItem('prepToken', m); if (m || sp.has('r')) history.replaceState(null, '', location.pathname + location.hash) })() // v4.31.0 保留 #meet=/#sop= 深層連結 // r=🔄的快取時間戳，進站就清掉（張良 2026-09-24：網址多一段）
 const TK = () => localStorage.getItem('prepToken') || ''
+// ── 👁 模擬檢視（v4.32.0 張良「切換不同使用者，確認每人畫面/設定/權限都正確」）──
+// 原理＝攔截全站 fetch：讀取自動帶 &as=對方rid → 伺服器直接用「那個人」的身分回資料（分頁藏不藏、按鈕有沒有、設定看不看得到＝跟本人開起來一模一樣，不是前端假裝）；寫入（POST）全部擋下＝只能看不能改
+const SIM = (()=>{ try { return JSON.parse(sessionStorage.getItem('gdSim')||'null') } catch(e){ return null } })()
+if (SIM) {
+  const _fetch0 = window.fetch.bind(window)
+  window.fetch = (u, o) => {
+    const s = String(u)
+    if (o && o.method && !/^get$/i.test(o.method)) { if (!s.includes('errlog=')) alert('👁 模擬中只能看、不能改資料——按上方「結束模擬」回到自己再操作'); return Promise.resolve(new Response(JSON.stringify({ ok:false, error:'模擬模式不能改資料' }), { headers: { 'content-type':'application/json' } })) }
+    return _fetch0(s.includes('/api/mail-sync?') ? s + '&as=' + encodeURIComponent(SIM.rid) : u, o)
+  }
+  const _simBn = () => { const bn = document.createElement('div'); bn.id = 'simBn'
+    bn.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:999;background:#3A2F10;border-bottom:1px solid #D4A72C;color:#F2CE60;font-weight:800;font-size:14px;padding:8px 12px;display:flex;gap:10px;align-items:center;justify-content:center;flex-wrap:wrap'
+    bn.innerHTML = '👁 模擬中：' + SIM.name + ' 看到的畫面（只能看、改不了資料）<button class="mini" style="padding:4px 14px" onclick="simEnd()">結束模擬</button>'
+    document.body.appendChild(bn); document.body.style.paddingTop = '42px' }
+  document.body ? _simBn() : document.addEventListener('DOMContentLoaded', _simBn)
+}
+function simStart(rid, name){ try { sessionStorage.setItem('gdSim', JSON.stringify({ rid, name })) } catch(e){}; simWipe(); location.reload() }
+function simEnd(){ try { sessionStorage.removeItem('gdSim') } catch(e){}; simWipe(); location.reload() }
+function simWipe(){ try { Object.keys(localStorage).filter(k2=>k2.startsWith('obc_')||k2.startsWith('obt_')).forEach(k2=>localStorage.removeItem(k2)) } catch(e){} } // 進出模擬都清畫面快取＝不殘留彼此的資料
 // 右上固定綁定入口（張良 2026-09-24：DD 訊息叫人按「輸入綁定碼」但按鈕藏在提示字裡找不到——未綁定時固定顯示在右上）
 function bindBtnSync(){ const b = document.getElementById('bindBtn'); if (b) b.style.display = TK() ? 'none' : '' }
 
@@ -3075,7 +3094,9 @@ function mnImgPick(i){
 function permPanelHtml(perm){
   return `<div style="background:#19222E;border:1.5px solid #35557A;border-radius:12px;padding:10px 12px;font-size:14px">
     <div style="font-weight:900">🔐 編輯權限管理 <span class="hint">模式：${perm.mode==='open'?'全開（人人可編）':'審核制（申請→老闆核准）'}</span>
-    <button class="mini" onclick="permSet('mode',null,'${perm.mode==='open'?'approve':'open'}')">切成${perm.mode==='open'?'審核制':'全開'}</button></div>
+    <button class="mini" onclick="permSet('mode',null,'${perm.mode==='open'?'approve':'open'}')">切成${perm.mode==='open'?'審核制':'全開'}</button>
+    <button class="mini" onclick="simStart('guest','未綁定訪客')">👁 模擬訪客</button>
+    <span class="hint">按人名旁 👁＝用那個人的身分看整個 App（驗分頁/按鈕/設定），只能看不能改</span></div>
     ${(perm.pending||[]).length?`<div style="margin-top:6px;font-weight:800">待審核：</div>`+perm.pending.map(u=>`<div style="padding:3px 0">🙋 ${u.name} <span class="hint">${u.ts||''}</span> <button class="mini on" onclick="permSet('approve','${u.rid}')">✅ 核准</button> <button class="mini" onclick="permSet('reject','${u.rid}')">✖</button></div>`).join(''):'<div class="hint" style="margin-top:6px">目前沒有待審核的申請</div>'}
     ${(()=>{ // v4.26.4（張良「太多小圖很醜沒質感」）：乾淨表格——每分頁拆「看/編」兩小欄、純勾選框無emoji；欄頭勾=全員一起
       const cfgT = window._tabCfg || {}
@@ -3099,7 +3120,7 @@ function permPanelHtml(perm){
       <tr>${TABS.map(([k,lb,so])=>`<th style="${SEP}padding:2px 5px 6px;text-align:center;font-size:11px;font-weight:600">看<br>${cb(allSee(k),`permSet('taball',null,null,'${k}',this.checked,'see')`,'全員看得見 '+lb)}</th>`+(so?``:`<th style="padding:2px 5px 6px;text-align:center;font-size:11px;font-weight:600">編<br>${cb(allEdit(k),`permSet('taball',null,null,'${k}',this.checked,'edit')`,'全員能編輯 '+lb)}</th>`)).join('')}</tr>
       </thead><tbody>`
       users.forEach(u=>{
-        t+=`<tr><td style="text-align:left;font-weight:800;position:sticky;left:0;background:var(--card);z-index:1;padding:5px 10px;white-space:nowrap">${u.admin?'👑 ':''}${u.name}${u.admin?'':` <button class="mini" style="padding:1px 8px;margin-left:4px" onclick="permSet('revoke','${u.rid}')">移除</button>`}</td>`
+        t+=`<tr><td style="text-align:left;font-weight:800;position:sticky;left:0;background:var(--card);z-index:1;padding:5px 10px;white-space:nowrap">${u.admin?'👑 ':''}${u.name} <button class="mini" style="padding:1px 8px;margin-left:4px" title="用 ${u.name} 的身分看整個 App" onclick="simStart('${u.rid}','${String(u.name||'').replace(/['"<>]/g,'')}')">👁</button>${u.admin?'':` <button class="mini" style="padding:1px 8px;margin-left:4px" onclick="permSet('revoke','${u.rid}')">移除</button>`}</td>`
         if(u.admin){ t+=`<td colspan="${COLS}" class="hint" style="text-align:left;padding:5px 10px">管理者＝全部看得見、全部能編輯</td>` }
         else {
           const rowSee=TABS.every(([k])=>!(u.hide&&u.hide[k])), rowEdit=TABS.filter(x=>!x[2]).every(([k])=>!u.tabs||u.tabs[k]!==0)
