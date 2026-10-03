@@ -86,7 +86,10 @@ export default async function handler(req, res) {
           if (po) {
             const pr = await fetch('https://api.line.me/v2/bot/message/push', { method: 'POST', headers: { 'content-type': 'application/json', Authorization: 'Bearer ' + tkM }, body: JSON.stringify({ to: po.lineUserId, messages: [{ type: 'text', text: (() => { const tkP = ((bindM.byUid || {})[po.lineUserId]); const lnk = tkP ? `https://ground-pm.vercel.app/prep?me=${tkP}#meet=${it.id}` : prepLink('meet=' + it.id); return `📣 會議宣達還沒簽收（第 ${r0.n + 1} 次提醒）\n【${it.type}・${it.date}】\n點下面連結直達這則，看完按「✅ 確認熟知」，有問題按「❓ 我想發問」👇\n${lnk}` })() }] }) })
             if (pr.ok) { await logPush(po.lineUserId, 1, '宣達未簽提醒'); it.remind[nm] = { n: r0.n + 1, last: Date.now() }; dirtyM = true }
-            try { await wpPushUids([po.lineUserId], { title: '📣 會議簽收提醒', body: `【${it.type}・${it.date}】還沒簽收，點開直達這則`, url: '/prep#meet=' + it.id }) } catch (_) {} // v4.33.0
+            try {
+              const nPend = listM.filter(x => x.pubTs && (x.ackNames || []).includes(nm) && !((x.acks || {})[nm] && x.acks[nm].ver === (x.ver || 1))).length // 這個人全部未簽收數=圖示紅點(v4.33.2)
+              await wpPushUids([po.lineUserId], { title: '📣 會議簽收提醒', body: `【${it.type}・${it.date}】還沒簽收，點開直達這則`, url: '/prep#meet=' + it.id, badge: nPend })
+            } catch (_) {} // v4.33.0
           } else { it.remind[nm] = { n: stage, last: Date.now() }; dirtyM = true } // 沒LINE的直接記階段，等大群點名
         }
         const dead = missing.filter(nm => (it.remind[nm] || {}).n >= 3)

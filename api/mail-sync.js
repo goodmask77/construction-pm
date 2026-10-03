@@ -2474,7 +2474,10 @@ export default async function handler(req, res) {
     const tkLT = (process.env.LINE_CHANNEL_ACCESS_TOKEN || '').trim()
     if (!tkLT) return res.status(500).json({ ok: false, error: '沒有 LINE token' })
     const prT = await fetch('https://api.line.me/v2/bot/message/push', { method: 'POST', headers: { 'content-type': 'application/json', Authorization: 'Bearer ' + tkLT }, body: JSON.stringify({ to: poT.lineUserId, messages: [{ type: 'text', text: `📣 會議宣達還沒簽收（測試）\n【${itT.type}・${itT.date}】\n點下面連結直達這則，看完按「✅ 確認熟知」，有問題按「❓ 我想發問」👇\n${lnkT}` }] }) })
-    let wpT = 0; try { wpT = await wpPushUids([poT.lineUserId], { title: '📣 會議簽收提醒（測試）', body: `【${itT.type}・${itT.date}】點開直達這則`, url: '/prep#meet=' + itT.id }) } catch (_) {}
+    let wpT = 0; try {
+      const nPendT = (((meetT || {}).list) || []).filter(x => x.pubTs && (x.ackNames || []).includes(poT.name) && !((x.acks || {})[poT.name] && x.acks[poT.name].ver === (x.ver || 1))).length
+      wpT = await wpPushUids([poT.lineUserId], { title: '📣 會議簽收提醒（測試）', body: `【${itT.type}・${itT.date}】點開直達這則`, url: '/prep#meet=' + itT.id, badge: nPendT || 1 })
+    } catch (_) {}
     return res.status(200).json({ ok: prT.ok, to: poT.name, meet: itT.id, linkType: tkPT ? '個人連結(自動帶身分)' : 'LIFF/https(未綁定)', webpushSent: wpT })
   }
   // ── 🔔 Web Push＋LIFF（v4.33.0 張良：點通知直接打開主畫面GD+本人身分；LINE群組連結點開自動認人不再是訪客）──

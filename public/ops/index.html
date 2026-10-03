@@ -449,6 +449,8 @@ function maniSync(){ try { const t8 = TK(); const l8 = document.querySelector('l
 // ── 🔔 Web Push（v4.33.0 張良：點通知直接打開主畫面GD+本人身分）──
 // iOS 規則：只有「加到主畫面」的 GD 裡才有 Notification（Safari 沒有）；允許通知一定要本人手點
 if ('serviceWorker' in navigator) { try { navigator.serviceWorker.register('/sw.js') } catch(e){} } // sw 在根目錄＝scope 蓋到 /prep
+// v4.33.2 圖示紅點：打開 App 就清掉（下次推播會再帶最新未簽收數）；回到前景也清
+try { if ('clearAppBadge' in navigator) { navigator.clearAppBadge().catch(()=>{}); document.addEventListener('visibilitychange', ()=>{ if (!document.hidden) navigator.clearAppBadge().catch(()=>{}) }) } } catch(e){}
 let _wpCfg = null
 async function wpCfg(){ if (_wpCfg) return _wpCfg; try { _wpCfg = await (await fetch('/api/mail-sync?webpushcfg=1')).json() } catch(e){ _wpCfg = {} } return _wpCfg }
 function wpSupport(){ return 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window }

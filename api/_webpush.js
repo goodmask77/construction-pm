@@ -15,7 +15,7 @@ export async function wpPush(rids, msg) {
   webpush.setVapidDetails('mailto:goodmask77@gmail.com', PUB, PRIV)
   const { kvGet, kvPut } = await import('./mail-sync.js')
   const doc = (await kvGet('sp_finance_pm_push_subs')) || {}
-  const payload = JSON.stringify({ title: msg.title || 'GD', body: String(msg.body || '').slice(0, 180), url: msg.url || '/prep' })
+  const payload = JSON.stringify({ title: msg.title || 'GD', body: String(msg.body || '').slice(0, 180), url: msg.url || '/prep', ...(msg.badge != null ? { badge: msg.badge } : {}) }) // badge=圖示紅點數字(v4.33.2)
   let sent = 0, dirty = false
   for (const [rid, rec] of Object.entries(doc)) {
     if (rids && !rids.includes(rid)) continue
