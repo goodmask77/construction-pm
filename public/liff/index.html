@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>GD</title>
+<style>body{font-family:-apple-system,"PingFang TC","Noto Sans TC",sans-serif;background:#0D1117;color:#E6EDF3;display:flex;align-items:center;justify-content:center;height:100vh;margin:0}div{text-align:center;font-size:17px;line-height:1.7;padding:0 24px}</style>
+</head>
+<body>
+<div id="m">🔑 正在認身分…</div>
+<script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+<script>
+// GD LIFF 入口（v4.33.0 張良：LINE群組同一條連結，每個人點開自動帶自己的身分，不再是訪客）
+// 流程：liff.init → 拿 access token → 後端跟 LINE 驗證換 userId → 查綁定 → 轉 /prep?me=token#深層連結
+(async()=>{
+  const M=document.getElementById('m')
+  const dest=(s)=>'/prep'+(s?('#'+decodeURIComponent(s)):'')
+  let s=new URLSearchParams(location.search).get('s')||''
+  try{
+    const cfg=await (await fetch('/api/mail-sync?webpushcfg=1')).json()
+    if(!cfg||!cfg.liff){ location.replace(dest(s)); return } // 還沒設 LIFF_ID → 直接進看板
+    await liff.init({ liffId: cfg.liff })
+    try{ const st=new URLSearchParams(location.search).get('liff.state'); if(st){ const q2=new URLSearchParams(st.startsWith('?')?st.slice(1):st); if(q2.get('s')) s=q2.get('s') } }catch(_){}
+    if(!liff.isLoggedIn()){ liff.login({ redirectUri: location.href }); return } // LINE 裡面開＝自動已登入，不會跳這步
+    const at=liff.getAccessToken()
+    const r=await (await fetch('/api/mail-sync?liffauth=1',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({at})})).json()
+    if(r&&r.ok&&r.me){ location.replace('/prep?me='+encodeURIComponent(r.me)+(s?('#'+decodeURIComponent(s)):'')) }
+    else{ M.innerHTML='還沒綁定 GD 🙏<br>私訊 DD「<b>綁定GD 你的本名</b>」綁好後再點一次連結'; setTimeout(()=>location.replace(dest(s)),4000) }
+  }catch(e){ location.replace(dest(s)) }
+})()
+</script>
+</body>
+</html>

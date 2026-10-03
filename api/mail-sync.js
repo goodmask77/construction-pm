@@ -2457,6 +2457,47 @@ export default async function handler(req, res) {
     await kvPut('sp_finance_pm_prep_perm', pm, '權限管理(' + who.name + ')')
     return res.status(200).json({ ok: true, perm: pm })
   }
+  // ── 🔔 Web Push＋LIFF（v4.33.0 張良：點通知直接打開主畫面GD+本人身分；LINE群組連結點開自動認人不再是訪客）──
+  // 設定口（公開資訊）：GET ?webpushcfg=1 → VAPID 公鑰 + LIFF id（公鑰本來就是公開的，LIFF id 也是）
+  if (req.query?.webpushcfg) {
+    const { wpPubKey } = await import('./_webpush.js')
+    return res.status(200).json({ ok: true, key: wpPubKey() || null, liff: (process.env.LIFF_ID || '').trim() || null })
+  }
+  // 訂閱口：POST ?pushsub=<OPS_BOARD_KEY> {token, sub, off} → 綁定者本人存訂閱（off=1 取消）
+  if (req.method === 'POST' && req.query?.pushsub) {
+    const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
+    if (!ok2 || String(req.query.pushsub) !== ok2) return res.status(403).json({ ok: false })
+    let bw = {}; try { bw = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
+    const whoW = await sopWho(bw.token)
+    if (!whoW) return res.status(403).json({ ok: false, error: permDeny() })
+    const ep = bw.sub && bw.sub.endpoint
+    if (!ep) return res.status(400).json({ ok: false, error: '缺訂閱資料' })
+    const ridW = whoW.rid || whoW.uid
+    const docW = (await kvGet('sp_finance_pm_push_subs')) || {}
+    const recW = docW[ridW] || { name: whoW.name, subs: [] }
+    recW.name = whoW.name
+    recW.subs = (recW.subs || []).filter(s => s.endpoint !== ep)
+    if (!bw.off) recW.subs = [bw.sub, ...recW.subs].slice(0, 5) // 一人最多 5 裝置
+    docW[ridW] = recW
+    await kvPut('sp_finance_pm_push_subs', docW, '推播訂閱(' + whoW.name + (bw.off ? '取消' : '') + ')')
+    return res.status(200).json({ ok: true, on: !bw.off })
+  }
+  // LIFF 換身分口：POST ?liffauth=1 {at}（LIFF access token）→ 伺服器跟 LINE 驗證拿 userId → 回個人 token
+  // 安全：不信前端給的 userId，一定拿 at 去 LINE API 驗（不然誰都能冒名）
+  if (req.method === 'POST' && req.query?.liffauth) {
+    let bl9 = {}; try { bl9 = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
+    const at9 = String(bl9.at || '')
+    if (!at9) return res.status(400).json({ ok: false, error: '缺 access token' })
+    try {
+      const vr = await (await fetch('https://api.line.me/oauth2/v2.1/verify?access_token=' + encodeURIComponent(at9))).json()
+      if (!vr || !vr.client_id || vr.expires_in <= 0) return res.status(403).json({ ok: false, error: 'token 無效' })
+      const pf = await (await fetch('https://api.line.me/v2/profile', { headers: { Authorization: 'Bearer ' + at9 } })).json()
+      if (!pf || !pf.userId) return res.status(403).json({ ok: false, error: '拿不到身分' })
+      const bd9 = (await kvGet('sp_finance_pm_prep_bind')) || {}
+      const tk0 = (bd9.byUid || {})[pf.userId] || null
+      return res.status(200).json({ ok: true, me: tk0, name: tk0 ? ((bd9.tokens || {})[tk0] || {}).name : null })
+    } catch (_) { return res.status(502).json({ ok: false, error: 'LINE 驗證失敗' }) }
+  }
   // ── 🧮 工時成本試算（張良 2026-10-03：每小時×崗位填金額、右/下自動加總、方案制可存版本切換比較）──
   if (req.query?.labor) {
     const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
@@ -2776,9 +2817,11 @@ export default async function handler(req, res) {
     if (it9.status === 'pending') { // DD 私訊審核人（找名冊 lineUserId）
       try {
         const tk9 = (process.env.LINE_CHANNEL_ACCESS_TOKEN || '').trim()
+        const { prepLink, wpPushUids } = await import('./_webpush.js') // v4.33.0
         for (const an of approvers9) {
           const ap = ((rosterD9 || {}).people || []).find(p => p.name === an && p.lineUserId)
-          if (tk9 && ap) await fetch('https://api.line.me/v2/bot/message/push', { method: 'POST', headers: { 'content-type': 'application/json', Authorization: 'Bearer ' + tk9 }, body: JSON.stringify({ to: ap.lineUserId, messages: [{ type: 'text', text: `🕐 待你審核：【${it9.st}】${it9.text || '（附件）'}\n${who9.name} 說已解決。\n到看板該站卡片按「核准／退回」👇\nhttps://ground-pm.vercel.app/prep` }] }) })
+          if (tk9 && ap) await fetch('https://api.line.me/v2/bot/message/push', { method: 'POST', headers: { 'content-type': 'application/json', Authorization: 'Bearer ' + tk9 }, body: JSON.stringify({ to: ap.lineUserId, messages: [{ type: 'text', text: `🕐 待你審核：【${it9.st}】${it9.text || '（附件）'}\n${who9.name} 說已解決。\n到看板該站卡片按「核准／退回」👇\n${prepLink('')}` }] }) })
+          if (ap) { try { await wpPushUids([ap.lineUserId], { title: '🕐 待你審核', body: `【${it9.st}】${who9.name} 說已解決，按核准／退回`, url: '/prep' }) } catch (_) {} }
         }
       } catch (_) {}
     }

@@ -446,6 +446,31 @@ async function rHide(kEnc, hideV){
 const TK = () => localStorage.getItem('prepToken') || ''
 // 📱 已綁定→manifest 換成個人化版（v4.31.2 張良：換 icon 重加 App 變訪客）：加入主畫面的捷徑 start_url 自帶 ?me=token，重加 App 身分不掉
 function maniSync(){ try { const t8 = TK(); const l8 = document.querySelector('link[rel="manifest"]'); if (l8) l8.href = t8 ? ('/api/mail-sync?manifest=1&me=' + encodeURIComponent(t8)) : '/ops/manifest.json?v=2' } catch(_){} }
+// ── 🔔 Web Push（v4.33.0 張良：點通知直接打開主畫面GD+本人身分）──
+// iOS 規則：只有「加到主畫面」的 GD 裡才有 Notification（Safari 沒有）；允許通知一定要本人手點
+if ('serviceWorker' in navigator) { try { navigator.serviceWorker.register('/sw.js') } catch(e){} } // sw 在根目錄＝scope 蓋到 /prep
+let _wpCfg = null
+async function wpCfg(){ if (_wpCfg) return _wpCfg; try { _wpCfg = await (await fetch('/api/mail-sync?webpushcfg=1')).json() } catch(e){ _wpCfg = {} } return _wpCfg }
+function wpSupport(){ return 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window }
+function wpB64(s){ const p='='.repeat((4-s.length%4)%4); const b=atob((s+p).replace(/-/g,'+').replace(/_/g,'/')); return Uint8Array.from([...b].map(c=>c.charCodeAt(0))) }
+async function pushSub(){ try { // 訂閱＋回報伺服器（已允許時默默跑＝換裝置/過期自動補）
+  const cfg = await wpCfg(); if (!cfg || !cfg.key || !TK()) return false
+  const reg = await navigator.serviceWorker.register('/sw.js'); await navigator.serviceWorker.ready
+  let sub = await reg.pushManager.getSubscription()
+  if (!sub) sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: wpB64(cfg.key) })
+  const r = await fetch('/api/mail-sync?pushsub=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ token: TK(), sub: sub.toJSON() }) })
+  const j = await r.json().catch(()=>null)
+  return !!(j && j.ok)
+} catch(e){ return false } }
+async function pushOn(){ // 🔔 按鈕（一定要使用者手點，iOS 規定）
+  if (!TK()) { alert('要先綁定身分才能開通知：私訊 DD「綁定GD 你的本名」'); return }
+  if (!wpSupport()) { alert('這裡開不了通知。iPhone 請用「加到主畫面」的 GD App 打開，再按一次 🔔'); return }
+  const perm = await Notification.requestPermission()
+  if (perm !== 'granted') { alert('沒有允許通知。之後要開：iPhone 設定 → 通知 → GD'); return }
+  const ok = await pushSub()
+  alert(ok ? '🔔 通知開好了！之後簽收提醒、公告點通知就直接打開 GD' : '訂閱沒成功，網路穩一點再按一次 🔔')
+  try { meChipInit() } catch(e){}
+}
 maniSync()
 // ── 👁 模擬檢視（v4.32.0 張良「切換不同使用者，確認每人畫面/設定/權限都正確」）──
 // 原理＝攔截全站 fetch：讀取自動帶 &as=對方rid → 伺服器直接用「那個人」的身分回資料（分頁藏不藏、按鈕有沒有、設定看不看得到＝跟本人開起來一模一樣，不是前端假裝）；寫入（POST）全部擋下＝只能看不能改
@@ -3377,6 +3402,11 @@ async function meChipInit(){ // 側欄底部＝登入身分（張良 2026-10-02�
   const role = me ? (me.approver ? '審核人' : (me.role === '主管' ? '主管' : '夥伴')) : '無編輯權限'
   el.innerHTML = `<div style="width:42px;height:42px;border-radius:50%;background:${me?'var(--grad)':'#3A4452'};color:#fff;display:flex;align-items:center;justify-content:center;font-weight:900;font-size:17px;flex:0 0 auto">${nm.slice(0,1)}</div>
     <div style="min-width:0"><div style="font-weight:800;font-size:16px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${nm}</div><div class="hint" style="font-size:12.5px">${role}</div></div>`
+  // 🔔 v4.33.0：綁定者＋支援推播＋還沒允許 → 身分旁亮鈴鐺；已允許 → 默默補訂閱（換部署/過期自動續）
+  try { if (me && wpSupport()) {
+    if (Notification.permission === 'granted') pushSub()
+    else if (Notification.permission === 'default') { const b9 = document.createElement('button'); b9.className='mini'; b9.style.cssText='margin-left:auto;padding:8px 11px;font-size:17px;line-height:1'; b9.title='開啟通知：點通知直接打開 GD'; b9.textContent='🔔'; b9.onclick=pushOn; el.appendChild(b9) }
+  } } catch(e){}
   // v4.26.3（張良：設定每個頁面看不看得見）：被關掉的分頁直接從側欄藏起來（board=首頁）
   if (me && !me.approver && Array.isArray(me.hideTabs)) me.hideTabs.forEach(k=>{ const b = document.getElementById(k==='board' ? 'tab-home' : 'tab-'+k); if (b) b.style.display = 'none' })
 }
