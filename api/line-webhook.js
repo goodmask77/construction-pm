@@ -1370,6 +1370,37 @@ async function queryPosDay(date, store) {
   if (Array.isArray(slot) && slot[0]) { L.push('時段（每小時營業額）：'); (slot[0].rows || []).forEach(r => { if (Array.isArray(r) && r.length) L.push(`  ${r[0]}時 NT$${Math.round(Number(r[r.length - 1]) || Number(r[1]) || 0)}`) }) }
   return L.join('\n')
 }
+// 🔎 訂位代查（inline 全檔；張良 2026-10-03「資料都串了為什麼摘要限制45天/20人」→治本：
+//   背景摘要只是快取，任何日期/區間（2021-02 開店～未來）都能用這支當場撈完整明細＋當日備註）
+async function queryResvDay(from, to) {
+  let f = String(from || ''), t2 = String(to || '')
+  if (!/^\d{4}-\d{2}(-\d{2})?$/.test(f)) return '（日期格式要 YYYY-MM-DD 或 YYYY-MM 整月；可加 to 查區間）'
+  if (/^\d{4}-\d{2}$/.test(f)) { if (!t2) t2 = f + '-31'; f = f + '-01' }
+  if (!t2) t2 = f
+  if (/^\d{4}-\d{2}$/.test(t2)) t2 = t2 + '-31'
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(t2) || t2 < f) return '（to 格式要 YYYY-MM-DD 且不能早於起日）'
+  const mos = []
+  for (let m = f.slice(0, 7); m <= t2.slice(0, 7);) { mos.push(m); m = new Date(Date.UTC(+m.slice(0, 4), +m.slice(5, 7), 1)).toISOString().slice(0, 7) }
+  if (mos.length > 4) return '（一次最多查 4 個月的區間，請分段）'
+  const kv3 = await kvGetMany(mos.map((m) => 'sp_finance_pm_inline_' + m).concat(['sp_finance_pm_inline_notes']))
+  const notes = ((kv3['sp_finance_pm_inline_notes'] || {}).days) || {}
+  const ST = { 1: '已確認', 2: '已取消', 3: '待確認', 4: '已入座', 5: '已取消', 6: '已確認' }
+  const L = [`◆ A Beach 訂位 ${f}${t2 !== f ? `~${t2}` : ''}（系統代查 inline 全檔）`]
+  let any = false
+  for (const m of mos) {
+    const days = ((kv3['sp_finance_pm_inline_' + m] || {}).days) || {}
+    for (const d of Object.keys(days).sort()) {
+      if (d < f || d > t2) continue
+      any = true
+      L.push(`${d}（${days[d].length}筆）：`)
+      days[d].forEach((r) => L.push(`  - ${r.t || '候位'} ${r.name} ${r.n}人｜${ST[r.st] || r.st}${r.phone ? `｜${r.phone}` : ''}${r.kc ? `｜兒童椅${r.kc}` : ''}${r.note ? `｜客註:${String(r.note).slice(0, 40)}` : ''}${r.inote ? `｜店註:${String(r.inote).slice(0, 40)}` : ''}`))
+    }
+  }
+  const dn = Object.keys(notes).filter((d) => d >= f && d <= t2).sort()
+  if (dn.length) { L.push('當日備註：'); dn.forEach((d) => (notes[d] || []).forEach((n) => L.push(`  - ${d} ${String(n.note).replace(/\s+/g, ' ').slice(0, 80)}（${n.by}）`))) }
+  if (!any && !dn.length) L.push('（這段期間沒有任何訂位或備註＝空檔）')
+  return L.join('\n')
+}
 // 🌐 即時翻譯模式（張良 2026-09-29：外國面試者溝通——群裡每句自動雙向翻，不用點名）
 async function ddTranslate(text, mode) {
   const pair = mode === 'zh-ko' ? { fo: '韓文', foName: 'Korean' } : { fo: '英文', foName: 'English' }
@@ -1489,6 +1520,7 @@ const BOT_AGENT_GUIDE = `
 - {"type":"set_item","category":"消防工程","item":"灑水頭","status":"完工","unitPrice":1200,"qty":10,"assignee":"王師傅"}  // 改細項；欄位都可省略
 - {"type":"add_category","name":"空調工程","budget":300000,"space":"工程"}  // 建大項分類（四個空間都可以，space 預設工程；例：在團隊工作建「採購」就帶"space":"團隊"）。任務中心的分類欄位就是這個大項，建好後用 add_task/update_task 的 category 歸類
 - {"type":"query_pos_day","date":"2026-09-25","store":"ground"}  // 🔎資料代查（唯讀,不用確認,誰問都能用）：查某天某店「完整」銷售明細=逐品項份數金額+時段表+付款別。date 也可以只給月份 "2026-09"＝查整月（回每日營收+月合計,問某月總額/要補一段日期時用這個,**不要**一天一天查）。使用者問的資料你手上摘要沒有時,輸出這個指令(可附一句「我查一下」),系統會代查回填後你再答——**不要**回「資料沒帶到/請自己看App/請找張良接」。store=ground|abeach。
+- {"type":"query_resv","date":"2024-07-15","to":"2024-07-20"}  // 🔎A Beach 訂位代查（唯讀,不用確認）：任何日期的訂位「逐筆完整明細」（姓名/電話/人數/時間/狀態/客註/店註）＋當日備註（⚠️包場/公休註記），2021-02 開店～未來全查得到。date=YYYY-MM-DD 或 YYYY-MM 整月；to 選填查區間（一次最多 4 個月）。摘要裡只有彙總數字、使用者要「某天是誰訂的/電話/歷史某天明細」就用這個；問空檔也可以用（回「空檔」=確定沒被訂）。
 - {"type":"add_item","category":"空調工程","name":"主機","qty":1,"unit":"式","unitPrice":150000,"taxType":"未稅"}
 - {"type":"delete_item","category":"空調工程","item":"主機"}
 - {"type":"add_payment","category":"消防工程","amount":63000,"date":"2026-06-22","note":"訂金"}  // 大項新增一筆付款
@@ -1985,10 +2017,12 @@ export default async function handler(req, res) {
       // 🔎 資料代查迴圈（張良 2026-09-27 根除）：AI 輸出 query_pos_day → 系統查庫 → 資料回填再答一輪（唯讀自動執行,不經確認）
       try {
         const qms = [...rawReply.matchAll(/\{[^{}]*"type"\s*:\s*"query_pos_day"[^{}]*\}/g)].slice(0, 2)
-        if (qms.length) {
+        const qrs = [...rawReply.matchAll(/\{[^{}]*"type"\s*:\s*"query_resv"[^{}]*\}/g)].slice(0, 2)
+        if (qms.length || qrs.length) {
           let dataTxt = ''
           for (const m of qms) { try { const q = JSON.parse(m[0]); dataTxt += await queryPosDay(String(q.date || ''), String(q.store || 'ground')) + '\n\n' } catch (e) { dataTxt += '（查詢指令解析失敗）\n' } }
-          rawReply = await answer(text + '\n\n【系統代查結果（依你剛才的 query_pos_day）——請直接據此回答使用者,不要再輸出查詢指令,也不要說資料沒帶到】\n' + dataTxt, snaps, accountsText, financeText, activityText, estimatesText, crewText, canAct, history, memoryToText(memList), conclusionsText, tasksText, sheetText, posText, catalogText, supplyText, lineQuotaText, filelibText, groupChatText, moneyOK)
+          for (const m of qrs) { try { const q = JSON.parse(m[0]); dataTxt += await queryResvDay(String(q.date || ''), String(q.to || '')) + '\n\n' } catch (e) { dataTxt += '（訂位查詢指令解析失敗）\n' } }
+          rawReply = await answer(text + '\n\n【系統代查結果（依你剛才的 query_pos_day/query_resv）——請直接據此回答使用者,不要再輸出查詢指令,也不要說資料沒帶到】\n' + dataTxt, snaps, accountsText, financeText, activityText, estimatesText, crewText, canAct, history, memoryToText(memList), conclusionsText, tasksText, sheetText, posText, catalogText, supplyText, lineQuotaText, filelibText, groupChatText, moneyOK)
         }
       } catch (e) { console.log('query tool err', e?.message) }
       // 抓出 D 想長期記住的事（[[記住:...]]）→ 存進記事本(僅操作者)，並把標記從給人看的文字拿掉
