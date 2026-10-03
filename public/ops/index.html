@@ -2401,11 +2401,11 @@ function laborRender(){
     h += `<tr><td style="padding:4px 10px;text-align:left;font-weight:800;position:sticky;left:0;background:var(--card);z-index:1;white-space:nowrap;${meN?'cursor:pointer':''}" ${meN?`onclick="lbRowClear('${hh}')" title="點我＝清空這一列"`:''}>${+hh}-${+hh+1}</td>`
     cols.forEach((_,ci)=>{
       const v = lbV(sh,hh,ci)
-      h += `<td id="lc_${hh}_${ci}" style="padding:0;text-align:center;min-width:86px;border:1px solid var(--line);${v?`background:${LB_AB[v]||'#1E2630'};`:''}${meN?'cursor:cell;':''}font-variant-numeric:tabular-nums"
+      h += `<td id="lc_${hh}_${ci}" style="padding:0;text-align:center;min-width:86px;border:1px solid var(--line);${v?`background:${LB_AB[v]||'#1E2630'};`:(meal?'background:#201B10;':'')}${meN?'cursor:cell;':''}font-variant-numeric:tabular-nums"
         ${meN?`onmousedown="lbDown(event,'${hh}',${ci})" onmouseenter="lbEnter('${hh}',${ci})"`:''}><div style="padding:6px 8px;min-height:19px;font-weight:800;color:${v?(LB_AC[v]||'var(--ink)'):'var(--ink)'}">${fmtN(v)}</div></td>`
     })
     const ppl = cols.reduce((a,_,ci)=>a+(lbV(sh,hh,ci)?1:0),0)
-    h += `<td style="padding:4px 10px;text-align:right;font-weight:900;white-space:nowrap">${fmtN(rowSum(hh))}</td><td style="padding:4px 10px;text-align:right;font-weight:800;font-variant-numeric:tabular-nums">${ppl||''}</td></tr>`
+    h += `<td style="padding:4px 10px;text-align:right;font-weight:900;white-space:nowrap;${mealBg}">${fmtN(rowSum(hh))}</td><td style="padding:4px 10px;text-align:right;font-weight:800;font-variant-numeric:tabular-nums;${mealBg}">${ppl||''}</td></tr>`
   })
   h += `<tr><td style="padding:6px 10px;text-align:left;font-weight:900;position:sticky;left:0;background:var(--soft);z-index:1">合計</td>
   ${cols.map((_,ci)=>`<td style="padding:6px 8px;text-align:center;font-weight:900;background:var(--soft)">${fmtN(colSum(ci))}</td>`).join('')}
