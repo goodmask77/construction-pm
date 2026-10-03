@@ -178,6 +178,7 @@ function bindPrompt(){
   if (!m) { alert('看不懂這串，請完整貼上 DD 給的連結'); return }
   localStorage.setItem('prepToken', m[1])
   bindBtnSync()
+  try { maniSync() } catch(_){} // 綁完立刻換個人化 manifest——之後再加主畫面就自帶身分
   alert('綁定完成 ✅')
   goView()
 }
@@ -436,6 +437,9 @@ async function rHide(kEnc, hideV){
 // 個人身分：跟 DD 說「綁定看板」拿到 /prep?me=token 連結 → 存這支手機，打卡自動是本人、站長可編輯自己的站
 ;(function(){ const sp = new URLSearchParams(location.search); const m = sp.get('me'); if (m) localStorage.setItem('prepToken', m); if (m || sp.has('r')) history.replaceState(null, '', location.pathname + location.hash) })() // v4.31.0 保留 #meet=/#sop= 深層連結 // r=🔄的快取時間戳，進站就清掉（張良 2026-09-24：網址多一段）
 const TK = () => localStorage.getItem('prepToken') || ''
+// 📱 已綁定→manifest 換成個人化版（v4.31.2 張良：換 icon 重加 App 變訪客）：加入主畫面的捷徑 start_url 自帶 ?me=token，重加 App 身分不掉
+function maniSync(){ try { const t8 = TK(); const l8 = document.querySelector('link[rel="manifest"]'); if (l8) l8.href = t8 ? ('/api/mail-sync?manifest=1&me=' + encodeURIComponent(t8)) : '/ops/manifest.json?v=2' } catch(_){} }
+maniSync()
 // ── 👁 模擬檢視（v4.32.0 張良「切換不同使用者，確認每人畫面/設定/權限都正確」）──
 // 原理＝攔截全站 fetch：讀取自動帶 &as=對方rid → 伺服器直接用「那個人」的身分回資料（分頁藏不藏、按鈕有沒有、設定看不看得到＝跟本人開起來一模一樣，不是前端假裝）；寫入（POST）全部擋下＝只能看不能改
 const SIM = (()=>{ try { return JSON.parse(sessionStorage.getItem('gdSim')||'null') } catch(e){ return null } })()

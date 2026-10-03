@@ -401,6 +401,24 @@ export default async function handler(req, res) {
     }
     const o = {}; if (Object.keys(tabs).length) o.tabs = tabs; if (Object.keys(hide).length) o.hide = hide; return o
   }
+  // 📱 個人化 manifest（v4.31.2 張良：換 icon 重加 App 變訪客——iOS 刪掉重加＝儲存清空，token 跟著掉）
+  // 已綁定的人開 /prep → 前端把 manifest 換成這支 → start_url 帶 ?me=token → 加入主畫面的捷徑自帶身分，重加也不會掉
+  // token 先驗真（sopWho）：無效/停權就回乾淨版，不把壞 token 烙進捷徑
+  if (req.query?.manifest) {
+    const me8 = String(req.query.me || '').replace(/[^A-Za-z0-9_-]/g, '')
+    let su8 = '/prep'
+    if (me8) { try { const w8 = await sopWho(me8); if (w8) su8 = '/prep?me=' + me8 } catch (_) {} }
+    res.setHeader('Content-Type', 'application/manifest+json')
+    res.setHeader('Cache-Control', 'private, no-store')
+    return res.status(200).json({
+      name: 'GD', short_name: 'GD', start_url: su8, scope: '/', display: 'standalone',
+      background_color: '#FFFFFF', theme_color: '#087EBA',
+      icons: [
+        { src: '/ops/icon-192.png?v=2', sizes: '192x192', type: 'image/png', purpose: 'any' },
+        { src: '/ops/icon-512.png?v=2', sizes: '512x512', type: 'image/png', purpose: 'any' }
+      ]
+    })
+  }
   // 診斷探針（只回結構統計，不回金額/內容——端點公開，保守）：?txprobe=YYYY-MM-DD
   if (req.query?.txprobe) {
     const dt = String(req.query.txprobe)
