@@ -127,17 +127,21 @@ async function custBuild() {
   const mos = Object.keys(sum.months || {}).sort()
   const today = twToday()
   const cust = {}
-  const ins = { yearly: {}, heat: Array.from({ length: 7 }, () => [0, 0, 0, 0]), src: {}, lead: { d0: 0, d1_3: 0, d4_7: 0, d8_30: 0, d31: 0 }, purpose: {}, nr: {}, kidsY: {}, bigY: {}, cxY: {} }
+  // v4.40.0（張良「每張卡點進去要有更深的分析：年/月/平均/趨勢」）：洞察改存「逐月明細 m」＋大組清單 bigList，前端自由切年/月/平均
+  const ins = { m: {}, bigList: [] }
+  const M9 = (ym) => ins.m[ym] = ins.m[ym] || { resv: 0, guests: 0, cxl: 0, kids: 0, nw: 0, rt: 0, big: 0, bigG: 0, src: {}, lead: { d0: 0, d1_3: 0, d4_7: 0, d8_30: 0, d31: 0 }, pp: {}, hp: Array.from({ length: 7 }, () => [0, 0, 0, 0]), hg: Array.from({ length: 7 }, () => [0, 0, 0, 0]), wdD: [0, 0, 0, 0, 0, 0, 0] }
   const slotIdx = (t) => (t < '13:00' ? 0 : t < '18:00' ? 1 : t < '19:00' ? 2 : 3)
   for (let i = 0; i < mos.length; i += 12) {
     const kvm = await Promise.all(mos.slice(i, i + 12).map((m) => kvGet('sp_finance_pm_inline_' + m)))
     for (const doc of kvm) {
       for (const [d, arr] of Object.entries(doc?.days || {})) {
-        const y = d.slice(0, 4), wd = (new Date(d + 'T00:00:00Z').getUTCDay() + 6) % 7
+        const ym = d.slice(0, 7), wd = (new Date(d + 'T00:00:00Z').getUTCDay() + 6) % 7
+        const mm = M9(ym)
+        let dayValid = false
         for (const r of arr) {
-          const yy = ins.yearly[y] = ins.yearly[y] || { resv: 0, guests: 0, cxl: 0 }
           const canceled = CANCELED_STATES.includes(r.st)
-          if (canceled) { yy.cxl++; ins.cxY[y] = (ins.cxY[y] || 0) + 1 } else { yy.resv++; yy.guests += r.n || 0 }
+          if (canceled) mm.cxl++
+          else { mm.resv++; mm.guests += r.n || 0 }
           const name = (r.name || '').trim()
           const key = r.cid || r.phone || (name ? 'n:' + name : '')
           if (key) {
@@ -155,26 +159,28 @@ async function custBuild() {
               c.k += (r.kc || 0) + (r.ks || 0)
               if ((r.n || 0) > c.mx) c.mx = r.n || 0
               if (d > c.l && d <= today) c.l = d
-              const nn = ins.nr[y] = ins.nr[y] || { nw: 0, rt: 0 }
-              isFirst ? nn.nw++ : nn.rt++
+              isFirst ? mm.nw++ : mm.rt++
             }
           }
-          if (canceled || !r.t) continue
-          // 洞察（只算有效）
-          ins.heat[wd][slotIdx(r.t)] += r.n || 0
+          if (canceled) continue
+          dayValid = true
+          if ((r.kc || 0) + (r.ks || 0) > 0) mm.kids++
+          if ((r.n || 0) >= 20) { mm.big++; mm.bigG += r.n; ins.bigList.push({ d, t: r.t || '', n: r.name || '', g: r.n }) }
           const sv = (r.ref || r.src || '其他').toLowerCase()
           const sk = /google/.test(sv) ? 'Google' : /fb|facebook|instagram|ig/.test(sv) ? 'FB/IG' : /opentable/.test(sv) ? 'OpenTable' : /host|ios|android/.test(sv) ? '店內/電話' : /web/.test(sv) ? '官網/線上' : '其他'
-          ins.src[sk] = (ins.src[sk] || 0) + 1
-          if (r.created) { const ld = Math.max(0, Math.round((new Date(d) - new Date(r.created.slice(0, 10))) / 86400e3)); ins.lead[ld === 0 ? 'd0' : ld <= 3 ? 'd1_3' : ld <= 7 ? 'd4_7' : ld <= 30 ? 'd8_30' : 'd31']++ }
+          mm.src[sk] = (mm.src[sk] || 0) + 1
+          if (r.created) { const ld = Math.max(0, Math.round((new Date(d) - new Date(r.created.slice(0, 10))) / 86400e3)); mm.lead[ld === 0 ? 'd0' : ld <= 3 ? 'd1_3' : ld <= 7 ? 'd4_7' : ld <= 30 ? 'd8_30' : 'd31']++ }
           const nt = String(r.note || '')
           const pk2 = /慶生|生日|birthday/i.test(nt) ? '慶生' : /約會|date/i.test(nt) ? '約會' : /家庭|親子|family/i.test(nt) ? '家庭' : /商務|公司|business/i.test(nt) ? '商務' : /一般/.test(nt) ? '一般' : nt ? '其他備註' : '未填'
-          ins.purpose[pk2] = (ins.purpose[pk2] || 0) + 1
-          if ((r.kc || 0) + (r.ks || 0) > 0) ins.kidsY[y] = (ins.kidsY[y] || 0) + 1
-          if ((r.n || 0) >= 20) { const bb = ins.bigY[y] = ins.bigY[y] || { cnt: 0, guests: 0 }; bb.cnt++; bb.guests += r.n }
+          mm.pp[pk2] = (mm.pp[pk2] || 0) + 1
+          if (r.t) { mm.hp[wd][slotIdx(r.t)] += r.n || 0; mm.hg[wd][slotIdx(r.t)]++ }
         }
+        if (dayValid) mm.wdD[wd]++
       }
     }
   }
+  ins.bigList.sort((a, b) => b.d.localeCompare(a.d))
+  if (ins.bigList.length > 900) ins.bigList = ins.bigList.slice(0, 900)
   // 分段寫入（只收「有有效電話」的＝識別得出同一人；現場代稱不進資料庫）
   const idd = Object.values(cust).filter((c) => c.n && c.ph.replace(/\D/g, '').length >= 8)
   const cutoff = addDays(today, -180)
