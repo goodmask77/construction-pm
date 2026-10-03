@@ -2199,7 +2199,8 @@ function shiftRender(){
       const OTH_C = {ink:'#9AA4B2',bg:'var(--soft)',chipB:'var(--line)',chipBg:'var(--card)'}
       // v4.36.3（張良「PT也分出來 內歸內外歸外」）：內場→內場PT→外場→外場PT→其他；PT 列名字前掛 PT 小籤（同 NUEiP 呈現）
       const grpOf = n => (DEPT_C[deptOf[n]] ? deptOf[n] : '其他') + (ptOf[n] ? 'PT' : '')
-      const names9 = Object.keys(abByN)
+      // v4.32.1（張良「已離職的人只在有班表的月份顯示；十月的班表就自動隱藏」）：整列只在「目前選的月份」有任何排班(含休/例)才出現；‹ › 翻月會重算
+      const names9 = Object.keys(abByN).filter(n9 => Object.keys(abByN[n9]).some(dt9 => dt9.startsWith(shiftYm)))
       const order9 = ['內場','內場PT','外場','外場PT','其他','其他PT']
       hh += `<tr><td colspan="${wd2.length+1}" style="${BD}border-top:4px solid var(--line);padding:6px 8px;text-align:left;font-weight:900;font-size:13px;background:var(--soft);position:sticky;left:0">🅰 A Beach 班表 <span class="hint" style="font-weight:600;font-size:10.5px">阿桑系統自動同步・唯讀・調度參考</span></td></tr>`
       order9.forEach(gp=>{
