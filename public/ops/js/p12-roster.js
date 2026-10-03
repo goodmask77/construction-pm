@@ -35,6 +35,7 @@ function hrmRender(){
       let va = a[k] ?? '', vb = b[k] ?? ''
       if (k === 'age') { va = +va||0; vb = +vb||0; return (va-vb)*hrmSort.dir }
       if (k === 'bday') { va = String(a.birth||'').slice(5); vb = String(b.birth||'').slice(5); return (va<vb?-1:va>vb?1:0)*hrmSort.dir }
+      if (k === 'co') { va = /A Beach/.test(a.co||'')?'AB':'GD'; vb = /A Beach/.test(b.co||'')?'AB':'GD'; return (va<vb?-1:va>vb?1:0)*hrmSort.dir }
       return (String(va)<String(vb)?-1:String(va)>String(vb)?1:0)*hrmSort.dir
     })
   }
@@ -71,7 +72,7 @@ function hrmRender(){
   // 🔒 身分證欄名單鎖（v4.41.2 張良「顯示鎖的符號 裡面有人員名單 我打勾的人才可以看到」）：管理者點鎖頭勾人；沒在名單的主管這欄=「—」(伺服器端拔掉)
   const LOCK_I9 = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" style="vertical-align:-2px"><rect x="4" y="11" width="16" height="9" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>'
   const nidTh = `<th style="padding:4px 7px;text-align:center;white-space:nowrap;user-select:none">身分證字號 ${d.idLock ? `<span title="名單制：打勾的人才看得到這一欄（點我設定）" style="cursor:pointer;color:#D4A72C" onclick="hrmIdLock()">${LOCK_I9}</span>` : (d.idCan ? '' : `<span class="hint" title="你沒有檢視這欄的權限">${LOCK_I9}</span>`)}</th>`
-  const header = (withCo)=>`<thead><tr>${TH('name','姓名','left',1)}${withCo?`<th style="padding:4px 7px;text-align:center">店</th>`:''}${TH('dept','部門','center')}${TH('title','職務','center')}${TH('onboard','到職日','center')}${TH('onboard','年資','center')}${TH('bday','生日','center')}${TH('age','年齡','center')}${TH('sex','性別','center')}${nidTh}${TH('health','體檢','left')}</tr></thead>`
+  const header = (withCo)=>`<thead><tr>${TH('name','姓名','left',1)}${withCo?TH('co','店','center'):''}${TH('dept','部門','center')}${TH('title','職務','center')}${TH('onboard','到職日','center')}${TH('onboard','年資','center')}${TH('bday','生日','center')}${TH('age','年齡','center')}${TH('sex','性別','center')}${nidTh}${TH('health','體檢','left')}</tr></thead>`
   const bdaySet = {} // 名→天數（近30天壽星整列生日光）
   upcoming.forEach(x=>{ bdaySet[x.co+'|'+x.name]=x.days })
   const IN9 = (x,f,w,alignL)=>`<input value="${String(x[f]??'').replace(/"/g,'&quot;')}" style="width:${w}px;padding:3px 5px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--ink);font-size:12.5px;text-align:${alignL?'left':'center'}" onchange="hrmSet('${(x.co||'').replace(/'/g,'')}','${(x.name||'').replace(/'/g,'')}','${f}',this.value)">`
@@ -141,14 +142,34 @@ async function hrmAdd(code){ const d = window._hrmD||{rows:[]}
   const nm = prompt('新夥伴姓名'); if (!nm) return; const r = await hrmUp({ op:'add', co, newName: nm.trim().slice(0,20) }); if (r) hrmRenderKeep() }
 async function hrmDel(co, name){ if (!confirm('把 '+name+' 從名冊移除？')) return; const r = await hrmUp({ op:'del', co, name }); if (r) hrmRender() }
 
-// 職務選單自訂（v4.34.4 張良「兼職改PT 值班改正職 我可以新增刪減編輯選單」）
-async function hrmTitleOpts(){
+// 職務選單自訂 v4.34.6（張良「不要再出現分號一行的設定視窗 專業一點」）：正式視窗＝一列一個選項、可改字/刪、＋新增、✓儲存
+function hrmTitleOpts(){
   const d = window._hrmD; if (!d) return
-  const cur = (d.titleOpts||['正職','PT']).join('、')
-  const v = prompt('職務選單（用「、」分隔，可自行增刪改）', cur)
-  if (v == null) return
-  const list = v.split(/[、,，]/).map(x=>x.trim()).filter(Boolean)
-  if (!list.length) { alert('至少留一個'); return }
+  window._toL = (d.titleOpts && d.titleOpts.length ? d.titleOpts : ['正職','PT']).slice()
+  hrmToDraw()
+}
+function hrmToDraw(){
+  const old = document.getElementById('toOv'); if (old) old.remove()
+  const ov = document.createElement('div'); ov.id = 'toOv'
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(10,14,22,.55);z-index:70;display:flex;align-items:center;justify-content:center;padding:16px'
+  ov.innerHTML = `<div style="background:#1C2430;border:1px solid #39434F;border-radius:14px;max-width:340px;width:100%;max-height:80vh;overflow:auto;padding:16px" onclick="event.stopPropagation()">
+    <div style="font-weight:900;margin-bottom:4px">職務選單</div>
+    <div class="hint" style="margin-bottom:10px">編輯模式下職務欄的選項；改字直接打、不要的按 ✕</div>
+    <div id="toList">${window._toL.map((o9,i)=>`<div style="display:flex;gap:8px;align-items:center;margin-bottom:8px">
+      <input value="${String(o9).replace(/"/g,'&quot;')}" style="flex:1;padding:8px 10px;border:1.5px solid var(--line);border-radius:9px;background:var(--bg);color:var(--ink);font-size:14.5px" onchange="window._toL[${i}]=this.value.trim()">
+      <button class="mini" style="padding:7px 11px;color:var(--red)" onclick="window._toL.splice(${i},1);hrmToDraw()">✕</button></div>`).join('')}</div>
+    <button class="mini" style="padding:7px 14px" onclick="window._toL.push('');hrmToDraw()">＋ 新增選項</button>
+    <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px">
+      <button class="mini" style="padding:8px 14px" onclick="document.getElementById('toOv').remove()">取消</button>
+      <button class="mini on" style="padding:8px 18px" onclick="hrmToSave()">✓ 儲存</button></div></div>`
+  ov.onclick = () => ov.remove()
+  document.body.appendChild(ov)
+  const inp = ov.querySelectorAll('#toList input'); if (inp.length) inp[inp.length-1].focus()
+}
+async function hrmToSave(){
+  const list = (window._toL||[]).map(x=>String(x).trim()).filter(Boolean)
+  if (!list.length) { alert('至少留一個選項'); return }
   const r = await hrmUp({ op:'titleopts', list })
-  if (r) { d.titleOpts = r.titleOpts; hrmRender() }
+  const o = document.getElementById('toOv'); if (o) o.remove()
+  if (r) { window._hrmD.titleOpts = r.titleOpts; hrmRenderKeep() }
 }
