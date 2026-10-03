@@ -7,13 +7,13 @@
 <meta name="robots" content="noindex" />
 <!-- PWA（張良 2026-09-21 幹成App）：手機瀏覽器「加入主畫面」→ 全螢幕獨立視窗＋icon；icon=:D 紅標、名稱=GD -->
 <link rel="manifest" href="/ops/manifest.json" />
-<link rel="icon" type="image/png" href="/ops/icon-192.png" />
+<link rel="icon" type="image/png" href="/ops/icon-192.png?v=2" />
 <meta name="apple-mobile-web-app-capable" content="yes" />
 <meta name="mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
 <meta name="apple-mobile-web-app-title" content="GD" />
 <meta name="theme-color" content="#0E1217" />
-<link rel="apple-touch-icon" href="/ops/icon-180.png" />
+<link rel="apple-touch-icon" href="/ops/icon-180.png?v=2" />
 <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700;900&display=swap" rel="stylesheet">
 <style>
@@ -3117,10 +3117,10 @@ async function settingsLoad(){ // ⚙️ 設定頁（張良 2026-10-01：分頁�
   document.getElementById('upd').textContent = '設定'
   app.innerHTML = `<section><h2>⚙️ 設定</h2>
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
+      <button class="mini" style="padding:10px 16px" onclick="const b=document.getElementById('permBox');b.style.display=b.style.display==='none'?'':'none'">🔐 權限設定</button>
       <button class="mini" style="padding:10px 16px" onclick="tabsEdit()">🗂 分頁名稱／排序</button>
       <button class="mini" style="padding:10px 16px" onclick="notifyEdit()">🔔 群組通知開關</button>
-      <button class="mini" style="padding:10px 16px" onclick="const b=document.getElementById('permBox');b.style.display=b.style.display==='none'?'':'none'">🔐 權限設定</button>
-    </div><div id="permBox" class="hint" style="display:none">權限資料載入中…</div></section>`
+    </div><div id="permBox" class="hint">權限資料載入中…</div></section>`
   let d; try{ const r = await fetch('/api/mail-sync?menu=' + encodeURIComponent(K) + (TK() ? '&me=' + encodeURIComponent(TK()) : '')); d = await r.json() }catch(e){}
   const box = document.getElementById('permBox'); if (!box) return
   window._permD = (d && d.me && d.me.admin && d.perm) ? d.perm : null // v4.26.4 樂觀更新用的本地快照
