@@ -1,5 +1,7 @@
 // ── ⚖️ 勞基法檢查 + 💰 薪資表 v4.33.0（張良 2026-10-04：台灣餐飲業 2026 法規對照排班/打卡逐條檢查；雙店薪資條給會計師/稽核，可複製圖片/匯出表格）──
 // 依拆檔政策（v4.40.0）新功能獨立一檔；共用全域：window._shiftD / window._shRows / window._shPer / shiftYm / shMergedAb / TK / K / r1
+// ⚠️ r1 在 p05-shift.js 裡是「函式內 const」不是全域（v4.40.8 治本：shift 頁 Uncaught ReferenceError: r1 is not defined 崩頁,張良 2026-10-04 05:56 錯誤回報）→ 這裡自備同款全域保險
+window.r1 = window.r1 || ((x) => Math.round(x * 10) / 10)
 
 function lpToast(t){ const old=document.getElementById('lpToast'); if(old) old.remove()
   const b=document.createElement('div'); b.id='lpToast'
