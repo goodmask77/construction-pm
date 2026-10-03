@@ -158,7 +158,7 @@ async function posFresh(){ // 跟主App同款：手動叫喬亞抓一次盤中�
   try { await fetch('/api/joya-intraday?manual=1&r=' + Date.now()) } catch(e) {}
   await load('ground', true)
 }
-function hardRefresh(){ location.replace(location.pathname + '?r=' + Date.now()) }
+function hardRefresh(){ try{ Object.keys(localStorage).filter(k=>k.startsWith('obt_')||k.startsWith('obc_')).forEach(k=>localStorage.removeItem(k)) }catch(_){} location.replace(location.pathname + '?r=' + Date.now()) } // v4.31.8 連本地快取一起清＝真的拿最新
 // 依目前分頁重畫（綁定後/操作後用）
 function taskEmbed(){ // 任務原地切換（張良 2026-10-02：不要像開新分頁）——iframe 內嵌，側欄照舊
   curStore = 'taskx'; setTabs('task')
@@ -1852,7 +1852,10 @@ function shMergedSched(){ const out=[], seen=new Set(); const add=a=>(a||[]).for
   ;(window._shLoaded||[]).forEach(y=>{ if(y===shiftYm)return; const c=tcGet('shift_'+y); if(c) add((c.sched||[]).filter(x=>String(x.date||'')<lo||String(x.date||'')>hi)) })
   add(window._shiftTmpQ); return out }
 function shMergedLeave(){ const out={}; const addL=l=>{ if(!l)return; for(const dt in l){ out[dt]=Object.assign(out[dt]||{}, l[dt]) } }; if(window._shiftD) addL(window._shiftD.leave); (window._shLoaded||[]).forEach(y=>{ if(y===shiftYm)return; const c=tcGet('shift_'+y); if(c) addL(c.leave) }); return out }
-async function shEnsure(yms){ window._shLoaded=window._shLoaded||[]; await Promise.all(yms.map(async y=>{ if(window._shLoaded.includes(y))return; const c=tcGet('shift_'+y); if(c){ window._shLoaded.push(y); return } try{ const r=await fetch('/api/mail-sync?shift='+encodeURIComponent(K)+'&ym='+y+(TK()?'&me='+encodeURIComponent(TK()):'')); const dd=await r.json(); if(dd&&dd.ok){ tcSet('shift_'+y,dd); if(!window._shLoaded.includes(y))window._shLoaded.push(y) } }catch(_){} })) }
+async function shEnsure(yms){ // v4.31.8 治本（張良「重新整理跟右上更新都按了還是沒有」）：原本「localStorage 有就永不再抓」→ 鄰月舊快取卡死（AB回補/別人改班都看不到）。改＝快取先畫（秒出），背景一定重抓一次最新，回來差異就重畫
+  window._shLoaded=window._shLoaded||[]
+  const reval = async (y)=>{ try{ const r=await fetch('/api/mail-sync?shift='+encodeURIComponent(K)+'&ym='+y+'&r='+Date.now()+(TK()?'&me='+encodeURIComponent(TK()):'')); const dd=await r.json(); if(dd&&dd.ok){ const old9=JSON.stringify(tcGet('shift_'+y)||''); tcSet('shift_'+y,dd); if(JSON.stringify(dd)!==old9&&curStore==='shift'){ const box=document.getElementById('shBox'); if(box) window._shAnchor=shLeftAnchor(box); shGridOnly() } } }catch(_){} }
+  await Promise.all(yms.map(async y=>{ if(window._shLoaded.includes(y))return; window._shLoaded.push(y); const c=tcGet('shift_'+y); if(c){ reval(y); return } await reval(y) })) }
 function shLeftAnchor(box){ const ths=box.querySelectorAll('th[data-d]'); const bx=box.getBoundingClientRect(); const edge=bx.left+100; for(const th of ths){ const r=th.getBoundingClientRect(); if(r.right>edge) return {date:th.getAttribute('data-d'), vx:r.left-bx.left} } return null }
 function shGridOnly(){ const box=document.getElementById('shBox'); if(!box||!window._shBuildGrid)return; const keep=box.scrollLeft; const a=window._shAnchor; window._shAnchor=null; box.innerHTML=window._shBuildGrid(shRangeDays()); box.onscroll=shOnScroll; if(a){ const th=box.querySelector('th[data-d="'+a.date+'"]'); if(th){ box.scrollLeft+=(th.getBoundingClientRect().left-box.getBoundingClientRect().left)-a.vx } } else box.scrollLeft=keep }
 function shOnScroll(){ const box=document.getElementById('shBox'); if(!box||window._shExtBusy)return; const nearL=box.scrollLeft<240, nearR=box.scrollLeft>box.scrollWidth-box.clientWidth-240; if(!nearL&&!nearR)return; window._shExtBusy=true; window._shAnchor=shLeftAnchor(box); if(nearL){ let [y,m]=window._shRangeStart.split('-').map(Number); if(--m<1){m=12;y--} window._shRangeStart=y+'-'+String(m).padStart(2,'0') } if(nearR){ let [y,m]=window._shRangeEnd.split('-').map(Number); if(++m>12){m=1;y++} window._shRangeEnd=y+'-'+String(m).padStart(2,'0') } shEnsure(shRangeYms()).then(()=>{ if(curStore==='shift') shGridOnly(); window._shExtBusy=false }) }
