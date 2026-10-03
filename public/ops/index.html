@@ -184,12 +184,12 @@ function goView(){
 }
 // 🔑 輸入綁定碼（iPhone 加入主畫面的 App 跟 Safari 儲存分開→token 帶不過去；貼一次 DD 給的連結/代碼即可）
 function bindPrompt(){
-  const v = prompt('📱 用 LINE 私訊 DD「登入碼」→ 把 DD 給的 4 個數字填在這裡（10分鐘內有效）\n\n（沒綁定過？先私訊 DD「綁定GD 你的本名」；貼個人連結也可以）')
+  const v = prompt('用 LINE 私訊 DD「登入碼」→ 把 DD 給的 4 個數字填在這裡（10分鐘內有效）\n\n（沒綁定過？先私訊 DD「綁定GD 你的本名」；貼個人連結也可以）')
   if (!v) return
   // 🔢 四位數登入碼（v4.31.3 張良：要更簡單＝打4個數字就好）
   if (/^\d{4}$/.test(v.trim())) {
     fetch('/api/mail-sync?bindcode=' + v.trim()).then(r => r.json()).then(j => {
-      if (j.ok && j.me) { localStorage.setItem('prepToken', j.me); try { simWipe() } catch(_){}; alert('登入完成 ✅'); hardRefresh() } // v4.31.4 清訪客快取+整個App重開＝名字/權限/分頁即時變（張良：登入完畫面還是訪客要手動刷）
+      if (j.ok && j.me) { localStorage.setItem('prepToken', j.me); try { simWipe() } catch(_){}; alert('登入完成'); hardRefresh() } // v4.31.4 清訪客快取+整個App重開＝名字/權限/分頁即時變（張良：登入完畫面還是訪客要手動刷）
       else alert(j.error || '登入碼錯誤或過期——私訊 DD「登入碼」再拿一組新的')
     }).catch(() => alert('網路不穩，再試一次'))
     return
@@ -199,7 +199,7 @@ function bindPrompt(){
   if (!m) { alert('看不懂這串——輸入 DD 給的 4 位數登入碼，或完整貼上個人連結'); return }
   localStorage.setItem('prepToken', m[1])
   try { simWipe() } catch(_){} // 清掉訪客身分抓的畫面快取
-  alert('綁定完成 ✅')
+  alert('綁定完成')
   hardRefresh() // v4.31.4 整個App重開＝名字/權限/分頁即時變（manifest 個人化 maniSync 重開後自動跑）
 }
 const BIND_HINT = `私訊 DD「登入碼」拿 4 位數 → 按 <button class="mini" onclick="bindPrompt()">🔑 登入</button> 填入（沒綁定過先跟 DD 說「綁定GD 本名」）`
@@ -527,11 +527,11 @@ async function pushSub(){ try { // 訂閱＋回報伺服器（已允許時默默
 } catch(e){ return false } }
 async function pushOn(){ // 🔔 按鈕（一定要使用者手點，iOS 規定）
   if (!TK()) { alert('要先綁定身分才能開通知：私訊 DD「綁定GD 你的本名」'); return }
-  if (!wpSupport()) { alert('這裡開不了通知。iPhone 請用「加到主畫面」的 GD App 打開，再按一次 🔔'); return }
+  if (!wpSupport()) { alert('這裡開不了通知。iPhone 請用「加到主畫面」的 GD App 打開，再按一次鈴鐺鈕'); return }
   const perm = await Notification.requestPermission()
   if (perm !== 'granted') { alert('沒有允許通知。之後要開：iPhone 設定 → 通知 → GD'); return }
   const ok = await pushSub()
-  alert(ok ? '🔔 通知開好了！之後簽收提醒、公告點通知就直接打開 GD' : '訂閱沒成功，網路穩一點再按一次 🔔')
+  alert(ok ? '通知開好了！之後簽收提醒、公告點通知就直接打開 GD' : '訂閱沒成功，網路穩一點再按一次鈴鐺鈕')
   try { meChipInit() } catch(e){}
 }
 maniSync()
@@ -540,6 +540,117 @@ maniSync()
 const SIM = (()=>{ try { return JSON.parse(sessionStorage.getItem('gdSim')||'null') } catch(e){ return null } })()
 // v4.32.2 張良「不要這個圖 以後都不要有顏色的emoji」：眼睛改單色線條 SVG（同側欄 stroke 風），UI 一律不用彩色 emoji
 const EYE_I = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>'
+// ── 全站彩色emoji→單色線條icon（v4.33.0 張良「以後都不要有顏色的emoji」）──
+// 集中一處治本：MutationObserver 盯著畫面，文字裡出現彩色 emoji 就原地換成 stroke SVG（同側欄風格）；
+// 以後程式再寫到 emoji 也會自動被換＝規則自動執行。<option>/<title> 塞不了 SVG → 直接把字拿掉。
+const _EI = d => '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2.5px;flex:0 0 auto">' + d + '</svg>'
+const _EP = s => _EI('<path d="' + s + '"/>')
+const EMO_SVG = (() => {
+  const food = _EP('M4 7h16l-1.5 13h-13ZM8 7a4 4 0 0 1 8 0')
+  const tool = _EP('M14.7 6.3a4.5 4.5 0 0 0-6 5.6L3 17.6V21h3.4l5.7-5.7a4.5 4.5 0 0 0 5.6-6l-3 3-2.8-.7-.7-2.8Z')
+  const folder = _EP('M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z')
+  const inbox = _EP('M5.5 5h13L22 12v6a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-6ZM22 12h-6l-2 3h-4l-2-3H2')
+  const mega = _EP('m3 11 18-7v16L3 13v-2ZM7.5 13.6v3.9a1.5 1.5 0 0 0 3 .3l-.8-4')
+  const medal = _EI('<circle cx="12" cy="15.5" r="5"/><path d="m8.5 11-3-8h4.5l2 5M15.5 11l3-8H14l-2 5"/>')
+  const lock = _EI('<rect x="4.5" y="10.5" width="15" height="10.5" rx="2"/><path d="M8 10.5V7a4 4 0 0 1 8 0v3.5"/>')
+  const help = _EI('<circle cx="12" cy="12" r="9"/><path d="M9.3 9a2.8 2.8 0 0 1 5.4 1c0 1.8-2.7 2.3-2.7 4M12 17.5h.01"/>')
+  const util = _EP('M7 2v8a2 2 0 0 0 4 0V2M9 2v20M17 22V2c-2 1-3 3.5-3 6v5h3')
+  const clock = _EI('<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>')
+  const check = _EP('M4 12.5 9.5 18 20 6')
+  return {
+  '✅': check, '☑': check, '❌': _EP('M5 5l14 14M19 5 5 19'),
+  '🗑': _EP('M3 6h18M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6M10 11v6M14 11v6'),
+  '⚙': _EI('<circle cx="12" cy="12" r="3.2"/><path d="M12 2.8v2.6M12 18.6v2.6M4.9 4.9l1.9 1.9M17.2 17.2l1.9 1.9M2.8 12h2.6M18.6 12h2.6M4.9 19.1l1.9-1.9M17.2 6.8l1.9-1.9"/>'),
+  '✏': _EP('M17 3a2.83 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z'),
+  '⚠': _EP('M10.3 3.8 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.8a2 2 0 0 0-3.4 0ZM12 9v4M12 17h.01'),
+  '🔔': _EP('M6 9a6 6 0 1 1 12 0c0 5 2 6.5 2 6.5H4S6 14 6 9ZM10 20a2.2 2.2 0 0 0 4 0'),
+  '📷': _EI('<path d="M4 7h3l2-2.5h6L17 7h3a1.5 1.5 0 0 1 1.5 1.5V19a1.5 1.5 0 0 1-1.5 1.5H4A1.5 1.5 0 0 1 2.5 19V8.5A1.5 1.5 0 0 1 4 7Z"/><circle cx="12" cy="13.5" r="3.5"/>'),
+  '🔗': _EP('M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7.1-7.1L11.7 5M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7.1 7.1L12.3 19'),
+  '📎': _EP('m21.4 11-9.2 9.2a6 6 0 0 1-8.5-8.5l9.2-9.2a4 4 0 0 1 5.7 5.7l-9.2 9.2a2 2 0 0 1-2.8-2.8l8.5-8.5'),
+  '🎓': _EP('M22 10 12 5 2 10l10 5ZM6 12.5V17c0 1.6 2.7 3 6 3s6-1.4 6-3v-4.5M22 10v5'),
+  '📋': _EI('<rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 2v4M15 2v4M8.5 11h7M8.5 15h5"/>'),
+  '⭐': _EP('m12 3 2.7 5.7 6.3.9-4.6 4.4 1.1 6.2-5.5-3-5.5 3 1.1-6.2L3 9.6l6.3-.9Z'),
+  '🕐': clock, '⏱': clock, '⏳': _EP('M6 2h12M6 22h12M7 2v4.5L12 11l5-4.5V2M7 22v-4.5L12 13l5 4.5V22'),
+  '⏰': _EI('<circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 1.5M5 3 2.5 5.5M19 3l2.5 2.5"/>'),
+  '📦': _EP('M21 8 12 3 3 8v8l9 5 9-5ZM3 8l9 5 9-5M12 13v8'),
+  '📅': _EI('<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M8 3v4M16 3v4M3 10h18"/>'),
+  '🎉': _EP('M5.5 11 13 18.5 3 21ZM9.5 8.5 15 14M13.5 6.5 15 5M17 10.5l2.5-.5M14.5 2.5 14 5.5M20.5 5 17.5 8'),
+  '👤': _EI('<circle cx="12" cy="8" r="4"/><path d="M4.5 21a7.5 7.5 0 0 1 15 0"/>'),
+  '🙋': _EI('<circle cx="12" cy="8" r="4"/><path d="M4.5 21a7.5 7.5 0 0 1 15 0"/>'),
+  '📝': _EP('M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8M18.4 2.6a2 2 0 0 1 2.8 2.8L13 13.5l-3.5 1 1-3.5Z'),
+  '💡': _EP('M9 18h6M10 21h4M12 3a6 6 0 0 1 3.5 10.9c-.7.5-1 1.3-1 2.1h-5c0-.8-.3-1.6-1-2.1A6 6 0 0 1 12 3Z'),
+  '🥩': food, '🍗': food, '🍔': food, '🍳': _EI('<circle cx="10" cy="12" r="7"/><path d="M17 12h5"/>'),
+  '💾': _EP('M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2ZM17 21v-8H7v8M7 3v5h8'),
+  '🖼': _EI('<rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="1.8"/><path d="m21 15.5-4.5-4.5L7 20.5"/>'),
+  '🙈': _EI('<path d="M10.7 5.1A10 10 0 0 1 12 5c6.5 0 10 7 10 7a17 17 0 0 1-2.4 3.3M6.6 6.6A16.8 16.8 0 0 0 2 12s3.5 7 10 7a10 10 0 0 0 5.4-1.6M2 2l20 20"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/>'),
+  '📌': _EP('M12 17v5M7 10.5 5.5 12.3a.8.8 0 0 0 .6 1.4h11.8a.8.8 0 0 0 .6-1.4L17 10.5V5l1-2.2H6L7 5Z'),
+  '🔍': _EI('<circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/>'),
+  '🚩': _EP('M4 22v-7M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1Z'),
+  '📱': _EI('<rect x="6" y="2.5" width="12" height="19" rx="2.5"/><path d="M11 18h2"/>'),
+  '🛠': tool, '🔧': tool,
+  '🛒': _EI('<circle cx="9" cy="20" r="1.6"/><circle cx="17" cy="20" r="1.6"/><path d="M3 4h2l2.4 11h10.2L20 8H6"/>'),
+  '💬': _EP('M21 12a8 8 0 0 1-8 8H4l2-3a8 8 0 1 1 15-5Z'),
+  '🔄': _EP('M3 12a9 9 0 0 1 15-6.7L21 8M21 3v5h-5M21 12a9 9 0 0 1-15 6.7L3 16M3 21v-5h5'),
+  '🐞': _EI('<rect x="8" y="7" width="8" height="11" rx="4"/><path d="M8 10H4M20 10h-4M8 14H4.5M19.5 14H16M9 7 7 4.5M15 7l2-2.5M10 3.5h4"/>'),
+  '🚫': _EI('<circle cx="12" cy="12" r="9"/><path d="m5.6 5.6 12.8 12.8"/>'),
+  '🗂': folder, '📂': folder, '📁': folder,
+  '🏷': _EI('<path d="M12.6 2.6 21.4 11.4a2 2 0 0 1 0 2.8l-7.2 7.2a2 2 0 0 1-2.8 0L2.6 12.6A2 2 0 0 1 2 11.2V4a2 2 0 0 1 2-2h7.2a2 2 0 0 1 1.4.6Z"/><circle cx="7.5" cy="7.5" r="1.3"/>'),
+  '📬': inbox, '📥': inbox, '📩': inbox, '📣': mega, '📢': mega,
+  '👥': _EI('<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0M16 4.7a3.5 3.5 0 0 1 0 6.6M17.5 14.3a6.5 6.5 0 0 1 4 5.7"/>'),
+  '🏠': _EP('M3 10.5 12 3l9 7.5M5 9.5V21h14V9.5'),
+  '🏆': _EP('M8 21h8M12 17v4M7 4h10v5a5 5 0 0 1-10 0ZM7 6H4v2a3 3 0 0 0 3 3M17 6h3v2a3 3 0 0 1-3 3'),
+  '🥇': medal, '🥈': medal, '🥉': medal,
+  '📜': _EP('M8 21h11a2 2 0 0 0 2-2v-2H10v2a2 2 0 1 1-4 0V5a2 2 0 1 0-4 0v3h4M19 17V5a2 2 0 0 0-2-2H4'),
+  '✍': _EP('M12 20h9M16.4 3.6a2 2 0 1 1 2.8 2.8L7 18.5l-4 1 1-4Z'),
+  '👑': _EP('m3 8 4.5 3.5L12 5l4.5 6.5L21 8l-1.8 10H4.8ZM5 21h14'),
+  '❓': help, '❔': help,
+  '📊': _EP('M3 3v16a2 2 0 0 0 2 2h16M8 17v-6M13 17V7M18 17v-3'),
+  '📈': _EP('m2 17 7-7 5 5 8-8M16 7h6v6'), '📉': _EP('m22 17-8.5-8.5-5 5L2 7M16 17h6v-6'),
+  '🧮': _EI('<rect x="5" y="2.5" width="14" height="19" rx="2"/><path d="M8.5 6.5h7M8.5 11h.01M12 11h.01M15.5 11h.01M8.5 14.5h.01M12 14.5h.01M15.5 14.5h.01M8.5 18h.01M12 18h.01M15.5 18h.01"/>'),
+  '🔐': lock, '🔒': lock,
+  '🔑': _EI('<circle cx="8" cy="15.5" r="4.5"/><path d="m11.5 12.5 9-9M16.5 7.5l3 3"/>'),
+  '⚡': _EP('M13 2 4.5 13.5H11L10 22l8.5-11.5H13Z'),
+  '🍟': util, '🥔': util, '🍴': util,
+  '🎬': _EI('<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 4v16M17 4v16M3 9h4M3 15h4M17 9h4M17 15h4"/>'),
+  '🆚': '<b style="font-size:11.5px;letter-spacing:.5px">VS</b>', '🅰': '',
+  '🏖': _EP('M12 3a9 9 0 0 0-9 9h18a9 9 0 0 0-9-9ZM12 12v7a2 2 0 0 0 4 0'),
+  '🔖': _EP('M6 3h12v18l-6-4-6 4Z'),
+  '🧾': _EP('M4 2.5h16V21l-2.7-1.5-2.6 1.5-2.7-1.5L9.4 21l-2.7-1.5L4 21ZM8 7.5h8M8 11.5h8'),
+  '🎚': _EP('M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M2 14h4M10 8h4M18 16h4'),
+  '☀': _EI('<circle cx="12" cy="12" r="4"/><path d="M12 2v2.5M12 19.5V22M4.9 4.9l1.8 1.8M17.3 17.3l1.8 1.8M2 12h2.5M19.5 12H22M4.9 19.1l1.8-1.8M17.3 6.7l1.8-1.8"/>'),
+  '🌙': _EP('M20 14.5A8.5 8.5 0 1 1 9.5 4 7 7 0 0 0 20 14.5Z'),
+  '🛍': _EP('M6 7h12l1.5 13a1 1 0 0 1-1 1.5h-13a1 1 0 0 1-1-1.5ZM8.5 10V6.5a3.5 3.5 0 0 1 7 0V10'),
+  '🔢': _EP('M9 3 7 21M17 3l-2 18M4 8.5h17M3 15.5h17'),
+  '👁': _EI('<path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/>'),
+  '🪑': _EP('M6 19v2M18 19v2M6 11V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v7M4 11h16a1 1 0 0 1 1 1v3a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1v-3a1 1 0 0 1 1-1Z'),
+  }
+})()
+const EMO_RE = new RegExp('(' + Object.keys(EMO_SVG).join('|') + ')️?', 'gu')
+function emoFix(root){
+  try {
+    if (!root) return
+    if (root.nodeType === 3) return emoFixT(root)
+    if (root.nodeType !== 1 && root.nodeType !== 11) return
+    const L = []
+    ;(function walk(n){ n.childNodes && n.childNodes.forEach(c => { if (c.nodeType === 3) L.push(c); else if (c.nodeType === 1 && c.nodeName !== 'svg' && c.nodeName !== 'SVG') walk(c) }) })(root)
+    L.forEach(emoFixT)
+  } catch(e){}
+}
+function emoFixT(tn){
+  const v = tn.nodeValue; if (!v) return
+  EMO_RE.lastIndex = 0; if (!EMO_RE.test(v)) return
+  const p = tn.parentNode; if (!p) return
+  const tg = p.nodeName
+  if (tg === 'SCRIPT' || tg === 'STYLE' || tg === 'TEXTAREA') return
+  EMO_RE.lastIndex = 0
+  if (tg === 'OPTION' || tg === 'TITLE') { tn.nodeValue = v.replace(EMO_RE, '').replace(/^ +| +$/g, ''); return } // SVG 塞不進去的位置：拿掉字
+  const t = document.createElement('template')
+  t.innerHTML = v.replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'})[c]).replace(EMO_RE, (m, g) => EMO_SVG[g] !== undefined ? EMO_SVG[g] : m)
+  p.replaceChild(t.content, tn)
+}
+const emoObs = new MutationObserver(rs => { rs.forEach(r => { if (r.type === 'characterData') emoFix(r.target); else if (r.addedNodes) r.addedNodes.forEach(emoFix) }) })
+const emoBoot = () => { emoFix(document.body); emoObs.observe(document.body, { childList: true, subtree: true, characterData: true }) }
+document.body ? emoBoot() : document.addEventListener('DOMContentLoaded', emoBoot)
 if (SIM) {
   const _fetch0 = window.fetch.bind(window)
   window.fetch = (u, o) => {
@@ -970,7 +1081,7 @@ function sopPick(id){
 async function sopDo(id, undo){
   if (!TK()) { alert('請先登入：按右上「登入」→ 私訊 DD「登入碼」→ 填入 4 個數字（或點 DD 給的個人連結）'); return }
   const it = (sopData.def.items||[]).find(x=>x.id===id)
-  if (!undo && it && it.photo && !sopPhotos[id]) { alert('這項要拍照——先按 📷'); return }
+  if (!undo && it && it.photo && !sopPhotos[id]) { alert('這項要拍照——先按相機鈕'); return }
   try {
     const r = await fetch('/api/mail-sync?sopdone=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ itemId:id, undo:!!undo, photo: sopPhotos[id]||undefined, token: TK() }) })
     const d = await r.json()
@@ -1043,13 +1154,13 @@ async function repSend(st){
   const r = await fetch('/api/mail-sync?sopreport=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ st, text: txt, media, by, token: TK() }) })
   const d = await r.json().catch(()=>null)
   repClose()
-  if (d && d.ok) { alert('回報已送出，DD 已通知群裡 ✅'); sopLoad() } else alert((d&&d.error)||'送出失敗，再試一次')
+  if (d && d.ok) { alert('回報已送出，DD 已通知群裡'); sopLoad() } else alert((d&&d.error)||'送出失敗，再試一次')
 }
 async function sopResolve(id){
   if (!confirm('標記已解決？（審核人按＝直接完成；夥伴按＝送審核，核准後才算完成）')) return
   const r = await fetch('/api/mail-sync?sopresolve=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ id, token: TK() }) })
   const d = await r.json().catch(()=>null)
-  if (d && d.ok) { if (d.status === 'pending') alert('已送出，等老闆審核 ✅'); refreshView() } else alert((d&&d.error)||'失敗（要先跟 DD 綁定GD）')
+  if (d && d.ok) { if (d.status === 'pending') alert('已送出，等老闆審核'); refreshView() } else alert((d&&d.error)||'失敗（要先跟 DD 綁定GD）')
 }
 function refreshView(){ if (curStore === 'task' || curStore === 'lb') { lbFetch(1).then(()=>{ curStore==='task' ? taskRender() : lbRender() }) } else sopLoad() } // 操作後重抓一律跳過快取
 async function sopReview(id, pass){
@@ -1302,7 +1413,7 @@ function taskRender(){
   let h = `<section>
   <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px">
     <h2 style="margin:0">任務中心 <span class="hint">${open.length} 件待辦・共 ${all.length} 件</span></h2>
-    <input id="tkQ" value="${q.replace(/"/g,'&quot;')}" oninput="tkSearch(this)" placeholder="🔍 搜尋任務…" style="margin-left:auto;border:1px solid var(--line);border-radius:9px;padding:7px 11px;font-size:14px;width:150px">
+    <input id="tkQ" value="${q.replace(/"/g,'&quot;')}" oninput="tkSearch(this)" placeholder="搜尋任務…" style="margin-left:auto;border:1px solid var(--line);border-radius:9px;padding:7px 11px;font-size:14px;width:150px">
     <span style="display:inline-flex;border:1.5px solid var(--primary);border-radius:9px;overflow:hidden">${vtab('🏠 今日','today')}${vtab('依大項','cat')}${vtab('依負責人','owner')}${vtab('看板','board')}${vtab('清單','list')}</span>
   </div>
   ${meN?`<div style="display:flex;gap:8px;margin-bottom:12px">
@@ -1648,8 +1759,8 @@ function buyNew(){
   ov.innerHTML = `<div style="background:#222B38;border:1px solid #3B4654;box-shadow:0 18px 50px rgba(0,0,0,.55);border-radius:14px;max-width:430px;width:100%;padding:16px" onclick="event.stopPropagation()">
     <div style="font-weight:900;margin-bottom:8px">🛒 提出採購需求</div>
     <textarea id="buyTxt" rows="2" placeholder="要買什麼？（品名/規格/數量）" style="width:100%;border:1px solid var(--line);border-radius:8px;padding:8px;font-size:15px;font-family:inherit"></textarea>
-    <input id="buyUrl" placeholder="🔗 商品連結（選填，貼網址）" style="width:100%;border:1px solid var(--line);border-radius:8px;padding:8px;font-size:14px;margin-top:6px">
-    <input id="buyCatIn" list="buyCats" placeholder="🏷 分類（選填，例：包材/器具/設備）" style="width:100%;border:1px solid var(--line);border-radius:8px;padding:8px;font-size:14px;margin-top:6px"><datalist id="buyCats">${[...new Set(((window._buyD||{}).list||[]).map(x=>x.cat).filter(Boolean))].map(c=>`<option>${c}</option>`).join('')}</datalist>
+    <input id="buyUrl" placeholder="商品連結（選填，貼網址）" style="width:100%;border:1px solid var(--line);border-radius:8px;padding:8px;font-size:14px;margin-top:6px">
+    <input id="buyCatIn" list="buyCats" placeholder="分類（選填，例：包材/器具/設備）" style="width:100%;border:1px solid var(--line);border-radius:8px;padding:8px;font-size:14px;margin-top:6px"><datalist id="buyCats">${[...new Set(((window._buyD||{}).list||[]).map(x=>x.cat).filter(Boolean))].map(c=>`<option>${c}</option>`).join('')}</datalist>
     <div id="buyList" class="hint" style="margin:6px 0"></div>
     <div style="display:flex;gap:8px;justify-content:space-between;margin-top:8px;flex-wrap:wrap">
       <button class="mini" style="padding:9px 12px" onclick="buyPick()">📷 加圖片</button>
@@ -1705,7 +1816,7 @@ async function punchNow(){
     if (confirm(`剛剛 ${_lastPunch.hm} 打了「${_lastPunch.dir==='in'?'上班':'下班'}」卡。\n\n確定＝修正方向（打錯了）\n取消＝不動作`)) {
       const r = await fetch('/api/mail-sync?punchfix=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ token: TK() }) })
       const d = await r.json().catch(()=>null)
-      if (d && d.ok) { _lastPunch.dir = d.dir; alert(`✅ 已改成「${d.dir==='in'?'上班':'下班'}」`) } else alert((d&&d.error)||'修正失敗，找管理員處理')
+      if (d && d.ok) { _lastPunch.dir = d.dir; alert(`已改成「${d.dir==='in'?'上班':'下班'}」`) } else alert((d&&d.error)||'修正失敗，找管理員處理')
     }
     return
   }
@@ -1715,7 +1826,7 @@ async function punchNow(){
   if (!d || !d.ok) { alert((d&&d.error)||'打卡失敗'); return }
   const hm = new Date(d.ts).toLocaleTimeString('en-GB',{hour12:false,timeZone:'Asia/Taipei'}).slice(0,5)
   _lastPunch = { at: Date.now(), dir: d.dir, hm }
-  alert(`✅ ${d.name}「${d.dir==='in'?'上班':'下班'}」打卡 ${hm}${d.dir==='out'?`・今天累計 ${d.todayHours} 小時`:''}\n（打錯方向？5 分鐘內再按一次 ⏰ 可以修正）`)
+  alert(`${d.name}「${d.dir==='in'?'上班':'下班'}」打卡 ${hm}${d.dir==='out'?`・今天累計 ${d.todayHours} 小時`:''}\n（打錯方向？5 分鐘內再按一次右上角打卡鈕可以修正）`)
 }
 // ── 📋 會議（張良 2026-09-22：班前會議/營運會議紀錄——類型可自訂、紀錄可新增刪改，全留姓名時間）──
 function todayTpe(){ return new Date(Date.now()+8*3600e3).toISOString().slice(0,10) }
@@ -1779,7 +1890,7 @@ function meetForm(id){
     <input id="mtDate" type="date" value="${it?it.date:todayTpe()}" style="${ip}">
     <textarea id="mtText" rows="7" placeholder="一行＝一條（會自動變成條列表格）" style="${ip}">${it?(it.text||'').replace(/</g,'&lt;'):''}</textarea>
     <div class="hint" style="margin:-2px 0 4px">📎 附照片：<input type="file" id="mtFile" accept="image/*" multiple style="font-size:13px" onchange="mtUpload(this.files)"><span id="mtUpN">${it&&(it.media||[]).length?`已有 ${it.media.length} 張`:''}</span></div>
-    <textarea id="mtLinks" rows="2" placeholder="🔗 連結（一行一個：標題|網址，或直接貼網址；SOP連結用每條旁的🔗複製來貼）" style="${ip}">${it?(it.links||[]).map(l2=>l2.label?`${l2.label}|${l2.url}`:l2.url).join('\n'):''}</textarea>
+    <textarea id="mtLinks" rows="2" placeholder="連結（一行一個：標題|網址，或直接貼網址；SOP連結用每條旁的複製鈕來貼）" style="${ip}">${it?(it.links||[]).map(l2=>l2.label?`${l2.label}|${l2.url}`:l2.url).join('\n'):''}</textarea>
     <div style="display:flex;gap:8px;justify-content:flex-end"><button class="mini" style="padding:9px 12px" onclick="document.getElementById('meetOv').remove()">取消</button>
     <button class="mini on" style="padding:9px 18px" onclick="meetSave('${id||''}')">儲存</button></div></div>`
   ov.onclick = () => ov.remove()
@@ -3618,7 +3729,7 @@ function todayRender(){
   el.innerHTML = s
 }
 // ── 🔖 分頁自訂（張良 2026-09-22：名稱＋排序可編輯，存 pm_prep_tabs 全裝置同步）──
-const TAB_DEF = { sop:'✅ SOP', task:'🛠 任務', lb:'🏆 排行榜', food:'🥩 盤點', pack:'📦 包材', buy:'🛒 採購', meet:'📋 會議', shift:'📅 班表', inc:'⚠️ 異常通知', fb:'💬 回饋', menu:'🍔 菜單' }
+const TAB_DEF = { sop:'SOP', task:'任務', lb:'排行榜', food:'盤點', pack:'包材', buy:'採購', meet:'會議', shift:'班表', inc:'異常通知', fb:'回饋', menu:'菜單' } // v4.33.0 去emoji（側欄本來就stripEmoji，這裡影響的是改名視窗的預設字）
 // ── 單色線條 icon（張良 2026-09-24：不要彩色 emoji——同 Beach Ops 的 stroke 線條圖）──
 const _I = (d) => `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex:0 0 auto;vertical-align:-3px">${d}</svg>`
 const TAB_ICONS = {
@@ -3811,7 +3922,7 @@ async function notifySave(){
   const o = document.getElementById('ntOv'); if (o) o.remove()
   const r = await fetch('/api/mail-sync?notifyset=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ cfg, token: TK() }) })
   const d = await r.json().catch(()=>null)
-  if (d && d.ok) alert('✅ 通知開關已更新'); else alert((d&&d.error)||'儲存失敗')
+  if (d && d.ok) alert('通知開關已更新'); else alert((d&&d.error)||'儲存失敗')
 }
 // 24小時制時間選擇（張良 2026-09-21：原生 time 輸入會跟著系統顯示上午/下午——改成 00~23 時＋分兩個下拉）
 function t24c(cls, v){
