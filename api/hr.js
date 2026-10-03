@@ -65,6 +65,64 @@ export async function fetchAttendance(from, to) {
   return out
 }
 
+// ── NUEiP 高效排班（hrm-next）逆向 2026-10-04（張良「高婕瀅直接從人資系統抓,我們有串好」）──
+// 鏈：classic cookie → GET cloud/oauth2/token/api 換 JWT → api.nueip.com/hrm/*（Bearer）
+// POST /hrm/shift/search/search {department,start_date,end_date} 回應就含每天每人班（shift_schedule_list[].shift_info[].shift_list）
+// GET /hrm/shift/search/basic-configs?shift_schedule_list_id[]= → shift_id→縮寫（Ｄ/沙/⚪休/🔴例…）；user_info 給官方 is_part_time
+export async function fetchShifts(from, to) {
+  const jar = await login()
+  const tj = await (await fetch('https://cloud.nueip.com/oauth2/token/api', { headers: { cookie: ckStr(jar) } })).json()
+  const jwt = tj.token_access_token
+  if (!jwt) throw new Error('NUEiP JWT 換發失敗')
+  const H = { authorization: 'Bearer ' + jwt, 'content-type': 'application/json' }
+  const dt = await (await fetch('https://api.nueip.com/hrm/organization/departments-tree', { headers: H })).json()
+  const depts = []
+  const walkD = (arr) => { for (const x of (arr || [])) { depts.push({ id: Number(x.department_id), name: x.name || '' }); walkD(x.sub_department_list) } }
+  walkD(dt.data?.department_list)
+  const ab = depts.filter(x => /ＡＢ|AB/.test(x.name) && /場/.test(x.name)) // ＡＢ外場/ＡＢ內場（管理部不排班）
+  if (!ab.length) throw new Error('NUEiP 部門樹找不到 AB 內外場')
+  const sr = await (await fetch('https://api.nueip.com/hrm/shift/search/search', { method: 'POST', headers: H, body: JSON.stringify({ department: ab.map(x => ({ id: x.id, type: 'dept' })), start_date: from, end_date: to, keyword: '', self_only: false }) })).json()
+  const lists = new Set(), users = {}, raw = {}
+  const deptShort = (n) => /內場/.test(n) ? '內場' : /外場/.test(n) ? '外場' : String(n || '')
+  for (const dep of (sr.data || [])) {
+    for (const u of (dep.user_info || [])) users[u.user_id] = { name: String(u.user_name || '').replace(/\s+[A-Za-z].*$/, ''), pt: !!u.is_part_time, dept: deptShort(dep.dept_name) }
+    for (const sl of (dep.shift_schedule_list || [])) {
+      if (sl.shift_schedule_list_id) lists.add(sl.shift_schedule_list_id)
+      for (const di of (sl.shift_info || [])) for (const s of (di.shift_list || [])) {
+        if (di.shift_date) (raw[di.shift_date] = raw[di.shift_date] || []).push({ uid: s.shift_user, sid: s.shift_id, wt: (s.working_times || [])[0] || null })
+      }
+    }
+  }
+  const qs2 = [...lists].map(id => 'shift_schedule_list_id%5B%5D=' + id).join('&')
+  const cf = qs2 ? await (await fetch('https://api.nueip.com/hrm/shift/search/basic-configs?' + qs2, { headers: H })).json() : { data: [] }
+  const codeOf = {}
+  for (const c of (cf.data || [])) codeOf[c.shift_schedule_basic_config_id] = { code: c.abbreviation || c.name || '', brk: c.type === 'break' ? 1 : 0 }
+  const days = {}
+  for (const [d, list] of Object.entries(raw)) {
+    days[d] = list.map(x => {
+      const u = users[x.uid] || {}, c = codeOf[x.sid] || {}
+      return { name: u.name || '', dept: u.dept || '', pt: u.pt ? 1 : 0, code: c.code || '', brk: c.brk || 0, start: x.wt?.start_time || '', end: x.wt?.end_time || '' }
+    }).filter(x => x.name)
+  }
+  return days // { 'YYYY-MM-DD': [{name,dept,pt,code,brk,start,end}] }
+}
+
+// 班表寫月檔 sp_crew_pm_hr_sched_YYYY-MM = { days: { 日期: [列…] } }（同日整天覆蓋＝以最新為準）
+async function storeShifts(days) {
+  const byMo = {}
+  for (const d of Object.keys(days)) (byMo[d.slice(0, 7)] = byMo[d.slice(0, 7)] || {})[d] = days[d]
+  const rep = {}
+  for (const [mo, part] of Object.entries(byMo)) {
+    const id = 'sp_crew_pm_hr_sched_' + mo
+    const doc = (await kvGet(id)) || { days: {} }
+    for (const [d, list] of Object.entries(part)) doc.days[d] = list
+    doc.updatedAt = new Date().toISOString()
+    await kvPut(id, doc, 'NUEiP班表同步')
+    rep[mo] = Object.keys(part).length
+  }
+  return rep
+}
+
 // 寫月檔（合併；同日同人覆蓋＝以最新抓到為準）
 async function store(days) {
   const byMo = {}
@@ -99,6 +157,16 @@ export default async function handler(req, res) {
   const manual = String(req.query?.manual || '')
   const isCron = !manual
   try {
+    const addD = (iso, n) => new Date(Date.parse(iso + 'T00:00:00Z') + n * 86400e3).toISOString().slice(0, 10)
+    // 班表同步口（?shifts=1[&from&to]；預設 前7天~後35天）：/prep AB 班表的資料來源（張良 2026-10-04 拍板 NUEiP 為準）
+    if (req.query?.shifts) {
+      const fromS = /^\d{4}-\d{2}-\d{2}$/.test(String(req.query.from || '')) ? String(req.query.from) : addD(today, -7)
+      const toS = /^\d{4}-\d{2}-\d{2}$/.test(String(req.query.to || '')) ? String(req.query.to) : addD(today, 35)
+      const daysS = await fetchShifts(fromS, toS)
+      const repS = await storeShifts(daysS)
+      let nS = 0; for (const d of Object.keys(daysS)) nS += daysS[d].length
+      return res.status(200).json({ ok: true, from: fromS, to: toS, personDays: nS, months: repS })
+    }
     const from = String(req.query?.from || '') || today
     const to = String(req.query?.to || '') || today
     if (!/^\d{4}-\d{2}-\d{2}$/.test(from) || !/^\d{4}-\d{2}-\d{2}$/.test(to)) return res.status(400).json({ ok: false, error: '日期格式 YYYY-MM-DD' })
@@ -116,6 +184,8 @@ export default async function handler(req, res) {
         const ops = (await kvGet('pm_bot_operators')) || {}
         const push = async (txt, src) => { for (const uid of Object.keys(ops)) { if (await linePush(uid, txt)) { await logPush(uid, 1, src); notified++ } } }
         if (hourTW >= 22) {
+          // 每日收班順手同步 NUEiP 班表（前7天~後35天；改班/新增人員隔天自動跟上）
+          try { await storeShifts(await fetchShifts(addD(today, -7), addD(today, 35))) } catch (_) {}
           const lines = anomalies(days[today])
           if (lines.length) await push(`🕐 NUEiP 出勤異常 ${today.slice(5).replace('-', '/')}\n${lines.slice(0, 15).join('\n')}${lines.length > 15 ? `\n…共 ${lines.length} 筆` : ''}\n（詳細：夥伴中心 → 人資系統）`, 'NUEiP出勤異常')
         } else {

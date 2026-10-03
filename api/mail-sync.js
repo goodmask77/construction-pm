@@ -1989,7 +1989,7 @@ export default async function handler(req, res) {
       }
       // v4.36.3（張良「PT也分出來 內歸內外歸外」）：pt=名冊職稱欄(cf_thi3j)含 PT/兼職；dept 班表沒帶就用名冊部門補
       const personOf = {}
-      abSched = abDocs.flatMap(d9 => Object.values((d9 || {}).rows || {}))
+      const bossRows = abDocs.flatMap(d9 => Object.values((d9 || {}).rows || {}))
         .filter(x => x.status !== 'cancelled' && String(x.work_date || '') >= loS && String(x.work_date || '') <= hiS)
         .map(x => {
           const nm9 = fullOf(idName[x.staff_id] || x.staff_name)
@@ -1997,6 +1997,14 @@ export default async function handler(req, res) {
           const pp9 = personOf[nm9]
           return { date: x.work_date, name: nm9, code: x.shift_code || x.role_code || '', dept: x.dept || (pp9 && pp9.dept) || '', pt: pp9 && /pt|兼職/i.test(String(pp9.cf_thi3j || '')) ? 1 : 0, start: hm(x.start_at), end: hm(x.end_at), day: x.day_type || '' }
         })
+      // v4.36.5（張良「高婕瀅直接從人資系統抓」）：NUEiP 高效排班為主來源（api/hr.js ?shifts=1 同步進 sp_crew_pm_hr_sched_ 月檔；
+      // 全名+官方 is_part_time+休/例也有），阿桑 boss 班表只補 NUEiP 沒有的 (日期|人)
+      const nueDocs = await Promise.all(moSet.map(m => kvGet('sp_crew_pm_hr_sched_' + m)))
+      const nueRows = nueDocs.flatMap(d9 => Object.entries((d9 || {}).days || {}))
+        .filter(([d]) => d >= loS && d <= hiS)
+        .flatMap(([d, list]) => (Array.isArray(list) ? list : []).map(x => ({ date: d, name: x.name, code: x.code || '', dept: x.dept || '', pt: x.pt ? 1 : 0, start: x.start || '', end: x.end || '', brk: x.brk || 0 })))
+      const seen9 = new Set(nueRows.map(x => x.date + '|' + x.name))
+      abSched = [...nueRows, ...bossRows.filter(x => !seen9.has(x.date + '|' + x.name))]
     } catch (_) {}
     // AB inline 訂位彙總（張良 2026-10-03「班表下方同日期對齊,時段 12-13/13-17/18-19/19後」）：
     // 每天×時段 {g組,p人,big:[≥20人大組]}；有效=state∉{2,5}；12-13含更早(11點包場)、13-17含17點、候位(沒時間)不計
