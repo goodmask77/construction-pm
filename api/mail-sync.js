@@ -974,11 +974,12 @@ export default async function handler(req, res) {
     if (!ok2 || String(req.query.whoami) !== ok2) return res.status(403).json({ ok: false })
     const w = await sopWho(req.query.me)
     if (!w) return res.status(200).json({ ok: true, me: null })
-    const [defW, pmW] = await Promise.all([kvGet('sp_finance_pm_sop_def'), kvGet('sp_finance_pm_prep_perm')])
+    const [defW, pmW, favW] = await Promise.all([kvGet('sp_finance_pm_sop_def'), kvGet('sp_finance_pm_prep_perm'), kvGet('sp_finance_pm_prep_fav')]) // v4.39.1 fav=個人常用捷徑
     const aprW = (((defW || {}).ground || {}).approvers || ['張良瑋'])
     const uW = ((pmW || {}).users || {})[w.rid || w.uid]
     const hideW = (uW && !uW.admin && uW.hide) ? Object.keys(uW.hide).filter(k => uW.hide[k]) : [] // v4.26.3 每頁看不看得見
-    return res.status(200).json({ ok: true, me: { name: w.name, role: w.role, approver: w.role === '主管' || aprW.includes(w.name), hideTabs: hideW } })
+    const favU = (((favW || {}).users || {})[w.rid || w.uid]) || null // v4.39.1 個人常用捷徑清單（手機底部列）
+    return res.status(200).json({ ok: true, me: { name: w.name, role: w.role, approver: w.role === '主管' || aprW.includes(w.name), hideTabs: hideW, fav: favU } })
   }
   if (req.query?.opsboard) {
     const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
@@ -2873,6 +2874,23 @@ export default async function handler(req, res) {
     if (bh.hide) hd.keys[bh.key] = 1; else delete hd.keys[bh.key]
     await kvPut('sp_finance_pm_prep_hide', hd, '預做隱藏(' + whoH.name + ')')
     return res.status(200).json({ ok: true, prepHide: hd.keys })
+  }
+  // ⭐ 個人常用捷徑清單（v4.39.1 張良「手機版固定一行、每個人可編輯自己的常用清單」）：POST ?prepfav=<OPS_BOARD_KEY> {token, list}
+  // 一人一份存 users[rid]＝跟人不跟裝置；只能改自己的、要綁定才存（未綁定前端自己存本機）
+  if (req.method === 'POST' && req.query?.prepfav) {
+    const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
+    if (!ok2 || String(req.query.prepfav) !== ok2) return res.status(403).json({ ok: false })
+    let bf = {}
+    try { bf = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
+    const wF = await sopWho(bf.token)
+    if (!wF) return res.status(403).json({ ok: false, error: '要先綁定身分才能存常用清單' })
+    const listF = Array.isArray(bf.list) ? bf.list.filter(x => typeof x === 'string' && x.length < 20).slice(0, 6) : []
+    if (!listF.length) return res.status(400).json({ ok: false, error: '清單是空的' })
+    const fd = (await kvGet('sp_finance_pm_prep_fav')) || { users: {} }
+    fd.users = fd.users || {}
+    fd.users[wF.rid || wF.uid] = listF
+    await kvPut('sp_finance_pm_prep_fav', fd, '常用清單(' + wF.name + ')')
+    return res.status(200).json({ ok: true, fav: listF })
   }
   if (req.method === 'POST' && req.query?.sopdone) {
     const ok2 = (process.env.OPS_BOARD_KEY || '').trim()

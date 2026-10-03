@@ -39,6 +39,18 @@
   .tabs button{border:1px solid var(--line);background:var(--card);border-radius:999px;padding:8px 15px;font-size:15px;font-weight:700;color:#C3CEDC;cursor:pointer;white-space:nowrap;flex:0 0 auto;transition:background .15s;display:inline-flex;gap:7px;align-items:center}
   .tabs button:hover{background:#232B36}
   .tabs button.on{background:var(--grad);border-color:transparent;color:#fff;box-shadow:0 4px 12px rgba(18,102,200,.30)}
+  /* ⭐ 個人常用捷徑列（v4.39.1 張良「手機版固定一行、每個人可編輯自己的常用清單」）：手機限定固定螢幕最底；桌機有側欄不顯示 */
+  #favbar{display:none}
+  @media(max-width:919px){
+    body{padding-bottom:78px} /* 內容不被捷徑列蓋住 */
+    #favbar{position:fixed;left:0;right:0;bottom:0;z-index:30;display:flex;align-items:stretch;gap:2px;background:rgba(17,21,27,.96);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);border-top:1px solid var(--line);padding:5px 6px calc(5px + env(safe-area-inset-bottom))}
+    #favbar button{flex:1 1 0;min-width:0;border:none;background:transparent;color:#C3CEDC;font-size:11px;font-weight:700;display:flex;flex-direction:column;align-items:center;gap:3px;padding:6px 2px;border-radius:10px;cursor:pointer;white-space:nowrap;overflow:hidden}
+    #favbar button svg{width:21px;height:21px;flex:0 0 auto}
+    #favbar button.on{color:#fff;background:var(--grad)}
+  }
+  .favchip{border:1px solid var(--line);background:var(--card);border-radius:12px;padding:10px 8px;font-size:13px;font-weight:700;color:#C3CEDC;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:5px;position:relative}
+  .favchip.on{border-color:transparent;background:var(--grad);color:#fff}
+  .favchip .fno{position:absolute;top:-7px;right:-7px;background:#fff;color:#0D63C9;border-radius:999px;min-width:19px;height:19px;line-height:19px;font-size:12px;font-weight:900;text-align:center}
   .kpis{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:14px 0}
   .kpi{background:var(--card);border:1px solid var(--line);border-radius:16px;box-shadow:var(--shadow);padding:16px 18px}
   .kpi .l{font-size:14px;font-weight:600;color:var(--text)}
@@ -147,6 +159,7 @@ function setTabs(k){
   if (g) g.className = 'bseg' + (lastStore==='ground' ? ' on' : '')
   if (a) a.className = 'bseg' + (lastStore==='abeach' ? ' on' : '')
   try { sessionStorage.setItem('prepView', curStore) } catch(_) {} // v4.4.0（張良 2026-10-02：重新整理留在原頁面）
+  try { favMark(k) } catch(_) {} // ⭐ v4.39.1 底部捷徑列同步亮燈
 }
 // 🔄 更新App（張良 2026-09-22：不是只抓數據——整個 App 重開、連新功能一起拿最新版；r=時戳穿透 CDN 快取）
 // 📱 手機版預覽（張良 2026-10-02：每頁右上隨時切手機寬度檢查排版）——iframe 實機 390px 寬載同一頁
@@ -3916,6 +3929,48 @@ function applyTabs(cfg){
   const hb = document.getElementById('tab-home'); if (hb) hb.innerHTML = TAB_ICONS.home + '<span>首頁</span>'
   const gb = document.getElementById('tab-gear'); if (gb) gb.innerHTML = TAB_ICONS.gear + '<span>設定</span>'
   const eb2 = document.getElementById('tab-errs'); if (eb2) eb2.innerHTML = TAB_ICONS.errs + '<span>問題回報</span>'
+  try { favRender() } catch(_) {} // ⭐ 分頁名稱/順序套完→底部捷徑列跟著重畫
+}
+// ── ⭐ 個人常用捷徑列（v4.39.1 張良「手機版固定一行、每個人可編輯自己的常用清單，例如班表/SOP/盤點/叫貨」）──
+// 手機版固定螢幕最底＝拇指直達；最多 5 格＋✎編輯；清單每人一份：綁定者存伺服器(pm_prep_fav)換手機跟著走、未綁定存本機
+const FAV_DEFAULT = ['shift','sop','food','buy']
+const FAV_MAX = 5
+const favAll = () => ['home', ...Object.keys(TAB_DEF), 'errs'].filter(k => { const b = document.getElementById(k==='home'?'tab-home':'tab-'+k); return b && b.style.display !== 'none' }) // 被權限藏掉的分頁不給選
+const favGet = () => { try { const v = JSON.parse(localStorage.getItem('gdFav')||'null'); if (Array.isArray(v) && v.length) return v } catch(_){}; return FAV_DEFAULT }
+const favLabel = k => k==='home' ? '首頁' : k==='errs' ? '回報' : stripEmoji(((window._tabCfg||{}).names||{})[k] || TAB_DEF[k] || k)
+function favRender(){
+  const bar = document.getElementById('favbar'); if (!bar) return
+  const list = favGet().filter(k => favAll().includes(k)).slice(0, FAV_MAX)
+  bar.innerHTML = list.map(k => `<button data-fk="${k}" onclick="favGo('${k}')">${TAB_ICONS[k]||TAB_ICONS.home}<span>${favLabel(k)}</span></button>`).join('')
+    + `<button onclick="favEdit()" title="編輯我的常用清單" style="flex:0 0 52px;opacity:.75">${_I('<path d="M4 20h4L19.3 8.7a2.12 2.12 0 0 0-3-3L5 17Z"/><path d="M13.5 6.5l3 3"/>')}<span>編輯</span></button>`
+  favMark()
+}
+function favGo(k){ const b = document.getElementById(k==='home'?'tab-home':'tab-'+k); if (b) b.click(); try{ scrollTo({top:0}) }catch(_){} }
+function favMark(k){ if (k) window._favCur = k; const c = window._favCur
+  document.querySelectorAll('#favbar [data-fk]').forEach(b => { const fk = b.dataset.fk; b.className = (fk===c || (fk==='home' && (c==='ground'||c==='abeach'))) ? 'on' : '' }) }
+async function favSave(sel){
+  try { localStorage.setItem('gdFav', JSON.stringify(sel)) } catch(_){}
+  favRender()
+  if (TK()) { try { await fetch('/api/mail-sync?prepfav=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ token: TK(), list: sel }) }) } catch(_){} } // 綁定者同步伺服器＝換裝置也在
+}
+function favEdit(){ // 編輯彈層：點=加入/移除、數字=顯示順序(照點的先後)、滿5個再點=擠掉最早的
+  let sel = favGet().filter(k => favAll().includes(k)).slice(0, FAV_MAX)
+  const ov = document.createElement('div'); ov.id = 'favOv'
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:60;display:flex;align-items:flex-end;justify-content:center'
+  ov.addEventListener('click', e => { if (e.target === ov) ov.remove() })
+  const box = document.createElement('div')
+  box.style.cssText = 'background:var(--bg);border:1px solid var(--line);border-radius:18px 18px 0 0;padding:16px 16px calc(16px + env(safe-area-inset-bottom));width:100%;max-width:560px;max-height:78vh;overflow-y:auto'
+  const draw = () => {
+    box.innerHTML = `<h2 style="margin-bottom:4px">我的常用清單</h2><div class="hint" style="margin-bottom:10px">點一下＝加入/移除，數字＝顯示順序（最多 ${FAV_MAX} 個）${TK()?'・跟著你的身分走，換手機也在':'・先綁定身分，換手機清單才會跟著'}</div>
+      <div id="favList" style="display:grid;grid-template-columns:repeat(4,1fr);gap:9px">${favAll().map(k => { const i = sel.indexOf(k); return `<button class="favchip${i>=0?' on':''}" data-k="${k}">${TAB_ICONS[k]||''}<span>${favLabel(k)}</span>${i>=0?`<b class="fno">${i+1}</b>`:''}</button>` }).join('')}</div>
+      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px"><button class="mini" style="padding:9px 16px" id="favReset">回預設</button><button class="mini on" style="padding:9px 22px;font-size:15px" id="favOk">✓ 完成</button></div>`
+    box.querySelectorAll('.favchip').forEach(b => b.addEventListener('click', () => { const k = b.dataset.k; const i = sel.indexOf(k)
+      if (i >= 0) sel.splice(i, 1); else { if (sel.length >= FAV_MAX) sel.shift(); sel.push(k) }
+      draw() }))
+    box.querySelector('#favReset').addEventListener('click', () => { sel = FAV_DEFAULT.slice(); draw() })
+    box.querySelector('#favOk').addEventListener('click', () => { favSave(sel.length ? sel : FAV_DEFAULT.slice()); ov.remove() })
+  }
+  draw(); ov.appendChild(box); document.body.appendChild(ov)
 }
 async function meChipInit(){ // 側欄底部＝登入身分（張良 2026-10-02：沒綁定顯示訪客·無編輯權限）
   const el = document.getElementById('meChip'); if (!el) return
@@ -3939,6 +3994,8 @@ async function meChipInit(){ // 側欄底部＝登入身分（張良 2026-10-02�
   } catch(e){}
   // v4.26.3（張良：設定每個頁面看不看得見）：被關掉的分頁直接從側欄藏起來（board=首頁）
   if (me && !me.approver && Array.isArray(me.hideTabs)) me.hideTabs.forEach(k=>{ const b = document.getElementById(k==='board' ? 'tab-home' : 'tab-'+k); if (b) b.style.display = 'none' })
+  if (me && Array.isArray(me.fav) && me.fav.length) { try { localStorage.setItem('gdFav', JSON.stringify(me.fav)) } catch(_){} } // ⭐ v4.39.1 伺服器版個人常用清單＝以人為準（換手機跟著走）
+  try { favRender() } catch(_){} // 藏分頁/個人清單套完→捷徑列重畫
 }
 // ── 🔔 通知中心（v4.33.4 張良：通知要有頁面＋歷史紀錄＋分類；鈴鐺常駐不再按完消失）──
 // 歷史=伺服器每發一次推播自動記一筆(sp_finance_pm_prep_ntf)；全員通知人人看得到、指定對象只有本人看得到
@@ -4573,5 +4630,6 @@ function lbFinder(nm){
 })()
 </script>
 <script src="/ops/tasks.js"></script> <!-- v4.38.0 任務中心原生版（拆檔第一步：新功能獨立檔） -->
+<div id="favbar"></div> <!-- ⭐ v4.39.1 個人常用捷徑列（手機限定；favRender 畫） -->
 </body>
 </html>
