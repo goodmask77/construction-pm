@@ -16,6 +16,9 @@ async function kvGet(id) {
   } catch (_) {}
   return null
 }
+async function kvSave(id, obj) { // v4.34.2 生日去重檔用（原 kvSet 只活在舊 seed 區塊裡）
+  try { const r = await fetch(`${SB_URL}/rest/v1/pm_documents`, { method: 'POST', headers: { apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}`, 'content-type': 'application/json', Prefer: 'resolution=merge-duplicates' }, body: JSON.stringify({ id, data: { v: JSON.stringify(obj) }, editor: 'cron-bday', updated_at: new Date().toISOString() }) }); return r.ok } catch (_) { return false }
+}
 const loadSnapshot = () => kvGet('pm_bot_context')
 
 // ── 每日任務提醒（張良 2026-09-08：用 LINE 打字記任務 → DD 每天主動提醒）──
@@ -137,6 +140,34 @@ export default async function handler(req, res) {
     try { const cur = await kvGet('sp_team_pm_activity'); const arr = Array.isArray(cur) ? cur : []; await kvSet('sp_team_pm_activity', [{ ts: now, user: 'Claude(補建)', action: '新增', detail: `補建任務「${title}」（DD 假完成翻車補救，備註放連結）` }, ...arr].slice(0, 200)) } catch (_) {}
     return res.status(200).json({ ok: okw, cat: cat?.name || '收件匣', id })
   }
+  // ── 🎂 生日提醒 v4.34.2（張良：一週前發到 ABpeople 群）：每天第一班 cron 檢查員工清冊，生日-7天=今天 → 群發；去重檔防重複 ──
+  try {
+    const tpeB = new Date(Date.now() + 8 * 3600e3)
+    const tgtB = new Date(tpeB.getTime() + 7 * 86400e3) // 7 天後
+    const mdB = String(tgtB.getUTCMonth() + 1).padStart(2, '0') + '-' + String(tgtB.getUTCDate()).padStart(2, '0')
+    const master = (await kvGet('sp_crew_pm_hr_master')) || { rows: [] }
+    const hits = (master.rows || []).filter(x => (x.birth || '').slice(5) === mdB)
+    if (hits.length && TOKEN) {
+      const dedupB = (await kvGet('sp_finance_pm_bdnotif')) || {}
+      const keyB = tgtB.toISOString().slice(0, 10)
+      const fresh = hits.filter(x => !dedupB[keyB + '|' + x.name])
+      if (fresh.length) {
+        let gidB = ''
+        const seenB = (await kvGet('pm_group_seen')) || {}
+        for (const [g2, gg] of Object.entries(seenB)) if (/abpeople|ab people/i.test(gg?.name || '')) { gidB = g2; break }
+        if (gidB) {
+          const wdB = '日一二三四五六'[tgtB.getUTCDay()]
+          const txtB = `🎂 生日提醒（一週後）\n下週${wdB} ${mdB.replace('-', '/')} 是 ${fresh.map(x => `${x.name}（${/A Beach/.test(x.co) ? 'A Beach' : 'GROUN:D'}${x.dept ? '・' + x.dept : ''}）`).join('、')} 的生日 🎉\n記得準備一下！`
+          const prB = await fetch('https://api.line.me/v2/bot/message/push', { method: 'POST', headers: { 'content-type': 'application/json', Authorization: 'Bearer ' + TOKEN }, body: JSON.stringify({ to: gidB, messages: [{ type: 'text', text: txtB }] }) })
+          if (prB.ok) {
+            fresh.forEach(x => { dedupB[keyB + '|' + x.name] = 1 })
+            await kvSave('sp_finance_pm_bdnotif', dedupB)
+            try { const { logPush, groupMembers } = await import('./push.js'); await logPush(gidB, 1, '生日提醒', await groupMembers(gidB)) } catch (_) {}
+          }
+        } else console.log('生日提醒：找不到 ABpeople 群（D哥要先在群裡收過訊息）')
+      }
+    }
+  } catch (e) { console.log('bday err', e?.message) }
   // 同一支 cron 跑三班：台北 8 點=早班（同步＋速報＋任務簡報）、21:00=備料班（發 GROUN:D Family 群「明天」的量）、17:30=晚班（只追未完成任務）
   const tpeHour = Number(new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Taipei', hour: '2-digit', hour12: false }).format(new Date()))
   const evening = req.query?.mode === 'evening' || (req.query?.mode !== 'morning' && req.query?.mode !== 'prep' && tpeHour >= 12 && tpeHour !== 21)
