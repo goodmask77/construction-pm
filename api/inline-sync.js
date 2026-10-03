@@ -8,7 +8,7 @@
 // 入庫：sp_finance_pm_inline_<YYYY-MM>＝{ days: { 'YYYY-MM-DD': [瘦身訂位…] }, updatedAt }（月檔，key=訂位日）
 //       sp_finance_pm_inline＝{ firstDay, lastSync, months: {…}, farFuture: [{d,…}], dayNotes: {今天起的當日備註} }（總覽，AI/probe 用）
 //       sp_finance_pm_inline_notes＝{ days: { 'YYYY-MM-DD': [{note,by,at}] } }（當日備註全史，RTDB branchDailyNotes）
-import { inlineLogin, inlineFetchDay, inlineSearchFuture, inlineFetchDayNotes, inlineSearchKeyword, CANCELED_STATES } from './_inline.js'
+import { inlineLogin, inlineFetchDay, inlineSearchFuture, inlineFetchDayNotes, inlineSearchKeyword, inlineCustomer, CANCELED_STATES } from './_inline.js'
 import { kvGet, kvPut, announceChanged } from './mail-sync.js'
 
 const DAY = 86400e3
@@ -135,11 +135,12 @@ export default async function handler(req, res) {
           for (const [d, arr] of Object.entries(doc?.days || {})) {
             for (const r of arr) {
               const name = (r.name || '').trim()
-              const key = r.cid || r.phone || (name ? 'n:' + name : '') // cid=inline 客人檔同口徑（同人換名/沒留電話都合得起來）
+              const key = r.cid || r.phone || (name ? 'n:' + name : '') // cid=inline 客人檔口徑（同人換名/沒留電話合併）
               if (!key) continue
               const c = cust[key] = cust[key] || { name, phone: '', seat: 0, book: 0, cx: 0, guests: 0, last: '' }
               if (name && (!c.name || name.length > c.name.length)) c.name = name
               if ((r.phone || '').length > (c.phone || '').length) c.phone = r.phone
+              if (r.cid && !c.cid) c.cid = r.cid
               c.book++
               if (CANCELED_STATES.includes(r.st)) c.cx++
               else { if (r.st === 4) { c.seat++; c.guests += r.n || 0 }; if (d > c.last) c.last = d }
@@ -148,7 +149,17 @@ export default async function handler(req, res) {
         }
       }
       const topN = Math.min(30, Number(req.query.n) || 10)
-      const rank = Object.values(cust).filter((c) => c.name && (c.phone || '').replace(/\D/g, '').length >= 8).sort((a, b) => b.seat - a.seat || b.book - a.book).slice(0, topN) // 沒電話=店員代稱(外國人/控)排除
+      // 聚合選人 → inline 官方客人檔統計定次數（與 line-webhook queryResvTop 同款；楊主委=楊安娜案）
+      const cands = Object.values(cust).filter((c) => c.name && (c.phone || '').replace(/\D/g, '').length >= 8).sort((a, b) => b.seat - a.seat || b.book - a.book).slice(0, Math.min(30, topN * 2))
+      try {
+        const token = await inlineLogin()
+        await Promise.all(cands.map(async (c) => {
+          if (!c.cid) return
+          const o = await inlineCustomer(token, c.cid)
+          if (o?.stats) { c.seat = o.stats.seated ?? c.seat; c.cx = o.stats.cancelled ?? o.stats.canceled ?? c.cx; c.bookOfficial = o.stats.total }
+        }))
+      } catch (_) {}
+      const rank = cands.sort((a, b) => b.seat - a.seat || b.book - a.book).slice(0, topN)
       return res.status(200).json({ ok: true, customers: Object.keys(cust).length, rank })
     }
     // 回填口

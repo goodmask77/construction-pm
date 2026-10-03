@@ -125,6 +125,16 @@ export async function inlineSearchKeyword(token, keyword, maxRows = 40) {
   return { total, rows }
 }
 
+// 客人檔（inline 官方統計＝App 客人頁同數字；張良 2026-10-03：楊主委/楊安娜同人被 inline 在客人檔層合併，
+// 訂位原始紀錄各帶舊 cid 合不回來 → 次數以這支官方 statistics 為準，自己聚合只拿來排序選人）
+export async function inlineCustomer(token, cid) {
+  const r = await fetch(`https://host-web-api.inline.app/customers/${encodeURIComponent(INLINE_COMPANY)}/${cid}`, { headers: { authorization: token, accept: 'application/json' } })
+  if (!r.ok) return null
+  const j = await r.json().catch(() => null)
+  if (!j) return null
+  return { name: j.name || '', phone: j.phoneNumber || '', stats: j.statistics || null }
+}
+
 // 全部「未來」訂位（搜尋端點翻頁；婚顧包場問 2027/2028 哪天被訂就靠這個）
 // 回 { 'YYYY-MM-DD': [瘦身訂位…] }；翻到第一筆過去日就停（未來排最前、由遠到近）
 export async function inlineSearchFuture(token) {

@@ -11,7 +11,7 @@ import { supplyDigest } from '../src/supply/digest.js'
 import { handleOnboardEvent } from './_onboard.js'
 // DD 互動卡片：照片歸檔/回饋卡/投票卡（Flex+postback，固定指令不經 AI，答案直接寫回 App 同一份資料）
 import { handleDDCards, handleJournalText, attachJournalPhotos, buildConfirmCard, buildTaskCards, buildTaskSetupCards } from './_ddcards.js'
-import { inlineLogin, inlineSearchKeyword } from './_inline.js' // 訂位關鍵字代查（客人名字→電話；張良 2026-10-03）
+import { inlineLogin, inlineSearchKeyword, inlineCustomer } from './_inline.js' // 訂位關鍵字代查＋客人檔官方統計（張良 2026-10-03）
 
 const clean = (v) => (v || '').trim().replace(/^["']|["']$/g, '').replace(/^[A-Za-z0-9_]+=/, '').trim()
 const SECRET = clean(process.env.LINE_CHANNEL_SECRET)
@@ -1482,6 +1482,12 @@ async function queryResvName(keyword) {
     if (!rows.length) return `（inline 全史搜「${kw}」＝0 筆，可能名字拼法不同，換個關鍵字再試）`
     const ST = { 1: '已確認', 2: '已取消', 3: '待確認', 4: '已入座', 5: '已取消', 6: '已確認' }
     const L = [`◆ inline 訂位搜尋「${kw}」共 ${total} 筆${total > rows.length ? `（列最近的 ${rows.length} 筆，要更多再縮關鍵字）` : ''}：`]
+    // 官方客人檔統計（App 客人頁同數字；搜尋/自己數訂位會漏——同人換名/沒留電話/現場客，次數以這個為準）
+    const cids = [...new Set(rows.map((r) => r.cid).filter(Boolean))].slice(0, 3)
+    for (const cid of cids) {
+      const c = await inlineCustomer(token, cid)
+      if (c?.stats) L.push(`★ ${c.name}${c.phone ? `（${c.phone}）` : ''} 官方客人檔統計：入座${c.stats.seated ?? '?'}次｜取消${c.stats.cancelled ?? c.stats.canceled ?? '?'}｜NO SHOW ${c.stats.noShow ?? '?'}｜全部${c.stats.total ?? '?'}（回答「來過幾次」以此為準）`)
+    }
     rows.forEach((r) => L.push(`  - ${r.d || '?'} ${r.t || ''} ${r.name} ${r.n}人｜${ST[r.st] || r.st}${r.phone ? `｜${r.phone}` : '｜未留電話'}${r.email ? `｜${r.email}` : ''}${r.note ? `｜客註:${String(r.note).slice(0, 30)}` : ''}`))
     return L.join('\n')
   } catch (e) { return `（inline 搜尋失敗：${e?.message}）` }
@@ -1505,6 +1511,7 @@ async function queryResvTop(n) {
           const c = cust[key] = cust[key] || { name, phone: '', seat: 0, book: 0, cx: 0, guests: 0, last: '' }
           if (name && (!c.name || name.length > c.name.length)) c.name = name
           if ((r.phone || '').length > (c.phone || '').length) c.phone = r.phone
+          if (r.cid && !c.cid) c.cid = r.cid
           c.book++
           if (r.st === 2 || r.st === 5) c.cx++
           else { if (r.st === 4) { c.seat++; c.guests += r.n || 0 }; if (d > c.last) c.last = d }
@@ -1513,9 +1520,19 @@ async function queryResvTop(n) {
     }
   }
   // 只排「有有效電話」的（沒電話的=店員現場代稱如「外國人/控」，幾百筆不是同一人，2026-10-03 實測排除）
-  const rank = Object.values(cust).filter((c) => c.name && (c.phone || '').replace(/\D/g, '').length >= 8).sort((a, b) => b.seat - a.seat || b.book - a.book).slice(0, top)
-  const L = [`◆ A Beach 常客排行 Top${top}（依「實際入座次數」排，2021-02 開店～今全史；同客人ID=同一人=inline客人檔同口徑；只計有留電話的，現場代稱不算）`]
-  rank.forEach((c, i) => L.push(`  ${i + 1}. ${c.name}｜入座${c.seat}次｜累計${c.guests}人次｜訂過${c.book}次(取消${c.cx})｜最近${c.last}${c.phone ? `｜${c.phone}` : ''}`))
+  const cands = Object.values(cust).filter((c) => c.name && (c.phone || '').replace(/\D/g, '').length >= 8).sort((a, b) => b.seat - a.seat || b.book - a.book).slice(0, Math.min(30, top * 2))
+  // 聚合只拿來「選人」；最終次數以 inline 官方客人檔 statistics 為準（同人換名/沒留電話/現場客聚合會漏——楊主委=楊安娜案）
+  try {
+    const token = await inlineLogin()
+    await Promise.all(cands.map(async (c) => {
+      if (!c.cid) return
+      const o = await inlineCustomer(token, c.cid)
+      if (o?.stats) { c.seat = o.stats.seated ?? c.seat; c.cx = o.stats.cancelled ?? o.stats.canceled ?? c.cx; c.bookOfficial = o.stats.total }
+    }))
+  } catch (_) {} // 官方統計拿不到就用聚合值（寧可近似別開天窗）
+  const rank = cands.sort((a, b) => b.seat - a.seat || b.book - a.book).slice(0, top)
+  const L = [`◆ A Beach 常客排行 Top${top}（次數=inline官方客人檔統計、與App客人頁同數字；只計有留電話的，現場代稱不算）`]
+  rank.forEach((c, i) => L.push(`  ${i + 1}. ${c.name}｜入座${c.seat}次｜全部${c.bookOfficial ?? c.book}次(取消${c.cx})｜最近${c.last}${c.phone ? `｜${c.phone}` : ''}`))
   return L.join('\n')
 }
 // 🌐 即時翻譯模式（張良 2026-09-29：外國面試者溝通——群裡每句自動雙向翻，不用點名）
