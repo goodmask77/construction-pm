@@ -13,7 +13,8 @@ const app = document.getElementById('app')
 let curStore = 'ground'
 let lastStore = 'ground'
 function setTabs(k){
-  ['sop','task','lb','food','pack','buy','meet','shift','inc','fb','menu','errs','gear'].forEach(t => { const b = document.getElementById('tab-' + t); if (b) b.className = (t===k) ? 'on' : '' })
+  // v4.41.2 治本（張良「切到設定了人員名冊還是藍色」）：原本寫死清單＝新分頁(hrm/inline…)漏清不退藍；改抓全部 tab- 按鈕一律清
+  document.querySelectorAll('.tabs button[id^="tab-"]').forEach(b => { b.className = (b.id === 'tab-' + k) ? 'on' : '' })
   const tw0 = document.getElementById('taskWrap'); if (tw0) tw0.style.display = (k==='task') ? '' : 'none' // v4.33.7 任務iframe常駐切換（閃跳治本）
   const hb = document.getElementById('tab-home'); if (hb) hb.className = (k==='ground'||k==='abeach') ? 'on' : '' // 🏠=回店面（張良 2026-09-21：怕有人不知道怎麼回去）
   if (k === 'ground' || k === 'abeach') lastStore = k
@@ -60,6 +61,7 @@ function goView(){
   else if (curStore === 'fb') fbLoad()
   else if (curStore === 'menu') menuLoad()
   else if (curStore === 'errs') errsView()
+  else if (curStore === 'prep') prepPage(true) // v4.42.0 備料分頁
   else load(curStore, true)
 }
 // 🔑 輸入綁定碼（iPhone 加入主畫面的 App 跟 Safari 儲存分開→token 帶不過去；貼一次 DD 給的連結/代碼即可）
@@ -103,42 +105,37 @@ async function load(store, fresh){
 }
 function dayPer(k){ window._dayPeriod = k; if (window._bd) renderBoard(window._bd, window._bd.store || lastStore) } // 每日數據期間切換（v4.30.0）
 function histYrs(){ dayPer('hist') } // v4.37.8 歷史資料＝自己是一個檢視（歷年年度總表＋舊年份鈕；今年鈕取消選取）
-function renderBoard(d, store){
+function renderBoard(d, store, view){
+  if (view === 'prep') return renderPrep(d, store) // v4.42.0（張良拍板）：備料量+節奏表搬「備料」分頁、首頁=今日為王儀表板
   document.getElementById('upd').textContent = '最新日結：' + (d.anchor || '—') + '・資料自動同步'
   let h = ''
-  // 今日事項（張良 2026-09-22：最上面＝今天該做的事——任務/收貨/班表；資料來自各分頁快取，todayRender 畫）
+  // 🌞 今日營收大卡（v4.42.0 今日為王：進來先回答「今天怎麼樣」）：營業中=盤中即時、打烊=最新日結；vs 近7個營業日全日均（紅=高 同色階習慣）
+  {
+    const ds0 = d.days || []
+    const lv0 = ds0.filter(x=>x.live).slice(-1)[0]
+    const of0 = ds0.filter(x=>!x.live && (Number(x.rev)||0)>0)
+    const shown = lv0 || of0[of0.length-1]
+    if (shown) {
+      const base7 = of0.filter(x=>x.date!==shown.date).slice(-7)
+      const avg7 = base7.length ? base7.reduce((t,x)=>t+(Number(x.rev)||0),0)/base7.length : 0
+      const pc0 = avg7 ? Math.round(((Number(shown.rev)||0)/avg7-1)*100) : null
+      const up0 = pc0!=null && pc0>=0
+      const lu0 = shown.lunchRev!=null ? shown.lunchRev : (shown.lunchPct!=null&&shown.rev ? shown.rev*shown.lunchPct/100 : null)
+      h += `<section style="margin-top:12px"><div style="display:flex;align-items:baseline;gap:14px;flex-wrap:wrap">
+        <div><div class="hint" style="font-weight:700">${lv0?'今日營收（營業中・隨盤中更新）':`${String(shown.date).slice(5)}${shown.wd?`（${shown.wd}）`:''} 營收（最新日結）`}</div>
+        <div style="font-size:36px;font-weight:900;color:var(--ink);letter-spacing:-.02em;font-variant-numeric:tabular-nums;line-height:1.25">${Math.round(shown.rev||0).toLocaleString()}</div></div>
+        ${pc0!=null?`<div style="font-size:18px;font-weight:900;color:${up0?'#FF6B6B':'#3DBE6C'}">${up0?'▲':'▼'}${Math.abs(pc0)}%<div class="hint" style="font-weight:600">近7日均 ${Math.round(avg7).toLocaleString()}</div></div>`:''}
+      </div>
+      <div style="display:flex;gap:22px;margin-top:6px;flex-wrap:wrap">
+        <span class="hint">單數 <b style="color:var(--ink);font-size:16px">${shown.tx||'—'}</b></span>
+        <span class="hint">單均 <b style="color:var(--ink);font-size:16px">${shown.tx&&shown.rev?Math.round(shown.rev/shown.tx).toLocaleString():'—'}</b></span>
+        ${store==='ground'&&lu0!=null?`<span class="hint">至14時 <b style="color:var(--ink);font-size:16px">${Math.round(lu0).toLocaleString()}</b></span>`:''}
+      </div></section>`
+    }
+  }
+  // 今日事項（張良 2026-09-22：今天該做的事——任務/收貨/班表；資料來自各分頁快取，todayRender 畫）
   h += `<div id="todaysec"></div>`
-  // 備料卡（GD：炸台/沙拉/吧檯；總平均＋每週幾平均＋峰值/低值——張良 2026-09-20 取消時段拆分，一早備好）
-  if (d.prep) {
-    const grps = [...new Set(d.prep.map(p=>p.grp))]
-    let tw = new Date().getDay() // 今天星期幾（1~5發光）
-    if (tw === 0 || tw === 6) tw = 1 // 週六日（GD公休）打開＝在準備週一的量 → 發光週一（張良 2026-09-20 抓到週日沒東西亮）
-    h += `<section><h2>預估備料量 <span class="hint">份/日</span><button class="mini" style="float:right" onclick="prepLogView()">📜 紀錄</button></h2>`
-    h += `<div class="scroll"><table class="tight"><thead><tr><th>項目</th><th class="todaycol">今日實備✏️</th><th>平均</th>${['一','二','三','四','五'].map((w,i)=>`<th${tw===i+1?' class="todaycol"':''}>週${w}${tw===i+1?' ★':''}</th>`).join('')}</tr></thead><tbody>`
-    grps.forEach(g=>{
-      h += `<tr class="catband"><td colspan="10">${g}</td></tr>`
-      d.prep.filter(p=>p.grp===g).forEach(p=>{
-        const wds = (p.byWd||[]).map((v,i)=>{
-          if(v==null) return `<td>—</td>`
-          return `<td${tw===i+1?' class="todaycol"':''}><b>${v}</b></td>` // ±%與峰低值取消（張良 2026-09-25：版面乾淨）
-        }).join('')
-        const av=(window._prepAct||{})[p.name]
-        const s86 = (window._prepS86||{})[p.name]
-        const nmE = p.name.replace(/'/g,"\\'")
-        const tb = 'font-size:10.5px;padding:1px 5px;border:1px solid var(--line);border-radius:6px;background:var(--card);cursor:pointer;color:var(--text)'
-        const actTd = p.sub ? `<td class="todaycol mut">—</td>` : `<td class="todaycol"><div style="display:inline-flex;gap:3px;align-items:center;white-space:nowrap"><input inputmode="numeric" value="${av!=null?av:''}" placeholder="填" style="width:42px;padding:2px;border:1.5px solid #9EC5E8;border-radius:6px;text-align:center;font-weight:800;font-size:13px" onchange="actSave('${nmE}',this.value)"><button title="追加（又備了幾份）" style="${tb}" onclick="actAdd('${nmE}')">＋</button><button title="耗損記錄" style="${tb}" onclick="actLoss('${nmE}')">耗</button><button title="86停售/回賣" style="${tb};${s86?'color:var(--red);border-color:var(--red);font-weight:800':''}" onclick="act86('${nmE}',${s86?1:0})">86</button></div></td>`
-        h += `<tr${p.sub?' class="subrow"':''}><td style="font-weight:${p.sub?800:700};color:${p.sub?'#8a5a2e':'var(--ink)'}">${p.sub?'└ ':''}${p.name}${s86?' <span style="color:var(--red);font-weight:900;font-size:12px;border:1.5px solid var(--red);border-radius:5px;padding:0 4px">86</span>':''}</td>${actTd}<td class="avg">${p.avg!=null?p.avg:'—'}</td>${wds}</tr>`
-      })
-    })
-    h += `</tbody></table></div><div class="hint" style="margin-top:8px">怎麼用：①平均＝近30天「去掉最高/最低各一天」的截尾平均（颱風日/異常日不拉偏；樣本不足8天不截）②看今天星期幾那欄（藍底）＝該星期的截尾平均，照這個數備。</div></section>`
-  }
-  // ✅ 今日SOP（張良 2026-09-21）：每站每天SOP＋拍照＋完成記時；先放佔位div，資料另外抓（sopLoad）
-  // SOP 已拆成獨立分頁（張良 2026-10-02）——首頁不再放
-  // 預做節奏表（張良 2026-09-21）：完整菜單＋品類分組＋隱藏設定；內容由 rhythmRender 畫（隱藏清單走即時的 sop 口）
-  if (d.rhythm) {
-    window._rhy = d.rhythm
-    h += `<section><h2>預做節奏表 <span style="float:right;white-space:nowrap"><button class="mini${rhyMode===15?' on':''}" id="rb15" onclick="rSwitch(15)">15分</button><button class="mini${rhyMode===30?' on':''}" id="rb30" onclick="rSwitch(30)">30分</button><button class="mini" id="rbMng" onclick="rMng()">🙈 隱藏管理</button></span><br><span class="hint">${d.rhythm.days ? `近 ${d.rhythm.days} 個營業日平均・每格＝該時段平均賣幾份（·＝不到0.5份）——照表預做、尖峰前先備` : '⏳ 資料累積中（GD 從 2026-09-21 起、AB 從 2026-09-22 起含歷史回補）——顯示近 7 個營業日平均，跑幾天會越來越準'}</span></h2><div id="rhyBody"></div></section>`
-  }
+  // 備料卡＋預做節奏表 → v4.42.0 搬到「備料」分頁（renderPrep）；SOP 已拆獨立分頁（2026-10-02）
   // 🚫 AB 停售動態（張良 2026-09-30：頁面表格隨時查——現在＋歷史；資料每30分自動掃）
   if (d.soldout) {
     const cur = Object.entries(d.soldout.current || {})
@@ -274,7 +271,8 @@ function renderBoard(d, store){
   // v4.37.3：獨立「歷史月營收」區塊退役——已整合進上面「每日數據」的年▸月▸日三層樹（全部模式）
   // 品項明細（張良 2026-09-22 v2：互動區塊——全部/分類/依品類分組＋欄位排序＋售價＋%欄＋🙈隱藏管理；itemsRender 畫）
   window._bd = d
-  h += `<div id="itemsec"></div>`
+  // v4.42.0（張良「太佔畫面」）：品項明細收成一行標題、點開才展（itemsRender 照畫進 itemsec）
+  h += `<details style="margin-top:16px"><summary style="cursor:pointer;list-style-position:inside;background:var(--card);border:1px solid var(--line);border-radius:16px;box-shadow:var(--shadow);padding:15px 16px;font-weight:800;font-size:17px;color:var(--ink)">品項明細 <span class="hint">每個品項賣幾份/排序/佔比——點開看</span></summary><div id="itemsec"></div></details>`
   // 時段
   if (d.slots) {
     const draw = (label, arr) => {
@@ -285,13 +283,66 @@ function renderBoard(d, store){
     }
     h += `<section>${draw('平日時段', d.slots.wk)}${draw('週末時段', d.slots.we)}</section>`
   }
-  if (store === 'ground') h += `<div id="fcsec"></div>` // 銷量預測驗證區＝整頁最底（張良 2026-09-26：說好在最底下結果放中間——修正）
   app.innerHTML = h
-  rhythmRender()
   itemsRender()
   todayRender()
-  if (store === 'ground') { sopLoad(); fcLoad(); soLoad() }
+  if (store === 'ground') { sopLoad(); soLoad() } // 銷量預測驗證區 fcsec 隨備料搬家（v4.42.0）
   if (!window._pf) { window._pf = 1; setTimeout(prefetchTabs, 800) } // 背景預抓其他分頁（切換秒開）
+}
+// ── 🍳 備料分頁（v4.42.0 張良拍板：預估備料量+預做節奏表從首頁搬家；App 當初就是為備料而生，現在升格獨立分頁） ──
+function renderPrep(d, store){
+  document.getElementById('upd').textContent = '備料・照「今天星期幾」那欄的量備'
+  let h = ''
+  // 備料卡（GD：炸台/沙拉/吧檯；總平均＋每週幾平均——張良 2026-09-20 取消時段拆分，一早備好）
+  if (d.prep) {
+    const grps = [...new Set(d.prep.map(p=>p.grp))]
+    let tw = new Date().getDay() // 今天星期幾（1~5發光）
+    if (tw === 0 || tw === 6) tw = 1 // 週六日（GD公休）打開＝在準備週一的量 → 發光週一（張良 2026-09-20 抓到週日沒東西亮）
+    h += `<section><h2>預估備料量 <span class="hint">份/日</span><button class="mini" style="float:right" onclick="prepLogView()">📜 紀錄</button></h2>`
+    h += `<div class="scroll"><table class="tight"><thead><tr><th>項目</th><th class="todaycol">今日實備✏️</th><th>平均</th>${['一','二','三','四','五'].map((w,i)=>`<th${tw===i+1?' class="todaycol"':''}>週${w}${tw===i+1?' ★':''}</th>`).join('')}</tr></thead><tbody>`
+    grps.forEach(g=>{
+      h += `<tr class="catband"><td colspan="10">${g}</td></tr>`
+      d.prep.filter(p=>p.grp===g).forEach(p=>{
+        const wds = (p.byWd||[]).map((v,i)=>{
+          if(v==null) return `<td>—</td>`
+          return `<td${tw===i+1?' class="todaycol"':''}><b>${v}</b></td>` // ±%與峰低值取消（張良 2026-09-25：版面乾淨）
+        }).join('')
+        const av=(window._prepAct||{})[p.name]
+        const s86 = (window._prepS86||{})[p.name]
+        const nmE = p.name.replace(/'/g,"\\'")
+        const tb = 'font-size:10.5px;padding:1px 5px;border:1px solid var(--line);border-radius:6px;background:var(--card);cursor:pointer;color:var(--text)'
+        const actTd = p.sub ? `<td class="todaycol mut">—</td>` : `<td class="todaycol"><div style="display:inline-flex;gap:3px;align-items:center;white-space:nowrap"><input inputmode="numeric" value="${av!=null?av:''}" placeholder="填" style="width:42px;padding:2px;border:1.5px solid #9EC5E8;border-radius:6px;text-align:center;font-weight:800;font-size:13px" onchange="actSave('${nmE}',this.value)"><button title="追加（又備了幾份）" style="${tb}" onclick="actAdd('${nmE}')">＋</button><button title="耗損記錄" style="${tb}" onclick="actLoss('${nmE}')">耗</button><button title="86停售/回賣" style="${tb};${s86?'color:var(--red);border-color:var(--red);font-weight:800':''}" onclick="act86('${nmE}',${s86?1:0})">86</button></div></td>`
+        h += `<tr${p.sub?' class="subrow"':''}><td style="font-weight:${p.sub?800:700};color:${p.sub?'#8a5a2e':'var(--ink)'}">${p.sub?'└ ':''}${p.name}${s86?' <span style="color:var(--red);font-weight:900;font-size:12px;border:1.5px solid var(--red);border-radius:5px;padding:0 4px">86</span>':''}</td>${actTd}<td class="avg">${p.avg!=null?p.avg:'—'}</td>${wds}</tr>`
+      })
+    })
+    h += `</tbody></table></div><div class="hint" style="margin-top:8px">怎麼用：①平均＝近30天「去掉最高/最低各一天」的截尾平均（颱風日/異常日不拉偏；樣本不足8天不截）②看今天星期幾那欄（藍底）＝該星期的截尾平均，照這個數備。</div></section>`
+  }
+  // 預做節奏表（完整菜單＋品類分組＋隱藏設定；內容由 rhythmRender 畫）
+  if (d.rhythm) {
+    window._rhy = d.rhythm
+    h += `<section><h2>預做節奏表 <span style="float:right;white-space:nowrap"><button class="mini${rhyMode===15?' on':''}" id="rb15" onclick="rSwitch(15)">15分</button><button class="mini${rhyMode===30?' on':''}" id="rb30" onclick="rSwitch(30)">30分</button><button class="mini" id="rbMng" onclick="rMng()">🙈 隱藏管理</button></span><br><span class="hint">${d.rhythm.days ? `近 ${d.rhythm.days} 個營業日平均・每格＝該時段平均賣幾份（·＝不到0.5份）——照表預做、尖峰前先備` : '⏳ 資料累積中（GD 從 2026-09-21 起、AB 從 2026-09-22 起含歷史回補）——顯示近 7 個營業日平均，跑幾天會越來越準'}</span></h2><div id="rhyBody"></div></section>`
+  }
+  if (!d.prep && !d.rhythm) h += `<section class="mut">這家店還沒有備料資料</section>`
+  if (store === 'ground') h += `<div id="fcsec"></div>` // 銷量預測驗證區（主管限定）跟著備料走
+  app.innerHTML = h
+  rhythmRender()
+  if (store === 'ground') fcLoad()
+}
+async function prepPage(fresh){ // 備料分頁入口：跟首頁同一包 opsboard 資料、同快取（stale-first 秒開）
+  curStore = 'prep'; setTabs('prep')
+  const store = lastStore
+  const ck = 'obc_' + store
+  let had = false
+  try { const c = localStorage.getItem(ck); if (c) { renderBoard(JSON.parse(c), store, 'prep'); had = true } } catch(_){}
+  if (!had) app.innerHTML = '<section>載入中…</section>'
+  let d
+  try { const r = await fetch('/api/mail-sync?opsboard=' + encodeURIComponent(K) + '&store=' + store + (fresh ? '&r=' + Date.now() : '')); d = await r.json() } catch(_){}
+  if (d && d.prepAct) window._prepAct = d.prepAct
+  if (d && d.prepS86) window._prepS86 = d.prepS86
+  if (!d || !d.ok) { if (!had) app.innerHTML = '<div class="err">讀不到資料（金鑰錯誤或連線問題）</div>'; return }
+  try { localStorage.setItem(ck, JSON.stringify(d)) } catch(_){}
+  if (curStore !== 'prep') return
+  renderBoard(d, store, 'prep')
 }
 // 實際備料填寫（張良 2026-10-01：每天留紀錄做分析；要綁定GD身分才能填）
 window._prepAct = {}

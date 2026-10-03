@@ -243,10 +243,11 @@ async function custFind(){
   const stLines = Object.values(d.stats||{}).map(c=>`<div style="font-weight:800;font-size:12.5px;color:#F2C94C">★ ${c.name}${c.phone?`（${c.phone}）`:''}：入座 ${c.stats.seated??0} 次・全部 ${c.stats.total??0}（官方客人檔）</div>`).join('')
   box.innerHTML = cCard(`🔍「${q}」共 ${cNum(d.total)} 筆`, stLines + `<div style="max-height:220px;overflow:auto;margin-top:4px">` + (d.rows||[]).map(r=>`<div style="font-size:12px;padding:2px 0;border-bottom:1px solid var(--line)">${r.d||'?'} ${r.t||''} <b>${r.name}</b> ${r.n}人・${ST9[r.st]||r.st}${r.phone?`・${r.phone}`:''}</div>`).join('') + `</div><div style="text-align:right;margin-top:4px"><button class="mini" onclick="document.getElementById('custFindBox').innerHTML=''">✕ 關閉</button></div>`)
 }
-const TAB_DEF = { sop:'SOP', task:'任務', lb:'排行榜', food:'盤點', pack:'包材', buy:'採購', meet:'會議', shift:'班表', inc:'異常通知', fb:'回饋', menu:'菜單', cust:'inline', hrm:'人員名冊' } // v4.33.0 去emoji；cust=inline顧客資料庫(v4.39.0 張良)
+const TAB_DEF = { prep:'備料', sop:'SOP', task:'任務', lb:'排行榜', food:'盤點', pack:'包材', buy:'採購', meet:'會議', shift:'班表', inc:'異常通知', fb:'回饋', menu:'菜單', cust:'inline', hrm:'人員名冊' } // v4.33.0 去emoji；cust=inline顧客資料庫(v4.39.0 張良)
 // ── 單色線條 icon（張良 2026-09-24：不要彩色 emoji——同 Beach Ops 的 stroke 線條圖）──
 const _I = (d) => `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex:0 0 auto;vertical-align:-3px">${d}</svg>`
 const TAB_ICONS = {
+  prep: _I('<path d="M3 13h18"/><path d="M5 13a7 7 0 0 1 14 0"/><path d="M12 5v1.5M8.2 6.6l.8 1.3M15.8 6.6l-.8 1.3"/><path d="M7 17h10"/>'), // v4.42.0 備料=鍋蓋
   inc: _I('<path d="M12 3 2.5 20h19Z"/><path d="M12 9.5V14M12 17h.01"/>'), // v4.41.5 異常通知原本缺icon=側欄那行沒圖示歪掉
   sop: _I('<path d="M9 11.5 11.2 14 15.5 9"/><rect x="4" y="4" width="16" height="16" rx="3"/>'),
   home: _I('<path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V21h14V9.5"/>'),
@@ -375,6 +376,8 @@ async function meChipInit(){ // 側欄底部＝登入身分（張良 2026-10-02�
   } catch(e){}
   // v4.26.3（張良：設定每個頁面看不看得見）：被關掉的分頁直接從側欄藏起來（board=首頁）
   if (me && !me.approver && Array.isArray(me.hideTabs)) me.hideTabs.forEach(k=>{ const b = document.getElementById(k==='board' ? 'tab-home' : 'tab-'+k); if (b) b.style.display = 'none' })
+  // v4.41.2 人員名冊=主管限定（張良「我說主管才能看」）：非主管/審核人連按鈕都不出現（資料端 hrmaster 本來就擋，這裡藏入口）
+  if (!me || !(me.approver || me.role === '主管')) { const bH9 = document.getElementById('tab-hrm'); if (bH9) bH9.style.display = 'none' }
   if (me && Array.isArray(me.fav) && me.fav.length) { try { localStorage.setItem('gdFav', JSON.stringify(me.fav)) } catch(_){} } // ⭐ v4.39.1 伺服器版個人常用清單＝以人為準（換手機跟著走）
   try { favRender() } catch(_){} // 藏分頁/個人清單套完→捷徑列重畫
 }
