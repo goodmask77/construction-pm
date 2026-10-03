@@ -1873,6 +1873,15 @@ function shMergedSched(){ const out=[], seen=new Set(); const add=a=>(a||[]).for
   ;(window._shLoaded||[]).forEach(y=>{ if(y===shiftYm)return; const c=tcGet('shift_'+y); if(c) add((c.sched||[]).filter(x=>String(x.date||'')<lo||String(x.date||'')>hi)) })
   add(window._shiftTmpQ); return out }
 function shMergedLeave(){ const out={}; const addL=l=>{ if(!l)return; for(const dt in l){ out[dt]=Object.assign(out[dt]||{}, l[dt]) } }; if(window._shiftD) addL(window._shiftD.leave); (window._shLoaded||[]).forEach(y=>{ if(y===shiftYm)return; const c=tcGet('shift_'+y); if(c) addL(c.leave) }); return out }
+// v4.32.0 真因二（張良「還是沒有班表」）：GD 班表有跨月合併(shMergedSched)，AB 班表/訂位一直沒有→永遠只畫當月檔自帶的 ±7 天，回補了也看不到
+function shMergedAb(){ const out=[], seen=new Set(); const add=a=>{ (a||[]).forEach(x=>{ const k=x.date+'|'+x.name; if(seen.has(k))return; seen.add(k); out.push(x) }) }
+  if(window._shiftD) add(window._shiftD.ab)
+  ;(window._shLoaded||[]).forEach(y=>{ if(y===shiftYm)return; const c=tcGet('shift_'+y); if(c) add(c.ab) })
+  return out }
+function shMergedResv(){ const out={}; const add=rv=>{ if(!rv)return; for(const dt in rv){ if(!(dt in out)) out[dt]=rv[dt] } }
+  if(window._shiftD) add(window._shiftD.resv)
+  ;(window._shLoaded||[]).forEach(y=>{ if(y===shiftYm)return; const c=tcGet('shift_'+y); if(c) add(c.resv) })
+  return out }
 async function shEnsure(yms){ // v4.31.8 治本（張良「重新整理跟右上更新都按了還是沒有」）：原本「localStorage 有就永不再抓」→ 鄰月舊快取卡死（AB回補/別人改班都看不到）。改＝快取先畫（秒出），背景一定重抓一次最新，回來差異就重畫
   window._shLoaded=window._shLoaded||[]
   const reval = async (y)=>{ try{ const r=await fetch('/api/mail-sync?shift='+encodeURIComponent(K)+'&ym='+y+'&r='+Date.now()+(TK()?'&me='+encodeURIComponent(TK()):'')); const dd=await r.json(); if(dd&&dd.ok){ const old9=JSON.stringify(tcGet('shift_'+y)||''); tcSet('shift_'+y,dd); if(JSON.stringify(dd)!==old9&&curStore==='shift'){ const box=document.getElementById('shBox'); if(box) window._shAnchor=shLeftAnchor(box); shGridOnly() } } }catch(_){} }
@@ -2039,9 +2048,10 @@ function shiftRender(){
       }).join('')||'<span class="hint" style="font-size:12px">✓</span>'}</td>`
     }).join('')+`</tr>`
     // v4.36.1（張良「班表日期要對照一起；內外場像崗位一樣用顏色區隔」）：AB 班表併進同一張表＝共用日期欄完全對齊、左右捲動同步
-    if ((d.ab||[]).length){
+    const abAll = shMergedAb() // v4.32.0 跨月合併
+    if (abAll.length){
       const abByN = {}, deptOf = {}, cnt = {}, ptOf = {}
-      d.ab.forEach(x=>{ if(!x.name) return; (abByN[x.name]=abByN[x.name]||{})[x.date]=x; if(x.dept&&!deptOf[x.name]) deptOf[x.name]=x.dept; if(x.pt) ptOf[x.name]=1; cnt[x.name]=(cnt[x.name]||0)+1 })
+      abAll.forEach(x=>{ if(!x.name) return; (abByN[x.name]=abByN[x.name]||{})[x.date]=x; if(x.dept&&!deptOf[x.name]) deptOf[x.name]=x.dept; if(x.pt) ptOf[x.name]=1; cnt[x.name]=(cnt[x.name]||0)+1 })
       const DEPT_C = { '內場':{ink:'#F0A050',bg:'#241A10',chipB:'#7A5A2A',chipBg:'#241A10'}, '外場':{ink:'#6EB1FF',bg:'#101A26',chipB:'#2A4A7A',chipBg:'#101A26'} }
       // v4.31.5（張良「照著NUEiP上面的顏色顯示排班,休假用不明顯的表示,不然都靠文字閱讀成本高」）：班別代碼→顏色（對齊NUEiP色系），沒對到的用調色盤穩定配色（同碼永遠同色）
       const AB_PAL = ['#6EB1FF','#7ED88F','#FF8A8A','#F48FB1','#5FD3D3','#F2C14E','#B9A3E8','#F0A050']
@@ -2090,14 +2100,15 @@ function shiftRender(){
     }
     // v4.37.0（張良「inline訂位也顯示在班表下方,左邊時段/上面日期對齊班表,12-13/13-17/18-19/19後」）：
     // 訂位四列併同一張表=日期欄完全對齊；格=組·人數、≥20人大組附名(🎉)；資料=inline每小時自動同步、唯讀
-    if (d.resv && Object.keys(d.resv).length){
+    const resvAll = shMergedResv() // v4.32.0 跨月合併
+    if (Object.keys(resvAll).length){
       const RSL = [['a','12-13'],['b','13-17'],['c','18-19'],['d','19後']]
       const RC = {ink:'#5FD3A6',bg:'#10211A'}
       hh += `<tr><td colspan="${wd2.length+1}" style="${BD}border-top:4px solid var(--line);padding:6px 8px;text-align:left;font-weight:900;font-size:13px;background:var(--soft);position:sticky;left:0">🍴 A Beach 訂位 <span class="hint" style="font-weight:600;font-size:10.5px">inline 自動同步・唯讀・組數/人數（不含已取消；12-13含更早、13-17含17點）</span></td></tr>`
       RSL.forEach(([k9,lb9],ri)=>{
         hh += `<tr><td style="${BD}${ri===0?`border-top:3px solid ${RC.ink}AA;`:''}padding:3px 6px;text-align:left;font-weight:800;font-size:11px;color:${RC.ink};position:sticky;left:0;background:${RC.bg};z-index:1;white-space:nowrap">${lb9}</td>`
         hh += wd2.map(dt=>{
-          const v9 = (d.resv[dt]||{})[k9]
+          const v9 = (resvAll[dt]||{})[k9]
           const base = `${BD}${ri===0?`border-top:3px solid ${RC.ink}AA;`:''}${sepOf(dt)}${dt===today?todayBg:wkndBg(dt)}`
           if (!v9) return `<td style="${base}"></td>`
           const big = (v9.big||[]).map(b9=>`<div style="font-size:9.5px;color:#F2C94C;font-weight:800;white-space:nowrap" title="${b9.t} ${b9.name} ${b9.n}人">🎉${b9.name.slice(0,6)}×${b9.n}</div>`).join('')
