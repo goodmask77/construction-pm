@@ -8,7 +8,7 @@
     "prebuild": "node scripts/gen-changelog.mjs && npm run selftest",
     "build": "vite build",
     "preview": "vite preview",
-    "selftest": "node scripts/test-task-model.mjs && node scripts/test-inv.mjs && node scripts/test-ai-coverage.mjs && node scripts/test-attendance.mjs && node scripts/test-payroll.mjs && node scripts/test-webhook-parsing.mjs"
+    "selftest": "node scripts/check-endpoints.mjs && node scripts/test-task-model.mjs && node scripts/test-inv.mjs && node scripts/test-ai-coverage.mjs && node scripts/test-attendance.mjs && node scripts/test-payroll.mjs && node scripts/test-webhook-parsing.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.4",
