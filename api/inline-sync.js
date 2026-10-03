@@ -1,11 +1,13 @@
 // ── A Beach inline 訂位同步（張良 2026-10-03「所有訂位資訊紀錄」）────────────
-// cron（vercel.json 每小時 :25）：同步「前 3 天 ～ 未來 45 天」滾動窗（新訂/改期/取消/入座隨時變）
+// cron（vercel.json 每小時 :25）：
+//   ①滾動窗「前 3 天 ～ 未來 45 天」逐日抓（新訂/改期/取消/入座隨時變）
+//   ②遠期同步：搜尋端點一次收齊「45 天後全部未來訂位」（婚顧包場 2027/2028；張良要隨時答哪天被訂）
 // 手動口（金鑰同 MENU_PROBE_KEY）：
 //   ?backfill=<key>&from=YYYY-MM-DD&to=YYYY-MM-DD → 回填區間（一次最多 150 天，歷史回填分批打）
-//   ?probe=<key>                                   → 各月筆數盤點
+//   ?probe=<key>                                   → 各月筆數盤點＋遠期清單
 // 入庫：sp_finance_pm_inline_<YYYY-MM>＝{ days: { 'YYYY-MM-DD': [瘦身訂位…] }, updatedAt }（月檔，key=訂位日）
-//       sp_finance_pm_inline＝{ firstDay, lastSync, months: { 'YYYY-MM': { days, resv, guests } } }（總覽，AI/probe 用）
-import { inlineLogin, inlineFetchDay } from './_inline.js'
+//       sp_finance_pm_inline＝{ firstDay, lastSync, months: { 'YYYY-MM': { days, resv, guests } }, farFuture: [{d,…}] }（總覽，AI/probe 用）
+import { inlineLogin, inlineFetchDay, inlineSearchFuture, CANCELED_STATES } from './_inline.js'
 import { kvGet, kvPut, announceChanged } from './mail-sync.js'
 
 const DAY = 86400e3
@@ -47,14 +49,51 @@ async function syncRange(from, to) {
     }
     doc.updatedAt = new Date().toISOString()
     await kvPut(key, doc, 'inline訂位同步')
-    // 總覽同月統計（guests 不含已取消）
-    const dd = Object.values(doc.days)
-    sum.months[mo] = { days: dd.length, resv: dd.reduce((t, a) => t + a.length, 0), guests: dd.reduce((t, a) => t + a.reduce((x, r) => x + (r.st === 2 ? 0 : r.n || 0), 0), 0) }
+    sum.months[mo] = moStat(doc)
   }
   sum.lastSync = new Date().toISOString()
   await kvPut('sp_finance_pm_inline', sum, 'inline訂位同步')
   await announceChanged()
   return { days: days.length, resv, skipped }
+}
+
+// 月檔 → 總覽統計（guests 不含已取消 state 2/5）
+const moStat = (doc) => {
+  const dd = Object.values(doc.days)
+  return { days: dd.length, resv: dd.reduce((t, a) => t + a.length, 0), guests: dd.reduce((t, a) => t + a.reduce((x, r) => x + (CANCELED_STATES.includes(r.st) ? 0 : r.n || 0), 0), 0) }
+}
+
+// 遠期同步：搜尋端點收齊全部未來訂位 → 「窗外（today+45 之後）」的日子以搜尋結果為準整批重建
+// （含刪掉已全取消消失的日子；取消的遠期訂位等日子滾進 45 天窗會由 dailyUpdated 補回取消紀錄）
+async function syncFuture(token) {
+  const boundary = addDays(twToday(), 45) // ≤boundary 由滾動窗負責
+  const byDate = await inlineSearchFuture(token)
+  const far = {}
+  for (const [d, arr] of Object.entries(byDate)) if (d > boundary) far[d] = arr
+  const sum = (await kvGet('sp_finance_pm_inline')) || { firstDay: '2021-02-10', months: {} }
+  // 要掃的月份＝遠期訂位所在月 ∪ 總覽裡 boundary 之後還有資料的月（才能清掉被取消而消失的日子）
+  const mos = new Set(Object.keys(far).map((d) => d.slice(0, 7)))
+  for (const mo of Object.keys(sum.months)) if (mo >= boundary.slice(0, 7)) mos.add(mo)
+  let farResv = 0
+  for (const mo of [...mos].sort()) {
+    const key = 'sp_finance_pm_inline_' + mo
+    const doc = (await kvGet(key)) || { days: {} }
+    let changed = false
+    for (const d of Object.keys(doc.days)) if (d > boundary && !far[d]) { delete doc.days[d]; changed = true }
+    for (const [d, arr] of Object.entries(far)) if (d.slice(0, 7) === mo) { doc.days[d] = arr; farResv += arr.length; changed = true }
+    if (changed) {
+      doc.updatedAt = new Date().toISOString()
+      await kvPut(key, doc, 'inline遠期同步')
+      sum.months[mo] = moStat(doc)
+      if (!sum.months[mo].days) delete sum.months[mo]
+    }
+  }
+  // 遠期清單直接放總覽（AI 兩邊都載總覽＝不用撈到未來月檔就能答「哪天已被訂」）
+  sum.farFuture = Object.keys(far).sort().flatMap((d) => far[d].map((r) => ({ d, ...r })))
+  sum.lastSync = new Date().toISOString()
+  await kvPut('sp_finance_pm_inline', sum, 'inline遠期同步')
+  await announceChanged()
+  return { farDays: Object.keys(far).length, farResv }
 }
 
 export default async function handler(req, res) {
@@ -74,10 +113,11 @@ export default async function handler(req, res) {
       const out = await syncRange(from, to)
       return res.status(200).json({ ok: true, ...out })
     }
-    // cron：滾動窗 前3天～未來45天
+    // cron：①滾動窗 前3天～未來45天 ②遠期（45天後全部，搜尋端點）
     const t = twToday()
     const out = await syncRange(addDays(t, -3), addDays(t, 45))
-    return res.status(200).json({ ok: true, ...out })
+    const far = await syncFuture(await inlineLogin())
+    return res.status(200).json({ ok: true, ...out, ...far })
   } catch (e) {
     return res.status(500).json({ ok: false, error: e?.message || String(e) })
   }

@@ -3,8 +3,12 @@
 // 資料 API：host-web-api.inline.app，authorization 標頭＝「裸 idToken」⚠️不加 Bearer（加了會 401 decode failed）
 // 訂位：GET /v2/reservations/dailyUpdated?companyId&branchId&day=YYYY-MM-DD&timestamp=0
 //   → 回 NDJSON（一行一筆 JSON，不是陣列），含已取消/未出席/候位，day=訂位日（不是建立日）
-// 狀態碼（2026-10-03 實測比對 seatedTime/canceledTime）：1=已確認 2=已取消 4=已入座(完成) 5=未出席no-show；其他保留原碼
-// 資料起點：2021-02-10（開店以來全在線上）；未來訂位最遠約 +1 個月
+// 狀態碼（2026-10-03 實測比對 acceptedTime/seatedTime/canceledTime/previousState）：
+//   1=已確認(預設) 3=待確認(prev 1,未accept) 6=已確認(店家已接受,有acceptedTime,prev 3) 4=已入座(完成)
+//   2=已取消 5=已取消(變體,也有canceledTime)——「有效訂位」＝state 不在 {2,5}
+// 搜尋端點：GET /search?companyId&branchId&keyword=&filterType=booking&offset=N&rawData=true
+//   → 空 keyword=全部訂位且「未來的排最前面(由遠到近)」→ 翻頁翻到過去日就收齊全部未來訂位（答婚顧/包場用）
+// 資料起點：2021-02-10（開店以來全在線上）
 const FIREBASE_KEY = 'AIzaSyAfHlsBd2WjrijkX4G26oHo0Tci-TZ5E-g' // host.inline.app 前端公開 key（不是機密）
 export const INLINE_COMPANY = '-MSaZaOu2SoK0rtCNgCK:inline-live-2' // 口香糖俱樂部
 export const INLINE_BRANCH = '-MSaZaX5Lt2HleQp32OL' // A Beach 101&Pizza
@@ -45,7 +49,7 @@ function trimResv(x) {
   if (x.numberOfKidChairs) o.kc = x.numberOfKidChairs
   if (x.numberOfKidSets) o.ks = x.numberOfKidSets
   if (x.customerNote) o.note = x.customerNote // 客人備註（用餐目的等）
-  if (x.note) o.inote = x.note // 店內註記
+  if (x.note) o.inote = typeof x.note === 'string' ? x.note : (x.note?.note || undefined) // 店內註記（搜尋端點回物件 {noteId,note}）
   if (Array.isArray(x.tags) && x.tags.length) o.tags = x.tags
   if (x.createdFrom) o.src = x.createdFrom // web/ios 等
   if (x.referer) o.ref = x.referer // 流量來源（google/fb…）
@@ -56,7 +60,8 @@ function trimResv(x) {
   return o
 }
 
-export const STATE_TXT = { 1: '已確認', 2: '已取消', 4: '已入座', 5: '未出席' }
+export const STATE_TXT = { 1: '已確認', 2: '已取消', 3: '待確認', 4: '已入座', 5: '已取消', 6: '已確認' }
+export const CANCELED_STATES = [2, 5] // 「有效訂位」＝state 不在這裡面
 
 // 抓一天的全部訂位（day=訂位日 YYYY-MM-DD）→ 瘦身後陣列（依時間排序）
 // ⚠️坑（2026-10-03 實測）：空日（無任何訂位的日子）inline 後端會「吊 60 秒」才回 0 筆（有資料日 <1 秒）
@@ -76,4 +81,29 @@ export async function inlineFetchDay(token, day) {
   } finally { clearTimeout(timer) }
   const rows = txt.split('\n').filter(Boolean).map((l) => { try { return JSON.parse(l) } catch (_) { return null } }).filter(Boolean)
   return rows.map(trimResv).sort((a, b) => (a.t || '99') < (b.t || '99') ? -1 : 1)
+}
+
+// 全部「未來」訂位（搜尋端點翻頁；婚顧包場問 2027/2028 哪天被訂就靠這個）
+// 回 { 'YYYY-MM-DD': [瘦身訂位…] }；翻到第一筆過去日就停（未來排最前、由遠到近）
+export async function inlineSearchFuture(token) {
+  const byDate = {}
+  let offset = 0
+  while (offset <= 4000) { // 保險上限（未來訂位通常 <500 筆）
+    const u = `https://host-web-api.inline.app/search?companyId=${encodeURIComponent(INLINE_COMPANY)}&branchId=${INLINE_BRANCH}&keyword=&filterType=booking&offset=${offset}&rawData=true`
+    const r = await fetch(u, { headers: { authorization: token, accept: 'application/json' } })
+    if (!r.ok) throw new Error(`inline: searchFuture ${r.status}`)
+    const j = await r.json()
+    const rows = j?.reservation?.reservations || []
+    if (!rows.length) break
+    let hitPast = false
+    for (const x of rows) {
+      if (!x.reservationTime || x.reservationTime < Date.now()) { hitPast = true; break }
+      const d = new Date(x.reservationTime + 8 * 3600e3).toISOString().slice(0, 10)
+      ;(byDate[d] = byDate[d] || []).push(trimResv(x))
+    }
+    if (hitPast) break
+    offset += rows.length
+  }
+  for (const d of Object.keys(byDate)) byDate[d].sort((a, b) => (a.t || '99') < (b.t || '99') ? -1 : 1)
+  return byDate
 }

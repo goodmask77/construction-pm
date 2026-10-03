@@ -631,18 +631,22 @@ async function loadPosText() {
       const inlDays = { ...(kv['sp_finance_pm_inline_' + pmo]?.days || {}), ...(kv['sp_finance_pm_inline_' + mo]?.days || {}), ...(kv['sp_finance_pm_inline_' + nmo]?.days || {}) }
       const inlSum = kv['sp_finance_pm_inline']
       if (Object.keys(inlDays).length || inlSum) {
-        const ST = { 1: '確認', 2: '取消', 4: '入座', 5: '未出席' }
+        const ST = { 1: '確認', 2: '取消', 3: '待確認', 4: '入座', 5: '取消', 6: '確認' }
+        const ok1 = (r) => r.st !== 2 && r.st !== 5 // 有效（2/5 都是取消）
         const fmt1 = (r) => `${r.t || '候位'} ${r.name}${r.n}人(${ST[r.st] || r.st}${r.kc ? `,兒童椅${r.kc}` : ''}${r.note ? `,${String(r.note).slice(0, 30)}` : ''})`
-        lines.push(`\n【A Beach 訂位（inline 每小時自動同步；目前載入=上月起到未來；2021-02 開店起全史已入庫 pm_inline_ 月檔，更早明細要另外查）】`)
+        lines.push(`\n【A Beach 訂位（inline 每小時自動同步；載入=上月起到未來全部；2021-02 開店起全史已入庫 pm_inline_ 月檔，更早明細要另外查）】`)
         const td = inlDays[today] || []
-        lines.push(`  - 今天 ${today}：${td.length ? `${td.filter(r => r.st !== 2).length}組有效（${td.filter(r => r.st !== 2).reduce((t, r) => t + (r.n || 0), 0)}人）｜` + td.filter(r => r.st !== 2).map(fmt1).join('、') + (td.some(r => r.st === 2) ? `｜另取消${td.filter(r => r.st === 2).length}組` : '') : '無訂位'}`)
+        lines.push(`  - 今天 ${today}：${td.length ? `${td.filter(ok1).length}組有效（${td.filter(ok1).reduce((t, r) => t + (r.n || 0), 0)}人）｜` + td.filter(ok1).map(fmt1).join('、') + (td.some(r => !ok1(r)) ? `｜另取消${td.filter(r => !ok1(r)).length}組` : '') : '無訂位'}`)
         const futs = Object.keys(inlDays).filter(d => d > today).sort().slice(0, 14)
-        if (futs.length) lines.push(`  - 未來訂位：` + futs.map(d => { const a = inlDays[d].filter(r => r.st !== 2); return `${d.slice(5)} ${a.length}組${a.reduce((t, r) => t + (r.n || 0), 0)}人` }).join('、'))
+        if (futs.length) lines.push(`  - 未來14天：` + futs.map(d => { const a = inlDays[d].filter(ok1); return `${d.slice(5)} ${a.length}組${a.reduce((t, r) => t + (r.n || 0), 0)}人` }).join('、'))
+        // 遠期訂位（45天後全部＝總覽 farFuture，每小時同步；婚顧/包場問「某天有沒有被訂」以此為準）
+        const ff = (inlSum?.farFuture || []).filter(ok1)
+        lines.push(`  - 遠期訂位（45天後～最遠，全部列出；婚顧包場問「哪天已被訂」以此為準，沒列到的日子=目前空）：${ff.length ? ff.map(r => `${r.d} ${r.t || ''} ${r.name}${r.n}人${r.inote ? `(${String(r.inote).slice(0, 20)})` : ''}`).join('、') : '無'}`)
         const pasts = Object.keys(inlDays).filter(d => d < today).sort().slice(-7)
         if (pasts.length) {
-          const agg = { all: 0, s4: 0, s2: 0, s5: 0 }
-          pasts.forEach(d => inlDays[d].forEach(r => { agg.all++; if (r.st === 4) agg.s4++; else if (r.st === 2) agg.s2++; else if (r.st === 5) agg.s5++ }))
-          lines.push(`  - 近${pasts.length}天（${pasts[0].slice(5)}~${pasts[pasts.length - 1].slice(5)}）：共${agg.all}組｜入座${agg.s4}/取消${agg.s2}/未出席${agg.s5}`)
+          const agg = { all: 0, s4: 0, cx: 0, rest: 0 }
+          pasts.forEach(d => inlDays[d].forEach(r => { agg.all++; if (r.st === 4) agg.s4++; else if (!ok1(r)) agg.cx++; else agg.rest++ }))
+          lines.push(`  - 近${pasts.length}天（${pasts[0].slice(5)}~${pasts[pasts.length - 1].slice(5)}）：共${agg.all}組｜入座${agg.s4}/取消${agg.cx}/其他${agg.rest}`)
         }
         if (inlSum?.months) { const ms = Object.entries(inlSum.months); lines.push(`  - 歷史總量：${ms.length}個月 ${ms.reduce((t, [, v]) => t + (v.resv || 0), 0)}筆（最後同步 ${String(inlSum.lastSync || '').slice(0, 16).replace('T', ' ')}）`) }
       }
