@@ -131,7 +131,7 @@ function shiftRender(){
   h += `<div style="display:flex;gap:8px;align-items:center;margin:2px 0 6px;flex-wrap:wrap">
     <span style="font-weight:900;white-space:nowrap">一週班表</span>${meN?`<button class="mini" style="padding:3px 10px" onclick="shiftPosEdit()" title="崗位/時段/人員排序・顏色">⚙️ 設定</button>`:''}
     <button class="mini" onclick="shiftWkNav(-1)">‹</button><button class="mini" onclick="shiftWkNav(1)">›</button><span class="hint" style="font-weight:800;white-space:nowrap">選取週 ${wkDays[0].slice(5)} ~ ${wkDays[6].slice(5)}</span>
-    <button class="mini" style="padding:3px 10px" onclick="shiftSkill()">📊 熟練度</button><button class="mini" style="padding:3px 10px" onclick="shiftHist()">📝 紀錄</button>${meN?`<button class="mini" style="padding:3px 10px" onclick="tplSave()">💾 存版本</button><button class="mini" style="padding:3px 10px" onclick="tplView()">📂 版本</button>`:``}${meN?`<button class="mini" style="padding:3px 10px" onclick="copyWeekNext()">⧉ 本週→下週</button><button class="mini" style="padding:3px 10px;color:var(--red)" onclick="clearWeek()">🗑 清空本週</button>${(()=>{ try { const sv = JSON.parse(localStorage.getItem('shiftLastClear')||'null'); return (sv && Date.now()-sv.ts < 48*3600e3) ? `<button class="mini" style="padding:3px 10px" onclick="undoClear()">↩️ 復原清空</button>` : '' } catch(_) { return '' } })()}`:''}
+    <button class="mini" style="padding:3px 10px" onclick="shiftSkill()">📊 熟練度</button><button class="mini" style="padding:3px 10px" onclick="shiftHist()">📝 紀錄</button>${(d.me&&(d.me.approver||d.me.role==='主管'))?`<button class="mini" style="padding:3px 10px" onclick="lawView()">⚖️ 法規</button><button class="mini" style="padding:3px 10px" onclick="payView()">💰 薪資表</button>`:''}${meN?`<button class="mini" style="padding:3px 10px" onclick="tplSave()">💾 存版本</button><button class="mini" style="padding:3px 10px" onclick="tplView()">📂 版本</button>`:``}${meN?`<button class="mini" style="padding:3px 10px" onclick="copyWeekNext()">⧉ 本週→下週</button><button class="mini" style="padding:3px 10px;color:var(--red)" onclick="clearWeek()">🗑 清空本週</button>${(()=>{ try { const sv = JSON.parse(localStorage.getItem('shiftLastClear')||'null'); return (sv && Date.now()-sv.ts < 48*3600e3) ? `<button class="mini" style="padding:3px 10px" onclick="undoClear()">↩️ 復原清空</button>` : '' } catch(_) { return '' } })()}`:''}
   </div>`
   // v4.3.5（張良 2026-10-02）：①欄寬固定+硬格線=日期與格子切齊 ②崗位三組配色(櫃檯/飲料/中控・漢堡/煎炸麵・披薩/三明治) ③同人同天兼多崗位→班卡同色標記
   const posGrp = ps => /櫃檯|飲料|中控/.test(ps) ? 0 : /漢堡|煎炸|炸麵/.test(ps) ? 1 : /披薩|三明治/.test(ps) ? 2 : 3
@@ -287,15 +287,7 @@ function shiftRender(){
   h += `<div id="shBox" class="scroll" style="max-height:72vh;overflow:auto;margin-bottom:12px;-webkit-overflow-scrolling:touch">${buildGrid(shRangeDays())}</div>`
   // v4.28.1（張良「不要放左側 放班表下面就好」）：🧮 工時成本試算掛在週班表下面
   h += `<div style="font-weight:900;margin:12px 0 6px;font-size:16px">人力時數配置表</div><div id="lbSec" class="hint">載入中…</div>`
-  const pn = Object.keys(per).sort()
-  if (pn.length){
-    h += `<div class="scroll"><table><thead><tr><th style="text-align:left">夥伴</th><th>總工時</th><th>正常</th><th>加班×1.34</th><th>加班×1.67</th><th style="text-align:left">⚠️ 勞基法檢查</th></tr></thead><tbody>`
-    pn.forEach(nm=>{ const p3 = per[nm]
-      const flags = [...p3.flags]
-      h += `<tr style="${meN===nm?'background:var(--psoft)':''}"><td style="text-align:left;font-weight:800;color:var(--ink)">${nm}</td><td class="avg">${r1(p3.h)}</td><td>${r1(p3.h-p3.ot1-p3.ot2)}</td><td>${p3.ot1?r1(p3.ot1):'—'}</td><td>${p3.ot2?r1(p3.ot2):'—'}</td><td style="text-align:left;${flags.length?'color:var(--red);font-weight:700':''}">${flags.length?flags.join('、'):'✓ 正常'}</td></tr>`
-    })
-    h += `</tbody></table></div>`
-  } else h += `<div class="mut">這個月還沒有班表或打卡——${meN?'按右上「＋ 排班」開始':'綁定後可以排班'}；上班用最上面 ⏰ 打卡</div>`
+  window._shRows = rows; window._shPer = per // v4.33.0 工時統計表收進「💰 薪資表」不再常駐（張良「不用直接顯示佔版面 要查再查」）；⚖️法規/薪資面板共用
   h += `</section><section><h2>明細 <span class="hint">一格＝一人一天；數字＝工時（白=正常、橘=遲到/早退、紫=未排班出勤、紅框>12h）、✕=未到、●=上班中、排=還沒到的班；點格可改班</span> <button class="mini" style="padding:3px 10px" onclick="window._shDetList=!window._shDetList;shiftRender()">${window._shDetList?'切回矩陣':'切成列表'}</button></h2>`
   const byDate = {}
   rows.forEach(r=>{ (byDate[r.date]=byDate[r.date]||[]).push(r) })

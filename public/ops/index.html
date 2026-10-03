@@ -43,6 +43,7 @@
   #favbar{display:none}
   @media(max-width:919px){
     body{padding-bottom:78px} /* 內容不被捷徑列蓋住 */
+    h1,.tabs{display:none} /* v4.40.3 張良拍板：手機版「營運看板」大字＋整排功能鈕收掉——入口=底部☰(全部功能)+常用格；通知/編輯常用都在☰彈層 */
     #favbar{position:fixed;left:0;right:0;bottom:0;z-index:30;display:flex;align-items:stretch;gap:2px;background:rgba(17,21,27,.96);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);border-top:1px solid var(--line);padding:5px 6px calc(5px + env(safe-area-inset-bottom))}
     #favbar button{flex:1 1 0;min-width:0;border:none;background:transparent;color:#C3CEDC;font-size:11px;font-weight:700;display:flex;flex-direction:column;align-items:center;gap:3px;padding:6px 2px;border-radius:10px;cursor:pointer;white-space:nowrap;overflow:hidden}
     #favbar button svg{width:21px;height:21px;flex:0 0 auto}
@@ -146,6 +147,7 @@
 <script src="/ops/js/p05-shift.js"></script>
 <script src="/ops/js/p06-shift2.js"></script>
 <script src="/ops/js/p07-labor.js"></script>
+<script src="/ops/js/p11-law-pay.js"></script>
 <script src="/ops/js/p08-menu-misc.js"></script>
 <script src="/ops/js/p09-ntf-crew.js"></script>
 <script src="/ops/js/p10-perm-init.js"></script>

@@ -1981,10 +1981,27 @@ export default async function handler(req, res) {
     const hourlyL = (((sd || {}).hourly) || []).filter(x => String(x.date || '') >= loS && String(x.date || '') <= hiS) // 🕐 時段排班（v4.27.0）
     // AB 班表（張良 2026-10-03「加在GD班表下方,知道兩間店有誰上班方便調度」）：阿桑 boss-api 排班（sp_finance_pm_boss_sched_ 月檔）
     // 唯讀；列=人名、格=班別代碼；status=cancelled 排除；start/end 轉台北 HH:MM
-    let abSched = [], abOn = []
+    let abSched = [], abOn = [], abAtt = [], payRates = {}
     try {
       const moSet = [...new Set([loS.slice(0, 7), ym, hiS.slice(0, 7)])]
-      const [bStaff, nueStf, ...abDocs] = await Promise.all([kvGet('sp_finance_pm_boss_staff'), kvGet('sp_crew_pm_hr_staff'), ...moSet.map(m => kvGet('sp_finance_pm_boss_sched_' + m.replace('-', '')))])
+      const [bStaff, nueStf, payDoc9, ...abDocs] = await Promise.all([kvGet('sp_finance_pm_boss_staff'), kvGet('sp_crew_pm_hr_staff'), kvGet('sp_finance_pm_payrates'), ...moSet.map(m => kvGet('sp_finance_pm_boss_sched_' + m.replace('-', '')))])
+      payRates = (payDoc9 || {}).rates || {}
+      // v4.33.0 AB 實際出勤（NUEiP 打卡,薪資條/法規檢查用）：att 月檔→ {date,name,h,late,early,absent}
+      try {
+        const attDocs = await Promise.all(moSet.map(m => kvGet('sp_crew_pm_hr_att_' + m)))
+        const t2m9 = (t) => { const a9 = String(t || '').split(':'); return (+a9[0] || 0) * 60 + (+a9[1] || 0) }
+        for (const ad of attDocs) {
+          for (const [dt9, users9] of Object.entries((ad || {}).days || {})) {
+            if (dt9 < loS || dt9 > hiS) continue
+            for (const rec9 of Object.values(users9)) {
+              if (!/AB/.test(rec9.dept || '')) continue
+              let h9 = (Number(rec9.durmin) || 0) / 60
+              if (!h9 && (rec9.on || []).length && (rec9.off || []).length) { let sp9 = t2m9(rec9.off[rec9.off.length - 1]) - t2m9(rec9.on[0]); if (sp9 < 0) sp9 += 1440; h9 = Math.max(0, sp9 - 60) / 60 }
+              if (h9 > 0 || rec9.absent) abAtt.push({ date: dt9, name: rec9.name, h: Math.round(h9 * 10) / 10, late: rec9.late || 0, early: rec9.early || 0, absent: rec9.absent || 0 })
+            }
+          }
+        }
+      } catch (_) {}
       const hm = (ts) => { if (!ts) return ''; try { return new Date(new Date(ts).getTime() + 8 * 3600e3).toISOString().slice(11, 16) } catch (_) { return '' } }
       // v4.36.2（張良「怎麼會出現 蕭/桑/芳/Fran 這種名字」）：阿桑系統存的是暱稱/簡稱 → 用我們名冊轉全名
       // 順序：①全名直接命中 ②暱稱命中(不分大小寫) ③唯一「名字包含」(蕭→蕭睿詮) ④唯一「暱稱互含」(桑→阿桑=林品燊)；轉不出來保留原樣
@@ -2049,7 +2066,7 @@ export default async function handler(req, res) {
         }
       }
     } catch (_) {}
-    return res.status(200).json({ ok: true, ym, ab: abSched, abOn, resv: resvDays, hourly: hourlyL, sched: schedL.map(x => ({ ...x, seq: seqMap[x.id], trSeq: trSeqMap[x.id] })), punches: pchs.map(p => ({ name: p.name, ts: p.ts, dir: p.dir, src: p.src })), names: namesU, namesAll, posList, slots: (sd || {}).slots || null, colors: colMap, posStats, leave: leaveM, hist: ((sd || {}).hist || []).slice(-200).reverse(), lockEdit: (sd || {}).lockEdit ? 1 : 0, tpls: (sd || {}).tpls || [], staff, me: meS ? { name: meS.name, role: meS.role, approver: aprS.includes(meS.name) } : null })
+    return res.status(200).json({ ok: true, ym, ab: abSched, abOn, abAtt, payRates, resv: resvDays, hourly: hourlyL, sched: schedL.map(x => ({ ...x, seq: seqMap[x.id], trSeq: trSeqMap[x.id] })), punches: pchs.map(p => ({ name: p.name, ts: p.ts, dir: p.dir, src: p.src })), names: namesU, namesAll, posList, slots: (sd || {}).slots || null, colors: colMap, posStats, leave: leaveM, hist: ((sd || {}).hist || []).slice(-200).reverse(), lockEdit: (sd || {}).lockEdit ? 1 : 0, tpls: (sd || {}).tpls || [], staff, me: meS ? { name: meS.name, role: meS.role, approver: aprS.includes(meS.name) } : null })
   }
   // 人員色號管理口：POST ?shiftcolor=管理金鑰 {map:{名字:色號}} 合併寫入（固定/校正專屬色用）
   if (req.method === 'POST' && req.query?.shiftcolor) {
@@ -2667,6 +2684,22 @@ export default async function handler(req, res) {
       const tk0 = (bd9.byUid || {})[pf.userId] || null
       return res.status(200).json({ ok: true, me: tk0, name: tk0 ? ((bd9.tokens || {})[tk0] || {}).name : null })
     } catch (_) { return res.status(502).json({ ok: false, error: 'LINE 驗證失敗' }) }
+  }
+  // ── 💰 薪資費率口 v4.33.0（張良：薪資條表格給會計師）：POST ?payset= {token,name,field:base|allow,val} ──
+  if (req.method === 'POST' && req.query?.payset) {
+    const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
+    if (!ok2 || String(req.query.payset) !== ok2) return res.status(403).json({ ok: false })
+    let bp9 = {}; try { bp9 = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
+    const whoP9 = await permWho(bp9.token, 'shift')
+    if (!whoP9) return res.status(403).json({ ok: false, error: permDeny() })
+    const docP = (await kvGet('sp_finance_pm_payrates')) || { rates: {} }
+    const nm9 = String(bp9.name || '').slice(0, 20); if (!nm9) return res.status(400).json({ ok: false })
+    const fd9 = bp9.field === 'allow' ? 'allow' : 'base'
+    docP.rates[nm9] = docP.rates[nm9] || {}
+    docP.rates[nm9][fd9] = Math.max(0, Math.min(999999, Number(bp9.val) || 0))
+    docP.rates[nm9].by = whoP9.name; docP.rates[nm9].ts = new Date().toISOString()
+    await kvPut('sp_finance_pm_payrates', docP, '薪資費率 ' + nm9 + '(' + whoP9.name + ')')
+    return res.status(200).json({ ok: true, rates: docP.rates })
   }
   // ── 🧮 工時成本試算（張良 2026-10-03：每小時×崗位填金額、右/下自動加總、方案制可存版本切換比較）──
   if (req.query?.labor) {

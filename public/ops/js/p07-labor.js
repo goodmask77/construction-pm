@@ -139,8 +139,7 @@ function laborRender(){
       <span>金流／外送 <b style="color:var(--ink)">${fin.pay||0}%</b></span>
       <span>淨利 <b style="color:var(--green)">${fin.profit||0}%</b></span>
     </div>`:''}</div>`
-  })()}
-  <div class="hint" style="margin-top:4px">點格＝跳時薪選單（200~300 顏色分檔，✕＝清空）・按住拖＝複製・點欄頭/列頭＝清整欄/整列・↩️ 復原；欄位＝班表崗位（⚙️ 設定改）</div>`
+  })()}`
   el.className = ''
   el.innerHTML = h
 }
