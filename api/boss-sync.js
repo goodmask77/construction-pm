@@ -69,7 +69,7 @@ export default async function handler(req, res) {
     const pk0 = (process.env.PARTNER_API_KEY || '').trim()
     if (!pk0 || String(req.query.bosspeek) !== pk0) return res.status(403).json({ ok: false })
     const slug0 = String(req.query.slug || 'staff')
-    const id0 = ['menu', 'staff'].includes(slug0) ? `sp_finance_pm_boss_${slug0}` : `sp_finance_pm_boss_${slug0}_${String(req.query.ym || '').replace('-', '') || tpeToday().slice(0, 7).replace('-', '')}`
+    const id0 = ['menu', 'staff', 'revm'].includes(slug0) ? `sp_finance_pm_boss_${slug0}` : `sp_finance_pm_boss_${slug0}_${String(req.query.ym || '').replace('-', '') || tpeToday().slice(0, 7).replace('-', '')}`
     const doc0 = (await kvGet(id0)) || {}
     let rows0 = Object.values(doc0.rows || {})
     const q0 = String(req.query.q || '')
