@@ -2037,7 +2037,7 @@ function shiftRender(){
           const base = `${BD}${ri===0?`border-top:3px solid ${RC.ink}AA;`:''}${sepOf(dt)}${dt===today?todayBg:wkndBg(dt)}`
           if (!v9) return `<td style="${base}"></td>`
           const big = (v9.big||[]).map(b9=>`<div style="font-size:9.5px;color:#F2C94C;font-weight:800;white-space:nowrap" title="${b9.t} ${b9.name} ${b9.n}人">🎉${b9.name.slice(0,6)}×${b9.n}</div>`).join('')
-          return `<td style="${base}padding:2px 3px;text-align:center;vertical-align:top" title="${dt} ${lb9}：${v9.g}組 ${v9.p}人"><span style="font-size:11px;font-weight:800;color:${RC.ink};white-space:nowrap">${v9.g}組</span><span class="hint" style="font-size:10px;white-space:nowrap">·${v9.p}人</span>${big}</td>`
+          return `<td style="${base}padding:2px 3px;text-align:center;vertical-align:top" title="${dt} ${lb9}：${v9.p}人 ${v9.g}組"><span style="font-size:15px;font-weight:900;color:${RC.ink};white-space:nowrap">${v9.p}</span><span style="font-size:10.5px;font-weight:800;color:${RC.ink};opacity:.85">人</span><span class="hint" style="font-size:9.5px;white-space:nowrap;opacity:.6">·${v9.g}組</span>${big}</td>`
         }).join('') + `</tr>`
       })
     }
