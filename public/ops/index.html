@@ -689,7 +689,13 @@ function sopFset(v){ sopFilter = v; localStorage.setItem('sopFilter', v); sopRen
 function sopPinT(st){ if (sopPin.has(st)) sopPin.delete(st); else sopPin.add(st); localStorage.setItem('sopPin', JSON.stringify([...sopPin])); if (!sopPin.size && sopFilter==='pin') sopFset('all'); else sopRender() } // itemId -> dataURL（待送出的照片）；編輯中的站
 async function sopLoad(){
   const el = document.getElementById('sop'); if (!el) return
-  try { const r = await fetch('/api/mail-sync?sop=' + encodeURIComponent(K) + (TK() ? '&me=' + encodeURIComponent(TK()) : '')); sopData = await r.json() } catch(e){}
+  // v4.31.9（張良「其他頁都順了 剩SOP明顯不順」）：全站只剩這頁沒走「快取先畫+背景更新」＝每次傻等網路白畫面。
+  // 快取只認「今天的」（SOP勾勾是按天記的，昨天的勾勾閃出來會誤導）；背景照樣抓最新回來重畫
+  const c9 = (sopData && sopData.ok) ? sopData : tcGet('sop')
+  if (c9 && c9.ok && c9.date === todayTpe()) { sopData = c9; sopRender() }
+  let d9 = null
+  try { const r = await fetch('/api/mail-sync?sop=' + encodeURIComponent(K) + (TK() ? '&me=' + encodeURIComponent(TK()) : '')); d9 = await r.json() } catch(e){}
+  if (d9 && d9.ok) { sopData = d9; tcSet('sop', d9) }
   if (!sopData || !sopData.ok) { el.innerHTML = ''; return }
   sopRender()
 }

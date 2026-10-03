@@ -2236,7 +2236,7 @@ export default async function handler(req, res) {
     const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
     if (!ok2 || String(req.query.sop) !== ok2) return res.status(403).json({ ok: false })
     const dt2 = sopToday()
-    const [defDoc, logDoc, rosterDoc, me3, hideDoc, shDoc9] = await Promise.all([kvGet('sp_finance_pm_sop_def'), kvGet('sp_finance_pm_sop_g_' + dt2), kvGet('sp_crew_kb_roster'), sopWho(req.query.me), kvGet('sp_finance_pm_prep_hide'), kvGet('sp_finance_pm_shift_g')])
+    const [defDoc, logDoc, rosterDoc, me3, hideDoc, shDoc9, issuesDoc] = await Promise.all([kvGet('sp_finance_pm_sop_def'), kvGet('sp_finance_pm_sop_g_' + dt2), kvGet('sp_crew_kb_roster'), sopWho(req.query.me), kvGet('sp_finance_pm_prep_hide'), kvGet('sp_finance_pm_shift_g'), kvGet('sp_finance_pm_sop_issues')]) // v4.31.9 issues併進平行抓（原本落單多一趟）
     // v4.17.2 負責人名單=只有GD人員、照班表⚙️排序（常態在前、非常態墊底）
     const ordN9 = (shDoc9 || {}).staffOrd || []
     const offN9 = new Set((shDoc9 || {}).offStaff || [])
@@ -2247,7 +2247,6 @@ export default async function handler(req, res) {
     // me＝綁定者（張良 2026-09-21 拍板：不設站長，綁定的人全站都能編，靠歷史紀錄留痕）
     const approvers = ((defDoc || {}).ground || {}).approvers || ['張良瑋'] // 解決審核人（張良 2026-09-21：已解決要經我審核）
     const me4 = me3 ? { name: me3.name, canEdit: true, approver: approvers.includes(me3.name), role: me3.role || '' } : null
-    const issuesDoc = await kvGet('sp_finance_pm_sop_issues')
     const issues = ((issuesDoc || {}).list || []).filter(x => x.status === 'open' || x.status === 'pending').slice(0, 30)
     // v4.18.0 hashtag 模型遷移（張良 2026-10-02：#階段 × #產品 雙標籤取代樹狀分身）——一次性自動轉
     let mig18 = false
