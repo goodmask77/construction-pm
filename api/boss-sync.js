@@ -23,6 +23,7 @@ const monthsBetween = (a, b) => { const out = []; let m = a.slice(0, 7); while (
 // 端點表（照 SKILL §3.1；orders/summary 刻意不同步＝SKILL 建議用自己的 orders 算）
 const EPS = [
   { ep: 'revenue/daily', slug: 'revd', pk: r => r.date, df: r => r.date, back: 14, fwd: 0 },
+  { ep: 'revenue/monthly', slug: 'revm', pk: r => r.month, snapshot: 1 }, // 2026-10-04 阿桑新增：iCHEF 時代 2021-02 起月營收（無 from/to 參數→快照全抓）
   { ep: 'revenue/settlement', slug: 'sett', pk: r => r.date, df: r => r.date, back: 7, fwd: 0 },
   { ep: 'orders', slug: 'ord', pk: r => r.order_id, df: r => String(r.created_at || '').slice(0, 10), back: 14, fwd: 0 },
   { ep: 'orders/items', slug: 'ordi', pk: r => r.line_id, df: r => String(r.ordered_at || r.created_at || '').slice(0, 10), back: 14, fwd: 0 },

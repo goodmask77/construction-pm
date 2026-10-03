@@ -918,13 +918,21 @@ async function loadBossText() {
     const nextYm = new Date(Date.UTC(+today.slice(0, 4), +today.slice(5, 7), 1)).toISOString().slice(0, 7).replace('-', '')
     const K = (s, m) => `sp_finance_pm_boss_${s}_${m}`
     const kv = await kvGetMany([
-      K('sett', ym), K('sett', prevYm), K('ord', ym), K('ord', prevYm), 'sp_finance_pm_boss_menu',
+      K('sett', ym), K('sett', prevYm), K('ord', ym), K('ord', prevYm), 'sp_finance_pm_boss_menu', 'sp_finance_pm_boss_revm',
       K('sched', ym), K('sched', nextYm), K('att', ym), K('att', prevYm), K('ot', ym), K('ot', prevYm),
       K('inc', ym), K('inc', prevYm), K('prep', ym), K('rout', ym), K('temp', ym),
     ])
     const rowsOf = (...ks) => ks.flatMap(k => Object.values((kv[k] || {}).rows || {}))
     const nt = (n) => 'NT$' + Math.round(n || 0).toLocaleString()
     const lines = ['【A Beach OPS（阿桑系統 boss-api，每小時自動同步；null=沒資料不是0）】']
+    // 歷史月營收（/revenue/monthly 2026-10-04 阿桑新增：iCHEF 時代 2021-02 開店起；「日」明細 2026-04 起才有，更早只有月彙總）
+    const revm = Object.values((kv['sp_finance_pm_boss_revm'] || {}).rows || {}).sort((a, b) => (a.month < b.month ? -1 : 1))
+    if (revm.length) {
+      const byY = {}
+      revm.forEach(m => { const y = m.month.slice(0, 4); const o = byY[y] = byY[y] || { rev: 0, mo: 0 }; o.rev += Number(m.revenue) || 0; o.mo++ })
+      lines.push(`  ◇ AB 歷史月營收（${revm[0].month} 開店起共 ${revm.length} 個月；2026-04 前只有月彙總無日明細）：年合計 ` + Object.entries(byY).map(([y, o]) => `${y}=${nt(o.rev)}(${o.mo}月)`).join('、'))
+      lines.push('    逐月（月:萬）：' + revm.map(m => `${m.month.slice(2).replace('-', '/')}:${Math.round((Number(m.revenue) || 0) / 1e4)}`).join('、'))
+    }
     // 每日結帳對帳：現金差/刷卡差/與POS差額（eats365_synced=false=還沒對帳不是差0）
     const sett = rowsOf(K('sett', ym), K('sett', prevYm)).sort((a, b) => (a.date < b.date ? 1 : -1))
     if (sett.length) {

@@ -107,13 +107,22 @@ async function loadSpaceAIContext() {
       const prevYmB = new Date(Date.UTC(+today.slice(0, 4), +today.slice(5, 7) - 2, 1)).toISOString().slice(0, 7).replace("-", "");
       const nextYmB = new Date(Date.UTC(+today.slice(0, 4), +today.slice(5, 7), 1)).toISOString().slice(0, 7).replace("-", "");
       const KB = (s, m) => `sp_finance_pm_boss_${s}_${m}`;
-      const [settA, settB, ordA, ordB, menuB, schA, schB, attA, attB, otA, otB, incA, incB, prepB, routB, tempB] = await Promise.all([
+      const [revmB, settA, settB, ordA, ordB, menuB, schA, schB, attA, attB, otA, otB, incA, incB, prepB, routB, tempB] = await Promise.all([
+        g("sp_finance_pm_boss_revm"),
         g(KB("sett", ymB)), g(KB("sett", prevYmB)), g(KB("ord", ymB)), g(KB("ord", prevYmB)), g("sp_finance_pm_boss_menu"),
         g(KB("sched", ymB)), g(KB("sched", nextYmB)), g(KB("att", ymB)), g(KB("att", prevYmB)), g(KB("ot", ymB)), g(KB("ot", prevYmB)),
         g(KB("inc", ymB)), g(KB("inc", prevYmB)), g(KB("prep", ymB)), g(KB("rout", ymB)), g(KB("temp", ymB)),
       ]);
       const rowsB = (...ds) => ds.flatMap(d => Object.values(d?.rows || {}));
       const bl = [];
+      // 歷史月營收（iCHEF 時代 2021-02 起；2026-04 前只有月彙總無日明細）
+      const revmRows = rowsB(revmB).sort((a, b) => (a.month < b.month ? -1 : 1));
+      if (revmRows.length) {
+        const byY = {};
+        revmRows.forEach(m => { const y = m.month.slice(0, 4); const o = byY[y] = byY[y] || { rev: 0, mo: 0 }; o.rev += Number(m.revenue) || 0; o.mo++; });
+        bl.push(`  ◇ AB 歷史月營收（${revmRows[0].month} 開店起共 ${revmRows.length} 個月；2026-04 前只有月彙總）：年合計 ` + Object.entries(byY).map(([y, o]) => `${y}=${nt(o.rev)}(${o.mo}月)`).join("、"));
+        bl.push("    逐月（月:萬）：" + revmRows.map(m => `${m.month.slice(2).replace("-", "/")}:${Math.round((Number(m.revenue) || 0) / 1e4)}`).join("、"));
+      }
       const sett = rowsB(settA, settB).sort((a, b) => (a.date < b.date ? 1 : -1));
       if (sett.length) {
         const bad = sett.filter(s => Math.abs(Number(s.cash_diff) || 0) + Math.abs(Number(s.card_diff) || 0) + Math.abs(Number(s.eats365_diff) || 0) > 0).slice(0, 10);
