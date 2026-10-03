@@ -43,7 +43,7 @@
   #favbar{display:none}
   @media(max-width:919px){
     body{padding-bottom:78px} /* 內容不被捷徑列蓋住 */
-    h1,.tabs{display:none} /* v4.40.3 張良拍板：手機版「營運看板」大字＋整排功能鈕收掉——入口=底部☰(全部功能)+常用格；通知/編輯常用都在☰彈層 */
+    .tabs{display:none} /* v4.40.3 張良拍板：手機版整排功能鈕收掉——入口=底部☰(全部功能)+常用格；通知/編輯常用都在☰彈層（h1 已於 v4.41.3 整個移除） */
     #favbar{position:fixed;left:0;right:0;bottom:0;z-index:30;display:flex;align-items:stretch;gap:2px;background:rgba(17,21,27,.96);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);border-top:1px solid var(--line);padding:5px 6px calc(5px + env(safe-area-inset-bottom))}
     #favbar button{flex:1 1 0;min-width:0;border:none;background:transparent;color:#C3CEDC;font-size:11px;font-weight:700;display:flex;flex-direction:column;align-items:center;gap:3px;padding:6px 2px;border-radius:10px;cursor:pointer;white-space:nowrap;overflow:hidden}
     #favbar button svg{width:21px;height:21px;flex:0 0 auto}
@@ -117,7 +117,7 @@
     <span><span id="bs-ground" class="bseg on" onclick="load('ground')">GROUN<b>:D</b></span> × <span id="bs-abeach" class="bseg" onclick="load('abeach')">A BEACH</span></span>
     <span style="display:flex;gap:6px"><button id="bindBtn" class="mini" style="display:none;font-size:14px;padding:5px 12px;font-weight:700" onclick="bindPrompt()" title="私訊 DD「登入碼」拿 4 位數填入">登入</button><button class="mini" style="font-size:14px;padding:5px 12px;font-weight:700;display:inline-flex;gap:5px;align-items:center" onclick="punchNow()" title="上下班打卡"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/></svg>打卡</button><button class="mini" style="padding:5px 10px;display:inline-flex;align-items:center" onclick="mobilePreview()" title="手機版畫面預覽">📱</button><button class="mini" style="padding:5px 10px;display:inline-flex;align-items:center" onclick="hardRefresh()" title="更新App到最新版"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M20 12a8 8 0 1 1-2.34-5.66"/><path d="M20 3v4h-4"/></svg></button></span>
   </div>
-  <h1>營運看板</h1>
+  <!-- v4.41.3 張良「營運看板四個字電腦版也拿掉」：h1 整個退役（手機版 v4.40.3 先藏、這次連桌機一起） -->
   <div class="sub" id="upd">載入中…</div>
   <div class="tabs">
     <div class="tbrand">GROUN<b>:D</b></div>
