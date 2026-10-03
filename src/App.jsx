@@ -126,7 +126,18 @@ async function loadSpaceAIContext() {
       const isG = e => /groun/i.test(e.store || "");
       const multiStore = new Set(pos.entries.map(e => isG(e) ? "g" : "a")).size > 1;
       const sTag = e => multiStore ? (isG(e) ? "［GROUN:D］" : "［A Beach］") : "";
-      parts.push("【營運日結（" + (multiStore ? "雙店：A Beach＋GROUN:D" : (pos.entries[0].store || "POS")) + "）】\n" + pos.entries.slice(-30).map(e => (e.partial && !e.txCount)
+      { // v4.31.2 治本（張良 2026-10-03「Ab九月營業額→AI說只有半個月」；與 line-webhook loadPosText 同步修）：月加總全史直接餵——問「X月營業額」就用這行答
+        const moAgg = {};
+        pos.entries.forEach(e => { const k9 = (isG(e) ? "g" : "a") + "|" + e.date.slice(0, 7); const o = moAgg[k9] = moAgg[k9] || { rev: 0, tx: 0, n: 0 }; o.rev += Number(e.revenue) || 0; o.tx += Number(e.txCount) || 0; o.n++; });
+        const moNow9 = new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 7);
+        const moLine = pfx => Object.keys(moAgg).filter(k9 => k9.startsWith(pfx)).sort().map(k9 => { const m2 = k9.slice(2), o = moAgg[k9]; return `${m2}=${nt(o.rev)}(${o.n}天${o.tx ? `,${o.tx}單` : ""})${m2 === moNow9 ? "〈本月進行中〉" : ""}`; }).join("、");
+        const moL = [];
+        if (moLine("a|")) moL.push(`- A Beach：${moLine("a|")}`);
+        if (moLine("g|")) moL.push(`- GROUN:D：${moLine("g|")}`);
+        if (moL.length) parts.push("【月營業額加總（全部歷史月份，日結逐日加總＝和營運日結頁月合計同一套算法；問「某月營業額」直接用這行答）】\n" + moL.join("\n"));
+      }
+      // v4.31.2：原本雙店混切30行＝每店只剩約15天，AI誤以為月初資料缺——改每店各取近30天
+      parts.push("【營運日結（" + (multiStore ? "雙店：A Beach＋GROUN:D" : (pos.entries[0].store || "POS")) + "；日列=每店近30天，更久的用上面月加總）】\n" + [...pos.entries.filter(e => !isG(e)).slice(-30), ...pos.entries.filter(e => isG(e)).slice(-30)].sort((x, y) => (x.date < y.date ? -1 : 1)).map(e => (e.partial && !e.txCount)
         ? `- ${e.date}${sTag(e)} 營收${nt(e.revenue)}${e.grossSales > e.revenue ? `（牌價${nt(e.grossSales)}·試營運折讓）` : ""}｜${e.partial}`
         : `- ${e.date}${sTag(e)} 營收${nt(e.revenue)}｜${e.txCount}單｜來客${e.guests || "?"}｜現金${nt(e.cash)}/卡${nt(e.card)}${e.linepay ? `/LINE Pay${nt(e.linepay)}` : ""}${e.payOther ? `/其他${nt(e.payOther)}` : ""}/Uber${nt(e.uber)}${e.kiosk ? `｜自助點餐${nt(e.kiosk)}(佔${e.revenue ? Math.round(e.kiosk / e.revenue * 100) : 0}%,約${e.txCount && e.revenue ? Math.round(e.kiosk / (e.revenue / e.txCount)) : "?"}單估算,已含在卡/LINE Pay內)` : ""}｜折扣${nt(e.discount)}`).join("\n"));
       if (posD?.days) {

@@ -6,8 +6,9 @@
 //   ?backfill=<key>&from=YYYY-MM-DD&to=YYYY-MM-DD → 回填區間（一次最多 150 天，歷史回填分批打）
 //   ?probe=<key>                                   → 各月筆數盤點＋遠期清單
 // 入庫：sp_finance_pm_inline_<YYYY-MM>＝{ days: { 'YYYY-MM-DD': [瘦身訂位…] }, updatedAt }（月檔，key=訂位日）
-//       sp_finance_pm_inline＝{ firstDay, lastSync, months: { 'YYYY-MM': { days, resv, guests } }, farFuture: [{d,…}] }（總覽，AI/probe 用）
-import { inlineLogin, inlineFetchDay, inlineSearchFuture, CANCELED_STATES } from './_inline.js'
+//       sp_finance_pm_inline＝{ firstDay, lastSync, months: {…}, farFuture: [{d,…}], dayNotes: {今天起的當日備註} }（總覽，AI/probe 用）
+//       sp_finance_pm_inline_notes＝{ days: { 'YYYY-MM-DD': [{note,by,at}] } }（當日備註全史，RTDB branchDailyNotes）
+import { inlineLogin, inlineFetchDay, inlineSearchFuture, inlineFetchDayNotes, CANCELED_STATES } from './_inline.js'
 import { kvGet, kvPut, announceChanged } from './mail-sync.js'
 
 const DAY = 86400e3
@@ -90,10 +91,20 @@ async function syncFuture(token) {
   }
   // 遠期清單直接放總覽（AI 兩邊都載總覽＝不用撈到未來月檔就能答「哪天已被訂」）
   sum.farFuture = Object.keys(far).sort().flatMap((d) => far[d].map((r) => ({ d, ...r })))
+  // 當日備註（RTDB branchDailyNotes 一次整包；⚠️包場/公休註記＝婚顧檔期的另一真相來源）
+  let notesInfo = {}
+  try {
+    const notes = await inlineFetchDayNotes(token)
+    const today = twToday()
+    sum.dayNotes = {} // 今天起的全部備註 → AI 直接讀
+    for (const [d, arr] of Object.entries(notes)) if (d >= today) sum.dayNotes[d] = arr
+    await kvPut('sp_finance_pm_inline_notes', { days: notes, updatedAt: new Date().toISOString() }, 'inline備註同步') // 全史另存一檔
+    notesInfo = { noteDays: Object.keys(notes).length, futureNoteDays: Object.keys(sum.dayNotes).length }
+  } catch (e) { notesInfo = { notesError: e?.message } }
   sum.lastSync = new Date().toISOString()
   await kvPut('sp_finance_pm_inline', sum, 'inline遠期同步')
   await announceChanged()
-  return { farDays: Object.keys(far).length, farResv }
+  return { farDays: Object.keys(far).length, farResv, ...notesInfo }
 }
 
 export default async function handler(req, res) {

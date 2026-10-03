@@ -83,6 +83,25 @@ export async function inlineFetchDay(token, day) {
   return rows.map(trimResv).sort((a, b) => (a.t || '99') < (b.t || '99') ? -1 : 1)
 }
 
+// 當日備註（host 後台日曆上的⚠️包場/公休註記；張良 2026-10-03 截圖問的那個）
+// 存在 Firebase RTDB：branchDailyNotes/<companyId>/<branchId>/<date>/{noteId:{note,createdBy,updatedBy,updatedTime}}
+// REST 一次整包：GET https://inline-live-2.firebaseio.com/branchDailyNotes/<C>/<B>.json?auth=<idToken>
+// （同一顆 idToken 可用；根路徑被規則擋 401、這條子路徑可讀；2026-10 實測 1507 天 841KB）
+export async function inlineFetchDayNotes(token) {
+  const u = `https://inline-live-2.firebaseio.com/branchDailyNotes/${encodeURIComponent(INLINE_COMPANY)}/${INLINE_BRANCH}.json?auth=${token}`
+  const r = await fetch(u)
+  if (!r.ok) throw new Error(`inline: dayNotes ${r.status}`)
+  const j = await r.json() || {}
+  const out = {} // { 'YYYY-MM-DD': [{note, by, at}] }
+  for (const [d, m] of Object.entries(j)) {
+    const arr = Object.values(m || {})
+      .filter((n) => (n.note || '').trim())
+      .map((n) => ({ note: n.note.trim(), by: n.updatedBy?.name || n.createdBy?.name || '', at: tw(n.updatedTime || n.createdTime) }))
+    if (arr.length) out[d] = arr
+  }
+  return out
+}
+
 // 全部「未來」訂位（搜尋端點翻頁；婚顧包場問 2027/2028 哪天被訂就靠這個）
 // 回 { 'YYYY-MM-DD': [瘦身訂位…] }；翻到第一筆過去日就停（未來排最前、由遠到近）
 export async function inlineSearchFuture(token) {

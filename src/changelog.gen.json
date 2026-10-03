@@ -2,6 +2,11 @@
  {
   "date": "2026-10-03",
   "items": [
+   "partner-api 文件照實：叫貨/進價=兩店共用供應鏈",
+   "鈴鐺數字即時刷新 v4.33.6(張良「圖示有數字 打開App鈴鐺沒數字🤣」)：根因=他在通知中心裡按開啟推播=當下全標已讀,之後App從背景喚醒不重算；修①visibilitychange回前景重算鈴鐺②sw收推播postMessage廣播→App開著也即時重算",
+   "partner-api v4.35.1(驗證修)：訂位狀態碼對齊_inline.js實測(2/5取消/3待確認/6已確認,附status_code原始碼)、orders與sop/issues預設全史窗差一修正",
+   "partner-api v4.35.0(互通API給阿桑)：/partner/v1 唯讀12端點(GD營收/品項/叫貨/進價+AB inline訂位全史/彙總+GD班表/名冊/SOP定義/完成/問題)、Bearer PARTNER_API_KEY、外殼與分頁對齊boss-api風格、名冊黑名單擋薪資身分證等機密欄；docs/PARTNER_API.md=給阿桑的串接說明",
+   "遠期訂位全接+狀態碼修正 v4.34.0(張良「婚顧簽約問到2028包場 要隨時答哪天已被訂」)：①逆向/search端點(空keyword=全部且未來排最前,翻到過去日即收齊)→每小時cron加syncFuture:45天後全部遠期以搜尋為準重建月檔(含清掉已取消消失的日子)+farFuture清單進總覽②D哥/App AI加「遠期訂位全列出」段=沒列的日子=空檔③狀態碼實測修正:3=待確認/6=已確認(acceptedTime)/5=取消變體非未出席,有效=st∉{2,5}；現況最遠2027-03-28婚禮100人,2028尚無登記",
    "桌面App圖示=未讀通知數 v4.33.5(張良「手機畫面上的app能不能顯示通知數字」)：每次推播badge=該人通知中心未讀數(ts>nd.read[rid],每人各算)＝跟App內鈴鐺同數字；+已讀口?ntfread=(開通知中心時伺服器記已讀→圖示數字歸零重算)；歷史讀不到退回呼叫端badge；已發張良瑋測試sent:1",
    "通知中心 v4.33.4(張良「要有通知頁面+歷史紀錄+通知分類 鈴鐺按完就消失」)：①wpPush單一路口自動記歷史sp_finance_pm_prep_ntf(cap300,cat自動歸類meet/sop/prep/stock/issue/other,to=null全員/指定rids只本人可見)②讀取口?ntf=OPS_KEY&me=過濾③左下鈴鐺常駐=通知中心入口+未讀紅點數(開啟推播鈕收進彈層)④彈層=分類chips計數+依日分組+未讀藍框+點通知跳深層連結+打開即已讀並清App圖示數字⑤測試口?ntfping=MENU_KEY&name=(badge:1)已發張良瑋sent:1",
    "深層連結吃掉金鑰治本 v4.33.3(張良「點測試連結還是訪客+讀不到資料」)：K舊邏輯「沒?k=就拿#後整串當金鑰」→#meet=/#sop=被吃成假金鑰=全API 403(訪客+讀不到資料=同一根因,連之前群組連結變訪客也有這成分)；改只認#k=…或純16進位長串；掃描:routeHash正規匹配✓/liff用?s=✓只有K一處✗已修；+meetping probe=1綁定診斷口(token伺服器端已驗=張良瑋OK)",

@@ -604,8 +604,18 @@ async function loadPosText() {
     const isG = (e) => /groun/i.test(e.store || '')
     const multiStore = new Set(entries.map(e => isG(e) ? 'g' : 'a')).size > 1
     const sTag = (e) => multiStore ? (isG(e) ? '［GROUN:D］' : '［A Beach］') : ''
-    const lines = [`\n\n【營運日結（${multiStore ? '雙店：A Beach＋GROUN:D' : (entries[0]?.store || 'POS')}，每日結帳自動入庫，共 ${entries.length} 天）】`]
-    entries.slice(-30).forEach(e => lines.push((e.partial && !e.txCount)
+    const lines = [`\n\n【營運日結（${multiStore ? '雙店：A Beach＋GROUN:D' : (entries[0]?.store || 'POS')}，每日結帳自動入庫，共 ${entries.length} 天；下面日列=每店近30天，更久的看月加總或用 query_pos_day 代查）】`]
+    { // v4.31.2 治本（張良 2026-10-03「Ab九月營業額→DD說只有半個月還叫我自己看App」）：月加總全史直接餵——問「X月營業額」就用這行答，不用代查
+      const moAgg = {}
+      entries.forEach(e => { const k9 = (isG(e) ? 'g' : 'a') + '|' + e.date.slice(0, 7); const o = moAgg[k9] = moAgg[k9] || { rev: 0, tx: 0, n: 0 }; o.rev += Number(e.revenue) || 0; o.tx += Number(e.txCount) || 0; o.n++ })
+      const moNow9 = now.toISOString().slice(0, 7)
+      const moLine = (pfx) => Object.keys(moAgg).filter(k9 => k9.startsWith(pfx)).sort().map(k9 => { const m2 = k9.slice(2), o = moAgg[k9]; return `${m2}=${nt(o.rev)}(${o.n}天${o.tx ? `,${o.tx}單` : ''})${m2 === moNow9 ? '〈本月進行中〉' : ''}` }).join('、')
+      lines.push(`【月營業額加總（全部歷史月份，日結逐日加總＝和 App 營運日結月合計同一套算法；問「某月營業額」直接用這行答，不要叫使用者自己去看 App）】`)
+      if (moLine('a|')) lines.push(`  - A Beach：${moLine('a|')}`)
+      if (moLine('g|')) lines.push(`  - GROUN:D：${moLine('g|')}`)
+    }
+    // v4.31.2：原本 entries.slice(-30) 雙店混切＝每店只剩約15天，AI誤以為月初資料缺——改每店各取近30天
+    ;[...entries.filter(e => !isG(e)).slice(-30), ...entries.filter(e => isG(e)).slice(-30)].sort((x, y) => (x.date < y.date ? -1 : 1)).forEach(e => lines.push((e.partial && !e.txCount)
       ? `  - ${e.date}${sTag(e)} 營收${nt(e.revenue)}${e.grossSales > e.revenue ? `（牌價${nt(e.grossSales)}·試營運折讓）` : ''}｜${e.partial}`
       : `  - ${e.date}${sTag(e)} 營收${nt(e.revenue)}｜${e.txCount}單｜來客${e.guests || '?'}｜客單${e.guests ? nt(Math.round(e.revenue / e.guests)) : '—'}｜現金${nt(e.cash)}/卡${nt(e.card)}${e.linepay ? `/LINE Pay${nt(e.linepay)}` : ''}${e.payOther ? `/其他${nt(e.payOther)}` : ''}/Uber${nt(e.uber)}${e.kiosk ? `｜自助點餐${nt(e.kiosk)}(佔${e.revenue ? Math.round(e.kiosk / e.revenue * 100) : 0}%,約${e.txCount && e.revenue ? Math.round(e.kiosk / (e.revenue / e.txCount)) : '?'}單估算,已含在卡/LINE Pay內)` : ''}｜折扣${nt(e.discount)}`))
     // AB 今天即時（pm_ablive＝Eats365 後台儀表板抓的「到目前為止」，張良 2026-09-02；日結信入庫後被正式資料取代——同一天有正式日結就別再引用即時值）
@@ -637,11 +647,15 @@ async function loadPosText() {
         lines.push(`\n【A Beach 訂位（inline 每小時自動同步；載入=上月起到未來全部；2021-02 開店起全史已入庫 pm_inline_ 月檔，更早明細要另外查）】`)
         const td = inlDays[today] || []
         lines.push(`  - 今天 ${today}：${td.length ? `${td.filter(ok1).length}組有效（${td.filter(ok1).reduce((t, r) => t + (r.n || 0), 0)}人）｜` + td.filter(ok1).map(fmt1).join('、') + (td.some(r => !ok1(r)) ? `｜另取消${td.filter(r => !ok1(r)).length}組` : '') : '無訂位'}`)
-        const futs = Object.keys(inlDays).filter(d => d > today).sort().slice(0, 14)
-        if (futs.length) lines.push(`  - 未來14天：` + futs.map(d => { const a = inlDays[d].filter(ok1); return `${d.slice(5)} ${a.length}組${a.reduce((t, r) => t + (r.n || 0), 0)}人` }).join('、'))
+        const futs = Object.keys(inlDays).filter(d => d > today).sort()
+        if (futs.length) lines.push(`  - 未來45天內（有訂位的日子全列；≥20人大組附名）：` + futs.map(d => { const a = inlDays[d].filter(ok1); if (!a.length) return null; const big = a.filter(r => (r.n || 0) >= 20).map(r => `${r.name}${r.n}人`).join('+'); return `${d.slice(5)} ${a.length}組${a.reduce((t, r) => t + (r.n || 0), 0)}人${big ? `(${big})` : ''}` }).filter(Boolean).join('、'))
         // 遠期訂位（45天後全部＝總覽 farFuture，每小時同步；婚顧/包場問「某天有沒有被訂」以此為準）
         const ff = (inlSum?.farFuture || []).filter(ok1)
         lines.push(`  - 遠期訂位（45天後～最遠，全部列出；婚顧包場問「哪天已被訂」以此為準，沒列到的日子=目前空）：${ff.length ? ff.map(r => `${r.d} ${r.t || ''} ${r.name}${r.n}人${r.inote ? `(${String(r.inote).slice(0, 20)})` : ''}`).join('、') : '無'}`)
+        // 當日備註（host 日曆⚠️註記＝包場/公休/訂位已關；婚顧檔期另一真相來源，跟訂位對照答；全史在 pm_inline_notes）
+        const dn = inlSum?.dayNotes || {}
+        const dnKeys = Object.keys(dn).sort()
+        if (dnKeys.length) lines.push(`  - 當日備註（今天起全部；⚠️=包場/全包等營運註記）：` + dnKeys.map(d => `${d} ${dn[d].map(n => String(n.note).replace(/\s+/g, ' ').slice(0, 40)).join(';')}`).join('、'))
         const pasts = Object.keys(inlDays).filter(d => d < today).sort().slice(-7)
         if (pasts.length) {
           const agg = { all: 0, s4: 0, cx: 0, rest: 0 }
@@ -1328,7 +1342,15 @@ async function handleUnsend(ev) {
 }
 // 🔎 DD 資料代查工具（張良 2026-09-27「一直出現一樣的問題,可以根除嗎」——根除法：不再靠預塞摘要,AI 需要什麼自己下指令查庫）
 async function queryPosDay(date, store) {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return '（日期格式要 YYYY-MM-DD）'
+  if (/^\d{4}-\d{2}$/.test(String(date || ''))) { // v4.31.2 整月代查（張良抓包：補整月卻一天一天查、2筆就斷）：回每日營收+月合計
+    const stM = /ab|beach/i.test(store || '') ? 'abeach' : 'ground'
+    const kvM = await kvGetMany(['sp_finance_pm_pos'])
+    const esM = (((kvM['sp_finance_pm_pos'] || {}).entries) || []).filter(e => e.date.slice(0, 7) === date && ((/groun/i.test(e.store || '') ? 'ground' : 'abeach') === stM)).sort((a, b) => (a.date < b.date ? -1 : 1))
+    if (!esM.length) return `（${date} ${stM === 'ground' ? 'GROUN:D' : 'A Beach'} 整月沒有入庫資料）`
+    const totM = esM.reduce((t, e) => t + (Number(e.revenue) || 0), 0)
+    return `◆ ${date} ${stM === 'ground' ? 'GROUN:D' : 'A Beach'} 整月（系統代查，共 ${esM.length} 天）\n` + esM.map(e => `  - ${e.date} NT$${Math.round(e.revenue || 0).toLocaleString()}${e.txCount ? `｜${e.txCount}單` : ''}`).join('\n') + `\n  ＝月合計 NT$${Math.round(totM).toLocaleString()}`
+  }
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return '（日期格式要 YYYY-MM-DD，或 YYYY-MM 查整月）'
   const st = /ab|beach/i.test(store || '') ? 'abeach' : 'ground'
   const kv2 = await kvGetMany(['sp_finance_pm_pos', 'sp_finance_pm_pos_d_' + date.slice(0, 7)])
   const ent = (((kv2['sp_finance_pm_pos'] || {}).entries) || []).find(e => e.date === date && ((/groun/i.test(e.store || '') ? 'ground' : 'abeach') === st))
@@ -1466,7 +1488,7 @@ const BOT_AGENT_GUIDE = `
 - {"type":"set_category_status","category":"消防工程","status":"完工"}  // 狀態：待開工/進行中/完工/有問題/暫停
 - {"type":"set_item","category":"消防工程","item":"灑水頭","status":"完工","unitPrice":1200,"qty":10,"assignee":"王師傅"}  // 改細項；欄位都可省略
 - {"type":"add_category","name":"空調工程","budget":300000,"space":"工程"}  // 建大項分類（四個空間都可以，space 預設工程；例：在團隊工作建「採購」就帶"space":"團隊"）。任務中心的分類欄位就是這個大項，建好後用 add_task/update_task 的 category 歸類
-- {"type":"query_pos_day","date":"2026-09-25","store":"ground"}  // 🔎資料代查（唯讀,不用確認,誰問都能用）：查某天某店「完整」銷售明細=逐品項份數金額+時段表+付款別。使用者問單日的品項/時段/細節而你手上摘要沒有那天資料時,輸出這個指令(可附一句「我查一下」),系統會代查回填後你再答——**不要**再回「資料沒帶到/請找張良接」。store=ground|abeach。
+- {"type":"query_pos_day","date":"2026-09-25","store":"ground"}  // 🔎資料代查（唯讀,不用確認,誰問都能用）：查某天某店「完整」銷售明細=逐品項份數金額+時段表+付款別。date 也可以只給月份 "2026-09"＝查整月（回每日營收+月合計,問某月總額/要補一段日期時用這個,**不要**一天一天查）。使用者問的資料你手上摘要沒有時,輸出這個指令(可附一句「我查一下」),系統會代查回填後你再答——**不要**回「資料沒帶到/請自己看App/請找張良接」。store=ground|abeach。
 - {"type":"add_item","category":"空調工程","name":"主機","qty":1,"unit":"式","unitPrice":150000,"taxType":"未稅"}
 - {"type":"delete_item","category":"空調工程","item":"主機"}
 - {"type":"add_payment","category":"消防工程","amount":63000,"date":"2026-06-22","note":"訂金"}  // 大項新增一筆付款
