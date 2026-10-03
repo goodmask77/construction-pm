@@ -998,6 +998,16 @@ export default async function handler(req, res) {
       }
       const r9 = ridByName9(String(tb.owner || '')); if (r9) { try { await wpPush([r9], { title: '🛠 新任務指派', body: `${title9}（${actor9} 指派）`, url: '/prep' }) } catch (_) {} }
     }
+    if (kind9 === 'manual' && mode9 !== 'none') { // v4.41.4 卡片內🔔隨時補通知（張良「一開始不通知後來要通知」）：措辭=提醒不是指派
+      const txtM = `🛠 任務提醒｜${title9}${tb.owner ? `\n負責人：${tb.owner}` : ''}${due9}\n— ${actor9} 提醒\n${prepLink('')}`
+      if (mode9 === 'group') { await push9('Cf7940efc6517b0c084ad2ad496b45f30', txtM); sent9++ }
+      else if (mode9 === 'dm') {
+        const uM = uidByName9(String(tb.owner || ''))
+        if (!uM) return res.status(200).json({ ok: false, error: `${tb.owner || '負責人'} 還沒綁定 GD，私訊不到——改發群組或請他先綁定` })
+        await push9(uM, txtM); sent9++
+      }
+      const rM = ridByName9(String(tb.owner || '')); if (rM) { try { await wpPush([rM], { title: '🛠 任務提醒', body: `${title9}（${actor9}）`, url: '/prep' }) } catch (_) {} }
+    }
     if (kind9 === 'review') { // 別人建立的任務按完成 → 固定私訊建立者審核（不吵群）
       const cu9 = uidByName9(String(tb.creator || ''))
       if (cu9) { await push9(cu9, `✅ ${actor9} 回報完成【${title9}】\n請到 GD 任務審核（通過＝封存）\n${prepLink('')}`); sent9++ }

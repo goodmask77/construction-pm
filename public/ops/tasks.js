@@ -25,7 +25,8 @@ const tnCBR = '#3B4654';   // 小卡邊框
 const tnFNT = '#8C98A8';   // 淡字
 const tnMONO = "'IBM Plex Mono',ui-monospace,Menlo,Consolas,monospace";
 // 存檔的淡色底（主 App 淺色值不變＝相容）→ /prep 顯示時轉同色系深色
-const tnDARKMAP = { '#fef2f2': '#2A181A', '#fff7ed': '#2A2012', '#fefce8': '#2A2612', '#f0fdf4': '#142414', '#eff6ff': '#13202E', '#faf5ff': '#211A2E', '#f5f5f5': '#1F242B', '#fde8e6': '#2A181A', '#fdf1dd': '#2A2012', '#faf6d8': '#2A2612', '#e9f2e4': '#142414', '#e6eef6': '#13202E', '#efe8f6': '#211A2E' };
+const tnDARKMAP = { '#fef2f2': '#3C1D21', '#fff7ed': '#3C2A12', '#fefce8': '#3B3312', '#f0fdf4': '#173619', '#eff6ff': '#153050', '#faf5ff': '#2E2148', '#f5f5f5': '#272E38', '#fde8e6': '#3C1D21', '#fdf1dd': '#3C2A12', '#faf6d8': '#3B3312', '#e9f2e4': '#173619', '#e6eef6': '#153050', '#efe8f6': '#2E2148' }; // v4.41.4 張良「根本看不出什麼顏色」：卡片底色全面加飽和一階
+const tnVIVID = { '#fef2f2': '#EF4444', '#fff7ed': '#F59E0B', '#fefce8': '#EAB308', '#f0fdf4': '#22C55E', '#eff6ff': '#3B82F6', '#faf5ff': '#A855F7', '#f5f5f5': '#9CA3AF' }; // 色盤圓點用鮮豔原色＝一眼分得出；存進資料的值不變(主App同組)
 const tnTcol = (c) => (c ? (tnDARKMAP[String(c).toLowerCase()] || c) : '');
 // 卡片/大項色盤（存進資料的值＝主 App 同一組淺色值，不能換）
 const tnPALETTE = [['', '無'], ['#fde8e6', '紅'], ['#fdf1dd', '杏'], ['#faf6d8', '黃'], ['#e9f2e4', '綠'], ['#e6eef6', '藍'], ['#efe8f6', '紫']];
@@ -76,6 +77,7 @@ const tnIP = {
   file: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/><path d="M14 2v6h6"/>',
   coffee: '<path d="M17 8h1a4 4 0 1 1 0 8h-1M3 8h14v9a4 4 0 0 1-4 4H7a4 4 0 0 1-4-4ZM6 2v2M10 2v2M14 2v2"/>',
   send: '<path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/>',
+  bell: '<path d="M6 8a6 6 0 1 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/>',
   belloff: '<path d="M8.7 3A6 6 0 0 1 18 8c0 2.1.3 3.7.8 4.9"/><path d="M6.3 6.3C6.1 6.8 6 7.4 6 8c0 7-3 9-3 9h13"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/><path d="m2 2 20 20"/>',
 };
 function tnI(name, size, color, fill, extra) {
@@ -1049,13 +1051,14 @@ function tnModal() {
   let h = '<div onclick="if(event.target===this)tnClose()" style="position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:700;display:flex;align-items:center;justify-content:center;padding:16px">'
     + '<div style="background:' + tnMOD + ';border:1px solid ' + tnC.line + ';border-radius:12px;padding:' + (tnMob() ? 16 : 24) + 'px;width:min(560px,96vw);max-height:90vh;overflow-y:auto">';
   // 頂列：釘選/刪除/關閉
-  h += '<div style="display:flex;align-items:center;gap:10px;margin-bottom:16px">'
+  h += '<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">'
     + '<div style="font-size:15px;font-weight:600;color:' + tnC.text + '">任務詳情</div><div style="flex:1"></div>'
+    + '<button onclick="tnNotifyAsk(\'' + t.id + '\')" title="隨時補通知：發群組或私訊負責人" style="display:inline-flex;align-items:center;gap:5px;background:none;border:1px solid ' + tnC.line + ';color:' + tnC.sub + ';border-radius:8px;padding:5px 12px;font-size:12.5px;cursor:pointer">' + tnI('bell', 12) + '通知</button>'
     + '<button onclick="tnPinToggle(\'' + t.id + '\')" style="display:inline-flex;align-items:center;gap:5px;background:' + (t.pinned ? tnC.accentSoft : 'none') + ';border:1px solid ' + (t.pinned ? tnC.accent : tnC.line) + ';color:' + (t.pinned ? tnC.accent : tnC.sub) + ';border-radius:8px;padding:5px 12px;font-size:12.5px;cursor:pointer">' + tnI('pin', 12, 'currentColor', t.pinned ? tnC.accent : 'none') + (t.pinned ? '已釘選' : '釘選') + '</button>'
     + '<button onclick="tnDel(\'' + t.id + '\')" style="background:none;border:1px solid ' + tnC.line + ';color:' + tnC.red + ';border-radius:8px;padding:5px 12px;font-size:12.5px;cursor:pointer">刪除</button>'
     + '<button onclick="tnClose()" style="background:none;border:none;cursor:pointer;color:' + tnC.sub + ';padding:4px;display:flex">' + tnI('x', 18) + '</button></div>';
   h += F('主題', '<input id="tnTitle" value="' + tnEsc(t.title) + '" oninput="tnUpdSilent(\'' + t.id + '\',{title:this.value})" style="' + tnInp + ';width:100%;font-size:14px;font-weight:600">');
-  h += F('內容 / 備註', '<textarea id="tnNote" rows="3" oninput="tnUpdSilent(\'' + t.id + '\',{note:this.value})" style="' + tnInp + ';width:100%;resize:vertical">' + tnEsc(t.note || '') + '</textarea>');
+  h += F('內容 / 備註', '<textarea id="tnNote" rows="2" oninput="tnUpdSilent(\'' + t.id + '\',{note:this.value})" style="' + tnInp + ';width:100%;resize:vertical">' + tnEsc(t.note || '') + '</textarea>');
   // 附件（不能包 label：label 會把點擊轉給隱藏選檔 input）
   h += '<div style="' + tnLbl + '">附件（截圖直接貼上，或按＋上傳檔案）<div style="margin-top:5px;display:flex;align-items:center;gap:6px;flex-wrap:wrap">'
     + '<input id="tnFile" type="file" accept="*/*" multiple style="display:none" onchange="tnAttachPick(\'' + t.id + '\',this)">'
@@ -1081,41 +1084,14 @@ function tnModal() {
       + '<option value=""' + (!t.owner ? ' selected' : '') + '>— 未指定 —</option>'
       + pool.map(n => '<option value="' + tnEsc(n) + '"' + (t.owner === n ? ' selected' : '') + '>' + tnEsc(n) + '</option>').join('')
       + '<option value="__custom">自訂…</option></select>');
-  h += F('等待中（等誰 / 等什麼）', '<input id="tnWait" value="' + tnEsc(t.waitingFor || '') + '" onchange="tnUpd(\'' + t.id + '\',{waitingFor:this.value})" placeholder="例：等對方回覆、等報價、等主管確認" style="' + tnInp + ';width:100%">');
-  h += F('預估時間（分鐘）', '<input type="number" min="1" step="1" value="' + (t.estimatedMinutes != null ? t.estimatedMinutes : '') + '" onchange="tnUpd(\'' + t.id + '\',{estimatedMinutes:this.value})" placeholder="未估算" style="' + tnInp + ';width:100%;font-variant-numeric:tabular-nums">');
-  h += F('卡片顏色（視覺分類）', '<div style="display:flex;gap:7px;align-items:center;flex-wrap:wrap;padding-top:3px">'
-    + tnPALETTE.map(p => '<button title="' + p[1] + '" onclick="tnUpd(\'' + t.id + '\',{color:\'' + p[0] + '\'})" style="width:24px;height:24px;border-radius:50%;background:' + (tnTcol(p[0]) || tnWHT) + ';cursor:pointer;padding:0;border:' + ((t.color || '') === p[0] ? '2.5px solid ' + tnC.red : '1.5px solid ' + tnC.line) + '"></button>').join('') + '</div>');
   h += '</div>'; // grid 結束
-  // 依賴任務
-  const deps = t.dependsOn || [];
-  const missing = tnMissingDeps(t, tnS.tasks);
-  let depH = '<div><div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:' + (deps.length ? 8 : 0) + 'px">'
-    + deps.map(did => {
-      const d = (tnS.tasks || []).find(x => x.id === did);
-      const isMissing = !d;
-      return '<span style="display:inline-flex;align-items:center;gap:5px;font-size:12px;color:' + (isMissing ? tnC.red : tnC.sub) + ';background:' + (isMissing ? '#2A181A' : tnC.soft) + ';border:1px solid ' + (isMissing ? '#5A3A3A' : tnC.line) + ';border-radius:999px;padding:3px 10px">'
-        + (isMissing ? (tnI('alert', 12) + '失效依賴') : ((d.status === 'done' ? tnI('check', 12, tnC.green) : '<span style="width:6px;height:6px;border-radius:50%;background:' + tnSColor(d.status) + '"></span>') + tnEsc(d.title)))
-        + '<button onclick="tnDepDel(\'' + t.id + '\',\'' + did + '\')" style="background:none;border:none;cursor:pointer;color:' + tnC.faint + ';padding:0;display:flex">' + tnI('x', 12) + '</button></span>';
-    }).join('') + '</div>'
-    + '<div style="display:flex;gap:8px;align-items:center">'
-    + '<select onchange="tnDepAdd(\'' + t.id + '\',this.value)" style="' + tnInp + ';flex:1">'
-    + '<option value="">＋ 新增依賴…</option>'
-    + (tnS.tasks || []).filter(x => x.id !== t.id && !deps.includes(x.id)).map(x => '<option value="' + x.id + '">' + tnEsc(x.title) + '</option>').join('')
-    + '</select>'
-    + (missing.length ? '<button onclick="tnDepClean(\'' + t.id + '\')" style="background:none;border:1px solid ' + tnC.line + ';color:' + tnC.sub + ';border-radius:8px;padding:6px 12px;font-size:12px;cursor:pointer;white-space:nowrap">清除失效依賴</button>' : '')
-    + '</div></div>';
-  h += F('依賴任務（前置做完才能動工）', depH);
-  // 標籤
-  h += F('標籤', '<div><div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:' + ((t.tags || []).length ? 8 : 0) + 'px">'
-    + (t.tags || []).map(tg => '<span style="display:inline-flex;align-items:center;gap:5px;font-size:12px;color:' + tnC.sub + ';background:' + tnC.soft + ';border:1px solid ' + tnC.line + ';border-radius:999px;padding:3px 10px">' + tnEsc(tg)
-      + '<button onclick="tnTagDel(\'' + t.id + '\',\'' + encodeURIComponent(tg) + '\')" style="background:none;border:none;cursor:pointer;color:' + tnC.faint + ';padding:0;display:flex">' + tnI('x', 12) + '</button></span>').join('')
-    + '</div><input id="tnTagIn" value="' + tnEsc(tnS.tagIn) + '" oninput="tnS.tagIn=this.value" onkeydown="if(event.key===\'Enter\'&&!event.isComposing&&event.keyCode!==229)tnTagAdd(\'' + t.id + '\')" placeholder="輸入標籤後按 Enter 新增" style="' + tnInp + ';width:100%"></div>');
-  // 顏色（各視角同步顯示；另一組 Keep 色盤＝主 App 同款兩組都留）
-  h += F('顏色（各視角同步顯示）', '<div style="display:flex;gap:8px;flex-wrap:wrap">'
+  // v4.41.4 瘦身（張良「內容多太大張、完成看不到還要滑」）：等待中/預估時間/依賴任務/標籤四欄位從彈窗拿掉（資料欄位保留，主App照舊）；
+  // 色盤兩組重複(寫同一個 color 欄)→只留一組「卡片顏色」，圓點用鮮豔原色一眼分得出
+  h += F('卡片顏色', '<div style="display:flex;gap:8px;flex-wrap:wrap;padding-top:3px">'
     + tnTASK_COLORS.map(c => {
       const on = (t.color || '') === c;
-      return '<button onclick="tnUpd(\'' + t.id + '\',{color:\'' + c + '\'})" title="' + (c ? '' : '無顏色') + '" style="width:26px;height:26px;border-radius:50%;cursor:pointer;background:' + (tnTcol(c) || tnWHT) + ';border:2px solid ' + (on ? tnC.accent : tnC.line) + ';display:flex;align-items:center;justify-content:center;padding:0">'
-        + (!c ? tnI('x', 11, tnC.faint) : (on ? tnI('check', 12, tnC.accent) : '')) + '</button>';
+      return '<button onclick="tnUpd(\'' + t.id + '\',{color:\'' + c + '\'})" title="' + (c ? '' : '無顏色') + '" style="width:26px;height:26px;border-radius:50%;cursor:pointer;background:' + (c ? (tnVIVID[c] || c) : tnWHT) + ';border:2.5px solid ' + (on ? '#fff' : 'transparent') + ';outline:1.5px solid ' + tnC.line + ';display:flex;align-items:center;justify-content:center;padding:0">'
+        + (!c ? tnI('x', 11, tnC.faint) : (on ? tnI('check', 13, '#fff') : '')) + '</button>';
     }).join('') + '</div>');
   h += '<div style="display:flex;align-items:center;gap:10px;margin-top:8px">'
     + '<div style="font-size:11px;color:' + tnC.faint + ';font-variant-numeric:tabular-nums">建立於 ' + tnDnorm(t.createdAt) + '</div><div style="flex:1"></div>'
@@ -1131,18 +1107,23 @@ function tnAssignMenu() {
   const btn = (icon, label, mode, accent) => '<button onclick="tnAssignGo(\'' + mode + '\')" style="display:flex;align-items:center;gap:9px;width:100%;text-align:left;border:1px solid ' + (accent ? tnC.accent : tnC.line) + ';background:' + (accent ? tnC.accentSoft : tnWHT) + ';color:' + (accent ? tnC.accent : tnC.sub) + ';border-radius:8px;padding:10px 12px;font-size:13px;font-weight:600;cursor:pointer">' + tnI(icon, 15) + label + '</button>';
   return '<div style="position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:800;display:flex;align-items:center;justify-content:center;padding:16px">'
     + '<div style="background:' + tnMOD + ';border:1px solid ' + tnC.line + ';border-radius:12px;padding:18px;width:min(320px,94vw);display:flex;flex-direction:column;gap:8px">'
-    + '<div style="font-size:14px;font-weight:700;color:' + tnC.text + '">已指派給 ' + tnEsc(a.owner) + '</div>'
-    + '<div style="font-size:12px;color:' + tnC.faint + ';margin-bottom:4px">要不要通知他？</div>'
+    + '<div style="font-size:14px;font-weight:700;color:' + tnC.text + '">' + (a.manual ? '通知誰？' : '已指派給 ' + tnEsc(a.owner)) + '</div>'
+    + '<div style="font-size:12px;color:' + tnC.faint + ';margin-bottom:4px">' + (a.manual ? '把這張任務卡提醒發出去' : '要不要通知他？') + '</div>'
     + btn('users', '發到 GROUN:D Family 群', 'group', true)
-    + btn('send', '私訊負責人', 'dm', false)
-    + btn('belloff', '不通知', 'none', false)
+    + (a.owner ? btn('send', '私訊負責人（' + tnEsc(a.owner) + '）', 'dm', false) : '')
+    + btn('belloff', a.manual ? '取消' : '不通知', 'none', false)
     + '</div></div>';
+}
+function tnNotifyAsk(id) { // v4.41.4 卡片內隨時補通知（不限指派當下）
+  const t = (tnS.tasks || []).find(x => x.id === id); if (!t) return;
+  tnS.assignAsk = { id: id, owner: t.owner || '', manual: 1 };
+  tnRender();
 }
 function tnAssignGo(mode) {
   const a = tnS.assignAsk; tnS.assignAsk = null;
   if (a && mode !== 'none') {
     const t = (tnS.tasks || []).find(x => x.id === a.id);
-    tnNotify({ kind: 'assign', mode: mode, title: (t && t.title) || '', due: (t && t.due) || '', owner: a.owner, creator: (t && t.createdBy) || tnS.me || '', doer: tnS.me || '' });
+    tnNotify({ kind: a.manual ? 'manual' : 'assign', mode: mode, title: (t && t.title) || '', due: (t && t.due) || '', owner: a.owner, creator: (t && t.createdBy) || tnS.me || '', doer: tnS.me || '' });
   }
   tnRender();
 }
