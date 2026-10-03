@@ -247,6 +247,7 @@ const TAB_DEF = { sop:'SOP', task:'任務', lb:'排行榜', food:'盤點', pack:
 // ── 單色線條 icon（張良 2026-09-24：不要彩色 emoji——同 Beach Ops 的 stroke 線條圖）──
 const _I = (d) => `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex:0 0 auto;vertical-align:-3px">${d}</svg>`
 const TAB_ICONS = {
+  inc: _I('<path d="M12 3 2.5 20h19Z"/><path d="M12 9.5V14M12 17h.01"/>'), // v4.41.5 異常通知原本缺icon=側欄那行沒圖示歪掉
   sop: _I('<path d="M9 11.5 11.2 14 15.5 9"/><rect x="4" y="4" width="16" height="16" rx="3"/>'),
   home: _I('<path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V21h14V9.5"/>'),
   meet: _I('<rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 2v4M15 2v4M8.5 11h7M8.5 15h5"/>'),

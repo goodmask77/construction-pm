@@ -93,9 +93,9 @@
   @media(min-width:920px){
     body{padding-left:216px}
     .wrap{max-width:1200px}
-    .tabs{position:fixed;left:0;top:0;bottom:0;width:248px;margin:0;padding:20px 14px 14px;background:#11151B;border-right:1px solid var(--line);display:flex;flex-direction:column;align-items:stretch;gap:6px;overflow-y:auto;z-index:20;flex-wrap:nowrap} /* 2026-10-02 張良：比例跟 Beach Ops 一樣大 */
-    .tbrand{display:block;font-weight:900;font-size:24px;color:#fff;padding:4px 10px 22px;letter-spacing:.04em} .tbrand b{color:#F92A1B;font-weight:900} /* v4.38.2 GROUN 白、:D 品牌紅、≋ 取消（偽元素改真元素才能雙色） */
-    .tabs button{text-align:left;border:none;background:transparent;border-radius:12px;padding:13px 14px;font-size:17px;font-weight:700;display:flex;align-items:center;gap:10px}
+    .tabs{position:fixed;left:0;top:0;bottom:0;width:248px;margin:0;padding:13px 12px 10px;background:#11151B;border-right:1px solid var(--line);display:flex;flex-direction:column;align-items:stretch;gap:1px;overflow-y:auto;z-index:20;flex-wrap:nowrap} /* v4.41.5 張良「不要卷軸、最下面名字要看得到」：間距全面縮 */
+    .tbrand{display:block;font-weight:900;font-size:22px;color:#fff;padding:2px 10px 10px;letter-spacing:.04em} .tbrand b{color:#F92A1B;font-weight:900} /* v4.38.2 GROUN 白、:D 品牌紅、≋ 取消（偽元素改真元素才能雙色） */
+    .tabs button{text-align:left;border:none;background:transparent;border-radius:10px;padding:8px 12px;font-size:15px;font-weight:700;display:flex;align-items:center;gap:9px}
     .tabs button:hover{background:#232B36}
     .tabs button.on{background:var(--grad);color:#fff;box-shadow:0 4px 12px rgba(18,102,200,.32)}
   }
@@ -137,7 +137,7 @@
     <button id="tab-hrm" onclick="hrmLoad()" title="員工清冊（主管限定）">🪪 人員名冊</button>
     <button id="tab-gear" onclick="settingsLoad()" title="設定">⚙️ 設定</button>
     <button id="tab-errs" onclick="errsView()" title="問題回報・功能許願">🐞 問題回報</button>
-    <div id="meChip" style="margin-top:auto;border-top:1px solid var(--line);padding:12px 6px 2px;display:flex;gap:10px;align-items:center"></div>
+    <div id="meChip" style="margin-top:auto;border-top:1px solid var(--line);padding:9px 6px 0;display:flex;gap:10px;align-items:center"></div> <!-- v4.41.5 側欄壓扁 -->
   </div>
   <div id="app"></div>
   <div id="taskWrap" style="display:none"></div> <!-- v4.33.7 任務iframe常駐（張良：點任務頁會閃跳）＝只載一次，切換用顯示/隱藏 -->
