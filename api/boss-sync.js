@@ -70,7 +70,7 @@ export default async function handler(req, res) {
     const pk = (process.env.PARTNER_API_KEY || '').trim()
     if (!pk || String(req.query.fillpos) !== pk) return res.status(403).json({ ok: false })
     const recs = []
-    for (const m of ['2026-04', '2026-05', '2026-06']) {
+    for (const m of ['2026-01', '2026-02', '2026-03', '2026-04', '2026-05', '2026-06']) {
       const ym = m.replace('-', '')
       const [revD, settD] = await Promise.all([kvGet(`sp_finance_pm_boss_revd_${ym}`), kvGet(`sp_finance_pm_boss_sett_${ym}`)])
       const settRows = (settD || {}).rows || {}
