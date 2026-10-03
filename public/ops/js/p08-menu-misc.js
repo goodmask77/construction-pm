@@ -305,6 +305,21 @@ function mnImgPick(i){
   }
   inp.click()
 }
+// v4.40.1 權限表點名字選單（張良「眼睛跟移除都不要出現圖，點名字進去再出現選擇」）：模擬檢視／移除權限收進來
+function permNameMenu(ev, rid, name, isAdmin){
+  ev.stopPropagation()
+  const old = document.getElementById('pmMn'); if (old) { old.remove(); return }
+  const m = document.createElement('div'); m.id = 'pmMn'
+  m.style.cssText = 'position:fixed;z-index:80;background:#222B38;border:1px solid #3B4654;border-radius:12px;box-shadow:0 14px 40px rgba(0,0,0,.55);padding:8px;min-width:200px'
+  m.innerHTML = `<div style="font-weight:900;padding:4px 8px 8px">${name}</div>
+    <button class="mini" style="display:block;width:100%;text-align:left;margin:0 0 6px;padding:9px 12px" onclick="document.getElementById('pmMn').remove();simStart('${rid}','${name}')">${EYE_I} 用他的身分看 App</button>
+    ${isAdmin?'':`<button class="mini" style="display:block;width:100%;text-align:left;margin:0;padding:9px 12px;color:var(--red)" onclick="document.getElementById('pmMn').remove();if(confirm('確定把 ${name} 移除編輯權限？\\n他的勾選設定會保留，下面「已移除」區可一鍵復原。'))permSet('revoke','${rid}')">移除編輯權限</button>`}`
+  document.body.appendChild(m)
+  const r9 = ev.target.getBoundingClientRect()
+  m.style.left = Math.max(8, Math.min(r9.left, innerWidth - m.offsetWidth - 10)) + 'px'
+  m.style.top = Math.min(r9.bottom + 6, innerHeight - m.offsetHeight - 10) + 'px'
+}
+document.addEventListener('mousedown', e9 => { const m9 = document.getElementById('pmMn'); if (m9 && !m9.contains(e9.target)) m9.remove() })
 function permPanelHtml(perm){
   return `<div style="background:#19222E;border:1.5px solid #35557A;border-radius:12px;padding:10px 12px;font-size:14px">
     <div style="font-weight:900">🔐 編輯權限管理 <span class="hint">模式：${perm.mode==='open'?'全開（人人可編）':'審核制（申請→老闆核准）'}</span>
@@ -336,7 +351,8 @@ function permPanelHtml(perm){
       <tr>${TABS.map(([k,lb,so])=>`<th style="${SEP}padding:2px 5px 6px;text-align:center;font-size:11px;font-weight:600">看<br>${cb(allSee(k),`permSet('taball',null,null,'${k}',this.checked,'see')`,'全員看得見 '+lb,anySee(k))}</th>`+(so?``:`<th style="padding:2px 5px 6px;text-align:center;font-size:11px;font-weight:600">編<br>${cb(allEdit(k),`permSet('taball',null,null,'${k}',this.checked,'edit')`,'全員能編輯 '+lb,anyEdit(k))}</th>`)).join('')}</tr>
       </thead><tbody>`
       users.forEach(u=>{
-        t+=`<tr><td style="text-align:left;font-weight:800;position:sticky;left:0;background:var(--card);z-index:1;padding:5px 10px;white-space:nowrap">${u.admin?'👑 ':''}${u.name} <button class="mini" style="padding:1px 8px;margin-left:4px" title="用 ${u.name} 的身分看整個 App" onclick="simStart('${u.rid}','${String(u.name||'').replace(/['"<>]/g,'')}')">${EYE_I}</button>${u.admin?'':` <button class="mini" style="padding:1px 8px;margin-left:4px" onclick="if(confirm('確定把 ${u.name} 移除編輯權限？\\n他的勾選設定會保留，下面「已移除」區可一鍵復原。'))permSet('revoke','${u.rid}')">移除</button>`}</td>`
+        // v4.40.1（張良「眼睛跟移除都不要出現圖，點名字進去再出現選擇」）：列上只留名字，點名字開小選單
+        t+=`<tr><td style="text-align:left;font-weight:800;position:sticky;left:0;background:var(--card);z-index:1;padding:5px 10px;white-space:nowrap">${u.admin?'👑 ':''}<span style="cursor:pointer;text-decoration:underline dotted rgba(255,255,255,.28);text-underline-offset:3px" title="點名字＝選擇動作" onclick="permNameMenu(event,'${u.rid}','${String(u.name||'').replace(/['"<>]/g,'')}',${u.admin?1:0})">${u.name}</span></td>`
         if(u.admin){ t+=`<td colspan="${COLS}" class="hint" style="text-align:left;padding:5px 10px">管理者＝全部看得見、全部能編輯</td>` }
         else {
           const rowSee=TABS.every(([k])=>!(u.hide&&u.hide[k])), rowEdit=TABS.filter(x=>!x[2]).every(([k])=>!u.tabs||u.tabs[k]!==0)
