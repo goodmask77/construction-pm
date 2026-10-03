@@ -1210,10 +1210,28 @@ export default async function handler(req, res) {
     // AB 停售動態（張良 2026-09-30：不只通知——看板要能隨時查現在+歷史）
     let soldout = null
     if (isAB2) { const soD = await kvGet('sp_finance_pm_absoldout'); if (soD) soldout = { current: soD.current || {}, log: (soD.log || []).slice(0, 150) } }
+    // 📜 歷史月營收（張良 2026-10-04「補在哪？現在主要都用prep」）：有日結的月份=entries 加總（跟 KPI/每日數據同口徑）、
+    // 更早（iCHEF 時代 2021-02 起）=阿桑 /revenue/monthly 月彙總（sp_finance_pm_boss_revm；只有 AB 有）
+    let hist = []
+    try {
+      const byMoH = {}
+      for (const e of entries) {
+        const mo9 = e.date.slice(0, 7)
+        const o = byMoH[mo9] = byMoH[mo9] || { month: mo9, revenue: 0, bills: 0, customers: 0, days: 0 }
+        o.revenue += Number(e.revenue) || 0; o.bills += Number(e.txCount) || 0; o.customers += Number(e.guests) || 0; o.days++
+      }
+      if (storeQ === 'abeach') {
+        const revmD = (await kvGet('sp_finance_pm_boss_revm')) || {}
+        for (const m9 of Object.values(revmD.rows || {})) {
+          if (m9?.month && !byMoH[m9.month]) byMoH[m9.month] = { month: m9.month, revenue: Number(m9.revenue) || 0, bills: m9.bills ?? null, customers: m9.customers ?? null, days: (m9.sources || [])[0]?.open_days ?? m9.days_with_data ?? null }
+        }
+      }
+      hist = Object.values(byMoH).sort((a, b) => (a.month < b.month ? 1 : -1))
+    } catch (_) {}
     // Vercel 邊緣快取 5 分鐘（張良 2026-09-21 嫌慢）：同網址請求直接吃 CDN 不進函式重算；資料本來 15 分一更，5 分快取無感
     res.setHeader('Cache-Control', 's-maxage=300, stale-while-revalidate=1800')
     return res.status(200).json({
-      ok: true, store: storeQ, updatedAt: new Date().toISOString(), anchor,
+      ok: true, store: storeQ, updatedAt: new Date().toISOString(), anchor, hist,
       kpi: { rev30, days30: w30.length, avgRev: w30.length ? Math.round(rev30 / w30.length) : 0, tx30: w30.reduce((t, e) => t + (Number(e.txCount) || 0), 0) },
       n30, prep, prepAct: Object.fromEntries(Object.entries((actDoc.days || {})[todayAct] || {}).filter(([, v]) => v.q != null).map(([k, v]) => [k, v.q])), prepS86: Object.fromEntries(Object.entries((actDoc.days || {})[todayAct] || {}).filter(([, v]) => v.s86 && v.s86.on).map(([k]) => [k, 1])), prepActDate: todayAct, share14, rhythm, soldout, days: days2.reverse(), setPcts: setDays.reverse(), dates: datesAll, cats: cats2, hidden: Object.values(itemsH2).map(o => ({ n: o.n, k: o.k, cat: o.cat, cum30: o.q30 })), slots: (slots2.wk.length || slots2.we.length) ? slots2 : null,
     })

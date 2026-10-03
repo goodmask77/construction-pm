@@ -310,6 +310,22 @@ function renderBoard(d, store){
     h += `<tr><td style="position:sticky;left:0;z-index:1;background:${zb};text-align:left;font-weight:${wknd?800:500};color:${wknd?'#A85C26':'inherit'}">${x.date.slice(5)}（${x.wd}）</td>${isGD?hc(lu,avLu):''}${hc(x.rev,avR,'font-weight:700')}<td style="${heat(x.tx,avTx)}">${x.tx||'—'}</td>${hc(x.avg,avAvg)}${hc(x.cash,avCash)}${hc(x.card,avCard)}<td style="${heat(x.linepay||null,avLp)}">${x.linepay?fN(x.linepay):'—'}</td><td style="${heat(x.uber||null,avUb)}">${x.uber?fN(x.uber):'—'}</td><td style="${heat(x.discount||null,avDis)}">${x.discount?fN(x.discount):'—'}</td>${isGD?`<td style="${heat(x.kioskPct,avKp)}">${x.kioskPct!=null?x.kioskPct+'%':'—'}</td><td style="${heat(x.takePct,avTk)}">${x.takePct!=null?x.takePct+'%':'—'}</td><td style="${heat(d.setPcts[i],avSet)}">${d.setPcts[i]!=null?d.setPcts[i]+'%':'—'}</td>`:''}</tr>`
   })
   h += `</tbody></table></div></section>`
+  // 📜 歷史月營收（張良 2026-10-04「補在哪？現在主要都用prep」）：AB=2021-02 開店起全史（iCHEF 時代只有月彙總）；
+  // 有日結的月份=日結加總（跟上表/KPI 同口徑），更早=阿桑系統 /revenue/monthly
+  if ((d.hist||[]).length){
+    const byY = {}
+    d.hist.forEach(m=>{ (byY[m.month.slice(0,4)]=byY[m.month.slice(0,4)]||[]).push(m) })
+    h += `<section><h2>歷史月營收 <span class="hint">共 ${d.hist.length} 個月；有日結的月份＝上表加總、更早＝iCHEF 月彙總</span></h2>`
+    h += `<div class="scroll" style="max-height:62vh;overflow-y:auto"><table><thead><tr><th style="position:sticky;left:0;z-index:3;text-align:left">月份</th><th>營收</th><th>單數</th><th>來客</th><th>單均</th><th>營業天</th></tr></thead><tbody>`
+    Object.keys(byY).sort().reverse().forEach(y=>{
+      const ms = byY[y]
+      const yr = ms.reduce((t,m)=>t+(Number(m.revenue)||0),0)
+      const yb = ms.reduce((t,m)=>t+(Number(m.bills)||0),0)
+      h += `<tr style="background:var(--soft)"><td style="position:sticky;left:0;z-index:1;background:var(--soft);text-align:left;font-weight:900">${y} 年</td><td style="font-weight:900">${fN(yr)}</td><td style="font-weight:900">${yb?yb.toLocaleString():'—'}</td><td colspan="3" class="hint">${ms.length} 個月・月均 ${fN(Math.round(yr/ms.length))}</td></tr>`
+      ms.forEach(m=>{ h += `<tr><td style="position:sticky;left:0;z-index:1;background:var(--card);text-align:left">${m.month}</td><td>${fN(m.revenue)}</td><td>${m.bills!=null?Number(m.bills).toLocaleString():'—'}</td><td>${m.customers!=null?Number(m.customers).toLocaleString():'—'}</td><td>${m.bills?fN(Math.round(m.revenue/m.bills)):'—'}</td><td>${m.days??'—'}</td></tr>` })
+    })
+    h += `</tbody></table></div></section>`
+  }
   // 品項明細（張良 2026-09-22 v2：互動區塊——全部/分類/依品類分組＋欄位排序＋售價＋%欄＋🙈隱藏管理；itemsRender 畫）
   window._bd = d
   h += `<div id="itemsec"></div>`
