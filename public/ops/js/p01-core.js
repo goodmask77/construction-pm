@@ -160,7 +160,7 @@ function renderBoard(d, store){
     const dayAvg = dKn.length ? Math.round(dKn.reduce((t,m)=>t+(Number(m.revenue)||0),0)/dKn.reduce((t,m)=>t+Number(m.days),0)) : 0
     const kv9 = n => n >= 1e6 ? Math.round(n/1e4).toLocaleString()+'<span style="font-size:.62em;font-weight:700"> 萬</span>' : Math.round(n||0).toLocaleString()
     h += `<div class="kpis">
-      <div class="kpi"><div class="l">總營收<span class="hint">（${hA.length}個月）</span></div><div class="v">${kv9(revAll)}</div></div>
+      <div class="kpi"><div class="l">總營收</div><div class="v">${kv9(revAll)}</div></div>
       <div class="kpi"><div class="l">日均營收</div><div class="v">${kv9(dayAvg)}</div></div>
       <div class="kpi"><div class="l">總單數</div><div class="v">${kv9(txAll)}</div></div>
     </div>`
@@ -191,7 +191,7 @@ function renderBoard(d, store){
   const fN = v => v!=null ? Math.round(v).toLocaleString() : '—' // 去 NT$：數字乾淨版面
   const fP = v => v!=null?Math.round(v)+'%':'—'
   // 色階：跟該欄平均比，高=綠、低=紅，差越多越深（±3%內不上色）
-  const heat = (v, avg) => { if (v==null||!avg) return ''; let dv2=(v-avg)/avg; if (Math.abs(dv2)<0.03) return ''; dv2=Math.max(-0.5,Math.min(0.5,dv2)); const a=Math.min(0.26,Math.abs(dv2)*0.5); return `background:rgba(${dv2>0?'220,38,38':'22,163,74'},${a.toFixed(2)})` } // 紅=高於平均(台灣看盤習慣)、綠=低於（張良 2026-09-22 指定反轉）
+  const heat = (v, avg) => { if (v==null||!avg) return ''; let dv2=(v-avg)/avg; if (Math.abs(dv2)<0.03) return ''; dv2=Math.max(-0.5,Math.min(0.5,dv2)); const a=Math.min(0.50,0.10+Math.abs(dv2)*0.8); return `background:rgba(${dv2>0?'229,57,53':'27,176,83'},${a.toFixed(2)})` } // v4.41.2 張良「紅綠明顯一點」：0.10起跳最深0.5+顏色換鮮一階；紅=高於平均(台灣看盤習慣)、綠=低於（2026-09-22 指定反轉）
   const hc = (v, avg, extra) => `<td style="${heat(v,avg)}${extra?';'+extra:''}">${fN(v)}</td>`
   const perChip = (k,l) => `<button class="mini${per===k?' on':''}" style="padding:4px 11px" onclick="dayPer('${k}')">${l}</button>`
   // v4.37.5（張良「近幾天/全部拿掉；第一層=本月/上月/今年/歷史資料；歷史資料點開其他年份新→舊；月鈕手機一排6個」）
@@ -213,7 +213,7 @@ function renderBoard(d, store){
                  : `<button class="mini" style="padding:6px 0;text-align:center;opacity:.3;cursor:default">${i2+1}月</button>`
     }).join('') + `</div>`
   }
-  h += `<section><h2>每日數據 <span class="hint">平均＝只算有營業的日子；紅＝高於平均、綠＝低於；選年＝看逐月、再選月＝看逐日</span>${isGD?(()=>{let t9='';try{t9=new Date(d.updatedAt).toLocaleTimeString('en-GB',{hour12:false,timeZone:'Asia/Taipei',hour:'2-digit',minute:'2-digit'})}catch(e){}return `<button class="mini" id="pfBtn" style="float:right" title="資料時間——按一下現抓最新" onclick="posFresh()">🔄 ${t9}</button>`})():``}</h2><div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:8px">${perChip('tm','本月')}${perChip('lm','上月')}${yrChips}</div>${moChips}<div class="scroll" style="max-height:62vh;overflow-y:auto"><table><thead><tr><th style="position:sticky;left:0;z-index:3;text-align:left">日期</th><th>總營收</th>${isGD?'<th>至14:00</th>':''}<th>單數</th><th>單均</th><th>現金</th><th>信用卡</th><th>LINE Pay</th><th>Uber</th><th>折扣</th>${isGD?'<th>自助%</th><th>外帶%</th><th>套餐/主餐%</th>':''}</tr></thead><tbody>`
+  h += `<section><h2>每日數據 ${isGD?(()=>{let t9='';try{t9=new Date(d.updatedAt).toLocaleTimeString('en-GB',{hour12:false,timeZone:'Asia/Taipei',hour:'2-digit',minute:'2-digit'})}catch(e){}return `<button class="mini" id="pfBtn" style="float:right" title="資料時間——按一下現抓最新" onclick="posFresh()">🔄 ${t9}</button>`})():``}</h2><div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:8px">${perChip('tm','本月')}${perChip('lm','上月')}${yrChips}</div>${moChips}<div class="scroll" style="max-height:62vh;overflow-y:auto"><table><thead><tr><th style="position:sticky;left:0;z-index:3;text-align:left">日期</th><th>總營收</th>${isGD?'<th>至14:00</th>':''}<th>單數</th><th>單均</th><th>現金</th><th>信用卡</th><th>LINE Pay</th><th>Uber</th><th>折扣</th>${isGD?'<th>自助%</th><th>外帶%</th><th>套餐/主餐%</th>':''}</tr></thead><tbody>`
   const avBg = 'background:var(--psoft);font-weight:800;color:var(--pdark)'
   // 總計列（張良：平均上面放總數+總天數）
   const sm = f => { const a = dv.map(f).filter(v=>v!=null&&isFinite(v)); return a.length ? a.reduce((s2,v)=>s2+v,0) : null }
