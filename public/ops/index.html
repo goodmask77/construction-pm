@@ -162,10 +162,11 @@ async function posFresh(){ // 跟主App同款：手動叫喬亞抓一次盤中�
 }
 function hardRefresh(){ try{ Object.keys(localStorage).filter(k=>k.startsWith('obt_')||k.startsWith('obc_')).forEach(k=>localStorage.removeItem(k)) }catch(_){} location.replace(location.pathname + '?r=' + Date.now()) } // v4.31.8 連本地快取一起清＝真的拿最新
 // 依目前分頁重畫（綁定後/操作後用）
-function taskEmbed(){ // 任務原地切換（張良 2026-10-02：不要像開新分頁）——iframe 內嵌，側欄照舊
+function taskEmbed(){ // v4.38.0 任務中心原生版（張良「直接原生重建吧 不要借主app」）：/ops/tasks.js tnPage()，資料同主App sp_team_ 雙向同步
+  if (typeof tnPage === 'function') { tnPage(); return }
+  // 保險：tasks.js 沒載到（網路怪）→ 退回舊 iframe 版，不會開天窗
   curStore = 'taskx'; setTabs('task')
   document.getElementById('upd').textContent = '任務中心・與主 App 同步'
-  // v4.33.7 閃跳治本（張良：每點一次都整頁重載 iframe＝閃白）：iframe 只建一次常駐 #taskWrap，之後切換純顯示/隱藏＝秒切不閃
   const tw = document.getElementById('taskWrap')
   if (!tw.firstChild) tw.innerHTML = `<iframe src="/ops-tasks.html?v=${Date.now()}" style="width:100%;height:calc(100vh - 150px);min-height:560px;border:none;border-radius:14px;background:var(--bg)"></iframe>`
   app.innerHTML = ''
@@ -2200,10 +2201,17 @@ function shiftRender(){
       const OTH_C = {ink:'#9AA4B2',bg:'var(--soft)',chipB:'var(--line)',chipBg:'var(--card)'}
       // v4.36.3（張良「PT也分出來 內歸內外歸外」）：內場→內場PT→外場→外場PT→其他；PT 列名字前掛 PT 小籤（同 NUEiP 呈現）
       const grpOf = n => (DEPT_C[deptOf[n]] ? deptOf[n] : '其他') + (ptOf[n] ? 'PT' : '')
-      // v4.32.3（張良「高婕瀅沒離職卻被藏」）：在職權威=NUEiP現役名單(abOn)。在職→永遠顯示(含該月還沒排班)；不在名單(=離職)→只在該月有班的月份顯示；名單還沒同步過→全顯示不誤殺
+      // v4.32.4（張良「陳立航9/16後就沒班=也是離職 怎麼判他在職」）：NUEiP成員名單會殘留離職者→再加「活躍度」雙條件。
+      // 顯示規則：①該月有任何列(含休) ②或 NUEiP現役＋「該月1號往前14天內還有列」(=還在被排班/標休,只是這月還沒排)；兩者都不符=視同離職藏列
       const abOnL9 = (window._shiftD && window._shiftD.abOn) || []
       const abOn9 = new Set(abOnL9)
-      const names9 = Object.keys(abByN).filter(n9 => (abOnL9.length ? abOn9.has(n9) : true) || Object.keys(abByN[n9]).some(dt9 => dt9.startsWith(shiftYm)))
+      const cut9 = (()=>{ const t9 = new Date(shiftYm + '-01T00:00:00Z'); t9.setUTCDate(t9.getUTCDate() - 14); return t9.toISOString().slice(0,10) })()
+      const names9 = Object.keys(abByN).filter(n9 => {
+        const ds9 = Object.keys(abByN[n9])
+        if (ds9.some(dt9 => dt9.startsWith(shiftYm))) return true
+        if (!abOnL9.length) return true // 在職名單還沒同步過→全顯示不誤殺
+        return abOn9.has(n9) && ds9.some(dt9 => dt9 >= cut9)
+      })
       const order9 = ['內場','內場PT','外場','外場PT','其他','其他PT']
       hh += `<tr><td colspan="${wd2.length+1}" style="${BD}border-top:4px solid var(--line);padding:6px 8px;text-align:left;font-weight:900;font-size:13px;background:var(--soft);position:sticky;left:0">🅰 A Beach 班表 <span class="hint" style="font-weight:600;font-size:10.5px">阿桑系統自動同步・唯讀・調度參考</span></td></tr>`
       order9.forEach(gp=>{
@@ -4438,5 +4446,6 @@ function lbFinder(nm){
     b.appendChild(sp) }) } catch(_) {}
 })()
 </script>
+<script src="/ops/tasks.js"></script> <!-- v4.38.0 任務中心原生版（拆檔第一步：新功能獨立檔） -->
 </body>
 </html>
