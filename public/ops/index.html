@@ -522,19 +522,21 @@ async function pushOn(){ // 🔔 按鈕（一定要使用者手點，iOS 規定�
   try { meChipInit() } catch(e){}
 }
 maniSync()
-// ── 👁 模擬檢視（v4.32.0 張良「切換不同使用者，確認每人畫面/設定/權限都正確」）──
+// ── 模擬檢視（v4.32.0 張良「切換不同使用者，確認每人畫面/設定/權限都正確」）──
 // 原理＝攔截全站 fetch：讀取自動帶 &as=對方rid → 伺服器直接用「那個人」的身分回資料（分頁藏不藏、按鈕有沒有、設定看不看得到＝跟本人開起來一模一樣，不是前端假裝）；寫入（POST）全部擋下＝只能看不能改
 const SIM = (()=>{ try { return JSON.parse(sessionStorage.getItem('gdSim')||'null') } catch(e){ return null } })()
+// v4.32.2 張良「不要這個圖 以後都不要有顏色的emoji」：眼睛改單色線條 SVG（同側欄 stroke 風），UI 一律不用彩色 emoji
+const EYE_I = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>'
 if (SIM) {
   const _fetch0 = window.fetch.bind(window)
   window.fetch = (u, o) => {
     const s = String(u)
-    if (o && o.method && !/^get$/i.test(o.method)) { if (!s.includes('errlog=')) alert('👁 模擬中只能看、不能改資料——按上方「結束模擬」回到自己再操作'); return Promise.resolve(new Response(JSON.stringify({ ok:false, error:'模擬模式不能改資料' }), { headers: { 'content-type':'application/json' } })) }
+    if (o && o.method && !/^get$/i.test(o.method)) { if (!s.includes('errlog=')) alert('模擬中只能看、不能改資料——按上方「結束模擬」回到自己再操作'); return Promise.resolve(new Response(JSON.stringify({ ok:false, error:'模擬模式不能改資料' }), { headers: { 'content-type':'application/json' } })) }
     return _fetch0(s.includes('/api/mail-sync?') ? s + '&as=' + encodeURIComponent(SIM.rid) : u, o)
   }
   const _simBn = () => { const bn = document.createElement('div'); bn.id = 'simBn'
-    bn.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:999;background:#3A2F10;border-bottom:1px solid #D4A72C;color:#F2CE60;font-weight:800;font-size:14px;padding:8px 12px;display:flex;gap:10px;align-items:center;justify-content:center;flex-wrap:wrap'
-    bn.innerHTML = '👁 模擬中：' + SIM.name + ' 看到的畫面（只能看、改不了資料）<button class="mini" style="padding:4px 14px" onclick="simEnd()">結束模擬</button>'
+    bn.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:999;background:#3A2F10;border-bottom:1px solid #D4A72C;color:#F2CE60;font-weight:800;font-size:14px;padding:8px 12px;display:flex;gap:8px;align-items:center;justify-content:center;flex-wrap:wrap'
+    bn.innerHTML = EYE_I + ' 模擬中：' + SIM.name + ' 看到的畫面（只能看、改不了資料）<button class="mini" style="padding:4px 14px" onclick="simEnd()">結束模擬</button>'
     document.body.appendChild(bn); document.body.style.paddingTop = '42px' }
   document.body ? _simBn() : document.addEventListener('DOMContentLoaded', _simBn)
 }
@@ -2459,7 +2461,7 @@ function tplView(){
   ov.innerHTML = `<div style="background:#222B38;border:1px solid #3B4654;border-radius:14px;width:min(520px,94vw);max-height:88vh;overflow:auto;padding:16px" onclick="event.stopPropagation()">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><b style="font-size:16px">📂 班表版本</b><button class="mini" style="padding:7px 12px" onclick="document.getElementById('tpOv').remove()">關閉</button></div>
     <div class="hint" style="margin-bottom:8px">套用＝鋪到「目前看的這一週」（照週一~週日對應；已有的班自動跳過）。</div>
-    ${T.length ? T.map(t2=>`<div style="display:flex;gap:8px;align-items:center;background:var(--soft);border:1px solid var(--line);border-radius:10px;padding:8px 10px;margin-bottom:6px"><div style="flex:1;min-width:0"><b>${t2.name}</b> <span class="hint">${t2.items.length} 筆</span><div class="hint" style="font-size:12px">${t2.by}・${tpe(t2.ts)}</div></div><button class="mini on" style="padding:7px 12px" onclick="tplPreview('${t2.id}')">👁 預覽</button><button class="mini" style="padding:7px 10px;color:var(--red)" onclick="if(confirm('刪除版本「${t2.name}」？'))tplDel('${t2.id}')">🗑</button></div>`).join('') : '<div class="mut">還沒有存過版本——排好一週按「💾 存版本」</div>'}</div>`
+    ${T.length ? T.map(t2=>`<div style="display:flex;gap:8px;align-items:center;background:var(--soft);border:1px solid var(--line);border-radius:10px;padding:8px 10px;margin-bottom:6px"><div style="flex:1;min-width:0"><b>${t2.name}</b> <span class="hint">${t2.items.length} 筆</span><div class="hint" style="font-size:12px">${t2.by}・${tpe(t2.ts)}</div></div><button class="mini on" style="padding:7px 12px" onclick="tplPreview('${t2.id}')">${EYE_I} 預覽</button><button class="mini" style="padding:7px 10px;color:var(--red)" onclick="if(confirm('刪除版本「${t2.name}」？'))tplDel('${t2.id}')">🗑</button></div>`).join('') : '<div class="mut">還沒有存過版本——排好一週按「💾 存版本」</div>'}</div>`
   ov.onclick = () => ov.remove()
   document.body.appendChild(ov)
 }
@@ -2492,7 +2494,7 @@ function tplPreview(id){ // 👁 先預覽確認再套用（張良 2026-10-02）
   const ov = document.createElement('div'); ov.id='tpPv'
   ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:61;display:flex;align-items:center;justify-content:center;padding:14px'
   ov.innerHTML = `<div style="background:#222B38;border:1px solid #3B4654;border-radius:14px;width:min(900px,96vw);max-height:88vh;overflow:auto;padding:16px" onclick="event.stopPropagation()">
-    <div style="font-weight:900;font-size:16px;margin-bottom:6px">👁 預覽「${tp.name}」→ ${days[0].slice(5)}~${days[6].slice(5)}</div>
+    <div style="font-weight:900;font-size:16px;margin-bottom:6px">${EYE_I} 預覽「${tp.name}」→ ${days[0].slice(5)}~${days[6].slice(5)}</div>
     <div class="hint" style="margin-bottom:8px">「已存在」＝這週已有同一筆會跳過、只會新增缺的；確認沒問題再按套用。</div>
     ${cols}
     <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px"><button class="mini" style="padding:9px 12px" onclick="document.getElementById('tpPv').remove()">取消</button>${addN?`<button class="mini on" style="padding:9px 18px" onclick="document.getElementById('tpPv').remove();tplApply('${id}',1)">✅ 套用（新增 ${addN} 筆）</button>`:`<span class="hint" style="align-self:center">這一週已經有一模一樣的班了——先用 ‹ › 翻到要套用的那一週，再開預覽</span>`}</div></div>`
@@ -3359,8 +3361,8 @@ function permPanelHtml(perm){
   return `<div style="background:#19222E;border:1.5px solid #35557A;border-radius:12px;padding:10px 12px;font-size:14px">
     <div style="font-weight:900">🔐 編輯權限管理 <span class="hint">模式：${perm.mode==='open'?'全開（人人可編）':'審核制（申請→老闆核准）'}</span>
     <button class="mini" onclick="permSet('mode',null,'${perm.mode==='open'?'approve':'open'}')">切成${perm.mode==='open'?'審核制':'全開'}</button>
-    <button class="mini" onclick="simStart('guest','未綁定訪客')">👁 模擬訪客</button>
-    <span class="hint">按人名旁 👁＝用那個人的身分看整個 App（驗分頁/按鈕/設定），只能看不能改</span></div>
+    <button class="mini" onclick="simStart('guest','未綁定訪客')">${EYE_I} 模擬訪客</button>
+    <span class="hint">按人名旁的 ${EYE_I}＝用那個人的身分看整個 App（驗分頁/按鈕/設定），只能看不能改</span></div>
     ${(perm.pending||[]).length?`<div style="margin-top:6px;font-weight:800">待審核：</div>`+perm.pending.map(u=>`<div style="padding:3px 0">🙋 ${u.name} <span class="hint">${u.ts||''}</span> <button class="mini on" onclick="permSet('approve','${u.rid}')">✅ 核准</button> <button class="mini" onclick="permSet('reject','${u.rid}')">✖</button></div>`).join(''):'<div class="hint" style="margin-top:6px">目前沒有待審核的申請</div>'}
     ${(()=>{ // v4.26.4（張良「太多小圖很醜沒質感」）：乾淨表格——每分頁拆「看/編」兩小欄、純勾選框無emoji；欄頭勾=全員一起
       const cfgT = window._tabCfg || {}
@@ -3386,7 +3388,7 @@ function permPanelHtml(perm){
       <tr>${TABS.map(([k,lb,so])=>`<th style="${SEP}padding:2px 5px 6px;text-align:center;font-size:11px;font-weight:600">看<br>${cb(allSee(k),`permSet('taball',null,null,'${k}',this.checked,'see')`,'全員看得見 '+lb,anySee(k))}</th>`+(so?``:`<th style="padding:2px 5px 6px;text-align:center;font-size:11px;font-weight:600">編<br>${cb(allEdit(k),`permSet('taball',null,null,'${k}',this.checked,'edit')`,'全員能編輯 '+lb,anyEdit(k))}</th>`)).join('')}</tr>
       </thead><tbody>`
       users.forEach(u=>{
-        t+=`<tr><td style="text-align:left;font-weight:800;position:sticky;left:0;background:var(--card);z-index:1;padding:5px 10px;white-space:nowrap">${u.admin?'👑 ':''}${u.name} <button class="mini" style="padding:1px 8px;margin-left:4px" title="用 ${u.name} 的身分看整個 App" onclick="simStart('${u.rid}','${String(u.name||'').replace(/['"<>]/g,'')}')">👁</button>${u.admin?'':` <button class="mini" style="padding:1px 8px;margin-left:4px" onclick="if(confirm('確定把 ${u.name} 移除編輯權限？\\n他的勾選設定會保留，下面「已移除」區可一鍵復原。'))permSet('revoke','${u.rid}')">移除</button>`}</td>`
+        t+=`<tr><td style="text-align:left;font-weight:800;position:sticky;left:0;background:var(--card);z-index:1;padding:5px 10px;white-space:nowrap">${u.admin?'👑 ':''}${u.name} <button class="mini" style="padding:1px 8px;margin-left:4px" title="用 ${u.name} 的身分看整個 App" onclick="simStart('${u.rid}','${String(u.name||'').replace(/['"<>]/g,'')}')">${EYE_I}</button>${u.admin?'':` <button class="mini" style="padding:1px 8px;margin-left:4px" onclick="if(confirm('確定把 ${u.name} 移除編輯權限？\\n他的勾選設定會保留，下面「已移除」區可一鍵復原。'))permSet('revoke','${u.rid}')">移除</button>`}</td>`
         if(u.admin){ t+=`<td colspan="${COLS}" class="hint" style="text-align:left;padding:5px 10px">管理者＝全部看得見、全部能編輯</td>` }
         else {
           const rowSee=TABS.every(([k])=>!(u.hide&&u.hide[k])), rowEdit=TABS.filter(x=>!x[2]).every(([k])=>!u.tabs||u.tabs[k]!==0)
