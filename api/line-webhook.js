@@ -1486,7 +1486,7 @@ async function queryResvName(keyword) {
     const cids = [...new Set(rows.map((r) => r.cid).filter(Boolean))].slice(0, 3)
     for (const cid of cids) {
       const c = await inlineCustomer(token, cid)
-      if (c?.stats) L.push(`★ ${c.name}${c.phone ? `（${c.phone}）` : ''} 官方客人檔統計：入座${c.stats.seated ?? '?'}次｜取消${c.stats.cancelled ?? c.stats.canceled ?? '?'}｜NO SHOW ${c.stats.noShow ?? '?'}｜全部${c.stats.total ?? '?'}（回答「來過幾次」以此為準）`)
+      if (c?.stats?.total != null) L.push(`★ ${c.name}${c.phone ? `（${c.phone}）` : ''} 官方客人檔統計：入座${c.stats.seated ?? 0}次｜取消${c.stats.total - (c.stats.seated || 0) - (c.stats.noShow || 0)}｜NO SHOW ${c.stats.noShow ?? 0}｜全部${c.stats.total}（回答「來過幾次」以此為準）`)
     }
     rows.forEach((r) => L.push(`  - ${r.d || '?'} ${r.t || ''} ${r.name} ${r.n}人｜${ST[r.st] || r.st}${r.phone ? `｜${r.phone}` : '｜未留電話'}${r.email ? `｜${r.email}` : ''}${r.note ? `｜客註:${String(r.note).slice(0, 30)}` : ''}`))
     return L.join('\n')
@@ -1527,7 +1527,8 @@ async function queryResvTop(n) {
     await Promise.all(cands.map(async (c) => {
       if (!c.cid) return
       const o = await inlineCustomer(token, c.cid)
-      if (o?.stats) { c.seat = o.stats.seated ?? c.seat; c.cx = o.stats.cancelled ?? o.stats.canceled ?? c.cx; c.bookOfficial = o.stats.total }
+      // 取消數＝全部−入座−NoShow（官方取消欄位名不固定，用恆等式反推最穩；Belle 137-31-0=106 與客人檔一致）
+      if (o?.stats?.total != null) { c.seat = o.stats.seated ?? c.seat; c.bookOfficial = o.stats.total; c.cx = o.stats.total - (o.stats.seated || 0) - (o.stats.noShow || 0) }
     }))
   } catch (_) {} // 官方統計拿不到就用聚合值（寧可近似別開天窗）
   const rank = cands.sort((a, b) => b.seat - a.seat || b.book - a.book).slice(0, top)

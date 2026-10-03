@@ -156,7 +156,8 @@ export default async function handler(req, res) {
         await Promise.all(cands.map(async (c) => {
           if (!c.cid) return
           const o = await inlineCustomer(token, c.cid)
-          if (o?.stats) { c.seat = o.stats.seated ?? c.seat; c.cx = o.stats.cancelled ?? o.stats.canceled ?? c.cx; c.bookOfficial = o.stats.total }
+          // 取消＝全部−入座−NoShow 反推（官方取消欄位名不固定）
+          if (o?.stats?.total != null) { c.seat = o.stats.seated ?? c.seat; c.bookOfficial = o.stats.total; c.cx = o.stats.total - (o.stats.seated || 0) - (o.stats.noShow || 0) }
         }))
       } catch (_) {}
       const rank = cands.sort((a, b) => b.seat - a.seat || b.book - a.book).slice(0, topN)
