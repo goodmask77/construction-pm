@@ -2652,7 +2652,7 @@ export default async function handler(req, res) {
     const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
     if (!ok2 || String(req.query.labor) !== ok2) return res.status(403).json({ ok: false })
     const [docL, meL] = await Promise.all([kvGet('sp_finance_pm_labor'), sopWho(req.query.me)])
-    return res.status(200).json({ ok: true, sheets: (docL || {}).sheets || [], me: meL ? { name: meL.name } : null })
+    return res.status(200).json({ ok: true, sheets: (docL || {}).sheets || [], versions: (docL || {}).versions || [], me: meL ? { name: meL.name } : null })
   }
   if (req.method === 'POST' && req.query?.laborset) {
     const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
@@ -2681,6 +2681,30 @@ export default async function handler(req, res) {
       doc.sheets = (doc.sheets || []).filter(x => x.id !== bl.id)
       await kvPut('sp_finance_pm_labor', doc, '工時成本刪方案(' + whoL.name + ')')
       return res.status(200).json({ ok: true })
+    } else if (bl.op === 'snap') { // v4.31.6（張良「存檔+版本檔案庫 怕自己或別人動到」）：目前方案拍快照進版本庫，之後自動儲存動不到它
+      const shS = (doc.sheets || []).find(x => x.id === bl.id)
+      if (!shS) return res.status(404).json({ ok: false, error: '找不到方案' })
+      const ts8 = new Date(Date.now() + 8 * 3600e3).toISOString().slice(5, 16).replace('T', ' ')
+      const v9 = { vid: 'lv' + Date.now().toString(36), name: String(bl.name || (shS.name + ' ' + ts8)).slice(0, 40), by: whoL.name, ts: ts8, sheet: JSON.parse(JSON.stringify(shS)) }
+      doc.versions = [...(doc.versions || []), v9].slice(-40)
+      await kvPut('sp_finance_pm_labor', doc, '工時成本存檔「' + v9.name + '」(' + whoL.name + ')')
+      return res.status(200).json({ ok: true, versions: doc.versions })
+    } else if (bl.op === 'restore') { // 還原：快照蓋回同 id 方案（方案被刪了就補回來）
+      const v9 = (doc.versions || []).find(x => x.vid === bl.vid)
+      if (!v9) return res.status(404).json({ ok: false, error: '找不到這個版本' })
+      const shR = JSON.parse(JSON.stringify(v9.sheet)); shR.by = whoL.name; shR.ts = new Date().toISOString()
+      const i9 = (doc.sheets || []).findIndex(x => x.id === shR.id)
+      if (i9 >= 0) doc.sheets[i9] = shR; else doc.sheets = [...(doc.sheets || []), shR]
+      await kvPut('sp_finance_pm_labor', doc, '工時成本還原「' + v9.name + '」(' + whoL.name + ')')
+      return res.status(200).json({ ok: true, sheets: doc.sheets, versions: doc.versions || [] })
+    } else if (bl.op === 'vdel') {
+      doc.versions = (doc.versions || []).filter(x => x.vid !== bl.vid)
+      await kvPut('sp_finance_pm_labor', doc, '工時成本刪版本(' + whoL.name + ')')
+      return res.status(200).json({ ok: true, versions: doc.versions })
+    } else if (bl.op === 'vren') {
+      const v9 = (doc.versions || []).find(x => x.vid === bl.vid)
+      if (v9) { v9.name = String(bl.name || v9.name).slice(0, 40); await kvPut('sp_finance_pm_labor', doc, '工時成本版本改名(' + whoL.name + ')') }
+      return res.status(200).json({ ok: true, versions: doc.versions || [] })
     }
     return res.status(400).json({ ok: false })
   }
