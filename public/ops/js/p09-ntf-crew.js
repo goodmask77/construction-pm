@@ -147,7 +147,7 @@ async function custDetail(kind, keepFilter){
     h += `<div style="margin-bottom:6px">${mets.map(([k,lb])=>`<button class="mini" onclick="custDmet='${k}';custDetail('trend',1)" style="padding:3px 11px;font-weight:800;${custDmet===k?'background:var(--primary);color:#fff;border-color:var(--primary)':''}">${lb}</button>`).join('')}</div>`
     const vals = custDmet==='avg' ? serie(m=>m.resv?+(m.guests/m.resv).toFixed(1):0) : serie(m=>m[custDmet]||0)
     h += cCard(`📈 每月${mets.find(([k])=>k===custDmet)[1]}趨勢（${periodLb}）`, cLineSvg(yms, vals, KD.c))
-    h += `<div style="height:8px"></div>` + cCard('月明細', `<div class="scroll" style="max-height:38vh;overflow:auto"><table style="width:100%;border-collapse:collapse;font-size:12px"><tr>${['月份','組數','人次','平均每組','取消率'].map(x=>`<th style="position:sticky;top:0;background:var(--soft);padding:4px 8px">${x}</th>`).join('')}</tr>${[...yms].reverse().map(ym=>{const m=ins.m[ym];return `<tr>${[ym, cNum(m.resv), cNum(m.guests), m.resv?(m.guests/m.resv).toFixed(1):'—', pct(m.cxl,m.resv+m.cxl)+'%'].map(x=>`<td style="border-top:1px solid var(--line);padding:3px 8px;text-align:center">${x}</td>`).join('')}</tr>`}).join('')}</table></div>`)
+    h += `<div style="height:8px"></div>` + cCard('月明細', `<div class="scroll" style="max-height:38vh;overflow:auto"><table style="width:100%;border-collapse:collapse;font-size:12px"><tr>${['月份','組數','人次','平均每組','取消率'].map(x=>`<th style="position:sticky;top:0;background:var(--soft);padding:4px 8px">${x}</th>`).join('')}</tr>${[...yms].reverse().map(ym=>{const m=ins.m[ym];return `<tr>${[ym, cNum(m.resv), cNum(m.guests), m.resv?(m.guests/m.resv).toFixed(1):'—', pct(m.cxl,m.resv+m.cxl)+'%'].map(x=>`<td style="border-top:1px solid var(--line);padding:3px 8px">${x}</td>`).join('')}</tr>`}).join('')}</table></div>`)
   }
   if (kind === 'heat'){
     const mets = [['avgp','平均每日人次'],['tot','總人次'],['avgg','平均每組人數']]
@@ -183,7 +183,7 @@ async function custDetail(kind, keepFilter){
   }
   if (kind === 'cxl'){
     h += cCard('❌ 取消率逐月（紅線＝25% 警戒值以上要上訂金）', cLineSvg(yms, serie(m=>pct(m.cxl,(m.resv||0)+(m.cxl||0))), '#F07373', v=>v+'%'))
-    h += `<div style="height:8px"></div>` + cCard('月明細', `<div class="scroll" style="max-height:38vh;overflow:auto"><table style="width:100%;border-collapse:collapse;font-size:12px"><tr>${['月份','有效訂位','取消','取消率'].map(x=>`<th style="position:sticky;top:0;background:var(--soft);padding:4px 8px">${x}</th>`).join('')}</tr>${[...yms].reverse().map(ym=>{const m=ins.m[ym];const r=pct(m.cxl,m.resv+m.cxl);return `<tr>${[ym, cNum(m.resv), cNum(m.cxl), `<b style="color:${r>25?'var(--red)':'#E8A657'}">${r}%</b>`].map(x=>`<td style="border-top:1px solid var(--line);padding:3px 8px;text-align:center">${x}</td>`).join('')}</tr>`}).join('')}</table></div>`)
+    h += `<div style="height:8px"></div>` + cCard('月明細', `<div class="scroll" style="max-height:38vh;overflow:auto"><table style="width:100%;border-collapse:collapse;font-size:12px"><tr>${['月份','有效訂位','取消','取消率'].map(x=>`<th style="position:sticky;top:0;background:var(--soft);padding:4px 8px">${x}</th>`).join('')}</tr>${[...yms].reverse().map(ym=>{const m=ins.m[ym];const r=pct(m.cxl,m.resv+m.cxl);return `<tr>${[ym, cNum(m.resv), cNum(m.cxl), `<b style="color:${r>25?'var(--red)':'#E8A657'}">${r}%</b>`].map(x=>`<td style="border-top:1px solid var(--line);padding:3px 8px">${x}</td>`).join('')}</tr>`}).join('')}</table></div>`)
   }
   if (kind === 'kids'){
     h += cCard('🧒 親子組佔比逐月', cLineSvg(yms, serie(m=>pct(m.kids,m.resv)), KD.c, v=>v+'%'))
@@ -192,7 +192,7 @@ async function custDetail(kind, keepFilter){
   if (kind === 'big'){
     h += cCard('🎉 大組/包場人次逐月', cLineSvg(yms, serie(m=>m.bigG||0), KD.c))
     const list = (ins.bigList||[]).filter(b=>yms.includes(b.d.slice(0,7)))
-    h += `<div style="height:8px"></div>` + cCard(`場次清單（${periodLb}・共 ${cNum(list.length)} 場）`, `<div class="scroll" style="max-height:40vh;overflow:auto"><table style="width:100%;border-collapse:collapse;font-size:12px;white-space:nowrap"><tr>${['#','日期','時間','名稱','人數'].map(x=>`<th style="position:sticky;top:0;background:var(--soft);padding:4px 8px">${x}</th>`).join('')}</tr>${list.slice(0,300).map((b,i)=>`<tr>${[i+1, b.d, b.t||'—', `<b>${b.n||'—'}</b>`, `<b style="color:#C792EA">${b.g}</b>`].map(x=>`<td style="border-top:1px solid var(--line);padding:3px 8px;text-align:center">${x}</td>`).join('')}</tr>`).join('')}</table></div>`)
+    h += `<div style="height:8px"></div>` + cCard(`場次清單（${periodLb}・共 ${cNum(list.length)} 場）`, `<div class="scroll" style="max-height:40vh;overflow:auto"><table style="width:100%;border-collapse:collapse;font-size:12px;white-space:nowrap"><tr>${['#','日期','時間','名稱','人數'].map(x=>`<th style="position:sticky;top:0;background:var(--soft);padding:4px 8px">${x}</th>`).join('')}</tr>${list.slice(0,300).map((b,i)=>`<tr>${[i+1, b.d, b.t||'—', `<b>${b.n||'—'}</b>`, `<b style="color:#C792EA">${b.g}</b>`].map(x=>`<td style="border-top:1px solid var(--line);padding:3px 8px">${x}</td>`).join('')}</tr>`).join('')}</table></div>`)
   }
   h += `</section>`
   app.innerHTML = h
