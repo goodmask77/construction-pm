@@ -2086,13 +2086,40 @@ function shiftRender(){
     })
     h += `</tbody></table></div>`
   } else h += `<div class="mut">這個月還沒有班表或打卡——${meN?'按右上「＋ 排班」開始':'綁定後可以排班'}；上班用最上面 ⏰ 打卡</div>`
-  h += `</section><section><h2>明細</h2>`
+  h += `</section><section><h2>明細 <span class="hint">一格＝一人一天；數字＝工時（白=正常、橘=遲到/早退、紫=未排班出勤、紅框>12h）、✕=未到、●=上班中、排=還沒到的班；點格可改班</span> <button class="mini" style="padding:3px 10px" onclick="window._shDetList=!window._shDetList;shiftRender()">${window._shDetList?'切回矩陣':'切成列表'}</button></h2>`
   const byDate = {}
   rows.forEach(r=>{ (byDate[r.date]=byDate[r.date]||[]).push(r) })
   const wd = ['日','一','二','三','四','五','六']
   const dts = Object.keys(byDate).sort().reverse()
   if (!dts.length) h += `<div class="mut">沒有資料</div>`
-  dts.forEach(dt=>{
+  else if (!window._shDetList) { // v4.31.7 矩陣檢視（張良「一列一列的看不了多少資料畫面太大」——同 NUEiP 班表查詢的呈現邏輯）
+    const dayN9 = new Date(+shiftYm.slice(0,4), +shiftYm.slice(5,7), 0).getDate()
+    const dts9 = Array.from({length:dayN9},(_,i)=>shiftYm+'-'+String(i+1).padStart(2,'0'))
+    const byK9 = {}; rows.forEach(r=>{ byK9[r.name+'|'+r.date]=r })
+    const names9 = [...new Set(rows.map(r=>r.name))].sort((a,b)=>a.localeCompare(b,'zh-Hant'))
+    h += `<div class="scroll"><table style="border-collapse:collapse"><thead><tr><th style="text-align:left;position:sticky;left:0;background:var(--soft);z-index:2;padding:4px 8px">夥伴</th>${dts9.map(dt=>{const g9=new Date(dt).getDay();return `<th style="padding:3px 5px;font-size:10.5px;text-align:center;line-height:1.3;${dt===today?'background:var(--primary);color:#fff;':(g9===0||g9===6?'color:#8FB3E8;background:#232F4C;':'')}">${+dt.slice(8)}<br>${wd[g9]}</th>`}).join('')}</tr></thead><tbody>`
+    names9.forEach(nm=>{
+      h += `<tr><td style="text-align:left;font-weight:800;position:sticky;left:0;background:var(--card);z-index:1;padding:4px 8px;white-space:nowrap">${nm}</td>`
+      dts9.forEach(dt=>{
+        const r = byK9[nm+'|'+dt]
+        const g9 = new Date(dt).getDay()
+        const tdB = `padding:2px 4px;text-align:center;font-size:11px;border:1px solid var(--line);${g9===0||g9===6?'background:#1B2438;':''}${dt===today?'box-shadow:inset 1.5px 0 0 var(--primary),inset -1.5px 0 0 var(--primary);':''}`
+        if (!r){ h += `<td style="${tdB}"></td>`; return }
+        const tip = `${nm} ${dt.slice(5)}｜班表 ${r.s?`${r.s.start}-${r.s.end}${r.s.break?`(休${r.s.break})`:''}`:'—'}｜打卡 ${r.firstIn||'—'}${r.lastOut?'~'+r.lastOut:(r.working?'~上班中':'')}${r.h?`｜${r1(r.h)}h`:''}${r.st.length?`｜${r.st.join('、')}`:''}`
+        let cell = ''
+        if (r.st.includes('未到')) cell = `<b style="color:var(--red)">✕</b>`
+        else if (r.working) cell = `<b style="color:var(--green)">●${r.h?r1(r.h):''}</b>`
+        else if (r.h > 0){
+          const warn9 = r.st.some(x=>/遲到|早退/.test(x)), unsch9 = r.st.includes('未排班出勤')
+          cell = `<b style="color:${unsch9?'#B9A3E8':warn9?'#E8A657':'var(--ink)'};${r.over12?'text-shadow:0 0 1px var(--red);border-bottom:2px solid var(--red);':''}">${r1(r.h)}</b>`
+        } else if (r.s) cell = `<span class="hint" style="font-size:10px">${dt>=today?'排':'—'}</span>`
+        h += `<td style="${tdB}${meN&&r.s?'cursor:pointer;':''}" title="${tip}"${meN&&r.s?` onclick="shiftForm('${r.s.id}')"`:''}>${cell}</td>`
+      })
+      h += `</tr>`
+    })
+    h += `</tbody></table></div>`
+  }
+  else dts.forEach(dt=>{
     h += `<div style="font-weight:900;margin:10px 0 4px;color:var(--pdark)">${dt.slice(5)}（${wd[new Date(dt).getDay()]}）${dt===today?'・今天':''}</div>`
     byDate[dt].sort((a,b)=>a.name.localeCompare(b.name)).forEach(r=>{
       const bad = r.st.some(x=>x!=='上班中')
