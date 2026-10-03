@@ -3555,7 +3555,7 @@ function permPanelHtml(perm){
     ${(()=>{ // v4.26.4（張良「太多小圖很醜沒質感」）：乾淨表格——每分頁拆「看/編」兩小欄、純勾選框無emoji；欄頭勾=全員一起
       const cfgT = window._tabCfg || {}
       const ordT = (cfgT.order && cfgT.order.length ? cfgT.order.slice() : Object.keys(TAB_DEF)).filter(k=>TAB_DEF[k])
-      Object.keys(TAB_DEF).forEach(k=>{ if (!ordT.includes(k)) ordT.unshift(k) })
+      Object.keys(TAB_DEF).forEach(k=>{ if (!ordT.includes(k)) ordT.push(k) }) // v4.39.1 新分頁排最後(設定上面)——原 unshift 會插到最前(張良要 inline 在設定上面)
       // v4.31.0（張良：側欄每一頁都要能關，像夥伴不用看到「設定」）：問題回報/設定也進表——這兩頁只有「看」的開關
       const TABS=[['board','首頁'], ...ordT.map(k=>[k, stripEmoji((cfgT.names||{})[k] || TAB_DEF[k])]), ['errs','問題回報',1], ['gear','設定',1]]
       const SEEK=TABS.map(x=>x[0]).join(','), EDITK=TABS.filter(x=>!x[2]).map(x=>x[0]).join(',')
