@@ -2728,6 +2728,26 @@ export default async function handler(req, res) {
       return res.status(200).json({ ok: true, me: tk0, name: tk0 ? ((bd9.tokens || {})[tk0] || {}).name : null })
     } catch (_) { return res.status(502).json({ ok: false, error: 'LINE 驗證失敗' }) }
   }
+  // ── 🪪 員工清冊 v4.34.0（張良：兩間公司到職日/生日/身分證，主管限定）：GET ?hrmaster=K&me=token；匯入 POST ?hrmasterset=<MENU_PROBE_KEY> ──
+  if (req.query?.hrmaster) {
+    const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
+    if (!ok2 || String(req.query.hrmaster) !== ok2) return res.status(403).json({ ok: false })
+    const [whoH9, defH9, rosH9] = await Promise.all([sopWho(req.query.me), kvGet('sp_finance_pm_sop_def'), kvGet('sp_crew_kb_roster')])
+    const aprH9 = (((defH9 || {}).ground || {}).approvers || ['張良瑋'])
+    const isMgr = whoH9 && (aprH9.includes(whoH9.name) || whoH9.name === '張良瑋' || whoH9.role === '主管')
+    if (!isMgr) return res.status(403).json({ ok: false, error: '這頁只有主管看得到（個資：身分證/生日）' })
+    const docH = (await kvGet('sp_crew_pm_hr_master')) || { rows: [] }
+    return res.status(200).json({ ok: true, rows: docH.rows || [], updatedAt: docH.updatedAt || '', src: docH.src || '' })
+  }
+  if (req.method === 'POST' && req.query?.hrmasterset) {
+    const mk9 = (process.env.MENU_PROBE_KEY || '').trim()
+    if (!mk9 || String(req.query.hrmasterset) !== mk9) return res.status(403).json({ ok: false })
+    let bh9 = {}; try { bh9 = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
+    if (!Array.isArray(bh9.rows) || !bh9.rows.length) return res.status(400).json({ ok: false, error: '要給 rows' })
+    const docH = { rows: bh9.rows.slice(0, 300), src: String(bh9.src || '').slice(0, 200), updatedAt: new Date().toISOString() }
+    await kvPut('sp_crew_pm_hr_master', docH, '員工清冊匯入(' + docH.rows.length + '人)')
+    return res.status(200).json({ ok: true, n: docH.rows.length })
+  }
   // ── 💰 薪資費率口 v4.33.0（張良：薪資條表格給會計師）：POST ?payset= {token,name,field:base|allow,val} ──
   if (req.method === 'POST' && req.query?.payset) {
     const ok2 = (process.env.OPS_BOARD_KEY || '').trim()

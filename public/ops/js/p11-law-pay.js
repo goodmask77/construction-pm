@@ -199,10 +199,11 @@ function shVioCompute(gdRows){
   ;(gdRows||[]).forEach(r=>{ if(r.over12) addV(g,r.name+'|'+r.date,'實際'+r1(r.h)+'h>12h') })
   // AB 排班（NUEiP；休/例不算工作日）
   const as={}
-  ;(typeof shMergedAb==='function'?shMergedAb():[]).forEach(x=>{ if(!x.name||!x.date||/休|例/.test(x.code||'')) return
-    if(x.start&&x.end){ let eM=t2m(x.end); if(eM<=t2m(x.start)) eM+=1440; const sp=eM-t2m(x.start)
-      pushIv(as[x.name]=as[x.name]||{}, x.date, t2m(x.start), eM, sp>=540?60:0) }
-    else pushIv(as[x.name]=as[x.name]||{}, x.date, 720, 720, 0) }) // 只有代碼沒時間＝只參與連上天數
+  // v4.33.5 誤判治本（張良「●是沒排班的意思 怎麼可能連上47天」）：●/⚫＝未排班、沒帶上下班時間的列＝不算工作日——只有「真的有排時段」才進連上/班距/12h計算
+  ;(typeof shMergedAb==='function'?shMergedAb():[]).forEach(x=>{ if(!x.name||!x.date||/休|例|●|⚫/.test(x.code||'')) return
+    if(!(x.start&&x.end)) return
+    let eM=t2m(x.end); if(eM<=t2m(x.start)) eM+=1440; const sp=eM-t2m(x.start)
+    pushIv(as[x.name]=as[x.name]||{}, x.date, t2m(x.start), eM, sp>=540?60:0) })
   scanSched(as,a)
   ;(((window._shiftD||{}).abAtt)||[]).forEach(x=>{ if((+x.h||0)>12) addV(a,x.name+'|'+x.date,'實際'+x.h+'h>12h') })
   return { g, a }
