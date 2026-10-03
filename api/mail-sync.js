@@ -944,7 +944,7 @@ export default async function handler(req, res) {
     if (!ok2 || String(req.query.kvproxy) !== ok2) return res.status(403).json({ ok: false })
     let kb = {}; try { kb = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
     const key = String(kb.key || '')
-    const ALLOW_RE = /^sp_team_pm_(task_[A-Za-z0-9_-]+|tasks_v2|data|activity)$/
+    const ALLOW_RE = /^sp_team_pm_(task_[A-Za-z0-9_-]+|tasks_v2|data|activity|ownerord)$/ // ownerord=負責人視角分組排序(v4.41.0)
     const ALLOW_PFX = /^sp_team_pm_task_$/
     const op = String(kb.op || '')
     if (op === 'getPrefix') {
@@ -967,6 +967,48 @@ export default async function handler(req, res) {
       return res.status(200).json({ ok: true })
     }
     return res.status(400).json({ ok: false, error: '未知 op' })
+  }
+  // 🛠 任務通知口（v4.41.0 張良：指派完選「發群/私訊/不通知」；完成送審通知建立者；審核結果回報本人）
+  // POST ?tasknotify=<OPS_BOARD_KEY> body={token, kind:'assign'|'review'|'approve'|'reject', mode:'group'|'dm'|'none', title, due, owner, creator, doer}
+  if (req.method === 'POST' && req.query?.tasknotify) {
+    const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
+    if (!ok2 || String(req.query.tasknotify) !== ok2) return res.status(403).json({ ok: false })
+    let tb = {}; try { tb = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
+    const whoT9 = await permWho(tb.token, 'task')
+    if (!whoT9) return res.status(403).json({ ok: false, error: permDeny() })
+    const actor9 = whoT9.name || '現場'
+    const title9 = String(tb.title || '').slice(0, 80)
+    if (!title9) return res.status(400).json({ ok: false, error: '缺任務標題' })
+    const tkL9 = (process.env.LINE_CHANNEL_ACCESS_TOKEN || '').trim()
+    const bd9 = (await kvGet('sp_finance_pm_prep_bind')) || {}
+    const uidByName9 = nm => { for (const [u9, tk9] of Object.entries(bd9.byUid || {})) { if (((bd9.tokens || {})[tk9] || {}).name === nm) return u9 } return null }
+    const ridByName9 = nm => { const e9 = Object.values(bd9.tokens || {}).find(x => x.name === nm); return e9 ? (e9.rid || e9.uid) : null }
+    const { prepLink, wpPush } = await import('./_webpush.js')
+    const push9 = (to, text) => tkL9 ? fetch('https://api.line.me/v2/bot/message/push', { method: 'POST', headers: { 'content-type': 'application/json', Authorization: 'Bearer ' + tkL9 }, body: JSON.stringify({ to, messages: [{ type: 'text', text }] }) }).catch(() => {}) : null
+    let sent9 = 0
+    const kind9 = String(tb.kind || 'assign'), mode9 = String(tb.mode || 'none')
+    const due9 = tb.due ? `\n截止：${String(tb.due).slice(0, 10)}` : ''
+    if (kind9 === 'assign' && mode9 !== 'none') {
+      const txt9 = `🛠 任務指派｜${title9}\n負責人：${tb.owner || '（未定）'}${due9}\n— ${actor9} 指派\n${prepLink('')}`
+      if (mode9 === 'group') { await push9('Cf7940efc6517b0c084ad2ad496b45f30', txt9); sent9++ }
+      else if (mode9 === 'dm') {
+        const u9 = uidByName9(String(tb.owner || ''))
+        if (!u9) return res.status(200).json({ ok: false, error: `${tb.owner || '負責人'} 還沒綁定 GD，私訊不到——改發群組或請他先綁定` })
+        await push9(u9, txt9); sent9++
+      }
+      const r9 = ridByName9(String(tb.owner || '')); if (r9) { try { await wpPush([r9], { title: '🛠 新任務指派', body: `${title9}（${actor9} 指派）`, url: '/prep' }) } catch (_) {} }
+    }
+    if (kind9 === 'review') { // 別人建立的任務按完成 → 固定私訊建立者審核（不吵群）
+      const cu9 = uidByName9(String(tb.creator || ''))
+      if (cu9) { await push9(cu9, `✅ ${actor9} 回報完成【${title9}】\n請到 GD 任務審核（通過＝封存）\n${prepLink('')}`); sent9++ }
+      const cr9 = ridByName9(String(tb.creator || '')); if (cr9) { try { await wpPush([cr9], { title: '🛠 完成待審核', body: `${actor9}：${title9}`, url: '/prep' }) } catch (_) {} }
+    }
+    if (kind9 === 'approve' || kind9 === 'reject') { // 審核結果 → 私訊回報完成的人
+      const du9 = uidByName9(String(tb.doer || ''))
+      if (du9) { await push9(du9, kind9 === 'approve' ? `🎉 你完成的【${title9}】通過審核，已封存` : `↩️ 【${title9}】被退回，再處理一下（${actor9}）\n${prepLink('')}`); sent9++ }
+      const dr9 = ridByName9(String(tb.doer || '')); if (dr9) { try { await wpPush([dr9], { title: kind9 === 'approve' ? '🎉 審核通過' : '↩️ 任務退回', body: title9, url: '/prep' }) } catch (_) {} }
+    }
+    return res.status(200).json({ ok: true, sent: sent9 })
   }
   // 我是誰（側欄底部身分膠囊用；張良 2026-10-02）：GET ?whoami=<OPS_BOARD_KEY>&me=token
   if (req.query?.whoami) {
@@ -2057,6 +2099,7 @@ export default async function handler(req, res) {
           if (dt < loS || dt > hiS) continue
           for (const r9 of arr) {
             if (r9.st === 2 || r9.st === 5 || !r9.t) continue
+            if (r9.ty === 4) continue // 候補≠真的會進店（張良 2026-10-04「候補要切出來」），班表訂位格不計
             const sl = slotOf(r9.t)
             const dd9 = resvDays[dt] = resvDays[dt] || {}
             const cell = dd9[sl] = dd9[sl] || { g: 0, p: 0, k: 0 }

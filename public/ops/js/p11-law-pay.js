@@ -156,3 +156,45 @@ async function payCopyImg(){
     cv.toBlob(async b=>{ try{ await navigator.clipboard.write([new ClipboardItem({'image/png':b})]); lpToast('📸 薪資表圖片已複製，直接貼上即可') }catch(e){ lpToast('這台裝置不給複製圖片——請改用「⬇️ 匯出表格」') } },'image/png')
   }catch(e){ lpToast('複製圖片失敗——請改用「⬇️ 匯出表格」') }
 }
+
+// ── 🔴 班表違規地圖 v4.33.3（張良「班表上發現違規的 直接在該欄位紅色發光提醒」）──
+// 回 {g:{'名|日':[原因]}, a:{...}}；規則=四週變形版：單日>12h(排班或實際)、班距<11h、連上第13天起
+function shVioCompute(gdRows){
+  const t2m=t=>{ const x=String(t||'').split(':'); return (+x[0]||0)*60+(+x[1]||0) }
+  const addV=(m,k,r)=>{ (m[k]=m[k]||[]).push(r) }
+  const scanSched=(map, out)=>{ // map: name→date→{min,max,h}（max 可能>1440=跨午夜）
+    for(const [nm,ds] of Object.entries(map)){
+      const dts=Object.keys(ds).sort(); let run=1
+      dts.forEach(dt=>{ if(ds[dt].h>12) addV(out,nm+'|'+dt,'排班'+Math.round(ds[dt].h*10)/10+'h>12h') })
+      for(let i=1;i<dts.length;i++){
+        const gap1=(new Date(dts[i])-new Date(dts[i-1]))/86400e3
+        if(gap1===1){
+          run++
+          const rest=ds[dts[i]].min+1440-ds[dts[i-1]].max
+          if(rest<660&&rest>0) addV(out,nm+'|'+dts[i],'與前一天班距'+(Math.round(rest/6)/10)+'h<11h')
+        } else run=1
+        if(run>12) addV(out,nm+'|'+dts[i],'連上第'+run+'天(四週變形例假不足)')
+      }
+    }
+  }
+  const g={}, a={}
+  // GD 排班
+  const gs={}
+  ;(typeof shMergedSched==='function'?shMergedSched():[]).forEach(x=>{ if(!x.date||!x.name||!x.start||!x.end) return
+    let eM=t2m(x.end); if(eM<=t2m(x.start)) eM+=1440
+    const o=(gs[x.name]=gs[x.name]||{}); const p=o[x.date]||{min:99999,max:-1,h:0}
+    p.min=Math.min(p.min,t2m(x.start)); p.max=Math.max(p.max,eM); p.h+=(eM-t2m(x.start)-(+x.break||0))/60; o[x.date]=p })
+  scanSched(gs,g)
+  ;(gdRows||[]).forEach(r=>{ if(r.over12) addV(g,r.name+'|'+r.date,'實際'+r1(r.h)+'h>12h') })
+  // AB 排班（NUEiP；休/例不算工作日）
+  const as={}
+  ;(typeof shMergedAb==='function'?shMergedAb():[]).forEach(x=>{ if(!x.name||!x.date||/休|例/.test(x.code||'')) return
+    const o=(as[x.name]=as[x.name]||{}); const p=o[x.date]||{min:99999,max:-1,h:0}
+    if(x.start&&x.end){ let eM=t2m(x.end); if(eM<=t2m(x.start)) eM+=1440; const sp=eM-t2m(x.start)
+      p.min=Math.min(p.min,t2m(x.start)); p.max=Math.max(p.max,eM); p.h+=(sp-(sp>=540?60:0))/60 }
+    else { p.min=Math.min(p.min,720); p.max=Math.max(p.max,720); } // 只有代碼沒時間＝只參與連上天數
+    o[x.date]=p })
+  scanSched(as,a)
+  ;(((window._shiftD||{}).abAtt)||[]).forEach(x=>{ if((+x.h||0)>12) addV(a,x.name+'|'+x.date,'實際'+x.h+'h>12h') })
+  return { g, a }
+}

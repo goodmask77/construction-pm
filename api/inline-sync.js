@@ -89,8 +89,8 @@ async function syncFuture(token) {
       if (!sum.months[mo].days) delete sum.months[mo]
     }
   }
-  // 遠期清單直接放總覽（AI 兩邊都載總覽＝不用撈到未來月檔就能答「哪天已被訂」）
-  sum.farFuture = Object.keys(far).sort().flatMap((d) => far[d].map((r) => ({ d, ...r })))
+  // 遠期清單直接放總覽（AI 兩邊都載總覽＝不用撈到未來月檔就能答「哪天已被訂」）；候補(ty=4)不算「被訂」排除
+  sum.farFuture = Object.keys(far).sort().flatMap((d) => far[d].filter((r) => r.ty !== 4).map((r) => ({ d, ...r })))
   // 當日備註（RTDB branchDailyNotes 一次整包；⚠️包場/公休註記＝婚顧檔期的另一真相來源）
   let notesInfo = {}
   try {
@@ -140,8 +140,10 @@ async function custBuild() {
         let dayValid = false
         for (const r of arr) {
           const canceled = CANCELED_STATES.includes(r.st)
+          // 候補(ty=4)＝沒進店的人：全部主統計排除、另計 wlN/wlG（張良 2026-10-04「候補要切出來」）
+          if (r.ty === 4) { if (!canceled) { mm.wlN = (mm.wlN || 0) + 1; mm.wlG = (mm.wlG || 0) + (r.n || 0) } continue }
           if (canceled) mm.cxl++
-          else { mm.resv++; mm.guests += r.n || 0 }
+          else { mm.resv++; mm.guests += r.n || 0; if (r.ty === 1 || r.ty === 3) { mm.wkN = (mm.wkN || 0) + 1; mm.wkG = (mm.wkG || 0) + (r.n || 0) } }
           const name = (r.name || '').trim()
           const key = r.cid || r.phone || (name ? 'n:' + name : '')
           if (key) {

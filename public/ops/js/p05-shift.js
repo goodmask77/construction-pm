@@ -152,6 +152,7 @@ function shiftRender(){
   const buildGrid = (wd2) => {
     const we2 = shMergedSched().filter(x=>wd2.includes(x.date)) // 無限軸：吃所有已載月份合併後的班
     const leave = shMergedLeave() // 請假標記 { 日期: { 姓名: 假別 } }
+    const VIO = (typeof shVioCompute==='function') ? shVioCompute(rows) : { g:{}, a:{} } // v4.33.3 違規格紅光（單日12h/班距11h/連13天）
     const pl2 = (d.posList||[]).slice(); we2.forEach(x=>{ const p4=x.pos||'未分崗'; if(!pl2.includes(p4)) pl2.push(p4) })
     const dayW = 'min-width:76px'
     const wdOf = dt => wdN[(new Date(dt).getDay()+6)%7]
@@ -171,7 +172,8 @@ function shiftRender(){
           const pi=pcIdx(e.name),ti=e.tr?pcIdx(e.tr):-1
           const bg2=e.tr?`background:linear-gradient(180deg,${PB[pi]} 50%,${PB[ti]} 50%);`:`background:${PB[pi]};`
           const exp=((d.posStats||{})[e.name]||{})[ps]||0, trExp=e.tr?(((d.posStats||{})[e.tr]||{})[ps]||0):0
-          return `<div ${meN?`draggable="true" ondragstart="event.stopPropagation();event.dataTransfer.setData('text/plain','${e.id}');window._shiftDragId='${e.id}'" ondragend="window._shiftDragId=null" onclick="event.stopPropagation();shiftForm('${e.id}')"`:''} style="font-size:12px;line-height:1.45;white-space:nowrap;${meN?'cursor:grab;':''}${bg2}border:${e.tr?'1.5px dashed rgba(255,255,255,.95)':'none'};border-radius:5px;padding:${e.tr?'1px 3px':'2px 4px'};margin:1.5px 0">${(e.seq||exp+1)<=2&&dt>=today&&ps!=='未分崗'&&!e.tr?'⚠️':''}<b style="color:${PT[pi]};font-weight:600">${e.name}</b>${ps!=='未分崗'?` <span style="font-size:10px;color:${PT[pi]};opacity:.7;font-weight:700">${e.seq||exp+1}</span>`:''}${e.tr?`<span style="display:block;color:${PT[ti]};font-weight:600;font-size:11.5px">🎓${e.tr} <span style="font-size:9px;opacity:.7">${e.trSeq||trExp+1}</span></span>`:''}</div>`
+          const vio9=(VIO.g||{})[e.name+'|'+dt]
+          return `<div ${vio9?`class="vioGlow" title="⚠️ ${vio9.join('、')}"`:''} ${meN?`draggable="true" ondragstart="event.stopPropagation();event.dataTransfer.setData('text/plain','${e.id}');window._shiftDragId='${e.id}'" ondragend="window._shiftDragId=null" onclick="event.stopPropagation();shiftForm('${e.id}')"`:''} style="font-size:12px;line-height:1.45;white-space:nowrap;${meN?'cursor:grab;':''}${bg2}border:${e.tr?'1.5px dashed rgba(255,255,255,.95)':'none'};border-radius:5px;padding:${e.tr?'1px 3px':'2px 4px'};margin:1.5px 0">${(e.seq||exp+1)<=2&&dt>=today&&ps!=='未分崗'&&!e.tr?'⚠️':''}<b style="color:${PT[pi]};font-weight:600">${e.name}</b>${ps!=='未分崗'?` <span style="font-size:10px;color:${PT[pi]};opacity:.7;font-weight:700">${e.seq||exp+1}</span>`:''}${e.tr?`<span style="display:block;color:${PT[ti]};font-weight:600;font-size:11.5px">🎓${e.tr} <span style="font-size:9px;opacity:.7">${e.trSeq||trExp+1}</span></span>`:''}</div>`
         }).join('')
         return `<td${cellOps} style="${BD}${sepOf(dt)}${gb}${dt===today?todayBg:wkndBg(dt)}padding:2px 3px;text-align:left;${meN?'cursor:pointer;':''}vertical-align:top">${ents||(meN?'<span class="mut">＋</span>':'<span class="mut">—</span>')}</td>`
       }).join('')+`</tr>`
@@ -235,9 +237,10 @@ function shiftRender(){
           hh += `<tr><td style="${BD}${gb9}padding:3px 6px;text-align:left;font-weight:800;font-size:11px;color:${c9.ink};position:sticky;left:0;background:${c9.bg};z-index:1;white-space:nowrap">${ptTag}${nm}${mi===0?` <span style="font-size:9px;font-weight:900;border:1px solid ${c9.ink}66;border-radius:4px;padding:0 3px">${gp==='其他'?'AB':gp}</span>`:''}</td>`
           hh += wd2.map(dt=>{
             const x = (abByN[nm]||{})[dt]
-            if (!x) return `<td style="${BD}${gb9}${sepOf(dt)}${dt===today?todayBg:wkndBg(dt)}"></td>`
+            const vioA9 = (VIO.a||{})[nm+'|'+dt]
+            if (!x) return `<td ${vioA9?`class="vioGlow" title="⚠️ ${vioA9.join('、')}"`:''} style="${BD}${gb9}${sepOf(dt)}${dt===today?todayBg:wkndBg(dt)}"></td>`
             const code = x.code || ''
-            const tip = `${nm} ${dt} ${code||'排休'}${x.start?` ${x.start}-${x.end}`:''}${x.dept?`（${x.dept}）`:''}`
+            const tip = `${vioA9?`⚠️ ${vioA9.join('、')}｜`:''}${nm} ${dt} ${code||'排休'}${x.start?` ${x.start}-${x.end}`:''}${x.dept?`（${x.dept}）`:''}`
             const rest9 = /例|休/.test(code) // 休假＝淡灰小字不加框（一眼略過，排班色塊才跳）
             const cc9 = abC(code)
             const chip = code && code!=='●'
@@ -245,7 +248,7 @@ function shiftRender(){
                 ? `<span style="font-size:10px;color:#55617A;font-weight:600;white-space:nowrap">${code.replace(/[●🔴⚪️]/g,'')}</span>`
                 : `<span style="display:inline-block;border:1px solid ${cc9};background:${cc9}1F;color:${cc9};border-radius:6px;padding:1px 6px;font-size:11px;font-weight:800;white-space:nowrap">${code}</span>${x.start?`<div class="hint" style="font-size:9px;white-space:nowrap">${x.start}-${x.end}</div>`:''}`)
               : `<span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:#3A4454" title="排休/未排"></span>`
-            return `<td style="${BD}${gb9}${sepOf(dt)}${dt===today?todayBg:wkndBg(dt)}padding:2px 3px;text-align:center" title="${tip}">${chip}</td>`
+            return `<td ${vioA9?'class="vioGlow"':''} style="${BD}${gb9}${sepOf(dt)}${dt===today?todayBg:wkndBg(dt)}padding:2px 3px;text-align:center" title="${tip}">${chip}</td>`
           }).join('') + `</tr>`
         })
       })

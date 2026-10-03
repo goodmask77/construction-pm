@@ -41,7 +41,7 @@ function cMsel(mm){ const nowYM = todayTpe().slice(0,7); const all = Object.keys
 function cAgg(mm, yms){
   const o = { resv:0,guests:0,cxl:0,kids:0,nw:0,rt:0,big:0,bigG:0,src:{},lead:{d0:0,d1_3:0,d4_7:0,d8_30:0,d31:0},pp:{},hp:Array.from({length:7},()=>[0,0,0,0]),hg:Array.from({length:7},()=>[0,0,0,0]),wdD:[0,0,0,0,0,0,0] }
   for (const ym of yms){ const m = mm[ym]; if (!m) continue
-    for (const k of ['resv','guests','cxl','kids','nw','rt','big','bigG','posG','posRev','posD']) o[k] = (o[k]||0) + (m[k]||0)
+    for (const k of ['resv','guests','cxl','kids','nw','rt','big','bigG','posG','posRev','posD','wlN','wlG','wkN','wkG']) o[k] = (o[k]||0) + (m[k]||0)
     for (const [k,v] of Object.entries(m.src||{})) o.src[k]=(o.src[k]||0)+v
     for (const k of Object.keys(o.lead)) o.lead[k]+= (m.lead||{})[k]||0
     for (const [k,v] of Object.entries(m.pp||{})) o.pp[k]=(o.pp[k]||0)+v
@@ -147,6 +147,8 @@ async function custDetail(kind, keepFilter){
     const AP = cAgg(ins.m, ymsP)
     h += cKpi(cNum(A.posG), '同期 POS 實際來客', `營收 ${cNum(Math.round(A.posRev/10000))} 萬・人均 NT$${cNum(Math.round(A.posRev/A.posG))}`, '#5FD3A6') + cKpi(pct(AP.guests, AP.posG)+'%', '訂位人次/實際來客', (pct(AP.guests,AP.posG)>100?'訂位有水分（沒到/沒調人數）':'缺口=現場客') + `（對齊 ${ymsP.length} 個有POS的月）`, pct(AP.guests,AP.posG)>100?'#E8A657':'#6EB1FF')
   }
+  if (A.wlG) h += cKpi(cNum(A.wlG), '候補人次（已切出，不計入）', `${cNum(A.wlN)} 組沒進店`, '#8C98A8')
+  if (A.wkG) h += cKpi(cNum(A.wkG), '現場客人次（含在人次內）', `${cNum(A.wkN)} 組 walk-in 真進店`, '#5FD3A6')
   h += `</div>`
   if (A.posG) h += `<div class="hint" style="font-size:11px;margin:-4px 0 8px">⚠️ 訂位人次是「訂的時候寫的」，實際少來、沒調人數不會改——絕對人數以 POS 來客為準，這張表拿來看「相對強弱與預約壓力」。</div>`
   if (kind === 'trend'){

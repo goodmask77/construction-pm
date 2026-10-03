@@ -1,5 +1,8 @@
-/* ── /prep 原生任務中心 tasks.js（v1.0 2026-10-04）────────────────────────────
+/* ── /prep 原生任務中心 tasks.js（v1.1 2026-10-04）────────────────────────────
    React 版 src/tasks/TaskCenter.jsx + taskModel.js 的 vanilla 移植，取代 iframe 內嵌。
+   v1.1（張良 5 則）：①指派完浮通知三選一（大群/私訊/不通知→tasknotify）②卡片完成鈕＋建立者審核流
+   （createdBy/review 新欄位，主 App 合併保留）③卡片減脂（大項名/狀態字/標籤不上卡）
+   ④負責人視角改每人一組看板（排序存 sp_team_pm_ownerord）⑤計時改日時分 tnFmtDur。
    資料 100% 相容主 App：
      sp_team_pm_task_<id> ＝ 一件任務一份文件（含 ord＝手動排序位置）
      sp_team_pm_tasks_v2  ＝ 遷移 marker（只讀不寫）
@@ -72,6 +75,8 @@ const tnIP = {
   clip: '<path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/>',
   file: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/><path d="M14 2v6h6"/>',
   coffee: '<path d="M17 8h1a4 4 0 1 1 0 8h-1M3 8h14v9a4 4 0 0 1-4 4H7a4 4 0 0 1-4-4ZM6 2v2M10 2v2M14 2v2"/>',
+  send: '<path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/>',
+  belloff: '<path d="M8.7 3A6 6 0 0 1 18 8c0 2.1.3 3.7.8 4.9"/><path d="M6.3 6.3C6.1 6.8 6 7.4 6 8c0 7-3 9-3 9h13"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/><path d="m2 2 20 20"/>',
 };
 function tnI(name, size, color, fill, extra) {
   return '<svg width="' + (size || 14) + '" height="' + (size || 14) + '" viewBox="0 0 24 24" fill="' + (fill || 'none') + '" stroke="' + (color || 'currentColor') + '" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" style="flex:0 0 auto;vertical-align:-2px;' + (extra || '') + '">' + (tnIP[name] || '') + '</svg>';
@@ -154,6 +159,9 @@ const tnS = {
   showDone: false, showAllDone: false, sel: null, drag: null, dragCat: null,
   editCat: null, colorCat: null, gdNames: [], me: '', quick: '', gnew: {}, tagIn: '', newCatIn: '',
   hover: null, colOf: {}, inited: false, loaded: false, ownerCustom: false,
+  assignAsk: null,  // 指派完浮出的通知三選一 {id,owner}
+  dragOwn: null,    // 負責人視角：正在拖的人員組
+  ownerOrd: null,   // 負責人分組排序 {order:[姓名…]}（sp_team_pm_ownerord 全裝置同步）
 };
 let tnPersisted = [];   // 上次已存清單（差異寫入比對基準；快照含 ord）
 let tnSaveTimer = null; // 存檔防抖（0.5 秒）
@@ -176,18 +184,19 @@ function tnPermFail(r) { // 寫入失敗（沒權限/沒綁定/網路）→ 提�
   tnWarned = Date.now();
   alert((r && r.error) ? ('沒存上：' + r.error) : '這次修改可能沒存上（網路不穩或沒有編輯權限）。');
 }
-async function tnFetchAll() { // 任務（逐筆檔合併）＋大項 一次抓
-  const [pr, cr] = await Promise.all([tnKV({ op: 'getPrefix', key: 'sp_team_pm_task_' }), tnKV({ op: 'get', key: 'sp_team_pm_data' })]);
+async function tnFetchAll() { // 任務（逐筆檔合併）＋大項＋負責人分組排序 一次抓
+  const [pr, cr, orr] = await Promise.all([tnKV({ op: 'getPrefix', key: 'sp_team_pm_task_' }), tnKV({ op: 'get', key: 'sp_team_pm_data' }), tnKV({ op: 'get', key: 'sp_team_pm_ownerord' })]);
   if (!pr || !pr.ok) return null;
   const tasks = Object.values(pr.rows || {}).map(v => { try { return JSON.parse(v); } catch (_) { return null; } })
     .filter(t => t && t.id).sort((a, b) => ((a.ord != null ? a.ord : 0)) - ((b.ord != null ? b.ord : 0)));
   let cats = []; try { cats = cr && cr.value != null ? JSON.parse(cr.value) : []; } catch (_) { cats = []; }
-  return { tasks, cats: Array.isArray(cats) ? cats : [] };
+  let oord = null; try { oord = orr && orr.value != null ? JSON.parse(orr.value) : null; } catch (_) { oord = null; }
+  return { tasks, cats: Array.isArray(cats) ? cats : [], ownerOrd: (oord && Array.isArray(oord.order)) ? oord : null };
 }
 // stale-first 快取（沿用頁面 tcGet/tcSet=localStorage obt_ 前綴；單獨載入時退回自己存）
 function tnCGet(k) { try { return (typeof tcGet === 'function') ? tcGet(k) : JSON.parse(localStorage.getItem('obt_' + k)); } catch (_) { return null; } }
 function tnCSet(k, d) { try { (typeof tcSet === 'function') ? tcSet(k, d) : localStorage.setItem('obt_' + k, JSON.stringify(d)); } catch (_) {} }
-function tnCacheSave() { tnCSet('tnData', { tasks: tnS.tasks || [], cats: tnS.cats || [] }); }
+function tnCacheSave() { tnCSet('tnData', { tasks: tnS.tasks || [], cats: tnS.cats || [], ownerOrd: tnS.ownerOrd }); }
 
 // 存檔：畫面即時、停手 0.5 秒才寫後端；只寫有變動的那幾筆（含 ord 變動）、刪被移除的 → 與主 App diffPersist 同款
 function tnSave(list, opts) {
@@ -215,6 +224,28 @@ async function tnFlushDiff() {
   } finally { tnInflight--; }
 }
 function tnFlushNow() { if (tnSaveTimer) { clearTimeout(tnSaveTimer); tnSaveTimer = null; tnFlushDiff(); } }
+
+/* ── 通知口（後端 ?tasknotify 全包：LINE 大群/私訊＋GD App 推播，前端只管丟 body）
+   私訊不到（對方沒綁定）後端會回 error → 原文 alert 給使用者，任務本身照存不受影響 */
+async function tnNotify(body) {
+  try {
+    const r = await fetch('/api/mail-sync?tasknotify=' + encodeURIComponent(typeof K !== 'undefined' ? K : ''), {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(Object.assign({ token: (typeof TK === 'function' ? TK() : '') }, body)),
+    });
+    const j = await r.json().catch(() => null);
+    if (!j || !j.ok) alert((j && j.error) ? j.error : '通知沒發出去（網路不穩），任務本身有存。');
+    return j || { ok: false };
+  } catch (_) { alert('通知沒發出去（網路不穩），任務本身有存。'); return { ok: false }; }
+}
+
+/* ── 計時格式共用（張良「已N分看不懂多久」）：≥1日→已2日3時41分、≥1時→已3時41分、不足→已41分 ── */
+function tnFmtDur(min) {
+  const m = Math.max(0, Math.floor(Number(min) || 0));
+  if (m >= 1440) return '已' + Math.floor(m / 1440) + '日' + Math.floor((m % 1440) / 60) + '時' + (m % 60) + '分';
+  if (m >= 60) return '已' + Math.floor(m / 60) + '時' + (m % 60) + '分';
+  return '已' + m + '分';
+}
 
 /* ── 大項（cats＝sp_team_pm_data 整包陣列；只動 name/order/color/tcol，其餘欄位原樣保留） ── */
 function tnCatsWrite(next) {
@@ -255,13 +286,14 @@ function tnMatchQ(t) { const q = tnS.q.trim().toLowerCase(); return !q || (t.tit
 /* ── 任務動作 ── */
 function tnAddQuick() {
   const t = (tnS.quick || '').trim(); if (!t) return;
-  const task = { id: tnRid(), title: t, note: '', status: 'todo', catId: tnINBOX, start: '', due: '', priority: 'normal', tags: [], createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
+  // createdBy＝建立者記名（審核流靠它認人；沒綁定身分就不記＝JSON 存檔時 undefined 自動消失）
+  const task = { id: tnRid(), title: t, note: '', status: 'todo', catId: tnINBOX, start: '', due: '', priority: 'normal', tags: [], createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), createdBy: tnS.me || undefined };
   tnS.quick = '';
   tnSave([task].concat(tnS.tasks || []));
 }
 function tnAddToGroup(catId) {
   const t = (tnS.gnew[catId] || '').trim(); if (!t) return;
-  const task = { id: tnRid(), title: t, note: '', status: 'todo', catId: catId, start: '', due: '', priority: 'normal', tags: [], createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
+  const task = { id: tnRid(), title: t, note: '', status: 'todo', catId: catId, start: '', due: '', priority: 'normal', tags: [], createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), createdBy: tnS.me || undefined };
   tnS.gnew[catId] = '';
   tnSave([task].concat(tnS.tasks || []));
 }

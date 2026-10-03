@@ -47,6 +47,7 @@ function trimResv(x) {
   }
   if (x.customer?.customerId) o.cid = x.customer.customerId // 客人ID＝inline 客人檔同人合併的 key（同人會用不同名字/有時沒留電話，電話當 key 會漏；張良 2026-10-03 楊主委=楊安娜案）
   if (x.customer?.gender) o.gd = x.customer.gender // 1=小姐 2=先生（顧客資料庫性別欄，張良 2026-10-04）
+  if (x.reservationType && x.reservationType !== 2) o.ty = x.reservationType // 1=現場候位 3=現場客(真進店) 4=候補(沒進店!別算人次)——張良 2026-10-04「候補要切出來」；省略=2 一般訂位
   if (x.customer?.email) o.email = x.customer.email
   if (x.numberOfKidChairs) o.kc = x.numberOfKidChairs
   if (x.numberOfKidSets) o.ks = x.numberOfKidSets

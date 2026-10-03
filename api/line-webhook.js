@@ -652,7 +652,7 @@ async function loadPosText() {
       const inlSum = kv['sp_finance_pm_inline']
       if (Object.keys(inlDays).length || inlSum) {
         const ST = { 1: '確認', 2: '取消', 3: '待確認', 4: '入座', 5: '取消', 6: '確認' }
-        const ok1 = (r) => r.st !== 2 && r.st !== 5 // 有效（2/5 都是取消）
+        const ok1 = (r) => r.st !== 2 && r.st !== 5 && r.ty !== 4 // 有效（2/5=取消、ty4=候補沒進店都排除——張良 2026-10-04）
         const fmt1 = (r) => `${r.t || '候位'} ${r.name}${r.n}人(${ST[r.st] || r.st}${r.kc ? `,兒童椅${r.kc}` : ''}${r.note ? `,${String(r.note).slice(0, 30)}` : ''})`
         lines.push(`\n【A Beach 訂位（inline 每小時自動同步；載入=上月起到未來全部；2021-02 開店起全史已入庫 pm_inline_ 月檔，更早明細要另外查）】`)
         const td = inlDays[today] || []
@@ -1517,15 +1517,16 @@ async function queryResvDay(from, to, kw) {
       any = true
       if (!compact) {
         L.push(`${d}（${days[d].length}筆）：`)
-        days[d].forEach((r) => L.push(`  - ${r.t || '候位'} ${r.name} ${r.n}人｜${ST[r.st] || r.st}${r.phone ? `｜${r.phone}` : ''}${r.kc ? `｜兒童椅${r.kc}` : ''}${r.note ? `｜客註:${String(r.note).slice(0, 40)}` : ''}${r.inote ? `｜店註:${String(r.inote).slice(0, 40)}` : ''}`))
+        days[d].forEach((r) => L.push(`  - ${r.t || '候位'} ${r.name} ${r.n}人｜${r.ty === 4 ? '候補⚠️' : r.ty === 3 || r.ty === 1 ? '現場客' : ''}${ST[r.st] || r.st}${r.phone ? `｜${r.phone}` : ''}${r.kc ? `｜兒童椅${r.kc}` : ''}${r.note ? `｜客註:${String(r.note).slice(0, 40)}` : ''}${r.inote ? `｜店註:${String(r.inote).slice(0, 40)}` : ''}`))
       }
       // 系統算好的合計（2026-10-04 DD 心算 34≠33 抓包）：有效=st∉{2,5}；分時段+全天；引用這些數字別自己加
       // v4.38.2 沒填時間的也要計入（之前 && r.t 直接漏掉＝100人包場沒填時間就從合計消失）＋午/晚場總計（張良切法：17:00前=中午、17:00後=晚上，17-18店休息）
-      const ok9 = days[d].filter((r) => r.st !== 2 && r.st !== 5)
+      const ok9 = days[d].filter((r) => r.st !== 2 && r.st !== 5 && r.ty !== 4)
       const slot9 = (t9) => (!t9 ? '未填時間' : t9 < '13:00' ? '午12-13' : t9 < '17:00' ? '午13-17' : t9 < '19:00' ? '晚18-19' : '晚19後')
       const agg9 = {}
       ok9.forEach((r) => { const s9 = slot9(r.t || ''); const a9 = agg9[s9] = agg9[s9] || { g: 0, p: 0, k: 0, pend: 0 }; a9.g++; a9.p += r.n || 0; a9.k += (r.kc || 0) + (r.ks || 0); if (r.st === 3) a9.pend++ })
       const tp = ok9.reduce((t9, r) => t9 + (r.n || 0), 0), tkc = ok9.reduce((t9, r) => t9 + (r.kc || 0), 0), tks = ok9.reduce((t9, r) => t9 + (r.ks || 0), 0), tpd = ok9.filter((r) => r.st === 3).length
+      const wl9 = days[d].filter((r) => r.ty === 4 && r.st !== 2 && r.st !== 5), wlG9 = wl9.reduce((t9, r) => t9 + (r.n || 0), 0)
       const kcWho = tkc ? ok9.filter((r) => r.kc).map((r) => `${r.name}${r.kc}張`).join('、') : ''
       const nn9 = ok9.filter((r) => r.t && r.t < '17:00'), ee9 = ok9.filter((r) => r.t && r.t >= '17:00'), nt9 = ok9.filter((r) => !r.t)
       if (compact) {
@@ -1534,7 +1535,7 @@ async function queryResvDay(from, to, kw) {
         L.push(`${d.slice(5)}(${wd9}) 有效${ok9.length}組${tp}人(午${nn9.length}/晚${ee9.length}${nt9.length ? `/未填${nt9.length}` : ''})${cx9 ? `,取消${cx9}組` : ''}${tkc + tks ? `,小孩${tkc + tks}` : ''}`)
         days[d].filter((r) => (r.n || 0) >= 20 || r.note || r.inote).forEach((r) => L.push(`  - ${r.t || '未填'} ${r.name}${r.n}人(${ST[r.st] || r.st})${r.note ? `｜客註:${String(r.note).slice(0, 40)}` : ''}${r.inote ? `｜店註:${String(r.inote).slice(0, 40)}` : ''}`))
       } else {
-        L.push(`  ＝${d} 系統合計（回答以此為準，別自己加總）：有效 ${ok9.length}組 ${tp}人${tkc || tks ? `＋小孩${tkc + tks}` : ''}${tpd ? `（含待確認${tpd}組）` : ''}｜午場(17:00前)${nn9.length}組${nn9.reduce((t9, r) => t9 + (r.n || 0), 0)}人/晚場(17:00後)${ee9.length}組${ee9.reduce((t9, r) => t9 + (r.n || 0), 0)}人${nt9.length ? `/未填時間${nt9.length}組${nt9.reduce((t9, r) => t9 + (r.n || 0), 0)}人` : ''}｜` + Object.entries(agg9).map(([s9, a9]) => `${s9}:${a9.g}組${a9.p}人${a9.k ? `+${a9.k}小` : ''}`).join('、') + (tkc ? `｜🪑兒童椅共${tkc}張（${kcWho}）` : '') + (tks ? `｜兒童座${tks}個` : '') + `｜⚠️ inline iPad 時間軸人數=大人+小孩`)
+        L.push(`  ＝${d} 系統合計（回答以此為準，別自己加總）：有效 ${ok9.length}組 ${tp}人${tkc || tks ? `＋小孩${tkc + tks}` : ''}${tpd ? `（含待確認${tpd}組）` : ''}｜午場(17:00前)${nn9.length}組${nn9.reduce((t9, r) => t9 + (r.n || 0), 0)}人/晚場(17:00後)${ee9.length}組${ee9.reduce((t9, r) => t9 + (r.n || 0), 0)}人${nt9.length ? `/未填時間${nt9.length}組${nt9.reduce((t9, r) => t9 + (r.n || 0), 0)}人` : ''}｜` + Object.entries(agg9).map(([s9, a9]) => `${s9}:${a9.g}組${a9.p}人${a9.k ? `+${a9.k}小` : ''}`).join('、') + (tkc ? `｜🪑兒童椅共${tkc}張（${kcWho}）` : '') + (tks ? `｜兒童座${tks}個` : '') + `｜⚠️ inline iPad 時間軸人數=大人+小孩` + (wl9.length ? `｜🪧候補另計：${wl9.length}組${wlG9}人（沒進店，不算人次）` : ''))
       }
     }
   }

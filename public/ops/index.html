@@ -100,6 +100,8 @@
   }
 @keyframes trGlow{0%,100%{box-shadow:0 0 2px 0 var(--gc)}50%{box-shadow:0 0 10px 2.5px var(--gc)}} /* 🎓帶訓卡發光（張良 2026-10-02） */
 @keyframes goldGlow{0%,100%{box-shadow:0 0 0 2px #D4A72C,0 0 6px 2px rgba(212,167,44,.35)}50%{box-shadow:0 0 0 3px #F2CE60,0 0 22px 7px rgba(242,206,96,.75)}} /* 🔗deep link 跳轉定位閃光（v4.16.0） */
+.vioGlow{animation:vioRed 1.6s ease-in-out infinite;border-radius:6px} /* 🔴 班表違規格紅光（v4.33.3 張良） */
+@keyframes vioRed{0%,100%{box-shadow:0 0 0 1.5px #F07373,0 0 4px 1px rgba(240,115,115,.35)}50%{box-shadow:0 0 0 2.5px #FF8B8B,0 0 14px 4px rgba(240,115,115,.8)}}
 @keyframes shSlideL{from{transform:translateX(44px);opacity:.35}to{transform:none;opacity:1}} /* 週表左右滑動（張良 2026-10-02） */
 @keyframes shSlideR{from{transform:translateX(-44px);opacity:.35}to{transform:none;opacity:1}}
 .glowgold{animation:goldGlow 1s ease-in-out 4;border-radius:8px}

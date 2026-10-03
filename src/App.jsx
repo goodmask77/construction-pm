@@ -352,7 +352,7 @@ async function loadSpaceAIContext() {
         const inlDays = { ...(inlPmoAI?.days || {}), ...(inlMoAI?.days || {}), ...(inlNmoAI?.days || {}) };
         if (Object.keys(inlDays).length || inlSumAI) {
           const ST = { 1: "確認", 2: "取消", 3: "待確認", 4: "入座", 5: "取消", 6: "確認" };
-          const ok1 = r => r.st !== 2 && r.st !== 5; // 有效（2/5 都是取消）
+          const ok1 = r => r.st !== 2 && r.st !== 5 && r.ty !== 4; // 有效（2/5=取消、ty4=候補沒進店都排除）
           const fmt1 = r => `${r.t || "候位"} ${r.name}${r.n}人(${ST[r.st] || r.st}${r.kc ? `,兒童椅${r.kc}` : ""}${r.note ? `,${String(r.note).slice(0, 30)}` : ""})`;
           const ls = [`【A Beach 訂位（inline 每小時自動同步；載入=上月起到未來全部；2021-02 開店起全史已入庫 pm_inline_ 月檔，更早明細要另外查）】`];
           const td = inlDays[twD] || [];
