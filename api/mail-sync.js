@@ -1426,12 +1426,16 @@ export default async function handler(req, res) {
     const defR3 = await kvGet('sp_finance_pm_sop_def')
     const aprR3 = (((defR3 || {}).ground || {}).approvers || ['張良瑋'])
     if (!whoR3 || (whoR3.role !== '主管' && !aprR3.includes(whoR3.name))) return res.status(403).json({ ok: false, error: '權限由主管/審核人設定' })
-    if (!['一般', '主管', '停權'].includes(rb.role)) return res.status(400).json({ ok: false })
+    // v4.41.3 兩口合一（張良按主管跳「名冊找不到」真因＝權限表送 rid、這個舊口只認 name；新口排後面被這裡攔截）：同時收 rid/name；職級加 PT/正職（''/一般=清除）
+    if (!['一般', '主管', '停權', 'PT', '正職', ''].includes(String(rb.role || ''))) return res.status(400).json({ ok: false })
     const rosterR = (await kvGet('sp_crew_kb_roster')) || { people: [] }
-    const pR = (rosterR.people || []).find(p2 => p2.name === String(rb.name || '').trim() && !p2.endDate)
-    if (!pR) return res.status(404).json({ ok: false, error: '名冊找不到' })
+    const ridQ3 = String(rb.rid || '')
+    const pR = ridQ3
+      ? (rosterR.people || []).find(p2 => String(p2.id) === ridQ3)
+      : (rosterR.people || []).find(p2 => p2.name === String(rb.name || '').trim() && !p2.endDate)
+    if (!pR) return res.status(404).json({ ok: false, error: '名冊找不到這個人' })
     if (aprR3.includes(pR.name) && rb.role === '停權') return res.status(400).json({ ok: false, error: '審核人不能停權自己人 😄' })
-    if (rb.role === '一般') delete pR.gdRole; else pR.gdRole = rb.role
+    if (rb.role === '一般' || rb.role === '') delete pR.gdRole; else pR.gdRole = rb.role
     await kvPut('sp_crew_kb_roster', rosterR, 'GD權限(' + whoR3.name + '→' + pR.name + '=' + rb.role + ')')
     return res.status(200).json({ ok: true })
   }
@@ -2582,31 +2586,16 @@ export default async function handler(req, res) {
     } catch (_) {}
     return res.status(200).json({ ok: true, pending: true })
   }
-  // 🪪 職級設定（v4.41.2 張良「PT/正職/主管 設定功能」）：GET ?gdrole=<OPS_KEY>&me= 回全部職級；POST {token,rid,role} 設定——都限管理者
-  // 職級寫進名冊 gdRole＝全系統同一來源（主管=員工清冊看得到、whoami 當審核人）
+  // 🪪 職級查詢（v4.41.3）：GET ?gdrole=<OPS_KEY>&me= 回全部職級（限管理者）；POST 設定走前面 1420 行的舊口（v4.41.3 兩口合一，別再加第二個 POST 分支）
   if (req.query?.gdrole) {
     const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
     if (!ok2 || String(req.query.gdrole) !== ok2) return res.status(403).json({ ok: false })
     const pmR9 = (await kvGet('sp_finance_pm_prep_perm')) || { users: {} }
-    const isAdmFn9 = w9 => !!(w9 && pmR9.users[w9.rid || w9.uid] && pmR9.users[w9.rid || w9.uid].admin)
-    if (req.method !== 'POST') {
-      const whoR9 = await sopWho(req.query.me)
-      if (!isAdmFn9(whoR9)) return res.status(403).json({ ok: false })
-      const rosR9 = (await kvGet('sp_crew_kb_roster')) || {}
-      const roles9 = {}; (rosR9.people || []).forEach(p9 => { if (p9.gdRole) roles9[p9.id] = p9.gdRole })
-      return res.status(200).json({ ok: true, roles: roles9 })
-    }
-    let bR9 = {}; try { bR9 = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
-    const whoR9 = await sopWho(bR9.token)
-    if (!isAdmFn9(whoR9)) return res.status(403).json({ ok: false, error: '只有管理者能設職級' })
-    const roleR9 = String(bR9.role || '')
-    if (!['PT', '正職', '主管', ''].includes(roleR9)) return res.status(400).json({ ok: false, error: '職級只能是 PT／正職／主管' })
-    const rosR9 = (await kvGet('sp_crew_kb_roster')) || { people: [] }
-    const pR9 = (rosR9.people || []).find(x => x.id === String(bR9.rid || ''))
-    if (!pR9) return res.status(404).json({ ok: false, error: '名冊找不到這個人' })
-    if (roleR9) pR9.gdRole = roleR9; else delete pR9.gdRole
-    await kvPut('sp_crew_kb_roster', rosR9, '職級 ' + pR9.name + '=' + (roleR9 || '清除') + '(' + whoR9.name + ')')
-    return res.status(200).json({ ok: true })
+    const whoR9 = await sopWho(req.query.me)
+    if (!whoR9 || !(pmR9.users[whoR9.rid || whoR9.uid] || {}).admin) return res.status(403).json({ ok: false })
+    const rosR9 = (await kvGet('sp_crew_kb_roster')) || {}
+    const roles9 = {}; (rosR9.people || []).forEach(p9 => { if (p9.gdRole) roles9[p9.id] = p9.gdRole })
+    return res.status(200).json({ ok: true, roles: roles9 })
   }
   // 🔒 身分證欄名單（v4.41.2）：POST ?hridlock=<OPS_KEY> {token, rids:[]}——限管理者；名冊頁鎖頭點開勾人
   if (req.method === 'POST' && req.query?.hridlock) {
@@ -2780,10 +2769,9 @@ export default async function handler(req, res) {
   if (req.query?.hrmaster) {
     const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
     if (!ok2 || String(req.query.hrmaster) !== ok2) return res.status(403).json({ ok: false })
-    const [whoH9, defH9, rosH9] = await Promise.all([sopWho(req.query.me), kvGet('sp_finance_pm_sop_def'), kvGet('sp_crew_kb_roster')])
-    const aprH9 = (((defH9 || {}).ground || {}).approvers || ['張良瑋'])
-    const isMgr = whoH9 && (aprH9.includes(whoH9.name) || whoH9.name === '張良瑋' || whoH9.role === '主管')
-    if (!isMgr) return res.status(403).json({ ok: false, error: '這頁只有主管看得到（個資：身分證/生日）' })
+    // v4.41.3 張良拍板改規則：名冊「所有人（有登入）都可以看」；敏感的身分證欄另外用名單鎖（下面 idlock）
+    const whoH9 = await sopWho(req.query.me)
+    if (!whoH9) return res.status(403).json({ ok: false, error: permDeny() })
     // 🔒 身分證欄名單鎖（v4.41.2 張良「打勾的人才可以看到」）：預設只有管理者；名單存 pm_hr_idlock；沒在名單＝整欄伺服器端拔掉(不是前端藏)
     const [docH, lockH, pmH] = await Promise.all([kvGet('sp_crew_pm_hr_master'), kvGet('sp_finance_pm_hr_idlock'), kvGet('sp_finance_pm_prep_perm')])
     const ridH = whoH9.rid || whoH9.uid
@@ -2796,7 +2784,7 @@ export default async function handler(req, res) {
     let rowsH = (docH || { rows: [] }).rows || []
     if (!canId) rowsH = rowsH.map(({ nid, ...r9 }) => r9)
     const topts = (docH || {}).titleOpts || [...new Set(['正職', 'PT', ...rowsH.map(r9 => r9.title).filter(Boolean)])]
-    const outH = { ok: true, rows: rowsH, titleOpts: topts, updatedAt: (docH || {}).updatedAt || '', src: (docH || {}).src || '', idCan: canId, canEdit: true }
+    const outH = { ok: true, rows: rowsH, titleOpts: topts, updatedAt: (docH || {}).updatedAt || '', src: (docH || {}).src || '', idCan: canId, canEdit: isAdmH || whoH9.role === '主管' } // v4.41.3 全員可看但編輯鈕只給主管/管理者（寫入口 hrmasterup 本來就擋）
     if (isAdmH) outH.idLock = { rids: ((lockH || {}).rids) || [], people: Object.entries((pmH && pmH.users) || {}).map(([r9, u9]) => ({ rid: r9, name: u9.name, admin: !!u9.admin })) }
     return res.status(200).json(outH)
   }

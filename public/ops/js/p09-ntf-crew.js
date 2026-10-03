@@ -376,8 +376,7 @@ async function meChipInit(){ // 側欄底部＝登入身分（張良 2026-10-02�
   } catch(e){}
   // v4.26.3（張良：設定每個頁面看不看得見）：被關掉的分頁直接從側欄藏起來（board=首頁）
   if (me && !me.approver && Array.isArray(me.hideTabs)) me.hideTabs.forEach(k=>{ const b = document.getElementById(k==='board' ? 'tab-home' : 'tab-'+k); if (b) b.style.display = 'none' })
-  // v4.41.2 人員名冊=主管限定（張良「我說主管才能看」）：非主管/審核人連按鈕都不出現（資料端 hrmaster 本來就擋，這裡藏入口）
-  if (!me || !(me.approver || me.role === '主管')) { const bH9 = document.getElementById('tab-hrm'); if (bH9) bH9.style.display = 'none' }
+  // v4.41.3 張良改規則：夥伴名冊全員可看（身分證欄另有名單鎖、編輯鈕只給主管）——v4.41.2 的藏按鈕取消
   if (me && Array.isArray(me.fav) && me.fav.length) { try { localStorage.setItem('gdFav', JSON.stringify(me.fav)) } catch(_){} } // ⭐ v4.39.1 伺服器版個人常用清單＝以人為準（換手機跟著走）
   try { favRender() } catch(_){} // 藏分頁/個人清單套完→捷徑列重畫
 }

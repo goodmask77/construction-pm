@@ -5,11 +5,11 @@ async function hrmLoad(){
   curStore = 'hrm'; setTabs('hrm')
   const hb = document.getElementById('tab-hrm'); if (hb) hb.className = 'on'
   document.getElementById('upd').textContent = '夥伴名冊'
-  app.innerHTML = '<section><h2>🪪 夥伴名冊</h2><div class="hint">讀取中…（主管限定）</div></section>'
+  app.innerHTML = '<section><h2>🪪 夥伴名冊</h2><div class="hint">讀取中…</div></section>'
   let d = null
   try { const r = await fetch('/api/mail-sync?hrmaster=' + encodeURIComponent(K) + (TK() ? '&me=' + encodeURIComponent(TK()) : '') + '&r=' + Date.now()); d = await r.json() } catch(e){}
   if (!d || !d.ok) {
-    app.innerHTML = `<section><h2>🪪 夥伴名冊</h2><div style="background:var(--card);border:1.5px solid var(--line);border-radius:12px;padding:18px;font-size:15px">🔒 ${(d&&d.error)||'這頁只有主管看得到（內含身分證、生日等個資）'}</div></section>`
+    app.innerHTML = `<section><h2>🪪 夥伴名冊</h2><div style="background:var(--card);border:1.5px solid var(--line);border-radius:12px;padding:18px;font-size:15px">🔒 ${(d&&d.error)||'要先登入才能看（私訊 DD「登入碼」）'}</div></section>`
     return
   }
   window._hrmD = d
@@ -49,7 +49,7 @@ function hrmRender(){
     return days <= 30 ? { ...x, days, md: x.birth.slice(5).replace('-','/') } : null
   }).filter(Boolean).sort((a,b)=>a.days-b.days)
   const coBtn = (v,lb)=>`<button class="mini${hrmCo===v?' on':''}" style="padding:6px 14px;font-weight:800" onclick="hrmCo='${v}';hrmRender()">${lb}</button>`
-  let h = `<section><h2>🪪 夥伴名冊 <span class="hint">主管限定・含個資請勿截圖外傳｜資料日期 ${String(d.updatedAt||'').slice(0,10)}</span></h2>
+  let h = `<section><h2>🪪 夥伴名冊 <span class="hint">含個資請勿截圖外傳｜資料日期 ${String(d.updatedAt||'').slice(0,10)}</span></h2>
     <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px;flex-wrap:wrap">
       ${coBtn('all','全部')}${coBtn('ab','A Beach')}${coBtn('gd','GROUN:D')}
       <input value="${hrmQ.replace(/"/g,'&quot;')}" placeholder="搜姓名／部門／職務" style="padding:8px 12px;border:1.5px solid var(--line);border-radius:10px;font-size:14.5px;width:200px;background:var(--card);color:var(--ink)" oninput="hrmQ=this.value;hrmRender()">
