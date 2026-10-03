@@ -210,7 +210,8 @@ async function lineQuota() {
 async function quotaFoot(billed) { // billed=本次計費則數（回覆=0 免費）
   const q = await lineQuota()
   if (q.used < 0) return ''
-  return `\n\n📊 本次 ${billed} 則${billed === 0 ? '（回覆不計費）' : ''}｜本月 ${q.used + billed}${q.total > 0 ? '/' + q.total : ''} 則`
+  // v4.41.2 簡易版（張良 2026-10-04「改成簡易版 0 70/3000 像這樣就好」）：本次計費數 本月用量/上限
+  return `\n\n${billed} ${q.used + billed}${q.total > 0 ? '/' + q.total : ''}`
 }
 async function lineReply(replyToken, text, extra) {
   // extra＝附加訊息物件（Flex 按鈕卡等），跟文字一起回（LINE 一次最多 5 則）
