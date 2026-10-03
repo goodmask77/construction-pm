@@ -147,7 +147,7 @@ export default async function handler(req, res) {
         }
       }
       const topN = Math.min(30, Number(req.query.n) || 10)
-      const rank = Object.values(cust).filter((c) => c.name && !/^(現場|walk)/i.test(c.name)).sort((a, b) => b.seat - a.seat || b.book - a.book).slice(0, topN)
+      const rank = Object.values(cust).filter((c) => c.name && (c.phone || '').replace(/\D/g, '').length >= 8).sort((a, b) => b.seat - a.seat || b.book - a.book).slice(0, topN) // 沒電話=店員代稱(外國人/控)排除
       return res.status(200).json({ ok: true, customers: Object.keys(cust).length, rank })
     }
     // 回填口

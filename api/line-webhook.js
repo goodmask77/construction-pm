@@ -1440,8 +1440,9 @@ async function queryResvTop(n) {
       }
     }
   }
-  const rank = Object.values(cust).filter((c) => c.name && !/^(現場|walk)/i.test(c.name)).sort((a, b) => b.seat - a.seat || b.book - a.book).slice(0, top)
-  const L = [`◆ A Beach 常客排行 Top${top}（依「實際入座次數」排，2021-02 開店～今全史；同電話=同一人）`]
+  // 只排「有有效電話」的（沒電話的=店員現場代稱如「外國人/控」，幾百筆不是同一人，2026-10-03 實測排除）
+  const rank = Object.values(cust).filter((c) => c.name && (c.phone || '').replace(/\D/g, '').length >= 8).sort((a, b) => b.seat - a.seat || b.book - a.book).slice(0, top)
+  const L = [`◆ A Beach 常客排行 Top${top}（依「實際入座次數」排，2021-02 開店～今全史；同電話=同一人；只計有留電話的，現場代稱不算）`]
   rank.forEach((c, i) => L.push(`  ${i + 1}. ${c.name}｜入座${c.seat}次｜累計${c.guests}人次｜訂過${c.book}次(取消${c.cx})｜最近${c.last}${c.phone ? `｜${c.phone}` : ''}`))
   return L.join('\n')
 }
