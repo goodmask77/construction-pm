@@ -6,9 +6,11 @@
 //   ・首次回填 from=2026-01-01（線上最早資料 2026-01，一段 366 天內涵蓋）
 //   ・401＝金鑰失效 → 當天停跑＋DD 私訊審核人一次
 // 儲存：sp_finance_pm_boss_<slug>_<YYYYMM>（月分片 {rows:{主鍵:整列}}）；快照型（菜單成本/名冊）單檔 sp_finance_pm_boss_<slug>
-// 🔴 紅線（SKILL 明定）：這些資料＝內部資料，不可進 /prep 共用金鑰頁；之後開頁面只能放要登入的主 App。
+// 紅線放寬（張良 2026-10-03 拍板）：阿桑＝自家員工、兩邊互通都是公司內部資料，/prep 也算內部可以放；
+// 實作仍走 /prep 既有權限矩陣（permWho），不進免登入裸頁。
 // cron：vercel.json 每小時 :07；手動 ?force=<MENU_PROBE_KEY>；只測金鑰 ?ping=1&force=<金鑰>
-import { kvGet, kvPut, announceChanged } from './mail-sync.js'
+// ?fillpos=<PARTNER_API_KEY>[&dry=1]：一次性把 4~6 月 AB 營收（revd+sett）補進營收頁 pos entries（7/1 起維持日結信為準）
+import { kvGet, kvPut, announceChanged, ingestPosRecords } from './mail-sync.js'
 
 const BASE = (process.env.BOSS_API_BASE_URL || '').trim().replace(/\/$/, '')
 const KEY = (process.env.BOSS_API_KEY || '').trim()
@@ -59,6 +61,36 @@ export default async function handler(req, res) {
   if (req.query?.ping) {
     if (!force) return res.status(403).json({ ok: false })
     try { const p = await call('ping'); return res.status(200).json({ ok: true, ping: p }) } catch (e) { return res.status(200).json({ ok: false, error: e.message }) }
+  }
+
+  // 一次性回填（張良 2026-10-03：「7/1 前營收頁沒 AB 資料，用阿桑 API 補完」）：
+  // boss revd（營收/單數/折扣/服務費/來客）＋ sett（現金/刷卡/Uber）→ 營收頁 pos entries；
+  // 只補 2026-07-01 前、且該日尚無 AB 列的日子（ingestPosRecords 本身就 date|店 去重，7/1 起日結信為準不會被蓋）
+  if (req.query?.fillpos) {
+    const pk = (process.env.PARTNER_API_KEY || '').trim()
+    if (!pk || String(req.query.fillpos) !== pk) return res.status(403).json({ ok: false })
+    const recs = []
+    for (const m of ['2026-04', '2026-05', '2026-06']) {
+      const ym = m.replace('-', '')
+      const [revD, settD] = await Promise.all([kvGet(`sp_finance_pm_boss_revd_${ym}`), kvGet(`sp_finance_pm_boss_sett_${ym}`)])
+      const settRows = (settD || {}).rows || {}
+      for (const r of Object.values((revD || {}).rows || {})) {
+        if (!r?.date || r.date >= '2026-07-01' || r.net_sales == null) continue
+        const s = settRows[r.date] || {}
+        recs.push({
+          id: 'pos-' + r.date.replace(/-/g, '') + 'boss-abeach',
+          date: r.date, period: r.date + '（阿桑OPS回填）', store: 'A Beach 101&Pizza', subject: 'A Beach boss-api 回填',
+          revenue: r.net_sales, grossSales: r.net_sales, discount: Number(r.discount) || 0, serviceFee: Number(r.service_charge) || 0,
+          txCount: r.transactions ?? null, guests: r.customers ?? null,
+          cash: s.cash_total ?? null, card: s.card_total ?? null, uber: s.ue_total ?? null,
+          source: 'boss-api',
+        })
+      }
+    }
+    if (req.query.dry) return res.status(200).json({ ok: true, dry: 1, n: recs.length, first: recs[0] || null, last: recs[recs.length - 1] || null })
+    const out = await ingestPosRecords(recs, 'boss-api回填AB4-6月營收')
+    await announceChanged()
+    return res.status(200).json({ ok: true, ...out })
   }
 
   const state = (await kvGet('sp_finance_pm_boss_state')) || { bf: {}, rot: 0, res: {} }

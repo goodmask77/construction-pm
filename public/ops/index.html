@@ -110,6 +110,7 @@
     <button id="tab-buy" onclick="buyLoad()">🛒 採購</button>
     <button id="tab-meet" onclick="meetLoad()">📋 會議</button>
     <button id="tab-shift" onclick="window._shScrollTo='today';shiftLoad()">📅 班表</button>
+    <button id="tab-inc" onclick="incLoad()" title="AB=阿桑系統自動同步；GD ERP 之後接入">⚠️ 異常通知</button>
     <button id="tab-fb" onclick="fbLoad()">💬 回饋</button>
     <button id="tab-menu" onclick="menuLoad()">🍔 菜單</button>
     <button id="tab-gear" onclick="settingsLoad()" title="設定">⚙️ 設定</button>
@@ -133,7 +134,7 @@ const app = document.getElementById('app')
 let curStore = 'ground'
 let lastStore = 'ground'
 function setTabs(k){
-  ['sop','task','lb','food','pack','buy','meet','shift','fb','menu','errs','gear'].forEach(t => { const b = document.getElementById('tab-' + t); if (b) b.className = (t===k) ? 'on' : '' })
+  ['sop','task','lb','food','pack','buy','meet','shift','inc','fb','menu','errs','gear'].forEach(t => { const b = document.getElementById('tab-' + t); if (b) b.className = (t===k) ? 'on' : '' })
   const hb = document.getElementById('tab-home'); if (hb) hb.className = (k==='ground'||k==='abeach') ? 'on' : '' // 🏠=回店面（張良 2026-09-21：怕有人不知道怎麼回去）
   if (k === 'ground' || k === 'abeach') lastStore = k
   const g = document.getElementById('bs-ground'), a = document.getElementById('bs-abeach')
@@ -1968,6 +1969,30 @@ function shiftRender(){
   // v4.25.0：無限時間軸——連續日期範圍(預設±2月)一長排，放品項明細同款四向捲動盒；滑到邊緣自動多載(shOnScroll)，月份 ‹ › 跳月，開啟自動捲到今天
   shInitRange(); shRangeInclude(shiftYm)
   h += `<div id="shBox" class="scroll" style="max-height:72vh;overflow:auto;margin-bottom:12px;-webkit-overflow-scrolling:touch">${buildGrid(shRangeDays())}</div>`
+  // v4.36.0（張良 2026-10-03「AB班表加在GD班表下方,知道兩間店有誰上班方便調度;左邊崗位變人名」）：
+  // AB 班表（阿桑 OPS 系統，boss-api 每小時自動同步）＝唯讀；列=人名、欄=日期、格=班別代碼（起訖時間掛 title）
+  if ((d.ab||[]).length){
+    const abByN = {}
+    d.ab.forEach(x=>{ if(x.name) (abByN[x.name]=abByN[x.name]||{})[x.date] = x })
+    const abDays = [...new Set(d.ab.map(x=>x.date))].sort()
+    const abNames = Object.keys(abByN).sort((a,b)=>Object.keys(abByN[b]).length-Object.keys(abByN[a]).length)
+    const BD2='border:1px solid var(--line);'
+    const wd9=['日','一','二','三','四','五','六']
+    let ah = `<div style="font-weight:900;margin:12px 0 6px;font-size:16px">A Beach 班表 <span class="hint" style="font-weight:600;font-size:11px">（阿桑系統自動同步・唯讀・調度參考）</span></div>`
+    ah += `<div class="scroll" style="max-height:60vh;overflow:auto;-webkit-overflow-scrolling:touch"><table style="border-collapse:collapse;min-width:max-content"><thead><tr><th style="${BD2}position:sticky;left:0;top:0;z-index:3;background:var(--soft);padding:4px 8px;text-align:left">夥伴</th>`
+    ah += abDays.map(dt=>{ const w9=new Date(dt+'T00:00:00').getDay(); return `<th style="${BD2}position:sticky;top:0;z-index:2;background:${dt===today?'var(--psoft)':'var(--soft)'};padding:4px 6px;font-size:11.5px;white-space:nowrap;${(w9===0||w9===6)?'color:var(--pdark);':''}">${dt.slice(5)}<br>${wd9[w9]}${dt===today?'・今':''}</th>` }).join('') + `</tr></thead><tbody>`
+    abNames.forEach(nm=>{
+      ah += `<tr><td style="${BD2}position:sticky;left:0;z-index:1;background:var(--card);padding:3px 8px;font-weight:800;white-space:nowrap">${nm}</td>`
+      ah += abDays.map(dt=>{
+        const x = abByN[nm][dt]
+        if (!x) return `<td style="${BD2}${dt===today?'background:var(--psoft);':''}"></td>`
+        const tip = `${nm} ${dt} ${x.code||''}${x.start?` ${x.start}-${x.end}`:''}${x.dept?`（${x.dept}）`:''}`
+        return `<td style="${BD2}${dt===today?'background:var(--psoft);':''}padding:2px 4px;text-align:center" title="${tip}"><span style="display:inline-block;border:1px solid var(--line);background:var(--card);border-radius:6px;padding:1px 6px;font-size:11.5px;font-weight:700;white-space:nowrap">${x.code||'●'}</span>${x.start?`<div class="hint" style="font-size:9.5px;white-space:nowrap">${x.start}-${x.end}</div>`:''}</td>`
+      }).join('') + `</tr>`
+    })
+    ah += `</tbody></table></div>`
+    h += ah
+  }
   // v4.28.1（張良「不要放左側 放班表下面就好」）：🧮 工時成本試算掛在週班表下面
   h += `<div style="font-weight:900;margin:12px 0 6px;font-size:16px">人力時數配置表</div><div id="lbSec" class="hint">載入中…</div>`
   const pn = Object.keys(per).sort()
@@ -2864,6 +2889,39 @@ function taskOwnSend(id){
 // ── 💬 每日回饋（張良 2026-09-22：每天對有上班的人文字回饋＋評分1~5星拉桿；一人一天對一人一則、可改）──
 let fbDate = null
 function fbNav(n){ const t2 = new Date(fbDate); t2.setDate(t2.getDate()+n); fbLoad(t2.toISOString().slice(0,10)) }
+// ── ⚠️ 異常通知（張良 2026-10-03：AB=阿桑系統 boss-api 自動同步先上；之後 GD ERP 叫貨收貨流程也同步進這頁）──
+async function incLoad(){
+  curStore = 'inc'; setTabs('inc')
+  if (window._incD) incRender(); else app.innerHTML = '<section>載入中…</section>'
+  let d
+  try { const r = await fetch('/api/mail-sync?absinc=' + encodeURIComponent(K) + (TK() ? '&me=' + encodeURIComponent(TK()) : '')); d = await r.json() } catch(e){}
+  if (!d || !d.ok) { if (!window._incD) app.innerHTML = '<div class="err">讀不到資料</div>'; return }
+  window._incD = d
+  if (curStore === 'inc') incRender()
+}
+function incRender(){
+  const d = window._incD; if (!d || curStore !== 'inc') return
+  document.getElementById('upd').textContent = '異常通知'
+  const fdt = s => String(s||'').slice(0,16).replace('T',' ')
+  const urgB = u => u ? `<span style="background:${/高|急/.test(u)?'var(--red)':'var(--soft)'};color:${/高|急/.test(u)?'#fff':'var(--muted)'};border-radius:5px;padding:0 6px;font-size:11px;font-weight:800">${u}</span>` : ''
+  let h = `<section><h2>⚠️ 異常通知 <span class="hint">A Beach＝阿桑系統自動同步（唯讀）・GROUN:D ERP 叫貨收貨之後接入同一頁</span></h2>`
+  const card = (x, open) => `<div style="background:var(--card);border:1.5px solid ${open?'var(--red)':'var(--line)'};border-radius:12px;padding:9px 12px;margin-bottom:8px">
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:3px">
+        <span style="background:var(--soft);border-radius:5px;padding:0 6px;font-size:11px;font-weight:800">🅰 A Beach</span>
+        <b style="font-size:14px">${x.cat || '異常'}</b>${urgB(x.urgency)}
+        <span style="background:${open?'#3A2A1A':'var(--soft)'};color:${open?'#F0B060':'var(--muted)'};border-radius:5px;padding:0 6px;font-size:11px;font-weight:800">${x.status}${x.stage?'・'+x.stage:''}</span>
+        <span class="hint" style="margin-left:auto;font-size:11px">${fdt(x.created)}</span>
+      </div>
+      ${x.detail?`<div style="font-size:13.5px;white-space:pre-wrap;margin:2px 0">${String(x.detail).slice(0,300)}</div>`:''}
+      <div class="hint" style="font-size:11.5px">${[x.station&&('站別:'+x.station), x.target&&('對象:'+x.target), x.by&&('回報:'+x.by+(x.dept?'('+x.dept+')':'')), x.assignee&&('負責:'+x.assignee), x.resolvedAt&&('結案:'+fdt(x.resolvedAt)+(x.resolveType?'・'+x.resolveType:''))].filter(Boolean).join('｜')}</div>
+    </div>`
+  h += `<div style="font-weight:900;margin:8px 0 6px;font-size:15px;color:var(--red)">未結案（${(d.open||[]).length}）</div>`
+  h += (d.open||[]).map(x=>card(x,1)).join('') || '<div class="mut">目前沒有未結案的異常 🎉</div>'
+  h += `<div style="font-weight:900;margin:14px 0 6px;font-size:15px">已結案（近三個月 ${(d.done||[]).length} 筆，列最近 30）</div>`
+  h += (d.done||[]).slice(0,30).map(x=>card(x,0)).join('') || '<div class="mut">沒有紀錄</div>'
+  h += `</section>`
+  app.innerHTML = h
+}
 async function fbLoad(date){
   curStore = 'fb'; setTabs('fb')
   fbDate = (typeof date === 'string' && date) || fbDate || todayTpe()
@@ -3367,7 +3425,7 @@ function todayRender(){
   el.innerHTML = s
 }
 // ── 🔖 分頁自訂（張良 2026-09-22：名稱＋排序可編輯，存 pm_prep_tabs 全裝置同步）──
-const TAB_DEF = { sop:'✅ SOP', task:'🛠 任務', lb:'🏆 排行榜', food:'🥩 盤點', pack:'📦 包材', buy:'🛒 採購', meet:'📋 會議', shift:'📅 班表', fb:'💬 回饋', menu:'🍔 菜單' }
+const TAB_DEF = { sop:'✅ SOP', task:'🛠 任務', lb:'🏆 排行榜', food:'🥩 盤點', pack:'📦 包材', buy:'🛒 採購', meet:'📋 會議', shift:'📅 班表', inc:'⚠️ 異常通知', fb:'💬 回饋', menu:'🍔 菜單' }
 // ── 單色線條 icon（張良 2026-09-24：不要彩色 emoji——同 Beach Ops 的 stroke 線條圖）──
 const _I = (d) => `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex:0 0 auto;vertical-align:-3px">${d}</svg>`
 const TAB_ICONS = {

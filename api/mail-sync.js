@@ -264,7 +264,7 @@ async function syncPos(days) {
 }
 
 // 共用回填插入（手動回填口＋喬亞自動抓取共用；同 syncPos 口徑：id 與 日期|店 都去重、明細月檔不覆蓋）
-async function ingestPosRecords(recs, editor) {
+export async function ingestPosRecords(recs, editor) { // export：boss-sync.js fillpos（AB 4~6月營收回填）共用
   const skOf2 = (n) => /groun/i.test(n || '') ? 'ground' : 'abeach'
   const store = (await kvGet('sp_finance_pm_pos')) || { entries: [] }
   const have = new Set(store.entries.map(e => e.id)), haveCombo = new Set(store.entries.map(e => e.date + '|' + skOf2(e.store)))
@@ -1566,7 +1566,7 @@ export default async function handler(req, res) {
     try { tb = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
     const whoT = await sopWho(tb.token)
     if (!whoT) return res.status(403).json({ ok: false, error: permDeny() })
-    const KEYS = ['task', 'lb', 'food', 'pack', 'buy', 'meet', 'shift', 'fb', 'menu']
+    const KEYS = ['task', 'lb', 'food', 'pack', 'buy', 'meet', 'shift', 'inc', 'fb', 'menu']
     const order = (Array.isArray(tb.order) ? tb.order : []).filter(k2 => KEYS.includes(k2))
     KEYS.forEach(k2 => { if (!order.includes(k2)) order.push(k2) }) // 漏掉的補在後面
     const names = {}
@@ -1769,6 +1769,25 @@ export default async function handler(req, res) {
     return res.status(200).json({ ok: true, ref: it.ref || null })
   }
   // ── 📋 會議紀錄（張良 2026-09-21：班前會議/營運會議，類型可自訂、紀錄可新增刪改）──
+  // ⚠️ 異常通知（張良 2026-10-03「/prep 多一個異常通知；AB=阿桑系統先上、之後 GD ERP 叫貨收貨也同步進同頁」）：
+  // GET ?absinc=<OPS_KEY>[&me=]：讀 boss-api 交接異常近3個月（sp_finance_pm_boss_inc_ 月檔）；唯讀；store 欄位留給之後 GD
+  if (req.query?.absinc) {
+    const okI = (process.env.OPS_BOARD_KEY || '').trim()
+    if (!okI || String(req.query.absinc) !== okI) return res.status(403).json({ ok: false })
+    const tdI = new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10)
+    const mosI = [0, 1, 2].map(n => new Date(Date.UTC(+tdI.slice(0, 4), +tdI.slice(5, 7) - 1 - n, 1)).toISOString().slice(0, 7).replace('-', ''))
+    const [meI, ...docsI] = await Promise.all([sopWho(req.query.me), ...mosI.map(m => kvGet('sp_finance_pm_boss_inc_' + m))])
+    const listI = docsI.flatMap(d9 => Object.values((d9 || {}).rows || {})).map(x => ({
+      id: x.incident_id, store: 'abeach', created: x.created_at, happened: x.happened_at || null,
+      cat: [x.main_cat, x.cat, x.item].filter(Boolean).join('／'), station: x.station || '', target: x.target || '',
+      detail: x.detail || '', status: x.status || '', stage: x.stage || '', urgency: x.urgency || '', importance: x.importance || '',
+      by: x.reported_by_name || '', dept: x.reported_dept || '', assignee: x.assignee_name || '',
+      resolveType: x.resolve_type || '', resolvedAt: x.resolved_at || null,
+    }))
+    const openI = listI.filter(x => !['closed', 'dismissed'].includes(x.status)).sort((a, b) => (String(a.created) < String(b.created) ? 1 : -1))
+    const doneI = listI.filter(x => ['closed', 'dismissed'].includes(x.status)).sort((a, b) => (String(a.created) < String(b.created) ? 1 : -1))
+    return res.status(200).json({ ok: true, open: openI.slice(0, 100), done: doneI.slice(0, 200), total: listI.length, me: meI ? { name: meI.name } : null })
+  }
   if (req.query?.meet) {
     const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
     if (!ok2 || String(req.query.meet) !== ok2) return res.status(403).json({ ok: false })
@@ -1940,7 +1959,18 @@ export default async function handler(req, res) {
     }
     const leaveM = {}; for (const dt of Object.keys(((sd || {}).leave) || {})) { if (dt >= loS && dt <= hiS) leaveM[dt] = sd.leave[dt] } // 🏖 當月範圍請假標記
     const hourlyL = (((sd || {}).hourly) || []).filter(x => String(x.date || '') >= loS && String(x.date || '') <= hiS) // 🕐 時段排班（v4.27.0）
-    return res.status(200).json({ ok: true, ym, hourly: hourlyL, sched: schedL.map(x => ({ ...x, seq: seqMap[x.id], trSeq: trSeqMap[x.id] })), punches: pchs.map(p => ({ name: p.name, ts: p.ts, dir: p.dir, src: p.src })), names: namesU, namesAll, posList, slots: (sd || {}).slots || null, colors: colMap, posStats, leave: leaveM, hist: ((sd || {}).hist || []).slice(-200).reverse(), lockEdit: (sd || {}).lockEdit ? 1 : 0, tpls: (sd || {}).tpls || [], staff, me: meS ? { name: meS.name, role: meS.role, approver: aprS.includes(meS.name) } : null })
+    // AB 班表（張良 2026-10-03「加在GD班表下方,知道兩間店有誰上班方便調度」）：阿桑 boss-api 排班（sp_finance_pm_boss_sched_ 月檔）
+    // 唯讀；列=人名、格=班別代碼；status=cancelled 排除；start/end 轉台北 HH:MM
+    let abSched = []
+    try {
+      const moSet = [...new Set([loS.slice(0, 7), ym, hiS.slice(0, 7)])]
+      const abDocs = await Promise.all(moSet.map(m => kvGet('sp_finance_pm_boss_sched_' + m.replace('-', ''))))
+      const hm = (ts) => { if (!ts) return ''; try { return new Date(new Date(ts).getTime() + 8 * 3600e3).toISOString().slice(11, 16) } catch (_) { return '' } }
+      abSched = abDocs.flatMap(d9 => Object.values((d9 || {}).rows || {}))
+        .filter(x => x.status !== 'cancelled' && String(x.work_date || '') >= loS && String(x.work_date || '') <= hiS)
+        .map(x => ({ date: x.work_date, name: x.staff_name || '', code: x.shift_code || x.role_code || '', dept: x.dept || '', start: hm(x.start_at), end: hm(x.end_at), day: x.day_type || '' }))
+    } catch (_) {}
+    return res.status(200).json({ ok: true, ym, ab: abSched, hourly: hourlyL, sched: schedL.map(x => ({ ...x, seq: seqMap[x.id], trSeq: trSeqMap[x.id] })), punches: pchs.map(p => ({ name: p.name, ts: p.ts, dir: p.dir, src: p.src })), names: namesU, namesAll, posList, slots: (sd || {}).slots || null, colors: colMap, posStats, leave: leaveM, hist: ((sd || {}).hist || []).slice(-200).reverse(), lockEdit: (sd || {}).lockEdit ? 1 : 0, tpls: (sd || {}).tpls || [], staff, me: meS ? { name: meS.name, role: meS.role, approver: aprS.includes(meS.name) } : null })
   }
   // 人員色號管理口：POST ?shiftcolor=管理金鑰 {map:{名字:色號}} 合併寫入（固定/校正專屬色用）
   if (req.method === 'POST' && req.query?.shiftcolor) {

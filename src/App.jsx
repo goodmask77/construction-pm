@@ -100,6 +100,61 @@ async function loadSpaceAIContext() {
         parts.push(`【NUEiP 人資出勤（本月 ${hrDays.length} 天；最新 ${lastD}）】\n` + rows.map(x => "- " + x).join("\n") + (bad.length ? `\n本月異常：${bad.join("、")}` : ""));
       }
     } catch (_) {}
+    // 阿桑 boss-api（A Beach OPS；sp_finance_pm_boss_* 每小時同步；與 D哥 loadBossText 同口徑，100%資料鐵則）
+    try {
+      const today = new Intl.DateTimeFormat("sv-SE", { timeZone: "Asia/Taipei" }).format(new Date()).slice(0, 10);
+      const ymB = today.slice(0, 7).replace("-", "");
+      const prevYmB = new Date(Date.UTC(+today.slice(0, 4), +today.slice(5, 7) - 2, 1)).toISOString().slice(0, 7).replace("-", "");
+      const nextYmB = new Date(Date.UTC(+today.slice(0, 4), +today.slice(5, 7), 1)).toISOString().slice(0, 7).replace("-", "");
+      const KB = (s, m) => `sp_finance_pm_boss_${s}_${m}`;
+      const [settA, settB, ordA, ordB, menuB, schA, schB, attA, attB, otA, otB, incA, incB, prepB, routB, tempB] = await Promise.all([
+        g(KB("sett", ymB)), g(KB("sett", prevYmB)), g(KB("ord", ymB)), g(KB("ord", prevYmB)), g("sp_finance_pm_boss_menu"),
+        g(KB("sched", ymB)), g(KB("sched", nextYmB)), g(KB("att", ymB)), g(KB("att", prevYmB)), g(KB("ot", ymB)), g(KB("ot", prevYmB)),
+        g(KB("inc", ymB)), g(KB("inc", prevYmB)), g(KB("prep", ymB)), g(KB("rout", ymB)), g(KB("temp", ymB)),
+      ]);
+      const rowsB = (...ds) => ds.flatMap(d => Object.values(d?.rows || {}));
+      const bl = [];
+      const sett = rowsB(settA, settB).sort((a, b) => (a.date < b.date ? 1 : -1));
+      if (sett.length) {
+        const bad = sett.filter(s => Math.abs(Number(s.cash_diff) || 0) + Math.abs(Number(s.card_diff) || 0) + Math.abs(Number(s.eats365_diff) || 0) > 0).slice(0, 10);
+        bl.push(`  ◇ 每日結帳對帳：最新 ${sett[0].date} 現金差${sett[0].cash_diff ?? "?"}／刷卡差${sett[0].card_diff ?? "?"}／POS差${sett[0].eats365_synced ? (sett[0].eats365_diff ?? 0) : "未對帳"}`);
+        if (bad.length) { bl.push(`  ◇ 有帳差的日子（${bad.length} 天）：`); bad.forEach(s => bl.push(`    - ${s.date} 現金${s.cash_diff || 0}｜刷卡${s.card_diff || 0}｜POS${s.eats365_diff ?? "未對帳"}`)); }
+      }
+      const ordsB = rowsB(ordA, ordB);
+      if (ordsB.length) {
+        const ap = ordsB.filter(o => o.status === "approved"), pend = ordsB.filter(o => o.status === "pending");
+        const sum = ap.reduce((t, o) => t + (Number(o.total_amount) || 0), 0);
+        bl.push(`  ◇ AB 叫貨（近兩個月，阿桑系統＝AB 實際在用）：已核准 ${ap.length} 單共${nt(sum)}｜待審 ${pend.length} 單`);
+        ordsB.sort((a, b) => (String(a.created_at) < String(b.created_at) ? 1 : -1)).slice(0, 8).forEach(o => bl.push(`    - ${String(o.created_at).slice(0, 10)} ${o.supplier || "(未填)"}｜${o.status}｜${o.line_count}項 ${nt(o.total_amount)}`));
+      }
+      const menuRows = Object.values(menuB?.rows || {}).filter(m => m.is_active);
+      if (menuRows.length) {
+        const costed = menuRows.filter(m => m.cost != null);
+        bl.push(`  ◇ AB 菜單成本估算：上架 ${menuRows.length} 道、有配方 ${costed.length} 道（cost_complete=false＝成本偏低僅供參考）；成本率最高：` + costed.sort((a, b) => (b.cost_ratio || 0) - (a.cost_ratio || 0)).slice(0, 5).map(m => `${m.name}${Math.round((m.cost_ratio || 0) * 100)}%`).join("、"));
+      }
+      const schedB = rowsB(schA, schB).filter(s => s.status !== "cancelled" && s.work_date >= today).sort((a, b) => (a.work_date < b.work_date ? -1 : 1));
+      if (schedB.length) {
+        const byD = {}; schedB.forEach(s => (byD[s.work_date] = byD[s.work_date] || []).push(s.staff_name + (s.shift_code ? `(${s.shift_code})` : "")));
+        bl.push("  ◇ AB 班表（今天起 7 天；排班非打卡）：");
+        Object.entries(byD).slice(0, 7).forEach(([d, ns]) => bl.push(`    - ${d}：${ns.join("、")}`));
+      }
+      const attRows = rowsB(attA, attB).sort((a, b) => (a.date < b.date ? 1 : -1));
+      if (attRows.length) { bl.push(`  ◇ AB 出勤事件（近兩個月 ${attRows.length} 筆，最近5；人工回報,沒紀錄≠全勤）：`); attRows.slice(0, 5).forEach(e => bl.push(`    - ${e.date} ${e.item || ""}：${(e.people || []).join("、")}${e.hours ? `（${e.hours}h）` : ""}`)); }
+      const otRows = rowsB(otA, otB);
+      if (otRows.length) { const hrs = otRows.reduce((t, e) => t + (Number(e.hours_each) || 0) * ((e.people || []).length || 1), 0); bl.push(`  ◇ AB 加班（近兩個月）：${otRows.length} 件、合計約 ${Math.round(hrs * 10) / 10} 人時`); }
+      const incRows = rowsB(incA, incB);
+      const incOpen = incRows.filter(i => !["closed", "dismissed"].includes(i.status)).sort((a, b) => (String(a.created_at) < String(b.created_at) ? 1 : -1));
+      if (incRows.length) {
+        bl.push(`  ◇ AB 交接異常（近兩個月 ${incRows.length} 筆、未結案 ${incOpen.length} 筆）：`);
+        incOpen.slice(0, 10).forEach(i => bl.push(`    - ${String(i.created_at).slice(0, 10)}［${i.status}${i.stage ? "·" + i.stage : ""}］${i.cat || i.main_cat || ""}｜${String(i.detail || i.item || "").replace(/\n/g, " ").slice(0, 50)}${i.assignee_name ? `（負責:${i.assignee_name}）` : ""}`));
+      }
+      const prepRows = rowsB(prepB).filter(p => String(p.at || "").slice(0, 10) === today && !p.cancelled_at);
+      const routRows = rowsB(routB).filter(r => r.biz_date === today);
+      if (prepRows.length || routRows.length) bl.push(`  ◇ AB 今日備料送出 ${prepRows.length} 筆、例行任務完成 ${routRows.length} 項`);
+      const tempRows = rowsB(tempB);
+      if (tempRows.length) { bl.push(`  ◇ ⚠️ AB 冰箱溫度超標 ${tempRows.length} 筆：`); tempRows.slice(0, 5).forEach(t => bl.push(`    - ${String(t.recorded_at).slice(0, 16)} ${t.device_label || t.device_id} ${t.temp_c}°C（${t.level}）`)); }
+      if (bl.length) parts.push("【A Beach OPS（阿桑系統 boss-api，每小時自動同步；null=沒資料不是0）】\n" + bl.join("\n"));
+    } catch (_) {}
     // 排班（100%資料鐵則：問誰哪天上什麼班以此為準；與 D哥 loadShiftText 同步接上）
     try {
       const [stf, tpl, idx] = await Promise.all([g("sp_crew_shift_staff"), g("sp_crew_shift_templates"), g("sp_crew_shift_sched_index")]);
