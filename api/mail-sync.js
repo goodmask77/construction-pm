@@ -388,6 +388,19 @@ export default async function handler(req, res) {
     const u9 = w9 && pm9.users[w9.rid || w9.uid]
     return (u9 && u9.edit && (u9.admin || !u9.tabs || u9.tabs[tab9] !== 0)) ? w9 : null
   }
+  // v4.32.1 新核准的人自動套「團隊共同設定」（張良抓包：林碧昱剛核准＝全開預設，班表能編+設定看得到，跟其他人不一致）
+  // 規則：現有非管理者「大家都關」的分頁才關（tabs[k]===0 全員一致→0；hide[k]=1 全員一致→藏），其餘照舊全開
+  const prepPermTmpl = (pm9) => {
+    const ns = Object.values(pm9.users || {}).filter(u => !u.admin && (u.tabs || u.hide)) // 只看「有設定過的人」——否則沒設定的新人自己會害「全員一致」永遠不成立
+    if (!ns.length) return {}
+    const keys = new Set(); ns.forEach(u => { Object.keys(u.tabs || {}).forEach(k => keys.add(k)); Object.keys(u.hide || {}).forEach(k => keys.add(k)) })
+    const tabs = {}, hide = {}
+    for (const k of keys) {
+      if (ns.every(u => u.tabs && u.tabs[k] === 0)) tabs[k] = 0
+      if (ns.every(u => u.hide && u.hide[k] === 1)) hide[k] = 1
+    }
+    const o = {}; if (Object.keys(tabs).length) o.tabs = tabs; if (Object.keys(hide).length) o.hide = hide; return o
+  }
   // 診斷探針（只回結構統計，不回金額/內容——端點公開，保守）：?txprobe=YYYY-MM-DD
   if (req.query?.txprobe) {
     const dt = String(req.query.txprobe)
@@ -1568,7 +1581,7 @@ export default async function handler(req, res) {
     const pmM = (await kvGet('sp_finance_pm_prep_perm')) || { mode: 'open', users: {}, pending: {} }
     const meU = meM2 ? pmM.users[meM2.rid || meM2.uid] : null
     const meOut = meM2 ? { name: meM2.name, canEdit: pmM.mode !== 'approve' || !!(meU && meU.edit), admin: !!(meU && meU.admin), pendingMe: !!pmM.pending[meM2.rid || meM2.uid] } : null
-    return res.status(200).json({ ok: true, imgs: mdoc.imgs || [], imgHist: Object.fromEntries(Object.entries(mdoc.imgHist || {}).map(([k, v]) => [k, (v || []).length])), base: mdoc.base, draft: mdoc.draft, edits: (mdoc.edits || []).slice(0, 15), me: meOut, perm: meOut && meOut.admin ? { mode: pmM.mode, users: Object.entries(pmM.users).map(([r, v]) => ({ rid: r, ...v })), pending: Object.entries(pmM.pending).map(([r, v]) => ({ rid: r, ...v })) } : null })
+    return res.status(200).json({ ok: true, imgs: mdoc.imgs || [], imgHist: Object.fromEntries(Object.entries(mdoc.imgHist || {}).map(([k, v]) => [k, (v || []).length])), base: mdoc.base, draft: mdoc.draft, edits: (mdoc.edits || []).slice(0, 15), me: meOut, perm: meOut && meOut.admin ? { mode: pmM.mode, users: Object.entries(pmM.users).map(([r, v]) => ({ rid: r, ...v })), pending: Object.entries(pmM.pending).map(([r, v]) => ({ rid: r, ...v })), removed: Object.entries(pmM.removed || {}).map(([r, v]) => ({ rid: r, ...v })) } : null })
   }
   // 菜單設計圖換圖（張良 2026-10-02：菜單頁頂四格圖，點看大圖、可各自換新圖）：POST ?menuimgset=<OPS_BOARD_KEY> {idx,url,token}
   if (req.method === 'POST' && req.query?.menuimgset) {
@@ -2366,7 +2379,9 @@ export default async function handler(req, res) {
     const rid = String(bp.rid || '')
     if (bp.op === 'approve' && pm.pending[rid]) {
       const appr = pm.pending[rid]
-      pm.users[rid] = { name: appr.name, edit: 1, by: who.name, ts: appr.ts }
+      const snap = (pm.removed || {})[rid] // v4.32.1 之前被移除過＝還原他原本的勾選；全新夥伴＝套團隊共同設定
+      pm.users[rid] = { ...(snap ? { tabs: snap.tabs, hide: snap.hide } : prepPermTmpl(pm)), name: appr.name, edit: 1, by: who.name, ts: appr.ts }
+      if (snap) delete pm.removed[rid]
       delete pm.pending[rid]
       try { // 核准→DD 通知當事人（張良 2026-10-01）
         const { linePush } = await import('./_onboard.js'); const { logPush } = await import('./push.js')
@@ -2376,7 +2391,15 @@ export default async function handler(req, res) {
       } catch (_) {}
     }
     else if (bp.op === 'reject') delete pm.pending[rid]
-    else if (bp.op === 'revoke' && pm.users[rid] && !pm.users[rid].admin) delete pm.users[rid]
+    else if (bp.op === 'revoke' && pm.users[rid] && !pm.users[rid].admin) { // v4.32.1 軟刪（張良：按移除就沒了要能復原）：搬到 removed 保留勾選，可一鍵復原
+      pm.removed = pm.removed || {}
+      pm.removed[rid] = { ...pm.users[rid], rts: new Date(Date.now() + 8 * 3600e3).toISOString().slice(5, 16).replace('T', ' ') }
+      delete pm.users[rid]
+    }
+    else if (bp.op === 'restore' && (pm.removed || {})[rid]) { // v4.32.1 復原：原本的勾選原封不動搬回來
+      const v9 = pm.removed[rid]; delete v9.rts
+      pm.users[rid] = v9; delete pm.removed[rid]
+    }
     else if (bp.op === 'mode') pm.mode = bp.mode === 'open' ? 'open' : 'approve'
     else if (bp.op === 'tab' && pm.users[rid]) { pm.users[rid].tabs = pm.users[rid].tabs || {}; pm.users[rid].tabs[String(bp.tab)] = bp.val ? 1 : 0 } // 分頁細部權限（張良 2026-10-01）
     else if (bp.op === 'see' && pm.users[rid]) { const u9 = pm.users[rid]; u9.hide = u9.hide || {}; if (bp.val) delete u9.hide[String(bp.tab)]; else u9.hide[String(bp.tab)] = 1 } // v4.26.3 每頁看不看得見（hide[tab]=1=隱藏）
@@ -2508,12 +2531,14 @@ export default async function handler(req, res) {
       await kvPut('sp_finance_pm_prep_perm', pm, '綁定改正口')
       return res.status(200).json({ ok: true, fixed, pending: Object.values(pm.pending || {}).map(v => v.name), users: Object.values(pm.users || {}).map(v => v.name) })
     }
-    if (op === 'approve') { const rid = String(req.query.rid || ''); const nm = String(req.query.name || ''); const hit = rid ? [[rid, pm.pending[rid]]] : Object.entries(pm.pending).filter(([, v]) => v.name.includes(nm)); for (const [r, v] of hit) { if (v) { pm.users[r] = { name: v.name, edit: 1, by: 'AI代操', ts: v.ts }; delete pm.pending[r]
+    if (op === 'approve') { const rid = String(req.query.rid || ''); const nm = String(req.query.name || ''); const hit = rid ? [[rid, pm.pending[rid]]] : Object.entries(pm.pending).filter(([, v]) => v.name.includes(nm)); for (const [r, v] of hit) { if (v) { const sn = (pm.removed || {})[r]; pm.users[r] = { ...(sn ? { tabs: sn.tabs, hide: sn.hide } : prepPermTmpl(pm)), name: v.name, edit: 1, by: 'AI代操', ts: v.ts }; if (sn) delete pm.removed[r]; delete pm.pending[r]
       try { const { linePush } = await import('./_onboard.js'); const { logPush } = await import('./push.js'); let uidA = v.uid; if (!uidA) { const bd = (await kvGet('sp_finance_pm_prep_bind')) || {}; uidA = (Object.values(bd.tokens || {}).find(t => t.rid === r || t.uid === r) || {}).uid } if (uidA && await linePush(uidA, `✅ 你的 /prep 編輯權限審核通過了！重新整理頁面就能編輯。`)) await logPush(uidA, 1, 'prep編輯權核准') } catch (_) {}
     } } await kvPut('sp_finance_pm_prep_perm', pm, '權限核准(AI代操)') }
-    if (op === 'revoke') { const nm = String(req.query.name || ''); for (const [r, v] of Object.entries(pm.users)) if (v.name.includes(nm) && !v.admin) delete pm.users[r]; await kvPut('sp_finance_pm_prep_perm', pm, '權限移除(AI代操)') }
+    if (op === 'revoke') { const nm = String(req.query.name || ''); for (const [r, v] of Object.entries(pm.users)) if (v.name.includes(nm) && !v.admin) { pm.removed = pm.removed || {}; pm.removed[r] = { ...v, rts: new Date(Date.now() + 8 * 3600e3).toISOString().slice(5, 16).replace('T', ' ') }; delete pm.users[r] } await kvPut('sp_finance_pm_prep_perm', pm, '權限移除(AI代操)') } // v4.32.1 軟刪可復原
+    if (op === 'restore') { const nm = String(req.query.name || ''); for (const [r, v] of Object.entries(pm.removed || {})) if (v.name.includes(nm)) { delete v.rts; pm.users[r] = v; delete pm.removed[r] } await kvPut('sp_finance_pm_prep_perm', pm, '權限復原(AI代操)') }
+    if (op === 'normalize') { const nm = String(req.query.name || ''); const tp = prepPermTmpl(pm); for (const v of Object.values(pm.users)) if (!v.admin && v.name.includes(nm) && !v.tabs && !v.hide) { if (tp.tabs) v.tabs = { ...tp.tabs }; if (tp.hide) v.hide = { ...tp.hide } } await kvPut('sp_finance_pm_prep_perm', pm, '權限套團隊預設(AI代操)') } // v4.32.1 補正沒設定過的人
     if (op === 'mode') { pm.mode = String(req.query.mode) === 'open' ? 'open' : 'approve'; await kvPut('sp_finance_pm_prep_perm', pm, '權限模式(AI代操)') }
-    return res.status(200).json({ ok: true, mode: pm.mode, users: Object.entries(pm.users).map(([r, v]) => ({ rid: r, ...v })), pending: Object.entries(pm.pending).map(([r, v]) => ({ rid: r, ...v })) })
+    return res.status(200).json({ ok: true, mode: pm.mode, users: Object.entries(pm.users).map(([r, v]) => ({ rid: r, ...v })), pending: Object.entries(pm.pending).map(([r, v]) => ({ rid: r, ...v })), removed: Object.entries(pm.removed || {}).map(([r, v]) => ({ rid: r, ...v })) })
   }
   // 實際備料填寫（張良 2026-10-01：備料表每天旁邊可填實備數字，逐日留痕做分析）：POST ?prepact=<OPS_BOARD_KEY> {item, qty, token}
   if (req.method === 'POST' && req.query?.prepact) {

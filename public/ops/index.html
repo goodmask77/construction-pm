@@ -3109,7 +3109,9 @@ function permPanelHtml(perm){
       const normal=users.filter(u=>!u.admin)
       const allSee=k=>normal.length&&normal.every(u=>!(u.hide&&u.hide[k]))
       const allEdit=k=>normal.length&&normal.every(u=>!u.tabs||u.tabs[k]!==0)
-      const cb=(ck,fn,tip)=>`<input type="checkbox" ${ck?'checked':''} onchange="${fn}" title="${tip}" style="width:15px;height:15px;cursor:pointer;accent-color:var(--primary)">`
+      const anySee=k=>normal.some(u=>!(u.hide&&u.hide[k])), anyEdit=k=>normal.some(u=>!u.tabs||u.tabs[k]!==0) // v4.32.1 半勾用
+      // v4.32.1（張良「整列框全沒勾看起來不太對」）：部分開＝半勾（－）不再顯示成全關；點半勾＝全開、再點＝全關
+      const cb=(ck,fn,tip,ind)=>`<input type="checkbox" ${ck?'checked':''}${!ck&&ind?' data-ind="1"':''} onchange="${fn}" title="${tip}" style="width:15px;height:15px;cursor:pointer;accent-color:var(--primary)">`
       const SEP='border-left:1px solid var(--line);'
       const COLS=1+TABS.reduce((a,x)=>a+(x[2]?1:2),0)
       let t=`<div style="margin-top:8px;font-weight:800">已核准（${users.length}）</div>
@@ -3117,21 +3119,25 @@ function permPanelHtml(perm){
       <tr><th rowspan="2" style="text-align:left;position:sticky;left:0;background:var(--soft);z-index:2;padding:6px 10px;vertical-align:bottom">夥伴</th>
         <th rowspan="2" style="${SEP}padding:5px 8px;text-align:center;font-size:11px;font-weight:600;vertical-align:bottom">整列<br>看｜編</th>
         ${TABS.map(([k,lb,so])=>`<th colspan="${so?1:2}" style="${SEP}padding:5px 8px 2px;text-align:center;font-size:12.5px;white-space:nowrap">${lb}</th>`).join('')}</tr>
-      <tr>${TABS.map(([k,lb,so])=>`<th style="${SEP}padding:2px 5px 6px;text-align:center;font-size:11px;font-weight:600">看<br>${cb(allSee(k),`permSet('taball',null,null,'${k}',this.checked,'see')`,'全員看得見 '+lb)}</th>`+(so?``:`<th style="padding:2px 5px 6px;text-align:center;font-size:11px;font-weight:600">編<br>${cb(allEdit(k),`permSet('taball',null,null,'${k}',this.checked,'edit')`,'全員能編輯 '+lb)}</th>`)).join('')}</tr>
+      <tr>${TABS.map(([k,lb,so])=>`<th style="${SEP}padding:2px 5px 6px;text-align:center;font-size:11px;font-weight:600">看<br>${cb(allSee(k),`permSet('taball',null,null,'${k}',this.checked,'see')`,'全員看得見 '+lb,anySee(k))}</th>`+(so?``:`<th style="padding:2px 5px 6px;text-align:center;font-size:11px;font-weight:600">編<br>${cb(allEdit(k),`permSet('taball',null,null,'${k}',this.checked,'edit')`,'全員能編輯 '+lb,anyEdit(k))}</th>`)).join('')}</tr>
       </thead><tbody>`
       users.forEach(u=>{
-        t+=`<tr><td style="text-align:left;font-weight:800;position:sticky;left:0;background:var(--card);z-index:1;padding:5px 10px;white-space:nowrap">${u.admin?'👑 ':''}${u.name} <button class="mini" style="padding:1px 8px;margin-left:4px" title="用 ${u.name} 的身分看整個 App" onclick="simStart('${u.rid}','${String(u.name||'').replace(/['"<>]/g,'')}')">👁</button>${u.admin?'':` <button class="mini" style="padding:1px 8px;margin-left:4px" onclick="permSet('revoke','${u.rid}')">移除</button>`}</td>`
+        t+=`<tr><td style="text-align:left;font-weight:800;position:sticky;left:0;background:var(--card);z-index:1;padding:5px 10px;white-space:nowrap">${u.admin?'👑 ':''}${u.name} <button class="mini" style="padding:1px 8px;margin-left:4px" title="用 ${u.name} 的身分看整個 App" onclick="simStart('${u.rid}','${String(u.name||'').replace(/['"<>]/g,'')}')">👁</button>${u.admin?'':` <button class="mini" style="padding:1px 8px;margin-left:4px" onclick="if(confirm('確定把 ${u.name} 移除編輯權限？\\n他的勾選設定會保留，下面「已移除」區可一鍵復原。'))permSet('revoke','${u.rid}')">移除</button>`}</td>`
         if(u.admin){ t+=`<td colspan="${COLS}" class="hint" style="text-align:left;padding:5px 10px">管理者＝全部看得見、全部能編輯</td>` }
         else {
           const rowSee=TABS.every(([k])=>!(u.hide&&u.hide[k])), rowEdit=TABS.filter(x=>!x[2]).every(([k])=>!u.tabs||u.tabs[k]!==0)
-          t+=`<td style="${SEP}padding:4px 6px;text-align:center;white-space:nowrap">${cb(rowSee,`permSet('rowall','${u.rid}',null,'${SEEK}',this.checked,'see')`,u.name+' 整列看得見/全關')}｜${cb(rowEdit,`permSet('rowall','${u.rid}',null,'${EDITK}',this.checked,'edit')`,u.name+' 整列能編輯/全關')}</td>`
+          const rowSeeAny=TABS.some(([k])=>!(u.hide&&u.hide[k])), rowEditAny=TABS.filter(x=>!x[2]).some(([k])=>!u.tabs||u.tabs[k]!==0) // v4.32.1 半勾
+          t+=`<td style="${SEP}padding:4px 6px;text-align:center;white-space:nowrap">${cb(rowSee,`permSet('rowall','${u.rid}',null,'${SEEK}',this.checked,'see')`,u.name+' 整列看得見/全關',rowSeeAny)}｜${cb(rowEdit,`permSet('rowall','${u.rid}',null,'${EDITK}',this.checked,'edit')`,u.name+' 整列能編輯/全關',rowEditAny)}</td>`
           TABS.forEach(([k,lb,so])=>{ t+=`<td style="${SEP}padding:4px 5px;text-align:center">${cb(!(u.hide&&u.hide[k]),`permSet('see','${u.rid}',null,'${k}',this.checked)`,u.name+' 看得見')}</td>`+(so?``:`<td style="padding:4px 5px;text-align:center">${cb(!u.tabs||u.tabs[k]!==0,`permSet('tab','${u.rid}',null,'${k}',this.checked)`,u.name+' 能編輯')}</td>`) })
         }
         t+=`</tr>`
       })
       return t+`</tbody></table></div>`
-    })()}</div>`
+    })()}
+    ${(perm.removed||[]).length?`<div style="margin-top:8px;padding-top:6px;border-top:1px dashed var(--line)"><b style="font-size:13px">🚫 已移除（${perm.removed.length}）</b><span class="hint">　勾選設定都還留著，按復原原樣回來</span>
+      ${perm.removed.map(u=>`<div style="padding:3px 0">${u.name} <span class="hint">${u.rts||''} 移除</span> <button class="mini on" style="padding:2px 10px" onclick="permSet('restore','${u.rid}')">↩️ 復原</button></div>`).join('')}</div>`:''}</div>`
 }
+function permIndFix(box){ box.querySelectorAll('input[data-ind="1"]').forEach(el=>{el.indeterminate=true}) } // v4.32.1 半勾（HTML屬性寫不了只能JS補）
 async function settingsLoad(){ // ⚙️ 設定頁（張良 2026-10-01：分頁管理/通知開關/權限管理集中這裡）
   curStore = 'settings'; setTabs('')
   const gb = document.getElementById('tab-gear'); if (gb) gb.className = 'on'
@@ -3146,6 +3152,7 @@ async function settingsLoad(){ // ⚙️ 設定頁（張良 2026-10-01：分頁�
   const box = document.getElementById('permBox'); if (!box) return
   window._permD = (d && d.me && d.me.admin && d.perm) ? d.perm : null // v4.26.4 樂觀更新用的本地快照
   box.innerHTML = window._permD ? permPanelHtml(window._permD) : '<div class="hint">🔐 編輯權限管理：僅管理者（老闆）看得到</div>'
+  if (window._permD) permIndFix(box)
   if (window._permKeepOpen) { box.style.display = ''; window._permKeepOpen = 0 }
 }
 async function prepApply(){
@@ -3162,7 +3169,7 @@ async function permSet(op, rid, mode, tab, val, kind){
     if (op==='taball') (pm.users||[]).forEach(u=>{ if (!u.admin) upd1(u) })
     else if (op==='rowall') { const u = (pm.users||[]).find(x=>x.rid===rid); if (u) String(tab).split(',').forEach(k9=>{ if (kind==='edit') { u.tabs=u.tabs||{}; u.tabs[k9]=val?1:0 } else { u.hide=u.hide||{}; if (val) delete u.hide[k9]; else u.hide[k9]=1 } }) } // v4.31.0 整列一鍵
     else { const u = (pm.users||[]).find(x=>x.rid===rid); if (u) upd1(u) }
-    const box = document.getElementById('permBox'); if (box) { box.innerHTML = permPanelHtml(pm); box.style.display = '' }
+    const box = document.getElementById('permBox'); if (box) { box.innerHTML = permPanelHtml(pm); box.style.display = ''; permIndFix(box) }
     const r = await fetch('/api/mail-sync?preppermset=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ token: TK(), op, rid, mode, tab, val, kind }) })
     const j = await r.json().catch(()=>null)
     if (!j || !j.ok) { alert((j&&j.error)||'沒存成功，畫面退回原狀'); window._permKeepOpen = 1; settingsLoad() }
