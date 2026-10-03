@@ -1964,11 +1964,32 @@ export default async function handler(req, res) {
     let abSched = []
     try {
       const moSet = [...new Set([loS.slice(0, 7), ym, hiS.slice(0, 7)])]
-      const abDocs = await Promise.all(moSet.map(m => kvGet('sp_finance_pm_boss_sched_' + m.replace('-', ''))))
+      const [bStaff, ...abDocs] = await Promise.all([kvGet('sp_finance_pm_boss_staff'), ...moSet.map(m => kvGet('sp_finance_pm_boss_sched_' + m.replace('-', '')))])
       const hm = (ts) => { if (!ts) return ''; try { return new Date(new Date(ts).getTime() + 8 * 3600e3).toISOString().slice(11, 16) } catch (_) { return '' } }
+      // v4.36.2（張良「怎麼會出現 蕭/桑/芳/Fran 這種名字」）：阿桑系統存的是暱稱/簡稱 → 用我們名冊轉全名
+      // 順序：①全名直接命中 ②暱稱命中(不分大小寫) ③唯一「名字包含」(蕭→蕭睿詮) ④唯一「暱稱互含」(桑→阿桑=林品燊)；轉不出來保留原樣
+      const idName = {}; Object.values((bStaff || {}).rows || {}).forEach(s9 => { if (s9.staff_id) idName[s9.staff_id] = s9.name })
+      const pplR = ((rosterS || {}).people) || []
+      const fullCache = {}
+      const fullOf = (raw) => {
+        const r0 = String(raw || '').trim()
+        if (!r0) return ''
+        if (fullCache[r0]) return fullCache[r0]
+        let out = r0
+        if (!pplR.some(p9 => p9.name === r0)) {
+          const byNick = pplR.filter(p9 => (p9.nick || '').toLowerCase() === r0.toLowerCase())
+          const byPart = byNick.length ? [] : pplR.filter(p9 => p9.name && p9.name.includes(r0))
+          const byNk2 = (byNick.length || byPart.length === 1) ? [] : pplR.filter(p9 => p9.nick && (p9.nick.includes(r0) || r0.includes(p9.nick)))
+          if (byNick.length === 1) out = byNick[0].name
+          else if (byPart.length === 1) out = byPart[0].name
+          else if (byNk2.length === 1) out = byNk2[0].name
+        }
+        fullCache[r0] = out
+        return out
+      }
       abSched = abDocs.flatMap(d9 => Object.values((d9 || {}).rows || {}))
         .filter(x => x.status !== 'cancelled' && String(x.work_date || '') >= loS && String(x.work_date || '') <= hiS)
-        .map(x => ({ date: x.work_date, name: x.staff_name || '', code: x.shift_code || x.role_code || '', dept: x.dept || '', start: hm(x.start_at), end: hm(x.end_at), day: x.day_type || '' }))
+        .map(x => ({ date: x.work_date, name: fullOf(idName[x.staff_id] || x.staff_name), code: x.shift_code || x.role_code || '', dept: x.dept || '', start: hm(x.start_at), end: hm(x.end_at), day: x.day_type || '' }))
     } catch (_) {}
     return res.status(200).json({ ok: true, ym, ab: abSched, hourly: hourlyL, sched: schedL.map(x => ({ ...x, seq: seqMap[x.id], trSeq: trSeqMap[x.id] })), punches: pchs.map(p => ({ name: p.name, ts: p.ts, dir: p.dir, src: p.src })), names: namesU, namesAll, posList, slots: (sd || {}).slots || null, colors: colMap, posStats, leave: leaveM, hist: ((sd || {}).hist || []).slice(-200).reverse(), lockEdit: (sd || {}).lockEdit ? 1 : 0, tpls: (sd || {}).tpls || [], staff, me: meS ? { name: meS.name, role: meS.role, approver: aprS.includes(meS.name) } : null })
   }
