@@ -104,7 +104,8 @@ export async function fetchShifts(from, to) {
       return { name: u.name || '', dept: u.dept || '', pt: u.pt ? 1 : 0, code: c.code || '', brk: c.brk || 0, start: x.wt?.start_time || '', end: x.wt?.end_time || '' }
     }).filter(x => x.name)
   }
-  return days // { 'YYYY-MM-DD': [{name,dept,pt,code,brk,start,end}] }
+  const staff = [...new Set(Object.values(users).map(u => u.name).filter(Boolean))] // v4.32.3 NUEiP 部門現役名單＝在職權威（名冊沒人填離職日）
+  return { days, staff }
 }
 
 // 班表寫月檔 sp_crew_pm_hr_sched_YYYY-MM = { days: { 日期: [列…] } }（同日整天覆蓋＝以最新為準）
@@ -162,10 +163,12 @@ export default async function handler(req, res) {
     if (req.query?.shifts) {
       const fromS = /^\d{4}-\d{2}-\d{2}$/.test(String(req.query.from || '')) ? String(req.query.from) : addD(today, -7)
       const toS = /^\d{4}-\d{2}-\d{2}$/.test(String(req.query.to || '')) ? String(req.query.to) : addD(today, 35)
-      const daysS = await fetchShifts(fromS, toS)
+      const fs9 = await fetchShifts(fromS, toS)
+      const daysS = fs9.days
       const repS = await storeShifts(daysS)
+      if (fromS <= today && today <= toS && (fs9.staff || []).length) await kvPut('sp_crew_pm_hr_staff', { names: fs9.staff, updatedAt: new Date().toISOString() }, 'NUEiP在職名單') // 只有「涵蓋今天」的同步才更新在職名單（歷史回補不能蓋）
       let nS = 0; for (const d of Object.keys(daysS)) nS += daysS[d].length
-      return res.status(200).json({ ok: true, from: fromS, to: toS, personDays: nS, months: repS })
+      return res.status(200).json({ ok: true, from: fromS, to: toS, personDays: nS, months: repS, staff: (fs9.staff || []).length })
     }
     const from = String(req.query?.from || '') || today
     const to = String(req.query?.to || '') || today
@@ -185,7 +188,7 @@ export default async function handler(req, res) {
         const push = async (txt, src) => { for (const uid of Object.keys(ops)) { if (await linePush(uid, txt)) { await logPush(uid, 1, src); notified++ } } }
         if (hourTW >= 22) {
           // 每日收班順手同步 NUEiP 班表（前7天~後35天；改班/新增人員隔天自動跟上）
-          try { await storeShifts(await fetchShifts(addD(today, -7), addD(today, 35))) } catch (_) {}
+          try { const fs9 = await fetchShifts(addD(today, -7), addD(today, 35)); await storeShifts(fs9.days); if ((fs9.staff || []).length) await kvPut('sp_crew_pm_hr_staff', { names: fs9.staff, updatedAt: new Date().toISOString() }, 'NUEiP在職名單') } catch (_) {}
           const lines = anomalies(days[today])
           if (lines.length) await push(`🕐 NUEiP 出勤異常 ${today.slice(5).replace('-', '/')}\n${lines.slice(0, 15).join('\n')}${lines.length > 15 ? `\n…共 ${lines.length} 筆` : ''}\n（詳細：夥伴中心 → 人資系統）`, 'NUEiP出勤異常')
         } else {

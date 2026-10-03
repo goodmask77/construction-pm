@@ -1979,10 +1979,10 @@ export default async function handler(req, res) {
     const hourlyL = (((sd || {}).hourly) || []).filter(x => String(x.date || '') >= loS && String(x.date || '') <= hiS) // 🕐 時段排班（v4.27.0）
     // AB 班表（張良 2026-10-03「加在GD班表下方,知道兩間店有誰上班方便調度」）：阿桑 boss-api 排班（sp_finance_pm_boss_sched_ 月檔）
     // 唯讀；列=人名、格=班別代碼；status=cancelled 排除；start/end 轉台北 HH:MM
-    let abSched = [], abOff = []
+    let abSched = [], abOn = []
     try {
       const moSet = [...new Set([loS.slice(0, 7), ym, hiS.slice(0, 7)])]
-      const [bStaff, ...abDocs] = await Promise.all([kvGet('sp_finance_pm_boss_staff'), ...moSet.map(m => kvGet('sp_finance_pm_boss_sched_' + m.replace('-', '')))])
+      const [bStaff, nueStf, ...abDocs] = await Promise.all([kvGet('sp_finance_pm_boss_staff'), kvGet('sp_crew_pm_hr_staff'), ...moSet.map(m => kvGet('sp_finance_pm_boss_sched_' + m.replace('-', '')))])
       const hm = (ts) => { if (!ts) return ''; try { return new Date(new Date(ts).getTime() + 8 * 3600e3).toISOString().slice(11, 16) } catch (_) { return '' } }
       // v4.36.2（張良「怎麼會出現 蕭/桑/芳/Fran 這種名字」）：阿桑系統存的是暱稱/簡稱 → 用我們名冊轉全名
       // 順序：①全名直接命中 ②暱稱命中(不分大小寫) ③唯一「名字包含」(蕭→蕭睿詮) ④唯一「暱稱互含」(桑→阿桑=林品燊)；轉不出來保留原樣
@@ -2023,8 +2023,8 @@ export default async function handler(req, res) {
         .flatMap(([d, list]) => (Array.isArray(list) ? list : []).map(x => ({ date: d, name: x.name, code: x.code || '', dept: x.dept || '', pt: x.pt ? 1 : 0, start: x.start || '', end: x.end || '', brk: x.brk || 0 })))
       const seen9 = new Set(nueRows.map(x => x.date + '|' + x.name))
       abSched = [...nueRows, ...bossRows.filter(x => !seen9.has(x.date + '|' + x.name))]
-      // v4.32.2（張良「高婕瀅內場PT十月不見但沒離職」）：離職名單=名冊 endDate 有值的人→前端只在「該月沒班的離職者」藏列；在職但還沒排班的照樣顯示空列
-      abOff = pplR.filter(p9 => p9.endDate).map(p9 => p9.name)
+      // v4.32.3（張良「高婕瀅沒離職卻被藏」+名冊離職日全空）：在職權威=NUEiP部門現役名單(每日班表同步順手更新sp_crew_pm_hr_staff)，再扣掉名冊有離職日的
+      abOn = (((nueStf || {}).names) || []).filter(n9 => { const p9 = pplR.find(q9 => q9.name === n9); return !(p9 && p9.endDate) })
     } catch (_) {}
     // AB inline 訂位彙總（張良 2026-10-03「班表下方同日期對齊,時段 12-13/13-17/18-19/19後」）：
     // 每天×時段 {g組,p人,big:[≥20人大組]}；有效=state∉{2,5}；12-13含更早(11點包場)、13-17含17點、候位(沒時間)不計
@@ -2047,7 +2047,7 @@ export default async function handler(req, res) {
         }
       }
     } catch (_) {}
-    return res.status(200).json({ ok: true, ym, ab: abSched, abOff, resv: resvDays, hourly: hourlyL, sched: schedL.map(x => ({ ...x, seq: seqMap[x.id], trSeq: trSeqMap[x.id] })), punches: pchs.map(p => ({ name: p.name, ts: p.ts, dir: p.dir, src: p.src })), names: namesU, namesAll, posList, slots: (sd || {}).slots || null, colors: colMap, posStats, leave: leaveM, hist: ((sd || {}).hist || []).slice(-200).reverse(), lockEdit: (sd || {}).lockEdit ? 1 : 0, tpls: (sd || {}).tpls || [], staff, me: meS ? { name: meS.name, role: meS.role, approver: aprS.includes(meS.name) } : null })
+    return res.status(200).json({ ok: true, ym, ab: abSched, abOn, resv: resvDays, hourly: hourlyL, sched: schedL.map(x => ({ ...x, seq: seqMap[x.id], trSeq: trSeqMap[x.id] })), punches: pchs.map(p => ({ name: p.name, ts: p.ts, dir: p.dir, src: p.src })), names: namesU, namesAll, posList, slots: (sd || {}).slots || null, colors: colMap, posStats, leave: leaveM, hist: ((sd || {}).hist || []).slice(-200).reverse(), lockEdit: (sd || {}).lockEdit ? 1 : 0, tpls: (sd || {}).tpls || [], staff, me: meS ? { name: meS.name, role: meS.role, approver: aprS.includes(meS.name) } : null })
   }
   // 人員色號管理口：POST ?shiftcolor=管理金鑰 {map:{名字:色號}} 合併寫入（固定/校正專屬色用）
   if (req.method === 'POST' && req.query?.shiftcolor) {
