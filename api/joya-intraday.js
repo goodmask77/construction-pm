@@ -40,7 +40,7 @@ export default async function handler(req, res) {
         slog.items = slog.items || {}; slog.notified = slog.notified || {}
         const over = items.filter(it => it.due && it.due <= hm && !(slog.items[it.id] && slog.items[it.id].done) && !slog.notified[it.id])
         if (over.length) {
-          const txt = '⏰ GD SOP 超時未完成：\n' + over.map(it => `・${it.st}｜${it.title}（${it.due} 前${it.photo ? '・要拍照' : ''}）`).join('\n') + '\n\n完成後到 ground-pm.vercel.app/prep 按「完成」打卡 🙏'
+          const txt = '⏰ GD SOP 超時未完成：\n' + over.map(it => `・${it.st}｜${it.title}（${it.due} 前${it.photo ? '・要拍照' : ''}）`).join('\n') + '\n\n完成後點連結按「完成」打卡 🙏\nhttps://ground-pm.vercel.app/prep'
           const ncfg = (await kvGet('sp_finance_pm_notify')) || {} // 通知開關（張良 2026-09-21：預設關，/prep 🔔 開）
           const tk = ncfg.sopLate === 1 ? (process.env.LINE_CHANNEL_ACCESS_TOKEN || '').trim() : ''
           if (tk) {
@@ -59,6 +59,8 @@ export default async function handler(req, res) {
     if (tkM && listM.length) {
       const rosM = await kvGet('sp_crew_kb_roster')
       const pplM = ((rosM || {}).people) || []
+      const bindM = (await kvGet('sp_finance_pm_prep_bind')) || {} // v4.31.0 張良：提醒要給「可以直接點的連結」→ 私訊帶本人專屬連結+#meet 直達該則
+
       const { logPush } = await import('./push.js')
       let dirtyM = false
       for (const it of listM) {
@@ -76,13 +78,13 @@ export default async function handler(req, res) {
           if (Math.random() > 0.25) continue // 隨機 tick 命中＝提醒時間不固定（張良習慣）
           const po = pplM.find(p2 => p2.name === nm && p2.lineUserId)
           if (po) {
-            const pr = await fetch('https://api.line.me/v2/bot/message/push', { method: 'POST', headers: { 'content-type': 'application/json', Authorization: 'Bearer ' + tkM }, body: JSON.stringify({ to: po.lineUserId, messages: [{ type: 'text', text: `📣 會議宣達還沒簽收（第 ${r0.n + 1} 次提醒）\n【${it.type}・${it.date}】\n看完到 ground-pm.vercel.app/prep → 會議 按「✅ 確認熟知」，有問題按「❓ 我想發問」` }] }) })
+            const pr = await fetch('https://api.line.me/v2/bot/message/push', { method: 'POST', headers: { 'content-type': 'application/json', Authorization: 'Bearer ' + tkM }, body: JSON.stringify({ to: po.lineUserId, messages: [{ type: 'text', text: (() => { const tkP = ((bindM.byUid || {})[po.lineUserId]); const lnk = `https://ground-pm.vercel.app/prep${tkP ? `?me=${tkP}` : ''}#meet=${it.id}`; return `📣 會議宣達還沒簽收（第 ${r0.n + 1} 次提醒）\n【${it.type}・${it.date}】\n點下面連結直達這則，看完按「✅ 確認熟知」，有問題按「❓ 我想發問」👇\n${lnk}` })() }] }) })
             if (pr.ok) { await logPush(po.lineUserId, 1, '宣達未簽提醒'); it.remind[nm] = { n: r0.n + 1, last: Date.now() }; dirtyM = true }
           } else { it.remind[nm] = { n: stage, last: Date.now() }; dirtyM = true } // 沒LINE的直接記階段，等大群點名
         }
         const dead = missing.filter(nm => (it.remind[nm] || {}).n >= 3)
         if (dead.length && !it.remind.__grp && ageH >= 96) {
-          const pg = await fetch('https://api.line.me/v2/bot/message/push', { method: 'POST', headers: { 'content-type': 'application/json', Authorization: 'Bearer ' + tkM }, body: JSON.stringify({ to: 'Cf7940efc6517b0c084ad2ad496b45f30', messages: [{ type: 'text', text: `📣 會議宣達【${it.type}・${it.date}】提醒 3 次還沒簽收：${dead.join('、')}\n麻煩今天到 /prep → 會議 簽收 🙏` }] }) })
+          const pg = await fetch('https://api.line.me/v2/bot/message/push', { method: 'POST', headers: { 'content-type': 'application/json', Authorization: 'Bearer ' + tkM }, body: JSON.stringify({ to: 'Cf7940efc6517b0c084ad2ad496b45f30', messages: [{ type: 'text', text: `📣 會議宣達【${it.type}・${it.date}】提醒 3 次還沒簽收：${dead.join('、')}\n麻煩今天點連結簽收 🙏\nhttps://ground-pm.vercel.app/prep#meet=${it.id}` }] }) })
           if (pg.ok) { it.remind.__grp = 1; dirtyM = true }
         }
       }
@@ -204,7 +206,7 @@ export default async function handler(req, res) {
         const [f2, p2] = await Promise.all([invStatus('food'), invStatus('pack')])
         const lows = [...f2.items.filter(x => x.low).map(x => ({ ...x, _k: '食材' })), ...p2.items.filter(x => x.low).map(x => ({ ...x, _k: '包材' }))]
         if (lows.length) {
-          const txt2 = '📉 庫存低水位提醒：\n' + lows.map(x => `・[${x._k}] ${x.name}：估剩 ${x.est}${x.unit || ''}（低標 ${x.min}）`).join('\n') + '\n\n請盡快叫貨/補盤點：ground-pm.vercel.app/prep'
+          const txt2 = '📉 庫存低水位提醒：\n' + lows.map(x => `・[${x._k}] ${x.name}：估剩 ${x.est}${x.unit || ''}（低標 ${x.min}）`).join('\n') + '\n\n請盡快叫貨/補盤點：https://ground-pm.vercel.app/prep'
           const ncfg2 = (await kvGet('sp_finance_pm_notify')) || {}
           const tk2 = ncfg2.lowStock === 1 ? (process.env.LINE_CHANNEL_ACCESS_TOKEN || '').trim() : ''
           if (tk2) {

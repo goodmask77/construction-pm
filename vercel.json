@@ -39,6 +39,10 @@
       "schedule": "50 13 * * *"
     },
     {
+      "path": "/api/inline-sync",
+      "schedule": "25 * * * *"
+    },
+    {
       "path": "/api/line-webhook?warm=1",
       "schedule": "*/5 * * * *"
     },

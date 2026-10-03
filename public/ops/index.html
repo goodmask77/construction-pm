@@ -171,7 +171,7 @@ function goView(){
 }
 // 🔑 輸入綁定碼（iPhone 加入主畫面的 App 跟 Safari 儲存分開→token 帶不過去；貼一次 DD 給的連結/代碼即可）
 function bindPrompt(){
-  const v = prompt('貼上 DD 給你的「個人連結」或綁定碼（跟 DD 說「綁定GD」拿）')
+  const v = prompt('貼上 DD 給你的「個人連結」（私訊 DD「我的連結」會再發一次；沒綁過先說「綁定GD 本名」）')
   if (!v) return
   if (/bind=/i.test(v)) { location.href = '/prep?bind=' + v.split(/bind=/i)[1].replace(/[^a-z0-9]/gi,''); return } // DD 新版連結 ?bind=xxx 直接走（2026-10-01 Toby 綁不上＝解析器只認舊格式）
   const m = v.match(/me=([a-z0-9]+)/i) || v.match(/(pv[a-z0-9]{8,})/i)
@@ -181,7 +181,7 @@ function bindPrompt(){
   alert('綁定完成 ✅')
   goView()
 }
-const BIND_HINT = `跟 DD 說「綁定GD」拿個人連結；已加入主畫面的 App 請按 <button class="mini" onclick="bindPrompt()">🔑 輸入綁定碼</button>`
+const BIND_HINT = `私訊 DD「我的連結」拿個人連結（沒綁過先說「綁定GD 本名」）；已加入主畫面的 App 請按 <button class="mini" onclick="bindPrompt()">🔑 輸入綁定碼</button>`
 async function load(store, fresh){
   curStore = store
   setTabs(store)
@@ -434,7 +434,7 @@ async function rHide(kEnc, hideV){
 }
 // ── 今日SOP（每站每天：拍照＋完成打卡；超時 DD 會通知群）──
 // 個人身分：跟 DD 說「綁定看板」拿到 /prep?me=token 連結 → 存這支手機，打卡自動是本人、站長可編輯自己的站
-;(function(){ const sp = new URLSearchParams(location.search); const m = sp.get('me'); if (m) localStorage.setItem('prepToken', m); if (m || sp.has('r')) history.replaceState(null, '', location.pathname) })() // r=🔄的快取時間戳，進站就清掉（張良 2026-09-24：網址多一段）
+;(function(){ const sp = new URLSearchParams(location.search); const m = sp.get('me'); if (m) localStorage.setItem('prepToken', m); if (m || sp.has('r')) history.replaceState(null, '', location.pathname + location.hash) })() // v4.31.0 保留 #meet=/#sop= 深層連結 // r=🔄的快取時間戳，進站就清掉（張良 2026-09-24：網址多一段）
 const TK = () => localStorage.getItem('prepToken') || ''
 // 右上固定綁定入口（張良 2026-09-24：DD 訊息叫人按「輸入綁定碼」但按鈕藏在提示字裡找不到——未綁定時固定顯示在右上）
 function bindBtnSync(){ const b = document.getElementById('bindBtn'); if (b) b.style.display = TK() ? 'none' : '' }
@@ -842,7 +842,7 @@ function sopPick(id){
   inp.click()
 }
 async function sopDo(id, undo){
-  if (!TK()) { alert('訪客只能看——打卡請先綁定：右上「輸入綁定碼」（跟 DD 說「綁定GD」拿連結）'); return }
+  if (!TK()) { alert('請先用 DD 給你的個人連結打開（私訊 DD「我的連結」會再發一次），或按右上「輸入綁定碼」貼上連結'); return }
   const it = (sopData.def.items||[]).find(x=>x.id===id)
   if (!undo && it && it.photo && !sopPhotos[id]) { alert('這項要拍照——先按 📷'); return }
   try {
@@ -857,7 +857,7 @@ sopLoad = async function(){ await _sopLoad0(); rhythmRender() }
 // ── 問題回報 v2（張良 2026-09-21 抓包連環彈窗）：正式回報視窗——先打字，附檔自己按📷，不附檔直接送出＝純文字回報 ──
 let repFiles = []
 function sopReport(st){
-  if (!TK()) { alert('訪客只能看——要回報請先綁定：右上「輸入綁定碼」'); return }
+  if (!TK()) { alert('請先用 DD 給你的個人連結打開（私訊 DD「我的連結」會再發一次），或按右上「輸入綁定碼」貼上連結'); return }
   repFiles = []
   const ov = document.createElement('div'); ov.id = 'repOv'
   ov.style.cssText = 'position:fixed;inset:0;background:rgba(16,24,43,.45);z-index:50;display:flex;align-items:center;justify-content:center;padding:16px'
@@ -1552,7 +1552,7 @@ async function buySend(){
       if (sd && sd.ok) { const ur = await fetch(sd.uploadUrl, { method:'PUT', headers:{'content-type': f.type||'image/jpeg'}, body: f }); if (ur.ok) media.push(sd.publicUrl) }
     } catch(e){}
   }
-  if (!TK()) { alert('訪客只能看——要提需求請先綁定：右上「輸入綁定碼」'); return }
+  if (!TK()) { alert('請先用 DD 給你的個人連結打開（私訊 DD「我的連結」會再發一次），或按右上「輸入綁定碼」貼上連結'); return }
   const by = ''
   const cat = (document.getElementById('buyCatIn')||{}).value||''
   const r = await fetch('/api/mail-sync?buyadd=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ text, url, media, by, cat, token: TK() }) })
@@ -1574,7 +1574,7 @@ async function buyOp(id, op){
 // ── ⏰ 打卡（張良 2026-09-22：/prep 一鍵打卡，寫進既有出勤系統法定逐筆檔；自動判上下班、5分內可修方向）──
 let _lastPunch = null
 async function punchNow(){
-  if (!TK()) { alert('要先綁定才能打卡：跟 DD 說「綁定GD」拿個人連結（已加入主畫面的 App 用「🔑 輸入綁定碼」）'); return }
+  if (!TK()) { alert('要先登入才能打卡：點 DD 給你的個人連結（私訊 DD「我的連結」會再發一次；App 版用右上「🔑 輸入綁定碼」貼上）'); return }
   if (_lastPunch && Date.now() - _lastPunch.at < 5*60000) {
     if (confirm(`剛剛 ${_lastPunch.hm} 打了「${_lastPunch.dir==='in'?'上班':'下班'}」卡。\n\n確定＝修正方向（打錯了）\n取消＝不動作`)) {
       const r = await fetch('/api/mail-sync?punchfix=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ token: TK() }) })
@@ -3081,23 +3081,31 @@ function permPanelHtml(perm){
       const cfgT = window._tabCfg || {}
       const ordT = (cfgT.order && cfgT.order.length ? cfgT.order.slice() : Object.keys(TAB_DEF)).filter(k=>TAB_DEF[k])
       Object.keys(TAB_DEF).forEach(k=>{ if (!ordT.includes(k)) ordT.unshift(k) })
-      const TABS=[['board','首頁'], ...ordT.map(k=>[k, stripEmoji((cfgT.names||{})[k] || TAB_DEF[k])])]
+      // v4.31.0（張良：側欄每一頁都要能關，像夥伴不用看到「設定」）：問題回報/設定也進表——這兩頁只有「看」的開關
+      const TABS=[['board','首頁'], ...ordT.map(k=>[k, stripEmoji((cfgT.names||{})[k] || TAB_DEF[k])]), ['errs','問題回報',1], ['gear','設定',1]]
+      const SEEK=TABS.map(x=>x[0]).join(','), EDITK=TABS.filter(x=>!x[2]).map(x=>x[0]).join(',')
       const users=(perm.users||[])
       const normal=users.filter(u=>!u.admin)
       const allSee=k=>normal.length&&normal.every(u=>!(u.hide&&u.hide[k]))
       const allEdit=k=>normal.length&&normal.every(u=>!u.tabs||u.tabs[k]!==0)
       const cb=(ck,fn,tip)=>`<input type="checkbox" ${ck?'checked':''} onchange="${fn}" title="${tip}" style="width:15px;height:15px;cursor:pointer;accent-color:var(--primary)">`
       const SEP='border-left:1px solid var(--line);'
+      const COLS=1+TABS.reduce((a,x)=>a+(x[2]?1:2),0)
       let t=`<div style="margin-top:8px;font-weight:800">已核准（${users.length}）</div>
       <div class="scroll" style="margin-top:4px"><table style="border-collapse:collapse"><thead>
       <tr><th rowspan="2" style="text-align:left;position:sticky;left:0;background:var(--soft);z-index:2;padding:6px 10px;vertical-align:bottom">夥伴</th>
-        ${TABS.map(([k,lb])=>`<th colspan="2" style="${SEP}padding:5px 8px 2px;text-align:center;font-size:12.5px;white-space:nowrap">${lb}</th>`).join('')}</tr>
-      <tr>${TABS.map(([k,lb])=>`<th style="${SEP}padding:2px 5px 6px;text-align:center;font-size:11px;font-weight:600">看<br>${cb(allSee(k),`permSet('taball',null,null,'${k}',this.checked,'see')`,'全員看得見 '+lb)}</th><th style="padding:2px 5px 6px;text-align:center;font-size:11px;font-weight:600">編<br>${cb(allEdit(k),`permSet('taball',null,null,'${k}',this.checked,'edit')`,'全員能編輯 '+lb)}</th>`).join('')}</tr>
+        <th rowspan="2" style="${SEP}padding:5px 8px;text-align:center;font-size:11px;font-weight:600;vertical-align:bottom">整列<br>看｜編</th>
+        ${TABS.map(([k,lb,so])=>`<th colspan="${so?1:2}" style="${SEP}padding:5px 8px 2px;text-align:center;font-size:12.5px;white-space:nowrap">${lb}</th>`).join('')}</tr>
+      <tr>${TABS.map(([k,lb,so])=>`<th style="${SEP}padding:2px 5px 6px;text-align:center;font-size:11px;font-weight:600">看<br>${cb(allSee(k),`permSet('taball',null,null,'${k}',this.checked,'see')`,'全員看得見 '+lb)}</th>`+(so?``:`<th style="padding:2px 5px 6px;text-align:center;font-size:11px;font-weight:600">編<br>${cb(allEdit(k),`permSet('taball',null,null,'${k}',this.checked,'edit')`,'全員能編輯 '+lb)}</th>`)).join('')}</tr>
       </thead><tbody>`
       users.forEach(u=>{
         t+=`<tr><td style="text-align:left;font-weight:800;position:sticky;left:0;background:var(--card);z-index:1;padding:5px 10px;white-space:nowrap">${u.admin?'👑 ':''}${u.name}${u.admin?'':` <button class="mini" style="padding:1px 8px;margin-left:4px" onclick="permSet('revoke','${u.rid}')">移除</button>`}</td>`
-        if(u.admin){ t+=`<td colspan="${TABS.length*2}" class="hint" style="text-align:left;padding:5px 10px">管理者＝全部看得見、全部能編輯</td>` }
-        else TABS.forEach(([k])=>{ t+=`<td style="${SEP}padding:4px 5px;text-align:center">${cb(!(u.hide&&u.hide[k]),`permSet('see','${u.rid}',null,'${k}',this.checked)`,u.name+' 看得見')}</td><td style="padding:4px 5px;text-align:center">${cb(!u.tabs||u.tabs[k]!==0,`permSet('tab','${u.rid}',null,'${k}',this.checked)`,u.name+' 能編輯')}</td>` })
+        if(u.admin){ t+=`<td colspan="${COLS}" class="hint" style="text-align:left;padding:5px 10px">管理者＝全部看得見、全部能編輯</td>` }
+        else {
+          const rowSee=TABS.every(([k])=>!(u.hide&&u.hide[k])), rowEdit=TABS.filter(x=>!x[2]).every(([k])=>!u.tabs||u.tabs[k]!==0)
+          t+=`<td style="${SEP}padding:4px 6px;text-align:center;white-space:nowrap">${cb(rowSee,`permSet('rowall','${u.rid}',null,'${SEEK}',this.checked,'see')`,u.name+' 整列看得見/全關')}｜${cb(rowEdit,`permSet('rowall','${u.rid}',null,'${EDITK}',this.checked,'edit')`,u.name+' 整列能編輯/全關')}</td>`
+          TABS.forEach(([k,lb,so])=>{ t+=`<td style="${SEP}padding:4px 5px;text-align:center">${cb(!(u.hide&&u.hide[k]),`permSet('see','${u.rid}',null,'${k}',this.checked)`,u.name+' 看得見')}</td>`+(so?``:`<td style="padding:4px 5px;text-align:center">${cb(!u.tabs||u.tabs[k]!==0,`permSet('tab','${u.rid}',null,'${k}',this.checked)`,u.name+' 能編輯')}</td>`) })
+        }
         t+=`</tr>`
       })
       return t+`</tbody></table></div>`
@@ -3128,9 +3136,10 @@ async function prepApply(){
 async function permSet(op, rid, mode, tab, val, kind){
   // v4.26.4（張良「勾選會卡頓+畫面閃退」治本）：勾選類＝樂觀更新本地立即重畫表格，背景存檔——不再整頁重載(重載會重抓整份菜單資料=卡,permBox又收合=畫面消失)
   const pm = window._permD
-  if (pm && (op==='tab' || op==='see' || op==='taball')){
-    const upd1 = u => { if (op==='tab' || (op==='taball' && kind==='edit')) { u.tabs = u.tabs || {}; u.tabs[tab] = val ? 1 : 0 } else { u.hide = u.hide || {}; if (val) delete u.hide[tab]; else u.hide[tab] = 1 } }
+  if (pm && (op==='tab' || op==='see' || op==='taball' || op==='rowall')){
+    const upd1 = u => { if (op==='tab' || ((op==='taball'||op==='rowall') && kind==='edit')) { u.tabs = u.tabs || {}; u.tabs[tab] = val ? 1 : 0 } else { u.hide = u.hide || {}; if (val) delete u.hide[tab]; else u.hide[tab] = 1 } }
     if (op==='taball') (pm.users||[]).forEach(u=>{ if (!u.admin) upd1(u) })
+    else if (op==='rowall') { const u = (pm.users||[]).find(x=>x.rid===rid); if (u) String(tab).split(',').forEach(k9=>{ if (kind==='edit') { u.tabs=u.tabs||{}; u.tabs[k9]=val?1:0 } else { u.hide=u.hide||{}; if (val) delete u.hide[k9]; else u.hide[k9]=1 } }) } // v4.31.0 整列一鍵
     else { const u = (pm.users||[]).find(x=>x.rid===rid); if (u) upd1(u) }
     const box = document.getElementById('permBox'); if (box) { box.innerHTML = permPanelHtml(pm); box.style.display = '' }
     const r = await fetch('/api/mail-sync?preppermset=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ token: TK(), op, rid, mode, tab, val, kind }) })

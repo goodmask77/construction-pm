@@ -594,7 +594,7 @@ async function loadPosText() {
   try {
     const now = new Date(Date.now() + 8 * 3600e3)
     const mo = now.toISOString().slice(0, 7)
-    const kv = await kvGetMany(['sp_finance_pm_pos', 'sp_finance_pm_pos_d_' + mo, 'sp_finance_pm_pos_tx_' + mo, 'sp_finance_pm_pos_flags', 'sp_finance_pm_pos_idlecfg', 'sp_finance_pm_pos_hh_' + mo, 'sp_finance_pm_pos_costs', 'sp_finance_pm_pos_prices', 'sp_finance_pm_pos_hidden', 'sp_finance_pm_pos_alias', 'sp_finance_pm_sop_def', 'sp_finance_pm_sop_g_' + now.toISOString().slice(0, 10), 'sp_finance_pm_sop_issues', 'sp_finance_pm_inv', 'sp_finance_pm_buy', 'sp_finance_pm_meet', 'sp_finance_pm_shift_g', 'sp_finance_pm_fb', 'sp_finance_pm_fbj', 'sp_finance_pm_menu', 'sp_finance_pm_fc_' + now.toISOString().slice(0, 7).replace('-', ''), 'sp_finance_pm_absoldout', 'sp_finance_pm_ablive', 'sp_finance_pm_labor'])
+    const kv = await kvGetMany(['sp_finance_pm_pos', 'sp_finance_pm_pos_d_' + mo, 'sp_finance_pm_pos_tx_' + mo, 'sp_finance_pm_pos_flags', 'sp_finance_pm_pos_idlecfg', 'sp_finance_pm_pos_hh_' + mo, 'sp_finance_pm_pos_costs', 'sp_finance_pm_pos_prices', 'sp_finance_pm_pos_hidden', 'sp_finance_pm_pos_alias', 'sp_finance_pm_sop_def', 'sp_finance_pm_sop_g_' + now.toISOString().slice(0, 10), 'sp_finance_pm_sop_issues', 'sp_finance_pm_inv', 'sp_finance_pm_buy', 'sp_finance_pm_meet', 'sp_finance_pm_shift_g', 'sp_finance_pm_fb', 'sp_finance_pm_fbj', 'sp_finance_pm_menu', 'sp_finance_pm_fc_' + now.toISOString().slice(0, 7).replace('-', ''), 'sp_finance_pm_absoldout', 'sp_finance_pm_ablive', 'sp_finance_pm_labor', 'sp_finance_pm_inline_' + mo, 'sp_finance_pm_inline_' + new Date(Date.UTC(+mo.slice(0, 4), +mo.slice(5, 7), 1)).toISOString().slice(0, 7), 'sp_finance_pm_inline_' + new Date(Date.UTC(+mo.slice(0, 4), +mo.slice(5, 7) - 2, 1)).toISOString().slice(0, 7), 'sp_finance_pm_inline'])
     const pos = kv['sp_finance_pm_pos']
     const entries = pos && Array.isArray(pos.entries) ? pos.entries : []
     if (!entries.length) return ''
@@ -622,6 +622,30 @@ async function loadPosText() {
     const abl = kv['sp_finance_pm_ablive']
     if (abl?.date === now.toISOString().slice(0, 10) && abl.revenue && !entries.some(e => e.date === abl.date && !isG(e))) {
       lines.push(`  - ${abl.date}［A Beach］盤中即時（${abl.at} 更新，還沒打烊會再長大）：營收${nt(abl.revenue)}｜${abl.tx}單${abl.guests ? `｜來客${abl.guests}` : ''}${abl.dineIn?.tx || abl.takeout?.tx ? `｜內用${abl.dineIn?.tx || 0}單${nt(abl.dineIn?.sales)}/外帶${abl.takeout?.tx || 0}單${nt(abl.takeout?.sales)}` : ''}${(abl.items || []).length ? `｜熱銷Top${Math.min(5, abl.items.length)}:${abl.items.slice(0, 5).map(i => `${i.n}×${i.q}`).join('、')}（品項共${abl.items.length}項${abl.items.reduce((t2, i) => t2 + (i.q || 0), 0) >= (abl.itemsQtyTotal || 0) ? ',完整' : ',僅Top10'};要全表問我某品項即可）` : ''}`)
+    }
+    // A Beach inline 訂位（pm_inline_月檔＝每小時自動同步，2021-02 起全史，張良 2026-10-03；與 App loadSpaceAIContext 同步接）
+    {
+      const today = now.toISOString().slice(0, 10)
+      const nmo = new Date(Date.UTC(+mo.slice(0, 4), +mo.slice(5, 7), 1)).toISOString().slice(0, 7)
+      const pmo = new Date(Date.UTC(+mo.slice(0, 4), +mo.slice(5, 7) - 2, 1)).toISOString().slice(0, 7)
+      const inlDays = { ...(kv['sp_finance_pm_inline_' + pmo]?.days || {}), ...(kv['sp_finance_pm_inline_' + mo]?.days || {}), ...(kv['sp_finance_pm_inline_' + nmo]?.days || {}) }
+      const inlSum = kv['sp_finance_pm_inline']
+      if (Object.keys(inlDays).length || inlSum) {
+        const ST = { 1: '確認', 2: '取消', 4: '入座', 5: '未出席' }
+        const fmt1 = (r) => `${r.t || '候位'} ${r.name}${r.n}人(${ST[r.st] || r.st}${r.kc ? `,兒童椅${r.kc}` : ''}${r.note ? `,${String(r.note).slice(0, 30)}` : ''})`
+        lines.push(`\n【A Beach 訂位（inline 每小時自動同步；目前載入=上月起到未來；2021-02 開店起全史已入庫 pm_inline_ 月檔，更早明細要另外查）】`)
+        const td = inlDays[today] || []
+        lines.push(`  - 今天 ${today}：${td.length ? `${td.filter(r => r.st !== 2).length}組有效（${td.filter(r => r.st !== 2).reduce((t, r) => t + (r.n || 0), 0)}人）｜` + td.filter(r => r.st !== 2).map(fmt1).join('、') + (td.some(r => r.st === 2) ? `｜另取消${td.filter(r => r.st === 2).length}組` : '') : '無訂位'}`)
+        const futs = Object.keys(inlDays).filter(d => d > today).sort().slice(0, 14)
+        if (futs.length) lines.push(`  - 未來訂位：` + futs.map(d => { const a = inlDays[d].filter(r => r.st !== 2); return `${d.slice(5)} ${a.length}組${a.reduce((t, r) => t + (r.n || 0), 0)}人` }).join('、'))
+        const pasts = Object.keys(inlDays).filter(d => d < today).sort().slice(-7)
+        if (pasts.length) {
+          const agg = { all: 0, s4: 0, s2: 0, s5: 0 }
+          pasts.forEach(d => inlDays[d].forEach(r => { agg.all++; if (r.st === 4) agg.s4++; else if (r.st === 2) agg.s2++; else if (r.st === 5) agg.s5++ }))
+          lines.push(`  - 近${pasts.length}天（${pasts[0].slice(5)}~${pasts[pasts.length - 1].slice(5)}）：共${agg.all}組｜入座${agg.s4}/取消${agg.s2}/未出席${agg.s5}`)
+        }
+        if (inlSum?.months) { const ms = Object.entries(inlSum.months); lines.push(`  - 歷史總量：${ms.length}個月 ${ms.reduce((t, [, v]) => t + (v.resv || 0), 0)}筆（最後同步 ${String(inlSum.lastSync || '').slice(0, 16).replace('T', ' ')}）`) }
+      }
     }
     // GROUN:D 半小時時段（pm_pos_hh_月檔＝盤中每30分快照相減推算，2026-08-28 起；答「排人力/尖峰半小時」；對帳以每小時原生資料為準；與 App loadSpaceAIContext 同步接）
     const hhDoc = kv['sp_finance_pm_pos_hh_' + mo]
@@ -1553,7 +1577,7 @@ export default async function handler(req, res) {
             if (piOp === 'go') {
               itP.pub = 'ok'
               await kvSet('sp_finance_pm_sop_issues', docP)
-              try { await fetch('https://api.line.me/v2/bot/message/push', { method: 'POST', headers: { 'content-type': 'application/json', Authorization: 'Bearer ' + TOKEN }, body: JSON.stringify({ to: 'Cf7940efc6517b0c084ad2ad496b45f30', messages: [{ type: 'text', text: `⚠️ 看板問題回報【${itP.st}】\n${itP.text || '（見附件）'}\n— ${itP.by}${(itP.media || []).length ? `・附 ${itP.media.length} 個檔案` : ''}\n處理完到 ground-pm.vercel.app/prep 按「已解決」` }] }) }) } catch (_) {}
+              try { await fetch('https://api.line.me/v2/bot/message/push', { method: 'POST', headers: { 'content-type': 'application/json', Authorization: 'Bearer ' + TOKEN }, body: JSON.stringify({ to: 'Cf7940efc6517b0c084ad2ad496b45f30', messages: [{ type: 'text', text: `⚠️ 看板問題回報【${itP.st}】\n${itP.text || '（見附件）'}\n— ${itP.by}${(itP.media || []).length ? `・附 ${itP.media.length} 個檔案` : ''}\n處理完點連結按「已解決」👇\nhttps://ground-pm.vercel.app/prep` }] }) }) } catch (_) {}
               await repP(`✅ 已發布到內部群：${headP}`)
             } else if (piOp === 'hold') {
               itP.pub = 'hold'
@@ -1785,11 +1809,22 @@ export default async function handler(req, res) {
         } catch (e) { await send('綁定出了點問題，稍後再試一次 🙏') }
         continue
       }
+      // 1.355) 我的連結（v4.31.0 張良：換瀏覽器打開變訪客→最簡單的「登入」＝把個人連結再發一次，點了就自動登入）
+      // 只限私訊本人索取；個人連結絕不進群組、絕不經 AI
+      if (isDM && /^(我的連結|個人連結|連結|登入|重新登入)$/.test(text.trim())) {
+        try {
+          const bindL = (await kvGetMany(['sp_finance_pm_prep_bind']))['sp_finance_pm_prep_bind'] || {}
+          const tkL = (bindL.byUid || {})[userId]
+          if (tkL) await send(`🔑 你的個人連結（點一下自動登入，換手機/瀏覽器都用這招）👇\nhttps://ground-pm.vercel.app/prep?me=${tkL}`)
+          else await send('你還沒綁定過，回我「綁定GD 你的本名」就好（例：綁定GD 張良瑋）。')
+        } catch (_) { await send('查連結出了點問題，稍後再試一次 🙏') }
+        continue
+      }
       // 1.36) 綁定防火牆（張良 2026-10-01：小夏問綁定→AI 自由發揮把 Toby 的專屬連結翻出來亂發）：
       // 私訊只要提到「綁定」但沒精準命中上面指令 → 固定短回覆，永遠不進 AI（個人連結絕不能由 AI 生成/轉傳）
       if (/綁定/.test(text)) { // 群組也擋（2026-10-01 張良在群裡講綁定，DD 自由發揮還發明錯誤教學）——固定說明、永不進 AI
         await send(isDM
-          ? '回我「綁定GD 本名」（例：綁定GD張良瑋）就好，我會發你專屬連結，點一下完成綁定。'
+          ? '回我「綁定GD 本名」（例：綁定GD張良瑋）就好，我會發你專屬連結，點一下完成綁定。已經綁過只是換瀏覽器？回我「我的連結」就好。'
           : '📌 綁定方法：本人私訊 DD 打「綁定GD 本名」（例：綁定GD張良瑋）→ 我會發專屬連結，點一下完成；核准後我會通知你。')
         continue
       }

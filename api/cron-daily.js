@@ -170,7 +170,7 @@ export default async function handler(req, res) {
       L.push(`${p.sub ? '　└ ' : '・'}${p.name}：${v}${p.avg != null && v !== p.avg ? `（總平均 ${p.avg}）` : ''}${p.peak != null ? `｜峰值 ${p.peak}` : ''}`)
     }
     L.push('')
-    L.push(`數字＝週${'日一二三四五六'[wd]}近幾週平均（已進位往上抓）；訂位多、活動日往「峰值」抓。詳細：ground-pm.vercel.app/prep`)
+    L.push(`數字＝週${'日一二三四五六'[wd]}近幾週平均（已進位往上抓）；訂位多、活動日往「峰值」抓。詳細：https://ground-pm.vercel.app/prep`)
     // 目標群：env LINE_PREP_GROUP 優先，否則從群組登記表找名字含 Family 的群
     let tgt = clean(process.env.LINE_PREP_GROUP)
     if (!tgt) { const seen = (await kvGet('pm_group_seen')) || {}; for (const [gid2, gg] of Object.entries(seen)) if (/family/i.test(gg?.name || '')) { tgt = gid2; break } }

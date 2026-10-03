@@ -62,9 +62,10 @@ async function loadSpaceAIContext() {
       } catch (_) { return await g(legacy); }
     };
     const d0 = new Date(); const mo = `${d0.getFullYear()}-${String(d0.getMonth() + 1).padStart(2, "0")}`;
-    const [snapC, snapT, snapK, snapF, tasks, crewRoster, crewOld, pos, posD, posTx, posFlags, posIdleCfgAI, posHHAI, posCostsAI, posPricesAI, posHiddenAI, posAliasAI, sopDefAI, sopLogAI, sopIssAI, invAI, buyAI, meetAI, shiftGAI, fbAI, fbjAI, menuAI, fcAI, soAbAI, posAbLiveAI, posLaborAI, bank, ctbc, accounts, ledger, conclusions, mailRules, mailLog, supply, supplyOrders, supplyRecipesRaw] = await Promise.all([
+    const [snapC, snapT, snapK, snapF, tasks, crewRoster, crewOld, pos, posD, posTx, posFlags, posIdleCfgAI, posHHAI, posCostsAI, posPricesAI, posHiddenAI, posAliasAI, sopDefAI, sopLogAI, sopIssAI, invAI, buyAI, meetAI, shiftGAI, fbAI, fbjAI, menuAI, fcAI, soAbAI, posAbLiveAI, posLaborAI, inlPmoAI, inlMoAI, inlNmoAI, inlSumAI, bank, ctbc, accounts, ledger, conclusions, mailRules, mailLog, supply, supplyOrders, supplyRecipesRaw] = await Promise.all([
       g("pm_bot_context"), g("sp_team_pm_bot_context"), g("sp_crew_pm_bot_context"), g("sp_finance_pm_bot_context"),
       recs("pm_tasks_v2", "pm_task_", "pm_tasks"), g("sp_crew_kb_roster"), g("sp_crew_kb_360"), g("sp_finance_pm_pos"), g("sp_finance_pm_pos_d_" + mo), g("sp_finance_pm_pos_tx_" + mo), g("sp_finance_pm_pos_flags"), g("sp_finance_pm_pos_idlecfg"), g("sp_finance_pm_pos_hh_" + mo), g("sp_finance_pm_pos_costs"), g("sp_finance_pm_pos_prices"), g("sp_finance_pm_pos_hidden"), g("sp_finance_pm_pos_alias"), g("sp_finance_pm_sop_def"), g("sp_finance_pm_sop_g_" + new Intl.DateTimeFormat("sv-SE", { timeZone: "Asia/Taipei" }).format(new Date()).slice(0, 10)), g("sp_finance_pm_sop_issues"), g("sp_finance_pm_inv"), g("sp_finance_pm_buy"), g("sp_finance_pm_meet"), g("sp_finance_pm_shift_g"), g("sp_finance_pm_fb"), g("sp_finance_pm_fbj"), g("sp_finance_pm_menu"), g("sp_finance_pm_fc_" + mo.replace("-", "")), g("sp_finance_pm_absoldout"), g("sp_finance_pm_ablive"), g("sp_finance_pm_labor"),
+      g("sp_finance_pm_inline_" + new Date(Date.UTC(+mo.slice(0, 4), +mo.slice(5, 7) - 2, 1)).toISOString().slice(0, 7)), g("sp_finance_pm_inline_" + mo), g("sp_finance_pm_inline_" + new Date(Date.UTC(+mo.slice(0, 4), +mo.slice(5, 7), 1)).toISOString().slice(0, 7)), g("sp_finance_pm_inline"),
       g("sp_finance_pm_bank"), g("sp_finance_pm_ctbc"), g("sp_finance_pm_fin_accounts"), recs("sp_finance_pm_fin_ledger_v2", "sp_finance_pm_fin_tx_", "sp_finance_pm_fin_ledger"),
       g("pm_conclusions"), g("sp_lw_pm_mail_rules"), g("sp_lw_pm_mail_log"), g("sp_supply_pm_supply"),
       g("sp_supply_pm_orders"), getSharedPrefix("sp_supply_pm_recipe_v_"),
@@ -269,6 +270,28 @@ async function loadSpaceAIContext() {
         const twD = new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10);
         const hasOfficial = (pos?.entries || []).some(e => e.date === twD && !/groun/i.test(e.store || ""));
         if (posAbLiveAI?.date === twD && posAbLiveAI.revenue && !hasOfficial) parts.push(`【A Beach 今天盤中即時（${posAbLiveAI.at} 更新，還沒打烊會再長大；打烊後以日結為準）】\n- ${posAbLiveAI.date} 營收NT$${Math.round(posAbLiveAI.revenue).toLocaleString()}｜${posAbLiveAI.tx}單${posAbLiveAI.guests ? `｜來客${posAbLiveAI.guests}` : ""}${posAbLiveAI.dineIn?.tx || posAbLiveAI.takeout?.tx ? `｜內用${posAbLiveAI.dineIn?.tx || 0}單/外帶${posAbLiveAI.takeout?.tx || 0}單` : ""}${(posAbLiveAI.items || []).length ? `｜熱銷Top${Math.min(5, posAbLiveAI.items.length)}:${posAbLiveAI.items.slice(0, 5).map(i => `${i.n}×${i.q}`).join("、")}（品項共${posAbLiveAI.items.length}項${posAbLiveAI.items.reduce((t2, i) => t2 + (i.q || 0), 0) >= (posAbLiveAI.itemsQtyTotal || 0) ? ",完整" : ",僅Top10"}）` : ""}`);
+      }
+      // A Beach inline 訂位（pm_inline_月檔＝每小時自動同步，2021-02 起全史，張良 2026-10-03；與 D哥 loadPosText 同步接）
+      {
+        const twD = new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10);
+        const inlDays = { ...(inlPmoAI?.days || {}), ...(inlMoAI?.days || {}), ...(inlNmoAI?.days || {}) };
+        if (Object.keys(inlDays).length || inlSumAI) {
+          const ST = { 1: "確認", 2: "取消", 4: "入座", 5: "未出席" };
+          const fmt1 = r => `${r.t || "候位"} ${r.name}${r.n}人(${ST[r.st] || r.st}${r.kc ? `,兒童椅${r.kc}` : ""}${r.note ? `,${String(r.note).slice(0, 30)}` : ""})`;
+          const ls = [`【A Beach 訂位（inline 每小時自動同步；目前載入=上月起到未來；2021-02 開店起全史已入庫 pm_inline_ 月檔，更早明細要另外查）】`];
+          const td = inlDays[twD] || [];
+          ls.push(`- 今天 ${twD}：${td.length ? `${td.filter(r => r.st !== 2).length}組有效（${td.filter(r => r.st !== 2).reduce((t, r) => t + (r.n || 0), 0)}人）｜` + td.filter(r => r.st !== 2).map(fmt1).join("、") + (td.some(r => r.st === 2) ? `｜另取消${td.filter(r => r.st === 2).length}組` : "") : "無訂位"}`);
+          const futs = Object.keys(inlDays).filter(d => d > twD).sort().slice(0, 14);
+          if (futs.length) ls.push(`- 未來訂位：` + futs.map(d => { const a = inlDays[d].filter(r => r.st !== 2); return `${d.slice(5)} ${a.length}組${a.reduce((t, r) => t + (r.n || 0), 0)}人`; }).join("、"));
+          const pasts = Object.keys(inlDays).filter(d => d < twD).sort().slice(-7);
+          if (pasts.length) {
+            const agg = { all: 0, s4: 0, s2: 0, s5: 0 };
+            pasts.forEach(d => inlDays[d].forEach(r => { agg.all++; if (r.st === 4) agg.s4++; else if (r.st === 2) agg.s2++; else if (r.st === 5) agg.s5++; }));
+            ls.push(`- 近${pasts.length}天（${pasts[0].slice(5)}~${pasts[pasts.length - 1].slice(5)}）：共${agg.all}組｜入座${agg.s4}/取消${agg.s2}/未出席${agg.s5}`);
+          }
+          if (inlSumAI?.months) { const ms = Object.entries(inlSumAI.months); ls.push(`- 歷史總量：${ms.length}個月 ${ms.reduce((t, [, v]) => t + (v.resv || 0), 0)}筆（最後同步 ${String(inlSumAI.lastSync || "").slice(0, 16).replace("T", " ")}）`); }
+          parts.push(ls.join("\n"));
+        }
       }
       // 人力配置（pm_labor 財務·人力成本分頁，張良 2026-09-11；與 D哥 loadPosText 同步接）
       if (posLaborAI?.stations?.length) {
