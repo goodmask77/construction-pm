@@ -103,7 +103,11 @@ function shiftRender(){
     } else if (ev.length) st.push('未排班出勤')
     if (working) st.push('上班中')
     const h2 = workedMin/60
-    rows.push({ date, name, s, firstIn: firstIn?fhm(firstIn.m):'', lastOut: lastOut?fhm(lastOut.m):'', working, h: h2, ot1: Math.max(0,Math.min(h2-8,2)), ot2: Math.max(0,h2-10), over12: h2>12, st })
+    // v4.33.2 四週變形工時（張良「我們餐飲業是四週變形」）：加班起算=當日排定時數（排定最多認10h、沒排班=8h）；§32 單日12h上限不變
+    let schedH = 8
+    if (s && s.start && s.end) { let sp9 = tmin(s.end) - tmin(s.start); if (sp9 <= 0) sp9 += 1440; schedH = Math.min(10, Math.max(8, (sp9 - (+s.break || 0)) / 60)) }
+    const otBase = Math.max(0, h2 - schedH)
+    rows.push({ date, name, s, firstIn: firstIn?fhm(firstIn.m):'', lastOut: lastOut?fhm(lastOut.m):'', working, h: h2, ot1: Math.min(otBase, 2), ot2: Math.max(0, otBase - 2), over12: h2>12, st })
   }
   // 人員月統計＋勞基法旗標
   const per = {}
@@ -114,7 +118,7 @@ function shiftRender(){
   Object.values(per).forEach(p3=>{
     if (p3.ot1+p3.ot2 > 46) p3.flags.add('月加班'+(Math.round((p3.ot1+p3.ot2)*10)/10)+'h＞46h上限')
     const ds = [...new Set(p3.days)].sort(); let run = 1
-    for (let i=1;i<ds.length;i++){ const gap = (new Date(ds[i])-new Date(ds[i-1]))/86400e3; run = gap===1 ? run+1 : 1; if (run>6){ p3.flags.add('連上超過6天（七休一）'); break } }
+    for (let i=1;i<ds.length;i++){ const gap = (new Date(ds[i])-new Date(ds[i-1]))/86400e3; run = gap===1 ? run+1 : 1; if (run>12){ p3.flags.add('連上超過12天（四週變形例假不足）'); break } } // v4.33.2 四週變形：七休一不適用,紅線=連12天
   })
   const r1 = x => Math.round(x*10)/10
   let h = `<section><h2>班表 × 打卡 <button class="mini" style="padding:3px 12px;font-size:12.5px;vertical-align:2px" onclick="window._gdStaffOpen=!window._gdStaffOpen;const b9=document.getElementById('gdStaffBox');if(b9)b9.style.display=window._gdStaffOpen?'':'none'">👥 GD 人員</button> <span class="hint">${meN?'':BIND_HINT}</span></h2>

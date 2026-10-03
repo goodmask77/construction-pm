@@ -18,14 +18,21 @@ const LP_MIN_HOURLY = 196, LP_MIN_MONTHLY = 29500
 
 // AB 當月出勤彙總（NUEiP 實際打卡 durmin；法規+薪資共用）
 function lpAbAgg(){ const d=window._shiftD||{}; const out={}
+  // v4.33.2 四週變形工時：加班起算=當日 NUEiP 排定時數（排定最多認10h、查不到排班=8h）
+  const t2m9=t=>{ const a=String(t||'').split(':'); return (+a[0]||0)*60+(+a[1]||0) }
+  const schedMap={}
+  ;(typeof shMergedAb==='function'?shMergedAb():[]).forEach(x=>{ if(!x.start||!x.end||/休|例/.test(x.code||'')) return
+    let sp=t2m9(x.end)-t2m9(x.start); if(sp<=0) sp+=1440
+    schedMap[x.name+'|'+x.date]=Math.min(10,Math.max(8,(sp-(sp>=540?60:0))/60)) }) // 跨午夜處理；排9h以上預設含1h休
   ;(d.abAtt||[]).forEach(a=>{ if(!String(a.date||'').startsWith(shiftYm)) return
     const o=out[a.name]=out[a.name]||{h:0,ot1:0,ot2:0,days:[],late:0,flags:new Set(),daily:{}}
-    const h=+a.h||0; o.h+=h; o.ot1+=Math.max(0,Math.min(h-8,2)); o.ot2+=Math.max(0,h-10)
+    const h=+a.h||0; const base9=schedMap[a.name+'|'+a.date]||8; const ot=Math.max(0,h-base9)
+    o.h+=h; o.ot1+=Math.min(ot,2); o.ot2+=Math.max(0,ot-2)
     if(h>0){ o.days.push(a.date); o.daily[a.date]=h }
     if(h>12) o.flags.add('單日'+r1(h)+'h>12h('+a.date.slice(5)+')')
     o.late+=a.late||0 })
   Object.values(out).forEach(o=>{ const ds=[...new Set(o.days)].sort(); let run=1
-    for(let i=1;i<ds.length;i++){ const gap=(new Date(ds[i])-new Date(ds[i-1]))/86400e3; run=gap===1?run+1:1; if(run>6){ o.flags.add('連上超過6天（七休一）'); break } }
+    for(let i=1;i<ds.length;i++){ const gap=(new Date(ds[i])-new Date(ds[i-1]))/86400e3; run=gap===1?run+1:1; if(run>12){ o.flags.add('連上超過12天（四週變形例假不足）'); break } }
     if(o.ot1+o.ot2>46) o.flags.add('月加班'+r1(o.ot1+o.ot2)+'h＞46h') })
   return out }
 
@@ -52,7 +59,12 @@ function lawView(){
   const gdOver12=rows.filter(r=>r.over12).map(r=>`GD ${r.name} ${r.date.slice(5)}（${r1(r.h)}h）`)
   const abOver12=[]; Object.entries(abAgg).forEach(([nm,o])=>[...o.flags].filter(f=>f.includes('>12h')).forEach(f=>abOver12.push('AB '+nm+' '+f)))
   const ot46=[...Object.entries(per).filter(([,p])=>p.ot1+p.ot2>46).map(([nm,p])=>`GD ${nm}（${r1(p.ot1+p.ot2)}h）`), ...Object.entries(abAgg).filter(([,o])=>o.ot1+o.ot2>46).map(([nm,o])=>`AB ${nm}（${r1(o.ot1+o.ot2)}h）`)]
-  const run7=[...Object.entries(per).filter(([,p])=>[...p.flags].some(f=>f.includes('七休一'))).map(([nm])=>'GD '+nm), ...Object.entries(abAgg).filter(([,o])=>[...o.flags].some(f=>f.includes('七休一'))).map(([nm])=>'AB '+nm)]
+  const run12=[...Object.entries(per).filter(([,p])=>[...p.flags].some(f=>f.includes('連上超過12天'))).map(([nm])=>'GD '+nm), ...Object.entries(abAgg).filter(([,o])=>[...o.flags].some(f=>f.includes('連上超過12天'))).map(([nm])=>'AB '+nm)]
+  // 每2週至少2例假（§36 四週變形版）：任意連續14天內工作≥13天=例假不足
+  const biw=[]
+  { const addBi=(tag,nm,dates)=>{ const ds=[...new Set(dates)].sort(); for(let i=0;i<ds.length;i++){ const d0=new Date(ds[i]); let c=0; for(const d2 of ds){ const diff=(new Date(d2)-d0)/86400e3; if(diff>=0&&diff<14) c++ } if(c>=13){ biw.push(`${tag} ${nm}（${ds[i].slice(5)}起14天內上了${c}天）`); return } } }
+    Object.entries(per).forEach(([nm,p])=>addBi('GD',nm,p.days||[]))
+    Object.entries(abAgg).forEach(([nm,o])=>addBi('AB',nm,o.days||[])) }
   const over8=rows.filter(r=>r.h>8&&!r.over12).length + Object.values(abAgg).reduce((t,o)=>t+Object.values(o.daily).filter(h=>h>8&&h<=12).length,0)
   const brkBad=rows.filter(r=>r.s&&r.h>4&&!((+r.s.break||0)>=30)).map(r=>`GD ${r.name} ${r.date.slice(5)}（班表休息${r.s.break||0}分）`)
   const rates=(d.payRates)||{}
@@ -62,9 +74,9 @@ function lawView(){
   const st=(s)=>s==='ok'?'<span style="color:var(--green);font-weight:900">✓ 合規</span>':s==='warn'?'<span style="color:#E8A657;font-weight:900">⚠ 需注意</span>':s==='bad'?'<span style="color:var(--red);font-weight:900">✗ 可能違規</span>':'<span class="hint" style="font-weight:800">ℹ 需人工確認</span>'
   const CK=[
     {art:'最低工資法（2026）', rule:'2026-01-01 起基本工資：月薪 29,500／時薪 196', s:lowPay.length?'bad':(noPay.length?'info':'ok'), det:lowPay.join('、')||(noPay.length?'尚未填時薪：'+noPay.slice(0,8).join('、')+(noPay.length>8?'…':''):'已填的時薪都 ≥196'), fix:lowPay.length?'把低於 196 的時薪調上來（薪資表直接改）':'到「薪資表」補齊每人時薪，之後自動盯'},
-    {art:'勞基法 §30', rule:'正常工時每日 8h、每週 40h；超過＝加班要給加班費', s:over8?'warn':'ok', det:over8?`本月有 ${over8} 個人日超過 8h（已計入加班費欄）`:'本月沒有超過 8h 的日子', fix:'超時屬合法加班，但務必按 §24 倍率給付（薪資表已自動算）'},
-    {art:'勞基法 §32', rule:'含加班每日上限 12h；每月加班上限 46h', s:(gdOver12.length+abOver12.length+ot46.length)?'bad':'ok', det:[...gdOver12,...abOver12,...ot46].join('、')||'無人超標', fix:'超過 12h／46h 屬違法，請調整排班分流或加人'},
-    {art:'勞基法 §36（七休一）', rule:'每 7 日應有 1 例假＋1 休息日，不得連上超過 6 天', s:run7.length?'bad':'ok', det:run7.join('、')||'無人連上超過 6 天', fix:'連 6 天的人下一天務必排例假'},
+    {art:'勞基法 §30-1（四週變形）', rule:'餐飲業適用：每日正常工時可排到 10h、4 週正常工時總計 ≤160h；前提=經工會或勞資會議同意並公告週期', s:'info', det:'已套用四週變形模式：加班改以「當日排定時數」起算（排定最多認 10h）', fix:'勞資會議同意書與 4 週週期表要留存備查（勞檢第一個就看這個）'},
+    {art:'勞基法 §32', rule:'含加班每日上限 12h；每月加班上限 46h（變形工時不豁免）', s:(gdOver12.length+abOver12.length+ot46.length)?'bad':'ok', det:[...gdOver12,...abOver12,...ot46].join('、')||'無人超標', fix:'超過 12h／46h 屬違法，請調整排班分流或加人'},
+    {art:'勞基法 §36（變形版例假）', rule:'四週變形：每 2 週至少 2 日例假、每 4 週例假＋休息日合計至少 8 日（七休一不適用）', s:(run12.length+biw.length)?'bad':'ok', det:[...run12,...biw].join('、')||'每 2 週都有至少 2 天沒出勤', fix:'14 天內至少排 2 天例假；連上超過 12 天絕對紅線'},
     {art:'勞基法 §34（班距）', rule:'輪班換班間隔至少 11 小時', s:gapBad.length?'bad':'ok', det:gapBad.slice(0,10).join('、')+(gapBad.length>10?`…共${gapBad.length}筆`:'')||'班距皆 ≥11h', fix:'晚班接早班最容易踩——兩班之間至少留 11 小時'},
     {art:'勞基法 §35（休息）', rule:'連續工作 4 小時至少休息 30 分鐘', s:brkBad.length?'warn':'ok', det:brkBad.slice(0,8).join('、')||'GD 班表休息欄皆 ≥30 分；AB 請依現場輪休確認', fix:'把班表「休(分)」填 30 以上；AB 由店長確認現場有輪休'},
     {art:'勞基法 §24（加班費率）', rule:'平日加班前 2h ×1.34、第 3-4h ×1.67', s:'ok', det:'薪資表已按 1.34／1.67 自動計算', fix:'—'},
@@ -73,7 +85,7 @@ function lawView(){
   ]
   lpOverlay('lawOv',`
     <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap"><b style="font-size:17px">⚖️ 勞基法檢查・${shiftYm}</b>
-      <span class="hint">依據：GD＝打卡實測｜AB＝NUEiP 出勤/排班｜台灣 2026 現行法規</span>
+      <span class="hint">依據：GD＝打卡實測｜AB＝NUEiP 出勤/排班｜台灣 2026 現行法規・<b style="color:var(--pdark)">已套用四週變形工時（餐飲業）</b></span>
       <button class="mini" style="padding:6px 14px" onclick="document.getElementById('lawOv').remove()">關閉</button></div>
     <div class="scroll" style="margin-top:10px"><table style="border-collapse:collapse;width:100%"><thead>
       <tr><th style="text-align:left;padding:6px 8px;white-space:nowrap">條文</th><th style="text-align:left;padding:6px 8px">規定（白話）</th><th style="padding:6px 8px;white-space:nowrap;text-align:center">狀態</th><th style="text-align:left;padding:6px 8px">檢查結果</th><th style="text-align:left;padding:6px 8px">修正建議</th></tr></thead><tbody>
@@ -100,7 +112,7 @@ function payView(){
   const TDL=TD.replace('right','left')
   const TH='border:1px solid #8a8f98;padding:6px 8px;font-size:12.5px;background:#eef1f5;color:#111;font-weight:800;white-space:nowrap'
   const tbl=`<div id="payTblWrap" style="background:#fff;padding:14px;border-radius:10px">
-    <div style="color:#111;font-weight:900;font-size:15px;padding-bottom:8px">GROUN:D × A Beach 薪資表　${shiftYm}　<span style="font-weight:600;font-size:12px;color:#555">GD＝打卡實測工時｜AB＝NUEiP 出勤工時｜加班費率 §24：前2h×1.34、後2h×1.67</span></div>
+    <div style="color:#111;font-weight:900;font-size:15px;padding-bottom:8px">GROUN:D × A Beach 薪資表　${shiftYm}　<span style="font-weight:600;font-size:12px;color:#555">GD＝打卡實測工時｜AB＝NUEiP 出勤工時｜加班費率 §24：前2h×1.34、後2h×1.67｜四週變形：加班以當日排定時數起算</span></div>
     <table style="border-collapse:collapse;width:100%"><thead><tr>
       <th style="${TH}">店</th><th style="${TH};text-align:left">姓名</th><th style="${TH}">正常時數</th><th style="${TH}">加班1.34</th><th style="${TH}">加班1.67</th><th style="${TH}">時薪</th><th style="${TH}">本薪</th><th style="${TH}">加班費1.34</th><th style="${TH}">加班費1.67</th><th style="${TH}">加給</th><th style="${TH}">應發合計</th></tr></thead><tbody>
     ${rows.map(r=>`<tr><td style="${TDL}">${r.store}</td><td style="${TDL};font-weight:800">${r.n}</td><td style="${TD}">${r1(r.reg)}</td><td style="${TD}">${r.o.ot1?r1(r.o.ot1):'—'}</td><td style="${TD}">${r.o.ot2?r1(r.o.ot2):'—'}</td>
