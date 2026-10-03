@@ -1,0 +1,677 @@
+// ⚠️ 這是 /prep 主程式的第 2/10 塊（v4.40.0 拆檔：原 index.html 單一大 <script> 依原順序切開，classic script 共用全域、載入順序就是執行順序——不可單獨重排）
+// 本塊內容：節奏表+SOP打卡+推播+模擬檢視+SOP分層
+// ── 預做節奏表渲染（完整菜單＋品類分組＋隱藏；隱藏清單在 sopData.prepHide，sopLoad 後會再畫一次）──
+let rhyMode = +(localStorage.getItem('rhyMode')||30), rhyMngOn = false // 預設30分（張良 2026-10-02）
+function rSwitch(m){ rhyMode = m; try{localStorage.setItem('rhyMode',m)}catch(_){} document.getElementById('rb15').className = 'mini' + (m===15?' on':''); document.getElementById('rb30').className = 'mini' + (m===30?' on':''); rhythmRender() }
+function rMng(){ rhyMngOn = !rhyMngOn; const b = document.getElementById('rbMng'); if (b) b.className = 'mini' + (rhyMngOn?' on':''); rhythmRender() }
+function rhythmRender(){
+  const R = window._rhy, el = document.getElementById('rhyBody'); if (!R || !el) return
+  const hide = (sopData && sopData.prepHide) || {}
+  const canMng = !!(sopData && sopData.me)
+  const slots = rhyMode === 30 ? R.slots.filter((_,i)=>i%2===0) : R.slots
+  const qOf = o => rhyMode === 30 ? slots.map((_,i)=>Math.round(((o.q[i*2]||0)+(o.q[i*2+1]||0))*10)/10) : o.q
+  const cell = v => v >= 0.5 ? '<b>'+(Math.round(v*10)/10)+'</b>' : (v>0?'·':'<span class="mut">0</span>')
+  // 備料導向重分類（張良 2026-09-21：漢堡拆牛肉/煎雞/炸雞、小點拆炸雞(×2=支數)/薯條——同備法放一起、每類帶時段加總抓量）
+  const rhyCatOf = o => {
+    if (o.cat === '漢堡') return /牛肉/.test(o.n) ? '🥩 牛肉堡' : (/炸雞/.test(o.n) ? '🍗 炸雞堡' : '🍳 煎雞堡')
+    if (o.cat === '小點') return /炸雞/.test(o.n) ? '🍗 單點炸雞' : (/薯/.test(o.n) ? '🍟 薯條類' : '🥔 其他小點')
+    return o.cat
+  }
+  const rhyMult = o => (o.cat === '小點' && /炸雞/.test(o.n)) ? 2 : 1 // 目前炸雞一份=2支→×2顯示個數（以後有單點炸雞照名字歸類）
+  const rows = R.items.filter(o => rhyMngOn || !hide[o.k]).map(o => ({ ...o, _rc: rhyCatOf(o), _m: rhyMult(o) }))
+  const hidCnt = R.items.filter(o => hide[o.k]).length
+  const CAT_ORDER = ['披薩', '🥩 牛肉堡', '🍳 煎雞堡', '🍗 炸雞堡', '越法三明治', '🍗 單點炸雞', '🍟 薯條類', '🥔 其他小點']
+  const cats = [...new Set(rows.map(o=>o._rc))].sort((a,b)=>{ const ia = CAT_ORDER.indexOf(a), ib = CAT_ORDER.indexOf(b); return (ia<0?99:ia)-(ib<0?99:ib) })
+  let s = `<div class="scroll" style="max-height:70vh;overflow-y:auto"><table><thead><tr><th style="position:sticky;left:0;background:var(--soft);z-index:2">品項${hidCnt&&!rhyMngOn?`<span class="hint">（隱藏${hidCnt}項）</span>`:''}</th>${rhyMngOn?'<th></th>':''}${slots.map(t=>'<th>'+t+'</th>').join('')}</tr></thead><tbody>`
+  cats.forEach(c=>{
+    const grp = rows.filter(o=>o._rc===c)
+    const live = grp.filter(o=>!hide[o.k]) // 加總不含隱藏
+    const sums = slots.map((_,i)=>live.reduce((t2,o)=>t2+(qOf(o)[i]||0)*o._m,0))
+    s += `<tr class="catband"><td style="position:sticky;left:0;background:var(--psoft);z-index:1">${c}${c==='🍗 單點炸雞'?' <span style="font-weight:600;font-size:11.5px">×2=支</span>':''}</td>${rhyMngOn?'<td></td>':''}${sums.map(v=>`<td style="font-weight:900;font-size:14px;color:#C2410C">${v>=0.5?Math.round(v*10)/10:(v>0?'·':'<span style=\"opacity:.3;font-size:13px\">0</span>')}</td>`).join('')}</tr>`
+    grp.forEach(o=>{
+      const hid = hide[o.k]
+      s += `<tr style="${rhyMngOn&&hid?'opacity:.42':''}"><td class="iname" style="position:sticky;left:0;background:var(--card);z-index:1" title="${o.n}">${o.n}${o._m>1?' <span class="hint">×2</span>':''}</td>${rhyMngOn?`<td><button class="mini" onclick="rHide('${encodeURIComponent(o.k)}',${hid?0:1})">${hid?'恢復':'隱藏'}</button></td>`:''}${qOf(o).map(v=>'<td>'+cell(v*o._m)+'</td>').join('')}</tr>`
+    })
+  })
+  s += `</tbody></table></div>${rhyMngOn?'<div class="hint" style="margin-top:6px">點「隱藏」的品項不會出現在預做表（要綁定過才能改；再按🙈可恢復）</div>':''}`
+  el.innerHTML = s
+}
+async function rHide(kEnc, hideV){
+  if (!(sopData && sopData.me)) { alert('要先跟 DD 說「綁定GD」才能改隱藏設定'); return }
+  const r = await fetch('/api/mail-sync?prephide=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ key: decodeURIComponent(kEnc), hide: !!hideV, token: TK() }) })
+  const d = await r.json().catch(()=>null)
+  if (d && d.ok) { sopData.prepHide = d.prepHide; rhythmRender() } else alert((d&&d.error)||'失敗')
+}
+// ── 今日SOP（每站每天：拍照＋完成打卡；超時 DD 會通知群）──
+// 個人身分：跟 DD 說「綁定看板」拿到 /prep?me=token 連結 → 存這支手機，打卡自動是本人、站長可編輯自己的站
+;(function(){ const sp = new URLSearchParams(location.search); const m = sp.get('me'); if (m) localStorage.setItem('prepToken', m); if (m || sp.has('r')) history.replaceState(null, '', location.pathname + location.hash) })() // v4.31.0 保留 #meet=/#sop= 深層連結 // r=🔄的快取時間戳，進站就清掉（張良 2026-09-24：網址多一段）
+const TK = () => localStorage.getItem('prepToken') || ''
+// 📱 已綁定→manifest 換成個人化版（v4.31.2 張良：換 icon 重加 App 變訪客）：加入主畫面的捷徑 start_url 自帶 ?me=token，重加 App 身分不掉
+function maniSync(){ try { const t8 = TK(); const l8 = document.querySelector('link[rel="manifest"]'); if (l8) l8.href = t8 ? ('/api/mail-sync?manifest=1&me=' + encodeURIComponent(t8)) : '/ops/manifest.json?v=2' } catch(_){} }
+// ── 🔔 Web Push（v4.33.0 張良：點通知直接打開主畫面GD+本人身分）──
+// iOS 規則：只有「加到主畫面」的 GD 裡才有 Notification（Safari 沒有）；允許通知一定要本人手點
+if ('serviceWorker' in navigator) { try { navigator.serviceWorker.register('/sw.js') } catch(e){} } // sw 在根目錄＝scope 蓋到 /prep
+// v4.33.2 圖示紅點：打開 App 就清掉（下次推播會再帶最新未簽收數）；回到前景也清
+try { if ('clearAppBadge' in navigator) { navigator.clearAppBadge().catch(()=>{}); document.addEventListener('visibilitychange', ()=>{ if (!document.hidden) navigator.clearAppBadge().catch(()=>{}) }) } } catch(e){}
+let _wpCfg = null
+async function wpCfg(){ if (_wpCfg) return _wpCfg; try { _wpCfg = await (await fetch('/api/mail-sync?webpushcfg=1')).json() } catch(e){ _wpCfg = {} } return _wpCfg }
+function wpSupport(){ return 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window }
+function wpB64(s){ const p='='.repeat((4-s.length%4)%4); const b=atob((s+p).replace(/-/g,'+').replace(/_/g,'/')); return Uint8Array.from([...b].map(c=>c.charCodeAt(0))) }
+async function pushSub(){ try { // 訂閱＋回報伺服器（已允許時默默跑＝換裝置/過期自動補）
+  const cfg = await wpCfg(); if (!cfg || !cfg.key || !TK()) return false
+  const reg = await navigator.serviceWorker.register('/sw.js'); await navigator.serviceWorker.ready
+  let sub = await reg.pushManager.getSubscription()
+  if (!sub) sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: wpB64(cfg.key) })
+  const r = await fetch('/api/mail-sync?pushsub=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ token: TK(), sub: sub.toJSON() }) })
+  const j = await r.json().catch(()=>null)
+  return !!(j && j.ok)
+} catch(e){ return false } }
+async function pushOn(){ // 🔔 按鈕（一定要使用者手點，iOS 規定）
+  if (!TK()) { alert('要先綁定身分才能開通知：私訊 DD「綁定GD 你的本名」'); return }
+  if (!wpSupport()) { alert('這裡開不了通知。iPhone 請用「加到主畫面」的 GD App 打開，再按一次鈴鐺鈕'); return }
+  const perm = await Notification.requestPermission()
+  if (perm !== 'granted') { alert('沒有允許通知。之後要開：iPhone 設定 → 通知 → GD'); return }
+  const ok = await pushSub()
+  alert(ok ? '通知開好了！之後簽收提醒、公告點通知就直接打開 GD' : '訂閱沒成功，網路穩一點再按一次鈴鐺鈕')
+  try { meChipInit() } catch(e){}
+}
+maniSync()
+// ── 模擬檢視（v4.32.0 張良「切換不同使用者，確認每人畫面/設定/權限都正確」）──
+// 原理＝攔截全站 fetch：讀取自動帶 &as=對方rid → 伺服器直接用「那個人」的身分回資料（分頁藏不藏、按鈕有沒有、設定看不看得到＝跟本人開起來一模一樣，不是前端假裝）；寫入（POST）全部擋下＝只能看不能改
+const SIM = (()=>{ try { return JSON.parse(sessionStorage.getItem('gdSim')||'null') } catch(e){ return null } })()
+// v4.32.2 張良「不要這個圖 以後都不要有顏色的emoji」：眼睛改單色線條 SVG（同側欄 stroke 風），UI 一律不用彩色 emoji
+const EYE_I = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>'
+// ── 全站彩色emoji→單色線條icon（v4.33.0 張良「以後都不要有顏色的emoji」）──
+// 集中一處治本：MutationObserver 盯著畫面，文字裡出現彩色 emoji 就原地換成 stroke SVG（同側欄風格）；
+// 以後程式再寫到 emoji 也會自動被換＝規則自動執行。<option>/<title> 塞不了 SVG → 直接把字拿掉。
+const _EI = d => '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2.5px;flex:0 0 auto">' + d + '</svg>'
+const _EP = s => _EI('<path d="' + s + '"/>')
+const EMO_SVG = (() => {
+  const food = _EP('M4 7h16l-1.5 13h-13ZM8 7a4 4 0 0 1 8 0')
+  const tool = _EP('M14.7 6.3a4.5 4.5 0 0 0-6 5.6L3 17.6V21h3.4l5.7-5.7a4.5 4.5 0 0 0 5.6-6l-3 3-2.8-.7-.7-2.8Z')
+  const folder = _EP('M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z')
+  const inbox = _EP('M5.5 5h13L22 12v6a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-6ZM22 12h-6l-2 3h-4l-2-3H2')
+  const mega = _EP('m3 11 18-7v16L3 13v-2ZM7.5 13.6v3.9a1.5 1.5 0 0 0 3 .3l-.8-4')
+  const medal = _EI('<circle cx="12" cy="15.5" r="5"/><path d="m8.5 11-3-8h4.5l2 5M15.5 11l3-8H14l-2 5"/>')
+  const lock = _EI('<rect x="4.5" y="10.5" width="15" height="10.5" rx="2"/><path d="M8 10.5V7a4 4 0 0 1 8 0v3.5"/>')
+  const help = _EI('<circle cx="12" cy="12" r="9"/><path d="M9.3 9a2.8 2.8 0 0 1 5.4 1c0 1.8-2.7 2.3-2.7 4M12 17.5h.01"/>')
+  const util = _EP('M7 2v8a2 2 0 0 0 4 0V2M9 2v20M17 22V2c-2 1-3 3.5-3 6v5h3')
+  const clock = _EI('<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>')
+  const check = _EP('M4 12.5 9.5 18 20 6')
+  return {
+  '✅': check, '☑': check, '❌': _EP('M5 5l14 14M19 5 5 19'),
+  '🗑': _EP('M3 6h18M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6M10 11v6M14 11v6'),
+  '⚙': _EI('<circle cx="12" cy="12" r="3.2"/><path d="M12 2.8v2.6M12 18.6v2.6M4.9 4.9l1.9 1.9M17.2 17.2l1.9 1.9M2.8 12h2.6M18.6 12h2.6M4.9 19.1l1.9-1.9M17.2 6.8l1.9-1.9"/>'),
+  '✏': _EP('M17 3a2.83 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z'),
+  '⚠': _EP('M10.3 3.8 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.8a2 2 0 0 0-3.4 0ZM12 9v4M12 17h.01'),
+  '🔔': _EP('M6 9a6 6 0 1 1 12 0c0 5 2 6.5 2 6.5H4S6 14 6 9ZM10 20a2.2 2.2 0 0 0 4 0'),
+  '📷': _EI('<path d="M4 7h3l2-2.5h6L17 7h3a1.5 1.5 0 0 1 1.5 1.5V19a1.5 1.5 0 0 1-1.5 1.5H4A1.5 1.5 0 0 1 2.5 19V8.5A1.5 1.5 0 0 1 4 7Z"/><circle cx="12" cy="13.5" r="3.5"/>'),
+  '🔗': _EP('M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7.1-7.1L11.7 5M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7.1 7.1L12.3 19'),
+  '📎': _EP('m21.4 11-9.2 9.2a6 6 0 0 1-8.5-8.5l9.2-9.2a4 4 0 0 1 5.7 5.7l-9.2 9.2a2 2 0 0 1-2.8-2.8l8.5-8.5'),
+  '🎓': _EP('M22 10 12 5 2 10l10 5ZM6 12.5V17c0 1.6 2.7 3 6 3s6-1.4 6-3v-4.5M22 10v5'),
+  '📋': _EI('<rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 2v4M15 2v4M8.5 11h7M8.5 15h5"/>'),
+  '⭐': _EP('m12 3 2.7 5.7 6.3.9-4.6 4.4 1.1 6.2-5.5-3-5.5 3 1.1-6.2L3 9.6l6.3-.9Z'),
+  '🕐': clock, '⏱': clock, '⏳': _EP('M6 2h12M6 22h12M7 2v4.5L12 11l5-4.5V2M7 22v-4.5L12 13l5 4.5V22'),
+  '⏰': _EI('<circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 1.5M5 3 2.5 5.5M19 3l2.5 2.5"/>'),
+  '📦': _EP('M21 8 12 3 3 8v8l9 5 9-5ZM3 8l9 5 9-5M12 13v8'),
+  '📅': _EI('<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M8 3v4M16 3v4M3 10h18"/>'),
+  '🎉': _EP('M5.5 11 13 18.5 3 21ZM9.5 8.5 15 14M13.5 6.5 15 5M17 10.5l2.5-.5M14.5 2.5 14 5.5M20.5 5 17.5 8'),
+  '👤': _EI('<circle cx="12" cy="8" r="4"/><path d="M4.5 21a7.5 7.5 0 0 1 15 0"/>'),
+  '🙋': _EI('<circle cx="12" cy="8" r="4"/><path d="M4.5 21a7.5 7.5 0 0 1 15 0"/>'),
+  '📝': _EP('M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8M18.4 2.6a2 2 0 0 1 2.8 2.8L13 13.5l-3.5 1 1-3.5Z'),
+  '💡': _EP('M9 18h6M10 21h4M12 3a6 6 0 0 1 3.5 10.9c-.7.5-1 1.3-1 2.1h-5c0-.8-.3-1.6-1-2.1A6 6 0 0 1 12 3Z'),
+  '🥩': food, '🍗': food, '🍔': food, '🍳': _EI('<circle cx="10" cy="12" r="7"/><path d="M17 12h5"/>'),
+  '💾': _EP('M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2ZM17 21v-8H7v8M7 3v5h8'),
+  '🖼': _EI('<rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="1.8"/><path d="m21 15.5-4.5-4.5L7 20.5"/>'),
+  '🙈': _EI('<path d="M10.7 5.1A10 10 0 0 1 12 5c6.5 0 10 7 10 7a17 17 0 0 1-2.4 3.3M6.6 6.6A16.8 16.8 0 0 0 2 12s3.5 7 10 7a10 10 0 0 0 5.4-1.6M2 2l20 20"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/>'),
+  '📌': _EP('M12 17v5M7 10.5 5.5 12.3a.8.8 0 0 0 .6 1.4h11.8a.8.8 0 0 0 .6-1.4L17 10.5V5l1-2.2H6L7 5Z'),
+  '🔍': _EI('<circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/>'),
+  '🚩': _EP('M4 22v-7M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1Z'),
+  '📱': _EI('<rect x="6" y="2.5" width="12" height="19" rx="2.5"/><path d="M11 18h2"/>'),
+  '🛠': tool, '🔧': tool,
+  '🛒': _EI('<circle cx="9" cy="20" r="1.6"/><circle cx="17" cy="20" r="1.6"/><path d="M3 4h2l2.4 11h10.2L20 8H6"/>'),
+  '💬': _EP('M21 12a8 8 0 0 1-8 8H4l2-3a8 8 0 1 1 15-5Z'),
+  '🔄': _EP('M3 12a9 9 0 0 1 15-6.7L21 8M21 3v5h-5M21 12a9 9 0 0 1-15 6.7L3 16M3 21v-5h5'),
+  '🐞': _EI('<rect x="8" y="7" width="8" height="11" rx="4"/><path d="M8 10H4M20 10h-4M8 14H4.5M19.5 14H16M9 7 7 4.5M15 7l2-2.5M10 3.5h4"/>'),
+  '🚫': _EI('<circle cx="12" cy="12" r="9"/><path d="m5.6 5.6 12.8 12.8"/>'),
+  '🗂': folder, '📂': folder, '📁': folder,
+  '🏷': _EI('<path d="M12.6 2.6 21.4 11.4a2 2 0 0 1 0 2.8l-7.2 7.2a2 2 0 0 1-2.8 0L2.6 12.6A2 2 0 0 1 2 11.2V4a2 2 0 0 1 2-2h7.2a2 2 0 0 1 1.4.6Z"/><circle cx="7.5" cy="7.5" r="1.3"/>'),
+  '📬': inbox, '📥': inbox, '📩': inbox, '📣': mega, '📢': mega,
+  '👥': _EI('<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0M16 4.7a3.5 3.5 0 0 1 0 6.6M17.5 14.3a6.5 6.5 0 0 1 4 5.7"/>'),
+  '🏠': _EP('M3 10.5 12 3l9 7.5M5 9.5V21h14V9.5'),
+  '🏆': _EP('M8 21h8M12 17v4M7 4h10v5a5 5 0 0 1-10 0ZM7 6H4v2a3 3 0 0 0 3 3M17 6h3v2a3 3 0 0 1-3 3'),
+  '🥇': medal, '🥈': medal, '🥉': medal,
+  '📜': _EP('M8 21h11a2 2 0 0 0 2-2v-2H10v2a2 2 0 1 1-4 0V5a2 2 0 1 0-4 0v3h4M19 17V5a2 2 0 0 0-2-2H4'),
+  '✍': _EP('M12 20h9M16.4 3.6a2 2 0 1 1 2.8 2.8L7 18.5l-4 1 1-4Z'),
+  '👑': _EP('m3 8 4.5 3.5L12 5l4.5 6.5L21 8l-1.8 10H4.8ZM5 21h14'),
+  '❓': help, '❔': help,
+  '📊': _EP('M3 3v16a2 2 0 0 0 2 2h16M8 17v-6M13 17V7M18 17v-3'),
+  '📈': _EP('m2 17 7-7 5 5 8-8M16 7h6v6'), '📉': _EP('m22 17-8.5-8.5-5 5L2 7M16 17h6v-6'),
+  '🧮': _EI('<rect x="5" y="2.5" width="14" height="19" rx="2"/><path d="M8.5 6.5h7M8.5 11h.01M12 11h.01M15.5 11h.01M8.5 14.5h.01M12 14.5h.01M15.5 14.5h.01M8.5 18h.01M12 18h.01M15.5 18h.01"/>'),
+  '🔐': lock, '🔒': lock,
+  '🔑': _EI('<circle cx="8" cy="15.5" r="4.5"/><path d="m11.5 12.5 9-9M16.5 7.5l3 3"/>'),
+  '⚡': _EP('M13 2 4.5 13.5H11L10 22l8.5-11.5H13Z'),
+  '🍟': util, '🥔': util, '🍴': util,
+  '🎬': _EI('<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 4v16M17 4v16M3 9h4M3 15h4M17 9h4M17 15h4"/>'),
+  '🆚': '<b style="font-size:11.5px;letter-spacing:.5px">VS</b>', '🅰': '',
+  '🏖': _EP('M12 3a9 9 0 0 0-9 9h18a9 9 0 0 0-9-9ZM12 12v7a2 2 0 0 0 4 0'),
+  '🔖': _EP('M6 3h12v18l-6-4-6 4Z'),
+  '🧾': _EP('M4 2.5h16V21l-2.7-1.5-2.6 1.5-2.7-1.5L9.4 21l-2.7-1.5L4 21ZM8 7.5h8M8 11.5h8'),
+  '🎚': _EP('M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M2 14h4M10 8h4M18 16h4'),
+  '☀': _EI('<circle cx="12" cy="12" r="4"/><path d="M12 2v2.5M12 19.5V22M4.9 4.9l1.8 1.8M17.3 17.3l1.8 1.8M2 12h2.5M19.5 12H22M4.9 19.1l1.8-1.8M17.3 6.7l1.8-1.8"/>'),
+  '🌙': _EP('M20 14.5A8.5 8.5 0 1 1 9.5 4 7 7 0 0 0 20 14.5Z'),
+  '🛍': _EP('M6 7h12l1.5 13a1 1 0 0 1-1 1.5h-13a1 1 0 0 1-1-1.5ZM8.5 10V6.5a3.5 3.5 0 0 1 7 0V10'),
+  '🔢': _EP('M9 3 7 21M17 3l-2 18M4 8.5h17M3 15.5h17'),
+  '👁': _EI('<path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/>'),
+  '🪑': _EP('M6 19v2M18 19v2M6 11V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v7M4 11h16a1 1 0 0 1 1 1v3a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1v-3a1 1 0 0 1 1-1Z'),
+  }
+})()
+const EMO_RE = new RegExp('(' + Object.keys(EMO_SVG).join('|') + ')️?', 'gu')
+function emoFix(root){
+  try {
+    if (!root) return
+    if (root.nodeType === 3) return emoFixT(root)
+    if (root.nodeType !== 1 && root.nodeType !== 11) return
+    const L = []
+    ;(function walk(n){ n.childNodes && n.childNodes.forEach(c => { if (c.nodeType === 3) L.push(c); else if (c.nodeType === 1 && c.nodeName !== 'svg' && c.nodeName !== 'SVG') walk(c) }) })(root)
+    L.forEach(emoFixT)
+  } catch(e){}
+}
+function emoFixT(tn){
+  const v = tn.nodeValue; if (!v) return
+  EMO_RE.lastIndex = 0; if (!EMO_RE.test(v)) return
+  const p = tn.parentNode; if (!p) return
+  const tg = p.nodeName
+  if (tg === 'SCRIPT' || tg === 'STYLE' || tg === 'TEXTAREA') return
+  EMO_RE.lastIndex = 0
+  if (tg === 'OPTION' || tg === 'TITLE') { tn.nodeValue = v.replace(EMO_RE, '').replace(/^ +| +$/g, ''); return } // SVG 塞不進去的位置：拿掉字
+  const t = document.createElement('template')
+  t.innerHTML = v.replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'})[c]).replace(EMO_RE, (m, g) => EMO_SVG[g] !== undefined ? EMO_SVG[g] : m)
+  p.replaceChild(t.content, tn)
+}
+const emoObs = new MutationObserver(rs => { rs.forEach(r => { if (r.type === 'characterData') emoFix(r.target); else if (r.addedNodes) r.addedNodes.forEach(n => { emoFix(n); if (n.nodeType === 1) { try { permScan(n) } catch(e){} } }) }) })
+const emoBoot = () => { emoFix(document.body); emoObs.observe(document.body, { childList: true, subtree: true, characterData: true }) }
+document.body ? emoBoot() : document.addEventListener('DOMContentLoaded', emoBoot)
+if (SIM) {
+  const _fetch0 = window.fetch.bind(window)
+  window.fetch = (u, o) => {
+    const s = String(u)
+    if (o && o.method && !/^get$/i.test(o.method)) { if (!s.includes('errlog=')) alert(canTab(curTabKey()) ? '模擬確認結果：' + SIM.name + ' 在這一頁「有」編輯權限，本人可以正常送出（模擬中不會真的寫入）' : '模擬中不能改資料——按上方「結束模擬」回到自己再操作'); return Promise.resolve(new Response(JSON.stringify({ ok:false, error:'模擬模式不能改資料' }), { headers: { 'content-type':'application/json' } })) } // v4.34.0 有權限→明講他本人送得出去
+    return _fetch0(s.includes('/api/mail-sync?') ? s + '&as=' + encodeURIComponent(SIM.rid) : u, o)
+  }
+  const _simBn = () => { const bn = document.createElement('div'); bn.id = 'simBn'
+    bn.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:999;background:#3A2F10;border-bottom:1px solid #D4A72C;color:#F2CE60;font-weight:800;font-size:14px;padding:8px 12px;display:flex;gap:8px;align-items:center;justify-content:center;flex-wrap:wrap'
+    bn.innerHTML = EYE_I + ' 模擬中：' + SIM.name + ' 看到的畫面（只能看、改不了資料）<button class="mini" style="padding:4px 14px" onclick="simEnd()">結束模擬</button>'
+    document.body.appendChild(bn); document.body.style.paddingTop = '42px' }
+  document.body ? _simBn() : document.addEventListener('DOMContentLoaded', _simBn)
+}
+function simStart(rid, name){ try { sessionStorage.setItem('gdSim', JSON.stringify({ rid, name })) } catch(e){}; simWipe(); location.reload() }
+function simEnd(){ try { sessionStorage.removeItem('gdSim') } catch(e){}; simWipe(); location.reload() }
+function simWipe(){ try { Object.keys(localStorage).filter(k2=>k2.startsWith('obc_')||k2.startsWith('obt_')).forEach(k2=>localStorage.removeItem(k2)) } catch(e){} } // 進出模擬都清畫面快取＝不殘留彼此的資料
+// ── 編輯權限鎖門器（v4.34.0 張良「無法編輯的連打開都不能打開、按鈕直接鎖死跳窗，不要最後才不能送出」）──
+// 原理：whoami 回我的（或模擬對象的）權限 → 會寫入的按鈕沒權限就變灰鎖死，一按跳窗「請向張良申請」；
+// 跟伺服器 permWho 同一套邏輯＝畫面上鎖的跟實際擋的一定一致。模擬時看到的鎖＝那個人本人看到的鎖。
+window._meW = (()=>{ try { return JSON.parse(localStorage.getItem('obt_mew')||'null') } catch(e){ return null } })()
+function curTabKey(){ const c = curStore; if (c==='ground'||c==='abeach') return 'board'; if (c==='settings') return 'gear'; return c }
+function canTab(k){
+  const w = window._meW
+  if (w === null || w === undefined) return true // 權限還沒載到→先不鎖（伺服器照樣守門）
+  if (!w.bound) return false
+  if (w.mode !== 'approve') return true // 全開模式：綁定即可編
+  return !!(w.edit && (w.adminP || !w.tabs || w.tabs[k] !== 0))
+}
+// 會寫入的按鈕 → 所屬分頁權限（'*'=跟著目前頁面，給盤點/包材共用函式）；純看的（切頁/收合/篩選/看圖）不鎖
+const EDIT_FN = {
+  actSave:'board', actAdd:'board', actLoss:'board', act86:'board', rHide:'board', posHide:'board', rMng:'board', itmMngTog:'board',
+  sopItemEdit:'sop', sopItemSave:'sop', sopEdAdd:'sop', sopEdSave:'sop', sopCatAdd:'sop', sopCatSet:'sop', sopStAdd:'sop', sopStDel:'sop', sopStRen:'sop', sopStRename:'sop', sopStOp:'sop', sopstOp:'sop', catMove:'sop', msAddSt:'sop', msDelSt:'sop', msSave:'sop', sopOrdMove:'sop', sopRefOpen:'sop', sopRefPaste:'sop', sopRefSave:'sop', sopRefUp:'sop', sopMngT:'sop',
+  taskNew:'task', taskNewSend:'task', taskOwn:'task', taskOwnSend:'task', ckAdd:'task', ckOp:'task', ckPick:'task', ckSend:'task', lbOp:'task', lbDue:'task',
+  menuCell:'menu', menuItemAdd:'menu', menuItemDel:'menu', menuItemSave:'menu', menuItemPurge:'menu', menuItemRestore:'menu', menuItemShift:'menu', menuSecDel:'menu', menuSecForm:'menu', menuSecShift:'menu', menuNoteEdit:'menu', mnImgPick:'menu', mnImgUndo:'menu',
+  fbSend:'fb', fbjNew:'fb', fbjSend:'fb', fbjDel:'fb', fbOther:'fb', fbOtherGo:'fb',
+  meetForm:'meet', meetSave:'meet', meetOp:'meet', meetTypes:'meet', mtUpload:'meet',
+  cellClick:'shift', dayClick:'shift', shiftForm:'shift', shiftSave:'shift', shiftDelFast:'shift', shiftPosEdit:'shift', posSave:'shift', shLeaveMenu:'shift', shLeaveSet:'shift', clearDay:'shift', clearWeek:'shift', copyDay:'shift', copyCell:'shift', copyWeekNext:'shift', undoClear:'shift', undoLastCopy:'shift', pasteOff:'shift', t24set:'shift', qkTrChange:'shift', shiftQuickGo:'shift', tplSave:'shift', tplApply:'shift', tplDel:'shift', shiftSkill:'shift', gdRoleModal:'shift', gdRoleSave:'shift', gdStaffAdd:'shift', gdStaffGo:'shift', gdStaffOp:'shift', odMove:'shift', odOff:'shift',
+  lbNew:'shift', lbDel:'shift', lbRen:'shift', lbCopy:'shift', lbSnap:'shift', lbSwitch:'shift', lbUndo:'shift', lbVDel:'shift', lbVRen:'shift', lbVRestore:'shift', lbClearAll:'shift', lbRowClear:'shift', lbColClear:'shift', lbWageMenu:'shift', lbFinSet:'shift', lbAmtPick:'shift',
+  invCount:'*', invEdit:'*', invSave:'*', invDel:'*',
+  buyNew:'buy', buySend:'buy', buyOp:'buy', buyRecv:'buy', recvPick:'buy', recvSend:'buy', buyCat:'buy', buyPick:'buy',
+}
+function permFnTab(el){
+  const src = (el.getAttribute('onclick') || '') + ';' + (el.getAttribute('onchange') || '')
+  for (const m of src.matchAll(/([A-Za-z_]\w*)\s*\(/g)) { const t = EDIT_FN[m[1]]; if (t) return t === '*' ? curTabKey() : t }
+  return null
+}
+function permScan(root){ // 每次重畫：沒權限的寫入鈕上鎖變灰（還是可以點＝點了跳說明窗）
+  try {
+    if (!root || !root.querySelectorAll) return
+    const els = root.querySelectorAll('[onclick],[onchange]')
+    els.forEach(el => {
+      const k = permFnTab(el); if (!k) return
+      const lock = !canTab(k)
+      el.classList.toggle('plk', lock)
+      if (lock && /^(INPUT|SELECT|TEXTAREA)$/.test(el.tagName) && el.getAttribute('onchange')) el.disabled = true
+    })
+    if (root !== document.body && root.matches && root.matches('[onclick],[onchange]')) { const k2 = permFnTab(root); if (k2) root.classList.toggle('plk', !canTab(k2)) }
+  } catch(e){}
+}
+function permPop(k){ // 鎖死按鈕被點到＝跳窗講清楚（模擬時=講「這個人」的狀態）
+  const old = document.getElementById('ppOv'); if (old) old.remove()
+  const names = { board:'首頁', gear:'設定', errs:'問題回報', inc:'異常通知' }
+  const lbl = stripEmoji((window._tabCfg && window._tabCfg.names && window._tabCfg.names[k]) || TAB_DEF[k] || names[k] || k)
+  const w = window._meW || {}
+  const msg = (typeof SIM !== 'undefined' && SIM)
+    ? SIM.name + ' 沒有「' + lbl + '」的編輯權限——他本人按這顆按鈕也會看到這個視窗'
+    : (w.bound ? '你目前沒有「' + lbl + '」的編輯權限' : '還沒登入——請點 DD 給你的個人連結進來（找不到連結→私訊 DD「我的連結」補發）')
+  const ov = document.createElement('div'); ov.id = 'ppOv'
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(10,14,20,.55);z-index:1000;display:flex;align-items:center;justify-content:center;padding:20px'
+  ov.innerHTML = '<div style="background:#222B38;border:1px solid #3B4654;box-shadow:0 18px 50px rgba(0,0,0,.55);border-radius:14px;max-width:340px;width:100%;padding:18px" onclick="event.stopPropagation()">'
+    + '<div style="font-weight:900;font-size:16px;display:flex;gap:8px;align-items:center">' + (EMO_SVG['🔒'] || '') + ' 無法編輯</div>'
+    + '<div style="margin-top:8px;font-size:14.5px;line-height:1.6">' + msg + '</div>'
+    + '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px">'
+    + ((w.bound && !(typeof SIM !== 'undefined' && SIM)) ? '<button class="mini on" style="padding:9px 14px" onclick="document.getElementById(\'ppOv\').remove();prepApply()">向張良申請編輯權限</button>' : '')
+    + '<button class="mini" style="padding:9px 14px" onclick="document.getElementById(\'ppOv\').remove()">知道了</button>'
+    + '</div></div>'
+  ov.onclick = () => ov.remove()
+  document.body.appendChild(ov)
+}
+// 全站攔截：鎖住的動作在「進到功能之前」就擋下（capture 階段＝比按鈕自己的 onclick 先跑）
+document.addEventListener('click', e => {
+  try {
+    const el = e.target && e.target.closest ? e.target.closest('[onclick]') : null
+    if (!el) return
+    const k = permFnTab(el); if (!k || canTab(k)) return
+    e.preventDefault(); e.stopPropagation()
+    permPop(k)
+  } catch(err){}
+}, true)
+document.addEventListener('change', e => {
+  try {
+    const el = e.target && e.target.closest ? e.target.closest('[onchange]') : null
+    if (!el) return
+    const k = permFnTab(el); if (!k || canTab(k)) return
+    e.stopPropagation()
+    permPop(k)
+  } catch(err){}
+}, true)
+// 右上固定綁定入口（張良 2026-09-24：DD 訊息叫人按「輸入綁定碼」但按鈕藏在提示字裡找不到——未綁定時固定顯示在右上）
+function bindBtnSync(){ const b = document.getElementById('bindBtn'); if (b) b.style.display = TK() ? 'none' : '' }
+
+let sopData = null, sopPhotos = {}, sopEditSt = null
+let sopPin = new Set(JSON.parse(localStorage.getItem('sopPin')||'[]')) // 📌 釘選的站（存本機＝每個人自己的）
+let sopColl = new Set(JSON.parse(localStorage.getItem('sopColl')||'[]')) // ⏷ 收合的站（張良 2026-09-24：可全部收合打開；存本機）
+// ── v4.15.0 SOP 分層＋負責人＋建議審核 ──
+async function sopstOp(body){
+  const r = await fetch('/api/mail-sync?sopst=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ ...body, token: TK() }) })
+  const j = await r.json().catch(()=>null)
+  if (j && j.ok) { await sopLoad() } else alert((j&&j.error)||'失敗')
+}
+function sopOrdMove(kind, name, dir){ // ◀▶ 排序（v4.18.1 張良「讓我可以排序」）
+  const arr = kind==='cat' ? [...(sopData.def.cats||[])] : [...(sopData.def.stations||[])]
+  const i = arr.indexOf(name), j = i + dir
+  if (i < 0 || j < 0 || j >= arr.length) return
+  ;[arr[i], arr[j]] = [arr[j], arr[i]]
+  sopstOp(kind==='cat' ? { op:'catord', list: arr } : { op:'stord', list: arr })
+}
+function sopMngT(){ window._sopMng = !window._sopMng; sopRender() } // ⚙️ 設定模式（張良 2026-10-02：平常乾淨,按了才出現編輯的東西）
+function sopItemEdit(id, newSt){ // 單條 SOP 編輯/新增（取代總編輯）
+  const it = id ? (sopData.def.items||[]).find(x=>x.id===id) : { title:'', due:'', photo:false, st:newSt||'' }
+  if (!it) return
+  const stsE = [...(sopData.def.stations||[])]
+  const stDispE = s9 => String(s9).includes('｜') ? String(s9).split('｜').pop() : s9
+  const ov = document.createElement('div'); ov.id='sieOv'
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:65;display:flex;align-items:center;justify-content:center;padding:16px'
+  const ip9 = 'width:100%;border:1px solid var(--line);border-radius:8px;padding:9px;font-size:15px;margin-bottom:8px'
+  ov.innerHTML = `<div style="background:#222B38;border:1px solid #3B4654;border-radius:14px;width:min(400px,94vw);padding:16px" onclick="event.stopPropagation()">
+    <div style="font-weight:900;margin-bottom:10px">⚙️ 編輯 SOP 條目</div>
+    <input id="sieT" value="${String(it.title||'').replace(/"/g,'&quot;')}" placeholder="內容" style="${ip9}">
+    <div style="display:flex;gap:10px;align-items:center;margin-bottom:8px"><span class="hint">時限</span><input id="sieD" type="time" value="${it.due||''}" style="border:1px solid var(--line);border-radius:8px;padding:8px;font-size:15px"><label style="font-size:14px"><input id="sieP" type="checkbox" ${it.photo?'checked':''}> 📷 要拍照</label></div>
+    <div style="display:flex;gap:10px;align-items:center;margin-bottom:8px"><span class="hint">#階段</span><select id="sieG" style="flex:1;border:1px solid var(--line);border-radius:8px;padding:8px;font-size:14px"><option value="">未分階段</option>${(sopData.def.cats||[]).map(c9=>`<option value="${c9}"${(it.tg||(id?'':window._sopTg||''))===c9?' selected':''}>${c9}</option>`).join('')}</select></div>
+    <div style="display:flex;gap:10px;align-items:center;margin-bottom:8px"><span class="hint">產品</span><select id="sieS" style="flex:1;border:1px solid var(--line);border-radius:8px;padding:8px;font-size:14px">${stsE.map(s9=>`<option value="${s9}"${it.st===s9?' selected':''}>${stDispE(s9)}</option>`).join('')}</select></div>
+    <div style="display:flex;gap:8px;justify-content:space-between;margin-top:10px">
+      ${id?`<button class="mini" style="color:var(--red);padding:9px 12px" onclick="if(confirm('刪除這一條？')){document.getElementById('sieOv').remove();sopItemSave('${id}',1)}">🗑 刪除</button>`:'<span></span>'}
+      <span style="display:flex;gap:8px"><button class="mini" style="padding:9px 12px" onclick="document.getElementById('sieOv').remove()">取消</button>
+      <button class="mini on" style="padding:9px 16px" onclick="sopItemSave(${id?`'${id}'`:'null'})">儲存</button></span></div></div>`
+  ov.onclick = () => ov.remove()
+  document.body.appendChild(ov)
+}
+async function sopItemSave(id, del){
+  let items = [...(sopData.def.items||[])]
+  if (del) items = items.filter(x=>x.id!==id)
+  else {
+    const t9 = ((document.getElementById('sieT')||{}).value||'').trim()
+    if (!t9) { alert('內容不能空'); return }
+    const d9 = (document.getElementById('sieD')||{}).value||''
+    const p9 = !!((document.getElementById('sieP')||{}).checked)
+    const s9 = (document.getElementById('sieS')||{}).value||''
+    const g9 = (document.getElementById('sieG')||{}).value||''
+    if (id) items = items.map(x=>{ if (x.id!==id) return x; const nx = { ...x, title:t9, due:d9, photo:p9, st:s9 }; if (g9) nx.tg = g9; else delete nx.tg; return nx })
+    else { const nx = { id: 'u' + Date.now().toString(36), title: t9, due: d9, photo: p9, st: s9 }; if (g9) nx.tg = g9; items = [...items, nx] }
+    const o9 = document.getElementById('sieOv'); if (o9) o9.remove()
+  }
+  const r = await fetch('/api/mail-sync?sopfull=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ stations: [...(sopData.def.stations||[])], items, token: TK() }) })
+  const j = await r.json().catch(()=>null)
+  if (j && j.ok) sopLoad(); else alert((j&&j.error)||'儲存失敗')
+}
+function sopCatAdd(){ prepAsk('＋ 新增階段',0,1,(q,r)=>{ if (r) sopstOp({op:'catadd',cat:r}).then(()=>{ window._sopTg=r; sopRender() }) },'階段名（例：開班／備料／出餐／收班）') }
+function sopStAdd(){ // ＋ 產品（hashtag 模型：產品是全域的，不綁階段）
+  prepAsk('＋ 新增產品站',0,1,(q,r)=>{
+    r = String(r||'').trim()
+    if (!r) return
+    if ((sopData.def.stations||[]).includes(r)) { alert(`已經有「${r}」了`); return }
+    sopstOp({ op:'add', st: r })
+  },'產品名（例：漢堡／披薩／飲料）')
+}
+function sopStRen(st){
+  const pre = String(st).includes('｜') ? String(st).split('｜')[0]+'｜' : ''
+  prepAsk(`✏️ 改站名「${st.includes('｜')?st.split('｜').pop():st}」`,0,1,(q,r)=>{ if (r) sopstOp({op:'rename',st,newName:pre+r}) },'新站名')
+}
+function sopCatMng(){ // 🗂 分類管理：分類增刪改排序＋每站歸類＋負責人
+  const def = sopData.def, cats = def.cats||[], sts9 = [...(def.stations||[])]
+  const mgr = sopData.me && (sopData.me.approver || sopData.me.role==='主管')
+  const catsJ = JSON.stringify(cats).replace(/"/g,'&quot;')
+  const ov = document.createElement('div'); ov.id='scOv'
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:60;display:flex;align-items:center;justify-content:center;padding:14px'
+  const catRow = (c2,i)=>`<div style="display:flex;gap:6px;align-items:center;padding:4px 0;border-bottom:1px solid var(--line)"><b style="flex:1">${c2}</b>
+    <button class="mini" style="padding:6px 9px" ${i===0?'disabled':''} onclick="catMove(${i},-1,${catsJ})">↑</button>
+    <button class="mini" style="padding:6px 9px" ${i===cats.length-1?'disabled':''} onclick="catMove(${i},1,${catsJ})">↓</button>
+    <button class="mini" style="padding:6px 9px" onclick="document.getElementById('scOv').remove();prepAsk('改名「${c2}」',0,1,(q,r)=>{if(r)sopstOp({op:'catren',cat:'${c2}',newName:r})},'新名稱')">✏️</button>
+    <button class="mini" style="padding:6px 9px;color:var(--red)" onclick="if(confirm('刪除分類「${c2}」？站會變未分類，不會刪站')){document.getElementById('scOv').remove();sopstOp({op:'catdel',cat:'${c2}'})}">✕</button></div>`
+  const stRow = st2 => `<div style="display:flex;gap:6px;align-items:center;padding:4px 0;border-bottom:1px solid var(--line)"><b style="flex:1;min-width:0">${st2}</b>
+    <select onchange="sopstOp({op:'catset',st:'${st2}',cat:this.value})" style="border:1px solid var(--line);border-radius:7px;padding:6px;font-size:13px;max-width:110px"><option value="">未分類</option>${cats.map(c2=>`<option${(def.stCat||{})[st2]===c2?' selected':''}>${c2}</option>`).join('')}</select>
+    <select ${mgr?'':'disabled title="負責人由審核人/主管指定"'} onchange="sopstOp({op:'ownset',st:'${st2}',owner:this.value})" style="border:1px solid var(--line);border-radius:7px;padding:6px;font-size:13px;max-width:110px"><option value="">無負責人</option>${(sopData.names||[]).map(n=>`<option${(def.stOwner||{})[st2]===n?' selected':''}>${n}</option>`).join('')}</select></div>`
+  ov.innerHTML = `<div style="background:#222B38;border:1px solid #3B4654;border-radius:14px;width:min(560px,94vw);max-height:88vh;overflow:auto;padding:16px" onclick="event.stopPropagation()">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><b style="font-size:16px">🗂 SOP 分類（組織架構）</b><button class="mini" style="padding:7px 12px" onclick="document.getElementById('scOv').remove()">關閉</button></div>
+    <div class="hint" style="margin-bottom:8px">三層：分類 → 站 → 條目。右邊兩個選單＝每站「歸哪類」「誰負責」（有負責人的站，別人要改得走 💡 提建議）。</div>
+    <div style="font-weight:900;margin:6px 0 2px">分類</div>${cats.map(catRow).join('')||'<div class="hint">還沒有分類——按下面新增（例：備料／設站／清潔）</div>'}
+    <button class="mini" style="margin:8px 0;padding:8px 12px" onclick="document.getElementById('scOv').remove();prepAsk('＋ 新增分類',0,1,(q,r)=>{if(r)sopstOp({op:'catadd',cat:r})},'分類名稱（例：備料/設站/清潔）')">＋ 新增分類</button>
+    <div style="font-weight:900;margin:10px 0 2px">站 → 分類・負責人</div>${sts9.map(stRow).join('')}</div>`
+  ov.onclick = () => ov.remove()
+  document.body.appendChild(ov)
+}
+function catMove(i, dir, arr){ const a = [...arr]; const j = i + dir; if (j<0||j>=a.length) return; [a[i],a[j]]=[a[j],a[i]]; const o=document.getElementById('scOv'); if(o)o.remove(); sopstOp({ op:'catord', list:a }) }
+function sugAdd(st){
+  prepAsk(`💡 對「${st}」SOP 提建議`, 0, 1, (q, r)=>{
+    if (!r) { alert('要寫建議內容'); return }
+    fetch('/api/mail-sync?sopsugset=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ op:'add', st, text: r, token: TK() }) }).then(r2=>r2.json()).then(j=>{ if (j&&j.ok) { alert('已送出給負責人審核——通過會記你一分'); sopLoad() } else alert((j&&j.error)||'失敗') })
+  }, '想怎麼改？寫具體一點')
+}
+async function sugView(st){
+  let j = null
+  try { const r = await fetch('/api/mail-sync?sopsug=' + encodeURIComponent(K) + '&st=' + encodeURIComponent(st) + '&r=' + Date.now()); j = await r.json() } catch(e){}
+  if (!j || !j.ok) { alert('讀不到'); return }
+  const me9 = sopData.me, ow9 = (sopData.def.stOwner||{})[st]
+  const canDec = me9 && (me9.name===ow9 || me9.approver || me9.role==='主管')
+  const open = (j.list||[]).filter(x=>x.status==='open')
+  const arch = (j.list||[]).filter(x=>x.status!=='open')
+  const old = document.getElementById('sgOv'); if (old) old.remove()
+  const ov = document.createElement('div'); ov.id='sgOv'
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:60;display:flex;align-items:center;justify-content:center;padding:14px'
+  ov.innerHTML = `<div style="background:#222B38;border:1px solid #3B4654;border-radius:14px;width:min(560px,94vw);max-height:88vh;overflow:auto;padding:16px" onclick="event.stopPropagation()">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><b style="font-size:16px">💡「${st}」SOP 建議</b><span><button class="mini" style="padding:7px 10px" onclick="document.getElementById('sgOv').remove();sugAdd('${st}')">＋ 我也要提</button><button class="mini" style="padding:7px 12px" onclick="document.getElementById('sgOv').remove()">關閉</button></span></div>
+    <div style="font-weight:900;margin:6px 0 4px">待審核（${open.length}）</div>
+    ${open.map(x=>`<div style="background:var(--soft);border:1px solid #E8D089;border-radius:10px;padding:8px 10px;margin-bottom:6px"><div>${x.text}</div><div class="hint">${x.by}・${x.ts}</div>${canDec?`<div style="margin-top:5px"><button class="mini on" style="padding:6px 12px" onclick="sugDecide('${x.id}',1,'${st}','')">✅ 通過（他加1分）</button><button class="mini" style="padding:6px 12px;color:var(--red)" onclick="document.getElementById('sgOv').remove();prepAsk('駁回原因（會歸檔，不能吃案）',0,1,(q2,r2)=>{if(!r2){alert('一定要寫原因');return}sugDecide('${x.id}',0,'${st}',r2)},'為什麼不採納')">❌ 駁回</button></div>`:''}</div>`).join('')||'<div class="mut">沒有待審的建議</div>'}
+    <div style="font-weight:900;margin:12px 0 4px">歸檔（${arch.length}）<span class="hint" style="font-weight:600">全部留存、人人可查——不會吃案</span></div>
+    ${arch.map(x=>`<div style="background:var(--soft);border:1px solid var(--line);border-radius:10px;padding:7px 10px;margin-bottom:5px"><div>${x.status==='ok'?'✅':'📁'} ${x.text}</div><div class="hint">${x.by}・${x.ts} → ${x.status==='ok'?`通過（${x.decBy}・${x.decTs}）＋1分`:`未採納（${x.decBy}・${x.decTs}）：${x.note||''}`}</div></div>`).join('')||'<div class="mut">還沒有歸檔紀錄</div>'}</div>`
+  ov.onclick = () => ov.remove()
+  document.body.appendChild(ov)
+}
+function sugDecide(id, pass, st, note){
+  fetch('/api/mail-sync?sopsugset=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ op:'decide', id, pass: !!pass, note: note||'', token: TK() }) }).then(r=>r.json()).then(j=>{ if (j&&j.ok) { sopLoad(); sugView(st) } else alert((j&&j.error)||'失敗') })
+}
+function sopCollT(st){ if (sopColl.has(st)) sopColl.delete(st); else sopColl.add(st); localStorage.setItem('sopColl', JSON.stringify([...sopColl])); sopRender() }
+function sopCollAll(sts2){ const allC = sts2.every(s2=>sopColl.has(s2)); if (allC) sts2.forEach(s2=>sopColl.delete(s2)); else sts2.forEach(s2=>sopColl.add(s2)); localStorage.setItem('sopColl', JSON.stringify([...sopColl])); sopRender() }
+let sopFilter = localStorage.getItem('sopFilter') || ''
+function sopCatSet(c){ window._sopTg = c; sopFilter = 'all'; sopRender() } // #階段切換（v4.18.0）
+function sopFset(v){ sopFilter = v; localStorage.setItem('sopFilter', v); sopRender() }
+function sopPinT(st){ if (sopPin.has(st)) sopPin.delete(st); else sopPin.add(st); localStorage.setItem('sopPin', JSON.stringify([...sopPin])); if (!sopPin.size && sopFilter==='pin') sopFset('all'); else sopRender() } // itemId -> dataURL（待送出的照片）；編輯中的站
+async function sopLoad(){
+  const el = document.getElementById('sop'); if (!el) return
+  // v4.31.9（張良「其他頁都順了 剩SOP明顯不順」）：全站只剩這頁沒走「快取先畫+背景更新」＝每次傻等網路白畫面。
+  // 快取只認「今天的」（SOP勾勾是按天記的，昨天的勾勾閃出來會誤導）；背景照樣抓最新回來重畫
+  const c9 = (sopData && sopData.ok) ? sopData : tcGet('sop')
+  if (c9 && c9.ok && c9.date === todayTpe()) { sopData = c9; sopRender() }
+  let d9 = null
+  try { const r = await fetch('/api/mail-sync?sop=' + encodeURIComponent(K) + (TK() ? '&me=' + encodeURIComponent(TK()) : '')); d9 = await r.json() } catch(e){}
+  if (d9 && d9.ok) { sopData = d9; tcSet('sop', d9) }
+  if (!sopData || !sopData.ok) { el.innerHTML = ''; return }
+  sopRender()
+}
+function sopRender(){
+  const el = document.getElementById('sop'); if (!el || !sopData) return
+  if (sopMasterOn) { sopMaster(el); return }
+  const items = (sopData.def.items || [])
+  const log = sopData.log.items || {}
+  const now = new Date(Date.now() + 8*3600e3).toISOString().slice(11,16)
+  const wd = new Date().getDay()
+  // 站別清單＝伺服器的 stations 順序（可含空站）＋任何漏網的 item 站
+  const sts = [...(sopData.def.stations || []), ...new Set(items.map(i => i.st).filter(s => !(sopData.def.stations || []).includes(s)))]
+  if (!sts.length) { el.innerHTML = ''; return }
+  const doneN = items.filter(i => log[i.id] && log[i.id].done).length
+  const me = sopData.me
+  let s = `<section><h2>今日 SOP（${sopData.date.slice(5)}）<span class="hint" style="float:right;font-weight:900;color:${doneN===items.length?'var(--green)':'var(--pdark)'}">${doneN}/${items.length}</span></h2>`
+  s += me ? `<div class="hint" style="margin-bottom:6px">👤 <b style="color:var(--pdark)">${me.name}</b>（打卡自動記你的名字・可編輯各站 SOP，改動會留姓名時間紀錄）</div>`
+          : `<div class="hint" style="margin-bottom:6px">💡 ${BIND_HINT}——打卡不用打名字、可編輯 SOP、認領問題</div>`
+  if (wd === 0 || wd === 6) s += `<div class="hint" style="margin-bottom:8px">今天公休——這是清單預覽，打卡留給營業日。</div>`
+  // 站別篩選＋📌釘選（張良 2026-09-21：SOP 站多，每人點自己要看的；釘選存在自己手機）
+  // v4.18.0 #hashtag 雙標籤（張良拍板）：#階段 × #產品 兩排篩選——點產品看全程、點階段看跨產品、都點=交集
+  const stDisp = st9 => String(st9).includes('｜') ? String(st9).split('｜').pop() : st9
+  const catsN = sopData.def.cats || []
+  const coN = sopData.def.catOwner || {}
+  const soN = sopData.def.stOwner || {}
+  let curTg = window._sopTg ?? null
+  if (curTg && !catsN.includes(curTg)) curTg = window._sopTg = null
+  const itemsAll = items
+  const tgOf = it9 => it9.tg && catsN.includes(it9.tg) ? it9.tg : ''
+  const itemsF = itemsAll.filter(it9 => !curTg || tgOf(it9) === curTg) // 階段篩選後的條目
+  const view = (sopFilter==='all'||sopFilter==='pin'||sts.includes(sopFilter)) ? sopFilter : (sopPin.size && !curTg ? 'pin' : 'all')
+  const shown0 = sts.filter(st2 => view==='all' ? true : (view==='pin' ? sopPin.has(st2) : st2===view)).filter(st2 => !curTg || itemsF.some(i9=>i9.st===st2) || view===st2)
+  const allColl = shown0.length > 0 && shown0.every(s2=>sopColl.has(s2))
+  const chipS = (on) => `border:1px solid ${on?'var(--primary)':'var(--line)'};background:${on?'var(--primary)':'var(--card)'};color:${on?'#fff':'var(--muted)'};border-radius:9px;padding:4px 10px;font-size:14px;font-weight:800;cursor:pointer;white-space:nowrap`
+  const catBtn = (on) => `border:1.5px solid ${on?'var(--primary)':'var(--line)'};background:${on?'var(--grad)':'var(--soft)'};color:${on?'#fff':'var(--text)'};border-radius:10px;padding:8px 16px;font-size:15px;font-weight:900;cursor:pointer;white-space:nowrap`
+  // 第一排：#階段
+  s += `<div style="display:flex;gap:7px;flex-wrap:wrap;margin-bottom:8px;align-items:center">
+    <span style="${catBtn(!curTg)}" onclick="sopCatSet(null)">全部</span>
+    ${catsN.map(cg=>`<span style="${catBtn(curTg===cg)}" onclick="sopCatSet('${cg}')"># ${cg}<span style="margin-left:5px;font-weight:700;font-size:12px;color:${curTg===cg?'#DCEBFF':'var(--muted)'}">${itemsAll.filter(i9=>tgOf(i9)===cg).length}</span></span>`).join('')}
+    ${me&&window._sopMng?`<span style="${chipS(false)}" onclick="sopCatAdd()">＋ 階段</span>`:''}
+    ${me?`<span style="${chipS(!!window._sopMng)};margin-left:auto" onclick="sopMngT()">⚙️ 設定</span>`:''}
+  </div>`
+  // 階段管理列（設定模式）
+  if (curTg && me && window._sopMng) {
+    const mgrC = me.approver || me.role === '主管'
+    s += `<div style="display:flex;gap:6px;flex-wrap:wrap;margin:-2px 0 8px;align-items:center;font-size:13px">
+      <span class="hint" style="font-weight:800">「#${curTg}」：</span>
+      <button class="mini" onclick="prepAsk('改階段名「${curTg}」',0,1,(q,r)=>{if(r)sopstOp({op:'catren',cat:'${curTg}',newName:r}).then(()=>{window._sopTg=r})},'新名稱')">✏️ 改名</button>
+      <button class="mini" style="color:var(--red)" onclick="if(confirm('刪除階段「#${curTg}」？條目會變未分階段，不會刪條目'))sopstOp({op:'catdel',cat:'${curTg}'}).then(()=>{window._sopTg=null})">🗑 刪階段</button>
+      <button class="mini" onclick="sopOrdMove('cat','${curTg}',-1)">◀</button><button class="mini" onclick="sopOrdMove('cat','${curTg}',1)">▶</button>
+      ${mgrC?`<span class="hint">⭐ 負責人</span><select onchange="sopstOp({op:'catown',cat:'${curTg}',owner:this.value})" style="border:1px solid var(--line);border-radius:7px;padding:5px;font-size:13px"><option value="">無</option>${(sopData.names||[]).map(n=>`<option${coN[curTg]===n?' selected':''}>${n}</option>`).join('')}</select>`:(coN[curTg]?`<span style="color:#D4A72C;font-weight:800">⭐ ${coN[curTg]}</span>`:'')}
+    </div>`
+  }
+  // 第二排：#產品
+  s += `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px;align-items:center">
+    ${sopPin.size&&!curTg?`<span style="${chipS(view==='pin')}" onclick="sopFset('pin')">📌 我的釘選（${sopPin.size}）</span>`:''}
+    <span style="${chipS(view==='all')}" onclick="sopFset('all')">全部產品</span>
+    ${sts.map(st2=>`<span style="${chipS(view===st2)};display:inline-flex;gap:5px;align-items:center"><span onclick="sopFset('${st2}')">${stDisp(st2)}</span><span onclick="sopPinT('${st2}')" title="釘選/取消釘選" style="opacity:${sopPin.has(st2)?1:.35}">📌</span></span>`).join('')}
+    ${me&&window._sopMng?`<span style="${chipS(false)}" onclick="sopStAdd()">＋ 產品</span>`:''}
+    <span style="${chipS(false)};margin-left:auto" onclick="sopCollAll(${JSON.stringify(shown0).replace(/"/g,'&quot;')})">${allColl?'⏵ 全部展開':'⏷ 全部收合'}</span>
+  </div>`
+  // 產品管理列（設定模式＋選中某產品）
+  if (me && window._sopMng && view !== 'all' && view !== 'pin' && sts.includes(view)) {
+    const mgrC2 = me.approver || me.role === '主管'
+    s += `<div style="display:flex;gap:6px;flex-wrap:wrap;margin:-2px 0 8px;align-items:center;font-size:13px">
+      <span class="hint" style="font-weight:800">「${stDisp(view)}」：</span>
+      <button class="mini" onclick="sopStRen('${view}')">✏️ 改名</button>
+      <button class="mini" style="color:var(--red)" onclick="if(confirm('刪除產品「${stDisp(view)}」？條目會進回收站可復原'))sopstOp({op:'del',st:'${view}'}).then(()=>{sopFilter='all'})">🗑 刪產品</button>
+      <button class="mini" onclick="sopOrdMove('st','${view}',-1)">◀</button><button class="mini" onclick="sopOrdMove('st','${view}',1)">▶</button>
+      ${mgrC2?`<span class="hint">⭐ 負責人</span><select onchange="sopstOp({op:'ownset',st:'${view}',owner:this.value})" style="border:1px solid var(--line);border-radius:7px;padding:5px;font-size:13px"><option value="">無</option>${(sopData.names||[]).map(n=>`<option${soN[view]===n?' selected':''}>${n}</option>`).join('')}</select>`:''}
+      <button class="mini on" onclick="sopItemEdit(null,'${view}')">＋ 新增條目</button>
+    </div>`
+  }
+  const shown = shown0
+  if (!shown.length) s += `<div class="mut" style="font-size:14px">${curTg?`「#${curTg}」還沒有條目——點某個產品的 ⚙️ 幫條目掛上這個階段`:'釘選的站不見了（可能被改名）——按「全部」重新釘。'}</div>`
+  shown.forEach(st => {
+    const canEd = me && me.canEdit
+    const stIss = (sopData.issues||[]).filter(x => x.st === st)
+    const stItems = itemsF.filter(i => i.st === st)
+    const stDone = stItems.filter(i => log[i.id] && log[i.id].done).length
+    const coll = sopColl.has(st)
+    const own9 = (sopData.def.stOwner||{})[st]
+    const mgr9 = me && (me.approver || me.role === '主管')
+    const sug9 = (sopData.sugOpen||{})[st] || 0
+    const sugBtn = own9 && me ? ((me.name===own9 || mgr9)
+      ? `<button class="mini" style="color:${sug9?'var(--primary)':'var(--muted)'}" onclick="sugView('${st}')">💡 建議${sug9?`(${sug9})`:''}</button>`
+      : `<button class="mini" style="color:var(--primary)" onclick="sugAdd('${st}')">💡 提建議</button>`) : (own9 ? `<button class="mini" onclick="sugView('${st}')">💡${sug9?`(${sug9})`:''}</button>` : '')
+    s += `<div onclick="sopCollT('${st}')" style="cursor:pointer;background:var(--psoft);border-radius:8px;padding:4px 10px;font-weight:900;color:var(--pdark);font-size:14px;margin:10px 0 4px">${coll?'⏵':'⏷'} ${stDisp(st)}${own9?` <span style="font-weight:700;font-size:12px;color:#D4A72C">⭐${own9}</span>`:''} <span class="hint" style="font-weight:700">${stDone}/${stItems.length}${stIss.length?`・⚠️${stIss.length}`:''}</span>
+      <span style="float:right" onclick="event.stopPropagation()">${sugBtn}<button class="mini" style="color:#A85C26" onclick="sopReport('${st}')">⚠️ 回報</button></span></div>`
+    if (coll) return
+    stIss.forEach(x => {
+      const pend = x.status === 'pending'
+      s += `<div style="background:${pend?'#2E2816':'#3A2023'};border:1px solid ${pend?'#E8D089':'#F0B8B1'};border-radius:8px;padding:8px 10px;margin:4px 0;font-size:14px">
+        <b style="color:${pend?'#A85C26':'var(--red)'}">${pend?'🕐':'⚠️'} ${x.text||'（附件）'}</b>
+        <div class="hint">${x.by}・${x.ts}${(x.media||[]).map((m,i)=>` <a href="${m}" target="_blank">📎附件${i+1}</a>`).join('')}</div>
+        ${pend?`<div class="hint" style="color:#A85C26;font-weight:700">🕐 ${x.doneBy} 已處理・等老闆審核</div>`:''}
+        ${!pend&&x.claimBy?`<div style="color:var(--pdark);font-weight:800;font-size:13px">🔧 ${x.claimBy} 處理中・已 ${lbElapsed(x.claimAt)}</div>`:''}
+        ${pend&&me&&me.approver?`<span><button class="mini on" style="margin-top:4px" onclick="sopReview('${x.id}',1)">✅ 核准</button><button class="mini" style="margin-top:4px;color:var(--red)" onclick="sopReview('${x.id}',0)">↩︎ 退回</button></span>`:''}
+        ${!pend&&me&&!x.claimBy?`<button class="mini on" style="margin-top:4px" onclick="lbOp('${x.id}','claim')">🙋 我來解決</button>`:''}
+        ${!pend&&me?`<button class="mini" style="margin-top:4px" onclick="sopResolve('${x.id}')">✅ 已解決${me.approver?'':'（送審核）'}</button>`:''}</div>`
+    })
+    if (!items.some(i => i.st === st)) s += `<div class="hint" style="padding:6px 4px">（這一站還沒有 SOP 項目——想加：點某一條旁的 ⚙️，或先按右上「⚙️ 設定」）</div>`
+    // 照設定時間自動排序（張良 2026-09-21：早的在上面；沒設時間的排最後）
+    const grpMode = (view === st) && !curTg && catsN.length // 看單一產品全程→照階段分組
+    const stList = itemsF.filter(i => i.st === st).sort((a,b)=> grpMode ? ((catsN.indexOf(tgOf(a))+99*(tgOf(a)===''))-(catsN.indexOf(tgOf(b))+99*(tgOf(b)===''))) || String(a.due||'99:99').localeCompare(String(b.due||'99:99')) : String(a.due||'99:99').localeCompare(String(b.due||'99:99')))
+    let lastTg9 = '⟪init⟫'
+    stList.forEach(it => {
+      if (grpMode) { const g9 = tgOf(it) || '未分階段'; if (g9 !== lastTg9) { lastTg9 = g9; s += `<div style="font-weight:900;font-size:13px;color:var(--pdark);margin:8px 0 2px"># ${g9}</div>` } }
+      const lg = log[it.id]
+      const overdue = !lg && it.due && it.due <= now && wd >= 1 && wd <= 5
+      s += `<div id="sopit-${it.id}" style="display:flex;align-items:center;gap:8px;padding:9px 4px;border-bottom:1px solid var(--line)"><span class="lnkbtn" title="複製這條 SOP 的連結（可貼到會議宣達）" onclick="event.stopPropagation();copyLink('#sop=${it.id}')">🔗</span>${it.tg&&!window._sopTg?`<span class="hint" style="font-size:11px;white-space:nowrap">#${it.tg}</span>`:''}${me&&window._sopMng?`<span class="lnkbtn" title="編輯這一條" onclick="event.stopPropagation();sopItemEdit('${it.id}')">⚙️</span>`:''}`
+      s += `<div style="flex:1;min-width:0"><div style="font-weight:700;cursor:pointer;color:${overdue?'var(--red)':(it.ref?'var(--primary)':'var(--ink)')}${it.ref?';text-decoration:underline':''}" onclick="sopRefOpen('${it.id}')" title="${it.ref?'點看標準照片':'點我上傳標準照'}">${it.title}${overdue?' ⚠️':''}</div><div class="hint">${it.due} 前${it.editBy?`・✏️ ${it.editBy} ${it.editTs||''}`:''}</div></div>`
+      if (lg && lg.done) {
+        // 完成狀態：縮圖直接顯示、點整塊開預覽；撤銷藏在預覽裡（張良 2026-09-21：列表上的撤銷容易誤點）
+        s += `<div style="text-align:right;cursor:pointer" onclick="sopView('${it.id}')"><div style="color:var(--green);font-weight:900">✓ ${lg.ts}</div><div class="hint">${lg.by||''}</div></div>`
+        s += lg.photo ? `<img src="${lg.photo}" onclick="sopView('${it.id}')" style="width:42px;height:42px;object-fit:cover;border-radius:8px;border:1.5px solid var(--green);cursor:pointer">` : ``
+      } else {
+        if (it.photo) s += sopPhotos[it.id]
+          ? `<img src="${sopPhotos[it.id]}" style="width:38px;height:38px;object-fit:cover;border-radius:6px;border:2px solid var(--green)" onclick="sopPick('${it.id}')">`
+          : `<button class="mini" style="font-size:16px;padding:6px 10px" onclick="sopPick('${it.id}')">📷</button>`
+        const need = it.photo && !sopPhotos[it.id]
+        s += `<button class="mini ${need?'':'on'}" style="padding:8px 14px" onclick="sopDo('${it.id}')" ${need?'title="要先拍照"':''}>完成</button>`
+      }
+      s += `</div>`
+    })
+  })
+  // ✍️ 編輯紀錄 v2（張良 2026-09-22「這紀錄沒用」→ 每筆算出「改了什麼」：改前快照 vs 下一版逐條 diff）
+  const eds = (sopData.def.edits || [])
+  if (eds.length) {
+    const cntE = {}; eds.forEach(e=>{ cntE[e.by||'？'] = (cntE[e.by||'？']||0)+1 })
+    // 每筆的「改後狀態」＝上一筆(更新的那筆)的 prev；最新一筆的改後＝現在的 def
+    const itemsOf = (e) => !e ? (sopData.def.items||[]) : (Array.isArray(e.prev) ? e.prev : ((e.prev||{}).items||null))
+    const diffOf = (i) => {
+      const before = itemsOf(eds[i]); let after = itemsOf(eds[i-1] || null)
+      if (!before || !after) return null
+      const stE = eds[i].st // 站存檔：只比那一站
+      const A = stE ? after.filter(x=>x.st===stE) : after, B = before
+      const bm = Object.fromEntries(B.map(x=>[x.id,x])), am = Object.fromEntries(A.map(x=>[x.id,x]))
+      const add = A.filter(x=>!bm[x.id]).map(x=>x.title)
+      const del = B.filter(x=>!am[x.id]).map(x=>x.title)
+      const chg = A.filter(x=>{ const b=bm[x.id]; return b && (b.title!==x.title || b.due!==x.due || !!b.photo!==!!x.photo || (b.ref||'')!==(x.ref||'') || b.st!==x.st) })
+        .map(x=>{ const b=bm[x.id]; const w=[]; if(b.title!==x.title)w.push(`改名「${b.title}→${x.title}」`); if(b.due!==x.due)w.push(`時間${b.due}→${x.due}`); if(!!b.photo!==!!x.photo)w.push(x.photo?'加要拍照':'取消拍照'); if((b.ref||'')!==(x.ref||''))w.push('換標準照'); if(b.st!==x.st)w.push(`搬到${x.st}`); return `${b.title}（${w.join('、')}）` })
+      const parts2 = []
+      if (add.length) parts2.push(`<span class="up">＋${add.join('、')}</span>`)
+      if (del.length) parts2.push(`<span style="color:var(--red)">－${del.join('、')}</span>`)
+      if (chg.length) parts2.push(`<span style="color:#A85C26">～${chg.join('；')}</span>`)
+      return parts2.length ? parts2.join('　') : '（沒有內容變動——可能只是重新排序）'
+    }
+    s += `<details style="margin-top:8px"><summary class="hint" style="cursor:pointer;font-weight:800">✍️ SOP 編輯紀錄（${eds.length}）｜${Object.entries(cntE).map(([n,c])=>`${n} ${c}次`).join('、')}</summary>${eds.map((e,i)=>{ const t8 = e.ts ? new Date(new Date(e.ts).getTime()+8*3600e3).toISOString().slice(5,16).replace('T',' ') : ''; const df2 = diffOf(i); return `<div class="hint" style="padding:3px 0;border-bottom:1px dashed var(--line)">${t8}・<b>${e.by||'？'}</b>${e.st?`・「${e.st}」站`:''}${df2?`<div style="padding-left:10px">${df2}</div>`:''}</div>` }).join('')}</details>` }
+  s += `<div class="hint" style="margin-top:8px">按「完成」記錄時間與名字；要拍照的先按 📷。超過時限沒完成，DD 會在群裡提醒。</div></section>`
+  el.innerHTML = s
+}
+// ── ⚙️ SOP 總編輯（張良 2026-09-21：站/項目拖曳排序、站名直接改、不再跳系統視窗）──
+let sopMasterOn = false
+function msItemHtml(it){
+  return `<div class="msItem" data-id="${it.id||''}" style="display:flex;gap:5px;align-items:center;background:var(--card);border:1px solid var(--line);border-radius:8px;padding:5px 7px;margin-bottom:5px">
+    <span class="mih" style="cursor:grab;color:var(--muted);font-size:15px;touch-action:none">☰</span>
+    <input class="miT" value="${(it.title||'').replace(/"/g,'&quot;')}" placeholder="項目名稱" style="flex:1;min-width:110px;border:1px solid var(--line);border-radius:6px;padding:5px 7px;font-size:14px">
+    ${t24c('miD', it.due||'11:00')}
+    <label style="font-size:13px;white-space:nowrap"><input class="miP" type="checkbox" ${it.photo?'checked':''}>📷</label>
+    <button class="mini" onclick="this.closest('.msItem').remove()">✕</button></div>`
+}
+function msCardHtml(st, items){
+  return `<div class="msCard" data-st="${st}" style="background:var(--soft);border:1px solid var(--line);border-radius:12px;padding:8px;margin-bottom:10px">
+    <div style="display:flex;gap:6px;align-items:center;margin-bottom:6px">
+      <span class="msh" style="cursor:grab;color:var(--pdark);font-size:17px;touch-action:none">☰</span>
+      <input class="msName" value="${st}" placeholder="站名" style="font-weight:900;color:var(--pdark);border:1px solid var(--line);border-radius:7px;padding:5px 8px;width:130px">
+      <span style="flex:1"></span>
+      <button class="mini" style="color:var(--red)" onclick="msDelSt(this)">🗑 刪站</button>
+      <button class="mini on" onclick="sopItemEdit(null,'${view}')">＋ 新增條目</button>
+    </div>
+    <div class="msItems" style="min-height:8px">${items.map(msItemHtml).join('')}</div>
+    <button class="mini" onclick="this.previousElementSibling.insertAdjacentHTML('beforeend', msItemHtml({due:'11:00'}))">＋ 加項目</button>
+  </div>`
+}
+function sopMaster(el){
+  const items = sopData.def.items || []
+  const sts = [...(sopData.def.stations || []), ...new Set(items.map(i=>i.st).filter(s=>!(sopData.def.stations||[]).includes(s)))]
+  let s = `<section><h2>⚙️ SOP 總編輯 <span class="hint">拖 ☰ 排序（項目可拖到別的站）・站名直接改字・改完按儲存</span></h2>
+    <div id="msSt">${sts.map(st=>msCardHtml(st, items.filter(i=>i.st===st).sort((a,b)=>String(a.due||'99:99').localeCompare(String(b.due||'99:99'))))).join('')}</div>
+    <div style="display:flex;gap:6px;align-items:center;margin:8px 0">
+      <input id="msNew" placeholder="新站名（例：甜點站）" style="border:1px solid var(--line);border-radius:8px;padding:7px 9px;font-size:14px">
+      <button class="mini" onclick="msAddSt()">＋ 新增站</button>
+    </div>`
+  if ((sopData.trash||[]).length) {
+    s += `<div style="border:1px dashed var(--line);border-radius:10px;padding:8px 10px;margin:6px 0"><b style="font-size:14px">🗂 回收站</b>` +
+      sopData.trash.map(tr=>`<div style="display:flex;align-items:center;gap:8px;padding:3px 0"><span style="flex:1;font-size:14px">🗑 ${tr.st}（${tr.n}項）<span class="hint">${tr.by}・${tr.ts}</span></span><button class="mini on" onclick="sopStOp({op:'restore',trashId:'${tr.id}'})">復原</button></div>`).join('') + `</div>`
+  }
+  s += `<div style="display:flex;justify-content:space-between;margin-top:10px">
+      <button class="mini" onclick="if(confirm('放棄未儲存的修改？')){sopMasterOn=false;sopRender()}">離開</button>
+      <button class="mini on" style="padding:9px 20px" onclick="msSave()">💾 全部儲存</button>
+    </div></section>`
+  el.innerHTML = s
+  if (window.Sortable) {
+    new Sortable(document.getElementById('msSt'), { handle: '.msh', animation: 150 })
+    document.querySelectorAll('.msItems').forEach(x => new Sortable(x, { group: 'msi', handle: '.mih', animation: 150 }))
+  }
+}
+function msAddSt(){
+  const inp = document.getElementById('msNew'); const nm = inp.value.trim()
+  if (!nm) { alert('輸入站名'); return }
+  document.getElementById('msSt').insertAdjacentHTML('beforeend', msCardHtml(nm, []))
+  if (window.Sortable) document.querySelectorAll('.msItems').forEach(x => { if (!x._sorted) { new Sortable(x, { group: 'msi', handle: '.mih', animation: 150 }); x._sorted = 1 } })
+  inp.value = ''
+}
+function msDelSt(btn){
+  const card = btn.closest('.msCard'); const st = card.querySelector('.msName').value.trim() || card.dataset.st
+  if (!confirm(`刪除「${st}」整站？（現有項目進回收站可復原）`)) return
+  if (card.dataset.st) sopStOp({ op:'del', st: card.dataset.st }) // 伺服器軟刪（已存在的站）
+  card.remove()
+}
+async function msSave(){
+  const stations = [], items = []
+  document.querySelectorAll('#msSt .msCard').forEach(card=>{
+    const st = card.querySelector('.msName').value.trim() || card.dataset.st
+    if (!st || stations.includes(st)) return
+    stations.push(st)
+    card.querySelectorAll('.msItem').forEach(r=>{
+      const title = r.querySelector('.miT').value.trim()
+      if (title) items.push({ id: r.dataset.id || undefined, st, title, due: t24read(r, 'miD') || '11:00', photo: r.querySelector('.miP').checked })
+    })
+  })
+  const r = await fetch('/api/mail-sync?sopfull=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ token: TK(), stations, items }) })
+  const d = await r.json().catch(()=>null)
+  if (d && d.ok) { sopMasterOn = false; sopLoad() } else alert((d&&d.error)||'儲存失敗')
+}
+// 完成紀錄預覽（點✓或縮圖）
+// 完成紀錄預覽（點✓或縮圖）：大圖＋資訊＋撤銷（撤銷只在這裡，防誤點）
+function sopView(id){
+  const it = (sopData.def.items||[]).find(x => x.id === id)
+  const lg = (sopData.log.items||{})[id]
+  if (!it || !lg) return
+  const ov = document.createElement('div'); ov.id = 'viewOv'
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(16,24,43,.6);z-index:50;display:flex;align-items:center;justify-content:center;padding:16px'
+  ov.innerHTML = `<div style="background:#222B38;border:1px solid #3B4654;box-shadow:0 18px 50px rgba(0,0,0,.55);border-radius:14px;max-width:460px;width:100%;padding:14px;text-align:center" onclick="event.stopPropagation()">
+    <div style="font-weight:900;color:var(--ink);margin-bottom:6px">${it.title}</div>
+    <div class="hint" style="margin-bottom:8px">✓ ${lg.ts} 完成・${lg.by||''}</div>
+    ${lg.photo?`<img src="${lg.photo}" style="max-width:100%;max-height:62vh;border-radius:10px;border:1px solid var(--line)">`:'<div class="hint">（這一項沒有照片）</div>'}
+    <div style="display:flex;justify-content:space-between;margin-top:12px">
+      <button class="mini" style="padding:9px 14px;color:var(--red)" onclick="if(confirm('撤銷這筆完成紀錄？')){document.getElementById('viewOv').remove();sopDo('${id}',1)}">↩︎ 撤銷完成</button>
+      <button class="mini on" style="padding:9px 18px" onclick="document.getElementById('viewOv').remove()">關閉</button>
+    </div></div>`
+  ov.onclick = () => ov.remove()
+  document.body.appendChild(ov)
+}
