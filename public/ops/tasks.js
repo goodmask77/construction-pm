@@ -1,0 +1,1036 @@
+/* ── /prep 原生任務中心 tasks.js（v1.0 2026-10-04）────────────────────────────
+   React 版 src/tasks/TaskCenter.jsx + taskModel.js 的 vanilla 移植，取代 iframe 內嵌。
+   資料 100% 相容主 App：
+     sp_team_pm_task_<id> ＝ 一件任務一份文件（含 ord＝手動排序位置）
+     sp_team_pm_tasks_v2  ＝ 遷移 marker（只讀不寫）
+     sp_team_pm_data      ＝ 工程大項陣列（id/order/name/color/tcol/…其餘欄位原樣保留）
+   傳輸：POST /api/mail-sync?kvproxy=<K>  body={op,key,value,token}（伺服器 permWho(task) 守門）
+   依賴頁面既有全域：K、TK()、app、setTabs、curStore、tcGet/tcSet、imgView、document#upd
+   入口：window.tnPage()（整合方在 taskEmbed 呼叫）；頂層只定義、不碰 DOM。
+   全部全域一律 tn 前綴，避免撞頁面既有 taskLoad/taskRender（那是舊資料域）。 */
+'use strict';
+
+/* ── 常數/色票（＝TaskCenter OPS_DARK 深色皮同款） ── */
+const tnINBOX = '__inbox__';
+const tnQW_MAX = 15; // Quick Win 門檻（分鐘）
+const tnSTATUS = [['todo', '待辦', '#9b9384'], ['doing', '進行中', '#3a6ea5'], ['done', '完成', '#3f7d4e']];
+const tnPRIO = [['urgent', '超急', '#F07373'], ['high', '高', '#E8A657'], ['normal', '一般', '#C7D0DB'], ['low', '低', '#8C98A8']];
+const tnC = { text: '#F2F5F9', sub: '#C7D0DB', faint: '#8C98A8', line: '#2A3240', soft: '#1C222B', bg: '#0E1217', card: '#161B22', accent: '#4DA3FF', accentSoft: '#1A2940', green: '#3DBE6C', amber: '#E8A657', red: '#F07373' };
+const tnWHT = '#1C232E';   // 原本寫死白底的卡片/按鈕/輸入框
+const tnMOD = '#222B38';   // 彈窗面板
+const tnCBR = '#3B4654';   // 小卡邊框
+const tnFNT = '#8C98A8';   // 淡字
+const tnMONO = "'IBM Plex Mono',ui-monospace,Menlo,Consolas,monospace";
+// 存檔的淡色底（主 App 淺色值不變＝相容）→ /prep 顯示時轉同色系深色
+const tnDARKMAP = { '#fef2f2': '#2A181A', '#fff7ed': '#2A2012', '#fefce8': '#2A2612', '#f0fdf4': '#142414', '#eff6ff': '#13202E', '#faf5ff': '#211A2E', '#f5f5f5': '#1F242B', '#fde8e6': '#2A181A', '#fdf1dd': '#2A2012', '#faf6d8': '#2A2612', '#e9f2e4': '#142414', '#e6eef6': '#13202E', '#efe8f6': '#211A2E' };
+const tnTcol = (c) => (c ? (tnDARKMAP[String(c).toLowerCase()] || c) : '');
+// 卡片/大項色盤（存進資料的值＝主 App 同一組淺色值，不能換）
+const tnPALETTE = [['', '無'], ['#fde8e6', '紅'], ['#fdf1dd', '杏'], ['#faf6d8', '黃'], ['#e9f2e4', '綠'], ['#e6eef6', '藍'], ['#efe8f6', '紫']];
+const tnTASK_COLORS = ['', '#fef2f2', '#fff7ed', '#fefce8', '#f0fdf4', '#eff6ff', '#faf5ff', '#f5f5f5'];
+
+const tnSLabel = (s) => (tnSTATUS.find(x => x[0] === s) || tnSTATUS[0])[1];
+const tnSColor = (s) => (tnSTATUS.find(x => x[0] === s) || tnSTATUS[0])[2];
+const tnPMeta = (p) => tnPRIO.find(x => x[0] === p) || tnPRIO[2];
+const tnRid = () => 't-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+const tnToday = () => { const d = new Date(); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); }; // 本地日（不能用 toISOString=UTC）
+const tnDnorm = (v) => String(v == null ? '' : v).replace(/\//g, '-').slice(0, 10);
+const tnWDZH = ['日', '一', '二', '三', '四', '五', '六'];
+const tnWd = (d) => d && /^\d{4}-\d{2}-\d{2}$/.test(d) ? ('（' + tnWDZH[new Date(d + 'T00:00:00').getDay()] + '）') : '';
+const tnEsc = (s) => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+const tnMob = () => (typeof window !== 'undefined' ? window.innerWidth : 1280) < 640;
+
+/* ── 單色線條 icon（硬規：UI 不用彩色 emoji；比照頁面 _I 做法） ── */
+const tnIP = {
+  listtodo: '<rect x="3" y="5" width="6" height="6" rx="1"/><path d="m3 17 2 2 4-4M13 6h8M13 12h8M13 18h8"/>',
+  search: '<circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>',
+  home: '<path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V21h14V9.5"/>',
+  inbox: '<polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/>',
+  grid: '<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/>',
+  cols: '<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18M15 3v18"/>',
+  users: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/>',
+  list: '<path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/>',
+  caldays: '<rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18M8 14h.01M12 14h.01M16 14h.01M8 18h.01M12 18h.01M16 18h.01"/>',
+  gantt: '<path d="M10 6h8"/><path d="M12 16h6"/><path d="M3 3v16a2 2 0 0 0 2 2h16"/><path d="M8 11h7"/>',
+  network: '<rect x="16" y="16" width="6" height="6" rx="1"/><rect x="2" y="16" width="6" height="6" rx="1"/><rect x="9" y="2" width="6" height="6" rx="1"/><path d="M5 16v-3a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v3M12 12V8"/>',
+  plus: '<path d="M12 5v14M5 12h14"/>',
+  x: '<path d="M18 6 6 18M6 6l12 12"/>',
+  check: '<path d="M20 6 9 17l-5-5"/>',
+  flame: '<path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z"/>',
+  cal: '<rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/>',
+  clock: '<circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>',
+  alert: '<circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/>',
+  zap: '<polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>',
+  hourglass: '<path d="M5 22h14M5 2h14M17 22v-4.172a2 2 0 0 0-.586-1.414L12 12l-4.414 4.414A2 2 0 0 0 7 17.828V22M7 2v4.172a2 2 0 0 0 .586 1.414L12 12l4.414-4.414A2 2 0 0 0 17 6.172V2"/>',
+  play: '<circle cx="12" cy="12" r="10"/><polygon points="10 8 16 12 10 16 10 8"/>',
+  pin: '<path d="M12 17v5"/><path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1z"/>',
+  sort: '<path d="m21 16-4 4-4-4M17 20V4M3 8l4-4 4 4M7 4v16"/>',
+  folderplus: '<path d="M12 10v6M9 13h6"/><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/>',
+  sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/>',
+  grip: '<circle cx="9" cy="5" r="1"/><circle cx="9" cy="12" r="1"/><circle cx="9" cy="19" r="1"/><circle cx="15" cy="5" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="15" cy="19" r="1"/>',
+  eye: '<path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/>',
+  wrench: '<path d="M14.7 6.3a4.5 4.5 0 0 0-6 5.6L3 17.6V21h3.4l5.7-5.7a4.5 4.5 0 0 0 5.6-6l-3 3-2.8-.7-.7-2.8Z"/>',
+  clip: '<path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/>',
+  file: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/><path d="M14 2v6h6"/>',
+  coffee: '<path d="M17 8h1a4 4 0 1 1 0 8h-1M3 8h14v9a4 4 0 0 1-4 4H7a4 4 0 0 1-4-4ZM6 2v2M10 2v2M14 2v2"/>',
+};
+function tnI(name, size, color, fill, extra) {
+  return '<svg width="' + (size || 14) + '" height="' + (size || 14) + '" viewBox="0 0 24 24" fill="' + (fill || 'none') + '" stroke="' + (color || 'currentColor') + '" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" style="flex:0 0 auto;vertical-align:-2px;' + (extra || '') + '">' + (tnIP[name] || '') + '</svg>';
+}
+
+/* ── taskModel.js 逐行移植（資料相容鐵則：欄位/語意一個都不能差） ── */
+const tnIsWaiting = (t) => Boolean(String((t && t.waitingFor) == null ? '' : t.waitingFor).trim());
+const tnIsQuickWin = (t) => t && t.estimatedMinutes != null && t.estimatedMinutes > 0 && t.estimatedMinutes <= tnQW_MAX;
+const tnIsBlocked = (t, tasks) => ((t && t.dependsOn) || []).some((id) => { const d = (tasks || []).find((x) => x.id === id); return d && d.status !== 'done'; });
+const tnMissingDeps = (t, tasks) => ((t && t.dependsOn) || []).filter((id) => !(tasks || []).some((x) => x.id === id));
+function tnHasCycleFrom(startId, tasks) {
+  const seen = new Set();
+  const first = (tasks || []).find((x) => x.id === startId);
+  const stack = [].concat((first && first.dependsOn) || []);
+  while (stack.length) {
+    const id = stack.pop();
+    if (id === startId) return true;
+    if (seen.has(id)) continue;
+    seen.add(id);
+    const t = (tasks || []).find((x) => x.id === id);
+    (((t && t.dependsOn) || [])).forEach((d) => stack.push(d));
+  }
+  return false;
+}
+function tnWouldCycle(taskId, depId, tasks) {
+  if (!taskId || !depId) return false;
+  if (taskId === depId) return true;
+  const others = (tasks || []).filter((x) => x.id !== taskId);
+  const cur = (tasks || []).find((x) => x.id === taskId);
+  const hypo = others.concat([{ id: taskId, dependsOn: ((cur && cur.dependsOn) || []).concat([depId]) }]);
+  return tnHasCycleFrom(taskId, hypo);
+}
+function tnStripCycles(taskId, arr, tasks) {
+  const others = (tasks || []).filter((x) => x.id !== taskId);
+  const ok = [];
+  for (const id of arr) {
+    const hypo = others.concat([{ id: taskId, dependsOn: ok.concat([id]) }]);
+    if (!tnHasCycleFrom(taskId, hypo)) ok.push(id);
+  }
+  return ok;
+}
+// Merge Rule：只整理「patch 有出現的 key」；空值 → undefined（JSON 存檔時整個 key 消失）
+function tnNormalizePatch(patch, taskId, tasks) {
+  const p = Object.assign({}, patch || {});
+  if ('owner' in p) { const v = String(p.owner == null ? '' : p.owner).trim(); p.owner = v || undefined; }
+  if ('waitingFor' in p) { const v = String(p.waitingFor == null ? '' : p.waitingFor).trim(); p.waitingFor = v || undefined; }
+  if ('dependsOn' in p) {
+    let arr = Array.isArray(p.dependsOn) ? p.dependsOn : [];
+    arr = [...new Set(arr.map((s) => String(s || '').trim()).filter(Boolean))];
+    arr = arr.filter((id) => id !== taskId);
+    p.dependsOn = tnStripCycles(taskId, arr, tasks);
+  }
+  if ('estimatedMinutes' in p) {
+    const v = p.estimatedMinutes;
+    if (v === null || v === undefined || v === '') p.estimatedMinutes = null;
+    else { const n = Number(v); p.estimatedMinutes = Number.isInteger(n) && n > 0 ? n : null; }
+  }
+  if ('tags' in p) { const arr = Array.isArray(p.tags) ? p.tags : []; p.tags = [...new Set(arr.map((s) => String(s || '').trim()).filter(Boolean))]; }
+  if ('pinned' in p) p.pinned = p.pinned ? true : undefined;
+  if ('color' in p) { const v = String(p.color == null ? '' : p.color).trim(); p.color = v || undefined; }
+  return p;
+}
+const tnPRIO_ORD = { urgent: 0, high: 1, normal: 2, low: 3 };
+const tnCmpDue = (a, b) => ((a.due || '9999') !== (b.due || '9999')) ? ((a.due || '9999') < (b.due || '9999') ? -1 : 1) : (((tnPRIO_ORD[a.priority] != null ? tnPRIO_ORD[a.priority] : 2)) - ((tnPRIO_ORD[b.priority] != null ? tnPRIO_ORD[b.priority] : 2)));
+const tnCmpPrio = (a, b) => (((tnPRIO_ORD[a.priority] != null ? tnPRIO_ORD[a.priority] : 2)) - ((tnPRIO_ORD[b.priority] != null ? tnPRIO_ORD[b.priority] : 2))) || tnCmpDue(a, b);
+function tnOrderTasks(arr, mode) {
+  const base = mode === 'due' ? [...arr].sort(tnCmpDue) : mode === 'prio' ? [...arr].sort(tnCmpPrio) : [...arr];
+  return base.sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0)); // 釘選永遠最前（穩定排序）
+}
+function tnMergeTask(existing, patch, tasks) {
+  return Object.assign({}, existing, tnNormalizePatch(patch, existing.id, tasks), { updatedAt: new Date().toISOString() });
+}
+function tnRemoveTaskAndRefs(tasks, id) {
+  return (tasks || []).filter((x) => x.id !== id).map((x) => (x.dependsOn || []).includes(id) ? Object.assign({}, x, { dependsOn: x.dependsOn.filter((d) => d !== id) }) : x);
+}
+
+/* ── 狀態 ── */
+const tnS = {
+  tasks: null, cats: null, view: 'today', q: '', fStatus: 'open', sortMode: 'manual',
+  showDone: false, showAllDone: false, sel: null, drag: null, dragCat: null,
+  editCat: null, colorCat: null, gdNames: [], me: '', quick: '', gnew: {}, tagIn: '', newCatIn: '',
+  hover: null, colOf: {}, inited: false, loaded: false, ownerCustom: false,
+};
+let tnPersisted = [];   // 上次已存清單（差異寫入比對基準；快照含 ord）
+let tnSaveTimer = null; // 存檔防抖（0.5 秒）
+let tnInflight = 0;     // 寫入中計數（背景重抓時不蓋手上的修改）
+let tnUndo = [];        // Cmd+Z 復原堆疊（30 步）
+let tnWarned = 0;       // 權限/網路失敗提示節流
+
+/* ── 儲存層：kvproxy（與主 App 同一份 sp_team_ 資料雙向同步） ── */
+async function tnKV(body) {
+  try {
+    const r = await fetch('/api/mail-sync?kvproxy=' + encodeURIComponent(typeof K !== 'undefined' ? K : ''), {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(Object.assign({}, body, { token: (typeof TK === 'function' ? TK() : '') })),
+    });
+    return await r.json().catch(() => ({ ok: false }));
+  } catch (_) { return { ok: false, error: '網路不穩' }; }
+}
+function tnPermFail(r) { // 寫入失敗（沒權限/沒綁定/網路）→ 提示一次，不洗版
+  if (Date.now() - tnWarned < 15000) return;
+  tnWarned = Date.now();
+  alert((r && r.error) ? ('沒存上：' + r.error) : '這次修改可能沒存上（網路不穩或沒有編輯權限）。');
+}
+async function tnFetchAll() { // 任務（逐筆檔合併）＋大項 一次抓
+  const [pr, cr] = await Promise.all([tnKV({ op: 'getPrefix', key: 'sp_team_pm_task_' }), tnKV({ op: 'get', key: 'sp_team_pm_data' })]);
+  if (!pr || !pr.ok) return null;
+  const tasks = Object.values(pr.rows || {}).map(v => { try { return JSON.parse(v); } catch (_) { return null; } })
+    .filter(t => t && t.id).sort((a, b) => ((a.ord != null ? a.ord : 0)) - ((b.ord != null ? b.ord : 0)));
+  let cats = []; try { cats = cr && cr.value != null ? JSON.parse(cr.value) : []; } catch (_) { cats = []; }
+  return { tasks, cats: Array.isArray(cats) ? cats : [] };
+}
+// stale-first 快取（沿用頁面 tcGet/tcSet=localStorage obt_ 前綴；單獨載入時退回自己存）
+function tnCGet(k) { try { return (typeof tcGet === 'function') ? tcGet(k) : JSON.parse(localStorage.getItem('obt_' + k)); } catch (_) { return null; } }
+function tnCSet(k, d) { try { (typeof tcSet === 'function') ? tcSet(k, d) : localStorage.setItem('obt_' + k, JSON.stringify(d)); } catch (_) {} }
+function tnCacheSave() { tnCSet('tnData', { tasks: tnS.tasks || [], cats: tnS.cats || [] }); }
+
+// 存檔：畫面即時、停手 0.5 秒才寫後端；只寫有變動的那幾筆（含 ord 變動）、刪被移除的 → 與主 App diffPersist 同款
+function tnSave(list, opts) {
+  opts = opts || {};
+  if (!opts.skipUndo && tnS.tasks) { tnUndo.push(tnS.tasks); if (tnUndo.length > 30) tnUndo.shift(); }
+  tnS.tasks = list;
+  if (tnSaveTimer) clearTimeout(tnSaveTimer);
+  tnSaveTimer = setTimeout(tnFlushDiff, 500);
+  tnCacheSave();
+  if (!opts.skipRender) tnRender();
+}
+async function tnFlushDiff() {
+  tnSaveTimer = null;
+  const prev = tnPersisted, next = tnS.tasks || [];
+  const snap = (t, i) => JSON.stringify(Object.assign({}, t, { ord: i })); // ord＝整份清單裡的位置（與 lib/records.js 一致）
+  const prevMap = new Map((prev || []).map((t, i) => [t.id, snap(t, i)]));
+  const puts = []; const alive = new Set();
+  next.forEach((t, i) => { if (!t || !t.id) return; alive.add(t.id); const s = snap(t, i); if (prevMap.get(t.id) !== s) puts.push(['sp_team_pm_task_' + t.id, s]); });
+  const dels = (prev || []).filter(t => t && t.id && !alive.has(t.id));
+  tnPersisted = next;
+  tnInflight++;
+  try {
+    for (const kv of puts) { const r = await tnKV({ op: 'set', key: kv[0], value: kv[1] }); if (!r || !r.ok) { tnPermFail(r); break; } }
+    for (const t of dels) { const r = await tnKV({ op: 'del', key: 'sp_team_pm_task_' + t.id }); if (!r || !r.ok) { tnPermFail(r); break; } }
+  } finally { tnInflight--; }
+}
+function tnFlushNow() { if (tnSaveTimer) { clearTimeout(tnSaveTimer); tnSaveTimer = null; tnFlushDiff(); } }
+
+/* ── 大項（cats＝sp_team_pm_data 整包陣列；只動 name/order/color/tcol，其餘欄位原樣保留） ── */
+function tnCatsWrite(next) {
+  tnS.cats = next;
+  tnKV({ op: 'set', key: 'sp_team_pm_data', value: JSON.stringify(next) }).then(r => { if (!r || !r.ok) tnPermFail(r); });
+  tnCacheSave();
+  tnRender();
+}
+function tnAddCat(name) { // 與 opsTasks.jsx onAddCat 同款欄位
+  const prev = tnS.cats || [];
+  tnCatsWrite(prev.concat([{ id: 'cat-' + Date.now(), order: prev.length, name: name, budget: 0, status: 'pending', items: [] }]));
+}
+function tnRenameCat(id, name) { tnCatsWrite((tnS.cats || []).map(c => c.id === id ? Object.assign({}, c, { name: name }) : c)); }
+function tnSetCatColor(id, color) { tnS.colorCat = null; tnCatsWrite((tnS.cats || []).map(c => c.id === id ? Object.assign({}, c, { color: color }) : c)); }
+function tnMoveCat(fromId, o) { // 拖大項＋tcol 欄記憶＋freeze（與 opsTasks.jsx onMoveCat 同邏輯）
+  o = o || {};
+  const prev = tnS.cats || [];
+  let base = prev;
+  if (o.freeze) base = prev.map(c => (c.tcol === undefined || c.tcol === null) && o.freeze[c.id] !== undefined ? Object.assign({}, c, { tcol: o.freeze[c.id] }) : c);
+  const arr = [...base].sort((a, b) => ((a.order != null ? a.order : 0)) - ((b.order != null ? b.order : 0)));
+  const fi = arr.findIndex(c => c.id === fromId); if (fi < 0) return;
+  const m = arr.splice(fi, 1)[0];
+  const m2 = o.col === undefined ? m : Object.assign({}, m, { tcol: o.col });
+  if (o.beforeId) { const ti = arr.findIndex(c => c.id === o.beforeId); arr.splice(ti < 0 ? arr.length : ti, 0, m2); }
+  else if (o.afterId) { const ti = arr.findIndex(c => c.id === o.afterId); arr.splice(ti < 0 ? arr.length : ti + 1, 0, m2); }
+  else arr.push(m2);
+  tnCatsWrite(arr.map((c, i) => Object.assign({}, c, { order: i })));
+}
+function tnGroups() {
+  return [{ id: tnINBOX, name: '收件匣' }].concat(
+    (tnS.cats || []).filter(c => !c.nonProject).slice().sort((a, b) => ((a.order != null ? a.order : 0)) - ((b.order != null ? b.order : 0)))
+      .map(c => ({ id: c.id, name: c.name, color: c.color || '', tcol: c.tcol })));
+}
+function tnCatName(id) { return (id === tnINBOX || !id) ? '收件匣' : (((tnS.cats || []).find(c => c.id === id) || {}).name || '收件匣'); }
+function tnTasksOf(catId) { return (tnS.tasks || []).filter(t => (t.catId || tnINBOX) === catId); }
+function tnMatchQ(t) { const q = tnS.q.trim().toLowerCase(); return !q || (t.title + (t.note || '') + (t.tags || []).join('')).toLowerCase().includes(q); }
+
+/* ── 任務動作 ── */
+function tnAddQuick() {
+  const t = (tnS.quick || '').trim(); if (!t) return;
+  const task = { id: tnRid(), title: t, note: '', status: 'todo', catId: tnINBOX, start: '', due: '', priority: 'normal', tags: [], createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
+  tnS.quick = '';
+  tnSave([task].concat(tnS.tasks || []));
+}
+function tnAddToGroup(catId) {
+  const t = (tnS.gnew[catId] || '').trim(); if (!t) return;
+  const task = { id: tnRid(), title: t, note: '', status: 'todo', catId: catId, start: '', due: '', priority: 'normal', tags: [], createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
+  tnS.gnew[catId] = '';
+  tnSave([task].concat(tnS.tasks || []));
+}
+// Merge Rule：一律 {...existing, ...patch}，絕不重建 task
+function tnUpd(id, patch, silent) {
+  tnSave((tnS.tasks || []).map(t => t.id === id ? tnMergeTask(t, patch, tnS.tasks) : t), { skipRender: !!silent });
+}
+function tnToggleDone(id) {
+  const t = (tnS.tasks || []).find(x => x.id === id); if (!t) return;
+  tnUpd(id, { status: t.status === 'done' ? 'todo' : 'done' });
+}
+function tnDel(id) { // 刪除＝同一次寫回「刪任務＋清掉所有 dependsOn 引用」
+  const t = (tnS.tasks || []).find(x => x.id === id);
+  if (!confirm('刪除任務「' + ((t && t.title) || '') + '」？')) return;
+  tnS.sel = null;
+  tnSave(tnRemoveTaskAndRefs(tnS.tasks, id));
+}
+function tnClaim(id) { if (!tnS.me) return; tnUpd(id, { claimBy: tnS.me, claimAt: Date.now(), status: 'doing' }); }
+function tnUnclaim(id) { tnUpd(id, { claimBy: '', claimAt: null, status: 'todo' }); }
+function tnSunToggle(id) { // ☀ 設為今天必處理 / 退出（記 prevDue 可復原）
+  const t = (tnS.tasks || []).find(x => x.id === id); if (!t) return;
+  if (t.due === tnToday()) tnUpd(id, { due: t.prevDue !== undefined ? t.prevDue : '', prevDue: undefined });
+  else tnUpd(id, { due: tnToday(), prevDue: t.due || '' });
+}
+function tnPinToggle(id) { const t = (tnS.tasks || []).find(x => x.id === id); if (!t) return; tnUpd(id, { pinned: !t.pinned }); }
+function tnDepAdd(id, depId) {
+  if (!depId) return;
+  const t = (tnS.tasks || []).find(x => x.id === id); if (!t) return;
+  if (tnWouldCycle(id, depId, tnS.tasks)) { alert('不能加這個依賴：會形成循環（例如 A 依賴 B、B 又依賴回 A）。'); tnRender(); return; }
+  tnUpd(id, { dependsOn: (t.dependsOn || []).concat([depId]) });
+}
+function tnDepDel(id, depId) { const t = (tnS.tasks || []).find(x => x.id === id); if (!t) return; tnUpd(id, { dependsOn: (t.dependsOn || []).filter(x => x !== depId) }); }
+function tnDepClean(id) { const t = (tnS.tasks || []).find(x => x.id === id); if (!t) return; tnUpd(id, { dependsOn: (t.dependsOn || []).filter(did => (tnS.tasks || []).some(x => x.id === did)) }); }
+function tnTagAdd(id) {
+  const v = (tnS.tagIn || '').trim(); if (!v) return;
+  const t = (tnS.tasks || []).find(x => x.id === id); if (!t) return;
+  tnS.tagIn = '';
+  tnUpd(id, { tags: (t.tags || []).concat([v]) });
+}
+function tnTagDel(id, encTag) { const tg = decodeURIComponent(encTag); const t = (tnS.tasks || []).find(x => x.id === id); if (!t) return; tnUpd(id, { tags: (t.tags || []).filter(x => x !== tg) }); }
+function tnOwnerSel(id, v) {
+  if (v === '__custom') { tnS.ownerCustom = true; tnRender(); return; }
+  tnS.ownerCustom = false; tnUpd(id, { owner: v });
+}
+function tnOwnerCustom(id, v) { tnS.ownerCustom = false; if (v && v.trim()) tnUpd(id, { owner: v.trim() }); else tnRender(); }
+function tnOpen(id) { tnS.sel = id; tnS.ownerCustom = false; tnS.tagIn = ''; tnRender(); }
+function tnClose() { tnS.sel = null; tnRender(); }
+function tnAttDel(id, fid) {
+  if (!confirm('移除這個附件？')) return;
+  const t = (tnS.tasks || []).find(x => x.id === id); if (!t) return;
+  tnUpd(id, { files: (t.files || []).filter(f => f.id !== fid) });
+}
+/* 附件上傳：走 /prep 既有簽名直傳（?sopsign → PUT Supabase photos 桶），檔案格式與主 App 同款 {id,url,path,name,isImage} */
+async function tnAttachAdd(id, files) {
+  const btn = document.getElementById('tnAttBtn'); if (btn) btn.textContent = '上傳中…';
+  const out = [];
+  for (const f of files) {
+    try {
+      if (f.size > 80 * 1024 * 1024) { alert((f.name || '檔案') + ' 超過 80MB，跳過'); continue; }
+      const ext = (((f.name || '').split('.').pop() || 'jpg').toLowerCase().replace(/[^a-z0-9]/g, '')) || 'jpg';
+      const sr = await fetch('/api/mail-sync?sopsign=' + encodeURIComponent(typeof K !== 'undefined' ? K : ''), { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ext: ext }) });
+      const sd = await sr.json();
+      if (!sd || !sd.ok) { alert('取得上傳位址失敗'); continue; }
+      const ur = await fetch(sd.uploadUrl, { method: 'PUT', headers: { 'content-type': f.type || 'application/octet-stream' }, body: f });
+      if (!ur.ok) { alert((f.name || '檔案') + ' 上傳失敗'); continue; }
+      out.push({ id: 'tf' + Math.random().toString(36).slice(2, 7), url: sd.publicUrl, path: (String(sd.publicUrl).split('/object/public/photos/')[1] || ''), name: f.name || '檔案', isImage: /^image\//.test(f.type) });
+    } catch (_) { alert('上傳失敗，再試一次'); }
+  }
+  if (out.length) { const t = (tnS.tasks || []).find(x => x.id === id); if (t) tnUpd(id, { files: (t.files || []).concat(out) }); else tnRender(); }
+  else tnRender();
+}
+function tnAttachPick(id, inputEl) { const fs = Array.from(inputEl.files || []); inputEl.value = ''; if (fs.length) tnAttachAdd(id, fs); }
+function tnImgView(u) { if (typeof imgView === 'function') imgView(u); else window.open(u, '_blank'); }
+
+/* 拖曳：把 dragId 移到 target 之前；可同時改 catId / status（與 React 版 moveTo 同邏輯） */
+function tnMoveTo(dragId, o) {
+  o = o || {};
+  if (!dragId) return;
+  const list = [...(tnS.tasks || [])];
+  const fi = list.findIndex(t => t.id === dragId); if (fi < 0) return;
+  const moved = Object.assign({}, list[fi]);
+  if (o.catId !== undefined) moved.catId = o.catId;
+  if (o.status !== undefined) moved.status = o.status;
+  moved.updatedAt = new Date().toISOString();
+  list.splice(fi, 1);
+  let ti = o.beforeId ? list.findIndex(t => t.id === o.beforeId) : -1;
+  if (ti < 0) { // 沒指定就放到「同群組」的最後
+    const grpKey = o.catId !== undefined ? o.catId : moved.catId;
+    const stKey = o.status !== undefined ? o.status : moved.status;
+    let last = -1;
+    list.forEach((t, idx) => { const okCat = tnS.view === 'board' ? t.status === stKey : (t.catId || tnINBOX) === grpKey; if (okCat) last = idx; });
+    ti = last + 1;
+  }
+  list.splice(ti, 0, moved);
+  tnSave(list);
+}
+
+/* ── 拖放 handlers（拖曳中不整頁重畫＝HTML5 DnD 不中斷；提示線用直接改 style） ── */
+function tnDS(e, id) { tnS.drag = id; try { e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', id); } catch (_) {} const el = e.currentTarget; setTimeout(() => { try { el.style.opacity = 0.4; } catch (_) {} }, 0); }
+function tnDE() { const had = tnS.drag || tnS.dragCat; tnS.drag = null; tnS.dragCat = null; if (had) tnRender(); }
+function tnDOvCard(e) { if (tnS.drag) { e.preventDefault(); e.stopPropagation(); } }
+function tnDropCard(e, id) {
+  if (!tnS.drag) return;
+  e.preventDefault(); e.stopPropagation();
+  const t = (tnS.tasks || []).find(x => x.id === id); if (!t) { tnS.drag = null; return; }
+  const dragId = tnS.drag; tnS.drag = null;
+  tnMoveTo(dragId, { catId: tnS.view === 'group' ? t.catId : undefined, status: tnS.view === 'board' ? t.status : undefined, beforeId: id });
+}
+function tnZOver(e) { if (tnS.drag) { e.preventDefault(); e.currentTarget.style.outline = '1px dashed ' + tnC.accent; e.currentTarget.style.outlineOffset = '-1px'; } }
+function tnZLeave(e) { e.currentTarget.style.outline = 'none'; }
+function tnZDrop(e, kind, val) {
+  if (!tnS.drag) return;
+  e.preventDefault(); e.currentTarget.style.outline = 'none';
+  const id = tnS.drag; tnS.drag = null;
+  if (kind === 'cat') tnMoveTo(id, { catId: val });
+  else if (kind === 'status') tnMoveTo(id, { status: val });
+  else if (kind === 'owner') { const nm = decodeURIComponent(val || ''); nm ? tnUpd(id, { claimBy: nm, claimAt: Date.now(), status: 'doing' }) : tnUpd(id, { claimBy: '', claimAt: null, status: 'todo' }); }
+  else if (kind === 'before') tnMoveTo(id, { beforeId: val }); // 清單手動排序
+}
+// 大項拖曳（上半=排它上面、下半=排它下面；提示線直接畫）
+function tnCDS(e, id) { e.stopPropagation(); tnS.dragCat = id; try { e.dataTransfer.effectAllowed = 'move'; } catch (_) {} }
+function tnCatOver(e, id) {
+  if (!(tnS.dragCat && tnS.dragCat !== id && id !== tnINBOX)) return;
+  e.preventDefault(); e.stopPropagation();
+  const r = e.currentTarget.getBoundingClientRect();
+  const p = e.clientY < r.top + r.height / 2 ? 'b' : 'a';
+  e.currentTarget.dataset.tnpos = p;
+  e.currentTarget.style.boxShadow = p === 'b' ? ('0 -4px 0 0 ' + tnC.accent) : ('0 4px 0 0 ' + tnC.accent);
+}
+function tnCatLeave(e) { e.currentTarget.style.boxShadow = 'none'; }
+function tnCatDrop(e, id) {
+  if (!(tnS.dragCat && tnS.dragCat !== id && id !== tnINBOX)) return;
+  e.preventDefault(); e.stopPropagation(); e.currentTarget.style.boxShadow = 'none';
+  const p = e.currentTarget.dataset.tnpos || 'b';
+  const from = tnS.dragCat; tnS.dragCat = null;
+  const o = { col: tnS.colOf[id], freeze: Object.assign({}, tnS.colOf) };
+  o[p === 'b' ? 'beforeId' : 'afterId'] = id;
+  tnMoveCat(from, o);
+}
+function tnColOver(e) { if (tnS.dragCat) { e.preventDefault(); e.currentTarget.style.outline = '2px dashed ' + tnC.accent; e.currentTarget.style.outlineOffset = '2px'; } }
+function tnColLeave(e) { e.currentTarget.style.outline = 'none'; }
+function tnColDrop(e, i) { if (!tnS.dragCat) return; e.preventDefault(); e.currentTarget.style.outline = 'none'; const from = tnS.dragCat; tnS.dragCat = null; tnMoveCat(from, { col: i, freeze: Object.assign({}, tnS.colOf) }); }
+
+/* 大項改名/調色/新增 */
+function tnCatEditStart(id, encName) { tnS.editCat = { id: id, name: decodeURIComponent(encName) }; tnRender(); }
+function tnCatRenameCommit() { const ec = tnS.editCat; tnS.editCat = null; if (ec && ec.name.trim()) tnRenameCat(ec.id, ec.name.trim()); else tnRender(); }
+function tnCatEditKey(e) { if (e.key === 'Enter' && !e.isComposing && e.keyCode !== 229) { e.target.blur(); } if (e.key === 'Escape') { tnS.editCat = null; tnRender(); } }
+function tnColorCatToggle(id) { tnS.colorCat = tnS.colorCat === id ? null : id; tnRender(); }
+function tnNewCatCommit() { const v = (tnS.newCatIn || '').trim(); if (!v) return; tnS.newCatIn = ''; tnAddCat(v); }
+
+/* 全域貼上（滑鼠停在卡上 or 彈窗開著 → 剪貼簿的圖直接進附件）＋ Cmd+Z 復原 */
+function tnPaste(e) {
+  if (typeof curStore !== 'undefined' && curStore !== 'taskx') return;
+  const items = e.clipboardData && e.clipboardData.items; if (!items) return;
+  const fs = []; for (const it of items) { if (it.type && it.type.indexOf('image/') === 0) { const f = it.getAsFile(); if (f) fs.push(f); } }
+  if (!fs.length) return;
+  const tid = tnS.sel || tnS.hover; if (!tid) return;
+  e.preventDefault();
+  tnAttachAdd(tid, fs);
+}
+function tnKey(e) {
+  if (typeof curStore !== 'undefined' && curStore !== 'taskx') return;
+  if (!(e.metaKey || e.ctrlKey) || String(e.key).toLowerCase() !== 'z' || e.shiftKey) return;
+  const tag = ((e.target && e.target.tagName) || '').toLowerCase();
+  if (tag === 'input' || tag === 'textarea' || tag === 'select' || (e.target && e.target.isContentEditable)) return;
+  if (!tnUndo.length) return;
+  e.preventDefault();
+  tnSave(tnUndo.pop(), { skipUndo: true });
+}
+
+/* ── 畫面 ── */
+const tnInp = 'border:1px solid ' + tnC.line + ';border-radius:8px;padding:7px 10px;font-size:13px;background:' + tnWHT + ';color:' + tnC.text + ';box-sizing:border-box;outline:none;font-family:inherit';
+const tnDateInp = tnInp + ';color-scheme:dark;cursor:pointer';
+const tnLbl = 'display:block;font-size:11px;letter-spacing:.5px;color:' + tnC.faint + ';font-weight:500;margin-bottom:10px';
+function tnPill(color, label) {
+  return '<span style="display:inline-flex;align-items:center;gap:5px;font-size:11px;color:' + tnC.sub + ';background:' + tnC.soft + ';border-radius:999px;padding:2px 8px;white-space:nowrap"><span style="width:6px;height:6px;border-radius:50%;background:' + color + ';flex-shrink:0"></span>' + label + '</span>';
+}
+function tnEmpty(icon, text, pad) {
+  return '<div style="display:flex;flex-direction:column;align-items:center;gap:6px;padding:' + (pad || 10) + 'px 0;color:' + tnC.faint + '">' + tnI(icon, 18) + '<span style="font-size:12px;color:' + tnC.sub + '">' + text + '</span></div>';
+}
+function tnRender() {
+  if (typeof document === 'undefined') return;
+  const host = (typeof app !== 'undefined' && app) ? app : document.getElementById('app');
+  if (!host) return;
+  if (typeof curStore !== 'undefined' && curStore !== 'taskx') return; // 已切去別頁，不蓋畫面
+  // 焦點保留（innerHTML 整換會掉焦點）：記住 activeElement id，畫完原位接回
+  const ae = document.activeElement; const aid = ae && ae.id; let ss = null;
+  try { if (ae && ae.setSelectionRange && /text|search|^$/.test(ae.type || '')) ss = ae.selectionStart; } catch (_) {}
+  host.innerHTML = tnRoot();
+  if (aid) { const el = document.getElementById(aid); if (el && el !== document.activeElement) { try { el.focus(); if (ss != null && el.setSelectionRange) el.setSelectionRange(ss, ss); } catch (_) {} } }
+}
+function tnRoot() {
+  if (tnS.tasks === null) { // 載入中 skeleton（淺灰佔位塊）
+    return '<div style="max-width:1240px;margin:6px auto;padding:0 4px">' + [38, 120, 120].map(h => '<div style="height:' + h + 'px;background:' + tnC.soft + ';border-radius:8px;margin-bottom:12px"></div>').join('') + '</div>';
+  }
+  const open = tnS.tasks.filter(t => t.status !== 'done');
+  const v = tnS.view;
+  let h = '<div style="max-width:1240px;margin:6px auto;padding:' + (tnMob() ? '12px 8px' : '16px') + ';background:' + tnC.bg + ';border:1px solid ' + tnC.line + ';border-radius:12px">';
+  // 第一行：標題/件數/搜尋/今日
+  h += '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px">'
+    + '<span style="color:' + tnC.sub + '">' + tnI('listtodo', 18) + '</span>'
+    + '<div style="font-size:17px;font-weight:600;color:' + tnC.text + '">任務中心</div>'
+    + '<span style="font-size:12px;color:' + tnC.faint + ';font-variant-numeric:tabular-nums">' + open.length + ' 件待辦・共 ' + tnS.tasks.length + ' 件</span>'
+    + '<div style="flex:1"></div>'
+    + '<div style="position:relative">'
+    + '<span style="position:absolute;left:9px;top:50%;transform:translateY(-50%);color:' + tnC.faint + '">' + tnI('search', 13) + '</span>'
+    + '<input id="tnQIn" value="' + tnEsc(tnS.q) + '" oninput="tnQIn(this.value)" placeholder="搜尋任務…" style="' + tnInp + ';width:' + (tnMob() ? 130 : 170) + 'px;padding:6px 10px 6px 28px;font-size:12.5px">'
+    + (tnS.q ? '<button onclick="tnS.q=\'\';tnRender()" style="position:absolute;right:6px;top:50%;transform:translateY(-50%);background:none;border:none;color:' + tnC.faint + ';cursor:pointer;padding:0;display:flex">' + tnI('x', 13) + '</button>' : '')
+    + '</div>'
+    + '<button onclick="tnSetView(\'today\')" style="display:inline-flex;align-items:center;gap:6px;padding:7px 14px;border-radius:8px;border:1px solid ' + (v === 'today' ? tnC.accent : tnC.line) + ';background:' + (v === 'today' ? tnC.accent : tnWHT) + ';color:' + (v === 'today' ? '#fff' : tnC.sub) + ';font-size:13px;font-weight:600;cursor:pointer">' + tnI('home', 14) + '今日</button>'
+    + '</div>';
+  // 第二行：視角分頁＋排序（排序鈕永遠佔位，切檢視零位移）
+  const TABS = [['group', '依大項', 'grid'], ['board', '看板', 'cols'], ['owner', '負責人', 'users'], ['list', '清單', 'list'], ['timeline', '時間軸', 'caldays'], ['gantt', '甘特', 'gantt'], ['mind', '心智圖', 'network']];
+  h += '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:16px">'
+    + '<div style="display:inline-flex;background:' + tnC.soft + ';border:1px solid ' + tnC.line + ';border-radius:8px;padding:2px;gap:2px;flex-wrap:wrap">'
+    + TABS.map(tb => '<button onclick="tnSetView(\'' + tb[0] + '\')" style="display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border-radius:6px;border:1px solid ' + (v === tb[0] ? tnC.line : 'transparent') + ';background:' + (v === tb[0] ? tnWHT : 'transparent') + ';color:' + (v === tb[0] ? tnC.text : tnC.sub) + ';font-size:13px;font-weight:' + (v === tb[0] ? 600 : 400) + ';cursor:pointer">' + tnI(tb[2], 14) + tb[1] + '</button>').join('')
+    + '</div><div style="flex:1"></div>'
+    + '<div style="display:inline-flex;align-items:center;background:' + tnC.soft + ';border:1px solid ' + tnC.line + ';border-radius:8px;padding:2px;gap:2px;visibility:' + ((v === 'board' || v === 'list' || v === 'owner') ? 'visible' : 'hidden') + '">'
+    + '<span style="color:' + tnC.faint + ';margin:0 2px 0 7px">' + tnI('sort', 12) + '</span>'
+    + [['manual', '手動'], ['due', '日期'], ['prio', '重要度']].map(m => '<button onclick="tnS.sortMode=\'' + m[0] + '\';tnRender()" style="padding:5px 10px;border-radius:6px;border:1px solid ' + (tnS.sortMode === m[0] ? tnC.line : 'transparent') + ';background:' + (tnS.sortMode === m[0] ? tnWHT : 'transparent') + ';color:' + (tnS.sortMode === m[0] ? tnC.text : tnC.sub) + ';font-size:12px;font-weight:' + (tnS.sortMode === m[0] ? 600 : 400) + ';cursor:pointer">' + m[1] + '</button>').join('')
+    + '</div></div>';
+  // 快速隨手記
+  h += '<div style="display:flex;gap:8px;margin-bottom:16px">'
+    + '<input id="tnQuick" value="' + tnEsc(tnS.quick) + '" oninput="tnS.quick=this.value" onkeydown="if(event.key===\'Enter\'&&!event.isComposing&&event.keyCode!==229)tnAddQuick()" placeholder="隨手丟一句任務…（先進收件匣，之後再拖到大項整理）按 Enter 新增" style="' + tnInp + ';flex:1;font-size:13.5px;padding:10px 12px">'
+    + '<button onclick="tnAddQuick()" style="display:inline-flex;align-items:center;gap:6px;background:' + tnC.accent + ';color:#fff;border:none;border-radius:8px;padding:0 16px;font-size:13.5px;font-weight:600;cursor:pointer">' + tnI('plus', 15, '#fff') + '新增</button>'
+    + '</div>';
+  if (v === 'today') h += tnVToday();
+  else if (v === 'group') h += tnVGroup();
+  else if (v === 'board') h += tnVBoard();
+  else if (v === 'owner') h += tnVOwner();
+  else if (v === 'list') h += tnVList();
+  else if (v === 'timeline') h += tnVTimeline();
+  else if (v === 'gantt') h += tnVGantt();
+  else if (v === 'mind') h += tnVMind();
+  h += '</div>';
+  if (tnS.sel) h += tnModal();
+  return h;
+}
+function tnSetView(v) { tnS.view = v; tnRender(); }
+let tnQTimer = null;
+function tnQIn(v) { tnS.q = v; clearTimeout(tnQTimer); tnQTimer = setTimeout(tnRender, 250); } // 搜尋邊打邊濾（防抖＋焦點保留）
+
+/* ── 任務小卡 ── */
+function tnCard(t, o) {
+  o = o || {};
+  const done = t.status === 'done';
+  const hot = !done && t.due === tnToday(); // 今日必處理＝發亮紅
+  const baseShadow = hot ? '0 0 0 2px rgba(240,115,115,.20), 0 2px 10px rgba(240,115,115,.30)' : '0 1px 3px rgba(0,0,0,.30)';
+  const dndCard = o.dropBefore ? ' ondragover="tnDOvCard(event)" ondrop="tnDropCard(event,\'' + t.id + '\')"' : '';
+  let h = '<div draggable="true" ondragstart="tnDS(event,\'' + t.id + '\')" ondragend="tnDE()"' + dndCard
+    + ' onclick="tnOpen(\'' + t.id + '\')" onmouseenter="tnS.hover=\'' + t.id + '\'" onmouseleave="if(tnS.hover===\'' + t.id + '\')tnS.hover=null"'
+    + ' style="' + (done
+      ? 'background:transparent;border:1px dashed ' + tnC.line + ';border-radius:8px;padding:5px 8px;margin-bottom:5px;cursor:grab;opacity:.6'
+      : 'background:' + (tnTcol(t.color) || tnWHT) + ';border:' + (hot ? '1.5px solid ' + tnC.red : '1.5px solid ' + tnCBR) + ';border-radius:8px;padding:5px 8px;margin-bottom:5px;cursor:grab;box-shadow:' + baseShadow) + '">';
+  h += '<div style="display:flex;align-items:flex-start;gap:8px">';
+  // 完成勾
+  h += '<button onclick="event.stopPropagation();tnToggleDone(\'' + t.id + '\')" title="切換完成" style="flex-shrink:0;width:16px;height:16px;margin-top:2px;border-radius:4px;border:1px solid ' + (done ? tnC.green : tnCBR) + ';background:' + (done ? tnC.green : tnWHT) + ';display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0">' + (done ? tnI('check', 11, '#fff') : '') + '</button>';
+  h += '<div style="flex:1;min-width:0">';
+  // 標題
+  h += '<div style="display:flex;align-items:center;gap:4px;font-size:12.5px;color:' + (done ? tnC.faint : tnC.text) + ';text-decoration:' + (done ? 'line-through' : 'none') + ';line-height:1.35;word-break:break-word">'
+    + (t.priority === 'urgent' ? tnI('flame', 12, tnC.red) : '') + tnEsc(t.title) + '</div>';
+  // 徽章列
+  h += '<div style="display:flex;gap:4px;flex-wrap:wrap;align-items:center;margin-top:2px">';
+  if (tnS.view !== 'group') h += '<span style="font-size:11px;color:' + tnC.faint + ';max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + tnEsc(tnCatName(t.catId)) + '</span>';
+  if (t.due) h += '<span style="display:inline-flex;align-items:center;gap:4px;font-size:11px;font-variant-numeric:tabular-nums;color:' + ((!done && t.due < tnToday()) ? tnC.red : tnC.sub) + '">' + tnI('cal', 11) + t.due + tnWd(t.due) + '</span>';
+  if ((t.files || []).length > 0) h += '<span title="' + t.files.length + ' 個附件" style="display:inline-flex;align-items:center;gap:2px;font-size:11px;color:' + tnC.sub + '">' + tnI('clip', 11) + t.files.length + '</span>';
+  if (tnS.view !== 'board') h += tnPill(tnSColor(t.status), tnSLabel(t.status));
+  if (tnIsWaiting(t) && !done) h += tnPill(tnC.amber, '等：' + tnEsc(t.waitingFor));
+  if (tnIsBlocked(t, tnS.tasks) && !done) h += tnPill(tnC.red, '被前置卡住');
+  h += (t.tags || []).map(tg => '<span style="font-size:10.5px;color:' + tnC.sub + ';background:' + tnC.soft + ';border-radius:999px;padding:0 6px;white-space:nowrap">' + tnEsc(tg) + '</span>').join('');
+  // /prep 特色：發現者/我來解決＋計時/審核/發布
+  if (t.by) h += '<span title="發現/回報者" style="display:inline-flex;align-items:center;gap:3px;font-size:10.5px;color:' + tnC.faint + ';white-space:nowrap">' + tnI('eye', 11) + tnEsc(t.by) + '</span>';
+  if (t.claimBy && !done) h += '<span title="處理中" style="display:inline-flex;align-items:center;gap:3px;font-size:10.5px;color:' + tnC.accent + ';font-weight:700;white-space:nowrap">' + tnI('wrench', 11) + tnEsc(t.claimBy) + (t.claimAt ? ('・已' + Math.max(0, Math.floor((Date.now() - t.claimAt) / 60000)) + '分') : '') + '</span>';
+  if (t.prepPending === 1 && !done) h += tnPill(tnC.amber, '待審核');
+  if (t.prepPub === 'pending') h += tnPill(tnC.amber, '等發布');
+  if (!done && !t.claimBy && tnS.me) h += '<button onclick="event.stopPropagation();tnClaim(\'' + t.id + '\')" style="border:1px solid ' + tnC.accent + ';background:' + tnC.accentSoft + ';color:' + tnC.accent + ';border-radius:999px;padding:0 8px;font-size:10.5px;font-weight:700;cursor:pointer">我來解決</button>';
+  if (!done && t.claimBy && t.claimBy === tnS.me) h += '<button onclick="event.stopPropagation();tnUnclaim(\'' + t.id + '\')" style="border:1px solid ' + tnC.line + ';background:' + tnWHT + ';color:' + tnFNT + ';border-radius:999px;padding:0 8px;font-size:10.5px;cursor:pointer">放棄</button>';
+  h += '</div>';
+  // 卡上照片：第一張封面、其餘小縮圖（已完成不佔版面）
+  const imgs = (t.files || []).filter(f => f.isImage);
+  if (!done && imgs.length) {
+    h += '<div style="margin-top:5px"><img src="' + tnEsc(imgs[0].url) + '" alt="" loading="lazy" style="width:100%;max-height:120px;object-fit:cover;border-radius:6px;border:1px solid ' + tnC.line + ';display:block">';
+    if (imgs.length > 1) {
+      h += '<div style="display:flex;gap:4px;margin-top:4px;align-items:center">'
+        + imgs.slice(1, 4).map(f => '<img src="' + tnEsc(f.url) + '" alt="" loading="lazy" style="width:34px;height:34px;object-fit:cover;border-radius:5px;border:1px solid ' + tnC.line + '">').join('')
+        + (imgs.length > 4 ? '<span style="font-size:10.5px;color:' + tnC.faint + '">+' + (imgs.length - 4) + '</span>' : '') + '</div>';
+    }
+    h += '</div>';
+  }
+  h += '</div>'; // flex:1 結束
+  // 右側小鈕：☀今天必處理 / 釘選 / 負責人圈 / 刪除
+  if (!done) {
+    const isToday = t.due === tnToday();
+    h += '<button onclick="event.stopPropagation();tnSunToggle(\'' + t.id + '\')" title="' + (isToday ? '退出今天必處理' : '設為今天必處理') + '" style="flex-shrink:0;background:none;border:none;cursor:pointer;line-height:1;padding:2px;color:' + (isToday ? tnC.red : tnCBR) + '">' + tnI('sun', 13, isToday ? tnC.red : 'currentColor') + '</button>';
+  }
+  h += '<button onclick="event.stopPropagation();tnPinToggle(\'' + t.id + '\')" title="' + (t.pinned ? '取消釘選' : '釘選到最上面') + '" style="flex-shrink:0;background:none;border:none;cursor:pointer;line-height:1;padding:2px;color:' + (t.pinned ? tnC.accent : tnCBR) + '">' + tnI('pin', 13, 'currentColor', t.pinned ? tnC.accent : 'none') + '</button>';
+  if (t.owner) h += '<span title="負責人：' + tnEsc(t.owner) + '" style="flex-shrink:0;width:20px;height:20px;border-radius:50%;background:' + tnC.accentSoft + ';color:' + tnC.accent + ';font-size:10px;font-weight:600;display:flex;align-items:center;justify-content:center;white-space:nowrap;overflow:hidden">' + tnEsc(t.owner.slice(0, 2)) + '</span>';
+  h += '<button onclick="event.stopPropagation();tnDel(\'' + t.id + '\')" title="刪除" style="flex-shrink:0;background:none;border:none;color:' + tnC.faint + ';cursor:pointer;line-height:1;padding:2px">' + tnI('x', 14) + '</button>';
+  h += '</div></div>';
+  return h;
+}
+
+/* ── Today / Home 落地頁 ── */
+function tnVToday() {
+  const t0 = tnToday();
+  const tasks = tnS.tasks;
+  const openT = tasks.filter(t => t.status !== 'done').filter(tnMatchQ);
+  const used = new Set();
+  const take = (arr) => { const out = arr.filter(t => !used.has(t.id)); out.forEach(t => used.add(t.id)); return out; };
+  const byUrgency = tnCmpDue;
+  const pinFirst = (arr) => tnOrderTasks(arr, 'manual');
+  const dueNow = pinFirst(take(openT.filter(t => t.due && t.due <= t0)).sort(byUrgency));
+  const doing = pinFirst(take(openT.filter(t => t.status === 'doing')).sort(byUrgency));
+  const blockedArr = pinFirst(take(openT.filter(t => tnIsBlocked(t, tasks))).sort(byUrgency));
+  const waitingArr = pinFirst(take(openT.filter(t => tnIsWaiting(t))).sort(byUrgency));
+  const quick = pinFirst(take(openT.filter(t => tnIsQuickWin(t))).sort(byUrgency));
+  const upcoming = pinFirst(take(openT.filter(t => t.due && t.due > t0 && (new Date(t.due) - new Date(t0)) / 86400000 <= 7)).sort(byUrgency));
+  const d = new Date();
+  const dateStr = (d.getMonth() + 1) + '/' + d.getDate() + '（週' + tnWDZH[d.getDay()] + '）';
+  const depNames = (t) => (t.dependsOn || []).map(id => { const x = tasks.find(y => y.id === id); return x && x.status !== 'done' ? x.title : null; }).filter(Boolean);
+  const Section = (icon, color, label, hint, inner) =>
+    '<div style="background:' + tnC.card + ';border:1px solid ' + tnC.line + ';border-radius:8px;padding:14px">'
+    + '<div style="display:flex;align-items:center;gap:7px;margin-bottom:10px"><span style="color:' + color + '">' + tnI(icon, 14, color) + '</span>'
+    + '<span style="font-size:13px;font-weight:600;color:' + tnC.text + '">' + label + '</span>'
+    + (hint ? '<span style="font-size:11px;color:' + tnC.faint + '">' + hint + '</span>' : '') + '</div>' + inner + '</div>';
+  const Grid = (arr) => '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:8px">' + arr.map(t => tnCard(t, {})).join('') + '</div>';
+  let h = '<div style="display:grid;gap:12px">';
+  h += '<div style="font-size:15px;font-weight:700;color:' + tnC.text + ';padding:2px 2px 0">今天 ' + dateStr + '</div>';
+  // 大數字摘要卡
+  h += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px">'
+    + [[dueNow.length, '今天必處理', tnC.red], [quick.length, 'Quick Wins ≤' + tnQW_MAX + '分', tnC.green], [waitingArr.length, '在等別人', tnC.amber], [blockedArr.length, '被前置卡住', tnC.faint]].map(x =>
+      '<div style="background:' + tnC.card + ';border:1.5px solid ' + tnCBR + ';border-radius:8px;padding:10px 12px">'
+      + '<div style="font-family:' + tnMONO + ';font-size:24px;font-weight:700;color:' + (x[0] > 0 ? tnC.text : tnC.faint) + ';line-height:1.1">' + x[0] + '</div>'
+      + '<div style="font-size:11px;color:' + tnC.sub + ';margin-top:3px;display:flex;align-items:center;gap:5px"><span style="width:6px;height:6px;border-radius:50%;background:' + x[2] + ';flex-shrink:0"></span>' + x[1] + '</div></div>').join('')
+    + '</div>';
+  h += Section('alert', tnC.red, '今天必處理', '逾期與今天到期・卡片按太陽可直接排進來', dueNow.length ? Grid(dueNow) : '<div style="font-size:12.5px;color:' + tnC.faint + ';padding:6px 2px">目前沒有——任何卡片按太陽就會排到今天。</div>');
+  if (doing.length) h += Section('play', tnC.accent, '進行中', '手上正在做的', Grid(doing));
+  if (quick.length) {
+    const b5 = quick.filter(t => t.estimatedMinutes <= 5), b10 = quick.filter(t => t.estimatedMinutes > 5 && t.estimatedMinutes <= 10), b15 = quick.filter(t => t.estimatedMinutes > 10);
+    const inner = '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px">'
+      + [['≤ 5 min', b5], ['6–10 min', b10], ['11–15 min', b15]].filter(x => x[1].length > 0).map(x =>
+        '<div><div style="font-family:' + tnMONO + ';font-size:11px;color:' + tnC.faint + ';font-weight:600;letter-spacing:.5px;margin-bottom:6px">' + x[0] + '</div>' + x[1].map(t => tnCard(t, {})).join('') + '</div>').join('')
+      + '</div>';
+    h += Section('zap', tnC.green, 'Quick Wins', '≤ ' + tnQW_MAX + ' 分鐘可完成，有空檔就清掉', inner);
+  }
+  if (waitingArr.length) h += Section('clock', tnC.amber, '在等別人', '該催的去催一下', Grid(waitingArr));
+  if (blockedArr.length) {
+    const inner = '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:8px">'
+      + blockedArr.map(t => '<div>' + tnCard(t, {}) + '<div style="font-size:11px;color:' + tnC.faint + ';margin:-4px 2px 0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">等：' + tnEsc(depNames(t).join('、')) + '</div></div>').join('') + '</div>';
+    h += Section('hourglass', tnC.sub, '被前置卡住', '前置任務完成後才能動工', inner);
+  }
+  if (upcoming.length) h += Section('caldays', tnC.sub, '接下來 7 天', '先心裡有數', Grid(upcoming));
+  // 各大項一眼：完成度＋今天＋卡住
+  const rows = (tnS.cats || []).filter(c => !c.nonProject).map(c => {
+    const ts = tasks.filter(t => (t.catId || tnINBOX) === c.id);
+    if (!ts.length) return null;
+    const done = ts.filter(t => t.status === 'done').length;
+    const tdN = ts.filter(t => t.status !== 'done' && t.due && t.due <= t0).length;
+    const blkN = ts.filter(t => t.status !== 'done' && tnIsBlocked(t, tasks)).length;
+    return { c: c, total: ts.length, done: done, tdN: tdN, blkN: blkN, pct: Math.round(done / ts.length * 100) };
+  }).filter(Boolean);
+  if (rows.length) {
+    const inner = '<div style="display:grid;gap:9px">' + rows.map(r =>
+      '<div style="display:flex;align-items:center;gap:10px">'
+      + '<span style="width:' + (tnMob() ? 86 : 130) + 'px;flex-shrink:0;font-size:12.5px;font-weight:600;color:' + tnC.text + ';overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + tnEsc(r.c.name) + '</span>'
+      + '<div style="flex:1;height:8px;background:' + tnC.soft + ';border-radius:6px;overflow:hidden"><div style="width:' + r.pct + '%;height:100%;background:' + (r.pct === 100 ? tnC.green : '#3a6ea5') + ';border-radius:6px"></div></div>'
+      + '<span style="font-family:' + tnMONO + ';font-size:12px;font-weight:700;color:' + tnC.text + ';width:44px;text-align:right;flex-shrink:0">' + r.pct + '%</span>'
+      + '<span style="font-family:' + tnMONO + ';font-size:11px;color:' + tnC.faint + ';width:40px;text-align:right;flex-shrink:0">' + r.done + '/' + r.total + '</span>'
+      + '<span style="font-size:11px;color:' + (r.tdN > 0 ? tnC.red : tnC.faint) + ';font-weight:' + (r.tdN > 0 ? 700 : 400) + ';width:52px;text-align:right;flex-shrink:0">今天 ' + r.tdN + '</span>'
+      + '<span style="font-size:11px;color:' + (r.blkN > 0 ? tnC.sub : tnC.faint) + ';font-weight:' + (r.blkN > 0 ? 700 : 400) + ';width:52px;text-align:right;flex-shrink:0">卡住 ' + r.blkN + '</span>'
+      + '</div>').join('') + '</div>';
+    h += Section('grid', tnC.sub, '各大項一眼', '任務完成度・今天・卡住', inner);
+  }
+  h += '</div>';
+  return h;
+}
+
+/* ── 依大項分組（Keep 式瀑布流＋tcol 欄記憶＋大項拖曳/改名/調色） ── */
+function tnVGroup() {
+  const groups = tnGroups();
+  const vis = (items) => tnS.showDone ? items : items.filter(t => t.status !== 'done');
+  const withItems = groups.map(g => ({ g: g, items: tnOrderTasks(tnTasksOf(g.id).filter(tnMatchQ), 'manual') }));
+  const doneTotal = withItems.reduce((s, x) => s + x.items.filter(t => t.status === 'done').length, 0);
+  const inboxX = withItems.find(x => x.g.id === tnINBOX);
+  const filled = withItems.filter(x => x.g.id !== tnINBOX && vis(x.items).length > 0);
+  const empties = withItems.filter(x => x.g.id !== tnINBOX && vis(x.items).length === 0);
+  const gInput = (gid, slim) => '<input id="tnG-' + gid + '" value="' + tnEsc(tnS.gnew[gid] || '') + '" oninput="tnS.gnew[\'' + gid + '\']=this.value"'
+    + ' onkeydown="if(event.key===\'Enter\'&&!event.isComposing&&event.keyCode!==229)tnAddToGroup(\'' + gid + '\')"'
+    + ' placeholder="' + (slim ? '＋ 新增或拖到這裡…' : '＋ 直接在此大項新增…') + '"'
+    + ' style="' + (slim ? 'flex:1;' : 'width:100%;margin-top:4px;') + 'min-width:0;box-sizing:border-box;border:1px dashed ' + tnC.line + ';border-radius:8px;padding:' + (slim ? '4px 9px' : '6px 10px') + ';font-size:' + (slim ? 12 : 12.5) + 'px;background:transparent;color:' + tnC.text + ';outline:none">';
+  const gName = (g, slim) => {
+    if (tnS.editCat && tnS.editCat.id === g.id) {
+      return '<input id="tnCatEdit" autofocus value="' + tnEsc(tnS.editCat.name) + '" oninput="tnS.editCat.name=this.value" onkeydown="tnCatEditKey(event)" onblur="tnCatRenameCommit()"'
+        + ' style="font-size:' + (slim ? 12.5 : 13) + 'px;font-weight:600;color:' + tnC.text + ';border:1px solid ' + tnC.line + ';border-radius:6px;padding:1px 6px;background:' + tnWHT + ';outline:none;min-width:0;width:130px">';
+    }
+    const editable = g.id !== tnINBOX;
+    return '<div ' + (editable ? 'title="點我改大項名稱" onclick="event.stopPropagation();tnCatEditStart(\'' + g.id + '\',\'' + encodeURIComponent(g.name) + '\')"' : '')
+      + ' style="font-size:' + (slim ? 12.5 : 13) + 'px;font-weight:600;color:' + (g.id === tnINBOX ? tnC.accent : (slim ? tnC.sub : tnC.text)) + ';white-space:nowrap;cursor:' + (editable ? 'text' : 'default') + '">' + tnEsc(g.name) + '</div>';
+  };
+  const catColorBtn = (g) => g.id === tnINBOX ? '' :
+    '<button onclick="event.stopPropagation();tnColorCatToggle(\'' + g.id + '\')" title="大項顏色" style="margin-left:auto;flex-shrink:0;width:15px;height:15px;border-radius:50%;background:' + (tnTcol(g.color) || tnWHT) + ';border:1.5px solid ' + tnC.line + ';cursor:pointer;padding:0"></button>';
+  const catPalette = (g) => tnS.colorCat !== g.id ? '' :
+    '<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin:2px 2px 8px">'
+    + tnPALETTE.map(p => '<button title="' + p[1] + '" onclick="event.stopPropagation();tnSetCatColor(\'' + g.id + '\',\'' + p[0] + '\')" style="width:21px;height:21px;border-radius:50%;background:' + (tnTcol(p[0]) || tnWHT) + ';cursor:pointer;padding:0;border:' + ((g.color || '') === p[0] ? '2.5px solid ' + tnC.red : '1.5px solid ' + tnC.line) + '"></button>').join('') + '</div>';
+  const canDragCat = (g) => g.id !== tnINBOX;
+  const catWrapOpen = (g) => '<div ondragover="tnCatOver(event,\'' + g.id + '\')" ondragleave="tnCatLeave(event)" ondrop="tnCatDrop(event,\'' + g.id + '\')" style="border-radius:8px;opacity:' + (tnS.dragCat === g.id ? 0.4 : 1) + '">';
+  const catHead = (g, items) => '<div ' + (canDragCat(g) ? 'draggable="true" ondragstart="tnCDS(event,\'' + g.id + '\')" ondragend="tnDE()" title="拖我＝搬整個大項排序"' : '')
+    + ' style="display:flex;align-items:center;gap:5px;margin-bottom:7px;padding:0 2px;cursor:' + (canDragCat(g) ? 'grab' : 'default') + '">'
+    + (g.id === tnINBOX ? '<span style="color:' + tnC.accent + '">' + tnI('inbox', 13, tnC.accent) + '</span>' : '<span style="color:' + tnC.faint + '">' + tnI('grip', 12) + '</span>')
+    + gName(g, false)
+    + '<span style="font-size:11.5px;color:' + tnC.faint + ';font-variant-numeric:tabular-nums">' + items.length + '</span>'
+    + catColorBtn(g) + '</div>';
+  const groupCard = (x) => catWrapOpen(x.g)
+    + '<div ondragover="tnZOver(event)" ondragleave="tnZLeave(event)" ondrop="tnZDrop(event,\'cat\',\'' + x.g.id + '\')" style="background:' + (tnTcol(x.g.color) || tnC.card) + ';border:1px solid ' + tnC.line + ';border-radius:8px;padding:8px">'
+    + catHead(x.g, vis(x.items)) + catPalette(x.g)
+    + vis(x.items).map(t => tnCard(t, { dropBefore: true })).join('')
+    + gInput(x.g.id, false)
+    + '</div></div>';
+  // 欄數＝實際容器寬 ÷ 每欄最少 250
+  const host = (typeof app !== 'undefined' && app) ? app : null;
+  const gwEff = (host && host.clientWidth ? host.clientWidth - 36 : (typeof window !== 'undefined' ? window.innerWidth : 1280) - 100);
+  const NCOL = tnMob() ? 1 : Math.max(1, Math.min(8, Math.floor((gwEff + 10) / 260)));
+  const cols = Array.from({ length: NCOL }, () => ({ w: 0, nodes: [] }));
+  // 沒有任務的大項＋新增大項
+  let emptiesBlock = '<div style="border:1px dashed ' + tnC.line + ';border-radius:8px;padding:8px">'
+    + '<div style="font-size:10.5px;letter-spacing:.5px;font-weight:500;color:' + tnC.faint + ';margin-bottom:6px;padding:0 2px">沒有任務的大項（拖任務進來就會長出去）</div>'
+    + '<div style="display:flex;flex-direction:column;gap:6px">'
+    + empties.map(x => catWrapOpen(x.g)
+      + '<div ondragover="tnZOver(event)" ondragleave="tnZLeave(event)" ondrop="tnZDrop(event,\'cat\',\'' + x.g.id + '\')" style="background:' + (tnTcol(x.g.color) || tnC.card) + ';border:1px solid ' + tnC.line + ';border-radius:8px;padding:6px 8px">'
+      + '<div draggable="true" ondragstart="tnCDS(event,\'' + x.g.id + '\')" ondragend="tnDE()" style="display:flex;align-items:center;gap:6px;cursor:grab">'
+      + '<span style="color:' + tnC.faint + '">' + tnI('grip', 12) + '</span>'
+      + gName(x.g, true)
+      + (!tnS.showDone && x.items.length > 0 ? '<span title="這個大項的任務全完成了" style="font-size:10.5px;color:' + tnC.green + ';flex-shrink:0;display:inline-flex;align-items:center;gap:2px">' + tnI('check', 10, tnC.green) + x.items.length + '</span>' : '')
+      + gInput(x.g.id, true)
+      + catColorBtn(x.g)
+      + '</div>' + catPalette(x.g) + '</div></div>').join('')
+    + '<div style="border:1px dashed ' + tnC.line + ';border-radius:8px;padding:6px 8px;display:flex;align-items:center;gap:6px">'
+    + '<span style="color:' + tnC.faint + '">' + tnI('folderplus', 13) + '</span>'
+    + '<input id="tnNewCat" value="' + tnEsc(tnS.newCatIn) + '" oninput="tnS.newCatIn=this.value" onkeydown="if(event.key===\'Enter\'&&!event.isComposing&&event.keyCode!==229)tnNewCatCommit()" placeholder="＋ 新增大項" style="flex:1;min-width:0;border:none;background:transparent;outline:none;font-size:12px;color:' + tnC.text + '">'
+    + '</div></div></div>';
+  // 佈局：第 0 欄＝收件匣＋空大項；有 tcol 的釘那欄、其餘補最矮欄
+  tnS.colOf = {};
+  const orderIdx = {}; groups.forEach((g, i) => { orderIdx[g.id] = i; });
+  const wOf = (x) => 2.2 + vis(x.items).length;
+  cols[0].nodes.push(groupCard(inboxX));
+  cols[0].w += 2.5 + vis(inboxX.items).length;
+  cols[0].nodes.push(emptiesBlock);
+  cols[0].w += 2 + empties.length * 0.6;
+  const colEntries = Array.from({ length: NCOL }, () => []);
+  const pinnedX = filled.filter(x => Number.isInteger(x.g.tcol));
+  const autosX = filled.filter(x => !Number.isInteger(x.g.tcol));
+  for (const x of pinnedX) { const k = Math.min(Math.max(0, x.g.tcol), NCOL - 1); colEntries[k].push(x); cols[k].w += wOf(x); tnS.colOf[x.g.id] = k; }
+  for (const x of autosX) { let k = 0; for (let i = 1; i < NCOL; i++) if (cols[i].w < cols[k].w) k = i; colEntries[k].push(x); cols[k].w += wOf(x); tnS.colOf[x.g.id] = k; }
+  colEntries.forEach((list, k) => { list.sort((a, b) => orderIdx[a.g.id] - orderIdx[b.g.id]); list.forEach(x => cols[k].nodes.push(groupCard(x))); });
+  let h = '';
+  if (doneTotal > 0 || tnS.showDone) {
+    h += '<div style="display:flex;justify-content:flex-end;margin-bottom:8px">'
+      + '<button onclick="tnS.showDone=!tnS.showDone;tnRender()" style="display:inline-flex;align-items:center;gap:5px;border:1px solid ' + (tnS.showDone ? tnC.green : tnC.line) + ';background:' + (tnS.showDone ? '#16281C' : tnWHT) + ';color:' + (tnS.showDone ? tnC.green : tnC.sub) + ';border-radius:999px;padding:3px 12px;font-size:12px;font-weight:600;cursor:pointer">' + tnI('check', 12) + '已完成 ' + doneTotal + (tnS.showDone ? '・點我收起' : '・點我顯示') + '</button></div>';
+  }
+  h += '<div style="display:flex;gap:10px;align-items:flex-start">'
+    + cols.map((c, i) => '<div ondragover="tnColOver(event)" ondragleave="tnColLeave(event)" ondrop="tnColDrop(event,' + i + ')" style="flex:1;min-width:0;display:flex;flex-direction:column;gap:10px;border-radius:8px;min-height:120px">' + c.nodes.join('') + '</div>').join('')
+    + '</div>';
+  return h;
+}
+
+/* ── 看板（依狀態三欄；完成欄預設 8 件收起） ── */
+function tnVBoard() {
+  return '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px;align-items:start">'
+    + tnSTATUS.map(s => {
+      const items = tnOrderTasks((tnS.tasks || []).filter(t => t.status === s[0]).filter(tnMatchQ), tnS.sortMode);
+      const shown = (s[0] === 'done' && !tnS.showAllDone) ? items.slice(0, 8) : items;
+      const hidden = items.length - shown.length;
+      return '<div ondragover="tnZOver(event)" ondragleave="tnZLeave(event)" ondrop="tnZDrop(event,\'status\',\'' + s[0] + '\')" style="background:' + tnC.card + ';border:1px solid ' + tnC.line + ';border-radius:8px;padding:12px;min-height:120px">'
+        + '<div style="display:flex;align-items:center;gap:7px;margin-bottom:10px"><span style="width:7px;height:7px;border-radius:50%;background:' + s[2] + '"></span>'
+        + '<div style="font-size:13px;font-weight:600;color:' + tnC.text + '">' + s[1] + '</div>'
+        + '<span style="font-size:11.5px;color:' + tnC.faint + ';font-variant-numeric:tabular-nums">' + items.length + '</span></div>'
+        + shown.map(t => tnCard(t, { dropBefore: true })).join('')
+        + (hidden > 0 ? '<button onclick="tnS.showAllDone=true;tnRender()" style="width:100%;background:none;border:1px dashed ' + tnC.line + ';border-radius:8px;padding:6px 0;font-size:12px;color:' + tnC.sub + ';cursor:pointer">顯示全部（還有 ' + hidden + ' 件）</button>' : '')
+        + (s[0] === 'done' && tnS.showAllDone && items.length > 8 ? '<button onclick="tnS.showAllDone=false;tnRender()" style="width:100%;background:none;border:none;padding:6px 0;font-size:12px;color:' + tnC.faint + ';cursor:pointer">收起</button>' : '')
+        + (items.length === 0 ? tnEmpty('cols', '拖到這欄') : '')
+        + '</div>';
+    }).join('') + '</div>';
+}
+
+/* ── 負責人（欄=每個 claimBy＋未指派；拖卡到人欄＝指派） ── */
+function tnVOwner() {
+  const openO = (tnS.tasks || []).filter(t => t.status !== 'done').filter(tnMatchQ);
+  const owners = [...new Set(openO.map(t => t.claimBy).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'zh-Hant'));
+  const cols = [['', '未指派']].concat(owners.map(n => [n, n]));
+  return '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px;align-items:start">'
+    + cols.map(c => {
+      const nm = c[0], label = c[1];
+      const items = tnOrderTasks(openO.filter(t => (t.claimBy || '') === nm), tnS.sortMode);
+      return '<div ondragover="tnZOver(event)" ondragleave="tnZLeave(event)" ondrop="tnZDrop(event,\'owner\',\'' + encodeURIComponent(nm) + '\')" style="background:' + tnC.card + ';border:1px solid ' + tnC.line + ';border-radius:8px;padding:12px;min-height:120px">'
+        + '<div style="display:flex;align-items:center;gap:7px;margin-bottom:10px">'
+        + (nm ? '<span style="color:' + tnC.accent + '">' + tnI('wrench', 13, tnC.accent) + '</span>' : '<span style="width:7px;height:7px;border-radius:50%;background:' + tnC.faint + '"></span>')
+        + '<div style="font-size:13px;font-weight:600;color:' + tnC.text + '">' + tnEsc(label) + '</div>'
+        + '<span style="font-size:11.5px;color:' + tnC.faint + ';font-variant-numeric:tabular-nums">' + items.length + '</span></div>'
+        + items.map(t => tnCard(t, {})).join('')
+        + (items.length === 0 ? tnEmpty('users', nm ? '拖任務過來＝指派給他' : '沒有未指派的任務') : '')
+        + '</div>';
+    }).join('') + '</div>';
+}
+
+/* ── 清單（Linear 式密表；手機四欄、桌機八欄；手動模式可拖曳排序） ── */
+function tnVList() {
+  let rows = (tnS.tasks || []).filter(tnMatchQ).filter(t => tnS.fStatus === 'all' || (tnS.fStatus === 'open' ? t.status !== 'done' : t.status === tnS.fStatus));
+  rows = tnOrderTasks(rows, tnS.sortMode);
+  const mob = tnMob();
+  const GTC = mob ? '34px minmax(0,1fr) 72px 88px' : '34px minmax(220px,1fr) 72px 96px 130px 52px 130px 88px';
+  const hc = 'font-size:10.5px;letter-spacing:.8px;color:' + tnC.faint + ';font-weight:600;padding:7px 8px;white-space:nowrap';
+  const manual = tnS.sortMode === 'manual';
+  let h = '<div>';
+  h += '<div style="display:flex;gap:8px;align-items:center;margin-bottom:10px;flex-wrap:wrap">'
+    + '<div style="display:inline-flex;background:' + tnC.soft + ';border:1px solid ' + tnC.line + ';border-radius:8px;padding:2px;gap:2px">'
+    + [['open', '未完成'], ['all', '全部'], ['done', '已完成']].map(f => '<button onclick="tnS.fStatus=\'' + f[0] + '\';tnRender()" style="padding:5px 12px;border-radius:6px;border:1px solid ' + (tnS.fStatus === f[0] ? tnC.line : 'transparent') + ';background:' + (tnS.fStatus === f[0] ? tnWHT : 'transparent') + ';color:' + (tnS.fStatus === f[0] ? tnC.text : tnC.sub) + ';font-size:12.5px;font-weight:' + (tnS.fStatus === f[0] ? 600 : 400) + ';cursor:pointer">' + f[1] + '</button>').join('')
+    + '</div></div>';
+  h += '<div style="border:1.5px solid ' + tnCBR + ';border-radius:8px;background:' + tnC.card + ';overflow:hidden"><div style="overflow-x:auto"><div style="' + (mob ? '' : 'min-width:880px') + '">';
+  h += '<div style="display:grid;grid-template-columns:' + GTC + ';background:' + tnC.soft + ';border-bottom:1.5px solid ' + tnCBR + ';align-items:center"><div></div>'
+    + '<div style="' + hc + '">標題</div><div style="' + hc + '">截止</div>'
+    + (mob ? '' : '<div style="' + hc + '">負責人</div><div style="' + hc + '">等待中</div><div style="' + hc + '">優先</div><div style="' + hc + '">大項</div>')
+    + '<div style="' + hc + '">狀態</div></div>';
+  if (!rows.length) h += tnEmpty('list', '沒有任務', 24);
+  else rows.forEach((t, i) => {
+    const done = t.status === 'done';
+    const pm = tnPMeta(t.priority);
+    const overdue = !done && t.due && t.due < tnToday();
+    h += '<div onclick="tnOpen(\'' + t.id + '\')"'
+      + (manual ? ' draggable="true" ondragstart="tnDS(event,\'' + t.id + '\')" ondragend="tnDE()" ondragover="tnDOvCard(event)" ondrop="event.stopPropagation();tnZDrop(event,\'before\',\'' + t.id + '\')" title="拖我排序（丟到目標列＝排到它上面）"' : '')
+      + ' style="display:grid;grid-template-columns:' + GTC + ';align-items:center;height:36px;border-top:' + (i ? '1px solid ' + tnC.line : 'none') + ';cursor:' + (manual ? 'grab' : 'pointer') + ';background:' + (tnTcol(t.color) || tnC.card) + '">'
+      + '<div style="display:flex;justify-content:center"><button onclick="event.stopPropagation();tnToggleDone(\'' + t.id + '\')" style="width:15px;height:15px;border-radius:4px;border:1px solid ' + (done ? tnC.green : tnCBR) + ';background:' + (done ? tnC.green : tnWHT) + ';display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0">' + (done ? tnI('check', 10, '#fff') : '') + '</button></div>'
+      + '<div style="display:flex;align-items:center;gap:5px;padding:0 8px;font-size:13px;color:' + (done ? tnC.faint : tnC.text) + ';text-decoration:' + (done ? 'line-through' : 'none') + ';overflow:hidden;white-space:nowrap">'
+      + (t.pinned ? tnI('pin', 11, tnC.accent, tnC.accent) : '') + (t.priority === 'urgent' && !done ? tnI('flame', 11, tnC.red) : '')
+      + '<span style="overflow:hidden;text-overflow:ellipsis">' + tnEsc(t.title) + '</span></div>'
+      + '<div style="padding:0 8px;font-family:' + tnMONO + ';font-size:11.5px;font-weight:' + (overdue ? 700 : 500) + ';color:' + (overdue ? tnC.red : (t.due ? tnC.sub : tnC.faint)) + ';white-space:nowrap">' + (t.due ? t.due.slice(5) + tnWd(t.due) : '—') + '</div>';
+    if (!mob) {
+      h += '<div style="padding:0 8px;font-size:12px;color:' + (t.owner ? tnC.text : tnC.faint) + ';overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:flex;align-items:center;gap:5px">'
+        + (t.owner ? '<span style="width:17px;height:17px;border-radius:50%;background:' + tnC.accentSoft + ';color:' + tnC.accent + ';font-size:9px;font-weight:700;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0">' + tnEsc(t.owner.slice(0, 2)) + '</span>' : '') + tnEsc(t.owner || '—') + '</div>'
+        + '<div style="padding:0 8px;font-size:12px;color:' + (tnIsWaiting(t) ? tnC.amber : tnC.faint) + ';font-weight:' + (tnIsWaiting(t) ? 600 : 400) + ';overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + tnEsc(t.waitingFor || '—') + '</div>'
+        + '<div style="padding:0 8px;font-size:12px;font-weight:' + (t.priority === 'urgent' ? 700 : 500) + ';color:' + (t.priority === 'urgent' ? tnC.red : t.priority === 'high' ? tnC.amber : t.priority === 'low' ? tnC.faint : tnC.sub) + ';white-space:nowrap">' + pm[1] + '</div>'
+        + '<div style="padding:0 8px;font-size:12px;color:' + tnC.sub + ';overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + tnEsc(tnCatName(t.catId)) + '</div>';
+    }
+    h += '<div style="padding:0 6px">' + tnPill(tnSColor(t.status), tnSLabel(t.status)) + '</div></div>';
+  });
+  h += '</div></div></div>';
+  if (rows.length) h += '<div style="font-size:11px;color:' + tnC.faint + ';margin-top:6px;font-family:' + tnMONO + '">' + rows.length + ' 件</div>';
+  h += '</div>';
+  return h;
+}
+
+/* ── 時間軸（依截止日分桶） ── */
+function tnVTimeline() {
+  const t0 = tnToday();
+  const tasks = tnS.tasks || [];
+  const within = (dd, n) => { if (!dd) return false; const diff = (new Date(dd) - new Date(t0)) / 86400000; return diff >= 0 && diff <= n; };
+  const buckets = [
+    ['逾期', 'alert', tnC.red, tasks.filter(t => t.status !== 'done' && t.due && t.due < t0)],
+    ['今天', 'cal', tnC.accent, tasks.filter(t => t.status !== 'done' && t.due === t0)],
+    ['本週內', 'caldays', tnC.sub, tasks.filter(t => t.status !== 'done' && t.due && t.due > t0 && within(t.due, 7))],
+    ['之後', 'clock', tnC.sub, tasks.filter(t => t.status !== 'done' && t.due && t.due > t0 && !within(t.due, 7))],
+    ['無日期', 'inbox', tnC.faint, tasks.filter(t => !t.due && t.status !== 'done')],
+  ].map(b => [b[0], b[1], b[2], tnOrderTasks(b[3].filter(tnMatchQ).sort((a, b2) => (a.due || '9') < (b2.due || '9') ? -1 : 1), 'manual')]);
+  let h = '<div style="display:grid;gap:12px">';
+  buckets.forEach(b => {
+    if (!b[3].length) return;
+    h += '<div style="background:' + tnC.card + ';border:1px solid ' + tnC.line + ';border-radius:8px;padding:14px">'
+      + '<div style="display:flex;align-items:center;gap:7px;margin-bottom:10px"><span style="color:' + b[2] + '">' + tnI(b[1], 14, b[2]) + '</span>'
+      + '<span style="font-size:13px;font-weight:600;color:' + tnC.text + '">' + b[0] + '</span>'
+      + '<span style="color:' + tnC.faint + ';font-size:11.5px;font-variant-numeric:tabular-nums">' + b[3].length + '</span></div>'
+      + '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:8px">' + b[3].map(t => tnCard(t, {})).join('') + '</div></div>';
+  });
+  if (!tasks.length) h += tnEmpty('caldays', '還沒有任務', 24);
+  h += '</div>';
+  return h;
+}
+
+/* ── 甘特圖（開始～截止畫橫條；紅線＝今天） ── */
+function tnVGantt() {
+  const dayMs = 86400000, dayW = 24;
+  const tasks = tnS.tasks || [];
+  const sched = tasks.filter(t => t.due || t.start).filter(tnMatchQ);
+  const unsched = tasks.filter(t => !t.due && !t.start).filter(tnMatchQ);
+  if (!sched.length) return tnEmpty('gantt', '還沒有「有日期」的任務。到任務詳情設好開始/截止日，就會出現在甘特圖。', 24);
+  const lo = (t) => new Date(tnDnorm(t.start || t.due));
+  const hi = (t) => new Date(tnDnorm(t.due || t.start));
+  let minD = new Date(Math.min.apply(null, sched.map(t => +lo(t)).concat([+new Date(tnToday())])));
+  let maxD = new Date(Math.max.apply(null, sched.map(t => +hi(t)).concat([+new Date(tnToday())])));
+  minD = new Date(+minD - 2 * dayMs); maxD = new Date(+maxD + 2 * dayMs);
+  let totalDays = Math.round((maxD - minD) / dayMs) + 1;
+  if (totalDays > 140) { maxD = new Date(+minD + 140 * dayMs); totalDays = 141; }
+  const offset = (d) => Math.round((new Date(tnDnorm(d)) - minD) / dayMs);
+  const ticks = []; for (let i = 0; i < totalDays; i += 7) { const d = new Date(+minD + i * dayMs); ticks.push({ i: i, label: (d.getMonth() + 1) + '/' + d.getDate() }); }
+  const todayOff = offset(tnToday());
+  const nameW = tnMob() ? 96 : 200;
+  let h = '<div><div style="border:1px solid ' + tnC.line + ';border-radius:8px;background:' + tnC.card + ';overflow:auto"><div style="min-width:' + (nameW + totalDays * dayW) + 'px">';
+  h += '<div style="display:flex;border-bottom:1px solid ' + tnC.line + ';position:sticky;top:0;background:' + tnC.bg + ';z-index:3">'
+    + '<div style="width:' + nameW + 'px;flex-shrink:0;border-right:1px solid ' + tnC.line + ';padding:6px 10px;font-size:11px;letter-spacing:.5px;color:' + tnC.faint + ';font-weight:500;position:sticky;left:0;background:' + tnC.bg + ';z-index:4">任務</div>'
+    + '<div style="position:relative;height:26px">'
+    + ticks.map(tk => '<div style="position:absolute;left:' + (tk.i * dayW) + 'px;top:0;font-size:10.5px;color:' + tnC.faint + ';font-variant-numeric:tabular-nums;padding:6px 0 0 4px;border-left:1px solid ' + tnC.soft + ';height:26px;box-sizing:border-box">' + tk.label + '</div>').join('')
+    + '</div></div>';
+  [...sched].sort((a, b) => +lo(a) - +lo(b)).forEach((t, i) => {
+    const s = offset(t.start || t.due), e = offset(t.due || t.start);
+    const left = Math.min(s, e), width = Math.abs(e - s) + 1;
+    h += '<div onclick="tnOpen(\'' + t.id + '\')" style="display:flex;align-items:center;border-top:' + (i ? '1px solid ' + tnC.soft : 'none') + ';cursor:pointer;background:' + (tnTcol(t.color) || tnWHT) + '">'
+      + '<div style="width:' + nameW + 'px;flex-shrink:0;border-right:1px solid ' + tnC.line + ';padding:7px 10px;font-size:' + (tnMob() ? 11 : 12.5) + 'px;color:' + (t.status === 'done' ? tnC.faint : tnC.text) + ';overflow:hidden;white-space:nowrap;display:flex;align-items:center;gap:4px;position:sticky;left:0;background:inherit;z-index:2">'
+      + (t.priority === 'urgent' ? tnI('flame', 11, tnC.red) : '')
+      + '<span style="overflow:hidden;text-overflow:ellipsis">' + tnEsc(t.title) + '</span>'
+      + (tnMob() ? '' : '<span style="font-size:10.5px;color:' + tnC.faint + ';flex-shrink:0">・' + tnEsc(tnCatName(t.catId)) + '</span>') + '</div>'
+      + '<div style="position:relative;height:30px;flex:1">'
+      + (todayOff >= 0 && todayOff < totalDays ? '<div style="position:absolute;left:' + (todayOff * dayW) + 'px;top:0;bottom:0;width:1px;background:' + tnC.red + ';opacity:.45"></div>' : '')
+      + '<div title="' + tnEsc((t.start || t.due) + ' ~ ' + (t.due || t.start)) + '" style="position:absolute;left:' + (left * dayW + 2) + 'px;top:9px;height:12px;width:' + Math.max(width * dayW - 4, 8) + 'px;background:' + (t.status === 'done' ? tnC.green : tnC.accent) + ';border-radius:999px;opacity:' + (t.status === 'done' ? 0.45 : 1) + '"></div>'
+      + '</div></div>';
+  });
+  h += '</div></div><div style="font-size:11.5px;color:' + tnC.faint + ';margin-top:8px">紅線＝今天。點任務列可編輯日期。</div>';
+  if (unsched.length) {
+    h += '<div style="margin-top:16px"><div style="font-size:11px;letter-spacing:.5px;font-weight:500;color:' + tnC.faint + ';margin-bottom:8px">未排程（沒設日期）' + unsched.length + '</div>'
+      + '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:8px">' + unsched.map(t => tnCard(t, {})).join('') + '</div></div>';
+  }
+  h += '</div>';
+  return h;
+}
+
+/* ── 心智圖（中心→大項→任務） ── */
+function tnVMind() {
+  const branches = tnGroups().map(g => ({ g: g, items: tnTasksOf(g.id).filter(tnMatchQ) })).filter(b => b.items.length > 0);
+  if (!branches.length) return tnEmpty('network', '還沒有任務', 24);
+  let h = '<div style="padding:10px 0"><div style="display:flex;flex-direction:column;align-items:center">'
+    + '<div style="background:' + tnC.accent + ';color:#fff;border-radius:999px;padding:7px 18px;font-size:14px;font-weight:600">全部任務</div>'
+    + '<div style="width:1px;height:18px;background:' + tnC.line + '"></div>'
+    + '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:16px;align-items:start;width:100%">';
+  branches.forEach(b => {
+    h += '<div style="display:flex;flex-direction:column;align-items:center;min-width:0">'
+      + '<div style="width:1px;height:8px;background:' + tnC.line + '"></div>'
+      + '<div style="background:' + (b.g.id === tnINBOX ? tnC.accentSoft : tnC.card) + ';border:1px solid ' + (b.g.id === tnINBOX ? tnC.accent : tnC.line) + ';border-radius:8px;padding:6px 14px;font-size:13px;font-weight:600;color:' + (b.g.id === tnINBOX ? tnC.accent : tnC.text) + ';white-space:nowrap">' + tnEsc(b.g.name) + ' <span style="color:' + tnC.faint + ';font-weight:400;font-size:11px;font-variant-numeric:tabular-nums">' + b.items.length + '</span></div>'
+      + '<div style="width:1px;height:10px;background:' + tnC.line + '"></div>'
+      + '<div style="display:flex;flex-direction:column;gap:7px;width:100%">'
+      + b.items.map(t => '<div onclick="tnOpen(\'' + t.id + '\')" style="display:flex;align-items:center;gap:5px;background:' + (tnTcol(t.color) || tnC.card) + ';border:1px solid ' + tnC.line + ';border-radius:8px;padding:6px 10px;font-size:12.5px;color:' + (t.status === 'done' ? tnC.faint : tnC.text) + ';text-decoration:' + (t.status === 'done' ? 'line-through' : 'none') + ';cursor:pointer">'
+        + '<span style="width:6px;height:6px;border-radius:50%;background:' + tnSColor(t.status) + ';flex-shrink:0"></span>'
+        + (t.pinned ? tnI('pin', 11, tnC.accent, tnC.accent) : '') + (t.priority === 'urgent' ? tnI('flame', 11, tnC.red) : '') + tnEsc(t.title) + '</div>').join('')
+      + '</div></div>';
+  });
+  h += '</div></div></div>';
+  return h;
+}
+
+/* ── 任務詳情彈窗（點卡片開啟；輸入即存、✓ 完成關閉） ── */
+function tnUpdSilent(id, patch) { tnUpd(id, patch, true); } // 打字輸入：更新＋排存檔但不整頁重畫（焦點不掉）
+function tnModal() {
+  const t = (tnS.tasks || []).find(x => x.id === tnS.sel); if (!t) return '';
+  const groups = tnGroups();
+  const F = (label, node) => '<label style="' + tnLbl + '">' + label + '<div style="margin-top:5px">' + node + '</div></label>';
+  let h = '<div onclick="if(event.target===this)tnClose()" style="position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:700;display:flex;align-items:center;justify-content:center;padding:16px">'
+    + '<div style="background:' + tnMOD + ';border:1px solid ' + tnC.line + ';border-radius:12px;padding:' + (tnMob() ? 16 : 24) + 'px;width:min(560px,96vw);max-height:90vh;overflow-y:auto">';
+  // 頂列：釘選/刪除/關閉
+  h += '<div style="display:flex;align-items:center;gap:10px;margin-bottom:16px">'
+    + '<div style="font-size:15px;font-weight:600;color:' + tnC.text + '">任務詳情</div><div style="flex:1"></div>'
+    + '<button onclick="tnPinToggle(\'' + t.id + '\')" style="display:inline-flex;align-items:center;gap:5px;background:' + (t.pinned ? tnC.accentSoft : 'none') + ';border:1px solid ' + (t.pinned ? tnC.accent : tnC.line) + ';color:' + (t.pinned ? tnC.accent : tnC.sub) + ';border-radius:8px;padding:5px 12px;font-size:12.5px;cursor:pointer">' + tnI('pin', 12, 'currentColor', t.pinned ? tnC.accent : 'none') + (t.pinned ? '已釘選' : '釘選') + '</button>'
+    + '<button onclick="tnDel(\'' + t.id + '\')" style="background:none;border:1px solid ' + tnC.line + ';color:' + tnC.red + ';border-radius:8px;padding:5px 12px;font-size:12.5px;cursor:pointer">刪除</button>'
+    + '<button onclick="tnClose()" style="background:none;border:none;cursor:pointer;color:' + tnC.sub + ';padding:4px;display:flex">' + tnI('x', 18) + '</button></div>';
+  h += F('主題', '<input id="tnTitle" value="' + tnEsc(t.title) + '" oninput="tnUpdSilent(\'' + t.id + '\',{title:this.value})" style="' + tnInp + ';width:100%;font-size:14px;font-weight:600">');
+  h += F('內容 / 備註', '<textarea id="tnNote" rows="3" oninput="tnUpdSilent(\'' + t.id + '\',{note:this.value})" style="' + tnInp + ';width:100%;resize:vertical">' + tnEsc(t.note || '') + '</textarea>');
+  // 附件（不能包 label：label 會把點擊轉給隱藏選檔 input）
+  h += '<div style="' + tnLbl + '">附件（截圖直接貼上，或按＋上傳檔案）<div style="margin-top:5px;display:flex;align-items:center;gap:6px;flex-wrap:wrap">'
+    + '<input id="tnFile" type="file" accept="*/*" multiple style="display:none" onchange="tnAttachPick(\'' + t.id + '\',this)">'
+    + (t.files || []).map(f => '<span style="position:relative;display:inline-flex">'
+      + (f.isImage
+        ? '<img src="' + tnEsc(f.url) + '" alt="" onclick="tnImgView(\'' + tnEsc(f.url) + '\')" style="width:52px;height:52px;object-fit:cover;border-radius:6px;border:1px solid ' + tnC.line + ';cursor:zoom-in">'
+        : '<a href="' + tnEsc(f.url) + '" target="_blank" rel="noreferrer" title="' + tnEsc(f.name) + '" style="display:inline-flex;flex-direction:column;align-items:center;justify-content:center;width:52px;height:52px;border-radius:6px;border:1px solid ' + tnC.line + ';text-decoration:none;color:' + tnC.sub + '">' + tnI('file', 18) + '<span style="font-size:8.5px;color:' + tnFNT + ';max-width:46px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + tnEsc(f.name) + '</span></a>')
+      + '<button onclick="tnAttDel(\'' + t.id + '\',\'' + f.id + '\')" style="position:absolute;top:-6px;right:-6px;width:17px;height:17px;border-radius:9px;border:1.5px solid ' + tnMOD + ';background:' + tnC.red + ';color:#fff;font-size:11px;line-height:14px;cursor:pointer;padding:0">×</button></span>').join('')
+    + '<button id="tnAttBtn" onclick="document.getElementById(\'tnFile\').click()" title="點選檔上傳；或直接貼上截圖" style="border:1.5px dashed ' + tnC.line + ';background:' + tnWHT + ';color:' + tnFNT + ';border-radius:6px;width:52px;height:52px;font-size:12px;cursor:pointer;line-height:1.3">＋<br>貼/傳</button>'
+    + '</div></div>';
+  // 兩欄欄位
+  h += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">';
+  h += F('隸屬大項', '<select onchange="tnUpd(\'' + t.id + '\',{catId:this.value})" style="' + tnInp + ';width:100%">' + groups.map(g => '<option value="' + g.id + '"' + ((t.catId || tnINBOX) === g.id ? ' selected' : '') + '>' + tnEsc(g.name) + '</option>').join('') + '</select>');
+  h += F('狀態', '<select onchange="tnUpd(\'' + t.id + '\',{status:this.value})" style="' + tnInp + ';width:100%">' + tnSTATUS.map(s => '<option value="' + s[0] + '"' + (t.status === s[0] ? ' selected' : '') + '>' + s[1] + '</option>').join('') + '</select>');
+  h += F('優先級', '<select onchange="tnUpd(\'' + t.id + '\',{priority:this.value})" style="' + tnInp + ';width:100%">' + tnPRIO.map(p => '<option value="' + p[0] + '"' + ((t.priority || 'normal') === p[0] ? ' selected' : '') + '>' + p[1] + '</option>').join('') + '</select>');
+  h += F('截止日', '<input type="date" value="' + tnDnorm(t.due) + '" onchange="tnUpd(\'' + t.id + '\',{due:this.value})" style="' + tnDateInp + ';width:100%">');
+  h += F('開始日', '<input type="date" value="' + tnDnorm(t.start) + '" onchange="tnUpd(\'' + t.id + '\',{start:this.value})" style="' + tnDateInp + ';width:100%">');
+  // 負責人選單（GD 人員＋任務裡出現過的人；自訂＝行內輸入，不用彈窗）
+  const pool = [...new Set([].concat(tnS.gdNames, (tnS.tasks || []).flatMap(x => [x.owner, x.claimBy]).filter(Boolean), t.owner ? [t.owner] : []))].sort((a, b) => a.localeCompare(b, 'zh-Hant'));
+  h += F('負責人', tnS.ownerCustom
+    ? '<input id="tnOwnerIn" autofocus placeholder="輸入負責人名字後按 Enter" onkeydown="if(event.key===\'Enter\'&&!event.isComposing&&event.keyCode!==229)tnOwnerCustom(\'' + t.id + '\',this.value)" onblur="tnOwnerCustom(\'' + t.id + '\',this.value)" style="' + tnInp + ';width:100%">'
+    : '<select onchange="tnOwnerSel(\'' + t.id + '\',this.value)" style="' + tnInp + ';width:100%;cursor:pointer">'
+      + '<option value=""' + (!t.owner ? ' selected' : '') + '>— 未指定 —</option>'
+      + pool.map(n => '<option value="' + tnEsc(n) + '"' + (t.owner === n ? ' selected' : '') + '>' + tnEsc(n) + '</option>').join('')
+      + '<option value="__custom">自訂…</option></select>');
+  h += F('等待中（等誰 / 等什麼）', '<input id="tnWait" value="' + tnEsc(t.waitingFor || '') + '" onchange="tnUpd(\'' + t.id + '\',{waitingFor:this.value})" placeholder="例：等對方回覆、等報價、等主管確認" style="' + tnInp + ';width:100%">');
+  h += F('預估時間（分鐘）', '<input type="number" min="1" step="1" value="' + (t.estimatedMinutes != null ? t.estimatedMinutes : '') + '" onchange="tnUpd(\'' + t.id + '\',{estimatedMinutes:this.value})" placeholder="未估算" style="' + tnInp + ';width:100%;font-variant-numeric:tabular-nums">');
+  h += F('卡片顏色（視覺分類）', '<div style="display:flex;gap:7px;align-items:center;flex-wrap:wrap;padding-top:3px">'
+    + tnPALETTE.map(p => '<button title="' + p[1] + '" onclick="tnUpd(\'' + t.id + '\',{color:\'' + p[0] + '\'})" style="width:24px;height:24px;border-radius:50%;background:' + (tnTcol(p[0]) || tnWHT) + ';cursor:pointer;padding:0;border:' + ((t.color || '') === p[0] ? '2.5px solid ' + tnC.red : '1.5px solid ' + tnC.line) + '"></button>').join('') + '</div>');
+  h += '</div>'; // grid 結束
+  // 依賴任務
+  const deps = t.dependsOn || [];
+  const missing = tnMissingDeps(t, tnS.tasks);
+  let depH = '<div><div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:' + (deps.length ? 8 : 0) + 'px">'
+    + deps.map(did => {
+      const d = (tnS.tasks || []).find(x => x.id === did);
+      const isMissing = !d;
+      return '<span style="display:inline-flex;align-items:center;gap:5px;font-size:12px;color:' + (isMissing ? tnC.red : tnC.sub) + ';background:' + (isMissing ? '#2A181A' : tnC.soft) + ';border:1px solid ' + (isMissing ? '#5A3A3A' : tnC.line) + ';border-radius:999px;padding:3px 10px">'
+        + (isMissing ? (tnI('alert', 12) + '失效依賴') : ((d.status === 'done' ? tnI('check', 12, tnC.green) : '<span style="width:6px;height:6px;border-radius:50%;background:' + tnSColor(d.status) + '"></span>') + tnEsc(d.title)))
+        + '<button onclick="tnDepDel(\'' + t.id + '\',\'' + did + '\')" style="background:none;border:none;cursor:pointer;color:' + tnC.faint + ';padding:0;display:flex">' + tnI('x', 12) + '</button></span>';
+    }).join('') + '</div>'
+    + '<div style="display:flex;gap:8px;align-items:center">'
+    + '<select onchange="tnDepAdd(\'' + t.id + '\',this.value)" style="' + tnInp + ';flex:1">'
+    + '<option value="">＋ 新增依賴…</option>'
+    + (tnS.tasks || []).filter(x => x.id !== t.id && !deps.includes(x.id)).map(x => '<option value="' + x.id + '">' + tnEsc(x.title) + '</option>').join('')
+    + '</select>'
+    + (missing.length ? '<button onclick="tnDepClean(\'' + t.id + '\')" style="background:none;border:1px solid ' + tnC.line + ';color:' + tnC.sub + ';border-radius:8px;padding:6px 12px;font-size:12px;cursor:pointer;white-space:nowrap">清除失效依賴</button>' : '')
+    + '</div></div>';
+  h += F('依賴任務（前置做完才能動工）', depH);
+  // 標籤
+  h += F('標籤', '<div><div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:' + ((t.tags || []).length ? 8 : 0) + 'px">'
+    + (t.tags || []).map(tg => '<span style="display:inline-flex;align-items:center;gap:5px;font-size:12px;color:' + tnC.sub + ';background:' + tnC.soft + ';border:1px solid ' + tnC.line + ';border-radius:999px;padding:3px 10px">' + tnEsc(tg)
+      + '<button onclick="tnTagDel(\'' + t.id + '\',\'' + encodeURIComponent(tg) + '\')" style="background:none;border:none;cursor:pointer;color:' + tnC.faint + ';padding:0;display:flex">' + tnI('x', 12) + '</button></span>').join('')
+    + '</div><input id="tnTagIn" value="' + tnEsc(tnS.tagIn) + '" oninput="tnS.tagIn=this.value" onkeydown="if(event.key===\'Enter\'&&!event.isComposing&&event.keyCode!==229)tnTagAdd(\'' + t.id + '\')" placeholder="輸入標籤後按 Enter 新增" style="' + tnInp + ';width:100%"></div>');
+  // 顏色（各視角同步顯示；另一組 Keep 色盤＝主 App 同款兩組都留）
+  h += F('顏色（各視角同步顯示）', '<div style="display:flex;gap:8px;flex-wrap:wrap">'
+    + tnTASK_COLORS.map(c => {
+      const on = (t.color || '') === c;
+      return '<button onclick="tnUpd(\'' + t.id + '\',{color:\'' + c + '\'})" title="' + (c ? '' : '無顏色') + '" style="width:26px;height:26px;border-radius:50%;cursor:pointer;background:' + (tnTcol(c) || tnWHT) + ';border:2px solid ' + (on ? tnC.accent : tnC.line) + ';display:flex;align-items:center;justify-content:center;padding:0">'
+        + (!c ? tnI('x', 11, tnC.faint) : (on ? tnI('check', 12, tnC.accent) : '')) + '</button>';
+    }).join('') + '</div>');
+  h += '<div style="display:flex;align-items:center;gap:10px;margin-top:8px">'
+    + '<div style="font-size:11px;color:' + tnC.faint + ';font-variant-numeric:tabular-nums">建立於 ' + tnDnorm(t.createdAt) + '</div><div style="flex:1"></div>'
+    + '<button onclick="tnClose()" style="display:inline-flex;align-items:center;gap:6px;background:' + tnC.accent + ';color:#fff;border:none;border-radius:8px;padding:8px 18px;font-size:13.5px;font-weight:700;cursor:pointer">' + tnI('check', 14, '#fff') + '完成</button></div>';
+  h += '</div></div>';
+  return h;
+}
+
+/* ── 初始化＋入口 ── */
+function tnInit() {
+  if (tnS.inited) return;
+  tnS.inited = true;
+  document.addEventListener('paste', tnPaste);
+  window.addEventListener('keydown', tnKey);
+  let rt = null;
+  window.addEventListener('resize', () => { if (typeof curStore !== 'undefined' && curStore !== 'taskx') return; clearTimeout(rt); rt = setTimeout(tnRender, 150); });
+  window.addEventListener('pagehide', tnFlushNow); // 關頁/切背景立刻寫入不漏資料（盡力而為）
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') tnFlushNow(); });
+  // 身分（我來解決記名）＋ GD 人員名單（負責人選單）
+  try {
+    const tk = (typeof TK === 'function' ? TK() : '');
+    fetch('/api/mail-sync?whoami=' + encodeURIComponent(typeof K !== 'undefined' ? K : '') + '&r=' + Date.now() + (tk ? '&me=' + encodeURIComponent(tk) : ''))
+      .then(r => r.json()).then(j => { if (j && j.me && j.me.name) { tnS.me = j.me.name; if (tnS.loaded) tnRender(); } }).catch(() => {});
+    fetch('/api/mail-sync?shift=' + encodeURIComponent(typeof K !== 'undefined' ? K : '') + '&ym=' + tnToday().slice(0, 7))
+      .then(r => r.json()).then(d => { if (d && d.ok) { tnS.gdNames = (d.staff || []).filter(s => !s.off && s.role !== '停權').map(s => s.n); if (tnS.loaded) tnRender(); } }).catch(() => {});
+  } catch (_) {}
+}
+async function tnRefetch() { // 背景抓最新；手上有沒存完的修改就不蓋
+  const d = await tnFetchAll();
+  if (!d) { if (!tnS.loaded) { tnS.tasks = tnS.tasks || []; tnS.cats = tnS.cats || []; tnS.loaded = true; tnRender(); } return; }
+  if (tnSaveTimer || tnInflight > 0) return;
+  tnS.tasks = d.tasks; tnS.cats = d.cats; tnPersisted = d.tasks; tnS.loaded = true;
+  tnCacheSave();
+  tnRender();
+}
+// 入口（整合方在 taskEmbed 呼叫）：stale-first＝先畫快取、背景抓最新再重畫
+window.tnPage = function () {
+  tnInit();
+  try { if (typeof curStore !== 'undefined') curStore = 'taskx'; } catch (_) {}
+  try { if (typeof setTabs === 'function') setTabs('task'); } catch (_) {}
+  try { const u = document.getElementById('upd'); if (u) u.textContent = '任務中心・與主 App 同步'; } catch (_) {}
+  const c = tnCGet('tnData');
+  if (c && Array.isArray(c.tasks)) { tnS.tasks = c.tasks; tnS.cats = Array.isArray(c.cats) ? c.cats : []; tnPersisted = c.tasks; tnS.loaded = true; }
+  tnRender();
+  tnRefetch();
+};
+
+
+
+
+
