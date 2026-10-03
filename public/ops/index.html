@@ -96,7 +96,7 @@
   <!-- 品牌字標＝切店（張良 2026-09-21）；右上=⏰打卡＋🔄更新App（張良 2026-09-22：🔄不是只抓數據，是整個App重開、連新功能一起拿最新版） -->
   <div class="brand" style="display:flex;align-items:center;justify-content:space-between">
     <span><span id="bs-ground" class="bseg on" onclick="load('ground')">GROUN:D</span> × <span id="bs-abeach" class="bseg" onclick="load('abeach')">A BEACH</span></span>
-    <span style="display:flex;gap:6px"><button id="bindBtn" class="mini" style="display:none;font-size:14px;padding:5px 12px;font-weight:700" onclick="bindPrompt()" title="貼上 DD 給的個人連結">輸入綁定碼</button><button class="mini" style="font-size:14px;padding:5px 12px;font-weight:700;display:inline-flex;gap:5px;align-items:center" onclick="punchNow()" title="上下班打卡"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/></svg>打卡</button><button class="mini" style="padding:5px 10px;display:inline-flex;align-items:center" onclick="mobilePreview()" title="手機版畫面預覽">📱</button><button class="mini" style="padding:5px 10px;display:inline-flex;align-items:center" onclick="hardRefresh()" title="更新App到最新版"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M20 12a8 8 0 1 1-2.34-5.66"/><path d="M20 3v4h-4"/></svg></button></span>
+    <span style="display:flex;gap:6px"><button id="bindBtn" class="mini" style="display:none;font-size:14px;padding:5px 12px;font-weight:700" onclick="bindPrompt()" title="私訊 DD「登入碼」拿 4 位數填入">登入</button><button class="mini" style="font-size:14px;padding:5px 12px;font-weight:700;display:inline-flex;gap:5px;align-items:center" onclick="punchNow()" title="上下班打卡"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/></svg>打卡</button><button class="mini" style="padding:5px 10px;display:inline-flex;align-items:center" onclick="mobilePreview()" title="手機版畫面預覽">📱</button><button class="mini" style="padding:5px 10px;display:inline-flex;align-items:center" onclick="hardRefresh()" title="更新App到最新版"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M20 12a8 8 0 1 1-2.34-5.66"/><path d="M20 3v4h-4"/></svg></button></span>
   </div>
   <h1>營運看板</h1>
   <div class="sub" id="upd">載入中…</div>
@@ -171,18 +171,26 @@ function goView(){
 }
 // 🔑 輸入綁定碼（iPhone 加入主畫面的 App 跟 Safari 儲存分開→token 帶不過去；貼一次 DD 給的連結/代碼即可）
 function bindPrompt(){
-  const v = prompt('貼上 DD 給你的「個人連結」（私訊 DD「我的連結」會再發一次；沒綁過先說「綁定GD 本名」）')
+  const v = prompt('📱 用 LINE 私訊 DD「登入碼」→ 把 DD 給的 4 個數字填在這裡（10分鐘內有效）\n\n（沒綁定過？先私訊 DD「綁定GD 你的本名」；貼個人連結也可以）')
   if (!v) return
+  // 🔢 四位數登入碼（v4.31.3 張良：要更簡單＝打4個數字就好）
+  if (/^\d{4}$/.test(v.trim())) {
+    fetch('/api/mail-sync?bindcode=' + v.trim()).then(r => r.json()).then(j => {
+      if (j.ok && j.me) { localStorage.setItem('prepToken', j.me); bindBtnSync(); try { maniSync() } catch(_){}; alert('登入完成 ✅'); goView() }
+      else alert(j.error || '登入碼錯誤或過期——私訊 DD「登入碼」再拿一組新的')
+    }).catch(() => alert('網路不穩，再試一次'))
+    return
+  }
   if (/bind=/i.test(v)) { location.href = '/prep?bind=' + v.split(/bind=/i)[1].replace(/[^a-z0-9]/gi,''); return } // DD 新版連結 ?bind=xxx 直接走（2026-10-01 Toby 綁不上＝解析器只認舊格式）
   const m = v.match(/me=([a-z0-9]+)/i) || v.match(/(pv[a-z0-9]{8,})/i)
-  if (!m) { alert('看不懂這串，請完整貼上 DD 給的連結'); return }
+  if (!m) { alert('看不懂這串——輸入 DD 給的 4 位數登入碼，或完整貼上個人連結'); return }
   localStorage.setItem('prepToken', m[1])
   bindBtnSync()
   try { maniSync() } catch(_){} // 綁完立刻換個人化 manifest——之後再加主畫面就自帶身分
   alert('綁定完成 ✅')
   goView()
 }
-const BIND_HINT = `私訊 DD「我的連結」拿個人連結（沒綁過先說「綁定GD 本名」）；已加入主畫面的 App 請按 <button class="mini" onclick="bindPrompt()">🔑 輸入綁定碼</button>`
+const BIND_HINT = `私訊 DD「登入碼」拿 4 位數 → 按 <button class="mini" onclick="bindPrompt()">🔑 登入</button> 填入（沒綁定過先跟 DD 說「綁定GD 本名」）`
 async function load(store, fresh){
   curStore = store
   setTabs(store)
@@ -865,7 +873,7 @@ function sopPick(id){
   inp.click()
 }
 async function sopDo(id, undo){
-  if (!TK()) { alert('請先用 DD 給你的個人連結打開（私訊 DD「我的連結」會再發一次），或按右上「輸入綁定碼」貼上連結'); return }
+  if (!TK()) { alert('請先登入：按右上「登入」→ 私訊 DD「登入碼」→ 填入 4 個數字（或點 DD 給的個人連結）'); return }
   const it = (sopData.def.items||[]).find(x=>x.id===id)
   if (!undo && it && it.photo && !sopPhotos[id]) { alert('這項要拍照——先按 📷'); return }
   try {
@@ -880,7 +888,7 @@ sopLoad = async function(){ await _sopLoad0(); rhythmRender() }
 // ── 問題回報 v2（張良 2026-09-21 抓包連環彈窗）：正式回報視窗——先打字，附檔自己按📷，不附檔直接送出＝純文字回報 ──
 let repFiles = []
 function sopReport(st){
-  if (!TK()) { alert('請先用 DD 給你的個人連結打開（私訊 DD「我的連結」會再發一次），或按右上「輸入綁定碼」貼上連結'); return }
+  if (!TK()) { alert('請先登入：按右上「登入」→ 私訊 DD「登入碼」→ 填入 4 個數字（或點 DD 給的個人連結）'); return }
   repFiles = []
   const ov = document.createElement('div'); ov.id = 'repOv'
   ov.style.cssText = 'position:fixed;inset:0;background:rgba(16,24,43,.45);z-index:50;display:flex;align-items:center;justify-content:center;padding:16px'
@@ -1575,7 +1583,7 @@ async function buySend(){
       if (sd && sd.ok) { const ur = await fetch(sd.uploadUrl, { method:'PUT', headers:{'content-type': f.type||'image/jpeg'}, body: f }); if (ur.ok) media.push(sd.publicUrl) }
     } catch(e){}
   }
-  if (!TK()) { alert('請先用 DD 給你的個人連結打開（私訊 DD「我的連結」會再發一次），或按右上「輸入綁定碼」貼上連結'); return }
+  if (!TK()) { alert('請先登入：按右上「登入」→ 私訊 DD「登入碼」→ 填入 4 個數字（或點 DD 給的個人連結）'); return }
   const by = ''
   const cat = (document.getElementById('buyCatIn')||{}).value||''
   const r = await fetch('/api/mail-sync?buyadd=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ text, url, media, by, cat, token: TK() }) })
@@ -1597,7 +1605,7 @@ async function buyOp(id, op){
 // ── ⏰ 打卡（張良 2026-09-22：/prep 一鍵打卡，寫進既有出勤系統法定逐筆檔；自動判上下班、5分內可修方向）──
 let _lastPunch = null
 async function punchNow(){
-  if (!TK()) { alert('要先登入才能打卡：點 DD 給你的個人連結（私訊 DD「我的連結」會再發一次；App 版用右上「🔑 輸入綁定碼」貼上）'); return }
+  if (!TK()) { alert('要先登入才能打卡：按右上「登入」→ 私訊 DD「登入碼」→ 填入 4 個數字'); return }
   if (_lastPunch && Date.now() - _lastPunch.at < 5*60000) {
     if (confirm(`剛剛 ${_lastPunch.hm} 打了「${_lastPunch.dir==='in'?'上班':'下班'}」卡。\n\n確定＝修正方向（打錯了）\n取消＝不動作`)) {
       const r = await fetch('/api/mail-sync?punchfix=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ token: TK() }) })
@@ -3831,7 +3839,7 @@ async function soLoad(){
     </div></details></section>`
 }
 async function soTog(k, on){
-  if (!TK()) { alert('要先綁定才能勾賣完：右上「輸入綁定碼」'); soLoad(); return }
+  if (!TK()) { alert('要先登入才能勾賣完：按右上「登入」'); soLoad(); return }
   const r = await fetch('/api/mail-sync?fcso=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ k, on, token: TK() }) })
   const d = await r.json().catch(()=>null)
   if (!d || !d.ok) alert((d&&d.error)||'失敗')

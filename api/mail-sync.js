@@ -379,7 +379,7 @@ export default async function handler(req, res) {
   // 有綁定＝權限問題→找張良開；沒綁定＝登入問題→點自己的個人連結（DD 會再發）
   const permDeny = () => _lastBound
     ? '你還沒有這一頁的編輯權限——請找張良申請開通（核准後就能編輯）'
-    : '請點 DD 給你的「個人連結」開啟頁面（找不到連結→私訊 DD「我的連結」會再發一次）'
+    : '還沒登入——私訊 DD「登入碼」拿 4 位數，App 按右上「登入」填入（或點 DD 給你的個人連結）'
   // 編輯守門（張良 2026-10-02：趙以棠還沒核准就能編 SOP——全部寫入端點掛上）：approve 模式要「已核准＋該分頁有勾」
   const permWho = async (tk9, tab9) => {
     const pm9 = (await kvGet('sp_finance_pm_prep_perm')) || { mode: 'open', users: {} }
@@ -418,6 +418,24 @@ export default async function handler(req, res) {
         { src: '/ops/icon-512.png?v=2', sizes: '512x512', type: 'image/png', purpose: 'any' }
       ]
     })
+  }
+  // 🔢 四位數登入碼兌換（v4.31.3 張良：綁定碼太麻煩）：DD 私訊「登入碼」發 4 位數 → App「登入」輸入 → 這裡換回 token
+  // 防暴力猜碼：全域 10 分鐘內錯 15 次就鎖（碼本身 10 分鐘過期＋單次使用，風險窗很小）
+  if (req.query?.bindcode) {
+    const cd7 = String(req.query.bindcode).replace(/\D/g, '')
+    const doc7 = (await kvGet('sp_finance_pm_prep_logincode')) || { codes: {} }
+    const now7 = Date.now()
+    doc7.fails = (doc7.fails || []).filter(t => now7 - t < 10 * 60e3)
+    if (doc7.fails.length >= 15) return res.status(200).json({ ok: false, error: '試太多次了，請過 10 分鐘再試，或改貼個人連結' })
+    const hit7 = (doc7.codes || {})[cd7]
+    if (!cd7 || !hit7 || hit7.exp < now7) {
+      doc7.fails.push(now7)
+      await kvPut('sp_finance_pm_prep_logincode', doc7, 'bindcode')
+      return res.status(200).json({ ok: false, error: '登入碼錯誤或已過期——私訊 DD「登入碼」再拿一組新的' })
+    }
+    delete doc7.codes[cd7] // 單次使用：換完即失效
+    await kvPut('sp_finance_pm_prep_logincode', doc7, 'bindcode')
+    return res.status(200).json({ ok: true, me: hit7.tk })
   }
   // 診斷探針（只回結構統計，不回金額/內容——端點公開，保守）：?txprobe=YYYY-MM-DD
   if (req.query?.txprobe) {

@@ -759,7 +759,7 @@ async function loadPosText() {
       fbL.slice(0, 8).forEach(x => lines.push(`  - ${x.date} ${x.by}→${x.target}${x.stars ? '⭐' + x.stars : ''}：${String(x.text || '').replace(/\n/g, ' ').slice(0, 50)}`))
     }
     // GD 夥伴 App 綁定小抄（張良 2026-09-24：夥伴問「輸入綁定碼在哪」DD 要答得出來）
-    lines.push('【GD夥伴App(/prep)綁定小抄】想綁定的人＝請他本人私訊DD說「綁定GD」就好。【鐵則】綁定連結是個人專屬：你絕對不可以自己生成、猜測或把聊天紀錄裡任何人的綁定連結(含 ?bind=、?me= 開頭)貼給別人——一律只回「私訊DD說綁定GD」。')
+    lines.push('【GD夥伴App(/prep)綁定小抄】想綁定的人＝請他本人私訊DD說「綁定GD」就好。已綁過要登入＝私訊DD「登入碼」拿4位數→App按右上「登入」填入。【鐵則】綁定連結是個人專屬：你絕對不可以自己生成、猜測或把聊天紀錄裡任何人的綁定連結(含 ?bind=、?me= 開頭)或登入碼貼給別人——一律只回「私訊DD說綁定GD／登入碼」。')
     // 會議紀錄＋GD班表（pm_meet/pm_shift_g＝/prep 會議、班表分頁；打卡本體走既有 sp_crew_pch_；與 App loadSpaceAIContext 同步接）
     const meetL = ((kv['sp_finance_pm_meet'] || {}).list || [])
     if (meetL.length) {
@@ -1811,11 +1811,25 @@ export default async function handler(req, res) {
       }
       // 1.355) 我的連結（v4.31.0 張良：換瀏覽器打開變訪客→最簡單的「登入」＝把個人連結再發一次，點了就自動登入）
       // 只限私訊本人索取；個人連結絕不進群組、絕不經 AI
-      if (isDM && /^(我的連結|個人連結|連結|登入|重新登入)$/.test(text.trim())) {
+      if (isDM && /^(我的連結|個人連結|連結|登入|重新登入|登入碼)$/.test(text.trim())) {
         try {
           const bindL = (await kvGetMany(['sp_finance_pm_prep_bind']))['sp_finance_pm_prep_bind'] || {}
           const tkL = (bindL.byUid || {})[userId]
-          if (tkL) await send(`🔑 你的個人連結（點一下自動登入，換手機/瀏覽器都用這招）👇\nhttps://ground-pm.vercel.app/prep?me=${tkL}`)
+          if (tkL) {
+            // v4.31.3 四位數登入碼（張良：綁定碼要更簡單＝打4個數字就好）：10分鐘有效、用一次就失效、過期自動清
+            let codeMsg = ''
+            try {
+              const lcDoc = (await kvGetMany(['sp_finance_pm_prep_logincode']))['sp_finance_pm_prep_logincode'] || { codes: {} }
+              const nowC = Date.now()
+              for (const [k9, v9] of Object.entries(lcDoc.codes || {})) if (!v9 || v9.exp < nowC) delete lcDoc.codes[k9]
+              let c9 = ''
+              do { c9 = String(Math.floor(1000 + Math.random() * 9000)) } while (lcDoc.codes[c9])
+              lcDoc.codes[c9] = { tk: tkL, exp: nowC + 10 * 60e3 }
+              await kvSet('sp_finance_pm_prep_logincode', lcDoc)
+              codeMsg = `🔢 登入碼【 ${c9} 】\nApp 按右上「登入」→ 輸入這 4 個數字就好（10分鐘內有效）\n\n`
+            } catch (_) {}
+            await send(`${codeMsg}🔑 或點個人連結自動登入（換手機/瀏覽器都通用）👇\nhttps://ground-pm.vercel.app/prep?me=${tkL}`)
+          }
           else await send('你還沒綁定過，回我「綁定GD 你的本名」就好（例：綁定GD 張良瑋）。')
         } catch (_) { await send('查連結出了點問題，稍後再試一次 🙏') }
         continue
