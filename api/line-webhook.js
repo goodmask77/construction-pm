@@ -11,6 +11,7 @@ import { supplyDigest } from '../src/supply/digest.js'
 import { handleOnboardEvent } from './_onboard.js'
 // DD 互動卡片：照片歸檔/回饋卡/投票卡（Flex+postback，固定指令不經 AI，答案直接寫回 App 同一份資料）
 import { handleDDCards, handleJournalText, attachJournalPhotos, buildConfirmCard, buildTaskCards, buildTaskSetupCards } from './_ddcards.js'
+import { inlineLogin, inlineSearchKeyword } from './_inline.js' // 訂位關鍵字代查（客人名字→電話；張良 2026-10-03）
 
 const clean = (v) => (v || '').trim().replace(/^["']|["']$/g, '').replace(/^[A-Za-z0-9_]+=/, '').trim()
 const SECRET = clean(process.env.LINE_CHANNEL_SECRET)
@@ -1401,6 +1402,49 @@ async function queryResvDay(from, to) {
   if (!any && !dn.length) L.push('（這段期間沒有任何訂位或備註＝空檔）')
   return L.join('\n')
 }
+// 🔎 訂位關鍵字代查（「客人OD電話多少」這種用名字問的；直連 inline 即時搜尋＝後台搜尋框同源）
+async function queryResvName(keyword) {
+  const kw = String(keyword || '').trim()
+  if (!kw) return '（要給關鍵字：姓名/電話片段都可以）'
+  try {
+    const token = await inlineLogin()
+    const { total, rows } = await inlineSearchKeyword(token, kw, 40)
+    if (!rows.length) return `（inline 全史搜「${kw}」＝0 筆，可能名字拼法不同，換個關鍵字再試）`
+    const ST = { 1: '已確認', 2: '已取消', 3: '待確認', 4: '已入座', 5: '已取消', 6: '已確認' }
+    const L = [`◆ inline 訂位搜尋「${kw}」共 ${total} 筆${total > rows.length ? `（列最近的 ${rows.length} 筆，要更多再縮關鍵字）` : ''}：`]
+    rows.forEach((r) => L.push(`  - ${r.d || '?'} ${r.t || ''} ${r.name} ${r.n}人｜${ST[r.st] || r.st}${r.phone ? `｜${r.phone}` : '｜未留電話'}${r.email ? `｜${r.email}` : ''}${r.note ? `｜客註:${String(r.note).slice(0, 30)}` : ''}`))
+    return L.join('\n')
+  } catch (e) { return `（inline 搜尋失敗：${e?.message}）` }
+}
+// 🔎 常客排行代查（「來最多次的客人前十名」；掃全史月檔即時聚合，電話為 key 同人合併）
+async function queryResvTop(n) {
+  const top = Math.min(30, Math.max(3, Number(n) || 10))
+  const sum = (await kvGetMany(['sp_finance_pm_inline']))['sp_finance_pm_inline']
+  const mos = Object.keys(sum?.months || {}).sort()
+  if (!mos.length) return '（訂位庫是空的）'
+  const cust = {} // key=電話(沒電話用名字) → {name, phone, seat, book, cx, guests, last}
+  for (let i = 0; i < mos.length; i += 12) {
+    const kvm = await kvGetMany(mos.slice(i, i + 12).map((m) => 'sp_finance_pm_inline_' + m))
+    for (const doc of Object.values(kvm)) {
+      for (const [d, arr] of Object.entries(doc?.days || {})) {
+        for (const r of arr) {
+          const name = (r.name || '').trim()
+          const key = r.phone || (name ? 'n:' + name : '')
+          if (!key) continue
+          const c = cust[key] = cust[key] || { name, phone: r.phone || '', seat: 0, book: 0, cx: 0, guests: 0, last: '' }
+          if (name && (!c.name || name.length > c.name.length)) c.name = name
+          c.book++
+          if (r.st === 2 || r.st === 5) c.cx++
+          else { if (r.st === 4) { c.seat++; c.guests += r.n || 0 }; if (d > c.last) c.last = d }
+        }
+      }
+    }
+  }
+  const rank = Object.values(cust).filter((c) => c.name && !/^(現場|walk)/i.test(c.name)).sort((a, b) => b.seat - a.seat || b.book - a.book).slice(0, top)
+  const L = [`◆ A Beach 常客排行 Top${top}（依「實際入座次數」排，2021-02 開店～今全史；同電話=同一人）`]
+  rank.forEach((c, i) => L.push(`  ${i + 1}. ${c.name}｜入座${c.seat}次｜累計${c.guests}人次｜訂過${c.book}次(取消${c.cx})｜最近${c.last}${c.phone ? `｜${c.phone}` : ''}`))
+  return L.join('\n')
+}
 // 🌐 即時翻譯模式（張良 2026-09-29：外國面試者溝通——群裡每句自動雙向翻，不用點名）
 async function ddTranslate(text, mode) {
   const pair = mode === 'zh-ko' ? { fo: '韓文', foName: 'Korean' } : { fo: '英文', foName: 'English' }
@@ -1521,6 +1565,8 @@ const BOT_AGENT_GUIDE = `
 - {"type":"add_category","name":"空調工程","budget":300000,"space":"工程"}  // 建大項分類（四個空間都可以，space 預設工程；例：在團隊工作建「採購」就帶"space":"團隊"）。任務中心的分類欄位就是這個大項，建好後用 add_task/update_task 的 category 歸類
 - {"type":"query_pos_day","date":"2026-09-25","store":"ground"}  // 🔎資料代查（唯讀,不用確認,誰問都能用）：查某天某店「完整」銷售明細=逐品項份數金額+時段表+付款別。date 也可以只給月份 "2026-09"＝查整月（回每日營收+月合計,問某月總額/要補一段日期時用這個,**不要**一天一天查）。使用者問的資料你手上摘要沒有時,輸出這個指令(可附一句「我查一下」),系統會代查回填後你再答——**不要**回「資料沒帶到/請自己看App/請找張良接」。store=ground|abeach。
 - {"type":"query_resv","date":"2024-07-15","to":"2024-07-20"}  // 🔎A Beach 訂位代查（唯讀,不用確認）：任何日期的訂位「逐筆完整明細」（姓名/電話/人數/時間/狀態/客註/店註）＋當日備註（⚠️包場/公休註記），2021-02 開店～未來全查得到。date=YYYY-MM-DD 或 YYYY-MM 整月；to 選填查區間（一次最多 4 個月）。摘要裡只有彙總數字、使用者要「某天是誰訂的/電話/歷史某天明細」就用這個；問空檔也可以用（回「空檔」=確定沒被訂）。
+- {"type":"query_resv","name":"OD"}  // 🔎A Beach 訂位「關鍵字」代查（唯讀,不用確認）：用「客人姓名/電話片段」直搜 inline 全史（=後台搜尋框同源），回每筆日期+姓名+人數+狀態+**電話**。使用者問「客人XX的電話/XX上次什麼時候來/XX訂過幾次」這種用名字問的就用這個（不知道日期時不要用 date 亂猜）。
+- {"type":"query_resv","top":10}  // 🔎A Beach 常客排行代查（唯讀,不用確認）：掃 2021 開店～今全史，回「實際入座次數」最多的前 N 名（姓名/入座次數/累計人次/訂過幾次含取消/最近來店/電話）。使用者問「常客前十名/來最多次的客人/回頭客」就用這個。
 - {"type":"add_item","category":"空調工程","name":"主機","qty":1,"unit":"式","unitPrice":150000,"taxType":"未稅"}
 - {"type":"delete_item","category":"空調工程","item":"主機"}
 - {"type":"add_payment","category":"消防工程","amount":63000,"date":"2026-06-22","note":"訂金"}  // 大項新增一筆付款
@@ -2021,7 +2067,7 @@ export default async function handler(req, res) {
         if (qms.length || qrs.length) {
           let dataTxt = ''
           for (const m of qms) { try { const q = JSON.parse(m[0]); dataTxt += await queryPosDay(String(q.date || ''), String(q.store || 'ground')) + '\n\n' } catch (e) { dataTxt += '（查詢指令解析失敗）\n' } }
-          for (const m of qrs) { try { const q = JSON.parse(m[0]); dataTxt += await queryResvDay(String(q.date || ''), String(q.to || '')) + '\n\n' } catch (e) { dataTxt += '（訂位查詢指令解析失敗）\n' } }
+          for (const m of qrs) { try { const q = JSON.parse(m[0]); dataTxt += (q.top ? await queryResvTop(q.top) : q.name ? await queryResvName(q.name) : await queryResvDay(String(q.date || ''), String(q.to || ''))) + '\n\n' } catch (e) { dataTxt += '（訂位查詢指令解析失敗）\n' } }
           rawReply = await answer(text + '\n\n【系統代查結果（依你剛才的 query_pos_day/query_resv）——請直接據此回答使用者,不要再輸出查詢指令,也不要說資料沒帶到】\n' + dataTxt, snaps, accountsText, financeText, activityText, estimatesText, crewText, canAct, history, memoryToText(memList), conclusionsText, tasksText, sheetText, posText, catalogText, supplyText, lineQuotaText, filelibText, groupChatText, moneyOK)
         }
       } catch (e) { console.log('query tool err', e?.message) }

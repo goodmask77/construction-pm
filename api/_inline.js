@@ -102,6 +102,28 @@ export async function inlineFetchDayNotes(token) {
   return out
 }
 
+// 關鍵字搜尋（＝host 後台搜尋框同源；姓名/電話/備註都搜得到、全史含未來，未來排最前）
+// 回 { total, rows: [{d:'YYYY-MM-DD', ...瘦身}] }，最多 maxRows 筆
+export async function inlineSearchKeyword(token, keyword, maxRows = 40) {
+  const rows = []
+  let total = 0, offset = 0
+  while (rows.length < maxRows && offset <= 200) {
+    const u = `https://host-web-api.inline.app/search?companyId=${encodeURIComponent(INLINE_COMPANY)}&branchId=${INLINE_BRANCH}&keyword=${encodeURIComponent(keyword)}&filterType=booking&offset=${offset}&rawData=true`
+    const r = await fetch(u, { headers: { authorization: token, accept: 'application/json' } })
+    if (!r.ok) throw new Error(`inline: search ${r.status}`)
+    const j = await r.json()
+    total = j?.reservation?.total || 0
+    const batch = j?.reservation?.reservations || []
+    if (!batch.length) break
+    for (const x of batch) {
+      if (rows.length >= maxRows) break
+      rows.push({ d: x.reservationTime ? new Date(x.reservationTime + 8 * 3600e3).toISOString().slice(0, 10) : null, ...trimResv(x) })
+    }
+    offset += batch.length
+  }
+  return { total, rows }
+}
+
 // 全部「未來」訂位（搜尋端點翻頁；婚顧包場問 2027/2028 哪天被訂就靠這個）
 // 回 { 'YYYY-MM-DD': [瘦身訂位…] }；翻到第一筆過去日就停（未來排最前、由遠到近）
 export async function inlineSearchFuture(token) {
