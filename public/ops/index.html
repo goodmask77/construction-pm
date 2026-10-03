@@ -276,6 +276,7 @@ function renderBoard(d, store){
     <div class="kpi"><div class="l">近30天單數</div><div class="v">${(d.kpi.tx30||0).toLocaleString()}</div></div>
   </div>`
   // 日表（張良 2026-09-22 v3：去NT簡化版面、日期欄凍結、至14:00=14點前營收、總營收、表頭下平均列、高低於平均用色階（綠=高於、紅=低於，深淺=差多少））
+  // v4.37.9（張良「總營收跟至14:00位子交換」）：總營收移到日期旁、至14:00退第三欄——表頭+總計+平均+單日+歷史年/月列全部同步換
   const isGD = d.store === 'ground'
   // v4.30.0（張良）：分時間週期查看——全部/近7/30/90天/本月/上月；總計+平均+色階+列全部只算該期間
   const per = window._dayPeriod || 'tm' // v4.37.5 預設=本月（「全部/近N天」已退役）
@@ -341,7 +342,7 @@ function renderBoard(d, store){
     const wknd = x.wd==='六'||x.wd==='日'
     const zb = ((zbi++)%2===0) ? '#191F28' : 'var(--card)' // 凍結欄自帶底色
     const lu = luOf(x)
-    return `<tr><td style="position:sticky;left:0;z-index:1;background:${zb};text-align:left;font-weight:${wknd?800:500};color:${wknd?'#A85C26':'inherit'}${indent?';padding-left:28px':''}">${x.date.slice(5)}（${x.wd}）</td>${isGD?hc(lu,avLu):''}${hc(x.rev,avR,'font-weight:700')}<td style="${heat(x.tx,avTx)}">${x.tx||'—'}</td>${hc(x.avg,avAvg)}${hc(x.cash,avCash)}${hc(x.card,avCard)}<td style="${heat(x.linepay||null,avLp)}">${x.linepay?fN(x.linepay):'—'}</td><td style="${heat(x.uber||null,avUb)}">${x.uber?fN(x.uber):'—'}</td><td style="${heat(x.discount||null,avDis)}">${x.discount?fN(x.discount):'—'}</td>${isGD?`<td style="${heat(x.kioskPct,avKp)}">${x.kioskPct!=null?x.kioskPct+'%':'—'}</td><td style="${heat(x.takePct,avTk)}">${x.takePct!=null?x.takePct+'%':'—'}</td><td style="${heat(d.setPcts[i],avSet)}">${d.setPcts[i]!=null?d.setPcts[i]+'%':'—'}</td>`:''}</tr>`
+    return `<tr><td style="position:sticky;left:0;z-index:1;background:${zb};text-align:left;font-weight:${wknd?800:500};color:${wknd?'#A85C26':'inherit'}${indent?';padding-left:28px':''}">${x.date.slice(5)}（${x.wd}）</td>${hc(x.rev,avR,'font-weight:700')}${isGD?hc(lu,avLu):''}<td style="${heat(x.tx,avTx)}">${x.tx||'—'}</td>${hc(x.avg,avAvg)}${hc(x.cash,avCash)}${hc(x.card,avCard)}<td style="${heat(x.linepay||null,avLp)}">${x.linepay?fN(x.linepay):'—'}</td><td style="${heat(x.uber||null,avUb)}">${x.uber?fN(x.uber):'—'}</td><td style="${heat(x.discount||null,avDis)}">${x.discount?fN(x.discount):'—'}</td>${isGD?`<td style="${heat(x.kioskPct,avKp)}">${x.kioskPct!=null?x.kioskPct+'%':'—'}</td><td style="${heat(x.takePct,avTk)}">${x.takePct!=null?x.takePct+'%':'—'}</td><td style="${heat(d.setPcts[i],avSet)}">${d.setPcts[i]!=null?d.setPcts[i]+'%':'—'}</td>`:''}</tr>`
   }
   // v4.37.4（張良「不要折疊——年鈕+月鈕兩層；選年=逐月、選月=逐日、沒日資料顯示無每日資料」）
   if (histMode){ // v4.37.8 歷年年度總表：一年一列（點列=進該年逐月）
@@ -349,30 +350,30 @@ function renderBoard(d, store){
     ;(d.hist||[]).forEach(m=>{ const y8=m.month.slice(0,4); const o=byY8[y8]=byY8[y8]||{rev:0,b:0,c:0,mo:0}; o.rev+=Number(m.revenue)||0; o.b+=Number(m.bills)||0; o.c+=Number(m.customers)||0; o.mo++ })
     const ys8 = Object.keys(byY8).sort().reverse()
     const aRev = ys8.reduce((t,y8)=>t+byY8[y8].rev,0), aB = ys8.reduce((t,y8)=>t+byY8[y8].b,0)
-    h += `<tr><td style="position:sticky;left:0;z-index:1;${tBg}">開店至今<span class="hint" style="font-weight:700">（${(d.hist||[]).length}個月）</span></td>${isGD?`<td style="${tBg}">—</td>`:''}<td style="${tBg}">${fN(aRev)}</td><td style="${tBg}">${aB?aB.toLocaleString():'—'}</td><td style="${tBg}">${aB?fN(aRev/aB):'—'}</td><td style="${tBg}" colspan="${5+(isGD?3:0)}"></td></tr>`
+    h += `<tr><td style="position:sticky;left:0;z-index:1;${tBg}">開店至今<span class="hint" style="font-weight:700">（${(d.hist||[]).length}個月）</span></td><td style="${tBg}">${fN(aRev)}</td>${isGD?`<td style="${tBg}">—</td>`:''}<td style="${tBg}">${aB?aB.toLocaleString():'—'}</td><td style="${tBg}">${aB?fN(aRev/aB):'—'}</td><td style="${tBg}" colspan="${5+(isGD?3:0)}"></td></tr>`
     const avY8 = ys8.length ? aRev/ys8.length : null
     ys8.forEach(y8=>{
       const o = byY8[y8]
-      h += `<tr onclick="dayPer('y:${y8}')" title="點我看 ${y8} 逐月" style="cursor:pointer"><td style="position:sticky;left:0;z-index:1;background:#191F28;text-align:left;font-weight:800">${y8} 年<span class="hint">（${o.mo}月${o.c?`・客 ${o.c.toLocaleString()}`:''}）</span></td>${isGD?'<td>—</td>':''}${hc(o.rev,avY8,'font-weight:800')}<td>${o.b?o.b.toLocaleString():'—'}</td><td>${o.b?fN(o.rev/o.b):'—'}</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td>${isGD?'<td>—</td><td>—</td><td>—</td>':''}</tr>`
+      h += `<tr onclick="dayPer('y:${y8}')" title="點我看 ${y8} 逐月" style="cursor:pointer"><td style="position:sticky;left:0;z-index:1;background:#191F28;text-align:left;font-weight:800">${y8} 年<span class="hint">（${o.mo}月${o.c?`・客 ${o.c.toLocaleString()}`:''}）</span></td>${hc(o.rev,avY8,'font-weight:800')}${isGD?'<td>—</td>':''}<td>${o.b?o.b.toLocaleString():'—'}</td><td>${o.b?fN(o.rev/o.b):'—'}</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td>${isGD?'<td>—</td><td>—</td><td>—</td>':''}</tr>`
     })
   } else if (yearMode){
     const ms = (d.hist||[]).filter(m=>m.month.startsWith(selY)).sort((a,b)=>(a.month<b.month?-1:1))
     const dayByMo = {}
     d.days.forEach(x=>{ const mo9=String(x.date).slice(0,7); (dayByMo[mo9]=dayByMo[mo9]||[]).push(x) })
     const yRev = ms.reduce((t,m)=>t+(Number(m.revenue)||0),0), yB = ms.reduce((t,m)=>t+(Number(m.bills)||0),0)
-    h += `<tr><td style="position:sticky;left:0;z-index:1;${tBg}">${selY} 年合計<span class="hint" style="font-weight:700">（${ms.length}月）</span></td>${isGD?`<td style="${tBg}">—</td>`:''}<td style="${tBg}">${fN(yRev)}</td><td style="${tBg}">${yB?yB.toLocaleString():'—'}</td><td style="${tBg}">${yB?fN(yRev/yB):'—'}</td><td style="${tBg}" colspan="${5+(isGD?3:0)}"></td></tr>`
-    h += `<tr><td style="position:sticky;left:0;z-index:1;${avBg}${avLine};font-weight:900">月均</td>${isGD?`<td style="${avBg}${avLine}">—</td>`:''}<td style="${avBg};font-weight:900">${fN(ms.length?yRev/ms.length:null)}</td><td style="${avBg}${avLine}">${ms.length&&yB?Math.round(yB/ms.length).toLocaleString():'—'}</td><td style="${avBg}${avLine}" colspan="${6+(isGD?3:0)}"></td></tr>`
+    h += `<tr><td style="position:sticky;left:0;z-index:1;${tBg}">${selY} 年合計<span class="hint" style="font-weight:700">（${ms.length}月）</span></td><td style="${tBg}">${fN(yRev)}</td>${isGD?`<td style="${tBg}">—</td>`:''}<td style="${tBg}">${yB?yB.toLocaleString():'—'}</td><td style="${tBg}">${yB?fN(yRev/yB):'—'}</td><td style="${tBg}" colspan="${5+(isGD?3:0)}"></td></tr>`
+    h += `<tr><td style="position:sticky;left:0;z-index:1;${avBg}${avLine};font-weight:900">月均</td><td style="${avBg};font-weight:900">${fN(ms.length?yRev/ms.length:null)}</td>${isGD?`<td style="${avBg}${avLine}">—</td>`:''}<td style="${avBg}${avLine}">${ms.length&&yB?Math.round(yB/ms.length).toLocaleString():'—'}</td><td style="${avBg}${avLine}" colspan="${6+(isGD?3:0)}"></td></tr>`
     const avMo = ms.length ? yRev/ms.length : null
     ms.forEach(m=>{
       const dR = dayByMo[m.month]
       const s9 = f => dR ? dR.reduce((t,x)=>t+(Number(f(x))||0),0) : null
       const c9=dR?s9(x=>x.cash):null, k9=dR?s9(x=>x.card):null, l9=dR?s9(x=>x.linepay):null, u9=dR?s9(x=>x.uber):null, di9=dR?s9(x=>x.discount):null
-      h += `<tr onclick="dayPer('m:${m.month}')" title="點我看 ${m.month} 每日數據" style="cursor:pointer"><td style="position:sticky;left:0;z-index:1;background:#191F28;text-align:left;font-weight:700">${+m.month.slice(5)}月<span class="hint">（${m.days??'—'}天${m.customers?`・客 ${Number(m.customers).toLocaleString()}`:''}）</span></td>${isGD?'<td>—</td>':''}${hc(Number(m.revenue)||0,avMo,'font-weight:800')}<td>${m.bills!=null?Number(m.bills).toLocaleString():'—'}</td><td>${m.bills?fN(m.revenue/m.bills):'—'}</td><td>${c9!=null?fN(c9):'—'}</td><td>${k9!=null?fN(k9):'—'}</td><td>${l9?fN(l9):'—'}</td><td>${u9?fN(u9):'—'}</td><td>${di9?fN(di9):'—'}</td>${isGD?'<td>—</td><td>—</td><td>—</td>':''}</tr>`
+      h += `<tr onclick="dayPer('m:${m.month}')" title="點我看 ${m.month} 每日數據" style="cursor:pointer"><td style="position:sticky;left:0;z-index:1;background:#191F28;text-align:left;font-weight:700">${+m.month.slice(5)}月<span class="hint">（${m.days??'—'}天${m.customers?`・客 ${Number(m.customers).toLocaleString()}`:''}）</span></td>${hc(Number(m.revenue)||0,avMo,'font-weight:800')}${isGD?'<td>—</td>':''}<td>${m.bills!=null?Number(m.bills).toLocaleString():'—'}</td><td>${m.bills?fN(m.revenue/m.bills):'—'}</td><td>${c9!=null?fN(c9):'—'}</td><td>${k9!=null?fN(k9):'—'}</td><td>${l9?fN(l9):'—'}</td><td>${u9?fN(u9):'—'}</td><td>${di9?fN(di9):'—'}</td>${isGD?'<td>—</td><td>—</td><td>—</td>':''}</tr>`
     })
     if (!ms.length) h += `<tr><td colspan="${isGD?13:9}" class="mut" style="text-align:center;padding:14px">這一年沒有資料</td></tr>`
   } else if (monthNoDaily){
     const m = (d.hist||[]).find(x=>x.month===selM)
-    if (m) h += `<tr><td style="position:sticky;left:0;z-index:1;${tBg}">${selM} 月合計</td>${isGD?`<td style="${tBg}">—</td>`:''}<td style="${tBg}">${fN(m.revenue)}</td><td style="${tBg}">${m.bills!=null?Number(m.bills).toLocaleString():'—'}</td><td style="${tBg}">${m.bills?fN(m.revenue/m.bills):'—'}</td><td style="${tBg}" colspan="${5+(isGD?3:0)}"></td></tr>`
+    if (m) h += `<tr><td style="position:sticky;left:0;z-index:1;${tBg}">${selM} 月合計</td><td style="${tBg}">${fN(m.revenue)}</td>${isGD?`<td style="${tBg}">—</td>`:''}<td style="${tBg}">${m.bills!=null?Number(m.bills).toLocaleString():'—'}</td><td style="${tBg}">${m.bills?fN(m.revenue/m.bills):'—'}</td><td style="${tBg}" colspan="${5+(isGD?3:0)}"></td></tr>`
     h += `<tr><td colspan="${isGD?13:9}" class="mut" style="text-align:center;padding:16px">這個月無每日資料（iCHEF 時代只有月彙總）${m&&m.customers?`・來客 ${Number(m.customers).toLocaleString()}・營業 ${m.days??'—'} 天`:''}</td></tr>`
   } else {
     d.days.forEach((x,i)=>{ if (inPer(x)) h += dayRow(x,i,false) }) // 期間篩選（v4.30.0）＝平鋪列表（全部/近N天/本月/上月/選月）
