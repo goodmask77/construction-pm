@@ -59,7 +59,7 @@ function cLineSvg(labels, vals, color, fmt){
 }
 async function custHome(){
   app.innerHTML = `<section>${custTopBar()}<div class="mut">載入中…</div></section>`
-  const d = await cFetch('custinsights=' + encodeURIComponent(K), 'custins')
+  const d = await cFetch('custinsights=' + encodeURIComponent(K) + '&v=2', 'custins2') // v=2 破邊緣快取（舊shape在10分快取裡）
   if (!d || !d.ins || !d.ins.m) { app.innerHTML = `<section>${custTopBar()}<div class="err">洞察資料重算中（新版每天自動重建；稍等幾分鐘再進來）</div></section>`; return }
   if (curStore !== 'cust' || custV !== 'home') return
   window._custIns = d
@@ -112,7 +112,7 @@ async function custDetail(kind, keepFilter){
   custV = 'detail'
   if (!keepFilter) { custDK = kind || custDK; if (!kind) kind = custDK }
   kind = custDK
-  if (!window._custIns) { const d = await cFetch('custinsights=' + encodeURIComponent(K), 'custins'); window._custIns = d }
+  if (!window._custIns) { const d = await cFetch('custinsights=' + encodeURIComponent(K) + '&v=2', 'custins2'); window._custIns = d }
   const d = window._custIns
   if (!d || !d.ins || !d.ins.m) { app.innerHTML = `<section>${custTopBar()}<div class="err">洞察資料重算中，稍等再進來</div></section>`; return }
   const KD = CUST_KINDS[kind], ins = d.ins
