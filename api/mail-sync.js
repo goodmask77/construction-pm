@@ -2038,8 +2038,8 @@ export default async function handler(req, res) {
             if (r9.st === 2 || r9.st === 5 || !r9.t) continue
             const sl = slotOf(r9.t)
             const dd9 = resvDays[dt] = resvDays[dt] || {}
-            const cell = dd9[sl] = dd9[sl] || { g: 0, p: 0 }
-            cell.g++; cell.p += r9.n || 0
+            const cell = dd9[sl] = dd9[sl] || { g: 0, p: 0, k: 0 }
+            cell.g++; cell.p += r9.n || 0; cell.k += (r9.kc || 0) + (r9.ks || 0) // k=小孩（兒童椅+兒童座；inline iPad 時間軸人數=大人+k，對帳用——張良 2026-10-04「40 vs 35」案）
             if ((r9.n || 0) >= 20) (cell.big = cell.big || []).push({ t: r9.t, name: r9.name, n: r9.n })
           }
         }

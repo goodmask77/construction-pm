@@ -2053,7 +2053,7 @@ function shiftRender(){
           const base = `${BD}${ri===0?`border-top:3px solid ${RC.ink}AA;`:''}${sepOf(dt)}${dt===today?todayBg:wkndBg(dt)}`
           if (!v9) return `<td style="${base}"></td>`
           const big = (v9.big||[]).map(b9=>`<div style="font-size:9.5px;color:#F2C94C;font-weight:800;white-space:nowrap" title="${b9.t} ${b9.name} ${b9.n}人">🎉${b9.name.slice(0,6)}×${b9.n}</div>`).join('')
-          return `<td style="${base}padding:2px 3px;text-align:center;vertical-align:top" title="${dt} ${lb9}：${v9.p}人 ${v9.g}組"><span style="font-size:15px;font-weight:900;color:${RC.ink};white-space:nowrap">${v9.p}</span><span style="font-size:10.5px;font-weight:800;color:${RC.ink};opacity:.85">人</span><span class="hint" style="font-size:9.5px;white-space:nowrap;opacity:.6">·${v9.g}組</span>${big}</td>`
+          return `<td style="${base}padding:2px 3px;text-align:center;vertical-align:top" title="${dt} ${lb9}：${v9.p}人${v9.k?`+${v9.k}小`:''} ${v9.g}組（inline iPad 時間軸人數=大人+小孩）"><span style="font-size:15px;font-weight:900;color:${RC.ink};white-space:nowrap">${v9.p}</span><span style="font-size:10.5px;font-weight:800;color:${RC.ink};opacity:.85">人</span>${v9.k?`<span style="font-size:9.5px;font-weight:800;color:#E8A657;white-space:nowrap">+${v9.k}小</span>`:''}<span class="hint" style="font-size:9.5px;white-space:nowrap;opacity:.6">·${v9.g}組</span>${big}</td>`
         }).join('') + `</tr>`
         // v4.37.4（張良「再顯示早上跟晚上人數」）：早上合計=12-13+13-17、晚上合計=18-19+19後——金字合計列
         if (ri===1 || ri===3){
@@ -2061,10 +2061,10 @@ function shiftRender(){
           hh += `<tr><td style="${BD}padding:3px 6px;text-align:left;font-weight:900;font-size:11px;color:${GK};position:sticky;left:0;background:#241F0E;z-index:1;white-space:nowrap">${lbS}</td>`
           hh += wd2.map(dt=>{
             const vv = keys9.map(k=>(d.resv[dt]||{})[k]).filter(Boolean)
-            const p9 = vv.reduce((t,v)=>t+(v.p||0),0), g9 = vv.reduce((t,v)=>t+(v.g||0),0)
+            const p9 = vv.reduce((t,v)=>t+(v.p||0),0), g9 = vv.reduce((t,v)=>t+(v.g||0),0), k9 = vv.reduce((t,v)=>t+(v.k||0),0)
             const base = `${BD}${sepOf(dt)}${dt===today?todayBg:wkndBg(dt)}border-bottom:2px solid var(--line);`
             if (!p9) return `<td style="${base}"></td>`
-            return `<td style="${base}padding:2px 3px;text-align:center" title="${dt} ${lbS}：${p9}人 ${g9}組"><span style="font-size:15px;font-weight:900;color:${GK};white-space:nowrap">${p9}</span><span style="font-size:10.5px;font-weight:800;color:${GK};opacity:.85">人</span><span class="hint" style="font-size:9.5px;white-space:nowrap;opacity:.6">·${g9}組</span></td>`
+            return `<td style="${base}padding:2px 3px;text-align:center" title="${dt} ${lbS}：${p9}人${k9?`+${k9}小`:''} ${g9}組"><span style="font-size:15px;font-weight:900;color:${GK};white-space:nowrap">${p9}</span><span style="font-size:10.5px;font-weight:800;color:${GK};opacity:.85">人</span>${k9?`<span style="font-size:9.5px;font-weight:800;color:#E8A657;white-space:nowrap">+${k9}小</span>`:''}<span class="hint" style="font-size:9.5px;white-space:nowrap;opacity:.6">·${g9}組</span></td>`
           }).join('')+`</tr>`
         }
       })

@@ -1473,6 +1473,13 @@ async function queryResvDay(from, to) {
       any = true
       L.push(`${d}（${days[d].length}筆）：`)
       days[d].forEach((r) => L.push(`  - ${r.t || '候位'} ${r.name} ${r.n}人｜${ST[r.st] || r.st}${r.phone ? `｜${r.phone}` : ''}${r.kc ? `｜兒童椅${r.kc}` : ''}${r.note ? `｜客註:${String(r.note).slice(0, 40)}` : ''}${r.inote ? `｜店註:${String(r.inote).slice(0, 40)}` : ''}`))
+      // 系統算好的合計（2026-10-04 DD 心算 34≠33 抓包）：有效=st∉{2,5}；分時段+全天；引用這些數字別自己加
+      const ok9 = days[d].filter((r) => r.st !== 2 && r.st !== 5 && r.t)
+      const slot9 = (t9) => (t9 < '13:00' ? '12-13' : t9 < '18:00' ? '13-17' : t9 < '19:00' ? '18-19' : '19後')
+      const agg9 = {}
+      ok9.forEach((r) => { const s9 = slot9(r.t); const a9 = agg9[s9] = agg9[s9] || { g: 0, p: 0, k: 0, pend: 0 }; a9.g++; a9.p += r.n || 0; a9.k += (r.kc || 0) + (r.ks || 0); if (r.st === 3) a9.pend++ })
+      const tp = ok9.reduce((t9, r) => t9 + (r.n || 0), 0), tk = ok9.reduce((t9, r) => t9 + (r.kc || 0) + (r.ks || 0), 0), tpd = ok9.filter((r) => r.st === 3).length
+      L.push(`  ＝${d} 系統合計（回答以此為準，別自己加總）：有效 ${ok9.length}組 ${tp}人${tk ? `+${tk}小孩` : ''}${tpd ? `（含待確認${tpd}組）` : ''}｜` + Object.entries(agg9).map(([s9, a9]) => `${s9}:${a9.g}組${a9.p}人${a9.k ? `+${a9.k}小` : ''}`).join('、') + `｜⚠️ inline iPad 時間軸人數=大人+小孩`)
     }
   }
   const dn = Object.keys(notes).filter((d) => d >= f && d <= t2).sort()
