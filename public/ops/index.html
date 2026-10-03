@@ -103,6 +103,7 @@
 @keyframes shSlideR{from{transform:translateX(-44px);opacity:.35}to{transform:none;opacity:1}}
 .glowgold{animation:goldGlow 1s ease-in-out 4;border-radius:8px}
 .lnkbtn{opacity:.35;cursor:pointer;font-size:12px} .lnkbtn:hover{opacity:1}
+.plk{opacity:.42!important;cursor:not-allowed!important;filter:saturate(.4)}
 </style>
 </head>
 <body>
@@ -685,14 +686,14 @@ function emoFixT(tn){
   t.innerHTML = v.replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'})[c]).replace(EMO_RE, (m, g) => EMO_SVG[g] !== undefined ? EMO_SVG[g] : m)
   p.replaceChild(t.content, tn)
 }
-const emoObs = new MutationObserver(rs => { rs.forEach(r => { if (r.type === 'characterData') emoFix(r.target); else if (r.addedNodes) r.addedNodes.forEach(emoFix) }) })
+const emoObs = new MutationObserver(rs => { rs.forEach(r => { if (r.type === 'characterData') emoFix(r.target); else if (r.addedNodes) r.addedNodes.forEach(n => { emoFix(n); if (n.nodeType === 1) { try { permScan(n) } catch(e){} } }) }) })
 const emoBoot = () => { emoFix(document.body); emoObs.observe(document.body, { childList: true, subtree: true, characterData: true }) }
 document.body ? emoBoot() : document.addEventListener('DOMContentLoaded', emoBoot)
 if (SIM) {
   const _fetch0 = window.fetch.bind(window)
   window.fetch = (u, o) => {
     const s = String(u)
-    if (o && o.method && !/^get$/i.test(o.method)) { if (!s.includes('errlog=')) alert('模擬中只能看、不能改資料——按上方「結束模擬」回到自己再操作'); return Promise.resolve(new Response(JSON.stringify({ ok:false, error:'模擬模式不能改資料' }), { headers: { 'content-type':'application/json' } })) }
+    if (o && o.method && !/^get$/i.test(o.method)) { if (!s.includes('errlog=')) alert(canTab(curTabKey()) ? '模擬確認結果：' + SIM.name + ' 在這一頁「有」編輯權限，本人可以正常送出（模擬中不會真的寫入）' : '模擬中不能改資料——按上方「結束模擬」回到自己再操作'); return Promise.resolve(new Response(JSON.stringify({ ok:false, error:'模擬模式不能改資料' }), { headers: { 'content-type':'application/json' } })) } // v4.34.0 有權限→明講他本人送得出去
     return _fetch0(s.includes('/api/mail-sync?') ? s + '&as=' + encodeURIComponent(SIM.rid) : u, o)
   }
   const _simBn = () => { const bn = document.createElement('div'); bn.id = 'simBn'
@@ -704,6 +705,88 @@ if (SIM) {
 function simStart(rid, name){ try { sessionStorage.setItem('gdSim', JSON.stringify({ rid, name })) } catch(e){}; simWipe(); location.reload() }
 function simEnd(){ try { sessionStorage.removeItem('gdSim') } catch(e){}; simWipe(); location.reload() }
 function simWipe(){ try { Object.keys(localStorage).filter(k2=>k2.startsWith('obc_')||k2.startsWith('obt_')).forEach(k2=>localStorage.removeItem(k2)) } catch(e){} } // 進出模擬都清畫面快取＝不殘留彼此的資料
+// ── 編輯權限鎖門器（v4.34.0 張良「無法編輯的連打開都不能打開、按鈕直接鎖死跳窗，不要最後才不能送出」）──
+// 原理：whoami 回我的（或模擬對象的）權限 → 會寫入的按鈕沒權限就變灰鎖死，一按跳窗「請向張良申請」；
+// 跟伺服器 permWho 同一套邏輯＝畫面上鎖的跟實際擋的一定一致。模擬時看到的鎖＝那個人本人看到的鎖。
+window._meW = (()=>{ try { return JSON.parse(localStorage.getItem('obt_mew')||'null') } catch(e){ return null } })()
+function curTabKey(){ const c = curStore; if (c==='ground'||c==='abeach') return 'board'; if (c==='settings') return 'gear'; return c }
+function canTab(k){
+  const w = window._meW
+  if (w === null || w === undefined) return true // 權限還沒載到→先不鎖（伺服器照樣守門）
+  if (!w.bound) return false
+  if (w.mode !== 'approve') return true // 全開模式：綁定即可編
+  return !!(w.edit && (w.adminP || !w.tabs || w.tabs[k] !== 0))
+}
+// 會寫入的按鈕 → 所屬分頁權限（'*'=跟著目前頁面，給盤點/包材共用函式）；純看的（切頁/收合/篩選/看圖）不鎖
+const EDIT_FN = {
+  actSave:'board', actAdd:'board', actLoss:'board', act86:'board', rHide:'board', posHide:'board', rMng:'board', itmMngTog:'board',
+  sopItemEdit:'sop', sopItemSave:'sop', sopEdAdd:'sop', sopEdSave:'sop', sopCatAdd:'sop', sopCatSet:'sop', sopStAdd:'sop', sopStDel:'sop', sopStRen:'sop', sopStRename:'sop', sopStOp:'sop', sopstOp:'sop', catMove:'sop', msAddSt:'sop', msDelSt:'sop', msSave:'sop', sopOrdMove:'sop', sopRefOpen:'sop', sopRefPaste:'sop', sopRefSave:'sop', sopRefUp:'sop', sopMngT:'sop',
+  taskNew:'task', taskNewSend:'task', taskOwn:'task', taskOwnSend:'task', ckAdd:'task', ckOp:'task', ckPick:'task', ckSend:'task', lbOp:'task', lbDue:'task',
+  menuCell:'menu', menuItemAdd:'menu', menuItemDel:'menu', menuItemSave:'menu', menuItemPurge:'menu', menuItemRestore:'menu', menuItemShift:'menu', menuSecDel:'menu', menuSecForm:'menu', menuSecShift:'menu', menuNoteEdit:'menu', mnImgPick:'menu', mnImgUndo:'menu',
+  fbSend:'fb', fbjNew:'fb', fbjSend:'fb', fbjDel:'fb', fbOther:'fb', fbOtherGo:'fb',
+  meetForm:'meet', meetSave:'meet', meetOp:'meet', meetTypes:'meet', mtUpload:'meet',
+  cellClick:'shift', dayClick:'shift', shiftForm:'shift', shiftSave:'shift', shiftDelFast:'shift', shiftPosEdit:'shift', posSave:'shift', shLeaveMenu:'shift', shLeaveSet:'shift', clearDay:'shift', clearWeek:'shift', copyDay:'shift', copyCell:'shift', copyWeekNext:'shift', undoClear:'shift', undoLastCopy:'shift', pasteOff:'shift', t24set:'shift', qkTrChange:'shift', shiftQuickGo:'shift', tplSave:'shift', tplApply:'shift', tplDel:'shift', shiftSkill:'shift', gdRoleModal:'shift', gdRoleSave:'shift', gdStaffAdd:'shift', gdStaffGo:'shift', gdStaffOp:'shift', odMove:'shift', odOff:'shift',
+  lbNew:'shift', lbDel:'shift', lbRen:'shift', lbCopy:'shift', lbSnap:'shift', lbSwitch:'shift', lbUndo:'shift', lbVDel:'shift', lbVRen:'shift', lbVRestore:'shift', lbClearAll:'shift', lbRowClear:'shift', lbColClear:'shift', lbWageMenu:'shift', lbFinSet:'shift', lbAmtPick:'shift',
+  invCount:'*', invEdit:'*', invSave:'*', invDel:'*',
+  buyNew:'buy', buySend:'buy', buyOp:'buy', buyRecv:'buy', recvPick:'buy', recvSend:'buy', buyCat:'buy', buyPick:'buy',
+}
+function permFnTab(el){
+  const src = (el.getAttribute('onclick') || '') + ';' + (el.getAttribute('onchange') || '')
+  for (const m of src.matchAll(/([A-Za-z_]\w*)\s*\(/g)) { const t = EDIT_FN[m[1]]; if (t) return t === '*' ? curTabKey() : t }
+  return null
+}
+function permScan(root){ // 每次重畫：沒權限的寫入鈕上鎖變灰（還是可以點＝點了跳說明窗）
+  try {
+    if (!root || !root.querySelectorAll) return
+    const els = root.querySelectorAll('[onclick],[onchange]')
+    els.forEach(el => {
+      const k = permFnTab(el); if (!k) return
+      const lock = !canTab(k)
+      el.classList.toggle('plk', lock)
+      if (lock && /^(INPUT|SELECT|TEXTAREA)$/.test(el.tagName) && el.getAttribute('onchange')) el.disabled = true
+    })
+    if (root !== document.body && root.matches && root.matches('[onclick],[onchange]')) { const k2 = permFnTab(root); if (k2) root.classList.toggle('plk', !canTab(k2)) }
+  } catch(e){}
+}
+function permPop(k){ // 鎖死按鈕被點到＝跳窗講清楚（模擬時=講「這個人」的狀態）
+  const old = document.getElementById('ppOv'); if (old) old.remove()
+  const names = { board:'首頁', gear:'設定', errs:'問題回報', inc:'異常通知' }
+  const lbl = stripEmoji((window._tabCfg && window._tabCfg.names && window._tabCfg.names[k]) || TAB_DEF[k] || names[k] || k)
+  const w = window._meW || {}
+  const msg = (typeof SIM !== 'undefined' && SIM)
+    ? SIM.name + ' 沒有「' + lbl + '」的編輯權限——他本人按這顆按鈕也會看到這個視窗'
+    : (w.bound ? '你目前沒有「' + lbl + '」的編輯權限' : '還沒登入——請點 DD 給你的個人連結進來（找不到連結→私訊 DD「我的連結」補發）')
+  const ov = document.createElement('div'); ov.id = 'ppOv'
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(10,14,20,.55);z-index:1000;display:flex;align-items:center;justify-content:center;padding:20px'
+  ov.innerHTML = '<div style="background:#222B38;border:1px solid #3B4654;box-shadow:0 18px 50px rgba(0,0,0,.55);border-radius:14px;max-width:340px;width:100%;padding:18px" onclick="event.stopPropagation()">'
+    + '<div style="font-weight:900;font-size:16px;display:flex;gap:8px;align-items:center">' + (EMO_SVG['🔒'] || '') + ' 無法編輯</div>'
+    + '<div style="margin-top:8px;font-size:14.5px;line-height:1.6">' + msg + '</div>'
+    + '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px">'
+    + ((w.bound && !(typeof SIM !== 'undefined' && SIM)) ? '<button class="mini on" style="padding:9px 14px" onclick="document.getElementById(\'ppOv\').remove();prepApply()">向張良申請編輯權限</button>' : '')
+    + '<button class="mini" style="padding:9px 14px" onclick="document.getElementById(\'ppOv\').remove()">知道了</button>'
+    + '</div></div>'
+  ov.onclick = () => ov.remove()
+  document.body.appendChild(ov)
+}
+// 全站攔截：鎖住的動作在「進到功能之前」就擋下（capture 階段＝比按鈕自己的 onclick 先跑）
+document.addEventListener('click', e => {
+  try {
+    const el = e.target && e.target.closest ? e.target.closest('[onclick]') : null
+    if (!el) return
+    const k = permFnTab(el); if (!k || canTab(k)) return
+    e.preventDefault(); e.stopPropagation()
+    permPop(k)
+  } catch(err){}
+}, true)
+document.addEventListener('change', e => {
+  try {
+    const el = e.target && e.target.closest ? e.target.closest('[onchange]') : null
+    if (!el) return
+    const k = permFnTab(el); if (!k || canTab(k)) return
+    e.stopPropagation()
+    permPop(k)
+  } catch(err){}
+}, true)
 // 右上固定綁定入口（張良 2026-09-24：DD 訊息叫人按「輸入綁定碼」但按鈕藏在提示字裡找不到——未綁定時固定顯示在右上）
 function bindBtnSync(){ const b = document.getElementById('bindBtn'); if (b) b.style.display = TK() ? 'none' : '' }
 
@@ -3982,6 +4065,10 @@ async function meChipInit(){ // 側欄底部＝登入身分（張良 2026-10-02�
   if (!me && TK()) {
     try { const r2 = await fetch('/api/mail-sync?menu=' + encodeURIComponent(K) + '&me=' + encodeURIComponent(TK()) + '&r=' + Date.now()); const j2 = await r2.json(); if (j2 && j2.me) me = { name: j2.me.name, approver: j2.me.admin || j2.me.approver } } catch(e){}
   }
+  // v4.34.0 權限快照：鎖按鈕用（模擬時 &as= 自動拿到被模擬者的權限）；菜單口保險路徑拿不到完整權限→不鎖
+  window._meW = me ? (me.mode !== undefined ? { bound: true, mode: me.mode || 'open', edit: !!me.edit, adminP: !!me.adminP, tabs: me.tabs || null } : null) : { bound: false }
+  try { localStorage.setItem('obt_mew', JSON.stringify(window._meW)) } catch(e){}
+  try { permScan(document.body) } catch(e){}
   const nm = me ? me.name : '訪客'
   const role = me ? (me.approver ? '審核人' : (me.role === '主管' ? '主管' : '夥伴')) : '無編輯權限'
   el.innerHTML = `<div style="width:42px;height:42px;border-radius:50%;background:${me?'var(--grad)':'#3A4452'};color:#fff;display:flex;align-items:center;justify-content:center;font-weight:900;font-size:17px;flex:0 0 auto">${nm.slice(0,1)}</div>

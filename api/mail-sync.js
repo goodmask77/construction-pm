@@ -979,7 +979,8 @@ export default async function handler(req, res) {
     const uW = ((pmW || {}).users || {})[w.rid || w.uid]
     const hideW = (uW && !uW.admin && uW.hide) ? Object.keys(uW.hide).filter(k => uW.hide[k]) : [] // v4.26.3 每頁看不看得見
     const favU = (((favW || {}).users || {})[w.rid || w.uid]) || null // v4.39.1 個人常用捷徑清單（手機底部列）
-    return res.status(200).json({ ok: true, me: { name: w.name, role: w.role, approver: w.role === '主管' || aprW.includes(w.name), hideTabs: hideW, fav: favU } })
+    // v4.34.0（張良「到底能不能編輯要一看就知道」）：whoami 連權限一起回，前端照 permWho 同一套邏輯鎖按鈕（&as= 模擬時=回被模擬者的）
+    return res.status(200).json({ ok: true, me: { name: w.name, role: w.role, approver: w.role === '主管' || aprW.includes(w.name), hideTabs: hideW, fav: favU, mode: (pmW || {}).mode || 'open', edit: !!(uW && uW.edit), adminP: !!(uW && uW.admin), tabs: (uW && uW.tabs) || null } })
   }
   if (req.query?.opsboard) {
     const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
@@ -1340,7 +1341,7 @@ export default async function handler(req, res) {
     if (!ok2 || String(req.query.gdstaff) !== ok2) return res.status(403).json({ ok: false })
     let gb = {}
     try { gb = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
-    const whoG = await sopWho(gb.token)
+    const whoG = await permWho(gb.token, 'shift') // v4.34.0 人員管理=要班表編輯權（原本綁定即可=漏洞）
     if (!whoG) return res.status(403).json({ ok: false, error: permDeny() })
     { const defG = await kvGet('sp_finance_pm_sop_def'); const aprG = (((defG || {}).ground || {}).approvers || ['張良瑋']); if (whoG.role !== '主管' && !aprG.includes(whoG.name)) return res.status(403).json({ ok: false, error: '人員名單由主管/審核人管理' }) }
     const rosterG = (await kvGet('sp_crew_kb_roster')) || { people: [] }
@@ -1369,7 +1370,7 @@ export default async function handler(req, res) {
     if (!ok2 || String(req.query.gdrole) !== ok2) return res.status(403).json({ ok: false })
     let rb = {}
     try { rb = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
-    const whoR3 = await sopWho(rb.token)
+    const whoR3 = await permWho(rb.token, 'shift') // v4.34.0 角色管理=要班表編輯權
     const defR3 = await kvGet('sp_finance_pm_sop_def')
     const aprR3 = (((defR3 || {}).ground || {}).approvers || ['張良瑋'])
     if (!whoR3 || (whoR3.role !== '主管' && !aprR3.includes(whoR3.name))) return res.status(403).json({ ok: false, error: '權限由主管/審核人設定' })
@@ -1599,7 +1600,7 @@ export default async function handler(req, res) {
     if (!ok2 || String(req.query.poshide) !== ok2) return res.status(403).json({ ok: false })
     let ph = {}
     try { ph = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
-    const whoH = await sopWho(ph.token)
+    const whoH = await permWho(ph.token, 'board') // v4.34.0 品項隱藏=要首頁編輯權
     const mkH = (process.env.MENU_PROBE_KEY || '').trim()
     const byAdminH = mkH && String(ph.force || '') === mkH // 管理金鑰（後台維運下架用）
     if (!whoH && !byAdminH) return res.status(403).json({ ok: false, error: permDeny() })
@@ -1774,7 +1775,7 @@ export default async function handler(req, res) {
     if (!ok2 || String(req.query.sopref) !== ok2) return res.status(403).json({ ok: false })
     let bR = {}
     try { bR = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
-    const whoR2 = await permWho(bR.token, 'board')
+    const whoR2 = await permWho(bR.token, 'sop') // v4.34.0 SOP拆頁後守門跟上：board→sop
     if (!whoR2) return res.status(403).json({ ok: false, error: permDeny() })
     const doc = (await kvGet('sp_finance_pm_sop_def')) || {}
     const g = doc.ground || {}
@@ -1823,7 +1824,7 @@ export default async function handler(req, res) {
     if (!ok2 || String(req.query.meetset) !== ok2) return res.status(403).json({ ok: false })
     let mb = {}
     try { mb = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
-    const whoM = await permWho(mb.token, 'meet')
+    const whoM = ['ack','view','ask'].includes(String(mb.op)) ? await sopWho(mb.token) : await permWho(mb.token, 'meet') // v4.34.0 簽收/看過/發問=人人可；增改刪/類型/回覆才要會議編輯權
     if (!whoM) return res.status(403).json({ ok: false, error: permDeny() })
     const doc = (await kvGet('sp_finance_pm_meet')) || { types: ['班前會議', '營運會議'], list: [] }
     if (!Array.isArray(doc.types) || !doc.types.length) doc.types = ['班前會議', '營運會議']
@@ -2285,7 +2286,7 @@ export default async function handler(req, res) {
     if (!ok2 || String(req.query.sopst) !== ok2) return res.status(403).json({ ok: false })
     let bs = {}
     try { bs = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
-    const whoS = await permWho(bs.token, 'board')
+    const whoS = await permWho(bs.token, 'sop') // v4.34.0 SOP拆頁後守門跟上：board→sop
     if (!whoS) return res.status(403).json({ ok: false, error: permDeny() })
     const curS = (await kvGet('sp_finance_pm_sop_def')) || {}
     const gS = curS.ground || { items: [] }
@@ -2913,7 +2914,7 @@ export default async function handler(req, res) {
         } catch (_) {}
       }
       const hm4 = new Date(Date.now() + 8 * 3600e3).toISOString().slice(11, 16)
-      const who4 = await permWho(b4.token, 'board')
+      const who4 = await sopWho(b4.token) // v4.34.0 打卡=參與，綁定即可（編輯內容才看 sop 權限）
       if (!who4) return res.status(403).json({ ok: false, error: permDeny() }) // 張良 2026-09-25：不再收手填名字
       slog.items[b4.itemId] = { done: 1, ts: hm4, by: who4.name, ...(photoUrl ? { photo: photoUrl } : {}) }
     }
@@ -2939,7 +2940,7 @@ export default async function handler(req, res) {
     if (!ok2 || String(req.query.sopedit) !== ok2) return res.status(403).json({ ok: false })
     let b6 = {}
     try { b6 = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
-    const who6 = await permWho(b6.token, 'board')
+    const who6 = await permWho(b6.token, 'sop') // v4.34.0 SOP拆頁後守門跟上：board→sop
     if (!who6) return res.status(403).json({ ok: false, error: permDeny() })
     if (!b6.st || !Array.isArray(b6.items)) return res.status(400).json({ ok: false, error: '缺 st 或 items' })
     const cur6 = (await kvGet('sp_finance_pm_sop_def')) || {}
@@ -3127,7 +3128,7 @@ export default async function handler(req, res) {
     let bb = {}
     try { bb = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
     if (!(bb.text || '').trim() && !(bb.media || []).length) return res.status(400).json({ ok: false, error: '至少寫要買什麼' })
-    const whoB = await sopWho(bb.token)
+    const whoB = await permWho(bb.token, 'buy') // v4.34.0 權限表「採購 編」生效
     if (!whoB) return res.status(403).json({ ok: false, error: permDeny() })
     const doc = (await kvGet('sp_finance_pm_buy')) || { list: [] }
     const it = { id: 'by' + Date.now().toString(36), text: String(bb.text || '').slice(0, 300), cat: String(bb.cat || '').trim().slice(0, 20), url: String(bb.url || '').slice(0, 500), media: (Array.isArray(bb.media) ? bb.media : []).slice(0, 6), by: whoB.name, ts: new Date(Date.now() + 8 * 3600e3).toISOString().slice(5, 16).replace('T', ' '), status: 'open' }
@@ -3145,7 +3146,7 @@ export default async function handler(req, res) {
     if (!ok2 || String(req.query.buyop) !== ok2) return res.status(403).json({ ok: false })
     let bo = {}
     try { bo = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
-    const whoO = await sopWho(bo.token)
+    const whoO = await permWho(bo.token, 'buy') // v4.34.0 權限表「採購 編」生效
     if (!whoO) return res.status(403).json({ ok: false, error: permDeny() })
     const doc = (await kvGet('sp_finance_pm_buy')) || { list: [] }
     const it = (doc.list || []).find(x => x.id === bo.id)
@@ -3173,7 +3174,7 @@ export default async function handler(req, res) {
     if (!ok2 || String(req.query.sopfull) !== ok2) return res.status(403).json({ ok: false })
     let bf = {}
     try { bf = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
-    const whoF = await permWho(bf.token, 'board')
+    const whoF = await permWho(bf.token, 'sop') // v4.34.0 SOP拆頁後守門跟上：board→sop
     if (!whoF) return res.status(403).json({ ok: false, error: permDeny() })
     if (!Array.isArray(bf.stations) || !Array.isArray(bf.items)) return res.status(400).json({ ok: false, error: '缺 stations/items' })
     const stCl = [...new Set(bf.stations.map(s => String(s || '').trim().slice(0, 20)).filter(Boolean))].slice(0, 20)
