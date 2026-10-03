@@ -293,11 +293,15 @@ async function loadSpaceAIContext() {
           const ls = [`【A Beach 訂位（inline 每小時自動同步；載入=上月起到未來全部；2021-02 開店起全史已入庫 pm_inline_ 月檔，更早明細要另外查）】`];
           const td = inlDays[twD] || [];
           ls.push(`- 今天 ${twD}：${td.length ? `${td.filter(ok1).length}組有效（${td.filter(ok1).reduce((t, r) => t + (r.n || 0), 0)}人）｜` + td.filter(ok1).map(fmt1).join("、") + (td.some(r => !ok1(r)) ? `｜另取消${td.filter(r => !ok1(r)).length}組` : "") : "無訂位"}`);
-          const futs = Object.keys(inlDays).filter(d => d > twD).sort().slice(0, 14);
-          if (futs.length) ls.push(`- 未來14天：` + futs.map(d => { const a = inlDays[d].filter(ok1); return `${d.slice(5)} ${a.length}組${a.reduce((t, r) => t + (r.n || 0), 0)}人`; }).join("、"));
+          const futs = Object.keys(inlDays).filter(d => d > twD).sort();
+          if (futs.length) ls.push(`- 未來45天內（有訂位的日子全列；≥20人大組附名）：` + futs.map(d => { const a = inlDays[d].filter(ok1); if (!a.length) return null; const big = a.filter(r => (r.n || 0) >= 20).map(r => `${r.name}${r.n}人`).join("+"); return `${d.slice(5)} ${a.length}組${a.reduce((t, r) => t + (r.n || 0), 0)}人${big ? `(${big})` : ""}`; }).filter(Boolean).join("、"));
           // 遠期訂位（45天後全部＝總覽 farFuture；婚顧/包場問「某天有沒有被訂」以此為準）
           const ff = (inlSumAI?.farFuture || []).filter(ok1);
           ls.push(`- 遠期訂位（45天後～最遠，全部列出；婚顧包場問「哪天已被訂」以此為準，沒列到的日子=目前空）：${ff.length ? ff.map(r => `${r.d} ${r.t || ""} ${r.name}${r.n}人${r.inote ? `(${String(r.inote).slice(0, 20)})` : ""}`).join("、") : "無"}`);
+          // 當日備註（host 日曆⚠️註記＝包場/公休/訂位已關；婚顧檔期另一真相來源；全史在 pm_inline_notes）
+          const dn = inlSumAI?.dayNotes || {};
+          const dnKeys = Object.keys(dn).sort();
+          if (dnKeys.length) ls.push(`- 當日備註（今天起全部；⚠️=包場/全包等營運註記）：` + dnKeys.map(d => `${d} ${dn[d].map(n => String(n.note).replace(/\s+/g, " ").slice(0, 40)).join(";")}`).join("、"));
           const pasts = Object.keys(inlDays).filter(d => d < twD).sort().slice(-7);
           if (pasts.length) {
             const agg = { all: 0, s4: 0, cx: 0, rest: 0 };
