@@ -2582,6 +2582,44 @@ export default async function handler(req, res) {
     } catch (_) {}
     return res.status(200).json({ ok: true, pending: true })
   }
+  // 🪪 職級設定（v4.41.2 張良「PT/正職/主管 設定功能」）：GET ?gdrole=<OPS_KEY>&me= 回全部職級；POST {token,rid,role} 設定——都限管理者
+  // 職級寫進名冊 gdRole＝全系統同一來源（主管=員工清冊看得到、whoami 當審核人）
+  if (req.query?.gdrole) {
+    const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
+    if (!ok2 || String(req.query.gdrole) !== ok2) return res.status(403).json({ ok: false })
+    const pmR9 = (await kvGet('sp_finance_pm_prep_perm')) || { users: {} }
+    const isAdmFn9 = w9 => !!(w9 && pmR9.users[w9.rid || w9.uid] && pmR9.users[w9.rid || w9.uid].admin)
+    if (req.method !== 'POST') {
+      const whoR9 = await sopWho(req.query.me)
+      if (!isAdmFn9(whoR9)) return res.status(403).json({ ok: false })
+      const rosR9 = (await kvGet('sp_crew_kb_roster')) || {}
+      const roles9 = {}; (rosR9.people || []).forEach(p9 => { if (p9.gdRole) roles9[p9.id] = p9.gdRole })
+      return res.status(200).json({ ok: true, roles: roles9 })
+    }
+    let bR9 = {}; try { bR9 = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
+    const whoR9 = await sopWho(bR9.token)
+    if (!isAdmFn9(whoR9)) return res.status(403).json({ ok: false, error: '只有管理者能設職級' })
+    const roleR9 = String(bR9.role || '')
+    if (!['PT', '正職', '主管', ''].includes(roleR9)) return res.status(400).json({ ok: false, error: '職級只能是 PT／正職／主管' })
+    const rosR9 = (await kvGet('sp_crew_kb_roster')) || { people: [] }
+    const pR9 = (rosR9.people || []).find(x => x.id === String(bR9.rid || ''))
+    if (!pR9) return res.status(404).json({ ok: false, error: '名冊找不到這個人' })
+    if (roleR9) pR9.gdRole = roleR9; else delete pR9.gdRole
+    await kvPut('sp_crew_kb_roster', rosR9, '職級 ' + pR9.name + '=' + (roleR9 || '清除') + '(' + whoR9.name + ')')
+    return res.status(200).json({ ok: true })
+  }
+  // 🔒 身分證欄名單（v4.41.2）：POST ?hridlock=<OPS_KEY> {token, rids:[]}——限管理者；名冊頁鎖頭點開勾人
+  if (req.method === 'POST' && req.query?.hridlock) {
+    const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
+    if (!ok2 || String(req.query.hridlock) !== ok2) return res.status(403).json({ ok: false })
+    let bL9 = {}; try { bL9 = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
+    const pmL9 = (await kvGet('sp_finance_pm_prep_perm')) || { users: {} }
+    const whoL9 = await sopWho(bL9.token)
+    if (!whoL9 || !(pmL9.users[whoL9.rid || whoL9.uid] || {}).admin) return res.status(403).json({ ok: false, error: '只有管理者能設' })
+    const docL9 = { rids: (Array.isArray(bL9.rids) ? bL9.rids : []).map(String).slice(0, 100), by: whoL9.name, ts: new Date().toISOString() }
+    await kvPut('sp_finance_pm_hr_idlock', docL9, '身分證欄名單(' + whoL9.name + ')')
+    return res.status(200).json({ ok: true, n: docL9.rids.length })
+  }
   // 管理口（頁內，admin 才能動）：POST ?preppermset=<OPS_BOARD_KEY> {token, op:approve|reject|revoke|mode, rid, mode}
   if (req.method === 'POST' && req.query?.preppermset) {
     const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
@@ -2746,8 +2784,51 @@ export default async function handler(req, res) {
     const aprH9 = (((defH9 || {}).ground || {}).approvers || ['張良瑋'])
     const isMgr = whoH9 && (aprH9.includes(whoH9.name) || whoH9.name === '張良瑋' || whoH9.role === '主管')
     if (!isMgr) return res.status(403).json({ ok: false, error: '這頁只有主管看得到（個資：身分證/生日）' })
-    const docH = (await kvGet('sp_crew_pm_hr_master')) || { rows: [] }
-    return res.status(200).json({ ok: true, rows: docH.rows || [], updatedAt: docH.updatedAt || '', src: docH.src || '' })
+    // 🔒 身分證欄名單鎖（v4.41.2 張良「打勾的人才可以看到」）：預設只有管理者；名單存 pm_hr_idlock；沒在名單＝整欄伺服器端拔掉(不是前端藏)
+    const [docH, lockH, pmH] = await Promise.all([kvGet('sp_crew_pm_hr_master'), kvGet('sp_finance_pm_hr_idlock'), kvGet('sp_finance_pm_prep_perm')])
+    const ridH = whoH9.rid || whoH9.uid
+    const isAdmH = !!(pmH && pmH.users && pmH.users[ridH] && pmH.users[ridH].admin)
+    const canId = isAdmH || (((lockH || {}).rids) || []).includes(ridH)
+    let rowsH = (docH || { rows: [] }).rows || []
+    if (!canId) rowsH = rowsH.map(({ nid, ...r9 }) => r9)
+    const outH = { ok: true, rows: rowsH, updatedAt: (docH || {}).updatedAt || '', src: (docH || {}).src || '', idCan: canId, canEdit: true }
+    if (isAdmH) outH.idLock = { rids: ((lockH || {}).rids) || [], people: Object.entries((pmH && pmH.users) || {}).map(([r9, u9]) => ({ rid: r9, name: u9.name, admin: !!u9.admin })) }
+    return res.status(200).json(outH)
+  }
+  // ✏️ 夥伴名冊編輯口 v4.34.3（張良「整個清冊要可以讓我跟有權限的人編輯」）：主管限定＋留痕；身分證欄要有 idLock 檢視權才能改
+  if (req.method === 'POST' && req.query?.hrmasterup) {
+    const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
+    if (!ok2 || String(req.query.hrmasterup) !== ok2) return res.status(403).json({ ok: false })
+    let bu9 = {}; try { bu9 = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
+    const [whoU9, defU9, lockU9, pmU9] = await Promise.all([sopWho(bu9.token), kvGet('sp_finance_pm_sop_def'), kvGet('sp_finance_pm_hr_idlock'), kvGet('sp_finance_pm_prep_perm')])
+    const aprU9 = (((defU9 || {}).ground || {}).approvers || ['張良瑋'])
+    if (!whoU9 || !(aprU9.includes(whoU9.name) || whoU9.name === '張良瑋' || whoU9.role === '主管')) return res.status(403).json({ ok: false, error: '只有主管能編輯名冊' })
+    const ridU = whoU9.rid || whoU9.uid
+    const admU = !!(pmU9 && pmU9.users && pmU9.users[ridU] && pmU9.users[ridU].admin)
+    const canIdU = admU || (((lockU9 || {}).rids) || []).includes(ridU)
+    const FLDS = ['name', 'dept', 'title', 'onboard', 'birth', 'age', 'sex', 'nid', 'health']
+    const docU = (await kvGet('sp_crew_pm_hr_master')) || { rows: [] }
+    docU.rows = docU.rows || []
+    const ts8U = new Date(Date.now() + 8 * 3600e3).toISOString().slice(5, 16).replace('T', ' ')
+    const findU = () => docU.rows.find(r9 => r9.co === bu9.co && r9.name === bu9.name)
+    if (bu9.op === 'set') {
+      const row9 = findU(); if (!row9) return res.status(404).json({ ok: false, error: '找不到這個人' })
+      const fd9 = String(bu9.field || '')
+      if (!FLDS.includes(fd9)) return res.status(400).json({ ok: false, error: '不認識的欄位' })
+      if (fd9 === 'nid' && !canIdU) return res.status(403).json({ ok: false, error: '你沒有身分證欄的權限' })
+      row9[fd9] = String(bu9.val ?? '').slice(0, 60).trim()
+      if (fd9 === 'birth' && /^\d{4}-\d{2}-\d{2}$/.test(row9.birth)) row9.age = Math.floor((Date.now() - new Date(row9.birth).getTime()) / 31557600000) // 改生日→年齡自動跟
+    } else if (bu9.op === 'add') {
+      if (!bu9.co) return res.status(400).json({ ok: false })
+      docU.rows.push({ co: String(bu9.co).slice(0, 40), name: String(bu9.newName || '新夥伴').slice(0, 20), dept: '', title: '', onboard: '', birth: '', age: '', sex: '', nid: '', health: '' })
+    } else if (bu9.op === 'del') {
+      const row9 = findU(); if (!row9) return res.status(404).json({ ok: false })
+      docU.rows = docU.rows.filter(r9 => r9 !== row9)
+    } else return res.status(400).json({ ok: false })
+    docU.log = [{ by: whoU9.name, ts: ts8U, what: `${bu9.op} ${bu9.name || bu9.newName || ''} ${bu9.field || ''}`.trim() }, ...(docU.log || [])].slice(0, 80)
+    docU.updatedAt = new Date().toISOString()
+    await kvPut('sp_crew_pm_hr_master', docU, '夥伴名冊編輯(' + whoU9.name + ')')
+    return res.status(200).json({ ok: true, rows: canIdU ? docU.rows : docU.rows.map(({ nid, ...r9 }) => r9) })
   }
   if (req.method === 'POST' && req.query?.hrmasterset) {
     const mk9 = (process.env.MENU_PROBE_KEY || '').trim()

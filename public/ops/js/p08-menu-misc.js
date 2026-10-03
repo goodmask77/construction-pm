@@ -312,14 +312,29 @@ function permNameMenu(ev, rid, name, isAdmin){
   const m = document.createElement('div'); m.id = 'pmMn'
   m.style.cssText = 'position:fixed;z-index:80;background:#222B38;border:1px solid #3B4654;border-radius:12px;box-shadow:0 14px 40px rgba(0,0,0,.55);padding:8px;min-width:200px'
   m.innerHTML = `<div style="font-weight:900;padding:4px 8px 8px">${name}</div>
+    <div style="padding:0 8px 10px"><div class="hint" style="font-size:12px;margin-bottom:4px">職級</div><div id="pmRoles" style="display:flex;gap:6px">${['PT','正職','主管'].map(r0=>`<button class="mini" style="padding:6px 13px" onclick="permRoleSet('${rid}','${r0}',this)">${r0}</button>`).join('')}</div></div>
     <button class="mini" style="display:block;width:100%;text-align:left;margin:0 0 6px;padding:9px 12px" onclick="document.getElementById('pmMn').remove();simStart('${rid}','${name}')">${EYE_I} 用他的身分看 App</button>
     ${isAdmin?'':`<button class="mini" style="display:block;width:100%;text-align:left;margin:0;padding:9px 12px;color:var(--red)" onclick="document.getElementById('pmMn').remove();if(confirm('確定把 ${name} 移除編輯權限？\\n他的勾選設定會保留，下面「已移除」區可一鍵復原。'))permSet('revoke','${rid}')">移除編輯權限</button>`}`
   document.body.appendChild(m)
+  // 目前職級點亮（v4.41.2 張良「PT/正職/主管設定功能」：存名冊 gdRole＝主管才看得到員工清冊）
+  fetch('/api/mail-sync?gdrole=' + encodeURIComponent(K) + '&me=' + encodeURIComponent(TK())).then(r=>r.json()).then(j=>{
+    if (!j || !j.ok) return
+    const cur = (j.roles || {})[rid] || ''
+    document.querySelectorAll('#pmRoles button').forEach(b=>{ if (b.textContent === cur) b.className = 'mini on' })
+  }).catch(()=>{})
   const r9 = ev.target.getBoundingClientRect()
   m.style.left = Math.max(8, Math.min(r9.left, innerWidth - m.offsetWidth - 10)) + 'px'
   m.style.top = Math.min(r9.bottom + 6, innerHeight - m.offsetHeight - 10) + 'px'
 }
 document.addEventListener('mousedown', e9 => { const m9 = document.getElementById('pmMn'); if (m9 && !m9.contains(e9.target)) m9.remove() })
+async function permRoleSet(rid, role, btn){ // 點同一顆再點一次＝清除職級
+  const was = btn.className.includes(' on')
+  const r = await fetch('/api/mail-sync?gdrole=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ token: TK(), rid, role: was ? '' : role }) })
+  const j = await r.json().catch(()=>null)
+  if (!j || !j.ok) { alert((j && j.error) || '設定失敗'); return }
+  document.querySelectorAll('#pmRoles button').forEach(b=>b.className='mini')
+  if (!was) btn.className = 'mini on'
+}
 function permPanelHtml(perm){
   return `<div style="background:#19222E;border:1.5px solid #35557A;border-radius:12px;padding:10px 12px;font-size:14px">
     <div style="font-weight:900">🔐 編輯權限管理 <span class="hint">模式：${perm.mode==='open'?'全開（人人可編）':'審核制（申請→老闆核准）'}</span>

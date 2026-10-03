@@ -60,7 +60,10 @@ function hrmRender(){
   // 欄頭：對齊與資料一致（姓名/體檢靠左、其餘置中）＋點了排序
   const arrow = k => hrmSort.k===k ? (hrmSort.dir>0?' ▲':' ▼') : ''
   const TH = (k,lb,align)=>`<th style="padding:6px 8px;text-align:${align};cursor:pointer;white-space:nowrap;user-select:none" onclick="hrmSortBy('${k}')" title="點我排序">${lb}${arrow(k)}</th>`
-  const header = `<thead><tr><th style="padding:6px 8px;text-align:center">#</th>${TH('name','姓名','left')}${TH('dept','部門','center')}${TH('title','職務','center')}${TH('onboard','到職日','center')}${TH('onboard','年資','center')}${TH('birth','生日','center')}${TH('age','年齡','center')}${TH('sex','性別','center')}${TH('nid','身分證字號','center')}${TH('health','體檢','left')}</tr></thead>`
+  // 🔒 身分證欄名單鎖（v4.41.2 張良「顯示鎖的符號 裡面有人員名單 我打勾的人才可以看到」）：管理者點鎖頭勾人；沒在名單的主管這欄=「—」(伺服器端拔掉)
+  const LOCK_I9 = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" style="vertical-align:-2px"><rect x="4" y="11" width="16" height="9" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>'
+  const nidTh = `<th style="padding:6px 8px;text-align:center;white-space:nowrap;user-select:none">身分證字號 ${d.idLock ? `<span title="名單制：打勾的人才看得到這一欄（點我設定）" style="cursor:pointer;color:#D4A72C" onclick="hrmIdLock()">${LOCK_I9}</span>` : (d.idCan ? '' : `<span class="hint" title="你沒有檢視這欄的權限">${LOCK_I9}</span>`)}</th>`
+  const header = `<thead><tr><th style="padding:6px 8px;text-align:center">#</th>${TH('name','姓名','left')}${TH('dept','部門','center')}${TH('title','職務','center')}${TH('onboard','到職日','center')}${TH('onboard','年資','center')}${TH('birth','生日','center')}${TH('age','年齡','center')}${TH('sex','性別','center')}${nidTh}${TH('health','體檢','left')}</tr></thead>`
   const rowHtml = (x,i)=>{
     let ten = ''
     if (x.onboard) { const ms = Date.now() - new Date(x.onboard).getTime(); const y9 = ms/31557600000; ten = y9 >= 1 ? (Math.round(y9*10)/10)+'年' : Math.max(1,Math.round(ms/2629800000))+'個月' }
@@ -88,4 +91,29 @@ function hrmRender(){
   }
   h += `<div class="hint" style="margin-top:10px">來源：勞工名冊（Google Sheet）・要更新跟 D 哥說「更新員工清冊」即可重新匯入</div></section>`
   app.innerHTML = h
+}
+// 🔒 身分證欄名單彈窗（v4.41.2）：勾選誰看得到；管理者固定看得到不可取消
+function hrmIdLock(){
+  const d = window._hrmD; if (!d || !d.idLock) return
+  window._idlSel = new Set(d.idLock.rids || [])
+  const ov = document.createElement('div'); ov.id = 'idlOv'
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(10,14,22,.55);z-index:70;display:flex;align-items:center;justify-content:center;padding:16px'
+  ov.innerHTML = `<div style="background:#1C2430;border:1px solid #39434F;border-radius:14px;max-width:360px;width:100%;max-height:80vh;overflow:auto;padding:16px" onclick="event.stopPropagation()">
+    <div style="font-weight:900;margin-bottom:4px">身分證字號欄・檢視名單</div>
+    <div class="hint" style="margin-bottom:10px">打勾的人才看得到這一欄；沒勾的主管開清冊時這欄顯示「—」（伺服器端直接不給資料）</div>
+    ${(d.idLock.people || []).map(p=>`<label style="display:flex;gap:8px;align-items:center;padding:7px 4px;border-top:1px solid var(--line);cursor:pointer${p.admin?';opacity:.55':''}">
+      <input type="checkbox" ${p.admin ? 'checked disabled' : (window._idlSel.has(p.rid) ? 'checked' : '')} onchange="this.checked?window._idlSel.add('${p.rid}'):window._idlSel.delete('${p.rid}')">
+      <span style="font-weight:700">${p.name||''}</span>${p.admin?'<span class="hint">管理者（固定可看）</span>':''}</label>`).join('')}
+    <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px">
+      <button class="mini" style="padding:8px 14px" onclick="document.getElementById('idlOv').remove()">取消</button>
+      <button class="mini on" style="padding:8px 18px" onclick="hrmIdLockSave()">✓ 儲存</button></div></div>`
+  ov.onclick = () => ov.remove()
+  document.body.appendChild(ov)
+}
+async function hrmIdLockSave(){
+  const r = await fetch('/api/mail-sync?hridlock=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ token: TK(), rids: [...(window._idlSel||[])] }) })
+  const j = await r.json().catch(()=>null)
+  const o = document.getElementById('idlOv'); if (o) o.remove()
+  if (!j || !j.ok) { alert((j && j.error) || '儲存失敗'); return }
+  hrmLoad() // 重抓＝名單即時生效
 }
