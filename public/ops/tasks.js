@@ -301,9 +301,35 @@ function tnAddToGroup(catId) {
 function tnUpd(id, patch, silent) {
   tnSave((tnS.tasks || []).map(t => t.id === id ? tnMergeTask(t, patch, tnS.tasks) : t), { skipRender: !!silent });
 }
+/* ── 完成三分支（張良：別人建的不能自己關，要給建立者過目）──
+   自己建（或老任務沒 createdBy、或我沒綁定認不了人）→ 直接完成封存（原本 done 流程）
+   別人建 → 標 review={by,ts} 送審＋私訊建立者，卡片掛「待審核」
+   建立者看到待審核 → 通過＝done＋私訊回報人；退回＝清 review＋私訊回報人
+   勾選框＝完成鈕同一條路（tnToggleDone 改道走 tnFinish） */
+function tnFinish(id) {
+  const t = (tnS.tasks || []).find(x => x.id === id); if (!t || t.status === 'done') return;
+  if (!t.createdBy || !tnS.me || t.createdBy === tnS.me) { tnUpd(id, { status: 'done', review: undefined }); return; }
+  if (t.review && t.review.by) return; // 已送審就不重複送
+  tnUpd(id, { review: { by: tnS.me, ts: new Date().toISOString() } });
+  tnNotify({ kind: 'review', creator: t.createdBy, title: t.title });
+}
+function tnApprove(id) { // 建立者點「通過」：完成封存＋告訴回報人過了
+  const t = (tnS.tasks || []).find(x => x.id === id); if (!t) return;
+  const by = (t.review && t.review.by) || '';
+  tnUpd(id, { status: 'done' });
+  tnNotify({ kind: 'approve', doer: by, title: t.title });
+}
+function tnReject(id) { // 建立者點「退回」：清審核標記＋告訴回報人再處理
+  const t = (tnS.tasks || []).find(x => x.id === id); if (!t) return;
+  if (!confirm('退回「' + (t.title || '') + '」？會通知回報人再處理。')) return;
+  const by = (t.review && t.review.by) || '';
+  tnUpd(id, { review: undefined });
+  tnNotify({ kind: 'reject', doer: by, title: t.title });
+}
 function tnToggleDone(id) {
   const t = (tnS.tasks || []).find(x => x.id === id); if (!t) return;
-  tnUpd(id, { status: t.status === 'done' ? 'todo' : 'done' });
+  if (t.status === 'done') { tnUpd(id, { status: 'todo', review: undefined }); return; } // 重開＝順手清舊審核紀錄
+  tnFinish(id); // 未完成→走三分支（別人建的＝送審不是直接關）
 }
 function tnDel(id) { // 刪除＝同一次寫回「刪任務＋清掉所有 dependsOn 引用」
   const t = (tnS.tasks || []).find(x => x.id === id);
@@ -336,9 +362,18 @@ function tnTagAdd(id) {
 function tnTagDel(id, encTag) { const tg = decodeURIComponent(encTag); const t = (tnS.tasks || []).find(x => x.id === id); if (!t) return; tnUpd(id, { tags: (t.tags || []).filter(x => x !== tg) }); }
 function tnOwnerSel(id, v) {
   if (v === '__custom') { tnS.ownerCustom = true; tnRender(); return; }
-  tnS.ownerCustom = false; tnUpd(id, { owner: v });
+  tnS.ownerCustom = false;
+  const t = (tnS.tasks || []).find(x => x.id === id);
+  if (v && t && (t.owner || '') !== v) tnS.assignAsk = { id: id, owner: v }; // 從無→有人、或換人 → 浮通知三選一
+  tnUpd(id, { owner: v });
 }
-function tnOwnerCustom(id, v) { tnS.ownerCustom = false; if (v && v.trim()) tnUpd(id, { owner: v.trim() }); else tnRender(); }
+function tnOwnerCustom(id, v) {
+  tnS.ownerCustom = false;
+  const nm = (v || '').trim(); if (!nm) { tnRender(); return; }
+  const t = (tnS.tasks || []).find(x => x.id === id);
+  if (t && (t.owner || '') !== nm) tnS.assignAsk = { id: id, owner: nm };
+  tnUpd(id, { owner: nm });
+}
 function tnOpen(id) { tnS.sel = id; tnS.ownerCustom = false; tnS.tagIn = ''; tnRender(); }
 function tnClose() { tnS.sel = null; tnRender(); }
 function tnAttDel(id, fid) {
@@ -393,7 +428,7 @@ function tnMoveTo(dragId, o) {
 
 /* ── 拖放 handlers（拖曳中不整頁重畫＝HTML5 DnD 不中斷；提示線用直接改 style） ── */
 function tnDS(e, id) { tnS.drag = id; try { e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', id); } catch (_) {} const el = e.currentTarget; setTimeout(() => { try { el.style.opacity = 0.4; } catch (_) {} }, 0); }
-function tnDE() { const had = tnS.drag || tnS.dragCat; tnS.drag = null; tnS.dragCat = null; if (had) tnRender(); }
+function tnDE() { const had = tnS.drag || tnS.dragCat || tnS.dragOwn; tnS.drag = null; tnS.dragCat = null; tnS.dragOwn = null; if (had) tnRender(); }
 function tnDOvCard(e) { if (tnS.drag) { e.preventDefault(); e.stopPropagation(); } }
 function tnDropCard(e, id) {
   if (!tnS.drag) return;
@@ -410,7 +445,13 @@ function tnZDrop(e, kind, val) {
   const id = tnS.drag; tnS.drag = null;
   if (kind === 'cat') tnMoveTo(id, { catId: val });
   else if (kind === 'status') tnMoveTo(id, { status: val });
-  else if (kind === 'owner') { const nm = decodeURIComponent(val || ''); nm ? tnUpd(id, { claimBy: nm, claimAt: Date.now(), status: 'doing' }) : tnUpd(id, { claimBy: '', claimAt: null, status: 'todo' }); }
+  else if (kind === 'owner') { // 拖卡到某人組＝指派負責人（owner 欄）＋浮通知三選一；拖回未指派＝清空不通知
+    const nm = decodeURIComponent(val || '');
+    const t = (tnS.tasks || []).find(x => x.id === id);
+    if (((t && t.owner) || '') === nm) { tnRender(); return; }
+    if (nm) tnS.assignAsk = { id: id, owner: nm };
+    tnUpd(id, { owner: nm });
+  }
   else if (kind === 'before') tnMoveTo(id, { beforeId: val }); // 清單手動排序
 }
 // 大項拖曳（上半=排它上面、下半=排它下面；提示線直接畫）
@@ -530,6 +571,7 @@ function tnRoot() {
   else if (v === 'mind') h += tnVMind();
   h += '</div>';
   if (tnS.sel) h += tnModal();
+  if (tnS.assignAsk) h += tnAssignMenu(); // 指派完浮出的通知三選一（蓋在詳情彈窗之上）
   return h;
 }
 function tnSetView(v) { tnS.view = v; tnRender(); }
@@ -555,20 +597,28 @@ function tnCard(t, o) {
   // 標題
   h += '<div style="display:flex;align-items:center;gap:4px;font-size:12.5px;color:' + (done ? tnC.faint : tnC.text) + ';text-decoration:' + (done ? 'line-through' : 'none') + ';line-height:1.35;word-break:break-word">'
     + (t.priority === 'urgent' ? tnI('flame', 12, tnC.red) : '') + tnEsc(t.title) + '</div>';
-  // 徽章列
+  // 徽章列（v1.1 卡片減脂：大項名/狀態字/標籤 chips 不上卡＝彈窗裡才看；張良「整排小字佔版面」）
   h += '<div style="display:flex;gap:4px;flex-wrap:wrap;align-items:center;margin-top:2px">';
-  if (tnS.view !== 'group') h += '<span style="font-size:11px;color:' + tnC.faint + ';max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + tnEsc(tnCatName(t.catId)) + '</span>';
   if (t.due) h += '<span style="display:inline-flex;align-items:center;gap:4px;font-size:11px;font-variant-numeric:tabular-nums;color:' + ((!done && t.due < tnToday()) ? tnC.red : tnC.sub) + '">' + tnI('cal', 11) + t.due + tnWd(t.due) + '</span>';
   if ((t.files || []).length > 0) h += '<span title="' + t.files.length + ' 個附件" style="display:inline-flex;align-items:center;gap:2px;font-size:11px;color:' + tnC.sub + '">' + tnI('clip', 11) + t.files.length + '</span>';
-  if (tnS.view !== 'board') h += tnPill(tnSColor(t.status), tnSLabel(t.status));
   if (tnIsWaiting(t) && !done) h += tnPill(tnC.amber, '等：' + tnEsc(t.waitingFor));
   if (tnIsBlocked(t, tnS.tasks) && !done) h += tnPill(tnC.red, '被前置卡住');
-  h += (t.tags || []).map(tg => '<span style="font-size:10.5px;color:' + tnC.sub + ';background:' + tnC.soft + ';border-radius:999px;padding:0 6px;white-space:nowrap">' + tnEsc(tg) + '</span>').join('');
-  // /prep 特色：發現者/我來解決＋計時/審核/發布
+  // /prep 特色：發現者/我來解決＋計時（日時分）/審核/發布
   if (t.by) h += '<span title="發現/回報者" style="display:inline-flex;align-items:center;gap:3px;font-size:10.5px;color:' + tnC.faint + ';white-space:nowrap">' + tnI('eye', 11) + tnEsc(t.by) + '</span>';
-  if (t.claimBy && !done) h += '<span title="處理中" style="display:inline-flex;align-items:center;gap:3px;font-size:10.5px;color:' + tnC.accent + ';font-weight:700;white-space:nowrap">' + tnI('wrench', 11) + tnEsc(t.claimBy) + (t.claimAt ? ('・已' + Math.max(0, Math.floor((Date.now() - t.claimAt) / 60000)) + '分') : '') + '</span>';
+  if (t.claimBy && !done) h += '<span title="處理中" style="display:inline-flex;align-items:center;gap:3px;font-size:10.5px;color:' + tnC.accent + ';font-weight:700;white-space:nowrap">' + tnI('wrench', 11) + tnEsc(t.claimBy) + (t.claimAt ? ('・' + tnFmtDur((Date.now() - t.claimAt) / 60000)) : '') + '</span>';
   if (t.prepPending === 1 && !done) h += tnPill(tnC.amber, '待審核');
   if (t.prepPub === 'pending') h += tnPill(tnC.amber, '等發布');
+  // 完成鈕＋建立者審核流（三分支見 tnFinish 上方註解）
+  const rvBy = (!done && t.review && t.review.by) ? t.review.by : '';
+  if (rvBy) {
+    h += '<span title="回報完成，等建立者過目" style="display:inline-flex;align-items:center;gap:4px;font-size:10.5px;color:' + tnC.amber + ';background:#2A2012;border:1px solid #5A4A2A;border-radius:999px;padding:0 8px;white-space:nowrap">' + tnI('hourglass', 10, tnC.amber) + '待審核・' + tnEsc(rvBy) + '</span>';
+    if (tnS.me && t.createdBy === tnS.me) { // 我建立的＋有人回報完成 → 通過/退回
+      h += '<button onclick="event.stopPropagation();tnApprove(\'' + t.id + '\')" style="display:inline-flex;align-items:center;gap:3px;border:1px solid ' + tnC.green + ';background:#16281C;color:' + tnC.green + ';border-radius:999px;padding:0 8px;font-size:10.5px;font-weight:700;cursor:pointer">' + tnI('check', 10, tnC.green) + '通過</button>';
+      h += '<button onclick="event.stopPropagation();tnReject(\'' + t.id + '\')" style="display:inline-flex;align-items:center;gap:3px;border:1px solid ' + tnC.red + ';background:#2A181A;color:' + tnC.red + ';border-radius:999px;padding:0 8px;font-size:10.5px;font-weight:700;cursor:pointer">' + tnI('x', 10, tnC.red) + '退回</button>';
+    }
+  } else if (!done) {
+    h += '<button onclick="event.stopPropagation();tnFinish(\'' + t.id + '\')" title="自己建的直接完成；別人建的會送建立者過目" style="display:inline-flex;align-items:center;gap:3px;border:1px solid ' + tnC.green + ';background:#16281C;color:' + tnC.green + ';border-radius:999px;padding:0 8px;font-size:10.5px;font-weight:700;cursor:pointer">' + tnI('check', 10, tnC.green) + '完成</button>';
+  }
   if (!done && !t.claimBy && tnS.me) h += '<button onclick="event.stopPropagation();tnClaim(\'' + t.id + '\')" style="border:1px solid ' + tnC.accent + ';background:' + tnC.accentSoft + ';color:' + tnC.accent + ';border-radius:999px;padding:0 8px;font-size:10.5px;font-weight:700;cursor:pointer">我來解決</button>';
   if (!done && t.claimBy && t.claimBy === tnS.me) h += '<button onclick="event.stopPropagation();tnUnclaim(\'' + t.id + '\')" style="border:1px solid ' + tnC.line + ';background:' + tnWHT + ';color:' + tnFNT + ';border-radius:999px;padding:0 8px;font-size:10.5px;cursor:pointer">放棄</button>';
   h += '</div>';
@@ -778,24 +828,75 @@ function tnVBoard() {
     }).join('') + '</div>';
 }
 
-/* ── 負責人（欄=每個 claimBy＋未指派；拖卡到人欄＝指派） ── */
+/* ── 負責人（v1.1 改分組看板）：GD 每人一組（沒任務也要出現空組）＋「未指派」固定第一組；
+      分組依 owner 欄；拖卡進某人組＝指派給他（觸發通知三選一）；
+      人員組可拖排序 → 存 sp_team_pm_ownerord 全裝置同步，讀不到就照名單原順序；
+      桌機 ≥920px 四欄瀑布並排（比照依大項瀑布流）、手機直向一組一組疊 ── */
+function tnOwnerPool() { // 人員名單＝彈窗負責人選單同一個來源：GD 名單＋任務裡出現過的人
+  return [...new Set([].concat(tnS.gdNames, (tnS.tasks || []).flatMap(x => [x.owner, x.claimBy]).filter(Boolean)))];
+}
+function tnOwnerNames() { // 照 sp_team_pm_ownerord 排；沒排過/新面孔照名單原順序接在後面
+  const base = tnOwnerPool();
+  const ord = (tnS.ownerOrd && Array.isArray(tnS.ownerOrd.order)) ? tnS.ownerOrd.order : [];
+  const pos = new Map(ord.map((n, i) => [n, i]));
+  return base.map((n, i) => [n, pos.has(n) ? pos.get(n) : 100000 + i]).sort((a, b) => a[1] - b[1]).map(x => x[0]);
+}
+function tnOwnerOrdSave(arr) {
+  tnS.ownerOrd = { order: arr };
+  tnKV({ op: 'set', key: 'sp_team_pm_ownerord', value: JSON.stringify({ order: arr }) }).then(r => { if (!r || !r.ok) tnPermFail(r); });
+  tnCacheSave();
+  tnRender();
+}
+// 人員組拖曳排序（上半=排它前面、下半=排它後面；比照大項拖曳做法；參數走 encodeURIComponent 防名字裡有怪字）
+function tnODS(e, enc) { e.stopPropagation(); tnS.dragOwn = decodeURIComponent(enc); try { e.dataTransfer.effectAllowed = 'move'; } catch (_) {} }
+function tnOwnOver(e, enc) {
+  const nm = decodeURIComponent(enc);
+  if (!(tnS.dragOwn && tnS.dragOwn !== nm && nm)) return;
+  e.preventDefault(); e.stopPropagation();
+  const r = e.currentTarget.getBoundingClientRect();
+  const p = e.clientY < r.top + r.height / 2 ? 'b' : 'a';
+  e.currentTarget.dataset.tnpos = p;
+  e.currentTarget.style.boxShadow = p === 'b' ? ('0 -4px 0 0 ' + tnC.accent) : ('0 4px 0 0 ' + tnC.accent);
+}
+function tnOwnDrop(e, enc) {
+  const nm = decodeURIComponent(enc);
+  if (!(tnS.dragOwn && tnS.dragOwn !== nm && nm)) return;
+  e.preventDefault(); e.stopPropagation(); e.currentTarget.style.boxShadow = 'none';
+  const p = e.currentTarget.dataset.tnpos || 'b';
+  const from = tnS.dragOwn; tnS.dragOwn = null;
+  const arr = tnOwnerNames().filter(n => n !== from);
+  const ti = arr.indexOf(nm);
+  arr.splice(ti < 0 ? arr.length : (p === 'b' ? ti : ti + 1), 0, from);
+  tnOwnerOrdSave(arr);
+}
 function tnVOwner() {
   const openO = (tnS.tasks || []).filter(t => t.status !== 'done').filter(tnMatchQ);
-  const owners = [...new Set(openO.map(t => t.claimBy).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'zh-Hant'));
-  const cols = [['', '未指派']].concat(owners.map(n => [n, n]));
-  return '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px;align-items:start">'
-    + cols.map(c => {
-      const nm = c[0], label = c[1];
-      const items = tnOrderTasks(openO.filter(t => (t.claimBy || '') === nm), tnS.sortMode);
-      return '<div ondragover="tnZOver(event)" ondragleave="tnZLeave(event)" ondrop="tnZDrop(event,\'owner\',\'' + encodeURIComponent(nm) + '\')" style="background:' + tnC.card + ';border:1px solid ' + tnC.line + ';border-radius:8px;padding:12px;min-height:120px">'
-        + '<div style="display:flex;align-items:center;gap:7px;margin-bottom:10px">'
-        + (nm ? '<span style="color:' + tnC.accent + '">' + tnI('wrench', 13, tnC.accent) + '</span>' : '<span style="width:7px;height:7px;border-radius:50%;background:' + tnC.faint + '"></span>')
-        + '<div style="font-size:13px;font-weight:600;color:' + tnC.text + '">' + tnEsc(label) + '</div>'
-        + '<span style="font-size:11.5px;color:' + tnC.faint + ';font-variant-numeric:tabular-nums">' + items.length + '</span></div>'
-        + items.map(t => tnCard(t, {})).join('')
-        + (items.length === 0 ? tnEmpty('users', nm ? '拖任務過來＝指派給他' : '沒有未指派的任務') : '')
-        + '</div>';
-    }).join('') + '</div>';
+  const groups = [{ nm: '', label: '未指派' }].concat(tnOwnerNames().map(n => ({ nm: n, label: n })));
+  const withItems = groups.map(g => ({ g: g, items: tnOrderTasks(openO.filter(t => (t.owner || '') === g.nm), tnS.sortMode) }));
+  const gCard = (x) => {
+    const g = x.g, items = x.items, enc = encodeURIComponent(g.nm);
+    return '<div' + (g.nm ? ' ondragover="tnOwnOver(event,\'' + enc + '\')" ondragleave="tnCatLeave(event)" ondrop="tnOwnDrop(event,\'' + enc + '\')"' : '') + ' style="border-radius:8px;opacity:' + (tnS.dragOwn === g.nm ? 0.4 : 1) + '">'
+      + '<div ondragover="tnZOver(event)" ondragleave="tnZLeave(event)" ondrop="tnZDrop(event,\'owner\',\'' + enc + '\')" style="background:' + tnC.card + ';border:1px solid ' + tnC.line + ';border-radius:8px;padding:10px;min-height:72px">'
+      + '<div ' + (g.nm ? 'draggable="true" ondragstart="tnODS(event,\'' + enc + '\')" ondragend="tnDE()" title="拖我＝調整人員組順序"' : '') + ' style="display:flex;align-items:center;gap:7px;margin-bottom:8px;cursor:' + (g.nm ? 'grab' : 'default') + '">'
+      + (g.nm
+        ? '<span style="color:' + tnC.faint + '">' + tnI('grip', 12) + '</span><span style="width:20px;height:20px;border-radius:50%;background:' + tnC.accentSoft + ';color:' + tnC.accent + ';font-size:10px;font-weight:700;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0">' + tnEsc(g.nm.slice(0, 2)) + '</span>'
+        : '<span style="width:7px;height:7px;border-radius:50%;background:' + tnC.faint + ';flex-shrink:0"></span>')
+      + '<div style="font-size:13px;font-weight:600;color:' + tnC.text + ';overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + tnEsc(g.label) + '</div>'
+      + '<span style="font-size:11.5px;color:' + tnC.faint + ';font-variant-numeric:tabular-nums">' + items.length + '</span></div>'
+      + items.map(t => tnCard(t, {})).join('')
+      + (items.length === 0 ? tnEmpty('users', g.nm ? '拖任務過來＝指派給他' : '沒有未指派的任務') : '')
+      + '</div></div>';
+  };
+  // 桌機四欄瀑布：未指派先進第 0 欄，其餘照排序依最矮欄補位；手機一欄直疊
+  const NCOL = ((typeof window !== 'undefined' ? window.innerWidth : 1280) >= 920) ? 4 : 1;
+  const cols = Array.from({ length: NCOL }, () => ({ w: 0, nodes: [] }));
+  withItems.forEach(x => {
+    let k = 0; for (let i = 1; i < NCOL; i++) if (cols[i].w < cols[k].w) k = i;
+    cols[k].nodes.push(gCard(x)); cols[k].w += 1.8 + x.items.length;
+  });
+  return '<div style="display:flex;gap:12px;align-items:flex-start">'
+    + cols.map(c => '<div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:12px">' + c.nodes.join('') + '</div>').join('')
+    + '</div>';
 }
 
 /* ── 清單（Linear 式密表；手機四欄、桌機八欄；手動模式可拖曳排序） ── */
@@ -1023,6 +1124,29 @@ function tnModal() {
   return h;
 }
 
+/* ── 指派通知三選一（選完負責人就地浮出；要明確按一顆才收＝不給誤觸跳過）
+   「不通知」走前端直接跳過不打口（後端兩種都行，選簡單的那條） ── */
+function tnAssignMenu() {
+  const a = tnS.assignAsk; if (!a) return '';
+  const btn = (icon, label, mode, accent) => '<button onclick="tnAssignGo(\'' + mode + '\')" style="display:flex;align-items:center;gap:9px;width:100%;text-align:left;border:1px solid ' + (accent ? tnC.accent : tnC.line) + ';background:' + (accent ? tnC.accentSoft : tnWHT) + ';color:' + (accent ? tnC.accent : tnC.sub) + ';border-radius:8px;padding:10px 12px;font-size:13px;font-weight:600;cursor:pointer">' + tnI(icon, 15) + label + '</button>';
+  return '<div style="position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:800;display:flex;align-items:center;justify-content:center;padding:16px">'
+    + '<div style="background:' + tnMOD + ';border:1px solid ' + tnC.line + ';border-radius:12px;padding:18px;width:min(320px,94vw);display:flex;flex-direction:column;gap:8px">'
+    + '<div style="font-size:14px;font-weight:700;color:' + tnC.text + '">已指派給 ' + tnEsc(a.owner) + '</div>'
+    + '<div style="font-size:12px;color:' + tnC.faint + ';margin-bottom:4px">要不要通知他？</div>'
+    + btn('users', '發到 GROUN:D Family 群', 'group', true)
+    + btn('send', '私訊負責人', 'dm', false)
+    + btn('belloff', '不通知', 'none', false)
+    + '</div></div>';
+}
+function tnAssignGo(mode) {
+  const a = tnS.assignAsk; tnS.assignAsk = null;
+  if (a && mode !== 'none') {
+    const t = (tnS.tasks || []).find(x => x.id === a.id);
+    tnNotify({ kind: 'assign', mode: mode, title: (t && t.title) || '', due: (t && t.due) || '', owner: a.owner, creator: (t && t.createdBy) || tnS.me || '', doer: tnS.me || '' });
+  }
+  tnRender();
+}
+
 /* ── 初始化＋入口 ── */
 function tnInit() {
   if (tnS.inited) return;
@@ -1047,6 +1171,7 @@ async function tnRefetch() { // 背景抓最新；手上有沒存完的修改就
   if (!d) { if (!tnS.loaded) { tnS.tasks = tnS.tasks || []; tnS.cats = tnS.cats || []; tnS.loaded = true; tnRender(); } return; }
   if (tnSaveTimer || tnInflight > 0) return;
   tnS.tasks = d.tasks; tnS.cats = d.cats; tnPersisted = d.tasks; tnS.loaded = true;
+  if (d.ownerOrd) tnS.ownerOrd = d.ownerOrd;
   tnCacheSave();
   tnRender();
 }
@@ -1057,7 +1182,7 @@ window.tnPage = function () {
   try { if (typeof setTabs === 'function') setTabs('task'); } catch (_) {}
   try { const u = document.getElementById('upd'); if (u) u.textContent = '任務中心・與主 App 同步'; } catch (_) {}
   const c = tnCGet('tnData');
-  if (c && Array.isArray(c.tasks)) { tnS.tasks = c.tasks; tnS.cats = Array.isArray(c.cats) ? c.cats : []; tnPersisted = c.tasks; tnS.loaded = true; }
+  if (c && Array.isArray(c.tasks)) { tnS.tasks = c.tasks; tnS.cats = Array.isArray(c.cats) ? c.cats : []; if (c.ownerOrd && Array.isArray(c.ownerOrd.order)) tnS.ownerOrd = c.ownerOrd; tnPersisted = c.tasks; tnS.loaded = true; }
   tnRender();
   tnRefetch();
 };
