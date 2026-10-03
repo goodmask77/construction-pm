@@ -120,7 +120,14 @@
   <div class="foot">資料每天自動同步（打開即最新）・僅供內部參考與備料使用，請勿外傳連結</div>
 </div>
 <script>
-const K = new URLSearchParams(location.search).get('k') || (location.hash || '').replace(/^#k?=?/, '') || '7ea362bae1f0274372d4ec7b27c78852' // 內建看板唯讀金鑰（短網址 /prep 用；與管理金鑰分開）
+// v4.33.3 治本（張良點 #meet= 測試連結變訪客+讀不到資料）：舊邏輯「沒 ?k= 就把 # 後面整串當金鑰」會把
+// #meet=/#sop= 深層連結吃成假金鑰→全部 API 403。改成只有「長得像金鑰」的 hash（#k=… 或純16進位長串）才算
+const K = (() => {
+  const q = new URLSearchParams(location.search).get('k'); if (q) return q
+  const h = (location.hash || '').replace(/^#/, '')
+  const m = h.match(/^k=([A-Za-z0-9]+)$/) || h.match(/^([a-f0-9]{24,})$/i)
+  return m ? m[1] : '7ea362bae1f0274372d4ec7b27c78852' // 內建看板唯讀金鑰（短網址 /prep 用；與管理金鑰分開）
+})()
 const fmt = n => 'NT$' + Math.round(n || 0).toLocaleString()
 const app = document.getElementById('app')
 let curStore = 'ground'

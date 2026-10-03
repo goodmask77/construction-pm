@@ -2469,7 +2469,12 @@ export default async function handler(req, res) {
     const itT = (((meetT || {}).list) || []).find(x => x.pubTs) || (((meetT || {}).list) || [])[0]
     if (!itT) return res.status(404).json({ ok: false, error: '沒有會議紀錄可以測' })
     const tkPT = ((bdT || {}).byUid || {})[poT.lineUserId]
-    const { prepLink, wpPushUids } = await import('./_webpush.js')
+    if (req.query.probe) { // v4.33.3 診斷（張良點測試連結還是訪客）：檢查 byUid token 是否能解析成身分，不發訊息
+      const recP = tkPT ? ((bdT || {}).tokens || {})[tkPT] : null
+      const whoP = tkPT ? await sopWho(tkPT) : null
+      const allTk = Object.entries((bdT || {}).tokens || {}).filter(([, v]) => v.uid === poT.lineUserId || v.rid === poT.id)
+      return res.status(200).json({ ok: true, name: poT.name, rosterId: poT.id, hasByUid: !!tkPT, byUidTokenHead: tkPT ? String(tkPT).slice(0, 6) + '…' : null, tokenRecord: recP ? { rid: recP.rid, name: recP.name } : null, sopWhoOK: !!whoP, whoName: whoP ? whoP.name : null, tokensForThisPerson: allTk.map(([k, v]) => ({ head: k.slice(0, 6) + '…', rid: v.rid, name: v.name })) })
+    }
     const lnkT = tkPT ? `https://ground-pm.vercel.app/prep?me=${tkPT}#meet=${itT.id}` : prepLink('meet=' + itT.id)
     const tkLT = (process.env.LINE_CHANNEL_ACCESS_TOKEN || '').trim()
     if (!tkLT) return res.status(500).json({ ok: false, error: '沒有 LINE token' })
