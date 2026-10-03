@@ -3801,7 +3801,8 @@ async function custHome(){
   if (!d || !d.ins) { app.innerHTML = `<section>${custTopBar()}<div class="err">洞察還沒建好（每天自動重算；剛上線要等第一輪）</div></section>`; return }
   if (curStore !== 'cust' || custV !== 'home') return
   const ins = d.ins, ms = d.months || {}, idx = d.idx || { segments: {} }
-  const yrs = Object.keys(ins.yearly||{}).sort()
+  const nowY = todayTpe().slice(0,4)
+  const yrs = Object.keys(ins.yearly||{}).sort().filter(y=>y<=nowY) // v4.39.3 未來年份(2027婚禮預訂)不進逐年統計——「今年321人次0%取消」假數字修正
   const thisY = yrs[yrs.length-1], lastY = yrs[yrs.length-2]
   const yv = y => (ins.yearly||{})[y] || { resv:0, guests:0, cxl:0 }
   const cxRate = y => { const v = yv(y); const t = v.resv + v.cxl; return t ? Math.round(v.cxl/t*100) : 0 }
