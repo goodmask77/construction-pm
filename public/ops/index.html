@@ -1839,6 +1839,13 @@ async function shiftLoad(ym){
   if ((window._shiftTmpQ||[]).length) d.sched.push(...window._shiftTmpQ) // 還在排隊的樂觀卡補回畫面（v4.4.7）
   if (curStore === 'shift') shiftRender()
 }
+// v4.36.4 未排收合（記住選擇；重畫時 shiftRender 自己會還原捲動位置）
+try { window._shUC = localStorage.getItem('shUC') === '1' } catch(_) {}
+function unschedToggle(){
+  window._shUC = !window._shUC
+  try { localStorage.setItem('shUC', window._shUC ? '1' : '') } catch(_) {}
+  shiftRender()
+}
 function shiftRender(){
   const d = window._shiftD; if (!d || curStore !== 'shift') return
   // v4.25.6（張良「重新整理不應該在8月 要在今天」）：重畫前先記住目前捲到哪——沒有明確目標時還原原位；連原位都沒有才預設捲到今天
@@ -1954,9 +1961,12 @@ function shiftRender(){
       }).join('')+`</tr>`
     })
     // 未排：併進同一張表的最後一列（崗位欄沿用 sticky 凍結，日期欄跟上面對齊）；點人名可標請假(反黑劃掉+假別)＝當天不能排班
-    hh += `<tr><td style="${BD}border-top:3px solid var(--line);padding:3px 6px;text-align:left;font-weight:800;font-size:11px;color:var(--muted);position:sticky;left:0;background:var(--soft);z-index:1;white-space:nowrap">未排<br><span class="hint" style="font-weight:600;font-size:9.5px">點人標請假</span></td>`+wd2.map(dt=>{
+    // v4.36.4（張良「未排這邊幫我做收合功能」）：點「未排」整列收合⇄展開（記住選擇）；收起時每天只顯示人數
+    const ucOn = !!window._shUC
+    hh += `<tr><td onclick="unschedToggle()" title="${ucOn?'點我展開':'點我收合'}" style="${BD}border-top:3px solid var(--line);padding:3px 6px;text-align:left;font-weight:800;font-size:11px;color:var(--muted);position:sticky;left:0;background:var(--soft);z-index:1;white-space:nowrap;cursor:pointer">${ucOn?'▸':'▾'} 未排<br><span class="hint" style="font-weight:600;font-size:9.5px">${ucOn?'點我展開':'點人標請假'}</span></td>`+wd2.map(dt=>{
       const onDay=new Set(we2.filter(x=>x.date===dt).flatMap(x=>[x.name,x.tr].filter(Boolean)))
       const rest=regStaff.filter(s2=>!onDay.has(s2.n))
+      if (ucOn) return `<td onclick="unschedToggle()" title="${rest.map(s2=>s2.n).join('、')||'全排完'}（點我展開）" style="${BD}${sepOf(dt)}${wkndBg(dt)}border-top:3px solid var(--line);padding:2px 3px;text-align:center;cursor:pointer">${rest.length?`<span class="hint" style="font-size:11px;font-weight:700">${rest.length}人</span>`:'<span class="hint" style="font-size:12px">✓</span>'}</td>`
       return `<td ${meN?`ondragover="event.preventDefault();this.style.outline='2px dashed var(--red)'" ondragleave="this.style.outline=''" ondrop="unschedDrop(event)"`:''} style="${BD}${sepOf(dt)}${wkndBg(dt)}border-top:3px solid var(--line);padding:2px 3px;vertical-align:top;text-align:left">${rest.map(s2=>{
         const lv=(leave[dt]||{})[s2.n]
         if(lv) return `<span ${meN?`onclick="shLeaveMenu('${s2.n}','${dt}')" style="cursor:pointer;"`:'style=""'} title="${s2.n} 請${lv}假${meN?'（點我改/取消）':''}"><span style="display:flex;align-items:center;gap:4px;width:max-content;white-space:nowrap;border:1px solid #5A3A3A;background:#2A1A1A;border-radius:6px;padding:1px 4px 1px 3px;margin:1.5px 0;font-size:11.5px;font-weight:700"><span style="width:7px;height:7px;border-radius:50%;background:#7A5A5A;flex:none"></span><span style="text-decoration:line-through;opacity:.65;color:#C7A0A0">${s2.n}</span><span style="background:var(--red);color:#fff;border-radius:4px;padding:0 5px;font-size:11px;font-weight:900">${lv}</span></span></span>`
