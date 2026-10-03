@@ -118,6 +118,7 @@
     <div id="meChip" style="margin-top:auto;border-top:1px solid var(--line);padding:12px 6px 2px;display:flex;gap:10px;align-items:center"></div>
   </div>
   <div id="app"></div>
+  <div id="taskWrap" style="display:none"></div> <!-- v4.33.7 任務iframe常駐（張良：點任務頁會閃跳）＝只載一次，切換用顯示/隱藏 -->
   <div class="foot">資料每天自動同步（打開即最新）・僅供內部參考與備料使用，請勿外傳連結</div>
 </div>
 <script>
@@ -135,6 +136,7 @@ let curStore = 'ground'
 let lastStore = 'ground'
 function setTabs(k){
   ['sop','task','lb','food','pack','buy','meet','shift','inc','fb','menu','errs','gear'].forEach(t => { const b = document.getElementById('tab-' + t); if (b) b.className = (t===k) ? 'on' : '' })
+  const tw0 = document.getElementById('taskWrap'); if (tw0) tw0.style.display = (k==='task') ? '' : 'none' // v4.33.7 任務iframe常駐切換（閃跳治本）
   const hb = document.getElementById('tab-home'); if (hb) hb.className = (k==='ground'||k==='abeach') ? 'on' : '' // 🏠=回店面（張良 2026-09-21：怕有人不知道怎麼回去）
   if (k === 'ground' || k === 'abeach') lastStore = k
   const g = document.getElementById('bs-ground'), a = document.getElementById('bs-abeach')
@@ -163,7 +165,10 @@ function hardRefresh(){ try{ Object.keys(localStorage).filter(k=>k.startsWith('o
 function taskEmbed(){ // 任務原地切換（張良 2026-10-02：不要像開新分頁）——iframe 內嵌，側欄照舊
   curStore = 'taskx'; setTabs('task')
   document.getElementById('upd').textContent = '任務中心・與主 App 同步'
-  app.innerHTML = `<iframe src="/ops-tasks.html?v=${Date.now()}" style="width:100%;height:calc(100vh - 150px);min-height:560px;border:none;border-radius:14px;background:var(--bg)"></iframe>`
+  // v4.33.7 閃跳治本（張良：每點一次都整頁重載 iframe＝閃白）：iframe 只建一次常駐 #taskWrap，之後切換純顯示/隱藏＝秒切不閃
+  const tw = document.getElementById('taskWrap')
+  if (!tw.firstChild) tw.innerHTML = `<iframe src="/ops-tasks.html?v=${Date.now()}" style="width:100%;height:calc(100vh - 150px);min-height:560px;border:none;border-radius:14px;background:var(--bg)"></iframe>`
+  app.innerHTML = ''
 }
 function goView(){
   if (curStore === 'task') taskLoad()
