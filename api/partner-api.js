@@ -61,7 +61,8 @@ function range(q, defBack, maxDays) {
   return { from: f, to: t }
 }
 
-const INLINE_ST = { 1: 'confirmed', 2: 'cancelled', 4: 'seated', 5: 'no_show' }
+// 狀態碼對照＝api/_inline.js STATE_TXT 實測（v4.34.0 修正）：有效訂位＝code 不在 {2,5}
+const INLINE_ST = { 1: 'confirmed', 2: 'cancelled', 3: 'pending', 4: 'seated', 5: 'cancelled', 6: 'confirmed' }
 const SCOPES = ['revenue', 'orders', 'reservations', 'hr', 'sop']
 
 export default async function handler(req, res) {
@@ -118,7 +119,7 @@ export default async function handler(req, res) {
 
     // ── 叫貨單：sp_supply_pm_orders（單頭含明細 items、驗收 check；滾動保留約600筆）
     if (ep === 'orders') {
-      const r = range(q, 3660, 3660); if (r.err) return res.status(400).json({ error: r.err })
+      const r = range(q, 3650, 3660); if (r.err) return res.status(400).json({ error: r.err })
       const list = (await kvGet('sp_supply_pm_orders')) || []
       const rows = (Array.isArray(list) ? list : []).filter(o => { const d = tpeDateOf(o.ts); return d >= r.from && d <= r.to })
         .map(o => ({
@@ -151,7 +152,7 @@ export default async function handler(req, res) {
         if (day < r.from || day > r.to) continue
         for (const x of (Array.isArray(list) ? list : [])) rows.push({
           date: day, time: x.t || null, reservation_id: x.id || null, name: x.name || null, phone: x.phone || null,
-          guests: x.n ?? null, status: INLINE_ST[x.st] || String(x.st ?? ''), kids_chair: x.kc ?? null,
+          guests: x.n ?? null, status: INLINE_ST[x.st] || String(x.st ?? ''), status_code: x.st ?? null, kids_chair: x.kc ?? null,
           note: x.note || null, internal_note: x.inote || null, source: x.src || null, ref: x.ref || null,
           created_at: x.created || null, cancelled_at: x.canceled || null, seated_at: x.seated || null, waitlist: x.waitlist ?? null,
         })
@@ -205,7 +206,7 @@ export default async function handler(req, res) {
       return page(res, rows, q, { from: r.from, to: r.to })
     }
     if (ep === 'sop/issues') {
-      const r = range(q, 3660, 3660); if (r.err) return res.status(400).json({ error: r.err })
+      const r = range(q, 3650, 3660); if (r.err) return res.status(400).json({ error: r.err })
       const doc = (await kvGet('sp_finance_pm_sop_issues')) || { list: [] }
       const rows = (doc.list || []).filter(x => { const d = tpeDateOf(x.ts); return d >= r.from && d <= r.to })
         .map(x => ({ issue_id: x.id, created_at: x.ts, store: x.store || null, by: x.name || null, text: x.text || null, kind: x.kind || null, status: x.status || null, claimed_by: x.claimBy || null, claimed_at: x.claimAt || null, photos: (x.photos || []).filter(u => typeof u === 'string' && !u.startsWith('data:')) }))

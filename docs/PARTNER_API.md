@@ -36,7 +36,7 @@
 - `/revenue/daily`：`net_sales`＝淨營收（我們兩店 KPI 口徑）；`kiosk` 是「通路」維度，跟 `cash/card/linepay` 付款別**交疊、不能加總**；GD `guests` 無資料（喬亞不給來客數）。GD 自動值從 2026-08 起、AB 從 2026-04 起。
 - `/revenue/items`：`section="總結"` 是分類彙總列，**別跟單品重複加總**；「付款方式」「時段」sheet 也原樣攤平在裡面，拿品項時建議濾 `sheet` 開頭是「總銷售額」的。
 - `/orders`：來源是叫貨頁，滾動保留約 600 筆（更早的看 `/orders/prices` 流水）；`items[].check` 是驗收結果（null＝還沒驗）。
-- `/reservations`：`status`＝`confirmed / cancelled / seated / no_show`；`guests` 人數含取消的列自己濾。回填自 inline 官方後台，歷史空日＝店休/疫情，本來就沒訂位。
+- `/reservations`：`status`＝`confirmed / pending / seated / cancelled`（另附原始 `status_code`：1,6=已確認、3=待確認、4=已入座、2,5=已取消；**有效訂位＝code 不在 {2,5}**）。回填自 inline 官方後台，歷史空日＝店休/疫情，本來就沒訂位。
 - `/hr/schedule` 是**排班**不是打卡。
 - `/sop/daily` 的 `photo` 是圖片連結（部分舊資料可能是 `(photo)` 佔位）。
 - 同步建議跟你 boss-api 的 SKILL 同一套：固定主鍵 upsert、增量窗整段重拉覆蓋、翻頁全成功才做刪除、每週大範圍重拉一次。
