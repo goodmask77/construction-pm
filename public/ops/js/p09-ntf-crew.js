@@ -269,7 +269,7 @@ function applyTabs(cfg){
 }
 // ── ⭐ 個人常用捷徑列（v4.39.1 張良「手機版固定一行、每個人可編輯自己的常用清單，例如班表/SOP/盤點/叫貨」）──
 // 手機版固定螢幕最底＝拇指直達；最多 5 格＋✎編輯；清單每人一份：綁定者存伺服器(pm_prep_fav)換手機跟著走、未綁定存本機
-const FAV_DEFAULT = ['shift','sop','food','buy']
+const FAV_DEFAULT = ['home','shift','sop','food','buy'] // v4.40.4 手機頂部功能鈕整排收掉→首頁進預設常用
 const FAV_MAX = 5
 const favAll = () => ['home', ...Object.keys(TAB_DEF), 'errs'].filter(k => { const b = document.getElementById(k==='home'?'tab-home':'tab-'+k); return b && b.style.display !== 'none' }) // 被權限藏掉的分頁不給選
 const favGet = () => { try { const v = JSON.parse(localStorage.getItem('gdFav')||'null'); if (Array.isArray(v) && v.length) return v } catch(_){}; return FAV_DEFAULT }
@@ -277,8 +277,9 @@ const favLabel = k => k==='home' ? '首頁' : k==='errs' ? '回報' : stripEmoji
 function favRender(){
   const bar = document.getElementById('favbar'); if (!bar) return
   const list = favGet().filter(k => favAll().includes(k)).slice(0, FAV_MAX)
-  bar.innerHTML = list.map(k => `<button data-fk="${k}" onclick="favGo('${k}')">${TAB_ICONS[k]||TAB_ICONS.home}<span>${favLabel(k)}</span></button>`).join('')
-    + `<button onclick="favEdit()" title="編輯我的常用清單" style="flex:0 0 52px;opacity:.75">${_I('<path d="M4 20h4L19.3 8.7a2.12 2.12 0 0 0-3-3L5 17Z"/><path d="M13.5 6.5l3 3"/>')}<span>編輯</span></button>`
+  // v4.40.4（張良拍板）：☰放最左=全部功能彈層（✎編輯收進彈層）；手機頂部功能鈕/大標題整排收掉後這裡是唯一入口
+  bar.innerHTML = `<button onclick="navSheet()" title="全部功能" style="flex:0 0 54px">${_I('<path d="M4 7h16M4 12h16M4 17h16"/>')}<span>全部</span></button>`
+    + list.map(k => `<button data-fk="${k}" onclick="favGo('${k}')">${TAB_ICONS[k]||TAB_ICONS.home}<span>${favLabel(k)}</span></button>`).join('')
   favMark()
 }
 function favGo(k){ const b = document.getElementById(k==='home'?'tab-home':'tab-'+k); if (b) b.click(); try{ scrollTo({top:0}) }catch(_){} }
@@ -307,6 +308,23 @@ function favEdit(){ // 編輯彈層：點=加入/移除、數字=顯示順序(�
     box.querySelector('#favOk').addEventListener('click', () => { favSave(sel.length ? sel : FAV_DEFAULT.slice()); ov.remove() })
   }
   draw(); ov.appendChild(box); document.body.appendChild(ov)
+}
+function navSheet(){ // ☰ 全部功能彈層（v4.40.4）：手機版頂部功能鈕收掉後的總入口；含通知中心(未讀數)與✎編輯常用
+  const old9 = document.getElementById('navOv'); if (old9) { old9.remove(); return }
+  const ov = document.createElement('div'); ov.id = 'navOv'
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:60;display:flex;align-items:flex-end;justify-content:center'
+  ov.addEventListener('click', e => { if (e.target === ov) ov.remove() })
+  const box = document.createElement('div')
+  box.style.cssText = 'background:var(--bg);border:1px solid var(--line);border-radius:18px 18px 0 0;padding:16px 16px calc(16px + env(safe-area-inset-bottom));width:100%;max-width:560px;max-height:78vh;overflow-y:auto'
+  const cur = window._favCur
+  let un9 = 0; try { un9 = ntfUnread() } catch(_){}
+  box.innerHTML = `<h2 style="margin-bottom:10px">全部功能</h2>
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:9px">${favAll().map(k => `<button class="favchip${(k===cur||(k==='home'&&(cur==='ground'||cur==='abeach')))?' on':''}" data-k="${k}">${TAB_ICONS[k]||''}<span>${favLabel(k)}</span></button>`).join('')}</div>
+    <div style="display:flex;gap:8px;margin-top:14px;align-items:center"><button class="mini" style="padding:9px 14px;display:inline-flex;gap:6px;align-items:center" id="navNtf">${TAB_ICONS.bell}通知${un9?` (${un9})`:''}</button><button class="mini" style="padding:9px 14px;margin-left:auto;display:inline-flex;gap:6px;align-items:center" id="navFavEd">${_I('<path d="M4 20h4L19.3 8.7a2.12 2.12 0 0 0-3-3L5 17Z"/><path d="M13.5 6.5l3 3"/>')}編輯常用清單</button></div>`
+  box.querySelectorAll('.favchip').forEach(b => b.addEventListener('click', () => { ov.remove(); favGo(b.dataset.k) }))
+  box.querySelector('#navNtf').addEventListener('click', () => { ov.remove(); try { ntfPage() } catch(_){} })
+  box.querySelector('#navFavEd').addEventListener('click', () => { ov.remove(); favEdit() })
+  ov.appendChild(box); document.body.appendChild(ov)
 }
 async function meChipInit(){ // 側欄底部＝登入身分（張良 2026-10-02：沒綁定顯示訪客·無編輯權限）
   const el = document.getElementById('meChip'); if (!el) return
