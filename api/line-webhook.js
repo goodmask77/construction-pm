@@ -907,6 +907,76 @@ async function loadPosText() {
   } catch (_) { return '' }
 }
 
+// ── 阿桑 boss-api（A Beach OPS 系統，api/boss-sync.js 每小時同步進 sp_finance_pm_boss_*）→ 文字（100%資料鐵則）──
+// 涵蓋：每日結帳對帳/叫貨/菜單成本/AB班表/出勤加班事件/交接異常/備料例行/冰箱警報；營收本體已併營收頁不重複列
+async function loadBossText() {
+  try {
+    const now = new Date(Date.now() + 8 * 3600e3)
+    const today = now.toISOString().slice(0, 10)
+    const ym = today.slice(0, 7).replace('-', '')
+    const prevYm = new Date(Date.UTC(+today.slice(0, 4), +today.slice(5, 7) - 2, 1)).toISOString().slice(0, 7).replace('-', '')
+    const nextYm = new Date(Date.UTC(+today.slice(0, 4), +today.slice(5, 7), 1)).toISOString().slice(0, 7).replace('-', '')
+    const K = (s, m) => `sp_finance_pm_boss_${s}_${m}`
+    const kv = await kvGetMany([
+      K('sett', ym), K('sett', prevYm), K('ord', ym), K('ord', prevYm), 'sp_finance_pm_boss_menu',
+      K('sched', ym), K('sched', nextYm), K('att', ym), K('att', prevYm), K('ot', ym), K('ot', prevYm),
+      K('inc', ym), K('inc', prevYm), K('prep', ym), K('rout', ym), K('temp', ym),
+    ])
+    const rowsOf = (...ks) => ks.flatMap(k => Object.values((kv[k] || {}).rows || {}))
+    const nt = (n) => 'NT$' + Math.round(n || 0).toLocaleString()
+    const lines = ['【A Beach OPS（阿桑系統 boss-api，每小時自動同步；null=沒資料不是0）】']
+    // 每日結帳對帳：現金差/刷卡差/與POS差額（eats365_synced=false=還沒對帳不是差0）
+    const sett = rowsOf(K('sett', ym), K('sett', prevYm)).sort((a, b) => (a.date < b.date ? 1 : -1))
+    if (sett.length) {
+      const bad = sett.filter(s => Math.abs(Number(s.cash_diff) || 0) + Math.abs(Number(s.card_diff) || 0) + Math.abs(Number(s.eats365_diff) || 0) > 0).slice(0, 10)
+      lines.push(`  ◇ 每日結帳對帳（近兩個月 ${sett.length} 天）：最新 ${sett[0].date} 現金差${sett[0].cash_diff ?? '?'}／刷卡差${sett[0].card_diff ?? '?'}／POS差${sett[0].eats365_synced ? (sett[0].eats365_diff ?? 0) : '未對帳'}`)
+      if (bad.length) { lines.push(`  ◇ 有帳差的日子（${bad.length} 天）：`); bad.forEach(s => lines.push(`    - ${s.date} 現金${s.cash_diff || 0}｜刷卡${s.card_diff || 0}｜POS${s.eats365_diff ?? '未對帳'}`)) }
+    }
+    // AB 叫貨（阿桑系統這份＝AB 實際在用的；成本只算已核准 approved）
+    const ords = rowsOf(K('ord', ym), K('ord', prevYm))
+    if (ords.length) {
+      const ap = ords.filter(o => o.status === 'approved'), pend = ords.filter(o => o.status === 'pending')
+      const sum = ap.reduce((t, o) => t + (Number(o.total_amount) || 0), 0)
+      const byV = {}; ap.forEach(o => { byV[o.supplier || '(未填)'] = (byV[o.supplier || '(未填)'] || 0) + (Number(o.total_amount) || 0) })
+      lines.push(`  ◇ AB 叫貨（近兩個月）：已核准 ${ap.length} 單共${nt(sum)}｜待審 ${pend.length} 單；廠商前5：` + Object.entries(byV).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([v, m]) => `${v}${nt(m)}`).join('、'))
+      ords.sort((a, b) => (String(a.created_at) < String(b.created_at) ? 1 : -1)).slice(0, 8).forEach(o => lines.push(`    - ${String(o.created_at).slice(0, 10)} ${o.supplier || '(未填)'}｜${o.status}｜${o.line_count}項 ${nt(o.total_amount)}${o.unpriced_lines > 0 ? `（${o.unpriced_lines}項沒單價,金額低估）` : ''}`))
+    }
+    // AB 菜單成本（估算值；cost_complete=false=配方缺價成本偏低不可盡信）
+    const menu = Object.values((kv['sp_finance_pm_boss_menu'] || {}).rows || {}).filter(m => m.is_active)
+    if (menu.length) {
+      const costed = menu.filter(m => m.cost != null)
+      lines.push(`  ◇ AB 菜單成本估算：上架 ${menu.length} 道、有配方 ${costed.length} 道（幾乎全部 cost_complete=false＝成本偏低僅供參考）；成本率最高：` + costed.sort((a, b) => (b.cost_ratio || 0) - (a.cost_ratio || 0)).slice(0, 5).map(m => `${m.name}${Math.round((m.cost_ratio || 0) * 100)}%`).join('、'))
+    }
+    // AB 班表（排班非打卡；status=cancelled 已排除）
+    const sched = rowsOf(K('sched', ym), K('sched', nextYm)).filter(s => s.status !== 'cancelled' && s.work_date >= today).sort((a, b) => (a.work_date < b.work_date ? -1 : 1))
+    if (sched.length) {
+      const byD = {}; sched.forEach(s => (byD[s.work_date] = byD[s.work_date] || []).push(s.staff_name + (s.shift_code ? `(${s.shift_code})` : '')))
+      lines.push('  ◇ AB 班表（今天起 7 天，阿桑系統）：')
+      Object.entries(byD).slice(0, 7).forEach(([d, ns]) => lines.push(`    - ${d}：${ns.join('、')}`))
+    }
+    // 出勤/加班事件（人工回報：請假/遲到/加班；沒紀錄≠全勤）
+    const att = rowsOf(K('att', ym), K('att', prevYm)).sort((a, b) => (a.date < b.date ? 1 : -1))
+    if (att.length) { lines.push(`  ◇ AB 出勤事件（近兩個月 ${att.length} 筆，最近5）：`); att.slice(0, 5).forEach(e => lines.push(`    - ${e.date} ${e.item || ''}：${(e.people || []).join('、')}${e.hours ? `（${e.hours}h）` : ''}`)) }
+    const ot = rowsOf(K('ot', ym), K('ot', prevYm))
+    if (ot.length) { const hrs = ot.reduce((t, e) => t + (Number(e.hours_each) || 0) * ((e.people || []).length || 1), 0); lines.push(`  ◇ AB 加班（近兩個月）：${ot.length} 件、合計約 ${Math.round(hrs * 10) / 10} 人時`) }
+    // 交接異常（不含人事類；status/stage 會變動）
+    const inc = rowsOf(K('inc', ym), K('inc', prevYm))
+    const incOpen = inc.filter(i => !['closed', 'dismissed'].includes(i.status)).sort((a, b) => (String(a.created_at) < String(b.created_at) ? 1 : -1))
+    if (inc.length) {
+      lines.push(`  ◇ AB 交接異常（近兩個月 ${inc.length} 筆、未結案 ${incOpen.length} 筆）：`)
+      incOpen.slice(0, 10).forEach(i => lines.push(`    - ${String(i.created_at).slice(0, 10)}［${i.status}${i.stage ? '·' + i.stage : ''}］${i.cat || i.main_cat || ''}｜${String(i.detail || i.item || '').replace(/\n/g, ' ').slice(0, 50)}${i.assignee_name ? `（負責:${i.assignee_name}）` : ''}`))
+    }
+    // 備料/例行任務（今天）
+    const prep = rowsOf(K('prep', ym)).filter(p => String(p.at || '').slice(0, 10) === today && !p.cancelled_at)
+    const rout = rowsOf(K('rout', ym)).filter(r => r.biz_date === today)
+    if (prep.length || rout.length) lines.push(`  ◇ AB 今日備料送出 ${prep.length} 筆、例行任務完成 ${rout.length} 項`)
+    // 冰箱溫度警報（只列超標；空=沒異常）
+    const temp = rowsOf(K('temp', ym))
+    if (temp.length) { lines.push(`  ◇ ⚠️ AB 冰箱溫度超標 ${temp.length} 筆：`); temp.slice(0, 5).forEach(t => lines.push(`    - ${String(t.recorded_at).slice(0, 16)} ${t.device_label || t.device_id} ${t.temp_c}°C（${t.level}）`)) }
+    return lines.length > 1 ? '\n' + lines.join('\n') : ''
+  } catch (_) { return '' }
+}
+
 // 資料總目錄：列出資料庫所有文件 id → D 知道系統有哪些資料域（新空間/新功能上線自動出現在這）
 // LINE OA 訊息額度（官方 API 即時）→ 文字（張良 2026-07-18：DD 要答得出「LINE 訊息額度多少」）
 async function loadLineQuotaText() {
@@ -1422,17 +1492,19 @@ async function queryResvTop(n) {
   const sum = (await kvGetMany(['sp_finance_pm_inline']))['sp_finance_pm_inline']
   const mos = Object.keys(sum?.months || {}).sort()
   if (!mos.length) return '（訂位庫是空的）'
-  const cust = {} // key=電話(沒電話用名字) → {name, phone, seat, book, cx, guests, last}
+  // key=客人ID（＝inline 客人檔同口徑；同人會換名字「楊主委/楊安娜/楊」且部分單沒留電話，用電話當 key 會漏算——張良 2026-10-03 抓包）→ 沒 cid 退電話 → 再退名字
+  const cust = {}
   for (let i = 0; i < mos.length; i += 12) {
     const kvm = await kvGetMany(mos.slice(i, i + 12).map((m) => 'sp_finance_pm_inline_' + m))
     for (const doc of Object.values(kvm)) {
       for (const [d, arr] of Object.entries(doc?.days || {})) {
         for (const r of arr) {
           const name = (r.name || '').trim()
-          const key = r.phone || (name ? 'n:' + name : '')
+          const key = r.cid || r.phone || (name ? 'n:' + name : '')
           if (!key) continue
-          const c = cust[key] = cust[key] || { name, phone: r.phone || '', seat: 0, book: 0, cx: 0, guests: 0, last: '' }
+          const c = cust[key] = cust[key] || { name, phone: '', seat: 0, book: 0, cx: 0, guests: 0, last: '' }
           if (name && (!c.name || name.length > c.name.length)) c.name = name
+          if ((r.phone || '').length > (c.phone || '').length) c.phone = r.phone
           c.book++
           if (r.st === 2 || r.st === 5) c.cx++
           else { if (r.st === 4) { c.seat++; c.guests += r.n || 0 }; if (d > c.last) c.last = d }
@@ -1442,7 +1514,7 @@ async function queryResvTop(n) {
   }
   // 只排「有有效電話」的（沒電話的=店員現場代稱如「外國人/控」，幾百筆不是同一人，2026-10-03 實測排除）
   const rank = Object.values(cust).filter((c) => c.name && (c.phone || '').replace(/\D/g, '').length >= 8).sort((a, b) => b.seat - a.seat || b.book - a.book).slice(0, top)
-  const L = [`◆ A Beach 常客排行 Top${top}（依「實際入座次數」排，2021-02 開店～今全史；同電話=同一人；只計有留電話的，現場代稱不算）`]
+  const L = [`◆ A Beach 常客排行 Top${top}（依「實際入座次數」排，2021-02 開店～今全史；同客人ID=同一人=inline客人檔同口徑；只計有留電話的，現場代稱不算）`]
   rank.forEach((c, i) => L.push(`  ${i + 1}. ${c.name}｜入座${c.seat}次｜累計${c.guests}人次｜訂過${c.book}次(取消${c.cx})｜最近${c.last}${c.phone ? `｜${c.phone}` : ''}`))
   return L.join('\n')
 }
@@ -2059,7 +2131,7 @@ export default async function handler(req, res) {
         moneyOK = (gid === 'Cf7940efc6517b0c084ad2ad496b45f30') || (gcfg[gid] && gcfg[gid].money === true)
       }
       // 3) 一般流程：載入資料＋對話記憶＋長期記事本 → 問 AI（操作者才開放下指令）
-      const [snaps, accountsText, financeText, activityText, estimatesText, crewText, history, memList, conclusionsText, tasksText, sheetText, posText, catalogText, supplyText, lineQuotaText, filelibText, groupChatText] = await Promise.all([loadSnapshots(), loadAccounts(), loadFinanceText(), loadActivityText(), loadEstimatesText(), Promise.all([loadCrewText(), loadShiftText(), loadPunchText(), loadHrText()]).then(([a, b, c, d]) => a + b + c + d), getChatHistory(convId), getMemory(), loadConclusionsText(), loadTasksText(), loadSheetText(), loadPosText(), loadCatalogText(), loadSupplyText(), loadLineQuotaText(), loadFilelibText(), loadGroupChatText().then(async g => g + await loadPushLogText(convId))])
+      const [snaps, accountsText, financeText, activityText, estimatesText, crewText, history, memList, conclusionsText, tasksText, sheetText, posText, catalogText, supplyText, lineQuotaText, filelibText, groupChatText] = await Promise.all([loadSnapshots(), loadAccounts(), loadFinanceText(), loadActivityText(), loadEstimatesText(), Promise.all([loadCrewText(), loadShiftText(), loadPunchText(), loadHrText()]).then(([a, b, c, d]) => a + b + c + d), getChatHistory(convId), getMemory(), loadConclusionsText(), loadTasksText(), loadSheetText(), Promise.all([loadPosText(), loadBossText()]).then(([a, b]) => a + b), loadCatalogText(), loadSupplyText(), loadLineQuotaText(), loadFilelibText(), loadGroupChatText().then(async g => g + await loadPushLogText(convId))])
       let rawReply = await answer(text, snaps, accountsText, financeText, activityText, estimatesText, crewText, canAct, history, memoryToText(memList), conclusionsText, tasksText, sheetText, posText, catalogText, supplyText, lineQuotaText, filelibText, groupChatText, moneyOK)
       // 🔎 資料代查迴圈（張良 2026-09-27 根除）：AI 輸出 query_pos_day → 系統查庫 → 資料回填再答一輪（唯讀自動執行,不經確認）
       try {

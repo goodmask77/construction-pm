@@ -135,10 +135,11 @@ export default async function handler(req, res) {
           for (const [d, arr] of Object.entries(doc?.days || {})) {
             for (const r of arr) {
               const name = (r.name || '').trim()
-              const key = r.phone || (name ? 'n:' + name : '')
+              const key = r.cid || r.phone || (name ? 'n:' + name : '') // cid=inline 客人檔同口徑（同人換名/沒留電話都合得起來）
               if (!key) continue
-              const c = cust[key] = cust[key] || { name, phone: r.phone || '', seat: 0, book: 0, cx: 0, guests: 0, last: '' }
+              const c = cust[key] = cust[key] || { name, phone: '', seat: 0, book: 0, cx: 0, guests: 0, last: '' }
               if (name && (!c.name || name.length > c.name.length)) c.name = name
+              if ((r.phone || '').length > (c.phone || '').length) c.phone = r.phone
               c.book++
               if (CANCELED_STATES.includes(r.st)) c.cx++
               else { if (r.st === 4) { c.seat++; c.guests += r.n || 0 }; if (d > c.last) c.last = d }
