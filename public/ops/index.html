@@ -3451,6 +3451,7 @@ async function ntfPage(){ // 通知中心彈層：分類chips＋依日分組歷�
   document.body.appendChild(ov)
   await ntfFetch(); ntfRender()
   localStorage.setItem('gdNtfRead', new Date().toISOString()) // 打開＝已讀
+  if (TK()) fetch('/api/mail-sync?ntfread=' + encodeURIComponent(K) + '&me=' + encodeURIComponent(TK())).catch(()=>{}) // v4.33.5 伺服器也記已讀＝之後推播的App圖示數字會歸零重算
   try { if ('clearAppBadge' in navigator) navigator.clearAppBadge().catch(()=>{}) } catch(e){}
   const b = document.getElementById('ntfBell'); const d = b && b.querySelector('.ntfDot'); if (d) d.remove()
 }

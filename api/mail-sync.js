@@ -2510,6 +2510,18 @@ export default async function handler(req, res) {
     await kvPut('sp_finance_pm_push_subs', docW, '推播訂閱(' + whoW.name + (bw.off ? '取消' : '') + ')')
     return res.status(200).json({ ok: true, on: !bw.off })
   }
+  // 🔔 通知已讀（v4.33.5 張良：手機桌面App圖示顯示未讀數）：GET ?ntfread=<OPS_BOARD_KEY>&me=token → 記本人已讀時間
+  // 之後每次推播 badge=ts>已讀 的筆數＝跟 App 裡鈴鐺同數字
+  if (req.query?.ntfread) {
+    const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
+    if (!ok2 || String(req.query.ntfread) !== ok2) return res.status(403).json({ ok: false })
+    const whoR9 = await sopWho(req.query.me)
+    if (!whoR9) return res.status(200).json({ ok: true }) // 訪客沒有個人未讀
+    const docR9 = (await kvGet('sp_finance_pm_prep_ntf')) || { list: [] }
+    docR9.read = { ...(docR9.read || {}), [whoR9.rid || whoR9.uid]: new Date().toISOString() }
+    await kvPut('sp_finance_pm_prep_ntf', docR9, '通知已讀(' + whoR9.name + ')')
+    return res.status(200).json({ ok: true })
+  }
   // 🔔 通知中心歷史（v4.33.4 張良：通知要有頁面+歷史+分類）：GET ?ntf=<OPS_BOARD_KEY>&me=token
   // 全員通知(to=null)人人看得到；指定對象的(to=[rids])只有本人看得到
   if (req.query?.ntf) {
