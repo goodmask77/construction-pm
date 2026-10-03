@@ -2403,6 +2403,24 @@ export default async function handler(req, res) {
     }
     return res.status(400).json({ ok: false })
   }
+  // boss-api 資料盤點探針（MENU_PROBE_KEY；2026-10-04 串接後盤點用）：?bossprobe=<key> 回各檔筆數+欄位+每類一筆樣本
+  if (req.query?.bossprobe) {
+    const mkP = (process.env.MENU_PROBE_KEY || '').trim()
+    if (!mkP || String(req.query.bossprobe) !== mkP) return res.status(403).json({ ok: false })
+    const r9 = await fetch(`${SB_URL}/rest/v1/pm_documents?id=like.sp_finance_pm_boss_*&select=id,data`, { headers: { apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}` } })
+    const rows9 = r9.ok ? await r9.json() : []
+    const files = [], samples = {}
+    for (const row of rows9) {
+      let v = null; try { v = typeof row.data?.v === 'string' ? JSON.parse(row.data.v) : row.data?.v } catch (_) {}
+      const rr = (v && v.rows) ? Object.values(v.rows) : (Array.isArray(v) ? v : (v && typeof v === 'object' && !v.rows ? [v] : []))
+      const n2 = (v && v.rows) ? Object.keys(v.rows).length : rr.length
+      files.push({ id: row.id, n: n2 })
+      const slug9 = row.id.replace('sp_finance_pm_boss_', '').replace(/_\d{6}$/, '')
+      if (!samples[slug9] && rr.length) samples[slug9] = rr[0]
+    }
+    files.sort((a, b) => a.id.localeCompare(b.id))
+    return res.status(200).json({ ok: true, files, samples })
+  }
   // 補發綁定審核按鈕卡（MENU_PROBE_KEY；張良 2026-10-03「這兩個請DD傳給我試試看」）：?bindcard=<key> 把待審核名單逐一發按鈕卡給審核人
   if (req.query?.bindcard) {
     const mkB = (process.env.MENU_PROBE_KEY || '').trim()
