@@ -179,8 +179,9 @@ async function custBuild() {
   const idd = Object.values(cust).filter((c) => c.n && c.ph.replace(/\D/g, '').length >= 8)
   const cutoff = addDays(today, -180)
   const idx = { builtAt: new Date().toISOString(), totalAll: Object.keys(cust).length, identified: idd.length, segments: {} }
+  const named = Object.values(cust).filter((c) => c.n) // 婚禮/包場常沒留電話 → wed 段不要求電話
   for (const [seg, [label, filt, sorter, maxPg]] of Object.entries(SEG_DEF)) {
-    let list = idd.filter(filt)
+    let list = (seg === 'wed' ? named : idd).filter(filt)
     if (seg === 'lost') list = list.filter((c) => c.l && c.l < cutoff)
     list.sort(sorter)
     const pages = Math.min(maxPg, Math.ceil(list.length / 1000) || 0)
