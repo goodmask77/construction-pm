@@ -1997,7 +1997,7 @@ export default async function handler(req, res) {
               if (!/AB/.test(rec9.dept || '')) continue
               let h9 = (Number(rec9.durmin) || 0) / 60
               if (!h9 && (rec9.on || []).length && (rec9.off || []).length) { let sp9 = t2m9(rec9.off[rec9.off.length - 1]) - t2m9(rec9.on[0]); if (sp9 < 0) sp9 += 1440; h9 = Math.max(0, sp9 - 60) / 60 }
-              if (h9 > 0 || rec9.absent) abAtt.push({ date: dt9, name: rec9.name, h: Math.round(h9 * 10) / 10, late: rec9.late || 0, early: rec9.early || 0, absent: rec9.absent || 0 })
+              if (h9 > 0 || rec9.absent) abAtt.push({ date: dt9, name: String(rec9.name || '').replace(/\s+[A-Za-z].*$/, ''), h: Math.round(h9 * 10) / 10, late: rec9.late || 0, early: rec9.early || 0, absent: rec9.absent || 0 }) // 名字去英文後綴=與班表/薪資費率同鍵
             }
           }
         }
