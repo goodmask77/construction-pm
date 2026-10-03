@@ -3411,13 +3411,69 @@ async function meChipInit(){ // 側欄底部＝登入身分（張良 2026-10-02�
   const role = me ? (me.approver ? '審核人' : (me.role === '主管' ? '主管' : '夥伴')) : '無編輯權限'
   el.innerHTML = `<div style="width:42px;height:42px;border-radius:50%;background:${me?'var(--grad)':'#3A4452'};color:#fff;display:flex;align-items:center;justify-content:center;font-weight:900;font-size:17px;flex:0 0 auto">${nm.slice(0,1)}</div>
     <div style="min-width:0"><div style="font-weight:800;font-size:16px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${nm}</div><div class="hint" style="font-size:12.5px">${role}</div></div>`
-  // 🔔 v4.33.0：綁定者＋支援推播＋還沒允許 → 身分旁亮鈴鐺；已允許 → 默默補訂閱（換部署/過期自動續）
-  try { if (me && wpSupport()) {
-    if (Notification.permission === 'granted') pushSub()
-    else if (Notification.permission === 'default') { const b9 = document.createElement('button'); b9.className='mini'; b9.style.cssText='margin-left:auto;padding:8px 11px;font-size:17px;line-height:1'; b9.title='開啟通知：點通知直接打開 GD'; b9.textContent='🔔'; b9.onclick=pushOn; el.appendChild(b9) }
-  } } catch(e){}
+  // 🔔 v4.33.4 鈴鐺改常駐＝通知中心入口（張良：原本按完就消失）＋未讀紅點數；已允許推播→默默補訂閱（換部署/過期自動續）
+  try {
+    if (me && wpSupport() && Notification.permission === 'granted') pushSub()
+    const b9 = document.createElement('button'); b9.id='ntfBell'; b9.className='mini'
+    b9.style.cssText='margin-left:auto;padding:8px 11px;font-size:17px;line-height:1;position:relative'
+    b9.title='通知中心：歷史紀錄＋分類'; b9.textContent='🔔'; b9.onclick=ntfPage; el.appendChild(b9)
+    ntfBadgeSync()
+  } catch(e){}
   // v4.26.3（張良：設定每個頁面看不看得見）：被關掉的分頁直接從側欄藏起來（board=首頁）
   if (me && !me.approver && Array.isArray(me.hideTabs)) me.hideTabs.forEach(k=>{ const b = document.getElementById(k==='board' ? 'tab-home' : 'tab-'+k); if (b) b.style.display = 'none' })
+}
+// ── 🔔 通知中心（v4.33.4 張良：通知要有頁面＋歷史紀錄＋分類；鈴鐺常駐不再按完消失）──
+// 歷史=伺服器每發一次推播自動記一筆(sp_finance_pm_prep_ntf)；全員通知人人看得到、指定對象只有本人看得到
+const NTF_CATS = { all:'全部', meet:'📢 會議', sop:'✅ SOP', prep:'🍳 備料', stock:'📦 庫存', issue:'⚠️ 問題回報', other:'🔔 其他' }
+let _ntfList = null, _ntfCat = 'all'
+async function ntfFetch(){ try { const r = await fetch('/api/mail-sync?ntf=' + encodeURIComponent(K) + (TK() ? '&me=' + encodeURIComponent(TK()) : '') + '&r=' + Date.now()); const j = await r.json(); if (j && j.ok) _ntfList = j.list || [] } catch(e){}; return _ntfList || [] }
+function ntfUnread(){ const rd = localStorage.getItem('gdNtfRead') || ''; return (_ntfList || []).filter(x => x.ts > rd).length }
+async function ntfBadgeSync(){ // 鈴鐺上的未讀紅點數（進站抓一次）
+  await ntfFetch()
+  const b = document.getElementById('ntfBell'); if (!b) return
+  const n = ntfUnread()
+  let d = b.querySelector('.ntfDot'); if (d) d.remove()
+  if (n > 0) { d = document.createElement('span'); d.className = 'ntfDot'
+    d.style.cssText = 'position:absolute;top:-5px;right:-5px;background:#E5484D;color:#fff;border-radius:999px;font-size:11px;font-weight:900;min-width:17px;height:17px;line-height:17px;text-align:center;padding:0 3px'
+    d.textContent = n > 99 ? '99+' : n; b.appendChild(d) }
+}
+async function ntfPage(){ // 通知中心彈層：分類chips＋依日分組歷史；打開＝全部標已讀＋清App圖示數字
+  const old = document.getElementById('ntfOv'); if (old) { old.remove(); return }
+  const ov = document.createElement('div'); ov.id = 'ntfOv'
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(10,14,22,.55);z-index:60;display:flex;align-items:flex-end;justify-content:center'
+  ov.innerHTML = `<div style="background:#1C2430;border:1px solid #39434F;border-radius:16px 16px 0 0;width:100%;max-width:560px;max-height:82vh;display:flex;flex-direction:column" onclick="event.stopPropagation()">
+    <div style="display:flex;align-items:center;gap:8px;padding:14px 16px 8px"><span style="font-weight:900;font-size:17px">🔔 通知中心</span>
+      ${('Notification' in window) && Notification.permission !== 'granted' ? '<button class="mini" style="padding:6px 10px" onclick="pushOn()">開啟推播</button>' : ''}
+      <button class="mini" style="margin-left:auto;padding:6px 12px" onclick="document.getElementById('ntfOv').remove()">✕</button></div>
+    <div id="ntfChips" style="display:flex;gap:6px;flex-wrap:wrap;padding:0 16px 10px"></div>
+    <div id="ntfList" style="overflow:auto;padding:0 16px 20px"></div></div>`
+  ov.onclick = () => ov.remove()
+  document.body.appendChild(ov)
+  await ntfFetch(); ntfRender()
+  localStorage.setItem('gdNtfRead', new Date().toISOString()) // 打開＝已讀
+  try { if ('clearAppBadge' in navigator) navigator.clearAppBadge().catch(()=>{}) } catch(e){}
+  const b = document.getElementById('ntfBell'); const d = b && b.querySelector('.ntfDot'); if (d) d.remove()
+}
+function ntfRender(){
+  const L = _ntfList || [], rd0 = localStorage.getItem('gdNtfRead') || ''
+  const cnt = k => k==='all' ? L.length : L.filter(x=>(x.cat||'other')===k).length
+  document.getElementById('ntfChips').innerHTML = Object.entries(NTF_CATS).filter(([k])=>k==='all'||cnt(k)).map(([k,lb]) =>
+    `<button class="mini${_ntfCat===k?' on':''}" style="padding:6px 11px" onclick="_ntfCat='${k}';ntfRender()">${lb}${cnt(k)?` <span style="opacity:.65">${cnt(k)}</span>`:''}</button>`).join('')
+  const fl = _ntfCat==='all' ? L : L.filter(x=>(x.cat||'other')===_ntfCat)
+  if (!fl.length) { document.getElementById('ntfList').innerHTML = '<div class="hint" style="padding:18px 0;text-align:center">還沒有通知</div>'; return }
+  const day = ts => { const d2 = ts.slice(0,10), t0 = new Date().toISOString().slice(0,10); return d2===t0 ? '今天' : d2 }
+  let lastD = '', html = ''
+  fl.forEach(x => {
+    const d2 = day(x.ts)
+    if (d2 !== lastD) { html += `<div class="hint" style="font-weight:800;margin:12px 0 4px">${d2}</div>`; lastD = d2 }
+    const hh = new Date(x.ts).toLocaleTimeString('zh-TW',{hour:'2-digit',minute:'2-digit',hour12:false})
+    const unread = x.ts > rd0
+    html += `<div onclick="location.href='${(x.url||'/prep').replace(/'/g,'')}'" style="display:flex;gap:9px;padding:10px 10px;border:1px solid ${unread?'#3E5B86':'#2C3542'};background:${unread?'#20304A':'#202834'};border-radius:11px;margin-bottom:7px;cursor:pointer">
+      <span style="flex:0 0 auto;font-size:16px">${(NTF_CATS[x.cat]||'🔔').slice(0,2)}</span>
+      <div style="min-width:0"><div style="font-weight:800;font-size:14.5px">${x.title||''} <span class="hint" style="font-weight:400">${hh}</span></div>
+      <div class="hint" style="font-size:13px;overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical">${x.body||''}</div></div></div>`
+  })
+  document.getElementById('ntfList').innerHTML = html
 }
 function sopPage(){ // ✅ SOP 獨立分頁（張良 2026-10-02：從首頁拆出）
   curStore = 'sop'; setTabs('sop')

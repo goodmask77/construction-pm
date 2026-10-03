@@ -16,6 +16,15 @@ export async function wpPush(rids, msg) {
   const { kvGet, kvPut } = await import('./mail-sync.js')
   const doc = (await kvGet('sp_finance_pm_push_subs')) || {}
   const payload = JSON.stringify({ title: msg.title || 'GD', body: String(msg.body || '').slice(0, 180), url: msg.url || '/prep', ...(msg.badge != null ? { badge: msg.badge } : {}) }) // badge=圖示紅點數字(v4.33.2)
+  // 📨 通知歷史（v4.33.4 張良：通知要有頁面+歷史+分類）：所有推播都走這裡＝單一路口順手記一筆
+  // cat 沒給就按文字自動歸類；to=null 全員看得到、有指定 rids 只有本人看得到（/prep ?ntf= 口過濾）
+  try {
+    const t9 = (msg.title || '') + (msg.body || '')
+    const cat9 = msg.cat || (/會議|宣達|簽收/.test(t9) ? 'meet' : /SOP|超時/.test(t9) ? 'sop' : /備料/.test(t9) ? 'prep' : /低水位|庫存|包材|叫貨/.test(t9) ? 'stock' : /問題|回報/.test(t9) ? 'issue' : 'other')
+    const nd = (await kvGet('sp_finance_pm_prep_ntf')) || { list: [] }
+    nd.list = [{ id: 'n' + Date.now().toString(36), ts: new Date().toISOString(), cat: cat9, title: msg.title || 'GD', body: String(msg.body || '').slice(0, 180), url: msg.url || '/prep', to: rids || null }, ...(nd.list || [])].slice(0, 300)
+    await kvPut('sp_finance_pm_prep_ntf', nd, '通知歷史')
+  } catch (_) {}
   let sent = 0, dirty = false
   for (const [rid, rec] of Object.entries(doc)) {
     if (rids && !rids.includes(rid)) continue

@@ -2510,6 +2510,28 @@ export default async function handler(req, res) {
     await kvPut('sp_finance_pm_push_subs', docW, '推播訂閱(' + whoW.name + (bw.off ? '取消' : '') + ')')
     return res.status(200).json({ ok: true, on: !bw.off })
   }
+  // 🔔 通知中心歷史（v4.33.4 張良：通知要有頁面+歷史+分類）：GET ?ntf=<OPS_BOARD_KEY>&me=token
+  // 全員通知(to=null)人人看得到；指定對象的(to=[rids])只有本人看得到
+  if (req.query?.ntf) {
+    const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
+    if (!ok2 || String(req.query.ntf) !== ok2) return res.status(403).json({ ok: false })
+    const [docN9, meN9] = await Promise.all([kvGet('sp_finance_pm_prep_ntf'), sopWho(req.query.me)])
+    const ridN9 = meN9 ? (meN9.rid || meN9.uid) : null
+    const listN9 = ((docN9 || {}).list || []).filter(x => !x.to || (ridN9 && x.to.includes(ridN9))).slice(0, 100).map(({ to, ...r }) => r)
+    return res.status(200).json({ ok: true, list: listN9 })
+  }
+  // 🔔 通知測試口（管理金鑰）：GET ?ntfping=<MENU_PROBE_KEY>&name=張良瑋 → 對本人發一則測試推播（帶 badge=1 驗證圖示數字）
+  if (req.query?.ntfping) {
+    const mk9 = (process.env.MENU_PROBE_KEY || '').trim()
+    if (!mk9 || String(req.query.ntfping) !== mk9) return res.status(403).json({ ok: false })
+    const nmP9 = String(req.query.name || '').trim()
+    const bdP9 = (await kvGet('sp_finance_pm_prep_bind')) || {}
+    const hitP9 = Object.values(bdP9.tokens || {}).find(x => x.name === nmP9)
+    if (!hitP9) return res.status(404).json({ ok: false, error: '找不到這個人的綁定' })
+    const { wpPush } = await import('./_webpush.js')
+    const sentP9 = await wpPush([hitP9.rid || hitP9.uid], { title: String(req.query.t || '🔔 通知中心上線'), body: String(req.query.b || '左下角鈴鐺＝通知歷史＋分類，這一則也會出現在裡面；App 圖示應該有數字 1'), url: '/prep', badge: 1, cat: 'other' })
+    return res.status(200).json({ ok: true, sent: sentP9 })
+  }
   // LIFF 換身分口：POST ?liffauth=1 {at}（LIFF access token）→ 伺服器跟 LINE 驗證拿 userId → 回個人 token
   // 安全：不信前端給的 userId，一定拿 at 去 LINE API 驗（不然誰都能冒名）
   if (req.method === 'POST' && req.query?.liffauth) {
