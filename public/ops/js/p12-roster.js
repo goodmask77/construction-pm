@@ -55,7 +55,7 @@ function hrmRender(){
       <input value="${hrmQ.replace(/"/g,'&quot;')}" placeholder="搜姓名／部門／職務" style="padding:8px 12px;border:1.5px solid var(--line);border-radius:10px;font-size:14.5px;width:200px;background:var(--card);color:var(--ink)" oninput="hrmQ=this.value;hrmRender()">
       <span class="hint">${rows.length} 人</span>
       ${d.canEdit?`<button class="mini${window._hrmEdit?' on':''}" style="padding:6px 14px;font-weight:800" onclick="window._hrmEdit=!window._hrmEdit;hrmRender()">${window._hrmEdit?'✓ 完成編輯':'✏️ 編輯'}</button>`:''}
-      ${d.canEdit&&window._hrmEdit?`<button class="mini" style="padding:6px 12px" onclick="hrmTitleOpts()">職務選單</button>`:''}
+      ${d.canEdit&&window._hrmEdit?`<button class="mini" style="padding:6px 12px" onclick="hrmTitleOpts()">職務選單</button><button class="mini" style="padding:6px 12px" onclick="hrmAdd('ab')">＋ AB 加人</button><button class="mini" style="padding:6px 12px" onclick="hrmAdd('gd')">＋ GD 加人</button>`:''}
     </div>`
   if (upcoming.length) {
     h += `<div style="background:var(--card);border:1.5px solid var(--line);border-radius:12px;padding:10px 13px;margin-bottom:12px">
@@ -95,15 +95,9 @@ function hrmRender(){
       <td style="padding:4px 7px;text-align:center;font-family:ui-monospace,monospace;letter-spacing:.5px">${ed&&d.idCan?IN9(x,'nid',104):(x.nid||'—')}</td>
       <td style="padding:4px 7px;text-align:left;font-size:12px" class="hint">${ed?IN9(x,'health',104,1):(x.health||'—')}${ed?` <button class="mini" style="padding:1px 7px;color:var(--red)" onclick="hrmDel('${(x.co||'').replace(/'/g,'')}','${(x.name||'').replace(/'/g,'')}')">刪</button>`:''}</td></tr>`
   }
-  if (hrmCo === 'all' && !hrmSort.k) { // 全部＋沒排序＝照公司分區
-    ;[...new Set(rows.map(x=>x.co))].forEach(co=>{
-      const list = rows.filter(x=>x.co===co)
-      h += `<div style="font-weight:900;font-size:15.5px;margin:14px 0 6px;color:var(--pdark)">${co}（${list.length} 人）${window._hrmEdit?` <button class="mini" style="padding:2px 10px" onclick="hrmAdd('${co.replace(/'/g,'')}')">＋ 加人</button>`:''}</div>
-        <div class="scroll"><table style="border-collapse:collapse;width:100%">${header(false)}<tbody>${list.map(rowHtml).join('')}</tbody></table></div>`
-    })
-  } else { // 篩選或排序＝一張表（跨公司排序才有意義），加「店」欄識別
-    h += `<div class="scroll"><table style="border-collapse:collapse;width:100%">${header(true)}<tbody>${rows.map((x,i)=>rowHtml({ ...x, _withCo: 1 }, i)).join('')}</tbody></table></div>`
-  }
+  // v4.34.5（張良抓包跳動真因：「全部」原本分公司、一排序才合併=版面縮一下）：全部=永遠一張合併表(含店欄)，排不排序版型都一樣
+  const withCo = hrmCo === 'all'
+  h += `<div class="scroll"><table style="border-collapse:collapse;width:100%">${header(withCo)}<tbody>${rows.map((x,i)=>rowHtml(withCo?{ ...x, _withCo: 1 }:x, i)).join('')}</tbody></table></div>`
   h += `<div class="hint" style="margin-top:10px">來源：勞工名冊（Google Sheet）・要更新跟 D 哥說「更新夥伴名冊」即可重新匯入</div></section>`
   app.innerHTML = h
 }
@@ -142,7 +136,9 @@ async function hrmUp(body){
 }
 function hrmRenderKeep(){ const scrs=[...document.querySelectorAll('#app .scroll')].map(el=>el.scrollLeft); const winY=window.scrollY; hrmRender(); requestAnimationFrame(()=>{ [...document.querySelectorAll('#app .scroll')].forEach((el,i)=>{ if(scrs[i]!=null) el.scrollLeft=scrs[i] }); window.scrollTo(0,winY) }) }
 async function hrmSet(co, name, field, val){ const r = await hrmUp({ op:'set', co, name, field, val }); if (r) hrmRenderKeep() }
-async function hrmAdd(co){ const nm = prompt('新夥伴姓名'); if (!nm) return; const r = await hrmUp({ op:'add', co, newName: nm.trim().slice(0,20) }); if (r) hrmRender() }
+async function hrmAdd(code){ const d = window._hrmD||{rows:[]}
+  const co = code==='ab' ? ((d.rows.find(x=>/A Beach/.test(x.co))||{}).co||'口香糖俱樂部（A Beach）') : ((d.rows.find(x=>/GROUN/.test(x.co))||{}).co||'喬亞國際（GROUN:D）')
+  const nm = prompt('新夥伴姓名'); if (!nm) return; const r = await hrmUp({ op:'add', co, newName: nm.trim().slice(0,20) }); if (r) hrmRenderKeep() }
 async function hrmDel(co, name){ if (!confirm('把 '+name+' 從名冊移除？')) return; const r = await hrmUp({ op:'del', co, name }); if (r) hrmRender() }
 
 // 職務選單自訂（v4.34.4 張良「兼職改PT 值班改正職 我可以新增刪減編輯選單」）
