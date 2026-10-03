@@ -77,7 +77,8 @@ export default async function handler(req, res) {
   }
   // 原始透傳探針（除錯用；?bossraw=<MENU_PROBE_KEY>&ep=revenue/daily&from=&to=）：直接打上游看原始回應
   if (req.query?.bossraw) {
-    if (!force && String(req.query.bossraw) !== mk) return res.status(403).json({ ok: false })
+    const pkR = (process.env.PARTNER_API_KEY || '').trim() // 本機 .env.local 的 MENU_PROBE_KEY 與線上不符 → 也收 partner 金鑰
+    if (!force && String(req.query.bossraw) !== mk && !(pkR && String(req.query.bossraw) === pkR)) return res.status(403).json({ ok: false })
     try {
       const p = { limit: 50 }
       if (req.query.from) { p.from = String(req.query.from); p.to = String(req.query.to || req.query.from) }
