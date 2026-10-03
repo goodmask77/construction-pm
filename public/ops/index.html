@@ -2241,7 +2241,7 @@ function shiftRender(){
           const lbS = ri===1?'☀️ 早上合計':'🌙 晚上合計', keys9 = ri===1?['a','b']:['c','d'], GK='#F2C94C'
           hh += `<tr><td style="${BD}padding:3px 6px;text-align:left;font-weight:900;font-size:11px;color:${GK};position:sticky;left:0;background:#241F0E;z-index:1;white-space:nowrap">${lbS}</td>`
           hh += wd2.map(dt=>{
-            const vv = keys9.map(k=>(d.resv[dt]||{})[k]).filter(Boolean)
+            const vv = keys9.map(k=>(resvAll[dt]||{})[k]).filter(Boolean) // v4.37.7 跟時段列同吃跨月合併版（原讀 d.resv=只有當月±6天→翻舊月合計斷掉）
             const p9 = vv.reduce((t,v)=>t+(v.p||0),0), g9 = vv.reduce((t,v)=>t+(v.g||0),0), k9 = vv.reduce((t,v)=>t+(v.k||0),0)
             const base = `${BD}${sepOf(dt)}${dt===today?todayBg:wkndBg(dt)}border-bottom:2px solid var(--line);`
             if (!p9) return `<td style="${base}"></td>`
