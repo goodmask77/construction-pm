@@ -20,8 +20,8 @@
 |---|---|---|---|---|
 | `/revenue/daily` | 每日營收（GD 喬亞＋AB Eats365 都有，`store=ground\|abeach` 可濾） | 31 天 | 366 天 | `date`＋`store` |
 | `/revenue/items` | 每日品項明細（攤平：分類/品項/數量/金額；含付款方式、時段表） | 31 天 | 92 天 | `date`＋`store`＋`sheet`＋`section`＋`name` |
-| `/orders` | GD 叫貨單（單頭含 `items` 明細與驗收狀態） | 全部 | — | `order_id` |
-| `/orders/prices` | GD 進價流水（日期/廠商/品項/單價/數量） | 31 天 | 366 天 | 無穩定主鍵，整窗覆蓋 |
+| `/orders` | 叫貨單（供應鏈兩店共用，A Beach／GROUN:D 都有；單頭含 `items` 明細與驗收狀態） | 全部 | — | `order_id` |
+| `/orders/prices` | 進價流水（日期/廠商/品項/單價/數量；兩店共用） | 31 天 | 366 天 | 無穩定主鍵，整窗覆蓋 |
 | `/reservations` | AB inline 訂位逐筆（全史 2021-02 起，14 萬筆） | 31 天 | 92 天 | `reservation_id` |
 | `/reservations/summary` | 訂位全史月彙總（每月筆數/人次） | — | — | 整份覆蓋 |
 | `/hr/schedule` | GD 班表（日期/人/起訖/休息） | 前 7 天 | 366 天 | `date`＋`name`＋`start` |
