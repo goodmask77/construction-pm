@@ -106,6 +106,10 @@ tr.bdayGlow td{animation:bdayBg 1.9s ease-in-out infinite;border-top:1.5px solid
 tr.bdayGlow td:first-child{border-left:1.5px solid #FF8FC5;border-radius:8px 0 0 8px}
 tr.bdayGlow td:last-child{border-right:1.5px solid #FF8FC5;border-radius:0 8px 8px 0}
 @keyframes bdayBg{0%,100%{background:rgba(255,143,197,.07)}50%{background:rgba(255,143,197,.22)}}
+td.hrmStick{position:sticky;left:0;background:var(--card);z-index:1} /* 夥伴名冊姓名凍結（v4.34.4 張良「凍結在姓名 滑到右邊才知道是誰」） */
+th.hrmStick{position:sticky;left:0;background:var(--soft);z-index:2}
+tr.bdayGlow td.hrmStick{animation:bdayBgSolid 1.9s ease-in-out infinite} /* 凍結格要實色不然後面字透出來 */
+@keyframes bdayBgSolid{0%,100%{background:#281B27}50%{background:#3A2336}}
 @keyframes vioRed{0%,100%{box-shadow:0 0 0 1.5px #F07373,0 0 4px 1px rgba(240,115,115,.35)}50%{box-shadow:0 0 0 2.5px #FF8B8B,0 0 14px 4px rgba(240,115,115,.8)}}
 @keyframes shSlideL{from{transform:translateX(44px);opacity:.35}to{transform:none;opacity:1}} /* 週表左右滑動（張良 2026-10-02） */
 @keyframes shSlideR{from{transform:translateX(-44px);opacity:.35}to{transform:none;opacity:1}}

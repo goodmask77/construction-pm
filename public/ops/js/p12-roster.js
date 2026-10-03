@@ -15,7 +15,13 @@ async function hrmLoad(){
   window._hrmD = d
   hrmRender()
 }
-function hrmSortBy(k){ if (hrmSort.k === k) hrmSort.dir = -hrmSort.dir; else hrmSort = { k, dir: 1 }; hrmRender() }
+function hrmSortBy(k){ // v4.34.4 張良「排序畫面不要跳不要閃 手機滑到右邊按排序會跑回左邊」：記住捲動位置重畫後原位還原
+  if (hrmSort.k === k) hrmSort.dir = -hrmSort.dir; else hrmSort = { k, dir: 1 }
+  const scrs = [...document.querySelectorAll('#app .scroll')].map(el=>el.scrollLeft)
+  const winY = window.scrollY
+  hrmRender()
+  requestAnimationFrame(()=>{ const after=[...document.querySelectorAll('#app .scroll')]; after.forEach((el,i)=>{ if(scrs[i]!=null) el.scrollLeft=scrs[i] }); window.scrollTo(0,winY) })
+}
 function hrmRender(){
   const d = window._hrmD; if (!d || curStore !== 'hrm') return
   const isAB = x => /A Beach/.test(x.co||'')
@@ -49,6 +55,7 @@ function hrmRender(){
       <input value="${hrmQ.replace(/"/g,'&quot;')}" placeholder="搜姓名／部門／職務" style="padding:8px 12px;border:1.5px solid var(--line);border-radius:10px;font-size:14.5px;width:200px;background:var(--card);color:var(--ink)" oninput="hrmQ=this.value;hrmRender()">
       <span class="hint">${rows.length} 人</span>
       ${d.canEdit?`<button class="mini${window._hrmEdit?' on':''}" style="padding:6px 14px;font-weight:800" onclick="window._hrmEdit=!window._hrmEdit;hrmRender()">${window._hrmEdit?'✓ 完成編輯':'✏️ 編輯'}</button>`:''}
+      ${d.canEdit&&window._hrmEdit?`<button class="mini" style="padding:6px 12px" onclick="hrmTitleOpts()">職務選單</button>`:''}
     </div>`
   if (upcoming.length) {
     h += `<div style="background:var(--card);border:1.5px solid var(--line);border-radius:12px;padding:10px 13px;margin-bottom:12px">
@@ -58,42 +65,44 @@ function hrmRender(){
         <b>${x.md}</b> ${x.name} <span class="hint" style="font-size:12px">${/A Beach/.test(x.co)?'AB':'GD'}・${x.days===0?'🎉 今天！':x.days+'天後'}</span></span>`).join('')}
       </div></div>`
   }
-  // 欄頭：對齊與資料一致（姓名/體檢靠左、其餘置中）＋點了排序
-  const arrow = k => hrmSort.k===k ? (hrmSort.dir>0?' ▲':' ▼') : ''
-  const TH = (k,lb,align)=>`<th style="padding:6px 8px;text-align:${align};cursor:pointer;white-space:nowrap;user-select:none" onclick="hrmSortBy('${k}')" title="點我排序">${lb}${arrow(k)}</th>`
+  // 欄頭：對齊與資料一致＋點了排序；箭頭佔固定寬（出現/消失不會把欄位擠歪）
+  const arrow = k => `<span style="display:inline-block;width:12px;text-align:center;font-size:10px">${hrmSort.k===k?(hrmSort.dir>0?'▲':'▼'):''}</span>`
+  const TH = (k,lb,align,stick)=>`<th class="${stick?'hrmStick':''}" style="padding:4px 7px;text-align:${align};cursor:pointer;white-space:nowrap;user-select:none" onclick="hrmSortBy('${k}')" title="點我排序">${lb}${arrow(k)}</th>`
   // 🔒 身分證欄名單鎖（v4.41.2 張良「顯示鎖的符號 裡面有人員名單 我打勾的人才可以看到」）：管理者點鎖頭勾人；沒在名單的主管這欄=「—」(伺服器端拔掉)
   const LOCK_I9 = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" style="vertical-align:-2px"><rect x="4" y="11" width="16" height="9" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>'
-  const nidTh = `<th style="padding:6px 8px;text-align:center;white-space:nowrap;user-select:none">身分證字號 ${d.idLock ? `<span title="名單制：打勾的人才看得到這一欄（點我設定）" style="cursor:pointer;color:#D4A72C" onclick="hrmIdLock()">${LOCK_I9}</span>` : (d.idCan ? '' : `<span class="hint" title="你沒有檢視這欄的權限">${LOCK_I9}</span>`)}</th>`
-  const header = `<thead><tr><th style="padding:6px 8px;text-align:center">#</th>${TH('name','姓名','left')}${TH('dept','部門','center')}${TH('title','職務','center')}${TH('onboard','到職日','center')}${TH('onboard','年資','center')}${TH('bday','生日','center')}${TH('age','年齡','center')}${TH('sex','性別','center')}${nidTh}${TH('health','體檢','left')}</tr></thead>`
+  const nidTh = `<th style="padding:4px 7px;text-align:center;white-space:nowrap;user-select:none">身分證字號 ${d.idLock ? `<span title="名單制：打勾的人才看得到這一欄（點我設定）" style="cursor:pointer;color:#D4A72C" onclick="hrmIdLock()">${LOCK_I9}</span>` : (d.idCan ? '' : `<span class="hint" title="你沒有檢視這欄的權限">${LOCK_I9}</span>`)}</th>`
+  const header = (withCo)=>`<thead><tr>${TH('name','姓名','left',1)}${withCo?`<th style="padding:4px 7px;text-align:center">店</th>`:''}${TH('dept','部門','center')}${TH('title','職務','center')}${TH('onboard','到職日','center')}${TH('onboard','年資','center')}${TH('bday','生日','center')}${TH('age','年齡','center')}${TH('sex','性別','center')}${nidTh}${TH('health','體檢','left')}</tr></thead>`
   const bdaySet = {} // 名→天數（近30天壽星整列生日光）
   upcoming.forEach(x=>{ bdaySet[x.co+'|'+x.name]=x.days })
   const IN9 = (x,f,w,alignL)=>`<input value="${String(x[f]??'').replace(/"/g,'&quot;')}" style="width:${w}px;padding:3px 5px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--ink);font-size:12.5px;text-align:${alignL?'left':'center'}" onchange="hrmSet('${(x.co||'').replace(/'/g,'')}','${(x.name||'').replace(/'/g,'')}','${f}',this.value)">`
+  const topts = d.titleOpts || ['正職','PT']
+  const SEL9 = (x)=>`<select style="padding:3px 4px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--ink);font-size:12.5px" onchange="hrmSet('${(x.co||'').replace(/'/g,'')}','${(x.name||'').replace(/'/g,'')}','title',this.value)">${[...new Set([x.title,...topts])].filter(Boolean).map(o9=>`<option ${o9===x.title?'selected':''}>${o9}</option>`).join('')}</select>`
   const rowHtml = (x,i)=>{
     let ten = ''
     if (x.onboard) { const ms = Date.now() - new Date(x.onboard).getTime(); const y9 = ms/31557600000; ten = y9 >= 1 ? (Math.round(y9*10)/10)+'年' : Math.max(1,Math.round(ms/2629800000))+'個月' }
     const bd9 = bdaySet[x.co+'|'+x.name]
     const ed = window._hrmEdit
-    return `<tr ${bd9!=null?'class="bdayGlow" title="🎂 '+(bd9===0?'今天生日！':bd9+' 天後生日')+'"':''} style="border-top:1px solid var(--line)"><td style="padding:6px 8px;text-align:center" class="hint">${i+1}</td>
-      <td style="padding:6px 8px;text-align:left;font-weight:800;white-space:nowrap">${ed?IN9(x,'name',72,1):(x.name||'')}${bd9!=null?' 🎂':''}</td>
-      <td style="padding:6px 8px;text-align:center;white-space:nowrap">${ed?IN9(x,'dept',58):(x.dept||'—')}</td>
-      <td style="padding:6px 8px;text-align:center;white-space:nowrap">${ed?IN9(x,'title',58):(x.title||'—')}</td>
-      <td style="padding:6px 8px;text-align:center;white-space:nowrap">${ed?IN9(x,'onboard',96):(x.onboard||'—')}</td>
-      <td style="padding:6px 8px;text-align:center;white-space:nowrap" class="hint">${ten||'—'}</td>
-      <td style="padding:6px 8px;text-align:center;white-space:nowrap">${ed?IN9(x,'birth',96):(x.birth||'—')}</td>
-      <td style="padding:6px 8px;text-align:center">${x.age||'—'}</td>
-      <td style="padding:6px 8px;text-align:center">${ed?IN9(x,'sex',34):(x.sex||'—')}</td>
-      <td style="padding:6px 8px;text-align:center;font-family:ui-monospace,monospace;letter-spacing:.5px">${ed&&d.idCan?IN9(x,'nid',106):(x.nid||'—')}</td>
-      <td style="padding:6px 8px;text-align:left;font-size:12.5px" class="hint">${ed?IN9(x,'health',110,1):(x.health||'—')}${ed?` <button class="mini" style="padding:1px 7px;color:var(--red)" onclick="hrmDel('${(x.co||'').replace(/'/g,'')}','${(x.name||'').replace(/'/g,'')}')">刪</button>`:''}</td></tr>`
+    const coTd = x._withCo?`<td style="padding:4px 7px;text-align:center;font-weight:700">${/A Beach/.test(x.co)?'AB':'GD'}</td>`:''
+    return `<tr ${bd9!=null?'class="bdayGlow" title="🎂 '+(bd9===0?'今天生日！':bd9+' 天後生日')+'"':''} style="border-top:1px solid var(--line);font-size:13px">
+      <td class="hrmStick" style="padding:4px 7px;text-align:left;font-weight:800;white-space:nowrap">${ed?IN9(x,'name',70,1):(x.name||'')}${bd9!=null?' 🎂':''}</td>${coTd}
+      <td style="padding:4px 7px;text-align:center;white-space:nowrap">${ed?IN9(x,'dept',56):(x.dept||'—')}</td>
+      <td style="padding:4px 7px;text-align:center;white-space:nowrap">${ed?SEL9(x):(x.title||'—')}</td>
+      <td style="padding:4px 7px;text-align:center;white-space:nowrap">${ed?IN9(x,'onboard',92):(x.onboard||'—')}</td>
+      <td style="padding:4px 7px;text-align:center;white-space:nowrap" class="hint">${ten||'—'}</td>
+      <td style="padding:4px 7px;text-align:center;white-space:nowrap">${ed?IN9(x,'birth',92):(x.birth||'—')}</td>
+      <td style="padding:4px 7px;text-align:center">${x.age||'—'}</td>
+      <td style="padding:4px 7px;text-align:center">${ed?IN9(x,'sex',32):(x.sex||'—')}</td>
+      <td style="padding:4px 7px;text-align:center;font-family:ui-monospace,monospace;letter-spacing:.5px">${ed&&d.idCan?IN9(x,'nid',104):(x.nid||'—')}</td>
+      <td style="padding:4px 7px;text-align:left;font-size:12px" class="hint">${ed?IN9(x,'health',104,1):(x.health||'—')}${ed?` <button class="mini" style="padding:1px 7px;color:var(--red)" onclick="hrmDel('${(x.co||'').replace(/'/g,'')}','${(x.name||'').replace(/'/g,'')}')">刪</button>`:''}</td></tr>`
   }
   if (hrmCo === 'all' && !hrmSort.k) { // 全部＋沒排序＝照公司分區
     ;[...new Set(rows.map(x=>x.co))].forEach(co=>{
       const list = rows.filter(x=>x.co===co)
       h += `<div style="font-weight:900;font-size:15.5px;margin:14px 0 6px;color:var(--pdark)">${co}（${list.length} 人）${window._hrmEdit?` <button class="mini" style="padding:2px 10px" onclick="hrmAdd('${co.replace(/'/g,'')}')">＋ 加人</button>`:''}</div>
-        <div class="scroll"><table style="border-collapse:collapse;width:100%">${header}<tbody>${list.map(rowHtml).join('')}</tbody></table></div>`
+        <div class="scroll"><table style="border-collapse:collapse;width:100%">${header(false)}<tbody>${list.map(rowHtml).join('')}</tbody></table></div>`
     })
-  } else { // 篩選或排序＝一張表（跨公司排序才有意義），加「公司」欄識別
-    h += `<div class="scroll"><table style="border-collapse:collapse;width:100%">${header.replace('<th style="padding:6px 8px;text-align:center">#</th>', `<th style="padding:6px 8px;text-align:center">#</th><th style="padding:6px 8px;text-align:center">店</th>`)}<tbody>
-      ${rows.map((x,i)=>rowHtml(x,i).replace('</td>', `</td><td style="padding:6px 8px;text-align:center;font-weight:700">${/A Beach/.test(x.co)?'AB':'GD'}</td>`)).join('')}</tbody></table></div>`
+  } else { // 篩選或排序＝一張表（跨公司排序才有意義），加「店」欄識別
+    h += `<div class="scroll"><table style="border-collapse:collapse;width:100%">${header(true)}<tbody>${rows.map((x,i)=>rowHtml({ ...x, _withCo: 1 }, i)).join('')}</tbody></table></div>`
   }
   h += `<div class="hint" style="margin-top:10px">來源：勞工名冊（Google Sheet）・要更新跟 D 哥說「更新夥伴名冊」即可重新匯入</div></section>`
   app.innerHTML = h
@@ -131,6 +140,19 @@ async function hrmUp(body){
   if (window._hrmD) window._hrmD.rows = r.rows
   return r
 }
-async function hrmSet(co, name, field, val){ const r = await hrmUp({ op:'set', co, name, field, val }); if (r) hrmRender() }
+function hrmRenderKeep(){ const scrs=[...document.querySelectorAll('#app .scroll')].map(el=>el.scrollLeft); const winY=window.scrollY; hrmRender(); requestAnimationFrame(()=>{ [...document.querySelectorAll('#app .scroll')].forEach((el,i)=>{ if(scrs[i]!=null) el.scrollLeft=scrs[i] }); window.scrollTo(0,winY) }) }
+async function hrmSet(co, name, field, val){ const r = await hrmUp({ op:'set', co, name, field, val }); if (r) hrmRenderKeep() }
 async function hrmAdd(co){ const nm = prompt('新夥伴姓名'); if (!nm) return; const r = await hrmUp({ op:'add', co, newName: nm.trim().slice(0,20) }); if (r) hrmRender() }
 async function hrmDel(co, name){ if (!confirm('把 '+name+' 從名冊移除？')) return; const r = await hrmUp({ op:'del', co, name }); if (r) hrmRender() }
+
+// 職務選單自訂（v4.34.4 張良「兼職改PT 值班改正職 我可以新增刪減編輯選單」）
+async function hrmTitleOpts(){
+  const d = window._hrmD; if (!d) return
+  const cur = (d.titleOpts||['正職','PT']).join('、')
+  const v = prompt('職務選單（用「、」分隔，可自行增刪改）', cur)
+  if (v == null) return
+  const list = v.split(/[、,，]/).map(x=>x.trim()).filter(Boolean)
+  if (!list.length) { alert('至少留一個'); return }
+  const r = await hrmUp({ op:'titleopts', list })
+  if (r) { d.titleOpts = r.titleOpts; hrmRender() }
+}

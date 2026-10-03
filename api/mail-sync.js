@@ -2789,9 +2789,14 @@ export default async function handler(req, res) {
     const ridH = whoH9.rid || whoH9.uid
     const isAdmH = !!(pmH && pmH.users && pmH.users[ridH] && pmH.users[ridH].admin)
     const canId = isAdmH || (((lockH || {}).rids) || []).includes(ridH)
+    // v4.34.4 職務統一（張良「兼職改為PT 值班都改為正職」）：開頁順手搬家一次，之後選單制
+    let mig44 = false
+    ;((docH || {}).rows || []).forEach(r9 => { const t9 = { '兼職': 'PT', '值班': '正職' }[r9.title]; if (t9) { r9.title = t9; mig44 = true } })
+    if (mig44) { docH.log = [{ by: '系統', ts: new Date(Date.now() + 8 * 3600e3).toISOString().slice(5, 16).replace('T', ' '), what: '職務統一：兼職→PT、值班→正職' }, ...(docH.log || [])].slice(0, 80); await kvPut('sp_crew_pm_hr_master', docH, '職務統一搬家') }
     let rowsH = (docH || { rows: [] }).rows || []
     if (!canId) rowsH = rowsH.map(({ nid, ...r9 }) => r9)
-    const outH = { ok: true, rows: rowsH, updatedAt: (docH || {}).updatedAt || '', src: (docH || {}).src || '', idCan: canId, canEdit: true }
+    const topts = (docH || {}).titleOpts || [...new Set(['正職', 'PT', ...rowsH.map(r9 => r9.title).filter(Boolean)])]
+    const outH = { ok: true, rows: rowsH, titleOpts: topts, updatedAt: (docH || {}).updatedAt || '', src: (docH || {}).src || '', idCan: canId, canEdit: true }
     if (isAdmH) outH.idLock = { rids: ((lockH || {}).rids) || [], people: Object.entries((pmH && pmH.users) || {}).map(([r9, u9]) => ({ rid: r9, name: u9.name, admin: !!u9.admin })) }
     return res.status(200).json(outH)
   }
@@ -2821,6 +2826,8 @@ export default async function handler(req, res) {
     } else if (bu9.op === 'add') {
       if (!bu9.co) return res.status(400).json({ ok: false })
       docU.rows.push({ co: String(bu9.co).slice(0, 40), name: String(bu9.newName || '新夥伴').slice(0, 20), dept: '', title: '', onboard: '', birth: '', age: '', sex: '', nid: '', health: '' })
+    } else if (bu9.op === 'titleopts') { // 職務選單自訂（張良「我可以新增刪減編輯選單」）
+      docU.titleOpts = (Array.isArray(bu9.list) ? bu9.list : []).map(x9 => String(x9).trim().slice(0, 12)).filter(Boolean).slice(0, 20)
     } else if (bu9.op === 'del') {
       const row9 = findU(); if (!row9) return res.status(404).json({ ok: false })
       docU.rows = docU.rows.filter(r9 => r9 !== row9)
@@ -2828,7 +2835,7 @@ export default async function handler(req, res) {
     docU.log = [{ by: whoU9.name, ts: ts8U, what: `${bu9.op} ${bu9.name || bu9.newName || ''} ${bu9.field || ''}`.trim() }, ...(docU.log || [])].slice(0, 80)
     docU.updatedAt = new Date().toISOString()
     await kvPut('sp_crew_pm_hr_master', docU, '夥伴名冊編輯(' + whoU9.name + ')')
-    return res.status(200).json({ ok: true, rows: canIdU ? docU.rows : docU.rows.map(({ nid, ...r9 }) => r9) })
+    return res.status(200).json({ ok: true, rows: canIdU ? docU.rows : docU.rows.map(({ nid, ...r9 }) => r9), titleOpts: docU.titleOpts || [] })
   }
   if (req.method === 'POST' && req.query?.hrmasterset) {
     const mk9 = (process.env.MENU_PROBE_KEY || '').trim()
