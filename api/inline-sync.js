@@ -107,6 +107,92 @@ async function syncFuture(token) {
   return { farDays: Object.keys(far).length, farResv, ...notesInfo }
 }
 
+// ── 顧客資料庫＋營運洞察（張良 2026-10-04「建立inline顧客資料庫+九大數據分析頁」）──────
+// 全史月檔掃一遍 → ①顧客聚合（key=cid→電話→名字）分段分頁存 sp_finance_pm_inline_cs_<seg>_<頁>
+//   ②營運洞察 sp_finance_pm_inline_insights（年趨勢/週幾×時段/來源/提前天數/親子/目的/新舊客/取消率/大組）
+//   ③索引 sp_finance_pm_inline_custidx {segments:{seg:{total,pages}}, builtAt}
+// cron 每小時檢查：builtAt 超過 20 小時自動重建＝持續累積；手動 ?custbuild=MENU_KEY
+const SEG_DEF = { // [標籤, 過濾, 排序, 最多頁數(每頁1000)]
+  all: ['全部(有電話)', (c) => true, (a, b) => (b.l || '').localeCompare(a.l || ''), 5],
+  vip: ['VIP常客≥10次', (c) => c.v >= 10, (a, b) => b.v - a.v, 2],
+  repeat: ['回頭客≥2次', (c) => c.v >= 2, (a, b) => b.v - a.v, 3],
+  kids: ['帶小孩', (c) => c.k > 0, (a, b) => (b.l || '').localeCompare(a.l || ''), 2],
+  big: ['大組/包場≥20人', (c) => c.mx >= 20, (a, b) => b.mx - a.mx, 2],
+  lost: ['流失常客(≥5次但180天沒來)', (c) => c.v >= 5, (a, b) => b.v - a.v, 2], // 180天門檻在 build 時補
+  cxh: ['高取消', (c) => c.cx >= 3 && c.cx > c.v, (a, b) => b.cx - a.cx, 1],
+  wed: ['婚禮/包場相關', (c) => /婚|包場/.test(c.n || ''), (a, b) => (b.l || '').localeCompare(a.l || ''), 1],
+}
+async function custBuild() {
+  const sum = (await kvGet('sp_finance_pm_inline')) || { months: {} }
+  const mos = Object.keys(sum.months || {}).sort()
+  const today = twToday()
+  const cust = {}
+  const ins = { yearly: {}, heat: Array.from({ length: 7 }, () => [0, 0, 0, 0]), src: {}, lead: { d0: 0, d1_3: 0, d4_7: 0, d8_30: 0, d31: 0 }, purpose: {}, nr: {}, kidsY: {}, bigY: {}, cxY: {} }
+  const slotIdx = (t) => (t < '13:00' ? 0 : t < '18:00' ? 1 : t < '19:00' ? 2 : 3)
+  for (let i = 0; i < mos.length; i += 12) {
+    const kvm = await Promise.all(mos.slice(i, i + 12).map((m) => kvGet('sp_finance_pm_inline_' + m)))
+    for (const doc of kvm) {
+      for (const [d, arr] of Object.entries(doc?.days || {})) {
+        const y = d.slice(0, 4), wd = (new Date(d + 'T00:00:00Z').getUTCDay() + 6) % 7
+        for (const r of arr) {
+          const yy = ins.yearly[y] = ins.yearly[y] || { resv: 0, guests: 0, cxl: 0 }
+          const canceled = CANCELED_STATES.includes(r.st)
+          if (canceled) { yy.cxl++; ins.cxY[y] = (ins.cxY[y] || 0) + 1 } else { yy.resv++; yy.guests += r.n || 0 }
+          const name = (r.name || '').trim()
+          const key = r.cid || r.phone || (name ? 'n:' + name : '')
+          if (key) {
+            const c = cust[key] = cust[key] || { n: name, ph: '', em: '', gd: 0, v: 0, b: 0, cx: 0, p: 0, k: 0, f: d, l: '', mx: 0 }
+            if (name && (!c.n || name.length > c.n.length)) c.n = name
+            if ((r.phone || '').length > c.ph.length) c.ph = r.phone
+            if (r.email && !c.em) c.em = r.email
+            if (r.gd && !c.gd) c.gd = r.gd
+            c.b++
+            if (d < c.f) c.f = d
+            const isFirst = c.b === 1
+            if (canceled) c.cx++
+            else {
+              if (r.st === 4) { c.v++; c.p += r.n || 0 }
+              c.k += (r.kc || 0) + (r.ks || 0)
+              if ((r.n || 0) > c.mx) c.mx = r.n || 0
+              if (d > c.l && d <= today) c.l = d
+              const nn = ins.nr[y] = ins.nr[y] || { nw: 0, rt: 0 }
+              isFirst ? nn.nw++ : nn.rt++
+            }
+          }
+          if (canceled || !r.t) continue
+          // 洞察（只算有效）
+          ins.heat[wd][slotIdx(r.t)] += r.n || 0
+          const sv = (r.ref || r.src || '其他').toLowerCase()
+          const sk = /google/.test(sv) ? 'Google' : /fb|facebook|instagram|ig/.test(sv) ? 'FB/IG' : /opentable/.test(sv) ? 'OpenTable' : /host|ios|android/.test(sv) ? '店內/電話' : /web/.test(sv) ? '官網/線上' : '其他'
+          ins.src[sk] = (ins.src[sk] || 0) + 1
+          if (r.created) { const ld = Math.max(0, Math.round((new Date(d) - new Date(r.created.slice(0, 10))) / 86400e3)); ins.lead[ld === 0 ? 'd0' : ld <= 3 ? 'd1_3' : ld <= 7 ? 'd4_7' : ld <= 30 ? 'd8_30' : 'd31']++ }
+          const nt = String(r.note || '')
+          const pk2 = /慶生|生日|birthday/i.test(nt) ? '慶生' : /約會|date/i.test(nt) ? '約會' : /家庭|親子|family/i.test(nt) ? '家庭' : /商務|公司|business/i.test(nt) ? '商務' : /一般/.test(nt) ? '一般' : nt ? '其他備註' : '未填'
+          ins.purpose[pk2] = (ins.purpose[pk2] || 0) + 1
+          if ((r.kc || 0) + (r.ks || 0) > 0) ins.kidsY[y] = (ins.kidsY[y] || 0) + 1
+          if ((r.n || 0) >= 20) { const bb = ins.bigY[y] = ins.bigY[y] || { cnt: 0, guests: 0 }; bb.cnt++; bb.guests += r.n }
+        }
+      }
+    }
+  }
+  // 分段寫入（只收「有有效電話」的＝識別得出同一人；現場代稱不進資料庫）
+  const idd = Object.values(cust).filter((c) => c.n && c.ph.replace(/\D/g, '').length >= 8)
+  const cutoff = addDays(today, -180)
+  const idx = { builtAt: new Date().toISOString(), totalAll: Object.keys(cust).length, identified: idd.length, segments: {} }
+  for (const [seg, [label, filt, sorter, maxPg]] of Object.entries(SEG_DEF)) {
+    let list = idd.filter(filt)
+    if (seg === 'lost') list = list.filter((c) => c.l && c.l < cutoff)
+    list.sort(sorter)
+    const pages = Math.min(maxPg, Math.ceil(list.length / 1000) || 0)
+    for (let p = 0; p < pages; p++) await kvPut(`sp_finance_pm_inline_cs_${seg}_${p}`, { rows: list.slice(p * 1000, p * 1000 + 1000) }, 'inline顧客庫')
+    idx.segments[seg] = { label, total: list.length, pages }
+  }
+  await kvPut('sp_finance_pm_inline_insights', ins, 'inline洞察')
+  await kvPut('sp_finance_pm_inline_custidx', idx, 'inline顧客庫索引')
+  await announceChanged()
+  return { identified: idd.length, segments: Object.fromEntries(Object.entries(idx.segments).map(([k, v]) => [k, v.total])) }
+}
+
 export default async function handler(req, res) {
   const mk = (process.env.MENU_PROBE_KEY || '').trim()
   try {
@@ -115,6 +201,36 @@ export default async function handler(req, res) {
       if (!mk || String(req.query.probe) !== mk) return res.status(403).json({ ok: false })
       const sum = (await kvGet('sp_finance_pm_inline')) || {}
       return res.status(200).json({ ok: true, sum })
+    }
+    // 顧客資料庫（/prep inline 分頁用；OPS 金鑰）
+    const ok9 = (q) => { const k = (process.env.OPS_BOARD_KEY || '').trim(); return k && String(q) === k }
+    if (req.query?.custdb) { // ?custdb=OPS&seg=all&page=0 → 索引+該頁名單
+      if (!ok9(req.query.custdb)) return res.status(403).json({ ok: false })
+      const seg = SEG_DEF[String(req.query.seg || 'all')] ? String(req.query.seg || 'all') : 'all'
+      const pg = Math.max(0, Number(req.query.page) || 0)
+      const [idx, shard] = await Promise.all([kvGet('sp_finance_pm_inline_custidx'), kvGet(`sp_finance_pm_inline_cs_${seg}_${pg}`)])
+      res.setHeader('Cache-Control', 's-maxage=600, stale-while-revalidate=3600')
+      return res.status(200).json({ ok: true, idx: idx || null, seg, page: pg, rows: (shard || {}).rows || [] })
+    }
+    if (req.query?.custinsights) { // ?custinsights=OPS → 九大洞察
+      if (!ok9(req.query.custinsights)) return res.status(403).json({ ok: false })
+      const [ins, idx, sum2] = await Promise.all([kvGet('sp_finance_pm_inline_insights'), kvGet('sp_finance_pm_inline_custidx'), kvGet('sp_finance_pm_inline')])
+      res.setHeader('Cache-Control', 's-maxage=600, stale-while-revalidate=3600')
+      return res.status(200).json({ ok: true, ins: ins || null, idx: idx || null, months: (sum2 || {}).months || {}, farFuture: (sum2 || {}).farFuture || [], dayNotes: (sum2 || {}).dayNotes || {} })
+    }
+    if (req.query?.custfind) { // ?custfind=OPS&q=OD → 即時直搜 inline（姓名/電話片段）＋官方客人檔統計
+      if (!ok9(req.query.custfind)) return res.status(403).json({ ok: false })
+      const token = await inlineLogin()
+      const { total, rows } = await inlineSearchKeyword(token, String(req.query.q || ''), 30)
+      const cids = [...new Set(rows.map((r) => r.cid).filter(Boolean))].slice(0, 3)
+      const stats = {}
+      for (const cid of cids) { const c = await inlineCustomer(token, cid); if (c?.stats) stats[cid] = c }
+      return res.status(200).json({ ok: true, total, rows, stats })
+    }
+    if (req.query?.custbuild) { // 手動重建（MENU 金鑰）
+      if (!mk || String(req.query.custbuild) !== mk) return res.status(403).json({ ok: false })
+      const out = await custBuild()
+      return res.status(200).json({ ok: true, ...out })
     }
     // 關鍵字搜尋盤點口（驗證 D哥 query_resv name 模式用；正式邏輯在 line-webhook queryResvName）
     if (req.query?.kwsearch) {
@@ -171,11 +287,16 @@ export default async function handler(req, res) {
       const out = await syncRange(from, to)
       return res.status(200).json({ ok: true, ...out })
     }
-    // cron：①滾動窗 前3天～未來45天 ②遠期（45天後全部，搜尋端點）
+    // cron：①滾動窗 前3天～未來45天 ②遠期（45天後全部，搜尋端點）③顧客庫/洞察超過20小時自動重建
     const t = twToday()
     const out = await syncRange(addDays(t, -3), addDays(t, 45))
     const far = await syncFuture(await inlineLogin())
-    return res.status(200).json({ ok: true, ...out, ...far })
+    let cb = {}
+    try {
+      const idx = await kvGet('sp_finance_pm_inline_custidx')
+      if (!idx?.builtAt || Date.now() - new Date(idx.builtAt).getTime() > 20 * 3600e3) cb = await custBuild()
+    } catch (e) { cb = { custErr: e?.message } }
+    return res.status(200).json({ ok: true, ...out, ...far, ...cb })
   } catch (e) {
     return res.status(500).json({ ok: false, error: e?.message || String(e) })
   }

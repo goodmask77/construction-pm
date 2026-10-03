@@ -46,6 +46,7 @@ function trimResv(x) {
     st: x.state, // 1確認/2取消/4入座/5未出席
   }
   if (x.customer?.customerId) o.cid = x.customer.customerId // 客人ID＝inline 客人檔同人合併的 key（同人會用不同名字/有時沒留電話，電話當 key 會漏；張良 2026-10-03 楊主委=楊安娜案）
+  if (x.customer?.gender) o.gd = x.customer.gender // 1=小姐 2=先生（顧客資料庫性別欄，張良 2026-10-04）
   if (x.customer?.email) o.email = x.customer.email
   if (x.numberOfKidChairs) o.kc = x.numberOfKidChairs
   if (x.numberOfKidSets) o.ks = x.numberOfKidSets

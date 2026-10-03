@@ -116,6 +116,7 @@
     <button id="tab-inc" onclick="incLoad()" title="AB=阿桑系統自動同步；GD ERP 之後接入">⚠️ 異常通知</button>
     <button id="tab-fb" onclick="fbLoad()">💬 回饋</button>
     <button id="tab-menu" onclick="menuLoad()">🍔 菜單</button>
+    <button id="tab-cust" onclick="custLoad()" title="inline 顧客資料庫＋營運洞察">👥 inline</button>
     <button id="tab-gear" onclick="settingsLoad()" title="設定">⚙️ 設定</button>
     <button id="tab-errs" onclick="errsView()" title="問題回報・功能許願">🐞 問題回報</button>
     <div id="meChip" style="margin-top:auto;border-top:1px solid var(--line);padding:12px 6px 2px;display:flex;gap:10px;align-items:center"></div>
@@ -3762,7 +3763,129 @@ function todayRender(){
   el.innerHTML = s
 }
 // ── 🔖 分頁自訂（張良 2026-09-22：名稱＋排序可編輯，存 pm_prep_tabs 全裝置同步）──
-const TAB_DEF = { sop:'SOP', task:'任務', lb:'排行榜', food:'盤點', pack:'包材', buy:'採購', meet:'會議', shift:'班表', inc:'異常通知', fb:'回饋', menu:'菜單' } // v4.33.0 去emoji（側欄本來就stripEmoji，這裡影響的是改名視窗的預設字）
+// ── 👥 inline 顧客資料庫＋營運洞察（v4.39.0 張良 2026-10-04：「建立顧客資料庫inline+九大數據分析首頁+#快速篩選+圖表」）──
+// 資料：inline-sync ?custinsights / ?custdb(seg,page) / ?custfind(q)——全史每天自動重算累積
+let custV = 'home', custSeg = 'all', custPg = 0, custRows = []
+async function custLoad(view){
+  curStore = 'cust'; setTabs('cust')
+  if (view) { custV = view }
+  document.getElementById('upd').textContent = 'inline 顧客資料庫'
+  if (custV === 'home') return custHome()
+  return custDb()
+}
+const cFetch = async (qs, ck) => { const c = ck && tcGet(ck); if (c) return c; try { const r = await fetch('/api/inline-sync?' + qs); const d = await r.json(); if (d && d.ok && ck) tcSet(ck, d); return d } catch(_) { return null } }
+const cNum = n => (Number(n)||0).toLocaleString()
+const cBar = (label, val, max, color, suffix) => `<div style="display:flex;align-items:center;gap:8px;margin:3px 0"><span style="width:92px;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${label}</span><div style="flex:1;background:var(--soft);border-radius:5px;height:14px;overflow:hidden"><div style="width:${max?Math.max(2,Math.round(val/max*100)):0}%;height:100%;background:${color};border-radius:5px"></div></div><span style="font-size:12px;font-weight:800;min-width:72px;text-align:right">${suffix||cNum(val)}</span></div>`
+const cCard = (title, body, hint) => `<div style="background:var(--card);border:1.5px solid var(--line);border-radius:12px;padding:12px 14px">${title?`<div style="font-weight:900;font-size:13.5px;margin-bottom:8px">${title}${hint?` <span class="hint" style="font-weight:600;font-size:10.5px">${hint}</span>`:''}</div>`:''}${body}</div>`
+const cKpi = (big, label, sub, color) => cCard('', `<div style="font-size:26px;font-weight:900;color:${color||'var(--text)'};line-height:1.1">${big}</div><div style="font-size:12.5px;font-weight:800;margin-top:3px">${label}</div>${sub?`<div class="hint" style="font-size:11px;margin-top:2px">${sub}</div>`:''}`)
+function custTopBar(){
+  const b = (v,lb) => `<button class="mini" onclick="custLoad('${v}')" style="padding:5px 14px;font-weight:800;${custV===v?'background:var(--primary);color:#fff;border-color:var(--primary)':''}">${lb}</button>`
+  return `<div style="display:flex;gap:8px;align-items:center;margin-bottom:10px;flex-wrap:wrap"><span style="font-weight:900;font-size:16px">inline 顧客資料庫</span>${b('home','📊 洞察首頁')}${b('db','👥 顧客資料')}<span class="hint" style="font-size:10.5px">全史自動累積・每天重算・唯讀</span></div>`
+}
+async function custHome(){
+  app.innerHTML = `<section>${custTopBar()}<div class="mut">載入中…</div></section>`
+  const d = await cFetch('custinsights=' + encodeURIComponent(K), 'custins')
+  if (!d || !d.ins) { app.innerHTML = `<section>${custTopBar()}<div class="err">洞察還沒建好（每天自動重算；剛上線要等第一輪）</div></section>`; return }
+  if (curStore !== 'cust' || custV !== 'home') return
+  const ins = d.ins, ms = d.months || {}, idx = d.idx || { segments: {} }
+  const yrs = Object.keys(ins.yearly||{}).sort()
+  const thisY = yrs[yrs.length-1], lastY = yrs[yrs.length-2]
+  const yv = y => (ins.yearly||{})[y] || { resv:0, guests:0, cxl:0 }
+  const cxRate = y => { const v = yv(y); const t = v.resv + v.cxl; return t ? Math.round(v.cxl/t*100) : 0 }
+  const kidsRate = y => { const v = yv(y); return v.resv ? Math.round(((ins.kidsY||{})[y]||0)/v.resv*100) : 0 }
+  const nr = y => (ins.nr||{})[y] || { nw:0, rt:0 }
+  const rtRate = y => { const n = nr(y); const t = n.nw + n.rt; return t ? Math.round(n.rt/t*100) : 0 }
+  // KPI 列
+  let h = `<section>${custTopBar()}`
+  h += `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:12px">`
+  h += cKpi(cNum(idx.identified), '識別顧客數', `全史訂位 ${cNum(Object.values(ms).reduce((t,v)=>t+(v.resv||0),0))} 筆`, 'var(--primary)')
+  h += cKpi(cNum(yv(thisY).guests), thisY + ' 人次', lastY?`去年 ${cNum(yv(lastY).guests)}`:'', '#5FD3A6')
+  h += cKpi(cxRate(thisY) + '%', '今年取消率', lastY?`去年 ${cxRate(lastY)}%`:'', cxRate(thisY) > 25 ? 'var(--red)' : '#E8A657')
+  h += cKpi(rtRate(thisY) + '%', '回頭客訂單比', `#回頭客 ${cNum((idx.segments.repeat||{}).total)} 人`, '#6EB1FF')
+  h += cKpi(kidsRate(thisY) + '%', '親子組佔比', `#帶小孩 ${cNum((idx.segments.kids||{}).total)} 人`, '#F2C94C')
+  h += cKpi(cNum(((ins.bigY||{})[thisY]||{}).cnt), '今年大組/包場', `${cNum(((ins.bigY||{})[thisY]||{}).guests)} 人次`, '#C792EA')
+  h += `</div>`
+  // 月趨勢（近24月 SVG 折線）
+  const mos = Object.keys(ms).sort().slice(-24)
+  if (mos.length > 1){
+    const vals = mos.map(m=>ms[m].resv||0), mx = Math.max(...vals)
+    const W = 940, H = 120, px = i => Math.round(i/(mos.length-1)*W), py = v => Math.round(H - (mx?v/mx*(H-14):0))
+    const pts = vals.map((v,i)=>`${px(i)},${py(v)}`).join(' ')
+    h += cCard('📈 月訂位趨勢（近24個月・組數）', `<svg viewBox="0 0 ${W} ${H+22}" style="width:100%;height:auto"><polyline points="${pts}" fill="none" stroke="var(--primary)" stroke-width="2.5"/><polygon points="0,${H} ${pts} ${W},${H}" fill="rgba(77,163,255,.12)" stroke="none"/>${mos.map((m,i)=> i%3===0?`<text x="${px(i)}" y="${H+16}" font-size="9.5" fill="#8A94A4" text-anchor="middle">${m.slice(2).replace('-','/')}</text>`:'').join('')}${vals.map((v,i)=> (v===mx)?`<text x="${px(i)}" y="${py(v)-4}" font-size="10" font-weight="800" fill="var(--primary)" text-anchor="middle">${v}</text>`:'').join('')}</svg>`)
+    h += `<div style="height:10px"></div>`
+  }
+  // 中段雙欄：熱力圖＋來源/提前/目的
+  h += `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:10px;margin-bottom:12px">`
+  const wdN9 = ['一','二','三','四','五','六','日'], slotN9 = ['12-13','13-17','18-19','19後']
+  const heat = ins.heat || [], hmax = Math.max(1, ...heat.flat())
+  h += cCard('🔥 週幾 × 時段（全史累計人次）', `<table style="width:100%;border-collapse:collapse;font-size:11.5px"><tr><td></td>${slotN9.map(s=>`<td style="text-align:center;font-weight:800;padding:3px">${s}</td>`).join('')}</tr>${heat.map((row,wi)=>`<tr><td style="font-weight:800;padding:3px">${wdN9[wi]}</td>${row.map(v=>`<td style="text-align:center;padding:4px 3px;border-radius:5px;background:rgba(95,211,166,${(v/hmax*0.75).toFixed(2)});font-weight:700">${cNum(v)}</td>`).join('')}</tr>`).join('')}</table>`, '排班/訂位開放策略用')
+  const srcE = Object.entries(ins.src||{}).sort((a,b)=>b[1]-a[1]); const srcMax = srcE[0]?.[1]||1; const srcT = srcE.reduce((t,[,v])=>t+v,0)
+  h += cCard('📣 客源通路（全史有效訂位）', srcE.map(([k,v])=>cBar(k, v, srcMax, '#6EB1FF', Math.round(v/srcT*100)+'%・'+cNum(v))).join(''), '行銷預算投放依據')
+  const ld = ins.lead||{}; const ldE = [['當天','d0'],['1-3天前','d1_3'],['4-7天前','d4_7'],['8-30天前','d8_30'],['31天+','d31']]; const ldMax = Math.max(1,...ldE.map(([,k])=>ld[k]||0))
+  h += cCard('⏰ 提前多久訂位', ldE.map(([lb,k])=>cBar(lb, ld[k]||0, ldMax, '#C792EA')).join(''), '開放訂位天數/提醒時機')
+  const pp = Object.entries(ins.purpose||{}).filter(([k])=>k!=='未填'&&k!=='其他備註').sort((a,b)=>b[1]-a[1]); const ppMax = pp[0]?.[1]||1
+  h += cCard('🎯 用餐目的（客人備註）', pp.map(([k,v])=>cBar(k, v, ppMax, '#F2C94C')).join('') || '<div class="mut">資料不足</div>', '加價購/節日商品線索')
+  h += `</div>`
+  // 年度結構：新舊客/取消率/親子/大組
+  h += `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:10px;margin-bottom:12px">`
+  const nrMax = Math.max(1,...yrs.map(y=>nr(y).nw+nr(y).rt))
+  h += cCard('🆕 新客 vs 回頭（每年有效訂單）', yrs.map(y=>{ const n=nr(y); const t=n.nw+n.rt; return `<div style="display:flex;align-items:center;gap:8px;margin:3px 0"><span style="width:40px;font-size:12px;font-weight:800">${y}</span><div style="flex:1;display:flex;height:14px;border-radius:5px;overflow:hidden;background:var(--soft)"><div style="width:${t?Math.round(n.nw/nrMax*100):0}%;background:#6EB1FF"></div><div style="width:${t?Math.round(n.rt/nrMax*100):0}%;background:#5FD3A6"></div></div><span style="font-size:11px;min-width:96px;text-align:right">新${cNum(n.nw)}/回${cNum(n.rt)}</span></div>` }).join('') + `<div class="hint" style="font-size:10.5px;margin-top:4px">🔵新客 🟢回頭客</div>`)
+  h += cCard('❌ 取消率逐年', yrs.map(y=>cBar(y, cxRate(y), 100, cxRate(y)>25?'var(--red)':'#E8A657', cxRate(y)+'%')).join(''), '訂金政策依據')
+  h += cCard('🧒 親子組佔比逐年', yrs.map(y=>cBar(y, kidsRate(y), 100, '#F2C94C', kidsRate(y)+'%')).join(''), '親子市場定位')
+  h += cCard('🎉 大組/包場逐年（≥20人）', yrs.map(y=>{ const b=(ins.bigY||{})[y]||{cnt:0,guests:0}; return cBar(y, b.guests, Math.max(1,...yrs.map(y2=>((ins.bigY||{})[y2]||{}).guests||0)), '#C792EA', `${b.cnt}場・${cNum(b.guests)}人`) }).join(''), '包場定價/婚顧合作')
+  h += `</div>`
+  // 九大策略建議（吃即時數字）
+  const sg = []
+  sg.push(['📉 趨勢', `${lastY||''}→${thisY} 訂位 ${cNum(yv(lastY).resv)}→${cNum(yv(thisY).resv)} 組`, '對照月趨勢抓淡月，淡月做活動檔期、旺月顧翻桌率。'])
+  sg.push(['💰 訂金政策', `今年取消率 ${cxRate(thisY)}%`, cxRate(thisY)>=20?'取消率偏高：建議大組(≥8人)與週末時段收訂金或信用卡保證。':'取消率健康：維持現制，大組再觀察。'])
+  sg.push(['📣 行銷投放', `最大來源：${srcE[0]?srcE[0][0]+' '+Math.round((srcE[0][1]||0)/srcT*100)+'%':'—'}`, 'Google 佔比高＝顧好評論與關鍵字；FB/IG 低＝社群內容有成長空間。'])
+  sg.push(['🔁 回頭經營', `回頭客訂單比 ${rtRate(thisY)}%`, '用 #流失常客 名單（' + cNum((idx.segments.lost||{}).total) + ' 人）做喚回：生日/週年訊息＋回店優惠。'])
+  sg.push(['🧒 親子市場', `親子組 ${kidsRate(thisY)}%`, '穩定客群：兒童餐/親子日活動可拉平日午場。'])
+  sg.push(['🎉 包場引擎', `今年 ${cNum(((ins.bigY||{})[thisY]||{}).cnt)} 場`, '煦願婚禮已是固定合作：把包場定價表制度化、平日晚場開放包場優惠。'])
+  sg.push(['⏰ 訂位窗', `多數人提前 ${(ld.d1_3||0)>(ld.d8_30||0)?'1-3天':'8-30天'} 訂`, '提醒訊息排在用餐前1天；熱門時段可開候補。'])
+  sg.push(['🎯 目的行銷', `慶生 ${cNum((ins.purpose||{})['慶生'])} 筆`, '慶生客群大：蛋糕/佈置加價購、壽星優惠別省。'])
+  sg.push(['🛡 口碑防線', `#高取消 ${cNum((idx.segments.cxh||{}).total)} 人`, '高取消名單訂位時櫃檯可見（DD 可查），大組先電話確認。'])
+  h += cCard('🧭 九大數據 × 策略建議', `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:8px">` + sg.map(([t,n,txt])=>`<div style="border:1px solid var(--line);border-radius:9px;padding:8px 10px;background:var(--soft)"><div style="font-weight:900;font-size:12.5px">${t}</div><div style="color:var(--primary);font-weight:800;font-size:12px;margin:2px 0">${n}</div><div class="hint" style="font-size:11.5px;line-height:1.5">${txt}</div></div>`).join('') + `</div>`)
+  h += `<div class="hint" style="font-size:10.5px;margin-top:8px">資料：inline 全史（2021-02 起）每小時同步、洞察每天重算（上次 ${String((idx.builtAt||'')).slice(0,16).replace('T',' ')}）；問 DD 可查任何明細</div></section>`
+  app.innerHTML = h
+}
+async function custDb(seg, more){
+  if (seg != null && seg !== custSeg) { custSeg = seg; custPg = 0; custRows = [] }
+  if (!more && !custRows.length) app.innerHTML = `<section>${custTopBar()}<div class="mut">載入中…</div></section>`
+  const d = await cFetch(`custdb=${encodeURIComponent(K)}&seg=${custSeg}&page=${custPg}`, `custdb_${custSeg}_${custPg}`)
+  if (curStore !== 'cust' || custV !== 'db') return
+  if (!d) { app.innerHTML = `<section>${custTopBar()}<div class="err">讀不到資料</div></section>`; return }
+  custRows = custPg === 0 ? (d.rows||[]) : custRows.concat(d.rows||[])
+  const idx = d.idx || { segments: {} }
+  const segInfo = idx.segments[custSeg] || { total: custRows.length, pages: 1 }
+  const chips = Object.entries(idx.segments).map(([k,v])=>`<button class="mini" onclick="custDb('${k}')" style="padding:4px 11px;font-weight:800;${k===custSeg?'background:var(--primary);color:#fff;border-color:var(--primary)':''}">#${v.label} <span style="opacity:.75">${cNum(v.total)}</span></button>`).join('')
+  const gdT = g => g===1?'小姐':g===2?'先生':'—'
+  let h = `<section>${custTopBar()}`
+  h += `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">${chips}</div>`
+  h += `<div style="display:flex;gap:8px;align-items:center;margin-bottom:8px"><input id="custQ" placeholder="搜尋姓名或電話（直連 inline 全史）" style="flex:1;max-width:340px;background:var(--card);border:1.5px solid var(--line);border-radius:9px;padding:7px 11px;color:var(--text);font-size:14px" onkeydown="if(event.key==='Enter')custFind()"><button class="mini" style="padding:6px 14px;font-weight:800" onclick="custFind()">🔍 搜尋</button><span class="hint" id="custQhint" style="font-size:11px"></span></div>`
+  h += `<div id="custFindBox"></div>`
+  h += `<div class="hint" style="font-size:11px;margin:4px 0">#${segInfo.label}：共 ${cNum(segInfo.total)} 人（顯示 ${cNum(custRows.length)}）・點欄位名可知排序已固定（此分群預設排序）</div>`
+  h += `<div class="scroll" style="max-height:62vh;overflow:auto"><table style="border-collapse:collapse;font-size:12.5px;white-space:nowrap"><thead><tr>${['姓名','稱謂','手機','Email','入座','人次','小孩','最大組','取消','首次來','最近來'].map(x=>`<th style="position:sticky;top:0;background:var(--soft);border:1px solid var(--line);padding:5px 8px;font-size:11.5px">${x}</th>`).join('')}</tr></thead><tbody>`
+  h += custRows.map(c=>`<tr>${[`<b>${c.n}</b>`, gdT(c.gd), c.ph||'—', c.em||'—', `<b style="color:#5FD3A6">${c.v}</b>`, cNum(c.p), c.k?`<span style="color:#F2C94C;font-weight:800">${c.k}</span>`:'—', c.mx>=20?`<b style="color:#C792EA">${c.mx}</b>`:(c.mx||'—'), c.cx||'—', c.f||'—', c.l||'—'].map(x=>`<td style="border:1px solid var(--line);padding:4px 8px">${x}</td>`).join('')}</tr>`).join('')
+  h += `</tbody></table></div>`
+  if (custPg + 1 < (segInfo.pages||1)) h += `<div style="margin-top:8px"><button class="mini" style="padding:6px 16px;font-weight:800" onclick="custPg++;custDb(null,1)">⬇️ 載入更多（還有 ${cNum(segInfo.total - custRows.length)} 人）</button></div>`
+  h += `</section>`
+  app.innerHTML = h
+}
+async function custFind(){
+  const q = (document.getElementById('custQ')||{}).value || ''
+  if (!q.trim()) return
+  const hint = document.getElementById('custQhint'); if (hint) hint.textContent = '搜尋中…'
+  let d = null
+  try { const r = await fetch(`/api/inline-sync?custfind=${encodeURIComponent(K)}&q=${encodeURIComponent(q.trim())}`); d = await r.json() } catch(_){}
+  if (hint) hint.textContent = ''
+  const box = document.getElementById('custFindBox'); if (!box) return
+  if (!d || !d.ok) { box.innerHTML = '<div class="err">搜尋失敗，再試一次</div>'; return }
+  const ST9 = {1:'確認',2:'取消',3:'待確認',4:'入座',5:'取消',6:'確認'}
+  const stLines = Object.values(d.stats||{}).map(c=>`<div style="font-weight:800;font-size:12.5px;color:#F2C94C">★ ${c.name}${c.phone?`（${c.phone}）`:''}：入座 ${c.stats.seated??0} 次・全部 ${c.stats.total??0}（官方客人檔）</div>`).join('')
+  box.innerHTML = cCard(`🔍「${q}」共 ${cNum(d.total)} 筆`, stLines + `<div style="max-height:220px;overflow:auto;margin-top:4px">` + (d.rows||[]).map(r=>`<div style="font-size:12px;padding:2px 0;border-bottom:1px solid var(--line)">${r.d||'?'} ${r.t||''} <b>${r.name}</b> ${r.n}人・${ST9[r.st]||r.st}${r.phone?`・${r.phone}`:''}</div>`).join('') + `</div><div style="text-align:right;margin-top:4px"><button class="mini" onclick="document.getElementById('custFindBox').innerHTML=''">✕ 關閉</button></div>`)
+}
+const TAB_DEF = { sop:'SOP', task:'任務', lb:'排行榜', food:'盤點', pack:'包材', buy:'採購', meet:'會議', shift:'班表', inc:'異常通知', fb:'回饋', menu:'菜單', cust:'inline' } // v4.33.0 去emoji；cust=inline顧客資料庫(v4.39.0 張良)
 // ── 單色線條 icon（張良 2026-09-24：不要彩色 emoji——同 Beach Ops 的 stroke 線條圖）──
 const _I = (d) => `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex:0 0 auto;vertical-align:-3px">${d}</svg>`
 const TAB_ICONS = {
