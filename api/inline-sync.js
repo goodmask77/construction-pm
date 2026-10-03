@@ -8,7 +8,7 @@
 // 入庫：sp_finance_pm_inline_<YYYY-MM>＝{ days: { 'YYYY-MM-DD': [瘦身訂位…] }, updatedAt }（月檔，key=訂位日）
 //       sp_finance_pm_inline＝{ firstDay, lastSync, months: {…}, farFuture: [{d,…}], dayNotes: {今天起的當日備註} }（總覽，AI/probe 用）
 //       sp_finance_pm_inline_notes＝{ days: { 'YYYY-MM-DD': [{note,by,at}] } }（當日備註全史，RTDB branchDailyNotes）
-import { inlineLogin, inlineFetchDay, inlineSearchFuture, inlineFetchDayNotes, CANCELED_STATES } from './_inline.js'
+import { inlineLogin, inlineFetchDay, inlineSearchFuture, inlineFetchDayNotes, inlineSearchKeyword, CANCELED_STATES } from './_inline.js'
 import { kvGet, kvPut, announceChanged } from './mail-sync.js'
 
 const DAY = 86400e3
@@ -115,6 +115,40 @@ export default async function handler(req, res) {
       if (!mk || String(req.query.probe) !== mk) return res.status(403).json({ ok: false })
       const sum = (await kvGet('sp_finance_pm_inline')) || {}
       return res.status(200).json({ ok: true, sum })
+    }
+    // 關鍵字搜尋盤點口（驗證 D哥 query_resv name 模式用；正式邏輯在 line-webhook queryResvName）
+    if (req.query?.kwsearch) {
+      if (!mk || String(req.query.kwsearch) !== mk) return res.status(403).json({ ok: false })
+      const token = await inlineLogin()
+      const out = await inlineSearchKeyword(token, String(req.query.kw || ''), 40)
+      return res.status(200).json({ ok: true, ...out })
+    }
+    // 常客排行盤點口（驗證 D哥 query_resv top 模式用；同一套聚合邏輯）
+    if (req.query?.custtop) {
+      if (!mk || String(req.query.custtop) !== mk) return res.status(403).json({ ok: false })
+      const sum = (await kvGet('sp_finance_pm_inline')) || {}
+      const mos = Object.keys(sum.months || {}).sort()
+      const cust = {}
+      for (let i = 0; i < mos.length; i += 12) {
+        const docs = await Promise.all(mos.slice(i, i + 12).map((m) => kvGet('sp_finance_pm_inline_' + m)))
+        for (const doc of docs) {
+          for (const [d, arr] of Object.entries(doc?.days || {})) {
+            for (const r of arr) {
+              const name = (r.name || '').trim()
+              const key = r.phone || (name ? 'n:' + name : '')
+              if (!key) continue
+              const c = cust[key] = cust[key] || { name, phone: r.phone || '', seat: 0, book: 0, cx: 0, guests: 0, last: '' }
+              if (name && (!c.name || name.length > c.name.length)) c.name = name
+              c.book++
+              if (CANCELED_STATES.includes(r.st)) c.cx++
+              else { if (r.st === 4) { c.seat++; c.guests += r.n || 0 }; if (d > c.last) c.last = d }
+            }
+          }
+        }
+      }
+      const topN = Math.min(30, Number(req.query.n) || 10)
+      const rank = Object.values(cust).filter((c) => c.name && !/^(現場|walk)/i.test(c.name)).sort((a, b) => b.seat - a.seat || b.book - a.book).slice(0, topN)
+      return res.status(200).json({ ok: true, customers: Object.keys(cust).length, rank })
     }
     // 回填口
     if (req.query?.backfill) {
