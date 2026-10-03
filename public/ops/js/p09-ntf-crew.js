@@ -33,9 +33,10 @@ const CUST_KINDS = {
   kids:{ t:'🧒 親子客', c:'#F2C94C', d:'親子客是平日與午場的重要填補客群，而且忠誠度高。佔比上升就投資兒童椅、兒童餐、親子活動；同時反映在座位規劃（嬰兒車動線）與尖峰時段的設備數量。' },
   big:{ t:'🎉 大組/包場', c:'#C792EA', d:'20 人以上的大組與包場是客單最高、最可預期的業務。看逐年成長決定是否建立固定包場價目表與婚顧分潤制度；接包場前用本頁評估「擋掉散客的機會成本」是否划算。' },
 }
-let custDK = 'trend', custDy = 'all', custDm = 'all', custDmet = ''
-// 依年/月篩選出月份清單（排除未來月；未來婚禮預訂會灌水）
-function cMsel(mm){ const nowYM = todayTpe().slice(0,7); return Object.keys(mm||{}).sort().filter(ym=>ym<=nowYM).filter(ym=>custDy==='all'||ym.slice(0,4)===custDy).filter(ym=>custDm==='all'||ym.slice(5,7)===custDm) }
+let custDK = 'trend', custDy = '12m', custDm = 'all', custDmet = ''
+// 依期間篩選出月份清單（排除未來月；未來婚禮預訂會灌水）
+// v4.40.3（張良「週一怎麼可能這麼多人 平均欸」）：預設=近12個月——全史平均被 2022-23 黃金年代拉高（週一午餐全史45 vs 近12月30），排班會被誤導
+function cMsel(mm){ const nowYM = todayTpe().slice(0,7); const all = Object.keys(mm||{}).sort().filter(ym=>ym<=nowYM); if (custDy==='12m') return all.slice(-12); return all.filter(ym=>custDy==='all'||ym.slice(0,4)===custDy).filter(ym=>custDm==='all'||ym.slice(5,7)===custDm) }
 // 合併多個月的洞察
 function cAgg(mm, yms){
   const o = { resv:0,guests:0,cxl:0,kids:0,nw:0,rt:0,big:0,bigG:0,src:{},lead:{d0:0,d1_3:0,d4_7:0,d8_30:0,d31:0},pp:{},hp:Array.from({length:7},()=>[0,0,0,0]),hg:Array.from({length:7},()=>[0,0,0,0]),wdD:[0,0,0,0,0,0,0] }
@@ -87,9 +88,12 @@ async function custHome(){
   // 預覽小圖們
   const last24 = allM.slice(-24)
   const A = cAgg(ins.m, allM)
-  const hmax = Math.max(1,...A.hp.flat())
+  // 熱力預覽＝近12個月平均每日人次（v4.40.3 張良抓包：全史總數被黃金年代拉高會誤導排班）
+  const A12 = cAgg(ins.m, allM.slice(-12))
+  const hAvg = (w,s) => A12.wdD[w] ? +(A12.hp[w][s]/A12.wdD[w]).toFixed(1) : 0
   const wdN9 = ['一','二','三','四','五','六','日'], slotN9 = ['12-13','13-17','18-19','19後']
-  const heatTbl = `<table style="width:100%;border-collapse:collapse;font-size:11px"><tr><td></td>${slotN9.map(s=>`<td style="text-align:center;font-weight:800;padding:2px">${s}</td>`).join('')}</tr>${A.hp.map((row,wi)=>`<tr><td style="font-weight:800;padding:2px">${wdN9[wi]}</td>${row.map(v=>`<td style="text-align:center;padding:3px 2px;border-radius:4px;background:rgba(95,211,166,${(v/hmax*0.75).toFixed(2)});font-weight:700">${cNum(v)}</td>`).join('')}</tr>`).join('')}</table>`
+  const hmax = Math.max(1,...wdN9.map((_,w)=>slotN9.map((_,s)=>hAvg(w,s))).flat())
+  const heatTbl = `<div class="hint" style="font-size:10px;margin-bottom:3px">近12個月・平均每日人次</div><table style="width:100%;border-collapse:collapse;font-size:11px"><tr><td></td>${slotN9.map(s=>`<td style="text-align:center;font-weight:800;padding:2px">${s}</td>`).join('')}</tr>${wdN9.map((wl,w)=>`<tr><td style="font-weight:800;padding:2px">${wl}</td>${slotN9.map((_,s)=>{const v=hAvg(w,s);return `<td style="text-align:center;padding:3px 2px;border-radius:4px;background:rgba(95,211,166,${(v/hmax*0.75).toFixed(2)});font-weight:700">${v}</td>`}).join('')}</tr>`).join('')}</table>`
   const srcE = Object.entries(A.src).sort((a,b)=>b[1]-a[1]); const srcT = srcE.reduce((t,[,v])=>t+v,0)
   const ldE = [['當天','d0'],['1-3天前','d1_3'],['4-7天前','d4_7'],['8-30天前','d8_30'],['31天+','d31']]
   const ppE = Object.entries(A.pp).filter(([k])=>k!=='未填'&&k!=='其他備註').sort((a,b)=>b[1]-a[1])
@@ -122,14 +126,14 @@ async function custDetail(kind, keepFilter){
   const pct = (a,b) => b ? Math.round(a/b*100) : 0
   const serie = fn => yms.map(ym=>fn(ins.m[ym]||{}))
   // 篩選列
-  const yChip = v => `<button class="mini" onclick="custDy='${v}';custDm='all';custDetail('${kind}',1)" style="padding:3px 11px;font-weight:800;${custDy===v?'background:var(--primary);color:#fff;border-color:var(--primary)':''}">${v==='all'?'全史':v}</button>`
+  const yChip = v => `<button class="mini" onclick="custDy='${v}';custDm='all';custDetail('${kind}',1)" style="padding:3px 11px;font-weight:800;${custDy===v?'background:var(--primary);color:#fff;border-color:var(--primary)':''}">${v==='12m'?'近12個月':v==='all'?'全史':v}</button>`
   const mChip = v => `<button class="mini" onclick="custDm='${v}';custDetail('${kind}',1)" style="padding:3px 9px;font-weight:800;${custDm===v?'background:var(--primary);color:#fff;border-color:var(--primary)':''}">${v==='all'?'全年':Number(v)+'月'}</button>`
   let h = `<section>${custTopBar()}`
   h += `<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:4px"><button class="mini" style="padding:5px 13px;font-weight:800" onclick="custLoad('home')">‹ 返回洞察</button><span style="font-weight:900;font-size:16px;color:${KD.c}">${KD.t}・完整分析</span></div>`
   h += `<div class="hint" style="font-size:12px;line-height:1.6;margin-bottom:8px">${KD.d}</div>`
-  h += `<div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:4px">${['all',...yrsAll].map(yChip).join('')}</div>`
-  if (custDy !== 'all') h += `<div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:8px">${['all','01','02','03','04','05','06','07','08','09','10','11','12'].map(mChip).join('')}</div>`
-  const periodLb = (custDy==='all'?'全史':custDy + (custDm==='all'?' 全年':' '+Number(custDm)+'月'))
+  h += `<div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:4px">${['12m','all',...yrsAll].map(yChip).join('')}</div>`
+  if (custDy !== 'all' && custDy !== '12m') h += `<div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:8px">${['all','01','02','03','04','05','06','07','08','09','10','11','12'].map(mChip).join('')}</div>`
+  const periodLb = custDy==='12m' ? '近12個月' : (custDy==='all'?'全史':custDy + (custDm==='all'?' 全年':' '+Number(custDm)+'月'))
   if (!yms.length) { h += `<div class="err">這段期間沒有資料</div></section>`; app.innerHTML = h; return }
   const avgG = A.resv ? (A.guests/A.resv).toFixed(1) : 0
   const wdN9 = ['一','二','三','四','五','六','日'], slotN9 = ['12-13','13-17','18-19','19後']
