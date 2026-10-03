@@ -1968,7 +1968,7 @@ export default async function handler(req, res) {
       const hm = (ts) => { if (!ts) return ''; try { return new Date(new Date(ts).getTime() + 8 * 3600e3).toISOString().slice(11, 16) } catch (_) { return '' } }
       // v4.36.2（張良「怎麼會出現 蕭/桑/芳/Fran 這種名字」）：阿桑系統存的是暱稱/簡稱 → 用我們名冊轉全名
       // 順序：①全名直接命中 ②暱稱命中(不分大小寫) ③唯一「名字包含」(蕭→蕭睿詮) ④唯一「暱稱互含」(桑→阿桑=林品燊)；轉不出來保留原樣
-      const idName = {}; Object.values((bStaff || {}).rows || {}).forEach(s9 => { if (s9.staff_id) idName[s9.staff_id] = s9.name })
+      const idName = {}; Object.values((bStaff || {}).rows || {}).forEach(s9 => { if (s9.staff_id) idName[s9.staff_id] = s9.display_name }) // 阿桑名冊欄位=display_name（2026-10-04 bosspeek 實查）
       const pplR = ((rosterS || {}).people) || []
       const fullCache = {}
       const fullOf = (raw) => {
