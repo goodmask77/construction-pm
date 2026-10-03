@@ -1798,6 +1798,7 @@ const BOT_AGENT_GUIDE = `
 - {"type":"query_resv","top":10}  // 🔎A Beach 常客排行代查（唯讀,不用確認）：掃 2021 開店～今全史，回「實際入座次數」最多的前 N 名（姓名/入座次數/累計人次/訂過幾次含取消/最近來店/電話）。使用者問「常客前十名/來最多次的客人/回頭客」就用這個。
 - {"type":"query_hr","month":"2026-08"}  // 🔎NUEiP人資代查（唯讀,不用確認）：任意月「出勤統計(每人出勤天數/遲到/早退/缺卡/曠職)+班表(每人排班天數)」。加 "date":"2026-08-15" =改看單日逐筆打卡+當日班表。摘要只有本月近況,問歷史月/某人某月統計就用這個。
 - {"type":"query_fin","month":"2026-08"}  // 🔎財務內帳代查（唯讀,不用確認,外部群自動擋）：任意月收支「逐筆+月合計」。摘要只有最近120筆,問更早的月份/某月總支出就用這個。
+- 張良想叫 CC（Claude Code 工程師）改程式/加功能：教他直接打「**轉給CC ＋需求內容**」一句話——系統會自動收進 CC 收件匣、CC 會撿單處理（這是接好的真管道，**不要再說「我沒辦法轉給CC」**）。只有張良本人打有效；夥伴提需求請他們走 /prep 的建議或先跟張良說。
 - **【代查鐵則】你沒有「稍等一下／待會撈回來再回報」的能力**——這一則回覆送出後就結束了，不會有下一則。要代查，就必須在**同一則回覆裡**輸出上面的 query_pos_day / query_resv JSON 指令（系統會當場查完回填、你再據此作答，使用者只會看到最終答案）。只寫「我幫你代查／撈回來整理給你／稍等一下」而**沒帶 JSON ＝什麼都不會發生＝對使用者說謊**（2026-10-04 真實翻車：答應查九月婚禮包場說「稍等一下」，結果指令沒輸出、使用者空等）。
 - {"type":"add_item","category":"空調工程","name":"主機","qty":1,"unit":"式","unitPrice":150000,"taxType":"未稅"}
 - {"type":"delete_item","category":"空調工程","item":"主機"}
@@ -1846,6 +1847,21 @@ export default async function handler(req, res) {
   if (req.method === 'GET' && req.query?.probe === 'crew') {
     const t = (await loadCrewText()) + (await loadShiftText()) + (await loadHrText())
     return res.status(200).json({ len: t.length, head: t.slice(0, 800), shiftHead: t.includes('【排班系統') ? t.slice(t.indexOf('【排班系統'), t.indexOf('【排班系統') + 600) : '（無排班段落）' })
+  }
+  // 「轉給CC」收件匣（v4.41.3 張良 2026-10-04「C能幹最好,關鍵密碼就是轉給CC」）：讀口＋銷單口（CC 本機排程撿單用）
+  if (req.method === 'GET' && req.query?.ccinbox) {
+    const mk9 = (process.env.MENU_PROBE_KEY || '').trim()
+    if (!mk9 || String(req.query.ccinbox) !== mk9) return res.status(403).json({ ok: false })
+    const doc9 = (await kvGetMany(['pm_cc_inbox']))['pm_cc_inbox'] || { list: [] }
+    return res.status(200).json({ ok: true, list: (doc9.list || []).filter(x => x.status === 'open') })
+  }
+  if (req.method === 'GET' && req.query?.ccdone) {
+    const mk9 = (process.env.MENU_PROBE_KEY || '').trim()
+    if (!mk9 || String(req.query.ccdone) !== mk9) return res.status(403).json({ ok: false })
+    const doc9 = (await kvGetMany(['pm_cc_inbox']))['pm_cc_inbox'] || { list: [] }
+    const it9 = (doc9.list || []).find(x => x.id === String(req.query.id || ''))
+    if (it9) { it9.status = 'done'; it9.doneAt = new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 16).replace('T', ' '); it9.result = String(req.query.note || '').slice(0, 300); await kvSet('pm_cc_inbox', doc9) }
+    return res.status(200).json({ ok: !!it9 })
   }
   if (req.method !== 'POST') return res.status(405).end()
   const raw = await readRaw(req)
@@ -2071,6 +2087,19 @@ export default async function handler(req, res) {
       if (sigOK === false && op) console.log('sig FAIL → 拒絕操作權限', userId.slice(-6))
       const canAct = !!op && sigOK !== false
 
+      // 1.34) 「轉給CC」直通車（v4.41.3 張良 2026-10-04 拍板：B自動掃夥伴許願太危險打槍、C=只有他本人下暗號才算）：
+      // 只認「張良本人」的訊息（夥伴/其他操作者都不行=一定經過他）→ 寫進 pm_cc_inbox 收件匣,
+      // CC 側排程每15分撿單照專案慣例實作+部署+ccdone銷單+推播回報;CC沒開機=累積在收件匣不會丟
+      const mCC = text.match(/^轉給\s*CC[:：,，\s]*([\s\S]*)$/i)
+      if (mCC && canAct && /張良/.test(op?.name || '')) {
+        const bodyCC = (mCC[1] || '').trim()
+        if (!bodyCC) { await send('要轉什麼給 CC？整句寫在「轉給CC」後面（例：轉給CC 把備料表加一欄昨日實際用量）。'); continue }
+        const docCC = (await kvGetMany(['pm_cc_inbox']))['pm_cc_inbox'] || { list: [] }
+        docCC.list = [{ id: 'cc' + Date.now().toString(36), ts: new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 16).replace('T', ' '), text: bodyCC.slice(0, 2000), status: 'open' }, ...(docCC.list || [])].slice(0, 100)
+        await kvSet('pm_cc_inbox', docCC)
+        await send(`已收進 CC 收件匣（待辦 ${docCC.list.filter(x => x.status === 'open').length} 件）。CC 在線時 15 分內撿單開工，完成會回報你；沒在線就先排隊，下次開工第一件處理。`)
+        continue
+      }
       // 1.35) App 身分綁定（張良 2026-09-21：夥伴打卡不用手填名字）：任何夥伴私訊「綁定GD」→
       // 用入職系統綁好的 lineUserId 對到名冊本人 → 發個人專屬連結（/prep?me=token，手機點開就永遠是他）。
       // 一個 bot 可掛多個 app：之後「綁定AB」等指令加進 BIND_APPS 就好，身分 token 各 app 共用（本人只有一個）

@@ -324,7 +324,10 @@ export async function handleDDCards(ev, operators) {
       }
       if (a === 'own' || a === 'own2') {
         const roster2 = await loadRoster()
-        const people = (roster2.people || []).filter(p => (p.status || '在職') === '在職' && !p.onboarding)
+        // v4.41.3 張良 2026-10-04 指定負責人按鈕名單＝這 10 人照此順序（原本=名冊在職前10）；名冊找不到的自動跳過、名冊有改名這裡要跟著改
+        const OWNER_PICK = ['林碧昱', '趙海韻', '夏傳程', '馬德儒', '姚沛旭', '王乃玉', '趙以棠', '林品燊', '黃沛勛', '張芷誩']
+        const all2 = (roster2.people || []).filter(p => (p.status || '在職') === '在職' && !p.onboarding)
+        const people = OWNER_PICK.map(n => all2.find(p => p.name === n)).filter(Boolean)
         if (a === 'own') {
           if (!people.length) { await reply(txt('名冊裡沒有在職夥伴可選。')); return true }
           await reply(flex('設負責人', bubble(`👤 「${String(task.title).slice(0, 24)}」誰負責？`, '', people.slice(0, 10).map(p => btn(p.name + (p.nick ? `（${p.nick}）` : ''), `tk|own2|${b}|${c}|${p.id}`, `${p.name} 負責`)))))
