@@ -197,7 +197,9 @@ async function custBuild() {
   await kvPut('sp_finance_pm_inline_insights', ins, 'inline洞察')
   await kvPut('sp_finance_pm_inline_custidx', idx, 'inline顧客庫索引')
   await announceChanged()
-  return { identified: idd.length, segments: Object.fromEntries(Object.entries(idx.segments).map(([k, v]) => [k, v.total])) }
+  // 自我驗證（2026-10-04 洞察檔悄悄寫失敗抓包）：寫完馬上讀回，讀不到=回報大小與錯誤
+  const chk = await kvGet('sp_finance_pm_inline_insights')
+  return { identified: idd.length, insightsOk: !!(chk && chk.m), insSize: JSON.stringify(ins).length, segments: Object.fromEntries(Object.entries(idx.segments).map(([k, v]) => [k, v.total])) }
 }
 
 export default async function handler(req, res) {
