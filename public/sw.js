@@ -14,6 +14,8 @@ self.addEventListener('push', (e) => {
   })]
   // v4.33.2 圖示紅點數字（張良：要像一般app顯示1234）：payload 帶 badge=未簽收數 → setAppBadge
   if (d.badge != null && 'setAppBadge' in navigator) jobs.push(navigator.setAppBadge(Number(d.badge) || 0).catch(() => {}))
+  // v4.33.6 App 開著時收到推播 → 通知頁面即時重算鈴鐺數字（不然要重開才看得到）
+  jobs.push(self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(ws => ws.forEach(w => { try { w.postMessage({ gdNtf: 1 }) } catch (_) {} })).catch(() => {}))
   e.waitUntil(Promise.all(jobs))
 })
 

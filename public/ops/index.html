@@ -3437,6 +3437,8 @@ async function ntfBadgeSync(){ // 鈴鐺上的未讀紅點數（進站抓一次�
     d.style.cssText = 'position:absolute;top:-5px;right:-5px;background:#E5484D;color:#fff;border-radius:999px;font-size:11px;font-weight:900;min-width:17px;height:17px;line-height:17px;text-align:center;padding:0 3px'
     d.textContent = n > 99 ? '99+' : n; b.appendChild(d) }
 }
+document.addEventListener('visibilitychange', () => { if (!document.hidden) ntfBadgeSync() }) // v4.33.6 App從背景回前景＝重算鈴鐺數字（張良：圖示有數字、打開App鈴鐺卻沒有＝喚醒不會重新抓）
+try { navigator.serviceWorker && navigator.serviceWorker.addEventListener('message', ev => { if (ev.data && ev.data.gdNtf) ntfBadgeSync() }) } catch(e){} // App開著收到推播→sw廣播→即時重算
 async function ntfPage(){ // 通知中心彈層：分類chips＋依日分組歷史；打開＝全部標已讀＋清App圖示數字
   const old = document.getElementById('ntfOv'); if (old) { old.remove(); return }
   const ov = document.createElement('div'); ov.id = 'ntfOv'
