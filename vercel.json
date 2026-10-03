@@ -3,6 +3,10 @@
     {
       "source": "/prep",
       "destination": "/ops/index.html"
+    },
+    {
+      "source": "/partner/v1/:ep*",
+      "destination": "/api/partner-api?ep=:ep*"
     }
   ],
   "crons": [
