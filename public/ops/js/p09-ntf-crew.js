@@ -141,7 +141,12 @@ async function custDetail(kind, keepFilter){
   h += `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px;margin-bottom:10px">`
   h += cKpi(cNum(A.resv), periodLb + ' 訂位組數', '', KD.c) + cKpi(cNum(A.guests), '訂位人次', `平均每組 ${avgG} 人`, KD.c) + cKpi(pct(A.cxl, A.resv+A.cxl)+'%', '取消率', `取消 ${cNum(A.cxl)} 筆`, A.cxl/(A.resv+A.cxl||1)>0.25?'var(--red)':'#E8A657')
   // POS 對帳卡（v4.40.4 張良「跟營業額人均對得起來嗎」：訂位人次≠真來客——9月實測訂位=POS的110%）
-  if (A.posG) h += cKpi(cNum(A.posG), '同期 POS 實際來客', `營收 ${cNum(Math.round(A.posRev/10000))} 萬・人均 NT$${cNum(Math.round(A.posRev/A.posG))}`, '#5FD3A6') + cKpi(pct(A.guests, A.posG)+'%', '訂位人次/實際來客', A.guests>A.posG?'訂位有水分（沒到/沒調人數）':'缺口=現場客', pct(A.guests,A.posG)>100?'#E8A657':'#6EB1FF')
+  // v4.40.5：覆蓋率只用「有 POS 資料的月份」對齊算（AB POS 2026-01 起才有；直接除會變 206% 假水分）
+  if (A.posG) {
+    const ymsP = yms.filter(ym=>(ins.m[ym]||{}).posG)
+    const AP = cAgg(ins.m, ymsP)
+    h += cKpi(cNum(A.posG), '同期 POS 實際來客', `營收 ${cNum(Math.round(A.posRev/10000))} 萬・人均 NT$${cNum(Math.round(A.posRev/A.posG))}`, '#5FD3A6') + cKpi(pct(AP.guests, AP.posG)+'%', '訂位人次/實際來客', (pct(AP.guests,AP.posG)>100?'訂位有水分（沒到/沒調人數）':'缺口=現場客') + `（對齊 ${ymsP.length} 個有POS的月）`, pct(AP.guests,AP.posG)>100?'#E8A657':'#6EB1FF')
+  }
   h += `</div>`
   if (A.posG) h += `<div class="hint" style="font-size:11px;margin:-4px 0 8px">⚠️ 訂位人次是「訂的時候寫的」，實際少來、沒調人數不會改——絕對人數以 POS 來客為準，這張表拿來看「相對強弱與預約壓力」。</div>`
   if (kind === 'trend'){
