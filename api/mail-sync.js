@@ -1987,9 +1987,16 @@ export default async function handler(req, res) {
         fullCache[r0] = out
         return out
       }
+      // v4.36.3（張良「PT也分出來 內歸內外歸外」）：pt=名冊職稱欄(cf_thi3j)含 PT/兼職；dept 班表沒帶就用名冊部門補
+      const personOf = {}
       abSched = abDocs.flatMap(d9 => Object.values((d9 || {}).rows || {}))
         .filter(x => x.status !== 'cancelled' && String(x.work_date || '') >= loS && String(x.work_date || '') <= hiS)
-        .map(x => ({ date: x.work_date, name: fullOf(idName[x.staff_id] || x.staff_name), code: x.shift_code || x.role_code || '', dept: x.dept || '', start: hm(x.start_at), end: hm(x.end_at), day: x.day_type || '' }))
+        .map(x => {
+          const nm9 = fullOf(idName[x.staff_id] || x.staff_name)
+          if (!(nm9 in personOf)) personOf[nm9] = pplR.find(p9 => p9.name === nm9) || null
+          const pp9 = personOf[nm9]
+          return { date: x.work_date, name: nm9, code: x.shift_code || x.role_code || '', dept: x.dept || (pp9 && pp9.dept) || '', pt: pp9 && /pt|兼職/i.test(String(pp9.cf_thi3j || '')) ? 1 : 0, start: hm(x.start_at), end: hm(x.end_at), day: x.day_type || '' }
+        })
     } catch (_) {}
     // AB inline 訂位彙總（張良 2026-10-03「班表下方同日期對齊,時段 12-13/13-17/18-19/19後」）：
     // 每天×時段 {g組,p人,big:[≥20人大組]}；有效=state∉{2,5}；12-13含更早(11點包場)、13-17含17點、候位(沒時間)不計

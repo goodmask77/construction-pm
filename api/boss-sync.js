@@ -63,6 +63,18 @@ export default async function handler(req, res) {
     try { const p = await call('ping'); return res.status(200).json({ ok: true, ping: p }) } catch (e) { return res.status(200).json({ ok: false, error: e.message }) }
   }
 
+  // 盤點探針（唯讀；?bosspeek=<PARTNER_API_KEY>&slug=sched&ym=202610[&q=關鍵字]）：看同步進來的 boss 月檔原始列（除錯用）
+  if (req.query?.bosspeek) {
+    const pk0 = (process.env.PARTNER_API_KEY || '').trim()
+    if (!pk0 || String(req.query.bosspeek) !== pk0) return res.status(403).json({ ok: false })
+    const slug0 = String(req.query.slug || 'staff')
+    const id0 = ['menu', 'staff'].includes(slug0) ? `sp_finance_pm_boss_${slug0}` : `sp_finance_pm_boss_${slug0}_${String(req.query.ym || '').replace('-', '') || tpeToday().slice(0, 7).replace('-', '')}`
+    const doc0 = (await kvGet(id0)) || {}
+    let rows0 = Object.values(doc0.rows || {})
+    const q0 = String(req.query.q || '')
+    if (q0) rows0 = rows0.filter(r => JSON.stringify(r).includes(q0))
+    return res.status(200).json({ ok: true, id: id0, total: Object.keys(doc0.rows || {}).length, matched: rows0.length, rows: rows0.slice(0, 30) })
+  }
   // 一次性回填（張良 2026-10-03：「7/1 前營收頁沒 AB 資料，用阿桑 API 補完」）：
   // boss revd（營收/單數/折扣/服務費/來客）＋ sett（現金/刷卡/Uber）→ 營收頁 pos entries；
   // 只補 2026-07-01 前、且該日尚無 AB 列的日子（ingestPosRecords 本身就 date|店 去重，7/1 起日結信為準不會被蓋）
