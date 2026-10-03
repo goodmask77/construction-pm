@@ -53,7 +53,7 @@
   .favchip.on{border-color:transparent;background:var(--grad);color:#fff}
   .favchip .fno{position:absolute;top:-7px;right:-7px;background:#fff;color:#0D63C9;border-radius:999px;min-width:19px;height:19px;line-height:19px;font-size:12px;font-weight:900;text-align:center}
   .kpis{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:14px 0}
-  .kpi{background:var(--card);border:1px solid var(--line);border-radius:16px;box-shadow:var(--shadow);padding:16px 18px}
+  .kpi{background:var(--card);border:1px solid var(--line);border-radius:16px;box-shadow:var(--shadow);padding:16px 18px;min-width:0} /* v4.41.1 min-width:0=長數字不把三卡撐出螢幕 */
   .kpi .l{font-size:14px;font-weight:600;color:var(--text)}
   .kpi .v{font-size:28px;font-weight:800;color:var(--ink);letter-spacing:-.02em;margin-top:4px;font-variant-numeric:tabular-nums}
   section{background:var(--card);border:1px solid var(--line);border-radius:16px;box-shadow:var(--shadow);padding:18px 16px;margin-top:16px;overflow:hidden}
@@ -86,7 +86,7 @@
   .slot{display:flex;flex-direction:column;align-items:center;gap:2px;font-size:11.5px;color:var(--muted)}
   .foot{text-align:center;font-size:13px;color:var(--muted);margin-top:22px}
   .err{background:#3A2023;color:#F07373;border-radius:12px;padding:14px;font-weight:700;margin-top:20px}
-  @media(max-width:480px){ .kpi .v{font-size:19px} h1{font-size:22px} .tabs button{padding:7px 13px;font-size:14px} }
+  @media(max-width:480px){ .kpis{gap:8px} .kpi{padding:11px 10px} .kpi .l{font-size:12px} .kpi .v{font-size:18px} h1{font-size:22px} .tabs button{padding:7px 13px;font-size:14px} } /* v4.41.1 三卡同排對齊塞進手機寬 */
   .tbrand{display:none} /* 側欄品牌字標＝桌機才顯示（v4.38.2 張良「GROUN:D就好、GROUN白:D紅、前面符號取消」） */
   /* 桌機＝Beach Ops 左側欄版型（≥920px；分頁選單變側欄、內容右移） */
   @media(min-width:920px){

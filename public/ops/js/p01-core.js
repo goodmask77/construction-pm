@@ -150,11 +150,21 @@ function renderBoard(d, store){
     </section>`
   }
   // KPI（張良 2026-09-22：搬到每日數據上面）
-  h += `<div class="kpis">
-    <div class="kpi"><div class="l">近30天營收（${d.kpi.days30} 個營業日）</div><div class="v">${fmt(d.kpi.rev30)}</div></div>
-    <div class="kpi"><div class="l">日均營收</div><div class="v">${fmt(d.kpi.avgRev)}</div></div>
-    <div class="kpi"><div class="l">近30天單數</div><div class="v">${(d.kpi.tx30||0).toLocaleString()}</div></div>
-  </div>`
+  // v4.41.1（張良「不要30天 顯示全部 手機排版對齊」）：口徑改開店至今全史(吃d.hist=跟歷史資料檢視同一套算法)；
+  // 大數換「萬」手機三卡才塞得下；日均只算有天數的月份(AB早期iCHEF月彙總天數不明就不混進分母)
+  {
+    const hA = d.hist || []
+    const revAll = hA.reduce((t,m)=>t+(Number(m.revenue)||0),0)
+    const txAll = hA.reduce((t,m)=>t+(Number(m.bills)||0),0)
+    const dKn = hA.filter(m=>Number(m.days))
+    const dayAvg = dKn.length ? Math.round(dKn.reduce((t,m)=>t+(Number(m.revenue)||0),0)/dKn.reduce((t,m)=>t+Number(m.days),0)) : 0
+    const kv9 = n => n >= 1e6 ? Math.round(n/1e4).toLocaleString()+'<span style="font-size:.62em;font-weight:700"> 萬</span>' : Math.round(n||0).toLocaleString()
+    h += `<div class="kpis">
+      <div class="kpi"><div class="l">總營收<span class="hint">（${hA.length}個月）</span></div><div class="v">${kv9(revAll)}</div></div>
+      <div class="kpi"><div class="l">日均營收</div><div class="v">${kv9(dayAvg)}</div></div>
+      <div class="kpi"><div class="l">總單數</div><div class="v">${kv9(txAll)}</div></div>
+    </div>`
+  }
   // 日表（張良 2026-09-22 v3：去NT簡化版面、日期欄凍結、至14:00=14點前營收、總營收、表頭下平均列、高低於平均用色階（綠=高於、紅=低於，深淺=差多少））
   // v4.37.9（張良「總營收跟至14:00位子交換」）：總營收移到日期旁、至14:00退第三欄——表頭+總計+平均+單日+歷史年/月列全部同步換
   const isGD = d.store === 'ground'
