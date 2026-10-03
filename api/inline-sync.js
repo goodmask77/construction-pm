@@ -181,6 +181,18 @@ async function custBuild() {
   }
   ins.bigList.sort((a, b) => b.d.localeCompare(a.d))
   if (ins.bigList.length > 900) ins.bigList = ins.bigList.slice(0, 900)
+  // POS 真實來客/營收對帳（張良 2026-10-04「跟營業額人均對得起來嗎」→實測9月訂位人次=POS來客的110%，訂位有水分）
+  // sp_finance_pm_pos entries（AB=日結信+boss回填）→ 每月 posG 來客/posRev 營收，前端算覆蓋率與人均
+  try {
+    const posDoc = await kvGet('sp_finance_pm_pos')
+    for (const e of ((posDoc || {}).entries || [])) {
+      if (/groun/i.test(e.store || '') || !e.date) continue
+      const mm = M9(e.date.slice(0, 7))
+      mm.posG = (mm.posG || 0) + (Number(e.guests) || 0)
+      mm.posRev = (mm.posRev || 0) + (Number(e.revenue) || 0)
+      mm.posD = (mm.posD || 0) + 1
+    }
+  } catch (_) {}
   // 分段寫入（只收「有有效電話」的＝識別得出同一人；現場代稱不進資料庫）
   const idd = Object.values(cust).filter((c) => c.n && c.ph.replace(/\D/g, '').length >= 8)
   const cutoff = addDays(today, -180)

@@ -41,7 +41,7 @@ function cMsel(mm){ const nowYM = todayTpe().slice(0,7); const all = Object.keys
 function cAgg(mm, yms){
   const o = { resv:0,guests:0,cxl:0,kids:0,nw:0,rt:0,big:0,bigG:0,src:{},lead:{d0:0,d1_3:0,d4_7:0,d8_30:0,d31:0},pp:{},hp:Array.from({length:7},()=>[0,0,0,0]),hg:Array.from({length:7},()=>[0,0,0,0]),wdD:[0,0,0,0,0,0,0] }
   for (const ym of yms){ const m = mm[ym]; if (!m) continue
-    for (const k of ['resv','guests','cxl','kids','nw','rt','big','bigG']) o[k] += m[k]||0
+    for (const k of ['resv','guests','cxl','kids','nw','rt','big','bigG','posG','posRev','posD']) o[k] = (o[k]||0) + (m[k]||0)
     for (const [k,v] of Object.entries(m.src||{})) o.src[k]=(o.src[k]||0)+v
     for (const k of Object.keys(o.lead)) o.lead[k]+= (m.lead||{})[k]||0
     for (const [k,v] of Object.entries(m.pp||{})) o.pp[k]=(o.pp[k]||0)+v
@@ -139,15 +139,18 @@ async function custDetail(kind, keepFilter){
   const wdN9 = ['一','二','三','四','五','六','日'], slotN9 = ['12-13','13-17','18-19','19後']
   // 共用 KPI 條
   h += `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px;margin-bottom:10px">`
-  h += cKpi(cNum(A.resv), periodLb + ' 訂位組數', '', KD.c) + cKpi(cNum(A.guests), '人次', `平均每組 ${avgG} 人`, KD.c) + cKpi(pct(A.cxl, A.resv+A.cxl)+'%', '取消率', `取消 ${cNum(A.cxl)} 筆`, A.cxl/(A.resv+A.cxl||1)>0.25?'var(--red)':'#E8A657')
+  h += cKpi(cNum(A.resv), periodLb + ' 訂位組數', '', KD.c) + cKpi(cNum(A.guests), '訂位人次', `平均每組 ${avgG} 人`, KD.c) + cKpi(pct(A.cxl, A.resv+A.cxl)+'%', '取消率', `取消 ${cNum(A.cxl)} 筆`, A.cxl/(A.resv+A.cxl||1)>0.25?'var(--red)':'#E8A657')
+  // POS 對帳卡（v4.40.4 張良「跟營業額人均對得起來嗎」：訂位人次≠真來客——9月實測訂位=POS的110%）
+  if (A.posG) h += cKpi(cNum(A.posG), '同期 POS 實際來客', `營收 ${cNum(Math.round(A.posRev/10000))} 萬・人均 NT$${cNum(Math.round(A.posRev/A.posG))}`, '#5FD3A6') + cKpi(pct(A.guests, A.posG)+'%', '訂位人次/實際來客', A.guests>A.posG?'訂位有水分（沒到/沒調人數）':'缺口=現場客', pct(A.guests,A.posG)>100?'#E8A657':'#6EB1FF')
   h += `</div>`
+  if (A.posG) h += `<div class="hint" style="font-size:11px;margin:-4px 0 8px">⚠️ 訂位人次是「訂的時候寫的」，實際少來、沒調人數不會改——絕對人數以 POS 來客為準，這張表拿來看「相對強弱與預約壓力」。</div>`
   if (kind === 'trend'){
     const mets = [['guests','人次'],['resv','組數'],['avg','平均每組人數']]
     if (!custDmet || !mets.some(([k])=>k===custDmet)) custDmet = 'guests'
     h += `<div style="margin-bottom:6px">${mets.map(([k,lb])=>`<button class="mini" onclick="custDmet='${k}';custDetail('trend',1)" style="padding:3px 11px;font-weight:800;${custDmet===k?'background:var(--primary);color:#fff;border-color:var(--primary)':''}">${lb}</button>`).join('')}</div>`
     const vals = custDmet==='avg' ? serie(m=>m.resv?+(m.guests/m.resv).toFixed(1):0) : serie(m=>m[custDmet]||0)
     h += cCard(`📈 每月${mets.find(([k])=>k===custDmet)[1]}趨勢（${periodLb}）`, cLineSvg(yms, vals, KD.c))
-    h += `<div style="height:8px"></div>` + cCard('月明細', `<div class="scroll" style="max-height:38vh;overflow:auto"><table style="width:100%;border-collapse:collapse;font-size:12px"><tr>${['月份','組數','人次','平均每組','取消率'].map(x=>`<th style="position:sticky;top:0;background:var(--soft);padding:4px 8px">${x}</th>`).join('')}</tr>${[...yms].reverse().map(ym=>{const m=ins.m[ym];return `<tr>${[ym, cNum(m.resv), cNum(m.guests), m.resv?(m.guests/m.resv).toFixed(1):'—', pct(m.cxl,m.resv+m.cxl)+'%'].map(x=>`<td style="border-top:1px solid var(--line);padding:3px 8px">${x}</td>`).join('')}</tr>`}).join('')}</table></div>`)
+    h += `<div style="height:8px"></div>` + cCard('月明細（含 POS 對帳）', `<div class="scroll" style="max-height:38vh;overflow:auto"><table style="width:100%;border-collapse:collapse;font-size:12px;white-space:nowrap"><tr>${['月份','訂位組數','訂位人次','平均每組','取消率','POS來客','POS營收','人均消費','訂位/來客'].map(x=>`<th style="position:sticky;top:0;background:var(--soft);padding:4px 8px">${x}</th>`).join('')}</tr>${[...yms].reverse().map(ym=>{const m=ins.m[ym];const cov=m.posG?pct(m.guests,m.posG):0;return `<tr>${[ym, cNum(m.resv), cNum(m.guests), m.resv?(m.guests/m.resv).toFixed(1):'—', pct(m.cxl,m.resv+m.cxl)+'%', m.posG?cNum(m.posG):'—', m.posRev?cNum(m.posRev):'—', m.posG?('NT$'+cNum(Math.round(m.posRev/m.posG))):'—', m.posG?`<b style="color:${cov>100?'#E8A657':'#6EB1FF'}">${cov}%</b>`:'—'].map(x=>`<td style="border-top:1px solid var(--line);padding:3px 8px">${x}</td>`).join('')}</tr>`}).join('')}</table></div><div class="hint" style="font-size:10.5px;margin-top:4px">POS 來客/營收＝日結真值（AB 2026-01 起才有）；訂位/來客 >100% ＝訂位有水分（沒到、沒調人數）。</div>`)
   }
   if (kind === 'heat'){
     const mets = [['avgp','平均每日人次'],['tot','總人次'],['avgg','平均每組人數']]
