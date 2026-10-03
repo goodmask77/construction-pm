@@ -162,39 +162,63 @@ async function payCopyImg(){
 function shVioCompute(gdRows){
   const t2m=t=>{ const x=String(t||'').split(':'); return (+x[0]||0)*60+(+x[1]||0) }
   const addV=(m,k,r)=>{ (m[k]=m[k]||[]).push(r) }
-  const scanSched=(map, out)=>{ // map: name→date→{min,max,h}（max 可能>1440=跨午夜）
+  // v4.33.4 誤報治本（張良「為什麼一堆在閃紅光」）：同人同天兼多崗位=多筆「同時段」紀錄，加總會變24h
+  // → 改「區間合併」：重疊時段只算一次，真正分段班（早+晚）才相加
+  const pushIv=(o,dt,sM,eM,brk)=>{ const p=o[dt]=o[dt]||{iv:[],brk:0}; p.iv.push([sM,eM]); p.brk=Math.max(p.brk,brk||0) }
+  const dayCalc=(p)=>{ const iv=p.iv.sort((x,y)=>x[0]-y[0]); let tot=0,cs=null,ce=null,mn=99999,mx=-1
+    for(const [s0,e0] of iv){ mn=Math.min(mn,s0); mx=Math.max(mx,e0)
+      if(cs===null){ cs=s0; ce=e0 } else if(s0<=ce){ ce=Math.max(ce,e0) } else { tot+=ce-cs; cs=s0; ce=e0 } }
+    if(cs!==null) tot+=ce-cs
+    return { h: Math.max(0,(tot-p.brk))/60, min:mn, max:mx }
+  }
+  const scanSched=(map, out)=>{
     for(const [nm,ds] of Object.entries(map)){
       const dts=Object.keys(ds).sort(); let run=1
-      dts.forEach(dt=>{ if(ds[dt].h>12) addV(out,nm+'|'+dt,'排班'+Math.round(ds[dt].h*10)/10+'h>12h') })
+      const cal={}; dts.forEach(dt=>{ cal[dt]=dayCalc(ds[dt]) })
+      dts.forEach(dt=>{ if(cal[dt].h>12) addV(out,nm+'|'+dt,'排班'+Math.round(cal[dt].h*10)/10+'h>12h') })
       for(let i=1;i<dts.length;i++){
         const gap1=(new Date(dts[i])-new Date(dts[i-1]))/86400e3
         if(gap1===1){
           run++
-          const rest=ds[dts[i]].min+1440-ds[dts[i-1]].max
-          if(rest<660&&rest>0) addV(out,nm+'|'+dts[i],'與前一天班距'+(Math.round(rest/6)/10)+'h<11h')
+          if(cal[dts[i]].min<99999&&cal[dts[i-1]].max>-1){
+            const rest=cal[dts[i]].min+1440-cal[dts[i-1]].max
+            if(rest<660&&rest>0) addV(out,nm+'|'+dts[i],'與前一天班距'+(Math.round(rest/6)/10)+'h<11h')
+          }
         } else run=1
         if(run>12) addV(out,nm+'|'+dts[i],'連上第'+run+'天(四週變形例假不足)')
       }
     }
   }
   const g={}, a={}
-  // GD 排班
+  // GD 排班（同時段多崗位→合併）
   const gs={}
   ;(typeof shMergedSched==='function'?shMergedSched():[]).forEach(x=>{ if(!x.date||!x.name||!x.start||!x.end) return
     let eM=t2m(x.end); if(eM<=t2m(x.start)) eM+=1440
-    const o=(gs[x.name]=gs[x.name]||{}); const p=o[x.date]||{min:99999,max:-1,h:0}
-    p.min=Math.min(p.min,t2m(x.start)); p.max=Math.max(p.max,eM); p.h+=(eM-t2m(x.start)-(+x.break||0))/60; o[x.date]=p })
+    pushIv(gs[x.name]=gs[x.name]||{}, x.date, t2m(x.start), eM, +x.break||0) })
   scanSched(gs,g)
   ;(gdRows||[]).forEach(r=>{ if(r.over12) addV(g,r.name+'|'+r.date,'實際'+r1(r.h)+'h>12h') })
   // AB 排班（NUEiP；休/例不算工作日）
   const as={}
   ;(typeof shMergedAb==='function'?shMergedAb():[]).forEach(x=>{ if(!x.name||!x.date||/休|例/.test(x.code||'')) return
-    const o=(as[x.name]=as[x.name]||{}); const p=o[x.date]||{min:99999,max:-1,h:0}
     if(x.start&&x.end){ let eM=t2m(x.end); if(eM<=t2m(x.start)) eM+=1440; const sp=eM-t2m(x.start)
-      p.min=Math.min(p.min,t2m(x.start)); p.max=Math.max(p.max,eM); p.h+=(sp-(sp>=540?60:0))/60 }
-    else { p.min=Math.min(p.min,720); p.max=Math.max(p.max,720); } // 只有代碼沒時間＝只參與連上天數
-    o[x.date]=p })
+      pushIv(as[x.name]=as[x.name]||{}, x.date, t2m(x.start), eM, sp>=540?60:0) }
+    else pushIv(as[x.name]=as[x.name]||{}, x.date, 720, 720, 0) }) // 只有代碼沒時間＝只參與連上天數
   scanSched(as,a)
   ;(((window._shiftD||{}).abAtt)||[]).forEach(x=>{ if((+x.h||0)>12) addV(a,x.name+'|'+x.date,'實際'+x.h+'h>12h') })
   return { g, a }
+}
+// 🔴 違規清單面板（張良「我要去哪裡確認是什麼問題」）：工具列紅色「違規 N」鈕點開＝每筆誰/哪天/什麼問題
+function shVioList(){
+  const V=shVioCompute(window._shRows||[])
+  const L=[]
+  for(const [k,rs] of Object.entries(V.g||{})){ const [nm,dt]=k.split('|'); rs.forEach(r=>L.push({st:'GD',nm,dt,r})) }
+  for(const [k,rs] of Object.entries(V.a||{})){ const [nm,dt]=k.split('|'); rs.forEach(r=>L.push({st:'AB',nm,dt,r})) }
+  L.sort((x,y)=>x.dt<y.dt?-1:x.dt>y.dt?1:0)
+  lpOverlay('vioOv',`
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap"><b style="font-size:17px">🔴 班表違規清單</b>
+      <span class="hint">和班表上發紅光的格子一一對應；規則＝四週變形（單日12h／班距11h／連13天）</span>
+      <button class="mini" style="padding:6px 14px" onclick="document.getElementById('vioOv').remove()">關閉</button></div>
+    ${L.length?`<div class="scroll" style="margin-top:10px"><table style="border-collapse:collapse;width:100%"><thead><tr><th style="padding:5px 8px">店</th><th style="padding:5px 8px">日期</th><th style="text-align:left;padding:5px 8px">夥伴</th><th style="text-align:left;padding:5px 8px">問題</th></tr></thead><tbody>
+      ${L.map(x=>`<tr style="border-top:1px solid var(--line)"><td style="padding:6px 8px;text-align:center">${x.st}</td><td style="padding:6px 8px;white-space:nowrap">${x.dt.slice(5)}</td><td style="padding:6px 8px;font-weight:800">${x.nm}</td><td style="padding:6px 8px;color:var(--red);font-weight:700">${x.r}</td></tr>`).join('')}
+    </tbody></table></div><div class="hint" style="margin-top:8px">想看法條層面的整體體檢 → 工具列「⚖️ 法規」。</div>`:`<div class="mut" style="margin-top:12px">目前已載入的班表沒有違規 🎉</div>`}`)
 }
