@@ -461,6 +461,15 @@ async function loadHrText() {
     return out.join('\n')
   } catch (_) { return '' }
 }
+// 薪資分潤模型（夥伴中心・薪資透明頁 sp_crew_salary_model；只給參數概要,個人試算以 App 頁為準；外部群不載；v4.38.3 盤點補洞）
+async function loadSalaryText() {
+  try {
+    const d = (await kvGetMany(['sp_crew_salary_model']))['sp_crew_salary_model']
+    if (!d?.settings) return ''
+    const S = d.settings
+    return `\n\n【薪資分潤模型（A Beach・夥伴中心「薪資透明」頁）】\n  - 池=損益淨利×淨利率×放大係數${S.pnl?.amp ?? '?'}${Number(S.poolManual) > 0 ? `（目前手動指定池 NT$${Number(S.poolManual).toLocaleString()}）` : ''}｜模式${S.mode}（A=全池連乘/B=半票半乘）｜預設本薪 NT$${Number(S.defaultBase || 0).toLocaleString()}\n  - 五大面向：${(S.facets || []).join('/')}｜每人票數${S.votesPerPerson}｜單項係數上限${S.maxBoost}｜已填浮動欄 ${Object.keys(d.people || {}).length} 人\n  - ⚠️個人獎金一律以 App 薪資透明頁試算為準（公式=保底+票數獎金×六係數連乘），不要自己心算`
+  } catch (_) { return '' }
+}
 async function loadPunchText() {
   try {
     const { todayPunchesAll } = await import('./punch.js')
@@ -595,7 +604,7 @@ async function loadPosText() {
   try {
     const now = new Date(Date.now() + 8 * 3600e3)
     const mo = now.toISOString().slice(0, 7)
-    const kv = await kvGetMany(['sp_finance_pm_pos', 'sp_finance_pm_pos_d_' + mo, 'sp_finance_pm_pos_tx_' + mo, 'sp_finance_pm_pos_flags', 'sp_finance_pm_pos_idlecfg', 'sp_finance_pm_pos_hh_' + mo, 'sp_finance_pm_pos_costs', 'sp_finance_pm_pos_prices', 'sp_finance_pm_pos_hidden', 'sp_finance_pm_pos_alias', 'sp_finance_pm_sop_def', 'sp_finance_pm_sop_g_' + now.toISOString().slice(0, 10), 'sp_finance_pm_sop_issues', 'sp_finance_pm_inv', 'sp_finance_pm_buy', 'sp_finance_pm_meet', 'sp_finance_pm_shift_g', 'sp_finance_pm_fb', 'sp_finance_pm_fbj', 'sp_finance_pm_menu', 'sp_finance_pm_fc_' + now.toISOString().slice(0, 7).replace('-', ''), 'sp_finance_pm_absoldout', 'sp_finance_pm_ablive', 'sp_finance_pm_labor', 'sp_finance_pm_inline_' + mo, 'sp_finance_pm_inline_' + new Date(Date.UTC(+mo.slice(0, 4), +mo.slice(5, 7), 1)).toISOString().slice(0, 7), 'sp_finance_pm_inline_' + new Date(Date.UTC(+mo.slice(0, 4), +mo.slice(5, 7) - 2, 1)).toISOString().slice(0, 7), 'sp_finance_pm_inline'])
+    const kv = await kvGetMany(['sp_finance_pm_pos', 'sp_finance_pm_pos_d_' + mo, 'sp_finance_pm_pos_tx_' + mo, 'sp_finance_pm_pos_flags', 'sp_finance_pm_pos_idlecfg', 'sp_finance_pm_pos_hh_' + mo, 'sp_finance_pm_pos_costs', 'sp_finance_pm_pos_prices', 'sp_finance_pm_pos_hidden', 'sp_finance_pm_pos_alias', 'sp_finance_pm_sop_def', 'sp_finance_pm_sop_g_' + now.toISOString().slice(0, 10), 'sp_finance_pm_sop_issues', 'sp_finance_pm_inv', 'sp_finance_pm_buy', 'sp_finance_pm_meet', 'sp_finance_pm_shift_g', 'sp_finance_pm_fb', 'sp_finance_pm_fbj', 'sp_finance_pm_menu', 'sp_finance_pm_fc_' + now.toISOString().slice(0, 7).replace('-', ''), 'sp_finance_pm_absoldout', 'sp_finance_pm_ablive', 'sp_finance_pm_labor', 'sp_finance_pm_inline_' + mo, 'sp_finance_pm_inline_' + new Date(Date.UTC(+mo.slice(0, 4), +mo.slice(5, 7), 1)).toISOString().slice(0, 7), 'sp_finance_pm_inline_' + new Date(Date.UTC(+mo.slice(0, 4), +mo.slice(5, 7) - 2, 1)).toISOString().slice(0, 7), 'sp_finance_pm_inline', 'sp_finance_pm_inline_insights', 'sp_finance_pm_sop_sugs'])
     const pos = kv['sp_finance_pm_pos']
     const entries = pos && Array.isArray(pos.entries) ? pos.entries : []
     if (!entries.length) return ''
@@ -664,8 +673,18 @@ async function loadPosText() {
           lines.push(`  - 近${pasts.length}天（${pasts[0].slice(5)}~${pasts[pasts.length - 1].slice(5)}）：共${agg.all}組｜入座${agg.s4}/取消${agg.cx}/其他${agg.rest}`)
         }
         if (inlSum?.months) { const ms = Object.entries(inlSum.months); lines.push(`  - 歷史總量：${ms.length}個月 ${ms.reduce((t, [, v]) => t + (v.resv || 0), 0)}筆（最後同步 ${String(inlSum.lastSync || '').slice(0, 16).replace('T', ' ')}）`) }
+        // 訂位洞察（inline-sync 全史聚合；答「客人哪來的/提前多久訂/大組趨勢」；v4.38.3 盤點補洞）
+        const insD = kv['sp_finance_pm_inline_insights']
+        if (insD && (insD.src || insD.purpose)) {
+          const top6 = (o) => Object.entries(o || {}).sort((a, b) => b[1] - a[1]).slice(0, 6).map(([k, v]) => `${k}${v}`).join('、')
+          lines.push(`  - 洞察（全史聚合）：來源=${top6(insD.src) || '無'}｜目的=${top6(insD.purpose) || '無'}${insD.lead ? `｜提前訂:當天${insD.lead.d0 || 0}/1-3天${insD.lead.d1_3 || 0}/4-7天${insD.lead.d4_7 || 0}/8-30天${insD.lead.d8_30 || 0}/31天+${insD.lead.d31 || 0}` : ''}${insD.bigY ? `｜大組(≥20人)年趨勢:${Object.entries(insD.bigY).sort().slice(-3).map(([y, b]) => `${y}年${b.cnt}次${b.guests}人`).join('、')}` : ''}`)
+        }
       }
     }
+    // SOP 建議待審（夥伴在 /prep 提的建議；status=open 等負責人處理；v4.38.3 盤點補洞）
+    const sugsD = kv['sp_finance_pm_sop_sugs']
+    const sugsOpen = (sugsD?.list || []).filter(s => s.status === 'open')
+    if (sugsOpen.length) lines.push(`【SOP 建議待審 ${sugsOpen.length} 件】` + sugsOpen.slice(0, 6).map(s => `${s.by}(${s.st}):${String(s.text || '').slice(0, 25)}`).join('、'))
     // GROUN:D 半小時時段（pm_pos_hh_月檔＝盤中每30分快照相減推算，2026-08-28 起；答「排人力/尖峰半小時」；對帳以每小時原生資料為準；與 App loadSpaceAIContext 同步接）
     const hhDoc = kv['sp_finance_pm_pos_hh_' + mo]
     if (hhDoc?.days && Object.keys(hhDoc.days).length) {
@@ -1464,15 +1483,20 @@ async function queryResvDay(from, to) {
   const kv3 = await kvGetMany(mos.map((m) => 'sp_finance_pm_inline_' + m).concat(['sp_finance_pm_inline_notes']))
   const notes = ((kv3['sp_finance_pm_inline_notes'] || {}).days) || {}
   const ST = { 1: '已確認', 2: '已取消', 3: '待確認', 4: '已入座', 5: '已取消', 6: '已確認' }
-  const L = [`◆ A Beach 訂位 ${f}${t2 !== f ? `~${t2}` : ''}（系統代查 inline 全檔）`]
+  // v4.38.3 大區間精簡模式（2026-10-04 真實翻車：代查九月=1182筆逐筆全塞,AI輸入爆掉回「AI 回應失敗」兩次）：
+  // >7天=每天一行統計+只逐列「≥20人大組 或 有客註/店註」的訂位（婚禮/包場線索都在備註,一筆不漏）；要完整逐筆用單日再查
+  const compact = (new Date(t2) - new Date(f)) / 86400e3 > 7
+  const L = [`◆ A Beach 訂位 ${f}${t2 !== f ? `~${t2}` : ''}（系統代查 inline 全檔${compact ? '；區間>7天=精簡模式:每天一行合計+只逐列大組(≥20人)/有備註的訂位,要某天完整逐筆用單日再查' : ''}）`]
   let any = false
   for (const m of mos) {
     const days = ((kv3['sp_finance_pm_inline_' + m] || {}).days) || {}
     for (const d of Object.keys(days).sort()) {
       if (d < f || d > t2) continue
       any = true
-      L.push(`${d}（${days[d].length}筆）：`)
-      days[d].forEach((r) => L.push(`  - ${r.t || '候位'} ${r.name} ${r.n}人｜${ST[r.st] || r.st}${r.phone ? `｜${r.phone}` : ''}${r.kc ? `｜兒童椅${r.kc}` : ''}${r.note ? `｜客註:${String(r.note).slice(0, 40)}` : ''}${r.inote ? `｜店註:${String(r.inote).slice(0, 40)}` : ''}`))
+      if (!compact) {
+        L.push(`${d}（${days[d].length}筆）：`)
+        days[d].forEach((r) => L.push(`  - ${r.t || '候位'} ${r.name} ${r.n}人｜${ST[r.st] || r.st}${r.phone ? `｜${r.phone}` : ''}${r.kc ? `｜兒童椅${r.kc}` : ''}${r.note ? `｜客註:${String(r.note).slice(0, 40)}` : ''}${r.inote ? `｜店註:${String(r.inote).slice(0, 40)}` : ''}`))
+      }
       // 系統算好的合計（2026-10-04 DD 心算 34≠33 抓包）：有效=st∉{2,5}；分時段+全天；引用這些數字別自己加
       // v4.38.2 沒填時間的也要計入（之前 && r.t 直接漏掉＝100人包場沒填時間就從合計消失）＋午/晚場總計（張良切法：17:00前=中午、17:00後=晚上，17-18店休息）
       const ok9 = days[d].filter((r) => r.st !== 2 && r.st !== 5)
@@ -1482,12 +1506,64 @@ async function queryResvDay(from, to) {
       const tp = ok9.reduce((t9, r) => t9 + (r.n || 0), 0), tkc = ok9.reduce((t9, r) => t9 + (r.kc || 0), 0), tks = ok9.reduce((t9, r) => t9 + (r.ks || 0), 0), tpd = ok9.filter((r) => r.st === 3).length
       const kcWho = tkc ? ok9.filter((r) => r.kc).map((r) => `${r.name}${r.kc}張`).join('、') : ''
       const nn9 = ok9.filter((r) => r.t && r.t < '17:00'), ee9 = ok9.filter((r) => r.t && r.t >= '17:00'), nt9 = ok9.filter((r) => !r.t)
-      L.push(`  ＝${d} 系統合計（回答以此為準，別自己加總）：有效 ${ok9.length}組 ${tp}人${tkc || tks ? `＋小孩${tkc + tks}` : ''}${tpd ? `（含待確認${tpd}組）` : ''}｜午場(17:00前)${nn9.length}組${nn9.reduce((t9, r) => t9 + (r.n || 0), 0)}人/晚場(17:00後)${ee9.length}組${ee9.reduce((t9, r) => t9 + (r.n || 0), 0)}人${nt9.length ? `/未填時間${nt9.length}組${nt9.reduce((t9, r) => t9 + (r.n || 0), 0)}人` : ''}｜` + Object.entries(agg9).map(([s9, a9]) => `${s9}:${a9.g}組${a9.p}人${a9.k ? `+${a9.k}小` : ''}`).join('、') + (tkc ? `｜🪑兒童椅共${tkc}張（${kcWho}）` : '') + (tks ? `｜兒童座${tks}個` : '') + `｜⚠️ inline iPad 時間軸人數=大人+小孩`)
+      if (compact) {
+        const wd9 = '日一二三四五六'[new Date(d + 'T00:00:00Z').getUTCDay()]
+        const cx9 = days[d].length - ok9.length
+        L.push(`${d.slice(5)}(${wd9}) 有效${ok9.length}組${tp}人(午${nn9.length}/晚${ee9.length}${nt9.length ? `/未填${nt9.length}` : ''})${cx9 ? `,取消${cx9}組` : ''}${tkc + tks ? `,小孩${tkc + tks}` : ''}`)
+        days[d].filter((r) => (r.n || 0) >= 20 || r.note || r.inote).forEach((r) => L.push(`  - ${r.t || '未填'} ${r.name}${r.n}人(${ST[r.st] || r.st})${r.note ? `｜客註:${String(r.note).slice(0, 40)}` : ''}${r.inote ? `｜店註:${String(r.inote).slice(0, 40)}` : ''}`))
+      } else {
+        L.push(`  ＝${d} 系統合計（回答以此為準，別自己加總）：有效 ${ok9.length}組 ${tp}人${tkc || tks ? `＋小孩${tkc + tks}` : ''}${tpd ? `（含待確認${tpd}組）` : ''}｜午場(17:00前)${nn9.length}組${nn9.reduce((t9, r) => t9 + (r.n || 0), 0)}人/晚場(17:00後)${ee9.length}組${ee9.reduce((t9, r) => t9 + (r.n || 0), 0)}人${nt9.length ? `/未填時間${nt9.length}組${nt9.reduce((t9, r) => t9 + (r.n || 0), 0)}人` : ''}｜` + Object.entries(agg9).map(([s9, a9]) => `${s9}:${a9.g}組${a9.p}人${a9.k ? `+${a9.k}小` : ''}`).join('、') + (tkc ? `｜🪑兒童椅共${tkc}張（${kcWho}）` : '') + (tks ? `｜兒童座${tks}個` : '') + `｜⚠️ inline iPad 時間軸人數=大人+小孩`)
+      }
     }
   }
   const dn = Object.keys(notes).filter((d) => d >= f && d <= t2).sort()
   if (dn.length) { L.push('當日備註：'); dn.forEach((d) => (notes[d] || []).forEach((n) => L.push(`  - ${d} ${String(n.note).replace(/\s+/g, ' ').slice(0, 80)}（${n.by}）`))) }
   if (!any && !dn.length) L.push('（這段期間沒有任何訂位或備註＝空檔）')
+  return L.join('\n')
+}
+// 🔎 人資代查（任意月出勤+班表；context 只載本月出勤近2天+異常統計,歷史月/逐人統計用這支；v4.38.3 全資料域盤點補洞）
+async function queryHrMonth(month, date) {
+  const dt = /^\d{4}-\d{2}-\d{2}$/.test(String(date || '')) ? String(date) : ''
+  const mo = dt ? dt.slice(0, 7) : String(month || '')
+  if (!/^\d{4}-\d{2}$/.test(mo)) return '（格式：month=YYYY-MM 整月統計，或 date=YYYY-MM-DD 看單日逐筆）'
+  const kvh = await kvGetMany(['sp_crew_pm_hr_att_' + mo, 'sp_crew_pm_hr_sched_' + mo])
+  const att = kvh['sp_crew_pm_hr_att_' + mo], sch = kvh['sp_crew_pm_hr_sched_' + mo]
+  const L = [`◆ NUEiP 人資 ${dt || mo}（系統代查）`]
+  if (dt) {
+    const rows = Object.values(att?.days?.[dt] || {})
+    L.push(rows.length ? `出勤逐筆：` : `（${dt} 沒有出勤資料）`)
+    rows.forEach(r => L.push(`  - ${r.name}${r.work ? ` 班${r.work}` : ''} 上${(r.on || []).join('/') || '—'} 下${(r.off || []).join('/') || '—'}${r.late ? ` 遲到${r.late}分` : ''}${r.early ? ` 早退${r.early}分` : ''}${r.miss ? ' 缺卡' : ''}${r.absent ? ' 曠職' : ''}`))
+    const srows = (sch?.days?.[dt] || []).filter(x => !x.brk && x.name)
+    if (srows.length) L.push(`班表：` + srows.map(x => `${x.name}${x.code ? `(${x.code}${x.start ? ` ${x.start.slice(0, 5)}-${(x.end || '').slice(0, 5)}` : ''})` : ''}`).join('、'))
+    return L.join('\n')
+  }
+  if (att?.days && Object.keys(att.days).length) {
+    const ds = Object.keys(att.days).sort()
+    const st = {}
+    ds.forEach(d => Object.values(att.days[d]).forEach(r => { const s = st[r.name] = st[r.name] || { d: 0, late: 0, lm: 0, early: 0, miss: 0, ab: 0 }; s.d++; if (r.late) { s.late++; s.lm += r.late } if (r.early) s.early++; if (r.miss) s.miss++; if (r.absent) s.ab++ }))
+    L.push(`出勤 ${ds[0]}~${ds[ds.length - 1]} 共${ds.length}天（每人統計；要某天逐筆帶 date 再查）：`)
+    Object.entries(st).sort((a, b) => b[1].d - a[1].d).forEach(([n, s]) => L.push(`  - ${n}：出勤${s.d}天${s.late ? `｜遲到${s.late}次(${s.lm}分)` : ''}${s.early ? `｜早退${s.early}次` : ''}${s.miss ? `｜缺卡${s.miss}次` : ''}${s.ab ? `｜曠職${s.ab}次` : ''}`))
+  } else L.push('（該月沒有出勤資料）')
+  if (sch?.days && Object.keys(sch.days).length) {
+    const st2 = {}
+    Object.values(sch.days).forEach(list => (list || []).forEach(x => { if (x.brk || !x.name) return; st2[x.name] = (st2[x.name] || 0) + 1 }))
+    L.push(`班表共${Object.keys(sch.days).length}天（每人排班天數,休假不計）：` + Object.entries(st2).sort((a, b) => b[1] - a[1]).map(([n, c]) => `${n}${c}天`).join('、'))
+  } else L.push('（該月沒有班表資料）')
+  return L.join('\n')
+}
+// 🔎 財務內帳代查（任意月逐筆；context 只有最近120筆,更早的用這支；v4.38.3 全資料域盤點補洞）
+async function queryFinMonth(month) {
+  if (!/^\d{4}-\d{2}$/.test(String(month || ''))) return '（月份格式要 YYYY-MM）'
+  const { list } = await kvLoadLedger()
+  const rows = list.filter(t => String(t.date || '').slice(0, 7) === month)
+  const L = [`◆ 財務內帳 ${month} 共 ${rows.length} 筆（系統代查）`]
+  if (rows.length) {
+    let inc = 0, exp = 0
+    rows.forEach(t => { if (t.kind === 'income') inc += Number(t.amount) || 0; else if (t.kind === 'expense') exp += Number(t.amount) || 0 })
+    L.push(`合計（回答以此為準，別自己加總）：收入 ${fmtNT(inc)}／支出 ${fmtNT(exp)}`)
+    rows.slice(0, 250).forEach(t => L.push(`  - ${t.date} ${t.kind === 'income' ? '收' : t.kind === 'transfer' ? '轉' : '支'} ${fmtNT(t.amount)}｜${t.category || ''}${t.vendor ? `｜${t.vendor}` : ''}${t.note ? `｜${String(t.note).slice(0, 30)}` : ''}`))
+    if (rows.length > 250) L.push(`…僅列前 250 筆（合計是全月的）`)
+  }
   return L.join('\n')
 }
 // 🔎 訂位關鍵字代查（「客人OD電話多少」這種用名字問的；直連 inline 即時搜尋＝後台搜尋框同源）
@@ -1676,6 +1752,8 @@ const BOT_AGENT_GUIDE = `
 - {"type":"query_resv","date":"2024-07-15","to":"2024-07-20"}  // 🔎A Beach 訂位代查（唯讀,不用確認）：任何日期的訂位「逐筆完整明細」（姓名/電話/人數/時間/狀態/客註/店註）＋當日備註（⚠️包場/公休註記），2021-02 開店～未來全查得到。date=YYYY-MM-DD 或 YYYY-MM 整月；to 選填查區間（一次最多 4 個月）。摘要裡只有彙總數字、使用者要「某天是誰訂的/電話/歷史某天明細/**兒童椅要幾張**」就用這個（回覆有🪑兒童椅合計＋誰要幾張）；問空檔也可以用（回「空檔」=確定沒被訂）。
 - {"type":"query_resv","name":"OD"}  // 🔎A Beach 訂位「關鍵字」代查（唯讀,不用確認）：用「客人姓名/電話片段」直搜 inline 全史（=後台搜尋框同源），回每筆日期+姓名+人數+狀態+**電話**。使用者問「客人XX的電話/XX上次什麼時候來/XX訂過幾次」這種用名字問的就用這個（不知道日期時不要用 date 亂猜）。
 - {"type":"query_resv","top":10}  // 🔎A Beach 常客排行代查（唯讀,不用確認）：掃 2021 開店～今全史，回「實際入座次數」最多的前 N 名（姓名/入座次數/累計人次/訂過幾次含取消/最近來店/電話）。使用者問「常客前十名/來最多次的客人/回頭客」就用這個。
+- {"type":"query_hr","month":"2026-08"}  // 🔎NUEiP人資代查（唯讀,不用確認）：任意月「出勤統計(每人出勤天數/遲到/早退/缺卡/曠職)+班表(每人排班天數)」。加 "date":"2026-08-15" =改看單日逐筆打卡+當日班表。摘要只有本月近況,問歷史月/某人某月統計就用這個。
+- {"type":"query_fin","month":"2026-08"}  // 🔎財務內帳代查（唯讀,不用確認,外部群自動擋）：任意月收支「逐筆+月合計」。摘要只有最近120筆,問更早的月份/某月總支出就用這個。
 - **【代查鐵則】你沒有「稍等一下／待會撈回來再回報」的能力**——這一則回覆送出後就結束了，不會有下一則。要代查，就必須在**同一則回覆裡**輸出上面的 query_pos_day / query_resv JSON 指令（系統會當場查完回填、你再據此作答，使用者只會看到最終答案）。只寫「我幫你代查／撈回來整理給你／稍等一下」而**沒帶 JSON ＝什麼都不會發生＝對使用者說謊**（2026-10-04 真實翻車：答應查九月婚禮包場說「稍等一下」，結果指令沒輸出、使用者空等）。
 - {"type":"add_item","category":"空調工程","name":"主機","qty":1,"unit":"式","unitPrice":150000,"taxType":"未稅"}
 - {"type":"delete_item","category":"空調工程","item":"主機"}
@@ -2168,7 +2246,7 @@ export default async function handler(req, res) {
         moneyOK = (gid === 'Cf7940efc6517b0c084ad2ad496b45f30') || (gcfg[gid] && gcfg[gid].money === true)
       }
       // 3) 一般流程：載入資料＋對話記憶＋長期記事本 → 問 AI（操作者才開放下指令）
-      const [snaps, accountsText, financeText, activityText, estimatesText, crewText, history, memList, conclusionsText, tasksText, sheetText, posText, catalogText, supplyText, lineQuotaText, filelibText, groupChatText] = await Promise.all([loadSnapshots(), loadAccounts(), loadFinanceText(), loadActivityText(), loadEstimatesText(), Promise.all([loadCrewText(), loadShiftText(), loadPunchText(), loadHrText()]).then(([a, b, c, d]) => a + b + c + d), getChatHistory(convId), getMemory(), loadConclusionsText(), loadTasksText(), loadSheetText(), Promise.all([loadPosText(), loadBossText()]).then(([a, b]) => a + b), loadCatalogText(), loadSupplyText(), loadLineQuotaText(), loadFilelibText(), loadGroupChatText().then(async g => g + await loadPushLogText(convId))])
+      const [snaps, accountsText, financeText, activityText, estimatesText, crewText, history, memList, conclusionsText, tasksText, sheetText, posText, catalogText, supplyText, lineQuotaText, filelibText, groupChatText] = await Promise.all([loadSnapshots(), loadAccounts(), loadFinanceText(), loadActivityText(), loadEstimatesText(), Promise.all([loadCrewText(), loadShiftText(), loadPunchText(), loadHrText(), moneyOK ? loadSalaryText() : Promise.resolve('')]).then(parts => parts.join('')), getChatHistory(convId), getMemory(), loadConclusionsText(), loadTasksText(), loadSheetText(), Promise.all([loadPosText(), loadBossText()]).then(([a, b]) => a + b), loadCatalogText(), loadSupplyText(), loadLineQuotaText(), loadFilelibText(), loadGroupChatText().then(async g => g + await loadPushLogText(convId))])
       let rawReply = await answer(text, snaps, accountsText, financeText, activityText, estimatesText, crewText, canAct, history, memoryToText(memList), conclusionsText, tasksText, sheetText, posText, catalogText, supplyText, lineQuotaText, filelibText, groupChatText, moneyOK)
       // 🔎 資料代查迴圈（張良 2026-09-27 根除）：AI 輸出 query_pos_day → 系統查庫 → 資料回填再答一輪（唯讀自動執行,不經確認）
       // v4.38.1 假代查抓包（張良 2026-10-04「dd到底查不查得到」：DD 答應查九月婚禮包場說「稍等一下」卻沒輸出指令,使用者空等）：
@@ -2177,10 +2255,16 @@ export default async function handler(req, res) {
         const runQueries = async (txt) => {
           const qms = [...txt.matchAll(/\{[^{}]*"type"\s*:\s*"query_pos_day"[^{}]*\}/g)].slice(0, 2)
           const qrs = [...txt.matchAll(/\{[^{}]*"type"\s*:\s*"query_resv"[^{}]*\}/g)].slice(0, 2)
-          if (!qms.length && !qrs.length) return null
+          const qhs = [...txt.matchAll(/\{[^{}]*"type"\s*:\s*"query_hr"[^{}]*\}/g)].slice(0, 2)
+          const qfs = moneyOK ? [...txt.matchAll(/\{[^{}]*"type"\s*:\s*"query_fin"[^{}]*\}/g)].slice(0, 2) : []
+          if (!qms.length && !qrs.length && !qhs.length && !qfs.length) return null
           let dataTxt = ''
           for (const m of qms) { try { const q = JSON.parse(m[0]); dataTxt += await queryPosDay(String(q.date || ''), String(q.store || 'ground')) + '\n\n' } catch (e) { dataTxt += '（查詢指令解析失敗）\n' } }
           for (const m of qrs) { try { const q = JSON.parse(m[0]); dataTxt += (q.top ? await queryResvTop(q.top) : q.name ? await queryResvName(q.name) : await queryResvDay(String(q.date || ''), String(q.to || ''))) + '\n\n' } catch (e) { dataTxt += '（訂位查詢指令解析失敗）\n' } }
+          for (const m of qhs) { try { const q = JSON.parse(m[0]); dataTxt += await queryHrMonth(q.month, q.date) + '\n\n' } catch (e) { dataTxt += '（人資查詢指令解析失敗）\n' } }
+          for (const m of qfs) { try { const q = JSON.parse(m[0]); dataTxt += await queryFinMonth(q.month) + '\n\n' } catch (e) { dataTxt += '（財務查詢指令解析失敗）\n' } }
+          // v4.38.3 保險絲（九月1182筆爆AI輸入翻車）：代查結果超長一律截斷,寧可請AI縮範圍也不能整則掛掉
+          if (dataTxt.length > 60000) dataTxt = dataTxt.slice(0, 60000) + '\n…（代查結果過長已截斷：請縮小日期區間分段再查）'
           return dataTxt
         }
         let dataTxt = await runQueries(rawReply)
