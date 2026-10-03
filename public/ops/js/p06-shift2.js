@@ -97,6 +97,7 @@ function clearDay(dt){
 }
 // 🗑 清空本週（班表，打卡紀錄不動）
 function clearWeek(){
+  try{shWkFollow()}catch(_){}
   const d = window._shiftD
   const days = [...Array(7)].map((_,i)=>{ const t2 = new Date(window._shiftWk); t2.setDate(t2.getDate()+i); return t2.toISOString().slice(0,10) })
   const ents = d.sched.filter(x=>days.includes(x.date))
@@ -127,11 +128,12 @@ function undoClear(){ // 清空本週復原：原班原樣補回（新id）；�
   pasteOff(); shiftRender()
 }
 async function copyWeekNext(){
+  try{shWkFollow()}catch(_){}
   const d = window._shiftD
   const days = [...Array(7)].map((_,i)=>{ const t2 = new Date(window._shiftWk); t2.setDate(t2.getDate()+i); return t2.toISOString().slice(0,10) })
   const ents = d.sched.filter(x=>days.includes(x.date))
   if (!ents.length) { alert('本週沒班可複製'); return }
-  if (!confirm(`把本週 ${ents.length} 筆班複製到下週同一天？（下週已有的會自動跳過）`)) return
+  if (!confirm(`把這一週（${days[0].slice(5)}~${days[6].slice(5)}）的 ${ents.length} 筆班複製到下週同一天？（下週已有的會自動跳過）`)) return
   const exist = new Set(d.sched.map(x=>[x.name, x.date, x.pos||''].join('|')))
   let n = 0
   window._lastCopy = []
@@ -185,6 +187,7 @@ function shiftSkill(){
 }
 // 💾 班表版本模組（v4.13.0 張良：排好存成版本可命名,自動記姓名時間,之後套用到任何一週）
 function tplSave(){
+  try{shWkFollow()}catch(_){}
   const d = window._shiftD
   const days = [...Array(7)].map((_,i)=>{ const t2 = new Date(window._shiftWk); t2.setDate(t2.getDate()+i); return t2.toISOString().slice(0,10) })
   const ents = d.sched.filter(x=>days.includes(x.date))
@@ -239,11 +242,12 @@ function tplPreview(id){ // 👁 先預覽確認再套用（張良 2026-10-02）
     <div style="font-weight:900;font-size:16px;margin-bottom:6px">${EYE_I} 預覽「${tp.name}」→ ${days[0].slice(5)}~${days[6].slice(5)}</div>
     <div class="hint" style="margin-bottom:8px">「已存在」＝這週已有同一筆會跳過、只會新增缺的；確認沒問題再按套用。</div>
     ${cols}
-    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px"><button class="mini" style="padding:9px 12px" onclick="document.getElementById('tpPv').remove()">取消</button>${addN?`<button class="mini on" style="padding:9px 18px" onclick="document.getElementById('tpPv').remove();tplApply('${id}',1)">✅ 套用（新增 ${addN} 筆）</button>`:`<span class="hint" style="align-self:center">這一週已經有一模一樣的班了——先用 ‹ › 翻到要套用的那一週，再開預覽</span>`}</div></div>`
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px"><button class="mini" style="padding:9px 12px" onclick="document.getElementById('tpPv').remove()">取消</button>${addN?`<button class="mini on" style="padding:9px 18px" onclick="document.getElementById('tpPv').remove();tplApply('${id}',1)">✅ 套用（新增 ${addN} 筆）</button>`:`<span class="hint" style="align-self:center">這一週已經有一模一樣的班了——先把班表捲到要套用的那一週，再開預覽</span>`}</div></div>`
   ov.onclick = () => ov.remove()
   document.body.appendChild(ov)
 }
 function tplApply(id, skip){
+  try{shWkFollow()}catch(_){}
   const d = window._shiftD, tp = (d.tpls||[]).find(x=>x.id===id); if (!tp) return
   const days = [...Array(7)].map((_,i)=>{ const t2 = new Date(window._shiftWk); t2.setDate(t2.getDate()+i); return t2.toISOString().slice(0,10) })
   if (!skip && !confirm(`把「${tp.name}」套用到 ${days[0].slice(5)}~${days[6].slice(5)}？（已有的班會跳過）`)) return
