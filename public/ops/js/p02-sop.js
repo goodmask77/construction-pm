@@ -241,14 +241,17 @@ function permFnTab(el){
 function permScan(root){ // 每次重畫：沒權限的寫入鈕上鎖變灰（還是可以點＝點了跳說明窗）
   try {
     if (!root || !root.querySelectorAll) return
+    // v4.40.7（張良「不能編輯沒錯，但班表整個看不見了」）：變灰只套「按鈕/輸入框」；
+    // 資料格（班表格子這種本身就是內容的）保持原樣清楚可讀——點下去一樣擋＋跳窗，但不弄暗
+    const dimOk = el => /^(BUTTON|INPUT|SELECT|TEXTAREA)$/.test(el.tagName) || (el.classList && el.classList.contains('mini'))
     const els = root.querySelectorAll('[onclick],[onchange]')
     els.forEach(el => {
       const k = permFnTab(el); if (!k) return
       const lock = !canTab(k)
-      el.classList.toggle('plk', lock)
+      el.classList.toggle('plk', lock && dimOk(el))
       if (lock && /^(INPUT|SELECT|TEXTAREA)$/.test(el.tagName) && el.getAttribute('onchange')) el.disabled = true
     })
-    if (root !== document.body && root.matches && root.matches('[onclick],[onchange]')) { const k2 = permFnTab(root); if (k2) root.classList.toggle('plk', !canTab(k2)) }
+    if (root !== document.body && root.matches && root.matches('[onclick],[onchange]')) { const k2 = permFnTab(root); if (k2) root.classList.toggle('plk', !canTab(k2) && dimOk(root)) }
   } catch(e){}
 }
 function permPop(k){ // 鎖死按鈕被點到＝跳窗講清楚（模擬時=講「這個人」的狀態）
