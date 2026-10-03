@@ -649,7 +649,7 @@ async function loadPosText() {
         const td = inlDays[today] || []
         lines.push(`  - 今天 ${today}：${td.length ? `${td.filter(ok1).length}組有效（${td.filter(ok1).reduce((t, r) => t + (r.n || 0), 0)}人）｜` + td.filter(ok1).map(fmt1).join('、') + (td.some(r => !ok1(r)) ? `｜另取消${td.filter(r => !ok1(r)).length}組` : '') : '無訂位'}`)
         const futs = Object.keys(inlDays).filter(d => d > today).sort()
-        if (futs.length) lines.push(`  - 未來45天內（有訂位的日子全列；≥20人大組附名）：` + futs.map(d => { const a = inlDays[d].filter(ok1); if (!a.length) return null; const big = a.filter(r => (r.n || 0) >= 20).map(r => `${r.name}${r.n}人`).join('+'); return `${d.slice(5)} ${a.length}組${a.reduce((t, r) => t + (r.n || 0), 0)}人${big ? `(${big})` : ''}` }).filter(Boolean).join('、'))
+        if (futs.length) lines.push(`  - 未來45天內（有訂位的日子全列；格式=日期(星期) 組數人數[午X/晚Y]；午場=訂位時間17:00前、晚場=17:00後（17-18店休息）；≥20人大組附名+時間；星期直接用括號裡的,不要自己算；要逐筆時間明細用 query_resv 代查）：` + futs.map(d => { const a = inlDays[d].filter(ok1); if (!a.length) return null; const wd = '日一二三四五六'[new Date(d + 'T00:00:00Z').getUTCDay()]; const noon = a.filter(r => r.t && r.t < '17:00').length, eve = a.filter(r => r.t && r.t >= '17:00').length, nt0 = a.length - noon - eve; const big = a.filter(r => (r.n || 0) >= 20).map(r => `${r.name}${r.n}人${r.t || ''}`).join('+'); return `${d.slice(5)}(${wd}) ${a.length}組${a.reduce((t, r) => t + (r.n || 0), 0)}人[午${noon}/晚${eve}${nt0 ? `/未填${nt0}` : ''}]${big ? `(${big})` : ''}` }).filter(Boolean).join('、'))
         // 遠期訂位（45天後全部＝總覽 farFuture，每小時同步；婚顧/包場問「某天有沒有被訂」以此為準）
         const ff = (inlSum?.farFuture || []).filter(ok1)
         lines.push(`  - 遠期訂位（45天後～最遠，全部列出；婚顧包場問「哪天已被訂」以此為準，沒列到的日子=目前空）：${ff.length ? ff.map(r => `${r.d} ${r.t || ''} ${r.name}${r.n}人${r.inote ? `(${String(r.inote).slice(0, 20)})` : ''}`).join('、') : '無'}`)
@@ -1474,13 +1474,15 @@ async function queryResvDay(from, to) {
       L.push(`${d}（${days[d].length}筆）：`)
       days[d].forEach((r) => L.push(`  - ${r.t || '候位'} ${r.name} ${r.n}人｜${ST[r.st] || r.st}${r.phone ? `｜${r.phone}` : ''}${r.kc ? `｜兒童椅${r.kc}` : ''}${r.note ? `｜客註:${String(r.note).slice(0, 40)}` : ''}${r.inote ? `｜店註:${String(r.inote).slice(0, 40)}` : ''}`))
       // 系統算好的合計（2026-10-04 DD 心算 34≠33 抓包）：有效=st∉{2,5}；分時段+全天；引用這些數字別自己加
-      const ok9 = days[d].filter((r) => r.st !== 2 && r.st !== 5 && r.t)
-      const slot9 = (t9) => (t9 < '13:00' ? '12-13' : t9 < '18:00' ? '13-17' : t9 < '19:00' ? '18-19' : '19後')
+      // v4.38.2 沒填時間的也要計入（之前 && r.t 直接漏掉＝100人包場沒填時間就從合計消失）＋午/晚場總計（張良切法：17:00前=中午、17:00後=晚上，17-18店休息）
+      const ok9 = days[d].filter((r) => r.st !== 2 && r.st !== 5)
+      const slot9 = (t9) => (!t9 ? '未填時間' : t9 < '13:00' ? '午12-13' : t9 < '17:00' ? '午13-17' : t9 < '19:00' ? '晚18-19' : '晚19後')
       const agg9 = {}
-      ok9.forEach((r) => { const s9 = slot9(r.t); const a9 = agg9[s9] = agg9[s9] || { g: 0, p: 0, k: 0, pend: 0 }; a9.g++; a9.p += r.n || 0; a9.k += (r.kc || 0) + (r.ks || 0); if (r.st === 3) a9.pend++ })
+      ok9.forEach((r) => { const s9 = slot9(r.t || ''); const a9 = agg9[s9] = agg9[s9] || { g: 0, p: 0, k: 0, pend: 0 }; a9.g++; a9.p += r.n || 0; a9.k += (r.kc || 0) + (r.ks || 0); if (r.st === 3) a9.pend++ })
       const tp = ok9.reduce((t9, r) => t9 + (r.n || 0), 0), tkc = ok9.reduce((t9, r) => t9 + (r.kc || 0), 0), tks = ok9.reduce((t9, r) => t9 + (r.ks || 0), 0), tpd = ok9.filter((r) => r.st === 3).length
       const kcWho = tkc ? ok9.filter((r) => r.kc).map((r) => `${r.name}${r.kc}張`).join('、') : ''
-      L.push(`  ＝${d} 系統合計（回答以此為準，別自己加總）：有效 ${ok9.length}組 ${tp}人${tkc || tks ? `＋小孩${tkc + tks}` : ''}${tpd ? `（含待確認${tpd}組）` : ''}｜` + Object.entries(agg9).map(([s9, a9]) => `${s9}:${a9.g}組${a9.p}人${a9.k ? `+${a9.k}小` : ''}`).join('、') + (tkc ? `｜🪑兒童椅共${tkc}張（${kcWho}）` : '') + (tks ? `｜兒童座${tks}個` : '') + `｜⚠️ inline iPad 時間軸人數=大人+小孩`)
+      const nn9 = ok9.filter((r) => r.t && r.t < '17:00'), ee9 = ok9.filter((r) => r.t && r.t >= '17:00'), nt9 = ok9.filter((r) => !r.t)
+      L.push(`  ＝${d} 系統合計（回答以此為準，別自己加總）：有效 ${ok9.length}組 ${tp}人${tkc || tks ? `＋小孩${tkc + tks}` : ''}${tpd ? `（含待確認${tpd}組）` : ''}｜午場(17:00前)${nn9.length}組${nn9.reduce((t9, r) => t9 + (r.n || 0), 0)}人/晚場(17:00後)${ee9.length}組${ee9.reduce((t9, r) => t9 + (r.n || 0), 0)}人${nt9.length ? `/未填時間${nt9.length}組${nt9.reduce((t9, r) => t9 + (r.n || 0), 0)}人` : ''}｜` + Object.entries(agg9).map(([s9, a9]) => `${s9}:${a9.g}組${a9.p}人${a9.k ? `+${a9.k}小` : ''}`).join('、') + (tkc ? `｜🪑兒童椅共${tkc}張（${kcWho}）` : '') + (tks ? `｜兒童座${tks}個` : '') + `｜⚠️ inline iPad 時間軸人數=大人+小孩`)
     }
   }
   const dn = Object.keys(notes).filter((d) => d >= f && d <= t2).sort()
@@ -2182,13 +2184,15 @@ export default async function handler(req, res) {
           return dataTxt
         }
         let dataTxt = await runQueries(rawReply)
-        if (dataTxt == null && canAct && /(代查|幫你查|幫你撈|撈回來|查回來|我查一下|我撈一下|稍等|等我一下)/.test(rawReply)) {
+        if (dataTxt == null && canAct && /(代查|幫你查|幫你撈|撈回來|查回來|我查一下|我撈一下|再查|試撈|稍等|等我一下)/.test(rawReply)) {
           console.log('fake-query caught, forcing retry')
           const retry = await answer(text + '\n\n【系統抓包】你剛剛的回覆說要「代查／撈資料／稍等一下」，但沒有輸出任何 query_pos_day/query_resv JSON 指令——你沒有「稍後再傳」的能力，這一則沒帶指令＝永遠不會查。現在立刻輸出正確的查詢 JSON 指令（照指令格式,一行就好,不要解釋）。你剛剛的回覆是：\n' + rawReply.slice(0, 1500), snaps, accountsText, financeText, activityText, estimatesText, crewText, canAct, history, memoryToText(memList), conclusionsText, tasksText, sheetText, posText, catalogText, supplyText, lineQuotaText, filelibText, groupChatText, moneyOK)
           dataTxt = await runQueries(retry)
         }
-        if (dataTxt != null) {
-          rawReply = await answer(text + '\n\n【系統代查結果（依你剛才的 query_pos_day/query_resv）——請直接據此回答使用者,不要再輸出查詢指令,也不要說資料沒帶到】\n' + dataTxt, snaps, accountsText, financeText, activityText, estimatesText, crewText, canAct, history, memoryToText(memList), conclusionsText, tasksText, sheetText, posText, catalogText, supplyText, lineQuotaText, filelibText, groupChatText, moneyOK)
+        // v4.38.2 最多兩輪：第一輪答完若又輸出新查詢指令（「我再查一次👇」），真的再查一次，不再放使用者空等
+        for (let hop = 0; dataTxt != null && hop < 2; hop++) {
+          rawReply = await answer(text + '\n\n【系統代查結果（依你剛才的 query_pos_day/query_resv）——請直接據此回答使用者' + (hop ? ',這是最後一輪,絕對' : ',沒必要就') + '不要再輸出查詢指令,也不要說資料沒帶到】\n' + dataTxt, snaps, accountsText, financeText, activityText, estimatesText, crewText, canAct, history, memoryToText(memList), conclusionsText, tasksText, sheetText, posText, catalogText, supplyText, lineQuotaText, filelibText, groupChatText, moneyOK)
+          dataTxt = hop < 1 ? await runQueries(rawReply) : null
         }
       } catch (e) { console.log('query tool err', e?.message) }
       // 抓出 D 想長期記住的事（[[記住:...]]）→ 存進記事本(僅操作者)，並把標記從給人看的文字拿掉
