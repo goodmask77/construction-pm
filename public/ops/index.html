@@ -73,12 +73,13 @@
   .foot{text-align:center;font-size:13px;color:var(--muted);margin-top:22px}
   .err{background:#3A2023;color:#F07373;border-radius:12px;padding:14px;font-weight:700;margin-top:20px}
   @media(max-width:480px){ .kpi .v{font-size:19px} h1{font-size:22px} .tabs button{padding:7px 13px;font-size:14px} }
+  .tbrand{display:none} /* 側欄品牌字標＝桌機才顯示（v4.38.2 張良「GROUN:D就好、GROUN白:D紅、前面符號取消」） */
   /* 桌機＝Beach Ops 左側欄版型（≥920px；分頁選單變側欄、內容右移） */
   @media(min-width:920px){
     body{padding-left:216px}
     .wrap{max-width:1200px}
     .tabs{position:fixed;left:0;top:0;bottom:0;width:248px;margin:0;padding:20px 14px 14px;background:#11151B;border-right:1px solid var(--line);display:flex;flex-direction:column;align-items:stretch;gap:6px;overflow-y:auto;z-index:20;flex-wrap:nowrap} /* 2026-10-02 張良：比例跟 Beach Ops 一樣大 */
-    .tabs::before{content:"≋ GD 營運看板";display:block;font-weight:900;font-size:24px;background:linear-gradient(120deg,#5EB2FF 10%,#9BE1FF 55%,#5EB2FF 95%);-webkit-background-clip:text;background-clip:text;color:transparent;padding:4px 10px 22px;letter-spacing:.04em;text-shadow:0 0 22px rgba(77,163,255,.25)}
+    .tbrand{display:block;font-weight:900;font-size:24px;color:#fff;padding:4px 10px 22px;letter-spacing:.04em} .tbrand b{color:#F92A1B;font-weight:900} /* v4.38.2 GROUN 白、:D 品牌紅、≋ 取消（偽元素改真元素才能雙色） */
     .tabs button{text-align:left;border:none;background:transparent;border-radius:12px;padding:13px 14px;font-size:17px;font-weight:700;display:flex;align-items:center;gap:10px}
     .tabs button:hover{background:#232B36}
     .tabs button.on{background:var(--grad);color:#fff;box-shadow:0 4px 12px rgba(18,102,200,.32)}
@@ -101,6 +102,7 @@
   <h1>營運看板</h1>
   <div class="sub" id="upd">載入中…</div>
   <div class="tabs">
+    <div class="tbrand">GROUN<b>:D</b></div>
     <button id="tab-home" onclick="load(lastStore)" title="回營運看板" style="padding:7px 13px;font-size:16px">🏠</button>
     <button id="tab-sop" onclick="sopPage()">✅ SOP</button>
     <button id="tab-task" onclick="taskEmbed()">🛠 任務</button> <!-- 2026-10-02 整併：改掛主App任務中心（同團隊空間雙向同步） -->
