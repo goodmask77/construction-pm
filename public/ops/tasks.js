@@ -623,18 +623,20 @@ function tnRoot() {
     + '</div>';
   // 第二行：今日＋視角分頁＋排序（排序鈕永遠佔位，切檢視零位移；v4.43.9 張良「今日跟那排選項距離太遠」：今日從第一行最右移到視角切換器前面緊鄰）
   const TABS = [['group', '依大項', 'grid'], ['board', '看板', 'cols'], ['owner', '負責人', 'users'], ['list', '清單', 'list'], ['timeline', '時間軸', 'caldays'], ['gantt', '甘特', 'gantt'], ['mind', '心智圖', 'network']];
-  h += '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:16px">'
-    + '<button onclick="tnSetView(\'today\')" style="display:inline-flex;align-items:center;gap:6px;padding:7px 14px;border-radius:8px;border:1px solid ' + (v === 'today' ? tnC.accent : tnC.line) + ';background:' + (v === 'today' ? tnC.accent : tnWHT) + ';color:' + (v === 'today' ? '#fff' : tnC.sub) + ';font-size:13px;font-weight:600;cursor:pointer">' + tnI('home', 14) + '今日</button>'
-    + '<div style="display:inline-flex;background:' + tnC.soft + ';border:1px solid ' + tnC.line + ';border-radius:8px;padding:2px;gap:2px;flex-wrap:wrap">'
-    + TABS.map(tb => '<button onclick="tnSetView(\'' + tb[0] + '\')" style="display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border-radius:6px;border:1px solid ' + (v === tb[0] ? tnC.line : 'transparent') + ';background:' + (v === tb[0] ? tnWHT : 'transparent') + ';color:' + (v === tb[0] ? tnC.text : tnC.sub) + ';font-size:13px;font-weight:' + (v === tb[0] ? 600 : 400) + ';cursor:pointer">' + tnI(tb[2], 14) + tb[1] + '</button>').join('')
+  // v4.44.0 手機瘦身（張良「精簡瘦身」）：手機=今日+視角+積分一排橫滑不換行（原 wrap 疊 3~4 行太高）；排序鈕手機不適用時直接不渲染（橫滑排無零位移需求）
+  const mb9 = tnMob(), sortOn9 = (v === 'board' || v === 'list' || v === 'owner');
+  h += '<div style="display:flex;align-items:center;gap:' + (mb9 ? 8 : 10) + 'px;' + (mb9 ? 'flex-wrap:nowrap;overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;margin-bottom:10px' : 'flex-wrap:wrap;margin-bottom:16px') + '">'
+    + '<button onclick="tnSetView(\'today\')" style="flex-shrink:0;display:inline-flex;align-items:center;gap:6px;padding:7px 14px;border-radius:8px;border:1px solid ' + (v === 'today' ? tnC.accent : tnC.line) + ';background:' + (v === 'today' ? tnC.accent : tnWHT) + ';color:' + (v === 'today' ? '#fff' : tnC.sub) + ';font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap">' + tnI('home', 14) + '今日</button>'
+    + '<div style="display:inline-flex;flex-shrink:0;background:' + tnC.soft + ';border:1px solid ' + tnC.line + ';border-radius:8px;padding:2px;gap:2px;flex-wrap:' + (mb9 ? 'nowrap' : 'wrap') + '">'
+    + TABS.map(tb => '<button onclick="tnSetView(\'' + tb[0] + '\')" style="display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border-radius:6px;border:1px solid ' + (v === tb[0] ? tnC.line : 'transparent') + ';background:' + (v === tb[0] ? tnWHT : 'transparent') + ';color:' + (v === tb[0] ? tnC.text : tnC.sub) + ';font-size:13px;font-weight:' + (v === tb[0] ? 600 : 400) + ';cursor:pointer;white-space:nowrap">' + tnI(tb[2], 14) + tb[1] + '</button>').join('')
     + '</div><div style="flex:1"></div>'
-    + '<div style="display:inline-flex;align-items:center;background:' + tnC.soft + ';border:1px solid ' + tnC.line + ';border-radius:8px;padding:2px;gap:2px;visibility:' + ((v === 'board' || v === 'list' || v === 'owner') ? 'visible' : 'hidden') + '">'
+    + (mb9 && !sortOn9 ? '' : '<div style="display:inline-flex;flex-shrink:0;align-items:center;background:' + tnC.soft + ';border:1px solid ' + tnC.line + ';border-radius:8px;padding:2px;gap:2px;visibility:' + (sortOn9 ? 'visible' : 'hidden') + '">'
     + '<span style="color:' + tnC.faint + ';margin:0 2px 0 7px">' + tnI('sort', 12) + '</span>'
-    + [['manual', '手動'], ['due', '日期'], ['prio', '重要度']].map(m => '<button onclick="tnS.sortMode=\'' + m[0] + '\';tnRender()" style="padding:5px 10px;border-radius:6px;border:1px solid ' + (tnS.sortMode === m[0] ? tnC.line : 'transparent') + ';background:' + (tnS.sortMode === m[0] ? tnWHT : 'transparent') + ';color:' + (tnS.sortMode === m[0] ? tnC.text : tnC.sub) + ';font-size:12px;font-weight:' + (tnS.sortMode === m[0] ? 600 : 400) + ';cursor:pointer">' + m[1] + '</button>').join('')
-    + '</div>'
-    + '<button onclick="tnPtsCfg()" title="積分級距設定" style="display:inline-flex;align-items:center;gap:6px;padding:7px 12px;border-radius:8px;border:1px solid ' + tnC.line + ';background:' + tnC.soft + ';color:' + tnC.sub + ';font-size:12.5px;cursor:pointer">' + tnI('gear', 13) + '積分級距</button></div>';
+    + [['manual', '手動'], ['due', '日期'], ['prio', '重要度']].map(m => '<button onclick="tnS.sortMode=\'' + m[0] + '\';tnRender()" style="padding:5px 10px;border-radius:6px;border:1px solid ' + (tnS.sortMode === m[0] ? tnC.line : 'transparent') + ';background:' + (tnS.sortMode === m[0] ? tnWHT : 'transparent') + ';color:' + (tnS.sortMode === m[0] ? tnC.text : tnC.sub) + ';font-size:12px;font-weight:' + (tnS.sortMode === m[0] ? 600 : 400) + ';cursor:pointer;white-space:nowrap">' + m[1] + '</button>').join('')
+    + '</div>')
+    + '<button onclick="tnPtsCfg()" title="積分級距設定" style="flex-shrink:0;display:inline-flex;align-items:center;gap:6px;padding:7px 12px;border-radius:8px;border:1px solid ' + tnC.line + ';background:' + tnC.soft + ';color:' + tnC.sub + ';font-size:12.5px;cursor:pointer;white-space:nowrap">' + tnI('gear', 13) + '積分級距</button></div>';
   // 快速隨手記
-  h += '<div style="display:flex;gap:8px;margin-bottom:16px">'
+  h += '<div style="display:flex;gap:8px;margin-bottom:' + (mb9 ? 10 : 16) + 'px">'
     + '<input id="tnQuick" value="' + tnEsc(tnS.quick) + '" oninput="tnS.quick=this.value" onkeydown="if(event.key===\'Enter\'&&!event.isComposing&&event.keyCode!==229)tnAddQuick()" placeholder="隨手丟一句任務…（先進收件匣，之後再拖到大項整理）按 Enter 新增" style="' + tnInp + ';flex:1;font-size:13.5px;padding:10px 12px">'
     + '<button onclick="tnAddQuick()" style="display:inline-flex;align-items:center;gap:6px;background:' + tnC.accent + ';color:#fff;border:none;border-radius:8px;padding:0 16px;font-size:13.5px;font-weight:600;cursor:pointer">' + tnI('plus', 15, '#fff') + '新增</button>'
     + '</div>';
@@ -754,12 +756,12 @@ function tnVToday() {
   const dateStr = (d.getMonth() + 1) + '/' + d.getDate() + '（週' + tnWDZH[d.getDay()] + '）';
   const depNames = (t) => (t.dependsOn || []).map(id => { const x = tasks.find(y => y.id === id); return x && x.status !== 'done' ? x.title : null; }).filter(Boolean);
   const Section = (icon, color, label, hint, inner) =>
-    '<div style="background:' + tnC.card + ';border:1px solid ' + tnC.line + ';border-radius:8px;padding:14px">'
+    '<div style="background:' + tnC.card + ';border:1px solid ' + tnC.line + ';border-radius:8px;padding:14px;min-width:0">'
     + '<div style="display:flex;align-items:center;gap:7px;margin-bottom:10px"><span style="color:' + color + '">' + tnI(icon, 14, color) + '</span>'
     + '<span style="font-size:13px;font-weight:600;color:' + tnC.text + '">' + label + '</span>'
     + (hint ? '<span style="font-size:11px;color:' + tnC.faint + '">' + hint + '</span>' : '') + '</div>' + inner + '</div>';
   const Grid = (arr) => '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:8px">' + arr.map(t => tnCard(t, {})).join('') + '</div>';
-  let h = '<div style="display:grid;gap:12px">';
+  let h = '<div style="display:grid;gap:12px;grid-template-columns:minmax(0,1fr)">'; // v4.44.0 軌道鎖 minmax(0,1fr)：任何卡內容再寬也壓在版心內,不再把手機整頁撐出橫向捲動
   h += '<div style="font-size:15px;font-weight:700;color:' + tnC.text + ';padding:2px 2px 0">今天 ' + dateStr + '</div>';
   // 大數字摘要卡
   h += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px">'
@@ -795,14 +797,16 @@ function tnVToday() {
     return { c: c, total: ts.length, done: done, tdN: tdN, blkN: blkN, pct: Math.round(done / ts.length * 100) };
   }).filter(Boolean);
   if (rows.length) {
+    // v4.44.0 手機橫向溢出治本（張良「左右卷軸移動很奇怪」）：固定欄寬加總 86+44+40+52+52+gap50=324＋卡padding28=352>344 把整頁撐寬 10px——手機縮欄+縮gap（70+36+34+46+46+gap30=262）
+    const m9 = tnMob();
     const inner = '<div style="display:grid;gap:9px">' + rows.map(r =>
-      '<div style="display:flex;align-items:center;gap:10px">'
-      + '<span style="width:' + (tnMob() ? 86 : 130) + 'px;flex-shrink:0;font-size:12.5px;font-weight:600;color:' + tnC.text + ';overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + tnEsc(r.c.name) + '</span>'
-      + '<div style="flex:1;height:8px;background:' + tnC.soft + ';border-radius:6px;overflow:hidden"><div style="width:' + r.pct + '%;height:100%;background:' + (r.pct === 100 ? tnC.green : '#3a6ea5') + ';border-radius:6px"></div></div>'
-      + '<span style="font-family:' + tnMONO + ';font-size:12px;font-weight:700;color:' + tnC.text + ';width:44px;text-align:right;flex-shrink:0">' + r.pct + '%</span>'
-      + '<span style="font-family:' + tnMONO + ';font-size:11px;color:' + tnC.faint + ';width:40px;text-align:right;flex-shrink:0">' + r.done + '/' + r.total + '</span>'
-      + '<span style="font-size:11px;color:' + (r.tdN > 0 ? tnC.red : tnC.faint) + ';font-weight:' + (r.tdN > 0 ? 700 : 400) + ';width:52px;text-align:right;flex-shrink:0">今天 ' + r.tdN + '</span>'
-      + '<span style="font-size:11px;color:' + (r.blkN > 0 ? tnC.sub : tnC.faint) + ';font-weight:' + (r.blkN > 0 ? 700 : 400) + ';width:52px;text-align:right;flex-shrink:0">卡住 ' + r.blkN + '</span>'
+      '<div style="display:flex;align-items:center;gap:' + (m9 ? 6 : 10) + 'px">'
+      + '<span style="width:' + (m9 ? 70 : 130) + 'px;flex-shrink:0;font-size:12.5px;font-weight:600;color:' + tnC.text + ';overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + tnEsc(r.c.name) + '</span>'
+      + '<div style="flex:1;min-width:24px;height:8px;background:' + tnC.soft + ';border-radius:6px;overflow:hidden"><div style="width:' + r.pct + '%;height:100%;background:' + (r.pct === 100 ? tnC.green : '#3a6ea5') + ';border-radius:6px"></div></div>'
+      + '<span style="font-family:' + tnMONO + ';font-size:12px;font-weight:700;color:' + tnC.text + ';width:' + (m9 ? 36 : 44) + 'px;text-align:right;flex-shrink:0">' + r.pct + '%</span>'
+      + '<span style="font-family:' + tnMONO + ';font-size:11px;color:' + tnC.faint + ';width:' + (m9 ? 34 : 40) + 'px;text-align:right;flex-shrink:0">' + r.done + '/' + r.total + '</span>'
+      + '<span style="font-size:11px;color:' + (r.tdN > 0 ? tnC.red : tnC.faint) + ';font-weight:' + (r.tdN > 0 ? 700 : 400) + ';width:' + (m9 ? 46 : 52) + 'px;text-align:right;flex-shrink:0">今天 ' + r.tdN + '</span>'
+      + '<span style="font-size:11px;color:' + (r.blkN > 0 ? tnC.sub : tnC.faint) + ';font-weight:' + (r.blkN > 0 ? 700 : 400) + ';width:' + (m9 ? 46 : 52) + 'px;text-align:right;flex-shrink:0">卡住 ' + r.blkN + '</span>'
       + '</div>').join('') + '</div>';
     h += Section('grid', tnC.sub, '各大項一眼', '任務完成度・今天・卡住', inner);
   }
@@ -1335,7 +1339,8 @@ function tnInit() {
     fetch('/api/mail-sync?whoami=' + encodeURIComponent(typeof K !== 'undefined' ? K : '') + '&r=' + Date.now() + (tk ? '&me=' + encodeURIComponent(tk) : ''))
       .then(r => r.json()).then(j => { if (j && j.me && j.me.name) { tnS.me = j.me.name; if (tnS.loaded) tnRender(); } }).catch(() => {});
     fetch('/api/mail-sync?shift=' + encodeURIComponent(typeof K !== 'undefined' ? K : '') + '&ym=' + tnToday().slice(0, 7))
-      .then(r => r.json()).then(d => { if (d && d.ok) { tnS.gdNames = (d.staff || []).filter(s => !s.off && s.role !== '停權').map(s => s.n); if (tnS.loaded) tnRender(); } }).catch(() => {});
+      // v4.42.4 張良「指派怎麼沒有林品燊」：班表「非常態」(off)只影響班表快選，不該踢出任務負責人選單——只擋停權
+      .then(r => r.json()).then(d => { if (d && d.ok) { tnS.gdNames = (d.staff || []).filter(s => s.role !== '停權').map(s => s.n); if (tnS.loaded) tnRender(); } }).catch(() => {});
   } catch (_) {}
 }
 async function tnRefetch() { // 背景抓最新；手上有沒存完的修改就不蓋

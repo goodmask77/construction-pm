@@ -387,23 +387,24 @@ export default function TaskCenter({ K, confirm, canEdit, cats, onLog, onAddCat,
           {q && <button onClick={() => setQ("")} style={{ position: "absolute", right: 6, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", color: C.faint, cursor: "pointer", padding: 0, display: "flex" }}><X size={13} /></button>}
         </div>
       </div>
-      <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 16 }}>
+      {/* v4.44.0 手機瘦身（張良「精簡瘦身」）：手機=一排橫滑不換行（原 wrap 疊 3~4 行太高）；排序鈕手機不適用時不渲染 */}
+      <div style={{ display: "flex", alignItems: "center", gap: isMobile ? 8 : 10, flexWrap: isMobile ? "nowrap" : "wrap", overflowX: isMobile ? "auto" : "visible", WebkitOverflowScrolling: "touch", scrollbarWidth: isMobile ? "none" : undefined, marginBottom: isMobile ? 10 : 16 }}>
         {/* Today 是 Home（落地頁），不是第七個並列視角 → 獨立按鈕緊鄰視角切換器最前（v4.43.9 張良「今日跟那排選項距離太遠」：從第一行最右移下來） */}
-        <button onClick={() => setView("today")} style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "7px 14px", borderRadius: 8, border: `1px solid ${view === "today" ? C.accent : C.line}`, background: view === "today" ? C.accent : WHT, color: view === "today" ? "#fff" : C.sub, fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
+        <button onClick={() => setView("today")} style={{ flexShrink: 0, display: "inline-flex", alignItems: "center", gap: 6, padding: "7px 14px", borderRadius: 8, border: `1px solid ${view === "today" ? C.accent : C.line}`, background: view === "today" ? C.accent : WHT, color: view === "today" ? "#fff" : C.sub, fontSize: 13, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" }}>
           <Home size={14} strokeWidth={1.75} />今日
         </button>
-        <div style={{ display: "inline-flex", background: C.soft, border: `1px solid ${C.line}`, borderRadius: 8, padding: 2, gap: 2, flexWrap: "wrap" }}>
+        <div style={{ display: "inline-flex", flexShrink: 0, background: C.soft, border: `1px solid ${C.line}`, borderRadius: 8, padding: 2, gap: 2, flexWrap: isMobile ? "nowrap" : "wrap" }}>
           {TABS.map(([k, l, I]) => Tab(k, l, I))}
         </div>
         <div style={{ flex: 1 }} />
-        {/* 排序切換：看板/清單可切 手動(拖曳)/日期/重要度；釘選永遠最前；其他視角隱形佔位＝版面不跑 */}
-        <div style={{ display: "inline-flex", alignItems: "center", background: C.soft, border: `1px solid ${C.line}`, borderRadius: 8, padding: 2, gap: 2, visibility: (view === "board" || view === "list" || view === "owner") ? "visible" : "hidden" }}>
+        {/* 排序切換：看板/清單可切 手動(拖曳)/日期/重要度；釘選永遠最前；其他視角隱形佔位＝版面不跑（手機橫滑排→不適用直接不渲染） */}
+        {(isMobile && !(view === "board" || view === "list" || view === "owner")) ? null : <div style={{ display: "inline-flex", flexShrink: 0, alignItems: "center", background: C.soft, border: `1px solid ${C.line}`, borderRadius: 8, padding: 2, gap: 2, visibility: (view === "board" || view === "list" || view === "owner") ? "visible" : "hidden" }}>
           <ArrowUpDown size={12} color={C.faint} style={{ margin: "0 2px 0 7px" }} />
           {[["manual", "手動"], ["due", "日期"], ["prio", "重要度"]].map(([k, l]) => { // 清單也開放手動拖曳排序（張良 2026-09-10）
             const act = sortMode === k;
-            return <button key={k} onClick={() => setSortMode(k)} style={{ padding: "5px 10px", borderRadius: 6, border: `1px solid ${act ? C.line : "transparent"}`, background: act ? WHT : "transparent", color: act ? C.text : C.sub, fontSize: 12, fontWeight: act ? 600 : 400, cursor: "pointer" }}>{l}</button>;
+            return <button key={k} onClick={() => setSortMode(k)} style={{ padding: "5px 10px", borderRadius: 6, border: `1px solid ${act ? C.line : "transparent"}`, background: act ? WHT : "transparent", color: act ? C.text : C.sub, fontSize: 12, fontWeight: act ? 600 : 400, cursor: "pointer", whiteSpace: "nowrap" }}>{l}</button>;
           })}
-        </div>
+        </div>}
       </div>
 
       {/* 快速隨手記 */}
@@ -438,7 +439,7 @@ export default function TaskCenter({ K, confirm, canEdit, cats, onLog, onAddCat,
         const inboxOpen = openT.filter(t => (t.catId || INBOX) === INBOX).length;
         const depNames = (t) => (t.dependsOn || []).map(id => { const x = tasks.find(y => y.id === id); return x && x.status !== "done" ? x.title : null; }).filter(Boolean);
         const Section = ({ icon: Icon, color, label, hint, children }) => (
-          <div style={{ background: C.card, border: `1px solid ${C.line}`, borderRadius: 8, padding: 14 }}>
+          <div style={{ background: C.card, border: `1px solid ${C.line}`, borderRadius: 8, padding: 14, minWidth: 0 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 10 }}>
               <Icon size={14} strokeWidth={1.75} color={color} />
               <span style={{ fontSize: 13, fontWeight: 600, color: C.text }}>{label}</span>
@@ -449,7 +450,7 @@ export default function TaskCenter({ K, confirm, canEdit, cats, onLog, onAddCat,
         );
         const Grid = ({ arr }) => <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(260px,1fr))", gap: 8 }}>{arr.map(t => Card({ t }))}</div>;
         return (
-          <div style={{ display: "grid", gap: 12 }}>
+          <div style={{ display: "grid", gap: 12, gridTemplateColumns: "minmax(0,1fr)" }}>{/* v4.44.0 軌道鎖 minmax(0,1fr)：卡內容再寬也不把手機整頁撐出橫向捲動 */}
             {/* 問候＋大數字摘要卡（gpack 式 mono 大數字＝視覺錨點，一眼知道今天量級） */}
             <div style={{ fontSize: 15, fontWeight: 700, color: C.text, padding: "2px 2px 0" }}>今天 {dateStr}</div>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(130px,1fr))", gap: 10 }}>
@@ -514,16 +515,17 @@ export default function TaskCenter({ K, confirm, canEdit, cats, onLog, onAddCat,
               return (
                 <Section icon={LayoutGrid} color={C.sub} label="各大項一眼" hint="任務完成度・今天・卡住">
                   <div style={{ display: "grid", gap: 9 }}>
+                    {/* v4.44.0 手機橫向溢出治本：固定欄寬加總超過版心會把整頁撐寬——手機縮欄+縮gap */}
                     {rows.map(r => (
-                      <div key={r.c.id} style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                        <span style={{ width: 130, flexShrink: 0, fontSize: 12.5, fontWeight: 600, color: C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.c.name}</span>
-                        <div style={{ flex: 1, height: 8, background: OPS_DARK ? "#1C222B" : "#e6ddc9", borderRadius: 6, overflow: "hidden" }}>
+                      <div key={r.c.id} style={{ display: "flex", alignItems: "center", gap: isMobile ? 6 : 10 }}>
+                        <span style={{ width: isMobile ? 70 : 130, flexShrink: 0, fontSize: 12.5, fontWeight: 600, color: C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.c.name}</span>
+                        <div style={{ flex: 1, minWidth: 24, height: 8, background: OPS_DARK ? "#1C222B" : "#e6ddc9", borderRadius: 6, overflow: "hidden" }}>
                           <div style={{ width: r.pct + "%", height: "100%", background: r.pct === 100 ? C.green : "#3a6ea5", borderRadius: 6 }} />
                         </div>
-                        <span style={{ fontFamily: MONO, fontSize: 12, fontWeight: 700, color: C.text, width: 44, textAlign: "right", flexShrink: 0 }}>{r.pct}%</span>
-                        <span style={{ fontFamily: MONO, fontSize: 11, color: C.faint, width: 40, textAlign: "right", flexShrink: 0 }}>{r.done}/{r.total}</span>
-                        <span style={{ fontSize: 11, color: r.tdN > 0 ? C.red : C.faint, fontWeight: r.tdN > 0 ? 700 : 400, width: 52, textAlign: "right", flexShrink: 0 }}>今天 {r.tdN}</span>
-                        <span style={{ fontSize: 11, color: r.blkN > 0 ? C.sub : C.faint, fontWeight: r.blkN > 0 ? 700 : 400, width: 52, textAlign: "right", flexShrink: 0 }}>卡住 {r.blkN}</span>
+                        <span style={{ fontFamily: MONO, fontSize: 12, fontWeight: 700, color: C.text, width: isMobile ? 36 : 44, textAlign: "right", flexShrink: 0 }}>{r.pct}%</span>
+                        <span style={{ fontFamily: MONO, fontSize: 11, color: C.faint, width: isMobile ? 34 : 40, textAlign: "right", flexShrink: 0 }}>{r.done}/{r.total}</span>
+                        <span style={{ fontSize: 11, color: r.tdN > 0 ? C.red : C.faint, fontWeight: r.tdN > 0 ? 700 : 400, width: isMobile ? 46 : 52, textAlign: "right", flexShrink: 0 }}>今天 {r.tdN}</span>
+                        <span style={{ fontSize: 11, color: r.blkN > 0 ? C.sub : C.faint, fontWeight: r.blkN > 0 ? 700 : 400, width: isMobile ? 46 : 52, textAlign: "right", flexShrink: 0 }}>卡住 {r.blkN}</span>
                       </div>
                     ))}
                   </div>
