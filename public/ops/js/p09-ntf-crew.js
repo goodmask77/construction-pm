@@ -415,6 +415,8 @@ async function meChipInit(){ // 側欄底部＝登入身分（張良 2026-10-02�
   try { permScan(document.body) } catch(e){}
   const nm = me ? me.name : '訪客'
   const role = me ? (me.approver ? '審核人' : (me.role === '主管' ? '主管' : '夥伴')) : '無編輯權限'
+  // v4.48.0（張良「手機版把登入者姓名放在 abeach 跟打卡中間，不然不知道有沒有登入」）
+  try { const mt=document.getElementById('meTop'); if(mt) mt.innerHTML=`<span style="width:24px;height:24px;border-radius:50%;background:${me?'var(--grad)':'#3A4452'};color:#fff;display:inline-flex;align-items:center;justify-content:center;font-weight:900;font-size:13px;flex:0 0 auto">${nm.slice(0,1)}</span><b style="font-size:14px;white-space:nowrap;color:${me?'var(--ink)':'#8893A4'}">${nm}</b>` } catch(e){}
   el.innerHTML = `<div style="width:42px;height:42px;border-radius:50%;background:${me?'var(--grad)':'#3A4452'};color:#fff;display:flex;align-items:center;justify-content:center;font-weight:900;font-size:17px;flex:0 0 auto">${nm.slice(0,1)}</div>
     <div style="min-width:0"><div style="font-weight:800;font-size:16px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${nm}</div><div class="hint" style="font-size:12.5px">${role}</div></div>`
   // 🔔 v4.33.4 鈴鐺改常駐＝通知中心入口（張良：原本按完就消失）＋未讀紅點數；已允許推播→默默補訂閱（換部署/過期自動續）
@@ -659,3 +661,5 @@ async function sopRefSave(itemId, ref){
   const o = document.getElementById('srOv'); if (o) o.remove()
   sopLoad()
 }
+
+function hrmHint(){}
