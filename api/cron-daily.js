@@ -160,12 +160,13 @@ export default async function handler(req, res) {
         for (const [s0, e0] of iv) { mn = Math.min(mn, s0); mx = Math.max(mx, e0); if (cs === null) { cs = s0; ce = e0 } else if (s0 <= ce) { ce = Math.max(ce, e0) } else { tot += ce - cs; cs = s0; ce = e0 } }
         if (cs !== null) tot += ce - cs
         cal[dt9] = { h: Math.max(0, tot - ds[dt9].brk) / 60, min: mn, max: mx } })
-      dts.forEach(dt9 => { if (cal[dt9].h > 12) out.push({ nm, dt: dt9, r: '排班' + Math.round(cal[dt9].h * 10) / 10 + 'h>12h', rule: '12h' }) })
+      const fmtHM9 = (mins) => { mins = Math.round(mins); const h9 = Math.floor(mins / 60), m9 = mins % 60; return m9 ? (h9 ? h9 + '時' + m9 + '分' : m9 + '分') : h9 + '時' }
+      dts.forEach(dt9 => { if (cal[dt9].h > 12) out.push({ nm, dt: dt9, r: '排班' + fmtHM9(cal[dt9].h * 60) + '>12時', rule: '12h' }) })
       for (let i = 1; i < dts.length; i++) {
         const gap1 = (new Date(dts[i]) - new Date(dts[i - 1])) / 86400e3
         if (gap1 === 1) { run++
           const rest = cal[dts[i]].min + 1440 - cal[dts[i - 1]].max
-          if (rest < 660 && rest > 0) out.push({ nm, dt: dts[i], dt2: dts[i - 1], r: '與前一天班距' + (Math.round(rest / 6) / 10) + 'h<11h', rule: 'gap' })
+          if (rest < 660 && rest > 0) out.push({ nm, dt: dts[i], dt2: dts[i - 1], r: '與前一天班距' + fmtHM9(rest) + '<11時', rule: 'gap' })
         } else run = 1
         if (run > 12) out.push({ nm, dt: dts[i], r: '連上第' + run + '天(例假不足)', rule: 'run' })
       }
