@@ -1098,6 +1098,28 @@ export default async function handler(req, res) {
     res.setHeader('Cache-Control', 's-maxage=86400, stale-while-revalidate=604800')
     return res.status(200).json({ ok: true, hol: fx9(hol), wk: fx9(wk) })
   }
+  // 🎬 個人動畫偏好（v2.0 張良：任務卡特效動畫開關，跟帳號走）：GET ?animpref=<OPS_KEY>&me=token 讀本人；POST ?animprefset= 存
+  if (req.query?.animpref) {
+    const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
+    if (!ok2 || String(req.query.animpref) !== ok2) return res.status(403).json({ ok: false })
+    const wA = await sopWho(req.query.me)
+    if (!wA) return res.status(200).json({ ok: true, pref: null })
+    const docA = (await kvGet('sp_finance_pm_prep_animpref')) || {}
+    return res.status(200).json({ ok: true, pref: docA[wA.rid || wA.uid] || null })
+  }
+  if (req.method === 'POST' && req.query?.animprefset) {
+    const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
+    if (!ok2 || String(req.query.animprefset) !== ok2) return res.status(403).json({ ok: false })
+    let bA = {}; try { bA = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
+    const wA = await sopWho(bA.token)
+    if (!wA) return res.status(403).json({ ok: false, error: permDeny() })
+    const p = bA.pref || {}
+    const clean = { inView: p.inView !== false, noDone: p.noDone !== false, followReduce: p.followReduce !== false, allOff: !!p.allOff }
+    const docA = (await kvGet('sp_finance_pm_prep_animpref')) || {}
+    docA[wA.rid || wA.uid] = clean
+    await kvPut('sp_finance_pm_prep_animpref', docA, '動畫偏好(' + wA.name + ')')
+    return res.status(200).json({ ok: true })
+  }
   // 我是誰（側欄底部身分膠囊用；張良 2026-10-02）：GET ?whoami=<OPS_BOARD_KEY>&me=token
   if (req.query?.whoami) {
     const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
