@@ -347,7 +347,7 @@ function tnReject(id) { // 建立者點「退回」：清審核標記＋告訴�
 function tnAck(id) {
   const t = (tnS.tasks || []).find(x => x.id === id); if (!t) return;
   if (t.ack && t.ack.by) return; // 已確認過不重複（重複按防呆）
-  if (t.status === 'done' || !tnS.me || t.owner !== tnS.me || !t.createdBy || t.createdBy === tnS.me) return;
+  if (t.status === 'done' || !tnS.me || t.owner !== tnS.me || t.createdBy === tnS.me) return; // v4.41.9 跟顯示條件同步放寬（張良「按了沒反應」真因＝這裡還留 !t.createdBy 舊守衛，舊任務按下默默返回）
   const patch = { ack: { by: tnS.me, ts: new Date().toISOString() } };
   if (!t.claimBy) { patch.claimBy = tnS.me; patch.claimAt = Date.now(); }
   if (t.status === 'todo') patch.status = 'doing';
