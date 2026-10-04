@@ -1,9 +1,12 @@
 // ── LINE 推播通知（由 App.jsx 原樣搬出，2026-07-18 拆檔第二刀；行為零改變）──────
 // App（事件通知）與設定頁（群組管理/通知設定/額度）共用同一套。
 import { K } from "./runtime.js";
+import { getToken } from "../supa.js";
 
 export const LINE_PUSH_URL = "/api/push"; // 本專案後端代理（原本誤指向已刪除的 ground-pm-webhook）
-export const LINE_API_KEY = "ground-pm-2026-secret-abc123"; // 先寫死，之後再改後端代理/加密
+// v4.44.0 金鑰洞修補（2026-10-04：repo 公開後寫死金鑰曝光,實測任何人可冒 DD 推播）：
+// 死金鑰作廢,改帶「登入權杖」由後端向 Supabase 驗證——沒登入就不能推播
+export const lineAuthHeaders = () => ({ "Content-Type": "application/json", Authorization: `Bearer ${getToken() || ""}` });
 export const DEFAULT_LINE_GROUP = "Cf7940efc6517b0c084ad2ad496b45f30";
 // 通知開關清單（key 同時供 webhook server 排程使用）
 export const LINE_EVENTS = [
@@ -20,7 +23,7 @@ export async function _lineSettings() {
 }
 async function _linePush(body) {
   try {
-    const res = await fetch(LINE_PUSH_URL, { method: "POST", headers: { "Content-Type": "application/json", "X-API-Key": LINE_API_KEY }, body: JSON.stringify(body) });
+    const res = await fetch(LINE_PUSH_URL, { method: "POST", headers: lineAuthHeaders(), body: JSON.stringify(body) });
     return await res.json().catch(() => ({ ok: res.ok }));
   } catch (e) { return { ok: false, error: String(e) }; }
 }

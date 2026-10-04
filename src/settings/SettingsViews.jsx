@@ -6,7 +6,7 @@ import { fmt, projectTotals } from "../lib/cost.js";
 import { SPACES, SPACE_CONF, PERM_MATRIX, LEGACY_EDIT, PERM_NONE, ALL_VIEW_KEYS, ALL_EDIT_KEYS, ALL_MONEY_KEYS } from "../lib/spaces.js";
 import { ACCENT, SURFACE, BORDER, TEXT, SUB, SecHead } from "../lib/theme.jsx";
 import { CURRENT_SPACE, K, CURRENT_USER } from "../lib/runtime.js";
-import { LINE_EVENTS, LINE_API_KEY, DEFAULT_LINE_GROUP, _lineSettings, sendLineNotify } from "../lib/line.js";
+import { LINE_EVENTS, lineAuthHeaders, DEFAULT_LINE_GROUP, _lineSettings, sendLineNotify } from "../lib/line.js";
 import { callAI, USD_TWD, KIND_LABEL, buildAdvisorSystem } from "../lib/ai.js";
 import { inputStyle } from "../lib/ui.jsx";
 import CHANGELOG_GEN from "../changelog.gen.json"; // build 前自動從 git 產生（scripts/gen-changelog.mjs）——手寫漏了也不停更
@@ -874,7 +874,7 @@ function LineQuotaBlock() {
       const before = q1?.used;
       const s = await _lineSettings();
       const to = s.lineGroupId || DEFAULT_LINE_GROUP;
-      const pr = await (await fetch("/api/push", { method: "POST", headers: { "Content-Type": "application/json", "X-API-Key": LINE_API_KEY }, body: JSON.stringify({ to, text: `🧪 額度檢測：這是 1 則測試訊息（發送前本月已用 ${before ?? "?"} 則）`, src: "額度檢測" }) })).json();
+      const pr = await (await fetch("/api/push", { method: "POST", headers: lineAuthHeaders(), body: JSON.stringify({ to, text: `🧪 額度檢測：這是 1 則測試訊息（發送前本月已用 ${before ?? "?"} 則）`, src: "額度檢測" }) })).json();
       if (!pr.ok) { setTest({ err: pr.error || "推播失敗" }); return; }
       let after = before;
       for (const ms of [2500, 4000, 6000]) { // 官方計數通常幾秒內跳，最多等三輪

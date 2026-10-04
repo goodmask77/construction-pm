@@ -9,6 +9,7 @@ import PriceTrack from "./PriceTrack.jsx";
 import Materials, { MatDetail, VendorsPane } from "./Materials.jsx";
 import { buildPriceEvents, applyLastPaid, applyQuote, priceAlert, unitCost, quoteUnit, packToBase, srcsOf, lastPaid, latestRecipeOf, recipeCost } from "./inv.js";
 import { getSharedPrefix } from "../supa.js";
+import { lineAuthHeaders } from "../lib/line.js"; // v4.44.0 金鑰洞修補：死金鑰作廢改登入權杖
 import { abNorm } from "../lib/num.js";
 
 export const C = {
@@ -789,7 +790,7 @@ export default function SupplyView({ view, K, canEdit, confirm, showMoney, userN
                       const gname = (groups[v2.lineGroupId] || {}).name || v2.lineGroupId;
                       if (!(await confirm(`把這張草稿發送到「${gname}」？`, { confirmLabel: "發送" }))) return;
                       try {
-                        const r = await fetch("/api/push", { method: "POST", headers: { "Content-Type": "application/json", "X-API-Key": "ground-pm-2026-secret-abc123" }, body: JSON.stringify({ to: v2.lineGroupId, messages: [flex2] }) });
+                        const r = await fetch("/api/push", { method: "POST", headers: lineAuthHeaders(), body: JSON.stringify({ to: v2.lineGroupId, messages: [flex2] }) });
                         const d = await r.json();
                         if (!d.ok) { alert(/monthly limit/i.test(d.error || "") ? "LINE 推播月額度不足。" : "發送失敗：" + (d.error || "未知")); return; }
                         markSent("D發群"); flash("✓ 草稿已由 DD 發送到「" + gname + "」");
@@ -856,7 +857,7 @@ export default function SupplyView({ view, K, canEdit, confirm, showMoney, userN
             const gname = (groups[pv.lineGroupId] || {}).name || pv.lineGroupId;
             if (!(await confirm(`確定把叫貨單發送到「${gname}」？（對外訊息，發出去就收不回）`, { confirmLabel: "發送" }))) return;
             try {
-              const r = await fetch("/api/push", { method: "POST", headers: { "Content-Type": "application/json", "X-API-Key": "ground-pm-2026-secret-abc123" }, body: JSON.stringify({ to: pv.lineGroupId, messages: [orderFlex(pv)] }) });
+              const r = await fetch("/api/push", { method: "POST", headers: lineAuthHeaders(), body: JSON.stringify({ to: pv.lineGroupId, messages: [orderFlex(pv)] }) });
               const d = await r.json();
               if (!d.ok) { alert(/monthly limit/i.test(d.error || "") ? "LINE 推播月額度用完了（輕用量 200 則/月，每月 1 號重置）。\n這單先按「複製文字」貼給廠商；常用的話可考慮升級 LINE 方案。" : "發送失敗：" + (d.error || "未知")); return; }
               recordOrder(pv, "D發群", "已送出", text); flash("✓ 已由 DD 發送到「" + gname + "」，叫貨單已記錄");

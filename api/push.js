@@ -3,7 +3,9 @@
 // 尚未設定 token 前，前端仍指向舊的外部 push，不影響現況；設好後把 App 的 LINE_PUSH_URL 改成 /api/push 即可切過來。
 const clean = (v) => (v || '').trim().replace(/^["']|["']$/g, '').replace(/^[A-Za-z0-9_]+=/, '').trim()
 const TOKEN = clean(process.env.LINE_CHANNEL_ACCESS_TOKEN)
-const PUSH_KEY = clean(process.env.LINE_PUSH_KEY) || 'ground-pm-2026-secret-abc123'
+// v4.44.0 金鑰洞修補（2026-10-04：repo 公開＝舊寫死金鑰曝光,實測任何人可冒 DD 推播,連群組 ID 都在公開程式碼裡）：
+// 不再有寫死預設——X-API-Key 只認環境變數 LINE_PUSH_KEY（沒設=這條路直接停用）；App 前端改走「登入權杖」驗證（下方）
+const PUSH_KEY = clean(process.env.LINE_PUSH_KEY)
 const SB_URL = clean(process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL)
 const SB_KEY = (process.env.SUPABASE_SERVICE_ROLE_KEY || '').trim()
 // 推播去向紀錄（給 設定→用量 顯示「用在哪」）；best-effort，失敗不影響推播
@@ -33,7 +35,16 @@ export async function groupMembers(to) {
 export default async function handler(req, res) {
   try {
     if (req.method !== 'POST') return res.status(405).json({ ok: false, error: '僅支援 POST' })
-    if ((req.headers['x-api-key'] || '') !== PUSH_KEY) return res.status(401).json({ ok: false, error: '金鑰錯誤' })
+    // v4.44.0 雙軌驗證：① X-API-Key＝環境變數 LINE_PUSH_KEY（伺服器對伺服器；沒設環境變數=停用）
+    // ② Authorization: Bearer <App 登入權杖> → 向 Supabase 驗證是真登入者（App 內推播走這條）
+    let authed = !!(PUSH_KEY && (req.headers['x-api-key'] || '') === PUSH_KEY)
+    if (!authed) {
+      const jwt = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '').trim()
+      if (jwt && SB_URL && SB_KEY) {
+        try { const vr = await fetch(`${SB_URL}/auth/v1/user`, { headers: { apikey: SB_KEY, authorization: `Bearer ${jwt}` } }); authed = vr.ok } catch (_) {}
+      }
+    }
+    if (!authed) return res.status(401).json({ ok: false, error: '未授權（App 請重新整理登入後再試）' })
     if (!TOKEN) return res.status(400).json({ ok: false, error: '後端未設定 LINE_CHANNEL_ACCESS_TOKEN' })
 
     const body = typeof req.body === 'string' ? JSON.parse(req.body || '{}') : (req.body || {})

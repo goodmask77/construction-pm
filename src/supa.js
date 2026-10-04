@@ -36,6 +36,7 @@ const sessionRestored = supabase
   : Promise.resolve()
 if (supabase) supabase.auth.onAuthStateChange((_e, s) => { _token = s?.access_token || null; _resolveRestored() })
 export const hasSession = () => !!_token
+export const getToken = () => _token // v4.44.0 推播金鑰洞修補：/api/push 改驗登入權杖，前端取 JWT 用
 
 // 資料「讀取」用 client：不過 auth 鎖 → 請求可真正並發，載入快。
 // accessToken：每個請求動態帶登入權杖（authenticated 角色）；沒登入回 null＝退回 anon key。
