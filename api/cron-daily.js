@@ -173,6 +173,23 @@ export default async function handler(req, res) {
     return out
   }
   const vioLink = v => 'https://ground-pm.vercel.app/prep#vio=' + encodeURIComponent('AB|' + v.nm + '|' + v.dt + '|' + (v.dt2 || ''))
+  // v4.36.5（張良「訊息也要帶上下班實際打卡時間+簡易說明怎麼造成」）：撈出勤卡補進每筆
+  const vioDetail = async (vs) => {
+    const mset = [...new Set(vs.flatMap(v => [v.dt.slice(0, 7), ...(v.dt2 ? [v.dt2.slice(0, 7)] : [])]))]
+    const ads = await Promise.all(mset.map(m9 => kvGet('sp_crew_pm_hr_att_' + m9)))
+    const att = {}
+    ads.forEach(ad => { for (const [dt9, users9] of Object.entries((ad || {}).days || {})) for (const rec9 of Object.values(users9)) { const n9 = String(rec9.name || '').replace(/\s+[A-Za-z].*$/, ''); att[n9 + '|' + dt9] = { on: (rec9.on || [])[0] || '', off: (rec9.off || []).slice(-1)[0] || '' } } })
+    return vs.map(v => {
+      const a = att[v.nm + '|' + v.dt] || {}
+      const b = v.dt2 ? (att[v.nm + '|' + v.dt2] || {}) : null
+      let why = ''
+      if (v.rule === 'gap') why = `${v.dt2.slice(5)} 下班${b && b.off ? '卡 ' + b.off : '（無卡，依排班）'} → ${v.dt.slice(5)} 上班${a.on ? '卡 ' + a.on : '（無卡，依排班）'}，中間休息不到法定 11 小時（晚班接早班最常見，兩天的班要錯開）`
+      else if (v.rule === '12h') why = `這天排班＋實際出勤時數超過單日 12 小時上限（§32），要拆班或換人`
+      else why = `中間沒有排例假，連續上班超過 12 天（四週變形的例假底線：每 2 週至少 2 天）`
+      const punch = (a.on || a.off) ? `實際打卡 ${a.on || '—'} → ${a.off || '—'}` : (v.dt > new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10) ? '（未來排班，還沒打卡）' : '（這天沒有打卡資料）')
+      return `・${v.dt.slice(5)} ${v.nm}：${v.r}\n　${punch}\n　成因：${why}\n　👉 ${vioLink(v)}`
+    })
+  }
   // ⚠️ 測試口（張良「嘗試發送一次訊息給我確認」）：?viotest=<MENU_PROBE_KEY> → 掃全史抓最近幾筆發張良私訊
   if (req.query?.viotest) {
     const mkV = (process.env.MENU_PROBE_KEY || '').trim()
@@ -180,7 +197,7 @@ export default async function handler(req, res) {
     const tpeV = new Date(Date.now() + 8 * 3600e3)
     const vs = (await abVioScan('2026-06', tpeV.toISOString().slice(0, 7))).sort((a, b) => (a.dt < b.dt ? 1 : -1)).slice(0, 3)
     if (!vs.length) return res.status(200).json({ ok: false, error: '目前掃不到任何違規' })
-    const txtV = `⚠️ 班表違規提醒（A Beach・測試一下長相）\n` + vs.map(v => `・${v.dt.slice(5)} ${v.nm}：${v.r}\n　👉 點我直達該格（金光定位）\n　${vioLink(v)}`).join('\n') + `\n\n正式版：每天早上自動掃「未來35天排班」，發現違規直接發 ABpeople 群（同一筆只提醒一次）。`
+    const txtV = `⚠️ 班表違規提醒（A Beach・測試一下長相）\n` + (await vioDetail(vs)).join('\n\n') + `\n\n正式版：每天早上自動掃「未來35天排班」，發現違規直接發 ABpeople 群（同一筆只提醒一次；點連結直達班表金光定位）。`
     const rosV = (await kvGet('sp_crew_kb_roster')) || {}
     const bossV = ((rosV.people) || []).find(p9 => p9.name === '張良瑋' && p9.lineUserId)
     if (!bossV) return res.status(200).json({ ok: false, error: '找不到張良瑋LINE' })
@@ -202,7 +219,7 @@ export default async function handler(req, res) {
         const seenV = (await kvGet('pm_group_seen')) || {}
         for (const [g2, gg] of Object.entries(seenV)) if (/abpeople|ab people/i.test(gg?.name || '')) { gidV = g2; break }
         if (gidV) {
-          const txt2 = `⚠️ 班表違規提醒（A Beach）\n` + fresh2.slice(0, 6).map(v => `・${v.dt.slice(5)} ${v.nm}：${v.r}\n　👉 ${vioLink(v)}`).join('\n') + (fresh2.length > 6 ? `\n…共 ${fresh2.length} 筆，詳見 /prep 班表「🔴 違規」` : '')
+          const txt2 = `⚠️ 班表違規提醒（A Beach）\n` + (await vioDetail(fresh2.slice(0, 6))).join('\n\n') + (fresh2.length > 6 ? `\n…共 ${fresh2.length} 筆，詳見 /prep 班表「🔴 違規」` : '')
           const pr2 = await fetch('https://api.line.me/v2/bot/message/push', { method: 'POST', headers: { 'content-type': 'application/json', Authorization: 'Bearer ' + TOKEN }, body: JSON.stringify({ to: gidV, messages: [{ type: 'text', text: txt2 }] }) })
           if (pr2.ok) {
             fresh2.forEach(v => { ded[v.nm + '|' + v.dt + '|' + v.rule] = 1 })
