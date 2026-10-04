@@ -339,15 +339,16 @@ function abAttDraw(){
     const stT9 = x => [x.abs?'<b style="color:var(--red)">曠職</b>':'', x.miss?'<b style="color:var(--red)">缺卡</b>':'', x.late>0?`<b style="color:#E8A657">遲到${x.late}分</b>`:'', x.early>0?`<b style="color:#E8A657">早退${x.early}分</b>`:''].filter(Boolean).join('、') || '<span class="mut">正常</span>'
     const moBtn9 = (v,lb)=>`<button class="mini${abaMo===v?' on':''}" style="padding:4px 12px;font-weight:800" onclick="abaMo='${v}';abAttDraw()">${lb}</button>`
     // v4.43.5 對齊治本：欄=[名稱,對齊]只宣告一次,表頭資料同一份定義產生——不再兩段手寫各歪各的
+    // v4.43.8 欄距收緊（張良「版面精簡好」）：每欄寬=內容寬(width:1%+nowrap)、剩餘空間全推給最右墊欄=欄位靠攏不再被平均拉開
     const C9 = [['日期','left'],['夥伴','left'],['狀態','left'],['班別','center'],['上班卡','center'],['下班卡','center'],['時數','right']]
-    const td9 = (i,html,ex)=>`<td style="padding:4px 8px;text-align:${C9[i][1]};${ex||''}">${html}</td>`
+    const td9 = (i,html,ex)=>`<td style="padding:4px 14px;text-align:${C9[i][1]};${ex||''}">${html}</td>`
     lpOverlay('abaOv', `
       <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap"><b style="font-size:17px">🕐 A Beach 出勤總覽</b>
         <span style="display:flex;gap:8px;align-items:center">${vBtn}<button class="mini" style="padding:6px 14px" onclick="document.getElementById('abaOv').remove()">關閉</button></span></div>
       <div style="display:flex;gap:6px;flex-wrap:wrap;margin:10px 0">${moBtn9('all','全部')}${mos.map(m=>moBtn9(m, m.slice(2).replace('-','/'))).join('')}</div>
       <div class="hint" style="margin-bottom:6px">共 ${det.length} 筆・點夥伴名字看他一個人的整期紀錄</div>
-      <div class="scroll" style="max-height:66vh;overflow-y:auto"><table style="border-collapse:collapse;width:100%"><thead><tr>
-        ${C9.map(([lb,al])=>`<th style="padding:4px 8px;text-align:${al}">${lb}</th>`).join('')}</tr></thead><tbody>
+      <div class="scroll" style="height:66vh;overflow-y:auto"><table style="border-collapse:collapse;width:100%"><thead><tr>
+        ${C9.map(([lb,al])=>`<th style="padding:4px 14px;text-align:${al};width:1%;white-space:nowrap">${lb}</th>`).join('')}<th></th></tr></thead><tbody>
         ${det.map(x=>`<tr style="border-top:1px solid var(--line);font-size:13px">
           ${td9(0, `${x.d.slice(5)}（${'日一二三四五六'[new Date(x.d).getDay()]}）`, 'white-space:nowrap')}
           ${td9(1, x.n, `font-weight:800;white-space:nowrap;cursor:pointer;text-decoration:underline dotted" onclick="abAttPerson('${x.n.replace(/'/g,'')}')`)}
@@ -355,7 +356,7 @@ function abAttDraw(){
           ${td9(3, x.w||'—')}
           ${td9(4, x.on||'—', !x.on&&!x.abs?'color:var(--red)':'')}
           ${td9(5, x.off||'—')}
-          ${td9(6, x.h||'—', 'font-weight:700')}</tr>`).join('')}
+          ${td9(6, x.h||'—', 'font-weight:700')}<td></td></tr>`).join('')}
       </tbody></table></div>`)
     return
   }
@@ -377,7 +378,7 @@ function abAttDraw(){
     <div class="hint" style="margin-top:4px">NUEiP 打卡・6/1 起已回補｜點欄頭排序、點名字看逐日明細</div>
     <div style="display:flex;gap:6px;flex-wrap:wrap;margin:10px 0">${moBtn('all','全部')}${mos.map(m=>moBtn(m, m.slice(2).replace('-','/'))).join('')}</div>
     <div style="display:flex;gap:14px;flex-wrap:wrap;margin-bottom:8px" class="hint">共 ${tot.days} 人日｜遲到 ${tot.late} 次｜缺卡 ${tot.miss} 次｜曠職 ${tot.abs} 次</div>
-    <div class="scroll"><table style="border-collapse:collapse;width:100%"><thead><tr>
+    <div class="scroll" style="height:66vh;overflow-y:auto"><table style="border-collapse:collapse;width:100%"><thead><tr>
       <th style="padding:5px 8px;text-align:left">夥伴</th>${TH9('days','出勤天')}${TH9('h','總時數')}${TH9('avg','日均')}${TH9('late','遲到次')}${TH9('lateMin','遲到分')}${TH9('early','早退次')}${TH9('miss','缺卡')}${TH9('abs','曠職')}</tr></thead><tbody>
       ${list.map(o=>`<tr style="border-top:1px solid var(--line)">
         <td style="padding:5px 8px;font-weight:800;white-space:nowrap;cursor:pointer;text-decoration:underline dotted" title="點我看逐日明細" onclick="abAttPerson('${o.n.replace(/'/g,'')}')">${o.n}</td>
@@ -426,7 +427,7 @@ function abAttPerson(nm, keep, f){
   const stTx = x => [x.abs?'<b style="color:var(--red)">曠職</b>':'', x.miss?'<b style="color:var(--red)">缺卡</b>':'', x.late>0?`<b style="color:#E8A657">遲到${x.late}分</b>`:'', x.early>0?`<b style="color:#E8A657">早退${x.early}分</b>`:''].filter(Boolean).join('、') || '<span style="color:var(--green)">✓</span>'
   // v4.37.2 張良「資料要對齊欄位名稱 所有欄位都要可排序」：th/td 同對齊、每欄可點排序
   const ar9 = k => `<span style="display:inline-block;width:12px;font-size:10px;text-align:center">${so.k===k?(so.dir>0?'▲':'▼'):''}</span>`
-  const TH9 = (k,lb,al)=>`<th style="padding:4px 8px;text-align:${al};cursor:pointer;white-space:nowrap;user-select:none" onclick="window._abaPSort=window._abaPSort.k==='${k}'?{k:'${k}',dir:-window._abaPSort.dir}:{k:'${k}',dir:${k==='d'?-1:1}};abAttPerson('${nmE}',1)">${lb}${ar9(k)}</th>`
+  const TH9 = (k,lb,al)=>`<th style="padding:4px 14px;text-align:${al};width:1%;cursor:pointer;white-space:nowrap;user-select:none" onclick="window._abaPSort=window._abaPSort.k==='${k}'?{k:'${k}',dir:-window._abaPSort.dir}:{k:'${k}',dir:${k==='d'?-1:1}};abAttPerson('${nmE}',1)">${lb}${ar9(k)}</th>`
   const pmBtn = (v,lb)=>`<button class="mini${pMo===v?' on':''}" style="padding:4px 12px;font-weight:800" onclick="window._abaPMo='${v}';abAttPerson('${nmE}',1)">${lb}</button>`
   const fBtn = (v,lb,c9)=>`<button class="mini${pF===v?' on':''}" style="padding:4px 12px;font-weight:800${pF!==v&&v!=='all'&&cnt9[v]?';color:'+c9:''}" onclick="window._abaPF='${v}';abAttPerson('${nmE}',1)">${lb}${v!=='all'?` ${cnt9[v]||0}`:''}</button>`
   const fLb = { late:'遲到彙整', miss:'缺卡彙整', early:'早退彙整', abs:'曠職彙整' }
@@ -436,21 +437,21 @@ function abAttPerson(nm, keep, f){
     <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">${pmBtn('all','全部')}${mos9.map(m=>pmBtn(m, m.slice(2).replace('-','/'))).join('')}</div>
     <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;align-items:center">${fBtn('all','全部')}${fBtn('late','遲到','#E8A657')}${fBtn('miss','缺卡','var(--red)')}${fBtn('early','早退','#E8A657')}${fBtn('abs','曠職','var(--red)')}
       ${pF==='late'&&lateSum?`<span class="hint" style="font-weight:800;color:#E8A657">合計遲到 ${lateSum} 分</span>`:''}${pF!=='all'&&!all.length?`<span class="hint">這段期間沒有${fLb[pF].slice(0,2)}紀錄 🎉</span>`:''}</div>
-    <div class="scroll" style="margin-top:8px"><table style="border-collapse:collapse;width:100%"><thead><tr>
-      ${TH9('d','日期','left')}${TH9('st','狀態','left')}${TH9('w','班別','center')}${TH9('on','上班卡','center')}${TH9('off','下班卡','center')}${TH9('h','時數','right')}</tr></thead><tbody>
+    <div class="scroll" style="margin-top:8px;height:66vh;overflow-y:auto"><table style="border-collapse:collapse;width:100%"><thead><tr>
+      ${TH9('d','日期','left')}${TH9('st','狀態','left')}${TH9('w','班別','center')}${TH9('on','上班卡','center')}${TH9('off','下班卡','center')}${TH9('h','時數','right')}<th></th></tr></thead><tbody>
       ${all.map((x,i)=>{
         const wd9 = new Date(x.d).getDay()
         const wkSep = so.k==='d' && pF==='all' && i>0 && wd9===(so.dir<0?0:1) ? 'border-top:3px solid #3A4456;' : '' // 每週分隔線（照排序方向在週一切）
         if (x.rest) return `<tr style="${wkSep}border-top:${wkSep?'3px solid #3A4456':'1px solid var(--line)'};font-size:13px;opacity:.5">
           <td style="padding:4px 8px;text-align:left;white-space:nowrap">${x.d.slice(5)}（${'日一二三四五六'[wd9]}）</td>
-          <td style="padding:4px 8px"></td><td style="padding:4px 8px;text-align:center" class="hint">休</td><td style="padding:4px 8px;text-align:center">—</td><td style="padding:4px 8px;text-align:center">—</td><td style="padding:4px 8px;text-align:right">—</td></tr>`
+          <td style="padding:4px 8px"></td><td style="padding:4px 8px;text-align:center" class="hint">休</td><td style="padding:4px 8px;text-align:center">—</td><td style="padding:4px 8px;text-align:center">—</td><td style="padding:4px 8px;text-align:right">—</td><td></td></tr>`
         return `<tr style="${wkSep}${wkSep?'':'border-top:1px solid var(--line);'}font-size:13px">
         <td style="padding:4px 8px;text-align:left;white-space:nowrap">${x.d.slice(5)}（${'日一二三四五六'[wd9]}）</td>
         <td style="padding:4px 8px;text-align:left;white-space:nowrap">${stTx(x)}</td>
         <td style="padding:4px 8px;text-align:center;white-space:nowrap">${x.w||'—'}</td>
         <td style="padding:4px 8px;text-align:center;${!x.on&&!x.abs?'color:var(--red)':''}">${x.on||'—'}</td>
         <td style="padding:4px 8px;text-align:center">${x.off||'—'}</td>
-        <td style="padding:4px 8px;text-align:right;font-weight:700">${x.h?fmtHM(x.h*60):'—'}</td></tr>` }).join('')}
+        <td style="padding:4px 8px;text-align:right;font-weight:700">${x.h?fmtHM(x.h*60):'—'}</td><td></td></tr>` }).join('')}
     </tbody></table></div>`)
 }
 

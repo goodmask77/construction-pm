@@ -72,6 +72,7 @@ function hrmRender(){
       <input value="${hrmQ.replace(/"/g,'&quot;')}" placeholder="搜姓名／部門／職務" style="padding:8px 12px;border:1.5px solid var(--line);border-radius:10px;font-size:14.5px;width:200px;background:var(--card);color:var(--ink)" oninput="hrmQ=this.value;hrmRender()">
       <span class="hint">${rows.length} 人</span>
       ${d.canEdit?`<button class="mini${window._hrmEdit?' on':''}" style="padding:6px 14px;font-weight:800" onclick="window._hrmEdit=!window._hrmEdit;hrmRender()">${window._hrmEdit?'✓ 完成編輯':'✏️ 編輯'}</button>`:''}
+      <button class="mini" style="padding:6px 14px;font-weight:800" onclick="hrmLib()">🗂 文件庫</button>
       ${d.canEdit&&window._hrmEdit?`<button class="mini" style="padding:6px 12px" onclick="hrmTitleOpts()">職務選單</button><button class="mini" style="padding:6px 12px" onclick="hrmAdd('ab')">＋ AB 加人</button><button class="mini" style="padding:6px 12px" onclick="hrmAdd('gd')">＋ GD 加人</button><button class="mini" style="padding:6px 12px" onclick="hrmColOrder()">欄位排序</button>`:''}
     </div>`
   if (upcoming.length) {
@@ -282,4 +283,43 @@ async function hrmColSave(){
   const r = await hrmUp({ op:'colorder', list: window._hcL })
   const o = document.getElementById('hcOv'); if (o) o.remove()
   if (r) { window._hrmD.colOrder = r.colOrder; hrmRenderKeep() }
+}
+
+// 🗂 文件庫 v4.38.3（張良「上面建一個資料庫 點進去看不同檔案的分類資料夾 檔名自動統一」）
+// 檔名規範：AB_林品燊_體檢報告_2026-10-04.jpg（下載/另存自動套用）
+function hrmFn(x, dk, f){ const co9=/A Beach/.test(x.co)?'AB':'GD'; const d9=(f.ts||'').slice(0,5).replace('-','')||''; return `${co9}_${x.name}_${dk.n.replace(/（.*/,'')}_${(f.ts||'').slice(0,5)||'未知'}.${f.ext||'jpg'}` }
+function hrmLib(folder){
+  const d = window._hrmD; if (!d) return
+  const isAB9 = x => /A Beach/.test(x.co||'')
+  let rows = (d.rows||[])
+  if (hrmCo==='ab') rows = rows.filter(isAB9)
+  if (hrmCo==='gd') rows = rows.filter(x=>!isAB9(x))
+  const old9 = document.getElementById('hlOv'); if (old9) old9.remove()
+  const ov = document.createElement('div'); ov.id='hlOv'
+  ov.style.cssText='position:fixed;inset:0;background:rgba(10,14,22,.58);z-index:69;display:flex;align-items:flex-start;justify-content:center;padding:14px;overflow:auto'
+  let inner
+  if (!folder) { // 第一層：分類資料夾
+    inner = `<div style="font-weight:900;font-size:16.5px;display:flex;justify-content:space-between;align-items:center">🗂 文件庫 <span class="hint" style="font-weight:600;font-size:12px">${hrmCo==='all'?'全部':hrmCo==='ab'?'A Beach':'GROUN:D'}・檔名自動統一：店_姓名_文件_日期</span><button class="mini" style="padding:6px 14px" onclick="document.getElementById('hlOv').remove()">關閉</button></div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:10px;margin-top:12px">
+      ${HR_DOCS.map(dk=>{ const n9 = rows.reduce((t,x)=>t+((((x.docs||{})[dk.k])||{}).files||[]).length,0)
+        const ppl9 = rows.filter(x=>((((x.docs||{})[dk.k])||{}).files||[]).length).length
+        return `<div onclick="hrmLib('${dk.k}')" style="background:var(--card);border:1.5px solid var(--line);border-radius:12px;padding:14px;cursor:pointer">
+          <div style="font-size:22px">📁</div><div style="font-weight:800;margin-top:4px">${dk.n.replace(/（.*/,'')}</div>
+          <div class="hint" style="font-size:12px;margin-top:2px">${n9} 份檔案・${ppl9}/${rows.length} 人已交</div></div>` }).join('')}
+      </div>`
+  } else { // 第二層：單一分類的全部檔案
+    const dk = HR_DOCS.find(z=>z.k===folder) || { n: folder }
+    const files = []
+    rows.forEach(x=>{ ((((x.docs||{})[folder])||{}).files||[]).forEach((f,i)=>files.push({ x, f, i })) })
+    files.sort((a,b)=>String(b.f.ts||'').localeCompare(String(a.f.ts||'')))
+    const missing = rows.filter(x=>!((((x.docs||{})[folder])||{}).files||[]).length && (!HR_DOCS.find(z=>z.k===folder)?.minor || (+x.age||99)<18))
+    inner = `<div style="font-weight:900;font-size:16.5px;display:flex;justify-content:space-between;align-items:center;gap:8px"><span><span style="cursor:pointer;color:var(--primary)" onclick="hrmLib()">🗂 文件庫</span> › 📁 ${dk.n.replace(/（.*/,'')}</span><button class="mini" style="padding:6px 14px" onclick="document.getElementById('hlOv').remove()">關閉</button></div>
+      ${files.length?`<div style="margin-top:10px">${files.map(({x,f,i})=>`<div style="display:flex;gap:10px;align-items:center;border-top:1px solid var(--line);padding:7px 0;font-size:13.5px;flex-wrap:wrap">
+        <a href="/api/mail-sync?hrdocurl=${encodeURIComponent(K)}&me=${encodeURIComponent(TK())}&co=${encodeURIComponent(x.co)}&nm=${encodeURIComponent(x.name)}&key=${folder}&i=${i}&dl=${encodeURIComponent(hrmFn(x,dk,f))}" target="_blank" style="color:var(--primary);text-decoration:underline;font-family:ui-monospace,monospace;font-size:12.5px">${hrmFn(x,dk,f)}</a>
+        <span class="hint" style="font-size:11.5px">${f.by||''} 上傳・${f.ts||''}</span></div>`).join('')}</div>`:'<div class="mut" style="margin-top:12px">這個分類還沒有檔案</div>'}
+      ${missing.length?`<div class="hint" style="margin-top:12px;font-size:12.5px">還沒交（${missing.length}）：${missing.map(x=>x.name).join('、')}</div>`:''}`
+  }
+  ov.innerHTML = `<div style="background:#1C2430;border:1px solid #39434F;border-radius:14px;max-width:760px;width:100%;padding:16px;margin:auto 0" onclick="event.stopPropagation()">${inner}</div>`
+  ov.onclick = () => ov.remove()
+  document.body.appendChild(ov)
 }

@@ -2994,8 +2994,9 @@ export default async function handler(req, res) {
     const file1 = f1[Number(req.query.i) || 0]
     if (!file1) return res.status(404).json({ ok: false })
     const { signedUrl } = await import('./_onboard.js')
-    const u1 = await signedUrl(file1.path, 300)
+    let u1 = await signedUrl(file1.path, 300)
     if (!u1) return res.status(502).json({ ok: false })
+    if (req.query.dl) u1 += (u1.includes('?') ? '&' : '?') + 'download=' + encodeURIComponent(String(req.query.dl).slice(0, 80)) // v4.38.3 統一檔名下載
     return res.redirect(302, u1)
   }
   if (req.method === 'POST' && req.query?.hrdocdel) { // 刪檔（主管限定，檔案留桶只移連結=可救回）
