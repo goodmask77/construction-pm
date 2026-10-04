@@ -18,14 +18,14 @@ const LP_MIN_HOURLY = 196, LP_MIN_MONTHLY = 29500
 
 // AB 當月出勤彙總（NUEiP 實際打卡 durmin；法規+薪資共用）
 function fmtHM(mins){ mins=Math.round(mins); const h9=Math.floor(mins/60), m9=mins%60; return m9? (h9? h9+'時'+m9+'分' : m9+'分') : h9+'時' } // v4.37.3 張良「不要12.3小時 幾分鐘就顯示幾分鐘」
-function lpAbAgg(){ const d=window._shiftD||{}; const out={}
+function lpAbAgg(ym9){ const d=window._shiftD||{}; const out={}; const YM=ym9||shiftYm
   // v4.33.2 四週變形工時：加班起算=當日 NUEiP 排定時數（排定最多認10h、查不到排班=8h）
   const t2m9=t=>{ const a=String(t||'').split(':'); return (+a[0]||0)*60+(+a[1]||0) }
   const schedMap={}
   ;(typeof shMergedAb==='function'?shMergedAb():[]).forEach(x=>{ if(!x.start||!x.end||/休|例/.test(x.code||'')) return
     let sp=t2m9(x.end)-t2m9(x.start); if(sp<=0) sp+=1440
     schedMap[x.name+'|'+x.date]=Math.min(10,Math.max(8,(sp-(sp>=540?60:0))/60)) }) // 跨午夜處理；排9h以上預設含1h休
-  ;(d.abAtt||[]).forEach(a=>{ if(!String(a.date||'').startsWith(shiftYm)) return
+  ;((typeof shMergedAbAtt==='function'?shMergedAbAtt():(d.abAtt||[]))).forEach(a=>{ if(!String(a.date||'').startsWith(YM)) return
     const o=out[a.name]=out[a.name]||{h:0,ot1:0,ot2:0,days:[],late:0,flags:new Set(),daily:{}}
     const h=+a.h||0; const base9=schedMap[a.name+'|'+a.date]||8; const ot=Math.max(0,h-base9)
     o.h+=h; o.ot1+=Math.min(ot,2); o.ot2+=Math.max(0,ot-2)
@@ -90,16 +90,19 @@ async function lawView(){
 }
 
 // 💰 薪資表（GD 打卡 + AB NUEiP 出勤；時薪/加給可填，本薪/加班費自動算）
-function payView(){
-  const d=window._shiftD||{}, per=window._shPer||{}, abAgg=lpAbAgg(), rates=d.payRates||{}
+function payView(ym9){
+  const d=window._shiftD||{}, per=window._shPer||{}, rates=d.payRates||{}
+  window._payYm = ym9 || window._payYm || shiftYm
+  const PYM = window._payYm
+  const abAgg=lpAbAgg(PYM)
   const meN=d.me?d.me.name:null
   // v4.46.1 NUEiP 真值（張良「好先進去」）：該月有發薪單的 AB 人改吃真值，沒有的（當月還沒發薪）照舊試算
   const TD='border:1px solid #8a8f98;padding:5px 8px;font-size:13px;color:#111;text-align:right;white-space:nowrap'
   const TDL=TD.replace('right','left')
   const TH='border:1px solid #8a8f98;padding:6px 8px;font-size:12.5px;background:#eef1f5;color:#111;font-weight:800;white-space:nowrap'
-  const truth = (d.hrPay||[]).filter(x=>x.ym===shiftYm).sort((a,b)=>b.net-a.net)
+  const truth = (d.hrPay||[]).filter(x=>x.ym===PYM).sort((a,b)=>b.net-a.net)
   const truthN = new Set(truth.map(x=>x.n))
-  const ppl=[...Object.keys(per).map(n=>({store:'GD',n,o:per[n]})), ...Object.keys(abAgg).filter(n=>!truthN.has(n)).map(n=>({store:'AB',n,o:abAgg[n]}))]
+  const ppl=[...(PYM===shiftYm?Object.keys(per).map(n=>({store:'GD',n,o:per[n]})):[]), ...Object.keys(abAgg).filter(n=>!truthN.has(n)).map(n=>({store:'AB',n,o:abAgg[n]}))]
     .filter(x=>x.o.h>0).sort((a,b)=>a.store.localeCompare(b.store)||b.o.h-a.o.h)
   const rows=ppl.map(x=>{ const rt=rates[x.n]||{}, base=+rt.base||0, allow=+rt.allow||0
     const reg=Math.max(0,x.o.h-x.o.ot1-x.o.ot2)
@@ -116,11 +119,11 @@ function payView(){
       ${truth.map(x=>`<tr><td style="${TDL};font-weight:800">${x.n}</td><td style="${TDL}">${x.ev||''}</td><td style="${TD}">${x.pd||''}</td><td style="${TD}">${nt(x.g)}</td><td style="${TD}">${nt(x.ot)}</td><td style="${TD}">${x.otH?fmtHM(x.otH*60):'—'}</td><td style="${TD};font-weight:900">${nt(x.net)}</td></tr>`).join('')}
       <tr><td style="${TDL};font-weight:900" colspan="3">合計</td><td style="${TD};font-weight:900">${nt(truth.reduce((t,x)=>t+x.g,0))}</td><td style="${TD};font-weight:900">${nt(truth.reduce((t,x)=>t+x.ot,0))}</td><td style="${TD}"></td><td style="${TD};font-weight:900">${nt(truth.reduce((t,x)=>t+x.net,0))}</td></tr>
     </tbody></table>
-    <div style="color:#555;font-size:11px;padding:4px 0 10px">來源：NUEiP 工資發放明細（每日自動同步）；勞健保/扣款已含在實發。</div>` : `<div style="color:#555;font-size:12px;padding:4px 0 10px">A Beach ${shiftYm} 的發薪單還沒產生（發薪日次月 10 號後自動出現）——下表為試算。</div>`
+    <div style="color:#555;font-size:11px;padding:4px 0 10px">來源：NUEiP 工資發放明細（每日自動同步）；勞健保/扣款已含在實發。</div>` : `<div style="color:#555;font-size:12px;padding:4px 0 10px">A Beach ${PYM} 的發薪單還沒產生（發薪日次月 10 號後自動出現）——下表為試算。</div>`
   const tbl=`<div id="payTblWrap" style="background:#fff;padding:14px;border-radius:10px">
-    <div style="color:#111;font-weight:900;font-size:15px;padding-bottom:8px">GROUN:D × A Beach 薪資表　${shiftYm}　<span style="font-weight:600;font-size:12px;color:#555">AB＝NUEiP 發薪真值（無單月份退回出勤試算）｜GD＝打卡試算（§24 前2h×1.34、後2h×1.67）</span></div>
+    <div style="color:#111;font-weight:900;font-size:15px;padding-bottom:8px">GROUN:D × A Beach 薪資表　${PYM}　<span style="font-weight:600;font-size:12px;color:#555">AB＝NUEiP 發薪真值（無單月份退回出勤試算）｜GD＝打卡試算（§24 前2h×1.34、後2h×1.67）</span></div>
     ${truthTbl}
-    ${rows.length?`<div style="color:#111;font-weight:900;font-size:14px;padding:4px 0 6px">${truth.length?'其餘（試算）':'工時試算'}（${rows.length} 人）</div>`:''}
+    ${rows.length?`<div style="color:#111;font-weight:900;font-size:14px;padding:4px 0 6px">${truth.length?'其餘（試算）':'工時試算'}（${rows.length} 人）</div>`:''}${PYM!==shiftYm?`<div style="color:#555;font-size:11px;padding:0 0 6px">GD 打卡試算只顯示班表目前月份（${shiftYm}）；看其他月的 GD 先用上面 ‹ › 切班表月份。</div>`:''}
     <table style="border-collapse:collapse;width:100%"><thead><tr>
       <th style="${TH}">店</th><th style="${TH};text-align:left">姓名</th><th style="${TH}">正常時數</th><th style="${TH}">加班1.34</th><th style="${TH}">加班1.67</th><th style="${TH}">時薪</th><th style="${TH}">本薪</th><th style="${TH}">加班費1.34</th><th style="${TH}">加班費1.67</th><th style="${TH}">加給</th><th style="${TH}">應發合計</th></tr></thead><tbody>
     ${rows.map(r=>`<tr><td style="${TDL}">${r.store}</td><td style="${TDL};font-weight:800">${r.n}</td><td style="${TD}">${r1(r.reg)}</td><td style="${TD}">${r.o.ot1?r1(r.o.ot1):'—'}</td><td style="${TD}">${r.o.ot2?r1(r.o.ot2):'—'}</td>
@@ -134,7 +137,8 @@ function payView(){
       時薪<input inputmode="numeric" value="${(rates[x.n]||{}).base||''}" placeholder="196" style="width:52px;padding:2px;border:1px solid var(--line);border-radius:6px;text-align:center" onchange="paySetRate('${x.n}','base',this.value)">
       加給<input inputmode="numeric" value="${(rates[x.n]||{}).allow||''}" placeholder="0" style="width:62px;padding:2px;border:1px solid var(--line);border-radius:6px;text-align:center" onchange="paySetRate('${x.n}','allow',this.value)"></span>`).join('')}</div></div>`:''
   lpOverlay('payOv',`
-    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap"><b style="font-size:17px">💰 薪資表・${shiftYm}</b>
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap"><b style="font-size:17px">💰 薪資表</b>
+      <span style="display:inline-flex;gap:6px;flex-wrap:wrap">${(()=>{ const ms=new Set((d.hrPay||[]).map(x=>x.ym).filter(Boolean)); ms.add(shiftYm); let y=2026,mo=6; const now9=new Date(Date.now()+8*3600e3); while(y<now9.getUTCFullYear()||(y===now9.getUTCFullYear()&&mo<=now9.getUTCMonth()+1)){ ms.add(y+'-'+String(mo).padStart(2,'0')); if(++mo>12){mo=1;y++} } return [...ms].sort().map(m9=>`<button class="mini${m9===PYM?' on':''}" style="padding:4px 11px;font-weight:800" onclick="payView('${m9}')">${m9.slice(2).replace('-','/')}</button>`).join('') })()}</span>
       <span style="display:inline-flex;gap:8px"><button class="mini" style="padding:6px 14px" onclick="payCopyImg()">📸 複製圖片</button><button class="mini" style="padding:6px 14px" onclick="payCsv()">⬇️ 匯出表格</button><button class="mini" style="padding:6px 14px" onclick="document.getElementById('payOv').remove()">關閉</button></span></div>
     <div class="scroll" style="margin-top:10px">${tbl}</div>${rateEd}`)
 }
@@ -146,13 +150,13 @@ async function paySetRate(name, field, val){
 }
 function payCsv(){
   const rows=window._payRows||[]
-  const truth=((window._shiftD||{}).hrPay||[]).filter(x=>x.ym===shiftYm)
+  const truth=((window._shiftD||{}).hrPay||[]).filter(x=>x.ym===(window._payYm||shiftYm))
   if(!rows.length&&!truth.length){ lpToast('沒有資料'); return }
   let csv='\ufeff來源,店別,姓名,發薪事件/說明,發放日,應發,加班費,實發\n'
   truth.forEach(x=>{ csv+=['NUEiP真值','AB',x.n,(x.ev||'').replace(/,/g,'，'),x.pd,x.g,x.ot,x.net].join(',')+'\n' })
   csv+='\n來源,店別,姓名,正常時數,加班1.34時數,加班1.67時數,時薪,本薪,加班費1.34,加班費1.67,加給,應發合計\n'
   rows.forEach(r=>{ csv+=['試算',r.store,r.n,r1(r.reg),r1(r.o.ot1),r1(r.o.ot2),r.base,r.basePay,r.ot1Pay,r.ot2Pay,r.allow,r.total].join(',')+'\n' })
-  const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'})); a.download='薪資表_'+shiftYm+'.csv'; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),4000)
+  const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'})); a.download='薪資表_'+(window._payYm||shiftYm)+'.csv'; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),4000)
   lpToast('⬇️ 已下載 薪資表_'+shiftYm+'.csv')
 }
 async function payCopyImg(){
