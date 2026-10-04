@@ -1984,6 +1984,40 @@ export default async function handler(req, res) {
       }
       // 工作日誌照片：綁定夥伴 15 分鐘內記過日誌 → 這張圖直接附到那則（私訊＋群組）。
       // 先「只查不寫」確認有近期日誌，才下載上傳——廠商群的圖不會被誤傳進公開桶；沒近期日誌就走原本檔案庫/文件流程
+      // 📎 入職文件收檔（v4.35.0）：私訊且 15 分內有「文件 …」情境 → 照片/檔案進私有桶+名冊欄位
+      if (ev.type === 'message' && (ev.message?.type === 'image' || ev.message?.type === 'file') && ev.source?.type === 'user') {
+        try {
+          const uidD = ev.source?.userId || ''
+          const pendD = (await kvGetMany(['pm_hrdoc_pending']))['pm_hrdoc_pending'] || {}
+          const ctxD = pendD[uidD]
+          if (ctxD && Date.now() - ctxD.ts < 15 * 60e3) {
+            const rD = await fetch(`https://api-data.line.me/v2/bot/message/${ev.message.id}/content`, { headers: { authorization: `Bearer ${TOKEN}` } })
+            if (rD.ok) {
+              const bufD = Buffer.from(await rD.arrayBuffer())
+              const ctD = rD.headers.get('content-type') || 'application/octet-stream'
+              const extD = ev.message.type === 'file' ? (String(ev.message.fileName || '').split('.').pop() || 'pdf').toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 5) : (/png/.test(ctD) ? 'png' : 'jpg')
+              const { uploadPrivate } = await import('./_onboard.js')
+              const pathD = `hrdocs/${/A Beach/.test(ctxD.co) ? 'ab' : 'gd'}/${encodeURIComponent(ctxD.name)}/${ctxD.key}-${Date.now().toString(36)}.${extD}`
+              if (bufD.length <= 15 * 1024 * 1024 && await uploadPrivate(pathD, bufD, ctD)) {
+                const docMD = (await kvGetMany(['sp_crew_pm_hr_master']))['sp_crew_pm_hr_master'] || { rows: [] }
+                const rowD = (docMD.rows || []).find(r9 => r9.co === ctxD.co && r9.name === ctxD.name)
+                if (rowD) {
+                  rowD.docs = rowD.docs || {}; rowD.docs[ctxD.key] = rowD.docs[ctxD.key] || { files: [] }
+                  rowD.docs[ctxD.key].files.push({ path: pathD, ext: extD, ts: new Date(Date.now() + 8 * 3600e3).toISOString().slice(5, 16).replace('T', ' '), by: ctxD.by })
+                  docMD.log = [{ by: ctxD.by, ts: new Date(Date.now() + 8 * 3600e3).toISOString().slice(5, 16).replace('T', ' '), what: `DD上傳 ${ctxD.name} ${ctxD.key}` }, ...(docMD.log || [])].slice(0, 80)
+                  docMD.updatedAt = new Date().toISOString()
+                  await kvSet('sp_crew_pm_hr_master', docMD)
+                  ctxD.ts = Date.now(); await kvSet('pm_hrdoc_pending', pendD) // 連傳多張=每張都續 15 分鐘
+                  if (ev.replyToken) await lineReply(ev.replyToken, `✅ 已歸檔：${ctxD.name}・${ctxD.label}（第 ${rowD.docs[ctxD.key].files.length} 份）\n夥伴名冊 → 點他的「📎 文件」就看得到。`)
+                  continue
+                }
+              }
+              if (ev.replyToken) await lineReply(ev.replyToken, '檔案收到了但歸檔失敗（太大或格式怪），再試一次 🙏')
+              continue
+            }
+          }
+        } catch (e) { console.log('hrdoc upload err', e?.message) }
+      }
       if (ev.type === 'message' && ev.message?.type === 'image') {
         try {
           const uidJ = ev.source?.userId || ''
@@ -2198,6 +2232,33 @@ export default async function handler(req, res) {
           }
           else await send('你還沒綁定過，回我「綁定GD 你的本名」就好（例：綁定GD 張良瑋）。')
         } catch (_) { await send('查連結出了點問題，稍後再試一次 🙏') }
+        continue
+      }
+      // 1.357) 📎 入職文件上傳 v4.35.0（張良「從DD上傳檔案或照片 直接到對應的欄位」）：主管私訊「文件 姓名 文件名」→ 15分內傳照片/檔案自動歸檔私有桶
+      const mDoc = isDM && text.match(/^文件\s*(\S{2,10})\s+(\S{1,12})\s*$/)
+      if (mDoc) {
+        try {
+          const HRD = { contract: ['勞動契約', '契約', '合約'], idcard: ['身分證'], bank: ['存摺', '銀行'], health: ['體檢', '健檢'], photo: ['大頭照', '照片'], emergency: ['緊急聯絡', '緊急'], insurance: ['勞健保', '加保', '保險'], hygiene: ['衛生', '教育訓練', '講習'], guardian: ['法代', '法定代理', '同意書'] }
+          const kvD = await kvGetMany(['sp_crew_pm_hr_master', 'sp_finance_pm_sop_def', 'sp_finance_pm_prep_bind'])
+          const bindD = kvD['sp_finance_pm_prep_bind'] || {}
+          const tkD = (bindD.byUid || {})[userId]
+          const meD = tkD ? ((bindD.tokens || {})[tkD] || {}).name : null
+          const aprD = (((kvD['sp_finance_pm_sop_def'] || {}).ground || {}).approvers || ['張良瑋'])
+          const rosD9 = await kvGetMany(['sp_crew_kb_roster'])
+          const roleD = meD ? ((((rosD9['sp_crew_kb_roster'] || {}).people) || []).find(p9 => p9.name === meD) || {}).gdRole : ''
+          if (!meD || !(aprD.includes(meD) || roleD === '主管')) { await send('入職文件上傳只開放主管使用 🙏'); continue }
+          const rowsD = (kvD['sp_crew_pm_hr_master'] || {}).rows || []
+          const psn = rowsD.filter(r9 => r9.name.includes(mDoc[1]) || mDoc[1].includes(r9.name))
+          if (!psn.length) { await send(`夥伴名冊找不到「${mDoc[1]}」。`); continue }
+          if (psn.length > 1) { await send(`有 ${psn.length} 個同名：${psn.map(x => x.name + '(' + (/A Beach/.test(x.co) ? 'AB' : 'GD') + ')').join('、')}——名字打完整一點。`); continue }
+          const kw = mDoc[2]
+          const keyD = Object.entries(HRD).find(([, as9]) => as9.some(a9 => kw.includes(a9) || a9.includes(kw)))
+          if (!keyD) { await send('文件名我認得這些：勞動契約、身分證、存摺、體檢、大頭照、緊急聯絡人、勞健保、衛生訓練、法代同意書。') ; continue }
+          const pend = (await kvGetMany(['pm_hrdoc_pending']))['pm_hrdoc_pending'] || {}
+          pend[userId] = { co: psn[0].co, name: psn[0].name, key: keyD[0], label: keyD[1][0], ts: Date.now(), by: meD }
+          await kvSet('pm_hrdoc_pending', pend)
+          await send(`📎 OK！接下來 15 分鐘內傳給我「${psn[0].name} 的 ${keyD[1][0]}」照片或檔案（可多張），我會直接歸到名冊對應欄位。`)
+        } catch (e) { await send('設定上傳出了點問題，再試一次 🙏') }
         continue
       }
       // 1.36) 綁定防火牆（張良 2026-10-01：小夏問綁定→AI 自由發揮把 Toby 的專屬連結翻出來亂發）：

@@ -2788,6 +2788,67 @@ export default async function handler(req, res) {
     if (isAdmH) outH.idLock = { rids: ((lockH || {}).rids) || [], people: Object.entries((pmH && pmH.users) || {}).map(([r9, u9]) => ({ rid: r9, name: u9.name, admin: !!u9.admin })) }
     return res.status(200).json(outH)
   }
+  // ── 📎 入職文件 v4.35.0（張良「體檢要能直接上傳檔案給勞檢稽核；一般入職文件列出來做在夥伴名冊」）──
+  // 標準清單（台灣餐飲業）：勞動契約/身分證影本/存摺影本/體檢報告/大頭照/緊急聯絡人/勞健保加保/衛生教育訓練/未成年法代同意書
+  // 檔案一律進私有桶 ground-private（個資），看檔=5分鐘簽名網址；上傳=頁面或 LINE 私訊 DD「文件 姓名 文件名」+照片/檔案
+  if (req.method === 'POST' && req.query?.hrdocup) {
+    const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
+    if (!ok2 || String(req.query.hrdocup) !== ok2) return res.status(403).json({ ok: false })
+    let bd0 = {}; try { bd0 = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
+    const [whoD0, defD0] = await Promise.all([sopWho(bd0.token), kvGet('sp_finance_pm_sop_def')])
+    const aprD0 = (((defD0 || {}).ground || {}).approvers || ['張良瑋'])
+    if (!whoD0 || !(aprD0.includes(whoD0.name) || whoD0.name === '張良瑋' || whoD0.role === '主管')) return res.status(403).json({ ok: false, error: '只有主管能上傳入職文件' })
+    const m0 = /^data:([\w\/+.-]+);base64,(.+)$/.exec(String(bd0.dataUrl || ''))
+    if (!m0) return res.status(400).json({ ok: false, error: '檔案格式不對' })
+    const buf0 = Buffer.from(m0[2], 'base64')
+    if (buf0.length > 8 * 1024 * 1024) return res.status(400).json({ ok: false, error: '檔案太大（上限8MB）' })
+    const docM = (await kvGet('sp_crew_pm_hr_master')) || { rows: [] }
+    const row0 = (docM.rows || []).find(r9 => r9.co === bd0.co && r9.name === bd0.name)
+    if (!row0) return res.status(404).json({ ok: false, error: '找不到這個人' })
+    const key0 = String(bd0.key || '').replace(/[^a-z]/g, '').slice(0, 20); if (!key0) return res.status(400).json({ ok: false })
+    const ext0 = String(bd0.ext || 'jpg').replace(/[^a-z0-9]/gi, '').slice(0, 5) || 'jpg'
+    const { uploadPrivate } = await import('./_onboard.js')
+    const path0 = `hrdocs/${/A Beach/.test(bd0.co) ? 'ab' : 'gd'}/${encodeURIComponent(bd0.name)}/${key0}-${Date.now().toString(36)}.${ext0}`
+    if (!(await uploadPrivate(path0, buf0, m0[1]))) return res.status(502).json({ ok: false, error: '上傳失敗' })
+    row0.docs = row0.docs || {}; row0.docs[key0] = row0.docs[key0] || { files: [] }
+    row0.docs[key0].files.push({ path: path0, ext: ext0, ts: new Date(Date.now() + 8 * 3600e3).toISOString().slice(5, 16).replace('T', ' '), by: whoD0.name })
+    docM.log = [{ by: whoD0.name, ts: new Date(Date.now() + 8 * 3600e3).toISOString().slice(5, 16).replace('T', ' '), what: `上傳 ${bd0.name} ${key0}` }, ...(docM.log || [])].slice(0, 80)
+    docM.updatedAt = new Date().toISOString()
+    await kvPut('sp_crew_pm_hr_master', docM, '入職文件上傳(' + whoD0.name + ')')
+    return res.status(200).json({ ok: true, docs: row0.docs })
+  }
+  if (req.query?.hrdocurl) { // 看檔：5 分鐘簽名網址（主管限定）
+    const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
+    if (!ok2 || String(req.query.hrdocurl) !== ok2) return res.status(403).json({ ok: false })
+    const [whoD1, defD1] = await Promise.all([sopWho(req.query.me), kvGet('sp_finance_pm_sop_def')])
+    const aprD1 = (((defD1 || {}).ground || {}).approvers || ['張良瑋'])
+    if (!whoD1 || !(aprD1.includes(whoD1.name) || whoD1.name === '張良瑋' || whoD1.role === '主管')) return res.status(403).json({ ok: false, error: '主管限定' })
+    const docM = (await kvGet('sp_crew_pm_hr_master')) || { rows: [] }
+    const row1 = (docM.rows || []).find(r9 => r9.co === String(req.query.co) && r9.name === String(req.query.nm))
+    const f1 = (((row1 || {}).docs || {})[String(req.query.key)] || {}).files || []
+    const file1 = f1[Number(req.query.i) || 0]
+    if (!file1) return res.status(404).json({ ok: false })
+    const { signedUrl } = await import('./_onboard.js')
+    const u1 = await signedUrl(file1.path, 300)
+    if (!u1) return res.status(502).json({ ok: false })
+    return res.redirect(302, u1)
+  }
+  if (req.method === 'POST' && req.query?.hrdocdel) { // 刪檔（主管限定，檔案留桶只移連結=可救回）
+    const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
+    if (!ok2 || String(req.query.hrdocdel) !== ok2) return res.status(403).json({ ok: false })
+    let bd2 = {}; try { bd2 = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
+    const [whoD2, defD2] = await Promise.all([sopWho(bd2.token), kvGet('sp_finance_pm_sop_def')])
+    const aprD2 = (((defD2 || {}).ground || {}).approvers || ['張良瑋'])
+    if (!whoD2 || !(aprD2.includes(whoD2.name) || whoD2.name === '張良瑋' || whoD2.role === '主管')) return res.status(403).json({ ok: false })
+    const docM = (await kvGet('sp_crew_pm_hr_master')) || { rows: [] }
+    const row2 = (docM.rows || []).find(r9 => r9.co === bd2.co && r9.name === bd2.name)
+    const slot2 = ((row2 || {}).docs || {})[String(bd2.key || '')]
+    if (!slot2 || !slot2.files[Number(bd2.i)]) return res.status(404).json({ ok: false })
+    slot2.files.splice(Number(bd2.i), 1)
+    docM.log = [{ by: whoD2.name, ts: new Date(Date.now() + 8 * 3600e3).toISOString().slice(5, 16).replace('T', ' '), what: `刪檔 ${bd2.name} ${bd2.key}` }, ...(docM.log || [])].slice(0, 80)
+    await kvPut('sp_crew_pm_hr_master', docM, '入職文件刪檔(' + whoD2.name + ')')
+    return res.status(200).json({ ok: true, docs: row2.docs })
+  }
   // ✏️ 夥伴名冊編輯口 v4.34.3（張良「整個清冊要可以讓我跟有權限的人編輯」）：主管限定＋留痕；身分證欄要有 idLock 檢視權才能改
   if (req.method === 'POST' && req.query?.hrmasterup) {
     const ok2 = (process.env.OPS_BOARD_KEY || '').trim()

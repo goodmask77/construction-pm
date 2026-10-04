@@ -1,6 +1,22 @@
 // ── 🪪 夥伴名冊 v4.34.2（張良 2026-10-04：主管限定；標題資料對齊/全部AB GD切換/欄位排序/生日提醒卡；生日前一週 cron 發 ABpeople 群）──
 // 資料端 hrmaster 口在伺服器就擋，非主管連資料都拿不到；來源＝勞工名冊 Google Sheet（口香糖=A Beach、喬亞=GROUN:D）
 let hrmQ = '', hrmCo = 'all', hrmSort = { k: '', dir: 1 }
+// 📎 入職文件標準清單 v4.35.0（台灣餐飲業；guardian 只有未成年需要）
+const HR_DOCS = [
+  { k:'contract',  n:'勞動契約' },
+  { k:'idcard',    n:'身分證影本（正反面）' },
+  { k:'bank',      n:'存摺封面影本（薪轉）' },
+  { k:'health',    n:'體檢報告' },
+  { k:'photo',     n:'大頭照' },
+  { k:'emergency', n:'緊急聯絡人資料' },
+  { k:'insurance', n:'勞健保加保資料' },
+  { k:'hygiene',   n:'衛生教育訓練證明' },
+  { k:'guardian',  n:'法定代理人同意書', minor:1 },
+]
+function hrmDocStat(x){ const need = HR_DOCS.filter(dk=>!dk.minor || (+x.age||99)<18)
+  const got = need.filter(dk=>(((x.docs||{})[dk.k]||{}).files||[]).length).length
+  return { got, need: need.length }
+}
 async function hrmLoad(){
   curStore = 'hrm'; setTabs('hrm')
   const hb = document.getElementById('tab-hrm'); if (hb) hb.className = 'on'
@@ -72,7 +88,7 @@ function hrmRender(){
   // 🔒 身分證欄名單鎖（v4.41.2 張良「顯示鎖的符號 裡面有人員名單 我打勾的人才可以看到」）：管理者點鎖頭勾人；沒在名單的主管這欄=「—」(伺服器端拔掉)
   const LOCK_I9 = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" style="vertical-align:-2px"><rect x="4" y="11" width="16" height="9" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>'
   const nidTh = `<th style="padding:4px 7px;text-align:center;white-space:nowrap;user-select:none">身分證字號 ${d.idLock ? `<span title="名單制：打勾的人才看得到這一欄（點我設定）" style="cursor:pointer;color:#D4A72C" onclick="hrmIdLock()">${LOCK_I9}</span>` : (d.idCan ? '' : `<span class="hint" title="你沒有檢視這欄的權限">${LOCK_I9}</span>`)}</th>`
-  const header = (withCo)=>`<thead><tr>${TH('name','姓名','left',1)}${withCo?TH('co','店','center'):''}${TH('dept','部門','center')}${TH('title','職務','center')}${TH('onboard','到職日','center')}${TH('onboard','年資','center')}${TH('bday','生日','center')}${TH('age','年齡','center')}${TH('sex','性別','center')}${nidTh}${TH('health','體檢','left')}</tr></thead>`
+  const header = (withCo)=>`<thead><tr>${TH('name','姓名','left',1)}${withCo?TH('co','店','center'):''}${TH('dept','部門','center')}${TH('title','職務','center')}${TH('onboard','到職日','center')}${TH('onboard','年資','center')}${TH('bday','生日','center')}${TH('age','年齡','center')}${TH('sex','性別','center')}${nidTh}${TH('health','體檢','left')}<th style="padding:4px 7px;text-align:center;white-space:nowrap">📎 文件</th></tr></thead>`
   const bdaySet = {} // 名→天數（近30天壽星整列生日光）
   upcoming.forEach(x=>{ bdaySet[x.co+'|'+x.name]=x.days })
   const IN9 = (x,f,w,alignL)=>`<input value="${String(x[f]??'').replace(/"/g,'&quot;')}" style="width:${w}px;padding:3px 5px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--ink);font-size:12.5px;text-align:${alignL?'left':'center'}" onchange="hrmSet('${(x.co||'').replace(/'/g,'')}','${(x.name||'').replace(/'/g,'')}','${f}',this.value)">`
@@ -94,7 +110,8 @@ function hrmRender(){
       <td style="padding:4px 7px;text-align:center">${x.age||'—'}</td>
       <td style="padding:4px 7px;text-align:center">${ed?IN9(x,'sex',32):(x.sex||'—')}</td>
       <td style="padding:4px 7px;text-align:center;font-family:ui-monospace,monospace;letter-spacing:.5px">${ed&&d.idCan?IN9(x,'nid',104):(x.nid||'—')}</td>
-      <td style="padding:4px 7px;text-align:left;font-size:12px" class="hint">${ed?IN9(x,'health',104,1):(x.health||'—')}${ed?` <button class="mini" style="padding:1px 7px;color:var(--red)" onclick="hrmDel('${(x.co||'').replace(/'/g,'')}','${(x.name||'').replace(/'/g,'')}')">刪</button>`:''}</td></tr>`
+      <td style="padding:4px 7px;text-align:left;font-size:12px" class="hint">${ed?IN9(x,'health',104,1):(x.health||'—')}${ed?` <button class="mini" style="padding:1px 7px;color:var(--red)" onclick="hrmDel('${(x.co||'').replace(/'/g,'')}','${(x.name||'').replace(/'/g,'')}')">刪</button>`:''}</td>
+      <td style="padding:4px 7px;text-align:center;white-space:nowrap">${(()=>{ const st9=hrmDocStat(x); return `<button class="mini" style="padding:2px 10px;font-weight:800;color:${st9.got>=st9.need?'var(--green)':'#E8A657'}" onclick="hrmDocs('${(x.co||'').replace(/'/g,'')}','${(x.name||'').replace(/'/g,'')}')">${st9.got}/${st9.need}</button>` })()}</td></tr>`
   }
   // v4.34.5（張良抓包跳動真因：「全部」原本分公司、一排序才合併=版面縮一下）：全部=永遠一張合併表(含店欄)，排不排序版型都一樣
   const withCo = hrmCo === 'all'
@@ -155,9 +172,7 @@ function hrmToDraw(){
   ov.innerHTML = `<div style="background:#1C2430;border:1px solid #39434F;border-radius:14px;max-width:340px;width:100%;max-height:80vh;overflow:auto;padding:16px" onclick="event.stopPropagation()">
     <div style="font-weight:900;margin-bottom:4px">職務選單</div>
     <div class="hint" style="margin-bottom:10px">編輯模式下職務欄的選項；改字直接打、不要的按 ✕</div>
-    <div id="toList">${window._toL.map((o9,i)=>`<div style="display:flex;gap:8px;align-items:center;margin-bottom:8px">
-      <input value="${String(o9).replace(/"/g,'&quot;')}" style="flex:1;padding:8px 10px;border:1.5px solid var(--line);border-radius:9px;background:var(--bg);color:var(--ink);font-size:14.5px" onchange="window._toL[${i}]=this.value.trim()">
-      <button class="mini" style="padding:7px 11px;color:var(--red)" onclick="window._toL.splice(${i},1);hrmToDraw()">✕</button></div>`).join('')}</div>
+
     <button class="mini" style="padding:7px 14px" onclick="window._toL.push('');hrmToDraw()">＋ 新增選項</button>
     <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px">
       <button class="mini" style="padding:8px 14px" onclick="document.getElementById('toOv').remove()">取消</button>
@@ -172,4 +187,68 @@ async function hrmToSave(){
   const r = await hrmUp({ op:'titleopts', list })
   const o = document.getElementById('toOv'); if (o) o.remove()
   if (r) { window._hrmD.titleOpts = r.titleOpts; hrmRenderKeep() }
+}
+
+// 📎 入職文件總管 v4.35.0（張良「體檢要能直接上傳檔案 給勞檢稽核；追蹤入職進度」）
+function hrmDocs(co, name){
+  const d = window._hrmD; if (!d) return
+  const x = (d.rows||[]).find(r=>r.co===co&&r.name===name); if (!x) return
+  window._hdCur = { co, name }
+  const minor = (+x.age||99) < 18
+  const old = document.getElementById('hdOv'); if (old) old.remove()
+  const ov = document.createElement('div'); ov.id='hdOv'
+  ov.style.cssText='position:fixed;inset:0;background:rgba(10,14,22,.58);z-index:70;display:flex;align-items:center;justify-content:center;padding:14px'
+  const st9 = hrmDocStat(x)
+  ov.innerHTML = `<div style="background:#1C2430;border:1px solid #39434F;border-radius:14px;max-width:480px;width:100%;max-height:86vh;overflow:auto;padding:16px" onclick="event.stopPropagation()">
+    <div style="display:flex;justify-content:space-between;align-items:center"><b style="font-size:16.5px">📎 ${name} 入職文件</b><span style="font-weight:900;color:${st9.got>=st9.need?'var(--green)':'#E8A657'}">${st9.got}/${st9.need}</span></div>
+    <div class="hint" style="margin:4px 0 10px">檔案存私有空間（個資），點檔名=開 5 分鐘有效連結；也可以 LINE 私訊 DD「文件 ${name} 體檢」再傳照片/檔案</div>
+    ${HR_DOCS.map(dk=>{
+      if (dk.minor && !minor) return ''
+      const files = (((x.docs||{})[dk.k])||{}).files||[]
+      return `<div style="border-top:1px solid var(--line);padding:8px 0">
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+          <span style="font-weight:800">${files.length?'✅':'⬜'} ${dk.n}${dk.minor?' <span class="hint" style="font-size:11px">未成年需要</span>':''}</span>
+          <button class="mini" style="padding:3px 12px;margin-left:auto" onclick="hrmDocPick('${dk.k}')">上傳</button>
+        </div>
+        ${files.map((f,i)=>`<div style="display:flex;gap:8px;align-items:center;padding:3px 0 0 22px;font-size:13px">
+          <a href="/api/mail-sync?hrdocurl=${encodeURIComponent(K)}&me=${encodeURIComponent(TK())}&co=${encodeURIComponent(co)}&nm=${encodeURIComponent(name)}&key=${dk.k}&i=${i}" target="_blank" style="color:var(--primary);text-decoration:underline">${dk.n.slice(0,4)}-${i+1}.${f.ext}</a>
+          <span class="hint" style="font-size:11.5px">${f.by||''}・${f.ts||''}</span>
+          <button class="mini" style="padding:0 8px;color:var(--red);font-size:11px" onclick="hrmDocDel('${dk.k}',${i})">刪</button></div>`).join('')}
+      </div>`
+    }).join('')}
+    <div style="text-align:right;margin-top:10px"><button class="mini" style="padding:8px 16px" onclick="document.getElementById('hdOv').remove()">關閉</button></div></div>`
+  ov.onclick = () => ov.remove()
+  document.body.appendChild(ov)
+}
+function hrmDocPick(key){
+  const inp = document.createElement('input'); inp.type='file'; inp.accept='image/*,application/pdf'
+  inp.onchange = async () => {
+    const f = inp.files[0]; if (!f) return
+    let dataUrl, ext
+    if (/^image\//.test(f.type)) { // 圖片壓縮到長邊1800（個資文件要看得清楚字）
+      const img = await new Promise((ok,bad)=>{ const i2=new Image(); i2.onload=()=>ok(i2); i2.onerror=bad; i2.src=URL.createObjectURL(f) })
+      const sc = Math.min(1, 1800/Math.max(img.width,img.height))
+      const cv = document.createElement('canvas'); cv.width=Math.round(img.width*sc); cv.height=Math.round(img.height*sc)
+      cv.getContext('2d').drawImage(img,0,0,cv.width,cv.height)
+      dataUrl = cv.toDataURL('image/jpeg',.88); ext='jpg'
+    } else {
+      if (f.size > 7*1024*1024) { alert('PDF 太大（上限約 7MB）——可以改用 LINE 傳給 DD（上限 15MB）'); return }
+      dataUrl = await new Promise((ok,bad)=>{ const r2=new FileReader(); r2.onload=()=>ok(r2.result); r2.onerror=bad; r2.readAsDataURL(f) })
+      ext = (f.name.split('.').pop()||'pdf').toLowerCase()
+    }
+    const { co, name } = window._hdCur||{}
+    const r = await fetch('/api/mail-sync?hrdocup='+encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ token: TK(), co, name, key, ext, dataUrl }) }).then(x=>x.json()).catch(()=>null)
+    if (!r || !r.ok) { alert((r&&r.error)||'上傳失敗'); return }
+    const row = (window._hrmD.rows||[]).find(z=>z.co===co&&z.name===name); if (row) row.docs = r.docs
+    hrmDocs(co, name); hrmRenderKeep()
+  }
+  inp.click()
+}
+async function hrmDocDel(key, i){
+  if (!confirm('移除這個檔案連結？')) return
+  const { co, name } = window._hdCur||{}
+  const r = await fetch('/api/mail-sync?hrdocdel='+encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ token: TK(), co, name, key, i }) }).then(x=>x.json()).catch(()=>null)
+  if (!r || !r.ok) { alert((r&&r.error)||'失敗'); return }
+  const row = (window._hrmD.rows||[]).find(z=>z.co===co&&z.name===name); if (row) row.docs = r.docs
+  hrmDocs(co, name); hrmRenderKeep()
 }
