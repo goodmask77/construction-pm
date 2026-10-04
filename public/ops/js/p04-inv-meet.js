@@ -270,6 +270,7 @@ async function meetLoad(){
 window._meetOpen = window._meetOpen || {}       // 展開中的會議 id
 window._meetCatClose = window._meetCatClose || {} // 收合的分類
 function meetToggle(id){ window._meetOpen[id] = !window._meetOpen[id]; meetRender() }
+function meetFilterSet(f){ window._meetFilter = f; meetRender() } // v4.47.5 分段篩選切換（全部/各類型）
 function meetCatToggle(tp){ window._meetCatClose[tp] = !window._meetCatClose[tp]; meetRender() }
 async function meetNudge(id, name){
   const b = event && event.target && event.target.closest ? event.target.closest('button') : null
@@ -325,12 +326,20 @@ function meetRender(){
     h2 += `</div>`
     return h2
   }
-  let h = `<section><h2>會議紀錄 <span class="hint">${meN?'':'看得到；要新增/編輯/催簽先綁定——'+BIND_HINT}</span></h2>
-    ${meN?`<div style="margin-bottom:10px;display:flex;gap:8px;flex-wrap:wrap"><button class="mini on" style="padding:9px 18px" onclick="meetForm()">＋ 新增紀錄</button><button class="mini" style="padding:9px 12px" onclick="meetTypes()">⚙️ 會議類型</button></div>`:''}`
+  let h = `<section><h2>會議紀錄 <span class="hint">${meN?'':'看得到；要新增/編輯/催簽先綁定——'+BIND_HINT}</span></h2>`
   const cats = [...d.types, ...([...new Set(d.list.map(x=>x.type))].filter(t=>!d.types.includes(t)))]
-  for (const tp of cats) {
+  // v4.47.5 分段篩選（張良 2026-10-05「像月份選擇器：全部/班前會議/營運會議/＋新增會議，按了下面只顯示那類」）
+  const filt = (window._meetFilter === 'all' || cats.includes(window._meetFilter)) ? window._meetFilter : 'all'
+  const pill = (lb, on, act) => `<button onclick="${act}" style="padding:8px 16px;border-radius:999px;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap;border:1.5px solid ${on?'var(--primary)':'var(--line)'};background:${on?'var(--primary)':'transparent'};color:${on?'#fff':'var(--muted)'}">${lb}</button>`
+  h += `<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px">`
+    + pill('全部（' + d.list.length + '）', filt === 'all', "meetFilterSet('all')")
+    + cats.map(tp => pill(tp + '（' + d.list.filter(x => x.type === tp).length + '）', filt === tp, "meetFilterSet('" + tp.replace(/'/g, "\\'") + "')")).join('')
+    + (meN ? pill('＋ 新增會議', false, 'meetForm()').replace('var(--muted)', 'var(--primary)') + `<button onclick="meetTypes()" title="管理會議類型" style="padding:8px 12px;border-radius:999px;font-size:13px;cursor:pointer;border:1px solid var(--line);background:transparent;color:var(--muted)">⚙️</button>` : '')
+    + `</div>`
+  const showCats = filt === 'all' ? cats : cats.filter(c => c === filt)
+  for (const tp of showCats) {
     const rows = d.list.filter(x => x.type === tp)
-    h += `<div style="font-weight:900;margin:14px 0 6px;color:var(--pdark)">${tp}（${rows.length}）</div>`
+    if (filt === 'all') h += `<div style="font-weight:900;margin:14px 0 6px;color:var(--pdark)">${tp}（${rows.length}）</div>`
     h += rows.length ? rows.map(mc).join('') : `<div class="mut" style="font-size:14px;margin-bottom:6px">還沒有紀錄</div>`
   }
   h += `</section>`
