@@ -2829,6 +2829,12 @@ export default async function handler(req, res) {
     if (isAdmH) outH.idLock = { rids: ((lockH || {}).rids) || [], people: Object.entries((pmH && pmH.users) || {}).map(([r9, u9]) => ({ rid: r9, name: u9.name, admin: !!u9.admin })) }
     return res.status(200).json(outH)
   }
+  // 🔗 短網址 v4.38.0（張良「能縮短網址嗎」）：/v/<code> → 302 到完整深層連結；碼存 pm_shortlinks
+  if (req.query?.vgo) {
+    const slDoc = (await kvGet('pm_shortlinks')) || { map: {} }
+    const tgt = (slDoc.map[String(req.query.vgo)] || {}).u
+    return res.redirect(302, tgt || 'https://ground-pm.vercel.app/prep')
+  }
   // 名單口：?viomgrs=K&me= → 可私訊的班表主管（班表編有勾+有LINE）
   if (req.query?.viomgrs) {
     const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
@@ -2857,7 +2863,13 @@ export default async function handler(req, res) {
     if (!items9.length) return res.status(400).json({ ok: false, error: '沒有要通知的違規' })
     const tkN9 = (process.env.LINE_CHANNEL_ACCESS_TOKEN || '').trim()
     if (!tkN9) return res.status(502).json({ ok: false, error: '缺 LINE token' })
-    const txt9 = `⚠️ 班表違規清單（${whoN9.name} 發送）\n` + items9.map(it => `・${String(it.st).slice(0, 2)} ${String(it.dt).slice(5)} ${String(it.nm).slice(0, 10)}：${String(it.r).slice(0, 40)}\n　${String(it.punch || '').slice(0, 60)}\n　👉 ${String(it.link || '').slice(0, 200)}`).join('\n') + `\n\n處理完請到 /prep 班表「🔴 違規」按 ✅ 處理銷案。`
+    // 短網址化（v4.38.0）
+    const slDoc9 = (await kvGet('pm_shortlinks')) || { map: {} }
+    const mkShort9 = (u9) => { const c9 = Math.random().toString(36).slice(2, 8); slDoc9.map[c9] = { u: u9, ts: Date.now() }; return 'https://ground-pm.vercel.app/v/' + c9 }
+    const withShort = items9.map(it => ({ ...it, short: mkShort9(String(it.link || '')) }))
+    { const es9 = Object.entries(slDoc9.map); if (es9.length > 500) { es9.sort((a, b) => (a[1].ts || 0) - (b[1].ts || 0)); es9.slice(0, es9.length - 500).forEach(([k9]) => delete slDoc9.map[k9]) } }
+    await kvPut('pm_shortlinks', slDoc9, '短網址')
+    const txt9 = `⚠️ 班表違規清單（${whoN9.name} 發送）\n` + withShort.map(it => `・${String(it.st).slice(0, 2)} ${String(it.dt).slice(5)} ${String(it.nm).slice(0, 10)}：${String(it.r).slice(0, 40)}\n　${String(it.punch || '').slice(0, 60)}\n　👉 ${it.short}`).join('\n') + `\n\n處理完到 /prep 班表「🔴 違規」按 ✅ 填處理內容 → 張良審核通過才銷案。`
     const { logPush } = await import('./push.js')
     const sent9 = []
     if (bn9.to === 'group') {
@@ -2896,9 +2908,27 @@ export default async function handler(req, res) {
     if (!whoV9) return res.status(403).json({ ok: false, error: permDeny() })
     const docV = (await kvGet('sp_finance_pm_vio_res')) || { items: {} }
     const keyV = String(bv9.key || '').slice(0, 80); if (!keyV) return res.status(400).json({ ok: false })
-    if (bv9.op === 'undo') delete docV.items[keyV]
-    else docV.items[keyV] = { by: whoV9.name, ts: new Date(Date.now() + 8 * 3600e3).toISOString().slice(5, 16).replace('T', ' '), note: String(bv9.note || '').slice(0, 120), r: String(bv9.r || '').slice(0, 60) }
-    await kvPut('sp_finance_pm_vio_res', docV, '違規處理(' + whoV9.name + ' ' + (bv9.op || 'done') + ')')
+    const defV9 = await kvGet('sp_finance_pm_sop_def')
+    const aprV9 = (((defV9 || {}).ground || {}).approvers || ['張良瑋'])
+    const isApr = aprV9.includes(whoV9.name) || whoV9.name === '張良瑋'
+    const ts8V = new Date(Date.now() + 8 * 3600e3).toISOString().slice(5, 16).replace('T', ' ')
+    if (bv9.op === 'done') { // v4.38.0 處理=必填內容→待審核（張良「要記錄姓名時間處理內容 我審核才能真的銷案」）
+      const noteV = String(bv9.note || '').trim()
+      if (!noteV) return res.status(400).json({ ok: false, error: '要寫「處理了什麼」才能送審' })
+      docV.items[keyV] = { by: whoV9.name, ts: ts8V, note: noteV.slice(0, 200), r: String(bv9.r || '').slice(0, 60), st: 'pending' }
+    } else if (bv9.op === 'approve') {
+      if (!isApr) return res.status(403).json({ ok: false, error: '只有審核人（張良）能核准銷案' })
+      const it9 = docV.items[keyV]; if (!it9) return res.status(404).json({ ok: false })
+      it9.st = 'ok'; it9.apBy = whoV9.name; it9.apTs = ts8V
+    } else if (bv9.op === 'reject') {
+      if (!isApr) return res.status(403).json({ ok: false, error: '只有審核人能退回' })
+      delete docV.items[keyV] // 退回=回到待處理（原處理紀錄進 log）
+      docV.log = [{ ts: ts8V, what: '退回 ' + keyV, by: whoV9.name }, ...(docV.log || [])].slice(0, 60)
+    } else if (bv9.op === 'undo') {
+      if (!isApr) return res.status(403).json({ ok: false, error: '只有審核人能復原' })
+      delete docV.items[keyV]
+    } else return res.status(400).json({ ok: false })
+    await kvPut('sp_finance_pm_vio_res', docV, '違規處理(' + whoV9.name + ' ' + (bv9.op || '') + ')')
     return res.status(200).json({ ok: true, items: docV.items })
   }
   // ── 🕐 AB 出勤總覽 v4.36.0（張良「6/1起所有人打卡紀錄,看出遲到/沒打卡,像營業額那樣好查」）：?abatt=K&me=&from=YYYY-MM；主管限定 ──

@@ -7,6 +7,10 @@
     {
       "source": "/partner/v1/:ep*",
       "destination": "/api/partner-api?ep=:ep*"
+    },
+    {
+      "source": "/v/:code",
+      "destination": "/api/mail-sync?vgo=:code"
     }
   ],
   "crons": [

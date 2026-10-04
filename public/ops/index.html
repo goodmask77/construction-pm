@@ -102,6 +102,8 @@
 @keyframes trGlow{0%,100%{box-shadow:0 0 2px 0 var(--gc)}50%{box-shadow:0 0 10px 2.5px var(--gc)}} /* 🎓帶訓卡發光（張良 2026-10-02） */
 @keyframes goldGlow{0%,100%{box-shadow:0 0 0 2px #D4A72C,0 0 6px 2px rgba(212,167,44,.35)}50%{box-shadow:0 0 0 3px #F2CE60,0 0 22px 7px rgba(242,206,96,.75)}} /* 🔗deep link 跳轉定位閃光（v4.16.0） */
 .vioGlow{animation:vioRed 1.6s ease-in-out infinite;border-radius:6px} /* 🔴 班表違規格紅光（v4.33.3 張良） */
+.vioPendGlow{animation:vioPend 2.2s ease-in-out infinite;border-radius:6px} /* 🕐 已處理待審核=橘光（v4.38.0） */
+@keyframes vioPend{0%,100%{box-shadow:inset 0 0 0 1.5px #E8A657,inset 0 0 5px 1px rgba(232,166,87,.25)}50%{box-shadow:inset 0 0 0 2px #F2C14E,inset 0 0 12px 3px rgba(232,166,87,.5)}}
 tr.bdayGlow td{animation:bdayBg 1.9s ease-in-out infinite;border-top:1.5px solid #FF8FC5;border-bottom:1.5px solid #FF8FC5} /* 🎂 壽星整列生日光（v4.34.3 張良「生日氛圍可愛的顏色發光閃動」） */
 tr.bdayGlow td:first-child{border-left:1.5px solid #FF8FC5;border-radius:8px 0 0 8px}
 tr.bdayGlow td:last-child{border-right:1.5px solid #FF8FC5;border-radius:0 8px 8px 0}

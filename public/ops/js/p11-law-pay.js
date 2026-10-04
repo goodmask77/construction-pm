@@ -201,11 +201,13 @@ function shVioCompute(gdRows){
     pushIv(as[x.name]=as[x.name]||{}, x.date, t2m(x.start), eM, sp>=540?60:0) })
   scanSched(as,a)
   ;((typeof shMergedAbAtt==='function'?shMergedAbAtt():((window._shiftD||{}).abAtt||[]))).forEach(x=>{ if((+x.h||0)>12) addV(a,x.name+'|'+x.date,'實際'+fmtHM(x.h*60)+'>12時') }) // v4.37.1 跨月合併
-  // v4.37.0 已處理的不再提醒（負責人在清單按「✅ 處理」；key=店|名|日）
+  // v4.38.0 審核流：st=ok(審核通過)=消失；st=pending(已處理待張良審核)=橘光；其他=紅光
   const res9 = ((window._shiftD||{}).vioRes)||{}
-  for(const k9 of Object.keys(g)) if(res9['GD|'+k9]) delete g[k9]
-  for(const k9 of Object.keys(a)) if(res9['AB|'+k9]) delete a[k9]
-  return { g, a }
+  const gp={}, ap={}
+  const stOf = k9 => { const it9=res9[k9]; return it9 ? (it9.st==='pending'?'pending':'ok') : '' }
+  for(const k9 of Object.keys(g)){ const st9=stOf('GD|'+k9); if(st9==='ok') delete g[k9]; else if(st9==='pending'){ gp[k9]=g[k9]; delete g[k9] } }
+  for(const k9 of Object.keys(a)){ const st9=stOf('AB|'+k9); if(st9==='ok') delete a[k9]; else if(st9==='pending'){ ap[k9]=a[k9]; delete a[k9] } }
+  return { g, a, gp, ap }
 }
 // 🔴 違規清單面板（張良「我要去哪裡確認是什麼問題」）：工具列紅色「違規 N」鈕點開＝每筆誰/哪天/什麼問題
 async function shVioEnsureAll(){ // v4.36.6 張良「怎麼又只剩一個」：清單原本只算瀏覽器已載月份→改成掃描前把 2026-06 起全部載好
@@ -253,20 +255,56 @@ async function shVioList(){
       ${L.map(x=>{ const prev9 = /班距/.test(x.r) ? new Date(new Date(x.dt+'T00:00:00Z').getTime()-86400e3).toISOString().slice(0,10) : ''
         return `<tr style="border-top:1px solid var(--line)"><td style="padding:6px 8px;text-align:center;cursor:pointer" onclick="shVioGo('${x.st}','${x.nm.replace(/'/g,'')}','${x.dt}','${prev9}')">${x.st}</td><td style="padding:6px 8px;white-space:nowrap;color:var(--primary);text-decoration:underline;cursor:pointer" title="點我跳到班表這一格（金光定位）" onclick="shVioGo('${x.st}','${x.nm.replace(/'/g,'')}','${x.dt}','${prev9}')">${x.dt.slice(5)}</td><td style="padding:6px 8px;font-weight:800;cursor:pointer" onclick="shVioGo('${x.st}','${x.nm.replace(/'/g,'')}','${x.dt}','${prev9}')">${x.nm}</td><td style="padding:6px 8px;text-align:left"><div style="color:var(--red);font-weight:700">${x.r}</div><div class="hint" style="font-size:12px;margin-top:2px;cursor:pointer;text-decoration:underline dotted" title="點我看完整法條" onclick="lawArtView('${ruleOf(x)}')">${LAW_REF[ruleOf(x)].art}：${LAW_REF[ruleOf(x)].brief} ›</div></td><td style="padding:6px 8px;text-align:left;white-space:nowrap;font-family:ui-monospace,monospace;font-size:13px">${punchOf(x)}</td><td style="padding:6px 8px;white-space:nowrap;text-align:center"><button class="mini on" style="padding:3px 12px" onclick="shVioDone('${x.st}','${x.nm.replace(/'/g,'')}','${x.dt}','${x.r.replace(/'/g,'')}')">✅ 處理</button></td></tr>` }).join('')}
     </tbody></table></div><div class="hint" style="margin-top:8px">「✅ 處理」＝負責人已調整/確認過：紅光與提醒消失、進下面的留存紀錄。法條體檢 → 工具列「⚖️ 法規」。</div>`:`<div class="mut" style="margin-top:12px">沒有待處理的違規 🎉</div>`}
-    ${(()=>{ const res9=((window._shiftD||{}).vioRes)||{}; const ks=Object.entries(res9); if(!ks.length) return ''
-      return `<details style="margin-top:12px"><summary style="cursor:pointer;font-weight:800" class="hint">📜 已處理紀錄（${ks.length}）</summary>
-        ${ks.sort((a,b)=>String(b[1].ts||'').localeCompare(String(a[1].ts||''))).map(([k9,v9])=>{ const [st9,nm9,dt9]=k9.split('|')
-          return `<div style="display:flex;gap:8px;align-items:center;border-top:1px dashed var(--line);padding:5px 0;font-size:13px;flex-wrap:wrap">
+    ${(()=>{ const res9=((window._shiftD||{}).vioRes)||{}; const isApr=!!(((window._shiftD||{}).me)||{}).approver
+      const pend=Object.entries(res9).filter(([,v9])=>v9.st==='pending')
+      const done=Object.entries(res9).filter(([,v9])=>v9.st!=='pending')
+      let h9=''
+      if(pend.length) h9+=`<div style="margin-top:14px;font-weight:900">🕐 待審核（${pend.length}）<span class="hint" style="font-weight:600;font-size:12px">處理人已回報，張良審核通過才正式銷案；格子橘光</span></div>`+
+        pend.sort((a,b)=>String(b[1].ts||'').localeCompare(String(a[1].ts||''))).map(([k9,v9])=>{ const [st9,nm9,dt9]=k9.split('|')
+          return `<div style="border-top:1px dashed var(--line);padding:7px 0;font-size:13px">
+            <div><b>${st9}</b> ${dt9.slice(5)} <b>${nm9}</b> <span class="hint">${v9.r||''}</span></div>
+            <div style="margin-top:2px">處理內容：<b>${v9.note||'—'}</b> <span class="hint" style="font-size:11.5px">（${v9.by||''}・${v9.ts||''}）</span></div>
+            ${isApr?`<div style="margin-top:4px;display:flex;gap:8px"><button class="mini on" style="padding:3px 14px" onclick="shVioJudge('${k9.replace(/'/g,'')}','approve')">✅ 審核通過銷案</button><button class="mini" style="padding:3px 12px;color:var(--red)" onclick="shVioJudge('${k9.replace(/'/g,'')}','reject')">退回</button></div>`:''}
+          </div>` }).join('')
+      if(done.length) h9+=`<details style="margin-top:12px"><summary style="cursor:pointer;font-weight:800" class="hint">📜 已銷案（${done.length}）</summary>
+        ${done.sort((a,b)=>String(b[1].apTs||b[1].ts||'').localeCompare(String(a[1].apTs||a[1].ts||''))).map(([k9,v9])=>{ const [st9,nm9,dt9]=k9.split('|')
+          return `<div style="border-top:1px dashed var(--line);padding:5px 0;font-size:13px">
             <b>${st9}</b> ${dt9.slice(5)} <b>${nm9}</b> <span class="hint">${v9.r||''}</span>
-            <span class="hint" style="font-size:11.5px">處理人 ${v9.by||''}・${v9.ts||''}</span>
-            <button class="mini" style="padding:1px 9px;margin-left:auto" onclick="shVioUndo('${k9.replace(/'/g,'')}')">復原</button></div>` }).join('')}
-      </details>`})()}`)
+            <div class="hint" style="font-size:12px">處理：${v9.note||'—'}（${v9.by||''}・${v9.ts||''}）｜審核：${v9.apBy||'—'}・${v9.apTs||''}</div>
+            ${isApr?`<button class="mini" style="padding:1px 9px" onclick="shVioJudge('${k9.replace(/'/g,'')}','undo')">復原</button>`:''}</div>` }).join('')}
+      </details>`
+      return h9 })()}`)
 }
-async function shVioDone(st, nm, dt, r){
-  if (!confirm(`確認「${nm} ${dt.slice(5)}」已調整/核對過？\n確認後紅光與提醒會消失，並留在已處理紀錄。`)) return
+function shVioDone(st, nm, dt, r){ // v4.38.0 必填處理內容→送張良審核
+  const old9 = document.getElementById('vdOv'); if (old9) old9.remove()
+  const ov = document.createElement('div'); ov.id='vdOv'
+  ov.style.cssText='position:fixed;inset:0;background:rgba(10,14,22,.6);z-index:73;display:flex;align-items:center;justify-content:center;padding:16px'
+  ov.innerHTML = `<div style="background:#1C2430;border:1px solid #39434F;border-radius:14px;max-width:360px;width:100%;padding:18px" onclick="event.stopPropagation()">
+    <div style="font-weight:900;font-size:16px">✅ 處理回報：${nm}・${dt.slice(5)}</div>
+    <div class="hint" style="margin:4px 0 10px">${r}</div>
+    <textarea id="vdNote" rows="3" placeholder="處理了什麼？（必填，例：已與本人確認為代班誤排，班表已改）" style="width:100%;box-sizing:border-box;padding:10px;border:1.5px solid var(--line);border-radius:10px;background:var(--bg);color:var(--ink);font-size:14.5px"></textarea>
+    <div class="hint" style="margin-top:6px;font-size:12px">會記錄你的姓名與時間 → 送張良審核，審核通過才正式銷案。</div>
+    <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px">
+      <button class="mini" style="padding:9px 14px" onclick="document.getElementById('vdOv').remove()">取消</button>
+      <button class="mini on" style="padding:9px 18px" onclick="shVioDoneSend('${st}','${nm.replace(/'/g,'')}','${dt}','${r.replace(/'/g,'')}')">送出審核</button></div></div>`
+  ov.onclick = () => ov.remove()
+  document.body.appendChild(ov)
+  setTimeout(()=>{ const t9=document.getElementById('vdNote'); if(t9) t9.focus() },50)
+}
+async function shVioDoneSend(st, nm, dt, r){
+  const note = (document.getElementById('vdNote')||{}).value||''
+  if (!note.trim()) { alert('要寫「處理了什麼」才能送審'); return }
+  const o = document.getElementById('vdOv'); if (o) o.remove()
   const key = st+'|'+nm+'|'+dt
-  const j = await fetch('/api/mail-sync?vioresset='+encodeURIComponent(K),{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({token:TK(),key,op:'done',r})}).then(x=>x.json()).catch(()=>null)
+  const j = await fetch('/api/mail-sync?vioresset='+encodeURIComponent(K),{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({token:TK(),key,op:'done',r,note})}).then(x=>x.json()).catch(()=>null)
   if(!j||!j.ok){ alert((j&&j.error)||'沒存成功'); return }
+  if(window._shiftD) window._shiftD.vioRes = j.items
+  if(typeof shGridOnly==='function') shGridOnly()
+  shVioList()
+}
+async function shVioJudge(key, op){
+  const j = await fetch('/api/mail-sync?vioresset='+encodeURIComponent(K),{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({token:TK(),key,op})}).then(x=>x.json()).catch(()=>null)
+  if(!j||!j.ok){ alert((j&&j.error)||'沒成功'); return }
   if(window._shiftD) window._shiftD.vioRes = j.items
   if(typeof shGridOnly==='function') shGridOnly()
   shVioList()
