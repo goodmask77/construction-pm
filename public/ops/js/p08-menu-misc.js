@@ -13,18 +13,21 @@ async function incLoad(){
 function incRender(){
   const d = window._incD; if (!d || curStore !== 'inc') return
   document.getElementById('upd').textContent = '異常通知'
-  const fdt = s => String(s||'').slice(0,16).replace('T',' ')
-  const urgB = u => u ? `<span style="background:${/高|急/.test(u)?'var(--red)':'var(--soft)'};color:${/高|急/.test(u)?'#fff':'var(--muted)'};border-radius:5px;padding:0 6px;font-size:11px;font-weight:800">${u}</span>` : ''
+  // v4.43.6 轉義（阿桑 2026-10-04 提醒「我這邊被塞亂碼你那邊也會收到」）：外來文字一律 esc 再進 HTML——
+  // 入庫端 boss-sync sanRow 已消毒一層，這裡是雙保險（客人亂碼/HTML 只會變純文字）
+  const esc9 = s => String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')
+  const fdt = s => esc9(String(s||'').slice(0,16).replace('T',' '))
+  const urgB = u => u ? `<span style="background:${/高|急/.test(u)?'var(--red)':'var(--soft)'};color:${/高|急/.test(u)?'#fff':'var(--muted)'};border-radius:5px;padding:0 6px;font-size:11px;font-weight:800">${esc9(u)}</span>` : ''
   let h = `<section><h2>⚠️ 異常通知 <span class="hint">A Beach＝阿桑系統自動同步（唯讀）・GROUN:D ERP 叫貨收貨之後接入同一頁</span></h2>`
   const card = (x, open) => `<div style="background:var(--card);border:1.5px solid ${open?'var(--red)':'var(--line)'};border-radius:12px;padding:9px 12px;margin-bottom:8px">
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:3px">
         <span style="background:var(--soft);border-radius:5px;padding:0 6px;font-size:11px;font-weight:800">🅰 A Beach</span>
-        <b style="font-size:14px">${x.cat || '異常'}</b>${urgB(x.urgency)}
-        <span style="background:${open?'#3A2A1A':'var(--soft)'};color:${open?'#F0B060':'var(--muted)'};border-radius:5px;padding:0 6px;font-size:11px;font-weight:800">${x.status}${x.stage?'・'+x.stage:''}</span>
+        <b style="font-size:14px">${esc9(x.cat) || '異常'}</b>${urgB(x.urgency)}
+        <span style="background:${open?'#3A2A1A':'var(--soft)'};color:${open?'#F0B060':'var(--muted)'};border-radius:5px;padding:0 6px;font-size:11px;font-weight:800">${esc9(x.status)}${x.stage?'・'+esc9(x.stage):''}</span>
         <span class="hint" style="margin-left:auto;font-size:11px">${fdt(x.created)}</span>
       </div>
-      ${x.detail?`<div style="font-size:13.5px;white-space:pre-wrap;margin:2px 0">${String(x.detail).slice(0,300)}</div>`:''}
-      <div class="hint" style="font-size:11.5px">${[x.station&&('站別:'+x.station), x.target&&('對象:'+x.target), x.by&&('回報:'+x.by+(x.dept?'('+x.dept+')':'')), x.assignee&&('負責:'+x.assignee), x.resolvedAt&&('結案:'+fdt(x.resolvedAt)+(x.resolveType?'・'+x.resolveType:''))].filter(Boolean).join('｜')}</div>
+      ${x.detail?`<div style="font-size:13.5px;white-space:pre-wrap;margin:2px 0">${esc9(String(x.detail).slice(0,300))}</div>`:''}
+      <div class="hint" style="font-size:11.5px">${[x.station&&('站別:'+esc9(x.station)), x.target&&('對象:'+esc9(x.target)), x.by&&('回報:'+esc9(x.by)+(x.dept?'('+esc9(x.dept)+')':'')), x.assignee&&('負責:'+esc9(x.assignee)), x.resolvedAt&&('結案:'+fdt(x.resolvedAt)+(x.resolveType?'・'+esc9(x.resolveType):''))].filter(Boolean).join('｜')}</div>
     </div>`
   h += `<div style="font-weight:900;margin:8px 0 6px;font-size:15px;color:var(--red)">未結案（${(d.open||[]).length}）</div>`
   h += (d.open||[]).map(x=>card(x,1)).join('') || '<div class="mut">目前沒有未結案的異常 🎉</div>'

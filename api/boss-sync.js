@@ -20,7 +20,28 @@ const tpeToday = () => new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 
 const addDays = (iso, n) => { const d = new Date(iso + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10) }
 const monthsBetween = (a, b) => { const out = []; let m = a.slice(0, 7); while (m <= b.slice(0, 7)) { out.push(m); const d = new Date(m + '-01T00:00:00Z'); d.setUTCMonth(d.getUTCMonth() + 1); m = d.toISOString().slice(0, 7) } return out }
 
+// 入庫消毒（2026-10-04 阿桑自己提醒「我這邊被塞亂碼你那邊也會收到」＝小夏問卷客人文字沒過濾會直通他家 DB）：
+// 所有字串欄位去 HTML 標籤/控制字元/截長度，巢狀物件陣列遞迴處理——亂碼可以進來但咬不了人（畫面另有轉義雙保險）
+function sanRow(r, depth = 0) {
+  if (depth > 4 || r == null || typeof r !== 'object') return r
+  const out = Array.isArray(r) ? [] : {}
+  const ent = Array.isArray(r) ? r.slice(0, 300).entries() : Object.entries(r)
+  for (const [k, v] of ent) {
+    if (typeof v === 'string') {
+      let s = v.replace(/<[^>]*>/g, '').replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, '').trim()
+      if (s.length > 1500) s = s.slice(0, 1500) + '…'
+      out[k] = s
+    } else if (v && typeof v === 'object') out[k] = sanRow(v, depth + 1)
+    else out[k] = v
+  }
+  return out
+}
+
 // 端點表（照 SKILL §3.1；orders/summary 刻意不同步＝SKILL 建議用自己的 orders 算）
+// 2026-10-04 張良收斂：「桑這邊其實只需要繼續接叫貨訂單＋物料價格規格」→ 日常只同步 ord/ordi/menu（物料價格規格）
+// ＋inc（/prep 異常通知頁在用）＋sett（對帳）。其餘停更：營收=日結信自己的、班表/出勤=NUEiP、revm 歷史已入庫不會變、
+// prep/rout/staff/temp 沒在用（月檔資料留著不刪，AI 讀到過期月自然淡出）。要復活＝把 slug 從 OFF 拿掉。
+const OFF = new Set(['revd', 'revm', 'sched', 'staff', 'att', 'ot', 'prep', 'rout', 'temp'])
 const EPS = [
   { ep: 'revenue/daily', slug: 'revd', pk: r => r.date, df: r => r.date, back: 14, fwd: 0 },
   { ep: 'revenue/monthly', slug: 'revm', pk: r => r.month, snapshot: 1 }, // 2026-10-04 阿桑新增：iCHEF 時代 2021-02 起月營收（無 from/to 參數→快照全抓）
@@ -142,7 +163,7 @@ export default async function handler(req, res) {
       if (from) { params.from = from; params.to = to }
       if (cursor) params.cursor = cursor
       const pg = await call(E.ep, params)
-      rows.push(...(pg.data || []))
+      rows.push(...(pg.data || []).map(sanRow).filter(r => { const k = E.pk(r); return k != null && String(k).length > 0 })) // 消毒+主鍵必在
       cursor = (pg.meta && pg.meta.next != null) ? pg.meta.next : (pg.next != null ? pg.next : null)
     } while (cursor)
     return rows
@@ -163,7 +184,7 @@ export default async function handler(req, res) {
   }
 
   const done = [], errs = []
-  const order = [...EPS.slice(state.rot % EPS.length), ...EPS.slice(0, state.rot % EPS.length)] // 輪替起點：預算吃完時後面的端點下一輪優先
+  const order = [...EPS.slice(state.rot % EPS.length), ...EPS.slice(0, state.rot % EPS.length)].filter(E => !OFF.has(E.slug)) // 輪替起點：預算吃完時後面的端點下一輪優先；OFF=張良收斂停更清單
   try {
     for (const E of order) {
       try {
