@@ -162,10 +162,11 @@ function renderBoard(d, store, view){
   // 今日事項（張良 2026-09-22：今天該做的事——任務/收貨/班表；資料來自各分頁快取，todayRender 畫）
   h += `<div id="todaysec"></div>`
   // 備料卡＋預做節奏表 → v4.42.0 搬到「備料」分頁（renderPrep）；SOP 已拆獨立分頁（2026-10-02）
-  // 🚫 AB 停售動態（張良 2026-09-30：頁面表格隨時查——現在＋歷史；資料每30分自動掃）
+  // 🚫 AB 停售動態（張良 2026-10-05「放最下方」）：存變數，renderBoard 尾端才接
+  let soldoutH = ''
   if (d.soldout) {
     const cur = Object.entries(d.soldout.current || {})
-    h += `<section><h2>停售動態 <span class="hint">品名🚫自動偵測・每 30 分更新・變化即時通知 happy337</span></h2>
+    soldoutH += `<section><h2>停售動態 <span class="hint">品名🚫自動偵測・每 30 分更新・變化即時通知 happy337</span></h2>
     <div style="font-weight:800;margin-bottom:6px">目前停售中（${cur.length}）</div>
     ${cur.length ? `<div class="scroll"><table><thead><tr><th style="text-align:left">品項</th><th>停售自</th></tr></thead><tbody>${cur.sort((a,b)=>(a[1]<b[1]?1:-1)).map(([n,ts])=>`<tr><td style="text-align:left;font-weight:700">${n}</td><td class="mut">${ts}</td></tr>`).join('')}</tbody></table></div>` : '<div class="mut">目前沒有停售品項 🎉</div>'}
     ${(d.soldout.log||[]).length ? `<details style="margin-top:10px"><summary style="font-weight:800;cursor:pointer">歷史紀錄（${d.soldout.log.length}）</summary>
@@ -349,6 +350,7 @@ function renderPrep(d, store){ // v4.42.1 分頁改名「銷售數據」＝備�
   if (!d.prep && !d.rhythm) h += `<section class="mut">這家店還沒有備料資料</section>`
   h += `<div id="itemsec"></div>` // 品項明細（v4.42.1 從首頁搬來；itemsRender 畫）
   if (store === 'ground') h += `<div id="fcsec"></div>` // 銷量預測驗證區（主管限定）跟著備料走
+  h += soldoutH // v4.48.2 停售動態放最下方（張良）
   app.innerHTML = h
   rhythmRender()
   itemsRender()

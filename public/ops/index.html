@@ -90,6 +90,8 @@
   @media(max-width:480px){ .kpis{gap:8px} .kpi{padding:12px 8px} .kpi .l{font-size:13.5px} .kpi .v{font-size:21px} h1{font-size:22px} .tabs button{padding:7px 13px;font-size:14px} } /* v4.41.2 三卡同排置中、字再放大一階 */
   #meTop{display:none}
   @media(max-width:920px){#meTop{display:inline-flex!important}.mbHide{display:none!important}}
+  .brand>span:first-child{display:none} /* v4.48.2 電腦版頂列品牌隱藏(側欄已有)；手機顯示 */
+  @media(max-width:920px){.brand>span:first-child{display:inline!important}}
   .tbrand{display:none} /* 側欄品牌字標＝桌機才顯示（v4.38.2 張良「GROUN:D就好、GROUN白:D紅、前面符號取消」） */
   /* 桌機＝Beach Ops 左側欄版型（≥920px；分頁選單變側欄、內容右移） */
   @media(min-width:920px){
@@ -158,17 +160,17 @@ tr.bdayGlow td.hrmStick{animation:bdayBgSolid 1.9s ease-in-out infinite} /* 凍�
   <div class="foot">資料每天自動同步（打開即最新）・僅供內部參考與備料使用，請勿外傳連結</div>
 </div>
 <!-- v4.40.0 拆檔（張良「現在先拆好」）：原單一大 script 依原順序切 10 塊，共用全域、順序＝執行順序，新增功能寫新檔別再疊回大檔 -->
-<script src="/ops/js/p01-core.js?v=4455"></script>
-<script src="/ops/js/p02-sop.js?v=4455"></script>
-<script src="/ops/js/p03-sopedit.js?v=4455"></script>
+<script src="/ops/js/p01-core.js?v=4456"></script>
+<script src="/ops/js/p02-sop.js?v=4456"></script>
+<script src="/ops/js/p03-sopedit.js?v=4456"></script>
 <script src="/ops/js/p04-inv-meet.js?v=4474"></script>
-<script src="/ops/js/p05-shift.js?v=4455"></script>
-<script src="/ops/js/p06-shift2.js?v=4455"></script>
-<script src="/ops/js/p07-labor.js?v=4455"></script>
-<script src="/ops/js/p11-law-pay.js?v=4455"></script>
-<script src="/ops/js/p12-roster.js?v=4455"></script>
-<script src="/ops/js/p13-abmod.js?v=4455"></script>
-<script src="/ops/js/p08-menu-misc.js?v=4455"></script>
+<script src="/ops/js/p05-shift.js?v=4456"></script>
+<script src="/ops/js/p06-shift2.js?v=4456"></script>
+<script src="/ops/js/p07-labor.js?v=4456"></script>
+<script src="/ops/js/p11-law-pay.js?v=4456"></script>
+<script src="/ops/js/p12-roster.js?v=4456"></script>
+<script src="/ops/js/p13-abmod.js?v=4456"></script>
+<script src="/ops/js/p08-menu-misc.js?v=4456"></script>
 <script src="/ops/js/p09-ntf-crew.js?v=4474"></script>
 <script src="/ops/js/p10-perm-init.js?v=4473"></script>
 <script src="/ops/tier-effects.js?v=1"></script> <!-- v2.0 模組化特效註冊表（tasks.js/TaskCenter 共用；務必在 tasks.js 之前） -->
