@@ -97,7 +97,7 @@ function payView(ym9){
   const abAgg=lpAbAgg(PYM)
   const meN=d.me?d.me.name:null
   // v4.46.1 NUEiP 真值（張良「好先進去」）：該月有發薪單的 AB 人改吃真值，沒有的（當月還沒發薪）照舊試算
-  const TD='border:1px solid #8a8f98;padding:5px 8px;font-size:13px;color:#111;text-align:right;white-space:nowrap'
+  const TD='background:#fff;border:1px solid #8a8f98;padding:5px 8px;font-size:13px;color:#111;text-align:right;white-space:nowrap' // background寫死=蓋掉全站 td 斑馬紋(v4.46.6 真因:規則打在td不是tr)
   const TDL=TD.replace('right','left')
   const TH='border:1px solid #8a8f98;padding:6px 8px;font-size:12.5px;background:#eef1f5;color:#111;font-weight:800;white-space:nowrap'
   const truth = (d.hrPay||[]).filter(x=>x.ym===PYM).sort((a,b)=>b.net-a.net)
@@ -119,7 +119,7 @@ function payView(ym9){
     <table style="border-collapse:collapse;width:100%;background:#fff"><thead><tr style="background:#eef1f5">
       <th style="${TH}">店</th><th style="${TH};text-align:left">姓名</th><th style="${TH};text-align:left">發薪事件</th><th style="${TH}">發放日</th><th style="${TH}">應發</th><th style="${TH}">加班費</th><th style="${TH}">加班時數</th><th style="${TH}">實發</th></tr></thead><tbody>
       ${truth.map(x=>`<tr style="background:#fff">`+`<td style="${TD};text-align:center">${coOf9(x.ev)}</td><td style="${TDL};font-weight:800">${x.n}</td><td style="${TDL}">${x.ev||''}</td><td style="${TD}">${x.pd||''}</td><td style="${TD}">${nt(x.g)}</td><td style="${TD}">${nt(x.ot)}</td><td style="${TD}">${x.otH?fmtHM(x.otH*60):'—'}</td><td style="${TD};font-weight:900">${nt(x.net)}</td></tr>`).join('')}
-      <tr style="background:#eef1f5"><td style="${TDL};font-weight:900" colspan="4">合計</td><td style="${TD};font-weight:900">${nt(truth.reduce((t,x)=>t+x.g,0))}</td><td style="${TD};font-weight:900">${nt(truth.reduce((t,x)=>t+x.ot,0))}</td><td style="${TD}"></td><td style="${TD};font-weight:900">${nt(truth.reduce((t,x)=>t+x.net,0))}</td></tr>
+      <tr><td style="${TDL};background:#eef1f5;font-weight:900" colspan="4">合計</td><td style="${TD};background:#eef1f5;font-weight:900">${nt(truth.reduce((t,x)=>t+x.g,0))}</td><td style="${TD};background:#eef1f5;font-weight:900">${nt(truth.reduce((t,x)=>t+x.ot,0))}</td><td style="${TD};background:#eef1f5"></td><td style="${TD};background:#eef1f5;font-weight:900">${nt(truth.reduce((t,x)=>t+x.net,0))}</td></tr>
     </tbody></table>
     <div style="color:#555;font-size:11px;padding:4px 0 10px">來源：NUEiP 工資發放明細（每日自動同步）；勞健保/扣款已含在實發；店別依發薪事件（AB・/GD・）。</div>` : `<div style="color:#333;font-weight:700;font-size:13px;padding:4px 0 10px">💡 ${PYM} 的薪水預計 ${nextPay} 左右發放，發了會自動出現在這裡——下表先看出勤累計。</div>`
   const prevYm = (()=>{ const [yy,mm]=PYM.split('-').map(Number); const d2=new Date(Date.UTC(yy,mm-2,1)); return d2.toISOString().slice(0,7) })()
@@ -142,7 +142,7 @@ function payView(ym9){
     ${rows.map(r=>`<tr style="background:#fff"><td style="${TDL}">${r.store}</td><td style="${TDL};font-weight:800">${r.n}</td><td style="${TD}">${r1(r.reg)}</td><td style="${TD}">${r.o.ot1?r1(r.o.ot1):'—'}</td><td style="${TD}">${r.o.ot2?r1(r.o.ot2):'—'}</td>
       <td style="${TD};${r.base&&r.base<LP_MIN_HOURLY?'color:#C00;font-weight:800':''}">${r.base||'未填'}</td>
       <td style="${TD}">${nt(r.basePay)}</td><td style="${TD}">${nt(r.ot1Pay)}</td><td style="${TD}">${nt(r.ot2Pay)}</td><td style="${TD}">${nt(r.allow)}</td><td style="${TD};font-weight:900">${nt(r.total)}</td></tr>`).join('')}
-    <tr style="background:#eef1f5"><td style="${TDL};font-weight:900" colspan="6">合計（${rows.length} 人）</td><td style="${TD};font-weight:900">${nt(sum('basePay'))}</td><td style="${TD};font-weight:900">${nt(sum('ot1Pay'))}</td><td style="${TD};font-weight:900">${nt(sum('ot2Pay'))}</td><td style="${TD};font-weight:900">${nt(sum('allow'))}</td><td style="${TD};font-weight:900">${nt(sum('total'))}</td></tr>
+    <tr><td style="${TDL};background:#eef1f5;font-weight:900" colspan="6">合計（${rows.length} 人）</td><td style="${TD};background:#eef1f5;font-weight:900">${nt(sum('basePay'))}</td><td style="${TD};background:#eef1f5;font-weight:900">${nt(sum('ot1Pay'))}</td><td style="${TD};background:#eef1f5;font-weight:900">${nt(sum('ot2Pay'))}</td><td style="${TD};background:#eef1f5;font-weight:900">${nt(sum('allow'))}</td><td style="${TD};background:#eef1f5;font-weight:900">${nt(sum('total'))}</td></tr>
     </tbody></table>`}
     <div style="color:#555;font-size:11px;padding-top:6px">本表為工時×費率自動試算，勞健保/勞退/請假扣款請由會計另計。產表：${new Date(Date.now()+8*3600e3).toISOString().slice(0,16).replace('T',' ')}</div></div>`
   const rateEd = meN?`<div style="margin-top:10px"><b>費率設定</b> <span class="hint">時薪（基本工資 2026＝196 起）／加給＝固定月加給；改完自動存、留誰改的</span>
