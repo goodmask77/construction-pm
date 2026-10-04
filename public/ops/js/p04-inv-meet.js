@@ -286,6 +286,7 @@ function meetRender(){
   const esc = s => String(s==null?'':s).replace(/</g,'&lt;')
   const lnk = (x,l) => { const inT = /^https?:\/\/[^/]*ground-pm|^\/prep|^#/.test(l.url); const href = l.url.startsWith('#') ? ('/prep'+l.url) : l.url
     return `<a href="${href}" ${inT?'':'target="_blank"'} onclick="event.stopPropagation();meetMop({op:'view',id:'${x.id}'},1)" style="color:var(--primary);font-weight:700;margin-right:10px">🔗 ${esc(l.label||l.url.slice(0,40))}</a>` }
+  // ── 任務卡式會議卡（張良「做得像任務中心那樣的卡片」）：內容直接攤開，不折疊 ──
   const mc = x => {
     const ver = x.ver || 1
     const names = x.ackNames || d.regNames || []
@@ -294,53 +295,43 @@ function meetRender(){
     const missing = names.filter(n=>!acked.includes(n))
     const itemsX = (x.items && x.items.length) ? x.items : String(x.text||'').split('\n').map(t=>t.trim()).filter(Boolean).map((t,i)=>({id:'tx'+i,t}))
     const myRow = meN && names.includes(meN), myAck = meN && acked.includes(meN)
-    const open = !!window._meetOpen[x.id]
     const allDone = names.length && !missing.length
     const title = itemsX.length ? itemsX[0].t : (x.text||'（無內容）')
-    // ── 收合列：日期・類型・標題首行・簽收數徽章・展開箭頭 ──
-    let h2 = `<div id="mt-${x.id}" style="background:var(--card);border:1.5px solid ${ver>1?'#E8A657':'var(--line)'};border-radius:12px;margin-bottom:8px;overflow:hidden">`
-    h2 += `<div onclick="meetToggle('${x.id}')" style="display:flex;align-items:center;gap:9px;padding:11px 13px;cursor:pointer">
-      <span style="color:var(--muted);transform:rotate(${open?90:0}deg);transition:.15s;flex-shrink:0">▸</span>
+    let h2 = `<div id="mt-${x.id}" style="background:var(--card);border:1.5px solid ${ver>1?'#E8A657':'var(--line)'};border-radius:12px;padding:12px 14px;margin-bottom:10px;font-size:14px">`
+    // 標題行：標題 + 簽收徽章
+    h2 += `<div style="display:flex;align-items:flex-start;gap:8px">
       <div style="flex:1;min-width:0">
-        <div style="font-weight:800;font-size:14.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(title)}</div>
-        <div class="hint" style="font-size:12px;margin-top:1px">${x.date}${ver>1?` ・<span style="color:#E8A657;font-weight:800">v${ver} 要重簽</span>`:''}${itemsX.length>1?` ・${itemsX.length} 條`:''}</div>
+        <div style="font-weight:800;font-size:15px;line-height:1.3;word-break:break-word">${esc(title)}</div>
+        <div class="hint" style="font-size:12px;margin-top:2px">📅 ${x.date}${ver>1?` ・<span style="color:#E8A657;font-weight:800">v${ver} 已改版要重簽</span>`:''}</div>
       </div>
-      ${names.length?`<span style="flex-shrink:0;display:inline-flex;align-items:center;gap:4px;font-size:12px;font-weight:800;border-radius:999px;padding:3px 10px;background:${allDone?'rgba(61,190,108,.15)':'rgba(240,115,115,.15)'};color:${allDone?'var(--green)':'var(--red)'}">${allDone?'🎉':''} ${acked.length}/${names.length}</span>`:''}
+      ${names.length?`<span style="flex-shrink:0;display:inline-flex;align-items:center;gap:4px;font-size:12.5px;font-weight:800;border-radius:999px;padding:4px 11px;background:${allDone?'rgba(61,190,108,.15)':'rgba(240,115,115,.15)'};color:${allDone?'var(--green)':'var(--red)'}">${allDone?'🎉':'✍️'} ${acked.length}/${names.length}</span>`:''}
     </div>`
-    if (open) {
-      h2 += `<div style="padding:0 13px 12px;font-size:14px" onclick="event.stopPropagation()">`
-      // 條列
-      if (itemsX.length) h2 += `<table style="width:100%;border-collapse:collapse;margin:3px 0 8px">${itemsX.map((it2,i)=>`<tr><td style="border:1px solid var(--line);padding:5px 8px;width:30px;text-align:center;color:var(--muted);font-weight:800">${i+1}</td><td style="border:1px solid var(--line);padding:5px 8px;text-align:left">${esc(it2.t)}</td></tr>`).join('')}</table>`
-      if ((x.media||[]).length) h2 += `<div style="display:flex;gap:6px;flex-wrap:wrap;margin:4px 0">${x.media.map(u=>`<a href="${u}" target="_blank" onclick="meetMop({op:'view',id:'${x.id}'},1)"><img src="${u}" style="width:56px;height:56px;object-fit:cover;border-radius:8px;border:1px solid var(--line)" onerror="this.outerHTML='📎'"></a>`).join('')}</div>`
-      if ((x.links||[]).length) h2 += `<div style="margin:4px 0">${x.links.map(l=>lnk(x,l)).join('')}</div>`
-      // 簽收狀況：已確認（含時間）＋未確認（可點催）
-      if (names.length) {
-        h2 += `<div style="margin:9px 0 2px;border-top:1px dashed var(--line);padding-top:8px">`
-        if (acked.length) h2 += `<div style="font-size:12px;color:var(--muted);margin-bottom:4px">✅ 已確認 ${acked.length}</div><div style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:8px">${acked.map(n=>`<span style="display:inline-flex;align-items:center;gap:4px;font-size:12px;border-radius:999px;padding:3px 9px;background:rgba(61,190,108,.14);color:var(--green)">${esc(n)}<span style="opacity:.7;font-size:11px">${(acks[n]||{}).ts||''}</span></span>`).join('')}</div>`
-        if (missing.length) {
-          h2 += `<div style="font-size:12px;color:var(--muted);margin-bottom:4px">⏳ 未確認 ${missing.length}　<span style="color:var(--red)">點名字＝發 DD 私訊＋App 提醒</span></div><div style="display:flex;flex-wrap:wrap;gap:5px">${missing.map(n=>`<button ${meN?'':'disabled'} onclick="meetNudge('${x.id}','${esc(n).replace(/'/g,'')}')" title="${nudges[n]?('上次催：'+nudges[n]):'點一下催他簽收'}" style="display:inline-flex;align-items:center;gap:4px;font-size:12.5px;font-weight:700;border-radius:999px;padding:4px 11px;background:rgba(240,115,115,.12);color:var(--red);border:1px solid rgba(240,115,115,.4);cursor:${meN?'pointer':'default'}">🔔 ${esc(n)}${nudges[n]?' <span style="opacity:.6;font-size:10.5px">已催</span>':''}</button>`).join('')}</div>`
-        } else h2 += `<div style="color:var(--green);font-weight:800;font-size:13px">🎉 全員完成簽收</div>`
-        h2 += `</div>`
-      }
-      // 我的簽收
-      if (myRow) h2 += myAck ? `<div style="color:var(--green);font-weight:800;font-size:13px;margin-top:6px">✓ 你已簽收（${(acks[meN]||{}).ts||''}）</div>` : `<button class="mini on" style="padding:8px 16px;margin:6px 0 0" onclick="ackWin('${x.id}')">📩 我讀完了（簽收）</button>`
-      // 發問串
-      if ((x.asks||[]).length) h2 += `<div style="margin-top:8px;border-top:1px dashed var(--line);padding-top:6px">${x.asks.map(a2=>`<div style="font-size:13px;margin-bottom:4px"><b>❓ ${esc(a2.q)}</b> <span class="hint">${a2.by}・${a2.ts}</span>${a2.ans?`<div style="color:var(--pdark)">💬 ${esc(a2.ans)} <span class="hint">${a2.ansBy}・${a2.ansTs}</span></div>`:(canAns?` <button class="mini" style="padding:4px 10px" onclick="meetAnswer('${x.id}','${a2.id}')">回覆</button>`:' <span class="hint">（等回覆）</span>')}</div>`).join('')}</div>`
-      h2 += `<div class="hint" style="margin-top:8px">${x.by}・${x.ts}${x.editedBy?`・改：${x.editedBy} ${x.editedTs}`:''}</div>`
-      h2 += `<div style="margin-top:7px;display:flex;gap:6px;flex-wrap:wrap"><span class="lnkbtn" title="複製這則連結" onclick="copyLink('#meet=${x.id}')" style="border:1px solid var(--line);border-radius:8px;padding:5px 10px;font-size:12px">🔗 複製連結</span>${meN?`<button class="mini" onclick="meetForm('${x.id}')">✏️ 編輯</button><button class="mini" style="color:var(--red)" onclick="if(confirm('刪除這筆會議紀錄？'))meetMop({op:'del',id:'${x.id}'})">🗑 刪除</button>`:''}</div>`
+    // 全部條列（≥2 條才列表格；單條已在標題）
+    if (itemsX.length > 1) h2 += `<table style="width:100%;border-collapse:collapse;margin:8px 0 2px">${itemsX.map((it2,i)=>`<tr><td style="border:1px solid var(--line);padding:5px 8px;width:30px;text-align:center;color:var(--muted);font-weight:800">${i+1}</td><td style="border:1px solid var(--line);padding:5px 8px;text-align:left">${esc(it2.t)}</td></tr>`).join('')}</table>`
+    if ((x.media||[]).length) h2 += `<div style="display:flex;gap:6px;flex-wrap:wrap;margin:6px 0 2px">${x.media.map(u=>`<a href="${u}" target="_blank" onclick="meetMop({op:'view',id:'${x.id}'},1)"><img src="${u}" style="width:56px;height:56px;object-fit:cover;border-radius:8px;border:1px solid var(--line)" onerror="this.outerHTML='📎'"></a>`).join('')}</div>`
+    if ((x.links||[]).length) h2 += `<div style="margin:6px 0 2px">${x.links.map(l=>lnk(x,l)).join('')}</div>`
+    // 簽收：已確認(含時間)綠chip + 未確認紅chip可點催
+    if (names.length) {
+      h2 += `<div style="margin:9px 0 2px;border-top:1px dashed var(--line);padding-top:8px">`
+      if (acked.length) h2 += `<div style="font-size:12px;color:var(--muted);margin-bottom:4px">✅ 已確認 ${acked.length}</div><div style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:${missing.length?'8px':'0'}">${acked.map(n=>`<span style="display:inline-flex;align-items:center;gap:4px;font-size:12px;border-radius:999px;padding:3px 9px;background:rgba(61,190,108,.14);color:var(--green)">${esc(n)}<span style="opacity:.7;font-size:11px">${(acks[n]||{}).ts||''}</span></span>`).join('')}</div>`
+      if (missing.length) {
+        h2 += `<div style="font-size:12px;color:var(--muted);margin-bottom:4px">⏳ 未確認 ${missing.length}　<span style="color:var(--red)">點名字＝發 DD 私訊＋App 提醒</span></div><div style="display:flex;flex-wrap:wrap;gap:5px">${missing.map(n=>`<button ${meN?'':'disabled'} onclick="meetNudge('${x.id}','${esc(n).replace(/'/g,'')}')" title="${nudges[n]?('上次催：'+nudges[n]):'點一下催他簽收'}" style="display:inline-flex;align-items:center;gap:4px;font-size:12.5px;font-weight:700;border-radius:999px;padding:4px 11px;background:rgba(240,115,115,.12);color:var(--red);border:1px solid rgba(240,115,115,.4);cursor:${meN?'pointer':'default'}">🔔 ${esc(n)}${nudges[n]?' <span style="opacity:.6;font-size:10.5px">已催</span>':''}</button>`).join('')}</div>`
+      } else h2 += `<div style="color:var(--green);font-weight:800;font-size:13px">🎉 全員完成簽收</div>`
       h2 += `</div>`
     }
+    if (myRow) h2 += myAck ? `<div style="color:var(--green);font-weight:800;font-size:13px;margin-top:6px">✓ 你已簽收（${(acks[meN]||{}).ts||''}）</div>` : `<button class="mini on" style="padding:8px 16px;margin:6px 0 0" onclick="ackWin('${x.id}')">📩 我讀完了（簽收）</button>`
+    if ((x.asks||[]).length) h2 += `<div style="margin-top:8px;border-top:1px dashed var(--line);padding-top:6px">${x.asks.map(a2=>`<div style="font-size:13px;margin-bottom:4px"><b>❓ ${esc(a2.q)}</b> <span class="hint">${a2.by}・${a2.ts}</span>${a2.ans?`<div style="color:var(--pdark)">💬 ${esc(a2.ans)} <span class="hint">${a2.ansBy}・${a2.ansTs}</span></div>`:(canAns?` <button class="mini" style="padding:4px 10px" onclick="meetAnswer('${x.id}','${a2.id}')">回覆</button>`:' <span class="hint">（等回覆）</span>')}</div>`).join('')}</div>`
+    h2 += `<div style="margin-top:9px;display:flex;gap:6px;flex-wrap:wrap;align-items:center"><span class="hint" style="margin-right:auto">${x.by}・${x.ts}${x.editedBy?`・改 ${x.editedBy}`:''}</span><span class="lnkbtn" title="複製連結" onclick="copyLink('#meet=${x.id}')" style="border:1px solid var(--line);border-radius:8px;padding:4px 9px;font-size:12px">🔗</span>${meN?`<button class="mini" style="padding:4px 10px" onclick="meetForm('${x.id}')">✏️ 編輯</button><button class="mini" style="padding:4px 10px;color:var(--red)" onclick="if(confirm('刪除這筆會議紀錄？'))meetMop({op:'del',id:'${x.id}'})">🗑</button>`:''}</div>`
     h2 += `</div>`
     return h2
   }
-  let h = `<section><h2>會議紀錄 <span class="hint">${meN?'點卡片展開':'看得到；要新增/編輯/催簽先綁定——'+BIND_HINT}</span></h2>
+  let h = `<section><h2>會議紀錄 <span class="hint">${meN?'':'看得到；要新增/編輯/催簽先綁定——'+BIND_HINT}</span></h2>
     ${meN?`<div style="margin-bottom:10px;display:flex;gap:8px;flex-wrap:wrap"><button class="mini on" style="padding:9px 18px" onclick="meetForm()">＋ 新增紀錄</button><button class="mini" style="padding:9px 12px" onclick="meetTypes()">⚙️ 會議類型</button></div>`:''}`
   const cats = [...d.types, ...([...new Set(d.list.map(x=>x.type))].filter(t=>!d.types.includes(t)))]
   for (const tp of cats) {
     const rows = d.list.filter(x => x.type === tp)
-    const closed = !!window._meetCatClose[tp]
-    h += `<div onclick="meetCatToggle('${tp}')" style="font-weight:900;margin:14px 0 6px;color:var(--pdark);cursor:pointer;display:flex;align-items:center;gap:7px"><span style="transform:rotate(${closed?-90:0}deg);transition:.15s;font-size:12px">▾</span>${tp}（${rows.length}）</div>`
-    if (!closed) h += rows.length ? rows.map(mc).join('') : `<div class="mut" style="font-size:14px;margin-bottom:6px">還沒有紀錄</div>`
+    h += `<div style="font-weight:900;margin:14px 0 6px;color:var(--pdark)">${tp}（${rows.length}）</div>`
+    h += rows.length ? rows.map(mc).join('') : `<div class="mut" style="font-size:14px;margin-bottom:6px">還沒有紀錄</div>`
   }
   h += `</section>`
   app.innerHTML = h
