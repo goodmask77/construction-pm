@@ -59,6 +59,7 @@ async function shiftLoad(ym){
   window._shLoaded = window._shLoaded || []; if (!window._shLoaded.includes(shiftYm)) window._shLoaded.push(shiftYm) // 無限軸：記下已載月份
   if ((window._shiftTmpQ||[]).length) d.sched.push(...window._shiftTmpQ) // 還在排隊的樂觀卡補回畫面（v4.4.7）
   if (curStore === 'shift') shiftRender()
+  if (!window._shVioAllLoaded && typeof shVioEnsureAll==='function') { window._shVioAllLoaded = 1; shVioEnsureAll().then(()=>{ try{ const V=shVioCompute(window._shRows||[]); const n9=Object.values(V.g).reduce((t,x)=>t+x.length,0)+Object.values(V.a).reduce((t,x)=>t+x.length,0); window._shVioN=n9; const b9=document.getElementById('shVioBadge'); if(b9){ b9.textContent='🔴 違規 '+n9; b9.style.display=n9?'':'none' } }catch(_){} }) } // v4.36.6 背景載6月起全史=徽章一開始就是全數字
 }
 // v4.36.4 未排收合（記住選擇；重畫時 shiftRender 自己會還原捲動位置）
 try { window._shUC = localStorage.getItem('shUC') === '1' } catch(_) {}

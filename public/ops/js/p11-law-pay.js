@@ -209,8 +209,17 @@ function shVioCompute(gdRows){
   return { g, a }
 }
 // 🔴 違規清單面板（張良「我要去哪裡確認是什麼問題」）：工具列紅色「違規 N」鈕點開＝每筆誰/哪天/什麼問題
-function shVioList(){
+async function shVioEnsureAll(){ // v4.36.6 張良「怎麼又只剩一個」：清單原本只算瀏覽器已載月份→改成掃描前把 2026-06 起全部載好
+  const mos=[]; let y=2026, m=6
+  const now9=new Date(Date.now()+8*3600e3)
+  while(y<now9.getUTCFullYear()||(y===now9.getUTCFullYear()&&m<=now9.getUTCMonth()+2)){ mos.push(y+'-'+String(m).padStart(2,'0')); if(++m>12){m=1;y++} }
+  if(typeof shEnsure==='function') await shEnsure(mos)
+}
+async function shVioList(){
+  lpOverlay('vioOv','<div class="hint" style="padding:18px">掃描 6 月起全部班表中…</div>')
+  await shVioEnsureAll()
   const V=shVioCompute(window._shRows||[])
+  try{ const n9=Object.values(V.g).reduce((t,x)=>t+x.length,0)+Object.values(V.a).reduce((t,x)=>t+x.length,0); const b9=document.getElementById('shVioBadge'); if(b9){ b9.textContent='🔴 違規 '+n9; b9.style.display=n9?'':'none' } }catch(_){}
   const L=[]
   for(const [k,rs] of Object.entries(V.g||{})){ const [nm,dt]=k.split('|'); rs.forEach(r=>L.push({st:'GD',nm,dt,r})) }
   for(const [k,rs] of Object.entries(V.a||{})){ const [nm,dt]=k.split('|'); rs.forEach(r=>L.push({st:'AB',nm,dt,r})) }
