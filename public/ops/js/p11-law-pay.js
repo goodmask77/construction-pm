@@ -226,7 +226,7 @@ function shVioList(){
 }
 
 // ── 🕐 AB 出勤總覽 v4.36.0（張良「6/1起所有打卡紀錄,看出遲到/沒打卡,每人總紀錄,像營業額那樣好查」）──
-let abaMo = 'all', abaSort = { k: 'late', dir: -1 }
+let abaMo = 'all', abaSort = { k: 'late', dir: -1 }, abaView = 'det' // v4.43.3 det=全員逐筆明細(張良要的預設)/sum=每人彙總
 async function abAttView(){
   if (!window._abaD) {
     lpOverlay('abaOv', '<div class="hint" style="padding:20px">讀取 6 月起全部打卡紀錄中…</div>')
@@ -240,6 +240,29 @@ function abAttDraw(){
   const all = window._abaD || []
   const mos = [...new Set(all.map(x=>x.d.slice(0,7)))].sort()
   const rows = all.filter(x => abaMo==='all' || x.d.startsWith(abaMo))
+  const vBtn = `<span style="display:inline-flex;gap:0;border:1px solid var(--line);border-radius:999px;overflow:hidden"><button class="mini${abaView==='det'?' on':''}" style="margin:0;border:none;border-radius:0;padding:4px 14px" onclick="abaView='det';abAttDraw()">逐筆明細</button><button class="mini${abaView==='sum'?' on':''}" style="margin:0;border:none;border-radius:0;padding:4px 14px" onclick="abaView='sum';abAttDraw()">每人彙總</button></span>`
+  if (abaView === 'det') { // v4.43.3 全員詳細打卡紀錄：日期新→舊、每列=一人一天的上下班卡
+    const det = rows.slice().sort((a,b)=> a.d===b.d ? a.n.localeCompare(b.n,'zh-Hant') : (a.d<b.d?1:-1))
+    const stT9 = x => [x.abs?'<b style="color:var(--red)">曠職</b>':'', x.miss?'<b style="color:var(--red)">缺卡</b>':'', x.late>0?`<b style="color:#E8A657">遲到${x.late}分</b>`:'', x.early>0?`<b style="color:#E8A657">早退${x.early}分</b>`:''].filter(Boolean).join('、') || '<span class="mut">正常</span>'
+    const moBtn9 = (v,lb)=>`<button class="mini${abaMo===v?' on':''}" style="padding:4px 12px;font-weight:800" onclick="abaMo='${v}';abAttDraw()">${lb}</button>`
+    lpOverlay('abaOv', `
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap"><b style="font-size:17px">🕐 A Beach 出勤總覽</b>
+        <span style="display:flex;gap:8px;align-items:center">${vBtn}<button class="mini" style="padding:6px 14px" onclick="document.getElementById('abaOv').remove()">關閉</button></span></div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin:10px 0">${moBtn9('all','全部')}${mos.map(m=>moBtn9(m, m.slice(2).replace('-','/'))).join('')}</div>
+      <div class="hint" style="margin-bottom:6px">共 ${det.length} 筆・點夥伴名字看他一個人的整期紀錄</div>
+      <div class="scroll" style="max-height:66vh;overflow-y:auto"><table style="border-collapse:collapse;width:100%"><thead><tr>
+        <th style="padding:4px 8px;text-align:left">日期</th><th style="padding:4px 8px;text-align:left">夥伴</th><th style="padding:4px 8px;text-align:center">班別</th><th style="padding:4px 8px;text-align:center">上班卡</th><th style="padding:4px 8px;text-align:center">下班卡</th><th style="padding:4px 8px;text-align:right">時數</th><th style="padding:4px 8px;text-align:left">狀態</th></tr></thead><tbody>
+        ${det.map(x=>`<tr style="border-top:1px solid var(--line);font-size:13px">
+          <td style="padding:4px 8px;white-space:nowrap">${x.d.slice(5)}（${'日一二三四五六'[new Date(x.d).getDay()]}）</td>
+          <td style="padding:4px 8px;font-weight:800;white-space:nowrap;cursor:pointer;text-decoration:underline dotted" onclick="abAttPerson('${x.n.replace(/'/g,'')}')">${x.n}</td>
+          <td style="padding:4px 8px;text-align:center">${x.w||'—'}</td>
+          <td style="padding:4px 8px;text-align:center;${!x.on&&!x.abs?'color:var(--red)':''}">${x.on||'—'}</td>
+          <td style="padding:4px 8px;text-align:center">${x.off||'—'}</td>
+          <td style="padding:4px 8px;text-align:right;font-weight:700">${x.h||'—'}</td>
+          <td style="padding:4px 8px;text-align:left">${stT9(x)}</td></tr>`).join('')}
+      </tbody></table></div>`)
+    return
+  }
   // 每人彙總
   const per = {}
   rows.forEach(x=>{ const o = per[x.n] = per[x.n] || { n:x.n, days:0, h:0, late:0, lateMin:0, early:0, miss:0, abs:0 }
@@ -254,8 +277,8 @@ function abAttDraw(){
   const tot = { days: list.reduce((t,o)=>t+o.days,0), late: list.reduce((t,o)=>t+o.late,0), miss: list.reduce((t,o)=>t+o.miss,0), abs: list.reduce((t,o)=>t+o.abs,0) }
   lpOverlay('abaOv', `
     <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap"><b style="font-size:17px">🕐 A Beach 出勤總覽</b>
-      <span class="hint">NUEiP 打卡・6/1 起已回補｜點欄頭排序、點名字看逐日明細</span>
-      <button class="mini" style="padding:6px 14px" onclick="document.getElementById('abaOv').remove()">關閉</button></div>
+      <span style="display:flex;gap:8px;align-items:center">${vBtn}<button class="mini" style="padding:6px 14px" onclick="document.getElementById('abaOv').remove()">關閉</button></span></div>
+    <div class="hint" style="margin-top:4px">NUEiP 打卡・6/1 起已回補｜點欄頭排序、點名字看逐日明細</div>
     <div style="display:flex;gap:6px;flex-wrap:wrap;margin:10px 0">${moBtn('all','全部')}${mos.map(m=>moBtn(m, m.slice(2).replace('-','/'))).join('')}</div>
     <div style="display:flex;gap:14px;flex-wrap:wrap;margin-bottom:8px" class="hint">共 ${tot.days} 人日｜遲到 ${tot.late} 次｜缺卡 ${tot.miss} 次｜曠職 ${tot.abs} 次</div>
     <div class="scroll"><table style="border-collapse:collapse;width:100%"><thead><tr>
