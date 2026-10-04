@@ -417,12 +417,39 @@ async function meetOp(op, id){
   const d = await r.json().catch(()=>null)
   if (d && d.ok) meetLoad(); else alert((d&&d.error)||'失敗')
 }
+// v4.47.5 會議類型正式視窗（張良「不要prompt 給我按鈕 可新增刪除編輯排序」）：一類一列改名/✕刪/⠿拖曳排序/＋新增
 function meetTypes(){
-  const d = window._meetD
-  const v = prompt('會議類型（用「、」分隔，可自行增減改名）', d.types.join('、'))
-  if (v == null) return
-  fetch('/api/mail-sync?meetset=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ op:'types', types: v.split(/[、,，]/).map(s=>s.trim()).filter(Boolean), token: TK() }) })
-    .then(r=>r.json()).then(d2=>{ if(d2&&d2.ok) meetLoad(); else alert((d2&&d2.error)||'失敗') })
+  window._mtTypes = (window._meetD.types || []).slice()
+  meetTypesDraw()
+}
+function meetTypesDraw(){
+  const old = document.getElementById('mtTypeOv'); if (old) old.remove()
+  const L = window._mtTypes || []
+  const ov = document.createElement('div'); ov.id='mtTypeOv'
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(16,24,43,.55);z-index:60;display:flex;align-items:center;justify-content:center;padding:16px'
+  ov.innerHTML = `<div style="background:#222B38;border:1px solid #3B4654;box-shadow:0 18px 50px rgba(0,0,0,.55);border-radius:14px;max-width:400px;width:100%;padding:18px;max-height:84vh;overflow:auto" onclick="event.stopPropagation()">
+    <div style="font-weight:900;font-size:16px;margin-bottom:4px">⚙️ 會議類型</div>
+    <div class="hint" style="margin-bottom:12px">⠿ 拖曳排順序、直接改名字、✕ 刪除；存了全裝置同步</div>
+    <div id="mtTypeList">${L.map((t,i)=>`<div class="mtTypeRow" data-idx="${i}" style="display:flex;gap:7px;align-items:center;margin-bottom:7px">
+      <span class="mtTypeHandle" title="拖我排順序" style="flex-shrink:0;display:flex;cursor:grab;color:var(--muted);touch-action:none">⠿</span>
+      <input value="${String(t).replace(/"/g,'&quot;')}" onchange="window._mtTypes[${i}]=this.value.trim()" style="flex:1;min-width:0;border:1px solid var(--line);border-radius:8px;padding:9px 10px;font-size:15px;background:var(--bg);color:var(--ink)">
+      <button onclick="window._mtTypes.splice(${i},1);meetTypesDraw()" style="flex-shrink:0;padding:8px 11px;border:1px solid var(--line);border-radius:8px;background:transparent;color:var(--red);cursor:pointer">✕</button>
+    </div>`).join('')}</div>
+    <button onclick="window._mtTypes.push('新類型');meetTypesDraw();setTimeout(()=>{const ii=document.querySelectorAll('#mtTypeList input');if(ii.length){ii[ii.length-1].focus();ii[ii.length-1].select()}},40)" style="padding:8px 14px;border:1px dashed var(--line);border-radius:8px;background:transparent;color:var(--muted);cursor:pointer">＋ 新增類型</button>
+    <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px">
+      <button class="mini" style="padding:9px 14px" onclick="document.getElementById('mtTypeOv').remove()">取消</button>
+      <button class="mini on" style="padding:9px 18px" onclick="meetTypesSave()">✓ 儲存</button></div></div>`
+  ov.onclick = () => ov.remove()
+  document.body.appendChild(ov)
+  try { const el = document.getElementById('mtTypeList'); if (el && typeof Sortable !== 'undefined') new Sortable(el, { handle:'.mtTypeHandle', animation:150, onEnd:()=>{ const order = Array.from(el.querySelectorAll('.mtTypeRow')).map(n=>Number(n.getAttribute('data-idx'))); window._mtTypes = order.map(i=>window._mtTypes[i]).filter(v=>v!=null); meetTypesDraw() } }) } catch(e){}
+}
+async function meetTypesSave(){
+  const types = (window._mtTypes||[]).map(s=>String(s||'').trim()).filter(Boolean)
+  if (!types.length) { alert('至少留一種會議類型'); return }
+  const r = await fetch('/api/mail-sync?meetset=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ op:'types', types, token: TK() }) })
+  const d2 = await r.json().catch(()=>null)
+  const o = document.getElementById('mtTypeOv'); if (o) o.remove()
+  if (d2 && d2.ok) meetLoad(); else alert((d2&&d2.error)||'失敗')
 }
 // ── 📅 班表 × 打卡（張良 2026-09-22：排班可增刪改；對照打卡算工時——口徑同薪資引擎 src/shift/payroll.js：
 //    正常8h/日、加班前2h×1.34、之後×1.67（勞基法§24）；單日>12h（§32）、月加班>46h（§32）、連上7天（§36七休一）標紅；遲到寬限5分）──
