@@ -112,25 +112,38 @@ function payView(ym9){
   const nt=n=>n?n.toLocaleString('en-US'):'0'
   const sum=k=>rows.reduce((t,r)=>t+r[k],0)
   // 表格用「紙本」配色（黑字白底、純 inline 樣式）＝複製圖片/給會計師列印都清楚
+  const coOf9 = ev => /^GD/.test(String(ev||'')) ? 'GD' : 'AB'
+  const nextPay = (()=>{ const [yy,mm]=PYM.split('-').map(Number); const d2=new Date(Date.UTC(yy,mm,10)); return d2.toISOString().slice(0,10) })()
   const truthTbl = truth.length ? `
-    <div style="color:#111;font-weight:900;font-size:14px;padding:4px 0 6px">A Beach・NUEiP 發薪真值（${truth.length} 人）</div>
+    <div style="color:#111;font-weight:900;font-size:14px;padding:4px 0 6px">NUEiP 發薪真值・${PYM} 薪水（${truth.length} 人）</div>
     <table style="border-collapse:collapse;width:100%"><thead><tr>
-      <th style="${TH};text-align:left">姓名</th><th style="${TH};text-align:left">發薪事件</th><th style="${TH}">發放日</th><th style="${TH}">應發</th><th style="${TH}">加班費</th><th style="${TH}">加班時數</th><th style="${TH}">實發</th></tr></thead><tbody>
-      ${truth.map(x=>`<tr><td style="${TDL};font-weight:800">${x.n}</td><td style="${TDL}">${x.ev||''}</td><td style="${TD}">${x.pd||''}</td><td style="${TD}">${nt(x.g)}</td><td style="${TD}">${nt(x.ot)}</td><td style="${TD}">${x.otH?fmtHM(x.otH*60):'—'}</td><td style="${TD};font-weight:900">${nt(x.net)}</td></tr>`).join('')}
-      <tr><td style="${TDL};font-weight:900" colspan="3">合計</td><td style="${TD};font-weight:900">${nt(truth.reduce((t,x)=>t+x.g,0))}</td><td style="${TD};font-weight:900">${nt(truth.reduce((t,x)=>t+x.ot,0))}</td><td style="${TD}"></td><td style="${TD};font-weight:900">${nt(truth.reduce((t,x)=>t+x.net,0))}</td></tr>
+      <th style="${TH}">店</th><th style="${TH};text-align:left">姓名</th><th style="${TH};text-align:left">發薪事件</th><th style="${TH}">發放日</th><th style="${TH}">應發</th><th style="${TH}">加班費</th><th style="${TH}">加班時數</th><th style="${TH}">實發</th></tr></thead><tbody>
+      ${truth.map(x=>`<tr><td style="${TD};text-align:center">${coOf9(x.ev)}</td><td style="${TDL};font-weight:800">${x.n}</td><td style="${TDL}">${x.ev||''}</td><td style="${TD}">${x.pd||''}</td><td style="${TD}">${nt(x.g)}</td><td style="${TD}">${nt(x.ot)}</td><td style="${TD}">${x.otH?fmtHM(x.otH*60):'—'}</td><td style="${TD};font-weight:900">${nt(x.net)}</td></tr>`).join('')}
+      <tr><td style="${TDL};font-weight:900" colspan="4">合計</td><td style="${TD};font-weight:900">${nt(truth.reduce((t,x)=>t+x.g,0))}</td><td style="${TD};font-weight:900">${nt(truth.reduce((t,x)=>t+x.ot,0))}</td><td style="${TD}"></td><td style="${TD};font-weight:900">${nt(truth.reduce((t,x)=>t+x.net,0))}</td></tr>
     </tbody></table>
-    <div style="color:#555;font-size:11px;padding:4px 0 10px">來源：NUEiP 工資發放明細（每日自動同步）；勞健保/扣款已含在實發。</div>` : `<div style="color:#555;font-size:12px;padding:4px 0 10px">A Beach ${PYM} 的發薪單還沒產生（發薪日次月 10 號後自動出現）——下表為試算。</div>`
+    <div style="color:#555;font-size:11px;padding:4px 0 10px">來源：NUEiP 工資發放明細（每日自動同步）；勞健保/扣款已含在實發；店別依發薪事件（AB・/GD・）。</div>` : `<div style="color:#333;font-weight:700;font-size:13px;padding:4px 0 10px">💡 ${PYM} 的薪水預計 ${nextPay} 左右發放，發了會自動出現在這裡——下表先看出勤累計。</div>`
+  const prevYm = (()=>{ const [yy,mm]=PYM.split('-').map(Number); const d2=new Date(Date.UTC(yy,mm-2,1)); return d2.toISOString().slice(0,7) })()
+  const prevNet = {}; (d.hrPay||[]).filter(x=>x.ym===prevYm).forEach(x=>{ prevNet[x.n]=x.net })
+  const noRates = rows.length && rows.every(r=>!r.base)
+  const attTbl = (!truth.length && noRates) ? `
+    <div style="color:#111;font-weight:900;font-size:14px;padding:4px 0 6px">出勤累計（${PYM} 進行中・${rows.length} 人）</div>
+    <table style="border-collapse:collapse;width:100%"><thead><tr>
+      <th style="${TH}">店</th><th style="${TH};text-align:left">姓名</th><th style="${TH}">本月時數</th><th style="${TH}">加班1.34</th><th style="${TH}">加班1.67</th><th style="${TH}">上月實發（參考）</th></tr></thead><tbody>
+      ${rows.map(r=>`<tr><td style="${TD};text-align:center">${r.store}</td><td style="${TDL};font-weight:800">${r.n}</td><td style="${TD}">${fmtHM(r.o.h*60)}</td><td style="${TD}">${r.o.ot1?fmtHM(r.o.ot1*60):'—'}</td><td style="${TD}">${r.o.ot2?fmtHM(r.o.ot2*60):'—'}</td><td style="${TD}">${prevNet[r.n]!=null?nt(prevNet[r.n]):'—'}</td></tr>`).join('')}
+    </tbody></table>
+    <div style="color:#555;font-size:11px;padding:4px 0 10px">金額等 NUEiP 發薪後顯示真值；要先試算金額→下方「費率設定」填時薪。</div>` : ''
   const tbl=`<div id="payTblWrap" style="background:#fff;padding:14px;border-radius:10px">
     <div style="color:#111;font-weight:900;font-size:15px;padding-bottom:8px">GROUN:D × A Beach 薪資表　${PYM}　<span style="font-weight:600;font-size:12px;color:#555">AB＝NUEiP 發薪真值（無單月份退回出勤試算）｜GD＝打卡試算（§24 前2h×1.34、後2h×1.67）</span></div>
     ${truthTbl}
-    ${rows.length?`<div style="color:#111;font-weight:900;font-size:14px;padding:4px 0 6px">${truth.length?'其餘（試算）':'工時試算'}（${rows.length} 人）</div>`:''}${PYM!==shiftYm?`<div style="color:#555;font-size:11px;padding:0 0 6px">GD 打卡試算只顯示班表目前月份（${shiftYm}）；看其他月的 GD 先用上面 ‹ › 切班表月份。</div>`:''}
-    <table style="border-collapse:collapse;width:100%"><thead><tr>
+    ${attTbl}
+    ${(rows.length&&!attTbl)?`<div style="color:#111;font-weight:900;font-size:14px;padding:4px 0 6px">${truth.length?'其餘（試算）':'工時試算'}（${rows.length} 人）</div>`:''}${PYM!==shiftYm?`<div style="color:#555;font-size:11px;padding:0 0 6px">GD 打卡試算只顯示班表目前月份（${shiftYm}）；看其他月的 GD 先用上面 ‹ › 切班表月份。</div>`:''}
+    ${attTbl?'':`<table style="border-collapse:collapse;width:100%"><thead><tr>
       <th style="${TH}">店</th><th style="${TH};text-align:left">姓名</th><th style="${TH}">正常時數</th><th style="${TH}">加班1.34</th><th style="${TH}">加班1.67</th><th style="${TH}">時薪</th><th style="${TH}">本薪</th><th style="${TH}">加班費1.34</th><th style="${TH}">加班費1.67</th><th style="${TH}">加給</th><th style="${TH}">應發合計</th></tr></thead><tbody>
     ${rows.map(r=>`<tr><td style="${TDL}">${r.store}</td><td style="${TDL};font-weight:800">${r.n}</td><td style="${TD}">${r1(r.reg)}</td><td style="${TD}">${r.o.ot1?r1(r.o.ot1):'—'}</td><td style="${TD}">${r.o.ot2?r1(r.o.ot2):'—'}</td>
       <td style="${TD};${r.base&&r.base<LP_MIN_HOURLY?'color:#C00;font-weight:800':''}">${r.base||'未填'}</td>
       <td style="${TD}">${nt(r.basePay)}</td><td style="${TD}">${nt(r.ot1Pay)}</td><td style="${TD}">${nt(r.ot2Pay)}</td><td style="${TD}">${nt(r.allow)}</td><td style="${TD};font-weight:900">${nt(r.total)}</td></tr>`).join('')}
     <tr><td style="${TDL};font-weight:900" colspan="6">合計（${rows.length} 人）</td><td style="${TD};font-weight:900">${nt(sum('basePay'))}</td><td style="${TD};font-weight:900">${nt(sum('ot1Pay'))}</td><td style="${TD};font-weight:900">${nt(sum('ot2Pay'))}</td><td style="${TD};font-weight:900">${nt(sum('allow'))}</td><td style="${TD};font-weight:900">${nt(sum('total'))}</td></tr>
-    </tbody></table>
+    </tbody></table>`}
     <div style="color:#555;font-size:11px;padding-top:6px">本表為工時×費率自動試算，勞健保/勞退/請假扣款請由會計另計。產表：${new Date(Date.now()+8*3600e3).toISOString().slice(0,16).replace('T',' ')}</div></div>`
   const rateEd = meN?`<div style="margin-top:10px"><b>費率設定</b> <span class="hint">時薪（基本工資 2026＝196 起）／加給＝固定月加給；改完自動存、留誰改的</span>
     <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:6px">${ppl.map(x=>`<span style="display:inline-flex;gap:4px;align-items:center;background:var(--soft);border:1px solid var(--line);border-radius:9px;padding:4px 8px;font-size:13px"><b>${x.n}</b>
@@ -138,7 +151,8 @@ function payView(ym9){
       加給<input inputmode="numeric" value="${(rates[x.n]||{}).allow||''}" placeholder="0" style="width:62px;padding:2px;border:1px solid var(--line);border-radius:6px;text-align:center" onchange="paySetRate('${x.n}','allow',this.value)"></span>`).join('')}</div></div>`:''
   lpOverlay('payOv',`
     <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap"><b style="font-size:17px">💰 薪資表</b>
-      <span style="display:inline-flex;gap:6px;flex-wrap:wrap">${(()=>{ const ms=new Set((d.hrPay||[]).map(x=>x.ym).filter(Boolean)); ms.add(shiftYm); let y=2026,mo=6; const now9=new Date(Date.now()+8*3600e3); while(y<now9.getUTCFullYear()||(y===now9.getUTCFullYear()&&mo<=now9.getUTCMonth()+1)){ ms.add(y+'-'+String(mo).padStart(2,'0')); if(++mo>12){mo=1;y++} } return [...ms].sort().map(m9=>`<button class="mini${m9===PYM?' on':''}" style="padding:4px 11px;font-weight:800" onclick="payView('${m9}')">${m9.slice(2).replace('-','/')}</button>`).join('') })()}</span>
+      <span style="display:inline-flex;gap:6px;flex-wrap:wrap">${(()=>{ const has=new Set((d.hrPay||[]).map(x=>x.ym).filter(Boolean)); const ms=new Set([...has]); const now9=new Date(Date.now()+8*3600e3); ms.add(now9.toISOString().slice(0,7)); ms.add(shiftYm); return [...ms].sort().map(m9=>`<button class="mini${m9===PYM?' on':''}" style="padding:4px 11px;font-weight:800" onclick="payView('${m9}')">${m9.slice(2).replace('-','/')}${has.has(m9)?' ✓':''}</button>`).join('') })()}</span>
+      <span class="hint" style="font-size:11.5px">✓＝NUEiP 已發薪（當月薪水次月 10 號發）</span>
       <span style="display:inline-flex;gap:8px"><button class="mini" style="padding:6px 14px" onclick="payCopyImg()">📸 複製圖片</button><button class="mini" style="padding:6px 14px" onclick="payCsv()">⬇️ 匯出表格</button><button class="mini" style="padding:6px 14px" onclick="document.getElementById('payOv').remove()">關閉</button></span></div>
     <div class="scroll" style="margin-top:10px">${tbl}</div>${rateEd}`)
 }
