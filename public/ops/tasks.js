@@ -106,6 +106,21 @@ function tnPtsBadge(t) {
   const crown = tr.level >= 8 ? '♛' : '★';      // 傳說/神話皇冠
   return '<span title="' + tnEsc(tr.name) + '・' + t.pts + ' 分" style="' + st + '">' + crown + ' ' + tnEsc(tr.name) + ' <strong style="font-size:.82em;font-weight:900">' + t.pts + '</strong></span>';
 }
+// v4.51 效果摘要（卡片右上小字，如「緩慢呼吸・4秒」）：挑該級 mods 裡最顯眼的動效＋約略秒數
+function tnEffLabel(tr) {
+  if (!tr || !tr.mods) return '';
+  const m = tr.mods, parts = [];
+  const B = { flow: '流動', laser: '雷射', laser2: '雙雷射', rainbow: '彩虹流動' }[m.border];
+  const G = { static: '靜態光', breathe: '緩慢呼吸', zap: '電擊閃' }[m.glow];
+  const E = { bolt: '閃電', fire: '火星升起' }[m.edge];
+  const S = { shimmer: '金屬掃光', flash: '閃光' }[m.surf];
+  const P = { gold: '金粉', rainbow: '星塵' }[m.part];
+  const O = { ripple: '漣漪', pulse: '脈衝', boom: '爆炸光圈' }[m.outer];
+  [B, G, E, S, P, O].forEach(x => { if (x) parts.push(x); });
+  if (!parts.length) return m.badge && m.badge !== 'outline' ? '實心徽章' : '';
+  const secs = [4, 4, 4, 4, 5, 5, 6, 6, 7, 8][tr.level] || 4; // 約略動畫秒數（越高越慢越華麗）
+  return parts.slice(0, 2).join('＋') + '・' + secs + '秒';
+}
 const tnVIVID = { '#fef2f2': '#EF4444', '#fff7ed': '#F59E0B', '#fefce8': '#EAB308', '#f0fdf4': '#22C55E', '#eff6ff': '#3B82F6', '#faf5ff': '#A855F7', '#f5f5f5': '#9CA3AF' }; // 色盤圓點用鮮豔原色＝一眼分得出；存進資料的值不變(主App同組)
 const tnTcol = (c) => (c ? (tnDARKMAP[String(c).toLowerCase()] || c) : '');
 // 卡片/大項色盤（存進資料的值＝主 App 同一組淺色值，不能換）
@@ -708,25 +723,36 @@ function tnCard(t, o) {
   // v4.50 固定卡片格式（張良 2026-10-05 規格＋mythic-motion-v2）：垂直六段式，徽章獨立底部列，絕不跟標題搶寬
   // ①頂部操作列 ②標題列(勾+標題·最多兩行) ③日期/關係/執行狀態 chips ④照片 ⑤底部(負責人左·徽章右)
   const tnBdgC = tnPtsBadge(t);
-  // ① 頂部列：優先旗標(左) + 更多操作 釘/☀/✕(右)
-  let h = '<div style="display:flex;align-items:center;gap:6px;min-height:18px">';
-  h += (t.priority === 'urgent') ? '<span title="緊急" style="display:inline-flex">' + tnI('flame', 13, tnC.red) + '</span>' : '';
-  h += '<div style="margin-left:auto;display:flex;align-items:center;gap:4px">';
-  h += '<button onclick="event.stopPropagation();tnPinToggle(\'' + t.id + '\')" title="' + (t.pinned ? '取消釘選' : '釘選到最上面') + '" style="background:none;border:none;cursor:pointer;line-height:1;padding:2px;color:' + (t.pinned ? tnC.accent : tnCBR) + '">' + tnI('pin', 13, 'currentColor', t.pinned ? tnC.accent : 'none') + '</button>';
-  if (!done) { const isToday = t.due === tnToday(); h += '<button onclick="event.stopPropagation();tnSunToggle(\'' + t.id + '\')" title="' + (isToday ? '退出今天必處理' : '設為今天必處理') + '" style="background:none;border:none;cursor:pointer;line-height:1;padding:2px;color:' + (isToday ? tnC.red : tnCBR) + '">' + tnI('sun', 13, isToday ? tnC.red : 'currentColor') + '</button>'; }
-  h += '<button onclick="event.stopPropagation();tnDel(\'' + t.id + '\')" title="刪除" style="background:none;border:none;color:' + tnC.faint + ';cursor:pointer;line-height:1;padding:2px">' + tnI('x', 14) + '</button>';
+  // v4.51 固定格式（張良 mockup）：①LEVEL標頭·效果摘要(左右) ②標題 ③meta一行(日期·負責人·預估) ④chips ⑤徽章右下 ＋頂部小操作
+  // ① 頂部列：LEVEL NN · 名稱(左) ＋ 效果摘要 ＋ 釘/☀/✕(右)
+  let h = '<div style="display:flex;align-items:center;gap:6px;min-height:16px;font-size:11px;color:' + tnC.faint + '">';
+  if (tr) h += '<span style="font-weight:700;letter-spacing:.6px;white-space:nowrap">LEVEL ' + String(tr.level + 1).padStart(2, '0') + ' · ' + tnEsc(tr.name) + '</span>';
+  if (t.priority === 'urgent') h += '<span title="緊急" style="display:inline-flex">' + tnI('flame', 12, tnC.red) + '</span>';
+  h += '<div style="margin-left:auto;display:flex;align-items:center;gap:5px;flex-shrink:0">';
+  if (tr) { const el = tnEffLabel(tr); if (el) h += '<span class="tnEffLbl" style="font-size:10.5px;color:' + tnC.faint + ';white-space:nowrap">' + tnEsc(el) + '</span>'; }
+  h += '<button onclick="event.stopPropagation();tnPinToggle(\'' + t.id + '\')" title="' + (t.pinned ? '取消釘選' : '釘選') + '" style="background:none;border:none;cursor:pointer;line-height:1;padding:1px;color:' + (t.pinned ? tnC.accent : tnCBR) + '">' + tnI('pin', 12, 'currentColor', t.pinned ? tnC.accent : 'none') + '</button>';
+  if (!done) { const isToday = t.due === tnToday(); h += '<button onclick="event.stopPropagation();tnSunToggle(\'' + t.id + '\')" title="' + (isToday ? '退出今天必處理' : '設為今天必處理') + '" style="background:none;border:none;cursor:pointer;line-height:1;padding:1px;color:' + (isToday ? tnC.red : tnCBR) + '">' + tnI('sun', 12, isToday ? tnC.red : 'currentColor') + '</button>'; }
+  h += '<button onclick="event.stopPropagation();tnDel(\'' + t.id + '\')" title="刪除" style="background:none;border:none;color:' + tnC.faint + ';cursor:pointer;line-height:1;padding:1px">' + tnI('x', 13) + '</button>';
   h += '</div></div>';
-  // ② 標題列：完成勾 + 標題（整列剩餘寬、最多兩行省略；完整看詳情）
-  h += '<div style="display:flex;align-items:flex-start;gap:8px;margin-top:2px">';
-  h += '<button onclick="event.stopPropagation();tnToggleDone(\'' + t.id + '\')" title="切換完成" style="flex-shrink:0;width:16px;height:16px;margin-top:1px;border-radius:4px;border:1px solid ' + (done ? tnC.green : tnCBR) + ';background:' + (done ? tnC.green : (tr ? 'rgba(0,0,0,.25)' : tnWHT)) + ';display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0">' + (done ? tnI('check', 11, '#fff') : '') + '</button>';
-  h += '<div style="flex:1;min-width:0;font-size:13.5px;font-weight:600;line-height:1.4;color:' + (done ? tnC.faint : tnC.text) + ';text-decoration:' + (done ? 'line-through' : 'none') + ';word-break:break-word;overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">' + tnEsc(t.title) + '</div>';
+  // ② 標題列：完成勾 + 標題（最多兩行省略）
+  h += '<div style="display:flex;align-items:flex-start;gap:8px;margin-top:5px">';
+  h += '<button onclick="event.stopPropagation();tnToggleDone(\'' + t.id + '\')" title="切換完成" style="flex-shrink:0;width:17px;height:17px;margin-top:1px;border-radius:4px;border:1px solid ' + (done ? tnC.green : tnCBR) + ';background:' + (done ? tnC.green : (tr ? 'rgba(0,0,0,.25)' : tnWHT)) + ';display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0">' + (done ? tnI('check', 11, '#fff') : '') + '</button>';
+  h += '<div style="flex:1;min-width:0;font-size:15px;font-weight:700;line-height:1.35;color:' + (done ? tnC.faint : tnC.text) + ';text-decoration:' + (done ? 'line-through' : 'none') + ';word-break:break-word;overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">' + tnEsc(t.title) + '</div>';
   h += '</div>';
-  // ③ 日期 / 關係 / 執行狀態 chips
+  // ③ meta 一行：日期 · 負責人 · 預估N分
+  const fmtD = s => { const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s || ''); return m ? (m[2] + '月' + m[3] + '日') : (s || ''); };
+  const metaLine = [];
+  if (t.due) metaLine.push('<span style="color:' + ((!done && t.due <= tnToday()) ? tnC.red : 'inherit') + '">' + fmtD(t.due) + tnWd(t.due) + '</span>');
+  if (t.owner) metaLine.push(tnEsc(t.owner));
+  if (t.estimatedMinutes) metaLine.push('預估' + t.estimatedMinutes + '分');
+  if (metaLine.length) h += '<div style="font-size:11.5px;color:' + tnC.sub + ';margin-top:6px">' + metaLine.join(' · ') + '</div>';
+  // ④ chips：大項 + 步驟 + 附件 + 狀態pill + 動作鈕
   let meta = '';
-  if (t.due) meta += '<span style="display:inline-flex;align-items:center;gap:4px;font-size:11px;font-variant-numeric:tabular-nums;color:' + ((!done && t.due <= tnToday()) ? tnC.red : tnC.sub) + '">' + tnI('cal', 11) + t.due + tnWd(t.due) + '</span>';
-  if ((t.files || []).length > 0) meta += '<span title="' + t.files.length + ' 個附件" style="display:inline-flex;align-items:center;gap:2px;font-size:11px;color:' + tnC.sub + '">' + tnI('clip', 11) + t.files.length + '</span>';
+  const cat = (tnS.cats || []).find(c => c.id === t.catId);
+  if (cat && cat.name && cat.id !== tnINBOX) meta += '<span style="display:inline-flex;align-items:center;font-size:11px;color:' + tnC.sub + ';border:1px solid ' + tnC.line + ';border-radius:7px;padding:2px 8px">' + tnEsc(cat.name) + '</span>';
   const tnTds = t.todos || [];
-  if (tnTds.length > 0) { const tnTdn = tnTds.filter(x => x && x.d).length, tnTall = tnTdn === tnTds.length; meta += '<span title="步驟 ' + tnTdn + '/' + tnTds.length + '" style="display:inline-flex;align-items:center;gap:3px;font-size:11px;font-variant-numeric:tabular-nums;font-weight:' + (tnTall ? 700 : 400) + ';color:' + (tnTall ? tnC.green : tnC.sub) + '">' + tnI('checksq', 11, tnTall ? tnC.green : 'currentColor') + tnTdn + '/' + tnTds.length + '</span>'; }
+  if (tnTds.length > 0) { const tnTdn = tnTds.filter(x => x && x.d).length, tnTall = tnTdn === tnTds.length; meta += '<span title="步驟 ' + tnTdn + '/' + tnTds.length + '" style="display:inline-flex;align-items:center;gap:3px;font-size:11px;font-variant-numeric:tabular-nums;border:1px solid ' + (tnTall ? tnC.green : tnC.line) + ';border-radius:7px;padding:2px 8px;font-weight:' + (tnTall ? 700 : 400) + ';color:' + (tnTall ? tnC.green : tnC.sub) + '">' + tnI('checksq', 11, tnTall ? tnC.green : 'currentColor') + tnTdn + '/' + tnTds.length + '</span>'; }
+  if ((t.files || []).length > 0) meta += '<span title="' + t.files.length + ' 個附件" style="display:inline-flex;align-items:center;gap:2px;font-size:11px;color:' + tnC.sub + ';border:1px solid ' + tnC.line + ';border-radius:7px;padding:2px 8px">' + tnI('clip', 11) + t.files.length + '</span>';
   if (tnIsWaiting(t) && !done) meta += tnPill(tnC.amber, '等：' + tnEsc(t.waitingFor));
   if (tnIsBlocked(t, tnS.tasks) && !done) meta += tnPill(tnC.red, '被前置卡住');
   if (t.by) meta += '<span title="發現/回報者" style="display:inline-flex;align-items:center;gap:3px;font-size:10.5px;color:' + tnC.faint + ';white-space:nowrap">' + tnI('eye', 11) + tnEsc(t.by) + '</span>';
@@ -738,28 +764,23 @@ function tnCard(t, o) {
   if (rvBy) {
     meta += '<span title="回報完成，等建立者過目" style="display:inline-flex;align-items:center;gap:4px;font-size:10.5px;color:' + tnC.amber + ';background:#2A2012;border:1px solid #5A4A2A;border-radius:999px;padding:0 8px;white-space:nowrap">' + tnI('hourglass', 10, tnC.amber) + '待審核・' + tnEsc(rvBy) + '</span>';
     if (tnS.me && t.createdBy === tnS.me) {
-      meta += '<button onclick="event.stopPropagation();tnApprove(\'' + t.id + '\')" style="display:inline-flex;align-items:center;gap:3px;border:1px solid ' + tnC.green + ';background:#16281C;color:' + tnC.green + ';border-radius:999px;padding:0 8px;font-size:10.5px;font-weight:700;cursor:pointer">' + tnI('check', 10, tnC.green) + '通過</button>';
-      meta += '<button onclick="event.stopPropagation();tnReject(\'' + t.id + '\')" style="display:inline-flex;align-items:center;gap:3px;border:1px solid ' + tnC.red + ';background:#2A181A;color:' + tnC.red + ';border-radius:999px;padding:0 8px;font-size:10.5px;font-weight:700;cursor:pointer">' + tnI('x', 10, tnC.red) + '退回</button>';
+      meta += '<button onclick="event.stopPropagation();tnApprove(\'' + t.id + '\')" style="display:inline-flex;align-items:center;gap:3px;border:1px solid ' + tnC.green + ';background:#16281C;color:' + tnC.green + ';border-radius:999px;padding:1px 8px;font-size:10.5px;font-weight:700;cursor:pointer">' + tnI('check', 10, tnC.green) + '通過</button>';
+      meta += '<button onclick="event.stopPropagation();tnReject(\'' + t.id + '\')" style="display:inline-flex;align-items:center;gap:3px;border:1px solid ' + tnC.red + ';background:#2A181A;color:' + tnC.red + ';border-radius:999px;padding:1px 8px;font-size:10.5px;font-weight:700;cursor:pointer">' + tnI('x', 10, tnC.red) + '退回</button>';
     }
   }
-  if (!done && !t.ack && tnS.me && t.owner === tnS.me && t.createdBy !== tnS.me) meta += '<button onclick="event.stopPropagation();tnAck(\'' + t.id + '\')" title="告訴建立者你看到這張任務了" style="display:inline-flex;align-items:center;gap:3px;border:1px solid ' + tnC.accent + ';background:' + tnC.accentSoft + ';color:' + tnC.accent + ';border-radius:999px;padding:0 8px;font-size:10.5px;font-weight:700;cursor:pointer">' + tnI('check', 10, tnC.accent) + '確認收到</button>';
-  if (!done && !t.claimBy && tnS.me) meta += '<button onclick="event.stopPropagation();tnClaim(\'' + t.id + '\')" style="border:1px solid ' + tnC.accent + ';background:' + tnC.accentSoft + ';color:' + tnC.accent + ';border-radius:999px;padding:0 8px;font-size:10.5px;font-weight:700;cursor:pointer">我來解決</button>';
-  if (!done && t.claimBy && t.claimBy === tnS.me) meta += '<button onclick="event.stopPropagation();tnUnclaim(\'' + t.id + '\')" style="border:1px solid ' + tnC.line + ';background:' + tnWHT + ';color:' + tnFNT + ';border-radius:999px;padding:0 8px;font-size:10.5px;cursor:pointer">放棄</button>';
-  if (meta) h += '<div style="display:flex;gap:4px 6px;flex-wrap:wrap;align-items:center;margin-top:7px">' + meta + '</div>';
-  // ④ 照片：第一張封面、其餘小縮圖（已完成不佔版面）
+  if (!done && !t.ack && tnS.me && t.owner === tnS.me && t.createdBy !== tnS.me) meta += '<button onclick="event.stopPropagation();tnAck(\'' + t.id + '\')" title="告訴建立者你看到這張任務了" style="display:inline-flex;align-items:center;gap:3px;border:1px solid ' + tnC.accent + ';background:' + tnC.accentSoft + ';color:' + tnC.accent + ';border-radius:999px;padding:1px 8px;font-size:10.5px;font-weight:700;cursor:pointer">' + tnI('check', 10, tnC.accent) + '確認收到</button>';
+  if (!done && !t.claimBy && tnS.me) meta += '<button onclick="event.stopPropagation();tnClaim(\'' + t.id + '\')" style="border:1px solid ' + tnC.accent + ';background:' + tnC.accentSoft + ';color:' + tnC.accent + ';border-radius:999px;padding:1px 8px;font-size:10.5px;font-weight:700;cursor:pointer">我來解決</button>';
+  if (!done && t.claimBy && t.claimBy === tnS.me) meta += '<button onclick="event.stopPropagation();tnUnclaim(\'' + t.id + '\')" style="border:1px solid ' + tnC.line + ';background:' + tnWHT + ';color:' + tnFNT + ';border-radius:999px;padding:1px 8px;font-size:10.5px;cursor:pointer">放棄</button>';
+  if (meta) h += '<div style="display:flex;gap:5px 6px;flex-wrap:wrap;align-items:center;margin-top:8px">' + meta + '</div>';
+  // 照片：第一張封面、其餘小縮圖（已完成不佔版面）
   const imgs = (t.files || []).filter(f => f.isImage);
   if (!done && imgs.length) {
-    h += '<div style="margin-top:7px"><img src="' + tnEsc(imgs[0].url) + '" alt="" loading="lazy" style="width:100%;max-height:120px;object-fit:cover;border-radius:6px;border:1px solid ' + tnC.line + ';display:block">';
+    h += '<div style="margin-top:8px"><img src="' + tnEsc(imgs[0].url) + '" alt="" loading="lazy" style="width:100%;max-height:120px;object-fit:cover;border-radius:6px;border:1px solid ' + tnC.line + ';display:block">';
     if (imgs.length > 1) h += '<div style="display:flex;gap:4px;margin-top:4px;align-items:center">' + imgs.slice(1, 4).map(f => '<img src="' + tnEsc(f.url) + '" alt="" loading="lazy" style="width:34px;height:34px;object-fit:cover;border-radius:5px;border:1px solid ' + tnC.line + '">').join('') + (imgs.length > 4 ? '<span style="font-size:10.5px;color:' + tnC.faint + '">+' + (imgs.length - 4) + '</span>' : '') + '</div>';
     h += '</div>';
   }
-  // ⑤ 底部列：負責人(左) · 積分徽章(右)；窄卡放不下→flex-wrap 自動掉第二列，不壓縮標題
-  if (t.owner || tnBdgC) {
-    h += '<div style="display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-top:9px">';
-    if (t.owner) h += '<span title="負責人：' + tnEsc(t.owner) + '" style="display:inline-flex;align-items:center;gap:5px;font-size:11px;color:' + tnC.sub + ';min-width:0"><span style="width:20px;height:20px;border-radius:50%;background:' + tnC.accentSoft + ';color:' + tnC.accent + ';font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center;white-space:nowrap;overflow:hidden;flex-shrink:0">' + tnEsc(t.owner.slice(0, 2)) + '</span><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + tnEsc(t.owner) + '</span></span>';
-    if (tnBdgC) h += '<span style="margin-left:auto;flex-shrink:0">' + tnBdgC + '</span>';
-    h += '</div>';
-  }
+  // ⑤ 徽章：固定右下角（大顆；沒有積分就不畫＝該列不佔空間）
+  if (tnBdgC) h += '<div style="display:flex;justify-content:flex-end;margin-top:10px">' + tnBdgC + '</div>';
   // v2.0 包圖層外殼：有等級＋註冊表＝七層特效卡；done/無等級/無註冊表＝素卡
   const outerOpen = '<div draggable="true" data-tid="' + t.id + '" ondragstart="tnDS(event,\'' + t.id + '\')" ondragend="tnDE()"' + dndCard
     + ' onclick="tnOpen(\'' + t.id + '\')" onmouseenter="tnS.hover=\'' + t.id + '\'" onmouseleave="if(tnS.hover===\'' + t.id + '\')tnS.hover=null"';
