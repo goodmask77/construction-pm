@@ -431,6 +431,7 @@ function lbFinder(nm){
     return false
   }
   window.addEventListener('hashchange', routeHash)
+  window.routeHash = routeHash // v4.47.2 暴露給通知中心 ntfGo：帶 hash 的通知若 hash 沒變（不觸發 hashchange）要能強制定位
   if (!routeHash()) { if (v && R[v]) R[v](); else load('ground') }
   // 側欄每個分頁小🔗（張良：這裡旁邊都建立複製連結）
   try { document.querySelectorAll('.tabs button[id^="tab-"]').forEach(b=>{ const k2 = b.id.slice(4); if (k2 === 'home') return

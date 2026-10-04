@@ -466,6 +466,31 @@ async function ntfPage(){ // 通知中心彈層：分類chips＋依日分組歷�
   try { if ('clearAppBadge' in navigator) navigator.clearAppBadge().catch(()=>{}) } catch(e){}
   const b = document.getElementById('ntfBell'); const d = b && b.querySelector('.ntfDot'); if (d) d.remove()
 }
+// 🔔 通知點擊定位（v4.47.2 張良「點了明日備料建議沒有定位過去」）：
+// 真因＝①舊通知 url 只存 /prep 沒帶 #tab=prep（v4.45.6 前寫入的改不了）②同頁 location.href 改 hash，hash 沒變就不觸發 hashchange＝不動。
+// 治本＝帶 hash 就設 hash（相同則強制 routeHash）、沒 hash 就按分類(cat)補定位；跨頁才整頁跳。
+function ntfGo(url, cat){
+  const ov = document.getElementById('ntfOv'); if (ov) ov.remove()
+  url = String(url || '/prep')
+  if (/^https?:/i.test(url)) { location.href = url; return } // 外站絕對連結
+  const path = url.split('#')[0]
+  if (path && path !== '/prep' && path !== '/') { location.href = url; return } // 別的頁（含主 App 路徑）
+  const hash = url.includes('#') ? '#' + url.split('#').slice(1).join('#') : ''
+  if (hash) { // 深層連結 #tab=/#meet=/#sop=/#vio=/#task=
+    if (location.hash === hash) { if (typeof window.routeHash === 'function') window.routeHash() } // hash 沒變→強制跑一次
+    else location.hash = hash // 改 hash→hashchange→routeHash 自動定位
+    return
+  }
+  const byCat = { // 舊通知沒帶 hash→用分類補定位
+    prep: () => typeof prepPage === 'function' && prepPage(true),
+    meet: () => typeof meetLoad === 'function' && meetLoad(),
+    sop: () => typeof sopPage === 'function' && sopPage(),
+    stock: () => typeof invLoad === 'function' && invLoad('food'),
+    issue: () => typeof errsView === 'function' && errsView()
+  }
+  if (cat && byCat[cat]) { try { byCat[cat]() } catch(_) {} return }
+  if (typeof load === 'function') load(lastStore || 'ground') // 真的沒資訊→至少關彈窗回看板
+}
 function ntfRender(){
   const L = _ntfList || [], rd0 = localStorage.getItem('gdNtfRead') || ''
   const cnt = k => k==='all' ? L.length : L.filter(x=>(x.cat||'other')===k).length
@@ -480,7 +505,7 @@ function ntfRender(){
     if (d2 !== lastD) { html += `<div class="hint" style="font-weight:800;margin:12px 0 4px">${d2}</div>`; lastD = d2 }
     const hh = new Date(x.ts).toLocaleTimeString('zh-TW',{hour:'2-digit',minute:'2-digit',hour12:false})
     const unread = x.ts > rd0
-    html += `<div onclick="var o9=document.getElementById('ntfOv');if(o9)o9.remove();location.href='${(x.url||'/prep').replace(/'/g,'')}'" style="display:flex;gap:9px;padding:10px 10px;border:1px solid ${unread?'#3E5B86':'#2C3542'};background:${unread?'#20304A':'#202834'};border-radius:11px;margin-bottom:7px;cursor:pointer"> <!-- v4.41.6 點通知先關彈窗再跳深層連結（不然擋住金光定位） -->
+    html += `<div onclick="ntfGo('${(x.url||'/prep').replace(/'/g,'')}','${(x.cat||'').replace(/'/g,'')}')" style="display:flex;gap:9px;padding:10px 10px;border:1px solid ${unread?'#3E5B86':'#2C3542'};background:${unread?'#20304A':'#202834'};border-radius:11px;margin-bottom:7px;cursor:pointer"> <!-- v4.47.2 ntfGo＝帶hash設hash(相同強制routeHash)/沒hash按分類定位/跨頁才整頁跳；原本只 location.href 同頁hash沒變不動 -->
       <span style="flex:0 0 auto;font-size:16px">${(NTF_CATS[x.cat]||'🔔').slice(0,2)}</span>
       <div style="min-width:0"><div style="font-weight:800;font-size:14.5px">${x.title||''} <span class="hint" style="font-weight:400">${hh}</span></div>
       <div class="hint" style="font-size:13px;overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical">${x.body||''}</div></div></div>`
