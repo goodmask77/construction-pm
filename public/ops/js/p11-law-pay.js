@@ -38,29 +38,23 @@ function lpAbAgg(){ const d=window._shiftD||{}; const out={}
   return out }
 
 // ⚖️ 法規逐條檢查（對照本月 GD 打卡實測 + AB NUEiP 出勤/排班）
-function lawView(){
+async function lawView(){
+  // v4.37.4（張良「這邊是不是沒更新到 實際上有問題」）：原本只看「當月」→ §32/§34/§36 改吃「全史未處理違規」（與🔴違規清單同一份；負責人按✅處理才轉綠）
+  lpOverlay('lawOv','<div class="hint" style="padding:18px">掃描 6 月起全部班表中…</div>')
+  if (typeof shVioEnsureAll==='function') await shVioEnsureAll()
   const rows=window._shRows||[], per=window._shPer||{}, abAgg=lpAbAgg(), d=window._shiftD||{}
-  const t2m=hm=>{ const a=String(hm||'').split(':'); return (+a[0]||0)*60+(+a[1]||0) }
-  // 班距<11h（§34）：GD=打卡（前日最後下班→次日最早上班）；AB=NUEiP 排班時間
-  const gapBad=[]
-  { const byN={}; rows.forEach(r=>{ (byN[r.name]=byN[r.name]||{})[r.date]=r })
-    for(const [nm,ds] of Object.entries(byN)){ const dts=Object.keys(ds).sort()
-      for(let i=1;i<dts.length;i++){ const a=ds[dts[i-1]], b=ds[dts[i]]
-        if((new Date(dts[i])-new Date(dts[i-1]))/86400e3!==1 || !a.lastOut || !b.firstIn) continue
-        const gap=(1440-t2m(a.lastOut))+t2m(b.firstIn)
-        if(gap<660) gapBad.push(`GD ${nm} ${dts[i-1].slice(5)}→${dts[i].slice(5)} 僅隔${r1(gap/60)}h`) } }
-    const abBy={}; (typeof shMergedAb==='function'?shMergedAb():[]).forEach(x=>{ if(String(x.date||'').startsWith(shiftYm)&&x.start&&x.end&&!/休|例/.test(x.code||'')) (abBy[x.name]=abBy[x.name]||{})[x.date]=x })
-    for(const [nm,ds] of Object.entries(abBy)){ const dts=Object.keys(ds).sort()
-      for(let i=1;i<dts.length;i++){ const a=ds[dts[i-1]], b=ds[dts[i]]
-        if((new Date(dts[i])-new Date(dts[i-1]))/86400e3!==1) continue
-        let endM=t2m(a.end); if(endM<=t2m(a.start)) endM+=1440 // 跨午夜(15:00-00:00)
-        const gap=(1440-(endM%1440===0?1440:endM%1440))+t2m(b.start)
-        if(gap<660&&gap>0) gapBad.push(`AB ${nm} ${dts[i-1].slice(5)}→${dts[i].slice(5)} 排班僅隔${r1(gap/60)}h`) } } }
-  // 彙整各條狀態
-  const gdOver12=rows.filter(r=>r.over12).map(r=>`GD ${r.name} ${r.date.slice(5)}（${r1(r.h)}h）`)
-  const abOver12=[]; Object.entries(abAgg).forEach(([nm,o])=>[...o.flags].filter(f=>f.includes('>12h')).forEach(f=>abOver12.push('AB '+nm+' '+f)))
-  const ot46=[...Object.entries(per).filter(([,p])=>p.ot1+p.ot2>46).map(([nm,p])=>`GD ${nm}（${r1(p.ot1+p.ot2)}h）`), ...Object.entries(abAgg).filter(([,o])=>o.ot1+o.ot2>46).map(([nm,o])=>`AB ${nm}（${r1(o.ot1+o.ot2)}h）`)]
-  const run12=[...Object.entries(per).filter(([,p])=>[...p.flags].some(f=>f.includes('連上超過12天'))).map(([nm])=>'GD '+nm), ...Object.entries(abAgg).filter(([,o])=>[...o.flags].some(f=>f.includes('連上超過12天'))).map(([nm])=>'AB '+nm)]
+  const V9 = shVioCompute(rows)
+  const vioL = []
+  for(const [k9,rs] of Object.entries(V9.g||{})){ const [nm9,dt9]=k9.split('|'); rs.forEach(r9=>vioL.push({st:'GD',nm:nm9,dt:dt9,r:r9})) }
+  for(const [k9,rs] of Object.entries(V9.a||{})){ const [nm9,dt9]=k9.split('|'); rs.forEach(r9=>vioL.push({st:'AB',nm:nm9,dt:dt9,r:r9})) }
+  vioL.sort((x,y)=>x.dt<y.dt?-1:1)
+  const vTx = x => `${x.st} ${x.nm} ${x.dt.slice(5)}（${x.r}）`
+  const gapBad = vioL.filter(x=>/班距/.test(x.r)).map(vTx)
+  const over12All = vioL.filter(x=>/>12/.test(x.r)).map(vTx)
+  const runAll = vioL.filter(x=>/連上/.test(x.r)).map(vTx)
+  const gdOver12=[], abOver12=over12All // 併進同一掛（全史）
+  const ot46=[...Object.entries(per).filter(([,p])=>p.ot1+p.ot2>46).map(([nm,p])=>`GD ${nm}（本月加班${fmtHM((p.ot1+p.ot2)*60)}）`), ...Object.entries(abAgg).filter(([,o])=>o.ot1+o.ot2>46).map(([nm,o])=>`AB ${nm}（本月加班${fmtHM((o.ot1+o.ot2)*60)}）`)]
+  const run12=runAll
   // 每2週至少2例假（§36 四週變形版）：任意連續14天內工作≥13天=例假不足
   const biw=[]
   { const addBi=(tag,nm,dates)=>{ const ds=[...new Set(dates)].sort(); for(let i=0;i<ds.length;i++){ const d0=new Date(ds[i]); let c=0; for(const d2 of ds){ const diff=(new Date(d2)-d0)/86400e3; if(diff>=0&&diff<14) c++ } if(c>=13){ biw.push(`${tag} ${nm}（${ds[i].slice(5)}起14天內上了${c}天）`); return } } }
@@ -85,7 +79,7 @@ function lawView(){
     {art:'勞基法 §38（特休）', rule:'滿 6 個月 3 天、滿 1 年 7 天…依年資遞增', s:'info', det:'系統缺完整到職日資料，暫無法自動核', fix:'名冊補齊到職日後可自動對照特休餘額'},
   ]
   lpOverlay('lawOv',`
-    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap"><b style="font-size:17px">⚖️ 勞基法檢查・${shiftYm}</b>
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap"><b style="font-size:17px">⚖️ 勞基法檢查 <span class="hint" style="font-weight:600;font-size:12.5px">工時類=6月起全史未處理（處理完才轉綠）・月加班/例假統計=${shiftYm}</span></b>
       <span class="hint">依據：GD＝打卡實測｜AB＝NUEiP 出勤/排班｜台灣 2026 現行法規・<b style="color:var(--pdark)">已套用四週變形工時（餐飲業）</b></span>
       <button class="mini" style="padding:6px 14px" onclick="document.getElementById('lawOv').remove()">關閉</button></div>
     <div class="scroll" style="margin-top:10px"><table style="border-collapse:collapse;width:100%"><thead>
