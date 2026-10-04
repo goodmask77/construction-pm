@@ -85,7 +85,17 @@ function bindPrompt(){
   hardRefresh() // v4.31.4 整個App重開＝名字/權限/分頁即時變（manifest 個人化 maniSync 重開後自動跑）
 }
 const BIND_HINT = `私訊 DD「登入碼」拿 4 位數 → 按 <button class="mini" onclick="bindPrompt()">🔑 登入</button> 填入（沒綁定過先跟 DD 說「綁定GD 本名」）`
+// 🗓 台灣國定假日（v4.43.0）：window._twHol={日期:假名} _twWk={日期:補班}——標記每日數據/班表、大卡均線略過連假、以後排班提醒用
+window._twHol = {}; window._twWk = {}; let _twT = 0
+function twHolInit(){
+  if (Date.now() - _twT < 3600e3) return; _twT = Date.now()
+  try { const c = JSON.parse(localStorage.getItem('twhol9') || 'null'); if (c && c.hol) { window._twHol = c.hol; window._twWk = c.wk || {} } } catch(_){}
+  fetch('/api/mail-sync?twhol=' + encodeURIComponent(K)).then(r=>r.json()).then(j=>{
+    if (j && j.ok) { window._twHol = j.hol || {}; window._twWk = j.wk || {}; try { localStorage.setItem('twhol9', JSON.stringify(j)) } catch(_){} }
+  }).catch(()=>{})
+}
 async function load(store, fresh){
+  try { twHolInit() } catch(_){}
   curStore = store
   setTabs(store)
   if (!K) { app.innerHTML = '<div class="err">網址缺少金鑰，請跟店長要完整連結</div>'; return }
@@ -117,15 +127,15 @@ function renderBoard(d, store, view){
     const of0 = ds0.filter(x=>!x.live && (Number(x.rev)||0)>0).slice().sort((a,b)=>String(a.date)<String(b.date)?-1:1)
     const shown = lv0 || of0[of0.length-1]
     if (shown) {
-      const base7 = of0.filter(x=>x.date!==shown.date).slice(-7)
+      const base7 = of0.filter(x=>x.date!==shown.date && !(window._twHol||{})[x.date]).slice(-7) // v4.43.0 略過國定假日（張良:中秋連假沒上班族拉低均線→48%虛胖）
       const avg7 = base7.length ? base7.reduce((t,x)=>t+(Number(x.rev)||0),0)/base7.length : 0
       const pc0 = avg7 ? Math.round(((Number(shown.rev)||0)/avg7-1)*100) : null
       const up0 = pc0!=null && pc0>=0
       const lu0 = shown.lunchRev!=null ? shown.lunchRev : (shown.lunchPct!=null&&shown.rev ? shown.rev*shown.lunchPct/100 : null)
       h += `<section style="margin-top:12px"><div style="display:flex;align-items:baseline;gap:14px;flex-wrap:wrap">
-        <div><div class="hint" style="font-weight:700">${lv0?'今日營收（營業中・隨盤中更新）':`${String(shown.date).slice(5)}${shown.wd?`（${shown.wd}）`:''} 營收（最新日結）`}</div>
+        <div><div class="hint" style="font-weight:700">${lv0?'今日營收（營業中・隨盤中更新）':`${String(shown.date).slice(5)}${shown.wd?`（${shown.wd}）`:''}${(window._twHol||{})[shown.date]?` <span style="color:#F2C14E">${window._twHol[shown.date]}</span>`:''} 營收（最新日結）`}</div>
         <div style="font-size:36px;font-weight:900;color:var(--ink);letter-spacing:-.02em;font-variant-numeric:tabular-nums;line-height:1.25">${Math.round(shown.rev||0).toLocaleString()}</div></div>
-        ${pc0!=null?`<div style="font-size:18px;font-weight:900;color:${up0?'#FF6B6B':'#3DBE6C'}">${up0?'▲':'▼'}${Math.abs(pc0)}%<div class="hint" style="font-weight:600">近7日均 ${Math.round(avg7).toLocaleString()}</div></div>`:''}
+        ${pc0!=null?`<div style="font-size:18px;font-weight:900;color:${up0?'#FF6B6B':'#3DBE6C'}">${up0?'▲':'▼'}${Math.abs(pc0)}%<div class="hint" style="font-weight:600">近7日均(不含連假) ${Math.round(avg7).toLocaleString()}</div></div>`:''}
       </div>
       <div style="display:flex;gap:22px;margin-top:6px;flex-wrap:wrap">
         <span class="hint">單數 <b style="color:var(--ink);font-size:16px">${shown.tx||'—'}</b></span>
@@ -230,7 +240,7 @@ function renderBoard(d, store, view){
     const wknd = x.wd==='六'||x.wd==='日'
     const zb = ((zbi++)%2===0) ? '#191F28' : 'var(--card)' // 凍結欄自帶底色
     const lu = luOf(x)
-    return `<tr><td style="position:sticky;left:0;z-index:1;background:${zb};text-align:left;font-weight:${wknd?800:500};color:${wknd?'#A85C26':'inherit'}${indent?';padding-left:28px':''}">${x.date.slice(5)}（${x.wd}）</td>${hc(x.rev,avR,'font-weight:700')}${isGD?hc(lu,avLu):''}<td style="${heat(x.tx,avTx)}">${x.tx||'—'}</td>${hc(x.avg,avAvg)}${hc(x.cash,avCash)}${hc(x.card,avCard)}<td style="${heat(x.linepay||null,avLp)}">${x.linepay?fN(x.linepay):'—'}</td><td style="${heat(x.uber||null,avUb)}">${x.uber?fN(x.uber):'—'}</td><td style="${heat(x.discount||null,avDis)}">${x.discount?fN(x.discount):'—'}</td>${isGD?`<td style="${heat(x.kioskPct,avKp)}">${x.kioskPct!=null?x.kioskPct+'%':'—'}</td><td style="${heat(x.takePct,avTk)}">${x.takePct!=null?x.takePct+'%':'—'}</td><td style="${heat(d.setPcts[i],avSet)}">${d.setPcts[i]!=null?d.setPcts[i]+'%':'—'}</td>`:''}</tr>`
+    return `<tr><td style="position:sticky;left:0;z-index:1;background:${zb};text-align:left;font-weight:${wknd?800:500};color:${wknd?'#A85C26':'inherit'}${indent?';padding-left:28px':''}">${x.date.slice(5)}（${x.wd}）${(window._twHol||{})[x.date]?`<span style="font-size:10px;color:#F2C14E;font-weight:800;margin-left:3px">${window._twHol[x.date]}</span>`:((window._twWk||{})[x.date]?`<span style="font-size:10px;color:#8C98A8;margin-left:3px">補班</span>`:'')}</td>${hc(x.rev,avR,'font-weight:700')}${isGD?hc(lu,avLu):''}<td style="${heat(x.tx,avTx)}">${x.tx||'—'}</td>${hc(x.avg,avAvg)}${hc(x.cash,avCash)}${hc(x.card,avCard)}<td style="${heat(x.linepay||null,avLp)}">${x.linepay?fN(x.linepay):'—'}</td><td style="${heat(x.uber||null,avUb)}">${x.uber?fN(x.uber):'—'}</td><td style="${heat(x.discount||null,avDis)}">${x.discount?fN(x.discount):'—'}</td>${isGD?`<td style="${heat(x.kioskPct,avKp)}">${x.kioskPct!=null?x.kioskPct+'%':'—'}</td><td style="${heat(x.takePct,avTk)}">${x.takePct!=null?x.takePct+'%':'—'}</td><td style="${heat(d.setPcts[i],avSet)}">${d.setPcts[i]!=null?d.setPcts[i]+'%':'—'}</td>`:''}</tr>`
   }
   // v4.37.4（張良「不要折疊——年鈕+月鈕兩層；選年=逐月、選月=逐日、沒日資料顯示無每日資料」）
   if (histMode){ // v4.37.8 歷年年度總表：一年一列（點列=進該年逐月）

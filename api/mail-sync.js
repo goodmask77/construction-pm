@@ -1020,6 +1020,36 @@ export default async function handler(req, res) {
     }
     return res.status(200).json({ ok: true, sent: sent9 })
   }
+  // 🗓 台灣國定假日/補班（v4.43.0 張良「中秋連假沒上班族——假日標記班表+營業額、以後排班提醒的底」）
+  // 資料=人事行政總處行事曆(ruyut/TaiwanCalendar,每年官方公告)；KV快取14天自動更新、2027公告後自動進來
+  if (req.query?.twhol) {
+    const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
+    if (!ok2 || String(req.query.twhol) !== ok2) return res.status(403).json({ ok: false })
+    const y0 = new Date(Date.now() + 8 * 3600e3).getUTCFullYear()
+    const hol = {}, wk = {}
+    for (const y of [y0, y0 + 1]) {
+      let doc = await kvGet('sp_finance_pm_twhol_' + y).catch(() => null)
+      if (!doc || !doc.ts || Date.now() - new Date(doc.ts).getTime() > 14 * 86400e3) {
+        try {
+          const r9 = await fetch('https://cdn.jsdelivr.net/gh/ruyut/TaiwanCalendar/data/' + y + '.json')
+          if (r9.ok) {
+            const arr = await r9.json()
+            const h9 = {}, w9 = {}
+            for (const x of arr) {
+              if (!x.description) continue
+              const dt = String(x.date).replace(/(d{4})(d{2})(d{2})/, '$1-$2-$3')
+              if (x.isHoliday) h9[dt] = x.description; else w9[dt] = x.description // 補行上班
+            }
+            doc = { ts: new Date().toISOString(), hol: h9, wk: w9 }
+            await kvPut('sp_finance_pm_twhol_' + y, doc, '行事曆快取')
+          }
+        } catch (_) {} // 來源掛了→用舊快取（明年檔還沒公告=404 正常跳過）
+      }
+      if (doc) { Object.assign(hol, doc.hol || {}); Object.assign(wk, doc.wk || {}) }
+    }
+    res.setHeader('Cache-Control', 's-maxage=86400, stale-while-revalidate=604800')
+    return res.status(200).json({ ok: true, hol, wk })
+  }
   // 我是誰（側欄底部身分膠囊用；張良 2026-10-02）：GET ?whoami=<OPS_BOARD_KEY>&me=token
   if (req.query?.whoami) {
     const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
