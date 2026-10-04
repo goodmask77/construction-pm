@@ -173,7 +173,7 @@ function shiftRender(){
           const bg2=e.tr?`background:linear-gradient(180deg,${PB[pi]} 50%,${PB[ti]} 50%);`:`background:${PB[pi]};`
           const exp=((d.posStats||{})[e.name]||{})[ps]||0, trExp=e.tr?(((d.posStats||{})[e.tr]||{})[ps]||0):0
           const vio9=(VIO.g||{})[e.name+'|'+dt]
-          return `<div ${vio9?`class="vioGlow" title="⚠️ ${vio9.join('、')}"`:''} ${meN?`draggable="true" ondragstart="event.stopPropagation();event.dataTransfer.setData('text/plain','${e.id}');window._shiftDragId='${e.id}'" ondragend="window._shiftDragId=null" onclick="event.stopPropagation();shiftForm('${e.id}')"`:''} style="font-size:12px;line-height:1.45;white-space:nowrap;${meN?'cursor:grab;':''}${bg2}border:${e.tr?'1.5px dashed rgba(255,255,255,.95)':'none'};border-radius:5px;padding:${e.tr?'1px 3px':'2px 4px'};margin:1.5px 0">${(e.seq||exp+1)<=2&&dt>=today&&ps!=='未分崗'&&!e.tr?'⚠️':''}<b style="color:${PT[pi]};font-weight:600">${e.name}</b>${ps!=='未分崗'?` <span style="font-size:10px;color:${PT[pi]};opacity:.7;font-weight:700">${e.seq||exp+1}</span>`:''}${e.tr?`<span style="display:block;color:${PT[ti]};font-weight:600;font-size:11.5px">🎓${e.tr} <span style="font-size:9px;opacity:.7">${e.trSeq||trExp+1}</span></span>`:''}</div>`
+          return `<div data-gd="${e.name}|${dt}" ${vio9?`class="vioGlow" title="⚠️ ${vio9.join('、')}"`:''} ${meN?`draggable="true" ondragstart="event.stopPropagation();event.dataTransfer.setData('text/plain','${e.id}');window._shiftDragId='${e.id}'" ondragend="window._shiftDragId=null" onclick="event.stopPropagation();shiftForm('${e.id}')"`:''} style="font-size:12px;line-height:1.45;white-space:nowrap;${meN?'cursor:grab;':''}${bg2}border:${e.tr?'1.5px dashed rgba(255,255,255,.95)':'none'};border-radius:5px;padding:${e.tr?'1px 3px':'2px 4px'};margin:1.5px 0">${(e.seq||exp+1)<=2&&dt>=today&&ps!=='未分崗'&&!e.tr?'⚠️':''}<b style="color:${PT[pi]};font-weight:600">${e.name}</b>${ps!=='未分崗'?` <span style="font-size:10px;color:${PT[pi]};opacity:.7;font-weight:700">${e.seq||exp+1}</span>`:''}${e.tr?`<span style="display:block;color:${PT[ti]};font-weight:600;font-size:11.5px">🎓${e.tr} <span style="font-size:9px;opacity:.7">${e.trSeq||trExp+1}</span></span>`:''}</div>`
         }).join('')
         return `<td${cellOps} style="${BD}${sepOf(dt)}${gb}${dt===today?todayBg:wkndBg(dt)}padding:2px 3px;text-align:left;${meN?'cursor:pointer;':''}vertical-align:top">${ents||(meN?'<span class="mut">＋</span>':'<span class="mut">—</span>')}</td>`
       }).join('')+`</tr>`
@@ -238,7 +238,7 @@ function shiftRender(){
           hh += wd2.map(dt=>{
             const x = (abByN[nm]||{})[dt]
             const vioA9 = (VIO.a||{})[nm+'|'+dt]
-            if (!x) return `<td ${vioA9?`class="vioGlow" title="⚠️ ${vioA9.join('、')}"`:''} style="${BD}${gb9}${sepOf(dt)}${dt===today?todayBg:wkndBg(dt)}"></td>`
+            if (!x) return `<td data-ab="${nm}|${dt}" ${vioA9?`class="vioGlow" title="⚠️ ${vioA9.join('、')}"`:''} style="${BD}${gb9}${sepOf(dt)}${dt===today?todayBg:wkndBg(dt)}"></td>`
             const code = x.code || ''
             const tip = `${vioA9?`⚠️ ${vioA9.join('、')}｜`:''}${nm} ${dt} ${code||'排休'}${x.start?` ${x.start}-${x.end}`:''}${x.dept?`（${x.dept}）`:''}`
             const rest9 = /例|休/.test(code) // 休假＝淡灰小字不加框（一眼略過，排班色塊才跳）
@@ -248,7 +248,7 @@ function shiftRender(){
                 ? `<span style="font-size:10px;color:#55617A;font-weight:600;white-space:nowrap">${code.replace(/[●🔴⚪️]/g,'')}</span>`
                 : `<span style="display:inline-block;border:1px solid ${cc9};background:${cc9}1F;color:${cc9};border-radius:6px;padding:1px 6px;font-size:11px;font-weight:800;white-space:nowrap">${code}</span>${x.start?`<div class="hint" style="font-size:9px;white-space:nowrap">${x.start}-${x.end}</div>`:''}`)
               : `<span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:#3A4454" title="排休/未排"></span>`
-            return `<td ${vioA9?'class="vioGlow"':''} style="${BD}${gb9}${sepOf(dt)}${dt===today?todayBg:wkndBg(dt)}padding:2px 3px;text-align:center" title="${tip}">${chip}</td>`
+            return `<td data-ab="${nm}|${dt}" ${vioA9?'class="vioGlow"':''} style="${BD}${gb9}${sepOf(dt)}${dt===today?todayBg:wkndBg(dt)}padding:2px 3px;text-align:center" title="${tip}">${chip}</td>`
           }).join('') + `</tr>`
         })
       })

@@ -220,7 +220,8 @@ function shVioList(){
       <span class="hint">和班表上發紅光的格子一一對應；規則＝四週變形（單日12h／班距11h／連13天）</span>
       <button class="mini" style="padding:6px 14px" onclick="document.getElementById('vioOv').remove()">關閉</button></div>
     ${L.length?`<div class="scroll" style="margin-top:10px"><table style="border-collapse:collapse;width:100%"><thead><tr><th style="padding:5px 8px">店</th><th style="padding:5px 8px">日期</th><th style="text-align:left;padding:5px 8px">夥伴</th><th style="text-align:left;padding:5px 8px">問題</th></tr></thead><tbody>
-      ${L.map(x=>`<tr style="border-top:1px solid var(--line)"><td style="padding:6px 8px;text-align:center">${x.st}</td><td style="padding:6px 8px;white-space:nowrap">${x.dt.slice(5)}</td><td style="padding:6px 8px;font-weight:800">${x.nm}</td><td style="padding:6px 8px;color:var(--red);font-weight:700">${x.r}</td></tr>`).join('')}
+      ${L.map(x=>{ const prev9 = /班距/.test(x.r) ? new Date(new Date(x.dt+'T00:00:00Z').getTime()-86400e3).toISOString().slice(0,10) : ''
+        return `<tr style="border-top:1px solid var(--line);cursor:pointer" title="點我跳到班表這一格（金光定位）" onclick="shVioGo('${x.st}','${x.nm.replace(/'/g,'')}','${x.dt}','${prev9}')"><td style="padding:6px 8px;text-align:center">${x.st}</td><td style="padding:6px 8px;white-space:nowrap;color:var(--primary);text-decoration:underline">${x.dt.slice(5)}</td><td style="padding:6px 8px;font-weight:800">${x.nm}</td><td style="padding:6px 8px;color:var(--red);font-weight:700">${x.r}</td></tr>` }).join('')}
     </tbody></table></div><div class="hint" style="margin-top:8px">想看法條層面的整體體檢 → 工具列「⚖️ 法規」。</div>`:`<div class="mut" style="margin-top:12px">目前已載入的班表沒有違規 🎉</div>`}`)
 }
 
@@ -286,4 +287,23 @@ function abAttPerson(nm){
         <td style="padding:4px 8px;text-align:right;font-weight:700">${x.h||'—'}</td>
         <td style="padding:4px 8px;text-align:left">${stTx(x)}</td></tr>`).join('')}
     </tbody></table></div>`)
+}
+
+// 🔗 違規跳轉定位 v4.36.1（張良「點擊直接跑到有問題的地方 兩天金光閃3秒 問題那天持續紅光」）
+async function shVioGo(st, nm, dt, dt2){
+  const ov = document.getElementById('vioOv'); if (ov) ov.remove()
+  shRangeInclude(dt.slice(0,7)); if (dt2) shRangeInclude(dt2.slice(0,7))
+  if (!document.querySelector('th[data-d="'+dt+'"]')) { await shEnsure(shRangeYms()); if (typeof shGridOnly==='function') shGridOnly() }
+  requestAnimationFrame(()=>{
+    const box = document.getElementById('shBox'); if (!box) return
+    const th = box.querySelector('th[data-d="'+(dt2&&dt2<dt?dt2:dt)+'"]')
+    if (th) box.scrollLeft += th.getBoundingClientRect().left - box.getBoundingClientRect().left - 130
+    const attr = st==='AB' ? 'data-ab' : 'data-gd'
+    const want = new Set([nm+'|'+dt, ...(dt2?[nm+'|'+dt2]:[])])
+    const els = [...box.querySelectorAll('['+attr+']')].filter(el=>want.has(el.getAttribute(attr)))
+    if (!els.length) { lpToast('這一格不在目前畫面資料裡（往回翻月再試）'); return }
+    const tr0 = els[0].closest('tr'); if (tr0) box.scrollTop = Math.max(0, tr0.offsetTop - box.clientHeight/2)
+    els.forEach(el=>{ el.classList.remove('glowgold'); void el.offsetWidth; el.classList.add('glowgold') }) // 重觸發動畫
+    setTimeout(()=>els.forEach(el=>el.classList.remove('glowgold')), 3200) // 金光3秒收場；vioGlow紅光class還在=問題那天繼續紅
+  })
 }
