@@ -474,7 +474,7 @@ function abCellInfo(nm, dt){
   const scheds = (typeof shMergedAb==='function'?shMergedAb():[]).filter(x=>x.name===nm&&x.date===dt)
   const att = (typeof shMergedAbAtt==='function'?shMergedAbAtt():[]).find(x=>x.name===nm&&x.date===dt)
   const wd9 = '日一二三四五六'[new Date(dt).getDay()]
-  const schTx = scheds.length ? scheds.map(x=>`${x.code||'班'}${x.start?` ${x.start}–${x.end}`:''}`).join('、') : '沒排班'
+  const schTx = scheds.length ? (scheds.every(x=>/●|⚫/.test(x.code||'')) ? '不可排班（PT 劃假：上課等原因）' : scheds.filter(x=>!/●|⚫/.test(x.code||'')).map(x=>`${x.code||'班'}${x.start?` ${x.start}–${x.end}`:''}`).join('、')) : '沒排班' // v4.38.2 張良「●=PT不能排班,有跟公司說過(上課等)」
   // v4.37.0 張良「不要顯示10.2 就正常時間表示 跟排班時間對齊 快速辨識」：兩列同欄位對齊、時間等寬字、不秀時數
   const sch0 = scheds.find(x=>x.start&&x.end)
   const bad9 = []
