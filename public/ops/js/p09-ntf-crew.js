@@ -112,6 +112,34 @@ async function custHome(){
   app.innerHTML = h
 }
 
+
+// ⬇️ 匯出 CSV（v4.43.0 張良「篩選的任何客戶名單都要可匯出表格 做再行銷用」）：BOM 防亂碼、手機雙格式(+886給廣告平台/0開頭一般用)
+function custCsvDl(rows, cols, fname){
+  const esc = v => { v = (v==null?'':String(v)); return /[",\n]/.test(v) ? '"'+v.replace(/"/g,'""')+'"' : v }
+  const lines = [cols.map(c=>c[0]).join(',')].concat(rows.map((r,i)=>cols.map(c=>esc(c[1](r,i))).join(',')))
+  const a = document.createElement('a')
+  a.href = URL.createObjectURL(new Blob(['\ufeff'+lines.join('\n')], {type:'text/csv;charset=utf-8'}))
+  a.download = fname; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href), 3000)
+}
+const phLocal = ph => String(ph||'').replace(/^\+886/, '0')
+async function custExport(){
+  const hint = document.getElementById('custExpHint'); if (hint) hint.textContent = '打包中…'
+  const idx = window._custIdx || { segments: {} }
+  const segInfo = idx.segments[custSeg] || { pages: 1, label: custSeg }
+  let all = []
+  for (let p = 0; p < (segInfo.pages||1); p++){
+    const d = await cFetch(`custdb=${encodeURIComponent(K)}&seg=${custSeg}&page=${p}`, `custdb_${custSeg}_${p}`)
+    all = all.concat((d&&d.rows)||[])
+  }
+  const gdT = g => g===1?'小姐':g===2?'先生':''
+  custCsvDl(all, [['序號',(r,i)=>i+1],['姓名',r=>r.n||''],['稱謂',r=>gdT(r.gd)],['手機E164',r=>r.ph||''],['手機',r=>phLocal(r.ph)],['Email',r=>r.em||''],['入座次數',r=>r.v||0],['累計人次',r=>r.p||0],['小孩',r=>r.k||0],['最大組',r=>r.mx||0],['取消次數',r=>r.cx||0],['首次來店',r=>r.f||''],['最近來店',r=>r.l||'']], `inline顧客_${(segInfo.label||custSeg).replace(/[\/\\:*?"<>|]/g,'')}_${todayTpe()}.csv`)
+  if (hint) hint.textContent = `已匯出 ${all.length} 人 ✓`
+}
+function custNrExport(ym, which){
+  const d = window._custNrD && window._custNrD[ym]; if (!d) return
+  const rows = which==='nw' ? (d.nw||[]) : (d.rt||[])
+  custCsvDl(rows, [['序號',(r,i)=>i+1],['日期',r=>r.d],['時間',r=>r.t||''],['姓名',r=>r.nm||''],['手機E164',r=>r.ph||''],['手機',r=>phLocal(r.ph)],['人數',r=>r.n||0],['首次來店',r=>r.f||''],['累計第幾筆',r=>r.b||''],['類型',r=>r.ty===3||r.ty===1?'現場客':'訂位']], `inline${which==='nw'?'新客':'回頭'}_${ym}_${todayTpe()}.csv`)
+}
 // 眼見為憑：某月新/回逐筆名單（v4.42.1 張良「點了要看到 182/76 的詳細資料」）
 async function custNrShow(ym){
   const box = document.getElementById('nrEvid'); if (!box) return
@@ -119,12 +147,13 @@ async function custNrShow(ym){
   let d = null
   try { const r = await fetch(`/api/inline-sync?custnr=${encodeURIComponent(K)}&ym=${ym}`); d = await r.json() } catch(_){}
   if (!d || !d.ok || !d.nr) { box.innerHTML = `<div class="err">這個月的名單還沒建（每天自動重算；只保留近14個月的逐筆名單）</div>`; return }
+  window._custNrD = window._custNrD || {}; window._custNrD[ym] = d.nr
   const tbl = (rows, isNew) => `<div class="scroll" style="max-height:46vh;overflow:auto"><table style="width:100%;border-collapse:collapse;font-size:11.5px;white-space:nowrap"><tr>${['#','日期','時間','姓名','電話','人數',...(isNew?[]:['首次來店','這是第幾筆'])].map(x=>`<th style="position:sticky;top:0;background:var(--soft);padding:3px 7px">${x}</th>`).join('')}</tr>${rows.map((r,i)=>`<tr>${[i+1, r.d, r.t||'—', `<b>${r.nm||'—'}</b>${r.ty===3||r.ty===1?' <span class="hint" style="font-size:9px">現場</span>':''}`, r.ph||'—', r.n, ...(isNew?[]:[r.f||'—', `第${r.b}筆`])].map(x=>`<td style="border-top:1px solid var(--line);padding:2px 7px">${x}</td>`).join('')}</tr>`).join('')}</table></div>`
   box.innerHTML = `<div style="border:1.5px solid var(--primary);border-radius:10px;padding:10px 12px;margin-top:10px;background:var(--soft)">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><b style="font-size:13.5px">${ym} 逐筆名單（眼見為憑）</b><button class="mini" onclick="document.getElementById('nrEvid').innerHTML=''">✕ 關閉</button></div>
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:10px">
-      <div><div style="font-weight:900;color:#6EB1FF;font-size:12.5px;margin-bottom:4px">🔵 新客 ${(d.nr.nw||[]).length} 筆（第一次出現在系統）</div>${tbl(d.nr.nw||[], true)}</div>
-      <div><div style="font-weight:900;color:#5FD3A6;font-size:12.5px;margin-bottom:4px">🟢 回頭 ${(d.nr.rt||[]).length} 筆（附首次來店日＋累計第幾筆）</div>${tbl(d.nr.rt||[], false)}</div>
+      <div><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px"><span style="font-weight:900;color:#6EB1FF;font-size:12.5px">🔵 新客 ${(d.nr.nw||[]).length} 筆（第一次出現在系統）</span><button class="mini" style="padding:2px 10px;font-size:11px" onclick="custNrExport('${ym}','nw')">⬇️ CSV</button></div>${tbl(d.nr.nw||[], true)}</div>
+      <div><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px"><span style="font-weight:900;color:#5FD3A6;font-size:12.5px">🟢 回頭 ${(d.nr.rt||[]).length} 筆（附首次來店日＋累計第幾筆）</span><button class="mini" style="padding:2px 10px;font-size:11px" onclick="custNrExport('${ym}','rt')">⬇️ CSV</button></div>${tbl(d.nr.rt||[], false)}</div>
     </div>
     <div class="hint" style="font-size:10.5px;margin-top:5px">口徑：可識別顧客（有電話/客人檔）、不含取消與候補；電話在店內系統都看得到，請勿外流。</div>
   </div>`
@@ -236,6 +265,7 @@ async function custDb(seg, more){
   if (!d) { app.innerHTML = `<section>${custTopBar()}<div class="err">讀不到資料</div></section>`; return }
   custRows = custPg === 0 ? (d.rows||[]) : custRows.concat(d.rows||[])
   const idx = d.idx || { segments: {} }
+  window._custIdx = idx
   const segInfo = idx.segments[custSeg] || { total: custRows.length, pages: 1 }
   const chips = Object.entries(idx.segments).map(([k,v])=>`<button class="mini" onclick="custDb('${k}')" style="padding:4px 11px;font-weight:800;${k===custSeg?'background:var(--primary);color:#fff;border-color:var(--primary)':''}">#${v.label} <span style="opacity:.75">${cNum(v.total)}</span></button>`).join('')
   const gdT = g => g===1?'小姐':g===2?'先生':'—'
@@ -243,7 +273,7 @@ async function custDb(seg, more){
   h += `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">${chips}</div>`
   h += `<div style="display:flex;gap:8px;align-items:center;margin-bottom:8px"><input id="custQ" placeholder="搜尋姓名或電話（直連 inline 全史）" style="flex:1;max-width:340px;background:var(--card);border:1.5px solid var(--line);border-radius:9px;padding:7px 11px;color:var(--text);font-size:14px" onkeydown="if(event.key==='Enter')custFind()"><button class="mini" style="padding:6px 14px;font-weight:800" onclick="custFind()">🔍 搜尋</button><span class="hint" id="custQhint" style="font-size:11px"></span></div>`
   h += `<div id="custFindBox"></div>`
-  h += `<div class="hint" style="font-size:11px;margin:4px 0">#${segInfo.label}：共 ${cNum(segInfo.total)} 人（顯示 ${cNum(custRows.length)}）・點欄位名可知排序已固定（此分群預設排序）</div>`
+  h += `<div style="display:flex;gap:8px;align-items:center;margin:4px 0;flex-wrap:wrap"><span class="hint" style="font-size:11px">#${segInfo.label}：共 ${cNum(segInfo.total)} 人（顯示 ${cNum(custRows.length)}）</span><button class="mini" style="padding:4px 13px;font-weight:800" onclick="custExport()">⬇️ 匯出此分群 CSV（全部 ${cNum(segInfo.total)} 人）</button><span class="hint" id="custExpHint" style="font-size:10.5px">再行銷名單用・勿外流</span></div>`
   h += `<div class="scroll" style="max-height:62vh;overflow:auto"><table style="border-collapse:collapse;font-size:12.5px;white-space:nowrap"><thead><tr>${['#','姓名','稱謂','手機','Email','入座','人次','小孩','最大組','取消','首次來','最近來'].map(x=>`<th style="position:sticky;top:0;background:var(--soft);border:1px solid var(--line);padding:5px 8px;font-size:11.5px">${x}</th>`).join('')}</tr></thead><tbody>`
   h += custRows.map((c,i9)=>`<tr>${[`<span class="hint" style="font-size:11px">${i9+1}</span>`, `<b>${c.n}</b>`, gdT(c.gd), c.ph||'—', c.em||'—', `<b style="color:#5FD3A6">${c.v}</b>`, cNum(c.p), c.k?`<span style="color:#F2C94C;font-weight:800">${c.k}</span>`:'—', c.mx>=20?`<b style="color:#C792EA">${c.mx}</b>`:(c.mx||'—'), c.cx||'—', c.f||'—', c.l||'—'].map(x=>`<td style="border:1px solid var(--line);padding:4px 8px">${x}</td>`).join('')}</tr>`).join('')
   h += `</tbody></table></div>`
