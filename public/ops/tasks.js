@@ -1,4 +1,4 @@
-/* ── /prep 原生任務中心 tasks.js（v1.3 2026-10-04）────────────────────────────
+/* ── /prep 原生任務中心 tasks.js（v1.5 2026-10-04）────────────────────────────
    React 版 src/tasks/TaskCenter.jsx + taskModel.js 的 vanilla 移植，取代 iframe 內嵌。
    v1.1（張良 5 則）：①指派完浮通知三選一（大群/私訊/不通知→tasknotify）②卡片完成鈕＋建立者審核流
    （createdBy/review 新欄位，主 App 合併保留）③卡片減脂（大項名/狀態字/標籤不上卡）
@@ -14,6 +14,12 @@
    ③彈窗頂大顆「確認收到」鈕（我是負責人＋別人建＋未ack＋未done）；按下（彈窗/卡片同一條 tnAck）
    ＝③合一：ack={by,ts}＋開始計時（claimBy=我/claimAt=now，待辦順轉進行中）＋tasknotify kind:'ack'；
    已 ack＝彈窗頂綠色狀態列「已收到・名字＋計時」、卡片照舊徽章＋🔧計時。
+   v1.5（張良 2 則）：①詳情彈窗欄位對調＝「開始日｜截止日」同排（開始在左）、「優先級｜負責人」同排，
+   只動排版不動邏輯。②步驟清單（Todo List）＝內容/備註下方新區塊：勾選框＋文字＋⠿把手＋✕刪（hover 才現、
+   單項輕量不 confirm）、底部「＋新增步驟…」Enter 連續輸入、SortableJS 拖排完立即存；
+   新欄位 todos=[{id,t,d}]（id=短隨機/t=文字/d=0或1；查證過主 App src/ 沒人讀 ck＝那是 SOP 問題回報域的欄，
+   任務域乾淨→用新欄位，主 App Merge Rule {...existing,...patch} 原樣保留＝同 ack/review）；
+   全走 tnUpd/diffPersist 差異存檔；卡片徽章「☑ 2/5」單色 SVG（全勾=綠）。
    資料 100% 相容主 App：
      sp_team_pm_task_<id> ＝ 一件任務一份文件（含 ord＝手動排序位置）
      sp_team_pm_tasks_v2  ＝ 遷移 marker（只讀不寫）
@@ -90,6 +96,7 @@ const tnIP = {
   send: '<path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/>',
   bell: '<path d="M6 8a6 6 0 1 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/>',
   belloff: '<path d="M8.7 3A6 6 0 0 1 18 8c0 2.1.3 3.7.8 4.9"/><path d="M6.3 6.3C6.1 6.8 6 7.4 6 8c0 7-3 9-3 9h13"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/><path d="m2 2 20 20"/>',
+  checksq: '<rect x="3" y="3" width="18" height="18" rx="2"/><path d="m9 12 2 2 4-4"/>', // v1.5 步驟進度徽章（單色＝硬規不用彩 emoji）
 };
 function tnI(name, size, color, fill, extra) {
   return '<svg width="' + (size || 14) + '" height="' + (size || 14) + '" viewBox="0 0 24 24" fill="' + (fill || 'none') + '" stroke="' + (color || 'currentColor') + '" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" style="flex:0 0 auto;vertical-align:-2px;' + (extra || '') + '">' + (tnIP[name] || '') + '</svg>';
@@ -554,6 +561,7 @@ function tnRender() {
   host.innerHTML = tnRoot();
   if (aid) { const el = document.getElementById(aid); if (el && el !== document.activeElement) { try { el.focus(); if (ss != null && el.setSelectionRange) el.setSelectionRange(ss, ss); } catch (_) {} } }
   tnFocusTry(); // v1.3 深層連結＝資料就緒的那次 render 直接開詳情彈窗（沒 tnFocusId 一行就返回，零成本）
+  tnTodoSortInit(); // v1.5 步驟清單拖排：彈窗開著才掛 SortableJS（沒開＝收掉舊實例就返回）
 }
 function tnRoot() {
   if (tnS.tasks === null) { // 載入中 skeleton（淺灰佔位塊）
@@ -630,6 +638,12 @@ function tnCard(t, o) {
   h += '<div style="display:flex;gap:4px;flex-wrap:wrap;align-items:center;margin-top:2px">';
   if (t.due) h += '<span style="display:inline-flex;align-items:center;gap:4px;font-size:11px;font-variant-numeric:tabular-nums;color:' + ((!done && t.due < tnToday()) ? tnC.red : tnC.sub) + '">' + tnI('cal', 11) + t.due + tnWd(t.due) + '</span>';
   if ((t.files || []).length > 0) h += '<span title="' + t.files.length + ' 個附件" style="display:inline-flex;align-items:center;gap:2px;font-size:11px;color:' + tnC.sub + '">' + tnI('clip', 11) + t.files.length + '</span>';
+  // v1.5 步驟進度徽章（有清單才顯示；全勾＝綠；單色 SVG 不用彩 emoji）
+  const tnTds = t.todos || [];
+  if (tnTds.length > 0) {
+    const tnTdn = tnTds.filter(x => x && x.d).length, tnTall = tnTdn === tnTds.length;
+    h += '<span title="步驟 ' + tnTdn + '/' + tnTds.length + '" style="display:inline-flex;align-items:center;gap:3px;font-size:11px;font-variant-numeric:tabular-nums;font-weight:' + (tnTall ? 700 : 400) + ';color:' + (tnTall ? tnC.green : tnC.sub) + '">' + tnI('checksq', 11, tnTall ? tnC.green : 'currentColor') + tnTdn + '/' + tnTds.length + '</span>';
+  }
   if (tnIsWaiting(t) && !done) h += tnPill(tnC.amber, '等：' + tnEsc(t.waitingFor));
   if (tnIsBlocked(t, tnS.tasks) && !done) h += tnPill(tnC.red, '被前置卡住');
   // /prep 特色：發現者/我來解決＋計時（日時分）/審核/發布
@@ -1077,6 +1091,47 @@ function tnVMind() {
 
 /* ── 任務詳情彈窗（點卡片開啟；輸入即存、✓ 完成關閉） ── */
 function tnUpdSilent(id, patch) { tnUpd(id, patch, true); } // 打字輸入：更新＋排存檔但不整頁重畫（焦點不掉）
+
+/* ── v1.5 步驟清單（張良「大任務拆小步驟逐條勾」）──
+   新欄位 todos=[{id,t,d}]（id=短隨機/t=文字/d=0或1）；查證過：主 App src/ 沒人讀 ck
+   （那是 p03-sopedit 的 SOP 問題回報域欄位，格式也不同）→ 任務域用乾淨新欄位，
+   主 App Merge Rule {...existing,...patch} 原樣保留＝同 ack/review，雙邊不打架。
+   勾/增/刪/拖排全走 tnUpd＝原有防抖 0.5 秒 diffPersist 差異存檔，欄位保留原則照舊。 */
+const tnTdRid = () => 'td' + Date.now().toString(36).slice(-4) + Math.random().toString(36).slice(2, 6); // 短隨機 id（時間尾碼+亂數＝同秒連按也不撞）
+function tnTodoAdd(id) { // Enter 新增：清空輸入框＋焦點保留（tnRender 的 activeElement id 接回）＝連續輸入不斷手
+  const el = document.getElementById('tnTodoIn');
+  const v = el ? String(el.value || '').trim() : '';
+  if (!v) return;
+  const t = (tnS.tasks || []).find(x => x.id === id); if (!t) return;
+  tnUpd(id, { todos: (t.todos || []).concat([{ id: tnTdRid(), t: v, d: 0 }]) }); // 重畫後輸入框是空的＝自動清空
+}
+function tnTodoToggle(id, did) { // 勾了＝文字劃線變淡（畫面在 tnModal 那段）
+  const t = (tnS.tasks || []).find(x => x.id === id); if (!t) return;
+  tnUpd(id, { todos: (t.todos || []).map(x => x.id === did ? Object.assign({}, x, { d: x.d ? 0 : 1 }) : x) });
+}
+function tnTodoDel(id, did) { // 單項步驟輕量＝不 confirm（任務刪除才要 confirm）；刪到空就整個欄位收掉（JSON 存檔 undefined 自動消失）
+  const t = (tnS.tasks || []).find(x => x.id === id); if (!t) return;
+  const next = (t.todos || []).filter(x => x.id !== did);
+  tnUpd(id, { todos: next.length ? next : undefined });
+}
+let tnTodoSortInst = null; // SortableJS 實例（每次重畫 DOM 整換＝先收舊的再掛新的，不堆殭屍）
+function tnTodoSortInit() { // tnRender 畫完呼叫：彈窗開著＋頁面全域 Sortable 1.15 在才掛（深層連結直開彈窗同一條路）
+  try { if (tnTodoSortInst) { tnTodoSortInst.destroy(); tnTodoSortInst = null; } } catch (_) { tnTodoSortInst = null; }
+  if (!tnS.sel || typeof document === 'undefined') return;
+  const el = document.getElementById('tnTodoList');
+  if (!el || typeof Sortable === 'undefined') return;
+  tnTodoSortInst = new Sortable(el, {
+    handle: '.tnTodoHandle', animation: 150,
+    onEnd: function () { // 排序完立即存：照 DOM 順序重排陣列（DOM 沒出現的保險補尾＝絕不弄丟）
+      const tid = tnS.sel; const t = (tnS.tasks || []).find(x => x.id === tid); if (!t) return;
+      const ids = Array.from(el.querySelectorAll('[data-tdid]')).map(n => n.getAttribute('data-tdid'));
+      const map = new Map((t.todos || []).map(x => [x.id, x]));
+      const next = ids.map(i => map.get(i)).filter(Boolean);
+      (t.todos || []).forEach(x => { if (!next.includes(x)) next.push(x); });
+      tnUpd(tid, { todos: next });
+    },
+  });
+}
 function tnModal() {
   const t = (tnS.tasks || []).find(x => x.id === tnS.sel); if (!t) return '';
   const groups = tnGroups();
@@ -1101,6 +1156,21 @@ function tnModal() {
   }
   h += F('主題', '<input id="tnTitle" value="' + tnEsc(t.title) + '" oninput="tnUpdSilent(\'' + t.id + '\',{title:this.value})" style="' + tnInp + ';width:100%;font-size:14px;font-weight:600">');
   h += F('內容 / 備註', '<textarea id="tnNote" rows="2" oninput="tnUpdSilent(\'' + t.id + '\',{note:this.value})" style="' + tnInp + ';width:100%;resize:vertical">' + tnEsc(t.note || '') + '</textarea>');
+  // v1.5 步驟清單（張良「大任務拆小步驟逐條勾」）：todos=[{id,t,d}] 新欄位；
+  // 勾/增/刪/拖排全走 tnUpd＝diffPersist 差異存檔；✕ hover 才現（單項輕量不 confirm）；⠿把手給 SortableJS
+  const tds = t.todos || [];
+  h += '<div style="' + tnLbl + '">步驟清單（勾掉＝做完一步，拖 ⠿ 可排順序）'
+    + '<style>.tnTodoDel{opacity:0;transition:opacity .15s}.tnTodoRow:hover .tnTodoDel{opacity:1}@media(hover:none){.tnTodoDel{opacity:.55}}</style>'
+    + '<div id="tnTodoList" style="margin-top:5px;display:flex;flex-direction:column;gap:3px">'
+    + tds.map(td => '<div class="tnTodoRow" data-tdid="' + tnEsc(td.id) + '" style="display:flex;align-items:center;gap:7px;padding:4px 6px;border-radius:6px;background:' + tnC.soft + '">'
+      + '<span class="tnTodoHandle" title="拖我排順序" style="flex-shrink:0;display:flex;cursor:grab;color:' + tnC.faint + ';touch-action:none">' + tnI('grip', 12) + '</span>'
+      + '<button onclick="tnTodoToggle(\'' + t.id + '\',\'' + tnEsc(td.id) + '\')" title="切換完成" style="flex-shrink:0;width:15px;height:15px;border-radius:4px;border:1px solid ' + (td.d ? tnC.green : tnCBR) + ';background:' + (td.d ? tnC.green : tnWHT) + ';display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0">' + (td.d ? tnI('check', 10, '#fff') : '') + '</button>'
+      + '<span style="flex:1;min-width:0;font-size:12.5px;line-height:1.4;word-break:break-word;color:' + (td.d ? tnC.faint : tnC.text) + ';text-decoration:' + (td.d ? 'line-through' : 'none') + '">' + tnEsc(td.t) + '</span>'
+      + '<button class="tnTodoDel" onclick="tnTodoDel(\'' + t.id + '\',\'' + tnEsc(td.id) + '\')" title="刪掉這步" style="flex-shrink:0;display:flex;background:none;border:none;color:' + tnC.faint + ';cursor:pointer;padding:2px;line-height:1">' + tnI('x', 12) + '</button>'
+      + '</div>').join('')
+    + '</div>'
+    + '<input id="tnTodoIn" placeholder="＋ 新增步驟…按 Enter（可連續輸入）" onkeydown="if(event.key===\'Enter\'&&!event.isComposing&&event.keyCode!==229)tnTodoAdd(\'' + t.id + '\')" style="' + tnInp + ';width:100%;margin-top:5px;border-style:dashed;background:transparent;font-size:12.5px">'
+    + '</div>';
   // 附件（不能包 label：label 會把點擊轉給隱藏選檔 input）
   h += '<div style="' + tnLbl + '">附件（截圖直接貼上，或按＋上傳檔案）<div style="margin-top:5px;display:flex;align-items:center;gap:6px;flex-wrap:wrap">'
     + '<input id="tnFile" type="file" accept="*/*" multiple style="display:none" onchange="tnAttachPick(\'' + t.id + '\',this)">'
@@ -1115,9 +1185,10 @@ function tnModal() {
   h += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">';
   h += F('隸屬大項', '<select onchange="tnUpd(\'' + t.id + '\',{catId:this.value})" style="' + tnInp + ';width:100%">' + groups.map(g => '<option value="' + g.id + '"' + ((t.catId || tnINBOX) === g.id ? ' selected' : '') + '>' + tnEsc(g.name) + '</option>').join('') + '</select>');
   h += F('狀態', '<select onchange="tnUpd(\'' + t.id + '\',{status:this.value})" style="' + tnInp + ';width:100%">' + tnSTATUS.map(s => '<option value="' + s[0] + '"' + (t.status === s[0] ? ' selected' : '') + '>' + s[1] + '</option>').join('') + '</select>');
-  h += F('優先級', '<select onchange="tnUpd(\'' + t.id + '\',{priority:this.value})" style="' + tnInp + ';width:100%">' + tnPRIO.map(p => '<option value="' + p[0] + '"' + ((t.priority || 'normal') === p[0] ? ' selected' : '') + '>' + p[1] + '</option>').join('') + '</select>');
-  h += F('截止日', '<input type="date" value="' + tnDnorm(t.due) + '" onchange="tnUpd(\'' + t.id + '\',{due:this.value})" style="' + tnDateInp + ';width:100%">');
+  // v1.5 欄位對調（張良「開始/截止放一起」）：開始日｜截止日 同排（開始在左）、優先級｜負責人 同排；只動排版不動邏輯
   h += F('開始日', '<input type="date" value="' + tnDnorm(t.start) + '" onchange="tnUpd(\'' + t.id + '\',{start:this.value})" style="' + tnDateInp + ';width:100%">');
+  h += F('截止日', '<input type="date" value="' + tnDnorm(t.due) + '" onchange="tnUpd(\'' + t.id + '\',{due:this.value})" style="' + tnDateInp + ';width:100%">');
+  h += F('優先級', '<select onchange="tnUpd(\'' + t.id + '\',{priority:this.value})" style="' + tnInp + ';width:100%">' + tnPRIO.map(p => '<option value="' + p[0] + '"' + ((t.priority || 'normal') === p[0] ? ' selected' : '') + '>' + p[1] + '</option>').join('') + '</select>');
   // 負責人選單（GD 人員＋任務裡出現過的人；自訂＝行內輸入，不用彈窗）
   const pool = [...new Set([].concat(tnS.gdNames, (tnS.tasks || []).flatMap(x => [x.owner, x.claimBy]).filter(Boolean), t.owner ? [t.owner] : []))].sort((a, b) => a.localeCompare(b, 'zh-Hant'));
   h += F('負責人', tnS.ownerCustom
