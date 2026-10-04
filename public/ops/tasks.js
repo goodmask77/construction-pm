@@ -651,7 +651,7 @@ function tnCard(t, o) {
     h += '<button onclick="event.stopPropagation();tnFinish(\'' + t.id + '\')" title="自己建的直接完成；別人建的會送建立者過目" style="display:inline-flex;align-items:center;gap:3px;border:1px solid ' + tnC.green + ';background:#16281C;color:' + tnC.green + ';border-radius:999px;padding:0 8px;font-size:10.5px;font-weight:700;cursor:pointer">' + tnI('check', 10, tnC.green) + '完成</button>';
   }
   // v1.2 確認收到鈕（張良「對方看到→按下去即時私訊任務建立者」）：我是負責人＋別人建的＋沒確認過＋未完成
-  if (!done && !t.ack && tnS.me && t.owner === tnS.me && t.createdBy && t.createdBy !== tnS.me) {
+  if (!done && !t.ack && tnS.me && t.owner === tnS.me && t.createdBy !== tnS.me) {
     h += '<button onclick="event.stopPropagation();tnAck(\'' + t.id + '\')" title="告訴建立者你看到這張任務了" style="display:inline-flex;align-items:center;gap:3px;border:1px solid ' + tnC.accent + ';background:' + tnC.accentSoft + ';color:' + tnC.accent + ';border-radius:999px;padding:0 8px;font-size:10.5px;font-weight:700;cursor:pointer">' + tnI('check', 10, tnC.accent) + '確認收到</button>';
   }
   if (!done && !t.claimBy && tnS.me) h += '<button onclick="event.stopPropagation();tnClaim(\'' + t.id + '\')" style="border:1px solid ' + tnC.accent + ';background:' + tnC.accentSoft + ';color:' + tnC.accent + ';border-radius:999px;padding:0 8px;font-size:10.5px;font-weight:700;cursor:pointer">我來解決</button>';
@@ -1092,7 +1092,7 @@ function tnModal() {
     + '<button onclick="tnClose()" style="background:none;border:none;cursor:pointer;color:' + tnC.sub + ';padding:4px;display:flex">' + tnI('x', 18) + '</button></div>';
   // v1.3 彈窗頂大顆「確認收到」（深層連結直開彈窗後第一眼就按得到；條件同卡片小鈕）；
   // 已 ack＝整寬綠色狀態列「已收到・名字＋計時」（計時＝claimAt 起 tnFmtDur，完成後不再跳）
-  const tnAckable = t.status !== 'done' && !(t.ack && t.ack.by) && tnS.me && t.owner === tnS.me && t.createdBy && t.createdBy !== tnS.me;
+  const tnAckable = t.status !== 'done' && !(t.ack && t.ack.by) && tnS.me && t.owner === tnS.me && t.createdBy !== tnS.me;
   if (tnAckable) {
     h += '<button onclick="tnAck(\'' + t.id + '\')" style="display:flex;align-items:center;justify-content:center;gap:8px;width:100%;background:' + tnC.accent + ';color:#fff;border:none;border-radius:10px;padding:13px 0;font-size:15px;font-weight:800;cursor:pointer;margin-bottom:14px;box-shadow:0 2px 12px rgba(77,163,255,.35)">' + tnI('check', 17, '#fff') + '確認收到・開始計時</button>';
   } else if (t.ack && t.ack.by) {
