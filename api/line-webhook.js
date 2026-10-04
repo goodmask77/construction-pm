@@ -1881,6 +1881,22 @@ export default async function handler(req, res) {
     const doc9 = (await kvGetMany(['pm_cc_inbox']))['pm_cc_inbox'] || { list: [] }
     return res.status(200).json({ ok: true, list: (doc9.list || []).filter(x => x.status === 'open') })
   }
+  // v4.45.6 CC 私訊張良共用小函式（開工/完成都用）：找 bind 裡名字含「張良」的 uid 發文字
+  const ccNotifyBoss = async (text) => { try {
+    const bdC9 = (await kvGetMany(['sp_finance_pm_prep_bind']))['sp_finance_pm_prep_bind'] || {}
+    let uidC9 = null
+    for (const [u9, tk9] of Object.entries(bdC9.byUid || {})) { if (/張良/.test(((bdC9.tokens || {})[tk9] || {}).name || '')) { uidC9 = u9; break } }
+    if (uidC9 && TOKEN) await fetch('https://api.line.me/v2/bot/message/push', { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${TOKEN}` }, body: JSON.stringify({ to: uidC9, messages: [{ type: 'text', text }] }) })
+  } catch (_) {} }
+  // 開工回報（v4.45.6 CC許願：撿單當下即時告訴張良「開工」）：GET ?ccstart=K&id=
+  if (req.method === 'GET' && req.query?.ccstart) {
+    const mk9 = (process.env.MENU_PROBE_KEY || '').trim()
+    if (!mk9 || String(req.query.ccstart) !== mk9) return res.status(403).json({ ok: false })
+    const doc9 = (await kvGetMany(['pm_cc_inbox']))['pm_cc_inbox'] || { list: [] }
+    const it9 = (doc9.list || []).find(x => x.id === String(req.query.id || ''))
+    if (it9 && !it9.startedAt) { it9.startedAt = new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 16).replace('T', ' '); await kvSet('pm_cc_inbox', doc9); await ccNotifyBoss(`🛠 CC 開工\n📥 ${String(it9.text || '').slice(0, 140)}\n做完會再回報你`) }
+    return res.status(200).json({ ok: !!it9 })
+  }
   if (req.method === 'GET' && req.query?.ccdone) {
     const mk9 = (process.env.MENU_PROBE_KEY || '').trim()
     if (!mk9 || String(req.query.ccdone) !== mk9) return res.status(403).json({ ok: false })
@@ -1888,16 +1904,8 @@ export default async function handler(req, res) {
     const it9 = (doc9.list || []).find(x => x.id === String(req.query.id || ''))
     if (it9) {
       it9.status = 'done'; it9.doneAt = new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 16).replace('T', ' '); it9.result = String(req.query.note || '').slice(0, 300); await kvSet('pm_cc_inbox', doc9)
-      // v4.42.3 銷單=自動 LINE 回報張良（張良「沒看到回報訊息」＝整條管線最大的洞：做完沒人告訴他）
-      try {
-        const bdC9 = (await kvGetMany(['sp_finance_pm_prep_bind']))['sp_finance_pm_prep_bind'] || {}
-        let uidC9 = null
-        for (const [u9, tk9] of Object.entries(bdC9.byUid || {})) { if (/張良/.test(((bdC9.tokens || {})[tk9] || {}).name || '')) { uidC9 = u9; break } }
-        if (uidC9 && TOKEN) {
-          const footC9 = await quotaFoot(1)
-          await fetch('https://api.line.me/v2/bot/message/push', { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${TOKEN}` }, body: JSON.stringify({ to: uidC9, messages: [{ type: 'text', text: `✅ CC 完成許願\n📥 ${String(it9.text || '').slice(0, 120)}\n🛠 結果：${it9.result || '已處理'}${footC9}` }] }) })
-        }
-      } catch (_) {}
+      const footC9 = await quotaFoot(1)
+      await ccNotifyBoss(`✅ CC 完成許願\n📥 ${String(it9.text || '').slice(0, 120)}\n🛠 結果：${it9.result || '已處理'}${footC9}`)
     }
     return res.status(200).json({ ok: !!it9 })
   }
@@ -2170,7 +2178,8 @@ export default async function handler(req, res) {
         const docCC = (await kvGetMany(['pm_cc_inbox']))['pm_cc_inbox'] || { list: [] }
         docCC.list = [{ id: 'cc' + Date.now().toString(36), ts: new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 16).replace('T', ' '), text: bodyCC.slice(0, 2000), status: 'open' }, ...(docCC.list || [])].slice(0, 100)
         await kvSet('pm_cc_inbox', docCC)
-        await send(`已收進 CC 收件匣（待辦 ${docCC.list.filter(x => x.status === 'open').length} 件）。CC 在線時 15 分內撿單開工，完成會回報你；沒在線就先排隊，下次開工第一件處理。`)
+        // v4.45.6（CC許願：回覆文案改正＋開工即時回報）：寫一筆「開工回報」待補——CC 撿單時會先發「開工」
+        await send(`✅ 已收進 CC 收件匣（待辦 ${docCC.list.filter(x => x.status === 'open').length} 件）。CC 在線時最快 20 秒內開工，開工跟完成都會即時回報你；沒在線就先排隊，下次開工第一件處理。`)
         continue
       }
       // 1.35) App 身分綁定（張良 2026-09-21：夥伴打卡不用手填名字）：任何夥伴私訊「綁定GD」→
