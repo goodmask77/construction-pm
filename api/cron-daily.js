@@ -322,6 +322,15 @@ export default async function handler(req, res) {
     }
     L.push('')
     try { const { prepLink } = await import('./_webpush.js'); L.push(`數字＝週${'日一二三四五六'[wd]}近幾週平均（已進位往上抓）；訂位多、活動日往「峰值」抓。點開直達備料表👇\n${prepLink('tab=prep')}`) } catch (_) { L.push(`數字＝週${'日一二三四五六'[wd]}近幾週平均（已進位往上抓）；訂位多、活動日往「峰值」抓。詳細：https://ground-pm.vercel.app/prep#tab=prep`) } // v4.45.6 CC許願：備料連結帶定位直達備料分頁
+    // v4.45.7（CC許願「發一則備料建議給我確認」）：preview=me＝只私訊張良本人預覽，不驚動群、只扣 1 則
+    if (String(req.query?.preview || '') === 'me') {
+      const bd = (await kvGet('sp_finance_pm_prep_bind')) || {}
+      let uid = null
+      for (const [u, tk] of Object.entries(bd.byUid || {})) { if (/張良/.test(((bd.tokens || {})[tk] || {}).name || '')) { uid = u; break } }
+      if (!uid) return res.status(200).json({ ok: false, error: '找不到張良的綁定 uid' })
+      const pr = await fetch('https://api.line.me/v2/bot/message/push', { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${TOKEN}` }, body: JSON.stringify({ to: uid, messages: [{ type: 'text', text: '【預覽・只有你看得到，沒發群】\n' + L.join('\n') }] }) })
+      return res.status(200).json({ ok: pr.ok, preview: true, wd, lines: L.length })
+    }
     // 目標群：env LINE_PREP_GROUP 優先，否則從群組登記表找名字含 Family 的群
     let tgt = clean(process.env.LINE_PREP_GROUP)
     if (!tgt) { const seen = (await kvGet('pm_group_seen')) || {}; for (const [gid2, gg] of Object.entries(seen)) if (/family/i.test(gg?.name || '')) { tgt = gid2; break } }
