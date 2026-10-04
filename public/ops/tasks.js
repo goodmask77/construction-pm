@@ -58,17 +58,18 @@ const tnDARKMAP = { '#fef2f2': '#3C1D21', '#fff7ed': '#3C2A12', '#fefce8': '#3B3
 // 特效強度=級距「順序」：第1級=卡片染色→第2級=彩色邊框→第3級=邊框+光暈→第4級=呼吸發光→第5級+=金光神裝
 // v2.0 模組化特效（張良 2026-10-05）：改讀 window.TIER_EFFECTS 註冊表（public/ops/tier-effects.js）
 // 預設十級（顏色同參考檔 T）；每級的特效＝tier.mods（7 軌道組合），沒設就套「浮誇」模板
+// 顏色＝mythic-motion-v2-parameters.md 十級等級色（tier-effects.js LV 同一組）
 const tnPTS_DEF = [
-  { name: '日常', min: 1, desc: '隨手可完成的小事，順手就做', color: '#9AA3AF' },
-  { name: '例行', min: 3, desc: '固定流程照做就好', color: '#c0567a' },
-  { name: '進階', min: 5, desc: '要動腦，半天內搞定', color: '#4b8cf7' },
-  { name: '熟練', min: 8, desc: '獨立完成，有品質要求', color: '#9b74ff' },
-  { name: '稀有', min: 10, desc: '小專案：自己規劃＋執行到完', color: '#26c6e0' },
-  { name: '精英', min: 15, desc: '跨人協調，或影響營運數字', color: '#ec4f9c' },
-  { name: '史詩', min: 20, desc: '跨天大案，帶人一起完成', color: '#ef4444' },
-  { name: '大師', min: 30, desc: '建立新制度、新流程', color: '#ff8a1f' },
-  { name: '傳說', min: 50, desc: '公司級改變、重大成果', color: '#f5c542' },
-  { name: '神話', min: 100, desc: '扭轉局面的里程碑', color: '#b07cff' },
+  { name: '日常', min: 1, desc: '隨手可完成的小事，順手就做', color: '#AAB4C4' },
+  { name: '例行', min: 3, desc: '固定流程照做就好', color: '#CD89A4' },
+  { name: '進階', min: 5, desc: '要動腦，半天內搞定', color: '#62A7FF' },
+  { name: '熟練', min: 8, desc: '獨立完成，有品質要求', color: '#AD8AFF' },
+  { name: '稀有', min: 10, desc: '小專案：自己規劃＋執行到完', color: '#35D9EC' },
+  { name: '精英', min: 15, desc: '跨人協調，或影響營運數字', color: '#FF5FAF' },
+  { name: '史詩', min: 20, desc: '跨天大案，帶人一起完成', color: '#FF5E66' },
+  { name: '大師', min: 30, desc: '建立新制度、新流程', color: '#FF9F28' },
+  { name: '傳說', min: 50, desc: '公司級改變、重大成果', color: '#FFDB6D' },
+  { name: '神話', min: 100, desc: '扭轉局面的里程碑', color: '#BE91FF' },
 ];
 const tnRBG = 'linear-gradient(90deg,#FF5252,#FFB74D,#FFF176,#69F0AE,#40C4FF,#B388FF,#FF4081,#FF5252)';
 function tnRgba(hex, a) { // #RGB/#RRGGBB → rgba(,,,a)
@@ -101,10 +102,9 @@ function tnAnimOn(t) { const p = tnS.anim || {}; if (p.allOff) return false; if 
 function tnPtsBadge(t) {
   const tr = tnTier(t.pts); if (!tr) return '';
   const TE = tnTE(); if (!TE) return ''; // 註冊表還沒載到＝先不畫徽章（下次 render 補）
-  const lv = tr.level, mod = tr.mods.badge || 'outline', anim = tnAnimOn(t);
-  const st = TE.layer.badge(mod, { color: tr.color, level: lv, gray: lv === 0, anim: anim });
-  const base = 'display:inline-flex;align-items:center;gap:4px;font-weight:700;letter-spacing:.3px;border-radius:999px;white-space:nowrap;line-height:1.3;box-sizing:border-box;';
-  return '<span title="' + tnEsc(tr.name) + '・' + t.pts + ' 分" style="' + base + st + '">★ ' + tnEsc(tr.name) + ' ★' + t.pts + '</span>';
+  const st = TE.badgeStyle(tr.level, tr.color); // v4.50 字級隨等級；造型由等級決定
+  const crown = tr.level >= 8 ? '♛' : '★';      // 傳說/神話皇冠
+  return '<span title="' + tnEsc(tr.name) + '・' + t.pts + ' 分" style="' + st + '">' + crown + ' ' + tnEsc(tr.name) + ' <strong style="font-size:.82em;font-weight:900">' + t.pts + '</strong></span>';
 }
 const tnVIVID = { '#fef2f2': '#EF4444', '#fff7ed': '#F59E0B', '#fefce8': '#EAB308', '#f0fdf4': '#22C55E', '#eff6ff': '#3B82F6', '#faf5ff': '#A855F7', '#f5f5f5': '#9CA3AF' }; // 色盤圓點用鮮豔原色＝一眼分得出；存進資料的值不變(主App同組)
 const tnTcol = (c) => (c ? (tnDARKMAP[String(c).toLowerCase()] || c) : '');
@@ -242,7 +242,7 @@ function tnRemoveTaskAndRefs(tasks, id) {
 const tnS = {
   tasks: null, cats: null, view: 'today', q: '', fStatus: 'open', sortMode: 'manual',
   showDone: false, showAllDone: false, sel: null, drag: null, dragCat: null,
-  editCat: null, colorCat: null, gdNames: [], me: '', meApprover: false, ptsNote: '', anim: { inView: true, noDone: true, followReduce: true, allOff: false }, quick: '', gnew: {}, tagIn: '', newCatIn: '',
+  editCat: null, colorCat: null, gdNames: [], me: '', meApprover: false, ptsNote: '', anim: { inView: true, noDone: true, followReduce: false, allOff: false }, quick: '', gnew: {}, tagIn: '', newCatIn: '',
   hover: null, colOf: {}, inited: false, loaded: false, ownerCustom: false,
   assignAsk: null,  // 指派完浮出的通知三選一 {id,owner}
   dragOwn: null,    // 負責人視角：正在拖的人員組
@@ -705,83 +705,66 @@ function tnCard(t, o) {
   const dndCard = o.dropBefore ? ' ondragover="tnDOvCard(event)" ondrop="tnDropCard(event,\'' + t.id + '\')"' : '';
   const tr = (!done) ? tnTier(t.pts) : null; // v2.0 等級＋模組（done 卡不給特效）
   const TE = tnTE();
-  // 內容（checkbox + 標題行含inline徽章 + 日期/步驟/狀態列 + 操作鈕 + 右側圖示欄）統一組成 inner，最後包進圖層外殼或素卡
-  let inn = '<div style="display:flex;align-items:flex-start;gap:8px">';
-  // 完成勾
-  inn += '<button onclick="event.stopPropagation();tnToggleDone(\'' + t.id + '\')" title="切換完成" style="flex-shrink:0;width:16px;height:16px;margin-top:2px;border-radius:4px;border:1px solid ' + (done ? tnC.green : tnCBR) + ';background:' + (done ? tnC.green : (tr ? 'rgba(0,0,0,.2)' : tnWHT)) + ';display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0">' + (done ? tnI('check', 11, '#fff') : '') + '</button>';
-  inn += '<div style="flex:1;min-width:0">';
-  // v2.0 等級徽章＝inline 在標題右（參考檔做法；標題 flex:1 可縮、徽章 flex-shrink:0）
+  // v4.50 固定卡片格式（張良 2026-10-05 規格＋mythic-motion-v2）：垂直六段式，徽章獨立底部列，絕不跟標題搶寬
+  // ①頂部操作列 ②標題列(勾+標題·最多兩行) ③日期/關係/執行狀態 chips ④照片 ⑤底部(負責人左·徽章右)
   const tnBdgC = tnPtsBadge(t);
-  // v4.49 固定卡片格式：標題行可換行＋標題保底寬度→大徽章(史詩/傳說/神話)自動掉到下一行，不再把標題擠成直書
-  inn += '<div style="display:flex;flex-wrap:wrap;align-items:center;gap:3px 6px;font-size:12.5px;color:' + (done ? tnC.faint : tnC.text) + ';text-decoration:' + (done ? 'line-through' : 'none') + ';line-height:1.35">'
-    + (t.priority === 'urgent' ? tnI('flame', 12, tnC.red) : '') + '<span style="flex:1 1 auto;min-width:60%;word-break:break-word">' + tnEsc(t.title) + '</span>'
-    + (tnBdgC ? '<span style="flex:0 0 auto;max-width:100%">' + tnBdgC + '</span>' : '') + '</div>';
-  let h = inn; // 相容後面以 h 累加的程式
-  // 徽章列（v1.1 卡片減脂：大項名/狀態字/標籤 chips 不上卡＝彈窗裡才看；張良「整排小字佔版面」）
-  h += '<div style="display:flex;gap:4px;flex-wrap:wrap;align-items:center;margin-top:2px">';
-  if (t.due) h += '<span style="display:inline-flex;align-items:center;gap:4px;font-size:11px;font-variant-numeric:tabular-nums;color:' + ((!done && t.due <= tnToday()) ? tnC.red : tnC.sub) + '">' + tnI('cal', 11) + t.due + tnWd(t.due) + '</span>'; // v1.7 紅框退役後改 <=：今天到期的日期字也標紅（原本只有逾期<今天才紅）
-  if ((t.files || []).length > 0) h += '<span title="' + t.files.length + ' 個附件" style="display:inline-flex;align-items:center;gap:2px;font-size:11px;color:' + tnC.sub + '">' + tnI('clip', 11) + t.files.length + '</span>';
-  // v1.5 步驟進度徽章（有清單才顯示；全勾＝綠；單色 SVG 不用彩 emoji）
+  // ① 頂部列：優先旗標(左) + 更多操作 釘/☀/✕(右)
+  let h = '<div style="display:flex;align-items:center;gap:6px;min-height:18px">';
+  h += (t.priority === 'urgent') ? '<span title="緊急" style="display:inline-flex">' + tnI('flame', 13, tnC.red) + '</span>' : '';
+  h += '<div style="margin-left:auto;display:flex;align-items:center;gap:4px">';
+  h += '<button onclick="event.stopPropagation();tnPinToggle(\'' + t.id + '\')" title="' + (t.pinned ? '取消釘選' : '釘選到最上面') + '" style="background:none;border:none;cursor:pointer;line-height:1;padding:2px;color:' + (t.pinned ? tnC.accent : tnCBR) + '">' + tnI('pin', 13, 'currentColor', t.pinned ? tnC.accent : 'none') + '</button>';
+  if (!done) { const isToday = t.due === tnToday(); h += '<button onclick="event.stopPropagation();tnSunToggle(\'' + t.id + '\')" title="' + (isToday ? '退出今天必處理' : '設為今天必處理') + '" style="background:none;border:none;cursor:pointer;line-height:1;padding:2px;color:' + (isToday ? tnC.red : tnCBR) + '">' + tnI('sun', 13, isToday ? tnC.red : 'currentColor') + '</button>'; }
+  h += '<button onclick="event.stopPropagation();tnDel(\'' + t.id + '\')" title="刪除" style="background:none;border:none;color:' + tnC.faint + ';cursor:pointer;line-height:1;padding:2px">' + tnI('x', 14) + '</button>';
+  h += '</div></div>';
+  // ② 標題列：完成勾 + 標題（整列剩餘寬、最多兩行省略；完整看詳情）
+  h += '<div style="display:flex;align-items:flex-start;gap:8px;margin-top:2px">';
+  h += '<button onclick="event.stopPropagation();tnToggleDone(\'' + t.id + '\')" title="切換完成" style="flex-shrink:0;width:16px;height:16px;margin-top:1px;border-radius:4px;border:1px solid ' + (done ? tnC.green : tnCBR) + ';background:' + (done ? tnC.green : (tr ? 'rgba(0,0,0,.25)' : tnWHT)) + ';display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0">' + (done ? tnI('check', 11, '#fff') : '') + '</button>';
+  h += '<div style="flex:1;min-width:0;font-size:13.5px;font-weight:600;line-height:1.4;color:' + (done ? tnC.faint : tnC.text) + ';text-decoration:' + (done ? 'line-through' : 'none') + ';word-break:break-word;overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">' + tnEsc(t.title) + '</div>';
+  h += '</div>';
+  // ③ 日期 / 關係 / 執行狀態 chips
+  let meta = '';
+  if (t.due) meta += '<span style="display:inline-flex;align-items:center;gap:4px;font-size:11px;font-variant-numeric:tabular-nums;color:' + ((!done && t.due <= tnToday()) ? tnC.red : tnC.sub) + '">' + tnI('cal', 11) + t.due + tnWd(t.due) + '</span>';
+  if ((t.files || []).length > 0) meta += '<span title="' + t.files.length + ' 個附件" style="display:inline-flex;align-items:center;gap:2px;font-size:11px;color:' + tnC.sub + '">' + tnI('clip', 11) + t.files.length + '</span>';
   const tnTds = t.todos || [];
-  if (tnTds.length > 0) {
-    const tnTdn = tnTds.filter(x => x && x.d).length, tnTall = tnTdn === tnTds.length;
-    h += '<span title="步驟 ' + tnTdn + '/' + tnTds.length + '" style="display:inline-flex;align-items:center;gap:3px;font-size:11px;font-variant-numeric:tabular-nums;font-weight:' + (tnTall ? 700 : 400) + ';color:' + (tnTall ? tnC.green : tnC.sub) + '">' + tnI('checksq', 11, tnTall ? tnC.green : 'currentColor') + tnTdn + '/' + tnTds.length + '</span>';
-  }
-  if (tnIsWaiting(t) && !done) h += tnPill(tnC.amber, '等：' + tnEsc(t.waitingFor));
-  if (tnIsBlocked(t, tnS.tasks) && !done) h += tnPill(tnC.red, '被前置卡住');
-  // /prep 特色：發現者/我來解決＋計時（日時分）/審核/發布
-  if (t.by) h += '<span title="發現/回報者" style="display:inline-flex;align-items:center;gap:3px;font-size:10.5px;color:' + tnC.faint + ';white-space:nowrap">' + tnI('eye', 11) + tnEsc(t.by) + '</span>';
-  if (t.claimBy && !done) h += '<span title="處理中" style="display:inline-flex;align-items:center;gap:3px;font-size:10.5px;color:' + tnC.accent + ';font-weight:700;white-space:nowrap">' + tnI('wrench', 11) + tnEsc(t.claimBy) + (t.claimAt ? ('・' + tnFmtDur((Date.now() - t.claimAt) / 60000)) : '') + '</span>';
-  if (t.prepPending === 1 && !done) h += tnPill(tnC.amber, '待審核');
-  if (t.prepPub === 'pending') h += tnPill(tnC.amber, '等發布');
-  // v1.2 已確認收到徽章（建立者跟其他人都看得到；單色＝既有 tnPill 樣式）
-  if (t.ack && t.ack.by) h += '<span title="負責人已確認收到這張任務">' + tnPill(tnC.green, '已收到・' + tnEsc(t.ack.by)) + '</span>';
-  // 完成鈕＋建立者審核流（三分支見 tnFinish 上方註解）
+  if (tnTds.length > 0) { const tnTdn = tnTds.filter(x => x && x.d).length, tnTall = tnTdn === tnTds.length; meta += '<span title="步驟 ' + tnTdn + '/' + tnTds.length + '" style="display:inline-flex;align-items:center;gap:3px;font-size:11px;font-variant-numeric:tabular-nums;font-weight:' + (tnTall ? 700 : 400) + ';color:' + (tnTall ? tnC.green : tnC.sub) + '">' + tnI('checksq', 11, tnTall ? tnC.green : 'currentColor') + tnTdn + '/' + tnTds.length + '</span>'; }
+  if (tnIsWaiting(t) && !done) meta += tnPill(tnC.amber, '等：' + tnEsc(t.waitingFor));
+  if (tnIsBlocked(t, tnS.tasks) && !done) meta += tnPill(tnC.red, '被前置卡住');
+  if (t.by) meta += '<span title="發現/回報者" style="display:inline-flex;align-items:center;gap:3px;font-size:10.5px;color:' + tnC.faint + ';white-space:nowrap">' + tnI('eye', 11) + tnEsc(t.by) + '</span>';
+  if (t.claimBy && !done) meta += '<span title="處理中" style="display:inline-flex;align-items:center;gap:3px;font-size:10.5px;color:' + tnC.accent + ';font-weight:700;white-space:nowrap">' + tnI('wrench', 11) + tnEsc(t.claimBy) + (t.claimAt ? ('・' + tnFmtDur((Date.now() - t.claimAt) / 60000)) : '') + '</span>';
+  if (t.prepPending === 1 && !done) meta += tnPill(tnC.amber, '待審核');
+  if (t.prepPub === 'pending') meta += tnPill(tnC.amber, '等發布');
+  if (t.ack && t.ack.by) meta += '<span title="負責人已確認收到這張任務">' + tnPill(tnC.green, '已收到・' + tnEsc(t.ack.by)) + '</span>';
   const rvBy = (!done && t.review && t.review.by) ? t.review.by : '';
   if (rvBy) {
-    h += '<span title="回報完成，等建立者過目" style="display:inline-flex;align-items:center;gap:4px;font-size:10.5px;color:' + tnC.amber + ';background:#2A2012;border:1px solid #5A4A2A;border-radius:999px;padding:0 8px;white-space:nowrap">' + tnI('hourglass', 10, tnC.amber) + '待審核・' + tnEsc(rvBy) + '</span>';
-    if (tnS.me && t.createdBy === tnS.me) { // 我建立的＋有人回報完成 → 通過/退回
-      h += '<button onclick="event.stopPropagation();tnApprove(\'' + t.id + '\')" style="display:inline-flex;align-items:center;gap:3px;border:1px solid ' + tnC.green + ';background:#16281C;color:' + tnC.green + ';border-radius:999px;padding:0 8px;font-size:10.5px;font-weight:700;cursor:pointer">' + tnI('check', 10, tnC.green) + '通過</button>';
-      h += '<button onclick="event.stopPropagation();tnReject(\'' + t.id + '\')" style="display:inline-flex;align-items:center;gap:3px;border:1px solid ' + tnC.red + ';background:#2A181A;color:' + tnC.red + ';border-radius:999px;padding:0 8px;font-size:10.5px;font-weight:700;cursor:pointer">' + tnI('x', 10, tnC.red) + '退回</button>';
+    meta += '<span title="回報完成，等建立者過目" style="display:inline-flex;align-items:center;gap:4px;font-size:10.5px;color:' + tnC.amber + ';background:#2A2012;border:1px solid #5A4A2A;border-radius:999px;padding:0 8px;white-space:nowrap">' + tnI('hourglass', 10, tnC.amber) + '待審核・' + tnEsc(rvBy) + '</span>';
+    if (tnS.me && t.createdBy === tnS.me) {
+      meta += '<button onclick="event.stopPropagation();tnApprove(\'' + t.id + '\')" style="display:inline-flex;align-items:center;gap:3px;border:1px solid ' + tnC.green + ';background:#16281C;color:' + tnC.green + ';border-radius:999px;padding:0 8px;font-size:10.5px;font-weight:700;cursor:pointer">' + tnI('check', 10, tnC.green) + '通過</button>';
+      meta += '<button onclick="event.stopPropagation();tnReject(\'' + t.id + '\')" style="display:inline-flex;align-items:center;gap:3px;border:1px solid ' + tnC.red + ';background:#2A181A;color:' + tnC.red + ';border-radius:999px;padding:0 8px;font-size:10.5px;font-weight:700;cursor:pointer">' + tnI('x', 10, tnC.red) + '退回</button>';
     }
   }
-  // v1.8 卡片上綠色「完成」鈕移除（張良「左上勾選＝完成，綠色完成不要出現」）＝改用左上勾選框；詳情彈窗右下完成鈕保留
-  // v1.2 確認收到鈕（張良「對方看到→按下去即時私訊任務建立者」）：我是負責人＋別人建的＋沒確認過＋未完成
-  if (!done && !t.ack && tnS.me && t.owner === tnS.me && t.createdBy !== tnS.me) {
-    h += '<button onclick="event.stopPropagation();tnAck(\'' + t.id + '\')" title="告訴建立者你看到這張任務了" style="display:inline-flex;align-items:center;gap:3px;border:1px solid ' + tnC.accent + ';background:' + tnC.accentSoft + ';color:' + tnC.accent + ';border-radius:999px;padding:0 8px;font-size:10.5px;font-weight:700;cursor:pointer">' + tnI('check', 10, tnC.accent) + '確認收到</button>';
-  }
-  if (!done && !t.claimBy && tnS.me) h += '<button onclick="event.stopPropagation();tnClaim(\'' + t.id + '\')" style="border:1px solid ' + tnC.accent + ';background:' + tnC.accentSoft + ';color:' + tnC.accent + ';border-radius:999px;padding:0 8px;font-size:10.5px;font-weight:700;cursor:pointer">我來解決</button>';
-  if (!done && t.claimBy && t.claimBy === tnS.me) h += '<button onclick="event.stopPropagation();tnUnclaim(\'' + t.id + '\')" style="border:1px solid ' + tnC.line + ';background:' + tnWHT + ';color:' + tnFNT + ';border-radius:999px;padding:0 8px;font-size:10.5px;cursor:pointer">放棄</button>';
-  h += '</div>';
-  // 卡上照片：第一張封面、其餘小縮圖（已完成不佔版面）
+  if (!done && !t.ack && tnS.me && t.owner === tnS.me && t.createdBy !== tnS.me) meta += '<button onclick="event.stopPropagation();tnAck(\'' + t.id + '\')" title="告訴建立者你看到這張任務了" style="display:inline-flex;align-items:center;gap:3px;border:1px solid ' + tnC.accent + ';background:' + tnC.accentSoft + ';color:' + tnC.accent + ';border-radius:999px;padding:0 8px;font-size:10.5px;font-weight:700;cursor:pointer">' + tnI('check', 10, tnC.accent) + '確認收到</button>';
+  if (!done && !t.claimBy && tnS.me) meta += '<button onclick="event.stopPropagation();tnClaim(\'' + t.id + '\')" style="border:1px solid ' + tnC.accent + ';background:' + tnC.accentSoft + ';color:' + tnC.accent + ';border-radius:999px;padding:0 8px;font-size:10.5px;font-weight:700;cursor:pointer">我來解決</button>';
+  if (!done && t.claimBy && t.claimBy === tnS.me) meta += '<button onclick="event.stopPropagation();tnUnclaim(\'' + t.id + '\')" style="border:1px solid ' + tnC.line + ';background:' + tnWHT + ';color:' + tnFNT + ';border-radius:999px;padding:0 8px;font-size:10.5px;cursor:pointer">放棄</button>';
+  if (meta) h += '<div style="display:flex;gap:4px 6px;flex-wrap:wrap;align-items:center;margin-top:7px">' + meta + '</div>';
+  // ④ 照片：第一張封面、其餘小縮圖（已完成不佔版面）
   const imgs = (t.files || []).filter(f => f.isImage);
   if (!done && imgs.length) {
-    h += '<div style="margin-top:5px"><img src="' + tnEsc(imgs[0].url) + '" alt="" loading="lazy" style="width:100%;max-height:120px;object-fit:cover;border-radius:6px;border:1px solid ' + tnC.line + ';display:block">';
-    if (imgs.length > 1) {
-      h += '<div style="display:flex;gap:4px;margin-top:4px;align-items:center">'
-        + imgs.slice(1, 4).map(f => '<img src="' + tnEsc(f.url) + '" alt="" loading="lazy" style="width:34px;height:34px;object-fit:cover;border-radius:5px;border:1px solid ' + tnC.line + '">').join('')
-        + (imgs.length > 4 ? '<span style="font-size:10.5px;color:' + tnC.faint + '">+' + (imgs.length - 4) + '</span>' : '') + '</div>';
-    }
+    h += '<div style="margin-top:7px"><img src="' + tnEsc(imgs[0].url) + '" alt="" loading="lazy" style="width:100%;max-height:120px;object-fit:cover;border-radius:6px;border:1px solid ' + tnC.line + ';display:block">';
+    if (imgs.length > 1) h += '<div style="display:flex;gap:4px;margin-top:4px;align-items:center">' + imgs.slice(1, 4).map(f => '<img src="' + tnEsc(f.url) + '" alt="" loading="lazy" style="width:34px;height:34px;object-fit:cover;border-radius:5px;border:1px solid ' + tnC.line + '">').join('') + (imgs.length > 4 ? '<span style="font-size:10.5px;color:' + tnC.faint + '">+' + (imgs.length - 4) + '</span>' : '') + '</div>';
     h += '</div>';
   }
-  h += '</div>'; // flex:1 結束
-  // v1.11 右側＝✕/釘選/☀ 圖示直立欄＋負責人圈（iconcol 徽章已搬卡片頂部整行，不在這裡）
-  h += '<div style="flex-shrink:0;display:flex;flex-direction:column;align-items:flex-end;gap:4px">';
-  h += '<div style="display:flex;flex-direction:column;align-items:center;gap:3px">';
-  h += '<button onclick="event.stopPropagation();tnDel(\'' + t.id + '\')" title="刪除" style="background:none;border:none;color:' + tnC.faint + ';cursor:pointer;line-height:1;padding:2px">' + tnI('x', 14) + '</button>';
-  h += '<button onclick="event.stopPropagation();tnPinToggle(\'' + t.id + '\')" title="' + (t.pinned ? '取消釘選' : '釘選到最上面') + '" style="background:none;border:none;cursor:pointer;line-height:1;padding:2px;color:' + (t.pinned ? tnC.accent : tnCBR) + '">' + tnI('pin', 13, 'currentColor', t.pinned ? tnC.accent : 'none') + '</button>';
-  if (!done) {
-    const isToday = t.due === tnToday();
-    h += '<button onclick="event.stopPropagation();tnSunToggle(\'' + t.id + '\')" title="' + (isToday ? '退出今天必處理' : '設為今天必處理') + '" style="background:none;border:none;cursor:pointer;line-height:1;padding:2px;color:' + (isToday ? tnC.red : tnCBR) + '">' + tnI('sun', 13, isToday ? tnC.red : 'currentColor') + '</button>';
+  // ⑤ 底部列：負責人(左) · 積分徽章(右)；窄卡放不下→flex-wrap 自動掉第二列，不壓縮標題
+  if (t.owner || tnBdgC) {
+    h += '<div style="display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-top:9px">';
+    if (t.owner) h += '<span title="負責人：' + tnEsc(t.owner) + '" style="display:inline-flex;align-items:center;gap:5px;font-size:11px;color:' + tnC.sub + ';min-width:0"><span style="width:20px;height:20px;border-radius:50%;background:' + tnC.accentSoft + ';color:' + tnC.accent + ';font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center;white-space:nowrap;overflow:hidden;flex-shrink:0">' + tnEsc(t.owner.slice(0, 2)) + '</span><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + tnEsc(t.owner) + '</span></span>';
+    if (tnBdgC) h += '<span style="margin-left:auto;flex-shrink:0">' + tnBdgC + '</span>';
+    h += '</div>';
   }
-  if (t.owner) h += '<span title="負責人：' + tnEsc(t.owner) + '" style="width:20px;height:20px;border-radius:50%;background:' + tnC.accentSoft + ';color:' + tnC.accent + ';font-size:10px;font-weight:600;display:flex;align-items:center;justify-content:center;white-space:nowrap;overflow:hidden">' + tnEsc(t.owner.slice(0, 2)) + '</span>';
-  h += '</div></div>';
-  h += '</div>'; // flex row 結束（inner 完成）
   // v2.0 包圖層外殼：有等級＋註冊表＝七層特效卡；done/無等級/無註冊表＝素卡
   const outerOpen = '<div draggable="true" data-tid="' + t.id + '" ondragstart="tnDS(event,\'' + t.id + '\')" ondragend="tnDE()"' + dndCard
     + ' onclick="tnOpen(\'' + t.id + '\')" onmouseenter="tnS.hover=\'' + t.id + '\'" onmouseleave="if(tnS.hover===\'' + t.id + '\')tnS.hover=null"';
   if (!done && tr && TE) {
-    const wrap = TE.cardWrap({ mods: tr.mods, color: tr.color, level: tr.level, seed: tnSeed(t.id), anim: tnAnimOn(t), innerHtml: h, innerPad: true });
+    const wrap = TE.cardWrap({ color: tr.color, level: tr.level, seed: tnSeed(t.id), anim: tnAnimOn(t), innerHtml: h });
     return outerOpen + ' class="tnfxCard" style="position:relative;margin-bottom:5px;min-width:0;max-width:100%;cursor:grab;' + (spot ? 'opacity:.45;' : '') + '">' + wrap + '</div>';
   }
   // 素卡（done / 無積分）
@@ -790,7 +773,7 @@ function tnCard(t, o) {
       ? 'background:#16281C;border:1.5px solid ' + tnC.green + ';box-shadow:0 0 0 1px rgba(61,190,108,.35),0 0 12px rgba(61,190,108,.45);'
       : 'background:transparent;border:1px dashed ' + tnC.line + ';opacity:.6')
     : 'background:' + (tnTcol(t.color) || tnWHT) + ';border:1.5px solid ' + tnCBR + ';box-shadow:0 1px 3px rgba(0,0,0,.30);';
-  return outerOpen + ' style="min-width:0;max-width:100%;overflow:hidden;border-radius:8px;padding:7px 10px;margin-bottom:5px;cursor:grab;' + plain + (spot && !done ? 'opacity:.45;' : '') + '">' + h + '</div>';
+  return outerOpen + ' style="min-width:0;max-width:100%;border-radius:12px;padding:11px 12px;margin-bottom:5px;cursor:grab;' + plain + (spot && !done ? 'opacity:.45;' : '') + '">' + h + '</div>';
 }
 
 /* ── Today / Home 落地頁 ── */
@@ -1401,11 +1384,20 @@ function tnAnimPrefLoad() {
   try {
     const tk = (typeof TK === 'function' ? TK() : ''); if (!tk) return;
     fetch('/api/mail-sync?animpref=' + encodeURIComponent(typeof K !== 'undefined' ? K : '') + '&me=' + encodeURIComponent(tk) + '&r=' + Date.now())
-      .then(r => r.json()).then(j => { if (j && j.ok && j.pref) { tnS.anim = Object.assign({ inView: true, noDone: true, followReduce: true, allOff: false }, j.pref); if (tnS.loaded) tnRender(); } }).catch(() => {});
+      .then(r => r.json()).then(j => {
+        if (j && j.ok && j.pref) {
+          const p = Object.assign({ inView: true, noDone: true, followReduce: false, allOff: false }, j.pref);
+          // v4.50 治本：舊版把 followReduce 預設 true＝裝置開「減少動態效果」就把整組積分動畫 !important 剝光（看得到不會動）。
+          // 一次性移除「不是使用者自己設的」舊 true：沒 rm2 標記＝當作舊預設→歸 false 並寫回；若之後使用者自己打開會帶 rm2 保留。
+          if (!p.rm2) { p.followReduce = false; p.rm2 = 1; tnS.anim = p; try { const tk2 = (typeof TK === 'function' ? TK() : ''); fetch('/api/mail-sync?animprefset=' + encodeURIComponent(typeof K !== 'undefined' ? K : ''), { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ token: tk2, pref: p }) }).catch(() => {}); } catch (_) {} }
+          else tnS.anim = p;
+          if (tnS.loaded) tnRender();
+        }
+      }).catch(() => {});
   } catch (_) {}
 }
 function tnAnimPrefSet(key, val) {
-  tnS.anim = Object.assign({}, tnS.anim, {}); tnS.anim[key] = !!val;
+  tnS.anim = Object.assign({}, tnS.anim, {}); tnS.anim[key] = !!val; tnS.anim.rm2 = 1; // 使用者自己設過＝標記 rm2，之後不被遷移覆寫
   tnRender(); // 即時生效
   try {
     const tk = (typeof TK === 'function' ? TK() : '');
