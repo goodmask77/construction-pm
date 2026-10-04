@@ -795,7 +795,7 @@ function tnCard(t, o) {
   const dndCard = o.dropBefore ? ' ondragover="tnDOvCard(event)" ondrop="tnDropCard(event,\'' + t.id + '\')"' : '';
   let h = '<div draggable="true" data-tid="' + t.id + '" ondragstart="tnDS(event,\'' + t.id + '\')" ondragend="tnDE()"' + dndCard
     + ' onclick="tnOpen(\'' + t.id + '\')" onmouseenter="tnS.hover=\'' + t.id + '\'" onmouseleave="if(tnS.hover===\'' + t.id + '\')tnS.hover=null"'
-    + ' style="' + (done
+    + ' style="min-width:0;max-width:100%;overflow:hidden;' + (done // v1.11 overflow:hidden＝徽章/內容絕不衝出卡片(光暈是box-shadow不受影響,照常發光)
       ? (spot
         ? 'background:#16281C;border:1.5px solid ' + tnC.green + ';border-radius:8px;padding:5px 8px;margin-bottom:5px;cursor:grab;box-shadow:0 0 0 1px rgba(61,190,108,.35),0 0 12px rgba(61,190,108,.45);'
         : 'background:transparent;border:1px dashed ' + tnC.line + ';border-radius:8px;padding:5px 8px;margin-bottom:5px;cursor:grab;opacity:.6')
