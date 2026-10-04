@@ -28,6 +28,16 @@ async function abModView(){
     }
   }
   if (!amCur || !window._amD.mods.some(m=>m.id===amCur)) amCur = window._amD.mods[0].id
+  // v4.47.2：舊模組(rows 都沒 sub 分組)自動照班表重整一次=不用手動點↻（保留已填格子；班表抓得到名單才套，避免誤清）
+  const m0 = amMod()
+  if (m0 && (m0.rows||[]).length && m0.rows.every(r=>!r.sub)) {
+    const fresh = amBuildRows(window._amD)
+    if (fresh.length >= Math.floor(m0.rows.length*0.6)) {
+      const byN={}; m0.rows.forEach(r=>byN[r.name]=r)
+      m0.rows = fresh.map(f=>{ const o=byN[f.name]; return o?{...f, days:o.days||{}, needH:o.needH||0, rate:o.rate||0, note:o.note||''}:f })
+      amSave()
+    }
+  }
   amDraw()
 }
 // v4.47.1（張良「正職PT 內場外場 照班表樣式排序；陳立航已離職核對班表」）：照 /prep 班表的分組與在職名單建列
