@@ -252,7 +252,9 @@ function shiftRender(){
             const tip = `${vioA9?`⚠️ ${vioA9.join('、')}｜`:''}${nm} ${dt} ${code==='●'||code==='⚫️'?'不可排班(PT劃假)':(code||'排休')}${x.start?` ${x.start}-${x.end}`:''}${x.dept?`（${x.dept}）`:''}`
             const rest9 = /例|休/.test(code) // 休假＝淡灰小字不加框（一眼略過，排班色塊才跳）
             const cc9 = abC(code)
-            const chip = code && code!=='●'
+            // v4.47.7 治本（張良「PT 無法排班不要顏色邊框 黑色圓形就好 降低辨識成本」）：根因＝不可排班的 code 是 ⚫️(emoji 黑圓)，舊判斷只排除 ● 沒排除 ⚫️→⚫️ 跑去走彩色 chip 被套上青框青底。改成 ●/⚫/⚫️/空 一律走下面無框黑點
+            const isNoShift9 = !code || /^\s*[●⚫]️?\s*$/.test(code)
+            const chip = !isNoShift9
               ? (rest9
                 ? `<span style="font-size:10px;color:#55617A;font-weight:600;white-space:nowrap">${code.replace(/[●🔴⚪️]/g,'')}</span>`
                 : `<span style="display:inline-block;border:1px solid ${cc9};background:${cc9}1F;color:${cc9};border-radius:6px;padding:1px 6px;font-size:11px;font-weight:800;white-space:nowrap">${code}</span>${x.start?`<div class="hint" style="font-size:9px;white-space:nowrap">${x.start}-${x.end}</div>`:''}`)
