@@ -418,10 +418,10 @@ function abCellInfo(nm, dt){
     <div style="margin-top:10px;background:var(--soft);border:1px solid var(--line);border-radius:10px;padding:12px 14px">
       <table style="border-collapse:collapse"><tbody>
         <tr><td class="hint" style="padding:3px 14px 3px 0;font-size:13px;white-space:nowrap">排班</td>
-          <td style="${MONO}">${sch0?`${sch0.start} – ${sch0.end}`:'<span class="hint" style="font-size:14px;font-weight:600">沒排班</span>'}</td>
+          <td style="${MONO}">${sch0?`${sch0.start} – ${sch0.end}`:'<span class="hint" style="font-size:14px;font-weight:600">沒排班</span>'}${(()=>{ if(!sch0) return ''; const t9=t=>{const z=String(t).split(':');return (+z[0])*60+(+z[1])}; let sp=t9(sch0.end)-t9(sch0.start); if(sp<=0) sp+=1440; return `<span style="font-size:14px;font-weight:800">＝${fmtHM(sp)}</span>` })()}</td>
           <td style="padding-left:12px;white-space:nowrap"><b>${schTx!=='沒排班'?schTx.replace(/ \d{2}:\d{2}–\d{2}:\d{2}/g,''):''}</b></td></tr>
         <tr><td class="hint" style="padding:3px 14px 3px 0;font-size:13px;white-space:nowrap">打卡</td>
-          <td style="${MONO};${noAtt?'':'color:var(--pdark)'}">${noAtt?`<span class="hint" style="font-size:14px;font-weight:600">${dt > todayTpe() ? '還沒到這天' : (att&&att.absent?'—':'沒有打卡資料')}</span>`:`${attOn} – ${attOff}`}</td>
+          <td style="${MONO};${noAtt?'':'color:var(--pdark)'}">${noAtt?`<span class="hint" style="font-size:14px;font-weight:600">${dt > todayTpe() ? '還沒到這天' : (att&&att.absent?'—':'沒有打卡資料')}</span>`:`${attOn} – ${attOff}`}${(()=>{ if(noAtt||!att.on||!att.off) return ''; const t9=t=>{const z=String(t).split(':');return (+z[0])*60+(+z[1])}; let sp=t9(att.off)-t9(att.on); if(sp<=0) sp+=1440; return `<span style="font-size:14px;font-weight:800">＝${fmtHM(sp)}</span>` })()}</td>
           <td style="padding-left:12px;white-space:nowrap">${bad9.join('、')||(noAtt?'':'<span style="color:var(--green);font-weight:800">✓</span>')}</td></tr>
       </tbody></table>
     </div>
