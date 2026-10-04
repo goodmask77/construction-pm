@@ -205,7 +205,7 @@ function shVioCompute(gdRows){
     let eM=t2m(x.end); if(eM<=t2m(x.start)) eM+=1440; const sp=eM-t2m(x.start)
     pushIv(as[x.name]=as[x.name]||{}, x.date, t2m(x.start), eM, sp>=540?60:0) })
   scanSched(as,a)
-  ;(((window._shiftD||{}).abAtt)||[]).forEach(x=>{ if((+x.h||0)>12) addV(a,x.name+'|'+x.date,'實際'+x.h+'h>12h') })
+  ;((typeof shMergedAbAtt==='function'?shMergedAbAtt():((window._shiftD||{}).abAtt||[]))).forEach(x=>{ if((+x.h||0)>12) addV(a,x.name+'|'+x.date,'實際'+x.h+'h>12h') }) // v4.37.1 跨月合併=柳坤廷7/15這種舊月實際超時不再漏
   // v4.37.0 已處理的不再提醒（負責人在清單按「✅ 處理」；key=店|名|日）
   const res9 = ((window._shiftD||{}).vioRes)||{}
   for(const k9 of Object.keys(g)) if(res9['GD|'+k9]) delete g[k9]
@@ -228,13 +228,33 @@ async function shVioList(){
   for(const [k,rs] of Object.entries(V.g||{})){ const [nm,dt]=k.split('|'); rs.forEach(r=>L.push({st:'GD',nm,dt,r})) }
   for(const [k,rs] of Object.entries(V.a||{})){ const [nm,dt]=k.split('|'); rs.forEach(r=>L.push({st:'AB',nm,dt,r})) }
   L.sort((x,y)=>x.dt<y.dt?-1:x.dt>y.dt?1:0)
+  // v4.37.1（張良「直接有說明跟打卡紀錄時間證明 再加上計算確認說明」）
+  const attBy={}; (typeof shMergedAbAtt==='function'?shMergedAbAtt():[]).forEach(x=>{ attBy['AB|'+x.name+'|'+x.date]=x })
+  ;(window._shRows||[]).forEach(r=>{ attBy['GD|'+r.name+'|'+r.date]={ on:r.firstIn, off:r.lastOut, h:Math.round(r.h*10)/10 } })
+  const t2m9=t=>{ const z=String(t||'').split(':'); return (+z[0]||0)*60+(+z[1]||0) }
+  const proofOf = x => {
+    const a=attBy[x.st+'|'+x.nm+'|'+x.dt]
+    if(/班距/.test(x.r)){
+      const d2=new Date(new Date(x.dt+'T00:00:00Z').getTime()-86400e3).toISOString().slice(0,10)
+      const b=attBy[x.st+'|'+x.nm+'|'+d2]
+      const offT=b&&b.off?b.off:'', onT=a&&a.on?a.on:''
+      let calc=''
+      if(offT&&onT){ const rest=t2m9(onT)+1440-t2m9(offT); calc=`＝中間只休 ${Math.round(rest/6)/10} 小時（法定要 ≥11）` }
+      return `打卡證明：${d2.slice(5)} 下班卡 ${offT||'無卡（依排班）'} → ${x.dt.slice(5)} 上班卡 ${onT||'無卡（依排班）'}${calc||'＝依排班時間推算班距不足 11 小時'}`
+    }
+    if(/>12h/.test(x.r)){
+      const onT=a&&a.on?a.on:'—', offT=a&&a.off?a.off:'—'
+      return `打卡證明：上班卡 ${onT} → 下班卡 ${offT}${a&&a.h?`＝出勤 ${a.h} 小時（單日上限 12）`:'（依排班時數超過 12 小時上限）'}`
+    }
+    return `計算：連續上班未排例假（四週變形底線＝每 2 週至少 2 天例假）`
+  }
   lpOverlay('vioOv',`
     <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap"><b style="font-size:17px">🔴 班表違規清單</b>
       <span class="hint">和班表上發紅光的格子一一對應；規則＝四週變形（單日12h／班距11h／連13天）</span>
       <button class="mini" style="padding:6px 14px" onclick="document.getElementById('vioOv').remove()">關閉</button></div>
-    ${L.length?`<div class="scroll" style="margin-top:10px"><table style="border-collapse:collapse;width:100%"><thead><tr><th style="padding:5px 8px">店</th><th style="padding:5px 8px">日期</th><th style="text-align:left;padding:5px 8px">夥伴</th><th style="text-align:left;padding:5px 8px">問題</th><th style="padding:5px 8px"></th></tr></thead><tbody>
+    ${L.length?`<div class="scroll" style="margin-top:10px"><table style="border-collapse:collapse;width:100%"><thead><tr><th style="padding:5px 8px;text-align:center">店</th><th style="padding:5px 8px;text-align:center">日期</th><th style="text-align:left;padding:5px 8px">夥伴</th><th style="text-align:left;padding:5px 8px">問題・打卡證明</th><th style="padding:5px 8px"></th></tr></thead><tbody>
       ${L.map(x=>{ const prev9 = /班距/.test(x.r) ? new Date(new Date(x.dt+'T00:00:00Z').getTime()-86400e3).toISOString().slice(0,10) : ''
-        return `<tr style="border-top:1px solid var(--line)"><td style="padding:6px 8px;text-align:center;cursor:pointer" onclick="shVioGo('${x.st}','${x.nm.replace(/'/g,'')}','${x.dt}','${prev9}')">${x.st}</td><td style="padding:6px 8px;white-space:nowrap;color:var(--primary);text-decoration:underline;cursor:pointer" title="點我跳到班表這一格（金光定位）" onclick="shVioGo('${x.st}','${x.nm.replace(/'/g,'')}','${x.dt}','${prev9}')">${x.dt.slice(5)}</td><td style="padding:6px 8px;font-weight:800;cursor:pointer" onclick="shVioGo('${x.st}','${x.nm.replace(/'/g,'')}','${x.dt}','${prev9}')">${x.nm}</td><td style="padding:6px 8px;color:var(--red);font-weight:700">${x.r}</td><td style="padding:6px 8px;white-space:nowrap"><button class="mini on" style="padding:3px 12px" onclick="shVioDone('${x.st}','${x.nm.replace(/'/g,'')}','${x.dt}','${x.r.replace(/'/g,'')}')">✅ 處理</button></td></tr>` }).join('')}
+        return `<tr style="border-top:1px solid var(--line)"><td style="padding:6px 8px;text-align:center;cursor:pointer" onclick="shVioGo('${x.st}','${x.nm.replace(/'/g,'')}','${x.dt}','${prev9}')">${x.st}</td><td style="padding:6px 8px;white-space:nowrap;color:var(--primary);text-decoration:underline;cursor:pointer" title="點我跳到班表這一格（金光定位）" onclick="shVioGo('${x.st}','${x.nm.replace(/'/g,'')}','${x.dt}','${prev9}')">${x.dt.slice(5)}</td><td style="padding:6px 8px;font-weight:800;cursor:pointer" onclick="shVioGo('${x.st}','${x.nm.replace(/'/g,'')}','${x.dt}','${prev9}')">${x.nm}</td><td style="padding:6px 8px"><div style="color:var(--red);font-weight:700">${x.r}</div><div class="hint" style="font-size:12px;margin-top:2px">${proofOf(x)}</div></td><td style="padding:6px 8px;white-space:nowrap;text-align:center"><button class="mini on" style="padding:3px 12px" onclick="shVioDone('${x.st}','${x.nm.replace(/'/g,'')}','${x.dt}','${x.r.replace(/'/g,'')}')">✅ 處理</button></td></tr>` }).join('')}
     </tbody></table></div><div class="hint" style="margin-top:8px">「✅ 處理」＝負責人已調整/確認過：紅光與提醒消失、進下面的留存紀錄。法條體檢 → 工具列「⚖️ 法規」。</div>`:`<div class="mut" style="margin-top:12px">沒有待處理的違規 🎉</div>`}
     ${(()=>{ const res9=((window._shiftD||{}).vioRes)||{}; const ks=Object.entries(res9); if(!ks.length) return ''
       return `<details style="margin-top:12px"><summary style="cursor:pointer;font-weight:800" class="hint">📜 已處理紀錄（${ks.length}）</summary>
