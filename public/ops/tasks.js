@@ -808,11 +808,11 @@ function tnCard(t, o) {
   const tnBdgC = tnPtsBadge(t);
   const bPos = (tnS.ptsBadge && tnS.ptsBadge.pos) || 'iconcol';
   if (tnBdgC && bPos === 'titleTop') h += '<div style="margin:0 0 4px">' + tnBdgC + '</div>';
-  // 標題（舊小 ★N 退役）；titleL/titleR＝徽章跟標題同一行
-  h += '<div style="display:flex;align-items:center;gap:5px;font-size:12.5px;color:' + (done ? tnC.faint : tnC.text) + ';text-decoration:' + (done ? 'line-through' : 'none') + ';line-height:1.35;word-break:break-word">'
-    + (tnBdgC && bPos === 'titleL' ? tnBdgC : '')
-    + (t.priority === 'urgent' ? tnI('flame', 12, tnC.red) : '') + '<span style="min-width:0;word-break:break-word">' + tnEsc(t.title) + '</span>'
-    + (tnBdgC && bPos === 'titleR' ? '<span style="margin-left:auto;flex-shrink:0">' + tnBdgC + '</span>' : '') + '</div>';
+  // 標題（舊小 ★N 退役）；titleL/titleR＝徽章跟標題同一行；v1.11 flex-wrap＝放不下自動換行不溢出卡片（手機高等級大徽章治本）
+  h += '<div style="display:flex;align-items:center;flex-wrap:wrap;gap:5px;font-size:12.5px;color:' + (done ? tnC.faint : tnC.text) + ';text-decoration:' + (done ? 'line-through' : 'none') + ';line-height:1.35;word-break:break-word">'
+    + (tnBdgC && bPos === 'titleL' ? '<span style="flex-shrink:0">' + tnBdgC + '</span>' : '')
+    + (t.priority === 'urgent' ? tnI('flame', 12, tnC.red) : '') + '<span style="flex:1;min-width:40%;word-break:break-word">' + tnEsc(t.title) + '</span>'
+    + (tnBdgC && bPos === 'titleR' ? '<span style="margin-left:auto;flex-shrink:0;max-width:100%">' + tnBdgC + '</span>' : '') + '</div>';
   // 徽章列（v1.1 卡片減脂：大項名/狀態字/標籤 chips 不上卡＝彈窗裡才看；張良「整排小字佔版面」）
   h += '<div style="display:flex;gap:4px;flex-wrap:wrap;align-items:center;margin-top:2px">';
   if (t.due) h += '<span style="display:inline-flex;align-items:center;gap:4px;font-size:11px;font-variant-numeric:tabular-nums;color:' + ((!done && t.due <= tnToday()) ? tnC.red : tnC.sub) + '">' + tnI('cal', 11) + t.due + tnWd(t.due) + '</span>'; // v1.7 紅框退役後改 <=：今天到期的日期字也標紅（原本只有逾期<今天才紅）
