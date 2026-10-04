@@ -1792,6 +1792,7 @@ const BOT_AGENT_GUIDE = `
 - {"type":"set_category_status","category":"消防工程","status":"完工"}  // 狀態：待開工/進行中/完工/有問題/暫停
 - {"type":"set_item","category":"消防工程","item":"灑水頭","status":"完工","unitPrice":1200,"qty":10,"assignee":"王師傅"}  // 改細項；欄位都可省略
 - {"type":"add_category","name":"空調工程","budget":300000,"space":"工程"}  // 建大項分類（四個空間都可以，space 預設工程；例：在團隊工作建「採購」就帶"space":"團隊"）。任務中心的分類欄位就是這個大項，建好後用 add_task/update_task 的 category 歸類
+【夥伴名冊（主管限定頁,/prep→夥伴名冊）】已上線：欄位=姓名/店/部門/職務/到職日/年資/生日/年齡/性別/身分證(鎖名單)/緊急聯絡人/入職文件(勞動契約/身分證影本/存摺/體檢/衛生訓練/未成年法代)。你不能直接改名冊——使用者要改就教他打指令(主管私訊限定)：改文字欄「名冊 姓名 欄位 值」或「緊急聯絡人 姓名 電話」(改那個人的欄位)或「我的緊急聯絡人 內容」(掛自己名下)；傳文件「文件 姓名 體檢」後15分內傳照片/檔案；查收件「文件 姓名」。絕不要說「名冊沒有某欄位/要找CC加欄位」。
 - {"type":"query_pos_day","date":"2026-09-25","store":"ground"}  // 🔎資料代查（唯讀,不用確認,誰問都能用）：查某天某店「完整」銷售明細=逐品項份數金額+時段表+付款別。date 也可以只給月份 "2026-09"＝查整月（回每日營收+月合計,問某月總額/要補一段日期時用這個,**不要**一天一天查）。使用者問的資料你手上摘要沒有時,輸出這個指令(可附一句「我查一下」),系統會代查回填後你再答——**不要**回「資料沒帶到/請自己看App/請找張良接」。store=ground|abeach。
 - {"type":"query_resv","date":"2024-07-15","to":"2024-07-20"}  // 🔎A Beach 訂位代查（唯讀,不用確認）：任何日期的訂位「逐筆完整明細」（姓名/電話/人數/時間/狀態/客註/店註）＋當日備註（⚠️包場/公休註記），2021-02 開店～未來全查得到。date=YYYY-MM-DD 或 YYYY-MM 整月；to 選填查區間（一次最多 4 個月）；加 "kw":"婚" =資料庫端先搜關鍵字（姓名/客註/店註/當日備註）只回命中的筆——問「某段期間所有婚禮/包場/慶生」這種主題式問題**優先用 kw**,比整月硬掃又準又省。摘要裡只有彙總數字、使用者要「某天是誰訂的/電話/歷史某天明細/**兒童椅要幾張**」就用這個（回覆有🪑兒童椅合計＋誰要幾張）；問空檔也可以用（回「空檔」=確定沒被訂）。
 - {"type":"query_resv","name":"OD"}  // 🔎A Beach 訂位「關鍵字」代查（唯讀,不用確認）：用「客人姓名/電話片段」直搜 inline 全史（=後台搜尋框同源），回每筆日期+姓名+人數+狀態+**電話**。使用者問「客人XX的電話/XX上次什麼時候來/XX訂過幾次」這種用名字問的就用這個（不知道日期時不要用 date 亂猜）。
@@ -2237,8 +2238,28 @@ export default async function handler(req, res) {
       // 1.357) 📎 入職文件上傳 v4.35.0（張良「從DD上傳檔案或照片 直接到對應的欄位」）：主管私訊「文件 姓名 文件名」→ 15分內傳照片/檔案自動歸檔私有桶
       // 1.356) 📇 名冊文字欄位直改 v4.35.2（張良「緊急聯絡人 趙以棠 0958120009 這樣DD就會自動更新資料嗎」→ 會）：
       // 「緊急聯絡人 姓名 內容」或「名冊 姓名 欄位 值」（欄位=部門/職務/到職日/生日/性別/緊急聯絡人）；主管限定、留痕
-      const mEmr = isDM && text.match(/^緊急聯絡人\s+(\S{2,10})\s+(.{2,40})$/)
+      const mEmrMe = isDM && text.match(/^我的緊急聯絡人\s+(.{2,40})$/) // v4.35.4 張良抓包：「緊急聯絡人 趙以棠 0958…」他本意=自己的聯絡人是趙以棠→新增「我的」版=掛發話者本人名下
+      const mEmr = isDM && !mEmrMe && text.match(/^緊急聯絡人\s+(\S{2,10})\s+(.{2,40})$/)
       const mRos = isDM && text.match(/^名冊\s+(\S{2,10})\s+(部門|職務|到職日|生日|性別|緊急聯絡人)\s+(.{1,40})$/)
+      if (mEmrMe) { // 掛自己名下（發話者=綁定本名，要在夥伴名冊裡）
+        try {
+          const kvM9 = await kvGetMany(['sp_crew_pm_hr_master', 'sp_finance_pm_prep_bind'])
+          const bindM9 = kvM9['sp_finance_pm_prep_bind'] || {}
+          const tkM9 = (bindM9.byUid || {})[userId]
+          const meM9 = tkM9 ? ((bindM9.tokens || {})[tkM9] || {}).name : null
+          if (!meM9) { await send('先綁定才知道你是誰——私訊我「綁定GD 本名」。'); continue }
+          const docM9 = kvM9['sp_crew_pm_hr_master'] || { rows: [] }
+          const rowM9 = (docM9.rows || []).find(r9 => r9.name === meM9)
+          if (!rowM9) { await send(`夥伴名冊裡找不到你（${meM9}）——跟張良說一聲加進名冊。`); continue }
+          const beforeM9 = rowM9.emer || '（空）'
+          rowM9.emer = mEmrMe[1].trim().slice(0, 60)
+          docM9.log = [{ by: meM9, ts: new Date(Date.now() + 8 * 3600e3).toISOString().slice(5, 16).replace('T', ' '), what: `DD改 ${meM9} emer(本人)` }, ...(docM9.log || [])].slice(0, 80)
+          docM9.updatedAt = new Date().toISOString()
+          await kvSet('sp_crew_pm_hr_master', docM9)
+          await send(`✅ 已更新「你本人（${meM9}）」的緊急聯絡人：\n${beforeM9} → ${rowM9.emer}`)
+        } catch (_) { await send('更新出了點問題 🙏') }
+        continue
+      }
       if (mEmr || mRos) {
         try {
           const nmQ = mEmr ? mEmr[1] : mRos[1]
@@ -2270,7 +2291,7 @@ export default async function handler(req, res) {
           docR.log = [{ by: meR, ts: ts8R, what: `DD改 ${rowR.name} ${fdK}` }, ...(docR.log || [])].slice(0, 80)
           docR.updatedAt = new Date().toISOString()
           await kvSet('sp_crew_pm_hr_master', docR)
-          await send(`✅ 已更新 ${rowR.name}（${/A Beach/.test(rowR.co) ? 'AB' : 'GD'}）的${mEmr ? '緊急聯絡人' : mRos[2]}：\n${before9} → ${rowR[fdK]}${fdK === 'birth' ? `（年齡自動改 ${rowR.age}）` : ''}`)
+          await send(`✅ 已更新 ${rowR.name}（${/A Beach/.test(rowR.co) ? 'AB' : 'GD'}）的${mEmr ? '緊急聯絡人' : mRos[2]}：\n${before9} → ${rowR[fdK]}${fdK === 'birth' ? `（年齡自動改 ${rowR.age}）` : ''}${mEmr ? '\n\n（這是改「' + rowR.name + ' 的」緊急聯絡人欄；如果你是要登記自己的，打「我的緊急聯絡人 ' + rowR.name + ' ' + rowR[fdK] + '」我會掛你名下）' : ''}`)
         } catch (e) { await send('更新出了點問題，再試一次 🙏') }
         continue
       }

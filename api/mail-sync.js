@@ -2923,6 +2923,19 @@ export default async function handler(req, res) {
     const mk9 = (process.env.MENU_PROBE_KEY || '').trim()
     if (!mk9 || String(req.query.hrmasterset) !== mk9) return res.status(403).json({ ok: false })
     let bh9 = {}; try { bh9 = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
+    if (Array.isArray(bh9.updates) && bh9.updates.length) { // v4.35.4 合併修資料（不整份覆蓋）
+      const docU9 = (await kvGet('sp_crew_pm_hr_master')) || { rows: [] }
+      const outU9 = []
+      for (const u9 of bh9.updates) {
+        const r9 = (docU9.rows || []).find(x9 => x9.name === u9.name && (!u9.co || x9.co === u9.co))
+        if (!r9) { outU9.push(u9.name + ':notfound'); continue }
+        Object.assign(r9, u9.set || {})
+        outU9.push(u9.name + ':ok')
+      }
+      docU9.updatedAt = new Date().toISOString()
+      await kvPut('sp_crew_pm_hr_master', docU9, '名冊合併修資料')
+      return res.status(200).json({ ok: true, results: outU9 })
+    }
     if (!Array.isArray(bh9.rows) || !bh9.rows.length) return res.status(400).json({ ok: false, error: '要給 rows' })
     const docH = { rows: bh9.rows.slice(0, 300), src: String(bh9.src || '').slice(0, 200), updatedAt: new Date().toISOString() }
     await kvPut('sp_crew_pm_hr_master', docH, '員工清冊匯入(' + docH.rows.length + '人)')
