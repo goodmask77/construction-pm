@@ -330,3 +330,28 @@ async function shVioGo(st, nm, dt, dt2){
     setTimeout(()=>els.forEach(el=>el.classList.remove('glowgold')), 3200) // 金光3秒收場；vioGlow紅光class還在=問題那天繼續紅
   })
 }
+
+// 🔍 AB 格點擊=排班vs實際打卡核對卡 v4.36.4（張良「點到該格直接顯示上下班真實打卡時間 方便負責人核對」）
+function abCellInfo(nm, dt){
+  const scheds = (typeof shMergedAb==='function'?shMergedAb():[]).filter(x=>x.name===nm&&x.date===dt)
+  const att = (typeof shMergedAbAtt==='function'?shMergedAbAtt():[]).find(x=>x.name===nm&&x.date===dt)
+  const wd9 = '日一二三四五六'[new Date(dt).getDay()]
+  const schTx = scheds.length ? scheds.map(x=>`${x.code||'班'}${x.start?` ${x.start}–${x.end}`:''}`).join('、') : '沒排班'
+  let attTx
+  if (att && (att.on||att.off)) {
+    const bad9 = []
+    if (att.late>0) bad9.push(`<b style="color:#E8A657">遲到 ${att.late} 分</b>`)
+    if (att.early>0) bad9.push(`<b style="color:#E8A657">早退 ${att.early} 分</b>`)
+    if (att.miss) bad9.push('<b style="color:var(--red)">缺卡</b>')
+    attTx = `<span style="font-size:19px;font-weight:900">${att.on||'—'} → ${att.off||'—'}</span>　<b>${att.h||'—'}h</b>${bad9.length?'<div style="margin-top:3px">'+bad9.join('、')+'</div>':''}`
+  } else if (att && att.absent) attTx = '<b style="color:var(--red)">曠職（排班未出勤）</b>'
+  else attTx = `<span class="hint">${dt > todayTpe() ? '還沒到這天' : '沒有打卡資料（可能沒打卡或還沒同步）'}</span>`
+  lpOverlay('abciOv', `
+    <div style="display:flex;justify-content:space-between;align-items:center"><b style="font-size:16.5px">${nm}・${dt.slice(5)}（${wd9}）</b>
+      <button class="mini" style="padding:6px 14px" onclick="document.getElementById('abciOv').remove()">關閉</button></div>
+    <div style="margin-top:10px;display:grid;gap:8px">
+      <div style="background:var(--soft);border:1px solid var(--line);border-radius:10px;padding:10px 12px"><div class="hint" style="font-size:12px;margin-bottom:2px">排班（NUEiP）</div><b style="font-size:15px">${schTx}</b></div>
+      <div style="background:var(--soft);border:1px solid var(--line);border-radius:10px;padding:10px 12px"><div class="hint" style="font-size:12px;margin-bottom:2px">實際打卡</div>${attTx}</div>
+    </div>
+    <div class="hint" style="margin-top:8px;font-size:12px">打卡=NUEiP 出勤同步（第一張上班卡→最後一張下班卡）；整月總帳看工具列「🕐 AB出勤」。</div>`)
+}

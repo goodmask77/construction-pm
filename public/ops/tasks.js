@@ -1,8 +1,12 @@
-/* ── /prep 原生任務中心 tasks.js（v1.1 2026-10-04）────────────────────────────
+/* ── /prep 原生任務中心 tasks.js（v1.2 2026-10-04）────────────────────────────
    React 版 src/tasks/TaskCenter.jsx + taskModel.js 的 vanilla 移植，取代 iframe 內嵌。
    v1.1（張良 5 則）：①指派完浮通知三選一（大群/私訊/不通知→tasknotify）②卡片完成鈕＋建立者審核流
    （createdBy/review 新欄位，主 App 合併保留）③卡片減脂（大項名/狀態字/標籤不上卡）
    ④負責人視角改每人一組看板（排序存 sp_team_pm_ownerord）⑤計時改日時分 tnFmtDur。
+   v1.2：①#task=<id> 深層連結定位（p10 設 window.tnFocusId → tnFocusTry 找 data-tid 卡、
+   看不到自動切依大項視角＋展開完成區、scrollIntoView＋.glowgold 金光約4秒；找不到＝小字提示）
+   ②「確認收到」鈕（負責人≠建立者＋未ack＋未done → 寫 ack={by,ts}＋tasknotify kind:'ack' 私訊建立者；
+   之後全員看到「已收到・名字」徽章）；所有 tasknotify body 一律補 id＝任務id（後端組直達深層連結）。
    資料 100% 相容主 App：
      sp_team_pm_task_<id> ＝ 一件任務一份文件（含 ord＝手動排序位置）
      sp_team_pm_tasks_v2  ＝ 遷移 marker（只讀不寫）
@@ -313,20 +317,30 @@ function tnFinish(id) {
   if (!t.createdBy || !tnS.me || t.createdBy === tnS.me) { tnUpd(id, { status: 'done', review: undefined }); return; }
   if (t.review && t.review.by) return; // 已送審就不重複送
   tnUpd(id, { review: { by: tnS.me, ts: new Date().toISOString() } });
-  tnNotify({ kind: 'review', creator: t.createdBy, title: t.title });
+  tnNotify({ kind: 'review', id: id, creator: t.createdBy, title: t.title });
 }
 function tnApprove(id) { // 建立者點「通過」：完成封存＋告訴回報人過了
   const t = (tnS.tasks || []).find(x => x.id === id); if (!t) return;
   const by = (t.review && t.review.by) || '';
   tnUpd(id, { status: 'done' });
-  tnNotify({ kind: 'approve', doer: by, title: t.title });
+  tnNotify({ kind: 'approve', id: id, doer: by, title: t.title });
 }
 function tnReject(id) { // 建立者點「退回」：清審核標記＋告訴回報人再處理
   const t = (tnS.tasks || []).find(x => x.id === id); if (!t) return;
   if (!confirm('退回「' + (t.title || '') + '」？會通知回報人再處理。')) return;
   const by = (t.review && t.review.by) || '';
   tnUpd(id, { review: undefined });
-  tnNotify({ kind: 'reject', doer: by, title: t.title });
+  tnNotify({ kind: 'reject', id: id, doer: by, title: t.title });
+}
+/* v1.2 確認收到（張良「對方看到→出現確認收到按鈕→按下去即時私訊任務建立者」）
+   ①寫 ack={by,ts}（走 diffPersist 差異存檔；新欄位主 App 合併原樣保留＝同 review）
+   ②tasknotify kind:'ack' fire-and-forget（通知失敗不影響已存的 ack）③重畫＝按鈕原地變徽章 */
+function tnAck(id) {
+  const t = (tnS.tasks || []).find(x => x.id === id); if (!t) return;
+  if (t.ack && t.ack.by) return; // 已確認過不重複
+  if (t.status === 'done' || !tnS.me || t.owner !== tnS.me || !t.createdBy || t.createdBy === tnS.me) return;
+  tnUpd(id, { ack: { by: tnS.me, ts: new Date().toISOString() } });
+  tnNotify({ kind: 'ack', id: id, title: t.title || '', due: t.due || '', creator: t.createdBy });
 }
 function tnToggleDone(id) {
   const t = (tnS.tasks || []).find(x => x.id === id); if (!t) return;
@@ -527,6 +541,9 @@ function tnRender() {
   try { if (ae && ae.setSelectionRange && /text|search|^$/.test(ae.type || '')) ss = ae.selectionStart; } catch (_) {}
   host.innerHTML = tnRoot();
   if (aid) { const el = document.getElementById(aid); if (el && el !== document.activeElement) { try { el.focus(); if (ss != null && el.setSelectionRange) el.setSelectionRange(ss, ss); } catch (_) {} } }
+  // v1.2 金光期間又重畫（背景 refetch/操作）→ 新 DOM 重掛 class 不中斷；再試深層連結定位
+  if (tnGlowId && Date.now() < tnGlowUntil) { try { const ge = document.querySelector('[data-tid="' + tnGlowId + '"]'); if (ge) ge.classList.add('glowgold'); } catch (_) {} }
+  tnFocusTry();
 }
 function tnRoot() {
   if (tnS.tasks === null) { // 載入中 skeleton（淺灰佔位塊）
@@ -587,7 +604,7 @@ function tnCard(t, o) {
   const hot = !done && t.due === tnToday(); // 今日必處理＝發亮紅
   const baseShadow = hot ? '0 0 0 2px rgba(240,115,115,.20), 0 2px 10px rgba(240,115,115,.30)' : '0 1px 3px rgba(0,0,0,.30)';
   const dndCard = o.dropBefore ? ' ondragover="tnDOvCard(event)" ondrop="tnDropCard(event,\'' + t.id + '\')"' : '';
-  let h = '<div draggable="true" ondragstart="tnDS(event,\'' + t.id + '\')" ondragend="tnDE()"' + dndCard
+  let h = '<div draggable="true" data-tid="' + t.id + '" ondragstart="tnDS(event,\'' + t.id + '\')" ondragend="tnDE()"' + dndCard
     + ' onclick="tnOpen(\'' + t.id + '\')" onmouseenter="tnS.hover=\'' + t.id + '\'" onmouseleave="if(tnS.hover===\'' + t.id + '\')tnS.hover=null"'
     + ' style="' + (done
       ? 'background:transparent;border:1px dashed ' + tnC.line + ';border-radius:8px;padding:5px 8px;margin-bottom:5px;cursor:grab;opacity:.6'
@@ -610,6 +627,8 @@ function tnCard(t, o) {
   if (t.claimBy && !done) h += '<span title="處理中" style="display:inline-flex;align-items:center;gap:3px;font-size:10.5px;color:' + tnC.accent + ';font-weight:700;white-space:nowrap">' + tnI('wrench', 11) + tnEsc(t.claimBy) + (t.claimAt ? ('・' + tnFmtDur((Date.now() - t.claimAt) / 60000)) : '') + '</span>';
   if (t.prepPending === 1 && !done) h += tnPill(tnC.amber, '待審核');
   if (t.prepPub === 'pending') h += tnPill(tnC.amber, '等發布');
+  // v1.2 已確認收到徽章（建立者跟其他人都看得到；單色＝既有 tnPill 樣式）
+  if (t.ack && t.ack.by) h += '<span title="負責人已確認收到這張任務">' + tnPill(tnC.green, '已收到・' + tnEsc(t.ack.by)) + '</span>';
   // 完成鈕＋建立者審核流（三分支見 tnFinish 上方註解）
   const rvBy = (!done && t.review && t.review.by) ? t.review.by : '';
   if (rvBy) {
@@ -620,6 +639,10 @@ function tnCard(t, o) {
     }
   } else if (!done) {
     h += '<button onclick="event.stopPropagation();tnFinish(\'' + t.id + '\')" title="自己建的直接完成；別人建的會送建立者過目" style="display:inline-flex;align-items:center;gap:3px;border:1px solid ' + tnC.green + ';background:#16281C;color:' + tnC.green + ';border-radius:999px;padding:0 8px;font-size:10.5px;font-weight:700;cursor:pointer">' + tnI('check', 10, tnC.green) + '完成</button>';
+  }
+  // v1.2 確認收到鈕（張良「對方看到→按下去即時私訊任務建立者」）：我是負責人＋別人建的＋沒確認過＋未完成
+  if (!done && !t.ack && tnS.me && t.owner === tnS.me && t.createdBy && t.createdBy !== tnS.me) {
+    h += '<button onclick="event.stopPropagation();tnAck(\'' + t.id + '\')" title="告訴建立者你看到這張任務了" style="display:inline-flex;align-items:center;gap:3px;border:1px solid ' + tnC.accent + ';background:' + tnC.accentSoft + ';color:' + tnC.accent + ';border-radius:999px;padding:0 8px;font-size:10.5px;font-weight:700;cursor:pointer">' + tnI('check', 10, tnC.accent) + '確認收到</button>';
   }
   if (!done && !t.claimBy && tnS.me) h += '<button onclick="event.stopPropagation();tnClaim(\'' + t.id + '\')" style="border:1px solid ' + tnC.accent + ';background:' + tnC.accentSoft + ';color:' + tnC.accent + ';border-radius:999px;padding:0 8px;font-size:10.5px;font-weight:700;cursor:pointer">我來解決</button>';
   if (!done && t.claimBy && t.claimBy === tnS.me) h += '<button onclick="event.stopPropagation();tnUnclaim(\'' + t.id + '\')" style="border:1px solid ' + tnC.line + ';background:' + tnWHT + ';color:' + tnFNT + ';border-radius:999px;padding:0 8px;font-size:10.5px;cursor:pointer">放棄</button>';
@@ -924,7 +947,7 @@ function tnVList() {
     const done = t.status === 'done';
     const pm = tnPMeta(t.priority);
     const overdue = !done && t.due && t.due < tnToday();
-    h += '<div onclick="tnOpen(\'' + t.id + '\')"'
+    h += '<div data-tid="' + t.id + '" onclick="tnOpen(\'' + t.id + '\')"'
       + (manual ? ' draggable="true" ondragstart="tnDS(event,\'' + t.id + '\')" ondragend="tnDE()" ondragover="tnDOvCard(event)" ondrop="event.stopPropagation();tnZDrop(event,\'before\',\'' + t.id + '\')" title="拖我排序（丟到目標列＝排到它上面）"' : '')
       + ' style="display:grid;grid-template-columns:' + GTC + ';align-items:center;height:36px;border-top:' + (i ? '1px solid ' + tnC.line : 'none') + ';cursor:' + (manual ? 'grab' : 'pointer') + ';background:' + (tnTcol(t.color) || tnC.card) + '">'
       + '<div style="display:flex;justify-content:center"><button onclick="event.stopPropagation();tnToggleDone(\'' + t.id + '\')" style="width:15px;height:15px;border-radius:4px;border:1px solid ' + (done ? tnC.green : tnCBR) + ';background:' + (done ? tnC.green : tnWHT) + ';display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0">' + (done ? tnI('check', 10, '#fff') : '') + '</button></div>'
@@ -1000,7 +1023,7 @@ function tnVGantt() {
   [...sched].sort((a, b) => +lo(a) - +lo(b)).forEach((t, i) => {
     const s = offset(t.start || t.due), e = offset(t.due || t.start);
     const left = Math.min(s, e), width = Math.abs(e - s) + 1;
-    h += '<div onclick="tnOpen(\'' + t.id + '\')" style="display:flex;align-items:center;border-top:' + (i ? '1px solid ' + tnC.soft : 'none') + ';cursor:pointer;background:' + (tnTcol(t.color) || tnWHT) + '">'
+    h += '<div data-tid="' + t.id + '" onclick="tnOpen(\'' + t.id + '\')" style="display:flex;align-items:center;border-top:' + (i ? '1px solid ' + tnC.soft : 'none') + ';cursor:pointer;background:' + (tnTcol(t.color) || tnWHT) + '">'
       + '<div style="width:' + nameW + 'px;flex-shrink:0;border-right:1px solid ' + tnC.line + ';padding:7px 10px;font-size:' + (tnMob() ? 11 : 12.5) + 'px;color:' + (t.status === 'done' ? tnC.faint : tnC.text) + ';overflow:hidden;white-space:nowrap;display:flex;align-items:center;gap:4px;position:sticky;left:0;background:inherit;z-index:2">'
       + (t.priority === 'urgent' ? tnI('flame', 11, tnC.red) : '')
       + '<span style="overflow:hidden;text-overflow:ellipsis">' + tnEsc(t.title) + '</span>'
@@ -1033,7 +1056,7 @@ function tnVMind() {
       + '<div style="background:' + (b.g.id === tnINBOX ? tnC.accentSoft : tnC.card) + ';border:1px solid ' + (b.g.id === tnINBOX ? tnC.accent : tnC.line) + ';border-radius:8px;padding:6px 14px;font-size:13px;font-weight:600;color:' + (b.g.id === tnINBOX ? tnC.accent : tnC.text) + ';white-space:nowrap">' + tnEsc(b.g.name) + ' <span style="color:' + tnC.faint + ';font-weight:400;font-size:11px;font-variant-numeric:tabular-nums">' + b.items.length + '</span></div>'
       + '<div style="width:1px;height:10px;background:' + tnC.line + '"></div>'
       + '<div style="display:flex;flex-direction:column;gap:7px;width:100%">'
-      + b.items.map(t => '<div onclick="tnOpen(\'' + t.id + '\')" style="display:flex;align-items:center;gap:5px;background:' + (tnTcol(t.color) || tnC.card) + ';border:1px solid ' + tnC.line + ';border-radius:8px;padding:6px 10px;font-size:12.5px;color:' + (t.status === 'done' ? tnC.faint : tnC.text) + ';text-decoration:' + (t.status === 'done' ? 'line-through' : 'none') + ';cursor:pointer">'
+      + b.items.map(t => '<div data-tid="' + t.id + '" onclick="tnOpen(\'' + t.id + '\')" style="display:flex;align-items:center;gap:5px;background:' + (tnTcol(t.color) || tnC.card) + ';border:1px solid ' + tnC.line + ';border-radius:8px;padding:6px 10px;font-size:12.5px;color:' + (t.status === 'done' ? tnC.faint : tnC.text) + ';text-decoration:' + (t.status === 'done' ? 'line-through' : 'none') + ';cursor:pointer">'
         + '<span style="width:6px;height:6px;border-radius:50%;background:' + tnSColor(t.status) + ';flex-shrink:0"></span>'
         + (t.pinned ? tnI('pin', 11, tnC.accent, tnC.accent) : '') + (t.priority === 'urgent' ? tnI('flame', 11, tnC.red) : '') + tnEsc(t.title) + '</div>').join('')
       + '</div></div>';
@@ -1093,8 +1116,10 @@ function tnModal() {
       return '<button onclick="tnUpd(\'' + t.id + '\',{color:\'' + c + '\'})" title="' + (c ? '' : '無顏色') + '" style="width:26px;height:26px;border-radius:50%;cursor:pointer;background:' + (c ? (tnVIVID[c] || c) : tnWHT) + ';border:2.5px solid ' + (on ? '#fff' : 'transparent') + ';outline:1.5px solid ' + tnC.line + ';display:flex;align-items:center;justify-content:center;padding:0">'
         + (!c ? tnI('x', 11, tnC.faint) : (on ? tnI('check', 13, '#fff') : '')) + '</button>';
     }).join('') + '</div>');
-  h += '<div style="display:flex;align-items:center;gap:10px;margin-top:8px">'
-    + '<div style="font-size:11px;color:' + tnC.faint + ';font-variant-numeric:tabular-nums">建立於 ' + tnDnorm(t.createdAt) + '</div><div style="flex:1"></div>'
+  h += '<div style="display:flex;align-items:center;gap:10px;margin-top:8px;flex-wrap:wrap">'
+    + '<div style="font-size:11px;color:' + tnC.faint + ';font-variant-numeric:tabular-nums">建立於 ' + tnDnorm(t.createdAt) + '</div>'
+    + (t.ack && t.ack.by ? '<span title="負責人已確認收到">' + tnPill(tnC.green, '已收到・' + tnEsc(t.ack.by) + (t.ack.ts ? '（' + tnDnorm(t.ack.ts) + '）' : '')) + '</span>' : '')
+    + '<div style="flex:1"></div>'
     + '<button onclick="tnClose()" style="display:inline-flex;align-items:center;gap:6px;background:' + tnC.accent + ';color:#fff;border:none;border-radius:8px;padding:8px 18px;font-size:13.5px;font-weight:700;cursor:pointer">' + tnI('check', 14, '#fff') + '完成</button></div>';
   h += '</div></div>';
   return h;
@@ -1123,9 +1148,52 @@ function tnAssignGo(mode) {
   const a = tnS.assignAsk; tnS.assignAsk = null;
   if (a && mode !== 'none') {
     const t = (tnS.tasks || []).find(x => x.id === a.id);
-    tnNotify({ kind: a.manual ? 'manual' : 'assign', mode: mode, title: (t && t.title) || '', due: (t && t.due) || '', owner: a.owner, creator: (t && t.createdBy) || tnS.me || '', doer: tnS.me || '' });
+    tnNotify({ kind: a.manual ? 'manual' : 'assign', id: a.id, mode: mode, title: (t && t.title) || '', due: (t && t.due) || '', owner: a.owner, creator: (t && t.createdBy) || tnS.me || '', doer: tnS.me || '' });
   }
   tnRender();
+}
+
+/* ── v1.2 深層連結定位（#task=<id>）──
+   p10 路由（點通知/LINE 連結、hashchange）設 window.tnFocusId 再呼叫 taskEmbed()→tnPage()；
+   每次 tnRender 畫完都會呼叫 tnFocusTry()（沒 tnFocusId＝一行就返回，零成本）：
+   stale-first 快取先畫→定位；快取沒資料就等背景 tnRefetch 畫完那次再定位。
+   目前視角看不到（今日Home 沒收它/已完成被收起/搜尋濾掉）→ 自動切「依大項」視角＋
+   done 先展開完成區＋清搜尋，重畫後再找；找到＝scrollIntoView 置中＋.glowgold（頁面既有金光約4秒）。
+   找不到（任務被刪）→ 小字浮提示不炸。重複呼叫 tnPage()/hashchange 再進來都走同一條路。 */
+let tnFocusBusy = false;              // 切視角觸發的巢狀 tnRender 防遞迴
+let tnGlowId = null, tnGlowUntil = 0; // 金光中的卡＋截止時間（重畫時重掛 class 用）
+function tnToastMini(msg) { // 小字浮提示（非阻斷；底部置中 3.5 秒自動消失）
+  try {
+    const d = document.createElement('div');
+    d.textContent = msg;
+    d.style.cssText = 'position:fixed;left:50%;bottom:28px;transform:translateX(-50%);background:' + tnMOD + ';border:1px solid ' + tnC.line + ';color:' + tnC.sub + ';font-size:12px;padding:7px 14px;border-radius:999px;z-index:900;box-shadow:0 4px 14px rgba(0,0,0,.4);max-width:92vw;white-space:nowrap;overflow:hidden;text-overflow:ellipsis';
+    document.body.appendChild(d);
+    setTimeout(() => { try { d.remove(); } catch (_) {} }, 3500);
+  } catch (_) {}
+}
+function tnFocusTry() {
+  const fid = window.tnFocusId;
+  if (!fid || tnFocusBusy || typeof document === 'undefined') return;
+  if (!tnS.loaded || !Array.isArray(tnS.tasks)) return; // 資料還沒到＝先不清，refetch 畫完會再進來
+  const t = tnS.tasks.find(x => x.id === fid);
+  if (!t) { window.tnFocusId = null; tnToastMini('找不到這張任務卡（可能已刪除）'); return; }
+  let el = null;
+  try { el = document.querySelector('[data-tid="' + fid + '"]'); } catch (_) {}
+  if (!el) { // 目前視角看不到 → 切依大項（它一定有一組；done 先展開完成區、清搜尋）重畫再找
+    tnFocusBusy = true;
+    tnS.view = 'group';
+    if (t.status === 'done') tnS.showDone = true;
+    tnS.q = '';
+    tnRender();
+    tnFocusBusy = false;
+    try { el = document.querySelector('[data-tid="' + fid + '"]'); } catch (_) {}
+  }
+  window.tnFocusId = null; // 用完即清（成功失敗都清，不殘留）
+  if (!el) { tnToastMini('找不到這張任務卡（可能已刪除）'); return; }
+  tnGlowId = fid; tnGlowUntil = Date.now() + 4200; // goldGlow 1s×4＝約4秒
+  try { el.scrollIntoView({ block: 'center', behavior: 'smooth' }); } catch (_) { try { el.scrollIntoView(); } catch (_) {} }
+  try { el.classList.add('glowgold'); } catch (_) {}
+  setTimeout(() => { tnGlowId = null; try { const e2 = document.querySelector('[data-tid="' + fid + '"]'); if (e2) e2.classList.remove('glowgold'); } catch (_) {} }, 4200);
 }
 
 /* ── 初始化＋入口 ── */

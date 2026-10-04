@@ -19,6 +19,10 @@ function shMergedAb(){ const out=[], seen=new Set(); const add=a=>{ (a||[]).forE
   if(window._shiftD) add(window._shiftD.ab)
   ;(window._shLoaded||[]).forEach(y=>{ if(y===shiftYm)return; const c=tcGet('shift_'+y); if(c) add(c.ab) })
   return out }
+function shMergedAbAtt(){ const out=[], seen=new Set(); const add=a=>{ (a||[]).forEach(x=>{ const k=x.date+'|'+x.name; if(seen.has(k))return; seen.add(k); out.push(x) }) }
+  if(window._shiftD) add(window._shiftD.abAtt)
+  ;(window._shLoaded||[]).forEach(y=>{ if(y===shiftYm)return; const c=tcGet('shift_'+y); if(c) add(c.abAtt) })
+  return out }
 function shMergedResv(){ const out={}; const add=rv=>{ if(!rv)return; for(const dt in rv){ if(!(dt in out)) out[dt]=rv[dt] } }
   if(window._shiftD) add(window._shiftD.resv)
   ;(window._shLoaded||[]).forEach(y=>{ if(y===shiftYm)return; const c=tcGet('shift_'+y); if(c) add(c.resv) })
@@ -240,7 +244,7 @@ function shiftRender(){
           hh += wd2.map(dt=>{
             const x = (abByN[nm]||{})[dt]
             const vioA9 = (VIO.a||{})[nm+'|'+dt]
-            if (!x) return `<td data-ab="${nm}|${dt}" ${vioA9?`class="vioGlow" title="⚠️ ${vioA9.join('、')}"`:''} style="${BD}${gb9}${sepOf(dt)}${dt===today?todayBg:wkndBg(dt)}"></td>`
+            if (!x) return `<td data-ab="${nm}|${dt}" onclick="abCellInfo('${nm.replace(/'/g,'')}','${dt}')" ${vioA9?`class="vioGlow" title="⚠️ ${vioA9.join('、')}"`:''} style="${BD}${gb9}${sepOf(dt)}${dt===today?todayBg:wkndBg(dt)};cursor:pointer"></td>`
             const code = x.code || ''
             const tip = `${vioA9?`⚠️ ${vioA9.join('、')}｜`:''}${nm} ${dt} ${code||'排休'}${x.start?` ${x.start}-${x.end}`:''}${x.dept?`（${x.dept}）`:''}`
             const rest9 = /例|休/.test(code) // 休假＝淡灰小字不加框（一眼略過，排班色塊才跳）
@@ -250,7 +254,7 @@ function shiftRender(){
                 ? `<span style="font-size:10px;color:#55617A;font-weight:600;white-space:nowrap">${code.replace(/[●🔴⚪️]/g,'')}</span>`
                 : `<span style="display:inline-block;border:1px solid ${cc9};background:${cc9}1F;color:${cc9};border-radius:6px;padding:1px 6px;font-size:11px;font-weight:800;white-space:nowrap">${code}</span>${x.start?`<div class="hint" style="font-size:9px;white-space:nowrap">${x.start}-${x.end}</div>`:''}`)
               : `<span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:#3A4454" title="排休/未排"></span>`
-            return `<td data-ab="${nm}|${dt}" ${vioA9?'class="vioGlow"':''} style="${BD}${gb9}${sepOf(dt)}${dt===today?todayBg:wkndBg(dt)}padding:2px 3px;text-align:center" title="${tip}">${chip}</td>`
+            return `<td data-ab="${nm}|${dt}" onclick="abCellInfo('${nm.replace(/'/g,'')}','${dt}')" ${vioA9?'class="vioGlow"':''} style="${BD}${gb9}${sepOf(dt)}${dt===today?todayBg:wkndBg(dt)}padding:2px 3px;text-align:center;cursor:pointer" title="${tip}">${chip}</td>`
           }).join('') + `</tr>`
         })
       })

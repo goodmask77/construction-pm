@@ -480,7 +480,7 @@ function ntfRender(){
     if (d2 !== lastD) { html += `<div class="hint" style="font-weight:800;margin:12px 0 4px">${d2}</div>`; lastD = d2 }
     const hh = new Date(x.ts).toLocaleTimeString('zh-TW',{hour:'2-digit',minute:'2-digit',hour12:false})
     const unread = x.ts > rd0
-    html += `<div onclick="location.href='${(x.url||'/prep').replace(/'/g,'')}'" style="display:flex;gap:9px;padding:10px 10px;border:1px solid ${unread?'#3E5B86':'#2C3542'};background:${unread?'#20304A':'#202834'};border-radius:11px;margin-bottom:7px;cursor:pointer">
+    html += `<div onclick="var o9=document.getElementById('ntfOv');if(o9)o9.remove();location.href='${(x.url||'/prep').replace(/'/g,'')}'" style="display:flex;gap:9px;padding:10px 10px;border:1px solid ${unread?'#3E5B86':'#2C3542'};background:${unread?'#20304A':'#202834'};border-radius:11px;margin-bottom:7px;cursor:pointer"> <!-- v4.41.6 點通知先關彈窗再跳深層連結（不然擋住金光定位） -->
       <span style="flex:0 0 auto;font-size:16px">${(NTF_CATS[x.cat]||'🔔').slice(0,2)}</span>
       <div style="min-width:0"><div style="font-weight:800;font-size:14.5px">${x.title||''} <span class="hint" style="font-weight:400">${hh}</span></div>
       <div class="hint" style="font-size:13px;overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical">${x.body||''}</div></div></div>`
