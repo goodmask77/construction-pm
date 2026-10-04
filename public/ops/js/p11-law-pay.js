@@ -375,9 +375,8 @@ function abAttDraw(){
   lpOverlay('abaOv', `
     <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap"><b style="font-size:17px">🕐 A Beach 出勤總覽</b>
       <span style="display:flex;gap:8px;align-items:center">${vBtn}<button class="mini" style="padding:6px 14px" onclick="document.getElementById('abaOv').remove()">關閉</button></span></div>
-    <div class="hint" style="margin-top:4px">NUEiP 打卡・6/1 起已回補｜點欄頭排序、點名字看逐日明細</div>
     <div style="display:flex;gap:6px;flex-wrap:wrap;margin:10px 0">${moBtn('all','全部')}${mos.map(m=>moBtn(m, m.slice(2).replace('-','/'))).join('')}</div>
-    <div style="display:flex;gap:14px;flex-wrap:wrap;margin-bottom:8px" class="hint">共 ${tot.days} 人日｜遲到 ${tot.late} 次｜缺卡 ${tot.miss} 次｜曠職 ${tot.abs} 次</div>
+    <div style="display:flex;gap:14px;flex-wrap:wrap;margin-bottom:6px" class="hint">共 ${tot.days} 人日｜遲到 ${tot.late} 次｜缺卡 ${tot.miss} 次｜曠職 ${tot.abs} 次・NUEiP 打卡・點欄頭排序、點名字看逐日明細</div><!-- v4.43.8 說明併一行=det/sum 切換彈窗高不跳 -->
     <div class="scroll" style="height:66vh;overflow-y:auto"><table style="border-collapse:collapse;width:100%"><thead><tr>
       <th style="padding:5px 8px;text-align:left">夥伴</th>${TH9('days','出勤天')}${TH9('h','總時數')}${TH9('avg','日均')}${TH9('late','遲到次')}${TH9('lateMin','遲到分')}${TH9('early','早退次')}${TH9('miss','缺卡')}${TH9('abs','曠職')}</tr></thead><tbody>
       ${list.map(o=>`<tr style="border-top:1px solid var(--line)">
@@ -388,8 +387,8 @@ function abAttDraw(){
         <td style="padding:5px 8px;text-align:right;${o.early?'color:#E8A657;cursor:pointer;text-decoration:underline dotted':''}"${o.early?` title="點我看早退彙整" onclick="abAttPerson('${o.n.replace(/'/g,'')}',0,'early')"`:''}>${o.early||'—'}</td>
         <td style="padding:5px 8px;text-align:right;${o.miss?'color:var(--red);font-weight:800;cursor:pointer;text-decoration:underline dotted':''}"${o.miss?` title="點我看缺卡彙整" onclick="abAttPerson('${o.n.replace(/'/g,'')}',0,'miss')"`:''}>${o.miss||'—'}</td>
         <td style="padding:5px 8px;text-align:right;${o.abs?'color:var(--red);font-weight:900;cursor:pointer;text-decoration:underline dotted':''}"${o.abs?` title="點我看曠職彙整" onclick="abAttPerson('${o.n.replace(/'/g,'')}',0,'abs')"`:''}>${o.abs||'—'}</td></tr>`).join('')}
-    </tbody></table></div>
-    <div class="hint" style="margin-top:8px">補卡紀錄 NUEiP 匯出沒帶旗標，先以「缺卡」欄代位；時數=NUEiP 核定工時。</div>`)
+    </tbody></table>
+    <div class="hint" style="margin-top:8px">補卡紀錄 NUEiP 匯出沒帶旗標，先以「缺卡」欄代位；時數=NUEiP 核定工時。</div></div>`) // v4.43.8 注腳移進捲動區=卡片高跟 det 一致
 }
 function abAttPerson(nm, keep, f){
   // v4.43.4（張良三則）：①狀態欄移日期後②視圖內建月份鈕=不用跳出去切③遲到/缺卡/早退/曠職彙整鈕=只列事件日(黃字數字點進來也是這)
@@ -427,7 +426,7 @@ function abAttPerson(nm, keep, f){
   const stTx = x => [x.abs?'<b style="color:var(--red)">曠職</b>':'', x.miss?'<b style="color:var(--red)">缺卡</b>':'', x.late>0?`<b style="color:#E8A657">遲到${x.late}分</b>`:'', x.early>0?`<b style="color:#E8A657">早退${x.early}分</b>`:''].filter(Boolean).join('、') || '<span style="color:var(--green)">✓</span>'
   // v4.37.2 張良「資料要對齊欄位名稱 所有欄位都要可排序」：th/td 同對齊、每欄可點排序
   const ar9 = k => `<span style="display:inline-block;width:12px;font-size:10px;text-align:center">${so.k===k?(so.dir>0?'▲':'▼'):''}</span>`
-  const TH9 = (k,lb,al)=>`<th style="padding:4px 14px;text-align:${al};width:1%;cursor:pointer;white-space:nowrap;user-select:none" onclick="window._abaPSort=window._abaPSort.k==='${k}'?{k:'${k}',dir:-window._abaPSort.dir}:{k:'${k}',dir:${k==='d'?-1:1}};abAttPerson('${nmE}',1)">${lb}${ar9(k)}</th>`
+  const TH9 = (k,lb,al)=>`<th style="padding:4px 8px;text-align:${al};width:1%;cursor:pointer;white-space:nowrap;user-select:none" onclick="window._abaPSort=window._abaPSort.k==='${k}'?{k:'${k}',dir:-window._abaPSort.dir}:{k:'${k}',dir:${k==='d'?-1:1}};abAttPerson('${nmE}',1)">${lb}${ar9(k)}</th>`
   const pmBtn = (v,lb)=>`<button class="mini${pMo===v?' on':''}" style="padding:4px 12px;font-weight:800" onclick="window._abaPMo='${v}';abAttPerson('${nmE}',1)">${lb}</button>`
   const fBtn = (v,lb,c9)=>`<button class="mini${pF===v?' on':''}" style="padding:4px 12px;font-weight:800${pF!==v&&v!=='all'&&cnt9[v]?';color:'+c9:''}" onclick="window._abaPF='${v}';abAttPerson('${nmE}',1)">${lb}${v!=='all'?` ${cnt9[v]||0}`:''}</button>`
   const fLb = { late:'遲到彙整', miss:'缺卡彙整', early:'早退彙整', abs:'曠職彙整' }
