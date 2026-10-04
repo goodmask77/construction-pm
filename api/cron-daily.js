@@ -140,6 +140,26 @@ export default async function handler(req, res) {
     try { const cur = await kvGet('sp_team_pm_activity'); const arr = Array.isArray(cur) ? cur : []; await kvSet('sp_team_pm_activity', [{ ts: now, user: 'Claude(補建)', action: '新增', detail: `補建任務「${title}」（DD 假完成翻車補救，備註放連結）` }, ...arr].slice(0, 200)) } catch (_) {}
     return res.status(200).json({ ok: okw, cat: cat?.name || '收件匣', id })
   }
+  // 🎂 測試口（張良「DD測試發送給我一次生日提醒」）：?bdaytest=<MENU_PROBE_KEY> → 拿最近的壽星做一則示範，私訊張良本人
+  if (req.query?.bdaytest) {
+    const mkT = (process.env.MENU_PROBE_KEY || '').trim()
+    if (!mkT || String(req.query.bdaytest) !== mkT) return res.status(401).json({ ok: false })
+    const master = (await kvGet('sp_crew_pm_hr_master')) || { rows: [] }
+    const tpeT = new Date(Date.now() + 8 * 3600e3)
+    const t0 = Date.UTC(tpeT.getUTCFullYear(), tpeT.getUTCMonth(), tpeT.getUTCDate())
+    const up = (master.rows || []).map(x => { if (!/^\d{4}-\d{2}-\d{2}$/.test(x.birth || '')) return null
+      let nb = Date.UTC(tpeT.getUTCFullYear(), +x.birth.slice(5, 7) - 1, +x.birth.slice(8, 10)); if (nb < t0) nb = Date.UTC(tpeT.getUTCFullYear() + 1, +x.birth.slice(5, 7) - 1, +x.birth.slice(8, 10))
+      return { x, d: Math.round((nb - t0) / 86400e3), nb } }).filter(Boolean).sort((a, b) => a.d - b.d)
+    if (!up.length) return res.status(200).json({ ok: false, error: '名冊沒有可用生日' })
+    const h1 = up[0]
+    const wdT = '日一二三四五六'[new Date(h1.nb).getUTCDay()]
+    const txtT = `🎂 生日提醒（測試一下長相——正式版會在生日前 7 天發到 ABpeople 群）\n週${wdT} ${h1.x.birth.slice(5).replace('-', '/')} 是 ${h1.x.name}（${/A Beach/.test(h1.x.co) ? 'A Beach' : 'GROUN:D'}${h1.x.dept ? '・' + h1.x.dept : ''}）的生日 🎉（${h1.d} 天後）\n記得準備一下！`
+    const rosT = (await kvGet('sp_crew_kb_roster')) || {}
+    const boss = ((rosT.people) || []).find(p9 => p9.name === '張良瑋' && p9.lineUserId)
+    if (!boss) return res.status(200).json({ ok: false, error: '名冊找不到張良瑋的LINE' })
+    const prT = await fetch('https://api.line.me/v2/bot/message/push', { method: 'POST', headers: { 'content-type': 'application/json', Authorization: 'Bearer ' + TOKEN }, body: JSON.stringify({ to: boss.lineUserId, messages: [{ type: 'text', text: txtT }] }) })
+    return res.status(200).json({ ok: prT.ok, sample: h1.x.name, days: h1.d })
+  }
   // ── 🎂 生日提醒 v4.34.2（張良：一週前發到 ABpeople 群）：每天第一班 cron 檢查員工清冊，生日-7天=今天 → 群發；去重檔防重複 ──
   try {
     const tpeB = new Date(Date.now() + 8 * 3600e3)
