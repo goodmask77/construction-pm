@@ -1,4 +1,9 @@
-/* ── /prep 原生任務中心 tasks.js（v1.5 2026-10-04）────────────────────────────
+/* ── /prep 原生任務中心 tasks.js（v1.6 2026-10-04）────────────────────────────
+   v1.6（張良 6 則）：①類別顏色恢復＝大項名稱右邊小色點鈕→7格色盤（含清除）寫 cat.color（染色鏈 tnDARKMAP/tnTcol 原在、只把鈕從列尾搬到名稱右邊）
+   ②標題列「積分說明」鈕＝級距表(照特效色階上色)＋note 說明；approver（whoami 回傳）可編輯 note＋開級距編輯器，其他人唯讀；存檔整包 merge 保留 tiers
+   ③標題統計搬最右＋補數字＝「待辦X・進行中Y・已完成Z・共N」④展開已完成＝完成卡排最上＋綠光描邊、未完成卡變暗(.45)（只動依大項視角）
+   ⑤彈窗積分改一排數字鈕 [1,2,3,5,8,10,15,20,30,50,100]（再點同顆=清除、無0鈕、按級距特效色）＋積分說明小鈕
+   ⑥ptscfg 讀取補 note 欄（tnS.ptsNote）；級距編輯器儲存改保留 note 不洗掉。
    React 版 src/tasks/TaskCenter.jsx + taskModel.js 的 vanilla 移植，取代 iframe 內嵌。
    v1.1（張良 5 則）：①指派完浮通知三選一（大群/私訊/不通知→tasknotify）②卡片完成鈕＋建立者審核流
    （createdBy/review 新欄位，主 App 合併保留）③卡片減脂（大項名/狀態字/標籤不上卡）
@@ -135,6 +140,8 @@ const tnIP = {
   bell: '<path d="M6 8a6 6 0 1 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/>',
   belloff: '<path d="M8.7 3A6 6 0 0 1 18 8c0 2.1.3 3.7.8 4.9"/><path d="M6.3 6.3C6.1 6.8 6 7.4 6 8c0 7-3 9-3 9h13"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/><path d="m2 2 20 20"/>',
   checksq: '<rect x="3" y="3" width="18" height="18" rx="2"/><path d="m9 12 2 2 4-4"/>', // v1.5 步驟進度徽章（單色＝硬規不用彩 emoji）
+  star: '<polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>', // v1.6 積分說明
+  gear: '<path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/>', // v1.6 編輯級距（之前被引用但沒定義＝順手補）
 };
 function tnI(name, size, color, fill, extra) {
   return '<svg width="' + (size || 14) + '" height="' + (size || 14) + '" viewBox="0 0 24 24" fill="' + (fill || 'none') + '" stroke="' + (color || 'currentColor') + '" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" style="flex:0 0 auto;vertical-align:-2px;' + (extra || '') + '">' + (tnIP[name] || '') + '</svg>';
@@ -215,7 +222,7 @@ function tnRemoveTaskAndRefs(tasks, id) {
 const tnS = {
   tasks: null, cats: null, view: 'today', q: '', fStatus: 'open', sortMode: 'manual',
   showDone: false, showAllDone: false, sel: null, drag: null, dragCat: null,
-  editCat: null, colorCat: null, gdNames: [], me: '', quick: '', gnew: {}, tagIn: '', newCatIn: '',
+  editCat: null, colorCat: null, gdNames: [], me: '', meApprover: false, ptsNote: '', quick: '', gnew: {}, tagIn: '', newCatIn: '',
   hover: null, colOf: {}, inited: false, loaded: false, ownerCustom: false,
   assignAsk: null,  // 指派完浮出的通知三選一 {id,owner}
   dragOwn: null,    // 負責人視角：正在拖的人員組
@@ -250,7 +257,8 @@ async function tnFetchAll() { // 任務（逐筆檔合併）＋大項＋負責�
   let cats = []; try { cats = cr && cr.value != null ? JSON.parse(cr.value) : []; } catch (_) { cats = []; }
   let oord = null; try { oord = orr && orr.value != null ? JSON.parse(orr.value) : null; } catch (_) { oord = null; }
   let pcfg = null; try { pcfg = pcr && pcr.value != null ? JSON.parse(pcr.value) : null; } catch (_) { pcfg = null; }
-  return { tasks, cats: Array.isArray(cats) ? cats : [], ownerOrd: (oord && Array.isArray(oord.order)) ? oord : null, ptscfg: (pcfg && Array.isArray(pcfg.tiers)) ? pcfg.tiers : null };
+  // v1.6 ptscfg 文件多了 note 欄（積分怎麼算說明）＝tiers 之外順手帶回，存檔時兩者同住一份要整包 merge
+  return { tasks, cats: Array.isArray(cats) ? cats : [], ownerOrd: (oord && Array.isArray(oord.order)) ? oord : null, ptscfg: (pcfg && Array.isArray(pcfg.tiers)) ? pcfg.tiers : null, ptsNote: (pcfg && typeof pcfg.note === 'string') ? pcfg.note : '' };
 }
 // stale-first 快取（沿用頁面 tcGet/tcSet=localStorage obt_ 前綴；單獨載入時退回自己存）
 function tnCGet(k) { try { return (typeof tcGet === 'function') ? tcGet(k) : JSON.parse(localStorage.getItem('obt_' + k)); } catch (_) { return null; } }
@@ -606,20 +614,23 @@ function tnRoot() {
   if (tnS.tasks === null) { // 載入中 skeleton（淺灰佔位塊）
     return '<div style="max-width:1240px;margin:6px auto;padding:0 4px">' + [38, 120, 120].map(h => '<div style="height:' + h + 'px;background:' + tnC.soft + ';border-radius:8px;margin-bottom:12px"></div>').join('') + '</div>';
   }
-  const open = tnS.tasks.filter(t => t.status !== 'done');
   const v = tnS.view;
   let h = '<div style="max-width:1240px;margin:6px auto;padding:' + (tnMob() ? '12px 8px' : '16px') + ';background:' + tnC.bg + ';border:1px solid ' + tnC.line + ';border-radius:12px">';
-  // 第一行：標題/件數/搜尋/今日
+  // 第一行：標題/搜尋/積分說明/統計（v1.6 統計搬到最右＋補進行中與已完成數字）
+  const nTodo = tnS.tasks.filter(t => t.status === 'todo').length;
+  const nDoing = tnS.tasks.filter(t => t.status === 'doing').length;
+  const nDone = tnS.tasks.filter(t => t.status === 'done').length;
   h += '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px">'
     + '<span style="color:' + tnC.sub + '">' + tnI('listtodo', 18) + '</span>'
     + '<div style="font-size:17px;font-weight:600;color:' + tnC.text + '">任務中心</div>'
-    + '<span style="font-size:12px;color:' + tnC.faint + ';font-variant-numeric:tabular-nums">' + open.length + ' 件待辦・共 ' + tnS.tasks.length + ' 件</span>'
     + '<div style="flex:1"></div>'
     + '<div style="position:relative">'
     + '<span style="position:absolute;left:9px;top:50%;transform:translateY(-50%);color:' + tnC.faint + '">' + tnI('search', 13) + '</span>'
     + '<input id="tnQIn" value="' + tnEsc(tnS.q) + '" oninput="tnQIn(this.value)" placeholder="搜尋任務…" style="' + tnInp + ';width:' + (tnMob() ? 130 : 170) + 'px;padding:6px 10px 6px 28px;font-size:12.5px">'
     + (tnS.q ? '<button onclick="tnS.q=\'\';tnRender()" style="position:absolute;right:6px;top:50%;transform:translateY(-50%);background:none;border:none;color:' + tnC.faint + ';cursor:pointer;padding:0;display:flex">' + tnI('x', 13) + '</button>' : '')
     + '</div>'
+    + '<button onclick="tnPtsHelp()" title="積分級距與計分方式" style="display:inline-flex;align-items:center;gap:5px;flex-shrink:0;border:1px solid ' + tnC.line + ';background:' + tnC.soft + ';color:' + tnC.sub + ';border-radius:8px;padding:6px 11px;font-size:12px;cursor:pointer;white-space:nowrap">' + tnI('star', 12) + '積分說明</button>'
+    + '<span style="font-size:12px;color:' + tnC.faint + ';font-variant-numeric:tabular-nums;white-space:nowrap">待辦 ' + nTodo + '・進行中 ' + nDoing + '・已完成 ' + nDone + '・共 ' + tnS.tasks.length + '</span>'
     + '</div>';
   // 第二行：今日＋視角分頁＋排序（排序鈕永遠佔位，切檢視零位移；v4.43.9 張良「今日跟那排選項距離太遠」：今日從第一行最右移到視角切換器前面緊鄰）
   const TABS = [['group', '依大項', 'grid'], ['board', '看板', 'cols'], ['owner', '負責人', 'users'], ['list', '清單', 'list'], ['timeline', '時間軸', 'caldays'], ['gantt', '甘特', 'gantt'], ['mind', '心智圖', 'network']];
@@ -634,7 +645,7 @@ function tnRoot() {
     + '<span style="color:' + tnC.faint + ';margin:0 2px 0 7px">' + tnI('sort', 12) + '</span>'
     + [['manual', '手動'], ['due', '日期'], ['prio', '重要度']].map(m => '<button onclick="tnS.sortMode=\'' + m[0] + '\';tnRender()" style="padding:5px 10px;border-radius:6px;border:1px solid ' + (tnS.sortMode === m[0] ? tnC.line : 'transparent') + ';background:' + (tnS.sortMode === m[0] ? tnWHT : 'transparent') + ';color:' + (tnS.sortMode === m[0] ? tnC.text : tnC.sub) + ';font-size:12px;font-weight:' + (tnS.sortMode === m[0] ? 600 : 400) + ';cursor:pointer;white-space:nowrap">' + m[1] + '</button>').join('')
     + '</div>')
-    + '<button onclick="tnPtsCfg()" title="積分級距設定" style="flex-shrink:0;display:inline-flex;align-items:center;gap:6px;padding:7px 12px;border-radius:8px;border:1px solid ' + tnC.line + ';background:' + tnC.soft + ';color:' + tnC.sub + ';font-size:12.5px;cursor:pointer;white-space:nowrap">' + tnI('gear', 13) + '積分級距</button></div>';
+    + '</div>'; // v1.6 第二行「積分級距」鈕退役＝級距編輯入口搬進「積分說明」彈窗（approver 才看得到）
   // 快速隨手記
   h += '<div style="display:flex;gap:8px;margin-bottom:' + (mb9 ? 10 : 16) + 'px">'
     + '<input id="tnQuick" value="' + tnEsc(tnS.quick) + '" oninput="tnS.quick=this.value" onkeydown="if(event.key===\'Enter\'&&!event.isComposing&&event.keyCode!==229)tnAddQuick()" placeholder="隨手丟一句任務…（先進收件匣，之後再拖到大項整理）按 Enter 新增" style="' + tnInp + ';flex:1;font-size:13.5px;padding:10px 12px">'
@@ -661,14 +672,17 @@ function tnQIn(v) { tnS.q = v; clearTimeout(tnQTimer); tnQTimer = setTimeout(tnR
 function tnCard(t, o) {
   o = o || {};
   const done = t.status === 'done';
+  const spot = !!o.spot; // v1.6 已完成顯示模式（展開已完成那刻）：完成卡亮綠描邊發光、未完成卡整張變暗＝一眼掃到做完哪些
   const hot = !done && t.due === tnToday(); // 今日必處理＝發亮紅
   const baseShadow = hot ? '0 0 0 2px rgba(240,115,115,.20), 0 2px 10px rgba(240,115,115,.30)' : '0 1px 3px rgba(0,0,0,.30)';
   const dndCard = o.dropBefore ? ' ondragover="tnDOvCard(event)" ondrop="tnDropCard(event,\'' + t.id + '\')"' : '';
   let h = '<div draggable="true" data-tid="' + t.id + '" ondragstart="tnDS(event,\'' + t.id + '\')" ondragend="tnDE()"' + dndCard
     + ' onclick="tnOpen(\'' + t.id + '\')" onmouseenter="tnS.hover=\'' + t.id + '\'" onmouseleave="if(tnS.hover===\'' + t.id + '\')tnS.hover=null"'
     + ' style="' + (done
-      ? 'background:transparent;border:1px dashed ' + tnC.line + ';border-radius:8px;padding:5px 8px;margin-bottom:5px;cursor:grab;opacity:.6'
-      : (function(){ const fx = tnPtsCardCss(t); return (fx ? fx.st : 'background:' + (tnTcol(t.color) || tnWHT) + ';border:' + (hot ? '1.5px solid ' + tnC.red : '1.5px solid ' + tnCBR) + ';') + 'border-radius:8px;padding:5px 8px;margin-bottom:5px;cursor:grab;box-shadow:' + baseShadow + ';' })()) + '"' + (function(){ const fx = tnPtsCardCss(t); return fx && fx.cls ? ' class="' + fx.cls + '"' : ''; })() + '>';
+      ? (spot
+        ? 'background:#16281C;border:1.5px solid ' + tnC.green + ';border-radius:8px;padding:5px 8px;margin-bottom:5px;cursor:grab;box-shadow:0 0 0 1px rgba(61,190,108,.35),0 0 12px rgba(61,190,108,.45);'
+        : 'background:transparent;border:1px dashed ' + tnC.line + ';border-radius:8px;padding:5px 8px;margin-bottom:5px;cursor:grab;opacity:.6')
+      : ((function(){ const fx = tnPtsCardCss(t); return (fx ? fx.st : 'background:' + (tnTcol(t.color) || tnWHT) + ';border:' + (hot ? '1.5px solid ' + tnC.red : '1.5px solid ' + tnCBR) + ';') + 'border-radius:8px;padding:5px 8px;margin-bottom:5px;cursor:grab;box-shadow:' + baseShadow + ';' })() + (spot ? 'opacity:.45;' : ''))) + '"' + (function(){ const fx = tnPtsCardCss(t); return fx && fx.cls ? ' class="' + fx.cls + '"' : ''; })() + '>';
   h += '<div style="display:flex;align-items:flex-start;gap:8px">';
   // 完成勾
   h += '<button onclick="event.stopPropagation();tnToggleDone(\'' + t.id + '\')" title="切換完成" style="flex-shrink:0;width:16px;height:16px;margin-top:2px;border-radius:4px;border:1px solid ' + (done ? tnC.green : tnCBR) + ';background:' + (done ? tnC.green : tnWHT) + ';display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0">' + (done ? tnI('check', 11, '#fff') : '') + '</button>';
@@ -817,7 +831,10 @@ function tnVToday() {
 /* ── 依大項分組（Keep 式瀑布流＋tcol 欄記憶＋大項拖曳/改名/調色） ── */
 function tnVGroup() {
   const groups = tnGroups();
-  const vis = (items) => tnS.showDone ? items : items.filter(t => t.status !== 'done');
+  // v1.6 展開已完成＝每個大項裡完成卡排最上面（穩定排序：done 先、其餘原順序）；收起＝照舊只看未完成
+  const vis = (items) => tnS.showDone
+    ? [...items].sort((a, b) => (b.status === 'done' ? 1 : 0) - (a.status === 'done' ? 1 : 0))
+    : items.filter(t => t.status !== 'done');
   const withItems = groups.map(g => ({ g: g, items: tnOrderTasks(tnTasksOf(g.id).filter(tnMatchQ), 'manual') }));
   const doneTotal = withItems.reduce((s, x) => s + x.items.filter(t => t.status === 'done').length, 0);
   const inboxX = withItems.find(x => x.g.id === tnINBOX);
@@ -836,8 +853,9 @@ function tnVGroup() {
     return '<div ' + (editable ? 'title="點我改大項名稱" onclick="event.stopPropagation();tnCatEditStart(\'' + g.id + '\',\'' + encodeURIComponent(g.name) + '\')"' : '')
       + ' style="font-size:' + (slim ? 12.5 : 13) + 'px;font-weight:600;color:' + (g.id === tnINBOX ? tnC.accent : (slim ? tnC.sub : tnC.text)) + ';white-space:nowrap;cursor:' + (editable ? 'text' : 'default') + '">' + tnEsc(g.name) + '</div>';
   };
+  // v1.6 類別顏色恢復（張良）：小色點鈕緊貼在大項「名稱右邊」（原本 margin-left:auto 推到列尾）；點開＝7 格色盤（含清除）寫 cat.color
   const catColorBtn = (g) => g.id === tnINBOX ? '' :
-    '<button onclick="event.stopPropagation();tnColorCatToggle(\'' + g.id + '\')" title="大項顏色" style="margin-left:auto;flex-shrink:0;width:15px;height:15px;border-radius:50%;background:' + (tnTcol(g.color) || tnWHT) + ';border:1.5px solid ' + tnC.line + ';cursor:pointer;padding:0"></button>';
+    '<button onclick="event.stopPropagation();tnColorCatToggle(\'' + g.id + '\')" title="大項顏色" style="flex-shrink:0;width:15px;height:15px;border-radius:50%;background:' + (tnTcol(g.color) || tnWHT) + ';border:1.5px solid ' + (g.color ? tnC.sub : tnC.line) + ';cursor:pointer;padding:0"></button>';
   const catPalette = (g) => tnS.colorCat !== g.id ? '' :
     '<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin:2px 2px 8px">'
     + tnPALETTE.map(p => '<button title="' + p[1] + '" onclick="event.stopPropagation();tnSetCatColor(\'' + g.id + '\',\'' + p[0] + '\')" style="width:21px;height:21px;border-radius:50%;background:' + (tnTcol(p[0]) || tnWHT) + ';cursor:pointer;padding:0;border:' + ((g.color || '') === p[0] ? '2.5px solid ' + tnC.red : '1.5px solid ' + tnC.line) + '"></button>').join('') + '</div>';
@@ -847,12 +865,13 @@ function tnVGroup() {
     + ' style="display:flex;align-items:center;gap:5px;margin-bottom:7px;padding:0 2px;cursor:' + (canDragCat(g) ? 'grab' : 'default') + '">'
     + (g.id === tnINBOX ? '<span style="color:' + tnC.accent + '">' + tnI('inbox', 13, tnC.accent) + '</span>' : '<span style="color:' + tnC.faint + '">' + tnI('grip', 12) + '</span>')
     + gName(g, false)
+    + catColorBtn(g)
     + '<span style="font-size:11.5px;color:' + tnC.faint + ';font-variant-numeric:tabular-nums">' + items.length + '</span>'
-    + catColorBtn(g) + '</div>';
+    + '</div>';
   const groupCard = (x) => catWrapOpen(x.g)
     + '<div ondragover="tnZOver(event)" ondragleave="tnZLeave(event)" ondrop="tnZDrop(event,\'cat\',\'' + x.g.id + '\')" style="background:' + (tnTcol(x.g.color) || tnC.card) + ';border:1px solid ' + tnC.line + ';border-radius:8px;padding:8px">'
     + catHead(x.g, vis(x.items)) + catPalette(x.g)
-    + vis(x.items).map(t => tnCard(t, { dropBefore: true })).join('')
+    + vis(x.items).map(t => tnCard(t, { dropBefore: true, spot: tnS.showDone })).join('')
     + gInput(x.g.id, false)
     + '</div></div>';
   // 欄數＝實際容器寬 ÷ 每欄最少 250
@@ -869,9 +888,9 @@ function tnVGroup() {
       + '<div draggable="true" ondragstart="tnCDS(event,\'' + x.g.id + '\')" ondragend="tnDE()" style="display:flex;align-items:center;gap:6px;cursor:grab">'
       + '<span style="color:' + tnC.faint + '">' + tnI('grip', 12) + '</span>'
       + gName(x.g, true)
+      + catColorBtn(x.g)
       + (!tnS.showDone && x.items.length > 0 ? '<span title="這個大項的任務全完成了" style="font-size:10.5px;color:' + tnC.green + ';flex-shrink:0;display:inline-flex;align-items:center;gap:2px">' + tnI('check', 10, tnC.green) + x.items.length + '</span>' : '')
       + gInput(x.g.id, true)
-      + catColorBtn(x.g)
       + '</div>' + catPalette(x.g) + '</div></div>').join('')
     + '<div style="border:1px dashed ' + tnC.line + ';border-radius:8px;padding:6px 8px;display:flex;align-items:center;gap:6px">'
     + '<span style="color:' + tnC.faint + '">' + tnI('folderplus', 13) + '</span>'
@@ -1245,13 +1264,22 @@ function tnModal() {
   // v4.41.4 瘦身（張良「內容多太大張、完成看不到還要滑」）：等待中/預估時間/依賴任務/標籤四欄位從彈窗拿掉（資料欄位保留，主App照舊）；
   // 色盤兩組重複(寫同一個 color 欄)→只留一組「卡片顏色」，圓點用鮮豔原色一眼分得出
   // v4.44.0 卡片顏色退役（張良）→ ⭐ 任務積分（360制度；特效跟著級距走）
-  h += F('任務積分', (function(){
+  // v1.6 積分改一排數字鈕（張良）：點選=設定該分數、再點同一顆=清除（pts 整欄拿掉=不計分、卡片不掛徽章）；
+  // 沒有 0 鈕；按鈕顏色=該分數落在的級距特效色；下方小鈕開「積分說明」同一個彈窗
+  h += F('任務積分', (function () {
+    const cur = Number(t.pts) || 0;
     const tr = tnTier(t.pts);
-    let hh = '<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding-top:3px">'
-      + '<input inputmode="numeric" value="' + (t.pts || '') + '" placeholder="0" onchange="tnUpd(\'' + t.id + '\',{pts:Math.max(0,Math.min(9999,Number(this.value)||0))})" style="width:76px;padding:7px;border:1px solid ' + tnC.line + ';border-radius:8px;text-align:center;font-weight:800;font-size:14px;background:transparent;color:' + tnC.text + '"> 分'
-      + (tr ? '<span style="font-weight:900;color:' + tr.fx.c + '">' + tnEsc(tr.name) + '級</span>' : '<span style="font-size:12px;color:' + tnC.faint + '">0=不計分</span>')
-      + '</div>'
-      + '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:7px">' + tnTiers().map(function(ti, i){ const fx = tnPTS_FX[Math.min(i, tnPTS_FX.length-1)]; return '<span style="font-size:11px;border:1px solid ' + fx.c + ';color:' + fx.c + ';border-radius:7px;padding:2px 8px">' + tnEsc(ti.name) + ' ' + ti.min + '分+</span>'; }).join('') + '</div>';
+    const opts = [1, 2, 3, 5, 8, 10, 15, 20, 30, 50, 100];
+    let hh = '<div style="display:flex;gap:6px;flex-wrap:wrap;padding-top:3px">'
+      + opts.map(function (pv) {
+        const pfx = (tnTier(pv) || { fx: tnPTS_FX[0] }).fx;
+        const on = cur === pv;
+        return '<button onclick="tnUpd(\'' + t.id + '\',{pts:' + (on ? 'undefined' : pv) + '})" title="' + (on ? '再點一下＝清除（不計分）' : pv + ' 分') + '" style="min-width:42px;padding:7px 4px;border-radius:8px;border:1.5px solid ' + pfx.c + ';background:' + (on ? pfx.c : 'transparent') + ';color:' + (on ? '#10151C' : pfx.c) + ';font-family:' + tnMONO + ';font-size:13px;font-weight:800;cursor:pointer' + (on ? ';box-shadow:0 0 10px ' + pfx.c + '66' : '') + '">' + pv + '</button>';
+      }).join('') + '</div>';
+    hh += '<div style="display:flex;align-items:center;gap:10px;margin-top:8px;flex-wrap:wrap">'
+      + (tr ? '<span style="font-size:12px;font-weight:900;color:' + tr.fx.c + '">' + cur + ' 分・' + tnEsc(tr.name) + '</span>' : '<span style="font-size:12px;color:' + tnC.faint + '">沒選＝不計分</span>')
+      + '<button onclick="tnPtsHelp()" style="display:inline-flex;align-items:center;gap:4px;border:1px solid ' + tnC.line + ';background:transparent;color:' + tnC.sub + ';border-radius:999px;padding:3px 10px;font-size:11.5px;cursor:pointer">' + tnI('star', 11) + '積分說明</button>'
+      + '</div>';
     return hh;
   })());
   h += '<div style="display:flex;align-items:center;gap:10px;margin-top:8px;flex-wrap:wrap">'
@@ -1337,7 +1365,7 @@ function tnInit() {
   try {
     const tk = (typeof TK === 'function' ? TK() : '');
     fetch('/api/mail-sync?whoami=' + encodeURIComponent(typeof K !== 'undefined' ? K : '') + '&r=' + Date.now() + (tk ? '&me=' + encodeURIComponent(tk) : ''))
-      .then(r => r.json()).then(j => { if (j && j.me && j.me.name) { tnS.me = j.me.name; if (tnS.loaded) tnRender(); } }).catch(() => {});
+      .then(r => r.json()).then(j => { if (j && j.me) { if (j.me.name) tnS.me = j.me.name; tnS.meApprover = !!j.me.approver; /* v1.6 積分說明可編輯＝只給 approver */ if (tnS.loaded) tnRender(); } }).catch(() => {});
     fetch('/api/mail-sync?shift=' + encodeURIComponent(typeof K !== 'undefined' ? K : '') + '&ym=' + tnToday().slice(0, 7))
       // v4.42.4 張良「指派怎麼沒有林品燊」：班表「非常態」(off)只影響班表快選，不該踢出任務負責人選單——只擋停權
       .then(r => r.json()).then(d => { if (d && d.ok) { tnS.gdNames = (d.staff || []).filter(s => s.role !== '停權').map(s => s.n); if (tnS.loaded) tnRender(); } }).catch(() => {});
@@ -1352,7 +1380,7 @@ async function tnRefetch() { // 背景抓最新；手上有沒存完的修改就
     return;
   }
   if (tnSaveTimer || tnInflight > 0) { tnFocusTry(); return; } // 不蓋手上修改＝沒重畫，同樣收尾深層連結
-  tnS.tasks = d.tasks; tnS.cats = d.cats; tnPersisted = d.tasks; tnS.loaded = true; if (d.ptscfg) tnS.ptscfg = d.ptscfg;
+  tnS.tasks = d.tasks; tnS.cats = d.cats; tnPersisted = d.tasks; tnS.loaded = true; if (d.ptscfg) tnS.ptscfg = d.ptscfg; tnS.ptsNote = d.ptsNote || '';
   if (d.ownerOrd) tnS.ownerOrd = d.ownerOrd;
   tnCacheSave();
   tnRender();
@@ -1388,6 +1416,52 @@ window.tnPage = function () {
 
 
 
+/* ── ⭐ 積分說明彈窗 v1.6（張良「10 級級距表＋積分怎麼算」）──
+   全員看得到：級距表（名稱/幾分起/說明，照特效色階上色）＋下方 note 說明文字；
+   approver（whoami 回傳）＝note 變 textarea 可編輯＋「編輯級距」鈕開既有編輯器；其他人唯讀。
+   note 與 tiers 同住 sp_team_pm_ptscfg 一份文件 → 兩邊存檔都整包 merge，誰也不洗掉誰。 */
+function tnPtsHelp() {
+  const old = document.getElementById('tnPtsHelpOv'); if (old) old.remove();
+  const ov = document.createElement('div'); ov.id = 'tnPtsHelpOv';
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:880;display:flex;align-items:center;justify-content:center;padding:16px';
+  const rows = tnTiers().map(function (ti, i) {
+    const fx = tnPTS_FX[Math.min(i, tnPTS_FX.length - 1)];
+    return '<div style="display:flex;align-items:center;gap:8px;padding:5px 9px;border-radius:7px;background:' + fx.bg + ';border:1px solid ' + fx.c + '44;margin-bottom:4px">'
+      + '<span style="width:9px;height:9px;border-radius:50%;background:' + fx.c + ';flex-shrink:0"></span>'
+      + '<span style="width:56px;flex-shrink:0;font-size:12.5px;font-weight:900;color:' + fx.c + '">' + tnEsc(ti.name || '') + '</span>'
+      + '<span style="width:56px;flex-shrink:0;font-family:' + tnMONO + ';font-size:12px;font-weight:700;color:' + fx.c + ';text-align:right">' + (Number(ti.min) || 0) + ' 分起</span>'
+      + '<span style="flex:1;min-width:0;font-size:12px;color:' + tnC.sub + ';padding-left:6px">' + tnEsc(ti.desc || '') + '</span></div>';
+  }).join('');
+  const noteBlock = tnS.meApprover
+    ? '<textarea id="tnPtsNoteIn" rows="5" placeholder="寫給大家看的計分說明…" style="' + tnInp + ';width:100%;resize:vertical;font-size:12.5px;line-height:1.6">' + tnEsc(tnS.ptsNote || '') + '</textarea>'
+      + '<div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">'
+      + '<button onclick="tnPtsNoteSave()" style="display:inline-flex;align-items:center;gap:5px;border:none;background:' + tnC.accent + ';color:#fff;border-radius:8px;padding:8px 16px;font-size:12.5px;font-weight:700;cursor:pointer">' + tnI('check', 12, '#fff') + '儲存說明</button>'
+      + '<button onclick="document.getElementById(\'tnPtsHelpOv\').remove();tnPtsCfg()" style="display:inline-flex;align-items:center;gap:5px;border:1px solid ' + tnC.line + ';background:transparent;color:' + tnC.sub + ';border-radius:8px;padding:8px 14px;font-size:12.5px;cursor:pointer">' + tnI('gear', 12) + '編輯級距</button></div>'
+    : (tnS.ptsNote
+      ? '<div style="font-size:12.5px;color:' + tnC.sub + ';line-height:1.7;white-space:pre-wrap;word-break:break-word">' + tnEsc(tnS.ptsNote) + '</div>'
+      : '<div style="font-size:12px;color:' + tnC.faint + '">（還沒有寫說明）</div>');
+  ov.innerHTML = '<div style="background:' + tnMOD + ';border:1px solid ' + tnC.line + ';border-radius:14px;max-width:460px;width:100%;max-height:86vh;overflow:auto;padding:18px" onclick="event.stopPropagation()">'
+    + '<div style="display:flex;align-items:center;gap:7px;margin-bottom:4px"><span style="color:' + tnC.amber + '">' + tnI('star', 15, tnC.amber) + '</span><span style="font-weight:800;font-size:15px;color:' + tnC.text + '">積分說明</span><div style="flex:1"></div>'
+    + '<button onclick="document.getElementById(\'tnPtsHelpOv\').remove()" style="background:none;border:none;cursor:pointer;color:' + tnC.sub + ';padding:4px;display:flex">' + tnI('x', 16) + '</button></div>'
+    + '<div style="font-size:11.5px;color:' + tnC.faint + ';margin-bottom:10px">分數越高＝卡片特效越華麗：染色 → 彩框 → 光暈 → 呼吸發光 → 金光</div>'
+    + rows
+    + '<div style="font-size:11px;letter-spacing:.5px;color:' + tnC.faint + ';font-weight:600;margin:12px 0 6px">積分怎麼算</div>'
+    + noteBlock
+    + '</div>';
+  ov.onclick = function () { ov.remove(); };
+  document.body.appendChild(ov);
+}
+async function tnPtsNoteSave() { // 存說明＝整包 merge：一定帶上現有 tiers，不然會把級距洗掉
+  const el = document.getElementById('tnPtsNoteIn'); if (!el) return;
+  const note = String(el.value || '').trim();
+  const obj = { tiers: (tnS.ptscfg && tnS.ptscfg.length) ? tnS.ptscfg : tnPTS_DEF };
+  if (note) obj.note = note;
+  const r = await tnKV({ op: 'set', key: 'sp_team_pm_ptscfg', value: JSON.stringify(obj) });
+  if (!r || !r.ok) { alert((r && r.error) || '沒存成功（要有編輯權限）'); return; }
+  tnS.ptsNote = note;
+  tnToastMini('說明已儲存');
+}
+
 /* ── ⚙️ 積分級距管理 v4.44.0（張良「規劃級距＆說明 可新增刪除編輯排序」）── */
 function tnPtsCfg(){
   window._tnPT = JSON.parse(JSON.stringify(tnTiers()));
@@ -1399,7 +1473,7 @@ function tnPtsCfgDraw(){
   const ov = document.createElement('div'); ov.id = 'tnPtsOv';
   ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:900;display:flex;align-items:center;justify-content:center;padding:16px';
   ov.innerHTML = '<div style="background:' + tnMOD + ';border:1px solid ' + tnC.line + ';border-radius:14px;max-width:420px;width:100%;max-height:84vh;overflow:auto;padding:18px" onclick="event.stopPropagation()">'
-    + '<div style="font-weight:800;font-size:15px;color:' + tnC.text + '">⭐ 積分級距</div>'
+    + '<div style="display:flex;align-items:center;gap:7px;font-weight:800;font-size:15px;color:' + tnC.text + '"><span style="color:' + tnC.amber + '">' + tnI('star', 15, tnC.amber) + '</span>積分級距</div>'
     + '<div style="font-size:12px;color:' + tnC.faint + ';margin:4px 0 12px">順序＝特效強度：第1級卡片染色 → 邊框 → 光暈 → 呼吸發光 → 金光神裝；任務達到「起始分」就套該級特效</div>'
     + L.map(function(ti, i){ const fx = tnPTS_FX[Math.min(i, tnPTS_FX.length-1)];
       return '<div style="display:flex;gap:6px;align-items:center;margin-bottom:8px">'
@@ -1420,7 +1494,9 @@ function tnPtsCfgDraw(){
 async function tnPtsCfgSave(){
   const L = (window._tnPT||[]).filter(function(t){ return t.name && Number(t.min) >= 0; }).slice(0, 10);
   if (!L.length) { alert('至少留一級'); return; }
-  const r = await tnKV({ op: 'set', key: 'sp_team_pm_ptscfg', value: JSON.stringify({ tiers: L }), token: (typeof TK === 'function' ? TK() : '') });
+  // v1.6 整包 merge：note 跟 tiers 同一份文件，存級距一定帶上現有 note（原本只寫 {tiers} 會把說明洗掉）
+  const obj = { tiers: L }; if (tnS.ptsNote) obj.note = tnS.ptsNote;
+  const r = await tnKV({ op: 'set', key: 'sp_team_pm_ptscfg', value: JSON.stringify(obj), token: (typeof TK === 'function' ? TK() : '') });
   if (!r || !r.ok) { alert((r && r.error) || '沒存成功（要有任務編輯權限）'); return; }
   tnS.ptscfg = L;
   const o = document.getElementById('tnPtsOv'); if (o) o.remove();

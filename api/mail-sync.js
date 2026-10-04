@@ -1029,6 +1029,43 @@ export default async function handler(req, res) {
     }
     return res.status(200).json({ ok: true, sent: sent9 })
   }
+  // 🧹 任務管理口（v4.45.0 張良「先把所有類別/卡片/框顏色都清除」＋「積分級距規劃一版」）：?taskadmin=<MENU_PROBE_KEY>&op=colorwipe|ptsseed
+  if (req.query?.taskadmin) {
+    const mk9 = (process.env.MENU_PROBE_KEY || '').trim()
+    if (!mk9 || String(req.query.taskadmin) !== mk9) return res.status(403).json({ ok: false })
+    const op9 = String(req.query.op || '')
+    if (op9 === 'colorwipe') { // 類別+卡片顏色全清（一次性；跑幾次都安全）
+      let nCat = 0, nTask = 0
+      const pd9 = await kvGet('sp_team_pm_data')
+      if (Array.isArray(pd9)) { pd9.forEach(c9 => { if (c9 && c9.color) { delete c9.color; nCat++ } }); if (nCat) await kvPut('sp_team_pm_data', pd9, '清類別顏色') }
+      const r9 = await fetch(`${SB_URL}/rest/v1/pm_documents?id=like.sp\\_team\\_pm\\_task\\_*&select=id,data`, { headers: { apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}` } })
+      const rows9 = r9.ok ? await r9.json() : []
+      for (const row9 of rows9) {
+        try { const t9 = JSON.parse(row9.data.v); if (t9 && t9.color) { delete t9.color; await kvPut(row9.id, t9, '清卡片顏色'); nTask++ } } catch (_) {}
+      }
+      await announceChanged()
+      return res.status(200).json({ ok: true, cats: nCat, tasks: nTask })
+    }
+    if (op9 === 'ptsseed') { // 積分級距 10 級規劃版（之後張良在 ⚙️ 自己增刪改排）
+      const tiers9 = [
+        { name: '日常', min: 1, desc: '隨手可完成的小事，順手就做' },
+        { name: '例行', min: 3, desc: '固定流程照做就好' },
+        { name: '進階', min: 5, desc: '要動腦，半天內搞定' },
+        { name: '熟練', min: 8, desc: '獨立完成，有品質要求' },
+        { name: '稀有', min: 10, desc: '小專案：自己規劃＋執行到完' },
+        { name: '精英', min: 15, desc: '跨人協調，或影響營運數字' },
+        { name: '史詩', min: 20, desc: '跨天大案，帶人一起完成' },
+        { name: '大師', min: 30, desc: '建立新制度、新流程' },
+        { name: '傳說', min: 50, desc: '公司級改變、重大成果' },
+        { name: '神話', min: 100, desc: '扭轉局面的里程碑' },
+      ]
+      const cur9 = (await kvGet('sp_team_pm_ptscfg')) || {}
+      await kvPut('sp_team_pm_ptscfg', { ...cur9, tiers: tiers9, note: cur9.note || '積分怎麼算：按任務的難度與影響力給分；完成並通過審核才入帳。積分會進排行榜，未來接 360 分潤加成。拿不準就往低一級抓，重大成果再往上調。' }, '積分級距規劃版')
+      await announceChanged()
+      return res.status(200).json({ ok: true, tiers: tiers9.length })
+    }
+    return res.status(400).json({ ok: false, error: '未知 op' })
+  }
   // 🗓 台灣國定假日/補班（v4.43.0 張良「中秋連假沒上班族——假日標記班表+營業額、以後排班提醒的底」）
   // 資料=人事行政總處行事曆(ruyut/TaiwanCalendar,每年官方公告)；KV快取14天自動更新、2027公告後自動進來
   if (req.query?.twhol) {
