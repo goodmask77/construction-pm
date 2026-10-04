@@ -2235,7 +2235,61 @@ export default async function handler(req, res) {
         continue
       }
       // 1.357) 📎 入職文件上傳 v4.35.0（張良「從DD上傳檔案或照片 直接到對應的欄位」）：主管私訊「文件 姓名 文件名」→ 15分內傳照片/檔案自動歸檔私有桶
+      // 1.356) 📇 名冊文字欄位直改 v4.35.2（張良「緊急聯絡人 趙以棠 0958120009 這樣DD就會自動更新資料嗎」→ 會）：
+      // 「緊急聯絡人 姓名 內容」或「名冊 姓名 欄位 值」（欄位=部門/職務/到職日/生日/性別/緊急聯絡人）；主管限定、留痕
+      const mEmr = isDM && text.match(/^緊急聯絡人\s+(\S{2,10})\s+(.{2,40})$/)
+      const mRos = isDM && text.match(/^名冊\s+(\S{2,10})\s+(部門|職務|到職日|生日|性別|緊急聯絡人)\s+(.{1,40})$/)
+      if (mEmr || mRos) {
+        try {
+          const nmQ = mEmr ? mEmr[1] : mRos[1]
+          const fdMap = { 部門: 'dept', 職務: 'title', 到職日: 'onboard', 生日: 'birth', 性別: 'sex', 緊急聯絡人: 'emer' }
+          const fdK = mEmr ? 'emer' : fdMap[mRos[2]]
+          let valQ = (mEmr ? mEmr[2] : mRos[3]).trim()
+          const kvR = await kvGetMany(['sp_crew_pm_hr_master', 'sp_finance_pm_sop_def', 'sp_finance_pm_prep_bind', 'sp_crew_kb_roster'])
+          const bindR = kvR['sp_finance_pm_prep_bind'] || {}
+          const tkR = (bindR.byUid || {})[userId]
+          const meR = tkR ? ((bindR.tokens || {})[tkR] || {}).name : null
+          const aprR = (((kvR['sp_finance_pm_sop_def'] || {}).ground || {}).approvers || ['張良瑋'])
+          const roleR = meR ? ((((kvR['sp_crew_kb_roster'] || {}).people) || []).find(p9 => p9.name === meR) || {}).gdRole : ''
+          if (!meR || !(aprR.includes(meR) || roleR === '主管')) { await send('名冊編輯只開放主管使用 🙏'); continue }
+          const docR = kvR['sp_crew_pm_hr_master'] || { rows: [] }
+          const psnR = (docR.rows || []).filter(r9 => r9.name.includes(nmQ) || nmQ.includes(r9.name))
+          if (!psnR.length) { await send(`夥伴名冊找不到「${nmQ}」。`); continue }
+          if (psnR.length > 1) { await send(`有 ${psnR.length} 個同名：${psnR.map(x => x.name + '(' + (/A Beach/.test(x.co) ? 'AB' : 'GD') + ')').join('、')}——名字打完整一點。`); continue }
+          const rowR = psnR[0]
+          if (fdK === 'onboard' || fdK === 'birth') { // 日期寬鬆收：2026/9/1、2026-9-1、民國 115-9-1 都轉標準
+            const dm9 = valQ.match(/^(\d{2,4})[\/\-.年](\d{1,2})[\/\-.月](\d{1,2})日?$/)
+            if (!dm9) { await send('日期格式看不懂——用 2026-09-01 這種寫法。'); continue }
+            let yy9 = +dm9[1]; if (yy9 < 200) yy9 += 1911
+            valQ = `${yy9}-${String(+dm9[2]).padStart(2, '0')}-${String(+dm9[3]).padStart(2, '0')}`
+          }
+          const before9 = rowR[fdK] || '（空）'
+          rowR[fdK] = valQ.slice(0, 60)
+          if (fdK === 'birth') rowR.age = Math.floor((Date.now() - new Date(rowR.birth).getTime()) / 31557600000)
+          const ts8R = new Date(Date.now() + 8 * 3600e3).toISOString().slice(5, 16).replace('T', ' ')
+          docR.log = [{ by: meR, ts: ts8R, what: `DD改 ${rowR.name} ${fdK}` }, ...(docR.log || [])].slice(0, 80)
+          docR.updatedAt = new Date().toISOString()
+          await kvSet('sp_crew_pm_hr_master', docR)
+          await send(`✅ 已更新 ${rowR.name}（${/A Beach/.test(rowR.co) ? 'AB' : 'GD'}）的${mEmr ? '緊急聯絡人' : mRos[2]}：\n${before9} → ${rowR[fdK]}${fdK === 'birth' ? `（年齡自動改 ${rowR.age}）` : ''}`)
+        } catch (e) { await send('更新出了點問題，再試一次 🙏') }
+        continue
+      }
       const mDoc = isDM && text.match(/^文件\s*(\S{2,10})\s+(\S{1,12})\s*$/)
+      const mDocQ = isDM && !mDoc && text.match(/^文件\s*(\S{2,10})\s*$/) // 只打「文件 姓名」=回收件狀態
+      if (mDocQ) {
+        try {
+          const kvQ = await kvGetMany(['sp_crew_pm_hr_master'])
+          const rowsQ = (kvQ['sp_crew_pm_hr_master'] || {}).rows || []
+          const psnQ = rowsQ.filter(r9 => r9.name.includes(mDocQ[1]) || mDocQ[1].includes(r9.name))
+          if (psnQ.length !== 1) { await send(psnQ.length ? '同名多人，名字打完整一點。' : `夥伴名冊找不到「${mDocQ[1]}」。`); continue }
+          const xQ = psnQ[0]
+          const DSET = [['contract', '勞動契約'], ['idcard', '身分證影本'], ['bank', '存摺影本'], ['health', '體檢報告'], ['hygiene', '衛生教育訓練'], ...((+xQ.age || 99) < 18 ? [['guardian', '法代同意書（未成年）']] : [])]
+          const lines9 = DSET.map(([k9, n9]) => `${((((xQ.docs || {})[k9]) || {}).files || []).length ? '✅' : '⬜'} ${n9}`)
+          const missQ = DSET.filter(([k9]) => !((((xQ.docs || {})[k9]) || {}).files || []).length)
+          await send(`📎 ${xQ.name}（${/A Beach/.test(xQ.co) ? 'AB' : 'GD'}）入職文件：\n${lines9.join('\n')}${missQ.length ? `\n\n要補哪件就回我「文件 ${xQ.name} ${missQ[0][1].slice(0, 2)}」再傳檔案。` : '\n\n全部收齊了 🎉'}`)
+        } catch (_) { await send('查詢出了點問題 🙏') }
+        continue
+      }
       if (mDoc) {
         try {
           const HRD = { contract: ['勞動契約', '契約', '合約'], idcard: ['身分證'], bank: ['存摺', '銀行'], health: ['體檢', '健檢'], hygiene: ['衛生', '教育訓練', '講習'], guardian: ['法代', '法定代理', '同意書'] } // v4.35.1 大頭照/緊急聯絡/勞健保退役
