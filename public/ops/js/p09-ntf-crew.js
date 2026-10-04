@@ -344,7 +344,10 @@ function favRender(){
   // v4.40.4（張良拍板）：☰放最左=全部功能彈層（✎編輯收進彈層）；手機頂部功能鈕/大標題整排收掉後這裡是唯一入口
   bar.innerHTML = `<button onclick="navSheet()" title="全部功能" style="flex:0 0 54px">${_I('<path d="M4 7h16M4 12h16M4 17h16"/>')}<span>全部</span></button>`
     + list.map(k => `<button data-fk="${k}" onclick="favGo('${k}')">${TAB_ICONS[k]||TAB_ICONS.home}<span>${favLabel(k)}</span></button>`).join('')
+    // 🔔 v4.47.4 通知鈴鐺固定最右（張良「坐在固定明顯的地方」）：帶未讀紅點數，點=通知中心；overflow:visible 才不被 #favbar button 的 hidden 裁掉紅點
+    + `<button id="favBell" onclick="ntfPage()" title="通知中心" style="flex:0 0 54px;position:relative;overflow:visible">${TAB_ICONS.bell}<span>通知</span></button>`
   favMark()
+  try { ntfBadgeSync() } catch(_){} // 重畫後補紅點數
 }
 function favGo(k){ const b = document.getElementById(k==='home'?'tab-home':'tab-'+k); if (b) b.click(); try{ scrollTo({top:0}) }catch(_){} }
 function favMark(k){ if (k) window._favCur = k; const c = window._favCur
@@ -439,14 +442,16 @@ const NTF_CATS = { all:'全部', meet:'📢 會議', sop:'✅ SOP', prep:'🍳 �
 let _ntfList = null, _ntfCat = 'all'
 async function ntfFetch(){ try { const r = await fetch('/api/mail-sync?ntf=' + encodeURIComponent(K) + (TK() ? '&me=' + encodeURIComponent(TK()) : '') + '&r=' + Date.now()); const j = await r.json(); if (j && j.ok) _ntfList = j.list || [] } catch(e){}; return _ntfList || [] }
 function ntfUnread(){ const rd = localStorage.getItem('gdNtfRead') || ''; return (_ntfList || []).filter(x => x.ts > rd).length }
-async function ntfBadgeSync(){ // 鈴鐺上的未讀紅點數（進站抓一次）
+async function ntfBadgeSync(){ // 鈴鐺上的未讀紅點數（進站抓一次）；v4.47.4 同步側欄(#ntfBell)＋手機底部列(#favBell)兩處
   await ntfFetch()
-  const b = document.getElementById('ntfBell'); if (!b) return
   const n = ntfUnread()
-  let d = b.querySelector('.ntfDot'); if (d) d.remove()
-  if (n > 0) { d = document.createElement('span'); d.className = 'ntfDot'
-    d.style.cssText = 'position:absolute;top:-5px;right:-5px;background:#E5484D;color:#fff;border-radius:999px;font-size:11px;font-weight:900;min-width:17px;height:17px;line-height:17px;text-align:center;padding:0 3px'
-    d.textContent = n > 99 ? '99+' : n; b.appendChild(d) }
+  ;[['ntfBell','-5px'], ['favBell','-2px']].forEach(([id, top]) => { // 底部列鈴鐺較高，紅點往下一點免超出
+    const b = document.getElementById(id); if (!b) return
+    let d = b.querySelector('.ntfDot'); if (d) d.remove()
+    if (n > 0) { d = document.createElement('span'); d.className = 'ntfDot'
+      d.style.cssText = `position:absolute;top:${top};right:${id==='favBell'?'8px':'-5px'};background:#E5484D;color:#fff;border-radius:999px;font-size:11px;font-weight:900;min-width:17px;height:17px;line-height:17px;text-align:center;padding:0 3px`
+      d.textContent = n > 99 ? '99+' : n; b.appendChild(d) }
+  })
 }
 document.addEventListener('visibilitychange', () => { if (!document.hidden) ntfBadgeSync() }) // v4.33.6 App從背景回前景＝重算鈴鐺數字（張良：圖示有數字、打開App鈴鐺卻沒有＝喚醒不會重新抓）
 try { navigator.serviceWorker && navigator.serviceWorker.addEventListener('message', ev => { if (ev.data && ev.data.gdNtf) ntfBadgeSync() }) } catch(e){} // App開著收到推播→sw廣播→即時重算
