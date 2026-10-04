@@ -161,7 +161,8 @@ async function custBuild() {
               c.k += (r.kc || 0) + (r.ks || 0)
               if ((r.n || 0) > c.mx) c.mx = r.n || 0
               if (d > c.l && d <= today) c.l = d
-              isFirst ? mm.nw++ : mm.rt++
+              // 新/回只算「可識別」客人（有客人檔或有效電話）——現場客代稱(外國人/王…)無法判斷新舊，算進去會灌水（張良 2026-10-04 抓包）
+              if (r.cid || (r.phone || '').replace(/\D/g, '').length >= 8) { isFirst ? mm.nw++ : mm.rt++ }
             }
           }
           if (canceled) continue
