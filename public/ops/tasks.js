@@ -729,7 +729,7 @@ function tnRoot() {
     return '<div style="max-width:1240px;margin:6px auto;padding:0 4px">' + [38, 120, 120].map(h => '<div style="height:' + h + 'px;background:' + tnC.soft + ';border-radius:8px;margin-bottom:12px"></div>').join('') + '</div>';
   }
   const v = tnS.view;
-  let h = '<div style="max-width:1240px;margin:6px auto;padding:' + (tnMob() ? '12px 8px' : '16px') + ';background:' + tnC.bg + ';border:1px solid ' + tnC.line + ';border-radius:12px">';
+  let h = '<div style="max-width:1240px;margin:6px auto;padding:' + (tnMob() ? '12px 8px' : '16px') + ';background:' + tnC.bg + ';border:1px solid ' + tnC.line + ';border-radius:12px;overflow-x:hidden">'; // v1.11 整頁不橫向溢出（nowrap 大徽章治本）
   // 第一行：標題/搜尋/積分說明/統計（v1.6 統計搬到最右＋補進行中與已完成數字）
   const nTodo = tnS.tasks.filter(t => t.status === 'todo').length;
   const nDoing = tnS.tasks.filter(t => t.status === 'doing').length;
@@ -803,7 +803,7 @@ function tnCard(t, o) {
   // v1.9/v1.11 等級徽章位置可設：iconcol=卡片頂部整行靠右(預設,拿整卡寬度不被內容擠爆)、titleTop=標題上方、titleR/titleL=標題同行
   const tnBdgC = tnPtsBadge(t);
   const bPos = (tnS.ptsBadge && tnS.ptsBadge.pos) || 'iconcol';
-  if (tnBdgC && bPos === 'iconcol') h += '<div style="display:flex;justify-content:flex-end;margin-bottom:4px;max-width:100%;overflow:hidden">' + tnBdgC + '</div>';
+  if (tnBdgC && bPos === 'iconcol') h += '<div style="display:flex;justify-content:flex-end;margin-bottom:4px;width:100%;max-width:100%;overflow:hidden;box-sizing:border-box">' + tnBdgC + '</div>';
   h += '<div style="display:flex;align-items:flex-start;gap:8px">';
   // 完成勾
   h += '<button onclick="event.stopPropagation();tnToggleDone(\'' + t.id + '\')" title="切換完成" style="flex-shrink:0;width:16px;height:16px;margin-top:2px;border-radius:4px;border:1px solid ' + (done ? tnC.green : tnCBR) + ';background:' + (done ? tnC.green : tnWHT) + ';display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0">' + (done ? tnI('check', 11, '#fff') : '') + '</button>';
