@@ -2122,7 +2122,8 @@ export default async function handler(req, res) {
       // v4.46.1 NUEiP 薪資真值進薪資表：salary_name「2026年8月薪水」=所屬月（發放日通常次月10）
       for (const ev of ((hrPayD || {}).events || [])) {
         let ym9 = ''
-        const mN = /(\d{4})\s*年\s*(\d{1,2})\s*月/.exec(ev.event || '')
+        const evN = String(ev.event || '').replace(/[０-９]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xFEE0)) // 全形數字→半形（實際資料是「２０２６年８月」）
+        const mN = /(\d{4})\s*年\s*(\d{1,2})\s*月/.exec(evN)
         if (mN) ym9 = mN[1] + '-' + String(+mN[2]).padStart(2, '0')
         else if (ev.payDate) { const d9 = new Date(ev.payDate + 'T00:00:00Z'); d9.setUTCMonth(d9.getUTCMonth() - 1); ym9 = d9.toISOString().slice(0, 7) }
         hrPay.push({ n: ev.name, ym: ym9, ev: ev.event, pd: ev.payDate, g: ev.gross, net: ev.net, ot: (ev.otFree || 0) + (ev.otTax || 0), otH: ev.otH || 0 })
