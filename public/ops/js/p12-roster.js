@@ -2,14 +2,11 @@
 // 資料端 hrmaster 口在伺服器就擋，非主管連資料都拿不到；來源＝勞工名冊 Google Sheet（口香糖=A Beach、喬亞=GROUN:D）
 let hrmQ = '', hrmCo = 'all', hrmSort = { k: '', dir: 1 }
 // 📎 入職文件標準清單 v4.35.0（台灣餐飲業；guardian 只有未成年需要）
-const HR_DOCS = [
+const HR_DOCS = [ // v4.35.1 張良瘦身：大頭照不用、緊急聯絡人=清單文字欄、勞健保有身分證即可
   { k:'contract',  n:'勞動契約' },
   { k:'idcard',    n:'身分證影本（正反面）' },
   { k:'bank',      n:'存摺封面影本（薪轉）' },
   { k:'health',    n:'體檢報告' },
-  { k:'photo',     n:'大頭照' },
-  { k:'emergency', n:'緊急聯絡人資料' },
-  { k:'insurance', n:'勞健保加保資料' },
   { k:'hygiene',   n:'衛生教育訓練證明' },
   { k:'guardian',  n:'法定代理人同意書', minor:1 },
 ]
@@ -41,7 +38,7 @@ function hrmSortBy(k){ // v4.34.4 張良「排序畫面不要跳不要閃 手機
 function hrmRender(){
   const d = window._hrmD; if (!d || curStore !== 'hrm') return
   const isAB = x => /A Beach/.test(x.co||'')
-  let rows = (d.rows||[]).filter(x => !hrmQ || (x.name||'').includes(hrmQ) || (x.dept||'').includes(hrmQ) || (x.title||'').includes(hrmQ))
+  let rows = (d.rows||[]).filter(x => !hrmQ || (x.name||'').includes(hrmQ) || (x.dept||'').includes(hrmQ) || (x.title||'').includes(hrmQ) || (x.emer||'').includes(hrmQ))
   if (hrmCo === 'ab') rows = rows.filter(isAB)
   if (hrmCo === 'gd') rows = rows.filter(x => !isAB(x))
   // 排序（點欄頭）；預設照清冊原順序
@@ -65,6 +62,9 @@ function hrmRender(){
     const days = Math.round((nb-todayMs)/86400e3)
     return days <= 30 ? { ...x, days, md: x.birth.slice(5).replace('-','/') } : null
   }).filter(Boolean).sort((a,b)=>a.days-b.days)
+  const bdaySet = {}
+  upcoming.forEach(x=>{ bdaySet[x.co+'|'+x.name]=x.days })
+  const IN9 = (x,f,w,alignL)=>`<input value="${String(x[f]??'').replace(/"/g,'&quot;')}" style="width:${w}px;padding:3px 5px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--ink);font-size:12.5px;text-align:${alignL?'left':'center'}" onchange="hrmSet('${(x.co||'').replace(/'/g,'')}','${(x.name||'').replace(/'/g,'')}','${f}',this.value)">`
   const coBtn = (v,lb)=>`<button class="mini${hrmCo===v?' on':''}" style="padding:6px 14px;font-weight:800" onclick="hrmCo='${v}';hrmRender()">${lb}</button>`
   let h = `<section><h2>🪪 夥伴名冊 <span class="hint">含個資請勿截圖外傳｜資料日期 ${String(d.updatedAt||'').slice(0,10)}</span></h2>
     <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px;flex-wrap:wrap">
@@ -72,7 +72,7 @@ function hrmRender(){
       <input value="${hrmQ.replace(/"/g,'&quot;')}" placeholder="搜姓名／部門／職務" style="padding:8px 12px;border:1.5px solid var(--line);border-radius:10px;font-size:14.5px;width:200px;background:var(--card);color:var(--ink)" oninput="hrmQ=this.value;hrmRender()">
       <span class="hint">${rows.length} 人</span>
       ${d.canEdit?`<button class="mini${window._hrmEdit?' on':''}" style="padding:6px 14px;font-weight:800" onclick="window._hrmEdit=!window._hrmEdit;hrmRender()">${window._hrmEdit?'✓ 完成編輯':'✏️ 編輯'}</button>`:''}
-      ${d.canEdit&&window._hrmEdit?`<button class="mini" style="padding:6px 12px" onclick="hrmTitleOpts()">職務選單</button><button class="mini" style="padding:6px 12px" onclick="hrmAdd('ab')">＋ AB 加人</button><button class="mini" style="padding:6px 12px" onclick="hrmAdd('gd')">＋ GD 加人</button>`:''}
+      ${d.canEdit&&window._hrmEdit?`<button class="mini" style="padding:6px 12px" onclick="hrmTitleOpts()">職務選單</button><button class="mini" style="padding:6px 12px" onclick="hrmAdd('ab')">＋ AB 加人</button><button class="mini" style="padding:6px 12px" onclick="hrmAdd('gd')">＋ GD 加人</button><button class="mini" style="padding:6px 12px" onclick="hrmColOrder()">欄位排序</button>`:''}
     </div>`
   if (upcoming.length) {
     h += `<div style="background:var(--card);border:1.5px solid var(--line);border-radius:12px;padding:10px 13px;margin-bottom:12px">
@@ -82,40 +82,40 @@ function hrmRender(){
         <b>${x.md}</b> ${x.name} <span class="hint" style="font-size:12px">${/A Beach/.test(x.co)?'AB':'GD'}・${x.days===0?'🎉 今天！':x.days+'天後'}</span></span>`).join('')}
       </div></div>`
   }
-  // 欄頭：對齊與資料一致＋點了排序；箭頭佔固定寬（出現/消失不會把欄位擠歪）
+  // 欄位＝資料驅動 v4.35.1：順序可自訂（⚙️欄位排序）；體檢文字欄退役（內容看 📎 體檢報告 note）
   const arrow = k => `<span style="display:inline-block;width:12px;text-align:center;font-size:10px">${hrmSort.k===k?(hrmSort.dir>0?'▲':'▼'):''}</span>`
-  const TH = (k,lb,align,stick)=>`<th class="${stick?'hrmStick':''}" style="padding:4px 7px;text-align:${align};cursor:pointer;white-space:nowrap;user-select:none" onclick="hrmSortBy('${k}')" title="點我排序">${lb}${arrow(k)}</th>`
-  // 🔒 身分證欄名單鎖（v4.41.2 張良「顯示鎖的符號 裡面有人員名單 我打勾的人才可以看到」）：管理者點鎖頭勾人；沒在名單的主管這欄=「—」(伺服器端拔掉)
   const LOCK_I9 = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" style="vertical-align:-2px"><rect x="4" y="11" width="16" height="9" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>'
-  const nidTh = `<th style="padding:4px 7px;text-align:center;white-space:nowrap;user-select:none">身分證字號 ${d.idLock ? `<span title="名單制：打勾的人才看得到這一欄（點我設定）" style="cursor:pointer;color:#D4A72C" onclick="hrmIdLock()">${LOCK_I9}</span>` : (d.idCan ? '' : `<span class="hint" title="你沒有檢視這欄的權限">${LOCK_I9}</span>`)}</th>`
-  const header = (withCo)=>`<thead><tr>${TH('name','姓名','left',1)}${withCo?TH('co','店','center'):''}${TH('dept','部門','center')}${TH('title','職務','center')}${TH('onboard','到職日','center')}${TH('onboard','年資','center')}${TH('bday','生日','center')}${TH('age','年齡','center')}${TH('sex','性別','center')}${nidTh}${TH('health','體檢','left')}<th style="padding:4px 7px;text-align:center;white-space:nowrap">📎 文件</th></tr></thead>`
-  const bdaySet = {} // 名→天數（近30天壽星整列生日光）
-  upcoming.forEach(x=>{ bdaySet[x.co+'|'+x.name]=x.days })
-  const IN9 = (x,f,w,alignL)=>`<input value="${String(x[f]??'').replace(/"/g,'&quot;')}" style="width:${w}px;padding:3px 5px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--ink);font-size:12.5px;text-align:${alignL?'left':'center'}" onchange="hrmSet('${(x.co||'').replace(/'/g,'')}','${(x.name||'').replace(/'/g,'')}','${f}',this.value)">`
   const topts = d.titleOpts || ['正職','PT']
   const SEL9 = (x)=>`<select style="padding:3px 4px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--ink);font-size:12.5px" onchange="hrmSet('${(x.co||'').replace(/'/g,'')}','${(x.name||'').replace(/'/g,'')}','title',this.value)">${[...new Set([x.title,...topts])].filter(Boolean).map(o9=>`<option ${o9===x.title?'selected':''}>${o9}</option>`).join('')}</select>`
-  const rowHtml = (x,i)=>{
-    let ten = ''
-    if (x.onboard) { const ms = Date.now() - new Date(x.onboard).getTime(); const y9 = ms/31557600000; ten = y9 >= 1 ? (Math.round(y9*10)/10)+'年' : Math.max(1,Math.round(ms/2629800000))+'個月' }
-    const bd9 = bdaySet[x.co+'|'+x.name]
-    const ed = window._hrmEdit
-    const coTd = x._withCo?`<td style="padding:4px 7px;text-align:center;font-weight:700">${/A Beach/.test(x.co)?'AB':'GD'}</td>`:''
-    return `<tr ${bd9!=null?'class="bdayGlow" title="🎂 '+(bd9===0?'今天生日！':bd9+' 天後生日')+'"':''} style="border-top:1px solid var(--line);font-size:13px">
-      <td class="hrmStick" style="padding:4px 7px;text-align:left;font-weight:800;white-space:nowrap">${ed?IN9(x,'name',70,1):(x.name||'')}${bd9!=null?' 🎂':''}</td>${coTd}
-      <td style="padding:4px 7px;text-align:center;white-space:nowrap">${ed?IN9(x,'dept',56):(x.dept||'—')}</td>
-      <td style="padding:4px 7px;text-align:center;white-space:nowrap">${ed?SEL9(x):(x.title||'—')}</td>
-      <td style="padding:4px 7px;text-align:center;white-space:nowrap">${ed?IN9(x,'onboard',92):(x.onboard||'—')}</td>
-      <td style="padding:4px 7px;text-align:center;white-space:nowrap" class="hint">${ten||'—'}</td>
-      <td style="padding:4px 7px;text-align:center;white-space:nowrap">${ed?IN9(x,'birth',92):(x.birth||'—')}</td>
-      <td style="padding:4px 7px;text-align:center">${x.age||'—'}</td>
-      <td style="padding:4px 7px;text-align:center">${ed?IN9(x,'sex',32):(x.sex||'—')}</td>
-      <td style="padding:4px 7px;text-align:center;font-family:ui-monospace,monospace;letter-spacing:.5px">${ed&&d.idCan?IN9(x,'nid',104):(x.nid||'—')}</td>
-      <td style="padding:4px 7px;text-align:left;font-size:12px" class="hint">${ed?IN9(x,'health',104,1):(x.health||'—')}${ed?` <button class="mini" style="padding:1px 7px;color:var(--red)" onclick="hrmDel('${(x.co||'').replace(/'/g,'')}','${(x.name||'').replace(/'/g,'')}')">刪</button>`:''}</td>
-      <td style="padding:4px 7px;text-align:center;white-space:nowrap">${(()=>{ const st9=hrmDocStat(x); return `<button class="mini" style="padding:2px 10px;font-weight:800;color:${st9.got>=st9.need?'var(--green)':'#E8A657'}" onclick="hrmDocs('${(x.co||'').replace(/'/g,'')}','${(x.name||'').replace(/'/g,'')}')">${st9.got}/${st9.need}</button>` })()}</td></tr>`
-  }
-  // v4.34.5（張良抓包跳動真因：「全部」原本分公司、一排序才合併=版面縮一下）：全部=永遠一張合併表(含店欄)，排不排序版型都一樣
+  const tenOf = x => { if (!x.onboard) return ''; const ms = Date.now() - new Date(x.onboard).getTime(); const y9 = ms/31557600000; return y9 >= 1 ? (Math.round(y9*10)/10)+'年' : Math.max(1,Math.round(ms/2629800000))+'個月' }
+  const ed0 = window._hrmEdit
+  const HRM_COLS = [
+    { k:'name', lb:'姓名', al:'left', stick:1, td:(x)=>`${ed0?IN9(x,'name',70,1):(x.name||'')}${bdaySet[x.co+'|'+x.name]!=null?' 🎂':''}`, w:800 },
+    { k:'co', lb:'店', al:'center', onlyAll:1, td:(x)=>`<b>${/A Beach/.test(x.co)?'AB':'GD'}</b>` },
+    { k:'dept', lb:'部門', al:'center', td:(x)=>ed0?IN9(x,'dept',56):(x.dept||'—') },
+    { k:'title', lb:'職務', al:'center', td:(x)=>ed0?SEL9(x):(x.title||'—') },
+    { k:'onboard', lb:'到職日', al:'center', td:(x)=>ed0?IN9(x,'onboard',92):(x.onboard||'—') },
+    { k:'ten', lb:'年資', al:'center', sortK:'onboard', td:(x)=>`<span class="hint">${tenOf(x)||'—'}</span>` },
+    { k:'bday', lb:'生日', al:'center', td:(x)=>ed0?IN9(x,'birth',92):(x.birth||'—') },
+    { k:'age', lb:'年齡', al:'center', td:(x)=>String(x.age||'—') },
+    { k:'sex', lb:'性別', al:'center', td:(x)=>ed0?IN9(x,'sex',32):(x.sex||'—') },
+    { k:'nid', lb:'身分證字號', al:'center', nosort:1, td:(x)=>`<span style="font-family:ui-monospace,monospace;letter-spacing:.5px">${ed0&&d.idCan?IN9(x,'nid',104):(x.nid||'—')}</span>` },
+    { k:'emer', lb:'緊急聯絡人', al:'left', td:(x)=>ed0?IN9(x,'emer',120,1):(x.emer||'—') },
+    { k:'docs', lb:'📎 文件', al:'center', nosort:1, td:(x)=>{ const st9=hrmDocStat(x); return `<button class="mini" style="padding:2px 10px;font-weight:800;color:${st9.got>=st9.need?'var(--green)':'#E8A657'}" onclick="hrmDocs('${(x.co||'').replace(/'/g,'')}','${(x.name||'').replace(/'/g,'')}')">${st9.got}/${st9.need}</button>${ed0?` <button class="mini" style="padding:1px 7px;color:var(--red)" onclick="hrmDel('${(x.co||'').replace(/'/g,'')}','${(x.name||'').replace(/'/g,'')}')">刪</button>`:''}` } },
+  ]
+  const ordK = [...(d.colOrder||[]).filter(k=>HRM_COLS.some(c=>c.k===k)), ...HRM_COLS.map(c=>c.k).filter(k=>!(d.colOrder||[]).includes(k))]
   const withCo = hrmCo === 'all'
-  h += `<div class="scroll"><table style="border-collapse:collapse;width:100%">${header(withCo)}<tbody>${rows.map((x,i)=>rowHtml(withCo?{ ...x, _withCo: 1 }:x, i)).join('')}</tbody></table></div>`
+  const colsR = ordK.map(k=>HRM_COLS.find(c=>c.k===k)).filter(c=>c && (!c.onlyAll || withCo))
+  const thOf = c => {
+    if (c.k==='nid') return `<th style="padding:4px 7px;text-align:center;white-space:nowrap;user-select:none">身分證字號 ${d.idLock ? `<span title="名單制：打勾的人才看得到這一欄（點我設定）" style="cursor:pointer;color:#D4A72C" onclick="hrmIdLock()">${LOCK_I9}</span>` : (d.idCan ? '' : `<span class="hint" title="你沒有檢視這欄的權限">${LOCK_I9}</span>`)}</th>`
+    const sk = c.nosort ? '' : (c.sortK||c.k)
+    return `<th class="${c.stick?'hrmStick':''}" style="padding:4px 7px;text-align:${c.al};white-space:nowrap;user-select:none${sk?';cursor:pointer':''}" ${sk?`onclick="hrmSortBy('${sk}')" title="點我排序"`:''}>${c.lb}${sk?arrow(sk):''}</th>`
+  }
+  const rowHtml = (x)=>{
+    const bd9 = bdaySet[x.co+'|'+x.name]
+    return `<tr ${bd9!=null?'class="bdayGlow" title="🎂 '+(bd9===0?'今天生日！':bd9+' 天後生日')+'"':''} style="border-top:1px solid var(--line);font-size:13px">${colsR.map(c=>`<td class="${c.stick?'hrmStick':''}" style="padding:4px 7px;text-align:${c.al};white-space:nowrap${c.k==='name'?';font-weight:800':''}">${c.td(x)}</td>`).join('')}</tr>`
+  }
+  h += `<div class="scroll"><table style="border-collapse:collapse;width:100%"><thead><tr>${colsR.map(thOf).join('')}</tr></thead><tbody>${rows.map(rowHtml).join('')}</tbody></table></div>`
   h += `<div class="hint" style="margin-top:10px">來源：勞工名冊（Google Sheet）・要更新跟 D 哥說「更新夥伴名冊」即可重新匯入</div></section>`
   app.innerHTML = h
 }
@@ -207,7 +207,7 @@ function hrmDocs(co, name){
       const files = (((x.docs||{})[dk.k])||{}).files||[]
       return `<div style="border-top:1px solid var(--line);padding:8px 0">
         <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-          <span style="font-weight:800">${files.length?'✅':'⬜'} ${dk.n}${dk.minor?' <span class="hint" style="font-size:11px">未成年需要</span>':''}</span>
+          <span style="font-weight:800">${files.length?'✅':'⬜'} ${dk.n}${dk.minor?' <span class="hint" style="font-size:11px">未成年需要</span>':''}</span>${dk.k==='health'&&x.health?`<span class="hint" style="font-size:12px">（${x.health}）</span>`:''}
           <button class="mini" style="padding:3px 12px;margin-left:auto" onclick="hrmDocPick('${dk.k}')">上傳</button>
         </div>
         ${files.map((f,i)=>`<div style="display:flex;gap:8px;align-items:center;padding:3px 0 0 22px;font-size:13px">
@@ -251,4 +251,35 @@ async function hrmDocDel(key, i){
   if (!r || !r.ok) { alert((r&&r.error)||'失敗'); return }
   const row = (window._hrmD.rows||[]).find(z=>z.co===co&&z.name===name); if (row) row.docs = r.docs
   hrmDocs(co, name); hrmRenderKeep()
+}
+
+// 欄位順序自訂 v4.35.1（張良「清單欄位讓我可以排序」）：正式視窗 ▲▼ 調整、全裝置共用（存名冊檔）
+function hrmColOrder(){
+  const d = window._hrmD; if (!d) return
+  const DEF = [['name','姓名'],['co','店'],['dept','部門'],['title','職務'],['onboard','到職日'],['ten','年資'],['bday','生日'],['age','年齡'],['sex','性別'],['nid','身分證字號'],['emer','緊急聯絡人'],['docs','📎 文件']]
+  const cur = [...(d.colOrder||[]).filter(k=>DEF.some(x=>x[0]===k)), ...DEF.map(x=>x[0]).filter(k=>!(d.colOrder||[]).includes(k))]
+  window._hcL = cur
+  const draw = () => {
+    const old = document.getElementById('hcOv'); if (old) old.remove()
+    const ov = document.createElement('div'); ov.id='hcOv'
+    ov.style.cssText='position:fixed;inset:0;background:rgba(10,14,22,.55);z-index:71;display:flex;align-items:center;justify-content:center;padding:16px'
+    ov.innerHTML = `<div style="background:#1C2430;border:1px solid #39434F;border-radius:14px;max-width:300px;width:100%;max-height:82vh;overflow:auto;padding:16px" onclick="event.stopPropagation()">
+      <div style="font-weight:900;margin-bottom:8px">欄位排序</div>
+      ${window._hcL.map((k,i)=>{ const lb=(DEF.find(x=>x[0]===k)||[])[1]||k; return `<div style="display:flex;gap:8px;align-items:center;padding:5px 0;border-top:1px solid var(--line)">
+        <span style="flex:1;font-weight:700">${lb}</span>
+        <button class="mini" style="padding:1px 9px;${i===0?'opacity:.3':''}" ${i===0?'disabled':''} onclick="const t=window._hcL[${i}];window._hcL[${i}]=window._hcL[${i-1}];window._hcL[${i-1}]=t;window._hcDraw()">▲</button>
+        <button class="mini" style="padding:1px 9px;${i===window._hcL.length-1?'opacity:.3':''}" ${i===window._hcL.length-1?'disabled':''} onclick="const t=window._hcL[${i}];window._hcL[${i}]=window._hcL[${i+1}];window._hcL[${i+1}]=t;window._hcDraw()">▼</button></div>` }).join('')}
+      <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px">
+        <button class="mini" style="padding:8px 14px" onclick="document.getElementById('hcOv').remove()">取消</button>
+        <button class="mini on" style="padding:8px 18px" onclick="hrmColSave()">✓ 儲存</button></div></div>`
+    ov.onclick = () => ov.remove()
+    document.body.appendChild(ov)
+  }
+  window._hcDraw = draw
+  draw()
+}
+async function hrmColSave(){
+  const r = await hrmUp({ op:'colorder', list: window._hcL })
+  const o = document.getElementById('hcOv'); if (o) o.remove()
+  if (r) { window._hrmD.colOrder = r.colOrder; hrmRenderKeep() }
 }

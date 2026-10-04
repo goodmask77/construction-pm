@@ -2238,7 +2238,7 @@ export default async function handler(req, res) {
       const mDoc = isDM && text.match(/^文件\s*(\S{2,10})\s+(\S{1,12})\s*$/)
       if (mDoc) {
         try {
-          const HRD = { contract: ['勞動契約', '契約', '合約'], idcard: ['身分證'], bank: ['存摺', '銀行'], health: ['體檢', '健檢'], photo: ['大頭照', '照片'], emergency: ['緊急聯絡', '緊急'], insurance: ['勞健保', '加保', '保險'], hygiene: ['衛生', '教育訓練', '講習'], guardian: ['法代', '法定代理', '同意書'] }
+          const HRD = { contract: ['勞動契約', '契約', '合約'], idcard: ['身分證'], bank: ['存摺', '銀行'], health: ['體檢', '健檢'], hygiene: ['衛生', '教育訓練', '講習'], guardian: ['法代', '法定代理', '同意書'] } // v4.35.1 大頭照/緊急聯絡/勞健保退役
           const kvD = await kvGetMany(['sp_crew_pm_hr_master', 'sp_finance_pm_sop_def', 'sp_finance_pm_prep_bind'])
           const bindD = kvD['sp_finance_pm_prep_bind'] || {}
           const tkD = (bindD.byUid || {})[userId]
@@ -2253,7 +2253,7 @@ export default async function handler(req, res) {
           if (psn.length > 1) { await send(`有 ${psn.length} 個同名：${psn.map(x => x.name + '(' + (/A Beach/.test(x.co) ? 'AB' : 'GD') + ')').join('、')}——名字打完整一點。`); continue }
           const kw = mDoc[2]
           const keyD = Object.entries(HRD).find(([, as9]) => as9.some(a9 => kw.includes(a9) || a9.includes(kw)))
-          if (!keyD) { await send('文件名我認得這些：勞動契約、身分證、存摺、體檢、大頭照、緊急聯絡人、勞健保、衛生訓練、法代同意書。') ; continue }
+          if (!keyD) { await send('文件名我認得這些：勞動契約、身分證、存摺、體檢、衛生訓練、法代同意書。') ; continue }
           const pend = (await kvGetMany(['pm_hrdoc_pending']))['pm_hrdoc_pending'] || {}
           pend[userId] = { co: psn[0].co, name: psn[0].name, key: keyD[0], label: keyD[1][0], ts: Date.now(), by: meD }
           await kvSet('pm_hrdoc_pending', pend)

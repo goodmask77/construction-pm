@@ -2784,7 +2784,7 @@ export default async function handler(req, res) {
     let rowsH = (docH || { rows: [] }).rows || []
     if (!canId) rowsH = rowsH.map(({ nid, ...r9 }) => r9)
     const topts = (docH || {}).titleOpts || [...new Set(['正職', 'PT', ...rowsH.map(r9 => r9.title).filter(Boolean)])]
-    const outH = { ok: true, rows: rowsH, titleOpts: topts, updatedAt: (docH || {}).updatedAt || '', src: (docH || {}).src || '', idCan: canId, canEdit: isAdmH || whoH9.role === '主管' } // v4.41.3 全員可看但編輯鈕只給主管/管理者（寫入口 hrmasterup 本來就擋）
+    const outH = { ok: true, rows: rowsH, titleOpts: topts, colOrder: (docH || {}).colOrder || [], updatedAt: (docH || {}).updatedAt || '', src: (docH || {}).src || '', idCan: canId, canEdit: isAdmH || whoH9.role === '主管' } // v4.41.3 全員可看但編輯鈕只給主管/管理者（寫入口 hrmasterup 本來就擋）
     if (isAdmH) outH.idLock = { rids: ((lockH || {}).rids) || [], people: Object.entries((pmH && pmH.users) || {}).map(([r9, u9]) => ({ rid: r9, name: u9.name, admin: !!u9.admin })) }
     return res.status(200).json(outH)
   }
@@ -2860,7 +2860,7 @@ export default async function handler(req, res) {
     const ridU = whoU9.rid || whoU9.uid
     const admU = !!(pmU9 && pmU9.users && pmU9.users[ridU] && pmU9.users[ridU].admin)
     const canIdU = admU || (((lockU9 || {}).rids) || []).includes(ridU)
-    const FLDS = ['name', 'dept', 'title', 'onboard', 'birth', 'age', 'sex', 'nid', 'health']
+    const FLDS = ['name', 'dept', 'title', 'onboard', 'birth', 'age', 'sex', 'nid', 'health', 'emer']
     const docU = (await kvGet('sp_crew_pm_hr_master')) || { rows: [] }
     docU.rows = docU.rows || []
     const ts8U = new Date(Date.now() + 8 * 3600e3).toISOString().slice(5, 16).replace('T', ' ')
@@ -2877,6 +2877,8 @@ export default async function handler(req, res) {
       docU.rows.push({ co: String(bu9.co).slice(0, 40), name: String(bu9.newName || '新夥伴').slice(0, 20), dept: '', title: '', onboard: '', birth: '', age: '', sex: '', nid: '', health: '' })
     } else if (bu9.op === 'titleopts') { // 職務選單自訂（張良「我可以新增刪減編輯選單」）
       docU.titleOpts = (Array.isArray(bu9.list) ? bu9.list : []).map(x9 => String(x9).trim().slice(0, 12)).filter(Boolean).slice(0, 20)
+    } else if (bu9.op === 'colorder') { // v4.35.1 欄位順序自訂（全裝置共用）
+      docU.colOrder = (Array.isArray(bu9.list) ? bu9.list : []).map(x9 => String(x9).slice(0, 12)).slice(0, 20)
     } else if (bu9.op === 'del') {
       const row9 = findU(); if (!row9) return res.status(404).json({ ok: false })
       docU.rows = docU.rows.filter(r9 => r9 !== row9)
@@ -2884,7 +2886,7 @@ export default async function handler(req, res) {
     docU.log = [{ by: whoU9.name, ts: ts8U, what: `${bu9.op} ${bu9.name || bu9.newName || ''} ${bu9.field || ''}`.trim() }, ...(docU.log || [])].slice(0, 80)
     docU.updatedAt = new Date().toISOString()
     await kvPut('sp_crew_pm_hr_master', docU, '夥伴名冊編輯(' + whoU9.name + ')')
-    return res.status(200).json({ ok: true, rows: canIdU ? docU.rows : docU.rows.map(({ nid, ...r9 }) => r9), titleOpts: docU.titleOpts || [] })
+    return res.status(200).json({ ok: true, rows: canIdU ? docU.rows : docU.rows.map(({ nid, ...r9 }) => r9), titleOpts: docU.titleOpts || [], colOrder: docU.colOrder || [] })
   }
   if (req.method === 'POST' && req.query?.hrmasterset) {
     const mk9 = (process.env.MENU_PROBE_KEY || '').trim()
