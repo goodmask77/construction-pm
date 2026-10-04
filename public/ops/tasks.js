@@ -1,12 +1,19 @@
-/* ── /prep 原生任務中心 tasks.js（v1.2 2026-10-04）────────────────────────────
+/* ── /prep 原生任務中心 tasks.js（v1.3 2026-10-04）────────────────────────────
    React 版 src/tasks/TaskCenter.jsx + taskModel.js 的 vanilla 移植，取代 iframe 內嵌。
    v1.1（張良 5 則）：①指派完浮通知三選一（大群/私訊/不通知→tasknotify）②卡片完成鈕＋建立者審核流
    （createdBy/review 新欄位，主 App 合併保留）③卡片減脂（大項名/狀態字/標籤不上卡）
    ④負責人視角改每人一組看板（排序存 sp_team_pm_ownerord）⑤計時改日時分 tnFmtDur。
-   v1.2：①#task=<id> 深層連結定位（p10 設 window.tnFocusId → tnFocusTry 找 data-tid 卡、
-   看不到自動切依大項視角＋展開完成區、scrollIntoView＋.glowgold 金光約4秒；找不到＝小字提示）
+   v1.2：①#task=<id> 深層連結定位（捲動＋金光；v1.3 已改直開彈窗取代）
    ②「確認收到」鈕（負責人≠建立者＋未ack＋未done → 寫 ack={by,ts}＋tasknotify kind:'ack' 私訊建立者；
    之後全員看到「已收到・名字」徽章）；所有 tasknotify body 一律補 id＝任務id（後端組直達深層連結）。
+   v1.3（張良「改成直接打開那張卡，讓該負責人很明確按下收到並開始計時」）：
+   ①深層連結沒生效根因修正＝index.html script 順序 p10→tasks.js，p10 路由 IIFE 跑的時候 tnPage
+   還不存在→taskEmbed 退回舊 iframe＝定位程式整段沒機會跑；檔尾自救 IIFE 接手（見檔尾）。
+   ②#task= 改「直接開詳情彈窗」取代捲動金光；stale 快取沒這張＝等背景抓完那次 render 再開
+   （tnFreshDone 旗標），抓完還是沒有→小字提示不炸；hashchange 重複進來照樣再開。
+   ③彈窗頂大顆「確認收到」鈕（我是負責人＋別人建＋未ack＋未done）；按下（彈窗/卡片同一條 tnAck）
+   ＝③合一：ack={by,ts}＋開始計時（claimBy=我/claimAt=now，待辦順轉進行中）＋tasknotify kind:'ack'；
+   已 ack＝彈窗頂綠色狀態列「已收到・名字＋計時」、卡片照舊徽章＋🔧計時。
    資料 100% 相容主 App：
      sp_team_pm_task_<id> ＝ 一件任務一份文件（含 ord＝手動排序位置）
      sp_team_pm_tasks_v2  ＝ 遷移 marker（只讀不寫）
@@ -332,14 +339,19 @@ function tnReject(id) { // 建立者點「退回」：清審核標記＋告訴�
   tnUpd(id, { review: undefined });
   tnNotify({ kind: 'reject', id: id, doer: by, title: t.title });
 }
-/* v1.2 確認收到（張良「對方看到→出現確認收到按鈕→按下去即時私訊任務建立者」）
-   ①寫 ack={by,ts}（走 diffPersist 差異存檔；新欄位主 App 合併原樣保留＝同 review）
-   ②tasknotify kind:'ack' fire-and-forget（通知失敗不影響已存的 ack）③重畫＝按鈕原地變徽章 */
+/* v1.3 確認收到＝③合一（張良「很明確按下收到的按鈕，並且開始計時」；彈窗大鈕/卡片小鈕同一條路）
+   a. 寫 ack={by,ts}（走 diffPersist 差異存檔；新欄位主 App 合併原樣保留＝同 review）
+   b. 開始計時＝「我來解決」同一組欄位 claimBy=我/claimAt=now（計時起點＝按下那刻）；
+      已有人在計時（含自己）就不動既有起點、不搶別人的錶；任務還是待辦順手轉進行中
+   c. tasknotify kind:'ack' fire-and-forget（通知失敗不影響已存的 ack）→ 重畫＝原地變已收到＋計時 */
 function tnAck(id) {
   const t = (tnS.tasks || []).find(x => x.id === id); if (!t) return;
-  if (t.ack && t.ack.by) return; // 已確認過不重複
+  if (t.ack && t.ack.by) return; // 已確認過不重複（重複按防呆）
   if (t.status === 'done' || !tnS.me || t.owner !== tnS.me || !t.createdBy || t.createdBy === tnS.me) return;
-  tnUpd(id, { ack: { by: tnS.me, ts: new Date().toISOString() } });
+  const patch = { ack: { by: tnS.me, ts: new Date().toISOString() } };
+  if (!t.claimBy) { patch.claimBy = tnS.me; patch.claimAt = Date.now(); }
+  if (t.status === 'todo') patch.status = 'doing';
+  tnUpd(id, patch);
   tnNotify({ kind: 'ack', id: id, title: t.title || '', due: t.due || '', creator: t.createdBy });
 }
 function tnToggleDone(id) {
@@ -541,9 +553,7 @@ function tnRender() {
   try { if (ae && ae.setSelectionRange && /text|search|^$/.test(ae.type || '')) ss = ae.selectionStart; } catch (_) {}
   host.innerHTML = tnRoot();
   if (aid) { const el = document.getElementById(aid); if (el && el !== document.activeElement) { try { el.focus(); if (ss != null && el.setSelectionRange) el.setSelectionRange(ss, ss); } catch (_) {} } }
-  // v1.2 金光期間又重畫（背景 refetch/操作）→ 新 DOM 重掛 class 不中斷；再試深層連結定位
-  if (tnGlowId && Date.now() < tnGlowUntil) { try { const ge = document.querySelector('[data-tid="' + tnGlowId + '"]'); if (ge) ge.classList.add('glowgold'); } catch (_) {} }
-  tnFocusTry();
+  tnFocusTry(); // v1.3 深層連結＝資料就緒的那次 render 直接開詳情彈窗（沒 tnFocusId 一行就返回，零成本）
 }
 function tnRoot() {
   if (tnS.tasks === null) { // 載入中 skeleton（淺灰佔位塊）
@@ -1080,6 +1090,15 @@ function tnModal() {
     + '<button onclick="tnPinToggle(\'' + t.id + '\')" style="display:inline-flex;align-items:center;gap:5px;background:' + (t.pinned ? tnC.accentSoft : 'none') + ';border:1px solid ' + (t.pinned ? tnC.accent : tnC.line) + ';color:' + (t.pinned ? tnC.accent : tnC.sub) + ';border-radius:8px;padding:5px 12px;font-size:12.5px;cursor:pointer">' + tnI('pin', 12, 'currentColor', t.pinned ? tnC.accent : 'none') + (t.pinned ? '已釘選' : '釘選') + '</button>'
     + '<button onclick="tnDel(\'' + t.id + '\')" style="background:none;border:1px solid ' + tnC.line + ';color:' + tnC.red + ';border-radius:8px;padding:5px 12px;font-size:12.5px;cursor:pointer">刪除</button>'
     + '<button onclick="tnClose()" style="background:none;border:none;cursor:pointer;color:' + tnC.sub + ';padding:4px;display:flex">' + tnI('x', 18) + '</button></div>';
+  // v1.3 彈窗頂大顆「確認收到」（深層連結直開彈窗後第一眼就按得到；條件同卡片小鈕）；
+  // 已 ack＝整寬綠色狀態列「已收到・名字＋計時」（計時＝claimAt 起 tnFmtDur，完成後不再跳）
+  const tnAckable = t.status !== 'done' && !(t.ack && t.ack.by) && tnS.me && t.owner === tnS.me && t.createdBy && t.createdBy !== tnS.me;
+  if (tnAckable) {
+    h += '<button onclick="tnAck(\'' + t.id + '\')" style="display:flex;align-items:center;justify-content:center;gap:8px;width:100%;background:' + tnC.accent + ';color:#fff;border:none;border-radius:10px;padding:13px 0;font-size:15px;font-weight:800;cursor:pointer;margin-bottom:14px;box-shadow:0 2px 12px rgba(77,163,255,.35)">' + tnI('check', 17, '#fff') + '確認收到・開始計時</button>';
+  } else if (t.ack && t.ack.by) {
+    h += '<div style="display:flex;align-items:center;justify-content:center;gap:8px;flex-wrap:wrap;width:100%;background:#16281C;border:1.5px solid ' + tnC.green + ';color:' + tnC.green + ';border-radius:10px;padding:11px 8px;font-size:14px;font-weight:700;margin-bottom:14px;box-sizing:border-box">' + tnI('check', 15, tnC.green) + '已收到・' + tnEsc(t.ack.by) + (t.ack.ts ? '（' + tnDnorm(t.ack.ts) + '）' : '')
+      + ((t.status !== 'done' && t.claimBy && t.claimAt) ? '<span style="display:inline-flex;align-items:center;gap:4px;color:' + tnC.accent + '">' + tnI('clock', 13, tnC.accent) + tnFmtDur((Date.now() - t.claimAt) / 60000) + '</span>' : '') + '</div>';
+  }
   h += F('主題', '<input id="tnTitle" value="' + tnEsc(t.title) + '" oninput="tnUpdSilent(\'' + t.id + '\',{title:this.value})" style="' + tnInp + ';width:100%;font-size:14px;font-weight:600">');
   h += F('內容 / 備註', '<textarea id="tnNote" rows="2" oninput="tnUpdSilent(\'' + t.id + '\',{note:this.value})" style="' + tnInp + ';width:100%;resize:vertical">' + tnEsc(t.note || '') + '</textarea>');
   // 附件（不能包 label：label 會把點擊轉給隱藏選檔 input）
@@ -1118,7 +1137,6 @@ function tnModal() {
     }).join('') + '</div>');
   h += '<div style="display:flex;align-items:center;gap:10px;margin-top:8px;flex-wrap:wrap">'
     + '<div style="font-size:11px;color:' + tnC.faint + ';font-variant-numeric:tabular-nums">建立於 ' + tnDnorm(t.createdAt) + '</div>'
-    + (t.ack && t.ack.by ? '<span title="負責人已確認收到">' + tnPill(tnC.green, '已收到・' + tnEsc(t.ack.by) + (t.ack.ts ? '（' + tnDnorm(t.ack.ts) + '）' : '')) + '</span>' : '')
     + '<div style="flex:1"></div>'
     + '<button onclick="tnClose()" style="display:inline-flex;align-items:center;gap:6px;background:' + tnC.accent + ';color:#fff;border:none;border-radius:8px;padding:8px 18px;font-size:13.5px;font-weight:700;cursor:pointer">' + tnI('check', 14, '#fff') + '完成</button></div>';
   h += '</div></div>';
@@ -1153,15 +1171,15 @@ function tnAssignGo(mode) {
   tnRender();
 }
 
-/* ── v1.2 深層連結定位（#task=<id>）──
+/* ── v1.3 深層連結（#task=<id>）＝直接開詳情彈窗（取代 v1.2 捲動金光）──
    p10 路由（點通知/LINE 連結、hashchange）設 window.tnFocusId 再呼叫 taskEmbed()→tnPage()；
-   每次 tnRender 畫完都會呼叫 tnFocusTry()（沒 tnFocusId＝一行就返回，零成本）：
-   stale-first 快取先畫→定位；快取沒資料就等背景 tnRefetch 畫完那次再定位。
-   目前視角看不到（今日Home 沒收它/已完成被收起/搜尋濾掉）→ 自動切「依大項」視角＋
-   done 先展開完成區＋清搜尋，重畫後再找；找到＝scrollIntoView 置中＋.glowgold（頁面既有金光約4秒）。
-   找不到（任務被刪）→ 小字浮提示不炸。重複呼叫 tnPage()/hashchange 再進來都走同一條路。 */
-let tnFocusBusy = false;              // 切視角觸發的巢狀 tnRender 防遞迴
-let tnGlowId = null, tnGlowUntil = 0; // 金光中的卡＋截止時間（重畫時重掛 class 用）
+   每次 tnRender 畫完都會呼叫 tnFocusTry()（沒 tnFocusId＝一行就返回，零成本）。
+   stale-first 兩段都接得住：
+   ①快取那次 render：找得到＝直接 tnOpen 開彈窗；找不到「先不判死」（快取可能舊，背景還在抓）
+   ②背景 tnRefetch 完成（tnFreshDone=true，tnPage 每次進站歸零）那次 render：還是沒有＝真的
+     不存在（被刪）→ 清 tnFocusId＋小字提示不炸。
+   hashchange 重複進來＝p10 重設 tnFocusId＋再呼叫 tnPage()→同一條路再開一次。 */
+let tnFreshDone = false; // 這一輪（tnPage 進站起算）背景抓最新是否已完成＝「找不到」才能判死
 function tnToastMini(msg) { // 小字浮提示（非阻斷；底部置中 3.5 秒自動消失）
   try {
     const d = document.createElement('div');
@@ -1173,27 +1191,17 @@ function tnToastMini(msg) { // 小字浮提示（非阻斷；底部置中 3.5 �
 }
 function tnFocusTry() {
   const fid = window.tnFocusId;
-  if (!fid || tnFocusBusy || typeof document === 'undefined') return;
-  if (!tnS.loaded || !Array.isArray(tnS.tasks)) return; // 資料還沒到＝先不清，refetch 畫完會再進來
+  if (!fid || typeof document === 'undefined') return;
+  if (!tnS.loaded || !Array.isArray(tnS.tasks)) return; // 連快取都還沒畫＝等 refetch 那次 render 再進來
   const t = tnS.tasks.find(x => x.id === fid);
-  if (!t) { window.tnFocusId = null; tnToastMini('找不到這張任務卡（可能已刪除）'); return; }
-  let el = null;
-  try { el = document.querySelector('[data-tid="' + fid + '"]'); } catch (_) {}
-  if (!el) { // 目前視角看不到 → 切依大項（它一定有一組；done 先展開完成區、清搜尋）重畫再找
-    tnFocusBusy = true;
-    tnS.view = 'group';
-    if (t.status === 'done') tnS.showDone = true;
-    tnS.q = '';
-    tnRender();
-    tnFocusBusy = false;
-    try { el = document.querySelector('[data-tid="' + fid + '"]'); } catch (_) {}
+  if (!t) {
+    if (!tnFreshDone) return; // 快取舊、背景還在抓＝先不判死（fid 留著，抓完那次再看）
+    window.tnFocusId = null;
+    tnToastMini('找不到這張任務卡（可能已刪除）');
+    return;
   }
-  window.tnFocusId = null; // 用完即清（成功失敗都清，不殘留）
-  if (!el) { tnToastMini('找不到這張任務卡（可能已刪除）'); return; }
-  tnGlowId = fid; tnGlowUntil = Date.now() + 4200; // goldGlow 1s×4＝約4秒
-  try { el.scrollIntoView({ block: 'center', behavior: 'smooth' }); } catch (_) { try { el.scrollIntoView(); } catch (_) {} }
-  try { el.classList.add('glowgold'); } catch (_) {}
-  setTimeout(() => { tnGlowId = null; try { const e2 = document.querySelector('[data-tid="' + fid + '"]'); if (e2) e2.classList.remove('glowgold'); } catch (_) {} }, 4200);
+  window.tnFocusId = null; // 先清再開（tnOpen 會重畫→再進 tnFocusTry，清了就一行返回不重入）
+  tnOpen(fid);             // 直接開詳情彈窗（頂部就是大顆「確認收到」）
 }
 
 /* ── 初始化＋入口 ── */
@@ -1217,8 +1225,13 @@ function tnInit() {
 }
 async function tnRefetch() { // 背景抓最新；手上有沒存完的修改就不蓋
   const d = await tnFetchAll();
-  if (!d) { if (!tnS.loaded) { tnS.tasks = tnS.tasks || []; tnS.cats = tnS.cats || []; tnS.loaded = true; tnRender(); } return; }
-  if (tnSaveTimer || tnInflight > 0) return;
+  tnFreshDone = true; // v1.3 這輪背景抓完（成敗都算）＝深層連結「找不到」從此可以判死
+  if (!d) {
+    if (!tnS.loaded) { tnS.tasks = tnS.tasks || []; tnS.cats = tnS.cats || []; tnS.loaded = true; tnRender(); }
+    else tnFocusTry(); // 抓失敗沒重畫＝也要把等資料的深層連結收尾（手上資料找得到就開、沒有就提示）
+    return;
+  }
+  if (tnSaveTimer || tnInflight > 0) { tnFocusTry(); return; } // 不蓋手上修改＝沒重畫，同樣收尾深層連結
   tnS.tasks = d.tasks; tnS.cats = d.cats; tnPersisted = d.tasks; tnS.loaded = true;
   if (d.ownerOrd) tnS.ownerOrd = d.ownerOrd;
   tnCacheSave();
@@ -1227,6 +1240,7 @@ async function tnRefetch() { // 背景抓最新；手上有沒存完的修改就
 // 入口（整合方在 taskEmbed 呼叫）：stale-first＝先畫快取、背景抓最新再重畫
 window.tnPage = function () {
   tnInit();
+  tnFreshDone = false; // v1.3 每次進站重置＝這輪 refetch 回來前，深層連結找不到先不判死
   try { if (typeof curStore !== 'undefined') curStore = 'taskx'; } catch (_) {}
   try { if (typeof setTabs === 'function') setTabs('task'); } catch (_) {}
   try { const u = document.getElementById('upd'); if (u) u.textContent = '任務中心・與主 App 同步'; } catch (_) {}
@@ -1235,6 +1249,19 @@ window.tnPage = function () {
   tnRender();
   tnRefetch();
 };
+
+/* ── v1.3 冷啟自救（深層連結 v1.2 沒生效的根因）──
+   index.html script 順序＝p10-perm-init.js → tasks.js；p10 的路由 IIFE 在 tasks.js 載入前就跑完：
+   #task=<id> 有設好 window.tnFocusId、也呼叫了 taskEmbed()，但當下 typeof tnPage !== 'function'
+   → taskEmbed 走「tasks.js 沒載到」保險＝退回舊 iframe 版，tnPage/tnFocusTry 從頭到尾沒被叫到。
+   tasks.js（最後一支 script）載好後發現有人還在等（tnFocusId 掛著）→ 清掉保險 iframe、自己接手跑原生版。 */
+(function () {
+  try {
+    if (typeof window === 'undefined' || !window.tnFocusId) return;
+    const tw = document.getElementById('taskWrap'); if (tw) tw.innerHTML = ''; // 退掉剛被誤開的 iframe 保險
+    window.tnPage();
+  } catch (_) {}
+})();
 
 
 

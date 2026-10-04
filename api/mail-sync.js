@@ -2077,10 +2077,11 @@ export default async function handler(req, res) {
     const hourlyL = (((sd || {}).hourly) || []).filter(x => String(x.date || '') >= loS && String(x.date || '') <= hiS) // 🕐 時段排班（v4.27.0）
     // AB 班表（張良 2026-10-03「加在GD班表下方,知道兩間店有誰上班方便調度」）：阿桑 boss-api 排班（sp_finance_pm_boss_sched_ 月檔）
     // 唯讀；列=人名、格=班別代碼；status=cancelled 排除；start/end 轉台北 HH:MM
-    let abSched = [], abOn = [], abAtt = [], payRates = {}
+    let abSched = [], abOn = [], abAtt = [], payRates = {}, vioRes = {}
     try {
       const moSet = [...new Set([loS.slice(0, 7), ym, hiS.slice(0, 7)])]
-      const [bStaff, nueStf, payDoc9, ...abDocs] = await Promise.all([kvGet('sp_finance_pm_boss_staff'), kvGet('sp_crew_pm_hr_staff'), kvGet('sp_finance_pm_payrates'), ...moSet.map(m => kvGet('sp_finance_pm_boss_sched_' + m.replace('-', '')))])
+      const [bStaff, nueStf, payDoc9, vioResD, ...abDocs] = await Promise.all([kvGet('sp_finance_pm_boss_staff'), kvGet('sp_crew_pm_hr_staff'), kvGet('sp_finance_pm_payrates'), kvGet('sp_finance_pm_vio_res'), ...moSet.map(m => kvGet('sp_finance_pm_boss_sched_' + m.replace('-', '')))])
+      vioRes = (vioResD || {}).items || {}
       payRates = (payDoc9 || {}).rates || {}
       // v4.33.0 AB 實際出勤（NUEiP 打卡,薪資條/法規檢查用）：att 月檔→ {date,name,h,late,early,absent}
       try {
@@ -2163,7 +2164,7 @@ export default async function handler(req, res) {
         }
       }
     } catch (_) {}
-    return res.status(200).json({ ok: true, ym, ab: abSched, abOn, abAtt, payRates, resv: resvDays, hourly: hourlyL, sched: schedL.map(x => ({ ...x, seq: seqMap[x.id], trSeq: trSeqMap[x.id] })), punches: pchs.map(p => ({ name: p.name, ts: p.ts, dir: p.dir, src: p.src })), names: namesU, namesAll, posList, slots: (sd || {}).slots || null, colors: colMap, posStats, leave: leaveM, hist: ((sd || {}).hist || []).slice(-200).reverse(), lockEdit: (sd || {}).lockEdit ? 1 : 0, tpls: (sd || {}).tpls || [], staff, me: meS ? { name: meS.name, role: meS.role, approver: aprS.includes(meS.name) } : null })
+    return res.status(200).json({ ok: true, ym, ab: abSched, abOn, abAtt, payRates, vioRes, resv: resvDays, hourly: hourlyL, sched: schedL.map(x => ({ ...x, seq: seqMap[x.id], trSeq: trSeqMap[x.id] })), punches: pchs.map(p => ({ name: p.name, ts: p.ts, dir: p.dir, src: p.src })), names: namesU, namesAll, posList, slots: (sd || {}).slots || null, colors: colMap, posStats, leave: leaveM, hist: ((sd || {}).hist || []).slice(-200).reverse(), lockEdit: (sd || {}).lockEdit ? 1 : 0, tpls: (sd || {}).tpls || [], staff, me: meS ? { name: meS.name, role: meS.role, approver: aprS.includes(meS.name) } : null })
   }
   // 人員色號管理口：POST ?shiftcolor=管理金鑰 {map:{名字:色號}} 合併寫入（固定/校正專屬色用）
   if (req.method === 'POST' && req.query?.shiftcolor) {
@@ -2827,6 +2828,20 @@ export default async function handler(req, res) {
     const outH = { ok: true, rows: rowsH, titleOpts: topts, colOrder: (docH || {}).colOrder || [], updatedAt: (docH || {}).updatedAt || '', src: (docH || {}).src || '', idCan: canId, canEdit: isAdmH || whoH9.role === '主管' } // v4.41.3 全員可看但編輯鈕只給主管/管理者（寫入口 hrmasterup 本來就擋）
     if (isAdmH) outH.idLock = { rids: ((lockH || {}).rids) || [], people: Object.entries((pmH && pmH.users) || {}).map(([r9, u9]) => ({ rid: r9, name: u9.name, admin: !!u9.admin })) }
     return res.status(200).json(outH)
+  }
+  // ── ✅ 違規處理紀錄 v4.37.0（張良「負責人調整確認完才消失 不然一直提醒;處理完進紀錄留存」）：POST ?vioresset=K {token,key,op:done|undo,note} ──
+  if (req.method === 'POST' && req.query?.vioresset) {
+    const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
+    if (!ok2 || String(req.query.vioresset) !== ok2) return res.status(403).json({ ok: false })
+    let bv9 = {}; try { bv9 = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
+    const whoV9 = await permWho(bv9.token, 'shift')
+    if (!whoV9) return res.status(403).json({ ok: false, error: permDeny() })
+    const docV = (await kvGet('sp_finance_pm_vio_res')) || { items: {} }
+    const keyV = String(bv9.key || '').slice(0, 80); if (!keyV) return res.status(400).json({ ok: false })
+    if (bv9.op === 'undo') delete docV.items[keyV]
+    else docV.items[keyV] = { by: whoV9.name, ts: new Date(Date.now() + 8 * 3600e3).toISOString().slice(5, 16).replace('T', ' '), note: String(bv9.note || '').slice(0, 120), r: String(bv9.r || '').slice(0, 60) }
+    await kvPut('sp_finance_pm_vio_res', docV, '違規處理(' + whoV9.name + ' ' + (bv9.op || 'done') + ')')
+    return res.status(200).json({ ok: true, items: docV.items })
   }
   // ── 🕐 AB 出勤總覽 v4.36.0（張良「6/1起所有人打卡紀錄,看出遲到/沒打卡,像營業額那樣好查」）：?abatt=K&me=&from=YYYY-MM；主管限定 ──
   if (req.query?.abatt) {

@@ -206,6 +206,10 @@ function shVioCompute(gdRows){
     pushIv(as[x.name]=as[x.name]||{}, x.date, t2m(x.start), eM, sp>=540?60:0) })
   scanSched(as,a)
   ;(((window._shiftD||{}).abAtt)||[]).forEach(x=>{ if((+x.h||0)>12) addV(a,x.name+'|'+x.date,'實際'+x.h+'h>12h') })
+  // v4.37.0 已處理的不再提醒（負責人在清單按「✅ 處理」；key=店|名|日）
+  const res9 = ((window._shiftD||{}).vioRes)||{}
+  for(const k9 of Object.keys(g)) if(res9['GD|'+k9]) delete g[k9]
+  for(const k9 of Object.keys(a)) if(res9['AB|'+k9]) delete a[k9]
   return { g, a }
 }
 // 🔴 違規清單面板（張良「我要去哪裡確認是什麼問題」）：工具列紅色「違規 N」鈕點開＝每筆誰/哪天/什麼問題
@@ -228,10 +232,34 @@ async function shVioList(){
     <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap"><b style="font-size:17px">🔴 班表違規清單</b>
       <span class="hint">和班表上發紅光的格子一一對應；規則＝四週變形（單日12h／班距11h／連13天）</span>
       <button class="mini" style="padding:6px 14px" onclick="document.getElementById('vioOv').remove()">關閉</button></div>
-    ${L.length?`<div class="scroll" style="margin-top:10px"><table style="border-collapse:collapse;width:100%"><thead><tr><th style="padding:5px 8px">店</th><th style="padding:5px 8px">日期</th><th style="text-align:left;padding:5px 8px">夥伴</th><th style="text-align:left;padding:5px 8px">問題</th></tr></thead><tbody>
+    ${L.length?`<div class="scroll" style="margin-top:10px"><table style="border-collapse:collapse;width:100%"><thead><tr><th style="padding:5px 8px">店</th><th style="padding:5px 8px">日期</th><th style="text-align:left;padding:5px 8px">夥伴</th><th style="text-align:left;padding:5px 8px">問題</th><th style="padding:5px 8px"></th></tr></thead><tbody>
       ${L.map(x=>{ const prev9 = /班距/.test(x.r) ? new Date(new Date(x.dt+'T00:00:00Z').getTime()-86400e3).toISOString().slice(0,10) : ''
-        return `<tr style="border-top:1px solid var(--line);cursor:pointer" title="點我跳到班表這一格（金光定位）" onclick="shVioGo('${x.st}','${x.nm.replace(/'/g,'')}','${x.dt}','${prev9}')"><td style="padding:6px 8px;text-align:center">${x.st}</td><td style="padding:6px 8px;white-space:nowrap;color:var(--primary);text-decoration:underline">${x.dt.slice(5)}</td><td style="padding:6px 8px;font-weight:800">${x.nm}</td><td style="padding:6px 8px;color:var(--red);font-weight:700">${x.r}</td></tr>` }).join('')}
-    </tbody></table></div><div class="hint" style="margin-top:8px">想看法條層面的整體體檢 → 工具列「⚖️ 法規」。</div>`:`<div class="mut" style="margin-top:12px">目前已載入的班表沒有違規 🎉</div>`}`)
+        return `<tr style="border-top:1px solid var(--line)"><td style="padding:6px 8px;text-align:center;cursor:pointer" onclick="shVioGo('${x.st}','${x.nm.replace(/'/g,'')}','${x.dt}','${prev9}')">${x.st}</td><td style="padding:6px 8px;white-space:nowrap;color:var(--primary);text-decoration:underline;cursor:pointer" title="點我跳到班表這一格（金光定位）" onclick="shVioGo('${x.st}','${x.nm.replace(/'/g,'')}','${x.dt}','${prev9}')">${x.dt.slice(5)}</td><td style="padding:6px 8px;font-weight:800;cursor:pointer" onclick="shVioGo('${x.st}','${x.nm.replace(/'/g,'')}','${x.dt}','${prev9}')">${x.nm}</td><td style="padding:6px 8px;color:var(--red);font-weight:700">${x.r}</td><td style="padding:6px 8px;white-space:nowrap"><button class="mini on" style="padding:3px 12px" onclick="shVioDone('${x.st}','${x.nm.replace(/'/g,'')}','${x.dt}','${x.r.replace(/'/g,'')}')">✅ 處理</button></td></tr>` }).join('')}
+    </tbody></table></div><div class="hint" style="margin-top:8px">「✅ 處理」＝負責人已調整/確認過：紅光與提醒消失、進下面的留存紀錄。法條體檢 → 工具列「⚖️ 法規」。</div>`:`<div class="mut" style="margin-top:12px">沒有待處理的違規 🎉</div>`}
+    ${(()=>{ const res9=((window._shiftD||{}).vioRes)||{}; const ks=Object.entries(res9); if(!ks.length) return ''
+      return `<details style="margin-top:12px"><summary style="cursor:pointer;font-weight:800" class="hint">📜 已處理紀錄（${ks.length}）</summary>
+        ${ks.sort((a,b)=>String(b[1].ts||'').localeCompare(String(a[1].ts||''))).map(([k9,v9])=>{ const [st9,nm9,dt9]=k9.split('|')
+          return `<div style="display:flex;gap:8px;align-items:center;border-top:1px dashed var(--line);padding:5px 0;font-size:13px;flex-wrap:wrap">
+            <b>${st9}</b> ${dt9.slice(5)} <b>${nm9}</b> <span class="hint">${v9.r||''}</span>
+            <span class="hint" style="font-size:11.5px">處理人 ${v9.by||''}・${v9.ts||''}</span>
+            <button class="mini" style="padding:1px 9px;margin-left:auto" onclick="shVioUndo('${k9.replace(/'/g,'')}')">復原</button></div>` }).join('')}
+      </details>`})()}`)
+}
+async function shVioDone(st, nm, dt, r){
+  if (!confirm(`確認「${nm} ${dt.slice(5)}」已調整/核對過？\n確認後紅光與提醒會消失，並留在已處理紀錄。`)) return
+  const key = st+'|'+nm+'|'+dt
+  const j = await fetch('/api/mail-sync?vioresset='+encodeURIComponent(K),{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({token:TK(),key,op:'done',r})}).then(x=>x.json()).catch(()=>null)
+  if(!j||!j.ok){ alert((j&&j.error)||'沒存成功'); return }
+  if(window._shiftD) window._shiftD.vioRes = j.items
+  if(typeof shGridOnly==='function') shGridOnly()
+  shVioList()
+}
+async function shVioUndo(key){
+  const j = await fetch('/api/mail-sync?vioresset='+encodeURIComponent(K),{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({token:TK(),key,op:'undo'})}).then(x=>x.json()).catch(()=>null)
+  if(!j||!j.ok){ alert((j&&j.error)||'沒成功'); return }
+  if(window._shiftD) window._shiftD.vioRes = j.items
+  if(typeof shGridOnly==='function') shGridOnly()
+  shVioList()
 }
 
 // ── 🕐 AB 出勤總覽 v4.36.0（張良「6/1起所有打卡紀錄,看出遲到/沒打卡,每人總紀錄,像營業額那樣好查」）──
@@ -346,21 +374,28 @@ function abCellInfo(nm, dt){
   const att = (typeof shMergedAbAtt==='function'?shMergedAbAtt():[]).find(x=>x.name===nm&&x.date===dt)
   const wd9 = '日一二三四五六'[new Date(dt).getDay()]
   const schTx = scheds.length ? scheds.map(x=>`${x.code||'班'}${x.start?` ${x.start}–${x.end}`:''}`).join('、') : '沒排班'
-  let attTx
-  if (att && (att.on||att.off)) {
-    const bad9 = []
-    if (att.late>0) bad9.push(`<b style="color:#E8A657">遲到 ${att.late} 分</b>`)
+  // v4.37.0 張良「不要顯示10.2 就正常時間表示 跟排班時間對齊 快速辨識」：兩列同欄位對齊、時間等寬字、不秀時數
+  const sch0 = scheds.find(x=>x.start&&x.end)
+  const bad9 = []
+  if (att){ if (att.late>0) bad9.push(`<b style="color:#E8A657">遲到 ${att.late} 分</b>`)
     if (att.early>0) bad9.push(`<b style="color:#E8A657">早退 ${att.early} 分</b>`)
     if (att.miss) bad9.push('<b style="color:var(--red)">缺卡</b>')
-    attTx = `<span style="font-size:19px;font-weight:900">${att.on||'—'} → ${att.off||'—'}</span>　<b>${att.h||'—'}h</b>${bad9.length?'<div style="margin-top:3px">'+bad9.join('、')+'</div>':''}`
-  } else if (att && att.absent) attTx = '<b style="color:var(--red)">曠職（排班未出勤）</b>'
-  else attTx = `<span class="hint">${dt > todayTpe() ? '還沒到這天' : '沒有打卡資料（可能沒打卡或還沒同步）'}</span>`
+    if (att.absent) bad9.push('<b style="color:var(--red)">曠職</b>') }
+  const MONO='font-family:ui-monospace,SFMono-Regular,monospace;font-size:19px;font-weight:900;letter-spacing:.5px;white-space:nowrap'
+  const attOn = att&&att.on?att.on:'—', attOff = att&&att.off?att.off:'—'
+  const noAtt = !(att&&(att.on||att.off))
   lpOverlay('abciOv', `
     <div style="display:flex;justify-content:space-between;align-items:center"><b style="font-size:16.5px">${nm}・${dt.slice(5)}（${wd9}）</b>
       <button class="mini" style="padding:6px 14px" onclick="document.getElementById('abciOv').remove()">關閉</button></div>
-    <div style="margin-top:10px;display:grid;gap:8px">
-      <div style="background:var(--soft);border:1px solid var(--line);border-radius:10px;padding:10px 12px"><div class="hint" style="font-size:12px;margin-bottom:2px">排班（NUEiP）</div><b style="font-size:15px">${schTx}</b></div>
-      <div style="background:var(--soft);border:1px solid var(--line);border-radius:10px;padding:10px 12px"><div class="hint" style="font-size:12px;margin-bottom:2px">實際打卡</div>${attTx}</div>
+    <div style="margin-top:10px;background:var(--soft);border:1px solid var(--line);border-radius:10px;padding:12px 14px">
+      <table style="border-collapse:collapse"><tbody>
+        <tr><td class="hint" style="padding:3px 14px 3px 0;font-size:13px;white-space:nowrap">排班</td>
+          <td style="${MONO}">${sch0?`${sch0.start} – ${sch0.end}`:'<span class="hint" style="font-size:14px;font-weight:600">沒排班</span>'}</td>
+          <td style="padding-left:12px;white-space:nowrap"><b>${schTx!=='沒排班'?schTx.replace(/ \d{2}:\d{2}–\d{2}:\d{2}/g,''):''}</b></td></tr>
+        <tr><td class="hint" style="padding:3px 14px 3px 0;font-size:13px;white-space:nowrap">打卡</td>
+          <td style="${MONO};${noAtt?'':'color:var(--pdark)'}">${noAtt?`<span class="hint" style="font-size:14px;font-weight:600">${dt > todayTpe() ? '還沒到這天' : (att&&att.absent?'—':'沒有打卡資料')}</span>`:`${attOn} – ${attOff}`}</td>
+          <td style="padding-left:12px;white-space:nowrap">${bad9.join('、')||(noAtt?'':'<span style="color:var(--green);font-weight:800">✓</span>')}</td></tr>
+      </tbody></table>
     </div>
-    <div class="hint" style="margin-top:8px;font-size:12px">打卡=NUEiP 出勤同步（第一張上班卡→最後一張下班卡）；整月總帳看工具列「🕐 AB出勤」。</div>`)
+    <div class="hint" style="margin-top:8px;font-size:12px">打卡=NUEiP 第一張上班卡 → 最後一張下班卡；整月總帳看「🕐 AB出勤」。</div>`)
 }
