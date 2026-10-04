@@ -386,12 +386,12 @@ export default function TaskCenter({ K, confirm, canEdit, cats, onLog, onAddCat,
           <input value={q} onChange={e => setQ(e.target.value)} placeholder="搜尋任務…" style={{ ...inp, width: 170, padding: "6px 10px 6px 28px", fontSize: 12.5 }} />
           {q && <button onClick={() => setQ("")} style={{ position: "absolute", right: 6, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", color: C.faint, cursor: "pointer", padding: 0, display: "flex" }}><X size={13} /></button>}
         </div>
-        {/* Today 是 Home（落地頁），不是第七個並列視角 → 獨立按鈕放在視角切換器外面 */}
+      </div>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 16 }}>
+        {/* Today 是 Home（落地頁），不是第七個並列視角 → 獨立按鈕緊鄰視角切換器最前（v4.43.9 張良「今日跟那排選項距離太遠」：從第一行最右移下來） */}
         <button onClick={() => setView("today")} style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "7px 14px", borderRadius: 8, border: `1px solid ${view === "today" ? C.accent : C.line}`, background: view === "today" ? C.accent : WHT, color: view === "today" ? "#fff" : C.sub, fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
           <Home size={14} strokeWidth={1.75} />今日
         </button>
-      </div>
-      <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 16 }}>
         <div style={{ display: "inline-flex", background: C.soft, border: `1px solid ${C.line}`, borderRadius: 8, padding: 2, gap: 2, flexWrap: "wrap" }}>
           {TABS.map(([k, l, I]) => Tab(k, l, I))}
         </div>

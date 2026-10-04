@@ -581,11 +581,11 @@ function tnRoot() {
     + '<input id="tnQIn" value="' + tnEsc(tnS.q) + '" oninput="tnQIn(this.value)" placeholder="搜尋任務…" style="' + tnInp + ';width:' + (tnMob() ? 130 : 170) + 'px;padding:6px 10px 6px 28px;font-size:12.5px">'
     + (tnS.q ? '<button onclick="tnS.q=\'\';tnRender()" style="position:absolute;right:6px;top:50%;transform:translateY(-50%);background:none;border:none;color:' + tnC.faint + ';cursor:pointer;padding:0;display:flex">' + tnI('x', 13) + '</button>' : '')
     + '</div>'
-    + '<button onclick="tnSetView(\'today\')" style="display:inline-flex;align-items:center;gap:6px;padding:7px 14px;border-radius:8px;border:1px solid ' + (v === 'today' ? tnC.accent : tnC.line) + ';background:' + (v === 'today' ? tnC.accent : tnWHT) + ';color:' + (v === 'today' ? '#fff' : tnC.sub) + ';font-size:13px;font-weight:600;cursor:pointer">' + tnI('home', 14) + '今日</button>'
     + '</div>';
-  // 第二行：視角分頁＋排序（排序鈕永遠佔位，切檢視零位移）
+  // 第二行：今日＋視角分頁＋排序（排序鈕永遠佔位，切檢視零位移；v4.43.9 張良「今日跟那排選項距離太遠」：今日從第一行最右移到視角切換器前面緊鄰）
   const TABS = [['group', '依大項', 'grid'], ['board', '看板', 'cols'], ['owner', '負責人', 'users'], ['list', '清單', 'list'], ['timeline', '時間軸', 'caldays'], ['gantt', '甘特', 'gantt'], ['mind', '心智圖', 'network']];
   h += '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:16px">'
+    + '<button onclick="tnSetView(\'today\')" style="display:inline-flex;align-items:center;gap:6px;padding:7px 14px;border-radius:8px;border:1px solid ' + (v === 'today' ? tnC.accent : tnC.line) + ';background:' + (v === 'today' ? tnC.accent : tnWHT) + ';color:' + (v === 'today' ? '#fff' : tnC.sub) + ';font-size:13px;font-weight:600;cursor:pointer">' + tnI('home', 14) + '今日</button>'
     + '<div style="display:inline-flex;background:' + tnC.soft + ';border:1px solid ' + tnC.line + ';border-radius:8px;padding:2px;gap:2px;flex-wrap:wrap">'
     + TABS.map(tb => '<button onclick="tnSetView(\'' + tb[0] + '\')" style="display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border-radius:6px;border:1px solid ' + (v === tb[0] ? tnC.line : 'transparent') + ';background:' + (v === tb[0] ? tnWHT : 'transparent') + ';color:' + (v === tb[0] ? tnC.text : tnC.sub) + ';font-size:13px;font-weight:' + (v === tb[0] ? 600 : 400) + ';cursor:pointer">' + tnI(tb[2], 14) + tb[1] + '</button>').join('')
     + '</div><div style="flex:1"></div>'
