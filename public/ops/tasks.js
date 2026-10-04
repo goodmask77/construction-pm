@@ -179,7 +179,7 @@ function tnPtsBadge(t) {
   const lv = tr.lv; // 0~9
   const szMode = (tnS.ptsBadge && tnS.ptsBadge.size) || 'auto';
   let fs, mh;
-  if (szMode === 'auto') { fs = 12 + (28 - 12) * lv / 9; mh = 24 + (56 - 24) * lv / 9; }
+  if (szMode === 'auto') { fs = 12 + (22 - 12) * lv / 9; mh = 24 + (44 - 24) * lv / 9; } // v1.11 auto 上限 22px＝全寬卡不被切；想更大選「特大」
   else { const M = { s: [12, 24], m: [16, 32], l: [22, 44], xl: [28, 56] }[szMode] || [16, 32]; fs = M[0]; mh = M[1]; }
   fs = Math.round(fs * 10) / 10;
   const isz = Math.round(fs * 0.85);        // 圖示隨字級
@@ -800,13 +800,14 @@ function tnCard(t, o) {
         ? 'background:#16281C;border:1.5px solid ' + tnC.green + ';border-radius:8px;padding:5px 8px;margin-bottom:5px;cursor:grab;box-shadow:0 0 0 1px rgba(61,190,108,.35),0 0 12px rgba(61,190,108,.45);'
         : 'background:transparent;border:1px dashed ' + tnC.line + ';border-radius:8px;padding:5px 8px;margin-bottom:5px;cursor:grab;opacity:.6')
       : ((function(){ const fx = tnPtsCardCss(t); return (fx ? fx.st : 'background:' + (tnTcol(t.color) || tnWHT) + ';border:1.5px solid ' + tnCBR + ';box-shadow:0 1px 3px rgba(0,0,0,.30);') + 'border-radius:8px;padding:5px 8px;margin-bottom:5px;cursor:grab;' })() + (spot ? 'opacity:.45;' : ''))) + '"' + (function(){ const fx = tnPtsCardCss(t); return fx && fx.cls ? ' class="' + fx.cls + '"' : ''; })() + '>';
+  // v1.9/v1.11 等級徽章位置可設：iconcol=卡片頂部整行靠右(預設,拿整卡寬度不被內容擠爆)、titleTop=標題上方、titleR/titleL=標題同行
+  const tnBdgC = tnPtsBadge(t);
+  const bPos = (tnS.ptsBadge && tnS.ptsBadge.pos) || 'iconcol';
+  if (tnBdgC && bPos === 'iconcol') h += '<div style="display:flex;justify-content:flex-end;margin-bottom:4px;max-width:100%;overflow:hidden">' + tnBdgC + '</div>';
   h += '<div style="display:flex;align-items:flex-start;gap:8px">';
   // 完成勾
   h += '<button onclick="event.stopPropagation();tnToggleDone(\'' + t.id + '\')" title="切換完成" style="flex-shrink:0;width:16px;height:16px;margin-top:2px;border-radius:4px;border:1px solid ' + (done ? tnC.green : tnCBR) + ';background:' + (done ? tnC.green : tnWHT) + ';display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0">' + (done ? tnI('check', 11, '#fff') : '') + '</button>';
   h += '<div style="flex:1;min-width:0">';
-  // v1.9 等級徽章位置可設（張良「徽章的位子也要讓我可以編輯」）：iconcol=右側圖示欄上方(預設)、titleTop=標題上方整條、titleR=標題同行右、titleL=標題同行左
-  const tnBdgC = tnPtsBadge(t);
-  const bPos = (tnS.ptsBadge && tnS.ptsBadge.pos) || 'iconcol';
   if (tnBdgC && bPos === 'titleTop') h += '<div style="margin:0 0 4px">' + tnBdgC + '</div>';
   // 標題（舊小 ★N 退役）；titleL/titleR＝徽章跟標題同一行；v1.11 flex-wrap＝放不下自動換行不溢出卡片（手機高等級大徽章治本）
   h += '<div style="display:flex;align-items:center;flex-wrap:wrap;gap:5px;font-size:12.5px;color:' + (done ? tnC.faint : tnC.text) + ';text-decoration:' + (done ? 'line-through' : 'none') + ';line-height:1.35;word-break:break-word">'
@@ -861,10 +862,8 @@ function tnCard(t, o) {
     h += '</div>';
   }
   h += '</div>'; // flex:1 結束
-  // v1.8 右側＝直立欄（張良「三個圖示變直立式靠右邊」＋「等級徽章出現在卡片這位子，等級越高越大」）：
-  //   上＝等級徽章（越高越大）、下＝✕/釘選/☀ 圖示直立堆疊＋負責人圈
+  // v1.11 右側＝✕/釘選/☀ 圖示直立欄＋負責人圈（iconcol 徽章已搬卡片頂部整行，不在這裡）
   h += '<div style="flex-shrink:0;display:flex;flex-direction:column;align-items:flex-end;gap:4px">';
-  if (tnBdgC && bPos === 'iconcol') h += tnBdgC; // 預設：徽章在圖示欄上方
   h += '<div style="display:flex;flex-direction:column;align-items:center;gap:3px">';
   h += '<button onclick="event.stopPropagation();tnDel(\'' + t.id + '\')" title="刪除" style="background:none;border:none;color:' + tnC.faint + ';cursor:pointer;line-height:1;padding:2px">' + tnI('x', 14) + '</button>';
   h += '<button onclick="event.stopPropagation();tnPinToggle(\'' + t.id + '\')" title="' + (t.pinned ? '取消釘選' : '釘選到最上面') + '" style="background:none;border:none;cursor:pointer;line-height:1;padding:2px;color:' + (t.pinned ? tnC.accent : tnCBR) + '">' + tnI('pin', 13, 'currentColor', t.pinned ? tnC.accent : 'none') + '</button>';
