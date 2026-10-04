@@ -2829,6 +2829,45 @@ export default async function handler(req, res) {
     if (isAdmH) outH.idLock = { rids: ((lockH || {}).rids) || [], people: Object.entries((pmH && pmH.users) || {}).map(([r9, u9]) => ({ rid: r9, name: u9.name, admin: !!u9.admin })) }
     return res.status(200).json(outH)
   }
+  // ── 📣 違規通知發送 v4.37.5（張良「通知按鈕 可選發給班表有勾編輯的主管 跟群發ABpeople」）：POST ?vionotify=K {token,to:mgrs|group,items:[{st,nm,dt,r,punch,link}]} ──
+  if (req.method === 'POST' && req.query?.vionotify) {
+    const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
+    if (!ok2 || String(req.query.vionotify) !== ok2) return res.status(403).json({ ok: false })
+    let bn9 = {}; try { bn9 = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
+    const whoN9 = await permWho(bn9.token, 'shift')
+    if (!whoN9) return res.status(403).json({ ok: false, error: permDeny() })
+    const items9 = (Array.isArray(bn9.items) ? bn9.items : []).slice(0, 8)
+    if (!items9.length) return res.status(400).json({ ok: false, error: '沒有要通知的違規' })
+    const tkN9 = (process.env.LINE_CHANNEL_ACCESS_TOKEN || '').trim()
+    if (!tkN9) return res.status(502).json({ ok: false, error: '缺 LINE token' })
+    const txt9 = `⚠️ 班表違規清單（${whoN9.name} 發送）\n` + items9.map(it => `・${String(it.st).slice(0, 2)} ${String(it.dt).slice(5)} ${String(it.nm).slice(0, 10)}：${String(it.r).slice(0, 40)}\n　${String(it.punch || '').slice(0, 60)}\n　👉 ${String(it.link || '').slice(0, 200)}`).join('\n') + `\n\n處理完請到 /prep 班表「🔴 違規」按 ✅ 處理銷案。`
+    const { logPush } = await import('./push.js')
+    const sent9 = []
+    if (bn9.to === 'group') {
+      let gid9 = ''
+      const seen9b = (await kvGet('pm_group_seen')) || {}
+      for (const [g2, gg] of Object.entries(seen9b)) if (/abpeople|ab people/i.test(gg?.name || '')) { gid9 = g2; break }
+      if (!gid9) return res.status(404).json({ ok: false, error: '找不到 ABpeople 群（DD 要先在群裡收過訊息）' })
+      const pr9 = await fetch('https://api.line.me/v2/bot/message/push', { method: 'POST', headers: { 'content-type': 'application/json', Authorization: 'Bearer ' + tkN9 }, body: JSON.stringify({ to: gid9, messages: [{ type: 'text', text: txt9 }] }) })
+      if (!pr9.ok) return res.status(502).json({ ok: false, error: 'LINE 發送失敗' })
+      try { const { groupMembers } = await import('./push.js'); await logPush(gid9, 1, '違規清單群發', await groupMembers(gid9)) } catch (_) {}
+      sent9.push('ABpeople 群')
+    } else { // mgrs＝權限表「班表・編」有勾的人（含管理者），要綁定過才有 LINE
+      const [pmN9, rosN9, bindN9] = await Promise.all([kvGet('sp_finance_pm_prep_perm'), kvGet('sp_crew_kb_roster'), kvGet('sp_finance_pm_prep_bind')])
+      const ppl9 = ((rosN9 || {}).people) || []
+      for (const [rid9, u9] of Object.entries(((pmN9 || {}).users) || {})) {
+        if (!u9.edit) continue
+        if (!u9.admin && u9.tabs && u9.tabs.shift === 0) continue // 班表編沒勾=跳過
+        let uid9 = (ppl9.find(p9 => p9.id === rid9) || {}).lineUserId
+        if (!uid9) uid9 = (Object.values((bindN9 || {}).tokens || {}).find(t9 => (t9.rid || t9.uid) === rid9) || {}).uid
+        if (!uid9) continue
+        const pr9 = await fetch('https://api.line.me/v2/bot/message/push', { method: 'POST', headers: { 'content-type': 'application/json', Authorization: 'Bearer ' + tkN9 }, body: JSON.stringify({ to: uid9, messages: [{ type: 'text', text: txt9 }] }) })
+        if (pr9.ok) { sent9.push(u9.name); await logPush(uid9, 1, '違規清單私訊') }
+      }
+      if (!sent9.length) return res.status(404).json({ ok: false, error: '找不到可通知的班表主管（要有班表編輯權＋綁定過 LINE）' })
+    }
+    return res.status(200).json({ ok: true, sent: sent9 })
+  }
   // ── ✅ 違規處理紀錄 v4.37.0（張良「負責人調整確認完才消失 不然一直提醒;處理完進紀錄留存」）：POST ?vioresset=K {token,key,op:done|undo,note} ──
   if (req.method === 'POST' && req.query?.vioresset) {
     const ok2 = (process.env.OPS_BOARD_KEY || '').trim()

@@ -228,6 +228,7 @@ async function shVioList(){
   ;(window._shRows||[]).forEach(r=>{ attBy['GD|'+r.name+'|'+r.date]={ on:r.firstIn, off:r.lastOut, h:Math.round(r.h*10)/10 } })
   const t2m9=t=>{ const z=String(t||'').split(':'); return (+z[0]||0)*60+(+z[1]||0) }
   const ruleOf = x => /班距/.test(x.r) ? 'gap' : (/>12/.test(x.r) ? 'h12' : 'run')
+  window._vioNotifyL = null // 下面渲染時填（📣 通知用）
   const punchOf = x => { // v4.37.3 純時間呈現「09:58 → 22:15＝12時18分」
     const a=attBy[x.st+'|'+x.nm+'|'+x.dt]
     if(ruleOf(x)==='gap'){
@@ -243,10 +244,11 @@ async function shVioList(){
     }
     return '—'
   }
+  window._vioNotifyL = L.map(x=>({ st:x.st, nm:x.nm, dt:x.dt, r:x.r, punch:punchOf(x), link:'https://ground-pm.vercel.app/prep#vio='+encodeURIComponent(x.st+'|'+x.nm+'|'+x.dt+'|'+(/班距/.test(x.r)?new Date(new Date(x.dt+'T00:00:00Z').getTime()-86400e3).toISOString().slice(0,10):'')) }))
   lpOverlay('vioOv',`
     <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap"><b style="font-size:17px">🔴 班表違規清單</b>
       <span class="hint">和班表上發紅光的格子一一對應；規則＝四週變形（單日12h／班距11h／連13天）</span>
-      <button class="mini" style="padding:6px 14px" onclick="document.getElementById('vioOv').remove()">關閉</button></div>
+      <span style="display:inline-flex;gap:8px">${L.length?`<button class="mini" style="padding:6px 14px;font-weight:800" onclick="shVioNotifyAsk()">📣 通知</button>`:''}<button class="mini" style="padding:6px 14px" onclick="document.getElementById('vioOv').remove()">關閉</button></span></div>
     ${L.length?`<div class="scroll" style="margin-top:10px"><table style="border-collapse:collapse;width:100%"><thead><tr><th style="padding:5px 8px;text-align:center">店</th><th style="padding:5px 8px;text-align:center">日期</th><th style="text-align:left;padding:5px 8px">夥伴</th><th style="text-align:left;padding:5px 8px">問題</th><th style="text-align:left;padding:5px 8px">打卡</th><th style="padding:5px 8px"></th></tr></thead><tbody>
       ${L.map(x=>{ const prev9 = /班距/.test(x.r) ? new Date(new Date(x.dt+'T00:00:00Z').getTime()-86400e3).toISOString().slice(0,10) : ''
         return `<tr style="border-top:1px solid var(--line)"><td style="padding:6px 8px;text-align:center;cursor:pointer" onclick="shVioGo('${x.st}','${x.nm.replace(/'/g,'')}','${x.dt}','${prev9}')">${x.st}</td><td style="padding:6px 8px;white-space:nowrap;color:var(--primary);text-decoration:underline;cursor:pointer" title="點我跳到班表這一格（金光定位）" onclick="shVioGo('${x.st}','${x.nm.replace(/'/g,'')}','${x.dt}','${prev9}')">${x.dt.slice(5)}</td><td style="padding:6px 8px;font-weight:800;cursor:pointer" onclick="shVioGo('${x.st}','${x.nm.replace(/'/g,'')}','${x.dt}','${prev9}')">${x.nm}</td><td style="padding:6px 8px;text-align:left"><div style="color:var(--red);font-weight:700">${x.r}</div><div class="hint" style="font-size:12px;margin-top:2px;cursor:pointer;text-decoration:underline dotted" title="點我看完整法條" onclick="lawArtView('${ruleOf(x)}')">${LAW_REF[ruleOf(x)].art}：${LAW_REF[ruleOf(x)].brief} ›</div></td><td style="padding:6px 8px;text-align:left;white-space:nowrap;font-family:ui-monospace,monospace;font-size:13px">${punchOf(x)}</td><td style="padding:6px 8px;white-space:nowrap;text-align:center"><button class="mini on" style="padding:3px 12px" onclick="shVioDone('${x.st}','${x.nm.replace(/'/g,'')}','${x.dt}','${x.r.replace(/'/g,'')}')">✅ 處理</button></td></tr>` }).join('')}
@@ -446,4 +448,27 @@ function lawArtView(rule){
     <div style="margin-top:6px;font-weight:800;color:var(--pdark)">${L9.brief}</div>
     <div style="margin-top:10px;background:var(--soft);border:1px solid var(--line);border-radius:10px;padding:12px 14px;font-size:14px;line-height:1.75;white-space:pre-wrap">${L9.full}</div>
     <div class="hint" style="margin-top:10px;font-size:12.5px">出處：全國法規資料庫（勞動部主管・勞動基準法）→ <a href="${L9.url}" target="_blank" style="color:var(--primary);text-decoration:underline">點我看官方最新條文</a></div>`)
+}
+
+// 📣 違規通知發送 v4.37.5（張良「可選發給班表有勾編輯的主管 或群發ABpeople」）
+function shVioNotifyAsk(){
+  const n = (window._vioNotifyL||[]).length; if (!n) return
+  const old = document.getElementById('vnOv'); if (old) old.remove()
+  const ov = document.createElement('div'); ov.id='vnOv'
+  ov.style.cssText='position:fixed;inset:0;background:rgba(10,14,22,.6);z-index:72;display:flex;align-items:center;justify-content:center;padding:16px'
+  ov.innerHTML = `<div style="background:#1C2430;border:1px solid #39434F;border-radius:14px;max-width:340px;width:100%;padding:18px" onclick="event.stopPropagation()">
+    <div style="font-weight:900;font-size:16px;margin-bottom:4px">📣 發送違規清單（${Math.min(n,8)} 筆）</div>
+    <div class="hint" style="margin-bottom:12px">內容＝問題＋打卡時間＋定位連結</div>
+    <button class="mini" style="width:100%;padding:12px;font-size:15px;margin-bottom:8px" onclick="shVioNotifySend('mgrs')">👑 私訊班表主管<div class="hint" style="font-size:11.5px;font-weight:600">權限表「班表・編」有勾的人（目前＝張良瑋、林碧昱）</div></button>
+    <button class="mini" style="width:100%;padding:12px;font-size:15px;margin-bottom:8px" onclick="shVioNotifySend('group')">📢 群發 ABpeople<div class="hint" style="font-size:11.5px;font-weight:600">全群都看得到（按群人數計費）</div></button>
+    <button class="mini" style="width:100%;padding:10px" onclick="document.getElementById('vnOv').remove()">取消</button></div>`
+  ov.onclick = () => ov.remove()
+  document.body.appendChild(ov)
+}
+async function shVioNotifySend(to){
+  const o = document.getElementById('vnOv'); if (o) o.remove()
+  lpToast('發送中…')
+  const r = await fetch('/api/mail-sync?vionotify='+encodeURIComponent(K),{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({token:TK(),to,items:(window._vioNotifyL||[]).slice(0,8)})}).then(x=>x.json()).catch(()=>null)
+  if(!r||!r.ok){ alert((r&&r.error)||'發送失敗'); return }
+  lpToast('✅ 已發送給：'+r.sent.join('、'))
 }
