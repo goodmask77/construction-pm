@@ -108,6 +108,33 @@ export async function fetchShifts(from, to) {
   return { days, staff }
 }
 
+// ── 💰 工資發放明細 v4.46.0（張良「先串好」；二道認證密碼=NUEIP_FUNCPASS）──
+// POST /Shared/validateSecondPw 解鎖薪酬模組 → payment_details/ajax（payroll=全部）
+// 個資最小化：id_no/home_address 入庫即丟；科目級明細此介面不吐（第二階段再接）
+export async function fetchPayroll(from, to) {
+  const jar = await login()
+  const ck = ckStr(jar)
+  const fp = (process.env.NUEIP_FUNCPASS || '').trim()
+  if (!fp) throw new Error('缺 NUEIP_FUNCPASS（薪酬二道認證密碼）')
+  const rv = await fetch('https://cloud.nueip.com/Shared/validateSecondPw/', { method: 'POST', body: new URLSearchParams({ SecondPw: fp }), headers: { 'content-type': 'application/x-www-form-urlencoded', cookie: ck, 'x-requested-with': 'XMLHttpRequest' } })
+  const rvj = await rv.json().catch(() => null)
+  if (!rvj || rvj.status !== 'success') throw new Error('薪酬認證密碼驗證失敗')
+  const p = { forDeptEmp: '0', work_status: '1', FLayer: '', SLayer: '', TLayer: '', payroll: '全部', date_start: from, date_end: to, displayDetail: '1', displayLeave: '1', countAvgPay: '1' }
+  const r = await fetch('https://cloud.nueip.com/salary/payment_details/ajax', { method: 'POST', body: new URLSearchParams(p), headers: { 'content-type': 'application/x-www-form-urlencoded', cookie: ck, 'x-requested-with': 'XMLHttpRequest' } })
+  const j = await r.json()
+  const nm9 = (n) => String(n || '').replace(/\s+[A-Za-z].*$/, '')
+  const leaves9 = (row) => { const o = {}; for (const [k, v] of Object.entries(row)) { const m = /^(.+)time$/.exec(k); if (m && typeof v === 'number' && v) o[m[1]] = v } ; delete o['加班']; return o }
+  const events = (j.detail || []).map(x => ({ uno: x.u_no, name: nm9(x.name), dept: (x.d_name || '').replace(/ＡＢ/g, 'AB'), title: x.title_name || '', event: x.salary_name || '', payDate: x.pay_date || '', gross: Number(x.earnings_total) || 0, net: Number(x.total) || 0, otFree: Number(x.overtimeTaxFree) || 0, otTax: Number(x.overtimeTax) || 0, otH: Number(x['加班time']) || 0, leaves: leaves9(x), ins: x.ins_setting_name || '' }))
+  const persons = {}
+  for (const t of Object.values(j.total || {})) persons[t.u_no] = { uno: t.u_no, name: nm9(t.name), months: t.month || {}, gross: Number(t.earnings_total) || 0, net: Number(t.total) || 0, avg: Number(t.avgPayroll) || 0, otH: Number(t['加班time']) || 0 }
+  return { events, persons }
+}
+export async function storePayroll(from, to) {
+  const d = await fetchPayroll(from, to)
+  const doc = { from, to, events: d.events, persons: d.persons, updatedAt: new Date().toISOString() }
+  await kvPut('sp_crew_pm_hr_pay', doc, 'NUEiP薪資同步(' + d.events.length + '筆)')
+  return { events: d.events.length, persons: Object.keys(d.persons).length }
+}
 // 班表寫月檔 sp_crew_pm_hr_sched_YYYY-MM = { days: { 日期: [列…] } }（同日整天覆蓋＝以最新為準）
 async function storeShifts(days) {
   const byMo = {}
@@ -160,6 +187,13 @@ export default async function handler(req, res) {
   try {
     const addD = (iso, n) => new Date(Date.parse(iso + 'T00:00:00Z') + n * 86400e3).toISOString().slice(0, 10)
     // 班表同步口（?shifts=1[&from&to]；預設 前7天~後35天）：/prep AB 班表的資料來源（張良 2026-10-04 拍板 NUEiP 為準）
+    if (req.query?.payroll) { // 薪資同步口（敏感=MENU_PROBE_KEY 守門）
+      const mkP = (process.env.MENU_PROBE_KEY || '').trim()
+      if (!mkP || String(req.query.payroll) !== mkP) return res.status(403).json({ ok: false })
+      const fromP = /^\d{4}-\d{2}-\d{2}$/.test(String(req.query.from || '')) ? String(req.query.from) : '2026-06-01'
+      const repP = await storePayroll(fromP, today)
+      return res.status(200).json({ ok: true, from: fromP, ...repP })
+    }
     if (req.query?.shifts) {
       const fromS = /^\d{4}-\d{2}-\d{2}$/.test(String(req.query.from || '')) ? String(req.query.from) : addD(today, -7)
       const toS = /^\d{4}-\d{2}-\d{2}$/.test(String(req.query.to || '')) ? String(req.query.to) : addD(today, 35)
@@ -189,6 +223,7 @@ export default async function handler(req, res) {
         if (hourTW >= 22) {
           // 每日收班順手同步 NUEiP 班表（前7天~後35天；改班/新增人員隔天自動跟上）
           try { const fs9 = await fetchShifts(addD(today, -7), addD(today, 35)); await storeShifts(fs9.days); if ((fs9.staff || []).length) await kvPut('sp_crew_pm_hr_staff', { names: fs9.staff, updatedAt: new Date().toISOString() }, 'NUEiP在職名單') } catch (_) {}
+          try { await storePayroll('2026-06-01', today) } catch (e) { console.log('payroll sync err', e?.message) } // v4.46.0 每日收班同步工資發放明細（發薪日後自動跟上）
           const lines = anomalies(days[today])
           if (lines.length) await push(`🕐 NUEiP 出勤異常 ${today.slice(5).replace('-', '/')}\n${lines.slice(0, 15).join('\n')}${lines.length > 15 ? `\n…共 ${lines.length} 筆` : ''}\n（詳細：夥伴中心 → 人資系統）`, 'NUEiP出勤異常')
         } else {
