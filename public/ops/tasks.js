@@ -712,9 +712,10 @@ function tnCard(t, o) {
   inn += '<div style="flex:1;min-width:0">';
   // v2.0 等級徽章＝inline 在標題右（參考檔做法；標題 flex:1 可縮、徽章 flex-shrink:0）
   const tnBdgC = tnPtsBadge(t);
-  inn += '<div style="display:flex;align-items:center;gap:6px;font-size:12.5px;color:' + (done ? tnC.faint : tnC.text) + ';text-decoration:' + (done ? 'line-through' : 'none') + ';line-height:1.35;word-break:break-word">'
-    + (t.priority === 'urgent' ? tnI('flame', 12, tnC.red) : '') + '<span style="flex:1;min-width:0;word-break:break-word">' + tnEsc(t.title) + '</span>'
-    + (tnBdgC ? '<span style="flex-shrink:0">' + tnBdgC + '</span>' : '') + '</div>';
+  // v4.49 固定卡片格式：標題行可換行＋標題保底寬度→大徽章(史詩/傳說/神話)自動掉到下一行，不再把標題擠成直書
+  inn += '<div style="display:flex;flex-wrap:wrap;align-items:center;gap:3px 6px;font-size:12.5px;color:' + (done ? tnC.faint : tnC.text) + ';text-decoration:' + (done ? 'line-through' : 'none') + ';line-height:1.35">'
+    + (t.priority === 'urgent' ? tnI('flame', 12, tnC.red) : '') + '<span style="flex:1 1 auto;min-width:60%;word-break:break-word">' + tnEsc(t.title) + '</span>'
+    + (tnBdgC ? '<span style="flex:0 0 auto;max-width:100%">' + tnBdgC + '</span>' : '') + '</div>';
   let h = inn; // 相容後面以 h 累加的程式
   // 徽章列（v1.1 卡片減脂：大項名/狀態字/標籤 chips 不上卡＝彈窗裡才看；張良「整排小字佔版面」）
   h += '<div style="display:flex;gap:4px;flex-wrap:wrap;align-items:center;margin-top:2px">';
