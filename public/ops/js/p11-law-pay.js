@@ -116,10 +116,10 @@ function payView(ym9){
   const nextPay = (()=>{ const [yy,mm]=PYM.split('-').map(Number); const d2=new Date(Date.UTC(yy,mm,10)); return d2.toISOString().slice(0,10) })()
   const truthTbl = truth.length ? `
     <div style="color:#111;font-weight:900;font-size:14px;padding:4px 0 6px">NUEiP 發薪真值・${PYM} 薪水（${truth.length} 人）</div>
-    <table style="border-collapse:collapse;width:100%"><thead><tr>
+    <table style="border-collapse:collapse;width:100%;background:#fff"><thead><tr style="background:#eef1f5">
       <th style="${TH}">店</th><th style="${TH};text-align:left">姓名</th><th style="${TH};text-align:left">發薪事件</th><th style="${TH}">發放日</th><th style="${TH}">應發</th><th style="${TH}">加班費</th><th style="${TH}">加班時數</th><th style="${TH}">實發</th></tr></thead><tbody>
-      ${truth.map(x=>`<tr><td style="${TD};text-align:center">${coOf9(x.ev)}</td><td style="${TDL};font-weight:800">${x.n}</td><td style="${TDL}">${x.ev||''}</td><td style="${TD}">${x.pd||''}</td><td style="${TD}">${nt(x.g)}</td><td style="${TD}">${nt(x.ot)}</td><td style="${TD}">${x.otH?fmtHM(x.otH*60):'—'}</td><td style="${TD};font-weight:900">${nt(x.net)}</td></tr>`).join('')}
-      <tr><td style="${TDL};font-weight:900" colspan="4">合計</td><td style="${TD};font-weight:900">${nt(truth.reduce((t,x)=>t+x.g,0))}</td><td style="${TD};font-weight:900">${nt(truth.reduce((t,x)=>t+x.ot,0))}</td><td style="${TD}"></td><td style="${TD};font-weight:900">${nt(truth.reduce((t,x)=>t+x.net,0))}</td></tr>
+      ${truth.map(x=>`<tr style="background:#fff">`+`<td style="${TD};text-align:center">${coOf9(x.ev)}</td><td style="${TDL};font-weight:800">${x.n}</td><td style="${TDL}">${x.ev||''}</td><td style="${TD}">${x.pd||''}</td><td style="${TD}">${nt(x.g)}</td><td style="${TD}">${nt(x.ot)}</td><td style="${TD}">${x.otH?fmtHM(x.otH*60):'—'}</td><td style="${TD};font-weight:900">${nt(x.net)}</td></tr>`).join('')}
+      <tr style="background:#eef1f5"><td style="${TDL};font-weight:900" colspan="4">合計</td><td style="${TD};font-weight:900">${nt(truth.reduce((t,x)=>t+x.g,0))}</td><td style="${TD};font-weight:900">${nt(truth.reduce((t,x)=>t+x.ot,0))}</td><td style="${TD}"></td><td style="${TD};font-weight:900">${nt(truth.reduce((t,x)=>t+x.net,0))}</td></tr>
     </tbody></table>
     <div style="color:#555;font-size:11px;padding:4px 0 10px">來源：NUEiP 工資發放明細（每日自動同步）；勞健保/扣款已含在實發；店別依發薪事件（AB・/GD・）。</div>` : `<div style="color:#333;font-weight:700;font-size:13px;padding:4px 0 10px">💡 ${PYM} 的薪水預計 ${nextPay} 左右發放，發了會自動出現在這裡——下表先看出勤累計。</div>`
   const prevYm = (()=>{ const [yy,mm]=PYM.split('-').map(Number); const d2=new Date(Date.UTC(yy,mm-2,1)); return d2.toISOString().slice(0,7) })()
@@ -127,9 +127,9 @@ function payView(ym9){
   const noRates = rows.length && rows.every(r=>!r.base)
   const attTbl = (!truth.length && noRates) ? `
     <div style="color:#111;font-weight:900;font-size:14px;padding:4px 0 6px">出勤累計（${PYM} 進行中・${rows.length} 人）</div>
-    <table style="border-collapse:collapse;width:100%"><thead><tr>
+    <table style="border-collapse:collapse;width:100%;background:#fff"><thead><tr style="background:#eef1f5">
       <th style="${TH}">店</th><th style="${TH};text-align:left">姓名</th><th style="${TH}">本月時數</th><th style="${TH}">加班1.34</th><th style="${TH}">加班1.67</th><th style="${TH}">上月實發（參考）</th></tr></thead><tbody>
-      ${rows.map(r=>`<tr><td style="${TD};text-align:center">${r.store}</td><td style="${TDL};font-weight:800">${r.n}</td><td style="${TD}">${fmtHM(r.o.h*60)}</td><td style="${TD}">${r.o.ot1?fmtHM(r.o.ot1*60):'—'}</td><td style="${TD}">${r.o.ot2?fmtHM(r.o.ot2*60):'—'}</td><td style="${TD}">${prevNet[r.n]!=null?nt(prevNet[r.n]):'—'}</td></tr>`).join('')}
+      ${rows.map(r=>`<tr style="background:#fff"><td style="${TD};text-align:center">${r.store}</td><td style="${TDL};font-weight:800">${r.n}</td><td style="${TD}">${fmtHM(r.o.h*60)}</td><td style="${TD}">${r.o.ot1?fmtHM(r.o.ot1*60):'—'}</td><td style="${TD}">${r.o.ot2?fmtHM(r.o.ot2*60):'—'}</td><td style="${TD}">${prevNet[r.n]!=null?nt(prevNet[r.n]):'—'}</td></tr>`).join('')}
     </tbody></table>
     <div style="color:#555;font-size:11px;padding:4px 0 10px">金額等 NUEiP 發薪後顯示真值；要先試算金額→下方「費率設定」填時薪。</div>` : ''
   const tbl=`<div id="payTblWrap" style="background:#fff;padding:14px;border-radius:10px">
@@ -137,12 +137,12 @@ function payView(ym9){
     ${truthTbl}
     ${attTbl}
     ${(rows.length&&!attTbl)?`<div style="color:#111;font-weight:900;font-size:14px;padding:4px 0 6px">${truth.length?'其餘（試算）':'工時試算'}（${rows.length} 人）</div>`:''}${PYM!==shiftYm?`<div style="color:#555;font-size:11px;padding:0 0 6px">GD 打卡試算只顯示班表目前月份（${shiftYm}）；看其他月的 GD 先用上面 ‹ › 切班表月份。</div>`:''}
-    ${attTbl?'':`<table style="border-collapse:collapse;width:100%"><thead><tr>
+    ${(attTbl||!rows.length)?'':`<table style="border-collapse:collapse;width:100%;background:#fff"><thead><tr style="background:#eef1f5">
       <th style="${TH}">店</th><th style="${TH};text-align:left">姓名</th><th style="${TH}">正常時數</th><th style="${TH}">加班1.34</th><th style="${TH}">加班1.67</th><th style="${TH}">時薪</th><th style="${TH}">本薪</th><th style="${TH}">加班費1.34</th><th style="${TH}">加班費1.67</th><th style="${TH}">加給</th><th style="${TH}">應發合計</th></tr></thead><tbody>
-    ${rows.map(r=>`<tr><td style="${TDL}">${r.store}</td><td style="${TDL};font-weight:800">${r.n}</td><td style="${TD}">${r1(r.reg)}</td><td style="${TD}">${r.o.ot1?r1(r.o.ot1):'—'}</td><td style="${TD}">${r.o.ot2?r1(r.o.ot2):'—'}</td>
+    ${rows.map(r=>`<tr style="background:#fff"><td style="${TDL}">${r.store}</td><td style="${TDL};font-weight:800">${r.n}</td><td style="${TD}">${r1(r.reg)}</td><td style="${TD}">${r.o.ot1?r1(r.o.ot1):'—'}</td><td style="${TD}">${r.o.ot2?r1(r.o.ot2):'—'}</td>
       <td style="${TD};${r.base&&r.base<LP_MIN_HOURLY?'color:#C00;font-weight:800':''}">${r.base||'未填'}</td>
       <td style="${TD}">${nt(r.basePay)}</td><td style="${TD}">${nt(r.ot1Pay)}</td><td style="${TD}">${nt(r.ot2Pay)}</td><td style="${TD}">${nt(r.allow)}</td><td style="${TD};font-weight:900">${nt(r.total)}</td></tr>`).join('')}
-    <tr><td style="${TDL};font-weight:900" colspan="6">合計（${rows.length} 人）</td><td style="${TD};font-weight:900">${nt(sum('basePay'))}</td><td style="${TD};font-weight:900">${nt(sum('ot1Pay'))}</td><td style="${TD};font-weight:900">${nt(sum('ot2Pay'))}</td><td style="${TD};font-weight:900">${nt(sum('allow'))}</td><td style="${TD};font-weight:900">${nt(sum('total'))}</td></tr>
+    <tr style="background:#eef1f5"><td style="${TDL};font-weight:900" colspan="6">合計（${rows.length} 人）</td><td style="${TD};font-weight:900">${nt(sum('basePay'))}</td><td style="${TD};font-weight:900">${nt(sum('ot1Pay'))}</td><td style="${TD};font-weight:900">${nt(sum('ot2Pay'))}</td><td style="${TD};font-weight:900">${nt(sum('allow'))}</td><td style="${TD};font-weight:900">${nt(sum('total'))}</td></tr>
     </tbody></table>`}
     <div style="color:#555;font-size:11px;padding-top:6px">本表為工時×費率自動試算，勞健保/勞退/請假扣款請由會計另計。產表：${new Date(Date.now()+8*3600e3).toISOString().slice(0,16).replace('T',' ')}</div></div>`
   const rateEd = meN?`<div style="margin-top:10px"><b>費率設定</b> <span class="hint">時薪（基本工資 2026＝196 起）／加給＝固定月加給；改完自動存、留誰改的</span>
@@ -287,7 +287,7 @@ async function shVioList(){
     <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap"><b style="font-size:17px">🔴 班表違規清單</b>
       <span class="hint">和班表上發紅光的格子一一對應；規則＝四週變形（單日12h／班距11h／連13天）</span>
       <span style="display:inline-flex;gap:8px">${L.length?`<button class="mini" style="padding:6px 14px;font-weight:800" onclick="shVioNotifyAsk()">📣 通知</button>`:''}<button class="mini" style="padding:6px 14px" onclick="document.getElementById('vioOv').remove()">關閉</button></span></div>
-    ${L.length?`<div class="scroll" style="margin-top:10px"><table style="border-collapse:collapse;width:100%"><thead><tr><th style="padding:5px 8px;text-align:center">店</th><th style="padding:5px 8px;text-align:center">日期</th><th style="text-align:left;padding:5px 8px">夥伴</th><th style="text-align:left;padding:5px 8px">問題</th><th style="text-align:left;padding:5px 8px">打卡</th><th style="padding:5px 8px;text-align:center"></th></tr></thead><tbody>
+    ${L.length?`<div class="scroll" style="margin-top:10px"><table style="border-collapse:collapse;width:100%;background:#fff"><thead><tr style="background:#eef1f5"><th style="padding:5px 8px;text-align:center">店</th><th style="padding:5px 8px;text-align:center">日期</th><th style="text-align:left;padding:5px 8px">夥伴</th><th style="text-align:left;padding:5px 8px">問題</th><th style="text-align:left;padding:5px 8px">打卡</th><th style="padding:5px 8px;text-align:center"></th></tr></thead><tbody>
       ${L.map(x=>{ const prev9 = /班距/.test(x.r) ? new Date(new Date(x.dt+'T00:00:00Z').getTime()-86400e3).toISOString().slice(0,10) : ''
         return `<tr style="border-top:1px solid var(--line)"><td style="padding:6px 8px;text-align:center;cursor:pointer" onclick="shVioGo('${x.st}','${x.nm.replace(/'/g,'')}','${x.dt}','${prev9}')">${x.st}</td><td style="padding:6px 8px;text-align:center;white-space:nowrap;color:var(--primary);text-decoration:underline;cursor:pointer" title="點我跳到班表這一格（金光定位）" onclick="shVioGo('${x.st}','${x.nm.replace(/'/g,'')}','${x.dt}','${prev9}')">${x.dt.slice(5)}</td><td style="padding:6px 8px;text-align:left;font-weight:800;cursor:pointer" onclick="shVioGo('${x.st}','${x.nm.replace(/'/g,'')}','${x.dt}','${prev9}')">${x.nm}</td><td style="padding:6px 8px;text-align:left"><div style="color:var(--red);font-weight:700">${x.r}</div><div class="hint" style="font-size:12px;margin-top:2px;cursor:pointer;text-decoration:underline dotted" title="點我看完整法條" onclick="lawArtView('${ruleOf(x)}')">${LAW_REF[ruleOf(x)].art}：${LAW_REF[ruleOf(x)].brief} ›</div></td><td style="padding:6px 8px;text-align:left;white-space:nowrap;font-family:ui-monospace,monospace;font-size:13px">${punchOf(x)}</td><td style="padding:6px 8px;white-space:nowrap;text-align:center"><button class="mini on" style="padding:3px 12px" onclick="shVioDone('${x.st}','${x.nm.replace(/'/g,'')}','${x.dt}','${x.r.replace(/'/g,'')}')">✅ 處理</button></td></tr>` }).join('')}
     </tbody></table></div><div class="hint" style="margin-top:8px">「✅ 處理」＝負責人已調整/確認過：紅光與提醒消失、進下面的留存紀錄。法條體檢 → 工具列「⚖️ 法規」。</div>`:`<div class="mut" style="margin-top:12px">沒有待處理的違規 🎉</div>`}
@@ -382,7 +382,7 @@ function abAttDraw(){
         <span style="display:flex;gap:8px;align-items:center">${vBtn}<button class="mini" style="padding:6px 14px" onclick="document.getElementById('abaOv').remove()">關閉</button></span></div>
       <div style="display:flex;gap:6px;flex-wrap:wrap;margin:10px 0">${moBtn9('all','全部')}${mos.map(m=>moBtn9(m, m.slice(2).replace('-','/'))).join('')}</div>
       <div class="hint" style="margin-bottom:6px">共 ${det.length} 筆・點夥伴名字看他一個人的整期紀錄</div>
-      <div class="scroll" style="height:66vh;overflow-y:auto"><table style="border-collapse:collapse;width:100%"><thead><tr>
+      <div class="scroll" style="height:66vh;overflow-y:auto"><table style="border-collapse:collapse;width:100%;background:#fff"><thead><tr style="background:#eef1f5">
         ${C9.map(([lb,al])=>`<th style="padding:4px 14px;text-align:${al};width:1%;white-space:nowrap">${lb}</th>`).join('')}<th></th></tr></thead><tbody>
         ${det.map(x=>`<tr style="border-top:1px solid var(--line);font-size:13px">
           ${td9(0, `${x.d.slice(5)}（${'日一二三四五六'[new Date(x.d).getDay()]}）`, 'white-space:nowrap')}
@@ -412,7 +412,7 @@ function abAttDraw(){
       <span style="display:flex;gap:8px;align-items:center">${vBtn}<button class="mini" style="padding:6px 14px" onclick="document.getElementById('abaOv').remove()">關閉</button></span></div>
     <div style="display:flex;gap:6px;flex-wrap:wrap;margin:10px 0">${moBtn('all','全部')}${mos.map(m=>moBtn(m, m.slice(2).replace('-','/'))).join('')}</div>
     <div style="display:flex;gap:14px;flex-wrap:wrap;margin-bottom:6px" class="hint">共 ${tot.days} 人日｜遲到 ${tot.late} 次｜缺卡 ${tot.miss} 次｜曠職 ${tot.abs} 次・NUEiP 打卡・點欄頭排序、點名字看逐日明細</div><!-- v4.43.8 說明併一行=det/sum 切換彈窗高不跳 -->
-    <div class="scroll" style="height:66vh;overflow-y:auto"><table style="border-collapse:collapse;width:100%"><thead><tr>
+    <div class="scroll" style="height:66vh;overflow-y:auto"><table style="border-collapse:collapse;width:100%;background:#fff"><thead><tr style="background:#eef1f5">
       <th style="padding:5px 8px;text-align:left">夥伴</th>${TH9('days','出勤天')}${TH9('h','總時數')}${TH9('avg','日均')}${TH9('late','遲到次')}${TH9('lateMin','遲到分')}${TH9('early','早退次')}${TH9('miss','缺卡')}${TH9('abs','曠職')}</tr></thead><tbody>
       ${list.map(o=>`<tr style="border-top:1px solid var(--line)">
         <td style="padding:5px 8px;font-weight:800;white-space:nowrap;cursor:pointer;text-decoration:underline dotted" title="點我看逐日明細" onclick="abAttPerson('${o.n.replace(/'/g,'')}')">${o.n}</td>
@@ -471,7 +471,7 @@ function abAttPerson(nm, keep, f){
     <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">${pmBtn('all','全部')}${mos9.map(m=>pmBtn(m, m.slice(2).replace('-','/'))).join('')}</div>
     <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;align-items:center">${fBtn('all','全部')}${fBtn('late','遲到','#E8A657')}${fBtn('miss','缺卡','var(--red)')}${fBtn('early','早退','#E8A657')}${fBtn('abs','曠職','var(--red)')}
       ${pF==='late'&&lateSum?`<span class="hint" style="font-weight:800;color:#E8A657">合計遲到 ${lateSum} 分</span>`:''}${pF!=='all'&&!all.length?`<span class="hint">這段期間沒有${fLb[pF].slice(0,2)}紀錄 🎉</span>`:''}</div>
-    <div class="scroll" style="margin-top:8px;height:66vh;overflow-y:auto"><table style="border-collapse:collapse;width:100%"><thead><tr>
+    <div class="scroll" style="margin-top:8px;height:66vh;overflow-y:auto"><table style="border-collapse:collapse;width:100%;background:#fff"><thead><tr style="background:#eef1f5">
       ${TH9('d','日期','left')}${TH9('st','狀態','left')}${TH9('w','班別','center')}${TH9('on','上班卡','center')}${TH9('off','下班卡','center')}${TH9('h','時數','right')}<th></th></tr></thead><tbody>
       ${all.map((x,i)=>{
         const wd9 = new Date(x.d).getDay()
