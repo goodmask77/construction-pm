@@ -2238,6 +2238,26 @@ export default async function handler(req, res) {
       // 1.357) 📎 入職文件上傳 v4.35.0（張良「從DD上傳檔案或照片 直接到對應的欄位」）：主管私訊「文件 姓名 文件名」→ 15分內傳照片/檔案自動歸檔私有桶
       // 1.356) 📇 名冊文字欄位直改 v4.35.2（張良「緊急聯絡人 趙以棠 0958120009 這樣DD就會自動更新資料嗎」→ 會）：
       // 「緊急聯絡人 姓名 內容」或「名冊 姓名 欄位 值」（欄位=部門/職務/到職日/生日/性別/緊急聯絡人）；主管限定、留痕
+      if (isDM && /^確認$/.test(text.trim())) { // 緊急聯絡人防呆的「確認」回覆（10分鐘內有效）
+        try {
+          const pendE2 = (await kvGetMany(['pm_emr_confirm']))['pm_emr_confirm'] || {}
+          const cE = pendE2[userId]
+          if (cE && Date.now() - cE.ts < 10 * 60e3) {
+            const docE2 = (await kvGetMany(['sp_crew_pm_hr_master']))['sp_crew_pm_hr_master'] || { rows: [] }
+            const rowE2 = (docE2.rows || []).find(r9 => r9.co === cE.co && r9.name === cE.name)
+            if (rowE2) {
+              const bE2 = rowE2.emer || '（空）'
+              rowE2.emer = cE.val
+              docE2.log = [{ by: cE.by, ts: new Date(Date.now() + 8 * 3600e3).toISOString().slice(5, 16).replace('T', ' '), what: `DD改 ${cE.name} emer(已確認)` }, ...(docE2.log || [])].slice(0, 80)
+              docE2.updatedAt = new Date().toISOString()
+              await kvSet('sp_crew_pm_hr_master', docE2)
+              delete pendE2[userId]; await kvSet('pm_emr_confirm', pendE2)
+              await send(`✅ 已更新 ${cE.name} 的緊急聯絡人：\n${bE2} → ${cE.val}`)
+              continue
+            }
+          }
+        } catch (_) {}
+      }
       const mEmrMe = isDM && text.match(/^我的緊急聯絡人\s+(.{2,40})$/) // v4.35.4 張良抓包：「緊急聯絡人 趙以棠 0958…」他本意=自己的聯絡人是趙以棠→新增「我的」版=掛發話者本人名下
       const mEmr = isDM && !mEmrMe && text.match(/^緊急聯絡人\s+(\S{2,10})\s+(.{2,40})$/)
       const mRos = isDM && text.match(/^名冊\s+(\S{2,10})\s+(部門|職務|到職日|生日|性別|緊急聯絡人)\s+(.{1,40})$/)
@@ -2283,6 +2303,14 @@ export default async function handler(req, res) {
             if (!dm9) { await send('日期格式看不懂——用 2026-09-01 這種寫法。'); continue }
             let yy9 = +dm9[1]; if (yy9 < 200) yy9 += 1911
             valQ = `${yy9}-${String(+dm9[2]).padStart(2, '0')}-${String(+dm9[3]).padStart(2, '0')}`
+          }
+          // v4.35.5 防呆（張良「他沒發現我不是趙以棠本人」）：改「別人」的緊急聯絡人、內容又只有電話（看不出聯絡人是誰）→ 先確認意圖，不直接寫
+          if (fdK === 'emer' && rowR.name !== meR && /^[\d\s\-+()]{6,}$/.test(valQ)) {
+            const pendE = (await kvGetMany(['pm_emr_confirm']))['pm_emr_confirm'] || {}
+            pendE[userId] = { co: rowR.co, name: rowR.name, val: valQ.slice(0, 60), ts: Date.now(), by: meR }
+            await kvSet('pm_emr_confirm', pendE)
+            await send(`等等，先確認一下你的意思 🤔\n\n1️⃣ 「${rowR.name} 的」緊急聯絡人＝${valQ}\n　→ 回我「確認」就改\n\n2️⃣ 「你（${meR}）的」緊急聯絡人是 ${rowR.name}（${valQ}）\n　→ 打「我的緊急聯絡人 ${rowR.name} ${valQ}」\n\n（判斷依據：你不是${rowR.name}本人，而且內容只有電話、看不出聯絡人叫什麼）`)
+            continue
           }
           const before9 = rowR[fdK] || '（空）'
           rowR[fdK] = valQ.slice(0, 60)
