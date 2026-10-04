@@ -13,10 +13,10 @@
   // ── 跟等級走的基礎尺寸（0~9；參考檔 BW/TI/BS/PD/TS/GS）──
   var BW = [1, 1, 1.5, 2, 3, 3, 4, 4, 5, 6];       // 框粗
   var TI = [0, 0, 0, .08, .12, .18, .24, .3, .36, .42]; // 底色染色強度
-  var BS = [11, 11, 12, 13, 15, 18, 21, 24, 28, 33];    // 徽章字級
+  var BS = [12, 12, 13, 14, 15, 16, 17, 19, 21, 24];    // 徽章字級（v4.47.4 收斂封頂24：原lv9=33巨型蓋住標題/逐字換行,張良「卡片爆掉」）
   var PD = [10, 10, 11, 12, 13, 14, 16, 18, 21, 24];    // 卡片內距
   var TS = [13, 13, 13, 14, 14, 15, 15, 16, 17, 18];    // 標題字級（參考用，GD 卡片自有字級）
-  var GS = [8, 10, 12, 14, 16, 20, 22, 26, 30, 36];     // 光暈大小
+  var GS = [6, 8, 10, 12, 14, 15, 17, 19, 22, 26];     // 光暈大小（v4.47.4 收斂封頂26：原lv9=36外溢到隔壁卡,張良「光暈不能擴散到隔壁」）
   var RB = '#ff5a5a,#ffb84d,#f5e642,#4de88a,#4dc3ff,#9b74ff,#ff5ad2,#ff5a5a'; // 彩虹漸層
 
   function rgba(h, a) {
@@ -95,7 +95,7 @@
     surf: function (mod, ctx) {
       if (mod === 'none' || !ctx.anim) return '';
       if (mod === 'shimmer') return '<div class="tnfxsh"></div>';
-      if (mod === 'flash') return '<div style="position:absolute;inset:0;background:#fff;animation:tnfxFla 2.6s infinite;pointer-events:none"></div>';
+      if (mod === 'flash') return '<div style="position:absolute;inset:0;background:rgba(255,255,255,.26);animation:tnfxFla 2.6s infinite;pointer-events:none"></div>';
       return '';
     },
     part: function (mod, ctx) {

@@ -1685,7 +1685,7 @@ function tnPtsFxDraw() {
         return '<button onclick="tnPtsFxMod(\'' + tid + '\',\'' + o[0] + '\')" title="' + o[1] + '" style="padding:4px;border-radius:9px;border:1.5px solid ' + (on ? tnC.accent : tnC.line) + ';background:' + (on ? tnC.accentSoft : 'transparent') + ';cursor:pointer;width:76px">' + thumb + '<div style="font-size:10px;color:' + (on ? tnC.accent : tnC.sub) + ';margin-top:3px;text-align:center">' + o[1] + '</div></button>';
       }).join('') + '</div>';
   }).join('');
-  ov.innerHTML = '<div style="background:' + tnMOD + ';border:1px solid ' + tnC.line + ';border-radius:14px;max-width:470px;width:100%;margin:auto;padding:18px" onclick="event.stopPropagation()">'
+  ov.innerHTML = '<div style="background:' + tnMOD + ';border:1px solid ' + tnC.line + ';border-radius:14px;max-width:580px;width:100%;margin:auto;padding:18px" onclick="event.stopPropagation()">'
     + '<div style="display:flex;align-items:center;gap:7px;margin-bottom:12px"><span style="color:' + tnC.amber + '">' + tnI('star', 15, tnC.amber) + '</span><span style="font-weight:800;font-size:15px;color:' + tnC.text + '">特效組合・' + tnEsc(ti.name || ('第' + (i + 1) + '級')) + '</span><div style="flex:1"></div><button onclick="document.getElementById(\'tnFxOv\').remove()" style="background:none;border:none;cursor:pointer;color:' + tnC.sub + ';padding:4px;display:flex">' + tnI('x', 16) + '</button></div>'
     + preview + tplRow + tracks
     + '<button onclick="tnPtsFxReset()" style="margin-top:4px;padding:8px 13px;border:1px solid ' + tnC.line + ';border-radius:8px;background:transparent;color:' + tnC.sub + ';cursor:pointer;font-size:12.5px">還原這級預設</button>'
