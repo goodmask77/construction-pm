@@ -552,10 +552,10 @@ function todayRender(){
   const myN = (lb && lb.me && lb.me.name) || null
   const mine = (x) => !myN || x.claimBy === myN
   const openIss = ((lb||{}).issues||[]).filter(x=>x.status!=='done')
-  openIss.filter(mine).filter(x=>x.due && (x.due.includes(md)||x.due.includes(today)||/今天|今日/.test(x.due))).forEach(x=>rows.push({ic:'⏰',tx:`任務排今天：${x.text||'（附件）'}${x.claimBy?`（${x.claimBy}）`:''}`,go:"taskLoad()"}))
-  openIss.filter(mine).filter(x=>x.flag && !(x.due&&(x.due.includes(md)||x.due.includes(today)))).forEach(x=>rows.push({ic:'🚩',tx:`重點任務：${x.text||'（附件）'}${x.claimBy?`（${x.claimBy}）`:''}`,go:"taskLoad()"}))
+  openIss.filter(mine).filter(x=>x.due && (x.due.includes(md)||x.due.includes(today)||/今天|今日/.test(x.due))).forEach(x=>rows.push({ic:'⏰',tx:`任務排今天：${x.text||'（附件）'}${x.claimBy?`（${x.claimBy}）`:''}`,go:"taskEmbed()"}))
+  openIss.filter(mine).filter(x=>x.flag && !(x.due&&(x.due.includes(md)||x.due.includes(today)))).forEach(x=>rows.push({ic:'🚩',tx:`重點任務：${x.text||'（附件）'}${x.claimBy?`（${x.claimBy}）`:''}`,go:"taskEmbed()"}))
   const pendPub = openIss.filter(x=>x.pub==='pending').length
-  if (pendPub && lb && lb.me) rows.push({ic:'🕐',tx:`${pendPub} 筆回報等確認發布`,go:"taskLoad()"})
+  if (pendPub && lb && lb.me) rows.push({ic:'🕐',tx:`${pendPub} 筆回報等確認發布`,go:"taskEmbed()"})
   const inbound = ((buy||{}).list||[]).filter(x=>x.status==='bought'||x.status==='done')
   inbound.forEach(x=>rows.push({ic:'📦',tx:`待收貨：${x.text||'（附件）'}${x.doneBy?`（${x.doneBy}買的）`:''}——收到請拍照確認`,go:"buyLoad()"}))
   const shToday = ((sh||{}).sched||[]).filter(x=>x.date===today)

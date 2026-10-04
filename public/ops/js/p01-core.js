@@ -52,7 +52,7 @@ function taskEmbed(){ // v4.38.0 任務中心原生版（張良「直接原生�
   app.innerHTML = ''
 }
 function goView(){
-  if (curStore === 'task') taskLoad()
+  if (curStore === 'task' || curStore === 'taskx') taskEmbed() // v4.41.5 舊task路徑一律導新任務中心（審計：殘留入口會開到舊資料域看板）
   else if (curStore === 'lb') loadLB()
   else if (curStore === 'food' || curStore === 'pack') invLoad(curStore)
   else if (curStore === 'buy') buyLoad()
