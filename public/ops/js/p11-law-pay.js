@@ -223,3 +223,67 @@ function shVioList(){
       ${L.map(x=>`<tr style="border-top:1px solid var(--line)"><td style="padding:6px 8px;text-align:center">${x.st}</td><td style="padding:6px 8px;white-space:nowrap">${x.dt.slice(5)}</td><td style="padding:6px 8px;font-weight:800">${x.nm}</td><td style="padding:6px 8px;color:var(--red);font-weight:700">${x.r}</td></tr>`).join('')}
     </tbody></table></div><div class="hint" style="margin-top:8px">想看法條層面的整體體檢 → 工具列「⚖️ 法規」。</div>`:`<div class="mut" style="margin-top:12px">目前已載入的班表沒有違規 🎉</div>`}`)
 }
+
+// ── 🕐 AB 出勤總覽 v4.36.0（張良「6/1起所有打卡紀錄,看出遲到/沒打卡,每人總紀錄,像營業額那樣好查」）──
+let abaMo = 'all', abaSort = { k: 'late', dir: -1 }
+async function abAttView(){
+  if (!window._abaD) {
+    lpOverlay('abaOv', '<div class="hint" style="padding:20px">讀取 6 月起全部打卡紀錄中…</div>')
+    const r = await fetch('/api/mail-sync?abatt=' + encodeURIComponent(K) + '&me=' + encodeURIComponent(TK()) + '&from=2026-06').then(x=>x.json()).catch(()=>null)
+    if (!r || !r.ok) { lpOverlay('abaOv', `<div style="padding:16px">🔒 ${(r&&r.error)||'讀不到出勤資料'}</div>`); return }
+    window._abaD = r.rows
+  }
+  abAttDraw()
+}
+function abAttDraw(){
+  const all = window._abaD || []
+  const mos = [...new Set(all.map(x=>x.d.slice(0,7)))].sort()
+  const rows = all.filter(x => abaMo==='all' || x.d.startsWith(abaMo))
+  // 每人彙總
+  const per = {}
+  rows.forEach(x=>{ const o = per[x.n] = per[x.n] || { n:x.n, days:0, h:0, late:0, lateMin:0, early:0, miss:0, abs:0 }
+    if (x.h>0 || x.on) o.days++
+    o.h += x.h; if (x.late>0){ o.late++; o.lateMin += x.late } if (x.early>0) o.early++; if (x.miss) o.miss++; if (x.abs) o.abs++ })
+  let list = Object.values(per).map(o=>({ ...o, h: Math.round(o.h*10)/10, avg: o.days? Math.round(o.h/o.days*10)/10 : 0 }))
+  const k = abaSort.k
+  list.sort((a,b)=>((a[k]||0)-(b[k]||0))*abaSort.dir || b.h-a.h)
+  const arrow9 = kk => `<span style="display:inline-block;width:12px;font-size:10px;text-align:center">${abaSort.k===kk?(abaSort.dir>0?'▲':'▼'):''}</span>`
+  const TH9 = (kk,lb)=>`<th style="padding:5px 8px;text-align:right;cursor:pointer;white-space:nowrap;user-select:none" onclick="abaSort=abaSort.k==='${kk}'?{k:'${kk}',dir:-abaSort.dir}:{k:'${kk}',dir:-1};abAttDraw()">${lb}${arrow9(kk)}</th>`
+  const moBtn = (v,lb)=>`<button class="mini${abaMo===v?' on':''}" style="padding:4px 12px;font-weight:800" onclick="abaMo='${v}';abAttDraw()">${lb}</button>`
+  const tot = { days: list.reduce((t,o)=>t+o.days,0), late: list.reduce((t,o)=>t+o.late,0), miss: list.reduce((t,o)=>t+o.miss,0), abs: list.reduce((t,o)=>t+o.abs,0) }
+  lpOverlay('abaOv', `
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap"><b style="font-size:17px">🕐 A Beach 出勤總覽</b>
+      <span class="hint">NUEiP 打卡・6/1 起已回補｜點欄頭排序、點名字看逐日明細</span>
+      <button class="mini" style="padding:6px 14px" onclick="document.getElementById('abaOv').remove()">關閉</button></div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin:10px 0">${moBtn('all','全部')}${mos.map(m=>moBtn(m, m.slice(2).replace('-','/'))).join('')}</div>
+    <div style="display:flex;gap:14px;flex-wrap:wrap;margin-bottom:8px" class="hint">共 ${tot.days} 人日｜遲到 ${tot.late} 次｜缺卡 ${tot.miss} 次｜曠職 ${tot.abs} 次</div>
+    <div class="scroll"><table style="border-collapse:collapse;width:100%"><thead><tr>
+      <th style="padding:5px 8px;text-align:left">夥伴</th>${TH9('days','出勤天')}${TH9('h','總時數')}${TH9('avg','日均')}${TH9('late','遲到次')}${TH9('lateMin','遲到分')}${TH9('early','早退次')}${TH9('miss','缺卡')}${TH9('abs','曠職')}</tr></thead><tbody>
+      ${list.map(o=>`<tr style="border-top:1px solid var(--line)">
+        <td style="padding:5px 8px;font-weight:800;white-space:nowrap;cursor:pointer;text-decoration:underline dotted" title="點我看逐日明細" onclick="abAttPerson('${o.n.replace(/'/g,'')}')">${o.n}</td>
+        <td style="padding:5px 8px;text-align:right">${o.days}</td><td style="padding:5px 8px;text-align:right;font-weight:700">${o.h}</td><td style="padding:5px 8px;text-align:right" class="hint">${o.avg}</td>
+        <td style="padding:5px 8px;text-align:right;${o.late?'color:#E8A657;font-weight:800':''}">${o.late||'—'}</td>
+        <td style="padding:5px 8px;text-align:right;${o.lateMin?'color:#E8A657':''}">${o.lateMin||'—'}</td>
+        <td style="padding:5px 8px;text-align:right;${o.early?'color:#E8A657':''}">${o.early||'—'}</td>
+        <td style="padding:5px 8px;text-align:right;${o.miss?'color:var(--red);font-weight:800':''}">${o.miss||'—'}</td>
+        <td style="padding:5px 8px;text-align:right;${o.abs?'color:var(--red);font-weight:900':''}">${o.abs||'—'}</td></tr>`).join('')}
+    </tbody></table></div>
+    <div class="hint" style="margin-top:8px">補卡紀錄 NUEiP 匯出沒帶旗標，先以「缺卡」欄代位；時數=NUEiP 核定工時。</div>`)
+}
+function abAttPerson(nm){
+  const all = (window._abaD||[]).filter(x=>x.n===nm && (abaMo==='all' || x.d.startsWith(abaMo))).sort((a,b)=>a.d<b.d?1:-1)
+  const stTx = x => [x.abs?'<b style="color:var(--red)">曠職</b>':'', x.miss?'<b style="color:var(--red)">缺卡</b>':'', x.late>0?`<b style="color:#E8A657">遲到${x.late}分</b>`:'', x.early>0?`<b style="color:#E8A657">早退${x.early}分</b>`:''].filter(Boolean).join('、') || '<span style="color:var(--green)">✓</span>'
+  lpOverlay('abaPOv', `
+    <div style="display:flex;justify-content:space-between;align-items:center"><b style="font-size:16.5px">🕐 ${nm}・逐日打卡（${abaMo==='all'?'全部':abaMo}）</b>
+      <button class="mini" style="padding:6px 14px" onclick="document.getElementById('abaPOv').remove()">關閉</button></div>
+    <div class="scroll" style="margin-top:8px"><table style="border-collapse:collapse;width:100%"><thead><tr>
+      <th style="padding:4px 8px;text-align:left">日期</th><th style="padding:4px 8px">班別</th><th style="padding:4px 8px">上班卡</th><th style="padding:4px 8px">下班卡</th><th style="padding:4px 8px;text-align:right">時數</th><th style="padding:4px 8px;text-align:left">狀態</th></tr></thead><tbody>
+      ${all.map(x=>`<tr style="border-top:1px solid var(--line);font-size:13px">
+        <td style="padding:4px 8px;white-space:nowrap">${x.d.slice(5)}（${'日一二三四五六'[new Date(x.d).getDay()]}）</td>
+        <td style="padding:4px 8px;text-align:center">${x.w||'—'}</td>
+        <td style="padding:4px 8px;text-align:center;${!x.on&&!x.abs?'color:var(--red)':''}">${x.on||'—'}</td>
+        <td style="padding:4px 8px;text-align:center">${x.off||'—'}</td>
+        <td style="padding:4px 8px;text-align:right;font-weight:700">${x.h||'—'}</td>
+        <td style="padding:4px 8px;text-align:left">${stTx(x)}</td></tr>`).join('')}
+    </tbody></table></div>`)
+}

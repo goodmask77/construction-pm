@@ -2819,6 +2819,28 @@ export default async function handler(req, res) {
     if (isAdmH) outH.idLock = { rids: ((lockH || {}).rids) || [], people: Object.entries((pmH && pmH.users) || {}).map(([r9, u9]) => ({ rid: r9, name: u9.name, admin: !!u9.admin })) }
     return res.status(200).json(outH)
   }
+  // ── 🕐 AB 出勤總覽 v4.36.0（張良「6/1起所有人打卡紀錄,看出遲到/沒打卡,像營業額那樣好查」）：?abatt=K&me=&from=YYYY-MM；主管限定 ──
+  if (req.query?.abatt) {
+    const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
+    if (!ok2 || String(req.query.abatt) !== ok2) return res.status(403).json({ ok: false })
+    const [whoA9, defA9] = await Promise.all([sopWho(req.query.me), kvGet('sp_finance_pm_sop_def')])
+    const aprA9 = (((defA9 || {}).ground || {}).approvers || ['張良瑋'])
+    if (!whoA9 || !(aprA9.includes(whoA9.name) || whoA9.name === '張良瑋' || whoA9.role === '主管')) return res.status(403).json({ ok: false, error: '出勤紀錄主管限定' })
+    const fromA = /^\d{4}-\d{2}$/.test(String(req.query.from || '')) ? String(req.query.from) : '2026-06'
+    const mos = []; { let [y9, m9] = fromA.split('-').map(Number); const now9 = new Date(Date.now() + 8 * 3600e3); while (y9 < now9.getUTCFullYear() || (y9 === now9.getUTCFullYear() && m9 <= now9.getUTCMonth() + 1)) { mos.push(y9 + '-' + String(m9).padStart(2, '0')); if (++m9 > 12) { m9 = 1; y9++ } } }
+    const docs9 = await Promise.all(mos.map(m9 => kvGet('sp_crew_pm_hr_att_' + m9)))
+    const outA = []
+    for (const ad of docs9) {
+      for (const [dt9, users9] of Object.entries((ad || {}).days || {})) {
+        for (const rec9 of Object.values(users9)) {
+          if (!/AB/.test(rec9.dept || '')) continue
+          outA.push({ d: dt9, n: String(rec9.name || '').replace(/\s+[A-Za-z].*$/, ''), w: rec9.work || '', on: (rec9.on || [])[0] || '', off: (rec9.off || []).slice(-1)[0] || '', h: Math.round(((Number(rec9.durmin) || 0) / 60) * 10) / 10, late: rec9.late || 0, early: rec9.early || 0, miss: rec9.miss || 0, abs: rec9.absent || 0 })
+        }
+      }
+    }
+    res.setHeader('Cache-Control', 's-maxage=300, stale-while-revalidate=1800')
+    return res.status(200).json({ ok: true, from: fromA, rows: outA })
+  }
   // ── 📎 入職文件 v4.35.0（張良「體檢要能直接上傳檔案給勞檢稽核；一般入職文件列出來做在夥伴名冊」）──
   // 標準清單（台灣餐飲業）：勞動契約/身分證影本/存摺影本/體檢報告/大頭照/緊急聯絡人/勞健保加保/衛生教育訓練/未成年法代同意書
   // 檔案一律進私有桶 ground-private（個資），看檔=5分鐘簽名網址；上傳=頁面或 LINE 私訊 DD「文件 姓名 文件名」+照片/檔案
