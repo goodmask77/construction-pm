@@ -390,7 +390,19 @@ function abAttPerson(nm, keep){
   if (!keep) window._abaPSort = { k:'d', dir:-1 }
   window._abaPN = nm
   const so = window._abaPSort
-  const all = (window._abaD||[]).filter(x=>x.n===nm && (abaMo==='all' || x.d.startsWith(abaMo)))
+  let all = (window._abaD||[]).filter(x=>x.n===nm && (abaMo==='all' || x.d.startsWith(abaMo)))
+  // v4.38.1 張良「每一天都要顯示 才知道哪天休假」：日期連續補滿，沒紀錄的那天=休
+  if (all.length && so.k==='d') {
+    const have = new Set(all.map(x=>x.d))
+    const today9 = new Date(Date.now()+8*3600e3).toISOString().slice(0,10)
+    const d0 = all.map(x=>x.d).sort()[0]
+    let dEnd = all.map(x=>x.d).sort().slice(-1)[0]; if (dEnd < today9 && (abaMo==='all' || today9.startsWith(abaMo))) dEnd = today9
+    for (let t9=new Date(d0+'T00:00:00Z'); ; t9=new Date(t9.getTime()+86400e3)) {
+      const ds9 = t9.toISOString().slice(0,10)
+      if (ds9 > dEnd) break
+      if (!have.has(ds9)) all.push({ d: ds9, n: nm, rest: 1 })
+    }
+  } else if (so.k!=='d') all = all.filter(x=>!x.rest)
   const sev = x => (x.abs?100:0)+(x.miss?50:0)+(x.late>0?10+x.late/1000:0)+(x.early>0?5:0)
   all.sort((a,b)=>{ const k=so.k
     let va = k==='st'?sev(a):(a[k]??''), vb = k==='st'?sev(b):(b[k]??'')
@@ -405,13 +417,19 @@ function abAttPerson(nm, keep){
       <button class="mini" style="padding:6px 14px" onclick="document.getElementById('abaPOv').remove()">關閉</button></div>
     <div class="scroll" style="margin-top:8px"><table style="border-collapse:collapse;width:100%"><thead><tr>
       ${TH9('d','日期','left')}${TH9('w','班別','center')}${TH9('on','上班卡','center')}${TH9('off','下班卡','center')}${TH9('h','時數','right')}${TH9('st','狀態','left')}</tr></thead><tbody>
-      ${all.map(x=>`<tr style="border-top:1px solid var(--line);font-size:13px">
-        <td style="padding:4px 8px;text-align:left;white-space:nowrap">${x.d.slice(5)}（${'日一二三四五六'[new Date(x.d).getDay()]}）</td>
+      ${all.map((x,i)=>{
+        const wd9 = new Date(x.d).getDay()
+        const wkSep = so.k==='d' && i>0 && wd9===(so.dir<0?0:1) ? 'border-top:3px solid #3A4456;' : '' // 每週分隔線（照排序方向在週一切）
+        if (x.rest) return `<tr style="${wkSep}border-top:${wkSep?'3px solid #3A4456':'1px solid var(--line)'};font-size:13px;opacity:.5">
+          <td style="padding:4px 8px;text-align:left;white-space:nowrap">${x.d.slice(5)}（${'日一二三四五六'[wd9]}）</td>
+          <td style="padding:4px 8px;text-align:center" class="hint">休</td><td style="padding:4px 8px;text-align:center">—</td><td style="padding:4px 8px;text-align:center">—</td><td style="padding:4px 8px;text-align:right">—</td><td style="padding:4px 8px"></td></tr>`
+        return `<tr style="${wkSep}${wkSep?'':'border-top:1px solid var(--line);'}font-size:13px">
+        <td style="padding:4px 8px;text-align:left;white-space:nowrap">${x.d.slice(5)}（${'日一二三四五六'[wd9]}）</td>
         <td style="padding:4px 8px;text-align:center;white-space:nowrap">${x.w||'—'}</td>
         <td style="padding:4px 8px;text-align:center;${!x.on&&!x.abs?'color:var(--red)':''}">${x.on||'—'}</td>
         <td style="padding:4px 8px;text-align:center">${x.off||'—'}</td>
-        <td style="padding:4px 8px;text-align:right;font-weight:700">${x.h||'—'}</td>
-        <td style="padding:4px 8px;text-align:left">${stTx(x)}</td></tr>`).join('')}
+        <td style="padding:4px 8px;text-align:right;font-weight:700">${x.h?fmtHM(x.h*60):'—'}</td>
+        <td style="padding:4px 8px;text-align:left">${stTx(x)}</td></tr>` }).join('')}
     </tbody></table></div>`)
 }
 
