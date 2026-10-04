@@ -343,15 +343,15 @@ function abAttDraw(){
       <div style="display:flex;gap:6px;flex-wrap:wrap;margin:10px 0">${moBtn9('all','全部')}${mos.map(m=>moBtn9(m, m.slice(2).replace('-','/'))).join('')}</div>
       <div class="hint" style="margin-bottom:6px">共 ${det.length} 筆・點夥伴名字看他一個人的整期紀錄</div>
       <div class="scroll" style="max-height:66vh;overflow-y:auto"><table style="border-collapse:collapse;width:100%"><thead><tr>
-        <th style="padding:4px 8px;text-align:left">日期</th><th style="padding:4px 8px;text-align:left">夥伴</th><th style="padding:4px 8px;text-align:center">班別</th><th style="padding:4px 8px;text-align:center">上班卡</th><th style="padding:4px 8px;text-align:center">下班卡</th><th style="padding:4px 8px;text-align:right">時數</th><th style="padding:4px 8px;text-align:left">狀態</th></tr></thead><tbody>
+        <th style="padding:4px 8px;text-align:left">日期</th><th style="padding:4px 8px;text-align:left">夥伴</th><th style="padding:4px 8px;text-align:left">狀態</th><th style="padding:4px 8px;text-align:center">班別</th><th style="padding:4px 8px;text-align:center">上班卡</th><th style="padding:4px 8px;text-align:center">下班卡</th><th style="padding:4px 8px;text-align:right">時數</th></tr></thead><tbody>
         ${det.map(x=>`<tr style="border-top:1px solid var(--line);font-size:13px">
           <td style="padding:4px 8px;white-space:nowrap">${x.d.slice(5)}（${'日一二三四五六'[new Date(x.d).getDay()]}）</td>
           <td style="padding:4px 8px;font-weight:800;white-space:nowrap;cursor:pointer;text-decoration:underline dotted" onclick="abAttPerson('${x.n.replace(/'/g,'')}')">${x.n}</td>
+          <td style="padding:4px 8px;text-align:left;white-space:nowrap">${stT9(x)}</td>
           <td style="padding:4px 8px;text-align:center">${x.w||'—'}</td>
           <td style="padding:4px 8px;text-align:center;${!x.on&&!x.abs?'color:var(--red)':''}">${x.on||'—'}</td>
           <td style="padding:4px 8px;text-align:center">${x.off||'—'}</td>
-          <td style="padding:4px 8px;text-align:right;font-weight:700">${x.h||'—'}</td>
-          <td style="padding:4px 8px;text-align:left">${stT9(x)}</td></tr>`).join('')}
+          <td style="padding:4px 8px;text-align:right;font-weight:700">${x.h||'—'}</td></tr>`).join('')}
       </tbody></table></div>`)
     return
   }
@@ -378,25 +378,36 @@ function abAttDraw(){
       ${list.map(o=>`<tr style="border-top:1px solid var(--line)">
         <td style="padding:5px 8px;font-weight:800;white-space:nowrap;cursor:pointer;text-decoration:underline dotted" title="點我看逐日明細" onclick="abAttPerson('${o.n.replace(/'/g,'')}')">${o.n}</td>
         <td style="padding:5px 8px;text-align:right">${o.days}</td><td style="padding:5px 8px;text-align:right;font-weight:700">${o.h}</td><td style="padding:5px 8px;text-align:right" class="hint">${o.avg}</td>
-        <td style="padding:5px 8px;text-align:right;${o.late?'color:#E8A657;font-weight:800':''}">${o.late||'—'}</td>
-        <td style="padding:5px 8px;text-align:right;${o.lateMin?'color:#E8A657':''}">${o.lateMin||'—'}</td>
-        <td style="padding:5px 8px;text-align:right;${o.early?'color:#E8A657':''}">${o.early||'—'}</td>
-        <td style="padding:5px 8px;text-align:right;${o.miss?'color:var(--red);font-weight:800':''}">${o.miss||'—'}</td>
-        <td style="padding:5px 8px;text-align:right;${o.abs?'color:var(--red);font-weight:900':''}">${o.abs||'—'}</td></tr>`).join('')}
+        <td style="padding:5px 8px;text-align:right;${o.late?'color:#E8A657;font-weight:800;cursor:pointer;text-decoration:underline dotted':''}"${o.late?` title="點我看遲到彙整" onclick="abAttPerson('${o.n.replace(/'/g,'')}',0,'late')"`:''}>${o.late||'—'}</td>
+        <td style="padding:5px 8px;text-align:right;${o.lateMin?'color:#E8A657;cursor:pointer;text-decoration:underline dotted':''}"${o.lateMin?` title="點我看遲到彙整" onclick="abAttPerson('${o.n.replace(/'/g,'')}',0,'late')"`:''}>${o.lateMin||'—'}</td>
+        <td style="padding:5px 8px;text-align:right;${o.early?'color:#E8A657;cursor:pointer;text-decoration:underline dotted':''}"${o.early?` title="點我看早退彙整" onclick="abAttPerson('${o.n.replace(/'/g,'')}',0,'early')"`:''}>${o.early||'—'}</td>
+        <td style="padding:5px 8px;text-align:right;${o.miss?'color:var(--red);font-weight:800;cursor:pointer;text-decoration:underline dotted':''}"${o.miss?` title="點我看缺卡彙整" onclick="abAttPerson('${o.n.replace(/'/g,'')}',0,'miss')"`:''}>${o.miss||'—'}</td>
+        <td style="padding:5px 8px;text-align:right;${o.abs?'color:var(--red);font-weight:900;cursor:pointer;text-decoration:underline dotted':''}"${o.abs?` title="點我看曠職彙整" onclick="abAttPerson('${o.n.replace(/'/g,'')}',0,'abs')"`:''}>${o.abs||'—'}</td></tr>`).join('')}
     </tbody></table></div>
     <div class="hint" style="margin-top:8px">補卡紀錄 NUEiP 匯出沒帶旗標，先以「缺卡」欄代位；時數=NUEiP 核定工時。</div>`)
 }
-function abAttPerson(nm, keep){
-  if (!keep) window._abaPSort = { k:'d', dir:-1 }
+function abAttPerson(nm, keep, f){
+  // v4.43.4（張良三則）：①狀態欄移日期後②視圖內建月份鈕=不用跳出去切③遲到/缺卡/早退/曠職彙整鈕=只列事件日(黃字數字點進來也是這)
+  if (!keep) { window._abaPSort = { k:'d', dir:-1 }; window._abaPMo = abaMo; window._abaPF = f || 'all' }
+  if (f) window._abaPF = f
   window._abaPN = nm
-  const so = window._abaPSort
-  let all = (window._abaD||[]).filter(x=>x.n===nm && (abaMo==='all' || x.d.startsWith(abaMo)))
-  // v4.38.1 張良「每一天都要顯示 才知道哪天休假」：日期連續補滿，沒紀錄的那天=休
-  if (all.length && so.k==='d') {
+  const so = window._abaPSort, pMo = window._abaPMo || 'all', pF = window._abaPF || 'all'
+  const nmE = nm.replace(/'/g,'')
+  const mine = (window._abaD||[]).filter(x=>x.n===nm)
+  const mos9 = [...new Set(mine.map(x=>x.d.slice(0,7)))].sort()
+  let all = mine.filter(x=> pMo==='all' || x.d.startsWith(pMo))
+  const cnt9 = { late: all.filter(x=>x.late>0).length, miss: all.filter(x=>x.miss).length, early: all.filter(x=>x.early>0).length, abs: all.filter(x=>x.abs).length }
+  const lateSum = all.reduce((t,x)=>t+(x.late>0?x.late:0),0)
+  if (pF==='late') all = all.filter(x=>x.late>0)
+  else if (pF==='miss') all = all.filter(x=>x.miss)
+  else if (pF==='early') all = all.filter(x=>x.early>0)
+  else if (pF==='abs') all = all.filter(x=>x.abs)
+  // v4.38.1 張良「每一天都要顯示 才知道哪天休假」：日期連續補滿，沒紀錄的那天=休（彙整模式只列事件日不補）
+  if (pF==='all' && all.length && so.k==='d') {
     const have = new Set(all.map(x=>x.d))
     const today9 = new Date(Date.now()+8*3600e3).toISOString().slice(0,10)
     const d0 = all.map(x=>x.d).sort()[0]
-    let dEnd = all.map(x=>x.d).sort().slice(-1)[0]; if (dEnd < today9 && (abaMo==='all' || today9.startsWith(abaMo))) dEnd = today9
+    let dEnd = all.map(x=>x.d).sort().slice(-1)[0]; if (dEnd < today9 && (pMo==='all' || today9.startsWith(pMo))) dEnd = today9
     for (let t9=new Date(d0+'T00:00:00Z'); ; t9=new Date(t9.getTime()+86400e3)) {
       const ds9 = t9.toISOString().slice(0,10)
       if (ds9 > dEnd) break
@@ -411,25 +422,31 @@ function abAttPerson(nm, keep){
   const stTx = x => [x.abs?'<b style="color:var(--red)">曠職</b>':'', x.miss?'<b style="color:var(--red)">缺卡</b>':'', x.late>0?`<b style="color:#E8A657">遲到${x.late}分</b>`:'', x.early>0?`<b style="color:#E8A657">早退${x.early}分</b>`:''].filter(Boolean).join('、') || '<span style="color:var(--green)">✓</span>'
   // v4.37.2 張良「資料要對齊欄位名稱 所有欄位都要可排序」：th/td 同對齊、每欄可點排序
   const ar9 = k => `<span style="display:inline-block;width:12px;font-size:10px;text-align:center">${so.k===k?(so.dir>0?'▲':'▼'):''}</span>`
-  const TH9 = (k,lb,al)=>`<th style="padding:4px 8px;text-align:${al};cursor:pointer;white-space:nowrap;user-select:none" onclick="window._abaPSort=window._abaPSort.k==='${k}'?{k:'${k}',dir:-window._abaPSort.dir}:{k:'${k}',dir:${k==='d'?-1:1}};abAttPerson('${nm.replace(/'/g,'')}',1)">${lb}${ar9(k)}</th>`
+  const TH9 = (k,lb,al)=>`<th style="padding:4px 8px;text-align:${al};cursor:pointer;white-space:nowrap;user-select:none" onclick="window._abaPSort=window._abaPSort.k==='${k}'?{k:'${k}',dir:-window._abaPSort.dir}:{k:'${k}',dir:${k==='d'?-1:1}};abAttPerson('${nmE}',1)">${lb}${ar9(k)}</th>`
+  const pmBtn = (v,lb)=>`<button class="mini${pMo===v?' on':''}" style="padding:4px 12px;font-weight:800" onclick="window._abaPMo='${v}';abAttPerson('${nmE}',1)">${lb}</button>`
+  const fBtn = (v,lb,c9)=>`<button class="mini${pF===v?' on':''}" style="padding:4px 12px;font-weight:800${pF!==v&&v!=='all'&&cnt9[v]?';color:'+c9:''}" onclick="window._abaPF='${v}';abAttPerson('${nmE}',1)">${lb}${v!=='all'?` ${cnt9[v]||0}`:''}</button>`
+  const fLb = { late:'遲到彙整', miss:'缺卡彙整', early:'早退彙整', abs:'曠職彙整' }
   lpOverlay('abaPOv', `
-    <div style="display:flex;justify-content:space-between;align-items:center"><b style="font-size:16.5px">🕐 ${nm}・逐日打卡（${abaMo==='all'?'全部':abaMo}）</b>
+    <div style="display:flex;justify-content:space-between;align-items:center"><b style="font-size:16.5px">🕐 ${nm}・${pF==='all'?'逐日打卡':fLb[pF]}（${pMo==='all'?'全部':pMo}）</b>
       <button class="mini" style="padding:6px 14px" onclick="document.getElementById('abaPOv').remove()">關閉</button></div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">${pmBtn('all','全部')}${mos9.map(m=>pmBtn(m, m.slice(2).replace('-','/'))).join('')}</div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;align-items:center">${fBtn('all','全部')}${fBtn('late','遲到','#E8A657')}${fBtn('miss','缺卡','var(--red)')}${fBtn('early','早退','#E8A657')}${fBtn('abs','曠職','var(--red)')}
+      ${pF==='late'&&lateSum?`<span class="hint" style="font-weight:800;color:#E8A657">合計遲到 ${lateSum} 分</span>`:''}${pF!=='all'&&!all.length?`<span class="hint">這段期間沒有${fLb[pF].slice(0,2)}紀錄 🎉</span>`:''}</div>
     <div class="scroll" style="margin-top:8px"><table style="border-collapse:collapse;width:100%"><thead><tr>
-      ${TH9('d','日期','left')}${TH9('w','班別','center')}${TH9('on','上班卡','center')}${TH9('off','下班卡','center')}${TH9('h','時數','right')}${TH9('st','狀態','left')}</tr></thead><tbody>
+      ${TH9('d','日期','left')}${TH9('st','狀態','left')}${TH9('w','班別','center')}${TH9('on','上班卡','center')}${TH9('off','下班卡','center')}${TH9('h','時數','right')}</tr></thead><tbody>
       ${all.map((x,i)=>{
         const wd9 = new Date(x.d).getDay()
-        const wkSep = so.k==='d' && i>0 && wd9===(so.dir<0?0:1) ? 'border-top:3px solid #3A4456;' : '' // 每週分隔線（照排序方向在週一切）
+        const wkSep = so.k==='d' && pF==='all' && i>0 && wd9===(so.dir<0?0:1) ? 'border-top:3px solid #3A4456;' : '' // 每週分隔線（照排序方向在週一切）
         if (x.rest) return `<tr style="${wkSep}border-top:${wkSep?'3px solid #3A4456':'1px solid var(--line)'};font-size:13px;opacity:.5">
           <td style="padding:4px 8px;text-align:left;white-space:nowrap">${x.d.slice(5)}（${'日一二三四五六'[wd9]}）</td>
-          <td style="padding:4px 8px;text-align:center" class="hint">休</td><td style="padding:4px 8px;text-align:center">—</td><td style="padding:4px 8px;text-align:center">—</td><td style="padding:4px 8px;text-align:right">—</td><td style="padding:4px 8px"></td></tr>`
+          <td style="padding:4px 8px"></td><td style="padding:4px 8px;text-align:center" class="hint">休</td><td style="padding:4px 8px;text-align:center">—</td><td style="padding:4px 8px;text-align:center">—</td><td style="padding:4px 8px;text-align:right">—</td></tr>`
         return `<tr style="${wkSep}${wkSep?'':'border-top:1px solid var(--line);'}font-size:13px">
         <td style="padding:4px 8px;text-align:left;white-space:nowrap">${x.d.slice(5)}（${'日一二三四五六'[wd9]}）</td>
+        <td style="padding:4px 8px;text-align:left;white-space:nowrap">${stTx(x)}</td>
         <td style="padding:4px 8px;text-align:center;white-space:nowrap">${x.w||'—'}</td>
         <td style="padding:4px 8px;text-align:center;${!x.on&&!x.abs?'color:var(--red)':''}">${x.on||'—'}</td>
         <td style="padding:4px 8px;text-align:center">${x.off||'—'}</td>
-        <td style="padding:4px 8px;text-align:right;font-weight:700">${x.h?fmtHM(x.h*60):'—'}</td>
-        <td style="padding:4px 8px;text-align:left">${stTx(x)}</td></tr>` }).join('')}
+        <td style="padding:4px 8px;text-align:right;font-weight:700">${x.h?fmtHM(x.h*60):'—'}</td></tr>` }).join('')}
     </tbody></table></div>`)
 }
 
