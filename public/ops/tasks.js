@@ -97,48 +97,99 @@ function tnTier(pts) { // 回 {i, name, fx, lv} ；pts<=0 回 null；lv＝特效
   hit.lv = Math.min(hit.i, 9);
   return hit;
 }
-/* v1.7 卡片特效十級漸進（張良）：強度看級距「順位」（第幾級，不是分數）、顏色一律吃該級 tier.color；
-   L1 素卡→L2 淡染→L3 細框→L4 粗框→L5 粗框+微光→L6 強光→L7 大光暈→L8 雙層光暈呼吸→
-   L9 金屬質感強光呼吸→L10 彩虹流動邊框+大光暈；動畫全走共用 CSS class（不逐卡 JS 動畫）、
-   prefers-reduced-motion 自動降級（見下方 style 注入）。done 不給特效。 */
+/* v1.8 特效全可編（張良）：每級 tier.fx 可自訂 6 參數＝卡片色/框色/框粗細/卡片光/框光/閃動方式；
+   沒設 tier.fx 就用「預設十級階梯」（素卡→淡染→細框→粗框→微光→強光→大光暈→呼吸→金屬呼吸→彩虹流動）。
+   tnFxResolve＝把某級的「生效特效」補成完整 6 參數（打開編輯器看到目前值、改一項不用全填）。done 不給特效。 */
+const TN_GLOW = [null, '0 0 7px ', '0 0 15px 2px ', '0 0 28px 7px ', '0 0 44px 13px ']; // 卡片光 0~4
+const TN_RING = [null, '0 0 0 1px ', '0 0 0 2px ', '0 0 0 2px #RING,0 0 11px 1px ', '0 0 0 3px #RING,0 0 18px 3px ']; // 框光 0~4
+// 預設十級階梯（以級距「順位 i」給；c＝該級代表色）：bg/bd 用 'auto' 代表吃 c、''＝無、'same'＝同卡片色
+function tnFxDefault(i) {
+  const D = [
+    { bg: '', bd: '', bw: 0, cg: 0, bg2: 0, anim: 'none' },       // L1 素卡
+    { bg: 'auto', bd: '', bw: 1.5, cg: 0, bg2: 0, anim: 'none' }, // L2 淡染（預設灰框）
+    { bg: 'auto', bd: 'same', bw: 1, cg: 0, bg2: 0, anim: 'none' },   // L3 細框
+    { bg: 'auto', bd: 'same', bw: 2.5, cg: 0, bg2: 0, anim: 'none' }, // L4 粗框
+    { bg: 'auto', bd: 'same', bw: 2.5, cg: 0, bg2: 1, anim: 'none' }, // L5 微光（框光）
+    { bg: 'auto', bd: 'same', bw: 2.5, cg: 2, bg2: 0, anim: 'none' }, // L6 強光
+    { bg: 'auto', bd: 'same', bw: 2.5, cg: 3, bg2: 0, anim: 'none' }, // L7 大光暈
+    { bg: 'auto', bd: 'same', bw: 2.5, cg: 2, bg2: 0, anim: 'breathe' }, // L8 雙層呼吸
+    { bg: 'metal', bd: 'same', bw: 2.5, cg: 3, bg2: 0, anim: 'breathe' },// L9 金屬呼吸
+    { bg: 'auto', bd: 'same', bw: 2.5, cg: 3, bg2: 0, anim: 'rainbow' }, // L10 彩虹流動
+  ];
+  return Object.assign({}, D[Math.min(Math.max(0, i), D.length - 1)]);
+}
+function tnFxResolve(ti, i) { // 回完整 6 參數：tier.fx 有就用、缺的欄位補預設階梯
+  const def = tnFxDefault(i);
+  const f = (ti && ti.fx) || {};
+  return {
+    bg: f.bg !== undefined ? f.bg : def.bg,
+    bd: f.bd !== undefined ? f.bd : def.bd,
+    bw: f.bw !== undefined ? f.bw : def.bw,
+    cg: f.cg !== undefined ? f.cg : def.cg,
+    bg2: f.bg2 !== undefined ? f.bg2 : def.bg2,
+    anim: f.anim !== undefined ? f.anim : def.anim,
+  };
+}
 function tnPtsCardCss(t) {
   const tr = tnTier(t.pts); if (!tr || t.status === 'done') return null;
-  const lv = tr.lv + 1; // 1~10
-  const c = tr.fx.c, bg = tr.fx.bg, rb = tr.fx.rb;
-  const sh = 'box-shadow:0 1px 3px rgba(0,0,0,.30);'; // 素底陰影（低級距沿用普通卡）
-  if (lv <= 1) return null; // L1 無特效＝走預設素卡樣式
-  if (lv === 2) return { st: 'background:' + bg + ';border:1.5px solid ' + tnCBR + ';' + sh, cls: '' };
-  if (lv === 3) return { st: 'background:' + bg + ';border:1px solid ' + c + ';' + sh, cls: '' };
-  if (lv === 4) return { st: 'background:' + bg + ';border:2.5px solid ' + c + ';' + sh, cls: '' };
-  if (lv === 5) return { st: 'background:' + bg + ';border:2.5px solid ' + c + ';box-shadow:0 0 7px ' + tnRgba(c, .5) + ';', cls: '' };
-  if (lv === 6) return { st: 'background:' + bg + ';border:2.5px solid ' + c + ';box-shadow:0 0 14px 2px ' + tnRgba(c, .65) + ';', cls: '' };
-  if (lv === 7) return { st: 'background:' + bg + ';border:2.5px solid ' + c + ';box-shadow:0 0 26px 7px ' + tnRgba(c, .55) + ';', cls: '' };
-  if (lv === 8) return { st: 'background:' + bg + ';border:2.5px solid ' + c + ';--tnA:' + tnRgba(c, .85) + ';--tnB:' + tnRgba(c, .35) + ';', cls: 'tnFx8' };
-  if (lv === 9) return { st: 'background:linear-gradient(135deg,' + tnRgba(c, .2) + ',rgba(255,255,255,.06),' + tnRgba(c, .2) + ');border:2.5px solid ' + c + ';--tnA:' + tnRgba(c, .9) + ';--tnB:' + tnRgba(c, .4) + ';', cls: 'tnFx9' };
-  // L10 神話：彩虹流動邊框（透明 border＋雙層背景，border-box 那層跑 background-position）＋大光暈；
-  // tier.color 改成單色＝同色系流動漸層退化版
-  const grad = rb ? tnRBG : 'linear-gradient(90deg,' + c + ',' + tnRgba(c, .35) + ',' + c + ',' + tnRgba(c, .35) + ',' + c + ')';
-  const glow = rb ? 'rgba(192,132,252,.45)' : tnRgba(c, .55);
-  return { st: 'border:2.5px solid transparent;background:linear-gradient(' + tnWHT + ',' + tnWHT + ') padding-box,' + grad + ' border-box;background-size:100% 100%,300% 100%;box-shadow:0 0 28px 8px ' + glow + ',0 0 10px 2px rgba(255,255,255,.2);', cls: 'tnFx10' };
+  const ti = tnTiers()[tr.i] || {};
+  const rbCol = String(ti.color || '').trim() === 'rainbow';
+  const c = tr.fx.c; // 代表色（彩虹→紫代表色）
+  const f = tnFxResolve(ti, tr.i);
+  // 卡片底色：auto＝吃 c 淡染、metal＝金屬斜向漸層、hex＝自訂淡染、''＝素底
+  let bgCss;
+  if (f.bg === 'metal') bgCss = 'linear-gradient(135deg,' + tnRgba(c, .2) + ',rgba(255,255,255,.06),' + tnRgba(c, .2) + ')';
+  else if (f.bg === 'auto') bgCss = tnRgba(c, .13);
+  else if (/^#/.test(f.bg)) bgCss = tnRgba(f.bg, .16);
+  else bgCss = tnWHT;
+  const anim = f.anim || 'none';
+  // 彩虹流動 / 單色流動：透明 border + border-box 漸層跑動（最浮誇）
+  if (anim === 'rainbow' || anim === 'flow') {
+    const useRb = anim === 'rainbow' || rbCol;
+    const grad = useRb ? tnRBG : 'linear-gradient(90deg,' + c + ',' + tnRgba(c, .35) + ',' + c + ',' + tnRgba(c, .35) + ',' + c + ')';
+    const glow = useRb ? 'rgba(192,132,252,.45)' : tnRgba(c, .55);
+    const bw = f.bw || 2.5;
+    return { st: 'border:' + bw + 'px solid transparent;background:linear-gradient(' + tnWHT + ',' + tnWHT + ') padding-box,' + grad + ' border-box;background-size:100% 100%,300% 100%;box-shadow:0 0 28px 8px ' + glow + ',0 0 10px 2px rgba(255,255,255,.2);', cls: 'tnFx10' };
+  }
+  // 一般：底色＋框（粗細/顏色）＋卡片光＋框光；呼吸/閃爍走 CSS class
+  const bdCol = f.bd === 'same' ? c : (/^#/.test(f.bd) ? f.bd : tnCBR);
+  const border = f.bw > 0 ? f.bw + 'px solid ' + bdCol : 'none';
+  const shadows = [];
+  if (f.cg > 0 && TN_GLOW[f.cg]) shadows.push(TN_GLOW[f.cg] + tnRgba(c, .6));
+  if (f.bg2 > 0 && TN_RING[f.bg2]) shadows.push(TN_RING[f.bg2].replace(/#RING/g, tnRgba(c, .5)) + tnRgba(c, .6));
+  if (!shadows.length) shadows.push('0 1px 3px rgba(0,0,0,.30)');
+  let cls = '';
+  if (anim === 'breathe') { cls = 'tnFx8'; }
+  else if (anim === 'blink') { cls = 'tnFxBl'; }
+  const vars = (anim === 'breathe') ? '--tnA:' + tnRgba(c, .85) + ';--tnB:' + tnRgba(c, .35) + ';' : '';
+  // L1 素卡（無框無光無底無動）＝回 null 走預設卡
+  if (f.bw === 0 && f.cg === 0 && f.bg2 === 0 && anim === 'none' && (f.bg === '' )) return null;
+  return { st: 'background:' + bgCss + ';border:' + border + ';box-shadow:' + shadows.join(',') + ';' + vars, cls: cls };
 }
 /* v1.7 等級徽章（張良「要讓看到的人覺得很爽」）：「稀有 ★10」大顆粗體、tier.color 上色；
    彩虹級＝漸層底深色字；0分/沒設分＝tnTier 回 null＝整顆不出現；舊小 ★N 退役 */
 function tnPtsBadge(t) {
   const tr = tnTier(t.pts); if (!tr) return '';
   const fx = tr.fx;
-  const base = 'display:inline-flex;align-items:center;gap:3px;font-size:11.5px;font-weight:900;letter-spacing:.4px;padding:2px 9px;border-radius:999px;white-space:nowrap;';
+  // v1.8 等級越高徽章越大（張良「讓看到的人覺得很爽」）：順位 0~9 → 字級 10.5→16px、padding 同步放大
+  const lv = tr.lv; // 0~9
+  const fs = (10.5 + lv * 0.65).toFixed(1); // 10.5 → 16.4
+  const py = (1.5 + lv * 0.35).toFixed(1), px = (7 + lv * 0.9).toFixed(1);
+  const isz = Math.round(10 + lv * 0.7);
+  const base = 'display:inline-flex;align-items:center;gap:3px;font-size:' + fs + 'px;font-weight:900;letter-spacing:.4px;padding:' + py + 'px ' + px + 'px;border-radius:999px;white-space:nowrap;';
   if (fx.rb) return '<span title="' + tnEsc(tr.name) + '・' + t.pts + ' 分" style="' + base + 'background:' + tnRBG + ';color:#10151C">' + tnEsc(tr.name) + ' ★' + t.pts + '</span>';
-  return '<span title="' + tnEsc(tr.name) + '・' + t.pts + ' 分" style="' + base + 'border:1px solid ' + fx.c + ';background:' + tnRgba(fx.c, .14) + ';color:' + fx.c + '">' + tnI('star', 11, fx.c, fx.c) + tnEsc(tr.name) + ' ★' + t.pts + '</span>';
+  return '<span title="' + tnEsc(tr.name) + '・' + t.pts + ' 分" style="' + base + 'border:1px solid ' + fx.c + ';background:' + tnRgba(fx.c, .14) + ';color:' + fx.c + '">' + tnI('star', isz, fx.c, fx.c) + tnEsc(tr.name) + ' ★' + t.pts + '</span>';
 }
-// v1.7 特效動畫共用 class：L8/L9 呼吸吃 --tnA/--tnB 自訂屬性（跟著 tier.color 走）、L10 流動邊框；
-// prefers-reduced-motion＝動畫全關（靜態框光仍在）；同畫面多張發光卡共用 class＝瀏覽器合成一次，效能不炸
+// v1.8 特效動畫共用 class：呼吸(tnFx8)吃 --tnA/--tnB、閃爍(tnFxBl)、流動邊框(tnFx10)；
+// prefers-reduced-motion＝動畫全關（靜態框光仍在）；同畫面多張共用 class＝瀏覽器合成一次，效能不炸
 (function(){ const st = document.createElement('style'); st.textContent =
   '@keyframes tnFxB{0%,100%{box-shadow:0 0 8px 2px var(--tnB),0 0 18px 6px var(--tnB)}50%{box-shadow:0 0 14px 3px var(--tnA),0 0 34px 12px var(--tnB)}}'
   + '.tnFx8{animation:tnFxB 1.8s ease-in-out infinite}'
-  + '.tnFx9{animation:tnFxB 1.4s ease-in-out infinite}'
+  + '@keyframes tnFxBlink{0%,100%{opacity:1}50%{opacity:.4}}'
+  + '.tnFxBl{animation:tnFxBlink 1s ease-in-out infinite}'
   + '@keyframes tnFxRB{0%{background-position:0 0,0% 50%}100%{background-position:0 0,300% 50%}}'
   + '.tnFx10{animation:tnFxRB 3.5s linear infinite}'
-  + '@media (prefers-reduced-motion:reduce){.tnFx8,.tnFx9,.tnFx10{animation:none}}';
+  + '@media (prefers-reduced-motion:reduce){.tnFx8,.tnFxBl,.tnFx10{animation:none}}';
 document.head.appendChild(st); })();
 const tnVIVID = { '#fef2f2': '#EF4444', '#fff7ed': '#F59E0B', '#fefce8': '#EAB308', '#f0fdf4': '#22C55E', '#eff6ff': '#3B82F6', '#faf5ff': '#A855F7', '#f5f5f5': '#9CA3AF' }; // 色盤圓點用鮮豔原色＝一眼分得出；存進資料的值不變(主App同組)
 const tnTcol = (c) => (c ? (tnDARKMAP[String(c).toLowerCase()] || c) : '');
@@ -744,9 +795,7 @@ function tnCard(t, o) {
   // 完成勾
   h += '<button onclick="event.stopPropagation();tnToggleDone(\'' + t.id + '\')" title="切換完成" style="flex-shrink:0;width:16px;height:16px;margin-top:2px;border-radius:4px;border:1px solid ' + (done ? tnC.green : tnCBR) + ';background:' + (done ? tnC.green : tnWHT) + ';display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0">' + (done ? tnI('check', 11, '#fff') : '') + '</button>';
   h += '<div style="flex:1;min-width:0">';
-  // v1.7 等級徽章「稀有 ★10」掛標題上方靠右（右上角）；0分/沒設＝tnPtsBadge 回空字串整列不出現
-  const tnBdg = tnPtsBadge(t);
-  if (tnBdg) h += '<div style="display:flex;justify-content:flex-end;margin:0 0 3px">' + tnBdg + '</div>';
+  // v1.8 等級徽章搬到右側圖示欄（下方），這裡不再畫
   // 標題（舊小 ★N 退役）
   h += '<div style="display:flex;align-items:center;gap:4px;font-size:12.5px;color:' + (done ? tnC.faint : tnC.text) + ';text-decoration:' + (done ? 'line-through' : 'none') + ';line-height:1.35;word-break:break-word">'
     + (t.priority === 'urgent' ? tnI('flame', 12, tnC.red) : '') + tnEsc(t.title) + '</div>';
@@ -777,9 +826,8 @@ function tnCard(t, o) {
       h += '<button onclick="event.stopPropagation();tnApprove(\'' + t.id + '\')" style="display:inline-flex;align-items:center;gap:3px;border:1px solid ' + tnC.green + ';background:#16281C;color:' + tnC.green + ';border-radius:999px;padding:0 8px;font-size:10.5px;font-weight:700;cursor:pointer">' + tnI('check', 10, tnC.green) + '通過</button>';
       h += '<button onclick="event.stopPropagation();tnReject(\'' + t.id + '\')" style="display:inline-flex;align-items:center;gap:3px;border:1px solid ' + tnC.red + ';background:#2A181A;color:' + tnC.red + ';border-radius:999px;padding:0 8px;font-size:10.5px;font-weight:700;cursor:pointer">' + tnI('x', 10, tnC.red) + '退回</button>';
     }
-  } else if (!done) {
-    h += '<button onclick="event.stopPropagation();tnFinish(\'' + t.id + '\')" title="自己建的直接完成；別人建的會送建立者過目" style="display:inline-flex;align-items:center;gap:3px;border:1px solid ' + tnC.green + ';background:#16281C;color:' + tnC.green + ';border-radius:999px;padding:0 8px;font-size:10.5px;font-weight:700;cursor:pointer">' + tnI('check', 10, tnC.green) + '完成</button>';
   }
+  // v1.8 卡片上綠色「完成」鈕移除（張良「左上勾選＝完成，綠色完成不要出現」）＝改用左上勾選框；詳情彈窗右下完成鈕保留
   // v1.2 確認收到鈕（張良「對方看到→按下去即時私訊任務建立者」）：我是負責人＋別人建的＋沒確認過＋未完成
   if (!done && !t.ack && tnS.me && t.owner === tnS.me && t.createdBy !== tnS.me) {
     h += '<button onclick="event.stopPropagation();tnAck(\'' + t.id + '\')" title="告訴建立者你看到這張任務了" style="display:inline-flex;align-items:center;gap:3px;border:1px solid ' + tnC.accent + ';background:' + tnC.accentSoft + ';color:' + tnC.accent + ';border-radius:999px;padding:0 8px;font-size:10.5px;font-weight:700;cursor:pointer">' + tnI('check', 10, tnC.accent) + '確認收到</button>';
@@ -799,14 +847,20 @@ function tnCard(t, o) {
     h += '</div>';
   }
   h += '</div>'; // flex:1 結束
-  // 右側小鈕：☀今天必處理 / 釘選 / 負責人圈 / 刪除
+  // v1.8 右側＝直立欄（張良「三個圖示變直立式靠右邊」＋「等級徽章出現在卡片這位子，等級越高越大」）：
+  //   上＝等級徽章（越高越大）、下＝✕/釘選/☀ 圖示直立堆疊＋負責人圈
+  h += '<div style="flex-shrink:0;display:flex;flex-direction:column;align-items:flex-end;gap:4px">';
+  const tnBdg = tnPtsBadge(t);
+  if (tnBdg) h += tnBdg;
+  h += '<div style="display:flex;flex-direction:column;align-items:center;gap:3px">';
+  h += '<button onclick="event.stopPropagation();tnDel(\'' + t.id + '\')" title="刪除" style="background:none;border:none;color:' + tnC.faint + ';cursor:pointer;line-height:1;padding:2px">' + tnI('x', 14) + '</button>';
+  h += '<button onclick="event.stopPropagation();tnPinToggle(\'' + t.id + '\')" title="' + (t.pinned ? '取消釘選' : '釘選到最上面') + '" style="background:none;border:none;cursor:pointer;line-height:1;padding:2px;color:' + (t.pinned ? tnC.accent : tnCBR) + '">' + tnI('pin', 13, 'currentColor', t.pinned ? tnC.accent : 'none') + '</button>';
   if (!done) {
     const isToday = t.due === tnToday();
-    h += '<button onclick="event.stopPropagation();tnSunToggle(\'' + t.id + '\')" title="' + (isToday ? '退出今天必處理' : '設為今天必處理') + '" style="flex-shrink:0;background:none;border:none;cursor:pointer;line-height:1;padding:2px;color:' + (isToday ? tnC.red : tnCBR) + '">' + tnI('sun', 13, isToday ? tnC.red : 'currentColor') + '</button>';
+    h += '<button onclick="event.stopPropagation();tnSunToggle(\'' + t.id + '\')" title="' + (isToday ? '退出今天必處理' : '設為今天必處理') + '" style="background:none;border:none;cursor:pointer;line-height:1;padding:2px;color:' + (isToday ? tnC.red : tnCBR) + '">' + tnI('sun', 13, isToday ? tnC.red : 'currentColor') + '</button>';
   }
-  h += '<button onclick="event.stopPropagation();tnPinToggle(\'' + t.id + '\')" title="' + (t.pinned ? '取消釘選' : '釘選到最上面') + '" style="flex-shrink:0;background:none;border:none;cursor:pointer;line-height:1;padding:2px;color:' + (t.pinned ? tnC.accent : tnCBR) + '">' + tnI('pin', 13, 'currentColor', t.pinned ? tnC.accent : 'none') + '</button>';
-  if (t.owner) h += '<span title="負責人：' + tnEsc(t.owner) + '" style="flex-shrink:0;width:20px;height:20px;border-radius:50%;background:' + tnC.accentSoft + ';color:' + tnC.accent + ';font-size:10px;font-weight:600;display:flex;align-items:center;justify-content:center;white-space:nowrap;overflow:hidden">' + tnEsc(t.owner.slice(0, 2)) + '</span>';
-  h += '<button onclick="event.stopPropagation();tnDel(\'' + t.id + '\')" title="刪除" style="flex-shrink:0;background:none;border:none;color:' + tnC.faint + ';cursor:pointer;line-height:1;padding:2px">' + tnI('x', 14) + '</button>';
+  if (t.owner) h += '<span title="負責人：' + tnEsc(t.owner) + '" style="width:20px;height:20px;border-radius:50%;background:' + tnC.accentSoft + ';color:' + tnC.accent + ';font-size:10px;font-weight:600;display:flex;align-items:center;justify-content:center;white-space:nowrap;overflow:hidden">' + tnEsc(t.owner.slice(0, 2)) + '</span>';
+  h += '</div></div>';
   h += '</div></div>';
   return h;
 }
@@ -1560,6 +1614,7 @@ function tnPtsCfgDraw(){
       + '<input value="' + (ti.name||'') + '" placeholder="級名" onchange="window._tnPT[' + i + '].name=this.value.trim()" style="width:64px;padding:7px;border:1px solid ' + tnC.line + ';border-radius:8px;background:transparent;color:' + tnC.text + ';font-weight:800">'
       + '<input inputmode="numeric" value="' + (ti.min||0) + '" onchange="window._tnPT[' + i + '].min=Math.max(0,Number(this.value)||0)" style="width:50px;padding:7px;border:1px solid ' + tnC.line + ';border-radius:8px;background:transparent;color:' + tnC.text + ';text-align:center" title="起始分">'
       + '<input value="' + (ti.desc||'') + '" placeholder="說明" onchange="window._tnPT[' + i + '].desc=this.value.trim()" style="flex:1;min-width:0;padding:7px;border:1px solid ' + tnC.line + ';border-radius:8px;background:transparent;color:' + tnC.sub + ';font-size:12.5px">'
+      + '<button onclick="tnPtsFxEdit(' + i + ')" title="這一級的特效（卡片色/框色/框粗細/卡片光/框光/閃動）" style="flex-shrink:0;padding:6px 9px;border:1px solid ' + (ti.fx ? tnC.accent : tnC.line) + ';border-radius:8px;background:transparent;color:' + (ti.fx ? tnC.accent : tnC.sub) + ';cursor:pointer">' + tnI('star', 13, ti.fx ? tnC.accent : 'currentColor') + '</button>'
       + '<button onclick="window._tnPT.splice(' + i + ',1);tnPtsCfgDraw()" style="padding:6px 9px;border:1px solid ' + tnC.line + ';border-radius:8px;background:transparent;color:' + tnC.red + ';cursor:pointer">✕</button></div>'; }).join('')
     + '</div>'
     + '<button onclick="window._tnPT.push({name:\'\',min:0,desc:\'\'});tnPtsCfgDraw()" style="padding:7px 14px;border:1px dashed ' + tnC.line + ';border-radius:8px;background:transparent;color:' + tnC.sub + ';cursor:pointer">＋ 新增級距</button>'
@@ -1577,6 +1632,52 @@ function tnPtsCfgDraw(){
       } });
     }
   } catch (_) {}
+}
+/* v1.8 單級特效編輯（張良「卡片色/框色/框粗細/卡片光/框光/閃動方式都可編」）：
+   獨立浮層蓋在級距編輯器上，改 window._tnPT[i].fx；關掉回級距編輯器（底下還開著），一起按儲存才寫庫 */
+function tnPtsFxEdit(i) {
+  window._tnFxI = i;
+  tnPtsFxDraw();
+}
+function tnPtsFxSet(key, val) {
+  const i = window._tnFxI; const L = window._tnPT; if (!L || !L[i]) return;
+  const cur = tnFxResolve(L[i], i); // 先補成完整 6 參數＝改一項不用全填
+  cur[key] = val;
+  L[i].fx = cur;
+  tnPtsFxDraw();
+}
+function tnPtsFxReset() {
+  const i = window._tnFxI; if (window._tnPT && window._tnPT[i]) delete window._tnPT[i].fx;
+  tnPtsFxDraw();
+}
+function tnPtsFxDraw() {
+  const i = window._tnFxI; const L = window._tnPT; if (!L || !L[i]) return;
+  const ti = L[i]; const f = tnFxResolve(ti, i);
+  const old = document.getElementById('tnFxOv'); if (old) old.remove();
+  const ov = document.createElement('div'); ov.id = 'tnFxOv';
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:950;display:flex;align-items:center;justify-content:center;padding:16px';
+  // 分段選擇器：opts=[[值,標籤],…]
+  const seg = (key, cur, opts) => '<div style="display:flex;flex-wrap:wrap;gap:5px">' + opts.map(function(o){
+    const on = String(cur) === String(o[0]);
+    return '<button onclick="tnPtsFxSet(\'' + key + '\',' + (typeof o[0] === 'number' ? o[0] : '\'' + o[0] + '\'') + ')" style="padding:6px 11px;border-radius:7px;border:1px solid ' + (on ? tnC.accent : tnC.line) + ';background:' + (on ? tnC.accentSoft : 'transparent') + ';color:' + (on ? tnC.accent : tnC.sub) + ';font-size:12.5px;font-weight:' + (on ? 700 : 400) + ';cursor:pointer">' + o[1] + '</button>';
+  }).join('') + '</div>';
+  const row = (label, body) => '<div style="margin-bottom:12px"><div style="font-size:11px;letter-spacing:.5px;color:' + tnC.faint + ';font-weight:600;margin-bottom:5px">' + label + '</div>' + body + '</div>';
+  const bgHex = /^#/.test(f.bg) ? f.bg : '#4DA3FF';
+  const bdHex = /^#/.test(f.bd) ? f.bd : '#4DA3FF';
+  ov.innerHTML = '<div style="background:' + tnMOD + ';border:1px solid ' + tnC.line + ';border-radius:14px;max-width:400px;width:100%;max-height:86vh;overflow:auto;padding:18px" onclick="event.stopPropagation()">'
+    + '<div style="display:flex;align-items:center;gap:7px;margin-bottom:12px"><span style="color:' + tnC.amber + '">' + tnI('star', 15, tnC.amber) + '</span><span style="font-weight:800;font-size:15px;color:' + tnC.text + '">特效・' + tnEsc(ti.name || ('第' + (i + 1) + '級')) + '</span><div style="flex:1"></div><button onclick="document.getElementById(\'tnFxOv\').remove()" style="background:none;border:none;cursor:pointer;color:' + tnC.sub + ';padding:4px;display:flex">' + tnI('x', 16) + '</button></div>'
+    + row('卡片色', seg('bg', f.bg, [['', '無'], ['auto', '跟等級色']]) + '<div style="margin-top:5px;display:inline-flex;align-items:center;gap:6px"><input type="color" value="' + bgHex + '" onchange="tnPtsFxSet(\'bg\',this.value)" style="width:30px;height:26px;border:1px solid ' + tnC.line + ';border-radius:6px;background:transparent;cursor:pointer"><span style="font-size:12px;color:' + (/^#/.test(f.bg) ? tnC.accent : tnC.faint) + '">自訂' + (/^#/.test(f.bg) ? '：' + f.bg : '') + '</span></div>')
+    + row('框色', seg('bd', f.bd, [['', '無'], ['same', '跟卡片/等級色']]) + '<div style="margin-top:5px;display:inline-flex;align-items:center;gap:6px"><input type="color" value="' + bdHex + '" onchange="tnPtsFxSet(\'bd\',this.value)" style="width:30px;height:26px;border:1px solid ' + tnC.line + ';border-radius:6px;background:transparent;cursor:pointer"><span style="font-size:12px;color:' + (/^#/.test(f.bd) ? tnC.accent : tnC.faint) + '">自訂' + (/^#/.test(f.bd) ? '：' + f.bd : '') + '</span></div>')
+    + row('框粗細', seg('bw', f.bw, [[0, '無'], [1, '細'], [1.5, '中'], [2.5, '粗'], [4, '很粗'], [6, '超粗']]))
+    + row('卡片光（整卡外光暈）', seg('cg', f.cg, [[0, '無'], [1, '微'], [2, '中'], [3, '強'], [4, '超強']]))
+    + row('框光（描邊光暈）', seg('bg2', f.bg2, [[0, '無'], [1, '微'], [2, '中'], [3, '強'], [4, '超強']]))
+    + row('閃動方式', seg('anim', f.anim, [['none', '無'], ['breathe', '呼吸'], ['blink', '閃爍'], ['flow', '流動'], ['rainbow', '彩虹流動']]))
+    + '<div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px">'
+    + '<button onclick="tnPtsFxReset()" style="padding:8px 12px;border:1px solid ' + tnC.line + ';border-radius:8px;background:transparent;color:' + tnC.sub + ';cursor:pointer;font-size:12.5px">還原預設</button>'
+    + '<button onclick="document.getElementById(\'tnFxOv\').remove()" style="padding:8px 18px;border:none;border-radius:8px;background:' + tnC.accent + ';color:#fff;font-weight:700;cursor:pointer">完成</button></div>'
+    + '<div style="font-size:11px;color:' + tnC.faint + ';margin-top:8px">改完記得回上一層按「✓ 儲存」才會套用</div></div>';
+  ov.onclick = function () { ov.remove(); };
+  document.body.appendChild(ov);
 }
 async function tnPtsCfgSave(){
   // v1.7：整列原物件下去存＝color 欄（含 'rainbow'）自動保留；沒 color 的舊級距照舊 fallback 色階
