@@ -120,7 +120,7 @@ function amDraw(){
   lpOverlay('amOv', `
     <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap"><b style="font-size:17px">🧩 AB 模組班表</b>
       <span style="display:inline-flex;gap:6px;flex-wrap:wrap">${(window._amD.mods||[]).map(md=>`<button class="mini${md.id===amCur?' on':''}" style="padding:4px 12px;font-weight:800" onclick="amCur='${md.id}';amDraw()">${md.name}</button>`).join('')}
-      <button class="mini" style="padding:4px 10px" onclick="amModNew()">＋ 新模組</button><button class="mini" style="padding:4px 10px" onclick="amModRen()">改名</button><button class="mini" style="padding:4px 10px" onclick="amDict()">班別字典</button><button class="mini" style="padding:4px 10px" onclick="amRowAdd()">＋ 加人</button></span>
+      <button class="mini" style="padding:4px 10px" onclick="amModNew()">＋ 新模組</button><button class="mini" style="padding:4px 10px" onclick="amModRen()">改名</button><button class="mini" style="padding:4px 10px" onclick="amDict()">班別字典</button><button class="mini" style="padding:4px 10px" onclick="amRowAdd()">＋ 加人</button><button class="mini" style="padding:4px 10px" onclick="amReapply()">↻ 套班表名單</button></span>
       <button class="mini" style="padding:6px 14px" onclick="document.getElementById('amOv').remove()">關閉</button></div>
     <div style="display:flex;gap:10px;align-items:center;margin:8px 0;flex-wrap:wrap">
       <span class="hint">生效日</span><input type="date" value="${m.eff||''}" style="padding:4px 8px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink)" onchange="amMod().eff=this.value;amSave()">
@@ -187,4 +187,14 @@ function amDict(){
   draw()
   ov.onclick = () => { ov.remove(); amDraw() }
   document.body.appendChild(ov)
+}
+
+// ↻ 照班表重整名單 v4.47.1（張良「陳立航已離職核對班表；正職PT內外場照班表排序」）：套用現在班表的在職名單與分組，保留已填的格子
+function amReapply(){
+  if(!confirm('照現在班表重整這個模組的名單？\n（離職的移除、補內/外場分組、照班表排序；你已填的班別/備註/時薪會保留）')) return
+  const m=amMod(); const fresh=amBuildRows(window._amD)
+  const byName={}; m.rows.forEach(r=>byName[r.name]=r)
+  m.rows = fresh.map(f=>{ const old=byName[f.name]; return old?{...f, days:old.days||{}, needH:old.needH||0, rate:old.rate||0, note:old.note||''}:f })
+  amSave(); amDraw()
+  lpToast('✓ 已照班表重整（'+m.rows.length+' 人）')
 }
