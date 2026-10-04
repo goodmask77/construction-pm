@@ -132,13 +132,13 @@ async function custExport(){
     all = all.concat((d&&d.rows)||[])
   }
   const gdT = g => g===1?'小姐':g===2?'先生':''
-  custCsvDl(all, [['序號',(r,i)=>i+1],['姓名',r=>r.n||''],['稱謂',r=>gdT(r.gd)],['手機E164',r=>r.ph||''],['手機',r=>phLocal(r.ph)],['Email',r=>r.em||''],['入座次數',r=>r.v||0],['累計人次',r=>r.p||0],['小孩',r=>r.k||0],['最大組',r=>r.mx||0],['取消次數',r=>r.cx||0],['首次來店',r=>r.f||''],['最近來店',r=>r.l||'']], `inline顧客_${(segInfo.label||custSeg).replace(/[\/\\:*?"<>|]/g,'')}_${todayTpe()}.csv`)
+  custCsvDl(all, [['序號',(r,i)=>i+1],['姓名',r=>r.n||''],['稱謂',r=>gdT(r.gd)],['電話',r=>phLocal(r.ph)],['Email',r=>r.em||''],['入座',r=>r.v||0],['人次',r=>r.p||0],['小孩',r=>r.k||0],['最大組',r=>r.mx||0],['取消',r=>r.cx||0],['首次來',r=>r.f||''],['最近來',r=>r.l||''],['電話E164(廣告平台用)',r=>r.ph||'']], `inline顧客_${(segInfo.label||custSeg).replace(/[\/\\:*?"<>|]/g,'')}_${todayTpe()}.csv`)
   if (hint) hint.textContent = `已匯出 ${all.length} 人 ✓`
 }
 function custNrExport(ym, which){
   const d = window._custNrD && window._custNrD[ym]; if (!d) return
   const rows = which==='nw' ? (d.nw||[]) : (d.rt||[])
-  custCsvDl(rows, [['序號',(r,i)=>i+1],['日期',r=>r.d],['時間',r=>r.t||''],['姓名',r=>r.nm||''],['手機E164',r=>r.ph||''],['手機',r=>phLocal(r.ph)],['人數',r=>r.n||0],['首次來店',r=>r.f||''],['已入座次數',r=>r.vz!=null?r.vz:''],['累計第幾筆訂位',r=>r.b||''],['類型',r=>r.ty===3||r.ty===1?'現場客':'訂位']], `inline${which==='nw'?'新客':'回頭'}_${ym}_${todayTpe()}.csv`)
+  custCsvDl(rows, [['序號',(r,i)=>i+1],['日期',r=>r.d],['時間',r=>r.t||''],['姓名',r=>r.nm||''],['電話',r=>phLocal(r.ph)],['人數',r=>r.n||0],['首次',r=>r.f||''],['入座',r=>r.vz!=null?r.vz:''],['累計',r=>r.b||''],['類型',r=>r.ty===3||r.ty===1?'現場客':'訂位'],['電話E164(廣告平台用)',r=>r.ph||'']], `inline${which==='nw'?'新客':'回頭'}_${ym}_${todayTpe()}.csv`)
 }
 // 眼見為憑：某月新/回逐筆名單（v4.42.1 張良「點了要看到 182/76 的詳細資料」）
 async function custNrShow(ym){
