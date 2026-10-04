@@ -414,7 +414,15 @@ function lbFinder(nm){
   const R = { lb: loadLB, buy: buyLoad, meet: meetLoad, shift: shiftLoad, fb: fbLoad, menu: menuLoad, errs: errsView, sop: sopPage, settings: settingsLoad, taskx: ()=>taskEmbed(), task: ()=>taskEmbed(), food: ()=>invLoad('food'), pack: ()=>invLoad('pack'), abeach: ()=>load('abeach'), hrm: hrmLoad }
   const routeHash = () => { // v4.18.5：頁內點深層連結也要動（原本只在開頁時解析）
     const hs = location.hash || ''
-    const mS2 = hs.match(/sop=([A-Za-z0-9_-]+)/), mM = hs.match(/meet=([A-Za-z0-9]+)/), mT = hs.match(/tab=([a-z]+)/)
+    const mS2 = hs.match(/sop=([A-Za-z0-9_-]+)/), mM = hs.match(/meet=([A-Za-z0-9]+)/), mT = hs.match(/tab=([a-z]+)/), mV = hs.match(/vio=([^&]+)/)
+    if (mV) { // v4.36.3 違規深層連結（群通知點進來直達該格金光）
+      try { const [stV, nmV, dtV, dt2V] = decodeURIComponent(mV[1]).split('|')
+        shiftLoad(dtV.slice(0,7))
+        let tryN = 0; const go9 = () => { if (document.getElementById('shBox')) { shVioGo(stV, nmV, dtV, dt2V||'') } else if (++tryN < 25) setTimeout(go9, 400) }
+        setTimeout(go9, 800)
+      } catch(_) {}
+      return true
+    }
     if (mS2) { sopPage(); glowWait('sopit-' + mS2[1]); return true }
     if (mM) { meetLoad(); glowWait('mt-' + mM[1]); setTimeout(()=>{ if (TK()) meetMop({ op:'view', id: mM[1] }, 1) }, 1500); return true }
     if (mT && R[mT[1]]) { R[mT[1]](); return true }

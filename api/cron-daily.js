@@ -140,6 +140,79 @@ export default async function handler(req, res) {
     try { const cur = await kvGet('sp_team_pm_activity'); const arr = Array.isArray(cur) ? cur : []; await kvSet('sp_team_pm_activity', [{ ts: now, user: 'Claude(補建)', action: '新增', detail: `補建任務「${title}」（DD 假完成翻車補救，備註放連結）` }, ...arr].slice(0, 200)) } catch (_) {}
     return res.status(200).json({ ok: okw, cat: cat?.name || '收件匣', id })
   }
+  // ── ⚠️ AB 班表違規掃描 v4.36.3（張良「違規通知直接傳ABpeople群 帶定位連結」）：規則=四週變形(單日>12h/班距<11h/連上>12天)，與 /prep 前端同一套 ──
+  const abVioScan = async (fromYm, toYm) => {
+    const t2m = t => { const a = String(t || '').split(':'); return (+a[0] || 0) * 60 + (+a[1] || 0) }
+    const mos = []; { let [y9, m9] = fromYm.split('-').map(Number); const [ey9, em9] = toYm.split('-').map(Number); while (y9 < ey9 || (y9 === ey9 && m9 <= em9)) { mos.push(y9 + '-' + String(m9).padStart(2, '0')); if (++m9 > 12) { m9 = 1; y9++ } } }
+    const docs9 = await Promise.all(mos.map(m9 => kvGet('sp_crew_pm_hr_sched_' + m9)))
+    const by = {}
+    for (const sd of docs9) for (const [dt9, list9] of Object.entries((sd || {}).days || {})) for (const x of (Array.isArray(list9) ? list9 : [])) {
+      if (!x.name || /休|例|●|⚫/.test(x.code || '') || !x.start || !x.end) continue
+      let eM = t2m(x.end); if (eM <= t2m(x.start)) eM += 1440
+      const o = (by[x.name] = by[x.name] || {}); const p = o[dt9] || { iv: [], brk: 0 }
+      p.iv.push([t2m(x.start), eM]); const sp = eM - t2m(x.start); p.brk = Math.max(p.brk, sp >= 540 ? 60 : 0); o[dt9] = p
+    }
+    const out = []
+    for (const [nm, ds] of Object.entries(by)) {
+      const dts = Object.keys(ds).sort(); let run = 1
+      const cal = {}
+      dts.forEach(dt9 => { const iv = ds[dt9].iv.sort((a, b) => a[0] - b[0]); let tot = 0, cs = null, ce = null, mn = 99999, mx = -1
+        for (const [s0, e0] of iv) { mn = Math.min(mn, s0); mx = Math.max(mx, e0); if (cs === null) { cs = s0; ce = e0 } else if (s0 <= ce) { ce = Math.max(ce, e0) } else { tot += ce - cs; cs = s0; ce = e0 } }
+        if (cs !== null) tot += ce - cs
+        cal[dt9] = { h: Math.max(0, tot - ds[dt9].brk) / 60, min: mn, max: mx } })
+      dts.forEach(dt9 => { if (cal[dt9].h > 12) out.push({ nm, dt: dt9, r: '排班' + Math.round(cal[dt9].h * 10) / 10 + 'h>12h', rule: '12h' }) })
+      for (let i = 1; i < dts.length; i++) {
+        const gap1 = (new Date(dts[i]) - new Date(dts[i - 1])) / 86400e3
+        if (gap1 === 1) { run++
+          const rest = cal[dts[i]].min + 1440 - cal[dts[i - 1]].max
+          if (rest < 660 && rest > 0) out.push({ nm, dt: dts[i], dt2: dts[i - 1], r: '與前一天班距' + (Math.round(rest / 6) / 10) + 'h<11h', rule: 'gap' })
+        } else run = 1
+        if (run > 12) out.push({ nm, dt: dts[i], r: '連上第' + run + '天(例假不足)', rule: 'run' })
+      }
+    }
+    return out
+  }
+  const vioLink = v => 'https://ground-pm.vercel.app/prep#vio=' + encodeURIComponent('AB|' + v.nm + '|' + v.dt + '|' + (v.dt2 || ''))
+  // ⚠️ 測試口（張良「嘗試發送一次訊息給我確認」）：?viotest=<MENU_PROBE_KEY> → 掃全史抓最近幾筆發張良私訊
+  if (req.query?.viotest) {
+    const mkV = (process.env.MENU_PROBE_KEY || '').trim()
+    if (!mkV || String(req.query.viotest) !== mkV) return res.status(401).json({ ok: false })
+    const tpeV = new Date(Date.now() + 8 * 3600e3)
+    const vs = (await abVioScan('2026-06', tpeV.toISOString().slice(0, 7))).sort((a, b) => (a.dt < b.dt ? 1 : -1)).slice(0, 3)
+    if (!vs.length) return res.status(200).json({ ok: false, error: '目前掃不到任何違規' })
+    const txtV = `⚠️ 班表違規提醒（A Beach・測試一下長相）\n` + vs.map(v => `・${v.dt.slice(5)} ${v.nm}：${v.r}\n　👉 點我直達該格（金光定位）\n　${vioLink(v)}`).join('\n') + `\n\n正式版：每天早上自動掃「未來35天排班」，發現違規直接發 ABpeople 群（同一筆只提醒一次）。`
+    const rosV = (await kvGet('sp_crew_kb_roster')) || {}
+    const bossV = ((rosV.people) || []).find(p9 => p9.name === '張良瑋' && p9.lineUserId)
+    if (!bossV) return res.status(200).json({ ok: false, error: '找不到張良瑋LINE' })
+    const prV = await fetch('https://api.line.me/v2/bot/message/push', { method: 'POST', headers: { 'content-type': 'application/json', Authorization: 'Bearer ' + TOKEN }, body: JSON.stringify({ to: bossV.lineUserId, messages: [{ type: 'text', text: txtV }] }) })
+    return res.status(200).json({ ok: prV.ok, n: vs.length, sample: vs.map(v => v.dt + ' ' + v.nm) })
+  }
+  // ⚠️ 每日自動掃（跟生日同班次；只掃「昨天起~未來35天」=排班預防；pm_vionotif 去重=同筆只發一次）
+  try {
+    const tpeV2 = new Date(Date.now() + 8 * 3600e3)
+    const ymNow = tpeV2.toISOString().slice(0, 7)
+    const ymNext = new Date(Date.UTC(tpeV2.getUTCFullYear(), tpeV2.getUTCMonth() + 1, 1)).toISOString().slice(0, 7)
+    const dLo = new Date(tpeV2.getTime() - 86400e3).toISOString().slice(0, 10)
+    const vs2 = (await abVioScan(ymNow < dLo.slice(0, 7) ? dLo.slice(0, 7) : dLo.slice(0, 7), ymNext)).filter(v => v.dt >= dLo)
+    if (vs2.length && TOKEN) {
+      const ded = (await kvGet('pm_vionotif')) || {}
+      const fresh2 = vs2.filter(v => !ded[v.nm + '|' + v.dt + '|' + v.rule])
+      if (fresh2.length) {
+        let gidV = ''
+        const seenV = (await kvGet('pm_group_seen')) || {}
+        for (const [g2, gg] of Object.entries(seenV)) if (/abpeople|ab people/i.test(gg?.name || '')) { gidV = g2; break }
+        if (gidV) {
+          const txt2 = `⚠️ 班表違規提醒（A Beach）\n` + fresh2.slice(0, 6).map(v => `・${v.dt.slice(5)} ${v.nm}：${v.r}\n　👉 ${vioLink(v)}`).join('\n') + (fresh2.length > 6 ? `\n…共 ${fresh2.length} 筆，詳見 /prep 班表「🔴 違規」` : '')
+          const pr2 = await fetch('https://api.line.me/v2/bot/message/push', { method: 'POST', headers: { 'content-type': 'application/json', Authorization: 'Bearer ' + TOKEN }, body: JSON.stringify({ to: gidV, messages: [{ type: 'text', text: txt2 }] }) })
+          if (pr2.ok) {
+            fresh2.forEach(v => { ded[v.nm + '|' + v.dt + '|' + v.rule] = 1 })
+            await kvSave('pm_vionotif', ded)
+            try { const { logPush, groupMembers } = await import('./push.js'); await logPush(gidV, 1, '班表違規提醒', await groupMembers(gidV)) } catch (_) {}
+          }
+        }
+      }
+    }
+  } catch (e) { console.log('vio notif err', e?.message) }
   // 🎂 測試口（張良「DD測試發送給我一次生日提醒」）：?bdaytest=<MENU_PROBE_KEY> → 拿最近的壽星做一則示範，私訊張良本人
   if (req.query?.bdaytest) {
     const mkT = (process.env.MENU_PROBE_KEY || '').trim()
