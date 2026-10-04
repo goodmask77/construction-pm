@@ -2917,6 +2917,29 @@ export default async function handler(req, res) {
     }
     return res.status(200).json({ ok: true, sent: sent9 })
   }
+  // ── 🧩 AB 模組班表 v4.45.0（張良：四週模組方法論搬進系統,人為列編輯+自動體檢）：GET ?abmod=K&me= / POST ?abmodset=K ──
+  if (req.query?.abmod) {
+    const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
+    if (!ok2 || String(req.query.abmod) !== ok2) return res.status(403).json({ ok: false })
+    const [whoAm, defAm] = await Promise.all([sopWho(req.query.me), kvGet('sp_finance_pm_sop_def')])
+    const aprAm = (((defAm || {}).ground || {}).approvers || ['張良瑋'])
+    if (!whoAm || !(aprAm.includes(whoAm.name) || whoAm.name === '張良瑋' || whoAm.role === '主管')) return res.status(403).json({ ok: false, error: '模組班表主管限定' })
+    const [docAm, stfAm, payAm] = await Promise.all([kvGet('sp_finance_pm_abmod'), kvGet('sp_crew_pm_hr_staff'), kvGet('sp_finance_pm_payrates')])
+    return res.status(200).json({ ok: true, mods: (docAm || {}).mods || [], staff: (stfAm || {}).names || [], payRates: (payAm || {}).rates || {} })
+  }
+  if (req.method === 'POST' && req.query?.abmodset) {
+    const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
+    if (!ok2 || String(req.query.abmodset) !== ok2) return res.status(403).json({ ok: false })
+    let bm9 = {}; try { bm9 = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
+    const whoAm2 = await permWho(bm9.token, 'shift')
+    if (!whoAm2) return res.status(403).json({ ok: false, error: permDeny() })
+    const docAm2 = (await kvGet('sp_finance_pm_abmod')) || { mods: [] }
+    if (!Array.isArray(bm9.mods)) return res.status(400).json({ ok: false })
+    docAm2.mods = bm9.mods.slice(0, 12)
+    docAm2.log = [{ by: whoAm2.name, ts: new Date(Date.now() + 8 * 3600e3).toISOString().slice(5, 16).replace('T', ' ') }, ...(docAm2.log || [])].slice(0, 40)
+    await kvPut('sp_finance_pm_abmod', docAm2, 'AB模組班表(' + whoAm2.name + ')')
+    return res.status(200).json({ ok: true })
+  }
   // ── ✅ 違規處理紀錄 v4.37.0（張良「負責人調整確認完才消失 不然一直提醒;處理完進紀錄留存」）：POST ?vioresset=K {token,key,op:done|undo,note} ──
   if (req.method === 'POST' && req.query?.vioresset) {
     const ok2 = (process.env.OPS_BOARD_KEY || '').trim()

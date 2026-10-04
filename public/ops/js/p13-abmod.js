@@ -1,0 +1,165 @@
+// ── 🧩 AB 模組班表 v4.45.0（張良 2026-10-04：把 Excel 四週模組方法論搬進系統）──
+// 第一期＝人為列編輯器＋自動體檢（單天逐時段人力/每人時數/PT需求vs排班/薪資預估/勞基法/PT可用性）
+// 第二期（之後）＝DD 按鈕卡逐人確認 → on 上班表；NUEiP 照舊人工輸入，用班表比對抓打錯
+// 資料 sp_finance_pm_abmod＝{mods:[{id,name,eff,note,dict,rows:[{name,tp:'正'|'PT',needH,note,days:{1..7:dictIdx|-1}}]}]}
+let amCur = null, amSaveT = null
+const AM_DICT_DEF = [ // 班別字典預設（照張良 Excel＋NUEiP 常用；可自行增改）
+  { code: 'D',  s: '11:00', e: '22:00' },
+  { code: '機動', s: '12:00', e: '21:00' },
+  { code: '收', s: '15:00', e: '24:00' },
+  { code: '跑', s: '12:00', e: '22:00' },
+  { code: '沙', s: '12:00', e: '21:00' },
+  { code: '叢', s: '12:00', e: '21:00' },
+  { code: 'B',  s: '12:00', e: '21:00' },
+  { code: '早', s: '12:00', e: '17:30' },
+  { code: '晚', s: '18:00', e: '22:30' },
+  { code: '早8', s: '08:00', e: '17:00' },
+]
+function amT2m(t){ const a=String(t||'').split(':'); return (+a[0]||0)*60+(+a[1]||0) }
+function amSpanH(dk){ let sp=amT2m(dk.e)-amT2m(dk.s); if(sp<=0) sp+=1440; return Math.max(0,(sp-(sp>=540?60:0)))/60 } // 排9h+預設含1h休
+async function abModView(){
+  if (!window._amD) {
+    lpOverlay('amOv','<div class="hint" style="padding:20px">讀取模組班表中…</div>')
+    const r = await fetch('/api/mail-sync?abmod='+encodeURIComponent(K)+'&me='+encodeURIComponent(TK())+'&r='+Date.now()).then(x=>x.json()).catch(()=>null)
+    if (!r || !r.ok) { lpOverlay('amOv', `<div style="padding:16px">🔒 ${(r&&r.error)||'讀不到（主管限定）'}</div>`); return }
+    window._amD = r
+    if (!r.mods.length) { // 首個模組：人員預載 NUEiP 現役（PT 判斷吃班表 pt 旗標）
+      const ptSet = new Set(); try { (typeof shMergedAb==='function'?shMergedAb():[]).forEach(x=>{ if(x.pt) ptSet.add(x.name) }) } catch(_){}
+      r.mods = [{ id:'m'+Date.now().toString(36), name:'模組A', eff:'', note:'', dict: JSON.parse(JSON.stringify(AM_DICT_DEF)),
+        rows: (r.staff||[]).map(n=>({ name:n, tp: ptSet.has(n)?'PT':'正', needH:0, note:'', days:{} })).sort((a,b)=>a.tp==='正'?-1:1) }]
+    }
+  }
+  if (!amCur || !window._amD.mods.some(m=>m.id===amCur)) amCur = window._amD.mods[0].id
+  amDraw()
+}
+function amMod(){ return (window._amD.mods||[]).find(m=>m.id===amCur) }
+function amSave(){ clearTimeout(amSaveT); amSaveT = setTimeout(async()=>{
+  const r = await fetch('/api/mail-sync?abmodset='+encodeURIComponent(K),{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({token:TK(),mods:window._amD.mods})}).then(x=>x.json()).catch(()=>null)
+  if(!r||!r.ok) lpToast((r&&r.error)||'沒存上（要班表編輯權）')
+},600) }
+function amDraw(){
+  const m = amMod(); if (!m) return
+  const WD = ['一','二','三','四','五','六','日']
+  const dictOf = i => (m.dict||[])[i]
+  // ── 體檢計算 ──
+  const perH = {}, dayPpl = [0,0,0,0,0,0,0], dayPT = [0,0,0,0,0,0,0]
+  const hourly = Array.from({length:7},()=>({})) // [wd][hour]=count（11~24）
+  m.rows.forEach(rw=>{ let h=0
+    for(let d=1;d<=7;d++){ const di=rw.days[d]; if(di==null||di<0) continue
+      const dk=dictOf(di); if(!dk) continue
+      h+=amSpanH(dk); dayPpl[d-1]++; if(rw.tp==='PT') dayPT[d-1]++
+      let sM=amT2m(dk.s), eM=amT2m(dk.e); if(eM<=sM) eM+=1440
+      for(let t=Math.floor(sM/60); t<Math.ceil(eM/60); t++){ const hh=t%24; if(hh>=11||t>=24) hourly[d-1][hh]=(hourly[d-1][hh]||0)+1 }
+    }
+    perH[rw.name]=Math.round(h*10)/10 })
+  // 法規（模組週重複推演）：班距11h（含週日→下週一）、單日>12h、連上>12天（週重複=有人7天全排就是無限連上）
+  const vio = []
+  m.rows.forEach(rw=>{
+    const seq=[]; for(let d=1;d<=7;d++){ const dk=rw.days[d]!=null&&rw.days[d]>=0?dictOf(rw.days[d]):null; seq.push(dk) }
+    let maxRun=0, run=0
+    for(let i=0;i<21;i++){ if(seq[i%7]){ run++; maxRun=Math.max(maxRun,run) } else run=0 }
+    if (maxRun>12) vio.push(`${rw.name}：週型重複後連上${maxRun>=21?'∞（每週七天全排）':maxRun+'天'}——至少留例假`)
+    seq.forEach((dk,i)=>{ if(dk&&amSpanH(dk)+(amT2m(dk.e)<=amT2m(dk.s)?0:0)>12) vio.push(`${rw.name} 週${WD[i]}：單日排 ${fmtHM(amSpanH(dk)*60)} >12時`) })
+    for(let i=0;i<7;i++){ const a=seq[i], b=seq[(i+1)%7]; if(!a||!b) continue
+      let eM=amT2m(a.e); if(eM<=amT2m(a.s)) eM+=1440
+      const rest=amT2m(b.s)+1440-eM
+      if(rest<660&&rest>0) vio.push(`${rw.name} 週${WD[i]}→週${WD[(i+1)%7]}：班距只有 ${fmtHM(rest)} <11時`) }
+  })
+  // PT 可用性（歷史規律：該週幾 7 成以上是●劃假＝警告）
+  const avail = {}
+  try { const agg={}
+    ;(typeof shMergedAb==='function'?shMergedAb():[]).forEach(x=>{ const g=(new Date(x.date).getDay()+6)%7
+      const o=(agg[x.name]=agg[x.name]||Array.from({length:7},()=>({n:0,no:0})))[g]; o.n++
+      if(/●|⚫/.test(x.code||'')) o.no++ })
+    for(const [n,arr] of Object.entries(agg)) avail[n]=arr.map(o=>o.n>=3&&o.no/o.n>=0.7)
+  } catch(_){}
+  m.rows.forEach(rw=>{ (avail[rw.name]||[]).forEach((bad,i)=>{ if(bad&&rw.days[i+1]!=null&&rw.days[i+1]>=0) vio.push(`${rw.name} 週${WD[i]}：歷史上這天幾乎都劃假（●），先跟本人確認`) }) })
+  // 薪資預估（4週）
+  const rates = (window._amD.payRates)||{}
+  let cost = 0
+  m.rows.forEach(rw=>{ const b=(rates[rw.name]||{}).base||196; cost += (perH[rw.name]||0)*4*b })
+  // ── 畫面 ──
+  const cellBtn = (rw, d) => {
+    const di=rw.days[d], dk=di!=null&&di>=0?dictOf(di):null
+    return `<td onclick="amCell('${rw.name.replace(/'/g,'')}',${d})" style="padding:3px 4px;text-align:center;cursor:pointer;border:1px solid var(--line);min-width:58px">${dk?`<div style="font-weight:800;font-size:12.5px">${dk.code}</div><div class="hint" style="font-size:9.5px">${dk.s}-${dk.e}</div>`:'<span class="mut">—</span>'}</td>` }
+  const sec = tp => m.rows.filter(r=>r.tp===tp)
+  const rowsHtml = tp => sec(tp).map(rw=>{
+    const diff = rw.tp==='PT'&&rw.needH ? (perH[rw.name]||0)-rw.needH : null
+    return `<tr style="border-top:1px solid var(--line)">
+    <td style="padding:3px 7px;font-weight:800;white-space:nowrap;position:sticky;left:0;background:var(--card);z-index:1">${rw.name}<button class="mini" style="padding:0 6px;margin-left:4px;color:var(--red);font-size:10px" onclick="amRowDel('${rw.name.replace(/'/g,'')}')">✕</button></td>
+    ${[1,2,3,4,5,6,7].map(d=>cellBtn(rw,d)).join('')}
+    <td style="padding:3px 6px;text-align:right;font-weight:800;white-space:nowrap">${perH[rw.name]||0}h</td>
+    ${tp==='PT'?`<td style="padding:3px 4px;text-align:center"><input inputmode="numeric" value="${rw.needH||''}" placeholder="—" style="width:44px;padding:2px;border:1px solid var(--line);border-radius:6px;text-align:center;background:var(--bg);color:var(--ink);font-size:12px" onchange="amRowSet('${rw.name.replace(/'/g,'')}','needH',Number(this.value)||0)">${diff!=null?`<span style="font-size:10px;font-weight:800;color:${Math.abs(diff)<2?'var(--green)':'#E8A657'}">${diff>0?'+':''}${Math.round(diff*10)/10}</span>`:''}</td>`:'<td></td>'}
+    <td style="padding:3px 4px"><input value="${(rw.note||'').replace(/"/g,'&quot;')}" placeholder="備註/限制" style="width:120px;padding:2px 5px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--ink);font-size:11.5px" onchange="amRowSet('${rw.name.replace(/'/g,'')}','note',this.value)"></td></tr>` }).join('')
+  const hourlyTbl = `<div class="scroll" style="margin-top:6px"><table style="border-collapse:collapse"><thead><tr><th style="padding:3px 6px">時段</th>${WD.map(w=>`<th style="padding:3px 8px">週${w}</th>`).join('')}</tr></thead><tbody>
+    ${Array.from({length:13},(_,i)=>11+i).map(hh=>`<tr style="border-top:1px solid var(--line)"><td style="padding:2px 6px;white-space:nowrap" class="hint">${hh%24}-${(hh+1)%24||24}</td>
+      ${hourly.map(hd=>{ const c=hd[hh%24]||0; return `<td style="padding:2px 8px;text-align:center;font-weight:800;${c===0?'color:#55617A':c<=2?'color:#E8A657':'color:var(--green)'}">${c||'·'}</td>` }).join('')}</tr>`).join('')}
+    <tr style="border-top:2px solid var(--line)"><td class="hint" style="padding:3px 6px">人數(正+PT)</td>${dayPpl.map((n,i)=>`<td style="padding:3px 8px;text-align:center;font-weight:900">${n}<span class="hint" style="font-size:10px">(${n-dayPT[i]}+${dayPT[i]})</span></td>`).join('')}</tr>
+  </tbody></table></div>`
+  lpOverlay('amOv', `
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap"><b style="font-size:17px">🧩 AB 模組班表</b>
+      <span style="display:inline-flex;gap:6px;flex-wrap:wrap">${(window._amD.mods||[]).map(md=>`<button class="mini${md.id===amCur?' on':''}" style="padding:4px 12px;font-weight:800" onclick="amCur='${md.id}';amDraw()">${md.name}</button>`).join('')}
+      <button class="mini" style="padding:4px 10px" onclick="amModNew()">＋ 新模組</button><button class="mini" style="padding:4px 10px" onclick="amModRen()">改名</button><button class="mini" style="padding:4px 10px" onclick="amDict()">班別字典</button><button class="mini" style="padding:4px 10px" onclick="amRowAdd()">＋ 加人</button></span>
+      <button class="mini" style="padding:6px 14px" onclick="document.getElementById('amOv').remove()">關閉</button></div>
+    <div style="display:flex;gap:10px;align-items:center;margin:8px 0;flex-wrap:wrap">
+      <span class="hint">生效日</span><input type="date" value="${m.eff||''}" style="padding:4px 8px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink)" onchange="amMod().eff=this.value;amSave()">
+      <input value="${(m.note||'').replace(/"/g,'&quot;')}" placeholder="組成條件備註（例：5正職＋PT假日）" style="flex:1;min-width:180px;padding:5px 9px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink);font-size:13px" onchange="amMod().note=this.value;amSave()">
+      <b style="color:var(--pdark)">四週人力成本預估 NT$${Math.round(cost).toLocaleString()}</b></div>
+    <div class="scroll"><table style="border-collapse:collapse;width:100%"><thead><tr><th style="text-align:left;padding:3px 7px;position:sticky;left:0;background:var(--soft);z-index:2">夥伴</th>${WD.map(w=>`<th style="padding:3px 6px">週${w}</th>`).join('')}<th style="padding:3px 6px">週時數</th><th style="padding:3px 6px">PT需求</th><th style="text-align:left;padding:3px 6px">備註</th></tr></thead><tbody>
+      <tr><td colspan="11" style="padding:4px 7px;font-weight:900;color:#F0A050;background:var(--soft)">正職（${sec('正').length}）</td></tr>${rowsHtml('正')}
+      <tr><td colspan="11" style="padding:4px 7px;font-weight:900;color:#6EB1FF;background:var(--soft)">PT（${sec('PT').length}）</td></tr>${rowsHtml('PT')}
+    </tbody></table></div>
+    <div style="margin-top:12px"><b>⏱ 單天逐時段人力</b> <span class="hint">灰·=0人、橘=1~2人、綠=3+；自動對照你 Excel 手工那張</span>${hourlyTbl}</div>
+    <div style="margin-top:12px"><b>⚖️ 體檢（${vio.length ? `<span style="color:var(--red)">${vio.length} 個問題</span>` : '<span style="color:var(--green)">全部通過</span>'}）</b>
+      ${vio.length?`<div style="margin-top:4px">${vio.slice(0,20).map(v=>`<div style="font-size:13px;color:var(--red);padding:2px 0">・${v}</div>`).join('')}</div>`:''}
+      <div class="hint" style="font-size:12px;margin-top:4px">規則：四週變形（連上≤12天／班距≥11時／單日≤12時）＋PT 歷史劃假比對；確認流程（DD 逐人按鈕）第二期接上。</div></div>`)
+}
+function amCell(nm, d){
+  const m = amMod(); const rw = m.rows.find(r=>r.name===nm); if (!rw) return
+  const old = document.getElementById('amCellOv'); if (old) old.remove()
+  const ov = document.createElement('div'); ov.id='amCellOv'
+  ov.style.cssText='position:fixed;inset:0;background:rgba(10,14,22,.5);z-index:75;display:flex;align-items:center;justify-content:center;padding:16px'
+  ov.innerHTML = `<div style="background:#1C2430;border:1px solid #39434F;border-radius:14px;max-width:300px;width:100%;padding:16px" onclick="event.stopPropagation()">
+    <div style="font-weight:900;margin-bottom:10px">${nm}・週${['','一','二','三','四','五','六','日'][d]}</div>
+    <div style="display:flex;gap:7px;flex-wrap:wrap">
+      ${(m.dict||[]).map((dk,i)=>`<button class="mini${rw.days[d]===i?' on':''}" style="padding:7px 12px;font-weight:800" onclick="amCellSet('${nm.replace(/'/g,'')}',${d},${i})">${dk.code}<div class="hint" style="font-size:9px">${dk.s}-${dk.e}</div></button>`).join('')}
+      <button class="mini" style="padding:7px 12px;color:var(--red)" onclick="amCellSet('${nm.replace(/'/g,'')}',${d},-1)">✕ 清除</button></div></div>`
+  ov.onclick = () => ov.remove()
+  document.body.appendChild(ov)
+}
+function amCellSet(nm, d, i){ const rw = amMod().rows.find(r=>r.name===nm); if (!rw) return
+  if (i<0) delete rw.days[d]; else rw.days[d]=i
+  const o=document.getElementById('amCellOv'); if(o) o.remove()
+  amSave(); amDraw() }
+function amRowSet(nm, f, v){ const rw = amMod().rows.find(r=>r.name===nm); if (rw){ rw[f]=v; amSave(); amDraw() } }
+function amRowDel(nm){ if(!confirm('把 '+nm+' 移出這個模組？')) return
+  const m=amMod(); m.rows=m.rows.filter(r=>r.name!==nm); amSave(); amDraw() }
+function amRowAdd(){ const nm=prompt('夥伴姓名'); if(!nm) return
+  const tp=confirm('是 PT 嗎？（確定=PT、取消=正職）')?'PT':'正'
+  amMod().rows.push({ name:nm.trim().slice(0,10), tp, needH:0, note:'', days:{} }); amSave(); amDraw() }
+function amModNew(){ const nm=prompt('新模組名稱（例：11/2後）','模組'+String.fromCharCode(65+window._amD.mods.length)); if(!nm) return
+  const cp=JSON.parse(JSON.stringify(amMod())); cp.id='m'+Date.now().toString(36); cp.name=nm.trim().slice(0,16); cp.eff=''
+  window._amD.mods.push(cp); amCur=cp.id; amSave(); amDraw() }
+function amModRen(){ const m=amMod(); const nm=prompt('模組改名', m.name); if(!nm) return; m.name=nm.trim().slice(0,16); amSave(); amDraw() }
+function amDict(){
+  const m = amMod()
+  const old = document.getElementById('amDictOv'); if (old) old.remove()
+  const ov = document.createElement('div'); ov.id='amDictOv'
+  ov.style.cssText='position:fixed;inset:0;background:rgba(10,14,22,.5);z-index:75;display:flex;align-items:center;justify-content:center;padding:16px'
+  const draw = () => {
+    ov.innerHTML = `<div style="background:#1C2430;border:1px solid #39434F;border-radius:14px;max-width:360px;width:100%;max-height:80vh;overflow:auto;padding:16px" onclick="event.stopPropagation()">
+    <div style="font-weight:900;margin-bottom:4px">班別字典</div><div class="hint" style="margin-bottom:10px">模組格子可選的班別；排 9 小時以上自動扣 1 小時休息</div>
+    ${(m.dict||[]).map((dk,i)=>`<div style="display:flex;gap:6px;align-items:center;margin-bottom:7px">
+      <input value="${dk.code}" style="width:56px;padding:6px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink);font-weight:800;text-align:center" onchange="amMod().dict[${i}].code=this.value.trim();amSave()">
+      <input value="${dk.s}" style="width:64px;padding:6px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink);text-align:center" onchange="amMod().dict[${i}].s=this.value.trim();amSave()">
+      <span class="hint">–</span>
+      <input value="${dk.e}" style="width:64px;padding:6px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink);text-align:center" onchange="amMod().dict[${i}].e=this.value.trim();amSave()">
+      <span class="hint" style="font-size:11px">${fmtHM(amSpanH(dk)*60)}</span>
+      <button class="mini" style="padding:5px 9px;color:var(--red);margin-left:auto" onclick="amMod().dict.splice(${i},1);amSave();document.getElementById('amDictOv').remove();amDict()">✕</button></div>`).join('')}
+    <button class="mini" style="padding:7px 14px" onclick="amMod().dict.push({code:'新',s:'12:00',e:'21:00'});amSave();document.getElementById('amDictOv').remove();amDict()">＋ 新增班別</button>
+    <div style="text-align:right;margin-top:10px"><button class="mini on" style="padding:8px 16px" onclick="document.getElementById('amDictOv').remove();amDraw()">✓ 完成</button></div></div>`
+  }
+  draw()
+  ov.onclick = () => { ov.remove(); amDraw() }
+  document.body.appendChild(ov)
+}
