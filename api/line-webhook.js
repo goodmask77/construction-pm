@@ -1861,7 +1861,19 @@ export default async function handler(req, res) {
     if (!mk9 || String(req.query.ccdone) !== mk9) return res.status(403).json({ ok: false })
     const doc9 = (await kvGetMany(['pm_cc_inbox']))['pm_cc_inbox'] || { list: [] }
     const it9 = (doc9.list || []).find(x => x.id === String(req.query.id || ''))
-    if (it9) { it9.status = 'done'; it9.doneAt = new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 16).replace('T', ' '); it9.result = String(req.query.note || '').slice(0, 300); await kvSet('pm_cc_inbox', doc9) }
+    if (it9) {
+      it9.status = 'done'; it9.doneAt = new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 16).replace('T', ' '); it9.result = String(req.query.note || '').slice(0, 300); await kvSet('pm_cc_inbox', doc9)
+      // v4.42.3 銷單=自動 LINE 回報張良（張良「沒看到回報訊息」＝整條管線最大的洞：做完沒人告訴他）
+      try {
+        const bdC9 = (await kvGetMany(['sp_finance_pm_prep_bind']))['sp_finance_pm_prep_bind'] || {}
+        let uidC9 = null
+        for (const [u9, tk9] of Object.entries(bdC9.byUid || {})) { if (/張良/.test(((bdC9.tokens || {})[tk9] || {}).name || '')) { uidC9 = u9; break } }
+        if (uidC9 && TOKEN) {
+          const footC9 = await quotaFoot(1)
+          await fetch('https://api.line.me/v2/bot/message/push', { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${TOKEN}` }, body: JSON.stringify({ to: uidC9, messages: [{ type: 'text', text: `✅ CC 完成許願\n📥 ${String(it9.text || '').slice(0, 120)}\n🛠 結果：${it9.result || '已處理'}${footC9}` }] }) })
+        }
+      } catch (_) {}
+    }
     return res.status(200).json({ ok: !!it9 })
   }
   if (req.method !== 'POST') return res.status(405).end()
@@ -2125,7 +2137,8 @@ export default async function handler(req, res) {
       // 1.34) 「轉給CC」直通車（v4.41.3 張良 2026-10-04 拍板：B自動掃夥伴許願太危險打槍、C=只有他本人下暗號才算）：
       // 只認「張良本人」的訊息（夥伴/其他操作者都不行=一定經過他）→ 寫進 pm_cc_inbox 收件匣,
       // CC 側排程每15分撿單照專案慣例實作+部署+ccdone銷單+推播回報;CC沒開機=累積在收件匣不會丟
-      const mCC = text.match(/^轉給\s*CC[:：,，\s]*([\s\S]*)$/i)
+      // v4.42.3 暗號放寬（張良實測打「轉告CC」沒進直通車=只記成任務卡沒人執行）：轉給/轉告/交給/丟給 CC 都算
+      const mCC = text.match(/^(?:轉給|轉告|交給|丟給)\s*CC[:：,，\s]*([\s\S]*)$/i)
       if (mCC && canAct && /張良/.test(op?.name || '')) {
         const bodyCC = (mCC[1] || '').trim()
         if (!bodyCC) { await send('要轉什麼給 CC？整句寫在「轉給CC」後面（例：轉給CC 把備料表加一欄昨日實際用量）。'); continue }
