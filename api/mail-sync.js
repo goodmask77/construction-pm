@@ -1047,17 +1047,18 @@ export default async function handler(req, res) {
       return res.status(200).json({ ok: true, cats: nCat, tasks: nTask })
     }
     if (op9 === 'ptsseed') { // 積分級距 10 級規劃版（之後張良在 ⚙️ 自己增刪改排）
+      // v4.45.2 十級色階（張良「從平凡進階豐富繽紛然後閃光浮誇、每個顏色不要相同」）：灰→綠→藍→紫→青→粉→紅→橘→金→彩虹
       const tiers9 = [
-        { name: '日常', min: 1, desc: '隨手可完成的小事，順手就做' },
-        { name: '例行', min: 3, desc: '固定流程照做就好' },
-        { name: '進階', min: 5, desc: '要動腦，半天內搞定' },
-        { name: '熟練', min: 8, desc: '獨立完成，有品質要求' },
-        { name: '稀有', min: 10, desc: '小專案：自己規劃＋執行到完' },
-        { name: '精英', min: 15, desc: '跨人協調，或影響營運數字' },
-        { name: '史詩', min: 20, desc: '跨天大案，帶人一起完成' },
-        { name: '大師', min: 30, desc: '建立新制度、新流程' },
-        { name: '傳說', min: 50, desc: '公司級改變、重大成果' },
-        { name: '神話', min: 100, desc: '扭轉局面的里程碑' },
+        { name: '日常', min: 1, desc: '隨手可完成的小事，順手就做', color: '#9AA3AF' },
+        { name: '例行', min: 3, desc: '固定流程照做就好', color: '#3DBE6C' },
+        { name: '進階', min: 5, desc: '要動腦，半天內搞定', color: '#4DA3FF' },
+        { name: '熟練', min: 8, desc: '獨立完成，有品質要求', color: '#A78BFA' },
+        { name: '稀有', min: 10, desc: '小專案：自己規劃＋執行到完', color: '#22D3EE' },
+        { name: '精英', min: 15, desc: '跨人協調，或影響營運數字', color: '#F472B6' },
+        { name: '史詩', min: 20, desc: '跨天大案，帶人一起完成', color: '#F05252' },
+        { name: '大師', min: 30, desc: '建立新制度、新流程', color: '#F59E0B' },
+        { name: '傳說', min: 50, desc: '公司級改變、重大成果', color: '#F2CE60' },
+        { name: '神話', min: 100, desc: '扭轉局面的里程碑', color: 'rainbow' },
       ]
       const cur9 = (await kvGet('sp_team_pm_ptscfg')) || {}
       await kvPut('sp_team_pm_ptscfg', { ...cur9, tiers: tiers9, note: cur9.note || '積分怎麼算：按任務的難度與影響力給分；完成並通過審核才入帳。積分會進排行榜，未來接 360 分潤加成。拿不準就往低一級抓，重大成果再往上調。' }, '積分級距規劃版')
@@ -2114,10 +2115,18 @@ export default async function handler(req, res) {
     const hourlyL = (((sd || {}).hourly) || []).filter(x => String(x.date || '') >= loS && String(x.date || '') <= hiS) // 🕐 時段排班（v4.27.0）
     // AB 班表（張良 2026-10-03「加在GD班表下方,知道兩間店有誰上班方便調度」）：阿桑 boss-api 排班（sp_finance_pm_boss_sched_ 月檔）
     // 唯讀；列=人名、格=班別代碼；status=cancelled 排除；start/end 轉台北 HH:MM
-    let abSched = [], abOn = [], abAtt = [], payRates = {}, vioRes = {}
+    let abSched = [], abOn = [], abAtt = [], payRates = {}, vioRes = {}, hrPay = []
     try {
       const moSet = [...new Set([loS.slice(0, 7), ym, hiS.slice(0, 7)])]
-      const [bStaff, nueStf, payDoc9, vioResD, ...abDocs] = await Promise.all([kvGet('sp_finance_pm_boss_staff'), kvGet('sp_crew_pm_hr_staff'), kvGet('sp_finance_pm_payrates'), kvGet('sp_finance_pm_vio_res'), ...moSet.map(m => kvGet('sp_finance_pm_boss_sched_' + m.replace('-', '')))])
+      const [bStaff, nueStf, payDoc9, vioResD, hrPayD, ...abDocs] = await Promise.all([kvGet('sp_finance_pm_boss_staff'), kvGet('sp_crew_pm_hr_staff'), kvGet('sp_finance_pm_payrates'), kvGet('sp_finance_pm_vio_res'), kvGet('sp_crew_pm_hr_pay'), ...moSet.map(m => kvGet('sp_finance_pm_boss_sched_' + m.replace('-', '')))])
+      // v4.46.1 NUEiP 薪資真值進薪資表：salary_name「2026年8月薪水」=所屬月（發放日通常次月10）
+      for (const ev of ((hrPayD || {}).events || [])) {
+        let ym9 = ''
+        const mN = /(\d{4})\s*年\s*(\d{1,2})\s*月/.exec(ev.event || '')
+        if (mN) ym9 = mN[1] + '-' + String(+mN[2]).padStart(2, '0')
+        else if (ev.payDate) { const d9 = new Date(ev.payDate + 'T00:00:00Z'); d9.setUTCMonth(d9.getUTCMonth() - 1); ym9 = d9.toISOString().slice(0, 7) }
+        hrPay.push({ n: ev.name, ym: ym9, ev: ev.event, pd: ev.payDate, g: ev.gross, net: ev.net, ot: (ev.otFree || 0) + (ev.otTax || 0), otH: ev.otH || 0 })
+      }
       vioRes = (vioResD || {}).items || {}
       payRates = (payDoc9 || {}).rates || {}
       // v4.33.0 AB 實際出勤（NUEiP 打卡,薪資條/法規檢查用）：att 月檔→ {date,name,h,late,early,absent}
@@ -2201,7 +2210,7 @@ export default async function handler(req, res) {
         }
       }
     } catch (_) {}
-    return res.status(200).json({ ok: true, ym, ab: abSched, abOn, abAtt, payRates, vioRes, resv: resvDays, hourly: hourlyL, sched: schedL.map(x => ({ ...x, seq: seqMap[x.id], trSeq: trSeqMap[x.id] })), punches: pchs.map(p => ({ name: p.name, ts: p.ts, dir: p.dir, src: p.src })), names: namesU, namesAll, posList, slots: (sd || {}).slots || null, colors: colMap, posStats, leave: leaveM, hist: ((sd || {}).hist || []).slice(-200).reverse(), lockEdit: (sd || {}).lockEdit ? 1 : 0, tpls: (sd || {}).tpls || [], staff, me: meS ? { name: meS.name, role: meS.role, approver: aprS.includes(meS.name) } : null })
+    return res.status(200).json({ ok: true, ym, ab: abSched, abOn, abAtt, payRates, vioRes, hrPay, resv: resvDays, hourly: hourlyL, sched: schedL.map(x => ({ ...x, seq: seqMap[x.id], trSeq: trSeqMap[x.id] })), punches: pchs.map(p => ({ name: p.name, ts: p.ts, dir: p.dir, src: p.src })), names: namesU, namesAll, posList, slots: (sd || {}).slots || null, colors: colMap, posStats, leave: leaveM, hist: ((sd || {}).hist || []).slice(-200).reverse(), lockEdit: (sd || {}).lockEdit ? 1 : 0, tpls: (sd || {}).tpls || [], staff, me: meS ? { name: meS.name, role: meS.role, approver: aprS.includes(meS.name) } : null })
   }
   // 人員色號管理口：POST ?shiftcolor=管理金鑰 {map:{名字:色號}} 合併寫入（固定/校正專屬色用）
   if (req.method === 'POST' && req.query?.shiftcolor) {
