@@ -138,7 +138,7 @@ async function custExport(){
 function custNrExport(ym, which){
   const d = window._custNrD && window._custNrD[ym]; if (!d) return
   const rows = which==='nw' ? (d.nw||[]) : (d.rt||[])
-  custCsvDl(rows, [['序號',(r,i)=>i+1],['日期',r=>r.d],['時間',r=>r.t||''],['姓名',r=>r.nm||''],['手機E164',r=>r.ph||''],['手機',r=>phLocal(r.ph)],['人數',r=>r.n||0],['首次來店',r=>r.f||''],['累計第幾筆',r=>r.b||''],['類型',r=>r.ty===3||r.ty===1?'現場客':'訂位']], `inline${which==='nw'?'新客':'回頭'}_${ym}_${todayTpe()}.csv`)
+  custCsvDl(rows, [['序號',(r,i)=>i+1],['日期',r=>r.d],['時間',r=>r.t||''],['姓名',r=>r.nm||''],['手機E164',r=>r.ph||''],['手機',r=>phLocal(r.ph)],['人數',r=>r.n||0],['首次來店',r=>r.f||''],['已入座次數',r=>r.vz!=null?r.vz:''],['累計第幾筆訂位',r=>r.b||''],['類型',r=>r.ty===3||r.ty===1?'現場客':'訂位']], `inline${which==='nw'?'新客':'回頭'}_${ym}_${todayTpe()}.csv`)
 }
 // 眼見為憑：某月新/回逐筆名單（v4.42.1 張良「點了要看到 182/76 的詳細資料」）
 async function custNrShow(ym){
@@ -148,12 +148,12 @@ async function custNrShow(ym){
   try { const r = await fetch(`/api/inline-sync?custnr=${encodeURIComponent(K)}&ym=${ym}`); d = await r.json() } catch(_){}
   if (!d || !d.ok || !d.nr) { box.innerHTML = `<div class="err">這個月的名單還沒建（每天自動重算；只保留近14個月的逐筆名單）</div>`; return }
   window._custNrD = window._custNrD || {}; window._custNrD[ym] = d.nr
-  const tbl = (rows, isNew) => `<div class="scroll" style="max-height:46vh;overflow:auto"><table style="width:100%;border-collapse:collapse;font-size:11.5px;white-space:nowrap"><tr>${['#','日期','時間','姓名','電話','人數',...(isNew?[]:['首次來店','這是第幾筆'])].map(x=>`<th style="position:sticky;top:0;background:var(--soft);padding:3px 7px">${x}</th>`).join('')}</tr>${rows.map((r,i)=>`<tr>${[i+1, r.d, r.t||'—', `<b>${r.nm||'—'}</b>${r.ty===3||r.ty===1?' <span class="hint" style="font-size:9px">現場</span>':''}`, r.ph||'—', r.n, ...(isNew?[]:[r.f||'—', `第${r.b}筆`])].map(x=>`<td style="border-top:1px solid var(--line);padding:2px 7px">${x}</td>`).join('')}</tr>`).join('')}</table></div>`
+  const tbl = (rows, isNew) => `<div class="scroll" style="max-height:46vh;overflow:auto"><table style="width:100%;border-collapse:collapse;font-size:11.5px;white-space:nowrap"><tr>${['#','日期','時間','姓名','電話','人數',...(isNew?[]:['首次來店','已入座','累計第幾筆訂位'])].map(x=>`<th style="position:sticky;top:0;background:var(--soft);padding:3px 7px">${x}</th>`).join('')}</tr>${rows.map((r,i)=>`<tr>${[i+1, r.d, r.t||'—', `<b>${r.nm||'—'}</b>${r.ty===3||r.ty===1?' <span class="hint" style="font-size:9px">現場</span>':''}`, r.ph||'—', r.n, ...(isNew?[]:[r.f||'—', (r.vz!=null?r.vz+'次':'—'), `第${r.b}筆`])].map(x=>`<td style="border-top:1px solid var(--line);padding:2px 7px">${x}</td>`).join('')}</tr>`).join('')}</table></div>`
   box.innerHTML = `<div style="border:1.5px solid var(--primary);border-radius:10px;padding:10px 12px;margin-top:10px;background:var(--soft)">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><b style="font-size:13.5px">${ym} 逐筆名單（眼見為憑）</b><button class="mini" onclick="document.getElementById('nrEvid').innerHTML=''">✕ 關閉</button></div>
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:10px">
       <div><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px"><span style="font-weight:900;color:#6EB1FF;font-size:12.5px">🔵 新客 ${(d.nr.nw||[]).length} 筆（第一次出現在系統）</span><button class="mini" style="padding:2px 10px;font-size:11px" onclick="custNrExport('${ym}','nw')">⬇️ CSV</button></div>${tbl(d.nr.nw||[], true)}</div>
-      <div><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px"><span style="font-weight:900;color:#5FD3A6;font-size:12.5px">🟢 回頭 ${(d.nr.rt||[]).length} 筆（附首次來店日＋累計第幾筆）</span><button class="mini" style="padding:2px 10px;font-size:11px" onclick="custNrExport('${ym}','rt')">⬇️ CSV</button></div>${tbl(d.nr.rt||[], false)}</div>
+      <div><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px"><span style="font-weight:900;color:#5FD3A6;font-size:12.5px">🟢 回頭 ${(d.nr.rt||[]).length} 筆（第N筆訂位=含取消與未來這筆；入座次數另欄）</span><button class="mini" style="padding:2px 10px;font-size:11px" onclick="custNrExport('${ym}','rt')">⬇️ CSV</button></div>${tbl(d.nr.rt||[], false)}</div>
     </div>
     <div class="hint" style="font-size:10.5px;margin-top:5px">口徑：可識別顧客（有電話/客人檔）、不含取消與候補；電話在店內系統都看得到，請勿外流。</div>
   </div>`

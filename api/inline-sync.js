@@ -151,7 +151,7 @@ async function custBuild() {
           const key = r.cid || r.phone || (name ? 'n:' + name : '')
           if (key) {
             const c = cust[key] = cust[key] || { n: name, ph: '', em: '', gd: 0, v: 0, b: 0, cx: 0, p: 0, k: 0, f: d, l: '', mx: 0 }
-            if (name && (!c.n || name.length > c.n.length)) c.n = name
+            if (name) c.n = name // 顧客檔名=最近一次訂位的名字（原取最長→抓到『同學會-Ginny』活動名，張良 2026-10-04 抓包）
             if ((r.phone || '').length > c.ph.length) c.ph = r.phone
             if (r.email && !c.em) c.em = r.email
             if (r.gd && !c.gd) c.gd = r.gd
@@ -170,7 +170,7 @@ async function custBuild() {
                 if (ym >= NRD_FROM) { // 眼見為憑逐筆名單（近14個月；回頭附首次來店日+第幾筆）
                   const g9 = nrd[ym] = nrd[ym] || { nw: [], rt: [] }
                   const lst = isFirst ? g9.nw : g9.rt
-                  if (lst.length < 1600) lst.push({ d, t: r.t || '', nm: c.n || name, ph: c.ph || r.phone || '', n: r.n || 0, f: c.f, b: c.b, ty: r.ty || 2 })
+                  if (lst.length < 1600) lst.push({ d, t: r.t || '', nm: name || c.n, ph: c.ph || r.phone || '', n: r.n || 0, f: c.f, b: c.b, vz: c.v, ty: r.ty || 2 }) // nm=該筆名字非檔名、vz=至此已入座次數
                 }
               }
             }
