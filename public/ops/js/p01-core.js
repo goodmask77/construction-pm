@@ -90,7 +90,7 @@ window._twHol = {}; window._twWk = {}; let _twT = 0
 function twHolInit(){
   if (Date.now() - _twT < 3600e3) return; _twT = Date.now()
   try { const c = JSON.parse(localStorage.getItem('twhol9') || 'null'); if (c && c.hol) { window._twHol = c.hol; window._twWk = c.wk || {} } } catch(_){}
-  fetch('/api/mail-sync?twhol=' + encodeURIComponent(K)).then(r=>r.json()).then(j=>{
+  fetch('/api/mail-sync?twhol=' + encodeURIComponent(K) + '&v=2').then(r=>r.json()).then(j=>{
     if (j && j.ok) { window._twHol = j.hol || {}; window._twWk = j.wk || {}; try { localStorage.setItem('twhol9', JSON.stringify(j)) } catch(_){} }
   }).catch(()=>{})
 }

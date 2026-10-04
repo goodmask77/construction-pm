@@ -1037,7 +1037,7 @@ export default async function handler(req, res) {
             const h9 = {}, w9 = {}
             for (const x of arr) {
               if (!x.description) continue
-              const dt = String(x.date).replace(/(d{4})(d{2})(d{2})/, '$1-$2-$3')
+              const s8 = String(x.date); const dt = s8.includes('-') ? s8 : (s8.slice(0,4)+'-'+s8.slice(4,6)+'-'+s8.slice(6,8)) // v4.43.1 寫檔跳脫吃掉\d害regex失效→改slice
               if (x.isHoliday) h9[dt] = x.description; else w9[dt] = x.description // 補行上班
             }
             doc = { ts: new Date().toISOString(), hol: h9, wk: w9 }
@@ -1047,8 +1047,9 @@ export default async function handler(req, res) {
       }
       if (doc) { Object.assign(hol, doc.hol || {}); Object.assign(wk, doc.wk || {}) }
     }
+    const fx9 = o => { const r = {}; for (const [k, v] of Object.entries(o || {})) { const kk = k.includes('-') ? k : (k.slice(0,4)+'-'+k.slice(4,6)+'-'+k.slice(6,8)); r[kk] = v } return r } // v4.43.1 舊快取鍵也正規化
     res.setHeader('Cache-Control', 's-maxage=86400, stale-while-revalidate=604800')
-    return res.status(200).json({ ok: true, hol, wk })
+    return res.status(200).json({ ok: true, hol: fx9(hol), wk: fx9(wk) })
   }
   // 我是誰（側欄底部身分膠囊用；張良 2026-10-02）：GET ?whoami=<OPS_BOARD_KEY>&me=token
   if (req.query?.whoami) {
