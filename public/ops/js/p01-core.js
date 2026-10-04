@@ -103,7 +103,9 @@ function twHolInit(){
   if (Date.now() - _twT < 3600e3) return
   try { const c = JSON.parse(localStorage.getItem('twhol9') || 'null'); if (c && c.hol) { window._twHol = c.hol; window._twWk = c.wk || {} } } catch(_){}
   fetch('/api/mail-sync?twhol=' + encodeURIComponent(K) + '&v=2').then(r=>r.json()).then(j=>{
-    if (j && j.ok) { window._twHol = j.hol || {}; window._twWk = j.wk || {}; _twT = Date.now(); try { localStorage.setItem('twhol9', JSON.stringify(j)) } catch(_){} }
+    if (j && j.ok) { window._twHol = j.hol || {}; window._twWk = j.wk || {}; _twT = Date.now(); try { localStorage.setItem('twhol9', JSON.stringify(j)) } catch(_){}
+      try { if (curStore === 'shift' && typeof shiftRender === 'function') shiftRender() } catch(_){} // v4.47.8 假日是 async 抓的,比表頭 render 慢→抓到後若正在看班表就補畫表頭假名(不然首次切進來看不到)
+    }
   }).catch(()=>{})
 }
 async function load(store, fresh){
