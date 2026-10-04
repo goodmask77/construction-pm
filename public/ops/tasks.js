@@ -1511,11 +1511,11 @@ function tnPtsHelp() {
   const ov = document.createElement('div'); ov.id = 'tnPtsHelpOv';
   ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:880;display:flex;align-items:center;justify-content:center;padding:16px';
   const rows = tnTiers().map(function (ti, i) {
-    const fx = tnTierFx(i); // v1.7 改吃 tier.color（沒設 fallback 舊色階）；彩虹級色點用漸層
-    return '<div style="display:flex;align-items:center;gap:8px;padding:5px 9px;border-radius:7px;background:' + fx.bg + ';border:1px solid ' + fx.c + '44;margin-bottom:4px">'
-      + '<span style="width:9px;height:9px;border-radius:50%;background:' + (fx.rb ? tnRBG : fx.c) + ';flex-shrink:0"></span>'
-      + '<span style="width:56px;flex-shrink:0;font-size:12.5px;font-weight:900;color:' + fx.c + '">' + tnEsc(ti.name || '') + '</span>'
-      + '<span style="width:56px;flex-shrink:0;font-family:' + tnMONO + ';font-size:12px;font-weight:700;color:' + fx.c + ';text-align:right">' + (Number(ti.min) || 0) + ' 分起</span>'
+    const isRb = String(ti.color || '') === 'rainbow'; const c = tnTierColor(ti); // v2.0 吃 tier.color（rainbow→代表紫，色點用漸層）
+    return '<div style="display:flex;align-items:center;gap:8px;padding:5px 9px;border-radius:7px;background:' + tnRgba(c, .1) + ';border:1px solid ' + c + '44;margin-bottom:4px">'
+      + '<span style="width:9px;height:9px;border-radius:50%;background:' + (isRb ? tnRBG : c) + ';flex-shrink:0"></span>'
+      + '<span style="width:56px;flex-shrink:0;font-size:12.5px;font-weight:900;color:' + c + '">' + tnEsc(ti.name || '') + '</span>'
+      + '<span style="width:56px;flex-shrink:0;font-family:' + tnMONO + ';font-size:12px;font-weight:700;color:' + c + ';text-align:right">' + (Number(ti.min) || 0) + ' 分起</span>'
       + '<span style="flex:1;min-width:0;font-size:12px;color:' + tnC.sub + ';padding-left:6px">' + tnEsc(ti.desc || '') + '</span></div>';
   }).join('');
   const noteBlock = tnS.meApprover
@@ -1553,7 +1553,6 @@ async function tnPtsNoteSave() { // 存說明＝整包 merge：一定帶上現�
    拖曳排序＝比照步驟清單做法（handle+onEnd 照 DOM 順序重排草稿再重畫）；儲存整列保留 color 欄 */
 function tnPtsCfg(){
   window._tnPT = JSON.parse(JSON.stringify(tnTiers()));
-  window._tnBadge = Object.assign({ pos: 'iconcol', size: 'auto' }, tnS.ptsBadge || {}); // v1.9 徽章設定草稿
   tnPtsCfgDraw();
 }
 function tnPtsReorder(idxArr){ // 拖完照 DOM 順序重排草稿（抽成函式好測；漏掉的保險補尾＝絕不弄丟）
