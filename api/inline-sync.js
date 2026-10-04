@@ -129,6 +129,9 @@ async function custBuild() {
   const cust = {}
   // v4.40.0（張良「每張卡點進去要有更深的分析：年/月/平均/趨勢」）：洞察改存「逐月明細 m」＋大組清單 bigList，前端自由切年/月/平均
   const ins = { m: {}, bigList: [] }
+  // v4.42.1（張良「眼見為憑：點 182/76 要看到詳細資料」）：近 14 個月的新/回「逐筆名單」另存 nr_<ym> 檔
+  const NRD_FROM = addDays(today, -430).slice(0, 7)
+  const nrd = {}
   const M9 = (ym) => ins.m[ym] = ins.m[ym] || { resv: 0, guests: 0, cxl: 0, kids: 0, nw: 0, rt: 0, big: 0, bigG: 0, src: {}, lead: { d0: 0, d1_3: 0, d4_7: 0, d8_30: 0, d31: 0 }, pp: {}, hp: Array.from({ length: 7 }, () => [0, 0, 0, 0]), hg: Array.from({ length: 7 }, () => [0, 0, 0, 0]), wdD: [0, 0, 0, 0, 0, 0, 0] }
   const slotIdx = (t) => (t < '13:00' ? 0 : t < '18:00' ? 1 : t < '19:00' ? 2 : 3)
   for (let i = 0; i < mos.length; i += 12) {
@@ -162,7 +165,14 @@ async function custBuild() {
               if ((r.n || 0) > c.mx) c.mx = r.n || 0
               if (d > c.l && d <= today) c.l = d
               // 新/回只算「可識別」客人（有客人檔或有效電話）——現場客代稱(外國人/王…)無法判斷新舊，算進去會灌水（張良 2026-10-04 抓包）
-              if (r.cid || (r.phone || '').replace(/\D/g, '').length >= 8) { isFirst ? mm.nw++ : mm.rt++ }
+              if (r.cid || (r.phone || '').replace(/\D/g, '').length >= 8) {
+                isFirst ? mm.nw++ : mm.rt++
+                if (ym >= NRD_FROM) { // 眼見為憑逐筆名單（近14個月；回頭附首次來店日+第幾筆）
+                  const g9 = nrd[ym] = nrd[ym] || { nw: [], rt: [] }
+                  const lst = isFirst ? g9.nw : g9.rt
+                  if (lst.length < 1600) lst.push({ d, t: r.t || '', nm: c.n || name, ph: c.ph || r.phone || '', n: r.n || 0, f: c.f, b: c.b, ty: r.ty || 2 })
+                }
+              }
             }
           }
           if (canceled) continue
@@ -209,6 +219,7 @@ async function custBuild() {
     for (let p = 0; p < pages; p++) await kvPut(`sp_finance_pm_inline_cs_${seg}_${p}`, { rows: list.slice(p * 1000, p * 1000 + 1000) }, 'inline顧客庫')
     idx.segments[seg] = { label, total: list.length, pages }
   }
+  for (const [ym9, g9] of Object.entries(nrd)) await kvPut(`sp_finance_pm_inline_nr_${ym9}`, { ...g9, builtAt: new Date().toISOString() }, 'inline新回名單')
   await kvPut('sp_finance_pm_inline_insights', ins, 'inline洞察')
   await kvPut('sp_finance_pm_inline_custidx', idx, 'inline顧客庫索引')
   await announceChanged()
@@ -241,6 +252,14 @@ export default async function handler(req, res) {
       const [ins, idx, sum2] = await Promise.all([kvGet('sp_finance_pm_inline_insights'), kvGet('sp_finance_pm_inline_custidx'), kvGet('sp_finance_pm_inline')])
       res.setHeader('Cache-Control', 's-maxage=600, stale-while-revalidate=3600')
       return res.status(200).json({ ok: true, ins: ins || null, idx: idx || null, months: (sum2 || {}).months || {}, farFuture: (sum2 || {}).farFuture || [], dayNotes: (sum2 || {}).dayNotes || {} })
+    }
+    if (req.query?.custnr) { // ?custnr=OPS&ym=2026-10 → 該月新/回「逐筆名單」（眼見為憑，張良 2026-10-04）
+      if (!ok9(req.query.custnr)) return res.status(403).json({ ok: false })
+      const ym9 = /^\d{4}-\d{2}$/.test(String(req.query.ym || '')) ? String(req.query.ym) : null
+      if (!ym9) return res.status(400).json({ ok: false, error: '要 ym=YYYY-MM' })
+      const doc9 = await kvGet(`sp_finance_pm_inline_nr_${ym9}`)
+      res.setHeader('Cache-Control', 's-maxage=600, stale-while-revalidate=3600')
+      return res.status(200).json({ ok: true, ym: ym9, nr: doc9 || null })
     }
     if (req.query?.custfind) { // ?custfind=OPS&q=OD → 即時直搜 inline（姓名/電話片段）＋官方客人檔統計
       if (!ok9(req.query.custfind)) return res.status(403).json({ ok: false })

@@ -111,6 +111,25 @@ async function custHome(){
   h += `<div class="hint" style="font-size:10.5px">每張卡「點進去」有完整分析：年/月篩選、平均值、趨勢變化。資料=inline 全史（2021-02 起）每小時同步、洞察每天重算（上次 ${String((idx.builtAt||'')).slice(0,16).replace('T',' ')}）；明細問 DD。</div></section>`
   app.innerHTML = h
 }
+
+// 眼見為憑：某月新/回逐筆名單（v4.42.1 張良「點了要看到 182/76 的詳細資料」）
+async function custNrShow(ym){
+  const box = document.getElementById('nrEvid'); if (!box) return
+  box.innerHTML = `<div class="mut" style="font-size:12px;margin-top:8px">撈 ${ym} 逐筆名單中…</div>`
+  let d = null
+  try { const r = await fetch(`/api/inline-sync?custnr=${encodeURIComponent(K)}&ym=${ym}`); d = await r.json() } catch(_){}
+  if (!d || !d.ok || !d.nr) { box.innerHTML = `<div class="err">這個月的名單還沒建（每天自動重算；只保留近14個月的逐筆名單）</div>`; return }
+  const tbl = (rows, isNew) => `<div class="scroll" style="max-height:46vh;overflow:auto"><table style="width:100%;border-collapse:collapse;font-size:11.5px;white-space:nowrap"><tr>${['#','日期','時間','姓名','電話','人數',...(isNew?[]:['首次來店','這是第幾筆'])].map(x=>`<th style="position:sticky;top:0;background:var(--soft);padding:3px 7px">${x}</th>`).join('')}</tr>${rows.map((r,i)=>`<tr>${[i+1, r.d, r.t||'—', `<b>${r.nm||'—'}</b>${r.ty===3||r.ty===1?' <span class="hint" style="font-size:9px">現場</span>':''}`, r.ph||'—', r.n, ...(isNew?[]:[r.f||'—', `第${r.b}筆`])].map(x=>`<td style="border-top:1px solid var(--line);padding:2px 7px">${x}</td>`).join('')}</tr>`).join('')}</table></div>`
+  box.innerHTML = `<div style="border:1.5px solid var(--primary);border-radius:10px;padding:10px 12px;margin-top:10px;background:var(--soft)">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><b style="font-size:13.5px">${ym} 逐筆名單（眼見為憑）</b><button class="mini" onclick="document.getElementById('nrEvid').innerHTML=''">✕ 關閉</button></div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:10px">
+      <div><div style="font-weight:900;color:#6EB1FF;font-size:12.5px;margin-bottom:4px">🔵 新客 ${(d.nr.nw||[]).length} 筆（第一次出現在系統）</div>${tbl(d.nr.nw||[], true)}</div>
+      <div><div style="font-weight:900;color:#5FD3A6;font-size:12.5px;margin-bottom:4px">🟢 回頭 ${(d.nr.rt||[]).length} 筆（附首次來店日＋累計第幾筆）</div>${tbl(d.nr.rt||[], false)}</div>
+    </div>
+    <div class="hint" style="font-size:10.5px;margin-top:5px">口徑：可識別顧客（有電話/客人檔）、不含取消與候補；電話在店內系統都看得到，請勿外流。</div>
+  </div>`
+  box.scrollIntoView({behavior:'smooth', block:'start'})
+}
 // ── 下鑽分析儀表板（點卡片進來）──────────────────────────────
 async function custDetail(kind, keepFilter){
   custV = 'detail'
@@ -188,7 +207,7 @@ async function custDetail(kind, keepFilter){
     h += `<div style="height:8px"></div>` + cCard('慶生組數逐月（節日商品檔期依據）', cLineSvg(yms, serie(m=>(m.pp||{})['慶生']||0), KD.c))
   }
   if (kind === 'nr'){
-    h += cCard(`🆕 新客 vs 回頭（${periodLb}）`, (()=>{ const mx = Math.max(1,...yms.map(ym=>{const m=ins.m[ym];return (m.nw||0)+(m.rt||0)})); return [...yms].slice(-24).map(ym=>{ const m=ins.m[ym]||{}; const t=(m.nw||0)+(m.rt||0); return `<div style="display:flex;align-items:center;gap:8px;margin:2.5px 0"><span style="width:56px;font-size:11px;font-weight:800">${ym.slice(2)}</span><div style="flex:1;display:flex;height:12px;border-radius:4px;overflow:hidden;background:var(--soft)"><div style="width:${(m.nw||0)/mx*100}%;background:#6EB1FF"></div><div style="width:${(m.rt||0)/mx*100}%;background:#5FD3A6"></div></div><span style="font-size:11px;min-width:110px;text-align:right">新${cNum(m.nw)}/回${cNum(m.rt)}（回頭${pct(m.rt,t)}%）</span></div>` }).join('') })() + `<div class="hint" style="font-size:10.5px;margin-top:4px">🔵新客 🟢回頭客（只計「可識別」顧客＝有電話或客人檔；現場客代稱無法判斷新舊不計入。以客人第一次訂位當新客，2021 年初大家都算新客屬正常冷啟動）</div>`)
+    h += cCard(`🆕 新客 vs 回頭（${periodLb}）`, (()=>{ const mx = Math.max(1,...yms.map(ym=>{const m=ins.m[ym];return (m.nw||0)+(m.rt||0)})); return [...yms].slice(-24).map(ym=>{ const m=ins.m[ym]||{}; const t=(m.nw||0)+(m.rt||0); return `<div onclick="custNrShow('${ym}')" title="點我看 ${ym} 逐筆名單（眼見為憑）" style="display:flex;align-items:center;gap:8px;margin:2.5px 0;cursor:pointer;border-radius:5px" onmouseover="this.style.background='var(--soft)'" onmouseout="this.style.background=''"><span style="width:56px;font-size:11px;font-weight:800">${ym.slice(2)}</span><div style="flex:1;display:flex;height:12px;border-radius:4px;overflow:hidden;background:var(--soft)"><div style="width:${(m.nw||0)/mx*100}%;background:#6EB1FF"></div><div style="width:${(m.rt||0)/mx*100}%;background:#5FD3A6"></div></div><span style="font-size:11px;min-width:126px;text-align:right">新${cNum(m.nw)}/回${cNum(m.rt)}（回頭${pct(m.rt,t)}%）<span style="color:var(--primary);font-weight:800"> ›</span></span></div>` }).join('') + `<div id="nrEvid"></div>` })() + `<div class="hint" style="font-size:10.5px;margin-top:4px">🔵新客 🟢回頭客（只計「可識別」顧客＝有電話或客人檔；現場客代稱無法判斷新舊不計入。以客人第一次訂位當新客，2021 年初大家都算新客屬正常冷啟動）</div>`)
     // v4.41.1（張良「100%怎麼可能」）：樣本<50 單的月份（疫情禁內用等）不畫——3筆全回頭=100% 是數學真話但沒有意義
     const ymsN = yms.filter(ym=>{const m=ins.m[ym]||{};return ((m.nw||0)+(m.rt||0))>=50})
     h += `<div style="height:8px"></div>` + cCard('回頭客訂單比逐月（樣本<50單的月份不畫，例：疫情禁內用）', cLineSvg(ymsN, ymsN.map(ym=>{const m=ins.m[ym]||{};return pct(m.rt,(m.nw||0)+(m.rt||0))}), '#5FD3A6', v=>v+'%'))
