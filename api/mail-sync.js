@@ -2870,16 +2870,21 @@ export default async function handler(req, res) {
     { const es9 = Object.entries(slDoc9.map); if (es9.length > 500) { es9.sort((a, b) => (a[1].ts || 0) - (b[1].ts || 0)); es9.slice(0, es9.length - 500).forEach(([k9]) => delete slDoc9.map[k9]) } }
     await kvPut('pm_shortlinks', slDoc9, '短網址')
     const txt9 = `⚠️ 班表違規清單（${whoN9.name} 發送）\n` + withShort.map(it => `・${String(it.st).slice(0, 2)} ${String(it.dt).slice(5)} ${String(it.nm).slice(0, 10)}：${String(it.r).slice(0, 40)}\n　${String(it.punch || '').slice(0, 60)}\n　👉 ${it.short}`).join('\n') + `\n\n處理完到 /prep 班表「🔴 違規」按 ✅ 填處理內容 → 張良審核通過才銷案。`
-    const { logPush } = await import('./push.js')
+    const { logPush, groupMembers } = await import('./push.js')
+    // 📊 v4.42.2（張良轉CC許願單：違規清單群發底下沒顯示訊息則數）：發送前查額度、尾端補「本次X則｜本月Y/Z」＝跟其他群發同款
+    const quota9 = async () => { try { const H9 = { authorization: 'Bearer ' + tkN9 }; const [q9, c9] = await Promise.all([fetch('https://api.line.me/v2/bot/message/quota', { headers: H9 }).then(x => x.json()), fetch('https://api.line.me/v2/bot/message/quota/consumption', { headers: H9 }).then(x => x.json())]); return { used: (c9 && c9.totalUsage != null) ? c9.totalUsage : -1, total: (q9 && q9.type === 'limited') ? q9.value : -1 } } catch (_) { return { used: -1, total: -1 } } }
+    const qv9 = await quota9()
+    const foot9 = (billed) => qv9.used < 0 ? '' : `\n\n📊 本次 ${billed} 則｜本月 ${qv9.used + billed}${qv9.total > 0 ? '/' + qv9.total : ''} 則`
     const sent9 = []
     if (bn9.to === 'group') {
       let gid9 = ''
       const seen9b = (await kvGet('pm_group_seen')) || {}
       for (const [g2, gg] of Object.entries(seen9b)) if (/abpeople|ab people/i.test(gg?.name || '')) { gid9 = g2; break }
       if (!gid9) return res.status(404).json({ ok: false, error: '找不到 ABpeople 群（DD 要先在群裡收過訊息）' })
-      const pr9 = await fetch('https://api.line.me/v2/bot/message/push', { method: 'POST', headers: { 'content-type': 'application/json', Authorization: 'Bearer ' + tkN9 }, body: JSON.stringify({ to: gid9, messages: [{ type: 'text', text: txt9 }] }) })
+      const mem9 = await groupMembers(gid9) // 先查人數＝真實扣額寫進訊息
+      const pr9 = await fetch('https://api.line.me/v2/bot/message/push', { method: 'POST', headers: { 'content-type': 'application/json', Authorization: 'Bearer ' + tkN9 }, body: JSON.stringify({ to: gid9, messages: [{ type: 'text', text: txt9 + foot9(mem9) }] }) })
       if (!pr9.ok) return res.status(502).json({ ok: false, error: 'LINE 發送失敗' })
-      try { const { groupMembers } = await import('./push.js'); await logPush(gid9, 1, '違規清單群發', await groupMembers(gid9)) } catch (_) {}
+      try { await logPush(gid9, 1, '違規清單群發', mem9) } catch (_) {}
       sent9.push('ABpeople 群')
     } else { // mgrs＝權限表「班表・編」有勾的人（含管理者），要綁定過才有 LINE
       const [pmN9, rosN9, bindN9] = await Promise.all([kvGet('sp_finance_pm_prep_perm'), kvGet('sp_crew_kb_roster'), kvGet('sp_finance_pm_prep_bind')])
@@ -2892,7 +2897,7 @@ export default async function handler(req, res) {
         let uid9 = (ppl9.find(p9 => p9.id === rid9) || {}).lineUserId
         if (!uid9) uid9 = (Object.values((bindN9 || {}).tokens || {}).find(t9 => (t9.rid || t9.uid) === rid9) || {}).uid
         if (!uid9) continue
-        const pr9 = await fetch('https://api.line.me/v2/bot/message/push', { method: 'POST', headers: { 'content-type': 'application/json', Authorization: 'Bearer ' + tkN9 }, body: JSON.stringify({ to: uid9, messages: [{ type: 'text', text: txt9 }] }) })
+        const pr9 = await fetch('https://api.line.me/v2/bot/message/push', { method: 'POST', headers: { 'content-type': 'application/json', Authorization: 'Bearer ' + tkN9 }, body: JSON.stringify({ to: uid9, messages: [{ type: 'text', text: txt9 + foot9(1) }] }) })
         if (pr9.ok) { sent9.push(u9.name); await logPush(uid9, 1, '違規清單私訊') }
       }
       if (!sent9.length) return res.status(404).json({ ok: false, error: '找不到可通知的班表主管（要有班表編輯權＋綁定過 LINE）' })
