@@ -2126,7 +2126,8 @@ export default async function handler(req, res) {
         const mN = /(\d{4})\s*年\s*(\d{1,2})\s*月/.exec(evN)
         if (mN) ym9 = mN[1] + '-' + String(+mN[2]).padStart(2, '0')
         else if (ev.payDate) { const d9 = new Date(ev.payDate + 'T00:00:00Z'); d9.setUTCMonth(d9.getUTCMonth() - 1); ym9 = d9.toISOString().slice(0, 7) }
-        hrPay.push({ n: ev.name, ym: ym9, ev: ev.event, pd: ev.payDate, g: ev.gross, net: ev.net, ot: (ev.otFree || 0) + (ev.otTax || 0), otH: ev.otH || 0 })
+        const lv9 = Object.entries(ev.leaves || {}).map(([k9, v9]) => k9 + ' ' + v9 + 'h').join('、')
+        hrPay.push({ n: ev.name, ym: ym9, ev: ev.event, pd: ev.payDate, g: ev.gross, net: ev.net, ot: (ev.otFree || 0) + (ev.otTax || 0), otF: ev.otFree || 0, otT: ev.otTax || 0, otH: ev.otH || 0, lv: lv9 })
       }
       vioRes = (vioResD || {}).items || {}
       payRates = (payDoc9 || {}).rates || {}
