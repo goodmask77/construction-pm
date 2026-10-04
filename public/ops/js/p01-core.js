@@ -42,14 +42,24 @@ async function posFresh(){ // 跟主App同款：手動叫喬亞抓一次盤中�
 }
 function hardRefresh(){ try{ Object.keys(localStorage).filter(k=>k.startsWith('obt_')||k.startsWith('obc_')).forEach(k=>localStorage.removeItem(k)) }catch(_){} location.replace(location.pathname + '?r=' + Date.now()) } // v4.31.8 連本地快取一起清＝真的拿最新
 // 依目前分頁重畫（綁定後/操作後用）
-function taskEmbed(){ // v4.38.0 任務中心原生版（張良「直接原生重建吧 不要借主app」）：/ops/tasks.js tnPage()，資料同主App sp_team_ 雙向同步
+function taskEmbed(){ // v4.38.0 任務中心原生版：/ops/tasks.js tnPage()，資料同主App sp_team_ 雙向同步
   if (typeof tnPage === 'function') { tnPage(); return }
-  // 保險：tasks.js 沒載到（網路怪）→ 退回舊 iframe 版，不會開天窗
+  // v4.44.2 真因修（張良「變成以前的版本嚇一跳」）：?v=快取換新後13支腳本重新下載，點任務搶在 tasks.js(93KB)載完前
+  // →原本「立刻」退回舊 iframe(React TaskCenter=保留舊欄位的那個彈窗)＝看起來像退版。改=等它載好(最多6秒)再開原生；真的載不到才退 iframe 保底
   curStore = 'taskx'; setTabs('task')
-  document.getElementById('upd').textContent = '任務中心・與主 App 同步'
-  const tw = document.getElementById('taskWrap')
-  if (!tw.firstChild) tw.innerHTML = `<iframe src="/ops-tasks.html?v=${Date.now()}" style="width:100%;height:calc(100vh - 150px);min-height:560px;border:none;border-radius:14px;background:var(--bg)"></iframe>`
-  app.innerHTML = ''
+  document.getElementById('upd').textContent = '任務中心載入中…'
+  app.innerHTML = '<section><div class="hint" style="padding:26px">任務中心載入中…</div></section>'
+  let n9 = 0
+  const w9 = () => {
+    if (curStore !== 'taskx') return // 使用者已切走
+    if (typeof tnPage === 'function') { tnPage(); return }
+    if (++n9 < 30) { setTimeout(w9, 200); return }
+    document.getElementById('upd').textContent = '任務中心・與主 App 同步'
+    const tw = document.getElementById('taskWrap')
+    if (tw && !tw.firstChild) tw.innerHTML = `<iframe src="/ops-tasks.html?v=${Date.now()}" style="width:100%;height:calc(100vh - 150px);min-height:560px;border:none;border-radius:14px;background:var(--bg)"></iframe>`
+    app.innerHTML = ''
+  }
+  w9()
 }
 function goView(){
   if (curStore === 'task' || curStore === 'taskx') taskEmbed() // v4.41.5 舊task路徑一律導新任務中心（審計：殘留入口會開到舊資料域看板）
