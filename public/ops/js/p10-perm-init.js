@@ -426,7 +426,7 @@ function lbFinder(nm){
     const mK9 = hs.match(/task=([A-Za-z0-9_-]+)/) // v4.41.6 任務卡深層連結（張良「通知跟訊息直接帶過去看那張卡片閃金光」）
     if (mK9) { window.tnFocusId = mK9[1]; taskEmbed(); return true }
     if (mS2) { sopPage(); glowWait('sopit-' + mS2[1]); return true }
-    if (mM) { meetLoad(); glowWait('mt-' + mM[1]); setTimeout(()=>{ if (TK()) meetMop({ op:'view', id: mM[1] }, 1) }, 1500); return true }
+    if (mM) { try { window._meetOpen = window._meetOpen || {}; window._meetOpen[mM[1]] = true } catch(_){} /* v4.47.3 深層連結自動展開該則 */ meetLoad(); glowWait('mt-' + mM[1]); setTimeout(()=>{ if (TK()) meetMop({ op:'view', id: mM[1] }, 1) }, 1500); return true }
     if (mT && R[mT[1]]) { R[mT[1]](); return true }
     return false
   }

@@ -2052,6 +2052,25 @@ export default async function handler(req, res) {
       const ts2 = (Array.isArray(mb.types) ? mb.types : []).map(s => String(s).trim().slice(0, 20)).filter(Boolean).slice(0, 10)
       if (!ts2.length) return res.status(400).json({ ok: false, error: '至少留一種會議類型' })
       doc.types = ts2
+    } else if (mb.op === 'nudge') { // v4.47.3 點未簽的人→單獨 DD 私訊（個人連結直達該則）＋App 推播＋記催時間
+      const it = (doc.list || []).find(x => x.id === mb.id); if (!it) return res.status(404).json({ ok: false })
+      const nm = String(mb.name || '').trim(); if (!nm) return res.status(400).json({ ok: false, error: '缺名字' })
+      const bdN = (await kvGet('sp_finance_pm_prep_bind')) || {}
+      let tok = null, uid = null, rid = null
+      for (const [k, v] of Object.entries(bdN.tokens || {})) { if (v && v.name === nm) { tok = k; uid = v.uid; rid = v.rid || v.uid; break } }
+      const tkL = (process.env.LINE_CHANNEL_ACCESS_TOKEN || '').trim()
+      let sent = 0
+      if (uid && tkL) {
+        const link = 'https://ground-pm.vercel.app/prep?me=' + tok + '#meet=' + it.id
+        await fetch('https://api.line.me/v2/bot/message/push', { method: 'POST', headers: { 'content-type': 'application/json', Authorization: 'Bearer ' + tkL }, body: JSON.stringify({ to: uid, messages: [{ type: 'text', text: '📣 會議簽收提醒【' + it.type + '・' + it.date + '】\n' + whoM.name + ' 請你確認熟知，點開直達這則並簽收 👇\n' + link }] }) }).catch(() => {})
+        try { const { logPush } = await import('./push.js'); await logPush(uid, 1, '會議個別催簽(' + nm + ')') } catch (_) {}
+        sent++
+      }
+      if (rid) { try { const { wpPush } = await import('./_webpush.js'); await wpPush([rid], { title: '📣 會議簽收提醒', body: it.type + '・' + it.date + '（' + whoM.name + ' 提醒你簽收）', url: '/prep#meet=' + it.id, cat: 'meet' }) } catch (_) {} }
+      it.nudges = it.nudges || {}; it.nudges[nm] = now8()
+      await kvPut('sp_finance_pm_meet', doc, '會議催簽 ' + nm + '(' + whoM.name + ')')
+      if (!uid && !rid) return res.status(200).json({ ok: false, error: nm + ' 還沒綁定 GD，私訊／推播都送不到——請他先綁定' })
+      return res.status(200).json({ ok: true, sent: sent, nudged: nm })
     } else return res.status(400).json({ ok: false })
     await kvPut('sp_finance_pm_meet', doc, '會議' + mb.op + '(' + whoM.name + ')')
     return res.status(200).json({ ok: true })
