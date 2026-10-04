@@ -130,6 +130,10 @@ function renderBoard(d, store, view){
   if (view === 'prep') return renderPrep(d, store) // v4.42.0（張良拍板）：備料量+節奏表搬「備料」分頁、首頁=今日為王儀表板
   document.getElementById('upd').textContent = '最新日結：' + (d.anchor || '—') + '・資料自動同步'
   let h = ''
+  // v4.48.1（張良「頂列只留GROUN:D；A Beach營收放首頁需要再切換」）：營收卡頂店別切換
+  h += `<div style="display:inline-flex;background:var(--soft);border:1px solid var(--line);border-radius:9px;padding:2px;gap:2px;margin-top:10px">
+    <button onclick="load('ground')" style="padding:5px 14px;border-radius:7px;border:none;font-weight:800;font-size:13px;cursor:pointer;background:${store==='ground'?'var(--primary)':'transparent'};color:${store==='ground'?'#fff':'var(--sub,#8893A4)'}">GROUN:D</button>
+    <button onclick="load('abeach')" style="padding:5px 14px;border-radius:7px;border:none;font-weight:800;font-size:13px;cursor:pointer;background:${store==='abeach'?'var(--primary)':'transparent'};color:${store==='abeach'?'#fff':'var(--sub,#8893A4)'}">A Beach</button></div>`
   // 🌞 今日營收大卡（v4.42.0 今日為王：進來先回答「今天怎麼樣」）：營業中=盤中即時、打烊=最新日結；vs 近7個營業日全日均（紅=高 同色階習慣）
   {
     const ds0 = d.days || []

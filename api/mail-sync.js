@@ -2014,6 +2014,23 @@ export default async function handler(req, res) {
       const it = (doc.list || []).find(x => x.id === mb.id)
       if (!it) return res.status(404).json({ ok: false })
       it.acks = it.acks || {}; it.acks[whoM.name] = { ts: now8(), ver: it.ver || 1 }
+      // v4.47.4 治本（張良「趙以棠按了會議確認已熟知 我這邊沒有通知」）：每人簽收→即時通知發起人(鈴鐺紅點+推播)，全員簽完→再加一則 LINE 私訊（關鍵節點才發，不每簽都吵）
+      try {
+        if (it.by && it.by !== whoM.name) { // 發起人自己簽自己發起的不用通知自己
+          const ver9 = it.ver || 1
+          const signed9 = (it.ackNames || []).filter(n => it.acks[n] && (it.acks[n].ver || 1) >= ver9).length
+          const total9 = (it.ackNames || []).length
+          const allDone9 = total9 > 0 && signed9 >= total9
+          const bdK = (await kvGet('sp_finance_pm_prep_bind')) || {}
+          let uidB = null, ridB = null
+          for (const v of Object.values(bdK.tokens || {})) { if (v && v.name === it.by) { uidB = v.uid; ridB = v.rid || v.uid; break } }
+          if (ridB) { const { wpPush } = await import('./_webpush.js'); await wpPush([ridB], { title: allDone9 ? '🎉 會議全員已簽收' : '✅ 會議簽收', body: `${whoM.name} 已確認熟知【${it.type}・${it.date}】（${signed9}/${total9}）`, url: '/prep#meet=' + it.id, cat: 'meet' }) }
+          if (allDone9 && uidB) { // 全員簽完才加 LINE 私訊
+            const tkB = (process.env.LINE_CHANNEL_ACCESS_TOKEN || '').trim()
+            if (tkB) { await fetch('https://api.line.me/v2/bot/message/push', { method: 'POST', headers: { 'content-type': 'application/json', Authorization: 'Bearer ' + tkB }, body: JSON.stringify({ to: uidB, messages: [{ type: 'text', text: `🎉 會議全員已簽收【${it.type}・${it.date}】\n${total9} 人全部確認熟知，點開看 👇\nhttps://ground-pm.vercel.app/prep#meet=${it.id}` }] }) }).catch(() => {}); try { const { logPush } = await import('./push.js'); await logPush(uidB, 1, '會議全員簽收(' + it.by + ')') } catch (_) {} }
+          }
+        }
+      } catch (_) {}
     } else if (mb.op === 'view') { // 點過連結/看過
       const it = (doc.list || []).find(x => x.id === mb.id)
       if (it) { it.views = it.views || {}; it.views[whoM.name] = now8() }

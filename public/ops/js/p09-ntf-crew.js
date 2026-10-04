@@ -333,8 +333,8 @@ function applyTabs(cfg){
 }
 // ── ⭐ 個人常用捷徑列（v4.39.1 張良「手機版固定一行、每個人可編輯自己的常用清單，例如班表/SOP/盤點/叫貨」）──
 // 手機版固定螢幕最底＝拇指直達；最多 5 格＋✎編輯；清單每人一份：綁定者存伺服器(pm_prep_fav)換手機跟著走、未綁定存本機
-const FAV_DEFAULT = ['home','shift','sop','food','buy'] // v4.40.4 手機頂部功能鈕整排收掉→首頁進預設常用
-const FAV_MAX = 5
+const FAV_DEFAULT = ['home','shift','sop','food'] // v4.47.4 常用 5→4（最右固定讓位給🔔通知鈴鐺，張良「小鈴鐺坐在固定明顯的地方」）
+const FAV_MAX = 4
 const favAll = () => ['home', ...Object.keys(TAB_DEF), 'errs'].filter(k => { const b = document.getElementById(k==='home'?'tab-home':'tab-'+k); return b && b.style.display !== 'none' }) // 被權限藏掉的分頁不給選
 const favGet = () => { try { const v = JSON.parse(localStorage.getItem('gdFav')||'null'); if (Array.isArray(v) && v.length) return v } catch(_){}; return FAV_DEFAULT }
 const favLabel = k => k==='home' ? '首頁' : k==='errs' ? '回報' : stripEmoji(((window._tabCfg||{}).names||{})[k] || TAB_DEF[k] || k)
