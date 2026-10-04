@@ -99,10 +99,11 @@ const BIND_HINT = `私訊 DD「登入碼」拿 4 位數 → 按 <button class="m
 window._twHol = {}; window._twWk = {}; let _twT = 0
 const twShort = nm => { nm = String(nm||''); if (nm.includes('/')) nm = nm.split('/').pop(); return nm.length > 5 ? nm.slice(0,4) : nm } // v4.43.2 官方假名太長截短顯示
 function twHolInit(){
-  if (Date.now() - _twT < 3600e3) return; _twT = Date.now()
+  // v4.47.8 治本（張良「國定假日標記不見」）：原本一進來就設 _twT→被 Vercel 擋/網路失敗後卡 1 小時不重試＝假日一直不回來。改成「只有抓成功才設 _twT」，失敗不節流→下次切頁自動重抓
+  if (Date.now() - _twT < 3600e3) return
   try { const c = JSON.parse(localStorage.getItem('twhol9') || 'null'); if (c && c.hol) { window._twHol = c.hol; window._twWk = c.wk || {} } } catch(_){}
   fetch('/api/mail-sync?twhol=' + encodeURIComponent(K) + '&v=2').then(r=>r.json()).then(j=>{
-    if (j && j.ok) { window._twHol = j.hol || {}; window._twWk = j.wk || {}; try { localStorage.setItem('twhol9', JSON.stringify(j)) } catch(_){} }
+    if (j && j.ok) { window._twHol = j.hol || {}; window._twWk = j.wk || {}; _twT = Date.now(); try { localStorage.setItem('twhol9', JSON.stringify(j)) } catch(_){} }
   }).catch(()=>{})
 }
 async function load(store, fresh){

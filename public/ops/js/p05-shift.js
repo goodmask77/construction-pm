@@ -49,6 +49,7 @@ function shWkFollow(){
 // （手勢切週已移除 v4.20.2：張良「固定視窗原生捲動很滑順，用這個就好」——班表容器維持原生捲動看七天，切週用 ‹ › 今天 按鈕＋滑入動畫）
 async function shiftLoad(ym){
   curStore = 'shift'; setTabs('shift')
+  try { twHolInit() } catch(_){} // v4.47.8 切到班表就確保國定假日載入（表頭假名小字）；配合 twHolInit 失敗不節流＝暫時被擋後切回來自動補上
   shiftYm = (typeof ym === 'string' && ym) || shiftYm || todayTpe().slice(0,7)
   if (!window._shiftD || window._shiftD.ym !== shiftYm) { const c = tcGet('shift_'+shiftYm); if (c) window._shiftD = c }
   if (window._shiftD && window._shiftD.ym === shiftYm) shiftRender(); else app.innerHTML = '<section>載入中…</section>'
