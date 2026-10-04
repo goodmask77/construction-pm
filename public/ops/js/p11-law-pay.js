@@ -451,24 +451,28 @@ function lawArtView(rule){
 }
 
 // 📣 違規通知發送 v4.37.5（張良「可選發給班表有勾編輯的主管 或群發ABpeople」）
-function shVioNotifyAsk(){
+async function shVioNotifyAsk(){ // v4.37.6 張良「不用說明 私訊要可以選人 不要直接都發」
   const n = (window._vioNotifyL||[]).length; if (!n) return
+  let mgrs = []
+  try { const r = await fetch('/api/mail-sync?viomgrs='+encodeURIComponent(K)+'&me='+encodeURIComponent(TK())); const j = await r.json(); mgrs = (j&&j.mgrs)||[] } catch(_){}
+  window._vnSel = new Set(mgrs.map(m=>m.rid))
   const old = document.getElementById('vnOv'); if (old) old.remove()
   const ov = document.createElement('div'); ov.id='vnOv'
   ov.style.cssText='position:fixed;inset:0;background:rgba(10,14,22,.6);z-index:72;display:flex;align-items:center;justify-content:center;padding:16px'
-  ov.innerHTML = `<div style="background:#1C2430;border:1px solid #39434F;border-radius:14px;max-width:340px;width:100%;padding:18px" onclick="event.stopPropagation()">
-    <div style="font-weight:900;font-size:16px;margin-bottom:4px">📣 發送違規清單（${Math.min(n,8)} 筆）</div>
-    <div class="hint" style="margin-bottom:12px">內容＝問題＋打卡時間＋定位連結</div>
-    <button class="mini" style="width:100%;padding:12px;font-size:15px;margin-bottom:8px" onclick="shVioNotifySend('mgrs')">👑 私訊班表主管<div class="hint" style="font-size:11.5px;font-weight:600">權限表「班表・編」有勾的人（目前＝張良瑋、林碧昱）</div></button>
-    <button class="mini" style="width:100%;padding:12px;font-size:15px;margin-bottom:8px" onclick="shVioNotifySend('group')">📢 群發 ABpeople<div class="hint" style="font-size:11.5px;font-weight:600">全群都看得到（按群人數計費）</div></button>
-    <button class="mini" style="width:100%;padding:10px" onclick="document.getElementById('vnOv').remove()">取消</button></div>`
+  ov.innerHTML = `<div style="background:#1C2430;border:1px solid #39434F;border-radius:14px;max-width:320px;width:100%;padding:18px" onclick="event.stopPropagation()">
+    <div style="font-weight:900;font-size:16px;margin-bottom:10px">📣 發送違規清單（${Math.min(n,8)} 筆）</div>
+    ${mgrs.map(m=>`<label style="display:flex;gap:10px;align-items:center;padding:8px 4px;border-top:1px solid var(--line);cursor:pointer;font-weight:700">
+      <input type="checkbox" checked style="width:17px;height:17px" onchange="this.checked?window._vnSel.add('${m.rid}'):window._vnSel.delete('${m.rid}')">${m.name}</label>`).join('')}
+    <button class="mini on" style="width:100%;padding:11px;font-size:15px;margin-top:10px" onclick="shVioNotifySend('mgrs')">✉️ 傳私訊給勾選的人</button>
+    <button class="mini" style="width:100%;padding:11px;font-size:15px;margin-top:8px" onclick="shVioNotifySend('group')">📢 群發 ABpeople</button>
+    <button class="mini" style="width:100%;padding:9px;margin-top:8px" onclick="document.getElementById('vnOv').remove()">取消</button></div>`
   ov.onclick = () => ov.remove()
   document.body.appendChild(ov)
 }
 async function shVioNotifySend(to){
   const o = document.getElementById('vnOv'); if (o) o.remove()
   lpToast('發送中…')
-  const r = await fetch('/api/mail-sync?vionotify='+encodeURIComponent(K),{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({token:TK(),to,items:(window._vioNotifyL||[]).slice(0,8)})}).then(x=>x.json()).catch(()=>null)
+  const r = await fetch('/api/mail-sync?vionotify='+encodeURIComponent(K),{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({token:TK(),to,rids:to==='mgrs'?[...(window._vnSel||[])]:undefined,items:(window._vioNotifyL||[]).slice(0,8)})}).then(x=>x.json()).catch(()=>null)
   if(!r||!r.ok){ alert((r&&r.error)||'發送失敗'); return }
   lpToast('✅ 已發送給：'+r.sent.join('、'))
 }

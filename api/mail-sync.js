@@ -2829,6 +2829,23 @@ export default async function handler(req, res) {
     if (isAdmH) outH.idLock = { rids: ((lockH || {}).rids) || [], people: Object.entries((pmH && pmH.users) || {}).map(([r9, u9]) => ({ rid: r9, name: u9.name, admin: !!u9.admin })) }
     return res.status(200).json(outH)
   }
+  // 名單口：?viomgrs=K&me= → 可私訊的班表主管（班表編有勾+有LINE）
+  if (req.query?.viomgrs) {
+    const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
+    if (!ok2 || String(req.query.viomgrs) !== ok2) return res.status(403).json({ ok: false })
+    const whoM0 = await permWho(req.query.me, 'shift')
+    if (!whoM0) return res.status(403).json({ ok: false })
+    const [pmM0, rosM0, bindM0] = await Promise.all([kvGet('sp_finance_pm_prep_perm'), kvGet('sp_crew_kb_roster'), kvGet('sp_finance_pm_prep_bind')])
+    const pplM0 = ((rosM0 || {}).people) || []
+    const outM0 = []
+    for (const [rid9, u9] of Object.entries(((pmM0 || {}).users) || {})) {
+      if (!u9.edit) continue
+      if (!u9.admin && u9.tabs && u9.tabs.shift === 0) continue
+      const hasLine = (pplM0.find(p9 => p9.id === rid9) || {}).lineUserId || (Object.values((bindM0 || {}).tokens || {}).find(t9 => (t9.rid || t9.uid) === rid9) || {}).uid
+      if (hasLine) outM0.push({ rid: rid9, name: u9.name })
+    }
+    return res.status(200).json({ ok: true, mgrs: outM0 })
+  }
   // ── 📣 違規通知發送 v4.37.5（張良「通知按鈕 可選發給班表有勾編輯的主管 跟群發ABpeople」）：POST ?vionotify=K {token,to:mgrs|group,items:[{st,nm,dt,r,punch,link}]} ──
   if (req.method === 'POST' && req.query?.vionotify) {
     const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
@@ -2855,7 +2872,9 @@ export default async function handler(req, res) {
     } else { // mgrs＝權限表「班表・編」有勾的人（含管理者），要綁定過才有 LINE
       const [pmN9, rosN9, bindN9] = await Promise.all([kvGet('sp_finance_pm_prep_perm'), kvGet('sp_crew_kb_roster'), kvGet('sp_finance_pm_prep_bind')])
       const ppl9 = ((rosN9 || {}).people) || []
+      const pickR = Array.isArray(bn9.rids) ? new Set(bn9.rids.map(String)) : null // v4.37.6 可選人,不直接都發
       for (const [rid9, u9] of Object.entries(((pmN9 || {}).users) || {})) {
+        if (pickR && !pickR.has(String(rid9))) continue
         if (!u9.edit) continue
         if (!u9.admin && u9.tabs && u9.tabs.shift === 0) continue // 班表編沒勾=跳過
         let uid9 = (ppl9.find(p9 => p9.id === rid9) || {}).lineUserId
