@@ -1046,22 +1046,26 @@ export default async function handler(req, res) {
       await announceChanged()
       return res.status(200).json({ ok: true, cats: nCat, tasks: nTask })
     }
-    if (op9 === 'ptsseed') { // 積分級距 10 級規劃版（之後張良在 ⚙️ 自己增刪改排）
-      // v4.45.2 十級色階（張良「從平凡進階豐富繽紛然後閃光浮誇、每個顏色不要相同」）：灰→綠→藍→紫→青→粉→紅→橘→金→彩虹
-      const tiers9 = [
-        { name: '日常', min: 1, desc: '隨手可完成的小事，順手就做', color: '#9AA3AF' },
-        { name: '例行', min: 3, desc: '固定流程照做就好', color: '#3DBE6C' },
-        { name: '進階', min: 5, desc: '要動腦，半天內搞定', color: '#4DA3FF' },
-        { name: '熟練', min: 8, desc: '獨立完成，有品質要求', color: '#A78BFA' },
-        { name: '稀有', min: 10, desc: '小專案：自己規劃＋執行到完', color: '#22D3EE' },
-        { name: '精英', min: 15, desc: '跨人協調，或影響營運數字', color: '#F472B6' },
-        { name: '史詩', min: 20, desc: '跨天大案，帶人一起完成', color: '#F05252' },
-        { name: '大師', min: 30, desc: '建立新制度、新流程', color: '#F59E0B' },
-        { name: '傳說', min: 50, desc: '公司級改變、重大成果', color: '#F2CE60' },
-        { name: '神話', min: 100, desc: '扭轉局面的里程碑', color: 'rainbow' },
+    if (op9 === 'ptsseed') { // 積分級距 10 級模組化版（v4.47.0 張良：模組化特效）：顏色＋mods（浮誇模板）同參考檔
+      const M = [ // 浮誇模板（參考 tier-effects-reference.html PR）每級的七軌道組合
+        { border: 'solid', glow: 'none', outer: 'none', edge: 'none', surf: 'none', part: 'none', badge: 'outline' },
+        { border: 'solid', glow: 'breathe', outer: 'none', edge: 'none', surf: 'none', part: 'none', badge: 'outline' },
+        { border: 'solid', glow: 'none', outer: 'ripple', edge: 'none', surf: 'none', part: 'none', badge: 'outline' },
+        { border: 'solid', glow: 'none', outer: 'none', edge: 'none', surf: 'shimmer', part: 'none', badge: 'outline' },
+        { border: 'laser', glow: 'static', outer: 'none', edge: 'none', surf: 'none', part: 'none', badge: 'outline' },
+        { border: 'solid', glow: 'breathe', outer: 'pulse', edge: 'none', surf: 'none', part: 'none', badge: 'solid' },
+        { border: 'solid', glow: 'zap', outer: 'none', edge: 'bolt', surf: 'none', part: 'none', badge: 'solid' },
+        { border: 'solid', glow: 'static', outer: 'none', edge: 'fire', surf: 'none', part: 'none', badge: 'solid' },
+        { border: 'laser2', glow: 'static', outer: 'none', edge: 'none', surf: 'shimmer', part: 'gold', badge: 'jump' },
+        { border: 'rainbow', glow: 'static', outer: 'boom', edge: 'none', surf: 'flash', part: 'rainbow', badge: 'rainbow' },
       ]
+      const CO = ['#9AA3AF', '#c0567a', '#4b8cf7', '#9b74ff', '#26c6e0', '#ec4f9c', '#ef4444', '#ff8a1f', '#f5c542', 'rainbow']
+      const NM = ['日常', '例行', '進階', '熟練', '稀有', '精英', '史詩', '大師', '傳說', '神話']
+      const DE = ['隨手可完成的小事，順手就做', '固定流程照做就好', '要動腦，半天內搞定', '獨立完成，有品質要求', '小專案：自己規劃＋執行到完', '跨人協調，或影響營運數字', '跨天大案，帶人一起完成', '建立新制度、新流程', '公司級改變、重大成果', '扭轉局面的里程碑']
+      const MN = [1, 3, 5, 8, 10, 15, 20, 30, 50, 100]
+      const tiers9 = NM.map((n, i) => ({ name: n, min: MN[i], desc: DE[i], color: CO[i], mods: M[i] }))
       const cur9 = (await kvGet('sp_team_pm_ptscfg')) || {}
-      await kvPut('sp_team_pm_ptscfg', { ...cur9, tiers: tiers9, note: cur9.note || '積分怎麼算：按任務的難度與影響力給分；完成並通過審核才入帳。積分會進排行榜，未來接 360 分潤加成。拿不準就往低一級抓，重大成果再往上調。' }, '積分級距規劃版')
+      await kvPut('sp_team_pm_ptscfg', { tiers: tiers9, note: cur9.note || '積分怎麼算：按任務的難度與影響力給分；完成並通過審核才入帳。積分會進排行榜，未來接 360 分潤加成。拿不準就往低一級抓，重大成果再往上調。' }, '積分級距模組化版')
       await announceChanged()
       return res.status(200).json({ ok: true, tiers: tiers9.length })
     }
