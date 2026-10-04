@@ -337,21 +337,24 @@ function abAttDraw(){
     const det = rows.slice().sort((a,b)=> a.d===b.d ? a.n.localeCompare(b.n,'zh-Hant') : (a.d<b.d?1:-1))
     const stT9 = x => [x.abs?'<b style="color:var(--red)">曠職</b>':'', x.miss?'<b style="color:var(--red)">缺卡</b>':'', x.late>0?`<b style="color:#E8A657">遲到${x.late}分</b>`:'', x.early>0?`<b style="color:#E8A657">早退${x.early}分</b>`:''].filter(Boolean).join('、') || '<span class="mut">正常</span>'
     const moBtn9 = (v,lb)=>`<button class="mini${abaMo===v?' on':''}" style="padding:4px 12px;font-weight:800" onclick="abaMo='${v}';abAttDraw()">${lb}</button>`
+    // v4.43.5 對齊治本：欄=[名稱,對齊]只宣告一次,表頭資料同一份定義產生——不再兩段手寫各歪各的
+    const C9 = [['日期','left'],['夥伴','left'],['狀態','left'],['班別','center'],['上班卡','center'],['下班卡','center'],['時數','right']]
+    const td9 = (i,html,ex)=>`<td style="padding:4px 8px;text-align:${C9[i][1]};${ex||''}">${html}</td>`
     lpOverlay('abaOv', `
       <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap"><b style="font-size:17px">🕐 A Beach 出勤總覽</b>
         <span style="display:flex;gap:8px;align-items:center">${vBtn}<button class="mini" style="padding:6px 14px" onclick="document.getElementById('abaOv').remove()">關閉</button></span></div>
       <div style="display:flex;gap:6px;flex-wrap:wrap;margin:10px 0">${moBtn9('all','全部')}${mos.map(m=>moBtn9(m, m.slice(2).replace('-','/'))).join('')}</div>
       <div class="hint" style="margin-bottom:6px">共 ${det.length} 筆・點夥伴名字看他一個人的整期紀錄</div>
       <div class="scroll" style="max-height:66vh;overflow-y:auto"><table style="border-collapse:collapse;width:100%"><thead><tr>
-        <th style="padding:4px 8px;text-align:left">日期</th><th style="padding:4px 8px;text-align:left">夥伴</th><th style="padding:4px 8px;text-align:left">狀態</th><th style="padding:4px 8px;text-align:center">班別</th><th style="padding:4px 8px;text-align:center">上班卡</th><th style="padding:4px 8px;text-align:center">下班卡</th><th style="padding:4px 8px;text-align:right">時數</th></tr></thead><tbody>
+        ${C9.map(([lb,al])=>`<th style="padding:4px 8px;text-align:${al}">${lb}</th>`).join('')}</tr></thead><tbody>
         ${det.map(x=>`<tr style="border-top:1px solid var(--line);font-size:13px">
-          <td style="padding:4px 8px;white-space:nowrap">${x.d.slice(5)}（${'日一二三四五六'[new Date(x.d).getDay()]}）</td>
-          <td style="padding:4px 8px;font-weight:800;white-space:nowrap;cursor:pointer;text-decoration:underline dotted" onclick="abAttPerson('${x.n.replace(/'/g,'')}')">${x.n}</td>
-          <td style="padding:4px 8px;text-align:left;white-space:nowrap">${stT9(x)}</td>
-          <td style="padding:4px 8px;text-align:center">${x.w||'—'}</td>
-          <td style="padding:4px 8px;text-align:center;${!x.on&&!x.abs?'color:var(--red)':''}">${x.on||'—'}</td>
-          <td style="padding:4px 8px;text-align:center">${x.off||'—'}</td>
-          <td style="padding:4px 8px;text-align:right;font-weight:700">${x.h||'—'}</td></tr>`).join('')}
+          ${td9(0, `${x.d.slice(5)}（${'日一二三四五六'[new Date(x.d).getDay()]}）`, 'white-space:nowrap')}
+          ${td9(1, x.n, `font-weight:800;white-space:nowrap;cursor:pointer;text-decoration:underline dotted" onclick="abAttPerson('${x.n.replace(/'/g,'')}')`)}
+          ${td9(2, stT9(x), 'white-space:nowrap')}
+          ${td9(3, x.w||'—')}
+          ${td9(4, x.on||'—', !x.on&&!x.abs?'color:var(--red)':'')}
+          ${td9(5, x.off||'—')}
+          ${td9(6, x.h||'—', 'font-weight:700')}</tr>`).join('')}
       </tbody></table></div>`)
     return
   }
