@@ -23,14 +23,29 @@ async function abModView(){
     const r = await fetch('/api/mail-sync?abmod='+encodeURIComponent(K)+'&me='+encodeURIComponent(TK())+'&r='+Date.now()).then(x=>x.json()).catch(()=>null)
     if (!r || !r.ok) { lpOverlay('amOv', `<div style="padding:16px">🔒 ${(r&&r.error)||'讀不到（主管限定）'}</div>`); return }
     window._amD = r
-    if (!r.mods.length) { // 首個模組：人員預載 NUEiP 現役（PT 判斷吃班表 pt 旗標）
-      const ptSet = new Set(); try { (typeof shMergedAb==='function'?shMergedAb():[]).forEach(x=>{ if(x.pt) ptSet.add(x.name) }) } catch(_){}
-      r.mods = [{ id:'m'+Date.now().toString(36), name:'模組A', eff:'', note:'', dict: JSON.parse(JSON.stringify(AM_DICT_DEF)),
-        rows: (r.staff||[]).map(n=>({ name:n, tp: ptSet.has(n)?'PT':'正', needH:0, note:'', days:{} })).sort((a,b)=>a.tp==='正'?-1:1) }]
+    if (!r.mods.length) { // 首個模組：照班表分組預載（內場/外場×正職/PT，排除離職）
+      r.mods = [{ id:'m'+Date.now().toString(36), name:'模組A', eff:'', note:'', dict: JSON.parse(JSON.stringify(AM_DICT_DEF)), rows: amBuildRows(r) }]
     }
   }
   if (!amCur || !window._amD.mods.some(m=>m.id===amCur)) amCur = window._amD.mods[0].id
   amDraw()
+}
+// v4.47.1（張良「正職PT 內場外場 照班表樣式排序；陳立航已離職核對班表」）：照 /prep 班表的分組與在職名單建列
+function amBuildRows(r){
+  const dep={}, pt={}, cnt={}, act={}
+  const today9=new Date(Date.now()+8*3600e3).toISOString().slice(0,10)
+  const d14=new Date(Date.now()+8*3600e3-14*86400e3).toISOString().slice(0,10)
+  try { (typeof shMergedAb==='function'?shMergedAb():[]).forEach(x=>{ if(!x.name) return
+    if(x.dept&&!dep[x.name]) dep[x.name]=x.dept; if(x.pt) pt[x.name]=1; cnt[x.name]=(cnt[x.name]||0)+1
+    if(x.date>act[x.name]||!act[x.name]) act[x.name]=x.date }) } catch(_){}
+  const onSet=new Set((r.abOn&&r.abOn.length)?r.abOn:(r.staff||[]))
+  // 在職判定＝NUEiP現役 且 14天內有班（跟班表同規則；離職如陳立航自動不帶）
+  const alive = n => onSet.has(n) && (act[n]?act[n]>=d14:true)
+  const names=[...new Set([...(r.staff||[]), ...Object.keys(cnt)])].filter(alive)
+  const subOf = n => /內/.test(dep[n]||'')?'內場':(/外/.test(dep[n]||'')?'外場':'其他')
+  const grpRank = n => (subOf(n)==='內場'?0:subOf(n)==='外場'?2:4) + (pt[n]?1:0) // 內場→內場PT→外場→外場PT→其他→其他PT
+  return names.map(n=>({ name:n, tp: pt[n]?'PT':'正', sub: subOf(n), needH:0, rate:0, note:'', days:{} }))
+    .sort((a,b)=>grpRank(a.name)-grpRank(b.name) || (cnt[b.name]||0)-(cnt[a.name]||0))
 }
 function amMod(){ return (window._amD.mods||[]).find(m=>m.id===amCur) }
 function amSave(){ clearTimeout(amSaveT); amSaveT = setTimeout(async()=>{
@@ -77,20 +92,26 @@ function amDraw(){
   // 薪資預估（4週）
   const rates = (window._amD.payRates)||{}
   let cost = 0
-  m.rows.forEach(rw=>{ const b=(rates[rw.name]||{}).base||196; cost += (perH[rw.name]||0)*4*b })
+  m.rows.forEach(rw=>{ const b=rw.tp==='PT'?(rw.rate||((rates[rw.name]||{}).base)||196):((rates[rw.name]||{}).base||196); cost += (perH[rw.name]||0)*4*b })
   // ── 畫面 ──
   const cellBtn = (rw, d) => {
     const di=rw.days[d], dk=di!=null&&di>=0?dictOf(di):null
     return `<td onclick="amCell('${rw.name.replace(/'/g,'')}',${d})" style="padding:3px 4px;text-align:center;cursor:pointer;border:1px solid var(--line);min-width:58px">${dk?`<div style="font-weight:800;font-size:12.5px">${dk.code}</div><div class="hint" style="font-size:9.5px">${dk.s}-${dk.e}</div>`:'<span class="mut">—</span>'}</td>` }
-  const sec = tp => m.rows.filter(r=>r.tp===tp)
-  const rowsHtml = tp => sec(tp).map(rw=>{
+  // 四區照班表：內場正職/內場PT/外場正職/外場PT/其他（sub 缺就從班表補）
+  const SUBO = { '內場':0,'外場':1,'其他':2 }
+  const grpKey = rw => (rw.sub||'其他')+'｜'+rw.tp
+  const GRPS = [['內場','正'],['內場','PT'],['外場','正'],['外場','PT'],['其他','正'],['其他','PT']]
+  const secG = (sub,tp) => m.rows.filter(r=>(r.sub||'其他')===sub && r.tp===tp)
+  const rowsHtml = (sub,tp) => secG(sub,tp).map(rw=>{
     const diff = rw.tp==='PT'&&rw.needH ? (perH[rw.name]||0)-rw.needH : null
     return `<tr style="border-top:1px solid var(--line)">
-    <td style="padding:3px 7px;font-weight:800;white-space:nowrap;position:sticky;left:0;background:var(--card);z-index:1">${rw.name}<button class="mini" style="padding:0 6px;margin-left:4px;color:var(--red);font-size:10px" onclick="amRowDel('${rw.name.replace(/'/g,'')}')">✕</button></td>
+    <td style="padding:3px 7px;font-weight:800;white-space:nowrap;position:sticky;left:0;background:var(--card);z-index:2;border:1px solid var(--line);min-width:96px">${rw.name}<button class="mini" style="padding:0 6px;margin-left:4px;color:var(--red);font-size:10px" onclick="amRowDel('${rw.name.replace(/'/g,'')}')">✕</button></td>
     ${[1,2,3,4,5,6,7].map(d=>cellBtn(rw,d)).join('')}
-    <td style="padding:3px 6px;text-align:right;font-weight:800;white-space:nowrap">${perH[rw.name]||0}h</td>
-    ${tp==='PT'?`<td style="padding:3px 4px;text-align:center"><input inputmode="numeric" value="${rw.needH||''}" placeholder="—" style="width:44px;padding:2px;border:1px solid var(--line);border-radius:6px;text-align:center;background:var(--bg);color:var(--ink);font-size:12px" onchange="amRowSet('${rw.name.replace(/'/g,'')}','needH',Number(this.value)||0)">${diff!=null?`<span style="font-size:10px;font-weight:800;color:${Math.abs(diff)<2?'var(--green)':'#E8A657'}">${diff>0?'+':''}${Math.round(diff*10)/10}</span>`:''}</td>`:'<td></td>'}
-    <td style="padding:3px 4px"><input value="${(rw.note||'').replace(/"/g,'&quot;')}" placeholder="備註/限制" style="width:120px;padding:2px 5px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--ink);font-size:11.5px" onchange="amRowSet('${rw.name.replace(/'/g,'')}','note',this.value)"></td></tr>` }).join('')
+    <td style="padding:3px 6px;text-align:right;font-weight:800;white-space:nowrap;border:1px solid var(--line)">${perH[rw.name]||0}h</td>
+    ${tp==='PT'?`<td style="padding:3px 4px;text-align:center;border:1px solid var(--line)"><input inputmode="numeric" value="${rw.needH||''}" placeholder="—" style="width:42px;padding:2px;border:1px solid var(--line);border-radius:6px;text-align:center;background:var(--bg);color:var(--ink);font-size:12px" onchange="amRowSet('${rw.name.replace(/'/g,'')}','needH',Number(this.value)||0)">${diff!=null?`<span style="font-size:10px;font-weight:800;color:${Math.abs(diff)<2?'var(--green)':'#E8A657'}">${diff>0?'+':''}${Math.round(diff*10)/10}</span>`:''}</td>
+    <td style="padding:3px 4px;text-align:center;border:1px solid var(--line)"><input inputmode="numeric" value="${rw.rate||''}" placeholder="196" style="width:48px;padding:2px;border:1px solid var(--line);border-radius:6px;text-align:center;background:var(--bg);color:var(--ink);font-size:12px" onchange="amRowSet('${rw.name.replace(/'/g,'')}','rate',Number(this.value)||0)"></td>
+    <td style="padding:3px 6px;text-align:right;font-weight:800;color:var(--pdark);white-space:nowrap;border:1px solid var(--line)">${(perH[rw.name]||0)&&(rw.rate||196)?('$'+Math.round((perH[rw.name]||0)*4*(rw.rate||196)).toLocaleString()):'—'}</td>`:'<td style="border:1px solid var(--line)"></td><td style="border:1px solid var(--line)"></td><td style="border:1px solid var(--line)"></td>'}
+    <td style="padding:3px 4px;border:1px solid var(--line)"><input value="${(rw.note||'').replace(/"/g,'&quot;')}" placeholder="備註/限制" style="width:120px;padding:2px 5px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--ink);font-size:11.5px" onchange="amRowSet('${rw.name.replace(/'/g,'')}','note',this.value)"></td></tr>` }).join('')
   const hourlyTbl = `<div class="scroll" style="margin-top:6px"><table style="border-collapse:collapse"><thead><tr><th style="padding:3px 6px">時段</th>${WD.map(w=>`<th style="padding:3px 8px">週${w}</th>`).join('')}</tr></thead><tbody>
     ${Array.from({length:13},(_,i)=>11+i).map(hh=>`<tr style="border-top:1px solid var(--line)"><td style="padding:2px 6px;white-space:nowrap" class="hint">${hh%24}-${(hh+1)%24||24}</td>
       ${hourly.map(hd=>{ const c=hd[hh%24]||0; return `<td style="padding:2px 8px;text-align:center;font-weight:800;${c===0?'color:#55617A':c<=2?'color:#E8A657':'color:var(--green)'}">${c||'·'}</td>` }).join('')}</tr>`).join('')}
@@ -105,9 +126,12 @@ function amDraw(){
       <span class="hint">生效日</span><input type="date" value="${m.eff||''}" style="padding:4px 8px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink)" onchange="amMod().eff=this.value;amSave()">
       <input value="${(m.note||'').replace(/"/g,'&quot;')}" placeholder="組成條件備註（例：5正職＋PT假日）" style="flex:1;min-width:180px;padding:5px 9px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink);font-size:13px" onchange="amMod().note=this.value;amSave()">
       <b style="color:var(--pdark)">四週人力成本預估 NT$${Math.round(cost).toLocaleString()}</b></div>
-    <div class="scroll"><table style="border-collapse:collapse;width:100%"><thead><tr><th style="text-align:left;padding:3px 7px;position:sticky;left:0;background:var(--soft);z-index:2">夥伴</th>${WD.map(w=>`<th style="padding:3px 6px">週${w}</th>`).join('')}<th style="padding:3px 6px">週時數</th><th style="padding:3px 6px">PT需求</th><th style="text-align:left;padding:3px 6px">備註</th></tr></thead><tbody>
-      <tr><td colspan="11" style="padding:4px 7px;font-weight:900;color:#F0A050;background:var(--soft)">正職（${sec('正').length}）</td></tr>${rowsHtml('正')}
-      <tr><td colspan="11" style="padding:4px 7px;font-weight:900;color:#6EB1FF;background:var(--soft)">PT（${sec('PT').length}）</td></tr>${rowsHtml('PT')}
+    <div class="scroll"><table style="border-collapse:collapse;width:100%"><thead><tr><th style="text-align:left;padding:3px 7px;position:sticky;left:0;background:var(--soft);z-index:3;border:1px solid var(--line);min-width:96px">夥伴</th>${WD.map(w=>`<th style="padding:3px 6px;border:1px solid var(--line);min-width:58px">週${w}</th>`).join('')}<th style="padding:3px 6px;border:1px solid var(--line)">週時數</th><th style="padding:3px 6px;border:1px solid var(--line)">PT需求</th><th style="padding:3px 6px;border:1px solid var(--line)">時薪</th><th style="padding:3px 6px;border:1px solid var(--line)">4週薪</th><th style="text-align:left;padding:3px 6px;border:1px solid var(--line)">備註</th></tr></thead><tbody>
+      ${GRPS.map(([sub,tp])=>{ const mem=secG(sub,tp); if(!mem.length) return ''
+        const col = sub==='內場'?'#F0A050':sub==='外場'?'#6EB1FF':'#9AA4B2'
+        return `<tr><td colspan="13" style="padding:4px 7px;font-weight:900;color:${col};background:var(--soft)">${sub}${tp==='PT'?'・PT':'・正職'}（${mem.length}）</td></tr>${rowsHtml(sub,tp)}` }).join('')}
+      ${(()=>{ const pts=m.rows.filter(r=>r.tp==='PT'); const totW=pts.reduce((t,r)=>t+(perH[r.name]||0),0); const totC=pts.reduce((t,r)=>t+(perH[r.name]||0)*4*(r.rate||196),0)
+        return pts.length?`<tr><td colspan="8" style="padding:4px 7px;text-align:right;font-weight:900;background:var(--card)">PT 合計（${pts.length} 人・週 ${Math.round(totW*10)/10}h）</td><td colspan="2" style="padding:4px 6px;text-align:right;font-weight:900;color:var(--pdark);background:var(--card)">4週 $${Math.round(totC).toLocaleString()}</td><td colspan="3" style="background:var(--card)"></td></tr>`:'' })()}
     </tbody></table></div>
     <div style="margin-top:12px"><b>⏱ 單天逐時段人力</b> <span class="hint">灰·=0人、橘=1~2人、綠=3+；自動對照你 Excel 手工那張</span>${hourlyTbl}</div>
     <div style="margin-top:12px"><b>⚖️ 體檢（${vio.length ? `<span style="color:var(--red)">${vio.length} 個問題</span>` : '<span style="color:var(--green)">全部通過</span>'}）</b>
@@ -136,7 +160,8 @@ function amRowDel(nm){ if(!confirm('把 '+nm+' 移出這個模組？')) return
   const m=amMod(); m.rows=m.rows.filter(r=>r.name!==nm); amSave(); amDraw() }
 function amRowAdd(){ const nm=prompt('夥伴姓名'); if(!nm) return
   const tp=confirm('是 PT 嗎？（確定=PT、取消=正職）')?'PT':'正'
-  amMod().rows.push({ name:nm.trim().slice(0,10), tp, needH:0, note:'', days:{} }); amSave(); amDraw() }
+  const sub=confirm('是內場嗎？（確定=內場、取消=外場）')?'內場':'外場'
+  amMod().rows.push({ name:nm.trim().slice(0,10), tp, sub, needH:0, rate:0, note:'', days:{} }); amSave(); amDraw() }
 function amModNew(){ const nm=prompt('新模組名稱（例：11/2後）','模組'+String.fromCharCode(65+window._amD.mods.length)); if(!nm) return
   const cp=JSON.parse(JSON.stringify(amMod())); cp.id='m'+Date.now().toString(36); cp.name=nm.trim().slice(0,16); cp.eff=''
   window._amD.mods.push(cp); amCur=cp.id; amSave(); amDraw() }

@@ -2972,8 +2972,9 @@ export default async function handler(req, res) {
     const [whoAm, defAm] = await Promise.all([sopWho(req.query.me), kvGet('sp_finance_pm_sop_def')])
     const aprAm = (((defAm || {}).ground || {}).approvers || ['張良瑋'])
     if (!whoAm || !(aprAm.includes(whoAm.name) || whoAm.name === '張良瑋' || whoAm.role === '主管')) return res.status(403).json({ ok: false, error: '模組班表主管限定' })
-    const [docAm, stfAm, payAm] = await Promise.all([kvGet('sp_finance_pm_abmod'), kvGet('sp_crew_pm_hr_staff'), kvGet('sp_finance_pm_payrates')])
-    return res.status(200).json({ ok: true, mods: (docAm || {}).mods || [], staff: (stfAm || {}).names || [], payRates: (payAm || {}).rates || {} })
+    const [docAm, stfAm, payAm, rosAm] = await Promise.all([kvGet('sp_finance_pm_abmod'), kvGet('sp_crew_pm_hr_staff'), kvGet('sp_finance_pm_payrates'), kvGet('sp_crew_kb_roster')])
+    const onAm = (((stfAm || {}).names) || []).filter(n9 => { const p9 = ((rosAm || {}).people || []).find(q9 => q9.name === n9); return !(p9 && p9.endDate) })
+    return res.status(200).json({ ok: true, mods: (docAm || {}).mods || [], staff: (stfAm || {}).names || [], abOn: onAm, payRates: (payAm || {}).rates || {} })
   }
   if (req.method === 'POST' && req.query?.abmodset) {
     const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
