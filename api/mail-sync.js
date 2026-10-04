@@ -944,7 +944,7 @@ export default async function handler(req, res) {
     if (!ok2 || String(req.query.kvproxy) !== ok2) return res.status(403).json({ ok: false })
     let kb = {}; try { kb = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
     const key = String(kb.key || '')
-    const ALLOW_RE = /^sp_team_pm_(task_[A-Za-z0-9_-]+|tasks_v2|data|activity|ownerord)$/ // ownerord=負責人視角分組排序(v4.41.0)
+    const ALLOW_RE = /^sp_team_pm_(task_[A-Za-z0-9_-]+|tasks_v2|data|activity|ownerord|ptscfg)$/ // ownerord=負責人分組排序(v4.41.0)；ptscfg=任務積分級距(v4.44.0)
     const ALLOW_PFX = /^sp_team_pm_task_$/
     const op = String(kb.op || '')
     if (op === 'getPrefix') {
@@ -2569,10 +2569,23 @@ export default async function handler(req, res) {
         x[aspect + 'Avg'] = all.length ? Math.round(evAvg * 10) / 10 : null
       }
     }
+    namesL.forEach(nm => P(nm)) // v4.44.0 張良「直接先把每個人的名字show出來」：GD 人員全員上榜（沒分=0）
+    // ⭐ 任務積分（v4.44.0 360制度）：已完成任務的 pts 按負責人加總
+    const tpMap = {}
+    try {
+      const rT = await fetch(`${SB_URL}/rest/v1/pm_documents?id=like.sp_team_pm_task_*&select=data`, { headers: { apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}` } })
+      const rowsT = rT.ok ? await rT.json() : []
+      for (const row of rowsT) {
+        let t9 = null; try { t9 = JSON.parse(typeof row.data?.v === 'string' ? row.data.v : JSON.stringify(row.data?.v)) } catch (_) {}
+        if (t9 && t9.status === 'done' && t9.owner && Number(t9.pts) > 0) tpMap[t9.owner] = (tpMap[t9.owner] || 0) + Number(t9.pts)
+      }
+      Object.keys(tpMap).forEach(nm => P(nm))
+    } catch (_) {}
     const rank = Object.values(board).map(p => ({
       name: p.name, nFind: p.nFind, nFix: p.nFix,
       findPts: Math.round(p.findPts * 10) / 10, fixPts: Math.round(p.fixPts * 10) / 10,
-      total: Math.round((p.findPts + p.fixPts) * 10) / 10,
+      taskPts: Math.round((tpMap[p.name] || 0) * 10) / 10,
+      total: Math.round((p.findPts + p.fixPts + (tpMap[p.name] || 0)) * 10) / 10,
       facets: Object.fromEntries(FACETS.map(f => [f, p.fc[f] ? { avg: Math.round(p.fc[f].sum / p.fc[f].n * 10) / 10, n: p.fc[f].n } : null])),
     })).sort((a, b) => b.total - a.total || (b.nFind + b.nFix) - (a.nFind + a.nFix))
     // ○○之星榮耀榜：每面向平均星最高者（至少 3 票才上榜，避免一票封神）

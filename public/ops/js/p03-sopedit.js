@@ -250,11 +250,11 @@ function lbRender(){
     <div style="font-size:13px;font-weight:700;color:var(--muted)">${i===0?'👑 ':''}#${i+1}</div><div style="font-weight:800;color:var(--ink)">${nm}</div><div style="font-size:20px;font-weight:800;color:var(--pdark)">${arr.length}<span style="font-size:12px"> 件</span></div>
   </div>`).join(''):'<div class="mut">還沒有人回報過問題</div>'}</div></section>`
   h += `<section><h2>積分排行榜 <span class="hint">積分＝每件「發現」與「解決」的全員評星平均加總（1~5⭐）</span></h2>
-  <div class="scroll"><table><thead><tr><th>#</th><th style="text-align:left">夥伴</th><th>發現分</th><th>解決分</th><th>總積分</th>${d.facets.map(f=>'<th>'+f+'</th>').join('')}<th>發現次</th><th>解決次</th></tr></thead><tbody>`
-  if (!d.rank.length) h += `<tr><td colspan="${7+d.facets.length}" style="text-align:center" class="mut">還沒有評分——回報問題、認領解決、幫別人評星開始累積</td></tr>`
+  <div class="scroll"><table><thead><tr><th>#</th><th style="text-align:left">夥伴</th><th>發現分</th><th>解決分</th><th>任務分</th><th>總積分</th>${d.facets.map(f=>'<th>'+f+'</th>').join('')}<th>發現次</th><th>解決次</th></tr></thead><tbody>`
+  if (!d.rank.length) h += `<tr><td colspan="${8+d.facets.length}" style="text-align:center" class="mut">還沒有評分——回報問題、認領解決、幫別人評星開始累積</td></tr>`
   d.rank.forEach((p,i)=>{
     const medal = i===0?'🥇':i===1?'🥈':i===2?'🥉':(i+1)
-    h += `<tr style="${meN===p.name?'background:var(--psoft)':''}"><td style="font-weight:900">${medal}</td><td style="text-align:left;font-weight:800;color:var(--ink)">${p.name}</td><td>${p.findPts||0}</td><td>${p.fixPts||0}</td><td class="avg">${p.total||0}</td>${d.facets.map(f=>'<td>'+(p.facets[f]?('⭐'+p.facets[f].avg):'—')+'</td>').join('')}<td class="mut">${p.nFind}</td><td class="mut">${p.nFix}</td></tr>`
+    h += `<tr style="${meN===p.name?'background:var(--psoft)':''}"><td style="font-weight:900">${medal}</td><td style="text-align:left;font-weight:800;color:var(--ink)">${p.name}</td><td>${p.findPts||0}</td><td>${p.fixPts||0}</td><td style="font-weight:800;color:${p.taskPts?'#F2C14E':'inherit'}">${p.taskPts||0}</td><td class="avg">${p.total||0}</td>${d.facets.map(f=>'<td>'+(p.facets[f]?('⭐'+p.facets[f].avg):'—')+'</td>').join('')}<td class="mut">${p.nFind}</td><td class="mut">${p.nFix}</td></tr>`
   })
   h += `</tbody></table></div></section>`
   // 待你評分（個人化）＋ 📦 封存
