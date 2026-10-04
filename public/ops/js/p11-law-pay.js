@@ -351,17 +351,28 @@ function abAttDraw(){
     </tbody></table></div>
     <div class="hint" style="margin-top:8px">補卡紀錄 NUEiP 匯出沒帶旗標，先以「缺卡」欄代位；時數=NUEiP 核定工時。</div>`)
 }
-function abAttPerson(nm){
-  const all = (window._abaD||[]).filter(x=>x.n===nm && (abaMo==='all' || x.d.startsWith(abaMo))).sort((a,b)=>a.d<b.d?1:-1)
+function abAttPerson(nm, keep){
+  if (!keep) window._abaPSort = { k:'d', dir:-1 }
+  window._abaPN = nm
+  const so = window._abaPSort
+  const all = (window._abaD||[]).filter(x=>x.n===nm && (abaMo==='all' || x.d.startsWith(abaMo)))
+  const sev = x => (x.abs?100:0)+(x.miss?50:0)+(x.late>0?10+x.late/1000:0)+(x.early>0?5:0)
+  all.sort((a,b)=>{ const k=so.k
+    let va = k==='st'?sev(a):(a[k]??''), vb = k==='st'?sev(b):(b[k]??'')
+    if (k==='h'||k==='st') return ((+va||0)-(+vb||0))*so.dir
+    return (String(va)<String(vb)?-1:String(va)>String(vb)?1:0)*so.dir })
   const stTx = x => [x.abs?'<b style="color:var(--red)">曠職</b>':'', x.miss?'<b style="color:var(--red)">缺卡</b>':'', x.late>0?`<b style="color:#E8A657">遲到${x.late}分</b>`:'', x.early>0?`<b style="color:#E8A657">早退${x.early}分</b>`:''].filter(Boolean).join('、') || '<span style="color:var(--green)">✓</span>'
+  // v4.37.2 張良「資料要對齊欄位名稱 所有欄位都要可排序」：th/td 同對齊、每欄可點排序
+  const ar9 = k => `<span style="display:inline-block;width:12px;font-size:10px;text-align:center">${so.k===k?(so.dir>0?'▲':'▼'):''}</span>`
+  const TH9 = (k,lb,al)=>`<th style="padding:4px 8px;text-align:${al};cursor:pointer;white-space:nowrap;user-select:none" onclick="window._abaPSort=window._abaPSort.k==='${k}'?{k:'${k}',dir:-window._abaPSort.dir}:{k:'${k}',dir:${k==='d'?-1:1}};abAttPerson('${nm.replace(/'/g,'')}',1)">${lb}${ar9(k)}</th>`
   lpOverlay('abaPOv', `
     <div style="display:flex;justify-content:space-between;align-items:center"><b style="font-size:16.5px">🕐 ${nm}・逐日打卡（${abaMo==='all'?'全部':abaMo}）</b>
       <button class="mini" style="padding:6px 14px" onclick="document.getElementById('abaPOv').remove()">關閉</button></div>
     <div class="scroll" style="margin-top:8px"><table style="border-collapse:collapse;width:100%"><thead><tr>
-      <th style="padding:4px 8px;text-align:left">日期</th><th style="padding:4px 8px">班別</th><th style="padding:4px 8px">上班卡</th><th style="padding:4px 8px">下班卡</th><th style="padding:4px 8px;text-align:right">時數</th><th style="padding:4px 8px;text-align:left">狀態</th></tr></thead><tbody>
+      ${TH9('d','日期','left')}${TH9('w','班別','center')}${TH9('on','上班卡','center')}${TH9('off','下班卡','center')}${TH9('h','時數','right')}${TH9('st','狀態','left')}</tr></thead><tbody>
       ${all.map(x=>`<tr style="border-top:1px solid var(--line);font-size:13px">
-        <td style="padding:4px 8px;white-space:nowrap">${x.d.slice(5)}（${'日一二三四五六'[new Date(x.d).getDay()]}）</td>
-        <td style="padding:4px 8px;text-align:center">${x.w||'—'}</td>
+        <td style="padding:4px 8px;text-align:left;white-space:nowrap">${x.d.slice(5)}（${'日一二三四五六'[new Date(x.d).getDay()]}）</td>
+        <td style="padding:4px 8px;text-align:center;white-space:nowrap">${x.w||'—'}</td>
         <td style="padding:4px 8px;text-align:center;${!x.on&&!x.abs?'color:var(--red)':''}">${x.on||'—'}</td>
         <td style="padding:4px 8px;text-align:center">${x.off||'—'}</td>
         <td style="padding:4px 8px;text-align:right;font-weight:700">${x.h||'—'}</td>
