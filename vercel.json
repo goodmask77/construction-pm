@@ -15,6 +15,10 @@
   ],
   "crons": [
     {
+      "path": "/api/em-sync",
+      "schedule": "40 * * * *"
+    },
+    {
       "path": "/api/cron-daily",
       "schedule": "0 0 * * *"
     },

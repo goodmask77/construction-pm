@@ -164,6 +164,23 @@ async function loadSpaceAIContext() {
       if (tempRows.length) { bl.push(`  ◇ ⚠️ AB 冰箱溫度超標 ${tempRows.length} 筆：`); tempRows.slice(0, 5).forEach(t => bl.push(`    - ${String(t.recorded_at).slice(0, 16)} ${t.device_label || t.device_id} ${t.temp_c}°C（${t.level}）`)); }
       if (bl.length) parts.push("【A Beach OPS（阿桑系統 boss-api，每小時自動同步；null=沒資料不是0）】\n" + bl.join("\n"));
     } catch (_) {}
+    // EM 包場/大訂（小夏系統 api/em-sync.js 每小時同步 sp_finance_pm_em；與 D哥 loadEmText 同口徑，100%資料鐵則）
+    try {
+      const em = await g("sp_finance_pm_em");
+      if (em && (em.projects || []).length) {
+        const todayE = new Intl.DateTimeFormat("sv-SE", { timeZone: "Asia/Taipei" }).format(new Date()).slice(0, 10);
+        const el = [];
+        const act = em.projects.filter(p => p.status !== "取消");
+        const fut = act.filter(p => p.date >= todayE && !/結案/.test(p.status || "")).sort((a, b) => (a.date < b.date ? -1 : 1));
+        if (fut.length) { el.push(`  ◇ 未來案件 ${fut.length} 件：`); fut.slice(0, 20).forEach(p => el.push(`    - ${p.date} ${p.start || ""}${p.end ? "-" + p.end : ""}｜${p.type || ""}${p.event ? "·" + p.event : ""}｜${p.n || "?"}人｜${p.venue || ""}｜${p.status}${p.deposit ? "·訂金" + p.deposit : ""}${p.quote ? "｜報價" + nt(p.quote) : ""}${p.owner ? "｜負責:" + p.owner : ""}${p.cust ? "｜客:" + p.cust : ""}`)); }
+        else el.push("  ◇ 未來沒有進行中的包場/大訂案件");
+        const done90 = act.filter(p => /結案/.test(p.status || "") && p.date >= new Date(Date.now() - 82 * 86400e3).toISOString().slice(0, 10));
+        if (done90.length) el.push(`  ◇ 近90天結案 ${done90.length} 件、實收合計 ${nt(done90.reduce((t, p) => t + (Number(p.actual) || 0), 0))}`);
+        const openTk = (em.tasks || []).filter(t => t.st !== "已完成");
+        if (openTk.length) { el.push(`  ◇ EM 未完成任務 ${openTk.length} 件（最近到期 10 件）：`); openTk.sort((a, b) => (String(a.due || "9999") < String(b.due || "9999") ? -1 : 1)).slice(0, 10).forEach(t => el.push(`    - ${t.due || "無期限"}［${t.dept || ""}］${t.title}${t.who ? "（" + t.who + "）" : ""}｜案:${t.code || t.ptitle || ""}`)); }
+        parts.push("【EM 包場/大訂（小夏系統，每小時自動同步；金額=actual_total 實收為準）】\n" + el.join("\n"));
+      }
+    } catch (_) {}
     // 排班（100%資料鐵則：問誰哪天上什麼班以此為準；與 D哥 loadShiftText 同步接上）
     try {
       const [stf, tpl, idx] = await Promise.all([g("sp_crew_shift_staff"), g("sp_crew_shift_templates"), g("sp_crew_shift_sched_index")]);

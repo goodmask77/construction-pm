@@ -1026,6 +1026,31 @@ async function loadBossText() {
   } catch (_) { return '' }
 }
 
+// ── EM 包場系統（小夏做的；api/em-sync.js 每小時全量進 sp_finance_pm_em）→ 文字（100%資料鐵則）──
+async function loadEmText() {
+  try {
+    const em = await kvGet('sp_finance_pm_em')
+    if (!em || !(em.projects || []).length) return ''
+    const today = new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10)
+    const nt = (n) => 'NT$' + Math.round(n || 0).toLocaleString()
+    const lines = ['【EM 包場/大訂（小夏系統，每小時自動同步；案件金額=actual_total 實收為準、quote=目前報價）】']
+    const act = em.projects.filter(p => p.status !== '取消')
+    const fut = act.filter(p => p.date >= today && !/結案/.test(p.status || '')).sort((a, b) => (a.date < b.date ? -1 : 1))
+    if (fut.length) {
+      lines.push(`  ◇ 未來案件 ${fut.length} 件：`)
+      fut.slice(0, 20).forEach(p => lines.push(`    - ${p.date} ${p.start || ''}${p.end ? '-' + p.end : ''}｜${p.type || ''}${p.event ? '·' + p.event : ''}｜${p.n || '?'}人｜${p.venue || ''}｜${p.status}${p.deposit ? '·訂金' + p.deposit : ''}${p.quote ? '｜報價' + nt(p.quote) : ''}${p.owner ? '｜負責:' + p.owner : ''}${p.cust ? '｜客:' + p.cust : ''}`))
+    } else lines.push('  ◇ 未來沒有進行中的包場/大訂案件')
+    const done90 = act.filter(p => /結案/.test(p.status || '') && p.date >= new Date(Date.now() - 82 * 86400e3).toISOString().slice(0, 10))
+    if (done90.length) lines.push(`  ◇ 近90天結案 ${done90.length} 件、實收合計 ${nt(done90.reduce((t, p) => t + (Number(p.actual) || 0), 0))}`)
+    const openTk = (em.tasks || []).filter(t => t.st !== '已完成')
+    if (openTk.length) {
+      lines.push(`  ◇ EM 未完成任務 ${openTk.length} 件（最近到期 10 件）：`)
+      openTk.sort((a, b) => (String(a.due || '9999') < String(b.due || '9999') ? -1 : 1)).slice(0, 10).forEach(t => lines.push(`    - ${t.due || '無期限'}［${t.dept || ''}］${t.title}${t.who ? '（' + t.who + '）' : ''}｜案:${t.code || t.ptitle || ''}`))
+    }
+    return '\n' + lines.join('\n')
+  } catch (_) { return '' }
+}
+
 // 資料總目錄：列出資料庫所有文件 id → D 知道系統有哪些資料域（新空間/新功能上線自動出現在這）
 // LINE OA 訊息額度（官方 API 即時）→ 文字（張良 2026-07-18：DD 要答得出「LINE 訊息額度多少」）
 async function loadLineQuotaText() {
@@ -2496,7 +2521,7 @@ export default async function handler(req, res) {
         moneyOK = (gid === 'Cf7940efc6517b0c084ad2ad496b45f30') || (gcfg[gid] && gcfg[gid].money === true)
       }
       // 3) 一般流程：載入資料＋對話記憶＋長期記事本 → 問 AI（操作者才開放下指令）
-      const [snaps, accountsText, financeText, activityText, estimatesText, crewText, history, memList, conclusionsText, tasksText, sheetText, posText, catalogText, supplyText, lineQuotaText, filelibText, groupChatText] = await Promise.all([loadSnapshots(), loadAccounts(), loadFinanceText(), loadActivityText(), loadEstimatesText(), Promise.all([loadCrewText(), loadShiftText(), loadPunchText(), loadHrText(), moneyOK ? loadSalaryText() : Promise.resolve('')]).then(parts => parts.join('')), getChatHistory(convId), getMemory(), loadConclusionsText(), loadTasksText(), loadSheetText(), Promise.all([loadPosText(), loadBossText()]).then(([a, b]) => a + b), loadCatalogText(), loadSupplyText(), loadLineQuotaText(), loadFilelibText(), loadGroupChatText().then(async g => g + await loadPushLogText(convId))])
+      const [snaps, accountsText, financeText, activityText, estimatesText, crewText, history, memList, conclusionsText, tasksText, sheetText, posText, catalogText, supplyText, lineQuotaText, filelibText, groupChatText] = await Promise.all([loadSnapshots(), loadAccounts(), loadFinanceText(), loadActivityText(), loadEstimatesText(), Promise.all([loadCrewText(), loadShiftText(), loadPunchText(), loadHrText(), moneyOK ? loadSalaryText() : Promise.resolve('')]).then(parts => parts.join('')), getChatHistory(convId), getMemory(), loadConclusionsText(), loadTasksText(), loadSheetText(), Promise.all([loadPosText(), loadBossText(), loadEmText()]).then(([a, b, c]) => a + b + c), loadCatalogText(), loadSupplyText(), loadLineQuotaText(), loadFilelibText(), loadGroupChatText().then(async g => g + await loadPushLogText(convId))])
       let rawReply = await answer(text, snaps, accountsText, financeText, activityText, estimatesText, crewText, canAct, history, memoryToText(memList), conclusionsText, tasksText, sheetText, posText, catalogText, supplyText, lineQuotaText, filelibText, groupChatText, moneyOK)
       // 🔎 資料代查迴圈（張良 2026-09-27 根除）：AI 輸出 query_pos_day → 系統查庫 → 資料回填再答一輪（唯讀自動執行,不經確認）
       // v4.38.1 假代查抓包（張良 2026-10-04「dd到底查不查得到」：DD 答應查九月婚禮包場說「稍等一下」卻沒輸出指令,使用者空等）：
