@@ -439,7 +439,7 @@ async function meChipInit(){ // 側欄底部＝登入身分（張良 2026-10-02�
 // ── 🔔 通知中心（v4.33.4 張良：通知要有頁面＋歷史紀錄＋分類；鈴鐺常駐不再按完消失）──
 // 歷史=伺服器每發一次推播自動記一筆(sp_finance_pm_prep_ntf)；全員通知人人看得到、指定對象只有本人看得到
 const NTF_CATS = { all:'全部', meet:'📢 會議', sop:'✅ SOP', prep:'🍳 備料', stock:'📦 庫存', issue:'⚠️ 問題回報', other:'🔔 其他' }
-let _ntfList = null, _ntfCat = 'all'
+let _ntfList = null, _ntfCat = 'all', _ntfRd = '' // _ntfRd=開啟通知中心當下的「上次已讀」快照，給未讀高亮用（v4.52.1）
 async function ntfFetch(){ try { const r = await fetch('/api/mail-sync?ntf=' + encodeURIComponent(K) + (TK() ? '&me=' + encodeURIComponent(TK()) : '') + '&r=' + Date.now()); const j = await r.json(); if (j && j.ok) _ntfList = j.list || [] } catch(e){}; return _ntfList || [] }
 function ntfUnread(){ const rd = localStorage.getItem('gdNtfRead') || ''; return (_ntfList || []).filter(x => x.ts > rd).length }
 async function ntfBadgeSync(){ // 鈴鐺上的未讀紅點數（進站抓一次）；v4.47.4 同步側欄(#ntfBell)＋手機底部列(#favBell)兩處
@@ -467,11 +467,15 @@ async function ntfPage(){ // 通知中心彈層：分類chips＋依日分組歷�
     <div id="ntfList" style="overflow:auto;padding:0 16px 20px"></div></div>`
   ov.onclick = () => ov.remove()
   document.body.appendChild(ov)
+  _ntfRd = localStorage.getItem('gdNtfRead') || '' // v4.52.1 先拍「上次已讀」快照給本次顯示＝未讀高亮這次看得到，不會一打開就全變已讀
   await ntfFetch(); ntfRender()
-  localStorage.setItem('gdNtfRead', new Date().toISOString()) // 打開＝已讀
-  if (TK()) fetch('/api/mail-sync?ntfread=' + encodeURIComponent(K) + '&me=' + encodeURIComponent(TK())).catch(()=>{}) // v4.33.5 伺服器也記已讀＝之後推播的App圖示數字會歸零重算
+  localStorage.setItem('gdNtfRead', new Date().toISOString()) // 打開＝已讀（浮水印設為現在）
+  if (TK()) fetch('/api/mail-sync?ntfread=' + encodeURIComponent(K) + '&me=' + encodeURIComponent(TK())).catch(()=>{}) // 伺服器也記已讀＝之後推播的App圖示數字會歸零重算
+  ntfClearBadges() // v4.52.1 治本（張良「手機小鈴鐺點了1還在、比較晚才消」）：原本只清側欄#ntfBell、漏清手機底部#favBell→兩顆一起清
+}
+function ntfClearBadges(){ // 兩顆鈴鐺(側欄#ntfBell＋手機底部#favBell)紅點一起清＋清手機App圖示數字
+  ;['ntfBell','favBell'].forEach(id => { const b = document.getElementById(id); const d = b && b.querySelector('.ntfDot'); if (d) d.remove() })
   try { if ('clearAppBadge' in navigator) navigator.clearAppBadge().catch(()=>{}) } catch(e){}
-  const b = document.getElementById('ntfBell'); const d = b && b.querySelector('.ntfDot'); if (d) d.remove()
 }
 // 🔔 通知點擊定位（v4.47.2 張良「點了明日備料建議沒有定位過去」）：
 // 真因＝①舊通知 url 只存 /prep 沒帶 #tab=prep（v4.45.6 前寫入的改不了）②同頁 location.href 改 hash，hash 沒變就不觸發 hashchange＝不動。
@@ -499,23 +503,28 @@ function ntfGo(url, cat){
   if (typeof load === 'function') load(lastStore || 'ground') // 真的沒資訊→至少關彈窗回看板
 }
 function ntfRender(){
-  const L = _ntfList || [], rd0 = localStorage.getItem('gdNtfRead') || ''
-  const cnt = k => k==='all' ? L.length : L.filter(x=>(x.cat||'other')===k).length
-  document.getElementById('ntfChips').innerHTML = Object.entries(NTF_CATS).filter(([k])=>k==='all'||cnt(k)).map(([k,lb]) =>
-    `<button class="mini${_ntfCat===k?' on':''}" style="padding:6px 11px" onclick="_ntfCat='${k}';ntfRender()">${lb}${cnt(k)?` <span style="opacity:.65">${cnt(k)}</span>`:''}</button>`).join('')
-  const fl = _ntfCat==='all' ? L : L.filter(x=>(x.cat||'other')===_ntfCat)
-  if (!fl.length) { document.getElementById('ntfList').innerHTML = '<div class="hint" style="padding:18px 0;text-align:center">還沒有通知</div>'; return }
+  const L = _ntfList || [], rd0 = _ntfRd || '' // v4.52.1 用開啟當下的已讀快照＝本次瀏覽未讀高亮不會消
+  const cnt = k => k==='all' ? L.length : k==='mine' ? L.filter(x=>x.mine).length : L.filter(x=>(x.cat||'other')===k).length
+  // v4.52.1 分類列：全部→＠我的(有才顯示)→各類別；＠我的＝指定給我的通知(任務指派/審核/會議簽收提醒…)，伺服器回 mine 旗標
+  const chipDefs = [['all','全部'],['mine','＠我的']].concat(Object.entries(NTF_CATS).filter(([k])=>k!=='all'))
+  document.getElementById('ntfChips').innerHTML = chipDefs.filter(([k])=>k==='all'||cnt(k)).map(([k,lb]) =>
+    `<button class="mini${_ntfCat===k?' on':''}" style="padding:6px 11px${k==='mine'&&_ntfCat!=='mine'?';border-color:#F2C94C;color:#F2C94C':''}" onclick="_ntfCat='${k}';ntfRender()">${lb}${cnt(k)?` <span style="opacity:.65">${cnt(k)}</span>`:''}</button>`).join('')
+  const fl = _ntfCat==='all' ? L : _ntfCat==='mine' ? L.filter(x=>x.mine) : L.filter(x=>(x.cat||'other')===_ntfCat)
+  if (!fl.length) { document.getElementById('ntfList').innerHTML = `<div class="hint" style="padding:18px 0;text-align:center">${_ntfCat==='mine'?'目前沒有指定給你的通知':'還沒有通知'}</div>`; return }
   const day = ts => { const d2 = ts.slice(0,10), t0 = new Date().toISOString().slice(0,10); return d2===t0 ? '今天' : d2 }
   let lastD = '', html = ''
   fl.forEach(x => {
     const d2 = day(x.ts)
     if (d2 !== lastD) { html += `<div class="hint" style="font-weight:800;margin:12px 0 4px">${d2}</div>`; lastD = d2 }
     const hh = new Date(x.ts).toLocaleTimeString('zh-TW',{hour:'2-digit',minute:'2-digit',hour12:false})
-    const unread = x.ts > rd0
-    html += `<div onclick="ntfGo('${(x.url||'/prep').replace(/'/g,'')}','${(x.cat||'').replace(/'/g,'')}')" style="display:flex;gap:9px;padding:10px 10px;border:1px solid ${unread?'#3E5B86':'#2C3542'};background:${unread?'#20304A':'#202834'};border-radius:11px;margin-bottom:7px;cursor:pointer"> <!-- v4.47.2 ntfGo＝帶hash設hash(相同強制routeHash)/沒hash按分類定位/跨頁才整頁跳；原本只 location.href 同頁hash沒變不動 -->
+    const unread = x.ts > rd0, mine = !!x.mine
+    // v4.52.1 已讀辨識（張良「沒明顯看過的區別」）：未讀=亮底+粗體+藍左條+右邊藍點；已讀=變暗；＠我的=金左條+「＠你」標
+    const accent = mine ? '#F2C94C' : unread ? '#4DA3FF' : 'transparent'
+    html += `<div onclick="ntfGo('${(x.url||'/prep').replace(/'/g,'')}','${(x.cat||'').replace(/'/g,'')}')" style="display:flex;gap:9px;padding:10px 11px;border:1px solid ${unread?'#3E5B86':'#262E3A'};border-left:3px solid ${accent};background:${unread?'#20304A':'#181E27'};border-radius:11px;margin-bottom:7px;cursor:pointer;opacity:${unread?'1':'.62'}">
       <span style="flex:0 0 auto;font-size:16px">${(NTF_CATS[x.cat]||'🔔').slice(0,2)}</span>
-      <div style="min-width:0"><div style="font-weight:800;font-size:14.5px">${x.title||''} <span class="hint" style="font-weight:400">${hh}</span></div>
-      <div class="hint" style="font-size:13px;overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical">${x.body||''}</div></div></div>`
+      <div style="min-width:0;flex:1"><div style="font-weight:${unread?800:600};font-size:14.5px">${x.title||''}${mine?' <span style="color:#F2C94C;font-weight:800;font-size:11px;border:1px solid #F2C94C;border-radius:5px;padding:0 4px">＠你</span>':''} <span class="hint" style="font-weight:400">${hh}</span></div>
+      <div class="hint" style="font-size:13px;overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical${unread?'':';color:#6B7686'}">${x.body||''}</div></div>
+      ${unread?'<span title="未讀" style="flex:0 0 auto;width:9px;height:9px;border-radius:50%;background:#4DA3FF;align-self:center"></span>':''}</div>`
   })
   document.getElementById('ntfList').innerHTML = html
 }

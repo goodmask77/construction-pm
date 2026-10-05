@@ -2925,7 +2925,8 @@ export default async function handler(req, res) {
     if (!ok2 || String(req.query.ntf) !== ok2) return res.status(403).json({ ok: false })
     const [docN9, meN9] = await Promise.all([kvGet('sp_finance_pm_prep_ntf'), sopWho(req.query.me)])
     const ridN9 = meN9 ? (meN9.rid || meN9.uid) : null
-    const listN9 = ((docN9 || {}).list || []).filter(x => !x.to || (ridN9 && x.to.includes(ridN9))).slice(0, 100).map(({ to, ...r }) => r)
+    // v4.52.1（張良「新增有＠自己的分類」）：加 mine 旗標＝這則是「指定給我」(to 含我，非全員廣播)；只回布林不外洩收件名單
+    const listN9 = ((docN9 || {}).list || []).filter(x => !x.to || (ridN9 && x.to.includes(ridN9))).slice(0, 100).map(({ to, ...r }) => ({ ...r, mine: !!(to && ridN9 && to.includes(ridN9)) }))
     return res.status(200).json({ ok: true, list: listN9 })
   }
   // 🔔 通知測試口（管理金鑰）：GET ?ntfping=<MENU_PROBE_KEY>&name=張良瑋 → 對本人發一則測試推播（帶 badge=1 驗證圖示數字）
