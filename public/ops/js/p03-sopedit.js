@@ -241,6 +241,35 @@ function lbRender(){
       <div style="font-size:13px;font-weight:800;color:var(--pdark)">${f}之星</div>
       ${w?`<div style="font-size:17px;font-weight:900;color:var(--ink)">👑 ${w.name}</div><div class="hint">⭐${w.avg}・${w.n}票</div>`:`<div class="mut" style="font-size:14px;padding:4px 0">虛位以待</div><div class="hint">滿3票上榜</div>`}
     </div>`}).join('') + `</div></section>`
+  // 🎁 兌換商城（張良 2026-10-06：放排行榜頁；排名不掉、另算可用點；全部要你審核；你也可直接給分）
+  const Elb = s => String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')
+  const myBal = d.myBalance||0
+  const rewards = (d.rewards||[]).filter(r=>!r.off).sort((a,b)=>(a.ord||0)-(b.ord||0))
+  h += `<section><h2>🎁 兌換商城 <span class="hint">用累積點數換獎勵（兌換不影響排名）</span>${meN&&d.isAdmin?' <button class="mini" style="margin-left:6px" onclick="lbRwMng()">⚙️ 管理獎勵</button> <button class="mini" onclick="lbGrant()">＋ 直接給分</button>':''}</h2>`
+  h += meN?`<div style="background:var(--soft);border:1px solid var(--primary);border-radius:12px;padding:10px 14px;margin-bottom:10px;display:flex;align-items:center;gap:10px"><span class="hint">我的可用點數</span><b style="font-size:26px;color:var(--primary)">${myBal}</b><span class="hint">點</span></div>`:`<div class="hint" style="margin-bottom:8px">綁定後才能兌換——${BIND_HINT}</div>`
+  h += `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px">`
+  h += rewards.length?rewards.map(r=>{
+    const soldout = r.stock!=null && r.stock<=0
+    const can = meN && myBal>=r.cost && !soldout
+    return `<div style="background:var(--card);border:1px solid var(--line);border-radius:12px;padding:11px 12px;display:flex;flex-direction:column;gap:5px">
+      <div style="font-weight:800;color:var(--ink)">${Elb(r.name)}</div>
+      ${r.desc?`<div class="hint" style="font-size:12px">${Elb(r.desc)}</div>`:''}
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-top:auto;padding-top:6px"><span style="font-weight:800;color:var(--primary)">${r.cost} 點</span>${r.stock!=null?`<span class="hint" style="font-size:11px">剩${r.stock}</span>`:''}</div>
+      <button class="mini ${can?'on':''}" ${can?'':'disabled style="opacity:.45"'} onclick="lbRedeem('${r.id}','${Elb(r.name)}',${r.cost})">${soldout?'已換完':(meN?(myBal>=r.cost?'兌換':'點數不足'):'要綁定')}</button>
+    </div>`
+  }).join(''):'<div class="mut">還沒有獎勵——管理者按「⚙️ 管理獎勵」新增</div>'
+  h += `</div>`
+  const myRd = d.myRedeems||[]
+  if (meN && myRd.length){ const stTag = s=>({pending:'🕐 待審',approved:'✅ 已通過',rejected:'❌ 未過',done:'🎉 已給'}[s]||s)
+    h += `<div style="margin-top:10px"><div style="font-weight:700;font-size:13px;margin-bottom:4px">我的兌換紀錄</div>${myRd.slice(0,10).map(r=>`<div style="background:var(--soft);border-radius:8px;padding:5px 9px;margin-top:4px;font-size:13px;display:flex;gap:8px"><span>${stTag(r.status)}</span><span style="flex:1">${Elb(r.rewardName)}（${r.cost}點）</span><span class="hint">${r.ts||''}</span></div>`).join('')}</div>` }
+  h += `</section>`
+  if (d.isAdmin && (d.pendingRedeems||[]).length){
+    h += `<section><h2>🛡 待審核兌換（${d.pendingRedeems.length}） <span class="hint">准了自動扣對方點數、雙方收通知</span></h2>`
+    h += d.pendingRedeems.map(r=>`<div style="background:var(--card);border:1.5px solid #E8B931;border-radius:11px;padding:9px 12px;margin-bottom:8px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+      <b>${Elb(r.person)}</b><span>換「${Elb(r.rewardName)}」</span><span style="color:var(--primary);font-weight:800">${r.cost}點</span><span class="hint">${r.ts||''}</span>
+      <span style="margin-left:auto;display:flex;gap:6px"><button class="mini on" style="padding:6px 14px" onclick="lbRdDecide('${r.id}',1)">准</button><button class="mini" style="padding:6px 14px;color:var(--red)" onclick="lbRdDecide('${r.id}',0)">駁回</button></span></div>`).join('')
+    h += `</section>`
+  }
   // 🔍 發現王（張良 2026-09-26）：發現問題次數排行，點名字看他發現過的每一件
   const finders = {}
   ;(d.issues||[]).forEach(x=>{ if (x.by && x.by!=='匿名') (finders[x.by]=finders[x.by]||[]).push(x) })
@@ -263,6 +292,9 @@ function lbRender(){
     h += `<tr style="${meN===p.name?'background:var(--psoft)':''}"><td style="font-weight:900">${medal}</td><td style="text-align:left;font-weight:800;color:var(--ink)">${p.name}</td><td style="font-weight:800;color:${p.behavPts?'#4DA3FF':'inherit'}">${p.behavPts||0}</td><td>${p.findPts||0}</td><td>${p.fixPts||0}</td><td style="font-weight:800;color:${p.taskPts?'#F2C14E':'inherit'}">${p.taskPts||0}</td><td class="avg">${p.total||0}</td>${d.facets.map(f=>'<td>'+(p.facets[f]?('⭐'+p.facets[f].avg):'—')+'</td>').join('')}<td class="mut">${p.nFind}</td><td class="mut">${p.nFix}</td></tr>`
   })
   h += `</tbody></table></div></section>`
+  // 📒 積分存摺（張良 2026-10-06：像銀行帳戶，逐筆＋餘額；本人看自己、管理者可查任何人）
+  h += `<section><h2>📒 積分存摺 <span class="hint">每一筆進出＋當下餘額</span>${d.isAdmin?` <select id="lgWho" onchange="lbLedgerView()" style="margin-left:6px;border:1px solid var(--line);border-radius:8px;padding:4px 8px;font-size:13px"><option value="">我自己</option>${(d.names||[]).map(n=>`<option>${Elb(n)}</option>`).join('')}</select>`:''}</h2>
+  <div id="lgBox">${lbLedgerHtml(d.myLedger||[], d.myBalance||0, meN||'我')}</div></section>`
   // 待你評分（個人化）＋ 📦 封存
   const doneL = (d.issues||[]).filter(x=>x.status==='done')
   const toRate = [], arch = []
@@ -341,6 +373,88 @@ async function lbPtsAdjust(){
   const d = await lbPtsPost({ op:'adjust', person, pts, note })
   if (d && d.ok){ alert('已記錄 '+(pts>0?'+':'')+pts+' 給 '+person); document.getElementById('pcOv').remove(); if (typeof refreshView==='function') refreshView() } else alert((d&&d.error)||'送出失敗')
 }
+// 📒 積分存摺 html（像銀行帳戶：逐筆＋跑餘額）
+function lbLedgerHtml(ledger, bal, who){
+  const E = s => String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+  const ACT = { punch:'打卡上班', fb_give:'交每日回饋', sop_done:'完成SOP', meet_ack:'簽收會議', journal:'工作日誌', issue_report:'回報問題', inv_count:'盤點', adjust:'手動調整', redeem:'兌換獎勵' }
+  let h = `<div style="background:var(--soft);border-radius:10px;padding:8px 12px;margin-bottom:8px;display:flex;align-items:center;gap:8px"><span class="hint">${E(who)} 目前餘額</span><b style="font-size:22px;color:var(--primary)">${bal}</b><span class="hint">點</span></div>`
+  if (!ledger.length) return h + '<div class="mut">還沒有任何積分紀錄</div>'
+  h += `<div class="scroll"><table><thead><tr><th style="text-align:left">時間</th><th style="text-align:left">項目</th><th>±</th><th>餘額</th></tr></thead><tbody>`
+  h += ledger.map(e=>`<tr><td style="text-align:left" class="hint">${E((e.date||'').slice(5))} ${E(e.ts||'')}</td><td style="text-align:left">${ACT[e.act]||E(e.act)}${e.note?'·'+E(e.note):''}${e.by?' <span class="hint">by '+E(e.by)+'</span>':''}</td><td style="font-weight:800;color:${e.pts>=0?'var(--green)':'var(--red)'}">${e.pts>=0?'+':''}${e.pts}</td><td>${e.bal}</td></tr>`).join('')
+  return h + `</tbody></table></div>`
+}
+async function lbLedgerView(){
+  const sel = document.getElementById('lgWho'); if (!sel) return
+  const who = sel.value, box = document.getElementById('lgBox'); if (!box) return
+  if (!who){ const d = window._lbD; box.innerHTML = lbLedgerHtml(d.myLedger||[], d.myBalance||0, (d.me&&d.me.name)||'我'); return }
+  box.innerHTML = '<div class="mut">載入中…</div>'
+  let d; try { const r = await fetch('/api/mail-sync?ledger=' + encodeURIComponent(K) + '&who=' + encodeURIComponent(who) + (TK()?'&me='+encodeURIComponent(TK()):'')); d = await r.json() } catch(e){}
+  box.innerHTML = (d&&d.ok) ? lbLedgerHtml(d.ledger||[], d.balance||0, who) : '<div class="err">讀不到</div>'
+}
+// 🎁 兌換
+async function lbRedeem(id, name, cost){
+  if (!confirm('用 ' + cost + ' 點兌換「' + name + '」？送出後等審核')) return
+  const r = await fetch('/api/mail-sync?redeem=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ op:'request', rewardId:id, token:TK() }) })
+  const d = await r.json().catch(()=>null)
+  if (d && d.ok){ alert('已送出兌換申請，等審核 🎁'); if (typeof refreshView==='function') refreshView() } else alert((d&&d.error)||'兌換失敗')
+}
+async function lbRdDecide(id, pass){
+  if (!confirm(pass ? '核准這筆兌換？會自動扣對方點數' : '駁回這筆兌換？點數不會扣')) return
+  const r = await fetch('/api/mail-sync?redeem=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ op:'decide', id, pass: !!pass, token:TK() }) })
+  const d = await r.json().catch(()=>null)
+  if (d && d.ok){ if (typeof refreshView==='function') refreshView() } else alert((d&&d.error)||'處理失敗')
+}
+// ＋ 直接給／扣積分（複用 pointscfg adjust）
+function lbGrant(){
+  const d = window._lbD, E = s => String(s==null?'':s).replace(/"/g,'&quot;')
+  const ov = document.createElement('div'); ov.id='grOv'
+  ov.style.cssText='position:fixed;inset:0;background:rgba(10,14,20,.6);z-index:60;display:flex;align-items:center;justify-content:center;padding:14px'
+  ov.innerHTML = `<div style="background:#161B22;border:1px solid #2A3240;border-radius:14px;max-width:360px;width:100%;padding:16px" onclick="event.stopPropagation()">
+    <div style="font-weight:900;margin-bottom:10px">＋ 直接給／扣積分</div>
+    <select id="grWho" style="width:100%;border:1px solid var(--line);border-radius:8px;padding:8px;font-size:15px;margin-bottom:8px">${(d.names||[]).map(n=>`<option>${E(n)}</option>`).join('')}</select>
+    <input id="grPts" type="number" placeholder="點數（正=給／負=扣）" style="width:100%;border:1px solid var(--line);border-radius:8px;padding:8px;font-size:15px;margin-bottom:8px;box-sizing:border-box">
+    <input id="grNote" placeholder="原因（可空）" style="width:100%;border:1px solid var(--line);border-radius:8px;padding:8px;font-size:15px;margin-bottom:12px;box-sizing:border-box">
+    <div style="display:flex;gap:8px;justify-content:flex-end"><button class="mini" style="padding:9px 12px" onclick="document.getElementById('grOv').remove()">取消</button><button class="mini on" style="padding:9px 18px" onclick="lbGrantGo()">送出</button></div></div>`
+  ov.onclick = () => ov.remove(); document.body.appendChild(ov)
+}
+async function lbGrantGo(){
+  const person=(document.getElementById('grWho')||{}).value||'', pts=+((document.getElementById('grPts')||{}).value||0), note=(document.getElementById('grNote')||{}).value||''
+  if (!person || !pts){ alert('要選人＋填點數'); return }
+  const r = await fetch('/api/mail-sync?pointscfg=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ op:'adjust', person, pts, note, token:TK() }) })
+  const d = await r.json().catch(()=>null)
+  const o = document.getElementById('grOv'); if (o) o.remove()
+  if (d && d.ok){ alert('已給 ' + person + ' ' + (pts>0?'+':'') + pts + ' 點'); if (typeof refreshView==='function') refreshView() } else alert((d&&d.error)||'失敗')
+}
+// ⚙️ 管理獎勵
+function lbRwMng(){
+  const d = window._lbD, E = s => String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;')
+  const rws = (d.rewards||[]).slice().sort((a,b)=>(a.ord||0)-(b.ord||0))
+  const row = r=>`<tr data-id="${E(r.id)}" style="${r.off?'opacity:.45':''}">
+    <td style="padding:3px"><input class="rwN" value="${E(r.name)}" style="width:120px;border:1px solid var(--line);border-radius:7px;padding:5px;font-size:13px"></td>
+    <td style="padding:3px"><input class="rwC" type="number" value="${r.cost}" style="width:56px;border:1px solid var(--line);border-radius:7px;padding:5px;font-size:13px;text-align:center"></td>
+    <td style="padding:3px"><input class="rwS" type="number" value="${r.stock==null?'':r.stock}" placeholder="∞" style="width:48px;border:1px solid var(--line);border-radius:7px;padding:5px;font-size:13px;text-align:center"></td>
+    <td style="padding:3px;text-align:center"><input class="rwOff" type="checkbox" ${r.off?'checked':''}></td>
+    <td style="padding:3px"><button class="mini" style="padding:4px 7px" onclick="lbRwSave(this)">存</button><button class="mini" style="padding:4px 7px;color:var(--red)" onclick="lbRwDel('${E(r.id)}')">刪</button></td></tr>`
+  const ov = document.createElement('div'); ov.id='rwOv'
+  ov.style.cssText='position:fixed;inset:0;background:rgba(10,14,20,.6);z-index:60;display:flex;align-items:center;justify-content:center;padding:14px'
+  ov.innerHTML = `<div style="background:#161B22;border:1px solid #2A3240;border-radius:14px;max-width:540px;width:100%;max-height:86vh;overflow:auto;padding:16px" onclick="event.stopPropagation()">
+    <div style="font-weight:900;font-size:16px;margin-bottom:4px">⚙️ 管理獎勵</div>
+    <div class="hint" style="margin-bottom:10px">點數＝兌換要花幾點；庫存留空＝不限；關＝暫時不開放</div>
+    <table style="width:100%;font-size:13px"><thead><tr><th style="text-align:left">獎勵</th><th>點</th><th>庫存</th><th>關</th><th></th></tr></thead><tbody>${rws.map(row).join('')}</tbody></table>
+    <div style="border-top:1px solid var(--line);margin-top:12px;padding-top:10px"><div style="font-weight:800;margin-bottom:6px">＋ 新增獎勵</div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+        <input id="rwNewN" placeholder="名稱" style="width:130px;border:1px solid var(--line);border-radius:7px;padding:6px 8px;font-size:13px">
+        <input id="rwNewC" type="number" placeholder="點數" style="width:64px;border:1px solid var(--line);border-radius:7px;padding:6px;font-size:13px;text-align:center">
+        <input id="rwNewS" type="number" placeholder="庫存(空=∞)" style="width:96px;border:1px solid var(--line);border-radius:7px;padding:6px;font-size:13px">
+        <input id="rwNewD" placeholder="說明(可空)" style="flex:1;min-width:110px;border:1px solid var(--line);border-radius:7px;padding:6px 8px;font-size:13px">
+        <button class="mini on" style="padding:6px 12px" onclick="lbRwAdd()">加入</button></div></div>
+    <div style="display:flex;justify-content:flex-end;margin-top:12px"><button class="mini" style="padding:8px 16px" onclick="document.getElementById('rwOv').remove()">關閉</button></div></div>`
+  ov.onclick = () => ov.remove(); document.body.appendChild(ov)
+}
+async function lbRwPost(body){ const r = await fetch('/api/mail-sync?rewardset=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ ...body, token:TK() }) }); return r.json().catch(()=>null) }
+async function lbRwSave(btn){ const tr = btn.closest('tr'); const d = await lbRwPost({ op:'set', id:tr.dataset.id, name:tr.querySelector('.rwN').value, cost:+tr.querySelector('.rwC').value, stock:tr.querySelector('.rwS').value, off:tr.querySelector('.rwOff').checked }); if (d&&d.ok){ btn.textContent='✓'; setTimeout(()=>btn.textContent='存',1000); window._lbD.rewards=d.rewards } else alert((d&&d.error)||'存失敗') }
+async function lbRwDel(id){ if (!confirm('刪除這個獎勵？')) return; const d = await lbRwPost({ op:'del', id }); if (d&&d.ok){ const o=document.getElementById('rwOv'); if(o)o.remove(); window._lbD.rewards=d.rewards; if (typeof refreshView==='function') refreshView() } else alert((d&&d.error)||'刪失敗') }
+async function lbRwAdd(){ const n=(document.getElementById('rwNewN')||{}).value||'', c=+((document.getElementById('rwNewC')||{}).value||0), s=(document.getElementById('rwNewS')||{}).value||'', ds=(document.getElementById('rwNewD')||{}).value||''; if (!n||!c){ alert('名稱和點數要填'); return } const d = await lbRwPost({ op:'set', name:n, cost:c, stock:s, desc:ds }); if (d&&d.ok){ const o=document.getElementById('rwOv'); if(o)o.remove(); window._lbD.rewards=d.rewards; lbRwMng(); if (typeof refreshView==='function') refreshView() } else alert((d&&d.error)||'加入失敗') }
 // 完成任務卡（排行榜評分用）：拉桿評星＋等級說明，onchange 就地送出
 function rateCard(x, meN, archived){
   const d = window._lbD

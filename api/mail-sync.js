@@ -88,6 +88,14 @@ export async function kvPut(id, obj, editor) {
 }
 
 // 🏦 積分中樞（行為分流水帳/規則/給分）抽到 _points.js 共用（punch 等端點也 import 同一套，不必拉整包 mail-sync）
+// 🎁 基礎獎勵種子（張良 2026-10-06：先幫我設定基礎獎勵；之後可自己增刪改）
+const REWARDS_SEED = [
+  { id: 'rw_drink', name: '指定飲料一杯', cost: 30, stock: null, desc: '上班日任選一杯', off: false, ord: 1 },
+  { id: 'rw_meal', name: '員工餐招待', cost: 60, stock: null, desc: '招待一份員工餐', off: false, ord: 2 },
+  { id: 'rw_early', name: '提早 30 分下班', cost: 120, stock: null, desc: '需當班主管同意時段', off: false, ord: 3 },
+  { id: 'rw_off', name: '指定一天排休', cost: 200, stock: null, desc: '排班前提出、不卡關鍵日', off: false, ord: 4 },
+  { id: 'rw_bonus', name: '加碼獎金 $500', cost: 300, stock: null, desc: '隨當月薪資發放', off: false, ord: 5 },
+]
 // 入庫後廣播「這些 key 變了」（Realtime REST 一發 HTTP 就好，免開 websocket）：
 // 前端 supa.js 訂著 pm-doc-sync 頻道，聽到就自動重抓該 key → 日結信一入庫，
 // 開著的營運報表/對帳頁畫面自己跳新資料，不用手動按更新或重新整理（張良 2026-08-14）
@@ -2186,8 +2194,8 @@ export default async function handler(req, res) {
       // v4.52.5/6 治本（張良「剛發新會議手機App沒出現1的通知；不要因為是我發的就沒通知，大家都一樣，我也要收到、也要走一樣簽到流程」）：新會議發LINE大群＋發App站內通知給「每個要簽的人（含發起人本人）」鈴鐺+1＋推播
       try {
         const bdM = (await kvGet('sp_finance_pm_prep_bind')) || {}
-        const nm2ridM = {}; for (const v of Object.values(bdM.tokens || {})) { if (v && v.name) nm2ridM[v.name] = v.rid || v.uid }
-        const ridsM = [...new Set(ackNames.map(n => nm2ridM[n]).filter(Boolean))] // 含發起人本人＝一視同仁
+        const nm2idsM = {}; for (const v of Object.values(bdM.tokens || {})) { if (v && v.name) { (nm2idsM[v.name] = nm2idsM[v.name] || []); if (v.rid) nm2idsM[v.name].push(v.rid); if (v.uid) nm2idsM[v.name].push(v.uid) } } // v4.54.4 每人收集所有身分id(桌面/手機各一組都中)
+        const ridsM = [...new Set(ackNames.flatMap(n => nm2idsM[n] || []))] // 含發起人本人＝一視同仁
         if (ridsM.length) { const { wpPush } = await import('./_webpush.js'); await wpPush(ridsM, { title: '📢 新會議要簽收', body: `【${it.type}・${it.date}】${String(it.text || '').slice(0, 50)}`, url: '/prep#meet=' + it.id, cat: 'meet' }) }
       } catch (_) {}
     } else if (mb.op === 'edit') {
@@ -2205,8 +2213,8 @@ export default async function handler(req, res) {
       // v4.52.5/6 內容改動＝要重簽→發App站內通知給「每個要簽的人（含發起人本人）」鈴鐺+1，跟新增一視同仁
       if (chgM && Array.isArray(it.ackNames)) { try {
         const bdE = (await kvGet('sp_finance_pm_prep_bind')) || {}
-        const nm2ridE = {}; for (const v of Object.values(bdE.tokens || {})) { if (v && v.name) nm2ridE[v.name] = v.rid || v.uid }
-        const ridsE = [...new Set(it.ackNames.map(n => nm2ridE[n]).filter(Boolean))]
+        const nm2idsE = {}; for (const v of Object.values(bdE.tokens || {})) { if (v && v.name) { (nm2idsE[v.name] = nm2idsE[v.name] || []); if (v.rid) nm2idsE[v.name].push(v.rid); if (v.uid) nm2idsE[v.name].push(v.uid) } } // v4.54.4 每人所有身分id
+        const ridsE = [...new Set(it.ackNames.flatMap(n => nm2idsE[n] || []))]
         if (ridsE.length) { const { wpPush } = await import('./_webpush.js'); await wpPush(ridsE, { title: '📢 會議更新要重簽', body: `【${it.type}・${it.date}】內容有更新，請重新確認熟知`, url: '/prep#meet=' + it.id, cat: 'meet' }) }
       } catch (_) {} }
     } else if (mb.op === 'ack') { // ✅ 確認熟知
@@ -2223,9 +2231,11 @@ export default async function handler(req, res) {
           const total9 = (it.ackNames || []).length
           const allDone9 = total9 > 0 && signed9 >= total9
           const bdK = (await kvGet('sp_finance_pm_prep_bind')) || {}
-          let uidB = null, ridB = null
-          for (const v of Object.values(bdK.tokens || {})) { if (v && v.name === it.by) { uidB = v.uid; ridB = v.rid || v.uid; break } }
-          if (ridB) { const { wpPush } = await import('./_webpush.js'); await wpPush([ridB], { title: allDone9 ? '🎉 會議全員已簽收' : '✅ 會議簽收', body: `${whoM.name} 已確認熟知【${it.type}・${it.date}】（${signed9}/${total9}）`, url: '/prep#meet=' + it.id, cat: 'meet' }) }
+          // v4.54.4 治本（張良「桌面鈴鐺有會議簽收、手機沒有」）：一個人可能桌面/手機各綁一組→發給同名的「所有身分id(rid+uid)」才不會只中一台
+          const idsB = new Set(), uidsB = []
+          for (const v of Object.values(bdK.tokens || {})) { if (v && v.name === it.by) { if (v.rid) idsB.add(v.rid); if (v.uid) { idsB.add(v.uid); uidsB.push(v.uid) } } }
+          const uidB = uidsB[0] || null
+          if (idsB.size) { const { wpPush } = await import('./_webpush.js'); await wpPush([...idsB], { title: allDone9 ? '🎉 會議全員已簽收' : '✅ 會議簽收', body: `${whoM.name} 已確認熟知【${it.type}・${it.date}】（${signed9}/${total9}）`, url: '/prep#meet=' + it.id, cat: 'meet' }) }
           if (allDone9 && uidB) { // 全員簽完才加 LINE 私訊
             const tkB = (process.env.LINE_CHANNEL_ACCESS_TOKEN || '').trim()
             if (tkB) { await fetch('https://api.line.me/v2/bot/message/push', { method: 'POST', headers: { 'content-type': 'application/json', Authorization: 'Bearer ' + tkB }, body: JSON.stringify({ to: uidB, messages: [{ type: 'text', text: `🎉 會議全員已簽收【${it.type}・${it.date}】\n${total9} 人全部確認熟知，點開看 👇\nhttps://ground-pm.vercel.app/prep#meet=${it.id}` }] }) }).catch(() => {}); try { const { logPush } = await import('./push.js'); await logPush(uidB, 1, '會議全員簽收(' + it.by + ')') } catch (_) {} }
@@ -2405,18 +2415,30 @@ export default async function handler(req, res) {
     const today = tpe(new Date())
     const date = /^\d{4}-\d{2}-\d{2}$/.test(String(pb.date || '')) ? String(pb.date) : today
     const hm = ts => new Date(ts).toLocaleTimeString('en-GB', { hour12: false, timeZone: 'Asia/Taipei' }).slice(0, 5)
+    const tmin = s => { const a = String(s || '').split(':'); return (+a[0] || 0) * 60 + (+a[1] || 0) }
     const dayP = await pj2.listPunches('sp_crew_pch_' + date.replace(/-/g, '') + '_')
-    const byP = {}
-    for (const p of dayP) { (byP[p.personId] = byP[p.personId] || { name: p.name, punches: [] }).punches.push(p) }
-    const rows = Object.entries(byP).map(([pid, o]) => {
+    // 當日排班（應到名單＋計畫時間）
+    const sg = await kvGet('sp_finance_pm_shift_g')
+    const schedByName = {}
+    for (const s of (((sg || {}).list) || [])) { if (String(s.date) === date && s.name && !schedByName[s.name]) schedByName[s.name] = { pos: s.pos || '', start: s.start || '', end: s.end || '' } }
+    const byName = {}
+    for (const p of dayP) { (byName[p.name] = byName[p.name] || { name: p.name, personId: p.personId, punches: [] }).punches.push(p) }
+    const allNames = [...new Set([...Object.keys(byName), ...Object.keys(schedByName)])]
+    const rows = allNames.map(nm => {
+      const o = byName[nm] || { name: nm, personId: null, punches: [] }
+      const plan = schedByName[nm] || null
       const ps = o.punches.slice().sort((a, b) => a.ts < b.ts ? -1 : 1)
-      const pairs = []; let open = null, ms = 0; const flags = []
+      const pairs = []; let open = null, ms = 0, firstIn = null, lastOut = null; const red = [], amber = []
       for (const p of ps) {
-        if (p.dir === 'in') { if (open) flags.push('重複上班'); open = p }
-        else { if (open) { const dur = new Date(p.ts) - new Date(open.ts); pairs.push({ inHm: hm(open.ts), outHm: hm(p.ts), hrs: Math.round(dur / 360000) / 10 }); if (dur > 12 * 3600e3) flags.push('單段>12h'); ms += dur; open = null } else flags.push('重複下班') }
+        if (p.dir === 'in') { if (open) red.push('重複上班'); open = p; if (!firstIn) firstIn = p }
+        else { if (open) { const dur = new Date(p.ts) - new Date(open.ts); pairs.push({ inHm: hm(open.ts), outHm: hm(p.ts), hrs: Math.round(dur / 360000) / 10 }); if (dur > 12 * 3600e3) red.push('單段>12h'); ms += dur; open = null } else red.push('重複下班'); lastOut = p }
       }
-      if (open) { pairs.push({ inHm: hm(open.ts), outHm: '', hrs: null }); if (date < today) flags.push('缺下班卡') }
-      return { personId: pid, name: o.name, punches: ps.map(p => ({ key: p.key, hm: hm(p.ts), ts: p.ts, dir: p.dir, src: p.src || '', verified: !!p.verified })), pairs, totalHrs: Math.round(ms / 360000) / 10, flags: [...new Set(flags)] }
+      const working = !!open
+      if (open) { pairs.push({ inHm: hm(open.ts), outHm: '', hrs: null }); if (date < today) red.push('缺下班卡') }
+      if (plan && plan.start && firstIn) { const late = tmin(hm(firstIn.ts)) - (tmin(plan.start) + 5); if (late > 0 && late < 720) amber.push('遲到' + late + '分') }
+      if (plan && plan.end && lastOut && !working) { const early = tmin(plan.end) - tmin(hm(lastOut.ts)); if (early > 0 && early < 720) amber.push('早退' + early + '分') }
+      if (ps.length === 0 && plan && date <= today) red.push('未打卡')
+      return { name: nm, personId: o.personId, scheduled: !!plan, plan: plan ? { pos: plan.pos, start: plan.start, end: plan.end } : null, working, unplanned: !plan && ps.length > 0, punches: ps.map(p => ({ key: p.key, hm: hm(p.ts), ts: p.ts, dir: p.dir, src: p.src || '', verified: !!p.verified })), pairs, totalHrs: Math.round(ms / 360000) / 10, red: [...new Set(red)], amber: [...new Set(amber)] }
     }).sort((a, b) => String(a.name).localeCompare(String(b.name), 'zh-Hant'))
     const tP = date === today ? dayP : await pj2.listPunches('sp_crew_pch_' + today.replace(/-/g, '') + '_')
     const byT = {}; for (const p of tP) { (byT[p.personId] = byT[p.personId] || { name: p.name, ps: [] }).ps.push(p) }
@@ -2425,7 +2447,8 @@ export default async function handler(req, res) {
     live.sort((a, b) => a.sinceHm < b.sinceHm ? -1 : 1)
     const mk = (await kvGet('sp_finance_pm_punch_makeup')) || { list: [] }
     const pendN = (mk.list || []).filter(x => x.status === 'pending').length
-    return res.status(200).json({ ok: true, date, today, rows, live, pendN })
+    const stats = { sched: Object.keys(schedByName).length, punched: Object.keys(byName).length, absent: rows.filter(r => r.red.includes('未打卡')).length, late: rows.filter(r => r.amber.some(f => f.startsWith('遲到'))).length, bad: rows.filter(r => r.red.length).length, totalHrs: Math.round(rows.reduce((t, r) => t + r.totalHrs, 0) * 10) / 10, working: rows.filter(r => r.working).length }
+    return res.status(200).json({ ok: true, date, today, rows, live, pendN, stats })
   }
   // v4.58 打卡後台 改/刪/補（主管直接寫，不經補卡審核）
   if (req.method === 'POST' && req.query?.punchedit) {
@@ -3049,20 +3072,26 @@ export default async function handler(req, res) {
     // 🏦 行為分（統一流水帳 sp_finance_pm_points）：總累積＝carry+窗內、本月＝當月；一套算法一個來源
     const ptsDoc = (await kvGet('sp_finance_pm_points')) || { list: [], carry: {} }
     const monthP = new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 7)
-    const behavTotal = { ...(ptsDoc.carry || {}) }, behavMonth = {}
+    // 行為分/榮譽＝排除兌換(type redeem)，兌換不讓排名掉；可用餘額balance＝全部加總(含兌換負值)
+    const behavTotal = { ...(ptsDoc.carry || {}) }, behavMonth = {}, balance = { ...(ptsDoc.carry || {}) }
     for (const e of (ptsDoc.list || [])) {
-      behavTotal[e.person] = (behavTotal[e.person] || 0) + Number(e.pts || 0)
-      if (String(e.date || '').slice(0, 7) === monthP) behavMonth[e.person] = (behavMonth[e.person] || 0) + Number(e.pts || 0)
+      const v = Number(e.pts || 0)
+      balance[e.person] = (balance[e.person] || 0) + v
+      if (e.type !== 'redeem') {
+        behavTotal[e.person] = (behavTotal[e.person] || 0) + v
+        if (String(e.date || '').slice(0, 7) === monthP && e.type === 'behavior') behavMonth[e.person] = (behavMonth[e.person] || 0) + v
+      }
     }
-    Object.keys(behavTotal).forEach(nm => P(nm))
+    Object.keys(behavTotal).forEach(nm => P(nm)); Object.keys(balance).forEach(nm => P(nm))
     const rank = Object.values(board).map(p => ({
       name: p.name, nFind: p.nFind, nFix: p.nFix,
       findPts: Math.round(p.findPts * 10) / 10, fixPts: Math.round(p.fixPts * 10) / 10,
       taskPts: Math.round((tpMap[p.name] || 0) * 10) / 10,
       behavPts: Math.round((behavTotal[p.name] || 0) * 10) / 10,
       behavMonth: Math.round((behavMonth[p.name] || 0) * 10) / 10,
+      balance: Math.round((balance[p.name] || 0) * 10) / 10, // 可用點（扣過兌換）
       qualPts: Math.round((p.findPts + p.fixPts + (tpMap[p.name] || 0)) * 10) / 10, // 品質分合計（發現+解決+任務）
-      total: Math.round((p.findPts + p.fixPts + (tpMap[p.name] || 0) + (behavTotal[p.name] || 0)) * 10) / 10,
+      total: Math.round((p.findPts + p.fixPts + (tpMap[p.name] || 0) + (behavTotal[p.name] || 0)) * 10) / 10, // 排名用＝累積賺得(不含兌換)
       facets: Object.fromEntries(FACETS.map(f => [f, p.fc[f] ? { avg: Math.round(p.fc[f].sum / p.fc[f].n * 10) / 10, n: p.fc[f].n } : null])),
     })).sort((a, b) => b.total - a.total || (b.nFind + b.nFix) - (a.nFind + a.nFix))
     // ○○之星榮耀榜：每面向平均星最高者（至少 3 票才上榜，避免一票封神）
@@ -3075,7 +3104,20 @@ export default async function handler(req, res) {
     const aprL = (((defL || {}).ground || {}).approvers || ['張良瑋'])
     const isAdmL = !!(meL && (meL.role === '主管' || aprL.includes(meL.name)))
     const ptsCfgL = await kvGet('sp_finance_pm_points_cfg')
-    return res.status(200).json({ ok: true, me: meL ? { name: meL.name, role: meL.role, approver: isAdmL } : null, facets: FACETS, rank, stars5, issues: list, names: namesL, month: monthP, ptsRules: pointsRules(ptsCfgL), isAdmin: isAdmL })
+    // 🎁 兌換商城＋📒 積分存摺（折進 lb 回應，排行榜頁一次載好）
+    let rwDoc = await kvGet('sp_finance_pm_rewards')
+    if (!rwDoc || !(rwDoc.list || []).length) { rwDoc = { list: REWARDS_SEED }; await kvPut('sp_finance_pm_rewards', rwDoc, '基礎獎勵種子') }
+    const rdDoc = (await kvGet('sp_finance_pm_redeem')) || { list: [] }
+    const meNameL = meL ? meL.name : null
+    const myRedeems = meNameL ? (rdDoc.list || []).filter(r => r.person === meNameL).slice(0, 40) : []
+    const pendingRedeems = isAdmL ? (rdDoc.list || []).filter(r => r.status === 'pending') : null
+    let myLedger = []
+    if (meNameL) { // 積分存摺：逐筆＋跑餘額，最近 120 筆（新到舊）
+      let run = Number((ptsDoc.carry || {})[meNameL] || 0)
+      const withBal = (ptsDoc.list || []).filter(e => e.person === meNameL).map(e => { run += Number(e.pts || 0); return { date: e.date, ts: e.ts, act: e.act, type: e.type, pts: e.pts, bal: Math.round(run * 10) / 10, note: e.note || '', by: e.by || '' } })
+      myLedger = withBal.slice(-120).reverse()
+    }
+    return res.status(200).json({ ok: true, me: meL ? { name: meL.name, role: meL.role, approver: isAdmL } : null, facets: FACETS, rank, stars5, issues: list, names: namesL, month: monthP, ptsRules: pointsRules(ptsCfgL), isAdmin: isAdmL, rewards: rwDoc.list, myBalance: Math.round((balance[meNameL] || 0) * 10) / 10, myRedeems, pendingRedeems, myLedger })
   }
   // 🏦 積分規則表（行為分）管理：GET 回規則＋近期流水；POST {op:'set',act,label,pts,cap,off} | {op:'del',act} | {op:'adjust',person,pts,note}（管理者抽查加扣分）
   if (req.query?.pointscfg) {
@@ -3120,6 +3162,112 @@ export default async function handler(req, res) {
       await kvPut('sp_finance_pm_points', doc, '積分抽查調整(' + whoP.name + '→' + person + ' ' + (pts > 0 ? '+' : '') + pts + ')')
     } else return res.status(400).json({ ok: false })
     return res.status(200).json({ ok: true, rules: pointsRules(cfg) })
+  }
+  // 🎁 獎勵主檔管理（管理者）：POST ?rewardset= {op:'set',id?,name,cost,stock,desc,off,ord} | {op:'del',id}
+  if (req.method === 'POST' && req.query?.rewardset) {
+    const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
+    if (!ok2 || String(req.query.rewardset) !== ok2) return res.status(403).json({ ok: false })
+    let bW = {}
+    try { bW = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
+    const whoW = await permWho(bW.token, 'lb')
+    if (!whoW) return res.status(403).json({ ok: false, error: permDeny() })
+    const defW = await kvGet('sp_finance_pm_sop_def')
+    const aprW = (((defW || {}).ground || {}).approvers || ['張良瑋'])
+    if (!(aprW.includes(whoW.name) || whoW.role === '主管')) return res.status(403).json({ ok: false, error: '只有管理者/主管能改獎勵' })
+    const doc = (await kvGet('sp_finance_pm_rewards')) || { list: [] }
+    doc.list = doc.list || []
+    if (bW.op === 'set') {
+      const nm = String(bW.name || '').trim().slice(0, 30)
+      const cost = Math.max(1, Math.round(Number(bW.cost) || 0))
+      if (!nm || !cost) return res.status(400).json({ ok: false, error: '名稱和點數要填' })
+      const stock = (bW.stock === '' || bW.stock == null) ? null : Math.max(0, Math.round(Number(bW.stock)))
+      let it = bW.id ? doc.list.find(x => x.id === bW.id) : null
+      if (it) { it.name = nm; it.cost = cost; it.stock = stock; it.desc = String(bW.desc || '').slice(0, 80); if (bW.off != null) it.off = !!bW.off; if (bW.ord != null) it.ord = Number(bW.ord) || 0 }
+      else doc.list.push({ id: 'rw' + Date.now().toString(36), name: nm, cost, stock, desc: String(bW.desc || '').slice(0, 80), off: !!bW.off, ord: (doc.list.length + 1) })
+    } else if (bW.op === 'del') {
+      doc.list = doc.list.filter(x => x.id !== bW.id)
+    } else return res.status(400).json({ ok: false })
+    await kvPut('sp_finance_pm_rewards', doc, '獎勵設定(' + whoW.name + ')')
+    return res.status(200).json({ ok: true, rewards: doc.list })
+  }
+  // 🎁 兌換（夥伴申請／管理者審核扣點）：POST ?redeem= {op:'request',rewardId} | {op:'decide',id,pass,note} | {op:'done',id}
+  if (req.method === 'POST' && req.query?.redeem) {
+    const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
+    if (!ok2 || String(req.query.redeem) !== ok2) return res.status(403).json({ ok: false })
+    let bR = {}
+    try { bR = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
+    const whoR = await permWho(bR.token, 'lb')
+    if (!whoR) return res.status(403).json({ ok: false, error: permDeny() })
+    const defR = await kvGet('sp_finance_pm_sop_def')
+    const aprR = (((defR || {}).ground || {}).approvers || ['張良瑋'])
+    const isAdmR = aprR.includes(whoR.name) || whoR.role === '主管'
+    const balOf = (nm, ptsDoc) => { let b = Number((ptsDoc.carry || {})[nm] || 0); for (const e of (ptsDoc.list || [])) if (e.person === nm) b += Number(e.pts || 0); return Math.round(b * 10) / 10 }
+    const nowR = new Date(Date.now() + 8 * 3600e3).toISOString().slice(5, 16).replace('T', ' ')
+    const rdDoc = (await kvGet('sp_finance_pm_redeem')) || { list: [] }
+    rdDoc.list = rdDoc.list || []
+    // 通知小工具（鈴鐺＋LINE）
+    const notify = async (names, title, body) => { try {
+      const bindN = (await kvGet('sp_finance_pm_prep_bind')) || {}
+      const nm2 = {}; for (const v of Object.values(bindN.tokens || {})) if (v && v.name) nm2[v.name] = { uid: v.uid, rid: v.rid || v.uid }
+      const rids = [...new Set(names.map(n => nm2[n] && nm2[n].rid).filter(Boolean))]
+      if (rids.length) { const { wpPush } = await import('./_webpush.js'); await wpPush(rids, { title, body, url: '/prep#lb', cat: 'reward' }) }
+      const tkN = (process.env.LINE_CHANNEL_ACCESS_TOKEN || '').trim()
+      if (tkN) for (const n of names) { const u = nm2[n] && nm2[n].uid; if (u) { await fetch('https://api.line.me/v2/bot/message/push', { method: 'POST', headers: { 'content-type': 'application/json', Authorization: 'Bearer ' + tkN }, body: JSON.stringify({ to: u, messages: [{ type: 'text', text: title + '\n' + body + '\nhttps://ground-pm.vercel.app/prep#lb' }] }) }).catch(() => {}); try { const { logPush } = await import('./push.js'); await logPush(u, 1, '兌換通知') } catch (_) {} } }
+    } catch (_) {} }
+    if (bR.op === 'request') {
+      const rwDoc = (await kvGet('sp_finance_pm_rewards')) || { list: [] }
+      const rw = (rwDoc.list || []).find(x => x.id === bR.rewardId && !x.off)
+      if (!rw) return res.status(404).json({ ok: false, error: '找不到這個獎勵' })
+      if (rw.stock != null && rw.stock <= 0) return res.status(400).json({ ok: false, error: '這個獎勵庫存沒了' })
+      const ptsDoc = (await kvGet('sp_finance_pm_points')) || { list: [], carry: {} }
+      const bal = balOf(whoR.name, ptsDoc)
+      if (bal < rw.cost) return res.status(400).json({ ok: false, error: `點數不夠（你有 ${bal}、需要 ${rw.cost}）` })
+      const it = { id: 'rd' + Date.now().toString(36), person: whoR.name, rewardId: rw.id, rewardName: rw.name, cost: rw.cost, ts: nowR, status: 'pending' }
+      rdDoc.list = [it, ...rdDoc.list].slice(0, 2000)
+      await kvPut('sp_finance_pm_redeem', rdDoc, '兌換申請(' + whoR.name + '→' + rw.name + ')')
+      await notify(aprR, '🎁 有人要兌換獎勵', `${whoR.name} 想換「${rw.name}」（${rw.cost} 點），到排行榜審核`)
+      return res.status(200).json({ ok: true, item: it })
+    }
+    if (!isAdmR) return res.status(403).json({ ok: false, error: '只有管理者/主管能審核兌換' })
+    const it = rdDoc.list.find(x => x.id === bR.id)
+    if (!it) return res.status(404).json({ ok: false })
+    if (bR.op === 'decide') {
+      if (it.status !== 'pending') return res.status(400).json({ ok: false, error: '這筆已經處理過了' })
+      if (bR.pass) {
+        const ptsDoc = (await kvGet('sp_finance_pm_points')) || { list: [], carry: {} }
+        ptsDoc.list = ptsDoc.list || []
+        if (balOf(it.person, ptsDoc) < it.cost) return res.status(400).json({ ok: false, error: '對方點數不足（可能剛被扣），無法核准' })
+        ptsDoc.list.push({ id: 'pt' + Date.now().toString(36) + '_rd', person: it.person, date: new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10), ts: new Date(Date.now() + 8 * 3600e3).toISOString().slice(11, 16), type: 'redeem', act: 'redeem', pts: -Math.abs(it.cost), ref: it.id, by: whoR.name, note: it.rewardName })
+        await kvPut('sp_finance_pm_points', ptsDoc, '兌換扣點(' + it.person + ' -' + it.cost + ')')
+        it.status = 'approved'; it.decBy = whoR.name; it.decTs = nowR; if (bR.note) it.note = String(bR.note).slice(0, 80)
+        // 扣庫存
+        try { const rwDoc = (await kvGet('sp_finance_pm_rewards')) || { list: [] }; const rw = (rwDoc.list || []).find(x => x.id === it.rewardId); if (rw && rw.stock != null) { rw.stock = Math.max(0, rw.stock - 1); await kvPut('sp_finance_pm_rewards', rwDoc, '兌換扣庫存') } } catch (_) {}
+        await notify([it.person], '✅ 兌換通過', `你換的「${it.rewardName}」已核准，扣 ${it.cost} 點`)
+      } else {
+        it.status = 'rejected'; it.decBy = whoR.name; it.decTs = nowR; if (bR.note) it.note = String(bR.note).slice(0, 80)
+        await notify([it.person], '❌ 兌換未通過', `你換的「${it.rewardName}」未通過${bR.note ? '（' + String(bR.note).slice(0, 40) + '）' : ''}，點數沒扣`)
+      }
+      await kvPut('sp_finance_pm_redeem', rdDoc, '兌換審核(' + whoR.name + ')')
+      return res.status(200).json({ ok: true })
+    }
+    if (bR.op === 'done') { it.status = 'done'; it.doneTs = nowR; await kvPut('sp_finance_pm_redeem', rdDoc, '兌換已給(' + whoR.name + ')'); return res.status(200).json({ ok: true }) }
+    return res.status(400).json({ ok: false })
+  }
+  // 📒 積分存摺（他人）：GET ?ledger=<OPS_BOARD_KEY>&me=token&who=姓名（管理者/主管可查任何人；本人查自己走 lb 的 myLedger）
+  if (req.query?.ledger) {
+    const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
+    if (!ok2 || String(req.query.ledger) !== ok2) return res.status(403).json({ ok: false })
+    const whoLg = await sopWho(req.query.me)
+    if (!whoLg) return res.status(403).json({ ok: false, error: permDeny() })
+    const defLg = await kvGet('sp_finance_pm_sop_def')
+    const aprLg = (((defLg || {}).ground || {}).approvers || ['張良瑋'])
+    const isAdmLg = aprLg.includes(whoLg.name) || whoLg.role === '主管'
+    const who = String(req.query.who || whoLg.name).slice(0, 20)
+    if (who !== whoLg.name && !isAdmLg) return res.status(403).json({ ok: false, error: '只能查自己的' })
+    const ptsDoc = (await kvGet('sp_finance_pm_points')) || { list: [], carry: {} }
+    let run = Number((ptsDoc.carry || {})[who] || 0)
+    const withBal = (ptsDoc.list || []).filter(e => e.person === who).map(e => { run += Number(e.pts || 0); return { date: e.date, ts: e.ts, act: e.act, type: e.type, pts: e.pts, bal: Math.round(run * 10) / 10, note: e.note || '', by: e.by || '' } })
+    return res.status(200).json({ ok: true, who, balance: Math.round(run * 10) / 10, ledger: withBal.slice(-200).reverse() })
   }
   if (req.method === 'POST' && req.query?.soprate) {
     // v2：面向星星（1~5）。body={id, aspect:'find'|'fix', facet:五面向之一, stars:1-5}
