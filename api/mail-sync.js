@@ -2012,6 +2012,19 @@ export default async function handler(req, res) {
       const ackNames = gdNames(rosA).filter(n => !offA.has(n))
       const it = { id: 'mt' + Date.now().toString(36), type: String(mb.type || doc.types[0]).slice(0, 20), date: /^\d{4}-\d{2}-\d{2}$/.test(mb.date) ? mb.date : new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10), text: String(mb.text || '').slice(0, 4000), items: mkItems(mb.text), media: (Array.isArray(mb.media) ? mb.media : []).slice(0, 10).map(u => String(u).slice(0, 300)), links: mkLinks(mb.links), ver: 1, pubTs: Date.now(), ackNames, acks: {}, views: {}, asks: [], remind: {}, by: whoM.name, ts: now8() }
       doc.list = [it, ...(doc.list || [])].slice(0, 500)
+      // v4.48.0 張良「新增會議都同步發大群＋定位連結＋提醒簽到按確認＋顯示則數」：try 包住＝發群失敗也不影響會議已存
+      try {
+        const tkG = (process.env.LINE_CHANNEL_ACCESS_TOKEN || '').trim()
+        const GRP_FAM = (process.env.LINE_DEFAULT_GROUP || '').trim() || 'Cf7940efc6517b0c084ad2ad496b45f30' // GROUN:D Family
+        if (tkG && GRP_FAM) {
+          const { prepLink } = await import('./_webpush.js')
+          const lnkG = prepLink('meet=' + it.id)
+          const bodyG = `📢 新會議宣達【${it.type}・${it.date}】\n${String(it.text || '').slice(0, 300)}\n\n👉 點連結直達，看完按「✅ 確認熟知」完成簽到（${it.ackNames.length} 人要簽）\n${lnkG}`
+          const rG = await fetch('https://api.line.me/v2/bot/message/push', { method: 'POST', headers: { 'content-type': 'application/json', Authorization: 'Bearer ' + tkG }, body: JSON.stringify({ to: GRP_FAM, messages: [{ type: 'text', text: bodyG }] }) })
+          if (rG.ok) { const nQ = it.ackNames.length || 1; try { const { logPush } = await import('./push.js'); await logPush(GRP_FAM, nQ, '會議宣達發大群(' + it.by + ')') } catch (_) {}; it.groupSent = { ts: now8(), n: nQ } } // 群發計費＝群人數×1則（line-quota）
+          else { it.groupSent = { ts: now8(), fail: true } }
+        }
+      } catch (_) { it.groupSent = { ts: now8(), fail: true } }
     } else if (mb.op === 'edit') {
       const it = (doc.list || []).find(x => x.id === mb.id)
       if (!it) return res.status(404).json({ ok: false })
