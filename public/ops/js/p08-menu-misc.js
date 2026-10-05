@@ -48,90 +48,198 @@ async function fbLoad(date){
   document.getElementById('upd').textContent = '每日回饋・' + d.date
   if (curStore === 'fb') fbRender()
 }
+// v4.53.0 每日回饋改指派制（張良 2026-10-06）：①換你回饋(系統指派,對方匿名) ②我收到的回饋(匿名) ③每日回饋紀錄(問題回報) ④管理者後台彙總(看得到是誰)
+const fbE = s => String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')
+function fbDimsFor(station){
+  const d = window._fbD, m = (d.dims&&d.dims.map)||{}, def = (d.dims&&d.dims.def)||[]
+  return (station && m[station] && m[station].length) ? m[station] : def
+}
+function fbDimsHtml(nm, station, mine){
+  const dims = fbDimsFor(station), cur = (mine&&mine.dims)||{}
+  return dims.map((asp,i)=>{
+    const v = cur[asp]||0
+    return `<div style="margin-top:6px"><div style="display:flex;align-items:center;gap:8px">
+      <span style="font-size:13px;font-weight:700;flex:0 0 80px">${fbE(asp)}</span>
+      <input type="range" min="1" max="5" step="1" value="${v||3}" data-asp="${fbE(asp)}" ${v?'data-touched="1"':''} style="flex:1;accent-color:#E8B931" oninput="fbDimSlide('${nm}',${i})">
+      <span id="fbsv_${nm}_${i}" style="width:66px;text-align:right;color:#E8B931;font-size:14px;flex:0 0 auto">${v?'★'.repeat(v)+'☆'.repeat(5-v):'<span class="mut" style="font-size:12px">未評</span>'}</span></div></div>`
+  }).join('') || '<div class="hint" style="margin-top:4px">這個站還沒設面向——寫一句話回饋就好（管理者可按「面向設定」加）</div>'
+}
+function fbAssignCard(a, done){
+  const d = window._fbD, nm = a.reviewee
+  const mine = (d.fbs||[]).find(x=>x.target===nm && x.by===(d.me&&d.me.name))
+  const stations = d.stations || []
+  const curSt = (mine&&mine.station) || a.station || (stations[0]||'')
+  const tag = a.type==='assigned' ? ` <span style="font-size:12px;background:var(--primary);color:#fff;border-radius:6px;padding:1px 7px">指定</span>` : ''
+  let h = `<div style="background:var(--soft);border:1px solid ${done?'var(--green)':'var(--line)'};border-radius:11px;padding:10px 12px;margin-top:8px">
+    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><b style="font-size:15px">${fbE(nm)}</b>${tag} ${done?'<span style="font-size:13px;color:var(--green);font-weight:800">✓ 已回饋</span>':''}</div>`
+  if (a.aspect) h += `<div class="hint" style="margin-top:3px">請針對：${fbE(a.aspect)}</div>`
+  if (stations.length) h += `<div style="display:flex;align-items:center;gap:7px;margin:7px 0 2px"><span style="font-size:13px;font-weight:700">站別</span>
+    <select id="fbst_${nm}" onchange="fbStPick('${nm}')" style="border:1px solid var(--line);border-radius:8px;padding:5px 8px;font-size:14px">${stations.map(s=>`<option ${s===curSt?'selected':''}>${fbE(s)}</option>`).join('')}</select></div>`
+  h += `<div id="fbdims_${nm}">${fbDimsHtml(nm, curSt, mine)}</div>
+    <div style="display:flex;gap:6px;margin-top:7px"><input id="fbtx_${nm}" placeholder="一句話回饋（可空）" value="${mine&&mine.text?fbE(mine.text):''}" style="flex:1;border:1px solid var(--line);border-radius:8px;padding:7px 9px;font-size:14px">
+    <button class="mini on" style="padding:7px 14px" onclick="fbSubmit('${nm}')">${mine?'更新':'送出'}</button></div></div>`
+  return h
+}
+function fbRecvLine(x){
+  const dims = x.dims||{}
+  const dimTxt = Object.keys(dims).map(k=>`${fbE(k)} ${'★'.repeat(dims[k])}`).join('　')
+  return `<div style="background:var(--soft);border-radius:8px;padding:6px 9px;margin-top:5px;font-size:14px">
+    <span class="hint">匿名${x.station?'・'+fbE(x.station):''}</span> ${x.stars?'<span style="color:#E8B931">'+'★'.repeat(x.stars)+'</span>':''}
+    ${dimTxt?`<div style="font-size:13px;color:var(--muted);margin-top:2px">${dimTxt}</div>`:''}
+    ${x.text?`<div style="white-space:pre-wrap;margin-top:2px">${fbE(x.text)}</div>`:''}</div>`
+}
+function fbAdminHtml(d){
+  const asg = d.assignDay||[], fbs = d.fbs||[]
+  const doneKey = new Set(fbs.map(x=>x.by+'→'+x.target))
+  const peers = asg.filter(a=>a.type==='peer'), assigned = asg.filter(a=>a.type==='assigned')
+  const total = asg.length, done = asg.filter(a=>doneKey.has(a.reviewer+'→'+a.reviewee)).length
+  const row = a=>{ const ok = doneKey.has(a.reviewer+'→'+a.reviewee)
+    return `<div style="display:flex;align-items:center;gap:6px;padding:4px 0;border-bottom:1px solid var(--line);font-size:13.5px">
+      <span style="flex:0 0 auto;color:${ok?'var(--green)':'var(--red)'};font-weight:800">${ok?'✓':'○'}</span>
+      <span>${fbE(a.reviewer)} → <b>${fbE(a.reviewee)}</b></span>
+      ${a.type==='assigned'?`<span style="font-size:12px;background:var(--primary);color:#fff;border-radius:6px;padding:0 6px">指定${a.by?'·'+fbE(a.by):''}</span>`:''}
+      ${a.aspect?`<span class="hint">${fbE(a.aspect)}</span>`:''}
+      ${a.type==='assigned'?`<button class="mini" style="margin-left:auto;color:var(--red);padding:1px 7px" onclick="fbAssignDel('${a.id}')">刪</button>`:''}</div>` }
+  return `<div style="background:var(--card);border:1.5px dashed var(--primary);border-radius:12px;padding:11px 13px;margin-top:4px">
+    <div><b>🛠 後台彙總</b> <span class="hint">只有你和站長看得到是誰（完成 ${done}/${total}）</span></div>
+    ${total?`<div style="margin-top:6px">${[...assigned,...peers].map(row).join('')}</div>`:'<div class="mut" style="margin-top:6px">今天還沒有任何指派</div>'}</div>`
+}
 function fbRender(){
   const d = window._fbD; if (!d || curStore !== 'fb') return
-  const meN = d.me ? d.me.name : null // 2026-10-02 全面修：只有菜單口有 canEdit 欄位，整檔替換誤傷各分頁→按鈕全滅；顯示層=綁定即可，真正權限由伺服器端守門
+  const meN = d.me ? d.me.name : null
+  const isAdmin = !!d.isAdmin
   const wd = ['日','一','二','三','四','五','六'][new Date(d.date).getDay()]
-  let h = `<section><h2>每日回饋 <span class="hint">${meN?'對今天有上班的夥伴留評分＋一句話回饋':'看得到；要回饋先綁定——'+BIND_HINT}</span></h2>
-    <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px">
-      <button class="mini" onclick="fbNav(-1)">‹</button><b style="font-size:15px">${d.date.slice(5)}（${wd}）${d.date===todayTpe()?'・今天':''}</b><button class="mini" onclick="fbNav(1)">›</button>
-      ${meN?`<button class="mini" style="margin-left:auto" onclick="fbOther()">＋ 對其他人回饋</button>`:''}
+  const isToday = d.date === (d.today || todayTpe())
+  let h = `<section><h2>每日回饋 <span class="hint">${meN?'對一起上班的夥伴做回饋（系統指派、對方看不到是你）':'看得到；要回饋先綁定——'+BIND_HINT}</span></h2>
+    <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px">
+      <button class="mini" onclick="fbNav(-1)">‹</button><b style="font-size:15px">${d.date.slice(5)}（${wd}）${isToday?'・今天':''}</b><button class="mini" onclick="fbNav(1)">›</button>
+      ${isAdmin?`<span style="margin-left:auto;display:flex;gap:6px"><button class="mini" onclick="fbDimsEdit()">面向設定</button><button class="mini on" onclick="fbAssignNew()">＋ 指定回饋</button></span>`:''}
     </div>`
-  // 📝 每日回饋紀錄（張良 2026-09-22：每人每天要發現問題——文字/照片/影片、可多則、選站別、按日期分）
+  // ① 換你回饋（系統指派）
+  if (meN){
+    const mine = d.myAssign || []
+    const doneSet = new Set((d.fbs||[]).filter(x=>x.by===meN).map(x=>x.target))
+    h += `<div style="background:var(--card);border:1.5px solid var(--primary);border-radius:12px;padding:11px 13px;margin-bottom:12px">
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><b>📋 換你回饋</b><span class="hint">系統指派你回饋這些夥伴（對方看不到是你）</span></div>
+      ${mine.length?mine.map(a=>fbAssignCard(a, doneSet.has(a.reviewee))).join(''):`<div class="mut" style="font-size:14px;margin-top:6px">${isToday?'今天還沒配到對象——有人打卡後就會指派給你':'這天沒有指派給你的回饋'}</div>`}</div>`
+  }
+  // ② 我收到的回饋（匿名）
+  if (meN){
+    const got = (d.fbs||[]).filter(x=>x.target===meN)
+    if (got.length){
+      const sc = got.filter(x=>x.stars)
+      const avg = sc.length ? Math.round(sc.reduce((s,x)=>s+x.stars,0)/sc.length*10)/10 : null
+      h += `<div style="background:var(--card);border:1.5px solid var(--line);border-radius:12px;padding:11px 13px;margin-bottom:12px">
+        <div><b>🎯 我收到的回饋</b> ${avg?`<span class="avg">⭐${avg}</span>`:''} <span class="hint">${got.length}則・匿名</span></div>
+        ${got.map(fbRecvLine).join('')}</div>`
+    }
+  }
+  // ③ 每日回饋紀錄（問題回報，維持原樣）
   const jn = d.jn || []
   const jnBy = [...new Set(jn.map(x=>x.by))]
   const undone = (d.workers||[]).filter(n=>!jnBy.includes(n))
-  h += `<div style="background:var(--card);border:1.5px solid var(--primary);border-radius:12px;padding:10px 12px;margin-bottom:12px">
-    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><b>每日回饋紀錄</b><span class="hint">每人每天把發現的問題交上來（可多則）</span>
+  h += `<div style="background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin-bottom:12px">
+    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><b>📝 每日回饋紀錄</b><span class="hint">每人每天把發現的問題交上來（可多則）</span>
     ${meN?`<button class="mini on" style="margin-left:auto;padding:8px 16px" onclick="fbjNew()">＋ 我要回饋</button>`:''}</div>
-    ${(d.workers||[]).length?`<div class="hint" style="margin-top:4px">今日已交：${jnBy.length?jnBy.map(n=>`<b style="color:var(--green)">${n}</b>`).join('、'):'—'}${undone.length?`｜未交：<span style="color:var(--red);font-weight:700">${undone.join('、')}</span>`:''}</div>`:''}
+    ${(d.workers||[]).length?`<div class="hint" style="margin-top:4px">今日已交：${jnBy.length?jnBy.map(n=>`<b style="color:var(--green)">${fbE(n)}</b>`).join('、'):'—'}${undone.length?`｜未交：<span style="color:var(--red);font-weight:700">${undone.map(fbE).join('、')}</span>`:''}</div>`:''}
     ${jn.length?jn.map(x=>`<div style="background:var(--soft);border-radius:9px;padding:7px 10px;margin-top:6px;font-size:14px">
-      <b>${x.by}</b>${x.st?` <span style="font-size:13px;border:1px solid var(--line);border-radius:7px;padding:1px 7px">${x.st}</span>`:''} <span class="hint">${x.ts||''}</span>
-      ${x.text?`<div style="white-space:pre-wrap;margin-top:2px">${(x.text||'').replace(/</g,'&lt;')}</div>`:''}
+      <b>${fbE(x.by)}</b>${x.st?` <span style="font-size:13px;border:1px solid var(--line);border-radius:7px;padding:1px 7px">${fbE(x.st)}</span>`:''} <span class="hint">${fbE(x.ts||'')}</span>
+      ${x.text?`<div style="white-space:pre-wrap;margin-top:2px">${fbE(x.text)}</div>`:''}
       ${(x.media||[]).length?`<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:5px">${x.media.map(m=>/\.(mp4|mov|webm|m4v)(\?|$)/i.test(m)?`<a href="${m}" target="_blank" style="font-size:13px;border:1px solid var(--line);border-radius:8px;padding:4px 9px">🎬 影片</a>`:`<img src="${m}" style="width:58px;height:58px;object-fit:cover;border-radius:8px;border:1px solid var(--line);cursor:pointer" onclick="imgView('${m}')">`).join('')}</div>`:''}
       ${meN&&(x.by===meN)?`<div style="margin-top:4px"><button class="mini" style="color:var(--red);padding:2px 8px" onclick="if(confirm('刪除這則回饋？'))fbjDel('${x.id}')">🗑</button></div>`:''}
     </div>`).join(''):`<div class="mut" style="font-size:14px;margin-top:6px">這天還沒有人交回饋</div>`}
   </div>`
-  const targets = [...new Set([...(d.workers||[]), ...(d.fbs||[]).map(x=>x.target)])]
-  if (!targets.length) h += `<div class="mut">這天沒有打卡紀錄——右上「＋ 對其他人回饋」可以直接選人</div>`
-  targets.forEach(nm=>{
-    const got = (d.fbs||[]).filter(x=>x.target===nm)
-    const mine = meN ? got.find(x=>x.by===meN) : null
-    const avg = got.filter(x=>x.stars).length ? Math.round(got.filter(x=>x.stars).reduce((s2,x)=>s2+x.stars,0)/got.filter(x=>x.stars).length*10)/10 : null
-    h += `<div style="background:var(--card);border:1.5px solid var(--line);border-radius:12px;padding:10px 12px;margin-bottom:10px;font-size:14px">
-      <div style="font-weight:900;font-size:15px">${nm} ${(d.workers||[]).includes(nm)?'<span style="font-size:13px;color:var(--green);font-weight:800">今日有打卡</span>':''} ${avg?`<span class="avg">⭐${avg}</span> <span class="hint">${got.filter(x=>x.stars).length}人評</span>`:''}</div>`
-    got.forEach(x=>{ h += `<div style="background:var(--soft);border-radius:8px;padding:6px 9px;margin-top:5px"><span style="font-weight:700">${x.by}</span> ${x.stars?'<span style="color:#E8B931">'+'★'.repeat(x.stars)+'</span>':''} <span class="hint">${x.ts||''}</span>${x.text?`<div style="white-space:pre-wrap;margin-top:2px">${(x.text||'').replace(/</g,'&lt;')}</div>`:''}</div>` })
-    if (meN && meN !== nm) {
-      const mv = mine && mine.stars || 0
-      h += `<div style="border-top:1px dashed var(--line);margin-top:7px;padding-top:6px">
-        <div style="display:flex;align-items:center;gap:8px"><span style="font-size:13px;font-weight:700;flex:0 0 auto">我的評分</span>
-          <input type="range" min="1" max="5" step="1" value="${mv||3}" style="flex:1;accent-color:#E8B931" oninput="fbSlide(this,'${nm}')">
-          <span id="fbst_${nm}" style="width:90px;text-align:right;font-size:15px;color:#E8B931;flex:0 0 auto">${mv?'★'.repeat(mv)+'☆'.repeat(5-mv):'<span class="mut" style="font-size:13px">未評</span>'}</span></div>
-        <div id="fbd_${nm}" class="hint" style="margin:2px 0 4px">${mv?LVLTXT[mv]:'拉一下拉桿看等級說明；按「送出」才會存'}</div>
-        <div style="display:flex;gap:6px"><input id="fbtx_${nm}" placeholder="一句話回饋（可空）" value="${mine&&mine.text?mine.text.replace(/"/g,'&quot;'):''}" style="flex:1;border:1px solid var(--line);border-radius:8px;padding:7px 9px;font-size:14px">
-        <button class="mini on" style="padding:7px 14px" onclick="fbSend('${nm}')">${mine?'更新':'送出'}</button></div>
-      </div>`
-    }
-    h += `</div>`
-  })
+  // ④ 管理者後台彙總
+  if (isAdmin) h += fbAdminHtml(d)
   h += `</section>`
   app.innerHTML = h
 }
-function fbSlide(el, nm){
-  const v = +el.value
-  const sp = document.getElementById('fbst_'+nm); if (sp) sp.innerHTML = '★'.repeat(v)+'☆'.repeat(5-v)
-  const fd = document.getElementById('fbd_'+nm); if (fd) fd.textContent = LVLTXT[v]
-  el.dataset.touched = '1'
+function fbDimSlide(nm,i){
+  const box = document.getElementById('fbdims_'+nm); if(!box) return
+  const sl = box.querySelectorAll('input[type=range]')[i]; if(!sl) return
+  sl.dataset.touched = '1'; const v = +sl.value
+  const sp = document.getElementById('fbsv_'+nm+'_'+i); if(sp) sp.textContent = '★'.repeat(v)+'☆'.repeat(5-v)
 }
-async function fbSend(nm){
-  const card = document.getElementById('fbtx_'+nm)
-  const sl = card ? card.closest('div').parentElement.querySelector('input[type=range]') : null
-  const mine = ((window._fbD.fbs||[]).find(x=>x.target===nm && x.by===window._fbD.me.name)) || null
-  const stars = (sl && (sl.dataset.touched || mine)) ? +sl.value : 0
-  const text = card ? card.value : ''
-  const r = await fetch('/api/mail-sync?fbset=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ date: window._fbD.date, target: nm, stars, text, token: TK() }) })
+function fbStPick(nm){
+  const sel = document.getElementById('fbst_'+nm); if(!sel) return
+  const mine = ((window._fbD.fbs||[]).find(x=>x.target===nm && x.by===(window._fbD.me&&window._fbD.me.name)))||null
+  const box = document.getElementById('fbdims_'+nm); if(box) box.innerHTML = fbDimsHtml(nm, sel.value, mine)
+}
+async function fbSubmit(nm){
+  const sel = document.getElementById('fbst_'+nm)
+  const station = sel ? sel.value : ''
+  const box = document.getElementById('fbdims_'+nm), dims = {}
+  if(box) box.querySelectorAll('input[type=range]').forEach(sl=>{ if(sl.dataset.touched) dims[sl.dataset.asp] = +sl.value })
+  const tx = document.getElementById('fbtx_'+nm), text = tx ? tx.value : ''
+  if(!Object.keys(dims).length && !text.trim()){ alert('至少評一個面向或寫一句話'); return }
+  const r = await fetch('/api/mail-sync?fbset=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ date: window._fbD.date, target: nm, station, dims, text, token: TK() }) })
   const d = await r.json().catch(()=>null)
   if (d && d.ok) fbLoad(window._fbD.date); else alert((d&&d.error)||'送出失敗')
 }
-function fbOther(){
+function fbAssignNew(){
   const d = window._fbD
-  const pool = (d.names||[]).filter(n=>!(d.workers||[]).includes(n) && n!==(d.me&&d.me.name))
-  const ov = document.createElement('div'); ov.id='fboOv'
+  const pool = [...new Set([...(d.workers||[]), ...(d.names||[])])]
+  const sts = d.stations || []
+  const ov = document.createElement('div'); ov.id='fbaOv'
   ov.style.cssText = 'position:fixed;inset:0;background:rgba(16,24,43,.45);z-index:50;display:flex;align-items:center;justify-content:center;padding:16px'
-  ov.innerHTML = `<div style="background:#222B38;border:1px solid #3B4654;box-shadow:0 18px 50px rgba(0,0,0,.55);border-radius:14px;max-width:360px;width:100%;padding:16px" onclick="event.stopPropagation()">
-    <div style="font-weight:900;margin-bottom:8px">＋ 對其他人回饋</div>
-    <select id="fboSel" style="width:100%;border:1px solid var(--line);border-radius:8px;padding:8px;font-size:15px;margin-bottom:10px">${pool.map(n=>`<option>${n}</option>`).join('')}</select>
-    <div style="display:flex;gap:8px;justify-content:flex-end"><button class="mini" style="padding:9px 12px" onclick="document.getElementById('fboOv').remove()">取消</button>
-    <button class="mini on" style="padding:9px 18px" onclick="fbOtherGo()">加入</button></div></div>`
+  ov.innerHTML = `<div style="background:#222B38;border:1px solid #3B4654;box-shadow:0 18px 50px rgba(0,0,0,.55);border-radius:14px;max-width:380px;width:100%;padding:16px" onclick="event.stopPropagation()">
+    <div style="font-weight:900;margin-bottom:10px">＋ 指定回饋（誰對誰）</div>
+    <div style="font-size:13px;margin-bottom:4px">由誰回饋</div>
+    <select id="fbaRv" style="width:100%;border:1px solid var(--line);border-radius:8px;padding:8px;font-size:15px;margin-bottom:8px">${pool.map(n=>`<option>${fbE(n)}</option>`).join('')}</select>
+    <div style="font-size:13px;margin-bottom:4px">回饋對象</div>
+    <select id="fbaRe" style="width:100%;border:1px solid var(--line);border-radius:8px;padding:8px;font-size:15px;margin-bottom:8px">${pool.map(n=>`<option>${fbE(n)}</option>`).join('')}</select>
+    <div style="font-size:13px;margin-bottom:4px">站別（可留空）</div>
+    <select id="fbaSt" style="width:100%;border:1px solid var(--line);border-radius:8px;padding:8px;font-size:15px;margin-bottom:8px"><option value="">—</option>${sts.map(s=>`<option>${fbE(s)}</option>`).join('')}</select>
+    <div style="font-size:13px;margin-bottom:4px">具體方面（可留空，帶教用）</div>
+    <input id="fbaAsp" placeholder="例：出餐速度、對客態度" style="width:100%;border:1px solid var(--line);border-radius:8px;padding:8px;font-size:15px;margin-bottom:12px;box-sizing:border-box">
+    <div style="display:flex;gap:8px;justify-content:flex-end"><button class="mini" style="padding:9px 12px" onclick="document.getElementById('fbaOv').remove()">取消</button>
+    <button class="mini on" style="padding:9px 18px" onclick="fbAssignGo()">指定</button></div></div>`
   ov.onclick = () => ov.remove()
   document.body.appendChild(ov)
 }
-function fbOtherGo(){
-  const v = (document.getElementById('fboSel')||{}).value||''
-  const o = document.getElementById('fboOv'); if (o) o.remove()
-  if (!v) return
-  window._fbD.workers = [...(window._fbD.workers||[]), v]
-  fbRender()
+async function fbAssignGo(){
+  const rv = (document.getElementById('fbaRv')||{}).value||''
+  const re = (document.getElementById('fbaRe')||{}).value||''
+  const st = (document.getElementById('fbaSt')||{}).value||''
+  const asp = (document.getElementById('fbaAsp')||{}).value||''
+  if(rv===re){ alert('不能指定自己回饋自己'); return }
+  const r = await fetch('/api/mail-sync?fbassign=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ op:'add', date: window._fbD.date, reviewer: rv, reviewee: re, station: st, aspect: asp, token: TK() }) })
+  const d = await r.json().catch(()=>null)
+  const o = document.getElementById('fbaOv'); if(o) o.remove()
+  if (d && d.ok) fbLoad(window._fbD.date); else alert((d&&d.error)||'指定失敗')
+}
+async function fbAssignDel(id){
+  if(!confirm('刪除這組指定回饋？')) return
+  const r = await fetch('/api/mail-sync?fbassign=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ op:'del', id, token: TK() }) })
+  const d = await r.json().catch(()=>null)
+  if (d && d.ok) fbLoad(window._fbD.date); else alert((d&&d.error)||'刪除失敗')
+}
+function fbDimsEdit(){
+  const d = window._fbD
+  const sts = d.stations || [], m = (d.dims&&d.dims.map)||{}
+  const def = ((d.dims&&d.dims.def)||[]).join('、')
+  const ov = document.createElement('div'); ov.id='fbdOv'
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(16,24,43,.45);z-index:50;display:flex;align-items:center;justify-content:center;padding:16px'
+  ov.innerHTML = `<div style="background:#222B38;border:1px solid #3B4654;box-shadow:0 18px 50px rgba(0,0,0,.55);border-radius:14px;max-width:420px;width:100%;max-height:80vh;overflow:auto;padding:16px" onclick="event.stopPropagation()">
+    <div style="font-weight:900;margin-bottom:6px">回饋面向設定</div>
+    <div class="hint" style="margin-bottom:10px">每站用頓號(、)或逗號分隔；留空＝用預設</div>
+    <div style="margin-bottom:10px"><div style="font-size:13px;font-weight:700;margin-bottom:3px">預設（沒單獨設的站都用這組）</div>
+      <div style="display:flex;gap:6px"><input id="fbdDef" value="${fbE(def)}" style="flex:1;border:1px solid var(--line);border-radius:8px;padding:7px 9px;font-size:14px">
+      <button class="mini on" style="padding:7px 12px" onclick="fbDimsSave('')">存</button></div></div>
+    ${sts.map(s=>`<div style="margin-bottom:8px"><div style="font-size:13px;font-weight:700;margin-bottom:3px">${fbE(s)}</div>
+      <div style="display:flex;gap:6px"><input id="fbdim_${fbE(s)}" value="${fbE((m[s]||[]).join('、'))}" placeholder="（用預設）" style="flex:1;border:1px solid var(--line);border-radius:8px;padding:7px 9px;font-size:14px">
+      <button class="mini" style="padding:7px 12px" onclick="fbDimsSave('${s}')">存</button></div></div>`).join('')}
+    <div style="display:flex;justify-content:flex-end;margin-top:8px"><button class="mini" style="padding:9px 16px" onclick="document.getElementById('fbdOv').remove()">關閉</button></div></div>`
+  ov.onclick = () => ov.remove()
+  document.body.appendChild(ov)
+}
+async function fbDimsSave(station){
+  const el = document.getElementById(station ? ('fbdim_'+station) : 'fbdDef'); if(!el) return
+  const aspects = el.value.split(/[、,，]/).map(s=>s.trim()).filter(Boolean)
+  const body = station ? { op:'station', station, aspects, token: TK() } : { op:'default', aspects, token: TK() }
+  const r = await fetch('/api/mail-sync?fbdims=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify(body) })
+  const d = await r.json().catch(()=>null)
+  if (d && d.ok){ if(d.dims) window._fbD.dims = { map: d.dims.map, def: d.dims.def }; el.style.borderColor = 'var(--green)' } else alert((d&&d.error)||'存失敗')
 }
 // ── 🍔 菜單分頁（張良 2026-09-22：base=既有菜單凍結、draft=新菜單協作編輯；diff 標新增/刪除/修改給大家看；可切「對照原菜單」雙欄）──
 let menuMode = 'edit'

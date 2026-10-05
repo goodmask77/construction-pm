@@ -1883,22 +1883,63 @@ export default async function handler(req, res) {
     await kvPut('sp_finance_pm_menu', doc, '新菜單編輯(' + whoM2.name + ')')
     return res.status(200).json({ ok: true })
   }
-  // ── 💬 每日回饋（張良 2026-09-22：每天對有上班的人做文字回饋＋評分1~5星；一人一天對一人一則可改）──
+  // ── 💬 每日回饋（v4.53.0 升級＝指派制互評；張良 2026-10-06）──
+  // 設計：A當班互評＝系統每天自動配對今天打卡的人互評(排除自己、日位移避免老評同一人)＋站長/管理者可手動指定(引薦)；
+  //       匿名＝被評者看不到是誰、只有管理者/站長後台看得到全貌；面向＝依站別各自設(dims)，沒設的站用預設集。
   if (req.query?.fb) {
     const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
     if (!ok2 || String(req.query.fb) !== ok2) return res.status(403).json({ ok: false })
-    const dtF = /^\d{4}-\d{2}-\d{2}$/.test(String(req.query.date || '')) ? String(req.query.date) : new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10)
-    const [fbDoc, meF, rosterF, fbjDoc, defFb] = await Promise.all([kvGet('sp_finance_pm_fb'), sopWho(req.query.me), kvGet('sp_crew_kb_roster'), kvGet('sp_finance_pm_fbj'), kvGet('sp_finance_pm_sop_def')])
+    const todayF = new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10)
+    const dtF = /^\d{4}-\d{2}-\d{2}$/.test(String(req.query.date || '')) ? String(req.query.date) : todayF
+    const [fbDoc, meF, rosterF, fbjDoc, defFb, dimsDoc, asgDoc] = await Promise.all([kvGet('sp_finance_pm_fb'), sopWho(req.query.me), kvGet('sp_crew_kb_roster'), kvGet('sp_finance_pm_fbj'), kvGet('sp_finance_pm_sop_def'), kvGet('sp_finance_pm_fb_dims'), kvGet('sp_finance_pm_fb_assign')])
     const pjF = await import('./punch.js')
     let pchF = []
     try { pchF = await pjF.listPunches('sp_crew_pch_' + dtF.replace(/-/g, '')) } catch (_) {}
     const workers = [...new Set(pchF.map(p2 => p2.name))].filter(Boolean)
     const namesF = gdNames(rosterF)
-    const fbs = ((fbDoc || {}).list || []).filter(x => x.date === dtF)
+    const gF0 = (defFb || {}).ground || {}
+    const aprF = gF0.approvers || ['張良瑋']
+    const stOwnerF = gF0.stOwner || {}
+    const meNameF = meF ? meF.name : null
+    const isAdminF = !!(meNameF && (aprF.includes(meNameF) || Object.values(stOwnerF).includes(meNameF)))
+    const FB_DIMS_DEFAULT = ['工作態度', '主動補位', 'SOP落實', '團隊配合', '細心穩定']
+    const dimsMap = (dimsDoc && dimsDoc.stations) || {}
+    const dimsDef = (dimsDoc && Array.isArray(dimsDoc.default) && dimsDoc.default.length) ? dimsDoc.default : FB_DIMS_DEFAULT
+    // 當班互評自動配對（懶惰補配對：只補不重洗，排除自己，日位移避免老評同一人）
+    const asg = asgDoc || { list: [] }
+    asg.list = asg.list || []
+    let asgChanged = false
+    if (dtF === todayF && workers.length >= 2) {
+      const sorted = [...workers].sort()
+      const N = sorted.length
+      const k = Math.min(2, N - 1)
+      let off = 0; for (const ch of dtF.replace(/-/g, '')) off += ch.charCodeAt(0); off = ((off % N) + N) % N
+      const have = new Set(asg.list.filter(a => a.date === dtF && a.type === 'peer').map(a => a.reviewer + '→' + a.reviewee))
+      for (let i = 0; i < N; i++) {
+        const rv = sorted[i]
+        let cnt = asg.list.filter(a => a.date === dtF && a.type === 'peer' && a.reviewer === rv).length
+        for (let j = 1; j <= N && cnt < k; j++) {
+          let idx = (i + off + j) % N
+          if (idx === i) idx = (idx + 1) % N
+          const re = sorted[idx]
+          const key = rv + '→' + re
+          if (re !== rv && !have.has(key)) {
+            asg.list.push({ id: 'ag' + dtF.replace(/-/g, '') + '_' + i + '_' + idx, date: dtF, type: 'peer', reviewer: rv, reviewee: re, status: 'open', ts: new Date(Date.now() + 8 * 3600e3).toISOString().slice(11, 16) })
+            have.add(key); cnt++; asgChanged = true
+          }
+        }
+      }
+      if (asgChanged) { asg.list = asg.list.slice(-5000); await kvPut('sp_finance_pm_fb_assign', asg, '當班互評配對(' + dtF + ')') }
+    }
+    const asgDay = asg.list.filter(a => a.date === dtF)
+    const myAssign = meNameF ? asgDay.filter(a => a.reviewer === meNameF).map(a => ({ reviewee: a.reviewee, type: a.type, station: a.station || '', aspect: a.aspect || '', by: a.by || '' })) : []
+    let fbs = ((fbDoc || {}).list || []).filter(x => x.date === dtF)
+    // 匿名（對同事匿名）：非管理者只看自己寫的＋別人給自己的(作者隱藏)；管理者看全貌
+    if (!isAdminF) fbs = fbs.filter(x => x.by === meNameF || x.target === meNameF).map(x => (x.target === meNameF && x.by !== meNameF) ? { ...x, by: '' } : x)
     // 每日回饋紀錄（張良 2026-09-22：每人每天發現問題要發——文字/照片/影片、可多則、選站別）
     const jn = ((fbjDoc || {}).list || []).filter(x => x.date === dtF)
-    const stationsF = (((defFb || {}).ground || {}).stations || [])
-    return res.status(200).json({ ok: true, date: dtF, workers, names: namesF, fbs, jn, stations: stationsF, me: meF ? { name: meF.name } : null })
+    const stationsF = gF0.stations || []
+    return res.status(200).json({ ok: true, date: dtF, today: todayF, workers, names: namesF, fbs, jn, stations: stationsF, dims: { map: dimsMap, def: dimsDef }, myAssign, assignDay: isAdminF ? asgDay : null, isAdmin: isAdminF, me: meF ? { name: meF.name } : null })
   }
   // 每日回饋紀錄：POST ?fbj= {op:'add', date?, st, text, media[]} / {op:'del', id}（本人或審核人可刪）
   if (req.method === 'POST' && req.query?.fbj) {
@@ -1933,20 +1974,84 @@ export default async function handler(req, res) {
     if (!whoF) return res.status(403).json({ ok: false, error: permDeny() })
     const dtF = /^\d{4}-\d{2}-\d{2}$/.test(String(fbB.date || '')) ? String(fbB.date) : new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10)
     const tgF = String(fbB.target || '').trim().slice(0, 20)
-    const svF = Math.round(Number(fbB.stars))
+    // v4.53.0 面向評分：dims={面向:1~5}；整體星數沒給時＝面向平均
+    const dimsIn = (fbB.dims && typeof fbB.dims === 'object') ? fbB.dims : null
+    let dimsClean = null
+    if (dimsIn) { dimsClean = {}; for (const kD of Object.keys(dimsIn)) { const vD = Math.round(Number(dimsIn[kD])); if (vD >= 1 && vD <= 5) dimsClean[String(kD).slice(0, 20)] = vD } }
+    let svF = Math.round(Number(fbB.stars))
+    if (!(svF >= 1 && svF <= 5) && dimsClean && Object.keys(dimsClean).length) { const vs = Object.values(dimsClean); svF = Math.round(vs.reduce((a, b) => a + b, 0) / vs.length) }
+    const stF = String(fbB.station || '').slice(0, 20)
     if (!tgF) return res.status(400).json({ ok: false, error: '要選對象' })
     if (tgF === whoF.name) return res.status(400).json({ ok: false, error: '不能回饋自己 😄' })
-    if (!(svF >= 1 && svF <= 5) && !String(fbB.text || '').trim()) return res.status(400).json({ ok: false, error: '評分或文字至少一樣' })
+    if (!(svF >= 1 && svF <= 5) && !String(fbB.text || '').trim() && !(dimsClean && Object.keys(dimsClean).length)) return res.status(400).json({ ok: false, error: '評分或文字至少一樣' })
     const doc = (await kvGet('sp_finance_pm_fb')) || { list: [] }
     doc.list = doc.list || []
     let it = doc.list.find(x => x.date === dtF && x.target === tgF && x.by === whoF.name)
     if (!it) { it = { id: 'fb' + Date.now().toString(36), date: dtF, target: tgF, by: whoF.name }; doc.list.unshift(it) }
     if (svF >= 1 && svF <= 5) it.stars = svF
+    if (dimsClean) it.dims = dimsClean
+    if (stF) it.station = stF
     it.text = String(fbB.text || '').slice(0, 1000)
     it.ts = new Date(Date.now() + 8 * 3600e3).toISOString().slice(5, 16).replace('T', ' ')
-    doc.list = doc.list.slice(0, 1000)
+    doc.list = doc.list.slice(0, 2000)
     await kvPut('sp_finance_pm_fb', doc, '每日回饋(' + whoF.name + '→' + tgF + ')')
+    // 標記指派完成（當班互評／指定回饋）
+    try {
+      const ad = (await kvGet('sp_finance_pm_fb_assign')) || { list: [] }
+      let hit = false
+      for (const a of (ad.list || [])) if (a.date === dtF && a.reviewer === whoF.name && a.reviewee === tgF && a.status !== 'done') { a.status = 'done'; a.doneTs = it.ts; hit = true }
+      if (hit) await kvPut('sp_finance_pm_fb_assign', ad, '指派完成(' + whoF.name + '→' + tgF + ')')
+    } catch (_) {}
     return res.status(200).json({ ok: true, item: it })
+  }
+  // 站別回饋面向設定（v4.53.0 管理者/站長）：POST ?fbdims= {op:'station', station, aspects:[]} | {op:'default', aspects:[]}
+  if (req.method === 'POST' && req.query?.fbdims) {
+    const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
+    if (!ok2 || String(req.query.fbdims) !== ok2) return res.status(403).json({ ok: false })
+    let bD = {}
+    try { bD = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
+    const whoD = await permWho(bD.token, 'fb')
+    if (!whoD) return res.status(403).json({ ok: false, error: permDeny() })
+    const defD = await kvGet('sp_finance_pm_sop_def')
+    const aprD = (((defD || {}).ground || {}).approvers || ['張良瑋'])
+    const ownD = Object.values(((defD || {}).ground || {}).stOwner || {})
+    if (!aprD.includes(whoD.name) && !ownD.includes(whoD.name)) return res.status(403).json({ ok: false, error: '只有管理者或站長能改面向' })
+    const doc = (await kvGet('sp_finance_pm_fb_dims')) || { stations: {}, default: [] }
+    doc.stations = doc.stations || {}
+    const clean = (arr) => [...new Set((Array.isArray(arr) ? arr : []).map(s => String(s || '').trim().slice(0, 12)).filter(Boolean))].slice(0, 8)
+    if (bD.op === 'station') { const st = String(bD.station || '').slice(0, 20); if (!st) return res.status(400).json({ ok: false }); const a = clean(bD.aspects); if (a.length) doc.stations[st] = a; else delete doc.stations[st] }
+    else if (bD.op === 'default') { doc.default = clean(bD.aspects) }
+    else return res.status(400).json({ ok: false })
+    await kvPut('sp_finance_pm_fb_dims', doc, '回饋面向設定(' + whoD.name + ')')
+    return res.status(200).json({ ok: true, dims: { map: doc.stations, def: doc.default } })
+  }
+  // 指定回饋／引薦（v4.53.0 管理者/站長指定 A 對 B，具名帶教）：POST ?fbassign= {op:'add', date?, reviewer, reviewee, station?, aspect?} | {op:'del', id}
+  if (req.method === 'POST' && req.query?.fbassign) {
+    const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
+    if (!ok2 || String(req.query.fbassign) !== ok2) return res.status(403).json({ ok: false })
+    let bA = {}
+    try { bA = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
+    const whoA = await permWho(bA.token, 'fb')
+    if (!whoA) return res.status(403).json({ ok: false, error: permDeny() })
+    const defA = await kvGet('sp_finance_pm_sop_def')
+    const aprA = (((defA || {}).ground || {}).approvers || ['張良瑋'])
+    const ownA = Object.values(((defA || {}).ground || {}).stOwner || {})
+    if (!aprA.includes(whoA.name) && !ownA.includes(whoA.name)) return res.status(403).json({ ok: false, error: '只有管理者或站長能指定回饋' })
+    const doc = (await kvGet('sp_finance_pm_fb_assign')) || { list: [] }
+    doc.list = doc.list || []
+    if (bA.op === 'add') {
+      const dtA = /^\d{4}-\d{2}-\d{2}$/.test(bA.date || '') ? bA.date : new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10)
+      const rv = String(bA.reviewer || '').trim().slice(0, 20), re = String(bA.reviewee || '').trim().slice(0, 20)
+      if (!rv || !re) return res.status(400).json({ ok: false, error: '要選誰對誰' })
+      if (rv === re) return res.status(400).json({ ok: false, error: '不能指定自己回饋自己' })
+      if (doc.list.find(a => a.date === dtA && a.reviewer === rv && a.reviewee === re)) return res.status(400).json({ ok: false, error: '已經有這組指派了' })
+      doc.list.push({ id: 'ax' + Date.now().toString(36), date: dtA, type: 'assigned', reviewer: rv, reviewee: re, station: String(bA.station || '').slice(0, 20), aspect: String(bA.aspect || '').slice(0, 60), by: whoA.name, status: 'open', ts: new Date(Date.now() + 8 * 3600e3).toISOString().slice(5, 16).replace('T', ' ') })
+      doc.list = doc.list.slice(-5000)
+    } else if (bA.op === 'del') {
+      doc.list = doc.list.filter(a => a.id !== bA.id)
+    } else return res.status(400).json({ ok: false })
+    await kvPut('sp_finance_pm_fb_assign', doc, '指定回饋(' + whoA.name + ')')
+    return res.status(200).json({ ok: true })
   }
   // 一次性回填（張良 2026-09-21：既有 SOP 條目補 editBy/editTs＝最近一次儲存者；之後逐條照實記）：GET ?sopstamp=<MENU_PROBE_KEY>
   if (req.query?.sopstamp) {
