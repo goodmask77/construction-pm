@@ -348,6 +348,14 @@ function tnFmtDur(min) {
   if (m >= 60) return '已' + Math.floor(m / 60) + '時' + (m % 60) + '分';
   return '已' + m + '分';
 }
+// ⏱ 倒數剩餘格式（ms）：≥1時 h:mm:ss、否則 mm:ss
+function tnFmtCd(ms) {
+  let s = Math.max(0, Math.floor(ms / 1000));
+  const h = Math.floor(s / 3600); s -= h * 3600;
+  const m = Math.floor(s / 60); const ss = s - m * 60;
+  const p = n => String(n).padStart(2, '0');
+  return h > 0 ? (h + ':' + p(m) + ':' + p(ss)) : (p(m) + ':' + p(ss));
+}
 
 /* ── 大項（cats＝sp_team_pm_data 整包陣列；只動 name/order/color/tcol，其餘欄位原樣保留） ── */
 function tnCatsWrite(next) {
@@ -750,6 +758,8 @@ function tnCard(t, o) {
   let meta = '';
   const cat = (tnS.cats || []).find(c => c.id === t.catId);
   if (cat && cat.name && cat.id !== tnINBOX) meta += '<span style="display:inline-flex;align-items:center;font-size:11px;color:' + tnC.sub + ';border:1px solid ' + tnC.line + ';border-radius:7px;padding:2px 8px">' + tnEsc(cat.name) + '</span>';
+  // ⏱ 倒數計時 chip（即時跳動靠 ticker；歸零爆炸）：data-cd=截止時間戳、data-tid=任務id
+  if (t.cdUntil && !done) { const left = t.cdUntil - Date.now(); meta += '<span class="tnCd" data-cd="' + t.cdUntil + '" data-tid="' + t.id + '" style="display:inline-flex;align-items:center;gap:3px;font-size:11px;font-weight:800;font-variant-numeric:tabular-nums;border-radius:7px;padding:2px 8px;border:1px solid ' + (left <= 0 ? tnC.red : (left < 300000 ? tnC.red : tnC.amber)) + ';color:' + (left < 300000 ? tnC.red : tnC.amber) + '">' + (left <= 0 ? '💥 時間到' : ('⏳ ' + tnFmtCd(left))) + '</span>'; }
   const tnTds = t.todos || [];
   if (tnTds.length > 0) { const tnTdn = tnTds.filter(x => x && x.d).length, tnTall = tnTdn === tnTds.length; meta += '<span title="步驟 ' + tnTdn + '/' + tnTds.length + '" style="display:inline-flex;align-items:center;gap:3px;font-size:11px;font-variant-numeric:tabular-nums;border:1px solid ' + (tnTall ? tnC.green : tnC.line) + ';border-radius:7px;padding:2px 8px;font-weight:' + (tnTall ? 700 : 400) + ';color:' + (tnTall ? tnC.green : tnC.sub) + '">' + tnI('checksq', 11, tnTall ? tnC.green : 'currentColor') + tnTdn + '/' + tnTds.length + '</span>'; }
   if ((t.files || []).length > 0) meta += '<span title="' + t.files.length + ' 個附件" style="display:inline-flex;align-items:center;gap:2px;font-size:11px;color:' + tnC.sub + ';border:1px solid ' + tnC.line + ';border-radius:7px;padding:2px 8px">' + tnI('clip', 11) + t.files.length + '</span>';
@@ -1328,6 +1338,20 @@ function tnModal() {
       + '</div>';
     return hh;
   })());
+  // ⏱ 倒數計時（張良「時間到就爆炸」）：設一段時間→卡片即時倒數→歸零爆炸
+  h += F('⏱ 倒數計時', (function () {
+    const now = Date.now(), left = t.cdUntil ? (t.cdUntil - now) : 0;
+    const mins = [['5', 5], ['15', 15], ['30', 30], ['60', 60], ['120', 120], ['240', 240]];
+    let hh = '<div style="display:flex;gap:6px;flex-wrap:wrap;padding-top:3px">'
+      + mins.map(function (m) { return '<button onclick="tnUpd(\'' + t.id + '\',{cdUntil:' + (now + m[1] * 60000) + ',cdSet:' + m[1] + '})" style="min-width:44px;padding:7px 8px;border-radius:8px;border:1px solid ' + tnC.line + ';background:transparent;color:' + tnC.sub + ';font-size:12.5px;font-weight:700;cursor:pointer">' + (m[1] >= 60 ? (m[1] / 60) + '時' : m[0] + '分') + '</button>'; }).join('')
+      + '</div>';
+    hh += '<div style="display:flex;align-items:center;gap:10px;margin-top:8px;flex-wrap:wrap">';
+    if (t.cdUntil && left > 0) hh += '<span style="font-size:13px;font-weight:900;color:' + (left < 300000 ? tnC.red : tnC.amber) + ';font-variant-numeric:tabular-nums">⏳ 剩 ' + tnFmtCd(left) + '</span>';
+    else if (t.cdUntil) hh += '<span style="font-size:13px;font-weight:900;color:' + tnC.red + '">💥 時間到！已爆炸</span>';
+    else hh += '<span style="font-size:12px;color:' + tnC.faint + '">沒設＝不倒數</span>';
+    if (t.cdUntil) hh += '<button onclick="tnUpd(\'' + t.id + '\',{cdUntil:undefined,cdSet:undefined})" style="border:1px solid ' + tnC.line + ';background:transparent;color:' + tnC.sub + ';border-radius:999px;padding:3px 11px;font-size:11.5px;cursor:pointer">清除倒數</button>';
+    return hh;
+  })());
   h += '<div style="display:flex;align-items:center;gap:10px;margin-top:8px;flex-wrap:wrap">'
     + '<div style="font-size:11px;color:' + tnC.faint + ';font-variant-numeric:tabular-nums">建立於 ' + tnDnorm(t.createdAt) + '</div>'
     + '<div style="flex:1"></div>'
@@ -1460,10 +1484,59 @@ function tnAnimMenu(ev) { // v2.0 動畫偏好選單（4 開關，即時生效�
   m.style.left = Math.max(10, Math.min(r.right - m.offsetWidth, innerWidth - m.offsetWidth - 10)) + 'px';
 }
 document.addEventListener('mousedown', function (e) { const m = document.getElementById('tnAnimMn'); if (m && !m.contains(e.target)) m.remove(); });
+// ⏱ 倒數計時 ticker（張良「時間到就爆炸」）：每秒更新所有 .tnCd 剩餘時間；歸零→整張卡爆炸動畫一次
+let tnCdTimer = null;
+const tnBoomed = new Set(); // 已爆過的任務 id（同一 session 不重爆）
+function tnCssOnce() {
+  if (document.getElementById('tnCdCss')) return;
+  const st = document.createElement('style'); st.id = 'tnCdCss';
+  st.textContent =
+    '@keyframes tnShake{0%,100%{transform:translate(0,0)}10%{transform:translate(-3px,2px) rotate(-1deg)}20%{transform:translate(4px,-2px) rotate(1deg)}30%{transform:translate(-5px,1px) rotate(-1.5deg)}40%{transform:translate(5px,2px) rotate(1deg)}50%{transform:translate(-4px,-2px) rotate(-1deg)}60%{transform:translate(3px,2px) rotate(.5deg)}70%{transform:translate(-2px,1px)}80%{transform:translate(2px,-1px)}90%{transform:translate(-1px,0)}}'
+    + '@keyframes tnFlash{0%{filter:brightness(1)}15%{filter:brightness(2.6) saturate(1.5)}30%{filter:brightness(1.1)}45%{filter:brightness(2) }100%{filter:brightness(1)}}'
+    + '@keyframes tnBoomFly{0%{transform:translate(-50%,-50%) scale(.3);opacity:1}100%{transform:translate(calc(-50% + var(--dx)),calc(-50% + var(--dy))) scale(1.1);opacity:0}}'
+    + '.tnBoom{animation:tnShake .6s ease-in-out,tnFlash .6s ease-in-out;position:relative}'
+    + '.tnBoomP{position:absolute;left:50%;top:50%;width:9px;height:9px;border-radius:50%;pointer-events:none;z-index:9;animation:tnBoomFly .7s ease-out forwards}'
+    + '@keyframes tnCdPulse{0%,100%{opacity:1}50%{opacity:.45}}'
+    + '.tnCd[data-urgent="1"]{animation:tnCdPulse 1s ease-in-out infinite}';
+  document.head.appendChild(st);
+}
+function tnBoomCard(cardEl) { // 爆炸：震動+閃光+飛濺碎片
+  if (!cardEl) return;
+  cardEl.classList.add('tnBoom');
+  const cols = ['#FF5252', '#FFB74D', '#FFF176', '#FF8A65', '#fff'];
+  for (let i = 0; i < 16; i++) {
+    const ang = (Math.PI * 2 * i) / 16, dist = 60 + (i % 3) * 22;
+    const p = document.createElement('span'); p.className = 'tnBoomP';
+    p.style.background = cols[i % cols.length];
+    p.style.setProperty('--dx', Math.cos(ang) * dist + 'px');
+    p.style.setProperty('--dy', Math.sin(ang) * dist + 'px');
+    p.style.animationDelay = (i % 4) * 0.03 + 's';
+    cardEl.appendChild(p);
+  }
+  setTimeout(() => { cardEl.classList.remove('tnBoom'); cardEl.querySelectorAll('.tnBoomP').forEach(x => x.remove()); }, 800);
+}
+function tnCdTick() {
+  const els = document.querySelectorAll('.tnCd[data-cd]');
+  if (!els.length) return;
+  const now = Date.now();
+  els.forEach(el => {
+    const until = Number(el.getAttribute('data-cd')) || 0, left = until - now, tid = el.getAttribute('data-tid');
+    if (left <= 0) {
+      if (el.textContent !== '💥 時間到') { el.textContent = '💥 時間到'; el.style.borderColor = tnC.red; el.style.color = tnC.red; el.removeAttribute('data-urgent'); }
+      if (tid && !tnBoomed.has(tid)) { tnBoomed.add(tid); const card = el.closest('.tnfxCard') || el.closest('[data-tid="' + tid + '"]'); tnBoomCard(card); }
+    } else {
+      if (tid && tnBoomed.has(tid)) tnBoomed.delete(tid); // 重設倒數＝之後能再爆
+      el.textContent = '⏳ ' + tnFmtCd(left);
+      if (left < 300000) { el.style.borderColor = tnC.red; el.style.color = tnC.red; el.setAttribute('data-urgent', '1'); }
+    }
+  });
+}
 function tnInit() {
   if (tnS.inited) return;
   tnS.inited = true;
   try { if (window.TIER_EFFECTS) window.TIER_EFFECTS.injectCss(); } catch (_) {} // v2.0 注入模組特效 keyframes/圖層 class
+  tnCssOnce(); // ⏱ 倒數/爆炸 CSS
+  if (!tnCdTimer) tnCdTimer = setInterval(tnCdTick, 1000); // 每秒跳倒數
   tnAnimPrefLoad(); // v2.0 讀個人動畫偏好（跟帳號走）
   document.addEventListener('paste', tnPaste);
   window.addEventListener('keydown', tnKey);
