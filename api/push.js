@@ -32,6 +32,25 @@ export async function groupMembers(to) {
   } catch (_) { return 1 }
 }
 
+// v4.55.0 共用額度尾巴（張良 2026-10-06「沒有訊息則數 全部檢查 所有通知都要出現」）：
+// 所有群發通知末尾統一帶「本次計費則數 本月用量/上限」＝簡易版（與 DD 私訊 quotaFoot v4.41.2 同格式）；
+// billed=本次計費則數（群發=群人數，私訊=1）；查不到額度就回空字串（不硬塞）
+let _qfCache = { t: 0, used: -1, total: -1 }
+export async function quotaFoot(billed = 1) {
+  try {
+    if (Date.now() - _qfCache.t > 60000) { // 60 秒快取，避免每則都打兩次 LINE API
+      const H = { authorization: `Bearer ${TOKEN}` }
+      const [q, c] = await Promise.all([
+        fetch('https://api.line.me/v2/bot/message/quota', { headers: H }).then((x) => x.json()),
+        fetch('https://api.line.me/v2/bot/message/quota/consumption', { headers: H }).then((x) => x.json()),
+      ])
+      _qfCache = { t: Date.now(), used: (c && c.totalUsage != null) ? c.totalUsage : -1, total: (q && q.type === 'limited') ? q.value : -1 }
+    }
+    if (_qfCache.used < 0) return ''
+    return `\n\n${billed} ${_qfCache.used + billed}${_qfCache.total > 0 ? '/' + _qfCache.total : ''}`
+  } catch (_) { return '' }
+}
+
 export default async function handler(req, res) {
   try {
     if (req.method !== 'POST') return res.status(405).json({ ok: false, error: '僅支援 POST' })

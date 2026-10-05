@@ -48,7 +48,10 @@ export default async function handler(req, res) {
             const tk = (process.env.LINE_CHANNEL_ACCESS_TOKEN || '').trim()
             let sent9 = false
             if (tk) {
-              const pr = await fetch('https://api.line.me/v2/bot/message/push', { method: 'POST', headers: { 'content-type': 'application/json', Authorization: 'Bearer ' + tk }, body: JSON.stringify({ to: await ddGroupGid(cfgSL.group), messages: [{ type: 'text', text: ddFill(cfgSL.text, { list: listSL, link: prepLink('') }) }] }) })
+              const gidSL = await ddGroupGid(cfgSL.group)
+              const { groupMembers: _gm, quotaFoot: _qf } = await import('./push.js')
+              const _mem = await _gm(gidSL)
+              const pr = await fetch('https://api.line.me/v2/bot/message/push', { method: 'POST', headers: { 'content-type': 'application/json', Authorization: 'Bearer ' + tk }, body: JSON.stringify({ to: gidSL, messages: [{ type: 'text', text: ddFill(cfgSL.text, { list: listSL, link: prepLink('') }) + await _qf(_mem) }] }) })
               if (pr.ok) sent9 = true
             }
             try { if (await wpPush(null, { title: '⏰ SOP 超時未完成', body: over.map(it => `${it.st}｜${it.title}`).join('、'), url: '/prep' })) sent9 = true } catch (_) {}
@@ -98,7 +101,10 @@ export default async function handler(req, res) {
           const { ddGet, ddFill, ddGroupGid } = await import('./_ddmsg.js') // v4.54.0 走 DD 自動訊息設定(meet_nudge)：開關/群/文字
           const cfgMN = await ddGet('meet_nudge')
           if (cfgMN.on) {
-            const pg = await fetch('https://api.line.me/v2/bot/message/push', { method: 'POST', headers: { 'content-type': 'application/json', Authorization: 'Bearer ' + tkM }, body: JSON.stringify({ to: await ddGroupGid(cfgMN.group), messages: [{ type: 'text', text: ddFill(cfgMN.text, { type: it.type, date: it.date, names: dead.join('、'), link: prepLink('meet=' + it.id) }) }] }) })
+            const gidMN = await ddGroupGid(cfgMN.group)
+            const { groupMembers: _gm, quotaFoot: _qf } = await import('./push.js')
+            const _mem = await _gm(gidMN)
+            const pg = await fetch('https://api.line.me/v2/bot/message/push', { method: 'POST', headers: { 'content-type': 'application/json', Authorization: 'Bearer ' + tkM }, body: JSON.stringify({ to: gidMN, messages: [{ type: 'text', text: ddFill(cfgMN.text, { type: it.type, date: it.date, names: dead.join('、'), link: prepLink('meet=' + it.id) }) + await _qf(_mem) }] }) })
             if (pg.ok) { it.remind.__grp = 1; dirtyM = true }
           }
         }
@@ -136,7 +142,7 @@ export default async function handler(req, res) {
         const cfgSo = await ddGet('soldoutAB')
         const gidSo = await ddGroupGid(cfgSo.group)
         const tkSo = (process.env.LINE_CHANNEL_ACCESS_TOKEN || '').trim()
-        if (tkSo && gidSo) await fetch('https://api.line.me/v2/bot/message/push', { method: 'POST', headers: { 'content-type': 'application/json', Authorization: 'Bearer ' + tkSo }, body: JSON.stringify({ to: gidSo, messages: [{ type: 'text', text: ddFill(cfgSo.text, { list: listSo }) }] }) })
+        if (tkSo && gidSo) { const { groupMembers: _gm, quotaFoot: _qf } = await import('./push.js'); const _mem = await _gm(gidSo); await fetch('https://api.line.me/v2/bot/message/push', { method: 'POST', headers: { 'content-type': 'application/json', Authorization: 'Bearer ' + tkSo }, body: JSON.stringify({ to: gidSo, messages: [{ type: 'text', text: ddFill(cfgSo.text, { list: listSo }) + await _qf(_mem) }] }) }) }
       } else if (!soDoc.day || soDoc.day !== todaySo) { // 每天首輪落個檔（沒變化也記狀態基準）
         soDoc.day = todaySo
         await kvPut('sp_finance_pm_absoldout', soDoc, 'AB停售基準')
@@ -191,7 +197,7 @@ export default async function handler(req, res) {
           const gidS = await ddGroupGid(cfgST.group)
           const txtS = ddFill(cfgST.text, { list: listS })
           const tkS = (process.env.LINE_CHANNEL_ACCESS_TOKEN || '').trim()
-          if (tkS && gidS) await fetch('https://api.line.me/v2/bot/message/push', { method: 'POST', headers: { 'content-type': 'application/json', Authorization: 'Bearer ' + tkS }, body: JSON.stringify({ to: gidS, messages: [{ type: 'text', text: txtS }] }) })
+          if (tkS && gidS) { const { groupMembers: _gm, quotaFoot: _qf } = await import('./push.js'); const _mem = await _gm(gidS); await fetch('https://api.line.me/v2/bot/message/push', { method: 'POST', headers: { 'content-type': 'application/json', Authorization: 'Bearer ' + tkS }, body: JSON.stringify({ to: gidS, messages: [{ type: 'text', text: txtS + await _qf(_mem) }] }) }) }
           else if (tkS) { // 找不到 happy337 群→退回私訊審核人（至少不漏）
             const [defS2, rosterS2] = await Promise.all([kvGet('sp_finance_pm_sop_def'), kvGet('sp_crew_kb_roster')])
             for (const an of (((defS2 || {}).ground || {}).approvers || ['張良瑋'])) {
@@ -231,7 +237,10 @@ export default async function handler(req, res) {
             const tk2 = (process.env.LINE_CHANNEL_ACCESS_TOKEN || '').trim()
             let sent2 = false
             if (tk2) {
-              const pr2 = await fetch('https://api.line.me/v2/bot/message/push', { method: 'POST', headers: { 'content-type': 'application/json', Authorization: 'Bearer ' + tk2 }, body: JSON.stringify({ to: await ddGroupGid(cfgLS.group), messages: [{ type: 'text', text: ddFill(cfgLS.text, { list: listLS }) }] }) })
+              const gidLS = await ddGroupGid(cfgLS.group)
+              const { groupMembers: _gm, quotaFoot: _qf } = await import('./push.js')
+              const _mem = await _gm(gidLS)
+              const pr2 = await fetch('https://api.line.me/v2/bot/message/push', { method: 'POST', headers: { 'content-type': 'application/json', Authorization: 'Bearer ' + tk2 }, body: JSON.stringify({ to: gidLS, messages: [{ type: 'text', text: ddFill(cfgLS.text, { list: listLS }) + await _qf(_mem) }] }) })
               if (pr2.ok) sent2 = true
             }
             try { if (await wpPush(null, { title: '📉 庫存低水位', body: lows.map(x => x.name).join('、'), url: '/prep' })) sent2 = true } catch (_) {}

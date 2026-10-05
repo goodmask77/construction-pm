@@ -2199,9 +2199,11 @@ export default async function handler(req, res) {
             const { prepLink } = await import('./_webpush.js')
             const lnkG = prepLink('meet=' + it.id)
             const GRP_FAM = await ddGroupGid(audM.group || cfgG.group) // v4.55.2 張良可per會議選發哪個群(海灘叢林team/HAPPY337/Family)，沒選用設定頁預設
-            const bodyG = ddFill(cfgG.text, { type: it.type, date: it.date, content: String(it.text || '').slice(0, 300), n: it.ackNames.length, link: lnkG })
+            const { logPush, groupMembers, quotaFoot } = await import('./push.js')
+            const _mem = await groupMembers(GRP_FAM)
+            const bodyG = ddFill(cfgG.text, { type: it.type, date: it.date, content: String(it.text || '').slice(0, 300), n: it.ackNames.length, link: lnkG }) + await quotaFoot(_mem)
             const rG = await fetch('https://api.line.me/v2/bot/message/push', { method: 'POST', headers: { 'content-type': 'application/json', Authorization: 'Bearer ' + tkG }, body: JSON.stringify({ to: GRP_FAM, messages: [{ type: 'text', text: bodyG }, ...imgMsgs9] }), signal: AbortSignal.timeout(8000) })
-            if (rG.ok) { const nQ = it.ackNames.length || 1; try { const { logPush } = await import('./push.js'); await logPush(GRP_FAM, nQ, '會議宣達發大群(' + it.by + ')') } catch (_) {}; it.groupSent = { ts: now8(), n: nQ } }
+            if (rG.ok) { const nQ = it.ackNames.length || 1; try { await logPush(GRP_FAM, nQ, '會議宣達發大群(' + it.by + ')') } catch (_) {}; it.groupSent = { ts: now8(), n: nQ } }
             else { it.groupSent = { ts: now8(), fail: true } }
           }
         } catch (_) { it.groupSent = { ts: now8(), fail: true } }
@@ -4284,7 +4286,7 @@ export default async function handler(req, res) {
           const tkP = (process.env.LINE_CHANNEL_ACCESS_TOKEN || '').trim()
           const { ddGet, ddFill, ddGroupGid } = await import('./_ddmsg.js') // v4.54.0 走 DD 自動訊息設定(issue)：開關/群/文字
           const cfgI = await ddGet('issue')
-          if (tkP && cfgI.on) await fetch('https://api.line.me/v2/bot/message/push', { method: 'POST', headers: { 'content-type': 'application/json', Authorization: 'Bearer ' + tkP }, body: JSON.stringify({ to: await ddGroupGid(cfgI.group), messages: [{ type: 'text', text: ddFill(cfgI.text, { st: itI.st, content: (itI.text || '（見附件）') + ((itI.media || []).length ? `・附件${itI.media.length}` : ''), by: itI.by }) }] }) })
+          if (tkP && cfgI.on) { const gidI = await ddGroupGid(cfgI.group); const { groupMembers, quotaFoot } = await import('./push.js'); const _mem = await groupMembers(gidI); await fetch('https://api.line.me/v2/bot/message/push', { method: 'POST', headers: { 'content-type': 'application/json', Authorization: 'Bearer ' + tkP }, body: JSON.stringify({ to: gidI, messages: [{ type: 'text', text: ddFill(cfgI.text, { st: itI.st, content: (itI.text || '（見附件）') + ((itI.media || []).length ? `・附件${itI.media.length}` : ''), by: itI.by }) + await quotaFoot(_mem) }] }) }) }
         } catch (_) {}
       } else if (bi.val === 'hold') { itI.pub = 'hold' }
       else if (bi.val === 'del') { dI.list = (dI.list || []).filter(x => x.id !== bi.id) }
@@ -4343,7 +4345,7 @@ export default async function handler(req, res) {
       const tkB = (process.env.LINE_CHANNEL_ACCESS_TOKEN || '').trim()
       const { ddGet, ddFill, ddGroupGid } = await import('./_ddmsg.js')
       const cfgB = await ddGet('buy')
-      if (cfgB.on && tkB) await fetch('https://api.line.me/v2/bot/message/push', { method: 'POST', headers: { 'content-type': 'application/json', Authorization: 'Bearer ' + tkB }, body: JSON.stringify({ to: await ddGroupGid(cfgB.group), messages: [{ type: 'text', text: ddFill(cfgB.text, { content: it.text || '（見附件）', by: it.by, url: (it.url ? '\n🔗 ' + it.url : '') + (it.media.length ? `・附${it.media.length}圖` : '') }) }] }) })
+      if (cfgB.on && tkB) { const gidB = await ddGroupGid(cfgB.group); const { groupMembers, quotaFoot } = await import('./push.js'); const _mem = await groupMembers(gidB); await fetch('https://api.line.me/v2/bot/message/push', { method: 'POST', headers: { 'content-type': 'application/json', Authorization: 'Bearer ' + tkB }, body: JSON.stringify({ to: gidB, messages: [{ type: 'text', text: ddFill(cfgB.text, { content: it.text || '（見附件）', by: it.by, url: (it.url ? '\n🔗 ' + it.url : '') + (it.media.length ? `・附${it.media.length}圖` : '') }) + await quotaFoot(_mem) }] }) }) }
     } catch (_) {}
     return res.status(200).json({ ok: true, item: it })
   }

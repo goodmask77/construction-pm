@@ -229,12 +229,14 @@ export default async function handler(req, res) {
         const seenV = (await kvGet('pm_group_seen')) || {}
         for (const [g2, gg] of Object.entries(seenV)) if (/abpeople|ab people/i.test(gg?.name || '')) { gidV = g2; break }
         if (gidV) {
-          const txt2 = `⚠️ 班表違規提醒（A Beach）\n` + (await vioLines(fresh2.slice(0, 6))).join('\n\n') + (fresh2.length > 6 ? `\n…共 ${fresh2.length} 筆，詳見 /prep 班表「🔴 違規」` : '')
+          const { groupMembers: _gm, quotaFoot: _qf } = await import('./push.js')
+          const _mem = await _gm(gidV)
+          const txt2 = `⚠️ 班表違規提醒（A Beach）\n` + (await vioLines(fresh2.slice(0, 6))).join('\n\n') + (fresh2.length > 6 ? `\n…共 ${fresh2.length} 筆，詳見 /prep 班表「🔴 違規」` : '') + await _qf(_mem)
           const pr2 = await fetch('https://api.line.me/v2/bot/message/push', { method: 'POST', headers: { 'content-type': 'application/json', Authorization: 'Bearer ' + TOKEN }, body: JSON.stringify({ to: gidV, messages: [{ type: 'text', text: txt2 }] }) })
           if (pr2.ok) {
             fresh2.forEach(v => { ded[v.nm + '|' + v.dt + '|' + v.rule] = 1 })
             await kvSave('pm_vionotif', ded)
-            try { const { logPush, groupMembers } = await import('./push.js'); await logPush(gidV, 1, '班表違規提醒', await groupMembers(gidV)) } catch (_) {}
+            try { const { logPush } = await import('./push.js'); await logPush(gidV, 1, '班表違規提醒', _mem) } catch (_) {}
           }
         }
       }
@@ -276,13 +278,15 @@ export default async function handler(req, res) {
         const seenB = (await kvGet('pm_group_seen')) || {}
         for (const [g2, gg] of Object.entries(seenB)) if (/abpeople|ab people/i.test(gg?.name || '')) { gidB = g2; break }
         if (gidB) {
+          const { groupMembers: _gm, quotaFoot: _qf } = await import('./push.js')
+          const _mem = await _gm(gidB)
           const wdB = '日一二三四五六'[tgtB.getUTCDay()]
-          const txtB = `🎂 生日提醒（一週後）\n下週${wdB} ${mdB.replace('-', '/')} 是 ${fresh.map(x => `${x.name}（${/A Beach/.test(x.co) ? 'A Beach' : 'GROUN:D'}${x.dept ? '・' + x.dept : ''}）`).join('、')} 的生日 🎉\n記得準備一下！`
+          const txtB = `🎂 生日提醒（一週後）\n下週${wdB} ${mdB.replace('-', '/')} 是 ${fresh.map(x => `${x.name}（${/A Beach/.test(x.co) ? 'A Beach' : 'GROUN:D'}${x.dept ? '・' + x.dept : ''}）`).join('、')} 的生日 🎉\n記得準備一下！` + await _qf(_mem)
           const prB = await fetch('https://api.line.me/v2/bot/message/push', { method: 'POST', headers: { 'content-type': 'application/json', Authorization: 'Bearer ' + TOKEN }, body: JSON.stringify({ to: gidB, messages: [{ type: 'text', text: txtB }] }) })
           if (prB.ok) {
             fresh.forEach(x => { dedupB[keyB + '|' + x.name] = 1 })
             await kvSave('sp_finance_pm_bdnotif', dedupB)
-            try { const { logPush, groupMembers } = await import('./push.js'); await logPush(gidB, 1, '生日提醒', await groupMembers(gidB)) } catch (_) {}
+            try { const { logPush } = await import('./push.js'); await logPush(gidB, 1, '生日提醒', _mem) } catch (_) {}
           }
         } else console.log('生日提醒：找不到 ABpeople 群（D哥要先在群裡收過訊息）')
       }
@@ -398,13 +402,16 @@ export default async function handler(req, res) {
   const taipeiDay = new Date(Date.now() + 8 * 3600e3).getUTCDay()
   if (taipeiDay === 5 && notify.weekly) messages.push({ type: 'text', text: '💬 每週回饋時間！\n花 30 秒到「夥伴中心 → 回饋」，給一位夥伴一句具體的鼓勵或建議（可匿名）。\n被按「幫到我」還會加分，衝一波回饋王 👑\nhttps://ground-pm.vercel.app/' })
   if (!messages.length) return res.status(200).json({ ok: true, skipped: '速報開關未勾選', taskPushed, teamPushed })
+  const { logPush: _logPush, groupMembers: _gm, quotaFoot: _qf } = await import('./push.js')
+  const _mem = await _gm(target)
+  { const lastTxt = [...messages].reverse().find(m => m.type === 'text'); if (lastTxt) lastTxt.text += await _qf(_mem) } // 末則文字補額度尾巴
   try {
     const r = await fetch('https://api.line.me/v2/bot/message/push', {
       method: 'POST',
       headers: { 'content-type': 'application/json', authorization: `Bearer ${TOKEN}` },
       body: JSON.stringify({ to: target, messages: messages.slice(0, 5) }),
     })
-    if (r.ok) { try { const { logPush, groupMembers } = await import('./push.js'); const m = await groupMembers(target); await logPush(target, messages.length, '每日彙報', m) } catch (_) {} }
+    if (r.ok) { try { await _logPush(target, messages.length, '每日彙報', _mem) } catch (_) {} }
     return res.status(200).json({ ok: r.ok, pushed: messages.length, taskPushed, teamPushed })
   } catch (e) {
     return res.status(200).json({ ok: false, error: e?.message })
