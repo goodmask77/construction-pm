@@ -167,6 +167,7 @@ function menuRender(){
   <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px">
     <span style="display:inline-flex;border:1.5px solid var(--primary);border-radius:9px;overflow:hidden">${seg('✏️ 新菜單','edit')}${seg('🆚 對照原菜單','cmp')}</span>
     ${meN&&menuMode==='edit'?`<button class="mini" onclick="menuSecForm()">＋ 新增分類</button>`:''}
+    ${meN&&menuMode==='edit'?`<button class="mini" id="menuFillBtn" onclick="menuFillEnOfficial()" title="照你上傳的 4 張菜單圖，把所有品項(含已刪除)補上官方英文">照菜單圖補英文</button>`:''}
     ${meN&&menuMode==='edit'?`<button class="mini" id="menuTransBtn" onclick="menuTransAll()" title="把所有缺英文的品項用 AI 自動翻成英文菜名，可再微調">自動翻譯英文</button>`:''}
     <button class="mini" onclick="menuExport('txt')">⬇️ 匯出文字</button>
     <button class="mini" onclick="menuExport('img')">🖼 匯出圖片</button>
@@ -459,6 +460,35 @@ function menuSecShift(si, dir){ // ↑↓ 搬分類（張良 2026-10-01：拖曳
   const [mv] = ss.splice(si, 1); ss.splice(j, 0, mv)
   menuEditSec = {}; menuEditSec[j] = true
   menuSave('搬分類 ' + mv.name)
+}
+// 📋 照菜單圖補官方英文（張良 2026-10-05 上傳 4 張菜單圖）：內建圖上官方中文→英文，遍歷 draft+base(含已刪)用 enMap 一次補；只改英文不動名稱價格
+const MENU_EN_OFFICIAL = {
+  '經典瑪格麗特':'Classic Margherita','蜂蜜五起司綜合堅果':'Honey Five-Cheese & Mixed Nuts','辣楓糖臘腸培根':'Spicy Maple Pepperoni & Bacon','煙燻BBQ雞肉':'Smoked BBQ Chicken','松露菌菇':'Black Truffle Mushroom','菠菜培根溫泉蛋':'Spinach, Bacon & Onsen Egg',
+  '香煎去骨雞腿堡':'Pan-Seared Boneless Chicken Burger','美式牧場炸雞腿堡':'Ranch Fried Chicken Burger','泰式椒麻炸雞腿堡':'Thai Spicy Fried Chicken Burger','大阪燒煎雞腿堡':'Osaka-Style Chicken Burger','松露菌菇炸雞腿堡':'Truffle Mushroom Fried Chicken Burger','川味微辣炸雞腿堡':'Sichuan Spicy Fried Chicken Burger','4oz 100%純牛肉起司堡':'4oz 100% Beef Cheeseburger','8oz 雙層純牛肉起司堡':'8oz Double Beef Cheeseburger',
+  '生菜煎蛋越南三明治':'Lettuce and Fried Egg Bánh Mì','BBQ烤豬肉越南三明治':'BBQ Roast Pork Bánh Mì','酥炸雞腿越南三明治':'Crispy Fried Chicken Bánh Mì','烤雞胸越南三明治':'Grilled Chicken Breast Bánh Mì','爐烤牛排越南三明治':'Roast Steak Bánh Mì',
+  '川味微辣炸雞 x2':'Sichuan Spicy Fried Chicken x2','玻璃脆殼炸雞 x2':'GROUN:D Fried Chicken x2','松露菌菇義大利麵':'Truffle Mushroom Pasta','經典番茄肉醬義大利麵':'Classic Tomato Meat Sauce Pasta',
+  '番茄蔬菜湯':'Tomato & Vegetable Soup','可愛沙拉杯':'Happy Little Salad','薯條':'Fries','酸奶油香煎小洋芋':'Crispy Smashed Baby Potatoes',
+  '松露/肉醬薯條':'Truffle / Classic Meat Sauce Fries','雙醬薯條':'Double Sauce Fries','費洛蒙起司薯條':'Animal-Style Fries','肉醬起司小洋芋':'Meat Sauce & Cheese Baby Potatoes','烤地瓜海鹽焦糖冰淇淋':'Roasted Sweet Potato with Salted Caramel Ice Cream',
+  '可口可樂 原味/ZERO':'Coca-Cola Original / Zero','南非國寶茶':'Rooibos Tea','自然四季春烏龍':'Taiwan Oolong Tea','台灣有機紅茶':'Org TW Black Tea','美式咖啡':'Americano','國寶鮮奶茶':'Rooibos Milk Tea','經典拿鐵':'Caffè Latte','抹茶/可可拿鐵':'Matcha / Coco Latte',
+}
+async function menuFillEnOfficial(){
+  const d = window._menuD; if (!d) return
+  const nz = s => String(s||'').replace(/\s+/g,'').replace(/％/g,'%').trim()
+  const EN2 = {}; for (const [k,v] of Object.entries(MENU_EN_OFFICIAL)) EN2[nz(k)] = v
+  const enMap = {}; let n = 0, noMatch = []
+  const fill = it => { const e = EN2[nz(it.name)]; if (e && it.id) { enMap[it.id] = e; n++ } else if (it.id) noMatch.push(it.name) }
+  ;(d.draft?.sections||[]).forEach(s=>(s.items||[]).forEach(fill))
+  ;(d.base?.sections||[]).forEach(s=>(s.items||[]).forEach(fill))
+  if (!n) { alert('沒有對應到菜單圖的品項'); return }
+  if (!confirm(`照菜單圖補 ${n} 個品項的官方英文嗎？（含已刪除的，只改英文、不動名稱和價格）${noMatch.length?'\n\n圖上沒有、不會動：'+[...new Set(noMatch)].join('、'):''}`)) return
+  const btn = document.getElementById('menuFillBtn'); if (btn) { btn.disabled = true; btn.textContent = '補英文中…' }
+  try {
+    const r = await fetch('/api/mail-sync?menuset=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ enMap, token: TK() }) })
+    const j = await r.json().catch(()=>null)
+    if (j && j.ok) { alert('補好了 '+j.updated+' 項官方英文（含已刪除的）！'); menuLoad() }
+    else alert('失敗：' + ((j&&j.error)||'？') + (j&&/登入/.test(j.error||'')?'\n\n→ 先按右上「登入」填 4 位數登入碼再點一次':''))
+  } catch(e){ alert('出錯：' + (e.message||e)) }
+  finally { const b = document.getElementById('menuFillBtn'); if (b) { b.disabled = false; b.textContent = '照菜單圖補英文' } }
 }
 // 🌐 自動翻譯英文（張良 2026-10-05「菜單的英文先給自動翻譯功能」）：把所有缺英文的品項用 Claude 翻成道地美式菜名，填回英文欄可再微調
 async function menuTransAll(){
