@@ -214,32 +214,39 @@ async function fbAssignDel(id){
   const d = await r.json().catch(()=>null)
   if (d && d.ok) fbLoad(window._fbD.date); else alert((d&&d.error)||'刪除失敗')
 }
+// v4.52.8 治本（張良「再也不要永遠出現頓號分隔、留空用預設的機制」——這條 ui-conventions 早記了卻沒套到這頁）：
+// 改一列一面向＋✕移除＋＋新增＋✓存（照夥伴名冊職務選單範式），不再是頓號字串
+const fbAspRow = (v) => `<div style="display:flex;gap:6px;align-items:center;margin-bottom:5px"><input value="${fbE(v||'')}" placeholder="面向名稱（例：工作態度）" style="flex:1;border:1px solid var(--line);border-radius:8px;padding:7px 9px;font-size:14px"><button class="mini" style="color:var(--red);padding:5px 11px" title="移除這一列" onclick="this.parentElement.remove()">✕</button></div>`
+window._fbAspRow = () => fbAspRow('')
 function fbDimsEdit(){
   const d = window._fbD
   const sts = d.stations || [], m = (d.dims&&d.dims.map)||{}
-  const def = ((d.dims&&d.dims.def)||[]).join('、')
+  const def = (d.dims&&d.dims.def)||[]
+  const grp = (key, title, arr, gid) => `<div style="margin-bottom:12px;border:1px solid var(--line);border-radius:10px;padding:10px 12px">
+    <div style="font-size:13px;font-weight:700;margin-bottom:6px">${title}</div>
+    <div id="${gid}">${(arr.length?arr:['']).map(a=>fbAspRow(a)).join('')}</div>
+    <div style="display:flex;gap:6px;margin-top:6px;align-items:center">
+      <button class="mini" style="padding:6px 12px" onclick="var g=document.getElementById('${gid}');g.insertAdjacentHTML('beforeend',window._fbAspRow());var ii=g.querySelectorAll('input');if(ii.length)ii[ii.length-1].focus()">＋ 新增面向</button>
+      <button class="mini on" style="padding:6px 16px;margin-left:auto" onclick="fbDimsSave('${key}','${gid}',this)">✓ 存</button>
+    </div></div>`
   const ov = document.createElement('div'); ov.id='fbdOv'
   ov.style.cssText = 'position:fixed;inset:0;background:rgba(16,24,43,.45);z-index:50;display:flex;align-items:center;justify-content:center;padding:16px'
-  ov.innerHTML = `<div style="background:#222B38;border:1px solid #3B4654;box-shadow:0 18px 50px rgba(0,0,0,.55);border-radius:14px;max-width:420px;width:100%;max-height:80vh;overflow:auto;padding:16px" onclick="event.stopPropagation()">
+  ov.innerHTML = `<div style="background:#222B38;border:1px solid #3B4654;box-shadow:0 18px 50px rgba(0,0,0,.55);border-radius:14px;max-width:440px;width:100%;max-height:82vh;overflow:auto;padding:16px" onclick="event.stopPropagation()">
     <div style="font-weight:900;margin-bottom:6px">回饋面向設定</div>
-    <div class="hint" style="margin-bottom:10px">每站用頓號(、)或逗號分隔；留空＝用預設</div>
-    <div style="margin-bottom:10px"><div style="font-size:13px;font-weight:700;margin-bottom:3px">預設（沒單獨設的站都用這組）</div>
-      <div style="display:flex;gap:6px"><input id="fbdDef" value="${fbE(def)}" style="flex:1;border:1px solid var(--line);border-radius:8px;padding:7px 9px;font-size:14px">
-      <button class="mini on" style="padding:7px 12px" onclick="fbDimsSave('')">存</button></div></div>
-    ${sts.map(s=>`<div style="margin-bottom:8px"><div style="font-size:13px;font-weight:700;margin-bottom:3px">${fbE(s)}</div>
-      <div style="display:flex;gap:6px"><input id="fbdim_${fbE(s)}" value="${fbE((m[s]||[]).join('、'))}" placeholder="（用預設）" style="flex:1;border:1px solid var(--line);border-radius:8px;padding:7px 9px;font-size:14px">
-      <button class="mini" style="padding:7px 12px" onclick="fbDimsSave('${s}')">存</button></div></div>`).join('')}
-    <div style="display:flex;justify-content:flex-end;margin-top:8px"><button class="mini" style="padding:9px 16px" onclick="document.getElementById('fbdOv').remove()">關閉</button></div></div>`
+    <div class="hint" style="margin-bottom:12px">一個面向一列：✕移除、＋新增，改完按✓存；某站整組清空＝那站改用預設</div>
+    ${grp('', '預設（沒單獨設的站都用這組）', def, 'fbgDef')}
+    ${sts.map((s,i)=>grp(s, fbE(s), m[s]||[], 'fbg'+i)).join('')}
+    <div style="display:flex;justify-content:flex-end;margin-top:4px"><button class="mini" style="padding:9px 16px" onclick="document.getElementById('fbdOv').remove()">關閉</button></div></div>`
   ov.onclick = () => ov.remove()
   document.body.appendChild(ov)
 }
-async function fbDimsSave(station){
-  const el = document.getElementById(station ? ('fbdim_'+station) : 'fbdDef'); if(!el) return
-  const aspects = el.value.split(/[、,，]/).map(s=>s.trim()).filter(Boolean)
+async function fbDimsSave(station, gid, btn){
+  const g = document.getElementById(gid); if(!g) return
+  const aspects = [...g.querySelectorAll('input')].map(i=>i.value.trim()).filter(Boolean)
   const body = station ? { op:'station', station, aspects, token: TK() } : { op:'default', aspects, token: TK() }
   const r = await fetch('/api/mail-sync?fbdims=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify(body) })
   const d = await r.json().catch(()=>null)
-  if (d && d.ok){ if(d.dims) window._fbD.dims = { map: d.dims.map, def: d.dims.def }; el.style.borderColor = 'var(--green)' } else alert((d&&d.error)||'存失敗')
+  if (d && d.ok){ if(d.dims) window._fbD.dims = { map: d.dims.map, def: d.dims.def }; if(btn){ btn.textContent='✓ 已存'; setTimeout(()=>{ if(btn) btn.textContent='✓ 存' },1200) } } else alert((d&&d.error)||'存失敗')
 }
 // ── 🍔 菜單分頁（張良 2026-09-22：base=既有菜單凍結、draft=新菜單協作編輯；diff 標新增/刪除/修改給大家看；可切「對照原菜單」雙欄）──
 let menuMode = 'edit'
