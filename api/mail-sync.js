@@ -3582,6 +3582,12 @@ export default async function handler(req, res) {
     const iss = { id: 'is' + Date.now().toString(36), st: String(b8.st).slice(0, 20), text: String(b8.text || '').slice(0, 500), media: (Array.isArray(b8.media) ? b8.media : []).slice(0, 6), by: who8.name, ts: new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 16).replace('T', ' '), status: 'open', pub: 'pending' }
     doc8.list = [iss, ...(doc8.list || [])].slice(0, 200)
     await kvPut('sp_finance_pm_sop_issues', doc8, '看板問題回報(' + iss.by + ')')
+    // v4.53.0 問題回報一提交就進通知中心（張良「通知中心也沒出現問題回報」）：只記通知歷史不發 web push（避免吵），issue 分類、全員可見
+    try {
+      const nd8 = (await kvGet('sp_finance_pm_prep_ntf')) || { list: [] }
+      nd8.list = [{ id: 'n' + Date.now().toString(36), ts: new Date().toISOString(), cat: 'issue', title: `⚠️ 問題回報【${iss.st}】`, body: `${(iss.text || '（見附件）').slice(0, 80)} — ${iss.by}`, url: '/prep', to: null }, ...(nd8.list || [])].slice(0, 300)
+      await kvPut('sp_finance_pm_prep_ntf', nd8, '問題回報通知')
+    } catch (_) {}
     // 審核發布制（張良 2026-09-22：不直接進群——DD 先私訊老闆帶【發布/保留/刪除】按鈕，確認完才到群裡；/prep 任務分頁也能按）
     try {
       const tk8 = (process.env.LINE_CHANNEL_ACCESS_TOKEN || '').trim()
