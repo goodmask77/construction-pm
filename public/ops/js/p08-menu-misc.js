@@ -167,6 +167,7 @@ function menuRender(){
   <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px">
     <span style="display:inline-flex;border:1.5px solid var(--primary);border-radius:9px;overflow:hidden">${seg('✏️ 新菜單','edit')}${seg('🆚 對照原菜單','cmp')}</span>
     ${meN&&menuMode==='edit'?`<button class="mini" onclick="menuSecForm()">＋ 新增分類</button>`:''}
+    ${meN&&menuMode==='edit'?`<button class="mini" id="menuTransBtn" onclick="menuTransAll()" title="把所有缺英文的品項用 AI 自動翻成英文菜名，可再微調">自動翻譯英文</button>`:''}
     <button class="mini" onclick="menuExport('txt')">⬇️ 匯出文字</button>
     <button class="mini" onclick="menuExport('img')">🖼 匯出圖片</button>
     ${d.me&&!d.me.canEdit?(d.me.pendingMe?`<span class="hint">🕐 編輯權審核中（已通知老闆）</span>`:`<button class="mini on" onclick="prepApply()">🙋 申請編輯權限</button>`):''}
@@ -457,6 +458,29 @@ function menuSecShift(si, dir){ // ↑↓ 搬分類（張良 2026-10-01：拖曳
   const [mv] = ss.splice(si, 1); ss.splice(j, 0, mv)
   menuEditSec = {}; menuEditSec[j] = true
   menuSave('搬分類 ' + mv.name)
+}
+// 🌐 自動翻譯英文（張良 2026-10-05「菜單的英文先給自動翻譯功能」）：把所有缺英文的品項用 Claude 翻成道地美式菜名，填回英文欄可再微調
+async function menuTransAll(){
+  const d = window._menuD; if (!d || !d.draft) return
+  const todo = []
+  ;(d.draft.sections||[]).forEach((s2,si)=>(s2.items||[]).forEach(i2=>{ if (i2.name && !String(i2.en||'').trim()) todo.push({ si, id: i2.id, name: i2.name }) }))
+  if (!todo.length) { alert('沒有缺英文的品項——全部都填好了'); return }
+  if (!confirm(`要自動翻譯 ${todo.length} 個缺英文的品項嗎？\n（AI 翻完直接填進英文欄，你可以再微調）`)) return
+  const btn = document.getElementById('menuTransBtn'); if (btn) { btn.disabled = true; btn.textContent = '翻譯中…' }
+  try {
+    const sys = '你是餐飲菜單翻譯專家。把中文菜名翻成簡潔、道地的美式餐廳英文菜名（不要逐字直譯）。範例：紐約街頭雞上飯→NYC Chicken Over Rice、夏威夷BBQ烤豬飯→Hawaiian BBQ Pork Rice、泰式椒麻炸雞飯→Thai Spicy Fried Chicken Rice。只輸出 JSON 陣列 [{"i":編號,"en":"英文菜名"}]，不要任何其他文字、說明或 markdown 標記。'
+    const usr = JSON.stringify(todo.map((t,i)=>({ i, name: t.name })))
+    const r = await fetch('/api/ai', { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ system: sys, messages: [{ role:'user', content: usr }] }) })
+    const j = await r.json().catch(()=>null)
+    if (!r.ok || !j || !j.content) { alert('翻譯失敗：' + ((j&&j.error)||'AI 沒回應，稍後再試')); return }
+    const txt = (j.content||[]).map(c=>c.text||'').join('')
+    const m = txt.match(/\[[\s\S]*\]/); if (!m) { alert('翻譯結果看不懂，再試一次'); return }
+    const arr = JSON.parse(m[0]); let n = 0
+    arr.forEach(x=>{ const t = todo[x.i]; if (t && x.en) { const it = (d.draft.sections[t.si].items||[]).find(y=>y.id===t.id); if (it && !String(it.en||'').trim()) { it.en = String(x.en).trim(); n++ } } })
+    if (n) { await menuSave('自動翻譯英文 '+n+' 項'); menuRender(); alert('翻好了 '+n+' 項，英文欄已填入——你可以再微調') }
+    else alert('沒有翻出結果，再試一次')
+  } catch(e){ alert('翻譯出錯：' + (e.message||e)) }
+  finally { const b = document.getElementById('menuTransBtn'); if (b) { b.disabled = false; b.textContent = '自動翻譯英文' } }
 }
 function menuCell(si, id, f, v){ // 表格每格直接改（onchange=離開格子就存）
   const it = (window._menuD.draft.sections[si].items||[]).find(x=>x.id===id); if(!it) return
