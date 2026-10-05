@@ -1012,7 +1012,7 @@ export default async function handler(req, res) {
         if (!u9) return res.status(200).json({ ok: false, error: `${tb.owner || '負責人'} 還沒綁定 GD，私訊不到——改發群組或請他先綁定` })
         await push9(u9, txt9); sent9++
       }
-      const r9 = ridByName9(String(tb.owner || '')); if (r9) { try { await wpPush([r9], { title: '🛠 新任務指派', body: `${title9}（${actor9} 指派）`, url: url9 }) } catch (_) {} }
+      const r9 = allIdsByName9(String(tb.owner || '')); if (r9.length) { try { await wpPush(r9, { title: '🛠 新任務指派', body: `${title9}（${actor9} 指派）`, url: url9 }) } catch (_) {} }
     }
     if (kind9 === 'manual' && mode9 !== 'none') { // v4.41.4 卡片內🔔隨時補通知（張良「一開始不通知後來要通知」）：措辭=提醒不是指派
       const txtM = `🛠 任務提醒｜${title9}${tb.owner ? `\n負責人：${tb.owner}` : ''}${due9}\n— ${actor9} 提醒\n點開直達這張卡 👇\n${lnk9}`
@@ -1022,22 +1022,22 @@ export default async function handler(req, res) {
         if (!uM) return res.status(200).json({ ok: false, error: `${tb.owner || '負責人'} 還沒綁定 GD，私訊不到——改發群組或請他先綁定` })
         await push9(uM, txtM); sent9++
       }
-      const rM = ridByName9(String(tb.owner || '')); if (rM) { try { await wpPush([rM], { title: '🛠 任務提醒', body: `${title9}（${actor9}）`, url: url9 }) } catch (_) {} }
+      const rM = allIdsByName9(String(tb.owner || '')); if (rM.length) { try { await wpPush(rM, { title: '🛠 任務提醒', body: `${title9}（${actor9}）`, url: url9 }) } catch (_) {} }
     }
     if (kind9 === 'review') { // 別人建立的任務按完成 → 固定私訊建立者審核（不吵群）
       const cu9 = uidByName9(String(tb.creator || ''))
       if (cu9) { await push9(cu9, `✅ ${actor9} 回報完成【${title9}】\n請到 GD 任務審核（通過＝封存）\n點開直達這張卡 👇\n${lnk9}`); sent9++ }
-      const cr9 = ridByName9(String(tb.creator || '')); if (cr9) { try { await wpPush([cr9], { title: '🛠 完成待審核', body: `${actor9}：${title9}`, url: url9 }) } catch (_) {} }
+      const cr9 = allIdsByName9(String(tb.creator || '')); if (cr9.length) { try { await wpPush(cr9, { title: '🛠 完成待審核', body: `${actor9}：${title9}`, url: url9 }) } catch (_) {} }
     }
     if (kind9 === 'approve' || kind9 === 'reject') { // 審核結果 → 私訊回報完成的人
       const du9 = uidByName9(String(tb.doer || ''))
       if (du9) { await push9(du9, kind9 === 'approve' ? `🎉 你完成的【${title9}】通過審核，已封存` : `↩️ 【${title9}】被退回，再處理一下（${actor9}）\n點開直達這張卡 👇\n${lnk9}`); sent9++ }
-      const dr9 = ridByName9(String(tb.doer || '')); if (dr9) { try { await wpPush([dr9], { title: kind9 === 'approve' ? '🎉 審核通過' : '↩️ 任務退回', body: title9, url: url9 }) } catch (_) {} }
+      const dr9 = allIdsByName9(String(tb.doer || '')); if (dr9.length) { try { await wpPush(dr9, { title: kind9 === 'approve' ? '🎉 審核通過' : '↩️ 任務退回', body: title9, url: url9 }) } catch (_) {} }
     }
     if (kind9 === 'ack') { // v4.41.6 ✅ 確認收到（張良「對方看到按下去 即時私訊任務建立者」）：負責人按鈕 → 建立者私訊+推播
       const cu9 = uidByName9(String(tb.creator || ''))
       if (cu9) { await push9(cu9, `👌 ${actor9} 已確認收到任務【${title9}】${due9}\n點開直達這張卡 👇\n${lnk9}`); sent9++ }
-      const cr9 = ridByName9(String(tb.creator || '')); if (cr9) { try { await wpPush([cr9], { title: '👌 任務已確認收到', body: `${actor9}：${title9}`, url: url9 }) } catch (_) {} }
+      const cr9 = allIdsByName9(String(tb.creator || '')); if (cr9.length) { try { await wpPush(cr9, { title: '👌 任務已確認收到', body: `${actor9}：${title9}`, url: url9 }) } catch (_) {} }
     }
     return res.status(200).json({ ok: true, sent: sent9 })
   }
