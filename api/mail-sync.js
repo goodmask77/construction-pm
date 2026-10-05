@@ -2044,6 +2044,13 @@ export default async function handler(req, res) {
           else { it.groupSent = { ts: now8(), fail: true } }
         }
       } catch (_) { it.groupSent = { ts: now8(), fail: true } }
+      // v4.52.5 治本（張良「剛發新會議，要簽的人手機App沒出現1的通知」）：新會議除了發LINE大群，也要發App站內通知給每個要簽的人（鈴鐺+1＋推播），不然打開App看不到。排除發起人自己
+      try {
+        const bdM = (await kvGet('sp_finance_pm_prep_bind')) || {}
+        const nm2ridM = {}; for (const v of Object.values(bdM.tokens || {})) { if (v && v.name) nm2ridM[v.name] = v.rid || v.uid }
+        const ridsM = [...new Set(ackNames.filter(n => n !== whoM.name).map(n => nm2ridM[n]).filter(Boolean))]
+        if (ridsM.length) { const { wpPush } = await import('./_webpush.js'); await wpPush(ridsM, { title: '📢 新會議要簽收', body: `【${it.type}・${it.date}】${String(it.text || '').slice(0, 50)}`, url: '/prep#meet=' + it.id, cat: 'meet' }) }
+      } catch (_) {}
     } else if (mb.op === 'edit') {
       const it = (doc.list || []).find(x => x.id === mb.id)
       if (!it) return res.status(404).json({ ok: false })
@@ -2056,6 +2063,13 @@ export default async function handler(req, res) {
       if (Array.isArray(mb.links)) it.links = mkLinks(mb.links)
       if (chgM && it.ackNames) { it.ver = (it.ver || 1) + 1; it.remind = {} } // 內容改了=v+1 要重簽（舊簽收留档但不算數）
       it.editedBy = whoM.name; it.editedTs = now8()
+      // v4.52.5 內容改動＝要重簽→發App站內通知給要簽的人（鈴鐺+1），跟新增一致
+      if (chgM && Array.isArray(it.ackNames)) { try {
+        const bdE = (await kvGet('sp_finance_pm_prep_bind')) || {}
+        const nm2ridE = {}; for (const v of Object.values(bdE.tokens || {})) { if (v && v.name) nm2ridE[v.name] = v.rid || v.uid }
+        const ridsE = [...new Set(it.ackNames.filter(n => n !== whoM.name).map(n => nm2ridE[n]).filter(Boolean))]
+        if (ridsE.length) { const { wpPush } = await import('./_webpush.js'); await wpPush(ridsE, { title: '📢 會議更新要重簽', body: `【${it.type}・${it.date}】內容有更新，請重新確認熟知`, url: '/prep#meet=' + it.id, cat: 'meet' }) }
+      } catch (_) {} }
     } else if (mb.op === 'ack') { // ✅ 確認熟知
       const it = (doc.list || []).find(x => x.id === mb.id)
       if (!it) return res.status(404).json({ ok: false })
@@ -2147,8 +2161,93 @@ export default async function handler(req, res) {
     const whoP = await sopWho(pb.token)
     if (!whoP || !whoP.rid) return res.status(403).json({ ok: false, error: permDeny() })
     const { recordPunch } = await import('./punch.js')
-    const out = await recordPunch({ id: whoP.rid, name: whoP.name }, 'prep', true)
+    const fd = (pb.dir === 'in' || pb.dir === 'out') ? pb.dir : undefined // v4.57 可指定上班/下班（取消自動判讀時）
+    const out = await recordPunch({ id: whoP.rid, name: whoP.name }, 'prep', true, fd)
     return res.status(200).json({ ok: true, name: whoP.name, ...out })
+  }
+  // v4.57 打卡狀態（給打卡視窗：建議方向＋是否審核人＋待審補卡數）
+  if (req.method === 'POST' && req.query?.punchstat) {
+    const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
+    if (!ok2 || String(req.query.punchstat) !== ok2) return res.status(403).json({ ok: false })
+    let pb = {}; try { pb = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
+    const whoP = await sopWho(pb.token)
+    if (!whoP || !whoP.rid) return res.status(403).json({ ok: false, error: permDeny() })
+    const pj2 = await import('./punch.js')
+    const today = await pj2.todayPunchesOf(whoP.rid)
+    const last = today[today.length - 1]
+    const suggest = (last && last.dir === 'in') ? 'out' : 'in'
+    const lastHm = last ? new Date(last.ts).toLocaleTimeString('en-GB', { hour12: false, timeZone: 'Asia/Taipei' }).slice(0, 5) : ''
+    const defS = await kvGet('sp_finance_pm_sop_def')
+    const aprS = (((defS || {}).ground || {}).approvers || ['張良瑋'])
+    const isApr = whoP.role === '主管' || aprS.includes(whoP.name)
+    const mk = (await kvGet('sp_finance_pm_punch_makeup')) || { list: [] }
+    const pendN = isApr ? (mk.list || []).filter(x => x.status === 'pending').length : 0
+    return res.status(200).json({ ok: true, name: whoP.name, suggest, lastDir: (last && last.dir) || '', lastHm, isApprover: isApr, pendN })
+  }
+  // v4.57 補卡申請（存 pending → 通知審核人；核准後才寫進法定逐筆檔）
+  if (req.method === 'POST' && req.query?.punchmakeup) {
+    const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
+    if (!ok2 || String(req.query.punchmakeup) !== ok2) return res.status(403).json({ ok: false })
+    let pb = {}; try { pb = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
+    const whoP = await sopWho(pb.token)
+    if (!whoP || !whoP.rid) return res.status(403).json({ ok: false, error: permDeny() })
+    const dir = pb.dir === 'in' ? 'in' : 'out'
+    const t = new Date(pb.ts)
+    if (isNaN(t.getTime())) return res.status(400).json({ ok: false, error: '時間格式不對' })
+    const now = Date.now()
+    if (t.getTime() > now + 5 * 60000) return res.status(400).json({ ok: false, error: '補卡時間不能是未來' })
+    if (t.getTime() < now - 31 * 86400e3) return res.status(400).json({ ok: false, error: '只能補最近 31 天內' })
+    const mk = (await kvGet('sp_finance_pm_punch_makeup')) || { list: [] }
+    const id = 'mk' + now.toString(36) + Math.random().toString(36).slice(2, 5)
+    mk.list = (mk.list || []).slice(-300)
+    mk.list.push({ id, rid: whoP.rid, name: whoP.name, dir, ts: t.toISOString(), reason: String(pb.reason || '').slice(0, 200), status: 'pending', reqAt: new Date().toISOString() })
+    await kvSet('sp_finance_pm_punch_makeup', mk)
+    try {
+      const defS = await kvGet('sp_finance_pm_sop_def')
+      const aprS = (((defS || {}).ground || {}).approvers || ['張良瑋'])
+      const bd = (await kvGet('sp_finance_pm_prep_bind')) || {}
+      const rids = aprS.map(nm => { const e = Object.values(bd.tokens || {}).find(x => x.name === nm); return e ? (e.rid || e.uid) : null }).filter(Boolean)
+      if (rids.length) { const { wpPush } = await import('./_webpush.js'); const hm = t.toLocaleString('zh-TW', { timeZone: 'Asia/Taipei', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false }); await wpPush(rids, { title: '🕐 補卡待審核', body: `${whoP.name} 申請補【${dir === 'in' ? '上班' : '下班'}】${hm}${pb.reason ? '・' + String(pb.reason).slice(0, 30) : ''}`, url: '/prep', cat: 'other' }) }
+    } catch (_) {}
+    return res.status(200).json({ ok: true })
+  }
+  // v4.57 補卡清單（審核人看全部 pending；本人看自己近況）
+  if (req.method === 'POST' && req.query?.punchmakeups) {
+    const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
+    if (!ok2 || String(req.query.punchmakeups) !== ok2) return res.status(403).json({ ok: false })
+    let pb = {}; try { pb = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
+    const whoP = await sopWho(pb.token)
+    if (!whoP || !whoP.rid) return res.status(403).json({ ok: false, error: permDeny() })
+    const defS = await kvGet('sp_finance_pm_sop_def')
+    const aprS = (((defS || {}).ground || {}).approvers || ['張良瑋'])
+    const isApr = whoP.role === '主管' || aprS.includes(whoP.name)
+    const mk = (await kvGet('sp_finance_pm_punch_makeup')) || { list: [] }
+    const pending = isApr ? (mk.list || []).filter(x => x.status === 'pending') : []
+    const mine = (mk.list || []).filter(x => x.rid === whoP.rid).slice(-12).reverse()
+    return res.status(200).json({ ok: true, isApprover: isApr, pending, mine })
+  }
+  // v4.57 補卡核准/退回（審核人；核准＝寫進法定逐筆檔＋通知申請人）
+  if (req.method === 'POST' && req.query?.punchmakeupset) {
+    const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
+    if (!ok2 || String(req.query.punchmakeupset) !== ok2) return res.status(403).json({ ok: false })
+    let pb = {}; try { pb = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
+    const whoP = await sopWho(pb.token)
+    if (!whoP || !whoP.rid) return res.status(403).json({ ok: false, error: permDeny() })
+    const defS = await kvGet('sp_finance_pm_sop_def')
+    const aprS = (((defS || {}).ground || {}).approvers || ['張良瑋'])
+    if (!(whoP.role === '主管' || aprS.includes(whoP.name))) return res.status(403).json({ ok: false, error: '補卡由主管／審核人處理' })
+    const mk = (await kvGet('sp_finance_pm_punch_makeup')) || { list: [] }
+    const it = (mk.list || []).find(x => x.id === pb.id)
+    if (!it || it.status !== 'pending') return res.status(400).json({ ok: false, error: '找不到或已處理' })
+    if (pb.action === 'approve') {
+      const pj2 = await import('./punch.js')
+      await pj2.recordPunchAt({ id: it.rid, name: it.name }, it.ts, it.dir, 'makeup', true)
+      it.status = 'approved'
+    } else { it.status = 'rejected'; it.decReason = String(pb.reason || '').slice(0, 100) }
+    it.byName = whoP.name; it.decAt = new Date().toISOString()
+    await kvSet('sp_finance_pm_punch_makeup', mk)
+    try { const { wpPush } = await import('./_webpush.js'); const hm = new Date(it.ts).toLocaleString('zh-TW', { timeZone: 'Asia/Taipei', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false }); await wpPush([it.rid], { title: pb.action === 'approve' ? '✅ 補卡已核准' : '↩️ 補卡被退回', body: `補【${it.dir === 'in' ? '上班' : '下班'}】${hm}${it.decReason ? '・' + it.decReason : ''}（${whoP.name}）`, url: '/prep', cat: 'other' }) } catch (_) {}
+    return res.status(200).json({ ok: true })
   }
   if (req.method === 'POST' && req.query?.punchfix) {
     const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
