@@ -2925,9 +2925,29 @@ export default async function handler(req, res) {
     if (!ok2 || String(req.query.ntf) !== ok2) return res.status(403).json({ ok: false })
     const [docN9, meN9] = await Promise.all([kvGet('sp_finance_pm_prep_ntf'), sopWho(req.query.me)])
     const ridN9 = meN9 ? (meN9.rid || meN9.uid) : null
+    const pinN9 = new Set((((docN9 || {}).pins || {})[ridN9]) || []) // v4.52.2 本人釘選集合
     // v4.52.1（張良「新增有＠自己的分類」）：加 mine 旗標＝這則是「指定給我」(to 含我，非全員廣播)；只回布林不外洩收件名單
-    const listN9 = ((docN9 || {}).list || []).filter(x => !x.to || (ridN9 && x.to.includes(ridN9))).slice(0, 100).map(({ to, ...r }) => ({ ...r, mine: !!(to && ridN9 && to.includes(ridN9)) }))
+    // v4.52.2（張良「收件匣／釘選稍後處理」）：加 pinned 旗標＝本人有沒有釘這則
+    const listN9 = ((docN9 || {}).list || []).filter(x => !x.to || (ridN9 && x.to.includes(ridN9))).slice(0, 100).map(({ to, ...r }) => ({ ...r, mine: !!(to && ridN9 && to.includes(ridN9)), pinned: pinN9.has(r.id) }))
     return res.status(200).json({ ok: true, list: listN9 })
+  }
+  // 📌 通知釘選/取消（v4.52.2 張良「收件匣／釘選稍後回頭處理」）：POST ?ntfpin=<OPS_BOARD_KEY> body={id,pin:1|0,token}
+  // 釘選以人為準存 doc.pins[rid]=[ids]（跟已讀 doc.read[rid] 同一份文件）；要綁定身分才能釘
+  if (req.query?.ntfpin) {
+    const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
+    if (!ok2 || String(req.query.ntfpin) !== ok2) return res.status(403).json({ ok: false })
+    let pb = {}; try { pb = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
+    const whoP9 = await sopWho(pb.token || req.query.me)
+    if (!whoP9) return res.status(200).json({ ok: false, error: '要綁定身分才能釘選' })
+    const idP9 = String(pb.id || '').trim(); if (!idP9) return res.status(400).json({ ok: false, error: '缺 id' })
+    const docP9 = (await kvGet('sp_finance_pm_prep_ntf')) || { list: [] }
+    const ridP9 = whoP9.rid || whoP9.uid
+    docP9.pins = docP9.pins || {}
+    const setP9 = new Set(docP9.pins[ridP9] || [])
+    if (pb.pin) setP9.add(idP9); else setP9.delete(idP9)
+    docP9.pins[ridP9] = [...setP9].slice(-200) // 最多留 200 筆釘選
+    await kvPut('sp_finance_pm_prep_ntf', docP9, '通知釘選(' + whoP9.name + ')')
+    return res.status(200).json({ ok: true, pins: docP9.pins[ridP9] })
   }
   // 🔔 通知測試口（管理金鑰）：GET ?ntfping=<MENU_PROBE_KEY>&name=張良瑋 → 對本人發一則測試推播（帶 badge=1 驗證圖示數字）
   if (req.query?.ntfping) {
