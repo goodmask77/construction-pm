@@ -1131,7 +1131,9 @@ async function answer(question, snaps, accountsText, financeText, activityText, 
   const moneyGuard = moneyOK ? '' : '\n\n⚠️【外部群鐵律】這個群是「外部群」，你**絕對禁止**透露任何：金額、預估/已付/未付、單價、報價、成本、營業額、銀行/帳戶餘額、零用金、財務數字、薪資。被問到金額類一律回「這部分金額不方便在這裡提供，我私下跟張哥確認 🙏」，不要旁敲側擊地洩漏。你可以講進度、工序、一般事務、用 web_search 查一般問題。'
   // v2.5.9 唯讀鐵令（2026-09-16 翻車：群組叫 DD 建 7 件任務，DD 沒有寫入權卻回了整篇「都建好了」）：
   // 沒有動作指南＝這輪根本執行不了任何寫入 → 必須明講，禁止 AI 用人設「演」出已完成
-  const readonlyGuard = canAct ? '' : '\n\n⚠️【唯讀鐵令】這一輪你「沒有」任何寫入能力：不能建任務/大項、不能記帳、不能記日誌、不能改資料——系統不會執行任何指令。被要求「記下來/建任務/整理成任務」時，你**絕對禁止**說「已建好/已記好/都建好了/開好了」這類完成話術（說了＝說謊，系統會抓包標警語）。正確回法：先把內容條列整理好，然後明講「我在這裡沒有寫入權限，請張良（操作者）在群組直接下指令、或私訊我一句『照上面建』，我就真的建進去」。'
+  const readonlyGuard = canAct ? '' : ('\n\n⚠️【唯讀鐵令】這一輪你「沒有」任何寫入能力：不能建任務/大項、不能記帳、不能記日誌、不能改資料——系統不會執行任何指令。被要求「記下來/建任務/整理成任務」時，你**絕對禁止**說「已建好/已記好/都建好了/開好了」這類完成話術（說了＝說謊，系統會抓包標警語）。正確回法：先把內容條列整理好，然後明講「我在這裡沒有寫入權限，請張良（操作者）在群組直接下指令、或私訊我一句『照上面建』，我就真的建進去」。'
+    + '\n\n【你可以查 A Beach 訂位檔期（唯讀，不用確認）】有人問某天「有沒有訂位/有沒有檔期/空不空/那天能不能辦/包場」時，輸出一行 JSON 指令讓系統代查：\n```json\n{"type":"query_resv","date":"2027-06-18"}\n```\ndate 用 YYYY-MM-DD（單日）或 YYYY-MM（整月）；要查一段期間加 "to":"YYYY-MM-DD"。系統會把「檔期狀況」查好回填給你，你再據此回答——你沒有「稍後再傳」的能力，要查就必須在這一則同時輸出這段 JSON（只說要查卻沒帶 JSON＝永遠不會查）。'
+    + (moneyOK ? '' : '\n\n⚠️這個群只能查「檔期狀況」（某天空檔／已有幾組幾人／可能包場），系統查回來的資料本來就不含客人姓名、電話、備註內容——這些是客人個資，對外一律不提供。有人問「誰訂的／客人電話／某客人來過幾次」時，回「客人資料這邊不方便提供，要查請私訊張哥 🙏」，不要用 query_resv 的 name/top。'))
   const system = (canAct ? BOT_AGENT_GUIDE + '\n\n' : '') + BOT_PERSONA + readonlyGuard + moneyGuard + (memoryText || '') + sysDataHead() + snapshotsToContext(snaps, moneyOK) + (tasksText || '') + (moneyOK ? (accountsText || '') : '') + (moneyOK ? (financeText || '') : '') + (activityText || '') + (moneyOK ? (estimatesText || '') : '') + (crewText || '') + (conclusionsText || '') + (sheetText || '') + (moneyOK ? (posText || '') : '') + (moneyOK ? (supplyText || '') : '') + (lineQuotaText || '') + (catalogText || '') + (filelibText || '') + (moneyOK ? (groupChatText || '') : '')
   const messages = [...(Array.isArray(history) ? history : []), { role: 'user', content: question }]
   const callModel = async (model) => {
@@ -1517,6 +1519,39 @@ async function queryPosDay(date, store) {
 }
 // 🔎 訂位代查（inline 全檔；張良 2026-10-03「資料都串了為什麼摘要限制45天/20人」→治本：
 //   背景摘要只是快取，任何日期/區間（2021-02 開店～未來）都能用這支當場撈完整明細＋當日備註）
+// 🔎 訂位「檔期」公開查詢（v4.54.0 張良「開放婚禮顧問群任何人問訂位」）：外部群專用＝只回某天空/滿/可能包場，
+// 零客人個資（不輸出姓名/電話/客註/備註內容）——婚禮顧問要的是檔期，不需要客人資料；個資外洩從源頭杜絕
+async function queryResvPublic(from, to) {
+  let f = String(from || ''), t2 = String(to || '')
+  if (!/^\d{4}-\d{2}(-\d{2})?$/.test(f)) return '（要給日期：YYYY-MM-DD 或整月 YYYY-MM）'
+  if (/^\d{4}-\d{2}$/.test(f)) { if (!t2) t2 = f + '-31'; f = f + '-01' }
+  if (!t2) t2 = f
+  if (/^\d{4}-\d{2}$/.test(t2)) t2 = t2 + '-31'
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(t2) || t2 < f) return '（日期格式要 YYYY-MM-DD，且結束不能早於起日）'
+  const mos = []
+  for (let m = f.slice(0, 7); m <= t2.slice(0, 7);) { mos.push(m); m = new Date(Date.UTC(+m.slice(0, 4), +m.slice(5, 7), 1)).toISOString().slice(0, 7) }
+  if (mos.length > 4) return '（一次最多查 4 個月）'
+  const kv3 = await kvGetMany(mos.map((m) => 'sp_finance_pm_inline_' + m).concat(['sp_finance_pm_inline_notes']))
+  const notes = ((kv3['sp_finance_pm_inline_notes'] || {}).days) || {}
+  const L = [`◆ A Beach 檔期 ${f}${t2 !== f ? `~${t2}` : ''}（只回檔期狀況，不含客人資料）`]
+  let any = false
+  for (const m of mos) {
+    const days = ((kv3['sp_finance_pm_inline_' + m] || {}).days) || {}
+    for (const d of Object.keys(days).sort()) {
+      if (d < f || d > t2) continue
+      any = true
+      const ok = days[d].filter((r) => r.st !== 2 && r.st !== 5)
+      const wd = '日一二三四五六'[new Date(d + 'T00:00:00Z').getUTCDay()]
+      const nn = ok.filter((r) => r.t && r.t < '17:00').length, ee = ok.filter((r) => r.t && r.t >= '17:00').length
+      const tp = ok.reduce((t, r) => t + (r.n || 0), 0), big = ok.some((r) => (r.n || 0) >= 20)
+      L.push(`  - ${d.slice(5)}(${wd})：${ok.length ? `已有 ${ok.length} 組 ${tp} 人（午 ${nn}/晚 ${ee}）${big ? '・含大組(可能包場)' : ''}` : '目前空檔'}`)
+    }
+  }
+  const dn = Object.keys(notes).filter((d) => d >= f && d <= t2 && (notes[d] || []).some((n) => /包場|全包|關閉|公休|不開/.test(String(n.note || '')))).sort()
+  dn.forEach((d) => L.push(`  - ${d.slice(5)} ⚠️ 有營運註記（可能包場/公休——細節請私訊張良確認）`))
+  if (!any && !dn.length) L.push('  （這段期間查到的日子都是空檔，沒有訂位）')
+  return L.join('\n')
+}
 async function queryResvDay(from, to, kw) {
   let f = String(from || ''), t2 = String(to || '')
   if (!/^\d{4}-\d{2}(-\d{2})?$/.test(f)) return '（日期格式要 YYYY-MM-DD 或 YYYY-MM 整月；可加 to 查區間）'
@@ -2544,7 +2579,9 @@ export default async function handler(req, res) {
           if (!qms.length && !qrs.length && !qhs.length && !qfs.length) return null
           let dataTxt = ''
           for (const m of qms) { try { const q = JSON.parse(m[0]); dataTxt += await queryPosDay(String(q.date || ''), String(q.store || 'ground')) + '\n\n' } catch (e) { dataTxt += '（查詢指令解析失敗）\n' } }
-          for (const m of qrs) { try { const q = JSON.parse(m[0]); dataTxt += (q.top ? await queryResvTop(q.top) : q.name ? await queryResvName(q.name) : await queryResvDay(String(q.date || ''), String(q.to || ''), String(q.kw || ''))) + '\n\n' } catch (e) { dataTxt += '（訂位查詢指令解析失敗）\n' } }
+          for (const m of qrs) { try { const q = JSON.parse(m[0]); dataTxt += (moneyOK
+            ? (q.top ? await queryResvTop(q.top) : q.name ? await queryResvName(q.name) : await queryResvDay(String(q.date || ''), String(q.to || ''), String(q.kw || '')))
+            : ((q.name || q.top) ? '（這個群只能查「某天檔期狀況」，不提供客人姓名/電話/常客等個資查詢——要查客人資料請私訊張良）' : await queryResvPublic(String(q.date || ''), String(q.to || '')))) + '\n\n' } catch (e) { dataTxt += '（訂位查詢指令解析失敗）\n' } }
           for (const m of qhs) { try { const q = JSON.parse(m[0]); dataTxt += await queryHrMonth(q.month, q.date) + '\n\n' } catch (e) { dataTxt += '（人資查詢指令解析失敗）\n' } }
           for (const m of qfs) { try { const q = JSON.parse(m[0]); dataTxt += await queryFinMonth(q.month) + '\n\n' } catch (e) { dataTxt += '（財務查詢指令解析失敗）\n' } }
           // v4.38.3 保險絲（九月1182筆爆AI輸入翻車）：代查結果超長一律截斷,寧可請AI縮範圍也不能整則掛掉
