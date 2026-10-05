@@ -9,6 +9,7 @@ import crypto from 'crypto'
 import { SB_URL, SB_KEY, svc, kvGet, kvSet, loadRoster } from './_onboard.js'
 import { compareDay, summarize, ATT_LABEL } from '../src/shift/attendance.js'
 import { schedKey, mondayOf } from '../src/shift/model.js'
+import { awardPts } from './_points.js' // 🏦 打卡給行為分
 
 const SECRET = crypto.createHash('sha256').update('punch:' + SB_KEY).digest() // 站點 token 簽章金鑰（由服務金鑰衍生，不另設環境變數）
 const TOKEN_TTL = 75 * 1000 // QR 每 30 秒換新，容忍慢掃 75 秒
@@ -63,6 +64,7 @@ export async function recordPunch(person, src, verified, forceDir) {
   const key = `sp_crew_pch_${dayKey()}_${person.id}_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`
   const rec = { personId: person.id, name: person.name, ts, dir, src, verified: !!verified }
   await kvSet(key, rec)
+  if (dir === 'in') await awardPts(person.name, 'punch', dayKey()) // 🏦 行為分：上班打卡（每天第一次；ref=當天只算一次）
   // 今日累計（配對 in/out）
   const list = [...today, { ...rec, key }]
   let ms = 0

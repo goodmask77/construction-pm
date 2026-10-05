@@ -10,6 +10,7 @@ import { parsePosWorkbook, parseTxSheet } from './_pos-parse.js' // 解析器共
 import { groundManualRecords } from './_ground-manual.js' // GROUN:D 喬亞POS報表手動回填（08-19~21，張良 2026-08-24 截圖；已驗證與POS一致）
 import { joyaLogin, joyaFetchDay, joyaBuildRecord, taipeiToday, taipeiAfterClose, joyaFetchTimeslots, timeslotSection, TIMESLOT_SHEET, joyaFetchSalesMethod, parseSalesMethod } from './_joya.js' // GROUN:D POS行動報表自動抓取（2026-08-26 起全自動）
 import { syncEatsLive } from './_eats.js' // AB 今天即時營業額（Eats365 商家後台，2026-09-02）
+import { awardPts, pointsRules } from './_points.js' // 🏦 積分中樞共用（行為分給分＋規則）
 
 const clean = (v) => (v || '').trim().replace(/^["']|["']$/g, '').replace(/^[A-Za-z0-9_]+=/, '').trim()
 const SB_URL = clean(process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL)
@@ -86,46 +87,7 @@ export async function kvPut(id, obj, editor) {
   CHANGED.add(id)
 }
 
-// ── 🏦 積分中樞（張良 2026-10-06：任何動作都給積分、回饋也給分、串排行榜、累積）──
-// 設計拍板：①分兩種＝行為分(做了就給,固定分)＋品質分(被評分,1~5)　②排行榜看 總累積＋本月　③行為分做了就入帳＋管理者抽查
-// 行為分走統一流水帳 sp_finance_pm_points（逐筆一事件，跟「逐筆存」習慣一致）；排行榜=流水加總。
-// 規則表 sp_finance_pm_points_cfg.behavior 可增刪改(label/pts/cap每日上限/off關閉)；cap=0＝不限每日(只用 ref 去重)。
-const POINTS_DEFAULT = {
-  punch: { label: '打卡上班', pts: 2, cap: 1 },
-  fb_give: { label: '交每日回饋', pts: 3, cap: 3 },
-  sop_done: { label: '完成 SOP 一條', pts: 1, cap: 0 },
-  meet_ack: { label: '簽收會議宣達', pts: 2, cap: 0 },
-  journal: { label: '交工作日誌', pts: 2, cap: 3 },
-  issue_report: { label: '回報問題', pts: 3, cap: 0 },
-  inv_count: { label: '完成盤點', pts: 3, cap: 1 },
-}
-export function pointsRules(cfg) { // 預設 ∪ 自訂（自訂可覆寫 pts/cap/label、加 off 關閉、加新動作）
-  const o = {}
-  for (const k of Object.keys(POINTS_DEFAULT)) o[k] = { ...POINTS_DEFAULT[k] }
-  const cu = (cfg && cfg.behavior) || {}
-  for (const k of Object.keys(cu)) o[k] = { ...(o[k] || {}), ...cu[k] }
-  return o
-}
-// 給行為分一筆（export 給 punch.js 等其他端點共用）。person=姓名、act=規則key、ref=去重鍵(同人同動作同ref只給一次)
-export async function awardPts(person, act, ref) {
-  try {
-    if (!person || person === '匿名') return false
-    const cfg = await kvGet('sp_finance_pm_points_cfg')
-    const rule = pointsRules(cfg)[act]
-    if (!rule || rule.off || !(Number(rule.pts) > 0)) return false
-    const doc = (await kvGet('sp_finance_pm_points')) || { list: [], carry: {} }
-    doc.list = doc.list || []; doc.carry = doc.carry || {}
-    const dnow = new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10)
-    if (ref && doc.list.find(e => e.person === person && e.act === act && e.ref === ref)) return false
-    const cap = Number(rule.cap) || 0
-    if (cap > 0 && doc.list.filter(e => e.person === person && e.act === act && e.date === dnow).length >= cap) return false
-    doc.list.push({ id: 'pt' + Date.now().toString(36) + '_' + doc.list.length, person, date: dnow, ts: new Date(Date.now() + 8 * 3600e3).toISOString().slice(11, 16), type: 'behavior', act, pts: Number(rule.pts), ref: ref || '' })
-    if (doc.list.length > 40000) { const cut = doc.list.splice(0, doc.list.length - 40000); for (const e of cut) doc.carry[e.person] = (doc.carry[e.person] || 0) + Number(e.pts || 0) } // 滾出窗口的折進 carry，總累積不失真
-    await kvPut('sp_finance_pm_points', doc, '積分(' + person + ' +' + rule.pts + ' ' + act + ')')
-    return true
-  } catch (_) { return false }
-}
-
+// 🏦 積分中樞（行為分流水帳/規則/給分）抽到 _points.js 共用（punch 等端點也 import 同一套，不必拉整包 mail-sync）
 // 入庫後廣播「這些 key 變了」（Realtime REST 一發 HTTP 就好，免開 websocket）：
 // 前端 supa.js 訂著 pm-doc-sync 頻道，聽到就自動重抓該 key → 日結信一入庫，
 // 開著的營運報表/對帳頁畫面自己跳新資料，不用手動按更新或重新整理（張良 2026-08-14）
@@ -2428,6 +2390,74 @@ export default async function handler(req, res) {
     try { const { wpPush } = await import('./_webpush.js'); const hm = new Date(it.ts).toLocaleString('zh-TW', { timeZone: 'Asia/Taipei', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false }); await wpPush([it.rid], { title: pb.action === 'approve' ? '✅ 補卡已核准' : '↩️ 補卡被退回', body: `補【${it.dir === 'in' ? '上班' : '下班'}】${hm}${it.decReason ? '・' + it.decReason : ''}（${whoP.name}）`, url: '/prep', cat: 'other' }) } catch (_) {}
     return res.status(200).json({ ok: true })
   }
+  // ── ⏰ 打卡後台 v4.58（主管／審核人）：某日全員打卡明細＋現在在班＋異常＋改/刪/補 ──
+  if (req.method === 'POST' && req.query?.punchadmin) {
+    const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
+    if (!ok2 || String(req.query.punchadmin) !== ok2) return res.status(403).json({ ok: false })
+    let pb = {}; try { pb = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
+    const whoP = await sopWho(pb.token)
+    if (!whoP || !whoP.rid) return res.status(403).json({ ok: false, error: permDeny() })
+    const defS = await kvGet('sp_finance_pm_sop_def')
+    const aprS = (((defS || {}).ground || {}).approvers || ['張良瑋'])
+    if (!(whoP.role === '主管' || aprS.includes(whoP.name))) return res.status(403).json({ ok: false, error: '打卡後台限主管／審核人' })
+    const pj2 = await import('./punch.js')
+    const tpe = d => new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Taipei' }).format(d)
+    const today = tpe(new Date())
+    const date = /^\d{4}-\d{2}-\d{2}$/.test(String(pb.date || '')) ? String(pb.date) : today
+    const hm = ts => new Date(ts).toLocaleTimeString('en-GB', { hour12: false, timeZone: 'Asia/Taipei' }).slice(0, 5)
+    const dayP = await pj2.listPunches('sp_crew_pch_' + date.replace(/-/g, '') + '_')
+    const byP = {}
+    for (const p of dayP) { (byP[p.personId] = byP[p.personId] || { name: p.name, punches: [] }).punches.push(p) }
+    const rows = Object.entries(byP).map(([pid, o]) => {
+      const ps = o.punches.slice().sort((a, b) => a.ts < b.ts ? -1 : 1)
+      const pairs = []; let open = null, ms = 0; const flags = []
+      for (const p of ps) {
+        if (p.dir === 'in') { if (open) flags.push('重複上班'); open = p }
+        else { if (open) { const dur = new Date(p.ts) - new Date(open.ts); pairs.push({ inHm: hm(open.ts), outHm: hm(p.ts), hrs: Math.round(dur / 360000) / 10 }); if (dur > 12 * 3600e3) flags.push('單段>12h'); ms += dur; open = null } else flags.push('重複下班') }
+      }
+      if (open) { pairs.push({ inHm: hm(open.ts), outHm: '', hrs: null }); if (date < today) flags.push('缺下班卡') }
+      return { personId: pid, name: o.name, punches: ps.map(p => ({ key: p.key, hm: hm(p.ts), ts: p.ts, dir: p.dir, src: p.src || '', verified: !!p.verified })), pairs, totalHrs: Math.round(ms / 360000) / 10, flags: [...new Set(flags)] }
+    }).sort((a, b) => String(a.name).localeCompare(String(b.name), 'zh-Hant'))
+    const tP = date === today ? dayP : await pj2.listPunches('sp_crew_pch_' + today.replace(/-/g, '') + '_')
+    const byT = {}; for (const p of tP) { (byT[p.personId] = byT[p.personId] || { name: p.name, ps: [] }).ps.push(p) }
+    const live = []
+    for (const o of Object.values(byT)) { const ps = o.ps.slice().sort((a, b) => a.ts < b.ts ? -1 : 1); const last = ps[ps.length - 1]; if (last && last.dir === 'in') live.push({ name: o.name, sinceHm: hm(last.ts), hrs: Math.round((Date.now() - new Date(last.ts)) / 360000) / 10 }) }
+    live.sort((a, b) => a.sinceHm < b.sinceHm ? -1 : 1)
+    const mk = (await kvGet('sp_finance_pm_punch_makeup')) || { list: [] }
+    const pendN = (mk.list || []).filter(x => x.status === 'pending').length
+    return res.status(200).json({ ok: true, date, today, rows, live, pendN })
+  }
+  // v4.58 打卡後台 改/刪/補（主管直接寫，不經補卡審核）
+  if (req.method === 'POST' && req.query?.punchedit) {
+    const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
+    if (!ok2 || String(req.query.punchedit) !== ok2) return res.status(403).json({ ok: false })
+    let pb = {}; try { pb = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
+    const whoP = await sopWho(pb.token)
+    if (!whoP || !whoP.rid) return res.status(403).json({ ok: false, error: permDeny() })
+    const defS = await kvGet('sp_finance_pm_sop_def')
+    const aprS = (((defS || {}).ground || {}).approvers || ['張良瑋'])
+    if (!(whoP.role === '主管' || aprS.includes(whoP.name))) return res.status(403).json({ ok: false, error: '限主管／審核人' })
+    const dir = pb.dir === 'in' ? 'in' : 'out'
+    const delDoc = async k => fetch(`${SB_URL}/rest/v1/pm_documents?id=eq.${encodeURIComponent(k)}`, { method: 'DELETE', headers: { apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}` } })
+    const pj2 = await import('./punch.js')
+    if (pb.action === 'del') { if (!pb.key) return res.status(400).json({ ok: false, error: '缺 key' }); await delDoc(pb.key); return res.status(200).json({ ok: true }) }
+    if (pb.action === 'edit') {
+      if (!pb.key) return res.status(400).json({ ok: false, error: '缺 key' })
+      const ex = await kvGet(pb.key); if (!ex) return res.status(404).json({ ok: false, error: '找不到這筆' })
+      const t = new Date(pb.ts); if (isNaN(t.getTime())) return res.status(400).json({ ok: false, error: '時間格式不對' })
+      await delDoc(pb.key); await pj2.recordPunchAt({ id: ex.personId, name: ex.name }, t.toISOString(), dir, 'admin-edit', true)
+      return res.status(200).json({ ok: true })
+    }
+    if (pb.action === 'add') {
+      const t = new Date(pb.ts); if (isNaN(t.getTime())) return res.status(400).json({ ok: false, error: '時間格式不對' })
+      let pid = pb.personId, nm = pb.name
+      if (!pid && nm) { const bd = (await kvGet('sp_finance_pm_prep_bind')) || {}; const e = Object.values(bd.tokens || {}).find(x => x.name === nm); pid = e ? (e.rid || e.uid) : null }
+      if (!pid) return res.status(400).json({ ok: false, error: '找不到這個人的綁定（要先綁定過才能幫他補）' })
+      await pj2.recordPunchAt({ id: pid, name: nm }, t.toISOString(), dir, 'admin', true)
+      return res.status(200).json({ ok: true })
+    }
+    return res.status(400).json({ ok: false, error: '未知動作' })
+  }
   if (req.method === 'POST' && req.query?.punchfix) {
     const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
     if (!ok2 || String(req.query.punchfix) !== ok2) return res.status(403).json({ ok: false })
@@ -2783,6 +2813,7 @@ export default async function handler(req, res) {
     kd.counts = kd.counts || {}
     kd.counts[bc.id] = [{ ts: new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 16).replace('T', ' '), qty: qv, by: whoC.name }, ...(kd.counts[bc.id] || [])].slice(0, 30)
     await kvPut('sp_finance_pm_inv', doc, '盤點紀錄(' + whoC.name + ')')
+    await awardPts(whoC.name, 'inv_count', new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10)) // 🏦 行為分：盤點（每天算一次，不論盤幾項）
     return res.status(200).json({ ok: true })
   }
   if (req.query?.sop) {

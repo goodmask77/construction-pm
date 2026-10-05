@@ -4,6 +4,7 @@
 // C. 「投票」→ 未投的投票卡，點選項即投（一人一票照防）；操作者可「推播投票」「推播回饋卡」給全體綁定夥伴
 // 全部走固定指令/postback，不經 AI；答案直接寫回 App 同一份資料（資料一致鐵則）。
 import { kvGet, kvSet, linePush, loadRoster, saveRoster, uploadPrivate, SB_URL, svc, BUCKET } from './_onboard.js'
+import { awardPts } from './_points.js' // 🏦 交工作日誌給行為分
 
 const clean = (v) => (v || '').trim().replace(/^["']|["']$/g, '').replace(/^[A-Za-z0-9_]+=/, '').trim()
 const LINE_TOKEN = clean(process.env.LINE_CHANNEL_ACCESS_TOKEN)
@@ -173,6 +174,7 @@ export async function handleJournalText(ev) {
   const item = { id: 'jn-' + Math.random().toString(36).slice(2, 8), personId: me.id, name: me.name, text: body.slice(0, 500), ts: new Date().toISOString(), via: isDM ? 'line' : 'line-group', kind, store, likes: [], photos: [], ...(kind === 'help' || kind === 'issue' ? { status: 'open' } : {}) } // 問題/求助帶狀態＝看板可追蹤到結案
   d.items = [item, ...(d.items || [])].slice(0, 1000)
   await kvSet(JOURNAL_KEY, d)
+  await awardPts(me.name, 'journal', item.id) // 🏦 行為分：交工作日誌（每則一次，每日上限由規則表）
   const kindTag = { note: '📝 心得', issue: '⚠️ 問題', improve: '🔧 改善', help: '🙋 要幫忙' }[kind]
   const storeTag = store === 'ground' ? '（GROUN:D）' : store === 'abeach' ? '（A Beach）' : ''
   await reply(kind === 'help'
