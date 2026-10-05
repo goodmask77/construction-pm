@@ -994,6 +994,7 @@ export default async function handler(req, res) {
     const bd9 = (await kvGet('sp_finance_pm_prep_bind')) || {}
     const uidByName9 = nm => { for (const [u9, tk9] of Object.entries(bd9.byUid || {})) { if (((bd9.tokens || {})[tk9] || {}).name === nm) return u9 } return null }
     const ridByName9 = nm => { const e9 = Object.values(bd9.tokens || {}).find(x => x.name === nm); return e9 ? (e9.rid || e9.uid) : null }
+    const allIdsByName9 = nm => { const s = new Set(); for (const v of Object.values(bd9.tokens || {})) if (v && v.name === nm) { if (v.rid) s.add(v.rid); if (v.uid) s.add(v.uid) } return [...s] } // v4.54.4 同名所有身分id(桌面/手機各綁一組都中)=通知不漏任何一台
     const { prepLink, wpPush } = await import('./_webpush.js')
     const push9 = (to, text) => tkL9 ? fetch('https://api.line.me/v2/bot/message/push', { method: 'POST', headers: { 'content-type': 'application/json', Authorization: 'Bearer ' + tkL9 }, body: JSON.stringify({ to, messages: [{ type: 'text', text }] }) }).catch(() => {}) : null
     let sent9 = 0

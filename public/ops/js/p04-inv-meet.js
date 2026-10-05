@@ -321,18 +321,39 @@ function _paNav(n){ const d=new Date(window._paD.date+'T00:00:00'); d.setDate(d.
 function punchAdminDraw(){
   const r=window._paD; if(!r)return
   const wd='日一二三四五六'[new Date(r.date+'T00:00:00').getDay()]
-  let h=`<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap"><b style="font-size:17px">⏰ 打卡後台</b><span style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">${r.pendN?`<button class="mini" style="padding:6px 12px;color:var(--primary);border-color:var(--primary)" onclick="punchReviewOpen()">📋 補卡審核（${r.pendN}）</button>`:''}<button class="mini" style="padding:6px 12px" onclick="punchAdminExport()">⬇️ 匯出CSV</button><button class="mini" style="padding:6px 14px" onclick="document.getElementById('paOv').remove()">關閉</button></span></div>`
-  h+=`<div style="margin:10px 0;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:var(--soft)"><b style="font-size:13px">🟢 現在在班（${r.live.length}）</b>${r.live.length?`<span style="display:inline-flex;gap:6px;flex-wrap:wrap;margin-left:8px">${r.live.map(x=>`<span style="padding:3px 10px;border-radius:999px;background:#16281C;border:1px solid var(--green);color:var(--green);font-size:12px;font-weight:700">${x.name}・${x.sinceHm}起 ${x.hrs}h</span>`).join('')}</span>`:'<span class="hint" style="margin-left:8px">目前沒有人在班</span>'}</div>`
-  h+=`<div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;flex-wrap:wrap"><button class="mini" style="padding:5px 12px" onclick="punchAdminView('${_paNav(-1)}')">‹ 前一天</button><b style="font-variant-numeric:tabular-nums;font-size:15px">${r.date}（${wd}）</b><button class="mini" style="padding:5px 12px" onclick="punchAdminView('${_paNav(1)}')">後一天 ›</button>${r.date!==r.today?`<button class="mini" style="padding:5px 12px" onclick="punchAdminView('${r.today}')">回今天</button>`:''}<button class="mini" style="padding:5px 12px;margin-left:auto;color:var(--primary)" onclick="punchAddForm()">＋ 幫人補打卡</button></div>`
-  if(!r.rows.length) h+=`<div class="hint" style="padding:24px;text-align:center">這天沒有打卡紀錄</div>`
+  const st=r.stats||{sched:0,punched:0,absent:0,late:0,bad:0,totalHrs:0,working:0}
+  let h=`<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;flex-wrap:wrap;margin-bottom:13px">
+    <div><div style="font-size:18px;font-weight:900;display:flex;align-items:center;gap:7px">⏰ 打卡後台</div><div class="hint" style="margin-top:2px">GD 自建打卡・出勤考勤管理</div></div>
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">${r.pendN?`<button class="mini" style="padding:7px 13px;color:#fff;background:var(--primary);border-color:transparent;font-weight:800" onclick="punchReviewOpen()">📋 補卡審核 ${r.pendN}</button>`:''}<button class="mini" style="padding:7px 13px" onclick="punchAddForm()">＋ 幫人補打卡</button><button class="mini" style="padding:7px 13px" onclick="punchAdminExport()">⬇️ 匯出CSV</button><button class="mini" style="padding:7px 14px" onclick="document.getElementById('paOv').remove()">關閉</button></div></div>`
+  const kpi=(lb,v,col)=>`<div style="flex:1;min-width:82px;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:11px 10px;text-align:center"><div style="font-size:23px;font-weight:900;line-height:1.1;color:${col||'var(--ink)'};font-variant-numeric:tabular-nums">${v}</div><div class="hint" style="margin-top:3px;font-size:12px">${lb}</div></div>`
+  h+=`<div style="display:flex;gap:9px;flex-wrap:wrap;margin-bottom:12px">${kpi('應到',st.sched)}${kpi('實到',st.punched,'var(--green)')}${kpi('未到',st.absent,st.absent?'var(--red)':'var(--muted)')}${kpi('遲到',st.late,st.late?'#E8A657':'var(--muted)')}${kpi('異常',st.bad,st.bad?'var(--red)':'var(--muted)')}${kpi('總工時',st.totalHrs+'h','var(--pdark)')}</div>`
+  h+=`<div style="display:flex;gap:8px;align-items:center;margin-bottom:10px;flex-wrap:wrap">
+    <button class="mini" style="padding:6px 12px" onclick="punchAdminView('${_paNav(-1)}')">‹ 前一天</button>
+    <input type="date" value="${r.date}" onchange="punchAdminView(this.value)" style="padding:7px 10px;border:1px solid var(--line);border-radius:9px;background:var(--bg);color:var(--ink);font-size:14px;font-weight:700">
+    <span style="font-weight:800;color:var(--pdark)">（${wd}）</span>
+    <button class="mini" style="padding:6px 12px" onclick="punchAdminView('${_paNav(1)}')">後一天 ›</button>
+    ${r.date!==r.today?`<button class="mini on" style="padding:6px 12px" onclick="punchAdminView('${r.today}')">回今天</button>`:'<span class="hint">● 今天</span>'}
+    <span style="margin-left:auto;display:inline-flex;align-items:center;gap:6px;padding:5px 11px;border-radius:999px;background:var(--soft);border:1px solid var(--line);font-size:12.5px;font-weight:700"><span style="width:8px;height:8px;border-radius:50%;background:var(--green);display:inline-block"></span>現在在班 ${r.live.length}</span></div>`
+  if(r.live.length) h+=`<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">${r.live.map(x=>`<span style="padding:4px 11px;border-radius:999px;background:#16281C;border:1px solid var(--green);color:var(--green);font-size:12.5px;font-weight:700">${x.name}・${x.sinceHm} 起 ${x.hrs}h</span>`).join('')}</div>`
+  if(!r.rows.length) h+=`<div style="padding:30px;text-align:center;border:1px dashed var(--line);border-radius:12px"><div style="font-size:15px;font-weight:700;color:var(--muted)">這天沒有排班、也沒有打卡紀錄</div></div>`
   else {
-    h+=`<div class="scroll" style="max-height:56vh;overflow:auto"><table style="border-collapse:collapse;width:100%"><thead><tr style="background:#2A3442"><th style="padding:5px 10px;text-align:left">夥伴</th><th style="padding:5px 10px;text-align:left">打卡（點一下可改／刪）</th><th style="padding:5px 10px;text-align:right">時數</th><th style="padding:5px 10px;text-align:left">狀態</th></tr></thead><tbody>`
-    h+=r.rows.map(x=>{
+    const badge=(bg,bd,co,t)=>`<span style="padding:2px 9px;border-radius:999px;background:${bg};border:1px solid ${bd};color:${co};font-size:12px;font-weight:700;white-space:nowrap">${t}</span>`
+    const stBadge=x=>{
+      if(x.working) return badge('#16281C','var(--green)','var(--green)','上班中')
+      const reds=x.red.map(f=>badge('#2A181A','var(--red)','var(--red)',f))
+      const ambers=x.amber.map(f=>badge('#2A2410','#6B5A2A','#E8A657',f))
+      if(!reds.length&&!ambers.length) return x.unplanned?badge('var(--soft)','var(--line)','var(--muted)','未排班'):badge('#16281C','var(--green)','var(--green)','正常')
+      return [...reds,...ambers].join(' ')
+    }
+    const TH='padding:7px 12px;text-align:left;position:sticky;top:0;background:#2A3442;white-space:nowrap'
+    h+=`<div class="scroll" style="max-height:50vh;overflow:auto"><table style="border-collapse:collapse;width:100%;font-size:13.5px"><thead><tr><th style="${TH}">夥伴</th><th style="${TH}">排班</th><th style="${TH}">打卡（點可改／刪）</th><th style="${TH};text-align:right">時數</th><th style="${TH}">狀態</th></tr></thead><tbody>`
+    h+=r.rows.map((x,i)=>{
+      const planTxt=x.plan?((x.plan.pos?x.plan.pos+'　':'')+(x.plan.start&&x.plan.end?x.plan.start+'–'+x.plan.end:'')).trim()||'<span class="mut">—</span>':'<span class="mut">—</span>'
       const chips=x.punches.map(p=>`<button onclick="punchEditForm('${p.key}','${p.dir}','${p.ts}','${String(x.name).replace(/'/g,'')}')" style="margin:2px;padding:3px 9px;border-radius:8px;border:1px solid ${p.dir==='in'?'var(--green)':'#E8A657'};background:transparent;color:${p.dir==='in'?'var(--green)':'#E8A657'};font-size:12px;font-weight:700;cursor:pointer;font-variant-numeric:tabular-nums">${p.dir==='in'?'上':'下'} ${p.hm}${(p.src&&p.src.indexOf('admin')>=0)?' ✎':(p.src==='makeup'?' 補':'')}</button>`).join('')
-      const fl=x.flags.length?`<span style="color:var(--red);font-weight:700">${x.flags.join('、')}</span>`:'<span class="mut">正常</span>'
-      return `<tr style="border-top:1px solid var(--line)"><td style="padding:6px 10px;font-weight:800;white-space:nowrap">${x.name}</td><td style="padding:5px 10px">${chips||'<span class="mut">—</span>'}</td><td style="padding:6px 10px;text-align:right;font-weight:700">${x.totalHrs||'—'}</td><td style="padding:6px 10px;font-size:12px">${fl}</td></tr>`
+      const punchCell=chips||`<button onclick="punchAddForm('${String(x.name).replace(/'/g,'')}')" style="padding:3px 10px;border-radius:8px;border:1px dashed var(--line);background:transparent;color:var(--muted);font-size:12px;cursor:pointer">＋ 補打卡</button>`
+      return `<tr style="border-top:1px solid var(--line);${i%2?'background:#171E29':''}"><td style="padding:7px 12px;font-weight:800;white-space:nowrap">${x.name}</td><td style="padding:7px 12px;white-space:nowrap;color:var(--text)">${planTxt}</td><td style="padding:6px 12px">${punchCell}</td><td style="padding:7px 12px;text-align:right;font-weight:800;font-variant-numeric:tabular-nums">${x.totalHrs||'<span class="mut">—</span>'}</td><td style="padding:7px 12px">${stBadge(x)}</td></tr>`
     }).join('')
-    h+=`</tbody></table></div><div class="hint" style="margin-top:6px">點打卡鈕＝改時間/方向或刪；✎＝管理員改過・補＝補卡核准</div>`
+    h+=`</tbody></table></div><div class="hint" style="margin-top:7px">點打卡鈕＝改時間/方向或刪　·　✎管理員改過　·　補＝補卡核准　·　＋補打卡＝幫沒打的人補</div>`
   }
   lpOverlay('paOv', h)
 }
@@ -361,14 +382,14 @@ async function punchEditDel(){
   const d=await r.json().catch(()=>null); if(!d||!d.ok){ alert((d&&d.error)||'刪除失敗'); return }
   punchOvClose(); punchAdminView(window._paD.date)
 }
-function punchAddForm(){
+function punchAddForm(prefill){
   window._peDir='in'
   const names=(window._shiftD&&(window._shiftD.namesAll||window._shiftD.names))||((window._paD&&window._paD.rows)||[]).map(x=>x.name)
   const p=n=>String(n).padStart(2,'0'), d=new Date((window._paD?window._paD.date:'')+'T12:00:00')
   const v=`${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}T12:00`
   let h=`<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px"><b style="font-size:16px">幫人補打卡</b><button onclick="punchOvClose()" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:16px">✕</button></div>`
   h+=`<div class="hint" style="margin-bottom:10px">管理員直接補，不用再審核；對方要先綁定過才補得了。</div>`
-  h+=`<div class="hint" style="margin-bottom:5px">夥伴</div><input id="peName" list="peNameList" placeholder="打名字" style="width:100%;padding:11px;border:1px solid var(--line);border-radius:10px;background:var(--bg);color:var(--ink);margin-bottom:12px;font-size:15px"><datalist id="peNameList">${[...new Set(names)].map(n=>`<option value="${String(n).replace(/"/g,'&quot;')}">`).join('')}</datalist>`
+  h+=`<div class="hint" style="margin-bottom:5px">夥伴</div><input id="peName" list="peNameList" value="${prefill?String(prefill).replace(/"/g,'&quot;'):''}" placeholder="打名字" style="width:100%;padding:11px;border:1px solid var(--line);border-radius:10px;background:var(--bg);color:var(--ink);margin-bottom:12px;font-size:15px"><datalist id="peNameList">${[...new Set(names)].map(n=>`<option value="${String(n).replace(/"/g,'&quot;')}">`).join('')}</datalist>`
   h+=`<div class="hint" style="margin-bottom:5px">方向</div><div style="display:flex;gap:8px;margin-bottom:12px">${_peTog('in','上班')}${_peTog('out','下班')}</div>`
   h+=`<div class="hint" style="margin-bottom:5px">時間</div><input type="datetime-local" id="peTs" value="${v}" style="width:100%;padding:11px;border:1px solid var(--line);border-radius:10px;background:var(--bg);color:var(--ink);margin-bottom:14px;font-size:15px">`
   h+=`<div style="display:flex;gap:10px"><button onclick="punchOvClose()" style="flex:1;padding:12px;border-radius:12px;border:1px solid var(--line);background:transparent;color:var(--muted);font-weight:700;cursor:pointer">取消</button><button onclick="punchAddSave()" style="flex:2;padding:12px;border-radius:12px;border:none;background:var(--primary);color:#fff;font-weight:800;cursor:pointer">新增</button></div>`
@@ -384,8 +405,13 @@ async function punchAddSave(){
 }
 function punchAdminExport(){
   const r=window._paD; if(!r)return
-  let csv='日期,夥伴,方向,時間,來源,狀態\n'
-  for(const x of r.rows){ for(const p of x.punches){ csv+=`${r.date},${x.name},${p.dir==='in'?'上班':'下班'},${p.hm},${p.src||''},"${x.flags.join('、')}"\n` } }
+  let csv='日期,夥伴,排班崗位,排班時間,上班卡,下班卡,時數,狀態\n'
+  for(const x of r.rows){
+    const ins=x.punches.filter(p=>p.dir==='in').map(p=>p.hm).join(' '), outs=x.punches.filter(p=>p.dir==='out').map(p=>p.hm).join(' ')
+    const stt=x.working?'上班中':[...x.red,...x.amber].join('、')||(x.unplanned?'未排班':'正常')
+    const pl=x.plan?((x.plan.start&&x.plan.end)?x.plan.start+'-'+x.plan.end:''):''
+    csv+=`${r.date},${x.name},"${x.plan?x.plan.pos||'':''}","${pl}","${ins}","${outs}",${x.totalHrs||0},"${stt}"\n`
+  }
   const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob(['﻿'+csv],{type:'text/csv;charset=utf-8'})); a.download=`打卡_${r.date}.csv`; a.click()
 }
 // ── 📋 會議（張良 2026-09-22：班前會議/營運會議紀錄——類型可自訂、紀錄可新增刪改，全留姓名時間）──
