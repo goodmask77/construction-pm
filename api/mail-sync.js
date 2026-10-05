@@ -2029,6 +2029,7 @@ export default async function handler(req, res) {
       const rosA = await kvGet('sp_crew_kb_roster')
       const offA = new Set((shA || {}).offStaff || [])
       const ackNames = gdNames(rosA).filter(n => !offA.has(n))
+      if (whoM.name && !ackNames.includes(whoM.name)) ackNames.push(whoM.name) // v4.52.6 發起人也納入要簽名單（張良「不要因為是我發的就沒通知，我也要走一樣簽到流程，大家都一樣」）
       const it = { id: 'mt' + Date.now().toString(36), type: String(mb.type || doc.types[0]).slice(0, 20), date: /^\d{4}-\d{2}-\d{2}$/.test(mb.date) ? mb.date : new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10), text: String(mb.text || '').slice(0, 4000), items: mkItems(mb.text), media: (Array.isArray(mb.media) ? mb.media : []).slice(0, 10).map(u => String(u).slice(0, 300)), links: mkLinks(mb.links), ver: 1, pubTs: Date.now(), ackNames, acks: {}, views: {}, asks: [], remind: {}, by: whoM.name, ts: now8() }
       doc.list = [it, ...(doc.list || [])].slice(0, 500)
       // v4.48.0 張良「新增會議都同步發大群＋定位連結＋提醒簽到按確認＋顯示則數」：try 包住＝發群失敗也不影響會議已存
@@ -2044,11 +2045,11 @@ export default async function handler(req, res) {
           else { it.groupSent = { ts: now8(), fail: true } }
         }
       } catch (_) { it.groupSent = { ts: now8(), fail: true } }
-      // v4.52.5 治本（張良「剛發新會議，要簽的人手機App沒出現1的通知」）：新會議除了發LINE大群，也要發App站內通知給每個要簽的人（鈴鐺+1＋推播），不然打開App看不到。排除發起人自己
+      // v4.52.5/6 治本（張良「剛發新會議手機App沒出現1的通知；不要因為是我發的就沒通知，大家都一樣，我也要收到、也要走一樣簽到流程」）：新會議發LINE大群＋發App站內通知給「每個要簽的人（含發起人本人）」鈴鐺+1＋推播
       try {
         const bdM = (await kvGet('sp_finance_pm_prep_bind')) || {}
         const nm2ridM = {}; for (const v of Object.values(bdM.tokens || {})) { if (v && v.name) nm2ridM[v.name] = v.rid || v.uid }
-        const ridsM = [...new Set(ackNames.filter(n => n !== whoM.name).map(n => nm2ridM[n]).filter(Boolean))]
+        const ridsM = [...new Set(ackNames.map(n => nm2ridM[n]).filter(Boolean))] // 含發起人本人＝一視同仁
         if (ridsM.length) { const { wpPush } = await import('./_webpush.js'); await wpPush(ridsM, { title: '📢 新會議要簽收', body: `【${it.type}・${it.date}】${String(it.text || '').slice(0, 50)}`, url: '/prep#meet=' + it.id, cat: 'meet' }) }
       } catch (_) {}
     } else if (mb.op === 'edit') {
@@ -2063,11 +2064,11 @@ export default async function handler(req, res) {
       if (Array.isArray(mb.links)) it.links = mkLinks(mb.links)
       if (chgM && it.ackNames) { it.ver = (it.ver || 1) + 1; it.remind = {} } // 內容改了=v+1 要重簽（舊簽收留档但不算數）
       it.editedBy = whoM.name; it.editedTs = now8()
-      // v4.52.5 內容改動＝要重簽→發App站內通知給要簽的人（鈴鐺+1），跟新增一致
+      // v4.52.5/6 內容改動＝要重簽→發App站內通知給「每個要簽的人（含發起人本人）」鈴鐺+1，跟新增一視同仁
       if (chgM && Array.isArray(it.ackNames)) { try {
         const bdE = (await kvGet('sp_finance_pm_prep_bind')) || {}
         const nm2ridE = {}; for (const v of Object.values(bdE.tokens || {})) { if (v && v.name) nm2ridE[v.name] = v.rid || v.uid }
-        const ridsE = [...new Set(it.ackNames.filter(n => n !== whoM.name).map(n => nm2ridE[n]).filter(Boolean))]
+        const ridsE = [...new Set(it.ackNames.map(n => nm2ridE[n]).filter(Boolean))]
         if (ridsE.length) { const { wpPush } = await import('./_webpush.js'); await wpPush(ridsE, { title: '📢 會議更新要重簽', body: `【${it.type}・${it.date}】內容有更新，請重新確認熟知`, url: '/prep#meet=' + it.id, cat: 'meet' }) }
       } catch (_) {} }
     } else if (mb.op === 'ack') { // ✅ 確認熟知
