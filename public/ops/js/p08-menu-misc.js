@@ -237,8 +237,9 @@ function menuRender(){
           const row=(l,r,bd)=>`<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:3px 0;border-top:1px dashed ${bd||'#2A3240'}">${l}${r}</div>`
           let rs = row('<div class="hint" style="font-weight:800">原菜單</div>','<div class="hint" style="font-weight:800">新菜單</div>','transparent')
           ;(ds?(ds.items||[]):[]).forEach(i2=>{ const b=df.bF[i2.id]; const isNew=!b; const chg=df.chg.includes(i2.id)
-            rs += row(`<div style="${chg?'color:#A85C26':''}">${b?`${b.name} $${b.price}`:'<span class="mut">—</span>'}</div>`,
-              `<div style="${isNew?'color:var(--green);font-weight:700':chg?'color:#A85C26;font-weight:700':''}">${i2.name} $${i2.price}${i2.note?` <span class="hint">${i2.note}</span>`:''}${isNew?' <span class="up" style="font-size:12px;font-weight:800">新增</span>':''}</div>`)
+            // v4.47.9 張良「保留的菜單字不要暗橘色很難看→白色存留、字體大一點；綠色新增、紅色刪除」：存留/修改一律白#F2F5F9+15.5px(不再暗橘),新增綠,刪除紅在下方區塊
+            rs += row(`<div style="color:#F2F5F9;font-size:15.5px">${b?`${b.name} $${b.price}`:'<span class="mut">—</span>'}</div>`,
+              `<div style="${isNew?'color:var(--green);font-weight:700':'color:#F2F5F9'};font-size:15.5px">${i2.name} $${i2.price}${i2.note?` <span class="hint">${i2.note}</span>`:''}${isNew?' <span class="up" style="font-size:12px;font-weight:800">新增</span>':''}</div>`)
           })
           const delK = df.del.filter(k=>df.bF[k].sec===nm)
           if(delK.length){ rs += `<div style="margin-top:8px;font-weight:800;color:var(--red);font-size:13px">🗑 已刪除（${delK.length}）</div>`
