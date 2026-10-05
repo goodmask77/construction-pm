@@ -344,6 +344,7 @@ async function syncJoya(daysBack) {
 }
 
 export default async function handler(req, res) {
+ try { // v4.52.4 總兜底（張良「儲存失敗 檢查問題」）：原本 handler 沒有 try/catch，任一行 throw(Supabase/LINE 瞬斷…)就噴 HTML 500→前端 r.json() 解析失敗→一律顯示「儲存失敗」看不出原因。改成任何未捕捉錯誤都回可讀 JSON
   if (!SB_URL || !SB_KEY) return res.status(200).json({ ok: false, error: '缺 Supabase 設定' })
   let _lastBound = false // v4.31.0（張良：擋下來的訊息要分「沒登入」跟「沒權限」）：sopWho 每次順手記「這個 token 有沒有綁定」
   const sopWho = async (tk3) => {
@@ -2020,7 +2021,7 @@ export default async function handler(req, res) {
           const { prepLink } = await import('./_webpush.js')
           const lnkG = prepLink('meet=' + it.id)
           const bodyG = `📢 新會議宣達【${it.type}・${it.date}】\n${String(it.text || '').slice(0, 300)}\n\n👉 點連結直達，看完按「✅ 確認熟知」完成簽到（${it.ackNames.length} 人要簽）\n${lnkG}`
-          const rG = await fetch('https://api.line.me/v2/bot/message/push', { method: 'POST', headers: { 'content-type': 'application/json', Authorization: 'Bearer ' + tkG }, body: JSON.stringify({ to: GRP_FAM, messages: [{ type: 'text', text: bodyG }] }) })
+          const rG = await fetch('https://api.line.me/v2/bot/message/push', { method: 'POST', headers: { 'content-type': 'application/json', Authorization: 'Bearer ' + tkG }, body: JSON.stringify({ to: GRP_FAM, messages: [{ type: 'text', text: bodyG }] }), signal: AbortSignal.timeout(8000) }) // v4.52.4 8秒逾時＝LINE 慢也不拖垮整個存檔(504)
           if (rG.ok) { const nQ = it.ackNames.length || 1; try { const { logPush } = await import('./push.js'); await logPush(GRP_FAM, nQ, '會議宣達發大群(' + it.by + ')') } catch (_) {}; it.groupSent = { ts: now8(), n: nQ } } // 群發計費＝群人數×1則（line-quota）
           else { it.groupSent = { ts: now8(), fail: true } }
         }
@@ -3940,4 +3941,9 @@ export default async function handler(req, res) {
   await announceChanged() // 有新資料入庫→通知所有開著的網頁自動重抓（沒新資料就不發）
   if (req.query?.debug) out.dbg = DBG
   return res.status(200).json(out)
+ } catch (e) { // v4.52.4 總兜底：把 HTML 500 轉成可讀 JSON 錯誤（回 200+ok:false＝前端一律看得到真正原因，不再只是「儲存失敗」）
+   const ep = Object.keys(req.query || {})[0] || req.method
+   console.error('mail-sync handler 未捕捉錯誤:', ep, e)
+   if (!res.headersSent) return res.status(200).json({ ok: false, error: '伺服器錯誤（' + ep + '）：' + (e?.message || String(e)) })
+ }
 }
