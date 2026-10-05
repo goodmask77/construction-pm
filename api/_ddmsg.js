@@ -6,10 +6,11 @@ const CFG_KEY = 'sp_finance_pm_ddmsg'
 const FALLBACK_GID = 'Cf7940efc6517b0c084ad2ad496b45f30' // 內部預設群（POS/金額/採購/問題也發這個）
 
 // 群組預設：env 優先 → 群組登記表(pm_group_seen)照名字找 → 寫死退路
+// 註：Cf7940（internal）官方群名「瑞光路337」＝團隊慣稱 HAPPY337（採購/問題/SOP/庫存/停售都發這個）；GROUN:D Family 是另一個群（會議用）。
+// 真名一律由 ddGroupName 即時抓顯示，下面 label 只是抓不到時的退路。
 export const DD_GROUPS = {
   family:   { label: 'GROUN:D Family 群', env: 'LINE_PREP_GROUP', match: /family/i, fallback: FALLBACK_GID },
-  internal: { label: '內部群（預設）', env: 'LINE_DEFAULT_GROUP', fallback: FALLBACK_GID },
-  happy337: { label: 'A Beach 停售群（happy337）', match: /happy ?337|337/i, fallback: '' },
+  internal: { label: '內部群 HAPPY337', env: 'LINE_DEFAULT_GROUP', fallback: FALLBACK_GID },
 }
 
 // 自動訊息登記表：label=人看的名稱、group=預設群、on=預設開關、text=可編輯文字(含 {變數})、vars=變數說明、where=發生情境
@@ -32,10 +33,10 @@ export const DD_MSG_DEF = {
   lowStock:   { label: '庫存低水位', group: 'internal', on: 0, legacy: 'lowStock', where: '盤點後低於安全量時',
     text: '📉 庫存低水位提醒：\n{list}\n\n請盡快叫貨／補盤點',
     vars: '{list}=低水位品項清單（自動帶）' },
-  staleItem:  { label: '品項停售盯梢', group: 'happy337', on: 1, legacy: 'staleItem', where: '超過5個營業日沒賣出',
+  staleItem:  { label: '品項停售盯梢', group: 'internal', on: 1, legacy: 'staleItem', where: '超過5個營業日沒賣出',
     text: '🕵️ 品項停售提醒（超過 5 個營業日沒賣出）：\n{list}\n\n請確認：斷貨？下架？還是產品有問題？',
     vars: '{list}=疑似停售品項（自動帶）' },
-  soldoutAB:  { label: 'A Beach 停售異動', group: 'happy337', on: 1, legacy: 'soldoutAB', where: '偵測到停售/恢復即時發',
+  soldoutAB:  { label: 'A Beach 停售異動', group: 'internal', on: 1, legacy: 'soldoutAB', where: '偵測到停售/恢復即時發',
     text: '🔔 A Beach 停售異動\n{list}',
     vars: '{list}=停售/恢復動態（自動帶）' },
 }
@@ -73,11 +74,12 @@ export function ddFill(text, vars) {
   return String(text || '').replace(/\{(\w+)\}/g, (m, k) => (vars && vars[k] != null) ? String(vars[k]) : '')
 }
 
-// 查某個 group id 的「真名」：先查 DD 記過的(pm_group_seen)，沒有才直接問 LINE
+// 查某個 group id 的「官方真名」：直接問 LINE(最準,群改名也跟著)，問不到才退回 DD 記過的 pm_group_seen
+// 註：LINE「官方群名」每個人看到的一樣；若使用者在自己手機把群「自訂顯示名」（例如改成 HAPPY337），那是本機私有的，伺服器拿不到，只能顯示官方名。
 export async function ddGroupName(gid) {
   if (!gid) return ''
+  try { const tk = (process.env.LINE_CHANNEL_ACCESS_TOKEN || '').trim(); if (tk) { const r = await fetch(`https://api.line.me/v2/bot/group/${gid}/summary`, { headers: { authorization: 'Bearer ' + tk }, signal: AbortSignal.timeout(4000) }); if (r.ok) { const nm = (await r.json()).groupName; if (nm) return nm } } } catch (_) {}
   try { const seen = (await _kvGet('pm_group_seen')) || {}; if (seen[gid] && seen[gid].name) return seen[gid].name } catch (_) {}
-  try { const tk = (process.env.LINE_CHANNEL_ACCESS_TOKEN || '').trim(); if (tk) { const r = await fetch(`https://api.line.me/v2/bot/group/${gid}/summary`, { headers: { authorization: 'Bearer ' + tk } }); if (r.ok) return (await r.json()).groupName || '' } } catch (_) {}
   return ''
 }
 
