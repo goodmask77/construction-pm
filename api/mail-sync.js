@@ -2160,7 +2160,8 @@ export default async function handler(req, res) {
     const bindM = (await kvGet('sp_finance_pm_prep_bind')) || {}
     const boundM = [...new Set(Object.values(bindM.tokens || {}).map(v => v && v.name).filter(Boolean))]
     const allM = [...new Set([...(((rosM || {}).people) || []).filter(p => !p.endDate && (p.status || '在職') !== '離職').map(p => p.name).filter(Boolean), ...(meM ? [meM.name] : [])])]
-    return res.status(200).json({ ok: true, types: ((md || {}).types || ['班前會議', '營運會議']), list: ((md || {}).list || []).slice(0, 200), regNames: regM, allNames: allM, boundNames: boundM, groups: ((md || {}).groups || []), me: meM ? { name: meM.name, role: meM.role || '', approver: aprM.includes(meM.name) } : null })
+    let sendG = []; try { const { ddAll } = await import('./_ddmsg.js'); sendG = (await ddAll()).groups } catch (_) {} // v4.55.2 可發的3個DD群(真名)給會議選
+    return res.status(200).json({ ok: true, types: ((md || {}).types || ['班前會議', '營運會議']), list: ((md || {}).list || []).slice(0, 200), regNames: regM, allNames: allM, boundNames: boundM, groups: ((md || {}).groups || []), sendGroups: sendG, me: meM ? { name: meM.name, role: meM.role || '', approver: aprM.includes(meM.name) } : null })
   }
   if (req.method === 'POST' && req.query?.meetset) {
     const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
@@ -2195,7 +2196,7 @@ export default async function handler(req, res) {
           if (tkG && cfgG.on) {
             const { prepLink } = await import('./_webpush.js')
             const lnkG = prepLink('meet=' + it.id)
-            const GRP_FAM = await ddGroupGid(cfgG.group)
+            const GRP_FAM = await ddGroupGid(audM.group || cfgG.group) // v4.55.2 張良可per會議選發哪個群(海灘叢林team/HAPPY337/Family)，沒選用設定頁預設
             const bodyG = ddFill(cfgG.text, { type: it.type, date: it.date, content: String(it.text || '').slice(0, 300), n: it.ackNames.length, link: lnkG })
             const rG = await fetch('https://api.line.me/v2/bot/message/push', { method: 'POST', headers: { 'content-type': 'application/json', Authorization: 'Bearer ' + tkG }, body: JSON.stringify({ to: GRP_FAM, messages: [{ type: 'text', text: bodyG }] }), signal: AbortSignal.timeout(8000) })
             if (rG.ok) { const nQ = it.ackNames.length || 1; try { const { logPush } = await import('./push.js'); await logPush(GRP_FAM, nQ, '會議宣達發大群(' + it.by + ')') } catch (_) {}; it.groupSent = { ts: now8(), n: nQ } }

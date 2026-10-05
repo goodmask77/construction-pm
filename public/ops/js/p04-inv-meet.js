@@ -511,7 +511,7 @@ function meetForm(id){
   const ov = document.createElement('div'); ov.id='meetOv'
   ov.style.cssText = 'position:fixed;inset:0;background:rgba(16,24,43,.45);z-index:50;display:flex;align-items:center;justify-content:center;padding:16px'
   const ip = 'width:100%;border:1px solid var(--line);border-radius:8px;padding:8px;font-size:15px;font-family:inherit;margin-bottom:6px'
-  window._mtAud = { mode: 'all', names: new Set() } // v4.55.0 收件對象（只在新增時用）
+  window._mtAud = { mode: 'all', names: new Set(), group: 'family' } // v4.55.0/2 收件對象（只在新增時用）；group=發群時選哪個群
   const audSec = it ? '' : `<div style="border-top:1px solid var(--line);margin:4px 0 6px;padding-top:8px">
       <div class="hint" style="margin-bottom:5px">收件對象</div>
       <div style="display:flex;gap:6px;margin-bottom:6px">
@@ -524,7 +524,7 @@ function meetForm(id){
     <select id="mtType" style="${ip}">${d.types.map(t2=>`<option${it&&it.type===t2?' selected':''}>${t2}</option>`).join('')}</select>
     <input id="mtDate" type="date" value="${it?it.date:todayTpe()}" style="${ip}">
     <textarea id="mtText" rows="7" placeholder="一行＝一條（會自動變成條列表格）" style="${ip}">${it?(it.text||'').replace(/</g,'&lt;'):''}</textarea>
-    <div class="hint" style="margin:-2px 0 4px">📎 附照片：<input type="file" id="mtFile" accept="image/*" multiple style="font-size:13px" onchange="mtUpload(this.files)"><span id="mtUpN">${it&&(it.media||[]).length?`已有 ${it.media.length} 張`:''}</span></div>
+    <div class="hint" style="margin:-2px 0 4px">📎 附照片：<input type="file" id="mtFile" accept="image/*" multiple style="font-size:13px" onchange="mtUpload(this.files)"><span class="wopt">・或直接 Ctrl/⌘V 貼上截圖</span> <span id="mtUpN">${it&&(it.media||[]).length?`已有 ${it.media.length} 張`:''}</span></div>
     <textarea id="mtLinks" rows="2" placeholder="連結（一行一個：標題|網址，或直接貼網址；SOP連結用每條旁的複製鈕來貼）" style="${ip}">${it?(it.links||[]).map(l2=>l2.label?`${l2.label}|${l2.url}`:l2.url).join('\n'):''}</textarea>
     ${audSec}
     <div style="display:flex;gap:8px;justify-content:flex-end"><button class="mini" style="padding:9px 12px" onclick="document.getElementById('meetOv').remove()">取消</button>
@@ -544,9 +544,16 @@ function mtAudToggle(n){ const s=window._mtAud.names; if(s.has(n))s.delete(n); e
 function mtAudGroup(gid){ const g=((window._meetD||{}).groups||[]).find(x=>x.id===gid); if(!g)return; (g.members||[]).forEach(n=>window._mtAud.names.add(n)); window._mtAud.mode='picked'; mtAudMode('picked') }
 function mtAudRender(){
   const box=document.getElementById('mtAudBox'); if(!box) return
-  if (window._mtAud.mode!=='picked'){ box.innerHTML='<div class="hint" style="font-size:11.5px">會發到 GROUN:D Family 群，常態夥伴都要簽（含你自己）。</div>'; return }
-  const d=window._meetD||{}, names=d.boundNames||d.allNames||d.regNames||[], sel=window._mtAud.names
+  const d=window._meetD||{}, sel=window._mtAud.names
   const esc=s=>String(s==null?'':s).replace(/</g,'&lt;').replace(/'/g,"\\'")
+  if (window._mtAud.mode!=='picked'){
+    const sg=d.sendGroups||[]
+    box.innerHTML = `<div style="display:flex;align-items:center;gap:8px"><span class="hint" style="font-size:12px">發到</span>
+      <select onchange="window._mtAud.group=this.value" style="flex:1;background:var(--bg);border:1px solid var(--line);border-radius:7px;padding:6px 8px;color:var(--ink);font-size:14px">${sg.map(g=>`<option value="${esc(g.key)}"${(window._mtAud.group||'family')===g.key?' selected':''}>${esc(g.label)}</option>`).join('')||'<option value="family">GROUN:D Family</option>'}</select></div>
+      <div class="hint" style="font-size:11px;margin-top:5px">發到這個群，常態夥伴都要簽（含你自己）。</div>`
+    return
+  }
+  const names=d.boundNames||d.allNames||d.regNames||[]
   const chips=(d.groups||[]).map(g=>`<button type="button" class="mini" style="padding:4px 10px" onclick="mtAudGroup('${esc(g.id)}')">👥 ${esc(g.name)}（${(g.members||[]).length}）</button>`).join('')
   box.innerHTML = `<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:6px">${chips||'<span class="hint" style="font-size:11px">還沒有自訂群組</span>'}<button type="button" class="mini" style="padding:4px 10px;margin-left:auto" onclick="meetGroupMng()">⚙️ 管理群組</button></div>
     <div class="hint" style="font-size:11px;margin-bottom:4px">只列「已綁定 DD」的人（沒綁定的收不到私訊，不顯示）・勾要收到的人・已選 <b id="mtAudN">${sel.size}</b> 人</div>
@@ -569,17 +576,25 @@ async function mtUpload(files){ // 📎 宣達附照（sopsign 簽名直傳，�
   }
   if (nEl) nEl.textContent = `已附 ${window._mtMedia.length} 張 ✓`
 }
+// v4.55.2 會議附照直接貼上：視窗開著時 Ctrl/⌘V 貼圖＝走同一條上傳
+document.addEventListener('paste', e => {
+  if (!document.getElementById('meetOv')) return
+  const imgs = [...((e.clipboardData || {}).items || [])].filter(x => x.type && x.type.startsWith('image/')).map(x => x.getAsFile()).filter(Boolean)
+  if (imgs.length) { e.preventDefault(); mtUpload(imgs) }
+})
 async function meetSave(id){
   const type = (document.getElementById('mtType')||{}).value||''
   const date = (document.getElementById('mtDate')||{}).value||''
   const text = (document.getElementById('mtText')||{}).value||''
   if (!text.trim()) { alert('內容空的'); return }
   const links = ((document.getElementById('mtLinks')||{}).value||'').split('\n').map(x=>x.trim()).filter(Boolean).map(x=>{ const i2 = x.indexOf('|'); return i2>0 ? { label: x.slice(0,i2).trim(), url: x.slice(i2+1).trim() } : { label:'', url: x } })
-  let audience = null // v4.55.0 收件對象：指定人＝個別私訊
-  if (!id && window._mtAud && window._mtAud.mode==='picked') {
-    const names = [...(window._mtAud.names||[])]
-    if (!names.length) { alert('指定對象模式：至少勾一個人（要測試可勾你自己）'); return }
-    audience = { mode:'picked', names }
+  let audience = null // v4.55.0/2 收件對象：指定人＝個別私訊；全體＝選發哪個群
+  if (!id && window._mtAud) {
+    if (window._mtAud.mode==='picked') {
+      const names = [...(window._mtAud.names||[])]
+      if (!names.length) { alert('指定對象模式：至少勾一個人（要測試可勾你自己）'); return }
+      audience = { mode:'picked', names }
+    } else audience = { mode:'all', group: window._mtAud.group||'family' }
   }
   const r = await fetch('/api/mail-sync?meetset=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ op: id?'edit':'add', id, type, date, text, media: window._mtMedia||[], links, audience, token: TK() }) })
   const d = await r.json().catch(()=>null)

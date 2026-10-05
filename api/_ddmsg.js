@@ -8,9 +8,11 @@ const FALLBACK_GID = 'Cf7940efc6517b0c084ad2ad496b45f30' // 內部預設群（PO
 // 群組預設：env 優先 → 群組登記表(pm_group_seen)照名字找 → 寫死退路
 // 註：Cf7940（internal）官方群名＝HAPPY337（原名瑞光路337已改名；採購/問題/SOP/庫存/停售都發這個）；GROUN:D Family 是另一個群（會議用）。
 // 真名一律由 ddGroupName 即時抓顯示，下面 label 只是抓不到時的退路。
+// v4.55.2 張良「只留 海灘叢林team / HAPPY337 / GROUN:D Family 這3個 DD 有在的群」：預設群固定這三個，真名由 ddGroupName 即時抓
 export const DD_GROUPS = {
-  family:   { label: 'GROUN:D Family 群', env: 'LINE_PREP_GROUP', match: /family/i, fallback: FALLBACK_GID },
-  internal: { label: '內部群 HAPPY337', env: 'LINE_DEFAULT_GROUP', fallback: FALLBACK_GID },
+  family:   { label: 'GROUN:D Family', match: /ground.*family|family/i, fallback: FALLBACK_GID },
+  internal: { label: 'HAPPY337', env: 'LINE_DEFAULT_GROUP', match: /happy ?337|337/i, fallback: FALLBACK_GID },
+  abteam:   { label: '海灘叢林 Team', match: /海灘叢林.*team|beach.*team/i, fallback: '' },
 }
 
 // 自動訊息登記表：label=人看的名稱、group=預設群、on=預設開關、text=可編輯文字(含 {變數})、vars=變數說明、where=發生情境
@@ -87,16 +89,13 @@ export async function ddGroupName(gid) {
 export async function ddAll() {
   let ov = {}; try { ov = (await _kvGet(CFG_KEY)) || {} } catch (_) {}
   const msgs = Object.keys(DD_MSG_DEF).map(k => ({ key: k, ...DD_MSG_DEF[k], cur: ov[k] || {} }))
-  // 預設 key：label＝解析出的真名（抓不到才退回原描述）；value 保留 key＝維持動態解析
+  // v4.55.2 只列 3 個預設群（張良「DD 有在的群：海灘叢林team/HAPPY337/GROUN:D Family 就好」）；label＝即時真名
   const groups = []
-  const presetGids = new Set()
   for (const [k, v] of Object.entries(DD_GROUPS)) {
-    const gid = await ddGroupGid(k); presetGids.add(gid)
+    const gid = await ddGroupGid(k)
     const real = await ddGroupName(gid)
     groups.push({ key: k, label: real || v.label, real })
   }
-  // 其餘 DD 記過的群（去掉已在預設出現的 gid，不重複）
-  try { const seen = (await _kvGet('pm_group_seen')) || {}; for (const [gid, gg] of Object.entries(seen)) if (gg?.name && !presetGids.has(gid)) groups.push({ key: gid, label: gg.name, real: gg.name }) } catch (_) {}
   return { msgs, groups }
 }
 
