@@ -17,7 +17,8 @@ const AM_DICT_DEF = [ // 班別字典預設（照張良 Excel＋NUEiP 常用；�
 ]
 function amT2m(t){ const a=String(t||'').split(':'); return (+a[0]||0)*60+(+a[1]||0) }
 // v4.47.3（張良「顏色跟系統一樣」）：班別配色＝/prep AB 班表同一套（p05 abC）
-function amColor(c0){ c0=String(c0||'')
+function amColor(c0, dk){ if(dk&&dk.color&&/^#[0-9a-fA-F]{6}$/.test(dk.color)) return dk.color // v4.55 自訂色優先
+  c0=String(c0||'')
   if(/機/.test(c0)) return '#6EB1FF'
   if(/沙|叢|^B/.test(c0)) return '#7ED88F'
   if(/^D/.test(c0)) return '#FF8A8A'
@@ -28,7 +29,7 @@ function amColor(c0){ c0=String(c0||'')
   if(/^P/.test(c0)) return '#B9A3E8'
   const PAL=['#6EB1FF','#7ED88F','#FF8A8A','#F48FB1','#5FD3D3','#F2C14E','#B9A3E8','#F0A050']
   let h=0; for(const ch of c0) h=(h*31+ch.charCodeAt(0))>>>0; return PAL[h%PAL.length] }
-function amSpanH(dk){ let sp=amT2m(dk.e)-amT2m(dk.s); if(sp<=0) sp+=1440; return Math.max(0,(sp-(sp>=540?60:0)))/60 } // 排9h+預設含1h休
+function amSpanH(dk){ if(!dk||!dk.s||!dk.e) return 0; let sp=amT2m(dk.e)-amT2m(dk.s); if(sp===0) return 0; if(sp<0) sp+=1440; return Math.max(0,(sp-(sp>=540?60:0)))/60 } // 排9h+預設含1h休；無起訖(如X休)或0時長=0h（v4.55治本：原本空白→繞夜算23h把時數/薪資灌水）
 async function abModView(){
   if (!window._amD) {
     lpOverlay('amOv','<div class="hint" style="padding:20px">讀取模組班表中…</div>')
@@ -84,7 +85,8 @@ function amDraw(){
   m.rows.forEach(rw=>{ let h=0
     for(let d=1;d<=7;d++){ const di=rw.days[d]; if(di==null||di<0) continue
       const dk=dictOf(di); if(!dk) continue
-      h+=amSpanH(dk); dayPpl[d-1]++; if(rw.tp==='PT') dayPT[d-1]++
+      const sph=amSpanH(dk); if(sph<=0) continue // v4.55：X/休等無時數＝休假，不算時數/人力/時段
+      h+=sph; dayPpl[d-1]++; if(rw.tp==='PT') dayPT[d-1]++
       let sM=amT2m(dk.s), eM=amT2m(dk.e); if(eM<=sM) eM+=1440
       for(let t=Math.floor(sM/60); t<Math.ceil(eM/60); t++){ const hh=t%24; if(hh>=11||t>=24) hourly[d-1][hh]=(hourly[d-1][hh]||0)+1 }
     }
@@ -92,7 +94,7 @@ function amDraw(){
   // 法規（模組週重複推演）：班距11h（含週日→下週一）、單日>12h、連上>12天（週重複=有人7天全排就是無限連上）
   const vio = []
   m.rows.forEach(rw=>{
-    const seq=[]; for(let d=1;d<=7;d++){ const dk=rw.days[d]!=null&&rw.days[d]>=0?dictOf(rw.days[d]):null; seq.push(dk) }
+    const seq=[]; for(let d=1;d<=7;d++){ const dk=rw.days[d]!=null&&rw.days[d]>=0?dictOf(rw.days[d]):null; seq.push(dk&&amSpanH(dk)>0?dk:null) } // v4.55：休假(0h)當沒排班，連上天數不計
     let maxRun=0, run=0
     for(let i=0;i<21;i++){ if(seq[i%7]){ run++; maxRun=Math.max(maxRun,run) } else run=0 }
     if (maxRun>12) vio.push(`${rw.name}：週型重複後連上${maxRun>=21?'∞（每週七天全排）':maxRun+'天'}——至少留例假`)
@@ -118,7 +120,7 @@ function amDraw(){
   // ── 畫面 ──
   const cellBtn = (rw, d) => {
     const di=rw.days[d], dk=di!=null&&di>=0?dictOf(di):null
-    const cc=dk?amColor(dk.code):''
+    const cc=dk?amColor(dk.code,dk):''
     return `<td onclick="amCell('${rw.name.replace(/'/g,'')}',${d})" style="padding:3px 4px;text-align:center;cursor:pointer;border:1px solid var(--line);min-width:58px">${dk?`<span style="display:inline-block;border:1.5px solid ${cc};background:${cc}1F;color:${cc};border-radius:6px;padding:1px 6px;font-weight:800;font-size:12px;white-space:nowrap">${dk.code}</span><div class="hint" style="font-size:9.5px">${dk.s}-${dk.e}</div>`:'<span class="mut">—</span>'}</td>` }
   // 四區照班表：內場正職/內場PT/外場正職/外場PT/其他（sub 缺就從班表補）
   const SUBO = { '內場':0,'外場':1,'其他':2 }
@@ -169,7 +171,7 @@ function amCell(nm, d){
   ov.innerHTML = `<div style="background:#1C2430;border:1px solid #39434F;border-radius:14px;max-width:300px;width:100%;padding:16px" onclick="event.stopPropagation()">
     <div style="font-weight:900;margin-bottom:10px">${nm}・週${['','一','二','三','四','五','六','日'][d]}</div>
     <div style="display:flex;gap:7px;flex-wrap:wrap">
-      ${(m.dict||[]).map((dk,i)=>{ const cc=amColor(dk.code); const on=rw.days[d]===i; return `<button style="padding:7px 12px;font-weight:800;border-radius:9px;cursor:pointer;border:1.5px solid ${cc};background:${on?cc:cc+'22'};color:${on?'#10141C':cc}" onclick="amCellSet('${nm.replace(/'/g,'')}',${d},${i})">${dk.code}<div style="font-size:9px;opacity:.8">${dk.s}-${dk.e}</div></button>` }).join('')}
+      ${(m.dict||[]).map((dk,i)=>{ const cc=amColor(dk.code,dk); const on=rw.days[d]===i; return `<button style="padding:7px 12px;font-weight:800;border-radius:9px;cursor:pointer;border:1.5px solid ${cc};background:${on?cc:cc+'22'};color:${on?'#10141C':cc}" onclick="amCellSet('${nm.replace(/'/g,'')}',${d},${i})">${dk.code}<div style="font-size:9px;opacity:.8">${dk.s}-${dk.e}</div></button>` }).join('')}
       <button class="mini" style="padding:7px 12px;color:var(--red)" onclick="amCellSet('${nm.replace(/'/g,'')}',${d},-1)">✕ 清除</button></div></div>`
   ov.onclick = () => ov.remove()
   document.body.appendChild(ov)
@@ -198,7 +200,7 @@ function amDict(){
     ov.innerHTML = `<div style="background:#1C2430;border:1px solid #39434F;border-radius:14px;max-width:360px;width:100%;max-height:80vh;overflow:auto;padding:16px" onclick="event.stopPropagation()">
     <div style="font-weight:900;margin-bottom:4px">班別字典</div><div class="hint" style="margin-bottom:10px">模組格子可選的班別；排 9 小時以上自動扣 1 小時休息</div>
     ${(m.dict||[]).map((dk,i)=>`<div style="display:flex;gap:6px;align-items:center;margin-bottom:7px">
-<span style="width:13px;height:13px;border-radius:50%;background:${amColor(dk.code)};flex-shrink:0" title="班別顏色"></span>
+<label style="position:relative;width:20px;height:20px;flex-shrink:0;cursor:pointer" title="點我改顏色"><span style="display:block;width:20px;height:20px;border-radius:50%;background:${amColor(dk.code,dk)};border:2px solid #39434F;box-sizing:border-box"></span><input type="color" value="${amColor(dk.code,dk)}" onchange="amMod().dict[${i}].color=this.value;amSave();document.getElementById('amDictOv').remove();amDict()" style="position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%"></label>
       <input value="${dk.code}" style="width:56px;padding:6px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink);font-weight:800;text-align:center" onchange="amMod().dict[${i}].code=this.value.trim();amSave()">
       <input value="${dk.s}" style="width:64px;padding:6px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink);text-align:center" onchange="amMod().dict[${i}].s=this.value.trim();amSave()">
       <span class="hint">–</span>
