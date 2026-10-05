@@ -63,29 +63,30 @@ function laborRender(){
     </div>`).join(''))||'<div class="mut" style="padding:6px 0">還沒有存檔——按上面「存檔」保存目前這張表</div>'}
   </div>`:''}
   <div class="scroll"><table id="lbTbl" style="border-collapse:collapse;user-select:none">
-  <thead><tr><th style="padding:6px 10px;text-align:left;position:sticky;left:0;background:var(--soft);z-index:2">時段</th>
+  <thead><tr><th style="padding:6px 10px;text-align:left;position:sticky;left:0;background:var(--soft);z-index:2">時段</th><th style="padding:6px 10px;text-align:right;font-weight:900">人數</th>
   ${cols.map((c,ci)=>{ const g=LB_GC[LB_GRP(c)]; return `<th style="padding:6px 8px;text-align:center;min-width:86px;white-space:nowrap;background:${g.bg};color:${g.ink};font-weight:800;${meN?'cursor:pointer':''}" ${meN?`onclick="lbColClear(${ci})" title="點我＝清空這一欄"`:''}>${c}</th>` }).join('')}
-  <th style="padding:6px 10px;text-align:right;font-weight:900">小計</th><th style="padding:6px 10px;text-align:right;font-weight:900">人數</th></tr></thead><tbody>`
+  <th style="padding:6px 10px;text-align:right;font-weight:900">小計</th></tr></thead><tbody>`
   LB_HOURS.forEach(hh=>{
     const meal = hh==='12'||hh==='13'||hh==='18' // v4.30.3 張良「再明顯一點 每個格子跟數字都看得出來」：整列每格淡金描邊+底色加亮
     const mealBg = meal ? 'background:#262B33;box-shadow:inset 0 0 0 1px rgba(226,233,242,.14);' : '' // v4.30.4 偏白色系、框線收斂
     const mealLn = meal ? 'box-shadow:inset 0 0 0 1px rgba(226,233,242,.14);' : ''
+    const ppl = cols.reduce((a,_,ci)=>a+(lbV(sh,hh,ci)?1:0),0)
     h += `<tr><td style="padding:4px 10px;text-align:left;font-weight:800;position:sticky;left:0;${meal?'background:#262B33;color:#EDF2F8;box-shadow:inset 0 0 0 1px rgba(226,233,242,.14);':'background:var(--card);'}z-index:1;white-space:nowrap;${meN?'cursor:pointer':''}" ${meN?`onclick="lbRowClear('${hh}')" title="點我＝清空這一列"`:''}>${+hh}-${+hh+1}</td>`
+    h += `<td style="padding:4px 10px;text-align:right;font-weight:800;font-variant-numeric:tabular-nums;${mealBg}">${ppl||''}</td>` // 人數移到時段右邊（張良 v4.53）
     cols.forEach((_,ci)=>{
       const v = lbV(sh,hh,ci)
       h += `<td id="lc_${hh}_${ci}" style="padding:0;text-align:center;min-width:86px;border:1px solid var(--line);${v?`background:${LB_AB[v]||'#1E2630'};`:(meal?'background:#232831;':'')}${mealLn}${meN?'cursor:cell;':''}font-variant-numeric:tabular-nums"
         ${meN?`onmousedown="lbDown(event,'${hh}',${ci})" onmouseenter="lbEnter('${hh}',${ci})"`:''}><div style="padding:6px 8px;min-height:19px;font-weight:800;color:${v?(LB_AC[v]||'var(--ink)'):'var(--ink)'}">${fmtN(v)}</div></td>`
     })
-    const ppl = cols.reduce((a,_,ci)=>a+(lbV(sh,hh,ci)?1:0),0)
-    h += `<td style="padding:4px 10px;text-align:right;font-weight:900;white-space:nowrap;${mealBg}">${fmtN(rowSum(hh))}</td><td style="padding:4px 10px;text-align:right;font-weight:800;font-variant-numeric:tabular-nums;${mealBg}">${ppl||''}</td></tr>`
+    h += `<td style="padding:4px 10px;text-align:right;font-weight:900;white-space:nowrap;${mealBg}">${fmtN(rowSum(hh))}</td></tr>`
   })
-  h += `<tr><td style="padding:6px 10px;text-align:left;font-weight:900;position:sticky;left:0;background:var(--soft);z-index:1">合計</td>
-  ${cols.map((_,ci)=>`<td style="padding:6px 8px;text-align:center;font-weight:900;background:var(--soft)">${fmtN(colSum(ci))}</td>`).join('')}
-  <td style="padding:6px 10px;text-align:right;font-weight:900;color:var(--red);background:var(--soft);font-size:15px">${fmtN(grand)}</td><td style="background:var(--soft)"></td></tr>`
-  // 時數列（張良：人數/時數分格子、跟其他數字一樣顯示）
-  h += `<tr><td style="padding:6px 10px;text-align:left;font-weight:900;position:sticky;left:0;background:var(--soft);z-index:1">時數</td>
+  // 時數列（張良 v4.53：放合計上面；人數/時數分格子、跟其他數字一樣顯示）；人數欄位(第2欄)留空
+  h += `<tr><td style="padding:6px 10px;text-align:left;font-weight:900;position:sticky;left:0;background:var(--soft);z-index:1">時數</td><td style="background:var(--soft)"></td>
   ${cols.map((_,ci)=>`<td style="padding:6px 8px;text-align:center;font-weight:800;background:var(--soft);font-variant-numeric:tabular-nums">${LB_HOURS.reduce((a,h2)=>a+(lbV(sh,h2,ci)?1:0),0)||''}</td>`).join('')}
-  <td style="padding:6px 10px;text-align:right;font-weight:900;background:var(--soft)">${LB_HOURS.reduce((a,h2)=>a+cols.reduce((b,_,ci)=>b+(lbV(sh,h2,ci)?1:0),0),0)||''}</td><td style="background:var(--soft)"></td></tr>`
+  <td style="padding:6px 10px;text-align:right;font-weight:900;background:var(--soft)">${LB_HOURS.reduce((a,h2)=>a+cols.reduce((b,_,ci)=>b+(lbV(sh,h2,ci)?1:0),0),0)||''}</td></tr>`
+  h += `<tr><td style="padding:6px 10px;text-align:left;font-weight:900;position:sticky;left:0;background:var(--soft);z-index:1">合計</td><td style="background:var(--soft)"></td>
+  ${cols.map((_,ci)=>`<td style="padding:6px 8px;text-align:center;font-weight:900;background:var(--soft)">${fmtN(colSum(ci))}</td>`).join('')}
+  <td style="padding:6px 10px;text-align:right;font-weight:900;color:var(--red);background:var(--soft);font-size:15px">${fmtN(grand)}</td></tr>`
   h += `</tbody></table></div>
   ${(()=>{ // 反推營業額（張良 2026-10-03；v4.29.0 去emoji表格化：固定成本/變動比率兩欄+結果列）
     const fin = sh.fin || { rent:0, util:0, misc:0, days:26, food:35, tax:5, pay:2, ins:12, profit:0 }
