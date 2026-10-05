@@ -2035,7 +2035,10 @@ export default async function handler(req, res) {
       // v4.48.0 張良「新增會議都同步發大群＋定位連結＋提醒簽到按確認＋顯示則數」：try 包住＝發群失敗也不影響會議已存
       try {
         const tkG = (process.env.LINE_CHANNEL_ACCESS_TOKEN || '').trim()
-        const GRP_FAM = (process.env.LINE_DEFAULT_GROUP || '').trim() || 'Cf7940efc6517b0c084ad2ad496b45f30' // GROUN:D Family
+        // v4.52.7（張良「會議群發改 GROUN:D Family」）：跟備料同一套鎖定 Family 群＝LINE_PREP_GROUP 優先→群組登記表找名字含 Family 的群→最後才退回舊預設
+        let GRP_FAM = (process.env.LINE_PREP_GROUP || '').trim()
+        if (!GRP_FAM) { const seenG = (await kvGet('pm_group_seen')) || {}; for (const [gid2, gg] of Object.entries(seenG)) if (/family/i.test(gg?.name || '')) { GRP_FAM = gid2; break } }
+        if (!GRP_FAM) GRP_FAM = 'Cf7940efc6517b0c084ad2ad496b45f30' // 退回已知的 GROUN:D Family 群（POS/金額資訊也發這個群）；不再用 LINE_DEFAULT_GROUP 以免發錯群
         if (tkG && GRP_FAM) {
           const { prepLink } = await import('./_webpush.js')
           const lnkG = prepLink('meet=' + it.id)
