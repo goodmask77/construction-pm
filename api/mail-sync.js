@@ -422,11 +422,11 @@ export default async function handler(req, res) {
     res.setHeader('Content-Type', 'application/manifest+json')
     res.setHeader('Cache-Control', 'private, no-store')
     return res.status(200).json({
-      name: 'GD', short_name: 'GD', start_url: su8, scope: '/', display: 'standalone',
+      name: 'GROUN:D', short_name: 'GROUN:D', start_url: su8, scope: '/', display: 'standalone',
       background_color: '#FFFFFF', theme_color: '#087EBA',
       icons: [
-        { src: '/ops/icon-192.png?v=2', sizes: '192x192', type: 'image/png', purpose: 'any' },
-        { src: '/ops/icon-512.png?v=2', sizes: '512x512', type: 'image/png', purpose: 'any' }
+        { src: '/ops/icon-192.png?v=3', sizes: '192x192', type: 'image/png', purpose: 'any' },
+        { src: '/ops/icon-512.png?v=3', sizes: '512x512', type: 'image/png', purpose: 'any' }
       ]
     })
   }
@@ -2187,6 +2187,8 @@ export default async function handler(req, res) {
       else { ackNames = gdNames(rosA).filter(n => !offA.has(n)); if (whoM.name && !ackNames.includes(whoM.name)) ackNames.push(whoM.name) } // 發起人也納入（一視同仁）
       const it = { id: 'mt' + Date.now().toString(36), type: String(mb.type || doc.types[0]).slice(0, 20), date: /^\d{4}-\d{2}-\d{2}$/.test(mb.date) ? mb.date : new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10), text: String(mb.text || '').slice(0, 4000), items: mkItems(mb.text), media: (Array.isArray(mb.media) ? mb.media : []).slice(0, 10).map(u => String(u).slice(0, 300)), links: mkLinks(mb.links), ver: 1, pubTs: Date.now(), ackNames, audMode: picked ? 'picked' : 'all', acks: {}, views: {}, asks: [], remind: {}, by: whoM.name, ts: now8() }
       doc.list = [it, ...(doc.list || [])].slice(0, 500)
+      // v4.55.4（張良「有夾帶圖檔也可以直接發在群中嗎」）：附圖一起發進群/私訊（LINE 一次最多5則＝文字+最多4張https圖）
+      const imgMsgs9 = (it.media || []).filter(u => /^https:\/\//.test(u)).slice(0, 4).map(u => ({ type: 'image', originalContentUrl: u, previewImageUrl: u }))
       if (!picked) {
         // 全體：發 LINE 大群（走 DD 自動訊息設定 meet_new）；try 包住＝發群失敗也不影響會議已存
         try {
@@ -2198,7 +2200,7 @@ export default async function handler(req, res) {
             const lnkG = prepLink('meet=' + it.id)
             const GRP_FAM = await ddGroupGid(audM.group || cfgG.group) // v4.55.2 張良可per會議選發哪個群(海灘叢林team/HAPPY337/Family)，沒選用設定頁預設
             const bodyG = ddFill(cfgG.text, { type: it.type, date: it.date, content: String(it.text || '').slice(0, 300), n: it.ackNames.length, link: lnkG })
-            const rG = await fetch('https://api.line.me/v2/bot/message/push', { method: 'POST', headers: { 'content-type': 'application/json', Authorization: 'Bearer ' + tkG }, body: JSON.stringify({ to: GRP_FAM, messages: [{ type: 'text', text: bodyG }] }), signal: AbortSignal.timeout(8000) })
+            const rG = await fetch('https://api.line.me/v2/bot/message/push', { method: 'POST', headers: { 'content-type': 'application/json', Authorization: 'Bearer ' + tkG }, body: JSON.stringify({ to: GRP_FAM, messages: [{ type: 'text', text: bodyG }, ...imgMsgs9] }), signal: AbortSignal.timeout(8000) })
             if (rG.ok) { const nQ = it.ackNames.length || 1; try { const { logPush } = await import('./push.js'); await logPush(GRP_FAM, nQ, '會議宣達發大群(' + it.by + ')') } catch (_) {}; it.groupSent = { ts: now8(), n: nQ } }
             else { it.groupSent = { ts: now8(), fail: true } }
           }
@@ -2217,7 +2219,7 @@ export default async function handler(req, res) {
               for (const [k, v] of Object.entries(bdP.tokens || {})) if (v && v.name === nm && v.uid) { uid = v.uid; tok = k; break }
               if (!uid) continue
               const lnk = tok ? `https://ground-pm.vercel.app/prep?me=${tok}#meet=${it.id}` : prepLink('meet=' + it.id)
-              const rD = await fetch('https://api.line.me/v2/bot/message/push', { method: 'POST', headers: { 'content-type': 'application/json', Authorization: 'Bearer ' + tkG }, body: JSON.stringify({ to: uid, messages: [{ type: 'text', text: `📢 會議宣達【${it.type}・${it.date}】（${it.by} 指定你簽收）\n${String(it.text || '').slice(0, 300)}\n\n👉 點連結直達，看完按「✅ 確認熟知」\n${lnk}` }] }), signal: AbortSignal.timeout(8000) }).catch(() => null)
+              const rD = await fetch('https://api.line.me/v2/bot/message/push', { method: 'POST', headers: { 'content-type': 'application/json', Authorization: 'Bearer ' + tkG }, body: JSON.stringify({ to: uid, messages: [{ type: 'text', text: `📢 會議宣達【${it.type}・${it.date}】（${it.by} 指定你簽收）\n${String(it.text || '').slice(0, 300)}\n\n👉 點連結直達，看完按「✅ 確認熟知」\n${lnk}` }, ...imgMsgs9] }), signal: AbortSignal.timeout(8000) }).catch(() => null)
               if (rD && rD.ok) { dm++; try { await logPush(uid, 1, '會議個別私訊(' + it.by + ')') } catch (_) {} }
             }
             it.groupSent = { ts: now8(), dm }
