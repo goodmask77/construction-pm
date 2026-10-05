@@ -2156,9 +2156,11 @@ export default async function handler(req, res) {
     const regM = gdNames(rosM).filter(n => !offM.has(n))
     const aprM = (((defM || {}).ground || {}).approvers) || ['張良瑋']
     // v4.55.0（張良「會議可選夥伴名單/自訂群組如主管群/個別私訊/含自己可測試」）：
-    // allNames＝全部在職名冊(含張良自己,給收件人勾選與自訂群組編輯用)；groups＝自訂收件群組(存會議文件 md.groups)
+    // v4.55.1 治本（張良「怎麼所有人都進來了，有些人根本不知道DD存在怎麼發」）：收件/群組只列「已綁定 DD」的人＝真的收得到私訊的才顯示
+    const bindM = (await kvGet('sp_finance_pm_prep_bind')) || {}
+    const boundM = [...new Set(Object.values(bindM.tokens || {}).map(v => v && v.name).filter(Boolean))]
     const allM = [...new Set([...(((rosM || {}).people) || []).filter(p => !p.endDate && (p.status || '在職') !== '離職').map(p => p.name).filter(Boolean), ...(meM ? [meM.name] : [])])]
-    return res.status(200).json({ ok: true, types: ((md || {}).types || ['班前會議', '營運會議']), list: ((md || {}).list || []).slice(0, 200), regNames: regM, allNames: allM, groups: ((md || {}).groups || []), me: meM ? { name: meM.name, role: meM.role || '', approver: aprM.includes(meM.name) } : null })
+    return res.status(200).json({ ok: true, types: ((md || {}).types || ['班前會議', '營運會議']), list: ((md || {}).list || []).slice(0, 200), regNames: regM, allNames: allM, boundNames: boundM, groups: ((md || {}).groups || []), me: meM ? { name: meM.name, role: meM.role || '', approver: aprM.includes(meM.name) } : null })
   }
   if (req.method === 'POST' && req.query?.meetset) {
     const ok2 = (process.env.OPS_BOARD_KEY || '').trim()

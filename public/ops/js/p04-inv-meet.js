@@ -545,11 +545,12 @@ function mtAudGroup(gid){ const g=((window._meetD||{}).groups||[]).find(x=>x.id=
 function mtAudRender(){
   const box=document.getElementById('mtAudBox'); if(!box) return
   if (window._mtAud.mode!=='picked'){ box.innerHTML='<div class="hint" style="font-size:11.5px">會發到 GROUN:D Family 群，常態夥伴都要簽（含你自己）。</div>'; return }
-  const d=window._meetD||{}, names=d.allNames||d.regNames||[], sel=window._mtAud.names
+  const d=window._meetD||{}, names=d.boundNames||d.allNames||d.regNames||[], sel=window._mtAud.names
   const esc=s=>String(s==null?'':s).replace(/</g,'&lt;').replace(/'/g,"\\'")
   const chips=(d.groups||[]).map(g=>`<button type="button" class="mini" style="padding:4px 10px" onclick="mtAudGroup('${esc(g.id)}')">👥 ${esc(g.name)}（${(g.members||[]).length}）</button>`).join('')
   box.innerHTML = `<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:6px">${chips||'<span class="hint" style="font-size:11px">還沒有自訂群組</span>'}<button type="button" class="mini" style="padding:4px 10px;margin-left:auto" onclick="meetGroupMng()">⚙️ 管理群組</button></div>
-    <div class="hint" style="font-size:11px;margin-bottom:4px">勾要收到的人（個別私訊，不發群）・已選 <b id="mtAudN">${sel.size}</b> 人</div>
+    <div class="hint" style="font-size:11px;margin-bottom:4px">只列「已綁定 DD」的人（沒綁定的收不到私訊，不顯示）・勾要收到的人・已選 <b id="mtAudN">${sel.size}</b> 人</div>
+    ${names.length?'':'<div class="hint" style="font-size:11.5px;color:var(--red)">目前沒有人綁定 DD——請夥伴先私訊 DD「綁定GD 本名」才收得到個別私訊</div>'}
     <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:4px;max-height:34vh;overflow:auto;border:1px solid var(--line);border-radius:8px;padding:7px">
       ${names.map(n=>`<label style="display:flex;align-items:center;gap:6px;font-size:13.5px;font-weight:600;padding:2px"><input type="checkbox" ${sel.has(n)?'checked':''} onchange="mtAudToggle('${esc(n)}')" style="width:16px;height:16px">${esc(n)}</label>`).join('')}
     </div>`
@@ -601,7 +602,7 @@ function meetGroupMng(){
 }
 function mgRender(){
   const box=document.getElementById('mgList'); if(!box) return
-  const d=window._meetD||{}, names=d.allNames||d.regNames||[]
+  const d=window._meetD||{}, names=d.boundNames||d.allNames||d.regNames||[] // 只列已綁定 DD 的人
   const esc=s=>String(s==null?'':s).replace(/</g,'&lt;').replace(/'/g,"\\'")
   box.innerHTML = (window._mtGroups||[]).map((g,gi)=>`<div style="border:1px solid var(--line);border-radius:10px;padding:10px;margin-bottom:8px">
     <div style="display:flex;gap:6px;align-items:center;margin-bottom:6px"><input value="${esc(g.name)}" placeholder="群組名稱（例：主管群）" oninput="window._mtGroups[${gi}].name=this.value" style="flex:1;border:1px solid var(--line);border-radius:7px;padding:6px 8px;background:var(--bg);color:var(--ink);font-size:14px;font-weight:700"><button class="mini" style="padding:5px 10px;color:var(--red)" onclick="window._mtGroups.splice(${gi},1);mgRender()">刪除</button></div>
