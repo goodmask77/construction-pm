@@ -532,6 +532,7 @@ function meetForm(id){
   ov.onclick = () => ov.remove()
   window._mtMedia = it ? [...(it.media||[])] : []
   document.body.appendChild(ov)
+  if (!it) try { mtAudRender() } catch(_){} // v4.55.2 一打開就畫預設「發群」下拉
 }
 // ── v4.55.0 會議收件對象（指定人/自訂群組/個別私訊）──
 function mtAudMode(m){
