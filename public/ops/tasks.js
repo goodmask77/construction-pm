@@ -1393,8 +1393,18 @@ function tnFocusTry() {
     tnToastMini('找不到這張任務卡（可能已刪除）');
     return;
   }
-  window.tnFocusId = null; // 先清再開（tnOpen 會重畫→再進 tnFocusTry，清了就一行返回不重入）
-  tnOpen(fid);             // 直接開詳情彈窗（頂部就是大顆「確認收到」）
+  window.tnFocusId = null;
+  tnFocusFlash(fid); // v4.52.3 張良「不要打開卡片，定位+閃光讓本人自己點進去（打開後關掉會找不到卡片在哪）」：捲到卡片閃金光，不自動開詳情
+}
+function tnFocusFlash(fid, tries) { // 捲到該任務卡+金光閃（glowgold 全域 CSS）；卡片被篩掉/收合時重試幾次找不到就算了
+  const el = typeof document !== 'undefined' && document.querySelector('[data-tid="' + fid + '"]');
+  if (el) {
+    try { el.scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch (_) {}
+    el.classList.remove('glowgold'); void el.offsetWidth; el.classList.add('glowgold'); // 重觸發動畫
+    setTimeout(() => { try { el.classList.remove('glowgold'); } catch (_) {} }, 4200);
+    return;
+  }
+  if ((tries || 0) < 30) setTimeout(() => tnFocusFlash(fid, (tries || 0) + 1), 300);
 }
 
 /* ── 初始化＋入口 ── */

@@ -526,17 +526,14 @@ function ntfRender(){
   if (!fl.length) { document.getElementById('ntfList').innerHTML = `<div class="hint" style="padding:18px 0;text-align:center">${_ntfCat==='pin'?'還沒有釘選的通知——在通知右邊按 📌 釘起來，稍後回頭處理':_ntfCat==='mine'?'目前沒有指定給你的通知':'還沒有通知'}</div>`; return }
   const day = ts => { const d2 = ts.slice(0,10), t0 = new Date().toISOString().slice(0,10); return d2===t0 ? '今天' : d2 }
   const pinSvg = on => `<svg width="17" height="17" viewBox="0 0 24 24" fill="${on?'#F2C94C':'none'}" stroke="${on?'#F2C94C':'currentColor'}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 17v5"/><path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1Z"/></svg>`
-  let lastD = '', html = ''
-  fl.forEach(x => {
-    const d2 = day(x.ts)
-    if (d2 !== lastD) { html += `<div class="hint" style="font-weight:800;margin:12px 0 4px">${d2}</div>`; lastD = d2 }
+  const itemHtml = x => {
     const hh = new Date(x.ts).toLocaleTimeString('zh-TW',{hour:'2-digit',minute:'2-digit',hour12:false})
     const unread = x.ts > rd0, mine = !!x.mine, pin = isPin(x)
     // v4.52.1 已讀辨識：未讀=亮底+粗體+藍左條+右邊藍點；已讀=變暗；＠我的=金左條+「＠你」標
     // v4.52.2 釘選=就算已讀也不變暗、金左條＝收件匣提醒還沒處理；右邊 📌 鈕切換
     const accent = unread ? '#4DA3FF' : (pin || mine) ? '#F2C94C' : 'transparent'
     const lit = unread || pin // 亮著不沉底
-    html += `<div onclick="ntfGo('${(x.url||'/prep').replace(/'/g,'')}','${(x.cat||'').replace(/'/g,'')}')" style="display:flex;gap:9px;padding:10px 11px;border:1px solid ${unread?'#3E5B86':pin?'#5A4F2E':'#262E3A'};border-left:3px solid ${accent};background:${unread?'#20304A':pin?'#262216':'#181E27'};border-radius:11px;margin-bottom:7px;cursor:pointer;opacity:${lit?'1':'.62'}">
+    return `<div onclick="ntfGo('${(x.url||'/prep').replace(/'/g,'')}','${(x.cat||'').replace(/'/g,'')}')" style="display:flex;gap:9px;padding:10px 11px;border:1px solid ${unread?'#3E5B86':pin?'#5A4F2E':'#262E3A'};border-left:3px solid ${accent};background:${unread?'#20304A':pin?'#262216':'#181E27'};border-radius:11px;margin-bottom:7px;cursor:pointer;opacity:${lit?'1':'.62'}">
       <span style="flex:0 0 auto;font-size:16px">${(NTF_CATS[x.cat]||'🔔').slice(0,2)}</span>
       <div style="min-width:0;flex:1"><div style="font-weight:${lit?800:600};font-size:14.5px">${x.title||''}${mine?' <span style="color:#F2C94C;font-weight:800;font-size:11px;border:1px solid #F2C94C;border-radius:5px;padding:0 4px">＠你</span>':''} <span class="hint" style="font-weight:400">${hh}</span></div>
       <div class="hint" style="font-size:13px;overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical${lit?'':';color:#6B7686'}">${x.body||''}</div></div>
@@ -544,6 +541,21 @@ function ntfRender(){
         ${unread?'<span title="未讀" style="width:9px;height:9px;border-radius:50%;background:#4DA3FF"></span>':''}
         <button onclick="event.stopPropagation();ntfPin('${x.id}',${pin?0:1})" title="${pin?'取消釘選':'釘選，稍後回頭處理'}" style="background:none;border:none;cursor:pointer;color:#6A7382;padding:0;line-height:0">${pinSvg(pin)}</button>
       </div></div>`
+  }
+  let html = ''
+  // 📌 釘選置頂（v4.52.3 張良「釘選置頂不然會被洗掉」）：非「釘選」分頁時，把釘選的通知集中最上面；其餘照日期排
+  const pinned = fl.filter(isPin)
+  if (_ntfCat !== 'pin' && pinned.length) {
+    html += `<div class="hint" style="font-weight:800;margin:10px 0 5px;color:#F2C94C">📌 釘選（${pinned.length}）</div>`
+    pinned.forEach(x => { html += itemHtml(x) })
+    html += `<div style="border-bottom:1px dashed #333B48;margin:2px 0 8px"></div>`
+  }
+  const main = _ntfCat === 'pin' ? fl : fl.filter(x => !isPin(x))
+  let lastD = ''
+  main.forEach(x => {
+    const d2 = day(x.ts)
+    if (d2 !== lastD) { html += `<div class="hint" style="font-weight:800;margin:12px 0 4px">${d2}</div>`; lastD = d2 }
+    html += itemHtml(x)
   })
   document.getElementById('ntfList').innerHTML = html
 }
