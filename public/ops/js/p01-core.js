@@ -316,7 +316,7 @@ function renderBoard(d, store, view){
       // v4.52.2 還原紅綠色階（張良「跟以前不一樣版本」＝主 App Finance 的版本）：每格跟「該時段日均」比，高於+3%紅、低於-3%綠，差越多越深（封頂72%）；±3%內幾乎不上色
       const rowAvg = {}; hrs.forEach(hr => { const vs = hdDates.map(dt=>d.hourDays[dt][hr]||0).filter(v=>v>0); rowAvg[hr] = vs.length ? vs.reduce((s,v)=>s+v,0)/vs.length : 0 })
       const heatC = (v,hr) => { const avg=rowAvg[hr]; if(!v||!avg) return ''; const dev=v/avg, hot=dev>1.03, cold=dev<0.97; const a= hot?Math.min(0.72,0.1+0.62*Math.min(1,dev-1)) : cold?Math.min(0.72,0.1+0.62*Math.min(1,1-dev)) : 0; return `background:${hot?`rgba(179,38,30,${a.toFixed(2)})`:cold?`rgba(63,125,78,${a.toFixed(2)})`:'rgba(255,255,255,.03)'}${a>0.42?';color:#fff':''}` }
-      const devTip = (v,hr) => { const avg=rowAvg[hr]; if(!v||!avg) return ''; const p=Math.round((v/avg-1)*100); return `・日均 ${fK(Math.round(avg))}（${p>0?'+':''}${p}%）` }
+      const devTip = (v,hr) => { const avg=rowAvg[hr]; if(!v||!avg) return ''; const p=Math.round((v/avg-1)*100); return `・日均 ${Math.round(avg).toLocaleString()}（${p>0?'+':''}${p}%）` }
       const wd7 = ['日','一','二','三','四','五','六']
       const wdOf = dt => wd7[new Date(dt+'T00:00:00Z').getUTCDay()]
       const fK = n => n>=10000 ? (Math.round(n/100)/100)+'萬' : n>=1000 ? Math.round(n/1000)+'k' : (n||'')
@@ -326,7 +326,7 @@ function renderBoard(d, store, view){
       hh += `</tr></thead><tbody>`
       hrs.forEach(hr=>{
         hh += `<tr><td style="position:sticky;left:0;z-index:1;background:var(--soft);font-weight:700;white-space:nowrap">${hr}時</td>`
-        hh += cols.map(dt=>{ const v=d.hourDays[dt][hr]||0; return `<td title="${dt.slice(5)} ${hr}時：${v?fK(v):'—'}${devTip(v,hr)}" style="text-align:right;padding:3px 6px;font-variant-numeric:tabular-nums;${heatC(v,hr)}">${v?fK(v):''}</td>` }).join('')
+        hh += cols.map(dt=>{ const v=d.hourDays[dt][hr]||0; return `<td title="${dt.slice(5)} ${hr}時：${v?v.toLocaleString():'—'}${devTip(v,hr)}" style="text-align:right;padding:3px 6px;font-variant-numeric:tabular-nums;${heatC(v,hr)}">${v?v.toLocaleString():''}</td>` }).join('')
         hh += `</tr>`
       })
       hh += `</tbody></table></div></section>`
