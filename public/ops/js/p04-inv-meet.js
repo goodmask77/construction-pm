@@ -234,25 +234,80 @@ async function buyOp(id, op){
   const d = await r.json().catch(()=>null)
   if (d && d.ok) buyLoad(); else alert((d&&d.error)||'失敗')
 }
-// ── ⏰ 打卡（張良 2026-09-22：/prep 一鍵打卡，寫進既有出勤系統法定逐筆檔；自動判上下班、5分內可修方向）──
-let _lastPunch = null
+// ── ⏰ 打卡 v4.57（張良「要有取消＋能正確選上班/下班/補卡(審核)」）：打卡視窗先建議方向、可明確選上/下班、補卡走主管審核 ──
+function punchOvClose(){ const o=document.getElementById('punchOv'); if(o) o.remove() }
+function punchOv(html){ let o=document.getElementById('punchOv'); if(!o){ o=document.createElement('div'); o.id='punchOv'; o.style.cssText='position:fixed;inset:0;background:rgba(10,14,22,.55);z-index:90;display:flex;align-items:center;justify-content:center;padding:16px'; o.onclick=()=>o.remove(); document.body.appendChild(o) } o.innerHTML='<div style="background:#1C2430;border:1px solid #39434F;border-radius:16px;max-width:380px;width:100%;max-height:84vh;overflow:auto;padding:18px" onclick="event.stopPropagation()">'+html+'</div>' }
 async function punchNow(){
   if (!TK()) { alert('要先登入才能打卡：按右上「登入」→ 私訊 DD「登入碼」→ 填入 4 個數字'); return }
-  if (_lastPunch && Date.now() - _lastPunch.at < 5*60000) {
-    if (confirm(`剛剛 ${_lastPunch.hm} 打了「${_lastPunch.dir==='in'?'上班':'下班'}」卡。\n\n確定＝修正方向（打錯了）\n取消＝不動作`)) {
-      const r = await fetch('/api/mail-sync?punchfix=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ token: TK() }) })
-      const d = await r.json().catch(()=>null)
-      if (d && d.ok) { _lastPunch.dir = d.dir; alert(`已改成「${d.dir==='in'?'上班':'下班'}」`) } else alert((d&&d.error)||'修正失敗，找管理員處理')
-    }
-    return
-  }
-  if (!confirm('現在打卡？（自動判斷上班/下班）')) return
-  const r = await fetch('/api/mail-sync?punchme=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ token: TK() }) })
-  const d = await r.json().catch(()=>null)
-  if (!d || !d.ok) { alert((d&&d.error)||'打卡失敗'); return }
-  const hm = new Date(d.ts).toLocaleTimeString('en-GB',{hour12:false,timeZone:'Asia/Taipei'}).slice(0,5)
-  _lastPunch = { at: Date.now(), dir: d.dir, hm }
-  alert(`${d.name}「${d.dir==='in'?'上班':'下班'}」打卡 ${hm}${d.dir==='out'?`・今天累計 ${d.todayHours} 小時`:''}\n（打錯方向？5 分鐘內再按一次右上角打卡鈕可以修正）`)
+  punchOv('<div class="hint" style="padding:12px 0;text-align:center">讀取中…</div>')
+  let s=null; try { const r=await fetch('/api/mail-sync?punchstat='+encodeURIComponent(K),{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({token:TK()})}); s=await r.json() } catch(_){}
+  if (!s || !s.ok) { punchOvClose(); alert((s&&s.error)||'讀不到打卡狀態'); return }
+  window._punchS=s
+  const now=new Date().toLocaleTimeString('en-GB',{hour12:false,timeZone:'Asia/Taipei'}).slice(0,5)
+  const btn=(dir,label,primary)=>`<button onclick="punchDo('${dir}')" style="flex:1;padding:15px 8px;border-radius:12px;border:1.5px solid ${primary?'var(--primary)':'var(--line)'};background:${primary?'var(--primary)':'transparent'};color:${primary?'#fff':'var(--ink)'};font-size:16px;font-weight:800;cursor:pointer">${label}${primary?' <span style="font-size:11px;font-weight:700;opacity:.9">建議</span>':''}</button>`
+  let h=`<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px"><b style="font-size:17px">打卡</b><span style="font-size:21px;font-weight:900;color:var(--pdark);font-variant-numeric:tabular-nums">${now}</span></div>`
+  h+=`<div class="hint" style="margin-bottom:13px">👤 ${s.name}${s.lastHm?`・上次 ${s.lastHm} 打了「${s.lastDir==='in'?'上班':'下班'}」`:'・今天還沒打卡'}</div>`
+  h+=`<div style="display:flex;gap:10px;margin-bottom:10px">${s.suggest==='in'?btn('in','上班',true)+btn('out','下班',false):btn('in','上班',false)+btn('out','下班',true)}</div>`
+  h+=`<button onclick="punchMakeupForm()" style="width:100%;padding:11px;border-radius:12px;border:1px solid var(--line);background:transparent;color:var(--ink);font-size:14px;font-weight:700;cursor:pointer;margin-bottom:8px">🕐 補卡申請（需主管審核）</button>`
+  if (s.isApprover) h+=`<button onclick="punchReviewOpen()" style="width:100%;padding:11px;border-radius:12px;border:1px solid ${s.pendN?'var(--primary)':'var(--line)'};background:transparent;color:${s.pendN?'var(--primary)':'var(--muted)'};font-size:14px;font-weight:700;cursor:pointer;margin-bottom:8px">📋 補卡審核${s.pendN?`（${s.pendN}）`:''}</button>`
+  h+=`<button onclick="punchOvClose()" style="width:100%;padding:10px;border:none;background:transparent;color:var(--muted);font-size:14px;cursor:pointer">取消</button>`
+  punchOv(h)
+}
+async function punchDo(dir){
+  punchOv('<div class="hint" style="padding:12px 0;text-align:center">打卡中…</div>')
+  const r=await fetch('/api/mail-sync?punchme='+encodeURIComponent(K),{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({token:TK(),dir})})
+  const d=await r.json().catch(()=>null)
+  if (!d || !d.ok) { punchOvClose(); alert((d&&d.error)||'打卡失敗'); return }
+  const hm=new Date(d.ts).toLocaleTimeString('en-GB',{hour12:false,timeZone:'Asia/Taipei'}).slice(0,5)
+  punchOv(`<div style="text-align:center;padding:6px 0"><div style="font-size:34px;margin-bottom:6px">✅</div><div style="font-size:17px;font-weight:800;margin-bottom:4px">${d.name}「${d.dir==='in'?'上班':'下班'}」${hm}</div>${d.dir==='out'?`<div class="hint">今天累計 ${d.todayHours} 小時</div>`:''}<button onclick="punchOvClose()" style="margin-top:14px;padding:10px 28px;border-radius:12px;border:none;background:var(--primary);color:#fff;font-weight:800;cursor:pointer">好</button></div>`)
+}
+function _mkSet(dir){ window._mkDir=dir; const a=document.getElementById('mkb_in'),b=document.getElementById('mkb_out'); if(!a||!b)return
+  const on='flex:1;padding:11px;border-radius:10px;border:1.5px solid var(--primary);background:var(--primary);color:#fff;font-weight:800;cursor:pointer'
+  const off='flex:1;padding:11px;border-radius:10px;border:1.5px solid var(--line);background:transparent;color:var(--ink);font-weight:800;cursor:pointer'
+  a.style.cssText=dir==='in'?on:off; b.style.cssText=dir==='out'?on:off }
+function punchMakeupForm(){
+  window._mkDir='in'
+  const pad=n=>String(n).padStart(2,'0'), t=new Date(Date.now()-3600e3)
+  const def=`${t.getFullYear()}-${pad(t.getMonth()+1)}-${pad(t.getDate())}T${pad(t.getHours())}:${pad(t.getMinutes())}`
+  let h=`<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><b style="font-size:16px">🕐 補卡申請</b><button onclick="punchNow()" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:13px">‹ 返回</button></div>`
+  h+=`<div class="hint" style="margin-bottom:12px">忘記打卡或打錯時用；送出後由主管審核，核准才會寫進出勤。</div>`
+  h+=`<div class="hint" style="margin-bottom:5px">方向</div><div style="display:flex;gap:8px;margin-bottom:12px"><button id="mkb_in" onclick="_mkSet('in')" style="flex:1;padding:11px;border-radius:10px;border:1.5px solid var(--primary);background:var(--primary);color:#fff;font-weight:800;cursor:pointer">上班</button><button id="mkb_out" onclick="_mkSet('out')" style="flex:1;padding:11px;border-radius:10px;border:1.5px solid var(--line);background:transparent;color:var(--ink);font-weight:800;cursor:pointer">下班</button></div>`
+  h+=`<div class="hint" style="margin-bottom:5px">時間</div><input type="datetime-local" id="mkTs" value="${def}" style="width:100%;padding:11px;border:1px solid var(--line);border-radius:10px;background:var(--bg);color:var(--ink);margin-bottom:12px;font-size:15px">`
+  h+=`<div class="hint" style="margin-bottom:5px">原因（選填）</div><input id="mkReason" placeholder="例：忘記打下班卡" style="width:100%;padding:11px;border:1px solid var(--line);border-radius:10px;background:var(--bg);color:var(--ink);margin-bottom:14px;font-size:15px">`
+  h+=`<div style="display:flex;gap:10px"><button onclick="punchOvClose()" style="flex:1;padding:12px;border-radius:12px;border:1px solid var(--line);background:transparent;color:var(--muted);font-weight:700;cursor:pointer">取消</button><button onclick="punchMakeupSubmit()" style="flex:2;padding:12px;border-radius:12px;border:none;background:var(--primary);color:#fff;font-weight:800;cursor:pointer">送出申請</button></div>`
+  punchOv(h)
+}
+async function punchMakeupSubmit(){
+  const tv=document.getElementById('mkTs').value; if(!tv){ alert('請選時間'); return }
+  const reason=document.getElementById('mkReason').value||''
+  let iso; try { iso=new Date(tv).toISOString() } catch(_){ alert('時間格式不對'); return }
+  punchOv('<div class="hint" style="padding:12px 0;text-align:center">送出中…</div>')
+  const r=await fetch('/api/mail-sync?punchmakeup='+encodeURIComponent(K),{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({token:TK(),dir:window._mkDir||'in',ts:iso,reason})})
+  const d=await r.json().catch(()=>null)
+  if (!d || !d.ok) { punchOvClose(); alert((d&&d.error)||'送出失敗'); return }
+  punchOv(`<div style="text-align:center;padding:6px 0"><div style="font-size:34px;margin-bottom:6px">📨</div><div style="font-size:16px;font-weight:800;margin-bottom:4px">已送出補卡申請</div><div class="hint">等主管審核，核准後會通知你</div><button onclick="punchOvClose()" style="margin-top:14px;padding:10px 28px;border-radius:12px;border:none;background:var(--primary);color:#fff;font-weight:800;cursor:pointer">好</button></div>`)
+}
+async function punchReviewOpen(){
+  punchOv('<div class="hint" style="padding:12px 0;text-align:center">讀取中…</div>')
+  const r=await fetch('/api/mail-sync?punchmakeups='+encodeURIComponent(K),{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({token:TK()})})
+  const d=await r.json().catch(()=>null)
+  if (!d || !d.ok) { punchOvClose(); alert((d&&d.error)||'讀不到'); return }
+  const fmtT=iso=>new Date(iso).toLocaleString('zh-TW',{timeZone:'Asia/Taipei',month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit',hour12:false})
+  let h=`<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px"><b style="font-size:16px">📋 補卡審核</b><button onclick="punchNow()" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:13px">‹ 返回</button></div>`
+  const pend=d.pending||[]
+  if (!pend.length) h+=`<div class="hint" style="padding:16px 0;text-align:center">目前沒有待審核的補卡</div>`
+  else h+=pend.map(it=>`<div style="border:1px solid var(--line);border-radius:12px;padding:10px;margin-bottom:8px">
+    <div style="font-weight:800">${it.name}　<span style="color:var(--pdark)">補${it.dir==='in'?'上班':'下班'}</span>　<span style="font-variant-numeric:tabular-nums">${fmtT(it.ts)}</span></div>
+    ${it.reason?`<div class="hint" style="margin:3px 0">${String(it.reason).replace(/</g,'&lt;')}</div>`:''}
+    <div style="display:flex;gap:8px;margin-top:8px"><button onclick="punchReviewAct('${it.id}','approve')" style="flex:1;padding:9px;border-radius:9px;border:1px solid var(--green);background:transparent;color:var(--green);font-weight:800;cursor:pointer">核准</button><button onclick="punchReviewAct('${it.id}','reject')" style="flex:1;padding:9px;border-radius:9px;border:1px solid var(--red);background:transparent;color:var(--red);font-weight:800;cursor:pointer">退回</button></div></div>`).join('')
+  h+=`<button onclick="punchOvClose()" style="width:100%;padding:10px;border:none;background:transparent;color:var(--muted);font-size:14px;cursor:pointer;margin-top:4px">關閉</button>`
+  punchOv(h)
+}
+async function punchReviewAct(id,action){
+  const r=await fetch('/api/mail-sync?punchmakeupset='+encodeURIComponent(K),{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({token:TK(),id,action})})
+  const d=await r.json().catch(()=>null)
+  if (!d || !d.ok) { alert((d&&d.error)||'處理失敗'); return }
+  punchReviewOpen()
 }
 // ── 📋 會議（張良 2026-09-22：班前會議/營運會議紀錄——類型可自訂、紀錄可新增刪改，全留姓名時間）──
 function todayTpe(){ return new Date(Date.now()+8*3600e3).toISOString().slice(0,10) }

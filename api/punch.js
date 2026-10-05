@@ -70,6 +70,16 @@ export async function recordPunch(person, src, verified, forceDir) {
   return { key, dir, ts, todayHours: Math.round(ms / 360000) / 10, count: list.length }
 }
 
+// 補卡：在指定（過去）時間寫一筆打卡；日 key 取該時間的台北日，讓它落在正確那天/月檔
+export async function recordPunchAt(person, tsISO, dir, src, verified) {
+  const dISO = new Date(tsISO).toISOString()
+  const dk = tpeDate(new Date(tsISO)).replace(/-/g, '')
+  const key = `sp_crew_pch_${dk}_${person.id}_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`
+  const rec = { personId: person.id, name: person.name, ts: dISO, dir, src: src || 'makeup', verified: !!verified }
+  await kvSet(key, rec)
+  return { key, dir, ts: dISO }
+}
+
 // P2 出勤×班表比對（今日）：App 與 D哥 共用（attendance.js 同一套算法）。本週沒發布班表回 null。
 export async function attendanceCompareToday() {
   const todayISO = tpeDate()
