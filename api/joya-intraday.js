@@ -41,13 +41,14 @@ export default async function handler(req, res) {
         slog.items = slog.items || {}; slog.notified = slog.notified || {}
         const over = items.filter(it => it.due && it.due <= hm && !(slog.items[it.id] && slog.items[it.id].done) && !slog.notified[it.id])
         if (over.length) {
-          const txt = '⏰ GD SOP 超時未完成：\n' + over.map(it => `・${it.st}｜${it.title}（${it.due} 前${it.photo ? '・要拍照' : ''}）`).join('\n') + '\n\n完成後點連結按「完成」打卡 🙏\n' + prepLink('')
-          const ncfg = (await kvGet('sp_finance_pm_notify')) || {} // 通知開關（張良 2026-09-21：預設關，/prep 🔔 開）
-          if (ncfg.sopLate === 1) { // v4.33.0 LINE＋GD推播走同一個開關、同一個「每項每日一次」標記（推播不吃LINE額度）
+          const listSL = over.map(it => `・${it.st}｜${it.title}（${it.due} 前${it.photo ? '・要拍照' : ''}）`).join('\n')
+          const { ddGet, ddFill, ddGroupGid } = await import('./_ddmsg.js') // v4.54.0 走 DD 自動訊息設定(sopLate)：開關(相容舊 pm_notify.sopLate)/群/文字
+          const cfgSL = await ddGet('sopLate')
+          if (cfgSL.on) { // v4.33.0 LINE＋GD推播走同一個開關、同一個「每項每日一次」標記（推播不吃LINE額度）
             const tk = (process.env.LINE_CHANNEL_ACCESS_TOKEN || '').trim()
             let sent9 = false
             if (tk) {
-              const pr = await fetch('https://api.line.me/v2/bot/message/push', { method: 'POST', headers: { 'content-type': 'application/json', Authorization: 'Bearer ' + tk }, body: JSON.stringify({ to: 'Cf7940efc6517b0c084ad2ad496b45f30', messages: [{ type: 'text', text: txt }] }) })
+              const pr = await fetch('https://api.line.me/v2/bot/message/push', { method: 'POST', headers: { 'content-type': 'application/json', Authorization: 'Bearer ' + tk }, body: JSON.stringify({ to: await ddGroupGid(cfgSL.group), messages: [{ type: 'text', text: ddFill(cfgSL.text, { list: listSL, link: prepLink('') }) }] }) })
               if (pr.ok) sent9 = true
             }
             try { if (await wpPush(null, { title: '⏰ SOP 超時未完成', body: over.map(it => `${it.st}｜${it.title}`).join('、'), url: '/prep' })) sent9 = true } catch (_) {}
@@ -94,8 +95,12 @@ export default async function handler(req, res) {
         }
         const dead = missing.filter(nm => (it.remind[nm] || {}).n >= 3)
         if (dead.length && !it.remind.__grp && ageH >= 96) {
-          const pg = await fetch('https://api.line.me/v2/bot/message/push', { method: 'POST', headers: { 'content-type': 'application/json', Authorization: 'Bearer ' + tkM }, body: JSON.stringify({ to: 'Cf7940efc6517b0c084ad2ad496b45f30', messages: [{ type: 'text', text: `📣 會議宣達【${it.type}・${it.date}】提醒 3 次還沒簽收：${dead.join('、')}\n麻煩今天點連結簽收 🙏\n${prepLink('meet=' + it.id)}` }] }) })
-          if (pg.ok) { it.remind.__grp = 1; dirtyM = true }
+          const { ddGet, ddFill, ddGroupGid } = await import('./_ddmsg.js') // v4.54.0 走 DD 自動訊息設定(meet_nudge)：開關/群/文字
+          const cfgMN = await ddGet('meet_nudge')
+          if (cfgMN.on) {
+            const pg = await fetch('https://api.line.me/v2/bot/message/push', { method: 'POST', headers: { 'content-type': 'application/json', Authorization: 'Bearer ' + tkM }, body: JSON.stringify({ to: await ddGroupGid(cfgMN.group), messages: [{ type: 'text', text: ddFill(cfgMN.text, { type: it.type, date: it.date, names: dead.join('、'), link: prepLink('meet=' + it.id) }) }] }) })
+            if (pg.ok) { it.remind.__grp = 1; dirtyM = true }
+          }
         }
       }
       if (dirtyM) await kvPut('sp_finance_pm_meet', meetDoc, '宣達追提醒')
@@ -123,14 +128,15 @@ export default async function handler(req, res) {
         removed.forEach(n => soDoc.log.unshift({ d: todaySo, t: hm, n, op: '恢復' }))
         soDoc.log = soDoc.log.slice(0, 300)
         await kvPut('sp_finance_pm_absoldout', soDoc, 'AB停售變化')
-        const seenG = (await kvGet('pm_group_seen')) || {}
-        const gidSo = (Object.entries(seenG).find(([, v]) => /happy\s*337/i.test((v && v.name) || '')) || [])[0]
         const lines2 = []
         added.forEach(n => lines2.push(`🚫 ${n} 停售了（約 ${hm}）`))
         removed.forEach(n => lines2.push(`✅ ${n} 恢復販售（約 ${hm}）`))
-        const txtSo = `🔔 A Beach 停售異動\n${lines2.join('\n')}\n目前停售中：${Object.keys(soDoc.current).length ? Object.keys(soDoc.current).join('、') : '無'}`
+        const listSo = `${lines2.join('\n')}\n目前停售中：${Object.keys(soDoc.current).length ? Object.keys(soDoc.current).join('、') : '無'}`
+        const { ddGet, ddFill, ddGroupGid } = await import('./_ddmsg.js') // v4.54.0 DD自動訊息設定(soldoutAB)：群/文字（開關沿用上面 sp_finance_pm_notify 閘）
+        const cfgSo = await ddGet('soldoutAB')
+        const gidSo = await ddGroupGid(cfgSo.group)
         const tkSo = (process.env.LINE_CHANNEL_ACCESS_TOKEN || '').trim()
-        if (tkSo && gidSo) await fetch('https://api.line.me/v2/bot/message/push', { method: 'POST', headers: { 'content-type': 'application/json', Authorization: 'Bearer ' + tkSo }, body: JSON.stringify({ to: gidSo, messages: [{ type: 'text', text: txtSo }] }) })
+        if (tkSo && gidSo) await fetch('https://api.line.me/v2/bot/message/push', { method: 'POST', headers: { 'content-type': 'application/json', Authorization: 'Bearer ' + tkSo }, body: JSON.stringify({ to: gidSo, messages: [{ type: 'text', text: ddFill(cfgSo.text, { list: listSo }) }] }) })
       } else if (!soDoc.day || soDoc.day !== todaySo) { // 每天首輪落個檔（沒變化也記狀態基準）
         soDoc.day = todaySo
         await kvPut('sp_finance_pm_absoldout', soDoc, 'AB停售基準')
@@ -179,9 +185,11 @@ export default async function handler(req, res) {
           }
         }
         if (alerts.length) {
-          const seen = (await kvGet('pm_group_seen')) || {}
-          const gidS = (Object.entries(seen).find(([, v]) => /happy\s*337/i.test((v && v.name) || '')) || [])[0]
-          const txtS = `🕵️ 品項停售提醒（超過 5 個營業日沒賣出）\n${alerts.slice(0, 15).join('\n')}${alerts.length > 15 ? `\n…共 ${alerts.length} 項` : ''}\n\n請確認：斷貨？下架？產品有問題？要下架的跟 DD 說品名。`
+          const listS = `${alerts.slice(0, 15).join('\n')}${alerts.length > 15 ? `\n…共 ${alerts.length} 項` : ''}`
+          const { ddGet, ddFill, ddGroupGid } = await import('./_ddmsg.js') // v4.54.0 DD自動訊息設定(staleItem)：群/文字（開關沿用上面 staleItem 閘）
+          const cfgST = await ddGet('staleItem')
+          const gidS = await ddGroupGid(cfgST.group)
+          const txtS = ddFill(cfgST.text, { list: listS })
           const tkS = (process.env.LINE_CHANNEL_ACCESS_TOKEN || '').trim()
           if (tkS && gidS) await fetch('https://api.line.me/v2/bot/message/push', { method: 'POST', headers: { 'content-type': 'application/json', Authorization: 'Bearer ' + tkS }, body: JSON.stringify({ to: gidS, messages: [{ type: 'text', text: txtS }] }) })
           else if (tkS) { // 找不到 happy337 群→退回私訊審核人（至少不漏）
@@ -216,13 +224,14 @@ export default async function handler(req, res) {
         const [f2, p2] = await Promise.all([invStatus('food'), invStatus('pack')])
         const lows = [...f2.items.filter(x => x.low).map(x => ({ ...x, _k: '食材' })), ...p2.items.filter(x => x.low).map(x => ({ ...x, _k: '包材' }))]
         if (lows.length) {
-          const txt2 = '📉 庫存低水位提醒：\n' + lows.map(x => `・[${x._k}] ${x.name}：估剩 ${x.est}${x.unit || ''}（低標 ${x.min}）`).join('\n') + '\n\n請盡快叫貨/補盤點：' + prepLink('')
-          const ncfg2 = (await kvGet('sp_finance_pm_notify')) || {}
-          if (ncfg2.lowStock === 1) { // v4.33.0 LINE＋GD推播同開關、同一天一次標記
+          const listLS = lows.map(x => `・[${x._k}] ${x.name}：估剩 ${x.est}${x.unit || ''}（低標 ${x.min}）`).join('\n')
+          const { ddGet, ddFill, ddGroupGid } = await import('./_ddmsg.js') // v4.54.0 走 DD 自動訊息設定(lowStock)：開關(相容舊 pm_notify.lowStock)/群/文字
+          const cfgLS = await ddGet('lowStock')
+          if (cfgLS.on) { // v4.33.0 LINE＋GD推播同開關、同一天一次標記
             const tk2 = (process.env.LINE_CHANNEL_ACCESS_TOKEN || '').trim()
             let sent2 = false
             if (tk2) {
-              const pr2 = await fetch('https://api.line.me/v2/bot/message/push', { method: 'POST', headers: { 'content-type': 'application/json', Authorization: 'Bearer ' + tk2 }, body: JSON.stringify({ to: 'Cf7940efc6517b0c084ad2ad496b45f30', messages: [{ type: 'text', text: txt2 }] }) })
+              const pr2 = await fetch('https://api.line.me/v2/bot/message/push', { method: 'POST', headers: { 'content-type': 'application/json', Authorization: 'Bearer ' + tk2 }, body: JSON.stringify({ to: await ddGroupGid(cfgLS.group), messages: [{ type: 'text', text: ddFill(cfgLS.text, { list: listLS }) }] }) })
               if (pr2.ok) sent2 = true
             }
             try { if (await wpPush(null, { title: '📉 庫存低水位', body: lows.map(x => x.name).join('、'), url: '/prep' })) sent2 = true } catch (_) {}

@@ -1491,6 +1491,34 @@ export default async function handler(req, res) {
     const aprN = (((defN || {}).ground || {}).approvers || ['張良瑋'])
     return res.status(200).json({ ok: true, cfg: cfgN || {}, canEdit: !!(meN2 && aprN.includes(meN2.name)) })
   }
+  // 📢 DD 自動訊息設定（v4.53.0 張良「設定頁管理 DD 所有自動發送：發哪個群/話怎麼講/開關」）：GET ?ddmsg=<OPS_BOARD_KEY>&me=token
+  if (req.query?.ddmsg) {
+    const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
+    if (!ok2 || String(req.query.ddmsg) !== ok2) return res.status(403).json({ ok: false })
+    const [meD9, defD9, allD9] = await Promise.all([sopWho(req.query.me), kvGet('sp_finance_pm_sop_def'), (async () => { const { ddAll } = await import('./_ddmsg.js'); return ddAll() })()])
+    const aprD9 = (((defD9 || {}).ground || {}).approvers || ['張良瑋'])
+    return res.status(200).json({ ok: true, msgs: allD9.msgs, groups: allD9.groups, canEdit: !!(meD9 && aprD9.includes(meD9.name)) })
+  }
+  // 📢 DD 自動訊息設定存檔（審核人限定）：POST ?ddmsgset=<OPS_BOARD_KEY> body={key, on, group, text, token}
+  if (req.method === 'POST' && req.query?.ddmsgset) {
+    const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
+    if (!ok2 || String(req.query.ddmsgset) !== ok2) return res.status(403).json({ ok: false })
+    let db9 = {}; try { db9 = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
+    const whoD9 = await sopWho(db9.token)
+    const defD9 = await kvGet('sp_finance_pm_sop_def')
+    const aprD9 = (((defD9 || {}).ground || {}).approvers || ['張良瑋'])
+    if (!whoD9 || !aprD9.includes(whoD9.name)) return res.status(403).json({ ok: false, error: '只有審核人能改 DD 自動訊息設定' })
+    const { DD_MSG_DEF, DDMSG_CFG_KEY } = await import('./_ddmsg.js')
+    const kD9 = String(db9.key || '')
+    if (!DD_MSG_DEF[kD9]) return res.status(400).json({ ok: false, error: '未知訊息' })
+    const docD9 = (await kvGet(DDMSG_CFG_KEY)) || {}
+    docD9[kD9] = { on: db9.on ? 1 : 0, group: String(db9.group || DD_MSG_DEF[kD9].group).slice(0, 60), text: String(db9.text || '').slice(0, 1500) }
+    await kvPut(DDMSG_CFG_KEY, docD9, 'DD自動訊息設定 ' + kD9 + '(' + whoD9.name + ')')
+    // 相容舊「群組通知開關」面板：有 legacy 對應的，開關也同步寫回 sp_finance_pm_notify（兩邊不打架）
+    const legK9 = DD_MSG_DEF[kD9].legacy
+    if (legK9) { try { const ncD9 = (await kvGet('sp_finance_pm_notify')) || {}; ncD9[legK9] = db9.on ? 1 : 0; await kvPut('sp_finance_pm_notify', ncD9, 'DD訊息開關同步 ' + legK9) } catch (_) {} }
+    return res.status(200).json({ ok: true })
+  }
   // 🔔 通知開關管理口（v4.51.1 CC：張良透過 CC 開/關任一群通知）：GET ?notifyadmin=<MENU_PROBE_KEY>&key=prep0930&val=0
   if (req.query?.notifyadmin) {
     const mk9 = (process.env.MENU_PROBE_KEY || '').trim()
@@ -2137,17 +2165,16 @@ export default async function handler(req, res) {
       if (whoM.name && !ackNames.includes(whoM.name)) ackNames.push(whoM.name) // v4.52.6 發起人也納入要簽名單（張良「不要因為是我發的就沒通知，我也要走一樣簽到流程，大家都一樣」）
       const it = { id: 'mt' + Date.now().toString(36), type: String(mb.type || doc.types[0]).slice(0, 20), date: /^\d{4}-\d{2}-\d{2}$/.test(mb.date) ? mb.date : new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10), text: String(mb.text || '').slice(0, 4000), items: mkItems(mb.text), media: (Array.isArray(mb.media) ? mb.media : []).slice(0, 10).map(u => String(u).slice(0, 300)), links: mkLinks(mb.links), ver: 1, pubTs: Date.now(), ackNames, acks: {}, views: {}, asks: [], remind: {}, by: whoM.name, ts: now8() }
       doc.list = [it, ...(doc.list || [])].slice(0, 500)
-      // v4.48.0 張良「新增會議都同步發大群＋定位連結＋提醒簽到按確認＋顯示則數」：try 包住＝發群失敗也不影響會議已存
+      // v4.53.0 改走 DD 自動訊息設定（meet_new）：開關/群組/文字都讀設定頁，讀不到退回預設；try 包住＝發群失敗也不影響會議已存
       try {
         const tkG = (process.env.LINE_CHANNEL_ACCESS_TOKEN || '').trim()
-        // v4.52.7（張良「會議群發改 GROUN:D Family」）：跟備料同一套鎖定 Family 群＝LINE_PREP_GROUP 優先→群組登記表找名字含 Family 的群→最後才退回舊預設
-        let GRP_FAM = (process.env.LINE_PREP_GROUP || '').trim()
-        if (!GRP_FAM) { const seenG = (await kvGet('pm_group_seen')) || {}; for (const [gid2, gg] of Object.entries(seenG)) if (/family/i.test(gg?.name || '')) { GRP_FAM = gid2; break } }
-        if (!GRP_FAM) GRP_FAM = 'Cf7940efc6517b0c084ad2ad496b45f30' // 退回已知的 GROUN:D Family 群（POS/金額資訊也發這個群）；不再用 LINE_DEFAULT_GROUP 以免發錯群
-        if (tkG && GRP_FAM) {
+        const { ddGet, ddFill, ddGroupGid } = await import('./_ddmsg.js')
+        const cfgG = await ddGet('meet_new')
+        if (tkG && cfgG.on) {
           const { prepLink } = await import('./_webpush.js')
           const lnkG = prepLink('meet=' + it.id)
-          const bodyG = `📢 新會議宣達【${it.type}・${it.date}】\n${String(it.text || '').slice(0, 300)}\n\n👉 點連結直達，看完按「✅ 確認熟知」完成簽到（${it.ackNames.length} 人要簽）\n${lnkG}`
+          const GRP_FAM = await ddGroupGid(cfgG.group)
+          const bodyG = ddFill(cfgG.text, { type: it.type, date: it.date, content: String(it.text || '').slice(0, 300), n: it.ackNames.length, link: lnkG })
           const rG = await fetch('https://api.line.me/v2/bot/message/push', { method: 'POST', headers: { 'content-type': 'application/json', Authorization: 'Bearer ' + tkG }, body: JSON.stringify({ to: GRP_FAM, messages: [{ type: 'text', text: bodyG }] }), signal: AbortSignal.timeout(8000) }) // v4.52.4 8秒逾時＝LINE 慢也不拖垮整個存檔(504)
           if (rG.ok) { const nQ = it.ackNames.length || 1; try { const { logPush } = await import('./push.js'); await logPush(GRP_FAM, nQ, '會議宣達發大群(' + it.by + ')') } catch (_) {}; it.groupSent = { ts: now8(), n: nQ } } // 群發計費＝群人數×1則（line-quota）
           else { it.groupSent = { ts: now8(), fail: true } }
@@ -3936,7 +3963,9 @@ export default async function handler(req, res) {
         itI.pub = 'ok'
         try {
           const tkP = (process.env.LINE_CHANNEL_ACCESS_TOKEN || '').trim()
-          if (tkP) await fetch('https://api.line.me/v2/bot/message/push', { method: 'POST', headers: { 'content-type': 'application/json', Authorization: 'Bearer ' + tkP }, body: JSON.stringify({ to: 'Cf7940efc6517b0c084ad2ad496b45f30', messages: [{ type: 'text', text: `📢 問題發布【${itI.st}】${itI.text || '（見附件）'}\n發現：${itI.by}${(itI.media || []).length ? `・附件${itI.media.length}` : ''}\n能處理的人 → /prep 按「🙋 我來解決」` }] }) })
+          const { ddGet, ddFill, ddGroupGid } = await import('./_ddmsg.js') // v4.54.0 走 DD 自動訊息設定(issue)：開關/群/文字
+          const cfgI = await ddGet('issue')
+          if (tkP && cfgI.on) await fetch('https://api.line.me/v2/bot/message/push', { method: 'POST', headers: { 'content-type': 'application/json', Authorization: 'Bearer ' + tkP }, body: JSON.stringify({ to: await ddGroupGid(cfgI.group), messages: [{ type: 'text', text: ddFill(cfgI.text, { st: itI.st, content: (itI.text || '（見附件）') + ((itI.media || []).length ? `・附件${itI.media.length}` : ''), by: itI.by }) }] }) })
         } catch (_) {}
       } else if (bi.val === 'hold') { itI.pub = 'hold' }
       else if (bi.val === 'del') { dI.list = (dI.list || []).filter(x => x.id !== bi.id) }
@@ -3991,10 +4020,11 @@ export default async function handler(req, res) {
     const it = { id: 'by' + Date.now().toString(36), text: String(bb.text || '').slice(0, 300), cat: String(bb.cat || '').trim().slice(0, 20), url: String(bb.url || '').slice(0, 500), media: (Array.isArray(bb.media) ? bb.media : []).slice(0, 6), by: whoB.name, ts: new Date(Date.now() + 8 * 3600e3).toISOString().slice(5, 16).replace('T', ' '), status: 'open' }
     doc.list = [it, ...(doc.list || [])].slice(0, 200)
     await kvPut('sp_finance_pm_buy', doc, '採購需求(' + it.by + ')')
-    try { // DD 通知內部群（張良 2026-09-21：掛通知開關 pm_notify.buy，預設關）
-      const ncfg = (await kvGet('sp_finance_pm_notify')) || {}
+    try { // DD 通知內部群——v4.54.0 走 DD 自動訊息設定(buy)：開關(相容舊 pm_notify.buy)/群/文字
       const tkB = (process.env.LINE_CHANNEL_ACCESS_TOKEN || '').trim()
-      if (ncfg.buy === 1 && tkB) await fetch('https://api.line.me/v2/bot/message/push', { method: 'POST', headers: { 'content-type': 'application/json', Authorization: 'Bearer ' + tkB }, body: JSON.stringify({ to: 'Cf7940efc6517b0c084ad2ad496b45f30', messages: [{ type: 'text', text: `🛒 採購需求：${it.text || '（見附件）'}\n— ${it.by}${it.url ? '\n🔗 ' + it.url : ''}${it.media.length ? `・附${it.media.length}圖` : ''}\n處理完到 /prep 採購分頁按「已購買」` }] }) })
+      const { ddGet, ddFill, ddGroupGid } = await import('./_ddmsg.js')
+      const cfgB = await ddGet('buy')
+      if (cfgB.on && tkB) await fetch('https://api.line.me/v2/bot/message/push', { method: 'POST', headers: { 'content-type': 'application/json', Authorization: 'Bearer ' + tkB }, body: JSON.stringify({ to: await ddGroupGid(cfgB.group), messages: [{ type: 'text', text: ddFill(cfgB.text, { content: it.text || '（見附件）', by: it.by, url: (it.url ? '\n🔗 ' + it.url : '') + (it.media.length ? `・附${it.media.length}圖` : '') }) }] }) })
     } catch (_) {}
     return res.status(200).json({ ok: true, item: it })
   }

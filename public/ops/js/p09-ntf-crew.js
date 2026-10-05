@@ -643,6 +643,45 @@ async function notifySave(){
   const d = await r.json().catch(()=>null)
   if (d && d.ok) alert('通知開關已更新'); else alert((d&&d.error)||'儲存失敗')
 }
+// ── 📢 DD 自動訊息設定（v4.54.0 張良「設定頁管理 DD 所有自動發送：發哪個群／話怎麼講／開關」）──
+let _ddGroups = []
+async function ddMsgEdit(){
+  let d; try { const r = await fetch('/api/mail-sync?ddmsg=' + encodeURIComponent(K) + (TK()?'&me='+encodeURIComponent(TK()):'')); d = await r.json() } catch(e){}
+  if (!d || !d.ok) { alert('讀不到 DD 訊息設定'); return }
+  _ddGroups = d.groups || []
+  const esc = s => String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')
+  const ov = document.createElement('div'); ov.id='ddOv'
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(10,14,22,.6);z-index:70;display:flex;align-items:flex-start;justify-content:center;padding:14px;overflow:auto'
+  const grpOpts = cur => _ddGroups.map(g=>`<option value="${esc(g.key)}"${g.key===cur?' selected':''}>${esc(g.label)}</option>`).join('')
+  const card = m => { const cur = m.cur||{}; const on = cur.on!=null?cur.on:m.on; const group = cur.group||m.group; const text = (cur.text!=null&&String(cur.text).trim())?cur.text:m.text
+    return `<div data-k="${esc(m.key)}" style="border:1px solid var(--line);border-radius:12px;padding:12px;margin-bottom:10px;background:var(--card)">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:7px"><b style="font-size:15px">${esc(m.label)}</b><span class="hint" style="font-size:11px">${esc(m.where||'')}</span>
+        <label style="margin-left:auto;display:inline-flex;align-items:center;gap:5px;font-size:13px;font-weight:700"><input type="checkbox" class="ddOn" ${on?'checked':''} style="width:17px;height:17px"> 開啟</label></div>
+      <div style="display:flex;align-items:center;gap:7px;margin-bottom:7px;flex-wrap:wrap"><span class="hint" style="font-size:12px">發到</span>
+        <select class="ddGrp" style="flex:1;min-width:160px;background:var(--soft);border:1px solid var(--line);border-radius:8px;padding:6px 8px;color:var(--ink);font-size:13px">${grpOpts(group)}</select></div>
+      <textarea class="ddTxt" rows="4" style="width:100%;background:var(--soft);border:1px solid var(--line);border-radius:8px;padding:8px;color:var(--ink);font-size:13px;line-height:1.6;resize:vertical">${esc(text)}</textarea>
+      <div class="hint" style="font-size:10.5px;margin-top:4px">可用變數（原樣保留，系統自動帶入）：${esc(m.vars||'')}</div>
+      <div style="text-align:right;margin-top:6px"><button class="mini on" style="padding:6px 16px" onclick="ddMsgSave('${esc(m.key)}',this)">💾 儲存這則</button></div>
+    </div>` }
+  ov.innerHTML = `<div style="background:var(--bg);border:1px solid var(--line);border-radius:16px;width:100%;max-width:620px;padding:16px" onclick="event.stopPropagation()">
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px"><b style="font-size:17px">📢 DD 自動訊息設定</b><button class="mini" style="margin-left:auto;padding:6px 12px" onclick="document.getElementById('ddOv').remove()">✕</button></div>
+    <div class="hint" style="margin-bottom:12px">每則 DD 會自動發的群訊：可改「開關／發哪個群／話怎麼講」。${d.canEdit?'改完按該則的「儲存」。':'（只有審核人能改，目前唯讀）'}帶 { } 的變數請原樣保留。</div>
+    ${(d.msgs||[]).map(card).join('')}</div>`
+  if (!d.canEdit) { setTimeout(()=>{ ov.querySelectorAll('input,select,textarea,button.on').forEach(e=>{ if(!/✕/.test(e.textContent||'')) e.disabled=true }) },0) }
+  ov.onclick = () => ov.remove()
+  document.body.appendChild(ov)
+}
+async function ddMsgSave(key, btn){
+  const card = btn.closest('[data-k]'); if (!card) return
+  const on = card.querySelector('.ddOn').checked ? 1 : 0
+  const group = card.querySelector('.ddGrp').value
+  const text = card.querySelector('.ddTxt').value
+  btn.textContent = '儲存中…'; btn.disabled = true
+  const r = await fetch('/api/mail-sync?ddmsgset=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ key, on, group, text, token: TK() }) })
+  const d = await r.json().catch(()=>null)
+  if (d && d.ok) { btn.textContent = '已儲存 ✓'; setTimeout(()=>{ btn.textContent='💾 儲存這則'; btn.disabled=false },1500) }
+  else { alert((d&&d.error)||'儲存失敗'); btn.textContent='💾 儲存這則'; btn.disabled=false }
+}
 // 24小時制時間選擇（張良 2026-09-21：原生 time 輸入會跟著系統顯示上午/下午——改成 00~23 時＋分兩個下拉）
 function t24c(cls, v){
   const [h,m] = String(v||'11:00').split(':')
