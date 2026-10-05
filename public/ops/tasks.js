@@ -1431,34 +1431,37 @@ function tnFocusTry() {
   window.tnFocusId = null;
   tnFocusFlash(fid); // v4.52.3 張良「不要打開卡片，定位+閃光讓本人自己點進去（打開後關掉會找不到卡片在哪）」：捲到卡片閃金光，不自動開詳情
 }
-function tnFocusFlash(fid, tries) { // v4.55.5 捲到卡片→套醒目脈動光框＋跳動箭頭指示（張良：原金光被卡片彩虹/電擊特效蓋掉看不到；箭頭+外框蓋最上層才看得見）
+function tnFocusFlash(fid, tries) { // v4.55.5/6 捲到卡片→套脈動光框＋跳動箭頭指示（張良：金光被卡片彩虹/電擊特效蓋掉看不到）
   const el = typeof document !== 'undefined' && document.querySelector('[data-tid="' + fid + '"]');
-  if (el) { try { el.scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch (_) {} setTimeout(() => tnFocusSpot(el), 450); return; }
+  if (el) { try { el.scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch (_) {} tnFocusSpot(fid); return; }
   if ((tries || 0) < 40) setTimeout(() => tnFocusFlash(fid, (tries || 0) + 1), 300);
   else if (typeof tnToastMini === 'function') tnToastMini('任務卡可能被篩選或收合了——切到「全部」再找找');
 }
-function tnFocusSpot(el) {
+function tnFocusSpot(fid) { // v4.55.6 每一幀即時貼齊卡片（rAF）：卡片在抖動/捲動/重繪都跟著走，不會跑掉；偵測卡片被重繪就用 data-tid 重找
   try {
     if (!document.getElementById('tnFocusKf')) { // 動畫 keyframes 只注入一次
       const st = document.createElement('style'); st.id = 'tnFocusKf';
-      st.textContent = '@keyframes tnFocusPulse{0%,100%{box-shadow:0 0 0 3px rgba(255,205,0,.9),0 0 0 9px rgba(255,205,0,.28),0 0 26px rgba(255,205,0,.6)}50%{box-shadow:0 0 0 3px rgba(255,205,0,1),0 0 0 14px rgba(255,205,0,.12),0 0 40px rgba(255,205,0,.85)}}@keyframes tnFocusBounce{0%,100%{transform:translateY(0)}50%{transform:translateY(10px)}}';
+      st.textContent = '@keyframes tnFocusPulse{0%,100%{box-shadow:0 0 0 3px rgba(255,205,0,.95),0 0 0 9px rgba(255,205,0,.26),0 0 26px rgba(255,205,0,.6)}50%{box-shadow:0 0 0 3px #FFCD00,0 0 0 14px rgba(255,205,0,.1),0 0 40px rgba(255,205,0,.85)}}@keyframes tnFocusBounce{0%,100%{transform:translateY(0)}50%{transform:translateY(10px)}}';
       document.head.appendChild(st);
     }
-    document.getElementById('tnFocusOv') && document.getElementById('tnFocusOv').remove();
+    const old = document.getElementById('tnFocusOv'); if (old) old.remove();
     const ov = document.createElement('div'); ov.id = 'tnFocusOv'; ov.style.cssText = 'position:fixed;inset:0;z-index:9998;pointer-events:none';
-    const ring = document.createElement('div');
-    const arrow = document.createElement('div');
+    const ring = document.createElement('div'); ring.style.cssText = 'position:fixed;border-radius:16px;animation:tnFocusPulse 1s ease-in-out infinite;will-change:left,top,width,height';
+    const arrow = document.createElement('div'); arrow.style.cssText = 'position:fixed;width:50px;height:50px;animation:tnFocusBounce .8s ease-in-out infinite;will-change:left,top';
     arrow.innerHTML = '<svg width="50" height="50" viewBox="0 0 24 24" fill="none" stroke="#FFCD00" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" style="filter:drop-shadow(0 2px 4px rgba(0,0,0,.6))"><path d="M12 4v14"/><path d="M5 12l7 7 7-7"/></svg>';
     ov.appendChild(ring); ov.appendChild(arrow); document.body.appendChild(ov);
-    const place = () => {
-      const r = el.getBoundingClientRect();
-      ring.style.cssText = 'position:fixed;left:' + (r.left - 5) + 'px;top:' + (r.top - 5) + 'px;width:' + (r.width + 10) + 'px;height:' + (r.height + 10) + 'px;border-radius:16px;animation:tnFocusPulse 1s ease-in-out infinite';
-      arrow.style.cssText = 'position:fixed;left:' + (r.left + r.width / 2 - 25) + 'px;top:' + Math.max(4, r.top - 58) + 'px;animation:tnFocusBounce .8s ease-in-out infinite';
+    let el = document.querySelector('[data-tid="' + fid + '"]'), stop = false;
+    const tick = () => {
+      if (stop) return;
+      if (!el || !el.isConnected) el = document.querySelector('[data-tid="' + fid + '"]'); // 卡片被 re-render 就重找
+      if (el) { const r = el.getBoundingClientRect(); if (r.width) {
+        ring.style.left = (r.left - 5) + 'px'; ring.style.top = (r.top - 5) + 'px'; ring.style.width = (r.width + 10) + 'px'; ring.style.height = (r.height + 10) + 'px';
+        arrow.style.left = (r.left + r.width / 2 - 25) + 'px'; arrow.style.top = Math.max(4, r.top - 58) + 'px';
+      } }
+      requestAnimationFrame(tick);
     };
-    place();
-    const onScroll = () => place();
-    window.addEventListener('scroll', onScroll, true); window.addEventListener('resize', onScroll);
-    setTimeout(() => { window.removeEventListener('scroll', onScroll, true); window.removeEventListener('resize', onScroll); ov.style.transition = 'opacity .4s'; ov.style.opacity = '0'; setTimeout(() => { try { ov.remove(); } catch (_) {} }, 400); }, 4200);
+    tick();
+    setTimeout(() => { stop = true; ov.style.transition = 'opacity .4s'; ov.style.opacity = '0'; setTimeout(() => { try { ov.remove(); } catch (_) {} }, 400); }, 4200);
   } catch (_) {}
 }
 
