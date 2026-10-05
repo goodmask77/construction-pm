@@ -6,7 +6,7 @@ const CFG_KEY = 'sp_finance_pm_ddmsg'
 const FALLBACK_GID = 'Cf7940efc6517b0c084ad2ad496b45f30' // 內部預設群（POS/金額/採購/問題也發這個）
 
 // 群組預設：env 優先 → 群組登記表(pm_group_seen)照名字找 → 寫死退路
-// 註：Cf7940（internal）官方群名「瑞光路337」＝團隊慣稱 HAPPY337（採購/問題/SOP/庫存/停售都發這個）；GROUN:D Family 是另一個群（會議用）。
+// 註：Cf7940（internal）官方群名＝HAPPY337（原名瑞光路337已改名；採購/問題/SOP/庫存/停售都發這個）；GROUN:D Family 是另一個群（會議用）。
 // 真名一律由 ddGroupName 即時抓顯示，下面 label 只是抓不到時的退路。
 export const DD_GROUPS = {
   family:   { label: 'GROUN:D Family 群', env: 'LINE_PREP_GROUP', match: /family/i, fallback: FALLBACK_GID },
