@@ -482,7 +482,7 @@ function meetRender(){
     }
     if (myRow) h2 += myAck ? `<div style="color:var(--green);font-weight:800;font-size:13px;margin-top:6px">✓ 你已簽收（${(acks[meN]||{}).ts||''}）</div>` : `<button class="mini on" style="padding:8px 16px;margin:6px 0 0" onclick="ackWin('${x.id}')">📩 我讀完了（簽收）</button>`
     if ((x.asks||[]).length) h2 += `<div style="margin-top:8px;border-top:1px dashed var(--line);padding-top:6px">${x.asks.map(a2=>`<div style="font-size:13px;margin-bottom:4px"><b>❓ ${esc(a2.q)}</b> <span class="hint">${a2.by}・${a2.ts}</span>${a2.ans?`<div style="color:var(--pdark)">💬 ${esc(a2.ans)} <span class="hint">${a2.ansBy}・${a2.ansTs}</span></div>`:(canAns?` <button class="mini" style="padding:4px 10px" onclick="meetAnswer('${x.id}','${a2.id}')">回覆</button>`:' <span class="hint">（等回覆）</span>')}</div>`).join('')}</div>`
-    if (x.groupSent) h2 += x.groupSent.fail ? `<div class="hint" style="margin-top:6px;color:#E8A657;font-size:12px">⚠️ 大群通知發送失敗（可稍後請 DD 補發）</div>` : `<div class="hint" style="margin-top:6px;font-size:12px">📢 已同步大群通知・${x.groupSent.n} 則（${x.groupSent.ts}）</div>` // v4.48.0 最下面顯示發群則數
+    if (x.groupSent) h2 += x.groupSent.fail ? `<div class="hint" style="margin-top:6px;color:#E8A657;font-size:12px">⚠️ 大群通知發送失敗（可稍後請 DD 補發）</div>` : `<div class="hint" style="margin-top:6px;font-size:12px">📢 ${x.groupSent.dm!=null ? `已個別私訊 ${x.groupSent.dm} 人` : `已同步大群通知${x.groupSent.n!=null?`・${x.groupSent.n} 則`:''}`}（${x.groupSent.ts}）</div>` // v4.55.7 相容:群發顯示則數/個別私訊顯示人數/沒帶到不顯示數字(修undefined)
     h2 += `<div style="margin-top:9px;display:flex;gap:6px;flex-wrap:wrap;align-items:center"><span class="hint" style="margin-right:auto">${x.by}・${x.ts}${x.editedBy?`・改 ${x.editedBy}`:''}</span><span class="lnkbtn" title="複製連結" onclick="copyLink('#meet=${x.id}')" style="border:1px solid var(--line);border-radius:8px;padding:4px 9px;font-size:12px">🔗</span>${meN?`<button class="mini" style="padding:4px 10px" onclick="meetForm('${x.id}')">✏️ 編輯</button><button class="mini" style="padding:4px 10px;color:var(--red)" onclick="if(confirm('刪除這筆會議紀錄？'))meetMop({op:'del',id:'${x.id}'})">🗑</button>`:''}</div>`
     h2 += `</div>`
     return h2
@@ -542,6 +542,7 @@ function mtAudMode(m){
   mtAudRender()
 }
 function mtAudToggle(n){ const s=window._mtAud.names; if(s.has(n))s.delete(n); else s.add(n); mtAudRender() }
+function mtAudAll(){ const d=window._meetD||{}, names=d.boundNames||d.allNames||d.regNames||[], s=window._mtAud.names; const allSel=names.length&&names.every(n=>s.has(n)); if(allSel){ names.forEach(n=>s.delete(n)) } else { names.forEach(n=>s.add(n)) } mtAudRender() } // v4.55.7 全選/全不選（張良「想到每個人私line不發群,給我全選」）
 function mtAudGroup(gid){ const g=((window._meetD||{}).groups||[]).find(x=>x.id===gid); if(!g)return; (g.members||[]).forEach(n=>window._mtAud.names.add(n)); window._mtAud.mode='picked'; mtAudMode('picked') }
 function mtAudRender(){
   const box=document.getElementById('mtAudBox'); if(!box) return
@@ -555,8 +556,9 @@ function mtAudRender(){
     return
   }
   const names=d.boundNames||d.allNames||d.regNames||[]
+  const allSel = names.length && names.every(n=>sel.has(n))
   const chips=(d.groups||[]).map(g=>`<button type="button" class="mini" style="padding:4px 10px" onclick="mtAudGroup('${esc(g.id)}')">👥 ${esc(g.name)}（${(g.members||[]).length}）</button>`).join('')
-  box.innerHTML = `<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:6px">${chips||'<span class="hint" style="font-size:11px">還沒有自訂群組</span>'}<button type="button" class="mini" style="padding:4px 10px;margin-left:auto" onclick="meetGroupMng()">⚙️ 管理群組</button></div>
+  box.innerHTML = `<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:6px"><button type="button" class="mini${allSel?' on':''}" style="padding:4px 12px" onclick="mtAudAll()">${allSel?'✓ 全選':'全選'}</button>${chips}<button type="button" class="mini" style="padding:4px 10px;margin-left:auto" onclick="meetGroupMng()">⚙️ 管理群組</button></div>
     <div class="hint" style="font-size:11px;margin-bottom:4px">只列「已綁定 DD」的人（沒綁定的收不到私訊，不顯示）・勾要收到的人・已選 <b id="mtAudN">${sel.size}</b> 人</div>
     ${names.length?'':'<div class="hint" style="font-size:11.5px;color:var(--red)">目前沒有人綁定 DD——請夥伴先私訊 DD「綁定GD 本名」才收得到個別私訊</div>'}
     <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:4px;max-height:34vh;overflow:auto;border:1px solid var(--line);border-radius:8px;padding:7px">
@@ -597,10 +599,14 @@ async function meetSave(id){
       audience = { mode:'picked', names }
     } else audience = { mode:'all', group: window._mtAud.group||'family' }
   }
-  const r = await fetch('/api/mail-sync?meetset=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ op: id?'edit':'add', id, type, date, text, media: window._mtMedia||[], links, audience, token: TK() }) })
-  const d = await r.json().catch(()=>null)
-  const o = document.getElementById('meetOv'); if (o) o.remove()
-  if (d && d.ok) meetLoad(); else alert((d&&d.error)||'儲存失敗')
+  if (window._mtSaving) return // v4.55.7 防連點（張良「按儲存有延遲點了兩次=發兩次」）：鎖住直到這次完成
+  window._mtSaving = true
+  const btn = document.querySelector('#meetOv .mini.on'); if (btn) { btn.disabled = true; btn.textContent = '儲存中…'; btn.style.opacity = '.6' }
+  let d = null
+  try { const r = await fetch('/api/mail-sync?meetset=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ op: id?'edit':'add', id, type, date, text, media: window._mtMedia||[], links, audience, token: TK() }) }); d = await r.json().catch(()=>null) } catch(_){}
+  window._mtSaving = false
+  if (d && d.ok) { const o = document.getElementById('meetOv'); if (o) o.remove(); meetLoad() }
+  else { if (btn) { btn.disabled = false; btn.textContent = '儲存'; btn.style.opacity = '1' }; alert((d&&d.error)||'儲存失敗，再試一次') }
 }
 // ── v4.55.0 自訂收件群組管理（例如「主管群」，自己選誰在裡面）──
 function meetGroupMng(){

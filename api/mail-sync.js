@@ -2176,6 +2176,9 @@ export default async function handler(req, res) {
     const mkItems = t2 => String(t2 || '').split('\n').map(x => x.trim()).filter(Boolean).slice(0, 40).map((t3, i) => ({ id: 'mi' + Date.now().toString(36) + i, t: t3.slice(0, 200) }))
     const mkLinks = L => (Array.isArray(L) ? L : []).slice(0, 10).map(x => ({ label: String(x.label || '').slice(0, 40), url: String(x.url || '').slice(0, 300) })).filter(x => x.url)
     if (mb.op === 'add') { // v4.16.0 宣達：條列+附件+連結+簽收快照
+      // v4.55.7 防重複送出（張良「按儲存有延遲點兩次=發兩次」）：12秒內同人同內容＝當作重複，不再建第二筆
+      const last0 = (doc.list || [])[0]
+      if (last0 && last0.by === whoM.name && String(last0.text || '') === String(mb.text || '') && (Date.now() - (last0.pubTs || 0)) < 12000) return res.status(200).json({ ok: true, dedup: true })
       const shA = await kvGet('sp_finance_pm_shift_g')
       const rosA = await kvGet('sp_crew_kb_roster')
       const offA = new Set((shA || {}).offStaff || [])
