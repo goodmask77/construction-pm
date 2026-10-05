@@ -194,9 +194,16 @@ const emoBoot = () => { emoFix(document.body); emoObs.observe(document.body, { c
 document.body ? emoBoot() : document.addEventListener('DOMContentLoaded', emoBoot)
 if (SIM) {
   const _fetch0 = window.fetch.bind(window)
+  let _simAlertTs = 0 // v4.54 防連環彈窗（張良：點任務連跳四次）：同一波寫入只提醒一次
   window.fetch = (u, o) => {
     const s = String(u)
-    if (o && o.method && !/^get$/i.test(o.method)) { if (!s.includes('errlog=')) alert(canTab(curTabKey()) ? '模擬確認結果：' + SIM.name + ' 在這一頁「有」編輯權限，本人可以正常送出（模擬中不會真的寫入）' : '模擬中不能改資料——按上方「結束模擬」回到自己再操作'); return Promise.resolve(new Response(JSON.stringify({ ok:false, error:'模擬模式不能改資料' }), { headers: { 'content-type':'application/json' } })) } // v4.34.0 有權限→明講他本人送得出去
+    if (o && o.method && !/^get$/i.test(o.method)) {
+      // v4.54 kvproxy 唯讀（op:get/getPrefix）＝讀共用資料，模擬照放行——否則任務/會議等靠 kvproxy 讀的頁面看不到資料
+      let body = null; try { body = o.body ? JSON.parse(o.body) : null } catch (_) {}
+      if (/kvproxy=/.test(s) && body && (body.op === 'get' || body.op === 'getPrefix')) return _fetch0(u, o)
+      if (!s.includes('errlog=') && Date.now() - _simAlertTs > 2500) { _simAlertTs = Date.now(); alert(canTab(curTabKey()) ? '模擬確認結果：' + SIM.name + ' 在這一頁「有」編輯權限，本人可以正常送出（模擬中不會真的寫入）' : '模擬中不能改資料——按上方「結束模擬」回到自己再操作') } // 有權限→明講他本人送得出去
+      return Promise.resolve(new Response(JSON.stringify({ ok:false, error:'模擬模式不能改資料' }), { headers: { 'content-type':'application/json' } }))
+    }
     return _fetch0(s.includes('/api/mail-sync?') ? s + '&as=' + encodeURIComponent(SIM.rid) : u, o)
   }
   const _simBn = () => { const bn = document.createElement('div'); bn.id = 'simBn'
