@@ -356,6 +356,17 @@ function tnFmtCd(ms) {
   const p = n => String(n).padStart(2, '0');
   return h > 0 ? (h + ':' + p(m) + ':' + p(ss)) : (p(m) + ':' + p(ss));
 }
+// ⏱ 向上累積格式（張良「改成動態讀秒累積」）：已X日X時X分X秒（上位為0就省略）
+function tnFmtUp(ms) {
+  let s = Math.max(0, Math.floor(ms / 1000));
+  const d = Math.floor(s / 86400); s -= d * 86400;
+  const h = Math.floor(s / 3600); s -= h * 3600;
+  const m = Math.floor(s / 60); const ss = s - m * 60;
+  let out = '已';
+  if (d > 0) out += d + '日';
+  if (d > 0 || h > 0) out += h + '時';
+  return out + m + '分' + ss + '秒';
+}
 
 /* ── 大項（cats＝sp_team_pm_data 整包陣列；只動 name/order/color/tcol，其餘欄位原樣保留） ── */
 function tnCatsWrite(next) {
@@ -766,7 +777,7 @@ function tnCard(t, o) {
   if (tnIsWaiting(t) && !done) meta += tnPill(tnC.amber, '等：' + tnEsc(t.waitingFor));
   if (tnIsBlocked(t, tnS.tasks) && !done) meta += tnPill(tnC.red, '被前置卡住');
   if (t.by) meta += '<span title="發現/回報者" style="display:inline-flex;align-items:center;gap:3px;font-size:10.5px;color:' + tnC.faint + ';white-space:nowrap">' + tnI('eye', 11) + tnEsc(t.by) + '</span>';
-  if (t.claimBy && !done) meta += '<span title="處理中" style="display:inline-flex;align-items:center;gap:3px;font-size:10.5px;color:' + tnC.accent + ';font-weight:700;white-space:nowrap">' + tnI('wrench', 11) + tnEsc(t.claimBy) + (t.claimAt ? ('・' + tnFmtDur((Date.now() - t.claimAt) / 60000)) : '') + '</span>';
+  if (t.claimBy && !done) meta += '<span title="處理中" style="display:inline-flex;align-items:center;gap:3px;font-size:10.5px;color:' + tnC.accent + ';font-weight:700;white-space:nowrap">' + tnI('wrench', 11) + tnEsc(t.claimBy) + (t.claimAt ? ('・<span class="tnUpTick" data-since="' + t.claimAt + '">' + tnFmtUp(Date.now() - t.claimAt) + '</span>') : '') + '</span>';
   if (t.prepPending === 1 && !done) meta += tnPill(tnC.amber, '待審核');
   if (t.prepPub === 'pending') meta += tnPill(tnC.amber, '等發布');
   if (t.ack && t.ack.by) meta += '<span title="負責人已確認收到這張任務">' + tnPill(tnC.green, '已收到・' + tnEsc(t.ack.by)) + '</span>';
@@ -1271,7 +1282,7 @@ function tnModal() {
     h += '<button onclick="tnAck(\'' + t.id + '\')" style="display:flex;align-items:center;justify-content:center;gap:8px;width:100%;background:' + tnC.accent + ';color:#fff;border:none;border-radius:10px;padding:13px 0;font-size:15px;font-weight:800;cursor:pointer;margin-bottom:14px;box-shadow:0 2px 12px rgba(77,163,255,.35)">' + tnI('check', 17, '#fff') + '確認收到・開始計時</button>';
   } else if (t.ack && t.ack.by) {
     h += '<div style="display:flex;align-items:center;justify-content:center;gap:8px;flex-wrap:wrap;width:100%;background:#16281C;border:1.5px solid ' + tnC.green + ';color:' + tnC.green + ';border-radius:10px;padding:11px 8px;font-size:14px;font-weight:700;margin-bottom:14px;box-sizing:border-box">' + tnI('check', 15, tnC.green) + '已收到・' + tnEsc(t.ack.by) + (t.ack.ts ? '（' + tnDnorm(t.ack.ts) + '）' : '')
-      + ((t.status !== 'done' && t.claimBy && t.claimAt) ? '<span style="display:inline-flex;align-items:center;gap:4px;color:' + tnC.accent + '">' + tnI('clock', 13, tnC.accent) + tnFmtDur((Date.now() - t.claimAt) / 60000) + '</span>' : '') + '</div>';
+      + ((t.status !== 'done' && t.claimBy && t.claimAt) ? '<span style="display:inline-flex;align-items:center;gap:4px;color:' + tnC.accent + '">' + tnI('clock', 13, tnC.accent) + '<span class="tnUpTick" data-since="' + t.claimAt + '">' + tnFmtUp(Date.now() - t.claimAt) + '</span></span>' : '') + '</div>';
   }
   h += F('主題', '<input id="tnTitle" value="' + tnEsc(t.title) + '" oninput="tnUpdSilent(\'' + t.id + '\',{title:this.value})" style="' + tnInp + ';width:100%;font-size:14px;font-weight:600">');
   h += F('內容 / 備註', '<textarea id="tnNote" rows="2" oninput="tnUpdSilent(\'' + t.id + '\',{note:this.value})" style="' + tnInp + ';width:100%;resize:vertical">' + tnEsc(t.note || '') + '</textarea>');
@@ -1516,9 +1527,11 @@ function tnBoomCard(cardEl) { // 爆炸：震動+閃光+飛濺碎片
   setTimeout(() => { cardEl.classList.remove('tnBoom'); cardEl.querySelectorAll('.tnBoomP').forEach(x => x.remove()); }, 800);
 }
 function tnCdTick() {
+  const now = Date.now();
+  // ⏱ 向上累積（我來解決計時等）每秒讀秒跳
+  document.querySelectorAll('.tnUpTick[data-since]').forEach(el => { const since = Number(el.getAttribute('data-since')) || now; el.textContent = tnFmtUp(now - since); });
   const els = document.querySelectorAll('.tnCd[data-cd]');
   if (!els.length) return;
-  const now = Date.now();
   els.forEach(el => {
     const until = Number(el.getAttribute('data-cd')) || 0, left = until - now, tid = el.getAttribute('data-tid');
     if (left <= 0) {
