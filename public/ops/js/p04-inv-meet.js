@@ -293,7 +293,8 @@ async function punchReviewOpen(){
   const d=await r.json().catch(()=>null)
   if (!d || !d.ok) { punchOvClose(); alert((d&&d.error)||'讀不到'); return }
   const fmtT=iso=>new Date(iso).toLocaleString('zh-TW',{timeZone:'Asia/Taipei',month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit',hour12:false})
-  let h=`<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px"><b style="font-size:16px">📋 補卡審核</b><button onclick="punchNow()" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:13px">‹ 返回</button></div>`
+  const backAct = document.getElementById('paOv') ? 'punchOvClose()' : 'punchNow()' // 從打卡後台開＝返回只關這層；從打卡視窗開＝回主選單
+  let h=`<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px"><b style="font-size:16px">📋 補卡審核</b><button onclick="${backAct}" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:13px">‹ 返回</button></div>`
   const pend=d.pending||[]
   if (!pend.length) h+=`<div class="hint" style="padding:16px 0;text-align:center">目前沒有待審核的補卡</div>`
   else h+=pend.map(it=>`<div style="border:1px solid var(--line);border-radius:12px;padding:10px;margin-bottom:8px">
@@ -308,6 +309,84 @@ async function punchReviewAct(id,action){
   const d=await r.json().catch(()=>null)
   if (!d || !d.ok) { alert((d&&d.error)||'處理失敗'); return }
   punchReviewOpen()
+}
+// ── ⏰ 打卡後台 v4.58（主管／審核人）：某日全員明細＋現在在班＋改/刪/幫補＋匯出CSV（lpOverlay z66；改/補表單用 punchOv z90 疊上去）──
+async function punchAdminView(date){
+  lpOverlay('paOv','<div class="hint" style="padding:20px">讀取打卡紀錄中…</div>')
+  const r=await fetch('/api/mail-sync?punchadmin='+encodeURIComponent(K),{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({token:TK(),date:date||null})}).then(x=>x.json()).catch(()=>null)
+  if (!r || !r.ok) { lpOverlay('paOv',`<div style="padding:16px">🔒 ${(r&&r.error)||'讀不到'}</div>`); return }
+  window._paD=r; punchAdminDraw()
+}
+function _paNav(n){ const d=new Date(window._paD.date+'T00:00:00'); d.setDate(d.getDate()+n); const p=x=>String(x).padStart(2,'0'); return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}` }
+function punchAdminDraw(){
+  const r=window._paD; if(!r)return
+  const wd='日一二三四五六'[new Date(r.date+'T00:00:00').getDay()]
+  let h=`<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap"><b style="font-size:17px">⏰ 打卡後台</b><span style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">${r.pendN?`<button class="mini" style="padding:6px 12px;color:var(--primary);border-color:var(--primary)" onclick="punchReviewOpen()">📋 補卡審核（${r.pendN}）</button>`:''}<button class="mini" style="padding:6px 12px" onclick="punchAdminExport()">⬇️ 匯出CSV</button><button class="mini" style="padding:6px 14px" onclick="document.getElementById('paOv').remove()">關閉</button></span></div>`
+  h+=`<div style="margin:10px 0;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:var(--soft)"><b style="font-size:13px">🟢 現在在班（${r.live.length}）</b>${r.live.length?`<span style="display:inline-flex;gap:6px;flex-wrap:wrap;margin-left:8px">${r.live.map(x=>`<span style="padding:3px 10px;border-radius:999px;background:#16281C;border:1px solid var(--green);color:var(--green);font-size:12px;font-weight:700">${x.name}・${x.sinceHm}起 ${x.hrs}h</span>`).join('')}</span>`:'<span class="hint" style="margin-left:8px">目前沒有人在班</span>'}</div>`
+  h+=`<div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;flex-wrap:wrap"><button class="mini" style="padding:5px 12px" onclick="punchAdminView('${_paNav(-1)}')">‹ 前一天</button><b style="font-variant-numeric:tabular-nums;font-size:15px">${r.date}（${wd}）</b><button class="mini" style="padding:5px 12px" onclick="punchAdminView('${_paNav(1)}')">後一天 ›</button>${r.date!==r.today?`<button class="mini" style="padding:5px 12px" onclick="punchAdminView('${r.today}')">回今天</button>`:''}<button class="mini" style="padding:5px 12px;margin-left:auto;color:var(--primary)" onclick="punchAddForm()">＋ 幫人補打卡</button></div>`
+  if(!r.rows.length) h+=`<div class="hint" style="padding:24px;text-align:center">這天沒有打卡紀錄</div>`
+  else {
+    h+=`<div class="scroll" style="max-height:56vh;overflow:auto"><table style="border-collapse:collapse;width:100%"><thead><tr style="background:#2A3442"><th style="padding:5px 10px;text-align:left">夥伴</th><th style="padding:5px 10px;text-align:left">打卡（點一下可改／刪）</th><th style="padding:5px 10px;text-align:right">時數</th><th style="padding:5px 10px;text-align:left">狀態</th></tr></thead><tbody>`
+    h+=r.rows.map(x=>{
+      const chips=x.punches.map(p=>`<button onclick="punchEditForm('${p.key}','${p.dir}','${p.ts}','${String(x.name).replace(/'/g,'')}')" style="margin:2px;padding:3px 9px;border-radius:8px;border:1px solid ${p.dir==='in'?'var(--green)':'#E8A657'};background:transparent;color:${p.dir==='in'?'var(--green)':'#E8A657'};font-size:12px;font-weight:700;cursor:pointer;font-variant-numeric:tabular-nums">${p.dir==='in'?'上':'下'} ${p.hm}${(p.src&&p.src.indexOf('admin')>=0)?' ✎':(p.src==='makeup'?' 補':'')}</button>`).join('')
+      const fl=x.flags.length?`<span style="color:var(--red);font-weight:700">${x.flags.join('、')}</span>`:'<span class="mut">正常</span>'
+      return `<tr style="border-top:1px solid var(--line)"><td style="padding:6px 10px;font-weight:800;white-space:nowrap">${x.name}</td><td style="padding:5px 10px">${chips||'<span class="mut">—</span>'}</td><td style="padding:6px 10px;text-align:right;font-weight:700">${x.totalHrs||'—'}</td><td style="padding:6px 10px;font-size:12px">${fl}</td></tr>`
+    }).join('')
+    h+=`</tbody></table></div><div class="hint" style="margin-top:6px">點打卡鈕＝改時間/方向或刪；✎＝管理員改過・補＝補卡核准</div>`
+  }
+  lpOverlay('paOv', h)
+}
+function _peSet(dir){ window._peDir=dir; ['in','out'].forEach(dd=>{ const b=document.getElementById('peb_'+dd); if(b){ const on=dd===dir; b.style.cssText=`flex:1;padding:11px;border-radius:10px;border:1.5px solid ${on?'var(--primary)':'var(--line)'};background:${on?'var(--primary)':'transparent'};color:${on?'#fff':'var(--ink)'};font-weight:800;cursor:pointer` } }) }
+function _peTog(dir2,lb){ const on=window._peDir===dir2; return `<button id="peb_${dir2}" onclick="_peSet('${dir2}')" style="flex:1;padding:11px;border-radius:10px;border:1.5px solid ${on?'var(--primary)':'var(--line)'};background:${on?'var(--primary)':'transparent'};color:${on?'#fff':'var(--ink)'};font-weight:800;cursor:pointer">${lb}</button>` }
+function punchEditForm(key,dir,ts,name){
+  window._peKey=key; window._peDir=dir
+  const d=new Date(ts), p=n=>String(n).padStart(2,'0')
+  const v=`${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`
+  let h=`<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px"><b style="font-size:16px">改打卡・${name}</b><button onclick="punchOvClose()" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:16px">✕</button></div>`
+  h+=`<div class="hint" style="margin-bottom:5px">方向</div><div style="display:flex;gap:8px;margin-bottom:12px">${_peTog('in','上班')}${_peTog('out','下班')}</div>`
+  h+=`<div class="hint" style="margin-bottom:5px">時間</div><input type="datetime-local" id="peTs" value="${v}" style="width:100%;padding:11px;border:1px solid var(--line);border-radius:10px;background:var(--bg);color:var(--ink);margin-bottom:14px;font-size:15px">`
+  h+=`<div style="display:flex;gap:10px"><button onclick="punchEditDel()" style="flex:1;padding:12px;border-radius:12px;border:1px solid var(--red);background:transparent;color:var(--red);font-weight:800;cursor:pointer">刪除</button><button onclick="punchEditSave()" style="flex:2;padding:12px;border-radius:12px;border:none;background:var(--primary);color:#fff;font-weight:800;cursor:pointer">存檔</button></div>`
+  punchOv(h)
+}
+async function punchEditSave(){
+  const tv=document.getElementById('peTs').value; if(!tv){ alert('請選時間'); return }
+  const iso=new Date(tv).toISOString()
+  const r=await fetch('/api/mail-sync?punchedit='+encodeURIComponent(K),{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({token:TK(),action:'edit',key:window._peKey,ts:iso,dir:window._peDir})})
+  const d=await r.json().catch(()=>null); if(!d||!d.ok){ alert((d&&d.error)||'存檔失敗'); return }
+  punchOvClose(); punchAdminView(window._paD.date)
+}
+async function punchEditDel(){
+  if(!confirm('確定刪除這筆打卡？（出勤是法定紀錄，刪了要留意）')) return
+  const r=await fetch('/api/mail-sync?punchedit='+encodeURIComponent(K),{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({token:TK(),action:'del',key:window._peKey})})
+  const d=await r.json().catch(()=>null); if(!d||!d.ok){ alert((d&&d.error)||'刪除失敗'); return }
+  punchOvClose(); punchAdminView(window._paD.date)
+}
+function punchAddForm(){
+  window._peDir='in'
+  const names=(window._shiftD&&(window._shiftD.namesAll||window._shiftD.names))||((window._paD&&window._paD.rows)||[]).map(x=>x.name)
+  const p=n=>String(n).padStart(2,'0'), d=new Date((window._paD?window._paD.date:'')+'T12:00:00')
+  const v=`${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}T12:00`
+  let h=`<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px"><b style="font-size:16px">幫人補打卡</b><button onclick="punchOvClose()" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:16px">✕</button></div>`
+  h+=`<div class="hint" style="margin-bottom:10px">管理員直接補，不用再審核；對方要先綁定過才補得了。</div>`
+  h+=`<div class="hint" style="margin-bottom:5px">夥伴</div><input id="peName" list="peNameList" placeholder="打名字" style="width:100%;padding:11px;border:1px solid var(--line);border-radius:10px;background:var(--bg);color:var(--ink);margin-bottom:12px;font-size:15px"><datalist id="peNameList">${[...new Set(names)].map(n=>`<option value="${String(n).replace(/"/g,'&quot;')}">`).join('')}</datalist>`
+  h+=`<div class="hint" style="margin-bottom:5px">方向</div><div style="display:flex;gap:8px;margin-bottom:12px">${_peTog('in','上班')}${_peTog('out','下班')}</div>`
+  h+=`<div class="hint" style="margin-bottom:5px">時間</div><input type="datetime-local" id="peTs" value="${v}" style="width:100%;padding:11px;border:1px solid var(--line);border-radius:10px;background:var(--bg);color:var(--ink);margin-bottom:14px;font-size:15px">`
+  h+=`<div style="display:flex;gap:10px"><button onclick="punchOvClose()" style="flex:1;padding:12px;border-radius:12px;border:1px solid var(--line);background:transparent;color:var(--muted);font-weight:700;cursor:pointer">取消</button><button onclick="punchAddSave()" style="flex:2;padding:12px;border-radius:12px;border:none;background:var(--primary);color:#fff;font-weight:800;cursor:pointer">新增</button></div>`
+  punchOv(h)
+}
+async function punchAddSave(){
+  const name=(document.getElementById('peName').value||'').trim(); if(!name){ alert('請填夥伴名字'); return }
+  const tv=document.getElementById('peTs').value; if(!tv){ alert('請選時間'); return }
+  const iso=new Date(tv).toISOString()
+  const r=await fetch('/api/mail-sync?punchedit='+encodeURIComponent(K),{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({token:TK(),action:'add',name,ts:iso,dir:window._peDir})})
+  const d=await r.json().catch(()=>null); if(!d||!d.ok){ alert((d&&d.error)||'新增失敗'); return }
+  punchOvClose(); punchAdminView(window._paD.date)
+}
+function punchAdminExport(){
+  const r=window._paD; if(!r)return
+  let csv='日期,夥伴,方向,時間,來源,狀態\n'
+  for(const x of r.rows){ for(const p of x.punches){ csv+=`${r.date},${x.name},${p.dir==='in'?'上班':'下班'},${p.hm},${p.src||''},"${x.flags.join('、')}"\n` } }
+  const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob(['﻿'+csv],{type:'text/csv;charset=utf-8'})); a.download=`打卡_${r.date}.csv`; a.click()
 }
 // ── 📋 會議（張良 2026-09-22：班前會議/營運會議紀錄——類型可自訂、紀錄可新增刪改，全留姓名時間）──
 function todayTpe(){ return new Date(Date.now()+8*3600e3).toISOString().slice(0,10) }
