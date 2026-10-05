@@ -9,7 +9,7 @@ const FALLBACK_GID = 'Cf7940efc6517b0c084ad2ad496b45f30' // 內部預設群（PO
 export const DD_GROUPS = {
   family:   { label: 'GROUN:D Family 群', env: 'LINE_PREP_GROUP', match: /family/i, fallback: FALLBACK_GID },
   internal: { label: '內部群（預設）', env: 'LINE_DEFAULT_GROUP', fallback: FALLBACK_GID },
-  happy337: { label: 'happy337 群（A Beach）', match: /happy ?337/i, fallback: '' },
+  happy337: { label: 'happy337 群（A Beach，實際群名瑞光路337）', match: /happy ?337|337/i, fallback: '' },
 }
 
 // 自動訊息登記表：label=人看的名稱、group=預設群、on=預設開關、text=可編輯文字(含 {變數})、vars=變數說明、where=發生情境
