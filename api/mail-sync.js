@@ -2155,7 +2155,10 @@ export default async function handler(req, res) {
     const offM = new Set((shM || {}).offStaff || [])
     const regM = gdNames(rosM).filter(n => !offM.has(n))
     const aprM = (((defM || {}).ground || {}).approvers) || ['張良瑋']
-    return res.status(200).json({ ok: true, types: ((md || {}).types || ['班前會議', '營運會議']), list: ((md || {}).list || []).slice(0, 200), regNames: regM, me: meM ? { name: meM.name, role: meM.role || '', approver: aprM.includes(meM.name) } : null })
+    // v4.55.0（張良「會議可選夥伴名單/自訂群組如主管群/個別私訊/含自己可測試」）：
+    // allNames＝全部在職名冊(含張良自己,給收件人勾選與自訂群組編輯用)；groups＝自訂收件群組(存會議文件 md.groups)
+    const allM = [...new Set([...(((rosM || {}).people) || []).filter(p => !p.endDate && (p.status || '在職') !== '離職').map(p => p.name).filter(Boolean), ...(meM ? [meM.name] : [])])]
+    return res.status(200).json({ ok: true, types: ((md || {}).types || ['班前會議', '營運會議']), list: ((md || {}).list || []).slice(0, 200), regNames: regM, allNames: allM, groups: ((md || {}).groups || []), me: meM ? { name: meM.name, role: meM.role || '', approver: aprM.includes(meM.name) } : null })
   }
   if (req.method === 'POST' && req.query?.meetset) {
     const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
@@ -2173,25 +2176,51 @@ export default async function handler(req, res) {
       const shA = await kvGet('sp_finance_pm_shift_g')
       const rosA = await kvGet('sp_crew_kb_roster')
       const offA = new Set((shA || {}).offStaff || [])
-      const ackNames = gdNames(rosA).filter(n => !offA.has(n))
-      if (whoM.name && !ackNames.includes(whoM.name)) ackNames.push(whoM.name) // v4.52.6 發起人也納入要簽名單（張良「不要因為是我發的就沒通知，我也要走一樣簽到流程，大家都一樣」）
-      const it = { id: 'mt' + Date.now().toString(36), type: String(mb.type || doc.types[0]).slice(0, 20), date: /^\d{4}-\d{2}-\d{2}$/.test(mb.date) ? mb.date : new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10), text: String(mb.text || '').slice(0, 4000), items: mkItems(mb.text), media: (Array.isArray(mb.media) ? mb.media : []).slice(0, 10).map(u => String(u).slice(0, 300)), links: mkLinks(mb.links), ver: 1, pubTs: Date.now(), ackNames, acks: {}, views: {}, asks: [], remind: {}, by: whoM.name, ts: now8() }
+      // v4.55.0（張良「會議可選夥伴/自訂群組/個別私訊不發大群/含自己可測試」）：picked＝指定對象(個別私訊)；否則全體常態夥伴+發起人(發大群)
+      const audM = mb.audience || {}
+      const picked = audM.mode === 'picked' && Array.isArray(audM.names) && audM.names.length
+      let ackNames
+      if (picked) ackNames = [...new Set(audM.names.map(n => String(n).trim()).filter(Boolean))].slice(0, 100)
+      else { ackNames = gdNames(rosA).filter(n => !offA.has(n)); if (whoM.name && !ackNames.includes(whoM.name)) ackNames.push(whoM.name) } // 發起人也納入（一視同仁）
+      const it = { id: 'mt' + Date.now().toString(36), type: String(mb.type || doc.types[0]).slice(0, 20), date: /^\d{4}-\d{2}-\d{2}$/.test(mb.date) ? mb.date : new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10), text: String(mb.text || '').slice(0, 4000), items: mkItems(mb.text), media: (Array.isArray(mb.media) ? mb.media : []).slice(0, 10).map(u => String(u).slice(0, 300)), links: mkLinks(mb.links), ver: 1, pubTs: Date.now(), ackNames, audMode: picked ? 'picked' : 'all', acks: {}, views: {}, asks: [], remind: {}, by: whoM.name, ts: now8() }
       doc.list = [it, ...(doc.list || [])].slice(0, 500)
-      // v4.53.0 改走 DD 自動訊息設定（meet_new）：開關/群組/文字都讀設定頁，讀不到退回預設；try 包住＝發群失敗也不影響會議已存
-      try {
-        const tkG = (process.env.LINE_CHANNEL_ACCESS_TOKEN || '').trim()
-        const { ddGet, ddFill, ddGroupGid } = await import('./_ddmsg.js')
-        const cfgG = await ddGet('meet_new')
-        if (tkG && cfgG.on) {
+      if (!picked) {
+        // 全體：發 LINE 大群（走 DD 自動訊息設定 meet_new）；try 包住＝發群失敗也不影響會議已存
+        try {
+          const tkG = (process.env.LINE_CHANNEL_ACCESS_TOKEN || '').trim()
+          const { ddGet, ddFill, ddGroupGid } = await import('./_ddmsg.js')
+          const cfgG = await ddGet('meet_new')
+          if (tkG && cfgG.on) {
+            const { prepLink } = await import('./_webpush.js')
+            const lnkG = prepLink('meet=' + it.id)
+            const GRP_FAM = await ddGroupGid(cfgG.group)
+            const bodyG = ddFill(cfgG.text, { type: it.type, date: it.date, content: String(it.text || '').slice(0, 300), n: it.ackNames.length, link: lnkG })
+            const rG = await fetch('https://api.line.me/v2/bot/message/push', { method: 'POST', headers: { 'content-type': 'application/json', Authorization: 'Bearer ' + tkG }, body: JSON.stringify({ to: GRP_FAM, messages: [{ type: 'text', text: bodyG }] }), signal: AbortSignal.timeout(8000) })
+            if (rG.ok) { const nQ = it.ackNames.length || 1; try { const { logPush } = await import('./push.js'); await logPush(GRP_FAM, nQ, '會議宣達發大群(' + it.by + ')') } catch (_) {}; it.groupSent = { ts: now8(), n: nQ } }
+            else { it.groupSent = { ts: now8(), fail: true } }
+          }
+        } catch (_) { it.groupSent = { ts: now8(), fail: true } }
+      } else {
+        // 指定對象：逐一 LINE 私訊（帶個人直達連結），不發大群
+        try {
+          const tkG = (process.env.LINE_CHANNEL_ACCESS_TOKEN || '').trim()
+          const bdP = (await kvGet('sp_finance_pm_prep_bind')) || {}
           const { prepLink } = await import('./_webpush.js')
-          const lnkG = prepLink('meet=' + it.id)
-          const GRP_FAM = await ddGroupGid(cfgG.group)
-          const bodyG = ddFill(cfgG.text, { type: it.type, date: it.date, content: String(it.text || '').slice(0, 300), n: it.ackNames.length, link: lnkG })
-          const rG = await fetch('https://api.line.me/v2/bot/message/push', { method: 'POST', headers: { 'content-type': 'application/json', Authorization: 'Bearer ' + tkG }, body: JSON.stringify({ to: GRP_FAM, messages: [{ type: 'text', text: bodyG }] }), signal: AbortSignal.timeout(8000) }) // v4.52.4 8秒逾時＝LINE 慢也不拖垮整個存檔(504)
-          if (rG.ok) { const nQ = it.ackNames.length || 1; try { const { logPush } = await import('./push.js'); await logPush(GRP_FAM, nQ, '會議宣達發大群(' + it.by + ')') } catch (_) {}; it.groupSent = { ts: now8(), n: nQ } } // 群發計費＝群人數×1則（line-quota）
-          else { it.groupSent = { ts: now8(), fail: true } }
-        }
-      } catch (_) { it.groupSent = { ts: now8(), fail: true } }
+          if (tkG) {
+            const { logPush } = await import('./push.js')
+            let dm = 0
+            for (const nm of ackNames) {
+              let uid = null, tok = null
+              for (const [k, v] of Object.entries(bdP.tokens || {})) if (v && v.name === nm && v.uid) { uid = v.uid; tok = k; break }
+              if (!uid) continue
+              const lnk = tok ? `https://ground-pm.vercel.app/prep?me=${tok}#meet=${it.id}` : prepLink('meet=' + it.id)
+              const rD = await fetch('https://api.line.me/v2/bot/message/push', { method: 'POST', headers: { 'content-type': 'application/json', Authorization: 'Bearer ' + tkG }, body: JSON.stringify({ to: uid, messages: [{ type: 'text', text: `📢 會議宣達【${it.type}・${it.date}】（${it.by} 指定你簽收）\n${String(it.text || '').slice(0, 300)}\n\n👉 點連結直達，看完按「✅ 確認熟知」\n${lnk}` }] }), signal: AbortSignal.timeout(8000) }).catch(() => null)
+              if (rD && rD.ok) { dm++; try { await logPush(uid, 1, '會議個別私訊(' + it.by + ')') } catch (_) {} }
+            }
+            it.groupSent = { ts: now8(), dm }
+          }
+        } catch (_) {}
+      }
       // v4.52.5/6 治本（張良「剛發新會議手機App沒出現1的通知；不要因為是我發的就沒通知，大家都一樣，我也要收到、也要走一樣簽到流程」）：新會議發LINE大群＋發App站內通知給「每個要簽的人（含發起人本人）」鈴鐺+1＋推播
       try {
         const bdM = (await kvGet('sp_finance_pm_prep_bind')) || {}
@@ -2281,6 +2310,8 @@ export default async function handler(req, res) {
       const ts2 = (Array.isArray(mb.types) ? mb.types : []).map(s => String(s).trim().slice(0, 20)).filter(Boolean).slice(0, 10)
       if (!ts2.length) return res.status(400).json({ ok: false, error: '至少留一種會議類型' })
       doc.types = ts2
+    } else if (mb.op === 'groups') { // v4.55.0 自訂收件群組(例如主管群)整份存：[{id,name,members:[名字]}]
+      doc.groups = (Array.isArray(mb.groups) ? mb.groups : []).slice(0, 30).map(g => ({ id: String(g.id || ('g' + Date.now().toString(36))).slice(0, 24), name: String(g.name || '').trim().slice(0, 20), members: [...new Set((Array.isArray(g.members) ? g.members : []).map(n => String(n).trim()).filter(Boolean))].slice(0, 100) })).filter(g => g.name)
     } else if (mb.op === 'nudge') { // v4.47.3 點未簽的人→單獨 DD 私訊（個人連結直達該則）＋App 推播＋記催時間
       const it = (doc.list || []).find(x => x.id === mb.id); if (!it) return res.status(404).json({ ok: false })
       const nm = String(mb.name || '').trim(); if (!nm) return res.status(400).json({ ok: false, error: '缺名字' })

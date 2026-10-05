@@ -511,6 +511,14 @@ function meetForm(id){
   const ov = document.createElement('div'); ov.id='meetOv'
   ov.style.cssText = 'position:fixed;inset:0;background:rgba(16,24,43,.45);z-index:50;display:flex;align-items:center;justify-content:center;padding:16px'
   const ip = 'width:100%;border:1px solid var(--line);border-radius:8px;padding:8px;font-size:15px;font-family:inherit;margin-bottom:6px'
+  window._mtAud = { mode: 'all', names: new Set() } // v4.55.0 收件對象（只在新增時用）
+  const audSec = it ? '' : `<div style="border-top:1px solid var(--line);margin:4px 0 6px;padding-top:8px">
+      <div class="hint" style="margin-bottom:5px">收件對象</div>
+      <div style="display:flex;gap:6px;margin-bottom:6px">
+        <button type="button" id="mtAudAll" class="mini on" style="padding:7px 12px;flex:1" onclick="mtAudMode('all')">全體夥伴（發群）</button>
+        <button type="button" id="mtAudPick" class="mini" style="padding:7px 12px;flex:1" onclick="mtAudMode('picked')">指定對象（個別私訊）</button>
+      </div>
+      <div id="mtAudBox"></div></div>`
   ov.innerHTML = `<div style="background:#222B38;border:1px solid #3B4654;box-shadow:0 18px 50px rgba(0,0,0,.55);border-radius:14px;max-width:460px;width:100%;padding:16px;max-height:86vh;overflow:auto" onclick="event.stopPropagation()">
     <div style="font-weight:900;margin-bottom:8px">${it?'✏️ 編輯':'📋 新增'}會議紀錄</div>
     <select id="mtType" style="${ip}">${d.types.map(t2=>`<option${it&&it.type===t2?' selected':''}>${t2}</option>`).join('')}</select>
@@ -518,11 +526,33 @@ function meetForm(id){
     <textarea id="mtText" rows="7" placeholder="一行＝一條（會自動變成條列表格）" style="${ip}">${it?(it.text||'').replace(/</g,'&lt;'):''}</textarea>
     <div class="hint" style="margin:-2px 0 4px">📎 附照片：<input type="file" id="mtFile" accept="image/*" multiple style="font-size:13px" onchange="mtUpload(this.files)"><span id="mtUpN">${it&&(it.media||[]).length?`已有 ${it.media.length} 張`:''}</span></div>
     <textarea id="mtLinks" rows="2" placeholder="連結（一行一個：標題|網址，或直接貼網址；SOP連結用每條旁的複製鈕來貼）" style="${ip}">${it?(it.links||[]).map(l2=>l2.label?`${l2.label}|${l2.url}`:l2.url).join('\n'):''}</textarea>
+    ${audSec}
     <div style="display:flex;gap:8px;justify-content:flex-end"><button class="mini" style="padding:9px 12px" onclick="document.getElementById('meetOv').remove()">取消</button>
     <button class="mini on" style="padding:9px 18px" onclick="meetSave('${id||''}')">儲存</button></div></div>`
   ov.onclick = () => ov.remove()
   window._mtMedia = it ? [...(it.media||[])] : []
   document.body.appendChild(ov)
+}
+// ── v4.55.0 會議收件對象（指定人/自訂群組/個別私訊）──
+function mtAudMode(m){
+  window._mtAud.mode = m
+  const ba=document.getElementById('mtAudAll'), bp=document.getElementById('mtAudPick')
+  if (ba) ba.className = 'mini' + (m==='all'?' on':''); if (bp) bp.className = 'mini' + (m==='picked'?' on':'')
+  mtAudRender()
+}
+function mtAudToggle(n){ const s=window._mtAud.names; if(s.has(n))s.delete(n); else s.add(n); mtAudRender() }
+function mtAudGroup(gid){ const g=((window._meetD||{}).groups||[]).find(x=>x.id===gid); if(!g)return; (g.members||[]).forEach(n=>window._mtAud.names.add(n)); window._mtAud.mode='picked'; mtAudMode('picked') }
+function mtAudRender(){
+  const box=document.getElementById('mtAudBox'); if(!box) return
+  if (window._mtAud.mode!=='picked'){ box.innerHTML='<div class="hint" style="font-size:11.5px">會發到 GROUN:D Family 群，常態夥伴都要簽（含你自己）。</div>'; return }
+  const d=window._meetD||{}, names=d.allNames||d.regNames||[], sel=window._mtAud.names
+  const esc=s=>String(s==null?'':s).replace(/</g,'&lt;').replace(/'/g,"\\'")
+  const chips=(d.groups||[]).map(g=>`<button type="button" class="mini" style="padding:4px 10px" onclick="mtAudGroup('${esc(g.id)}')">👥 ${esc(g.name)}（${(g.members||[]).length}）</button>`).join('')
+  box.innerHTML = `<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:6px">${chips||'<span class="hint" style="font-size:11px">還沒有自訂群組</span>'}<button type="button" class="mini" style="padding:4px 10px;margin-left:auto" onclick="meetGroupMng()">⚙️ 管理群組</button></div>
+    <div class="hint" style="font-size:11px;margin-bottom:4px">勾要收到的人（個別私訊，不發群）・已選 <b id="mtAudN">${sel.size}</b> 人</div>
+    <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:4px;max-height:34vh;overflow:auto;border:1px solid var(--line);border-radius:8px;padding:7px">
+      ${names.map(n=>`<label style="display:flex;align-items:center;gap:6px;font-size:13.5px;font-weight:600;padding:2px"><input type="checkbox" ${sel.has(n)?'checked':''} onchange="mtAudToggle('${esc(n)}')" style="width:16px;height:16px">${esc(n)}</label>`).join('')}
+    </div>`
 }
 async function mtUpload(files){ // 📎 宣達附照（sopsign 簽名直傳，與回報同管道）
   const nEl = document.getElementById('mtUpN'); if (nEl) nEl.textContent = '上傳中…'
@@ -544,10 +574,49 @@ async function meetSave(id){
   const text = (document.getElementById('mtText')||{}).value||''
   if (!text.trim()) { alert('內容空的'); return }
   const links = ((document.getElementById('mtLinks')||{}).value||'').split('\n').map(x=>x.trim()).filter(Boolean).map(x=>{ const i2 = x.indexOf('|'); return i2>0 ? { label: x.slice(0,i2).trim(), url: x.slice(i2+1).trim() } : { label:'', url: x } })
-  const r = await fetch('/api/mail-sync?meetset=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ op: id?'edit':'add', id, type, date, text, media: window._mtMedia||[], links, token: TK() }) })
+  let audience = null // v4.55.0 收件對象：指定人＝個別私訊
+  if (!id && window._mtAud && window._mtAud.mode==='picked') {
+    const names = [...(window._mtAud.names||[])]
+    if (!names.length) { alert('指定對象模式：至少勾一個人（要測試可勾你自己）'); return }
+    audience = { mode:'picked', names }
+  }
+  const r = await fetch('/api/mail-sync?meetset=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ op: id?'edit':'add', id, type, date, text, media: window._mtMedia||[], links, audience, token: TK() }) })
   const d = await r.json().catch(()=>null)
   const o = document.getElementById('meetOv'); if (o) o.remove()
   if (d && d.ok) meetLoad(); else alert((d&&d.error)||'儲存失敗')
+}
+// ── v4.55.0 自訂收件群組管理（例如「主管群」，自己選誰在裡面）──
+function meetGroupMng(){
+  const d = window._meetD||{}; const names = d.allNames||d.regNames||[]
+  window._mtGroups = JSON.parse(JSON.stringify(d.groups||[]))
+  const ov = document.createElement('div'); ov.id='mgOv'
+  ov.style.cssText='position:fixed;inset:0;background:rgba(10,14,22,.6);z-index:60;display:flex;align-items:center;justify-content:center;padding:14px'
+  ov.innerHTML = `<div style="background:#222B38;border:1px solid #3B4654;border-radius:14px;max-width:460px;width:100%;padding:16px;max-height:86vh;overflow:auto" onclick="event.stopPropagation()">
+    <div style="display:flex;align-items:center;margin-bottom:8px"><b style="font-size:16px">⚙️ 自訂收件群組</b><button class="mini" style="margin-left:auto;padding:6px 12px" onclick="document.getElementById('mgOv').remove()">✕</button></div>
+    <div class="hint" style="margin-bottom:8px">建立常用的收件群組（例如「主管群」），之後發會議一鍵帶入成員。</div>
+    <div id="mgList"></div>
+    <button class="mini" style="padding:8px 14px;margin-top:8px" onclick="mtGroupAdd()">＋ 新增群組</button>
+    <div style="text-align:right;margin-top:12px"><button class="mini on" style="padding:9px 20px" onclick="meetGroupSave()">💾 儲存全部</button></div></div>`
+  ov.onclick=()=>ov.remove(); document.body.appendChild(ov); mgRender()
+}
+function mgRender(){
+  const box=document.getElementById('mgList'); if(!box) return
+  const d=window._meetD||{}, names=d.allNames||d.regNames||[]
+  const esc=s=>String(s==null?'':s).replace(/</g,'&lt;').replace(/'/g,"\\'")
+  box.innerHTML = (window._mtGroups||[]).map((g,gi)=>`<div style="border:1px solid var(--line);border-radius:10px;padding:10px;margin-bottom:8px">
+    <div style="display:flex;gap:6px;align-items:center;margin-bottom:6px"><input value="${esc(g.name)}" placeholder="群組名稱（例：主管群）" oninput="window._mtGroups[${gi}].name=this.value" style="flex:1;border:1px solid var(--line);border-radius:7px;padding:6px 8px;background:var(--bg);color:var(--ink);font-size:14px;font-weight:700"><button class="mini" style="padding:5px 10px;color:var(--red)" onclick="window._mtGroups.splice(${gi},1);mgRender()">刪除</button></div>
+    <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:3px;max-height:28vh;overflow:auto">
+      ${names.map(n=>`<label style="display:flex;align-items:center;gap:5px;font-size:13px;padding:1px"><input type="checkbox" ${(g.members||[]).includes(n)?'checked':''} onchange="mtGroupMem(${gi},'${esc(n)}',this.checked)" style="width:15px;height:15px">${esc(n)}</label>`).join('')}
+    </div></div>`).join('') || '<div class="hint">還沒有群組，按下面新增。</div>'
+}
+function mtGroupAdd(){ window._mtGroups=window._mtGroups||[]; window._mtGroups.push({ id:'g'+Date.now().toString(36), name:'', members:[] }); mgRender() }
+function mtGroupMem(gi,n,on){ const g=window._mtGroups[gi]; g.members=g.members||[]; if(on){ if(!g.members.includes(n))g.members.push(n) } else g.members=g.members.filter(x=>x!==n) }
+async function meetGroupSave(){
+  const groups=(window._mtGroups||[]).filter(g=>String(g.name||'').trim())
+  const r=await fetch('/api/mail-sync?meetset='+encodeURIComponent(K),{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({op:'groups',groups,token:TK()})})
+  const d=await r.json().catch(()=>null)
+  if(d&&d.ok){ window._meetD.groups=groups; const o=document.getElementById('mgOv'); if(o)o.remove(); mtAudRender() }
+  else alert((d&&d.error)||'儲存失敗')
 }
 // ── v4.16.0 簽收/發問/回覆 ──
 async function meetMop(body, silent){
