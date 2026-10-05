@@ -331,6 +331,8 @@ export default async function handler(req, res) {
       const pr = await fetch('https://api.line.me/v2/bot/message/push', { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${TOKEN}` }, body: JSON.stringify({ to: uid, messages: [{ type: 'text', text: '【預覽・只有你看得到，沒發群】\n' + L.join('\n') }] }) })
       return res.status(200).json({ ok: pr.ok, preview: true, wd, lines: L.length })
     }
+    // v4.54.1 張良 2026-10-05「停止發送每日備料建議到群組」：正式群發停用（上面 preview=me 自己私訊預覽不受影響）；要重開＝拿掉這段 return
+    return res.status(200).json({ ok: true, skipped: '備料群發已停止（張良 2026-10-05 要求）；要自己看用 ?preview=me' })
     // 目標群：env LINE_PREP_GROUP 優先，否則從群組登記表找名字含 Family 的群
     let tgt = clean(process.env.LINE_PREP_GROUP)
     if (!tgt) { const seen = (await kvGet('pm_group_seen')) || {}; for (const [gid2, gg] of Object.entries(seen)) if (/family/i.test(gg?.name || '')) { tgt = gid2; break } }
