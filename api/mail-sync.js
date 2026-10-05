@@ -1491,6 +1491,16 @@ export default async function handler(req, res) {
     const aprN = (((defN || {}).ground || {}).approvers || ['張良瑋'])
     return res.status(200).json({ ok: true, cfg: cfgN || {}, canEdit: !!(meN2 && aprN.includes(meN2.name)) })
   }
+  // 🔔 通知開關管理口（v4.51.1 CC：張良透過 CC 開/關任一群通知）：GET ?notifyadmin=<MENU_PROBE_KEY>&key=prep0930&val=0
+  if (req.query?.notifyadmin) {
+    const mk9 = (process.env.MENU_PROBE_KEY || '').trim()
+    if (!mk9 || String(req.query.notifyadmin) !== mk9) return res.status(403).json({ ok: false })
+    const kN9 = String(req.query.key || '')
+    if (!['buy', 'sopLate', 'lowStock', 'prep0930', 'staleItem', 'soldoutAB'].includes(kN9)) return res.status(400).json({ ok: false, error: '未知開關' })
+    const doc9 = (await kvGet('sp_finance_pm_notify')) || {}
+    if (req.query.val != null) { doc9[kN9] = Number(req.query.val) === 1 ? 1 : 0; await kvPut('sp_finance_pm_notify', doc9, 'CC改通知開關 ' + kN9 + '=' + doc9[kN9]) }
+    return res.status(200).json({ ok: true, cfg: doc9 })
+  }
   if (req.method === 'POST' && req.query?.notifyset) {
     const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
     if (!ok2 || String(req.query.notifyset) !== ok2) return res.status(403).json({ ok: false })
