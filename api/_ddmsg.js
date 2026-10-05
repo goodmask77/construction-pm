@@ -9,7 +9,7 @@ const FALLBACK_GID = 'Cf7940efc6517b0c084ad2ad496b45f30' // 內部預設群（PO
 export const DD_GROUPS = {
   family:   { label: 'GROUN:D Family 群', env: 'LINE_PREP_GROUP', match: /family/i, fallback: FALLBACK_GID },
   internal: { label: '內部群（預設）', env: 'LINE_DEFAULT_GROUP', fallback: FALLBACK_GID },
-  happy337: { label: 'happy337 群（A Beach，實際群名瑞光路337）', match: /happy ?337|337/i, fallback: '' },
+  happy337: { label: 'A Beach 停售群（happy337）', match: /happy ?337|337/i, fallback: '' },
 }
 
 // 自動訊息登記表：label=人看的名稱、group=預設群、on=預設開關、text=可編輯文字(含 {變數})、vars=變數說明、where=發生情境
@@ -73,13 +73,28 @@ export function ddFill(text, vars) {
   return String(text || '').replace(/\{(\w+)\}/g, (m, k) => (vars && vars[k] != null) ? String(vars[k]) : '')
 }
 
-// 給設定頁：全部定義 + 目前覆蓋 + 可選群組清單
+// 查某個 group id 的「真名」：先查 DD 記過的(pm_group_seen)，沒有才直接問 LINE
+export async function ddGroupName(gid) {
+  if (!gid) return ''
+  try { const seen = (await _kvGet('pm_group_seen')) || {}; if (seen[gid] && seen[gid].name) return seen[gid].name } catch (_) {}
+  try { const tk = (process.env.LINE_CHANNEL_ACCESS_TOKEN || '').trim(); if (tk) { const r = await fetch(`https://api.line.me/v2/bot/group/${gid}/summary`, { headers: { authorization: 'Bearer ' + tk } }); if (r.ok) return (await r.json()).groupName || '' } } catch (_) {}
+  return ''
+}
+
+// 給設定頁：全部定義 + 目前覆蓋 + 可選群組清單（一律顯示「真名」，不用猜的）
 export async function ddAll() {
   let ov = {}; try { ov = (await _kvGet(CFG_KEY)) || {} } catch (_) {}
   const msgs = Object.keys(DD_MSG_DEF).map(k => ({ key: k, ...DD_MSG_DEF[k], cur: ov[k] || {} }))
-  const groups = Object.entries(DD_GROUPS).map(([k, v]) => ({ key: k, label: v.label }))
-  // 已知群組（讓使用者也能直接選某個登記過的群）
-  try { const seen = (await _kvGet('pm_group_seen')) || {}; for (const [gid, gg] of Object.entries(seen)) if (gg?.name) groups.push({ key: gid, label: gg.name + '（群）' }) } catch (_) {}
+  // 預設 key：label＝解析出的真名（抓不到才退回原描述）；value 保留 key＝維持動態解析
+  const groups = []
+  const presetGids = new Set()
+  for (const [k, v] of Object.entries(DD_GROUPS)) {
+    const gid = await ddGroupGid(k); presetGids.add(gid)
+    const real = await ddGroupName(gid)
+    groups.push({ key: k, label: real || v.label, real })
+  }
+  // 其餘 DD 記過的群（去掉已在預設出現的 gid，不重複）
+  try { const seen = (await _kvGet('pm_group_seen')) || {}; for (const [gid, gg] of Object.entries(seen)) if (gg?.name && !presetGids.has(gid)) groups.push({ key: gid, label: gg.name, real: gg.name }) } catch (_) {}
   return { msgs, groups }
 }
 
