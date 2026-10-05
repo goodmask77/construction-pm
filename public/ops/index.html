@@ -29,10 +29,10 @@
   html,body{overscroll-behavior-x:none} /* 擋瀏覽器橫滑返回上一頁（張良 2026-10-02） */
   body{background:var(--bg);color:var(--text);font-family:-apple-system,"PingFang TC","Noto Sans TC",system-ui,sans-serif;font-size:15px;line-height:1.7}
   .wrap{max-width:980px;margin:0 auto;padding:18px 14px 60px}
-  .brand{font-weight:800;font-size:15px;letter-spacing:.04em;color:#fff} /* v4.38.3 張良「除了:D其他都白色」：藍→白 */
+  .brand{font-weight:900;font-size:24px;letter-spacing:.04em;color:#fff} /* v4.52 張良「GROUND白色底線拿掉、字體變大」：15→24px */
   .brand b{color:#F92A1B} /* :D=品牌紅 */
-  .bseg{cursor:pointer;opacity:.35;padding-bottom:2px}
-  .bseg.on{opacity:1;border-bottom:2.5px solid #fff}
+  .bseg{cursor:pointer;opacity:.35} /* v4.52 底線移除（原 padding-bottom 2px 一併拿掉） */
+  .bseg.on{opacity:1} /* v4.52 白色底線拿掉（原 border-bottom:2.5px solid #fff） */
   h1{font-size:23px;font-weight:800;color:var(--ink);letter-spacing:-.02em;margin-top:6px}
   .sub{font-size:14px;color:var(--muted);margin-top:3px}
   .tabs{display:flex;gap:8px;margin:16px 0;flex-wrap:wrap}
@@ -57,6 +57,7 @@
   .kpi{text-align:center} /* v4.41.2 張良「置中」 */
   .kpi .l{font-size:15.5px;font-weight:700;color:var(--text)}
   .kpi .v{font-size:31px;font-weight:800;color:var(--ink);letter-spacing:-.02em;margin-top:4px;font-variant-numeric:tabular-nums} /* v4.41.2 字體數字放大 */
+  .kpi .sub2{font-size:12.5px;font-weight:700;color:var(--muted);margin-top:3px;font-variant-numeric:tabular-nums} /* v4.52 今年小字 */
   section{background:var(--card);border:1px solid var(--line);border-radius:16px;box-shadow:var(--shadow);padding:18px 16px;margin-top:16px;overflow:hidden}
   .mini{border:1px solid var(--line);background:var(--card);border-radius:999px;padding:4px 12px;font-size:13px;font-weight:700;color:#A9C3E2;cursor:pointer;margin-left:4px;transition:background .15s}
   .mini:hover{background:#232B36}
@@ -160,7 +161,7 @@ tr.bdayGlow td.hrmStick{animation:bdayBgSolid 1.9s ease-in-out infinite} /* 凍�
   <div class="foot">資料每天自動同步（打開即最新）・僅供內部參考與備料使用，請勿外傳連結</div>
 </div>
 <!-- v4.40.0 拆檔（張良「現在先拆好」）：原單一大 script 依原順序切 10 塊，共用全域、順序＝執行順序，新增功能寫新檔別再疊回大檔 -->
-<script src="/ops/js/p01-core.js?v=4479"></script>
+<script src="/ops/js/p01-core.js?v=4521"></script>
 <script src="/ops/js/p02-sop.js?v=4456"></script>
 <script src="/ops/js/p03-sopedit.js?v=4456"></script>
 <script src="/ops/js/p04-inv-meet.js?v=4477"></script>

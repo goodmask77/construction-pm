@@ -131,7 +131,7 @@ function dayPer(k){ window._dayPeriod = k; if (window._bd) renderBoard(window._b
 function histYrs(){ dayPer('hist') } // v4.37.8 歷史資料＝自己是一個檢視（歷年年度總表＋舊年份鈕；今年鈕取消選取）
 function renderBoard(d, store, view){
   if (view === 'prep') return renderPrep(d, store) // v4.42.0（張良拍板）：備料量+節奏表搬「備料」分頁、首頁=今日為王儀表板
-  document.getElementById('upd').textContent = '最新日結：' + (d.anchor || '—') + '・資料自動同步'
+  document.getElementById('upd').textContent = '' // v4.52 張良：日結資訊搬到「每日數據」右邊一行，這條橫幅拿掉
   let h = ''
   // v4.48.1（張良「頂列只留GROUN:D；A Beach營收放首頁需要再切換」）：營收卡頂店別切換
   h += `<div style="display:inline-flex;background:var(--soft);border:1px solid var(--line);border-radius:9px;padding:2px;gap:2px;margin-top:10px">
@@ -180,16 +180,26 @@ function renderBoard(d, store, view){
   // v4.41.1（張良「不要30天 顯示全部 手機排版對齊」）：口徑改開店至今全史(吃d.hist=跟歷史資料檢視同一套算法)；
   // 大數換「萬」手機三卡才塞得下；日均只算有天數的月份(AB早期iCHEF月彙總天數不明就不混進分母)
   {
+    // v4.52（張良「總營收不要顯示歷史加總＝顯示當月(數字大)今年(數字小)；日均/總單同邏輯」）：本月大字、今年小字；跟 d.hist 同口徑＝與每日數據/年表一致
     const hA = d.hist || []
-    const revAll = hA.reduce((t,m)=>t+(Number(m.revenue)||0),0)
-    const txAll = hA.reduce((t,m)=>t+(Number(m.bills)||0),0)
-    const dKn = hA.filter(m=>Number(m.days))
-    const dayAvg = dKn.length ? Math.round(dKn.reduce((t,m)=>t+(Number(m.revenue)||0),0)/dKn.reduce((t,m)=>t+Number(m.days),0)) : 0
+    const tp9 = todayTpe()
+    const curM9 = tp9.slice(0,7), curY9 = tp9.slice(0,4)
+    const moH9 = hA.find(m=>m.month===curM9) || {}
+    const yrM9 = hA.filter(m=>String(m.month).slice(0,4)===curY9)
+    const sum9 = (list,f) => list.reduce((t,m)=>t+(Number(f(m))||0),0)
+    const mRev = Number(moH9.revenue)||0, yRev = sum9(yrM9,m=>m.revenue)
+    const mTx = Number(moH9.bills)||0, yTx = sum9(yrM9,m=>m.bills)
+    const mDays = Number(moH9.days)||0
+    const yDaysArr = yrM9.filter(m=>Number(m.days))
+    const yDays = yDaysArr.reduce((t,m)=>t+Number(m.days),0)
+    const mAvg = mDays ? Math.round(mRev/mDays) : 0
+    const yAvg = yDays ? Math.round(sum9(yDaysArr,m=>m.revenue)/yDays) : 0
     const kv9 = n => n >= 1e6 ? Math.round(n/1e4).toLocaleString()+'<span style="font-size:.62em;font-weight:700"> 萬</span>' : Math.round(n||0).toLocaleString()
+    const card9 = (label,big,small) => `<div class="kpi"><div class="l">${label} <span class="hint" style="font-weight:700">本月</span></div><div class="v">${kv9(big)}</div><div class="sub2">今年 ${kv9(small)}</div></div>`
     h += `<div class="kpis">
-      <div class="kpi"><div class="l">總營收</div><div class="v">${kv9(revAll)}</div></div>
-      <div class="kpi"><div class="l">日均營收</div><div class="v">${kv9(dayAvg)}</div></div>
-      <div class="kpi"><div class="l">總單數</div><div class="v">${kv9(txAll)}</div></div>
+      ${card9('總營收', mRev, yRev)}
+      ${card9('日均營收', mAvg, yAvg)}
+      ${card9('總單數', mTx, yTx)}
     </div>`
   }
   // 日表（張良 2026-09-22 v3：去NT簡化版面、日期欄凍結、至14:00=14點前營收、總營收、表頭下平均列、高低於平均用色階（綠=高於、紅=低於，深淺=差多少））
@@ -240,7 +250,7 @@ function renderBoard(d, store, view){
                  : `<button class="mini" style="padding:6px 0;text-align:center;opacity:.3;cursor:default">${i2+1}月</button>`
     }).join('') + `</div>`
   }
-  h += `<section><h2>每日數據 ${isGD?(()=>{let t9='';try{t9=new Date(d.updatedAt).toLocaleTimeString('en-GB',{hour12:false,timeZone:'Asia/Taipei',hour:'2-digit',minute:'2-digit'})}catch(e){}return `<button class="mini" id="pfBtn" style="float:right" title="資料時間——按一下現抓最新" onclick="posFresh()">🔄 ${t9}</button>`})():``}</h2><div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:8px">${perChip('tm','本月')}${perChip('lm','上月')}${yrChips}</div>${moChips}<div class="scroll" style="max-height:62vh;overflow-y:auto"><table><thead><tr><th style="position:sticky;left:0;z-index:3;text-align:left">日期</th><th>總營收</th>${isGD?'<th>至14:00</th>':''}<th>單數</th><th>單均</th><th>現金</th><th>信用卡</th><th>LINE Pay</th><th>Uber</th><th>折扣</th>${isGD?'<th>自助%</th><th>外帶%</th><th>套餐/主餐%</th>':''}</tr></thead><tbody>`
+  h += `<section><h2 style="display:flex;align-items:baseline;gap:8px">每日數據 ${(()=>{let t9='';try{t9=new Date(d.updatedAt).toLocaleTimeString('en-GB',{hour12:false,timeZone:'Asia/Taipei',hour:'2-digit',minute:'2-digit'})}catch(e){}const anc9=d.anchor?String(d.anchor).slice(5).replace('-','/'):'—';return isGD?`<button class="mini" id="pfBtn" style="margin-left:auto;font-weight:600;font-size:11px;white-space:nowrap;padding:3px 9px" title="最新日結・按一下現抓最新" onclick="posFresh()">日結 ${anc9}・🔄 ${t9}</button>`:`<span class="hint" style="margin-left:auto;font-weight:600;font-size:11px;white-space:nowrap">日結 ${anc9}${t9?`・${t9}`:''}</span>`})()}</h2><div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:8px">${perChip('tm','本月')}${perChip('lm','上月')}${yrChips}</div>${moChips}<div class="scroll" style="max-height:62vh;overflow-y:auto"><table><thead><tr><th style="position:sticky;left:0;z-index:3;text-align:left">日期</th><th>總營收</th>${isGD?'<th>至14:00</th>':''}<th>單數</th><th>單均</th><th>現金</th><th>信用卡</th><th>LINE Pay</th><th>Uber</th><th>折扣</th>${isGD?'<th>自助%</th><th>外帶%</th><th>套餐/主餐%</th>':''}</tr></thead><tbody>`
   const avBg = 'background:var(--psoft);font-weight:800;color:var(--pdark)'
   // 總計列（張良：平均上面放總數+總天數）
   const sm = f => { const a = dv.map(f).filter(v=>v!=null&&isFinite(v)); return a.length ? a.reduce((s2,v)=>s2+v,0) : null }
@@ -296,6 +306,33 @@ function renderBoard(d, store, view){
     d.days.forEach((x,i)=>{ if (inPer(x)) h += dayRow(x,i,false) }) // 期間篩選（v4.30.0）＝平鋪列表（全部/近N天/本月/上月/選月）
   }
   h += `</tbody></table></div></section>`
+  // 🔥 時段營收熱力圖（張良 2026-10-05「之前有做營收時間熱力圖，放每日數據下面」）：列=時段、欄=日期(新→左)、色深=該時段營收相對高低(每列各自比)
+  // 口徑=d.hourDays{date:{hour:rev}}（近約4個月有日結時段表的日子；GD/AB 都給）；跟著上面期間chips(本月/上月/選月)連動
+  if (d.hourDays) {
+    const hdDates = Object.keys(d.hourDays).filter(dt => inPer({date:dt})).sort() // 舊→新
+    if (hdDates.length) {
+      const cols = [...hdDates].reverse() // 新日在左（與 App 熱力圖同向）
+      const hrs = [...new Set(hdDates.flatMap(dt => Object.keys(d.hourDays[dt]).map(Number)))].sort((a,b)=>a-b)
+      const rowMx = {}; hrs.forEach(hr => rowMx[hr] = Math.max(1, ...hdDates.map(dt => d.hourDays[dt][hr]||0)))
+      const heatC = (v,mx) => v ? `background:rgba(229,57,53,${Math.min(0.92, 0.12 + v/mx*0.8).toFixed(2)})` : '' // 紅=高（張良看盤習慣）
+      const wd7 = ['日','一','二','三','四','五','六']
+      const wdOf = dt => wd7[new Date(dt+'T00:00:00Z').getUTCDay()]
+      const fK = n => n>=10000 ? (Math.round(n/100)/100)+'萬' : n>=1000 ? Math.round(n/1000)+'k' : (n||'')
+      let hh = `<section><h2 style="margin-top:14px">時段營收熱力圖 <span class="hint">每格=該時段營收・色越紅=該時段相對越高・新日在左</span></h2>`
+      hh += `<div class="scroll" style="overflow:auto;max-height:60vh"><table style="border-collapse:collapse;font-size:11px"><thead><tr><th style="position:sticky;left:0;top:0;z-index:5;background:var(--soft)">時段</th>`
+      hh += cols.map(dt=>{ const we=['六','日'].includes(wdOf(dt)); return `<th style="position:sticky;top:0;z-index:2;background:var(--soft);white-space:nowrap;text-align:center${we?';color:#A85C26':''}">${dt.slice(5)}<br><span class="hint" style="font-size:10px">${wdOf(dt)}</span></th>` }).join('')
+      hh += `</tr></thead><tbody>`
+      hrs.forEach(hr=>{
+        hh += `<tr><td style="position:sticky;left:0;z-index:1;background:var(--soft);font-weight:700;white-space:nowrap">${hr}時</td>`
+        hh += cols.map(dt=>{ const v=d.hourDays[dt][hr]||0; return `<td style="text-align:right;padding:3px 6px;font-variant-numeric:tabular-nums;${heatC(v,rowMx[hr])}">${v?fK(v):''}</td>` }).join('')
+        hh += `</tr>`
+      })
+      hh += `</tbody></table></div></section>`
+      h += hh
+    } else {
+      h += `<section><h2 style="margin-top:14px">時段營收熱力圖</h2><div class="mut" style="padding:8px">這個期間沒有時段明細（熱力圖僅近約 4 個月有日結時段資料）；切「本月／上月」可看。</div></section>`
+    }
+  }
   // 📜 歷史月營收（張良 2026-10-04「補在哪？現在主要都用prep」）：AB=2021-02 開店起全史（iCHEF 時代只有月彙總）；
   // 有日結的月份=日結加總（跟上表/KPI 同口徑），更早=阿桑系統 /revenue/monthly
   // v4.37.3：獨立「歷史月營收」區塊退役——已整合進上面「每日數據」的年▸月▸日三層樹（全部模式）
@@ -311,6 +348,7 @@ function renderBoard(d, store, view){
     }
     h += `<section>${draw('平日時段', d.slots.wk)}${draw('週末時段', d.slots.we)}</section>`
   }
+  h += soldoutH // v4.48.3 停售動態放首頁最下方（張良原意：營收卡→今日事項→KPI→每日數據→停售）；v4.48.2 誤把 append 放進 renderPrep 造成跨函式 ReferenceError→銷售數據頁卡在載入中，治本搬回這裡
   app.innerHTML = h
   todayRender()
   if (store === 'ground') { sopLoad(); soLoad() } // 銷量預測驗證區 fcsec 隨備料搬家（v4.42.0）
@@ -353,7 +391,7 @@ function renderPrep(d, store){ // v4.42.1 分頁改名「銷售數據」＝備�
   if (!d.prep && !d.rhythm) h += `<section class="mut">這家店還沒有備料資料</section>`
   h += `<div id="itemsec"></div>` // 品項明細（v4.42.1 從首頁搬來；itemsRender 畫）
   if (store === 'ground') h += `<div id="fcsec"></div>` // 銷量預測驗證區（主管限定）跟著備料走
-  h += soldoutH // v4.48.2 停售動態放最下方（張良）
+  // v4.48.3：停售動態已搬回 renderBoard 尾端（首頁最下方）；此處原本的 h += soldoutH 是跨函式參照不到的變數＝害銷售數據頁卡載入中，移除治本
   app.innerHTML = h
   rhythmRender()
   itemsRender()

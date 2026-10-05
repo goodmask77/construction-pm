@@ -1313,6 +1313,19 @@ export default async function handler(req, res) {
     // 14:00 前的單量佔比（平日；備料節奏推估用——品項無分時資料，用全店時段分佈當比例）
     const wkTot2 = slots2.wk.reduce((t, a) => t + a[1], 0)
     const share14 = wkTot2 ? Math.round(slots2.wk.filter(a => a[0] < 14).reduce((t, a) => t + a[1], 0) / wkTot2 * 100) : null
+    // 🔥 時段營收熱力圖（張良 2026-10-05「之前的營收時間熱力圖放每日數據下面」）：{date:{hour:rev}}；近120天有日結時段表的日子；GD/AB 都給
+    // 口徑＝時段表最後一欄＝營收（與 App 熱力圖同一份：det.sheets['時段分析(每小時)']）
+    const hourDays = {}
+    const fromHD = dOf(anchor, -120)
+    for (const e of entries) {
+      if (e.date < fromHD) continue
+      const sheet = ((dayDet2(e.date) || {}).sheets || {})['時段分析(每小時)']
+      const rows3 = Array.isArray(sheet) && sheet[0] ? (sheet[0].rows || []) : []
+      if (!rows3.length) continue
+      const hm = {}
+      for (const r of rows3) { const h = parseInt(r[0]); if (!isNaN(h)) hm[h] = (hm[h] || 0) + (Number(r[r.length - 1]) || 0) }
+      if (Object.keys(hm).length) hourDays[e.date] = hm
+    }
     const rev30 = w30.reduce((t, e) => t + (Number(e.revenue) || 0), 0)
     // 預做節奏表（張良 2026-09-21：每15分×品項）：pm_pos_q_每日檔（joya-intraday 15分快照）相鄰差分 → 近7個營業日平均
     // 喬亞不給歷史時分 → 資料 2026-09-22 起累積；沒資料時 rhythm.days=0（前端顯示 0 佔位）
@@ -1392,6 +1405,7 @@ export default async function handler(req, res) {
       ok: true, store: storeQ, updatedAt: new Date().toISOString(), anchor, hist,
       kpi: { rev30, days30: w30.length, avgRev: w30.length ? Math.round(rev30 / w30.length) : 0, tx30: w30.reduce((t, e) => t + (Number(e.txCount) || 0), 0) },
       n30, prep, prepAct: Object.fromEntries(Object.entries((actDoc.days || {})[todayAct] || {}).filter(([, v]) => v.q != null).map(([k, v]) => [k, v.q])), prepS86: Object.fromEntries(Object.entries((actDoc.days || {})[todayAct] || {}).filter(([, v]) => v.s86 && v.s86.on).map(([k]) => [k, 1])), prepActDate: todayAct, share14, rhythm, soldout, days: days2.reverse(), setPcts: setDays.reverse(), dates: datesAll, cats: cats2, hidden: Object.values(itemsH2).map(o => ({ n: o.n, k: o.k, cat: o.cat, cum30: o.q30 })), slots: (slots2.wk.length || slots2.we.length) ? slots2 : null,
+      hourDays: Object.keys(hourDays).length ? hourDays : null,
     })
   }
   // 內用/外帶歷史回補口（同金鑰，張良 2026-09-20 內外帶接進報表）：?dinefill=<key>[&dry=1]
