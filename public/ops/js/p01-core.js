@@ -313,18 +313,20 @@ function renderBoard(d, store, view){
     if (hdDates.length) {
       const cols = [...hdDates].reverse() // 新日在左（與 App 熱力圖同向）
       const hrs = [...new Set(hdDates.flatMap(dt => Object.keys(d.hourDays[dt]).map(Number)))].sort((a,b)=>a-b)
-      const rowMx = {}; hrs.forEach(hr => rowMx[hr] = Math.max(1, ...hdDates.map(dt => d.hourDays[dt][hr]||0)))
-      const heatC = (v,mx) => v ? `background:rgba(229,57,53,${Math.min(0.92, 0.12 + v/mx*0.8).toFixed(2)})` : '' // 紅=高（張良看盤習慣）
+      // v4.52.2 還原紅綠色階（張良「跟以前不一樣版本」＝主 App Finance 的版本）：每格跟「該時段日均」比，高於+3%紅、低於-3%綠，差越多越深（封頂72%）；±3%內幾乎不上色
+      const rowAvg = {}; hrs.forEach(hr => { const vs = hdDates.map(dt=>d.hourDays[dt][hr]||0).filter(v=>v>0); rowAvg[hr] = vs.length ? vs.reduce((s,v)=>s+v,0)/vs.length : 0 })
+      const heatC = (v,hr) => { const avg=rowAvg[hr]; if(!v||!avg) return ''; const dev=v/avg, hot=dev>1.03, cold=dev<0.97; const a= hot?Math.min(0.72,0.1+0.62*Math.min(1,dev-1)) : cold?Math.min(0.72,0.1+0.62*Math.min(1,1-dev)) : 0; return `background:${hot?`rgba(179,38,30,${a.toFixed(2)})`:cold?`rgba(63,125,78,${a.toFixed(2)})`:'rgba(255,255,255,.03)'}${a>0.42?';color:#fff':''}` }
+      const devTip = (v,hr) => { const avg=rowAvg[hr]; if(!v||!avg) return ''; const p=Math.round((v/avg-1)*100); return `・日均 ${fK(Math.round(avg))}（${p>0?'+':''}${p}%）` }
       const wd7 = ['日','一','二','三','四','五','六']
       const wdOf = dt => wd7[new Date(dt+'T00:00:00Z').getUTCDay()]
       const fK = n => n>=10000 ? (Math.round(n/100)/100)+'萬' : n>=1000 ? Math.round(n/1000)+'k' : (n||'')
-      let hh = `<section><h2 style="margin-top:14px">時段營收熱力圖 <span class="hint">每格=該時段營收・色越紅=該時段相對越高・新日在左</span></h2>`
+      let hh = `<section><h2 style="margin-top:14px">時段營收熱力圖 <span class="hint">每格=該時段營收・紅=高於該時段日均、綠=低於日均（差越多越深）・新日在左</span></h2>`
       hh += `<div class="scroll" style="overflow:auto;max-height:60vh"><table style="border-collapse:collapse;font-size:11px"><thead><tr><th style="position:sticky;left:0;top:0;z-index:5;background:var(--soft)">時段</th>`
       hh += cols.map(dt=>{ const we=['六','日'].includes(wdOf(dt)); return `<th style="position:sticky;top:0;z-index:2;background:var(--soft);white-space:nowrap;text-align:center${we?';color:#A85C26':''}">${dt.slice(5)}<br><span class="hint" style="font-size:10px">${wdOf(dt)}</span></th>` }).join('')
       hh += `</tr></thead><tbody>`
       hrs.forEach(hr=>{
         hh += `<tr><td style="position:sticky;left:0;z-index:1;background:var(--soft);font-weight:700;white-space:nowrap">${hr}時</td>`
-        hh += cols.map(dt=>{ const v=d.hourDays[dt][hr]||0; return `<td style="text-align:right;padding:3px 6px;font-variant-numeric:tabular-nums;${heatC(v,rowMx[hr])}">${v?fK(v):''}</td>` }).join('')
+        hh += cols.map(dt=>{ const v=d.hourDays[dt][hr]||0; return `<td title="${dt.slice(5)} ${hr}時：${v?fK(v):'—'}${devTip(v,hr)}" style="text-align:right;padding:3px 6px;font-variant-numeric:tabular-nums;${heatC(v,hr)}">${v?fK(v):''}</td>` }).join('')
         hh += `</tr>`
       })
       hh += `</tbody></table></div></section>`
