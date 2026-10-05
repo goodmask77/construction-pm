@@ -1846,6 +1846,14 @@ export default async function handler(req, res) {
     if (!whoM2) return res.status(403).json({ ok: false, error: permDeny() })
     const doc = (await kvGet('sp_finance_pm_menu')) || {}
     if (!doc.base) return res.status(400).json({ ok: false, error: '先開一次菜單分頁讓系統種既有菜單' })
+    // v4.52.6 批次補英文（張良上傳 4 張菜單圖→補所有品項含「已刪除」(在 base)的官方英文；只改 en 不動名稱/價格）
+    if (mb2.enMap && typeof mb2.enMap === 'object' && !Array.isArray(mb2.enMap)) {
+      let n9 = 0
+      for (const s9 of ((doc.draft || {}).sections || [])) for (const i9 of (s9.items || [])) if (mb2.enMap[i9.id] !== undefined) { i9.en = String(mb2.enMap[i9.id]).slice(0, 80); n9++ }
+      for (const s9 of ((doc.base || {}).sections || [])) for (const i9 of (s9.items || [])) if (mb2.enMap[i9.id] !== undefined) { i9.en = String(mb2.enMap[i9.id]).slice(0, 80); n9++ }
+      await kvPut('sp_finance_pm_menu', doc, '批次補英文(' + whoM2.name + ') ' + n9 + '項')
+      return res.status(200).json({ ok: true, updated: n9 })
+    }
     const dr = mb2.draft || {}
     if (!Array.isArray(dr.sections)) return res.status(400).json({ ok: false, error: '格式不對' })
     const oldEn = {}; for (const s0 of ((doc.draft || {}).sections || [])) for (const i0 of (s0.items || [])) if (i0.en) oldEn[i0.id] = i0.en // 英文防蓋（2026-10-01：舊分頁整份存檔會把剛灌的英文清空）
