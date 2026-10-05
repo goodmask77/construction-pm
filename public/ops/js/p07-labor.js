@@ -63,7 +63,7 @@ function laborRender(){
     </div>`).join(''))||'<div class="mut" style="padding:6px 0">還沒有存檔——按上面「存檔」保存目前這張表</div>'}
   </div>`:''}
   <div class="scroll"><table id="lbTbl" style="border-collapse:collapse;user-select:none">
-  <thead><tr><th style="padding:6px 10px;text-align:left;position:sticky;left:0;background:var(--soft);z-index:2">時段</th><th style="padding:6px 10px;text-align:right;font-weight:900">人數</th>
+  <thead><tr><th style="padding:6px 10px;text-align:left;position:sticky;left:0;background:var(--soft);z-index:2">時段</th><th style="padding:6px 10px;text-align:left;font-weight:900">人數</th>
   ${cols.map((c,ci)=>{ const g=LB_GC[LB_GRP(c)]; return `<th style="padding:6px 8px;text-align:center;min-width:86px;white-space:nowrap;background:${g.bg};color:${g.ink};font-weight:800;${meN?'cursor:pointer':''}" ${meN?`onclick="lbColClear(${ci})" title="點我＝清空這一欄"`:''}>${c}</th>` }).join('')}
   <th style="padding:6px 10px;text-align:right;font-weight:900">小計</th></tr></thead><tbody>`
   LB_HOURS.forEach(hh=>{
@@ -72,7 +72,7 @@ function laborRender(){
     const mealLn = meal ? 'box-shadow:inset 0 0 0 1px rgba(226,233,242,.14);' : ''
     const ppl = cols.reduce((a,_,ci)=>a+(lbV(sh,hh,ci)?1:0),0)
     h += `<tr><td style="padding:4px 10px;text-align:left;font-weight:800;position:sticky;left:0;${meal?'background:#262B33;color:#EDF2F8;box-shadow:inset 0 0 0 1px rgba(226,233,242,.14);':'background:var(--card);'}z-index:1;white-space:nowrap;${meN?'cursor:pointer':''}" ${meN?`onclick="lbRowClear('${hh}')" title="點我＝清空這一列"`:''}>${+hh}-${+hh+1}</td>`
-    h += `<td style="padding:4px 10px;text-align:right;font-weight:800;font-variant-numeric:tabular-nums;${mealBg}">${ppl||''}</td>` // 人數移到時段右邊（張良 v4.53）
+    h += `<td style="padding:4px 10px;text-align:left;font-weight:800;font-variant-numeric:tabular-nums;${mealBg}">${ppl||''}</td>` // 人數移到時段右邊+靠左（張良 v4.53/v4.54）
     cols.forEach((_,ci)=>{
       const v = lbV(sh,hh,ci)
       h += `<td id="lc_${hh}_${ci}" style="padding:0;text-align:center;min-width:86px;border:1px solid var(--line);${v?`background:${LB_AB[v]||'#1E2630'};`:(meal?'background:#232831;':'')}${mealLn}${meN?'cursor:cell;':''}font-variant-numeric:tabular-nums"
