@@ -249,12 +249,18 @@ function lbRender(){
   <div style="display:flex;gap:8px;flex-wrap:wrap">${fRank.length?fRank.slice(0,12).map(([nm,arr],i)=>`<div onclick="lbFinder('${nm}')" style="cursor:pointer;background:${i===0?'#2E2814':'var(--soft)'};border:1.5px solid ${i===0?'#E8D089':'var(--line)'};border-radius:12px;padding:10px 16px;text-align:center;min-width:96px">
     <div style="font-size:13px;font-weight:700;color:var(--muted)">${i===0?'👑 ':''}#${i+1}</div><div style="font-weight:800;color:var(--ink)">${nm}</div><div style="font-size:20px;font-weight:800;color:var(--pdark)">${arr.length}<span style="font-size:12px"> 件</span></div>
   </div>`).join(''):'<div class="mut">還沒有人回報過問題</div>'}</div></section>`
-  h += `<section><h2>積分排行榜 <span class="hint">積分＝每件「發現」與「解決」的全員評星平均加總（1~5⭐）</span></h2>
-  <div class="scroll"><table><thead><tr><th>#</th><th style="text-align:left">夥伴</th><th>發現分</th><th>解決分</th><th>任務分</th><th>總積分</th>${d.facets.map(f=>'<th>'+f+'</th>').join('')}<th>發現次</th><th>解決次</th></tr></thead><tbody>`
-  if (!d.rank.length) h += `<tr><td colspan="${8+d.facets.length}" style="text-align:center" class="mut">還沒有評分——回報問題、認領解決、幫別人評星開始累積</td></tr>`
+  // 🔥 本月行為榜（張良 2026-10-06 拍板：排行榜看 總累積＋本月；行為分＝做了就給）
+  const monthRank = [...d.rank].filter(p=>p.behavMonth>0).sort((a,b)=>b.behavMonth-a.behavMonth)
+  h += `<section><h2>🔥 本月行為榜 <span class="hint">本月「有做事」累積分（${d.month||''}）：打卡／交回饋／完成SOP／簽收會議／回報問題</span></h2>
+  <div style="display:flex;gap:8px;flex-wrap:wrap">${monthRank.length?monthRank.slice(0,12).map((p,i)=>`<div style="background:${i===0?'#13233A':'var(--soft)'};border:1.5px solid ${i===0?'#4DA3FF':'var(--line)'};border-radius:12px;padding:10px 16px;text-align:center;min-width:92px">
+    <div style="font-size:13px;font-weight:700;color:var(--muted)">${i===0?'🔥 ':''}#${i+1}</div><div style="font-weight:800;color:var(--ink)">${p.name}</div><div style="font-size:20px;font-weight:800;color:var(--primary)">${p.behavMonth}<span style="font-size:12px"> 分</span></div>
+  </div>`).join(''):'<div class="mut">本月還沒有人累積行為分——做事就有分</div>'}</div></section>`
+  h += `<section><h2>積分排行榜 <span class="hint">總累積＝行為分(做了就給)＋品質分(被評星)＋任務分</span>${meN&&d.isAdmin?' <button class="mini" style="margin-left:6px" onclick="lbPtsCfg()">⚙️ 積分規則</button>':''}</h2>
+  <div class="scroll"><table><thead><tr><th>#</th><th style="text-align:left">夥伴</th><th>行為分</th><th>發現分</th><th>解決分</th><th>任務分</th><th>總積分</th>${d.facets.map(f=>'<th>'+f+'</th>').join('')}<th>發現次</th><th>解決次</th></tr></thead><tbody>`
+  if (!d.rank.length) h += `<tr><td colspan="${9+d.facets.length}" style="text-align:center" class="mut">還沒有分數——打卡、交回饋、完成SOP、回報問題、幫別人評星開始累積</td></tr>`
   d.rank.forEach((p,i)=>{
     const medal = i===0?'🥇':i===1?'🥈':i===2?'🥉':(i+1)
-    h += `<tr style="${meN===p.name?'background:var(--psoft)':''}"><td style="font-weight:900">${medal}</td><td style="text-align:left;font-weight:800;color:var(--ink)">${p.name}</td><td>${p.findPts||0}</td><td>${p.fixPts||0}</td><td style="font-weight:800;color:${p.taskPts?'#F2C14E':'inherit'}">${p.taskPts||0}</td><td class="avg">${p.total||0}</td>${d.facets.map(f=>'<td>'+(p.facets[f]?('⭐'+p.facets[f].avg):'—')+'</td>').join('')}<td class="mut">${p.nFind}</td><td class="mut">${p.nFix}</td></tr>`
+    h += `<tr style="${meN===p.name?'background:var(--psoft)':''}"><td style="font-weight:900">${medal}</td><td style="text-align:left;font-weight:800;color:var(--ink)">${p.name}</td><td style="font-weight:800;color:${p.behavPts?'#4DA3FF':'inherit'}">${p.behavPts||0}</td><td>${p.findPts||0}</td><td>${p.fixPts||0}</td><td style="font-weight:800;color:${p.taskPts?'#F2C14E':'inherit'}">${p.taskPts||0}</td><td class="avg">${p.total||0}</td>${d.facets.map(f=>'<td>'+(p.facets[f]?('⭐'+p.facets[f].avg):'—')+'</td>').join('')}<td class="mut">${p.nFind}</td><td class="mut">${p.nFix}</td></tr>`
   })
   h += `</tbody></table></div></section>`
   // 待你評分（個人化）＋ 📦 封存
@@ -270,6 +276,70 @@ function lbRender(){
   h += `</section>`
   if (arch.length) h += `<section><details><summary style="font-weight:900;cursor:pointer">📦 封存（${arch.length}）｜評完／略過的收在這，點開可看可改票</summary><div style="margin-top:8px">${arch.map(x=>rateCard(x,meN,true)).join('')}</div></details></section>`
   app.innerHTML = h
+}
+// 🏦 積分規則表管理（管理者；張良 2026-10-06）：改每個動作幾分/每天上限/開關、加新動作、抽查加扣分
+async function lbPtsCfg(){
+  let d; try { const r = await fetch('/api/mail-sync?pointscfg=' + encodeURIComponent(K) + (TK()?'&me='+encodeURIComponent(TK()):'')); d = await r.json() } catch(e){}
+  if (!d || !d.ok){ alert('讀不到積分規則'); return }
+  const esc = s => String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')
+  const rules = d.rules || {}
+  const rows = Object.keys(rules).map(act=>{ const r = rules[act]
+    return `<tr data-act="${esc(act)}" style="${r.off?'opacity:.45':''}">
+      <td style="text-align:left;padding:4px 6px"><input class="pcLbl" value="${esc(r.label||act)}" style="width:118px;border:1px solid var(--line);border-radius:7px;padding:5px 7px;font-size:13px"><div class="hint" style="font-size:11px">${esc(act)}</div></td>
+      <td style="padding:4px 6px"><input class="pcPts" type="number" value="${Number(r.pts)||0}" style="width:52px;border:1px solid var(--line);border-radius:7px;padding:5px;font-size:13px;text-align:center"></td>
+      <td style="padding:4px 6px"><input class="pcCap" type="number" value="${Number(r.cap)||0}" style="width:52px;border:1px solid var(--line);border-radius:7px;padding:5px;font-size:13px;text-align:center"></td>
+      <td style="padding:4px 6px;text-align:center"><input class="pcOff" type="checkbox" ${r.off?'checked':''}></td>
+      <td style="padding:4px 6px"><button class="mini" style="padding:4px 8px" onclick="lbPtsSave(this)">存</button></td></tr>`
+  }).join('')
+  const ov = document.createElement('div'); ov.id='pcOv'
+  ov.style.cssText='position:fixed;inset:0;background:rgba(10,14,20,.6);z-index:60;display:flex;align-items:center;justify-content:center;padding:14px'
+  ov.innerHTML = `<div style="background:#161B22;border:1px solid #2A3240;box-shadow:0 18px 50px rgba(0,0,0,.6);border-radius:14px;max-width:560px;width:100%;max-height:86vh;overflow:auto;padding:16px" onclick="event.stopPropagation()">
+    <div style="font-weight:900;font-size:16px;margin-bottom:4px">⚙️ 積分規則表（行為分）</div>
+    <div class="hint" style="margin-bottom:10px">分數＝做一次給幾分；上限＝每人每天最多算幾次（0＝不限）；關閉＝暫停這項給分。品質分由排行榜評星另計。</div>
+    <table style="width:100%;font-size:13px"><thead><tr><th style="text-align:left">動作</th><th>分數</th><th>每天上限</th><th>關閉</th><th></th></tr></thead><tbody>${rows}</tbody></table>
+    <div style="border-top:1px solid var(--line);margin-top:12px;padding-top:10px">
+      <div style="font-weight:800;margin-bottom:6px">＋ 新增動作</div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+        <input id="pcNewAct" placeholder="代碼(英數)" style="width:110px;border:1px solid var(--line);border-radius:7px;padding:6px 8px;font-size:13px">
+        <input id="pcNewLbl" placeholder="顯示名稱" style="width:120px;border:1px solid var(--line);border-radius:7px;padding:6px 8px;font-size:13px">
+        <input id="pcNewPts" type="number" placeholder="分" style="width:56px;border:1px solid var(--line);border-radius:7px;padding:6px;font-size:13px;text-align:center">
+        <input id="pcNewCap" type="number" placeholder="上限" style="width:56px;border:1px solid var(--line);border-radius:7px;padding:6px;font-size:13px;text-align:center">
+        <button class="mini on" style="padding:6px 12px" onclick="lbPtsAdd()">加入</button></div>
+      <div class="hint" style="font-size:11px;margin-top:4px">代碼＝程式識別用（之後要接這個動作給分才有效）；張良只要改分數/上限/開關就好</div>
+    </div>
+    <div style="border-top:1px solid var(--line);margin-top:12px;padding-top:10px">
+      <div style="font-weight:800;margin-bottom:6px">🔎 抽查加／扣分</div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+        <select id="pcAdjP" style="border:1px solid var(--line);border-radius:7px;padding:6px 8px;font-size:13px">${((window._lbD&&window._lbD.names)||[]).map(n=>`<option>${esc(n)}</option>`).join('')}</select>
+        <input id="pcAdjPts" type="number" placeholder="±分" style="width:64px;border:1px solid var(--line);border-radius:7px;padding:6px;font-size:13px;text-align:center">
+        <input id="pcAdjNote" placeholder="原因(可空)" style="flex:1;min-width:120px;border:1px solid var(--line);border-radius:7px;padding:6px 8px;font-size:13px">
+        <button class="mini" style="padding:6px 12px" onclick="lbPtsAdjust()">送出</button></div>
+    </div>
+    <div style="display:flex;justify-content:flex-end;margin-top:12px"><button class="mini" style="padding:8px 16px" onclick="document.getElementById('pcOv').remove()">關閉</button></div></div>`
+  ov.onclick = () => ov.remove()
+  document.body.appendChild(ov)
+}
+async function lbPtsPost(body){
+  const r = await fetch('/api/mail-sync?pointscfg=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ ...body, token: TK() }) })
+  return r.json().catch(()=>null)
+}
+async function lbPtsSave(btn){
+  const tr = btn.closest('tr'); const act = tr.dataset.act
+  const label = tr.querySelector('.pcLbl').value, pts = +tr.querySelector('.pcPts').value, cap = +tr.querySelector('.pcCap').value, off = tr.querySelector('.pcOff').checked
+  const d = await lbPtsPost({ op:'set', act, label, pts, cap, off })
+  if (d && d.ok){ btn.textContent='✓'; setTimeout(()=>btn.textContent='存',1000) } else alert((d&&d.error)||'存失敗')
+}
+async function lbPtsAdd(){
+  const act=(document.getElementById('pcNewAct')||{}).value||'', label=(document.getElementById('pcNewLbl')||{}).value||'', pts=+((document.getElementById('pcNewPts')||{}).value||0), cap=+((document.getElementById('pcNewCap')||{}).value||0)
+  if(!act||!label){ alert('代碼和名稱都要填'); return }
+  const d = await lbPtsPost({ op:'set', act, label, pts, cap })
+  if (d && d.ok){ document.getElementById('pcOv').remove(); lbPtsCfg() } else alert((d&&d.error)||'加入失敗')
+}
+async function lbPtsAdjust(){
+  const person=(document.getElementById('pcAdjP')||{}).value||'', pts=+((document.getElementById('pcAdjPts')||{}).value||0), note=(document.getElementById('pcAdjNote')||{}).value||''
+  if(!person||!pts){ alert('要選人＋填加扣分數'); return }
+  const d = await lbPtsPost({ op:'adjust', person, pts, note })
+  if (d && d.ok){ alert('已記錄 '+(pts>0?'+':'')+pts+' 給 '+person); document.getElementById('pcOv').remove(); if (typeof refreshView==='function') refreshView() } else alert((d&&d.error)||'送出失敗')
 }
 // 完成任務卡（排行榜評分用）：拉桿評星＋等級說明，onchange 就地送出
 function rateCard(x, meN, archived){

@@ -86,6 +86,46 @@ export async function kvPut(id, obj, editor) {
   CHANGED.add(id)
 }
 
+// ── 🏦 積分中樞（張良 2026-10-06：任何動作都給積分、回饋也給分、串排行榜、累積）──
+// 設計拍板：①分兩種＝行為分(做了就給,固定分)＋品質分(被評分,1~5)　②排行榜看 總累積＋本月　③行為分做了就入帳＋管理者抽查
+// 行為分走統一流水帳 sp_finance_pm_points（逐筆一事件，跟「逐筆存」習慣一致）；排行榜=流水加總。
+// 規則表 sp_finance_pm_points_cfg.behavior 可增刪改(label/pts/cap每日上限/off關閉)；cap=0＝不限每日(只用 ref 去重)。
+const POINTS_DEFAULT = {
+  punch: { label: '打卡上班', pts: 2, cap: 1 },
+  fb_give: { label: '交每日回饋', pts: 3, cap: 3 },
+  sop_done: { label: '完成 SOP 一條', pts: 1, cap: 0 },
+  meet_ack: { label: '簽收會議宣達', pts: 2, cap: 0 },
+  journal: { label: '交工作日誌', pts: 2, cap: 3 },
+  issue_report: { label: '回報問題', pts: 3, cap: 0 },
+  inv_count: { label: '完成盤點', pts: 3, cap: 1 },
+}
+export function pointsRules(cfg) { // 預設 ∪ 自訂（自訂可覆寫 pts/cap/label、加 off 關閉、加新動作）
+  const o = {}
+  for (const k of Object.keys(POINTS_DEFAULT)) o[k] = { ...POINTS_DEFAULT[k] }
+  const cu = (cfg && cfg.behavior) || {}
+  for (const k of Object.keys(cu)) o[k] = { ...(o[k] || {}), ...cu[k] }
+  return o
+}
+// 給行為分一筆（export 給 punch.js 等其他端點共用）。person=姓名、act=規則key、ref=去重鍵(同人同動作同ref只給一次)
+export async function awardPts(person, act, ref) {
+  try {
+    if (!person || person === '匿名') return false
+    const cfg = await kvGet('sp_finance_pm_points_cfg')
+    const rule = pointsRules(cfg)[act]
+    if (!rule || rule.off || !(Number(rule.pts) > 0)) return false
+    const doc = (await kvGet('sp_finance_pm_points')) || { list: [], carry: {} }
+    doc.list = doc.list || []; doc.carry = doc.carry || {}
+    const dnow = new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10)
+    if (ref && doc.list.find(e => e.person === person && e.act === act && e.ref === ref)) return false
+    const cap = Number(rule.cap) || 0
+    if (cap > 0 && doc.list.filter(e => e.person === person && e.act === act && e.date === dnow).length >= cap) return false
+    doc.list.push({ id: 'pt' + Date.now().toString(36) + '_' + doc.list.length, person, date: dnow, ts: new Date(Date.now() + 8 * 3600e3).toISOString().slice(11, 16), type: 'behavior', act, pts: Number(rule.pts), ref: ref || '' })
+    if (doc.list.length > 40000) { const cut = doc.list.splice(0, doc.list.length - 40000); for (const e of cut) doc.carry[e.person] = (doc.carry[e.person] || 0) + Number(e.pts || 0) } // 滾出窗口的折進 carry，總累積不失真
+    await kvPut('sp_finance_pm_points', doc, '積分(' + person + ' +' + rule.pts + ' ' + act + ')')
+    return true
+  } catch (_) { return false }
+}
+
 // 入庫後廣播「這些 key 變了」（Realtime REST 一發 HTTP 就好，免開 websocket）：
 // 前端 supa.js 訂著 pm-doc-sync 頻道，聽到就自動重抓該 key → 日結信一入庫，
 // 開著的營運報表/對帳頁畫面自己跳新資料，不用手動按更新或重新整理（張良 2026-08-14）
@@ -2030,6 +2070,7 @@ export default async function handler(req, res) {
       for (const a of (ad.list || [])) if (a.date === dtF && a.reviewer === whoF.name && a.reviewee === tgF && a.status !== 'done') { a.status = 'done'; a.doneTs = it.ts; hit = true }
       if (hit) await kvPut('sp_finance_pm_fb_assign', ad, '指派完成(' + whoF.name + '→' + tgF + ')')
     } catch (_) {}
+    await awardPts(whoF.name, 'fb_give', dtF + ':' + tgF) // 🏦 行為分：交回饋（每位對象每天算一次，每日上限由規則表）
     return res.status(200).json({ ok: true, item: it })
   }
   // 站別回饋面向設定（v4.53.0 管理者/站長）：POST ?fbdims= {op:'station', station, aspects:[]} | {op:'default', aspects:[]}
@@ -2209,7 +2250,9 @@ export default async function handler(req, res) {
     } else if (mb.op === 'ack') { // ✅ 確認熟知
       const it = (doc.list || []).find(x => x.id === mb.id)
       if (!it) return res.status(404).json({ ok: false })
+      const firstAck = !(it.acks || {})[whoM.name]
       it.acks = it.acks || {}; it.acks[whoM.name] = { ts: now8(), ver: it.ver || 1 }
+      if (firstAck) await awardPts(whoM.name, 'meet_ack', it.id) // 🏦 行為分：簽收會議（每場每人一次，改版重簽不重複給）
       // v4.47.4 治本（張良「趙以棠按了會議確認已熟知 我這邊沒有通知」）：每人簽收→即時通知發起人(鈴鐺紅點+推播)，全員簽完→再加一則 LINE 私訊（關鍵節點才發，不每簽都吵）
       try {
         if (it.by && it.by !== whoM.name) { // 發起人自己簽自己發起的不用通知自己
@@ -2972,11 +3015,23 @@ export default async function handler(req, res) {
       }
       Object.keys(tpMap).forEach(nm => P(nm))
     } catch (_) {}
+    // 🏦 行為分（統一流水帳 sp_finance_pm_points）：總累積＝carry+窗內、本月＝當月；一套算法一個來源
+    const ptsDoc = (await kvGet('sp_finance_pm_points')) || { list: [], carry: {} }
+    const monthP = new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 7)
+    const behavTotal = { ...(ptsDoc.carry || {}) }, behavMonth = {}
+    for (const e of (ptsDoc.list || [])) {
+      behavTotal[e.person] = (behavTotal[e.person] || 0) + Number(e.pts || 0)
+      if (String(e.date || '').slice(0, 7) === monthP) behavMonth[e.person] = (behavMonth[e.person] || 0) + Number(e.pts || 0)
+    }
+    Object.keys(behavTotal).forEach(nm => P(nm))
     const rank = Object.values(board).map(p => ({
       name: p.name, nFind: p.nFind, nFix: p.nFix,
       findPts: Math.round(p.findPts * 10) / 10, fixPts: Math.round(p.fixPts * 10) / 10,
       taskPts: Math.round((tpMap[p.name] || 0) * 10) / 10,
-      total: Math.round((p.findPts + p.fixPts + (tpMap[p.name] || 0)) * 10) / 10,
+      behavPts: Math.round((behavTotal[p.name] || 0) * 10) / 10,
+      behavMonth: Math.round((behavMonth[p.name] || 0) * 10) / 10,
+      qualPts: Math.round((p.findPts + p.fixPts + (tpMap[p.name] || 0)) * 10) / 10, // 品質分合計（發現+解決+任務）
+      total: Math.round((p.findPts + p.fixPts + (tpMap[p.name] || 0) + (behavTotal[p.name] || 0)) * 10) / 10,
       facets: Object.fromEntries(FACETS.map(f => [f, p.fc[f] ? { avg: Math.round(p.fc[f].sum / p.fc[f].n * 10) / 10, n: p.fc[f].n } : null])),
     })).sort((a, b) => b.total - a.total || (b.nFind + b.nFix) - (a.nFind + a.nFix))
     // ○○之星榮耀榜：每面向平均星最高者（至少 3 票才上榜，避免一票封神）
@@ -2987,7 +3042,53 @@ export default async function handler(req, res) {
     // 2026-10-02 治本（張良：還是沒按鈕）：lb 口的 me 漏了 approver → taskCard 的 📣發布/✅核准 鈕對誰都不出現
     const defL = await kvGet('sp_finance_pm_sop_def')
     const aprL = (((defL || {}).ground || {}).approvers || ['張良瑋'])
-    return res.status(200).json({ ok: true, me: meL ? { name: meL.name, role: meL.role, approver: meL.role === '主管' || aprL.includes(meL.name) } : null, facets: FACETS, rank, stars5, issues: list, names: namesL })
+    const isAdmL = !!(meL && (meL.role === '主管' || aprL.includes(meL.name)))
+    const ptsCfgL = await kvGet('sp_finance_pm_points_cfg')
+    return res.status(200).json({ ok: true, me: meL ? { name: meL.name, role: meL.role, approver: isAdmL } : null, facets: FACETS, rank, stars5, issues: list, names: namesL, month: monthP, ptsRules: pointsRules(ptsCfgL), isAdmin: isAdmL })
+  }
+  // 🏦 積分規則表（行為分）管理：GET 回規則＋近期流水；POST {op:'set',act,label,pts,cap,off} | {op:'del',act} | {op:'adjust',person,pts,note}（管理者抽查加扣分）
+  if (req.query?.pointscfg) {
+    const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
+    if (!ok2 || String(req.query.pointscfg) !== ok2) return res.status(403).json({ ok: false })
+    const defP = await kvGet('sp_finance_pm_sop_def')
+    const aprP = (((defP || {}).ground || {}).approvers || ['張良瑋'])
+    const isAdm = (w) => !!(w && (w.role === '主管' || aprP.includes(w.name)))
+    if (req.method !== 'POST') {
+      const whoP = await sopWho(req.query.me)
+      const cfgP = await kvGet('sp_finance_pm_points_cfg')
+      const ledg = ((await kvGet('sp_finance_pm_points')) || {}).list || []
+      return res.status(200).json({ ok: true, rules: pointsRules(cfgP), custom: (cfgP || {}).behavior || {}, recent: isAdm(whoP) ? ledg.slice(-80).reverse() : [], isAdmin: isAdm(whoP) })
+    }
+    let bP = {}
+    try { bP = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
+    const whoP = await permWho(bP.token, 'lb')
+    if (!whoP) return res.status(403).json({ ok: false, error: permDeny() })
+    if (!isAdm(whoP)) return res.status(403).json({ ok: false, error: '只有管理者/主管能改積分規則' })
+    const cfg = (await kvGet('sp_finance_pm_points_cfg')) || { behavior: {} }
+    cfg.behavior = cfg.behavior || {}
+    if (bP.op === 'set') {
+      const act = String(bP.act || '').trim().replace(/[^A-Za-z0-9_]/g, '').slice(0, 24)
+      if (!act) return res.status(400).json({ ok: false, error: '動作代碼只能用英數底線' })
+      const cur = cfg.behavior[act] || {}
+      cfg.behavior[act] = { ...cur,
+        ...(bP.label != null ? { label: String(bP.label).slice(0, 20) } : {}),
+        ...(bP.pts != null ? { pts: Math.max(0, Math.round(Number(bP.pts) || 0)) } : {}),
+        ...(bP.cap != null ? { cap: Math.max(0, Math.round(Number(bP.cap) || 0)) } : {}),
+        ...(bP.off != null ? { off: !!bP.off } : {}) }
+      await kvPut('sp_finance_pm_points_cfg', cfg, '積分規則(' + whoP.name + ' set ' + act + ')')
+    } else if (bP.op === 'del') {
+      delete cfg.behavior[String(bP.act || '')]
+      await kvPut('sp_finance_pm_points_cfg', cfg, '積分規則(' + whoP.name + ' del)')
+    } else if (bP.op === 'adjust') { // 管理者抽查加/扣分
+      const person = String(bP.person || '').trim().slice(0, 20)
+      const pts = Math.round(Number(bP.pts) || 0)
+      if (!person || !pts) return res.status(400).json({ ok: false, error: '要選人＋填加扣分數' })
+      const doc = (await kvGet('sp_finance_pm_points')) || { list: [], carry: {} }
+      doc.list = doc.list || []
+      doc.list.push({ id: 'pt' + Date.now().toString(36) + '_adj', person, date: new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10), ts: new Date(Date.now() + 8 * 3600e3).toISOString().slice(11, 16), type: 'adjust', act: 'adjust', pts, ref: '', by: whoP.name, note: String(bP.note || '').slice(0, 80) })
+      await kvPut('sp_finance_pm_points', doc, '積分抽查調整(' + whoP.name + '→' + person + ' ' + (pts > 0 ? '+' : '') + pts + ')')
+    } else return res.status(400).json({ ok: false })
+    return res.status(200).json({ ok: true, rules: pointsRules(cfg) })
   }
   if (req.method === 'POST' && req.query?.soprate) {
     // v2：面向星星（1~5）。body={id, aspect:'find'|'fix', facet:五面向之一, stars:1-5}
@@ -3795,6 +3896,7 @@ export default async function handler(req, res) {
       const who4 = await sopWho(b4.token) // v4.34.0 打卡=參與，綁定即可（編輯內容才看 sop 權限）
       if (!who4) return res.status(403).json({ ok: false, error: permDeny() }) // 張良 2026-09-25：不再收手填名字
       slog.items[b4.itemId] = { done: 1, ts: hm4, by: who4.name, ...(photoUrl ? { photo: photoUrl } : {}) }
+      await awardPts(who4.name, 'sop_done', dt2 + ':' + b4.itemId) // 🏦 行為分：完成 SOP 一條（同條同天只算一次；撤銷不扣，抽查制）
     }
     await kvPut(dk2, slog, 'SOP打卡')
     return res.status(200).json({ ok: true, log: slog })
@@ -3870,6 +3972,7 @@ export default async function handler(req, res) {
     const iss = { id: 'is' + Date.now().toString(36), st: String(b8.st).slice(0, 20), text: String(b8.text || '').slice(0, 500), media: (Array.isArray(b8.media) ? b8.media : []).slice(0, 6), by: who8.name, ts: new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 16).replace('T', ' '), status: 'open', pub: 'pending' }
     doc8.list = [iss, ...(doc8.list || [])].slice(0, 200)
     await kvPut('sp_finance_pm_sop_issues', doc8, '看板問題回報(' + iss.by + ')')
+    await awardPts(iss.by, 'issue_report', iss.id) // 🏦 行為分：回報問題（品質分另由排行榜評星累計）
     // v4.53.0 問題回報一提交就進通知中心（張良「通知中心也沒出現問題回報」）：只記通知歷史不發 web push（避免吵），issue 分類、全員可見
     try {
       const nd8 = (await kvGet('sp_finance_pm_prep_ntf')) || { list: [] }

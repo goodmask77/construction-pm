@@ -225,6 +225,7 @@ const EDIT_FN = {
   actSave:'board', actAdd:'board', actLoss:'board', act86:'board', rHide:'board', posHide:'board', rMng:'board', itmMngTog:'board',
   sopItemEdit:'sop', sopItemSave:'sop', sopEdAdd:'sop', sopEdSave:'sop', sopCatAdd:'sop', sopCatSet:'sop', sopStAdd:'sop', sopStDel:'sop', sopStRen:'sop', sopStRename:'sop', sopStOp:'sop', sopstOp:'sop', catMove:'sop', msAddSt:'sop', msDelSt:'sop', msSave:'sop', sopOrdMove:'sop', sopRefOpen:'sop', sopRefPaste:'sop', sopRefSave:'sop', sopRefUp:'sop', sopMngT:'sop',
   taskNew:'task', taskNewSend:'task', taskOwn:'task', taskOwnSend:'task', ckAdd:'task', ckOp:'task', ckPick:'task', ckSend:'task', lbOp:'task', lbDue:'task',
+  lbPtsSave:'lb', lbPtsAdd:'lb', lbPtsAdjust:'lb',
   menuCell:'menu', menuItemAdd:'menu', menuItemDel:'menu', menuItemSave:'menu', menuItemPurge:'menu', menuItemRestore:'menu', menuItemShift:'menu', menuSecDel:'menu', menuSecForm:'menu', menuSecShift:'menu', menuNoteEdit:'menu', mnImgPick:'menu', mnImgUndo:'menu',
   fbSubmit:'fb', fbjNew:'fb', fbjSend:'fb', fbjDel:'fb', fbAssignNew:'fb', fbAssignGo:'fb', fbAssignDel:'fb', fbDimsEdit:'fb', fbDimsSave:'fb',
   meetForm:'meet', meetSave:'meet', meetOp:'meet', meetTypes:'meet', mtUpload:'meet',
