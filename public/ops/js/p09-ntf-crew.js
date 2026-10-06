@@ -441,7 +441,21 @@ async function meChipInit(){ // 側欄底部＝登入身分（張良 2026-10-02�
 const NTF_CATS = { all:'全部', meet:'📢 會議', sop:'✅ SOP', prep:'🍳 備料', stock:'📦 庫存', issue:'⚠️ 問題回報', other:'🔔 其他' }
 let _ntfList = null, _ntfCat = 'all', _ntfRd = '' // _ntfRd=開啟通知中心當下的「上次已讀」快照，給未讀高亮用（v4.52.1）
 async function ntfFetch(){ try { const r = await fetch('/api/mail-sync?ntf=' + encodeURIComponent(K) + (TK() ? '&me=' + encodeURIComponent(TK()) : '') + '&r=' + Date.now()); const j = await r.json(); if (j && j.ok) _ntfList = j.list || [] } catch(e){}; return _ntfList || [] }
-function ntfUnread(){ const rd = localStorage.getItem('gdNtfRead') || ''; return (_ntfList || []).filter(x => x.ts > rd).length }
+// v4.55.10 逐則已讀（張良拍板）：每則各自記已讀，點哪則哪則才消；未讀＝不在 seen 集合。首次用舊浮水印 gdNtfRead 當種子（以前看過的都當已讀，只有比浮水印新的才算未讀）
+function ntfSeen(){
+  let s = null
+  try { const v = localStorage.getItem('gdNtfSeen'); if (v != null) s = new Set(JSON.parse(v) || []) } catch(_){}
+  if (s === null) { // 還沒初始化
+    if (!(_ntfList && _ntfList.length)) return new Set() // 清單還沒載＝先別種（等有資料再種，免得種成空的之後全亮）
+    const rd = localStorage.getItem('gdNtfRead') || ''
+    s = new Set((_ntfList || []).filter(x => x.ts && x.ts <= rd).map(x => x.id))
+    try { localStorage.setItem('gdNtfSeen', JSON.stringify([...s])) } catch(_){}
+  }
+  return s
+}
+function ntfMarkSeen(ids){ const s = ntfSeen(); (Array.isArray(ids)?ids:[ids]).forEach(i => i && s.add(i)); try { localStorage.setItem('gdNtfSeen', JSON.stringify([...s].slice(-500)) ) } catch(_){}; try { ntfPaintBadge() } catch(_){} }
+function ntfUnread(){ const s = ntfSeen(); return (_ntfList || []).filter(x => !s.has(x.id)).length }
+function ntfPaintBadge(){ const n = ntfUnread(); ;[['ntfBell','-5px'], ['favBell','-2px']].forEach(([id, top]) => { const b = document.getElementById(id); if (!b) return; let d = b.querySelector('.ntfDot'); if (d) d.remove(); if (n > 0) { d = document.createElement('span'); d.className = 'ntfDot'; d.style.cssText = `position:absolute;top:${top};right:${id==='favBell'?'8px':'-5px'};background:#E5484D;color:#fff;border-radius:999px;font-size:11px;font-weight:900;min-width:17px;height:17px;line-height:17px;text-align:center;padding:0 3px`; d.textContent = n > 99 ? '99+' : n; b.appendChild(d) } }) }
 // 📌 釘選/收件匣（v4.52.2 張良「有些人看過會忘或在忙，需要收件匣或釘選稍後回頭處理」）：本機先存＝秒反應；綁定者同步伺服器＝換手機也在
 const ntfPinGet = () => { try { const v = JSON.parse(localStorage.getItem('gdNtfPin') || '[]'); return new Set(Array.isArray(v) ? v : []) } catch(_) { return new Set() } }
 const ntfIsPin = x => !!x.pinned || ntfPinGet().has(x.id) // 伺服器旗標 or 本機都算釘選
@@ -452,16 +466,9 @@ async function ntfPin(id, pin){
   try { ntfRender() } catch(_){}
   if (TK()) { try { await fetch('/api/mail-sync?ntfpin=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ id, pin: pin?1:0, token: TK() }) }) } catch(_){} }
 }
-async function ntfBadgeSync(){ // 鈴鐺上的未讀紅點數（進站抓一次）；v4.47.4 同步側欄(#ntfBell)＋手機底部列(#favBell)兩處
+async function ntfBadgeSync(){ // 鈴鐺上的未讀紅點數（進站抓一次）：抓最新後依「未讀=未seen」重畫兩顆鈴鐺
   await ntfFetch()
-  const n = ntfUnread()
-  ;[['ntfBell','-5px'], ['favBell','-2px']].forEach(([id, top]) => { // 底部列鈴鐺較高，紅點往下一點免超出
-    const b = document.getElementById(id); if (!b) return
-    let d = b.querySelector('.ntfDot'); if (d) d.remove()
-    if (n > 0) { d = document.createElement('span'); d.className = 'ntfDot'
-      d.style.cssText = `position:absolute;top:${top};right:${id==='favBell'?'8px':'-5px'};background:#E5484D;color:#fff;border-radius:999px;font-size:11px;font-weight:900;min-width:17px;height:17px;line-height:17px;text-align:center;padding:0 3px`
-      d.textContent = n > 99 ? '99+' : n; b.appendChild(d) }
-  })
+  ntfPaintBadge()
 }
 document.addEventListener('visibilitychange', () => { if (!document.hidden) ntfBadgeSync() }) // v4.33.6 App從背景回前景＝重算鈴鐺數字（張良：圖示有數字、打開App鈴鐺卻沒有＝喚醒不會重新抓）
 try { navigator.serviceWorker && navigator.serviceWorker.addEventListener('message', ev => { if (ev.data && ev.data.gdNtf) ntfBadgeSync() }) } catch(e){} // App開著收到推播→sw廣播→即時重算
@@ -472,16 +479,20 @@ async function ntfPage(){ // 通知中心彈層：分類chips＋依日分組歷�
   ov.innerHTML = `<div style="background:#1C2430;border:1px solid #39434F;border-radius:16px 16px 0 0;width:100%;max-width:560px;height:min(82vh,760px);display:flex;flex-direction:column" onclick="event.stopPropagation()"><!-- v4.55.9 固定高度(張良「切換分類高度跳來跳去不舒服」)：內容少也不縮，改內部捲動 -->
     <div style="display:flex;align-items:center;gap:8px;padding:14px 16px 8px"><span style="font-weight:900;font-size:17px">🔔 通知中心</span>
       ${('Notification' in window) && Notification.permission !== 'granted' ? '<button class="mini" style="padding:6px 10px" onclick="pushOn()">開啟推播</button>' : ''}
-      <button class="mini" style="margin-left:auto;padding:6px 12px" onclick="document.getElementById('ntfOv').remove()">✕</button></div>
+      <button class="mini" style="margin-left:auto;padding:6px 10px" onclick="ntfReadAll()">全部已讀</button>
+      <button class="mini" style="padding:6px 12px" onclick="document.getElementById('ntfOv').remove()">✕</button></div>
     <div id="ntfChips" style="display:flex;gap:6px;flex-wrap:wrap;padding:0 16px 10px"></div>
     <div id="ntfList" style="flex:1;overflow:auto;padding:0 16px 20px"></div></div>`
   ov.onclick = () => ov.remove()
   document.body.appendChild(ov)
-  _ntfRd = localStorage.getItem('gdNtfRead') || '' // v4.52.1 先拍「上次已讀」快照給本次顯示＝未讀高亮這次看得到，不會一打開就全變已讀
   await ntfFetch(); ntfRender()
-  localStorage.setItem('gdNtfRead', new Date().toISOString()) // 打開＝已讀（浮水印設為現在）
-  if (TK()) fetch('/api/mail-sync?ntfread=' + encodeURIComponent(K) + '&me=' + encodeURIComponent(TK())).catch(()=>{}) // 伺服器也記已讀＝之後推播的App圖示數字會歸零重算
-  ntfClearBadges() // v4.52.1 治本（張良「手機小鈴鐺點了1還在、比較晚才消」）：原本只清側欄#ntfBell、漏清手機底部#favBell→兩顆一起清
+  // v4.55.10 逐則已讀：打開通知中心「不」全部標已讀——每則要你各自點才消。只清手機桌面 App 圖示紅點（在 App 裡靠底色看哪些未讀）
+  try { if ('clearAppBadge' in navigator) navigator.clearAppBadge().catch(()=>{}) } catch(e){}
+  if (TK()) fetch('/api/mail-sync?ntfread=' + encodeURIComponent(K) + '&me=' + encodeURIComponent(TK())).catch(()=>{}) // 只讓手機桌面 App 圖示數字歸零；App 內未讀仍逐則算
+}
+function ntfReadAll(){ // 全部已讀（張良）：一鍵把現在清單全部標已讀
+  try { ntfMarkSeen((_ntfList || []).map(x => x.id)) } catch(_){}
+  try { ntfRender() } catch(_){}
 }
 function ntfClearBadges(){ // 兩顆鈴鐺(側欄#ntfBell＋手機底部#favBell)紅點一起清＋清手機App圖示數字
   ;['ntfBell','favBell'].forEach(id => { const b = document.getElementById(id); const d = b && b.querySelector('.ntfDot'); if (d) d.remove() })
@@ -490,7 +501,8 @@ function ntfClearBadges(){ // 兩顆鈴鐺(側欄#ntfBell＋手機底部#favBell
 // 🔔 通知點擊定位（v4.47.2 張良「點了明日備料建議沒有定位過去」）：
 // 真因＝①舊通知 url 只存 /prep 沒帶 #tab=prep（v4.45.6 前寫入的改不了）②同頁 location.href 改 hash，hash 沒變就不觸發 hashchange＝不動。
 // 治本＝帶 hash 就設 hash（相同則強制 routeHash）、沒 hash 就按分類(cat)補定位；跨頁才整頁跳。
-function ntfGo(url, cat){
+function ntfGo(url, cat, id){
+  if (id) { try { ntfMarkSeen(id) } catch(_){} } // v4.55.10 逐則已讀：點哪則就標哪則已讀（其他保持未讀高亮）
   const ov = document.getElementById('ntfOv'); if (ov) ov.remove()
   url = String(url || '/prep')
   if (/^https?:/i.test(url)) { location.href = url; return } // 外站絕對連結
@@ -513,7 +525,7 @@ function ntfGo(url, cat){
   if (typeof load === 'function') load(lastStore || 'ground') // 真的沒資訊→至少關彈窗回看板
 }
 function ntfRender(){
-  const L = _ntfList || [], rd0 = _ntfRd || '' // v4.52.1 用開啟當下的已讀快照＝本次瀏覽未讀高亮不會消
+  const L = _ntfList || [], seenS = ntfSeen() // v4.55.10 逐則已讀：未讀＝不在 seen 集合（點哪則哪則才消）
   const pinS = ntfPinGet() // v4.52.2 本機釘選集合
   const isPin = x => !!x.pinned || pinS.has(x.id)
   const cnt = k => k==='all' ? L.length : k==='pin' ? L.filter(isPin).length : k==='mine' ? L.filter(x=>x.mine).length : L.filter(x=>(x.cat||'other')===k).length
@@ -528,12 +540,12 @@ function ntfRender(){
   const pinSvg = on => `<svg width="17" height="17" viewBox="0 0 24 24" fill="${on?'#F2C94C':'none'}" stroke="${on?'#F2C94C':'currentColor'}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 17v5"/><path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1Z"/></svg>`
   const itemHtml = x => {
     const hh = new Date(x.ts).toLocaleTimeString('zh-TW',{hour:'2-digit',minute:'2-digit',hour12:false})
-    const unread = x.ts > rd0, mine = !!x.mine, pin = isPin(x)
+    const unread = !seenS.has(x.id), mine = !!x.mine, pin = isPin(x)
     // v4.52.1 已讀辨識：未讀=亮底+粗體+藍左條+右邊藍點；已讀=變暗；＠我的=金左條+「＠你」標
     // v4.52.2 釘選=就算已讀也不變暗、金左條＝收件匣提醒還沒處理；右邊 📌 鈕切換
     const accent = unread ? '#4DA3FF' : (pin || mine) ? '#F2C94C' : 'transparent'
     const lit = unread || pin // 亮著不沉底
-    return `<div onclick="ntfGo('${(x.url||'/prep').replace(/'/g,'')}','${(x.cat||'').replace(/'/g,'')}')" style="display:flex;gap:9px;padding:10px 11px;border:1px solid ${unread?'#3E5B86':pin?'#5A4F2E':'#262E3A'};border-left:3px solid ${accent};background:${unread?'#20304A':pin?'#262216':'#181E27'};border-radius:11px;margin-bottom:7px;cursor:pointer;opacity:${lit?'1':'.62'}">
+    return `<div onclick="ntfGo('${(x.url||'/prep').replace(/'/g,'')}','${(x.cat||'').replace(/'/g,'')}','${(x.id||'').replace(/'/g,'')}')" style="display:flex;gap:9px;padding:10px 11px;border:1px solid ${unread?'#3E5B86':pin?'#5A4F2E':'#262E3A'};border-left:3px solid ${accent};background:${unread?'#20304A':pin?'#262216':'#181E27'};border-radius:11px;margin-bottom:7px;cursor:pointer;opacity:${lit?'1':'.62'}">
       <span style="flex:0 0 auto;font-size:16px">${(NTF_CATS[x.cat]||'🔔').slice(0,2)}</span>
       <div style="min-width:0;flex:1"><div style="font-weight:${lit?800:600};font-size:14.5px">${x.title||''}${mine?' <span style="color:#F2C94C;font-weight:800;font-size:11px;border:1px solid #F2C94C;border-radius:5px;padding:0 4px">＠你</span>':''} <span class="hint" style="font-weight:400">${hh}</span></div>
       <div class="hint" style="font-size:13px;overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical${lit?'':';color:#6B7686'}">${x.body||''}</div></div>
