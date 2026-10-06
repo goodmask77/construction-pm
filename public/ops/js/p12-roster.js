@@ -90,7 +90,7 @@ function hrmRender(){
       <div style="display:flex;flex-direction:column;gap:8px">
       ${d.pending.map(p=>`<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:9px 12px">
         <b style="font-size:15px">${p.name}</b>
-        <span class="hint" style="font-size:12.5px">報到 ${String(p.onboardAt||'').slice(0,10)||'—'}・契約${p.contractSigned?'已簽 ✓':'未簽'}${p.inMaster?'・⚠️名冊已有同名':''}</span>
+        <span class="hint" style="font-size:12.5px">報到 ${p.onboardAt?new Date(p.onboardAt).toLocaleString('zh-TW',{timeZone:'Asia/Taipei',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false}):'—'}・契約${p.contractSigned?'已簽 ✓':'未簽'}${p.inMaster?'・⚠️名冊已有同名':''}</span>
         ${d.canEdit?`<span style="margin-left:auto;display:inline-flex;gap:7px;flex-wrap:wrap"><button class="mini" style="padding:6px 13px;color:#fff;background:var(--green);border-color:transparent;font-weight:800" onclick="hrmPendAct('${p.id}','approve','${(p.name||'').replace(/'/g,'')}')">核准加入名冊</button><button class="mini" style="padding:6px 12px;color:var(--red)" onclick="hrmPendAct('${p.id}','reject','${(p.name||'').replace(/'/g,'')}')">不是員工・刪除</button></span>`:'<span class="hint" style="margin-left:auto">（主管才能核准）</span>'}
       </div>`).join('')}
       </div></div>`
