@@ -428,7 +428,8 @@ function menuExport(kind){ // 匯出完整菜單（張良 2026-10-02）：txt=�
   mg.font = FZ('500 20px')
   const noteLines = d.draft.note ? wrap(mg, d.draft.note, W-padX*2) : []
   const titleH = 66 + 10 + 24 + (noteLines.length ? 14 + noteLines.length*26 : 0) + 34
-  const PAL = ['#201713','#12201A','#141A26','#20131C','#1A1326','#1F2012','#122020','#231A12'] // v4.58.1 每區不同淡底色（深色不吃白字）
+  const PAL = ['#FFDCE6','#D8F3E3','#DCE8FF','#FBE4CF','#F0DFFF','#FFF4C9','#D2F2EE','#FFE0CE'] // v4.58.2 繽紛粉彩底色（張良：亮一點）→ 卡內改深字
+  const INK='#1E2633', SUB='#5C6675', PRICE='#111820' // 粉彩底上的深字
   const startY = padTop + titleH
   const rowH = 74, secHeadH = 56, secGap = 26
   const secH = s => secHeadH + s.items.length*rowH + secGap
@@ -453,10 +454,10 @@ function menuExport(kind){ // 匯出完整菜單（張良 2026-10-02）：txt=�
     const right = x + colW
     const cardTop = y-20, cardH = secH(s) - secGap + 24
     rr(x-18, cardTop, colW+36, cardH, 16); g.fillStyle = PAL[pi % PAL.length]; g.fill()
-    rr(x-18, cardTop, colW+36, cardH, 16); g.strokeStyle = 'rgba(255,255,255,.05)'; g.lineWidth = 1; g.stroke()
-    g.font = FZ('800 33px'); g.fillStyle = '#FFFFFF'; g.fillText(fit(g, s.name, colW-130), x, y+30)
-    if (s.combo){ g.font = FZ('700 16px'); g.fillStyle = '#8C98A8'; const t='套餐價 $'+s.combo; g.fillText(t, right - g.measureText(t).width, y+26) }
-    g.strokeStyle = 'rgba(255,255,255,.12)'; g.lineWidth = 2; g.beginPath(); g.moveTo(x, y+46); g.lineTo(right, y+46); g.stroke()
+    rr(x-18, cardTop, colW+36, cardH, 16); g.strokeStyle = 'rgba(0,0,0,.06)'; g.lineWidth = 1; g.stroke()
+    g.font = FZ('800 33px'); g.fillStyle = INK; g.fillText(fit(g, s.name, colW-130), x, y+30)
+    if (s.combo){ g.font = FZ('700 16px'); g.fillStyle = SUB; const t='套餐價 $'+s.combo; g.fillText(t, right - g.measureText(t).width, y+26) }
+    g.strokeStyle = 'rgba(0,0,0,.14)'; g.lineWidth = 2; g.beginPath(); g.moveTo(x, y+46); g.lineTo(right, y+46); g.stroke()
     s.items.forEach((it,ri)=>{
       const ry = y + secHeadH + ri*rowH
       const c = mnCombo(s, it)
@@ -464,15 +465,15 @@ function menuExport(kind){ // 匯出完整菜單（張良 2026-10-02）：txt=�
       let pillX = right
       g.font = FZ('800 14px')
       if (c){ const tw=g.measureText(c.t).width, pw=tw+22, ph=26, px=right-pw, py=ry-2
-        rr(px,py,pw,ph,13); g.fillStyle = c.inc?'rgba(61,190,108,.16)':'rgba(255,255,255,.07)'; g.fill()
-        g.fillStyle = c.inc?'#3DBE6C':'#C7D0DB'; g.fillText(c.t, px+11, py+18); pillX = px - 12 }
-      g.font = FZ('800 23px'); g.fillStyle = '#FFFFFF'; const pr='$'+(it.price||0); const prW=g.measureText(pr).width; const priceLeft = pillX - prW
+        rr(px,py,pw,ph,13); g.fillStyle = c.inc?'rgba(23,138,74,.16)':'rgba(0,0,0,.08)'; g.fill()
+        g.fillStyle = c.inc?'#148A46':'#4A5260'; g.fillText(c.t, px+11, py+18); pillX = px - 12 }
+      g.font = FZ('800 23px'); g.fillStyle = PRICE; const pr='$'+(it.price||0); const prW=g.measureText(pr).width; const priceLeft = pillX - prW
       g.fillText(pr, priceLeft, ry+18)
-      if (it.note){ g.font = FZ('600 15px'); g.fillStyle = '#8C98A8'; const nt=fit(g, it.note, colW*0.5); g.fillText(nt, right-g.measureText(nt).width, ry+44) }
+      if (it.note){ g.font = FZ('600 15px'); g.fillStyle = SUB; const nt=fit(g, it.note, colW*0.5); g.fillText(nt, right-g.measureText(nt).width, ry+44) }
       // 左側：中文（第一行）＋英文（第二行）
       const leftMax = priceLeft - x - 18
-      g.font = FZ('800 23px'); g.fillStyle = '#F2F5F9'; g.fillText(fit(g, it.name, leftMax), x, ry+18)
-      if (it.en){ g.font = FZ('500 16px'); g.fillStyle = '#8C98A8'; g.fillText(fit(g, it.en, leftMax), x, ry+44) }
+      g.font = FZ('800 23px'); g.fillStyle = INK; g.fillText(fit(g, it.name, leftMax), x, ry+18)
+      if (it.en){ g.font = FZ('500 16px'); g.fillStyle = SUB; g.fillText(fit(g, it.en, leftMax), x, ry+44) }
     })
   })
   cv.toBlob(bl => { const a2 = document.createElement('a'); a2.href = URL.createObjectURL(bl); a2.download = 'GROUND菜單_' + todayTpe() + '.png'; a2.click(); URL.revokeObjectURL(a2.href) }, 'image/png')
