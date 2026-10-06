@@ -29,6 +29,7 @@
 | `public/ops/index.html` | 本線只加：`tab-onb` 按鈕；p13/p09 快取戳。**不碰別人的 icon/brand** |
 | `public/ops/js/p09-ntf-crew.js` | `TAB_DEF.onb='入職'`＋`TAB_ICONS.onb`(單色 user-plus)。p09 當時是乾淨的，沒撞到別人未提交 |
 | `public/ops/js/p10-perm-init.js` | 路由 R 字典 `onb:()=>onbPage()`（早先版本，本次未再動） |
+| `public/ops/js/p12-roster.js` | ⚠️**本為另一條 CC 的檔**，經張良指定「入職進度放夥伴名冊」才動（v4.56.10，動前確認是乾淨已提交狀態）。把既有待審核區升級：入職四步進度條＋繳交未完成/基本未填紅標＋入職完成綠標＋隱藏鈕＋主管「完整入職資料」彈窗(hrmOnbDetail)＋「確認已加保」(hrmOnbIns)。**保留原核准/刪除(hrmPendAct)不動**。另一條 CC 若要改名冊頁，注意這段 |
 | `docs/ONBOARD_FLOW_DESIGN.md` | 四步流程設計稿 |
 | `docs/legal-templates/*.md` | 勞動契約／四週變形工時同意書**公版範本（待顧問覆核）**；p13 簽署頁內文即源自這兩份 |
 
@@ -71,7 +72,8 @@
 | `public/ops/js/p09-ntf-crew.js` | 只加了 `onb` 到 TAB_DEF/TAB_ICONS；改前重讀 |
 | `public/ops/js/p10-perm-init.js` | 只加了 onb 路由 |
 
-**不要碰（另一條 CC 活躍區）**：p01-core.js、p12-roster.js(名冊主管端 v4.60)、p02-sop.js、p08-menu-misc.js、物料庫、cron-daily.js 備料群發。
+**不要碰（另一條 CC 活躍區）**：p01-core.js、p02-sop.js、p08-menu-misc.js、物料庫、cron-daily.js 備料群發。
+**p12-roster.js**：原則上是另一條 CC 的；本線僅因張良指定「入職進度放夥伴名冊」加了入職進度區(v4.56.10)，其餘不碰——兩邊改名冊頁前互相重讀。
 
 ---
 
