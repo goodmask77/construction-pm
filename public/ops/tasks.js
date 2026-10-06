@@ -418,6 +418,13 @@ function tnAddToGroup(catId) {
   tnS.gnew[catId] = '';
   tnSave([task].concat(tnS.tasks || []));
 }
+// v4.52.9 負責人視圖也能直接新增（張良「所有卡片在的不同負責人類別一樣要可以直接新增」）：Enter＝新增並指派給該負責人；未指派欄＝進收件匣
+function tnAddToOwner(ownerEnc, val) {
+  const owner = decodeURIComponent(ownerEnc || '');
+  const t = String(val || '').trim(); if (!t) return;
+  const task = { id: tnRid(), title: t, note: '', status: 'todo', catId: tnINBOX, owner: owner || undefined, start: '', due: '', priority: 'normal', tags: [], createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), createdBy: tnS.me || undefined };
+  tnSave([task].concat(tnS.tasks || []));
+}
 // Merge Rule：一律 {...existing, ...patch}，絕不重建 task
 function tnUpd(id, patch, silent) {
   tnSave((tnS.tasks || []).map(t => t.id === id ? tnMergeTask(t, patch, tnS.tasks) : t), { skipRender: !!silent });
@@ -1064,6 +1071,7 @@ function tnVOwner() {
       + '<span style="font-size:11.5px;color:' + tnC.faint + ';font-variant-numeric:tabular-nums">' + items.length + '</span></div>'
       + items.map(t => tnCard(t, {})).join('')
       + (items.length === 0 ? tnEmpty('users', g.nm ? '拖任務過來＝指派給他' : '沒有未指派的任務') : '')
+      + '<input onkeydown="if(event.key===\'Enter\'&&!event.isComposing&&event.keyCode!==229){tnAddToOwner(\'' + enc + '\',this.value);this.value=\'\'}" placeholder="' + (g.nm ? '＋ 直接指派給 ' + tnEsc(g.nm) + '…' : '＋ 直接新增到收件匣…') + '" style="width:100%;margin-top:6px;box-sizing:border-box;border:1px dashed ' + tnC.line + ';border-radius:8px;padding:6px 10px;font-size:12.5px;background:transparent;color:' + tnC.text + ';outline:none">'
       + '</div></div>';
   };
   // 桌機四欄瀑布：未指派先進第 0 欄，其餘照排序依最矮欄補位；手機一欄直疊

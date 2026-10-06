@@ -215,6 +215,14 @@ export default function TaskCenter({ K, confirm, canEdit, cats, onLog, onAddCat,
     save([task, ...(tasks || [])]); setGnew(p => ({ ...p, [catId]: "" }));
     onLog?.("新增", `新增任務「${t.slice(0, 20)}」→${catName(catId)}`);
   };
+  // v4.52.9 負責人視圖也能直接新增（張良「所有卡片在的不同負責人類別一樣要可以直接新增」）：新增並指派(claimBy)給該負責人；未指派欄＝進收件匣
+  const addToOwner = (nm) => {
+    if (!guard()) return;
+    const key = "ow:" + nm; const t = (gnew[key] || "").trim(); if (!t) return;
+    const task = { id: rid(), title: t, note: "", status: nm ? "doing" : "todo", catId: INBOX, claimBy: nm || "", claimAt: nm ? Date.now() : null, start: "", due: "", priority: "normal", tags: [], createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
+    save([task, ...(tasks || [])]); setGnew(p => ({ ...p, [key]: "" }));
+    onLog?.("新增", `新增任務「${t.slice(0, 20)}」${nm ? "→指派給 " + nm : "→收件匣"}`);
+  };
   // Merge Rule：一律 {...existing, ...patch}（normalize 只動 patch 有的 key），絕不重建 task
   const upd = (id, patch) => { save((tasks || []).map(t => t.id === id ? mergeTask(t, patch, tasks) : t)); };
   // 全域貼上：滑鼠停在某張卡上（且沒開詳情彈窗）→ 剪貼簿的圖直接進那張卡的附件（張良 2026-09-10）
@@ -726,6 +734,7 @@ export default function TaskCenter({ K, confirm, canEdit, cats, onLog, onAddCat,
                   </div>
                   {items.map(t => Card({ t, dropBefore: false }))}
                   {items.length === 0 && <Empty icon={Users} text={nm ? "拖任務過來＝指派給他" : "沒有未指派的任務"} />}
+                  {canEdit && <input value={gnew["ow:" + nm] || ""} onChange={e => setGnew(p => ({ ...p, ["ow:" + nm]: e.target.value }))} onKeyDown={e => { if (e.key === "Enter" && !e.nativeEvent.isComposing && e.keyCode !== 229) addToOwner(nm); }} placeholder={nm ? `＋ 直接指派給 ${nm}…` : "＋ 直接新增到收件匣…"} style={{ width: "100%", boxSizing: "border-box", border: `1px dashed ${C.line}`, borderRadius: 8, padding: "6px 10px", fontSize: 12.5, background: "transparent", color: C.text, outline: "none", marginTop: 6 }} />}
                 </> });
             })}
           </div>
