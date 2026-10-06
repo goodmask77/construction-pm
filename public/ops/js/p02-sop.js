@@ -379,9 +379,9 @@ function sopCatMng(){ // 🗂 分類管理：分類增刪改排序＋每站歸�
   const catsJ = JSON.stringify(cats).replace(/"/g,'&quot;')
   const ov = document.createElement('div'); ov.id='scOv'
   ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:60;display:flex;align-items:center;justify-content:center;padding:14px'
-  const catRow = (c2,i)=>`<div style="display:flex;gap:6px;align-items:center;padding:4px 0;border-bottom:1px solid var(--line)"><b style="flex:1">${c2}</b>
-    <button class="mini" style="padding:6px 9px" ${i===0?'disabled':''} onclick="catMove(${i},-1,${catsJ})">↑</button>
-    <button class="mini" style="padding:6px 9px" ${i===cats.length-1?'disabled':''} onclick="catMove(${i},1,${catsJ})">↓</button>
+  // v4.58.3（張良「第二層階段可以拖曳排序」）：↑↓ 箭頭改 ☰ 拖曳，跟第一層站別總編輯一致
+  const catRow = c2=>`<div data-c="${String(c2).replace(/"/g,'&quot;')}" style="display:flex;gap:6px;align-items:center;padding:4px 0;border-bottom:1px solid var(--line)">
+    <span class="catH" style="cursor:grab;touch-action:none;color:var(--muted);font-size:16px">☰</span><b style="flex:1">${c2}</b>
     <button class="mini" style="padding:6px 9px" onclick="document.getElementById('scOv').remove();prepAsk('改名「${c2}」',0,1,(q,r)=>{if(r)sopstOp({op:'catren',cat:'${c2}',newName:r})},'新名稱')">✏️</button>
     <button class="mini" style="padding:6px 9px;color:var(--red)" onclick="if(confirm('刪除分類「${c2}」？站會變未分類，不會刪站')){document.getElementById('scOv').remove();sopstOp({op:'catdel',cat:'${c2}'})}">✕</button></div>`
   const stRow = st2 => `<div style="display:flex;gap:6px;align-items:center;padding:4px 0;border-bottom:1px solid var(--line)"><b style="flex:1;min-width:0">${st2}</b>
@@ -390,11 +390,13 @@ function sopCatMng(){ // 🗂 分類管理：分類增刪改排序＋每站歸�
   ov.innerHTML = `<div style="background:#222B38;border:1px solid #3B4654;border-radius:14px;width:min(560px,94vw);max-height:88vh;overflow:auto;padding:16px" onclick="event.stopPropagation()">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><b style="font-size:16px">🗂 SOP 分類（組織架構）</b><button class="mini" style="padding:7px 12px" onclick="document.getElementById('scOv').remove()">關閉</button></div>
     <div class="hint" style="margin-bottom:8px">三層：分類 → 站 → 條目。右邊兩個選單＝每站「歸哪類」「誰負責」（有負責人的站，別人要改得走 💡 提建議）。</div>
-    <div style="font-weight:900;margin:6px 0 2px">分類</div>${cats.map(catRow).join('')||'<div class="hint">還沒有分類——按下面新增（例：備料／設站／清潔）</div>'}
+    <div style="font-weight:900;margin:6px 0 2px">分類（階段）<span class="hint" style="font-weight:600">拖 ☰ 排順序</span></div><div id="scCatList">${cats.map(catRow).join('')||'<div class="hint">還沒有分類——按下面新增（例：開班／收班／備料／清潔）</div>'}</div>
     <button class="mini" style="margin:8px 0;padding:8px 12px" onclick="document.getElementById('scOv').remove();prepAsk('＋ 新增分類',0,1,(q,r)=>{if(r)sopstOp({op:'catadd',cat:r})},'分類名稱（例：備料/設站/清潔）')">＋ 新增分類</button>
     <div style="font-weight:900;margin:10px 0 2px">站 → 分類・負責人</div>${sts9.map(stRow).join('')}</div>`
   ov.onclick = () => ov.remove()
   document.body.appendChild(ov)
+  // v4.58.3 分類拖曳排序（張良）：拖完直接存 catord；sopstOp 會 sopLoad 更新資料但不關這個 overlay，可連續拖
+  if (window.Sortable) { const cl = document.getElementById('scCatList'); if (cl) new Sortable(cl, { handle:'.catH', animation:150, onEnd: () => { const list = [...cl.querySelectorAll('[data-c]')].map(e=>e.dataset.c); if (list.length) sopstOp({ op:'catord', list }) } }) }
 }
 function catMove(i, dir, arr){ const a = [...arr]; const j = i + dir; if (j<0||j>=a.length) return; [a[i],a[j]]=[a[j],a[i]]; const o=document.getElementById('scOv'); if(o)o.remove(); sopstOp({ op:'catord', list:a }) }
 function sugAdd(st){

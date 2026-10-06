@@ -3020,6 +3020,22 @@ export default async function handler(req, res) {
     await kvPut('sp_finance_pm_sop_def', curS, 'SOP站別' + bs.op + '(' + whoS.name + ')')
     return res.status(200).json({ ok: true })
   }
+  // 🧰 SOP 範本初始化（維護口，v4.58.3 張良 2026-10-06「工作流程SOP改成營運流程：站別換成圖3那套、階段先給開班收班」）：
+  // 金鑰守門(OPS_BOARD_KEY)＝幫老闆一次設好站別清單＋階段清單當起點，之後自己在 UI 增刪改拖曳。只覆蓋有傳的欄位，items/stOwner/stCat/catOwner 全不動。
+  if (req.method === 'POST' && req.query?.sopseed) {
+    const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
+    if (!ok2 || String(req.query.sopseed) !== ok2) return res.status(403).json({ ok: false })
+    let sd = {}
+    try { sd = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
+    const curSd = (await kvGet('sp_finance_pm_sop_def')) || {}
+    const gSd = curSd.ground || { items: [] }
+    if (Array.isArray(sd.stations)) gSd.stations = [...new Set(sd.stations.map(x => String(x).trim().slice(0, 20)).filter(Boolean))]
+    if (Array.isArray(sd.cats)) gSd.catOrder = [...new Set(sd.cats.map(x => String(x).trim().slice(0, 20)).filter(Boolean))].slice(0, 20)
+    gSd.edits = [{ ts: new Date().toISOString(), by: '維護', op: 'seed' }, ...(gSd.edits || [])].slice(0, 30)
+    curSd.ground = gSd
+    await kvPut('sp_finance_pm_sop_def', curSd, 'SOP範本初始化(維護)')
+    return res.status(200).json({ ok: true, stations: gSd.stations, catOrder: gSd.catOrder })
+  }
   // 💡 SOP 建議（v4.15.0 張良：非負責人提建議→負責人審核；通過加分留記錄、駁回歸檔不吃案）
   if (req.query?.sopsug && req.method !== 'POST') {
     const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
