@@ -36,6 +36,29 @@ async function hrmPendAct(id, action, name){ // v4.60 名冊待審核：核准�
   if (!d || !d.ok) { alert((d&&d.error)||'處理失敗'); return }
   hrmLoad() // 重抓：核准的人進表、待審核清掉
 }
+async function hrmOnbIns(id, name){ // v4.56.10 名冊頁主管確認勞健保已加保→通知新人入職完成
+  if (!confirm('確認「'+name+'」的勞健保已加保？\n會通知他「入職完成」。')) return
+  const r = await fetch('/api/mail-sync?onboardins', { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ token: TK(), rid: id }) })
+  const d = await r.json().catch(()=>null)
+  if (!d || !d.ok) { alert((d&&d.error)||'操作失敗'); return }
+  hrmLoad()
+}
+async function hrmOnbDetail(id, name){ // v4.56.10 名冊頁主管看單一新人完整入職資料（彈窗）
+  let d; try { d = await (await fetch('/api/mail-sync?onboardone&rid=' + encodeURIComponent(id) + '&me=' + encodeURIComponent(TK()))).json() } catch(e){}
+  if (!d || !d.ok) { alert((d&&d.error)||'讀不到完整資料'); return }
+  const f = d.fields||{}, files = d.files||{}
+  const L = { name:'姓名', dept:'部門', empNo:'員編', joinDate:'到職日', birthday:'出生', gender:'性別', marital:'婚姻', ethnic:'身分族群', nid:'身分證號碼', foreignPermitNo:'外籍工作證號', military:'兵役', dischargeDate:'退伍日期', disability:'身心障礙', disabilityNote:'身心障礙說明', nationality:'國籍', mobile:'手機', homePhone:'住家電話', email:'電子信箱', emailNotify:'email同步通知', regAddr:'戶籍地址', mailAddr:'通訊地址', commute:'通勤方式', parkingPlate:'機車停車格', emerName:'緊急聯絡人', emerRel:'關係', emerPhone:'緊急電話', bankBranch:'薪轉分行', bankAccount:'薪轉帳號', signName:'簽署人', signedAt:'簽署時間', insured:'已加保', insuredAt:'加保時間' }
+  const esc = s => String(s==null?'':s).replace(/</g,'&lt;')
+  const fmt = (k,v) => k==='insured' ? (v?'是':'否') : (k==='signedAt'||k==='insuredAt') ? String(v).slice(0,16).replace('T',' ') : esc(v)
+  const rowsHtml = Object.keys(L).filter(k=>f[k]!=null&&f[k]!=='').map(k=>`<div style="display:flex;gap:8px;padding:4px 0;border-bottom:1px solid var(--line)"><span style="flex:0 0 100px;color:var(--muted);font-size:12.5px">${L[k]}</span><span style="font-size:13px;color:var(--ink);word-break:break-all">${fmt(k,f[k])}</span></div>`).join('')
+  let depHtml = ''; try { const deps = JSON.parse(f.dependents||'[]'); if (deps.length) depHtml = '<div style="margin-top:10px;font-weight:700;font-size:12.5px;color:var(--muted)">眷屬（健保加保）</div>'+deps.map(dp=>`<div style="font-size:13px;padding:2px 0">・${esc(dp.name)} ${esc(dp.rel)} ${esc(dp.birth)} ${esc(dp.nid)}</div>`).join('') } catch(_){}
+  const fileLbl = { idDoc:'身分證影本', bankDoc:'存摺封面', healthDoc1:'健檢報告①', healthDoc2:'健檢報告②', signDoc:'簽名檔' }
+  const fileHtml = '<div style="margin-top:10px;font-weight:700;font-size:12.5px;color:var(--muted)">機密檔案</div><div style="margin-top:3px">'+Object.keys(fileLbl).map(k=>`<span style="display:inline-block;margin:2px 6px 2px 0;font-size:12px;padding:2px 8px;border-radius:6px;background:var(--soft);color:${files[k]?'var(--green)':'var(--muted)'}">${files[k]?'✓ ':'— '}${fileLbl[k]}</span>`).join('')+'</div>'
+  const m = document.createElement('div'); m.id = 'onbDetailModal'; m.style.cssText = 'position:fixed;inset:0;z-index:95;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;padding:16px'
+  m.onclick = e => { if (e.target===m) m.remove() }
+  m.innerHTML = `<div style="background:var(--bg);border:1px solid var(--line);border-radius:14px;max-width:460px;width:100%;max-height:85vh;overflow:auto;padding:18px"><div style="display:flex;align-items:center;margin-bottom:10px"><b style="font-size:16px">${esc(name)}・完整入職資料</b><button class="mini" style="margin-left:auto" onclick="document.getElementById('onbDetailModal').remove()">關閉</button></div>${rowsHtml||'<div class="hint">尚無填寫資料</div>'}${depHtml}${fileHtml}<div class="hint" style="margin-top:12px">含個資請勿截圖外傳。機密檔案原圖請到文件庫/私有區查看。</div></div>`
+  document.body.appendChild(m)
+}
 function hrmSortBy(k){ // v4.34.4 張良「排序畫面不要跳不要閃 手機滑到右邊按排序會跑回左邊」：記住捲動位置重畫後原位還原
   if (hrmSort.k === k) hrmSort.dir = -hrmSort.dir; else hrmSort = { k, dir: 1 }
   const scrs = [...document.querySelectorAll('#app .scroll')].map(el=>el.scrollLeft)
@@ -83,17 +106,37 @@ function hrmRender(){
       <button class="mini" style="padding:6px 14px;font-weight:800" onclick="hrmLib()">🗂 文件庫</button>
       ${d.canEdit&&window._hrmEdit?`<button class="mini" style="padding:6px 12px" onclick="hrmTitleOpts()">職務選單</button><button class="mini" style="padding:6px 12px" onclick="hrmAdd('ab')">＋ AB 加人</button><button class="mini" style="padding:6px 12px" onclick="hrmAdd('gd')">＋ GD 加人</button><button class="mini" style="padding:6px 12px" onclick="hrmColOrder()">欄位排序</button>`:''}
     </div>`
-  if ((d.pending||[]).length) { // v4.60 LINE 報到新人（kb_roster onboarding）在名冊頁顯示＋核准
+  if ((d.pending||[]).length) { // v4.60 LINE 報到新人（kb_roster onboarding）；v4.56.10 升級：入職進度條＋繳交未完成標記＋完整資料＋可隱藏（主管限定看全部）
+    const ONB_L = ['基本資料','繳交表','簽署','勞健保']
+    const hideOnb = window._hrmHideOnb
     h += `<div style="background:#182617;border:1.5px solid var(--green);border-radius:12px;padding:12px 14px;margin-bottom:12px">
-      <b style="color:var(--green)">🆕 待審核・LINE 報到新人（${d.pending.length}）</b>
-      <div class="hint" style="margin:3px 0 9px">這些人用 LINE 自助報到了，還沒進正式名冊。確認是你要的員工→「核准加入名冊」；不認識→刪除。</div>
+      <div style="display:flex;align-items:center;gap:8px"><b style="color:var(--green)">🆕 入職中新人（${d.pending.length}）</b>
+      <button class="mini" style="margin-left:auto;padding:4px 11px" onclick="window._hrmHideOnb=!window._hrmHideOnb;hrmRender()">${hideOnb?'展開':'隱藏'}</button></div>`
+    if (!hideOnb) {
+      h += `<div class="hint" style="margin:3px 0 9px">用 LINE 自助報到、填寫入職資料中的新人。確認要的員工→「核准加入名冊」；不認識→刪除。</div>
       <div style="display:flex;flex-direction:column;gap:8px">
-      ${d.pending.map(p=>`<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:9px 12px">
-        <b style="font-size:15px">${p.name}</b>
-        <span class="hint" style="font-size:12.5px">報到 ${p.onboardAt?new Date(p.onboardAt).toLocaleString('zh-TW',{timeZone:'Asia/Taipei',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false}):'—'}・契約${p.contractSigned?'已簽 ✓':'未簽'}${p.inMaster?'・⚠️名冊已有同名':''}</span>
-        ${d.canEdit?`<span style="margin-left:auto;display:inline-flex;gap:7px;flex-wrap:wrap"><button class="mini" style="padding:6px 13px;color:#fff;background:var(--green);border-color:transparent;font-weight:800" onclick="hrmPendAct('${p.id}','approve','${(p.name||'').replace(/'/g,'')}')">核准加入名冊</button><button class="mini" style="padding:6px 12px;color:var(--red)" onclick="hrmPendAct('${p.id}','reject','${(p.name||'').replace(/'/g,'')}')">不是員工・刪除</button></span>`:'<span class="hint" style="margin-left:auto">（主管才能核准）</span>'}
-      </div>`).join('')}
-      </div></div>`
+      ${d.pending.map(p=>{
+        const step = p.step||0
+        const bar = ONB_L.map((s,i)=>`<span style="display:inline-block;padding:2px 7px;border-radius:6px;font-size:10.5px;font-weight:700;margin:1px;background:${i<step?'var(--green)':i===step?'#3B82F6':'var(--soft)'};color:${i<=step?'#fff':'var(--muted)'}">${i<step?'✓':''}${s}</span>`).join('')
+        const mark = step<1 ? '基本資料未填' : step<2 ? '繳交未完成' : null
+        return `<div style="background:var(--card);border:1px solid var(--line);border-radius:10px;padding:9px 12px">
+          <div style="display:flex;align-items:center;gap:9px;flex-wrap:wrap">
+            <b style="font-size:15px">${p.name}</b>${p.dept?`<span class="hint" style="font-size:12px">${p.dept}</span>`:''}
+            ${mark?`<span style="background:var(--red);color:#fff;font-size:11px;font-weight:800;padding:2px 8px;border-radius:7px">${mark}</span>`:p.insured?`<span style="background:var(--green);color:#fff;font-size:11px;font-weight:800;padding:2px 8px;border-radius:7px">入職完成</span>`:''}
+            ${p.inMaster?'<span class="hint" style="font-size:11.5px;color:#E8A657">⚠️名冊已有同名</span>':''}
+            <span class="hint" style="font-size:12px;margin-left:auto">報到 ${p.onboardAt?new Date(p.onboardAt).toLocaleString('zh-TW',{timeZone:'Asia/Taipei',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false}):'—'}</span>
+          </div>
+          <div style="margin:7px 0 2px">${bar}</div>
+          <div style="display:flex;gap:7px;flex-wrap:wrap;margin-top:7px">
+          ${d.canEdit?`<button class="mini" style="padding:5px 12px" onclick="hrmOnbDetail('${p.id}','${(p.name||'').replace(/'/g,'')}')">完整入職資料</button>
+            ${step>=3&&!p.insured?`<button class="mini" style="padding:5px 12px;color:#fff;background:#3B82F6;border-color:transparent;font-weight:800" onclick="hrmOnbIns('${p.id}','${(p.name||'').replace(/'/g,'')}')">✓ 確認已加保</button>`:''}
+            <button class="mini" style="padding:5px 12px;color:#fff;background:var(--green);border-color:transparent;font-weight:800" onclick="hrmPendAct('${p.id}','approve','${(p.name||'').replace(/'/g,'')}')">核准加入名冊</button><button class="mini" style="padding:5px 11px;color:var(--red)" onclick="hrmPendAct('${p.id}','reject','${(p.name||'').replace(/'/g,'')}')">刪除</button>`:'<span class="hint">（主管才能操作／看完整資料）</span>'}
+          </div>
+        </div>`
+      }).join('')}
+      </div>`
+    }
+    h += `</div>`
   }
   if (upcoming.length) {
     h += `<div style="background:var(--card);border:1.5px solid var(--line);border-radius:12px;padding:10px 13px;margin-bottom:12px">

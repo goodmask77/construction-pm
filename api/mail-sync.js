@@ -3666,7 +3666,7 @@ export default async function handler(req, res) {
     if (isAdmH) outH.idLock = { rids: ((lockH || {}).rids) || [], people: Object.entries((pmH && pmH.users) || {}).map(([r9, u9]) => ({ rid: r9, name: u9.name, admin: !!u9.admin })) }
     // v4.60 待審核：LINE 報到的新人在 kb_roster(onboarding:true)，但名冊頁讀 hr_master＝兩個檔不同→新人看不到。這裡把入職中名單帶出來給名冊頁顯示＋核准。
     const nmSetH = new Set((rowsH || []).filter(r9 => !/A Beach/.test(r9.co || '')).map(r9 => r9.name))
-    outH.pending = (((rosH9 || {}).people) || []).filter(p9 => p9.onboarding && (p9.status || '在職') !== '離職').map(p9 => ({ id: p9.id, name: p9.name, onboardAt: p9.onboardAt || '', contractSigned: !!p9.contractSigned, inMaster: nmSetH.has(p9.name) }))
+    outH.pending = (((rosH9 || {}).people) || []).filter(p9 => p9.onboarding && (p9.status || '在職') !== '離職').map(p9 => ({ id: p9.id, name: p9.name, dept: p9.dept || '', onboardAt: p9.onboardAt || '', contractSigned: !!p9.contractSigned, inMaster: nmSetH.has(p9.name), step: Math.min(p9.onboardStep || 0, 4), signedAt: p9.signedAt || '', insured: !!p9.insured })) // v4.56.10 帶入職進度/加保狀態給名冊頁顯示進度條＋繳交未完成標記
     return res.status(200).json(outH)
   }
   // v4.60 名冊待審核 核准／刪除（主管）：核准＝清 onboarding＋加進 hr_master 名冊；刪除＝從 kb_roster 移除＋清帳號
@@ -4677,6 +4677,19 @@ export default async function handler(req, res) {
       .map(p => ({ id: p.id, name: p.name || '', dept: p.dept || '', step: Math.min(p.onboardStep || 0, 4), signedAt: p.signedAt || '', insured: !!p.insured, contractSigned: !!p.contractSigned }))
       .sort((a, b) => b.step - a.step || String(a.name).localeCompare(String(b.name)))
     return res.status(200).json({ ok: true, list })
+  }
+  if (req.method === 'GET' && req.query?.onboardone !== undefined) { // v4.56.10 主管看單一新人完整入職資料（名冊頁「完整入職資料」）
+    const whoO = await sopWho(req.query.me)
+    if (!whoO || !whoO.rid) return res.status(403).json({ ok: false, error: '請先綁定' })
+    const defO = await kvGet('sp_finance_pm_sop_def'); const aprO = (((defO || {}).ground || {}).approvers || ['張良瑋'])
+    if (!(whoO.role === '主管' || aprO.includes(whoO.name))) return res.status(403).json({ ok: false, error: '僅主管可檢視完整入職資料' })
+    const rosO = (await kvGet('sp_crew_kb_roster')) || { people: [] }
+    const pO = (rosO.people || []).find(x => x.id === String(req.query.rid))
+    if (!pO) return res.status(404).json({ ok: false, error: '找不到此新人' })
+    const F = ['name', 'dept', 'empNo', 'joinDate', 'birthday', 'gender', 'marital', 'ethnic', 'nid', 'foreignPermitNo', 'military', 'dischargeDate', 'disability', 'disabilityNote', 'nationality', 'mobile', 'homePhone', 'email', 'emailNotify', 'regAddr', 'mailAddr', 'commute', 'parkingPlate', 'emerName', 'emerRel', 'emerPhone', 'emergency', 'dependents', 'bankBranch', 'bankAccount', 'signName', 'signedAt', 'insured', 'insuredAt']
+    const out = {}; F.forEach(k => { if (pO[k] != null) out[k] = pO[k] })
+    const files = { idDoc: !!pO.idDoc, bankDoc: !!pO.bankDoc, healthDoc1: !!pO.healthDoc1, healthDoc2: !!pO.healthDoc2, signDoc: !!pO.signDoc }
+    return res.status(200).json({ ok: true, fields: out, files, step: Math.min(pO.onboardStep || 0, 4) })
   }
   if (req.method === 'POST' && req.query?.onboardins !== undefined) {
     let bI = {}
