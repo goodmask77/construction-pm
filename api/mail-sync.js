@@ -4646,7 +4646,7 @@ export default async function handler(req, res) {
     if (!m5) return res.status(400).json({ ok: false, error: '照片格式不對（要用拍照／選圖）' })
     const buf5 = Buffer.from(m5[2], 'base64')
     if (buf5.length > 10 * 1024 * 1024) return res.status(400).json({ ok: false, error: '檔案太大（上限 10MB）' })
-    const ext5 = /png/i.test(m5[1]) ? 'png' : 'jpg'
+    const ext5 = /pdf/i.test(m5[1]) ? 'pdf' : /png/i.test(m5[1]) ? 'png' : 'jpg' // v4.56.7 支援 PDF 直傳
     const path5 = `roster/${whoF.rid}/${FIELD_FILE[bf.field]}.${ext5}`
     try {
       const { uploadPrivate } = await import('./_onboard.js')

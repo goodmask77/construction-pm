@@ -1,4 +1,4 @@
-// ⚠️ /prep 主程式第 13 塊（v4.56.6 張良「開工」入職流程）：新人自填入職流程頁；欄位對齊 NUEiP 到職基本資料單＋入職繳交表（必填＋選填全補，含眷屬多筆、健檢報告）；v4.56.6 通訊地址「同戶籍」勾選＋緊急聯絡人拆三格必填
+// ⚠️ /prep 主程式第 13 塊（v4.56.7 張良「開工」入職流程）：新人自填入職流程頁；欄位對齊 NUEiP 到職基本資料單＋入職繳交表（必填＋選填全補，含眷屬多筆、健檢報告）；v4.56.6 通訊地址「同戶籍」勾選＋緊急聯絡人拆三格必填；v4.56.7 上傳可拍照／圖庫／檔案(含PDF)
 // 第一步＝基本資料（繳交表/簽署/勞健保分步後續做）；資料走 ?onboardself（本人 token 驗身分、只改自己那筆名冊卡）
 // 本塊只負責「新人端填寫」；主管端核准在名冊頁（p12 待審核區，已有 v4.60）
 const ONB_STEPS = ['基本資料', '繳交表', '簽署', '勞健保']
@@ -108,32 +108,41 @@ function onbStep2Form(me, esc) {
 }
 function onbEditStep2() { const d = window._onbD || {}; d.step = 1; window._onbD = d; onbRender() }
 
-// 機密檔案上傳（拍照→壓縮→私有桶）
+// 機密檔案上傳（可拍照／從圖庫選／選檔案；照片自動壓縮，PDF 等原檔直傳）→ 私有桶
+// v4.56.7 張良「手機版不要只能拍照，要能上傳檔案或照片」：移除 capture 強制鏡頭、開放 image+pdf
 function onbFileUpload(field) {
-  const inp = document.createElement('input'); inp.type = 'file'; inp.accept = 'image/*'; inp.capture = 'environment'
+  const inp = document.createElement('input'); inp.type = 'file'; inp.accept = 'image/*,application/pdf' // 不設 capture→手機會跳「拍照／照片圖庫／檔案」讓使用者選
   inp.onchange = () => {
     const f = inp.files && inp.files[0]; if (!f) return
+    const isImg = /^image\//.test(f.type || '')
     const reader = new FileReader()
     reader.onload = () => {
+      if (!isImg) { // PDF 等非圖片：不壓縮直接傳（dataURL 約為檔案 1.37 倍，13.3MB≈10MB 後端上限）
+        if (String(reader.result || '').length > 13.3 * 1024 * 1024) { alert('檔案太大（上限約 10MB），請壓縮後再傳'); return }
+        onbSendFile(field, reader.result); return
+      }
       const img = new Image()
-      img.onload = async () => {
+      img.onload = () => {
         // 壓縮：長邊 ≤1600，jpeg 0.82（存摺照清楚即可、省流量/不超限）
         const max = 1600, sc = Math.min(1, max / Math.max(img.width, img.height))
         const cv = document.createElement('canvas'); cv.width = Math.round(img.width * sc); cv.height = Math.round(img.height * sc)
         cv.getContext('2d').drawImage(img, 0, 0, cv.width, cv.height)
-        const dataUrl = cv.toDataURL('image/jpeg', 0.82)
-        try {
-          const r = await fetch('/api/mail-sync?onboardfile', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ token: TK(), field, dataUrl }) })
-          const d = await r.json()
-          if (d && d.ok) { if (window._onbD && window._onbD.me) window._onbD.me[field] = 'uploaded'; onbRender(); onbToast('✓ 已上傳') }
-          else alert((d && d.error) || '上傳失敗')
-        } catch (e) { alert('上傳失敗，稍後再試') }
+        onbSendFile(field, cv.toDataURL('image/jpeg', 0.82))
       }
+      img.onerror = () => alert('這張圖讀不開，換一張或改用檔案上傳')
       img.src = reader.result
     }
     reader.readAsDataURL(f)
   }
   inp.click()
+}
+async function onbSendFile(field, dataUrl) {
+  try {
+    const r = await fetch('/api/mail-sync?onboardfile', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ token: TK(), field, dataUrl }) })
+    const d = await r.json()
+    if (d && d.ok) { if (window._onbD && window._onbD.me) window._onbD.me[field] = 'uploaded'; onbRender(); onbToast('✓ 已上傳') }
+    else alert((d && d.error) || '上傳失敗')
+  } catch (e) { alert('上傳失敗，稍後再試') }
 }
 
 async function onbSaveStep2() {
