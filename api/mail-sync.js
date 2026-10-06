@@ -3570,8 +3570,26 @@ export default async function handler(req, res) {
     const pinN9 = new Set((((docN9 || {}).pins || {})[ridN9]) || []) // v4.52.2 本人釘選集合
     // v4.52.1（張良「新增有＠自己的分類」）：加 mine 旗標＝這則是「指定給我」(to 含我，非全員廣播)；只回布林不外洩收件名單
     // v4.52.2（張良「收件匣／釘選稍後處理」）：加 pinned 旗標＝本人有沒有釘這則
-    const listN9 = ((docN9 || {}).list || []).filter(x => !x.to || (ridN9 && x.to.includes(ridN9))).slice(0, 100).map(({ to, ...r }) => ({ ...r, mine: !!(to && ridN9 && to.includes(ridN9)), pinned: pinN9.has(r.id) }))
+    const seenN9 = new Set((((docN9 || {}).seenIds || {})[ridN9]) || []) // v4.55.11 本人已讀集合（電腦/手機共用＝已讀同步）
+    const listN9 = ((docN9 || {}).list || []).filter(x => !x.to || (ridN9 && x.to.includes(ridN9))).slice(0, 100).map(({ to, ...r }) => ({ ...r, mine: !!(to && ridN9 && to.includes(ridN9)), pinned: pinN9.has(r.id), seen: seenN9.has(r.id) }))
     return res.status(200).json({ ok: true, list: listN9 })
+  }
+  // 👁 通知已讀同步（v4.55.11 張良「小鈴鐺電腦跟手機沒辦法即時同步？」）：POST ?ntfseen=<OPS_BOARD_KEY> body={ids:[...], token}；已讀存 doc.seenIds[rid]＝跨裝置同步（要綁定）
+  if (req.query?.ntfseen) {
+    const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
+    if (!ok2 || String(req.query.ntfseen) !== ok2) return res.status(403).json({ ok: false })
+    let sb = {}; try { sb = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
+    const whoS9 = await sopWho(sb.token || req.query.me)
+    if (!whoS9) return res.status(200).json({ ok: false, error: '訪客不存伺服器' })
+    const idsS9 = (Array.isArray(sb.ids) ? sb.ids : []).map(x => String(x).trim()).filter(Boolean)
+    if (!idsS9.length) return res.status(200).json({ ok: true })
+    const docS9 = (await kvGet('sp_finance_pm_prep_ntf')) || { list: [] }
+    const ridS9 = whoS9.rid || whoS9.uid
+    docS9.seenIds = docS9.seenIds || {}
+    const setS9 = new Set(docS9.seenIds[ridS9] || []); idsS9.forEach(i => setS9.add(i))
+    docS9.seenIds[ridS9] = [...setS9].slice(-500)
+    await kvPut('sp_finance_pm_prep_ntf', docS9, '通知已讀同步(' + whoS9.name + ')')
+    return res.status(200).json({ ok: true })
   }
   // 📌 通知釘選/取消（v4.52.2 張良「收件匣／釘選稍後回頭處理」）：POST ?ntfpin=<OPS_BOARD_KEY> body={id,pin:1|0,token}
   // 釘選以人為準存 doc.pins[rid]=[ids]（跟已讀 doc.read[rid] 同一份文件）；要綁定身分才能釘

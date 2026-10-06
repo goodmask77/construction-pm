@@ -446,14 +446,19 @@ function ntfSeen(){
   let s = null
   try { const v = localStorage.getItem('gdNtfSeen'); if (v != null) s = new Set(JSON.parse(v) || []) } catch(_){}
   if (s === null) { // 還沒初始化
-    if (!(_ntfList && _ntfList.length)) return new Set() // 清單還沒載＝先別種（等有資料再種，免得種成空的之後全亮）
-    const rd = localStorage.getItem('gdNtfRead') || ''
-    s = new Set((_ntfList || []).filter(x => x.ts && x.ts <= rd).map(x => x.id))
-    try { localStorage.setItem('gdNtfSeen', JSON.stringify([...s])) } catch(_){}
+    if (!(_ntfList && _ntfList.length)) s = new Set() // 清單還沒載＝先別種（等有資料再種，免得種成空的之後全亮）
+    else { const rd = localStorage.getItem('gdNtfRead') || ''; s = new Set((_ntfList || []).filter(x => x.ts && x.ts <= rd).map(x => x.id)); try { localStorage.setItem('gdNtfSeen', JSON.stringify([...s])) } catch(_){} }
   }
+  ;(_ntfList || []).forEach(x => { if (x.seen) s.add(x.id) }) // v4.55.11 併入伺服器已讀＝別台點掉的這台 fetch 後也算已讀（跨裝置同步）
   return s
 }
-function ntfMarkSeen(ids){ const s = ntfSeen(); (Array.isArray(ids)?ids:[ids]).forEach(i => i && s.add(i)); try { localStorage.setItem('gdNtfSeen', JSON.stringify([...s].slice(-500)) ) } catch(_){}; try { ntfPaintBadge() } catch(_){} }
+function ntfMarkSeen(ids){
+  ids = (Array.isArray(ids) ? ids : [ids]).filter(Boolean)
+  const s = ntfSeen(); ids.forEach(i => s.add(i))
+  try { localStorage.setItem('gdNtfSeen', JSON.stringify([...s].slice(-500))) } catch(_){}
+  try { ntfPaintBadge() } catch(_){}
+  if (TK() && ids.length) { try { fetch('/api/mail-sync?ntfseen=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ ids, token: TK() }) }).catch(()=>{}) } catch(_){} } // v4.55.11 同步伺服器＝換台也已讀
+}
 function ntfUnread(){ const s = ntfSeen(); return (_ntfList || []).filter(x => !s.has(x.id)).length }
 function ntfPaintBadge(){ const n = ntfUnread(); ;[['ntfBell','-5px'], ['favBell','-2px']].forEach(([id, top]) => { const b = document.getElementById(id); if (!b) return; let d = b.querySelector('.ntfDot'); if (d) d.remove(); if (n > 0) { d = document.createElement('span'); d.className = 'ntfDot'; d.style.cssText = `position:absolute;top:${top};right:${id==='favBell'?'8px':'-5px'};background:#E5484D;color:#fff;border-radius:999px;font-size:11px;font-weight:900;min-width:17px;height:17px;line-height:17px;text-align:center;padding:0 3px`; d.textContent = n > 99 ? '99+' : n; b.appendChild(d) } }) }
 // 📌 釘選/收件匣（v4.52.2 張良「有些人看過會忘或在忙，需要收件匣或釘選稍後回頭處理」）：本機先存＝秒反應；綁定者同步伺服器＝換手機也在
