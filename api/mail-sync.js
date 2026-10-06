@@ -4608,6 +4608,7 @@ export default async function handler(req, res) {
     const pick = {}
     ;['name', 'nick', 'dept', 'empNo', 'joinDate', 'birthday', 'gender', 'marital', 'ethnic', 'nid', 'foreignPermitNo', 'emergency', 'bankBranch', 'bankAccount',
       'mobile', 'regAddr', 'mailAddr', 'commute', 'military', 'disability', 'disabilityNote', 'agree1', 'agree2', 'agree3', // v4.56.3 對齊 NUEiP 到職基本資料單必填欄
+      'emerName', 'emerRel', 'emerPhone', // v4.56.6 緊急聯絡人拆三格（姓名/關係/電話）
       'dischargeDate', 'nationality', 'homePhone', 'email', 'emailNotify', 'parkingPlate', 'dependents', // v4.56.4 NUEiP 選填欄（退伍日期/國籍/住家電話/email/email同步通知/機車停車格/眷屬）
       'idDoc', 'bankDoc', 'healthDoc1', 'healthDoc2'].forEach(k => { if (p4g[k] != null) pick[k] = p4g[k] }) // 檔案給前端判斷「已上傳」(本人自己的路徑)
     return res.status(200).json({ ok: true, me: pick, step: p4g.onboardStep || 0, onboarding: !!p4g.onboarding })
@@ -4624,6 +4625,7 @@ export default async function handler(req, res) {
     // v4.56.3 對齊 NUEiP：加手機/戶籍地址/通訊地址/通勤方式/兵役/身心障礙(+說明)/三條須知同意
     const ALLOW = ['birthday', 'gender', 'marital', 'ethnic', 'nid', 'foreignPermitNo', 'emergency', 'bankBranch', 'bankAccount',
       'mobile', 'regAddr', 'mailAddr', 'commute', 'military', 'disability', 'disabilityNote', 'agree1', 'agree2', 'agree3',
+      'emerName', 'emerRel', 'emerPhone', // v4.56.6 緊急聯絡人三格
       'dischargeDate', 'nationality', 'homePhone', 'email', 'emailNotify', 'parkingPlate', 'dependents'] // v4.56.4 選填欄
     const saved = []
     // dependents 是多筆眷屬 JSON，放寬到 2000；其餘單欄 300 足夠

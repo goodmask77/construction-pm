@@ -1,4 +1,4 @@
-// ⚠️ /prep 主程式第 13 塊（v4.56.4 張良「開工」入職流程）：新人自填入職流程頁；欄位對齊 NUEiP 到職基本資料單＋入職繳交表（必填＋選填全補，含眷屬多筆、健檢報告）
+// ⚠️ /prep 主程式第 13 塊（v4.56.6 張良「開工」入職流程）：新人自填入職流程頁；欄位對齊 NUEiP 到職基本資料單＋入職繳交表（必填＋選填全補，含眷屬多筆、健檢報告）；v4.56.6 通訊地址「同戶籍」勾選＋緊急聯絡人拆三格必填
 // 第一步＝基本資料（繳交表/簽署/勞健保分步後續做）；資料走 ?onboardself（本人 token 驗身分、只改自己那筆名冊卡）
 // 本塊只負責「新人端填寫」；主管端核准在名冊頁（p12 待審核區，已有 v4.60）
 const ONB_STEPS = ['基本資料', '繳交表', '簽署', '勞健保']
@@ -161,6 +161,11 @@ function onbStep1Form(me, esc) {
   const lb = t => `<div style="font-size:13px;font-weight:700;color:var(--ink);margin:12px 0 5px">${t}</div>`
   const sec = t => `<div style="font-size:13px;font-weight:800;color:var(--primary);margin:22px 0 2px;border-bottom:1px solid var(--line);padding-bottom:5px">${t}</div>`
   const rq = '<span style="color:var(--red)">*</span>'
+  const sameAddr = !!(me.mailAddr && me.regAddr && me.mailAddr === me.regAddr) // 通訊=戶籍時預設勾「同上」
+  const ip3 = 'flex:1;min-width:0;border:1px solid var(--line);border-radius:8px;padding:9px;font-size:15px;font-family:inherit;background:var(--soft);color:var(--ink)'
+  // 緊急聯絡人三格回填：優先用拆開欄位，舊資料(單一字串)則用分隔符拆
+  const emr = { name: me.emerName || '', rel: me.emerRel || '', phone: me.emerPhone || '' }
+  if (!emr.name && !emr.rel && !emr.phone && me.emergency) { const pp = String(me.emergency).split(/[・･、,\s]+/).filter(Boolean); emr.name = pp[0] || ''; emr.rel = pp[1] || ''; emr.phone = pp[2] || '' }
   return `<div style="max-width:560px">
     <div style="background:var(--soft);border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin-bottom:6px;font-size:13px;color:var(--muted)">
       歡迎加入 GROUN:D！先填基本資料，公司好建檔。${me.name ? `<br>姓名：<b style="color:var(--ink)">${esc(me.name)}</b>${me.dept ? `・部門：${esc(me.dept)}` : ''}${me.empNo ? `・員編：${esc(me.empNo)}` : ''}${me.joinDate ? `・到職：${esc(me.joinDate)}` : ''}` : ''}
@@ -182,11 +187,16 @@ function onbStep1Form(me, esc) {
     ${lb('住家電話（非必填）')}<input type="tel" id="ob_home" value="${esc(me.homePhone || '')}" placeholder="例：02-12345678" style="${ip}">
     ${lb('電子信箱（非必填）')}<input type="email" id="ob_email" value="${esc(me.email || '')}" placeholder="example@mail.com" style="${ip}">
     ${lb('電子信箱同步通知')}<div>${radio('ob_emailnot', me.emailNotify || '', ['是', '否'])}</div>
-    ${lb('戶籍地址 ' + rq)}<input type="text" id="ob_reg" value="${esc(me.regAddr || '')}" placeholder="請輸入戶籍地址" style="${ip}">
-    ${lb('通訊地址 ' + rq)}<input type="text" id="ob_mail" value="${esc(me.mailAddr || '')}" placeholder="與戶籍相同可直接填相同地址" style="${ip}">
+    ${lb('戶籍地址 ' + rq)}<input type="text" id="ob_reg" value="${esc(me.regAddr || '')}" placeholder="請輸入戶籍地址" style="${ip}" oninput="onbSameAddrSync()">
+    ${lb('通訊地址 ' + rq + ' <label style="font-weight:600;font-size:12px;color:var(--muted);margin-left:8px;cursor:pointer"><input type="checkbox" id="ob_sameaddr" onchange="onbSameAddr()" ' + (sameAddr ? 'checked' : '') + ' style="width:14px;height:14px;vertical-align:-2px"> 同戶籍地址</label>')}<input type="text" id="ob_mail" value="${esc(me.mailAddr || '')}" placeholder="與戶籍相同可勾選右上「同戶籍地址」" style="${ip}${sameAddr ? ';opacity:0.6' : ''}" ${sameAddr ? 'disabled' : ''}>
     ${lb('通勤方式 ' + rq + '（可複選）')}<div>${cbg('ob_commute', me.commute || '', ['騎車', '捷運', '公車', '走路', '其他'])}</div>
     ${lb('申請機車停車格（非必填，填車牌號碼）')}<input type="text" id="ob_park" value="${esc(me.parkingPlate || '')}" placeholder="填車牌號碼，後續提供停車場資訊" style="${ip}">
-    ${lb('緊急聯絡人（姓名・關係・電話）')}<input type="text" id="ob_emer" value="${esc(me.emergency || '')}" placeholder="例：王大明・父・0912345678" style="${ip}">
+    ${lb('緊急聯絡人 ' + rq)}
+    <div style="display:flex;gap:6px;flex-wrap:wrap">
+      <input id="ob_emer_name" value="${esc(emr.name)}" placeholder="姓名" style="${ip3}">
+      <input id="ob_emer_rel" value="${esc(emr.rel)}" placeholder="關係(父/配偶…)" style="${ip3}">
+      <input id="ob_emer_phone" type="tel" inputmode="numeric" value="${esc(emr.phone)}" placeholder="電話" style="${ip3}">
+    </div>
     ${sec('眷屬資料（如有眷屬要依員工做健保加保才填；非必填）')}
     <div id="ob_deps"></div>
     <button type="button" onclick="onbDepAdd()" style="margin-top:8px;padding:8px 14px;border:1px solid var(--line);border-radius:9px;background:var(--soft);color:var(--primary);font-size:13px;font-weight:700;cursor:pointer">＋ 新增眷屬</button>
@@ -201,6 +211,18 @@ function onbStep1Form(me, esc) {
 
 function onbEditStep1() { const d = window._onbD || {}; d.step = 0; window._onbD = d; onbRender() }
 
+// 通訊地址「同戶籍地址」：勾了自動帶戶籍、鎖住；戶籍改字也跟著同步
+function onbSameAddr() {
+  const c = document.getElementById('ob_sameaddr'), reg = document.getElementById('ob_reg'), mail = document.getElementById('ob_mail')
+  if (!c || !reg || !mail) return
+  if (c.checked) { mail.value = reg.value; mail.disabled = true; mail.style.opacity = '0.6' }
+  else { mail.disabled = false; mail.style.opacity = ''; mail.focus() }
+}
+function onbSameAddrSync() {
+  const c = document.getElementById('ob_sameaddr'); if (!c || !c.checked) return
+  const reg = document.getElementById('ob_reg'), mail = document.getElementById('ob_mail'); if (reg && mail) mail.value = reg.value
+}
+
 async function onbSaveStep1() {
   const g = id => (document.getElementById(id) || {}).value || ''
   const rv = name => { const el = document.querySelector(`input[name="${name}"]:checked`); return el ? el.value : '' }
@@ -208,19 +230,21 @@ async function onbSaveStep1() {
   const chk = id => ((document.getElementById(id) || {}).checked ? '1' : '')
   onbDepSync()
   const deps = (window._onbDeps || []).filter(d => d.name || d.rel || d.nid || d.birth)
+  const en = g('ob_emer_name').trim(), er = g('ob_emer_rel').trim(), ep = g('ob_emer_phone').trim()
   const set = {
     birthday: g('ob_birthday'), gender: rv('ob_gender'), marital: rv('ob_marital'), ethnic: rv('ob_ethnic'),
     nid: g('ob_nid').trim(), foreignPermitNo: g('ob_fp').trim(),
     military: rv('ob_military'), dischargeDate: g('ob_discharge'), disability: rv('ob_disab'), disabilityNote: g('ob_disabn').trim(), nationality: g('ob_nat').trim(),
     mobile: g('ob_mobile').trim(), homePhone: g('ob_home').trim(), email: g('ob_email').trim(), emailNotify: rv('ob_emailnot'),
     regAddr: g('ob_reg').trim(), mailAddr: g('ob_mail').trim(), commute: cv('ob_commute'), parkingPlate: g('ob_park').trim(),
-    emergency: g('ob_emer').trim(), dependents: JSON.stringify(deps),
+    emerName: en, emerRel: er, emerPhone: ep, emergency: [en, er, ep].filter(Boolean).join('・'), dependents: JSON.stringify(deps),
     agree1: chk('ob_ag1'), agree2: chk('ob_ag2'), agree3: chk('ob_ag3')
   }
   const miss = []
   if (!set.birthday) miss.push('出生年月日'); if (!set.gender) miss.push('性別'); if (!set.nid) miss.push('身分證號碼')
   if (!set.military) miss.push('兵役狀態'); if (!set.disability) miss.push('身心障礙類別')
   if (!set.mobile) miss.push('手機號碼'); if (!set.regAddr) miss.push('戶籍地址'); if (!set.mailAddr) miss.push('通訊地址'); if (!set.commute) miss.push('通勤方式')
+  if (!en) miss.push('緊急聯絡人-姓名'); if (!er) miss.push('緊急聯絡人-關係'); if (!ep) miss.push('緊急聯絡人-電話')
   if (miss.length) { alert('這些是必填的喔：\n・' + miss.join('\n・')); return }
   if (!(set.agree1 && set.agree2 && set.agree3)) { alert('請確認並勾選下方三項報到須知。'); return }
   const btn = event && event.target; if (btn) { btn.disabled = true; btn.textContent = '儲存中…' }
