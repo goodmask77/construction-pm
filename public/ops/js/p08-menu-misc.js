@@ -427,7 +427,8 @@ function menuExport(kind){ // 匯出完整菜單（張良 2026-10-02）：txt=�
   const mcv = document.createElement('canvas'); const mg = mcv.getContext('2d')
   mg.font = FZ('500 20px')
   const noteLines = d.draft.note ? wrap(mg, d.draft.note, W-padX*2) : []
-  const titleH = 54 + 10 + 24 + (noteLines.length ? 14 + noteLines.length*26 : 0) + 30
+  const titleH = 66 + 10 + 24 + (noteLines.length ? 14 + noteLines.length*26 : 0) + 34
+  const PAL = ['#201713','#12201A','#141A26','#20131C','#1A1326','#1F2012','#122020','#231A12'] // v4.58.1 每區不同淡底色（深色不吃白字）
   const startY = padTop + titleH
   const rowH = 74, secHeadH = 56, secGap = 26
   const secH = s => secHeadH + s.items.length*rowH + secGap
@@ -440,19 +441,22 @@ function menuExport(kind){ // 匯出完整菜單（張良 2026-10-02）：txt=�
   const g = cv.getContext('2d'); g.scale(S,S)
   const rr=(x,y,w,h,r)=>{g.beginPath();g.moveTo(x+r,y);g.arcTo(x+w,y,x+w,y+h,r);g.arcTo(x+w,y+h,x,y+h,r);g.arcTo(x,y+h,x,y,r);g.arcTo(x,y,x+w,y,r);g.closePath()}
   g.fillStyle = '#0E1217'; g.fillRect(0,0,W,H)
-  // 標題
+  // 標題（GROUN:D 白色，字級放大）
   g.textBaseline = 'alphabetic'
-  g.font = FZ('900 46px'); g.fillStyle = '#F92A1B'; g.fillText('GROUN:D', padX, padTop+44)
+  g.font = FZ('900 56px'); g.fillStyle = '#FFFFFF'; g.fillText('GROUN:D', padX, padTop+52)
   const brandW = g.measureText('GROUN:D').width
-  g.fillStyle = '#F2F5F9'; g.fillText(' 菜單', padX+brandW, padTop+44)
-  g.font = FZ('600 19px'); g.fillStyle = '#8C98A8'; g.fillText(todayTpe(), padX, padTop+44+30)
-  if (noteLines.length){ g.font = FZ('600 20px'); g.fillStyle = '#C7D0DB'; noteLines.forEach((ln,i)=>g.fillText(ln, padX, padTop+44+30+24+i*26)) }
-  // 各區
-  place.forEach(({s,x,y})=>{
+  g.fillStyle = '#F2F5F9'; g.fillText(' 菜單', padX+brandW, padTop+52)
+  g.font = FZ('600 19px'); g.fillStyle = '#8C98A8'; g.fillText(todayTpe(), padX, padTop+52+32)
+  if (noteLines.length){ g.font = FZ('600 20px'); g.fillStyle = '#C7D0DB'; noteLines.forEach((ln,i)=>g.fillText(ln, padX, padTop+52+32+24+i*26)) }
+  // 各區（每區不同淡底色卡片）
+  place.forEach(({s,x,y},pi)=>{
     const right = x + colW
-    g.font = FZ('800 27px'); g.fillStyle = '#FFFFFF'; g.fillText(fit(g, s.name, colW-130), x, y+28)
+    const cardTop = y-20, cardH = secH(s) - secGap + 24
+    rr(x-18, cardTop, colW+36, cardH, 16); g.fillStyle = PAL[pi % PAL.length]; g.fill()
+    rr(x-18, cardTop, colW+36, cardH, 16); g.strokeStyle = 'rgba(255,255,255,.05)'; g.lineWidth = 1; g.stroke()
+    g.font = FZ('800 33px'); g.fillStyle = '#FFFFFF'; g.fillText(fit(g, s.name, colW-130), x, y+30)
     if (s.combo){ g.font = FZ('700 16px'); g.fillStyle = '#8C98A8'; const t='套餐價 $'+s.combo; g.fillText(t, right - g.measureText(t).width, y+26) }
-    g.strokeStyle = '#2A3240'; g.lineWidth = 2; g.beginPath(); g.moveTo(x, y+42); g.lineTo(right, y+42); g.stroke()
+    g.strokeStyle = 'rgba(255,255,255,.12)'; g.lineWidth = 2; g.beginPath(); g.moveTo(x, y+46); g.lineTo(right, y+46); g.stroke()
     s.items.forEach((it,ri)=>{
       const ry = y + secHeadH + ri*rowH
       const c = mnCombo(s, it)
