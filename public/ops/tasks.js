@@ -1065,7 +1065,7 @@ function tnVOwner() {
       + '<div ondragover="tnZOver(event)" ondragleave="tnZLeave(event)" ondrop="tnZDrop(event,\'owner\',\'' + enc + '\')" style="background:' + tnC.card + ';border:1px solid ' + tnC.line + ';border-radius:8px;padding:10px;min-height:72px">'
       + '<div ' + (g.nm ? 'draggable="true" ondragstart="tnODS(event,\'' + enc + '\')" ondragend="tnDE()" title="拖我＝調整人員組順序"' : '') + ' style="display:flex;align-items:center;gap:7px;margin-bottom:8px;cursor:' + (g.nm ? 'grab' : 'default') + '">'
       + (g.nm
-        ? '<span style="color:' + tnC.faint + '">' + tnI('grip', 12) + '</span><span style="width:20px;height:20px;border-radius:50%;background:' + tnC.accentSoft + ';color:' + tnC.accent + ';font-size:10px;font-weight:700;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0">' + tnEsc(g.nm.slice(0, 2)) + '</span>'
+        ? '<span style="color:' + tnC.faint + '">' + tnI('grip', 12) + '</span>' /* v4.53.0 拿掉前2字圓標(張良「重複出現名字 沒功用就拿掉」)：旁邊就有全名了,縮寫=重複 */
         : '<span style="width:7px;height:7px;border-radius:50%;background:' + tnC.faint + ';flex-shrink:0"></span>')
       + '<div style="font-size:13px;font-weight:600;color:' + tnC.text + ';overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + tnEsc(g.label) + '</div>'
       + '<span style="font-size:11.5px;color:' + tnC.faint + ';font-variant-numeric:tabular-nums">' + items.length + '</span></div>'
