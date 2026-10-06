@@ -1,4 +1,4 @@
-// ⚠️ /prep 主程式第 13 塊（v4.56.7 張良「開工」入職流程）：新人自填入職流程頁；欄位對齊 NUEiP 到職基本資料單＋入職繳交表（必填＋選填全補，含眷屬多筆、健檢報告）；v4.56.6 通訊地址「同戶籍」勾選＋緊急聯絡人拆三格必填；v4.56.7 上傳可拍照／圖庫／檔案(含PDF)
+// ⚠️ /prep 主程式第 13 塊（v4.56.8 張良「開工」入職流程）：新人自填入職流程頁；欄位對齊 NUEiP 到職基本資料單＋入職繳交表（必填＋選填全補，含眷屬多筆、健檢報告）；v4.56.6 通訊地址「同戶籍」勾選＋緊急聯絡人拆三格必填；v4.56.7 上傳可拍照／圖庫／檔案(含PDF)；v4.56.8 第三步簽署=顯示勞動契約+四週變形同意書+手寫簽名板→私有桶
 // 第一步＝基本資料（繳交表/簽署/勞健保分步後續做）；資料走 ?onboardself（本人 token 驗身分、只改自己那筆名冊卡）
 // 本塊只負責「新人端填寫」；主管端核准在名冊頁（p12 待審核區，已有 v4.60）
 const ONB_STEPS = ['基本資料', '繳交表', '簽署', '勞健保']
@@ -20,17 +20,20 @@ function onbRender() {
   // 進度條
   let h = `<section><h2>入職流程</h2>
     <div style="display:flex;gap:6px;margin-bottom:16px">${ONB_STEPS.map((s, i) => `<div style="flex:1;text-align:center;padding:9px 4px;border-radius:9px;font-size:12px;font-weight:800;background:${i < step ? 'var(--green)' : i === step ? 'var(--primary)' : 'var(--soft)'};color:${i <= step ? '#fff' : 'var(--muted)'}">${i < step ? '✓ ' : ''}${i + 1}. ${s}</div>`).join('')}</div>`
-  // 目前只做第一步（基本資料）；其餘步驟顯示「準備中」
   if (step === 0) h += onbStep1Form(me, esc)
   else if (step === 1) h += onbStep2Form(me, esc)
+  else if (step === 2) h += onbStep3Form(me, esc) // 第三步＝簽署（v4.56.8）
   else h += `<div style="padding:20px;text-align:center;color:var(--muted)">
-    <div style="font-size:15px;font-weight:700;color:var(--ink);margin-bottom:6px">✓ 基本資料、繳交表已完成</div>
-    「${ONB_STEPS[step]}」步驟準備中，很快開放。<br>
-    <button class="mini" style="margin-top:12px" onclick="onbEditStep1()">↩ 改基本資料</button>
-    <button class="mini" style="margin-top:12px" onclick="onbEditStep2()">↩ 改繳交表</button></div>`
+    <div style="font-size:15px;font-weight:700;color:var(--ink);margin-bottom:6px">✓ 基本資料、繳交表、簽署已完成</div>
+    「勞健保確認」步驟準備中——報到當天由公司加保後通知你，入職就完成了 🎉<br>
+    <div style="display:flex;gap:6px;justify-content:center;flex-wrap:wrap;margin-top:12px">
+    <button class="mini" onclick="onbEditStep1()">↩ 改基本資料</button>
+    <button class="mini" onclick="onbEditStep2()">↩ 改繳交表</button>
+    <button class="mini" onclick="onbEditStep3()">↩ 看/重簽</button></div></div>`
   h += `</section>`
   app.innerHTML = h
   if (step === 0) { onbDepInit(); onbDepRender() } // 眷屬多筆：表單進 DOM 後再畫
+  if (step === 2) onbSignInit() // 簽名板：表單進 DOM 後再綁定
 }
 
 // ── 眷屬資料多筆（健保加保用）：存成 JSON 字串進 dependents 欄 ──
@@ -107,6 +110,102 @@ function onbStep2Form(me, esc) {
   </div>`
 }
 function onbEditStep2() { const d = window._onbD || {}; d.step = 1; window._onbD = d; onbRender() }
+function onbEditStep3() { const d = window._onbD || {}; d.step = 2; window._onbD = d; onbRender() }
+
+// ── 第三步：簽署（勞動契約＋四週變形工時同意書→手寫簽名→私有桶）v4.56.8 ──
+// 內文為通用公版，最終以公司正式版本為準（docs/legal-templates/，待顧問覆核）
+function onbDocContract(me, esc) {
+  const nm = esc(me.name || '〔姓名〕'), nid = esc(me.nid || '〔身分證字號〕'), jd = esc(me.joinDate || '〔到職日〕')
+  const H = t => `<div style="font-weight:800;color:var(--ink);margin:10px 0 2px">${t}</div>`
+  return `立契約人：雇主（甲方）GROUN:D／口香糖俱樂部；勞工（乙方）${nm}，身分證字號 ${nid}。<br>雙方依勞動基準法及相關法令，約定勞動條件如下：
+    ${H('第一條 契約期間')}自 ${jd} 起生效；到職前三個月為試用期，雙方得隨時終止契約。
+    ${H('第二條 工作地點與職務')}依公司門市與排班安排，餐飲內外場及相關職務；甲方得於合理範圍內調整。
+    ${H('第三條 工作時間（四週變形工時）')}適用勞基法 §30-1 四週變形工時（詳見另簽同意書）。單日正常工時最多 10 小時，四週內正常工時不超過 160 小時；延長工時依法給加班費。
+    ${H('第四條 工資')}依錄用時約定之月薪／時薪，匯入本人薪轉帳戶（薪轉銀行：中國信託）。發薪日每月 10 日，遇例假日提前發放；加班費、勞健保自付額依法計算代扣。
+    ${H('第五條 休假')}例假、休息日、國定假日、特休及請假，均依勞基法及相關法令辦理。
+    ${H('第六條 勞健保與退休金')}甲方依法為乙方辦理勞保、健保加保，並依法提繳勞工退休金。
+    ${H('第七條 服務規範')}乙方應遵守公司工作規則、SOP 及相關規範；獎懲依公司制度辦理。
+    ${H('第八條 保密')}乙方對職務知悉之營業秘密、客戶資料、配方等負保密義務，在職及離職後均不得洩漏或不當使用。
+    ${H('第九條 契約終止')}契約終止、預告期間、資遣費等依勞動基準法辦理。
+    ${H('第十條 其他')}本契約未盡事宜依勞動基準法及相關法令辦理；如有爭議雙方先行協商。本人以下方線上簽名視為乙方簽署，系統記錄簽署時間與裝置並留存。`
+}
+function onbDocFlex(me, esc) {
+  const nm = esc(me.name || '〔姓名〕'), nid = esc(me.nid || '〔身分證字號〕')
+  const H = t => `<div style="font-weight:800;color:var(--ink);margin:10px 0 2px">${t}</div>`
+  return `依勞動基準法第 30 條之 1，餐飲業經勞資會議同意，得實施四週變形工時。本同意書為勞工個別同意，併入入職流程。
+    ${H('一、實施內容')}以每四週為一週期分配各日正常工時；<b>單日正常工時不超過 10 小時</b>，每四週內正常工時總計不超過 160 小時。
+    ${H('二、例假與休息日')}每七日至少一日例假；每四週內例假及休息日合計不少於八日。
+    ${H('三、延長工時')}超過正常工時部分依法給加班費；每日連同延長工時不超過 12 小時；每月延長工時上限依法辦理。
+    ${H('四、排班')}排班表於每週期開始前公告。
+    ${H('五、勞工個別同意')}本人（${nm}，身分證字號 ${nid}）已知悉並同意上開四週變形工時之實施內容。本人以下方線上簽名視為同意簽署。
+    <div style="font-size:11px;color:var(--muted);margin-top:8px">※ 本個別同意不取代勞資會議；四週變形工時仍須經勞資會議同意並公告後始得合法實施。</div>`
+}
+function onbStep3Form(me, esc) {
+  const rq = '<span style="color:var(--red)">*</span>'
+  const already = !!me.signedAt
+  const panel = (title, body) => `<details style="border:1px solid var(--line);border-radius:10px;margin-top:8px;background:var(--soft)" open><summary style="padding:11px 13px;font-weight:800;color:var(--ink);cursor:pointer;font-size:14px">${title}</summary><div style="max-height:280px;overflow:auto;padding:0 14px 14px;font-size:13px;line-height:1.75;color:var(--text)">${body}</div></details>`
+  return `<div style="max-width:560px">
+    <div style="background:var(--soft);border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin-bottom:6px;font-size:13px;color:var(--muted)">請詳閱以下兩份文件，確認無誤後在下方簽名送出。${me.name ? `<br>簽署人：<b style="color:var(--ink)">${esc(me.name)}</b>` : ''}</div>
+    ${panel('勞動契約', onbDocContract(me, esc))}
+    ${panel('四週變形工時勞資會議同意書', onbDocFlex(me, esc))}
+    <div style="font-size:11px;color:var(--muted);margin-top:6px">※ 內文為公版範本，條款最終以公司正式版本為準。</div>
+    <label style="display:flex;align-items:flex-start;gap:8px;margin:14px 0 4px;cursor:pointer;font-size:13px;color:var(--text);line-height:1.5"><input type="checkbox" id="ob_sign_agree" ${already ? 'checked' : ''} style="width:17px;height:17px;flex:0 0 auto;margin-top:1px"><span>我已詳閱並同意上述《勞動契約》與《四週變形工時勞資會議同意書》之內容。</span></label>
+    <div style="font-size:13px;font-weight:700;color:var(--ink);margin:14px 0 5px">在下方簽名 ${rq}</div>
+    <div style="position:relative;border:1.5px dashed var(--line);border-radius:12px;background:#fff;height:180px;overflow:hidden">
+      <canvas id="ob_sig" style="width:100%;height:100%;touch-action:none;display:block"></canvas>
+      <span id="ob_sig_ph" style="position:absolute;left:0;right:0;top:50%;transform:translateY(-50%);text-align:center;font-size:13px;color:#c4c4c4;pointer-events:none">請用手指／滑鼠在此簽名</span>
+    </div>
+    <div style="display:flex;gap:8px;margin-top:8px">
+      <button type="button" onclick="onbSigClear()" style="flex:0 0 100px;padding:10px;border:1px solid var(--line);border-radius:10px;background:transparent;color:var(--muted);font-size:14px;font-weight:700;cursor:pointer">清除重簽</button>
+      <button onclick="onbSaveStep3()" style="flex:1;padding:12px;border:none;border-radius:10px;background:var(--primary);color:#fff;font-size:15px;font-weight:800;cursor:pointer">送出簽署 →</button>
+    </div>
+    <button onclick="onbEditStep2()" style="width:100%;margin-top:10px;padding:11px;border:1px solid var(--line);border-radius:10px;background:transparent;color:var(--muted);font-size:14px;font-weight:700;cursor:pointer">← 回繳交表</button>
+    ${already ? `<div class="hint" style="margin-top:8px;color:var(--green)">✓ 你已於 ${esc(String(me.signedAt).slice(0, 16).replace('T', ' '))} 簽署，如需更新可重新簽名送出。</div>` : '<div class="hint" style="margin-top:8px">簽名會連同時間、裝置紀錄存進機密私有區，只有你本人和主管看得到。</div>'}
+  </div>`
+}
+
+// 手寫簽名板：手指／滑鼠都能簽；白底存 PNG
+function onbSignInit() {
+  const cv = document.getElementById('ob_sig'); if (!cv) return
+  const ctx = cv.getContext('2d')
+  const rect = cv.getBoundingClientRect(), dpr = window.devicePixelRatio || 1
+  cv.width = Math.round(rect.width * dpr); cv.height = Math.round(rect.height * dpr)
+  ctx.scale(dpr, dpr)
+  ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, rect.width, rect.height)
+  ctx.lineWidth = 2.6; ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.strokeStyle = '#111'
+  let drawing = false
+  const ph = document.getElementById('ob_sig_ph')
+  const pos = e => { const r = cv.getBoundingClientRect(), t = e.touches ? e.touches[0] : e; return { x: t.clientX - r.left, y: t.clientY - r.top } }
+  const start = e => { e.preventDefault(); drawing = true; const p = pos(e); ctx.beginPath(); ctx.moveTo(p.x, p.y); if (ph) ph.style.display = 'none'; window._onbSigned = true }
+  const move = e => { if (!drawing) return; e.preventDefault(); const p = pos(e); ctx.lineTo(p.x, p.y); ctx.stroke() }
+  const end = () => { drawing = false }
+  cv.addEventListener('mousedown', start); cv.addEventListener('mousemove', move); window.addEventListener('mouseup', end)
+  cv.addEventListener('touchstart', start, { passive: false }); cv.addEventListener('touchmove', move, { passive: false }); cv.addEventListener('touchend', end)
+  window._onbSigned = false
+}
+function onbSigClear() {
+  const cv = document.getElementById('ob_sig'); if (!cv) return
+  const ctx = cv.getContext('2d'); const dpr = window.devicePixelRatio || 1
+  ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, cv.width, cv.height); ctx.restore()
+  const ph = document.getElementById('ob_sig_ph'); if (ph) ph.style.display = ''
+  window._onbSigned = false
+}
+async function onbSaveStep3() {
+  if (!((document.getElementById('ob_sign_agree') || {}).checked)) { alert('請先勾選「我已詳閱並同意」'); return }
+  if (!window._onbSigned) { alert('請在簽名框內簽上你的名字'); return }
+  const cv = document.getElementById('ob_sig'); if (!cv) return
+  const dataUrl = cv.toDataURL('image/png')
+  const btn = event && event.target; if (btn) { btn.disabled = true; btn.textContent = '送出中…' }
+  try {
+    const r1 = await fetch('/api/mail-sync?onboardfile', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ token: TK(), field: 'signDoc', dataUrl }) })
+    const d1 = await r1.json(); if (!d1 || !d1.ok) throw new Error((d1 && d1.error) || '簽名上傳失敗')
+  } catch (e) { alert(e.message || '簽名上傳失敗'); if (btn) { btn.disabled = false; btn.textContent = '送出簽署 →' } return }
+  const set = { agreeDoc: '1', signName: (window._onbD && window._onbD.me && window._onbD.me.name) || '', signedAt: new Date().toISOString() }
+  let d
+  try { const r = await fetch('/api/mail-sync?onboardself', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ token: TK(), step: 3, set }) }); d = await r.json() } catch (e) {}
+  if (d && d.ok) { if (window._onbD) { window._onbD.me = { ...(window._onbD.me || {}), ...set, signDoc: 'uploaded' }; window._onbD.step = 3 } onbRender(); onbToast('✓ 簽署完成') }
+  else { alert((d && d.error) || '儲存失敗，稍後再試'); if (btn) { btn.disabled = false; btn.textContent = '送出簽署 →' } }
+}
 
 // 機密檔案上傳（可拍照／從圖庫選／選檔案；照片自動壓縮，PDF 等原檔直傳）→ 私有桶
 // v4.56.7 張良「手機版不要只能拍照，要能上傳檔案或照片」：移除 capture 強制鏡頭、開放 image+pdf
