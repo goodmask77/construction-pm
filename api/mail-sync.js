@@ -1810,7 +1810,7 @@ export default async function handler(req, res) {
     try { tb = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
     const whoT = await sopWho(tb.token)
     if (!whoT) return res.status(403).json({ ok: false, error: permDeny() })
-    const KEYS = ['task', 'lb', 'food', 'pack', 'buy', 'meet', 'shift', 'inc', 'fb', 'menu']
+    const KEYS = ['prep', 'sop', 'task', 'lb', 'food', 'pack', 'buy', 'meet', 'shift', 'inc', 'fb', 'menu', 'cust', 'hrm', 'onb'] // v4.58.2 補齊=與前端 TAB_DEF 一致（原漏 prep/sop/cust/hrm/onb→這些分頁改名排序存不住，張良 2026-10-06「SOP改工作流程SOP重整又變回」）
     const order = (Array.isArray(tb.order) ? tb.order : []).filter(k2 => KEYS.includes(k2))
     KEYS.forEach(k2 => { if (!order.includes(k2)) order.push(k2) }) // 漏掉的補在後面
     const names = {}
