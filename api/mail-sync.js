@@ -3105,13 +3105,15 @@ export default async function handler(req, res) {
     // ⭐ 任務積分（v4.44.0 360制度）：已完成任務的 pts 按負責人加總
     const tpMap = {}, taskBreak = {} // taskBreak：每人任務分拆解（張良 2026-10-06「數字點進去看怎麼來的」）
     try {
+      const catsDoc = await kvGet('sp_team_pm_data') // 工程大項＝任務分類（catId→name；張良 2026-10-06 任務分明細做分類）
+      const catMap = {}; (Array.isArray(catsDoc) ? catsDoc : (catsDoc && catsDoc.list) || []).forEach(c => { if (c && c.id) catMap[c.id] = String(c.name || '').slice(0, 30) })
       const rT = await fetch(`${SB_URL}/rest/v1/pm_documents?id=like.sp_team_pm_task_*&select=data`, { headers: { apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}` } })
       const rowsT = rT.ok ? await rT.json() : []
       for (const row of rowsT) {
         let t9 = null; try { t9 = JSON.parse(typeof row.data?.v === 'string' ? row.data.v : JSON.stringify(row.data?.v)) } catch (_) {}
         if (t9 && t9.status === 'done' && t9.owner && Number(t9.pts) > 0) {
           tpMap[t9.owner] = (tpMap[t9.owner] || 0) + Number(t9.pts)
-          ;(taskBreak[t9.owner] = taskBreak[t9.owner] || []).push({ title: String(t9.title || t9.name || '任務').slice(0, 60), pts: Number(t9.pts), date: String(t9.doneAt || t9.updatedAt || '').slice(0, 10) })
+          ;(taskBreak[t9.owner] = taskBreak[t9.owner] || []).push({ title: String(t9.title || t9.name || '任務').slice(0, 60), pts: Number(t9.pts), date: String(t9.doneAt || t9.updatedAt || '').slice(0, 10), cat: (t9.catId && catMap[t9.catId]) || '收件匣' })
         }
       }
       Object.keys(taskBreak).forEach(nm => taskBreak[nm].sort((a, b) => b.pts - a.pts))

@@ -455,9 +455,11 @@ function lbWhy(kind){
     html = wrap(kind==='fix'?'解決分怎麼來的':'解決次怎麼來的', kind==='fix'?'解決分＝你標記解決、且被評星的問題，每件取星平均加總。':'解決次＝你一共解決了幾件問題。', (items||'<div class="mut">還沒有解決紀錄</div>')+(kind==='nFix'?`<div style="text-align:right;font-weight:800;margin-top:6px">共 ${arr.length} 件</div>`:''))
   } else if (kind==='task'){
     const arr = (d.taskBreak||{})[nm] || []
-    const items = arr.map(t=>row(E(t.title), t.date||'', '+'+t.pts)).join('')
+    const grp = {}; arr.forEach(t=>{ const c=t.cat||'收件匣'; (grp[c]=grp[c]||[]).push(t) })
+    const cats = Object.entries(grp).map(([c,ts])=>[c,ts,ts.reduce((s,t)=>s+Number(t.pts||0),0)]).sort((a,b)=>b[2]-a[2])
+    let inner = cats.map(([c,ts,sub])=>`<div style="margin-top:8px"><div style="display:flex;gap:8px;align-items:center;background:var(--psoft);border-radius:8px;padding:5px 9px;font-weight:800;color:var(--pdark);font-size:13px"><span style="flex:1">📁 ${E(c)}</span><span>${ts.length} 件</span><span style="color:#F2C14E">+${Math.round(sub*10)/10}</span></div>${ts.map(t=>row(E(t.title), t.date||'', '+'+t.pts)).join('')}</div>`).join('')
     const tot = arr.reduce((s,t)=>s+Number(t.pts||0),0)
-    html = wrap('任務分怎麼來的','任務分＝你完成的任務積分加總（每張任務卡的分數）。', (items||'<div class="mut">還沒有完成帶積分的任務</div>')+`<div style="border-top:2px solid var(--line);margin-top:6px;padding-top:6px;text-align:right;font-weight:800">合計 ${Math.round(tot*10)/10} 分</div>`)
+    html = wrap('任務分怎麼來的','任務分＝你完成的任務積分加總（每張任務卡的分數），依分類歸類：', (inner||'<div class="mut">還沒有完成帶積分的任務</div>')+`<div style="border-top:2px solid var(--line);margin-top:8px;padding-top:6px;text-align:right;font-weight:800">合計 ${Math.round(tot*10)/10} 分</div>`)
   } else if (kind==='total'){
     const p = (d.rank||[]).find(x=>x.name===nm) || {}
     html = wrap('總積分怎麼來的','總積分＝行為分＋發現分＋解決分＋任務分（不含兌換，兌換不讓名次掉）。',
