@@ -469,12 +469,12 @@ async function ntfPage(){ // 通知中心彈層：分類chips＋依日分組歷�
   const old = document.getElementById('ntfOv'); if (old) { old.remove(); return }
   const ov = document.createElement('div'); ov.id = 'ntfOv'
   ov.style.cssText = 'position:fixed;inset:0;background:rgba(10,14,22,.55);z-index:60;display:flex;align-items:flex-end;justify-content:center'
-  ov.innerHTML = `<div style="background:#1C2430;border:1px solid #39434F;border-radius:16px 16px 0 0;width:100%;max-width:560px;max-height:82vh;display:flex;flex-direction:column" onclick="event.stopPropagation()">
+  ov.innerHTML = `<div style="background:#1C2430;border:1px solid #39434F;border-radius:16px 16px 0 0;width:100%;max-width:560px;height:min(82vh,760px);display:flex;flex-direction:column" onclick="event.stopPropagation()"><!-- v4.55.9 固定高度(張良「切換分類高度跳來跳去不舒服」)：內容少也不縮，改內部捲動 -->
     <div style="display:flex;align-items:center;gap:8px;padding:14px 16px 8px"><span style="font-weight:900;font-size:17px">🔔 通知中心</span>
       ${('Notification' in window) && Notification.permission !== 'granted' ? '<button class="mini" style="padding:6px 10px" onclick="pushOn()">開啟推播</button>' : ''}
       <button class="mini" style="margin-left:auto;padding:6px 12px" onclick="document.getElementById('ntfOv').remove()">✕</button></div>
     <div id="ntfChips" style="display:flex;gap:6px;flex-wrap:wrap;padding:0 16px 10px"></div>
-    <div id="ntfList" style="overflow:auto;padding:0 16px 20px"></div></div>`
+    <div id="ntfList" style="flex:1;overflow:auto;padding:0 16px 20px"></div></div>`
   ov.onclick = () => ov.remove()
   document.body.appendChild(ov)
   _ntfRd = localStorage.getItem('gdNtfRead') || '' // v4.52.1 先拍「上次已讀」快照給本次顯示＝未讀高亮這次看得到，不會一打開就全變已讀
