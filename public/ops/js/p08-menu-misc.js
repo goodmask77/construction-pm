@@ -253,6 +253,8 @@ let menuMode = 'edit'
 let menuEditSec = {} // 每個分類自己的編輯開關（張良 2026-10-01：每個分類都要有編輯按鈕）
 async function menuLoad(){
   curStore = 'menu'; setTabs('menu')
+  if (typeof menuFlushCell === 'function') menuFlushCell() // 進來前先把上次待存的格子送出，避免被這次回抓蓋掉
+  if (!window._mnPageHide) { window._mnPageHide = 1; window.addEventListener('pagehide', ()=>{ try{ menuFlushCell() }catch(_){} }) } // 關頁/切App前保底存一次
   if (!window._menuD) { const c = tcGet('menu'); if (c) window._menuD = c }
   if (window._menuD) menuRender(); else app.innerHTML = '<section>載入中…</section>'
   let d
@@ -313,10 +315,11 @@ function menuRender(){
   if (menuMode === 'edit') {
     window._menuFold = window._menuFold || new Set() // v4.10.0（張良）：分類可收合＋一鍵全收/全開
     h += `<div style="margin-bottom:8px;display:flex;gap:6px"><button class="mini" onclick="menuFoldAll(1)">⊖ 全部收合</button><button class="mini" onclick="menuFoldAll(0)">⊕ 全部展開</button></div>`
+    h += `<div id="mnSecs">` // v4.57.0 分類拖曳容器（pointer 拖曳＝滑鼠/觸控都順，取代原生 HTML5 拖曳 iPad 不順）
     ;(d.draft.sections||[]).forEach((s2,si)=>{
       const fold = window._menuFold.has(si)
-      h += `<div ondragover="event.preventDefault()" ondrop="menuSecDrop(${si})" style="background:var(--soft);border:1px solid var(--line);border-radius:12px;padding:9px 11px;margin-bottom:10px">
-        <div style="font-weight:900;color:var(--pdark)">${meN&&menuEditSec[si]?`<span draggable="true" ondragstart="mnDragS=${si}" title="拖曳排序分類" style="cursor:grab;color:#9fb0c6">⠿ </span>`:''}<span style="cursor:pointer" onclick="menuFoldT(${si})">${fold?'▸':'▾'} ${s2.name}</span>${fold?` <span class="hint">（${(s2.items||[]).length} 品項）</span>`:''} ${s2.note?`<span class="hint">${s2.note}</span>`:''}
+      h += `<div class="mnSec" data-si="${si}" style="background:var(--soft);border:1px solid var(--line);border-radius:12px;padding:9px 11px;margin-bottom:10px">
+        <div style="font-weight:900;color:var(--pdark)">${meN?`<span onpointerdown="mnDragStart(event,'sec',${si})" title="按住拖曳排序分類" style="cursor:grab;touch-action:none;color:#9fb0c6;padding:2px 5px;display:inline-block">⠿</span> `:''}<span style="cursor:pointer" onclick="menuFoldT(${si})">${fold?'▸':'▾'} ${s2.name}</span>${fold?` <span class="hint">（${(s2.items||[]).length} 品項）</span>`:''} ${s2.note?`<span class="hint">${s2.note}</span>`:''}
         ${meN?` <button class="mini ${menuEditSec[si]?'on':''}" onclick="menuEditSec[${si}]=!menuEditSec[${si}];menuRender()">${menuEditSec[si]?'完成':'編輯'}</button>`:''}${meN&&menuEditSec[si]?` <button class="mini" onclick="menuSecShift(${si},-1)">↑</button><button class="mini" onclick="menuSecShift(${si},1)">↓</button> <button class="mini" onclick="menuSecForm(${si})">改名</button> <button class="mini" onclick="menuItemAdd(${si})">＋品項</button> <button class="mini" style="color:var(--red)" onclick="if(confirm('刪掉整個分類「${s2.name}」？（品項會標成刪除）'))menuSecDel(${si})">刪分類</button>`:''}</div>`
       // 表格化＋每格直接編輯（張良 2026-10-01：中文/英文/售價/備註四欄全 inline 改）
       // v4.43.7 對齊治本：th 改[名稱,對齊]單一來源（售價/新售價=right 跟 td 一致、操作=left）——照 p11 C9 範式
@@ -327,8 +330,8 @@ function menuRender(){
         const isNew = !b, isChg = b && (b.name!==i2.name || b.price!==i2.price || (b.note||'')!==(i2.note||'') || (b.en||'')!==(i2.en||''))
         const edOn = meN && menuEditSec[si]
         // v4.52.5 clr=1 給清空 X（張良「加一個X給我直接消除整個」）：點 X=清空該格並重畫；配合後端防蓋修正,清了不會再跑回來
-        const cell=(f,v,st,clr)=> edOn ? `<td style="padding:3px 4px;border:1px solid var(--line);position:relative"><input value="${String(v??'').replace(/"/g,'&quot;')}" onchange="menuCell(${si},'${i2.id}','${f}',this.value)" style="width:100%;box-sizing:border-box;border:1px solid var(--line);border-radius:7px;padding:6px;${clr?'padding-right:26px;':''}font-size:14px;background:var(--card);${st||''}">${clr?`<button onclick="menuCell(${si},'${i2.id}','${f}','');menuRender()" title="清空這格" style="position:absolute;right:9px;top:50%;transform:translateY(-50%);background:none;border:none;color:var(--muted);cursor:pointer;font-size:13px;line-height:1;padding:0">✕</button>`:''}</td>` : `<td style="padding:6px 7px;border:1px solid var(--line);text-align:left;${st||''}">${String(v??'')!==''?String(v).replace(/</g,'&lt;'):'<span class="mut">—</span>'}</td>`
-        h += `<tr style="background:${isNew?'#1C3326':isChg?'#2E2512':'transparent'}">${cell('name',i2.name,'font-weight:700;min-width:120px')}${cell('en',i2.en,'min-width:110px',1)}${edOn?`<td style="padding:3px 4px;border:1px solid var(--line)"><input inputmode="numeric" value="${i2.price}" onchange="menuCell(${si},'${i2.id}','price',this.value)" style="width:64px;border:1px solid var(--line);border-radius:7px;padding:6px;font-size:14px;text-align:right;font-weight:800;background:var(--card)"></td>`:`<td style="padding:6px 7px;border:1px solid var(--line);text-align:right;font-weight:800">$${i2.price}</td>`}${edOn?`<td style="padding:3px 4px;border:1px solid var(--line)"><input inputmode="numeric" value="${i2.np||''}" placeholder="—" onchange="menuCell(${si},'${i2.id}','np',this.value)" style="width:64px;border:1px solid var(--line);border-radius:7px;padding:6px;font-size:14px;text-align:right;font-weight:800;background:var(--card);color:#A85C26"></td>`:`<td style="padding:6px 7px;border:1px solid var(--line);text-align:right;font-weight:800;color:#A85C26">${i2.np?'$'+i2.np:'—'}</td>`}${cell('note',i2.note,'min-width:90px')}<td style="white-space:nowrap;border:1px solid var(--line);padding:3px 5px;text-align:left">${isNew?'<span class="up" style="font-size:12px;font-weight:800">新增</span> ':''}${edOn?`<button class="mini" onclick="menuItemShift(${si},'${i2.id}',-1)">↑</button><button class="mini" onclick="menuItemShift(${si},'${i2.id}',1)">↓</button><button class="mini" style="color:var(--red)" onclick="if(confirm('刪掉「${i2.name}」？'))menuItemDel(${si},'${i2.id}')">🗑</button>`:''}</td></tr>`
+        const cell=(f,v,st,clr)=> edOn ? `<td style="padding:3px 4px;border:1px solid var(--line);position:relative"><input value="${String(v??'').replace(/"/g,'&quot;')}" onchange="menuCell(${si},'${i2.id}','${f}',this.value)" onkeydown="menuKey(event)" style="width:100%;box-sizing:border-box;border:1px solid var(--line);border-radius:7px;padding:6px;${clr?'padding-right:26px;':''}font-size:14px;background:var(--card);${st||''}">${clr?`<button onclick="menuCell(${si},'${i2.id}','${f}','');menuRender()" title="清空這格" style="position:absolute;right:9px;top:50%;transform:translateY(-50%);background:none;border:none;color:var(--muted);cursor:pointer;font-size:13px;line-height:1;padding:0">✕</button>`:''}</td>` : `<td style="padding:6px 7px;border:1px solid var(--line);text-align:left;${st||''}">${String(v??'')!==''?String(v).replace(/</g,'&lt;'):'<span class="mut">—</span>'}</td>`
+        h += `<tr data-id="${i2.id}" style="background:${isNew?'#1C3326':isChg?'#2E2512':'transparent'}">${cell('name',i2.name,'font-weight:700;min-width:120px')}${cell('en',i2.en,'min-width:110px',1)}${edOn?`<td style="padding:3px 4px;border:1px solid var(--line)"><input inputmode="numeric" value="${i2.price}" onchange="menuCell(${si},'${i2.id}','price',this.value)" onkeydown="menuKey(event)" style="width:64px;border:1px solid var(--line);border-radius:7px;padding:6px;font-size:14px;text-align:right;font-weight:800;background:var(--card)"></td>`:`<td style="padding:6px 7px;border:1px solid var(--line);text-align:right;font-weight:800">$${i2.price}</td>`}${edOn?`<td style="padding:3px 4px;border:1px solid var(--line)"><input inputmode="numeric" value="${i2.np||''}" placeholder="—" onchange="menuCell(${si},'${i2.id}','np',this.value)" onkeydown="menuKey(event)" style="width:64px;border:1px solid var(--line);border-radius:7px;padding:6px;font-size:14px;text-align:right;font-weight:800;background:var(--card);color:#A85C26"></td>`:`<td style="padding:6px 7px;border:1px solid var(--line);text-align:right;font-weight:800;color:#A85C26">${i2.np?'$'+i2.np:'—'}</td>`}${cell('note',i2.note,'min-width:90px')}<td style="white-space:nowrap;border:1px solid var(--line);padding:3px 5px;text-align:left">${isNew?'<span class="up" style="font-size:12px;font-weight:800">新增</span> ':''}${edOn?`<span onpointerdown="mnDragStart(event,'item',${si})" title="按住拖曳排序品項" style="cursor:grab;touch-action:none;color:#9fb0c6;padding:2px 5px;display:inline-block;vertical-align:middle">⠿</span><button class="mini" onclick="menuItemShift(${si},'${i2.id}',-1)">↑</button><button class="mini" onclick="menuItemShift(${si},'${i2.id}',1)">↓</button><button class="mini" style="color:var(--red)" onclick="if(confirm('刪掉「${i2.name}」？'))menuItemDel(${si},'${i2.id}')">🗑</button>`:''}</td></tr>`
       })
       h += `</tbody></table></div>`
       // 這分類底下被刪掉的（原菜單有、新菜單沒了）→ 灰底刪除線＋復原
@@ -338,6 +341,7 @@ function menuRender(){
           ${meN?`<button class="mini" onclick="menuItemRestore('${k}')">↩︎ 復原</button> <button class="mini" style="color:var(--red)" onclick="if(confirm('永久刪除「${b.name}」？不會再出現在菜單頁'))menuItemPurge('${k}')">永久刪除</button>`:''}</div>` })
       h += `</div>`
     })
+    h += `</div>` // /#mnSecs
     // 整個分類被刪掉的
     const delSecs = (d.base.sections||[]).filter(bs=>!(d.draft.sections||[]).some(s2=>s2.name===bs.name) && df.del.some(k=>df.bF[k].sec===bs.name))
     delSecs.forEach(bs=>{
@@ -631,10 +635,80 @@ async function menuTransAll(){
   } catch(e){ alert('翻譯出錯：' + (e.message||e)) }
   finally { const b = document.getElementById('menuTransBtn'); if (b) { b.disabled = false; b.textContent = '自動翻譯英文' } }
 }
-function menuCell(si, id, f, v){ // 表格每格直接改（onchange=離開格子就存）
+function menuCell(si, id, f, v){ // v4.57.0 表格每格直接改（onchange=離開格子就存）
   const it = (window._menuD.draft.sections[si].items||[]).find(x=>x.id===id); if(!it) return
   it[f] = (f==='price'||f==='np') ? (+String(v).replace(/[^0-9]/g,'')||0) : String(v).trim()
-  menuSave('改 '+it.name+' '+({name:'中文',en:'英文',price:'售價',np:'新售價',note:'備註'}[f]||f))
+  tcSet('menu', window._menuD) // 本地快取先更新
+  // 關鍵治本（張良「打字卡、刪字跑回來」）：不再每格存完就 menuRender()+menuLoad() 整頁重畫＋回抓
+  // 回抓會把 KV 還沒同步的舊值蓋回你剛改/剛刪的字＝「跑回來」；整頁重畫又會打斷你下一格的打字＝「卡」。
+  // 改成：本地即時生效＋防抖靜默存檔（700ms 內多格編輯併成一次 POST，不重畫、不回抓）。
+  menuSaveSoon('改 '+it.name+' '+({name:'中文',en:'英文',price:'售價',np:'新售價',note:'備註'}[f]||f))
+}
+let _mnSaveT = null, _mnSaveWhat = ''
+function menuSaveSoon(what){ // 防抖：離開格子後 700ms 沒再動才送；期間再改就重新計時＝打字全程零網路零重畫
+  _mnSaveWhat = what
+  clearTimeout(_mnSaveT)
+  _mnSaveT = setTimeout(()=>{ _mnSaveT = null; mnQuietSave(_mnSaveWhat) }, 700)
+}
+async function mnQuietSave(what){ // 靜默存：只 POST，不 menuRender、不 menuLoad（不打斷打字、刪字不回彈）
+  const d = window._menuD; if (!d || !d.draft) return
+  try {
+    const r = await fetch('/api/mail-sync?menuset=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ draft: d.draft, what, token: TK() }) })
+    const j = await r.json().catch(()=>null)
+    if (!j || !j.ok) alert((j&&j.error)||'儲存失敗——網路不穩，請再改一下或重整')
+  } catch(e){ /* 下次編輯會再送整份 draft，不中斷使用 */ }
+}
+function menuFlushCell(){ if (_mnSaveT) { clearTimeout(_mnSaveT); _mnSaveT = null; mnQuietSave(_mnSaveWhat) } } // 切頁/結構變更前先把待存的格子送出
+// ⠿ 拖曳排序（張良 2026-10-06：品項＋分類都要拖、要順）：pointer 事件＝滑鼠/觸控(iPad)共用，拖的時候直接搬 DOM＝流暢，放手才寫資料＋存
+let _mnDrag = null
+function mnDragStart(e, type, si){
+  const handle = e.currentTarget
+  const el = type==='sec' ? handle.closest('.mnSec') : handle.closest('tr')
+  if (!el || !el.parentNode) return
+  e.preventDefault()
+  _mnDrag = { type, si, el, parent: el.parentNode }
+  el.style.opacity = '.55'; el.style.boxShadow = '0 6px 18px rgba(0,0,0,.4)'
+  document.body.style.userSelect = 'none'
+  try { handle.setPointerCapture && handle.setPointerCapture(e.pointerId) } catch(_){}
+  window.addEventListener('pointermove', mnDragMove)
+  window.addEventListener('pointerup', mnDragEnd)
+  window.addEventListener('pointercancel', mnDragEnd)
+}
+function mnDragMove(e){
+  if (!_mnDrag) return
+  const { el, parent, type } = _mnDrag
+  const y = e.clientY
+  const sibs = [...parent.children].filter(c => type==='sec' ? c.classList && c.classList.contains('mnSec') : c.tagName==='TR')
+  let target = null
+  for (const s of sibs){ if (s===el) continue; const r = s.getBoundingClientRect(); if (y < r.top + r.height/2) { target = s; break } }
+  if (target){ if (target!==el && el.nextElementSibling!==target) parent.insertBefore(el, target) }
+  else if (parent.lastElementChild!==el) parent.appendChild(el)
+}
+function mnDragEnd(){
+  if (!_mnDrag) return
+  const { type, si, el, parent } = _mnDrag
+  el.style.opacity = ''; el.style.boxShadow = ''
+  document.body.style.userSelect = ''
+  window.removeEventListener('pointermove', mnDragMove)
+  window.removeEventListener('pointerup', mnDragEnd)
+  window.removeEventListener('pointercancel', mnDragEnd)
+  _mnDrag = null
+  const d = window._menuD; if (!d || !d.draft) return
+  if (type==='sec'){
+    const order = [...parent.children].filter(c=>c.classList && c.classList.contains('mnSec')).map(c=>+c.dataset.si)
+    if (order.join()=== order.slice().sort((a,b)=>a-b).join()) return // 沒拖動（只點了一下）＝不存不重畫
+    const ss = d.draft.sections
+    d.draft.sections = order.map(i=>ss[i]).filter(Boolean)
+    menuEditSec = {} // 索引全變了，清掉逐類編輯狀態避免錯位
+    menuSave('拖曳排序分類')
+  } else {
+    const order = [...parent.children].filter(c=>c.tagName==='TR').map(c=>c.dataset.id)
+    const items = d.draft.sections[si] && d.draft.sections[si].items || []
+    if (order.join('|') === items.map(it=>it.id).join('|')) return // 順序沒變＝不存不重畫
+    const map = {}; items.forEach(it=>map[it.id]=it)
+    d.draft.sections[si].items = order.map(id=>map[id]).filter(Boolean)
+    menuSave('拖曳排序品項')
+  }
 }
 function menuSecDrop(to){ // 分類拖曳排序
   if (mnDragS==null || mnDragS===to) { mnDragS=null; return }
@@ -642,12 +716,23 @@ function menuSecDrop(to){ // 分類拖曳排序
   const [mv] = ss.splice(mnDragS,1); ss.splice(to,0,mv); mnDragS=null
   menuSave('搬分類 '+mv.name)
 }
-async function menuSave(what, purge){
+function menuKey(e){ // v4.57.0 張良「不能直接按 enter」：Enter=存這格並跳下一格（像試算表）；Esc=放棄焦點
+  if (e.key === 'Enter') {
+    e.preventDefault()
+    const inp = e.target, tb = inp.closest('table')
+    inp.blur() // 觸發 onchange→menuCell 存檔
+    if (tb) { const ins = [...tb.querySelectorAll('input')]; const nx = ins[ins.indexOf(inp)+1]; if (nx) { nx.focus(); nx.select && nx.select() } }
+  } else if (e.key === 'Escape') { e.target.blur() }
+}
+async function menuSave(what, purge){ // 結構變更（增刪品項/分類、排序）：樂觀先畫＝不閃不彈回；成功不再整頁回抓
+  clearTimeout(_mnSaveT); _mnSaveT = null // 併入待存的格子編輯（都在同一份 draft 裡，這次 POST 一起送）
   const d = window._menuD
-  const r = await fetch('/api/mail-sync?menuset=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ draft: d.draft, what, token: TK(), ...(purge&&purge.length?{purge}:{}) }) })
-  const j = await r.json().catch(()=>null)
-  if (!j || !j.ok) { alert((j&&j.error)||'儲存失敗'); menuLoad(); return }
-  tcSet('menu', d); menuRender(); menuLoad() // 樂觀更新＋背景校正
+  tcSet('menu', d); menuRender() // 先畫＝拖曳/增刪立即定位，不等網路
+  try {
+    const r = await fetch('/api/mail-sync?menuset=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ draft: d.draft, what, token: TK(), ...(purge&&purge.length?{purge}:{}) }) })
+    const j = await r.json().catch(()=>null)
+    if (!j || !j.ok) { alert((j&&j.error)||'儲存失敗'); menuLoad() } // 只有失敗才回抓校正（避免 KV 延遲把剛做的蓋掉）
+  } catch(e){ alert('儲存失敗，請重試'); menuLoad() }
 }
 function menuItemForm(si, id){
   const d = window._menuD, s2 = d.draft.sections[si], it = id ? (s2.items||[]).find(x=>x.id===id) : null
