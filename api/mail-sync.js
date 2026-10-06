@@ -3103,14 +3103,18 @@ export default async function handler(req, res) {
     }
     namesL.forEach(nm => P(nm)) // v4.44.0 張良「直接先把每個人的名字show出來」：GD 人員全員上榜（沒分=0）
     // ⭐ 任務積分（v4.44.0 360制度）：已完成任務的 pts 按負責人加總
-    const tpMap = {}
+    const tpMap = {}, taskBreak = {} // taskBreak：每人任務分拆解（張良 2026-10-06「數字點進去看怎麼來的」）
     try {
       const rT = await fetch(`${SB_URL}/rest/v1/pm_documents?id=like.sp_team_pm_task_*&select=data`, { headers: { apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}` } })
       const rowsT = rT.ok ? await rT.json() : []
       for (const row of rowsT) {
         let t9 = null; try { t9 = JSON.parse(typeof row.data?.v === 'string' ? row.data.v : JSON.stringify(row.data?.v)) } catch (_) {}
-        if (t9 && t9.status === 'done' && t9.owner && Number(t9.pts) > 0) tpMap[t9.owner] = (tpMap[t9.owner] || 0) + Number(t9.pts)
+        if (t9 && t9.status === 'done' && t9.owner && Number(t9.pts) > 0) {
+          tpMap[t9.owner] = (tpMap[t9.owner] || 0) + Number(t9.pts)
+          ;(taskBreak[t9.owner] = taskBreak[t9.owner] || []).push({ title: String(t9.title || t9.name || '任務').slice(0, 60), pts: Number(t9.pts), date: String(t9.doneAt || t9.updatedAt || '').slice(0, 10) })
+        }
       }
+      Object.keys(taskBreak).forEach(nm => taskBreak[nm].sort((a, b) => b.pts - a.pts))
       Object.keys(tpMap).forEach(nm => P(nm))
     } catch (_) {}
     // 🏦 行為分（統一流水帳 sp_finance_pm_points）：總累積＝carry+窗內、本月＝當月；一套算法一個來源
@@ -3161,7 +3165,7 @@ export default async function handler(req, res) {
       const withBal = (ptsDoc.list || []).filter(e => e.person === meNameL).map(e => { run += Number(e.pts || 0); return { date: e.date, ts: e.ts, act: e.act, type: e.type, pts: e.pts, bal: Math.round(run * 10) / 10, note: e.note || '', by: e.by || '' } })
       myLedger = withBal.slice(-120).reverse()
     }
-    return res.status(200).json({ ok: true, me: meL ? { name: meL.name, role: meL.role, approver: isAdmL } : null, facets: FACETS, rank, stars5, issues: list, names: namesL, month: monthP, ptsRules: pointsRules(ptsCfgL), isAdmin: isAdmL, rewards: rwDoc.list, myBalance: Math.round((balance[meNameL] || 0) * 10) / 10, myRedeems, pendingRedeems, myLedger })
+    return res.status(200).json({ ok: true, me: meL ? { name: meL.name, role: meL.role, approver: isAdmL } : null, facets: FACETS, rank, stars5, issues: list, names: namesL, month: monthP, ptsRules: pointsRules(ptsCfgL), isAdmin: isAdmL, rewards: rwDoc.list, myBalance: Math.round((balance[meNameL] || 0) * 10) / 10, myRedeems, pendingRedeems, myLedger, taskBreak })
   }
   // 🏦 積分規則表（行為分）管理：GET 回規則＋近期流水；POST {op:'set',act,label,pts,cap,off} | {op:'del',act} | {op:'adjust',person,pts,note}（管理者抽查加扣分）
   if (req.query?.pointscfg) {

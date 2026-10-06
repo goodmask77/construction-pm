@@ -392,21 +392,25 @@ async function lbLedgerView(){
   box.innerHTML = (d&&d.ok) ? lbLedgerHtml(d.ledger||[], d.balance||0, who) : '<div class="err">讀不到</div>'
 }
 // 👤 點名字看某人明細（張良 2026-10-06「這些點進去要看得到內容」）：分項拆解＋逐筆存摺（有權限才顯示）
+// v4.56.2 張良「數字也要點進去看怎麼來的」：每個分項可點→下方展開來源明細
 async function lbPerson(nm){
   const d = window._lbD || {}
   const p = (d.rank||[]).find(x=>x.name===nm) || { name:nm }
   const E = s => String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
-  const stat = (lbl,val,col)=>`<div style="flex:1 1 72px;min-width:72px;background:var(--soft);border:1px solid var(--line);border-radius:10px;padding:8px 6px;text-align:center"><div class="hint" style="font-size:11.5px">${lbl}</div><div style="font-size:19px;font-weight:800;color:${col||'var(--ink)'};font-variant-numeric:tabular-nums">${val}</div></div>`
-  const facetsH = (d.facets||[]).map(f=>`<span style="display:inline-block;background:var(--soft);border:1px solid var(--line);border-radius:999px;padding:3px 10px;margin:2px;font-size:12.5px">${E(f)}：${p.facets&&p.facets[f]?('⭐'+p.facets[f].avg):'—'}</span>`).join('')
+  window._pnNm = nm; window._pnLg = null
+  const stat = (lbl,val,col,kind)=>`<div onclick="lbWhy('${kind}')" style="cursor:pointer;flex:1 1 72px;min-width:72px;background:var(--soft);border:1px solid var(--line);border-radius:10px;padding:8px 6px;text-align:center"><div class="hint" style="font-size:11.5px">${lbl} ›</div><div style="font-size:19px;font-weight:800;color:${col||'var(--ink)'};font-variant-numeric:tabular-nums">${val}</div></div>`
+  const facetsH = (d.facets||[]).map(f=>`<span onclick="lbWhy('facet:${E(f)}')" style="cursor:pointer;display:inline-block;background:var(--soft);border:1px solid var(--line);border-radius:999px;padding:3px 10px;margin:2px;font-size:12.5px">${E(f)}：${p.facets&&p.facets[f]?('⭐'+p.facets[f].avg):'—'} ›</span>`).join('')
   const ov = document.createElement('div'); ov.id='pnOv'
   ov.style.cssText='position:fixed;inset:0;background:rgba(10,14,20,.6);z-index:60;display:flex;align-items:center;justify-content:center;padding:14px'
   ov.innerHTML = `<div style="background:#161B22;border:1px solid #2A3240;box-shadow:0 18px 50px rgba(0,0,0,.6);border-radius:14px;max-width:540px;width:100%;max-height:86vh;overflow:auto;padding:16px" onclick="event.stopPropagation()">
-    <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px"><b style="font-size:18px">${E(nm)}</b><span class="avg" style="margin-left:auto">總積分 ${p.total||0}</span></div>
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px"><b style="font-size:18px">${E(nm)}</b><span onclick="lbWhy('total')" class="avg" style="margin-left:auto;cursor:pointer">總積分 ${p.total||0} ›</span></div>
+    <div class="hint" style="font-size:11.5px;margin-bottom:8px">👆 點任一數字看「這分怎麼來的」</div>
     <div style="display:flex;gap:7px;flex-wrap:wrap;margin-bottom:8px">
-      ${stat('行為分',p.behavPts||0,'#4DA3FF')}${stat('本月行為',p.behavMonth||0,'#4DA3FF')}${stat('發現分',p.findPts||0)}${stat('解決分',p.fixPts||0)}${stat('任務分',p.taskPts||0,'#F2C14E')}</div>
-    <div style="display:flex;gap:7px;flex-wrap:wrap;margin-bottom:8px">${stat('發現次',p.nFind||0)}${stat('解決次',p.nFix||0)}</div>
+      ${stat('行為分',p.behavPts||0,'#4DA3FF','behav')}${stat('本月行為',p.behavMonth||0,'#4DA3FF','behavMonth')}${stat('發現分',p.findPts||0,'','find')}${stat('解決分',p.fixPts||0,'','fix')}${stat('任務分',p.taskPts||0,'#F2C14E','task')}</div>
+    <div style="display:flex;gap:7px;flex-wrap:wrap;margin-bottom:8px">${stat('發現次',p.nFind||0,'','nFind')}${stat('解決次',p.nFix||0,'','nFix')}</div>
     ${facetsH?`<div style="margin:6px 0 10px">${facetsH}</div>`:''}
-    <div style="font-weight:800;margin:10px 0 6px">📒 積分存摺</div>
+    <div id="pnWhy"></div>
+    <div style="font-weight:800;margin:10px 0 6px">📒 積分存摺（逐筆）</div>
     <div id="pnLg"><div class="mut">載入中…</div></div>
     <div style="text-align:right;margin-top:12px"><button class="mini" style="padding:8px 16px" onclick="document.getElementById('pnOv').remove()">關閉</button></div></div>`
   ov.onclick = () => ov.remove()
@@ -415,9 +419,61 @@ async function lbPerson(nm){
   try {
     const r = await fetch('/api/mail-sync?ledger=' + encodeURIComponent(K) + '&who=' + encodeURIComponent(nm) + (TK()?'&me='+encodeURIComponent(TK()):''))
     const j = await r.json()
-    if (j && j.ok) lg.innerHTML = lbLedgerHtml(j.ledger||[], j.balance||0, nm)
-    else lg.innerHTML = '<div class="hint">逐筆明細僅本人或管理者可看——上方分項為公開排行數據。</div>'
+    if (j && j.ok) { window._pnLg = j.ledger||[]; lg.innerHTML = lbLedgerHtml(j.ledger||[], j.balance||0, nm) }
+    else lg.innerHTML = '<div class="hint">逐筆明細僅本人或管理者可看——上方分項為公開排行數據，仍可點開看來源。</div>'
   } catch(e){ lg.innerHTML = '<div class="hint">明細讀取失敗。</div>' }
+}
+// 🔎 某個數字「怎麼來的」：點分項→下方展開來源
+function lbWhy(kind){
+  const box = document.getElementById('pnWhy'); if (!box) return
+  const d = window._lbD || {}, nm = window._pnNm, lg = window._pnLg
+  const E = s => String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+  const ACT = { punch:'打卡上班', fb_give:'交每日回饋', sop_done:'完成SOP', meet_ack:'簽收會議', journal:'工作日誌', issue_report:'回報問題', inv_count:'盤點', adjust:'手動調整', redeem:'兌換獎勵' }
+  const wrap = (title,formula,inner)=>`<div style="background:#12161C;border:1px solid var(--line);border-radius:11px;padding:11px 12px;margin:4px 0 10px">
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:5px"><b style="font-size:14px">${title}</b><button class="mini" style="margin-left:auto;padding:3px 10px" onclick="document.getElementById('pnWhy').innerHTML=''">收起</button></div>
+    <div class="hint" style="font-size:12px;margin-bottom:7px">${formula}</div>${inner}</div>`
+  const row = (a,b,c)=>`<div style="display:flex;gap:8px;padding:5px 0;border-top:1px dashed var(--line);font-size:13px"><span style="flex:1;min-width:0">${a}</span><span class="hint" style="white-space:nowrap">${b||''}</span><b style="white-space:nowrap;color:${(c||'').startsWith('+')?'var(--green)':'var(--ink)'}">${c||''}</b></div>`
+  const needLg = ()=> lg===null ? '<div class="hint">逐筆來源僅本人或管理者可看。</div>' : null
+  let html = ''
+  if (kind==='behav' || kind==='behavMonth'){
+    const nl = needLg(); if (nl) { box.innerHTML = wrap(kind==='behav'?'行為分怎麼來的':'本月行為怎麼來的','行為分＝每做一件事就加分（打卡／回饋／SOP／簽收／回報⋯），一件一筆。',nl); box.scrollIntoView({block:'nearest'}); return }
+    const mon = (d.month||'')
+    const ents = (lg||[]).filter(e=> e.type!=='redeem' && (kind==='behav' ? true : (e.type==='behavior' && String(e.date||'').slice(0,7)===mon)))
+    const agg = {}; ents.forEach(e=>{ const k=e.act||'其他'; (agg[k]=agg[k]||{n:0,sum:0}); agg[k].n++; agg[k].sum+=Number(e.pts||0) })
+    const items = Object.entries(agg).sort((a,b)=>b[1].sum-a[1].sum).map(([k,v])=>row((ACT[k]||E(k))+` <span class="hint">×${v.n}</span>`,'',(v.sum>=0?'+':'')+Math.round(v.sum*10)/10)).join('')
+    const tot = ents.reduce((s,e)=>s+Number(e.pts||0),0)
+    html = wrap(kind==='behav'?'行為分怎麼來的':`本月行為怎麼來的（${mon}）`, kind==='behav'?'行為分＝做了就給分，不含兌換。以下依動作歸類：':'本月「有做事」累積分，依動作歸類：', (items||'<div class="mut">這段期間沒有行為加分</div>')+`<div style="border-top:2px solid var(--line);margin-top:6px;padding-top:6px;text-align:right;font-weight:800">合計 ${Math.round(tot*10)/10} 分</div>`)
+  } else if (kind==='find' || kind==='nFind'){
+    const arr = (d.issues||[]).filter(x=>x.by===nm)
+    const items = arr.map(x=>row(`${E(x.text||'（附件）')} ${x.status==='done'?'✅':x.status==='pending'?'🕐':''}`, (x.st||'')+'・'+(x.ts||''), x.findAvg!=null?('⭐'+x.findAvg):'未評')).join('')
+    html = wrap(kind==='find'?'發現分怎麼來的':'發現次怎麼來的', kind==='find'?'發現分＝你回報、且被評星的問題，每件取星平均加總。':'發現次＝你一共回報了幾件問題。', (items||'<div class="mut">還沒有回報過問題</div>')+(kind==='nFind'?`<div style="text-align:right;font-weight:800;margin-top:6px">共 ${arr.length} 件</div>`:''))
+  } else if (kind==='fix' || kind==='nFix'){
+    const arr = (d.issues||[]).filter(x=>x.doneBy===nm && x.status==='done')
+    const items = arr.map(x=>row(`${E(x.text||'（附件）')} ✅`, (x.st||'')+'・'+(x.ts||''), x.fixAvg!=null?('⭐'+x.fixAvg):'未評')).join('')
+    html = wrap(kind==='fix'?'解決分怎麼來的':'解決次怎麼來的', kind==='fix'?'解決分＝你標記解決、且被評星的問題，每件取星平均加總。':'解決次＝你一共解決了幾件問題。', (items||'<div class="mut">還沒有解決紀錄</div>')+(kind==='nFix'?`<div style="text-align:right;font-weight:800;margin-top:6px">共 ${arr.length} 件</div>`:''))
+  } else if (kind==='task'){
+    const arr = (d.taskBreak||{})[nm] || []
+    const items = arr.map(t=>row(E(t.title), t.date||'', '+'+t.pts)).join('')
+    const tot = arr.reduce((s,t)=>s+Number(t.pts||0),0)
+    html = wrap('任務分怎麼來的','任務分＝你完成的任務積分加總（每張任務卡的分數）。', (items||'<div class="mut">還沒有完成帶積分的任務</div>')+`<div style="border-top:2px solid var(--line);margin-top:6px;padding-top:6px;text-align:right;font-weight:800">合計 ${Math.round(tot*10)/10} 分</div>`)
+  } else if (kind==='total'){
+    const p = (d.rank||[]).find(x=>x.name===nm) || {}
+    html = wrap('總積分怎麼來的','總積分＝行為分＋發現分＋解決分＋任務分（不含兌換，兌換不讓名次掉）。',
+      row('行為分','做了就給',(p.behavPts||0)>=0?'+'+(p.behavPts||0):''+(p.behavPts||0))+
+      row('發現分','被評星',(p.findPts||0)?'+'+p.findPts:'0')+
+      row('解決分','被評星',(p.fixPts||0)?'+'+p.fixPts:'0')+
+      row('任務分','完成任務',(p.taskPts||0)?'+'+p.taskPts:'0')+
+      `<div style="border-top:2px solid var(--line);margin-top:6px;padding-top:6px;text-align:right;font-weight:800">總積分 ${p.total||0} 分</div>`)
+  } else if (kind.startsWith('facet:')){
+    const f = kind.slice(6)
+    const arr = (d.issues||[]).filter(x=>{ const s=(x.stars||{}); return (s.find&&s.find[f])||(s.fix&&s.fix[f]) }).filter(x=>x.by===nm||x.doneBy===nm)
+    const p = (d.rank||[]).find(x=>x.name===nm) || {}
+    const fa = p.facets&&p.facets[f] ? p.facets[f] : null
+    const items = arr.map(x=>{ const who3 = x.by===nm?'發現':'解決'; const s=(x.stars||{}); const vs=[]; ['find','fix'].forEach(a=>{ const o=(s[a]||{})[f]; if(o) Object.values(o).forEach(v=>vs.push(Number(v))) }); const avg = vs.length?Math.round(vs.reduce((a,b)=>a+b,0)/vs.length*10)/10:null; return row(`${E(x.text||'（附件）')} <span class="hint">(${who3})</span>`, (x.ts||''), avg!=null?('⭐'+avg):'') }).join('')
+    html = wrap(`${E(f)} 評分怎麼來的`, `${E(f)}＝別人在你「發現／解決」的問題上，對這個面向打的星平均${fa?`（目前 ⭐${fa.avg}，共 ${fa.n} 票）`:'（還沒有票）'}。`, items||'<div class="mut">這個面向還沒有被評星</div>')
+  }
+  box.innerHTML = html
+  box.scrollIntoView({block:'nearest'})
 }
 // 🎁 兌換
 async function lbRedeem(id, name, cost){
