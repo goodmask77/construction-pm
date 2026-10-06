@@ -1,10 +1,16 @@
-// ⚠️ /prep 主程式第 13 塊（v4.56.9 張良「開工」入職流程）：新人自填入職流程頁；欄位對齊 NUEiP 到職基本資料單＋入職繳交表（必填＋選填全補，含眷屬多筆、健檢報告）；v4.56.6 通訊地址「同戶籍」勾選＋緊急聯絡人拆三格必填；v4.56.7 上傳可拍照／圖庫／檔案(含PDF)；v4.56.8 第三步簽署=顯示勞動契約+四週變形同意書+手寫簽名板→私有桶；v4.56.9 第四步勞健保=新人端等加保頁+主管端入職管理面板(進度總覽+確認加保通知新人完成)
+// ⚠️ /prep 主程式第 13 塊（v4.56.9 張良「開工」入職流程）：新人自填入職流程頁；欄位對齊 NUEiP 到職基本資料單＋入職繳交表（必填＋選填全補，含眷屬多筆、健檢報告）；v4.56.6 通訊地址「同戶籍」勾選＋緊急聯絡人拆三格必填；v4.56.7 上傳可拍照／圖庫／檔案(含PDF)；v4.56.8 第三步簽署=顯示勞動契約+四週變形同意書+手寫簽名板→私有桶；v4.56.9 第四步勞健保=新人端等加保頁+主管端入職管理面板(進度總覽+確認加保通知新人完成)；v4.56.11 預覽模式(preview=1 免登入免填翻看四步版面)+複製預覽連結給夥伴
 // 第一步＝基本資料（繳交表/簽署/勞健保分步後續做）；資料走 ?onboardself（本人 token 驗身分、只改自己那筆名冊卡）
 // 本塊只負責「新人端填寫」；主管端核准在名冊頁（p12 待審核區，已有 v4.60）
 const ONB_STEPS = ['基本資料', '繳交表', '簽署', '勞健保']
 
 async function onbPage() {
   curStore = 'onb'; setTabs('onb') // v4.56.5 有分頁按鈕後：點進來要高亮「入職」分頁
+  // v4.56.11 預覽模式：連結帶 preview=1 → 免綁定、免填資料、可翻看四步版面（給夥伴確認用）
+  if (/preview=1|onbpreview/i.test(location.hash || '') || window._onbPreview) {
+    window._onbPreview = true; if (window._onbPrevStep == null) window._onbPrevStep = 0
+    window._onbD = { ok: true, me: {}, step: 0 }; onbRender(); return
+  }
+  window._onbPreview = false
   app.innerHTML = '<section>載入中…</section>'
   if (!TK || !TK()) { app.innerHTML = '<section class="err">要先綁定才能填入職資料——請私訊 DD「綁定GD 你的本名」，點我發的連結進來。</section>'; return }
   let d
@@ -20,6 +26,23 @@ function onbRender() {
   const d = window._onbD || {}, me = d.me || {}, step = Math.min(d.step || 0, 4)
   const _u = document.getElementById('upd'); if (_u) _u.textContent = '入職流程' // v4.56.1d 修「載入中…」沒消失（張良截圖抓包）
   const esc = s => String(s == null ? '' : s).replace(/"/g, '&quot;').replace(/</g, '&lt;')
+  // 預覽模式（v4.56.11）：免填、可翻看四步版面，不會儲存
+  if (window._onbPreview) {
+    const ps = window._onbPrevStep || 0, pm = {}
+    let hp = `<section><h2>入職流程 <span style="font-size:13px;color:var(--muted);font-weight:600">（預覽）</span></h2>
+      <div style="background:var(--soft);border:1px solid var(--line);border-radius:10px;padding:11px 13px;margin-bottom:10px;font-size:13px;color:var(--text);line-height:1.6">這是<b style="color:var(--ink)">預覽模式</b>：點下面四個步驟可看每一頁版面，<b style="color:var(--ink)">不會儲存任何資料</b>，給夥伴確認流程用。
+        <button class="mini" onclick="onbCopyPreviewLink()" style="margin-top:8px">🔗 複製預覽連結</button>${d.approver ? ' <button class="mini" onclick="window._onbPreview=false;onbRender()" style="margin-top:8px">← 回入職管理</button>' : ''}</div>
+      <div style="display:flex;gap:6px;margin-bottom:14px;flex-wrap:wrap">${ONB_STEPS.map((s, i) => `<button onclick="window._onbPrevStep=${i};onbRender()" style="flex:1;min-width:72px;padding:9px 4px;border-radius:9px;font-size:12px;font-weight:800;border:none;cursor:pointer;background:${i === ps ? 'var(--primary)' : 'var(--soft)'};color:${i === ps ? '#fff' : 'var(--muted)'}">${i + 1}. ${s}</button>`).join('')}</div>`
+    if (ps === 0) hp += onbStep1Form(pm, esc)
+    else if (ps === 1) hp += onbStep2Form(pm, esc)
+    else if (ps === 2) hp += onbStep3Form(pm, esc)
+    else hp += onbStep4Self(pm, esc)
+    hp += `</section>`
+    app.innerHTML = hp
+    if (ps === 0) { onbDepInit(); onbDepRender() }
+    if (ps === 2) onbSignInit()
+    return
+  }
   // 主管視圖（v4.56.9）：approver 進來先看入職管理面板；按「填/看我自己的」才切到個人流程
   if (d.approver && !window._onbSelfMode) { app.innerHTML = onbMgrView(esc); return }
   // 進度條
@@ -66,7 +89,11 @@ function onbMgrView(esc) {
   const m = window._onbMgr || {}, list = (m.ok && m.list) || []
   let h = `<section><h2>入職管理</h2>
     <div style="color:var(--muted);font-size:13px;margin-bottom:10px">新人入職進度總覽。完成簽署後，報到當天公司辦好勞健保加保，按「確認已加保」就會通知新人入職完成。</div>
-    <button class="mini" onclick="window._onbSelfMode=true;onbRender()" style="margin-bottom:12px">✎ 預覽／填寫入職表</button>`
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
+      <button class="mini" onclick="window._onbPreview=true;window._onbPrevStep=0;onbRender()">預覽入職表（四步版面）</button>
+      <button class="mini" onclick="onbCopyPreviewLink()">🔗 複製預覽連結給夥伴</button>
+      <button class="mini" onclick="window._onbSelfMode=true;onbRender()">✎ 填我自己的</button>
+    </div>`
   if (!list.length) h += `<div class="hint">目前沒有入職中的新人。</div>`
   else h += list.map(p => {
     const prog = ONB_STEPS.map((s, i) => `<span style="display:inline-block;padding:3px 8px;border-radius:7px;font-size:11px;font-weight:700;margin:2px;background:${i < p.step ? 'var(--green)' : i === p.step ? 'var(--primary)' : 'var(--soft)'};color:${i <= p.step ? '#fff' : 'var(--muted)'}">${i < p.step ? '✓' : ''}${s}</span>`).join('')
@@ -162,8 +189,8 @@ function onbStep2Form(me, esc) {
     <div class="hint" style="margin-top:8px">存摺／證件只有你本人和主管看得到（存機密私有區，不進公開圖庫）。</div>
   </div>`
 }
-function onbEditStep2() { const d = window._onbD || {}; d.step = 1; window._onbD = d; onbRender() }
-function onbEditStep3() { const d = window._onbD || {}; d.step = 2; window._onbD = d; onbRender() }
+function onbEditStep2() { if (window._onbPreview) { window._onbPrevStep = 1; onbRender(); return } const d = window._onbD || {}; d.step = 1; window._onbD = d; onbRender() }
+function onbEditStep3() { if (window._onbPreview) { window._onbPrevStep = 2; onbRender(); return } const d = window._onbD || {}; d.step = 2; window._onbD = d; onbRender() }
 
 // ── 第三步：簽署（勞動契約＋四週變形工時同意書→手寫簽名→私有桶）v4.56.8 ──
 // 內文為通用公版，最終以公司正式版本為準（docs/legal-templates/，待顧問覆核）
@@ -244,6 +271,7 @@ function onbSigClear() {
   window._onbSigned = false
 }
 async function onbSaveStep3() {
+  if (window._onbPreview) { alert('預覽模式不會儲存，點上方步驟切換看各頁版面。'); return }
   if (!((document.getElementById('ob_sign_agree') || {}).checked)) { alert('請先勾選「我已詳閱並同意」'); return }
   if (!window._onbSigned) { alert('請在簽名框內簽上你的名字'); return }
   const cv = document.getElementById('ob_sig'); if (!cv) return
@@ -263,6 +291,7 @@ async function onbSaveStep3() {
 // 機密檔案上傳（可拍照／從圖庫選／選檔案；照片自動壓縮，PDF 等原檔直傳）→ 私有桶
 // v4.56.7 張良「手機版不要只能拍照，要能上傳檔案或照片」：移除 capture 強制鏡頭、開放 image+pdf
 function onbFileUpload(field) {
+  if (window._onbPreview) { alert('預覽模式只是看版面，不會上傳檔案。'); return }
   const inp = document.createElement('input'); inp.type = 'file'; inp.accept = 'image/*,application/pdf' // 不設 capture→手機會跳「拍照／照片圖庫／檔案」讓使用者選
   inp.onchange = () => {
     const f = inp.files && inp.files[0]; if (!f) return
@@ -298,6 +327,7 @@ async function onbSendFile(field, dataUrl) {
 }
 
 async function onbSaveStep2() {
+  if (window._onbPreview) { alert('預覽模式不會儲存，點上方步驟切換看各頁版面。'); return }
   const g = id => (document.getElementById(id) || {}).value || ''
   const branch = g('ob_branch').trim(), acct = g('ob_acct').trim()
   if (!branch || !acct) { alert('分行名稱和帳號要填'); return }
@@ -312,6 +342,12 @@ async function onbSaveStep2() {
 
 function onbToast(msg) {
   try { const t = document.createElement('div'); t.style.cssText = 'position:fixed;bottom:18px;left:50%;transform:translateX(-50%);z-index:80;background:#10182B;color:#fff;border-radius:10px;padding:9px 18px;font-size:14px'; t.textContent = msg; document.body.appendChild(t); setTimeout(() => t.remove(), 1800) } catch (_) {} }
+
+// 預覽連結：複製可直接傳給夥伴（免登入、免填、只看版面）v4.56.11
+function onbCopyPreviewLink() {
+  const url = location.origin + '/prep#tab=onb&preview=1'
+  try { navigator.clipboard.writeText(url); onbToast('🔗 預覽連結已複製，可貼給夥伴') } catch (_) { prompt('複製這個預覽連結傳給夥伴：', url) }
+}
 
 // 第一步表單：基本資料（欄位對齊 NUEiP 到職基本資料單；v4.56.3 補必填）
 function onbStep1Form(me, esc) {
@@ -370,7 +406,7 @@ function onbStep1Form(me, esc) {
   </div>`
 }
 
-function onbEditStep1() { const d = window._onbD || {}; d.step = 0; window._onbD = d; onbRender() }
+function onbEditStep1() { if (window._onbPreview) { window._onbPrevStep = 0; onbRender(); return } const d = window._onbD || {}; d.step = 0; window._onbD = d; onbRender() }
 
 // 通訊地址「同戶籍地址」：勾了自動帶戶籍、鎖住；戶籍改字也跟著同步
 function onbSameAddr() {
@@ -385,6 +421,7 @@ function onbSameAddrSync() {
 }
 
 async function onbSaveStep1() {
+  if (window._onbPreview) { alert('預覽模式不會儲存，點上方步驟切換看各頁版面。'); return }
   const g = id => (document.getElementById(id) || {}).value || ''
   const rv = name => { const el = document.querySelector(`input[name="${name}"]:checked`); return el ? el.value : '' }
   const cv = name => Array.from(document.querySelectorAll(`input[name="${name}"]:checked`)).map(e => e.value).join(',')
