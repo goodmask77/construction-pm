@@ -280,16 +280,16 @@ function lbRender(){
   </div>`).join(''):'<div class="mut">還沒有人回報過問題</div>'}</div></section>`
   // 🔥 本月行為榜（張良 2026-10-06 拍板：排行榜看 總累積＋本月；行為分＝做了就給）
   const monthRank = [...d.rank].filter(p=>p.behavMonth>0).sort((a,b)=>b.behavMonth-a.behavMonth)
-  h += `<section><h2>🔥 本月行為榜 <span class="hint">本月「有做事」累積分（${d.month||''}）：打卡／交回饋／完成SOP／簽收會議／回報問題</span></h2>
-  <div style="display:flex;gap:8px;flex-wrap:wrap">${monthRank.length?monthRank.slice(0,12).map((p,i)=>`<div style="background:${i===0?'#13233A':'var(--soft)'};border:1.5px solid ${i===0?'#4DA3FF':'var(--line)'};border-radius:12px;padding:10px 16px;text-align:center;min-width:92px">
+  h += `<section><h2>🔥 本月行為榜 <span class="hint">本月「有做事」累積分（${d.month||''}）——點名字看明細</span></h2>
+  <div style="display:flex;gap:8px;flex-wrap:wrap">${monthRank.length?monthRank.slice(0,12).map((p,i)=>`<div onclick="lbPerson('${p.name}')" style="cursor:pointer;background:${i===0?'#13233A':'var(--soft)'};border:1.5px solid ${i===0?'#4DA3FF':'var(--line)'};border-radius:12px;padding:10px 16px;text-align:center;min-width:92px">
     <div style="font-size:13px;font-weight:700;color:var(--muted)">${i===0?'🔥 ':''}#${i+1}</div><div style="font-weight:800;color:var(--ink)">${p.name}</div><div style="font-size:20px;font-weight:800;color:var(--primary)">${p.behavMonth}<span style="font-size:12px"> 分</span></div>
   </div>`).join(''):'<div class="mut">本月還沒有人累積行為分——做事就有分</div>'}</div></section>`
-  h += `<section><h2>積分排行榜 <span class="hint">總累積＝行為分(做了就給)＋品質分(被評星)＋任務分</span>${meN&&d.isAdmin?' <button class="mini" style="margin-left:6px" onclick="lbPtsCfg()">⚙️ 積分規則</button>':''}</h2>
+  h += `<section><h2>積分排行榜 <span class="hint">總累積＝行為分(做了就給)＋品質分(被評星)＋任務分——點名字看明細</span>${meN&&d.isAdmin?' <button class="mini" style="margin-left:6px" onclick="lbPtsCfg()">⚙️ 積分規則</button>':''}</h2>
   <div class="scroll"><table><thead><tr><th>#</th><th style="text-align:left">夥伴</th><th>行為分</th><th>發現分</th><th>解決分</th><th>任務分</th><th>總積分</th>${d.facets.map(f=>'<th>'+f+'</th>').join('')}<th>發現次</th><th>解決次</th></tr></thead><tbody>`
   if (!d.rank.length) h += `<tr><td colspan="${9+d.facets.length}" style="text-align:center" class="mut">還沒有分數——打卡、交回饋、完成SOP、回報問題、幫別人評星開始累積</td></tr>`
   d.rank.forEach((p,i)=>{
     const medal = i===0?'🥇':i===1?'🥈':i===2?'🥉':(i+1)
-    h += `<tr style="${meN===p.name?'background:var(--psoft)':''}"><td style="font-weight:900">${medal}</td><td style="text-align:left;font-weight:800;color:var(--ink)">${p.name}</td><td style="font-weight:800;color:${p.behavPts?'#4DA3FF':'inherit'}">${p.behavPts||0}</td><td>${p.findPts||0}</td><td>${p.fixPts||0}</td><td style="font-weight:800;color:${p.taskPts?'#F2C14E':'inherit'}">${p.taskPts||0}</td><td class="avg">${p.total||0}</td>${d.facets.map(f=>'<td>'+(p.facets[f]?('⭐'+p.facets[f].avg):'—')+'</td>').join('')}<td class="mut">${p.nFind}</td><td class="mut">${p.nFix}</td></tr>`
+    h += `<tr style="${meN===p.name?'background:var(--psoft)':''}"><td style="font-weight:900">${medal}</td><td onclick="lbPerson('${p.name}')" style="text-align:left;font-weight:800;color:var(--primary);cursor:pointer;text-decoration:underline;text-decoration-style:dotted;text-underline-offset:3px">${p.name}</td><td style="font-weight:800;color:${p.behavPts?'#4DA3FF':'inherit'}">${p.behavPts||0}</td><td>${p.findPts||0}</td><td>${p.fixPts||0}</td><td style="font-weight:800;color:${p.taskPts?'#F2C14E':'inherit'}">${p.taskPts||0}</td><td class="avg">${p.total||0}</td>${d.facets.map(f=>'<td>'+(p.facets[f]?('⭐'+p.facets[f].avg):'—')+'</td>').join('')}<td class="mut">${p.nFind}</td><td class="mut">${p.nFix}</td></tr>`
   })
   h += `</tbody></table></div></section>`
   // 📒 積分存摺（張良 2026-10-06：像銀行帳戶，逐筆＋餘額；本人看自己、管理者可查任何人）
@@ -390,6 +390,34 @@ async function lbLedgerView(){
   box.innerHTML = '<div class="mut">載入中…</div>'
   let d; try { const r = await fetch('/api/mail-sync?ledger=' + encodeURIComponent(K) + '&who=' + encodeURIComponent(who) + (TK()?'&me='+encodeURIComponent(TK()):'')); d = await r.json() } catch(e){}
   box.innerHTML = (d&&d.ok) ? lbLedgerHtml(d.ledger||[], d.balance||0, who) : '<div class="err">讀不到</div>'
+}
+// 👤 點名字看某人明細（張良 2026-10-06「這些點進去要看得到內容」）：分項拆解＋逐筆存摺（有權限才顯示）
+async function lbPerson(nm){
+  const d = window._lbD || {}
+  const p = (d.rank||[]).find(x=>x.name===nm) || { name:nm }
+  const E = s => String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+  const stat = (lbl,val,col)=>`<div style="flex:1 1 72px;min-width:72px;background:var(--soft);border:1px solid var(--line);border-radius:10px;padding:8px 6px;text-align:center"><div class="hint" style="font-size:11.5px">${lbl}</div><div style="font-size:19px;font-weight:800;color:${col||'var(--ink)'};font-variant-numeric:tabular-nums">${val}</div></div>`
+  const facetsH = (d.facets||[]).map(f=>`<span style="display:inline-block;background:var(--soft);border:1px solid var(--line);border-radius:999px;padding:3px 10px;margin:2px;font-size:12.5px">${E(f)}：${p.facets&&p.facets[f]?('⭐'+p.facets[f].avg):'—'}</span>`).join('')
+  const ov = document.createElement('div'); ov.id='pnOv'
+  ov.style.cssText='position:fixed;inset:0;background:rgba(10,14,20,.6);z-index:60;display:flex;align-items:center;justify-content:center;padding:14px'
+  ov.innerHTML = `<div style="background:#161B22;border:1px solid #2A3240;box-shadow:0 18px 50px rgba(0,0,0,.6);border-radius:14px;max-width:540px;width:100%;max-height:86vh;overflow:auto;padding:16px" onclick="event.stopPropagation()">
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px"><b style="font-size:18px">${E(nm)}</b><span class="avg" style="margin-left:auto">總積分 ${p.total||0}</span></div>
+    <div style="display:flex;gap:7px;flex-wrap:wrap;margin-bottom:8px">
+      ${stat('行為分',p.behavPts||0,'#4DA3FF')}${stat('本月行為',p.behavMonth||0,'#4DA3FF')}${stat('發現分',p.findPts||0)}${stat('解決分',p.fixPts||0)}${stat('任務分',p.taskPts||0,'#F2C14E')}</div>
+    <div style="display:flex;gap:7px;flex-wrap:wrap;margin-bottom:8px">${stat('發現次',p.nFind||0)}${stat('解決次',p.nFix||0)}</div>
+    ${facetsH?`<div style="margin:6px 0 10px">${facetsH}</div>`:''}
+    <div style="font-weight:800;margin:10px 0 6px">📒 積分存摺</div>
+    <div id="pnLg"><div class="mut">載入中…</div></div>
+    <div style="text-align:right;margin-top:12px"><button class="mini" style="padding:8px 16px" onclick="document.getElementById('pnOv').remove()">關閉</button></div></div>`
+  ov.onclick = () => ov.remove()
+  document.body.appendChild(ov)
+  const lg = ov.querySelector('#pnLg')
+  try {
+    const r = await fetch('/api/mail-sync?ledger=' + encodeURIComponent(K) + '&who=' + encodeURIComponent(nm) + (TK()?'&me='+encodeURIComponent(TK()):''))
+    const j = await r.json()
+    if (j && j.ok) lg.innerHTML = lbLedgerHtml(j.ledger||[], j.balance||0, nm)
+    else lg.innerHTML = '<div class="hint">逐筆明細僅本人或管理者可看——上方分項為公開排行數據。</div>'
+  } catch(e){ lg.innerHTML = '<div class="hint">明細讀取失敗。</div>' }
 }
 // 🎁 兌換
 async function lbRedeem(id, name, cost){
