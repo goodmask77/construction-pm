@@ -4,7 +4,7 @@
 const ONB_STEPS = ['基本資料', '繳交表', '簽署', '勞健保']
 
 async function onbPage() {
-  curStore = 'onb'; setTabs('')
+  curStore = 'onb'; setTabs('onb') // v4.56.5 有分頁按鈕後：點進來要高亮「入職」分頁
   app.innerHTML = '<section>載入中…</section>'
   if (!TK || !TK()) { app.innerHTML = '<section class="err">要先綁定才能填入職資料——請私訊 DD「綁定GD 你的本名」，點我發的連結進來。</section>'; return }
   let d
