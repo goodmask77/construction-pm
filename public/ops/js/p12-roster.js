@@ -108,7 +108,12 @@ function hrmRender(){
   const LOCK_I9 = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" style="vertical-align:-2px"><rect x="4" y="11" width="16" height="9" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>'
   const topts = d.titleOpts || ['正職','PT']
   const SEL9 = (x)=>`<select style="padding:3px 4px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--ink);font-size:12.5px" onchange="hrmSet('${(x.co||'').replace(/'/g,'')}','${(x.name||'').replace(/'/g,'')}','title',this.value)">${[...new Set([x.title,...topts])].filter(Boolean).map(o9=>`<option ${o9===x.title?'selected':''}>${o9}</option>`).join('')}</select>`
-  const tenOf = x => { if (!x.onboard) return ''; const ms = Date.now() - new Date(x.onboard).getTime(); const y9 = ms/31557600000; return y9 >= 1 ? (Math.round(y9*10)/10)+'年' : Math.max(1,Math.round(ms/2629800000))+'個月' }
+  const tenOf = x => { // v4.62 年資按天算（剛到職別再湊成1個月）：今天/N天/N個月/N年；比日期＝免時區誤差
+    const on = String(x.onboard||'').slice(0,10); if (!/^\d{4}-\d{2}-\d{2}$/.test(on)) return ''
+    const ty = new Date(Date.now()+8*3600e3).toISOString().slice(0,10)
+    const days = Math.round((Date.UTC(+ty.slice(0,4),+ty.slice(5,7)-1,+ty.slice(8,10)) - Date.UTC(+on.slice(0,4),+on.slice(5,7)-1,+on.slice(8,10)))/86400e3)
+    if (days < 0) return '未到職'; if (days === 0) return '今天'; if (days < 31) return days+'天'
+    const mo = Math.floor(days/30.44); return mo < 12 ? mo+'個月' : (Math.round(days/365.25*10)/10)+'年' }
   const ed0 = window._hrmEdit
   const HRM_COLS = [
     { k:'name', lb:'姓名', al:'left', stick:1, td:(x)=>`${ed0?IN9(x,'name',70,1):(x.name||'')}${bdaySet[x.co+'|'+x.name]!=null?' 🎂':''}`, w:800 },
