@@ -469,7 +469,7 @@ function meetRender(){
     </div>`
     // 全部條列（≥2 條才列表格；單條已在標題）
     if (itemsX.length > 1) h2 += `<table style="width:100%;border-collapse:collapse;margin:8px 0 2px">${itemsX.map((it2,i)=>`<tr><td style="border:1px solid var(--line);padding:5px 8px;width:30px;text-align:center;color:var(--muted);font-weight:800">${i+1}</td><td style="border:1px solid var(--line);padding:5px 8px;text-align:left">${esc(it2.t)}</td></tr>`).join('')}</table>`
-    if ((x.media||[]).length) h2 += `<div style="display:flex;gap:6px;flex-wrap:wrap;margin:6px 0 2px">${x.media.map(u=>`<a href="${u}" target="_blank" onclick="meetMop({op:'view',id:'${x.id}'},1)"><img src="${u}" style="width:56px;height:56px;object-fit:cover;border-radius:8px;border:1px solid var(--line)" onerror="this.outerHTML='📎'"></a>`).join('')}</div>`
+    if ((x.media||[]).length) h2 += `<div style="display:flex;gap:6px;flex-wrap:wrap;margin:6px 0 2px">${x.media.map(u=>`<img src="${u}" onclick="meetMop({op:'view',id:'${x.id}'},1);mtImgView('${String(u).replace(/'/g,"\\'")}')" style="width:56px;height:56px;object-fit:cover;border-radius:8px;border:1px solid var(--line);cursor:zoom-in" onerror="this.outerHTML='📎'">`).join('')}</div>` // v4.55.8 點縮圖＝App內燈箱預覽，不開新分頁（張良）
     if ((x.links||[]).length) h2 += `<div style="margin:6px 0 2px">${x.links.map(l=>lnk(x,l)).join('')}</div>`
     // 簽收：已確認(含時間)綠chip + 未確認紅chip可點催
     if (names.length) {
@@ -543,6 +543,14 @@ function mtAudMode(m){
 }
 function mtAudToggle(n){ const s=window._mtAud.names; if(s.has(n))s.delete(n); else s.add(n); mtAudRender() }
 function mtAudAll(){ const d=window._meetD||{}, names=d.boundNames||d.allNames||d.regNames||[], s=window._mtAud.names; const allSel=names.length&&names.every(n=>s.has(n)); if(allSel){ names.forEach(n=>s.delete(n)) } else { names.forEach(n=>s.add(n)) } mtAudRender() } // v4.55.7 全選/全不選（張良「想到每個人私line不發群,給我全選」）
+function mtImgView(url){ // v4.55.8 圖片燈箱預覽（張良「有圖預覽就好 不要開分頁」）：全螢幕看大圖，點任意處關閉
+  const old=document.getElementById('mtImgOv'); if(old)old.remove()
+  const ov=document.createElement('div'); ov.id='mtImgOv'
+  ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.9);z-index:90;display:flex;align-items:center;justify-content:center;padding:16px;cursor:zoom-out'
+  ov.innerHTML=`<img src="${url}" style="max-width:94vw;max-height:90vh;object-fit:contain;border-radius:10px;box-shadow:0 10px 40px rgba(0,0,0,.6)"><button class="mini" style="position:absolute;top:14px;right:14px;padding:7px 13px">✕ 關閉</button>`
+  ov.onclick=()=>ov.remove()
+  document.body.appendChild(ov)
+}
 function mtAudGroup(gid){ const g=((window._meetD||{}).groups||[]).find(x=>x.id===gid); if(!g)return; (g.members||[]).forEach(n=>window._mtAud.names.add(n)); window._mtAud.mode='picked'; mtAudMode('picked') }
 function mtAudRender(){
   const box=document.getElementById('mtAudBox'); if(!box) return

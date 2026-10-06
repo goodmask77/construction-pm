@@ -23,8 +23,10 @@ export async function wpPush(rids, msg) {
     const t9 = (msg.title || '') + (msg.body || '')
     const cat9 = msg.cat || (/會議|宣達|簽收/.test(t9) ? 'meet' : /SOP|超時/.test(t9) ? 'sop' : /備料/.test(t9) ? 'prep' : /低水位|庫存|包材|叫貨/.test(t9) ? 'stock' : /問題|回報/.test(t9) ? 'issue' : 'other')
     nd = (await kvGet('sp_finance_pm_prep_ntf')) || { list: [] }
-    nd.list = [{ id: 'n' + Date.now().toString(36), ts: new Date().toISOString(), cat: cat9, title: msg.title || 'GD', body: String(msg.body || '').slice(0, 180), url: msg.url || '/prep', to: rids || null }, ...(nd.list || [])].slice(0, 300)
-    await kvPut('sp_finance_pm_prep_ntf', nd, '通知歷史')
+    const bodyN = String(msg.body || '').slice(0, 180), toKey = JSON.stringify(rids || null)
+    // v4.55.8 去重保險（張良「通知重複」）：8秒內同標題+內容+對象的通知＝視為重複，不再寫一筆
+    const dup = (nd.list || []).find(x => x.title === (msg.title || 'GD') && x.body === bodyN && JSON.stringify(x.to || null) === toKey && (Date.now() - new Date(x.ts).getTime()) < 8000)
+    if (!dup) { nd.list = [{ id: 'n' + Date.now().toString(36), ts: new Date().toISOString(), cat: cat9, title: msg.title || 'GD', body: bodyN, url: msg.url || '/prep', to: rids || null }, ...(nd.list || [])].slice(0, 300); await kvPut('sp_finance_pm_prep_ntf', nd, '通知歷史') }
   } catch (_) { nd = null }
   // 🔢 App 圖示數字＝每人「通知中心未讀數」（v4.33.5 張良：手機桌面App要顯示通知數字）
   // 跟 App 裡鈴鐺同一個數字＝資料一致；已讀基準=nd.read[rid]（打開通知中心時 ?ntfread= 記）；歷史讀不到才退回呼叫端給的 badge

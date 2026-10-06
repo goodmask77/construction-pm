@@ -2260,12 +2260,14 @@ export default async function handler(req, res) {
     } else if (mb.op === 'ack') { // ✅ 確認熟知
       const it = (doc.list || []).find(x => x.id === mb.id)
       if (!it) return res.status(404).json({ ok: false })
-      const firstAck = !(it.acks || {})[whoM.name]
+      const prevAck9 = (it.acks || {})[whoM.name]
+      const firstAck = !prevAck9
+      const newSign9 = !prevAck9 || (prevAck9.ver || 1) < (it.ver || 1) // v4.55.8 治本（張良「會議簽收通知重複」）：同版重複點「確認熟知」不再重通知；只有新簽/改版重簽才通知
       it.acks = it.acks || {}; it.acks[whoM.name] = { ts: now8(), ver: it.ver || 1 }
       if (firstAck) await awardPts(whoM.name, 'meet_ack', it.id) // 🏦 行為分：簽收會議（每場每人一次，改版重簽不重複給）
       // v4.47.4 治本（張良「趙以棠按了會議確認已熟知 我這邊沒有通知」）：每人簽收→即時通知發起人(鈴鐺紅點+推播)，全員簽完→再加一則 LINE 私訊（關鍵節點才發，不每簽都吵）
       try {
-        if (it.by && it.by !== whoM.name) { // 發起人自己簽自己發起的不用通知自己
+        if (newSign9 && it.by && it.by !== whoM.name) { // 發起人自己簽自己發起的不用通知自己；重複點同版不再通知
           const ver9 = it.ver || 1
           const signed9 = (it.ackNames || []).filter(n => it.acks[n] && (it.acks[n].ver || 1) >= ver9).length
           const total9 = (it.ackNames || []).length
