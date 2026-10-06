@@ -4610,9 +4610,11 @@ export default async function handler(req, res) {
       'mobile', 'regAddr', 'mailAddr', 'commute', 'military', 'disability', 'disabilityNote', 'agree1', 'agree2', 'agree3', // v4.56.3 對齊 NUEiP 到職基本資料單必填欄
       'emerName', 'emerRel', 'emerPhone', // v4.56.6 緊急聯絡人拆三格（姓名/關係/電話）
       'dischargeDate', 'nationality', 'homePhone', 'email', 'emailNotify', 'parkingPlate', 'dependents', // v4.56.4 NUEiP 選填欄（退伍日期/國籍/住家電話/email/email同步通知/機車停車格/眷屬）
-      'agreeDoc', 'signName', 'signedAt', // v4.56.8 第三步簽署（同意勾選/簽署人/簽署時間）
+      'agreeDoc', 'signName', 'signedAt', 'insured', 'insuredAt', 'contractSigned', // v4.56.8 簽署；v4.56.9 第四步勞健保加保旗標
       'idDoc', 'bankDoc', 'healthDoc1', 'healthDoc2', 'signDoc'].forEach(k => { if (p4g[k] != null) pick[k] = p4g[k] }) // 檔案給前端判斷「已上傳」(本人自己的路徑)
-    return res.status(200).json({ ok: true, me: pick, step: p4g.onboardStep || 0, onboarding: !!p4g.onboarding })
+    const def4g = await kvGet('sp_finance_pm_sop_def'); const apr4g = (((def4g || {}).ground || {}).approvers || ['張良瑋'])
+    const approver4g = who4g.role === '主管' || apr4g.includes(who4g.name) // v4.56.9 主管看得到入職管理面板
+    return res.status(200).json({ ok: true, me: pick, step: p4g.onboardStep || 0, onboarding: !!p4g.onboarding, approver: approver4g })
   }
   if (req.method === 'POST' && req.query?.onboardself !== undefined) {
     let b4 = {}
@@ -4632,8 +4634,12 @@ export default async function handler(req, res) {
     const saved = []
     // dependents 是多筆眷屬 JSON，放寬到 2000；其餘單欄 300 足夠
     for (const k of ALLOW) if (b4.set && b4.set[k] !== undefined) { p4[k] = String(b4.set[k]).slice(0, k === 'dependents' ? 2000 : 300); saved.push(k) }
+    // v4.56.9 首次完成簽署（agreeDoc=1 且還沒標記過）：設 contractSigned 並通知老闆去辦勞健保加保
+    const becameSigned = b4.set && b4.set.agreeDoc === '1' && !p4.contractSigned
+    if (becameSigned) { p4.contractSigned = true }
     if (b4.step != null) p4.onboardStep = Math.max(0, Math.min(4, Number(b4.step) || 0))
     await kvPut('sp_crew_kb_roster', doc4, '入職自填(' + (who4.name || '') + ')'); await announceChanged()
+    if (becameSigned) { try { const { notifyOps } = await import('./_onboard.js'); await notifyOps(`📝 ${p4.name || '新人'} 已完成入職簽署（勞動契約＋四週變形工時同意書）。\n報到當天辦好勞健保加保後，到 /prep「入職」分頁按「確認已加保」即可通知他入職完成。`) } catch (_) {} }
     return res.status(200).json({ ok: true, saved, step: p4.onboardStep || 0 })
   }
   // v4.56.2 入職機密檔案自傳（第二步繳交表：存摺照／身分證影本）：本人 token 驗身分→進私有桶 ground-private（個資，不進公開圖庫）
@@ -4659,6 +4665,34 @@ export default async function handler(req, res) {
     const pF = (docF.people || []).find(x => x.id === whoF.rid)
     if (pF) { pF[bf.field] = path5; await kvPut('sp_crew_kb_roster', docF, '入職檔案(' + (whoF.name || '') + ')'); await announceChanged() }
     return res.status(200).json({ ok: true, field: bf.field })
+  }
+  // v4.56.9 入職管理（主管端）：GET 列入職中新人進度；POST 確認勞健保已加保→完成入職＋通知新人
+  if (req.method === 'GET' && req.query?.onboardmgr !== undefined) {
+    const whoM = await sopWho(req.query.me)
+    if (!whoM || !whoM.rid) return res.status(403).json({ ok: false, error: '請先綁定' })
+    const defM = await kvGet('sp_finance_pm_sop_def'); const aprM = (((defM || {}).ground || {}).approvers || ['張良瑋'])
+    if (!(whoM.role === '主管' || aprM.includes(whoM.name))) return res.status(403).json({ ok: false, error: '僅主管可檢視入職管理' })
+    const rosM = (await kvGet('sp_crew_kb_roster')) || { people: [] }
+    const list = (rosM.people || []).filter(p => p.onboarding && (p.status || '在職') !== '離職')
+      .map(p => ({ id: p.id, name: p.name || '', dept: p.dept || '', step: Math.min(p.onboardStep || 0, 4), signedAt: p.signedAt || '', insured: !!p.insured, contractSigned: !!p.contractSigned }))
+      .sort((a, b) => b.step - a.step || String(a.name).localeCompare(String(b.name)))
+    return res.status(200).json({ ok: true, list })
+  }
+  if (req.method === 'POST' && req.query?.onboardins !== undefined) {
+    let bI = {}
+    try { bI = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
+    const whoI = await sopWho(bI.token)
+    if (!whoI || !whoI.rid) return res.status(403).json({ ok: false, error: '請先綁定' })
+    const defI = await kvGet('sp_finance_pm_sop_def'); const aprI = (((defI || {}).ground || {}).approvers || ['張良瑋'])
+    if (!(whoI.role === '主管' || aprI.includes(whoI.name))) return res.status(403).json({ ok: false, error: '僅主管可確認加保' })
+    const rosI = (await kvGet('sp_crew_kb_roster')) || { people: [] }
+    const pI = (rosI.people || []).find(x => x.id === bI.rid)
+    if (!pI) return res.status(404).json({ ok: false, error: '找不到此新人' })
+    pI.insured = true; pI.insuredAt = new Date().toISOString(); pI.onboardStep = 4
+    await kvPut('sp_crew_kb_roster', rosI, '入職勞健保加保(' + (pI.name || '') + ')'); await announceChanged()
+    try { const { wpPush } = await import('./_webpush.js'); if (pI.id) await wpPush([pI.id], { title: '🎉 入職完成', body: `${pI.name || ''}歡迎加入 GROUN:D！勞健保已加保完成，入職流程全部完成。`, url: '/prep#tab=onb' }) } catch (_) {}
+    try { const { notifyOps } = await import('./_onboard.js'); await notifyOps(`✅ 已為 ${pI.name || '新人'} 完成勞健保加保，並通知對方入職完成。`) } catch (_) {}
+    return res.status(200).json({ ok: true })
   }
   // 菜單探針（唯讀＋金鑰保護，回品名/金額 → 沒帶對 MENU_PROBE_KEY 一律 403）：?menuprobe=<key>&store=abeach|ground
   // 用途：把期間內出現過的全部品項按「日結信分類」彙總（品名/數量/套餐內/金額/出現天數），給菜單盤點/試算表用

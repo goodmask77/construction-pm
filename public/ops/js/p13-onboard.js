@@ -1,4 +1,4 @@
-// ⚠️ /prep 主程式第 13 塊（v4.56.8 張良「開工」入職流程）：新人自填入職流程頁；欄位對齊 NUEiP 到職基本資料單＋入職繳交表（必填＋選填全補，含眷屬多筆、健檢報告）；v4.56.6 通訊地址「同戶籍」勾選＋緊急聯絡人拆三格必填；v4.56.7 上傳可拍照／圖庫／檔案(含PDF)；v4.56.8 第三步簽署=顯示勞動契約+四週變形同意書+手寫簽名板→私有桶
+// ⚠️ /prep 主程式第 13 塊（v4.56.9 張良「開工」入職流程）：新人自填入職流程頁；欄位對齊 NUEiP 到職基本資料單＋入職繳交表（必填＋選填全補，含眷屬多筆、健檢報告）；v4.56.6 通訊地址「同戶籍」勾選＋緊急聯絡人拆三格必填；v4.56.7 上傳可拍照／圖庫／檔案(含PDF)；v4.56.8 第三步簽署=顯示勞動契約+四週變形同意書+手寫簽名板→私有桶；v4.56.9 第四步勞健保=新人端等加保頁+主管端入職管理面板(進度總覽+確認加保通知新人完成)
 // 第一步＝基本資料（繳交表/簽署/勞健保分步後續做）；資料走 ?onboardself（本人 token 驗身分、只改自己那筆名冊卡）
 // 本塊只負責「新人端填寫」；主管端核准在名冊頁（p12 待審核區，已有 v4.60）
 const ONB_STEPS = ['基本資料', '繳交表', '簽署', '勞健保']
@@ -10,30 +10,83 @@ async function onbPage() {
   let d
   try { const r = await fetch('/api/mail-sync?onboardself&me=' + encodeURIComponent(TK())); d = await r.json() } catch (e) {}
   if (!d || !d.ok) { app.innerHTML = `<section class="err">${(d && d.error) || '讀不到你的入職資料'}</section>`; return }
-  window._onbD = d; onbRender()
+  window._onbD = d
+  // 主管：順便載入「入職管理」名單（進度總覽＋確認加保）v4.56.9
+  if (d.approver) { try { window._onbMgr = await (await fetch('/api/mail-sync?onboardmgr&me=' + encodeURIComponent(TK()))).json() } catch (e) { window._onbMgr = null } }
+  onbRender()
 }
 
 function onbRender() {
-  const d = window._onbD || {}, me = d.me || {}, step = Math.min(d.step || 0, 3)
+  const d = window._onbD || {}, me = d.me || {}, step = Math.min(d.step || 0, 4)
   const _u = document.getElementById('upd'); if (_u) _u.textContent = '入職流程' // v4.56.1d 修「載入中…」沒消失（張良截圖抓包）
   const esc = s => String(s == null ? '' : s).replace(/"/g, '&quot;').replace(/</g, '&lt;')
+  // 主管視圖（v4.56.9）：approver 進來先看入職管理面板；按「填/看我自己的」才切到個人流程
+  if (d.approver && !window._onbSelfMode) { app.innerHTML = onbMgrView(esc); return }
   // 進度條
-  let h = `<section><h2>入職流程</h2>
-    <div style="display:flex;gap:6px;margin-bottom:16px">${ONB_STEPS.map((s, i) => `<div style="flex:1;text-align:center;padding:9px 4px;border-radius:9px;font-size:12px;font-weight:800;background:${i < step ? 'var(--green)' : i === step ? 'var(--primary)' : 'var(--soft)'};color:${i <= step ? '#fff' : 'var(--muted)'}">${i < step ? '✓ ' : ''}${i + 1}. ${s}</div>`).join('')}</div>`
+  let h = `<section><h2>入職流程</h2>`
+  if (d.approver) h += `<button class="mini" onclick="window._onbSelfMode=false;onbRender()" style="margin-bottom:10px">← 回入職管理</button>`
+  h += `<div style="display:flex;gap:6px;margin-bottom:16px">${ONB_STEPS.map((s, i) => `<div style="flex:1;text-align:center;padding:9px 4px;border-radius:9px;font-size:12px;font-weight:800;background:${i < step ? 'var(--green)' : i === step ? 'var(--primary)' : 'var(--soft)'};color:${i <= step ? '#fff' : 'var(--muted)'}">${i < step ? '✓ ' : ''}${i + 1}. ${s}</div>`).join('')}</div>`
   if (step === 0) h += onbStep1Form(me, esc)
   else if (step === 1) h += onbStep2Form(me, esc)
   else if (step === 2) h += onbStep3Form(me, esc) // 第三步＝簽署（v4.56.8）
-  else h += `<div style="padding:20px;text-align:center;color:var(--muted)">
-    <div style="font-size:15px;font-weight:700;color:var(--ink);margin-bottom:6px">✓ 基本資料、繳交表、簽署已完成</div>
-    「勞健保確認」步驟準備中——報到當天由公司加保後通知你，入職就完成了 🎉<br>
-    <div style="display:flex;gap:6px;justify-content:center;flex-wrap:wrap;margin-top:12px">
-    <button class="mini" onclick="onbEditStep1()">↩ 改基本資料</button>
-    <button class="mini" onclick="onbEditStep2()">↩ 改繳交表</button>
-    <button class="mini" onclick="onbEditStep3()">↩ 看/重簽</button></div></div>`
+  else if (step === 3) h += onbStep4Self(me, esc) // 第四步＝等公司辦勞健保（v4.56.9）
+  else h += onbDone() // 全部完成
   h += `</section>`
   app.innerHTML = h
   if (step === 0) { onbDepInit(); onbDepRender() } // 眷屬多筆：表單進 DOM 後再畫
   if (step === 2) onbSignInit() // 簽名板：表單進 DOM 後再綁定
+}
+
+// 第四步（新人端）：已簽署，等公司辦勞健保加保
+function onbStep4Self(me, esc) {
+  return `<div style="max-width:560px;padding:6px 0">
+    <div style="background:var(--soft);border:1px solid var(--line);border-radius:12px;padding:20px;text-align:center">
+      <div style="font-size:16px;font-weight:800;color:var(--green);margin-bottom:8px">✓ 已完成簽署</div>
+      <div style="color:var(--text);font-size:14px;line-height:1.7">最後一步「勞健保加保」由公司辦理。<br>報到當天公司幫你加保後，會通知你 <b style="color:var(--ink)">入職完成</b>。<br>這期間你不用再做什麼，等通知就好。</div>
+    </div>
+    <div style="display:flex;gap:6px;justify-content:center;flex-wrap:wrap;margin-top:12px">
+      <button class="mini" onclick="onbEditStep1()">↩ 改基本資料</button>
+      <button class="mini" onclick="onbEditStep2()">↩ 改繳交表</button>
+      <button class="mini" onclick="onbEditStep3()">↩ 看/重簽</button>
+    </div>
+  </div>`
+}
+// 全部完成
+function onbDone() {
+  return `<div style="max-width:560px;padding:6px 0">
+    <div style="background:var(--soft);border:1px solid var(--line);border-radius:12px;padding:24px;text-align:center">
+      <div style="font-size:18px;font-weight:900;color:var(--green)">入職完成！</div>
+      <div style="color:var(--text);font-size:14px;line-height:1.7;margin-top:10px">歡迎加入 GROUN:D，勞健保已加保完成。<br>之後排班、SOP、工作事項都在這個 App 裡，隨時找得到。</div>
+    </div>
+  </div>`
+}
+
+// 入職管理（主管端）：進度總覽＋確認加保 v4.56.9
+function onbMgrView(esc) {
+  const m = window._onbMgr || {}, list = (m.ok && m.list) || []
+  let h = `<section><h2>入職管理</h2>
+    <div style="color:var(--muted);font-size:13px;margin-bottom:10px">新人入職進度總覽。完成簽署後，報到當天公司辦好勞健保加保，按「確認已加保」就會通知新人入職完成。</div>
+    <button class="mini" onclick="window._onbSelfMode=true;onbRender()" style="margin-bottom:12px">✎ 預覽／填寫入職表</button>`
+  if (!list.length) h += `<div class="hint">目前沒有入職中的新人。</div>`
+  else h += list.map(p => {
+    const prog = ONB_STEPS.map((s, i) => `<span style="display:inline-block;padding:3px 8px;border-radius:7px;font-size:11px;font-weight:700;margin:2px;background:${i < p.step ? 'var(--green)' : i === p.step ? 'var(--primary)' : 'var(--soft)'};color:${i <= p.step ? '#fff' : 'var(--muted)'}">${i < p.step ? '✓' : ''}${s}</span>`).join('')
+    const canIns = p.step >= 3 && !p.insured
+    return `<div style="border:1px solid var(--line);border-radius:10px;padding:12px;margin-bottom:8px">
+      <div style="font-weight:800;color:var(--ink)">${esc(p.name)}${p.dept ? ` <span style="font-weight:400;color:var(--muted);font-size:12px">${esc(p.dept)}</span>` : ''}</div>
+      <div style="margin:6px 0">${prog}</div>
+      ${p.signedAt ? `<div style="font-size:12px;color:var(--muted)">簽署時間：${esc(String(p.signedAt).slice(0, 16).replace('T', ' '))}</div>` : ''}
+      ${p.insured ? `<div style="font-size:13px;color:var(--green);font-weight:700;margin-top:4px">✓ 已加保・入職完成</div>` : canIns ? `<button onclick="onbMarkIns('${p.id}','${esc(p.name)}')" style="margin-top:8px;padding:9px 14px;border:none;border-radius:9px;background:var(--primary);color:#fff;font-size:13px;font-weight:800;cursor:pointer">✓ 確認已加保・完成入職</button>` : `<div style="font-size:12px;color:var(--muted);margin-top:4px">等新人完成簽署後才能確認加保</div>`}
+    </div>`
+  }).join('')
+  h += `</section>`
+  return h
+}
+async function onbMarkIns(rid, name) {
+  if (!confirm('確認「' + (name || '這位新人') + '」的勞健保已加保？\n會通知他「入職完成」。')) return
+  let d
+  try { d = await (await fetch('/api/mail-sync?onboardins', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ token: TK(), rid }) })).json() } catch (e) {}
+  if (d && d.ok) { try { window._onbMgr = await (await fetch('/api/mail-sync?onboardmgr&me=' + encodeURIComponent(TK()))).json() } catch (e) {} onbRender(); onbToast('✓ 已確認加保，已通知新人') }
+  else alert((d && d.error) || '操作失敗，稍後再試')
 }
 
 // ── 眷屬資料多筆（健保加保用）：存成 JSON 字串進 dependents 欄 ──
