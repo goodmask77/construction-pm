@@ -230,7 +230,7 @@ function canTab(k){
 // 會寫入的按鈕 → 所屬分頁權限（'*'=跟著目前頁面，給盤點/包材共用函式）；純看的（切頁/收合/篩選/看圖）不鎖
 const EDIT_FN = {
   actSave:'board', actAdd:'board', actLoss:'board', act86:'board', rHide:'board', posHide:'board', rMng:'board', itmMngTog:'board',
-  sopItemEdit:'sop', sopItemSave:'sop', sopEdAdd:'sop', sopEdSave:'sop', sopCatAdd:'sop', sopCatSet:'sop', sopStAdd:'sop', sopStDel:'sop', sopStRen:'sop', sopStRename:'sop', sopStOp:'sop', sopstOp:'sop', catMove:'sop', msAddSt:'sop', msDelSt:'sop', msSave:'sop', sopOrdMove:'sop', sopRefOpen:'sop', sopRefPaste:'sop', sopRefSave:'sop', sopRefUp:'sop', sopMngT:'sop',
+  sopItemEdit:'sop', sopItemSave:'sop', sopEdAdd:'sop', sopEdSave:'sop', sopCatAdd:'sop', sopCatMng:'sop', sopCatSet:'sop', sopStAdd:'sop', sopStDel:'sop', sopStRen:'sop', sopStRename:'sop', sopStOp:'sop', sopstOp:'sop', catMove:'sop', msAddSt:'sop', msDelSt:'sop', msSave:'sop', sopOrdMove:'sop', sopRefOpen:'sop', sopRefPaste:'sop', sopRefSave:'sop', sopRefUp:'sop', sopMngT:'sop',
   taskNew:'task', taskNewSend:'task', taskOwn:'task', taskOwnSend:'task', ckAdd:'task', ckOp:'task', ckPick:'task', ckSend:'task', lbOp:'task', lbDue:'task',
   lbPtsSave:'lb', lbPtsAdd:'lb', lbPtsAdjust:'lb', lbRdDecide:'lb', lbGrant:'lb', lbGrantGo:'lb', lbRwMng:'lb', lbRwSave:'lb', lbRwDel:'lb', lbRwAdd:'lb',
   menuCell:'menu', menuItemAdd:'menu', menuItemDel:'menu', menuItemSave:'menu', menuItemPurge:'menu', menuItemRestore:'menu', menuItemShift:'menu', menuSecDel:'menu', menuSecForm:'menu', menuSecShift:'menu', menuNoteEdit:'menu', mnImgPick:'menu', mnImgUndo:'menu', mnDragStart:'menu', menuSecCombo:'menu', menuItemCombo:'menu',
@@ -384,7 +384,9 @@ function sopCatMng(){ // 🗂 分類管理：分類增刪改排序＋每站歸�
     <span class="catH" style="cursor:grab;touch-action:none;color:var(--muted);font-size:16px">☰</span><b style="flex:1">${c2}</b>
     <button class="mini" style="padding:6px 9px" onclick="document.getElementById('scOv').remove();prepAsk('改名「${c2}」',0,1,(q,r)=>{if(r)sopstOp({op:'catren',cat:'${c2}',newName:r})},'新名稱')">✏️</button>
     <button class="mini" style="padding:6px 9px;color:var(--red)" onclick="if(confirm('刪除分類「${c2}」？站會變未分類，不會刪站')){document.getElementById('scOv').remove();sopstOp({op:'catdel',cat:'${c2}'})}">✕</button></div>`
-  const stRow = st2 => `<div style="display:flex;gap:6px;align-items:center;padding:4px 0;border-bottom:1px solid var(--line)"><b style="flex:1;min-width:0">${st2}</b>
+  // v4.58.3 站別也加 ☰ 拖曳排序（張良「第一層工作站可拖曳排序」）：只改順序，不碰條目內容
+  const stRow = st2 => `<div data-st="${String(st2).replace(/"/g,'&quot;')}" style="display:flex;gap:6px;align-items:center;padding:4px 0;border-bottom:1px solid var(--line)">
+    <span class="stH" style="cursor:grab;touch-action:none;color:var(--muted);font-size:15px">☰</span><b style="flex:1;min-width:0">${st2}</b>
     <select onchange="sopstOp({op:'catset',st:'${st2}',cat:this.value})" style="border:1px solid var(--line);border-radius:7px;padding:6px;font-size:13px;max-width:110px"><option value="">未分類</option>${cats.map(c2=>`<option${(def.stCat||{})[st2]===c2?' selected':''}>${c2}</option>`).join('')}</select>
     <select ${mgr?'':'disabled title="負責人由審核人/主管指定"'} onchange="sopstOp({op:'ownset',st:'${st2}',owner:this.value})" style="border:1px solid var(--line);border-radius:7px;padding:6px;font-size:13px;max-width:110px"><option value="">無負責人</option>${(sopData.names||[]).map(n=>`<option${(def.stOwner||{})[st2]===n?' selected':''}>${n}</option>`).join('')}</select></div>`
   ov.innerHTML = `<div style="background:#222B38;border:1px solid #3B4654;border-radius:14px;width:min(560px,94vw);max-height:88vh;overflow:auto;padding:16px" onclick="event.stopPropagation()">
@@ -392,11 +394,14 @@ function sopCatMng(){ // 🗂 分類管理：分類增刪改排序＋每站歸�
     <div class="hint" style="margin-bottom:8px">三層：分類 → 站 → 條目。右邊兩個選單＝每站「歸哪類」「誰負責」（有負責人的站，別人要改得走 💡 提建議）。</div>
     <div style="font-weight:900;margin:6px 0 2px">分類（階段）<span class="hint" style="font-weight:600">拖 ☰ 排順序</span></div><div id="scCatList">${cats.map(catRow).join('')||'<div class="hint">還沒有分類——按下面新增（例：開班／收班／備料／清潔）</div>'}</div>
     <button class="mini" style="margin:8px 0;padding:8px 12px" onclick="document.getElementById('scOv').remove();prepAsk('＋ 新增分類',0,1,(q,r)=>{if(r)sopstOp({op:'catadd',cat:r})},'分類名稱（例：備料/設站/清潔）')">＋ 新增分類</button>
-    <div style="font-weight:900;margin:10px 0 2px">站 → 分類・負責人</div>${sts9.map(stRow).join('')}</div>`
+    <div style="font-weight:900;margin:10px 0 2px">站（工作站）<span class="hint" style="font-weight:600">拖 ☰ 排順序・右邊設歸類與負責人</span></div><div id="scStList">${sts9.map(stRow).join('')}</div></div>`
   ov.onclick = () => ov.remove()
   document.body.appendChild(ov)
-  // v4.58.3 分類拖曳排序（張良）：拖完直接存 catord；sopstOp 會 sopLoad 更新資料但不關這個 overlay，可連續拖
-  if (window.Sortable) { const cl = document.getElementById('scCatList'); if (cl) new Sortable(cl, { handle:'.catH', animation:150, onEnd: () => { const list = [...cl.querySelectorAll('[data-c]')].map(e=>e.dataset.c); if (list.length) sopstOp({ op:'catord', list }) } }) }
+  // v4.58.3 兩層拖曳排序（張良）：拖完直接存 catord/stord；sopstOp 會 sopLoad 更新資料但不關這個 overlay，可連續拖。只改順序不碰條目內容（tg/標準照都保住）
+  if (window.Sortable) {
+    const cl = document.getElementById('scCatList'); if (cl) new Sortable(cl, { handle:'.catH', animation:150, onEnd: () => { const list = [...cl.querySelectorAll('[data-c]')].map(e=>e.dataset.c); if (list.length) sopstOp({ op:'catord', list }) } })
+    const sl = document.getElementById('scStList'); if (sl) new Sortable(sl, { handle:'.stH', animation:150, onEnd: () => { const list = [...sl.querySelectorAll('[data-st]')].map(e=>e.dataset.st); if (list.length) sopstOp({ op:'stord', list }) } })
+  }
 }
 function catMove(i, dir, arr){ const a = [...arr]; const j = i + dir; if (j<0||j>=a.length) return; [a[i],a[j]]=[a[j],a[i]]; const o=document.getElementById('scOv'); if(o)o.remove(); sopstOp({ op:'catord', list:a }) }
 function sugAdd(st){
@@ -483,6 +488,7 @@ function sopRender(){
     <span style="${catBtn(!curTg)}" onclick="sopCatSet(null)">全部</span>
     ${catsN.map(cg=>`<span style="${catBtn(curTg===cg)}" onclick="sopCatSet('${cg}')"># ${cg}<span style="margin-left:5px;font-weight:700;font-size:12px;color:${curTg===cg?'#DCEBFF':'var(--muted)'}">${itemsAll.filter(i9=>tgOf(i9)===cg).length}</span></span>`).join('')}
     ${me&&window._sopMng?`<span style="${chipS(false)}" onclick="sopCatAdd()">＋ 階段</span>`:''}
+    ${me&&window._sopMng?`<span style="${chipS(false)}" onclick="sopCatMng()">🗂 組織架構・拖曳排序</span>`:''}
     ${me?`<span style="${chipS(!!window._sopMng)};margin-left:auto" onclick="sopMngT()">⚙️ 設定</span>`:''}
   </div>`
   // 階段管理列（設定模式）
