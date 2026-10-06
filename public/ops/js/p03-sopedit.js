@@ -245,7 +245,7 @@ function lbRender(){
   const Elb = s => String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')
   const myBal = d.myBalance||0
   const rewards = (d.rewards||[]).filter(r=>!r.off).sort((a,b)=>(a.ord||0)-(b.ord||0))
-  h += `<section><h2>🎁 兌換商城 <span class="hint">用累積點數換獎勵（兌換不影響排名）</span>${meN&&d.isAdmin?' <button class="mini" style="margin-left:6px" onclick="lbRwMng()">⚙️ 管理獎勵</button> <button class="mini" onclick="lbGrant()">＋ 直接給分</button>':''}</h2>`
+  h += `<section><h2>🎁 兌換商城 <span class="hint">用累積點數換獎勵（兌換不影響排名）</span>${meN&&d.isAdmin?' <button class="mini" style="margin-left:6px" onclick="lbRwMng()">⚙️ 管理獎勵</button> <button class="mini" onclick="lbGrant()">＋ 直接給分</button> <button class="mini" onclick="lbCheckerMng()">👮 核銷人</button>':''}</h2>`
   h += meN?`<div style="background:var(--soft);border:1px solid var(--primary);border-radius:12px;padding:10px 14px;margin-bottom:10px;display:flex;align-items:center;gap:10px"><span class="hint">我的可用點數</span><b style="font-size:26px;color:var(--primary)">${myBal}</b><span class="hint">點</span></div>`:`<div class="hint" style="margin-bottom:8px">綁定後才能兌換——${BIND_HINT}</div>`
   h += `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px">`
   h += rewards.length?rewards.map(r=>{
@@ -259,9 +259,34 @@ function lbRender(){
     </div>`
   }).join(''):'<div class="mut">還沒有獎勵——管理者按「⚙️ 管理獎勵」新增</div>'
   h += `</div>`
+  // 🎟 我的獎勵券包（張良 2026-10-06）：核准=可用券(出示QR/核銷碼)，核銷後變已使用
   const myRd = d.myRedeems||[]
-  if (meN && myRd.length){ const stTag = s=>({pending:'🕐 待審',approved:'✅ 已通過',rejected:'❌ 未過',done:'🎉 已給'}[s]||s)
-    h += `<div style="margin-top:10px"><div style="font-weight:700;font-size:13px;margin-bottom:4px">我的兌換紀錄</div>${myRd.slice(0,10).map(r=>`<div style="background:var(--soft);border-radius:8px;padding:5px 9px;margin-top:4px;font-size:13px;display:flex;gap:8px"><span>${stTag(r.status)}</span><span style="flex:1">${Elb(r.rewardName)}（${r.cost}點）</span><span class="hint">${r.ts||''}</span></div>`).join('')}</div>` }
+  if (meN && myRd.length){
+    const usable = myRd.filter(r=>r.status==='approved')
+    const others = myRd.filter(r=>r.status!=='approved')
+    h += `<div style="margin-top:12px"><div style="font-weight:800;font-size:14px;margin-bottom:6px">🎟 我的獎勵券包</div>`
+    if (usable.length){
+      h += `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:9px">`
+      h += usable.map(r=>`<div style="background:linear-gradient(135deg,#143055,#0E2038);border:1.5px solid var(--primary);border-radius:12px;padding:11px 12px;display:flex;flex-direction:column;gap:6px">
+        <div style="display:flex;align-items:center;gap:6px"><span style="background:var(--green);color:#06210F;font-weight:800;font-size:11px;border-radius:999px;padding:1px 8px">可用</span><span style="font-weight:800;color:#fff;flex:1;min-width:0">${Elb(r.rewardName)}</span></div>
+        <div class="hint" style="font-size:11.5px">核銷碼 <b style="color:#F2D06B;letter-spacing:2px;font-size:14px">${Elb(r.code||'—')}</b></div>
+        <button class="mini on" style="padding:7px 10px" onclick="lbVoucher('${Elb(r.code||'')}','${Elb(r.rewardName)}')">出示 QR 給核銷人</button>
+      </div>`).join('')
+      h += `</div>`
+    }
+    if (others.length){ const stTag = s=>({pending:'🕐 待審',rejected:'❌ 未過',used:'🎉 已使用',done:'🎉 已給'}[s]||s)
+      h += `<div style="margin-top:8px">${others.slice(0,12).map(r=>`<div style="background:var(--soft);border-radius:8px;padding:5px 9px;margin-top:4px;font-size:13px;display:flex;gap:8px;${r.status==='used'?'opacity:.6':''}"><span>${stTag(r.status)}</span><span style="flex:1">${Elb(r.rewardName)}（${r.cost}點）</span><span class="hint">${r.status==='used'&&r.usedAt?('核銷 '+r.usedAt+(r.usedBy?' by '+Elb(r.usedBy):'')):(r.ts||'')}</span></div>`).join('')}</div>` }
+    h += `</div>`
+  }
+  // 🎟 現場核銷（授權核銷人）：掃碼 or 待核銷清單手動核銷
+  if (d.isChecker){
+    const q = d.checkinQueue||[]
+    h += `<div style="margin-top:12px;border-top:1px solid var(--line);padding-top:10px"><div style="display:flex;align-items:center;gap:8px;margin-bottom:6px"><span style="font-weight:800;font-size:14px">🎟 現場核銷</span><span class="hint" style="font-size:12px">你是授權核銷人</span><button class="mini on" style="margin-left:auto;padding:7px 14px" onclick="lbScan()">📷 掃碼核銷</button></div>`
+    h += `<div class="hint" style="font-size:12px;margin-bottom:6px">待核銷 ${q.length} 張——掃對方 QR，或直接點「核銷」/輸碼</div>`
+    h += q.length?q.map(v=>`<div style="background:var(--soft);border-radius:9px;padding:7px 10px;margin-top:5px;font-size:13px;display:flex;align-items:center;gap:8px;flex-wrap:wrap"><b>${Elb(v.person)}</b><span style="flex:1;min-width:80px">${Elb(v.rewardName)}</span><span class="hint">碼 <b style="color:#F2D06B;letter-spacing:1px">${Elb(v.code)}</b></span><button class="mini on" style="padding:5px 14px" onclick="lbCheckin('${Elb(v.code)}')">核銷</button></div>`).join(''):'<div class="mut">目前沒有待核銷的券</div>'
+    h += `<div style="margin-top:8px;display:flex;gap:6px;align-items:center"><input id="ckCode" placeholder="手動輸核銷碼" maxlength="6" style="width:150px;border:1px solid var(--line);border-radius:8px;padding:7px 10px;font-size:14px;letter-spacing:2px;text-transform:uppercase"><button class="mini" style="padding:7px 14px" onclick="lbCheckin((document.getElementById('ckCode')||{}).value||'')">核銷</button></div>`
+    h += `</div>`
+  }
   h += `</section>`
   if (d.isAdmin && (d.pendingRedeems||[]).length){
     h += `<section><h2>🛡 待審核兌換（${d.pendingRedeems.length}） <span class="hint">准了自動扣對方點數、雙方收通知</span></h2>`
@@ -491,6 +516,75 @@ async function lbRdDecide(id, pass){
   const r = await fetch('/api/mail-sync?redeem=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ op:'decide', id, pass: !!pass, token:TK() }) })
   const d = await r.json().catch(()=>null)
   if (d && d.ok){ if (typeof refreshView==='function') refreshView() } else alert((d&&d.error)||'處理失敗')
+}
+// 🎟 出示券 QR（員工端給核銷人掃）
+function lbVoucher(code, name){
+  if (!code){ alert('這張券沒有核銷碼'); return }
+  const E = s => String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+  const ov = document.createElement('div'); ov.id='vcOv'
+  ov.style.cssText='position:fixed;inset:0;background:rgba(6,9,13,.92);z-index:70;display:flex;align-items:center;justify-content:center;padding:20px'
+  ov.innerHTML = `<div style="background:#fff;border-radius:18px;padding:22px 20px;max-width:340px;width:100%;text-align:center" onclick="event.stopPropagation()">
+    <div style="font-weight:900;font-size:17px;color:#111">${E(name)}</div>
+    <div style="color:#666;font-size:13px;margin:4px 0 14px">把這個 QR 給核銷人掃</div>
+    <div id="vcQr" style="display:flex;justify-content:center;margin-bottom:14px"></div>
+    <div style="color:#111;font-size:13px">核銷碼</div>
+    <div style="font-weight:900;font-size:30px;letter-spacing:6px;color:#0E63C9">${E(code)}</div>
+    <button class="mini" style="margin-top:16px;padding:9px 20px;background:#111;color:#fff;border:none" onclick="document.getElementById('vcOv').remove()">關閉</button></div>`
+  ov.onclick = () => ov.remove(); document.body.appendChild(ov)
+  try { const qr = qrcode(0,'M'); qr.addData(String(code)); qr.make(); document.getElementById('vcQr').innerHTML = qr.createImgTag(6,8) }
+  catch(e){ document.getElementById('vcQr').innerHTML = '<div style="color:#999;font-size:13px">QR 產生失敗，請改報核銷碼</div>' }
+}
+// 🎟 掃碼核銷（核銷人端）
+function lbScan(){
+  if (typeof Html5Qrcode==='undefined'){ alert('掃碼元件還沒載入，請改用「核銷」鈕或手動輸碼'); return }
+  const ov = document.createElement('div'); ov.id='scOv'
+  ov.style.cssText='position:fixed;inset:0;background:rgba(6,9,13,.92);z-index:70;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:18px'
+  ov.innerHTML = `<div style="background:#111820;border:1px solid #2A3240;border-radius:16px;padding:16px;max-width:380px;width:100%">
+    <div style="font-weight:800;color:#fff;margin-bottom:8px">📷 掃員工的券 QR</div>
+    <div id="scReader" style="width:100%;border-radius:12px;overflow:hidden"></div>
+    <div id="scMsg" class="hint" style="margin-top:8px;font-size:12px">把鏡頭對準對方手機上的 QR…</div>
+    <div style="text-align:right;margin-top:10px"><button class="mini" style="padding:8px 16px" onclick="lbScanStop()">關閉</button></div></div>`
+  ov.onclick = (e)=>{ if(e.target===ov) lbScanStop() }; document.body.appendChild(ov)
+  const h5 = new Html5Qrcode('scReader'); window._scH5 = h5
+  h5.start({ facingMode:'environment' }, { fps:10, qrbox:220 }, (txt)=>{
+    if (window._scBusy) return; window._scBusy = true
+    const code = String(txt||'').trim().toUpperCase().slice(0,6)
+    const m = document.getElementById('scMsg'); if (m) m.textContent = '讀到碼 '+code+'，核銷中…'
+    lbScanStop(); lbCheckin(code)
+  }, ()=>{}).catch(e=>{ const m=document.getElementById('scMsg'); if(m) m.innerHTML='<span style="color:#F07373">開不了鏡頭（請允許相機權限，或改用手動輸碼）</span>' })
+}
+function lbScanStop(){
+  window._scBusy = false
+  try { if (window._scH5){ window._scH5.stop().then(()=>{ try{window._scH5.clear()}catch(_){ } window._scH5=null }).catch(()=>{window._scH5=null}) } } catch(_){}
+  const ov = document.getElementById('scOv'); if (ov) ov.remove()
+}
+async function lbCheckin(code){
+  code = String(code||'').trim().toUpperCase()
+  if (code.length<4){ alert('請輸入核銷碼'); return }
+  const r = await fetch('/api/mail-sync?redeem=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ op:'checkin', code, token:TK() }) })
+  const d = await r.json().catch(()=>null)
+  if (d && d.ok){ alert('✅ 核銷成功：'+(d.item?d.item.person+'「'+d.item.rewardName+'」':'')); if (typeof refreshView==='function') refreshView() }
+  else alert('❌ '+((d&&d.error)||'核銷失敗'))
+}
+// 👮 核銷人名單管理（管理者）
+function lbCheckerMng(){
+  const d = window._lbD, E = s => String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')
+  const cur = new Set(d.checkers||[])
+  const ov = document.createElement('div'); ov.id='ckmOv'
+  ov.style.cssText='position:fixed;inset:0;background:rgba(10,14,20,.6);z-index:60;display:flex;align-items:center;justify-content:center;padding:14px'
+  ov.innerHTML = `<div style="background:#161B22;border:1px solid #2A3240;border-radius:14px;max-width:380px;width:100%;max-height:82vh;overflow:auto;padding:16px" onclick="event.stopPropagation()">
+    <div style="font-weight:900;margin-bottom:4px">👮 授權核銷人</div>
+    <div class="hint" style="font-size:12px;margin-bottom:10px">勾選的人，夥伴兌換通過後會收到核銷碼、可到「現場核銷」掃碼或輸碼。管理者與主管本來就能核銷。</div>
+    <div style="display:flex;flex-direction:column;gap:2px">${(d.names||[]).map(n=>`<label style="display:flex;align-items:center;gap:8px;padding:6px 4px;font-size:14px;cursor:pointer"><input type="checkbox" class="ckName" value="${E(n)}" ${cur.has(n)?'checked':''} style="width:17px;height:17px"> ${E(n)}</label>`).join('')}</div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px"><button class="mini" style="padding:9px 12px" onclick="document.getElementById('ckmOv').remove()">取消</button><button class="mini on" style="padding:9px 18px" onclick="lbCheckerSave()">儲存</button></div></div>`
+  ov.onclick = () => ov.remove(); document.body.appendChild(ov)
+}
+async function lbCheckerSave(){
+  const names = [...document.querySelectorAll('.ckName:checked')].map(c=>c.value)
+  const r = await fetch('/api/mail-sync?redeem=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ op:'setcheckers', names, token:TK() }) })
+  const d = await r.json().catch(()=>null)
+  if (d && d.ok){ const ov=document.getElementById('ckmOv'); if(ov) ov.remove(); alert('已更新核銷人（'+names.length+' 人）'); if (typeof refreshView==='function') refreshView() }
+  else alert((d&&d.error)||'儲存失敗')
 }
 // ＋ 直接給／扣積分（複用 pointscfg adjust）
 function lbGrant(){
