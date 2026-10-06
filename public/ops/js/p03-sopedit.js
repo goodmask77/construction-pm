@@ -289,7 +289,8 @@ function lbRender(){
   if (!d.rank.length) h += `<tr><td colspan="${9+d.facets.length}" style="text-align:center" class="mut">還沒有分數——打卡、交回饋、完成SOP、回報問題、幫別人評星開始累積</td></tr>`
   d.rank.forEach((p,i)=>{
     const medal = i===0?'🥇':i===1?'🥈':i===2?'🥉':(i+1)
-    h += `<tr style="${meN===p.name?'background:var(--psoft)':''}"><td style="font-weight:900">${medal}</td><td onclick="lbPerson('${p.name}')" style="text-align:left;font-weight:800;color:var(--primary);cursor:pointer;text-decoration:underline;text-decoration-style:dotted;text-underline-offset:3px">${p.name}</td><td style="font-weight:800;color:${p.behavPts?'#4DA3FF':'inherit'}">${p.behavPts||0}</td><td>${p.findPts||0}</td><td>${p.fixPts||0}</td><td style="font-weight:800;color:${p.taskPts?'#F2C14E':'inherit'}">${p.taskPts||0}</td><td class="avg">${p.total||0}</td>${d.facets.map(f=>'<td>'+(p.facets[f]?('⭐'+p.facets[f].avg):'—')+'</td>').join('')}<td class="mut">${p.nFind}</td><td class="mut">${p.nFix}</td></tr>`
+    const cell = (kind,inner,extra)=>`<td onclick="lbPerson('${p.name}','${kind}')" style="cursor:pointer;${extra||''}">${inner}</td>`
+    h += `<tr style="${meN===p.name?'background:var(--psoft)':''}"><td style="font-weight:900">${medal}</td><td onclick="lbPerson('${p.name}')" style="text-align:left;font-weight:800;color:var(--primary);cursor:pointer;text-decoration:underline;text-decoration-style:dotted;text-underline-offset:3px">${p.name}</td>${cell('behav',p.behavPts||0,`font-weight:800;color:${p.behavPts?'#4DA3FF':'inherit'}`)}${cell('find',p.findPts||0)}${cell('fix',p.fixPts||0)}${cell('task',p.taskPts||0,`font-weight:800;color:${p.taskPts?'#F2C14E':'inherit'}`)}${cell('total',p.total||0,'font-weight:800;color:var(--pdark)')}${d.facets.map(f=>cell('facet:'+f,(p.facets[f]?('⭐'+p.facets[f].avg):'—'))).join('')}${cell('nFind',p.nFind,'color:var(--muted)')}${cell('nFix',p.nFix,'color:var(--muted)')}</tr>`
   })
   h += `</tbody></table></div></section>`
   // 📒 積分存摺（張良 2026-10-06：像銀行帳戶，逐筆＋餘額；本人看自己、管理者可查任何人）
@@ -393,7 +394,7 @@ async function lbLedgerView(){
 }
 // 👤 點名字看某人明細（張良 2026-10-06「這些點進去要看得到內容」）：分項拆解＋逐筆存摺（有權限才顯示）
 // v4.56.2 張良「數字也要點進去看怎麼來的」：每個分項可點→下方展開來源明細
-async function lbPerson(nm){
+async function lbPerson(nm, focusKind){
   const d = window._lbD || {}
   const p = (d.rank||[]).find(x=>x.name===nm) || { name:nm }
   const E = s => String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
@@ -422,6 +423,7 @@ async function lbPerson(nm){
     if (j && j.ok) { window._pnLg = j.ledger||[]; lg.innerHTML = lbLedgerHtml(j.ledger||[], j.balance||0, nm) }
     else lg.innerHTML = '<div class="hint">逐筆明細僅本人或管理者可看——上方分項為公開排行數據，仍可點開看來源。</div>'
   } catch(e){ lg.innerHTML = '<div class="hint">明細讀取失敗。</div>' }
+  if (focusKind) lbWhy(focusKind) // 從表格數字格直接點進來：載完存摺後聚焦該分項（行為分需等存摺）
 }
 // 🔎 某個數字「怎麼來的」：點分項→下方展開來源
 function lbWhy(kind){
