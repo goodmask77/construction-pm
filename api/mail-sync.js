@@ -4590,6 +4590,24 @@ export default async function handler(req, res) {
     if (!dry) { await kvPut('sp_crew_kb_roster', doc, '名冊更新口'); await announceChanged() }
     return res.status(200).json({ ok: true, dry, ...out3, total: doc.people.length })
   }
+  // v4.56.1 入職流程「新人自填」端點（張良「開工」做入職流程第一步地基）：用本人綁定 token 驗身分，
+  // 只能改「自己那筆」名冊卡的白名單欄位，絕不開放 role/status/gdRole/薪資（安全守門）；機密檔案另走私有桶。
+  if (req.method === 'POST' && req.query?.onboardself !== undefined) {
+    let b4 = {}
+    try { b4 = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
+    const who4 = await sopWho(b4.token)
+    if (!who4 || !who4.rid) return res.status(403).json({ ok: false, error: '請先私訊 DD「綁定GD 你的本名」綁定後再填。' })
+    const doc4 = (await kvGet('sp_crew_kb_roster')) || { people: [] }
+    const p4 = (doc4.people || []).find(x => x.id === who4.rid)
+    if (!p4) return res.status(404).json({ ok: false, error: '找不到你的名冊卡，請聯絡店長。' })
+    // 白名單＝基本資料＋繳交表欄位（本人填自己的）；絕不含 role/status/gdRole/薪資/投保額
+    const ALLOW = ['birthday', 'gender', 'marital', 'ethnic', 'nid', 'foreignPermitNo', 'emergency', 'bankBranch', 'bankAccount']
+    const saved = []
+    for (const k of ALLOW) if (b4.set && b4.set[k] !== undefined) { p4[k] = String(b4.set[k]).slice(0, 200); saved.push(k) }
+    if (b4.step != null) p4.onboardStep = Math.max(0, Math.min(4, Number(b4.step) || 0))
+    await kvPut('sp_crew_kb_roster', doc4, '入職自填(' + (who4.name || '') + ')'); await announceChanged()
+    return res.status(200).json({ ok: true, saved, step: p4.onboardStep || 0 })
+  }
   // 菜單探針（唯讀＋金鑰保護，回品名/金額 → 沒帶對 MENU_PROBE_KEY 一律 403）：?menuprobe=<key>&store=abeach|ground
   // 用途：把期間內出現過的全部品項按「日結信分類」彙總（品名/數量/套餐內/金額/出現天數），給菜單盤點/試算表用
   if (req.query?.menuprobe) {
