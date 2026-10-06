@@ -721,6 +721,7 @@ function menuSecDrop(to){ // 分類拖曳排序
   menuSave('搬分類 '+mv.name)
 }
 function menuKey(e){ // v4.57.0 張良「不能直接按 enter」：Enter=存這格並跳下一格（像試算表）；Esc=放棄焦點
+  if (e.isComposing || e.keyCode === 229) return // v4.57.2 中文輸入法選字的 Enter 不攔（否則「桂花」還沒落格就被帶到下一格）——要再按一次 Enter 才跳格
   if (e.key === 'Enter') {
     e.preventDefault()
     const inp = e.target, tb = inp.closest('table')
