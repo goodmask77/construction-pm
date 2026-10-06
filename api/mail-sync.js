@@ -4592,6 +4592,17 @@ export default async function handler(req, res) {
   }
   // v4.56.1 入職流程「新人自填」端點（張良「開工」做入職流程第一步地基）：用本人綁定 token 驗身分，
   // 只能改「自己那筆」名冊卡的白名單欄位，絕不開放 role/status/gdRole/薪資（安全守門）；機密檔案另走私有桶。
+  // GET 讀自己（回顯用）：?onboardself&me=token → 回自己名冊卡的白名單欄位值＋進度
+  if (req.method === 'GET' && req.query?.onboardself !== undefined) {
+    const who4g = await sopWho(req.query.me)
+    if (!who4g || !who4g.rid) return res.status(403).json({ ok: false, error: '請先私訊 DD「綁定GD 你的本名」綁定後再填。' })
+    const doc4g = (await kvGet('sp_crew_kb_roster')) || { people: [] }
+    const p4g = (doc4g.people || []).find(x => x.id === who4g.rid)
+    if (!p4g) return res.status(404).json({ ok: false, error: '找不到你的名冊卡，請聯絡店長。' })
+    const pick = {}
+    ;['name', 'nick', 'dept', 'empNo', 'joinDate', 'birthday', 'gender', 'marital', 'ethnic', 'nid', 'foreignPermitNo', 'emergency', 'bankBranch', 'bankAccount'].forEach(k => { if (p4g[k] != null) pick[k] = p4g[k] })
+    return res.status(200).json({ ok: true, me: pick, step: p4g.onboardStep || 0, onboarding: !!p4g.onboarding })
+  }
   if (req.method === 'POST' && req.query?.onboardself !== undefined) {
     let b4 = {}
     try { b4 = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
