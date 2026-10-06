@@ -2237,13 +2237,15 @@ export default async function handler(req, res) {
           const byNameOrNick = (s) => { const q = String(s || '').trim().toLowerCase(); return q ? ppl.find(p => (p.name || '').toLowerCase() === q || (p.nick || '').toLowerCase() === q) : null }
           let rp = ppl.find(p => p.lineUserId === userId)
           let note2 = ''
-          if (!rp && mBind[2]) { // 帶名字版：本名或綽號都認
+          if (!rp && mBind[2]) { // 帶名字版：本名或綽號都認；名冊沒這人→自動建入職卡（v4.56.0 張良「整合成一步,只要/prep」）
             const cand = byNameOrNick(mBind[2])
-            if (!cand) { await send(`名冊裡找不到「${mBind[2].trim()}」（本名或綽號都可以）。也可以直接打「綁定GD」就好，我會用你的 LINE 名稱幫你綁。`); continue }
-            if (cand.lineUserId && cand.lineUserId !== userId) { await send('這個名字已經綁定過其他 LINE 帳號。如果是你本人換帳號，請聯絡店長解除舊綁定。'); continue }
-            cand.lineUserId = userId
-            await kvSet('sp_crew_kb_roster', rosterDoc2)
-            rp = cand
+            if (cand && cand.lineUserId && cand.lineUserId !== userId) { await send('這個名字已經綁定過其他 LINE 帳號。如果是你本人換帳號，請聯絡店長解除舊綁定。'); continue }
+            if (cand) { cand.lineUserId = userId; await kvSet('sp_crew_kb_roster', rosterDoc2); rp = cand }
+            else { // 名冊找不到＝新夥伴：自動建「入職中」名冊卡並綁定（onboarding待審核+權限守門+下方isNewBind通知老闆審核卡），不再卡住要他先報到
+              const newP = { id: 'p-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5), name: mBind[2].trim(), nick: '', dept: '', role: 'staff', status: '在職', onboarding: true, onboardAt: new Date().toISOString(), lineUserId: userId, gd: 1 }
+              rosterDoc2.people.push(newP); await kvSet('sp_crew_kb_roster', rosterDoc2); rp = newP
+              note2 = '\n\n（你是新夥伴，已自動建好名冊卡、待店長核准。基本資料／證件／簽約之後在 App 名冊卡補就好。）'
+            }
           }
           if (!rp) { // 一句「綁定GD」→ 自動用 LINE 名稱
             const ln = await getLineProfile(userId)
