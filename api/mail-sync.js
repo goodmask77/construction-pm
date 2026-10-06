@@ -4625,6 +4625,30 @@ export default async function handler(req, res) {
     await kvPut('sp_crew_kb_roster', doc4, '入職自填(' + (who4.name || '') + ')'); await announceChanged()
     return res.status(200).json({ ok: true, saved, step: p4.onboardStep || 0 })
   }
+  // v4.56.2 入職機密檔案自傳（第二步繳交表：存摺照／身分證影本）：本人 token 驗身分→進私有桶 ground-private（個資，不進公開圖庫）
+  if (req.method === 'POST' && req.query?.onboardfile !== undefined) {
+    let bf = {}
+    try { bf = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
+    const whoF = await sopWho(bf.token)
+    if (!whoF || !whoF.rid) return res.status(403).json({ ok: false, error: '請先私訊 DD「綁定GD 你的本名」綁定後再傳。' })
+    const FIELD_FILE = { idDoc: 'idcard', bankDoc: 'bankbook' } // 只允許新人自傳這兩類機密檔
+    if (!FIELD_FILE[bf.field]) return res.status(400).json({ ok: false, error: '不支援的檔案欄位' })
+    const m5 = /^data:([\w\/+.-]+);base64,(.+)$/.exec(String(bf.dataUrl || ''))
+    if (!m5) return res.status(400).json({ ok: false, error: '照片格式不對（要用拍照／選圖）' })
+    const buf5 = Buffer.from(m5[2], 'base64')
+    if (buf5.length > 10 * 1024 * 1024) return res.status(400).json({ ok: false, error: '檔案太大（上限 10MB）' })
+    const ext5 = /png/i.test(m5[1]) ? 'png' : 'jpg'
+    const path5 = `roster/${whoF.rid}/${FIELD_FILE[bf.field]}.${ext5}`
+    try {
+      const { uploadPrivate } = await import('./_onboard.js')
+      const okU = await uploadPrivate(path5, buf5, m5[1])
+      if (!okU) return res.status(502).json({ ok: false, error: '上傳失敗，稍後再試' })
+    } catch (e) { return res.status(502).json({ ok: false, error: '上傳失敗：' + (e?.message || '') }) }
+    const docF = (await kvGet('sp_crew_kb_roster')) || { people: [] }
+    const pF = (docF.people || []).find(x => x.id === whoF.rid)
+    if (pF) { pF[bf.field] = path5; await kvPut('sp_crew_kb_roster', docF, '入職檔案(' + (whoF.name || '') + ')'); await announceChanged() }
+    return res.status(200).json({ ok: true, field: bf.field })
+  }
   // 菜單探針（唯讀＋金鑰保護，回品名/金額 → 沒帶對 MENU_PROBE_KEY 一律 403）：?menuprobe=<key>&store=abeach|ground
   // 用途：把期間內出現過的全部品項按「日結信分類」彙總（品名/數量/套餐內/金額/出現天數），給菜單盤點/試算表用
   if (req.query?.menuprobe) {
