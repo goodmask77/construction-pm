@@ -282,9 +282,9 @@ function lbRender(){
   if (d.isChecker){
     const q = d.checkinQueue||[]
     h += `<div style="margin-top:12px;border-top:1px solid var(--line);padding-top:10px"><div style="display:flex;align-items:center;gap:8px;margin-bottom:6px"><span style="font-weight:800;font-size:14px">🎟 現場核銷</span><span class="hint" style="font-size:12px">你是授權核銷人</span><button class="mini on" style="margin-left:auto;padding:7px 14px" onclick="lbScan()">📷 掃碼核銷</button></div>`
-    h += `<div class="hint" style="font-size:12px;margin-bottom:6px">待核銷 ${q.length} 張——掃對方 QR，或直接點「核銷」/輸碼</div>`
-    h += q.length?q.map(v=>`<div style="background:var(--soft);border-radius:9px;padding:7px 10px;margin-top:5px;font-size:13px;display:flex;align-items:center;gap:8px;flex-wrap:wrap"><b>${Elb(v.person)}</b><span style="flex:1;min-width:80px">${Elb(v.rewardName)}</span><span class="hint">碼 <b style="color:#F2D06B;letter-spacing:1px">${Elb(v.code)}</b></span><button class="mini on" style="padding:5px 14px" onclick="lbCheckin('${Elb(v.code)}')">核銷</button></div>`).join(''):'<div class="mut">目前沒有待核銷的券</div>'
-    h += `<div style="margin-top:8px;display:flex;gap:6px;align-items:center"><input id="ckCode" placeholder="手動輸核銷碼" maxlength="6" style="width:150px;border:1px solid var(--line);border-radius:8px;padding:7px 10px;font-size:14px;letter-spacing:2px;text-transform:uppercase"><button class="mini" style="padding:7px 14px" onclick="lbCheckin((document.getElementById('ckCode')||{}).value||'')">核銷</button></div>`
+    h += `<div style="display:flex;gap:6px;align-items:center;margin-bottom:8px"><input id="ckCode" placeholder="輸入核銷碼" maxlength="6" style="width:160px;border:1px solid var(--line);border-radius:8px;padding:8px 10px;font-size:15px;letter-spacing:2px;text-transform:uppercase"><button class="mini on" style="padding:8px 16px" onclick="lbCheckin((document.getElementById('ckCode')||{}).value||'')">核銷</button></div>`
+    h += `<div class="hint" style="font-size:12px;margin-bottom:4px">待核銷 ${q.length} 張（下方僅供對照，核銷請掃 QR 或輸碼）</div>`
+    h += q.length?q.map(v=>`<div style="background:var(--soft);border-radius:9px;padding:6px 10px;margin-top:4px;font-size:13px;display:flex;align-items:center;gap:8px;flex-wrap:wrap"><b>${Elb(v.person)}</b><span style="flex:1;min-width:80px">${Elb(v.rewardName)}</span><span class="hint">碼 <b style="color:#F2D06B;letter-spacing:1px">${Elb(v.code)}</b></span></div>`).join(''):'<div class="mut">目前沒有待核銷的券</div>'
     h += `</div>`
   }
   h += `</section>`

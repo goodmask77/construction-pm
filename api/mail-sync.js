@@ -3158,6 +3158,11 @@ export default async function handler(req, res) {
     let rwDoc = await kvGet('sp_finance_pm_rewards')
     if (!rwDoc || !(rwDoc.list || []).length) { rwDoc = { list: REWARDS_SEED }; await kvPut('sp_finance_pm_rewards', rwDoc, '基礎獎勵種子') }
     const rdDoc = (await kvGet('sp_finance_pm_redeem')) || { list: [] }
+    // 🎟 補發核銷碼（張良 2026-10-06）：v4.57 前通過的可用券沒碼，載入時自動補一次
+    { let chg = false; const usedC = new Set((rdDoc.list || []).filter(x => x.code).map(x => x.code))
+      const genC = () => { const AB = 'ACDEFGHJKLMNPQRSTUVWXYZ2345679'; let c; do { c = ''; for (let i = 0; i < 6; i++) c += AB[Math.floor(Math.random() * AB.length)] } while (usedC.has(c)); usedC.add(c); return c }
+      for (const r of (rdDoc.list || [])) if (r.status === 'approved' && !r.code) { r.code = genC(); chg = true }
+      if (chg) await kvPut('sp_finance_pm_redeem', rdDoc, '補發核銷碼(舊券)') }
     const meNameL = meL ? meL.name : null
     const myRedeems = meNameL ? (rdDoc.list || []).filter(r => r.person === meNameL).slice(0, 40) : []
     const pendingRedeems = isAdmL ? (rdDoc.list || []).filter(r => r.status === 'pending') : null
