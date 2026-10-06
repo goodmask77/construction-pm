@@ -509,13 +509,21 @@ async function lbRedeem(id, name, cost){
   if (!confirm('用 ' + cost + ' 點兌換「' + name + '」？送出後等審核')) return
   const r = await fetch('/api/mail-sync?redeem=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ op:'request', rewardId:id, token:TK() }) })
   const d = await r.json().catch(()=>null)
-  if (d && d.ok){ alert('已送出兌換申請，等審核 🎁'); if (typeof refreshView==='function') refreshView() } else alert((d&&d.error)||'兌換失敗')
+  if (d && d.ok){
+    const L = window._lbD // 即時更新：兌換紀錄馬上出現（待審），不等重抓
+    if (L && d.item){ L.myRedeems = [d.item, ...(L.myRedeems||[])]; if (curStore==='lb') lbRender() }
+    alert('已送出兌換申請，等審核 🎁'); if (typeof refreshView==='function') refreshView()
+  } else alert((d&&d.error)||'兌換失敗')
 }
 async function lbRdDecide(id, pass){
   if (!confirm(pass ? '核准這筆兌換？會自動扣對方點數' : '駁回這筆兌換？點數不會扣')) return
   const r = await fetch('/api/mail-sync?redeem=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ op:'decide', id, pass: !!pass, token:TK() }) })
   const d = await r.json().catch(()=>null)
-  if (d && d.ok){ if (typeof refreshView==='function') refreshView() } else alert((d&&d.error)||'處理失敗')
+  if (d && d.ok){
+    const L = window._lbD // 即時更新：待審核那筆馬上從清單消失
+    if (L && Array.isArray(L.pendingRedeems)){ L.pendingRedeems = L.pendingRedeems.filter(r=>r.id!==id); if (curStore==='lb') lbRender() }
+    if (typeof refreshView==='function') refreshView()
+  } else alert((d&&d.error)||'處理失敗')
 }
 // 🎟 出示券 QR（員工端給核銷人掃）
 function lbVoucher(code, name){
@@ -563,7 +571,16 @@ async function lbCheckin(code){
   if (code.length<4){ alert('請輸入核銷碼'); return }
   const r = await fetch('/api/mail-sync?redeem=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ op:'checkin', code, token:TK() }) })
   const d = await r.json().catch(()=>null)
-  if (d && d.ok){ alert('✅ 核銷成功：'+(d.item?d.item.person+'「'+d.item.rewardName+'」':'')); if (typeof refreshView==='function') refreshView() }
+  if (d && d.ok){
+    const it = d.item||{}, L = window._lbD // 即時更新：券馬上從可用變已核銷、從待核銷清單移除（不等重抓）
+    if (L){
+      (L.myRedeems||[]).forEach(x=>{ if ((x.code&&x.code===code)||(it.id&&x.id===it.id)){ x.status='used'; x.usedBy=it.usedBy||x.usedBy; x.usedAt=it.usedAt||x.usedAt } })
+      if (Array.isArray(L.checkinQueue)) L.checkinQueue = L.checkinQueue.filter(v=> v.code!==code && (!it.id||v.id!==it.id))
+      if (curStore==='lb') lbRender()
+    }
+    alert('✅ 核銷成功：'+(it.person?it.person+'「'+it.rewardName+'」':''))
+    if (typeof refreshView==='function') refreshView()
+  }
   else alert('❌ '+((d&&d.error)||'核銷失敗'))
 }
 // 👮 核銷人名單管理（管理者）

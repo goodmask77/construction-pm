@@ -3079,6 +3079,16 @@ export default async function handler(req, res) {
     const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
     if (!ok2 || String(req.query.lb) !== ok2) return res.status(403).json({ ok: false })
     const [issDoc, meL, rosterL] = await Promise.all([kvGet('sp_finance_pm_sop_issues'), sopWho(req.query.me), kvGet('sp_crew_kb_roster')])
+    // ⚡ 提速（張良 2026-10-06「兌換頁載入慢卡卡」）：本來一堆逐個 await 的 kvGet／任務掃描→改一次平行抓，時間取最慢的那個不是相加
+    const [catsDoc, taskRows, ptsDocRaw, defL, ptsCfgL, rwDocRaw, rdDocRaw] = await Promise.all([
+      kvGet('sp_team_pm_data'),
+      fetch(`${SB_URL}/rest/v1/pm_documents?id=like.sp_team_pm_task_*&select=data`, { headers: { apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}` } }).then(r => r.ok ? r.json() : []).catch(() => []),
+      kvGet('sp_finance_pm_points'),
+      kvGet('sp_finance_pm_sop_def'),
+      kvGet('sp_finance_pm_points_cfg'),
+      kvGet('sp_finance_pm_rewards'),
+      kvGet('sp_finance_pm_redeem')
+    ])
     const namesL = gdNames(rosterL)
     const list = ((issDoc || {}).list || []).slice(0, 60)
     const board = {}
@@ -3105,10 +3115,8 @@ export default async function handler(req, res) {
     // ⭐ 任務積分（v4.44.0 360制度）：已完成任務的 pts 按負責人加總
     const tpMap = {}, taskBreak = {} // taskBreak：每人任務分拆解（張良 2026-10-06「數字點進去看怎麼來的」）
     try {
-      const catsDoc = await kvGet('sp_team_pm_data') // 工程大項＝任務分類（catId→name；張良 2026-10-06 任務分明細做分類）
-      const catMap = {}; (Array.isArray(catsDoc) ? catsDoc : (catsDoc && catsDoc.list) || []).forEach(c => { if (c && c.id) catMap[c.id] = String(c.name || '').slice(0, 30) })
-      const rT = await fetch(`${SB_URL}/rest/v1/pm_documents?id=like.sp_team_pm_task_*&select=data`, { headers: { apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}` } })
-      const rowsT = rT.ok ? await rT.json() : []
+      const catMap = {}; (Array.isArray(catsDoc) ? catsDoc : (catsDoc && catsDoc.list) || []).forEach(c => { if (c && c.id) catMap[c.id] = String(c.name || '').slice(0, 30) }) // 工程大項＝任務分類（catId→name）
+      const rowsT = Array.isArray(taskRows) ? taskRows : []
       for (const row of rowsT) {
         let t9 = null; try { t9 = JSON.parse(typeof row.data?.v === 'string' ? row.data.v : JSON.stringify(row.data?.v)) } catch (_) {}
         if (t9 && t9.status === 'done' && t9.owner && Number(t9.pts) > 0) {
@@ -3120,7 +3128,7 @@ export default async function handler(req, res) {
       Object.keys(tpMap).forEach(nm => P(nm))
     } catch (_) {}
     // 🏦 行為分（統一流水帳 sp_finance_pm_points）：總累積＝carry+窗內、本月＝當月；一套算法一個來源
-    const ptsDoc = (await kvGet('sp_finance_pm_points')) || { list: [], carry: {} }
+    const ptsDoc = ptsDocRaw || { list: [], carry: {} }
     const monthP = new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 7)
     // 行為分/榮譽＝排除兌換(type redeem)，兌換不讓排名掉；可用餘額balance＝全部加總(含兌換負值)
     const behavTotal = { ...(ptsDoc.carry || {}) }, behavMonth = {}, balance = { ...(ptsDoc.carry || {}) }
@@ -3149,15 +3157,13 @@ export default async function handler(req, res) {
       const cand = rank.filter(p => p.facets[f] && p.facets[f].n >= 3).sort((a, b) => b.facets[f].avg - a.facets[f].avg || b.facets[f].n - a.facets[f].n)
       return [f, cand[0] ? { name: cand[0].name, avg: cand[0].facets[f].avg, n: cand[0].facets[f].n } : null]
     }))
-    // 2026-10-02 治本（張良：還是沒按鈕）：lb 口的 me 漏了 approver → taskCard 的 📣發布/✅核准 鈕對誰都不出現
-    const defL = await kvGet('sp_finance_pm_sop_def')
+    // 2026-10-02 治本（張良：還是沒按鈕）：lb 口的 me 漏了 approver → taskCard 的 📣發布/✅核准 鈕對誰都不出現（defL/ptsCfgL 已於開頭平行抓）
     const aprL = (((defL || {}).ground || {}).approvers || ['張良瑋'])
     const isAdmL = !!(meL && (meL.role === '主管' || aprL.includes(meL.name)))
-    const ptsCfgL = await kvGet('sp_finance_pm_points_cfg')
-    // 🎁 兌換商城＋📒 積分存摺（折進 lb 回應，排行榜頁一次載好）
-    let rwDoc = await kvGet('sp_finance_pm_rewards')
+    // 🎁 兌換商城＋📒 積分存摺（折進 lb 回應，排行榜頁一次載好）；rwDoc/rdDoc 已平行抓
+    let rwDoc = rwDocRaw
     if (!rwDoc || !(rwDoc.list || []).length) { rwDoc = { list: REWARDS_SEED }; await kvPut('sp_finance_pm_rewards', rwDoc, '基礎獎勵種子') }
-    const rdDoc = (await kvGet('sp_finance_pm_redeem')) || { list: [] }
+    const rdDoc = rdDocRaw || { list: [] }
     // 🎟 補發核銷碼（張良 2026-10-06）：v4.57 前通過的可用券沒碼，載入時自動補一次
     { let chg = false; const usedC = new Set((rdDoc.list || []).filter(x => x.code).map(x => x.code))
       const genC = () => { const AB = 'ACDEFGHJKLMNPQRSTUVWXYZ2345679'; let c; do { c = ''; for (let i = 0; i < 6; i++) c += AB[Math.floor(Math.random() * AB.length)] } while (usedC.has(c)); usedC.add(c); return c }
