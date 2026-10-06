@@ -245,7 +245,7 @@ function lbRender(){
   const Elb = s => String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')
   const myBal = d.myBalance||0
   const rewards = (d.rewards||[]).filter(r=>!r.off).sort((a,b)=>(a.ord||0)-(b.ord||0))
-  h += `<section><h2>🎁 兌換商城 <span class="hint">用累積點數換獎勵（兌換不影響排名）</span>${meN&&d.isAdmin?' <button class="mini" style="margin-left:6px" onclick="lbRwMng()">⚙️ 管理獎勵</button> <button class="mini" onclick="lbGrant()">＋ 直接給分</button> <button class="mini" onclick="lbCheckerMng()">👮 核銷人</button>':''}</h2>`
+  h += `<section><h2>🎁 兌換商城 <span class="hint">用累積點數換獎勵（兌換不影響排名）</span>${meN&&d.isAdmin?' <button class="mini" style="margin-left:6px" onclick="lbRwMng()">⚙️ 管理獎勵</button> <button class="mini" onclick="lbGrant()">＋ 直接給分</button> <button class="mini" onclick="lbCheckerMng()">👮 核銷人</button> <button class="mini" onclick="lbRedeemLog()">📜 兌換核銷紀錄</button>':''}</h2>`
   h += meN?`<div style="background:var(--soft);border:1px solid var(--primary);border-radius:12px;padding:10px 14px;margin-bottom:10px;display:flex;align-items:center;gap:10px"><span class="hint">我的可用點數</span><b style="font-size:26px;color:var(--primary)">${myBal}</b><span class="hint">點</span></div>`:`<div class="hint" style="margin-bottom:8px">綁定後才能兌換——${BIND_HINT}</div>`
   h += `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px">`
   h += rewards.length?rewards.map(r=>{
@@ -585,6 +585,51 @@ async function lbCheckerSave(){
   const d = await r.json().catch(()=>null)
   if (d && d.ok){ const ov=document.getElementById('ckmOv'); if(ov) ov.remove(); alert('已更新核銷人（'+names.length+' 人）'); if (typeof refreshView==='function') refreshView() }
   else alert((d&&d.error)||'儲存失敗')
+}
+// 📜 兌換核銷歷史後台（管理者）：全部人全部日期全部兌換全部核銷
+async function lbRedeemLog(){
+  let d; try { const r = await fetch('/api/mail-sync?redeemlog=' + encodeURIComponent(K) + (TK()?'&me='+encodeURIComponent(TK()):'')); d = await r.json() } catch(e){}
+  if (!d || !d.ok){ alert((d&&d.error)||'讀不到紀錄'); return }
+  window._rlRows = d.rows||[]; window._rlSum = d.sum||{}
+  const ov = document.createElement('div'); ov.id='rlOv'
+  ov.style.cssText='position:fixed;inset:0;background:rgba(10,14,20,.7);z-index:62;display:flex;align-items:center;justify-content:center;padding:12px'
+  ov.innerHTML = `<div style="background:#161B22;border:1px solid #2A3240;box-shadow:0 18px 50px rgba(0,0,0,.6);border-radius:14px;max-width:760px;width:100%;max-height:88vh;display:flex;flex-direction:column;padding:16px" onclick="event.stopPropagation()">
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px"><b style="font-size:16px">📜 兌換核銷紀錄</b><span class="hint" style="font-size:12px">全部人・全部日期</span><button class="mini" style="margin-left:auto;padding:7px 14px" onclick="document.getElementById('rlOv').remove()">關閉</button></div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:8px">
+      <input id="rlQ" placeholder="搜尋夥伴／獎勵／碼" oninput="lbRlDraw()" style="flex:1;min-width:120px;border:1px solid var(--line);border-radius:8px;padding:7px 10px;font-size:13px">
+      <select id="rlSt" onchange="lbRlDraw()" style="border:1px solid var(--line);border-radius:8px;padding:7px 8px;font-size:13px"><option value="">全部狀態</option><option value="pending">待審</option><option value="approved">可用(未核銷)</option><option value="used">已核銷</option><option value="rejected">未過</option></select>
+      <button class="mini" style="padding:7px 12px" onclick="lbRlCsv()">⬇️ CSV</button>
+    </div>
+    <div id="rlBox" style="overflow:auto;flex:1"></div></div>`
+  ov.onclick = () => ov.remove(); document.body.appendChild(ov); lbRlDraw()
+}
+function lbRlDraw(){
+  const box = document.getElementById('rlBox'); if (!box) return
+  const E = s => String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+  const q = ((document.getElementById('rlQ')||{}).value||'').trim().toLowerCase()
+  const st = (document.getElementById('rlSt')||{}).value||''
+  const sm = window._rlSum||{}
+  let rows = (window._rlRows||[]).filter(r=>{
+    if (st && r.status!==st) return false
+    if (q && !((r.person||'')+((r.rewardName||''))+(r.code||'')).toLowerCase().includes(q)) return false
+    return true
+  })
+  const stTag = s=>({pending:'🕐 待審',approved:'🎟 可用',used:'✅ 已核銷',rejected:'❌ 未過',done:'🎉 已給'}[s]||s)
+  let h = `<div class="hint" style="font-size:12px;margin-bottom:6px">共 ${sm.total||0} 筆｜待審 ${sm.pending||0}｜可用 ${sm.approved||0}｜已核銷 ${sm.used||0}｜未過 ${sm.rejected||0}｜兌出點數 ${sm.usedPts||0}（篩選後 ${rows.length} 筆）</div>`
+  h += `<div class="scroll"><table style="font-size:13px"><thead><tr><th style="text-align:left">夥伴</th><th style="text-align:left">獎勵</th><th>點</th><th>狀態</th><th style="text-align:left">申請</th><th style="text-align:left">審核</th><th style="text-align:left">核銷</th><th>碼</th></tr></thead><tbody>`
+  if (!rows.length) h += `<tr><td colspan="8" style="text-align:center" class="mut">沒有符合的紀錄</td></tr>`
+  h += rows.map(r=>`<tr><td style="text-align:left;font-weight:700">${E(r.person)}</td><td style="text-align:left">${E(r.rewardName)}</td><td>${r.cost}</td><td style="white-space:nowrap">${stTag(r.status)}</td><td style="text-align:left" class="hint">${E(r.ts)}</td><td style="text-align:left" class="hint">${r.decBy?E(r.decBy)+'<br>'+E(r.decTs):'—'}</td><td style="text-align:left" class="hint">${r.usedBy?E(r.usedBy)+'<br>'+E(r.usedAt):'—'}</td><td class="hint" style="letter-spacing:1px;color:#F2D06B">${E(r.code||'—')}</td></tr>`).join('')
+  h += `</tbody></table></div>`
+  box.innerHTML = h
+}
+function lbRlCsv(){
+  const rows = window._rlRows||[]
+  const head = ['夥伴','獎勵','點數','狀態','申請時間','審核人','審核時間','核銷人','核銷時間','核銷碼','備註']
+  const esc = s => '"'+String(s==null?'':s).replace(/"/g,'""')+'"'
+  const lines = [head.map(esc).join(',')]
+  rows.forEach(r=>lines.push([r.person,r.rewardName,r.cost,r.status,r.ts,r.decBy,r.decTs,r.usedBy,r.usedAt,r.code,r.note].map(esc).join(',')))
+  const blob = new Blob(['﻿'+lines.join('\n')], {type:'text/csv;charset=utf-8'})
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = '兌換核銷紀錄.csv'; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),2000)
 }
 // ＋ 直接給／扣積分（複用 pointscfg adjust）
 function lbGrant(){

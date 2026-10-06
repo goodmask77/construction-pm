@@ -3340,6 +3340,21 @@ export default async function handler(req, res) {
     if (bR.op === 'done') { it.status = 'done'; it.doneTs = nowR; await kvPut('sp_finance_pm_redeem', rdDoc, '兌換已給(' + whoR.name + ')'); return res.status(200).json({ ok: true }) }
     return res.status(400).json({ ok: false })
   }
+  // 📜 兌換核銷歷史後台（張良 2026-10-06）：GET ?redeemlog=<OPS_BOARD_KEY>&me=token（管理者/主管看全部人全部日期全部兌換全部核銷）
+  if (req.query?.redeemlog) {
+    const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
+    if (!ok2 || String(req.query.redeemlog) !== ok2) return res.status(403).json({ ok: false })
+    const whoRl = await sopWho(req.query.me)
+    if (!whoRl) return res.status(403).json({ ok: false, error: permDeny() })
+    const defRl = await kvGet('sp_finance_pm_sop_def')
+    const aprRl = (((defRl || {}).ground || {}).approvers || ['張良瑋'])
+    if (!(aprRl.includes(whoRl.name) || whoRl.role === '主管')) return res.status(403).json({ ok: false, error: '只有管理者/主管能看兌換核銷紀錄' })
+    const rdDocL = (await kvGet('sp_finance_pm_redeem')) || { list: [] }
+    const rows = (rdDocL.list || []).map(r => ({ id: r.id, person: r.person, rewardName: r.rewardName, cost: r.cost, status: r.status, code: r.code || '', ts: r.ts || '', decBy: r.decBy || '', decTs: r.decTs || '', usedBy: r.usedBy || '', usedAt: r.usedAt || '', note: r.note || '' }))
+    const sum = { total: rows.length, pending: 0, approved: 0, used: 0, rejected: 0, usedPts: 0 }
+    for (const r of rows) { sum[r.status] = (sum[r.status] || 0) + 1; if (r.status === 'used' || r.status === 'approved') sum.usedPts += Number(r.cost || 0) }
+    return res.status(200).json({ ok: true, rows, sum })
+  }
   // 📒 積分存摺（他人）：GET ?ledger=<OPS_BOARD_KEY>&me=token&who=姓名（管理者/主管可查任何人；本人查自己走 lb 的 myLedger）
   if (req.query?.ledger) {
     const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
