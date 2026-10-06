@@ -4606,7 +4606,10 @@ export default async function handler(req, res) {
     const p4g = (doc4g.people || []).find(x => x.id === who4g.rid)
     if (!p4g) return res.status(404).json({ ok: false, error: '找不到你的名冊卡，請聯絡店長。' })
     const pick = {}
-    ;['name', 'nick', 'dept', 'empNo', 'joinDate', 'birthday', 'gender', 'marital', 'ethnic', 'nid', 'foreignPermitNo', 'emergency', 'bankBranch', 'bankAccount'].forEach(k => { if (p4g[k] != null) pick[k] = p4g[k] })
+    ;['name', 'nick', 'dept', 'empNo', 'joinDate', 'birthday', 'gender', 'marital', 'ethnic', 'nid', 'foreignPermitNo', 'emergency', 'bankBranch', 'bankAccount',
+      'mobile', 'regAddr', 'mailAddr', 'commute', 'military', 'disability', 'disabilityNote', 'agree1', 'agree2', 'agree3', // v4.56.3 對齊 NUEiP 到職基本資料單必填欄
+      'dischargeDate', 'nationality', 'homePhone', 'email', 'emailNotify', 'parkingPlate', 'dependents', // v4.56.4 NUEiP 選填欄（退伍日期/國籍/住家電話/email/email同步通知/機車停車格/眷屬）
+      'idDoc', 'bankDoc', 'healthDoc1', 'healthDoc2'].forEach(k => { if (p4g[k] != null) pick[k] = p4g[k] }) // 檔案給前端判斷「已上傳」(本人自己的路徑)
     return res.status(200).json({ ok: true, me: pick, step: p4g.onboardStep || 0, onboarding: !!p4g.onboarding })
   }
   if (req.method === 'POST' && req.query?.onboardself !== undefined) {
@@ -4618,9 +4621,13 @@ export default async function handler(req, res) {
     const p4 = (doc4.people || []).find(x => x.id === who4.rid)
     if (!p4) return res.status(404).json({ ok: false, error: '找不到你的名冊卡，請聯絡店長。' })
     // 白名單＝基本資料＋繳交表欄位（本人填自己的）；絕不含 role/status/gdRole/薪資/投保額
-    const ALLOW = ['birthday', 'gender', 'marital', 'ethnic', 'nid', 'foreignPermitNo', 'emergency', 'bankBranch', 'bankAccount']
+    // v4.56.3 對齊 NUEiP：加手機/戶籍地址/通訊地址/通勤方式/兵役/身心障礙(+說明)/三條須知同意
+    const ALLOW = ['birthday', 'gender', 'marital', 'ethnic', 'nid', 'foreignPermitNo', 'emergency', 'bankBranch', 'bankAccount',
+      'mobile', 'regAddr', 'mailAddr', 'commute', 'military', 'disability', 'disabilityNote', 'agree1', 'agree2', 'agree3',
+      'dischargeDate', 'nationality', 'homePhone', 'email', 'emailNotify', 'parkingPlate', 'dependents'] // v4.56.4 選填欄
     const saved = []
-    for (const k of ALLOW) if (b4.set && b4.set[k] !== undefined) { p4[k] = String(b4.set[k]).slice(0, 200); saved.push(k) }
+    // dependents 是多筆眷屬 JSON，放寬到 2000；其餘單欄 300 足夠
+    for (const k of ALLOW) if (b4.set && b4.set[k] !== undefined) { p4[k] = String(b4.set[k]).slice(0, k === 'dependents' ? 2000 : 300); saved.push(k) }
     if (b4.step != null) p4.onboardStep = Math.max(0, Math.min(4, Number(b4.step) || 0))
     await kvPut('sp_crew_kb_roster', doc4, '入職自填(' + (who4.name || '') + ')'); await announceChanged()
     return res.status(200).json({ ok: true, saved, step: p4.onboardStep || 0 })
@@ -4631,7 +4638,7 @@ export default async function handler(req, res) {
     try { bf = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
     const whoF = await sopWho(bf.token)
     if (!whoF || !whoF.rid) return res.status(403).json({ ok: false, error: '請先私訊 DD「綁定GD 你的本名」綁定後再傳。' })
-    const FIELD_FILE = { idDoc: 'idcard', bankDoc: 'bankbook' } // 只允許新人自傳這兩類機密檔
+    const FIELD_FILE = { idDoc: 'idcard', bankDoc: 'bankbook', healthDoc1: 'health1', healthDoc2: 'health2' } // 只允許新人自傳這幾類機密檔（+健檢報告最多2張）
     if (!FIELD_FILE[bf.field]) return res.status(400).json({ ok: false, error: '不支援的檔案欄位' })
     const m5 = /^data:([\w\/+.-]+);base64,(.+)$/.exec(String(bf.dataUrl || ''))
     if (!m5) return res.status(400).json({ ok: false, error: '照片格式不對（要用拍照／選圖）' })
