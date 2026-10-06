@@ -29,7 +29,7 @@ export async function invStatus(kind) {
   const doc = (await kvGet('sp_finance_pm_inv')) || {}
   const kd = doc[kind] || { items: [], counts: {} }
   const items = kd.items || []
-  if (!items.length) return { items: [] }
+  if (!items.length) return { items: [], cats: kd.cats || [] }
   const counts = kd.counts || {}
   let minDate = null
   for (const it of items) { const last = (counts[it.id] || [])[0]; if (last) { const d0 = last.ts.slice(0, 10); if (!minDate || d0 < minDate) minDate = d0 } }
@@ -75,7 +75,7 @@ export async function invStatus(kind) {
     }
     return { ...it, last, used, est, low: est != null && it.min > 0 && est <= it.min }
   })
-  return { items: out }
+  return { items: out, cats: kd.cats || [] }
 }
 
 export async function kvPut(id, obj, editor) {
@@ -2841,7 +2841,7 @@ export default async function handler(req, res) {
     if (!ok2 || String(req.query.inv) !== ok2) return res.status(403).json({ ok: false })
     const kind = String(req.query.kind) === 'pack' ? 'pack' : 'food'
     const [st, meV] = await Promise.all([invStatus(kind), sopWho(req.query.me)])
-    return res.status(200).json({ ok: true, kind, items: st.items, me: meV ? { name: meV.name } : null })
+    return res.status(200).json({ ok: true, kind, items: st.items, cats: st.cats || [], me: meV ? { name: meV.name } : null })
   }
   if (req.method === 'POST' && req.query?.invset) { // 品項增改刪：{kind, op:'save'|'del', item}
     const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
@@ -2853,15 +2853,21 @@ export default async function handler(req, res) {
     const kind = bn.kind === 'pack' ? 'pack' : 'food'
     const doc = (await kvGet('sp_finance_pm_inv')) || {}
     const kd = doc[kind] || (doc[kind] = { items: [], counts: {}, edits: [] })
-    if (bn.op === 'del') kd.items = (kd.items || []).filter(x => x.id !== bn.id)
+    kd.cats = Array.isArray(kd.cats) ? kd.cats : [] // 🧱 物料庫脊椎（張良 2026-10-06）：分類清單＝可增刪改排序；食譜/採購之後共用同一份物料庫
+    if (bn.op === 'catadd') { const nm = String(bn.name || '').slice(0, 20).trim(); if (!nm) return res.status(400).json({ ok: false, error: '要有分類名稱' }); if (!kd.cats.includes(nm)) kd.cats.push(nm) }
+    else if (bn.op === 'catdel') { const nm = String(bn.name || ''); kd.cats = kd.cats.filter(c => c !== nm); (kd.items || []).forEach(x => { if (x.cat === nm) x.cat = '' }) } // 刪分類＝品項不刪，退回未分類
+    else if (bn.op === 'catren') { const f = String(bn.from || ''), t = String(bn.to || '').slice(0, 20).trim(); if (!t) return res.status(400).json({ ok: false, error: '要有新名稱' }); kd.cats = [...new Set(kd.cats.map(c => c === f ? t : c))]; (kd.items || []).forEach(x => { if (x.cat === f) x.cat = t }) } // 改名＝連品項一起改
+    else if (bn.op === 'catsort') { const order = (Array.isArray(bn.cats) ? bn.cats : []).map(String); kd.cats = order.filter(c => kd.cats.includes(c)).concat(kd.cats.filter(c => !order.includes(c))) }
+    else if (bn.op === 'del') kd.items = (kd.items || []).filter(x => x.id !== bn.id)
     else {
       const it = bn.item || {}
-      const clean = { id: it.id || ('iv' + Date.now().toString(36)), name: String(it.name || '').slice(0, 30), unit: String(it.unit || '').slice(0, 8), min: Number(it.min) || 0, links: (Array.isArray(it.links) ? it.links : []).slice(0, 10).map(l => ({ type: l.type === 'cat' ? 'cat' : 'item', key: String(l.key || '').slice(0, 40), per: Number(l.per) || 0 })).filter(l => l.key && l.per > 0) }
+      const clean = { id: it.id || ('iv' + Date.now().toString(36)), name: String(it.name || '').slice(0, 30), cat: String(it.cat || '').slice(0, 20), unit: String(it.unit || '').slice(0, 8), min: Number(it.min) || 0, links: (Array.isArray(it.links) ? it.links : []).slice(0, 10).map(l => ({ type: l.type === 'cat' ? 'cat' : 'item', key: String(l.key || '').slice(0, 40), per: Number(l.per) || 0 })).filter(l => l.key && l.per > 0) }
       if (!clean.name) return res.status(400).json({ ok: false, error: '要有名稱' })
+      if (clean.cat && !kd.cats.includes(clean.cat)) kd.cats.push(clean.cat) // 新填的分類自動進清單
       const i0 = (kd.items || []).findIndex(x => x.id === clean.id)
       if (i0 >= 0) kd.items[i0] = clean; else kd.items.push(clean)
     }
-    kd.edits = [{ ts: new Date().toISOString(), by: whoN.name, op: bn.op, name: (bn.item || {}).name || bn.id }, ...(kd.edits || [])].slice(0, 30)
+    kd.edits = [{ ts: new Date().toISOString(), by: whoN.name, op: bn.op, name: (bn.item || {}).name || bn.name || bn.id }, ...(kd.edits || [])].slice(0, 30)
     await kvPut('sp_finance_pm_inv', doc, '盤點品項' + bn.op + '(' + whoN.name + ')')
     return res.status(200).json({ ok: true })
   }

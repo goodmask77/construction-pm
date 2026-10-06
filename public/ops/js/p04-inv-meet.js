@@ -11,21 +11,36 @@ async function invLoad(kind){
   window._invD = d; tcSet('inv_'+kind, d)
   if (curStore === kind) invRender()
 }
+function invCatOf(x){ return x.cat && String(x.cat).trim() ? x.cat : '未分類' } // 物料庫分類（空=未分類）
 function invRender(){
   const d = window._invD; if (!d || (curStore !== 'food' && curStore !== 'pack')) return
   const lbl = d.kind === 'pack' ? '包材' : '食材'
   document.getElementById('upd').textContent = `${d.kind==='pack'?'📦':'🥩'} ${lbl}盤點・預估現量＝最後盤點 − 盤後銷售×每份用量`
   const meN = d.me ? d.me.name : null // 2026-10-02 全面修：只有菜單口有 canEdit 欄位，整檔替換誤傷各分頁→按鈕全滅；顯示層=綁定即可，真正權限由伺服器端守門
+  const cats = Array.isArray(d.cats) ? d.cats : [] // 🧱 物料庫脊椎（張良 2026-10-06）：分類看；食譜/採購之後共用同一份物料庫
+  const hasUncat = d.items.some(x=>!(x.cat&&String(x.cat).trim()))
+  const ck = '_invCat_'+d.kind
+  let cur = window[ck] || '全部'
+  if (cur!=='全部' && cur!=='未分類' && !cats.includes(cur)) { cur='全部'; window[ck]=cur } // 選的分類被刪→回全部
   const lows = d.items.filter(x => x.low)
   let h = ''
   if (lows.length) h += `<section style="border:1.5px solid #F0B8B1"><h2 style="color:var(--red)">📉 低水位警報（${lows.length}）</h2>` + lows.map(x=>`<div style="font-weight:800;color:var(--red)">・${x.name}：估剩 ${x.est}${x.unit||''}（低標 ${x.min}）</div>`).join('') + `<div class="hint" style="margin-top:4px">每天開店前 DD 也會在群裡提醒</div></section>`
-  h += `<section><h2>${d.kind==='pack'?'📦':'🥩'} ${lbl}清單 <span class="hint">${meN?'📋盤點＝輸入現在數量；✏️可改品項/用量連結':''}</span></h2>`
-  if (!d.items.length) h += `<div class="mut">還沒有品項——按下面「＋新增品項」開始建（名稱／單位／最低水位／連結哪些菜品扣多少）</div>`
+  // 分類 chips（張良 2026-10-06「盤點也可以分類看」）：按鈕可增刪改排序（✎管理分類）
+  const cnt = c => d.items.filter(x=>invCatOf(x)===c).length
+  let chips = `<button class="mini${cur==='全部'?' on':''}" onclick="invCatSet('${d.kind}','全部')">全部 ${d.items.length}</button>`
+  chips += cats.map(c=>`<button class="mini${cur===c?' on':''}" onclick="invCatSet('${d.kind}','${c.replace(/'/g,"\\'")}')">${c} ${cnt(c)}</button>`).join('')
+  if (hasUncat) chips += `<button class="mini${cur==='未分類'?' on':''}" onclick="invCatSet('${d.kind}','未分類')">未分類 ${cnt('未分類')}</button>`
+  if (meN) chips += `<button class="mini" style="opacity:.85" onclick="invCatMgr()">✎ 管理分類</button>`
+  h += `<section><h2>${d.kind==='pack'?'📦':'🥩'} ${lbl}清單 <span class="hint">${meN?'分類看・📋盤點輸數量・✏️改品項':''}</span></h2>`
+  h += `<div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:10px">${chips}</div>`
+  const shown = d.items.filter(x => cur==='全部' || invCatOf(x)===cur)
+  if (!d.items.length) h += `<div class="mut">還沒有品項——按下面「＋新增品項」開始建（名稱／分類／單位／最低水位／連結哪些菜品扣多少）</div>`
+  else if (!shown.length) h += `<div class="mut">這個分類還沒有品項</div>`
   else {
     h += `<div class="scroll"><table><thead><tr><th style="text-align:left">品項</th><th>預估現量</th><th>低標</th><th>已扣銷售</th><th style="text-align:left">最後盤點</th><th></th></tr></thead><tbody>`
-    d.items.forEach(x=>{
+    shown.forEach(x=>{
       h += `<tr>
-        <td style="text-align:left;font-weight:800;color:var(--ink)">${x.low?'📉 ':''}${x.name}<div class="hint">${(x.links||[]).map(l=>`${l.type==='cat'?'類:':''}${l.key}×${l.per}`).join('、')||'（沒設銷售連結，不會自動扣）'}</div></td>
+        <td style="text-align:left;font-weight:800;color:var(--ink)">${x.low?'📉 ':''}${x.name}${cur==='全部'&&x.cat?` <span class="hint" style="font-weight:600">· ${x.cat}</span>`:''}<div class="hint">${(x.links||[]).map(l=>`${l.type==='cat'?'類:':''}${l.key}×${l.per}`).join('、')||'（沒設銷售連結，不會自動扣）'}</div></td>
         <td style="font-weight:900;font-size:15px;color:${x.low?'var(--red)':'var(--pdark)'}">${x.est!=null?x.est:'—'}${x.unit||''}</td>
         <td>${x.min||'—'}</td><td class="mut">${x.used!=null?x.used:'—'}</td>
         <td style="text-align:left" class="hint">${x.last?`${x.last.qty}${x.unit||''}・${x.last.ts}<br>${x.last.by}`:'還沒盤過'}</td>
@@ -37,6 +52,40 @@ function invRender(){
   h += `<div class="hint" style="margin-top:8px">盤點時機：開店前盤＝當天銷售會繼續扣；打烊後盤＝從隔天開始扣（系統照盤點時間自動判斷）。</div></section>`
   app.innerHTML = h
 }
+function invCatSet(kind, c){ window['_invCat_'+kind] = c; invRender() }
+// ✎ 管理分類（增/刪/改名/排序；物料庫脊椎，食譜/採購之後共用）
+function invCatMgr(){
+  const d = window._invD; const cats = Array.isArray(d.cats)?d.cats:[]
+  const esc = s => String(s).replace(/"/g,'&quot;'), es2 = s => String(s).replace(/'/g,"\\'")
+  const ov = document.createElement('div'); ov.id='invCatOv'
+  ov.style.cssText='position:fixed;inset:0;background:rgba(16,24,43,.5);z-index:51;display:flex;align-items:center;justify-content:center;padding:14px;overflow:auto'
+  const rows = cats.map((c,i)=>`<div style="display:flex;gap:5px;align-items:center;margin-bottom:5px">
+    <input class="ctN" value="${esc(c)}" style="flex:1;min-width:90px;border:1px solid var(--line);border-radius:7px;padding:6px">
+    <button class="mini" onclick="invCatMove(${i},-1)"${i===0?' style="opacity:.3" disabled':''}>↑</button>
+    <button class="mini" onclick="invCatMove(${i},1)"${i===cats.length-1?' style="opacity:.3" disabled':''}>↓</button>
+    <button class="mini" onclick="invCatRen('${es2(c)}',this)">改名</button>
+    <button class="mini" style="color:var(--red)" onclick="invCatDel('${es2(c)}')">🗑</button></div>`).join('')
+  ov.innerHTML = `<div style="background:#222B38;border:1px solid #3B4654;box-shadow:0 18px 50px rgba(0,0,0,.55);border-radius:14px;max-width:460px;width:100%;padding:16px" onclick="event.stopPropagation()">
+    <div style="font-weight:900;margin-bottom:10px">✎ 管理分類（${d.kind==='pack'?'包材':'食材'}）</div>
+    ${cats.length?rows:'<div class="mut" style="margin-bottom:8px">還沒有分類，先在下面新增</div>'}
+    <div style="display:flex;gap:5px;margin-top:10px">
+      <input id="invCatNew" placeholder="新分類名稱（例：肉品）" style="flex:1;border:1px solid var(--line);border-radius:8px;padding:8px">
+      <button class="mini on" style="padding:8px 14px" onclick="invCatAdd()">＋ 新增</button></div>
+    <div style="text-align:right;margin-top:12px"><button class="mini" onclick="document.getElementById('invCatOv').remove()">完成</button></div></div>`
+  ov.onclick=()=>ov.remove()
+  document.body.appendChild(ov)
+}
+async function invCatPost(body){
+  const r = await fetch('/api/mail-sync?invset='+encodeURIComponent(K), {method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({kind:window._invD.kind, token:TK(), ...body})})
+  const dd = await r.json().catch(()=>null)
+  if (!dd||!dd.ok){ alert((dd&&dd.error)||'失敗'); return false }
+  return true
+}
+async function invCatReopen(){ const ov=document.getElementById('invCatOv'); if(ov)ov.remove(); await invLoad(window._invD.kind); invCatMgr() }
+async function invCatAdd(){ const v=((document.getElementById('invCatNew')||{}).value||'').trim(); if(!v){alert('輸入分類名稱');return} if(await invCatPost({op:'catadd',name:v})) invCatReopen() }
+async function invCatDel(name){ if(!confirm(`刪除分類「${name}」？（品項不會刪，只會退回未分類）`))return; if(await invCatPost({op:'catdel',name})) invCatReopen() }
+async function invCatRen(from, btn){ const to=((btn.parentElement.querySelector('.ctN')||{}).value||'').trim(); if(!to||to===from)return; if(await invCatPost({op:'catren',from,to})) invCatReopen() }
+async function invCatMove(i,dir){ const cats=[...(window._invD.cats||[])]; const j=i+dir; if(j<0||j>=cats.length)return; const t=cats[i];cats[i]=cats[j];cats[j]=t; if(await invCatPost({op:'catsort',cats})) invCatReopen() }
 async function invCount(id, name){
   const v = prompt(`「${name}」現在實際數量？（純數字）`)
   if (v === null) return
@@ -61,6 +110,8 @@ function invEdit(id){
   ov.innerHTML = `<div style="background:#222B38;border:1px solid #3B4654;box-shadow:0 18px 50px rgba(0,0,0,.55);border-radius:14px;max-width:470px;width:100%;padding:16px" onclick="event.stopPropagation()">
     <div style="font-weight:900;margin-bottom:8px">${id?'✏️ 編輯':'＋ 新增'}${d.kind==='pack'?'包材':'食材'}品項</div>
     <datalist id="menuDL">${[...catNames,...menuNames].map(n=>`<option value="${n}">`).join('')}</datalist>
+    <datalist id="ivCatDL">${(d.cats||[]).map(c=>`<option value="${c}">`).join('')}</datalist>
+    <input id="ivCat" list="ivCatDL" value="${it.cat||''}" placeholder="分類（例：肉品，可留白；打新字會自動建分類）" style="width:100%;border:1px solid var(--line);border-radius:8px;padding:7px;margin-bottom:6px">
     <div style="display:flex;gap:6px;margin-bottom:6px">
       <input id="ivName" value="${it.name}" placeholder="名稱（例：無骨雞腿）" style="flex:1;min-width:120px;border:1px solid var(--line);border-radius:8px;padding:7px">
       <input id="ivUnit" value="${it.unit||''}" placeholder="單位" style="width:62px;border:1px solid var(--line);border-radius:8px;padding:7px">
@@ -80,7 +131,7 @@ function invEdit(id){
 }
 async function invSave(id){
   const links = [...document.querySelectorAll('#invOv .invLink')].map(r=>({ type: r.querySelector('.lt').value, key: r.querySelector('.lk').value.trim(), per: Number(r.querySelector('.lp').value)||0 })).filter(l=>l.key&&l.per>0)
-  const item = { id: id||undefined, name: document.getElementById('ivName').value.trim(), unit: document.getElementById('ivUnit').value.trim(), min: Number(document.getElementById('ivMin').value)||0, links }
+  const item = { id: id||undefined, name: document.getElementById('ivName').value.trim(), cat: (document.getElementById('ivCat').value||'').trim(), unit: document.getElementById('ivUnit').value.trim(), min: Number(document.getElementById('ivMin').value)||0, links }
   if (!item.name) { alert('要有名稱'); return }
   const r = await fetch('/api/mail-sync?invset=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ kind: window._invD.kind, op:'save', item, token: TK() }) })
   const dd = await r.json().catch(()=>null)
