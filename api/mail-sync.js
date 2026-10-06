@@ -3570,7 +3570,7 @@ export default async function handler(req, res) {
     const pinN9 = new Set((((docN9 || {}).pins || {})[ridN9]) || []) // v4.52.2 本人釘選集合
     // v4.52.1（張良「新增有＠自己的分類」）：加 mine 旗標＝這則是「指定給我」(to 含我，非全員廣播)；只回布林不外洩收件名單
     // v4.52.2（張良「收件匣／釘選稍後處理」）：加 pinned 旗標＝本人有沒有釘這則
-    const seenN9 = new Set((((docN9 || {}).seenIds || {})[ridN9]) || []) // v4.55.11 本人已讀集合（電腦/手機共用＝已讀同步）
+    const seenN9 = new Set((((docN9 || {}).seenIds || {})[meN9 ? meN9.name : '_'] ) || []) // v4.55.12 已讀以「姓名」為鍵（電腦/手機各一組綁定 rid 不同，用姓名才同步＝治本張良「還是沒同步」）
     const listN9 = ((docN9 || {}).list || []).filter(x => !x.to || (ridN9 && x.to.includes(ridN9))).slice(0, 100).map(({ to, ...r }) => ({ ...r, mine: !!(to && ridN9 && to.includes(ridN9)), pinned: pinN9.has(r.id), seen: seenN9.has(r.id) }))
     return res.status(200).json({ ok: true, list: listN9 })
   }
@@ -3584,10 +3584,10 @@ export default async function handler(req, res) {
     const idsS9 = (Array.isArray(sb.ids) ? sb.ids : []).map(x => String(x).trim()).filter(Boolean)
     if (!idsS9.length) return res.status(200).json({ ok: true })
     const docS9 = (await kvGet('sp_finance_pm_prep_ntf')) || { list: [] }
-    const ridS9 = whoS9.rid || whoS9.uid
+    const keyS9 = whoS9.name // v4.55.12 用姓名當鍵＝電腦/手機不同綁定也同一桶（治本）
     docS9.seenIds = docS9.seenIds || {}
-    const setS9 = new Set(docS9.seenIds[ridS9] || []); idsS9.forEach(i => setS9.add(i))
-    docS9.seenIds[ridS9] = [...setS9].slice(-500)
+    const setS9 = new Set(docS9.seenIds[keyS9] || []); idsS9.forEach(i => setS9.add(i))
+    docS9.seenIds[keyS9] = [...setS9].slice(-500)
     await kvPut('sp_finance_pm_prep_ntf', docS9, '通知已讀同步(' + whoS9.name + ')')
     return res.status(200).json({ ok: true })
   }

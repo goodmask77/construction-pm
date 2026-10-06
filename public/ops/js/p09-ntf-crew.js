@@ -474,6 +474,7 @@ async function ntfPin(id, pin){
 async function ntfBadgeSync(){ // 鈴鐺上的未讀紅點數（進站抓一次）：抓最新後依「未讀=未seen」重畫兩顆鈴鐺
   await ntfFetch()
   ntfPaintBadge()
+  if (document.getElementById('ntfOv')) { try { ntfRender() } catch(_){} } // v4.55.12 面板開著時順便重畫＝切回App即反映另一台的已讀
 }
 document.addEventListener('visibilitychange', () => { if (!document.hidden) ntfBadgeSync() }) // v4.33.6 App從背景回前景＝重算鈴鐺數字（張良：圖示有數字、打開App鈴鐺卻沒有＝喚醒不會重新抓）
 try { navigator.serviceWorker && navigator.serviceWorker.addEventListener('message', ev => { if (ev.data && ev.data.gdNtf) ntfBadgeSync() }) } catch(e){} // App開著收到推播→sw廣播→即時重算
