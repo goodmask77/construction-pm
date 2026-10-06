@@ -2279,7 +2279,7 @@ export default async function handler(req, res) {
               pendTxt = '\n已自動幫你申請編輯權限，核准後我會通知你。'
             }
           } catch (_) {}
-          await send(`✅ ${rp.name} 綁定完成！點一下啟用👇\n${BIND_APPS[appKey]}?me=${tk2}${pendTxt}${note2}`)
+          await send(`✅ ${rp.name} 綁定完成！點一下啟用👇\n${BIND_APPS[appKey]}?me=${tk2}${rp.onboarding ? '#tab=onb' : ''}${pendTxt}${note2}`)
           if (isNewBind) { // 新綁定→DD 通知老闆（張良 2026-09-21：任何人綁定完成要跟我說）
             try {
               const defB2 = await kvGetMany(['sp_finance_pm_sop_def'])
