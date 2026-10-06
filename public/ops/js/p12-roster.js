@@ -28,6 +28,14 @@ async function hrmLoad(){
   window._hrmD = d
   hrmRender()
 }
+async function hrmPendAct(id, action, name){ // v4.60 名冊待審核：核准加入／刪除
+  if (action==='approve' && !confirm(`把「${name}」核准加入 GD 名冊？（之後可在名冊補部門/職務/生日等）`)) return
+  if (action==='reject' && !confirm(`確定刪除「${name}」？會一併移除他的帳號，對方要重新報到。`)) return
+  const r = await fetch('/api/mail-sync?hrmpendset=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ token: TK(), id, action }) })
+  const d = await r.json().catch(()=>null)
+  if (!d || !d.ok) { alert((d&&d.error)||'處理失敗'); return }
+  hrmLoad() // 重抓：核准的人進表、待審核清掉
+}
 function hrmSortBy(k){ // v4.34.4 張良「排序畫面不要跳不要閃 手機滑到右邊按排序會跑回左邊」：記住捲動位置重畫後原位還原
   if (hrmSort.k === k) hrmSort.dir = -hrmSort.dir; else hrmSort = { k, dir: 1 }
   const scrs = [...document.querySelectorAll('#app .scroll')].map(el=>el.scrollLeft)
@@ -75,6 +83,18 @@ function hrmRender(){
       <button class="mini" style="padding:6px 14px;font-weight:800" onclick="hrmLib()">🗂 文件庫</button>
       ${d.canEdit&&window._hrmEdit?`<button class="mini" style="padding:6px 12px" onclick="hrmTitleOpts()">職務選單</button><button class="mini" style="padding:6px 12px" onclick="hrmAdd('ab')">＋ AB 加人</button><button class="mini" style="padding:6px 12px" onclick="hrmAdd('gd')">＋ GD 加人</button><button class="mini" style="padding:6px 12px" onclick="hrmColOrder()">欄位排序</button>`:''}
     </div>`
+  if ((d.pending||[]).length) { // v4.60 LINE 報到新人（kb_roster onboarding）在名冊頁顯示＋核准
+    h += `<div style="background:#182617;border:1.5px solid var(--green);border-radius:12px;padding:12px 14px;margin-bottom:12px">
+      <b style="color:var(--green)">🆕 待審核・LINE 報到新人（${d.pending.length}）</b>
+      <div class="hint" style="margin:3px 0 9px">這些人用 LINE 自助報到了，還沒進正式名冊。確認是你要的員工→「核准加入名冊」；不認識→刪除。</div>
+      <div style="display:flex;flex-direction:column;gap:8px">
+      ${d.pending.map(p=>`<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:9px 12px">
+        <b style="font-size:15px">${p.name}</b>
+        <span class="hint" style="font-size:12.5px">報到 ${String(p.onboardAt||'').slice(0,10)||'—'}・契約${p.contractSigned?'已簽 ✓':'未簽'}${p.inMaster?'・⚠️名冊已有同名':''}</span>
+        ${d.canEdit?`<span style="margin-left:auto;display:inline-flex;gap:7px;flex-wrap:wrap"><button class="mini" style="padding:6px 13px;color:#fff;background:var(--green);border-color:transparent;font-weight:800" onclick="hrmPendAct('${p.id}','approve','${(p.name||'').replace(/'/g,'')}')">核准加入名冊</button><button class="mini" style="padding:6px 12px;color:var(--red)" onclick="hrmPendAct('${p.id}','reject','${(p.name||'').replace(/'/g,'')}')">不是員工・刪除</button></span>`:'<span class="hint" style="margin-left:auto">（主管才能核准）</span>'}
+      </div>`).join('')}
+      </div></div>`
+  }
   if (upcoming.length) {
     h += `<div style="background:var(--card);border:1.5px solid var(--line);border-radius:12px;padding:10px 13px;margin-bottom:12px">
       <b>🎂 生日提醒（接下來 30 天）</b> <span class="hint">生日前一週 D 哥會自動發 ABpeople 群</span>

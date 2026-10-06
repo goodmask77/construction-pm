@@ -3569,7 +3569,7 @@ export default async function handler(req, res) {
     const whoH9 = await sopWho(req.query.me)
     if (!whoH9) return res.status(403).json({ ok: false, error: permDeny() })
     // 🔒 身分證欄名單鎖（v4.41.2 張良「打勾的人才可以看到」）：預設只有管理者；名單存 pm_hr_idlock；沒在名單＝整欄伺服器端拔掉(不是前端藏)
-    const [docH, lockH, pmH] = await Promise.all([kvGet('sp_crew_pm_hr_master'), kvGet('sp_finance_pm_hr_idlock'), kvGet('sp_finance_pm_prep_perm')])
+    const [docH, lockH, pmH, rosH9] = await Promise.all([kvGet('sp_crew_pm_hr_master'), kvGet('sp_finance_pm_hr_idlock'), kvGet('sp_finance_pm_prep_perm'), kvGet('sp_crew_kb_roster')])
     const ridH = whoH9.rid || whoH9.uid
     const isAdmH = !!(pmH && pmH.users && pmH.users[ridH] && pmH.users[ridH].admin)
     const canId = isAdmH || (((lockH || {}).rids) || []).includes(ridH)
@@ -3582,7 +3582,39 @@ export default async function handler(req, res) {
     const topts = (docH || {}).titleOpts || [...new Set(['正職', 'PT', ...rowsH.map(r9 => r9.title).filter(Boolean)])]
     const outH = { ok: true, rows: rowsH, titleOpts: topts, colOrder: (docH || {}).colOrder || [], updatedAt: (docH || {}).updatedAt || '', src: (docH || {}).src || '', idCan: canId, canEdit: isAdmH || whoH9.role === '主管' } // v4.41.3 全員可看但編輯鈕只給主管/管理者（寫入口 hrmasterup 本來就擋）
     if (isAdmH) outH.idLock = { rids: ((lockH || {}).rids) || [], people: Object.entries((pmH && pmH.users) || {}).map(([r9, u9]) => ({ rid: r9, name: u9.name, admin: !!u9.admin })) }
+    // v4.60 待審核：LINE 報到的新人在 kb_roster(onboarding:true)，但名冊頁讀 hr_master＝兩個檔不同→新人看不到。這裡把入職中名單帶出來給名冊頁顯示＋核准。
+    const nmSetH = new Set((rowsH || []).filter(r9 => !/A Beach/.test(r9.co || '')).map(r9 => r9.name))
+    outH.pending = (((rosH9 || {}).people) || []).filter(p9 => p9.onboarding && (p9.status || '在職') !== '離職').map(p9 => ({ id: p9.id, name: p9.name, onboardAt: p9.onboardAt || '', contractSigned: !!p9.contractSigned, inMaster: nmSetH.has(p9.name) }))
     return res.status(200).json(outH)
+  }
+  // v4.60 名冊待審核 核准／刪除（主管）：核准＝清 onboarding＋加進 hr_master 名冊；刪除＝從 kb_roster 移除＋清帳號
+  if (req.method === 'POST' && req.query?.hrmpendset) {
+    const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
+    if (!ok2 || String(req.query.hrmpendset) !== ok2) return res.status(403).json({ ok: false })
+    let bp = {}; try { bp = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
+    const [whoP9, defP9] = await Promise.all([sopWho(bp.token), kvGet('sp_finance_pm_sop_def')])
+    const aprP9 = (((defP9 || {}).ground || {}).approvers || ['張良瑋'])
+    if (!whoP9 || !(aprP9.includes(whoP9.name) || whoP9.name === '張良瑋' || whoP9.role === '主管')) return res.status(403).json({ ok: false, error: '只有主管能審核名冊' })
+    const rosP9 = (await kvGet('sp_crew_kb_roster')) || { people: [] }
+    const per9 = (rosP9.people || []).find(x => x.id === bp.id && x.onboarding)
+    if (!per9) return res.status(404).json({ ok: false, error: '找不到這位待審核的夥伴（可能已處理）' })
+    const ob9 = await import('./_onboard.js')
+    if (bp.action === 'approve') {
+      const r9 = await ob9.approveApp(bp.id, bp.dept || per9.dept || '', whoP9.name, '')
+      if (r9.error) return res.status(400).json({ ok: false, error: r9.error })
+      const docU9 = (await kvGet('sp_crew_pm_hr_master')) || { rows: [] }; docU9.rows = docU9.rows || []
+      if (!docU9.rows.find(x => !/A Beach/.test(x.co || '') && x.name === per9.name)) {
+        const today9 = new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10)
+        docU9.rows.push({ co: 'GD', name: per9.name, dept: bp.dept || per9.dept || '', title: (per9.role === 'PT' || per9.gdRole === 'PT') ? 'PT' : '正職', onboard: today9, birth: '', age: '', sex: '', nid: '', health: '', emer: '' })
+        docU9.updatedAt = new Date().toISOString()
+        docU9.log = [{ by: whoP9.name, ts: new Date(Date.now() + 8 * 3600e3).toISOString().slice(5, 16).replace('T', ' '), what: '審核加入名冊 ' + per9.name }, ...(docU9.log || [])].slice(0, 80)
+        await kvPut('sp_crew_pm_hr_master', docU9, '名冊審核加入(' + whoP9.name + ')')
+      }
+    } else {
+      const r9 = await ob9.rejectApp(bp.id, String(bp.reason || '').slice(0, 100), whoP9.name)
+      if (r9.error) return res.status(400).json({ ok: false, error: r9.error })
+    }
+    return res.status(200).json({ ok: true })
   }
   // 🔗 短網址 v4.38.0（張良「能縮短網址嗎」）：/v/<code> → 302 到完整深層連結；碼存 pm_shortlinks
   if (req.query?.vgo) {
