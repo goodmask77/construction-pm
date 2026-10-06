@@ -15,6 +15,7 @@ async function onbPage() {
 
 function onbRender() {
   const d = window._onbD || {}, me = d.me || {}, step = Math.min(d.step || 0, 3)
+  const _u = document.getElementById('upd'); if (_u) _u.textContent = '入職流程' // v4.56.1d 修「載入中…」沒消失（張良截圖抓包）
   const esc = s => String(s == null ? '' : s).replace(/"/g, '&quot;').replace(/</g, '&lt;')
   // 進度條
   let h = `<section><h2>入職流程</h2>
@@ -36,7 +37,7 @@ function onbStep1Form(me, esc) {
   const lb = t => `<div style="font-size:13px;font-weight:700;color:var(--ink);margin:12px 0 5px">${t}</div>`
   return `<div style="max-width:560px">
     <div style="background:var(--soft);border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin-bottom:6px;font-size:13px;color:var(--muted)">
-      歡迎加入 GROUN:D！先填基本資料，公司好建檔。${me.name ? `<br>姓名：<b style="color:var(--ink)">${esc(me.name)}</b>${me.dept ? `・部門：${esc(me.dept)}` : ''}${me.joinDate ? `・到職：${esc(me.joinDate)}` : ''}` : ''}
+      歡迎加入 GROUN:D！先填基本資料，公司好建檔。${me.name ? `<br>姓名：<b style="color:var(--ink)">${esc(me.name)}</b>${me.dept ? `・部門：${esc(me.dept)}` : ''}${me.empNo ? `・員編：${esc(me.empNo)}` : ''}${me.joinDate ? `・到職：${esc(me.joinDate)}` : ''}` : ''}
     </div>
     ${lb('出生年月日 <span style="color:var(--red)">*</span>')}<input type="date" id="ob_birthday" value="${esc(me.birthday || '')}" style="${ip}">
     ${lb('性別 <span style="color:var(--red)">*</span>')}<div>${radio('ob_gender', me.gender || '', ['男', '女'])}</div>
