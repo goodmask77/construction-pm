@@ -666,17 +666,16 @@ function sopRender(){
   const myName = me && me.name
   const shown0 = sts.filter(st2 => view==='all' ? true : view==='pin' ? sopPin.has(st2) : view==='mine' ? ((sopData.def.stOwner||{})[st2]===myName) : st2===view).filter(st2 => !curTg || itemsF.some(i9=>i9.st===st2) || view===st2)
   const allColl = shown0.length > 0 && shown0.every(s2=>sopColl.has(s2))
-  const chipS = (on) => `border:1px solid ${on?'var(--primary)':'var(--line)'};background:${on?'var(--primary)':'var(--card)'};color:${on?'#fff':'var(--muted)'};border-radius:9px;padding:4px 10px;font-size:14px;font-weight:800;cursor:pointer;white-space:nowrap`
+  const chipS = (on) => `border:1px solid ${on?'var(--primary)':'var(--line)'};background:${on?'var(--primary)':'var(--card)'};color:${on?'#fff':'var(--muted)'};border-radius:9px;padding:5px 11px;font-size:14px;font-weight:800;cursor:pointer;white-space:nowrap;flex:0 0 auto`
   const catBtn = (on) => `border:1.5px solid ${on?'var(--primary)':'var(--line)'};background:${on?'var(--grad)':'var(--soft)'};color:${on?'#fff':'var(--text)'};border-radius:10px;padding:8px 16px;font-size:15px;font-weight:900;cursor:pointer;white-space:nowrap`
   // v4.62.0 V3：第一排＝工作站、第二排＝階段（交換）
-  // 第一排：工作站
-  s += `<div style="display:flex;gap:7px;flex-wrap:wrap;margin-bottom:8px;align-items:center">
+  // 第一排：工作站（V3 橫向滑動一行＝手機不佔多行）
+  s += `<div style="display:flex;gap:7px;overflow-x:auto;margin-bottom:8px;align-items:center;padding-bottom:3px">
     ${me?`<span style="${chipS(view==='mine')}" onclick="sopFset('mine')">我的工作</span>`:''}
-    ${sopPin.size&&!curTg?`<span style="${chipS(view==='pin')}" onclick="sopFset('pin')">📌 我的釘選（${sopPin.size}）</span>`:''}
+    ${sopPin.size&&!curTg?`<span style="${chipS(view==='pin')}" onclick="sopFset('pin')">📌 釘選（${sopPin.size}）</span>`:''}
     <span style="${chipS(view==='all')}" onclick="sopFset('all')">全部</span>
     ${sts.map(st2=>`<span style="${chipS(view===st2)};display:inline-flex;gap:6px;align-items:center"><span onclick="sopFset('${st2}')">${stDisp(st2)}</span><span onclick="sopPinT('${st2}')" title="釘選/取消釘選" style="opacity:${sopPin.has(st2)?1:.4};font-size:13px">📌</span></span>`).join('')}
     ${me&&window._sopMng?`<span style="${chipS(false)}" onclick="sopStAdd()">＋ 工作站</span>`:''}
-    ${me?`<span style="${chipS(!!window._sopMng)};margin-left:auto" onclick="sopMngT()">⚙️ 設定</span>`:''}
   </div>`
   // 工作站管理列（設定模式＋選中某站）
   if (me && window._sopMng && view !== 'all' && view !== 'pin' && sts.includes(view)) {
@@ -690,14 +689,18 @@ function sopRender(){
       <button class="mini on" onclick="sopItemEdit(null,'${view}')">＋ 新增動作</button>
     </div>`
   }
-  // 第二排：階段（V3 張良：第一層跟第二層有區隔＝加底色分開）
-  s += `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px;align-items:center;background:var(--soft);border:1px solid var(--line);border-radius:10px;padding:7px 8px">
-    <span class="hint" style="font-weight:800;margin-right:2px">階段</span>
+  // 第二排：階段（橫向滑動＋底色區隔）
+  s += `<div style="display:flex;gap:6px;overflow-x:auto;margin-bottom:6px;align-items:center;background:var(--soft);border:1px solid var(--line);border-radius:10px;padding:7px 8px">
+    <span class="hint" style="font-weight:800;margin-right:2px;flex:0 0 auto">階段</span>
     <span style="${chipS(!curTg)}" onclick="sopCatSet(null)">全部</span>
     ${catsN.map(cg=>`<span style="${chipS(curTg===cg)}" onclick="sopCatSet('${cg}')">${cg}<span style="margin-left:5px;font-weight:700;font-size:12px;color:${curTg===cg?'#DCEBFF':'var(--muted)'}">${itemsAll.filter(i9=>tgOf(i9)===cg).length}</span></span>`).join('')}
     ${me&&window._sopMng?`<span style="${chipS(false)}" onclick="sopCatAdd()">＋ 階段</span>`:''}
-    ${me&&window._sopMng?`<span style="${chipS(false)}" onclick="sopCatMng()">🗂 組織架構・拖曳排序</span>`:''}
-    <span style="${chipS(!!window._sopPending)};margin-left:auto" onclick="sopPendingT()">只看待完成</span>
+    ${me&&window._sopMng?`<span style="${chipS(false)}" onclick="sopCatMng()">🗂 組織架構</span>`:''}
+  </div>`
+  // 操作行：設定 / 只看待完成 / 收合（獨立一行＝不佔篩選空間）
+  s += `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;align-items:center">
+    ${me?`<span style="${chipS(!!window._sopMng)}" onclick="sopMngT()">⚙️ 設定</span>`:''}
+    <span style="${chipS(!!window._sopPending)}" onclick="sopPendingT()">只看待完成</span>
     <span style="${chipS(false)}" onclick="sopCollAll(${JSON.stringify(shown0).replace(/"/g,'&quot;')})">${allColl?'⏵ 全部展開':'⏷ 全部收合'}</span>
   </div>`
   // 階段管理列（設定模式＋選中階段）
