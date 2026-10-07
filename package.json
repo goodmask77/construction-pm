@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "deploy": "git push origin main && vercel --prod",
     "prebuild": "node scripts/gen-changelog.mjs && npm run selftest",
     "build": "vite build",
     "preview": "vite preview",
