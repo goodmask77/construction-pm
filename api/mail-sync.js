@@ -4289,10 +4289,8 @@ export default async function handler(req, res) {
       const gD4 = ((await kvGet('sp_finance_pm_sop_def')) || {}).ground || {}
       const it4 = (gD4.items || []).find(x => x.id === b4.itemId)
       const wd4 = new Date(Date.now() + 8 * 3600e3).getUTCDay()
-      if (it4 && it4.start && wd4 >= 1 && wd4 <= 5) { // v4.63.0 V3：正式永遠驗證時間（移除 strictMode 開關）；週末公休不鎖；伺服器權威
-        if (hm4 < it4.start) return res.status(409).json({ ok: false, error: `尚未開放（${it4.start} 才能開始）` })
-        if (it4.end && hm4 >= it4.end) return res.status(409).json({ ok: false, error: `已逾時（${it4.end} 截止），不能補打成完成；可改用「回報異常」` })
-      }
+      // v4.70.0 張良「提早也能做」：移除尚未開放擋，只擋逾時（過 end）；週末公休不鎖；伺服器權威
+      if (it4 && it4.end && wd4 >= 1 && wd4 <= 5 && hm4 >= it4.end) return res.status(409).json({ ok: false, error: `已逾時（${it4.end} 截止），不能補打成完成；可改用「回報異常」` })
       if (it4 && Array.isArray(it4.prereq) && it4.prereq.length) { // v4.66.0 前置：要先完成的動作沒完成就擋
         const unmet4 = it4.prereq.filter(pid => !(slog.items[pid] && slog.items[pid].done))
         if (unmet4.length) return res.status(409).json({ ok: false, error: '前置動作還沒完成，要先完成前置才能做這條' })

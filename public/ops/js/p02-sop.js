@@ -497,10 +497,10 @@ function sopState(it, lg, now, wd, log){
   if (!it.start) return 'pending_cfg'                 // 有end沒start＝待設定（管理者去補開始時間）
   const weekend = (wd===0 || wd===6)
   if (weekend) return 'open'                          // 公休預覽不鎖
-  if (now < it.start) return 'locked'                 // 尚未開放
-  if (it.end && now >= it.end) return 'overdue'       // 逾時＝永遠鎖（只能回報異常）
-  if (sopPrereqUnmet(it, log)) return 'waiting'       // 時間內但前置未完成＝等待前置
-  return 'open'                                       // 可執行
+  // v4.70.0 張良「提早也能做」：移除「尚未開放」鎖，提早(now<start)也可執行；只有逾時(過end)才鎖
+  if (it.end && now >= it.end) return 'overdue'       // 逾時＝鎖（只能回報異常）
+  if (sopPrereqUnmet(it, log)) return 'waiting'       // 前置未完成＝等待前置
+  return 'open'                                       // 可執行（含提早）
 }
 const SOP_BADGE = {
   done:       { label:'已完成',   c:'#0E1217', bg:'var(--green)' },
