@@ -520,6 +520,11 @@ const sopFmtRange = it => { const a=it.start||'', b=it.end||it.due||''; return a
 function sopActToggle(id){ if (sopOpenSet.has(id)) sopOpenSet.delete(id); else sopOpenSet.add(id); sopRender() }
 function sopSubTab(v){ window._sopSub = v; sopRender() }
 function sopPendingT(){ window._sopPending = !window._sopPending; sopRender() } // V3 只看待完成＝隱藏已完成
+// V3 交接待辦（第9節）：新增事項、接收人簽收、刪除
+async function sopHoPost(body){ const r=await fetch('/api/mail-sync?sopho='+encodeURIComponent(K),{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({...body,token:TK()})}); const d=await r.json().catch(()=>null); if(d&&d.ok){sopData.handover=d.handover;sopRender()}else alert((d&&d.error)||'失敗') }
+function sopHoAdd(){ if(!TK()){alert('請先登入：按右上「登入」→ 私訊 DD「登入碼」');return} prepAsk('＋ 新增交接事項',0,1,(q,r)=>{ if(r&&r.trim())sopHoPost({op:'add',text:r.trim()}) },'要交接什麼？（例：剩餘飲料交櫃檯、未完成備料3盤）') }
+function sopHoAck(id){ if(!TK()){alert('請先登入');return} sopHoPost({op:'ack',id}) }
+function sopHoDel(id){ if(confirm('刪除這筆交接？'))sopHoPost({op:'del',id}) }
 // 展開面板：說明＋標準照＋子項目＋今日檢核照＋拍照並完成（照設計圖）
 function sopActPanel(it, lg, state){
   const refs = (it.refs && it.refs.length) ? it.refs : (it.ref ? [it.ref] : [])
@@ -809,7 +814,16 @@ function sopRender(){
     </div>`
   }
   // 🔄 交接待辦（V3 第9節；交接簽收介面在批次5）
-  s += `<div style="margin-top:14px;padding:12px;background:var(--soft);border:1px solid var(--line);border-radius:12px"><div style="display:flex;align-items:center;gap:8px;margin-bottom:6px"><b style="font-size:15px">🔄 交接待辦</b></div><div class="hint" style="padding:6px 0">目前沒有交接待辦</div>${me?`<button class="mini" style="width:100%;padding:9px" onclick="alert('交接簽收介面在批次5上線（可新增事項／數量／接收人簽收）')">＋ 新增交接</button>`:''}</div>`
+  { const ho = sopData.handover || []
+    s += `<div style="margin-top:14px;padding:12px;background:var(--soft);border:1px solid var(--line);border-radius:12px">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px"><b style="font-size:15px">🔄 交接待辦</b>${ho.length?`<span class="hint" style="margin-left:auto">${ho.filter(h=>!h.ackBy).length} 未接收</span>`:''}</div>
+      ${ho.length ? ho.map(h=>`<div style="padding:7px 0;border-bottom:1px solid var(--line);font-size:13px">
+        <div style="display:flex;gap:6px"><span style="flex:1;font-weight:700">${sopEsc(h.text)}${h.qty?` <span class="hint">×${sopEsc(h.qty)}</span>`:''}</span>${me?`<span class="lnkbtn" onclick="sopHoDel('${h.id}')">✕</span>`:''}</div>
+        <div class="hint">交：${sopEsc(h.by)} ${h.byTs||''}${h.to?` → ${sopEsc(h.to)}`:''}</div>
+        ${h.ackBy?`<div style="color:var(--green);font-weight:700">✓ ${sopEsc(h.ackBy)} 已接收 ${h.ackTs||''}</div>`:(me?`<button class="mini on" style="padding:5px 12px;margin-top:3px" onclick="sopHoAck('${h.id}')">我接收</button>`:'<span class="hint">等接收</span>')}
+      </div>`).join('') : '<div class="hint" style="padding:6px 0">目前沒有交接待辦</div>'}
+      ${me?`<button class="mini" style="width:100%;padding:9px;margin-top:6px" onclick="sopHoAdd()">＋ 新增交接</button>`:''}
+    </div>` }
   s += `</div></div></section>` // 閉 sopSide + sopCols + section
   el.innerHTML = s
   if (window._sopEdit) renderSieSubs() // 原地編輯中→補填子項目清單

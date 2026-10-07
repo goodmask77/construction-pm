@@ -2943,7 +2943,7 @@ export default async function handler(req, res) {
     const sugsD0 = await kvGet('sp_finance_pm_sop_sugs')
     const sugOpen = {}
     ;(((sugsD0 || {}).list) || []).forEach(x => { if (x.status === 'open') sugOpen[x.st] = (sugOpen[x.st] || 0) + 1 })
-    return res.status(200).json({ ok: true, date: dt2, def: { items: gdef.items || [], stations, strictMode: !!gdef.strictMode, edits: (gdef.edits || []).slice(0, 10), cats: gdef.catOrder || [], stCat: gdef.stCat || {}, stOwner: gdef.stOwner || {}, catOwner: gdef.catOwner || {} }, sugOpen, trash, log: logDoc || { items: {} }, names, me: me4, issues, prepHide: (hideDoc || {}).keys || {} })
+    return res.status(200).json({ ok: true, date: dt2, def: { items: gdef.items || [], stations, strictMode: !!gdef.strictMode, edits: (gdef.edits || []).slice(0, 10), cats: gdef.catOrder || [], stCat: gdef.stCat || {}, stOwner: gdef.stOwner || {}, catOwner: gdef.catOwner || {} }, sugOpen, trash, log: logDoc || { items: {} }, handover: (logDoc || {}).handover || [], names, me: me4, issues, prepHide: (hideDoc || {}).keys || {} })
   }
   // v4.61.0 跨日歷史查詢（工作流程SOP改版第3期）：讀指定日完成紀錄（含快照 title/st/tg，改名/刪條目也能正確顯示）
   if (req.query?.sophist && req.method !== 'POST') {
@@ -4390,6 +4390,30 @@ export default async function handler(req, res) {
     curT.ground = gT
     await kvPut('sp_finance_pm_sop_def', curT, 'SOP嚴格模式' + (bt.on ? '開' : '關') + '(' + whoT.name + ')')
     return res.status(200).json({ ok: true, strictMode: gT.strictMode })
+  }
+  // v4.68.0 V3 交接待辦（第9節）：新增交接事項/數量/接收人；接收人簽收留雙方時間。存每日 sop_g.handover
+  if (req.method === 'POST' && req.query?.sopho) {
+    const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
+    if (!ok2 || String(req.query.sopho) !== ok2) return res.status(403).json({ ok: false })
+    let bh = {}
+    try { bh = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
+    const whoH = await sopWho(bh.token)
+    if (!whoH) return res.status(403).json({ ok: false, error: permDeny() })
+    const dtH = sopToday(); const dkH = 'sp_finance_pm_sop_g_' + dtH
+    const slogH = (await kvGet(dkH)) || { items: {}, notified: {} }
+    slogH.handover = slogH.handover || []
+    const nowH = new Date(Date.now() + 8 * 3600e3).toISOString().slice(11, 16)
+    if (bh.op === 'add') {
+      const text = String(bh.text || '').trim().slice(0, 200); if (!text) return res.status(400).json({ ok: false, error: '要寫交接事項' })
+      slogH.handover.push({ id: 'ho' + Date.now().toString(36), text, qty: String(bh.qty || '').slice(0, 40), by: whoH.name, byTs: nowH, to: String(bh.to || '').slice(0, 20) })
+    } else if (bh.op === 'ack') {
+      const ho = slogH.handover.find(x => x.id === bh.id); if (!ho) return res.status(404).json({ ok: false, error: '找不到這筆交接' })
+      ho.ackBy = whoH.name; ho.ackTs = nowH // 接收人簽收＝留雙方時間
+    } else if (bh.op === 'del') {
+      slogH.handover = slogH.handover.filter(x => x.id !== bh.id)
+    } else return res.status(400).json({ ok: false, error: 'op 不認得' })
+    await kvPut(dkH, slogH, '交接(' + whoH.name + ')')
+    return res.status(200).json({ ok: true, handover: slogH.handover })
   }
   if (req.method === 'POST' && req.query?.sopset) {
     const mk = (process.env.MENU_PROBE_KEY || '').trim()
