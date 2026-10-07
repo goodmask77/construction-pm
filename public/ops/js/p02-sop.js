@@ -552,6 +552,7 @@ function sopActPanel(it, lg, state){
       ? `<div class="hint" style="margin-top:6px">⏳ 尚未開放——${it.start} 才能開始</div>`
       : `<div style="margin-top:6px;display:flex;align-items:center;gap:8px"><span class="hint" style="color:#C2410C">⛔ 已逾時（${it.end} 截止），不能補打成完成</span><button class="mini" style="margin-left:auto;padding:7px 12px;color:#A85C26" onclick="sopReport('${sopEsc(it.st)}')">⚠️ 回報異常</button></div>`
   }
+  h += `<div class="hint" style="margin-top:8px;font-size:12px;border-top:1px solid var(--line);padding-top:6px">來源：${sopEsc(it.editBy||'流程文件')}${it.editTs?`・${sopEsc(it.editTs)}`:''}</div>`
   return h + `</div>`
 }
 async function sopSubDo(itemId, subId, undo){
@@ -654,43 +655,44 @@ function sopRender(){
   const allColl = shown0.length > 0 && shown0.every(s2=>sopColl.has(s2))
   const chipS = (on) => `border:1px solid ${on?'var(--primary)':'var(--line)'};background:${on?'var(--primary)':'var(--card)'};color:${on?'#fff':'var(--muted)'};border-radius:9px;padding:4px 10px;font-size:14px;font-weight:800;cursor:pointer;white-space:nowrap`
   const catBtn = (on) => `border:1.5px solid ${on?'var(--primary)':'var(--line)'};background:${on?'var(--grad)':'var(--soft)'};color:${on?'#fff':'var(--text)'};border-radius:10px;padding:8px 16px;font-size:15px;font-weight:900;cursor:pointer;white-space:nowrap`
-  // 第一排：#階段
+  // v4.62.0 V3：第一排＝工作站、第二排＝階段（交換）
+  // 第一排：工作站
   s += `<div style="display:flex;gap:7px;flex-wrap:wrap;margin-bottom:8px;align-items:center">
-    <span style="${catBtn(!curTg)}" onclick="sopCatSet(null)">全部</span>
-    ${catsN.map(cg=>`<span style="${catBtn(curTg===cg)}" onclick="sopCatSet('${cg}')"># ${cg}<span style="margin-left:5px;font-weight:700;font-size:12px;color:${curTg===cg?'#DCEBFF':'var(--muted)'}">${itemsAll.filter(i9=>tgOf(i9)===cg).length}</span></span>`).join('')}
-    ${me&&window._sopMng?`<span style="${chipS(false)}" onclick="sopCatAdd()">＋ 階段</span>`:''}
-    ${me&&window._sopMng?`<span style="${chipS(false)}" onclick="sopCatMng()">🗂 組織架構・拖曳排序</span>`:''}
+    ${sopPin.size&&!curTg?`<span style="${catBtn(view==='pin')}" onclick="sopFset('pin')">📌 我的釘選（${sopPin.size}）</span>`:''}
+    <span style="${catBtn(view==='all')}" onclick="sopFset('all')">全部工作站</span>
+    ${sts.map(st2=>`<span style="${catBtn(view===st2)};display:inline-flex;gap:6px;align-items:center"><span onclick="sopFset('${st2}')">${stDisp(st2)}</span><span onclick="sopPinT('${st2}')" title="釘選/取消釘選" style="opacity:${sopPin.has(st2)?1:.4};font-size:13px">📌</span></span>`).join('')}
+    ${me&&window._sopMng?`<span style="${chipS(false)}" onclick="sopStAdd()">＋ 工作站</span>`:''}
     ${me?`<span style="${chipS(!!window._sopMng)};margin-left:auto" onclick="sopMngT()">⚙️ 設定</span>`:''}
   </div>`
-  // 階段管理列（設定模式）
-  if (curTg && me && window._sopMng) {
-    const mgrC = me.approver || me.role === '主管'
-    s += `<div style="display:flex;gap:6px;flex-wrap:wrap;margin:-2px 0 8px;align-items:center;font-size:13px">
-      <span class="hint" style="font-weight:800">「#${curTg}」：</span>
-      <button class="mini" onclick="prepAsk('改階段名「${curTg}」',0,1,(q,r)=>{if(r)sopstOp({op:'catren',cat:'${curTg}',newName:r}).then(()=>{window._sopTg=r})},'新名稱')">✏️ 改名</button>
-      <button class="mini" style="color:var(--red)" onclick="if(confirm('刪除階段「#${curTg}」？條目會變未分階段，不會刪條目'))sopstOp({op:'catdel',cat:'${curTg}'}).then(()=>{window._sopTg=null})">🗑 刪階段</button>
-      <button class="mini" onclick="sopOrdMove('cat','${curTg}',-1)">◀</button><button class="mini" onclick="sopOrdMove('cat','${curTg}',1)">▶</button>
-      ${mgrC?`<span class="hint">⭐ 負責人</span><select onchange="sopstOp({op:'catown',cat:'${curTg}',owner:this.value})" style="border:1px solid var(--line);border-radius:7px;padding:5px;font-size:13px"><option value="">無</option>${(sopData.names||[]).map(n=>`<option${coN[curTg]===n?' selected':''}>${n}</option>`).join('')}</select>`:(coN[curTg]?`<span style="color:#D4A72C;font-weight:800">⭐ ${coN[curTg]}</span>`:'')}
-    </div>`
-  }
-  // 第二排：#產品
-  s += `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px;align-items:center">
-    ${sopPin.size&&!curTg?`<span style="${chipS(view==='pin')}" onclick="sopFset('pin')">📌 我的釘選（${sopPin.size}）</span>`:''}
-    <span style="${chipS(view==='all')}" onclick="sopFset('all')">全部產品</span>
-    ${sts.map(st2=>`<span style="${chipS(view===st2)};display:inline-flex;gap:5px;align-items:center"><span onclick="sopFset('${st2}')">${stDisp(st2)}</span><span onclick="sopPinT('${st2}')" title="釘選/取消釘選" style="opacity:${sopPin.has(st2)?1:.35}">📌</span></span>`).join('')}
-    ${me&&window._sopMng?`<span style="${chipS(false)}" onclick="sopStAdd()">＋ 產品</span>`:''}
-    <span style="${chipS(false)};margin-left:auto" onclick="sopCollAll(${JSON.stringify(shown0).replace(/"/g,'&quot;')})">${allColl?'⏵ 全部展開':'⏷ 全部收合'}</span>
-  </div>`
-  // 產品管理列（設定模式＋選中某產品）
+  // 工作站管理列（設定模式＋選中某站）
   if (me && window._sopMng && view !== 'all' && view !== 'pin' && sts.includes(view)) {
     const mgrC2 = me.approver || me.role === '主管'
     s += `<div style="display:flex;gap:6px;flex-wrap:wrap;margin:-2px 0 8px;align-items:center;font-size:13px">
       <span class="hint" style="font-weight:800">「${stDisp(view)}」：</span>
       <button class="mini" onclick="sopStRen('${view}')">✏️ 改名</button>
-      <button class="mini" style="color:var(--red)" onclick="if(confirm('刪除產品「${stDisp(view)}」？條目會進回收站可復原'))sopstOp({op:'del',st:'${view}'}).then(()=>{sopFilter='all'})">🗑 刪產品</button>
+      <button class="mini" style="color:var(--red)" onclick="if(confirm('刪除工作站「${stDisp(view)}」？條目會進回收站可復原'))sopstOp({op:'del',st:'${view}'}).then(()=>{sopFilter='all'})">🗑 刪站</button>
       <button class="mini" onclick="sopOrdMove('st','${view}',-1)">◀</button><button class="mini" onclick="sopOrdMove('st','${view}',1)">▶</button>
       ${mgrC2?`<span class="hint">⭐ 負責人</span><select onchange="sopstOp({op:'ownset',st:'${view}',owner:this.value})" style="border:1px solid var(--line);border-radius:7px;padding:5px;font-size:13px"><option value="">無</option>${(sopData.names||[]).map(n=>`<option${soN[view]===n?' selected':''}>${n}</option>`).join('')}</select>`:''}
-      <button class="mini on" onclick="sopItemEdit(null,'${view}')">＋ 新增條目</button>
+      <button class="mini on" onclick="sopItemEdit(null,'${view}')">＋ 新增動作</button>
+    </div>`
+  }
+  // 第二排：階段
+  s += `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px;align-items:center">
+    <span style="${chipS(!curTg)}" onclick="sopCatSet(null)">全部階段</span>
+    ${catsN.map(cg=>`<span style="${chipS(curTg===cg)}" onclick="sopCatSet('${cg}')">${cg}<span style="margin-left:5px;font-weight:700;font-size:12px;color:${curTg===cg?'#DCEBFF':'var(--muted)'}">${itemsAll.filter(i9=>tgOf(i9)===cg).length}</span></span>`).join('')}
+    ${me&&window._sopMng?`<span style="${chipS(false)}" onclick="sopCatAdd()">＋ 階段</span>`:''}
+    ${me&&window._sopMng?`<span style="${chipS(false)}" onclick="sopCatMng()">🗂 組織架構・拖曳排序</span>`:''}
+    <span style="${chipS(false)};margin-left:auto" onclick="sopCollAll(${JSON.stringify(shown0).replace(/"/g,'&quot;')})">${allColl?'⏵ 全部展開':'⏷ 全部收合'}</span>
+  </div>`
+  // 階段管理列（設定模式＋選中階段）
+  if (curTg && me && window._sopMng) {
+    const mgrC = me.approver || me.role === '主管'
+    s += `<div style="display:flex;gap:6px;flex-wrap:wrap;margin:-2px 0 8px;align-items:center;font-size:13px">
+      <span class="hint" style="font-weight:800">「${curTg}」：</span>
+      <button class="mini" onclick="prepAsk('改階段名「${curTg}」',0,1,(q,r)=>{if(r)sopstOp({op:'catren',cat:'${curTg}',newName:r}).then(()=>{window._sopTg=r})},'新名稱')">✏️ 改名</button>
+      <button class="mini" style="color:var(--red)" onclick="if(confirm('刪除階段「${curTg}」？條目會變未分階段，不會刪條目'))sopstOp({op:'catdel',cat:'${curTg}'}).then(()=>{window._sopTg=null})">🗑 刪階段</button>
+      <button class="mini" onclick="sopOrdMove('cat','${curTg}',-1)">◀</button><button class="mini" onclick="sopOrdMove('cat','${curTg}',1)">▶</button>
+      ${mgrC?`<span class="hint">⭐ 負責人</span><select onchange="sopstOp({op:'catown',cat:'${curTg}',owner:this.value})" style="border:1px solid var(--line);border-radius:7px;padding:5px;font-size:13px"><option value="">無</option>${(sopData.names||[]).map(n=>`<option${coN[curTg]===n?' selected':''}>${n}</option>`).join('')}</select>`:(coN[curTg]?`<span style="color:#D4A72C;font-weight:800">⭐ ${coN[curTg]}</span>`:'')}
     </div>`
   }
   const shown = shown0
@@ -737,10 +739,10 @@ function sopRender(){
       s += `<div id="sopit-${it.id}" style="padding:9px 2px;border-bottom:1px solid var(--line)">
         <div style="display:flex;align-items:center;gap:8px">
           <div style="flex:1;min-width:0;cursor:pointer" onclick="sopActToggle('${it.id}')">
-            <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap"><span style="font-weight:700;color:var(--ink)">${open?'▾':'▸'} ${sopEsc(it.title)}</span>${it.req===false?'<span class="hint" style="font-size:11px;border:1px solid var(--line);border-radius:5px;padding:0 4px">選做</span>':''}${subs.length?`<span class="hint" style="font-size:12px">子項 ${subDoneN}/${subs.length}</span>`:''}${it.tg&&!window._sopTg&&!grpMode?`<span class="hint" style="font-size:11px">#${sopEsc(it.tg)}</span>`:''}</div>
-            <div class="hint" style="font-size:12px">${sopFmtRange(it)}${it.editBy?`・✏️ ${sopEsc(it.editBy)}`:''}</div>
+            <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap"><span style="font-weight:700;color:var(--ink)">${open?'▾':'▸'} ${sopEsc(it.title)}</span>${it.req===false?'<span class="hint" style="font-size:11px;border:1px solid var(--line);border-radius:5px;padding:0 4px">選做</span>':''}${subs.length?`<span class="hint" style="font-size:12px">子項 ${subDoneN}/${subs.length}</span>`:''}</div>
+            <div class="hint" style="font-size:12px">${sopFmtRange(it)}</div>
           </div>
-          ${(lg&&lg.done) ? `<span style="flex:0 0 auto;color:var(--green);font-weight:900;white-space:nowrap;font-size:13px">✓ ${lg.ts}</span>` : state==='open' ? `<button class="mini on" style="flex:0 0 auto;padding:6px 16px" onclick="event.stopPropagation();sopDoOrExpand('${it.id}')">完成</button>` : sopBadgeOutline(state)}
+          ${(lg&&lg.done) ? `<span onclick="event.stopPropagation();sopView('${it.id}')" title="查看完成紀錄" style="flex:0 0 auto;display:flex;align-items:center;gap:6px;white-space:nowrap;cursor:pointer"><span style="color:var(--green);font-weight:800;font-size:13px">${sopEsc(lg.by||'')} · ${lg.ts}</span>${lg.photo?`<img src="${lg.photo}" style="width:30px;height:30px;object-fit:cover;border-radius:6px;border:1px solid var(--green)">`:''}</span>` : state==='open' ? `<button class="mini on" style="flex:0 0 auto;padding:6px 16px" onclick="event.stopPropagation();sopDoOrExpand('${it.id}')">完成</button>` : sopBadgeOutline(state)}
           <span class="lnkbtn" title="複製這條連結（可貼到會議宣達）" onclick="event.stopPropagation();copyLink('#sop=${it.id}')" style="flex:0 0 auto">🔗</span>
           ${me&&window._sopMng?`<span class="lnkbtn" title="編輯這一條" onclick="event.stopPropagation();sopItemEdit('${it.id}')" style="flex:0 0 auto">✎</span>`:''}
         </div>
