@@ -657,14 +657,16 @@ function sopRender(){
   const itemsAll = items
   const tgOf = it9 => it9.tg && catsN.includes(it9.tg) ? it9.tg : ''
   const itemsF = itemsAll.filter(it9 => !curTg || tgOf(it9) === curTg) // 階段篩選後的條目
-  const view = (sopFilter==='all'||sopFilter==='pin'||sts.includes(sopFilter)) ? sopFilter : (sopPin.size && !curTg ? 'pin' : 'all')
-  const shown0 = sts.filter(st2 => view==='all' ? true : (view==='pin' ? sopPin.has(st2) : st2===view)).filter(st2 => !curTg || itemsF.some(i9=>i9.st===st2) || view===st2)
+  const view = (sopFilter==='all'||sopFilter==='pin'||sopFilter==='mine'||sts.includes(sopFilter)) ? sopFilter : (sopPin.size && !curTg ? 'pin' : 'all')
+  const myName = me && me.name
+  const shown0 = sts.filter(st2 => view==='all' ? true : view==='pin' ? sopPin.has(st2) : view==='mine' ? ((sopData.def.stOwner||{})[st2]===myName) : st2===view).filter(st2 => !curTg || itemsF.some(i9=>i9.st===st2) || view===st2)
   const allColl = shown0.length > 0 && shown0.every(s2=>sopColl.has(s2))
   const chipS = (on) => `border:1px solid ${on?'var(--primary)':'var(--line)'};background:${on?'var(--primary)':'var(--card)'};color:${on?'#fff':'var(--muted)'};border-radius:9px;padding:4px 10px;font-size:14px;font-weight:800;cursor:pointer;white-space:nowrap`
   const catBtn = (on) => `border:1.5px solid ${on?'var(--primary)':'var(--line)'};background:${on?'var(--grad)':'var(--soft)'};color:${on?'#fff':'var(--text)'};border-radius:10px;padding:8px 16px;font-size:15px;font-weight:900;cursor:pointer;white-space:nowrap`
   // v4.62.0 V3：第一排＝工作站、第二排＝階段（交換）
   // 第一排：工作站
   s += `<div style="display:flex;gap:7px;flex-wrap:wrap;margin-bottom:8px;align-items:center">
+    ${me?`<span style="${catBtn(view==='mine')}" onclick="sopFset('mine')">我的工作</span>`:''}
     ${sopPin.size&&!curTg?`<span style="${catBtn(view==='pin')}" onclick="sopFset('pin')">📌 我的釘選（${sopPin.size}）</span>`:''}
     <span style="${catBtn(view==='all')}" onclick="sopFset('all')">全部工作站</span>
     ${sts.map(st2=>`<span style="${catBtn(view===st2)};display:inline-flex;gap:6px;align-items:center"><span onclick="sopFset('${st2}')">${stDisp(st2)}</span><span onclick="sopPinT('${st2}')" title="釘選/取消釘選" style="opacity:${sopPin.has(st2)?1:.4};font-size:13px">📌</span></span>`).join('')}
@@ -705,7 +707,7 @@ function sopRender(){
   }
   const shown = shown0
   s += `<div class="sopCols"><div class="sopMain">` // v4.65.0 V3 桌面兩欄：左主流程
-  if (!shown.length) s += `<div class="mut" style="font-size:14px">${curTg?`「${curTg}」還沒有動作——到工作站按 ＋新增動作`:'釘選的站不見了（可能被改名）——按「全部工作站」重新釘。'}</div>`
+  if (!shown.length) s += `<div class="mut" style="font-size:14px">${view==='mine'?'今天沒有分派給你的工作——你是負責人的工作站會顯示在這（負責人由審核人／主管在工作站 ⚙️ 指定）。先按「全部工作站」看全部。':curTg?`「${curTg}」還沒有動作——到工作站按 ＋新增動作`:'釘選的站不見了（可能被改名）——按「全部工作站」重新釘。'}</div>`
   shown.forEach(st => {
     const canEd = me && me.canEdit
     const stIss = (sopData.issues||[]).filter(x => x.st === st)
