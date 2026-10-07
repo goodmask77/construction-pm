@@ -321,35 +321,35 @@ function sopOrdMove(kind, name, dir){ // ◀▶ 排序（v4.18.1 張良「讓我
   sopstOp(kind==='cat' ? { op:'catord', list: arr } : { op:'stord', list: arr })
 }
 function sopMngT(){ window._sopMng = !window._sopMng; sopRender() } // ⚙️ 設定模式（張良 2026-10-02：平常乾淨,按了才出現編輯的東西）
-function sopItemEdit(id, newSt){ // 單條動作 編輯/新增（v4.59.0：start/end/必做/說明/子項目；存走 sopact 不吃別條 tg/ref）
-  const it = id ? (sopData.def.items||[]).find(x=>x.id===id) : { title:'', start:'', end:'', req:true, photo:false, desc:'', st:newSt||window._sopLastSt||'', tg:window._sopTg||'' }
-  if (!it) return
-  if (!id && newSt) window._sopLastSt = newSt
-  window._sieSubs = JSON.parse(JSON.stringify(it.subs||[]))
+// v4.64.0 V3：原地編輯——點鉛筆在動作卡原位展開編輯表單（不彈窗/不側欄）
+function sopItemEdit(id, newSt){
+  if (id) { window._sopEdit = id; sopOpenSet.delete(id); const it = (sopData.def.items||[]).find(x=>x.id===id); window._sieSubs = it ? JSON.parse(JSON.stringify(it.subs||[])) : [] }
+  else { window._sopEdit = '__new__:' + (newSt || window._sopLastSt || ''); if (newSt) window._sopLastSt = newSt; window._sieSubs = [] }
+  sopRender()
+  setTimeout(()=>renderSieSubs(), 0)
+}
+function sopEditCancel(){ window._sopEdit = null; window._sieSubs = null; sopRender() }
+function sopEditForm(it, isNew){
   const stsE = [...(sopData.def.stations||[])]
   const stDispE = s9 => String(s9).includes('｜') ? String(s9).split('｜').pop() : s9
-  const ov = document.createElement('div'); ov.id='sieOv'
-  ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:65;display:flex;align-items:center;justify-content:center;padding:16px'
-  const ip9 = 'width:100%;border:1px solid var(--line);border-radius:8px;padding:9px;font-size:15px;margin-bottom:8px'
-  const selS = 'border:1px solid var(--line);border-radius:8px;padding:8px;font-size:14px'
-  ov.innerHTML = `<div style="background:#222B38;border:1px solid #3B4654;border-radius:14px;width:min(440px,94vw);max-height:90vh;overflow:auto;padding:16px" onclick="event.stopPropagation()">
-    <div style="font-weight:900;margin-bottom:10px">✎ ${id?'編輯':'新增'}動作</div>
+  const ip9 = 'width:100%;border:1px solid var(--line);border-radius:8px;padding:9px;font-size:15px;margin-bottom:8px;background:var(--bg)'
+  const selS = 'border:1px solid var(--line);border-radius:8px;padding:8px;font-size:14px;background:var(--bg)'
+  return `<div style="margin:8px 0 2px;padding:12px;background:#223141;border:1px solid var(--primary);border-radius:10px">
+    <div style="font-weight:900;margin-bottom:8px;color:var(--pdark)">✎ 編輯流程範本｜下個營業日生效</div>
     <input id="sieT" value="${sopEsc(it.title)}" placeholder="動作名稱（例：POS 開機・零用金點收）" style="${ip9}">
-    <div style="display:flex;gap:8px;align-items:center;margin-bottom:4px"><span class="hint">可完成時間</span><input id="sieS1" type="time" value="${it.start||''}" style="${selS}"><span class="hint">到</span><input id="sieE1" type="time" value="${it.end||it.due||''}" style="${selS}"></div>
-    <div class="hint" style="margin:0 0 8px">過了「結束時間」在嚴格模式下就鎖死不能補打（只能回報異常）。開始留空＝待設定。</div>
+    <div style="display:flex;gap:8px;align-items:center;margin-bottom:4px;flex-wrap:wrap"><span class="hint">可完成時間</span><input id="sieS1" type="time" value="${it.start||''}" style="${selS}"><span class="hint">到</span><input id="sieE1" type="time" value="${it.end||it.due||''}" style="${selS}"></div>
+    <div class="hint" style="margin:0 0 8px">過了「結束時間」就鎖死不能補打（只能回報異常）。開始留空＝待設定。</div>
     <div style="display:flex;gap:14px;align-items:center;margin-bottom:8px"><label style="font-size:14px"><input id="sieReq" type="checkbox" ${it.req!==false?'checked':''}> 必做</label><label style="font-size:14px"><input id="sieP" type="checkbox" ${it.photo?'checked':''}> 📷 完成要拍照</label></div>
-    <div style="display:flex;gap:8px;margin-bottom:8px;align-items:center"><span class="hint">階段</span><select id="sieG" style="flex:1;${selS}"><option value="">未分階段</option>${(sopData.def.cats||[]).map(c9=>`<option value="${sopEsc(c9)}"${it.tg===c9?' selected':''}>${sopEsc(c9)}</option>`).join('')}</select><span class="hint">工作站</span><select id="sieS" style="flex:1;${selS}">${stsE.map(s9=>`<option value="${sopEsc(s9)}"${it.st===s9?' selected':''}>${sopEsc(stDispE(s9))}</option>`).join('')}</select></div>
+    <div style="display:flex;gap:8px;margin-bottom:8px;align-items:center;flex-wrap:wrap"><span class="hint">階段</span><select id="sieG" style="flex:1;min-width:120px;${selS}"><option value="">未分階段</option>${(sopData.def.cats||[]).map(c9=>`<option value="${sopEsc(c9)}"${it.tg===c9?' selected':''}>${sopEsc(c9)}</option>`).join('')}</select><span class="hint">工作站</span><select id="sieS" style="flex:1;min-width:120px;${selS}">${stsE.map(s9=>`<option value="${sopEsc(s9)}"${it.st===s9?' selected':''}>${sopEsc(stDispE(s9))}</option>`).join('')}</select></div>
     <textarea id="sieDesc" rows="2" placeholder="執行說明（選填）" style="${ip9};font-family:inherit">${sopEsc(it.desc||'')}</textarea>
     <div style="font-weight:800;font-size:13px;margin:2px 0 4px">子項目（選填，只一層）</div>
     <div id="sieSubs"></div>
     <button class="mini" style="padding:6px 12px;margin-top:4px" onclick="sieSubAdd()">＋ 加子項目</button>
     <div style="display:flex;gap:8px;justify-content:space-between;margin-top:12px">
-      ${id?`<button class="mini" style="color:var(--red);padding:9px 12px" onclick="if(confirm('刪除這個動作？')){sopItemSave('${id}',1)}">🗑 刪除</button>`:'<span></span>'}
-      <span style="display:flex;gap:8px"><button class="mini" style="padding:9px 12px" onclick="document.getElementById('sieOv').remove()">取消</button>
-      <button class="mini on" style="padding:9px 16px" onclick="sopItemSave(${id?`'${id}'`:'null'})">儲存</button></span></div></div>`
-  ov.onclick = () => ov.remove()
-  document.body.appendChild(ov)
-  renderSieSubs()
+      ${!isNew?`<button class="mini" style="color:var(--red);padding:9px 12px" onclick="if(confirm('刪除這個動作？'))sopItemSave('${it.id}',1)">🗑 刪除</button>`:'<span></span>'}
+      <span style="display:flex;gap:8px"><button class="mini" style="padding:9px 12px" onclick="sopEditCancel()">取消</button>
+      <button class="mini on" style="padding:9px 16px" onclick="sopItemSave(${isNew?'null':`'${it.id}'`})">✓ 完成編輯</button></span></div>
+  </div>`
 }
 function renderSieSubs(){
   const box = document.getElementById('sieSubs'); if (!box) return
@@ -386,7 +386,7 @@ async function sopItemSave(id, del){
   }
   const r = await fetch('/api/mail-sync?sopact=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify(body) })
   const j = await r.json().catch(()=>null)
-  if (j && j.ok) { const o9=document.getElementById('sieOv'); if(o9)o9.remove(); sopLoad() } else alert((j&&j.error)||'儲存失敗')
+  if (j && j.ok) { window._sopEdit = null; window._sieSubs = null; sopLoad() } else alert((j&&j.error)||'儲存失敗')
 }
 function sopCatAdd(){ prepAsk('＋ 新增階段',0,1,(q,r)=>{ if (r) sopstOp({op:'catadd',cat:r}).then(()=>{ window._sopTg=r; sopRender() }) },'階段名（例：開班／備料／出餐／收班）') }
 function sopStAdd(){ // ＋ 產品（hashtag 模型：產品是全域的，不綁階段）
@@ -744,9 +744,14 @@ function sopRender(){
           <span class="lnkbtn" title="複製這條連結（可貼到會議宣達）" onclick="event.stopPropagation();copyLink('#sop=${it.id}')" style="flex:0 0 auto">🔗</span>
           ${me&&window._sopMng?`<span class="lnkbtn" title="編輯這一條" onclick="event.stopPropagation();sopItemEdit('${it.id}')" style="flex:0 0 auto">✎</span>`:''}
         </div>
-        ${open ? sopActPanel(it, lg, state) : ''}
+        ${window._sopEdit===it.id ? sopEditForm(it, false) : (open ? sopActPanel(it, lg, state) : '')}
       </div>`
     })
+    // V3 原地新增動作（設定模式）：站末尾＋新增動作，點了在此展開空白編輯表單
+    if (me && window._sopMng) {
+      if (window._sopEdit === '__new__:'+st) s += sopEditForm({ title:'', start:'', end:'', req:true, photo:false, desc:'', st, tg:(curTg||window._sopTg||'') }, true)
+      else s += `<button class="mini on" style="margin:6px 0 4px;padding:7px 14px" onclick="sopItemEdit(null,'${st}')">＋ 新增動作</button>`
+    }
   })
   // ✍️ 編輯紀錄 v2（張良 2026-09-22「這紀錄沒用」→ 每筆算出「改了什麼」：改前快照 vs 下一版逐條 diff）
   const eds = (sopData.def.edits || [])
@@ -790,6 +795,7 @@ function sopRender(){
   }
   s += `<div class="hint" style="margin-top:8px">點動作名稱展開＝看說明/標準照/子項目/拍照完成。要拍照的先按 📷。</div></section>`
   el.innerHTML = s
+  if (window._sopEdit) renderSieSubs() // 原地編輯中→補填子項目清單
 }
 // 流程範本（第1期：唯讀總覽——站→階段→動作，含時間區間/必做/子項數；編輯走今日執行頁設定模式）
 function sopTemplateHtml(now, wd){
