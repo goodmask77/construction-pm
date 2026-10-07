@@ -422,7 +422,7 @@ function menuExport(kind){ // 匯出完整菜單（張良 2026-10-02）：txt=�
   if (kind === 'imgsec') { menuPosterSections(d, secs); return }
   menuPosterCanva(d, secs)
 }
-// ───── 菜單海報共用（v4.62.0 / v12 暖米白紅字風，2026-10-08 比照 GROUND_final_6screens 最終設計）─────
+// ───── 菜單海報共用（v4.63.0 / v12，2026-10-08 照 GROUND_portrait-text.svg 官方精確幾何）─────
 const MENU_SK = { CREAM:'#F5EADA', RED:'#CE1611', ENG:'#C56B54', WHITE:'#FFF6E9', DOT:'#D98A7A',
   SLAB:'"Alfa Slab One", Georgia, serif', TC:'"Noto Sans TC", system-ui, sans-serif',
   PP:'"Poppins","Noto Sans TC",system-ui,sans-serif', MONO:'"Space Mono",ui-monospace,monospace' }
@@ -508,80 +508,92 @@ function menuFooter(C, SK, x, rightX, baseY){
   const w1=g.measureText('npm install ').width; g.fillStyle=SK.ENG; g.fillText('HAPPINESS', x+w1, baseY)
   setFont('700 15px '+SK.MONO,0); g.fillStyle=SK.ENG; const tag='take a "quick BITE" of "HAPPINESS" :D'; g.fillText(tag, rightX-g.measureText(tag).width, baseY)
 }
-// ── v12 直式純文字菜單（1080×1920）：HAPPINESS/GROUN:D 置中品牌頭＋四組左右配對欄＋單行紅底列 ──
-// 品牌頭（HAPPINESS 小字在上、GROUN:D 大字在下，置中）；回傳底部 y
-function menuBrandHead(C, SK, cx, topY){
-  const {g,setFont}=C
-  setFont('600 22px '+SK.PP,7); g.fillStyle=SK.RED; g.textAlign='center'; g.fillText('HAPPINESS', cx, topY+22)
-  setFont('56px '+SK.SLAB,1); g.fillStyle=SK.RED; g.fillText('GROUN:D', cx, topY+80)
+// ── v4.63.0 直式純文字菜單（1080×1920）：照 GROUND_portrait-text.svg 官方精確幾何 ──
+// 固定配對[披薩,療癒碗][漢堡,三明治][PASTA,BRUNCH][SNACKS,DRINKS]、分類圓角紅框(非底線)、英標襯線、底列到底
+const MENU_SERIF = 'Georgia, "DejaVu Serif", serif' // 英文分類字（DejaVuSerif-Bold 的網頁近似，缺原 TTF）
+// 品牌頭（HAPPINESS 小／GROUN:D 大，置中 x540，位於頂 160 品牌帶）
+function menuBrandHead(C, SK){
+  const {g,setFont}=C; g.textAlign='center'
+  setFont('600 22px '+SK.PP,8); g.fillStyle=SK.RED; g.fillText('HAPPINESS', 540, 66)
+  setFont('52px '+SK.SLAB,0); g.fillStyle=SK.RED; g.fillText('GROUN:D', 540, 122)
   g.textAlign='left'; g.letterSpacing='0px'
-  return topY+100
 }
-// 分類標題（EN 粗厚大標＋中文，紅底線）；回傳標題佔高
-function menuPHead(C, SK, sec, x, y, colW, ts){
-  const {g,setFont}=C
-  const {enU,cnT}=menuSplitName(sec.name)
-  const cnSize=Math.round(21*ts)
-  setFont('900 '+cnSize+'px '+SK.TC,1); const cnW=cnT?g.measureText(cnT).width:0
-  let enSize=Math.round(34*ts)
-  if (enU){ const avail=colW-(cnT?cnW+12:0); g.font=enSize+'px '+SK.SLAB; g.letterSpacing='0px'; while(enSize>18 && g.measureText(enU).width>avail){ enSize--; g.font=enSize+'px '+SK.SLAB } }
-  let tx=x
-  if (enU){ setFont(enSize+'px '+SK.SLAB,0); g.fillStyle=SK.RED; g.fillText(enU, tx, y+Math.round(30*ts)); tx+=g.measureText(enU).width+12 }
-  if (cnT){ setFont('900 '+cnSize+'px '+SK.TC,1); g.fillStyle=SK.RED; g.fillText(cnT, tx, y+Math.round(28*ts)); g.letterSpacing='0px' }
-  const lineY=y+Math.round(42*ts); g.strokeStyle=SK.RED; g.lineWidth=2.5; g.beginPath(); g.moveTo(x,lineY); g.lineTo(x+colW,lineY); g.stroke()
-  return Math.round(54*ts)
+// 分類標題（EN 襯線 30px＋CN 26px，中英共同基線＝分類區起點+27，過寬自動縮 EN）
+function menuPHead(C, SK, sec, textX, colW, headStartY){
+  const {g,setFont}=C; const {enU,cnT}=menuSplitName(sec.name); const baseY=headStartY+27
+  setFont('650 26px '+SK.TC,1); const cnW=cnT?g.measureText(cnT).width:0; g.letterSpacing='0px'
+  let enSize=30; if (enU){ const avail=colW-(cnT?cnW+14:0)-4; g.font='bold '+enSize+'px '+MENU_SERIF; while(enSize>16 && g.measureText(enU).width>avail){ enSize--; g.font='bold '+enSize+'px '+MENU_SERIF } }
+  let tx=textX
+  if (enU){ g.font='bold '+enSize+'px '+MENU_SERIF; g.letterSpacing='0px'; g.fillStyle=SK.RED; g.fillText(enU, tx, baseY); tx+=g.measureText(enU).width+14 }
+  if (cnT){ setFont('650 26px '+SK.TC,1); g.fillStyle=SK.RED; g.fillText(cnT, tx, baseY-1); g.letterSpacing='0px' }
 }
-// 一列品項：中文名…點線…售價 [內含/+N]；下方英文＋行內標籤（無咖啡因等）；無 $
-function menuPItemRow(C, SK, sec, it, x, colW, ry, ts){
-  const {g,fit,setFont,rr,leader}=C; const right=x+colW; let cursor=right
+// 一列品項：中文名…點線…售價＋[內含紅底徽章/+N紅字]；下方英文＋行內標籤(冰／熱‧無咖啡因)
+function menuPItemRow(C, SK, sec, it, boxX, boxW, textX, boxTop, i, side){
+  const {g,fit,setFont,rr,leader}=C; const right=boxX+boxW
+  const cnY=boxTop+38+i*64, enY=cnY+27, leadY=cnY-9
+  const nmSize=side?30:32, enSize=side?16:18, prSize=side?29:32
   const c=(typeof mnCombo==='function')?mnCombo(sec,it):null
-  if (c){ if (c.inc){ setFont('800 '+Math.round(14*ts)+'px '+SK.TC,0); const t='內含', tw=g.measureText(t).width, pw=tw+16, ph=Math.round(26*ts), bx=cursor-pw, by=ry-Math.round(5*ts)
-      rr(bx,by,pw,ph,6); g.fillStyle=SK.RED; g.fill(); g.fillStyle=SK.WHITE; g.fillText(t,bx+8,ry+Math.round(14*ts)); cursor=bx-12 }
-    else { const t=String(c.t).replace('套餐','').trim(); setFont('800 '+Math.round(20*ts)+'px '+SK.TC,0); g.fillStyle=SK.RED; const tw=g.measureText(t).width; g.fillText(t,cursor-tw,ry+Math.round(15*ts)); cursor=cursor-tw-12 } }
-  const ps=Math.round(23*ts)
-  setFont('800 '+ps+'px '+SK.TC,0); g.fillStyle=SK.RED; const pr=String(it.price||0); const prW=g.measureText(pr).width; const priceLeft=cursor-prW; g.fillText(pr,priceLeft,ry+Math.round(15*ts))
-  setFont('700 '+ps+'px '+SK.TC,0); g.fillStyle=SK.RED; const nmMax=priceLeft-x-28; const nmTxt=fit(it.name,nmMax); g.fillText(nmTxt,x,ry+Math.round(15*ts))
-  const nameEnd=x+g.measureText(nmTxt).width
-  leader(nameEnd+10, priceLeft-10, ry+Math.round(9*ts), SK.DOT)
-  // 英文＋行內標籤
-  let ex=x
-  if (it.en){ setFont('500 '+Math.round(14*ts)+'px '+SK.PP,0); g.fillStyle=SK.ENG; const et=fit(it.en, colW*0.74); g.fillText(et, ex, ry+Math.round(35*ts)); ex+=g.measureText(et).width+10 }
-  const tags=String(it.note||'').split(/[\s,，]+/).map(s=>s.replace(/^#/,'').trim()).filter(Boolean)
-  if (tags.length){ setFont('700 '+Math.round(13*ts)+'px '+SK.TC,0); g.fillStyle=SK.RED; g.fillText(tags.join('・'), ex, ry+Math.round(35*ts)) }
+  const tagRight=right-8, priceRight=side?right-96:right-32
+  // 套餐標籤（固定最右欄，價格靠在其左＝數字對齊）
+  if (c){ if (c.inc){ const bw=66,bh=34,bx=tagRight-bw,by=cnY-27; rr(bx,by,bw,bh,4); g.fillStyle=SK.RED; g.fill()
+      setFont('650 20px '+SK.TC,0); g.fillStyle=SK.WHITE; g.textAlign='center'; g.fillText('內含',bx+bw/2,cnY-2); g.textAlign='left' }
+    else { const t=String(c.t).replace('套餐','').trim(); setFont('650 24px '+SK.TC,0); g.fillStyle=SK.RED; g.textAlign='right'; g.fillText(t,tagRight,cnY-1); g.textAlign='left' } }
+  // 售價靠右對齊在 priceRight
+  setFont('650 '+prSize+'px '+SK.TC,0); g.fillStyle=SK.RED; const pr=String(it.price||0); g.textAlign='right'; g.fillText(pr,priceRight,cnY); g.textAlign='left'
+  const priceLeft=priceRight-g.measureText(pr).width
+  // 菜名（把結尾的 I/H 抽出來移到英文行）
+  let nm=String(it.name||''), ih=false
+  if (/\s+I\s*\/\s*H\s*$/i.test(nm)){ ih=true; nm=nm.replace(/\s+I\s*\/\s*H\s*$/i,'').trim() }
+  setFont('650 '+nmSize+'px '+SK.TC,0); g.fillStyle=SK.RED; const nmMax=priceLeft-textX-26; const nmTxt=fit(nm,nmMax); g.fillText(nmTxt,textX,cnY)
+  const nameEnd=textX+g.measureText(nmTxt).width
+  leader(nameEnd+14, priceLeft-18, leadY, SK.DOT)
+  // 英文＋行內標籤（依字寬順序，不越價格欄）
+  let ex=textX
+  if (it.en){ setFont(enSize+'px '+SK.TC,0); g.fillStyle=SK.ENG; const et=fit(it.en, priceLeft-textX-6); g.fillText(et, ex, enY); ex+=g.measureText(et).width+12 }
+  const tags=[]; if (ih) tags.push('冰／熱'); String(it.note||'').split(/[\s,，、]+/).forEach(s=>{ s=s.replace(/^#/,'').trim(); if (s) tags.push(s) })
+  if (tags.length){ setFont('650 '+enSize+'px '+SK.TC,0); g.fillStyle=SK.RED; g.fillText(tags.join('　'), ex, enY) }
 }
-// 底部單行紅底列：主餐 +N 升級套餐｜副餐選 1＋飲品選 1｜肉品產地…
+// 底部單行紅底列（y1850 高70，直式 26px 置中）：主餐 +N 升級套餐｜副餐選 1＋飲品選 1｜肉品產地…
 function menuFooterBar(C, SK, W, y, h, setN, origins){
   const {g,setFont}=C
   g.fillStyle=SK.RED; g.fillRect(0,y,W,h)
   const txt='主餐 +'+setN+' 升級套餐　｜　副餐選 1＋飲品選 1　｜　肉品產地：'+origins
-  let fs=22; setFont('700 '+fs+'px '+SK.TC,0); while(fs>14 && g.measureText(txt).width>W-72){ fs--; setFont('700 '+fs+'px '+SK.TC,0) }
+  let fs=26; setFont('650 '+fs+'px '+SK.TC,0); while(fs>14 && g.measureText(txt).width>W-56){ fs--; setFont('650 '+fs+'px '+SK.TC,0) }
   g.fillStyle=SK.WHITE; g.textAlign='center'; g.fillText(txt, W/2, y+Math.round(h/2)+fs*0.36); g.textAlign='left'
 }
-// 整張直式菜單（v12）：四組左右配對欄，每列取左右較大高度對齊
+// 整張直式菜單：固定 1080×1920、固定設計配對、分類圓角框、每列取左右較大框底往下排、底列到底無留白
 async function menuPosterCanva(d, secs){
   await menuFontsReady()
-  const SK=MENU_SK, S=2, W=1080, padX=48, colGap=40, ts=1
-  const colW=(W-padX*2-colGap)/2
-  const itemH=58, rowGap=34, footH=84
-  secs=secs.map(s=>({...s, items:(s.items||[]).filter(it=>Number(it.price)>0)})).filter(s=>s.items.length) // 隱藏待價 $0
-  const bodyH = s => Math.round(54*ts) + s.items.length*itemH
-  // 兩兩配對成列
-  const rows=[]; for(let i=0;i<secs.length;i+=2) rows.push([secs[i], secs[i+1]].filter(Boolean))
-  const headY = 40, headH = 108
-  let y = headY + headH + 18; const place=[]
-  rows.forEach(r=>{ const rh=Math.max(...r.map(bodyH)); place.push({r,y,rh}); y += rh + rowGap })
-  const footY = y + 4
-  const H = footY + footH
+  const SK=MENU_SK, S=2, W=1080, H=1920
+  const L={x:38,w:498,tx:50}, R={x:573,w:479,tx:585} // 官方 SVG 左右欄座標
+  // 固定設計順序＋隱藏待價 $0
+  const ORDER=['PIZZA','COMFORT','BURGER','ROLL','PASTA','BRUNCH','SNACK','DRINK']
+  secs=secs.map(s=>({...s, items:(s.items||[]).filter(it=>Number(it.price)>0)})).filter(s=>s.items.length)
+  const rank=s=>{ const u=String(s.name||'').toUpperCase(); const i=ORDER.findIndex(k=>u.includes(k)); return i<0?99:i }
+  secs=secs.slice().map((s,i)=>({s,i})).sort((a,b)=>rank(a.s)-rank(b.s)||a.i-b.i).map(o=>o.s)
+  const rows=[]; for (let i=0;i<secs.length;i+=2) rows.push([secs[i],secs[i+1]].filter(Boolean))
   const cv=document.createElement('canvas'); cv.width=W*S; cv.height=H*S
   const C=menuMkCtx(cv,S); const {g}=C
   g.fillStyle=SK.CREAM; g.fillRect(0,0,W,H)
-  menuBrandHead(C, SK, W/2, headY)
-  place.forEach(({r,y})=>{ r.forEach((sec,ci)=>{ const x=padX+ci*(colW+colGap)
-    const hh=menuPHead(C, SK, sec, x, y, colW, ts)
-    sec.items.forEach((it,ii)=>menuPItemRow(C, SK, sec, it, x, colW, y+hh+ii*itemH, ts)) }) })
+  menuBrandHead(C, SK)
+  // 欄頭：左 MENU 菜單／右 單點價・套餐（官方頂部標）
+  C.setFont('650 22px '+SK.TC,1); g.fillStyle=SK.RED; g.textAlign='left'; g.fillText('MENU 菜單', L.x+12, 182); g.letterSpacing='0px'
+  C.setFont('650 18px '+SK.TC,0); g.fillStyle=SK.RED; g.textAlign='right'; g.fillText('單點價／套餐', R.x+R.w, 182); g.textAlign='left'
+  let headStartY=222
+  rows.forEach(r=>{
+    const boxTop=headStartY+43; let maxBottom=boxTop
+    r.forEach((sec,ci)=>{
+      const col=ci===0?L:R, side=(Number(sec.combo)||0)>0, n=sec.items.length, boxH=76+(n-1)*64
+      menuPHead(C, SK, sec, col.tx, col.w-(col.tx-col.x), headStartY)
+      C.rr(col.x,boxTop,col.w,boxH,16); g.strokeStyle=SK.RED; g.lineWidth=2; g.stroke()
+      sec.items.forEach((it,i)=>menuPItemRow(C, SK, sec, it, col.x, col.w, col.tx, boxTop, i, side))
+      maxBottom=Math.max(maxBottom, boxTop+boxH)
+    })
+    headStartY=maxBottom+18
+  })
   const mm=String(d.draft.note||'').match(/(\d+)\s*元/); const setN=mm?mm[1]:'89'
   const origins=(d.draft.origins||'牛肉 美國／豬肉 台灣／雞肉 美國、台灣')
-  menuFooterBar(C, SK, W, footY, footH, setN, origins)
+  menuFooterBar(C, SK, W, 1850, 70, setN, origins)
   menuDownload(menuFitSpec(cv), 'GROUND菜單_直式_'+todayTpe()+'.png')
 }
 // 一區一張：每區各一張 landscape（標題＋右上雙語升級橫幅＋2 欄品項）
