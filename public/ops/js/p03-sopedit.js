@@ -31,11 +31,20 @@ async function sopDo(id, undo){
   if (!TK()) { alert('請先登入：按右上「登入」→ 私訊 DD「登入碼」→ 填入 4 個數字（或點 DD 給的個人連結）'); return }
   const it = (sopData.def.items||[]).find(x=>x.id===id)
   if (!undo && it && it.photo && !sopPhotos[id]) { alert('這項要拍照——先按相機鈕'); return }
+  // v4.61.3 樂觀更新（張良「很慢才反應」）：沒照片的完成/撤銷立即反映畫面，fetch 在背景確認；伺服器拒絕才回滾重抓
+  const fast = !sopPhotos[id]
+  if (fast) {
+    sopData.log = sopData.log || { items:{} }; sopData.log.items = sopData.log.items || {}
+    if (undo) delete sopData.log.items[id]
+    else { const now = new Date(Date.now()+8*3600e3).toISOString().slice(11,16); const cur = sopData.log.items[id]||{}; sopData.log.items[id] = { ...cur, done:1, ts:now, by:(sopData.me&&sopData.me.name)||'', title:it&&it.title, st:it&&it.st, tg:(it&&it.tg)||'' } }
+    sopRender()
+  }
   try {
     const r = await fetch('/api/mail-sync?sopdone=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ itemId:id, undo:!!undo, photo: sopPhotos[id]||undefined, token: TK() }) })
     const d = await r.json()
-    if (d && d.ok) { delete sopPhotos[id]; sopData.log = d.log; sopRender() } else alert((d&&d.error)||'失敗')
-  } catch(e){ alert('連線失敗，再試一次') }
+    if (d && d.ok) { delete sopPhotos[id]; sopData.log = d.log; if (!fast) sopRender() }
+    else { alert((d&&d.error)||'失敗'); if (fast) sopLoad() }
+  } catch(e){ if (fast) sopLoad(); alert('連線失敗，再試一次') }
 }
 // sop 資料到手後，預做表也重畫一次（隱藏清單/身分在 sopData 裡）
 const _sopLoad0 = sopLoad

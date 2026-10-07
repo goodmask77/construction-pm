@@ -560,11 +560,22 @@ async function sopSubDo(itemId, subId, undo){
   const su = it && (it.subs||[]).find(s=>s.id===subId)
   const pk = itemId+':'+subId
   if (!undo && su && su.photo && !sopPhotos[pk]) { alert('這個子項目要拍照——先按相機鈕'); return }
+  // v4.61.3 樂觀更新：沒照片的子項立即反映，fetch 背景確認
+  const fast = !sopPhotos[pk]
+  if (fast) {
+    sopData.log = sopData.log || { items:{} }; sopData.log.items = sopData.log.items || {}
+    const cur = sopData.log.items[itemId] || {}; cur.subs = cur.subs || {}
+    if (it) { cur.title = it.title; cur.st = it.st; cur.tg = it.tg||'' }
+    if (undo) delete cur.subs[subId]
+    else { const now = new Date(Date.now()+8*3600e3).toISOString().slice(11,16); cur.subs[subId] = { done:1, ts:now, by:(sopData.me&&sopData.me.name)||'' } }
+    sopData.log.items[itemId] = cur; sopRender()
+  }
   try {
     const r = await fetch('/api/mail-sync?sopdone=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ itemId, subId, undo:!!undo, photo: sopPhotos[pk]||undefined, token: TK() }) })
     const d = await r.json()
-    if (d && d.ok) { delete sopPhotos[pk]; sopData.log = d.log; sopRender() } else alert((d&&d.error)||'失敗')
-  } catch(e){ alert('連線失敗，再試一次') }
+    if (d && d.ok) { delete sopPhotos[pk]; sopData.log = d.log; if (!fast) sopRender() }
+    else { alert((d&&d.error)||'失敗'); if (fast) sopLoad() }
+  } catch(e){ if (fast) sopLoad(); alert('連線失敗，再試一次') }
 }
 async function sopStrictOn(on){
   if (on && !confirm('啟用嚴格模式後：動作過了「結束時間」就鎖死、不能再打完成（只能回報異常），連主管也不能補成準時。確定啟用？')) return
