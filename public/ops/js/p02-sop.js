@@ -618,7 +618,7 @@ function sopRender(){
   if (wd === 0 || wd === 6) s += `<div class="hint" style="margin-bottom:8px">今天公休——這是清單預覽，打卡留給營業日。</div>`
   // 非「今日執行」子頁＝範本/歷史（第1期先骨架）
   if (window._sopSub === 'tmpl') { s += sopTemplateHtml(now, strict, wd); s += `</section>`; el.innerHTML = s; return }
-  if (window._sopSub === 'hist') { s += sopHistoryHtml(); s += `</section>`; el.innerHTML = s; return }
+  if (window._sopSub === 'hist') { s += sopHistoryHtml(); s += `</section>`; el.innerHTML = s; setTimeout(()=>sopHistLoad(sopData.date),0); return }
   // 站別篩選＋📌釘選（張良 2026-09-21：SOP 站多，每人點自己要看的；釘選存在自己手機）
   // v4.18.0 #hashtag 雙標籤（張良拍板）：#階段 × #產品 兩排篩選——點產品看全程、點階段看跨產品、都點=交集
   const stDisp = st9 => String(st9).includes('｜') ? String(st9).split('｜').pop() : st9
@@ -792,14 +792,23 @@ function sopTemplateHtml(now, strict, wd){
   })
   return h
 }
-// 歷史紀錄（第1期：先指引，完整查詢第3期）
+// 歷史紀錄（第3期：跨日查詢——選日期讀當天完成紀錄，用當時快照 title/st/tg 顯示，改名/刪條目不壞）
 function sopHistoryHtml(){
-  const log = (sopData.log && sopData.log.items) || {}
-  const doneList = Object.entries(log).filter(([,v])=>v&&v.done).sort((a,b)=>String(a[1].ts||'').localeCompare(String(b[1].ts||'')))
-  let h = `<div class="hint" style="margin-bottom:8px">今日完成紀錄（跨日歷史查詢在第3期上線）。</div>`
-  if (!doneList.length) return h + `<div class="hint" style="padding:12px 0">今天還沒有完成紀錄。</div>`
-  h += doneList.map(([id,v]) => `<div style="display:flex;gap:8px;align-items:center;padding:6px 4px;border-bottom:1px solid var(--line);font-size:14px">${v.photo?`<img src="${v.photo}" style="width:34px;height:34px;object-fit:cover;border-radius:6px;cursor:pointer" onclick="window.open('${v.photo}','_blank')">`:'<span style="width:34px;text-align:center;color:var(--green)">✓</span>'}<span style="flex:1;min-width:0">${sopEsc(v.title||id)}${v.st?` <span class="hint">${sopEsc(v.st)}</span>`:''}</span><span class="hint">${sopEsc(v.by||'')} ${v.ts||''}</span></div>`).join('')
-  return h
+  const today = sopData.date
+  return `<div class="hint" style="margin-bottom:8px">選日期查當天完成紀錄（用當時快照顯示，動作改名/刪除也看得到）。</div>
+    <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px"><span class="hint">日期</span><input type="date" id="sopHistD" value="${today}" max="${today}" onchange="sopHistLoad(this.value)" style="border:1px solid var(--line);border-radius:8px;padding:7px 9px;font-size:14px"></div>
+    <div id="sopHistBody"></div>`
+}
+async function sopHistLoad(date){
+  const body = document.getElementById('sopHistBody'); if (!body) return
+  body.innerHTML = '<div class="hint" style="padding:12px 0">讀取中…</div>'
+  let d = null
+  try { const r = await fetch('/api/mail-sync?sophist=' + encodeURIComponent(K) + '&date=' + encodeURIComponent(date)); d = await r.json() } catch(_){}
+  if (!d || !d.ok) { body.innerHTML = '<div class="hint" style="padding:12px 0">讀不到</div>'; return }
+  const items = d.items || {}
+  const list = Object.entries(items).filter(([,v])=>v&&v.done).sort((a,b)=>String(a[1].ts||'').localeCompare(String(b[1].ts||'')))
+  if (!list.length) { body.innerHTML = '<div class="hint" style="padding:12px 0">這天沒有完成紀錄。</div>'; return }
+  body.innerHTML = `<div class="hint" style="margin-bottom:6px">${date}：完成 ${list.length} 項</div>` + list.map(([id,v]) => `<div style="display:flex;gap:8px;align-items:center;padding:6px 4px;border-bottom:1px solid var(--line);font-size:14px">${v.photo?`<img src="${v.photo}" style="width:34px;height:34px;object-fit:cover;border-radius:6px;cursor:pointer" onclick="window.open('${v.photo}','_blank')">`:'<span style="width:34px;text-align:center;color:var(--green)">✓</span>'}<span style="flex:1;min-width:0">${sopEsc(v.title||id)}${v.st?` <span class="hint">${sopEsc(v.st)}</span>`:''}</span><span class="hint">${sopEsc(v.by||'')} ${v.ts||''}</span></div>`).join('')
 }
 // ── ⚙️ SOP 總編輯（張良 2026-09-21：站/項目拖曳排序、站名直接改、不再跳系統視窗）──
 let sopMasterOn = false

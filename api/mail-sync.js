@@ -2945,6 +2945,15 @@ export default async function handler(req, res) {
     ;(((sugsD0 || {}).list) || []).forEach(x => { if (x.status === 'open') sugOpen[x.st] = (sugOpen[x.st] || 0) + 1 })
     return res.status(200).json({ ok: true, date: dt2, def: { items: gdef.items || [], stations, strictMode: !!gdef.strictMode, edits: (gdef.edits || []).slice(0, 10), cats: gdef.catOrder || [], stCat: gdef.stCat || {}, stOwner: gdef.stOwner || {}, catOwner: gdef.catOwner || {} }, sugOpen, trash, log: logDoc || { items: {} }, names, me: me4, issues, prepHide: (hideDoc || {}).keys || {} })
   }
+  // v4.61.0 跨日歷史查詢（工作流程SOP改版第3期）：讀指定日完成紀錄（含快照 title/st/tg，改名/刪條目也能正確顯示）
+  if (req.query?.sophist && req.method !== 'POST') {
+    const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
+    if (!ok2 || String(req.query.sophist) !== ok2) return res.status(403).json({ ok: false })
+    const dH = String(req.query.date || '').replace(/[^0-9-]/g, '')
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dH)) return res.status(400).json({ ok: false, error: '日期格式 YYYY-MM-DD' })
+    const logH = (await kvGet('sp_finance_pm_sop_g_' + dH.replace(/-/g, ''))) || { items: {} }
+    return res.status(200).json({ ok: true, date: dH, items: logH.items || {} })
+  }
   // 站別管理（張良 2026-09-21：站可新增/改名/刪除；誤刪可復原→軟刪進回收站）：POST ?sopst=<OPS_BOARD_KEY> {token, op, st, newName, trashId}
   if (req.method === 'POST' && req.query?.sopst) {
     const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
