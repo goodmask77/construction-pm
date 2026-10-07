@@ -671,10 +671,10 @@ function sopRender(){
   // v4.62.0 V3：第一排＝工作站、第二排＝階段（交換）
   // 第一排：工作站
   s += `<div style="display:flex;gap:7px;flex-wrap:wrap;margin-bottom:8px;align-items:center">
-    ${me?`<span style="${catBtn(view==='mine')}" onclick="sopFset('mine')">我的工作</span>`:''}
-    ${sopPin.size&&!curTg?`<span style="${catBtn(view==='pin')}" onclick="sopFset('pin')">📌 我的釘選（${sopPin.size}）</span>`:''}
-    <span style="${catBtn(view==='all')}" onclick="sopFset('all')">全部工作站</span>
-    ${sts.map(st2=>`<span style="${catBtn(view===st2)};display:inline-flex;gap:6px;align-items:center"><span onclick="sopFset('${st2}')">${stDisp(st2)}</span><span onclick="sopPinT('${st2}')" title="釘選/取消釘選" style="opacity:${sopPin.has(st2)?1:.4};font-size:13px">📌</span></span>`).join('')}
+    ${me?`<span style="${chipS(view==='mine')}" onclick="sopFset('mine')">我的工作</span>`:''}
+    ${sopPin.size&&!curTg?`<span style="${chipS(view==='pin')}" onclick="sopFset('pin')">📌 我的釘選（${sopPin.size}）</span>`:''}
+    <span style="${chipS(view==='all')}" onclick="sopFset('all')">全部</span>
+    ${sts.map(st2=>`<span style="${chipS(view===st2)};display:inline-flex;gap:6px;align-items:center"><span onclick="sopFset('${st2}')">${stDisp(st2)}</span><span onclick="sopPinT('${st2}')" title="釘選/取消釘選" style="opacity:${sopPin.has(st2)?1:.4};font-size:13px">📌</span></span>`).join('')}
     ${me&&window._sopMng?`<span style="${chipS(false)}" onclick="sopStAdd()">＋ 工作站</span>`:''}
     ${me?`<span style="${chipS(!!window._sopMng)};margin-left:auto" onclick="sopMngT()">⚙️ 設定</span>`:''}
   </div>`
@@ -690,9 +690,10 @@ function sopRender(){
       <button class="mini on" onclick="sopItemEdit(null,'${view}')">＋ 新增動作</button>
     </div>`
   }
-  // 第二排：階段
-  s += `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px;align-items:center">
-    <span style="${chipS(!curTg)}" onclick="sopCatSet(null)">全部階段</span>
+  // 第二排：階段（V3 張良：第一層跟第二層有區隔＝加底色分開）
+  s += `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px;align-items:center;background:var(--soft);border:1px solid var(--line);border-radius:10px;padding:7px 8px">
+    <span class="hint" style="font-weight:800;margin-right:2px">階段</span>
+    <span style="${chipS(!curTg)}" onclick="sopCatSet(null)">全部</span>
     ${catsN.map(cg=>`<span style="${chipS(curTg===cg)}" onclick="sopCatSet('${cg}')">${cg}<span style="margin-left:5px;font-weight:700;font-size:12px;color:${curTg===cg?'#DCEBFF':'var(--muted)'}">${itemsAll.filter(i9=>tgOf(i9)===cg).length}</span></span>`).join('')}
     ${me&&window._sopMng?`<span style="${chipS(false)}" onclick="sopCatAdd()">＋ 階段</span>`:''}
     ${me&&window._sopMng?`<span style="${chipS(false)}" onclick="sopCatMng()">🗂 組織架構・拖曳排序</span>`:''}
@@ -760,13 +761,13 @@ function sopRender(){
           </div>
           ${(lg&&lg.done) ? `<span onclick="event.stopPropagation();sopView('${it.id}')" title="查看完成紀錄" style="flex:0 0 auto;display:flex;align-items:center;gap:6px;white-space:nowrap;cursor:pointer"><span style="color:var(--green);font-weight:800;font-size:13px">${sopEsc(lg.by||'')} · ${lg.ts}</span>${lg.photo?`<img src="${lg.photo}" style="width:30px;height:30px;object-fit:cover;border-radius:6px;border:1px solid var(--green)">`:''}</span>` : state==='open' ? `<button class="mini on" style="flex:0 0 auto;padding:6px 16px" onclick="event.stopPropagation();sopDoOrExpand('${it.id}')">完成</button>` : sopBadgeOutline(state)}
           <span class="lnkbtn" title="複製這條連結（可貼到會議宣達）" onclick="event.stopPropagation();copyLink('#sop=${it.id}')" style="flex:0 0 auto">🔗</span>
-          ${me&&window._sopMng?`<span class="lnkbtn" title="編輯這一條" onclick="event.stopPropagation();sopItemEdit('${it.id}')" style="flex:0 0 auto">✎</span>`:''}
+          ${me&&me.isMgr?`<span class="lnkbtn" title="編輯這一條" onclick="event.stopPropagation();sopItemEdit('${it.id}')" style="flex:0 0 auto">✎</span>`:''}
         </div>
         ${window._sopEdit===it.id ? sopEditForm(it, false) : (open ? sopActPanel(it, lg, state) : '')}
       </div>`
     })
     // V3 原地新增動作（設定模式）：站末尾＋新增動作，點了在此展開空白編輯表單
-    if (me && window._sopMng) {
+    if (me && me.isMgr) {
       if (window._sopEdit === '__new__:'+st) s += sopEditForm({ title:'', start:'', end:'', req:true, photo:false, desc:'', st, tg:(curTg||window._sopTg||'') }, true)
       else s += `<button class="mini on" style="margin:6px 0 4px;padding:7px 14px" onclick="sopItemEdit(null,'${st}')">＋ 新增動作</button>`
     }
