@@ -226,7 +226,26 @@ export default async function handler(req, res) {
   // ── AB 即時＋參考店（獨立 try：AB 掛了不影響 GD，反之亦然）──
   const extra = {}
   if (abHit) {
-    try { extra.ab = await syncEatsLive(kvGet, kvPut) } catch (e) { extra.ab = { error: e?.message || String(e) } }
+    try {
+      const abLive = await syncEatsLive(kvGet, kvPut)
+      extra.ab = abLive
+      // v4.67.0 AB即時化（張良 2026-10-08 轉給CC①：AB 跟 GD 一樣盤中更新）：把 AB 即時營收寫進 pos entries(intraday=true)，
+      // 看板才看得到「營業中」今日營收；打烊後日結信會自動覆蓋（ingestPosRecords 已處理盤中覆蓋）。
+      if (abLive && abLive.revenue != null) {
+        const abToday = taipeiToday()
+        const live = (await kvGet('sp_finance_pm_ablive')) || {}
+        const posAB = (await kvGet('sp_finance_pm_pos')) || { entries: [] }
+        const isAB = (n) => /beach/i.test(n || '')
+        const curAB = posAB.entries.find(e => e.date === abToday && isAB(e.store))
+        if (!(curAB && !curAB.intraday)) { // 已有打烊正式值就不覆蓋
+          const abRec = { id: 'pos-' + abToday.replace(/-/g, '') + 'eats-abeach', date: abToday, period: abToday + '（Eats365 盤中更新 ' + hm + '）', store: 'A Beach 101&Pizza', subject: 'A Beach Eats365 盤中即時', revenue: Math.round(Number(abLive.revenue) || 0), txCount: Number(abLive.tx) || 0, dineTx: (live.dineIn || {}).tx || 0, takeTx: (live.takeout || {}).tx || 0, intraday: true, fetchedAt: hm, partial: '盤中更新（' + hm + '，未打烊）：數字之後還會變，打烊後自動換成最終值。' }
+          // 清掉 AB 自己的舊盤中筆（含今天這筆要換新），正式筆與 GD 全不動
+          posAB.entries = [...posAB.entries.filter(e => !(isAB(e.store) && e.intraday && e.date <= abToday)), abRec].sort((a, b) => (a.date < b.date ? -1 : 1))
+          posAB.updatedAt = new Date().toISOString()
+          await kvPut('sp_finance_pm_pos', posAB, 'Eats365 盤中更新 ' + hm)
+        }
+      }
+    } catch (e) { extra.ab = { error: e?.message || String(e) } }
     // 參考店 1/2 已退役（張良 2026-09-24：停抓＋刪設定與數據）
   }
   if (!hit && !force && !manual) { // 只有 AB 場次（GD 已打烊 19:30 後）：發廣播直接回

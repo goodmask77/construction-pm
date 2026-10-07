@@ -277,7 +277,8 @@ async function syncPos(days) {
 export async function ingestPosRecords(recs, editor) { // export：boss-sync.js fillpos（AB 4~6月營收回填）共用
   const skOf2 = (n) => /groun/i.test(n || '') ? 'ground' : 'abeach'
   const store = (await kvGet('sp_finance_pm_pos')) || { entries: [] }
-  const have = new Set(store.entries.map(e => e.id)), haveCombo = new Set(store.entries.map(e => e.date + '|' + skOf2(e.store)))
+  // v4.67.0 AB即時化：去重只看「正式(非盤中)」筆——盤中(intraday)是暫存，不能擋正式日結進來、也不參與去重
+  const have = new Set(store.entries.filter(e => !e.intraday).map(e => e.id)), haveCombo = new Set(store.entries.filter(e => !e.intraday).map(e => e.date + '|' + skOf2(e.store)))
   const add = recs.filter(r => { const id = r.id || ('pos-' + r.date.replace(/-/g, '') + 'ingest-' + skOf2(r.store)); r.id = id; return !have.has(id) && !haveCombo.has(r.date + '|' + skOf2(r.store)) })
   const byMonth = {}
   for (const r of add) { if (r._details) (byMonth[r.date.slice(0, 7)] = byMonth[r.date.slice(0, 7)] || []).push(r) }
@@ -289,7 +290,10 @@ export async function ingestPosRecords(recs, editor) { // export：boss-sync.js 
     if (ch) { doc.updatedAt = new Date().toISOString(); await kvPut(did, doc, editor) }
   }
   if (add.length) {
-    store.entries = [...store.entries, ...add.map(({ _details, ...r }) => r)].sort((a, b) => (a.date < b.date ? -1 : 1))
+    // v4.67.0 新正式日結覆蓋同 date|store 的盤中(intraday)暫存筆，避免 AB/GD 盤中值卡住最終值
+    const addCombo = new Set(add.map(r => r.date + '|' + skOf2(r.store)))
+    const kept = store.entries.filter(e => !(e.intraday && addCombo.has(e.date + '|' + skOf2(e.store))))
+    store.entries = [...kept, ...add.map(({ _details, ...r }) => r)].sort((a, b) => (a.date < b.date ? -1 : 1))
     store.updatedAt = new Date().toISOString()
     await kvPut('sp_finance_pm_pos', store, editor)
   }
