@@ -505,6 +505,10 @@ const SOP_BADGE = {
 }
 const sopBadge = st => SOP_BADGE[st] || SOP_BADGE.open
 const sopBadgeHtml = st => { const b = sopBadge(st); return `<span style="flex:0 0 auto;background:${b.bg};color:${b.c};border-radius:999px;padding:3px 10px;font-size:12px;font-weight:800;white-space:nowrap">${b.label}</span>` }
+// v4.61.2（張良「可執行是文字不是按鈕」）：非完成狀態用「外框」徽章＝不像按鈕；可執行狀態直接給「完成」鈕可按
+const OUTLINE_C = { locked:'var(--muted)', overdue:'#E8853D', pending_cfg:'#D4A72C', waiting:'var(--muted)', done:'var(--green)', open:'var(--primary)' }
+const sopBadgeOutline = st => { const c = OUTLINE_C[st] || 'var(--muted)'; return `<span style="flex:0 0 auto;border:1px solid ${c};color:${c};border-radius:999px;padding:3px 10px;font-size:12px;font-weight:700;white-space:nowrap">${sopBadge(st).label}</span>` }
+function sopDoOrExpand(id){ const it = (sopData.def.items||[]).find(x=>x.id===id); if (!it) return; if (it.photo || (it.subs && it.subs.length)) { sopOpenSet.add(id); sopRender() } else sopDo(id) } // 要拍照/有子項→展開操作；否則直接完成
 const sopFmtRange = it => { const a=it.start||'', b=it.end||it.due||''; return a&&b?`${a}–${b}`:(b?`${b} 前`:(a?`${a} 起`:'未設時間')) }
 function sopActToggle(id){ if (sopOpenSet.has(id)) sopOpenSet.delete(id); else sopOpenSet.add(id); sopRender() }
 function sopSubTab(v){ window._sopSub = v; sopRender() }
@@ -515,7 +519,11 @@ function sopActPanel(it, lg, state){
   const canDo = (state==='open' || state==='pending_cfg')
   let h = `<div style="margin:6px 0 2px;padding:10px 12px;background:var(--soft);border:1px solid var(--line);border-radius:10px">`
   if (it.desc) h += `<div style="font-size:14px;line-height:1.6;white-space:pre-wrap;margin-bottom:8px">${sopEsc(it.desc)}</div>`
-  if (refs.length) h += `<div class="hint" style="margin-bottom:3px">標準照片</div><div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">${refs.map(u=>`<img src="${sopEsc(u)}" onclick="window.open('${sopEsc(u)}','_blank')" style="width:64px;height:64px;object-fit:cover;border-radius:8px;border:1px solid var(--line);cursor:pointer">`).join('')}</div>`
+  const canEditRef = sopData.me && sopData.me.canEdit
+  if (refs.length || canEditRef) {
+    h += `<div class="hint" style="margin-bottom:4px;display:flex;align-items:center;gap:8px">標準照片${canEditRef?`<button class="mini" style="padding:3px 10px" onclick="sopRefOpen('${it.id}')">🖼 ${refs.length?'更換':'設定'}</button>`:''}</div>`
+    if (refs.length) h += `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">${refs.map(u=>`<img src="${sopEsc(u)}" onclick="window.open('${sopEsc(u)}','_blank')" style="width:64px;height:64px;object-fit:cover;border-radius:8px;border:1px solid var(--line);cursor:pointer">`).join('')}</div>`
+  }
   if (subs.length) {
     h += `<div class="hint" style="margin-bottom:3px">子項目</div>`
     h += subs.map(su => {
@@ -721,7 +729,7 @@ function sopRender(){
             <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap"><span style="font-weight:700;color:var(--ink)">${open?'▾':'▸'} ${sopEsc(it.title)}</span>${it.req===false?'<span class="hint" style="font-size:11px;border:1px solid var(--line);border-radius:5px;padding:0 4px">選做</span>':''}${subs.length?`<span class="hint" style="font-size:12px">子項 ${subDoneN}/${subs.length}</span>`:''}${it.tg&&!window._sopTg&&!grpMode?`<span class="hint" style="font-size:11px">#${sopEsc(it.tg)}</span>`:''}</div>
             <div class="hint" style="font-size:12px">${sopFmtRange(it)}${it.editBy?`・✏️ ${sopEsc(it.editBy)}`:''}</div>
           </div>
-          ${sopBadgeHtml(state)}
+          ${(lg&&lg.done) ? `<span style="flex:0 0 auto;color:var(--green);font-weight:900;white-space:nowrap;font-size:13px">✓ ${lg.ts}</span>` : state==='open' ? `<button class="mini on" style="flex:0 0 auto;padding:6px 16px" onclick="event.stopPropagation();sopDoOrExpand('${it.id}')">完成</button>` : sopBadgeOutline(state)}
           <span class="lnkbtn" title="複製這條連結（可貼到會議宣達）" onclick="event.stopPropagation();copyLink('#sop=${it.id}')" style="flex:0 0 auto">🔗</span>
           ${me&&window._sopMng?`<span class="lnkbtn" title="編輯這一條" onclick="event.stopPropagation();sopItemEdit('${it.id}')" style="flex:0 0 auto">✎</span>`:''}
         </div>
