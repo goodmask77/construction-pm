@@ -3051,6 +3051,17 @@ export default async function handler(req, res) {
     const gSd = curSd.ground || { items: [] }
     if (Array.isArray(sd.stations)) gSd.stations = [...new Set(sd.stations.map(x => String(x).trim().slice(0, 20)).filter(Boolean))]
     if (Array.isArray(sd.cats)) gSd.catOrder = [...new Set(sd.cats.map(x => String(x).trim().slice(0, 20)).filter(Boolean))].slice(0, 20)
+    // v4.61.1 批次上動作（維護用，照流程文件一次灌入）：消毒時間/子項/欄位，覆蓋 items
+    if (Array.isArray(sd.items)) gSd.items = sd.items.slice(0, 400).filter(it => it && String(it.title || '').trim()).map((it, i) => {
+      const hm = s => /^\d{2}:\d{2}$/.test(String(s || '')) ? String(s) : ''
+      const o = { id: String(it.id || ('u' + i)).slice(0, 24), st: String(it.st || '').slice(0, 20), title: String(it.title).slice(0, 80), start: hm(it.start), end: hm(it.end), req: it.req !== false, photo: !!it.photo, editBy: String(it.editBy || '維護').slice(0, 20), editTs: String(it.editTs || '') }
+      o.due = o.end
+      const tg = String(it.tg || '').trim().slice(0, 20); if (tg) o.tg = tg
+      const desc = String(it.desc || '').trim().slice(0, 500); if (desc) o.desc = desc
+      if (Array.isArray(it.refs) && it.refs.length) { o.refs = it.refs.filter(u => typeof u === 'string' && u).slice(0, 5).map(u => u.slice(0, 500)); if (o.refs.length) o.ref = o.refs[0] }
+      if (Array.isArray(it.subs) && it.subs.length) o.subs = it.subs.slice(0, 20).filter(s => s && String(s.title || '').trim()).map((s, j) => ({ id: String(s.id || ('s' + i + '_' + j)).slice(0, 24), title: String(s.title).slice(0, 80), req: s.req !== false, photo: !!s.photo }))
+      return o
+    })
     gSd.edits = [{ ts: new Date().toISOString(), by: '維護', op: 'seed' }, ...(gSd.edits || [])].slice(0, 30)
     curSd.ground = gSd
     await kvPut('sp_finance_pm_sop_def', curSd, 'SOP範本初始化(維護)')
