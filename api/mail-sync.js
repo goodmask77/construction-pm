@@ -2936,7 +2936,7 @@ export default async function handler(req, res) {
         mig19 = true
       }
     }
-    if (mig18 || mig19) { defDoc = defDoc || {}; defDoc.ground = gdef; await kvPut('sp_finance_pm_sop_def', defDoc, mig19 ? 'SOP時間區間遷移' : 'SOP hashtag遷移') }
+    if (mig18 || mig19) { defDoc.ground = gdef; await kvPut('sp_finance_pm_sop_def', defDoc, mig19 ? 'SOP時間區間遷移' : 'SOP hashtag遷移') }
     const stations = gdef.stations
     const trash = (gdef.trash || []).map(t => ({ id: t.id, st: t.st, n: (t.items || []).length, ts: t.ts, by: t.by }))
     // v4.15.0 SOP分層+負責人（張良 2026-10-02）
