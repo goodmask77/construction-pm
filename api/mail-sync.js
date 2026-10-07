@@ -9,7 +9,7 @@ import { parsePosWorkbook, parseTxSheet } from './_pos-parse.js' // 解析器共
 // 且每次同步都會把刪掉的日子塞回來——改由 syncJoya 抓喬亞真值（張良同意四天以 POS 為準）。檔案留檔不再引用。
 import { groundManualRecords } from './_ground-manual.js' // GROUN:D 喬亞POS報表手動回填（08-19~21，張良 2026-08-24 截圖；已驗證與POS一致）
 import { joyaLogin, joyaFetchDay, joyaBuildRecord, taipeiToday, taipeiAfterClose, joyaFetchTimeslots, timeslotSection, TIMESLOT_SHEET, joyaFetchSalesMethod, parseSalesMethod } from './_joya.js' // GROUN:D POS行動報表自動抓取（2026-08-26 起全自動）
-import { syncEatsLive } from './_eats.js' // AB 今天即時營業額（Eats365 商家後台，2026-09-02）
+import { syncEatsLive, eatsDayRecord } from './_eats.js' // AB 今天即時營業額＋某天日結回填（Eats365 商家後台，2026-09-02）
 import { awardPts, pointsRules } from './_points.js' // 🏦 積分中樞共用（行為分給分＋規則）
 
 const clean = (v) => (v || '').trim().replace(/^["']|["']$/g, '').replace(/^[A-Za-z0-9_]+=/, '').trim()
@@ -481,6 +481,24 @@ export default async function handler(req, res) {
     const out2 = await ingestPosRecords(recs, 'POS手動回填口')
     await announceChanged() // 開著的網頁即刻自動跟上
     return res.status(200).json({ ok: true, ...out2 })
+  }
+  // AB 日結後台回填口（張良 2026-10-08：日結信沒進來時，從 Eats365 後台抓某天補上）：
+  // GET ?eatsday=<MENU_PROBE_KEY>&date=YYYY-MM-DD[,YYYY-MM-DD…][&go=1]
+  // 預設 dry-run 只回「會灌什麼」（含付款別原始對映，方便核數）；&go=1 才真的入庫（official，去重同 ingest）。
+  if (req.query?.eatsday) {
+    const mk = (process.env.MENU_PROBE_KEY || '').trim()
+    if (!mk || String(req.query.eatsday) !== mk) return res.status(403).json({ ok: false })
+    const dates = String(req.query.date || '').split(',').map(s => s.trim()).filter(s => /^\d{4}-\d{2}-\d{2}$/.test(s)).slice(0, 10)
+    if (!dates.length) return res.status(400).json({ ok: false, error: '要給 date=YYYY-MM-DD（可逗號多天，最多10）' })
+    const go = String(req.query.go || '') === '1'
+    const recs = []
+    for (const dt of dates) { try { const r = await eatsDayRecord(dt, kvGet); if (r) recs.push(r); else recs.push({ date: dt, error: '未設 EATS_* 或抓不到' }) } catch (e) { recs.push({ date: dt, error: e?.message || String(e) }) } }
+    const good = recs.filter(r => typeof r.revenue === 'number')
+    if (!go) return res.status(200).json({ ok: true, dryRun: true, hint: '數字對就加 &go=1 真的入庫', preview: recs.map(r => ({ date: r.date, revenue: r.revenue, txCount: r.txCount, guests: r.guests, dineTx: r.dineTx, takeTx: r.takeTx, cash: r.cash, card: r.card, linepay: r.linepay, uber: r.uber, payOther: r.payOther, paySum: typeof r.revenue === 'number' ? (r.cash + r.card + r.linepay + r.uber + r.payOther) : null, payRaw: r._payRaw, err: r.error })) })
+    const ingestRecs = good.map(({ _payRaw, ...rest }) => rest)
+    const out = ingestRecs.length ? await ingestPosRecords(ingestRecs, 'AB日結後台回填') : { added: 0 }
+    await announceChanged()
+    return res.status(200).json({ ok: true, ingested: out, dates, revenues: good.map(r => ({ date: r.date, revenue: r.revenue, txCount: r.txCount })) })
   }
   // 任務搬移口（同金鑰，張良 2026-09-01：D哥把 14 筆記到工程空間，要搬到團隊工作）：
   // ?taskmove=<key>&from=ISO&to=ISO[&dry=1] → 把工程空間收件匣、createdAt 落在 [from,to] 的任務

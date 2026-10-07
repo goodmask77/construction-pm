@@ -111,6 +111,40 @@ export async function syncEatsLive(kvGet, kvPut) {
   return { revenue: doc.revenue, tx: doc.tx }
 }
 
+// 回補某天 AB 日結（張良 2026-10-08：日結信沒進來時從後台抓補上）：口徑 totalNetSales 同日結信；付款別由 dailyReport.paymentType 對映。回 pos-record 形狀（official）。
+export async function eatsDayRecord(date, kvGet) {
+  if (!process.env.EATS_USER || !process.env.EATS_PASS) return null
+  const sessDoc = (await kvGet('sp_finance_pm_eats_sess')) || {}
+  const sess = await eatsSession(sessDoc.device || process.env.EATS_DEVICE_COOKIE || '')
+  const d = await eatsFetchDay(sess, date)
+  // dailyReport：付款別 paymentType（＋可取品項，但回填只存摘要）
+  let dr = {}
+  try {
+    const rr = await fetch(BASE + '/report/dailyReport', { method: 'POST', headers: { 'User-Agent': UA, Cookie: sess.J.cookieStr(), 'X-XSRF-TOKEN': sess.tok, 'X-XSRF-SESSION': sess.csid, 'EATS365-RESTAURANT-CODE': CTX.rcode, 'EATS365-BRAND-ID': CTX.brand, 'EATS365-ORGANIZATION-ID': CTX.org, 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify({ startDate: date + ' 00:00:00', endDate: date + ' 23:59:59', rCode: CTX.rcode }) })
+    if (rr.ok) dr = await rr.json()
+  } catch (_) {}
+  const pay = { cash: 0, card: 0, linepay: 0, uber: 0, payOther: 0 }
+  const payRaw = []
+  for (const p of (dr.paymentType || [])) {
+    const n = (p && (p.paymentMethodName?.tc || p.paymentMethodName?.default || p.name?.tc || p.name?.default || p.name || p.paymentMethod || p.type)) || ''
+    const amt = Math.round(Number(p?.netSales ?? p?.amount ?? p?.sales ?? p?.total ?? p?.value ?? 0) || 0)
+    payRaw.push({ n: String(n), amt })
+    if (!amt) continue
+    if (/現金|cash/i.test(n)) pay.cash += amt
+    else if (/line\s*pay/i.test(n)) pay.linepay += amt
+    else if (/uber/i.test(n)) pay.uber += amt
+    else if (/信用卡|刷卡|卡|credit|card|visa|master/i.test(n)) pay.card += amt
+    else pay.payOther += amt
+  }
+  return {
+    date, store: 'A Beach 101&Pizza', subject: 'A Beach Eats365 後台回填', period: date + '（Eats365 後台回填）',
+    revenue: Math.round(Number(d.totalNetSales) || 0), txCount: Number(d.totalTransaction) || 0, guests: Number(d.totalCustomer) || 0,
+    dineTx: Number(d.dineInTransaction) || 0, takeTx: Number(d.takeoutTransaction) || 0,
+    cash: pay.cash, card: pay.card, linepay: pay.linepay, uber: pay.uber, payOther: pay.payOther,
+    _payRaw: payRaw,
+  }
+}
+
 // AB 時段品項（張良 2026-09-22 實測 dailyReport 吃任意時間區段 → 節奏表不用快照、可回補歷史）
 // 回 {品名: 份數}；start/end 形如 'YYYY-MM-DD HH:MM:SS'
 export async function eatsItemsRange(sess, start, end) {
