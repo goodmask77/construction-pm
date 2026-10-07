@@ -290,7 +290,8 @@ function menuRender(){
     <button class="mini" onclick="menuExport('txt')">⬇️ 匯出文字</button>
     <select class="mini" onchange="menuSetSpec(this.value)" title="匯出圖片尺寸（方向×畫質）" style="padding:4px 10px">${Object.entries(MENU_SPECS).map(([k,s])=>`<option value="${k}" ${k===menuOutKey?'selected':''}>${s.t}</option>`).join('')}</select>
     <button class="mini" onclick="menuExport('img')">🖼 直式菜單圖</button>
-    <button class="mini" onclick="menuExport('tv')" title="4 台電視各一張（兩分類並排＋食物照片）＝官方定稿橫式">🖼 四張電視圖</button>
+    <button class="mini" onclick="menuExport('tv')" title="4 台電視各一張（兩分類並排）＝跟著你改價/改字自動變，先不含食物照片">🖼 四張電視圖</button>
+    <button class="mini" onclick="menuExport('tvphoto')" title="官方定稿橫式（含食物照片），靜態、不隨改價變">官方照片版</button>
     ${d.me&&!d.me.canEdit?(d.me.pendingMe?`<span class="hint">🕐 編輯權審核中（已通知老闆）</span>`:`<button class="mini on" onclick="prepApply()">🙋 申請編輯權限</button>`):''}
     ${!d.me?`<span class="hint">看得到；要編輯先綁定＋申請</span>`:''}
   </div>`
@@ -420,7 +421,8 @@ function menuExport(kind){ // 匯出完整菜單（張良 2026-10-02）：txt=�
     return
   }
   // 🖼 匯出圖（張良 2026-10-08 v4.66.0）：img=直式整張(動態) / tv=四張電視橫式(官方定稿含照片)
-  if (kind === 'tv') { menuExportTV(); return }
+  if (kind === 'tv') { menuPosterTVDynamic(d, secs); return } // 動態橫式(跟著資料變)
+  if (kind === 'tvphoto') { menuExportTV(); return } // 官方定稿橫式(含照片,靜態)
   if (kind === 'imgsec') { menuPosterSections(d, secs); return } // 舊：一分類一張(保留備用)
   menuPosterCanva(d, secs)
 }
@@ -441,7 +443,67 @@ async function menuExportTV(){
     await new Promise(r=>setTimeout(r,600))
   }
 }
-// ───── 菜單海報共用（v4.66.0 / v15，2026-10-08 直式動態＋四張電視官方定稿橫式）─────
+// 🖼 四張電視圖「動態版」（張良 2026-10-08：要跟著改價/改字自動變，先不含食物照片）
+// 一螢幕＝兩分類並排(1920×1080)，Ultra 粗標題，品項填滿到底列；配對同直式：披薩|療癒碗、漢堡|三明治、麵|早午餐、小點|飲品
+async function menuPosterTVDynamic(d, secs){
+  await menuFontsReady()
+  const ORDER=['PIZZA','BOWL','BURGER','ROLL','PASTA','BRUNCH','SNACK','DRINK']
+  secs=secs.map(s=>({...s, items:(s.items||[]).filter(it=>Number(it.price)>0)})).filter(s=>s.items.length)
+  const rank=s=>{ const u=String(s.name||'').toUpperCase(); const i=ORDER.findIndex(k=>u.includes(k)); return i<0?99:i }
+  secs=secs.slice().map((s,i)=>({s,i})).sort((a,b)=>rank(a.s)-rank(b.s)||a.i-b.i).map(o=>o.s)
+  const pairs=[]; for (let i=0;i<secs.length;i+=2) pairs.push([secs[i],secs[i+1]].filter(Boolean))
+  const brand=await menuBrandImg()
+  const setN=(String(d.draft.note||'').match(/(\d+)\s*元/)||[])[1]||'89'
+  const origins=d.draft.origins||'牛肉 美國／豬肉 台灣／雞肉 美國、台灣'
+  for (let i=0;i<pairs.length;i++){ menuTVScreen(pairs[i], i, brand, setN, origins); if (i<pairs.length-1) await new Promise(r=>setTimeout(r,500)) }
+}
+function menuTVScreen(pair, idx, brand, setN, origins){
+  const SK=MENU_SK, S=2, W=1920, H=1080
+  const cv=document.createElement('canvas'); cv.width=W*S; cv.height=H*S
+  const C=menuMkCtx(cv,S); const {g}=C
+  g.fillStyle=SK.CREAM; g.fillRect(0,0,W,H)
+  if (brand) g.drawImage(brand, 960-215, 28, 430, 64)
+  else { g.textAlign='center'; C.setFont('46px '+SK.SLAB,0); g.fillStyle=SK.RED; g.fillText('GROUN:D',960,90); g.textAlign='left' }
+  const cols=[{x:70,w:845},{x:1005,w:845}]
+  pair.forEach((sec,ci)=>menuTVCat(C, SK, sec, cols[ci].x, cols[ci].w))
+  menuFooterBar(C, SK, W, 1010, 70, setN, origins)
+  const nm=pair.map(s=>menuSplitName(s.name).enU).join('-')
+  menuDownload(cv, 'GROUND_電視'+(idx+1)+'_'+nm+'.png')
+}
+function menuTVCat(C, SK, sec, x, w){
+  const {g,setFont}=C; const {enU,cnT}=menuSplitName(sec.name); const right=x+w; const baseY=300
+  setFont('900 42px '+SK.TC,1); const cnW=cnT?g.measureText(cnT).width:0; g.letterSpacing='0px'
+  let enSize=68; g.font=enSize+'px Ultra,'+MENU_SERIF; while(enSize>30 && g.measureText(enU).width>w-cnW-30){ enSize--; g.font=enSize+'px Ultra,'+MENU_SERIF }
+  g.fillStyle=SK.RED; g.fillText(enU, x, baseY); let tx=x+g.measureText(enU).width+20
+  if (cnT){ setFont('900 42px '+SK.TC,1); g.fillStyle=SK.RED; g.fillText(cnT, tx, baseY-4); g.letterSpacing='0px'; tx+=cnW+16 }
+  if (enU==='PIZZA'){ setFont('700 22px '+SK.TC,0); g.fillStyle=SK.RED; g.fillText('400°C', tx, baseY-26); g.fillText('12吋', tx, baseY-2) }
+  g.strokeStyle=SK.RED; g.lineWidth=2; g.beginPath(); g.moveTo(x,baseY+28); g.lineTo(right,baseY+28); g.stroke()
+  const items=sec.items, n=items.length, side=(Number(sec.combo)||0)>0
+  const top=baseY+90, bottom=972, itemH=Math.min(155, Math.floor((bottom-top)/n)), big=n<=4
+  items.forEach((it,i)=>menuTVItem(C, SK, sec, it, x, w, top+i*itemH, side, big))
+}
+function menuTVItem(C, SK, sec, it, x, w, cy, side, big){
+  const {g,fit,setFont,rr,leader}=C; const right=x+w
+  const nmSize=big?46:34, enSize=big?25:20, prSize=big?46:34
+  const c=(typeof mnCombo==='function')?mnCombo(sec,it):null
+  const tagRight=right, priceRight=side?right-160:right-6
+  if (c){ if (c.inc){ const t='內含', bh=48; setFont('700 27px '+SK.TC,0); const bw=g.measureText(t).width+46, bx=tagRight-bw, by=cy-Math.round(bh*0.72)
+      rr(bx,by,bw,bh,bh/2); g.fillStyle=SK.RED; g.fill(); g.fillStyle=SK.WHITE; g.textAlign='center'; g.fillText(t,bx+bw/2,cy); g.textAlign='left' }
+    else { const t=String(c.t).replace('套餐','').trim(); setFont('800 36px '+SK.TC,0); g.fillStyle=SK.RED; g.textAlign='right'; g.fillText(t,tagRight,cy); g.textAlign='left' } }
+  setFont('900 '+prSize+'px '+SK.TC,0); g.fillStyle=SK.RED; const pr=String(it.price||0); g.textAlign='right'; g.fillText(pr,priceRight,cy); g.textAlign='left'
+  const priceLeft=priceRight-g.measureText(pr).width
+  let nm=String(it.name||''), ih=false
+  if (/\s+I\s*\/\s*H\s*$/i.test(nm)){ ih=true; nm=nm.replace(/\s+I\s*\/\s*H\s*$/i,'').trim() }
+  setFont('800 '+nmSize+'px '+SK.TC,0); g.fillStyle=SK.RED; const nmMax=priceLeft-x-44-(ih?96:0); const nmTxt=fit(nm,nmMax); g.fillText(nmTxt,x,cy)
+  let nameEnd=x+g.measureText(nmTxt).width
+  if (ih){ setFont('800 28px '+SK.TC,0); g.fillStyle=SK.RED; g.fillText('冰 / 熱', nameEnd+16, cy); nameEnd+=16+g.measureText('冰 / 熱').width }
+  leader(nameEnd+18, priceLeft-22, cy-12, SK.DOT)
+  let ex=x
+  if (it.en){ setFont(enSize+'px '+SK.TC,0); g.fillStyle=SK.ENG; const et=fit(it.en, priceLeft-x-12); g.fillText(et, x, cy+34); ex+=g.measureText(et).width+16 }
+  const tags=[]; if (ih) tags.push('冰 / 熱'); String(it.note||'').split(/[\s,，、]+/).forEach(s=>{ s=s.replace(/^#/,'').trim(); if (s) tags.push(s) })
+  if (tags.length){ setFont('700 '+enSize+'px '+SK.TC,0); g.fillStyle=SK.RED; g.fillText(tags.join('　'), ex, cy+34) }
+}
+// ───── 菜單海報共用（v4.67.0 / v15，2026-10-08 直式動態＋四張電視動態橫式＋官方定稿備用）─────
 const MENU_SK = { CREAM:'#F5EADA', RED:'#CE1611', ENG:'#C56B54', WHITE:'#FFF6E9', DOT:'#D98A7A',
   SLAB:'"Alfa Slab One", Georgia, serif', TC:'"Noto Sans TC", system-ui, sans-serif',
   PP:'"Poppins","Noto Sans TC",system-ui,sans-serif', MONO:'"Space Mono",ui-monospace,monospace' }
@@ -462,7 +524,7 @@ function menuFitSpec(srcCv){
 }
 // 字型預載（Alfa Slab 英文大標／Poppins 英文副標／Space Mono 標語／Noto Sans TC 中文）
 async function menuFontsReady(){
-  const need = ['64px "Alfa Slab One"','900 30px "Noto Sans TC"','700 30px "Noto Sans TC"','500 18px "Poppins"','700 18px "Space Mono"']
+  const need = ['64px "Alfa Slab One"','900 30px "Noto Sans TC"','700 30px "Noto Sans TC"','500 18px "Poppins"','700 18px "Space Mono"','66px "Ultra"']
   try{ await Promise.all(need.map(f=>document.fonts.load(f))); await document.fonts.ready }catch(e){}
 }
 // 建一個帶 helper 的繪圖 context
