@@ -694,7 +694,8 @@ function sopRender(){
     </div>`
   }
   const shown = shown0
-  if (!shown.length) s += `<div class="mut" style="font-size:14px">${curTg?`「#${curTg}」還沒有條目——點某個產品的 ⚙️ 幫條目掛上這個階段`:'釘選的站不見了（可能被改名）——按「全部」重新釘。'}</div>`
+  s += `<div class="sopCols"><div class="sopMain">` // v4.65.0 V3 桌面兩欄：左主流程
+  if (!shown.length) s += `<div class="mut" style="font-size:14px">${curTg?`「${curTg}」還沒有動作——到工作站按 ＋新增動作`:'釘選的站不見了（可能被改名）——按「全部工作站」重新釘。'}</div>`
   shown.forEach(st => {
     const canEd = me && me.canEdit
     const stIss = (sopData.issues||[]).filter(x => x.st === st)
@@ -776,7 +777,9 @@ function sopRender(){
       return parts2.length ? parts2.join('　') : '（沒有內容變動——可能只是重新排序）'
     }
     s += `<details style="margin-top:8px"><summary class="hint" style="cursor:pointer;font-weight:800">✍️ SOP 編輯紀錄（${eds.length}）｜${Object.entries(cntE).map(([n,c])=>`${n} ${c}次`).join('、')}</summary>${eds.map((e,i)=>{ const t8 = e.ts ? new Date(new Date(e.ts).getTime()+8*3600e3).toISOString().slice(5,16).replace('T',' ') : ''; const df2 = diffOf(i); return `<div class="hint" style="padding:3px 0;border-bottom:1px dashed var(--line)">${t8}・<b>${e.by||'？'}</b>${e.st?`・「${e.st}」站`:''}${df2?`<div style="padding-left:10px">${df2}</div>`:''}</div>` }).join('')}</details>` }
-  // 📋 收班彙整（第1期：唯讀統計＋預覽不發；統一群組通知第2期接）
+  s += `<div class="hint" style="margin-top:8px">點動作名稱展開＝看說明/標準照/子項目/拍照完成。要拍照的先按 📷。</div>`
+  s += `</div><div class="sopSide">` // v4.65.0 V3 右欄：收班彙整＋交接（手機時移到動作下方）
+  // 📋 收班彙整（右欄；唯讀統計＋預覽不發，統一群組通知第2期接）
   { const reqAll = items.filter(i=>i.req!==false)
     const doneR = reqAll.filter(i=>log[i.id]&&log[i.id].done).length
     const overR = reqAll.filter(i=>sopState(i,log[i.id],now,wd)==='overdue')
@@ -793,7 +796,9 @@ function sopRender(){
       <div class="hint" style="text-align:center;margin-top:5px">時間外無法完成，逾時可回報異常。</div>
     </div>`
   }
-  s += `<div class="hint" style="margin-top:8px">點動作名稱展開＝看說明/標準照/子項目/拍照完成。要拍照的先按 📷。</div></section>`
+  // 🔄 交接待辦（V3 第9節；交接簽收介面在批次5）
+  s += `<div style="margin-top:14px;padding:12px;background:var(--soft);border:1px solid var(--line);border-radius:12px"><div style="display:flex;align-items:center;gap:8px;margin-bottom:6px"><b style="font-size:15px">🔄 交接待辦</b></div><div class="hint" style="padding:6px 0">目前沒有交接待辦</div>${me?`<button class="mini" style="width:100%;padding:9px" onclick="alert('交接簽收介面在批次5上線（可新增事項／數量／接收人簽收）')">＋ 新增交接</button>`:''}</div>`
+  s += `</div></div></section>` // 閉 sopSide + sopCols + section
   el.innerHTML = s
   if (window._sopEdit) renderSieSubs() // 原地編輯中→補填子項目清單
 }
