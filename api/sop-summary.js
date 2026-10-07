@@ -52,10 +52,9 @@ async function pushLine(gid, text) {
 
 async function runSummary(mode, dateStr) {
   const snap = await buildSummary(dateStr)
-  let link = 'https://ground-pm.vercel.app/prep#tab=sop'
+  const link = 'https://ground-pm.vercel.app/prep#tab=sop'
   let cfg = { on: 0, group: 'internal', text: '' }
   try { const { ddGet } = await import('./_ddmsg.js'); cfg = (await ddGet('sopSummary')) || cfg } catch (_) {}
-  try { const { prepLink } = await import('./_webpush.js'); if (prepLink) link = prepLink('#tab=sop') || link } catch (_) {}
   const text = summaryText(cfg.text, snap, link)
   if (mode === 'preview') return { ok: true, mode: 'preview', text, snap, willSend: !!cfg.on }
   // send / cron：冪等（唯一鍵＝營業日）
