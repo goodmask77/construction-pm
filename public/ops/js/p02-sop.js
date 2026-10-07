@@ -323,12 +323,13 @@ function sopOrdMove(kind, name, dir){ // ◀▶ 排序（v4.18.1 張良「讓我
 function sopMngT(){ window._sopMng = !window._sopMng; sopRender() } // ⚙️ 設定模式（張良 2026-10-02：平常乾淨,按了才出現編輯的東西）
 // v4.64.0 V3：原地編輯——點鉛筆在動作卡原位展開編輯表單（不彈窗/不側欄）
 function sopItemEdit(id, newSt){
-  if (id) { window._sopEdit = id; sopOpenSet.delete(id); const it = (sopData.def.items||[]).find(x=>x.id===id); window._sieSubs = it ? JSON.parse(JSON.stringify(it.subs||[])) : [] }
-  else { window._sopEdit = '__new__:' + (newSt || window._sopLastSt || ''); if (newSt) window._sopLastSt = newSt; window._sieSubs = [] }
+  if (id) { window._sopEdit = id; sopOpenSet.delete(id); const it = (sopData.def.items||[]).find(x=>x.id===id); window._sieSubs = it ? JSON.parse(JSON.stringify(it.subs||[])) : []; window._siePrereq = it ? [...(it.prereq||[])] : [] }
+  else { window._sopEdit = '__new__:' + (newSt || window._sopLastSt || ''); if (newSt) window._sopLastSt = newSt; window._sieSubs = []; window._siePrereq = [] }
   sopRender()
   setTimeout(()=>renderSieSubs(), 0)
 }
-function sopEditCancel(){ window._sopEdit = null; window._sieSubs = null; sopRender() }
+function sieToggleP(id,on){ window._siePrereq = window._siePrereq||[]; if(on){ if(!window._siePrereq.includes(id)) window._siePrereq.push(id) } else window._siePrereq = window._siePrereq.filter(x=>x!==id) }
+function sopEditCancel(){ window._sopEdit = null; window._sieSubs = null; window._siePrereq = null; sopRender() }
 function sopEditForm(it, isNew){
   const stsE = [...(sopData.def.stations||[])]
   const stDispE = s9 => String(s9).includes('｜') ? String(s9).split('｜').pop() : s9
@@ -345,6 +346,8 @@ function sopEditForm(it, isNew){
     <div style="font-weight:800;font-size:13px;margin:2px 0 4px">子項目（選填，只一層）</div>
     <div id="sieSubs"></div>
     <button class="mini" style="padding:6px 12px;margin-top:4px" onclick="sieSubAdd()">＋ 加子項目</button>
+    <div style="font-weight:800;font-size:13px;margin:10px 0 4px">前置動作（要先完成才能做這條・選填）</div>
+    <div style="max-height:130px;overflow:auto;border:1px solid var(--line);border-radius:8px;padding:6px;background:var(--bg)">${(sopData.def.items||[]).filter(x=>x.st===it.st && x.id!==it.id).map(o=>`<label style="display:block;font-size:13px;padding:2px 0"><input type="checkbox" ${(window._siePrereq||[]).includes(o.id)?'checked':''} onchange="sieToggleP('${o.id}',this.checked)"> ${sopEsc(o.title)}</label>`).join('')||'<span class="hint">這個工作站沒有其他動作可當前置</span>'}</div>
     <div style="display:flex;gap:8px;justify-content:space-between;margin-top:12px">
       ${!isNew?`<button class="mini" style="color:var(--red);padding:9px 12px" onclick="if(confirm('刪除這個動作？'))sopItemSave('${it.id}',1)">🗑 刪除</button>`:'<span></span>'}
       <span style="display:flex;gap:8px"><button class="mini" style="padding:9px 12px" onclick="sopEditCancel()">取消</button>
@@ -380,7 +383,8 @@ async function sopItemSave(id, del){
       req: !!((document.getElementById('sieReq')||{}).checked),
       photo: !!((document.getElementById('sieP')||{}).checked),
       desc: ((document.getElementById('sieDesc')||{}).value||'').trim(),
-      subs: (window._sieSubs||[]).filter(s=>s&&String(s.title||'').trim())
+      subs: (window._sieSubs||[]).filter(s=>s&&String(s.title||'').trim()),
+      prereq: window._siePrereq||[]
     }
     body = { item, token: TK() }
   }
@@ -485,14 +489,17 @@ let sopOpenSet = new Set()                 // 展開的動作(itemId)；記憶�
 window._sopSub = window._sopSub || 'today' // 子頁：today / tmpl / hist
 const sopNow = () => new Date(Date.now() + 8*3600e3).toISOString().slice(11,16)
 // v4.63.0 V3：正式執行永遠驗證時間（移除嚴格開關）。台北 HH:MM 字串比較；wd=週幾(0日6六公休不鎖)
-function sopState(it, lg, now, wd){
+// v4.66.0 加前置條件：時間內但前置動作未完成＝等待前置（waiting）
+const sopPrereqUnmet = (it, log) => it.prereq && it.prereq.length && it.prereq.some(pid => !(log && log[pid] && log[pid].done))
+function sopState(it, lg, now, wd, log){
   if (lg && lg.done) return 'done'
-  if (!it.start && !it.end) return 'open'            // 完全沒設時間＝一般可做（無時段限制）
+  if (!it.start && !it.end) return sopPrereqUnmet(it, log) ? 'waiting' : 'open' // 無時段限制：看前置
   if (!it.start) return 'pending_cfg'                 // 有end沒start＝待設定（管理者去補開始時間）
   const weekend = (wd===0 || wd===6)
   if (weekend) return 'open'                          // 公休預覽不鎖
   if (now < it.start) return 'locked'                 // 尚未開放
   if (it.end && now >= it.end) return 'overdue'       // 逾時＝永遠鎖（只能回報異常）
+  if (sopPrereqUnmet(it, log)) return 'waiting'       // 時間內但前置未完成＝等待前置
   return 'open'                                       // 可執行
 }
 const SOP_BADGE = {
@@ -548,6 +555,9 @@ function sopActPanel(it, lg, state){
       ${it.photo?(sopPhotos[it.id]?`<img src="${sopPhotos[it.id]}" style="width:40px;height:40px;object-fit:cover;border-radius:8px;border:2px solid var(--green);cursor:pointer" onclick="sopPick('${it.id}')">`:`<button class="mini" style="padding:8px 12px;font-size:15px" onclick="sopPick('${it.id}')">📷 拍照</button>`):''}
       <button class="mini ${(needP||reqSubMiss)?'':'on'}" style="margin-left:auto;padding:9px 18px" onclick="sopDo('${it.id}')" ${reqSubMiss?'title="先完成必做子項目"':(needP?'title="要先拍照"':'')}>${it.photo?'拍照並完成':'完成'}</button></div>`
     if (reqSubMiss) h += `<div class="hint" style="text-align:right;margin-top:3px;color:#D4A72C">先完成上面的必做子項目</div>`
+  } else if (state==='waiting') {
+    const pend = (it.prereq||[]).map(pid=>{ const p=(sopData.def.items||[]).find(x=>x.id===pid); return p?p.title:'' }).filter(Boolean)
+    h += `<div class="hint" style="margin-top:6px;color:#D4A72C">⏳ 等待前置完成：${pend.map(t=>sopEsc(t)).join('、')||'前置動作'}</div>`
   } else {
     h += state==='locked'
       ? `<div class="hint" style="margin-top:6px">⏳ 尚未開放——${it.start} 才能開始</div>`
@@ -730,7 +740,7 @@ function sopRender(){
     stList.forEach(it => {
       if (grpMode) { const g9 = tgOf(it) || '未分階段'; if (g9 !== lastTg9) { lastTg9 = g9; s += `<div style="font-weight:900;font-size:13px;color:var(--pdark);margin:8px 0 2px"># ${g9}</div>` } }
       const lg = log[it.id]
-      const state = sopState(it, lg, now, wd)
+      const state = sopState(it, lg, now, wd, log)
       const open = sopOpenSet.has(it.id)
       const subs = it.subs || []
       const subDoneN = subs.filter(su => lg && lg.subs && lg.subs[su.id] && lg.subs[su.id].done).length
@@ -782,7 +792,7 @@ function sopRender(){
   // 📋 收班彙整（右欄；唯讀統計＋預覽不發，統一群組通知第2期接）
   { const reqAll = items.filter(i=>i.req!==false)
     const doneR = reqAll.filter(i=>log[i.id]&&log[i.id].done).length
-    const overR = reqAll.filter(i=>sopState(i,log[i.id],now,wd)==='overdue')
+    const overR = reqAll.filter(i=>sopState(i,log[i.id],now,wd,log)==='overdue')
     const undoneR = Math.max(0, reqAll.length - doneR - overR.length)
     s += `<div style="margin-top:14px;padding:12px;background:var(--soft);border:1px solid var(--line);border-radius:12px">
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px"><b style="font-size:15px">📋 收班彙整</b><span class="hint" style="margin-left:auto">統一通知群組（第2期上線）</span></div>

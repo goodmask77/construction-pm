@@ -4289,6 +4289,10 @@ export default async function handler(req, res) {
         if (hm4 < it4.start) return res.status(409).json({ ok: false, error: `尚未開放（${it4.start} 才能開始）` })
         if (it4.end && hm4 >= it4.end) return res.status(409).json({ ok: false, error: `已逾時（${it4.end} 截止），不能補打成完成；可改用「回報異常」` })
       }
+      if (it4 && Array.isArray(it4.prereq) && it4.prereq.length) { // v4.66.0 前置：要先完成的動作沒完成就擋
+        const unmet4 = it4.prereq.filter(pid => !(slog.items[pid] && slog.items[pid].done))
+        if (unmet4.length) return res.status(409).json({ ok: false, error: '前置動作還沒完成，要先完成前置才能做這條' })
+      }
       let photoUrl = null
       if (typeof b4.photo === 'string' && b4.photo.startsWith('data:image')) {
         try {
@@ -4357,6 +4361,7 @@ export default async function handler(req, res) {
       const desc = String(inp.desc || '').trim().slice(0, 500); if (desc) o.desc = desc
       if (refsIn.length) { o.refs = refsIn; o.ref = refsIn[0] } // ref 鏡像=相容舊單張讀取
       if (subsIn.length) o.subs = subsIn
+      if (Array.isArray(inp.prereq) && inp.prereq.length) o.prereq = inp.prereq.filter(x => typeof x === 'string' && x).slice(0, 20) // v4.66.0 前置動作
       const prevA = gA.items.find(x => x.id === o.id)
       gA.items = [...gA.items.filter(x => x.id !== o.id), o]
       gA.edits = [{ ts: new Date().toISOString(), by: whoA.name, st, op: 'actset', prev: prevA ? [prevA] : [] }, ...(gA.edits || [])].slice(0, 30)
