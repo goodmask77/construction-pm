@@ -494,7 +494,7 @@ function menuTVCat(C, SK, sec, x, w, bottom){
 }
 function menuTVItem(C, SK, sec, it, x, w, cy, side, big){
   const {g,fit,setFont,rr,leader}=C; const right=x+w
-  const nmSize=big?46:34, enSize=big?25:20, prSize=big?46:34
+  const nmSize=big?46:30, enSize=big?25:16, prSize=big?46:32, enY=cy+(big?34:24) // 英文貼著自己品名(密集欄縮字放大行距)
   const c=(typeof mnCombo==='function')?mnCombo(sec,it):null
   const tagRight=right, priceRight=side?right-160:right-6
   if (c){ if (c.inc){ const t='內含', bh=48; setFont('700 27px '+SK.TC,0); const bw=g.measureText(t).width+46, bx=tagRight-bw, by=cy-Math.round(bh*0.72)
@@ -509,9 +509,9 @@ function menuTVItem(C, SK, sec, it, x, w, cy, side, big){
   if (ih){ setFont('800 28px '+SK.TC,0); g.fillStyle=SK.RED; g.fillText('冰 / 熱', nameEnd+16, cy); nameEnd+=16+g.measureText('冰 / 熱').width }
   leader(nameEnd+18, priceLeft-22, cy-12, SK.DOT)
   let ex=x
-  if (it.en){ setFont(enSize+'px '+SK.TC,0); g.fillStyle=SK.ENG; const et=fit(it.en, priceLeft-x-12); g.fillText(et, x, cy+34); ex+=g.measureText(et).width+16 }
-  const tags=[]; if (ih) tags.push('冰 / 熱'); String(it.note||'').split(/[\s,，、]+/).forEach(s=>{ s=s.replace(/^#/,'').trim(); if (s) tags.push(s) })
-  if (tags.length){ setFont('700 '+enSize+'px '+SK.TC,0); g.fillStyle=SK.RED; g.fillText(tags.join('　'), ex, cy+34) }
+  if (it.en){ setFont(enSize+'px '+SK.TC,0); g.fillStyle=SK.ENG; const et=fit(it.en, priceLeft-x-12); g.fillText(et, x, enY); ex+=g.measureText(et).width+16 }
+  const tags=[]; if (ih) tags.push('I / H'); String(it.note||'').split(/[\s,，、]+/).forEach(s=>{ s=s.replace(/^#/,'').trim(); if (s) tags.push(s) }) // 英文行＝I / H(中文行才是冰／熱)
+  if (tags.length){ setFont('700 '+enSize+'px '+SK.TC,0); g.fillStyle=SK.RED; g.fillText(tags.join('　'), ex, enY) }
 }
 // ───── 菜單海報共用（v4.67.0 / v15，2026-10-08 直式動態＋四張電視動態橫式＋官方定稿備用）─────
 const MENU_SK = { CREAM:'#F5EADA', RED:'#CE1611', ENG:'#C56B54', WHITE:'#FFF6E9', DOT:'#D98A7A',
@@ -624,7 +624,7 @@ function menuPHead(C, SK, sec, textX, colW, headStartY){
 // 一列品項：中文名…點線…售價＋[內含紅底徽章/+N紅字]；下方英文＋行內標籤(冰／熱‧無咖啡因)
 function menuPItemRow(C, SK, sec, it, boxX, boxW, textX, boxTop, i, side){
   const {g,fit,setFont,rr,leader}=C; const right=boxX+boxW
-  const cnY=boxTop+38+i*64, enY=cnY+27, leadY=cnY-9
+  const cnY=boxTop+38+i*64, enY=cnY+23, leadY=cnY-9 // 英文貼近自己品名(原+27離下項太近)
   const nmSize=side?30:32, enSize=side?16:18, prSize=side?29:32
   const c=(typeof mnCombo==='function')?mnCombo(sec,it):null
   const tagRight=right-8, priceRight=side?right-96:right-44
@@ -645,7 +645,7 @@ function menuPItemRow(C, SK, sec, it, boxX, boxW, textX, boxTop, i, side){
   // 英文＋行內標籤（依字寬順序，不越價格欄）
   let ex=textX
   if (it.en){ setFont(enSize+'px '+SK.TC,0); g.fillStyle=SK.ENG; const et=fit(it.en, priceLeft-textX-6); g.fillText(et, ex, enY); ex+=g.measureText(et).width+12 }
-  const tags=[]; if (ih) tags.push('冰／熱'); String(it.note||'').split(/[\s,，、]+/).forEach(s=>{ s=s.replace(/^#/,'').trim(); if (s) tags.push(s) })
+  const tags=[]; if (ih) tags.push('I / H'); String(it.note||'').split(/[\s,，、]+/).forEach(s=>{ s=s.replace(/^#/,'').trim(); if (s) tags.push(s) }) // 英文行＝I / H(中文行才是冰／熱)
   if (tags.length){ setFont('650 '+enSize+'px '+SK.TC,0); g.fillStyle=SK.RED; g.fillText(tags.join('　'), ex, enY) }
 }
 // 底部單行紅底列（y1850 高70，直式 26px 置中）：主餐 +N 升級套餐｜副餐選 1＋飲品選 1｜肉品產地…
