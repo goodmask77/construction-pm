@@ -11,7 +11,8 @@ async function sopStOp(body){
 // （legacy sopStAdd 已併入 hashtag 版）
 function sopStRename(st){ const inp = document.getElementById('edStName'); const nn = inp && inp.value.trim(); if (!nn || nn === st) return alert('輸入新站名再按改名'); sopStOp({ op:'rename', st, newName: nn }) }
 function sopStDel(st){ if (confirm(`刪除「${st}」整站？（項目會進回收站，可隨時復原）`)) sopStOp({ op:'del', st }) }
-function sopPick(id){
+function sopPick(id, subId){ // v4.59.0 subId＝子項目拍照，存複合 key id:subId
+  const pk = subId ? id + ':' + subId : id
   const inp = document.createElement('input'); inp.type = 'file'; inp.accept = 'image/*'; inp.capture = 'environment'
   inp.onchange = () => {
     const f = inp.files && inp.files[0]; if (!f) return
@@ -20,7 +21,7 @@ function sopPick(id){
       const sc = Math.min(1, 1280 / Math.max(img.width, img.height))
       const cv = document.createElement('canvas'); cv.width = Math.round(img.width*sc); cv.height = Math.round(img.height*sc)
       cv.getContext('2d').drawImage(img, 0, 0, cv.width, cv.height)
-      sopPhotos[id] = cv.toDataURL('image/jpeg', 0.75); sopRender()
+      sopPhotos[pk] = cv.toDataURL('image/jpeg', 0.75); sopRender()
     }
     img.src = URL.createObjectURL(f)
   }

@@ -2904,7 +2904,7 @@ export default async function handler(req, res) {
     const gdef = (defDoc || {}).ground || { items: [] }
     // me＝綁定者（張良 2026-09-21 拍板：不設站長，綁定的人全站都能編，靠歷史紀錄留痕）
     const approvers = ((defDoc || {}).ground || {}).approvers || ['張良瑋'] // 解決審核人（張良 2026-09-21：已解決要經我審核）
-    const me4 = me3 ? { name: me3.name, canEdit: true, approver: approvers.includes(me3.name), role: me3.role || '' } : null
+    const me4 = me3 ? { name: me3.name, canEdit: true, approver: approvers.includes(me3.name), role: me3.role || '', isMgr: approvers.includes(me3.name) || me3.role === '主管' } : null
     const issues = ((issuesDoc || {}).list || []).filter(x => x.status === 'open' || x.status === 'pending').slice(0, 30)
     // v4.18.0 hashtag 模型遷移（張良 2026-10-02：#階段 × #產品 雙標籤取代樹狀分身）——一次性自動轉
     let mig18 = false
@@ -2925,14 +2925,25 @@ export default async function handler(req, res) {
       gdef.items.forEach(it => { if (it.st === stX && !it.tg) { it.tg = cg18; mig18 = true } })
     }
     if (gdef.stCat && Object.keys(gdef.stCat).length) { gdef.stCat = {}; mig18 = true }
-    if (mig18) { defDoc.ground = gdef; await kvPut('sp_finance_pm_sop_def', defDoc, 'SOP hashtag遷移') }
+    // v4.59.0 mig19（工作流程SOP改版）：舊單一 due → 時間區間 start/end；start 不推定留空＝待設定（遵 spec §8）；req 補預設必做。
+    // start 空時不硬鎖（否則舊條遷移後全變逾時鎖死當天開不了工）；要管理者把全部區間設好、按「啟用嚴格模式」才對 end 過期硬鎖。
+    let mig19 = false
+    for (const it of gdef.items) {
+      if (it.start === undefined && it.end === undefined) {
+        it.end = it.due || ''
+        it.start = ''
+        if (it.req === undefined) it.req = true
+        mig19 = true
+      }
+    }
+    if (mig18 || mig19) { defDoc = defDoc || {}; defDoc.ground = gdef; await kvPut('sp_finance_pm_sop_def', defDoc, mig19 ? 'SOP時間區間遷移' : 'SOP hashtag遷移') }
     const stations = gdef.stations
     const trash = (gdef.trash || []).map(t => ({ id: t.id, st: t.st, n: (t.items || []).length, ts: t.ts, by: t.by }))
     // v4.15.0 SOP分層+負責人（張良 2026-10-02）
     const sugsD0 = await kvGet('sp_finance_pm_sop_sugs')
     const sugOpen = {}
     ;(((sugsD0 || {}).list) || []).forEach(x => { if (x.status === 'open') sugOpen[x.st] = (sugOpen[x.st] || 0) + 1 })
-    return res.status(200).json({ ok: true, date: dt2, def: { items: gdef.items || [], stations, edits: (gdef.edits || []).slice(0, 10), cats: gdef.catOrder || [], stCat: gdef.stCat || {}, stOwner: gdef.stOwner || {}, catOwner: gdef.catOwner || {} }, sugOpen, trash, log: logDoc || { items: {} }, names, me: me4, issues, prepHide: (hideDoc || {}).keys || {} })
+    return res.status(200).json({ ok: true, date: dt2, def: { items: gdef.items || [], stations, strictMode: !!gdef.strictMode, edits: (gdef.edits || []).slice(0, 10), cats: gdef.catOrder || [], stCat: gdef.stCat || {}, stOwner: gdef.stOwner || {}, catOwner: gdef.catOwner || {} }, sugOpen, trash, log: logDoc || { items: {} }, names, me: me4, issues, prepHide: (hideDoc || {}).keys || {} })
   }
   // 站別管理（張良 2026-09-21：站可新增/改名/刪除；誤刪可復原→軟刪進回收站）：POST ?sopst=<OPS_BOARD_KEY> {token, op, st, newName, trashId}
   if (req.method === 'POST' && req.query?.sopst) {
@@ -4241,25 +4252,116 @@ export default async function handler(req, res) {
     const dt2 = sopToday(); const dk2 = 'sp_finance_pm_sop_g_' + dt2
     const slog = (await kvGet(dk2)) || { items: {}, notified: {} }
     slog.items = slog.items || {}
-    if (b4.undo) delete slog.items[b4.itemId]
+    if (b4.undo) {
+      // v4.59.0 撤銷：撤子項＝只刪該子項（父若已完成也一併取消，因必做子項不再齊全）；撤父＝整條清掉（含所有子項）
+      if (b4.subId && slog.items[b4.itemId] && slog.items[b4.itemId].subs) { delete slog.items[b4.itemId].subs[b4.subId]; delete slog.items[b4.itemId].done }
+      else delete slog.items[b4.itemId]
+    }
     else {
+      const who4 = await sopWho(b4.token) // v4.34.0 打卡=參與，綁定即可（編輯內容才看 sop 權限）
+      if (!who4) return res.status(403).json({ ok: false, error: permDeny() }) // 張良 2026-09-25：不再收手填名字
+      const hm4 = new Date(Date.now() + 8 * 3600e3).toISOString().slice(11, 16)
+      // v4.59.0 伺服器時間鎖（權威）：只在嚴格模式且該動作有設 start 才鎖；前端 disable 不算數，這裡再擋一次
+      const gD4 = ((await kvGet('sp_finance_pm_sop_def')) || {}).ground || {}
+      const it4 = (gD4.items || []).find(x => x.id === b4.itemId)
+      if (it4 && gD4.strictMode && it4.start) {
+        if (hm4 < it4.start) return res.status(409).json({ ok: false, error: `尚未開放（${it4.start} 才能開始）` })
+        if (it4.end && hm4 >= it4.end) return res.status(409).json({ ok: false, error: `已逾時（${it4.end} 截止），不能補打成完成；可改用「回報異常」` })
+      }
       let photoUrl = null
       if (typeof b4.photo === 'string' && b4.photo.startsWith('data:image')) {
         try {
           const buf = Buffer.from(b4.photo.split(',')[1], 'base64')
-          const path4 = `sop/${dt2}/${b4.itemId}_${Date.now()}.jpg`
+          const path4 = `sop/${dt2}/${b4.itemId}${b4.subId ? '_' + b4.subId : ''}_${Date.now()}.jpg`
           const ur = await fetch(`${SB_URL}/storage/v1/object/photos/${path4}`, { method: 'POST', headers: { apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}`, 'content-type': 'image/jpeg', 'x-upsert': 'true' }, body: buf })
           if (ur.ok) photoUrl = `${SB_URL}/storage/v1/object/public/photos/${path4}`
         } catch (_) {}
       }
-      const hm4 = new Date(Date.now() + 8 * 3600e3).toISOString().slice(11, 16)
-      const who4 = await sopWho(b4.token) // v4.34.0 打卡=參與，綁定即可（編輯內容才看 sop 權限）
-      if (!who4) return res.status(403).json({ ok: false, error: permDeny() }) // 張良 2026-09-25：不再收手填名字
-      slog.items[b4.itemId] = { done: 1, ts: hm4, by: who4.name, ...(photoUrl ? { photo: photoUrl } : {}) }
-      await awardPts(who4.name, 'sop_done', dt2 + ':' + b4.itemId) // 🏦 行為分：完成 SOP 一條（同條同天只算一次；撤銷不扣，抽查制）
+      const cur4 = slog.items[b4.itemId] || {}
+      // §歷史一致：存範本快照 title/st/tg，之後改名/刪條目歷史不壞
+      if (it4) { cur4.title = it4.title; cur4.st = it4.st; cur4.tg = it4.tg || '' }
+      if (b4.subId) { // 子項目完成：各記完成人/時間，不自動標父完成
+        cur4.subs = cur4.subs || {}
+        cur4.subs[b4.subId] = { done: 1, ts: hm4, by: who4.name, ...(photoUrl ? { photo: photoUrl } : {}) }
+        slog.items[b4.itemId] = cur4
+      } else { // 父動作完成：若有必做子項，全部完成才允許（前後端同驗）
+        const reqSubs = ((it4 && it4.subs) || []).filter(s => s.req !== false)
+        if (reqSubs.length) {
+          const doneSubs = cur4.subs || {}
+          const missN = reqSubs.filter(s => !(doneSubs[s.id] && doneSubs[s.id].done)).length
+          if (missN) return res.status(409).json({ ok: false, error: `還有 ${missN} 個必做子項目未完成` })
+        }
+        cur4.done = 1; cur4.ts = hm4; cur4.by = who4.name
+        if (photoUrl) cur4.photo = photoUrl
+        slog.items[b4.itemId] = cur4
+        await awardPts(who4.name, 'sop_done', dt2 + ':' + b4.itemId) // 🏦 行為分：完成 SOP 一條（同條同天只算一次；撤銷不扣，抽查制）
+      }
     }
     await kvPut(dk2, slog, 'SOP打卡')
     return res.status(200).json({ ok: true, log: slog })
+  }
+  // v4.59.0 單一動作全量存（工作流程SOP改版）：含 start/end/req/desc/refs/subs，只改這一條不動別條（避開 sopfull 吃掉別條 tg/ref）。守門 permWho('sop')+負責人；自動儲存靠它
+  if (req.method === 'POST' && req.query?.sopact) {
+    const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
+    if (!ok2 || String(req.query.sopact) !== ok2) return res.status(403).json({ ok: false })
+    let ba = {}
+    try { ba = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
+    const whoA = await permWho(ba.token, 'sop')
+    if (!whoA) return res.status(403).json({ ok: false, error: permDeny() })
+    const inp = ba.item || {}
+    if (ba.del !== true && !String(inp.title || '').trim()) return res.status(400).json({ ok: false, error: '缺動作名稱' })
+    const curA = (await kvGet('sp_finance_pm_sop_def')) || {}
+    const gA = curA.ground || { items: [] }
+    gA.items = gA.items || []
+    const st = String(inp.st || '').trim().slice(0, 20)
+    // 負責人守門（複用 sopedit 規則）：有主的站只有負責人/審核人/主管能改
+    const ownA = (gA.stOwner || {})[st] || (gA.catOwner || {})[(gA.stCat || {})[st]]
+    const aprA = gA.approvers || ['張良瑋']
+    if (ownA && ownA !== whoA.name && !aprA.includes(whoA.name) && whoA.role !== '主管') return res.status(403).json({ ok: false, error: '「' + st + '」由 ' + ownA + ' 負責——想改請按站名旁「💡 提建議」' })
+    const now8a = new Date(Date.now() + 8 * 3600e3).toISOString().slice(5, 16).replace('T', ' ')
+    if (ba.del === true) { // 刪一條（有歷史的靠每日快照保留，範本直接移除）
+      if (!inp.id) return res.status(400).json({ ok: false, error: '缺 id' })
+      const prevD = gA.items.find(x => x.id === inp.id)
+      gA.items = gA.items.filter(x => x.id !== inp.id)
+      gA.edits = [{ ts: new Date().toISOString(), by: whoA.name, st, op: 'actdel', prev: prevD ? [prevD] : [] }, ...(gA.edits || [])].slice(0, 30)
+    } else {
+      const hm = s => /^\d{2}:\d{2}$/.test(String(s || '')) ? String(s) : ''
+      const subsIn = Array.isArray(inp.subs) ? inp.subs.slice(0, 20).filter(s => s && String(s.title || '').trim()).map((s, i) => ({ id: String(s.id || ('s' + Date.now().toString(36) + i)).slice(0, 24), title: String(s.title).trim().slice(0, 60), req: s.req !== false, photo: !!s.photo })) : []
+      const refsIn = Array.isArray(inp.refs) ? inp.refs.filter(u => typeof u === 'string' && u).slice(0, 5).map(u => u.slice(0, 500)) : []
+      const o = { id: inp.id || ('u' + Date.now().toString(36)), st, title: String(inp.title).trim().slice(0, 60), start: hm(inp.start), end: hm(inp.end), req: inp.req !== false, photo: !!inp.photo, editBy: whoA.name, editTs: now8a }
+      o.due = o.end // 鏡像保相容（舊 edits diff / 舊碼讀 due）
+      const tg = String(inp.tg || '').trim().slice(0, 20); if (tg) o.tg = tg
+      const desc = String(inp.desc || '').trim().slice(0, 500); if (desc) o.desc = desc
+      if (refsIn.length) { o.refs = refsIn; o.ref = refsIn[0] } // ref 鏡像=相容舊單張讀取
+      if (subsIn.length) o.subs = subsIn
+      const prevA = gA.items.find(x => x.id === o.id)
+      gA.items = [...gA.items.filter(x => x.id !== o.id), o]
+      gA.edits = [{ ts: new Date().toISOString(), by: whoA.name, st, op: 'actset', prev: prevA ? [prevA] : [] }, ...(gA.edits || [])].slice(0, 30)
+    }
+    curA.ground = gA
+    await kvPut('sp_finance_pm_sop_def', curA, 'SOP動作(' + whoA.name + ')')
+    return res.status(200).json({ ok: true, items: gA.items })
+  }
+  // v4.59.0 啟用/關閉嚴格時間模式（審核人/主管限定）：啟用前要全部動作都設好 start，否則拒絕（避免空區間條被硬鎖）
+  if (req.method === 'POST' && req.query?.sopstrict) {
+    const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
+    if (!ok2 || String(req.query.sopstrict) !== ok2) return res.status(403).json({ ok: false })
+    let bt = {}
+    try { bt = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
+    const whoT = await permWho(bt.token, 'sop')
+    if (!whoT) return res.status(403).json({ ok: false, error: permDeny() })
+    const curT = (await kvGet('sp_finance_pm_sop_def')) || {}
+    const gT = curT.ground || { items: [] }
+    const aprT = gT.approvers || ['張良瑋']
+    if (!(aprT.includes(whoT.name) || whoT.role === '主管')) return res.status(403).json({ ok: false, error: '嚴格模式由審核人／主管開啟' })
+    if (bt.on) {
+      const noStart = (gT.items || []).filter(x => !x.start)
+      if (noStart.length) return res.status(400).json({ ok: false, error: `還有 ${noStart.length} 個動作沒設開始時間，設定完成前不能啟用嚴格模式` })
+    }
+    gT.strictMode = !!bt.on
+    curT.ground = gT
+    await kvPut('sp_finance_pm_sop_def', curT, 'SOP嚴格模式' + (bt.on ? '開' : '關') + '(' + whoT.name + ')')
+    return res.status(200).json({ ok: true, strictMode: gT.strictMode })
   }
   if (req.method === 'POST' && req.query?.sopset) {
     const mk = (process.env.MENU_PROBE_KEY || '').trim()

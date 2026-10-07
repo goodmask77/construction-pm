@@ -230,7 +230,7 @@ function canTab(k){
 // 會寫入的按鈕 → 所屬分頁權限（'*'=跟著目前頁面，給盤點/包材共用函式）；純看的（切頁/收合/篩選/看圖）不鎖
 const EDIT_FN = {
   actSave:'board', actAdd:'board', actLoss:'board', act86:'board', rHide:'board', posHide:'board', rMng:'board', itmMngTog:'board',
-  sopItemEdit:'sop', sopItemSave:'sop', sopEdAdd:'sop', sopEdSave:'sop', sopCatAdd:'sop', sopCatMng:'sop', sopCatSet:'sop', sopStAdd:'sop', sopStDel:'sop', sopStRen:'sop', sopStRename:'sop', sopStOp:'sop', sopstOp:'sop', catMove:'sop', msAddSt:'sop', msDelSt:'sop', msSave:'sop', sopOrdMove:'sop', sopRefOpen:'sop', sopRefPaste:'sop', sopRefSave:'sop', sopRefUp:'sop', sopMngT:'sop',
+  sopItemEdit:'sop', sopItemSave:'sop', sopEdAdd:'sop', sopEdSave:'sop', sopCatAdd:'sop', sopCatMng:'sop', sopCatSet:'sop', sopStAdd:'sop', sopStDel:'sop', sopStRen:'sop', sopStRename:'sop', sopStOp:'sop', sopstOp:'sop', catMove:'sop', msAddSt:'sop', msDelSt:'sop', msSave:'sop', sopOrdMove:'sop', sopRefOpen:'sop', sopRefPaste:'sop', sopRefSave:'sop', sopRefUp:'sop', sopMngT:'sop', sopStrictOn:'sop',
   taskNew:'task', taskNewSend:'task', taskOwn:'task', taskOwnSend:'task', ckAdd:'task', ckOp:'task', ckPick:'task', ckSend:'task', lbOp:'task', lbDue:'task',
   lbPtsSave:'lb', lbPtsAdd:'lb', lbPtsAdjust:'lb', lbRdDecide:'lb', lbGrant:'lb', lbGrantGo:'lb', lbRwMng:'lb', lbRwSave:'lb', lbRwDel:'lb', lbRwAdd:'lb',
   menuCell:'menu', menuItemAdd:'menu', menuItemDel:'menu', menuItemSave:'menu', menuItemPurge:'menu', menuItemRestore:'menu', menuItemShift:'menu', menuSecDel:'menu', menuSecForm:'menu', menuSecShift:'menu', menuNoteEdit:'menu', mnImgPick:'menu', mnImgUndo:'menu', mnDragStart:'menu', menuSecCombo:'menu', menuItemCombo:'menu',
@@ -321,44 +321,72 @@ function sopOrdMove(kind, name, dir){ // ◀▶ 排序（v4.18.1 張良「讓我
   sopstOp(kind==='cat' ? { op:'catord', list: arr } : { op:'stord', list: arr })
 }
 function sopMngT(){ window._sopMng = !window._sopMng; sopRender() } // ⚙️ 設定模式（張良 2026-10-02：平常乾淨,按了才出現編輯的東西）
-function sopItemEdit(id, newSt){ // 單條 SOP 編輯/新增（取代總編輯）
-  const it = id ? (sopData.def.items||[]).find(x=>x.id===id) : { title:'', due:'', photo:false, st:newSt||'' }
+function sopItemEdit(id, newSt){ // 單條動作 編輯/新增（v4.59.0：start/end/必做/說明/子項目；存走 sopact 不吃別條 tg/ref）
+  const it = id ? (sopData.def.items||[]).find(x=>x.id===id) : { title:'', start:'', end:'', req:true, photo:false, desc:'', st:newSt||window._sopLastSt||'', tg:window._sopTg||'' }
   if (!it) return
+  if (!id && newSt) window._sopLastSt = newSt
+  window._sieSubs = JSON.parse(JSON.stringify(it.subs||[]))
   const stsE = [...(sopData.def.stations||[])]
   const stDispE = s9 => String(s9).includes('｜') ? String(s9).split('｜').pop() : s9
   const ov = document.createElement('div'); ov.id='sieOv'
   ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:65;display:flex;align-items:center;justify-content:center;padding:16px'
   const ip9 = 'width:100%;border:1px solid var(--line);border-radius:8px;padding:9px;font-size:15px;margin-bottom:8px'
-  ov.innerHTML = `<div style="background:#222B38;border:1px solid #3B4654;border-radius:14px;width:min(400px,94vw);padding:16px" onclick="event.stopPropagation()">
-    <div style="font-weight:900;margin-bottom:10px">⚙️ 編輯 SOP 條目</div>
-    <input id="sieT" value="${String(it.title||'').replace(/"/g,'&quot;')}" placeholder="內容" style="${ip9}">
-    <div style="display:flex;gap:10px;align-items:center;margin-bottom:8px"><span class="hint">時限</span><input id="sieD" type="time" value="${it.due||''}" style="border:1px solid var(--line);border-radius:8px;padding:8px;font-size:15px"><label style="font-size:14px"><input id="sieP" type="checkbox" ${it.photo?'checked':''}> 📷 要拍照</label></div>
-    <div style="display:flex;gap:10px;align-items:center;margin-bottom:8px"><span class="hint">#階段</span><select id="sieG" style="flex:1;border:1px solid var(--line);border-radius:8px;padding:8px;font-size:14px"><option value="">未分階段</option>${(sopData.def.cats||[]).map(c9=>`<option value="${c9}"${(it.tg||(id?'':window._sopTg||''))===c9?' selected':''}>${c9}</option>`).join('')}</select></div>
-    <div style="display:flex;gap:10px;align-items:center;margin-bottom:8px"><span class="hint">產品</span><select id="sieS" style="flex:1;border:1px solid var(--line);border-radius:8px;padding:8px;font-size:14px">${stsE.map(s9=>`<option value="${s9}"${it.st===s9?' selected':''}>${stDispE(s9)}</option>`).join('')}</select></div>
-    <div style="display:flex;gap:8px;justify-content:space-between;margin-top:10px">
-      ${id?`<button class="mini" style="color:var(--red);padding:9px 12px" onclick="if(confirm('刪除這一條？')){document.getElementById('sieOv').remove();sopItemSave('${id}',1)}">🗑 刪除</button>`:'<span></span>'}
+  const selS = 'border:1px solid var(--line);border-radius:8px;padding:8px;font-size:14px'
+  ov.innerHTML = `<div style="background:#222B38;border:1px solid #3B4654;border-radius:14px;width:min(440px,94vw);max-height:90vh;overflow:auto;padding:16px" onclick="event.stopPropagation()">
+    <div style="font-weight:900;margin-bottom:10px">✎ ${id?'編輯':'新增'}動作</div>
+    <input id="sieT" value="${sopEsc(it.title)}" placeholder="動作名稱（例：POS 開機・零用金點收）" style="${ip9}">
+    <div style="display:flex;gap:8px;align-items:center;margin-bottom:4px"><span class="hint">可完成時間</span><input id="sieS1" type="time" value="${it.start||''}" style="${selS}"><span class="hint">到</span><input id="sieE1" type="time" value="${it.end||it.due||''}" style="${selS}"></div>
+    <div class="hint" style="margin:0 0 8px">過了「結束時間」在嚴格模式下就鎖死不能補打（只能回報異常）。開始留空＝待設定。</div>
+    <div style="display:flex;gap:14px;align-items:center;margin-bottom:8px"><label style="font-size:14px"><input id="sieReq" type="checkbox" ${it.req!==false?'checked':''}> 必做</label><label style="font-size:14px"><input id="sieP" type="checkbox" ${it.photo?'checked':''}> 📷 完成要拍照</label></div>
+    <div style="display:flex;gap:8px;margin-bottom:8px;align-items:center"><span class="hint">階段</span><select id="sieG" style="flex:1;${selS}"><option value="">未分階段</option>${(sopData.def.cats||[]).map(c9=>`<option value="${sopEsc(c9)}"${it.tg===c9?' selected':''}>${sopEsc(c9)}</option>`).join('')}</select><span class="hint">工作站</span><select id="sieS" style="flex:1;${selS}">${stsE.map(s9=>`<option value="${sopEsc(s9)}"${it.st===s9?' selected':''}>${sopEsc(stDispE(s9))}</option>`).join('')}</select></div>
+    <textarea id="sieDesc" rows="2" placeholder="執行說明（選填）" style="${ip9};font-family:inherit">${sopEsc(it.desc||'')}</textarea>
+    <div style="font-weight:800;font-size:13px;margin:2px 0 4px">子項目（選填，只一層）</div>
+    <div id="sieSubs"></div>
+    <button class="mini" style="padding:6px 12px;margin-top:4px" onclick="sieSubAdd()">＋ 加子項目</button>
+    <div style="display:flex;gap:8px;justify-content:space-between;margin-top:12px">
+      ${id?`<button class="mini" style="color:var(--red);padding:9px 12px" onclick="if(confirm('刪除這個動作？')){sopItemSave('${id}',1)}">🗑 刪除</button>`:'<span></span>'}
       <span style="display:flex;gap:8px"><button class="mini" style="padding:9px 12px" onclick="document.getElementById('sieOv').remove()">取消</button>
       <button class="mini on" style="padding:9px 16px" onclick="sopItemSave(${id?`'${id}'`:'null'})">儲存</button></span></div></div>`
   ov.onclick = () => ov.remove()
   document.body.appendChild(ov)
+  renderSieSubs()
 }
+function renderSieSubs(){
+  const box = document.getElementById('sieSubs'); if (!box) return
+  box.innerHTML = (window._sieSubs||[]).map((su,i)=>`<div style="display:flex;gap:6px;align-items:center;margin-bottom:5px">
+    <input value="${sopEsc(su.title||'')}" oninput="window._sieSubs[${i}].title=this.value" placeholder="子項目名稱" style="flex:1;min-width:0;border:1px solid var(--line);border-radius:6px;padding:6px;font-size:14px">
+    <label style="font-size:12px;white-space:nowrap"><input type="checkbox" ${su.req!==false?'checked':''} onchange="window._sieSubs[${i}].req=this.checked">必做</label>
+    <label style="font-size:12px;white-space:nowrap"><input type="checkbox" ${su.photo?'checked':''} onchange="window._sieSubs[${i}].photo=this.checked">📷</label>
+    <button class="mini" style="padding:4px 8px;color:var(--red)" onclick="window._sieSubs.splice(${i},1);renderSieSubs()">✕</button>
+  </div>`).join('') || '<div class="hint">還沒有子項目</div>'
+}
+function sieSubAdd(){ window._sieSubs = window._sieSubs||[]; window._sieSubs.push({ title:'', req:true, photo:false }); renderSieSubs() }
 async function sopItemSave(id, del){
-  let items = [...(sopData.def.items||[])]
-  if (del) items = items.filter(x=>x.id!==id)
-  else {
+  if (!TK()) { alert('要先綁定才能編輯：跟 DD 說「綁定GD」'); return }
+  let body
+  if (del) {
+    const it0 = (sopData.def.items||[]).find(x=>x.id===id)
+    body = { del:true, item:{ id, st: it0?it0.st:'' }, token: TK() }
+  } else {
     const t9 = ((document.getElementById('sieT')||{}).value||'').trim()
-    if (!t9) { alert('內容不能空'); return }
-    const d9 = (document.getElementById('sieD')||{}).value||''
-    const p9 = !!((document.getElementById('sieP')||{}).checked)
-    const s9 = (document.getElementById('sieS')||{}).value||''
-    const g9 = (document.getElementById('sieG')||{}).value||''
-    if (id) items = items.map(x=>{ if (x.id!==id) return x; const nx = { ...x, title:t9, due:d9, photo:p9, st:s9 }; if (g9) nx.tg = g9; else delete nx.tg; return nx })
-    else { const nx = { id: 'u' + Date.now().toString(36), title: t9, due: d9, photo: p9, st: s9 }; if (g9) nx.tg = g9; items = [...items, nx] }
-    const o9 = document.getElementById('sieOv'); if (o9) o9.remove()
+    if (!t9) { alert('動作名稱不能空'); return }
+    const item = {
+      id: id||undefined,
+      st: (document.getElementById('sieS')||{}).value||'',
+      tg: (document.getElementById('sieG')||{}).value||'',
+      title: t9,
+      start: (document.getElementById('sieS1')||{}).value||'',
+      end: (document.getElementById('sieE1')||{}).value||'',
+      req: !!((document.getElementById('sieReq')||{}).checked),
+      photo: !!((document.getElementById('sieP')||{}).checked),
+      desc: ((document.getElementById('sieDesc')||{}).value||'').trim(),
+      subs: (window._sieSubs||[]).filter(s=>s&&String(s.title||'').trim())
+    }
+    body = { item, token: TK() }
   }
-  const r = await fetch('/api/mail-sync?sopfull=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ stations: [...(sopData.def.stations||[])], items, token: TK() }) })
+  const r = await fetch('/api/mail-sync?sopact=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify(body) })
   const j = await r.json().catch(()=>null)
-  if (j && j.ok) sopLoad(); else alert((j&&j.error)||'儲存失敗')
+  if (j && j.ok) { const o9=document.getElementById('sieOv'); if(o9)o9.remove(); sopLoad() } else alert((j&&j.error)||'儲存失敗')
 }
 function sopCatAdd(){ prepAsk('＋ 新增階段',0,1,(q,r)=>{ if (r) sopstOp({op:'catadd',cat:r}).then(()=>{ window._sopTg=r; sopRender() }) },'階段名（例：開班／備料／出餐／收班）') }
 function sopStAdd(){ // ＋ 產品（hashtag 模型：產品是全域的，不綁階段）
@@ -451,6 +479,99 @@ async function sopLoad(){
   if (!sopData || !sopData.ok) { el.innerHTML = ''; return }
   sopRender()
 }
+// ── v4.59.0 工作流程SOP改版（照 GROUND_SOP_CC_spec.md 第1期）：四層(站→階段→動作→子項目)+時間區間鎖+五狀態+展開面板 ──
+const sopEsc = s => String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')
+let sopOpenSet = new Set()                 // 展開的動作(itemId)；記憶體即可
+window._sopSub = window._sopSub || 'today' // 子頁：today / tmpl / hist
+const sopNow = () => new Date(Date.now() + 8*3600e3).toISOString().slice(11,16)
+// 五狀態（與後端 sopdone 同邏輯；台北 HH:MM 字串比較）。strict=嚴格模式；wd=週幾(0日6六公休不鎖)
+function sopState(it, lg, now, strict, wd){
+  if (lg && lg.done) return 'done'
+  const weekend = (wd===0 || wd===6)
+  if (!it.start && !it.end) return 'open'            // 完全沒設時間＝一般可做
+  if (!it.start) return (strict && !weekend) ? 'pending_cfg' : 'open' // 只有end沒start＝待設定
+  if (weekend) return 'open'                          // 公休預覽不鎖
+  if (now < it.start) return 'locked'                 // 尚未開放
+  if (it.end && now >= it.end) return strict ? 'overdue' : 'open' // 嚴格逾時鎖；寬鬆仍可做
+  return 'open'                                       // 可執行
+}
+const SOP_BADGE = {
+  done:       { label:'已完成',   c:'#0E1217', bg:'var(--green)' },
+  open:       { label:'可執行',   c:'#fff',    bg:'var(--primary)' },
+  locked:     { label:'尚未開放', c:'var(--muted)', bg:'var(--soft)' },
+  overdue:    { label:'逾時未完成', c:'#fff',  bg:'#C2410C' },
+  pending_cfg:{ label:'待設定時間', c:'#1B1300', bg:'#D4A72C' },
+  waiting:    { label:'等待前置', c:'var(--muted)', bg:'var(--soft)' },
+}
+const sopBadge = st => SOP_BADGE[st] || SOP_BADGE.open
+const sopBadgeHtml = st => { const b = sopBadge(st); return `<span style="flex:0 0 auto;background:${b.bg};color:${b.c};border-radius:999px;padding:3px 10px;font-size:12px;font-weight:800;white-space:nowrap">${b.label}</span>` }
+const sopFmtRange = it => { const a=it.start||'', b=it.end||it.due||''; return a&&b?`${a}–${b}`:(b?`${b} 前`:(a?`${a} 起`:'未設時間')) }
+function sopActToggle(id){ if (sopOpenSet.has(id)) sopOpenSet.delete(id); else sopOpenSet.add(id); sopRender() }
+function sopSubTab(v){ window._sopSub = v; sopRender() }
+// 展開面板：說明＋標準照＋子項目＋今日檢核照＋拍照並完成（照設計圖）
+function sopActPanel(it, lg, state){
+  const refs = (it.refs && it.refs.length) ? it.refs : (it.ref ? [it.ref] : [])
+  const subs = it.subs || []
+  const canDo = (state==='open' || state==='pending_cfg')
+  let h = `<div style="margin:6px 0 2px;padding:10px 12px;background:var(--soft);border:1px solid var(--line);border-radius:10px">`
+  if (it.desc) h += `<div style="font-size:14px;line-height:1.6;white-space:pre-wrap;margin-bottom:8px">${sopEsc(it.desc)}</div>`
+  if (refs.length) h += `<div class="hint" style="margin-bottom:3px">標準照片</div><div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">${refs.map(u=>`<img src="${sopEsc(u)}" onclick="window.open('${sopEsc(u)}','_blank')" style="width:64px;height:64px;object-fit:cover;border-radius:8px;border:1px solid var(--line);cursor:pointer">`).join('')}</div>`
+  if (subs.length) {
+    h += `<div class="hint" style="margin-bottom:3px">子項目</div>`
+    h += subs.map(su => {
+      const sl = lg && lg.subs && lg.subs[su.id]; const sd = sl && sl.done
+      const pk = it.id+':'+su.id, needP = su.photo && !sopPhotos[pk]
+      return `<div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px dashed var(--line)">
+        <span style="font-size:15px;color:${sd?'var(--green)':'var(--muted)'}">${sd?'✓':'○'}</span>
+        <span style="flex:1;min-width:0">${sopEsc(su.title)}${su.req===false?' <span class="hint">選做</span>':''}</span>
+        ${sd ? `<span class="hint">${sopEsc(sl.by||'')} ${sl.ts||''}</span>${sl.photo?`<img src="${sl.photo}" style="width:30px;height:30px;object-fit:cover;border-radius:5px;cursor:pointer" onclick="window.open('${sl.photo}','_blank')">`:''}<button class="mini" style="padding:4px 8px" onclick="sopSubDo('${it.id}','${su.id}',1)">撤</button>`
+             : (canDo ? `${su.photo?`<button class="mini" style="padding:5px 8px" onclick="sopPick('${it.id}','${su.id}')">📷</button>`:''}${sopPhotos[pk]?`<img src="${sopPhotos[pk]}" style="width:30px;height:30px;object-fit:cover;border-radius:5px">`:''}<button class="mini ${needP?'':'on'}" style="padding:5px 10px" onclick="sopSubDo('${it.id}','${su.id}')">完成</button>`
+                      : `<span class="hint">—</span>`)}
+      </div>`
+    }).join('')
+  }
+  if (lg && lg.done) {
+    h += `<div style="display:flex;align-items:center;gap:10px;margin-top:8px"><span style="color:var(--green);font-weight:900">✓ 已完成 ${lg.ts} ${sopEsc(lg.by||'')}</span>${lg.photo?`<img src="${lg.photo}" style="width:40px;height:40px;object-fit:cover;border-radius:8px;border:1.5px solid var(--green);cursor:pointer" onclick="sopView('${it.id}')">`:''}<button class="mini" style="margin-left:auto;padding:5px 10px" onclick="sopDo('${it.id}',1)">撤銷</button></div>`
+  } else if (canDo) {
+    const needP = it.photo && !sopPhotos[it.id]
+    const reqSubMiss = subs.filter(su=>su.req!==false).some(su=>!(lg&&lg.subs&&lg.subs[su.id]&&lg.subs[su.id].done))
+    h += `<div style="display:flex;align-items:center;gap:8px;margin-top:8px">
+      ${it.photo?(sopPhotos[it.id]?`<img src="${sopPhotos[it.id]}" style="width:40px;height:40px;object-fit:cover;border-radius:8px;border:2px solid var(--green);cursor:pointer" onclick="sopPick('${it.id}')">`:`<button class="mini" style="padding:8px 12px;font-size:15px" onclick="sopPick('${it.id}')">📷 拍照</button>`):''}
+      <button class="mini ${(needP||reqSubMiss)?'':'on'}" style="margin-left:auto;padding:9px 18px" onclick="sopDo('${it.id}')" ${reqSubMiss?'title="先完成必做子項目"':(needP?'title="要先拍照"':'')}>${it.photo?'拍照並完成':'完成'}</button></div>`
+    if (reqSubMiss) h += `<div class="hint" style="text-align:right;margin-top:3px;color:#D4A72C">先完成上面的必做子項目</div>`
+  } else {
+    h += state==='locked'
+      ? `<div class="hint" style="margin-top:6px">⏳ 尚未開放——${it.start} 才能開始</div>`
+      : `<div style="margin-top:6px;display:flex;align-items:center;gap:8px"><span class="hint" style="color:#C2410C">⛔ 已逾時（${it.end} 截止），不能補打成完成</span><button class="mini" style="margin-left:auto;padding:7px 12px;color:#A85C26" onclick="sopReport('${sopEsc(it.st)}')">⚠️ 回報異常</button></div>`
+  }
+  return h + `</div>`
+}
+async function sopSubDo(itemId, subId, undo){
+  if (!TK()) { alert('請先登入：按右上「登入」→ 私訊 DD「登入碼」→ 填入 4 個數字（或點 DD 給的個人連結）'); return }
+  const it = (sopData.def.items||[]).find(x=>x.id===itemId)
+  const su = it && (it.subs||[]).find(s=>s.id===subId)
+  const pk = itemId+':'+subId
+  if (!undo && su && su.photo && !sopPhotos[pk]) { alert('這個子項目要拍照——先按相機鈕'); return }
+  try {
+    const r = await fetch('/api/mail-sync?sopdone=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ itemId, subId, undo:!!undo, photo: sopPhotos[pk]||undefined, token: TK() }) })
+    const d = await r.json()
+    if (d && d.ok) { delete sopPhotos[pk]; sopData.log = d.log; sopRender() } else alert((d&&d.error)||'失敗')
+  } catch(e){ alert('連線失敗，再試一次') }
+}
+async function sopStrictOn(on){
+  if (on && !confirm('啟用嚴格模式後：動作過了「結束時間」就鎖死、不能再打完成（只能回報異常），連主管也不能補成準時。確定啟用？')) return
+  const r = await fetch('/api/mail-sync?sopstrict=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ on:!!on, token: TK() }) })
+  const d = await r.json().catch(()=>null)
+  if (d && d.ok) { if (sopData&&sopData.def) sopData.def.strictMode = d.strictMode; sopLoad() } else alert((d&&d.error)||'失敗')
+}
+function sopSummaryPreview(){
+  const items = (sopData.def.items||[]), log = sopData.log.items||{}, now = sopNow(), wd = new Date().getDay(), strict = !!sopData.def.strictMode
+  const req = items.filter(i=>i.req!==false)
+  const doneN = req.filter(i=>log[i.id]&&log[i.id].done).length
+  const over = req.filter(i=>sopState(i,log[i.id],now,strict,wd)==='overdue')
+  const lines = over.map(i=>`・${i.st}／${i.tg||'未分階段'}：${i.title}（${sopFmtRange(i)}）`)
+  alert(`【收班彙整預覽｜${sopData.date}】\n必做完成 ${doneN}/${req.length}；逾時未完成 ${over.length}\n${lines.join('\n')||'（目前沒有逾時項目）'}\n\n⚠️ 這是預覽，不會發到群組（統一彙整通知在第2期上線）`)
+}
 function sopRender(){
   const el = document.getElementById('sop'); if (!el || !sopData) return
   if (sopMasterOn) { sopMaster(el); return }
@@ -463,10 +584,22 @@ function sopRender(){
   if (!sts.length) { el.innerHTML = ''; return }
   const doneN = items.filter(i => log[i.id] && log[i.id].done).length
   const me = sopData.me
-  let s = `<section><h2>今日 SOP（${sopData.date.slice(5)}）<span class="hint" style="float:right;font-weight:900;color:${doneN===items.length?'var(--green)':'var(--pdark)'}">${doneN}/${items.length}</span></h2>`
-  s += me ? `<div class="hint" style="margin-bottom:6px">👤 <b style="color:var(--pdark)">${me.name}</b>（打卡自動記你的名字・可編輯各站 SOP，改動會留姓名時間紀錄）</div>`
+  const strict = !!sopData.def.strictMode
+  const noStartN = items.filter(i=>!i.start).length
+  const subTab = (v,lb)=>`<span onclick="sopSubTab('${v}')" style="padding:7px 14px;border-radius:9px;font-weight:800;font-size:14px;cursor:pointer;border:1px solid ${window._sopSub===v?'transparent':'var(--line)'};background:${window._sopSub===v?'var(--grad)':'var(--card)'};color:${window._sopSub===v?'#fff':'var(--muted)'}">${lb}</span>`
+  let s = `<section><div style="display:flex;align-items:center;gap:8px;margin-bottom:10px"><h2 style="margin:0">工作流程 SOP <span class="hint" style="font-weight:600">${sopData.date.slice(5)}</span></h2><span class="hint" style="margin-left:auto;font-weight:900;color:${doneN===items.length?'var(--green)':'var(--pdark)'}">今日 ${doneN}/${items.length}</span></div>`
+  s += `<div style="display:flex;gap:7px;margin-bottom:10px">${subTab('today','今日執行')}${subTab('tmpl','流程範本')}${subTab('hist','歷史紀錄')}</div>`
+  s += me ? `<div class="hint" style="margin-bottom:6px">👤 <b style="color:var(--pdark)">${me.name}</b>（打卡自動記你的名字・可編輯 SOP，改動會留姓名時間紀錄）</div>`
           : `<div class="hint" style="margin-bottom:6px">💡 ${BIND_HINT}——打卡不用打名字、可編輯 SOP、認領問題</div>`
+  // 待設定時間橫幅 + 嚴格模式開關（管理者）
+  if (me && me.isMgr) {
+    if (noStartN) s += `<div style="margin-bottom:8px;padding:8px 11px;background:#2E2816;border:1px solid #E8D089;border-radius:9px;font-size:13px;color:#E8D089">⏳ 還有 <b>${noStartN}</b> 個動作沒設「開始時間」——設定完成前不會進嚴格鎖定（逾時暫時不鎖）。到 ⚙️ 設定逐條補上開始/結束時間。</div>`
+    else s += `<div style="margin-bottom:8px;padding:8px 11px;background:${strict?'#16261B':'var(--soft)'};border:1px solid ${strict?'var(--green)':'var(--line)'};border-radius:9px;font-size:13px;display:flex;align-items:center;gap:8px">${strict?'🔒 嚴格模式已啟用：過了結束時間就鎖死不能補打':'🔓 所有動作都設好時間了，可啟用嚴格模式（逾時鎖死）'}<button class="mini ${strict?'':'on'}" style="margin-left:auto;padding:6px 12px" onclick="sopStrictOn(${strict?'false':'true'})">${strict?'關閉嚴格':'啟用嚴格'}</button></div>`
+  } else if (strict) s += `<div class="hint" style="margin-bottom:8px">🔒 嚴格模式：動作過了結束時間就不能再打完成，只能回報異常。</div>`
   if (wd === 0 || wd === 6) s += `<div class="hint" style="margin-bottom:8px">今天公休——這是清單預覽，打卡留給營業日。</div>`
+  // 非「今日執行」子頁＝範本/歷史（第1期先骨架）
+  if (window._sopSub === 'tmpl') { s += sopTemplateHtml(now, strict, wd); s += `</section>`; el.innerHTML = s; return }
+  if (window._sopSub === 'hist') { s += sopHistoryHtml(); s += `</section>`; el.innerHTML = s; return }
   // 站別篩選＋📌釘選（張良 2026-09-21：SOP 站多，每人點自己要看的；釘選存在自己手機）
   // v4.18.0 #hashtag 雙標籤（張良拍板）：#階段 × #產品 兩排篩選——點產品看全程、點階段看跨產品、都點=交集
   const stDisp = st9 => String(st9).includes('｜') ? String(st9).split('｜').pop() : st9
@@ -558,21 +691,23 @@ function sopRender(){
     stList.forEach(it => {
       if (grpMode) { const g9 = tgOf(it) || '未分階段'; if (g9 !== lastTg9) { lastTg9 = g9; s += `<div style="font-weight:900;font-size:13px;color:var(--pdark);margin:8px 0 2px"># ${g9}</div>` } }
       const lg = log[it.id]
-      const overdue = !lg && it.due && it.due <= now && wd >= 1 && wd <= 5
-      s += `<div id="sopit-${it.id}" style="display:flex;align-items:center;gap:8px;padding:9px 4px;border-bottom:1px solid var(--line)"><span class="lnkbtn" title="複製這條 SOP 的連結（可貼到會議宣達）" onclick="event.stopPropagation();copyLink('#sop=${it.id}')">🔗</span>${it.tg&&!window._sopTg?`<span class="hint" style="font-size:11px;white-space:nowrap">#${it.tg}</span>`:''}${me&&window._sopMng?`<span class="lnkbtn" title="編輯這一條" onclick="event.stopPropagation();sopItemEdit('${it.id}')">⚙️</span>`:''}`
-      s += `<div style="flex:1;min-width:0"><div style="font-weight:700;cursor:pointer;color:${overdue?'var(--red)':(it.ref?'var(--primary)':'var(--ink)')}${it.ref?';text-decoration:underline':''}" onclick="sopRefOpen('${it.id}')" title="${it.ref?'點看標準照片':'點我上傳標準照'}">${it.title}${overdue?' ⚠️':''}</div><div class="hint">${it.due} 前${it.editBy?`・✏️ ${it.editBy} ${it.editTs||''}`:''}</div></div>`
-      if (lg && lg.done) {
-        // 完成狀態：縮圖直接顯示、點整塊開預覽；撤銷藏在預覽裡（張良 2026-09-21：列表上的撤銷容易誤點）
-        s += `<div style="text-align:right;cursor:pointer" onclick="sopView('${it.id}')"><div style="color:var(--green);font-weight:900">✓ ${lg.ts}</div><div class="hint">${lg.by||''}</div></div>`
-        s += lg.photo ? `<img src="${lg.photo}" onclick="sopView('${it.id}')" style="width:42px;height:42px;object-fit:cover;border-radius:8px;border:1.5px solid var(--green);cursor:pointer">` : ``
-      } else {
-        if (it.photo) s += sopPhotos[it.id]
-          ? `<img src="${sopPhotos[it.id]}" style="width:38px;height:38px;object-fit:cover;border-radius:6px;border:2px solid var(--green)" onclick="sopPick('${it.id}')">`
-          : `<button class="mini" style="font-size:16px;padding:6px 10px" onclick="sopPick('${it.id}')">📷</button>`
-        const need = it.photo && !sopPhotos[it.id]
-        s += `<button class="mini ${need?'':'on'}" style="padding:8px 14px" onclick="sopDo('${it.id}')" ${need?'title="要先拍照"':''}>完成</button>`
-      }
-      s += `</div>`
+      const state = sopState(it, lg, now, strict, wd)
+      const open = sopOpenSet.has(it.id)
+      const subs = it.subs || []
+      const subDoneN = subs.filter(su => lg && lg.subs && lg.subs[su.id] && lg.subs[su.id].done).length
+      // v4.59.0 收合列：名稱(點展開)＋時間區間＋五狀態徽章＋鉛筆(設定模式)；展開＝說明/標準照/子項目/拍照完成
+      s += `<div id="sopit-${it.id}" style="padding:9px 2px;border-bottom:1px solid var(--line)">
+        <div style="display:flex;align-items:center;gap:8px">
+          <div style="flex:1;min-width:0;cursor:pointer" onclick="sopActToggle('${it.id}')">
+            <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap"><span style="font-weight:700;color:var(--ink)">${open?'▾':'▸'} ${sopEsc(it.title)}</span>${it.req===false?'<span class="hint" style="font-size:11px;border:1px solid var(--line);border-radius:5px;padding:0 4px">選做</span>':''}${subs.length?`<span class="hint" style="font-size:12px">子項 ${subDoneN}/${subs.length}</span>`:''}${it.tg&&!window._sopTg&&!grpMode?`<span class="hint" style="font-size:11px">#${sopEsc(it.tg)}</span>`:''}</div>
+            <div class="hint" style="font-size:12px">${sopFmtRange(it)}${it.editBy?`・✏️ ${sopEsc(it.editBy)}`:''}</div>
+          </div>
+          ${sopBadgeHtml(state)}
+          <span class="lnkbtn" title="複製這條連結（可貼到會議宣達）" onclick="event.stopPropagation();copyLink('#sop=${it.id}')" style="flex:0 0 auto">🔗</span>
+          ${me&&window._sopMng?`<span class="lnkbtn" title="編輯這一條" onclick="event.stopPropagation();sopItemEdit('${it.id}')" style="flex:0 0 auto">✎</span>`:''}
+        </div>
+        ${open ? sopActPanel(it, lg, state) : ''}
+      </div>`
     })
   })
   // ✍️ 編輯紀錄 v2（張良 2026-09-22「這紀錄沒用」→ 每筆算出「改了什麼」：改前快照 vs 下一版逐條 diff）
@@ -598,8 +733,54 @@ function sopRender(){
       return parts2.length ? parts2.join('　') : '（沒有內容變動——可能只是重新排序）'
     }
     s += `<details style="margin-top:8px"><summary class="hint" style="cursor:pointer;font-weight:800">✍️ SOP 編輯紀錄（${eds.length}）｜${Object.entries(cntE).map(([n,c])=>`${n} ${c}次`).join('、')}</summary>${eds.map((e,i)=>{ const t8 = e.ts ? new Date(new Date(e.ts).getTime()+8*3600e3).toISOString().slice(5,16).replace('T',' ') : ''; const df2 = diffOf(i); return `<div class="hint" style="padding:3px 0;border-bottom:1px dashed var(--line)">${t8}・<b>${e.by||'？'}</b>${e.st?`・「${e.st}」站`:''}${df2?`<div style="padding-left:10px">${df2}</div>`:''}</div>` }).join('')}</details>` }
-  s += `<div class="hint" style="margin-top:8px">按「完成」記錄時間與名字；要拍照的先按 📷。超過時限沒完成，DD 會在群裡提醒。</div></section>`
+  // 📋 收班彙整（第1期：唯讀統計＋預覽不發；統一群組通知第2期接）
+  { const reqAll = items.filter(i=>i.req!==false)
+    const doneR = reqAll.filter(i=>log[i.id]&&log[i.id].done).length
+    const overR = reqAll.filter(i=>sopState(i,log[i.id],now,strict,wd)==='overdue')
+    const undoneR = Math.max(0, reqAll.length - doneR - overR.length)
+    s += `<div style="margin-top:14px;padding:12px;background:var(--soft);border:1px solid var(--line);border-radius:12px">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px"><b style="font-size:15px">📋 收班彙整</b><span class="hint" style="margin-left:auto">統一通知群組（第2期上線）</span></div>
+      <div style="display:flex;gap:8px;margin-bottom:8px">
+        <div style="flex:1;text-align:center;padding:8px;background:#16261B;border:1px solid var(--green);border-radius:9px"><div style="font-size:22px;font-weight:900;color:var(--green)">${doneR}</div><div class="hint">已完成</div></div>
+        <div style="flex:1;text-align:center;padding:8px;background:var(--card);border:1px solid var(--line);border-radius:9px"><div style="font-size:22px;font-weight:900">${undoneR}</div><div class="hint">未完成</div></div>
+        <div style="flex:1;text-align:center;padding:8px;background:#2A1A12;border:1px solid #C2410C;border-radius:9px"><div style="font-size:22px;font-weight:900;color:#E8853D">${overR.length}</div><div class="hint">逾時</div></div>
+      </div>
+      ${overR.length?`<div class="hint" style="margin-bottom:6px">逾時未完成：${overR.map(i=>`${sopEsc(i.st)}／${sopEsc(i.title)}`).join('、')}</div>`:''}
+      <button class="mini on" style="width:100%;padding:10px" onclick="sopSummaryPreview()">預覽群組回報</button>
+      <div class="hint" style="text-align:center;margin-top:5px">時間外無法完成，逾時可回報異常。</div>
+    </div>`
+  }
+  s += `<div class="hint" style="margin-top:8px">點動作名稱展開＝看說明/標準照/子項目/拍照完成。要拍照的先按 📷。</div></section>`
   el.innerHTML = s
+}
+// 流程範本（第1期：唯讀總覽——站→階段→動作，含時間區間/必做/子項數；編輯走今日執行頁設定模式）
+function sopTemplateHtml(now, strict, wd){
+  const items = sopData.def.items || []
+  const sts = [...(sopData.def.stations || []), ...new Set(items.map(i=>i.st).filter(s=>!(sopData.def.stations||[]).includes(s)))]
+  const cats = sopData.def.cats || []
+  if (!items.length) return `<div class="hint" style="padding:16px 0">還沒有任何動作——到「今日執行」按 ⚙️ 設定新增。</div>`
+  let h = `<div class="hint" style="margin-bottom:8px">整份流程範本一覽（唯讀）。要增刪改排序請回「今日執行」按 ⚙️ 設定。</div>`
+  sts.forEach(st => {
+    const stItems = items.filter(i=>i.st===st); if (!stItems.length) return
+    h += `<div style="font-weight:900;color:var(--pdark);background:var(--psoft);border-radius:8px;padding:5px 10px;margin:10px 0 4px">${sopEsc(st)} <span class="hint" style="font-weight:700">${stItems.length} 項</span></div>`
+    const groups = [...cats, ''].filter(g => stItems.some(i => (i.tg&&cats.includes(i.tg)?i.tg:'')===g))
+    groups.forEach(g => {
+      const gi = stItems.filter(i => (i.tg&&cats.includes(i.tg)?i.tg:'')===g).sort((a,b)=>String(a.start||a.due||'99:99').localeCompare(String(b.start||b.due||'99:99')))
+      if (!gi.length) return
+      h += `<div class="hint" style="font-weight:800;margin:6px 0 2px"># ${g||'未分階段'}</div>`
+      gi.forEach(it => { h += `<div style="display:flex;gap:8px;align-items:center;padding:4px 6px;border-bottom:1px solid var(--line);font-size:14px"><span style="flex:1;min-width:0">${sopEsc(it.title)}${it.req===false?' <span class="hint">選做</span>':''}${(it.subs||[]).length?` <span class="hint">・${it.subs.length}子項</span>`:''}</span><span class="hint">${sopFmtRange(it)}</span></div>` })
+    })
+  })
+  return h
+}
+// 歷史紀錄（第1期：先指引，完整查詢第3期）
+function sopHistoryHtml(){
+  const log = (sopData.log && sopData.log.items) || {}
+  const doneList = Object.entries(log).filter(([,v])=>v&&v.done).sort((a,b)=>String(a[1].ts||'').localeCompare(String(b[1].ts||'')))
+  let h = `<div class="hint" style="margin-bottom:8px">今日完成紀錄（跨日歷史查詢在第3期上線）。</div>`
+  if (!doneList.length) return h + `<div class="hint" style="padding:12px 0">今天還沒有完成紀錄。</div>`
+  h += doneList.map(([id,v]) => `<div style="display:flex;gap:8px;align-items:center;padding:6px 4px;border-bottom:1px solid var(--line);font-size:14px">${v.photo?`<img src="${v.photo}" style="width:34px;height:34px;object-fit:cover;border-radius:6px;cursor:pointer" onclick="window.open('${v.photo}','_blank')">`:'<span style="width:34px;text-align:center;color:var(--green)">✓</span>'}<span style="flex:1;min-width:0">${sopEsc(v.title||id)}${v.st?` <span class="hint">${sopEsc(v.st)}</span>`:''}</span><span class="hint">${sopEsc(v.by||'')} ${v.ts||''}</span></div>`).join('')
+  return h
 }
 // ── ⚙️ SOP 總編輯（張良 2026-09-21：站/項目拖曳排序、站名直接改、不再跳系統視窗）──
 let sopMasterOn = false
