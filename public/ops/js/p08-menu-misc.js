@@ -290,7 +290,7 @@ function menuRender(){
     <button class="mini" onclick="menuExport('txt')">⬇️ 匯出文字</button>
     <select class="mini" onchange="menuSetSpec(this.value)" title="匯出圖片尺寸（方向×畫質）" style="padding:4px 10px">${Object.entries(MENU_SPECS).map(([k,s])=>`<option value="${k}" ${k===menuOutKey?'selected':''}>${s.t}</option>`).join('')}</select>
     <button class="mini" onclick="menuExport('img')">🖼 直式菜單圖</button>
-    <button class="mini" onclick="menuExport('imgsec')">🖼 一區一張</button>
+    <button class="mini" onclick="menuExport('tv')" title="4 台電視各一張（兩分類並排＋食物照片）＝官方定稿橫式">🖼 四張電視圖</button>
     ${d.me&&!d.me.canEdit?(d.me.pendingMe?`<span class="hint">🕐 編輯權審核中（已通知老闆）</span>`:`<button class="mini on" onclick="prepApply()">🙋 申請編輯權限</button>`):''}
     ${!d.me?`<span class="hint">看得到；要編輯先綁定＋申請</span>`:''}
   </div>`
@@ -419,11 +419,29 @@ function menuExport(kind){ // 匯出完整菜單（張良 2026-10-02）：txt=�
     const a2 = document.createElement('a'); a2.href = URL.createObjectURL(blob); a2.download = 'GROUND菜單_' + todayTpe() + '.txt'; a2.click(); URL.revokeObjectURL(a2.href)
     return
   }
-  // 🖼 海報（張良 2026-10-07 v4.58.5）：Canva 奶油底紅字風；img=整張 / imgsec=一區一張
-  if (kind === 'imgsec') { menuPosterSections(d, secs); return }
+  // 🖼 匯出圖（張良 2026-10-08 v4.66.0）：img=直式整張(動態) / tv=四張電視橫式(官方定稿含照片)
+  if (kind === 'tv') { menuExportTV(); return }
+  if (kind === 'imgsec') { menuPosterSections(d, secs); return } // 舊：一分類一張(保留備用)
   menuPosterCanva(d, secs)
 }
-// ───── 菜單海報共用（v4.64.0 / v15，2026-10-08 照 GROUND_portrait-text.svg 幾何＋冰熱雙行＋BOWLS）─────
+// 🖼 四張電視圖（張良 2026-10-08）：一區=一台電視=兩分類並排＋食物照片，共 4 張＝官方 v15 定稿橫式(靜態)
+async function menuExportTV(){
+  const tvs = [
+    ['/ops/menu/tv-01.png','GROUND_電視1_披薩-療癒碗.png'],
+    ['/ops/menu/tv-02.png','GROUND_電視2_漢堡-越法三明治.png'],
+    ['/ops/menu/tv-03.png','GROUND_電視3_義大利麵-早午餐.png'],
+    ['/ops/menu/tv-04.png','GROUND_電視4_炸物小點-飲品.png'],
+  ]
+  for (let i=0;i<tvs.length;i++){
+    try{
+      const r = await fetch(tvs[i][0]); if(!r.ok) throw 0
+      const bl = await r.blob(); const a = document.createElement('a')
+      a.href = URL.createObjectURL(bl); a.download = tvs[i][1]; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href), 4000)
+    }catch(e){ alert('下載第 '+(i+1)+' 張電視圖失敗，再試一次'); return }
+    await new Promise(r=>setTimeout(r,600))
+  }
+}
+// ───── 菜單海報共用（v4.66.0 / v15，2026-10-08 直式動態＋四張電視官方定稿橫式）─────
 const MENU_SK = { CREAM:'#F5EADA', RED:'#CE1611', ENG:'#C56B54', WHITE:'#FFF6E9', DOT:'#D98A7A',
   SLAB:'"Alfa Slab One", Georgia, serif', TC:'"Noto Sans TC", system-ui, sans-serif',
   PP:'"Poppins","Noto Sans TC",system-ui,sans-serif', MONO:'"Space Mono",ui-monospace,monospace' }
