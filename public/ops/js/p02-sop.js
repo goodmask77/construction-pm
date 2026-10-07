@@ -230,7 +230,7 @@ function canTab(k){
 // 會寫入的按鈕 → 所屬分頁權限（'*'=跟著目前頁面，給盤點/包材共用函式）；純看的（切頁/收合/篩選/看圖）不鎖
 const EDIT_FN = {
   actSave:'board', actAdd:'board', actLoss:'board', act86:'board', rHide:'board', posHide:'board', rMng:'board', itmMngTog:'board',
-  sopItemEdit:'sop', sopItemSave:'sop', sopEdAdd:'sop', sopEdSave:'sop', sopCatAdd:'sop', sopCatMng:'sop', sopCatSet:'sop', sopStAdd:'sop', sopStDel:'sop', sopStRen:'sop', sopStRename:'sop', sopStOp:'sop', sopstOp:'sop', catMove:'sop', msAddSt:'sop', msDelSt:'sop', msSave:'sop', sopOrdMove:'sop', sopRefOpen:'sop', sopRefPaste:'sop', sopRefSave:'sop', sopRefUp:'sop', sopMngT:'sop', sopStrictOn:'sop',
+  sopItemEdit:'sop', sopItemSave:'sop', sopEdAdd:'sop', sopEdSave:'sop', sopCatAdd:'sop', sopCatMng:'sop', sopCatSet:'sop', sopStAdd:'sop', sopStDel:'sop', sopStRen:'sop', sopStRename:'sop', sopStOp:'sop', sopstOp:'sop', catMove:'sop', msAddSt:'sop', msDelSt:'sop', msSave:'sop', sopOrdMove:'sop', sopRefOpen:'sop', sopRefPaste:'sop', sopRefSave:'sop', sopRefUp:'sop', sopMngT:'sop', sopStrictOn:'sop', sopSummarySend:'sop',
   taskNew:'task', taskNewSend:'task', taskOwn:'task', taskOwnSend:'task', ckAdd:'task', ckOp:'task', ckPick:'task', ckSend:'task', lbOp:'task', lbDue:'task',
   lbPtsSave:'lb', lbPtsAdd:'lb', lbPtsAdjust:'lb', lbRdDecide:'lb', lbGrant:'lb', lbGrantGo:'lb', lbRwMng:'lb', lbRwSave:'lb', lbRwDel:'lb', lbRwAdd:'lb',
   menuCell:'menu', menuItemAdd:'menu', menuItemDel:'menu', menuItemSave:'menu', menuItemPurge:'menu', menuItemRestore:'menu', menuItemShift:'menu', menuSecDel:'menu', menuSecForm:'menu', menuSecShift:'menu', menuNoteEdit:'menu', mnImgPick:'menu', mnImgUndo:'menu', mnDragStart:'menu', menuSecCombo:'menu', menuItemCombo:'menu',
@@ -564,13 +564,32 @@ async function sopStrictOn(on){
   const d = await r.json().catch(()=>null)
   if (d && d.ok) { if (sopData&&sopData.def) sopData.def.strictMode = d.strictMode; sopLoad() } else alert((d&&d.error)||'失敗')
 }
-function sopSummaryPreview(){
-  const items = (sopData.def.items||[]), log = sopData.log.items||{}, now = sopNow(), wd = new Date().getDay(), strict = !!sopData.def.strictMode
-  const req = items.filter(i=>i.req!==false)
-  const doneN = req.filter(i=>log[i.id]&&log[i.id].done).length
-  const over = req.filter(i=>sopState(i,log[i.id],now,strict,wd)==='overdue')
-  const lines = over.map(i=>`・${i.st}／${i.tg||'未分階段'}：${i.title}（${sopFmtRange(i)}）`)
-  alert(`【收班彙整預覽｜${sopData.date}】\n必做完成 ${doneN}/${req.length}；逾時未完成 ${over.length}\n${lines.join('\n')||'（目前沒有逾時項目）'}\n\n⚠️ 這是預覽，不會發到群組（統一彙整通知在第2期上線）`)
+async function sopSummaryPreview(){ // v4.60.0 接後端 sop-summary：顯示真實彙整內容＋是否會真發；審核人可手動發送
+  let d = null
+  try { const r = await fetch('/api/sop-summary?sopsummary=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ mode:'preview', token: TK() }) }); d = await r.json() } catch(_){}
+  if (!d || !d.ok) { alert('讀不到彙整'); return }
+  const isMgr = sopData.me && sopData.me.isMgr
+  const ob = (d.snap && d.snap) || {}
+  const ov = document.createElement('div'); ov.id='sumOv'
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:65;display:flex;align-items:center;justify-content:center;padding:16px'
+  ov.innerHTML = `<div style="background:#222B38;border:1px solid #3B4654;border-radius:14px;width:min(460px,94vw);max-height:90vh;overflow:auto;padding:16px" onclick="event.stopPropagation()">
+    <div style="font-weight:900;margin-bottom:8px">📋 收班彙整預覽</div>
+    <div style="white-space:pre-wrap;font-size:14px;line-height:1.6;background:var(--soft);border:1px solid var(--line);border-radius:10px;padding:12px;margin-bottom:10px">${sopEsc(d.text)}</div>
+    <div class="hint" style="margin-bottom:10px">${d.willSend?'⚠️ 群組發送目前「已開啟」——按下面會真的發到群組。':'🔕 群組發送目前關閉（預設）＝這是預覽，不會發到群組。要真發：到「📢DD自動訊息」開啟「SOP 每日收班彙整」。'}</div>
+    <div style="display:flex;gap:8px;justify-content:flex-end">
+      <button class="mini" style="padding:9px 14px" onclick="document.getElementById('sumOv').remove()">關閉</button>
+      ${isMgr?`<button class="mini on" style="padding:9px 16px" onclick="sopSummarySend()">${d.willSend?'立即發送到群組':'測試發送（dry-run）'}</button>`:''}
+    </div></div>`
+  ov.onclick = () => ov.remove()
+  document.body.appendChild(ov)
+}
+async function sopSummarySend(){
+  if (!confirm('確定執行發送？（群組發送關閉時＝dry-run 不會真發，只記錄）')) return
+  let d = null
+  try { const r = await fetch('/api/sop-summary?sopsummary=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ mode:'send', token: TK() }) }); d = await r.json() } catch(_){}
+  const o = document.getElementById('sumOv'); if (o) o.remove()
+  if (!d || !d.ok) { alert((d&&d.error)||'失敗'); return }
+  alert(d.already ? '今天已經發過了（不重送）' : d.status==='sent' ? '✅ 已發送到群組' : d.status==='dryrun' ? '🔕 dry-run 完成（未真發，已記錄在 outbox）' : d.status==='failed' ? '❌ 發送失敗（可稍後重試）' : '完成：'+d.status)
 }
 function sopRender(){
   const el = document.getElementById('sop'); if (!el || !sopData) return

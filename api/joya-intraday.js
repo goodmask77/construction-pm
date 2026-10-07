@@ -28,39 +28,8 @@ export default async function handler(req, res) {
   const hit = SLOTS.some(s => nowM >= toMin(s) && nowM < toMin(s) + WINDOW_MIN)
   // AB 定時更新（張良 2026-09-06）：手動不在這跑（🔄 鈕本來就會打 mail-sync 抓 AB，避免連打 Eats365 兩次）
   const abHit = !manual && (force || (nowM >= toMin(AB_OPEN) && nowM < toMin(AB_CLOSE) && (nowM % 30) < WINDOW_MIN)) // AB/1/2 維持每30分（cron 變 15 分別跟著加倍打人家後台）
-  // ── GD 每日 SOP 超時檢查（張良 2026-09-21）：每次 cron 順路查，過時限未完成 → DD 發內部群一則彙整（每項每日只提醒一次）──
-  try {
-    const tpe = new Date(Date.now() + 8 * 3600e3)
-    const wd = tpe.getUTCDay(), todaySop = tpe.toISOString().slice(0, 10)
-    if (wd >= 1 && wd <= 5) { // GD 週末公休不吵
-      const defDoc = await kvGet('sp_finance_pm_sop_def')
-      const items = (defDoc && defDoc.ground && Array.isArray(defDoc.ground.items)) ? defDoc.ground.items : []
-      if (items.length) {
-        const dk = 'sp_finance_pm_sop_g_' + todaySop
-        const slog = (await kvGet(dk)) || { items: {}, notified: {} }
-        slog.items = slog.items || {}; slog.notified = slog.notified || {}
-        const over = items.filter(it => it.due && it.due <= hm && !(slog.items[it.id] && slog.items[it.id].done) && !slog.notified[it.id])
-        if (over.length) {
-          const listSL = over.map(it => `・${it.st}｜${it.title}（${it.due} 前${it.photo ? '・要拍照' : ''}）`).join('\n')
-          const { ddGet, ddFill, ddGroupGid } = await import('./_ddmsg.js') // v4.54.0 走 DD 自動訊息設定(sopLate)：開關(相容舊 pm_notify.sopLate)/群/文字
-          const cfgSL = await ddGet('sopLate')
-          if (cfgSL.on) { // v4.33.0 LINE＋GD推播走同一個開關、同一個「每項每日一次」標記（推播不吃LINE額度）
-            const tk = (process.env.LINE_CHANNEL_ACCESS_TOKEN || '').trim()
-            let sent9 = false
-            if (tk) {
-              const gidSL = await ddGroupGid(cfgSL.group)
-              const { groupMembers: _gm, quotaFoot: _qf } = await import('./push.js')
-              const _mem = await _gm(gidSL)
-              const pr = await fetch('https://api.line.me/v2/bot/message/push', { method: 'POST', headers: { 'content-type': 'application/json', Authorization: 'Bearer ' + tk }, body: JSON.stringify({ to: gidSL, messages: [{ type: 'text', text: ddFill(cfgSL.text, { list: listSL, link: prepLink('') }) + await _qf(_mem) }] }) })
-              if (pr.ok) sent9 = true
-            }
-            try { if (await wpPush(null, { title: '⏰ SOP 超時未完成', body: over.map(it => `${it.st}｜${it.title}`).join('、'), url: '/prep' })) sent9 = true } catch (_) {}
-            if (sent9) { over.forEach(it => { slog.notified[it.id] = 1 }); await kvPut(dk, slog, 'SOP超時通知') } // 發送成功才標記，失敗下一輪重試
-          }
-        }
-      }
-    }
-  } catch (e) { console.log('sop check err', e?.message) }
+  // ── GD SOP 超時提醒（v4.60.0 停用）：照 GROUND_SOP_CC_spec.md 第7節，取消「每項到期立即群組提醒（含逐項超時）」，
+  //    改成每天台北 20:05 一則「收班彙整」（api/sop-summary.js + vercel.json cron）。站內狀態即時更新，群組只收彙整。
   // ── 📣 會議宣達未簽收追提醒（v4.16.0 張良：24h/48h/72h DD私訊、3次不理→大群點名；cron每15分隨機命中=時點不固定）──
   try {
     const meetDoc = await kvGet('sp_finance_pm_meet')

@@ -4282,7 +4282,9 @@ export default async function handler(req, res) {
       if (it4) { cur4.title = it4.title; cur4.st = it4.st; cur4.tg = it4.tg || '' }
       if (b4.subId) { // 子項目完成：各記完成人/時間，不自動標父完成
         cur4.subs = cur4.subs || {}
-        cur4.subs[b4.subId] = { done: 1, ts: hm4, by: who4.name, ...(photoUrl ? { photo: photoUrl } : {}) }
+        if (!(cur4.subs[b4.subId] && cur4.subs[b4.subId].done)) cur4.subs[b4.subId] = { done: 1, ts: hm4, by: who4.name, ...(photoUrl ? { photo: photoUrl } : {}) } // v4.60.0 冪等：已完成的子項不覆寫第一筆
+        slog.items[b4.itemId] = cur4
+      } else if (cur4.done) { // v4.60.0 冪等：多人同時按/重複提交，已完成就不覆寫第一筆成功紀錄
         slog.items[b4.itemId] = cur4
       } else { // 父動作完成：若有必做子項，全部完成才允許（前後端同驗）
         const reqSubs = ((it4 && it4.subs) || []).filter(s => s.req !== false)

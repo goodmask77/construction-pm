@@ -43,6 +43,10 @@
       "schedule": "0,15,30,45 3-13 * * *"
     },
     {
+      "path": "/api/sop-summary",
+      "schedule": "5 12 * * *"
+    },
+    {
       "path": "/api/boss-sync",
       "schedule": "7 * * * *"
     },
