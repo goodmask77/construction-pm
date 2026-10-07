@@ -286,6 +286,7 @@ function menuRender(){
     ${meN&&menuMode==='edit'?`<button class="mini" onclick="menuSecForm()">＋ 新增分類</button>`:''}
     ${meN&&menuMode==='edit'?`<button class="mini" id="menuFillBtn" onclick="menuFillEnOfficial()" title="照你上傳的 4 張菜單圖，把所有品項(含已刪除)補上官方英文">照菜單圖補英文</button>`:''}
     ${meN&&menuMode==='edit'?`<button class="mini" id="menuTransBtn" onclick="menuTransAll()" title="把所有缺英文的品項用 AI 自動翻成英文菜名，可再微調">自動翻譯英文</button>`:''}
+    ${meN&&menuMode==='edit'?`<button class="mini" onclick="menuApplyV15()" title="把分類與英文校正成官方 v15 定稿（BOWLS、Bánh Mì、Cocoa）">套用官方修正</button>`:''}
     <button class="mini" onclick="menuExport('txt')">⬇️ 匯出文字</button>
     <select class="mini" onchange="menuSetSpec(this.value)" title="匯出圖片尺寸（方向×畫質）" style="padding:4px 10px">${Object.entries(MENU_SPECS).map(([k,s])=>`<option value="${k}" ${k===menuOutKey?'selected':''}>${s.t}</option>`).join('')}</select>
     <button class="mini" onclick="menuExport('img')">🖼 直式菜單圖</button>
@@ -422,7 +423,7 @@ function menuExport(kind){ // 匯出完整菜單（張良 2026-10-02）：txt=�
   if (kind === 'imgsec') { menuPosterSections(d, secs); return }
   menuPosterCanva(d, secs)
 }
-// ───── 菜單海報共用（v4.63.0 / v12，2026-10-08 照 GROUND_portrait-text.svg 官方精確幾何）─────
+// ───── 菜單海報共用（v4.64.0 / v15，2026-10-08 照 GROUND_portrait-text.svg 幾何＋冰熱雙行＋BOWLS）─────
 const MENU_SK = { CREAM:'#F5EADA', RED:'#CE1611', ENG:'#C56B54', WHITE:'#FFF6E9', DOT:'#D98A7A',
   SLAB:'"Alfa Slab One", Georgia, serif', TC:'"Noto Sans TC", system-ui, sans-serif',
   PP:'"Poppins","Noto Sans TC",system-ui,sans-serif', MONO:'"Space Mono",ui-monospace,monospace' }
@@ -533,7 +534,7 @@ function menuPItemRow(C, SK, sec, it, boxX, boxW, textX, boxTop, i, side){
   const cnY=boxTop+38+i*64, enY=cnY+27, leadY=cnY-9
   const nmSize=side?30:32, enSize=side?16:18, prSize=side?29:32
   const c=(typeof mnCombo==='function')?mnCombo(sec,it):null
-  const tagRight=right-8, priceRight=side?right-96:right-32
+  const tagRight=right-8, priceRight=side?right-96:right-44
   // 套餐標籤（固定最右欄，價格靠在其左＝數字對齊）
   if (c){ if (c.inc){ const bw=66,bh=34,bx=tagRight-bw,by=cnY-27; rr(bx,by,bw,bh,4); g.fillStyle=SK.RED; g.fill()
       setFont('650 20px '+SK.TC,0); g.fillStyle=SK.WHITE; g.textAlign='center'; g.fillText('內含',bx+bw/2,cnY-2); g.textAlign='left' }
@@ -541,11 +542,12 @@ function menuPItemRow(C, SK, sec, it, boxX, boxW, textX, boxTop, i, side){
   // 售價靠右對齊在 priceRight
   setFont('650 '+prSize+'px '+SK.TC,0); g.fillStyle=SK.RED; const pr=String(it.price||0); g.textAlign='right'; g.fillText(pr,priceRight,cnY); g.textAlign='left'
   const priceLeft=priceRight-g.measureText(pr).width
-  // 菜名（把結尾的 I/H 抽出來移到英文行）
+  // 菜名（把結尾的 I/H 抽出來；v15：冰／熱放中文行、I/H 放英文行）
   let nm=String(it.name||''), ih=false
   if (/\s+I\s*\/\s*H\s*$/i.test(nm)){ ih=true; nm=nm.replace(/\s+I\s*\/\s*H\s*$/i,'').trim() }
-  setFont('650 '+nmSize+'px '+SK.TC,0); g.fillStyle=SK.RED; const nmMax=priceLeft-textX-26; const nmTxt=fit(nm,nmMax); g.fillText(nmTxt,textX,cnY)
-  const nameEnd=textX+g.measureText(nmTxt).width
+  setFont('650 '+nmSize+'px '+SK.TC,0); g.fillStyle=SK.RED; const nmMax=priceLeft-textX-26-(ih?74:0); const nmTxt=fit(nm,nmMax); g.fillText(nmTxt,textX,cnY)
+  let nameEnd=textX+g.measureText(nmTxt).width
+  if (ih){ setFont('650 20px '+SK.TC,0); g.fillStyle=SK.RED; g.fillText('冰 / 熱', nameEnd+10, cnY); nameEnd+=10+g.measureText('冰 / 熱').width }
   leader(nameEnd+14, priceLeft-18, leadY, SK.DOT)
   // 英文＋行內標籤（依字寬順序，不越價格欄）
   let ex=textX
@@ -567,7 +569,7 @@ async function menuPosterCanva(d, secs){
   const SK=MENU_SK, S=2, W=1080, H=1920
   const L={x:38,w:498,tx:50}, R={x:573,w:479,tx:585} // 官方 SVG 左右欄座標
   // 固定設計順序＋隱藏待價 $0
-  const ORDER=['PIZZA','COMFORT','BURGER','ROLL','PASTA','BRUNCH','SNACK','DRINK']
+  const ORDER=['PIZZA','BOWL','BURGER','ROLL','PASTA','BRUNCH','SNACK','DRINK']
   secs=secs.map(s=>({...s, items:(s.items||[]).filter(it=>Number(it.price)>0)})).filter(s=>s.items.length)
   const rank=s=>{ const u=String(s.name||'').toUpperCase(); const i=ORDER.findIndex(k=>u.includes(k)); return i<0?99:i }
   secs=secs.slice().map((s,i)=>({s,i})).sort((a,b)=>rank(a.s)-rank(b.s)||a.i-b.i).map(o=>o.s)
@@ -799,13 +801,29 @@ function menuSecShift(si, dir){ // ↑↓ 搬分類（張良 2026-10-01：拖曳
 const MENU_EN_OFFICIAL = {
   '經典瑪格麗特':'Classic Margherita','蜂蜜五起司綜合堅果':'Honey Five-Cheese & Mixed Nuts','辣楓糖臘腸培根':'Spicy Maple Pepperoni & Bacon','煙燻BBQ雞肉':'Smoked BBQ Chicken','松露菌菇':'Black Truffle Mushroom','菠菜培根溫泉蛋':'Spinach, Bacon & Onsen Egg',
   '香煎去骨雞腿堡':'Pan-Seared Boneless Chicken Burger','美式牧場炸雞腿堡':'Ranch Fried Chicken Burger','泰式椒麻炸雞腿堡':'Thai Spicy Fried Chicken Burger','大阪燒煎雞腿堡':'Osaka-Style Chicken Burger','松露菌菇炸雞腿堡':'Truffle Mushroom Fried Chicken Burger','川味微辣炸雞腿堡':'Sichuan Spicy Fried Chicken Burger','4oz 100%純牛肉起司堡':'4oz 100% Beef Cheeseburger','8oz 雙層純牛肉起司堡':'8oz Double Beef Cheeseburger',
-  '生菜煎蛋越南三明治':'Lettuce and Fried Egg Bánh Mì','BBQ烤豬肉越南三明治':'BBQ Roast Pork Bánh Mì','酥炸雞腿越南三明治':'Crispy Fried Chicken Bánh Mì','烤雞胸越南三明治':'Grilled Chicken Breast Bánh Mì','爐烤牛排越南三明治':'Roast Steak Bánh Mì',
+  '生菜煎蛋越南三明治':'Lettuce and Fried Egg Bánh Mì','BBQ烤豬肉越南三明治':'BBQ Roast Pork Bánh Mì','酥炸雞腿越南三明治':'Crispy Fried Chicken Bánh Mì','烤雞胸越南三明治':'Grilled Chicken Breast Bánh Mì','香料烤雞胸越南三明治':'Spiced Roast Chicken Bánh Mì','爐烤牛排越南三明治':'Roast Steak Bánh Mì',
   '川味微辣炸雞 x2':'Sichuan Spicy Fried Chicken x2','玻璃脆殼炸雞 x2':'GROUN:D Fried Chicken x2','松露菌菇義大利麵':'Truffle Mushroom Pasta','經典番茄肉醬義大利麵':'Classic Tomato Meat Sauce Pasta',
   '番茄蔬菜湯':'Tomato & Vegetable Soup','可愛沙拉杯':'Happy Little Salad','薯條':'Fries','酸奶油香煎小洋芋':'Crispy Smashed Baby Potatoes',
   '松露/肉醬薯條':'Truffle / Classic Meat Sauce Fries','雙醬薯條':'Double Sauce Fries','費洛蒙起司薯條':'Animal-Style Fries','肉醬起司小洋芋':'Meat Sauce & Cheese Baby Potatoes','烤地瓜海鹽焦糖冰淇淋':'Roasted Sweet Potato with Salted Caramel Ice Cream',
-  '可口可樂 原味/ZERO':'Coca-Cola Original / Zero','南非國寶茶':'Rooibos Tea','自然四季春烏龍':'Taiwan Oolong Tea','台灣有機紅茶':'Org TW Black Tea','美式咖啡':'Americano','國寶鮮奶茶':'Rooibos Milk Tea','經典拿鐵':'Caffè Latte','抹茶/可可拿鐵':'Matcha / Coco Latte',
+  '可口可樂 原味/ZERO':'Coca-Cola Original / Zero','南非國寶茶':'Rooibos Tea','自然四季春烏龍':'Taiwan Oolong Tea','台灣有機紅茶':'Org TW Black Tea','美式咖啡':'Americano','國寶鮮奶茶':'Rooibos Milk Tea','經典拿鐵':'Caffè Latte','抹茶/可可拿鐵':'Matcha / Cocoa Latte',
   // v4.52.7 療癒碗+明太子（張良 2026-10-05「新增菜單 幫補上英文」=保留非下架,這批圖上還沒畫,用系統現有英文一起納入補英文範圍）
   '紐約街頭雞上飯':'NYC Chicken Over Rice','24H爐烤牛肉飯':'NYC Beef Over Rice','GD招牌雙拼飯':'NYC Combo Over Rice','夏威夷BBQ烤豬飯':'Hawaiian BBQ Pork Rice','泰式椒麻炸雞飯':'Thai Spicy Fried Chicken Rice','明太子溫泉蛋義大利麵':'Mentaiko Pasta with Onsen Egg',
+}
+// 套用官方 v15 定稿修正（張良 2026-10-08）：只改與官方真正有差的 3 處，不整表套（舊表有過時值）
+async function menuApplyV15(){
+  const d = window._menuD; if (!d || !d.draft) return
+  if (!confirm('校正成官方 v15？\n・分類 COMFORT BOWL → BOWLS 療癒碗\n・香料烤雞胸…→ Spiced Roast Chicken Bánh Mì\n・抹茶/可可拿鐵 → Matcha / Cocoa Latte\n（只改分類名與英文，不動中文與價格）')) return
+  const nz = s => String(s||'').replace(/\s*I\s*\/\s*H\s*$/i,'').replace(/\s+/g,'').replace(/／/g,'/')
+  const EN = { '香料烤雞胸越南三明治':'Spiced Roast Chicken Bánh Mì', '抹茶/可可拿鐵':'Matcha / Cocoa Latte' }
+  const EN2 = {}; for (const [k,v] of Object.entries(EN)) EN2[nz(k)] = v
+  const log = []
+  for (const s of (d.draft.sections||[])) {
+    if (/COMFORT\s*BOWL/i.test(s.name) && s.name !== 'BOWLS 療癒碗') { log.push(s.name + ' → BOWLS 療癒碗'); s.name = 'BOWLS 療癒碗' }
+    for (const it of (s.items||[])) { const e = EN2[nz(it.name)]; if (e && it.en !== e) { log.push(it.name + '：' + (it.en||'—') + ' → ' + e); it.en = e } }
+  }
+  if (!log.length) { alert('已經是官方 v15 了，無需校正'); return }
+  await menuSave('套用官方v15修正 ' + log.length + '項')
+  alert('校正好了 ' + log.length + ' 項：\n' + log.join('\n'))
 }
 async function menuFillEnOfficial(){
   const d = window._menuD; if (!d) return
