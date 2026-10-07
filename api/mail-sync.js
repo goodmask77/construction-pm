@@ -3236,7 +3236,7 @@ export default async function handler(req, res) {
       const withBal = (ptsDoc.list || []).filter(e => e.person === meNameL).map(e => { run += Number(e.pts || 0); return { date: e.date, ts: e.ts, act: e.act, type: e.type, pts: e.pts, bal: Math.round(run * 10) / 10, note: e.note || '', by: e.by || '' } })
       myLedger = withBal.slice(-120).reverse()
     }
-    return res.status(200).json({ ok: true, me: meL ? { name: meL.name, role: meL.role, approver: isAdmL } : null, facets: FACETS, rank, stars5, issues: list, names: namesL, month: monthP, ptsRules: pointsRules(ptsCfgL), isAdmin: isAdmL, rewards: rwDoc.list, myBalance: Math.round((balance[meNameL] || 0) * 10) / 10, myRedeems, pendingRedeems, myLedger, taskBreak, isChecker: isCheckerL, checkinQueue, checkers: isAdmL ? checkersL : null })
+    return res.status(200).json({ ok: true, me: meL ? { name: meL.name, role: meL.role, approver: isAdmL } : null, facets: FACETS, rank, stars5, issues: list, issueCats: ((issDoc || {}).cats && issDoc.cats.length) ? issDoc.cats : ['App問題', '現場流程', '物料', '工作站系統', '客人問題'], names: namesL, month: monthP, ptsRules: pointsRules(ptsCfgL), isAdmin: isAdmL, rewards: rwDoc.list, myBalance: Math.round((balance[meNameL] || 0) * 10) / 10, myRedeems, pendingRedeems, myLedger, taskBreak, isChecker: isCheckerL, checkinQueue, checkers: isAdmL ? checkersL : null })
   }
   // 🏦 積分規則表（行為分）管理：GET 回規則＋近期流水；POST {op:'set',act,label,pts,cap,off} | {op:'del',act} | {op:'adjust',person,pts,note}（管理者抽查加扣分）
   if (req.query?.pointscfg) {
@@ -4459,7 +4459,7 @@ export default async function handler(req, res) {
     const who8 = await sopWho(b8.token)
     if (!who8) return res.status(403).json({ ok: false, error: permDeny() }) // 張良 2026-09-25：訪客唯讀
     const doc8 = (await kvGet('sp_finance_pm_sop_issues')) || { list: [] }
-    const iss = { id: 'is' + Date.now().toString(36), st: String(b8.st).slice(0, 20), text: String(b8.text || '').slice(0, 500), media: (Array.isArray(b8.media) ? b8.media : []).slice(0, 6), by: who8.name, ts: new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 16).replace('T', ' '), status: 'open', pub: 'pending' }
+    const iss = { id: 'is' + Date.now().toString(36), st: String(b8.st).slice(0, 20), cat: String(b8.cat || '').trim().slice(0, 20), text: String(b8.text || '').slice(0, 500), media: (Array.isArray(b8.media) ? b8.media : []).slice(0, 6), by: who8.name, ts: new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 16).replace('T', ' '), status: 'open', pub: 'pending' }
     doc8.list = [iss, ...(doc8.list || [])].slice(0, 200)
     await kvPut('sp_finance_pm_sop_issues', doc8, '看板問題回報(' + iss.by + ')')
     await awardPts(iss.by, 'issue_report', iss.id) // 🏦 行為分：回報問題（品質分另由排行榜評星累計）
@@ -4587,9 +4587,44 @@ export default async function handler(req, res) {
       if (c.done) { delete c.done; delete c.doneBy; delete c.doneTs } else { c.done = 1; c.doneBy = whoI.name; c.doneTs = new Date(Date.now() + 8 * 3600e3).toISOString().slice(5, 16).replace('T', ' ') }
     } else if (bi.op === 'ckdel') {
       itI.ck = (itI.ck || []).filter(c2 => c2.id !== bi.val)
+    } else if (bi.op === 'setcat') { // v4.66.0 改某卡的問題類別（空=清除）
+      itI.cat = String(bi.val || '').trim().slice(0, 20); if (!itI.cat) delete itI.cat
     } else return res.status(400).json({ ok: false, error: 'op?' })
     await kvPut('sp_finance_pm_sop_issues', dI, '問題卡' + bi.op + '(' + whoI.name + ')')
     return res.status(200).json({ ok: true, issue: itI })
+  }
+  // 問題類別管理（張良 2026-10-08 轉給CC：問題回報加「可增刪改排序」的類別，照 sopst 同款）：POST ?issuecat=<KEY> {token, op:add|ren|del|ord, cat, newName, list}
+  if (req.method === 'POST' && req.query?.issuecat) {
+    const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
+    if (!ok2 || String(req.query.issuecat) !== ok2) return res.status(403).json({ ok: false })
+    let bc = {}
+    try { bc = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
+    const whoC = await permWho(bc.token, 'task')
+    if (!whoC) return res.status(403).json({ ok: false, error: permDeny() })
+    const docC = (await kvGet('sp_finance_pm_sop_issues')) || { list: [] }
+    docC.cats = (docC.cats && docC.cats.length) ? docC.cats : ['App問題', '現場流程', '物料', '工作站系統', '客人問題']
+    const nmC = String(bc.cat || '').trim().slice(0, 20)
+    if (bc.op === 'add') {
+      if (!nmC) return res.status(400).json({ ok: false, error: '要給類別名' })
+      if (docC.cats.includes(nmC)) return res.status(400).json({ ok: false, error: '已經有這個類別了' })
+      docC.cats.push(nmC)
+    } else if (bc.op === 'ren') {
+      const nnC = String(bc.newName || '').trim().slice(0, 20)
+      if (!nmC || !nnC) return res.status(400).json({ ok: false, error: '要給舊名與新名' })
+      if (docC.cats.includes(nnC)) return res.status(400).json({ ok: false, error: '新類別名已存在' })
+      docC.cats = docC.cats.map(c => c === nmC ? nnC : c)
+      ;(docC.list || []).forEach(it => { if (it.cat === nmC) it.cat = nnC })
+    } else if (bc.op === 'del') {
+      if (!docC.cats.includes(nmC)) return res.status(400).json({ ok: false, error: '找不到這個類別' })
+      docC.cats = docC.cats.filter(c => c !== nmC)
+      ;(docC.list || []).forEach(it => { if (it.cat === nmC) delete it.cat })
+    } else if (bc.op === 'ord') {
+      const want = (Array.isArray(bc.list) ? bc.list : []).map(x => String(x).trim().slice(0, 20)).filter(Boolean)
+      const keep = want.filter(x => docC.cats.includes(x))
+      docC.cats = [...keep, ...docC.cats.filter(x => !keep.includes(x))]
+    } else return res.status(400).json({ ok: false, error: 'op 不認得' })
+    await kvPut('sp_finance_pm_sop_issues', docC, '問題類別' + bc.op + '(' + whoC.name + ')')
+    return res.status(200).json({ ok: true, cats: docC.cats })
   }
   // ── 採購需求（張良 2026-09-21：大家隨時提要買的東西，可附圖片＆連結）──
   // GET ?buy=<OPS>&me=；POST ?buyadd= {text,url,media,by,token}（圖走 sopsign 簽名直傳）；POST ?buyop= {id,op:done|undone|del,token}

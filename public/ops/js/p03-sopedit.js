@@ -50,14 +50,20 @@ async function sopDo(id, undo){
 const _sopLoad0 = sopLoad
 sopLoad = async function(){ await _sopLoad0(); rhythmRender() }
 // ── 問題回報 v2（張良 2026-09-21 抓包連環彈窗）：正式回報視窗——先打字，附檔自己按📷，不附檔直接送出＝純文字回報 ──
-let repFiles = []
+// v4.66.0 張良 2026-10-08：加「問題類別」按鈕（App問題/現場流程/物料/工作站系統/客人問題…可增刪改排序）
+const ISSUE_CATS_DEF = ['App問題', '現場流程', '物料', '工作站系統', '客人問題']
+function issueCatsNow(){ return (window._lbD && window._lbD.issueCats && window._lbD.issueCats.length) ? window._lbD.issueCats : ISSUE_CATS_DEF }
+let repFiles = [], repCat = ''
+function repPickCat(btn){ repCat = btn.dataset.cat || ''; document.querySelectorAll('#repCats button').forEach(b => b.classList.remove('on')); btn.classList.add('on') }
 function sopReport(st){
   if (!TK()) { alert('請先登入：按右上「登入」→ 私訊 DD「登入碼」→ 填入 4 個數字（或點 DD 給的個人連結）'); return }
-  repFiles = []
+  repFiles = []; repCat = ''
   const ov = document.createElement('div'); ov.id = 'repOv'
   ov.style.cssText = 'position:fixed;inset:0;background:rgba(16,24,43,.45);z-index:50;display:flex;align-items:center;justify-content:center;padding:16px'
   ov.innerHTML = `<div style="background:#222B38;border:1px solid #3B4654;box-shadow:0 18px 50px rgba(0,0,0,.55);border-radius:14px;max-width:430px;width:100%;padding:16px" onclick="event.stopPropagation()">
     <div style="font-weight:900;color:var(--ink);margin-bottom:8px">⚠️ 回報問題【${st}】</div>
+    <div class="hint" style="margin-bottom:4px">問題類別（可不選）</div>
+    <div id="repCats" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">${issueCatsNow().map(c => `<button type="button" class="mini" data-cat="${String(c).replace(/"/g, '&quot;')}" onclick="repPickCat(this)" style="padding:6px 10px">${c}</button>`).join('')}</div>
     <textarea id="repTxt" rows="3" placeholder="發生什麼事？（只寫文字也可以送出）" style="width:100%;border:1px solid var(--line);border-radius:8px;padding:8px;font-size:15px;font-family:inherit"></textarea>
     <div id="repList" class="hint" style="margin:6px 0"></div>
     <div style="display:flex;gap:8px;justify-content:space-between;margin-top:8px;flex-wrap:wrap">
@@ -109,7 +115,7 @@ async function repSend(st){
     } catch(e){ alert(`${f.name} 上傳失敗`) }
   }
   let by = sopData && sopData.me ? sopData.me.name : (localStorage.getItem('sopName') || prompt('你的名字？') || '匿名')
-  const r = await fetch('/api/mail-sync?sopreport=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ st, text: txt, media, by, token: TK() }) })
+  const r = await fetch('/api/mail-sync?sopreport=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ st, cat: repCat, text: txt, media, by, token: TK() }) })
   const d = await r.json().catch(()=>null)
   repClose()
   if (d && d.ok) { alert('回報已送出，DD 已通知群裡'); sopLoad() } else alert((d&&d.error)||'送出失敗，再試一次')
@@ -127,6 +133,41 @@ async function sopReview(id, pass){
   const d = await r.json().catch(()=>null)
   if (d && d.ok) refreshView(); else alert((d&&d.error)||'失敗')
 }
+// ── 問題類別管理 v4.66.0（張良 2026-10-08 轉給CC：增刪改排序）──
+function issueCatMng(){
+  if (!TK()) { alert('請先登入綁定才能管理類別'); return }
+  const cats = issueCatsNow()
+  const ov = document.createElement('div'); ov.id = 'icOv'
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(16,24,43,.45);z-index:55;display:flex;align-items:center;justify-content:center;padding:16px'
+  ov.innerHTML = `<div style="background:#222B38;border:1px solid #3B4654;box-shadow:0 18px 50px rgba(0,0,0,.55);border-radius:14px;max-width:420px;width:100%;padding:16px;max-height:80vh;overflow:auto" onclick="event.stopPropagation()">
+    <div style="font-weight:900;color:var(--ink);margin-bottom:4px">🏷 問題類別管理</div>
+    <div class="hint" style="margin-bottom:10px">回報時可選的類別・◀▶排序・✏️改名・🗑刪除</div>
+    <div id="icList">${cats.map((c, i) => `<div style="display:flex;gap:6px;align-items:center;margin-bottom:6px">
+      <span style="flex:1;font-weight:700;color:var(--ink)">${c}</span>
+      <button class="mini" onclick="issueCatOrd('${String(c).replace(/'/g,'')}',-1)" ${i===0?'disabled':''}>◀</button>
+      <button class="mini" onclick="issueCatOrd('${String(c).replace(/'/g,'')}',1)" ${i===cats.length-1?'disabled':''}>▶</button>
+      <button class="mini" onclick="issueCatRen('${String(c).replace(/'/g,'')}')">✏️</button>
+      <button class="mini" style="color:var(--red)" onclick="issueCatDel('${String(c).replace(/'/g,'')}')">🗑</button>
+    </div>`).join('')}</div>
+    <div style="display:flex;gap:6px;margin-top:10px">
+      <input id="icNew" placeholder="新類別名…" style="flex:1;border:1px solid var(--line);border-radius:8px;padding:8px;font-size:14px">
+      <button class="mini on" style="padding:8px 14px" onclick="issueCatAdd()">＋ 新增</button>
+    </div>
+    <div style="text-align:right;margin-top:10px"><button class="mini" onclick="document.getElementById('icOv').remove()">關閉</button></div>
+  </div>`
+  ov.onclick = () => ov.remove()
+  document.body.appendChild(ov)
+}
+async function issueCatOp(body){
+  const r = await fetch('/api/mail-sync?issuecat=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ ...body, token: TK() }) })
+  const d = await r.json().catch(()=>null)
+  if (d && d.ok) { if (window._lbD) window._lbD.issueCats = d.cats; const o = document.getElementById('icOv'); if (o) o.remove(); issueCatMng() }
+  else alert((d&&d.error)||'失敗（要先綁定且有「任務」編輯權）')
+}
+function issueCatAdd(){ const v = (document.getElementById('icNew')||{}).value||''; if (!v.trim()) { alert('先輸入類別名'); return } issueCatOp({ op:'add', cat:v.trim() }) }
+function issueCatRen(c){ const nn = prompt('改類別名：', c); if (nn && nn.trim() && nn.trim() !== c) issueCatOp({ op:'ren', cat:c, newName:nn.trim() }) }
+function issueCatDel(c){ if (confirm(`刪除類別「${c}」？（原本標這類的卡片會變回未分類，不會刪卡）`)) issueCatOp({ op:'del', cat:c }) }
+function issueCatOrd(c, dir){ const cats = [...issueCatsNow()]; const i = cats.indexOf(c), j = i + dir; if (i < 0 || j < 0 || j >= cats.length) return; [cats[i], cats[j]] = [cats[j], cats[i]]; issueCatOp({ op:'ord', list:cats }) }
 // ── SOP 編輯（張良 2026-09-21 拍板：不設站長，綁定者全站可編；時間/姓名/改前內容全留痕）──
 function sopEdit(st){ sopEditSt = (sopEditSt === st) ? null : st; sopRender() }
 function sopEditor(st){
@@ -714,7 +755,7 @@ function rateCard(x, meN, archived){
   const d = window._lbD
   let s = `<div style="background:var(--card);border:1.5px solid ${archived?'var(--line)':'#BBE3CC'};border-radius:12px;padding:10px 12px;margin-bottom:10px;font-size:14px">
     <div><b>✅ ${x.text||'（附件）'}</b>${(x.media||[]).map((m,i)=>` <a href="${m}" target="_blank">📎${i+1}</a>`).join('')}</div>
-    <div class="hint">${x.st||''}・發現：${x.by}・${x.ts}｜解決：${x.doneBy||'—'}${x.doneTs?'・'+x.doneTs:''}${x.durMin?`・耗時${x.durMin}分`:''}</div>`
+    <div class="hint">${x.cat?`<span style="background:var(--primary);color:#fff;border-radius:5px;padding:0 5px;font-size:11px;margin-right:4px">${x.cat}</span>`:''}${x.st||''}・發現：${x.by}・${x.ts}｜解決：${x.doneBy||'—'}${x.doneTs?'・'+x.doneTs:''}${x.durMin?`・耗時${x.durMin}分`:''}</div>`
   for (const a of ['find','fix']){
     const target = a==='find' ? x.by : x.doneBy
     if (!target || target==='匿名') continue
@@ -774,7 +815,7 @@ function tkMini(x, meN, me){ // 小卡（今日/看板/清單共用）
     <div style="display:flex;gap:7px;align-items:flex-start">
       ${meN&&!done?`<input type="checkbox" style="margin-top:2px;width:15px;height:15px" onclick="this.checked=false;sopResolve('${x.id}')" title="完成（送審核）">`:(done?'<span>✅</span>':'')}
       <div style="flex:1;min-width:0"><b style="${done?'color:var(--green)':''}">${x.flag?'🚩 ':''}${x.text||'（附件）'}</b>
-      <div class="hint">${x.st||''}${x.due?`・<span style="color:var(--red);font-weight:700">📅 ${x.due}</span>`:''}${x.claimBy?`・👤 ${x.claimBy}`:''}${x.status==='pending'?'・🕐 待審核':''}${(x.ck||[]).length?`・☑ ${(x.ck||[]).filter(c=>c.done).length}/${x.ck.length}`:''}</div></div>
+      <div class="hint">${x.cat?`<span style="background:var(--primary);color:#fff;border-radius:5px;padding:0 5px;font-size:11px;margin-right:4px">${x.cat}</span>`:''}${x.st||''}${x.due?`・<span style="color:var(--red);font-weight:700">📅 ${x.due}</span>`:''}${x.claimBy?`・👤 ${x.claimBy}`:''}${x.status==='pending'?'・🕐 待審核':''}${(x.ck||[]).length?`・☑ ${(x.ck||[]).filter(c=>c.done).length}/${x.ck.length}`:''}</div></div>
       ${meN&&!done?`<span style="cursor:pointer" title="指派負責人" onclick="taskOwn('${x.id}')">👤</span>`:''}
     </div></div>`
 }
@@ -801,6 +842,7 @@ function taskRender(){
     <h2 style="margin:0">任務中心 <span class="hint">${open.length} 件待辦・共 ${all.length} 件</span></h2>
     <input id="tkQ" value="${q.replace(/"/g,'&quot;')}" oninput="tkSearch(this)" placeholder="搜尋任務…" style="margin-left:auto;border:1px solid var(--line);border-radius:9px;padding:7px 11px;font-size:14px;width:150px">
     <span style="display:inline-flex;border:1.5px solid var(--primary);border-radius:9px;overflow:hidden">${vtab('🏠 今日','today')}${vtab('依大項','cat')}${vtab('依負責人','owner')}${vtab('看板','board')}${vtab('清單','list')}</span>
+    <button class="mini" style="padding:6px 10px" onclick="issueCatMng()" title="管理問題類別">🏷 類別</button>
   </div>
   ${meN?`<div style="display:flex;gap:8px;margin-bottom:12px">
     <input id="tkQuick" placeholder="隨手丟一句任務…（先進收件匣，之後再整理）按 Enter 新增" onkeydown="tkQuickKey(event)" style="flex:1;border:1.5px solid var(--line);border-radius:10px;padding:10px 12px;font-size:15px">
