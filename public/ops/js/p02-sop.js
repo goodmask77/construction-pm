@@ -484,15 +484,15 @@ const sopEsc = s => String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt
 let sopOpenSet = new Set()                 // 展開的動作(itemId)；記憶體即可
 window._sopSub = window._sopSub || 'today' // 子頁：today / tmpl / hist
 const sopNow = () => new Date(Date.now() + 8*3600e3).toISOString().slice(11,16)
-// 五狀態（與後端 sopdone 同邏輯；台北 HH:MM 字串比較）。strict=嚴格模式；wd=週幾(0日6六公休不鎖)
-function sopState(it, lg, now, strict, wd){
+// v4.63.0 V3：正式執行永遠驗證時間（移除嚴格開關）。台北 HH:MM 字串比較；wd=週幾(0日6六公休不鎖)
+function sopState(it, lg, now, wd){
   if (lg && lg.done) return 'done'
+  if (!it.start && !it.end) return 'open'            // 完全沒設時間＝一般可做（無時段限制）
+  if (!it.start) return 'pending_cfg'                 // 有end沒start＝待設定（管理者去補開始時間）
   const weekend = (wd===0 || wd===6)
-  if (!it.start && !it.end) return 'open'            // 完全沒設時間＝一般可做
-  if (!it.start) return (strict && !weekend) ? 'pending_cfg' : 'open' // 只有end沒start＝待設定
   if (weekend) return 'open'                          // 公休預覽不鎖
   if (now < it.start) return 'locked'                 // 尚未開放
-  if (it.end && now >= it.end) return strict ? 'overdue' : 'open' // 嚴格逾時鎖；寬鬆仍可做
+  if (it.end && now >= it.end) return 'overdue'       // 逾時＝永遠鎖（只能回報異常）
   return 'open'                                       // 可執行
 }
 const SOP_BADGE = {
@@ -512,6 +512,7 @@ function sopDoOrExpand(id){ const it = (sopData.def.items||[]).find(x=>x.id===id
 const sopFmtRange = it => { const a=it.start||'', b=it.end||it.due||''; return a&&b?`${a}–${b}`:(b?`${b} 前`:(a?`${a} 起`:'未設時間')) }
 function sopActToggle(id){ if (sopOpenSet.has(id)) sopOpenSet.delete(id); else sopOpenSet.add(id); sopRender() }
 function sopSubTab(v){ window._sopSub = v; sopRender() }
+function sopPendingT(){ window._sopPending = !window._sopPending; sopRender() } // V3 只看待完成＝隱藏已完成
 // 展開面板：說明＋標準照＋子項目＋今日檢核照＋拍照並完成（照設計圖）
 function sopActPanel(it, lg, state){
   const refs = (it.refs && it.refs.length) ? it.refs : (it.ref ? [it.ref] : [])
@@ -623,21 +624,17 @@ function sopRender(){
   if (!sts.length) { el.innerHTML = ''; return }
   const doneN = items.filter(i => log[i.id] && log[i.id].done).length
   const me = sopData.me
-  const strict = !!sopData.def.strictMode
-  const noStartN = items.filter(i=>!i.start).length
+  const noStartN = items.filter(i=>!i.start && (i.end||i.due)).length // 有結束沒開始＝待設定
   const subTab = (v,lb)=>`<span onclick="sopSubTab('${v}')" style="padding:7px 14px;border-radius:9px;font-weight:800;font-size:14px;cursor:pointer;border:1px solid ${window._sopSub===v?'transparent':'var(--line)'};background:${window._sopSub===v?'var(--grad)':'var(--card)'};color:${window._sopSub===v?'#fff':'var(--muted)'}">${lb}</span>`
   let s = `<section><div style="display:flex;align-items:center;gap:8px;margin-bottom:10px"><h2 style="margin:0">工作流程 SOP <span class="hint" style="font-weight:600">${sopData.date.slice(5)}</span></h2><span class="hint" style="margin-left:auto;font-weight:900;color:${doneN===items.length?'var(--green)':'var(--pdark)'}">今日 ${doneN}/${items.length}</span></div>`
   s += `<div style="display:flex;gap:7px;margin-bottom:10px">${subTab('today','今日執行')}${subTab('tmpl','流程範本')}${subTab('hist','歷史紀錄')}</div>`
   s += me ? `<div class="hint" style="margin-bottom:6px">👤 <b style="color:var(--pdark)">${me.name}</b>（打卡自動記你的名字・可編輯 SOP，改動會留姓名時間紀錄）</div>`
           : `<div class="hint" style="margin-bottom:6px">💡 ${BIND_HINT}——打卡不用打名字、可編輯 SOP、認領問題</div>`
-  // 待設定時間橫幅 + 嚴格模式開關（管理者）
-  if (me && me.isMgr) {
-    if (noStartN) s += `<div style="margin-bottom:8px;padding:8px 11px;background:#2E2816;border:1px solid #E8D089;border-radius:9px;font-size:13px;color:#E8D089">⏳ 還有 <b>${noStartN}</b> 個動作沒設「開始時間」——設定完成前不會進嚴格鎖定（逾時暫時不鎖）。到 ⚙️ 設定逐條補上開始/結束時間。</div>`
-    else s += `<div style="margin-bottom:8px;padding:8px 11px;background:${strict?'#16261B':'var(--soft)'};border:1px solid ${strict?'var(--green)':'var(--line)'};border-radius:9px;font-size:13px;display:flex;align-items:center;gap:8px">${strict?'🔒 嚴格模式已啟用：過了結束時間就鎖死不能補打':'🔓 所有動作都設好時間了，可啟用嚴格模式（逾時鎖死）'}<button class="mini ${strict?'':'on'}" style="margin-left:auto;padding:6px 12px" onclick="sopStrictOn(${strict?'false':'true'})">${strict?'關閉嚴格':'啟用嚴格'}</button></div>`
-  } else if (strict) s += `<div class="hint" style="margin-bottom:8px">🔒 嚴格模式：動作過了結束時間就不能再打完成，只能回報異常。</div>`
+  // v4.63.0 V3：正式永遠驗證時間，沒有嚴格開關。待設定（有結束沒開始）提示管理者去補
+  if (me && me.isMgr && noStartN) s += `<div style="margin-bottom:8px;padding:8px 11px;background:#2E2816;border:1px solid #E8D089;border-radius:9px;font-size:13px;color:#E8D089">⏳ 有 <b>${noStartN}</b> 個動作沒設「開始時間」＝顯示「待設定」——點該動作 ✎ 補上開始/結束時間。</div>`
   if (wd === 0 || wd === 6) s += `<div class="hint" style="margin-bottom:8px">今天公休——這是清單預覽，打卡留給營業日。</div>`
-  // 非「今日執行」子頁＝範本/歷史（第1期先骨架）
-  if (window._sopSub === 'tmpl') { s += sopTemplateHtml(now, strict, wd); s += `</section>`; el.innerHTML = s; return }
+  // 非「今日執行」子頁＝範本/歷史
+  if (window._sopSub === 'tmpl') { s += sopTemplateHtml(now, wd); s += `</section>`; el.innerHTML = s; return }
   if (window._sopSub === 'hist') { s += sopHistoryHtml(); s += `</section>`; el.innerHTML = s; setTimeout(()=>sopHistLoad(sopData.date),0); return }
   // 站別篩選＋📌釘選（張良 2026-09-21：SOP 站多，每人點自己要看的；釘選存在自己手機）
   // v4.18.0 #hashtag 雙標籤（張良拍板）：#階段 × #產品 兩排篩選——點產品看全程、點階段看跨產品、都點=交集
@@ -682,7 +679,8 @@ function sopRender(){
     ${catsN.map(cg=>`<span style="${chipS(curTg===cg)}" onclick="sopCatSet('${cg}')">${cg}<span style="margin-left:5px;font-weight:700;font-size:12px;color:${curTg===cg?'#DCEBFF':'var(--muted)'}">${itemsAll.filter(i9=>tgOf(i9)===cg).length}</span></span>`).join('')}
     ${me&&window._sopMng?`<span style="${chipS(false)}" onclick="sopCatAdd()">＋ 階段</span>`:''}
     ${me&&window._sopMng?`<span style="${chipS(false)}" onclick="sopCatMng()">🗂 組織架構・拖曳排序</span>`:''}
-    <span style="${chipS(false)};margin-left:auto" onclick="sopCollAll(${JSON.stringify(shown0).replace(/"/g,'&quot;')})">${allColl?'⏵ 全部展開':'⏷ 全部收合'}</span>
+    <span style="${chipS(!!window._sopPending)};margin-left:auto" onclick="sopPendingT()">只看待完成</span>
+    <span style="${chipS(false)}" onclick="sopCollAll(${JSON.stringify(shown0).replace(/"/g,'&quot;')})">${allColl?'⏵ 全部展開':'⏷ 全部收合'}</span>
   </div>`
   // 階段管理列（設定模式＋選中階段）
   if (curTg && me && window._sopMng) {
@@ -726,12 +724,12 @@ function sopRender(){
     if (!items.some(i => i.st === st)) s += `<div class="hint" style="padding:6px 4px">（這一站還沒有 SOP 項目——想加：點某一條旁的 ⚙️，或先按右上「⚙️ 設定」）</div>`
     // 照設定時間自動排序（張良 2026-09-21：早的在上面；沒設時間的排最後）
     const grpMode = (view === st) && !curTg && catsN.length // 看單一產品全程→照階段分組
-    const stList = itemsF.filter(i => i.st === st).sort((a,b)=> grpMode ? ((catsN.indexOf(tgOf(a))+99*(tgOf(a)===''))-(catsN.indexOf(tgOf(b))+99*(tgOf(b)===''))) || String(a.due||'99:99').localeCompare(String(b.due||'99:99')) : String(a.due||'99:99').localeCompare(String(b.due||'99:99')))
+    const stList = itemsF.filter(i => i.st === st).filter(i => !window._sopPending || !(log[i.id] && log[i.id].done)).sort((a,b)=> grpMode ? ((catsN.indexOf(tgOf(a))+99*(tgOf(a)===''))-(catsN.indexOf(tgOf(b))+99*(tgOf(b)===''))) || String(a.due||'99:99').localeCompare(String(b.due||'99:99')) : String(a.due||'99:99').localeCompare(String(b.due||'99:99')))
     let lastTg9 = '⟪init⟫'
     stList.forEach(it => {
       if (grpMode) { const g9 = tgOf(it) || '未分階段'; if (g9 !== lastTg9) { lastTg9 = g9; s += `<div style="font-weight:900;font-size:13px;color:var(--pdark);margin:8px 0 2px"># ${g9}</div>` } }
       const lg = log[it.id]
-      const state = sopState(it, lg, now, strict, wd)
+      const state = sopState(it, lg, now, wd)
       const open = sopOpenSet.has(it.id)
       const subs = it.subs || []
       const subDoneN = subs.filter(su => lg && lg.subs && lg.subs[su.id] && lg.subs[su.id].done).length
@@ -776,7 +774,7 @@ function sopRender(){
   // 📋 收班彙整（第1期：唯讀統計＋預覽不發；統一群組通知第2期接）
   { const reqAll = items.filter(i=>i.req!==false)
     const doneR = reqAll.filter(i=>log[i.id]&&log[i.id].done).length
-    const overR = reqAll.filter(i=>sopState(i,log[i.id],now,strict,wd)==='overdue')
+    const overR = reqAll.filter(i=>sopState(i,log[i.id],now,wd)==='overdue')
     const undoneR = Math.max(0, reqAll.length - doneR - overR.length)
     s += `<div style="margin-top:14px;padding:12px;background:var(--soft);border:1px solid var(--line);border-radius:12px">
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px"><b style="font-size:15px">📋 收班彙整</b><span class="hint" style="margin-left:auto">統一通知群組（第2期上線）</span></div>
@@ -794,7 +792,7 @@ function sopRender(){
   el.innerHTML = s
 }
 // 流程範本（第1期：唯讀總覽——站→階段→動作，含時間區間/必做/子項數；編輯走今日執行頁設定模式）
-function sopTemplateHtml(now, strict, wd){
+function sopTemplateHtml(now, wd){
   const items = sopData.def.items || []
   const sts = [...(sopData.def.stations || []), ...new Set(items.map(i=>i.st).filter(s=>!(sopData.def.stations||[]).includes(s)))]
   const cats = sopData.def.cats || []

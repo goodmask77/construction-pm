@@ -4284,7 +4284,8 @@ export default async function handler(req, res) {
       // v4.59.0 伺服器時間鎖（權威）：只在嚴格模式且該動作有設 start 才鎖；前端 disable 不算數，這裡再擋一次
       const gD4 = ((await kvGet('sp_finance_pm_sop_def')) || {}).ground || {}
       const it4 = (gD4.items || []).find(x => x.id === b4.itemId)
-      if (it4 && gD4.strictMode && it4.start) {
+      const wd4 = new Date(Date.now() + 8 * 3600e3).getUTCDay()
+      if (it4 && it4.start && wd4 >= 1 && wd4 <= 5) { // v4.63.0 V3：正式永遠驗證時間（移除 strictMode 開關）；週末公休不鎖；伺服器權威
         if (hm4 < it4.start) return res.status(409).json({ ok: false, error: `尚未開放（${it4.start} 才能開始）` })
         if (it4.end && hm4 >= it4.end) return res.status(409).json({ ok: false, error: `已逾時（${it4.end} 截止），不能補打成完成；可改用「回報異常」` })
       }
