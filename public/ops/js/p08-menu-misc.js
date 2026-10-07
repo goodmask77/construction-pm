@@ -290,8 +290,7 @@ function menuRender(){
     <button class="mini" onclick="menuExport('txt')">⬇️ 匯出文字</button>
     <select class="mini" onchange="menuSetSpec(this.value)" title="匯出圖片尺寸（方向×畫質）" style="padding:4px 10px">${Object.entries(MENU_SPECS).map(([k,s])=>`<option value="${k}" ${k===menuOutKey?'selected':''}>${s.t}</option>`).join('')}</select>
     <button class="mini" onclick="menuExport('img')">🖼 直式菜單圖</button>
-    <button class="mini" onclick="menuExport('tv')" title="4 台電視各一張（兩分類並排）＝跟著你改價/改字自動變，先不含食物照片">🖼 四張電視圖</button>
-    <button class="mini" onclick="menuExport('tvphoto')" title="官方定稿橫式（含食物照片），靜態、不隨改價變">官方照片版</button>
+    <button class="mini" onclick="menuExport('tv')" title="4 台電視各一張：官方食物照片不動，價格/品名跟著你改的自動變">🖼 四張電視圖</button>
     ${d.me&&!d.me.canEdit?(d.me.pendingMe?`<span class="hint">🕐 編輯權審核中（已通知老闆）</span>`:`<button class="mini on" onclick="prepApply()">🙋 申請編輯權限</button>`):''}
     ${!d.me?`<span class="hint">看得到；要編輯先綁定＋申請</span>`:''}
   </div>`
@@ -443,8 +442,22 @@ async function menuExportTV(){
     await new Promise(r=>setTimeout(r,600))
   }
 }
-// 🖼 四張電視圖「動態版」（張良 2026-10-08：要跟著改價/改字自動變，先不含食物照片）
-// 一螢幕＝兩分類並排(1920×1080)，Ultra 粗標題，品項填滿到底列；配對同直式：披薩|療癒碗、漢堡|三明治、麵|早午餐、小點|飲品
+// 🖼 四張電視圖「照片保留＋文字動態」（張良 2026-10-08：圖片不動、字跟著改）
+// 用官方橫式當底→塗掉文字區(保留品牌/照片/底列)→動態重畫分類標題與品項
+const TV_CREAM = [ // 每螢幕要塗奶油底蓋掉的「舊文字區」[x,y,w,h]（保留上方品牌、下方照片、底列紅條）
+  [[0,158,1920,608]],                    // tv-01 4品項：y158-766（照片 766+）
+  [[0,158,1920,608]],                    // tv-02 4品項
+  [[0,158,1920,527]],                    // tv-03 3品項(有框)：y158-685
+  [[0,158,1920,635],[760,793,1160,217]], // tv-04：上半全蓋 y158-793＋右欄下半(留左下炸物照 x0-760,y793+)
+]
+const TV_COLS = [ // 每螢幕兩欄 {x,w,bottom}；bottom=品項可排到的最低 y（照片上緣）
+  [{x:70,w:850,bottom:748},{x:1000,w:850,bottom:748}],
+  [{x:70,w:850,bottom:748},{x:1000,w:850,bottom:748}],
+  [{x:70,w:850,bottom:630},{x:1000,w:850,bottom:630}],
+  [{x:70,w:850,bottom:715},{x:1000,w:850,bottom:985}],
+]
+function menuTVBgSrc(idx){ return (window._MENU_TVBG && window._MENU_TVBG[idx]) || ('/ops/menu/tv-0'+(idx+1)+'.png') }
+function menuLoadImg(src){ return new Promise(r=>{ try{ const im=new Image(); im.crossOrigin='anonymous'; im.onload=()=>r(im); im.onerror=()=>r(null); im.src=src }catch(_){ r(null) } }) }
 async function menuPosterTVDynamic(d, secs){
   await menuFontsReady()
   const ORDER=['PIZZA','BOWL','BURGER','ROLL','PASTA','BRUNCH','SNACK','DRINK']
@@ -452,34 +465,31 @@ async function menuPosterTVDynamic(d, secs){
   const rank=s=>{ const u=String(s.name||'').toUpperCase(); const i=ORDER.findIndex(k=>u.includes(k)); return i<0?99:i }
   secs=secs.slice().map((s,i)=>({s,i})).sort((a,b)=>rank(a.s)-rank(b.s)||a.i-b.i).map(o=>o.s)
   const pairs=[]; for (let i=0;i<secs.length;i+=2) pairs.push([secs[i],secs[i+1]].filter(Boolean))
-  const brand=await menuBrandImg()
   const setN=(String(d.draft.note||'').match(/(\d+)\s*元/)||[])[1]||'89'
   const origins=d.draft.origins||'牛肉 美國／豬肉 台灣／雞肉 美國、台灣'
-  for (let i=0;i<pairs.length;i++){ menuTVScreen(pairs[i], i, brand, setN, origins); if (i<pairs.length-1) await new Promise(r=>setTimeout(r,500)) }
+  for (let i=0;i<pairs.length;i++){ await menuTVScreen(pairs[i], i, setN, origins); if (i<pairs.length-1) await new Promise(r=>setTimeout(r,500)) }
 }
-function menuTVScreen(pair, idx, brand, setN, origins){
+async function menuTVScreen(pair, idx, setN, origins){
   const SK=MENU_SK, S=2, W=1920, H=1080
   const cv=document.createElement('canvas'); cv.width=W*S; cv.height=H*S
   const C=menuMkCtx(cv,S); const {g}=C
-  g.fillStyle=SK.CREAM; g.fillRect(0,0,W,H)
-  if (brand) g.drawImage(brand, 960-215, 28, 430, 64)
-  else { g.textAlign='center'; C.setFont('46px '+SK.SLAB,0); g.fillStyle=SK.RED; g.fillText('GROUN:D',960,90); g.textAlign='left' }
-  const cols=[{x:70,w:845},{x:1005,w:845}]
-  pair.forEach((sec,ci)=>menuTVCat(C, SK, sec, cols[ci].x, cols[ci].w))
-  menuFooterBar(C, SK, W, 1010, 70, setN, origins)
-  const nm=pair.map(s=>menuSplitName(s.name).enU).join('-')
-  menuDownload(cv, 'GROUND_電視'+(idx+1)+'_'+nm+'.png')
+  const bg=await menuLoadImg(menuTVBgSrc(idx))
+  if (bg){ g.drawImage(bg,0,0,W,H); g.fillStyle=SK.CREAM; (TV_CREAM[idx]||[]).forEach(r=>g.fillRect(r[0],r[1],r[2],r[3])) } // 保留官方照片/品牌/底列，只蓋舊文字
+  else { g.fillStyle=SK.CREAM; g.fillRect(0,0,W,H); const bi=await menuBrandImg(); if(bi) g.drawImage(bi,960-215,28,430,64); menuFooterBar(C,SK,W,1010,70,setN,origins) } // 載不到底圖＝純文字退路
+  const cols=TV_COLS[idx]||[{x:70,w:850,bottom:960},{x:1000,w:850,bottom:960}]
+  pair.forEach((sec,ci)=>menuTVCat(C, SK, sec, cols[ci].x, cols[ci].w, cols[ci].bottom))
+  menuDownload(cv, 'GROUND_電視'+(idx+1)+'_'+pair.map(s=>menuSplitName(s.name).enU).join('-')+'.png')
 }
-function menuTVCat(C, SK, sec, x, w){
-  const {g,setFont}=C; const {enU,cnT}=menuSplitName(sec.name); const right=x+w; const baseY=300
+function menuTVCat(C, SK, sec, x, w, bottom){
+  const {g,setFont}=C; const {enU,cnT}=menuSplitName(sec.name); const right=x+w; const baseY=292
   setFont('900 42px '+SK.TC,1); const cnW=cnT?g.measureText(cnT).width:0; g.letterSpacing='0px'
   let enSize=68; g.font=enSize+'px Ultra,'+MENU_SERIF; while(enSize>30 && g.measureText(enU).width>w-cnW-30){ enSize--; g.font=enSize+'px Ultra,'+MENU_SERIF }
   g.fillStyle=SK.RED; g.fillText(enU, x, baseY); let tx=x+g.measureText(enU).width+20
   if (cnT){ setFont('900 42px '+SK.TC,1); g.fillStyle=SK.RED; g.fillText(cnT, tx, baseY-4); g.letterSpacing='0px'; tx+=cnW+16 }
   if (enU==='PIZZA'){ setFont('700 22px '+SK.TC,0); g.fillStyle=SK.RED; g.fillText('400°C', tx, baseY-26); g.fillText('12吋', tx, baseY-2) }
-  g.strokeStyle=SK.RED; g.lineWidth=2; g.beginPath(); g.moveTo(x,baseY+28); g.lineTo(right,baseY+28); g.stroke()
+  g.strokeStyle=SK.RED; g.lineWidth=2; g.beginPath(); g.moveTo(x,baseY+26); g.lineTo(right,baseY+26); g.stroke()
   const items=sec.items, n=items.length, side=(Number(sec.combo)||0)>0
-  const top=baseY+90, bottom=972, itemH=Math.min(155, Math.floor((bottom-top)/n)), big=n<=4
+  const top=baseY+84, itemH=Math.min(150, Math.max(56,Math.floor((bottom-top)/n))), big=n<=4
   items.forEach((it,i)=>menuTVItem(C, SK, sec, it, x, w, top+i*itemH, side, big))
 }
 function menuTVItem(C, SK, sec, it, x, w, cy, side, big){

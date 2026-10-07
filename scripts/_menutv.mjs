@@ -16,11 +16,15 @@ const d={ ok:true, draft:{ note:'套餐 +'+REF.setBasePrice+' 元', sections } }
 
 const src=fs.readFileSync('public/ops/js/p08-menu-misc.js','utf8');
 const posterCode=src.slice(src.indexOf('const MENU_SK'), src.indexOf('function mnImgView('));
-const tvCode=src.slice(src.indexOf('async function menuPosterTVDynamic'), src.indexOf('// ───── 菜單海報共用'));
+const tvCode=src.slice(src.indexOf('// 🖼 四張電視圖「照片保留'), src.indexOf('// ───── 菜單海報共用'));
+// 官方 4 張橫式當底圖：用 route 餵檔(帶 ACAO)，避免巨大 data URL
+const BGBYTES=['01','02','03','04'].map(n=>fs.readFileSync('/tmp/v15/a/GROUND_landscape-'+n+'.png'));
+const BG={0:'https://tvbg.test/0.png',1:'https://tvbg.test/1.png',2:'https://tvbg.test/2.png',3:'https://tvbg.test/3.png'};
 
 const browser=await chromium.launch({ channel:'chrome', headless:true });
 const page=await browser.newContext({ viewport:{width:1200,height:900} }).then(c=>c.newPage());
 const errs=[]; page.on('pageerror',e=>errs.push(String(e)));
+await page.route('https://tvbg.test/*', route=>{ const i=+route.request().url().match(/(\d)\.png/)[1]; route.fulfill({ status:200, contentType:'image/png', headers:{'access-control-allow-origin':'*'}, body:BGBYTES[i] }); });
 await page.setContent(`<!doctype html><html><head>
 <style>@font-face{font-family:'Ultra';src:url('${ULTRA}') format('truetype')}</style>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700;900&display=swap" rel="stylesheet">
@@ -37,10 +41,12 @@ await page.addScriptTag({ content: `
   menuDownload=function(cv,name){ window._OUT.push({name,dataUrl:cv.toDataURL('image/png'),w:cv.width,h:cv.height}); };
 `});
 
+await page.evaluate(bg=>{ window._MENU_TVBG = bg; }, BG);
 const res=await page.evaluate(async(d)=>{
+  const probe = await Promise.all([0,1,2,3].map(i=>menuLoadImg(window._MENU_TVBG[i]).then(im=>im?im.naturalWidth+'x'+im.naturalHeight:'FAIL')));
   const secs=(d.draft.sections||[]).map(s2=>({name:s2.name,note:s2.note,combo:Number(s2.combo)||0,items:(s2.items||[]).filter(i2=>i2.name)})).filter(s=>s.items.length);
   await menuPosterTVDynamic(d, secs);
-  return { count:window._OUT.length, items:window._OUT.map(o=>({w:o.w,h:o.h,name:o.name})) };
+  return { count:window._OUT.length, probe, items:window._OUT.map(o=>({w:o.w,h:o.h,name:o.name})) };
 }, d);
 
 const all=await page.evaluate(()=>window._OUT.map(o=>o.dataUrl));
