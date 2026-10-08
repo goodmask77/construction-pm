@@ -347,20 +347,20 @@ function renderBoard(d, store, view){
       const hrsVis = hrs.filter(hr => (heatEditOn && canEd) || !hid.has(hr)) // 編輯模式才連隱藏的時段一起列出（可恢復）；一般檢視只看沒被藏的
       const hidArr = [...hid].sort((a,b)=>a-b)
       let heatT = ''; try { heatT = new Date(d.updatedAt).toLocaleTimeString('en-GB',{hour12:false,timeZone:'Asia/Taipei',hour:'2-digit',minute:'2-digit'}) } catch(e){}
-      let hh = `<section><h2 style="margin-top:14px;display:flex;align-items:baseline;gap:8px;flex-wrap:wrap">時段營收熱力圖 <span class="hint">每格=該時段營收・紅=高於該時段日均、綠=低於日均・新日在左</span>`
+      let hh = `<section><h2 style="margin-top:14px;display:flex;align-items:baseline;gap:8px;flex-wrap:wrap">時段營收熱力圖 <span class="hint">每格=該時段營收・紅=高於該時段日均、綠=低於日均・平均欄=各時段日均（色階就依它）・新日在左</span>`
       hh += canEd ? `<button class="mini${heatEditOn?' on':''}" style="margin-left:auto;font-weight:600;font-size:11px;padding:3px 9px" onclick="heatEdit()">${heatEditOn?'✓ 完成':'編輯時段'}</button>` : ''
       hh += `<button class="boardFreshBtn mini" style="${canEd?'':'margin-left:auto;'}font-weight:600;font-size:11px;white-space:nowrap;padding:3px 9px" title="抓最新資料（每5分鐘也會自動更新）" onclick="boardFresh('${store}')">🔄 更新${heatT?' '+heatT:''}</button></h2>`
       if (heatEditOn && canEd) hh += `<div style="display:flex;gap:5px;flex-wrap:wrap;align-items:center;margin:2px 0 8px"><span class="hint">點各時段的 ✕ 隱藏非營業／測試時段（存起來後全店都看不到、再點「恢復」拿回來）</span>${hidArr.length?`<button class="mini" style="padding:3px 9px" onclick="heatShowAll('${store}')">全部顯示</button>`:''}</div>`
-      hh += `<div class="scroll" style="overflow:auto;max-height:60vh"><table style="border-collapse:collapse"><thead><tr><th style="position:sticky;left:0;top:0;z-index:5;background:var(--soft)">時段</th>`  // v4.70.0 字體拿掉11px＝跟營收表同14px（張良「營收跟熱力圖字體都要一樣大」）
+      hh += `<div class="scroll" style="overflow:auto;max-height:60vh"><table style="border-collapse:collapse"><thead><tr><th style="position:sticky;left:0;top:0;z-index:5;background:var(--soft)">時段</th><th style="position:sticky;top:0;z-index:2;background:var(--psoft,var(--soft));color:var(--pdark,var(--ink));text-align:right">平均</th>`  // v4.70.0 字體14px同營收；v4.70.2 加各時段日均欄（色階基準，張良）
       hh += cols.map(dt=>{ const we=['六','日'].includes(wdOf(dt)); return `<th style="position:sticky;top:0;z-index:2;background:var(--soft);white-space:nowrap;text-align:center${we?';color:#A85C26':''}">${dt.slice(5)}<br><span class="hint" style="font-size:12.5px">${wdOf(dt)}</span></th>` }).join('')
       hh += `</tr></thead><tbody>`
       hrsVis.forEach(hr=>{
         const isHid = hid.has(hr)
-        hh += `<tr${isHid?' style="opacity:.5"':''}><td style="position:sticky;left:0;z-index:1;background:var(--soft);font-weight:700;white-space:nowrap">${hr}時${(heatEditOn&&canEd)?` <button class="mini" style="padding:0 6px;font-size:11px;line-height:1.6;margin-left:3px" title="${isHid?'恢復顯示':'隱藏這個時段'}" onclick="heatHideToggle('${store}',${hr})">${isHid?'恢復':'✕'}</button>`:''}</td>`
+        hh += `<tr${isHid?' style="opacity:.5"':''}><td style="position:sticky;left:0;z-index:1;background:var(--soft);font-weight:700;white-space:nowrap">${hr}時${(heatEditOn&&canEd)?` <button class="mini" style="padding:0 6px;font-size:11px;line-height:1.6;margin-left:3px" title="${isHid?'恢復顯示':'隱藏這個時段'}" onclick="heatHideToggle('${store}',${hr})">${isHid?'恢復':'✕'}</button>`:''}</td><td style="text-align:right;padding:6px 8px;font-weight:800;background:var(--psoft,var(--soft));color:var(--pdark,var(--ink))">${rowAvg[hr]?Math.round(rowAvg[hr]).toLocaleString():'—'}</td>`
         hh += cols.map(dt=>{ const v=d.hourDays[dt][hr]||0; return `<td title="${dt.slice(5)} ${hr}時：${v?v.toLocaleString():'—'}${devTip(v,hr)}" style="text-align:right;padding:6px 8px;font-variant-numeric:tabular-nums;${heatC(v,hr)}">${v?v.toLocaleString():''}</td>` }).join('')
         hh += `</tr>`
       })
-      if (!hrsVis.length) hh += `<tr><td colspan="${cols.length+1}" class="mut" style="text-align:center;padding:14px">目前沒有要顯示的時段</td></tr>`
+      if (!hrsVis.length) hh += `<tr><td colspan="${cols.length+2}" class="mut" style="text-align:center;padding:14px">目前沒有要顯示的時段</td></tr>`
       hh += `</tbody></table></div></section>`
       h += hh
     } else {
