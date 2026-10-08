@@ -347,7 +347,7 @@ function renderBoard(d, store, view){
       const hrsVis = hrs.filter(hr => (heatEditOn && canEd) || !hid.has(hr)) // 編輯模式才連隱藏的時段一起列出（可恢復）；一般檢視只看沒被藏的
       const hidArr = [...hid].sort((a,b)=>a-b)
       let heatT = ''; try { heatT = new Date(d.updatedAt).toLocaleTimeString('en-GB',{hour12:false,timeZone:'Asia/Taipei',hour:'2-digit',minute:'2-digit'}) } catch(e){}
-      let hh = `<section><h2 style="margin-top:14px;display:flex;align-items:baseline;gap:8px;flex-wrap:wrap">時段營收熱力圖 <span class="hint">每格=該時段營收・紅=高於該時段日均、綠=低於日均・平均欄=各時段日均（色階就依它）・新日在左</span>`
+      let hh = `<section><h2 style="margin-top:14px;display:flex;align-items:baseline;gap:8px;flex-wrap:wrap">時段營收熱力圖`
       hh += canEd ? `<button class="mini${heatEditOn?' on':''}" style="margin-left:auto;font-weight:600;font-size:11px;padding:3px 9px" onclick="heatEdit()">${heatEditOn?'✓ 完成':'編輯時段'}</button>` : ''
       hh += `<button class="boardFreshBtn mini" style="${canEd?'':'margin-left:auto;'}font-weight:600;font-size:11px;white-space:nowrap;padding:3px 9px" title="抓最新資料（每5分鐘也會自動更新）" onclick="boardFresh('${store}')">🔄 更新${heatT?' '+heatT:''}</button></h2>`
       if (heatEditOn && canEd) hh += `<div style="display:flex;gap:5px;flex-wrap:wrap;align-items:center;margin:2px 0 8px"><span class="hint">點各時段的 ✕ 隱藏非營業／測試時段（存起來後全店都看不到、再點「恢復」拿回來）</span>${hidArr.length?`<button class="mini" style="padding:3px 9px" onclick="heatShowAll('${store}')">全部顯示</button>`:''}</div>`
