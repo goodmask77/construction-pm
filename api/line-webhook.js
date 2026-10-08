@@ -1910,9 +1910,9 @@ export default async function handler(req, res) {
     return res.status(200).json({ len: t.length, head: t.slice(0, 800), shiftHead: t.includes('【排班系統') ? t.slice(t.indexOf('【排班系統'), t.indexOf('【排班系統') + 600) : '（無排班段落）' })
   }
   // 「轉給CC」收件匣（v4.41.3 張良 2026-10-04「C能幹最好,關鍵密碼就是轉給CC」）：讀口＋銷單口（CC 本機排程撿單用）
+  const ccAuth = (v) => { const a = (process.env.MENU_PROBE_KEY || '').trim(), b = (process.env.CC_AGENT_KEY || '').trim(), s = String(v || ''); return !!((a && s === a) || (b && s === b)) } // v4.68.7 雲端代理用 CC_AGENT_KEY 也可
   if (req.method === 'GET' && req.query?.ccinbox) {
-    const mk9 = (process.env.MENU_PROBE_KEY || '').trim()
-    if (!mk9 || String(req.query.ccinbox) !== mk9) return res.status(403).json({ ok: false })
+    if (!ccAuth(req.query.ccinbox)) return res.status(403).json({ ok: false })
     const doc9 = (await kvGetMany(['pm_cc_inbox']))['pm_cc_inbox'] || { list: [] }
     return res.status(200).json({ ok: true, list: (doc9.list || []).filter(x => x.status === 'open') })
   }
@@ -1925,16 +1925,14 @@ export default async function handler(req, res) {
   } catch (_) {} }
   // 開工回報（v4.45.6 CC許願：撿單當下即時告訴張良「開工」）：GET ?ccstart=K&id=
   if (req.method === 'GET' && req.query?.ccstart) {
-    const mk9 = (process.env.MENU_PROBE_KEY || '').trim()
-    if (!mk9 || String(req.query.ccstart) !== mk9) return res.status(403).json({ ok: false })
+    if (!ccAuth(req.query.ccstart)) return res.status(403).json({ ok: false })
     const doc9 = (await kvGetMany(['pm_cc_inbox']))['pm_cc_inbox'] || { list: [] }
     const it9 = (doc9.list || []).find(x => x.id === String(req.query.id || ''))
     if (it9 && !it9.startedAt) { it9.startedAt = new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 16).replace('T', ' '); await kvSet('pm_cc_inbox', doc9); await ccNotifyBoss(`🛠 CC 開工\n📥 ${String(it9.text || '').slice(0, 140)}\n做完會再回報你`) }
     return res.status(200).json({ ok: !!it9 })
   }
   if (req.method === 'GET' && req.query?.ccdone) {
-    const mk9 = (process.env.MENU_PROBE_KEY || '').trim()
-    if (!mk9 || String(req.query.ccdone) !== mk9) return res.status(403).json({ ok: false })
+    if (!ccAuth(req.query.ccdone)) return res.status(403).json({ ok: false })
     const doc9 = (await kvGetMany(['pm_cc_inbox']))['pm_cc_inbox'] || { list: [] }
     const it9 = (doc9.list || []).find(x => x.id === String(req.query.id || ''))
     if (it9) {
@@ -1943,6 +1941,12 @@ export default async function handler(req, res) {
       await ccNotifyBoss(`✅ CC 完成許願\n📥 ${String(it9.text || '').slice(0, 120)}\n🛠 結果：${it9.result || '已處理'}${footC9}`)
     }
     return res.status(200).json({ ok: !!it9 })
+  }
+  // 問題回報（v4.68.6 CC 全自動：卡住需張良決定時 DD 問他，不硬幹）：GET ?ccask=K&id=&q=
+  if (req.method === 'GET' && req.query?.ccask) {
+    if (!ccAuth(req.query.ccask)) return res.status(403).json({ ok: false })
+    await ccNotifyBoss(`❓ CC 有問題要你決定\n${String(req.query.q || '').slice(0, 280)}\n（回覆：直接打「轉給CC ＋你的決定」）`)
+    return res.status(200).json({ ok: true })
   }
   if (req.method !== 'POST') return res.status(405).end()
   const raw = await readRaw(req)

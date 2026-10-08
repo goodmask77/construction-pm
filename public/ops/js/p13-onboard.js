@@ -223,11 +223,11 @@ function onbDocFlex(me, esc) {
 function onbStep3Form(me, esc) {
   const rq = '<span style="color:var(--red)">*</span>'
   const already = !!me.signedAt
-  const panel = (title, body) => `<details style="border:1px solid var(--line);border-radius:10px;margin-top:8px;background:var(--soft)" open><summary style="padding:11px 13px;font-weight:800;color:var(--ink);cursor:pointer;font-size:14px">${title}</summary><div style="max-height:280px;overflow:auto;padding:0 14px 14px;font-size:13px;line-height:1.75;color:var(--text)">${body}</div></details>`
+  const panel = (title, body, hdrBg, barClr) => `<details style="border:1px solid var(--line);border-radius:10px;margin-top:8px;background:var(--soft);overflow:hidden" open><summary style="padding:11px 13px 11px 15px;font-weight:800;color:var(--ink);cursor:pointer;font-size:14px;background:${hdrBg};border-left:4px solid ${barClr}">${title}</summary><div style="max-height:280px;overflow:auto;padding:0 14px 14px;font-size:13px;line-height:1.75;color:var(--text)">${body}</div></details>`
   return `<div style="max-width:560px">
     <div style="background:var(--soft);border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin-bottom:6px;font-size:13px;color:var(--muted)">請詳閱以下兩份文件，確認無誤後在下方簽名送出。${me.name ? `<br>簽署人：<b style="color:var(--ink)">${esc(me.name)}</b>` : ''}</div>
-    ${panel('勞動契約', onbDocContract(me, esc))}
-    ${panel('四週變形工時勞資會議同意書', onbDocFlex(me, esc))}
+    ${panel('勞動契約', onbDocContract(me, esc), 'rgba(37,99,235,.14)', '#2563eb')}
+    ${panel('四週變形工時勞資會議同意書', onbDocFlex(me, esc), 'rgba(217,119,6,.16)', '#d97706')}
     <div style="font-size:11px;color:var(--muted);margin-top:6px">※ 內文為公版範本，條款最終以公司正式版本為準。</div>
     <label style="display:flex;align-items:flex-start;gap:8px;margin:14px 0 4px;cursor:pointer;font-size:13px;color:var(--text);line-height:1.5"><input type="checkbox" id="ob_sign_agree" ${already ? 'checked' : ''} style="width:17px;height:17px;flex:0 0 auto;margin-top:1px"><span>我已詳閱並同意上述《勞動契約》與《四週變形工時勞資會議同意書》之內容。</span></label>
     <div style="font-size:13px;font-weight:700;color:var(--ink);margin:14px 0 5px">在下方簽名 ${rq}</div>

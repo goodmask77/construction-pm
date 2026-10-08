@@ -3983,6 +3983,152 @@ export default async function handler(req, res) {
     await kvPut('sp_crew_pm_hr_master', docM, '入職文件刪檔(' + whoD2.name + ')')
     return res.status(200).json({ ok: true, docs: row2.docs })
   }
+  // ── 🗂 通用文件庫 v4.70.0（張良「建一個資料庫像雲端硬碟：可增刪改拖曳排序＋DD上傳歸檔＋搜尋＋DD撈檔傳群＋資料夾權限」）──
+  // 資料存 KV sp_finance_pm_library，檔案一律進私有桶 ground-private（看檔＝5分鐘簽名網址）。
+  // 權限模型：每個資料夾 acl={ roles:{角色:等級}, users:{rid:等級}, noExport }；等級 0=看不到 1=只能看/下載 2=可編輯（上傳/刪/改/排序）。
+  // 管理者（approver／主管／prep admin）永遠 2，且唯一能「管理資料夾結構＋設權限」。個人覆蓋 > 角色預設 > 一般預設。
+  if (req.query?.libget || (req.method === 'POST' && (req.query?.libfold || req.query?.libup || req.query?.libfile)) || req.query?.liburl) {
+    const okL = (process.env.OPS_BOARD_KEY || '').trim()
+    const qkL = String(req.query.libget || req.query.libfold || req.query.libup || req.query.libfile || req.query.liburl || '')
+    if (!okL || qkL !== okL) return res.status(403).json({ ok: false })
+    const LIB_KEY = 'sp_finance_pm_library'
+    const nowTS = () => new Date(Date.now() + 8 * 3600e3).toISOString().slice(5, 16).replace('T', ' ')
+    const libIsMgr = (who, apr, pm) => !!who && (apr.includes(who.name) || who.name === '張良瑋' || who.role === '主管' || (((pm || {}).users || {})[who.rid || who.uid] || {}).admin)
+    const libLevel = (who, folder, mgr) => {
+      if (mgr) return 2
+      const acl = folder.acl || {}
+      if (!who) return (acl.roles || {})['訪客'] != null ? acl.roles['訪客'] : 0 // 未綁定＝訪客，預設看不到
+      const rid = who.rid || who.uid
+      if ((acl.users || {})[rid] != null) return acl.users[rid]
+      const role = who.role || '一般'
+      if ((acl.roles || {})[role] != null) return acl.roles[role]
+      return (acl.roles || {})['一般'] != null ? acl.roles['一般'] : 1
+    }
+    let bodyL = {}
+    if (req.method === 'POST') { try { bodyL = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {} }
+    const tkL = req.method === 'POST' ? bodyL.token : req.query.me
+    const [whoL, defL, pmL] = await Promise.all([sopWho(tkL), kvGet('sp_finance_pm_sop_def'), kvGet('sp_finance_pm_prep_perm')])
+    const aprL = (((defL || {}).ground || {}).approvers || ['張良瑋'])
+    const mgrL = libIsMgr(whoL, aprL, pmL)
+    const lib = (await kvGet(LIB_KEY)) || { folders: [], files: {}, log: [] }
+    lib.folders = lib.folders || []; lib.files = lib.files || {}
+
+    // 讀：回傳「這個人看得到的」資料夾＋檔案（看不到的連同檔案都不回傳＝伺服器端就過濾）
+    if (req.query?.libget) {
+      const out = []
+      for (const f of lib.folders.slice().sort((a, b) => (a.order || 0) - (b.order || 0))) {
+        const lv = libLevel(whoL, f, mgrL)
+        if (lv <= 0) continue
+        const files = (lib.files[f.id] || []).slice().sort((a, b) => (a.order || 0) - (b.order || 0))
+        out.push({
+          id: f.id, name: f.name, level: lv, noExport: !!(f.acl && f.acl.noExport), count: files.length,
+          acl: mgrL ? (f.acl || {}) : undefined,
+          files: files.map(x => ({ id: x.id, name: x.name, ext: x.ext, mime: x.mime, size: x.size, ts: x.ts, by: x.by }))
+        })
+      }
+      let people = []
+      if (mgrL) { try { const r = (await kvGet('sp_crew_kb_roster')) || {}; people = (r.people || []).filter(p => p.name).map(p => ({ id: p.id, name: p.name, role: p.gdRole || '一般' })) } catch (_) {} }
+      res.setHeader('Cache-Control', 'private, no-store')
+      return res.status(200).json({ ok: true, mgr: mgrL, me: whoL ? { name: whoL.name, role: whoL.role, rid: whoL.rid || whoL.uid } : null, folders: out, people })
+    }
+
+    // 取檔：5 分鐘簽名網址（該夾 level>=1）
+    if (req.query?.liburl) {
+      const f = lib.folders.find(x => x.id === String(req.query.folderId))
+      if (!f) return res.status(404).json({ ok: false })
+      if (libLevel(whoL, f, mgrL) < 1) return res.status(403).json({ ok: false, error: '沒有檢視權限' })
+      const file = (lib.files[f.id] || []).find(x => x.id === String(req.query.fileId))
+      if (!file) return res.status(404).json({ ok: false })
+      const { signedUrl } = await import('./_onboard.js')
+      let u = await signedUrl(file.path, 300)
+      if (!u) return res.status(502).json({ ok: false })
+      if (req.query.dl) u += (u.includes('?') ? '&' : '?') + 'download=' + encodeURIComponent(String(req.query.dl).slice(0, 120))
+      return res.redirect(302, u)
+    }
+
+    // 管理資料夾結構＋設權限（限管理者）
+    if (req.query?.libfold) {
+      if (!mgrL) return res.status(403).json({ ok: false, error: '只有主管能管理資料夾與權限' })
+      const op = String(bodyL.op || '')
+      if (op === 'add') {
+        const name = String(bodyL.name || '').trim().slice(0, 40); if (!name) return res.status(400).json({ ok: false, error: '請填資料夾名稱' })
+        const id = 'f' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6)
+        const maxo = Math.max(0, ...lib.folders.map(f => f.order || 0))
+        lib.folders.push({ id, name, order: maxo + 1, by: whoL.name, ts: nowTS(), acl: { roles: { '一般': 1, '主管': 2, '審核人': 2 }, users: {}, noExport: false } })
+      } else if (op === 'rename') {
+        const f = lib.folders.find(x => x.id === bodyL.id); if (!f) return res.status(404).json({ ok: false })
+        f.name = String(bodyL.name || '').trim().slice(0, 40) || f.name
+      } else if (op === 'del') {
+        const i = lib.folders.findIndex(x => x.id === bodyL.id); if (i < 0) return res.status(404).json({ ok: false })
+        lib.folders.splice(i, 1); delete lib.files[bodyL.id] // 檔案留桶，只移索引
+      } else if (op === 'reorder') {
+        (bodyL.order || []).forEach((id, idx) => { const f = lib.folders.find(x => x.id === id); if (f) f.order = idx + 1 })
+      } else if (op === 'setacl') {
+        const f = lib.folders.find(x => x.id === bodyL.id); if (!f) return res.status(404).json({ ok: false })
+        f.acl = f.acl || {}; const a = bodyL.acl || {}
+        if (a.roles) f.acl.roles = a.roles
+        if (a.users) f.acl.users = a.users
+        if ('noExport' in a) f.acl.noExport = !!a.noExport
+      } else return res.status(400).json({ ok: false, error: '未知操作' })
+      lib.log = [{ by: whoL.name, ts: nowTS(), what: '資料夾' + op }, ...(lib.log || [])].slice(0, 100)
+      lib.updatedAt = new Date().toISOString()
+      await kvPut(LIB_KEY, lib, '文件庫資料夾' + op + '(' + whoL.name + ')')
+      return res.status(200).json({ ok: true })
+    }
+
+    // 上傳檔案（該夾 level>=2）
+    if (req.query?.libup) {
+      const f = lib.folders.find(x => x.id === bodyL.folderId); if (!f) return res.status(404).json({ ok: false, error: '找不到資料夾' })
+      if (libLevel(whoL, f, mgrL) < 2) return res.status(403).json({ ok: false, error: '你沒有這個資料夾的上傳權限' })
+      const m = /^data:([\w\/+.-]+);base64,(.+)$/.exec(String(bodyL.dataUrl || ''))
+      if (!m) return res.status(400).json({ ok: false, error: '檔案格式不對' })
+      const buf = Buffer.from(m[2], 'base64')
+      if (buf.length > 20 * 1024 * 1024) return res.status(400).json({ ok: false, error: '檔案太大（上限 20MB）' })
+      const ext = (String(bodyL.ext || '').replace(/[^a-z0-9]/gi, '').slice(0, 5) || (m[1].split('/')[1] || 'bin').replace(/[^a-z0-9]/gi, '').slice(0, 5)).toLowerCase()
+      const name = String(bodyL.name || '檔案').trim().slice(0, 80) || '檔案'
+      const fid = 'x' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6)
+      const { uploadPrivate } = await import('./_onboard.js')
+      const path = `library/${f.id}/${fid}.${ext || 'bin'}`
+      if (!(await uploadPrivate(path, buf, m[1]))) return res.status(502).json({ ok: false, error: '上傳失敗' })
+      lib.files[f.id] = lib.files[f.id] || []
+      const maxo = Math.max(0, ...lib.files[f.id].map(x => x.order || 0))
+      lib.files[f.id].push({ id: fid, name, path, ext: ext || 'bin', mime: m[1], size: buf.length, ts: nowTS(), by: whoL.name, order: maxo + 1 })
+      lib.log = [{ by: whoL.name, ts: nowTS(), what: '上傳 ' + name + ' → ' + f.name }, ...(lib.log || [])].slice(0, 100)
+      lib.updatedAt = new Date().toISOString()
+      await kvPut(LIB_KEY, lib, '文件庫上傳(' + whoL.name + ')')
+      return res.status(200).json({ ok: true, id: fid })
+    }
+
+    // 檔案操作：刪／改名／排序／搬移（該夾 level>=2）
+    if (req.query?.libfile) {
+      const op = String(bodyL.op || '')
+      const f = lib.folders.find(x => x.id === bodyL.folderId); if (!f) return res.status(404).json({ ok: false })
+      if (libLevel(whoL, f, mgrL) < 2) return res.status(403).json({ ok: false, error: '你沒有這個資料夾的編輯權限' })
+      const arr = lib.files[f.id] || []
+      if (op === 'del') {
+        const i = arr.findIndex(x => x.id === bodyL.id); if (i < 0) return res.status(404).json({ ok: false })
+        arr.splice(i, 1) // 檔案留桶，只移索引＝可救回
+      } else if (op === 'rename') {
+        const x = arr.find(z => z.id === bodyL.id); if (!x) return res.status(404).json({ ok: false })
+        x.name = String(bodyL.name || '').trim().slice(0, 80) || x.name
+      } else if (op === 'reorder') {
+        (bodyL.order || []).forEach((id, idx) => { const x = arr.find(z => z.id === id); if (x) x.order = idx + 1 })
+      } else if (op === 'move') {
+        const g = lib.folders.find(x => x.id === bodyL.toFolderId); if (!g) return res.status(404).json({ ok: false, error: '找不到目標資料夾' })
+        if (libLevel(whoL, g, mgrL) < 2) return res.status(403).json({ ok: false, error: '你沒有目標資料夾的編輯權限' })
+        const i = arr.findIndex(x => x.id === bodyL.id); if (i < 0) return res.status(404).json({ ok: false })
+        const [mv] = arr.splice(i, 1)
+        lib.files[g.id] = lib.files[g.id] || []
+        mv.order = Math.max(0, ...lib.files[g.id].map(x => x.order || 0)) + 1
+        lib.files[g.id].push(mv)
+      } else return res.status(400).json({ ok: false, error: '未知操作' })
+      lib.files[f.id] = arr
+      lib.log = [{ by: whoL.name, ts: nowTS(), what: '檔案' + op + ' @' + f.name }, ...(lib.log || [])].slice(0, 100)
+      lib.updatedAt = new Date().toISOString()
+      await kvPut(LIB_KEY, lib, '文件庫檔案' + op + '(' + whoL.name + ')')
+      return res.status(200).json({ ok: true })
+    }
+  }
   // ✏️ 夥伴名冊編輯口 v4.34.3（張良「整個清冊要可以讓我跟有權限的人編輯」）：主管限定＋留痕；身分證欄要有 idLock 檢視權才能改
   if (req.method === 'POST' && req.query?.hrmasterup) {
     const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
