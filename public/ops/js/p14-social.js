@@ -260,7 +260,7 @@
           <input id="sfWhen" type="datetime-local" value="${v.scheduledAt ? new Date(v.scheduledAt).toISOString().slice(0, 16) : ''}" style="border:1px solid var(--line);border-radius:10px;padding:8px;display:${isLater ? 'inline-block' : 'none'}">
         </div>
       </div>
-      <div class="hint" style="margin-top:8px">流程：存草稿 → 送審 → <b>你核准後：即刻＝馬上發、指定時間＝到點自動發</b>到你勾的平台。</div>
+      <div id="sfSchHint" class="hint" style="margin-top:8px">${isLater ? '📅 已選「指定時間」：到你設的時間自動發。' : '⚡ 已選「即刻發送」：核准後馬上發。內容填好後，按下面「✓ 儲存」送出。'}</div>
       <div style="margin-top:12px;display:flex;gap:8px"><button class="mini on" onclick="_socialSave('${v.id || ''}')">✓ 儲存</button><button class="mini" onclick="_socialEditClose()">取消</button></div>
     </section>`
   }
@@ -288,10 +288,10 @@
   window._socialPickLen = function (el, v) { genLen = v;[...el.parentNode.querySelectorAll('.mini')].forEach(b => b.classList.remove('on')); el.classList.add('on') }
   // 發送時間：即刻 / 指定時間
   window._socialSchMode = function (m) {
-    const now = document.getElementById('sfSchNow'), later = document.getElementById('sfSchLater'), inp = document.getElementById('sfWhen')
+    const now = document.getElementById('sfSchNow'), later = document.getElementById('sfSchLater'), inp = document.getElementById('sfWhen'), hint = document.getElementById('sfSchHint')
     if (!now || !later || !inp) return
-    if (m === 'later') { later.classList.add('on'); now.classList.remove('on'); inp.style.display = 'inline-block'; inp.focus() }
-    else { now.classList.add('on'); later.classList.remove('on'); inp.style.display = 'none' }
+    if (m === 'later') { later.classList.add('on'); now.classList.remove('on'); inp.style.display = 'inline-block'; inp.focus(); if (hint) hint.textContent = '📅 已選「指定時間」：到你設的時間自動發。' }
+    else { now.classList.add('on'); later.classList.remove('on'); inp.style.display = 'none'; if (hint) hint.textContent = '⚡ 已選「即刻發送」：核准後馬上發。內容填好後，按下面「✓ 儲存」送出。' }
   }
 
   // ── 多圖：縮圖牆＋拖曳排序（第一張＝封面）──

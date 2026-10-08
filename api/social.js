@@ -36,12 +36,14 @@ async function aiText(system, user, maxTokens = 1500) {
 // 從 AI 回應解析出多個版本（優先吃 JSON {versions:[...]}，失敗再退回分隔切割）
 function parseVersions(raw) {
   if (!raw) return []
+  // 統一清掉每版開頭的角度標籤（如「【情境帶入】」）再回傳
+  const clean = a => a.map(x => String(x || '').trim().replace(/^【[^】]{0,16}】\s*/, '').trim()).filter(Boolean).slice(0, 5)
   let s = String(raw).trim().replace(/^```(?:json)?/i, '').replace(/```$/, '').trim()
-  try { const o = JSON.parse(s); if (Array.isArray(o.versions)) return o.versions.map(x => String(x || '').trim()).filter(Boolean).slice(0, 5) } catch (_) {}
+  try { const o = JSON.parse(s); if (Array.isArray(o.versions)) return clean(o.versions) } catch (_) {}
   const m = s.match(/\{[\s\S]*\}/)
-  if (m) { try { const o = JSON.parse(m[0]); if (Array.isArray(o.versions)) return o.versions.map(x => String(x || '').trim()).filter(Boolean).slice(0, 5) } catch (_) {} }
+  if (m) { try { const o = JSON.parse(m[0]); if (Array.isArray(o.versions)) return clean(o.versions) } catch (_) {} }
   const parts = s.split(/\n\s*(?:[-=]{3,}|版本\s*[一二三四五1-5]|\[\[?\d\]?\]|\d\s*[\.、).])/).map(x => x.trim()).filter(x => x.length > 8)
-  return parts.slice(0, 5)
+  return clean(parts)
 }
 
 // 取每篇貼文「最新一筆」成效快照（翻最近兩個月檔）
@@ -151,7 +153,7 @@ export default async function handler(req, res) {
             : 'Instagram 貼文：精簡分段、適度使用 emoji，結尾放 5–8 個相關 hashtag（中英混搭）'
           const brand = String(body.brand || '').trim().slice(0, 40)
           const items = (Array.isArray(body.relatedItems) ? body.relatedItems : []).slice(0, 10).filter(Boolean)
-          const sys = '你是台灣餐飲品牌的資深社群小編，擅長寫吸引人、會被分享與收藏的貼文。這次請一次產出【5 個切入角度明顯不同】的版本（例如：情境帶入、產品特色、限時優惠、提問互動、故事情感），每個都要能直接發佈。只輸出 JSON，格式嚴格為：{"versions":["版本一","版本二","版本三","版本四","版本五"]}，不要任何其他文字、不要 markdown 標記、不要說明。'
+          const sys = '你是台灣餐飲品牌的資深社群小編，擅長寫吸引人、會被分享與收藏的貼文。這次請一次產出 5 個切入角度明顯不同的版本，每個都是「可直接複製貼上就發佈的純貼文正文」。⚠️非常重要：絕對不要在內文裡加上「【情境帶入】」「【產品特色】」這類角度名稱、標題或任何方括號標籤，直接寫貼文本身。只輸出 JSON，格式嚴格為：{"versions":["版本一","版本二","版本三","版本四","版本五"]}，不要任何其他文字、不要 markdown 標記、不要說明。'
           const txt = [
             brand ? `品牌：${brand}` : '',
             `平台語氣：${plat}`,
