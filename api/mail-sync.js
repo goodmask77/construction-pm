@@ -3756,7 +3756,8 @@ export default async function handler(req, res) {
     let rowsH = (docH || { rows: [] }).rows || []
     if (!canId) rowsH = rowsH.map(({ nid, ...r9 }) => r9)
     const topts = (docH || {}).titleOpts || [...new Set(['正職', 'PT', ...rowsH.map(r9 => r9.title).filter(Boolean)])]
-    const outH = { ok: true, rows: rowsH, titleOpts: topts, colOrder: (docH || {}).colOrder || [], updatedAt: (docH || {}).updatedAt || '', src: (docH || {}).src || '', idCan: canId, canEdit: isAdmH || whoH9.role === '主管' } // v4.41.3 全員可看但編輯鈕只給主管/管理者（寫入口 hrmasterup 本來就擋）
+    const dopts = (docH || {}).deptOpts || [...new Set(rowsH.map(r9 => r9.dept).filter(Boolean))] // v4.35.0 部門選單：沒設定就用名冊現有部門湊
+    const outH = { ok: true, rows: rowsH, titleOpts: topts, deptOpts: dopts, colOrder: (docH || {}).colOrder || [], updatedAt: (docH || {}).updatedAt || '', src: (docH || {}).src || '', idCan: canId, canEdit: isAdmH || whoH9.role === '主管' } // v4.41.3 全員可看但編輯鈕只給主管/管理者（寫入口 hrmasterup 本來就擋）
     if (isAdmH) outH.idLock = { rids: ((lockH || {}).rids) || [], people: Object.entries((pmH && pmH.users) || {}).map(([r9, u9]) => ({ rid: r9, name: u9.name, admin: !!u9.admin })) }
     // v4.60 待審核：LINE 報到的新人在 kb_roster(onboarding:true)，但名冊頁讀 hr_master＝兩個檔不同→新人看不到。這裡把入職中名單帶出來給名冊頁顯示＋核准。
     const nmSetH = new Set((rowsH || []).filter(r9 => !/A Beach/.test(r9.co || '')).map(r9 => r9.name))
@@ -4181,6 +4182,8 @@ export default async function handler(req, res) {
       docU.rows.push({ co: String(bu9.co).slice(0, 40), name: String(bu9.newName || '新夥伴').slice(0, 20), dept: '', title: '', onboard: '', birth: '', age: '', sex: '', nid: '', health: '' })
     } else if (bu9.op === 'titleopts') { // 職務選單自訂（張良「我可以新增刪減編輯選單」）
       docU.titleOpts = (Array.isArray(bu9.list) ? bu9.list : []).map(x9 => String(x9).trim().slice(0, 12)).filter(Boolean).slice(0, 20)
+    } else if (bu9.op === 'deptopts') { // v4.35.0 部門選單自訂（張良「部門跟職務都要可以編輯 用選單不要填寫」）
+      docU.deptOpts = (Array.isArray(bu9.list) ? bu9.list : []).map(x9 => String(x9).trim().slice(0, 12)).filter(Boolean).slice(0, 30)
     } else if (bu9.op === 'colorder') { // v4.35.1 欄位順序自訂（全裝置共用）
       docU.colOrder = (Array.isArray(bu9.list) ? bu9.list : []).map(x9 => String(x9).slice(0, 12)).slice(0, 20)
     } else if (bu9.op === 'del') {
@@ -4190,7 +4193,7 @@ export default async function handler(req, res) {
     docU.log = [{ by: whoU9.name, ts: ts8U, what: `${bu9.op} ${bu9.name || bu9.newName || ''} ${bu9.field || ''}`.trim() }, ...(docU.log || [])].slice(0, 80)
     docU.updatedAt = new Date().toISOString()
     await kvPut('sp_crew_pm_hr_master', docU, '夥伴名冊編輯(' + whoU9.name + ')')
-    return res.status(200).json({ ok: true, rows: canIdU ? docU.rows : docU.rows.map(({ nid, ...r9 }) => r9), titleOpts: docU.titleOpts || [], colOrder: docU.colOrder || [] })
+    return res.status(200).json({ ok: true, rows: canIdU ? docU.rows : docU.rows.map(({ nid, ...r9 }) => r9), titleOpts: docU.titleOpts || [], deptOpts: docU.deptOpts || [], colOrder: docU.colOrder || [] })
   }
   if (req.method === 'POST' && req.query?.hrmasterset) {
     const mk9 = (process.env.MENU_PROBE_KEY || '').trim()
@@ -4517,11 +4520,11 @@ export default async function handler(req, res) {
         recs: o.recs.slice(-80),
       }
     }).sort((a, b) => b.amt30 - a.amt30)
-    const vendorsOut = Object.values(vend).map(v => ({ name: v.name, amt30: Math.round(v.amt30), n30: v.n30, nItems: Object.keys(v.items).length, last: v.last })).sort((a, b) => b.amt30 - a.amt30)
+    const vendorsOut = Object.values(vend).map(v => ({ name: v.name, cat: (catD.vmap || {})[v.name] || '', amt30: Math.round(v.amt30), n30: v.n30, nItems: Object.keys(v.items).length, last: v.last })).sort((a, b) => b.amt30 - a.amt30)
     const canEditM = !!(await permWho(meTk, 'buy'))
     return res.status(200).json({
       ok: true, me: { name: meW.name, canEdit: canEditM },
-      items: itemsOut, vendors: vendorsOut, cats: catD.cats || [],
+      items: itemsOut, vendors: vendorsOut, cats: catD.cats || [], vcats: catD.vcats || [],
       byMonth, months: mosM.slice().reverse(),
       updatedAt: (ordiDocs.find(Boolean) || {}).updatedAt || null, rows: rowCount,
     })
@@ -4534,17 +4537,50 @@ export default async function handler(req, res) {
     try { bm = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
     const whoM = await permWho(bm.token, 'buy')
     if (!whoM) return res.status(403).json({ ok: false, error: permDeny() })
-    const doc = (await kvGet('sp_finance_pm_boss_matcat')) || { cats: [], map: {} }
-    doc.cats = doc.cats || []; doc.map = doc.map || {}
+    const doc = (await kvGet('sp_finance_pm_boss_matcat')) || { cats: [], map: {}, vcats: [], vmap: {} }
+    doc.cats = doc.cats || []; doc.map = doc.map || {}; doc.vcats = doc.vcats || []; doc.vmap = doc.vmap || {}
+    const isV = bm.kind === 'vendor' // kind=vendor → 操作廠商分類(vcats/vmap)；預設物料分類(cats/map)
+    const C = isV ? 'vcats' : 'cats', M = isV ? 'vmap' : 'map'
     const op = bm.op
-    if (op === 'addcat') { const nm = String(bm.name || '').trim().slice(0, 20); if (!nm) return res.status(400).json({ ok: false, error: '分類名稱空白' }); if (!doc.cats.includes(nm)) doc.cats.push(nm) }
-    else if (op === 'delcat') { doc.cats = doc.cats.filter(c => c !== bm.name); for (const k of Object.keys(doc.map)) if (doc.map[k] === bm.name) delete doc.map[k] }
-    else if (op === 'rencat') { const nm = String(bm.to || '').trim().slice(0, 20); if (!nm) return res.status(400).json({ ok: false, error: '新名稱空白' }); doc.cats = doc.cats.map(c => (c === bm.name ? nm : c)); for (const k of Object.keys(doc.map)) if (doc.map[k] === bm.name) doc.map[k] = nm }
-    else if (op === 'setcat') { const keys = Array.isArray(bm.keys) ? bm.keys : [bm.key]; for (const k of keys) { if (!k) continue; if (bm.cat) doc.map[k] = String(bm.cat).slice(0, 20); else delete doc.map[k] } }
-    else if (op === 'order') { if (Array.isArray(bm.cats)) doc.cats = bm.cats.filter(c => typeof c === 'string').slice(0, 50) }
+    if (op === 'addcat') { const nm = String(bm.name || '').trim().slice(0, 20); if (!nm) return res.status(400).json({ ok: false, error: '分類名稱空白' }); if (!doc[C].includes(nm)) doc[C].push(nm) }
+    else if (op === 'delcat') { doc[C] = doc[C].filter(c => c !== bm.name); for (const k of Object.keys(doc[M])) if (doc[M][k] === bm.name) delete doc[M][k] }
+    else if (op === 'rencat') { const nm = String(bm.to || '').trim().slice(0, 20); if (!nm) return res.status(400).json({ ok: false, error: '新名稱空白' }); doc[C] = doc[C].map(c => (c === bm.name ? nm : c)); for (const k of Object.keys(doc[M])) if (doc[M][k] === bm.name) doc[M][k] = nm }
+    else if (op === 'setcat') { const keys = Array.isArray(bm.keys) ? bm.keys : [bm.key]; for (const k of keys) { if (!k) continue; if (bm.cat) doc[M][k] = String(bm.cat).slice(0, 20); else delete doc[M][k] } }
+    else if (op === 'order') { if (Array.isArray(bm.cats)) doc[C] = bm.cats.filter(c => typeof c === 'string').slice(0, 50) }
     else return res.status(400).json({ ok: false, error: '未知操作' })
-    await kvPut('sp_finance_pm_boss_matcat', doc, '物料庫分類(' + whoM.name + ')')
-    return res.status(200).json({ ok: true, cats: doc.cats, map: doc.map })
+    await kvPut('sp_finance_pm_boss_matcat', doc, '物料庫分類' + (isV ? '(廠商)' : '') + '(' + whoM.name + ')')
+    return res.status(200).json({ ok: true, cats: doc.cats, map: doc.map, vcats: doc.vcats, vmap: doc.vmap })
+  }
+  // 📦 物料庫廠商分類輔助口（金鑰維護口，照本專案慣例，免個人 token，給後台/CC 依叫貨內容批次歸類用）：
+  // GET  ?matseed=<MENU_PROBE_KEY> → 回每家廠商的叫貨品項彙總（判斷廠商類型用）＋現有廠商分類
+  // POST ?matseed=<MENU_PROBE_KEY> {vcats:[...], vmap:{廠商名:分類}} → 灌入廠商分類（合併，空值=取消該廠商歸類）
+  if (req.query?.matseed) {
+    const mkS = (process.env.MENU_PROBE_KEY || '').trim()
+    if (!mkS || String(req.query.matseed) !== mkS) return res.status(403).json({ ok: false })
+    const todayS = new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10)
+    const mosS = (() => { const out = []; const d = new Date(todayS + 'T00:00:00Z'); for (let i = 0; i < 13; i++) { out.push(d.toISOString().slice(0, 7)); d.setUTCMonth(d.getUTCMonth() - 1) } return out })()
+    if (req.method === 'POST') {
+      let bs = {}
+      try { bs = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
+      const doc = (await kvGet('sp_finance_pm_boss_matcat')) || { cats: [], map: {}, vcats: [], vmap: {} }
+      doc.cats = doc.cats || []; doc.map = doc.map || {}; doc.vcats = doc.vcats || []; doc.vmap = doc.vmap || {}
+      if (Array.isArray(bs.vcats)) for (const c of bs.vcats) { const cc = String(c || '').trim().slice(0, 20); if (cc && !doc.vcats.includes(cc)) doc.vcats.push(cc) }
+      if (bs.vmap && typeof bs.vmap === 'object') for (const [k, v] of Object.entries(bs.vmap)) {
+        if (!k) continue
+        if (v) { const cc = String(v).trim().slice(0, 20); doc.vmap[k] = cc; if (cc && !doc.vcats.includes(cc)) doc.vcats.push(cc) } else delete doc.vmap[k]
+      }
+      await kvPut('sp_finance_pm_boss_matcat', doc, '物料庫廠商分類(種子批次)')
+      return res.status(200).json({ ok: true, vcats: doc.vcats, vmapCount: Object.keys(doc.vmap).length })
+    }
+    const docsS = await Promise.all(mosS.map(m => kvGet('sp_finance_pm_boss_ordi_' + m.replace('-', ''))))
+    const vendS = {}
+    for (const doc of docsS) for (const r of Object.values((doc || {}).rows || {})) {
+      const sup = (r.supplier || '').trim() || '（未填廠商）'; const nm = (r.name || r.item || '').trim(); if (!nm) continue
+      const v = vendS[sup] || (vendS[sup] = { items: {}, n: 0 }); v.items[nm] = (v.items[nm] || 0) + 1; v.n++
+    }
+    const curS = (await kvGet('sp_finance_pm_boss_matcat')) || {}
+    const outS = Object.entries(vendS).map(([name, v]) => ({ name, n: v.n, top: Object.entries(v.items).sort((a, b) => b[1] - a[1]).slice(0, 30).map(x => x[0]) })).sort((a, b) => b.n - a.n)
+    return res.status(200).json({ ok: true, vendors: outS, curVcats: curS.vcats || [], curVmap: curS.vmap || {} })
   }
   // ⭐ 個人常用捷徑清單（v4.39.1 張良「手機版固定一行、每個人可編輯自己的常用清單」）：POST ?prepfav=<OPS_BOARD_KEY> {token, list}
   // 一人一份存 users[rid]＝跟人不跟裝置；只能改自己的、要綁定才存（未綁定前端自己存本機）

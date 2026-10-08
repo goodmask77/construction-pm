@@ -7,7 +7,7 @@
   const nf = n => Math.round(n || 0).toLocaleString()
   const money = n => 'NT$' + nf(n)
   const COL = { b: '#4DA3FF', g: '#3DBE6C', o: '#E8A657', y: '#E8C14E', p: '#B48CF2', r: '#F07373' }
-  let MDATA = null, mSub = 'dash', mVendF = 'all', mCatF = 'all', mQ = '', mSort = 'amt30', mCatMng = false
+  let MDATA = null, mSub = 'dash', mVendF = 'all', mVcatF = 'all', mCatF = 'all', mQ = '', mSort = 'amt30', mCatMng = false
 
   window.matlibLoad = async function () {
     curStore = 'matlib'; try { setTabs('matlib') } catch (_) {}
@@ -26,12 +26,27 @@
   // ── 工具：篩選後的物料清單 ──
   function catOf (o) { return o.cat || '未分類' }
   function mFilt () {
+    let vset = null
+    if (mVcatF !== 'all') vset = new Set((MDATA.vendors || []).filter(v => (v.cat || '未分類') === mVcatF).map(v => v.name))
     return (MDATA.items || []).filter(o => {
       if (mVendF !== 'all' && !(o.suppliers || []).includes(mVendF)) return false
+      if (vset && !(o.suppliers || []).some(s => vset.has(s))) return false
       if (mCatF !== 'all' && catOf(o) !== mCatF) return false
       if (mQ) { const q = mQ.toLowerCase(); if (!((o.name || '').toLowerCase().includes(q) || (o.code || '').toLowerCase().includes(q) || (o.suppliers || []).some(s => s.toLowerCase().includes(q)))) return false }
       return true
     })
+  }
+  // 廠商分類清單（只有建過廠商分類才顯示「未分類」，避免一上來佔版面）
+  function allVcats () {
+    const base = MDATA.vcats || []
+    if (!base.length) return []
+    const set = new Set(base)
+    let hasUn = false
+    for (const v of (MDATA.vendors || [])) { if (v.cat) set.add(v.cat); else hasUn = true }
+    const arr = base.filter(c => set.has(c))
+    for (const c of set) if (!arr.includes(c)) arr.push(c)
+    if (hasUn) arr.push('未分類')
+    return arr
   }
   // 現有分類清單（自訂分類 ＋ 實際出現的「未分類」）
   function allCats () {
@@ -86,10 +101,16 @@
   // ── 篩選列（廠商／分類／搜尋）──
   function filterBar () {
     const d = MDATA
-    const vends = (d.vendors || []).map(v => v.name)
+    const vcats = allVcats()
+    let vends = (d.vendors || []).map(v => v.name)
+    if (mVcatF !== 'all') vends = (d.vendors || []).filter(v => (v.cat || '未分類') === mVcatF).map(v => v.name)
     const cats = allCats()
     let h = '<section style="padding:12px">'
     h += `<input value="${esc(mQ)}" oninput="_mSearch(this.value)" placeholder="🔍 搜尋物料／廠商／品號…" style="width:100%;border:1px solid var(--line);border-radius:10px;padding:9px 12px;margin-bottom:10px">`
+    if (vcats.length) h += `<div class="hint" style="margin-bottom:4px">廠商分類</div><div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">`
+      + `<button class="mini ${mVcatF === 'all' ? 'on' : ''}" onclick="_mVcat('all')">全部</button>`
+      + vcats.map(c => `<button class="mini ${mVcatF === c ? 'on' : ''}" onclick="_mVcat('${esc(c).replace(/'/g, '&#39;')}')">${esc(c)}</button>`).join('')
+      + `</div>`
     h += `<div class="hint" style="margin-bottom:4px">廠商</div><div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">`
       + `<button class="mini ${mVendF === 'all' ? 'on' : ''}" onclick="_mVend('all')">全部</button>`
       + vends.map(v => `<button class="mini ${mVendF === v ? 'on' : ''}" onclick="_mVend('${esc(v).replace(/'/g, '&#39;')}')">${esc(v)}</button>`).join('')
@@ -102,6 +123,7 @@
   }
   window._mSearch = function (v) { mQ = v; const el = document.getElementById('matList'); if (el) el.innerHTML = listTable() }
   window._mVend = function (v) { mVendF = v; mSub = 'list'; mBody() }
+  window._mVcat = function (c) { mVcatF = c; mVendF = 'all'; mSub = 'list'; mBody() }
   window._mCat = function (c) { mCatF = c; mSub = 'list'; mBody() }
 
   // ── 波動分析（像社群儀表板：建議＋圖表卡牆）──
@@ -262,13 +284,28 @@
   }
 
   // ── 分類管理卡（增刪改）──
+  function chipRow (list, kind) {
+    return list.length ? list.map(c => `<span style="display:inline-flex;align-items:center;gap:6px;background:#1C222B;border:1px solid var(--line);border-radius:999px;padding:5px 10px">${esc(c)}<span onclick="_m${kind}Ren('${esc(c).replace(/'/g, '&#39;')}')" style="cursor:pointer;color:var(--muted)" title="改名">✎</span><span onclick="_m${kind}Del('${esc(c).replace(/'/g, '&#39;')}')" style="cursor:pointer;color:var(--red);font-weight:700" title="刪除">✕</span></span>`).join('') : '<span class="hint">還沒有分類</span>'
+  }
   function catMngCard () {
-    const cats = MDATA.cats || []
+    const cats = MDATA.cats || [], vcats = MDATA.vcats || []
+    const vrows = (MDATA.vendors || []).map(v => {
+      const opts = ['<option value="">未分類</option>'].concat(vcats.map(c => `<option value="${esc(c)}" ${v.cat === c ? 'selected' : ''}>${esc(c)}</option>`)).join('')
+      return `<div style="display:flex;align-items:center;gap:8px;padding:4px 0"><span style="flex:1;min-width:0;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(v.name)}${v.cat ? `<span class="hint" style="font-size:11px"> · ${esc(v.cat)}</span>` : ''}</span><select onchange="_mVendSetCat('${esc(v.name).replace(/'/g, '&#39;')}',this.value)" style="border:1px solid var(--line);border-radius:8px;padding:5px 8px;font-size:12px;max-width:160px">${opts}</select></div>`
+    }).join('')
+    const inpStyle = 'flex:1;border:1px solid var(--line);border-radius:10px;padding:8px 10px'
     return `<section style="border:1px solid var(--primary)">
-      <h2>🏷 管理物料分類</h2>
-      <div class="hint" style="margin-bottom:10px">先在這裡建分類，再到各物料細部指定分類。分類可隨時改名、刪除（刪除不影響叫貨資料，只是取消歸類）。</div>
-      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px">${cats.length ? cats.map(c => `<span style="display:inline-flex;align-items:center;gap:6px;background:#1C222B;border:1px solid var(--line);border-radius:999px;padding:5px 10px">${esc(c)}<span onclick="_mCatRen('${esc(c).replace(/'/g, '&#39;')}')" style="cursor:pointer;color:var(--muted)" title="改名">✎</span><span onclick="_mCatDel('${esc(c).replace(/'/g, '&#39;')}')" style="cursor:pointer;color:var(--red);font-weight:700" title="刪除">✕</span></span>`).join('') : '<span class="hint">還沒有分類</span>'}</div>
-      <div style="display:flex;gap:6px"><input id="mCatNew" placeholder="新分類名稱（如：肉品、蔬菜、包材）" style="flex:1;border:1px solid var(--line);border-radius:10px;padding:8px 10px"><button class="mini on" onclick="_mCatAdd()">＋ 新增</button></div>
+      <h2>🏷 管理分類</h2>
+      <div class="hint" style="margin-bottom:12px">分類可隨時改名、刪除（不影響叫貨資料，只是取消歸類）。</div>
+      <div style="font-weight:800;margin-bottom:4px">📦 物料分類</div>
+      <div class="hint" style="margin-bottom:6px">建好後到各物料細部指定分類。</div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">${chipRow(cats, 'Cat')}</div>
+      <div style="display:flex;gap:6px;margin-bottom:18px"><input id="mCatNew" placeholder="新物料分類（如：肉品、蔬菜、包材）" style="${inpStyle}"><button class="mini on" onclick="_mCatAdd()">＋ 新增</button></div>
+      <div style="font-weight:800;margin-bottom:4px;border-top:1px solid var(--line);padding-top:16px">🏭 廠商分類</div>
+      <div class="hint" style="margin-bottom:6px">建好分類後，下方每家廠商直接選分類即可（之後可用「廠商分類」篩選）。</div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">${chipRow(vcats, 'Vcat')}</div>
+      <div style="display:flex;gap:6px;margin-bottom:12px"><input id="mVcatNew" placeholder="新廠商分類（如：肉商、起司、水產、員餐）" style="${inpStyle}"><button class="mini on" onclick="_mVcatAdd()">＋ 新增</button></div>
+      ${vcats.length ? `<div class="hint" style="margin-bottom:4px">廠商歸類（共 ${(MDATA.vendors || []).length} 家）</div><div style="max-height:340px;overflow:auto;border:1px solid var(--line);border-radius:10px;padding:8px">${vrows}</div>` : '<div class="hint">先新增一個廠商分類，這裡才會列出廠商讓你歸類。</div>'}
     </section>`
   }
   async function mcPost (body) {
@@ -288,6 +325,23 @@
   window._mCatRen = async function (name) {
     const to = prompt('把分類「' + name + '」改成：', name); if (!to || !to.trim() || to.trim() === name) return
     const j = await mcPost({ op: 'rencat', name, to: to.trim() }); if (j.ok) { MDATA.cats = j.cats; for (const o of MDATA.items) if (o.cat === name) o.cat = to.trim(); if (mCatF === name) mCatF = to.trim(); mRender() } else alert(j.error || '失敗')
+  }
+  // 廠商分類（kind:'vendor'）
+  window._mVcatAdd = async function () {
+    const v = ((document.getElementById('mVcatNew') || {}).value || '').trim(); if (!v) { alert('請輸入廠商分類名稱'); return }
+    const j = await mcPost({ op: 'addcat', kind: 'vendor', name: v }); if (j.ok) { MDATA.vcats = j.vcats; mRender() } else alert(j.error || '失敗')
+  }
+  window._mVcatDel = async function (name) {
+    if (!confirm('刪除廠商分類「' + name + '」？\n（原本歸這類的廠商會變回未分類，叫貨資料不受影響）')) return
+    const j = await mcPost({ op: 'delcat', kind: 'vendor', name }); if (j.ok) { MDATA.vcats = j.vcats; for (const v of MDATA.vendors) if (v.cat === name) v.cat = ''; if (mVcatF === name) mVcatF = 'all'; mRender() } else alert(j.error || '失敗')
+  }
+  window._mVcatRen = async function (name) {
+    const to = prompt('把廠商分類「' + name + '」改成：', name); if (!to || !to.trim() || to.trim() === name) return
+    const j = await mcPost({ op: 'rencat', kind: 'vendor', name, to: to.trim() }); if (j.ok) { MDATA.vcats = j.vcats; for (const v of MDATA.vendors) if (v.cat === name) v.cat = to.trim(); if (mVcatF === name) mVcatF = to.trim(); mRender() } else alert(j.error || '失敗')
+  }
+  window._mVendSetCat = async function (name, cat) {
+    const j = await mcPost({ op: 'setcat', kind: 'vendor', key: name, cat })
+    if (j && j.ok) { const v = (MDATA.vendors || []).find(x => x.name === name); if (v) v.cat = cat; MDATA.vcats = j.vcats } else alert((j && j.error) || '沒權限或存檔失敗')
   }
 
   // 深層連結：DD 通知點 /prep#matlib → 自動開
