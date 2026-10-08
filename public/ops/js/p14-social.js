@@ -5,6 +5,10 @@
   const nf = n => Math.round(n || 0).toLocaleString()
   const ST = { draft: ['草稿', '#8C98A8'], pending_review: ['待審核', '#E8A657'], approved: ['已核准待發', '#4DA3FF'], publishing: ['發布中', '#4DA3FF'], published: ['已發布', '#3DBE6C'], failed: ['失敗', '#F07373'], rejected: ['已退回', '#F07373'] }
   let DATA = null, subTab = 'dash', editId = null, editMedia = [], soDrill = {}, platFilter = 'all'
+  let genStyle = 'warm', genLang = 'zh', genLen = 'medium', genVers = [] // AI 生成文案：風格／語言／長度／最近 5 版
+  const STYLES = [['warm', '溫馨日常'], ['promo', '促銷強打'], ['chic', '文青質感'], ['fun', '活潑俏皮'], ['pro', '專業正式']]
+  const LANGS = [['zh', '繁中'], ['en', '英文'], ['bi', '中英雙語']]
+  const LENS = [['short', '簡短(1-2句)'], ['medium', '適中(3-4句)'], ['long', '較長(5句+)']]
   const INTER = m => (m ? (m.reactions || 0) + (m.comments || 0) + (m.shares || 0) : 0)
   const PLAT = p => (p === 'instagram' || p === 'ig') ? { k: 'ig', n: 'IG', c: '#E1427E' } : { k: 'fb', n: 'FB', c: '#4D8BF0' } // 品牌色：FB藍／IG粉
   const inFilter = p => platFilter === 'all' || (platFilter === 'ig' ? p.platform === 'instagram' : p.platform !== 'instagram')
@@ -54,6 +58,7 @@
     h += `<div style="display:flex;gap:8px;margin:16px 0 4px;flex-wrap:wrap;align-items:center">`
       + `<button class="mini ${subTab === 'dash' ? 'on' : ''}" onclick="_socialSub('dash')">📊 儀表板</button>`
       + `<button class="mini ${subTab === 'lib' ? 'on' : ''}" onclick="_socialSub('lib')">內容庫</button>`
+      + `<button class="mini ${subTab === 'assets' ? 'on' : ''}" onclick="_socialSub('assets')">📁 素材庫</button>`
       + `<span style="margin-left:auto;display:flex;gap:6px">`
       + `<button class="mini ${platFilter === 'all' ? 'on' : ''}" onclick="_socialPlat('all')">全部</button>`
       + `<button class="mini ${platFilter === 'fb' ? 'on' : ''}" onclick="_socialPlat('fb')"><span style="color:#4D8BF0">●</span> FB</button>`
@@ -127,7 +132,54 @@
   function socialBody() {
     const el = document.getElementById('socialBody'); if (!el) return
     if (subTab === 'dash') { el.innerHTML = dashView(); return }
+    if (subTab === 'assets') { el.innerHTML = assetsView(); return }
     el.innerHTML = libView()
+    if (document.getElementById('sfMediaWrap')) renderMedia() // 編輯器開著→初始化圖片牆＋拖曳排序
+  }
+
+  // 素材庫（獨立子分頁：平常上傳管理，發貼文時可重複選用）
+  function assetsView() {
+    const assets = DATA.assets || []
+    const isAdmin = !!(DATA.me && DATA.me.admin)
+    let h = ''
+    if (DATA.canEdit) h += `<div style="margin:10px 0;display:flex;gap:8px;align-items:center;flex-wrap:wrap"><button class="mini on" id="sfUpBtn" style="padding:8px 16px" onclick="_socialUploadAsset()">＋ 上傳素材（可一次多張）</button><span id="sfUpProg" class="hint">上傳的圖存這裡，新增貼文時可一鍵選用、不用每次重傳</span></div>`
+    if (!assets.length) return h + '<section><div class="hint" style="padding:18px">素材庫還是空的。按「＋ 上傳素材」放圖片進來，之後新增貼文時就能重複選用。</div></section>'
+    h += '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:10px">' + assets.map(a => `<div style="position:relative"><img src="${esc(a.url)}" onclick="_socialAssetView('${esc(a.url)}')" style="width:100%;aspect-ratio:1;object-fit:cover;border-radius:12px;border:1px solid var(--line);cursor:zoom-in">${isAdmin ? `<span onclick="event.stopPropagation();_socialAssetDel('${esc(a.url)}',this)" style="position:absolute;top:5px;right:5px;background:rgba(0,0,0,.6);color:#fff;width:24px;height:24px;border-radius:50%;display:flex;align-items:center;justify-content:center;cursor:pointer;font-weight:700">✕</span>` : ''}</div>`).join('') + '</div>'
+    return h
+  }
+  // 壓縮單張成 dataURL（長邊 1280、jpeg 0.82）
+  function compressImg(f) {
+    return new Promise((res, rej) => {
+      const im = new Image()
+      im.onload = () => {
+        const sc = Math.min(1, 1280 / Math.max(im.width, im.height))
+        const cv = document.createElement('canvas'); cv.width = Math.round(im.width * sc); cv.height = Math.round(im.height * sc)
+        cv.getContext('2d').drawImage(im, 0, 0, cv.width, cv.height)
+        try { res(cv.toDataURL('image/jpeg', 0.82)) } catch (e) { rej(e) }
+      }
+      im.onerror = rej; im.src = URL.createObjectURL(f)
+    })
+  }
+  window._socialUploadAsset = function () {
+    const inp = document.createElement('input'); inp.type = 'file'; inp.accept = 'image/*'; inp.multiple = true // 批量多選
+    inp.onchange = async () => {
+      const files = [...inp.files]; if (!files.length) return
+      const btn = document.getElementById('sfUpBtn'); const prog = document.getElementById('sfUpProg')
+      if (btn) btn.disabled = true
+      let ok = 0, fail = 0
+      for (let i = 0; i < files.length; i++) {
+        if (prog) prog.textContent = `上傳中 ${i + 1}/${files.length}…（成功 ${ok}）`
+        try {
+          const du = await compressImg(files[i])
+          const j = await sPost({ op: 'upload', dataUrl: du })
+          if (j.ok) { DATA.assets = DATA.assets || []; DATA.assets.unshift({ url: j.url, type: 'image' }); ok++ } else fail++
+        } catch (_) { fail++ }
+      }
+      if (btn) btn.disabled = false
+      socialBody() // 重畫，新圖都顯示出來
+      if (fail) alert(`上傳完成：成功 ${ok} 張，失敗 ${fail} 張`)
+    }
+    inp.click()
   }
 
   // 內容庫
@@ -176,47 +228,185 @@
   // 編輯器（新增/改草稿）
   function editorHtml(p) {
     const v = p || {}
-    const img = editMedia[0] && editMedia[0].url
+    const isLater = !!v.scheduledAt
+    const aiBox = DATA.aiReady === false ? '' : `
+      <div style="border:1px dashed var(--primary);border-radius:12px;padding:12px;margin:4px 0 14px;background:#111A24">
+        <div style="font-weight:800;margin-bottom:3px">✨ AI 一鍵生成文案</div>
+        <div class="hint" style="margin-bottom:8px">上面有選圖的話，AI 會先看圖再寫。填要宣傳什麼、挑風格/語言/長度，按生成給 5 版選。</div>
+        <textarea id="sfTopic" rows="2" style="width:100%;border:1px solid var(--line);border-radius:10px;padding:9px;margin-bottom:8px" placeholder="要宣傳什麼？例：新品草莓千層上市、週末下午茶買一送一（只選圖不打字也行）"></textarea>
+        <div style="margin-bottom:6px"><span class="hint" style="margin-right:6px">風格</span>${STYLES.map(s => `<button class="mini ${genStyle === s[0] ? 'on' : ''}" onclick="_socialPickStyle(this,'${s[0]}')">${s[1]}</button>`).join('')}</div>
+        <div style="margin-bottom:6px"><span class="hint" style="margin-right:6px">語言</span>${LANGS.map(l => `<button class="mini ${genLang === l[0] ? 'on' : ''}" onclick="_socialPickLang(this,'${l[0]}')">${l[1]}</button>`).join('')}</div>
+        <div style="margin-bottom:10px"><span class="hint" style="margin-right:6px">長度</span>${LENS.map(l => `<button class="mini ${genLen === l[0] ? 'on' : ''}" onclick="_socialPickLen(this,'${l[0]}')">${l[1]}</button>`).join('')}</div>
+        <button class="mini on" id="sfGenBtn" style="padding:8px 20px" onclick="_socialGen()">✨ 生成 5 版文案</button>
+        <div id="sfGenOut"></div>
+      </div>`
     return `<section style="border:1px solid var(--primary)">
       <h2>${p ? '編輯貼文' : '新增貼文'}</h2>
-      <label class="hint">文案</label>
-      <textarea id="sfCap" rows="4" style="width:100%;border:1px solid var(--line);border-radius:10px;padding:10px;margin:4px 0 10px" placeholder="貼文內容…">${esc(v.caption || '')}</textarea>
-      <label class="hint">圖片（IG 必附；FB 可選）</label>
-      <div style="display:flex;gap:10px;align-items:center;margin:4px 0 10px">
-        <div id="sfImgBox">${img ? `<img src="${esc(img)}" style="max-width:160px;max-height:120px;border-radius:8px">` : '<span class="hint">尚無圖片</span>'}</div>
-        <button class="mini" onclick="_socialPickImg()">上傳/更換</button>${img ? '<button class="mini" onclick="_socialClrImg()">移除</button>' : ''}
-      </div>
+      <label class="hint">① 圖片（可多張、可拖曳排序，第一張＝封面；IG 必附）</label>
+      <div id="sfMediaWrap" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:6px 0 12px"></div>
+      <label class="hint">② AI 生成 / 文案</label>
+      ${aiBox}
+      <textarea id="sfCap" rows="5" style="width:100%;border:1px solid var(--line);border-radius:10px;padding:10px;margin:4px 0 10px" placeholder="貼文內容…（可用上方 AI 生成，或自己打）">${esc(v.caption || '')}</textarea>
       ${destBoxes(v)}
       <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:10px">
         <div style="flex:1;min-width:150px"><label class="hint">分類（逗號分隔，如 新品,活動）</label><input id="sfTags" value="${esc((v.tags || []).join(','))}" style="width:100%;border:1px solid var(--line);border-radius:10px;padding:8px;margin-top:4px"></div>
         <div style="flex:1;min-width:150px"><label class="hint">關聯餐點（分析銷量用，逗號分隔）</label><input id="sfItems" value="${esc((v.relatedItems || []).join(','))}" style="width:100%;border:1px solid var(--line);border-radius:10px;padding:8px;margin-top:4px"></div>
       </div>
-      <div style="margin-top:10px"><label class="hint">排程發文時間（留空＝核准後盡快發）</label><br><input id="sfWhen" type="datetime-local" value="${v.scheduledAt ? new Date(v.scheduledAt).toISOString().slice(0, 16) : ''}" style="border:1px solid var(--line);border-radius:10px;padding:8px;margin-top:4px"></div>
-      <div class="hint" style="margin-top:8px">流程：存草稿 → 送審 → <b>你核准後，到排程時間會「真的」自動發到你勾的平台</b>。</div>
+      <div style="margin-top:10px">
+        <label class="hint">發送時間</label>
+        <div style="display:flex;gap:8px;align-items:center;margin-top:5px;flex-wrap:wrap">
+          <button class="mini ${isLater ? '' : 'on'}" id="sfSchNow" onclick="_socialSchMode('now')">⚡ 即刻發送</button>
+          <button class="mini ${isLater ? 'on' : ''}" id="sfSchLater" onclick="_socialSchMode('later')">📅 指定時間</button>
+          <input id="sfWhen" type="datetime-local" value="${v.scheduledAt ? new Date(v.scheduledAt).toISOString().slice(0, 16) : ''}" style="border:1px solid var(--line);border-radius:10px;padding:8px;display:${isLater ? 'inline-block' : 'none'}">
+        </div>
+      </div>
+      <div class="hint" style="margin-top:8px">流程：存草稿 → 送審 → <b>你核准後：即刻＝馬上發、指定時間＝到點自動發</b>到你勾的平台。</div>
       <div style="margin-top:12px;display:flex;gap:8px"><button class="mini on" onclick="_socialSave('${v.id || ''}')">✓ 儲存</button><button class="mini" onclick="_socialEditClose()">取消</button></div>
     </section>`
   }
 
   window._socialPickImg = function () {
-    const inp = document.createElement('input'); inp.type = 'file'; inp.accept = 'image/*'
-    inp.onchange = () => {
-      const f = inp.files[0]; if (!f) return
-      const im = new Image()
-      im.onload = async () => {
-        const sc = Math.min(1, 1280 / Math.max(im.width, im.height))
-        const cv = document.createElement('canvas'); cv.width = Math.round(im.width * sc); cv.height = Math.round(im.height * sc)
-        cv.getContext('2d').drawImage(im, 0, 0, cv.width, cv.height)
-        const du = cv.toDataURL('image/jpeg', 0.82)
-        const box = document.getElementById('sfImgBox'); if (box) box.innerHTML = '<span class="hint">上傳中…</span>'
-        const j = await sPost({ op: 'upload', dataUrl: du })
-        if (j.ok) { editMedia = [{ url: j.url, type: 'image' }]; if (box) box.innerHTML = `<img src="${j.url}" style="max-width:160px;max-height:120px;border-radius:8px">` }
-        else { alert(j.error || '上傳失敗'); if (box) box.innerHTML = '<span class="hint">尚無圖片</span>' }
+    const inp = document.createElement('input'); inp.type = 'file'; inp.accept = 'image/*'; inp.multiple = true // 可一次多張，加入到圖片牆
+    inp.onchange = async () => {
+      const files = [...inp.files]; if (!files.length) return
+      for (const f of files) {
+        try {
+          const du = await compressImg(f)
+          const j = await sPost({ op: 'upload', dataUrl: du })
+          if (j.ok) { editMedia.push({ url: j.url, type: 'image' }); DATA.assets = DATA.assets || []; DATA.assets.unshift({ url: j.url, type: 'image' }) }
+          else alert(j.error || '上傳失敗')
+        } catch (_) {}
       }
-      im.src = URL.createObjectURL(f)
+      renderMedia()
     }
     inp.click()
   }
-  window._socialClrImg = function () { editMedia = []; const box = document.getElementById('sfImgBox'); if (box) box.innerHTML = '<span class="hint">尚無圖片</span>' }
+
+  // ── AI 一鍵生成文案 ──
+  window._socialPickStyle = function (el, v) { genStyle = v;[...el.parentNode.querySelectorAll('.mini')].forEach(b => b.classList.remove('on')); el.classList.add('on') }
+  window._socialPickLang = function (el, v) { genLang = v;[...el.parentNode.querySelectorAll('.mini')].forEach(b => b.classList.remove('on')); el.classList.add('on') }
+  window._socialPickLen = function (el, v) { genLen = v;[...el.parentNode.querySelectorAll('.mini')].forEach(b => b.classList.remove('on')); el.classList.add('on') }
+  // 發送時間：即刻 / 指定時間
+  window._socialSchMode = function (m) {
+    const now = document.getElementById('sfSchNow'), later = document.getElementById('sfSchLater'), inp = document.getElementById('sfWhen')
+    if (!now || !later || !inp) return
+    if (m === 'later') { later.classList.add('on'); now.classList.remove('on'); inp.style.display = 'inline-block'; inp.focus() }
+    else { now.classList.add('on'); later.classList.remove('on'); inp.style.display = 'none' }
+  }
+
+  // ── 多圖：縮圖牆＋拖曳排序（第一張＝封面）──
+  function mediaItemsHtml() {
+    const items = editMedia.map((m, i) => `<div class="sfMediaItem" data-url="${esc(m.url)}" style="position:relative;width:78px;height:78px;flex:0 0 auto">
+      <img src="${esc(m.url)}" onclick="_socialAssetView('${esc(m.url)}')" style="width:100%;height:100%;object-fit:cover;border-radius:10px;border:1px solid var(--line);cursor:zoom-in">
+      ${i === 0 ? '<span style="position:absolute;bottom:3px;left:3px;background:rgba(0,0,0,.65);color:#fff;font-size:10px;font-weight:700;padding:1px 5px;border-radius:5px">封面</span>' : ''}
+      <span onclick="event.stopPropagation();_socialRmMedia('${esc(m.url)}')" style="position:absolute;top:-6px;right:-6px;background:#F07373;color:#fff;width:20px;height:20px;border-radius:50%;display:flex;align-items:center;justify-content:center;cursor:pointer;font-weight:700;font-size:12px">✕</span>
+    </div>`).join('')
+    const add = `<div class="sfAddBtns" style="display:flex;flex-direction:column;gap:4px;justify-content:center;flex:0 0 auto">
+      <button class="mini" onclick="_socialPickImg()">＋上傳</button>
+      <button class="mini" onclick="_socialAssets()">📁素材庫</button>
+    </div>`
+    return (items || '') + add
+  }
+  function renderMedia() {
+    const el = document.getElementById('sfMediaWrap'); if (!el) return
+    if (el._sortable) { try { el._sortable.destroy() } catch (_) {} el._sortable = null }
+    el.innerHTML = mediaItemsHtml()
+    bindMediaSort()
+  }
+  function bindMediaSort() {
+    const el = document.getElementById('sfMediaWrap'); if (!el || el._sortable) return
+    if (window.Sortable) el._sortable = window.Sortable.create(el, { animation: 150, draggable: '.sfMediaItem', filter: '.sfAddBtns', onEnd: syncMediaOrder })
+  }
+  function syncMediaOrder() {
+    const el = document.getElementById('sfMediaWrap'); if (!el) return
+    const order = [...el.querySelectorAll('.sfMediaItem')].map(x => x.dataset.url)
+    editMedia = order.map(u => editMedia.find(m => m.url === u)).filter(Boolean)
+    renderMedia() // 重畫讓「封面」標記跟著移到第一張
+  }
+  window._socialRmMedia = function (url) { editMedia = editMedia.filter(m => m.url !== url); renderMedia() }
+  window._socialGen = async function () {
+    const topic = ((document.getElementById('sfTopic') || {}).value || '').trim()
+    const imageUrl = (editMedia[0] || {}).url || ''
+    if (!topic && !imageUrl) { alert('請先輸入「要宣傳什麼」，或先選一張圖片（AI 會看圖寫）'); return }
+    const dests = [...document.querySelectorAll('.sfDest:checked')].map(x => x.value)
+    const platform = dests.some(d => d.startsWith('fb')) && !dests.some(d => d.startsWith('ig')) ? 'fb' : 'ig'
+    const pages = ((DATA.account || {}).pages) || []
+    let brand = ''
+    if (dests[0]) { const pid = dests[0].split(':')[1]; const pg = pages.find(p => p.pageId === pid || p.igUserId === pid); if (pg) brand = pg.pageName }
+    else if (pages[0]) brand = pages[0].pageName
+    const items = ((document.getElementById('sfItems') || {}).value || '').split(',').map(s => s.trim()).filter(Boolean)
+    const btn = document.getElementById('sfGenBtn'); if (btn) { btn.disabled = true; btn.textContent = imageUrl ? '看圖生成中…（約 10 秒）' : '生成 5 版中…（約 10 秒）' }
+    const out = document.getElementById('sfGenOut'); if (out) out.innerHTML = '<div class="hint" style="margin-top:10px">AI 思考中…</div>'
+    let j
+    try { j = await sPost({ op: 'gen', topic, style: genStyle, lang: genLang, length: genLen, platform, brand, relatedItems: items, imageUrl }) } catch (e) { j = { ok: false, error: '連線問題' } }
+    if (btn) { btn.disabled = false; btn.textContent = '✨ 生成 5 版文案' }
+    if (j.ok && (j.versions || j.caption)) { genVers = j.versions || [j.caption]; renderGenVersions() }
+    else { if (out) out.innerHTML = ''; alert(j.error || '生成失敗') }
+  }
+  function renderGenVersions() {
+    const out = document.getElementById('sfGenOut'); if (!out) return
+    if (!genVers.length) { out.innerHTML = ''; return }
+    out.innerHTML = `<div class="hint" style="margin:12px 0 6px">AI 給了 ${genVers.length} 個版本，點「用這版」填進下方文案框（還能再改、或再生成一批）：</div>`
+      + genVers.map((v, i) => `<div style="border:1px solid var(--line);border-radius:10px;padding:10px;margin-bottom:8px;background:var(--soft)">
+        <div style="font-size:11px;font-weight:800;color:var(--pdark);margin-bottom:4px">版本 ${i + 1}</div>
+        <div style="white-space:pre-wrap;font-size:13px;line-height:1.6;max-height:160px;overflow:auto">${esc(v)}</div>
+        <div style="margin-top:6px;text-align:right"><button class="mini on" onclick="_socialPickVer(${i})">✓ 用這版</button></div>
+      </div>`).join('')
+  }
+  window._socialPickVer = function (i) {
+    const t = document.getElementById('sfCap'); if (t && genVers[i] != null) { t.value = genVers[i]; t.focus(); try { t.scrollIntoView({ block: 'center', behavior: 'smooth' }) } catch (_) {} }
+  }
+
+  // ── 素材庫（可重複選用的圖片）──
+  window._socialAssets = function () {
+    const assets = DATA.assets || []
+    const isAdmin = !!(DATA.me && DATA.me.admin)
+    const chosen = u => !!editMedia.find(m => m.url === u)
+    const grid = assets.length
+      ? assets.map(a => `<div style="position:relative"><img src="${esc(a.url)}" onclick="_socialAssetUse('${esc(a.url)}',this)" style="width:100%;aspect-ratio:1;object-fit:cover;border-radius:10px;cursor:pointer;border:1px solid var(--line);outline:${chosen(a.url) ? '3px solid var(--green)' : 'none'};outline-offset:-1px">${chosen(a.url) ? '<span class="sfChk" style="position:absolute;top:4px;left:4px;background:var(--green);color:#fff;width:22px;height:22px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:12px">✓</span>' : ''}${isAdmin ? `<span onclick="event.stopPropagation();_socialAssetDel('${esc(a.url)}',this)" style="position:absolute;top:4px;right:4px;background:rgba(0,0,0,.6);color:#fff;width:22px;height:22px;border-radius:50%;display:flex;align-items:center;justify-content:center;cursor:pointer;font-weight:700">✕</span>` : ''}</div>`).join('')
+      : '<div class="hint" style="padding:20px;grid-column:1/-1">素材庫還是空的。先按「上傳」放幾張圖進來，之後就能重複選用。</div>'
+    const ov = document.createElement('div'); ov.className = 'assetOv'; ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.62);z-index:72;display:flex;align-items:center;justify-content:center;padding:16px'; ov.onclick = () => ov.remove()
+    ov.innerHTML = `<div onclick="event.stopPropagation()" style="background:var(--card);border:1px solid var(--line);border-radius:16px;max-width:560px;width:100%;max-height:82vh;overflow:auto;padding:18px"><h2 style="margin:0 0 4px">📁 素材庫</h2><div class="hint" style="margin-bottom:12px">點圖片＝加入這則貼文（可連點多張），再拖曳排順序。你上傳過的圖會自動收進來。</div><div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:10px">${grid}</div><div style="text-align:right;margin-top:14px"><button class="mini" onclick="_socialPickImg()">＋ 上傳新圖</button> <button class="mini on" onclick="this.closest('.assetOv').remove()">完成</button></div></div>`
+    document.body.appendChild(ov)
+  }
+  window._socialAssetUse = function (url, el) {
+    const i = editMedia.findIndex(m => m.url === url)
+    if (i < 0) editMedia.push({ url, type: 'image' }); else editMedia.splice(i, 1) // 再點一次＝取消選取
+    renderMedia()
+    // 更新 modal 內這張的勾選樣式
+    if (el) { const on = !!editMedia.find(m => m.url === url); el.style.outline = on ? '3px solid var(--green)' : 'none'; const chk = el.parentNode.querySelector('.sfChk'); if (on && !chk) { const s = document.createElement('span'); s.className = 'sfChk'; s.textContent = '✓'; s.style.cssText = 'position:absolute;top:4px;left:4px;background:var(--green);color:#fff;width:22px;height:22px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:12px'; el.parentNode.appendChild(s) } else if (!on && chk) chk.remove() }
+  }
+  window._socialAssetDel = async function (url, el) {
+    if (!confirm('從素材庫刪掉這張圖？（已發佈的貼文不受影響）')) return
+    const j = await sPost({ op: 'assetdel', url })
+    if (j.ok) {
+      DATA.assets = (DATA.assets || []).filter(a => a.url !== url)
+      if (document.querySelector('.assetOv')) { const cell = el.closest('div'); if (cell) cell.remove() } // 素材庫 modal 內：只移掉該格
+      else socialBody() // 獨立素材庫頁：重畫（空了會顯示提示）
+    } else alert(j.error || '刪除失敗')
+  }
+  // 素材放大預覽（App 內燈箱，不另開分頁）＋下載
+  window._socialAssetView = function (url) {
+    const ov = document.createElement('div'); ov.className = 'assetLb'
+    ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.88);z-index:75;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:20px;gap:14px'
+    ov.onclick = () => ov.remove()
+    ov.innerHTML = `<img src="${esc(url)}" onclick="event.stopPropagation()" style="max-width:94vw;max-height:76vh;object-fit:contain;border-radius:12px;box-shadow:0 10px 40px rgba(0,0,0,.6)">
+      <div onclick="event.stopPropagation()" style="display:flex;gap:10px">
+        <button class="mini on" style="padding:9px 20px" onclick="_socialDownload('${esc(url)}',this)">⬇ 下載</button>
+        <button class="mini" style="padding:9px 20px" onclick="this.closest('.assetLb').remove()">關閉</button>
+      </div>`
+    document.body.appendChild(ov)
+  }
+  window._socialDownload = async function (url, btn) {
+    const name = (url.split('/').pop() || ('素材_' + Date.now() + '.jpg')).split('?')[0]
+    if (btn) { btn.disabled = true; btn.textContent = '下載中…' }
+    try {
+      const r = await fetch(url); const b = await r.blob()
+      const u = URL.createObjectURL(b); const a = document.createElement('a'); a.href = u; a.download = name
+      document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(u), 4000)
+    } catch (_) { window.open(url, '_blank') } // 萬一跨域擋 blob，退而求其次開原圖
+    if (btn) { btn.disabled = false; btn.textContent = '⬇ 下載' }
+  }
 
   window._socialEdit = function (id) { editId = id || ''; const pp = (DATA.posts || []).find(x => x.id === editId); editMedia = (pp && pp.media) ? JSON.parse(JSON.stringify(pp.media)) : []; socialBody(); const e = document.getElementById('sfCap'); if (e) e.focus() }
   window._socialEditClose = function () { editId = null; socialBody() }
@@ -225,9 +415,12 @@
     if (!cap.trim()) { alert('請先輸入文案'); return }
     const tags = ((document.getElementById('sfTags') || {}).value || '').split(',').map(s => s.trim()).filter(Boolean)
     const items = ((document.getElementById('sfItems') || {}).value || '').split(',').map(s => s.trim()).filter(Boolean)
-    const whenV = (document.getElementById('sfWhen') || {}).value
+    const later = document.getElementById('sfSchLater')
+    const isLater = later && later.classList.contains('on') // 指定時間；否則＝即刻（核准後馬上發）
+    const whenV = isLater ? ((document.getElementById('sfWhen') || {}).value) : ''
+    if (isLater && !whenV) { alert('選了「指定時間」請填發送時間，或改回「即刻發送」'); return }
     const dests = [...document.querySelectorAll('.sfDest:checked')].map(x => x.value)
-    if (dests.some(d => d.startsWith('ig:')) && !(editMedia[0] && editMedia[0].url)) { alert('有勾 IG 的話一定要上傳圖片'); return }
+    if (dests.some(d => d.startsWith('ig:')) && !(editMedia[0] && editMedia[0].url)) { alert('有勾 IG 的話一定要附圖'); return }
     const j = await sPost({ op: 'save', id: id || undefined, caption: cap, tags, relatedItems: items, scheduledAt: whenV ? new Date(whenV).toISOString() : null, dests, media: editMedia })
     if (j.ok) { editId = null; socialLoad() } else alert(j.error || '儲存失敗')
   }

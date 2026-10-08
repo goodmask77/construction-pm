@@ -9,6 +9,40 @@ const clean = (v) => (v || '').trim().replace(/^["']|["']$/g, '').replace(/^[A-Z
 const ymOf = (iso) => String(iso || '').slice(0, 7)
 const SB_URL = clean(process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL)
 const SB_KEY = (process.env.SUPABASE_SERVICE_ROLE_KEY || '').trim()
+const AST_KEY = 'sp_finance_pm_social_assets' // 素材庫（可重複用的圖片／影片）
+
+// AI 文案生成：沿用 api/ai.js 同一套金鑰與多模型回退
+const AI_MODELS = [process.env.ANTHROPIC_MODEL, 'claude-sonnet-4-6', 'claude-opus-4-8'].filter(Boolean)
+async function aiText(system, user, maxTokens = 1500) {
+  const key = (process.env.ANTHROPIC_API_KEY || '').trim()
+  if (!key) throw new Error('AI 文案生成尚未設定（缺 ANTHROPIC_API_KEY）')
+  let lastErr = 'AI 服務錯誤'
+  for (const model of AI_MODELS) {
+    try {
+      const r = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01' },
+        body: JSON.stringify({ model, max_tokens: maxTokens, system, messages: [{ role: 'user', content: user }] }),
+      })
+      const data = await r.json().catch(() => ({}))
+      if (r.ok) return (data.content || []).map(b => b.text || '').join('').trim()
+      lastErr = (data.error && data.error.message) || lastErr
+      if (!(/model/i.test(lastErr) || r.status === 404)) break // 非模型問題（金鑰/額度）不再換，直接報
+    } catch (e) { lastErr = e.message || lastErr }
+  }
+  throw new Error(lastErr)
+}
+
+// 從 AI 回應解析出多個版本（優先吃 JSON {versions:[...]}，失敗再退回分隔切割）
+function parseVersions(raw) {
+  if (!raw) return []
+  let s = String(raw).trim().replace(/^```(?:json)?/i, '').replace(/```$/, '').trim()
+  try { const o = JSON.parse(s); if (Array.isArray(o.versions)) return o.versions.map(x => String(x || '').trim()).filter(Boolean).slice(0, 5) } catch (_) {}
+  const m = s.match(/\{[\s\S]*\}/)
+  if (m) { try { const o = JSON.parse(m[0]); if (Array.isArray(o.versions)) return o.versions.map(x => String(x || '').trim()).filter(Boolean).slice(0, 5) } catch (_) {} }
+  const parts = s.split(/\n\s*(?:[-=]{3,}|版本\s*[一二三四五1-5]|\[\[?\d\]?\]|\d\s*[\.、).])/).map(x => x.trim()).filter(x => x.length > 8)
+  return parts.slice(0, 5)
+}
 
 // 取每篇貼文「最新一筆」成效快照（翻最近兩個月檔）
 async function latestMetrics(postIds) {
@@ -53,12 +87,13 @@ export default async function handler(req, res) {
       const avgInter = withMet.length ? Math.round(interTot / withMet.length * 10) / 10 : 0
       const pageMap = (acc.facebook && acc.facebook.pages) || {}
       const pageList = Object.values(pageMap)
+      const assets = ((await kvGet(AST_KEY)) || { list: [] }).list || []
       return res.status(200).json({
         ok: true, connected: pageList.length > 0,
         account: pageList.length ? { pages: pageList, defaultPageId: (acc.facebook && acc.facebook.defaultPageId) || null } : null,
-        metaReady: metaReady(), graphVersion: GV, canEdit: canEditSocial(who),
+        metaReady: metaReady(), aiReady: !!(process.env.ANTHROPIC_API_KEY || '').trim(), graphVersion: GV, canEdit: canEditSocial(who),
         me: who ? { name: who.name, admin: who.admin } : null,
-        posts: withM, kpi: { pubThis: pubThis.length, reach, inter: interTot, avgInter },
+        posts: withM, assets, kpi: { pubThis: pubThis.length, reach, inter: interTot, avgInter },
       })
     }
 
@@ -82,8 +117,77 @@ export default async function handler(req, res) {
         try {
           const r = await fetch(`${SB_URL}/storage/v1/object/photos/${path}`, { method: 'POST', headers: { authorization: `Bearer ${SB_KEY}`, 'content-type': m[1] }, body: buf })
           if (!r.ok) return res.status(200).json({ ok: false, error: '上傳失敗(' + r.status + ')' })
-          return res.status(200).json({ ok: true, url: `${SB_URL}/storage/v1/object/public/photos/${path}` })
+          const publicUrl = `${SB_URL}/storage/v1/object/public/photos/${path}`
+          // 存進素材庫，之後可重複選用
+          try { const a = (await kvGet(AST_KEY)) || { list: [] }; a.list = a.list || []; a.list.unshift({ url: publicUrl, type: 'image', name: String(body.name || '').slice(0, 40), addedAt: new Date().toISOString(), addedBy: who.name }); a.list = a.list.slice(0, 300); await kvPut(AST_KEY, a, '素材入庫') } catch (_) {}
+          return res.status(200).json({ ok: true, url: publicUrl })
         } catch (e) { return res.status(200).json({ ok: false, error: e.message || '上傳失敗' }) }
+      }
+      if (op === 'gen') {
+        let versions
+        try {
+          const topic = String(body.topic || '').trim().slice(0, 800)
+          const imgUrl = String(body.imageUrl || '').trim()
+          if (!topic && !imgUrl) return res.status(200).json({ ok: false, error: '請先輸入要宣傳的重點，或先選一張圖片（AI 會看圖寫）' })
+          const styleMap = {
+            promo: '促銷強打：營造限時／優惠的急迫感，明確行動呼籲（快來、把握、限定）',
+            warm: '溫馨日常：親切有溫度，像跟熟客朋友分享生活',
+            chic: '文青質感：精煉有氛圍，重意境與畫面感，留白得宜',
+            fun: '活潑俏皮：輕鬆幽默，多用口語和表情，貼近年輕族群',
+            pro: '專業正式：清楚得體，適合正式公告或品牌宣達',
+          }
+          const style = styleMap[body.style] || styleMap.warm
+          const lenMap = {
+            short: '每版精簡有力，大約 1–2 句、30 字以內',
+            medium: '每版適中，大約 3–4 句、60 字上下',
+            long: '每版較完整，大約 5–7 句、100 字以上，適度分段',
+          }
+          const len = lenMap[body.length] || lenMap.medium
+          const lang = body.lang === 'en' ? '只用英文撰寫'
+            : body.lang === 'bi' ? '先寫繁體中文版本，空一行用「——」分隔後，再接對應的英文版本'
+              : '只用繁體中文（台灣用語、口語自然）'
+          const plat = body.platform === 'fb'
+            ? 'Facebook 貼文：可稍長、有敘事感與故事性，結尾放 2–3 個相關 hashtag'
+            : 'Instagram 貼文：精簡分段、適度使用 emoji，結尾放 5–8 個相關 hashtag（中英混搭）'
+          const brand = String(body.brand || '').trim().slice(0, 40)
+          const items = (Array.isArray(body.relatedItems) ? body.relatedItems : []).slice(0, 10).filter(Boolean)
+          const sys = '你是台灣餐飲品牌的資深社群小編，擅長寫吸引人、會被分享與收藏的貼文。這次請一次產出【5 個切入角度明顯不同】的版本（例如：情境帶入、產品特色、限時優惠、提問互動、故事情感），每個都要能直接發佈。只輸出 JSON，格式嚴格為：{"versions":["版本一","版本二","版本三","版本四","版本五"]}，不要任何其他文字、不要 markdown 標記、不要說明。'
+          const txt = [
+            brand ? `品牌：${brand}` : '',
+            `平台語氣：${plat}`,
+            `文案風格：${style}`,
+            `文案長度：${len}`,
+            `語言：${lang}`,
+            items.length ? `主打餐點：${items.join('、')}` : '',
+            imgUrl ? '已附上一張圖片，請先仔細觀察圖片內容（餐點外觀／擺盤／場景／氛圍／文字），讓 5 個版本都緊貼畫面。' : '',
+            topic ? `要宣傳的重點／素材：\n${topic}` : '請主要依照圖片內容發想貼文。',
+          ].filter(Boolean).join('\n')
+          // 有圖就讓 AI 看圖（抓圖轉 base64 餵給 Claude vision）
+          let content = txt
+          if (imgUrl) {
+            try {
+              const ir = await fetch(imgUrl)
+              if (ir.ok) {
+                const ct = (ir.headers.get('content-type') || 'image/jpeg').split(';')[0]
+                const buf = Buffer.from(await ir.arrayBuffer())
+                if (/^image\/(jpeg|png|gif|webp)$/.test(ct) && buf.length < 4.5 * 1024 * 1024) {
+                  content = [{ type: 'image', source: { type: 'base64', media_type: ct, data: buf.toString('base64') } }, { type: 'text', text: txt }]
+                }
+              }
+            } catch (_) { /* 抓圖失敗就純文字生成 */ }
+          }
+          const raw = await aiText(sys, content, 2800)
+          versions = parseVersions(raw)
+        } catch (e) { return res.status(200).json({ ok: false, error: e.message || '生成失敗' }) }
+        if (!versions || !versions.length) return res.status(200).json({ ok: false, error: '生成是空的，請換個說法再試一次' })
+        await act('社群AI生成5版', String(body.topic || '').slice(0, 24))
+        return res.status(200).json({ ok: true, versions, caption: versions[0] })
+      }
+      if (op === 'assetdel') {
+        const u = String(body.url || '')
+        const a = (await kvGet(AST_KEY)) || { list: [] }; a.list = (a.list || []).filter(x => x.url !== u)
+        await kvPut(AST_KEY, a, '素材庫刪'); await act('社群刪素材', '')
+        return res.status(200).json({ ok: true })
       }
       if (op === 'save') {
         const now = new Date().toISOString()
