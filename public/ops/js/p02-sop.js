@@ -229,7 +229,7 @@ function canTab(k){
 }
 // 會寫入的按鈕 → 所屬分頁權限（'*'=跟著目前頁面，給盤點/包材共用函式）；純看的（切頁/收合/篩選/看圖）不鎖
 const EDIT_FN = {
-  actSave:'board', actAdd:'board', actLoss:'board', act86:'board', rHide:'board', posHide:'board', rMng:'board', itmMngTog:'board',
+  actSave:'board', actAdd:'board', actLoss:'board', act86:'board', rHide:'board', posHide:'board', rMng:'board', itmMngTog:'board', heatHideToggle:'board', heatShowAll:'board',
   sopItemEdit:'sop', sopItemSave:'sop', sopEdAdd:'sop', sopEdSave:'sop', sopCatAdd:'sop', sopCatMng:'sop', sopCatSet:'sop', sopStAdd:'sop', sopStDel:'sop', sopStRen:'sop', sopStRename:'sop', sopStOp:'sop', sopstOp:'sop', catMove:'sop', msAddSt:'sop', msDelSt:'sop', msSave:'sop', sopOrdMove:'sop', sopRefOpen:'sop', sopRefPaste:'sop', sopRefSave:'sop', sopRefUp:'sop', sopMngT:'sop', sopStrictOn:'sop', sopSummarySend:'sop',
   taskNew:'task', taskNewSend:'task', taskOwn:'task', taskOwnSend:'task', ckAdd:'task', ckOp:'task', ckPick:'task', ckSend:'task', lbOp:'task', lbDue:'task',
   lbPtsSave:'lb', lbPtsAdd:'lb', lbPtsAdjust:'lb', lbRdDecide:'lb', lbGrant:'lb', lbGrantGo:'lb', lbRwMng:'lb', lbRwSave:'lb', lbRwDel:'lb', lbRwAdd:'lb',

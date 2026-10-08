@@ -1440,6 +1440,7 @@ export default async function handler(req, res) {
       kpi: { rev30, days30: w30.length, avgRev: w30.length ? Math.round(rev30 / w30.length) : 0, tx30: w30.reduce((t, e) => t + (Number(e.txCount) || 0), 0) },
       n30, prep, prepAct: Object.fromEntries(Object.entries((actDoc.days || {})[todayAct] || {}).filter(([, v]) => v.q != null).map(([k, v]) => [k, v.q])), prepS86: Object.fromEntries(Object.entries((actDoc.days || {})[todayAct] || {}).filter(([, v]) => v.s86 && v.s86.on).map(([k]) => [k, 1])), prepActDate: todayAct, share14, rhythm, soldout, days: days2.reverse(), setPcts: setDays.reverse(), dates: datesAll, cats: cats2, hidden: Object.values(itemsH2).map(o => ({ n: o.n, k: o.k, cat: o.cat, cum30: o.q30 })), slots: (slots2.wk.length || slots2.we.length) ? slots2 : null,
       hourDays: Object.keys(hourDays).length ? hourDays : null,
+      heatHide: ((await kvGet('sp_finance_pm_heat_hide')) || {})[storeQ] || {}, // v4.70.1 熱力圖隱藏時段（全店一致、限有權限者改）：{時段:1}
     })
   }
   // 內用/外帶歷史回補口（同金鑰，張良 2026-09-20 內外帶接進報表）：?dinefill=<key>[&dry=1]
@@ -4413,6 +4414,22 @@ export default async function handler(req, res) {
     if (bh.hide) hd.keys[bh.key] = 1; else delete hd.keys[bh.key]
     await kvPut('sp_finance_pm_prep_hide', hd, '預做隱藏(' + whoH.name + ')')
     return res.status(200).json({ ok: true, prepHide: hd.keys })
+  }
+  // 時段營收熱力圖隱藏設定（張良 2026-10-08：非營業/測試時段藏起來、只有有權限者能改、全店一致）：POST ?heathide=<OPS_BOARD_KEY> {store, hour, hide, all, token}
+  if (req.method === 'POST' && req.query?.heathide) {
+    const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
+    if (!ok2 || String(req.query.heathide) !== ok2) return res.status(403).json({ ok: false })
+    let bh = {}
+    try { bh = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
+    const whoH = (await (async () => { const pm = (await kvGet('sp_finance_pm_prep_perm')) || { mode: 'open', users: {} }; const w = await sopWho(bh.token); if (pm.mode !== 'approve') return w || { name: '現場(未綁定)' }; const u = w && pm.users[w.rid || w.uid]; return (u && u.edit && (u.admin || !u.tabs || u.tabs['board'] !== 0)) ? w : null })())
+    if (!whoH) return res.status(403).json({ ok: false, error: permDeny() })
+    const storeH = bh.store === 'abeach' ? 'abeach' : 'ground'
+    const hd = (await kvGet('sp_finance_pm_heat_hide')) || {}
+    hd[storeH] = hd[storeH] || {}
+    if (bh.all) hd[storeH] = {} // 全部顯示
+    else { const hr = Number(bh.hour); if (isNaN(hr) || hr < 0 || hr > 23) return res.status(400).json({ ok: false, error: '時段 0-23' }); if (bh.hide) hd[storeH][hr] = 1; else delete hd[storeH][hr] }
+    await kvPut('sp_finance_pm_heat_hide', hd, '熱力圖隱藏' + storeH + '(' + whoH.name + ')')
+    return res.status(200).json({ ok: true, heatHide: hd[storeH] })
   }
   // ⭐ 個人常用捷徑清單（v4.39.1 張良「手機版固定一行、每個人可編輯自己的常用清單」）：POST ?prepfav=<OPS_BOARD_KEY> {token, list}
   // 一人一份存 users[rid]＝跟人不跟裝置；只能改自己的、要綁定才存（未綁定前端自己存本機）

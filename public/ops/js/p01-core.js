@@ -44,11 +44,20 @@ async function boardFresh(store){
   await load(store, true) // 重畫會換掉上面那些抓取中按鈕
 }
 function posFresh(){ return boardFresh('ground') } // 相容舊呼叫
-// 🙈 熱力圖時段隱藏（張良 2026-10-08「非營業/測試時段要能隱藏」）：GD/AB 各存一份、存本機即可（純顯示偏好）
-function heatHidden(store){ try { return new Set((JSON.parse(localStorage.getItem('prep_heathide_' + store) || '[]') || []).map(Number)) } catch(_) { return new Set() } }
-function heatHideSave(store, set){ try { localStorage.setItem('prep_heathide_' + store, JSON.stringify([...set])) } catch(_) {} ; if (window._bd) renderBoard(window._bd, window._bd.store || lastStore) }
-function heatHideToggle(store, hr){ const s = heatHidden(store); hr = Number(hr); s.has(hr) ? s.delete(hr) : s.add(hr); heatHideSave(store, s) }
-function heatShowAll(store){ heatHideSave(store, new Set()) }
+// 🙈 熱力圖時段隱藏（張良 2026-10-08「非營業/測試時段要能隱藏；只有我能編輯、不要直接顯示 X、按編輯才打開」）：
+// 存伺服器全店一致(sp_finance_pm_heat_hide)、限 board 編輯權(canTab 藏鈕＋permScan 鎖＋伺服器 permWho 三重守門)；heatEditOn=按「編輯時段」才顯示 ✕
+let heatEditOn = false
+function heatEdit(){ heatEditOn = !heatEditOn; if (window._bd) renderBoard(window._bd, window._bd.store || lastStore) }
+async function heatHidePost(body){
+  try {
+    const r = await fetch('/api/mail-sync?heathide=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ ...body, token: (typeof TK==='function'?TK():'') }) })
+    const d = await r.json().catch(()=>null)
+    if (d && d.ok) { if (window._bd) { window._bd.heatHide = d.heatHide; renderBoard(window._bd, window._bd.store || lastStore) } }
+    else alert((d && d.error) || '沒權限或存檔失敗')
+  } catch(_) { alert('網路不穩，再試一次') }
+}
+function heatHideToggle(store, hr){ hr = Number(hr); const cur = !!(window._bd && window._bd.heatHide && window._bd.heatHide[hr]); heatHidePost({ store, hour: hr, hide: !cur }) }
+function heatShowAll(store){ heatHidePost({ store, all: true }) }
 function hardRefresh(){ try{ Object.keys(localStorage).filter(k=>k.startsWith('obt_')||k.startsWith('obc_')).forEach(k=>localStorage.removeItem(k)) }catch(_){} location.replace(location.pathname + '?r=' + Date.now()) } // v4.31.8 連本地快取一起清＝真的拿最新
 // 依目前分頁重畫（綁定後/操作後用）
 function taskEmbed(){ // v4.38.0 任務中心原生版：/ops/tasks.js tnPage()，資料同主App sp_team_ 雙向同步
@@ -332,20 +341,26 @@ function renderBoard(d, store, view){
       const devTip = (v,hr) => { const avg=rowAvg[hr]; if(!v||!avg) return ''; const p=Math.round((v/avg-1)*100); return `・日均 ${Math.round(avg).toLocaleString()}（${p>0?'+':''}${p}%）` }
       const wd7 = ['日','一','二','三','四','五','六']
       const wdOf = dt => wd7[new Date(dt+'T00:00:00Z').getUTCDay()]
-      // 🙈 隱藏非營業／測試時段（GD/AB 各存一份）；更新時間戳跟營收表同一包資料
-      const hid = heatHidden(store), hrsVis = hrs.filter(hr => !hid.has(hr)), hidArr = [...hid].sort((a,b)=>a-b)
+      // 🙈 隱藏非營業／測試時段：存伺服器 d.heatHide（全店一致）；只有 board 編輯權的人看得到「編輯時段」鈕、按下才顯示 ✕（張良「X只有我能編輯、不要直接顯示、按編輯才打開」）
+      const hid = new Set(Object.keys(d.heatHide || {}).map(Number))
+      const canEd = (typeof canTab === 'function') ? canTab('board') : true
+      const hrsVis = hrs.filter(hr => (heatEditOn && canEd) || !hid.has(hr)) // 編輯模式才連隱藏的時段一起列出（可恢復）；一般檢視只看沒被藏的
+      const hidArr = [...hid].sort((a,b)=>a-b)
       let heatT = ''; try { heatT = new Date(d.updatedAt).toLocaleTimeString('en-GB',{hour12:false,timeZone:'Asia/Taipei',hour:'2-digit',minute:'2-digit'}) } catch(e){}
-      let hh = `<section><h2 style="margin-top:14px;display:flex;align-items:baseline;gap:8px;flex-wrap:wrap">時段營收熱力圖 <span class="hint">每格=該時段營收・紅=高於該時段日均、綠=低於日均・新日在左</span><button class="boardFreshBtn mini" style="margin-left:auto;font-weight:600;font-size:11px;white-space:nowrap;padding:3px 9px" title="抓最新資料（每5分鐘也會自動更新）" onclick="boardFresh('${store}')">🔄 更新${heatT?' '+heatT:''}</button></h2>`
-      hh += `<div style="display:flex;gap:5px;flex-wrap:wrap;align-items:center;margin:2px 0 8px"><span class="hint">點時段列左邊的 ✕ 可隱藏非營業／測試時段</span>${hidArr.length ? hidArr.map(hr=>`<button class="mini" style="padding:3px 9px" title="點一下恢復顯示" onclick="heatHideToggle('${store}',${hr})">${hr}時 ✕隱藏中</button>`).join('')+`<button class="mini" style="padding:3px 9px" onclick="heatShowAll('${store}')">全部顯示</button>` : ''}</div>`
+      let hh = `<section><h2 style="margin-top:14px;display:flex;align-items:baseline;gap:8px;flex-wrap:wrap">時段營收熱力圖 <span class="hint">每格=該時段營收・紅=高於該時段日均、綠=低於日均・新日在左</span>`
+      hh += canEd ? `<button class="mini${heatEditOn?' on':''}" style="margin-left:auto;font-weight:600;font-size:11px;padding:3px 9px" onclick="heatEdit()">${heatEditOn?'✓ 完成':'編輯時段'}</button>` : ''
+      hh += `<button class="boardFreshBtn mini" style="${canEd?'':'margin-left:auto;'}font-weight:600;font-size:11px;white-space:nowrap;padding:3px 9px" title="抓最新資料（每5分鐘也會自動更新）" onclick="boardFresh('${store}')">🔄 更新${heatT?' '+heatT:''}</button></h2>`
+      if (heatEditOn && canEd) hh += `<div style="display:flex;gap:5px;flex-wrap:wrap;align-items:center;margin:2px 0 8px"><span class="hint">點各時段的 ✕ 隱藏非營業／測試時段（存起來後全店都看不到、再點「恢復」拿回來）</span>${hidArr.length?`<button class="mini" style="padding:3px 9px" onclick="heatShowAll('${store}')">全部顯示</button>`:''}</div>`
       hh += `<div class="scroll" style="overflow:auto;max-height:60vh"><table style="border-collapse:collapse"><thead><tr><th style="position:sticky;left:0;top:0;z-index:5;background:var(--soft)">時段</th>`  // v4.70.0 字體拿掉11px＝跟營收表同14px（張良「營收跟熱力圖字體都要一樣大」）
       hh += cols.map(dt=>{ const we=['六','日'].includes(wdOf(dt)); return `<th style="position:sticky;top:0;z-index:2;background:var(--soft);white-space:nowrap;text-align:center${we?';color:#A85C26':''}">${dt.slice(5)}<br><span class="hint" style="font-size:12.5px">${wdOf(dt)}</span></th>` }).join('')
       hh += `</tr></thead><tbody>`
       hrsVis.forEach(hr=>{
-        hh += `<tr><td style="position:sticky;left:0;z-index:1;background:var(--soft);font-weight:700;white-space:nowrap">${hr}時 <button class="mini" style="padding:0 6px;font-size:11px;line-height:1.6;margin-left:3px" title="隱藏這個時段" onclick="heatHideToggle('${store}',${hr})">✕</button></td>`
+        const isHid = hid.has(hr)
+        hh += `<tr${isHid?' style="opacity:.5"':''}><td style="position:sticky;left:0;z-index:1;background:var(--soft);font-weight:700;white-space:nowrap">${hr}時${(heatEditOn&&canEd)?` <button class="mini" style="padding:0 6px;font-size:11px;line-height:1.6;margin-left:3px" title="${isHid?'恢復顯示':'隱藏這個時段'}" onclick="heatHideToggle('${store}',${hr})">${isHid?'恢復':'✕'}</button>`:''}</td>`
         hh += cols.map(dt=>{ const v=d.hourDays[dt][hr]||0; return `<td title="${dt.slice(5)} ${hr}時：${v?v.toLocaleString():'—'}${devTip(v,hr)}" style="text-align:right;padding:6px 8px;font-variant-numeric:tabular-nums;${heatC(v,hr)}">${v?v.toLocaleString():''}</td>` }).join('')
         hh += `</tr>`
       })
-      if (!hrsVis.length) hh += `<tr><td colspan="${cols.length+1}" class="mut" style="text-align:center;padding:14px">所有時段都被隱藏了——點上方「全部顯示」叫回來</td></tr>`
+      if (!hrsVis.length) hh += `<tr><td colspan="${cols.length+1}" class="mut" style="text-align:center;padding:14px">目前沒有要顯示的時段</td></tr>`
       hh += `</tbody></table></div></section>`
       h += hh
     } else {
