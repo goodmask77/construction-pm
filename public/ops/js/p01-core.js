@@ -35,11 +35,20 @@ function mobilePreview(){
   ov.onclick = () => ov.remove()
   document.body.appendChild(ov)
 }
-async function posFresh(){ // 跟主App同款：手動叫喬亞抓一次盤中→重載看板（v4.18.2）
-  const b = document.getElementById('pfBtn'); if (b) { b.disabled = true; b.textContent = '抓取中…' }
-  try { await fetch('/api/joya-intraday?manual=1&r=' + Date.now()) } catch(e) {}
-  await load('ground', true)
+// 🔄 通用「更新」（v4.70.0 張良 2026-10-08「熱力圖/營收 GD AB 都要有更新按鈕＋固定時間即時更新」）：
+// GD 先叫喬亞抓一次盤中、AB 直接重載最新 KV；營收表＋熱力圖共用同一包資料，一按全部一起刷新
+async function boardFresh(store){
+  store = store || curStore || lastStore
+  document.querySelectorAll('.boardFreshBtn').forEach(b => { b.disabled = true; b.dataset.bak = b.innerHTML; b.textContent = '抓取中…' })
+  try { if (store === 'ground') await fetch('/api/joya-intraday?manual=1&r=' + Date.now()) } catch(e) {}
+  await load(store, true) // 重畫會換掉上面那些抓取中按鈕
 }
+function posFresh(){ return boardFresh('ground') } // 相容舊呼叫
+// 🙈 熱力圖時段隱藏（張良 2026-10-08「非營業/測試時段要能隱藏」）：GD/AB 各存一份、存本機即可（純顯示偏好）
+function heatHidden(store){ try { return new Set((JSON.parse(localStorage.getItem('prep_heathide_' + store) || '[]') || []).map(Number)) } catch(_) { return new Set() } }
+function heatHideSave(store, set){ try { localStorage.setItem('prep_heathide_' + store, JSON.stringify([...set])) } catch(_) {} ; if (window._bd) renderBoard(window._bd, window._bd.store || lastStore) }
+function heatHideToggle(store, hr){ const s = heatHidden(store); hr = Number(hr); s.has(hr) ? s.delete(hr) : s.add(hr); heatHideSave(store, s) }
+function heatShowAll(store){ heatHideSave(store, new Set()) }
 function hardRefresh(){ try{ Object.keys(localStorage).filter(k=>k.startsWith('obt_')||k.startsWith('obc_')).forEach(k=>localStorage.removeItem(k)) }catch(_){} location.replace(location.pathname + '?r=' + Date.now()) } // v4.31.8 連本地快取一起清＝真的拿最新
 // 依目前分頁重畫（綁定後/操作後用）
 function taskEmbed(){ // v4.38.0 任務中心原生版：/ops/tasks.js tnPage()，資料同主App sp_team_ 雙向同步
@@ -112,6 +121,8 @@ async function load(store, fresh){
   try { twHolInit() } catch(_){}
   curStore = store
   setTabs(store)
+  // ⏱ 固定時間即時更新（v4.70.0 張良「熱力圖也要跟著即時更新」）：停在 GD/AB 首頁、分頁可見時每 5 分鐘背景重載＝營收表＋熱力圖一起換最新；自動刷不打喬亞 POS（省叫貨），要現抓按更新鈕
+  if (!window._boardTimer) window._boardTimer = setInterval(() => { if ((curStore === 'ground' || curStore === 'abeach') && !document.hidden) load(curStore, true) }, 300000)
   if (!K) { app.innerHTML = '<div class="err">網址缺少金鑰，請跟店長要完整連結</div>'; return }
   // ⚡ 快取先上（打開秒出畫面）、背景抓最新無感刷新（張良 2026-09-21：讀取太慢）
   const ck = 'obc_' + store
@@ -228,7 +239,9 @@ function renderBoard(d, store, view){
   const fN = v => v!=null ? Math.round(v).toLocaleString() : '—' // 去 NT$：數字乾淨版面
   const fP = v => v!=null?Math.round(v)+'%':'—'
   // 色階：跟該欄平均比，高=綠、低=紅，差越多越深（±3%內不上色）
-  const heat = (v, avg) => { if (v==null||!avg) return ''; let dv2=(v-avg)/avg; if (Math.abs(dv2)<0.03) return ''; dv2=Math.max(-0.5,Math.min(0.5,dv2)); const a=Math.min(0.50,0.10+Math.abs(dv2)*0.8); return `background:rgba(${dv2>0?'229,57,53':'27,176,83'},${a.toFixed(2)})` } // v4.41.2 張良「紅綠明顯一點」：0.10起跳最深0.5+顏色換鮮一階；紅=高於平均(台灣看盤習慣)、綠=低於（2026-09-22 指定反轉）
+  // v4.70.0 張良「熱力圖顏色跟營收一樣、都不要那麼亮」：統一色階＝紅=高於、綠=低於(台灣看盤習慣)、±3%內不上色，起跳0.08最深封頂0.38（比舊0.50柔和）；營收表與熱力圖共用這支 heatBg
+  const heatBg = dv2 => { if (dv2==null||!isFinite(dv2)||Math.abs(dv2)<0.03) return ''; dv2=Math.max(-0.5,Math.min(0.5,dv2)); const a=Math.min(0.38,0.08+Math.abs(dv2)*0.6); return `background:rgba(${dv2>0?'229,57,53':'27,176,83'},${a.toFixed(2)})` }
+  const heat = (v, avg) => (v==null||!avg) ? '' : heatBg((v-avg)/avg)
   const hc = (v, avg, extra) => `<td style="${heat(v,avg)}${extra?';'+extra:''}">${fN(v)}</td>`
   const perChip = (k,l) => `<button class="mini${per===k?' on':''}" style="padding:4px 11px" onclick="dayPer('${k}')">${l}</button>`
   // v4.37.5（張良「近幾天/全部拿掉；第一層=本月/上月/今年/歷史資料；歷史資料點開其他年份新→舊；月鈕手機一排6個」）
@@ -250,7 +263,7 @@ function renderBoard(d, store, view){
                  : `<button class="mini" style="padding:6px 0;text-align:center;opacity:.3;cursor:default">${i2+1}月</button>`
     }).join('') + `</div>`
   }
-  h += `<section><h2 style="display:flex;align-items:baseline;gap:8px">每日數據 ${(()=>{let t9='';try{t9=new Date(d.updatedAt).toLocaleTimeString('en-GB',{hour12:false,timeZone:'Asia/Taipei',hour:'2-digit',minute:'2-digit'})}catch(e){}const anc9=d.anchor?String(d.anchor).slice(5).replace('-','/'):'—';return isGD?`<button class="mini" id="pfBtn" style="margin-left:auto;font-weight:600;font-size:11px;white-space:nowrap;padding:3px 9px" title="最新日結・按一下現抓最新" onclick="posFresh()">日結 ${anc9}・🔄 ${t9}</button>`:`<span class="hint" style="margin-left:auto;font-weight:600;font-size:11px;white-space:nowrap">日結 ${anc9}${t9?`・${t9}`:''}</span>`})()}</h2><div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:8px">${perChip('tm','本月')}${perChip('lm','上月')}${yrChips}</div>${moChips}<div class="scroll" style="max-height:62vh;overflow-y:auto"><table><thead><tr><th style="position:sticky;left:0;z-index:3;text-align:left">日期</th><th>總營收</th>${isGD?'<th>至14:00</th>':''}<th>單數</th><th>單均</th><th>現金</th><th>信用卡</th><th>LINE Pay</th><th>Uber</th><th>折扣</th>${isGD?'<th>自助%</th><th>外帶%</th><th>套餐/主餐%</th>':''}</tr></thead><tbody>`
+  h += `<section><h2 style="display:flex;align-items:baseline;gap:8px">每日數據 ${(()=>{let t9='';try{t9=new Date(d.updatedAt).toLocaleTimeString('en-GB',{hour12:false,timeZone:'Asia/Taipei',hour:'2-digit',minute:'2-digit'})}catch(e){}const anc9=d.anchor?String(d.anchor).slice(5).replace('-','/'):'—';return isGD?`<button class="boardFreshBtn mini" id="pfBtn" style="margin-left:auto;font-weight:600;font-size:11px;white-space:nowrap;padding:3px 9px" title="最新日結・按一下現抓最新" onclick="boardFresh('ground')">日結 ${anc9}・🔄 ${t9}</button>`:`<button class="boardFreshBtn mini" style="margin-left:auto;font-weight:600;font-size:11px;white-space:nowrap;padding:3px 9px" title="按一下抓最新（每5分鐘也會自動更新）" onclick="boardFresh('abeach')">日結 ${anc9}${t9?`・${t9}`:''}・🔄 更新</button>`})()}</h2><div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:8px">${perChip('tm','本月')}${perChip('lm','上月')}${yrChips}</div>${moChips}<div class="scroll" style="max-height:62vh;overflow-y:auto"><table><thead><tr><th style="position:sticky;left:0;z-index:3;text-align:left">日期</th><th>總營收</th>${isGD?'<th>至14:00</th>':''}<th>單數</th><th>單均</th><th>現金</th><th>信用卡</th><th>LINE Pay</th><th>Uber</th><th>折扣</th>${isGD?'<th>自助%</th><th>外帶%</th><th>套餐/主餐%</th>':''}</tr></thead><tbody>`
   const avBg = 'background:var(--psoft);font-weight:800;color:var(--pdark)'
   // 總計列（張良：平均上面放總數+總天數）
   const sm = f => { const a = dv.map(f).filter(v=>v!=null&&isFinite(v)); return a.length ? a.reduce((s2,v)=>s2+v,0) : null }
@@ -313,22 +326,26 @@ function renderBoard(d, store, view){
     if (hdDates.length) {
       const cols = [...hdDates].reverse() // 新日在左（與 App 熱力圖同向）
       const hrs = [...new Set(hdDates.flatMap(dt => Object.keys(d.hourDays[dt]).map(Number)))].sort((a,b)=>a-b)
-      // v4.52.2 還原紅綠色階（張良「跟以前不一樣版本」＝主 App Finance 的版本）：每格跟「該時段日均」比，高於+3%紅、低於-3%綠，差越多越深（封頂72%）；±3%內幾乎不上色
+      // v4.70.0（張良「熱力圖顏色跟營收一樣、都不要那麼亮」）：每格跟「該時段日均」比，共用上面 heatBg＝紅=高/綠=低、±3%不上色、封頂0.38柔和
       const rowAvg = {}; hrs.forEach(hr => { const vs = hdDates.map(dt=>d.hourDays[dt][hr]||0).filter(v=>v>0); rowAvg[hr] = vs.length ? vs.reduce((s,v)=>s+v,0)/vs.length : 0 })
-      const heatC = (v,hr) => { const avg=rowAvg[hr]; if(!v||!avg) return ''; const dev=v/avg, hot=dev>1.03, cold=dev<0.97; const a= hot?Math.min(0.72,0.1+0.62*Math.min(1,dev-1)) : cold?Math.min(0.72,0.1+0.62*Math.min(1,1-dev)) : 0; return `background:${hot?`rgba(179,38,30,${a.toFixed(2)})`:cold?`rgba(63,125,78,${a.toFixed(2)})`:'rgba(255,255,255,.03)'}${a>0.42?';color:#fff':''}` }
+      const heatC = (v,hr) => { const avg=rowAvg[hr]; if(!v||!avg) return 'background:rgba(255,255,255,.02)'; return heatBg((v-avg)/avg) || 'background:rgba(255,255,255,.02)' }
       const devTip = (v,hr) => { const avg=rowAvg[hr]; if(!v||!avg) return ''; const p=Math.round((v/avg-1)*100); return `・日均 ${Math.round(avg).toLocaleString()}（${p>0?'+':''}${p}%）` }
       const wd7 = ['日','一','二','三','四','五','六']
       const wdOf = dt => wd7[new Date(dt+'T00:00:00Z').getUTCDay()]
-      const fK = n => n>=10000 ? (Math.round(n/100)/100)+'萬' : n>=1000 ? Math.round(n/1000)+'k' : (n||'')
-      let hh = `<section><h2 style="margin-top:14px">時段營收熱力圖 <span class="hint">每格=該時段營收・紅=高於該時段日均、綠=低於日均（差越多越深）・新日在左</span></h2>`
+      // 🙈 隱藏非營業／測試時段（GD/AB 各存一份）；更新時間戳跟營收表同一包資料
+      const hid = heatHidden(store), hrsVis = hrs.filter(hr => !hid.has(hr)), hidArr = [...hid].sort((a,b)=>a-b)
+      let heatT = ''; try { heatT = new Date(d.updatedAt).toLocaleTimeString('en-GB',{hour12:false,timeZone:'Asia/Taipei',hour:'2-digit',minute:'2-digit'}) } catch(e){}
+      let hh = `<section><h2 style="margin-top:14px;display:flex;align-items:baseline;gap:8px;flex-wrap:wrap">時段營收熱力圖 <span class="hint">每格=該時段營收・紅=高於該時段日均、綠=低於日均・新日在左</span><button class="boardFreshBtn mini" style="margin-left:auto;font-weight:600;font-size:11px;white-space:nowrap;padding:3px 9px" title="抓最新資料（每5分鐘也會自動更新）" onclick="boardFresh('${store}')">🔄 更新${heatT?' '+heatT:''}</button></h2>`
+      hh += `<div style="display:flex;gap:5px;flex-wrap:wrap;align-items:center;margin:2px 0 8px"><span class="hint">點時段列左邊的 ✕ 可隱藏非營業／測試時段</span>${hidArr.length ? hidArr.map(hr=>`<button class="mini" style="padding:3px 9px" title="點一下恢復顯示" onclick="heatHideToggle('${store}',${hr})">${hr}時 ✕隱藏中</button>`).join('')+`<button class="mini" style="padding:3px 9px" onclick="heatShowAll('${store}')">全部顯示</button>` : ''}</div>`
       hh += `<div class="scroll" style="overflow:auto;max-height:60vh"><table style="border-collapse:collapse;font-size:11px"><thead><tr><th style="position:sticky;left:0;top:0;z-index:5;background:var(--soft)">時段</th>`
       hh += cols.map(dt=>{ const we=['六','日'].includes(wdOf(dt)); return `<th style="position:sticky;top:0;z-index:2;background:var(--soft);white-space:nowrap;text-align:center${we?';color:#A85C26':''}">${dt.slice(5)}<br><span class="hint" style="font-size:10px">${wdOf(dt)}</span></th>` }).join('')
       hh += `</tr></thead><tbody>`
-      hrs.forEach(hr=>{
-        hh += `<tr><td style="position:sticky;left:0;z-index:1;background:var(--soft);font-weight:700;white-space:nowrap">${hr}時</td>`
+      hrsVis.forEach(hr=>{
+        hh += `<tr><td style="position:sticky;left:0;z-index:1;background:var(--soft);font-weight:700;white-space:nowrap">${hr}時 <button class="mini" style="padding:0 5px;font-size:10px;line-height:1.6;margin-left:2px" title="隱藏這個時段" onclick="heatHideToggle('${store}',${hr})">✕</button></td>`
         hh += cols.map(dt=>{ const v=d.hourDays[dt][hr]||0; return `<td title="${dt.slice(5)} ${hr}時：${v?v.toLocaleString():'—'}${devTip(v,hr)}" style="text-align:right;padding:3px 6px;font-variant-numeric:tabular-nums;${heatC(v,hr)}">${v?v.toLocaleString():''}</td>` }).join('')
         hh += `</tr>`
       })
+      if (!hrsVis.length) hh += `<tr><td colspan="${cols.length+1}" class="mut" style="text-align:center;padding:14px">所有時段都被隱藏了——點上方「全部顯示」叫回來</td></tr>`
       hh += `</tbody></table></div></section>`
       h += hh
     } else {
