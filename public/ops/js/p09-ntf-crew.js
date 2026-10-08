@@ -294,7 +294,7 @@ async function custFind(){
   const stLines = Object.values(d.stats||{}).map(c=>`<div style="font-weight:800;font-size:12.5px;color:#F2C94C">★ ${c.name}${c.phone?`（${c.phone}）`:''}：入座 ${c.stats.seated??0} 次・全部 ${c.stats.total??0}（官方客人檔）</div>`).join('')
   box.innerHTML = cCard(`🔍「${q}」共 ${cNum(d.total)} 筆`, stLines + `<div style="max-height:220px;overflow:auto;margin-top:4px">` + (d.rows||[]).map(r=>`<div style="font-size:12px;padding:2px 0;border-bottom:1px solid var(--line)">${r.d||'?'} ${r.t||''} <b>${r.name}</b> ${r.n}人・${ST9[r.st]||r.st}${r.phone?`・${r.phone}`:''}</div>`).join('') + `</div><div style="text-align:right;margin-top:4px"><button class="mini" onclick="document.getElementById('custFindBox').innerHTML=''">✕ 關閉</button></div>`)
 }
-const TAB_DEF = { prep:'銷售數據', sop:'SOP', task:'任務', lb:'排行榜', food:'盤點', pack:'包材', buy:'採購', meet:'會議', shift:'班表', inc:'異常通知', fb:'回饋', menu:'菜單', social:'社群', cust:'inline', hrm:'夥伴名冊', onb:'入職' } // v4.33.0 去emoji；cust=inline顧客資料庫(v4.39.0 張良)；onb=入職流程(v4.56.5 張良「直接建按鈕進去」)；social=社群發文(v4.68 張良 2026-10-08)
+const TAB_DEF = { prep:'銷售數據', sop:'SOP', task:'任務', lb:'排行榜', food:'盤點', pack:'包材', buy:'採購', meet:'會議', shift:'班表', inc:'異常通知', fb:'回饋', menu:'菜單', social:'社群', cust:'inline', lib:'文件庫', hrm:'夥伴名冊', onb:'入職' } // v4.33.0 去emoji；cust=inline顧客資料庫(v4.39.0 張良)；onb=入職流程(v4.56.5 張良「直接建按鈕進去」)；social=社群發文(v4.68 張良 2026-10-08)；lib=通用文件庫(v4.70.0 張良 2026-10-08)
 // ── 單色線條 icon（張良 2026-09-24：不要彩色 emoji——同 Beach Ops 的 stroke 線條圖）──
 const _I = (d) => `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex:0 0 auto;vertical-align:-3px">${d}</svg>`
 const TAB_ICONS = {
@@ -318,6 +318,7 @@ const TAB_ICONS = {
   cust: _I('<circle cx="9" cy="8" r="3"/><path d="M4 19c0-3 2.2-5 5-5s5 2 5 5"/><circle cx="17" cy="9" r="2.5"/><path d="M14.5 19c.2-2.5 1.7-4 3.5-4 1.8 0 3.3 1.5 3.5 4"/>'), // inline 顧客資料庫
   onb: _I('<circle cx="9" cy="8" r="3.2"/><path d="M3.5 20c0-3.3 2.4-5.5 5.5-5.5s5.5 2.2 5.5 5.5"/><path d="M18 8v6M15 11h6"/>'), // 入職＝新人加入（user-plus）
   social: _I('<path d="M3 11v2a1 1 0 0 0 1 1h2l5 4V6L6 10H4a1 1 0 0 0-1 1Z"/><path d="M15.5 8.5a4 4 0 0 1 0 7"/>'), // 社群＝喇叭廣播（v4.68 張良 2026-10-08）
+  lib: _I('<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>'), // 文件庫＝資料夾（v4.70.0 張良 2026-10-08）
 }
 const stripEmoji = (s) => String(s||'').replace(/[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE0F}\u{2B00}-\u{2BFF}\u{2190}-\u{21FF}⭐★☆✅✏️📌]/gu,'').trim()
 function applyTabs(cfg){
@@ -337,9 +338,18 @@ function applyTabs(cfg){
 // 手機版固定螢幕最底＝拇指直達；最多 5 格＋✎編輯；清單每人一份：綁定者存伺服器(pm_prep_fav)換手機跟著走、未綁定存本機
 const FAV_DEFAULT = ['home','shift','sop','food'] // v4.47.4 常用 5→4（最右固定讓位給🔔通知鈴鐺，張良「小鈴鐺坐在固定明顯的地方」）
 const FAV_MAX = 4
-const favAll = () => ['home', ...Object.keys(TAB_DEF), 'errs'].filter(k => { const b = document.getElementById(k==='home'?'tab-home':'tab-'+k); return b && b.style.display !== 'none' }) // 被權限藏掉的分頁不給選
+// v4.70.3 根治「新分頁手機選單會漏」：除了 TAB_DEF，再自動補掃 index.html 裡所有 tab 按鈕——以後加分頁只要有按鈕就自動出現，不必再手動登記 TAB_DEF
+const favAll = () => {
+  const keys = ['home', ...Object.keys(TAB_DEF)]
+  try { document.querySelectorAll('.tabs button[id^="tab-"]').forEach(b => { const k = b.id.slice(4); if (!['home','gear','errs'].includes(k) && !keys.includes(k)) keys.push(k) }) } catch(_){}
+  keys.push('errs')
+  return keys.filter((k,i)=>keys.indexOf(k)===i).filter(k => { const b = document.getElementById(k==='home'?'tab-home':'tab-'+k); return b && b.style.display !== 'none' }) // 被權限藏掉的分頁不給選
+}
 const favGet = () => { try { const v = JSON.parse(localStorage.getItem('gdFav')||'null'); if (Array.isArray(v) && v.length) return v } catch(_){}; return FAV_DEFAULT }
-const favLabel = k => k==='home' ? '首頁' : k==='errs' ? '回報' : stripEmoji(((window._tabCfg||{}).names||{})[k] || TAB_DEF[k] || k)
+const favLabel = k => { if (k==='home') return '首頁'; if (k==='errs') return '回報'
+  const nm = ((window._tabCfg||{}).names||{})[k] || TAB_DEF[k]
+  if (nm) return stripEmoji(nm)
+  const b = document.getElementById('tab-'+k); return b ? stripEmoji(b.textContent.trim()) : k } // 沒登記 TAB_DEF 時退用按鈕文字（根治漏登記）
 function favRender(){
   const bar = document.getElementById('favbar'); if (!bar) return
   const list = favGet().filter(k => favAll().includes(k)).slice(0, FAV_MAX)

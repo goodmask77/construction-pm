@@ -20,7 +20,6 @@ const LIB_ICON = {
 const LIB_LVL = { 0: '看不到', 1: '只能看', 2: '可編輯' }
 let _libCur = null // 目前進入的資料夾 id（null=資料夾網格）
 let _libQ = ''      // 搜尋字串
-let _libDrag = null // 拖曳中的 {kind,id}
 
 function libEsc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])) }
 function libSize(n) { n = +n || 0; return n < 1024 ? n + ' B' : n < 1048576 ? (n / 1024).toFixed(0) + ' KB' : (n / 1048576).toFixed(1) + ' MB' }
@@ -71,7 +70,7 @@ function libRender() {
     html += '<div id="libGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:12px;margin-top:16px">'
     html += d.folders.map(f => {
       const canEdit = f.level >= 2
-      const drag = mgr ? ' draggable="true" ondragstart="libDragStart(event,\'folder\',\'' + f.id + '\')" ondragover="event.preventDefault()" ondrop="libDropFolder(event,\'' + f.id + '\')"' : ''
+      const drag = mgr ? ' data-fid="' + f.id + '"' : ''
       return '<div class="libCard"' + drag + ' style="background:var(--card);border:1.5px solid var(--line);border-radius:14px;padding:15px;cursor:pointer;position:relative" onclick="libOpen(\'' + f.id + '\')">'
         + '<div style="display:flex;align-items:flex-start;justify-content:space-between">'
         + '<span style="color:var(--primary)">' + LIB_ICON.folder + '</span>'
@@ -84,11 +83,43 @@ function libRender() {
         + '</div></div>'
     }).join('')
     html += '</div>'
-    if (mgr) html += '<div class="hint" style="margin-top:10px;font-size:12px">拖曳資料夾可排序・齒輪可設「誰看得到／誰能編」</div>'
+    if (mgr) html += '<div class="hint" style="margin-top:10px;font-size:12px">長按拖曳資料夾可排序・齒輪可設「誰看得到／誰能編」</div>'
   }
   html += '</section>'
   app.innerHTML = html
   if (typeof permScan === 'function') permScan(app)
+  libInitSort()
+}
+
+// 拖曳排序（SortableJS，手機/iPad 觸控也能用）：長按拖曳，短按＝點擊開啟
+function libInitSort() {
+  if (!window.Sortable) return
+  const d = window._libD; if (!d) return
+  if (!_libCur && !_libQ && d.mgr) {
+    const g = document.getElementById('libGrid')
+    if (g) new Sortable(g, {
+      animation: 150, delay: 180, delayOnTouchOnly: true,
+      onEnd: async () => {
+        const ids = Array.from(g.querySelectorAll('[data-fid]')).map(el => el.getAttribute('data-fid'))
+        d.folders.sort((a, b) => ids.indexOf(a.id) - ids.indexOf(b.id))
+        const r = await libPost('libfold', { op: 'reorder', order: ids }); if (!r || !r.ok) { libToast('排序沒存成功', true); libLoad() }
+      }
+    })
+  }
+  if (_libCur) {
+    const f = d.folders.find(x => x.id === _libCur)
+    if (f && f.level >= 2) {
+      const dz = document.getElementById('libDrop')
+      if (dz) new Sortable(dz, {
+        animation: 150, delay: 180, delayOnTouchOnly: true, draggable: '.libFileRow',
+        onEnd: async () => {
+          const ids = Array.from(dz.querySelectorAll('.libFileRow')).map(el => el.getAttribute('data-fileid'))
+          f.files.sort((a, b) => ids.indexOf(a.id) - ids.indexOf(b.id))
+          const r = await libPost('libfile', { op: 'reorder', folderId: f.id, order: ids }); if (!r || !r.ok) { libToast('排序沒存成功', true); libLoad() }
+        }
+      })
+    }
+  }
 }
 
 function libSearchBox() {
@@ -142,24 +173,48 @@ function libRenderFolder() {
   html += '</div></section>'
   app.innerHTML = html
   if (typeof permScan === 'function') permScan(app)
+  libInitSort()
 }
 
 function libFileRow(f, x, withFolder) {
   const canEdit = f.level >= 2
-  const dlName = libEsc(x.name)
-  const url = '/api/mail-sync?liburl=' + encodeURIComponent(K) + '&me=' + encodeURIComponent(TK()) + '&folderId=' + f.id + '&fileId=' + x.id + '&dl=' + encodeURIComponent(x.name)
-  const drag = (canEdit && !withFolder) ? ' draggable="true" ondragstart="libDragStart(event,\'file\',\'' + x.id + '\')" ondragover="event.preventDefault()" ondrop="libDropFile(event,\'' + f.id + '\',\'' + x.id + '\')"' : ''
+  const base = '/api/mail-sync?liburl=' + encodeURIComponent(K) + '&me=' + encodeURIComponent(TK()) + '&folderId=' + f.id + '&fileId=' + x.id
+  const dlUrl = base + '&dl=' + encodeURIComponent(x.name) // 帶 dl＝強制下載
+  const drag = (canEdit && !withFolder) ? ' data-fileid="' + x.id + '"' : ''
   return '<div class="libFileRow"' + drag + ' style="display:flex;gap:10px;align-items:center;border-bottom:1px solid var(--line);padding:9px 8px;flex-wrap:wrap">'
     + '<span class="hint" style="flex-shrink:0">' + LIB_ICON.file + '</span>'
-    + '<a href="' + url + '" target="_blank" style="color:var(--primary);text-decoration:none;font-weight:700;font-size:14px;word-break:break-all;flex:1;min-width:140px">' + libEsc(x.name) + '</a>'
+    + '<a onclick="libPreview(\'' + f.id + '\',\'' + x.id + '\');return false" style="color:var(--primary);text-decoration:none;font-weight:700;font-size:14px;word-break:break-all;flex:1;min-width:140px;cursor:pointer" title="點檔名在這裡預覽">' + libEsc(x.name) + '</a>'
     + (withFolder ? '<span class="hint" style="font-size:11.5px">' + LIB_ICON.folder + ' ' + libEsc(f.name) + '</span>' : '')
     + '<span class="hint" style="font-size:11.5px;white-space:nowrap">' + libSize(x.size) + '・' + (x.by || '') + '・' + (x.ts || '') + '</span>'
     + '<span style="display:inline-flex;gap:4px">'
-    + '<a class="mini" style="padding:5px 8px" href="' + url + '" target="_blank" title="下載">' + LIB_ICON.download + '</a>'
+    + '<a class="mini" style="padding:5px 8px" href="' + dlUrl + '" title="下載">' + LIB_ICON.download + '</a>'
     + (canEdit ? '<button class="mini" style="padding:5px 8px" title="改名" onclick="libRenameFile(\'' + f.id + '\',\'' + x.id + '\')">' + LIB_ICON.pencil + '</button>'
       + '<button class="mini" style="padding:5px 8px" title="搬到其他資料夾" onclick="libMoveFile(\'' + f.id + '\',\'' + x.id + '\')">' + LIB_ICON.move + '</button>'
       + '<button class="mini" style="padding:5px 8px" title="刪除" onclick="libDelFile(\'' + f.id + '\',\'' + x.id + '\',\'' + libEsc(x.name).replace(/'/g, '') + '\')">' + LIB_ICON.trash + '</button>' : '')
     + '</span></div>'
+}
+
+// 檔案預覽：在 App 內疊一層看（不開新分頁）。PDF 用 iframe、圖片用 img，其他類型給下載鈕。
+function libPreview(folderId, fileId) {
+  const f = window._libD.folders.find(x => x.id === folderId); const x = f && (f.files || []).find(z => z.id === fileId); if (!x) return
+  const base = '/api/mail-sync?liburl=' + encodeURIComponent(K) + '&me=' + encodeURIComponent(TK()) + '&folderId=' + folderId + '&fileId=' + fileId
+  const dlUrl = base + '&dl=' + encodeURIComponent(x.name)
+  const isImg = /^image\//.test(x.mime || '') || /\.(jpe?g|png|gif|webp|bmp|svg)$/i.test(x.name)
+  const isPdf = /pdf/.test(x.mime || '') || /\.pdf$/i.test(x.name)
+  const old = document.getElementById('libPvOv'); if (old) old.remove()
+  const ov = document.createElement('div'); ov.id = 'libPvOv'
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(8,11,16,.94);z-index:1300;display:flex;flex-direction:column'
+  const body = isImg
+    ? '<div style="flex:1;overflow:auto;display:flex;align-items:center;justify-content:center;padding:10px"><img src="' + base + '" style="max-width:100%;max-height:100%;object-fit:contain"></div>'
+    : (isPdf
+      ? '<iframe src="' + base + '" style="flex:1;border:0;width:100%;background:#fff"></iframe>'
+      : '<div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;color:#C7D0DB;padding:20px;text-align:center"><div>這個檔案類型沒辦法在這裡預覽</div><a class="mini on" style="padding:10px 18px" href="' + dlUrl + '">下載來看</a></div>')
+  ov.innerHTML = '<div style="display:flex;align-items:center;gap:10px;padding:12px 14px;background:#161B22;border-bottom:1px solid #2A3240">'
+    + '<span style="flex:1;color:#F2F5F9;font-weight:700;font-size:14px;word-break:break-all">' + libEsc(x.name) + '</span>'
+    + '<a class="mini" style="padding:6px 12px;display:inline-flex;gap:5px;align-items:center" href="' + dlUrl + '">' + LIB_ICON.download + ' 下載</a>'
+    + '<button class="mini" style="padding:6px 14px" onclick="document.getElementById(\'libPvOv\').remove()">關閉</button>'
+    + '</div>' + body
+  document.body.appendChild(ov)
 }
 
 // ── 資料夾操作（限管理者）──
@@ -184,45 +239,19 @@ async function libDelFolder(id) {
   libToast('已刪除'); _libCur = null; libLoad()
 }
 
-// ── 拖曳排序 ──
-function libDragStart(e, kind, id) { _libDrag = { kind, id }; try { e.dataTransfer.effectAllowed = 'move' } catch (_) {} }
-async function libDropFolder(e, targetId) {
-  e.preventDefault(); if (!_libDrag || _libDrag.kind !== 'folder' || _libDrag.id === targetId) { _libDrag = null; return }
-  const ids = window._libD.folders.map(f => f.id)
-  const from = ids.indexOf(_libDrag.id), to = ids.indexOf(targetId); _libDrag = null
-  if (from < 0 || to < 0) return
-  ids.splice(to, 0, ids.splice(from, 1)[0])
-  // 先在本地重排畫面，再送後端
-  window._libD.folders.sort((a, b) => ids.indexOf(a.id) - ids.indexOf(b.id))
-  libRender()
-  const r = await libPost('libfold', { op: 'reorder', order: ids })
-  if (!r || !r.ok) { libToast('排序沒存成功', true); libLoad() }
-}
-async function libDropFile(e, folderId, targetId) {
-  e.preventDefault(); if (!_libDrag || _libDrag.kind !== 'file' || _libDrag.id === targetId) { _libDrag = null; return }
-  const f = window._libD.folders.find(x => x.id === folderId); if (!f) { _libDrag = null; return }
-  const ids = (f.files || []).map(x => x.id)
-  const from = ids.indexOf(_libDrag.id), to = ids.indexOf(targetId); _libDrag = null
-  if (from < 0 || to < 0) return
-  ids.splice(to, 0, ids.splice(from, 1)[0])
-  f.files.sort((a, b) => ids.indexOf(a.id) - ids.indexOf(b.id))
-  libRender()
-  const r = await libPost('libfile', { op: 'reorder', folderId, order: ids })
-  if (!r || !r.ok) { libToast('排序沒存成功', true); libLoad() }
-}
-
 // ── 上傳 ──
 function libPickUpload(folderId) {
   const inp = document.createElement('input'); inp.type = 'file'; inp.multiple = true
   inp.onchange = () => libDoUpload(folderId, Array.from(inp.files || []))
   inp.click()
 }
-function libDzOver(e) { e.preventDefault(); const dz = document.getElementById('libDrop'); if (dz && !_libDrag) dz.style.borderColor = 'var(--primary)' }
+function libDzOver(e) { if (!(e.dataTransfer && e.dataTransfer.types && Array.from(e.dataTransfer.types).includes('Files'))) return; e.preventDefault(); const dz = document.getElementById('libDrop'); if (dz) dz.style.borderColor = 'var(--primary)' }
 function libDzLeave(e) { const dz = document.getElementById('libDrop'); if (dz) dz.style.borderColor = 'var(--line)' }
 function libDzDrop(e, folderId) {
+  const files = Array.from((e.dataTransfer && e.dataTransfer.files) || [])
+  if (!files.length) return // 內部排序拖曳交給 SortableJS，不是上傳
   e.preventDefault(); const dz = document.getElementById('libDrop'); if (dz) dz.style.borderColor = 'var(--line)'
-  if (_libDrag) return // 內部排序拖曳，不是上傳
-  const files = Array.from((e.dataTransfer && e.dataTransfer.files) || []); if (files.length) libDoUpload(folderId, files)
+  libDoUpload(folderId, files)
 }
 async function libDoUpload(folderId, files) {
   if (!files.length) return
@@ -311,9 +340,12 @@ function libPermRender(name) {
     }).join('')
     inner += '</div>'
   }
-  inner += '<div style="margin-top:8px;display:flex;gap:6px;align-items:center">'
-    + '<input id="libPermAddQ" oninput="libPermAddSearch(this.value)" placeholder="打名字加入個別指定…" style="flex:1;padding:7px 10px;border-radius:8px;border:1.5px solid var(--line);background:var(--card);color:inherit;font-size:13px">'
-    + '</div><div id="libPermAddRes" style="margin-top:4px"></div>'
+  const addable = (d.people || []).filter(p => _libPermAcl.users[p.id] == null)
+  inner += '<div style="margin-top:8px">'
+    + '<select onchange="if(this.value){libPermAddUser(this.value)}" style="width:100%;padding:8px 10px;border-radius:8px;border:1.5px solid var(--line);background:var(--card);color:inherit;font-size:13px">'
+    + '<option value="">＋ 選一個人加入個別指定…</option>'
+    + addable.map(p => '<option value="' + p.id + '">' + libEsc(p.name) + '（' + p.role + '）</option>').join('')
+    + '</select></div>'
   // 禁外傳
   inner += '<label style="margin-top:16px;display:flex;align-items:center;gap:8px;font-size:13.5px;cursor:pointer"><input type="checkbox" id="libPermNoExport"' + (_libPermAcl.noExport ? ' checked' : '') + ' onchange="_libPermAcl.noExport=this.checked"> <span style="display:inline-flex;align-items:center;gap:4px">' + LIB_ICON.lock + ' 禁止 DD 把此夾的檔案撈到群組（敏感文件建議勾）</span></label>'
   // 動作
@@ -328,14 +360,6 @@ function libPermRender(name) {
 function libPermSetRole(rl, v) { _libPermAcl.roles[rl] = +v }
 function libPermSetUser(rid, v) { _libPermAcl.users[rid] = +v }
 function libPermDelUser(rid) { delete _libPermAcl.users[rid]; const f = window._libD.folders.find(x => x.id === _libPermId); libPermRender(f ? f.name : '') }
-function libPermAddSearch(q) {
-  q = q.trim().toLowerCase()
-  const box = document.getElementById('libPermAddRes'); if (!box) return
-  if (!q) { box.innerHTML = ''; return }
-  const d = window._libD
-  const hits = (d.people || []).filter(p => p.name.toLowerCase().includes(q) && _libPermAcl.users[p.id] == null).slice(0, 8)
-  box.innerHTML = hits.map(p => '<button class="mini" style="padding:5px 10px;margin:3px 3px 0 0" onclick="libPermAddUser(\'' + p.id + '\')">' + LIB_ICON.plus + ' ' + libEsc(p.name) + '（' + p.role + '）</button>').join('') || '<span class="hint" style="font-size:12px">查無此人</span>'
-}
 function libPermAddUser(rid) { _libPermAcl.users[rid] = 1; const f = window._libD.folders.find(x => x.id === _libPermId); libPermRender(f ? f.name : '') }
 async function libPermSave() {
   const r = await libPost('libfold', { op: 'setacl', id: _libPermId, acl: _libPermAcl })

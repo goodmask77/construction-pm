@@ -135,6 +135,108 @@ async function saveCachedFilesToLibrary(label, byName, convId) {
   return { ok: true, count: names.length, names, failed, label: folder || (kind === 'other' ? '其他' : { quote: '估價單', invoice: '發票', site: '現場照' }[kind]) }
 }
 
+// ── 🗂 通用文件庫 v4.70.0（張良「資料庫像雲端硬碟＋DD上傳歸檔＋DD撈檔傳群」）──
+// 資料 KV sp_finance_pm_library，實體檔進私有桶 ground-private。權限：資料夾 acl 角色預設＋個人覆蓋；等級 0看不到/1只能看/2可編。
+const LIBRARY_KEY = 'sp_finance_pm_library'
+// lineUserId → { name, rid, role, mgr }（走 prep 綁定＋名冊 gdRole；mgr=主管/審核人approver/張良＝可管理＋可撈檔）
+async function libWhoByLine(userId) {
+  const kv = await kvGetMany(['sp_finance_pm_prep_bind', 'sp_finance_pm_sop_def', 'sp_crew_kb_roster'])
+  const bind = kv['sp_finance_pm_prep_bind'] || {}
+  const tk = (bind.byUid || {})[userId]
+  const w = tk ? (bind.tokens || {})[tk] : null
+  if (!w || !w.name) return null
+  const apr = (((kv['sp_finance_pm_sop_def'] || {}).ground || {}).approvers || ['張良瑋'])
+  const role = ((((kv['sp_crew_kb_roster'] || {}).people) || []).find(p => p.name === w.name) || {}).gdRole || '一般'
+  const mgr = apr.includes(w.name) || w.name === '張良瑋' || role === '主管'
+  return { name: w.name, rid: w.rid || w.uid, role, mgr }
+}
+function libLevelOf(who, folder) {
+  if (!who) return 0
+  if (who.mgr) return 2
+  const acl = folder.acl || {}
+  if ((acl.users || {})[who.rid] != null) return acl.users[who.rid]
+  if ((acl.roles || {})[who.role] != null) return acl.roles[who.role]
+  return (acl.roles || {})['一般'] != null ? acl.roles['一般'] : 1
+}
+function libFindFolder(lib, name) {
+  const n = String(name || '').trim().toLowerCase(); if (!n) return null
+  const fs = lib.folders || []
+  return fs.find(f => f.name.toLowerCase() === n) || fs.find(f => f.name.toLowerCase().includes(n) || n.includes(f.name.toLowerCase())) || null
+}
+// 把 stash 的檔案（使用者剛傳、同一對話）存進 library 指定資料夾（who 需該夾 level>=2）
+async function saveCachedToLibrary(folderName, who, convId) {
+  const lib = (await kvGetMany([LIBRARY_KEY]))[LIBRARY_KEY] || { folders: [], files: {} }
+  lib.folders = lib.folders || []; lib.files = lib.files || {}
+  const folder = libFindFolder(lib, folderName)
+  if (!folder) {
+    const can = lib.folders.filter(f => libLevelOf(who, f) >= 2).map(f => f.name)
+    return { ok: false, msg: `找不到資料夾「${folderName || '（沒講清楚）'}」。${can.length ? '你可以存進：' + can.join('、') : '你目前沒有可上傳的資料夾，請主管在 App 文件庫開一個或給你權限。'}` }
+  }
+  if (libLevelOf(who, folder) < 2) return { ok: false, msg: `你沒有「${folder.name}」的上傳權限 🙏` }
+  const cache = (await kvGetMany([FILECACHE_KEY]))[FILECACHE_KEY]
+  const all = (cache && Array.isArray(cache.list)) ? cache.list : []
+  const now = Date.now()
+  const mine = all.filter(f => f && f.ts && (now - new Date(f.ts).getTime()) < 60 * 60 * 1000 && (!convId || f.convId === convId))
+  if (!mine.length) return { ok: false, msg: `找不到剛剛傳的檔案（超過 60 分鐘會清掉）。請重新傳一次，傳完馬上說「存到文件庫 ${folder.name}」。` }
+  const { uploadPrivate } = await import('./_onboard.js')
+  lib.files[folder.id] = lib.files[folder.id] || []
+  const names = [], failed = []
+  for (const f of mine) {
+    try {
+      const r = await fetch(`https://api-data.line.me/v2/bot/message/${f.mid}/content`, { headers: { authorization: `Bearer ${TOKEN}` } })
+      if (!r.ok) { failed.push(f.name); continue }
+      const buf = Buffer.from(await r.arrayBuffer())
+      if (buf.length > 20 * 1024 * 1024) { failed.push(f.name + '(超過20MB)'); continue }
+      const ct = r.headers.get('content-type') || (f.isImage ? 'image/jpeg' : 'application/octet-stream')
+      const ext = f.isImage ? (/png/.test(ct) ? 'png' : 'jpg') : ((String(f.name).split('.').pop() || 'bin').toLowerCase().replace(/[^a-z0-9]/g, '') || 'bin')
+      const fid = 'x' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6)
+      const path = `library/${folder.id}/${fid}.${ext}`
+      if (!(await uploadPrivate(path, buf, ct))) { failed.push(f.name); continue }
+      const maxo = Math.max(0, ...lib.files[folder.id].map(x => x.order || 0))
+      const ts = new Date(Date.now() + 8 * 3600e3).toISOString().slice(5, 16).replace('T', ' ')
+      lib.files[folder.id].push({ id: fid, name: f.name, path, ext, mime: ct, size: buf.length, ts, by: who.name + '(LINE)', order: maxo + 1 })
+      names.push(f.name)
+    } catch (_) { failed.push(f.name) }
+  }
+  if (!names.length) return { ok: false, msg: '檔案抓取失敗（可能超過 LINE 下載期限），請重新傳一次。' }
+  lib.log = [{ by: who.name, ts: new Date(Date.now() + 8 * 3600e3).toISOString().slice(5, 16).replace('T', ' '), what: `DD存 ${names.length}檔→${folder.name}` }, ...(lib.log || [])].slice(0, 100)
+  lib.updatedAt = new Date().toISOString()
+  await kvSet(LIBRARY_KEY, lib)
+  const rest = all.filter(f => !mine.some(m => m.mid === f.mid))
+  await kvSet(FILECACHE_KEY, { list: rest })
+  return { ok: true, folder: folder.name, count: names.length, names, failed }
+}
+// DD 把 library 檔案撈出傳到群/私訊（who 需 mgr；資料夾需 level>=1 且非 noExport；圖片推 image，其他推簽名連結）
+async function pushLibraryFile(folderName, fileKw, who, to) {
+  if (!who || !who.mgr) return { ok: false, msg: '撈檔傳送只開放主管使用 🙏' }
+  const lib = (await kvGetMany([LIBRARY_KEY]))[LIBRARY_KEY] || { folders: [], files: {} }
+  const folder = libFindFolder(lib, folderName)
+  if (!folder) return { ok: false, msg: `找不到資料夾「${folderName}」。` }
+  if (folder.acl && folder.acl.noExport) return { ok: false, msg: `「${folder.name}」被標記為「禁止外傳」，不能撈到群。要改請到 App 文件庫 → 該夾齒輪 → 權限設定。` }
+  if (libLevelOf(who, folder) < 1) return { ok: false, msg: `你沒有「${folder.name}」的檢視權限 🙏` }
+  const files = (lib.files || {})[folder.id] || []
+  const kw = String(fileKw || '').trim().toLowerCase()
+  const hits = kw ? files.filter(x => x.name.toLowerCase().includes(kw)) : files
+  if (!hits.length) return { ok: false, msg: kw ? `「${folder.name}」裡找不到檔名含「${fileKw}」的檔案。` : `「${folder.name}」裡還沒有檔案。` }
+  if (hits.length > 5) return { ok: false, msg: `符合的有 ${hits.length} 個，太多了——檔名講精確一點。前幾個：${hits.slice(0, 6).map(x => x.name).join('、')}` }
+  const { signedUrl } = await import('./_onboard.js')
+  const msgs = []
+  for (const x of hits.slice(0, 5)) {
+    const u = await signedUrl(x.path, 600)
+    if (!u) continue
+    const isImg = /^image\//.test(x.mime || '') || /\.(jpe?g|png|gif|webp)$/i.test(x.name)
+    if (isImg) msgs.push({ type: 'image', originalContentUrl: u, previewImageUrl: u })
+    else msgs.push({ type: 'text', text: `📄 ${x.name}（${folder.name}）\n下載（10分鐘內有效）：\n${u}` })
+  }
+  if (!msgs.length) return { ok: false, msg: '檔案連結產生失敗，稍後再試 🙏' }
+  for (let i = 0; i < msgs.length; i += 5) {
+    await fetch('https://api.line.me/v2/bot/message/push', { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${TOKEN}` }, body: JSON.stringify({ to, messages: msgs.slice(i, i + 5) }) })
+  }
+  lib.log = [{ by: who.name, ts: new Date(Date.now() + 8 * 3600e3).toISOString().slice(5, 16).replace('T', ' '), what: `DD撈 ${hits.length}檔 ${folder.name}→傳送` }, ...(lib.log || [])].slice(0, 100)
+  await kvSet(LIBRARY_KEY, lib)
+  return { ok: true, count: Math.min(hits.length, 5), folder: folder.name, names: hits.slice(0, 5).map(x => x.name) }
+}
+
 // ── 逐筆存（v2）相容（2026-07-18）：前端改「一筆交易/任務＝一份文件」後，D哥 讀寫要跟上 ──
 async function kvGetPrefix(prefix) {
   if (!SB_URL || !SB_KEY) return []
@@ -447,6 +549,7 @@ const BOT_PERSONA = `你是「DD」（舊名 D哥，大家叫哪個都認得）�
 - **禁止沿用你先前說過的「我沒有 X 資料」**——資料每天都在擴充，以「本次」附的資料為準；先前對話說沒有≠現在沒有。
 - 資料裡真的沒有的（搜過確認），才說「這個我手上沒有資料」。
 - **你「會」操作 App 檔案庫**：使用者傳檔案給你、說「存到檔案庫〔類別名〕」你就會把檔案存進去；說「檔案庫新增類別〔名〕」你會建立新類別；類別是自訂的（可任意命名，如設計檔案／LOGO），存好後在 App 檔案庫頁看得到。**絕對不要說「我沒有新增檔案庫類別的能力／開不了類別／存不了檔案」**——你有。若對方說「沒看到剛建的類別」，提醒他：空類別要在 App 檔案庫頁上方「類別📁」篩選才看得到，或傳個檔案進去就會顯示（不要否認自己建過）。
+- **你「會」操作「文件庫」（雲端硬碟）**：這跟上面的「檔案庫／相簿」是兩套東西。使用者先傳檔案給你、再說「存到文件庫〔資料夾名〕」你就把檔案歸進該資料夾（受權限：他要有該夾的編輯權）；私訊打「文件庫」你會列出他看得到的資料夾。主管還可以說「文件庫 把〔資料夾〕〔檔名〕傳到群／給我」，你把檔案撈出來傳過去（但被標記「禁止外傳」的資料夾、或非主管，一律不給撈）。**不要說你做不到**——這些由系統直接執行。資料夾的新增／刪除／改名／排序／設權限在 App 文件庫頁做。
 - **【日期計算鐵則】你心算日期差很不可靠（2026-09-18 真實翻車：把 2025-04 到職的人「目測年份」判成未滿一年）**。年資、年齡、滿幾年→資料區已算好，直接引用；其他日期差（幾天後、隔幾週）→必須先寫下兩個完整日期再逐步算，**禁止看年份目測**。
 - **先在心裡把資料查完、算完、驗完，才開始寫回覆**。回覆只呈現最終結果——嚴禁把草稿過程寫出來（像「等等這是8月先跳過」「欸不對我重抓一次」這種自我更正實況，觀感很差）。寫錯就整段重寫，不是邊寫邊改。
 - **你「有」每日主動提醒功能**：系統每天早上 8:00 自動把「今日任務簡報」（逾期/今天到期/急件/三天內）私訊給張良，傍晚 5:30 若今天的任務還沒完成會再追一次；提醒附**互動按鈕卡**（每件任務可直接按 ✅完成／⏭延1天／📅改日期／🗑取消，不用打字）。**絕對不要說「我不會主動提醒/我沒辦法定時推播/要你自己來問我」**——定時推播是系統既有功能。另外：每週日傍晚會送「下週任務規劃」（7 天按日排好）；張良隨時打「**今日任務**」就會秒回當日簡報＋按鈕卡。改資料/金額類操作等確認時也有 ✅確認/❌取消 按鈕（打字照樣有效）。要調整提醒的內容或時間，請對方跟張良講一聲就能改。
@@ -2130,7 +2233,7 @@ export default async function handler(req, res) {
           const uid2 = ev.source?.userId || ''
           const isDM2 = ev.source?.type === 'user'
           const cid = isDM2 ? ('dm_' + uid2) : ('g_' + (ev.source?.groupId || ev.source?.roomId || uid2))
-          if (!isDM2 || (await getOperators())[uid2]) await stashLibraryFile(ev, cid) // 私訊只幫操作者記；群組都記
+          if (!isDM2 || (await getOperators())[uid2] || (await libWhoByLine(uid2))) await stashLibraryFile(ev, cid) // 私訊幫操作者＋已綁定GD者記（文件庫歸檔要用）；群組都記
         } catch (e) { console.log('filelib stash error', e?.message) }
         continue
       }
@@ -2459,6 +2562,40 @@ export default async function handler(req, res) {
           ? '回我「綁定GD 本名」（例：綁定GD張良瑋）就好，我會發你專屬連結，點一下完成綁定。已經綁過只是換瀏覽器？回我「我的連結」就好。'
           : '📌 綁定方法：本人私訊 DD 打「綁定GD 本名」（例：綁定GD張良瑋）→ 我會發專屬連結，點一下完成；核准後我會通知你。')
         continue
+      }
+      // 1.39) 🗂 通用文件庫（雲端硬碟）：先傳檔→「存到文件庫 <資料夾>」歸檔；私訊打「文件庫」列出可存資料夾；主管可「文件庫 把 <資料夾> <檔名> 傳到群/給我」撈檔
+      {
+        const _libPush = /(傳|發|送|撈)\s*(到|給|去)?\s*(群|這|我|私|自己)/.test(text)
+        const _libSave = !_libPush && /(存|放|上傳|收|歸)/.test(text)
+        if (/文件庫/.test(text) && (isDM || _libPush || _libSave)) {
+          const who = await libWhoByLine(userId)
+          if (!who) { await finish('先綁定才知道你是誰——私訊我「綁定GD 本名」，核准後就能用文件庫。'); continue }
+          if (_libPush) { // 撈檔傳群/傳我（限主管＋受權限＋禁外傳夾擋）
+            const toSelf = /給我|傳我|私訊|給自己|自己/.test(text)
+            let seg = text.replace(/^(@\S+|dd|d哥)[\s,，:：]*/i, '').replace(/文件庫/g, ' ')
+              .replace(/(傳|發|送|撈)\s*(到|給|去)?\s*(群(組|裡)?|這裡?|我|私訊|自己)\S*/g, ' ')
+              .replace(/(把|將|幫我|請|一下|的檔案|檔案|文件|資料)/g, ' ').trim()
+            const toks = seg.split(/[\s，,、]+|的|裡的?|中的?/).map(s => s.trim()).filter(Boolean)
+            const out = await pushLibraryFile(toks[0] || '', toks.slice(1).join(''), who, toSelf ? userId : (isDM ? userId : convId))
+            await finish(out.ok ? `✅ 已把「${out.folder}」的 ${out.count} 個檔案傳${toSelf || isDM ? '給你' : '到這個群'}：${out.names.join('、')}` : out.msg)
+            continue
+          }
+          if (_libSave) { // 把剛傳的檔歸進資料夾（受權限）
+            const fname = text.replace(/.*文件庫/, '')
+              .replace(/類別|資料夾|夾|存到?|存進?|放到?|放進?|上傳到?|收到?|收進?|歸到?|歸檔|一下|把|剛剛的?|這些?|那些?|請|幫我|裡面|的|檔案|到/g, '')
+              .replace(/[，,、。\s「」『』:：]/g, '').trim()
+            const out = await saveCachedToLibrary(fname, who, convId)
+            await finish(out.ok ? `✅ 已把 ${out.count} 個檔案存進文件庫「${out.folder}」${out.failed && out.failed.length ? `（${out.failed.length} 個抓不到）` : ''}。到 App 文件庫頁看得到。` : out.msg)
+            continue
+          }
+          // 查詢（私訊）：列出看得到的資料夾＋用法
+          const lib9 = (await kvGetMany([LIBRARY_KEY]))[LIBRARY_KEY] || { folders: [] }
+          const vis = (lib9.folders || []).filter(f => libLevelOf(who, f) >= 1)
+          await finish(vis.length
+            ? `🗂 你看得到的文件庫資料夾：\n${vis.map(f => `・${f.name}（${libLevelOf(who, f) >= 2 ? '可存檔' : '只能看'}${(f.acl && f.acl.noExport) ? '・禁外傳' : ''}）`).join('\n')}\n\n存檔：先傳檔案給我，再說「存到文件庫 ${vis[0].name}」。${who.mgr ? '\n撈檔：「文件庫 把 ' + vis[0].name + ' 檔名 傳到群」（或傳給我）。' : ''}`
+            : '目前沒有你看得到的文件庫資料夾，請主管在 App 文件庫開資料夾或給你權限。')
+          continue
+        }
       }
       // 1.4) 檔案庫（私訊操作者 or 被叫名字的群組都能用）：一句話可同時「新增類別／查有哪些類別／把剛傳的檔存進去」
       if ((isDM ? canAct : true) && /檔案庫|相簿/.test(text)) {

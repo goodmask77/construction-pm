@@ -468,6 +468,25 @@ export default async function handler(req, res) {
     }
     return res.status(200).json({ ok: true, probe: dt, days: out2 })
   }
+  // 🚫 時段排除日（包場/異常大單日）維護口（張良 2026-10-08）：分店。GET ?slotex=<MENU_PROBE_KEY>[&store=] 讀；?slotexset=<KEY>&date=YYYY-MM-DD[&store=ground|abeach][&op=add|del] 增刪
+  // 效果：該日不進該店「時段平均/營收熱力圖」，但仍計入總營業額（營收走 e.revenue 不受影響）
+  if (req.query?.slotex || req.query?.slotexset) {
+    const mk = (process.env.MENU_PROBE_KEY || '').trim()
+    const qk = String(req.query.slotex || req.query.slotexset || '')
+    if (!mk || qk !== mk) return res.status(403).json({ ok: false })
+    const st = String(req.query.store || 'ground') === 'abeach' ? 'abeach' : 'ground'
+    const doc = (await kvGet('sp_finance_pm_pos_slotex')) || {}
+    doc[st] = Array.isArray(doc[st]) ? doc[st] : []
+    if (req.query.slotexset) {
+      const dt = String(req.query.date || '')
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(dt)) return res.status(400).json({ ok: false, error: '要 date=YYYY-MM-DD' })
+      if (String(req.query.op || 'add') === 'del') doc[st] = doc[st].filter(d => d !== dt)
+      else if (!doc[st].includes(dt)) doc[st].push(dt)
+      await kvPut('sp_finance_pm_pos_slotex', doc, '時段排除日')
+      await announceChanged()
+    }
+    return res.status(200).json({ ok: true, store: st, dates: doc[st] })
+  }
   // 手動回填口（POST＋金鑰，張良 2026-08-24：喬亞POS寄信開通前，回填不用再部署）：
   // POST ?ingest=<MENU_PROBE_KEY>，body={records:[record…]}，record 形狀同日結信入庫（date/store/revenue/…/_details 選填）
   // 同一條只增不改管線：id 與 日期|店 都去重，之後寄信自動化來了也不會撞
@@ -1332,8 +1351,11 @@ export default async function handler(req, res) {
       return sq && mains ? Math.round(sq / mains * 100) : null
     })
     // 時段平均（近30天，分平日/週末；GD 才有）
+    // 🚫 排除包場/非常態大單日（張良 2026-10-08：10/4 包場 76,500 不進時段平均/熱力圖，但仍計入總營收）：清單 sp_finance_pm_pos_slotex.dates
+    const slotEx = new Set(((await kvGet('sp_finance_pm_pos_slotex')) || {})[storeQ] || [])
     const hourAgg = { wk: {}, we: {} }, hourN = { wk: 0, we: 0 }
     for (const e of w30) {
+      if (slotEx.has(e.date)) continue // 包場日不算進時段平均
       const sheet = ((dayDet2(e.date) || {}).sheets || {})['時段分析(每小時)']
       const rows2 = Array.isArray(sheet) && sheet[0] ? (sheet[0].rows || []) : []
       if (!rows2.length) continue
@@ -1353,6 +1375,7 @@ export default async function handler(req, res) {
     const fromHD = dOf(anchor, -120)
     for (const e of entries) {
       if (e.date < fromHD) continue
+      if (slotEx.has(e.date)) continue // 包場日不進熱力圖（那格隱藏）
       const sheet = ((dayDet2(e.date) || {}).sheets || {})['時段分析(每小時)']
       const rows3 = Array.isArray(sheet) && sheet[0] ? (sheet[0].rows || []) : []
       if (!rows3.length) continue
@@ -4430,6 +4453,98 @@ export default async function handler(req, res) {
     else { const hr = Number(bh.hour); if (isNaN(hr) || hr < 0 || hr > 23) return res.status(400).json({ ok: false, error: '時段 0-23' }); if (bh.hide) hd[storeH][hr] = 1; else delete hd[storeH][hr] }
     await kvPut('sp_finance_pm_heat_hide', hd, '熱力圖隱藏' + storeH + '(' + whoH.name + ')')
     return res.status(200).json({ ok: true, heatHide: hd[storeH] })
+  }
+  // 📦 物料庫（張良 2026-10-08「把桑 api 叫貨資料建成物料庫：分廠商／物料類別／搜尋／進價波動紀錄分析／點進去看細部」）：
+  // 讀 boss 叫貨明細月檔 sp_finance_pm_boss_ordi_<YYYYMM>（boss-sync.js 每小時同步進來）→ 聚合成「物料 × 廠商 × 時間」的進價歷史。
+  // 🔴 boss 成本屬敏感內部資料（boss-api 紅線）→ 必須個人身分 me=token 守門，不走 /prep 內建看板金鑰直接給。
+  if (req.query?.matlib) {
+    const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
+    if (!ok2 || String(req.query.matlib) !== ok2) return res.status(403).json({ ok: false })
+    const meTk = String(req.query.me || '')
+    const meW = await sopWho(meTk)
+    if (!meW) return res.status(403).json({ ok: false, error: '物料成本屬內部資料，請先綁定身分（私訊 DD「登入碼」）' })
+    const todayM = new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10)
+    const mosM = (() => { const out = []; const d = new Date(todayM + 'T00:00:00Z'); for (let i = 0; i < 13; i++) { out.push(d.toISOString().slice(0, 7)); d.setUTCMonth(d.getUTCMonth() - 1) } return out })()
+    const [ordiDocs, catDoc] = await Promise.all([
+      Promise.all(mosM.map(m => kvGet('sp_finance_pm_boss_ordi_' + m.replace('-', '')))),
+      kvGet('sp_finance_pm_boss_matcat'),
+    ])
+    const catD = catDoc || { cats: [], map: {} }
+    const d30M = (() => { const d = new Date(todayM + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() - 29); return d.toISOString().slice(0, 10) })()
+    const normM = s => String(s || '').replace(/\s+/g, '').trim()
+    const items = {}, vend = {}, byMonth = {}
+    let rowCount = 0
+    for (const doc of ordiDocs) {
+      for (const r of Object.values((doc || {}).rows || {})) {
+        const nm = r.name || r.item || ''
+        if (!nm) continue
+        const date = String(r.ordered_at || r.created_at || '').slice(0, 10)
+        if (date.length < 10) continue
+        const key = normM(r.code) ? ('c:' + normM(r.code)) : ('n:' + normM(nm))
+        const price = (r.price == null || r.price === '') ? null : Number(r.price)
+        const qty = Number(r.qty) || 0
+        const amt = (r.amount == null || r.amount === '') ? (price != null ? price * qty : null) : Number(r.amount)
+        const supplier = (r.supplier || '').trim() || '（未填廠商）'
+        const status = r.order_status || r.status || ''
+        const appr = status === 'approved'
+        rowCount++
+        const o = items[key] || (items[key] = { key, name: nm, code: r.code || '', unit: r.unit || '', suppliers: {}, recs: [], qty30: 0, amt30: 0, n30: 0 })
+        o.name = nm; if (r.unit) o.unit = r.unit
+        o.suppliers[supplier] = (o.suppliers[supplier] || 0) + 1
+        o.recs.push({ d: date, s: supplier, q: qty, u: r.unit || '', p: price, a: amt == null ? null : Math.round(amt), st: status })
+        if (date >= d30M && appr) { o.qty30 += qty; if (amt != null) o.amt30 += amt; o.n30++ }
+        const v = vend[supplier] || (vend[supplier] = { name: supplier, amt30: 0, n30: 0, items: {}, last: '' })
+        v.items[key] = 1; if (date > v.last) v.last = date
+        if (date >= d30M && appr) { v.amt30 += (amt || 0); v.n30++ }
+        if (appr && amt != null) byMonth[date.slice(0, 7)] = (byMonth[date.slice(0, 7)] || 0) + amt
+      }
+    }
+    const itemsOut = Object.values(items).map(o => {
+      o.recs.sort((a, b) => (a.d < b.d ? -1 : (a.d > b.d ? 1 : 0)))
+      const priced = o.recs.filter(r => r.p != null && r.st === 'approved')
+      const first = priced[0], last = priced[priced.length - 1]
+      const prices = priced.map(r => r.p)
+      const lastP = last ? last.p : null, firstP = first ? first.p : null
+      return {
+        key: o.key, name: o.name, code: o.code, unit: o.unit, cat: catD.map[o.key] || '',
+        suppliers: Object.keys(o.suppliers),
+        lastPrice: lastP, lastDate: (o.recs[o.recs.length - 1] || {}).d || '',
+        firstPrice: firstP,
+        pctChg: (firstP && lastP != null && priced.length > 1) ? Math.round((lastP - firstP) / firstP * 1000) / 10 : null,
+        minP: prices.length ? Math.min(...prices) : null, maxP: prices.length ? Math.max(...prices) : null,
+        qty30: Math.round(o.qty30 * 10) / 10, amt30: Math.round(o.amt30), n30: o.n30, nRec: o.recs.length,
+        series: priced.map(r => ({ d: r.d, p: r.p, s: r.s })).slice(-80),
+        recs: o.recs.slice(-80),
+      }
+    }).sort((a, b) => b.amt30 - a.amt30)
+    const vendorsOut = Object.values(vend).map(v => ({ name: v.name, amt30: Math.round(v.amt30), n30: v.n30, nItems: Object.keys(v.items).length, last: v.last })).sort((a, b) => b.amt30 - a.amt30)
+    const canEditM = !!(await permWho(meTk, 'buy'))
+    return res.status(200).json({
+      ok: true, me: { name: meW.name, canEdit: canEditM },
+      items: itemsOut, vendors: vendorsOut, cats: catD.cats || [],
+      byMonth, months: mosM.slice().reverse(),
+      updatedAt: (ordiDocs.find(Boolean) || {}).updatedAt || null, rows: rowCount,
+    })
+  }
+  // 📦 物料庫分類管理（張良要「分類可自己增刪改」；UI 慣例）：POST ?matcat=<OPS_BOARD_KEY> {op, token, ...}；限採購權限
+  if (req.method === 'POST' && req.query?.matcat) {
+    const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
+    if (!ok2 || String(req.query.matcat) !== ok2) return res.status(403).json({ ok: false })
+    let bm = {}
+    try { bm = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
+    const whoM = await permWho(bm.token, 'buy')
+    if (!whoM) return res.status(403).json({ ok: false, error: permDeny() })
+    const doc = (await kvGet('sp_finance_pm_boss_matcat')) || { cats: [], map: {} }
+    doc.cats = doc.cats || []; doc.map = doc.map || {}
+    const op = bm.op
+    if (op === 'addcat') { const nm = String(bm.name || '').trim().slice(0, 20); if (!nm) return res.status(400).json({ ok: false, error: '分類名稱空白' }); if (!doc.cats.includes(nm)) doc.cats.push(nm) }
+    else if (op === 'delcat') { doc.cats = doc.cats.filter(c => c !== bm.name); for (const k of Object.keys(doc.map)) if (doc.map[k] === bm.name) delete doc.map[k] }
+    else if (op === 'rencat') { const nm = String(bm.to || '').trim().slice(0, 20); if (!nm) return res.status(400).json({ ok: false, error: '新名稱空白' }); doc.cats = doc.cats.map(c => (c === bm.name ? nm : c)); for (const k of Object.keys(doc.map)) if (doc.map[k] === bm.name) doc.map[k] = nm }
+    else if (op === 'setcat') { const keys = Array.isArray(bm.keys) ? bm.keys : [bm.key]; for (const k of keys) { if (!k) continue; if (bm.cat) doc.map[k] = String(bm.cat).slice(0, 20); else delete doc.map[k] } }
+    else if (op === 'order') { if (Array.isArray(bm.cats)) doc.cats = bm.cats.filter(c => typeof c === 'string').slice(0, 50) }
+    else return res.status(400).json({ ok: false, error: '未知操作' })
+    await kvPut('sp_finance_pm_boss_matcat', doc, '物料庫分類(' + whoM.name + ')')
+    return res.status(200).json({ ok: true, cats: doc.cats, map: doc.map })
   }
   // ⭐ 個人常用捷徑清單（v4.39.1 張良「手機版固定一行、每個人可編輯自己的常用清單」）：POST ?prepfav=<OPS_BOARD_KEY> {token, list}
   // 一人一份存 users[rid]＝跟人不跟裝置；只能改自己的、要綁定才存（未綁定前端自己存本機）
