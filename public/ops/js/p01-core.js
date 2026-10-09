@@ -58,7 +58,12 @@ async function heatHidePost(body){
 }
 function heatHideToggle(store, hr){ hr = Number(hr); const cur = !!(window._bd && window._bd.heatHide && window._bd.heatHide[hr]); heatHidePost({ store, hour: hr, hide: !cur }) }
 function heatShowAll(store){ heatHidePost({ store, all: true }) }
-function hardRefresh(){ try{ Object.keys(localStorage).filter(k=>k.startsWith('obt_')||k.startsWith('obc_')).forEach(k=>localStorage.removeItem(k)) }catch(_){} location.replace(location.pathname + '?r=' + Date.now()) } // v4.31.8 連本地快取一起清＝真的拿最新
+async function hardRefresh(){ // v4.70.14 ↻＝⌘+Shift+R 效果：清 localStorage/caches/SW ＋保留 ?me= 登入 ＋時間戳繞 html 快取
+  try{ Object.keys(localStorage).filter(k=>k.startsWith('obt_')||k.startsWith('obc_')).forEach(k=>localStorage.removeItem(k)) }catch(_){}
+  try{ if(window.caches&&caches.keys){ const ks=await caches.keys(); await Promise.all(ks.map(k=>caches.delete(k))) } }catch(_){}
+  try{ if(navigator.serviceWorker&&navigator.serviceWorker.getRegistrations){ const rs=await navigator.serviceWorker.getRegistrations(); await Promise.all(rs.map(r=>r.unregister())) } }catch(_){}
+  try{ const u=new URL(location.href); u.searchParams.set('r', Date.now()); location.replace(u.toString()) }catch(_){ location.replace(location.pathname + '?r=' + Date.now()) }
+}
 // 依目前分頁重畫（綁定後/操作後用）
 function taskEmbed(){ // v4.38.0 任務中心原生版：/ops/tasks.js tnPage()，資料同主App sp_team_ 雙向同步
   if (typeof tnPage === 'function') { tnPage(); return }

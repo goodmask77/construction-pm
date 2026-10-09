@@ -143,10 +143,10 @@ tr.rowGD td.hrmStick{background:#2A1C1D}
 <body>
 <div class="wrap">
   <!-- 品牌字標＝切店（張良 2026-09-21）；右上=⏰打卡＋🔄更新App（張良 2026-09-22：🔄不是只抓數據，是整個App重開、連新功能一起拿最新版） -->
-  <div class="brand" style="display:flex;align-items:center;justify-content:space-between">
+  <div class="brand" style="display:flex;align-items:center;gap:10px">
     <span><span id="bs-ground" class="bseg on" onclick="load('ground')">GROUN<b>:D</b></span><span id="bs-abeach" style="display:none" onclick="load('abeach')"></span></span>
-    <span id="meTop" onclick="hrmHint()" style="display:none;align-items:center;gap:6px;margin:0 auto 0 10px;cursor:default"></span>
-    <span style="display:flex;gap:6px"><button id="bindBtn" class="mini" style="display:none;font-size:14px;padding:5px 12px;font-weight:700" onclick="bindPrompt()" title="私訊 DD「登入碼」拿 4 位數填入">登入</button><button class="mini" style="font-size:14px;padding:5px 12px;font-weight:700;display:inline-flex;gap:5px;align-items:center" onclick="punchNow()" title="上下班打卡"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/></svg>打卡</button><button class="mini mbHide" style="padding:5px 10px;display:inline-flex;align-items:center" onclick="mobilePreview()" title="手機版畫面預覽">📱</button><button class="mini" style="padding:5px 10px;display:inline-flex;align-items:center" onclick="hardRefresh()" title="更新App到最新版"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M20 12a8 8 0 1 1-2.34-5.66"/><path d="M20 3v4h-4"/></svg></button></span>
+    <span style="display:flex;gap:6px"><button id="bindBtn" class="mini" style="display:none;font-size:14px;padding:5px 12px;font-weight:700" onclick="bindPrompt()" title="私訊 DD「登入碼」拿 4 位數填入">登入</button><button class="mini" style="font-size:14px;padding:5px 12px;font-weight:700;display:inline-flex;gap:5px;align-items:center" onclick="punchNow()" title="上下班打卡"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/></svg>打卡</button><button class="mini mbHide" style="padding:5px 10px;display:inline-flex;align-items:center" onclick="mobilePreview()" title="手機版畫面預覽">📱</button><button class="mini" style="padding:5px 10px;display:inline-flex;align-items:center" onclick="hardRefresh()" title="更新App到最新版（清快取拿最新）"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M20 12a8 8 0 1 1-2.34-5.66"/><path d="M20 3v4h-4"/></svg></button></span>
+    <span id="meTop" onclick="hrmHint()" style="display:none;align-items:center;gap:6px;margin-left:auto;cursor:default"></span>
   </div>
   <!-- v4.41.3 張良「營運看板四個字電腦版也拿掉」：h1 整個退役（手機版 v4.40.3 先藏、這次連桌機一起） -->
   <div class="sub" id="upd">載入中…</div>
@@ -180,7 +180,7 @@ tr.rowGD td.hrmStick{background:#2A1C1D}
   <div class="foot">資料每天自動同步（打開即最新）・僅供內部參考與備料使用，請勿外傳連結</div>
 </div>
 <!-- v4.40.0 拆檔（張良「現在先拆好」）：原單一大 script 依原順序切 10 塊，共用全域、順序＝執行順序，新增功能寫新檔別再疊回大檔 -->
-<script src="/ops/js/p01-core.js?v=4703"></script>
+<script src="/ops/js/p01-core.js?v=4722"></script>
 <script src="/ops/js/p02-sop.js?v=4711"></script>
 <script src="/ops/js/p03-sopedit.js?v=4660"></script>
 <script src="/ops/js/p04-inv-meet.js?v=4560"></script>
