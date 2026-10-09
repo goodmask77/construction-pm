@@ -366,6 +366,15 @@ function renderBoard(d, store, view){
         hh += `</tr>`
       })
       if (!hrsVis.length) hh += `<tr><td colspan="${cols.length+2}" class="mut" style="text-align:center;padding:14px">目前沒有要顯示的時段</td></tr>`
+      // 總計列（張良 2026-10-10「最底下要有總營收、跟每日營收核對要正確」）：每日欄＝該日全日營收（取每日數據表同源 rev＝保證核對一致）、平均欄＝這些日營收平均
+      if (hrsVis.length) {
+        const revByDate = {}; (d.days||[]).forEach(e=>{ revByDate[e.date] = Number(e.rev)||0 })
+        const dayRevs = cols.map(dt=>revByDate[dt]||0).filter(v=>v>0)
+        const avgRev = dayRevs.length ? Math.round(dayRevs.reduce((a,b)=>a+b,0)/dayRevs.length) : 0
+        hh += `<tr style="border-top:2px solid var(--line,#8886);font-weight:800"><td style="position:sticky;left:0;z-index:1;background:var(--soft);font-weight:800;white-space:nowrap">日營收</td><td style="text-align:right;padding:6px 8px;background:var(--psoft,var(--soft));color:var(--pdark,var(--ink));font-weight:800" title="有時段資料那幾天的每日營收平均">${avgRev?avgRev.toLocaleString():'—'}</td>`
+        hh += cols.map(dt=>{ const rv=revByDate[dt]||0; return `<td style="text-align:right;padding:6px 8px;font-variant-numeric:tabular-nums;font-weight:800" title="${dt.slice(5)} 全日營收（與每日數據核對）">${rv?rv.toLocaleString():'—'}</td>` }).join('')
+        hh += `</tr>`
+      }
       hh += `</tbody></table></div></section>`
       h += hh
     } else {
