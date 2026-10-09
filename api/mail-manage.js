@@ -290,6 +290,6 @@ export default async function handler(req, res) {
     if (action === 'recover') return res.status(200).json({ ok: true, ...(await doRecover(req.query?.uids)) })
     return res.status(200).json({ ok: false, error: '未知 action' })
   } catch (e) {
-    return res.status(200).json({ ok: false, error: e?.message || String(e) })
+    return res.status(200).json({ ok: false, error: e?.message || String(e), code: e?.code, resp: e?.responseText, cmd: e?.command, at: (e?.stack || '').split('\n').slice(1, 3).join(' | ') })
   }
 }
