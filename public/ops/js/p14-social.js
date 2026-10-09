@@ -5,6 +5,7 @@
   const nf = n => Math.round(n || 0).toLocaleString()
   const ST = { draft: ['草稿', '#8C98A8'], pending_review: ['待審核', '#E8A657'], approved: ['已核准待發', '#4DA3FF'], publishing: ['發布中', '#4DA3FF'], published: ['已發布', '#3DBE6C'], failed: ['失敗', '#F07373'], rejected: ['已退回', '#F07373'] }
   let DATA = null, subTab = 'dash', editId = null, editMedia = [], soDrill = {}, platFilter = 'all'
+  let connEditOn = false // 連接卡「編輯」模式：預設藏操作鈕（連接/斷開/✕/編號），按編輯才顯示
   let genStyle = 'warm', genLang = 'zh', genLen = 'medium', genVers = [] // AI 生成文案：風格／語言／長度／最近 5 版
   const STYLES = [['warm', '溫馨日常'], ['promo', '促銷強打'], ['chic', '文青質感'], ['fun', '活潑俏皮'], ['pro', '專業正式']]
   const LANGS = [['zh', '繁中'], ['en', '英文'], ['bi', '中英雙語']]
@@ -77,18 +78,19 @@
     const isAdmin = !!(d.me && d.me.admin) // 連接/移除粉專＝敏感操作，只有管理者能看能按
     if (!d.metaReady) return `<section><b>尚未啟用</b><div class="hint" style="margin-top:6px">系統還沒設定 Meta App（這步 CC 做）。設定好後這裡會出現「連接 Facebook」按鈕。</div></section>`
     const pages = (a && a.pages) || []
+    const showEdit = isAdmin && connEditOn // 編輯模式才顯示操作鈕
     if (pages.length) {
       const rows = pages.map(p => {
         const bad = p.tokenStatus === 'invalid'
-        return `<div style="display:flex;align-items:center;gap:8px"><b style="color:${bad ? '#F07373' : '#3DBE6C'}">${bad ? '⚠' : '●'}</b> <b>${esc(p.pageName || '')}</b>${bad ? '<span class="hint">（授權失效，請重新連接）</span>' : ''}${p.igUserId ? '<span class="hint" style="font-size:11px">IG已連結</span>' : ''}${isAdmin ? `<span onclick="_socialDelPage('${p.pageId}','${esc(p.pageName || '').replace(/'/g, '')}')" style="cursor:pointer;color:var(--muted);font-weight:700;margin-left:4px" title="從這裡移除（不影響粉專本身）">✕</span>` : ''}</div>`
+        return `<div style="display:flex;align-items:center;gap:8px"><b style="color:${bad ? '#F07373' : '#3DBE6C'}">${bad ? '⚠' : '●'}</b> <b>${esc(p.pageName || '')}</b>${bad ? '<span class="hint">（授權失效，請重新連接）</span>' : ''}${p.igUserId ? '<span class="hint" style="font-size:11px">IG已連結</span>' : ''}${showEdit ? `<span onclick="_socialDelPage('${p.pageId}','${esc(p.pageName || '').replace(/'/g, '')}')" style="cursor:pointer;color:var(--muted);font-weight:700;margin-left:4px" title="從這裡移除（不影響粉專本身）">✕</span>` : ''}</div>`
       }).join('')
       return `<section>
         <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px;flex-wrap:wrap">
           <div style="display:flex;flex-direction:column;gap:6px">${rows}</div>
-          <div style="display:flex;gap:6px">${isAdmin ? `<button class="mini" onclick="_socialConnect()">＋ 連接其他粉專</button><button class="mini" onclick="_socialDisconnect()">全部斷開</button>` : ''}</div>
+          <div style="display:flex;gap:6px">${showEdit ? `<button class="mini" onclick="_socialConnect()">＋ 連接其他粉專</button><button class="mini" onclick="_socialDisconnect()">全部斷開</button><button class="mini on" onclick="_socialConnEdit()">✓ 完成</button>` : (isAdmin ? `<button class="mini" onclick="_socialConnEdit()">✎ 編輯</button>` : '')}</div>
         </div>
-        ${isAdmin ? '<div class="hint" style="margin-top:8px">要加別人管理的粉專（如同事管的 GROUN:D）：請那位同事用「他的 FB」按「＋ 連接其他粉專」登入即可，不會蓋掉現有的。</div>' : ''}
-        ${isAdmin ? addByIdRow() : ''}
+        ${showEdit ? '<div class="hint" style="margin-top:8px">要加別人管理的粉專（如同事管的 GROUN:D）：請那位同事用「他的 FB」按「＋ 連接其他粉專」登入即可，不會蓋掉現有的。</div>' : ''}
+        ${showEdit ? addByIdRow() : ''}
       </section>`
     }
     return `<section style="text-align:center;padding:22px">
@@ -123,6 +125,7 @@
   window._socialSub = function (t) { subTab = t; socialRender() }
   window._socialPlat = function (f) { platFilter = f; socialRender() }
 
+  window._socialConnEdit = function () { connEditOn = !connEditOn; socialRender() }
   window._socialConnect = function () {
     if (!TK()) { alert('請先登入（右上「登入」），再連接粉專'); return }
     location.href = '/api/social-oauth?start=' + encodeURIComponent(TK())
