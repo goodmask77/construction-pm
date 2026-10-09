@@ -137,9 +137,10 @@ export async function eatsDayRecord(date, kvGet) {
     return ''
   }
   for (const p of (dr.paymentType || [])) {
-    const n = pickName(p?.paymentMethodName) || pickName(p?.name) || pickName(p?.paymentMethod) || pickName(p?.type) || ''
+    // 名稱可能沒設顯示名、只有內部代碼（如 NON_INTEGRATED_CASH / NON_INTEGRATED_CREDIT）→ 連代碼欄位一起抓，代碼也能 regex 分類
+    const n = pickName(p?.paymentMethodName) || pickName(p?.name) || pickName(p?.paymentMethod) || pickName(p?.paymentMethodCode) || pickName(p?.code) || pickName(p?.paymentCode) || pickName(p?.methodCode) || pickName(p?.paymentMethodType) || pickName(p?.type) || ''
     const amt = Math.round(Number(p?.netSales ?? p?.amount ?? p?.sales ?? p?.total ?? p?.value ?? 0) || 0)
-    payRaw.push({ n: String(n), amt })
+    payRaw.push({ n: String(n), amt, _k: Object.keys(p || {}) })
     if (!amt) continue
     if (/現金|cash/i.test(n)) pay.cash += amt
     else if (/line\s*pay/i.test(n)) pay.linepay += amt
