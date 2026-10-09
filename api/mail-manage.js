@@ -4,6 +4,10 @@
 // cron-daily 每天 apply（新信寄來→依張良的設定自動處理）。keep 規則=白名單，永不動。
 import { ImapFlow } from 'imapflow'
 
+// 🛑 全域暫停開關（張良 2026-10-09）：郵件管理功能全停，不再自動刪/移任何信，避免誤刪 Meta 等確認信。
+// 要重新啟用：把下面改回 false，並恢復 vercel.json / cron-daily.js 的定時任務。
+const MAIL_MANAGE_PAUSED = true
+
 const clean = (v) => (v || '').trim().replace(/^["']|["']$/g, '').replace(/^[A-Za-z0-9_]+=/, '').trim()
 const SB_URL = clean(process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL)
 const SB_KEY = (process.env.SUPABASE_SERVICE_ROLE_KEY || '').trim()
@@ -226,6 +230,7 @@ export default async function handler(req, res) {
   if (!MU || !MP) return res.status(200).json({ ok: false, error: '缺信箱憑證' })
   const action = String(req.query?.action || 'apply') // cron 每小時直打不帶參數＝套用規則
   const days = Math.min(3650, Math.max(1, parseInt(req.query?.days || (action === 'scan' ? '90' : '2'), 10) || 2))
+  if (MAIL_MANAGE_PAUSED) return res.status(200).json({ ok: true, paused: true, moved: 0, note: '郵件管理已全域暫停，不會刪/移任何信' })
   try {
     if (action === 'scan') return res.status(200).json({ ok: true, ...(await doScan(days)) })
     if (action === 'apply') return res.status(200).json({ ok: true, ...(await doApply(days)) })

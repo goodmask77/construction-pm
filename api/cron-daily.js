@@ -354,7 +354,7 @@ export default async function handler(req, res) {
     const syncOne = async (label, url) => { try { const r = await fetch(url); if (!r.ok) syncErrs.push(`${label} ${r.status}`) } catch (e) { syncErrs.push(`${label} ${e?.message || 'fail'}`) } }
     await syncOne('sheet-sync', 'https://ground-pm.vercel.app/api/sheet-sync') // 對帳中心：公司帳務試算表
     await syncOne('mail-sync', 'https://ground-pm.vercel.app/api/mail-sync?days=10') // 自動收信：中信 e-Cash + Eats365 POS 日結
-    await syncOne('mail-manage', 'https://ground-pm.vercel.app/api/mail-manage?action=apply&days=7') // 信箱管理規則
+    // await syncOne('mail-manage', 'https://ground-pm.vercel.app/api/mail-manage?action=apply&days=7') // 🛑 信箱管理已全域暫停（張良 2026-10-09）：避免誤刪確認信
     if (syncErrs.length) console.log('cron-daily sync errors:', syncErrs.join('; '))
   }
   if (!TOKEN) return res.status(200).json({ ok: false, skipped: '未設 LINE_CHANNEL_ACCESS_TOKEN' })
