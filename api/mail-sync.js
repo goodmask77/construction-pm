@@ -4626,6 +4626,38 @@ export default async function handler(req, res) {
     const outS = Object.entries(vendS).map(([name, v]) => ({ name, n: v.n, top: Object.entries(v.items).sort((a, b) => b[1] - a[1]).slice(0, 30).map(x => x[0]) })).sort((a, b) => b.n - a.n)
     return res.status(200).json({ ok: true, vendors: outS, curVcats: curS.vcats || [], curVmap: curS.vmap || {} })
   }
+  // 📄 物料庫-叫貨單檢視（張良 2026-10-10「有物料庫那應該找得到每張訂單」）：
+  // 讀 boss 訂單單頭 ord_<YYYYMM> ＋ 明細 ordi_<YYYYMM>，用 order_id 組成「每張叫貨單＋其明細」。
+  // 🔴 成本敏感 → me 身分守門，不走裸金鑰。
+  if (req.query?.matord) {
+    const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
+    if (!ok2 || String(req.query.matord) !== ok2) return res.status(403).json({ ok: false })
+    const meTk = String(req.query.me || '')
+    const meW = await sopWho(meTk)
+    if (!meW) return res.status(403).json({ ok: false, error: '叫貨單屬內部成本資料，請先綁定身分（私訊 DD「登入碼」）' })
+    const todayO = new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10)
+    const mosO = (() => { const out = []; const d = new Date(todayO + 'T00:00:00Z'); for (let i = 0; i < 13; i++) { out.push(d.toISOString().slice(0, 7)); d.setUTCMonth(d.getUTCMonth() - 1) } return out })()
+    const tpeDay = s => { const t = Date.parse(String(s || '')); return isNaN(t) ? '' : new Date(t + 8 * 3600e3).toISOString().slice(0, 10) }
+    const [ordDocs, ordiDocs] = await Promise.all([
+      Promise.all(mosO.map(m => kvGet('sp_finance_pm_boss_ord_' + m.replace('-', '')))),
+      Promise.all(mosO.map(m => kvGet('sp_finance_pm_boss_ordi_' + m.replace('-', '')))),
+    ])
+    const orders = {}
+    for (const doc of ordDocs) for (const r of Object.values((doc || {}).rows || {})) {
+      if (!r.order_id) continue
+      orders[r.order_id] = { id: r.order_id, date: tpeDay(r.created_at), supplier: (r.supplier || '').trim() || '（未填廠商）', dept: r.dept || '', status: r.status || '', total: Number(r.total_amount) || 0, lineCount: Number(r.line_count) || 0, unpriced: Number(r.unpriced_lines) || 0, items: [] }
+    }
+    for (const doc of ordiDocs) for (const r of Object.values((doc || {}).rows || {})) {
+      const oid = r.order_id; if (!oid) continue
+      let o = orders[oid]
+      if (!o) o = orders[oid] = { id: oid, date: tpeDay(r.ordered_at), supplier: (r.supplier || '').trim() || '（未填廠商）', dept: r.dept || '', status: r.order_status || '', total: 0, lineCount: 0, unpriced: 0, items: [], _fi: 1 } // 單頭缺→用明細補一張
+      o.items.push({ name: r.name || r.item || '', code: r.code || '', qty: Number(r.qty) || 0, unit: r.unit || '', price: (r.price == null || r.price === '') ? null : Number(r.price), amount: (r.amount == null || r.amount === '') ? null : Math.round(Number(r.amount)), st: r.order_status || '' })
+      if (o._fi) { o.total += (Number(r.amount) || 0); o.lineCount = o.items.length }
+    }
+    const outO = Object.values(orders).map(o => { delete o._fi; o.total = Math.round(o.total); return o }).sort((a, b) => (a.date < b.date ? 1 : (a.date > b.date ? -1 : 0)))
+    const canEditO = !!(await permWho(meTk, 'buy'))
+    return res.status(200).json({ ok: true, me: { name: meW.name, canEdit: canEditO }, orders: outO, months: mosO.slice().reverse(), updatedAt: (ordDocs.find(Boolean) || {}).updatedAt || null })
+  }
   // ⭐ 個人常用捷徑清單（v4.39.1 張良「手機版固定一行、每個人可編輯自己的常用清單」）：POST ?prepfav=<OPS_BOARD_KEY> {token, list}
   // 一人一份存 users[rid]＝跟人不跟裝置；只能改自己的、要綁定才存（未綁定前端自己存本機）
   if (req.method === 'POST' && req.query?.prepfav) {

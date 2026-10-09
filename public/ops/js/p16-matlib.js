@@ -8,6 +8,8 @@
   const money = n => 'NT$' + nf(n)
   const COL = { b: '#4DA3FF', g: '#3DBE6C', o: '#E8A657', y: '#E8C14E', p: '#B48CF2', r: '#F07373' }
   let MDATA = null, mSub = 'dash', mVendF = 'all', mVcatF = 'all', mCatF = 'all', mQ = '', mSort = 'amt30', mCatMng = false
+  let MORD = null, mOrdStat = 'all', mOrdQ = '' // 叫貨單分頁（lazy load）
+  const OST = { approved: ['已核准', '#3DBE6C'], pending: ['待審', '#E8A657'], rejected: ['退回', '#F07373'] }
 
   window.matlibLoad = async function () {
     curStore = 'matlib'; try { setTabs('matlib') } catch (_) {}
@@ -82,6 +84,7 @@
     h += `<div style="display:flex;gap:8px;margin:16px 0 4px;flex-wrap:wrap;align-items:center">`
       + `<button class="mini ${mSub === 'dash' ? 'on' : ''}" onclick="_mSub('dash')">📊 波動分析</button>`
       + `<button class="mini ${mSub === 'list' ? 'on' : ''}" onclick="_mSub('list')">📋 物料清單</button>`
+      + `<button class="mini ${mSub === 'ord' ? 'on' : ''}" onclick="_mSub('ord')">📄 叫貨單</button>`
       + (d.me && d.me.canEdit ? `<button class="mini ${mCatMng ? 'on' : ''}" style="margin-left:auto" onclick="_mCatMngTog()">🏷 管理分類</button>` : '')
       + `</div>`
     if (d.me && d.me.canEdit && mCatMng) h += catMngCard()
@@ -95,7 +98,7 @@
 
   function mBody () {
     const el = document.getElementById('matBody'); if (!el) return
-    el.innerHTML = (mSub === 'dash') ? dashView() : listView()
+    el.innerHTML = (mSub === 'dash') ? dashView() : (mSub === 'ord' ? ordView() : listView())
   }
 
   // ── 篩選列（廠商／分類／搜尋）──
@@ -342,6 +345,73 @@
   window._mVendSetCat = async function (name, cat) {
     const j = await mcPost({ op: 'setcat', kind: 'vendor', key: name, cat })
     if (j && j.ok) { const v = (MDATA.vendors || []).find(x => x.name === name); if (v) v.cat = cat; MDATA.vcats = j.vcats } else alert((j && j.error) || '沒權限或存檔失敗')
+  }
+
+  // ── 叫貨單分頁（lazy load；張良 2026-10-10「有物料庫那應該找得到每張訂單」）──
+  async function fetchOrders () {
+    try {
+      const r = await fetch('/api/mail-sync?matord=' + encodeURIComponent(K) + (TK() ? '&me=' + encodeURIComponent(TK()) : '') + '&r=' + Date.now())
+      const d = await r.json()
+      MORD = (d && d.ok) ? d : { orders: [], err: (d && d.error) || '讀取失敗' }
+    } catch (e) { MORD = { orders: [], err: '連線問題' } }
+    if (mSub === 'ord') mBody()
+  }
+  function ordView () {
+    if (!MORD) { fetchOrders(); return '<section><div class="hint" style="padding:22px">載入叫貨單中…</div></section>' }
+    if (MORD.err) return '<section><div class="err">' + esc(MORD.err) + '</div>' + (/綁定|登入|身分/.test(MORD.err) ? '<div class="hint" style="margin-top:10px">叫貨單是內部成本資料，要先登入才看得到。</div>' : '') + '</section>'
+    const orders = MORD.orders || []
+    let h = '<section style="padding:12px">'
+    h += `<input value="${esc(mOrdQ)}" oninput="_mOrdSearch(this.value)" placeholder="🔍 搜尋廠商／品項／日期…" style="width:100%;border:1px solid var(--line);border-radius:10px;padding:9px 12px;margin-bottom:10px">`
+    h += `<div style="display:flex;gap:6px;flex-wrap:wrap">`
+      + `<button class="mini ${mOrdStat === 'all' ? 'on' : ''}" onclick="_mOrdStatF('all')">全部 ${orders.length}</button>`
+      + ['approved', 'pending', 'rejected'].map(s => { const n = orders.filter(o => o.status === s).length; return `<button class="mini ${mOrdStat === s ? 'on' : ''}" onclick="_mOrdStatF('${s}')">${OST[s][0]} ${n}</button>` }).join('')
+      + `</div><div id="matOrdList" style="margin-top:10px">` + orderTable() + '</div></section>'
+    return h
+  }
+  function orderFilt () {
+    const q = mOrdQ.toLowerCase()
+    return (MORD.orders || []).filter(o => {
+      if (mOrdStat !== 'all' && o.status !== mOrdStat) return false
+      if (q && !((o.supplier || '').toLowerCase().includes(q) || (o.date || '').includes(q) || (o.items || []).some(it => (it.name || '').toLowerCase().includes(q)))) return false
+      return true
+    })
+  }
+  function orderTable () {
+    const list = orderFilt()
+    if (!list.length) return '<div class="hint" style="padding:16px">沒有符合的叫貨單。</div>'
+    let h = `<div class="hint" style="margin-bottom:8px">共 ${list.length} 張（點任一張看明細）</div><div class="scroll"><table class="tight" style="min-width:520px"><thead><tr><th style="text-align:left">日期</th><th style="text-align:left">廠商</th><th>品項</th><th>金額</th><th>狀態</th></tr></thead><tbody>`
+    for (const o of list) {
+      const st = OST[o.status] || [o.status || '—', 'var(--muted)']
+      h += `<tr onclick="_mOrdDetail('${esc(o.id).replace(/'/g, '&#39;')}')" style="cursor:pointer">`
+        + `<td style="text-align:left">${o.date || '—'}</td>`
+        + `<td style="text-align:left"><div class="iname" style="max-width:none">${esc(o.supplier)}</div>${o.dept ? `<span class="hint" style="font-size:11px">${esc(o.dept)}</span>` : ''}</td>`
+        + `<td>${o.lineCount || (o.items || []).length}</td>`
+        + `<td>${o.total ? nf(o.total) : '—'}${o.unpriced ? `<span class="hint" style="font-size:10px"> ${o.unpriced}無價</span>` : ''}</td>`
+        + `<td><span style="color:${st[1]};font-weight:800">${st[0]}</span></td></tr>`
+    }
+    return h + '</tbody></table></div>'
+  }
+  window._mOrdStatF = function (s) { mOrdStat = s; const el = document.getElementById('matOrdList'); if (el) el.innerHTML = orderTable() }
+  window._mOrdSearch = function (v) { mOrdQ = v; const el = document.getElementById('matOrdList'); if (el) el.innerHTML = orderTable() }
+  window._mOrdDetail = function (id) {
+    const o = (MORD.orders || []).find(x => x.id === id); if (!o) return
+    const st = OST[o.status] || [o.status || '—', 'var(--muted)']
+    const rows = (o.items || []).map(it => `<tr${it.st && it.st !== 'approved' ? ' style="opacity:.55"' : ''}><td style="text-align:left">${esc(it.name)}${it.code ? `<span class="hint" style="font-size:10px"> #${esc(it.code)}</span>` : ''}</td><td>${it.qty ? nf(it.qty) : '—'}${it.unit ? `<span class="hint" style="font-size:10px">${esc(it.unit)}</span>` : ''}</td><td>${it.price != null ? it.price : '—'}</td><td>${it.amount != null ? nf(it.amount) : '—'}</td></tr>`).join('')
+    const ov = document.createElement('div'); ov.id = 'mOrdOv'
+    ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.62);z-index:70;display:flex;align-items:center;justify-content:center;padding:16px'; ov.onclick = () => ov.remove()
+    ov.innerHTML = `<div onclick="event.stopPropagation()" style="background:var(--card);border:1px solid var(--line);border-radius:16px;max-width:560px;width:100%;max-height:88vh;overflow:auto;padding:18px">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px">
+        <div><div style="font-size:18px;font-weight:800;color:var(--ink)">${esc(o.supplier)}</div>
+        <div class="hint" style="margin-top:3px">${o.date || ''}${o.dept ? '　' + esc(o.dept) : ''}　<span style="color:${st[1]};font-weight:700">${st[0]}</span></div></div>
+        <button class="mini" onclick="document.getElementById('mOrdOv').remove()">關閉</button></div>
+      <div style="display:flex;gap:18px;margin:14px 0;background:#1C222B;border-radius:12px;padding:14px">
+        <div style="text-align:center;flex:1"><div style="font-size:21px;font-weight:800;color:#3DBE6C;font-variant-numeric:tabular-nums">${nf(o.total)}</div><div class="hint" style="font-size:12px">訂單金額</div></div>
+        <div style="text-align:center;flex:1"><div style="font-size:21px;font-weight:800;color:var(--ink);font-variant-numeric:tabular-nums">${o.lineCount || (o.items || []).length}</div><div class="hint" style="font-size:12px">品項數</div></div>
+      </div>
+      <h2 style="margin:4px 0 8px;font-size:15px">🧾 明細</h2>
+      <div class="scroll"><table class="tight" style="min-width:380px"><thead><tr><th style="text-align:left">品項</th><th>數量</th><th>單價</th><th>金額</th></tr></thead><tbody>${rows || '<tr><td colspan="4" class="hint">沒有明細</td></tr>'}</tbody></table></div>
+    </div>`
+    document.body.appendChild(ov)
   }
 
   // 深層連結：DD 通知點 /prep#matlib → 自動開
