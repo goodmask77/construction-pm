@@ -252,7 +252,7 @@ function renderBoard(d, store, view){
   const avAvg = (()=>{ const tr=dvAvg.reduce((s2,x)=>s2+(x.rev||0),0), tt=dvAvg.reduce((s2,x)=>s2+(x.tx||0),0); return tt?tr/tt:null })()
   const avCash = mean(x=>x.cash), avCard = mean(x=>x.card), avLp = mean(x=>x.linepay||null), avUb = mean(x=>x.uber||null), avDis = mean(x=>x.discount||null)
   const avKp = isGD?mean(x=>x.kioskPct):null, avTk = isGD?mean(x=>x.takePct):null
-  const avSet = isGD?(()=>{ const a=(d.setPcts||[]).filter(v=>v!=null); return a.length?a.reduce((s2,v)=>s2+v,0)/a.length:null })():null
+  const avSet = isGD?(()=>{ const a=(d.days||[]).map((x,i)=>(inPer(x)&&!exSet.has(x.date))?(d.setPcts||[])[i]:null).filter(v=>v!=null); return a.length?a.reduce((s2,v)=>s2+v,0)/a.length:null })():null // v4.70.22 套餐%平均要跟「本月/上月」期間走（原本用全部41天→本月沒資料卻顯示8~9月的66%誤導）
   const fN = v => v!=null ? Math.round(v).toLocaleString() : '—' // 去 NT$：數字乾淨版面
   const fP = v => v!=null?Math.round(v)+'%':'—'
   // 色階：跟該欄平均比，高=綠、低=紅，差越多越深（±3%內不上色）
