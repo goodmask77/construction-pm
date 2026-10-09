@@ -212,41 +212,69 @@
     if (editId !== null) h += editorHtml(posts.find(p => p.id === editId) || null)
     if (!posts.length) return h + '<section><div class="hint" style="padding:18px">還沒有貼文。連接粉專後，系統今晚起會自動把你粉專近 30 天的貼文抓進來。</div></section>'
     const canEd = d.canEdit
-    h += `<div class="hint" style="margin:2px 0 8px">共 ${posts.length} 則${platFilter !== 'all' ? '（只看 ' + (platFilter === 'ig' ? 'IG' : 'FB') + '）' : ''}・點任一列看詳情與完整數據</div>`
-    h += `<div style="overflow-x:auto;-webkit-overflow-scrolling:touch;border:1px solid var(--line);border-radius:12px">
-      <table style="width:100%;border-collapse:collapse;font-size:13px;min-width:520px">
-        <thead><tr style="background:#141A22;color:var(--muted);text-align:left">
-          <th style="padding:10px;font-weight:700">貼文</th>
-          <th style="padding:10px;font-weight:700;white-space:nowrap">平台</th>
-          <th style="padding:10px;font-weight:700;text-align:right;white-space:nowrap">FB 互動</th>
-          <th style="padding:10px;font-weight:700;text-align:right;white-space:nowrap">IG 互動</th>
-          <th style="padding:10px;font-weight:700;white-space:nowrap">狀態</th>
-          ${canEd ? '<th style="padding:10px;font-weight:700;white-space:nowrap">操作</th>' : ''}
+    const rows = flattenRows(posts)
+    const docShown = new Set()
+    const th = (label, right) => `<th style="padding:11px 12px;font-weight:600;white-space:nowrap${right ? ';text-align:right' : ''}">${label}</th>`
+    h += `<div class="hint" style="margin:2px 0 9px">共 ${rows.length} 筆・每則貼文依實際發佈的平台分列（同一則的重複紀錄已自動併一列）${platFilter !== 'all' ? '・只看 ' + (platFilter === 'ig' ? 'IG' : 'FB') : ''}・點任一列看完整數據</div>`
+    h += `<div style="overflow-x:auto;-webkit-overflow-scrolling:touch;border:1px solid var(--line);border-radius:14px;background:var(--card)">
+      <table style="width:100%;border-collapse:collapse;font-size:13px;min-width:940px">
+        <thead><tr style="background:#131A23;color:var(--muted);text-align:left;font-size:12px;letter-spacing:.3px">
+          ${th('帳號')}${th('貼文')}${th('平台')}${th('讚', 1)}${th('留言', 1)}${th('分享', 1)}${th('觸及', 1)}${th('收藏', 1)}${th('瀏覽', 1)}${th('互動', 1)}${th('狀態')}${th('日期')}${canEd ? th('操作') : ''}
         </tr></thead>
-        <tbody>${posts.map(p => postRow(p)).join('')}</tbody>
+        <tbody>${rows.map(r => { const first = !docShown.has(r.id); docShown.add(r.id); return rowHtml(r, canEd, first) }).join('')}</tbody>
       </table>
     </div>`
     return h
   }
 
-  // v4.70.23 內容庫改「表格」：一列一則貼文，FB／IG 互動並排，狀態一眼看完（原本卡片網格同一則會攤成多張、重複又亂）
-  function postRow(p) {
-    const d = DATA, st = ST[p.status] || ['', '#8C98A8']
-    const img = (p.media && p.media[0] && p.media[0].url) || ''
-    const interFb = p.metricsFb ? INTER(p.metricsFb) : null, interIg = p.metricsIg ? INTER(p.metricsIg) : null
-    let acts = ''
-    if (d.canEdit) {
-      if (p.status === 'draft' || p.status === 'rejected') acts = `<button class="mini" onclick="event.stopPropagation();_socialEdit('${p.id}')">編輯</button><button class="mini" onclick="event.stopPropagation();_socialSubmit('${p.id}')">送審</button><button class="mini" onclick="event.stopPropagation();_socialDel('${p.id}')">刪</button>`
-      else if (p.status === 'pending_review' && d.me && d.me.admin) acts = `${d.metaReady ? `<button class="mini on" style="background:#3DBE6C;border-color:transparent" onclick="event.stopPropagation();_socialApprovePublish('${p.id}')">🚀 核准並發</button>` : ''}<button class="mini" onclick="event.stopPropagation();_socialApprove('${p.id}','approve')">核准</button><button class="mini" onclick="event.stopPropagation();_socialApprove('${p.id}','reject')">退</button>`
+  const SHORT_BRAND = b => { b = (b || '').replace(/·IG$/, '').trim(); if (/beach/i.test(b)) return 'A Beach'; if (/groun/i.test(b)) return 'GROUN:D'; return b || '—' }
+  const FB_C = '#4D8BF0', IG_C = '#E1427E'
+
+  // v4.70.24 內容庫表格升級：攤平成「平台列」+ 用原生 postId/mediaId 去重（同一則的 App 發布筆與匯入筆併一列）、每個指標獨立欄、帳號欄、tabular 數字、配色對齊版面
+  function flattenRows(posts) {
+    const rows = [], seen = new Map()
+    for (const p of posts) {
+      const plats = []
+      if (p.metricsFb || (p.pub && p.pub.facebook)) plats.push('fb')
+      if (p.metricsIg || (p.pub && p.pub.instagram)) plats.push('ig')
+      if (!plats.length) postPlats(p).forEach(k => plats.push(k)) // 草稿/待審：看預定平台
+      for (const plat of plats) {
+        if (platFilter !== 'all' && platFilter !== plat) continue
+        const m = plat === 'fb' ? p.metricsFb : p.metricsIg
+        const pubp = p.pub && p.pub[plat === 'fb' ? 'facebook' : 'instagram']
+        const nativeId = pubp && (pubp.postId || pubp.mediaId)
+        const key = plat + ':' + (nativeId || 'doc:' + p.id)
+        const when = (pubp && pubp.publishedAt) || p.publishedAt || p.updatedAt || p.createdAt || ''
+        const row = { p, id: p.id, plat, brand: SHORT_BRAND(p.brand), caption: p.caption, media: p.media, status: p.status, metrics: m, when, hasM: !!m }
+        if (seen.has(key)) { const i = seen.get(key), o = rows[i]; if ((row.hasM && !o.hasM) || (row.hasM === o.hasM && row.when > o.when)) rows[i] = row }
+        else { seen.set(key, rows.length); rows.push(row) }
+      }
     }
-    const thumb = img ? `<img src="${esc(img)}" style="width:42px;height:42px;object-fit:cover;border-radius:8px;flex:0 0 auto">` : '<div style="width:42px;height:42px;border-radius:8px;background:#1C222B;flex:0 0 auto"></div>'
-    return `<tr onclick="_socialDetail('${p.id}')" style="border-top:1px solid var(--line);cursor:pointer">
-      <td style="padding:8px 10px"><div style="display:flex;gap:9px;align-items:center;min-width:0">${thumb}<div style="min-width:0"><div style="color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:360px">${esc((p.caption || '（無文字）').slice(0, 80))}</div>${(p.tags || []).length ? `<div class="hint" style="font-size:11px">#${esc(p.tags[0])}</div>` : ''}</div></div></td>
-      <td style="padding:8px 10px;white-space:nowrap">${platBadges(p)}</td>
-      <td style="padding:8px 10px;text-align:right;white-space:nowrap;font-weight:800;color:${interFb != null ? '#4D8BF0' : 'var(--muted)'}">${interFb != null ? nf(interFb) : '—'}</td>
-      <td style="padding:8px 10px;text-align:right;white-space:nowrap;font-weight:800;color:${interIg != null ? '#E1427E' : 'var(--muted)'}">${interIg != null ? nf(interIg) : '—'}</td>
-      <td style="padding:8px 10px;white-space:nowrap"><span style="color:${st[1]};font-weight:700;font-size:12px">● ${st[0]}</span></td>
-      ${d.canEdit ? `<td style="padding:8px 10px" onclick="event.stopPropagation()"><div style="display:flex;gap:4px;flex-wrap:wrap">${acts || '<span class="hint" style="font-size:11px">—</span>'}</div></td>` : ''}
+    rows.sort((a, b) => a.when < b.when ? 1 : a.when > b.when ? -1 : 0)
+    return rows
+  }
+
+  function rowHtml(r, canEd, showActs) {
+    const p = r.p, st = ST[p.status] || ['', '#8C98A8'], m = r.metrics
+    const pc = r.plat === 'ig' ? IG_C : FB_C
+    const img = (r.media && r.media[0] && r.media[0].url) || ''
+    const thumb = img ? `<img src="${esc(img)}" style="width:40px;height:40px;object-fit:cover;border-radius:8px;flex:0 0 auto">` : '<div style="width:40px;height:40px;border-radius:8px;background:#1C222B;flex:0 0 auto"></div>'
+    const num = (v, strong) => (v != null) ? `<td style="padding:9px 12px;text-align:right;font-variant-numeric:tabular-nums;color:${strong ? pc : 'var(--text)'};font-weight:${strong ? 800 : 600}">${nf(v)}</td>` : '<td style="padding:9px 12px;text-align:right;color:var(--muted)">—</td>'
+    const inter = m ? (m.reactions || 0) + (m.comments || 0) + (m.shares || 0) : null
+    const dt = r.when ? String(r.when).slice(5, 10).replace('-', '/') : '—'
+    let acts = ''
+    if (canEd && showActs) {
+      if (p.status === 'draft' || p.status === 'rejected') acts = `<button class="mini" onclick="event.stopPropagation();_socialEdit('${p.id}')">編輯</button><button class="mini" onclick="event.stopPropagation();_socialSubmit('${p.id}')">送審</button><button class="mini" onclick="event.stopPropagation();_socialDel('${p.id}')">刪</button>`
+      else if (p.status === 'pending_review' && DATA.me && DATA.me.admin) acts = `${DATA.metaReady ? `<button class="mini on" style="background:#3DBE6C;border-color:transparent" onclick="event.stopPropagation();_socialApprovePublish('${p.id}')">🚀 核准並發</button>` : ''}<button class="mini" onclick="event.stopPropagation();_socialApprove('${p.id}','approve')">核准</button><button class="mini" onclick="event.stopPropagation();_socialApprove('${p.id}','reject')">退</button>`
+    }
+    return `<tr onclick="_socialDetail('${p.id}')" style="border-top:1px solid var(--line);cursor:pointer" onmouseover="this.style.background='rgba(255,255,255,.03)'" onmouseout="this.style.background=''">
+      <td style="padding:9px 12px;white-space:nowrap"><span style="display:inline-block;padding:3px 9px;border-radius:999px;background:rgba(255,255,255,.05);border:1px solid var(--line);font-size:12px;font-weight:600">${esc(r.brand)}</span></td>
+      <td style="padding:9px 12px"><div style="display:flex;gap:10px;align-items:center;min-width:0">${thumb}<div style="min-width:0;max-width:340px"><div style="color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc((r.caption || '（無文字）').slice(0, 70))}</div>${(p.tags || []).length ? `<div class="hint" style="font-size:11px;margin-top:2px">#${esc(p.tags[0])}</div>` : ''}</div></div></td>
+      <td style="padding:9px 12px;white-space:nowrap"><span style="display:inline-block;padding:3px 10px;border-radius:999px;background:${r.plat === 'ig' ? 'rgba(225,66,126,.15)' : 'rgba(77,139,240,.15)'};color:${pc};font-size:11px;font-weight:800">${r.plat === 'ig' ? 'IG' : 'FB'}</span></td>
+      ${num(m && m.reactions)}${num(m && m.comments)}${num(m && m.shares)}${num(m && m.reach)}${num(m && m.saves)}${num(m && m.views)}${num(inter, true)}
+      <td style="padding:9px 12px;white-space:nowrap"><span style="color:${st[1]};font-weight:700;font-size:12px">● ${st[0]}</span></td>
+      <td style="padding:9px 12px;white-space:nowrap;color:var(--muted);font-size:12px;font-variant-numeric:tabular-nums">${dt}</td>
+      ${canEd ? `<td style="padding:9px 12px" onclick="event.stopPropagation()"><div style="display:flex;gap:4px;flex-wrap:wrap">${acts || '<span class="hint" style="font-size:11px">—</span>'}</div></td>` : ''}
     </tr>`
   }
 
