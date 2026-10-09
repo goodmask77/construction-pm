@@ -234,6 +234,18 @@ export default async function handler(req, res) {
       if (abLive && abLive.revenue != null) {
         const abToday = taipeiToday()
         const live = (await kvGet('sp_finance_pm_ablive')) || {}
+        // v4.70.16 AB 時段快照（張良 2026-10-09 熱力圖）：每次盤中存「當天累計營收」一個時段點 → opsboard 相鄰相減＝該時段營收
+        try {
+          const hhKey = 'sp_finance_pm_ab_hh_' + abToday.slice(0, 7)
+          const hhDoc = (await kvGet(hhKey)) || { days: {} }
+          const arr = hhDoc.days[abToday] = hhDoc.days[abToday] || []
+          const rev = Math.round(Number(abLive.revenue) || 0), tx = Number(abLive.tx) || 0
+          const idx = arr.findIndex(p => p.t === hm)
+          if (idx >= 0) arr[idx] = { t: hm, rev, tx }; else arr.push({ t: hm, rev, tx })
+          arr.sort((a, b) => (a.t < b.t ? -1 : 1))
+          hhDoc.updatedAt = new Date().toISOString()
+          await kvPut(hhKey, hhDoc, 'AB時段快照 ' + hm)
+        } catch (_) {}
         const posAB = (await kvGet('sp_finance_pm_pos')) || { entries: [] }
         const isAB = (n) => /beach/i.test(n || '')
         const curAB = posAB.entries.find(e => e.date === abToday && isAB(e.store))

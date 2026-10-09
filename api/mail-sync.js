@@ -1383,6 +1383,22 @@ export default async function handler(req, res) {
       for (const r of rows3) { const h = parseInt(r[0]); if (!isNaN(h)) hm[h] = (hm[h] || 0) + (Number(r[r.length - 1]) || 0) }
       if (Object.keys(hm).length) hourDays[e.date] = hm
     }
+    // AB 沒有日結時段表（Eats365 日結無時段）→ 改用盤中快照 pm_ab_hh_（joya-intraday 每半小時存「當天累計」）相鄰相減＝該時段營收（張良 2026-10-09 熱力圖）
+    if (isAB2 && !Object.keys(hourDays).length) {
+      const mos = new Set()
+      for (let i = 0; i <= 4; i++) { const dM = new Date(anchor + 'T00:00:00Z'); dM.setUTCMonth(dM.getUTCMonth() - i); mos.add(dM.toISOString().slice(0, 7)) }
+      for (const mo of mos) {
+        const hhDoc = await kvGet('sp_finance_pm_ab_hh_' + mo)
+        if (!hhDoc || !hhDoc.days) continue
+        for (const [date, arr] of Object.entries(hhDoc.days)) {
+          if (date < fromHD || slotEx.has(date)) continue
+          const pts = (arr || []).slice().sort((a, b) => (a.t < b.t ? -1 : 1))
+          const hm2 = {}
+          for (let i = 1; i < pts.length; i++) { const seg = (Number(pts[i].rev) || 0) - (Number(pts[i - 1].rev) || 0); if (seg <= 0) continue; const h = parseInt(pts[i - 1].t.slice(0, 2)); if (!isNaN(h)) hm2[h] = (hm2[h] || 0) + seg }
+          if (Object.keys(hm2).length) hourDays[date] = hm2
+        }
+      }
+    }
     const rev30 = w30.reduce((t, e) => t + (Number(e.revenue) || 0), 0)
     // 預做節奏表（張良 2026-09-21：每15分×品項）：pm_pos_q_每日檔（joya-intraday 15分快照）相鄰差分 → 近7個營業日平均
     // 喬亞不給歷史時分 → 資料 2026-09-22 起累積；沒資料時 rhythm.days=0（前端顯示 0 佔位）
