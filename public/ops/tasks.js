@@ -366,6 +366,55 @@ function tnRemSummary(rm) {
   const fTxt = rm.freq === 'weekday' ? '工作日' : rm.freq === 'custom' ? ('週' + ((rm.days || []).slice().sort((a, b) => a - b).map(d => tnREM_WD[d]).join('') || '—')) : '每天';
   return fTxt + ' ' + hTxt;
 }
+/* 詳情彈窗「定期提醒」設定面板（v4.70.21 張良 2026-10-10「可選時段/頻率/顯示已提醒次數」）：
+   開關→頻率(每天/工作日/自訂星期)→時段(整點複選)→方式(鈴鐺/LINE私訊/群)；全部走上面 tnRem* 函式＝只寫設定，
+   count/lastSlot 由後端 cron 寫；UI 禁彩色 emoji 一律 tnI 單色 SVG。 */
+function tnRemField(t) {
+  const id = t.id;
+  const rm = t.reminder || null;
+  const on = !!(rm && rm.on);
+  const cur = rm || tnREM_DEF();
+  const seg = (label, active, click) => '<button onclick="' + click + '" style="padding:6px 12px;border-radius:8px;border:1.5px solid ' + (active ? tnC.accent : tnC.line) + ';background:' + (active ? tnC.accentSoft : 'transparent') + ';color:' + (active ? tnC.accent : tnC.sub) + ';font-size:12.5px;font-weight:700;cursor:pointer">' + label + '</button>';
+  let h = '<div style="' + tnLbl + '"><span style="display:inline-flex;align-items:center;gap:5px">' + tnI('bell', 13, tnC.sub) + '定期提醒</span>'
+    + '<div style="margin-top:6px;border:1px solid ' + tnC.line + ';border-radius:10px;padding:12px;background:' + tnC.soft + '">';
+  // 開關列（＋已提醒次數）
+  h += '<div style="display:flex;align-items:center;gap:10px">'
+    + '<button onclick="tnRemToggle(\'' + id + '\')" title="開/關定期提醒" style="position:relative;width:44px;height:24px;border-radius:999px;border:none;cursor:pointer;background:' + (on ? tnC.accent : tnC.line) + ';flex-shrink:0;transition:.15s">'
+    + '<span style="position:absolute;top:2px;left:' + (on ? '22px' : '2px') + ';width:20px;height:20px;border-radius:50%;background:#fff;transition:.15s"></span></button>'
+    + '<span style="font-size:13px;font-weight:700;color:' + (on ? tnC.text : tnC.faint) + '">' + (on ? '已開啟' : '關閉（點左邊開啟）') + '</span>'
+    + (on && Number(cur.count) ? '<span style="margin-left:auto;font-size:11.5px;font-weight:700;color:' + tnC.accent + '">已提醒 ' + cur.count + ' 次</span>' : '')
+    + '</div>';
+  if (on) {
+    // 頻率
+    h += '<div style="font-size:11.5px;color:' + tnC.faint + ';margin:13px 0 5px">頻率</div>'
+      + '<div style="display:flex;gap:6px;flex-wrap:wrap">'
+      + seg('每天', !cur.freq || cur.freq === 'daily', 'tnRemFreq(\'' + id + '\',\'daily\')')
+      + seg('工作日（一～五）', cur.freq === 'weekday', 'tnRemFreq(\'' + id + '\',\'weekday\')')
+      + seg('自訂星期', cur.freq === 'custom', 'tnRemFreq(\'' + id + '\',\'custom\')')
+      + '</div>';
+    // 自訂星期（只有 custom 才出現）
+    if (cur.freq === 'custom') {
+      h += '<div style="display:flex;gap:5px;flex-wrap:wrap;margin-top:7px">'
+        + tnREM_WD.map(function (w, d) { const a = (cur.days || []).includes(d); return '<button onclick="tnRemDay(\'' + id + '\',' + d + ')" style="width:34px;height:34px;border-radius:8px;border:1.5px solid ' + (a ? tnC.accent : tnC.line) + ';background:' + (a ? tnC.accent : 'transparent') + ';color:' + (a ? '#fff' : tnC.sub) + ';font-size:13px;font-weight:700;cursor:pointer">' + w + '</button>'; }).join('')
+        + '</div>';
+    }
+    // 時段（整點複選）
+    h += '<div style="font-size:11.5px;color:' + tnC.faint + ';margin:13px 0 5px">時段（點整點＝那個鐘頭提醒，可複選）</div>'
+      + '<div style="display:flex;gap:5px;flex-wrap:wrap">'
+      + Array.from({ length: 24 }, function (_, hh) { return hh; }).map(function (hh) { const a = (cur.hours || []).includes(hh); return '<button onclick="tnRemHour(\'' + id + '\',' + hh + ')" style="min-width:38px;padding:5px 2px;border-radius:7px;border:1px solid ' + (a ? tnC.accent : tnC.line) + ';background:' + (a ? tnC.accent : 'transparent') + ';color:' + (a ? '#fff' : tnC.sub) + ';font-size:11.5px;font-weight:700;cursor:pointer;font-family:' + tnMONO + '">' + hh + '</button>'; }).join('')
+      + '</div>';
+    // 提醒方式（通道複選）
+    const chDef = [['push', '鈴鐺推播', 'bell'], ['dm', 'LINE 私訊負責人', 'send'], ['group', '發到群組', 'users']];
+    h += '<div style="font-size:11.5px;color:' + tnC.faint + ';margin:13px 0 5px">提醒方式（可複選）</div>'
+      + '<div style="display:flex;gap:6px;flex-wrap:wrap">'
+      + chDef.map(function (c) { const a = (cur.ch || ['push']).includes(c[0]); return '<button onclick="tnRemCh(\'' + id + '\',\'' + c[0] + '\')" style="display:inline-flex;align-items:center;gap:5px;padding:6px 11px;border-radius:8px;border:1.5px solid ' + (a ? tnC.accent : tnC.line) + ';background:' + (a ? tnC.accentSoft : 'transparent') + ';color:' + (a ? tnC.accent : tnC.sub) + ';font-size:12.5px;font-weight:700;cursor:pointer">' + tnI(c[2], 12, a ? tnC.accent : tnC.sub) + c[1] + '</button>'; }).join('')
+      + '</div>';
+    // 摘要
+    h += '<div style="margin-top:13px;display:inline-flex;align-items:center;gap:5px;font-size:12px;font-weight:700;color:' + tnC.accent + '">' + tnI('clock', 12, tnC.accent) + (tnRemSummary(cur) ? tnEsc(tnRemSummary(cur)) + ' 提醒' : '還沒選時段') + '</div>';
+  }
+  h += '</div></div>';
+  return h;
+}
 
 /* ── 計時格式共用（張良「已N分看不懂多久」）：≥1日→已2日3時41分、≥1時→已3時41分、不足→已41分 ── */
 function tnFmtDur(min) {
@@ -1399,6 +1448,8 @@ function tnModal() {
     if (t.cdUntil) hh += '<button onclick="tnUpd(\'' + t.id + '\',{cdUntil:undefined,cdSet:undefined})" style="border:1px solid ' + tnC.line + ';background:transparent;color:' + tnC.sub + ';border-radius:999px;padding:3px 11px;font-size:11.5px;cursor:pointer">清除倒數</button>';
     return hh;
   })());
+  // 🔔 定期提醒設定面板（v4.70.21）
+  h += tnRemField(t);
   h += '<div style="display:flex;align-items:center;gap:10px;margin-top:8px;flex-wrap:wrap">'
     + '<div style="font-size:11px;color:' + tnC.faint + ';font-variant-numeric:tabular-nums">建立於 ' + tnDnorm(t.createdAt) + '</div>'
     + '<div style="flex:1"></div>'
