@@ -387,7 +387,7 @@ function renderBoard(d, store, view){
     }
     h += `<section>${draw('平日時段', d.slots.wk)}${draw('週末時段', d.slots.we)}</section>`
   }
-  h += soldoutH // v4.48.3 停售動態放首頁最下方（張良原意：營收卡→今日事項→KPI→每日數據→停售）；v4.48.2 誤把 append 放進 renderPrep 造成跨函式 ReferenceError→銷售數據頁卡在載入中，治本搬回這裡
+  // h += soldoutH // v4.70.15 停售動態先隱藏（張良 2026-10-09「之後再做新版本」）；soldoutH 仍算著、之後新版直接接回
   app.innerHTML = h
   todayRender()
   if (store === 'ground') { sopLoad(); soLoad() } // 銷量預測驗證區 fcsec 隨備料搬家（v4.42.0）
