@@ -200,7 +200,7 @@
     let acts = ''
     if (d.canEdit) {
       if (p.status === 'draft' || p.status === 'rejected') acts = `<button class="mini" onclick="event.stopPropagation();_socialEdit('${p.id}')">編輯</button><button class="mini" onclick="event.stopPropagation();_socialSubmit('${p.id}')">送審</button><button class="mini" onclick="event.stopPropagation();_socialDel('${p.id}')">刪</button>`
-      else if (p.status === 'pending_review' && d.me && d.me.admin) acts = `<button class="mini on" onclick="event.stopPropagation();_socialApprove('${p.id}','approve')">核准</button><button class="mini" onclick="event.stopPropagation();_socialApprove('${p.id}','reject')">退</button>`
+      else if (p.status === 'pending_review' && d.me && d.me.admin) acts = `${d.metaReady ? `<button class="mini on" style="background:#3DBE6C;border-color:transparent" onclick="event.stopPropagation();_socialApprovePublish('${p.id}')">🚀 核准並發</button>` : ''}<button class="mini" onclick="event.stopPropagation();_socialApprove('${p.id}','approve')">核准</button><button class="mini" onclick="event.stopPropagation();_socialApprove('${p.id}','reject')">退</button>`
     }
     return `<div onclick="_socialDetail('${p.id}')" style="background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px;display:flex;gap:10px;align-items:center;cursor:pointer">
       ${img ? `<img src="${esc(img)}" style="width:50px;height:50px;object-fit:cover;border-radius:8px;flex:0 0 auto">` : '<div style="width:50px;height:50px;border-radius:8px;background:#1C222B;flex:0 0 auto"></div>'}
@@ -451,6 +451,16 @@
   window._socialSubmit = async function (id) { if (!confirm('送出審核？張良會收到通知。')) return; const j = await sPost({ op: 'submit', id }); if (j.ok) { alert('已送審，張良會收到通知'); socialLoad() } else alert(j.error || '失敗') }
   window._socialDel = async function (id) { if (!confirm('刪除這則貼文？')) return; const j = await sPost({ op: 'del', id }); if (j.ok) socialLoad(); else alert(j.error || '失敗') }
   window._socialApprove = async function (id, op) { const j = await sPost({ op, id }); if (j.ok) socialLoad(); else alert(j.error || '失敗') }
+  window._socialApprovePublish = async function (id) {
+    if (!confirm('核准並「立即發送」到這則勾選的平台？\n發出去就收不回了。')) return
+    const a = await sPost({ op: 'approve', id }); if (!a.ok) { alert(a.error || '核准失敗'); return }
+    const ov = document.createElement('div'); ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:80;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;color:#fff'
+    ov.innerHTML = '<div style="font-size:17px;font-weight:800">🚀 發送中…</div><div style="color:#C7D0DB;font-size:13px">發 IG 需要約 10–30 秒，請稍候別關</div>'
+    document.body.appendChild(ov)
+    let j; try { j = await sPost({ op: 'publishnow', id }) } catch (e) { j = { ok: false, error: '連線問題' } }
+    ov.remove()
+    if (j.ok) { alert('✅ 已核准並發送成功！'); socialLoad() } else { alert('已核准，但發送沒成功：\n' + (j.error || '')); socialLoad() }
+  }
 
   // ── 儀表板（像 inline：KPI 已在上方，這裡＝行動建議＋圖表卡牆）──
   const COL = { b: '#4DA3FF', g: '#3DBE6C', o: '#E8A657', y: '#E8C14E', p: '#B48CF2', r: '#F07373' }
