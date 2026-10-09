@@ -211,28 +211,43 @@
     if (d.canEdit) h += `<div style="margin:10px 0"><button class="mini on" style="padding:8px 16px" onclick="_socialEdit('')">＋ 新增貼文</button></div>`
     if (editId !== null) h += editorHtml(posts.find(p => p.id === editId) || null)
     if (!posts.length) return h + '<section><div class="hint" style="padding:18px">還沒有貼文。連接粉專後，系統今晚起會自動把你粉專近 30 天的貼文抓進來。</div></section>'
-    h += '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:10px">' + posts.map(p => postCard(p)).join('') + '</div>'
+    const canEd = d.canEdit
+    h += `<div class="hint" style="margin:2px 0 8px">共 ${posts.length} 則${platFilter !== 'all' ? '（只看 ' + (platFilter === 'ig' ? 'IG' : 'FB') + '）' : ''}・點任一列看詳情與完整數據</div>`
+    h += `<div style="overflow-x:auto;-webkit-overflow-scrolling:touch;border:1px solid var(--line);border-radius:12px">
+      <table style="width:100%;border-collapse:collapse;font-size:13px;min-width:520px">
+        <thead><tr style="background:#141A22;color:var(--muted);text-align:left">
+          <th style="padding:10px;font-weight:700">貼文</th>
+          <th style="padding:10px;font-weight:700;white-space:nowrap">平台</th>
+          <th style="padding:10px;font-weight:700;text-align:right;white-space:nowrap">FB 互動</th>
+          <th style="padding:10px;font-weight:700;text-align:right;white-space:nowrap">IG 互動</th>
+          <th style="padding:10px;font-weight:700;white-space:nowrap">狀態</th>
+          ${canEd ? '<th style="padding:10px;font-weight:700;white-space:nowrap">操作</th>' : ''}
+        </tr></thead>
+        <tbody>${posts.map(p => postRow(p)).join('')}</tbody>
+      </table>
+    </div>`
     return h
   }
 
-  function postCard(p) {
+  // v4.70.23 內容庫改「表格」：一列一則貼文，FB／IG 互動並排，狀態一眼看完（原本卡片網格同一則會攤成多張、重複又亂）
+  function postRow(p) {
     const d = DATA, st = ST[p.status] || ['', '#8C98A8']
     const img = (p.media && p.media[0] && p.media[0].url) || ''
     const interFb = p.metricsFb ? INTER(p.metricsFb) : null, interIg = p.metricsIg ? INTER(p.metricsIg) : null
-    const hasMet = interFb != null || interIg != null
     let acts = ''
     if (d.canEdit) {
       if (p.status === 'draft' || p.status === 'rejected') acts = `<button class="mini" onclick="event.stopPropagation();_socialEdit('${p.id}')">編輯</button><button class="mini" onclick="event.stopPropagation();_socialSubmit('${p.id}')">送審</button><button class="mini" onclick="event.stopPropagation();_socialDel('${p.id}')">刪</button>`
       else if (p.status === 'pending_review' && d.me && d.me.admin) acts = `${d.metaReady ? `<button class="mini on" style="background:#3DBE6C;border-color:transparent" onclick="event.stopPropagation();_socialApprovePublish('${p.id}')">🚀 核准並發</button>` : ''}<button class="mini" onclick="event.stopPropagation();_socialApprove('${p.id}','approve')">核准</button><button class="mini" onclick="event.stopPropagation();_socialApprove('${p.id}','reject')">退</button>`
     }
-    return `<div onclick="_socialDetail('${p.id}')" style="background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px;display:flex;gap:10px;align-items:center;cursor:pointer">
-      ${img ? `<img src="${esc(img)}" style="width:50px;height:50px;object-fit:cover;border-radius:8px;flex:0 0 auto">` : '<div style="width:50px;height:50px;border-radius:8px;background:#1C222B;flex:0 0 auto"></div>'}
-      <div style="flex:1;min-width:0">
-        <div style="display:flex;align-items:center;gap:6px"><span style="color:${st[1]};font-size:11px">●</span>${platBadges(p)}${(p.tags || []).length ? `<span class="hint" style="font-size:11px">·${esc(p.tags[0])}</span>` : ''}${hasMet ? `<span style="margin-left:auto;font-weight:800;color:var(--pdark);font-size:12px;flex:0 0 auto;white-space:nowrap">${interFb != null ? '<span style="color:#4D8BF0">FB</span> ' + nf(interFb) : ''}${interFb != null && interIg != null ? '　' : ''}${interIg != null ? '<span style="color:#E1427E">IG</span> ' + nf(interIg) : ''}</span>` : `<span class="hint" style="margin-left:auto;font-size:11px;flex:0 0 auto">${st[0]}</span>`}</div>
-        <div style="font-size:13px;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-top:3px">${esc((p.caption || '（無文字）').slice(0, 60))}</div>
-        ${acts ? `<div style="margin-top:7px;display:flex;gap:5px;flex-wrap:wrap" onclick="event.stopPropagation()">${acts}</div>` : ''}
-      </div>
-    </div>`
+    const thumb = img ? `<img src="${esc(img)}" style="width:42px;height:42px;object-fit:cover;border-radius:8px;flex:0 0 auto">` : '<div style="width:42px;height:42px;border-radius:8px;background:#1C222B;flex:0 0 auto"></div>'
+    return `<tr onclick="_socialDetail('${p.id}')" style="border-top:1px solid var(--line);cursor:pointer">
+      <td style="padding:8px 10px"><div style="display:flex;gap:9px;align-items:center;min-width:0">${thumb}<div style="min-width:0"><div style="color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:360px">${esc((p.caption || '（無文字）').slice(0, 80))}</div>${(p.tags || []).length ? `<div class="hint" style="font-size:11px">#${esc(p.tags[0])}</div>` : ''}</div></div></td>
+      <td style="padding:8px 10px;white-space:nowrap">${platBadges(p)}</td>
+      <td style="padding:8px 10px;text-align:right;white-space:nowrap;font-weight:800;color:${interFb != null ? '#4D8BF0' : 'var(--muted)'}">${interFb != null ? nf(interFb) : '—'}</td>
+      <td style="padding:8px 10px;text-align:right;white-space:nowrap;font-weight:800;color:${interIg != null ? '#E1427E' : 'var(--muted)'}">${interIg != null ? nf(interIg) : '—'}</td>
+      <td style="padding:8px 10px;white-space:nowrap"><span style="color:${st[1]};font-weight:700;font-size:12px">● ${st[0]}</span></td>
+      ${d.canEdit ? `<td style="padding:8px 10px" onclick="event.stopPropagation()"><div style="display:flex;gap:4px;flex-wrap:wrap">${acts || '<span class="hint" style="font-size:11px">—</span>'}</div></td>` : ''}
+    </tr>`
   }
 
   // 發布目標勾選（每個連接的粉專＝FB 一個、IG 一個）
