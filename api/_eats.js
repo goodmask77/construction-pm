@@ -150,8 +150,13 @@ export async function eatsDayRecord(date, kvGet) {
   }
   // 每小時營收（熱力圖用）：後台 dashboard/shop 現成給 hourlySalesRecordMap → {時:營收}，可回補任意歷史日（張良 2026-10-10 AB 熱力圖）
   const hourly = {}
-  for (const h of Object.values(d.hourlySalesRecordMap || {})) { const hr = Number(h?.hour); const rev = Math.round(Number(h?.netSales) || 0); if (!isNaN(hr) && rev > 0) hourly[hr] = (hourly[hr] || 0) + rev }
+  const _hourRaw = []
+  for (const [k, h] of Object.entries(d.hourlySalesRecordMap || {})) {
+    _hourRaw.push({ k, hour: h?.hour, netSales: h?.netSales, count: h?.count })
+    const hr = Number(h?.hour); const rev = Math.round(Number(h?.netSales) || 0); if (!isNaN(hr) && rev > 0) hourly[hr] = (hourly[hr] || 0) + rev
+  }
   return {
+    _hourRaw, // 每時段 [{hour,netSales,count}]＝dry-run 核對用（count=該時段交易筆數）
     date, store: 'A Beach 101&Pizza', subject: 'A Beach Eats365 後台回填', period: date + '（Eats365 後台回填）',
     revenue: Math.round(Number(d.totalNetSales) || 0), txCount: Number(d.totalTransaction) || 0, guests: Number(d.totalCustomer) || 0,
     dineTx: Number(d.dineInTransaction) || 0, takeTx: Number(d.takeoutTransaction) || 0,

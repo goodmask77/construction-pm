@@ -531,7 +531,7 @@ export default async function handler(req, res) {
     const recs = []
     for (const dt of dates) { try { const r = await eatsDayRecord(dt, kvGet); if (r) recs.push(r); else recs.push({ date: dt, error: '未設 EATS_* 或抓不到' }) } catch (e) { recs.push({ date: dt, error: e?.message || String(e) }) } }
     const good = recs.filter(r => typeof r.revenue === 'number')
-    if (!go) return res.status(200).json({ ok: true, dryRun: true, hint: '數字對就加 &go=1 真的入庫', preview: recs.map(r => ({ date: r.date, revenue: r.revenue, txCount: r.txCount, guests: r.guests, dineTx: r.dineTx, takeTx: r.takeTx, cash: r.cash, card: r.card, linepay: r.linepay, uber: r.uber, payOther: r.payOther, paySum: typeof r.revenue === 'number' ? (r.cash + r.card + r.linepay + r.uber + r.payOther) : null, payRaw: r._payRaw, err: r.error })) })
+    if (!go) return res.status(200).json({ ok: true, dryRun: true, hint: '數字對就加 &go=1 真的入庫', preview: recs.map(r => ({ date: r.date, revenue: r.revenue, txCount: r.txCount, guests: r.guests, dineTx: r.dineTx, takeTx: r.takeTx, cash: r.cash, card: r.card, linepay: r.linepay, uber: r.uber, payOther: r.payOther, paySum: typeof r.revenue === 'number' ? (r.cash + r.card + r.linepay + r.uber + r.payOther) : null, payRaw: r._payRaw, hourRaw: r._hourRaw, err: r.error })) })
     const ingestRecs = good.map(({ _payRaw, ...rest }) => rest)
     const out = ingestRecs.length ? await ingestPosRecords(ingestRecs, 'AB日結後台回填') : { added: 0 }
     const hhSaved = await saveAbHourly(good) // 熱力圖每小時：即使日結去重沒加，每小時照存（補歷史熱力圖）
