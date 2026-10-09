@@ -290,6 +290,8 @@ export default async function handler(req, res) {
     if (action === 'recover') return res.status(200).json({ ok: true, ...(await doRecover(req.query?.uids)) })
     return res.status(200).json({ ok: false, error: '未知 action' })
   } catch (e) {
-    return res.status(200).json({ ok: false, error: e?.message || String(e), code: e?.code, resp: e?.responseText, cmd: e?.command, at: (e?.stack || '').split('\n').slice(1, 3).join(' | ') })
+    const raw = (e?.responseText || e?.message || String(e))
+    const friendly = /invalid credentials/i.test(raw) ? '信箱連線憑證失效（App 密碼需更新）' : raw
+    return res.status(200).json({ ok: false, error: friendly })
   }
 }
