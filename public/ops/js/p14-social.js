@@ -15,18 +15,24 @@
   // 一則可能發到多平台：優先看實際發布結果 pub，其次看勾選 dests，最後才退回匯入貼文的 platform
   const postPlats = p => { const s = new Set(); if (p.pub) { if (p.pub.facebook) s.add('fb'); if (p.pub.instagram) s.add('ig') } if (!s.size && p.dests && p.dests.length) p.dests.forEach(d => s.add(d.startsWith('ig') ? 'ig' : 'fb')); if (!s.size) s.add(p.platform === 'instagram' || p.platform === 'ig' ? 'ig' : 'fb'); return [...s] }
   const platBadges = p => postPlats(p).map(k => `<span style="font-size:11px;font-weight:800;color:${k === 'ig' ? '#E1427E' : '#4D8BF0'}">${k === 'ig' ? 'IG' : 'FB'}</span>`).join('<span style="color:var(--muted);font-size:10px;margin:0 2px">·</span>')
-  const inFilter = p => platFilter === 'all' || (platFilter === 'ig' ? p.platform === 'instagram' : p.platform !== 'instagram')
+  const inFilter = p => platFilter === 'all' || postPlats(p).includes(platFilter)
   // 聚合統計（儀表板共用；吃 platFilter）
+  // v4.70.21 分平台：一則貼文攤成「FB 一筆＋IG 一筆」各帶自己的 metrics＝趨勢/熱力/平台對比全部自動分平台，不再互蓋
   function stats() {
-    const posts = (DATA.posts || []).filter(p => p.status === 'published' && p.metrics && inFilter(p))
-    const fb = posts.filter(p => p.platform !== 'instagram'), ig = posts.filter(p => p.platform === 'instagram')
-    const totInter = posts.reduce((s, p) => s + INTER(p.metrics), 0)
-    const totReach = posts.reduce((s, p) => s + (p.metrics.reach || 0), 0)
-    const totSaves = posts.reduce((s, p) => s + (p.metrics.saves || 0), 0)
+    const out = []
+    for (const p of (DATA.posts || []).filter(x => x.status === 'published')) {
+      const push = (plat, m) => { if (!m) return; if (platFilter !== 'all' && platFilter !== plat) return; out.push({ ...p, platform: plat === 'ig' ? 'instagram' : 'facebook', metrics: m, _plat: plat }) }
+      if (p.metricsFb || p.metricsIg) { push('fb', p.metricsFb); push('ig', p.metricsIg) }
+      else if (p.metrics) push(p.platform === 'instagram' ? 'ig' : 'fb', p.metrics) // 舊資料相容
+    }
+    const fb = out.filter(p => p._plat === 'fb'), ig = out.filter(p => p._plat === 'ig')
+    const totInter = out.reduce((s, p) => s + INTER(p.metrics), 0)
+    const totReach = out.reduce((s, p) => s + (p.metrics.reach || 0), 0)
+    const totSaves = out.reduce((s, p) => s + (p.metrics.saves || 0), 0)
     const pages = ((DATA.account || {}).pages) || []
     const followers = pages.reduce((s, p) => s + (platFilter !== 'ig' ? (p.followers || 0) : 0) + (platFilter !== 'fb' ? (p.igFollowers || 0) : 0), 0)
     const avg = arr => arr.length ? Math.round(arr.reduce((s, p) => s + INTER(p.metrics), 0) / arr.length) : 0
-    return { posts, fb, ig, totInter, totReach, totSaves, followers, avgInter: posts.length ? Math.round(totInter / posts.length) : 0, igAvg: avg(ig), fbAvg: avg(fb) }
+    return { posts: out, fb, ig, totInter, totReach, totSaves, followers, avgInter: out.length ? Math.round(totInter / out.length) : 0, igAvg: avg(ig), fbAvg: avg(fb) }
   }
 
   async function sPost(body) {
@@ -64,6 +70,7 @@
       + `<button class="mini ${subTab === 'dash' ? 'on' : ''}" onclick="_socialSub('dash')">📊 儀表板</button>`
       + `<button class="mini ${subTab === 'lib' ? 'on' : ''}" onclick="_socialSub('lib')">內容庫</button>`
       + `<button class="mini ${subTab === 'assets' ? 'on' : ''}" onclick="_socialSub('assets')">📁 素材庫</button>`
+      + (d.canEdit ? `<button class="mini" id="soSyncBtn" onclick="_socialSync()" title="馬上抓最新數據＋偵測粉專已刪的貼文（平常每 3 小時自動跑）">🔄 立即同步</button>` : '')
       + `<span style="margin-left:auto;display:flex;gap:6px">`
       + `<button class="mini ${platFilter === 'all' ? 'on' : ''}" onclick="_socialPlat('all')">全部</button>`
       + `<button class="mini ${platFilter === 'fb' ? 'on' : ''}" onclick="_socialPlat('fb')"><span style="color:#4D8BF0">●</span> FB</button>`
@@ -125,6 +132,12 @@
 
   window._socialSub = function (t) { subTab = t; socialRender() }
   window._socialPlat = function (f) { platFilter = f; socialRender() }
+  window._socialSync = async function () {
+    const btn = document.getElementById('soSyncBtn'); if (btn) { btn.disabled = true; btn.textContent = '🔄 同步中…（約 20–40 秒）' }
+    let j; try { j = await sPost({ op: 'sync' }) } catch (e) { j = { ok: false, error: '連線問題' } }
+    if (!j || !j.ok) { if (btn) { btn.disabled = false; btn.textContent = '🔄 立即同步' }; alert((j && j.error) || '同步失敗'); return }
+    await socialLoad() // 重載最新數據（含剛同步的成效與已刪標記）
+  }
 
   window._socialConnEdit = function () { connEditOn = !connEditOn; socialRender() }
   window._socialConnect = function () {
@@ -203,9 +216,10 @@
   }
 
   function postCard(p) {
-    const d = DATA, st = ST[p.status] || ['', '#8C98A8'], m = p.metrics
+    const d = DATA, st = ST[p.status] || ['', '#8C98A8']
     const img = (p.media && p.media[0] && p.media[0].url) || ''
-    const inter = m ? INTER(m) : null
+    const interFb = p.metricsFb ? INTER(p.metricsFb) : null, interIg = p.metricsIg ? INTER(p.metricsIg) : null
+    const hasMet = interFb != null || interIg != null
     let acts = ''
     if (d.canEdit) {
       if (p.status === 'draft' || p.status === 'rejected') acts = `<button class="mini" onclick="event.stopPropagation();_socialEdit('${p.id}')">編輯</button><button class="mini" onclick="event.stopPropagation();_socialSubmit('${p.id}')">送審</button><button class="mini" onclick="event.stopPropagation();_socialDel('${p.id}')">刪</button>`
@@ -214,7 +228,7 @@
     return `<div onclick="_socialDetail('${p.id}')" style="background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px;display:flex;gap:10px;align-items:center;cursor:pointer">
       ${img ? `<img src="${esc(img)}" style="width:50px;height:50px;object-fit:cover;border-radius:8px;flex:0 0 auto">` : '<div style="width:50px;height:50px;border-radius:8px;background:#1C222B;flex:0 0 auto"></div>'}
       <div style="flex:1;min-width:0">
-        <div style="display:flex;align-items:center;gap:6px"><span style="color:${st[1]};font-size:11px">●</span>${platBadges(p)}${(p.tags || []).length ? `<span class="hint" style="font-size:11px">·${esc(p.tags[0])}</span>` : ''}${inter != null ? `<span style="margin-left:auto;font-weight:800;color:var(--pdark);font-size:13px;flex:0 0 auto">互動 ${nf(inter)}</span>` : `<span class="hint" style="margin-left:auto;font-size:11px;flex:0 0 auto">${st[0]}</span>`}</div>
+        <div style="display:flex;align-items:center;gap:6px"><span style="color:${st[1]};font-size:11px">●</span>${platBadges(p)}${(p.tags || []).length ? `<span class="hint" style="font-size:11px">·${esc(p.tags[0])}</span>` : ''}${hasMet ? `<span style="margin-left:auto;font-weight:800;color:var(--pdark);font-size:12px;flex:0 0 auto;white-space:nowrap">${interFb != null ? '<span style="color:#4D8BF0">FB</span> ' + nf(interFb) : ''}${interFb != null && interIg != null ? '　' : ''}${interIg != null ? '<span style="color:#E1427E">IG</span> ' + nf(interIg) : ''}</span>` : `<span class="hint" style="margin-left:auto;font-size:11px;flex:0 0 auto">${st[0]}</span>`}</div>
         <div style="font-size:13px;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-top:3px">${esc((p.caption || '（無文字）').slice(0, 60))}</div>
         ${acts ? `<div style="margin-top:7px;display:flex;gap:5px;flex-wrap:wrap" onclick="event.stopPropagation()">${acts}</div>` : ''}
       </div>
@@ -564,15 +578,55 @@
       + `</div>`
     return h
   }
+  // 成長曲線（分平台 series：[{t,v,reach,saves,views}]）→ 互動隨時間 SVG；不足 2 點給累積提示
+  function soSeriesSvg(ser) {
+    if (!ser || ser.length < 2) return `<div class="hint" style="padding:12px;background:#1C222B;border-radius:10px;line-height:1.6">每 3 小時自動記一次，累積幾天後這裡會長出成長曲線（看互動何時爆、多久飽和）。目前 ${(ser || []).length} 個資料點。</div>`
+    const vals = ser.map(x => x.v), W = 380, H = 96, PAD = 16, mx = Math.max(...vals), mn = Math.min(...vals), rg = (mx - mn) || 1
+    const X = i => PAD + i / (ser.length - 1) * (W - PAD * 2), Y = v => H - PAD - (v - mn) / rg * (H - PAD * 2)
+    const pts = ser.map((x, i) => `${X(i).toFixed(1)},${Y(x.v).toFixed(1)}`).join(' ')
+    const lbl = s => String(s).replace('T', ' ') + ':00'
+    return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:110px"><polygon points="${PAD},${H - PAD} ${pts} ${W - PAD},${H - PAD}" fill="rgba(77,163,255,.14)"/><polyline points="${pts}" fill="none" stroke="${COL.b}" stroke-width="2"/></svg><div class="hint" style="display:flex;justify-content:space-between"><span>${lbl(ser[0].t)}</span><span>最新互動 ${vals[vals.length - 1]}</span></div>`
+  }
+  window._soDetTab = function (btn, k) { const box = btn.closest('.soDet'); [...box.querySelectorAll('.soTab')].forEach(b => b.classList.remove('on')); btn.classList.add('on'); [...box.querySelectorAll('.soPane')].forEach(pane => { pane.style.display = pane.dataset.k === k ? 'block' : 'none' }) }
   window._socialDetail = function (id) {
     const p = (DATA.posts || []).find(x => x.id === id); if (!p) return
-    const m = p.metrics || {}, link = p.pub && ((p.pub.instagram || {}).permalink || (p.pub.facebook || {}).permalink), img = p.media && p.media[0] && p.media[0].url
+    const img = p.media && p.media[0] && p.media[0].url
+    const plats = []
+    if (p.metricsFb || (p.pub && p.pub.facebook)) plats.push('fb')
+    if (p.metricsIg || (p.pub && p.pub.instagram)) plats.push('ig')
+    if (!plats.length) plats.push(p.platform === 'instagram' ? 'ig' : 'fb')
     const met = (l, v, c) => `<div style="text-align:center"><div style="font-size:21px;font-weight:800;color:${c || 'var(--ink)'};font-variant-numeric:tabular-nums">${nf(v || 0)}</div><div class="hint" style="font-size:12px">${l}</div></div>`
+    const platPane = (k, show) => {
+      const m = (k === 'fb' ? p.metricsFb : p.metricsIg) || {}
+      const pub = p.pub && (k === 'fb' ? p.pub.facebook : p.pub.instagram)
+      const deleted = pub && pub.deletedAt
+      const link = pub && pub.permalink
+      const ser = (p.series && p.series[k]) || []
+      const cells = k === 'fb'
+        ? [met('互動', INTER(m), '#9CC7F5'), met('讚', m.reactions, COL.g), met('留言', m.comments), met('分享', m.shares), met('觸及', m.reach, COL.o), met('曝光', m.views, COL.p), met('點擊', m.clicks, COL.b)]
+        : [met('互動', INTER(m), '#9CC7F5'), met('讚', m.reactions, COL.g), met('留言', m.comments), met('分享', m.shares), met('收藏', m.saves, COL.y), met('觸及', m.reach, COL.o), met('瀏覽', m.views, COL.p)]
+      const hasData = !!(k === 'fb' ? p.metricsFb : p.metricsIg)
+      return `<div class="soPane" data-k="${k}" style="display:${show ? 'block' : 'none'}">
+        ${deleted ? '<div style="background:#2A1A1A;border:1px solid #5A3030;color:#F0A0A0;border-radius:10px;padding:9px 12px;margin:10px 0;font-size:13px">⚠️ 這則已從粉專刪除，數據停在刪除前。</div>' : ''}
+        ${k === 'fb' ? '<div class="hint" style="margin:8px 0 2px;font-size:11px">FB 觸及/曝光已被 Meta 2024 大幅限縮，常為 0＝正常。</div>' : ''}
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:10px 0;background:#1C222B;border-radius:12px;padding:14px">${cells.join('')}</div>
+        <div class="hint" style="margin:12px 0 5px;font-weight:700;color:var(--text)">📈 發出後的成長曲線（${k === 'ig' ? 'IG' : 'FB'} 互動）</div>
+        ${soSeriesSvg(ser)}
+        <div style="margin-top:12px">${link ? `<a class="mini" style="text-decoration:none" href="${esc(link)}" target="_blank">看 ${k === 'ig' ? 'IG' : 'FB'} 原貼文 ↗</a>` : '<span class="hint">（這個平台沒有連結）</span>'}${hasData ? '' : '<span class="hint" style="margin-left:8px">尚無數據（下次抓取後出現）</span>'}</div>
+      </div>`
+    }
+    const tabs = plats.length > 1
+      ? `<div style="display:flex;gap:6px;margin:14px 0 2px">${plats.map((k, i) => `<button class="mini soTab ${i === 0 ? 'on' : ''}" style="min-width:56px" onclick="_soDetTab(this,'${k}')">${k === 'ig' ? 'IG' : 'FB'}</button>`).join('')}</div>`
+      : ''
     const ov = document.createElement('div'); ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.62);z-index:70;display:flex;align-items:center;justify-content:center;padding:16px'; ov.onclick = () => ov.remove()
-    ov.innerHTML = `<div onclick="event.stopPropagation()" style="background:var(--card);border:1px solid var(--line);border-radius:16px;max-width:460px;width:100%;max-height:85vh;overflow:auto;padding:18px">
-      <div style="display:flex;gap:10px"><div style="flex:1;min-width:0"><span>${postPlats(p).map(k => `<span style="background:${k === 'ig' ? '#E1427E' : '#4D8BF0'}22;color:${k === 'ig' ? '#E1427E' : '#4D8BF0'};padding:2px 9px;border-radius:999px;font-size:11px;font-weight:700;margin-right:4px">${k === 'ig' ? 'IG' : 'FB'}</span>`).join('')}</span><div style="margin-top:7px;line-height:1.6;color:var(--text);max-height:160px;overflow:auto">${esc(p.caption || '（無文字）')}</div></div>${img ? `<img src="${esc(img)}" style="width:90px;height:90px;object-fit:cover;border-radius:10px;flex:0 0 auto">` : ''}</div>
-      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:16px 0;background:#1C222B;border-radius:12px;padding:14px">${met('互動', INTER(m), '#9CC7F5')}${met('讚', m.reactions, COL.g)}${met('留言', m.comments)}${met('分享', m.shares)}${met('收藏', m.saves, COL.y)}${met('觸及', m.reach, COL.o)}</div>
-      <div style="display:flex;gap:8px;align-items:center">${link ? `<a class="mini" style="text-decoration:none" href="${esc(link)}" target="_blank">看原貼文 ↗</a>` : ''}<button class="mini on" style="margin-left:auto" onclick="this.closest('div[style*=fixed]').remove()">關閉</button></div></div>`
+    ov.innerHTML = `<div class="soDet" onclick="event.stopPropagation()" style="background:var(--card);border:1px solid var(--line);border-radius:16px;max-width:460px;width:100%;max-height:88vh;display:flex;flex-direction:column;overflow:hidden">
+      <div style="flex:0 0 auto;padding:18px 18px 0">
+        <div style="display:flex;gap:10px"><div style="flex:1;min-width:0"><span>${plats.map(k => `<span style="background:${k === 'ig' ? '#E1427E' : '#4D8BF0'}22;color:${k === 'ig' ? '#E1427E' : '#4D8BF0'};padding:2px 9px;border-radius:999px;font-size:11px;font-weight:700;margin-right:4px">${k === 'ig' ? 'IG' : 'FB'}</span>`).join('')}${p.brand ? `<span class="hint" style="font-size:11px">${esc(p.brand)}</span>` : ''}</span><div style="margin-top:7px;line-height:1.6;color:var(--text);max-height:120px;overflow:auto">${esc(p.caption || '（無文字）')}</div></div>${img ? `<img src="${esc(img)}" style="width:90px;height:90px;object-fit:cover;border-radius:10px;flex:0 0 auto">` : ''}</div>
+        ${tabs}
+      </div>
+      <div style="flex:1 1 auto;overflow:auto;padding:0 18px 4px">${plats.map((k, i) => platPane(k, i === 0)).join('')}</div>
+      <div style="flex:0 0 auto;padding:12px 18px;border-top:1px solid var(--line);text-align:right"><button class="mini on" onclick="this.closest('.soDet').parentNode.remove()">關閉</button></div>
+    </div>`
     document.body.appendChild(ov)
   }
   // 圖表下鑽：點任何圖的元素 → 看「這個數字是哪幾篇貼文來的」

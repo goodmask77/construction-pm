@@ -46,22 +46,30 @@ function parseVersions(raw) {
   return clean(parts)
 }
 
-// 取每篇貼文「最新一筆」成效快照（翻最近兩個月檔）
+// 取每篇貼文分平台（FB／IG）的「最新一筆」成效＋成長曲線時序（翻最近兩個月檔）
+// key 新格式 <pid>::<plat>::<slot>（slot 含 T 為 3 小時時序點、無 T 為每日最終值）；舊格式 <pid>::<date> 以 id 前綴判平台
 async function latestMetrics(postIds) {
   const now = new Date(Date.now() + 8 * 3600e3)
   const prev = new Date(now.getFullYear(), now.getMonth() - 1, 1)
-  const yms = [now.toISOString().slice(0, 7), prev.toISOString().slice(0, 7)]
+  const yms = [prev.toISOString().slice(0, 7), now.toISOString().slice(0, 7)]
   const ids = new Set(postIds)
-  const out = {}
+  const out = {} // out[pid] = { fb, ig, series:{fb:[],ig:[]}, _fbAt, _igAt }
   for (const ym of yms) {
     const doc = (await kvGet(metricsKey(ym))) || { days: {} }
     for (const [k, v] of Object.entries(doc.days || {})) {
-      const i = k.indexOf('::'); if (i < 0) continue
-      const pid = k.slice(0, i), date = k.slice(i + 2)
-      if (!ids.has(pid)) continue
-      if (!out[pid] || date > out[pid]._date) out[pid] = { ...v, _date: date }
+      const parts = k.split('::'); if (parts.length < 2) continue
+      const pid = parts[0]; if (!ids.has(pid)) continue
+      let plat, slot
+      if (parts.length >= 3) { plat = parts[1]; slot = parts[2] }
+      else { plat = (v && v.plat) || (pid.startsWith('ig') ? 'ig' : 'fb'); slot = parts[1] } // 舊格式相容
+      if (plat !== 'fb' && plat !== 'ig') plat = 'fb'
+      out[pid] = out[pid] || { series: { fb: [], ig: [] } }
+      const atKey = '_' + plat + 'At'
+      if (!out[pid][atKey] || slot > out[pid][atKey]) { out[pid][plat] = { ...v }; out[pid][atKey] = slot }
+      if (/T\d/.test(slot)) out[pid].series[plat].push({ t: slot, v: (v.reactions || 0) + (v.comments || 0) + (v.shares || 0), reach: v.reach || 0, saves: v.saves || 0, views: v.views || 0 })
     }
   }
+  for (const pid in out) for (const pl of ['fb', 'ig']) { const m = {}; out[pid].series[pl].forEach(x => { m[x.t] = x }); out[pid].series[pl] = Object.values(m).sort((a, b) => a.t < b.t ? -1 : 1) }
   return out
 }
 
@@ -75,17 +83,18 @@ export default async function handler(req, res) {
       const acc = await getAccounts()
       const posts = (await getPosts()).list || []
       const mx = await latestMetrics(posts.map(p => p.id))
+      const inter = m => m ? ((m.reactions || 0) + (m.comments || 0) + (m.shares || 0)) : 0
       const withM = posts
-        .map(p => ({ ...p, metrics: mx[p.id] || null }))
+        .map(p => { const mm = mx[p.id] || {}; return { ...p, metricsFb: mm.fb || null, metricsIg: mm.ig || null, metrics: mm.ig || mm.fb || null, series: mm.series || null } })
         .sort((a, b) => String(b.updatedAt || '').localeCompare(String(a.updatedAt || '')))
-      // KPI
+      // KPI（分平台各自加總，一則雙平台的 FB 互動＋IG 互動分開算）
       const thisYm = new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 7)
       const pub = withM.filter(p => p.status === 'published')
-      const pubThis = pub.filter(p => ymOf((p.pub && p.pub.facebook && p.pub.facebook.publishedAt) || p.updatedAt) === thisYm)
-      // 觸及被 Meta 2024 淘汰（API 抓不到）→ 看板以「互動（讚+留言+分享）」為主
-      const reach = pub.reduce((s, p) => s + ((p.metrics && p.metrics.reach) || 0), 0)
-      const withMet = pub.filter(p => p.metrics)
-      const interTot = withMet.reduce((s, p) => s + ((p.metrics.reactions || 0) + (p.metrics.comments || 0) + (p.metrics.shares || 0)), 0)
+      const pubThis = pub.filter(p => ymOf((p.pub && p.pub.facebook && p.pub.facebook.publishedAt) || (p.pub && p.pub.instagram && p.pub.instagram.publishedAt) || p.updatedAt) === thisYm)
+      // 觸及被 Meta 2024 淘汰 FB 端（IG 仍有）→ 看板以「互動（讚+留言+分享）」為主
+      const reach = pub.reduce((s, p) => s + ((p.metricsFb && p.metricsFb.reach) || 0) + ((p.metricsIg && p.metricsIg.reach) || 0), 0)
+      const withMet = pub.filter(p => p.metricsFb || p.metricsIg)
+      const interTot = pub.reduce((s, p) => s + inter(p.metricsFb) + inter(p.metricsIg), 0)
       const avgInter = withMet.length ? Math.round(interTot / withMet.length * 10) / 10 : 0
       const pageMap = (acc.facebook && acc.facebook.pages) || {}
       const pageList = Object.values(pageMap)
@@ -108,6 +117,11 @@ export default async function handler(req, res) {
       const doc = await getPosts(); doc.list = doc.list || []
       const act = async (action, detail) => { try { const a = (await kvGet('pm_activity')) || []; a.unshift({ ts: new Date().toISOString(), user: who.name, action, detail }); await kvPut('pm_activity', a.slice(0, 500), '社群') } catch (_) {} }
 
+      if (op === 'sync') {
+        // 立即同步：手動觸發 collect（抓最新成效＋偵測粉專已刪的貼文）。張良 2026-10-10
+        try { const { runCollect } = await import('./social-collect.js'); const r = await runCollect(Number(body.days) || 30); await act('立即同步社群成效'); return res.status(200).json(r) }
+        catch (e) { return res.status(200).json({ ok: false, error: e.message || '同步失敗' }) }
+      }
       if (op === 'upload') {
         // 貼文圖片上傳 photos 桶（公開，發文時給 Meta 當 image_url）
         const du = String(body.dataUrl || '')
