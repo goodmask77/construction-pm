@@ -148,12 +148,15 @@ export async function eatsDayRecord(date, kvGet) {
     else if (/信用卡|刷卡|卡|credit|card|visa|master/i.test(n)) pay.card += amt
     else pay.payOther += amt
   }
+  // 每小時營收（熱力圖用）：後台 dashboard/shop 現成給 hourlySalesRecordMap → {時:營收}，可回補任意歷史日（張良 2026-10-10 AB 熱力圖）
+  const hourly = {}
+  for (const h of Object.values(d.hourlySalesRecordMap || {})) { const hr = Number(h?.hour); const rev = Math.round(Number(h?.netSales) || 0); if (!isNaN(hr) && rev > 0) hourly[hr] = (hourly[hr] || 0) + rev }
   return {
     date, store: 'A Beach 101&Pizza', subject: 'A Beach Eats365 後台回填', period: date + '（Eats365 後台回填）',
     revenue: Math.round(Number(d.totalNetSales) || 0), txCount: Number(d.totalTransaction) || 0, guests: Number(d.totalCustomer) || 0,
     dineTx: Number(d.dineInTransaction) || 0, takeTx: Number(d.takeoutTransaction) || 0,
     cash: pay.cash, card: pay.card, linepay: pay.linepay, uber: pay.uber, payOther: pay.payOther,
-    _payRaw: payRaw,
+    hourly, _payRaw: payRaw,
   }
 }
 

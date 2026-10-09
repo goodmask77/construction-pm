@@ -274,6 +274,24 @@ async function syncPos(days) {
 }
 
 // 共用回填插入（手動回填口＋喬亞自動抓取共用；同 syncPos 口徑：id 與 日期|店 都去重、明細月檔不覆蓋）
+// AB 每小時營收寫入熱力圖來源（sp_finance_pm_ab_hhrev_YYYY-MM）：{days:{date:{hour:rev}}}；來源＝Eats365 後台 hourlySalesRecordMap，可回補任意歷史日。回補口＋每日自動補抓共用（張良 2026-10-10 AB 熱力圖跟 GD 一樣）
+async function saveAbHourly(recs) {
+  const byMo = {}
+  for (const r of recs) {
+    if (!r || !r.date || !r.hourly || !Object.keys(r.hourly).length) continue
+    const mo = r.date.slice(0, 7); (byMo[mo] = byMo[mo] || {})[r.date] = r.hourly
+  }
+  let saved = 0
+  for (const [mo, days] of Object.entries(byMo)) {
+    const id = 'sp_finance_pm_ab_hhrev_' + mo
+    const doc = (await kvGet(id)) || { days: {} }
+    doc.days = doc.days || {}
+    for (const [dt, hm] of Object.entries(days)) { doc.days[dt] = hm; saved++ }
+    await kvPut(id, doc, 'AB每小時營收回補')
+  }
+  return saved
+}
+
 export async function ingestPosRecords(recs, editor) { // export：boss-sync.js fillpos（AB 4~6月營收回填）共用
   const skOf2 = (n) => /groun/i.test(n || '') ? 'ground' : 'abeach'
   const store = (await kvGet('sp_finance_pm_pos')) || { entries: [] }
@@ -507,8 +525,8 @@ export default async function handler(req, res) {
   if (req.query?.eatsday) {
     const mk = (process.env.MENU_PROBE_KEY || '').trim()
     if (!mk || String(req.query.eatsday) !== mk) return res.status(403).json({ ok: false })
-    const dates = String(req.query.date || '').split(',').map(s => s.trim()).filter(s => /^\d{4}-\d{2}-\d{2}$/.test(s)).slice(0, 10)
-    if (!dates.length) return res.status(400).json({ ok: false, error: '要給 date=YYYY-MM-DD（可逗號多天，最多10）' })
+    const dates = String(req.query.date || '').split(',').map(s => s.trim()).filter(s => /^\d{4}-\d{2}-\d{2}$/.test(s)).slice(0, 40)
+    if (!dates.length) return res.status(400).json({ ok: false, error: '要給 date=YYYY-MM-DD（可逗號多天，最多40）' })
     const go = String(req.query.go || '') === '1'
     const recs = []
     for (const dt of dates) { try { const r = await eatsDayRecord(dt, kvGet); if (r) recs.push(r); else recs.push({ date: dt, error: '未設 EATS_* 或抓不到' }) } catch (e) { recs.push({ date: dt, error: e?.message || String(e) }) } }
@@ -516,8 +534,9 @@ export default async function handler(req, res) {
     if (!go) return res.status(200).json({ ok: true, dryRun: true, hint: '數字對就加 &go=1 真的入庫', preview: recs.map(r => ({ date: r.date, revenue: r.revenue, txCount: r.txCount, guests: r.guests, dineTx: r.dineTx, takeTx: r.takeTx, cash: r.cash, card: r.card, linepay: r.linepay, uber: r.uber, payOther: r.payOther, paySum: typeof r.revenue === 'number' ? (r.cash + r.card + r.linepay + r.uber + r.payOther) : null, payRaw: r._payRaw, err: r.error })) })
     const ingestRecs = good.map(({ _payRaw, ...rest }) => rest)
     const out = ingestRecs.length ? await ingestPosRecords(ingestRecs, 'AB日結後台回填') : { added: 0 }
+    const hhSaved = await saveAbHourly(good) // 熱力圖每小時：即使日結去重沒加，每小時照存（補歷史熱力圖）
     await announceChanged()
-    return res.status(200).json({ ok: true, ingested: out, dates, revenues: good.map(r => ({ date: r.date, revenue: r.revenue, txCount: r.txCount })) })
+    return res.status(200).json({ ok: true, ingested: out, hourlySaved: hhSaved, dates, revenues: good.map(r => ({ date: r.date, revenue: r.revenue, txCount: r.txCount, hours: r.hourly ? Object.keys(r.hourly).length : 0 })) })
   }
   // 任務搬移口（同金鑰，張良 2026-09-01：D哥把 14 筆記到工程空間，要搬到團隊工作）：
   // ?taskmove=<key>&from=ISO&to=ISO[&dry=1] → 把工程空間收件匣、createdAt 落在 [from,to] 的任務
@@ -1383,15 +1402,24 @@ export default async function handler(req, res) {
       for (const r of rows3) { const h = parseInt(r[0]); if (!isNaN(h)) hm[h] = (hm[h] || 0) + (Number(r[r.length - 1]) || 0) }
       if (Object.keys(hm).length) hourDays[e.date] = hm
     }
-    // AB 沒有日結時段表（Eats365 日結無時段）→ 改用盤中快照 pm_ab_hh_（joya-intraday 每半小時存「當天累計」）相鄰相減＝該時段營收（張良 2026-10-09 熱力圖）
+    // AB 沒有日結時段表（Eats365 日結無時段）→ ①主來源：後台 hourlySalesRecordMap 回補的直接每小時營收 sp_finance_pm_ab_hhrev_（可回補歷史＝熱力圖跟 GD 一樣滿，張良 2026-10-10）②補：盤中快照 sp_finance_pm_ab_hh_（joya-intraday 當天累計相鄰相減）補今天進行中的日子
     if (isAB2 && !Object.keys(hourDays).length) {
       const mos = new Set()
       for (let i = 0; i <= 4; i++) { const dM = new Date(anchor + 'T00:00:00Z'); dM.setUTCMonth(dM.getUTCMonth() - i); mos.add(dM.toISOString().slice(0, 7)) }
-      for (const mo of mos) {
+      for (const mo of mos) { // ① 回補的直接每小時（優先）
+        const rvDoc = await kvGet('sp_finance_pm_ab_hhrev_' + mo)
+        if (!rvDoc || !rvDoc.days) continue
+        for (const [date, hm] of Object.entries(rvDoc.days)) {
+          if (date < fromHD || slotEx.has(date)) continue
+          const hm2 = {}; for (const [h, v] of Object.entries(hm || {})) { const hh = parseInt(h); if (!isNaN(hh) && Number(v) > 0) hm2[hh] = Number(v) }
+          if (Object.keys(hm2).length) hourDays[date] = hm2
+        }
+      }
+      for (const mo of mos) { // ② 盤中快照補 hhrev 還沒回補到的日子（今天進行中）
         const hhDoc = await kvGet('sp_finance_pm_ab_hh_' + mo)
         if (!hhDoc || !hhDoc.days) continue
         for (const [date, arr] of Object.entries(hhDoc.days)) {
-          if (date < fromHD || slotEx.has(date)) continue
+          if (date < fromHD || slotEx.has(date) || hourDays[date]) continue
           const pts = (arr || []).slice().sort((a, b) => (a.t < b.t ? -1 : 1))
           const hm2 = {}
           for (let i = 1; i < pts.length; i++) { const seg = (Number(pts[i].rev) || 0) - (Number(pts[i - 1].rev) || 0); if (seg <= 0) continue; const h = parseInt(pts[i - 1].t.slice(0, 2)); if (!isNaN(h)) hm2[h] = (hm2[h] || 0) + seg }
@@ -5309,14 +5337,18 @@ export default async function handler(req, res) {
       const posStore = (await kvGet('sp_finance_pm_pos')) || { entries: [] }
       const haveAb = new Set((posStore.entries || []).filter(e => !/groun/i.test(e.store || '') && !e.intraday).map(e => e.date))
       const todayTW = new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10)
-      const want = []
+      const cand = [], hhMos = new Set()
       for (let i = 1; i <= Math.min(days, 7); i++) {
         const dt = new Date(Date.now() + 8 * 3600e3 - i * 864e5).toISOString().slice(0, 10)
-        if (dt < todayTW && !haveAb.has(dt)) want.push(dt)
+        if (dt < todayTW) { cand.push(dt); hhMos.add(dt.slice(0, 7)) }
       }
+      const hhHave = new Set()
+      for (const mo of hhMos) { const hd = await kvGet('sp_finance_pm_ab_hhrev_' + mo); if (hd && hd.days) for (const dt of Object.keys(hd.days)) hhHave.add(dt) }
       const recs = []
-      for (const dt of want) { try { const r = await eatsDayRecord(dt, kvGet); if (r && Number(r.revenue) > 0) recs.push(r) } catch (_) {} }
-      out.abDaily = recs.length ? await ingestPosRecords(recs, 'AB日結後台自動補抓') : { want: want.length, added: 0 }
+      for (const dt of cand) { if (haveAb.has(dt) && hhHave.has(dt)) continue; try { const r = await eatsDayRecord(dt, kvGet); if (r && Number(r.revenue) > 0) recs.push(r) } catch (_) {} } // 日結＋每小時都有才跳過
+      const dayRecs = recs.filter(r => !haveAb.has(r.date))
+      const ab1 = dayRecs.length ? await ingestPosRecords(dayRecs, 'AB日結後台自動補抓') : { added: 0 }
+      out.abDaily = { dayAdded: ab1.added || 0, hourlySaved: await saveAbHourly(recs), checked: cand.length }
     }
   } catch (e) { out.abDaily = { error: e?.message || String(e) } }
   try { out.joya = await syncJoya(Math.min(days, 20)) } catch (e) { out.joya = { error: e?.message || String(e) } } // GROUN:D 喬亞自動抓（?days=N 可回補 N 天）
