@@ -1872,11 +1872,10 @@ export default async function handler(req, res) {
     try { tb = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
     const whoT = await sopWho(tb.token)
     if (!whoT) return res.status(403).json({ ok: false, error: permDeny() })
-    const KEYS = ['prep', 'sop', 'task', 'lb', 'food', 'pack', 'buy', 'meet', 'shift', 'inc', 'fb', 'menu', 'cust', 'hrm', 'onb'] // v4.58.2 補齊=與前端 TAB_DEF 一致（原漏 prep/sop/cust/hrm/onb→這些分頁改名排序存不住，張良 2026-10-06「SOP改工作流程SOP重整又變回」）
-    const order = (Array.isArray(tb.order) ? tb.order : []).filter(k2 => KEYS.includes(k2))
-    KEYS.forEach(k2 => { if (!order.includes(k2)) order.push(k2) }) // 漏掉的補在後面
+    // v4.70.18 治本（張良 2026-10-10「改了名字又變回沒改之前」）：不再寫死白名單＝每新增一個分頁就漏存（social/lib 又中招，歷史上 SOP/cust/hrm/onb 也中過）。改成動態接受前端送來的所有分頁 key，只做格式/長度/數量防呆。
+    const order = (Array.isArray(tb.order) ? tb.order : []).map(k2 => String(k2)).filter(k2 => /^[a-z0-9_]{1,24}$/i.test(k2)).slice(0, 80)
     const names = {}
-    for (const k2 of KEYS) { const v2 = String((tb.names || {})[k2] || '').trim().slice(0, 12); if (v2) names[k2] = v2 }
+    for (const k2 of order) { const v2 = String((tb.names || {})[k2] || '').trim().slice(0, 12); if (v2) names[k2] = v2 }
     await kvPut('sp_finance_pm_prep_tabs', { order, names, by: whoT.name, ts: new Date(Date.now() + 8 * 3600e3).toISOString().slice(5, 16).replace('T', ' ') }, '分頁自訂(' + whoT.name + ')')
     return res.status(200).json({ ok: true })
   }

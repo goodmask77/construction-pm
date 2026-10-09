@@ -48,7 +48,8 @@
   }
   function socialRender() {
     const d = DATA, s = stats()
-    let h = '<h1>📣 行銷大師</h1><div class="sub">粉專內容與成效・Facebook ＋ Instagram</div>'
+    const _sTab = (((window._tabCfg || {}).names || {}).social) || '行銷大師' // v4.70.18 標題跟著設定頁「分頁名稱」走，避免側邊欄改了標題沒跟上
+    let h = '<h1>📣 ' + _sTab + '</h1><div class="sub">粉專內容與成效・Facebook ＋ Instagram</div>'
     // 6 KPI
     h += `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin:14px 0">`
       + kcard('貼文總數', nf(s.posts.length), `FB ${s.fb.length} · IG ${s.ig.length}`, '#4DA3FF')
