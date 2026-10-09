@@ -11,6 +11,9 @@
   const LENS = [['short', '簡短(1-2句)'], ['medium', '適中(3-4句)'], ['long', '較長(5句+)']]
   const INTER = m => (m ? (m.reactions || 0) + (m.comments || 0) + (m.shares || 0) : 0)
   const PLAT = p => (p === 'instagram' || p === 'ig') ? { k: 'ig', n: 'IG', c: '#E1427E' } : { k: 'fb', n: 'FB', c: '#4D8BF0' } // 品牌色：FB藍／IG粉
+  // 一則可能發到多平台：優先看實際發布結果 pub，其次看勾選 dests，最後才退回匯入貼文的 platform
+  const postPlats = p => { const s = new Set(); if (p.pub) { if (p.pub.facebook) s.add('fb'); if (p.pub.instagram) s.add('ig') } if (!s.size && p.dests && p.dests.length) p.dests.forEach(d => s.add(d.startsWith('ig') ? 'ig' : 'fb')); if (!s.size) s.add(p.platform === 'instagram' || p.platform === 'ig' ? 'ig' : 'fb'); return [...s] }
+  const platBadges = p => postPlats(p).map(k => `<span style="font-size:11px;font-weight:800;color:${k === 'ig' ? '#E1427E' : '#4D8BF0'}">${k === 'ig' ? 'IG' : 'FB'}</span>`).join('<span style="color:var(--muted);font-size:10px;margin:0 2px">·</span>')
   const inFilter = p => platFilter === 'all' || (platFilter === 'ig' ? p.platform === 'instagram' : p.platform !== 'instagram')
   // 聚合統計（儀表板共用；吃 platFilter）
   function stats() {
@@ -205,7 +208,7 @@
     return `<div onclick="_socialDetail('${p.id}')" style="background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px;display:flex;gap:10px;align-items:center;cursor:pointer">
       ${img ? `<img src="${esc(img)}" style="width:50px;height:50px;object-fit:cover;border-radius:8px;flex:0 0 auto">` : '<div style="width:50px;height:50px;border-radius:8px;background:#1C222B;flex:0 0 auto"></div>'}
       <div style="flex:1;min-width:0">
-        <div style="display:flex;align-items:center;gap:6px"><span style="color:${st[1]};font-size:11px">●</span><span style="font-size:11px;font-weight:800;color:${PLAT(p.platform).c}">${PLAT(p.platform).n}</span>${(p.tags || []).length ? `<span class="hint" style="font-size:11px">·${esc(p.tags[0])}</span>` : ''}${inter != null ? `<span style="margin-left:auto;font-weight:800;color:var(--pdark);font-size:13px;flex:0 0 auto">互動 ${nf(inter)}</span>` : `<span class="hint" style="margin-left:auto;font-size:11px;flex:0 0 auto">${st[0]}</span>`}</div>
+        <div style="display:flex;align-items:center;gap:6px"><span style="color:${st[1]};font-size:11px">●</span>${platBadges(p)}${(p.tags || []).length ? `<span class="hint" style="font-size:11px">·${esc(p.tags[0])}</span>` : ''}${inter != null ? `<span style="margin-left:auto;font-weight:800;color:var(--pdark);font-size:13px;flex:0 0 auto">互動 ${nf(inter)}</span>` : `<span class="hint" style="margin-left:auto;font-size:11px;flex:0 0 auto">${st[0]}</span>`}</div>
         <div style="font-size:13px;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-top:3px">${esc((p.caption || '（無文字）').slice(0, 60))}</div>
         ${acts ? `<div style="margin-top:7px;display:flex;gap:5px;flex-wrap:wrap" onclick="event.stopPropagation()">${acts}</div>` : ''}
       </div>
@@ -554,7 +557,7 @@
     const met = (l, v, c) => `<div style="text-align:center"><div style="font-size:21px;font-weight:800;color:${c || 'var(--ink)'};font-variant-numeric:tabular-nums">${nf(v || 0)}</div><div class="hint" style="font-size:12px">${l}</div></div>`
     const ov = document.createElement('div'); ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.62);z-index:70;display:flex;align-items:center;justify-content:center;padding:16px'; ov.onclick = () => ov.remove()
     ov.innerHTML = `<div onclick="event.stopPropagation()" style="background:var(--card);border:1px solid var(--line);border-radius:16px;max-width:460px;width:100%;max-height:85vh;overflow:auto;padding:18px">
-      <div style="display:flex;gap:10px"><div style="flex:1;min-width:0"><span style="background:${PLAT(p.platform).c}22;color:${PLAT(p.platform).c};padding:2px 9px;border-radius:999px;font-size:11px;font-weight:700">${esc(p.brand || PLAT(p.platform).n)}</span><div style="margin-top:7px;line-height:1.6;color:var(--text);max-height:160px;overflow:auto">${esc(p.caption || '（無文字）')}</div></div>${img ? `<img src="${esc(img)}" style="width:90px;height:90px;object-fit:cover;border-radius:10px;flex:0 0 auto">` : ''}</div>
+      <div style="display:flex;gap:10px"><div style="flex:1;min-width:0"><span>${postPlats(p).map(k => `<span style="background:${k === 'ig' ? '#E1427E' : '#4D8BF0'}22;color:${k === 'ig' ? '#E1427E' : '#4D8BF0'};padding:2px 9px;border-radius:999px;font-size:11px;font-weight:700;margin-right:4px">${k === 'ig' ? 'IG' : 'FB'}</span>`).join('')}</span><div style="margin-top:7px;line-height:1.6;color:var(--text);max-height:160px;overflow:auto">${esc(p.caption || '（無文字）')}</div></div>${img ? `<img src="${esc(img)}" style="width:90px;height:90px;object-fit:cover;border-radius:10px;flex:0 0 auto">` : ''}</div>
       <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:16px 0;background:#1C222B;border-radius:12px;padding:14px">${met('互動', INTER(m), '#9CC7F5')}${met('讚', m.reactions, COL.g)}${met('留言', m.comments)}${met('分享', m.shares)}${met('收藏', m.saves, COL.y)}${met('觸及', m.reach, COL.o)}</div>
       <div style="display:flex;gap:8px;align-items:center">${link ? `<a class="mini" style="text-decoration:none" href="${esc(link)}" target="_blank">看原貼文 ↗</a>` : ''}<button class="mini on" style="margin-left:auto" onclick="this.closest('div[style*=fixed]').remove()">關閉</button></div></div>`
     document.body.appendChild(ov)
