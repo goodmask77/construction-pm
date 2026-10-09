@@ -214,6 +214,23 @@ export default async function handler(req, res) {
         await setPosts(doc, op); await act('社群' + (op === 'approve' ? '核准' : '退回'), p.title || (p.caption || '').slice(0, 20))
         return res.status(200).json({ ok: true })
       }
+      if (op === 'publishnow') { // 立即發送（管理者繞審核直接發到勾選平台）
+        if (!who.admin) return res.status(200).json({ ok: false, error: '只有管理者能直接發送' })
+        if (!metaReady()) return res.status(200).json({ ok: false, error: '發送功能尚未開通（Meta 未設定）' })
+        const p = doc.list.find(x => x.id === body.id); if (!p) return res.status(200).json({ ok: false, error: '找不到貼文' })
+        if (!(p.dests && p.dests.length)) return res.status(200).json({ ok: false, error: '還沒勾選要發到哪個平台（下面「發布到哪裡」）' })
+        try {
+          const { publishPost } = await import('./social-publish.js')
+          const acc = await getAccounts(); const pages = (acc.facebook && acc.facebook.pages) || {}
+          p.status = 'publishing'; p.updatedAt = new Date().toISOString(); await setPosts(doc, '立即發布中')
+          const okPub = await publishPost(p, pages)
+          p.status = okPub ? 'published' : 'failed'; p.updatedAt = new Date().toISOString(); if (okPub) { p.publishedAt = new Date().toISOString(); p.approvedBy = who.name; p.approvedAt = p.publishedAt }
+          await setPosts(doc, '立即發布結果'); await act(okPub ? '社群立即發布' : '社群發布失敗', (p.caption || '').slice(0, 20))
+          const igErr = p.pub && p.pub.instagram && p.pub.instagram.status === 'failed' ? p.pub.instagram.error : ''
+          const fbErr = p.pub && p.pub.facebook && p.pub.facebook.status === 'failed' ? p.pub.facebook.error : ''
+          return res.status(200).json({ ok: okPub, status: p.status, pub: p.pub, error: okPub ? null : ('發布失敗：' + [igErr && ('IG—' + igErr), fbErr && ('FB—' + fbErr)].filter(Boolean).join('；')) })
+        } catch (e) { p.status = 'failed'; await setPosts(doc, '立即發布錯誤'); return res.status(200).json({ ok: false, error: e.message || '發布失敗' }) }
+      }
       if (op === 'addpage') {
         if (!who.admin) return res.status(200).json({ ok: false, error: '只有管理者能新增粉專' })
         // 商家旗下粉專不列在 /me/accounts：用授權時存的 user token＋粉專編號直接拿 page token

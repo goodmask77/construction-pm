@@ -260,8 +260,12 @@
           <input id="sfWhen" type="datetime-local" value="${v.scheduledAt ? new Date(v.scheduledAt).toISOString().slice(0, 16) : ''}" style="border:1px solid var(--line);border-radius:10px;padding:8px;display:${isLater ? 'inline-block' : 'none'}">
         </div>
       </div>
-      <div id="sfSchHint" class="hint" style="margin-top:8px">${isLater ? '📅 已選「指定時間」：到你設的時間自動發。' : '⚡ 已選「即刻發送」：核准後馬上發。內容填好後，按下面「✓ 儲存」送出。'}</div>
-      <div style="margin-top:12px;display:flex;gap:8px"><button class="mini on" onclick="_socialSave('${v.id || ''}')">✓ 儲存</button><button class="mini" onclick="_socialEditClose()">取消</button></div>
+      <div id="sfSchHint" class="hint" style="margin-top:8px">${isLater ? '📅 已選「指定時間」：到你設的時間自動發。' : '⚡ 已選「即刻發送」：填好內容後，按「🚀 立即發送」直接發，或「✓ 儲存草稿」留著稍後。'}</div>
+      <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">
+        <button class="mini on" onclick="_socialSave('${v.id || ''}')">✓ 儲存草稿</button>
+        ${(DATA.me && DATA.me.admin && DATA.metaReady) ? `<button class="mini" style="background:#3DBE6C;color:#fff;border-color:transparent" onclick="_socialPublishNow('${v.id || ''}')">🚀 立即發送</button>` : ''}
+        <button class="mini" onclick="_socialEditClose()">取消</button>
+      </div>
     </section>`
   }
 
@@ -423,6 +427,26 @@
     if (dests.some(d => d.startsWith('ig:')) && !(editMedia[0] && editMedia[0].url)) { alert('有勾 IG 的話一定要附圖'); return }
     const j = await sPost({ op: 'save', id: id || undefined, caption: cap, tags, relatedItems: items, scheduledAt: whenV ? new Date(whenV).toISOString() : null, dests, media: editMedia })
     if (j.ok) { editId = null; socialLoad() } else alert(j.error || '儲存失敗')
+  }
+  window._socialPublishNow = async function (id) {
+    const cap = ((document.getElementById('sfCap') || {}).value || '').trim()
+    if (!cap && !editMedia.length) { alert('請先填文案或選圖'); return }
+    const dests = [...document.querySelectorAll('.sfDest:checked')].map(x => x.value)
+    if (!dests.length) { alert('請先在下面「發布到哪裡」勾至少一個平台'); return }
+    if (dests.some(d => d.startsWith('ig:')) && !(editMedia[0] && editMedia[0].url)) { alert('發 IG 一定要附圖'); return }
+    const names = [...new Set(dests.map(d => d.startsWith('ig:') ? 'IG' : 'FB'))].join('、')
+    if (!confirm('確定現在直接發送到 ' + names + '？\n發出去就收不回了。')) return
+    const tags = ((document.getElementById('sfTags') || {}).value || '').split(',').map(s => s.trim()).filter(Boolean)
+    const items = ((document.getElementById('sfItems') || {}).value || '').split(',').map(s => s.trim()).filter(Boolean)
+    const sv = await sPost({ op: 'save', id: id || undefined, caption: cap, tags, relatedItems: items, dests, media: editMedia, scheduledAt: null })
+    if (!sv.ok) { alert(sv.error || '儲存失敗'); return }
+    const ov = document.createElement('div'); ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:80;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;color:#fff'
+    ov.innerHTML = '<div style="font-size:17px;font-weight:800">🚀 發送中…</div><div style="color:#C7D0DB;font-size:13px">發 IG 需要約 10–30 秒，請稍候別關</div>'
+    document.body.appendChild(ov)
+    let j; try { j = await sPost({ op: 'publishnow', id: sv.id }) } catch (e) { j = { ok: false, error: '連線問題' } }
+    ov.remove()
+    if (j.ok) { alert('✅ 已發送成功！'); editId = null; socialLoad() }
+    else { alert('發送沒成功：\n' + (j.error || '未知原因')); socialLoad() }
   }
   window._socialSubmit = async function (id) { if (!confirm('送出審核？張良會收到通知。')) return; const j = await sPost({ op: 'submit', id }); if (j.ok) { alert('已送審，張良會收到通知'); socialLoad() } else alert(j.error || '失敗') }
   window._socialDel = async function (id) { if (!confirm('刪除這則貼文？')) return; const j = await sPost({ op: 'del', id }); if (j.ok) socialLoad(); else alert(j.error || '失敗') }

@@ -6,6 +6,50 @@ import { getPosts, setPosts, getAccounts, fbPageToken, graphGet, graphPost, DRY_
 
 const sleep = (ms) => new Promise(r => setTimeout(r, ms))
 
+// 發一則到它指定的 dests（FB／IG）。更新 p.pub，回傳是否全部成功。不負責存檔（caller 存）＝立即發與 cron 共用
+export async function publishPost(p, pages) {
+  p.pub = p.pub || {}
+  const dests = (p.dests && p.dests.length) ? p.dests : []
+  let allOk = dests.length > 0
+  if (!dests.length) { p.pub._err = '沒有選發布目標' }
+  for (const dest of dests) {
+    const i = dest.indexOf(':'); const type = dest.slice(0, i), id = dest.slice(i + 1)
+    try {
+      if (type === 'fb') {
+        const token = await fbPageToken(id); if (!token) throw new Error('無粉專權杖')
+        const img = (p.media && p.media[0] && p.media[0].url)
+        let r
+        if (DRY_RUN) r = { id: 'DRYRUN', post_id: 'DRYRUN' }
+        else if (img) r = await graphPost(`/${id}/photos`, { url: img, caption: p.caption || '' }, token)
+        else r = await graphPost(`/${id}/feed`, { message: p.caption || '' }, token)
+        const postId = r.post_id || r.id
+        let permalink = ''
+        if (!DRY_RUN) { try { const pl = await graphGet(`/${postId}`, { fields: 'permalink_url' }, token); permalink = pl.permalink_url || '' } catch (_) {} }
+        p.pub.facebook = { postId, permalink, publishedAt: new Date().toISOString(), status: 'published', dest: id }
+      } else if (type === 'ig') {
+        const ownPage = Object.values(pages).find(pg => pg.igUserId === id)
+        const token = ownPage ? await fbPageToken(ownPage.pageId) : ''
+        if (!token) throw new Error('IG 無權杖')
+        const img = (p.media && p.media[0] && p.media[0].url); if (!img) throw new Error('IG 一定要有圖片')
+        if (DRY_RUN) { p.pub.instagram = { mediaId: 'DRYRUN', status: 'published', publishedAt: new Date().toISOString(), dest: id } }
+        else {
+          const cont = await graphPost(`/${id}/media`, { image_url: img, caption: p.caption || '' }, token)
+          let ready = false
+          for (let k = 0; k < 12; k++) { const st = await graphGet(`/${cont.id}`, { fields: 'status_code' }, token); if (st.status_code === 'FINISHED') { ready = true; break } if (st.status_code === 'ERROR') throw new Error('IG 容器處理失敗'); await sleep(2500) }
+          if (!ready) throw new Error('IG 容器逾時')
+          const pub = await graphPost(`/${id}/media_publish`, { creation_id: cont.id }, token)
+          let permalink = ''; try { const pl = await graphGet(`/${pub.id}`, { fields: 'permalink' }, token); permalink = pl.permalink || '' } catch (_) {}
+          p.pub.instagram = { mediaId: pub.id, permalink, publishedAt: new Date().toISOString(), status: 'published', dest: id }
+        }
+      }
+    } catch (e) {
+      allOk = false
+      p.pub[type === 'ig' ? 'instagram' : 'facebook'] = { status: 'failed', error: e.message || '發布失敗', dest: id }
+    }
+  }
+  return allOk
+}
+
 export default async function handler(req, res) {
   try {
     if (!metaReady()) return res.status(200).json({ ok: false, skipped: '未設 META env' })
@@ -18,47 +62,7 @@ export default async function handler(req, res) {
 
     for (const p of due.slice(0, 5)) { // 一次最多 5 則
       p.status = 'publishing'; p.updatedAt = new Date().toISOString(); await setPosts(doc, '發布中') // 原子鎖：先標記避免重複發
-      p.pub = p.pub || {}
-      const dests = (p.dests && p.dests.length) ? p.dests : []
-      let allOk = dests.length > 0
-      if (!dests.length) { p.pub._err = '沒有選發布目標' }
-
-      for (const dest of dests) {
-        const i = dest.indexOf(':'); const type = dest.slice(0, i), id = dest.slice(i + 1)
-        try {
-          if (type === 'fb') {
-            const token = await fbPageToken(id); if (!token) throw new Error('無粉專權杖')
-            const img = (p.media && p.media[0] && p.media[0].url)
-            let r
-            if (DRY_RUN) r = { id: 'DRYRUN', post_id: 'DRYRUN' }
-            else if (img) r = await graphPost(`/${id}/photos`, { url: img, caption: p.caption || '' }, token)
-            else r = await graphPost(`/${id}/feed`, { message: p.caption || '' }, token)
-            const postId = r.post_id || r.id
-            let permalink = ''
-            if (!DRY_RUN) { try { const pl = await graphGet(`/${postId}`, { fields: 'permalink_url' }, token); permalink = pl.permalink_url || '' } catch (_) {} }
-            p.pub.facebook = { postId, permalink, publishedAt: new Date().toISOString(), status: 'published', dest: id }
-          } else if (type === 'ig') {
-            const ownPage = Object.values(pages).find(pg => pg.igUserId === id)
-            const token = ownPage ? await fbPageToken(ownPage.pageId) : ''
-            if (!token) throw new Error('IG 無權杖')
-            const img = (p.media && p.media[0] && p.media[0].url); if (!img) throw new Error('IG 一定要有圖片')
-            if (DRY_RUN) { p.pub.instagram = { mediaId: 'DRYRUN', status: 'published', publishedAt: new Date().toISOString(), dest: id } }
-            else {
-              const cont = await graphPost(`/${id}/media`, { image_url: img, caption: p.caption || '' }, token)
-              let ready = false
-              for (let k = 0; k < 12; k++) { const st = await graphGet(`/${cont.id}`, { fields: 'status_code' }, token); if (st.status_code === 'FINISHED') { ready = true; break } if (st.status_code === 'ERROR') throw new Error('IG 容器處理失敗'); await sleep(2500) }
-              if (!ready) throw new Error('IG 容器逾時')
-              const pub = await graphPost(`/${id}/media_publish`, { creation_id: cont.id }, token)
-              let permalink = ''; try { const pl = await graphGet(`/${pub.id}`, { fields: 'permalink' }, token); permalink = pl.permalink || '' } catch (_) {}
-              p.pub.instagram = { mediaId: pub.id, permalink, publishedAt: new Date().toISOString(), status: 'published', dest: id }
-            }
-          }
-        } catch (e) {
-          allOk = false
-          p.pub[type === 'ig' ? 'instagram' : 'facebook'] = { status: 'failed', error: e.message || '發布失敗', dest: id }
-        }
-      }
-
+      const allOk = await publishPost(p, pages)
       p.status = allOk ? 'published' : 'failed'; p.updatedAt = new Date().toISOString(); if (allOk) p.publishedAt = new Date().toISOString()
       await setPosts(doc, '發布結果')
       try { const { wpPush } = await import('./_webpush.js'); await wpPush(null, { title: allOk ? '✅ 社群已發布' : '⚠️ 社群發布失敗', body: (p.caption || '').slice(0, 50), url: '/prep#social', cat: 'other' }) } catch (_) {}

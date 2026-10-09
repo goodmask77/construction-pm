@@ -53,6 +53,15 @@ export default async function handler(req, res) {
       for (const pg of list) sec.facebook.tokens[pg.id] = pg.access_token
       sec.facebook.userToken = longUser // 存長效 user token：商家旗下粉專不列在 /me/accounts，用它＋粉專編號可直接拿 page token
       sec.facebook.userTokenExp = t2.expires_in || null
+      // 重連時一併刷新「商家旗下、不在 /me/accounts」的已連粉專（如 A Beach 101&Pizza）→ 用新 user token 重拿 page token，帶上新授權的發文權限
+      for (const pid of Object.keys(acc.facebook.pages)) {
+        if (list.find(p => p.id === pid)) continue // /me/accounts 已處理過
+        try {
+          const pg = await graphGet('/' + pid, { fields: 'id,name,access_token,instagram_business_account' }, longUser)
+          if (pg.access_token) { sec.facebook.tokens[pid] = pg.access_token; acc.facebook.pages[pid].igUserId = (pg.instagram_business_account || {}).id || acc.facebook.pages[pid].igUserId; acc.facebook.pages[pid].tokenStatus = 'ok'; acc.facebook.pages[pid].tokenCheckedAt = now }
+        } catch (_) {}
+      }
+      await setAccounts(acc, 'FB連接刷新')
       await setSecret(sec, 'FB token')
       await kvPut('sp_finance_pm_social_oauth', {}, 'oauth-done')
       const names = list.map(p => esc(p.name)).join('、')
