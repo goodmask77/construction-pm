@@ -1,4 +1,4 @@
-// ── 🪪 夥伴名冊 v4.34.2（張良 2026-10-04：主管限定；標題資料對齊/全部AB GD切換/欄位排序/生日提醒卡；生日前一週 cron 發 ABpeople 群）──
+// ── 🪪 夥伴名冊 v4.35.0（張良 2026-10-08：部門/職務都改下拉選單可自訂+GD/AB不同底色；主管限定；標題資料對齊/全部AB GD切換/欄位排序/生日提醒卡；生日前一週 cron 發 ABpeople 群）──
 // 資料端 hrmaster 口在伺服器就擋，非主管連資料都拿不到；來源＝勞工名冊 Google Sheet（口香糖=A Beach、喬亞=GROUN:D）
 let hrmQ = '', hrmCo = 'all', hrmSort = { k: '', dir: 1 }
 // 📎 入職文件標準清單 v4.35.0（台灣餐飲業；guardian 只有未成年需要）
@@ -104,7 +104,7 @@ function hrmRender(){
       <span class="hint">${rows.length} 人</span>
       ${d.canEdit?`<button class="mini${window._hrmEdit?' on':''}" style="padding:6px 14px;font-weight:800" onclick="window._hrmEdit=!window._hrmEdit;hrmRender()">${window._hrmEdit?'✓ 完成編輯':'✏️ 編輯'}</button>`:''}
       <button class="mini" style="padding:6px 14px;font-weight:800" onclick="hrmLib()">🗂 文件庫</button>
-      ${d.canEdit&&window._hrmEdit?`<button class="mini" style="padding:6px 12px" onclick="hrmTitleOpts()">職務選單</button><button class="mini" style="padding:6px 12px" onclick="hrmAdd('ab')">＋ AB 加人</button><button class="mini" style="padding:6px 12px" onclick="hrmAdd('gd')">＋ GD 加人</button><button class="mini" style="padding:6px 12px" onclick="hrmColOrder()">欄位排序</button>`:''}
+      ${d.canEdit&&window._hrmEdit?`<button class="mini" style="padding:6px 12px" onclick="hrmOptsEdit('dept')">部門選單</button><button class="mini" style="padding:6px 12px" onclick="hrmOptsEdit('title')">職務選單</button><button class="mini" style="padding:6px 12px" onclick="hrmAdd('ab')">＋ AB 加人</button><button class="mini" style="padding:6px 12px" onclick="hrmAdd('gd')">＋ GD 加人</button><button class="mini" style="padding:6px 12px" onclick="hrmColOrder()">欄位排序</button>`:''}
     </div>`
   if ((d.pending||[]).length) { // v4.60 LINE 報到新人（kb_roster onboarding）；v4.56.10 升級：入職進度條＋繳交未完成標記＋完整資料＋可隱藏（主管限定看全部）
     const ONB_L = ['基本資料','繳交表','簽署','勞健保']
@@ -150,7 +150,11 @@ function hrmRender(){
   const arrow = k => `<span style="display:inline-block;width:12px;text-align:center;font-size:10px">${hrmSort.k===k?(hrmSort.dir>0?'▲':'▼'):''}</span>`
   const LOCK_I9 = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" style="vertical-align:-2px"><rect x="4" y="11" width="16" height="9" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>'
   const topts = d.titleOpts || ['正職','PT']
-  const SEL9 = (x)=>`<select style="padding:3px 4px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--ink);font-size:12.5px" onchange="hrmSet('${(x.co||'').replace(/'/g,'')}','${(x.name||'').replace(/'/g,'')}','title',this.value)">${[...new Set([x.title,...topts])].filter(Boolean).map(o9=>`<option ${o9===x.title?'selected':''}>${o9}</option>`).join('')}</select>`
+  const dopts = d.deptOpts || [...new Set((d.rows||[]).map(r9=>r9.dept).filter(Boolean))] // 部門選項：沒設定就用名冊現有部門湊
+  // v4.35.0 部門/職務都改下拉選單（張良「部門跟職務都要可以編輯 用選單不要填寫」）：選單含目前值＋可自訂，第一項「—」=清空
+  const SELf = (x,f,opts)=>{ const co9=(x.co||'').replace(/'/g,''), nm9=(x.name||'').replace(/'/g,''), cur9=x[f]||''
+    const list9=[...new Set([cur9,...opts])].filter(Boolean)
+    return `<select style="padding:3px 4px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--ink);font-size:12.5px" onchange="hrmSet('${co9}','${nm9}','${f}',this.value)"><option value="" ${cur9?'':'selected'}>—</option>${list9.map(o9=>`<option ${o9===cur9?'selected':''}>${o9}</option>`).join('')}</select>` }
   const tenOf = x => { // v4.62 年資按天算（剛到職別再湊成1個月）：今天/N天/N個月/N年；比日期＝免時區誤差
     const on = String(x.onboard||'').slice(0,10); if (!/^\d{4}-\d{2}-\d{2}$/.test(on)) return ''
     const ty = new Date(Date.now()+8*3600e3).toISOString().slice(0,10)
@@ -161,8 +165,8 @@ function hrmRender(){
   const HRM_COLS = [
     { k:'name', lb:'姓名', al:'left', stick:1, td:(x)=>`${ed0?IN9(x,'name',70,1):(x.name||'')}${bdaySet[x.co+'|'+x.name]!=null?' 🎂':''}`, w:800 },
     { k:'co', lb:'店', al:'center', onlyAll:1, td:(x)=>`<b>${/A Beach/.test(x.co)?'AB':'GD'}</b>` },
-    { k:'dept', lb:'部門', al:'center', td:(x)=>ed0?IN9(x,'dept',56):(x.dept||'—') },
-    { k:'title', lb:'職務', al:'center', td:(x)=>ed0?SEL9(x):(x.title||'—') },
+    { k:'dept', lb:'部門', al:'center', td:(x)=>ed0?SELf(x,'dept',dopts):(x.dept||'—') },
+    { k:'title', lb:'職務', al:'center', td:(x)=>ed0?SELf(x,'title',topts):(x.title||'—') },
     { k:'onboard', lb:'到職日', al:'center', td:(x)=>ed0?IN9(x,'onboard',92):(x.onboard||'—') },
     { k:'ten', lb:'年資', al:'center', sortK:'onboard', td:(x)=>`<span class="hint">${tenOf(x)||'—'}</span>` },
     { k:'bday', lb:'生日', al:'center', td:(x)=>ed0?IN9(x,'birth',92):(x.birth||'—') },
@@ -182,7 +186,8 @@ function hrmRender(){
   }
   const rowHtml = (x)=>{
     const bd9 = bdaySet[x.co+'|'+x.name]
-    return `<tr ${bd9!=null?'class="bdayGlow" title="🎂 '+(bd9===0?'今天生日！':bd9+' 天後生日')+'"':''} style="border-top:1px solid var(--line);font-size:13px">${colsR.map(c=>`<td class="${c.stick?'hrmStick':''}" style="padding:4px 7px;text-align:${c.al};white-space:nowrap${c.k==='name'?';font-weight:800':''}">${c.td(x)}</td>`).join('')}</tr>`
+    const co9 = bd9!=null ? 'bdayGlow' : (/A Beach/.test(x.co||'') ? 'rowAB' : 'rowGD') // v4.35.0 GD/AB 不同底色好辨識；生日列優先顯示發光
+    return `<tr class="${co9}" ${bd9!=null?'title="🎂 '+(bd9===0?'今天生日！':bd9+' 天後生日')+'"':''} style="border-top:1px solid var(--line);font-size:13px">${colsR.map(c=>`<td class="${c.stick?'hrmStick':''}" style="padding:4px 7px;text-align:${c.al};white-space:nowrap${c.k==='name'?';font-weight:800':''}">${c.td(x)}</td>`).join('')}</tr>`
   }
   h += `<div class="scroll"><table style="border-collapse:collapse;width:100%"><thead><tr>${colsR.map(thOf).join('')}</tr></thead><tbody>${rows.map(rowHtml).join('')}</tbody></table></div>`
   h += `<div class="hint" style="margin-top:10px">來源：勞工名冊（Google Sheet）・要更新跟 D 哥說「更新夥伴名冊」即可重新匯入</div></section>`
@@ -228,34 +233,42 @@ async function hrmAdd(code){ const d = window._hrmD||{rows:[]}
   const nm = prompt('新夥伴姓名'); if (!nm) return; const r = await hrmUp({ op:'add', co, newName: nm.trim().slice(0,20) }); if (r) hrmRenderKeep() }
 async function hrmDel(co, name){ if (!confirm('把 '+name+' 從名冊移除？')) return; const r = await hrmUp({ op:'del', co, name }); if (r) hrmRender() }
 
-// 職務選單自訂 v4.34.6（張良「不要再出現分號一行的設定視窗 專業一點」）：正式視窗＝一列一個選項、可改字/刪、＋新增、✓儲存
-function hrmTitleOpts(){
+// 部門／職務選單自訂 v4.35.0（張良「部門跟職務都要可以編輯 用選單不要填寫」）：一列一個選項、可改字/刪、＋新增、✓儲存
+// kind='dept'|'title'；修掉舊版「選項列表沒渲染出來」的 bug（原本漏了 #toList）
+function hrmOptsEdit(kind){
   const d = window._hrmD; if (!d) return
-  window._toL = (d.titleOpts && d.titleOpts.length ? d.titleOpts : ['正職','PT']).slice()
-  hrmToDraw()
+  const def = kind==='title' ? ['正職','PT'] : [...new Set((d.rows||[]).map(r9=>r9.dept).filter(Boolean))]
+  const cur = kind==='title' ? d.titleOpts : d.deptOpts
+  window._optKind = kind
+  window._optL = (cur && cur.length ? cur : def).slice()
+  hrmOptDraw()
 }
-function hrmToDraw(){
-  const old = document.getElementById('toOv'); if (old) old.remove()
-  const ov = document.createElement('div'); ov.id = 'toOv'
+function hrmOptDraw(){
+  const kind = window._optKind, lb = kind==='title' ? '職務' : '部門'
+  const old = document.getElementById('optOv'); if (old) old.remove()
+  const ov = document.createElement('div'); ov.id = 'optOv'
   ov.style.cssText = 'position:fixed;inset:0;background:rgba(10,14,22,.55);z-index:70;display:flex;align-items:center;justify-content:center;padding:16px'
   ov.innerHTML = `<div style="background:#1C2430;border:1px solid #39434F;border-radius:14px;max-width:340px;width:100%;max-height:80vh;overflow:auto;padding:16px" onclick="event.stopPropagation()">
-    <div style="font-weight:900;margin-bottom:4px">職務選單</div>
-    <div class="hint" style="margin-bottom:10px">編輯模式下職務欄的選項；改字直接打、不要的按 ✕</div>
-
-    <button class="mini" style="padding:7px 14px" onclick="window._toL.push('');hrmToDraw()">＋ 新增選項</button>
+    <div style="font-weight:900;margin-bottom:4px">${lb}選單</div>
+    <div class="hint" style="margin-bottom:10px">編輯模式下${lb}欄的下拉選項；改字直接打、不要的按 ✕</div>
+    <div id="optList">${window._optL.map((v,i)=>`<div style="display:flex;gap:8px;align-items:center;padding:4px 0;border-top:1px solid var(--line)">
+      <input value="${String(v).replace(/"/g,'&quot;')}" style="flex:1;padding:6px 9px;border:1px solid var(--line);border-radius:7px;background:var(--bg);color:var(--ink);font-size:14px" oninput="window._optL[${i}]=this.value">
+      <button class="mini" style="padding:3px 10px;color:var(--red)" onclick="window._optL.splice(${i},1);hrmOptDraw()">✕</button></div>`).join('')}</div>
+    <button class="mini" style="padding:7px 14px;margin-top:10px" onclick="window._optL.push('');hrmOptDraw()">＋ 新增選項</button>
     <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px">
-      <button class="mini" style="padding:8px 14px" onclick="document.getElementById('toOv').remove()">取消</button>
-      <button class="mini on" style="padding:8px 18px" onclick="hrmToSave()">✓ 儲存</button></div></div>`
+      <button class="mini" style="padding:8px 14px" onclick="document.getElementById('optOv').remove()">取消</button>
+      <button class="mini on" style="padding:8px 18px" onclick="hrmOptSave()">✓ 儲存</button></div></div>`
   ov.onclick = () => ov.remove()
   document.body.appendChild(ov)
-  const inp = ov.querySelectorAll('#toList input'); if (inp.length) inp[inp.length-1].focus()
+  const inp = ov.querySelectorAll('#optList input'); if (inp.length) inp[inp.length-1].focus()
 }
-async function hrmToSave(){
-  const list = (window._toL||[]).map(x=>String(x).trim()).filter(Boolean)
+async function hrmOptSave(){
+  const kind = window._optKind
+  const list = (window._optL||[]).map(x=>String(x).trim()).filter(Boolean)
   if (!list.length) { alert('至少留一個選項'); return }
-  const r = await hrmUp({ op:'titleopts', list })
-  const o = document.getElementById('toOv'); if (o) o.remove()
-  if (r) { window._hrmD.titleOpts = r.titleOpts; hrmRenderKeep() }
+  const r = await hrmUp({ op: kind==='title'?'titleopts':'deptopts', list })
+  const o = document.getElementById('optOv'); if (o) o.remove()
+  if (r) { if (kind==='title') window._hrmD.titleOpts = r.titleOpts; else window._hrmD.deptOpts = r.deptOpts; hrmRenderKeep() }
 }
 
 // 📎 入職文件總管 v4.35.0（張良「體檢要能直接上傳檔案 給勞檢稽核；追蹤入職進度」）
