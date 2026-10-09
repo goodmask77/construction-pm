@@ -37,8 +37,25 @@ export default async function handler(req, res) {
       const longUser = t2.access_token
       // 取可管理的粉專（通常只有一個）＋ page token
       const pages = await graphGet('/me/accounts', { fields: 'id,name,access_token,instagram_business_account' }, longUser)
-      const list = pages.data || []
-      if (!list.length) return res.status(200).send(page('找不到粉專', '這個 Facebook 帳號沒有可管理的粉專。請確認你登入的是該粉專的「管理員」帳號。'))
+      let list = pages.data || []
+      // 商家旗下粉專不列在 /me/accounts：用 user token 抓商家 owned/client pages 補上（需 business_management）
+      if (!list.length) {
+        try {
+          const biz = await graphGet('/me/businesses', { fields: 'id,name' }, longUser)
+          const seen = new Set()
+          for (const b of (biz.data || [])) {
+            for (const edge of ['owned_pages', 'client_pages']) {
+              try {
+                const r = await graphGet('/' + b.id + '/' + edge, { fields: 'id,name,access_token,instagram_business_account' }, longUser)
+                for (const pg of (r.data || [])) { if (pg.access_token && !seen.has(pg.id)) { seen.add(pg.id); list.push(pg) } }
+              } catch (_) {}
+            }
+          }
+        } catch (_) {}
+      }
+      // 先存長效 user token（就算沒抓到粉專，之後也能用「粉專編號」手動加商家旗下粉專）
+      { const s0 = await getSecret(); s0.facebook = s0.facebook || {}; s0.facebook.userToken = longUser; s0.facebook.userTokenExp = t2.expires_in || null; await setSecret(s0, 'FB user token') }
+      if (!list.length) return res.status(200).send(page('授權成功，粉專待加入', '授權已存好 👍 但你的粉專掛在「商家」底下、沒自動列出。<br><br>請回 App「社群」分頁用「<b>用粉專編號加入</b>」，貼上 GROUN:D 粉專編號即可。', true))
       // 多粉專：把這次授權帳號能管的粉專全部「併入」（不覆蓋別帳號已連的），A Beach / GROUN:D 可各自連
       const now = new Date().toISOString()
       const acc = await getAccounts()
