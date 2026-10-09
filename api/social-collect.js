@@ -87,17 +87,20 @@ export async function runCollect(daysBack = 30) {
         measured++
       } catch (e) { if (!firstErr) firstErr = e.message }
     }
-    // FB 刪除偵測（保守）：這次有成功抓到 feed 才判；只標在 since 之後發布、且不在本次清單的已發布貼文＝軟標記不真刪
+    // FB 刪除偵測（保守·連續缺席才標）：單次 API 不一定回傳近 30 天全部貼文，一次抓不到就標會誤殺。
+    // 改成連續 MISS_MAX 次（每 3 小時一次＝約 9 小時）都抓不到才軟標 deletedAt；一旦又出現或缺席不足門檻＝自動清除（修復誤標）
+    const MISS_MAX = 3
     let fbDeleted = 0
     if (fbOk) {
       for (const p of doc.list) {
         const f = p.pub && p.pub.facebook
-        if (!f || f.postId == null || f.deletedAt) continue
-        if (f.status !== 'published') continue
+        if (!f || f.postId == null) continue
+        if (f.status && f.status !== 'published' && !f.deletedAt) continue
         if (p.page && p.page !== pageId) continue
         const pubSec = Date.parse(f.publishedAt || p.createdAt || 0) / 1000
-        if (!pubSec || pubSec < since) continue // 超出抓取範圍的不判（避免分頁遺漏誤殺）
-        if (!seenFb.has(f.postId)) { f.deletedAt = nowIso; if (p.status === 'published') p.status = 'published'; fbDeleted++ }
+        if (!pubSec || pubSec < since) { if (f.deletedAt) { delete f.deletedAt; f.miss = 0 }; continue } // 超出範圍不判＋清掉舊誤標
+        if (seenFb.has(f.postId)) { f.miss = 0; if (f.deletedAt) delete f.deletedAt }
+        else { f.miss = (f.miss || 0) + 1; if (f.miss >= MISS_MAX) { if (!f.deletedAt) { f.deletedAt = nowIso; fbDeleted++ } } else if (f.deletedAt) delete f.deletedAt }
       }
     }
 
@@ -126,14 +129,15 @@ export async function runCollect(daysBack = 30) {
           md.days[`${p.id}::ig::${today}`] = snap
           igMeas++
         }
-        // IG 刪除偵測（同 FB 保守）
+        // IG 刪除偵測（同 FB 保守·連續缺席才標）
         for (const p of doc.list) {
           const g = p.pub && p.pub.instagram
-          if (!g || g.mediaId == null || g.deletedAt) continue
+          if (!g || g.mediaId == null) continue
           if (p.page && p.page !== pg.igUserId) continue
           const pubSec = Date.parse(g.publishedAt || p.createdAt || 0) / 1000
-          if (!pubSec || pubSec < since) continue
-          if (!seenIg.has(g.mediaId)) { g.deletedAt = nowIso; igDeleted++ }
+          if (!pubSec || pubSec < since) { if (g.deletedAt) { delete g.deletedAt; g.miss = 0 }; continue }
+          if (seenIg.has(g.mediaId)) { g.miss = 0; if (g.deletedAt) delete g.deletedAt }
+          else { g.miss = (g.miss || 0) + 1; if (g.miss >= MISS_MAX) { if (!g.deletedAt) { g.deletedAt = nowIso; igDeleted++ } } else if (g.deletedAt) delete g.deletedAt }
         }
       } catch (e) { igErr = 'ig:' + (e.message || '') }
     }

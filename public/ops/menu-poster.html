@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8" />
+<title>GROUN:D 菜單海報</title>
+<!--
+  菜單海報 HTML 模板（張良 2026-10-10 v1.0 自建網頁模板出圖）
+  取代舊 canvas 手刻：用 CSS 排版 → puppeteer 截圖成 PNG。框線/對齊/換行全自動，不再切字。
+  資料來源：window.MENU_DATA（截圖腳本/App 注入）；無則用內建 sample（當前菜單含沙拉）。
+  直式畫布 1080×1920。字體：Alfa Slab One（英文大標）/ Noto Sans TC（中文）/ Poppins（英文副標）。
+-->
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700;900&family=Alfa+Slab+One&family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  :root{ --cream:#F5EADA; --red:#CE1611; --eng:#C56B54; --dot:#D98A7A; }
+  html,body{background:#555}
+  /* 直式畫布 */
+  #poster{
+    width:1080px; height:1920px; background:var(--cream); position:relative;
+    font-family:"Noto Sans TC",system-ui,sans-serif; color:var(--red);
+    padding:28px 38px 0; display:flex; flex-direction:column;
+  }
+  /* 品牌頭 */
+  .brand{ text-align:center; margin-bottom:10px; }
+  .brand .h{ font-family:"Poppins",sans-serif; font-weight:600; font-size:22px; letter-spacing:.42em; }
+  .brand .g{ font-family:"Alfa Slab One",serif; font-size:52px; line-height:1.05; letter-spacing:.01em; }
+  /* 欄頭 */
+  .colhead{ display:flex; justify-content:space-between; align-items:baseline; font-size:19px; font-weight:700; padding:0 12px; margin-bottom:6px; }
+  /* 分類：左右兩欄各自獨立堆疊（非行對齊，官方版式） */
+  .cats{ flex:1; display:flex; gap:37px; align-items:flex-start; padding-bottom:78px; }
+  .col{ flex:1; min-width:0; display:flex; flex-direction:column; gap:13px; }
+  .cat{ }
+  .cat h2{ display:flex; align-items:baseline; gap:10px; margin-bottom:6px; padding-left:2px; }
+  .cat h2 .en{ font-family:"Alfa Slab One",serif; font-size:30px; line-height:1; }
+  .cat h2 .zh{ font-size:25px; font-weight:900; }
+  .cat h2 .pz{ font-size:14px; font-weight:700; line-height:1.1; }
+  /* 品項框 */
+  .box{ border:2px solid var(--red); border-radius:16px; padding:12px 16px 14px; }
+  .item{ margin:0; }
+  .item + .item{ margin-top:10px; }
+  .item .row1{ display:flex; align-items:baseline; gap:8px; font-weight:700; }
+  .item .nm{ font-size:30px; font-weight:800; white-space:nowrap; line-height:1.15; }
+  .item .ih{ font-size:20px; font-weight:700; flex:0 0 auto; }
+  .item .lead{ flex:1; border-bottom:4px dotted var(--dot); transform:translateY(-6px); min-width:14px; }
+  .item .pr{ font-size:30px; font-weight:900; flex:0 0 auto; font-variant-numeric:tabular-nums; }
+  .item .tag{ flex:0 0 auto; font-size:22px; font-weight:800; }
+  .item .tag.inc{ background:var(--red); color:var(--cream); border-radius:7px; padding:2px 10px; font-size:19px; }
+  .item .en{ font-family:"Poppins",sans-serif; color:var(--eng); font-size:17px; font-weight:500; margin-top:1px; }
+  .item .en .decaf{ color:var(--red); font-weight:700; margin-left:8px; }
+  /* 自動縮字：品名過長時整列縮放，不切字（JS 控制 nm font-size） */
+  /* 底部紅條 */
+  .footer{ position:absolute; left:0; right:0; bottom:0; height:70px; background:var(--red); color:var(--cream);
+    display:flex; align-items:center; justify-content:center; font-size:23px; font-weight:700; letter-spacing:.01em; }
+  .footer b{ font-weight:900; }
+</style>
+</head>
+<body>
+<div id="poster">
+  <div class="brand">
+    <div class="h">HAPPINESS</div>
+    <div class="g">GROUN:D</div>
+  </div>
+  <div class="colhead"><span>MENU 菜單</span><span>單點價／套餐</span></div>
+  <div class="cats" id="cats"></div>
+  <div class="footer" id="footer"></div>
+</div>
+
+<script>
+// ── 內建 sample（當前菜單含沙拉），無注入資料時用 ──
+const SAMPLE = {
+  setN:'89', origins:'牛肉 美國／豬肉 台灣／雞肉 美國、台灣',
+  sections:[
+    {name:'PIZZA 披薩', pz:'400°C 12吋', items:[
+      {name:'經典瑪格麗特',en:'Classic Margherita',price:330},
+      {name:'煙燻BBQ雞肉',en:'Smoked BBQ Chicken',price:360},
+      {name:'松露綜合野菇',en:'Black Truffle Mushroom',price:380},
+      {name:'辣楓糖臘腸培根',en:'Spicy Maple Pepperoni & Bacon',price:390}]},
+    {name:'BOWLS 療癒碗', items:[
+      {name:'紐約街頭雞上飯 / 沙拉',en:'NYC Chicken Over Rice / Salad',price:250},
+      {name:'泰式椒麻炸雞飯 / 沙拉',en:'Thai Spicy Fried Chicken Rice / Salad',price:280},
+      {name:'夏威夷BBQ烤豬飯 / 沙拉',en:'Hawaiian BBQ Pork Rice / Salad',price:280},
+      {name:'24H爐烤牛肉飯 / 沙拉',en:'24H Slow-Roasted Beef Rice / Salad',price:320}]},
+    {name:'BURGERS 漢堡', items:[
+      {name:'香煎去骨雞腿堡',en:'Pan-Seared Boneless Chicken Burger',price:180},
+      {name:'美式牧場炸雞腿堡',en:'Ranch Fried Chicken Burger',price:180},
+      {name:'4oz 100%純牛肉起司堡',en:'4oz 100% Beef Cheeseburger',price:200},
+      {name:'8oz 雙層純牛肉起司堡',en:'8oz Double Beef Cheeseburger',price:260}]},
+    {name:'ROLLS 越法三明治', items:[
+      {name:'生菜煎蛋越南三明治',en:'Lettuce and Fried Egg Bánh Mì',price:130},
+      {name:'香料烤雞胸越南三明治',en:'Spiced Roast Chicken Bánh Mì',price:160},
+      {name:'BBQ烤豬肉越南三明治',en:'BBQ Roast Pork Bánh Mì',price:180},
+      {name:'爐烤牛排越南三明治',en:'Roast Steak Bánh Mì',price:250}]},
+    {name:'PASTA 義大利麵', items:[
+      {name:'經典番茄肉醬義大利麵',en:'Classic Tomato Meat Sauce Pasta',price:160},
+      {name:'松露綜合野菇義大利麵',en:'Truffle Mushroom Pasta',price:180},
+      {name:'明太子溫泉蛋義大利麵',en:'Mentaiko Pasta with Onsen Egg',price:210}]},
+    {name:'BRUNCH 早午餐', items:[
+      {name:'GROUN:D大早餐盤',en:'GD Ultimate Breakfast Plate',price:320},
+      {name:'法式吐司早餐盤',en:'French Toast Breakfast Plate',price:280},
+      {name:'美式鬆餅早餐盤',en:'Classic American Pancake Breakfast',price:280}]},
+    {name:'SNACKS 炸物與小點', combo:60, items:[
+      {name:'薯條',en:'Fries',price:60},
+      {name:'可愛沙拉杯',en:'Happy Little Salad',price:60},
+      {name:'酸奶油香煎小洋芋',en:'Crispy Smashed Baby Potatoes',price:80},
+      {name:'GD招牌脆雞 原味/川味麻辣',en:'GD Crispy Chicken – Original / Sichuan Mala',price:80}]},
+    {name:'DRINKS 飲品', combo:50, items:[
+      {name:'可口可樂 原味 / ZERO',en:'Coca-Cola Original / Zero',price:50},
+      {name:'四季桂花春烏龍',en:'Seasonal Osmanthus Spring Oolong',price:50},
+      {name:'台灣高山青茶',en:'Taiwan Highland Green Tea',price:50},
+      {name:'南非國寶茶',en:'Rooibos Tea',price:50,note:'無咖啡因'},
+      {name:'國寶鮮奶茶 I/H',en:'Rooibos Milk Tea',price:65,note:'無咖啡因'},
+      {name:'美式咖啡 I/H',en:'Americano',price:75},
+      {name:'經典拿鐵 I/H',en:'Caffè Latte',price:90},
+      {name:'抹茶 / 可可拿鐵 I/H',en:'Matcha / Cocoa Latte',price:90},
+      {name:'番茄蔬菜湯',en:'Tomato & Vegetable Soup',price:60}]},
+  ]
+};
+
+// 把 App 的 d.draft.sections 轉成模板資料（App 注入 window.MENU_DATA 時用）
+function normalize(data){
+  if (!data) return SAMPLE;
+  const setN = (String(data.note||'').match(/(\d+)\s*元/)||[])[1] || '89';
+  const sections = (data.sections||[]).map(s=>({
+    name:s.name, combo:Number(s.combo)||0,
+    items:(s.items||[]).filter(it=>Number(it.price)>0).map(it=>({name:it.name,en:it.en,price:it.price,note:it.note}))
+  })).filter(s=>s.items.length);
+  return { setN, origins:data.origins||SAMPLE.origins, sections };
+}
+
+const ORDER=['PIZZA','BOWL','BURGER','ROLL','PASTA','BRUNCH','SNACK','DRINK'];
+function comboTag(combo, price){
+  if (!combo) return null;
+  const d = price - combo;
+  if (d===0) return {t:'內含', inc:true};
+  return {t:(d>0?'+':'')+d, inc:false};
+}
+function splitIH(name){
+  let ih=false, nm=String(name||'');
+  if (/\s+I\s*\/\s*H\s*$/i.test(nm)){ ih=true; nm=nm.replace(/\s+I\s*\/\s*H\s*$/i,'').trim(); }
+  return {nm, ih};
+}
+function splitName(nm){
+  nm=String(nm||'').trim();
+  const m=nm.match(/^([A-Za-z0-9&'.\- ]+?)\s*([一-鿿].*)?$/);
+  const en=m&&m[1]?m[1].trim():''; const zh=m&&m[2]?m[2].trim():(en?'':nm);
+  return {en:en.toUpperCase(), zh};
+}
+
+function render(){
+  const D = normalize(window.MENU_DATA);
+  // 固定配對順序
+  const rank=s=>{ const u=String(s.name||'').toUpperCase(); const i=ORDER.findIndex(k=>u.includes(k)); return i<0?99:i; };
+  const secs = D.sections.slice().map((s,i)=>({s,i})).sort((a,b)=>rank(a.s)-rank(b.s)||a.i-b.i).map(o=>o.s);
+
+  const cats=document.getElementById('cats'); cats.innerHTML='';
+  const colL=document.createElement('div'); colL.className='col';
+  const colR=document.createElement('div'); colR.className='col';
+  cats.appendChild(colL); cats.appendChild(colR);
+  secs.forEach((sec,ci)=>{
+    const {en,zh}=splitName(sec.name);
+    const cat=document.createElement('div'); cat.className='cat';
+    let h=`<h2><span class="en">${en}</span>${zh?`<span class="zh">${zh}</span>`:''}${sec.pz?`<span class="pz">${sec.pz.replace(' ','<br>')}</span>`:''}</h2><div class="box">`;
+    sec.items.forEach(it=>{
+      const {nm,ih}=splitIH(it.name);
+      const tag=comboTag(Number(sec.combo)||0, Number(it.price)||0);
+      let note='', nmHtml=nm;
+      // 無咖啡因 → 英文行末紅字
+      const decaf = /無咖啡因/.test(it.note||'') ? '無咖啡因' : '';
+      h+=`<div class="item"><div class="row1">`
+        +`<span class="nm">${nmHtml}</span>`
+        +(ih?`<span class="ih">冰 / 熱</span>`:``)
+        +`<span class="lead"></span>`
+        +`<span class="pr">${it.price}</span>`
+        +(tag?`<span class="tag ${tag.inc?'inc':''}">${tag.t}</span>`:``)
+        +`</div>`
+        +(it.en?`<div class="en">${it.en}${decaf?`<span class="decaf">${decaf}</span>`:''}</div>`:``)
+        +`</div>`;
+    });
+    h+=`</div>`;
+    cat.innerHTML=h; (ci%2===0?colL:colR).appendChild(cat);
+  });
+
+  document.getElementById('footer').innerHTML =
+    `<b>主餐 +${D.setN} 升級套餐</b>　｜　副餐選 1＋飲品選 1　｜　肉品產地：${D.origins}`;
+
+  // 自動縮字：品名超出可用寬度就縮，保證不切字
+  document.querySelectorAll('.item .row1').forEach(row=>{
+    const nm=row.querySelector('.nm'); if(!nm) return;
+    let size=30;
+    // 可用寬 = row 寬 - 價格 - tag - ih - 間距
+    const avail = row.clientWidth - 10;
+    let guard=0;
+    while(nm.scrollWidth && (sumFixed(row) > avail) && size>20 && guard<20){ size--; nm.style.fontSize=size+'px'; guard++; }
+  });
+  window.__rendered = true;
+}
+function sumFixed(row){
+  let w=0; row.childNodes.forEach(c=>{ if(c.classList && !c.classList.contains('lead')) w+=c.offsetWidth+8; });
+  return w;
+}
+render();
+</script>
+</body>
+</html>
