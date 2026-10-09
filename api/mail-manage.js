@@ -74,6 +74,55 @@ async function doScan(days) {
   return { inboxCount: mails.length, senders: senders.length }
 }
 
+// 🔎 搜垃圾桶：把近 N 天被移到垃圾桶、且寄件者/主旨含指定關鍵字（預設 Meta/FB/IG）的信列出來（唯讀，不動任何信）
+async function doTrashFind(days, q) {
+  const kws = (q ? String(q) : 'facebook,facebookmail,meta,business,instagram,商家,資產,邀請')
+    .split(',').map(s => s.trim().toLowerCase()).filter(Boolean)
+  const client = await connect()
+  const hits = []
+  let trashTotal = 0
+  try {
+    const sp = await specialPaths(client)
+    const trash = sp.trash || '[Gmail]/Trash'
+    const lock = await client.getMailboxLock(trash)
+    try {
+      const uids = await client.search({ since: new Date(Date.now() - days * 864e5) }, { uid: true })
+      if (uids && uids.length) {
+        trashTotal = uids.length
+        for await (const msg of client.fetch(uids, { envelope: true }, { uid: true })) {
+          const fr = msg.envelope?.from?.[0] || {}
+          const from = (fr.address || '').toLowerCase(), name = (fr.name || '').toLowerCase()
+          const subject = msg.envelope?.subject || ''
+          const hay = (from + ' ' + name + ' ' + subject).toLowerCase()
+          if (kws.some(k => hay.includes(k))) {
+            hits.push({ uid: msg.uid, from, name: fr.name || '', subject, date: msg.envelope?.date ? new Date(msg.envelope.date).toISOString().slice(0, 16).replace('T', ' ') : '' })
+          }
+        }
+      }
+    } finally { lock.release() }
+  } finally { await client.logout().catch(() => {}) }
+  hits.sort((a, b) => (a.date < b.date ? 1 : -1))
+  return { trashBox: trash, trashTotal, matched: hits.length, mails: hits }
+}
+
+// ↩️ 救回：把垃圾桶指定 uid 的信移回收件匣（uids=逗號分隔）
+async function doRecover(uidsStr) {
+  const uids = String(uidsStr || '').split(',').map(s => parseInt(s.trim(), 10)).filter(n => n > 0)
+  if (!uids.length) return { recovered: 0, error: '未指定 uids' }
+  const client = await connect()
+  let recovered = 0
+  try {
+    const sp = await specialPaths(client)
+    const trash = sp.trash || '[Gmail]/Trash'
+    const lock = await client.getMailboxLock(trash)
+    try {
+      await client.messageMove(uids, 'INBOX', { uid: true })
+      recovered = uids.length
+    } finally { lock.release() }
+  } finally { await client.logout().catch(() => {}) }
+  return { recovered, uids }
+}
+
 // 套用規則（範圍：收件匣＋重要郵件＋使用者自建資料夾；keep=白名單優先；目標標籤資料夾本身不掃避免自轉）
 async function doApply(days) {
   const rulesDoc = (await kvGet('sp_lw_pm_mail_rules')) || { rules: [] }
@@ -230,10 +279,15 @@ export default async function handler(req, res) {
   if (!MU || !MP) return res.status(200).json({ ok: false, error: '缺信箱憑證' })
   const action = String(req.query?.action || 'apply') // cron 每小時直打不帶參數＝套用規則
   const days = Math.min(3650, Math.max(1, parseInt(req.query?.days || (action === 'scan' ? '90' : '2'), 10) || 2))
-  if (MAIL_MANAGE_PAUSED) return res.status(200).json({ ok: true, paused: true, moved: 0, note: '郵件管理已全域暫停，不會刪/移任何信' })
   try {
+    // apply＝唯一會刪/移信的動作，全域暫停時直接擋掉
+    if (action === 'apply') {
+      if (MAIL_MANAGE_PAUSED) return res.status(200).json({ ok: true, paused: true, moved: 0, note: '郵件管理已全域暫停，不會刪/移任何信' })
+      return res.status(200).json({ ok: true, ...(await doApply(days)) })
+    }
     if (action === 'scan') return res.status(200).json({ ok: true, ...(await doScan(days)) })
-    if (action === 'apply') return res.status(200).json({ ok: true, ...(await doApply(days)) })
+    if (action === 'trashfind') return res.status(200).json({ ok: true, ...(await doTrashFind(days, req.query?.q)) })
+    if (action === 'recover') return res.status(200).json({ ok: true, ...(await doRecover(req.query?.uids)) })
     return res.status(200).json({ ok: false, error: '未知 action' })
   } catch (e) {
     return res.status(200).json({ ok: false, error: e?.message || String(e) })
