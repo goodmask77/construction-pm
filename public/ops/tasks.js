@@ -347,6 +347,26 @@ async function tnNotify(body) {
   } catch (_) { alert('通知沒發出去（網路不穩），任務本身有存。'); return { ok: false }; }
 }
 
+/* ── 🔔 定期提醒（張良 2026-10-09「可選時段/頻率/顯示已提醒次數」）──
+   設定存 task.reminder = { on, freq:'daily'|'weekday'|'custom', days:[0..6], hours:[整點], ch:['push','dm','group'] }；
+   count（已提醒次數）/lastSlot（防同一小時重複）由後端 cron api/task-remind 每小時整點累加；前端讀出來顯示。
+   前端只寫設定、後端只寫 count/lastSlot（讀-改-寫同一份 task 文件）＝兩邊不打架。 */
+const tnREM_DEF = () => ({ on: true, freq: 'daily', days: [1, 2, 3, 4, 5], hours: [9], ch: ['push'] });
+const tnREM_WD = ['日', '一', '二', '三', '四', '五', '六']; // 0=日…6=六（對齊後端台灣星期）
+function tnRemSet(id, patch) { const t = (tnS.tasks || []).find(x => x.id === id); if (!t) return; const cur = t.reminder || tnREM_DEF(); tnUpd(id, { reminder: Object.assign({}, cur, patch) }); }
+function tnRemToggle(id) { const t = (tnS.tasks || []).find(x => x.id === id); if (!t) return; const cur = t.reminder; if (cur && cur.on) tnUpd(id, { reminder: Object.assign({}, cur, { on: false }) }); else tnUpd(id, { reminder: cur ? Object.assign({}, cur, { on: true }) : tnREM_DEF() }); }
+function tnRemFreq(id, f) { tnRemSet(id, { freq: f }); }
+function tnRemDay(id, d) { const t = (tnS.tasks || []).find(x => x.id === id); const cur = (t && t.reminder) || tnREM_DEF(); const s = new Set(cur.days || []); s.has(d) ? s.delete(d) : s.add(d); tnRemSet(id, { days: [...s].sort((a, b) => a - b) }); }
+function tnRemHour(id, h) { const t = (tnS.tasks || []).find(x => x.id === id); const cur = (t && t.reminder) || tnREM_DEF(); const s = new Set(cur.hours || []); s.has(h) ? s.delete(h) : s.add(h); tnRemSet(id, { hours: [...s].sort((a, b) => a - b) }); }
+function tnRemCh(id, c) { const t = (tnS.tasks || []).find(x => x.id === id); const cur = (t && t.reminder) || tnREM_DEF(); const s = new Set(cur.ch || ['push']); s.has(c) ? s.delete(c) : s.add(c); if (!s.size) s.add('push'); tnRemSet(id, { ch: [...s] }); }
+function tnRemSummary(rm) {
+  if (!rm || !rm.on) return '';
+  const hs = (rm.hours || []).slice().sort((a, b) => a - b);
+  const hTxt = hs.length ? hs.map(h => h + ':00').join('·') : '未設時間';
+  const fTxt = rm.freq === 'weekday' ? '工作日' : rm.freq === 'custom' ? ('週' + ((rm.days || []).slice().sort((a, b) => a - b).map(d => tnREM_WD[d]).join('') || '—')) : '每天';
+  return fTxt + ' ' + hTxt;
+}
+
 /* ── 計時格式共用（張良「已N分看不懂多久」）：≥1日→已2日3時41分、≥1時→已3時41分、不足→已41分 ── */
 function tnFmtDur(min) {
   const m = Math.max(0, Math.floor(Number(min) || 0));
@@ -784,6 +804,8 @@ function tnCard(t, o) {
   if (cat && cat.name && cat.id !== tnINBOX) meta += '<span style="display:inline-flex;align-items:center;font-size:11px;color:' + tnC.sub + ';border:1px solid ' + tnC.line + ';border-radius:7px;padding:2px 8px">' + tnEsc(cat.name) + '</span>';
   // ⏱ 倒數計時 chip（即時跳動靠 ticker；歸零爆炸）：data-cd=截止時間戳、data-tid=任務id
   if (t.cdUntil && !done) { const left = t.cdUntil - Date.now(); meta += '<span class="tnCd" data-cd="' + t.cdUntil + '" data-tid="' + t.id + '" style="display:inline-flex;align-items:center;gap:3px;font-size:11px;font-weight:800;font-variant-numeric:tabular-nums;border-radius:7px;padding:2px 8px;border:1px solid ' + (left <= 0 ? tnC.red : (left < 300000 ? tnC.red : tnC.amber)) + ';color:' + (left < 300000 ? tnC.red : tnC.amber) + '">' + (left <= 0 ? '💥 時間到' : ('⏳ ' + tnFmtCd(left))) + '</span>'; }
+  // 🔔 定期提醒 chip（開啟中才顯示）：頻率＋時段摘要 ＋ 已提醒次數
+  if (t.reminder && t.reminder.on && !done) meta += '<span title="定期提醒" style="display:inline-flex;align-items:center;gap:3px;font-size:11px;color:' + tnC.accent + ';border:1px solid ' + tnC.accent + ';border-radius:7px;padding:2px 8px">' + tnI('bell', 11, tnC.accent) + tnEsc(tnRemSummary(t.reminder)) + (Number(t.reminder.count) ? '・已' + t.reminder.count + '次' : '') + '</span>';
   const tnTds = t.todos || [];
   if (tnTds.length > 0) { const tnTdn = tnTds.filter(x => x && x.d).length, tnTall = tnTdn === tnTds.length; meta += '<span title="步驟 ' + tnTdn + '/' + tnTds.length + '" style="display:inline-flex;align-items:center;gap:3px;font-size:11px;font-variant-numeric:tabular-nums;border:1px solid ' + (tnTall ? tnC.green : tnC.line) + ';border-radius:7px;padding:2px 8px;font-weight:' + (tnTall ? 700 : 400) + ';color:' + (tnTall ? tnC.green : tnC.sub) + '">' + tnI('checksq', 11, tnTall ? tnC.green : 'currentColor') + tnTdn + '/' + tnTds.length + '</span>'; }
   if ((t.files || []).length > 0) meta += '<span title="' + t.files.length + ' 個附件" style="display:inline-flex;align-items:center;gap:2px;font-size:11px;color:' + tnC.sub + ';border:1px solid ' + tnC.line + ';border-radius:7px;padding:2px 8px">' + tnI('clip', 11) + t.files.length + '</span>';
