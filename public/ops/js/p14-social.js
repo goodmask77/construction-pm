@@ -36,7 +36,7 @@
 
   window.socialLoad = async function () {
     curStore = 'social'; try { setTabs('social') } catch (_) {}
-    document.getElementById('upd').textContent = '社群內容中心'
+    document.getElementById('upd').textContent = '行銷大師中心'
     app.innerHTML = '<section><div class="hint" style="padding:22px">載入中…</div></section>'
     let d; try { const r = await fetch('/api/social?social=' + encodeURIComponent(K) + (TK() ? '&me=' + encodeURIComponent(TK()) : '')); d = await r.json() } catch (e) {}
     if (!d || !d.ok) { app.innerHTML = '<div class="err">讀不到社群資料（' + ((d && d.error) || '連線問題') + '）</div>'; return }
@@ -48,7 +48,7 @@
   }
   function socialRender() {
     const d = DATA, s = stats()
-    let h = '<h1>📣 社群</h1><div class="sub">粉專內容與成效・Facebook ＋ Instagram</div>'
+    let h = '<h1>📣 行銷大師</h1><div class="sub">粉專內容與成效・Facebook ＋ Instagram</div>'
     // 6 KPI
     h += `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin:14px 0">`
       + kcard('貼文總數', nf(s.posts.length), `FB ${s.fb.length} · IG ${s.ig.length}`, '#4DA3FF')
