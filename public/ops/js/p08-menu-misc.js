@@ -448,7 +448,7 @@ const TV_CREAM = [ // 每螢幕要塗奶油底蓋掉的「舊文字區」[x,y,w,
   [[0,158,1920,608]],                    // tv-01 4品項：y158-766（照片 766+）
   [[0,158,1920,608]],                    // tv-02 4品項
   [[0,158,1920,527]],                    // tv-03 3品項(有框)：y158-685
-  [[0,158,1920,635],[760,793,1160,217]], // tv-04：上半全蓋 y158-793＋右欄下半(留左下炸物照 x0-760,y793+)
+  [[0,150,1920,862]], // tv-04：整個下半全蓋(含原炸物照與DRINKS殘字)y150-1012；炸物照改由 menuTVScreen 裁貼進 SNACKS 框內
 ]
 const TV_COLS = [ // 每螢幕兩欄 {x,w,bottom}；bottom=品項可排到的最低 y（照片上緣）
   [{x:70,w:850,bottom:748},{x:1000,w:850,bottom:748}],
@@ -477,20 +477,41 @@ async function menuTVScreen(pair, idx, setN, origins){
   if (bg){ g.drawImage(bg,0,0,W,H); g.fillStyle=SK.CREAM; (TV_CREAM[idx]||[]).forEach(r=>g.fillRect(r[0],r[1],r[2],r[3])) } // 保留官方照片/品牌/底列，只蓋舊文字
   else { g.fillStyle=SK.CREAM; g.fillRect(0,0,W,H); const bi=await menuBrandImg(); if(bi) g.drawImage(bi,960-215,28,430,64); menuFooterBar(C,SK,W,1010,70,setN,origins) } // 載不到底圖＝純文字退路
   const cols=TV_COLS[idx]||[{x:70,w:850,bottom:960},{x:1000,w:850,bottom:960}]
+  // v4.70.6（張良「以左圖官方版為準：紅匡線/表頭回來、字體照官方」）：套餐欄(SNACKS/DRINKS)補紅框＋表頭；各欄照自己項數定字號(SNACKS大/DRINKS小=官方版)
   pair.forEach((sec,ci)=>menuTVCat(C, SK, sec, cols[ci].x, cols[ci].w, cols[ci].bottom))
+  // v4.70.6 tv-04：把官方底圖的炸物照片裁出來、等比縮小貼進 SNACKS 框內下方(不頂到 DRINKS、不被框線壓)
+  if (idx===3 && bg){
+    const sx=34, sy=812, sw=852, sh=196, dw=800, dh=Math.round(sh*dw/sw), dx=82, dy=990-dh // sw到x886=只取炸物、排除官方DRINKS殘字
+    g.imageSmoothingQuality='high'; g.drawImage(bg, sx,sy,sw,sh, dx,dy,dw,dh)
+  }
   menuDownload(cv, 'GROUND_電視'+(idx+1)+'_'+pair.map(s=>menuSplitName(s.name).enU).join('-')+'.png')
 }
 function menuTVCat(C, SK, sec, x, w, bottom){
-  const {g,setFont}=C; const {enU,cnT}=menuSplitName(sec.name); const right=x+w; const baseY=292
+  const {g,setFont,rr}=C; const {enU,cnT}=menuSplitName(sec.name); const right=x+w; const baseY=292
   setFont('900 42px '+SK.TC,1); const cnW=cnT?g.measureText(cnT).width:0; g.letterSpacing='0px'
   let enSize=68; g.font=enSize+'px Ultra,'+MENU_SERIF; while(enSize>30 && g.measureText(enU).width>w-cnW-30){ enSize--; g.font=enSize+'px Ultra,'+MENU_SERIF }
   g.fillStyle=SK.RED; g.fillText(enU, x, baseY); let tx=x+g.measureText(enU).width+20
   if (cnT){ setFont('900 42px '+SK.TC,1); g.fillStyle=SK.RED; g.fillText(cnT, tx, baseY-4); g.letterSpacing='0px'; tx+=cnW+16 }
   if (enU==='PIZZA'){ setFont('700 22px '+SK.TC,0); g.fillStyle=SK.RED; g.fillText('400°C', tx, baseY-26); g.fillText('12吋', tx, baseY-2) }
-  g.strokeStyle=SK.RED; g.lineWidth=2; g.beginPath(); g.moveTo(x,baseY+26); g.lineTo(right,baseY+26); g.stroke()
-  const items=sec.items, n=items.length, side=(Number(sec.combo)||0)>0
-  const top=baseY+84, itemH=Math.min(150, Math.max(56,Math.floor((bottom-top)/n))), big=n<=4
-  items.forEach((it,i)=>menuTVItem(C, SK, sec, it, x, w, top+i*itemH, side, big))
+  const items=sec.items, n=items.length, side=(Number(sec.combo)||0)>0, big=n<=4
+  if (side){
+    // v4.70.6 官方 SNACKS/DRINKS 版式：紅圓角框＋表頭列（品項／單點／套餐選擇）；兩欄框等高到底
+    // 項少的欄(SNACKS)用固定行高、下方留白給炸物照片(由 menuTVScreen 裁貼進框內)；項多的欄(DRINKS)填滿
+    const boxTop=baseY+36, boxBot=1000
+    g.strokeStyle=SK.RED; g.lineWidth=2.5; rr(x-8, boxTop, w+16, boxBot-boxTop, 20); g.stroke()
+    const hy=boxTop+48
+    setFont('700 25px '+SK.TC,0); g.fillStyle=SK.RED
+    g.textAlign='left'; g.fillText('品項', x, hy)
+    g.textAlign='right'; g.fillText('單點', right-150, hy); g.fillText('套餐選擇', right-2, hy); g.textAlign='left'
+    g.strokeStyle=SK.RED; g.lineWidth=1.5; g.beginPath(); g.moveTo(x, hy+18); g.lineTo(right, hy+18); g.stroke()
+    const top=hy+68, itemH = big ? 94 : Math.min(120, Math.max(56, Math.floor((boxBot-26-top)/n)))
+    items.forEach((it,i)=>menuTVItem(C, SK, sec, it, x, w, top+i*itemH, side, big))
+  } else {
+    // 官方 PIZZA／BURGERS／PASTA… 版式：標題紅底線＋點線引導品項（照片在底圖保留）
+    g.strokeStyle=SK.RED; g.lineWidth=2; g.beginPath(); g.moveTo(x,baseY+26); g.lineTo(right,baseY+26); g.stroke()
+    const top=baseY+84, itemH=Math.min(150, Math.max(56, Math.floor((bottom-top)/n)))
+    items.forEach((it,i)=>menuTVItem(C, SK, sec, it, x, w, top+i*itemH, side, big))
+  }
 }
 function menuTVItem(C, SK, sec, it, x, w, cy, side, big){
   const {g,fit,setFont,rr,leader}=C; const right=x+w
@@ -504,7 +525,9 @@ function menuTVItem(C, SK, sec, it, x, w, cy, side, big){
   const priceLeft=priceRight-g.measureText(pr).width
   let nm=String(it.name||''), ih=false
   if (/\s+I\s*\/\s*H\s*$/i.test(nm)){ ih=true; nm=nm.replace(/\s+I\s*\/\s*H\s*$/i,'').trim() }
-  setFont('800 '+nmSize+'px '+SK.TC,0); g.fillStyle=SK.RED; const nmMax=priceLeft-x-44-(ih?96:0); const nmTxt=fit(nm,nmMax); g.fillText(nmTxt,x,cy)
+  const nmMax=priceLeft-x-44-(ih?96:0) // v4.70.5：電視版中文名同步自動縮字（下限26px）
+  let nmPx=nmSize; setFont('800 '+nmPx+'px '+SK.TC,0); while(nmPx>26 && g.measureText(nm).width>nmMax){ nmPx--; setFont('800 '+nmPx+'px '+SK.TC,0) }
+  g.fillStyle=SK.RED; const nmTxt=fit(nm,nmMax); g.fillText(nmTxt,x,cy)
   let nameEnd=x+g.measureText(nmTxt).width
   if (ih){ setFont('800 28px '+SK.TC,0); g.fillStyle=SK.RED; g.fillText('冰 / 熱', nameEnd+16, cy); nameEnd+=16+g.measureText('冰 / 熱').width }
   leader(nameEnd+18, priceLeft-22, cy-12, SK.DOT)
@@ -638,7 +661,10 @@ function menuPItemRow(C, SK, sec, it, boxX, boxW, textX, boxTop, i, side){
   // 菜名（把結尾的 I/H 抽出來；v15：冰／熱放中文行、I/H 放英文行）
   let nm=String(it.name||''), ih=false
   if (/\s+I\s*\/\s*H\s*$/i.test(nm)){ ih=true; nm=nm.replace(/\s+I\s*\/\s*H\s*$/i,'').trim() }
-  setFont('650 '+nmSize+'px '+SK.TC,0); g.fillStyle=SK.RED; const nmMax=priceLeft-textX-26-(ih?74:0); const nmTxt=fit(nm,nmMax); g.fillText(nmTxt,textX,cnY)
+  // v4.70.5 治本（張良「飯後面加沙拉→夏威夷BBQ烤豬飯/沙拉太長被切成…」）：中文名過長先自動縮字（下限22px）再保險截斷，不直接吃掉字
+  const nmMax=priceLeft-textX-26-(ih?74:0)
+  let nmPx=nmSize; setFont('650 '+nmPx+'px '+SK.TC,0); while(nmPx>22 && g.measureText(nm).width>nmMax){ nmPx--; setFont('650 '+nmPx+'px '+SK.TC,0) }
+  g.fillStyle=SK.RED; const nmTxt=fit(nm,nmMax); g.fillText(nmTxt,textX,cnY)
   let nameEnd=textX+g.measureText(nmTxt).width
   if (ih){ setFont('650 20px '+SK.TC,0); g.fillStyle=SK.RED; g.fillText('冰 / 熱', nameEnd+10, cnY); nameEnd+=10+g.measureText('冰 / 熱').width }
   leader(nameEnd+14, priceLeft-18, leadY, SK.DOT)
