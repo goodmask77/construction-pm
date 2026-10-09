@@ -1507,6 +1507,7 @@ export default async function handler(req, res) {
       kpi: { rev30, days30: w30.length, avgRev: w30.length ? Math.round(rev30 / w30.length) : 0, tx30: w30.reduce((t, e) => t + (Number(e.txCount) || 0), 0) },
       n30, prep, prepAct: Object.fromEntries(Object.entries((actDoc.days || {})[todayAct] || {}).filter(([, v]) => v.q != null).map(([k, v]) => [k, v.q])), prepS86: Object.fromEntries(Object.entries((actDoc.days || {})[todayAct] || {}).filter(([, v]) => v.s86 && v.s86.on).map(([k]) => [k, 1])), prepActDate: todayAct, share14, rhythm, soldout, days: days2.reverse(), setPcts: setDays.reverse(), dates: datesAll, cats: cats2, hidden: Object.values(itemsH2).map(o => ({ n: o.n, k: o.k, cat: o.cat, cum30: o.q30 })), slots: (slots2.wk.length || slots2.we.length) ? slots2 : null,
       hourDays: Object.keys(hourDays).length ? hourDays : null,
+      slotEx: [...slotEx], // 包場/異常大單日（張良 2026-10-10：10/4 隱藏不入每日列、計入總營收、不拉平均）：每日數據表用它排除平均並隱藏該列
       heatHide: ((await kvGet('sp_finance_pm_heat_hide')) || {})[storeQ] || {}, // v4.70.1 熱力圖隱藏時段（全店一致、限有權限者改）：{時段:1}
     })
   }

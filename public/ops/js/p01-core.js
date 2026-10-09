@@ -242,11 +242,14 @@ function renderBoard(d, store, view){
     if (per==='tm') return String(x.date).slice(0,7) === todayP.slice(0,7)
     if (per==='lm') { const t2 = new Date(todayP.slice(0,7)+'-15'); t2.setMonth(t2.getMonth()-1); return String(x.date).slice(0,7) === t2.toISOString().slice(0,7) }
     const cut = new Date(todayP); cut.setDate(cut.getDate()-(+per)); return String(x.date) > cut.toISOString().slice(0,10) }
-  const dv = d.days.filter(x=>x.rev>0 && !x.live && inPer(x)) // 平均只算有營業的日子（盤中不入平均）
-  const mean = f => { const a = dv.map(f).filter(v=>v!=null&&isFinite(v)); return a.length ? a.reduce((s2,v)=>s2+v,0)/a.length : null }
+  const dv = d.days.filter(x=>x.rev>0 && !x.live && inPer(x)) // 總計用：有營業的日子（盤中不入；含包場日——營收要算進月營業額）
+  const exSet = new Set(d.slotEx||[]) // v4.70.21 包場/異常大單日（張良 2026-10-10：10/4 隱藏不入每日列、計入總營收、不拉平均）
+  const dvAvg = dv.filter(x=>!exSet.has(x.date)) // 平均用：再排除包場日，免得單均/現金/至14:00 被怪數字拉歪
+  const exInPer = d.days.filter(x=>x.rev>0 && !x.live && inPer(x) && exSet.has(x.date)) // 本期被隱藏的包場日（底部註明用）
+  const mean = f => { const a = dvAvg.map(f).filter(v=>v!=null&&isFinite(v)); return a.length ? a.reduce((s2,v)=>s2+v,0)/a.length : null }
   const luOf = x => x.lunchRev!=null ? x.lunchRev : (x.lunchPct!=null&&x.rev ? x.rev*x.lunchPct/100 : null)
   const avR = mean(x=>x.rev), avLu = isGD?mean(luOf):null, avTx = mean(x=>x.tx||null)
-  const avAvg = (()=>{ const tr=dv.reduce((s2,x)=>s2+(x.rev||0),0), tt=dv.reduce((s2,x)=>s2+(x.tx||0),0); return tt?tr/tt:null })()
+  const avAvg = (()=>{ const tr=dvAvg.reduce((s2,x)=>s2+(x.rev||0),0), tt=dvAvg.reduce((s2,x)=>s2+(x.tx||0),0); return tt?tr/tt:null })()
   const avCash = mean(x=>x.cash), avCard = mean(x=>x.card), avLp = mean(x=>x.linepay||null), avUb = mean(x=>x.uber||null), avDis = mean(x=>x.discount||null)
   const avKp = isGD?mean(x=>x.kioskPct):null, avTk = isGD?mean(x=>x.takePct):null
   const avSet = isGD?(()=>{ const a=(d.setPcts||[]).filter(v=>v!=null); return a.length?a.reduce((s2,v)=>s2+v,0)/a.length:null })():null
@@ -289,7 +292,7 @@ function renderBoard(d, store, view){
   const monthNoDaily = !!(selM && !(monthDays && monthDays.length))
   if (!histMode && !yearMode && !monthNoDaily){
     h += `<tr><td style="position:sticky;left:0;z-index:1;${tBg}">總計<span class="hint" style="font-weight:700">（${dv.length}天）</span></td><td style="${tBg}">${fN(tRev)}</td>${isGD?`<td style="${tBg}">${fN(sm(luOf))}</td>`:''}<td style="${tBg}">${tTx!=null?Math.round(tTx).toLocaleString():'—'}</td><td style="${tBg}">${fN(tRev&&tTx?tRev/tTx:null)}</td><td style="${tBg}">${fN(sm(x=>x.cash))}</td><td style="${tBg}">${fN(sm(x=>x.card))}</td><td style="${tBg}">${fN(sm(x=>x.linepay||null))}</td><td style="${tBg}">${fN(sm(x=>x.uber||null))}</td><td style="${tBg}">${fN(sm(x=>x.discount||null))}</td>${isGD?`<td style="${tBg}">—</td><td style="${tBg}">—</td><td style="${tBg}">—</td>`:''}</tr>`
-    h += `<tr><td style="position:sticky;left:0;z-index:1;${avBg}${avLine};font-weight:900">平均</td><td style="${avBg};font-weight:900">${fN(avR)}</td>${isGD?`<td style="${avBg}${avLine}">${fN(avLu)}</td>`:''}<td style="${avBg}${avLine}">${avTx!=null?Math.round(avTx):'—'}</td><td style="${avBg}${avLine}">${fN(avAvg)}</td><td style="${avBg}${avLine}">${fN(avCash)}</td><td style="${avBg}${avLine}">${fN(avCard)}</td><td style="${avBg}${avLine}">${fN(avLp)}</td><td style="${avBg}${avLine}">${fN(avUb)}</td><td style="${avBg}${avLine}">${fN(avDis)}</td>${isGD?`<td style="${avBg}${avLine}">${fP(avKp)}</td><td style="${avBg}${avLine}">${fP(avTk)}</td><td style="${avBg}${avLine}">${fP(avSet)}</td>`:''}</tr>`
+    h += `<tr><td style="position:sticky;left:0;z-index:1;${avBg}${avLine};font-weight:900">平均${exInPer.length?`<span class="hint" style="font-weight:700">（${dvAvg.length}天·不含包場）</span>`:''}</td><td style="${avBg};font-weight:900">${fN(avR)}</td>${isGD?`<td style="${avBg}${avLine}">${fN(avLu)}</td>`:''}<td style="${avBg}${avLine}">${avTx!=null?Math.round(avTx):'—'}</td><td style="${avBg}${avLine}">${fN(avAvg)}</td><td style="${avBg}${avLine}">${fN(avCash)}</td><td style="${avBg}${avLine}">${fN(avCard)}</td><td style="${avBg}${avLine}">${fN(avLp)}</td><td style="${avBg}${avLine}">${fN(avUb)}</td><td style="${avBg}${avLine}">${fN(avDis)}</td>${isGD?`<td style="${avBg}${avLine}">${fP(avKp)}</td><td style="${avBg}${avLine}">${fP(avTk)}</td><td style="${avBg}${avLine}">${fP(avSet)}</td>`:''}</tr>`
   }
   let zbi = 0
   const dayRow = (x,i,indent)=>{ // 單日列（樹狀模式縮排共用）
@@ -330,7 +333,8 @@ function renderBoard(d, store, view){
     if (m) h += `<tr><td style="position:sticky;left:0;z-index:1;${tBg}">${selM} 月合計</td><td style="${tBg}">${fN(m.revenue)}</td>${isGD?`<td style="${tBg}">—</td>`:''}<td style="${tBg}">${m.bills!=null?Number(m.bills).toLocaleString():'—'}</td><td style="${tBg}">${m.bills?fN(m.revenue/m.bills):'—'}</td><td style="${tBg}" colspan="${5+(isGD?3:0)}"></td></tr>`
     h += `<tr><td colspan="${isGD?13:9}" class="mut" style="text-align:center;padding:16px">這個月無每日資料（iCHEF 時代只有月彙總）${m&&m.customers?`・來客 ${Number(m.customers).toLocaleString()}・營業 ${m.days??'—'} 天`:''}</td></tr>`
   } else {
-    d.days.forEach((x,i)=>{ if (inPer(x)) h += dayRow(x,i,false) }) // 期間篩選（v4.30.0）＝平鋪列表（全部/近N天/本月/上月/選月）
+    d.days.forEach((x,i)=>{ if (inPer(x) && !exSet.has(x.date)) h += dayRow(x,i,false) }) // 期間篩選（v4.30.0）＝平鋪列表；包場日(exSet)隱藏不入每日列（張良 2026-10-10）
+    if (exInPer.length){ const cs9=isGD?13:9; h += `<tr><td colspan="${cs9}" class="mut" style="text-align:left;padding:8px 10px;font-size:11px">已隱藏包場日：${exInPer.map(x=>`${x.date.slice(5)}（${x.wd}）${fN(x.rev)}`).join('、')}　計入總營收・不計平均</td></tr>` }
   }
   h += `</tbody></table></div></section>`
   // 🔥 時段營收熱力圖（張良 2026-10-05「之前有做營收時間熱力圖，放每日數據下面」）：列=時段、欄=日期(新→左)、色深=該時段營收相對高低(每列各自比)
