@@ -169,8 +169,9 @@
   }
   window._socialUploadAsset = function () {
     const inp = document.createElement('input'); inp.type = 'file'; inp.accept = 'image/*'; inp.multiple = true // 批量多選
+    inp.style.display = 'none'; document.body.appendChild(inp) // v4.70.20 iOS 需掛 DOM 才觸發（同 _socialPickImg）
     inp.onchange = async () => {
-      const files = [...inp.files]; if (!files.length) return
+      const files = [...inp.files]; if (!files.length) { inp.remove(); return }
       const btn = document.getElementById('sfUpBtn'); const prog = document.getElementById('sfUpProg')
       if (btn) btn.disabled = true
       let ok = 0, fail = 0
@@ -185,6 +186,7 @@
       if (btn) btn.disabled = false
       socialBody() // 重畫，新圖都顯示出來
       if (fail) alert(`上傳完成：成功 ${ok} 張，失敗 ${fail} 張`)
+      inp.remove()
     }
     inp.click()
   }
@@ -278,8 +280,9 @@
 
   window._socialPickImg = function () {
     const inp = document.createElement('input'); inp.type = 'file'; inp.accept = 'image/*'; inp.multiple = true // 可一次多張，加入到圖片牆
+    inp.style.display = 'none'; document.body.appendChild(inp) // v4.70.20 iOS Safari 需 input 掛在 DOM 上 .click() 才會開選圖視窗（原本沒 append＝手機按了沒反應）
     inp.onchange = async () => {
-      const files = [...inp.files]; if (!files.length) return
+      const files = [...inp.files]; if (!files.length) { inp.remove(); return }
       for (const f of files) {
         try {
           const du = await compressImg(f)
@@ -289,6 +292,7 @@
         } catch (_) {}
       }
       renderMedia()
+      inp.remove()
     }
     inp.click()
   }
@@ -326,7 +330,7 @@
   }
   function bindMediaSort() {
     const el = document.getElementById('sfMediaWrap'); if (!el || el._sortable) return
-    if (window.Sortable) el._sortable = window.Sortable.create(el, { animation: 150, draggable: '.sfMediaItem', filter: '.sfAddBtns', onEnd: syncMediaOrder })
+    if (window.Sortable) el._sortable = window.Sortable.create(el, { animation: 150, draggable: '.sfMediaItem', filter: '.sfAddBtns', preventOnFilter: false, onEnd: syncMediaOrder }) // v4.70.20 preventOnFilter:false＝手機上「＋上傳/素材庫」兩鈕的點擊不再被 Sortable 攔掉（張良「點了沒反應」）
   }
   function syncMediaOrder() {
     const el = document.getElementById('sfMediaWrap'); if (!el) return
@@ -377,7 +381,12 @@
       ? assets.map(a => `<div style="position:relative"><img src="${esc(a.url)}" onclick="_socialAssetUse('${esc(a.url)}',this)" style="width:100%;aspect-ratio:1;object-fit:cover;border-radius:10px;cursor:pointer;border:1px solid var(--line);outline:${chosen(a.url) ? '3px solid var(--green)' : 'none'};outline-offset:-1px">${chosen(a.url) ? '<span class="sfChk" style="position:absolute;top:4px;left:4px;background:var(--green);color:#fff;width:22px;height:22px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:12px">✓</span>' : ''}${isAdmin ? `<span onclick="event.stopPropagation();_socialAssetDel('${esc(a.url)}',this)" style="position:absolute;top:4px;right:4px;background:rgba(0,0,0,.6);color:#fff;width:22px;height:22px;border-radius:50%;display:flex;align-items:center;justify-content:center;cursor:pointer;font-weight:700">✕</span>` : ''}</div>`).join('')
       : '<div class="hint" style="padding:20px;grid-column:1/-1">素材庫還是空的。先按「上傳」放幾張圖進來，之後就能重複選用。</div>'
     const ov = document.createElement('div'); ov.className = 'assetOv'; ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.62);z-index:72;display:flex;align-items:center;justify-content:center;padding:16px'; ov.onclick = () => ov.remove()
-    ov.innerHTML = `<div onclick="event.stopPropagation()" style="background:var(--card);border:1px solid var(--line);border-radius:16px;max-width:560px;width:100%;max-height:82vh;overflow:auto;padding:18px"><h2 style="margin:0 0 4px">📁 素材庫</h2><div class="hint" style="margin-bottom:12px">點圖片＝加入這則貼文（可連點多張），再拖曳排順序。你上傳過的圖會自動收進來。</div><div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:10px">${grid}</div><div style="text-align:right;margin-top:14px"><button class="mini" onclick="_socialPickImg()">＋ 上傳新圖</button> <button class="mini on" onclick="this.closest('.assetOv').remove()">完成</button></div></div>`
+    // v4.70.20 張良「隨時都要看到完成按鈕，不然要滑很遠」：改 flex column＝標題固定、圖片區捲動、底列(上傳新圖/完成)永遠貼底可見
+    ov.innerHTML = `<div onclick="event.stopPropagation()" style="background:var(--card);border:1px solid var(--line);border-radius:16px;max-width:560px;width:100%;max-height:86vh;display:flex;flex-direction:column;overflow:hidden">
+      <div style="flex:0 0 auto;padding:18px 18px 10px"><h2 style="margin:0 0 4px">📁 素材庫</h2><div class="hint">點圖片＝加入這則貼文（可連點多張），再拖曳排順序。你上傳過的圖會自動收進來。</div></div>
+      <div style="flex:1 1 auto;overflow:auto;padding:0 18px 12px"><div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:10px">${grid}</div></div>
+      <div style="flex:0 0 auto;display:flex;gap:8px;justify-content:flex-end;padding:12px 18px;border-top:1px solid var(--line);background:var(--card)"><button class="mini" onclick="_socialPickImg()">＋ 上傳新圖</button><button class="mini on" onclick="this.closest('.assetOv').remove()">完成</button></div>
+    </div>`
     document.body.appendChild(ov)
   }
   window._socialAssetUse = function (url, el) {
