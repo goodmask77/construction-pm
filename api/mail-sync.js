@@ -5302,6 +5302,23 @@ export default async function handler(req, res) {
   const out = { ok: true, days }
   try { out.ctbc = await syncCtbc(days) } catch (e) { out.ctbc = { error: e?.message || String(e) } }
   try { out.pos = await syncPos(days) } catch (e) { out.pos = { error: e?.message || String(e) } }
+  // AB 日結後台自動補抓（張良 2026-10-10 拍板治本「改用後台自動抓」）：Gmail 收日結信常 Command failed → 不等信，
+  // 直接從 Eats365 後台抓近 days 天「缺的」AB 正式日結補上（走 ingestPosRecords 去重：已存在的 日期|店 不覆蓋、不碰盤中）
+  try {
+    if (process.env.EATS_USER && process.env.EATS_PASS) {
+      const posStore = (await kvGet('sp_finance_pm_pos')) || { entries: [] }
+      const haveAb = new Set((posStore.entries || []).filter(e => !/groun/i.test(e.store || '') && !e.intraday).map(e => e.date))
+      const todayTW = new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10)
+      const want = []
+      for (let i = 1; i <= Math.min(days, 7); i++) {
+        const dt = new Date(Date.now() + 8 * 3600e3 - i * 864e5).toISOString().slice(0, 10)
+        if (dt < todayTW && !haveAb.has(dt)) want.push(dt)
+      }
+      const recs = []
+      for (const dt of want) { try { const r = await eatsDayRecord(dt, kvGet); if (r && Number(r.revenue) > 0) recs.push(r) } catch (_) {} }
+      out.abDaily = recs.length ? await ingestPosRecords(recs, 'AB日結後台自動補抓') : { want: want.length, added: 0 }
+    }
+  } catch (e) { out.abDaily = { error: e?.message || String(e) } }
   try { out.joya = await syncJoya(Math.min(days, 20)) } catch (e) { out.joya = { error: e?.message || String(e) } } // GROUN:D 喬亞自動抓（?days=N 可回補 N 天）
   // 參考店1/2（iCHEF，2026-09-01）：後台即時＝今天的數字每次抓都是「到目前為止」→ 手動🔄/每小時 cron 都只掃近3天（快），?days=N 可回補
   // 參考店 1/2 已退役（張良 2026-09-24）——iCHEF 停抓、數據已刪

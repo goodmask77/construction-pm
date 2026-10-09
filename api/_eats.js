@@ -125,8 +125,19 @@ export async function eatsDayRecord(date, kvGet) {
   } catch (_) {}
   const pay = { cash: 0, card: 0, linepay: 0, uber: 0, payOther: 0 }
   const payRaw = []
+  // 付款別名稱深掘：Eats365 後台 paymentType 的名稱可能是多語系物件（key 不定：tc/zh-TW/en…）→ 任一語言字串都抓得到，避免變成 "[object Object]" 全擠進「其他」（張良 2026-10-10）
+  const pickName = (v) => {
+    if (v == null) return ''
+    if (typeof v === 'string') return v
+    if (typeof v === 'number') return String(v)
+    if (typeof v === 'object') {
+      for (const k of ['tc', 'zh-TW', 'zh-Hant', 'zh', 'default', 'en', 'name', 'label', 'text']) { if (typeof v[k] === 'string' && v[k].trim()) return v[k] }
+      for (const val of Object.values(v)) { if (typeof val === 'string' && val.trim()) return val }
+    }
+    return ''
+  }
   for (const p of (dr.paymentType || [])) {
-    const n = (p && (p.paymentMethodName?.tc || p.paymentMethodName?.default || p.name?.tc || p.name?.default || p.name || p.paymentMethod || p.type)) || ''
+    const n = pickName(p?.paymentMethodName) || pickName(p?.name) || pickName(p?.paymentMethod) || pickName(p?.type) || ''
     const amt = Math.round(Number(p?.netSales ?? p?.amount ?? p?.sales ?? p?.total ?? p?.value ?? 0) || 0)
     payRaw.push({ n: String(n), amt })
     if (!amt) continue
