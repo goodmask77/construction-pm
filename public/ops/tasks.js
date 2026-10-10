@@ -741,7 +741,10 @@ function tnRender() {
   // 焦點保留（innerHTML 整換會掉焦點）：記住 activeElement id，畫完原位接回
   const ae = document.activeElement; const aid = ae && ae.id; let ss = null;
   try { if (ae && ae.setSelectionRange && /text|search|^$/.test(ae.type || '')) ss = ae.selectionStart; } catch (_) {}
+  // v4.70.28 詳情彈窗捲動位置保留（張良「點提醒時間畫面會跑跳」）：整頁重畫前記住彈窗捲到哪、畫完接回，不再彈回最頂
+  const _msEl = document.getElementById('tnModalScroll'); const _msTop = _msEl ? _msEl.scrollTop : null;
   host.innerHTML = tnRoot();
+  if (_msTop != null) { const m2 = document.getElementById('tnModalScroll'); if (m2) m2.scrollTop = _msTop; }
   if (aid) { const el = document.getElementById(aid); if (el && el !== document.activeElement) { try { el.focus(); if (ss != null && el.setSelectionRange) el.setSelectionRange(ss, ss); } catch (_) {} } }
   tnFocusTry(); // v1.3 深層連結＝資料就緒的那次 render 直接開詳情彈窗（沒 tnFocusId 一行就返回，零成本）
   tnTodoSortInit(); // v1.5 步驟清單拖排：彈窗開著才掛 SortableJS（沒開＝收掉舊實例就返回）
@@ -1352,7 +1355,7 @@ function tnModal() {
   const groups = tnGroups();
   const F = (label, node) => '<label style="' + tnLbl + '">' + label + '<div style="margin-top:5px">' + node + '</div></label>';
   let h = '<div onclick="if(event.target===this)tnClose()" style="position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:700;display:flex;align-items:center;justify-content:center;padding:16px">'
-    + '<div style="background:' + tnMOD + ';border:1px solid ' + tnC.line + ';border-radius:12px;padding:' + (tnMob() ? 16 : 24) + 'px;width:min(560px,96vw);max-height:90vh;overflow-y:auto">';
+    + '<div id="tnModalScroll" style="background:' + tnMOD + ';border:1px solid ' + tnC.line + ';border-radius:12px;padding:' + (tnMob() ? 16 : 24) + 'px;width:min(' + (tnMob() ? 560 : 960) + 'px,96vw);max-height:90vh;overflow-y:auto">';
   // 頂列：釘選/刪除/關閉
   h += '<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">'
     + '<div style="font-size:15px;font-weight:600;color:' + tnC.text + '">任務詳情</div><div style="flex:1"></div>'
@@ -1369,6 +1372,9 @@ function tnModal() {
     h += '<div style="display:flex;align-items:center;justify-content:center;gap:8px;flex-wrap:wrap;width:100%;background:#16281C;border:1.5px solid ' + tnC.green + ';color:' + tnC.green + ';border-radius:10px;padding:11px 8px;font-size:14px;font-weight:700;margin-bottom:14px;box-sizing:border-box">' + tnI('check', 15, tnC.green) + '已收到・' + tnEsc(t.ack.by) + (t.ack.ts ? '（' + tnDnorm(t.ack.ts) + '）' : '')
       + ((t.status !== 'done' && t.claimBy && t.claimAt) ? '<span style="display:inline-flex;align-items:center;gap:4px;color:' + tnC.accent + '">' + tnI('clock', 13, tnC.accent) + '<span class="tnUpTick" data-since="' + t.claimAt + '">' + tnFmtUp(Date.now() - t.claimAt) + '</span></span>' : '') + '</div>';
   }
+  // v4.70.28 詳情版面精簡（張良「不要往下滑、電腦版寬一點」）：電腦版左右兩欄＝左(主題/備註/步驟/附件)｜右(設定/積分/倒數/提醒)；手機維持單欄堆疊
+  h += '<div style="display:' + (tnMob() ? 'block' : 'grid') + ';grid-template-columns:1fr 1fr;gap:0 22px;align-items:start">';
+  h += '<div>'; // 左欄
   h += F('主題', '<input id="tnTitle" value="' + tnEsc(t.title) + '" oninput="tnUpdSilent(\'' + t.id + '\',{title:this.value})" style="' + tnInp + ';width:100%;font-size:14px;font-weight:600">');
   h += F('內容 / 備註', '<textarea id="tnNote" rows="2" oninput="tnUpdSilent(\'' + t.id + '\',{note:this.value})" style="' + tnInp + ';width:100%;resize:vertical">' + tnEsc(t.note || '') + '</textarea>');
   // v1.5 步驟清單（張良「大任務拆小步驟逐條勾」）：todos=[{id,t,d}] 新欄位；
@@ -1397,7 +1403,8 @@ function tnModal() {
     + '<button id="tnAttBtn" onclick="document.getElementById(\'tnFile\').click()" title="點選檔上傳；或直接貼上截圖" style="border:1.5px dashed ' + tnC.line + ';background:' + tnWHT + ';color:' + tnFNT + ';border-radius:6px;width:52px;height:52px;font-size:12px;cursor:pointer;line-height:1.3">＋<br>貼/傳</button>'
     + '</div></div>';
   // 兩欄欄位
-  h += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">';
+  h += '</div><div>'; // v4.70.28 左欄結束 → 右欄開始
+  h += '<div style="display:grid;grid-template-columns:' + (tnMob() ? '1fr 1fr' : 'repeat(3,1fr)') + ';gap:12px">';
   h += F('隸屬大項', '<select onchange="tnUpd(\'' + t.id + '\',{catId:this.value})" style="' + tnInp + ';width:100%">' + groups.map(g => '<option value="' + g.id + '"' + ((t.catId || tnINBOX) === g.id ? ' selected' : '') + '>' + tnEsc(g.name) + '</option>').join('') + '</select>');
   h += F('狀態', '<select onchange="tnUpd(\'' + t.id + '\',{status:this.value})" style="' + tnInp + ';width:100%">' + tnSTATUS.map(s => '<option value="' + s[0] + '"' + (t.status === s[0] ? ' selected' : '') + '>' + s[1] + '</option>').join('') + '</select>');
   // v1.5 欄位對調（張良「開始/截止放一起」）：開始日｜截止日 同排（開始在左）、優先級｜負責人 同排；只動排版不動邏輯
@@ -1450,6 +1457,7 @@ function tnModal() {
   })());
   // 🔔 定期提醒設定面板（v4.70.21）
   h += tnRemField(t);
+  h += '</div></div>'; // v4.70.28 右欄結束 ＋ 兩欄 wrapper 收尾
   h += '<div style="display:flex;align-items:center;gap:10px;margin-top:8px;flex-wrap:wrap">'
     + '<div style="font-size:11px;color:' + tnC.faint + ';font-variant-numeric:tabular-nums">建立於 ' + tnDnorm(t.createdAt) + '</div>'
     + '<div style="flex:1"></div>'
