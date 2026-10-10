@@ -292,6 +292,7 @@ async function registerGroup(gid, src) {
     try { const r = await fetch(`https://api.line.me/v2/bot/group/${gid}/summary`, { headers: { authorization: `Bearer ${TOKEN}` } }); if (r.ok) name = (await r.json()).groupName || '' } catch (_) {}
   }
   cur[gid] = { ...g, ...(name ? { name } : {}), lastActive: new Date().toISOString(), count: (g.count || 0) + 1, src: src || g.src }
+  delete cur[gid].gone // 有訊息進來＝DD 還在這個群（v4.70.38）
   await kvSet('pm_group_seen', cur)
 }
 
@@ -2077,6 +2078,15 @@ export default async function handler(req, res) {
       if (ev.deliveryContext?.isRedelivery) { console.log('skip redelivery', ev.webhookEventId || ''); continue }
       // 回收訊息 → 私訊老闆（誰在哪個群回收了什麼）
       if (ev.type === 'unsend') { await handleUnsend(ev); continue }
+      // v4.70.38 DD 被加進群（join）就登記到群組清單（不用等有人講話）；被踢出／離開（leave）標 gone（設定頁顯示「DD 已不在這個群」）
+      if (ev.type === 'join' || ev.type === 'leave') {
+        const gidJ = ev.source?.groupId || ev.source?.roomId || ''
+        if (gidJ) {
+          if (ev.type === 'join') await registerGroup(gidJ, ev.source?.type)
+          else { try { const curJ = (await kvGetMany(['pm_group_seen']))['pm_group_seen'] || {}; if (curJ[gidJ]) { curJ[gidJ].gone = 1; await kvSet('pm_group_seen', curJ) } } catch (_) {} }
+        }
+        continue
+      }
       // 互動卡片按鈕（postback）：回饋/投票/文件歸類/任務卡（只在私訊）
       // 簽章驗不過＝偽造請求 → 按鈕一律不理（按鈕會寫資料/刪任務，跟操作權同一套防線）
       if (ev.type === 'postback' && ev.source?.type === 'user') {

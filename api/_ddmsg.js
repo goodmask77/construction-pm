@@ -72,8 +72,13 @@ async function _kvPut(id, obj, editor) { try { const m = await import('./mail-sy
 export async function ddGroupList({ refresh } = {}) {
   let seen = {}; try { seen = (await _kvGet('pm_group_seen')) || {} } catch (_) {}
   const cfgAll = await ddGroupCfgAll()
+  // 三個常用群的 gid：跟 ddGroupGid 同一套規則（env → 登記表照名字 → 寫死退路），但直接用上面已讀的 seen，省 3 次 KV 來回（端點 3.8s → 更快）
   const presetGid = {}
-  for (const k of Object.keys(DD_GROUPS)) { try { presetGid[k] = await ddGroupGid(k) } catch (_) {} }
+  for (const [k, g] of Object.entries(DD_GROUPS)) {
+    let gid = (g.env && (process.env[g.env] || '').trim()) || ''
+    if (!gid && g.match) for (const [g2, gg] of Object.entries(seen)) if (g.match.test(gg?.name || '')) { gid = g2; break }
+    presetGid[k] = gid || g.fallback || FALLBACK_GID
+  }
   const tk = (process.env.LINE_CHANNEL_ACCESS_TOKEN || '').trim()
   const gids = Object.keys(seen).filter(g => /^[CR]/.test(g)) // C=group R=room；私訊 U 不算群
   if (refresh && tk) {

@@ -11,7 +11,8 @@ await pg.waitForTimeout(1500);
 const hasBtn = await pg.evaluate(()=>!![...document.querySelectorAll('button')].find(b=>/DD 自動訊息/.test(b.textContent)));
 // 開 DD 自動訊息面板
 await pg.evaluate(()=>{ try{ ddMsgEdit() }catch(e){ window.__e2=String(e) } });
-await pg.waitForTimeout(1500);
+await pg.waitForSelector('#ddOv [data-k]', { timeout: 20000 }).catch(()=>{});
+await pg.waitForTimeout(500);
 const r = await pg.evaluate(()=>{
   const ov=document.getElementById('ddOv');
   const cards=ov?ov.querySelectorAll('[data-k]').length:0;
