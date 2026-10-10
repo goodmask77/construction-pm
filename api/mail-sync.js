@@ -4835,7 +4835,13 @@ export default async function handler(req, res) {
     const todayM2 = new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10)
     const mosM2 = (() => { const out = []; const d = new Date(todayM2 + 'T00:00:00Z'); for (let i = 0; i < 13; i++) { out.push(d.toISOString().slice(0, 7)); d.setUTCMonth(d.getUTCMonth() - 1) } return out })()
     const t = await mcBuild({ kvGet, months: mosM2 })
-    return res.status(200).json({ ok: true, me: { name: meW.name, canEdit: canEditM }, ...t })
+    if (req.query.card) { // 單卡明細（含每個供應品的價格紀錄）：開卡時才抓，列表回傳不帶 recs（1.4MB→瘦身）
+      const c = (t.cards || []).find(x => x.id === String(req.query.card)); if (!c) return res.status(404).json({ ok: false, error: '找不到這張卡' })
+      const sups = {}; for (const k of c.supplies) if (t.supplies[k]) sups[k] = t.supplies[k]
+      return res.status(200).json({ ok: true, card: c, supplies: sups, log: (t.log || []).filter(l => l.cardId === c.id || c.supplies.includes(l.key) || l.target === c.id || (l.keys || []).some(k => c.supplies.includes(k))) })
+    }
+    const slim = {}; for (const [k, v] of Object.entries(t.supplies || {})) { const { recs, convs, ...rest } = v; slim[k] = { ...rest, nConv: (convs || []).length } }
+    return res.status(200).json({ ok: true, me: { name: meW.name, canEdit: canEditM }, ...t, supplies: slim, log: (t.log || []).slice(0, 20) })
   }
   // ── 🧾 產品與成本模組｜批次 1 偵錯與待處理中心（v4.70.31，規格 docs/COST_MODULE_SPEC.md）──
   // GET  ?costtodo=<OPS_BOARD_KEY>&me=token            → 待處理清單（價格異常/單位待確認/資料缺口/合併建議/已靜音）＋計數＋門檻設定

@@ -19,7 +19,7 @@
     loading = false; paint()
   }
   window.matcardView = function () { if (!MC) { matcardFetch(); return '<section><div class="hint" style="padding:22px">載入物料卡中…</div></section>' } return render() }
-  function paint () { const el = document.getElementById('matBody'); if (el && window._mSubIs && _mSubIs('card')) el.innerHTML = render(); if (openId) { const c = card(openId); if (c) drawer(c, true) } }
+  function paint () { const el = document.getElementById('matBody'); if (el && window._mSubIs && _mSubIs('card')) el.innerHTML = render(); if (openId) { const c = card(openId); if (c) { drawer(c, true); loadDetail(openId) } } }
   window.matcardRefresh = function () { MC = null; matcardFetch() }
   const card = id => (MC.cards || []).find(c => c.id === id)
   const sup = k => (MC.supplies || {})[k]
@@ -102,7 +102,13 @@
   window._mcSelClear = function () { sel.clear(); repaintList() }
 
   // ── 物料卡 drawer ──
-  window._mcOpen = function (id) { const c = card(id); if (!c) return; openId = id; cTab = 'basic'; form = null; drawer(c) }
+  window._mcOpen = async function (id) { const c = card(id); if (!c) return; openId = id; cTab = 'basic'; form = null; drawer(c); await loadDetail(id) }
+  async function loadDetail (id) { // 開卡才抓價格紀錄／換算／紀錄（列表不帶，省流量）
+    try { const meQ = TK() ? '&me=' + encodeURIComponent(TK()) : ''; const r = await fetch('/api/mail-sync?matcard=' + encodeURIComponent(K) + meQ + '&card=' + encodeURIComponent(id) + '&r=' + Date.now()); const j = await r.json(); if (!j.ok) return
+      Object.assign(MC.supplies, j.supplies || {}); MC.log = [...(j.log || []), ...(MC.log || []).filter(l => !(j.log || []).some(x => x.at === l.at && x.op === l.op))]
+      if (openId === id) { const c = card(id); if (c) { const el = document.getElementById('mcTabBody'); if (el) el.innerHTML = tabBody(c, MC.me && MC.me.canEdit) } }
+    } catch (_) {}
+  }
   function drawer (c, keep) {
     let ov = document.getElementById('mcOv')
     if (!ov) { ov = document.createElement('div'); ov.id = 'mcOv'; ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.62);z-index:80;display:flex;align-items:center;justify-content:center;padding:16px'; ov.onclick = () => { ov.remove(); openId = null }; document.body.appendChild(ov) }
