@@ -259,7 +259,8 @@ export async function buildTodo ({ kvGet, months }) {
   for (const it of items) if (it.open) counts[it.tab] = (counts[it.tab] || 0) + 1
   counts.muted = Object.values(todo.mutes).reduce((s, arr) => s + arr.filter(m => !m.off).length, 0)
   counts.done = items.filter(it => it.decision).length
-  counts.total = Object.values(counts).reduce((s, n) => s + n, 0) - counts.muted - counts.done
+  counts.total = (counts.price || 0) + (counts.unit || 0) + (counts.gap || 0) + (counts.merge || 0)
+  counts.urgent = items.filter(it => it.open && !it.info).length // 導覽徽章用：不含資訊級（g=ml 1:1、跨廠商同漲…）
   return { items, counts, mutes, cfg, snapAsOf: snap.asOf, seriesFrom: ser.firstDay, nSeries: ser.series.length, log: (todo.log || []).slice(-50).reverse(), hasSnap: snap.products.length > 0 }
 }
 

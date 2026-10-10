@@ -53,7 +53,7 @@
     paintNavBadge()
     if (!silent) costTodoPaint()
   }
-  function openCount () { const c = (CT && CT.counts) || {}; return (c.price || 0) + (c.unit || 0) + (c.gap || 0) + (c.merge || 0) }
+  function openCount () { const c = (CT && CT.counts) || {}; return c.urgent != null ? c.urgent : ((c.price || 0) + (c.unit || 0) + (c.gap || 0) + (c.merge || 0)) } // 徽章＝需要人決定的（不含資訊級）
   // 導覽徽章（規格：導覽列顯示未處理件數）：物料庫分頁按鈕＋手機常用列
   function paintNavBadge () {
     const n = CT && CT.ok ? openCount() : 0
@@ -99,7 +99,7 @@
       + `<button class="mini" onclick="costTodoRefresh()">${IC.undo} 重新掃描</button></span></div>`
     h += `<div class="hint" style="margin-top:8px;line-height:1.7">資料：A Beach 叫貨序列 ${esc(CT.seriesFrom || '—')} 起、${nf(CT.nSeries)} 組廠商×物料（阿桑系統每小時同步）`
       + (CT.hasSnap ? `；主檔／換算／食譜行＝<b style="color:${COL.y}">10-06 快照（驗收基準，等 boss-api 端點開通後改即時）</b>` : `；<b style="color:${COL.r}">尚未灌 10/06 快照</b>`)
-      + `；門檻 一般 ±${CT.cfg.thr.default}%・蔬果 ±${CT.cfg.thr.veg}%・起司乾貨包材 ±${CT.cfg.thr.tight}%</div>`
+      + `；門檻 一般 ±${CT.cfg.thr.default}%・蔬果 ±${CT.cfg.thr.veg}%・起司乾貨包材 ±${CT.cfg.thr.tight}%；徽章數字＝要人決定的 ${nf((CT.counts || {}).urgent)} 筆（灰字「資訊」級不算）</div>`
     if (cCfgOpen) h += cfgCard()
     h += '</section>'
     // 分頁

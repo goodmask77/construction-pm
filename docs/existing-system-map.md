@@ -152,7 +152,31 @@
 
 ## 6. boss-api 已開通端點實際欄位
 
-（CC 補）
+2026-10-10 20:30 經正式站 `?bossraw`／`?bosspeek` 實打（金鑰 scopes：hr／ops／orders／revenue、限流 60 次／分）。**只列本模組會用到的**；每列一個真實樣本（已消毒）。
+
+| 端點 | KV | 真實欄位（樣本） | 本模組用途／備註 |
+| --- | --- | --- | --- |
+| `/orders`（A Beach 叫貨單） | `boss_ord_YYYYMM`（pk order_id） | `{dept:"內場", status:"approved", order_id:"d5826167-…", supplier:"上展", created_at:"2026-10-03T09:41:22+00:00", line_count:1, approved_at:"…", total_amount:240, unpriced_lines:0}` | status 有 approved／rejected（received 待觀察）；**沒有** 驗收改價、補單金額 |
+| `/orders/items`（A Beach 叫貨明細） | `boss_ordi_YYYYMM`（pk line_id） | `{qty:1, sku:"KCR103", code:"A0021", dept:"內場", name:"聖女番茄", unit:"公斤", price:240, amount:240, line_id:"…", order_id:"…", supplier:"上展", ordered_at:"2026-10-03T09:41:22+00:00", is_backfill:false, order_status:"rejected"}` | **價格偵錯唯一序列來源**（`_cost.js loadSeries`：approved／received、排除 is_backfill、price≤0、qty≤0，同單同料加權）。資料自 2026-07-23 起；筆數 07 月 135／08 月 1294／09 月 965／10 月 306（10-10 止）。price＝下單價，**不是驗收價** |
+| `/costs/menu` | `boss_menu`（快照，pk menu_id） | `{menu_id:1, name:"臘腸培根微火辣楓糖披薩", category:"披薩 PIZZA", price:480, cost:126.93, cost_ratio:0.2644, is_active:true, recipe_lines:9, lines_costed:9, lines_broken:0, lines_no_price:0, lines_no_conversion:0, cost_complete:true, sku:null, code:null}` | 129 列；規格：只交叉比對，不當成本來源 |
+| `/revenue/settlement` | `boss_sett_YYYYMM`（pk date） | `{date:"2026-10-02", cash_total:7392, card_total:179414, card_slips:20, ue_total:0, ae_total:0, eats365_total:192806, eats365_diff:0, banquet_prepay:6000, submitted_at:"…"}` | 對帳頁（非成本模組） |
+| `/ops/incidents` | `boss_inc_YYYYMM`（pk incident_id） | `{incident_id:2711, cat:"食材", item:"收貨異常", target:"上展 · 九層塔", detail:"數量超收：0.4\n驗收時數量不符：訂 0.4、這次收 0.8…", status:"closed", resolve_type:"耗損記錄", reported_dept:"內場", created_at:"2026-10-01T10:17:53+00:00", …}` | **意外收穫**：驗收數量異常會以 incident 形式出現（文字 detail），可當「驗收攔截」事後線索；但沒有改價金額 |
+| `/revenue/monthly` | `boss_revm`（快照，pk month） | `{month:"2023-07", revenue:5642820, bills:2559, customers:8010, avg_check:704, sources:[{source:"iCHEF",…}], days_in_month:31, days_with_data:31, partial:false}` | 營收頁，非本模組 |
+| `/ping` | — | `{ok:true, scopes:["hr","ops","orders","revenue"], rate_limit_per_min:60}` | 金鑰健康 |
+
+**阿桑 10-10 公告的 8 個新端點**（`/recipes` `/costs/items` `/products` `/suppliers` `/gops/products` `/gops/suppliers` `/gops/orders` `/gops/orders/items`）：10-10 20:10 同一 BASE 實打**全部 404**；`boss-sync.js` 已預接（EPS `pend:1`，404 安靜等、打通自動入庫＋DD 私訊審核人）。欄位要等打通後補到這張表。
+
+**與規格「尚缺」表的落差（實測後）**
+
+| 規格「尚缺」 | 實況 |
+| --- | --- |
+| A Beach 叫貨歷史 | **已有**（`/orders` `/orders/items`，07-23 起，含 is_backfill 旗標）；規格這列應改為「只缺 order_adjust 驗收改價」 |
+| 驗收實收單價（order_adjust） | 確缺。影響：快照 7.7 的「京原起司 300／3000」我們偵測不到（我們只看到下單價 2978／3000），需阿桑補端點或在 `/orders/items` 加 `adj_price` |
+| 單位換算（item_convs／item_no_conv）、庫存品 | 確缺；批次 1 先用 10/06 快照 `產品總表.最小單位換算` 欄做 g=ml 1:1／規格≠換算 偵測（畫面標「快照 10-06」） |
+| 改價紀錄（product_price_log） | 確缺；批次 1 先用快照 7.7c 的 17 筆（資訊級） |
+| 菜單的食譜明細 | 確缺；批次 1 影響面（幾道在賣菜、每份金額）用快照 `菜單食譜逐行`＋`食譜明細` 估算，標「估」 |
+| 月帳對帳紀錄 | 確缺；`/revenue/settlement` 是營收結算不是廠商對帳 |
+| 停用中的配方 | 確缺 |
 
 ## 7. 規格 vs 程式／資料對不上的點
 
@@ -160,7 +184,7 @@
 | --- | --- | --- | --- |
 | 1 | 「尚缺：A Beach 叫貨歷史（orders/order_items）…目前只有 GROUN:D 的叫貨單」 | `boss-sync.js` 50–51 行自 2026-01 起每小時同步 **A Beach** `orders`/`orders/items` → `boss_ord_/ordi_`；matlib/matord/_cost.js 都在用。反倒 GROUN:D `gops/orders` 才是預接中（404） | 規格「已開通端點」表漏列 `/orders` `/orders/items`；「尚缺」表的 A Beach 叫貨歷史其實已有（缺的是 order_adjust 驗收改價） |
 | 2 | 已開通 9 端點（2026-10-10） | 10-10 晚實測 8 個新端點全 404（boss-sync 61–62 行註解），KV 內無 `prod/sup/rcp/citem/gprod/gsup/gord/gordi` 任何資料 | 批次 0「用 boss-api 實際呼叫每個端點各一頁」目前做不到，第 6 節待補 |
-| 3 | 單價 0 或空白＝不知道價格 | `?matlib` 把 `price=0` 視為有效價（minP/lastPrice/pctChg） | 物料庫波動數字會被 0 污染；`_cost.js` 已排除 0，兩口徑不一致 |
+| 3 | 單價 0 或空白＝不知道價格 | ~~`?matlib` 把 `price=0` 視為有效價~~ **已修（v4.70.31）**：matlib 與 `_cost.js` 同口徑，0／空＝未知 | 已一致 |
 | 4 | 成本基準＝最近一次**已確認的驗收進價** | 主 App `inv.js lastPaid` 無 last 時退回主檔 `price`；驗收完成立即更新 `last`（無待確認）；boss `ordi.price` 為下單價 | 三個來源都不是「已確認驗收價」 |
 | 5 | 半成品成本＝原料÷實際可用產量，耗損已在產量裡不再加 | `recipeCost` 另除以 `(1−lossPct)` | 與規格雙重計算；A Beach 食譜若帶 yield_qty 會被再打折 |
 | 6 | 包材依內用/外帶/外送各一組＋數量 | `productPackaging` 只有 product_id↔packaging_id，每份固定 1 個、無通路 | 規格頁 5 需新資料結構 |
@@ -171,4 +195,4 @@
 | 11 | 月帳／vendor_recon、order_adjust、item_convs、product_price_log | repo 完全沒有這些資料（grep 無） | 與規格「尚缺」表一致，但表示批次 1 的「對帳兩格」「驗收改價」目前無資料可做 |
 | 12 | 物料庫＝模組七頁之一，應有自己的權限 | `TAB_DEF`（p09 297）沒有 `matlib` → 不能改名/排序、權限矩陣沒有它、按鈕文字 fallback | 要把 `matlib`（或新模組鍵）登記進 `TAB_DEF`/`EDIT_FN` |
 | 13 | 批次 1b 耗損「物料先用 `src/supply/` 現有物料清單」 | /prep 現場用的是 `sp_finance_pm_inv.food/pack`（另一套，無價格）；`src/supply` 的 `ingredients` 在主 App 空間，/prep 沒有端點讀它（`kvproxy` 1014 只准 `sp_team_pm_task*`） | 耗損在 /prep 做的話要新開端點讀 `sp_supply_pm_supply`，或先接 `pm_inv` |
-| 14 | 「10/06 快照 20 筆異常」驗收基準 | 快照灌入口 `?costsnap` 已進 `f0355db`；腳本實際檔名 `scripts/cost-snap-ingest.py`（mail-sync 4696 行註解寫 `.mjs`）；KV 內是否已灌入未確認 | 批次 1 完成條件要先確認快照已入庫 |
+| 14 | 「10/06 快照 20 筆異常」驗收基準 | 快照 9 張表已於 10-10 灌入 `sp_finance_pm_cost_snap_*`（`scripts/cost-snap-ingest.py`，註解已改正）；批次 1 完成條件實跑：7.7＋7.7d 共 23 筆對中 **21 筆**，漏 2 筆＝京原起司（需 order_adjust 驗收改價，見第 6 節落差）、上展香菜（補「全期間高低差 ≥2 倍」資訊級後對中） | 完成條件達標（扣除資料本身拿不到的 1 筆） |
