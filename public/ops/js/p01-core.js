@@ -545,7 +545,10 @@ const nextYm = ym => { const t2 = new Date(ym + '-15'); t2.setMonth(t2.getMonth(
 // 全站折線圖只走這一個函式：Y 軸整數刻度＋格線、X 軸頭尾一定標、滑鼠／手指移動＝直線浮標＋浮窗顯示該點所有數值、單點也畫（不再顯示「資料點不足」）
 // opt：labels[]（X 類別，例月份/日期）＋ series[{name,color,vals[],dotColors[]}]；或 series[{name,color,pts:[{x:數字(毫秒),y}]}] 時序模式
 //      xFmt(label)=軸上短標、tipX(label,i)=浮窗標題、yFmt(v)=數值格式、zero=Y 從 0 起、h=viewBox 高、click(i)=點圓點要跑的 js、noFill=不填底色
+const _lcOpts = {}; let _lcN = 0 // 每張圖的參數留著，等畫到頁面上量到真實寬度再用 1 單位=1px 重畫一次（字不會因容器窄被縮到看不見）
 function lineChart(opt){
+  const id = opt._id || ('lc' + (++_lcN)); _lcOpts[id] = opt; opt._id = id
+  if (!opt._w) setTimeout(() => _lcFit(id), 0)
   const esc9 = s => String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;')
   const ser = (opt.series||[]).filter(s => (s.vals && s.vals.length) || (s.pts && s.pts.length))
   if (!ser.length) return '<div class="hint" style="font-size:12px">沒有資料</div>'
@@ -563,15 +566,15 @@ function lineChart(opt){
   const step = [1,2,2.5,5,10].map(m=>m*pow).find(v=>v>=raw) || pow*10
   const mn = Math.floor(mn0/step+1e-9)*step, mx = Math.max(Math.ceil(mx0/step-1e-9)*step, mn+step), rg = mx-mn
   const yT = []; for (let v=mn; v<=mx+step/2; v+=step) yT.push(+v.toFixed(10))
-  const W = 640, H = opt.h || 170, PR = 14, PT = 14, PB = 26
-  const PL = 12 + Math.max(...yT.map(v=>String(yFmt(v)).length))*6.3
+  const W = opt._w || 640, H = opt.h || 170, PR = 14, PT = 14, PB = 26, FS = 11
+  const PL = 12 + Math.max(...yT.map(v=>String(yFmt(v)).length))*6.8
   const x0 = cols[0].x, x1 = cols[cols.length-1].x
   const X = x => PL + (x1===x0 ? 0.5 : (x-x0)/(x1-x0))*(W-PL-PR), Y = v => PT + (1-(v-mn)/rg)*(H-PT-PB)
-  const grid = yT.map(v=>`<line x1="${PL}" x2="${W-PR}" y1="${Y(v).toFixed(1)}" y2="${Y(v).toFixed(1)}" stroke="#2A3340"/><text x="${PL-6}" y="${(Y(v)+3.5).toFixed(1)}" text-anchor="end" font-size="10" fill="#8A94A6">${esc9(yFmt(v))}</text>`).join('')
+  const grid = yT.map(v=>`<line x1="${PL}" x2="${W-PR}" y1="${Y(v).toFixed(1)}" y2="${Y(v).toFixed(1)}" stroke="#2A3340"/><text x="${PL-6}" y="${(Y(v)+3.5).toFixed(1)}" text-anchor="end" font-size="${FS}" fill="#8A94A6">${esc9(yFmt(v))}</text>`).join('')
   // X 刻度：最多 8 個、頭尾一定有
-  const n = cols.length, want = Math.min(8, n), tix = [...new Set(Array.from({length:want},(_,k)=>Math.round(k*(n-1)/(want-1||1))))]
+  const n = cols.length, want = Math.min(W < 420 ? 6 : 8, n), tix = [...new Set(Array.from({length:want},(_,k)=>Math.round(k*(n-1)/(want-1||1))))]
   const xf = idxMode ? (i => opt.xFmt ? opt.xFmt(labels[i], i) : labels[i]) : (i => opt.xFmt ? opt.xFmt(cols[i].x) : String(cols[i].x))
-  const xa = tix.map(i => { const x = X(cols[i].x), anc = n===1?'middle':i===0?'start':i===n-1?'end':'middle'; return `<line x1="${x.toFixed(1)}" x2="${x.toFixed(1)}" y1="${H-PB}" y2="${H-PB+4}" stroke="#3A4452"/><text x="${x.toFixed(1)}" y="${H-PB+15}" text-anchor="${anc}" font-size="10" fill="#8A94A6">${esc9(xf(i))}</text>` }).join('')
+  const xa = tix.map(i => { const x = X(cols[i].x), anc = n===1?'middle':i===0?'start':i===n-1?'end':'middle'; return `<line x1="${x.toFixed(1)}" x2="${x.toFixed(1)}" y1="${H-PB}" y2="${H-PB+4}" stroke="#3A4452"/><text x="${x.toFixed(1)}" y="${H-PB+15}" text-anchor="${anc}" font-size="${FS}" fill="#8A94A6">${esc9(xf(i))}</text>` }).join('')
   let body = ''
   ser.forEach((s, si) => {
     const col = s.color || '#4DA3FF'
@@ -583,14 +586,23 @@ function lineChart(opt){
       if (sg.length>1) body += `<polyline points="${ps}" fill="none" style="stroke:${col}" stroke-width="2" stroke-linejoin="round"/>`
     }
     // 數字直接標在點上：單線且點數≤14 全標；點多時只標最高點（其餘滑過看）
-    const vs = cols.map(c=>c.v[si]), mxI = vs.indexOf(Math.max(...vs.filter(v=>v!=null))), showAll = ser.length===1 && n<=14
+    const vs = cols.map(c=>c.v[si]), mxI = vs.indexOf(Math.max(...vs.filter(v=>v!=null))), showAll = ser.length===1 && n<=(W < 420 ? 8 : 14)
     pts.forEach((p,i) => { if (!p) return; const dc = (s.dotColors && s.dotColors[i]) || col
       body += `<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="${n>40?2:3.2}" style="fill:${dc}${opt.click?';cursor:pointer':''}" stroke="#0E1217" stroke-width="1.2"${opt.click?` onclick="${esc9(opt.click(i))}"`:''}/>`
-      if (showAll || (ser.length===1 && i===mxI)) body += `<text x="${Math.min(W-PR-12, Math.max(PL+12, p.x)).toFixed(1)}" y="${(p.y-7).toFixed(1)}" text-anchor="middle" font-size="10" font-weight="700" fill="#C7D0DB">${esc9(yFmt(vs[i]))}</text>` })
+      if (showAll || (ser.length===1 && i===mxI)) body += `<text x="${Math.min(W-PR-12, Math.max(PL+12, p.x)).toFixed(1)}" y="${(p.y-7).toFixed(1)}" text-anchor="middle" font-size="${FS}" font-weight="700" fill="#C7D0DB">${esc9(yFmt(vs[i]))}</text>` })
   })
   const data = esc9(JSON.stringify({ n:ser.map(s=>s.name||''), c:ser.map(s=>s.color||'#4DA3FF'), p:cols.map(c=>({ x:+X(c.x).toFixed(1), lb:c.lb, y:c.v.map(v=>v==null?null:+Y(v).toFixed(1)), t:c.v.map(v=>v==null?null:String(yFmt(v))) })) }))
   const curG = `<g class="lcCur" style="display:none;pointer-events:none"><line x1="0" x2="0" y1="${PT}" y2="${H-PB}" stroke="#9CC7F5" stroke-dasharray="3 3"/>${ser.map(s=>`<circle r="4.5" style="fill:${s.color||'#4DA3FF'}" stroke="#fff" stroke-width="1.5"/>`).join('')}</g>`
-  return `<div class="lcBox" style="position:relative"><svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto;display:block;touch-action:pan-y" data-lc="${data}" data-w="${W}" onmousemove="_lcHover(event,this)" onmouseleave="_lcLeave(this)" ontouchstart="_lcHover(event,this)" ontouchmove="_lcHover(event,this)" ontouchend="_lcLeave(this)"><line x1="${PL}" x2="${PL}" y1="${PT}" y2="${H-PB}" stroke="#3A4452"/><line x1="${PL}" x2="${W-PR}" y1="${H-PB}" y2="${H-PB}" stroke="#3A4452"/>${grid}${xa}${body}${curG}</svg><div class="lcTip" style="display:none;position:absolute;top:4px;pointer-events:none;background:#0F141B;border:1px solid #3A4452;border-radius:8px;padding:5px 9px;font-size:12px;line-height:1.5;white-space:nowrap;box-shadow:0 4px 14px rgba(0,0,0,.4);z-index:2"></div></div>`
+  return `<div class="lcBox" id="${id}" style="position:relative"><svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto;display:block;touch-action:pan-y" data-lc="${data}" data-w="${W}" onmousemove="_lcHover(event,this)" onmouseleave="_lcLeave(this)" ontouchstart="_lcHover(event,this)" ontouchmove="_lcHover(event,this)"><line x1="${PL}" x2="${PL}" y1="${PT}" y2="${H-PB}" stroke="#3A4452"/><line x1="${PL}" x2="${W-PR}" y1="${H-PB}" y2="${H-PB}" stroke="#3A4452"/>${grid}${xa}${body}${curG}</svg><div class="lcTip" style="display:none;position:absolute;top:4px;pointer-events:none;background:#0F141B;border:1px solid #3A4452;border-radius:8px;padding:5px 9px;font-size:12px;line-height:1.5;white-space:nowrap;box-shadow:0 4px 14px rgba(0,0,0,.4);z-index:2"></div></div>`
+}
+// 量真實寬度重畫（1 viewBox 單位＝1px，字固定 11px 看得清）；之後容器變寬變窄（轉向／側欄）再重畫
+window._lcFit = function(id){
+  const box = document.getElementById(id), o = _lcOpts[id]; if (!box || !o) { if (!box) delete _lcOpts[id]; return }
+  const px = Math.round(box.clientWidth); if (!px) return
+  const W = Math.max(280, px); if (o._w === W) return
+  o._w = W; box.outerHTML = lineChart(o)
+  const el = document.getElementById(id); if (el && window.ResizeObserver) new ResizeObserver(() => _lcFit(id)).observe(el)
+  if (Object.keys(_lcOpts).length > 300) for (const k of Object.keys(_lcOpts)) if (!document.getElementById(k)) delete _lcOpts[k]
 }
 // 曲線浮標：找離滑鼠／手指最近的 X 欄，移動指標線＋各線圓點，浮窗列出該欄每條線的數值
 window._lcHover = function(ev, svg){
