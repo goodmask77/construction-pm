@@ -538,7 +538,7 @@ async function loadCrewText() {
   } catch (_) { return '' }
 }
 
-const BOT_MODEL = process.env.ANTHROPIC_MODEL || 'claude-opus-4-8' // 最高級；失敗自動退回 Sonnet
+// BOT_MODEL 已退役（v4.70.29）：D哥用哪家／哪個模型改在 /prep 設定頁「AI 模型」選（api/_ai.js route=dd，預設 Claude Opus→備援 Sonnet）
 const BOT_PERSONA = `你是「DD」（舊名 D哥，大家叫哪個都認得），喬亞國際餐飲團隊的 LINE 小幫手。你手上有公司管理 App 的即時資料（附在下面）。
 
 講話風格：像個可靠、反應快、講話自然的同事——親切、直接、不囉嗦。用正常口語跟適度的表情符號，不要像念公文或一條條規則。該一句話講完就一句話，需要才條列。**不要每次都自我介紹**（你們是熟人了，接著聊就好，除非對方第一次跟你說話或問你是誰）。
@@ -1229,7 +1229,6 @@ async function loadFilelibText() {
 }
 
 async function answer(question, snaps, accountsText, financeText, activityText, estimatesText, crewText, canAct, history, memoryText, conclusionsText, tasksText, sheetText, posText, catalogText, supplyText, lineQuotaText, filelibText, groupChatText, moneyOK = true) {
-  if (!ANTHROPIC) return '（D哥的 AI 金鑰尚未設定。）'
   // 外部群（moneyOK=false）：不給任何金額/財務資料，並下鐵令禁止透露
   const moneyGuard = moneyOK ? '' : '\n\n⚠️【外部群鐵律】這個群是「外部群」，你**絕對禁止**透露任何：金額、預估/已付/未付、單價、報價、成本、營業額、銀行/帳戶餘額、零用金、財務數字、薪資。被問到金額類一律回「這部分金額不方便在這裡提供，我私下跟張哥確認 🙏」，不要旁敲側擊地洩漏。你可以講進度、工序、一般事務、用 web_search 查一般問題。'
   // v2.5.9 唯讀鐵令（2026-09-16 翻車：群組叫 DD 建 7 件任務，DD 沒有寫入權卻回了整篇「都建好了」）：
@@ -1239,21 +1238,16 @@ async function answer(question, snaps, accountsText, financeText, activityText, 
     + (moneyOK ? '' : '\n\n⚠️這個群只能查「檔期狀況」（某天空檔／已有幾組幾人／可能包場），系統查回來的資料本來就不含客人姓名、電話、備註內容——這些是客人個資，對外一律不提供。有人問「誰訂的／客人電話／某客人來過幾次」時，回「客人資料這邊不方便提供，要查請私訊張哥 🙏」，不要用 query_resv 的 name/top。'))
   const system = (canAct ? BOT_AGENT_GUIDE + '\n\n' : '') + BOT_PERSONA + readonlyGuard + moneyGuard + (memoryText || '') + sysDataHead() + snapshotsToContext(snaps, moneyOK) + (tasksText || '') + (moneyOK ? (accountsText || '') : '') + (moneyOK ? (financeText || '') : '') + (activityText || '') + (moneyOK ? (estimatesText || '') : '') + (crewText || '') + (conclusionsText || '') + (sheetText || '') + (moneyOK ? (posText || '') : '') + (moneyOK ? (supplyText || '') : '') + (lineQuotaText || '') + (catalogText || '') + (filelibText || '') + (moneyOK ? (groupChatText || '') : '')
   const messages = [...(Array.isArray(history) ? history : []), { role: 'user', content: question }]
-  const callModel = async (model) => {
-    const r = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', 'x-api-key': ANTHROPIC, 'anthropic-version': '2023-06-01' },
-      // system 標記可快取（5 分鐘內資料沒變就命中快取）→ 連續對話時 Opus 輸入成本大降、回覆更快
-      body: JSON.stringify({ model, max_tokens: 3000, system: [{ type: 'text', text: system, cache_control: { type: 'ephemeral' } }], messages }),
-    })
-    return { ok: r.ok, d: await r.json().catch(() => ({})) }
-  }
+  // v4.70.29 走 AI 中樞 route=dd（設定頁可選 ChatGPT／Claude／Gemini；cache=system 可快取→Claude 連續對話輸入成本大降）；選的那家壞了自動退備援，D哥不會啞掉
   try {
-    let { ok, d } = await callModel(BOT_MODEL)
-    if (!ok) { console.log('primary model failed, fallback to sonnet', d?.error?.message); ({ ok, d } = await callModel('claude-sonnet-4-6')) } // 主模型不可用就退回，D哥不會啞掉
-    if (ok) return (d.content || []).map((b) => b.text || '').join('').trim() || '（沒有內容）'
-    return '（AI 回應失敗，請稍後再試）'
-  } catch (_) { return '（AI 連線失敗，請稍後再試）' }
+    const { aiCall } = await import('./_ai.js')
+    const r = await aiCall('dd', { system, messages, maxTokens: 3000, cache: true })
+    if (r.tried && r.tried.length) console.log('dd primary failed → used', r.provider, r.model, r.tried)
+    return r.text || '（沒有內容）'
+  } catch (e) {
+    console.log('dd ai all failed', e.message, e.tried)
+    return /尚未設定金鑰/.test(e.message || '') ? '（D哥的 AI 金鑰尚未設定。）' : '（AI 回應失敗，請稍後再試）'
+  }
 }
 
 // ════════════════════════════════════════════════════════════════════════
@@ -1843,16 +1837,12 @@ async function ddTranslate(text, mode) {
   const hasHan = /[\u4e00-\u9fff]/.test(text)
   const hasHangul = /[\uac00-\ud7af]/.test(text)
   const dir = hasHan ? `翻成${pair.fo}` : (hasHangul || !hasHan ? '翻成繁體中文（台灣用語）' : `翻成${pair.fo}`)
-  const call = async (model) => {
-    const r = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', 'x-api-key': ANTHROPIC, 'anthropic-version': '2023-06-01' },
-      body: JSON.stringify({ model, max_tokens: Math.min(500, Math.max(80, text.length * 3)), system: `即時口譯：把訊息${dir}。只輸出譯文，不解釋不加引號。保留語氣敬語；人名品牌保留原文。`, messages: [{ role: 'user', content: text }] }),
-    })
-    const d = await r.json()
-    return r.ok ? (d.content || []).map(c => c.text || '').join('') : null
-  }
-  return (await call('claude-haiku-4-5-20251001')) || (await call('claude-sonnet-4-6')) || '（翻譯暫時失敗，再說一次）'
+  // v4.70.29 走 AI 中樞 route=translate（預設 Haiku 便宜快，設定頁可換家）
+  try {
+    const { aiCall } = await import('./_ai.js')
+    const r = await aiCall('translate', { system: `即時口譯：把訊息${dir}。只輸出譯文，不解釋不加引號。保留語氣敬語；人名品牌保留原文。`, messages: [{ role: 'user', content: text }], maxTokens: Math.min(500, Math.max(80, text.length * 3)) })
+    return r.text || '（翻譯暫時失敗，再說一次）'
+  } catch (_) { return '（翻譯暫時失敗，再說一次）' }
 }
 async function getLineProfile(userId) { try { const r = await fetch('https://api.line.me/v2/bot/profile/' + userId, { headers: { authorization: `Bearer ${TOKEN}` } }); if (r.ok) { const d = await r.json(); return d.displayName || '' } } catch (_) {} return '' }
 
@@ -1875,18 +1865,13 @@ async function getChatHistory(convId) {
 }
 // 舊對話溢出時：把「既有摘要＋要被擠掉的舊對話」合併成新摘要（用便宜的 Haiku；失敗就保留舊摘要，不丟資料）
 async function summarizeOverflow(oldSummary, dropped) {
-  if (!ANTHROPIC || !dropped.length) return oldSummary || ''
+  if (!dropped.length) return oldSummary || ''
   const convo = dropped.map(x => (x.role === 'user' ? '使用者' : 'DD') + '：' + x.content).join('\n')
   const prompt = `你在維護一份 LINE 對話的「長期摘要」。把【既有摘要】和【即將被移出逐字記憶的舊對話】合併成更新版摘要：保留仍重要的事實、決定、數字、金額、日期、待辦、使用者偏好與習慣；閒聊丟掉。600字內、條列。只輸出摘要本身，不要開場白。\n\n【既有摘要】\n${oldSummary || '（無）'}\n\n【舊對話】\n${convo}`
-  try {
-    const r = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', 'x-api-key': ANTHROPIC, 'anthropic-version': '2023-06-01' },
-      body: JSON.stringify({ model: 'claude-haiku-4-5-20251001', max_tokens: 900, messages: [{ role: 'user', content: prompt }] }),
-    })
-    const d = await r.json().catch(() => ({}))
-    const t = (d.content || []).map(b => b.text || '').join('').trim()
-    return t || oldSummary || ''
+  try { // v4.70.29 走 AI 中樞 route=summary（預設 Haiku）
+    const { aiCall } = await import('./_ai.js')
+    const r = await aiCall('summary', { messages: [{ role: 'user', content: prompt }], maxTokens: 900 })
+    return r.text || oldSummary || ''
   } catch (_) { return oldSummary || '' }
 }
 async function pushChat(convId, userText, assistantText) {

@@ -858,6 +858,7 @@ async function settingsLoad(){ // ⚙️ 設定頁（張良 2026-10-01：分頁�
       <button class="mini" style="padding:10px 16px" onclick="tabsEdit()">🗂 分頁名稱／排序</button>
       <button class="mini" style="padding:10px 16px" onclick="notifyEdit()">🔔 群組通知開關</button>
       <button class="mini" style="padding:10px 16px" onclick="ddMsgEdit()">📢 DD 自動訊息（發哪個群／話怎麼講）</button>
+      <button class="mini" style="padding:10px 16px" onclick="aiCfgEdit()">AI 模型（ChatGPT／Claude／Gemini 各功能用哪家）</button>
     </div><div id="permBox" class="hint">權限資料載入中…</div></section>`
   let d; try{ const r = await fetch('/api/mail-sync?menu=' + encodeURIComponent(K) + (TK() ? '&me=' + encodeURIComponent(TK()) : '')); d = await r.json() }catch(e){}
   const box = document.getElementById('permBox'); if (!box) return

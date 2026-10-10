@@ -778,3 +778,85 @@ async function sopRefSave(itemId, ref){
 }
 
 function hrmHint(){}
+
+// ── 🤖 AI 模型設定（v4.70.29 張良 2026-10-10「ChatGPT、Claude、Gemini 三家都接，不同功能各選一家，先都接上再選」）──
+// 讀 ?aicfg（誰都能看）、改/列模型/測試 ?aicfgset ?aimodels ?aitest（審核人限定）；金鑰不下傳，只顯示「有／沒有設」
+let _aiD = null, _aiModels = {}
+async function aiCfgEdit(){
+  let d; try { const r = await fetch('/api/mail-sync?aicfg=' + encodeURIComponent(K) + (TK()?'&me='+encodeURIComponent(TK()):'')); d = await r.json() } catch(e){}
+  if (!d || !d.ok) { alert('讀不到 AI 設定'); return }
+  _aiD = d
+  const esc = s => String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')
+  const P = d.providers || {}
+  const pills = Object.entries(P).map(([k,p])=>`<span style="display:inline-flex;align-items:center;gap:5px;padding:4px 10px;border-radius:999px;border:1px solid var(--line);font-size:12px;font-weight:700;background:var(--soft)"><span style="width:8px;height:8px;border-radius:50%;background:${p.hasKey?'var(--green,#3DBE6C)':'#F07373'}"></span>${esc(p.label)}<span class="hint" style="font-weight:500">${p.hasKey?'金鑰已設':'未設金鑰'}</span></span>`).join('')
+  const card = r => {
+    const cur = r.cur || {}; const prov = cur.provider || ''
+    const provOpts = `<option value="">預設（${esc(P[r.def.provider]?P[r.def.provider].label:r.def.provider)}・${esc(r.def.model)}${r.fb?'，備援 '+esc(P[r.fb.provider]?P[r.fb.provider].label:r.fb.provider)+'・'+esc(r.fb.model):''}）</option>` +
+      Object.entries(P).map(([k,p])=>{ const no = !p.hasKey || (r.kind==='image' && !p.image); return `<option value="${k}" ${k===prov?'selected':''} ${no?'disabled':''}>${esc(p.label)}${!p.hasKey?'（未設金鑰）':(r.kind==='image'&&!p.image?'（不會生圖）':'')}</option>` }).join('')
+    return `<div data-k="${esc(r.key)}" data-kind="${esc(r.kind)}" style="border:1px solid var(--line);border-radius:12px;padding:12px;margin-bottom:10px;background:var(--card)">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;flex-wrap:wrap"><b style="font-size:15px">${esc(r.label)}</b><span class="hint" style="font-size:11px">${esc(r.where||'')}</span></div>
+      <div class="hint" style="font-size:11.5px;margin-bottom:8px">目前：${cur.provider?`<b>${esc(P[cur.provider]?P[cur.provider].label:cur.provider)}</b> ${esc(cur.model||'（該家預設）')}${cur.by?`　<span>${esc(cur.by)} ${esc(String(cur.at||'').slice(0,10))} 設定</span>`:''}`:'走預設'}</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:7px;align-items:center">
+        <select class="aiProv" onchange="aiProvChange(this)" style="background:var(--soft);border:1px solid var(--line);border-radius:8px;padding:7px 8px;color:var(--ink);font-size:13px;min-width:0">${provOpts}</select>
+        <select class="aiModel" style="background:var(--soft);border:1px solid var(--line);border-radius:8px;padding:7px 8px;color:var(--ink);font-size:13px;min-width:0" ${prov?'':'disabled'}><option value="">${prov?'載入模型清單…':'（先選左邊）'}</option></select>
+        <input class="aiModelCustom" placeholder="或手動輸入模型代號" value="${esc(cur.model||'')}" style="grid-column:1/-1;display:none;background:var(--soft);border:1px solid var(--line);border-radius:8px;padding:7px 8px;color:var(--ink);font-size:13px">
+      </div>
+      <div class="aiOut hint" style="font-size:12px;margin-top:6px;white-space:pre-wrap;line-height:1.5"></div>
+      <div style="display:flex;gap:6px;justify-content:flex-end;margin-top:8px;flex-wrap:wrap">
+        <button class="mini" style="padding:6px 12px" onclick="aiTest(this)">測試</button>
+        <button class="mini" style="padding:6px 12px" onclick="aiCfgSave(this,1)">恢復預設</button>
+        <button class="mini on" style="padding:6px 16px" onclick="aiCfgSave(this)">儲存</button>
+      </div>
+    </div>` }
+  const ov = document.createElement('div'); ov.id='aiOv'
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(10,14,22,.6);z-index:70;display:flex;align-items:flex-start;justify-content:center;padding:14px;overflow:auto'
+  ov.innerHTML = `<div style="background:var(--bg);border:1px solid var(--line);border-radius:16px;width:100%;max-width:640px;padding:16px" onclick="event.stopPropagation()">
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px"><b style="font-size:17px">AI 模型設定</b><button class="mini" style="margin-left:auto;padding:6px 12px" onclick="document.getElementById('aiOv').remove()">✕</button></div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">${pills}</div>
+    <div class="hint" style="margin-bottom:12px">每個功能各自選用哪家＋哪個模型。沒選＝走預設；選的那家壞了（額度／模型下架）會自動退回預設，不會卡住。${d.canEdit?'改完按該功能的「儲存」，「測試」會真的打一次給你看回覆與秒數。':'（只有審核人能改，目前唯讀）'}<br>金鑰只放伺服器端：要加／換金鑰跟 CC 說。</div>
+    ${(d.routes||[]).map(card).join('')}</div>`
+  if (!d.canEdit) setTimeout(()=>{ ov.querySelectorAll('input,select,button.on,button').forEach(e=>{ if(!/✕/.test(e.textContent||'')) e.disabled=true }) },0)
+  ov.onclick = () => ov.remove()
+  document.body.appendChild(ov)
+  if (d.canEdit) ov.querySelectorAll('.aiProv').forEach(sel => { if (sel.value) aiProvChange(sel, true) })
+}
+async function aiProvChange(sel, init){
+  const card = sel.closest('[data-k]'); const prov = sel.value; const kind = card.dataset.kind
+  const mSel = card.querySelector('.aiModel'); const cu = card.querySelector('.aiModelCustom')
+  const r = (_aiD.routes||[]).find(x=>x.key===card.dataset.k) || {}; const want = init && r.cur ? (r.cur.model||'') : ''
+  if (!prov) { mSel.disabled = true; mSel.innerHTML = '<option value="">（先選左邊）</option>'; cu.style.display='none'; return }
+  mSel.disabled = false; mSel.innerHTML = '<option value="">載入模型清單…</option>'
+  const ck = prov + ':' + kind
+  if (!_aiModels[ck]) { try { const rr = await fetch('/api/mail-sync?aimodels=' + encodeURIComponent(K) + '&me=' + encodeURIComponent(TK()||'') + '&provider=' + prov + '&kind=' + kind); _aiModels[ck] = await rr.json() } catch(e){ _aiModels[ck] = { ok:false, models:[] } } }
+  const lst = (_aiModels[ck].models||[]); const dft = ((_aiD.defaults||{})[kind]||{})[prov] || ''
+  const esc = s => String(s==null?'':s).replace(/</g,'&lt;').replace(/"/g,'&quot;')
+  mSel.innerHTML = `<option value="">該家預設（${esc(dft)}）</option>` + lst.map(m=>`<option value="${esc(m.id)}">${esc(m.label||m.id)}${m.id===dft?'（預設）':''}</option>`).join('') + `<option value="__custom">其他（手動輸入）</option>`
+  if (!_aiModels[ck].ok) mSel.insertAdjacentHTML('afterbegin', `<option value="" disabled>清單讀不到：${esc(_aiModels[ck].error||'')}</option>`)
+  mSel.onchange = () => { cu.style.display = mSel.value==='__custom' ? '' : 'none' }
+  if (want) { if (lst.some(m=>m.id===want)) mSel.value = want; else if (want !== dft) { mSel.value='__custom'; cu.style.display=''; cu.value=want } }
+}
+function aiPick(card){ const prov = card.querySelector('.aiProv').value; const mSel = card.querySelector('.aiModel'); let model = mSel.value; if (model==='__custom') model = card.querySelector('.aiModelCustom').value.trim(); return { provider: prov, model } }
+async function aiTest(btn){
+  const card = btn.closest('[data-k]'); const out = card.querySelector('.aiOut'); const r = (_aiD.routes||[]).find(x=>x.key===card.dataset.k) || {}
+  let { provider, model } = aiPick(card)
+  if (!provider) { provider = r.def.provider; model = r.def.model } // 沒選＝測預設
+  btn.disabled = true; btn.textContent = '測試中…'; out.textContent = ''
+  try {
+    const rr = await fetch('/api/mail-sync?aitest=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ provider, model, kind: card.dataset.kind, token: TK() }) })
+    const j = await rr.json()
+    if (j.ok) { out.innerHTML = `✓ ${(j.ms/1000).toFixed(1)} 秒・${String(j.model||'').replace(/</g,'&lt;')}<br>` + (j.image ? `<img src="${j.image}" style="max-width:160px;border-radius:8px;margin-top:4px">` : String(j.text||'').replace(/</g,'&lt;')) }
+    else out.textContent = '✗ 失敗：' + (j.error||'未知') + (j.ms?`（${(j.ms/1000).toFixed(1)} 秒）`:'')
+  } catch(e){ out.textContent = '✗ 連線失敗' }
+  btn.disabled = false; btn.textContent = '測試'
+}
+async function aiCfgSave(btn, reset){
+  const card = btn.closest('[data-k]'); const key = card.dataset.k
+  const sel = reset ? { provider:'', model:'' } : aiPick(card)
+  if (!reset && !sel.provider) { alert('請先選一家，或按「恢復預設」'); return }
+  btn.disabled = true; const t = btn.textContent; btn.textContent = '儲存中…'
+  const r = await fetch('/api/mail-sync?aicfgset=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ key, provider: sel.provider, model: sel.model, token: TK() }) })
+  const d = await r.json().catch(()=>null)
+  btn.disabled = false; btn.textContent = t
+  if (d && d.ok) { btn.textContent = '已儲存 ✓'; setTimeout(()=>{ btn.textContent = t; const o=document.getElementById('aiOv'); if(o){ o.remove(); aiCfgEdit() } }, 900) }
+  else alert((d&&d.error)||'儲存失敗')
+}

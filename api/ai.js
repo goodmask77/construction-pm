@@ -1,51 +1,17 @@
-// Vercel Serverless Function：代理 Anthropic Messages API，金鑰由環境變數提供。
-// 前端的 callAI() 會 POST { messages, system } 到 /api/ai。
-// 依序嘗試多個現行模型，遇到「模型不存在/無權限」自動換下一個。
-const MODELS = [
-  process.env.ANTHROPIC_MODEL,
-  'claude-sonnet-4-6',
-  'claude-opus-4-8',
-].filter(Boolean)
+// Vercel Serverless Function：主 App 的 AI 顧問端點（前端 callAI() POST { messages, system }）。
+// v4.70.29 改走 AI 中樞 api/_ai.js route=app：設定頁可選 ChatGPT／Claude／Gemini，金鑰全在伺服器端，壞了自動退備援。
+// 回傳格式維持舊樣（content:[{type:'text',text}]）前端不用改。
+import { aiCall } from './_ai.js'
 
 export default async function handler(req, res) {
-  if (req.method !== 'POST') {
-    return res.status(405).json({ error: '僅支援 POST' })
-  }
-
-  const key = process.env.ANTHROPIC_API_KEY
-  if (!key) {
-    return res.status(400).json({
-      error: 'AI 顧問尚未設定：請在 Vercel 專案環境變數加入 ANTHROPIC_API_KEY 後重新部署。',
-    })
-  }
-
+  if (req.method !== 'POST') return res.status(405).json({ error: '僅支援 POST' })
   const { messages, system } = req.body || {}
-  let lastErr = 'AI 服務錯誤'
-
-  for (const model of MODELS) {
-    try {
-      const r = await fetch('https://api.anthropic.com/v1/messages', {
-        method: 'POST',
-        headers: {
-          'content-type': 'application/json',
-          'x-api-key': key,
-          'anthropic-version': '2023-06-01',
-        },
-        body: JSON.stringify({ model, max_tokens: 16000, system, messages }),
-      })
-      const data = await r.json()
-      if (r.ok) {
-        return res.status(200).json({ content: data.content, model, stop_reason: data.stop_reason, usage: data.usage })
-      }
-      lastErr = data?.error?.message || lastErr
-      // 只有「模型相關」錯誤才換下一個；其他錯誤（金鑰/額度）直接回報
-      const isModelErr = /model/i.test(lastErr) || r.status === 404
-      if (!isModelErr) {
-        return res.status(r.status).json({ error: lastErr })
-      }
-    } catch (e) {
-      lastErr = e?.message || 'unknown'
-    }
+  if (!Array.isArray(messages) || !messages.length) return res.status(400).json({ error: '缺 messages' })
+  try {
+    const r = await aiCall('app', { system, messages, maxTokens: 16000 })
+    return res.status(200).json({ content: [{ type: 'text', text: r.text }], model: r.model, provider: r.provider, stop_reason: r.stop, usage: r.usage })
+  } catch (e) {
+    const nokey = (e.tried || []).length && e.tried.every(t => /尚未設定金鑰/.test(t.err))
+    return res.status(nokey ? 400 : 502).json({ error: (nokey ? 'AI 顧問尚未設定金鑰：' : 'AI 服務錯誤：') + (e.message || '未知'), tried: e.tried })
   }
-  return res.status(502).json({ error: 'AI 服務錯誤：' + lastErr })
 }

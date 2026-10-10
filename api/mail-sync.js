@@ -1593,6 +1593,47 @@ export default async function handler(req, res) {
     const aprN = (((defN || {}).ground || {}).approvers || ['張良瑋'])
     return res.status(200).json({ ok: true, cfg: cfgN || {}, canEdit: !!(meN2 && aprN.includes(meN2.name)) })
   }
+  // ── 🤖 AI 模型設定（v4.70.29 張良「ChatGPT／Claude／Gemini 三家都接，不同功能各選一家」）──
+  // 守門同 DD 自動訊息：讀＝任何綁定者看得到目前設定；改／列模型／測試＝審核人限定（金鑰永遠不下傳，只回「有沒有設」）
+  const aiAdminOK = async (tk) => { const w = await sopWho(tk); if (!w) return null; const def = await kvGet('sp_finance_pm_sop_def'); const apr = (((def || {}).ground || {}).approvers || ['張良瑋']); return apr.includes(w.name) ? w : null }
+  if (req.query?.aicfg) { // GET ?aicfg=<OPS_BOARD_KEY>&me=token
+    const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
+    if (!ok2 || String(req.query.aicfg) !== ok2) return res.status(403).json({ ok: false })
+    const { aiOverview } = await import('./_ai.js')
+    const [ov, adm] = await Promise.all([aiOverview(), aiAdminOK(req.query.me)])
+    return res.status(200).json({ ok: true, ...ov, canEdit: !!adm })
+  }
+  if (req.method === 'POST' && req.query?.aicfgset) { // POST body={key, provider, model, token}；provider 空＝回預設
+    const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
+    if (!ok2 || String(req.query.aicfgset) !== ok2) return res.status(403).json({ ok: false })
+    let b = {}; try { b = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
+    const adm = await aiAdminOK(b.token); if (!adm) return res.status(403).json({ ok: false, error: '只有審核人能改 AI 模型設定' })
+    try { const { aiCfgSet } = await import('./_ai.js'); await aiCfgSet(String(b.key || ''), b.provider ? { provider: String(b.provider), model: String(b.model || '') } : null, adm.name); return res.status(200).json({ ok: true }) }
+    catch (e) { return res.status(400).json({ ok: false, error: e.message || '存檔失敗' }) }
+  }
+  if (req.query?.aimodels) { // GET ?aimodels=<OPS_BOARD_KEY>&me=token&provider=openai&kind=text|image → 直接問該家現在有哪些模型
+    const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
+    if (!ok2 || String(req.query.aimodels) !== ok2) return res.status(403).json({ ok: false })
+    const adm = await aiAdminOK(req.query.me); if (!adm) return res.status(403).json({ ok: false, error: '審核人限定' })
+    const { aiListModels } = await import('./_ai.js')
+    res.setHeader('Cache-Control', 'private, no-store')
+    return res.status(200).json(await aiListModels(String(req.query.provider || ''), req.query.kind === 'image' ? 'image' : 'text'))
+  }
+  if (req.method === 'POST' && req.query?.aitest) { // POST body={provider, model, kind, prompt, token} → 用指定那家跑一句，回文字／圖＋耗時（不退備援，壞就直接報錯）
+    const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
+    if (!ok2 || String(req.query.aitest) !== ok2) return res.status(403).json({ ok: false })
+    let b = {}; try { b = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
+    const adm = await aiAdminOK(b.token); if (!adm) return res.status(403).json({ ok: false, error: '審核人限定' })
+    const { aiCall, aiImage, defaultModel } = await import('./_ai.js')
+    const provider = String(b.provider || ''), kind = b.kind === 'image' ? 'image' : 'text'
+    const override = { provider, model: String(b.model || '').trim() || defaultModel(provider, kind) }
+    const t0 = Date.now()
+    try {
+      if (kind === 'image') { const r = await aiImage('image', { override, noFallback: true, prompt: String(b.prompt || '一杯放在木桌上的冰拿鐵，自然光，俯拍') }); return res.status(200).json({ ok: true, ms: Date.now() - t0, model: r.model, image: `data:${r.mime};base64,${r.data}`, note: r.note || '' }) }
+      const r = await aiCall('app', { override, noFallback: true, messages: [{ role: 'user', content: String(b.prompt || '用一句繁體中文自我介紹你是哪個模型，20字內。') }], maxTokens: 400 })
+      return res.status(200).json({ ok: true, ms: Date.now() - t0, model: r.model, text: r.text, usage: r.usage || null })
+    } catch (e) { return res.status(200).json({ ok: false, ms: Date.now() - t0, error: e.message || '失敗' }) }
+  }
   // 📢 DD 自動訊息設定（v4.53.0 張良「設定頁管理 DD 所有自動發送：發哪個群/話怎麼講/開關」）：GET ?ddmsg=<OPS_BOARD_KEY>&me=token
   if (req.query?.ddmsg) {
     const ok2 = (process.env.OPS_BOARD_KEY || '').trim()

@@ -163,7 +163,7 @@
     const assets = DATA.assets || []
     const isAdmin = !!(DATA.me && DATA.me.admin)
     let h = ''
-    if (DATA.canEdit) h += `<div style="margin:10px 0;display:flex;gap:8px;align-items:center;flex-wrap:wrap"><button class="mini on" id="sfUpBtn" style="padding:8px 16px" onclick="_socialUploadAsset()">＋ 上傳素材（可一次多張）</button><span id="sfUpProg" class="hint">上傳的圖存這裡，新增貼文時可一鍵選用、不用每次重傳</span></div>`
+    if (DATA.canEdit) h += `<div style="margin:10px 0;display:flex;gap:8px;align-items:center;flex-wrap:wrap"><button class="mini on" id="sfUpBtn" style="padding:8px 16px" onclick="_socialUploadAsset()">＋ 上傳素材（可一次多張）</button><button class="mini" style="padding:8px 16px" onclick="_socialGenImg()">AI 生圖</button><span id="sfUpProg" class="hint">上傳的圖存這裡，新增貼文時可一鍵選用、不用每次重傳</span></div>`
     if (!assets.length) return h + '<section><div class="hint" style="padding:18px">素材庫還是空的。按「＋ 上傳素材」放圖片進來，之後新增貼文時就能重複選用。</div></section>'
     h += '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:10px">' + assets.map(a => `<div style="position:relative"><img src="${esc(a.url)}" onclick="_socialAssetView('${esc(a.url)}')" style="width:100%;aspect-ratio:1;object-fit:cover;border-radius:12px;border:1px solid var(--line);cursor:zoom-in">${isAdmin ? `<span onclick="event.stopPropagation();_socialAssetDel('${esc(a.url)}',this)" style="position:absolute;top:5px;right:5px;background:rgba(0,0,0,.6);color:#fff;width:24px;height:24px;border-radius:50%;display:flex;align-items:center;justify-content:center;cursor:pointer;font-weight:700">✕</span>` : ''}</div>`).join('') + '</div>'
     return h
@@ -499,6 +499,45 @@
     socialLoad()
   }
 
+  // ── AI 生圖（v4.70.29 張良「做圖就得用 Gemini」：走 AI 中樞 route=image，設定頁可改 Gemini／ChatGPT；生好自動入素材庫）──
+  // forPost=1：從貼文編輯的素材庫 modal 進來 → 生好可直接「加入這則貼文」
+  let genImgRefs = []
+  window._socialGenImg = function (forPost) {
+    const assets = (DATA.assets || []).slice(0, 12)
+    genImgRefs = []
+    const ov = document.createElement('div'); ov.className = 'genImgOv'; ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.66);z-index:74;display:flex;align-items:center;justify-content:center;padding:14px'; ov.onclick = () => ov.remove()
+    const AR = [['1:1', '正方形'], ['4:3', '橫式'], ['3:4', '直式'], ['16:9', '寬螢幕'], ['9:16', '限動／直立']]
+    ov.innerHTML = `<div onclick="event.stopPropagation()" style="background:var(--card);border:1px solid var(--line);border-radius:16px;max-width:560px;width:100%;max-height:90vh;display:flex;flex-direction:column;overflow:hidden">
+      <div style="flex:0 0 auto;padding:16px 18px 8px"><h2 style="margin:0 0 4px">AI 生圖</h2><div class="hint">描述想要的畫面（餐點／場景／氛圍／文字），可勾下方既有素材當參考圖讓 AI 照著商品或風格改。生好的圖自動進素材庫。</div></div>
+      <div style="flex:1 1 auto;overflow:auto;padding:0 18px 10px">
+        <textarea id="giPrompt" rows="4" style="width:100%;border:1px solid var(--line);border-radius:10px;padding:10px;margin:4px 0 8px" placeholder="例：一盤拿坡里披薩放在木桌上，旁邊有一杯冰啤酒，海邊夕陽自然光，俯拍，質感要像美食雜誌"></textarea>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">${AR.map(([v, l], i) => `<button class="mini ${i === 0 ? 'on' : ''}" data-ar="${v}" onclick="this.parentNode.querySelectorAll('.mini').forEach(b=>b.classList.remove('on'));this.classList.add('on')">${l} ${v}</button>`).join('')}</div>
+        ${assets.length ? `<div class="hint" style="margin-bottom:4px">參考圖（可選，最多 3 張）：</div><div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(70px,1fr));gap:6px;margin-bottom:8px">${assets.map(a => `<img src="${esc(a.url)}" data-ref="${esc(a.url)}" onclick="_socialGenRef(this)" style="width:100%;aspect-ratio:1;object-fit:cover;border-radius:8px;border:1px solid var(--line);cursor:pointer">`).join('')}</div>` : ''}
+        <div id="giOut"></div>
+      </div>
+      <div style="flex:0 0 auto;display:flex;gap:8px;justify-content:flex-end;padding:12px 18px;border-top:1px solid var(--line);background:var(--card)"><button class="mini" onclick="this.closest('.genImgOv').remove()">關閉</button><button class="mini on" id="giGo" onclick="_socialGenImgGo(${forPost ? 1 : 0})">生成</button></div>
+    </div>`
+    document.body.appendChild(ov)
+  }
+  window._socialGenRef = function (el) {
+    const u = el.dataset.ref; const i = genImgRefs.indexOf(u)
+    if (i >= 0) { genImgRefs.splice(i, 1); el.style.outline = 'none' }
+    else { if (genImgRefs.length >= 3) return; genImgRefs.push(u); el.style.outline = '3px solid var(--green)'; el.style.outlineOffset = '-1px' }
+  }
+  window._socialGenImgGo = async function (forPost) {
+    const ov = document.querySelector('.genImgOv'); if (!ov) return
+    const prompt = (ov.querySelector('#giPrompt').value || '').trim(); if (!prompt) { alert('先描述想要的畫面'); return }
+    const ar = (ov.querySelector('[data-ar].on') || {}).dataset ? ov.querySelector('[data-ar].on').dataset.ar : '1:1'
+    const btn = ov.querySelector('#giGo'); const out = ov.querySelector('#giOut')
+    btn.disabled = true; btn.textContent = '生成中（約 10–40 秒）…'; out.innerHTML = ''
+    let j; try { j = await sPost({ op: 'genimg', prompt, aspect: ar, refUrls: genImgRefs }) } catch (e) { j = { ok: false, error: '連線問題' } }
+    btn.disabled = false; btn.textContent = '再生一張'
+    if (!j || !j.ok) { out.innerHTML = `<div class="hint" style="color:#F07373">${esc((j && j.error) || '生圖失敗')}</div>`; return }
+    DATA.assets = DATA.assets || []; DATA.assets.unshift({ url: j.url, type: 'image', ai: 1 })
+    out.innerHTML = `<div style="margin-top:6px"><img src="${esc(j.url)}" style="width:100%;border-radius:12px;border:1px solid var(--line)"><div class="hint" style="margin-top:4px">已存進素材庫・${esc(j.provider || '')} ${esc(j.model || '')}${j.note ? '<br>' + esc(j.note) : ''}</div>
+      ${forPost ? `<div style="margin-top:8px;text-align:right"><button class="mini on" onclick="_socialAssetUse('${esc(j.url)}');document.querySelectorAll('.genImgOv,.assetOv').forEach(o=>o.remove())">加入這則貼文</button></div>` : ''}</div>`
+    if (!forPost && subTab === 'assets') { try { socialBody() } catch (_) {} }
+  }
   // ── 素材庫（可重複選用的圖片）──
   window._socialAssets = function () {
     const assets = DATA.assets || []
@@ -512,7 +551,7 @@
     ov.innerHTML = `<div onclick="event.stopPropagation()" style="background:var(--card);border:1px solid var(--line);border-radius:16px;max-width:560px;width:100%;max-height:86vh;display:flex;flex-direction:column;overflow:hidden">
       <div style="flex:0 0 auto;padding:18px 18px 10px"><h2 style="margin:0 0 4px">📁 素材庫</h2><div class="hint">點圖片＝加入這則貼文（可連點多張），再拖曳排順序。你上傳過的圖會自動收進來。</div></div>
       <div style="flex:1 1 auto;overflow:auto;padding:0 18px 12px"><div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:10px">${grid}</div></div>
-      <div style="flex:0 0 auto;display:flex;gap:8px;justify-content:flex-end;padding:12px 18px;border-top:1px solid var(--line);background:var(--card)"><button class="mini" onclick="_socialPickImg()">＋ 上傳新圖</button><button class="mini on" onclick="this.closest('.assetOv').remove()">完成</button></div>
+      <div style="flex:0 0 auto;display:flex;gap:8px;justify-content:flex-end;padding:12px 18px;border-top:1px solid var(--line);background:var(--card)"><button class="mini" onclick="_socialPickImg()">＋ 上傳新圖</button><button class="mini" onclick="_socialGenImg(1)">AI 生圖</button><button class="mini on" onclick="this.closest('.assetOv').remove()">完成</button></div>
     </div>`
     document.body.appendChild(ov)
   }

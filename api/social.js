@@ -11,26 +11,11 @@ const SB_URL = clean(process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL)
 const SB_KEY = (process.env.SUPABASE_SERVICE_ROLE_KEY || '').trim()
 const AST_KEY = 'sp_finance_pm_social_assets' // 素材庫（可重複用的圖片／影片）
 
-// AI 文案生成：沿用 api/ai.js 同一套金鑰與多模型回退
-const AI_MODELS = [process.env.ANTHROPIC_MODEL, 'claude-sonnet-4-6', 'claude-opus-4-8'].filter(Boolean)
+// AI 文案生成：v4.70.29 走 AI 中樞（api/_ai.js）route=social，設定頁可選 ChatGPT／Claude／Gemini；圖片用統一格式 {type:'image',media_type,data}
 async function aiText(system, user, maxTokens = 1500) {
-  const key = (process.env.ANTHROPIC_API_KEY || '').trim()
-  if (!key) throw new Error('AI 文案生成尚未設定（缺 ANTHROPIC_API_KEY）')
-  let lastErr = 'AI 服務錯誤'
-  for (const model of AI_MODELS) {
-    try {
-      const r = await fetch('https://api.anthropic.com/v1/messages', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01' },
-        body: JSON.stringify({ model, max_tokens: maxTokens, system, messages: [{ role: 'user', content: user }] }),
-      })
-      const data = await r.json().catch(() => ({}))
-      if (r.ok) return (data.content || []).map(b => b.text || '').join('').trim()
-      lastErr = (data.error && data.error.message) || lastErr
-      if (!(/model/i.test(lastErr) || r.status === 404)) break // 非模型問題（金鑰/額度）不再換，直接報
-    } catch (e) { lastErr = e.message || lastErr }
-  }
-  throw new Error(lastErr)
+  const { aiCall } = await import('./_ai.js')
+  const r = await aiCall('social', { system, messages: [{ role: 'user', content: user }], maxTokens })
+  return r.text
 }
 
 // 從 AI 回應解析出多個版本（優先吃 JSON {versions:[...]}，失敗再退回分隔切割）
@@ -168,7 +153,7 @@ export default async function handler(req, res) {
             if (ir.ok) {
               const ct = (ir.headers.get('content-type') || 'image/jpeg').split(';')[0]
               const buf = Buffer.from(await ir.arrayBuffer())
-              if (/^image\/(jpeg|png|gif|webp)$/.test(ct) && buf.length < 4.5 * 1024 * 1024) imgBlock = { type: 'image', source: { type: 'base64', media_type: ct, data: buf.toString('base64') } }
+              if (/^image\/(jpeg|png|gif|webp)$/.test(ct) && buf.length < 4.5 * 1024 * 1024) imgBlock = { type: 'image', media_type: ct, data: buf.toString('base64') } // 統一格式，_ai.js 會轉成各家吃的樣子
             }
           } catch (_) { /* 抓圖失敗就純文字生成 */ }
         }
@@ -209,6 +194,29 @@ export default async function handler(req, res) {
         if (!versions || !versions.length) return res.status(200).json({ ok: false, error: '生成是空的，請換個說法再試一次' })
         await act('社群AI生成5版', String(body.topic || '').slice(0, 24))
         return res.status(200).json({ ok: true, versions, caption: versions[0] })
+      }
+      if (op === 'genimg') {
+        // v4.70.29 AI 生圖（張良「做圖就得用 Gemini」）：走 AI 中樞 route=image（設定頁可改 Gemini／ChatGPT），生好直接上傳 photos 桶＋入素材庫
+        const prompt = String(body.prompt || '').trim().slice(0, 1500)
+        if (!prompt) return res.status(200).json({ ok: false, error: '請先描述想要的畫面' })
+        const aspect = ['1:1', '3:4', '4:3', '9:16', '16:9'].includes(body.aspect) ? body.aspect : '1:1'
+        const refImages = []
+        for (const u of (Array.isArray(body.refUrls) ? body.refUrls : []).slice(0, 3)) { // 參考圖（素材庫既有的圖，讓 AI 照著風格／商品改）
+          try { const ir = await fetch(String(u)); if (!ir.ok) continue; const ct = (ir.headers.get('content-type') || 'image/jpeg').split(';')[0]; const buf = Buffer.from(await ir.arrayBuffer()); if (/^image\/(jpeg|png|webp)$/.test(ct) && buf.length < 4 * 1024 * 1024) refImages.push({ media_type: ct, data: buf.toString('base64') }) } catch (_) {}
+        }
+        let im
+        try { const { aiImage } = await import('./_ai.js'); im = await aiImage('image', { prompt, refImages, aspect }) }
+        catch (e) { return res.status(200).json({ ok: false, error: '生圖失敗：' + (e.message || '未知') }) }
+        const ext = (im.mime || 'image/png').split('/')[1].replace('jpeg', 'jpg')
+        const path = 'social/ai_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7) + '.' + ext
+        try {
+          const r = await fetch(`${SB_URL}/storage/v1/object/photos/${path}`, { method: 'POST', headers: { authorization: `Bearer ${SB_KEY}`, 'content-type': im.mime || 'image/png' }, body: Buffer.from(im.data, 'base64') })
+          if (!r.ok) return res.status(200).json({ ok: false, error: '圖生好了但上傳失敗(' + r.status + ')' })
+          const publicUrl = `${SB_URL}/storage/v1/object/public/photos/${path}`
+          try { const a = (await kvGet(AST_KEY)) || { list: [] }; a.list = a.list || []; a.list.unshift({ url: publicUrl, type: 'image', name: ('AI:' + prompt).slice(0, 40), ai: 1, prompt: prompt.slice(0, 300), model: im.provider + '/' + im.model, addedAt: new Date().toISOString(), addedBy: who.name }); a.list = a.list.slice(0, 300); await kvPut(AST_KEY, a, 'AI生圖入庫') } catch (_) {}
+          await act('社群AI生圖', (im.provider + ' ' + prompt).slice(0, 40))
+          return res.status(200).json({ ok: true, url: publicUrl, provider: im.provider, model: im.model, note: im.note || '' })
+        } catch (e) { return res.status(200).json({ ok: false, error: e.message || '上傳失敗' }) }
       }
       if (op === 'assetdel') {
         const u = String(body.url || '')
