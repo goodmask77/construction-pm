@@ -25,7 +25,7 @@
     ['price', '價格異常', IC.trend, COL.r], ['unit', '單位待確認', IC.scale, COL.o], ['gap', '資料缺口', IC.gap, COL.y], ['merge', '合併建議', IC.merge, COL.p], ['muted', '已靜音', IC.bell0, COL.m], ['done', '已處理', IC.done, COL.g],
   ]
   const SIG = { // 訊號 → 標籤文字
-    spike: '單點尖峰', step: '階梯變價', 'step-cross': '跨廠商同漲', digit: '差一位數', drift: '累計漂移', openweek: '開帳週錯價', curvslast: '現價≠最後叫貨價', pricelog: '改價紀錄',
+    spike: '單點尖峰', step: '階梯變價', 'step-cross': '跨廠商同漲', digit: '差一位數', drift: '累計漂移', range: '高低差2倍', openweek: '開帳週錯價', curvslast: '現價≠最後叫貨價', pricelog: '改價紀錄',
     alternate: '一碼多單位', intmul: '整數倍', conserve: '金額守恆', gml11: 'g=ml 1:1', specmismatch: '規格≠換算', noconv: '缺換算', fromprice: '由價格轉入',
     noprice: '缺價', nosku: '缺料號', noinv: '無庫存資料', inactiveused: '停用品被引用', nocode: '行沒料號', incomplete: '食譜不完整', nocost: '白名單外不計成本', samename: '同名多代碼',
   }

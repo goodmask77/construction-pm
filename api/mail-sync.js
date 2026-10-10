@@ -4568,7 +4568,7 @@ export default async function handler(req, res) {
     const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
     if (!ok2 || String(req.query.matlib) !== ok2) return res.status(403).json({ ok: false })
     const meTk = String(req.query.me || '')
-    const meW = await sopWho(meTk)
+    const meW = ((process.env.MENU_PROBE_KEY || '').trim() && String(req.query.probe || '') === (process.env.MENU_PROBE_KEY || '').trim()) ? { name: 'probe' } : await sopWho(meTk) // v4.70.31 本機截圖驗證探針（唯讀；canEdit 仍走 permWho=false）
     if (!meW) return res.status(403).json({ ok: false, error: '物料成本屬內部資料，請先綁定身分（私訊 DD「登入碼」）' })
     const todayM = new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10)
     const mosM = (() => { const out = []; const d = new Date(todayM + 'T00:00:00Z'); for (let i = 0; i < 13; i++) { out.push(d.toISOString().slice(0, 7)); d.setUTCMonth(d.getUTCMonth() - 1) } return out })()
@@ -4730,7 +4730,7 @@ export default async function handler(req, res) {
     const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
     if (!ok2 || String(req.query.matord) !== ok2) return res.status(403).json({ ok: false })
     const meTk = String(req.query.me || '')
-    const meW = await sopWho(meTk)
+    const meW = ((process.env.MENU_PROBE_KEY || '').trim() && String(req.query.probe || '') === (process.env.MENU_PROBE_KEY || '').trim()) ? { name: 'probe' } : await sopWho(meTk) // v4.70.31 本機截圖驗證探針（唯讀；canEdit 仍走 permWho=false）
     if (!meW) return res.status(403).json({ ok: false, error: '叫貨單屬內部成本資料，請先綁定身分（私訊 DD「登入碼」）' })
     const todayO = new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10)
     const mosO = (() => { const out = []; const d = new Date(todayO + 'T00:00:00Z'); for (let i = 0; i < 13; i++) { out.push(d.toISOString().slice(0, 7)); d.setUTCMonth(d.getUTCMonth() - 1) } return out })()

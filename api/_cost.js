@@ -166,6 +166,11 @@ function scanSeries (series, firstDay, cfg, catMap, impact) {
       const drift = lastPt.p / lo - 1
       if ((drift >= thr || hi / lo >= 2) && !out.some(o => o.itemKey === s.key && o.tab === 'price' && !o.info)) push('price', 'drift', lastPt.d, `60 天內 ${lo} → ${lastPt.p}（累計 ${drift >= 0 ? '+' : ''}${Math.round(drift * 100)}%）`, `每一段都沒過門檻，但累計變動大${crossMoved(s, lastPt.d, 1) ? '；其他廠商同期也漲 → 真的變價' : ''}；序列：${seq(pts.slice(-6))}`, drift, { suggest: '確認正確（真的變價）', info: true })
     }
+    // 全期間高低差 ≥2 倍（快照 7.7 同口徑；每段都沒過門檻、60 天內也沒有時才補一筆資訊）
+    if (stats.length >= 3 && !out.some(o => o.itemKey === s.key && (o.tab === 'price' || o.tab === 'unit'))) {
+      const lo = Math.min(...stats.map(p => p.p)), hi = Math.max(...stats.map(p => p.p))
+      if (lo > 0 && hi / lo >= 2) push('price', 'range', lastPt.d, `期間最低 ${lo}、最高 ${hi}（差 ${r2(hi / lo)} 倍）`, `單段變動都在門檻內，但整段高低差 ≥2 倍；序列：${seq(pts.slice(-6))}`, lastPt.p / lo - 1, { suggest: '看一眼就好；要的話確認正確', info: true })
+    }
     if (openWeek) push('price', 'openweek', first.d, `首價 ${first.p} 只出現在開帳首週`, `之後都是 ${pts[1].p} 左右 → 疑似開帳初始價錯誤，建議從統計排除；序列：${seq(pts.slice(0, 4))}`, 0, { suggest: '排除這筆不進價格統計', info: true })
   }
   return out
