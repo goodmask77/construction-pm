@@ -59,7 +59,7 @@ export async function buildCards ({ kvGet, months }) {
   for (const s of [...serA.series, ...serG.series]) {
     if (!s.code) continue
     const k = supplyKeyOf(s.sys, s.code)
-    ;(recs[k] = recs[k] || []).push(...s.pts.map(p => ({ d: p.d, p: p.p, q: p.q, src: 'order', supplier: s.supplier, oid: p.oid })))
+    ;(recs[k] = recs[k] || []).push(...s.pts.map(p => ({ d: p.d, p: p.p, q: p.q, src: 'order' })))
   }
   for (const q of (doc.quotes || [])) (recs[q.supplyKey] = recs[q.supplyKey] || []).push({ d: q.date, p: q.price, src: q.src || 'quote', by: q.by, note: q.note })
   for (const k of Object.keys(recs)) recs[k].sort((a, b) => (a.d < b.d ? -1 : a.d > b.d ? 1 : 0))
@@ -70,24 +70,23 @@ export async function buildCards ({ kvGet, months }) {
     const snapConv = parseConvText(p.conv)
     const sugg = parseSpec(p.spec)
     const confirmed = (doc.conv[k] || []).filter(c => !c.off)
-    const convs = [
-      ...confirmed.map(c => ({ ...c, status: c.status || 'confirmed' })),
-      ...snapConv.filter(c => !confirmed.some(x => x.to === c.to)).map(c => ({ to: c.to, factor: c.factor, status: 'snapshot', why: '阿桑系統 item_convs（10-06 快照）' })),
-      ...sugg.filter(c => !confirmed.some(x => x.to === c.to) && !snapConv.some(x => x.to === c.to && Math.abs(x.factor - c.factor) < 1e-6)).map(c => ({ ...c, status: 'suggested' })),
-    ]
     const mu = METRIC[String(p.unit || '').toLowerCase()]
-    if (mu && !convs.some(c => c.to === mu[0])) convs.unshift({ to: mu[0], factor: mu[1], status: 'metric', why: '公制固定換算' })
+    const convs = confirmed.map(c => ({ ...c, status: c.status || 'confirmed' }))
+    const has = to => convs.some(x => x.to === to)
+    if (mu && !has(mu[0])) convs.push({ to: mu[0], factor: mu[1], status: 'metric', why: '公制固定換算（叫貨單位 ' + p.unit + '）' }) // 公制優先於快照／建議
+    for (const c of snapConv) if (!has(c.to)) convs.push({ to: c.to, factor: c.factor, status: 'snapshot', why: '阿桑系統 item_convs（10-06 快照）' })
+    for (const c of sugg) if (!has(c.to)) convs.push({ ...c, status: 'suggested' })
     const rs = recs[k] || []
     const split = doc.splits[k]
     const own = split ? rs.filter(r => r.src !== 'order' || !(r.p >= split.minPrice)) : rs
     const lastOrder = own.filter(r => r.src === 'order').slice(-1)[0] || null
     const lastConfirmed = own.filter(r => r.src === 'confirmed').slice(-1)[0] || null
-    supplies[k] = { key: k, sys: p.sys, code: p.code, sku: p.sku || '', name: p.name, supplier: p.supplier, spec: p.spec || '', unit: p.unit || '', price: p.price, tax: p.tax || '', status: p.status, cat: p.cat || '', dept: p.dept || '', store: p.store || '', station: p.station || '', cost: p.cost, stock: p.stock, safe: p.safe, convs, recs: own.slice(-60), nRecs: own.length, lastOrder, lastConfirmed, updatedAt: p.updatedAt }
+    supplies[k] = { key: k, sys: p.sys, code: p.code, sku: p.sku || '', name: p.name, supplier: p.supplier, spec: p.spec || '', unit: p.unit || '', price: p.price, tax: p.tax || '', status: p.status, cat: p.cat || '', dept: p.dept || '', store: p.store || '', station: p.station || '', cost: p.cost, stock: p.stock, safe: p.safe, convs, recs: own.slice(-24), nRecs: own.length, lastOrder, lastConfirmed, updatedAt: p.updatedAt }
     if (split) {
       const vk = k + '~2'
       const vr = rs.filter(r => r.src === 'order' && r.p >= split.minPrice)
       const vconf = (doc.conv[vk] || []).filter(c => !c.off).map(c => ({ ...c, status: c.status || 'confirmed' }))
-      supplies[vk] = { key: vk, sys: p.sys, code: p.code + '（' + (split.label || '大單位') + '）', sku: p.sku || '', name: p.name, supplier: p.supplier, spec: p.spec || '', unit: split.unit || p.unit || '', price: null, tax: p.tax || '', status: p.status, cat: p.cat || '', dept: p.dept || '', store: p.store || '', virtual: true, splitOf: k, convs: vconf, recs: vr.slice(-60), nRecs: vr.length, lastOrder: vr.slice(-1)[0] || null, lastConfirmed: null }
+      supplies[vk] = { key: vk, sys: p.sys, code: p.code + '（' + (split.label || '大單位') + '）', sku: p.sku || '', name: p.name, supplier: p.supplier, spec: p.spec || '', unit: split.unit || p.unit || '', price: null, tax: p.tax || '', status: p.status, cat: p.cat || '', dept: p.dept || '', store: p.store || '', virtual: true, splitOf: k, convs: vconf, recs: vr.slice(-24), nRecs: vr.length, lastOrder: vr.slice(-1)[0] || null, lastConfirmed: null }
     }
   }
   // 卡：供應品 → cardId（沒指定＝自己一張 auto 卡）
