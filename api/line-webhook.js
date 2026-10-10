@@ -2881,7 +2881,7 @@ export default async function handler(req, res) {
       // v4.70.41 DD 承認「沒資料」→ 自動記健康紀錄＋寫進「轉給 CC」收件匣（張良 2026-10-11：不要再等他問到才發現漏接）
       try {
         const plainND = stripJson(reply)
-        if (/(沒接進|沒有接進|還沒接|手上沒有|手上並沒有|沒有抓到|沒抓到|沒這份|沒有這份|查不到|撈不到|沒同步|沒有同步|我這邊沒有|這邊還沒有|沒有.{0,6}資料|資料.{0,4}沒有)/.test(plainND)) {
+        if (/(沒接進|沒有接進|還沒接|手上沒有|手上並沒有|沒有抓到|沒抓到|沒這份|沒有這份|查不到|撈不到|沒同步|沒有同步|我這邊沒有|這邊還沒有|還沒有這份|沒有這份資料)/.test(plainND)) {
           ddHealthLog({ kind: 'nodata', dm: isDM, conv: convId.slice(-6), who: op?.name || '', q: text.slice(0, 200), a: plainND.slice(0, 300) }).catch(() => {})
           if (moneyOK) await ccInboxAdd(`DD 查不到資料（自動記錄）${op?.name ? '，' + op.name + ' 問' : ''}：「${text.slice(0, 150)}」→ DD 答：「${plainND.slice(0, 200)}」`, 'nodata')
         }
