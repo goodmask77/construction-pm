@@ -55,6 +55,16 @@ export async function buildRecipes ({ kvGet, months, light }) {
       yieldQty: eff && eff.yieldQty ? eff.yieldQty : r.yieldQty, yieldUnit: eff && eff.yieldUnit ? eff.yieldUnit : r.yieldUnit,
       items: (eff ? eff.items : r.items).map(i => ({ ...i })), steps: (pub && pub.steps) || [], draft, pubV: pub ? pub.v : 0, nVersions: vers.length, updatedAt: r.updatedAt, liveItems: r.items, liveYield: { qty: r.yieldQty, unit: r.yieldUnit } }
   }
+  for (const [key, mine] of Object.entries(rb.r)) { // 我們自建的食譜（阿桑系統沒有；GD 五款代表餐點／新品）
+    if (!mine.own || recipes[key]) continue
+    const vers = mine.versions || []
+    const pub = vers.filter(v => v.status === 'published').sort((a, b) => b.v - a.v)[0] || null
+    const draft = vers.find(v => v.status === 'draft') || null
+    const eff = pub || draft || { items: [], yieldQty: 0, yieldUnit: '' }
+    recipes[key] = { key, id: null, code: mine.own.code || key, name: mine.own.name, brand: mine.own.brand || 'GROUN:D', type: mine.own.type === 'dish' ? 'dish' : 'prep', src: 'own', station: mine.station || mine.own.station || '', photo: mine.photo || '', minutes: null,
+      yieldQty: eff.yieldQty, yieldUnit: eff.yieldUnit, items: (eff.items || []).map(i => ({ ...i })), steps: (pub && pub.steps) || [], draft, pubV: pub ? pub.v : 0, nVersions: vers.length, updatedAt: mine.own.at || '', liveItems: [], liveYield: null, pendingContent: !pub || !(pub.items || []).length }
+  }
+  for (const rc of Object.values(recipes)) if (!rc.brand) rc.brand = 'A Beach'
   const byCode = {}; for (const rc of Object.values(recipes)) if (rc.code) byCode[norm(rc.code)] = rc
   const byName = {}; for (const rc of Object.values(recipes)) byName[norm(rc.name)] = rc
   // 成本遞迴
@@ -71,7 +81,7 @@ export async function buildRecipes ({ kvGet, months, light }) {
         if (isWhite(it.name)) { L.kind = 'zero'; L.cost = 0; L.chain = '白名單：不計成本'; lines.push(L); continue }
         L.status = 'nocost_unlisted'; L.chain = '標不計成本但不在白名單 → 進待處理'; allOk = false; gaps.push(`「${it.name}」白名單外不計成本`); lines.push(L); continue
       }
-      const sup = it.code ? (supBy[norm(it.code)] || null) : null
+      const sup = it.code ? ((rc.brand === 'GROUN:D' ? supBy['G|' + norm(it.code)] : null) || supBy[norm(it.code)] || supBy['G|' + norm(it.code)] || null) : null
       const sub = it.code ? (byCode[norm(it.code)] || null) : (byName[norm(it.name)] && byName[norm(it.name)].key !== rc.key ? byName[norm(it.name)] : null)
       if (sup && !(sub && !sup.lastOrder && !(num(sup.price) > 0))) { // 叫貨品（若同時也是食譜且叫貨品沒價→當半成品）
         L.supplyKey = sup.key; L.supplier = sup.supplier; L.cardId = (cardOf[sup.key] || {}).id || ''
@@ -104,9 +114,10 @@ export async function buildRecipes ({ kvGet, months, light }) {
     const out = { status, total: r2(total), perUnit: rc.yieldQty ? r4(total / rc.yieldQty) : null, lines, gaps }
     memo[rc.key] = out; return out
   }
-  const list = []
+  const list = [], ownDishes = []
   for (const rc of Object.values(recipes)) {
     const c = costOf(rc, [])
+    if (rc.src === 'own' && rc.type === 'dish') { const sn = (snaps[rc.key] || []); ownDishes.push({ ...rc, category: rc.station || '', price: null, abCost: null, cost: c.total, perUnit: c.total, status: c.status === 'ok' ? '完整' : (c.gaps[0] || (rc.items.length ? '不完整' : '待補配方')), ok: c.status === 'ok' && rc.items.length > 0, gaps: c.gaps.slice(0, 6), lines: light ? undefined : c.lines, margin: null, content: { items: rc.items.length > 0, steps: (rc.steps || []).length > 0, photo: !!rc.photo }, snaps: light ? undefined : sn.slice(-40), lastSnap: sn.length ? sn[sn.length - 1] : null }); continue }
     const sn = (snaps[rc.key] || [])
     list.push({ ...rc, cost: c.total, perUnit: c.perUnit, status: c.status === 'ok' ? '完整' : (c.status === 'cycle' ? '循環引用' : (c.status === 'depth' ? '超過深度' : (c.gaps[0] || '不完整'))), ok: c.status === 'ok', gaps: c.gaps.slice(0, 6), lines: light ? undefined : c.lines,
       content: { items: rc.items.length > 0, steps: (rc.steps || []).length > 0, photo: !!rc.photo }, snaps: light ? undefined : sn.slice(-40), lastSnap: sn.length ? sn[sn.length - 1] : null })
@@ -130,6 +141,7 @@ export async function buildRecipes ({ kvGet, months, light }) {
       cost: c.total, perUnit: c.total, status: c.status === 'ok' ? '完整' : (c.gaps[0] || '不完整'), ok: c.status === 'ok', gaps: c.gaps.slice(0, 6), lines: light ? undefined : c.lines, yieldQty: 1, yieldUnit: '份',
       margin: (c.status === 'ok' && (m && num(m.price) > 0)) ? r4((m.price - c.total) / m.price) : null, content: { items: fake.items.length > 0, steps: (pub && pub.steps || []).length > 0, photo: !!mine.photo }, snaps: light ? undefined : sn.slice(-40), lastSnap: sn.length ? sn[sn.length - 1] : null })
   }
+  dishList.push(...ownDishes)
   list.sort((a, b) => (a.station || '~').localeCompare(b.station || '~') || a.name.localeCompare(b.name))
   dishList.sort((a, b) => (a.category || '').localeCompare(b.category || '') || a.name.localeCompare(b.name))
   const stations = [...new Set(list.map(r => r.station).filter(Boolean))].sort()
@@ -178,6 +190,15 @@ export async function applyRecipeOp ({ kvGet, kvPut, who, body, uploadPrivate, m
   const save = async msg => { await kvPut(RB_KEY, doc, msg + '(' + who.name + ')'); return { ok: true } }
   const cleanSteps = steps => (Array.isArray(steps) ? steps : []).slice(0, 60).map((s, i) => ({ seq: i + 1, title: String(s.title || '').slice(0, 80), desc: String(s.desc || '').slice(0, 1500), media: (Array.isArray(s.media) ? s.media : []).slice(0, 6).map(m => String(m).slice(0, 300)), timerSec: Math.max(0, Math.min(86400, Number(s.timerSec) || 0)), itemCodes: (Array.isArray(s.itemCodes) ? s.itemCodes : []).slice(0, 30).map(x => String(x).slice(0, 40)) }))
   const cleanItems = items => (Array.isArray(items) ? items : []).slice(0, 80).map((i, n) => ({ seq: n, code: String(i.code || '').slice(0, 40), name: String(i.name || '').slice(0, 80), qty: Number(i.qty) || 0, unit: String(i.unit || '').slice(0, 10), match: i.match || (i.code ? 'matched' : (isWhite(i.name) ? 'nonstock' : 'unmatched')) }))
+  if (op === 'create') { // 自建食譜（批次 4：GD 五款代表餐點／新品）；不生成假配方，材料由人填
+    const name = String(body.name || '').trim().slice(0, 80); if (!name) return { ok: false, error: '要填名稱' }
+    if (R.own || R.versions.length) return { ok: false, error: '這個 key 已存在' }
+    R.own = { name, brand: body.brand === 'A Beach' ? 'A Beach' : 'GROUN:D', type: body.type === 'dish' ? 'dish' : 'prep', station: String(body.station || '').slice(0, 30), code: String(body.code || '').slice(0, 40), by: who.name, at }
+    R.station = R.own.station
+    R.versions.push({ v: 1, status: 'draft', items: cleanItems(body.items), yieldQty: Number(body.yieldQty) || (R.own.type === 'dish' ? 1 : 0), yieldUnit: String(body.yieldUnit || (R.own.type === 'dish' ? '份' : '')).slice(0, 10), steps: [], by: who.name, at, note: String(body.note || '').slice(0, 300) })
+    log({ name, brand: R.own.brand, type: R.own.type }); await kvPut(RB_KEY, doc, '新增食譜(' + who.name + ')'); return { ok: true, key }
+  }
+  if (op === 'rename') { if (!R.own) return { ok: false, error: '只能改自建食譜的名稱' }; const before = R.own.name; R.own.name = String(body.name || '').trim().slice(0, 80) || R.own.name; log({ before, after: R.own.name }); return save('食譜改名') }
   if (op === 'meta') { const before = { station: R.station, type: R.type }; if (body.station != null) R.station = String(body.station).slice(0, 30); log({ before, station: R.station }); return save('食譜工作站') }
   if (op === 'photo' || op === 'media') {
     const m = /^data:(image\/[\w+.-]+);base64,(.+)$/.exec(String(body.dataUrl || '')); if (!m) return { ok: false, error: '只能上傳圖片（影片請貼連結）' }

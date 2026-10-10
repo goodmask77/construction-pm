@@ -13,7 +13,8 @@ import { syncEatsLive, eatsDayRecord } from './_eats.js' // AB 今天即時營�
 import { awardPts, pointsRules } from './_points.js' // 🏦 積分中樞共用（行為分給分＋規則）
 import { buildTodo as costBuildTodo, applyDecision as costDecide, putSnapshot as costPutSnap } from './_cost.js'
 import { buildCards as mcBuild, applyCardOp as mcApply } from './_matcard.js' // 🗂 成本模組 批次2 物料卡（v4.70.33）
-import { buildRecipes as rcpBuild, applyRecipeOp as rcpApply } from './_recipe.js' // 🍳 成本模組 批次3 食譜庫（v4.70.34） // 🧾 產品與成本模組 批次1：偵錯與待處理中心（v4.70.31）
+import { buildRecipes as rcpBuild, applyRecipeOp as rcpApply } from './_recipe.js' // 🍳 成本模組 批次3 食譜庫（v4.70.34）
+import { buildPricing as prBuild, applyPricingOp as prApply, seedGdFive } from './_menu.js' // 💲 成本模組 批次5 菜單與定價＋批次4 GD 五款（v4.70.35） // 🧾 產品與成本模組 批次1：偵錯與待處理中心（v4.70.31）
 import * as WASTE from './_waste.js' // 🧪 耗損紀錄 v1（批次 1b，v4.70.32） // 🧾 產品與成本模組 批次1：偵錯與待處理中心（v4.70.31）
 
 const clean = (v) => (v || '').trim().replace(/^["']|["']$/g, '').replace(/^[A-Za-z0-9_]+=/, '').trim()
@@ -4807,6 +4808,41 @@ export default async function handler(req, res) {
   // 📄 物料庫-叫貨單檢視（張良 2026-10-10「有物料庫那應該找得到每張訂單」）：
   // 讀 boss 訂單單頭 ord_<YYYYMM> ＋ 明細 ordi_<YYYYMM>，用 order_id 組成「每張叫貨單＋其明細」。
   // 🔴 成本敏感 → me 身分守門，不走裸金鑰。
+  // ── 💲 產品與成本模組｜批次 5 菜單與定價（v4.70.35，規格 §5）＋ 批次 4 GD 五款代表餐點骨架 ──
+  // GET  ?pricing=<OPS_BOARD_KEY>&me=token                       → 兩品牌菜單品項（規格×通路售價／食材／包材／成本率／毛利率／套餐）＋包材卡＋可選食譜
+  // POST ?pricing=<OPS_BOARD_KEY> {token, key, op:link|specs|pack|combo|clear, …} → 限「菜單成本」分頁權限 permWho 'pricing'
+  // GET  ?gdfive=<MENU_PROBE_KEY>                                 → 一次性：從 /prep 菜單挑 漢堡/披薩/碗/義麵/飲料 各一款建自建餐點草稿（材料空白待補）＋連到菜單品項
+  if (req.query?.pricing) {
+    const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
+    if (!ok2 || String(req.query.pricing) !== ok2) return res.status(403).json({ ok: false })
+    let bP = {}
+    if (req.method === 'POST') { try { bP = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {} }
+    const meTk = String(req.method === 'POST' ? (bP.token || '') : (req.query.me || ''))
+    const mkP = (process.env.MENU_PROBE_KEY || '').trim()
+    const probeP = req.method !== 'POST' && mkP && String(req.query.probe || '') === mkP
+    const meW = probeP ? { name: 'probe' } : await sopWho(meTk)
+    if (!meW) return res.status(403).json({ ok: false, error: '菜單成本屬內部資料，請先綁定身分（私訊 DD「登入碼」）' })
+    const todayP = new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10)
+    const mosP = (() => { const out = []; const d = new Date(todayP + 'T00:00:00Z'); for (let i = 0; i < 13; i++) { out.push(d.toISOString().slice(0, 7)); d.setUTCMonth(d.getUTCMonth() - 1) } return out })()
+    const canEditP = !probeP && !!(await permWho(meTk, 'pricing'))
+    if (req.method === 'POST') {
+      if (!canEditP) return res.status(403).json({ ok: false, error: '沒有編輯菜單定價的權限' })
+      const r = await prApply({ kvGet, kvPut, who: meW, body: bP })
+      if (r.ok) await announceChanged()
+      return res.status(r.ok ? 200 : 400).json(r)
+    }
+    const t = await prBuild({ kvGet, months: mosP })
+    return res.status(200).json({ ok: true, me: { name: meW.name, canEdit: canEditP }, ...t })
+  }
+  if (req.query?.gdfive) {
+    const mkG = (process.env.MENU_PROBE_KEY || '').trim()
+    if (!mkG || String(req.query.gdfive) !== mkG) return res.status(403).json({ ok: false })
+    const todayG = new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10)
+    const mosG = (() => { const out = []; const d = new Date(todayG + 'T00:00:00Z'); for (let i = 0; i < 13; i++) { out.push(d.toISOString().slice(0, 7)); d.setUTCMonth(d.getUTCMonth() - 1) } return out })()
+    const r = await seedGdFive({ kvGet, kvPut, who: { name: 'CC（批次 4 骨架）' }, applyRecipeOp: rcpApply, months: mosG })
+    await announceChanged()
+    return res.status(200).json(r)
+  }
   // ── 🍳 產品與成本模組｜批次 3 食譜庫＋製作模式（v4.70.34，規格 §4）──
   // GET  ?recipes=<OPS_BOARD_KEY>&me=token[&light=1]      → 備料食譜 190（阿桑即時）＋出餐食譜（在賣菜單，快照行）＋我們的版本／步驟／成本快照
   // POST ?recipes=<OPS_BOARD_KEY> {token, key, op:meta|photo|media|draft|edit|discard|publish, ...} → 限「食譜」分頁權限 permWho 'rcp'
