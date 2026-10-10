@@ -8,6 +8,7 @@
 // 儲存：sp_finance_pm_boss_<slug>_<YYYYMM>（月分片 {rows:{主鍵:整列}}）；快照型（菜單成本/名冊）單檔 sp_finance_pm_boss_<slug>
 // 紅線放寬（張良 2026-10-03 拍板）：阿桑＝自家員工、兩邊互通都是公司內部資料，/prep 也算內部可以放；
 // 實作仍走 /prep 既有權限矩陣（permWho），不進免登入裸頁。
+// v4.70.30（2026-10-10）：預接阿桑 8 個新端點（pend:1，404 安靜等、打通自動入庫＋通知）
 // cron：vercel.json 每小時 :07；手動 ?force=<MENU_PROBE_KEY>；只測金鑰 ?ping=1&force=<金鑰>
 // ?fillpos=<PARTNER_API_KEY>[&dry=1]：一次性把 4~6 月 AB 營收（revd+sett）補進營收頁 pos entries（7/1 起維持日結信為準）
 import { kvGet, kvPut, announceChanged, ingestPosRecords } from './mail-sync.js'
@@ -57,7 +58,23 @@ const EPS = [
   { ep: 'hr/overtime', slug: 'ot', pk: r => r.event_id, df: r => r.date, back: 31, fwd: 0 },
   { ep: 'ops/incidents', slug: 'inc', pk: r => r.incident_id, df: r => String(r.created_at || '').slice(0, 10), back: 45, fwd: 0 },
   { ep: 'ops/temp-alerts', slug: 'temp', pk: r => r.reading_id, df: r => String(r.recorded_at || '').slice(0, 10), back: 7, fwd: 0 },
+  // ── 2026-10-10 阿桑公告「新增 8 個端點（物料庫即時讀取用）」：公告當晚實測全 404＝尚未真的上線 → 先預接（pend:1）
+  //    404 時安靜記 live:0 不算錯誤；第一次打通自動入庫＋DD 私訊審核人一次（之後畫面再接）。欄位未定→主鍵用候選欄位+內容雜湊兜底
+  { ep: 'products', slug: 'prod', pk: r => pkOf(r, ['product_id', 'id', 'code', 'sku']), snapshot: 1, pend: 1 }, // AB 叫貨商品主檔（標準單價/規格/廠商）
+  { ep: 'suppliers', slug: 'sup', pk: r => pkOf(r, ['supplier_id', 'id', 'name']), snapshot: 1, pend: 1 }, // AB 廠商（叫貨日/休息日/帳期）
+  { ep: 'recipes', slug: 'rcp', pk: r => pkOf(r, ['recipe_id', 'id', 'menu_id', 'name']), snapshot: 1, pend: 1 }, // AB 配方（yield_qty 一批原料用量）
+  { ep: 'costs/items', slug: 'citem', pk: r => pkOf(r, ['item_id', 'product_id', 'id', 'code', 'name']), snapshot: 1, pend: 1 }, // AB 每品項單位成本
+  { ep: 'gops/products', slug: 'gprod', pk: r => pkOf(r, ['product_id', 'id', 'code', 'sku']), snapshot: 1, pend: 1 }, // GD 產品（price/cost/stock/safe/station/store）
+  { ep: 'gops/suppliers', slug: 'gsup', pk: r => pkOf(r, ['supplier_id', 'id', 'name']), snapshot: 1, pend: 1 }, // GD 廠商
+  { ep: 'gops/orders', slug: 'gord', pk: r => pkOf(r, ['order_id', 'id']), df: r => String(r.created_at || r.ordered_at || '').slice(0, 10), back: 14, fwd: 0, pend: 1 }, // GD 叫貨單（含向 AB 央廚）
+  { ep: 'gops/orders/items', slug: 'gordi', pk: r => pkOf(r, ['line_id', 'id']), df: r => String(r.ordered_at || r.created_at || '').slice(0, 10), back: 14, fwd: 0, pend: 1 }, // GD 叫貨明細＋驗收結果
 ]
+// 主鍵兜底：依序找候選欄位，都沒有就用整列內容雜湊（穩定、同列同鍵）
+function pkOf(r, keys) {
+  for (const k of keys) if (r && r[k] != null && String(r[k]).length) return String(r[k])
+  let h = 0; const s = JSON.stringify(r); for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0
+  return 'h' + (h >>> 0).toString(36)
+}
 
 export default async function handler(req, res) {
   const mk = (process.env.MENU_PROBE_KEY || '').trim()
@@ -75,7 +92,7 @@ export default async function handler(req, res) {
     if (r.status === 429) { const ra = Number(r.headers.get('Retry-After')) || 60; await sleep(ra * 1000); r = await fetch(url, { headers: { Authorization: `Bearer ${KEY}` } }) }
     if (r.status === 401) throw Object.assign(new Error('金鑰無效/已撤銷'), { auth: true })
     if (r.status === 403) throw Object.assign(new Error('scope 不足'), { scope: true })
-    if (!r.ok) throw new Error(`${path} HTTP ${r.status}`)
+    if (!r.ok) throw Object.assign(new Error(`${path} HTTP ${r.status}`), { notFound: r.status === 404 })
     return await r.json()
   }
 
@@ -183,7 +200,7 @@ export default async function handler(req, res) {
     }
   }
 
-  const done = [], errs = []
+  const done = [], errs = [], justLive = []
   const order = [...EPS.slice(state.rot % EPS.length), ...EPS.slice(0, state.rot % EPS.length)].filter(E => !OFF.has(E.slug)) // 輪替起點：預算吃完時後面的端點下一輪優先；OFF=張良收斂停更清單
   try {
     for (const E of order) {
@@ -206,8 +223,10 @@ export default async function handler(req, res) {
           await writeRows(E, rows, from, to, true)
           done.push(`${E.slug}:${rows.length}`)
         }
+        if (E.pend && !(state.res[E.slug] || {}).ok) justLive.push(E.ep) // 預接端點第一次打通
         state.res[E.slug] = { at: new Date().toISOString(), ok: 1 }
       } catch (e) {
+        if (E.pend && e.notFound) { state.res[E.slug] = { at: new Date().toISOString(), live: 0 }; continue } // 阿桑尚未上線：安靜等
         if (e.budget) { state.rot = EPS.findIndex(x => x.slug === E.slug); throw e } // 預算吃完：下一輪從這個端點開始
         if (e.auth) throw e
         if (e.scope) { state.res[E.slug] = { at: new Date().toISOString(), scope: 0 }; errs.push(`${E.slug}:無scope`); continue } // 金鑰沒開這類→跳過不重試
@@ -228,8 +247,19 @@ export default async function handler(req, res) {
       } catch (_) {}
     } else if (!e.budget) errs.push(e.message)
   }
+  if (justLive.length) { // 預接端點首次打通：DD 私訊審核人一次（通知鐵則：事件發生當下就說）
+    try {
+      const [defD, rosterD] = await Promise.all([kvGet('sp_finance_pm_sop_def'), kvGet('sp_crew_kb_roster')])
+      const tk = (process.env.LINE_CHANNEL_ACCESS_TOKEN || '').trim()
+      for (const an of (((defD || {}).ground || {}).approvers || ['張良瑋'])) {
+        const ap = ((rosterD || {}).people || []).find(p => p.name === an && p.lineUserId)
+        if (tk && ap) await fetch('https://api.line.me/v2/bot/message/push', { method: 'POST', headers: { 'content-type': 'application/json', Authorization: 'Bearer ' + tk }, body: JSON.stringify({ to: ap.lineUserId, messages: [{ type: 'text', text: `✅ 阿桑 boss-api 新端點已打通、資料開始每小時自動進庫：\n${justLive.map(x => '・' + x).join('\n')}\n（物料庫畫面要接這些資料，跟 CC 說一聲）` }] }) })
+      }
+    } catch (_) {}
+  }
   state.lastRun = new Date().toISOString()
   await kvPut('sp_finance_pm_boss_state', state, 'boss同步狀態')
   await announceChanged()
-  return res.status(200).json({ ok: !errs.length, requests: used, done, errs, rot: state.rot, bf: state.bf })
+  const pend = Object.fromEntries(EPS.filter(E => E.pend).map(E => [E.slug, (state.res[E.slug] || {}).ok ? 'live' : 'wait404']))
+  return res.status(200).json({ ok: !errs.length, requests: used, done, errs, justLive, pend, rot: state.rot, bf: state.bf })
 }
