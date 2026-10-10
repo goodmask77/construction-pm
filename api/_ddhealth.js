@@ -53,8 +53,8 @@ export async function ddHealthSummary(days = 7) {
   const list = []
   for (let i = 0; i < days; i++) list.push(tpeDay(Date.now() - i * 86400e3))
   const perDay = await Promise.all(list.map(readDay))
-  const mk = () => ({ n: 0, ok: 0, fail: 0, msSum: 0, ms: [], le3: 0, le10: 0, le30: 0, gt30: 0, pushFb: 0, aiCalls: 0, aiFb: 0, aiErr: 0, inCut: 0, outCut: 0, itSum: 0, sigfail: 0, dup: 0, redeliv: 0, errors: 0 })
-  const total = mk(); const daysOut = []; const recentFail = []; const reasons = {}
+  const mk = () => ({ n: 0, ok: 0, fail: 0, msSum: 0, ms: [], le3: 0, le10: 0, le30: 0, gt30: 0, pushFb: 0, aiCalls: 0, aiFb: 0, aiErr: 0, inCut: 0, outCut: 0, itSum: 0, sigfail: 0, dup: 0, redeliv: 0, errors: 0, nodata: 0 })
+  const total = mk(); const daysOut = []; const recentFail = []; const recentNodata = []; const reasons = {}
   const addReason = (k) => { if (!k) return; k = String(k).slice(0, 60); reasons[k] = (reasons[k] || 0) + 1 }
   list.forEach((day, i) => {
     const d = mk(); d.day = day
@@ -71,16 +71,18 @@ export async function ddHealthSummary(days = 7) {
         else if (e.kind === 'sigfail') T.sigfail++
         else if (e.kind === 'dup') T.dup++
         else if (e.kind === 'redelivery_ok') T.redeliv++
+        else if (e.kind === 'nodata') T.nodata++ // v4.70.41 DD 承認沒資料
       }
       if (e.kind === 'error') { addReason('例外：' + (e.err || '?')); recentFail.push(e) }
       else if (e.kind === 'reply' && !e.ok) { addReason('回覆失敗：' + ((e.send && (e.send.err || e.send.status)) || '?')); recentFail.push(e) }
       else if (e.kind === 'sigfail') addReason('驗簽失敗')
+      if (e.kind === 'nodata') recentNodata.push(e)
       if (e.kind === 'reply' && e.ai && e.ai.err) addReason('AI：' + (e.ai.lastErr || '失敗')) // 回覆成功與否都算（AI 壞了走備援也要看得到）
     }
     daysOut.push(fin(d))
   })
-  recentFail.sort((a, b) => String(b.t).localeCompare(String(a.t)))
-  return { days: daysOut, total: fin(total), reasons: Object.entries(reasons).sort((a, b) => b[1] - a[1]).slice(0, 12).map(([k, n]) => ({ k, n })), recentFail: recentFail.slice(0, 20) }
+  recentFail.sort((a, b) => String(b.t).localeCompare(String(a.t))); recentNodata.sort((a, b) => String(b.t).localeCompare(String(a.t)))
+  return { days: daysOut, total: fin(total), reasons: Object.entries(reasons).sort((a, b) => b[1] - a[1]).slice(0, 12).map(([k, n]) => ({ k, n })), recentFail: recentFail.slice(0, 20), recentNodata: recentNodata.slice(0, 20) }
 }
 function fin(T) {
   const ms = T.ms.slice().sort((a, b) => a - b)

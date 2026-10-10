@@ -1014,10 +1014,19 @@ async function ddHealthOpen(days){
     tile('驗簽失敗', T.sigfail||0, d.sigStrict ? '嚴格模式：已拒絕' : '觀察模式：只記不擋'),
     tile('重送去重', `${T.dup||0}／${T.redeliv||0}`, '跳過重複／補處理成功'),
     tile('程式例外', T.errors||0, ''),
+    tile('查不到資料', T.nodata||0, 'DD 承認沒資料（已自動記給 CC）'), // v4.70.41
   ].join('')
   const rows = (d.days||[]).map(x => `<tr><td>${esc(x.day.slice(5))}</td><td>${x.n||0}</td><td>${x.fail||0}</td><td>${sec(x.p50||0)}</td><td>${sec(x.p90||0)}</td><td>${x.gt30||0}</td><td>${x.pushFb||0}</td><td>${x.aiFb||0}</td><td>${(x.inCut||0)+(x.outCut||0)}</td><td>${(x.avgIt||0).toLocaleString()}</td><td>${x.sigfail||0}</td><td>${x.errors||0}</td></tr>`).join('')
   const reasons = (d.reasons||[]).length ? `<div style="margin-top:12px"><b style="font-size:14px">失敗原因</b><table class="hard" style="width:100%;margin-top:6px;font-size:12.5px"><thead><tr><th style="text-align:left">原因</th><th>次數</th></tr></thead><tbody>${d.reasons.map(r=>`<tr><td>${esc(r.k)}</td><td style="text-align:center">${r.n}</td></tr>`).join('')}</tbody></table></div>` : '<div class="hint" style="margin-top:12px">這段期間沒有失敗紀錄。</div>'
   const fails = (d.recentFail||[]).length ? `<div style="margin-top:12px"><b style="font-size:14px">最近失敗（最多 20 筆）</b>${d.recentFail.map(f=>`<div class="hint" style="font-size:12px;padding:4px 0;border-bottom:1px solid var(--line)">${esc(new Date(f.t).toLocaleString('zh-TW',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit',hour12:false,timeZone:'Asia/Taipei'}))}・${f.kind==='error'?'例外：'+esc(f.err):'回覆失敗：'+esc((f.send&&(f.send.err||f.send.status))||'?')}${f.ms?'・'+sec(f.ms):''}${f.ai&&f.ai.lastErr?'・AI：'+esc(f.ai.lastErr):''}</div>`).join('')}</div>` : ''
+  // v4.70.41 查不到資料清單＋資料覆蓋自檢（哪些資料來源、DD 怎麼看到、資料庫新出現的家族）
+  const fmtT = t => new Date(t).toLocaleString('zh-TW',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit',hour12:false,timeZone:'Asia/Taipei'})
+  const nodata = (d.recentNodata||[]).length ? `<div style="margin-top:12px"><b style="font-size:14px">DD 說「沒資料」的問題（最多 20 筆，已自動記給 CC）</b>${d.recentNodata.map(f=>`<div class="hint" style="font-size:12px;padding:4px 0;border-bottom:1px solid var(--line)">${esc(fmtT(f.t))}${f.who?'・'+esc(f.who):''}・問：${esc(f.q||'')}<br>答：${esc(f.a||'')}</div>`).join('')}</div>` : ''
+  const cov = d.coverage || {}
+  const covRows = (cov.boss||[]).map(b=>`<tr><td style="text-align:left">${esc(b.label)}<span class="hint" style="font-size:11px">　${esc(b.slug)}</span></td><td>${b.off?'<span class="hint">停更</span>':(b.rows==null?'—':b.rows)}</td><td style="text-align:left">${esc(b.via)}</td></tr>`).join('')
+  const fresh = (cov.fresh||[]).length ? `<div style="margin-top:8px"><b style="font-size:13px">資料庫新出現的資料家族（DD 可能看不到，CC 要接）</b>${cov.fresh.map(x=>`<div class="hint" style="font-size:12px">${esc(x.t)}・${esc(x.f)}</div>`).join('')}</div>` : `<div class="hint" style="margin-top:8px;font-size:12px">近期沒有新出現的資料家族${cov.families?`（已登記 ${cov.families} 個）`:''}。</div>`
+  const coverage = `<div style="margin-top:14px"><b style="font-size:14px">資料覆蓋自檢</b><span class="hint" style="font-size:12px">　每天自動對照；${cov.checkedAt?'上次 '+esc(cov.checkedAt):'尚未跑過'}</span>
+    <table class="hard" style="width:100%;margin-top:6px;font-size:12.5px;text-align:center"><thead><tr><th style="text-align:left">阿桑系統資料</th><th>本月筆數</th><th style="text-align:left">DD 怎麼看到</th></tr></thead><tbody>${covRows||'<tr><td colspan=3 class="hint">—</td></tr>'}</tbody></table>${fresh}</div>`
   const ov = document.createElement('div'); ov.id='ddhOv'
   ov.style.cssText = 'position:fixed;inset:0;background:rgba(10,14,22,.6);z-index:70;display:flex;align-items:flex-start;justify-content:center;padding:14px;overflow:auto'
   ov.innerHTML = `<div style="background:var(--bg);border:1px solid var(--line);border-radius:16px;width:100%;max-width:760px;padding:16px" onclick="event.stopPropagation()">
@@ -1027,7 +1036,7 @@ async function ddHealthOpen(days){
     <div class="hint" style="margin-bottom:10px">每一則 DD 回覆從「收到訊息」到「回完」的時間與結果。紀錄從 v4.70.39 上線起才有，之前的沒有資料。</div>
     <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px">${tiles}</div>
     <div style="overflow:auto;margin-top:12px"><table class="hard" style="min-width:720px;width:100%;font-size:12.5px;text-align:center"><thead><tr><th>日期</th><th>則數</th><th>失敗</th><th>中位</th><th>九成</th><th>&gt;30s</th><th>改推播</th><th>AI備援</th><th>截斷</th><th>平均輸入token</th><th>驗簽失敗</th><th>例外</th></tr></thead><tbody>${rows||'<tr><td colspan="12" class="hint">還沒有紀錄</td></tr>'}</tbody></table></div>
-    ${reasons}${fails}</div>`
+    ${reasons}${fails}${nodata}${coverage}</div>`
   ov.onclick = () => ov.remove()
   document.body.appendChild(ov)
 }

@@ -12,7 +12,8 @@ import { handleOnboardEvent } from './_onboard.js'
 // DD 互動卡片：照片歸檔/回饋卡/投票卡（Flex+postback，固定指令不經 AI，答案直接寫回 App 同一份資料）
 import { handleDDCards, handleJournalText, attachJournalPhotos, buildConfirmCard, buildTaskCards, buildTaskSetupCards } from './_ddcards.js'
 import { inlineLogin, inlineSearchKeyword, inlineCustomer } from './_inline.js'
-import { ddEventOnce, ddHealthLog } from './_ddhealth.js' // v4.70.39 DD 穩定化批次 1a：事件去重＋健康紀錄（docs/COMMS_PLAN.md 項目 1） // 訂位關鍵字代查＋客人檔官方統計（張良 2026-10-03）
+import { ddEventOnce, ddHealthLog } from './_ddhealth.js'
+import { bossGenericText, queryBoss } from './_ddcoverage.js' // v4.70.41 DD 資料覆蓋：阿桑端點通用摘要行＋query_boss 通用代查（新端點不用再手接） // v4.70.39 DD 穩定化批次 1a：事件去重＋健康紀錄（docs/COMMS_PLAN.md 項目 1） // 訂位關鍵字代查＋客人檔官方統計（張良 2026-10-03）
 
 const clean = (v) => (v || '').trim().replace(/^["']|["']$/g, '').replace(/^[A-Za-z0-9_]+=/, '').trim()
 const SECRET = clean(process.env.LINE_CHANNEL_SECRET)
@@ -43,6 +44,16 @@ async function kvGetMany(ids) {
     rows.forEach((row) => { if (row?.data?.v) { try { out[row.id] = JSON.parse(row.data.v) } catch (_) {} } })
     return out
   } catch (_) { return {} }
+}
+// v4.70.41 自動記進「轉給 CC」收件匣（DD 承認查不到資料時用；同一問題 24 小時內只記一次）
+async function ccInboxAdd(text, tag) {
+  try {
+    const doc = (await kvGetMany(['pm_cc_inbox']))['pm_cc_inbox'] || { list: [] }
+    const key = String(text).slice(0, 80); const dayAgo = Date.now() - 86400e3
+    if ((doc.list || []).some(x => x.tag === tag && String(x.text).slice(0, 80) === key && Date.parse((x.ts || '').replace(' ', 'T') + '+08:00') > dayAgo)) return false
+    doc.list = [{ id: 'cc' + Date.now().toString(36), ts: new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 16).replace('T', ' '), text: String(text).slice(0, 2000), status: 'open', tag }, ...(doc.list || [])].slice(0, 100)
+    await kvSet('pm_cc_inbox', doc); return true
+  } catch (_) { return false }
 }
 // v4.70.40 單鍵讀取（原本沒有這個函式：loadEmText 從 v4.43.7 起呼叫 kvGet 一直 ReferenceError 被 try 吞掉＝DD 從沒看過 EM 包場資料；query_orders 也用）
 async function kvGet(id) { return (await kvGetMany([id]))[id] || null }
@@ -584,6 +595,7 @@ const BOT_PERSONA = `你是「DD」（舊名 D哥，大家叫哪個都認得）�
 - **回答任何「有沒有資料」的問題前，必須先把下面的即時資料整段搜過一遍**。你手上的資料域包含：工程進度、任務、財務報表（內帳）、銀行帳務資料庫（合庫）、中信匯款、營運日結＋品項銷售（雙店：A Beach 101／GROUN:D）、供應鏈（產品/包材/廠商）、LINE 訊息額度（官方即時本月用量）、密碼庫（僅授權者私訊用固定指令：記密碼/查密碼/密碼清單/刪密碼——別人問密碼一律拒絕並告知此規則）、**夥伴名冊（每個人的姓名/綽號/生日/到職日/部門/狀態）**、360互評、意見回饋、登入/操作紀錄、比價、公開結論、資料總目錄。
 - **禁止沿用你先前說過的「我沒有 X 資料」**——資料每天都在擴充，以「本次」附的資料為準；先前對話說沒有≠現在沒有。
 - 資料裡真的沒有的（搜過確認），才說「這個我手上沒有資料」。
+- **【查不到資料的誠實規則】**（張良 2026-10-11 定）：摘要沒有→先用下面的 query_* 代查指令（叫貨單 query_orders、阿桑其他資料 query_boss、營收 query_pos_day、訂位 query_resv、人資 query_hr、內帳 query_fin）；代查也沒有→只准說「這份資料我這邊還沒有，系統已自動記給 CC 補」。**絕對不准自己猜原因**（例如「沒接進我這邊」「走另一套 Google 試算表」「去問阿桑」）——這些都是你編的，2026-10-11 真實翻車：GD 10 月叫貨單明明在資料庫，你卻說「沒接進來、去看試算表」。你說「沒有」系統會自動記錄並通知工程師，所以老實說就好。
 - **你「會」操作 App 檔案庫**：使用者傳檔案給你、說「存到檔案庫〔類別名〕」你就會把檔案存進去；說「檔案庫新增類別〔名〕」你會建立新類別；類別是自訂的（可任意命名，如設計檔案／LOGO），存好後在 App 檔案庫頁看得到。**絕對不要說「我沒有新增檔案庫類別的能力／開不了類別／存不了檔案」**——你有。若對方說「沒看到剛建的類別」，提醒他：空類別要在 App 檔案庫頁上方「類別📁」篩選才看得到，或傳個檔案進去就會顯示（不要否認自己建過）。
 - **你「會」操作「文件庫」（雲端硬碟）**：這跟上面的「檔案庫／相簿」是兩套東西。使用者先傳檔案給你、再說「存到文件庫〔資料夾名〕」你就把檔案歸進該資料夾（受權限：他要有該夾的編輯權）；私訊打「文件庫」你會列出他看得到的資料夾。主管還可以說「文件庫 把〔資料夾〕〔檔名〕傳到群／給我」，你把檔案撈出來傳過去（但被標記「禁止外傳」的資料夾、或非主管，一律不給撈）。**不要說你做不到**——這些由系統直接執行。資料夾的新增／刪除／改名／排序／設權限在 App 文件庫頁做。
 - **【日期計算鐵則】你心算日期差很不可靠（2026-09-18 真實翻車：把 2025-04 到職的人「目測年份」判成未滿一年）**。年資、年齡、滿幾年→資料區已算好，直接引用；其他日期差（幾天後、隔幾週）→必須先寫下兩個完整日期再逐步算，**禁止看年份目測**。
@@ -1169,6 +1181,7 @@ async function loadBossText() {
     if (prep.length || rout.length) lines.push(`  ◇ AB 今日備料送出 ${prep.length} 筆、例行任務完成 ${rout.length} 項`)
     // 冰箱溫度警報（只列超標；空=沒異常）
     const temp = rowsOf(K('temp', ym))
+    try { const gen = await bossGenericText(ym); if (gen.length) { lines.push('  【阿桑系統其他資料（沒專門摘要的端點，每份一行；新端點自動出現在這）】'); lines.push(...gen) } } catch (_) {} // v4.70.41
     if (temp.length) { lines.push(`  ◇ ⚠️ AB 冰箱溫度超標 ${temp.length} 筆：`); temp.slice(0, 5).forEach(t => lines.push(`    - ${String(t.recorded_at).slice(0, 16)} ${t.device_label || t.device_id} ${t.temp_c}°C（${t.level}）`)) }
     return lines.length > 1 ? '\n' + lines.join('\n') : ''
   } catch (_) { return '' }
@@ -2040,6 +2053,7 @@ const BOT_AGENT_GUIDE = `
 - {"type":"query_resv","top":10}  // 🔎A Beach 常客排行代查（唯讀,不用確認）：掃 2021 開店～今全史，回「實際入座次數」最多的前 N 名（姓名/入座次數/累計人次/訂過幾次含取消/最近來店/電話）。使用者問「常客前十名/來最多次的客人/回頭客」就用這個。
 - {"type":"query_hr","month":"2026-08"}  // 🔎NUEiP人資代查（唯讀,不用確認）：任意月「出勤統計(每人出勤天數/遲到/早退/缺卡/曠職)+班表(每人排班天數)」。加 "date":"2026-08-15" =改看單日逐筆打卡+當日班表。摘要只有本月近況,問歷史月/某人某月統計就用這個。
 - {"type":"query_orders","month":"2026-10","store":"ground"}  // 🔎叫貨單代查（唯讀,不用確認,外部群自動擋）：某店某月「跟廠商的叫貨單逐張」（日期/廠商/狀態/幾項/金額）＋月合計＋依廠商合計。store=ground（GROUN:D，含向 AB 央廚叫貨）|abeach（A Beach）。加 "supplier":"上展" 只列那家；加 "items":1 連每張單的品項數量單價一起列。摘要裡只有近 8 張，使用者問「X 月叫貨單／跟某家叫了什麼／叫貨花多少」就用這個——**不要**回「沒接進來／去看 Google 試算表」。
+- {"type":"query_boss","feed":"gprod","kw":"牛奶"}  // 🔎阿桑系統通用代查（唯讀,不用確認,外部群自動擋）：摘要裡「阿桑系統其他資料」列出的每一份（feed=那行寫的代號，例 gprod=GD 產品主檔、gsup=GD 廠商、prod=AB 商品主檔、sup=AB 廠商、rcp=AB 配方、citem=AB 品項成本），整份撈出來逐筆列。月檔型的加 "month":"2026-10"；kw=關鍵字只列含它的列；limit 預設 80 最多 200。使用者問「GD 某產品售價/成本/庫存、某廠商的叫貨日/帳期、某配方用量」就用這個。
 - {"type":"query_fin","month":"2026-08"}  // 🔎財務內帳代查（唯讀,不用確認,外部群自動擋）：任意月收支「逐筆+月合計」。摘要只有最近120筆,問更早的月份/某月總支出就用這個。
 - 張良想叫 CC（Claude Code 工程師）改程式/加功能：教他直接打「**轉給CC ＋需求內容**」一句話——系統會自動收進 CC 收件匣、CC 會撿單處理（這是接好的真管道，**不要再說「我沒辦法轉給CC」**）。只有張良本人打有效；夥伴提需求請他們走 /prep 的建議或先跟張良說。
 - **【代查鐵則】你沒有「稍等一下／待會撈回來再回報」的能力**——這一則回覆送出後就結束了，不會有下一則。要代查，就必須在**同一則回覆裡**輸出上面的 query_pos_day / query_resv JSON 指令（系統會當場查完回填、你再據此作答，使用者只會看到最終答案）。只寫「我幫你代查／撈回來整理給你／稍等一下」而**沒帶 JSON ＝什麼都不會發生＝對使用者說謊**（2026-10-04 真實翻車：答應查九月婚禮包場說「稍等一下」，結果指令沒輸出、使用者空等）。
@@ -2831,7 +2845,8 @@ export default async function handler(req, res) {
           const qhs = [...txt.matchAll(/\{[^{}]*"type"\s*:\s*"query_hr"[^{}]*\}/g)].slice(0, 2)
           const qfs = moneyOK ? [...txt.matchAll(/\{[^{}]*"type"\s*:\s*"query_fin"[^{}]*\}/g)].slice(0, 2) : []
           const qos = moneyOK ? [...txt.matchAll(/\{[^{}]*"type"\s*:\s*"query_orders"[^{}]*\}/g)].slice(0, 2) : [] // v4.70.40 叫貨單（成本資料，外部群擋）
-          if (!qms.length && !qrs.length && !qhs.length && !qfs.length && !qos.length) return null
+          const qbs = moneyOK ? [...txt.matchAll(/\{[^{}]*"type"\s*:\s*"query_boss"[^{}]*\}/g)].slice(0, 2) : [] // v4.70.41 阿桑系統通用代查
+          if (!qms.length && !qrs.length && !qhs.length && !qfs.length && !qos.length && !qbs.length) return null
           let dataTxt = ''
           for (const m of qms) { try { const q = JSON.parse(m[0]); dataTxt += await queryPosDay(String(q.date || ''), String(q.store || 'ground')) + '\n\n' } catch (e) { dataTxt += '（查詢指令解析失敗）\n' } }
           for (const m of qrs) { try { const q = JSON.parse(m[0]); dataTxt += (moneyOK
@@ -2840,6 +2855,7 @@ export default async function handler(req, res) {
           for (const m of qhs) { try { const q = JSON.parse(m[0]); dataTxt += await queryHrMonth(q.month, q.date) + '\n\n' } catch (e) { dataTxt += '（人資查詢指令解析失敗）\n' } }
           for (const m of qfs) { try { const q = JSON.parse(m[0]); dataTxt += await queryFinMonth(q.month) + '\n\n' } catch (e) { dataTxt += '（財務查詢指令解析失敗）\n' } }
           for (const m of qos) { try { const q = JSON.parse(m[0]); dataTxt += await queryOrders(q.month, q.store, q.supplier, q.items) + '\n\n' } catch (e) { dataTxt += '（叫貨單查詢指令解析失敗）\n' } }
+          for (const m of qbs) { try { const q = JSON.parse(m[0]); dataTxt += await queryBoss(q.feed, q.month, q.kw, q.limit) + '\n\n' } catch (e) { dataTxt += '（阿桑資料查詢指令解析失敗）\n' } }
           // v4.38.3 保險絲（九月1182筆爆AI輸入翻車）：代查結果超長一律截斷,寧可請AI縮範圍也不能整則掛掉
           if (dataTxt.length > 60000) dataTxt = dataTxt.slice(0, 60000) + '\n…（代查結果過長已截斷：請縮小日期區間分段再查）'
           return dataTxt
@@ -2862,6 +2878,14 @@ export default async function handler(req, res) {
       const reply = clean || rawReply
       const actions = canAct ? parseActions(reply) : []
       console.log('answer', JSON.stringify({ snaps: snaps.length, canAct, hist: history.length, mem: memList.length, autoFacts: facts.length, actions: actions.length, replyLen: reply.length }))
+      // v4.70.41 DD 承認「沒資料」→ 自動記健康紀錄＋寫進「轉給 CC」收件匣（張良 2026-10-11：不要再等他問到才發現漏接）
+      try {
+        const plainND = stripJson(reply)
+        if (/(沒接進|沒有接進|還沒接|手上沒有|手上並沒有|沒有抓到|沒抓到|沒這份|沒有這份|查不到|撈不到|沒同步|沒有同步|我這邊沒有|這邊還沒有|沒有.{0,6}資料|資料.{0,4}沒有)/.test(plainND)) {
+          ddHealthLog({ kind: 'nodata', dm: isDM, conv: convId.slice(-6), who: op?.name || '', q: text.slice(0, 200), a: plainND.slice(0, 300) }).catch(() => {})
+          if (moneyOK) await ccInboxAdd(`DD 查不到資料（自動記錄）${op?.name ? '，' + op.name + ' 問' : ''}：「${text.slice(0, 150)}」→ DD 答：「${plainND.slice(0, 200)}」`, 'nodata')
+        }
+      } catch (_) {}
 
       if (actions.length) {
         // 4) 操作分兩級（張良 2026-08-28）：

@@ -125,7 +125,8 @@ export default async function handler(req, res) {
   // 可選：用 CRON_SECRET 防止外部亂打
   const secret = clean(process.env.CRON_SECRET)
   if (secret && req.headers['authorization'] !== `Bearer ${secret}`) return res.status(401).json({ ok: false })
-  try { const { ddHealthCleanup } = await import('./_ddhealth.js'); console.log('ddhealth cleanup', JSON.stringify(await ddHealthCleanup())) } catch (e) { console.log('ddhealth cleanup err', e?.message) } // v4.70.39 去重列留 2 天、健康紀錄留 30 天
+  try { const { ddHealthCleanup } = await import('./_ddhealth.js'); console.log('ddhealth cleanup', JSON.stringify(await ddHealthCleanup())) } catch (e) { console.log('ddhealth cleanup err', e?.message) } // v4.70.39 去重列
+  try { const { ddCoverageCheck } = await import('./_ddcoverage.js'); console.log('ddcoverage', JSON.stringify(await ddCoverageCheck({ force: req.query?.covforce === '1' }))) } catch (e) { console.log('ddcoverage err', e?.message) } // v4.70.41 DD 資料覆蓋自檢（同日只跑一次，新資料家族私訊審核人）留 2 天、健康紀錄留 30 天
   // 一次性補建（已於 2026-09-12 使用完畢；防重複所以留著也無害，佔位待清）
   if (false && req.query?.seed === 'pizza12') {
     const kvSet = async (id, obj) => { const r = await fetch(`${SB_URL}/rest/v1/pm_documents`, { method: 'POST', headers: { apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}`, 'content-type': 'application/json', Prefer: 'resolution=merge-duplicates' }, body: JSON.stringify({ id, data: { v: JSON.stringify(obj) }, editor: 'claude-seed', updated_at: new Date().toISOString() }) }); return r.ok }

@@ -1668,7 +1668,8 @@ export default async function handler(req, res) {
     const { ddHealthSummary } = await import('./_ddhealth.js')
     const sH9 = await ddHealthSummary(Math.min(14, Math.max(1, Number(req.query.days) || 7)))
     res.setHeader('Cache-Control', 'private, no-store')
-    return res.status(200).json({ ok: true, ...sH9, sigStrict: (process.env.LINE_SIG_STRICT || '').trim() === '1' })
+    let covH9 = null; try { const { ddCoverageReport } = await import('./_ddcoverage.js'); covH9 = await ddCoverageReport() } catch (_) {} // v4.70.41 資料覆蓋自檢
+    return res.status(200).json({ ok: true, ...sH9, sigStrict: (process.env.LINE_SIG_STRICT || '').trim() === '1', coverage: covH9 })
   }
   // 📢 DD 自動訊息設定（v4.53.0 張良「設定頁管理 DD 所有自動發送：發哪個群/話怎麼講/開關」）：GET ?ddmsg=<OPS_BOARD_KEY>&me=token
   if (req.query?.ddmsg) {
