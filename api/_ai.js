@@ -26,7 +26,7 @@ export const AI_ROUTES = {
   social:    { label: '行銷大師 AI 文案', where: '一鍵生成 5 版／分品牌各寫一版（會看圖）', kind: 'text',
                def: { provider: 'anthropic', model: 'claude-sonnet-4-6' }, fb: { provider: 'anthropic', model: 'claude-opus-4-8' } },
   image:     { label: 'AI 生圖', where: '行銷大師素材庫「AI 生圖」（Claude 不會生圖，只能選 Gemini／ChatGPT）', kind: 'image',
-               def: { provider: 'gemini', model: 'gemini-2.5-flash-image' }, fb: { provider: 'openai', model: 'gpt-image-1' } },
+               def: { provider: 'gemini', model: 'gemini-nano-banana-2.1' }, fb: { provider: 'gemini', model: 'gemini-3.1-flash-image' } },
   translate: { label: '即時翻譯', where: 'DD 群組「翻譯模式」每句雙向翻', kind: 'text',
                def: { provider: 'anthropic', model: 'claude-haiku-4-5-20251001' }, fb: { provider: 'anthropic', model: 'claude-sonnet-4-6' } },
   summary:   { label: '對話摘要', where: 'DD 舊對話滾動濃縮（省錢用小模型即可）', kind: 'text',
@@ -62,8 +62,8 @@ function resolve(route, cfg, override) {
   const seen = new Set(); return chain.filter(c => { const k = c.provider + '|' + c.model; if (seen.has(k)) return false; seen.add(k); return true })
 }
 export function defaultModel(p, kind) {
-  if (kind === 'image') return p === 'openai' ? 'gpt-image-1' : p === 'gemini' ? 'gemini-2.5-flash-image' : ''
-  return p === 'openai' ? 'gpt-5' : p === 'gemini' ? 'gemini-2.5-flash' : 'claude-sonnet-4-6'
+  if (kind === 'image') return p === 'openai' ? 'gpt-image-2' : p === 'gemini' ? 'gemini-nano-banana-2.1' : '' // 2026-10-10 實測：Gemini 2.5 系列已對新用戶關閉，官方建議 3.8-flash；生圖最新 Nano Banana 2.1
+  return p === 'openai' ? 'gpt-5.5' : p === 'gemini' ? 'gemini-3.8-flash' : 'claude-sonnet-4-6'
 }
 
 // ── 內容格式轉換 ──
@@ -221,7 +221,7 @@ export async function aiListModels(provider, kind = 'text') {
       const r = await fetch('https://generativelanguage.googleapis.com/v1beta/models?pageSize=200', { headers: { 'x-goog-api-key': key } })
       const d = await r.json().catch(() => ({})); if (!r.ok) return { ok: false, error: (d.error && d.error.message) || ('HTTP ' + r.status), models: [] }
       const ms = (d.models || []).filter(m => (m.supportedGenerationMethods || []).includes('generateContent') && /^models\/gemini/.test(m.name))
-      const pick = ms.filter(m => kind === 'image' ? /image/i.test(m.name) : !/image|tts|audio|embedding|live/i.test(m.name))
+      const pick = ms.filter(m => kind === 'image' ? /image|nano-banana/i.test(m.name) : !/image|nano-banana|tts|audio|embedding|live|transcribe|robotics|computer-use/i.test(m.name))
       return { ok: true, models: pick.map(m => ({ id: m.name.replace(/^models\//, ''), label: m.displayName || m.name })).sort((a, b) => b.id.localeCompare(a.id)) }
     }
     return { ok: false, error: '未知供應商', models: [] }
