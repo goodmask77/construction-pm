@@ -8,7 +8,7 @@
   const money = n => 'NT$' + nf(n)
   const COL = { b: '#4DA3FF', g: '#3DBE6C', o: '#E8A657', y: '#E8C14E', p: '#B48CF2', r: '#F07373' }
   let MDATA = null, mSub = 'dash', mVendF = 'all', mVcatF = 'all', mCatF = 'all', mQ = '', mSort = 'amt30', mCatMng = false
-  let MORD = null, mOrdStat = 'all', mOrdQ = '' // 叫貨單分頁（lazy load）
+  let MORD = null, mOrdStat = 'all', mOrdQ = '', mOrdStore = 'all' // 叫貨單分頁（lazy load）；v4.70.42 mOrdStore=all|AB|GD
   const OST = { approved: ['已核准', '#3DBE6C'], pending: ['待審', '#E8A657'], rejected: ['退回', '#F07373'] }
 
   window.matlibLoad = async function () {
@@ -366,7 +366,9 @@
     let h = '<section style="padding:12px">'
     h += `<input value="${esc(mOrdQ)}" oninput="_mOrdSearch(this.value)" placeholder="🔍 搜尋廠商／品項／日期…" style="width:100%;border:1px solid var(--line);border-radius:10px;padding:9px 12px;margin-bottom:10px">`
     h += `<div style="display:flex;gap:6px;flex-wrap:wrap">`
-      + `<button class="mini ${mOrdStat === 'all' ? 'on' : ''}" onclick="_mOrdStatF('all')">全部 ${orders.length}</button>`
+      + ['all', 'GD', 'AB'].map(s => { const n = s === 'all' ? orders.length : orders.filter(o => o.store === s).length; return `<button class="mini ${mOrdStore === s ? 'on' : ''}" onclick="_mOrdStoreF('${s}')">${s === 'all' ? '兩店' : s === 'GD' ? 'GROUN:D' : 'A Beach'} ${n}</button>` }).join('')
+      + `<span style="width:6px"></span>`
+      + `<button class="mini ${mOrdStat === 'all' ? 'on' : ''}" onclick="_mOrdStatF('all')">全部狀態</button>`
       + ['approved', 'pending', 'rejected'].map(s => { const n = orders.filter(o => o.status === s).length; return `<button class="mini ${mOrdStat === s ? 'on' : ''}" onclick="_mOrdStatF('${s}')">${OST[s][0]} ${n}</button>` }).join('')
       + `</div><div id="matOrdList" style="margin-top:10px">` + orderTable() + '</div></section>'
     return h
@@ -374,6 +376,7 @@
   function orderFilt () {
     const q = mOrdQ.toLowerCase()
     return (MORD.orders || []).filter(o => {
+      if (mOrdStore !== 'all' && o.store !== mOrdStore) return false
       if (mOrdStat !== 'all' && o.status !== mOrdStat) return false
       if (q && !((o.supplier || '').toLowerCase().includes(q) || (o.date || '').includes(q) || (o.items || []).some(it => (it.name || '').toLowerCase().includes(q)))) return false
       return true
@@ -387,13 +390,14 @@
       const st = OST[o.status] || [o.status || '—', 'var(--muted)']
       h += `<tr onclick="_mOrdDetail('${esc(o.id).replace(/'/g, '&#39;')}')" style="cursor:pointer">`
         + `<td style="text-align:left">${o.date || '—'}</td>`
-        + `<td style="text-align:left"><div class="iname" style="max-width:none">${esc(o.supplier)}</div>${o.dept ? `<span class="hint" style="font-size:11px">${esc(o.dept)}</span>` : ''}</td>`
+        + `<td style="text-align:left"><div class="iname" style="max-width:none">${esc(o.supplier)}</div><span class="hint" style="font-size:11px">${o.store === 'GD' ? 'GROUN:D' : 'A Beach'}${o.dept ? '・' + esc(o.dept) : ''}</span></td>`
         + `<td>${o.lineCount || (o.items || []).length}</td>`
         + `<td>${o.total ? nf(o.total) : '—'}${o.unpriced ? `<span class="hint" style="font-size:10px"> ${o.unpriced}無價</span>` : ''}</td>`
         + `<td><span style="color:${st[1]};font-weight:800">${st[0]}</span></td></tr>`
     }
     return h + '</tbody></table></div>'
   }
+  window._mOrdStoreF = function (s) { mOrdStore = s; const el = document.getElementById('matOrdList'); if (el) el.innerHTML = orderTable(); document.querySelectorAll('[onclick^="_mOrdStoreF"]').forEach(b => b.classList.toggle('on', b.getAttribute('onclick').includes("'" + s + "'"))) }
   window._mOrdStatF = function (s) { mOrdStat = s; const el = document.getElementById('matOrdList'); if (el) el.innerHTML = orderTable() }
   window._mOrdSearch = function (v) { mOrdQ = v; const el = document.getElementById('matOrdList'); if (el) el.innerHTML = orderTable() }
   window._mOrdDetail = function (id) {
@@ -405,7 +409,7 @@
     ov.innerHTML = `<div onclick="event.stopPropagation()" style="background:var(--card);border:1px solid var(--line);border-radius:16px;max-width:560px;width:100%;max-height:88vh;overflow:auto;padding:18px">
       <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px">
         <div><div onclick="_mVendDetail('${esc(o.supplier).replace(/'/g, '&#39;')}')" style="font-size:18px;font-weight:800;color:var(--ink);cursor:pointer;text-decoration:underline">${esc(o.supplier)}</div>
-        <div class="hint" style="margin-top:3px">${o.date ? `<span onclick="_mDayDetail('${o.date}')" style="cursor:pointer;color:var(--pdark);text-decoration:underline">${o.date}</span>` : ''}${o.dept ? '　' + esc(o.dept) : ''}　<span style="color:${st[1]};font-weight:700">${st[0]}</span></div></div>
+        <div class="hint" style="margin-top:3px">${o.store === 'GD' ? 'GROUN:D' : 'A Beach'}　${o.date ? `<span onclick="_mDayDetail('${o.date}')" style="cursor:pointer;color:var(--pdark);text-decoration:underline">${o.date}</span>` : ''}${o.dept ? '　' + esc(o.dept) : ''}　<span style="color:${st[1]};font-weight:700">${st[0]}</span></div></div>
         <button class="mini" onclick="document.getElementById('mOrdOv').remove()">關閉</button></div>
       <div style="display:flex;gap:18px;margin:14px 0;background:#1C222B;border-radius:12px;padding:14px">
         <div style="text-align:center;flex:1"><div style="font-size:21px;font-weight:800;color:#3DBE6C;font-variant-numeric:tabular-nums">${nf(o.total)}</div><div class="hint" style="font-size:12px">訂單金額</div></div>

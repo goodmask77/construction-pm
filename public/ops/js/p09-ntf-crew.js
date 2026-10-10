@@ -1022,6 +1022,8 @@ async function ddHealthOpen(days){
   // v4.70.41 查不到資料清單＋資料覆蓋自檢（哪些資料來源、DD 怎麼看到、資料庫新出現的家族）
   const fmtT = t => new Date(t).toLocaleString('zh-TW',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit',hour12:false,timeZone:'Asia/Taipei'})
   const nodata = (d.recentNodata||[]).length ? `<div style="margin-top:12px"><b style="font-size:14px">DD 說「沒資料」的問題（最多 20 筆，已自動記給 CC）</b>${d.recentNodata.map(f=>`<div class="hint" style="font-size:12px;padding:4px 0;border-bottom:1px solid var(--line)">${esc(fmtT(f.t))}${f.who?'・'+esc(f.who):''}・問：${esc(f.q||'')}<br>答：${esc(f.a||'')}</div>`).join('')}</div>` : ''
+  const secTot = (d.sections||[]).reduce((t,x)=>t+x.avg,0)
+  const sections = (d.sections||[]).length ? `<div style="margin-top:12px"><b style="font-size:14px">每次問 DD 塞給 AI 的資料有多大</b><span class="hint" style="font-size:12px">　平均每則，共約 ${Math.round(secTot/1000)}k 字；越大越慢越貴，批次 1b 要先瘦最肥的</span><table class="hard" style="width:100%;margin-top:6px;font-size:12.5px"><thead><tr><th style="text-align:left">資料段落</th><th>平均字數</th><th>佔比</th></tr></thead><tbody>${d.sections.map(x=>`<tr><td style="text-align:left">${esc(x.k)}</td><td style="text-align:right">${x.avg.toLocaleString()}</td><td style="text-align:right">${secTot?Math.round(x.avg/secTot*100):0}%</td></tr>`).join('')}</tbody></table></div>` : ''
   const cov = d.coverage || {}
   const covRows = (cov.boss||[]).map(b=>`<tr><td style="text-align:left">${esc(b.label)}<span class="hint" style="font-size:11px">　${esc(b.slug)}</span></td><td>${b.off?'<span class="hint">停更</span>':(b.rows==null?'—':b.rows)}</td><td style="text-align:left">${esc(b.via)}</td></tr>`).join('')
   const fresh = (cov.fresh||[]).length ? `<div style="margin-top:8px"><b style="font-size:13px">資料庫新出現的資料家族（DD 可能看不到，CC 要接）</b>${cov.fresh.map(x=>`<div class="hint" style="font-size:12px">${esc(x.t)}・${esc(x.f)}</div>`).join('')}</div>` : `<div class="hint" style="margin-top:8px;font-size:12px">近期沒有新出現的資料家族${cov.families?`（已登記 ${cov.families} 個）`:''}。</div>`
@@ -1036,7 +1038,7 @@ async function ddHealthOpen(days){
     <div class="hint" style="margin-bottom:10px">每一則 DD 回覆從「收到訊息」到「回完」的時間與結果。紀錄從 v4.70.39 上線起才有，之前的沒有資料。</div>
     <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px">${tiles}</div>
     <div style="overflow:auto;margin-top:12px"><table class="hard" style="min-width:720px;width:100%;font-size:12.5px;text-align:center"><thead><tr><th>日期</th><th>則數</th><th>失敗</th><th>中位</th><th>九成</th><th>&gt;30s</th><th>改推播</th><th>AI備援</th><th>截斷</th><th>平均輸入token</th><th>驗簽失敗</th><th>例外</th></tr></thead><tbody>${rows||'<tr><td colspan="12" class="hint">還沒有紀錄</td></tr>'}</tbody></table></div>
-    ${reasons}${fails}${nodata}${coverage}</div>`
+    ${reasons}${fails}${nodata}${sections}${coverage}</div>`
   ov.onclick = () => ov.remove()
   document.body.appendChild(ov)
 }
