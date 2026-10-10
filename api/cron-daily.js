@@ -309,8 +309,11 @@ export default async function handler(req, res) {
     if (!TOKEN) return res.status(200).json({ ok: false, skipped: '未設 LINE token' })
     const st = (await kvGet('pm_settings')) || {}
     if ((st.lineNotify || {}).prepRemind === false) return res.status(200).json({ ok: true, skipped: '備料訊息已關（prepRemind=false）' })
-    const ncfgP = (await kvGet('sp_finance_pm_notify')) || {} // 統一通知開關（張良 2026-09-21：預設關，/prep 🔔 開）
-    if (ncfgP.prep0930 !== 1 && !forced) return res.status(200).json({ ok: true, skipped: '備料群訊未開（/prep 🔔 通知開關）' })
+    // v4.70.38：開關／發哪個群／文字 統一走「DD 自動訊息設定」prep0930 那則（舊 sp_finance_pm_notify.prep0930 由 ddGet 相容讀）；預設關＝不發
+    const { ddGet: ddGetP, ddFill: ddFillP, ddGroupGid: ddGidP } = await import('./_ddmsg.js')
+    const msgP = await ddGetP('prep0930')
+    // 開關關＝連 force 也不發群（張良 10-05 停發原意）；preview=me 私訊自己不受限
+    if (!msgP || (!msgP.on && String(req.query?.preview || '') !== 'me')) return res.status(200).json({ ok: true, skipped: '備料群訊未開（/prep 設定 → DD 自動訊息 → 每日備料量）' })
     // 備料數字直接吃 /prep 看板同一個資料口（資料一致鐵則：不另算一套）
     const okey = clean(process.env.OPS_BOARD_KEY) || '7ea362bae1f0274372d4ec7b27c78852'
     const rr = await fetch('https://ground-pm.vercel.app/api/mail-sync?opsboard=' + encodeURIComponent(okey) + '&store=ground')
@@ -335,14 +338,12 @@ export default async function handler(req, res) {
       const pr = await fetch('https://api.line.me/v2/bot/message/push', { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${TOKEN}` }, body: JSON.stringify({ to: uid, messages: [{ type: 'text', text: '【預覽・只有你看得到，沒發群】\n' + L.join('\n') }] }) })
       return res.status(200).json({ ok: pr.ok, preview: true, wd, lines: L.length })
     }
-    // v4.54.1 張良 2026-10-05「停止發送每日備料建議到群組」：正式群發停用（上面 preview=me 自己私訊預覽不受影響）；要重開＝拿掉這段 return
-    return res.status(200).json({ ok: true, skipped: '備料群發已停止（張良 2026-10-05 要求）；要自己看用 ?preview=me' })
-    // 目標群：env LINE_PREP_GROUP 優先，否則從群組登記表找名字含 Family 的群
-    let tgt = clean(process.env.LINE_PREP_GROUP)
-    if (!tgt) { const seen = (await kvGet('pm_group_seen')) || {}; for (const [gid2, gg] of Object.entries(seen)) if (/family/i.test(gg?.name || '')) { tgt = gid2; break } }
-    if (!tgt) return res.status(200).json({ ok: false, error: '找不到 GROUN:D Family 群（讓 DD 在群裡看到一則訊息就會登記群名，或設 LINE_PREP_GROUP）' })
+    // v4.54.1 張良 2026-10-05 停發 → v4.70.38 改由「DD 自動訊息設定」的開關決定（預設關；上面已擋）。目標群＝該則設定的「發到」
+    const tgt = await ddGidP(msgP.group)
+    if (!tgt) return res.status(200).json({ ok: false, error: '找不到備料訊息要發的群（到 /prep 設定 → DD 自動訊息 → 每日備料量 選群）' })
+    const bodyP = ddFillP(msgP.text, { body: L.join('\n') }) || L.join('\n')
     try {
-      const pr = await fetch('https://api.line.me/v2/bot/message/push', { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${TOKEN}` }, body: JSON.stringify({ to: tgt, messages: [{ type: 'text', text: L.join('\n') }] }) })
+      const pr = await fetch('https://api.line.me/v2/bot/message/push', { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${TOKEN}` }, body: JSON.stringify({ to: tgt, messages: [{ type: 'text', text: bodyP }] }) })
       if (pr.ok) { try { const { logPush, groupMembers } = await import('./push.js'); await logPush(tgt, 1, '備料建議', await groupMembers(tgt)) } catch (_) {} }
       try { const { wpPush } = await import('./_webpush.js'); await wpPush(null, { title: '🍳 明日備料建議', body: `週${'日一二三四五六'[wd]}的備料表出爐了，點開看要備多少`, url: '/prep#tab=prep' }) } catch (_) {} // v4.45.6 推播也帶定位
       return res.status(200).json({ ok: pr.ok, prep: true, wd, to: tgt.slice(-6), lines: L.length })

@@ -315,6 +315,23 @@ async function quotaFoot(billed) { // billed=本次計費則數（回覆=0 免�
   // v4.41.2 簡易版（張良 2026-10-04「改成簡易版 0 70/3000 像這樣就好」）：本次計費數 本月用量/上限
   return `\n\n${billed} ${q.used + billed}${q.total > 0 ? '/' + q.total : ''}`
 }
+// 🗒 DD 群組回話紀錄（v4.70.38 張良 2026-10-10「有些群 DD 會突然自己回」→ 記下每次在哪個群、因為哪條規則、對方說什麼、DD 回什麼；私訊不記）
+// why：mention=被@本帳號／name=字裡有 D哥·dd／journal=日誌前綴／photo=照片附日誌／translate=翻譯模式逐句／cmd=開關翻譯指令
+async function ddReplyLog(ev, why, q, a) {
+  try {
+    if (!ev || ev.source?.type === 'user') return
+    const gid = ev.source?.groupId || ev.source?.roomId || ''
+    if (!gid) return
+    const cur = (await kvGetMany(['pm_dd_replylog']))['pm_dd_replylog']
+    const arr = Array.isArray(cur) ? cur : []
+    arr.unshift({ t: new Date().toISOString(), gid, uid: ev.source?.userId || '', why, q: String(q || '').slice(0, 80), a: String(a || '').slice(0, 120) })
+    await kvSet('pm_dd_replylog', arr.slice(0, 300))
+  } catch (e) { console.log('ddReplyLog err', e?.message) }
+}
+// 群組個別設定（mode/journal/translate）：讀壞一律退預設＝現狀行為不變
+async function ddGrpCfg(ev) {
+  try { const gid = ev.source?.groupId || ev.source?.roomId || ''; if (!gid) return null; const { ddGroupCfg } = await import('./_ddmsg.js'); return await ddGroupCfg(gid) } catch (_) { return null }
+}
 async function lineReply(replyToken, text, extra) {
   // extra＝附加訊息物件（Flex 按鈕卡等），跟文字一起回（LINE 一次最多 5 則）
   try {
@@ -2152,8 +2169,9 @@ export default async function handler(req, res) {
       }
       // 工作日誌（張良 2026-08-20：群組跟 DD 講也要能記）：固定前綴「日誌/心得 …」私訊＋群組都收、不用點名；
       // 記完 15 分鐘內傳的照片自動附上（下面 image 分支）；未綁定者在群組保持安靜（外部群安靜原則）
-      if (ev.type === 'message' && ev.message?.type === 'text') {
-        try { const jr = await handleJournalText(ev); if (jr?.consumed) { if (ev.source?.type !== 'user') await cacheGroupMsg(ev); continue } } catch (e) { console.log('journal error', e?.message) }
+      const gcE = (ev.source?.type !== 'user') ? await ddGrpCfg(ev) : null // v4.70.38 這個群的個別設定（null＝私訊或讀不到＝照舊）
+      if (ev.type === 'message' && ev.message?.type === 'text' && !(gcE && (gcE.journal === 0 || gcE.mode === 'off'))) {
+        try { const jr = await handleJournalText(ev); if (jr?.consumed) { if (ev.source?.type !== 'user') { await cacheGroupMsg(ev); ddReplyLog(ev, 'journal', ev.message.text, '（已記日誌）').catch(() => {}) }; continue } } catch (e) { console.log('journal error', e?.message) }
       }
       // 工作日誌照片：綁定夥伴 15 分鐘內記過日誌 → 這張圖直接附到那則（私訊＋群組）。
       // 先「只查不寫」確認有近期日誌，才下載上傳——廠商群的圖不會被誤傳進公開桶；沒近期日誌就走原本檔案庫/文件流程
@@ -2191,7 +2209,7 @@ export default async function handler(req, res) {
           }
         } catch (e) { console.log('hrdoc upload err', e?.message) }
       }
-      if (ev.type === 'message' && ev.message?.type === 'image') {
+      if (ev.type === 'message' && ev.message?.type === 'image' && !(gcE && (gcE.journal === 0 || gcE.mode === 'off'))) {
         try {
           const uidJ = ev.source?.userId || ''
           if (uidJ && await attachJournalPhotos(uidJ, [])) {
@@ -2201,7 +2219,7 @@ export default async function handler(req, res) {
               const ctJ = rJ.headers.get('content-type') || 'image/jpeg'
               const { url } = await uploadToPhotos(bufJ, /png/.test(ctJ) ? 'png' : 'jpg', ctJ)
               const hit = await attachJournalPhotos(uidJ, [url])
-              if (hit) { if (ev.replyToken) await lineReply(ev.replyToken, `📷 照片已附到 ${hit.name} 剛剛的日誌（共 ${(hit.photos || []).length} 張）。`); continue }
+              if (hit) { if (ev.replyToken) await lineReply(ev.replyToken, `📷 照片已附到 ${hit.name} 剛剛的日誌（共 ${(hit.photos || []).length} 張）。`); ddReplyLog(ev, 'photo', '（照片）', '照片已附到 ' + hit.name + ' 的日誌').catch(() => {}); continue }
             }
           }
         } catch (e) { console.log('journal photo error', e?.message) }
@@ -2226,13 +2244,15 @@ export default async function handler(req, res) {
       const gid = ev.source?.groupId || ev.source?.roomId || ev.source?.userId
       const text = (ev.message.text || '').trim()
       const isDM = ev.source?.type === 'user' // 一對一私訊
-      // 🌐 翻譯模式快速通道（張良 2026-09-30「能不能秒翻」）：翻譯群第一時間翻、其他紀錄射後不理
-      if (!isDM && !/^(關翻譯|(?:DD\s*)?開翻譯)/i.test(text)) {
+      // v4.70.38 群組設定「不回話」：只默默快取＋登記群，其他一律不做（不翻譯、不回答、不認指令）
+      if (!isDM && gcE && gcE.mode === 'off') { await cacheGroupMsg(ev); await registerGroup(gid, ev.source?.type); continue }
+      // 🌐 翻譯模式快速通道（張良 2026-09-30「能不能秒翻」）：翻譯群第一時間翻、其他紀錄射後不理（v4.70.38 該群 translate=0 就不翻）
+      if (!isDM && !(gcE && gcE.translate === 0) && !/^(關翻譯|(?:DD\s*)?開翻譯)/i.test(text)) {
         const trDocF = (await kvGetMany(['pm_bot_translate']))['pm_bot_translate'] || {}
         const trCfgF = trDocF[gid]
         if (trCfgF && trCfgF.mode && Date.now() - (trCfgF.on || 0) <= 12 * 3600e3) {
           cacheGroupMsg(ev).catch(() => {}) // 不等
-          try { const tr = await ddTranslate(text, trCfgF.mode); if (tr && ev.replyToken) await lineReply(ev.replyToken, '🌐 ' + tr) } catch (e) { console.log('translate err', e?.message) }
+          try { const tr = await ddTranslate(text, trCfgF.mode); if (tr && ev.replyToken) { await lineReply(ev.replyToken, '🌐 ' + tr); ddReplyLog(ev, 'translate', text, tr).catch(() => {}) } } catch (e) { console.log('translate err', e?.message) }
           continue
         }
         if (trCfgF && Date.now() - (trCfgF.on || 0) > 12 * 3600e3) { delete trDocF[gid]; kvSet('pm_bot_translate', trDocF).catch(() => {}) }
@@ -2242,17 +2262,18 @@ export default async function handler(req, res) {
       // 只登記「群組/聊天室」到群組頁；私訊(user)不是群，登記進去會在群組頁出現「未命名群」
       if (ev.source?.type !== 'user') await registerGroup(gid, ev.source?.type)
       // ── 🌐 翻譯模式（張良 2026-09-29）：群裡「開翻譯 中英/中韓」（操作者限定）→ 該群每句話自動雙向翻到「關翻譯」為止（12小時自動關保險）──
-      if (!isDM) {
+      if (!isDM && !(gcE && gcE.translate === 0)) { // v4.70.38 該群關掉翻譯＝開翻譯指令當一般訊息
         const trM = text.match(/^(?:DD\s*)?開翻譯\s*(中英|中韓)?$/i)
         const trOff = /^(?:DD\s*)?關翻譯$/i.test(text)
         if (trM || trOff) {
           const ops0 = await getOperators()
           if (!ops0[ev.source?.userId || '']) { /* 非操作者的開關指令當一般訊息 */ } else {
             const trDoc = (await kvGetMany(['pm_bot_translate']))['pm_bot_translate'] || {}
-            if (trOff) { delete trDoc[gid]; await kvSet('pm_bot_translate', trDoc); await lineReply(ev.replyToken, '🌐 翻譯模式已關閉。'); continue }
+            if (trOff) { delete trDoc[gid]; await kvSet('pm_bot_translate', trDoc); await lineReply(ev.replyToken, '🌐 翻譯模式已關閉。'); ddReplyLog(ev, 'cmd', text, '翻譯模式已關閉').catch(() => {}); continue }
             const md = trM[1] === '中韓' ? 'zh-ko' : 'zh-en'
             trDoc[gid] = { mode: md, on: Date.now(), by: ev.source?.userId }
             await kvSet('pm_bot_translate', trDoc)
+            ddReplyLog(ev, 'cmd', text, '翻譯模式 ON ' + md).catch(() => {})
             await lineReply(ev.replyToken, md === 'zh-ko' ? '🌐 翻譯模式 ON（中⇄韓）：這個群每句話我都會自動翻譯，直到說「關翻譯」。\n🌐 통역 모드 시작: 이 방의 모든 메시지를 자동으로 번역합니다.' : '🌐 翻譯模式 ON（中⇄英）：這個群每句話我都會自動翻譯，直到說「關翻譯」。\n🌐 Translation mode ON: I will translate every message in this chat automatically.')
             continue
           }
@@ -2263,12 +2284,15 @@ export default async function handler(req, res) {
       const mentionees = ev.message?.mention?.mentionees || []
       const mentionedSelf = mentionees.some((m) => m.isSelf === true && m.type !== 'all')
       // 叫名字：新名 DD（要獨立字，避免 add/odd 誤觸）或舊名 D哥 都算
-      const named = mentionedSelf || /d哥/i.test(text) || /(^|[^a-z0-9])dd([^a-z0-9]|$)/i.test(text)
-      console.log('event', JSON.stringify({ src: ev.source?.type, isDM, named, mSelf: mentionedSelf, text: text.slice(0, 40) }))
-      if (!isDM && !named) continue // 私訊一律回；群組必須被點名（@本帳號 或 講「D哥」）
+      // v4.70.38 群組設定 quiet（安靜）＝只認 @DD 本帳號，字裡提到 D哥／dd 不插嘴（廠商群、外部群建議設這個）
+      const quietG = !isDM && gcE && gcE.mode === 'quiet'
+      const named = mentionedSelf || (!quietG && (/d哥/i.test(text) || /(^|[^a-z0-9])dd([^a-z0-9]|$)/i.test(text)))
+      console.log('event', JSON.stringify({ src: ev.source?.type, isDM, named, mSelf: mentionedSelf, quiet: !!quietG, text: text.slice(0, 40) }))
+      if (!isDM && !named) continue // 私訊一律回；群組必須被點名（@本帳號 或 講「D哥」；安靜群只認 @）
       const userId = ev.source?.userId || ''
       const convId = isDM ? ('dm_' + userId) : ('g_' + gid) // 對話記憶的識別
-      const send = (t, extra) => ev.replyToken ? lineReply(ev.replyToken, t, extra) : Promise.resolve()
+      const whyG = mentionedSelf ? 'mention' : 'name'
+      const send = (t, extra) => { if (!isDM) ddReplyLog(ev, whyG, text, t).catch(() => {}); return ev.replyToken ? lineReply(ev.replyToken, t, extra) : Promise.resolve() }
       // finish＝回覆＋把這輪存進對話記憶（讓 D哥 記得前文）；授權訊息不用 finish(含密碼，不留紀錄)
       // hist＝存進對話記憶的版本（可跟送出的不同）。動作輪要存「含 json 指令」的原始回覆，
       // 不然記憶裡只剩「✅ 已直接記好」文字、沒有指令 → DD 回頭學自己的歷史，學會只寫✅不夾指令（2026-09-12 自導自演翻車根因）

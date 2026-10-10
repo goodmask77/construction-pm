@@ -655,58 +655,64 @@ async function tabsReset(){
 }
 tabsInit()
 bindBtnSync()
-// ── 🔔 群組通知開關（張良 2026-09-21：主動群通知先全關；審核人在這裡逐項開）──
-const NOTIFY_DEF = [ ['buy','採購需求→內部群'], ['sopLate','SOP 超時未完成→內部群'], ['lowStock','庫存低水位→內部群'], ['prep0930','每日 09:30 備料量→Family 群'], ['staleItem','品項超過5個營業日沒販售→happy337 群（預設開）', 1], ['soldoutAB','AB 停售/恢復即時通知→happy337 群（預設開）', 1] ]
-async function notifyEdit(){
-  let d
-  try { const r = await fetch('/api/mail-sync?notifycfg=' + encodeURIComponent(K) + (TK() ? '&me=' + encodeURIComponent(TK()) : '')); d = await r.json() } catch(e){}
-  if (!d || !d.ok) { alert('讀不到通知設定'); return }
-  const ov = document.createElement('div'); ov.id='ntOv'
-  ov.style.cssText = 'position:fixed;inset:0;background:rgba(16,24,43,.45);z-index:50;display:flex;align-items:center;justify-content:center;padding:16px'
-  ov.innerHTML = `<div style="background:#222B38;border:1px solid #3B4654;box-shadow:0 18px 50px rgba(0,0,0,.55);border-radius:14px;max-width:400px;width:100%;padding:16px" onclick="event.stopPropagation()">
-    <div style="font-weight:900;margin-bottom:4px">🔔 群組通知開關</div>
-    <div class="hint" style="margin-bottom:10px">預設全關（不主動打擾群組）。${d.canEdit?'點開要的：':'只有審核人能改，目前狀態：'}<br>問題回報不在這裡——那個走你的「發布」審核，你按了才進群。</div>
-    ${NOTIFY_DEF.map(([k,lb,defOn])=>`<label style="display:flex;gap:8px;align-items:center;padding:7px 4px;border-bottom:1px solid var(--line);font-size:15px;font-weight:600"><input type="checkbox" data-nk="${k}" ${(defOn ? d.cfg[k]!==0 : d.cfg[k]===1)?'checked':''} ${d.canEdit?'':'disabled'} style="width:18px;height:18px"> ${lb}</label>`).join('')}
-    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:10px"><button class="mini" style="padding:9px 12px" onclick="document.getElementById('ntOv').remove()">關閉</button>
-    ${d.canEdit?`<button class="mini on" style="padding:9px 18px" onclick="notifySave()">儲存</button>`:''}</div></div>`
-  ov.onclick = () => ov.remove()
-  document.body.appendChild(ov)
-}
-async function notifySave(){
-  const cfg = {}
-  document.querySelectorAll('#ntOv input[data-nk]').forEach(i2=>{ cfg[i2.dataset.nk] = i2.checked ? 1 : 0 })
-  const o = document.getElementById('ntOv'); if (o) o.remove()
-  const r = await fetch('/api/mail-sync?notifyset=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ cfg, token: TK() }) })
-  const d = await r.json().catch(()=>null)
-  if (d && d.ok) alert('通知開關已更新'); else alert((d&&d.error)||'儲存失敗')
-}
-// ── 📢 DD 自動訊息設定（v4.54.0 張良「設定頁管理 DD 所有自動發送：發哪個群／話怎麼講／開關」）──
-let _ddGroups = []
-async function ddMsgEdit(){
-  let d; try { const r = await fetch('/api/mail-sync?ddmsg=' + encodeURIComponent(K) + (TK()?'&me='+encodeURIComponent(TK()):'')); d = await r.json() } catch(e){}
+// ── 📢 DD 自動訊息設定（v4.54.0）→ v4.70.38 一個面板管全部（張良 2026-10-10「DD 在的群全部列出來、都要能設定功能」）：
+//    三個子頁：①自動訊息（每則開關／發哪個群／話怎麼講；舊「群組通知開關」已併入，備料量也在這）②DD 在的群（每群：別名／內部外部／回話模式／日誌／翻譯／可發自動訊息／隱藏）③回話紀錄（DD 在哪個群因為哪條規則回了什麼）
+let _ddGroups = [], _ddGrps = [], _ddD = null
+const DD_WHY = { mention:'被 @DD', name:'字裡有 D哥/dd', journal:'日誌前綴', photo:'照片附日誌', translate:'翻譯模式', cmd:'開關翻譯指令' }
+const DD_MODE = [['normal','一般（@DD／講到 D哥 都回）'],['quiet','安靜（只認 @DD）'],['off','不回話']]
+async function ddMsgEdit(sub, refresh){
+  let d; try { const r = await fetch('/api/mail-sync?ddmsg=' + encodeURIComponent(K) + (TK()?'&me='+encodeURIComponent(TK()):'') + (refresh?'&refresh=1':'') + '&r=' + Date.now()); d = await r.json() } catch(e){}
   if (!d || !d.ok) { alert('讀不到 DD 訊息設定'); return }
-  _ddGroups = d.groups || []
-  const esc = s => String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')
+  _ddD = d; _ddGroups = d.groups || []; _ddGrps = d.grps || []
+  const old = document.getElementById('ddOv'); if (old) old.remove()
   const ov = document.createElement('div'); ov.id='ddOv'
   ov.style.cssText = 'position:fixed;inset:0;background:rgba(10,14,22,.6);z-index:70;display:flex;align-items:flex-start;justify-content:center;padding:14px;overflow:auto'
-  const grpOpts = cur => _ddGroups.map(g=>`<option value="${esc(g.key)}"${g.key===cur?' selected':''}>${esc(g.label)}</option>`).join('')
+  ov.innerHTML = `<div style="background:var(--bg);border:1px solid var(--line);border-radius:16px;width:100%;max-width:680px;padding:16px" onclick="event.stopPropagation()">
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px"><b style="font-size:17px">DD 自動訊息與群組設定</b><button class="mini" style="margin-left:auto;padding:6px 12px" onclick="document.getElementById('ddOv').remove()">✕</button></div>
+    <div id="ddSub" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">
+      <button class="mini" data-s="msg" onclick="ddSubShow('msg')">自動訊息</button>
+      <button class="mini" data-s="grp" onclick="ddSubShow('grp')">DD 在的群${_ddGrps.length?'（'+_ddGrps.filter(g=>!g.gone&&!g.cfg.hide).length+'）':''}</button>
+      <button class="mini" data-s="log" onclick="ddSubShow('log')">回話紀錄</button>
+    </div>
+    <div id="ddBody"></div></div>`
+  ov.onclick = () => ov.remove()
+  document.body.appendChild(ov)
+  ddSubShow(sub || 'msg')
+}
+function ddSubShow(sub){
+  document.querySelectorAll('#ddSub button').forEach(b=>{ b.className = 'mini' + (b.dataset.s===sub?' on':'') })
+  const box = document.getElementById('ddBody'); if (!box) return
+  if (sub === 'msg') ddRenderMsgs(box)
+  else if (sub === 'grp') ddRenderGrps(box)
+  else ddRenderLog(box)
+}
+const ddEsc = s => String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')
+// ① 自動訊息：發到＝全部 DD 在的群（常用三群置頂，其他照標籤分「內部／外部／未分」）
+function ddGrpOpts(cur){
+  const esc = ddEsc
+  const pre = _ddGroups.filter(g=>g.preset), rest = _ddGroups.filter(g=>!g.preset)
+  const opt = g => `<option value="${esc(g.key)}"${g.key===cur?' selected':''}>${esc(g.label)}${g.tag==='external'?'（外部）':''}</option>`
+  let h = `<optgroup label="常用">${pre.map(opt).join('')}</optgroup>`
+  const grp = (lb, arr) => arr.length ? `<optgroup label="${lb}">${arr.map(opt).join('')}</optgroup>` : ''
+  h += grp('內部群', rest.filter(g=>g.tag==='internal')) + grp('未分類', rest.filter(g=>!g.tag)) + grp('外部群（廠商／合作）', rest.filter(g=>g.tag==='external'))
+  if (cur && !_ddGroups.some(g=>g.key===cur)) h += `<option value="${esc(cur)}" selected>（目前設定的群已不在清單：${esc(cur).slice(-6)}）</option>`
+  return h
+}
+function ddRenderMsgs(box){
+  const d = _ddD, esc = ddEsc
   const card = m => { const cur = m.cur||{}; const on = cur.on!=null?cur.on:m.on; const group = cur.group||m.group; const text = (cur.text!=null&&String(cur.text).trim())?cur.text:m.text
     return `<div data-k="${esc(m.key)}" style="border:1px solid var(--line);border-radius:12px;padding:12px;margin-bottom:10px;background:var(--card)">
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:7px"><b style="font-size:15px">${esc(m.label)}</b><span class="hint" style="font-size:11px">${esc(m.where||'')}</span>
         <label style="margin-left:auto;display:inline-flex;align-items:center;gap:5px;font-size:13px;font-weight:700"><input type="checkbox" class="ddOn" ${on?'checked':''} style="width:17px;height:17px"> 開啟</label></div>
       <div style="display:flex;align-items:center;gap:7px;margin-bottom:7px;flex-wrap:wrap"><span class="hint" style="font-size:12px">發到</span>
-        <select class="ddGrp" style="flex:1;min-width:160px;background:var(--soft);border:1px solid var(--line);border-radius:8px;padding:6px 8px;color:var(--ink);font-size:13px">${grpOpts(group)}</select></div>
+        <select class="ddGrp" style="flex:1;min-width:160px;background:var(--soft);border:1px solid var(--line);border-radius:8px;padding:6px 8px;color:var(--ink);font-size:13px">${ddGrpOpts(group)}</select></div>
       <textarea class="ddTxt" rows="4" style="width:100%;background:var(--soft);border:1px solid var(--line);border-radius:8px;padding:8px;color:var(--ink);font-size:13px;line-height:1.6;resize:vertical">${esc(text)}</textarea>
       <div class="hint" style="font-size:10.5px;margin-top:4px">可用變數（原樣保留，系統自動帶入）：${esc(m.vars||'')}</div>
-      <div style="text-align:right;margin-top:6px"><button class="mini on" style="padding:6px 16px" onclick="ddMsgSave('${esc(m.key)}',this)">💾 儲存這則</button></div>
+      <div style="text-align:right;margin-top:6px"><button class="mini on" style="padding:6px 16px" onclick="ddMsgSave('${esc(m.key)}',this)">儲存這則</button></div>
     </div>` }
-  ov.innerHTML = `<div style="background:var(--bg);border:1px solid var(--line);border-radius:16px;width:100%;max-width:620px;padding:16px" onclick="event.stopPropagation()">
-    <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px"><b style="font-size:17px">📢 DD 自動訊息設定</b><button class="mini" style="margin-left:auto;padding:6px 12px" onclick="document.getElementById('ddOv').remove()">✕</button></div>
-    <div class="hint" style="margin-bottom:12px">每則 DD 會自動發的群訊：可改「開關／發哪個群／話怎麼講」。${d.canEdit?'改完按該則的「儲存」。':'（只有審核人能改，目前唯讀）'}帶 { } 的變數請原樣保留。</div>
-    ${(d.msgs||[]).map(card).join('')}</div>`
-  if (!d.canEdit) { setTimeout(()=>{ ov.querySelectorAll('input,select,textarea,button.on').forEach(e=>{ if(!/✕/.test(e.textContent||'')) e.disabled=true }) },0) }
-  ov.onclick = () => ov.remove()
-  document.body.appendChild(ov)
+  box.innerHTML = `<div class="hint" style="margin-bottom:12px">每則 DD 會自動發的群訊：可改「開關／發哪個群／話怎麼講」。${d.canEdit?'改完按該則的「儲存」。':'（只有審核人能改，目前唯讀）'}帶 { } 的變數請原樣保留。「發到」可選 DD 在的任何一個群（要調整清單到「DD 在的群」）。</div>
+    ${(d.msgs||[]).map(card).join('')}`
+  if (!d.canEdit) box.querySelectorAll('input,select,textarea,button.on').forEach(e=>{ e.disabled=true })
 }
 async function ddMsgSave(key, btn){
   const card = btn.closest('[data-k]'); if (!card) return
@@ -716,8 +722,61 @@ async function ddMsgSave(key, btn){
   btn.textContent = '儲存中…'; btn.disabled = true
   const r = await fetch('/api/mail-sync?ddmsgset=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ key, on, group, text, token: TK() }) })
   const d = await r.json().catch(()=>null)
-  if (d && d.ok) { btn.textContent = '已儲存 ✓'; setTimeout(()=>{ btn.textContent='💾 儲存這則'; btn.disabled=false },1500) }
-  else { alert((d&&d.error)||'儲存失敗'); btn.textContent='💾 儲存這則'; btn.disabled=false }
+  if (d && d.ok) { btn.textContent = '已儲存 ✓'; setTimeout(()=>{ btn.textContent='儲存這則'; btn.disabled=false },1500) }
+  else { alert((d&&d.error)||'儲存失敗'); btn.textContent='儲存這則'; btn.disabled=false }
+}
+// ② DD 在的群：每群一列可設定（改了按「儲存全部群組設定」一次存）
+function ddRenderGrps(box){
+  const d = _ddD, esc = ddEsc
+  if (!d.canEdit) { box.innerHTML = '<div class="hint">只有審核人能看／改群組清單。</div>'; return }
+  const fmtT = t => { if (!t) return '－'; const dt = new Date(t); if (isNaN(dt)) return '－'; const dd = Math.floor((Date.now()-dt)/864e5); return dd<=0?'今天':dd===1?'昨天':dd+' 天前' }
+  const row = g => { const c = g.cfg||{}; return `<div class="ddGRow" data-gid="${esc(g.gid)}" style="border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin-bottom:8px;background:var(--card);${c.hide?'opacity:.55':''}">
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px">
+        <b style="font-size:15px">${esc(g.name||('（沒抓到群名）'+g.gid.slice(-6)))}</b>${g.key?'<span class="hint" style="font-size:11px;border:1px solid var(--line);border-radius:6px;padding:1px 6px">常用</span>':''}${g.gone?'<span style="font-size:11px;color:#E5484D;font-weight:700">DD 已不在這個群</span>':''}
+        <span class="hint" style="font-size:11px;margin-left:auto">最近活動 ${fmtT(g.lastActive)}・${g.count||0} 則</span></div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:6px 10px;align-items:center;font-size:13px">
+        <label style="display:flex;gap:4px;align-items:center"><span class="hint" style="font-size:11px;white-space:nowrap">別名</span><input class="gAlias" value="${esc(c.alias||'')}" placeholder="自己看的名稱" style="flex:1;min-width:0;background:var(--soft);border:1px solid var(--line);border-radius:7px;padding:4px 6px;color:var(--ink);font-size:13px"></label>
+        <label style="display:flex;gap:4px;align-items:center"><span class="hint" style="font-size:11px;white-space:nowrap">分類</span><select class="gTag" style="flex:1;background:var(--soft);border:1px solid var(--line);border-radius:7px;padding:4px 6px;color:var(--ink);font-size:13px"><option value=""${!c.tag?' selected':''}>未分類</option><option value="internal"${c.tag==='internal'?' selected':''}>內部群</option><option value="external"${c.tag==='external'?' selected':''}>外部群（廠商／合作）</option></select></label>
+        <label style="display:flex;gap:4px;align-items:center;grid-column:1/-1"><span class="hint" style="font-size:11px;white-space:nowrap">回話</span><select class="gMode" style="flex:1;background:var(--soft);border:1px solid var(--line);border-radius:7px;padding:4px 6px;color:var(--ink);font-size:13px">${DD_MODE.map(([v,lb])=>`<option value="${v}"${(c.mode||'normal')===v?' selected':''}>${lb}</option>`).join('')}</select></label>
+        <label style="display:flex;gap:5px;align-items:center"><input type="checkbox" class="gJournal" ${c.journal!==0?'checked':''} style="width:16px;height:16px"> 收「日誌／心得」</label>
+        <label style="display:flex;gap:5px;align-items:center"><input type="checkbox" class="gTranslate" ${c.translate!==0?'checked':''} style="width:16px;height:16px"> 可開翻譯模式</label>
+        <label style="display:flex;gap:5px;align-items:center"><input type="checkbox" class="gTarget" ${c.target!==0?'checked':''} style="width:16px;height:16px"> 可發自動訊息</label>
+        <label style="display:flex;gap:5px;align-items:center"><input type="checkbox" class="gHide" ${c.hide?'checked':''} style="width:16px;height:16px"> 隱藏（不列在清單）</label>
+      </div></div>` }
+  const live = _ddGrps.filter(g=>!g.cfg.hide), hid = _ddGrps.filter(g=>g.cfg.hide)
+  box.innerHTML = `<div class="hint" style="margin-bottom:10px">DD 看過訊息的群都在這（共 ${_ddGrps.length} 個）。每群可設：回話模式、收不收日誌、能不能開翻譯、能不能被選為自動訊息的「發到」。廠商／外部群建議設「安靜」＝只有 @DD 才回，別人聊天提到 D哥 不插嘴。</div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">
+      <button class="mini on" style="padding:8px 14px" onclick="ddGrpSaveAll(this)">儲存全部群組設定</button>
+      <button class="mini" style="padding:8px 14px" onclick="ddGrpQuietExt()">外部群一鍵安靜</button>
+      <button class="mini" style="padding:8px 14px" onclick="ddMsgEdit('grp',true)">重新確認群名／是否還在群</button>
+    </div>
+    ${live.map(row).join('') || '<div class="hint">還沒有登記到任何群（DD 在群裡看到一則訊息就會登記）。</div>'}
+    ${hid.length?`<details style="margin-top:8px"><summary class="hint" style="cursor:pointer">已隱藏 ${hid.length} 個群（點開）</summary>${hid.map(row).join('')}</details>`:''}`
+}
+function ddGrpQuietExt(){
+  let n = 0
+  document.querySelectorAll('#ddBody .ddGRow').forEach(r=>{ if (r.querySelector('.gTag').value==='external') { const m = r.querySelector('.gMode'); if (m.value==='normal') { m.value='quiet'; n++ } } })
+  alert(n ? `已把 ${n} 個外部群改成「安靜」，記得按「儲存全部群組設定」。` : '沒有分類為「外部群」的群，先把廠商群的分類選成外部群。')
+}
+async function ddGrpSaveAll(btn){
+  const items = [...document.querySelectorAll('#ddBody .ddGRow')].map(r=>({ gid: r.dataset.gid, cfg: { alias: r.querySelector('.gAlias').value, tag: r.querySelector('.gTag').value, mode: r.querySelector('.gMode').value, journal: r.querySelector('.gJournal').checked?1:0, translate: r.querySelector('.gTranslate').checked?1:0, target: r.querySelector('.gTarget').checked?1:0, hide: r.querySelector('.gHide').checked?1:0 } }))
+  btn.textContent = '儲存中…'; btn.disabled = true
+  const r = await fetch('/api/mail-sync?ddgrpset=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ items, token: TK() }) })
+  const d = await r.json().catch(()=>null)
+  if (d && d.ok) { btn.textContent = '已儲存 ✓（' + d.n + ' 個群）'; setTimeout(()=>ddMsgEdit('grp'), 900) }
+  else { alert((d&&d.error)||'儲存失敗'); btn.textContent='儲存全部群組設定'; btn.disabled=false }
+}
+// ③ 回話紀錄：DD 在群組每次回話（私訊不記）＝看「突然自己回」是哪條規則觸發
+async function ddRenderLog(box){
+  box.innerHTML = '<div class="hint">載入中…</div>'
+  let d; try { const r = await fetch('/api/mail-sync?ddlog=' + encodeURIComponent(K) + (TK()?'&me='+encodeURIComponent(TK()):'') + '&r=' + Date.now()); d = await r.json() } catch(e){}
+  if (!d || !d.ok) { box.innerHTML = '<div class="hint">' + ddEsc((d&&d.error)||'讀不到回話紀錄') + '</div>'; return }
+  const esc = ddEsc
+  const fmt = t => { const dt = new Date(t); return isNaN(dt) ? '' : dt.toLocaleString('zh-TW', { timeZone:'Asia/Taipei', month:'numeric', day:'numeric', hour:'2-digit', minute:'2-digit', hour12:false }) }
+  const alias = gid => { const g = _ddGrps.find(x=>x.gid===gid); return g ? (g.cfg.alias || g.name) : '' }
+  box.innerHTML = `<div class="hint" style="margin-bottom:8px">最近 ${d.list.length} 次 DD 在群組回話（新→舊）。「觸發」＝為什麼回：被 @、字裡有 D哥／dd、日誌、翻譯…。想讓某群不插嘴 → 到「DD 在的群」把回話改「安靜」或「不回話」。</div>
+    ${d.list.length ? `<table style="width:100%;border-collapse:collapse;font-size:12.5px"><thead><tr style="color:var(--mute)"><th style="text-align:left;padding:4px 6px;border-bottom:1px solid var(--line)">時間</th><th style="text-align:left;padding:4px 6px;border-bottom:1px solid var(--line)">群</th><th style="text-align:left;padding:4px 6px;border-bottom:1px solid var(--line)">觸發</th><th style="text-align:left;padding:4px 6px;border-bottom:1px solid var(--line)">對方說</th><th style="text-align:left;padding:4px 6px;border-bottom:1px solid var(--line)">DD 回</th></tr></thead><tbody>
+      ${d.list.map(x=>`<tr><td style="padding:5px 6px;border-bottom:1px solid var(--line);white-space:nowrap">${esc(fmt(x.t))}</td><td style="padding:5px 6px;border-bottom:1px solid var(--line)">${esc(alias(x.gid)||x.gname||x.gid.slice(-6))}</td><td style="padding:5px 6px;border-bottom:1px solid var(--line);white-space:nowrap">${esc(DD_WHY[x.why]||x.why)}</td><td style="padding:5px 6px;border-bottom:1px solid var(--line);color:var(--mute)">${esc(x.q)}</td><td style="padding:5px 6px;border-bottom:1px solid var(--line)">${esc(x.a)}</td></tr>`).join('')}</tbody></table>` : '<div class="hint">還沒有紀錄（從這版上線後 DD 在群組回話才會記）。</div>'}`
 }
 // 24小時制時間選擇（張良 2026-09-21：原生 time 輸入會跟著系統顯示上午/下午——改成 00~23 時＋分兩個下拉）
 function t24c(cls, v){
