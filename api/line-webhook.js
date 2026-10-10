@@ -11,11 +11,13 @@ import { supplyDigest } from '../src/supply/digest.js'
 import { handleOnboardEvent } from './_onboard.js'
 // DD 互動卡片：照片歸檔/回饋卡/投票卡（Flex+postback，固定指令不經 AI，答案直接寫回 App 同一份資料）
 import { handleDDCards, handleJournalText, attachJournalPhotos, buildConfirmCard, buildTaskCards, buildTaskSetupCards } from './_ddcards.js'
-import { inlineLogin, inlineSearchKeyword, inlineCustomer } from './_inline.js' // 訂位關鍵字代查＋客人檔官方統計（張良 2026-10-03）
+import { inlineLogin, inlineSearchKeyword, inlineCustomer } from './_inline.js'
+import { ddEventOnce, ddHealthLog } from './_ddhealth.js' // v4.70.39 DD 穩定化批次 1a：事件去重＋健康紀錄（docs/COMMS_PLAN.md 項目 1） // 訂位關鍵字代查＋客人檔官方統計（張良 2026-10-03）
 
 const clean = (v) => (v || '').trim().replace(/^["']|["']$/g, '').replace(/^[A-Za-z0-9_]+=/, '').trim()
 const SECRET = clean(process.env.LINE_CHANNEL_SECRET)
 const TOKEN = clean(process.env.LINE_CHANNEL_ACCESS_TOKEN)
+const SIG_STRICT = (process.env.LINE_SIG_STRICT || '').trim() === '1' // v4.70.39：=1 才真的拒絕驗簽失敗；先觀察健康頁「驗簽失敗」歸零再開
 const ANTHROPIC = clean(process.env.ANTHROPIC_API_KEY)
 const SB_URL = clean(process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL)
 const SB_KEY = (process.env.SUPABASE_SERVICE_ROLE_KEY || '').trim().replace(/^["']|["']$/g, '').replace(/^[A-Za-z0-9_]+=/, '').trim()
@@ -292,6 +294,7 @@ async function registerGroup(gid, src) {
     try { const r = await fetch(`https://api.line.me/v2/bot/group/${gid}/summary`, { headers: { authorization: `Bearer ${TOKEN}` } }); if (r.ok) name = (await r.json()).groupName || '' } catch (_) {}
   }
   cur[gid] = { ...g, ...(name ? { name } : {}), lastActive: new Date().toISOString(), count: (g.count || 0) + 1, src: src || g.src }
+  delete cur[gid].gone // 有訊息進來＝DD 還在這個群（v4.70.38）
   await kvSet('pm_group_seen', cur)
 }
 
@@ -315,19 +318,50 @@ async function quotaFoot(billed) { // billed=本次計費則數（回覆=0 免�
   // v4.41.2 簡易版（張良 2026-10-04「改成簡易版 0 70/3000 像這樣就好」）：本次計費數 本月用量/上限
   return `\n\n${billed} ${q.used + billed}${q.total > 0 ? '/' + q.total : ''}`
 }
-async function lineReply(replyToken, text, extra) {
+// 🗒 DD 群組回話紀錄（v4.70.38 張良 2026-10-10「有些群 DD 會突然自己回」→ 記下每次在哪個群、因為哪條規則、對方說什麼、DD 回什麼；私訊不記）
+// why：mention=被@本帳號／name=字裡有 D哥·dd／journal=日誌前綴／photo=照片附日誌／translate=翻譯模式逐句／cmd=開關翻譯指令
+async function ddReplyLog(ev, why, q, a) {
+  try {
+    if (!ev || ev.source?.type === 'user') return
+    const gid = ev.source?.groupId || ev.source?.roomId || ''
+    if (!gid) return
+    const cur = (await kvGetMany(['pm_dd_replylog']))['pm_dd_replylog']
+    const arr = Array.isArray(cur) ? cur : []
+    arr.unshift({ t: new Date().toISOString(), gid, uid: ev.source?.userId || '', why, q: String(q || '').slice(0, 80), a: String(a || '').slice(0, 120) })
+    await kvSet('pm_dd_replylog', arr.slice(0, 300))
+  } catch (e) { console.log('ddReplyLog err', e?.message) }
+}
+// 群組個別設定（mode/journal/translate）：讀壞一律退預設＝現狀行為不變
+async function ddGrpCfg(ev) {
+  try { const gid = ev.source?.groupId || ev.source?.roomId || ''; if (!gid) return null; const { ddGroupCfg } = await import('./_ddmsg.js'); return await ddGroupCfg(gid) } catch (_) { return null }
+}
+let _lastSend = null // v4.70.39 健康紀錄用：最近一次送出結果 { replyOk, status, err, pushed }
+async function lineReply(replyToken, text, extra, fallbackTo) {
   // extra＝附加訊息物件（Flex 按鈕卡等），跟文字一起回（LINE 一次最多 5 則）
+  // v4.70.39 fallbackTo＝reply 失敗（token 逾時／已用過＝400）時改 push 給這個對象（userId 或 groupId），答案不再無聲消失。
+  //   push 會計費，所以只在 reply 真的失敗才用；健康頁會記「改推播」次數（docs/COMMS_PLAN.md 項目 1 第 2 點）
+  _lastSend = null
   try {
     const foot9 = await quotaFoot(0) // v4.41.1 回覆免費＝本次0則，照樣顯示本月用量
+    const messages = [{ type: 'text', text: String(text).slice(0, 4800) + foot9 }, ...(Array.isArray(extra) ? extra.slice(0, 4) : [])]
     const r = await fetch('https://api.line.me/v2/bot/message/reply', {
       method: 'POST',
       headers: { 'content-type': 'application/json', authorization: `Bearer ${TOKEN}` },
-      body: JSON.stringify({ replyToken, messages: [{ type: 'text', text: String(text).slice(0, 4800) + foot9 }, ...(Array.isArray(extra) ? extra.slice(0, 4) : [])] }),
+      body: JSON.stringify({ replyToken, messages }),
     })
-    if (!r.ok) { const d = await r.text().catch(() => ''); console.log('LINE reply FAILED', r.status, d.slice(0, 300)) }
-    else console.log('LINE reply OK')
-    return r.ok
-  } catch (e) { console.log('LINE reply error', e?.message); return false }
+    if (r.ok) { console.log('LINE reply OK'); _lastSend = { replyOk: true }; return true }
+    const d = await r.text().catch(() => '')
+    console.log('LINE reply FAILED', r.status, d.slice(0, 300))
+    _lastSend = { replyOk: false, status: r.status, err: d.slice(0, 120) }
+    if (fallbackTo && r.status === 400) {
+      const p = await fetch('https://api.line.me/v2/bot/message/push', { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${TOKEN}` }, body: JSON.stringify({ to: fallbackTo, messages }) })
+      _lastSend.pushed = p.ok ? 1 : 0
+      if (!p.ok) _lastSend.pushErr = (await p.text().catch(() => '')).slice(0, 120)
+      console.log('LINE reply→push fallback', p.ok)
+      return p.ok
+    }
+    return false
+  } catch (e) { console.log('LINE reply error', e?.message); _lastSend = { replyOk: false, err: String(e?.message || '').slice(0, 120) }; return false }
 }
 
 // 把快照整理成精簡文字，餵給 AI 當依據
@@ -1239,15 +1273,33 @@ async function answer(question, snaps, accountsText, financeText, activityText, 
   const system = (canAct ? BOT_AGENT_GUIDE + '\n\n' : '') + BOT_PERSONA + readonlyGuard + moneyGuard + (memoryText || '') + sysDataHead() + snapshotsToContext(snaps, moneyOK) + (tasksText || '') + (moneyOK ? (accountsText || '') : '') + (moneyOK ? (financeText || '') : '') + (activityText || '') + (moneyOK ? (estimatesText || '') : '') + (crewText || '') + (conclusionsText || '') + (sheetText || '') + (moneyOK ? (posText || '') : '') + (moneyOK ? (supplyText || '') : '') + (lineQuotaText || '') + (catalogText || '') + (filelibText || '') + (moneyOK ? (groupChatText || '') : '')
   const messages = [...(Array.isArray(history) ? history : []), { role: 'user', content: question }]
   // v4.70.29 走 AI 中樞 route=dd（設定頁可選 ChatGPT／Claude／Gemini；cache=system 可快取→Claude 連續對話輸入成本大降）；選的那家壞了自動退備援，D哥不會啞掉
+  const tAi = Date.now()
   try {
     const { aiCall } = await import('./_ai.js')
     const r = await aiCall('dd', { system, messages, maxTokens: 3000, cache: true })
     if (r.tried && r.tried.length) console.log('dd primary failed → used', r.provider, r.model, r.tried)
+    aiAggAdd(r, system, tAi) // v4.70.39 健康紀錄：這輪用哪家、備援、token、是否截斷
     return r.text || '（沒有內容）'
   } catch (e) {
     console.log('dd ai all failed', e.message, e.tried)
+    aiAggAdd(null, system, tAi, e)
     return /尚未設定金鑰/.test(e.message || '') ? '（D哥的 AI 金鑰尚未設定。）' : '（AI 回應失敗，請稍後再試）'
   }
+}
+// v4.70.39 一個事件內所有 AI 呼叫的彙總（代查迴圈一題可能打 2–4 次）：calls／fb 備援次數／err／it 輸入 token／inCut 輸入被「中段略」截斷／outCut 輸出撞到 3000 上限
+let _aiAgg = null
+const aiAggReset = () => { _aiAgg = { calls: 0, fb: 0, err: 0, it: 0, ot: 0, ms: 0, inCut: 0, outCut: 0, provider: '', model: '' } }
+function aiAggAdd(r, system, t0, e) {
+  if (!_aiAgg) aiAggReset()
+  const A = _aiAgg; A.calls++; A.ms += Date.now() - t0
+  if (String(system || '').includes('（中段略）')) A.inCut++
+  if (e) { A.err++; A.lastErr = String(e.message || e).slice(0, 120); if (e.tried && e.tried.length) A.fb += e.tried.length; return }
+  const u = r.usage || {}
+  const it = +(u.input_tokens ?? u.prompt_tokens ?? u.promptTokenCount ?? 0) + +(u.cache_read_input_tokens ?? 0) + +(u.cache_creation_input_tokens ?? 0)
+  const ot = +(u.output_tokens ?? u.completion_tokens ?? u.candidatesTokenCount ?? 0)
+  A.it += it; A.ot += ot; A.provider = r.provider || ''; A.model = r.model || ''
+  if (r.tried && r.tried.length) A.fb++
+  if (ot >= 2950) A.outCut++
 }
 
 // ════════════════════════════════════════════════════════════════════════
@@ -1848,11 +1900,23 @@ async function getLineProfile(userId) { try { const r = await fetch('https://api
 
 // ── 對話記憶：每個對話(私訊userId或群組id)留最近幾輪「逐字」，更舊的滾動濃縮成摘要永久保留 ──
 // 三層記憶：①逐字最近 30 輪 ②滾動摘要（pm_bot_chatsum，舊對話濃縮、不再蒸發＝無限記憶）③長期記事本(pm_bot_memory)
+// v4.70.39 每個對話各自一筆 pm_bot_chat_<convId>／pm_bot_chatsum_<convId>（原本全部擠在 pm_bot_chats 一鍵：兩個對話同時進來讀改寫互相覆蓋＝DD 失憶根因；docs/COMMS_PLAN.md 項目 1 第 3 點）
+// 舊鍵 pm_bot_chats／pm_bot_chatsum 只讀不寫（新鍵沒有時才讀一次＝懶遷移，寫入一律進新鍵）
+const chatKey = (c) => 'pm_bot_chat_' + c
+const chatSumKey = (c) => 'pm_bot_chatsum_' + c
+async function loadConv(convId) {
+  const m = await kvGetMany([chatKey(convId), chatSumKey(convId)])
+  let h = m[chatKey(convId)], sum = m[chatSumKey(convId)]
+  if (!h || sum == null) {
+    const old = await kvGetMany(['pm_bot_chats', 'pm_bot_chatsum'])
+    if (!h) { const o = asObj(old['pm_bot_chats'])[convId]; h = { list: Array.isArray(o) ? o : [] } }
+    if (sum == null) sum = { text: String(asObj(old['pm_bot_chatsum'])[convId] || '') }
+  }
+  return { h: Array.isArray(h.list) ? h.list : [], sum: String((sum && sum.text) || '') }
+}
 async function getChatHistory(convId) {
-  const m = await kvGetMany(['pm_bot_chats', 'pm_bot_chatsum'])
-  const all = asObj(m['pm_bot_chats'])
-  const h = Array.isArray(all[convId]) ? all[convId].filter(x => x && (x.role === 'user' || x.role === 'assistant') && x.content).slice(-60) : []
-  const sum = asObj(m['pm_bot_chatsum'])[convId]
+  const { h: all, sum } = await loadConv(convId)
+  const h = all.filter(x => x && (x.role === 'user' || x.role === 'assistant') && x.content).slice(-60)
   if (sum) {
     // 摘要以一問一答塞在最前面，維持 user/assistant 交錯
     return [
@@ -1876,26 +1940,18 @@ async function summarizeOverflow(oldSummary, dropped) {
 }
 async function pushChat(convId, userText, assistantText) {
   try {
-    const all = asObj((await kvGetMany(['pm_bot_chats']))['pm_bot_chats'])
-    const h = Array.isArray(all[convId]) ? all[convId] : []
+    const { h, sum: oldSum } = await loadConv(convId)
     h.push({ role: 'user', content: String(userText || '').slice(0, 900) })
     h.push({ role: 'assistant', content: String(assistantText || '').slice(0, 1400) })
+    let keep = h
     if (h.length > 60) {
       // 滿 30 輪：最舊的 6 輪不丟掉 → 濃縮進滾動摘要（回覆已送出後才跑，使用者無感）
-      const keep = 48
-      const dropped = h.slice(0, h.length - keep)
-      const sums = asObj((await kvGetMany(['pm_bot_chatsum']))['pm_bot_chatsum'])
-      sums[convId] = (await summarizeOverflow(sums[convId] || '', dropped)).slice(0, 2400)
-      const sk = Object.keys(sums)
-      if (sk.length > 40) for (const k of sk.slice(0, sk.length - 40)) delete sums[k]
-      await kvSet('pm_bot_chatsum', sums)
-      all[convId] = h.slice(-keep)
-    } else {
-      all[convId] = h
+      const dropped = h.slice(0, h.length - 48)
+      const ns = (await summarizeOverflow(oldSum || '', dropped)).slice(0, 2400)
+      await kvSet(chatSumKey(convId), { text: ns, at: new Date().toISOString() })
+      keep = h.slice(-48)
     }
-    const keys = Object.keys(all)
-    if (keys.length > 20) for (const k of keys.slice(0, keys.length - 20)) delete all[k] // 最多 20 個對話（文件太肥每次讀寫都慢）
-    await kvSet('pm_bot_chats', all)
+    await kvSet(chatKey(convId), { list: keep, at: new Date().toISOString() }) // 一個對話一鍵，不再 20 個對話擠一份文件
   } catch (_) {}
 }
 
@@ -2048,18 +2104,38 @@ export default async function handler(req, res) {
   } else if (req.body) {
     body = typeof req.body === 'string' ? (() => { try { return JSON.parse(req.body) } catch (_) { return {} } })() : req.body
   }
-  // 診斷用 log（之後 strict 模式會用 sigOK 擋）。暫時：不論驗章結果都處理，先確認 D 會回。
   console.log('LINE webhook hit', JSON.stringify({ rawLen: raw?.length || 0, sigPresent: !!req.headers['x-line-signature'], sigOK, events: (body.events || []).length, secretSet: !!SECRET, tokenSet: !!TOKEN }))
   const events = body.events || []
+  // v4.70.39 驗簽失敗一律進健康紀錄；LINE_SIG_STRICT=1 才真的拒絕（上線先確認健康頁「驗簽失敗」是 0，再開 strict——開了才算補上「偽造事件可操作任務」這個洞）
+  if (sigOK === false) {
+    ddHealthLog({ kind: 'sigfail', n: events.length, strict: SIG_STRICT ? 1 : 0 }).catch(() => {})
+    if (SIG_STRICT) return res.status(403).json({ ok: false, error: 'bad signature' })
+  }
   if (!events.length) return res.status(200).json({ ok: true }) // LINE 驗證請求等
 
   // 重要：serverless 一旦 res 回應就會凍結，後面的 await 不會跑完 → 必須「先處理完(含回覆)再回 200」。
   for (const ev of events) {
+    const tEv = Date.now(); aiAggReset() // v4.70.39 健康紀錄：這個事件從收到到回完花多久
     try {
-      // 防重複：LINE 在我們回應慢時會「重送」同一批事件，redelivery 標記為 true → 直接跳過，避免同一則通知/回覆重複
-      if (ev.deliveryContext?.isRedelivery) { console.log('skip redelivery', ev.webhookEventId || ''); continue }
+      // v4.70.39 去重取代「重送一律跳過」：重送＝LINE 認為第一次沒成功；用 webhookEventId 判斷——第一次真的處理過才跳過，否則照常處理（原本整筆跳過＝那則訊息永久遺失）
+      const evIdX = String(ev.webhookEventId || '')
+      const redelivX = !!ev.deliveryContext?.isRedelivery
+      if (evIdX) {
+        const firstX = await ddEventOnce(evIdX)
+        if (firstX === false || (firstX === null && redelivX)) { console.log('dup event skip', evIdX, redelivX ? 'redelivery' : ''); ddHealthLog({ kind: 'dup', redelivery: redelivX ? 1 : 0, type: ev.type }).catch(() => {}); continue }
+        if (redelivX) ddHealthLog({ kind: 'redelivery_ok', type: ev.type }).catch(() => {})
+      } else if (redelivX) { console.log('skip redelivery (no id)'); continue }
       // 回收訊息 → 私訊老闆（誰在哪個群回收了什麼）
       if (ev.type === 'unsend') { await handleUnsend(ev); continue }
+      // v4.70.38 DD 被加進群（join）就登記到群組清單（不用等有人講話）；被踢出／離開（leave）標 gone（設定頁顯示「DD 已不在這個群」）
+      if (ev.type === 'join' || ev.type === 'leave') {
+        const gidJ = ev.source?.groupId || ev.source?.roomId || ''
+        if (gidJ) {
+          if (ev.type === 'join') await registerGroup(gidJ, ev.source?.type)
+          else { try { const curJ = (await kvGetMany(['pm_group_seen']))['pm_group_seen'] || {}; if (curJ[gidJ]) { curJ[gidJ].gone = 1; await kvSet('pm_group_seen', curJ) } } catch (_) {} }
+        }
+        continue
+      }
       // 互動卡片按鈕（postback）：回饋/投票/文件歸類/任務卡（只在私訊）
       // 簽章驗不過＝偽造請求 → 按鈕一律不理（按鈕會寫資料/刪任務，跟操作權同一套防線）
       if (ev.type === 'postback' && ev.source?.type === 'user') {
@@ -2152,8 +2228,9 @@ export default async function handler(req, res) {
       }
       // 工作日誌（張良 2026-08-20：群組跟 DD 講也要能記）：固定前綴「日誌/心得 …」私訊＋群組都收、不用點名；
       // 記完 15 分鐘內傳的照片自動附上（下面 image 分支）；未綁定者在群組保持安靜（外部群安靜原則）
-      if (ev.type === 'message' && ev.message?.type === 'text') {
-        try { const jr = await handleJournalText(ev); if (jr?.consumed) { if (ev.source?.type !== 'user') await cacheGroupMsg(ev); continue } } catch (e) { console.log('journal error', e?.message) }
+      const gcE = (ev.source?.type !== 'user') ? await ddGrpCfg(ev) : null // v4.70.38 這個群的個別設定（null＝私訊或讀不到＝照舊）
+      if (ev.type === 'message' && ev.message?.type === 'text' && !(gcE && (gcE.journal === 0 || gcE.mode === 'off'))) {
+        try { const jr = await handleJournalText(ev); if (jr?.consumed) { if (ev.source?.type !== 'user') { await cacheGroupMsg(ev); ddReplyLog(ev, 'journal', ev.message.text, '（已記日誌）').catch(() => {}) }; continue } } catch (e) { console.log('journal error', e?.message) }
       }
       // 工作日誌照片：綁定夥伴 15 分鐘內記過日誌 → 這張圖直接附到那則（私訊＋群組）。
       // 先「只查不寫」確認有近期日誌，才下載上傳——廠商群的圖不會被誤傳進公開桶；沒近期日誌就走原本檔案庫/文件流程
@@ -2191,7 +2268,7 @@ export default async function handler(req, res) {
           }
         } catch (e) { console.log('hrdoc upload err', e?.message) }
       }
-      if (ev.type === 'message' && ev.message?.type === 'image') {
+      if (ev.type === 'message' && ev.message?.type === 'image' && !(gcE && (gcE.journal === 0 || gcE.mode === 'off'))) {
         try {
           const uidJ = ev.source?.userId || ''
           if (uidJ && await attachJournalPhotos(uidJ, [])) {
@@ -2201,7 +2278,7 @@ export default async function handler(req, res) {
               const ctJ = rJ.headers.get('content-type') || 'image/jpeg'
               const { url } = await uploadToPhotos(bufJ, /png/.test(ctJ) ? 'png' : 'jpg', ctJ)
               const hit = await attachJournalPhotos(uidJ, [url])
-              if (hit) { if (ev.replyToken) await lineReply(ev.replyToken, `📷 照片已附到 ${hit.name} 剛剛的日誌（共 ${(hit.photos || []).length} 張）。`); continue }
+              if (hit) { if (ev.replyToken) await lineReply(ev.replyToken, `📷 照片已附到 ${hit.name} 剛剛的日誌（共 ${(hit.photos || []).length} 張）。`); ddReplyLog(ev, 'photo', '（照片）', '照片已附到 ' + hit.name + ' 的日誌').catch(() => {}); continue }
             }
           }
         } catch (e) { console.log('journal photo error', e?.message) }
@@ -2226,13 +2303,15 @@ export default async function handler(req, res) {
       const gid = ev.source?.groupId || ev.source?.roomId || ev.source?.userId
       const text = (ev.message.text || '').trim()
       const isDM = ev.source?.type === 'user' // 一對一私訊
-      // 🌐 翻譯模式快速通道（張良 2026-09-30「能不能秒翻」）：翻譯群第一時間翻、其他紀錄射後不理
-      if (!isDM && !/^(關翻譯|(?:DD\s*)?開翻譯)/i.test(text)) {
+      // v4.70.38 群組設定「不回話」：只默默快取＋登記群，其他一律不做（不翻譯、不回答、不認指令）
+      if (!isDM && gcE && gcE.mode === 'off') { await cacheGroupMsg(ev); await registerGroup(gid, ev.source?.type); continue }
+      // 🌐 翻譯模式快速通道（張良 2026-09-30「能不能秒翻」）：翻譯群第一時間翻、其他紀錄射後不理（v4.70.38 該群 translate=0 就不翻）
+      if (!isDM && !(gcE && gcE.translate === 0) && !/^(關翻譯|(?:DD\s*)?開翻譯)/i.test(text)) {
         const trDocF = (await kvGetMany(['pm_bot_translate']))['pm_bot_translate'] || {}
         const trCfgF = trDocF[gid]
         if (trCfgF && trCfgF.mode && Date.now() - (trCfgF.on || 0) <= 12 * 3600e3) {
           cacheGroupMsg(ev).catch(() => {}) // 不等
-          try { const tr = await ddTranslate(text, trCfgF.mode); if (tr && ev.replyToken) await lineReply(ev.replyToken, '🌐 ' + tr) } catch (e) { console.log('translate err', e?.message) }
+          try { const tr = await ddTranslate(text, trCfgF.mode); if (tr && ev.replyToken) { await lineReply(ev.replyToken, '🌐 ' + tr); ddReplyLog(ev, 'translate', text, tr).catch(() => {}) } } catch (e) { console.log('translate err', e?.message) }
           continue
         }
         if (trCfgF && Date.now() - (trCfgF.on || 0) > 12 * 3600e3) { delete trDocF[gid]; kvSet('pm_bot_translate', trDocF).catch(() => {}) }
@@ -2242,17 +2321,18 @@ export default async function handler(req, res) {
       // 只登記「群組/聊天室」到群組頁；私訊(user)不是群，登記進去會在群組頁出現「未命名群」
       if (ev.source?.type !== 'user') await registerGroup(gid, ev.source?.type)
       // ── 🌐 翻譯模式（張良 2026-09-29）：群裡「開翻譯 中英/中韓」（操作者限定）→ 該群每句話自動雙向翻到「關翻譯」為止（12小時自動關保險）──
-      if (!isDM) {
+      if (!isDM && !(gcE && gcE.translate === 0)) { // v4.70.38 該群關掉翻譯＝開翻譯指令當一般訊息
         const trM = text.match(/^(?:DD\s*)?開翻譯\s*(中英|中韓)?$/i)
         const trOff = /^(?:DD\s*)?關翻譯$/i.test(text)
         if (trM || trOff) {
           const ops0 = await getOperators()
           if (!ops0[ev.source?.userId || '']) { /* 非操作者的開關指令當一般訊息 */ } else {
             const trDoc = (await kvGetMany(['pm_bot_translate']))['pm_bot_translate'] || {}
-            if (trOff) { delete trDoc[gid]; await kvSet('pm_bot_translate', trDoc); await lineReply(ev.replyToken, '🌐 翻譯模式已關閉。'); continue }
+            if (trOff) { delete trDoc[gid]; await kvSet('pm_bot_translate', trDoc); await lineReply(ev.replyToken, '🌐 翻譯模式已關閉。'); ddReplyLog(ev, 'cmd', text, '翻譯模式已關閉').catch(() => {}); continue }
             const md = trM[1] === '中韓' ? 'zh-ko' : 'zh-en'
             trDoc[gid] = { mode: md, on: Date.now(), by: ev.source?.userId }
             await kvSet('pm_bot_translate', trDoc)
+            ddReplyLog(ev, 'cmd', text, '翻譯模式 ON ' + md).catch(() => {})
             await lineReply(ev.replyToken, md === 'zh-ko' ? '🌐 翻譯模式 ON（中⇄韓）：這個群每句話我都會自動翻譯，直到說「關翻譯」。\n🌐 통역 모드 시작: 이 방의 모든 메시지를 자동으로 번역합니다.' : '🌐 翻譯模式 ON（中⇄英）：這個群每句話我都會自動翻譯，直到說「關翻譯」。\n🌐 Translation mode ON: I will translate every message in this chat automatically.')
             continue
           }
@@ -2263,12 +2343,20 @@ export default async function handler(req, res) {
       const mentionees = ev.message?.mention?.mentionees || []
       const mentionedSelf = mentionees.some((m) => m.isSelf === true && m.type !== 'all')
       // 叫名字：新名 DD（要獨立字，避免 add/odd 誤觸）或舊名 D哥 都算
-      const named = mentionedSelf || /d哥/i.test(text) || /(^|[^a-z0-9])dd([^a-z0-9]|$)/i.test(text)
-      console.log('event', JSON.stringify({ src: ev.source?.type, isDM, named, mSelf: mentionedSelf, text: text.slice(0, 40) }))
-      if (!isDM && !named) continue // 私訊一律回；群組必須被點名（@本帳號 或 講「D哥」）
+      // v4.70.38 群組設定 quiet（安靜）＝只認 @DD 本帳號，字裡提到 D哥／dd 不插嘴（廠商群、外部群建議設這個）
+      const quietG = !isDM && gcE && gcE.mode === 'quiet'
+      const named = mentionedSelf || (!quietG && (/d哥/i.test(text) || /(^|[^a-z0-9])dd([^a-z0-9]|$)/i.test(text)))
+      console.log('event', JSON.stringify({ src: ev.source?.type, isDM, named, mSelf: mentionedSelf, quiet: !!quietG, text: text.slice(0, 40) }))
+      if (!isDM && !named) continue // 私訊一律回；群組必須被點名（@本帳號 或 講「D哥」；安靜群只認 @）
       const userId = ev.source?.userId || ''
       const convId = isDM ? ('dm_' + userId) : ('g_' + gid) // 對話記憶的識別
-      const send = (t, extra) => ev.replyToken ? lineReply(ev.replyToken, t, extra) : Promise.resolve()
+      const whyG = mentionedSelf ? 'mention' : 'name'
+      const send = async (t, extra) => {
+        if (!isDM) ddReplyLog(ev, whyG, text, t).catch(() => {})
+        const okS = ev.replyToken ? await lineReply(ev.replyToken, t, extra, isDM ? userId : gid) : false // v4.70.39 reply 失敗改 push 給同一對象
+        ddHealthLog({ kind: 'reply', dm: isDM ? 1 : 0, conv: String(convId).slice(-6), ms: Date.now() - tEv, ok: okS ? 1 : 0, send: _lastSend, ai: _aiAgg && _aiAgg.calls ? _aiAgg : null, len: String(t || '').length }).catch(() => {})
+        return okS
+      }
       // finish＝回覆＋把這輪存進對話記憶（讓 D哥 記得前文）；授權訊息不用 finish(含密碼，不留紀錄)
       // hist＝存進對話記憶的版本（可跟送出的不同）。動作輪要存「含 json 指令」的原始回覆，
       // 不然記憶裡只剩「✅ 已直接記好」文字、沒有指令 → DD 回頭學自己的歷史，學會只寫✅不夾指令（2026-09-12 自導自演翻車根因）
@@ -2779,7 +2867,7 @@ export default async function handler(req, res) {
         const out = sanitizeFakeDone(reply) + falseDoneWarning(reply, 0, !canAct)
         await finish(out)
       }
-    } catch (e) { console.log('event error', e?.message) }
+    } catch (e) { console.log('event error', e?.message); ddHealthLog({ kind: 'error', err: String(e?.message || '').slice(0, 160), ms: Date.now() - tEv, type: ev.type, ai: _aiAgg && _aiAgg.calls ? _aiAgg : null }).catch(() => {}) }
   }
   return res.status(200).json({ ok: true })
 }

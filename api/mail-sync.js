@@ -1658,13 +1658,63 @@ export default async function handler(req, res) {
       return res.status(200).json({ ok: true, ms: Date.now() - t0, model: r.model, text: r.text, usage: r.usage || null })
     } catch (e) { return res.status(200).json({ ok: false, ms: Date.now() - t0, error: e.message || '失敗' }) }
   }
+  // 🩺 DD 健康頁（v4.70.39 溝通中樞項目 1：近 N 天回應秒數分佈／失敗與原因／截斷／備援／驗簽失敗／重送去重；審核人限定）：GET ?ddhealth=<OPS_BOARD_KEY>&me=token&days=7
+  if (req.query?.ddhealth) {
+    const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
+    if (!ok2 || String(req.query.ddhealth) !== ok2) return res.status(403).json({ ok: false })
+    const [meH9, defH9] = await Promise.all([sopWho(req.query.me), kvGet('sp_finance_pm_sop_def')])
+    const aprH9 = (((defH9 || {}).ground || {}).approvers || ['張良瑋'])
+    if (!meH9 || !aprH9.includes(meH9.name)) return res.status(403).json({ ok: false, error: '只有審核人能看 DD 健康頁' })
+    const { ddHealthSummary } = await import('./_ddhealth.js')
+    const sH9 = await ddHealthSummary(Math.min(14, Math.max(1, Number(req.query.days) || 7)))
+    res.setHeader('Cache-Control', 'private, no-store')
+    return res.status(200).json({ ok: true, ...sH9, sigStrict: (process.env.LINE_SIG_STRICT || '').trim() === '1' })
+  }
   // 📢 DD 自動訊息設定（v4.53.0 張良「設定頁管理 DD 所有自動發送：發哪個群/話怎麼講/開關」）：GET ?ddmsg=<OPS_BOARD_KEY>&me=token
   if (req.query?.ddmsg) {
     const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
     if (!ok2 || String(req.query.ddmsg) !== ok2) return res.status(403).json({ ok: false })
-    const [meD9, defD9, allD9] = await Promise.all([sopWho(req.query.me), kvGet('sp_finance_pm_sop_def'), (async () => { const { ddAll } = await import('./_ddmsg.js'); return ddAll() })()])
+    const [meD9, defD9, allD9] = await Promise.all([sopWho(req.query.me), kvGet('sp_finance_pm_sop_def'), (async () => { const { ddAll } = await import('./_ddmsg.js'); return ddAll({ refresh: String(req.query.refresh || '') === '1' }) })()])
     const aprD9 = (((defD9 || {}).ground || {}).approvers || ['張良瑋'])
-    return res.status(200).json({ ok: true, msgs: allD9.msgs, groups: allD9.groups, canEdit: !!(meD9 && aprD9.includes(meD9.name)) })
+    // v4.70.38：grps＝全部 DD 在的群＋每群設定（只給審核人看；群組清單含廠商群屬內部資訊）
+    const canD9 = !!(meD9 && aprD9.includes(meD9.name))
+    return res.status(200).json({ ok: true, msgs: allD9.msgs, groups: allD9.groups, grps: canD9 ? allD9.grps : [], canEdit: canD9 })
+  }
+  // 👥 群組個別設定存檔（v4.70.38 審核人限定）：POST ?ddgrpset=<OPS_BOARD_KEY> body={items:[{gid,cfg}], token}（也接單筆 {gid,cfg}）
+  if (req.method === 'POST' && req.query?.ddgrpset) {
+    const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
+    if (!ok2 || String(req.query.ddgrpset) !== ok2) return res.status(403).json({ ok: false })
+    let gb9 = {}; try { gb9 = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
+    const whoG9 = await sopWho(gb9.token)
+    const defG9 = await kvGet('sp_finance_pm_sop_def')
+    const aprG9 = (((defG9 || {}).ground || {}).approvers || ['張良瑋'])
+    if (!whoG9 || !aprG9.includes(whoG9.name)) return res.status(403).json({ ok: false, error: '只有審核人能改群組設定' })
+    const { DDGRP_CFG_KEY, DD_GRP_DEF } = await import('./_ddmsg.js')
+    const items9 = Array.isArray(gb9.items) ? gb9.items : (gb9.gid ? [{ gid: gb9.gid, cfg: gb9.cfg }] : [])
+    const docG9 = (await kvGet(DDGRP_CFG_KEY)) || {}
+    let nG9 = 0
+    for (const it of items9) {
+      const gid9 = String(it?.gid || ''); if (!/^[CR][0-9a-f]{20,}$/i.test(gid9)) continue
+      const c9 = it.cfg || {}
+      const out9 = { ...DD_GRP_DEF, ...(docG9[gid9] || {}) }
+      if (c9.mode != null) out9.mode = ['normal', 'quiet', 'off'].includes(c9.mode) ? c9.mode : 'normal'
+      for (const k of ['journal', 'translate', 'target', 'hide']) if (c9[k] != null) out9[k] = c9[k] ? 1 : 0
+      if (c9.tag != null) out9.tag = ['internal', 'external', ''].includes(c9.tag) ? c9.tag : ''
+      if (c9.alias != null) out9.alias = String(c9.alias).trim().slice(0, 30)
+      docG9[gid9] = out9; nG9++
+    }
+    await kvPut(DDGRP_CFG_KEY, docG9, 'DD群組設定×' + nG9 + '(' + whoG9.name + ')')
+    return res.status(200).json({ ok: true, n: nG9 })
+  }
+  // 🗒 DD 群組回話紀錄（v4.70.38 張良「有些群 DD 會突然自己回」→ 看是哪條規則觸發）：GET ?ddlog=<OPS_BOARD_KEY>&me=token（審核人限定）
+  if (req.query?.ddlog) {
+    const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
+    if (!ok2 || String(req.query.ddlog) !== ok2) return res.status(403).json({ ok: false })
+    const [meL9, defL9, logL9, seenL9] = await Promise.all([sopWho(req.query.me), kvGet('sp_finance_pm_sop_def'), kvGet('pm_dd_replylog'), kvGet('pm_group_seen')])
+    const aprL9 = (((defL9 || {}).ground || {}).approvers || ['張良瑋'])
+    if (!meL9 || !aprL9.includes(meL9.name)) return res.status(403).json({ ok: false, error: '只有審核人能看回話紀錄' })
+    const list9 = (Array.isArray(logL9) ? logL9 : []).slice(0, 200).map(x => ({ ...x, gname: ((seenL9 || {})[x.gid] || {}).name || '' }))
+    return res.status(200).json({ ok: true, list: list9 })
   }
   // 📢 DD 自動訊息設定存檔（審核人限定）：POST ?ddmsgset=<OPS_BOARD_KEY> body={key, on, group, text, token}
   if (req.method === 'POST' && req.query?.ddmsgset) {
