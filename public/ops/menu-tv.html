@@ -2,13 +2,13 @@
 <html lang="zh-Hant">
 <head>
 <meta charset="UTF-8" />
-<meta name="viewport" content="width=1920" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>GROUN:D 電視菜單</title>
 <!--
-  電視橫式菜單 HTML 模板（張良 2026-10-10 v1.3）：一台電視=兩分類並排＋底部食物照片，共 4 張。
+  電視橫式菜單 HTML 模板（張良 2026-10-10 v1.4）：一台電視=兩分類並排＋底部食物照片，共 4 張。
   ?screen=0..3（0披薩/療癒碗 1漢堡/三明治 2麵/早午餐 3小點/飲品）。照片=從官方底圖截出的獨立檔 menu/photos/。
   套餐欄(SNACKS/DRINKS,combo>0)=官方版式：紅圓角框＋表頭(品項/單點/套餐選擇)，兩框等高；項多(>6)自動緊湊。
-  左上 4 張切換＋「下載全部 4 張」；右上「調整照片」面板：每張照片 上下/左右/縮放 滑桿，區塊參數(邊距/欄距/標題/品名/英文/價格/間距)可選「只這一頁」或「四頁共用」，照片位移縮放每頁各自；存 localStorage gd_tvcfg {g,p}；分層=照片z0<文字/框線z1<底條z3，截圖不含面板。
+  左上 4 張切換＋「下載全部 4 張」；「✎ 編輯」=點選式：點 logo/分類標題/品項/照片/底條→旁邊只出該元素滑桿；整張用 #stage scale 縮進視窗不滑動（出圖仍截 #tv 原尺寸）；照片底部淡出 --pf：每張照片 上下/左右/縮放 滑桿，區塊參數(邊距/欄距/標題/品名/英文/價格/間距)可選「只這一頁」或「四頁共用」，照片位移縮放每頁各自；存 localStorage gd_tvcfg {g,p}；分層=照片z0<文字/框線z1<底條z3，截圖不含面板。
   字體版式同直式 menu-poster（Alfa Slab 英標／Noto 粗中文拉字距／Lora 襯線英副標／官方 logo 圖／#ce1611）。
 -->
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700;900&family=Alfa+Slab+One&family=Poppins:wght@400;500;600;700&family=Lora:ital,wght@0,400;0,500;0,600;1,400&display=swap" rel="stylesheet">
@@ -16,7 +16,19 @@
 <style>
   *{margin:0;padding:0;box-sizing:border-box}
   :root{ --cream:#F5EADA; --red:#CE1611; --eng:#C56B54; --dot:#D98A7A; }
-  html,body{background:#555}
+  html,body{background:#555; height:100%; overflow:hidden}
+  #stage{ position:fixed; left:0; top:0; width:1920px; height:1080px; transform-origin:top left; }
+  #editbtn{ position:fixed; top:14px; right:160px; z-index:99; padding:12px 22px; background:#333; color:#fff; border:none; border-radius:10px; font-size:16px; font-weight:700; cursor:pointer; box-shadow:0 4px 14px rgba(0,0,0,.35); font-family:system-ui,sans-serif }
+  #editbtn.on{ background:#1a7f37 }
+  body.edit [data-edit]{ cursor:pointer; outline:3px dashed transparent; outline-offset:6px; transition:outline-color .15s; border-radius:6px }
+  body.edit [data-edit]:hover{ outline-color:rgba(206,22,17,.55) }
+  body.edit [data-edit].sel{ outline:3px solid #1a7f37 }
+  body.edit .photo img{ pointer-events:auto }
+  #mini{ position:fixed; z-index:120; background:rgba(20,20,20,.96); color:#eee; padding:12px 14px; border-radius:12px; width:300px; font:14px/1.5 system-ui,sans-serif; display:none; box-shadow:0 8px 24px rgba(0,0,0,.45) }
+  #mini.on{ display:block } #mini h4{ margin:0 0 6px; font-size:14px; color:#F5EADA; display:flex; justify-content:space-between; align-items:center } #mini h4 b{ font-weight:700 } #mini h4 .x{ cursor:pointer; color:#aaa; font-size:18px; padding:0 4px }
+  #mini label{ display:flex; align-items:center; gap:8px; margin:4px 0 } #mini label span{ width:80px; font-size:12px; color:#bbb } #mini input[type=range]{ flex:1 } #mini .v{ width:44px; text-align:right; font-variant-numeric:tabular-nums; font-size:12px }
+  #mini .scope{ display:flex; gap:6px; margin:4px 0 8px } #mini .scope button{ flex:1; padding:5px; border:1px solid #666; background:#222; color:#ddd; border-radius:8px; cursor:pointer; font-weight:700; font-size:12px } #mini .scope button.on{ background:#CE1611; border-color:#CE1611; color:#fff }
+  #mini .foot{ display:flex; justify-content:space-between; align-items:center; margin-top:8px; font-size:12px; color:#999 } #mini .foot a{ color:#9cf; cursor:pointer } #mini .foot button{ padding:5px 10px; border:none; border-radius:8px; background:#555; color:#fff; cursor:pointer; font-weight:700; font-size:12px }
   #dlbtn,#adjbtn{ position:fixed; top:14px; z-index:99; padding:12px 22px; background:#CE1611; color:#fff; border:none; border-radius:10px; font-size:16px; font-weight:700; cursor:pointer; box-shadow:0 4px 14px rgba(0,0,0,.35); font-family:system-ui,sans-serif }
   #dlbtn{ right:14px } #adjbtn{ right:160px; background:#333 } #dlall{ position:fixed; top:14px; right:306px; z-index:99; padding:12px 18px; background:#7a0e0b; color:#fff; border:none; border-radius:10px; font-size:16px; font-weight:700; cursor:pointer; box-shadow:0 4px 14px rgba(0,0,0,.35); font-family:system-ui,sans-serif }
   #sw{ position:fixed; top:14px; left:14px; z-index:99; display:flex; gap:6px; font-family:system-ui,sans-serif } #sw button{ padding:10px 14px; border:none; border-radius:10px; background:rgba(0,0,0,.55); color:#fff; font-size:14px; font-weight:700; cursor:pointer } #sw button.on{ background:#CE1611 }
@@ -24,11 +36,11 @@
   #adj{ position:fixed; right:14px; top:66px; z-index:99; background:rgba(20,20,20,.94); color:#eee; padding:14px 16px; border-radius:12px; width:300px; font:14px/1.5 system-ui,sans-serif; display:none; box-shadow:0 6px 20px rgba(0,0,0,.4) }
   #adj.on{ display:block } #adj h4{ margin:6px 0 4px; font-size:14px; color:#F5EADA } #adj label{ display:flex; align-items:center; gap:8px; margin:3px 0 } #adj label span{ width:38px; font-size:12px; color:#bbb } #adj input[type=range]{ flex:1 } #adj .v{ width:44px; text-align:right; font-variant-numeric:tabular-nums; font-size:12px }
   #adj .ops{ display:flex; gap:8px; margin-top:10px } #adj button{ flex:1; padding:7px; border:none; border-radius:8px; cursor:pointer; font-weight:700 } #adj .rst{ background:#555; color:#fff } #adj .ok{ background:#CE1611; color:#fff }
-  #tv{ --pad:70px; --gap:70px; --top:0px; --h2:60px; --nm:38px; --en:23px; --pr:40px; --ig:16px; --rule:14px; --cf:1;
+  #tv{ --pad:70px; --gap:70px; --top:0px; --h2:60px; --nm:38px; --en:23px; --pr:40px; --ig:16px; --rule:14px; --logo:84px; --foot:26px; --footh:60px; --cf:1;
     width:1920px; height:1080px; background:var(--cream); position:relative; overflow:hidden;
     font-family:"Noto Sans TC",system-ui,sans-serif; color:var(--red); letter-spacing:.04em; display:flex; flex-direction:column; }
   .tvhead{ text-align:center; padding:22px 0 8px; flex:0 0 auto; position:relative; z-index:2; }
-  .tvhead img{ height:84px; }
+  .tvhead img{ height:var(--logo); }
   .cols{ flex:1; display:flex; gap:var(--gap); padding:var(--top) var(--pad) 0; min-height:0; }
   .col{ flex:1; min-width:0; display:flex; flex-direction:column; min-height:0; }
   .cat{ display:flex; flex-direction:column; flex:1; min-height:0; position:relative; }
@@ -59,8 +71,9 @@
   .cat.compact{ --cf:.78 } .cat.compact .item .lead{ border-bottom-width:4px; transform:translateY(-6px) }
   /* 照片：最底層，推到欄底；位移/縮放自由、不被裁切 */
   .photo{ margin-top:auto; position:relative; z-index:0; display:flex; justify-content:center; align-items:flex-end; min-height:0; }
-  .photo img{ width:100%; display:block; transform-origin:bottom center; transform:translate(var(--px,0px),var(--py,0px)) scale(var(--ps,1)); }
-  .footer{ height:60px; background:var(--red); color:var(--cream); display:flex; align-items:center; justify-content:center; font-size:26px; font-weight:800; letter-spacing:.02em; position:relative; z-index:3; flex:0 0 auto; }
+  .photo img{ width:100%; display:block; transform-origin:bottom center; transform:translate(var(--px,0px),var(--py,0px)) scale(var(--ps,1));
+    -webkit-mask-image:linear-gradient(to bottom,#000 calc(100% - var(--pf,50px)),transparent 100%); mask-image:linear-gradient(to bottom,#000 calc(100% - var(--pf,50px)),transparent 100%); }
+  .footer{ height:var(--footh); background:var(--red); color:var(--cream); display:flex; align-items:center; justify-content:center; font-size:var(--foot); font-weight:800; letter-spacing:.02em; position:relative; z-index:3; flex:0 0 auto; }
   /* 面板 */
   #adj{ width:340px; max-height:88vh; overflow:auto }
   #adj .scope{ display:flex; gap:6px; margin-bottom:8px } #adj .scope button{ flex:1; padding:7px; border:1px solid #666; background:#222; color:#ddd; border-radius:8px; cursor:pointer; font-weight:700 } #adj .scope button.on{ background:#CE1611; border-color:#CE1611; color:#fff }
@@ -70,13 +83,16 @@
 <body>
 <div id="sw"><button onclick="setScreen(0)">1 披薩・療癒碗</button><button onclick="setScreen(1)">2 漢堡・三明治</button><button onclick="setScreen(2)">3 義大利麵・早午餐</button><button onclick="setScreen(3)">4 小點・飲品</button></div>
 <button id="dlall" onclick="downloadAll()">⬇ 下載全部 4 張</button>
-<button id="adjbtn" onclick="document.getElementById('adj').classList.toggle('on')">⚙ 調整照片</button>
+<button id="editbtn" onclick="toggleEdit()">✎ 編輯</button>
 <button id="dlbtn" onclick="downloadTV()">⬇ 下載圖片</button>
 <div id="adj"></div>
+<div id="mini"></div>
+<div id="stage">
 <div id="tv">
-  <div class="tvhead"><img src="menu/brand.png" alt="HAPPINESS GROUN:D"></div>
+  <div class="tvhead"><img src="menu/brand.png" alt="HAPPINESS GROUN:D" data-edit="logo"></div>
   <div class="cols" id="cols"></div>
-  <div class="footer" id="footer"></div>
+  <div class="footer" id="footer" data-edit="footer"></div>
+</div>
 </div>
 
 <script>
@@ -103,7 +119,7 @@ const SCREEN_NAMES=['1 披薩・療癒碗','2 漢堡・三明治','3 義大利�
 // 區塊參數（可編輯）：key→[標籤,最小,最大,預設,單位]
 const PARAMS={ pad:['欄左右邊距',0,160,70,'px'], gap:['兩欄間距',20,200,70,'px'], top:['上方留白',0,120,0,'px'],
   h2:['分類標題大小',36,90,60,'px'], nm:['品名大小',24,56,38,'px'], en:['英文副標大小',14,34,23,'px'], pr:['價格大小',24,60,40,'px'],
-  ig:['項目間距',0,40,16,'px'], rule:['標題與品項距離',0,40,14,'px'] };
+  ig:['項目間距',0,40,16,'px'], rule:['標題與品項距離',0,40,14,'px'], logo:['Logo 大小',50,140,84,'px'], foot:['底條字大小',18,36,26,'px'], footh:['底條高度',40,90,60,'px'] };
 const ALLKEY='gd_tvcfg';
 let CFG={g:{},p:{}}; let scope='page'; // 'page'=只這一頁 / 'all'=四頁共用
 function loadCfg(){ try{ const o=JSON.parse(localStorage.getItem(ALLKEY)||'null'); if(o&&o.p) CFG=o; }catch(e){} CFG.g=CFG.g||{}; CFG.p=CFG.p||{}; }
@@ -120,7 +136,7 @@ function data(){ const d=window.MENU_DATA||SAMPLE; return { note:d.note, origins
 
 function itemHTML(sec,it,side){
   const {nm,ih}=splitIH(it.name); const tag=comboTag(Number(sec.combo)||0,Number(it.price)||0); const decaf=/無咖啡因/.test(it.note||'')?'無咖啡因':'';
-  return `<div class="item"><div class="row1"><span class="nm">${nm}</span>`+(ih?`<span class="ih">冰 / 熱</span>`:``)
+  return `<div class="item" data-edit="items"><div class="row1"><span class="nm">${nm}</span>`+(ih?`<span class="ih">冰 / 熱</span>`:``)
     +`<span class="lead"></span><span class="pr">${it.price}</span>`
     +(side?`<span class="tagc">${tag?`<span class="tag ${tag.inc?'inc':''}">${tag.t}</span>`:''}</span>`:(tag?`<span class="tag ${tag.inc?'inc':''}">${tag.t}</span>`:''))
     +`</div>`+(it.en?`<div class="en">${it.en}${decaf?`<span class="decaf">${decaf}</span>`:''}</div>`:``)+`</div>`;
@@ -132,8 +148,8 @@ function render(){
     const col=document.createElement('div'); col.className='col';
     if(sec){
       const {en,zh}=splitName(sec.name); const side=(Number(sec.combo)||0)>0, compact=sec.items.length>6;
-      const ph=sc.photos[i]; const photo=ph?`<div class="photo" data-i="${i}"><img src="${ph}" alt=""></div>`:'';
-      let h=`<div class="cat ${side?'side':''} ${compact?'compact':''}"><h2><span class="en">${en}</span>${zh?`<span class="zh">${zh}</span>`:''}${en==='PIZZA'?`<span class="pz">400°C<br>12吋</span>`:''}</h2>`;
+      const ph=sc.photos[i]; const photo=ph?`<div class="photo" data-i="${i}" data-edit="photo"><img src="${ph}" alt=""></div>`:'';
+      let h=`<div class="cat ${side?'side':''} ${compact?'compact':''}"><h2 data-edit="cat"><span class="en">${en}</span>${zh?`<span class="zh">${zh}</span>`:''}${en==='PIZZA'?`<span class="pz">400°C<br>12吋</span>`:''}</h2>`;
       if(side){ h+=`<div class="box"><div class="thead"><span class="c1">品項</span><span class="c2">單點</span><span class="c3">套餐選擇</span></div>`; sec.items.forEach(it=>h+=itemHTML(sec,it,true)); h+=photo+`</div>`; }
       else { h+=`<div class="rule"></div>`; sec.items.forEach(it=>h+=itemHTML(sec,it,false)); h+=photo; }
       h+=`</div>`; col.innerHTML=h;
@@ -156,7 +172,7 @@ function fitNames(){
 function applyCfg(){
   const tv=document.getElementById('tv'); Object.keys(PARAMS).forEach(k=>tv.style.setProperty('--'+k, eff(k)+PARAMS[k][4]));
   const ph=(CFG.p[screenIdx]||{}).ph||{};
-  document.querySelectorAll('.photo').forEach(p=>{ const c=ph[p.dataset.i]||{}; const im=p.querySelector('img'); im.style.setProperty('--px',(c.x||0)+'px'); im.style.setProperty('--py',(c.y||0)+'px'); im.style.setProperty('--ps',(c.s||100)/100); });
+  document.querySelectorAll('.photo').forEach(p=>{ const c=ph[p.dataset.i]||{}; const im=p.querySelector('img'); im.style.setProperty('--px',(c.x||0)+'px'); im.style.setProperty('--py',(c.y||0)+'px'); im.style.setProperty('--ps',(c.s||100)/100); im.style.setProperty('--pf',(c.f===undefined?50:c.f)+'px'); });
 }
 function buildAdj(){
   const box=document.getElementById('adj'); let h=`<div class="scope"><button class="${scope==='page'?'on':''}" onclick="setScope('page')">只套用這一頁</button><button class="${scope==='all'?'on':''}" onclick="setScope('all')">四頁一起套用</button></div>`;
@@ -183,6 +199,39 @@ async function boot(){
   window.addEventListener('load',fitNames);
 }
 boot();
+// ── 整張縮進視窗（固定、不左右滑）；出圖仍截 #tv 原尺寸 ──
+function fitStage(){ const s=Math.min(window.innerWidth/1920, window.innerHeight/1080); const st=document.getElementById('stage'); st.style.transform='translate('+Math.round((window.innerWidth-1920*s)/2)+'px,'+Math.round((window.innerHeight-1080*s)/2)+'px) scale('+s+')'; }
+fitStage(); window.addEventListener('resize',fitStage);
+// ── 點選式編輯 ──
+let EDIT=false, SEL=null;
+function toggleEdit(){ EDIT=!EDIT; document.body.classList.toggle('edit',EDIT); document.getElementById('editbtn').classList.toggle('on',EDIT); document.getElementById('editbtn').textContent=EDIT?'✓ 完成編輯':'✎ 編輯'; if(!EDIT) closeMini(); }
+function closeMini(){ document.getElementById('mini').classList.remove('on'); if(SEL){ SEL.classList.remove('sel'); SEL=null; } }
+document.getElementById('tv').addEventListener('click',ev=>{ if(!EDIT) return; const t=ev.target.closest('[data-edit]'); if(!t) return; ev.stopPropagation(); openMini(t); });
+const MINI_DEF={ logo:{title:'Logo',keys:['logo','top']}, cat:{title:'分類標題',keys:['h2','rule']}, items:{title:'品項',keys:['nm','en','pr','ig']}, footer:{title:'底條',keys:['foot','footh']}, layout:{title:'整體版面',keys:['pad','gap','top']} };
+function openMini(el,type){
+  if(SEL) SEL.classList.remove('sel'); SEL=el; el.classList.add('sel');
+  type=type||el.dataset.edit; const m=document.getElementById('mini'); let h='';
+  if(type==='photo'){ const i=el.dataset.i, c=((CFG.p[screenIdx]||{}).ph||{})[i]||{};
+    h+=`<h4><b>照片（只影響這一頁）</b><span class="x" onclick="closeMini()">×</span></h4>`
+      +`<label><span>上下</span><input type="range" min="-300" max="300" value="${c.y||0}" oninput="setPhoto(${i},'y',this.value)"><b class="v" id="pv_${i}_y">${c.y||0}</b></label>`
+      +`<label><span>左右</span><input type="range" min="-300" max="300" value="${c.x||0}" oninput="setPhoto(${i},'x',this.value)"><b class="v" id="pv_${i}_x">${c.x||0}</b></label>`
+      +`<label><span>縮放</span><input type="range" min="40" max="180" value="${c.s||100}" oninput="setPhoto(${i},'s',this.value)"><b class="v" id="pv_${i}_s">${c.s||100}%</b></label>`
+      +`<label><span>底部淡出</span><input type="range" min="0" max="200" value="${c.f===undefined?50:c.f}" oninput="setPhoto(${i},'f',this.value)"><b class="v" id="pv_${i}_f">${c.f===undefined?50:c.f}</b></label>`
+      +`<div class="foot"><a onclick="resetPhoto(${i})">這張回預設</a><button onclick="closeMini()">完成</button></div>`;
+  } else { const d=MINI_DEF[type]||MINI_DEF.layout;
+    h+=`<h4><b>${d.title}</b><span class="x" onclick="closeMini()">×</span></h4>`
+      +`<div class="scope"><button class="${scope==='page'?'on':''}" onclick="scope='page';openMini(SEL,'${type}')">只套用這一頁</button><button class="${scope==='all'?'on':''}" onclick="scope='all';openMini(SEL,'${type}')">四頁一起套用</button></div>`;
+    d.keys.forEach(k=>{ const [lab,mn,mx,df,u]=PARAMS[k]; const v=eff(k); h+=`<label><span>${lab}</span><input type="range" min="${mn}" max="${mx}" value="${v}" oninput="setParam('${k}',this.value)"><b class="v" id="v_${k}">${v}</b></label>`; });
+    h+=`<div class="foot"><a onclick="openMini(SEL,'layout')">整體版面…</a><span><a onclick="resetKeys('${type}')">回預設</a>　<button onclick="closeMini()">完成</button></span></div>`;
+  }
+  m.innerHTML=h; m.classList.add('on');
+  // 面板放在元素右側，放不下就放左側/下方，並限制在視窗內
+  const r=el.getBoundingClientRect(); const W=300, H=m.offsetHeight||220; let x=r.right+14, y=r.top;
+  if(x+W>window.innerWidth-10) x=r.left-W-14; if(x<10) x=Math.min(window.innerWidth-W-10, r.left); if(y+H>window.innerHeight-10) y=Math.max(10,window.innerHeight-H-10);
+  m.style.left=x+'px'; m.style.top=y+'px';
+}
+function resetKeys(type){ const d=MINI_DEF[type]||MINI_DEF.layout; d.keys.forEach(k=>{ if(scope==='all') delete CFG.g[k]; else delete pageCfg()[k]; }); saveCfg(); applyCfg(); fitNames(); openMini(SEL,type); }
+function resetPhoto(i){ const pc=pageCfg(); if(pc.ph) delete pc.ph[i]; saveCfg(); applyCfg(); openMini(SEL,'photo'); }
 document.querySelectorAll('#sw button').forEach((b,j)=>b.classList.toggle('on',j===screenIdx));
 async function snapPng(){ if(document.fonts&&document.fonts.ready) await document.fonts.ready; fitNames(); await new Promise(r=>setTimeout(r,120)); return await htmlToImage.toPng(document.getElementById('tv'),{width:1920,height:1080,pixelRatio:2,backgroundColor:'#F5EADA',cacheBust:true}); }
 function dl(url,name){ const a=document.createElement('a'); a.href=url; a.download=name; a.click(); }
