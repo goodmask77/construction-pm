@@ -1,7 +1,8 @@
 // ── 社群成效回收＋token 健檢（張良 2026-10-08；v4.70.21 起每 3 小時一次，分 FB/IG 時序快照）──
 // 多粉專：逐一跑 acc.facebook.pages 的每個粉專（A Beach / GROUN:D 各自的 token）
 // 範圍：每個粉專近 30 天貼文。既有貼文自動匯入（source=imported）立刻有數據看
-// 成效快照存月檔 metricsKey，key=<postId>::<plat>::<slot>（plat=fb|ig、slot=YYYY-MM-DDTHH 取 3 小時整點）
+// 成效快照存月檔 metricsKey，key=<postId>::<plat>::<slot>（plat=fb|ig、slot=YYYY-MM-DDTHH 取台灣時間 3 小時整點）
+// v4.70.37（2026-10-10 張良）：cron 改成台灣 06/09/12/15/18/21/00/03 整點跑（vercel.json UTC 22,1,4,7,10,13,16,19），之前照 UTC 整 3 小時＝台灣 08/11/14…，存檔往下取整後標籤比真實抓取早 2 小時，看起來像少一個點
 //   → ① FB 跟 IG 各存一份不再互蓋 ② 一天最多 8 個時序點＝畫得出「貼文發出後的成長曲線」
 //   原始整包存 raw（指標改名也不遺失）。舊格式 <postId>::<date> 仍可被 social.js 相容讀取。
 // ⚠️ Insights metric 名稱 Meta 近年會改；抓不到不致命，raw 都留著，之後對照文件補

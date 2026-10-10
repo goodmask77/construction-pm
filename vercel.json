@@ -72,7 +72,7 @@
     },
     {
       "path": "/api/social-collect",
-      "schedule": "0 */3 * * *"
+      "schedule": "0 22,1,4,7,10,13,16,19 * * *"
     },
     {
       "path": "/api/social-publish",
