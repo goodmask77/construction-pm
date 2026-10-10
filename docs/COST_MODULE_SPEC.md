@@ -41,6 +41,46 @@
 | 20 | 物料辨識學習 | 不自訓模型;用「候選縮小+自家確認照當參考」,確認照自動進圖庫,追蹤每個物料命中率 | 同上 |
 | 21 | 免秤估重 | 第三階段;每個物料累積 ≥ 30 筆秤重配對且盲估誤差中位數 ≤ 15% 才開放,估重紀錄標「估」分開加總 | 同上 |
 
+## 資料來源:boss-api(11 月 ops 合併前)
+
+A Beach 與 GROUN:D 的 ops/gops 資料在阿桑的資料庫,本模組在 11 月合併前透過 **boss-api** 唯讀讀取(2026-10-10 開通)。合併後改為直接讀資料庫。
+
+**存取規則**
+
+- 全部是唯讀 GET;金鑰放 Vercel 與本機 `.env.local` 的環境變數(名稱由 CC 定,例如 `BOSS_API_KEY`),**只在 `api/` 伺服器端呼叫**,不進前端、不進 repo
+- 分頁:`limit` 最多 500,用回傳的 `next` 游標翻頁,直到沒有 `next`
+- 單價 0 或空白 = 不知道價格,不計入金額;`null` 不是 0,不可當 0 加總
+- 所有 boss-api 呼叫集中在**一個資料存取檔**(adapter),頁面不直接呼叫;11 月合併後只改這一個檔
+- 讀回的資料可快取,但標明「資料時間」;不可回寫
+
+**已開通端點**
+
+| 端點 | 內容 | 本規格用在 |
+| --- | --- | --- |
+| `/recipes` | 啟用中的配方;items 為做 yield_qty 這一批的原料用量;match = matched / guess / unmatched / nonstock | 食譜庫、完整度、不計成本白名單 |
+| `/costs/items` | 每個品項每個單位的 unit_cost;complete=false 代表底下有缺價或缺換算 | 物料卡成本、食譜成本、完整度 |
+| `/costs/menu` | 菜單 price、cost、cost_ratio(毛利自己算 price − cost) | 菜單與定價、成本總覽 |
+| `/products` | A Beach 叫貨商品主檔:code、name、supplier、spec、unit、price、dept、category、is_active | 物料卡、合併建議、資料缺口 |
+| `/suppliers` | 叫貨日、休息日、帳期 bill_*、price_tax_excl、最低訂購額 | 廠商頁、稅別 |
+| `/gops/products` | GROUN:D 產品:price、cost、stock、safe、station、store | 物料卡(GROUN:D) |
+| `/gops/suppliers` | 廠商叫貨日、休息日 | 廠商頁 |
+| `/gops/orders` | 叫貨單:單號、時間、廠商、狀態、核准時間、行數、金額、unpriced_lines;可帶 from/to | 價格歷史、偵錯 |
+| `/gops/orders/items` | 叫貨明細:qty、unit、price、amount、recv_status、recv_qty、recv_at | 價格歷史、偵錯 |
+
+**阿桑刻意不給**:廠商聯絡方式與 LINE 綁定、訊息格式、自由文字備註、照片網址、食譜步驟、員工姓名、驗收備註。食譜步驟本來就要在本模組新建;照片在本模組自己的儲存空間另存。
+
+**尚缺、需向阿桑補要**(缺的期間,相關功能先做畫面與邏輯,資料處標「待 boss-api 補端點」,不要自己猜或爬資料庫)
+
+| 缺的資料 | 為什麼需要 | 影響批次 |
+| --- | --- | --- |
+| **驗收實收單價**(order_adjust 最新價 / 驗收改價) | 決策 #17 成本基準 = 驗收進價;目前 API 口徑「金額 = 下單單價 × 數量,不含驗收改價」 | 1、2、3 |
+| **A Beach 叫貨歷史**(orders、order_items、order_adjust,含補單標記) | 目前只有 GROUN:D 的叫貨單;A Beach 的價格偵錯、價格歷史、月帳都靠它 | 1、2、5 |
+| **單位換算**(item_convs、item_no_conv)與庫存品(inventory_items) | 物料卡換算顯示、單位偵測、g/ml 1:1 檢查 | 1、2 |
+| **改價紀錄**(product_price_log,含來源 recv/手動與備註原因) | 偵錯判讀「是誰、從哪裡改的價」 | 1 |
+| **菜單的食譜明細**(menu_items 與每道菜用到的原料/半成品行) | `/costs/menu` 只有總成本,出餐食譜與變價影響要逐行 | 3、5 |
+| **月帳對帳**(vendor_recon、結帳區間 cycle 設定) | 對帳頁、未稅廠商 5% 假差額修正 | 5 |
+| 停用中的配方(或加 `include_inactive` 參數) | 「停用品仍被引用」與歷史重現 | 2、3 |
+
 ## 頁面架構
 
 ```text
@@ -378,6 +418,7 @@
 1. **批次 0|現況核對**(唯讀)
    - 交付 `existing-system-map.md`:repo 與路由、資料表與 key、現有成本公式(`v_item_cost`、`v_menu_cost`、`recipe_conv`)、權限、每個功能沿用或新增的理由
    - 同時進行:第 7 節清資料
+   - 用 boss-api 實際呼叫每個已開通端點各一頁,把真實欄位名稱與範例寫進現況文件;列出與本規格「尚缺」表的落差
 2. **批次 1|偵錯與待處理中心**(最優先)
    - 驗收變價提示與攔截、價格變動紀錄(單筆/批次確認)、每日歷史掃描、待處理中心各分頁、靜音三種範圍、導覽徽章
    - 對帳帳單金額改「未稅＋稅額」兩格
