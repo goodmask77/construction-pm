@@ -148,16 +148,16 @@ export async function aiCall(route, opts = {}) {
 }
 
 // ── 生圖：aiImage('image', { prompt, refImages:[{media_type,data}], aspect:'1:1'|'3:4'|'4:3'|'9:16'|'16:9' }) → { mime, data(base64), provider, model } ──
-async function imageOnce({ provider, model }, { prompt, refImages, aspect, timeoutMs }) {
+async function imageOnce({ provider, model }, { prompt, refImages, aspect, timeoutMs, size }) { // size='1K'|'2K'|'4K'（Gemini 3 系／Nano Banana 2 支援；v4.70.32 菜單 AI 圖用）
   const key = keyOf(provider); if (!key) throw Object.assign(new Error(AI_PROVIDERS[provider].label + ' 尚未設定金鑰（' + AI_PROVIDERS[provider].env + '）'), { nokey: true })
   const ctl = new AbortController(); const tm = setTimeout(() => ctl.abort(), timeoutMs || 170000)
   try {
     if (provider === 'gemini') {
       const parts = [...(refImages || []).map(im => ({ inlineData: { mimeType: im.media_type, data: im.data } })), { text: prompt }]
-      const body = (withAspect) => ({ contents: [{ role: 'user', parts }], generationConfig: { responseModalities: ['TEXT', 'IMAGE'], ...(withAspect && aspect ? { imageConfig: { aspectRatio: aspect } } : {}) } })
+      const body = (withAspect) => ({ contents: [{ role: 'user', parts }], generationConfig: { responseModalities: ['TEXT', 'IMAGE'], ...(withAspect && (aspect || size) ? { imageConfig: { ...(aspect ? { aspectRatio: aspect } : {}), ...(size ? { imageSize: size } : {}) } } : {}) } })
       let r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, { method: 'POST', signal: ctl.signal, headers: { 'content-type': 'application/json', 'x-goog-api-key': key }, body: JSON.stringify(body(true)) })
       let d = await r.json().catch(() => ({}))
-      if (!r.ok && aspect && r.status === 400) { // 舊模型不認 imageConfig → 拿掉再試一次
+      if (!r.ok && (aspect || size) && r.status === 400) { // 舊模型不認 imageConfig → 拿掉再試一次
         r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, { method: 'POST', signal: ctl.signal, headers: { 'content-type': 'application/json', 'x-goog-api-key': key }, body: JSON.stringify(body(false)) })
         d = await r.json().catch(() => ({}))
       }

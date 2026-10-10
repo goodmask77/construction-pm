@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>GROUN:D 電視菜單</title>
 <!--
-  電視橫式菜單 HTML 模板（張良 2026-10-10 v1.4）：一台電視=兩分類並排＋底部食物照片，共 4 張。
+  電視橫式菜單 HTML 模板（張良 2026-10-10 v1.5）：一台電視=兩分類並排＋底部食物照片，共 4 張。
   ?screen=0..3（0披薩/療癒碗 1漢堡/三明治 2麵/早午餐 3小點/飲品）。照片=從官方底圖截出的獨立檔 menu/photos/。
   套餐欄(SNACKS/DRINKS,combo>0)=官方版式：紅圓角框＋表頭(品項/單點/套餐選擇)，兩框等高；項多(>6)自動緊湊。
   左上 4 張切換＋「下載全部 4 張」；「✎ 編輯」=點選式：點 logo/分類標題/品項/照片/底條→旁邊只出該元素滑桿；整張用 #stage scale 縮進視窗不滑動（出圖仍截 #tv 原尺寸）；照片底部淡出 --pf：每張照片 上下/左右/縮放 滑桿，區塊參數(邊距/欄距/標題/品名/英文/價格/間距)可選「只這一頁」或「四頁共用」，照片位移縮放每頁各自；存 localStorage gd_tvcfg {g,p}；分層=照片z0<文字/框線z1<底條z3，截圖不含面板。
@@ -13,6 +13,7 @@
 -->
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700;900&family=Alfa+Slab+One&family=Poppins:wght@400;500;600;700&family=Lora:ital,wght@0,400;0,500;0,600;1,400&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/html-to-image@1.11.13/dist/html-to-image.js"></script>
+<script src="js/menu-ai.js?v=1"></script>
 <style>
   *{margin:0;padding:0;box-sizing:border-box}
   :root{ --cream:#F5EADA; --red:#CE1611; --eng:#C56B54; --dot:#D98A7A; }
@@ -70,9 +71,9 @@
   .cat.side .item .pr{ flex:0 0 auto }
   .cat.compact{ --cf:.78 } .cat.compact .item .lead{ border-bottom-width:4px; transform:translateY(-6px) }
   /* 照片：最底層，推到欄底；位移/縮放自由、不被裁切 */
-  .photo{ margin-top:auto; position:relative; z-index:0; display:flex; justify-content:center; align-items:flex-end; min-height:0; }
-  .photo img{ width:100%; display:block; transform-origin:bottom center; transform:translate(var(--px,0px),var(--py,0px)) scale(var(--ps,1));
-    -webkit-mask-image:linear-gradient(to bottom,#000 calc(100% - var(--pf,50px)),transparent 100%); mask-image:linear-gradient(to bottom,#000 calc(100% - var(--pf,50px)),transparent 100%); }
+  .photo{ margin-top:auto; flex:1; position:relative; z-index:0; display:flex; justify-content:center; align-items:flex-end; min-height:0; }
+  .photo img{ max-width:100%; max-height:100%; width:auto; height:auto; object-fit:contain; display:block; transform-origin:bottom center; transform:translate(var(--px,0px),var(--py,0px)) scale(var(--ps,1));
+    -webkit-mask-image:linear-gradient(to bottom,#000 calc(100% - var(--pf,0px)),transparent 100%); mask-image:linear-gradient(to bottom,#000 calc(100% - var(--pf,0px)),transparent 100%); }
   .footer{ height:var(--footh); background:var(--red); color:var(--cream); display:flex; align-items:center; justify-content:center; font-size:var(--foot); font-weight:800; letter-spacing:.02em; position:relative; z-index:3; flex:0 0 auto; }
   /* 面板 */
   #adj{ width:340px; max-height:88vh; overflow:auto }
@@ -108,12 +109,15 @@ const SAMPLE = { note:'套餐 +89 元', origins:'牛肉 美國／豬肉 台灣�
   {name:'DRINKS 飲品', combo:50, items:[{name:'可口可樂 原味 / ZERO',en:'Coca-Cola Original / Zero',price:50},{name:'四季桂花春烏龍',en:'Seasonal Osmanthus Spring Oolong',price:50},{name:'台灣高山青茶',en:'Taiwan Highland Green Tea',price:50},{name:'南非國寶茶',en:'Rooibos Tea',price:50,note:'無咖啡因'},{name:'國寶鮮奶茶 I/H',en:'Rooibos Milk Tea',price:65,note:'無咖啡因'},{name:'美式咖啡 I/H',en:'Americano',price:75},{name:'經典拿鐵 I/H',en:'Caffè Latte',price:90},{name:'抹茶 / 可可拿鐵 I/H',en:'Matcha / Cocoa Latte',price:90},{name:'番茄蔬菜湯',en:'Tomato & Vegetable Soup',price:60}]},
 ]};
 const SCREENS=[
-  {keys:['PIZZA','BOWL'],  photos:['menu/photos/pizza.png','menu/photos/bowl.png']},
-  {keys:['BURGER','ROLL'], photos:['menu/photos/burger.png','menu/photos/roll.png']},
-  {keys:['PASTA','BRUNCH'],photos:['menu/photos/pasta.png','menu/photos/brunch.png']},
-  {keys:['SNACK','DRINK'], photos:['menu/photos/snack.png',null]},
+  {keys:['PIZZA','BOWL'],  photos:['menu/photos/pizza.webp','menu/photos/bowl.webp']},
+  {keys:['BURGER','ROLL'], photos:['menu/photos/burger.webp','menu/photos/roll.webp']},
+  {keys:['PASTA','BRUNCH'],photos:['menu/photos/pasta.webp','menu/photos/brunch.webp']},
+  {keys:['SNACK','DRINK'], photos:['menu/photos/snack.webp',null]},
 ];
 const Q=new URLSearchParams(location.search);
+// 照片來源：雲端圖庫（AI 重畫後登記）優先，否則用內建檔；key=檔名（pizza/bowl/…）
+function photoKey(path){ return path?path.split('/').pop().replace(/\.[a-z]+$/,''):''; }
+function photoSrc(path){ if(!path) return null; const a=(MAI.assets.photos||{})[photoKey(path)]; return a&&a.url?a.url:path; }
 let screenIdx=Math.max(0,Math.min(3,parseInt(Q.get('screen')||'0',10)));
 const SCREEN_NAMES=['1 披薩・療癒碗','2 漢堡・三明治','3 義大利麵・早午餐','4 小點・飲品'];
 // 區塊參數（可編輯）：key→[標籤,最小,最大,預設,單位]
@@ -123,7 +127,8 @@ const PARAMS={ pad:['欄左右邊距',0,160,70,'px'], gap:['兩欄間距',20,200
 const ALLKEY='gd_tvcfg';
 let CFG={g:{},p:{}}; let scope='page'; // 'page'=只這一頁 / 'all'=四頁共用
 function loadCfg(){ try{ const o=JSON.parse(localStorage.getItem(ALLKEY)||'null'); if(o&&o.p) CFG=o; }catch(e){} CFG.g=CFG.g||{}; CFG.p=CFG.p||{}; }
-function saveCfg(){ try{ localStorage.setItem(ALLKEY,JSON.stringify(CFG)); }catch(e){} }
+let pushT=null; function pushCfg(){ clearTimeout(pushT); pushT=setTimeout(()=>{ if(MAI.TK()) MAI.api('menuassetset',{tvcfg:CFG}).catch(()=>{}); },900); }
+function saveCfg(){ try{ localStorage.setItem(ALLKEY,JSON.stringify(CFG)); }catch(e){} pushCfg(); }
 function pageCfg(){ return CFG.p[screenIdx]=CFG.p[screenIdx]||{}; }
 function eff(k){ const pc=CFG.p[screenIdx]||{}; return (k in pc)?pc[k]:((k in CFG.g)?CFG.g[k]:PARAMS[k][3]); }
 loadCfg();
@@ -148,7 +153,7 @@ function render(){
     const col=document.createElement('div'); col.className='col';
     if(sec){
       const {en,zh}=splitName(sec.name); const side=(Number(sec.combo)||0)>0, compact=sec.items.length>6;
-      const ph=sc.photos[i]; const photo=ph?`<div class="photo" data-i="${i}" data-edit="photo"><img src="${ph}" alt=""></div>`:'';
+      const ph=photoSrc(sc.photos[i]); const photo=ph?`<div class="photo" data-i="${i}" data-edit="photo"><img src="${ph}" alt=""></div>`:'';
       let h=`<div class="cat ${side?'side':''} ${compact?'compact':''}"><h2 data-edit="cat"><span class="en">${en}</span>${zh?`<span class="zh">${zh}</span>`:''}${en==='PIZZA'?`<span class="pz">400°C<br>12吋</span>`:''}</h2>`;
       if(side){ h+=`<div class="box"><div class="thead"><span class="c1">品項</span><span class="c2">單點</span><span class="c3">套餐選擇</span></div>`; sec.items.forEach(it=>h+=itemHTML(sec,it,true)); h+=photo+`</div>`; }
       else { h+=`<div class="rule"></div>`; sec.items.forEach(it=>h+=itemHTML(sec,it,false)); h+=photo; }
@@ -172,14 +177,14 @@ function fitNames(){
 function applyCfg(){
   const tv=document.getElementById('tv'); Object.keys(PARAMS).forEach(k=>tv.style.setProperty('--'+k, eff(k)+PARAMS[k][4]));
   const ph=(CFG.p[screenIdx]||{}).ph||{};
-  document.querySelectorAll('.photo').forEach(p=>{ const c=ph[p.dataset.i]||{}; const im=p.querySelector('img'); im.style.setProperty('--px',(c.x||0)+'px'); im.style.setProperty('--py',(c.y||0)+'px'); im.style.setProperty('--ps',(c.s||100)/100); im.style.setProperty('--pf',(c.f===undefined?50:c.f)+'px'); });
+  document.querySelectorAll('.photo').forEach(p=>{ const c=ph[p.dataset.i]||{}; const im=p.querySelector('img'); im.style.setProperty('--px',(c.x||0)+'px'); im.style.setProperty('--py',(c.y||0)+'px'); im.style.setProperty('--ps',(c.s||100)/100); im.style.setProperty('--pf',(c.f===undefined?0:c.f)+'px'); });
 }
 function buildAdj(){
   const box=document.getElementById('adj'); let h=`<div class="scope"><button class="${scope==='page'?'on':''}" onclick="setScope('page')">只套用這一頁</button><button class="${scope==='all'?'on':''}" onclick="setScope('all')">四頁一起套用</button></div>`;
   h+=`<h4>版面（${scope==='page'?'這一頁':'四頁共用'}）</h4>`;
   Object.entries(PARAMS).forEach(([k,[lab,mn,mx,df,u]])=>{ const v=eff(k); const ov=(CFG.p[screenIdx]||{})[k]!==undefined;
     h+=`<label><span title="${lab}">${lab}</span><input type="range" min="${mn}" max="${mx}" value="${v}" oninput="setParam('${k}',this.value)"><b class="v" id="v_${k}">${v}${ov&&scope==='all'?'*':''}</b></label>`; });
-  document.querySelectorAll('.photo').forEach(p=>{ const i=p.dataset.i, c=((CFG.p[screenIdx]||{}).ph||{})[i]||{}; const name=SCREENS[screenIdx].photos[i].split('/').pop().replace('.png','');
+  document.querySelectorAll('.photo').forEach(p=>{ const i=p.dataset.i, c=((CFG.p[screenIdx]||{}).ph||{})[i]||{}; const name=SCREENS[screenIdx].photos[i].split('/').pop().replace(/\.[a-z]+$/,'');
     h+=`<h4>照片 ${+i+1}（${name}）— 只影響這一頁</h4>`
       +`<label><span>上下</span><input type="range" min="-300" max="300" value="${c.y||0}" oninput="setPhoto(${i},'y',this.value)"><b class="v" id="pv_${i}_y">${c.y||0}</b></label>`
       +`<label><span>左右</span><input type="range" min="-300" max="300" value="${c.x||0}" oninput="setPhoto(${i},'x',this.value)"><b class="v" id="pv_${i}_x">${c.x||0}</b></label>`
@@ -193,6 +198,7 @@ function setPhoto(i,k,v){ const pc=pageCfg(); pc.ph=pc.ph||{}; pc.ph[i]=pc.ph[i]
 function resetCfg(){ if(scope==='all'){ CFG.g={}; } else { CFG.p[screenIdx]={}; } saveCfg(); applyCfg(); buildAdj(); fitNames(); }
 
 async function boot(){
+  await MAI.load(); if(MAI.assets.tvcfg&&MAI.assets.tvcfg.p){ CFG=MAI.assets.tvcfg; CFG.g=CFG.g||{}; CFG.p=CFG.p||{}; } // 雲端設定優先（哪台開都一樣）
   if(!window.MENU_DATA){ try{ const K=Q.get('k')||'7ea362bae1f0274372d4ec7b27c78852'; const r=await fetch('/api/mail-sync?menu='+K); const d=await r.json(); if(d&&d.ok&&d.draft) window.MENU_DATA=d.draft; }catch(e){} }
   render();
   if(document.fonts&&document.fonts.ready) document.fonts.ready.then(fitNames);
@@ -216,8 +222,8 @@ function openMini(el,type){
       +`<label><span>上下</span><input type="range" min="-300" max="300" value="${c.y||0}" oninput="setPhoto(${i},'y',this.value)"><b class="v" id="pv_${i}_y">${c.y||0}</b></label>`
       +`<label><span>左右</span><input type="range" min="-300" max="300" value="${c.x||0}" oninput="setPhoto(${i},'x',this.value)"><b class="v" id="pv_${i}_x">${c.x||0}</b></label>`
       +`<label><span>縮放</span><input type="range" min="40" max="180" value="${c.s||100}" oninput="setPhoto(${i},'s',this.value)"><b class="v" id="pv_${i}_s">${c.s||100}%</b></label>`
-      +`<label><span>底部淡出</span><input type="range" min="0" max="200" value="${c.f===undefined?50:c.f}" oninput="setPhoto(${i},'f',this.value)"><b class="v" id="pv_${i}_f">${c.f===undefined?50:c.f}</b></label>`
-      +`<div class="foot"><a onclick="resetPhoto(${i})">這張回預設</a><button onclick="closeMini()">完成</button></div>`;
+      +`<label><span>底部淡出</span><input type="range" min="0" max="200" value="${c.f===undefined?0:c.f}" oninput="setPhoto(${i},'f',this.value)"><b class="v" id="pv_${i}_f">${c.f===undefined?0:c.f}</b></label>`
+      +`<div class="foot"><span><a onclick="aiPhoto(${i})">✨ AI 重畫</a>${(MAI.assets.photos||{})[photoKey(SCREENS[screenIdx].photos[i])]?`　<a onclick="photoReset(${i})">回預設照片</a>`:``}</span><span><a onclick="resetPhoto(${i})">位置回預設</a>　<button onclick="closeMini()">完成</button></span></div>`;
   } else { const d=MINI_DEF[type]||MINI_DEF.layout;
     h+=`<h4><b>${d.title}</b><span class="x" onclick="closeMini()">×</span></h4>`
       +`<div class="scope"><button class="${scope==='page'?'on':''}" onclick="scope='page';openMini(SEL,'${type}')">只套用這一頁</button><button class="${scope==='all'?'on':''}" onclick="scope='all';openMini(SEL,'${type}')">四頁一起套用</button></div>`;
@@ -232,6 +238,17 @@ function openMini(el,type){
 }
 function resetKeys(type){ const d=MINI_DEF[type]||MINI_DEF.layout; d.keys.forEach(k=>{ if(scope==='all') delete CFG.g[k]; else delete pageCfg()[k]; }); saveCfg(); applyCfg(); fitNames(); openMini(SEL,type); }
 function resetPhoto(i){ const pc=pageCfg(); if(pc.ph) delete pc.ph[i]; saveCfg(); applyCfg(); openMini(SEL,'photo'); }
+// ✨ AI 重畫這張照片（v1.5）：目前照片當參考 → 兩段式生成 → 後製（去影子/校色）→ 直傳 → 登記為這道菜的照片（四頁共用圖庫）
+async function aiPhoto(i){
+  const path=SCREENS[screenIdx].photos[i], key=photoKey(path), src=photoSrc(path); let ref='';
+  try{ ref=await MAI.toDataURL(src,1024,'image/jpeg',.9); }catch(e){}
+  MAI.open({ kind:'photo', title:'✨ AI 重畫照片：'+key.toUpperCase(), ref, n:2, onPick: async (url,meta)=>{
+    const clean=await MAI.cleanPhoto(url); const pub=await MAI.upload(clean,'photo');
+    const r=await MAI.api('menuaisave',{kind:'photo',key,url:pub,brief_zh:meta.brief_zh}); if(!r.ok) throw new Error(r.error||'登記失敗');
+    await MAI.load(); closeMini(); render();
+  }});
+}
+async function photoReset(i){ const key=photoKey(SCREENS[screenIdx].photos[i]); const r=await MAI.api('menuassetset',{photoReset:key}); if(!r.ok){ alert(r.error||'失敗'); return; } await MAI.load(); closeMini(); render(); }
 document.querySelectorAll('#sw button').forEach((b,j)=>b.classList.toggle('on',j===screenIdx));
 async function snapPng(){ if(document.fonts&&document.fonts.ready) await document.fonts.ready; fitNames(); await new Promise(r=>setTimeout(r,120)); return await htmlToImage.toPng(document.getElementById('tv'),{width:1920,height:1080,pixelRatio:2,backgroundColor:'#F5EADA',cacheBust:true}); }
 function dl(url,name){ const a=document.createElement('a'); a.href=url; a.download=name; a.click(); }

@@ -28,9 +28,28 @@ async function loadSnap (kvGet) {
   return out
 }
 
+// ── 即時主檔（boss-api 2026-10-10 晚打通；每小時 boss-sync 入庫）＋ 快照補「換算」欄（item_convs 阿桑尚未給）──
+async function loadMaster (kvGet, snap) {
+  const [prodD, supD, rcpD, citemD, gprodD, gsupD] = await Promise.all(['prod', 'sup', 'rcp', 'citem', 'gprod', 'gsup'].map(k => kvGet('sp_finance_pm_boss_' + k)))
+  const rows = d => Object.values((d || {}).rows || {})
+  const convBy = {}; for (const p of snap.products) { if (p.conv) { if (p.code) convBy[norm(p.code)] = p.conv; if (p.sku) convBy[norm(p.sku)] = p.conv } }
+  const storeBy = {}; for (const p of snap.products) if (p.code && p.store) storeBy[norm(p.code)] = p.store
+  const supTax = {}; for (const x of rows(supD)) supTax[x.name] = x.price_tax_excl ? '未稅' : '含稅'
+  const gsupTax = {}; for (const x of rows(gsupD)) gsupTax[x.name] = x.price_tax_excl ? '未稅' : '含稅'
+  const products = [
+    ...rows(prodD).map(p => ({ sys: 'A Beach', sku: p.sku || '', code: p.code || '', name: p.name || '', spec: p.spec || '', unit: p.unit || '', price: num(p.price), cat: p.category || '', dept: p.dept || '', supplier: p.supplier || '', status: p.is_active ? '啟用' : '停用', tax: supTax[p.supplier] || '', conv: convBy[norm(p.code)] || convBy[norm(p.sku)] || '', store: storeBy[norm(p.code)] || '', updatedAt: p.updated_at || '' })),
+    ...rows(gprodD).map(p => ({ sys: 'GROUN:D', sku: '', code: p.code || '', name: p.name || '', spec: p.spec || '', unit: p.unit || '', price: num(p.price), cost: num(p.cost), stock: num(p.stock), safe: num(p.safe), cat: p.category || '', dept: p.dept || '', station: p.station || '', store: p.store || '', supplier: p.supplier || '', status: p.is_active ? '啟用' : '停用', tax: p.price_tax_excl != null ? (p.price_tax_excl ? '未稅' : '含稅') : (gsupTax[p.supplier] || ''), conv: convBy[norm(p.code)] || '', updatedAt: p.updated_at || '' })),
+  ]
+  const recipes = rows(rcpD).map(r => ({ id: r.recipe_id, code: r.code || '', name: r.name || '', yieldQty: num(r.yield_qty), yieldUnit: r.yield_unit || '', perUnit: r.per_unit, perUnitQty: num(r.per_unit_qty), minutes: num(r.batch_minutes), items: (r.items || []).map(i => ({ seq: i.seq, code: i.code || '', name: i.name || '', qty: num(i.qty), unit: i.unit || '', match: i.match || '' })), updatedAt: r.updated_at || '' }))
+  const costItems = rows(citemD).map(c => ({ code: c.code || '', name: c.name || '', unit: c.unit || '', complete: !!c.complete, unitCost: num(c.unit_cost) }))
+  const suppliers = [...rows(supD).map(x => ({ sys: 'A Beach', ...x })), ...rows(gsupD).map(x => ({ sys: 'GROUN:D', ...x }))]
+  const live = products.length > 0
+  return { products: live ? products : snap.products, recipes, costItems, suppliers, live, liveRecipes: recipes.length > 0, updatedAt: (prodD || {}).updatedAt || null }
+}
+
 // ── A Beach 叫貨序列：廠商 × 物料 → [{d, p, q, oid}]（每張單一點）──
-async function loadSeries (kvGet, months) {
-  const docs = await Promise.all(months.map(m => kvGet('sp_finance_pm_boss_ordi_' + m.replace('-', ''))))
+async function loadSeries (kvGet, months, slug = 'ordi', sys = 'A Beach') {
+  const docs = await Promise.all(months.map(m => kvGet(`sp_finance_pm_boss_${slug}_` + m.replace('-', ''))))
   const per = {} // key → { supplier, code, name, unit, orders: {oid:{d, amt, qty}} }
   let firstDay = ''
   for (const doc of docs) for (const r of Object.values((doc || {}).rows || {})) {
@@ -43,8 +62,8 @@ async function loadSeries (kvGet, months) {
     if (!firstDay || d < firstDay) firstDay = d
     const supplier = (r.supplier || '').trim() || '（未填廠商）'
     const code = norm(r.code), nm = r.name || r.item || ''
-    const key = supplier + '|' + (code ? 'c:' + code : 'n:' + norm(nm))
-    const o = per[key] || (per[key] = { key, supplier, code, sku: r.sku || '', name: nm, unit: r.unit || '', orders: {} })
+    const key = (sys === 'A Beach' ? '' : 'G|') + supplier + '|' + (code ? 'c:' + code : 'n:' + norm(nm))
+    const o = per[key] || (per[key] = { key, sys, supplier, code, sku: r.sku || '', name: nm, unit: r.unit || '', orders: {} })
     if (r.unit) o.unit = r.unit
     const od = o.orders[r.order_id || (d + '#' + p)] || (o.orders[r.order_id || (d + '#' + p)] = { d, amt: 0, qty: 0, lines: [] })
     od.amt += p * q; od.qty += q; od.lines.push({ p, q, u: r.unit || '' })
@@ -113,7 +132,7 @@ function scanSeries (series, firstDay, cfg, catMap, impact) {
     if (pts.length < 2) continue
     const cat = catMap[s.code ? 'c:' + s.code : 'n:' + norm(s.name)] || ''
     const thr = thrOf(cfg, cat) / 100
-    const base = { itemKey: s.key, supplier: s.supplier, code: s.code, sku: s.sku, name: s.name, unit: s.unit, cat, thr: Math.round(thr * 100), series: pts.slice(-8).map(p => ({ d: p.d, p: p.p, q: p.q })) }
+    const base = { itemKey: s.key, sys: s.sys, supplier: s.supplier, code: s.code, sku: s.sku, name: s.name, unit: s.unit, cat, thr: Math.round(thr * 100), series: pts.slice(-8).map(p => ({ d: p.d, p: p.p, q: p.q })) }
     const push = (tab, signal, d, title, basis, ratio, extra) => {
       const imp = impact(s.code || s.name, ratio)
       out.push({ id: hash([tab, signal, s.key, d].join('|')), tab, signal, date: d, title, basis, ...base, impact: imp, ...extra })
@@ -177,9 +196,14 @@ function scanSeries (series, firstDay, cfg, catMap, impact) {
 }
 
 // ── 快照衍生的待處理（資料缺口／合併建議／單位待確認／現價 vs 最後叫貨）──
-function scanSnapshot (snap, impact) {
+function scanSnapshot (snap, impact, master, lastBy) {
   const out = []
-  const push = (tab, signal, key, title, basis, extra) => out.push({ id: hash([tab, signal, key].join('|')), tab, signal, date: snap.asOf || '', title, basis, fromSnap: true, ...extra })
+  const live = master && master.live
+  const today = new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10)
+  const push = (tab, signal, key, title, basis, extra) => out.push({ id: hash([tab, signal, key].join('|')), tab, signal, date: (extra && extra.fromSnap === false) ? today : (snap.asOf || ''), title, basis, fromSnap: true, ...extra })
+  const prodList = live ? master.products : snap.products
+  // 最後叫貨價：即時序列（A=ordi、G=gordi）覆蓋快照欄
+  for (const p of prodList) { const lb = lastBy && lastBy[(p.sys === 'GROUN:D' ? 'G|' : '') + norm(p.code)]; if (lb) { p.lastPrice = lb.p; p.lastDate = lb.d } }
   const specG = s => { // 「1000g/罐」「1kg * 10塊/箱」「5K*4包/件」「200g*5盒」→ 總量（g 或 ml）
     const t = String(s || '').replace(/，/g, ',').replace(/×/g, '*').replace(/[xX]\s*(\d)/g, '*$1')
     const m = t.match(/(\d+(?:\.\d+)?)\s*(kg|k|g|l|ml|公斤|公克|毫升|公升)(?![a-z])/i); if (!m) return null
@@ -187,10 +211,14 @@ function scanSnapshot (snap, impact) {
     const mult = (t.slice(m.index + m[0].length).match(/^\s*\*\s*(\d+(?:\.\d+)?)/) || [])[1]
     const f = mult ? Number(mult) : 1
     return { g: (u === 'kg' || u === 'k' || u === '公斤') ? v * 1000 * f : (u === 'g' || u === '公克') ? v * f : null, ml: (u === 'l' || u === '公升') ? v * 1000 * f : (u === 'ml' || u === '毫升') ? v * f : null } }
-  for (const p of snap.products) {
+  for (const p of prodList) {
     const key = (p.sys || '') + '|' + (p.code || p.sku || p.name)
     const conv = String(p.conv || '')
-    const base = { supplier: p.supplier || '', code: p.code || '', sku: p.sku || '', name: p.name || '', unit: p.unit || '', sys: p.sys || '', active: p.status === '啟用' }
+    const base = { supplier: p.supplier || '', code: p.code || '', sku: p.sku || '', name: p.name || '', unit: p.unit || '', sys: p.sys || '', active: p.status === '啟用', fromSnap: !live }
+    if (live && base.active) { // 即時主檔就能判的缺口（取代快照 7.1b/7.1c/7.2）
+      if (!(num(p.price) > 0)) push('gap', 'noprice', key, `${p.name} 無單價或 0`, `${p.sys} 啟用中但單價空白／0（即時主檔）`, { ...base, suggest: '補價格', impact: impact(p.code || p.sku, 0) })
+      if (p.sys === 'A Beach' && !p.sku) push('gap', 'nosku', key, `${p.name} 沒有料號`, 'A Beach 啟用品沒有料號 sku（即時主檔）', { ...base, suggest: '補料號', impact: impact(p.code || p.sku, 0) })
+    }
     // 1:1 假設：換算同時有 g 與 ml 且數值相同
     const mg = conv.match(/g=(\d+(?:\.\d+)?)/), mml = conv.match(/ml=(\d+(?:\.\d+)?)/)
     if (mg && mml && mg[1] === mml[1] && base.active) push('unit', 'gml11', key, `換算 g=${mg[1]}; ml=${mml[1]} 是 1:1 假設`, '決策 #14：g 與 ml 不可預設 1:1，要實測密度（可批次確認「密度 ≈1」）', { ...base, suggest: '手動輸入實測換算或確認密度 ≈1', info: true, impact: impact(p.code || p.sku, 0) })
@@ -199,12 +227,33 @@ function scanSnapshot (snap, impact) {
     if (sg && base.active) { const g = sg.g != null ? sg.g : sg.ml; const mm = sg.g != null ? mg : mml; if (mm && g && !near(Number(mm[1]), g, 0.02)) push('unit', 'specmismatch', key, `規格「${p.spec}」但換算 ${sg.g != null ? 'g' : 'ml'}=${mm[1]}`, '規格文字解析出的量與登記換算不符', { ...base, suggest: `接受建議換算 ${sg.g != null ? 'g' : 'ml'}=${g}`, suggestConv: g, impact: impact(p.code || p.sku, 0) }) }
     // 現價 vs 最後叫貨價 差 ≥2 倍
     const cur = num(p.price), last = num(p.lastPrice)
-    if (cur && last && (cur / last >= 2 || last / cur >= 2)) push('price', 'curvslast', key, `現價 ${cur} vs 最後叫貨價 ${last}（${p.lastDate || ''}）`, '目前叫貨單價與最後一次叫貨單價差 2 倍以上（快照 10-06）', { ...base, suggest: '確認哪個才對、更正現價或單位', impact: impact(p.code || p.sku, cur / last - 1) })
+    if (cur && last && (cur / last >= 2 || last / cur >= 2)) push('price', 'curvslast', key, `現價 ${cur} vs 最後叫貨價 ${last}（${p.lastDate || ''}）`, `目前叫貨單價與最後一次叫貨單價差 2 倍以上（${live ? '即時主檔 × 叫貨序列' : '快照 10-06'}）`, { ...base, suggest: '確認哪個才對、更正現價或單位', impact: impact(p.code || p.sku, cur / last - 1) })
+  }
+  // 即時食譜（/recipes）：停用品被引用、行沒料號、白名單外不計成本、合併建議、成本不完整（/costs/items complete=false）
+  if (live && master.liveRecipes) {
+    const prodBy = {}; for (const p of prodList) if (p.sys === 'A Beach' && p.code) prodBy[norm(p.code)] = p
+    const usedInactive = {}, nocode = [], nocostUse = {}
+    for (const r of master.recipes) for (const it of r.items) {
+      if (it.match === 'nonstock') { const nm = norm(it.name); if (nm && !NOCOST_WHITELIST.some(w => norm(w) === nm)) (nocostUse[nm] = nocostUse[nm] || { name: it.name, users: [] }).users.push(r.name); continue }
+      if (!it.code || it.match === 'unmatched') { nocode.push({ r, it }); continue }
+      const p = prodBy[norm(it.code)]; if (p && p.status !== '啟用') (usedInactive[norm(it.code)] = usedInactive[norm(it.code)] || { p, users: [] }).users.push(r.name)
+    }
+    for (const [c, x] of Object.entries(usedInactive)) push('gap', 'inactiveused', 'live|' + c, `停用品「${x.p.name}」仍被 ${x.users.length} 份啟用食譜使用`, `用在：${[...new Set(x.users)].slice(0, 8).join('、')}（即時 /recipes）`, { supplier: x.p.supplier, code: x.p.code, sku: x.p.sku, name: x.p.name, unit: x.p.unit, sys: 'A Beach', fromSnap: false, suggest: '指定替代料', impact: impact(x.p.code, 0) })
+    for (const { r, it } of nocode) push('gap', 'nocode', 'live|' + r.code + '|' + it.seq, `食譜「${r.name}」第 ${it.seq + 1} 行「${it.name}」沒對到物料`, `match=${it.match || '—'}；用量 ${it.qty} ${it.unit}（即時 /recipes）`, { name: it.name, code: it.code || '', sys: 'A Beach', fromSnap: false, suggest: '對到物料', recipe: r.name })
+    for (const [nm, x] of Object.entries(nocostUse)) push('gap', 'nocost', 'live|' + nm, `「${x.name}」被標為不計成本，但不在白名單`, `用在：${[...new Set(x.users)].join('、')}；白名單只有 ${NOCOST_WHITELIST.join('/')}（即時 /recipes）`, { name: x.name, fromSnap: false, suggest: '改接半成品食譜，或確認不計成本（填原因）' })
+    const rcpByName = {}; for (const r of master.recipes) rcpByName[norm(r.name)] = r
+    for (const c of master.costItems) if (!c.complete) { const r = rcpByName[norm(c.name)]; push('gap', 'incomplete', 'live|' + c.code, `「${c.name}」成本不完整`, `/costs/items complete=false：底下有原料缺價或缺換算，成本 ${c.unitCost != null ? c.unitCost + '/' + c.unit + ' 偏低' : '算不出'}${r ? '（食譜 ' + r.code + '）' : ''}`, { name: c.name, code: c.code, unit: c.unit, sys: 'A Beach', fromSnap: false, suggest: '補上游缺口後自動解決', impact: impact(c.code, 0) }) }
+    // 合併建議：同名多代碼（即時主檔，兩體系各自）
+    const byNm = {}
+    for (const p of prodList) { const k = p.sys + '|' + norm(p.name).toLowerCase(); (byNm[k] = byNm[k] || []).push(p) }
+    for (const [k, arr] of Object.entries(byNm)) if (arr.length > 1) { const sys = arr[0].sys; push('merge', 'samename', 'live|' + k, `${arr[0].name}：${arr.length} 個代碼同名`, arr.map(r => `${r.code || r.sku}（${r.supplier || '—'}・${r.status}）`).join('、'), { sys, name: arr[0].name, fromSnap: false, rows: arr.map(r => ({ code: r.code, sku: r.sku, supplier: r.supplier, status: r.status })), suggest: '合併進同一張物料卡（批次 2）或標「不是同一物」' }) }
   }
   // 資料品質清單（阿桑 7.x）→ 資料缺口／合併建議／單位待確認
   const mergeGroups = {}
   const nameOf = {}; for (const p of snap.products) { if (p.code) nameOf[norm(p.code)] = p.name; if (p.sku && !nameOf[norm(p.sku)]) nameOf[norm(p.sku)] = p.name }
+  const skipSnap = live && master.liveRecipes ? /^7\.(1b|1c|2|4|5|6b|9)/ : null // 這些已由即時主檔產生
   for (const q of snap.quality) {
+    if (skipSnap && skipSnap.test(String(q.cat || ''))) continue
     if (!q.name && (q.code || q.sku)) q.name = nameOf[norm(q.code || q.sku)] || q.code || q.sku
     const cat = String(q.cat || '')
     const k = (q.code || q.sku || q.name) + '|' + (q.supplier || '')
@@ -234,11 +283,16 @@ function scanSnapshot (snap, impact) {
 
 // ── 主入口：產生待處理清單＋套用決定／靜音 ──
 export async function buildTodo ({ kvGet, months }) {
-  const [snap, ser, todoDoc, catDoc] = await Promise.all([loadSnap(kvGet), loadSeries(kvGet, months), kvGet(TODO_KEY), kvGet('sp_finance_pm_boss_matcat')])
+  const [snap, ser, gser, todoDoc, catDoc] = await Promise.all([loadSnap(kvGet), loadSeries(kvGet, months), loadSeries(kvGet, months, 'gordi', 'GROUN:D'), kvGet(TODO_KEY), kvGet('sp_finance_pm_boss_matcat')])
+  const master = await loadMaster(kvGet, snap)
   const todo = todoDoc || { dec: {}, mutes: {}, cfg: DEFAULT_CFG, log: [] }
   const cfg = { ...DEFAULT_CFG, ...(todo.cfg || {}), thr: { ...DEFAULT_CFG.thr, ...((todo.cfg || {}).thr || {}) }, catRules: { ...DEFAULT_CFG.catRules, ...((todo.cfg || {}).catRules || {}) } }
   const impact = buildImpact(snap)
-  const items = [...scanSeries(ser.series, ser.firstDay, cfg, (catDoc || {}).map || {}, impact), ...scanSnapshot(snap, impact)]
+  const lastBy = {} // 代碼 → 最後叫貨價（即時序列）
+  for (const s of ser.series) { const l = s.pts[s.pts.length - 1]; if (l && s.code) { const k = norm(s.code); if (!lastBy[k] || lastBy[k].d < l.d) lastBy[k] = { p: l.p, d: l.d } } }
+  for (const s of gser.series) { const l = s.pts[s.pts.length - 1]; if (l && s.code) { const k = 'G|' + norm(s.code); if (!lastBy[k] || lastBy[k].d < l.d) lastBy[k] = { p: l.p, d: l.d } } }
+  const allSeries = [...ser.series, ...gser.series]
+  const items = [...scanSeries(allSeries, ser.firstDay || gser.firstDay, cfg, (catDoc || {}).map || {}, impact), ...scanSnapshot(snap, impact, master, lastBy)]
   const today = new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10)
   // 價格異常被判「是單位問題」→ 轉到單位待確認（新 id，原筆算已處理）
   for (const it of items.slice()) { const d = todo.dec[it.id]; if (d && d.st === 'unit' && it.tab === 'price') items.push({ ...it, id: it.id + ':u', tab: 'unit', signal: 'fromprice', title: '（由價格異常轉入）' + it.title, suggest: '登記換算或拆料號', info: false }) }
@@ -261,7 +315,7 @@ export async function buildTodo ({ kvGet, months }) {
   counts.done = items.filter(it => it.decision).length
   counts.total = (counts.price || 0) + (counts.unit || 0) + (counts.gap || 0) + (counts.merge || 0)
   counts.urgent = items.filter(it => it.open && !it.info).length // 導覽徽章用：不含資訊級（g=ml 1:1、跨廠商同漲…）
-  return { items, counts, mutes, cfg, snapAsOf: snap.asOf, seriesFrom: ser.firstDay, nSeries: ser.series.length, log: (todo.log || []).slice(-50).reverse(), hasSnap: snap.products.length > 0 }
+  return { items, counts, mutes, cfg, snapAsOf: snap.asOf, seriesFrom: ser.firstDay, gSeriesFrom: gser.firstDay, nSeries: ser.series.length, nGSeries: gser.series.length, log: (todo.log || []).slice(-50).reverse(), hasSnap: snap.products.length > 0, live: master.live, liveRecipes: master.liveRecipes, masterUpdatedAt: master.updatedAt, nProducts: master.products.length, nRecipes: master.recipes.length }
 }
 
 // ── 寫決定：POST {op:'decide'|'mute'|'unmute'|'cfg', ...} ──

@@ -97,8 +97,8 @@
       + `<span style="margin-left:auto;display:flex;gap:6px;flex-wrap:wrap">`
       + (CT.me && CT.me.canDecide ? `<button class="mini ${cCfgOpen ? 'on' : ''}" onclick="_ctCfgTog()">${IC.gear} 門檻設定</button>` : '')
       + `<button class="mini" onclick="costTodoRefresh()">${IC.undo} 重新掃描</button></span></div>`
-    h += `<div class="hint" style="margin-top:8px;line-height:1.7">資料：A Beach 叫貨序列 ${esc(CT.seriesFrom || '—')} 起、${nf(CT.nSeries)} 組廠商×物料（阿桑系統每小時同步）`
-      + (CT.hasSnap ? `；主檔／換算／食譜行＝<b style="color:${COL.y}">10-06 快照（驗收基準，等 boss-api 端點開通後改即時）</b>` : `；<b style="color:${COL.r}">尚未灌 10/06 快照</b>`)
+    h += `<div class="hint" style="margin-top:8px;line-height:1.7">資料：A Beach 叫貨序列 ${esc(CT.seriesFrom || '—')} 起 ${nf(CT.nSeries)} 組、GROUN:D ${esc(CT.gSeriesFrom || '—')} 起 ${nf(CT.nGSeries || 0)} 組（阿桑系統每小時同步）`
+      + (CT.live ? `；產品／廠商／食譜／品項成本＝<b style="color:${COL.g}">即時主檔</b>（${nf(CT.nProducts)} 項・${nf(CT.nRecipes)} 份食譜，${esc(String(CT.masterUpdatedAt || '').slice(5, 16).replace('T', ' '))}）；單位換算＋影響面估算仍用 <b style="color:${COL.y}">10-06 快照</b>（阿桑尚未給換算表）` : (CT.hasSnap ? `；主檔／換算／食譜行＝<b style="color:${COL.y}">10-06 快照（驗收基準）</b>` : `；<b style="color:${COL.r}">尚未灌 10/06 快照</b>`))
       + `；門檻 一般 ±${CT.cfg.thr.default}%・蔬果 ±${CT.cfg.thr.veg}%・起司乾貨包材 ±${CT.cfg.thr.tight}%；徽章數字＝要人決定的 ${nf((CT.counts || {}).urgent)} 筆（灰字「資訊」級不算）</div>`
     if (cCfgOpen) h += cfgCard()
     h += '</section>'
@@ -158,7 +158,7 @@
       if (can && cTab !== 'done' && it.tab !== 'merge') h += `<input type="checkbox" ${cSel.has(it.id) ? 'checked' : ''} onchange="_ctSel('${it.id}',this.checked)" style="width:18px;height:18px;margin-top:4px;flex:0 0 auto">`
       h += `<div style="flex:1;min-width:0;cursor:pointer" onclick="_ctOpen('${it.id}')">`
       h += `<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center"><span style="font-size:11.5px;font-weight:800;color:${col};border:1px solid ${col};border-radius:6px;padding:0 6px">${esc(SIG[it.signal] || it.signal)}</span>`
-        + (it.info ? `<span class="hint" style="font-size:11.5px">資訊</span>` : '') + (it.fromSnap ? `<span class="hint" style="font-size:11.5px">快照 10-06</span>` : '') + (it.sys ? `<span class="hint" style="font-size:11.5px">${esc(it.sys)}</span>` : '')
+        + (it.info ? `<span class="hint" style="font-size:11.5px">資訊</span>` : '') + (it.fromSnap ? `<span class="hint" style="font-size:11.5px">快照 10-06</span>` : `<span style="font-size:11.5px;color:${COL.g}">即時</span>`) + (it.sys ? `<span class="hint" style="font-size:11.5px">${esc(it.sys)}</span>` : '')
         + `<span class="hint" style="margin-left:auto;font-size:12px">${esc(it.date || '')}</span></div>`
       h += `<div style="font-weight:800;font-size:16px;margin-top:4px">${esc(it.name || '')}${it.code ? ` <span class="hint" style="font-weight:600">${esc(it.code)}</span>` : ''}${it.supplier ? ` <span class="hint" style="font-weight:600">・${esc(it.supplier)}</span>` : ''}${it.unit ? ` <span class="hint">／${esc(it.unit)}</span>` : ''}</div>`
       h += `<div style="margin-top:3px;font-size:15px">${esc(it.title)}</div>`

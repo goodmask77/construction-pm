@@ -5,13 +5,14 @@
 <meta name="viewport" content="width=1080" />
 <title>GROUN:D 菜單海報</title>
 <!--
-  菜單海報 HTML 模板（張良 2026-10-10 v1.0 自建網頁模板出圖）
+  菜單海報 HTML 模板（張良 2026-10-10 v1.1：加 ✨AI 插圖／Logo 變化／標語貼紙層，可拖曳縮放、設定存雲端）
   取代舊 canvas 手刻：用 CSS 排版 → puppeteer 截圖成 PNG。框線/對齊/換行全自動，不再切字。
   資料來源：window.MENU_DATA（截圖腳本/App 注入）；無則用內建 sample（當前菜單含沙拉）。
   直式畫布 1080×1920。字體：Alfa Slab One（英文大標）/ Noto Sans TC（中文）/ Poppins（英文副標）。
 -->
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700;900&family=Alfa+Slab+One&family=Poppins:wght@400;500;600;700&family=Lora:ital,wght@0,400;0,500;0,600;1,400&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/html-to-image@1.11.13/dist/html-to-image.js"></script>
+<script src="js/menu-ai.js?v=1"></script>
 <style>
   /* 官方 CIS 中文字型「寒蟬德黑體 ChillDINGothic」（SIL OFL 可商用，源於 DIN 工業字體，數字特別俐落）；單一字重 Regular */
   @font-face{ font-family:'ChillDINGothic'; src:url('fonts/ChillDINGothic_Std.woff2') format('woff2'); font-weight:normal; font-display:swap }
@@ -20,6 +21,18 @@
   html,body{background:#555}
   #dlbtn{ position:fixed; top:14px; right:14px; z-index:99; padding:12px 22px; background:#CE1611; color:#fff; border:none; border-radius:10px; font-size:16px; font-weight:700; cursor:pointer; box-shadow:0 4px 14px rgba(0,0,0,.35); font-family:system-ui,sans-serif }
   #dlbtn:disabled{ opacity:.6 }
+  #artbtn,#editbtn{ position:fixed; top:14px; z-index:99; padding:12px 18px; border:none; border-radius:10px; font-size:16px; font-weight:700; cursor:pointer; box-shadow:0 4px 14px rgba(0,0,0,.35); font-family:system-ui,sans-serif; color:#fff }
+  #artbtn{ right:166px; background:#6d3df0 } #editbtn{ right:286px; background:#333 } #editbtn.on{ background:#1a7f37 }
+  /* 貼紙層（插圖／Logo 變化／標語）：在品項之上、底條之下；只有編輯模式可點可拖 */
+  #stk{ position:absolute; inset:0; z-index:4; pointer-events:none; overflow:hidden }
+  .stk{ position:absolute; pointer-events:none; transform:translate(-50%,-50%) rotate(var(--r,0deg)); user-select:none; -webkit-user-drag:none; touch-action:none }
+  body.edit .stk{ pointer-events:auto; cursor:grab; outline:2px dashed rgba(26,127,55,.0) }
+  body.edit .stk:hover{ outline-color:#1a7f37 } body.edit .stk.sel{ outline:3px solid #1a7f37 }
+  body.edit #poster::after{ content:'編輯中：拖曳插圖移動；點一下調大小／旋轉／移除'; position:absolute; left:0; right:0; top:0; z-index:7; background:#1a7f37; color:#fff; font:700 20px/1.6 system-ui; text-align:center; padding:4px }
+  #mini{ position:fixed; z-index:120; background:rgba(20,20,20,.96); color:#eee; padding:12px 14px; border-radius:12px; width:300px; font:14px/1.5 system-ui,sans-serif; display:none; box-shadow:0 8px 24px rgba(0,0,0,.45) }
+  #mini.on{ display:block } #mini h4{ margin:0 0 6px; font-size:14px; color:#F5EADA; display:flex; justify-content:space-between; align-items:center } #mini h4 .x{ cursor:pointer; color:#aaa; font-size:18px; padding:0 4px }
+  #mini label{ display:flex; align-items:center; gap:8px; margin:4px 0 } #mini label span{ width:60px; font-size:12px; color:#bbb } #mini input[type=range]{ flex:1 } #mini .v{ width:44px; text-align:right; font-variant-numeric:tabular-nums; font-size:12px }
+  #mini .foot{ display:flex; justify-content:space-between; align-items:center; margin-top:8px; font-size:12px; color:#999; gap:6px } #mini .foot a{ color:#9cf; cursor:pointer } #mini .foot button{ padding:5px 10px; border:none; border-radius:8px; background:#555; color:#fff; cursor:pointer; font-weight:700; font-size:12px }
   /* 直式畫布 */
   #poster{
     width:1080px; height:1920px; background:var(--cream); position:relative;
@@ -54,17 +67,21 @@
   .item .en .decaf{ color:var(--red); font-weight:700; margin-left:8px; }
   /* 自動縮字：品名過長時整列縮放，不切字（JS 控制 nm font-size） */
   /* 底部紅條 */
-  .footer{ position:absolute; left:0; right:0; bottom:0; height:70px; background:var(--red); color:var(--cream);
+  .footer{ position:absolute; left:0; right:0; bottom:0; z-index:6; height:70px; background:var(--red); color:var(--cream);
     display:flex; align-items:center; justify-content:center; font-size:23px; font-weight:700; letter-spacing:.01em; }
   .footer b{ font-weight:800; }
 </style>
 </head>
 <body>
+<button id="editbtn" onclick="toggleEdit()">✎ 編輯</button>
+<button id="artbtn" onclick="openArt()">✨ 插圖</button>
 <button id="dlbtn" onclick="downloadPoster()">⬇ 下載圖片</button>
+<div id="mini"></div>
 <div id="poster">
   <div class="brand"><img src="menu/brand.png" alt="HAPPINESS GROUN:D"></div>
   <div class="colhead"><span>MENU 菜單</span><span>單點價／套餐</span></div>
   <div class="cats" id="cats"></div>
+  <div id="stk"></div>
   <div class="footer" id="footer"></div>
 </div>
 
@@ -209,6 +226,7 @@ function sumFixed(row){
 }
 // 開機：先抓 App 的真實菜單（看板唯讀金鑰），抓不到(本機/離線)才用內建 sample
 async function boot(){
+  await MAI.load(); loadPoster();
   if (!window.MENU_DATA){
     try{
       const K=new URLSearchParams(location.search).get('k') || '7ea362bae1f0274372d4ec7b27c78852';
@@ -217,11 +235,46 @@ async function boot(){
       if (d && d.ok && d.draft) window.MENU_DATA=d.draft;
     }catch(e){}
   }
-  render();
+  render(); renderStk();
   if (document.fonts && document.fonts.ready) document.fonts.ready.then(fit);
   window.addEventListener('load', fit);
 }
 boot();
+
+// ── ✨ 貼紙層（v1.1）：AI 插圖／Logo 變化／標語，可拖曳、縮放、旋轉、分層；位置存雲端（哪台開都一樣）＋本機備份 ──
+let POSTER={stickers:[]}, EDIT=false, SELS=null, pT=null;
+function loadPoster(){ const c=MAI.assets.poster; if(c&&Array.isArray(c.stickers)) POSTER=c; else { try{ const o=JSON.parse(localStorage.getItem('gd_poster')||'null'); if(o&&o.stickers) POSTER=o; }catch(e){} } }
+function savePoster(){ try{ localStorage.setItem('gd_poster',JSON.stringify(POSTER)); }catch(e){} clearTimeout(pT); pT=setTimeout(()=>{ if(MAI.TK()) MAI.api('menuassetset',{poster:POSTER}).catch(()=>{}); },900); }
+function renderStk(){ const L=document.getElementById('stk'); L.innerHTML=POSTER.stickers.map((s,i)=>`<img class="stk ${SELS===i?'sel':''}" data-i="${i}" src="${s.url}" style="left:${s.x}px;top:${s.y}px;width:${s.w}px;--r:${s.r||0}deg;z-index:${i+1}" draggable="false" crossorigin="anonymous">`).join(''); }
+function toggleEdit(){ EDIT=!EDIT; document.body.classList.toggle('edit',EDIT); const b=document.getElementById('editbtn'); b.classList.toggle('on',EDIT); b.textContent=EDIT?'✓ 完成編輯':'✎ 編輯'; if(!EDIT) closeStk(); }
+function closeStk(){ SELS=null; document.getElementById('mini').classList.remove('on'); renderStk(); }
+function stkSet(i,k,v){ const s=POSTER.stickers[i]; s[k]=Number(v); const el=document.querySelector(`.stk[data-i="${i}"]`); if(el){ if(k==='w') el.style.width=s.w+'px'; if(k==='r') el.style.setProperty('--r',s.r+'deg'); } const e=document.getElementById('sv_'+k); if(e) e.textContent=v+(k==='r'?'°':''); savePoster(); }
+function stkLayer(i,d){ const j=i+d; if(j<0||j>=POSTER.stickers.length) return; const a=POSTER.stickers; [a[i],a[j]]=[a[j],a[i]]; savePoster(); openStk(j); }
+function stkDel(i){ POSTER.stickers.splice(i,1); savePoster(); closeStk(); }
+function openStk(i){
+  SELS=i; renderStk(); const s=POSTER.stickers[i]; if(!s) return; const m=document.getElementById('mini');
+  m.innerHTML=`<h4><b>插圖</b><span class="x" onclick="closeStk()">×</span></h4>`
+    +`<label><span>大小</span><input type="range" min="60" max="900" value="${s.w}" oninput="stkSet(${i},'w',this.value)"><b class="v" id="sv_w">${s.w}</b></label>`
+    +`<label><span>旋轉</span><input type="range" min="-60" max="60" value="${s.r||0}" oninput="stkSet(${i},'r',this.value)"><b class="v" id="sv_r">${s.r||0}°</b></label>`
+    +`<div class="foot"><span><a onclick="stkLayer(${i},1)">上一層</a>　<a onclick="stkLayer(${i},-1)">下一層</a>　<a onclick="stkDel(${i})" style="color:#f88">從海報移除</a></span><button onclick="closeStk()">完成</button></div>`;
+  m.classList.add('on');
+  const el=document.querySelector(`.stk[data-i="${i}"]`); const r=el?el.getBoundingClientRect():{right:200,left:0,top:100}; const W=300,H=m.offsetHeight||150; let x=r.right+14,y=r.top;
+  if(x+W>innerWidth-10) x=r.left-W-14; if(x<10) x=10; if(y+H>innerHeight-10) y=Math.max(10,innerHeight-H-10); m.style.left=x+'px'; m.style.top=y+'px';
+}
+(()=>{ const L=document.getElementById('stk'); let drag=null;
+  L.addEventListener('pointerdown',ev=>{ if(!EDIT) return; const el=ev.target.closest('.stk'); if(!el) return; ev.preventDefault(); const i=+el.dataset.i, s=POSTER.stickers[i]; const sc=1080/document.getElementById('poster').getBoundingClientRect().width; drag={i,sx:ev.clientX,sy:ev.clientY,ox:s.x,oy:s.y,sc,moved:false}; try{ el.setPointerCapture(ev.pointerId); }catch(e){} });
+  L.addEventListener('pointermove',ev=>{ if(!drag) return; const dx=(ev.clientX-drag.sx)*drag.sc, dy=(ev.clientY-drag.sy)*drag.sc; if(Math.abs(dx)+Math.abs(dy)>3) drag.moved=true; const s=POSTER.stickers[drag.i]; s.x=Math.round(drag.ox+dx); s.y=Math.round(drag.oy+dy); const el=L.querySelector(`.stk[data-i="${drag.i}"]`); if(el){ el.style.left=s.x+'px'; el.style.top=s.y+'px'; } });
+  const up=ev=>{ if(!drag) return; const d=drag; drag=null; if(d.moved) savePoster(); openStk(d.i); };
+  L.addEventListener('pointerup',up); L.addEventListener('pointercancel',up);
+})();
+function addStk(a){ POSTER.stickers.push({id:a.id,url:a.url,x:540,y:960,w:a.sub==='slogan'?560:260,r:0}); savePoster(); if(!EDIT) toggleEdit(); renderStk(); openStk(POSTER.stickers.length-1); }
+// ✨ 插圖面板：貼上喜歡的風格截圖＋講概念 → 文字模型寫指令 → Gemini 畫 4 張 → 挑一張 → 去背成貼紙 → 入圖庫＋放到海報
+function openArt(){
+  MAI.open({ kind:'art', title:'✨ AI 插圖／Logo 變化／標語', n:4,
+    onPick: async (url,meta)=>{ const cut=await MAI.cutout(url); const pub=await MAI.upload(cut,'art'); const r=await MAI.api('menuaisave',{kind:'art',url:pub,sub:meta.sub,brief_zh:meta.brief_zh}); if(!r.ok) throw new Error(r.error||'登記失敗'); await MAI.load(); addStk(r.art[0]); },
+    onLib: async (a)=>addStk(a),
+    onLibDel: (id)=>{ POSTER.stickers=POSTER.stickers.filter(s=>s.id!==id); savePoster(); renderStk(); } });
+}
 
 // ⬇ 下載 PNG（前端出圖，html-to-image）：等字體載入→暫時放大到 1:1 截 1080×1920
 async function downloadPoster(){
