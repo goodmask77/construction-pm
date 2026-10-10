@@ -14,6 +14,7 @@ import { awardPts, pointsRules } from './_points.js' // 🏦 積分中樞共用�
 import { buildTodo as costBuildTodo, applyDecision as costDecide, putSnapshot as costPutSnap } from './_cost.js'
 import { buildCards as mcBuild, applyCardOp as mcApply } from './_matcard.js' // 🗂 成本模組 批次2 物料卡（v4.70.33） // 🧾 產品與成本模組 批次1：偵錯與待處理中心（v4.70.31）
 import * as WASTE from './_waste.js' // 🧪 耗損紀錄 v1（批次 1b，v4.70.32） // 🧾 產品與成本模組 批次1：偵錯與待處理中心（v4.70.31）
+import { buildDash as cdDash, buildVendors as cdVendors, applyDashOp as cdApply } from './_costdash.js' // 📊 成本模組 批次5a 成本總覽＋廠商月帳（v4.70.34）
 
 const clean = (v) => (v || '').trim().replace(/^["']|["']$/g, '').replace(/^[A-Za-z0-9_]+=/, '').trim()
 const SB_URL = clean(process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL)
@@ -4843,6 +4844,33 @@ export default async function handler(req, res) {
     }
     const slim = {}; for (const [k, v] of Object.entries(t.supplies || {})) { const { recs, convs, ...rest } = v; slim[k] = { ...rest, nConv: (convs || []).length } }
     return res.status(200).json({ ok: true, me: { name: meW.name, canEdit: canEditM }, ...t, supplies: slim, log: (t.log || []).slice(0, 20) })
+  }
+  // ── 📊 成本總覽＋廠商月帳（批次 5a）──（v4.70.34，規格 §1、§6；規則在 api/_costdash.js，數字口徑沿用 _cost.buildTodo／_matcard.buildCards）
+  // GET  ?costdash=<OPS_BOARD_KEY>&me=token[&view=dash|vendors][&ym=YYYY-MM][&vendor=A|上展][&probe=<MENU_PROBE_KEY>]
+  // POST ?costdash=<OPS_BOARD_KEY> {token, op:'ratioCap'|'recon', ...}  → 限採購權限（permWho 'buy'），留紀錄
+  if (req.query?.costdash) {
+    const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
+    if (!ok2 || String(req.query.costdash) !== ok2) return res.status(403).json({ ok: false })
+    let bD = {}
+    if (req.method === 'POST') { try { bD = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {} }
+    const meTk = String(req.method === 'POST' ? (bD.token || '') : (req.query.me || ''))
+    const mkP = (process.env.MENU_PROBE_KEY || '').trim()
+    const probeD = req.method !== 'POST' && mkP && String(req.query.probe || '') === mkP
+    const meW = probeD ? { name: 'probe' } : await sopWho(meTk)
+    if (!meW) return res.status(403).json({ ok: false, error: '成本資料屬內部資料，請先綁定身分（私訊 DD「登入碼」）' })
+    const canD = !probeD && !!(await permWho(meTk, 'buy'))
+    if (req.method === 'POST') {
+      if (!canD) return res.status(403).json({ ok: false, error: '沒有設定的權限（採購權限）' })
+      const r = await cdApply({ kvGet, kvPut, who: meW, body: bD })
+      if (r.ok) await announceChanged()
+      return res.status(r.ok ? 200 : 400).json(r)
+    }
+    const todayD = new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10)
+    const mosD = (() => { const out = []; const d = new Date(todayD + 'T00:00:00Z'); for (let i = 0; i < 13; i++) { out.push(d.toISOString().slice(0, 7)); d.setUTCMonth(d.getUTCMonth() - 1) } return out })()
+    const view = String(req.query.view || 'dash')
+    if (view === 'vendors') { const t = await cdVendors({ kvGet, months: mosD, ym: String(req.query.ym || ''), detail: String(req.query.vendor || '') }); return res.status(200).json({ ok: true, me: { name: meW.name, canEdit: canD }, ...t }) }
+    const t = await cdDash({ kvGet, months: mosD })
+    return res.status(200).json({ ok: true, me: { name: meW.name, canEdit: canD }, ...t })
   }
   // ── 🧪 耗損紀錄 v1（批次 1b）──（v4.70.32，規格 docs/COST_MODULE_SPEC.md「耗損紀錄(AI 拍照)」；規則在 api/_waste.js）
   // GET  ?waste=<OPS_BOARD_KEY>&me=token[&months=3][&probe=<MENU_PROBE_KEY>]  → 紀錄（含舊備料板耗損）＋統計＋候選物料＋設定

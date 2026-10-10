@@ -240,6 +240,7 @@ const EDIT_FN = {
   lbNew:'shift', lbDel:'shift', lbRen:'shift', lbCopy:'shift', lbSnap:'shift', lbSwitch:'shift', lbUndo:'shift', lbVDel:'shift', lbVRen:'shift', lbVRestore:'shift', lbClearAll:'shift', lbRowClear:'shift', lbColClear:'shift', lbWageMenu:'shift', lbFinSet:'shift', lbAmtPick:'shift',
   invCount:'*', invEdit:'*', invSave:'*', invDel:'*',
   wasteShot:'waste', wasteManual:'waste', wasteSend:'waste', wasteVoid:'waste', wasteCfgSave:'waste', wasteAi:'waste',
+  cdCapSave:'buy', cdReconSave:'buy', // 成本總覽：成本率上限／月帳對帳＝採購權限（批次 5a v4.70.34）
   buyNew:'buy', buySend:'buy', buyOp:'buy', buyRecv:'buy', recvPick:'buy', recvSend:'buy', buyCat:'buy', buyPick:'buy',
 }
 function permFnTab(el){
