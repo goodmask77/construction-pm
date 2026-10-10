@@ -575,9 +575,9 @@ function lineChart(opt){
   const n = cols.length
   const xf = idxMode ? (i => String(opt.xFmt ? opt.xFmt(labels[i], i) : labels[i])) : (i => String(opt.xFmt ? opt.xFmt(cols[i].x) : cols[i].x))
   // X 刻度數量＝看標籤實際寬度塞得下幾個（不重疊），最多 8 個、頭尾一定有
-  const xlW = Math.max(...cols.map((_,i)=>xf(i).length)) * FS * 0.62 + 12
+  const xlW = Math.max(...cols.map((_,i)=>xf(i).length)) * FS * 0.66 + 12
   const want = Math.max(2, Math.min(8, n, Math.floor((W-PL-PR) / xlW))), tix0 = [...new Set(Array.from({length:want},(_,k)=>Math.round(k*(n-1)/(want-1||1))))]
-  const tix = []; for (const i of tix0) { if (tix.length && X(cols[i].x) - X(cols[tix[tix.length-1]].x) < xlW) { if (i === n-1) tix.pop(); else continue } tix.push(i) } // 相鄰兩個太近就捨掉前一個（尾端一定留）
+  const tix = []; for (const i of tix0) { const pv = tix[tix.length-1]; if (tix.length && X(cols[i].x) - X(cols[pv].x) < ((pv === 0 || i === n-1) ? xlW*1.45 : xlW)) { if (i === n-1) tix.pop(); else continue } tix.push(i) } // 相鄰兩個太近就捨掉前一個（尾端一定留）
   const xa = tix.map(i => { const x = X(cols[i].x), anc = n===1?'middle':i===0?'start':i===n-1?'end':'middle'; return `<line x1="${x.toFixed(1)}" x2="${x.toFixed(1)}" y1="${H-PB}" y2="${H-PB+4}" stroke="#3A4452"/><text x="${x.toFixed(1)}" y="${H-PB+15}" text-anchor="${anc}" font-size="${FS}" fill="#8A94A6">${esc9(xf(i))}</text>` }).join('')
   let body = ''
   ser.forEach((s, si) => {
