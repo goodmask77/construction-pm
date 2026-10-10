@@ -264,7 +264,7 @@ const tnS = {
   tasks: null, cats: null, view: 'today', q: '', fStatus: 'open', sortMode: 'manual',
   showDone: false, showAllDone: false, sel: null, drag: null, dragCat: null,
   editCat: null, colorCat: null, gdNames: [], me: '', meApprover: false, ptsNote: '', anim: { inView: true, noDone: true, followReduce: false, allOff: false }, quick: '', gnew: {}, tagIn: '', newCatIn: '',
-  hover: null, colOf: {}, inited: false, loaded: false, ownerCustom: false,
+  hover: null, colOf: {}, inited: false, loaded: false, ownerCustom: false, ptsEditOpen: false,
   assignAsk: null,  // 指派完浮出的通知三選一 {id,owner}
   dragOwn: null,    // 負責人視角：正在拖的人員組
   ownerOrd: null,   // 負責人分組排序 {order:[姓名…]}（sp_team_pm_ownerord 全裝置同步）
@@ -592,7 +592,8 @@ function tnOwnerCustom(id, v) {
   if (t && (t.owner || '') !== nm) tnS.assignAsk = { id: id, owner: nm };
   tnUpd(id, { owner: nm });
 }
-function tnOpen(id) { tnS.sel = id; tnS.ownerCustom = false; tnS.tagIn = ''; tnRender(); }
+function tnOpen(id) { tnS.sel = id; tnS.ownerCustom = false; tnS.tagIn = ''; tnS.ptsEditOpen = false; tnRender(); } // 每次開卡積分預設收合
+function tnPtsEditToggle() { tnS.ptsEditOpen = !tnS.ptsEditOpen; tnRender(); } // v4.70.29 展開/收合積分分數鈕（限 approver）
 function tnClose() { tnS.sel = null; tnRender(); }
 function tnAttDel(id, fid) {
   if (!confirm('移除這個附件？')) return;
@@ -1428,22 +1429,33 @@ function tnModal() {
   h += F('任務積分', (function () {
     const cur = Number(t.pts) || 0;
     const tr = tnTier(t.pts);
-    // v4.70.28 張良：任務積分只有我＋有開放權限的人(後台審核者 approver)能編輯；其他人看得到目前分數但點不動
+    // v4.70.29 張良「不要把全部分數列出來，只有我跟有權限的人開啟編輯才出現」：
+    // 平常收合＝只顯示目前「幾分・哪一級」；approver 才有「編輯分數」鈕，按了才展開 11 顆分數鈕
     const canPts = !!tnS.meApprover;
+    const open = canPts && !!tnS.ptsEditOpen;
     const opts = [1, 2, 3, 5, 8, 10, 15, 20, 30, 50, 100];
-    let hh = '<div style="display:flex;gap:6px;flex-wrap:wrap;padding-top:3px">'
+    const tc = tr ? tnTierColor(tr) : tnC.faint;
+    // 收合行：● 級距名 X分・說明（像積分說明的級距列）；沒設＝未計分
+    let hh = '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding-top:3px">'
+      + ((cur && tr)
+        ? '<span style="width:9px;height:9px;border-radius:50%;background:' + tc + ';flex-shrink:0"></span>'
+          + '<span style="font-size:13px;font-weight:900;color:' + tc + '">' + tnEsc(tr.name) + '</span>'
+          + '<span style="font-family:' + tnMONO + ';font-size:13px;font-weight:800;color:' + tc + '">' + cur + ' 分</span>'
+          + (tr.desc ? '<span style="font-size:12px;color:' + tnC.sub + '">' + tnEsc(tr.desc) + '</span>' : '')
+        : '<span style="font-size:12.5px;color:' + tnC.faint + '">未計分</span>')
+      + '</div>';
+    // 操作列：編輯分數(限 approver，toggle 展開)＋積分說明(全員看級距表)
+    hh += '<div style="display:flex;align-items:center;gap:8px;margin-top:8px;flex-wrap:wrap">';
+    if (canPts) hh += '<button onclick="tnPtsEditToggle()" style="display:inline-flex;align-items:center;gap:5px;border:1px solid ' + (open ? tnC.accent : tnC.line) + ';background:' + (open ? tnC.accentSoft : 'transparent') + ';color:' + (open ? tnC.accent : tnC.sub) + ';border-radius:999px;padding:3px 12px;font-size:11.5px;font-weight:700;cursor:pointer">' + tnI(open ? 'x' : 'gear', 11, open ? tnC.accent : tnC.sub) + (open ? '收起' : '編輯分數') + '</button>';
+    hh += '<button onclick="tnPtsHelp()" style="display:inline-flex;align-items:center;gap:4px;border:1px solid ' + tnC.line + ';background:transparent;color:' + tnC.sub + ';border-radius:999px;padding:3px 10px;font-size:11.5px;cursor:pointer">' + tnI('star', 11) + '積分說明</button>';
+    hh += '</div>';
+    // 展開才出現 11 顆分數鈕（只有 approver 會 open）
+    if (open) hh += '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px">'
       + opts.map(function (pv) {
-        const pc = (tnTier(pv) || { color: '#9AA3AF' }).color; // v2.0 鈕色＝該分數級距色
+        const pc = (tnTier(pv) || { color: '#9AA3AF' }).color; // 鈕色＝該分數級距色
         const on = cur === pv;
-        if (!canPts) // 無權限＝唯讀：只亮目前分數、其餘變灰，點了給小提示不改值
-          return '<button onclick="tnToastMini(\'任務積分僅開放權限者可編輯\')" title="僅開放權限者可編輯" style="min-width:42px;padding:7px 4px;border-radius:8px;border:1.5px solid ' + (on ? pc : tnC.line) + ';background:' + (on ? pc : 'transparent') + ';color:' + (on ? '#10151C' : tnC.faint) + ';font-family:' + tnMONO + ';font-size:13px;font-weight:800;cursor:default;opacity:' + (on ? '1' : '.45') + '">' + pv + '</button>';
         return '<button onclick="tnUpd(\'' + t.id + '\',{pts:' + (on ? 'undefined' : pv) + '})" title="' + (on ? '再點一下＝清除（不計分）' : pv + ' 分') + '" style="min-width:42px;padding:7px 4px;border-radius:8px;border:1.5px solid ' + pc + ';background:' + (on ? pc : 'transparent') + ';color:' + (on ? '#10151C' : pc) + ';font-family:' + tnMONO + ';font-size:13px;font-weight:800;cursor:pointer' + (on ? ';box-shadow:0 0 10px ' + pc + '66' : '') + '">' + pv + '</button>';
       }).join('') + '</div>';
-    hh += '<div style="display:flex;align-items:center;gap:10px;margin-top:8px;flex-wrap:wrap">'
-      + (tr ? '<span style="font-size:12px;font-weight:900;color:' + tr.color + '">' + cur + ' 分・' + tnEsc(tr.name) + '</span>' : '<span style="font-size:12px;color:' + tnC.faint + '">沒選＝不計分</span>')
-      + (canPts ? '' : '<span style="font-size:11px;color:' + tnC.faint + '">（僅開放權限者可編輯）</span>')
-      + '<button onclick="tnPtsHelp()" style="display:inline-flex;align-items:center;gap:4px;border:1px solid ' + tnC.line + ';background:transparent;color:' + tnC.sub + ';border-radius:999px;padding:3px 10px;font-size:11.5px;cursor:pointer">' + tnI('star', 11) + '積分說明</button>'
-      + '</div>';
     return hh;
   })());
   // ⏱ 倒數計時（張良「時間到就爆炸」）：設一段時間→卡片即時倒數→歸零爆炸
@@ -1819,7 +1831,7 @@ function tnPtsCfgDraw(){
   const old = document.getElementById('tnPtsOv'); if (old) old.remove();
   const ov = document.createElement('div'); ov.id = 'tnPtsOv';
   ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:900;display:flex;align-items:center;justify-content:center;padding:16px';
-  ov.innerHTML = '<div style="background:' + tnMOD + ';border:1px solid ' + tnC.line + ';border-radius:14px;max-width:440px;width:100%;max-height:84vh;overflow:auto;padding:18px" onclick="event.stopPropagation()">'
+  ov.innerHTML = '<div style="background:' + tnMOD + ';border:1px solid ' + tnC.line + ';border-radius:14px;width:min(680px,96vw);max-height:84vh;overflow:auto;padding:18px" onclick="event.stopPropagation()">'
     + '<div style="display:flex;align-items:center;gap:7px;font-weight:800;font-size:15px;color:' + tnC.text + '"><span style="color:' + tnC.amber + '">' + tnI('star', 15, tnC.amber) + '</span>積分級距</div>'
     + '<div style="font-size:12px;color:' + tnC.faint + ';margin:4px 0 10px">拖 ⠿ 排順序＝等級由低到高；點色塊改顏色、小漸層塊＝彩虹；每列「特效」鈕＝開七軌道組合器；任務達到「起始分」就套該級（徽章字級跟等級走）</div>'
     + '<div id="tnPtsList">'
@@ -1829,7 +1841,7 @@ function tnPtsCfgDraw(){
       const isRb = col === 'rainbow';
       const swatch = isRb ? tnRBG : (/^#/.test(col) ? col : baseC); // 色塊顯示：彩虹=漸層
       const pickVal = /^#/.test(col) ? col : baseC;
-      return '<div class="tnPtsRow" data-pti="' + i + '" style="display:flex;gap:6px;align-items:center;margin-bottom:8px">'
+      return '<div class="tnPtsRow" data-pti="' + i + '" style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:8px">'
       + '<span class="tnPtsHandle" title="拖我排順序" style="flex-shrink:0;display:flex;cursor:grab;color:' + tnC.faint + ';touch-action:none">' + tnI('grip', 14) + '</span>'
       + '<span style="position:relative;flex-shrink:0;display:flex">'
       + '<button onclick="this.nextElementSibling.click()" title="這一級的顏色（點我改）" style="width:22px;height:22px;border-radius:50%;border:1.5px solid ' + tnC.line + ';cursor:pointer;padding:0;background:' + swatch + '"></button>'
@@ -1838,7 +1850,7 @@ function tnPtsCfgDraw(){
       + '<button onclick="window._tnPT[' + i + '].color=\'rainbow\';tnPtsCfgDraw()" title="設成彩虹（漸層）" style="flex-shrink:0;width:15px;height:15px;border-radius:4px;border:1px solid ' + tnC.line + ';cursor:pointer;padding:0;background:' + tnRBG + ';opacity:' + (isRb ? 1 : .45) + '"></button>'
       + '<input value="' + (ti.name||'') + '" placeholder="級名" onchange="window._tnPT[' + i + '].name=this.value.trim()" style="width:64px;padding:7px;border:1px solid ' + tnC.line + ';border-radius:8px;background:transparent;color:' + tnC.text + ';font-weight:800">'
       + '<input inputmode="numeric" value="' + (ti.min||0) + '" onchange="window._tnPT[' + i + '].min=Math.max(0,Number(this.value)||0)" style="width:50px;padding:7px;border:1px solid ' + tnC.line + ';border-radius:8px;background:transparent;color:' + tnC.text + ';text-align:center" title="起始分">'
-      + '<input value="' + (ti.desc||'') + '" placeholder="說明" onchange="window._tnPT[' + i + '].desc=this.value.trim()" style="flex:1;min-width:0;padding:7px;border:1px solid ' + tnC.line + ';border-radius:8px;background:transparent;color:' + tnC.sub + ';font-size:12.5px">'
+      + '<input value="' + (ti.desc||'') + '" placeholder="說明（完整顯示）" onchange="window._tnPT[' + i + '].desc=this.value.trim()" style="flex:1 1 220px;min-width:200px;padding:7px;border:1px solid ' + tnC.line + ';border-radius:8px;background:transparent;color:' + tnC.sub + ';font-size:12.5px">'
       + '<button onclick="tnPtsFxEdit(' + i + ')" title="這一級的特效組合（七軌道）" style="flex-shrink:0;display:inline-flex;align-items:center;gap:3px;padding:6px 10px;border:1px solid ' + (ti.mods ? tnC.accent : tnC.line) + ';border-radius:8px;background:' + (ti.mods ? tnC.accentSoft : 'transparent') + ';color:' + (ti.mods ? tnC.accent : tnC.sub) + ';cursor:pointer;font-size:12px;font-weight:700">' + tnI('star', 12, ti.mods ? tnC.accent : 'currentColor') + '特效</button>'
       + '<button onclick="window._tnPT.splice(' + i + ',1);tnPtsCfgDraw()" style="padding:6px 9px;border:1px solid ' + tnC.line + ';border-radius:8px;background:transparent;color:' + tnC.red + ';cursor:pointer">✕</button></div>'; }).join('')
     + '</div>'
