@@ -190,6 +190,23 @@ export async function applyCardOp ({ kvGet, kvPut, who, body, uploadPrivate }) {
     }
     await kvPut(CARD_KEY, doc, '物料換算(' + who.name + ')'); return { ok: true }
   }
+  if (op === 'convBatchAccept') { // 批次接受「阿桑快照換算」或「規格文字建議」（規格 §2：紀錄頁可批次確認；每筆各留一條）
+    const which = body.which === 'suggested' ? 'suggested' : 'snapshot'
+    const snap = await loadSnap(kvGet); const master = await loadMaster(kvGet, snap)
+    let n = 0
+    for (const p of master.products) {
+      const k = supplyKeyOf(p.sys, p.code); const arr = doc.conv[k] = doc.conv[k] || []
+      const cands = which === 'snapshot' ? parseConvText(p.conv) : parseSpec(p.spec)
+      for (const c of cands) {
+        if (arr.some(x => !x.off && (x.to === c.to || x.noconv))) continue
+        const mu = METRIC[String(p.unit || '').toLowerCase()]; if (mu && mu[0] === c.to) continue // 公制已涵蓋
+        if ((c.to === 'g' && cands.some(y => y.to === 'ml' && y.factor === c.factor)) || (c.to === 'ml' && cands.some(y => y.to === 'g' && y.factor === c.factor))) { if (!body.includeGml) continue } // g=ml 1:1 不批次接受（決策 #14）
+        arr.push({ to: c.to, factor: c.factor, by: who.name, at, status: 'confirmed', mode: '批次接受' + (which === 'snapshot' ? '快照' : '規格建議'), why: c.why || '阿桑系統 item_convs（10-06 快照）' }); n++
+        if (n >= 2000) break
+      }
+    }
+    log({ which, n }); await kvPut(CARD_KEY, doc, '物料換算批次接受(' + who.name + ')'); return { ok: true, n }
+  }
   if (op === 'quote') { // 手動價格紀錄（報價／確認價）：只新增
     const k = String(body.supplyKey || ''), price = Number(body.price), date = String(body.date || '').slice(0, 10)
     if (!k || !(price > 0) || !/^\d{4}-\d{2}-\d{2}$/.test(date)) return { ok: false, error: '供應品、價格（>0）、日期都要填' }

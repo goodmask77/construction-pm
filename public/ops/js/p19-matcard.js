@@ -53,7 +53,7 @@
     const total = (MC.cards || []).length, inc = (MC.cards || []).filter(c => c.status === '啟用' && !c.complete).length
     let h = `<section style="padding:14px 16px"><div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap"><h2 style="margin:0;display:flex;align-items:center;gap:8px">${IC.card} 物料庫・物料卡</h2>`
       + `<span class="hint">一張卡＝一種東西；底下可掛多個代碼（供應品），各代碼保留自己的價格歷史</span>`
-      + `<span style="margin-left:auto;display:flex;gap:6px"><button class="mini" onclick="matcardRefresh()">${IC.undo} 重新整理</button></span></div>`
+      + `<span style="margin-left:auto;display:flex;gap:6px;flex-wrap:wrap">${MC.me && MC.me.canEdit ? `<button class="mini" onclick="_mcBatchConv('snapshot')" title="把阿桑系統 10-06 的換算表（item_convs）一次當作已確認；g=ml 1:1 的不含，仍要逐筆看">${IC.check} 批次接受快照換算</button><button class="mini" onclick="_mcBatchConv('suggested')" title="把規格文字解析出的建議（如 1000g/罐）一次當作已確認">${IC.check} 批次接受規格建議</button>` : ''}<button class="mini" onclick="matcardRefresh()">${IC.undo} 重新整理</button></span></div>`
     h += `<div class="hint" style="margin-top:8px;line-height:1.7">${nf(total)} 張卡（已合併 ${nf(MC.nMerged)} 個代碼）・啟用中成本不完整 <b style="color:${inc ? COL.o : COL.g}">${nf(inc)}</b> 張；主檔＝阿桑即時（${esc(String(MC.masterUpdatedAt || '').slice(5, 16).replace('T', ' '))}），換算建議來自規格文字＋10-06 快照，<b>人確認才算完整</b></div></section>`
     h += `<section style="padding:12px"><div id="mcFilters">${filters()}</div></section>`
     h += `<div id="mcList">${list()}</div>`
@@ -201,6 +201,7 @@
     svg += `<div style="display:flex;gap:10px;flex-wrap:wrap" class="hint">` + lines.map(l => `<span><span style="display:inline-block;width:10px;height:10px;background:${l.col};border-radius:2px"></span> ${esc(l.s.code)}・${esc(l.s.supplier)}</span>`).join('') + `</div>`
     return svg
   }
+  window._mcBatchConv = async function (which) { if (!confirm(which === 'snapshot' ? '把阿桑 10-06 換算表（item_convs）全部當作已確認？（g=ml 1:1 的不含；每筆留紀錄、可逐筆取消）' : '把規格文字解析的建議換算全部當作已確認？（每筆留紀錄、可逐筆取消）')) return; const r = await fetch('/api/mail-sync?matcard=' + encodeURIComponent(K), { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ op: 'convBatchAccept', which, token: TK() }) }); const j = await r.json().catch(() => ({})); alert(j.ok ? '完成：接受了 ' + j.n + ' 條換算' : (j.error || '沒成功')); if (j.ok) await matcardFetch() }
   window._mcPrimary = async function (id, key) { if (await post({ op: 'edit', cardId: id, fields: { primary: key } })) await matcardFetch() }
   window._mcUnmerge = async function (key) { if (!confirm('把這個代碼從這張卡拆出去（變回自己一張卡）？歷史不會變。')) return; if (await post({ op: 'unmerge', supplyKey: key })) await matcardFetch() }
   window._mcUnsplit = async function (key) { if (await post({ op: 'unsplit', supplyKey: key })) await matcardFetch() }
