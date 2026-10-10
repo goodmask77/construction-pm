@@ -117,9 +117,9 @@ export async function buildRecipes ({ kvGet, months, light }) {
   const list = [], ownDishes = []
   for (const rc of Object.values(recipes)) {
     const c = costOf(rc, [])
-    if (rc.src === 'own' && rc.type === 'dish') { const sn = (snaps[rc.key] || []); ownDishes.push({ ...rc, category: rc.station || '', price: null, abCost: null, cost: c.total, perUnit: c.total, status: c.status === 'ok' ? '完整' : (c.gaps[0] || (rc.items.length ? '不完整' : '待補配方')), ok: c.status === 'ok' && rc.items.length > 0, gaps: c.gaps.slice(0, 6), lines: light ? undefined : c.lines, margin: null, content: { items: rc.items.length > 0, steps: (rc.steps || []).length > 0, photo: !!rc.photo }, snaps: light ? undefined : sn.slice(-40), lastSnap: sn.length ? sn[sn.length - 1] : null }); continue }
+    if (rc.src === 'own' && rc.type === 'dish') { const sn = (snaps[rc.key] || []); ownDishes.push({ ...rc, category: rc.station || '', price: null, abCost: null, cost: c.total, perUnit: c.total, status: !rc.items.length ? '待補配方' : (c.status === 'ok' ? '完整' : (c.gaps[0] || '不完整')), ok: c.status === 'ok' && rc.items.length > 0, gaps: c.gaps.slice(0, 6), lines: light ? undefined : c.lines, margin: null, content: { items: rc.items.length > 0, steps: (rc.steps || []).length > 0, photo: !!rc.photo }, snaps: light ? undefined : sn.slice(-40), lastSnap: sn.length ? sn[sn.length - 1] : null }); continue }
     const sn = (snaps[rc.key] || [])
-    list.push({ ...rc, cost: c.total, perUnit: c.perUnit, status: c.status === 'ok' ? '完整' : (c.status === 'cycle' ? '循環引用' : (c.status === 'depth' ? '超過深度' : (c.gaps[0] || '不完整'))), ok: c.status === 'ok', gaps: c.gaps.slice(0, 6), lines: light ? undefined : c.lines,
+    list.push({ ...rc, cost: c.total, perUnit: c.perUnit, status: !rc.items.length ? '待補配方' : (c.status === 'ok' ? '完整' : (c.status === 'cycle' ? '循環引用' : (c.status === 'depth' ? '超過深度' : (c.gaps[0] || '不完整')))), ok: c.status === 'ok' && rc.items.length > 0, gaps: c.gaps.slice(0, 6), lines: light ? undefined : c.lines,
       content: { items: rc.items.length > 0, steps: (rc.steps || []).length > 0, photo: !!rc.photo }, snaps: light ? undefined : sn.slice(-40), lastSnap: sn.length ? sn[sn.length - 1] : null })
   }
   // 出餐食譜（在賣 90 道）：快照菜單行 ＋ /costs/menu 售價；行成本用我們的引擎（代碼→供應品／半成品）

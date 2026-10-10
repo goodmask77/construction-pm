@@ -540,3 +540,72 @@ async function prepLogView(ym){
 }
 const prevYm = ym => { const t2 = new Date(ym + '-15'); t2.setMonth(t2.getMonth()-1); return t2.toISOString().slice(0,7) }
 const nextYm = ym => { const t2 = new Date(ym + '-15'); t2.setMonth(t2.getMonth()+1); return t2.toISOString().slice(0,7) }
+
+// ── 共用曲線圖 lineChart（v4.70.36 張良 2026-10-10「所有曲線圖 XY 軸都要有數字、邊移動都可以看得到、全部一起檢查更新」）──
+// 全站折線圖只走這一個函式：Y 軸整數刻度＋格線、X 軸頭尾一定標、滑鼠／手指移動＝直線浮標＋浮窗顯示該點所有數值、單點也畫（不再顯示「資料點不足」）
+// opt：labels[]（X 類別，例月份/日期）＋ series[{name,color,vals[],dotColors[]}]；或 series[{name,color,pts:[{x:數字(毫秒),y}]}] 時序模式
+//      xFmt(label)=軸上短標、tipX(label,i)=浮窗標題、yFmt(v)=數值格式、zero=Y 從 0 起、h=viewBox 高、click(i)=點圓點要跑的 js、noFill=不填底色
+function lineChart(opt){
+  const esc9 = s => String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;')
+  const ser = (opt.series||[]).filter(s => (s.vals && s.vals.length) || (s.pts && s.pts.length))
+  if (!ser.length) return '<div class="hint" style="font-size:12px">沒有資料</div>'
+  const yFmt = opt.yFmt || (v => (Math.round(v*100)/100).toLocaleString())
+  const idxMode = !!opt.labels, labels = opt.labels || []
+  // 每個 X 位置整理成一欄：{x:原始x(序號或毫秒), lb:浮窗標題, v:[各線數值|null]}
+  let cols = []
+  if (idxMode) cols = labels.map((lb,i) => ({ x:i, lb:(opt.tipX?opt.tipX(lb,i):lb), v:ser.map(s=>(s.vals[i]==null||!isFinite(+s.vals[i]))?null:+s.vals[i]) }))
+  else { const xs = [...new Set(ser.flatMap(s=>s.pts.map(p=>+p.x)))].sort((a,b)=>a-b); cols = xs.map(x => ({ x, lb:(opt.tipX?opt.tipX(x):String(x)), v:ser.map(s=>{ const p=s.pts.find(p=>+p.x===x); return (p&&isFinite(+p.y))?+p.y:null }) })) }
+  const allV = cols.flatMap(c=>c.v).filter(v=>v!=null)
+  if (!allV.length) return '<div class="hint" style="font-size:12px">沒有資料</div>'
+  let mn0 = Math.min(...allV), mx0 = Math.max(...allV); if (opt.zero) mn0 = Math.min(0, mn0)
+  // Y 刻度：好看的步距（1/2/2.5/5×10^n）、4 格左右；最大值貼頂就再加一格
+  const span = Math.max(mx0-mn0, Math.abs(mx0)*0.1, 1e-9), raw = span/4, pow = Math.pow(10, Math.floor(Math.log10(raw)))
+  const step = [1,2,2.5,5,10].map(m=>m*pow).find(v=>v>=raw) || pow*10
+  const mn = Math.floor(mn0/step+1e-9)*step, mx = Math.max(Math.ceil(mx0/step-1e-9)*step, mn+step), rg = mx-mn
+  const yT = []; for (let v=mn; v<=mx+step/2; v+=step) yT.push(+v.toFixed(10))
+  const W = 640, H = opt.h || 170, PR = 14, PT = 14, PB = 26
+  const PL = 12 + Math.max(...yT.map(v=>String(yFmt(v)).length))*6.3
+  const x0 = cols[0].x, x1 = cols[cols.length-1].x
+  const X = x => PL + (x1===x0 ? 0.5 : (x-x0)/(x1-x0))*(W-PL-PR), Y = v => PT + (1-(v-mn)/rg)*(H-PT-PB)
+  const grid = yT.map(v=>`<line x1="${PL}" x2="${W-PR}" y1="${Y(v).toFixed(1)}" y2="${Y(v).toFixed(1)}" stroke="#2A3340"/><text x="${PL-6}" y="${(Y(v)+3.5).toFixed(1)}" text-anchor="end" font-size="10" fill="#8A94A6">${esc9(yFmt(v))}</text>`).join('')
+  // X 刻度：最多 8 個、頭尾一定有
+  const n = cols.length, want = Math.min(8, n), tix = [...new Set(Array.from({length:want},(_,k)=>Math.round(k*(n-1)/(want-1||1))))]
+  const xf = idxMode ? (i => opt.xFmt ? opt.xFmt(labels[i], i) : labels[i]) : (i => opt.xFmt ? opt.xFmt(cols[i].x) : String(cols[i].x))
+  const xa = tix.map(i => { const x = X(cols[i].x), anc = n===1?'middle':i===0?'start':i===n-1?'end':'middle'; return `<line x1="${x.toFixed(1)}" x2="${x.toFixed(1)}" y1="${H-PB}" y2="${H-PB+4}" stroke="#3A4452"/><text x="${x.toFixed(1)}" y="${H-PB+15}" text-anchor="${anc}" font-size="10" fill="#8A94A6">${esc9(xf(i))}</text>` }).join('')
+  let body = ''
+  ser.forEach((s, si) => {
+    const col = s.color || '#4DA3FF'
+    const pts = cols.map(c => c.v[si]==null ? null : { x:X(c.x), y:Y(c.v[si]) })
+    const segs = []; let cur = []; pts.forEach(p => { if (p) cur.push(p); else { if (cur.length) segs.push(cur); cur = [] } }); if (cur.length) segs.push(cur) // 中間缺值就斷線
+    for (const sg of segs) {
+      const ps = sg.map(p=>`${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ')
+      if (ser.length===1 && !opt.noFill && sg.length>1) body += `<polygon points="${sg[0].x.toFixed(1)},${H-PB} ${ps} ${sg[sg.length-1].x.toFixed(1)},${H-PB}" style="fill:${col};fill-opacity:.13"/>`
+      if (sg.length>1) body += `<polyline points="${ps}" fill="none" style="stroke:${col}" stroke-width="2" stroke-linejoin="round"/>`
+    }
+    // 數字直接標在點上：單線且點數≤14 全標；點多時只標最高點（其餘滑過看）
+    const vs = cols.map(c=>c.v[si]), mxI = vs.indexOf(Math.max(...vs.filter(v=>v!=null))), showAll = ser.length===1 && n<=14
+    pts.forEach((p,i) => { if (!p) return; const dc = (s.dotColors && s.dotColors[i]) || col
+      body += `<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="${n>40?2:3.2}" style="fill:${dc}${opt.click?';cursor:pointer':''}" stroke="#0E1217" stroke-width="1.2"${opt.click?` onclick="${esc9(opt.click(i))}"`:''}/>`
+      if (showAll || (ser.length===1 && i===mxI)) body += `<text x="${Math.min(W-PR-12, Math.max(PL+12, p.x)).toFixed(1)}" y="${(p.y-7).toFixed(1)}" text-anchor="middle" font-size="10" font-weight="700" fill="#C7D0DB">${esc9(yFmt(vs[i]))}</text>` })
+  })
+  const data = esc9(JSON.stringify({ n:ser.map(s=>s.name||''), c:ser.map(s=>s.color||'#4DA3FF'), p:cols.map(c=>({ x:+X(c.x).toFixed(1), lb:c.lb, y:c.v.map(v=>v==null?null:+Y(v).toFixed(1)), t:c.v.map(v=>v==null?null:String(yFmt(v))) })) }))
+  const curG = `<g class="lcCur" style="display:none;pointer-events:none"><line x1="0" x2="0" y1="${PT}" y2="${H-PB}" stroke="#9CC7F5" stroke-dasharray="3 3"/>${ser.map(s=>`<circle r="4.5" style="fill:${s.color||'#4DA3FF'}" stroke="#fff" stroke-width="1.5"/>`).join('')}</g>`
+  return `<div class="lcBox" style="position:relative"><svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto;display:block;touch-action:pan-y" data-lc="${data}" data-w="${W}" onmousemove="_lcHover(event,this)" onmouseleave="_lcLeave(this)" ontouchstart="_lcHover(event,this)" ontouchmove="_lcHover(event,this)" ontouchend="_lcLeave(this)"><line x1="${PL}" x2="${PL}" y1="${PT}" y2="${H-PB}" stroke="#3A4452"/><line x1="${PL}" x2="${W-PR}" y1="${H-PB}" y2="${H-PB}" stroke="#3A4452"/>${grid}${xa}${body}${curG}</svg><div class="lcTip" style="display:none;position:absolute;top:4px;pointer-events:none;background:#0F141B;border:1px solid #3A4452;border-radius:8px;padding:5px 9px;font-size:12px;line-height:1.5;white-space:nowrap;box-shadow:0 4px 14px rgba(0,0,0,.4);z-index:2"></div></div>`
+}
+// 曲線浮標：找離滑鼠／手指最近的 X 欄，移動指標線＋各線圓點，浮窗列出該欄每條線的數值
+window._lcHover = function(ev, svg){
+  let d; try { d = JSON.parse(svg.dataset.lc||'{}') } catch(_) { return }
+  if (!d.p || !d.p.length) return
+  const r = svg.getBoundingClientRect(), cx = (ev.touches ? ev.touches[0].clientX : ev.clientX) - r.left, vx = cx / r.width * (+svg.dataset.w)
+  let b = 0; d.p.forEach((p,i)=>{ if (Math.abs(p.x-vx) < Math.abs(d.p[b].x-vx)) b = i })
+  const p = d.p[b], g = svg.querySelector('.lcCur'); if (!g) return
+  g.style.display = ''; const ln = g.querySelector('line'); ln.setAttribute('x1', p.x); ln.setAttribute('x2', p.x)
+  g.querySelectorAll('circle').forEach((c,i)=>{ if (p.y[i]==null) { c.style.display='none'; return } c.style.display=''; c.setAttribute('cx', p.x); c.setAttribute('cy', p.y[i]) })
+  const tip = svg.parentNode.querySelector('.lcTip'); if (!tip) return
+  const e9 = s => String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;')
+  tip.innerHTML = `<b>${e9(p.lb)}</b>` + d.n.map((nm,i)=> p.t[i]==null ? '' : `<div><span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:${d.c[i]};margin-right:5px"></span>${nm?e9(nm)+' ':''}<b>${e9(p.t[i])}</b></div>`).join('')
+  tip.style.display = ''
+  const px = p.x / (+svg.dataset.w) * r.width
+  if (px > r.width*0.55) { tip.style.left = ''; tip.style.right = (r.width - px + 10) + 'px' } else { tip.style.right = ''; tip.style.left = (px + 10) + 'px' }
+}
+window._lcLeave = function(svg){ const g = svg.querySelector('.lcCur'); if (g) g.style.display='none'; const tip = svg.parentNode.querySelector('.lcTip'); if (tip) tip.style.display='none' }
