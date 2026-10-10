@@ -18,7 +18,8 @@ import { bossGenericText, queryBoss } from './_ddcoverage.js' // v4.70.41 DD 資
 const clean = (v) => (v || '').trim().replace(/^["']|["']$/g, '').replace(/^[A-Za-z0-9_]+=/, '').trim()
 const SECRET = clean(process.env.LINE_CHANNEL_SECRET)
 const TOKEN = clean(process.env.LINE_CHANNEL_ACCESS_TOKEN)
-const SIG_STRICT = (process.env.LINE_SIG_STRICT || '').trim() === '1' // v4.70.39：=1 才真的拒絕驗簽失敗；先觀察健康頁「驗簽失敗」歸零再開
+const SIG_STRICT = (process.env.LINE_SIG_STRICT || '').trim() === '1'
+const DD_LEAN = (process.env.DD_LEAN || '').trim() === '1' // v4.70.43 批次 1b：=1 每段資料只給「頭」＋query_section 代查完整版（整包塞資料→按需查詢）；先量健康頁「資料段落」再決定開 // v4.70.39：=1 才真的拒絕驗簽失敗；先觀察健康頁「驗簽失敗」歸零再開
 const ANTHROPIC = clean(process.env.ANTHROPIC_API_KEY)
 const SB_URL = clean(process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL)
 const SB_KEY = (process.env.SUPABASE_SERVICE_ROLE_KEY || '').trim().replace(/^["']|["']$/g, '').replace(/^[A-Za-z0-9_]+=/, '').trim()
@@ -1296,9 +1297,15 @@ async function answer(question, snaps, accountsText, financeText, activityText, 
     + (moneyOK ? '' : '\n\n⚠️這個群只能查「檔期狀況」（某天空檔／已有幾組幾人／可能包場），系統查回來的資料本來就不含客人姓名、電話、備註內容——這些是客人個資，對外一律不提供。有人問「誰訂的／客人電話／某客人來過幾次」時，回「客人資料這邊不方便提供，要查請私訊張哥 🙏」，不要用 query_resv 的 name/top。'))
   // v4.70.42 批次 1b 量測：每段資料各佔多少字（健康頁「資料段落佔比」；要瘦身先看哪段最肥）
   const SEC = { 規則: (canAct ? BOT_AGENT_GUIDE : '') + BOT_PERSONA + readonlyGuard + moneyGuard, 記憶: memoryText || '', 快照: snapshotsToContext(snaps, moneyOK), 任務: tasksText || '', 帳戶: moneyOK ? (accountsText || '') : '', 內帳: moneyOK ? (financeText || '') : '', 動態: activityText || '', 估價: moneyOK ? (estimatesText || '') : '', 夥伴班表人資: crewText || '', 結論: conclusionsText || '', 試算表: sheetText || '', '營收/阿桑/EM': moneyOK ? (posText || '') : '', 供應鏈: moneyOK ? (supplyText || '') : '', LINE額度: lineQuotaText || '', 目錄: catalogText || '', 文件庫: filelibText || '', 群組訊息: moneyOK ? (groupChatText || '') : '', 對話歷史: (Array.isArray(history) ? history : []).map(h => String(h.content || '')).join('') }
-  if (_aiAgg) { _aiAgg.sec = {}; for (const [k, v] of Object.entries(SEC)) _aiAgg.sec[k] = String(v).length }
-  const system = (canAct ? BOT_AGENT_GUIDE + '\n\n' : '') + BOT_PERSONA + readonlyGuard + moneyGuard + (memoryText || '') + sysDataHead() + snapshotsToContext(snaps, moneyOK) + (tasksText || '') + (moneyOK ? (accountsText || '') : '') + (moneyOK ? (financeText || '') : '') + (activityText || '') + (moneyOK ? (estimatesText || '') : '') + (crewText || '') + (conclusionsText || '') + (sheetText || '') + (moneyOK ? (posText || '') : '') + (moneyOK ? (supplyText || '') : '') + (lineQuotaText || '') + (catalogText || '') + (filelibText || '') + (moneyOK ? (groupChatText || '') : '')
-  const messages = [...(Array.isArray(history) ? history : []), { role: 'user', content: question }]
+  if (_aiAgg) { _aiAgg.sec = {}; for (const [k, v] of Object.entries(SEC)) _aiAgg.sec[k] = String(v).length; _aiAgg.lean = DD_LEAN }
+  _secFull = SEC // query_section 代查用（完整版）
+  const L = (name, v) => leanCut(name, v) // DD_LEAN=1 才縮，否則原樣
+  const system = (canAct ? BOT_AGENT_GUIDE + '\n\n' : '') + BOT_PERSONA + QUERY_GUIDE + readonlyGuard + moneyGuard + (memoryText || '') + sysDataHead() + L('快照', snapshotsToContext(snaps, moneyOK)) + L('任務', tasksText || '') + (moneyOK ? (accountsText || '') : '') + L('內帳', moneyOK ? (financeText || '') : '') + L('動態', activityText || '') + L('估價', moneyOK ? (estimatesText || '') : '') + L('夥伴班表人資', crewText || '') + L('結論', conclusionsText || '') + L('試算表', sheetText || '') + L('營收/阿桑/EM', moneyOK ? (posText || '') : '') + L('供應鏈', moneyOK ? (supplyText || '') : '') + (lineQuotaText || '') + L('目錄', catalogText || '') + L('文件庫', filelibText || '') + L('群組訊息', moneyOK ? (groupChatText || '') : '')
+  let hist = Array.isArray(history) ? history : []
+  if (DD_LEAN && hist.length > 18) { const head = (hist[0] && /【系統】以下是我們更早之前對話的濃縮摘要/.test(String(hist[0].content || ''))) ? hist.slice(0, 2) : []; hist = [...head, ...hist.slice(-16)] } // 1b：逐字對話留最近 16 則（舊的本來就有濃縮摘要）
+  if (DD_LEAN) hist = hist.map(h => (String(h.content || '').length > 1500 ? { ...h, content: String(h.content).slice(0, 1500) + '…（略）' } : h))
+  if (_aiAgg) { _aiAgg.sysLen = system.length; _aiAgg.histN = hist.length }
+  const messages = [...hist, { role: 'user', content: question }]
   // v4.70.29 走 AI 中樞 route=dd（設定頁可選 ChatGPT／Claude／Gemini；cache=system 可快取→Claude 連續對話輸入成本大降）；選的那家壞了自動退備援，D哥不會啞掉
   const tAi = Date.now()
   try {
@@ -1315,6 +1322,23 @@ async function answer(question, snaps, accountsText, financeText, activityText, 
 }
 // v4.70.39 一個事件內所有 AI 呼叫的彙總（代查迴圈一題可能打 2–4 次）：calls／fb 備援次數／err／it 輸入 token／inCut 輸入被「中段略」截斷／outCut 輸出撞到 3000 上限
 let _aiAgg = null
+// v4.70.43 批次 1b：本輪各資料段落「完整版」（query_section 代查用；每事件開頭由 answer() 重設）
+let _secFull = null
+const LEAN_CAP = { 快照: 6000, 任務: 5000, 內帳: 2500, 動態: 2500, 估價: 2000, 夥伴班表人資: 7000, 結論: 2500, 試算表: 2500, '營收/阿桑/EM': 9000, 供應鏈: 3000, 目錄: 2500, 文件庫: 2500, 群組訊息: 3000 }
+function leanCut(name, txt) {
+  const cap = LEAN_CAP[name]; txt = String(txt || '')
+  if (!DD_LEAN || !cap || txt.length <= cap) return txt
+  let cut = txt.slice(0, cap); const nl = cut.lastIndexOf('\n'); if (nl > cap * 0.6) cut = cut.slice(0, nl)
+  return cut + `\n…（「${name}」此段已縮短：只給前 ${cut.length} 字，完整共 ${txt.length} 字。要找特定人/品項/日期/更早的內容 → 輸出 {"type":"query_section","name":"${name}","kw":"關鍵字"} 代查完整版，不要說沒有）`
+}
+function querySection(name, kw) {
+  const full = _secFull && _secFull[String(name || '').trim()]
+  if (full == null) return `（沒有「${name}」這個段落；可用：${Object.keys(_secFull || {}).join('、')}）`
+  const k = String(kw || '').trim()
+  if (!k) return `◆ 段落「${name}」完整版（${full.length} 字）：\n` + full
+  const hits = String(full).split('\n').filter(l => l.toLowerCase().includes(k.toLowerCase()))
+  return `◆ 段落「${name}」含「${k}」的行（${hits.length} 行，系統代查）：\n` + (hits.length ? hits.join('\n') : '（這段裡沒有含這個關鍵字的行；換個寫法或不給 kw 看整段）')
+}
 const aiAggReset = () => { _aiAgg = { calls: 0, fb: 0, err: 0, it: 0, ot: 0, ms: 0, inCut: 0, outCut: 0, provider: '', model: '' } }
 function aiAggAdd(r, system, t0, e) {
   if (!_aiAgg) aiAggReset()
@@ -2033,6 +2057,21 @@ function extractMemoryTags(reply) {
   return { facts, clean }
 }
 
+// v4.70.43 批次 1b：資料代查指令說明獨立成 QUERY_GUIDE，附給「每一個人」（原本塞在 BOT_AGENT_GUIDE 只有操作者看得到→夥伴問 GD 叫貨單 DD 連代查都不會）
+const QUERY_GUIDE = `
+
+【資料代查指令（唯讀、不用確認、誰問都能用；外部群系統自動擋金額類）】摘要裡沒有的資料，在回覆裡輸出一行 JSON 指令，系統當場查完回填給你再答：
+- {"type":"query_pos_day","date":"2026-09-25","store":"ground"}  // 🔎資料代查（唯讀,不用確認,誰問都能用）：查某天某店「完整」銷售明細=逐品項份數金額+時段表+付款別。date 也可以只給月份 "2026-09"＝查整月（回每日營收+月合計,問某月總額/要補一段日期時用這個,**不要**一天一天查）。使用者問的資料你手上摘要沒有時,輸出這個指令(可附一句「我查一下」),系統會代查回填後你再答——**不要**回「資料沒帶到/請自己看App/請找張良接」。store=ground|abeach。
+- {"type":"query_resv","date":"2024-07-15","to":"2024-07-20"}  // 🔎A Beach 訂位代查（唯讀,不用確認）：任何日期的訂位「逐筆完整明細」（姓名/電話/人數/時間/狀態/客註/店註）＋當日備註（⚠️包場/公休註記），2021-02 開店～未來全查得到。date=YYYY-MM-DD 或 YYYY-MM 整月；to 選填查區間（一次最多 4 個月）；加 "kw":"婚" =資料庫端先搜關鍵字（姓名/客註/店註/當日備註）只回命中的筆——問「某段期間所有婚禮/包場/慶生」這種主題式問題**優先用 kw**,比整月硬掃又準又省。摘要裡只有彙總數字、使用者要「某天是誰訂的/電話/歷史某天明細/**兒童椅要幾張**」就用這個（回覆有🪑兒童椅合計＋誰要幾張）；問空檔也可以用（回「空檔」=確定沒被訂）。
+- {"type":"query_resv","name":"OD"}  // 🔎A Beach 訂位「關鍵字」代查（唯讀,不用確認）：用「客人姓名/電話片段」直搜 inline 全史（=後台搜尋框同源），回每筆日期+姓名+人數+狀態+**電話**。使用者問「客人XX的電話/XX上次什麼時候來/XX訂過幾次」這種用名字問的就用這個（不知道日期時不要用 date 亂猜）。
+- {"type":"query_resv","top":10}  // 🔎A Beach 常客排行代查（唯讀,不用確認）：掃 2021 開店～今全史，回「實際入座次數」最多的前 N 名（姓名/入座次數/累計人次/訂過幾次含取消/最近來店/電話）。使用者問「常客前十名/來最多次的客人/回頭客」就用這個。
+- {"type":"query_hr","month":"2026-08"}  // 🔎NUEiP人資代查（唯讀,不用確認）：任意月「出勤統計(每人出勤天數/遲到/早退/缺卡/曠職)+班表(每人排班天數)」。加 "date":"2026-08-15" =改看單日逐筆打卡+當日班表。摘要只有本月近況,問歷史月/某人某月統計就用這個。
+- {"type":"query_orders","month":"2026-10","store":"ground"}  // 🔎叫貨單代查（唯讀,不用確認,外部群自動擋）：某店某月「跟廠商的叫貨單逐張」（日期/廠商/狀態/幾項/金額）＋月合計＋依廠商合計。store=ground（GROUN:D，含向 AB 央廚叫貨）|abeach（A Beach）。加 "supplier":"上展" 只列那家；加 "items":1 連每張單的品項數量單價一起列。摘要裡只有近 8 張，使用者問「X 月叫貨單／跟某家叫了什麼／叫貨花多少」就用這個——**不要**回「沒接進來／去看 Google 試算表」。
+- {"type":"query_boss","feed":"gprod","kw":"牛奶"}  // 🔎阿桑系統通用代查（唯讀,不用確認,外部群自動擋）：摘要裡「阿桑系統其他資料」列出的每一份（feed=那行寫的代號，例 gprod=GD 產品主檔、gsup=GD 廠商、prod=AB 商品主檔、sup=AB 廠商、rcp=AB 配方、citem=AB 品項成本），整份撈出來逐筆列。月檔型的加 "month":"2026-10"；kw=關鍵字只列含它的列；limit 預設 80 最多 200。使用者問「GD 某產品售價/成本/庫存、某廠商的叫貨日/帳期、某配方用量」就用這個。
+- {"type":"query_fin","month":"2026-08"}  // 🔎財務內帳代查（唯讀,不用確認,外部群自動擋）：任意月收支「逐筆+月合計」。摘要只有最近120筆,問更早的月份/某月總支出就用這個。
+- **【代查鐵則】你沒有「稍等一下／待會撈回來再回報」的能力**——這一則回覆送出後就結束了，不會有下一則。要代查，就必須在**同一則回覆裡**輸出上面的 query_pos_day / query_resv JSON 指令（系統會當場查完回填、你再據此作答，使用者只會看到最終答案）。只寫「我幫你代查／撈回來整理給你／稍等一下」而**沒帶 JSON ＝什麼都不會發生＝對使用者說謊**（2026-10-04 真實翻車：答應查九月婚禮包場說「稍等一下」，結果指令沒輸出、使用者空等）。
+- {"type":"query_section","name":"夥伴班表人資","kw":"趙以棠"}  // 🔎資料段落完整版代查：摘要裡標了「此段已縮短」的段落，用這個拿完整內容；name=段落名（照摘要標的）、kw=關鍵字（只回含它的行；人名/品項/日期都可以；不給 kw=整段）。使用者問的人/品項/日期在縮短版裡找不到時，**先用這個查再回答**，不要說沒有。
+`
 const BOT_AGENT_GUIDE = `
 你除了回答問題，還能「直接操作」這個 App。當（且僅當）使用者明確要你「做某個操作」（新增/修改/刪除/記一筆/改狀態…）時，用一段 markdown json 區塊輸出指令；若只是問問題，就正常用文字回答、不要輸出 json。
 \`\`\`json
@@ -2050,16 +2089,7 @@ const BOT_AGENT_GUIDE = `
 - {"type":"set_item","category":"消防工程","item":"灑水頭","status":"完工","unitPrice":1200,"qty":10,"assignee":"王師傅"}  // 改細項；欄位都可省略
 - {"type":"add_category","name":"空調工程","budget":300000,"space":"工程"}  // 建大項分類（四個空間都可以，space 預設工程；例：在團隊工作建「採購」就帶"space":"團隊"）。任務中心的分類欄位就是這個大項，建好後用 add_task/update_task 的 category 歸類
 【夥伴名冊（主管限定頁,/prep→夥伴名冊）】已上線：欄位=姓名/店/部門/職務/到職日/年資/生日/年齡/性別/身分證(鎖名單)/緊急聯絡人/入職文件(勞動契約/身分證影本/存摺/體檢/衛生訓練/未成年法代)。你不能直接改名冊——使用者要改就教他打指令(主管私訊限定)：改文字欄「名冊 姓名 欄位 值」或「緊急聯絡人 姓名 電話」(改那個人的欄位)或「我的緊急聯絡人 內容」(掛自己名下)；傳文件「文件 姓名 體檢」後15分內傳照片/檔案；查收件「文件 姓名」。絕不要說「名冊沒有某欄位/要找CC加欄位」。
-- {"type":"query_pos_day","date":"2026-09-25","store":"ground"}  // 🔎資料代查（唯讀,不用確認,誰問都能用）：查某天某店「完整」銷售明細=逐品項份數金額+時段表+付款別。date 也可以只給月份 "2026-09"＝查整月（回每日營收+月合計,問某月總額/要補一段日期時用這個,**不要**一天一天查）。使用者問的資料你手上摘要沒有時,輸出這個指令(可附一句「我查一下」),系統會代查回填後你再答——**不要**回「資料沒帶到/請自己看App/請找張良接」。store=ground|abeach。
-- {"type":"query_resv","date":"2024-07-15","to":"2024-07-20"}  // 🔎A Beach 訂位代查（唯讀,不用確認）：任何日期的訂位「逐筆完整明細」（姓名/電話/人數/時間/狀態/客註/店註）＋當日備註（⚠️包場/公休註記），2021-02 開店～未來全查得到。date=YYYY-MM-DD 或 YYYY-MM 整月；to 選填查區間（一次最多 4 個月）；加 "kw":"婚" =資料庫端先搜關鍵字（姓名/客註/店註/當日備註）只回命中的筆——問「某段期間所有婚禮/包場/慶生」這種主題式問題**優先用 kw**,比整月硬掃又準又省。摘要裡只有彙總數字、使用者要「某天是誰訂的/電話/歷史某天明細/**兒童椅要幾張**」就用這個（回覆有🪑兒童椅合計＋誰要幾張）；問空檔也可以用（回「空檔」=確定沒被訂）。
-- {"type":"query_resv","name":"OD"}  // 🔎A Beach 訂位「關鍵字」代查（唯讀,不用確認）：用「客人姓名/電話片段」直搜 inline 全史（=後台搜尋框同源），回每筆日期+姓名+人數+狀態+**電話**。使用者問「客人XX的電話/XX上次什麼時候來/XX訂過幾次」這種用名字問的就用這個（不知道日期時不要用 date 亂猜）。
-- {"type":"query_resv","top":10}  // 🔎A Beach 常客排行代查（唯讀,不用確認）：掃 2021 開店～今全史，回「實際入座次數」最多的前 N 名（姓名/入座次數/累計人次/訂過幾次含取消/最近來店/電話）。使用者問「常客前十名/來最多次的客人/回頭客」就用這個。
-- {"type":"query_hr","month":"2026-08"}  // 🔎NUEiP人資代查（唯讀,不用確認）：任意月「出勤統計(每人出勤天數/遲到/早退/缺卡/曠職)+班表(每人排班天數)」。加 "date":"2026-08-15" =改看單日逐筆打卡+當日班表。摘要只有本月近況,問歷史月/某人某月統計就用這個。
-- {"type":"query_orders","month":"2026-10","store":"ground"}  // 🔎叫貨單代查（唯讀,不用確認,外部群自動擋）：某店某月「跟廠商的叫貨單逐張」（日期/廠商/狀態/幾項/金額）＋月合計＋依廠商合計。store=ground（GROUN:D，含向 AB 央廚叫貨）|abeach（A Beach）。加 "supplier":"上展" 只列那家；加 "items":1 連每張單的品項數量單價一起列。摘要裡只有近 8 張，使用者問「X 月叫貨單／跟某家叫了什麼／叫貨花多少」就用這個——**不要**回「沒接進來／去看 Google 試算表」。
-- {"type":"query_boss","feed":"gprod","kw":"牛奶"}  // 🔎阿桑系統通用代查（唯讀,不用確認,外部群自動擋）：摘要裡「阿桑系統其他資料」列出的每一份（feed=那行寫的代號，例 gprod=GD 產品主檔、gsup=GD 廠商、prod=AB 商品主檔、sup=AB 廠商、rcp=AB 配方、citem=AB 品項成本），整份撈出來逐筆列。月檔型的加 "month":"2026-10"；kw=關鍵字只列含它的列；limit 預設 80 最多 200。使用者問「GD 某產品售價/成本/庫存、某廠商的叫貨日/帳期、某配方用量」就用這個。
-- {"type":"query_fin","month":"2026-08"}  // 🔎財務內帳代查（唯讀,不用確認,外部群自動擋）：任意月收支「逐筆+月合計」。摘要只有最近120筆,問更早的月份/某月總支出就用這個。
 - 張良想叫 CC（Claude Code 工程師）改程式/加功能：教他直接打「**轉給CC ＋需求內容**」一句話——系統會自動收進 CC 收件匣、CC 會撿單處理（這是接好的真管道，**不要再說「我沒辦法轉給CC」**）。只有張良本人打有效；夥伴提需求請他們走 /prep 的建議或先跟張良說。
-- **【代查鐵則】你沒有「稍等一下／待會撈回來再回報」的能力**——這一則回覆送出後就結束了，不會有下一則。要代查，就必須在**同一則回覆裡**輸出上面的 query_pos_day / query_resv JSON 指令（系統會當場查完回填、你再據此作答，使用者只會看到最終答案）。只寫「我幫你代查／撈回來整理給你／稍等一下」而**沒帶 JSON ＝什麼都不會發生＝對使用者說謊**（2026-10-04 真實翻車：答應查九月婚禮包場說「稍等一下」，結果指令沒輸出、使用者空等）。
 - {"type":"add_item","category":"空調工程","name":"主機","qty":1,"unit":"式","unitPrice":150000,"taxType":"未稅"}
 - {"type":"delete_item","category":"空調工程","item":"主機"}
 - {"type":"add_payment","category":"消防工程","amount":63000,"date":"2026-06-22","note":"訂金"}  // 大項新增一筆付款
@@ -2837,6 +2867,7 @@ export default async function handler(req, res) {
       }
       // 3) 一般流程：載入資料＋對話記憶＋長期記事本 → 問 AI（操作者才開放下指令）
       const [snaps, accountsText, financeText, activityText, estimatesText, crewText, history, memList, conclusionsText, tasksText, sheetText, posText, catalogText, supplyText, lineQuotaText, filelibText, groupChatText] = await Promise.all([loadSnapshots(), loadAccounts(), loadFinanceText(), loadActivityText(), loadEstimatesText(), Promise.all([loadCrewText(), loadShiftText(), loadPunchText(), loadHrText(), moneyOK ? loadSalaryText() : Promise.resolve('')]).then(parts => parts.join('')), getChatHistory(convId), getMemory(), loadConclusionsText(), loadTasksText(), loadSheetText(), Promise.all([loadPosText(), loadBossText(), loadEmText()]).then(([a, b, c]) => a + b + c), loadCatalogText(), loadSupplyText(), loadLineQuotaText(), loadFilelibText(), loadGroupChatText().then(async g => g + await loadPushLogText(convId))])
+      if (isDM && TOKEN) fetch('https://api.line.me/v2/bot/chat/loading/start', { method: 'POST', headers: { 'content-type': 'application/json', Authorization: 'Bearer ' + TOKEN }, body: JSON.stringify({ chatId: userId, loadingSeconds: 60 }) }).catch(() => {}) // v4.70.43 1b：私訊顯示「輸入中」動畫（免費、不耗 reply token；群組沒有這功能）
       let rawReply = await answer(text, snaps, accountsText, financeText, activityText, estimatesText, crewText, canAct, history, memoryToText(memList), conclusionsText, tasksText, sheetText, posText, catalogText, supplyText, lineQuotaText, filelibText, groupChatText, moneyOK)
       // 🔎 資料代查迴圈（張良 2026-09-27 根除）：AI 輸出 query_pos_day → 系統查庫 → 資料回填再答一輪（唯讀自動執行,不經確認）
       // v4.38.1 假代查抓包（張良 2026-10-04「dd到底查不查得到」：DD 答應查九月婚禮包場說「稍等一下」卻沒輸出指令,使用者空等）：
@@ -2849,7 +2880,8 @@ export default async function handler(req, res) {
           const qfs = moneyOK ? [...txt.matchAll(/\{[^{}]*"type"\s*:\s*"query_fin"[^{}]*\}/g)].slice(0, 2) : []
           const qos = moneyOK ? [...txt.matchAll(/\{[^{}]*"type"\s*:\s*"query_orders"[^{}]*\}/g)].slice(0, 2) : [] // v4.70.40 叫貨單（成本資料，外部群擋）
           const qbs = moneyOK ? [...txt.matchAll(/\{[^{}]*"type"\s*:\s*"query_boss"[^{}]*\}/g)].slice(0, 2) : [] // v4.70.41 阿桑系統通用代查
-          if (!qms.length && !qrs.length && !qhs.length && !qfs.length && !qos.length && !qbs.length) return null
+          const qss = [...txt.matchAll(/\{[^{}]*"type"\s*:\s*"query_section"[^{}]*\}/g)].slice(0, 3) // v4.70.43 段落完整版（金額段在外部群本來就是空字串）
+          if (!qms.length && !qrs.length && !qhs.length && !qfs.length && !qos.length && !qbs.length && !qss.length) return null
           let dataTxt = ''
           for (const m of qms) { try { const q = JSON.parse(m[0]); dataTxt += await queryPosDay(String(q.date || ''), String(q.store || 'ground')) + '\n\n' } catch (e) { dataTxt += '（查詢指令解析失敗）\n' } }
           for (const m of qrs) { try { const q = JSON.parse(m[0]); dataTxt += (moneyOK
@@ -2859,12 +2891,13 @@ export default async function handler(req, res) {
           for (const m of qfs) { try { const q = JSON.parse(m[0]); dataTxt += await queryFinMonth(q.month) + '\n\n' } catch (e) { dataTxt += '（財務查詢指令解析失敗）\n' } }
           for (const m of qos) { try { const q = JSON.parse(m[0]); dataTxt += await queryOrders(q.month, q.store, q.supplier, q.items) + '\n\n' } catch (e) { dataTxt += '（叫貨單查詢指令解析失敗）\n' } }
           for (const m of qbs) { try { const q = JSON.parse(m[0]); dataTxt += await queryBoss(q.feed, q.month, q.kw, q.limit) + '\n\n' } catch (e) { dataTxt += '（阿桑資料查詢指令解析失敗）\n' } }
+          for (const m of qss) { try { const q = JSON.parse(m[0]); dataTxt += querySection(q.name, q.kw) + '\n\n' } catch (e) { dataTxt += '（段落查詢指令解析失敗）\n' } }
           // v4.38.3 保險絲（九月1182筆爆AI輸入翻車）：代查結果超長一律截斷,寧可請AI縮範圍也不能整則掛掉
           if (dataTxt.length > 60000) dataTxt = dataTxt.slice(0, 60000) + '\n…（代查結果過長已截斷：請縮小日期區間分段再查）'
           return dataTxt
         }
         let dataTxt = await runQueries(rawReply)
-        if (dataTxt == null && canAct && /(代查|幫你查|幫你撈|撈回來|查回來|我查一下|我撈一下|再查|試撈|稍等|等我一下)/.test(rawReply)) {
+        if (dataTxt == null && /(代查|幫你查|幫你撈|撈回來|查回來|我查一下|我撈一下|再查|試撈|稍等|等我一下)/.test(rawReply)) { // v4.70.43 人人適用（代查指令現在人人都有）
           console.log('fake-query caught, forcing retry')
           const retry = await answer(text + '\n\n【系統抓包】你剛剛的回覆說要「代查／撈資料／稍等一下」，但沒有輸出任何 query_pos_day/query_resv JSON 指令——你沒有「稍後再傳」的能力，這一則沒帶指令＝永遠不會查。現在立刻輸出正確的查詢 JSON 指令（照指令格式,一行就好,不要解釋）。你剛剛的回覆是：\n' + rawReply.slice(0, 1500), snaps, accountsText, financeText, activityText, estimatesText, crewText, canAct, history, memoryToText(memList), conclusionsText, tasksText, sheetText, posText, catalogText, supplyText, lineQuotaText, filelibText, groupChatText, moneyOK)
           dataTxt = await runQueries(retry)
