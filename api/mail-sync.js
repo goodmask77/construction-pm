@@ -5074,19 +5074,23 @@ export default async function handler(req, res) {
     const todayO = new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10)
     const mosO = (() => { const out = []; const d = new Date(todayO + 'T00:00:00Z'); for (let i = 0; i < 13; i++) { out.push(d.toISOString().slice(0, 7)); d.setUTCMonth(d.getUTCMonth() - 1) } return out })()
     const tpeDay = s => { const t = Date.parse(String(s || '')); return isNaN(t) ? '' : new Date(t + 8 * 3600e3).toISOString().slice(0, 10) }
-    const [ordDocs, ordiDocs] = await Promise.all([
+    // v4.70.42 兩店都列（張良 2026-10-11 問 DD「GD 10 月叫貨單」才發現這頁也只有 AB）：store=AB（阿桑 OPS ord/ordi）／GD（gops gord/gordi）
+    const [ordDocs, ordiDocs, gordDocs, gordiDocs] = await Promise.all([
       Promise.all(mosO.map(m => kvGet('sp_finance_pm_boss_ord_' + m.replace('-', '')))),
       Promise.all(mosO.map(m => kvGet('sp_finance_pm_boss_ordi_' + m.replace('-', '')))),
+      Promise.all(mosO.map(m => kvGet('sp_finance_pm_boss_gord_' + m.replace('-', '')))),
+      Promise.all(mosO.map(m => kvGet('sp_finance_pm_boss_gordi_' + m.replace('-', '')))),
     ])
     const orders = {}
-    for (const doc of ordDocs) for (const r of Object.values((doc || {}).rows || {})) {
+    for (const [store, docs] of [['AB', ordDocs], ['GD', gordDocs]]) for (const doc of docs) for (const r of Object.values((doc || {}).rows || {})) {
       if (!r.order_id) continue
-      orders[r.order_id] = { id: r.order_id, date: tpeDay(r.created_at), supplier: (r.supplier || '').trim() || '（未填廠商）', dept: r.dept || '', status: r.status || '', total: Number(r.total_amount) || 0, lineCount: Number(r.line_count) || 0, unpriced: Number(r.unpriced_lines) || 0, items: [] }
+      orders[store + ':' + r.order_id] = { id: store + ':' + r.order_id, store, date: tpeDay(r.created_at), supplier: (r.supplier || '').trim() || '（未填廠商）', dept: r.dept || '', status: r.status || '', total: Number(r.total_amount) || 0, lineCount: Number(r.line_count) || 0, unpriced: Number(r.unpriced_lines) || 0, items: [] }
     }
-    for (const doc of ordiDocs) for (const r of Object.values((doc || {}).rows || {})) {
-      const oid = r.order_id; if (!oid) continue
+    for (const [store, docs] of [['AB', ordiDocs], ['GD', gordiDocs]]) for (const doc of docs) for (const r of Object.values((doc || {}).rows || {})) {
+      const oid0 = r.order_id; if (!oid0) continue
+      const oid = store + ':' + oid0
       let o = orders[oid]
-      if (!o) o = orders[oid] = { id: oid, date: tpeDay(r.ordered_at), supplier: (r.supplier || '').trim() || '（未填廠商）', dept: r.dept || '', status: r.order_status || '', total: 0, lineCount: 0, unpriced: 0, items: [], _fi: 1 } // 單頭缺→用明細補一張
+      if (!o) o = orders[oid] = { id: oid, store, date: tpeDay(r.ordered_at), supplier: (r.supplier || '').trim() || '（未填廠商）', dept: r.dept || '', status: r.order_status || '', total: 0, lineCount: 0, unpriced: 0, items: [], _fi: 1 } // 單頭缺→用明細補一張
       o.items.push({ name: r.name || r.item || '', code: r.code || '', qty: Number(r.qty) || 0, unit: r.unit || '', price: (r.price == null || r.price === '') ? null : Number(r.price), amount: (r.amount == null || r.amount === '') ? null : Math.round(Number(r.amount)), st: r.order_status || '' })
       if (o._fi) { o.total += (Number(r.amount) || 0); o.lineCount = o.items.length }
     }

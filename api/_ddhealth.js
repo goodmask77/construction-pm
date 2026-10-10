@@ -55,6 +55,7 @@ export async function ddHealthSummary(days = 7) {
   const perDay = await Promise.all(list.map(readDay))
   const mk = () => ({ n: 0, ok: 0, fail: 0, msSum: 0, ms: [], le3: 0, le10: 0, le30: 0, gt30: 0, pushFb: 0, aiCalls: 0, aiFb: 0, aiErr: 0, inCut: 0, outCut: 0, itSum: 0, sigfail: 0, dup: 0, redeliv: 0, errors: 0, nodata: 0 })
   const total = mk(); const daysOut = []; const recentFail = []; const recentNodata = []; const reasons = {}
+  const secSum = {}; let secN = 0 // v4.70.42 各資料段落平均字數（1b 瘦身量測）
   const addReason = (k) => { if (!k) return; k = String(k).slice(0, 60); reasons[k] = (reasons[k] || 0) + 1 }
   list.forEach((day, i) => {
     const d = mk(); d.day = day
@@ -67,6 +68,7 @@ export async function ddHealthSummary(days = 7) {
           if (e.send && e.send.pushed) T.pushFb++
           const a = e.ai || null
           if (a) { T.aiCalls += a.calls || 0; T.aiFb += a.fb || 0; T.aiErr += a.err || 0; T.inCut += a.inCut || 0; T.outCut += a.outCut || 0; T.itSum += a.it || 0 }
+          if (T === total && a && a.sec) { secN++; for (const [k, v] of Object.entries(a.sec)) secSum[k] = (secSum[k] || 0) + (+v || 0) }
         } else if (e.kind === 'error') T.errors++
         else if (e.kind === 'sigfail') T.sigfail++
         else if (e.kind === 'dup') T.dup++
@@ -82,7 +84,7 @@ export async function ddHealthSummary(days = 7) {
     daysOut.push(fin(d))
   })
   recentFail.sort((a, b) => String(b.t).localeCompare(String(a.t))); recentNodata.sort((a, b) => String(b.t).localeCompare(String(a.t)))
-  return { days: daysOut, total: fin(total), reasons: Object.entries(reasons).sort((a, b) => b[1] - a[1]).slice(0, 12).map(([k, n]) => ({ k, n })), recentFail: recentFail.slice(0, 20), recentNodata: recentNodata.slice(0, 20) }
+  return { days: daysOut, total: fin(total), reasons: Object.entries(reasons).sort((a, b) => b[1] - a[1]).slice(0, 12).map(([k, n]) => ({ k, n })), recentFail: recentFail.slice(0, 20), recentNodata: recentNodata.slice(0, 20), sections: secN ? Object.entries(secSum).map(([k, v]) => ({ k, avg: Math.round(v / secN) })).sort((a, b) => b.avg - a.avg) : [] }
 }
 function fin(T) {
   const ms = T.ms.slice().sort((a, b) => a - b)
