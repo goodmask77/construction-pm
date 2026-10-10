@@ -813,6 +813,7 @@ async function aiCfgEdit(){
   ov.innerHTML = `<div style="background:var(--bg);border:1px solid var(--line);border-radius:16px;width:100%;max-width:640px;padding:16px" onclick="event.stopPropagation()">
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px"><b style="font-size:17px">AI 模型設定</b><button class="mini" style="margin-left:auto;padding:6px 12px" onclick="document.getElementById('aiOv').remove()">✕</button></div>
     <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">${pills}</div>
+    ${aiUsageHtml(d)}
     <div class="hint" style="margin-bottom:12px">每個功能各自選用哪家＋哪個模型。沒選＝走預設；選的那家壞了（額度／模型下架）會自動退回預設，不會卡住。${d.canEdit?'改完按該功能的「儲存」，「測試」會真的打一次給你看回覆與秒數。':'（只有審核人能改，目前唯讀）'}<br>金鑰只放伺服器端：要加／換金鑰跟 CC 說。</div>
     ${(d.routes||[]).map(card).join('')}</div>`
   if (!d.canEdit) setTimeout(()=>{ ov.querySelectorAll('input,select,button.on,button').forEach(e=>{ if(!/✕/.test(e.textContent||'')) e.disabled=true }) },0)
@@ -859,4 +860,69 @@ async function aiCfgSave(btn, reset){
   btn.disabled = false; btn.textContent = t
   if (d && d.ok) { btn.textContent = '已儲存 ✓'; setTimeout(()=>{ btn.textContent = t; const o=document.getElementById('aiOv'); if(o){ o.remove(); aiCfgEdit() } }, 900) }
   else alert((d&&d.error)||'儲存失敗')
+}
+
+// ── 用量儀表板（v4.70.30 張良「每個 AI API 能不能顯示即時用量與額度」：各家官方沒有剩餘額度 API → 自己記 token 估金額＋張良填儲值→估剩／撐幾天）──
+function aiUsageHtml(d){
+  const u = d.usage; if (!u) return '<div class="hint" style="margin-bottom:10px">用量資料讀不到</div>'
+  const esc = s => String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')
+  const nt = usd => { const v = usd * u.rate; return v >= 100 ? Math.round(v).toLocaleString() : v >= 1 ? v.toFixed(1) : v.toFixed(2) }
+  const money = (v, cur) => (cur === 'USD' ? 'US$' : 'NT$') + (v >= 100 ? Math.round(v).toLocaleString() : v.toFixed(1))
+  const P = d.providers || {}
+  const rows = Object.entries(u.providers).map(([k, v]) => {
+    const b = v.budget
+    const bud = b ? `${money(b.amount, b.currency)}<div class="hint" style="font-size:10.5px">自 ${esc(b.since)}</div>` : '<span class="hint">未填</span>'
+    const left = b ? `<b style="color:${b.pct <= 10 ? '#F07373' : b.pct <= 20 ? '#E8A657' : 'inherit'}">${money(Math.max(0, b.left), b.currency)}</b><div class="hint" style="font-size:10.5px">${b.pct}%${b.daysLeft != null ? '・約 ' + b.daysLeft + ' 天' : ''}</div>` : '<span class="hint">—</span>'
+    return `<tr style="border-top:1px solid var(--line)">
+      <td style="padding:6px 4px;font-weight:700;white-space:nowrap">${esc(v.label)}${P[k] && !P[k].hasKey ? '<div class="hint" style="font-size:10px">未設金鑰</div>' : ''}</td>
+      <td style="padding:6px 4px;text-align:right">${v.month.n.toLocaleString()}${v.month.err ? `<div class="hint" style="font-size:10px;color:#F07373">失敗 ${v.month.err}</div>` : ''}</td>
+      <td style="padding:6px 4px;text-align:right">NT$${nt(v.month.usd)}${v.month.img ? `<div class="hint" style="font-size:10px">圖 ${v.month.img} 張</div>` : ''}</td>
+      <td style="padding:6px 4px;text-align:right">${v.today.n}<div class="hint" style="font-size:10px">NT$${nt(v.today.usd)}</div></td>
+      <td style="padding:6px 4px;text-align:right">${bud}</td>
+      <td style="padding:6px 4px;text-align:right">${left}</td>
+      <td style="padding:6px 2px;text-align:right;white-space:nowrap">${d.canEdit ? `<button class="mini" style="padding:3px 8px;font-size:11px" onclick="aiBudgetForm('${k}',${b ? b.amount : 0},'${b ? b.currency : 'TWD'}','${b ? b.since : ''}')">儲值</button>` : ''}<a href="${esc(u.links[k] || '#')}" target="_blank" class="mini" style="padding:3px 8px;font-size:11px;text-decoration:none;display:inline-block;margin-left:3px">官方</a></td>
+    </tr>` }).join('')
+  const routes = Object.entries(u.routes).sort((a, b) => b[1].usd - a[1].usd).map(([k, r]) => `<span style="display:inline-flex;gap:5px;align-items:center;padding:3px 9px;border:1px solid var(--line);border-radius:999px;font-size:11.5px;background:var(--soft)"><b>${esc(r.label)}</b>${r.n} 次・NT$${nt(r.usd)}</span>`).join(' ')
+  const models = (u.models || []).sort((a, b) => b.usd - a.usd).map(m => `<tr style="border-top:1px solid var(--line)"><td style="padding:4px;font-size:11.5px">${esc(m.provider)}<br><span class="hint" style="font-size:10.5px">${esc(m.model)}</span></td><td style="padding:4px;text-align:right;font-size:11.5px">${m.n}</td><td style="padding:4px;text-align:right;font-size:11.5px">${(m.it/1000).toFixed(1)}k / ${(m.ot/1000).toFixed(1)}k</td><td style="padding:4px;text-align:right;font-size:11.5px">NT$${nt(m.usd)}</td>
+    <td style="padding:4px;white-space:nowrap;font-size:11px">${d.canEdit ? `<input value="${m.price.in}" data-f="in" style="width:46px;padding:2px 4px;border:1px solid var(--line);border-radius:5px;background:var(--soft);color:var(--ink);font-size:11px"> / <input value="${m.price.out}" data-f="out" style="width:46px;padding:2px 4px;border:1px solid var(--line);border-radius:5px;background:var(--soft);color:var(--ink);font-size:11px">${m.price.img ? ` / 圖 <input value="${m.price.img}" data-f="img" style="width:46px;padding:2px 4px;border:1px solid var(--line);border-radius:5px;background:var(--soft);color:var(--ink);font-size:11px">` : ''} <button class="mini" style="padding:2px 7px;font-size:10.5px" onclick="aiPriceSave('${esc(m.model)}',this)">存</button>` : `${m.price.in} / ${m.price.out}${m.price.img ? ' / 圖 ' + m.price.img : ''}`}</td></tr>`).join('')
+  return `<div style="border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin-bottom:12px;background:var(--card)">
+    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px"><b style="font-size:14px">本月用量（${esc(u.ym)}，估算）</b><span class="hint" style="font-size:11px">匯率 1 美元＝${u.rate} 元${d.canEdit ? ` <a href="#" onclick="event.preventDefault();aiRateForm(${u.rate})" style="margin-left:4px">改</a>` : ''}</span></div>
+    <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12.5px"><thead><tr class="hint" style="font-size:11px"><th style="text-align:left;padding:2px 4px">家</th><th style="text-align:right;padding:2px 4px">本月次數</th><th style="text-align:right;padding:2px 4px">本月估費</th><th style="text-align:right;padding:2px 4px">今天</th><th style="text-align:right;padding:2px 4px">儲值</th><th style="text-align:right;padding:2px 4px">估剩</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
+    <div style="margin-top:8px;display:flex;gap:5px;flex-wrap:wrap">${routes || '<span class="hint">本月還沒有呼叫紀錄</span>'}</div>
+    <details style="margin-top:8px"><summary class="hint" style="cursor:pointer;font-size:11.5px">模型明細與單價（美元／百萬 token：輸入 / 輸出${d.canEdit ? '，可改' : ''}）</summary>
+      <div style="overflow-x:auto;margin-top:4px"><table style="width:100%;border-collapse:collapse"><thead><tr class="hint" style="font-size:10.5px"><th style="text-align:left;padding:2px 4px">模型</th><th style="text-align:right">次</th><th style="text-align:right">token 入/出</th><th style="text-align:right">估費</th><th style="text-align:left;padding-left:8px">單價</th></tr></thead><tbody>${models || '<tr><td colspan="5" class="hint" style="padding:6px">本月還沒有</td></tr>'}</tbody></table></div>
+      <div class="hint" style="font-size:10.5px;margin-top:4px">估算 = token × 單價 ＋ 生圖每張固定價；各家調價時請改單價。剩 20%／10% 時 D哥會私訊提醒。儲值金額請照各家後台實際加值填，「自」＝從哪天起算。</div>
+    </details>
+  </div>`
+}
+function aiBudgetForm(provider, amount, currency, since){
+  const nm = (_aiD && _aiD.providers[provider] || {}).label || provider
+  const ov = document.createElement('div'); ov.id = 'aiBudOv'
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:80;display:flex;align-items:center;justify-content:center;padding:16px'
+  ov.innerHTML = `<div style="background:var(--bg);border:1px solid var(--line);border-radius:14px;padding:16px;width:100%;max-width:340px" onclick="event.stopPropagation()">
+    <b style="font-size:15px">${nm} 儲值金額</b><div class="hint" style="margin:4px 0 10px">照你在 ${nm} 後台實際加值的金額填；加值日期＝從那天開始算用量。再加值時把金額加總、日期不用動，或改成新日期重算。</div>
+    <div style="display:flex;gap:6px;margin-bottom:8px"><input id="aiBudAmt" type="number" inputmode="decimal" value="${amount || ''}" placeholder="金額" style="flex:1;padding:8px;border:1px solid var(--line);border-radius:8px;background:var(--soft);color:var(--ink)"><select id="aiBudCur" style="padding:8px;border:1px solid var(--line);border-radius:8px;background:var(--soft);color:var(--ink)"><option value="TWD" ${currency !== 'USD' ? 'selected' : ''}>台幣</option><option value="USD" ${currency === 'USD' ? 'selected' : ''}>美元</option></select></div>
+    <div style="margin-bottom:12px"><span class="hint">從哪天起算</span> <input id="aiBudSince" type="date" value="${since || new Date(Date.now()+8*3600e3).toISOString().slice(0,10)}" style="padding:7px;border:1px solid var(--line);border-radius:8px;background:var(--soft);color:var(--ink)"></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end"><button class="mini" onclick="document.getElementById('aiBudOv').remove()">取消</button>${amount ? '<button class="mini" onclick="aiBudgetSave(\'' + provider + '\',1)">清除</button>' : ''}<button class="mini on" onclick="aiBudgetSave('${provider}')">儲存</button></div></div>`
+  ov.onclick = () => ov.remove(); document.body.appendChild(ov)
+}
+async function aiBudgetSave(provider, clear){
+  const amount = clear ? 0 : +document.getElementById('aiBudAmt').value, currency = document.getElementById('aiBudCur').value, since = document.getElementById('aiBudSince').value
+  const r = await fetch('/api/mail-sync?aicfgset=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ op:'budget', provider, amount, currency, since, token: TK() }) })
+  const d = await r.json().catch(()=>null)
+  if (d && d.ok) { const o=document.getElementById('aiBudOv'); if(o) o.remove(); const m=document.getElementById('aiOv'); if(m){ m.remove(); aiCfgEdit() } } else alert((d&&d.error)||'儲存失敗')
+}
+async function aiPriceSave(model, btn){
+  const tr = btn.closest('tr'); const body = { op:'price', model, token: TK() }
+  tr.querySelectorAll('input[data-f]').forEach(i => { body[i.dataset.f] = +i.value || 0 })
+  btn.disabled = true
+  const r = await fetch('/api/mail-sync?aicfgset=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify(body) })
+  const d = await r.json().catch(()=>null); btn.disabled = false
+  if (d && d.ok) { btn.textContent = '✓'; setTimeout(()=>{ btn.textContent='存' }, 1200) } else alert((d&&d.error)||'儲存失敗')
+}
+async function aiRateForm(cur){
+  const v = prompt('1 美元換多少台幣？（估算用）', cur); if (!v || !(+v > 0)) return
+  const r = await fetch('/api/mail-sync?aicfgset=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ op:'rate', usdTwd:+v, token: TK() }) })
+  const d = await r.json().catch(()=>null)
+  if (d && d.ok) { const m=document.getElementById('aiOv'); if(m){ m.remove(); aiCfgEdit() } } else alert((d&&d.error)||'儲存失敗')
 }

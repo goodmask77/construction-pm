@@ -1599,15 +1599,20 @@ export default async function handler(req, res) {
   if (req.query?.aicfg) { // GET ?aicfg=<OPS_BOARD_KEY>&me=token
     const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
     if (!ok2 || String(req.query.aicfg) !== ok2) return res.status(403).json({ ok: false })
-    const { aiOverview } = await import('./_ai.js')
-    const [ov, adm] = await Promise.all([aiOverview(), aiAdminOK(req.query.me)])
-    return res.status(200).json({ ok: true, ...ov, canEdit: !!adm })
+    const { aiOverview, aiUsageSummary } = await import('./_ai.js')
+    const [ov, adm, us] = await Promise.all([aiOverview(), aiAdminOK(req.query.me), aiUsageSummary().catch(() => null)])
+    res.setHeader('Cache-Control', 'private, no-store')
+    return res.status(200).json({ ok: true, ...ov, usage: us, canEdit: !!adm })
   }
   if (req.method === 'POST' && req.query?.aicfgset) { // POST body={key, provider, model, token}；provider 空＝回預設
     const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
     if (!ok2 || String(req.query.aicfgset) !== ok2) return res.status(403).json({ ok: false })
     let b = {}; try { b = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
     const adm = await aiAdminOK(b.token); if (!adm) return res.status(403).json({ ok: false, error: '只有審核人能改 AI 模型設定' })
+    if (b.op === 'budget' || b.op === 'price' || b.op === 'rate') { // v4.70.30 儲值／單價／匯率
+      try { const { aiBudgetSet } = await import('./_ai.js'); await aiBudgetSet(b.op, b, adm.name); return res.status(200).json({ ok: true }) }
+      catch (e) { return res.status(400).json({ ok: false, error: e.message || '存檔失敗' }) }
+    }
     try { const { aiCfgSet } = await import('./_ai.js'); await aiCfgSet(String(b.key || ''), b.provider ? { provider: String(b.provider), model: String(b.model || '') } : null, adm.name); return res.status(200).json({ ok: true }) }
     catch (e) { return res.status(400).json({ ok: false, error: e.message || '存檔失敗' }) }
   }
