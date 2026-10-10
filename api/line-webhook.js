@@ -44,6 +44,8 @@ async function kvGetMany(ids) {
     return out
   } catch (_) { return {} }
 }
+// v4.70.40 單鍵讀取（原本沒有這個函式：loadEmText 從 v4.43.7 起呼叫 kvGet 一直 ReferenceError 被 try 吞掉＝DD 從沒看過 EM 包場資料；query_orders 也用）
+async function kvGet(id) { return (await kvGetMany([id]))[id] || null }
 async function kvSet(id, valueObj) {
   if (!SB_URL || !SB_KEY) return
   try {
@@ -1095,7 +1097,7 @@ async function loadBossText() {
     const nextYm = new Date(Date.UTC(+today.slice(0, 4), +today.slice(5, 7), 1)).toISOString().slice(0, 7).replace('-', '')
     const K = (s, m) => `sp_finance_pm_boss_${s}_${m}`
     const kv = await kvGetMany([
-      K('sett', ym), K('sett', prevYm), K('ord', ym), K('ord', prevYm), 'sp_finance_pm_boss_menu', 'sp_finance_pm_boss_revm',
+      K('sett', ym), K('sett', prevYm), K('ord', ym), K('ord', prevYm), K('gord', ym), K('gord', prevYm), 'sp_finance_pm_boss_menu', 'sp_finance_pm_boss_revm',
       K('sched', ym), K('sched', nextYm), K('att', ym), K('att', prevYm), K('ot', ym), K('ot', prevYm),
       K('inc', ym), K('inc', prevYm), K('prep', ym), K('rout', ym), K('temp', ym),
     ])
@@ -1126,6 +1128,15 @@ async function loadBossText() {
       const byV = {}; ap.forEach(o => { byV[o.supplier || '(未填)'] = (byV[o.supplier || '(未填)'] || 0) + (Number(o.total_amount) || 0) })
       lines.push(`  ◇ AB 叫貨（近兩個月）：已核准 ${ap.length} 單共${nt(sum)}｜待審 ${pend.length} 單；廠商前5：` + Object.entries(byV).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([v, m]) => `${v}${nt(m)}`).join('、'))
       ords.sort((a, b) => (String(a.created_at) < String(b.created_at) ? 1 : -1)).slice(0, 8).forEach(o => lines.push(`    - ${String(o.created_at).slice(0, 10)} ${o.supplier || '(未填)'}｜${o.status}｜${o.line_count}項 ${nt(o.total_amount)}${o.unpriced_lines > 0 ? `（${o.unpriced_lines}項沒單價,金額低估）` : ''}`))
+    }
+    // v4.70.40 GROUN:D 叫貨（阿桑 gops 系統 10-10 起入庫；張良 2026-10-11 問「GD 10 月叫貨訂單」DD 答沒資料＝只餵了 AB 這份）
+    const gords = rowsOf(K('gord', ym), K('gord', prevYm))
+    if (gords.length) {
+      const ap = gords.filter(o => o.status === 'approved'), pend = gords.filter(o => o.status === 'pending')
+      const sum = ap.reduce((t, o) => t + (Number(o.total_amount) || 0), 0)
+      const byV = {}; ap.forEach(o => { byV[o.supplier || '(未填)'] = (byV[o.supplier || '(未填)'] || 0) + (Number(o.total_amount) || 0) })
+      lines.push(`  ◇ GROUN:D 叫貨（近兩個月，含向 AB 央廚叫貨；要逐張全列／看明細用 query_orders 代查）：已核准 ${ap.length} 單共${nt(sum)}｜待審 ${pend.length} 單；廠商前5：` + Object.entries(byV).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([v, m]) => `${v}${nt(m)}`).join('、'))
+      gords.sort((a, b) => (String(a.created_at) < String(b.created_at) ? 1 : -1)).slice(0, 8).forEach(o => lines.push(`    - ${String(o.created_at).slice(0, 10)} ${o.supplier || '(未填)'}｜${o.status}｜${o.line_count}項 ${nt(o.total_amount)}${o.unpriced_lines > 0 ? `（${o.unpriced_lines}項沒單價,金額低估）` : ''}`))
     }
     // AB 菜單成本（估算值；cost_complete=false=配方缺價成本偏低不可盡信）
     const menu = Object.values((kv['sp_finance_pm_boss_menu'] || {}).rows || {}).filter(m => m.is_active)
@@ -1805,6 +1816,32 @@ async function queryHrMonth(month, date) {
   return L.join('\n')
 }
 // 🔎 財務內帳代查（任意月逐筆；context 只有最近120筆,更早的用這支；v4.38.3 全資料域盤點補洞）
+// 🔎 v4.70.40 叫貨單代查（兩店；資料＝阿桑 boss/gops 系統每小時入庫的月檔 sp_finance_pm_boss_{ord|gord}_YYYYMM＋明細 {ordi|gordi}）
+async function queryOrders(month, store, supplier, withItems) {
+  if (!/^\d{4}-\d{2}$/.test(String(month || ''))) return '（月份格式要 YYYY-MM）'
+  const st = /ab|beach|a beach/i.test(String(store || '')) ? 'abeach' : 'ground'
+  const label = st === 'abeach' ? 'A Beach' : 'GROUN:D'
+  const ymk = month.replace('-', '')
+  const tpeDay = (x) => { const t = Date.parse(String(x || '')); return isNaN(t) ? '' : new Date(t + 8 * 3600e3).toISOString().slice(0, 10) }
+  const [hd, it] = await Promise.all([kvGet(`sp_finance_pm_boss_${st === 'abeach' ? 'ord' : 'gord'}_${ymk}`), kvGet(`sp_finance_pm_boss_${st === 'abeach' ? 'ordi' : 'gordi'}_${ymk}`)])
+  const rows = Object.values((hd || {}).rows || {}).filter(r => r.order_id)
+  const sup = String(supplier || '').trim()
+  let list = rows.map(r => ({ id: r.order_id, d: tpeDay(r.created_at), supplier: (r.supplier || '').trim() || '（未填廠商）', status: r.status || '', total: Number(r.total_amount) || 0, n: Number(r.line_count) || 0, unpriced: Number(r.unpriced_lines) || 0 }))
+  if (sup) list = list.filter(o => o.supplier.includes(sup))
+  list.sort((a, b) => (a.d < b.d ? 1 : a.d > b.d ? -1 : 0))
+  const L = [`◆ ${label} 叫貨單 ${month}${sup ? `（廠商含「${sup}」）` : ''} 共 ${list.length} 張（系統代查；阿桑 ${st === 'abeach' ? 'OPS' : 'gops'} 系統每小時同步，最新到 ${(hd || {}).updatedAt ? String(hd.updatedAt).slice(0, 16).replace('T', ' ') : '?'}）`]
+  if (!list.length) { L.push(rows.length ? '（這個月有單但沒有符合這家廠商的）' : '（這個月在我們這邊沒有任何單；如果阿桑系統裡有，可能同步還沒跑到或更早的月份）'); return L.join('\n') }
+  const ap = list.filter(o => o.status === 'approved'), pend = list.filter(o => o.status === 'pending'), other = list.length - ap.length - pend.length
+  const sum = (a) => a.reduce((t, o) => t + o.total, 0)
+  L.push(`合計（回答以此為準，別自己加總）：已核准 ${ap.length} 張 ${fmtNT(sum(ap))}｜待審 ${pend.length} 張 ${fmtNT(sum(pend))}${other ? `｜其他狀態 ${other} 張` : ''}`)
+  const byV = {}; ap.forEach(o => { byV[o.supplier] = (byV[o.supplier] || 0) + o.total })
+  L.push('已核准依廠商：' + Object.entries(byV).sort((a, b) => b[1] - a[1]).map(([v, m]) => `${v} ${fmtNT(m)}`).join('、'))
+  const items = {}
+  if (withItems) for (const r of Object.values((it || {}).rows || {})) { if (!r.order_id) continue; (items[r.order_id] = items[r.order_id] || []).push(`${r.name || r.item || '?'}×${Number(r.qty) || 0}${r.unit || ''}${r.price != null && r.price !== '' ? `@${Math.round(Number(r.price))}` : ''}`) }
+  list.slice(0, 120).forEach(o => L.push(`  - ${o.d} ${o.supplier}｜${o.status === 'approved' ? '已核准' : o.status === 'pending' ? '待審' : o.status}｜${o.n}項 ${fmtNT(o.total)}${o.unpriced ? `（${o.unpriced}項沒單價,金額低估）` : ''}${items[o.id] ? '：' + items[o.id].slice(0, 12).join('、') + (items[o.id].length > 12 ? `…等${items[o.id].length}項` : '') : ''}`))
+  if (list.length > 120) L.push(`…僅列前 120 張（合計是整月的）`)
+  return L.join('\n')
+}
 async function queryFinMonth(month) {
   if (!/^\d{4}-\d{2}$/.test(String(month || ''))) return '（月份格式要 YYYY-MM）'
   const { list } = await kvLoadLedger()
@@ -2002,6 +2039,7 @@ const BOT_AGENT_GUIDE = `
 - {"type":"query_resv","name":"OD"}  // 🔎A Beach 訂位「關鍵字」代查（唯讀,不用確認）：用「客人姓名/電話片段」直搜 inline 全史（=後台搜尋框同源），回每筆日期+姓名+人數+狀態+**電話**。使用者問「客人XX的電話/XX上次什麼時候來/XX訂過幾次」這種用名字問的就用這個（不知道日期時不要用 date 亂猜）。
 - {"type":"query_resv","top":10}  // 🔎A Beach 常客排行代查（唯讀,不用確認）：掃 2021 開店～今全史，回「實際入座次數」最多的前 N 名（姓名/入座次數/累計人次/訂過幾次含取消/最近來店/電話）。使用者問「常客前十名/來最多次的客人/回頭客」就用這個。
 - {"type":"query_hr","month":"2026-08"}  // 🔎NUEiP人資代查（唯讀,不用確認）：任意月「出勤統計(每人出勤天數/遲到/早退/缺卡/曠職)+班表(每人排班天數)」。加 "date":"2026-08-15" =改看單日逐筆打卡+當日班表。摘要只有本月近況,問歷史月/某人某月統計就用這個。
+- {"type":"query_orders","month":"2026-10","store":"ground"}  // 🔎叫貨單代查（唯讀,不用確認,外部群自動擋）：某店某月「跟廠商的叫貨單逐張」（日期/廠商/狀態/幾項/金額）＋月合計＋依廠商合計。store=ground（GROUN:D，含向 AB 央廚叫貨）|abeach（A Beach）。加 "supplier":"上展" 只列那家；加 "items":1 連每張單的品項數量單價一起列。摘要裡只有近 8 張，使用者問「X 月叫貨單／跟某家叫了什麼／叫貨花多少」就用這個——**不要**回「沒接進來／去看 Google 試算表」。
 - {"type":"query_fin","month":"2026-08"}  // 🔎財務內帳代查（唯讀,不用確認,外部群自動擋）：任意月收支「逐筆+月合計」。摘要只有最近120筆,問更早的月份/某月總支出就用這個。
 - 張良想叫 CC（Claude Code 工程師）改程式/加功能：教他直接打「**轉給CC ＋需求內容**」一句話——系統會自動收進 CC 收件匣、CC 會撿單處理（這是接好的真管道，**不要再說「我沒辦法轉給CC」**）。只有張良本人打有效；夥伴提需求請他們走 /prep 的建議或先跟張良說。
 - **【代查鐵則】你沒有「稍等一下／待會撈回來再回報」的能力**——這一則回覆送出後就結束了，不會有下一則。要代查，就必須在**同一則回覆裡**輸出上面的 query_pos_day / query_resv JSON 指令（系統會當場查完回填、你再據此作答，使用者只會看到最終答案）。只寫「我幫你代查／撈回來整理給你／稍等一下」而**沒帶 JSON ＝什麼都不會發生＝對使用者說謊**（2026-10-04 真實翻車：答應查九月婚禮包場說「稍等一下」，結果指令沒輸出、使用者空等）。
@@ -2792,7 +2830,8 @@ export default async function handler(req, res) {
           const qrs = [...txt.matchAll(/\{[^{}]*"type"\s*:\s*"query_resv"[^{}]*\}/g)].slice(0, 2)
           const qhs = [...txt.matchAll(/\{[^{}]*"type"\s*:\s*"query_hr"[^{}]*\}/g)].slice(0, 2)
           const qfs = moneyOK ? [...txt.matchAll(/\{[^{}]*"type"\s*:\s*"query_fin"[^{}]*\}/g)].slice(0, 2) : []
-          if (!qms.length && !qrs.length && !qhs.length && !qfs.length) return null
+          const qos = moneyOK ? [...txt.matchAll(/\{[^{}]*"type"\s*:\s*"query_orders"[^{}]*\}/g)].slice(0, 2) : [] // v4.70.40 叫貨單（成本資料，外部群擋）
+          if (!qms.length && !qrs.length && !qhs.length && !qfs.length && !qos.length) return null
           let dataTxt = ''
           for (const m of qms) { try { const q = JSON.parse(m[0]); dataTxt += await queryPosDay(String(q.date || ''), String(q.store || 'ground')) + '\n\n' } catch (e) { dataTxt += '（查詢指令解析失敗）\n' } }
           for (const m of qrs) { try { const q = JSON.parse(m[0]); dataTxt += (moneyOK
@@ -2800,6 +2839,7 @@ export default async function handler(req, res) {
             : ((q.name || q.top) ? '（這個群只能查「某天檔期狀況」，不提供客人姓名/電話/常客等個資查詢——要查客人資料請私訊張良）' : await queryResvPublic(String(q.date || ''), String(q.to || '')))) + '\n\n' } catch (e) { dataTxt += '（訂位查詢指令解析失敗）\n' } }
           for (const m of qhs) { try { const q = JSON.parse(m[0]); dataTxt += await queryHrMonth(q.month, q.date) + '\n\n' } catch (e) { dataTxt += '（人資查詢指令解析失敗）\n' } }
           for (const m of qfs) { try { const q = JSON.parse(m[0]); dataTxt += await queryFinMonth(q.month) + '\n\n' } catch (e) { dataTxt += '（財務查詢指令解析失敗）\n' } }
+          for (const m of qos) { try { const q = JSON.parse(m[0]); dataTxt += await queryOrders(q.month, q.store, q.supplier, q.items) + '\n\n' } catch (e) { dataTxt += '（叫貨單查詢指令解析失敗）\n' } }
           // v4.38.3 保險絲（九月1182筆爆AI輸入翻車）：代查結果超長一律截斷,寧可請AI縮範圍也不能整則掛掉
           if (dataTxt.length > 60000) dataTxt = dataTxt.slice(0, 60000) + '\n…（代查結果過長已截斷：請縮小日期區間分段再查）'
           return dataTxt
