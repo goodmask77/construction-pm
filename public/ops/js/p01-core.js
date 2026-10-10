@@ -572,8 +572,11 @@ function lineChart(opt){
   const X = x => PL + (x1===x0 ? 0.5 : (x-x0)/(x1-x0))*(W-PL-PR), Y = v => PT + (1-(v-mn)/rg)*(H-PT-PB)
   const grid = yT.map(v=>`<line x1="${PL}" x2="${W-PR}" y1="${Y(v).toFixed(1)}" y2="${Y(v).toFixed(1)}" stroke="#2A3340"/><text x="${PL-6}" y="${(Y(v)+3.5).toFixed(1)}" text-anchor="end" font-size="${FS}" fill="#8A94A6">${esc9(yFmt(v))}</text>`).join('')
   // X 刻度：最多 8 個、頭尾一定有
-  const n = cols.length, want = Math.min(W < 420 ? 6 : 8, n), tix = [...new Set(Array.from({length:want},(_,k)=>Math.round(k*(n-1)/(want-1||1))))]
-  const xf = idxMode ? (i => opt.xFmt ? opt.xFmt(labels[i], i) : labels[i]) : (i => opt.xFmt ? opt.xFmt(cols[i].x) : String(cols[i].x))
+  const n = cols.length
+  const xf = idxMode ? (i => String(opt.xFmt ? opt.xFmt(labels[i], i) : labels[i])) : (i => String(opt.xFmt ? opt.xFmt(cols[i].x) : cols[i].x))
+  // X 刻度數量＝看標籤實際寬度塞得下幾個（不重疊），最多 8 個、頭尾一定有
+  const xlW = Math.max(...cols.map((_,i)=>xf(i).length)) * FS * 0.62 + 12
+  const want = Math.max(2, Math.min(8, n, Math.floor((W-PL-PR) / xlW))), tix = [...new Set(Array.from({length:want},(_,k)=>Math.round(k*(n-1)/(want-1||1))))]
   const xa = tix.map(i => { const x = X(cols[i].x), anc = n===1?'middle':i===0?'start':i===n-1?'end':'middle'; return `<line x1="${x.toFixed(1)}" x2="${x.toFixed(1)}" y1="${H-PB}" y2="${H-PB+4}" stroke="#3A4452"/><text x="${x.toFixed(1)}" y="${H-PB+15}" text-anchor="${anc}" font-size="${FS}" fill="#8A94A6">${esc9(xf(i))}</text>` }).join('')
   let body = ''
   ser.forEach((s, si) => {
@@ -586,10 +589,11 @@ function lineChart(opt){
       if (sg.length>1) body += `<polyline points="${ps}" fill="none" style="stroke:${col}" stroke-width="2" stroke-linejoin="round"/>`
     }
     // 數字直接標在點上：單線且點數≤14 全標；點多時只標最高點（其餘滑過看）
-    const vs = cols.map(c=>c.v[si]), mxI = vs.indexOf(Math.max(...vs.filter(v=>v!=null))), showAll = ser.length===1 && n<=(W < 420 ? 8 : 14)
+    const vs = cols.map(c=>c.v[si]), mxI = vs.indexOf(Math.max(...vs.filter(v=>v!=null)))
+    const vlW = Math.max(...vs.filter(v=>v!=null).map(v=>String(yFmt(v)).length)) * FS * 0.62 + 8, showAll = ser.length===1 && n*vlW <= (W-PL-PR) && n <= 14
     pts.forEach((p,i) => { if (!p) return; const dc = (s.dotColors && s.dotColors[i]) || col
       body += `<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="${n>40?2:3.2}" style="fill:${dc}${opt.click?';cursor:pointer':''}" stroke="#0E1217" stroke-width="1.2"${opt.click?` onclick="${esc9(opt.click(i))}"`:''}/>`
-      if (showAll || (ser.length===1 && i===mxI)) body += `<text x="${Math.min(W-PR-12, Math.max(PL+12, p.x)).toFixed(1)}" y="${(p.y-7).toFixed(1)}" text-anchor="middle" font-size="${FS}" font-weight="700" fill="#C7D0DB">${esc9(yFmt(vs[i]))}</text>` })
+      if (showAll || (ser.length===1 && i===mxI)) { const anc = p.x - vlW/2 < PL ? 'start' : p.x + vlW/2 > W-PR ? 'end' : 'middle'; body += `<text x="${p.x.toFixed(1)}" y="${(p.y-7).toFixed(1)}" text-anchor="${anc}" font-size="${FS}" font-weight="700" fill="#C7D0DB">${esc9(yFmt(vs[i]))}</text>` } })
   })
   const data = esc9(JSON.stringify({ n:ser.map(s=>s.name||''), c:ser.map(s=>s.color||'#4DA3FF'), p:cols.map(c=>({ x:+X(c.x).toFixed(1), lb:c.lb, y:c.v.map(v=>v==null?null:+Y(v).toFixed(1)), t:c.v.map(v=>v==null?null:String(yFmt(v))) })) }))
   const curG = `<g class="lcCur" style="display:none;pointer-events:none"><line x1="0" x2="0" y1="${PT}" y2="${H-PB}" stroke="#9CC7F5" stroke-dasharray="3 3"/>${ser.map(s=>`<circle r="4.5" style="fill:${s.color||'#4DA3FF'}" stroke="#fff" stroke-width="1.5"/>`).join('')}</g>`
