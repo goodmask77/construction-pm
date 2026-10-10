@@ -163,6 +163,7 @@ tr.rowGD td.hrmStick{background:#2A1C1D}
     <button id="tab-pack" onclick="invLoad('pack')">📦 包材</button>
     <button id="tab-buy" onclick="buyLoad()">🛒 採購</button>
     <button id="tab-matlib" onclick="matlibLoad()" title="A Beach 叫貨物料：分廠商/分類/搜尋/進價波動分析">🧾 物料庫</button>
+    <button id="tab-waste" onclick="wasteLoad()" title="耗損紀錄：拍照 AI 讀秤、人確認才入帳">耗損</button> <!-- 批次 1b v4.70.32 -->
     <button id="tab-meet" onclick="meetLoad()">📋 會議</button>
     <button id="tab-shift" onclick="window._shScrollTo='today';shiftLoad()">📅 班表</button>
     <button id="tab-inc" onclick="incLoad()" title="AB=阿桑系統自動同步；GD ERP 之後接入">⚠️ 異常通知</button>
@@ -198,7 +199,8 @@ tr.rowGD td.hrmStick{background:#2A1C1D}
 <script src="/ops/js/p14-social.js?v=4733"></script><!-- v4.70.32 成長曲線可切互動／觸及／收藏／瀏覽（張良 2026-10-10） --><!-- v4.70.31 成長曲線加 XY 軸刻度＋滑鼠浮標（張良 2026-10-10） --><!-- v4.70.29 AI 中樞：設定頁「AI 模型」三家各功能選用＋素材庫 AI 生圖（張良 2026-10-10） --><!-- 行銷大師（原「社群」）發文＋成效（張良 2026-10-09 v4.70.18 側邊欄＋頁面標題改名「社群」→「行銷大師」，真正生效處在 p09 TAB_DEF） -->
 <script src="/ops/js/p15-library.js?v=4702"></script><!-- 📁 通用文件庫（雲端硬碟：資料夾/上傳/權限/DD歸檔撈檔 張良 2026-10-08 v4.70.2：預覽改App內嵌不開分頁） -->
 <script src="/ops/js/p16-matlib.js?v=4731"></script>
-<script src="/ops/js/p17-costtodo.js?v=4731"></script><!-- 成本模組批次1：偵錯與待處理中心（物料庫子分頁「待處理」＋導覽徽章，v4.70.31 2026-10-10） --><!-- 🧾 物料庫（A Beach 叫貨物料/進價波動分析，資料來自 boss-api 張良 2026-10-08 v4.70.6：全面下鑽KPI/廠商/日期/品項互跳） -->
+<script src="/ops/js/p17-costtodo.js?v=4731"></script>
+<script src="/ops/js/p18-waste.js?v=4732"></script><!-- 🧪 耗損紀錄 v1（批次 1b：拍照 AI 讀秤＋人確認入帳＋耗損頁統計，v4.70.32 2026-10-10） --><!-- 成本模組批次1：偵錯與待處理中心（物料庫子分頁「待處理」＋導覽徽章，v4.70.31 2026-10-10） --><!-- 🧾 物料庫（A Beach 叫貨物料/進價波動分析，資料來自 boss-api 張良 2026-10-08 v4.70.6：全面下鑽KPI/廠商/日期/品項互跳） -->
 <script src="/ops/js/p10-perm-init.js?v=4524"></script>
 <script src="/ops/tier-effects.js?v=4479"></script> <!-- v2.0(mythic-motion-v2) 特效註冊表（tasks.js 共用；務必在 tasks.js 之前） -->
 <script src="/ops/tasks.js?v=4726"></script> <!-- v4.70.29 積分收合(只有權限者按編輯才展開分數)＋級距說明欄完整顯示；v4.70.28 定期提醒/跳位/兩欄/積分權限（張良 2026-10-10）；v=4726 破快取 -->

@@ -33,6 +33,8 @@ export const AI_ROUTES = {
                def: { provider: 'anthropic', model: 'claude-haiku-4-5-20251001' }, fb: { provider: 'anthropic', model: 'claude-sonnet-4-6' } },
   app:       { label: '主 App AI 顧問', where: '工程主 App 的 /api/ai（callAI）', kind: 'text',
                def: { provider: 'anthropic', model: 'claude-sonnet-4-6' }, fb: { provider: 'anthropic', model: 'claude-opus-4-8' } },
+  waste:     { label: '耗損 AI 讀秤', where: 'GD 耗損頁：看秤面讀重量＋從候選清單認物料（視覺，批次 1b v4.70.32）', kind: 'text',
+               def: { provider: 'anthropic', model: 'claude-sonnet-4-6' }, fb: { provider: 'gemini', model: 'gemini-3.8-flash' } },
 }
 
 // ── 設定讀寫 ──
