@@ -32,7 +32,7 @@ function chUnreadTotal() { return (_chRooms || []).reduce((t, r) => t + (r.unrea
 function chRender() {
   const mobile = window.innerWidth < 760
   app.innerHTML = `<section style="padding:0;overflow:hidden">
-    <div id="chWrap" style="display:flex;height:calc(100vh - 150px);min-height:420px">
+    <div id="chWrap" style="display:flex;height:calc(100vh - ${mobile ? 232 : 150}px);min-height:360px">
       <div id="chList" style="width:${mobile ? '100%' : '280px'};flex:none;border-right:${mobile ? '0' : '1px solid var(--line)'};overflow:auto;${mobile && _chCur ? 'display:none' : ''}"></div>
       <div id="chPane" style="flex:1;display:${mobile && !_chCur ? 'none' : 'flex'};flex-direction:column;min-width:0"></div>
     </div></section>`
@@ -61,7 +61,7 @@ function chRenderPane() {
     </div>
     <div id="chMsgs" style="flex:1;overflow:auto;padding:12px;display:flex;flex-direction:column;gap:8px"><div class="hint">讀取中…</div></div>
     <div style="display:flex;gap:8px;padding:10px 12px;border-top:1px solid var(--line);align-items:flex-end">
-      <textarea id="chInput" rows="1" placeholder="輸入訊息… 打 @DD 叫 AI 回答（Enter 送出、Shift+Enter 換行）" style="flex:1;border:1px solid var(--line);border-radius:12px;padding:10px 12px;font-size:15px;resize:none;max-height:140px;background:var(--card);color:inherit" oninput="this.style.height='auto';this.style.height=Math.min(140,this.scrollHeight)+'px'" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();chSend()}"></textarea>
+      <textarea id="chInput" rows="1" placeholder="輸入訊息… 打 @DD 叫 AI 回答（Enter 送出、Shift+Enter 換行）" style="flex:1;border:1px solid var(--line);border-radius:12px;padding:10px 12px;font-size:15px;font-family:inherit;resize:none;max-height:140px;background:var(--card);color:inherit" oninput="this.style.height='auto';this.style.height=Math.min(140,this.scrollHeight)+'px'" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();chSend()}"></textarea>
       <button class="mini on" style="padding:10px 14px;display:flex;align-items:center;gap:4px" onclick="chSend()">${CH_ICON.send}</button>
     </div>`
 }
@@ -72,7 +72,7 @@ function chRenderMsgs(scroll) {
   if (!_chMsgs.length) { box.innerHTML = '<div class="hint" style="text-align:center;padding:20px">還沒有訊息，說點什麼吧。</div>'; return }
   let lastDay = ''
   box.innerHTML = _chMsgs.map(m => {
-    const day = String(m.t || '').slice(0, 10); let sep = ''
+    const day = (() => { try { const d = new Date(m.t); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0') } catch (_) { return String(m.t || '').slice(0, 10) } })(); let sep = '' // 日期分隔用本機時間（ISO 是 UTC，凌晨會差一天）
     if (day !== lastDay) { lastDay = day; sep = `<div class="hint" style="text-align:center;font-size:11px;margin:6px 0">${chEsc(day)}</div>` }
     if (m.kind === 'sys') return sep + `<div class="hint" style="text-align:center;font-size:12px">${chEsc(m.text)}</div>`
     const mine = mineIds.has(m.rid) || (m.name === me.name && m.rid !== 'dd')
