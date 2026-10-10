@@ -140,60 +140,71 @@ export default async function handler(req, res) {
         } catch (e) { return res.status(200).json({ ok: false, error: e.message || '上傳失敗' }) }
       }
       if (op === 'gen') {
+        const topic = String(body.topic || '').trim().slice(0, 800)
+        const imgUrl = String(body.imageUrl || '').trim()
+        if (!topic && !imgUrl) return res.status(200).json({ ok: false, error: '請先輸入要宣傳的重點，或先選一張圖片（AI 會看圖寫）' })
+        const styleMap = {
+          promo: '促銷強打：營造限時／優惠的急迫感，明確行動呼籲（快來、把握、限定）',
+          warm: '溫馨日常：親切有溫度，像跟熟客朋友分享生活',
+          chic: '文青質感：精煉有氛圍，重意境與畫面感，留白得宜',
+          fun: '活潑俏皮：輕鬆幽默，多用口語和表情，貼近年輕族群',
+          pro: '專業正式：清楚得體，適合正式公告或品牌宣達',
+        }
+        const style = styleMap[body.style] || styleMap.warm
+        const lenMap = { short: '精簡有力，大約 1–2 句、30 字以內', medium: '適中，大約 3–4 句、60 字上下', long: '較完整，大約 5–7 句、100 字以上，適度分段' }
+        const len = lenMap[body.length] || lenMap.medium
+        const lang = body.lang === 'en' ? '只用英文撰寫'
+          : body.lang === 'bi' ? '先寫繁體中文版本，空一行用「——」分隔後，再接對應的英文版本'
+            : '只用繁體中文（台灣用語、口語自然）'
+        const plat = body.platform === 'fb'
+          ? 'Facebook 貼文：可稍長、有敘事感與故事性，結尾放 2–3 個相關 hashtag'
+          : 'Instagram 貼文：精簡分段、適度使用 emoji，結尾放 5–8 個相關 hashtag（中英混搭）'
+        const items = (Array.isArray(body.relatedItems) ? body.relatedItems : []).slice(0, 10).filter(Boolean)
+        // 抓圖一次（multi 與單版共用）：有圖就讓 AI 看圖（base64 餵 Claude vision）
+        let imgBlock = null
+        if (imgUrl) {
+          try {
+            const ir = await fetch(imgUrl)
+            if (ir.ok) {
+              const ct = (ir.headers.get('content-type') || 'image/jpeg').split(';')[0]
+              const buf = Buffer.from(await ir.arrayBuffer())
+              if (/^image\/(jpeg|png|gif|webp)$/.test(ct) && buf.length < 4.5 * 1024 * 1024) imgBlock = { type: 'image', source: { type: 'base64', media_type: ct, data: buf.toString('base64') } }
+            }
+          } catch (_) { /* 抓圖失敗就純文字生成 */ }
+        }
+        const mkContent = (t) => imgBlock ? [imgBlock, { type: 'text', text: t }] : t
+        // ── 分品牌模式：為每個品牌各寫一版（各自調性，避免兩品牌四個帳號發得一模一樣影響成效）──
+        if (body.mode === 'multi' && Array.isArray(body.brands) && body.brands.filter(Boolean).length) {
+          try {
+            const brands = body.brands.slice(0, 4).map(s => String(s || '').trim().slice(0, 40)).filter(Boolean)
+            const per = []
+            for (const bd of brands) {
+              const sysM = `你是台灣餐飲品牌「${bd}」的資深社群小編。請為這個品牌寫「1 則」可直接複製貼上就發佈的純貼文正文，要緊貼「${bd}」的品牌特色、調性與客群，用專屬口吻撰寫，和別的品牌明顯區隔、不要寫得像同一篇。⚠️不要加「【】」方括號標籤、標題或任何說明，直接寫正文。只輸出 JSON，格式嚴格為：{"versions":["正文"]}`
+              const txtM = [`品牌：${bd}`, `平台語氣：${plat}`, `文案風格：${style}`, `文案長度：${len}`, `語言：${lang}`, items.length ? `主打餐點：${items.join('、')}` : '', imgBlock ? '已附上圖片，請先觀察畫面（餐點／擺盤／場景／氛圍）再寫，讓文字緊貼畫面。' : '', topic ? `要宣傳的重點／素材：\n${topic}` : '請主要依照圖片內容發想。'].filter(Boolean).join('\n')
+              const vs = parseVersions(await aiText(sysM, mkContent(txtM), 1200))
+              per.push({ brand: bd, caption: (vs && vs[0]) || '' })
+            }
+            if (!per.some(x => x.caption)) return res.status(200).json({ ok: false, error: '生成是空的，請換個說法再試一次' })
+            await act('社群AI分品牌生成', brands.join('/'))
+            return res.status(200).json({ ok: true, perBrand: per })
+          } catch (e) { return res.status(200).json({ ok: false, error: e.message || '生成失敗' }) }
+        }
+        // ── 單一版：一次 5 版不同角度（原本行為）──
         let versions
         try {
-          const topic = String(body.topic || '').trim().slice(0, 800)
-          const imgUrl = String(body.imageUrl || '').trim()
-          if (!topic && !imgUrl) return res.status(200).json({ ok: false, error: '請先輸入要宣傳的重點，或先選一張圖片（AI 會看圖寫）' })
-          const styleMap = {
-            promo: '促銷強打：營造限時／優惠的急迫感，明確行動呼籲（快來、把握、限定）',
-            warm: '溫馨日常：親切有溫度，像跟熟客朋友分享生活',
-            chic: '文青質感：精煉有氛圍，重意境與畫面感，留白得宜',
-            fun: '活潑俏皮：輕鬆幽默，多用口語和表情，貼近年輕族群',
-            pro: '專業正式：清楚得體，適合正式公告或品牌宣達',
-          }
-          const style = styleMap[body.style] || styleMap.warm
-          const lenMap = {
-            short: '每版精簡有力，大約 1–2 句、30 字以內',
-            medium: '每版適中，大約 3–4 句、60 字上下',
-            long: '每版較完整，大約 5–7 句、100 字以上，適度分段',
-          }
-          const len = lenMap[body.length] || lenMap.medium
-          const lang = body.lang === 'en' ? '只用英文撰寫'
-            : body.lang === 'bi' ? '先寫繁體中文版本，空一行用「——」分隔後，再接對應的英文版本'
-              : '只用繁體中文（台灣用語、口語自然）'
-          const plat = body.platform === 'fb'
-            ? 'Facebook 貼文：可稍長、有敘事感與故事性，結尾放 2–3 個相關 hashtag'
-            : 'Instagram 貼文：精簡分段、適度使用 emoji，結尾放 5–8 個相關 hashtag（中英混搭）'
           const brand = String(body.brand || '').trim().slice(0, 40)
-          const items = (Array.isArray(body.relatedItems) ? body.relatedItems : []).slice(0, 10).filter(Boolean)
           const sys = '你是台灣餐飲品牌的資深社群小編，擅長寫吸引人、會被分享與收藏的貼文。這次請一次產出 5 個切入角度明顯不同的版本，每個都是「可直接複製貼上就發佈的純貼文正文」。⚠️非常重要：絕對不要在內文裡加上「【情境帶入】」「【產品特色】」這類角度名稱、標題或任何方括號標籤，直接寫貼文本身。只輸出 JSON，格式嚴格為：{"versions":["版本一","版本二","版本三","版本四","版本五"]}，不要任何其他文字、不要 markdown 標記、不要說明。'
           const txt = [
             brand ? `品牌：${brand}` : '',
             `平台語氣：${plat}`,
             `文案風格：${style}`,
-            `文案長度：${len}`,
+            `文案長度：每版${len}`,
             `語言：${lang}`,
             items.length ? `主打餐點：${items.join('、')}` : '',
-            imgUrl ? '已附上一張圖片，請先仔細觀察圖片內容（餐點外觀／擺盤／場景／氛圍／文字），讓 5 個版本都緊貼畫面。' : '',
+            imgBlock ? '已附上一張圖片，請先仔細觀察圖片內容（餐點外觀／擺盤／場景／氛圍／文字），讓 5 個版本都緊貼畫面。' : '',
             topic ? `要宣傳的重點／素材：\n${topic}` : '請主要依照圖片內容發想貼文。',
           ].filter(Boolean).join('\n')
-          // 有圖就讓 AI 看圖（抓圖轉 base64 餵給 Claude vision）
-          let content = txt
-          if (imgUrl) {
-            try {
-              const ir = await fetch(imgUrl)
-              if (ir.ok) {
-                const ct = (ir.headers.get('content-type') || 'image/jpeg').split(';')[0]
-                const buf = Buffer.from(await ir.arrayBuffer())
-                if (/^image\/(jpeg|png|gif|webp)$/.test(ct) && buf.length < 4.5 * 1024 * 1024) {
-                  content = [{ type: 'image', source: { type: 'base64', media_type: ct, data: buf.toString('base64') } }, { type: 'text', text: txt }]
-                }
-              }
-            } catch (_) { /* 抓圖失敗就純文字生成 */ }
-          }
-          const raw = await aiText(sys, content, 2800)
-          versions = parseVersions(raw)
+          versions = parseVersions(await aiText(sys, mkContent(txt), 2800))
         } catch (e) { return res.status(200).json({ ok: false, error: e.message || '生成失敗' }) }
         if (!versions || !versions.length) return res.status(200).json({ ok: false, error: '生成是空的，請換個說法再試一次' })
         await act('社群AI生成5版', String(body.topic || '').slice(0, 24))

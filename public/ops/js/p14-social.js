@@ -7,6 +7,7 @@
   let DATA = null, subTab = 'dash', editId = null, editMedia = [], soDrill = {}, platFilter = 'all'
   let connEditOn = false // 連接卡「編輯」模式：預設藏操作鈕（連接/斷開/✕/編號），按編輯才顯示
   let genStyle = 'warm', genLang = 'zh', genLen = 'medium', genVers = [] // AI 生成文案：風格／語言／長度／最近 5 版
+  let multiDraft = [] // v4.70.26 分品牌各生一版：[{brand,caption,dests}]
   const STYLES = [['warm', '溫馨日常'], ['promo', '促銷強打'], ['chic', '文青質感'], ['fun', '活潑俏皮'], ['pro', '專業正式']]
   const LANGS = [['zh', '繁中'], ['en', '英文'], ['bi', '中英雙語']]
   const LENS = [['short', '簡短(1-2句)'], ['medium', '適中(3-4句)'], ['long', '較長(5句+)']]
@@ -303,7 +304,11 @@
         <div style="margin-bottom:6px"><span class="hint" style="margin-right:6px">風格</span>${STYLES.map(s => `<button class="mini ${genStyle === s[0] ? 'on' : ''}" onclick="_socialPickStyle(this,'${s[0]}')">${s[1]}</button>`).join('')}</div>
         <div style="margin-bottom:6px"><span class="hint" style="margin-right:6px">語言</span>${LANGS.map(l => `<button class="mini ${genLang === l[0] ? 'on' : ''}" onclick="_socialPickLang(this,'${l[0]}')">${l[1]}</button>`).join('')}</div>
         <div style="margin-bottom:10px"><span class="hint" style="margin-right:6px">長度</span>${LENS.map(l => `<button class="mini ${genLen === l[0] ? 'on' : ''}" onclick="_socialPickLen(this,'${l[0]}')">${l[1]}</button>`).join('')}</div>
-        <button class="mini on" id="sfGenBtn" style="padding:8px 20px" onclick="_socialGen()">✨ 生成 5 版文案</button>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+          <button class="mini on" id="sfGenBtn" style="padding:8px 20px" onclick="_socialGen()">✨ 生成 5 版文案</button>
+          <button class="mini" id="sfGenMultiBtn" style="padding:8px 16px" onclick="_socialGenMulti()">🏷 分品牌各生一版</button>
+        </div>
+        <div class="hint" style="margin-top:6px;font-size:11px">「分品牌各生一版」＝先在下方勾選兩個品牌以上的發布目標，AI 會依各品牌調性各寫一版、各自建一則（素材共用、文案不同），避免四個帳號發得一模一樣影響成效。</div>
         <div id="sfGenOut"></div>
       </div>`
     return `<section style="border:1px solid var(--primary)">
@@ -427,6 +432,71 @@
   }
   window._socialPickVer = function (i) {
     const t = document.getElementById('sfCap'); if (t && genVers[i] != null) { t.value = genVers[i]; t.focus(); try { t.scrollIntoView({ block: 'center', behavior: 'smooth' }) } catch (_) {} }
+  }
+
+  // ── v4.70.26 分品牌各生一版（素材共用、文案依品牌調性分化，再各建一則）──
+  function destsByBrand() {
+    const dests = [...document.querySelectorAll('.sfDest:checked')].map(x => x.value)
+    const pages = ((DATA.account || {}).pages) || []
+    const groups = [], idx = {}
+    for (const d of dests) {
+      const pid = d.split(':')[1]; const pg = pages.find(p => p.pageId === pid || p.igUserId === pid); if (!pg) continue
+      if (idx[pg.pageId] == null) { idx[pg.pageId] = groups.length; groups.push({ brand: pg.pageName, dests: [] }) }
+      groups[idx[pg.pageId]].dests.push(d)
+    }
+    return groups
+  }
+  window._socialGenMulti = async function () {
+    const topic = ((document.getElementById('sfTopic') || {}).value || '').trim()
+    const imageUrl = (editMedia[0] || {}).url || ''
+    if (!topic && !imageUrl) { alert('請先輸入「要宣傳什麼」，或先選一張圖片（AI 會看圖寫）'); return }
+    const groups = destsByBrand()
+    if (groups.length < 2) { alert('請先在下方「發布到哪裡」勾選兩個品牌以上（例如 A Beach 跟 GROUN:D 都勾），才需要分品牌各寫一版'); return }
+    const items = ((document.getElementById('sfItems') || {}).value || '').split(',').map(s => s.trim()).filter(Boolean)
+    const btn = document.getElementById('sfGenMultiBtn'); if (btn) { btn.disabled = true; btn.textContent = `各品牌生成中…（約 ${groups.length * 8} 秒）` }
+    const out = document.getElementById('sfGenOut'); if (out) out.innerHTML = '<div class="hint" style="margin-top:10px">AI 正在為每個品牌各寫一版…</div>'
+    let j
+    try { j = await sPost({ op: 'gen', mode: 'multi', brands: groups.map(g => g.brand), topic, style: genStyle, lang: genLang, length: genLen, platform: 'ig', relatedItems: items, imageUrl }) } catch (e) { j = { ok: false, error: '連線問題' } }
+    if (btn) { btn.disabled = false; btn.textContent = '🏷 分品牌各生一版' }
+    if (j.ok && Array.isArray(j.perBrand)) { multiDraft = j.perBrand.map((p, i) => ({ brand: p.brand, caption: p.caption || '', dests: (groups[i] && groups[i].dests) || [] })); renderMultiBrands() }
+    else { if (out) out.innerHTML = ''; alert(j.error || '生成失敗') }
+  }
+  function renderMultiBrands() {
+    const out = document.getElementById('sfGenOut'); if (!out) return
+    if (!multiDraft.length) { out.innerHTML = ''; return }
+    const canPub = DATA.me && DATA.me.admin && DATA.metaReady
+    out.innerHTML = `<div class="hint" style="margin:12px 0 6px">AI 依各品牌調性各寫了一版，可直接改。確認後選下面一個鈕一次處理：</div>`
+      + multiDraft.map((m, i) => {
+        const plats = m.dests.map(d => d.startsWith('ig') ? 'IG' : 'FB').join('＋')
+        return `<div style="border:1px solid var(--line);border-radius:10px;padding:10px;margin-bottom:8px;background:var(--soft)">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:5px"><span style="display:inline-block;padding:3px 9px;border-radius:999px;background:rgba(255,255,255,.06);border:1px solid var(--line);font-size:12px;font-weight:700">${esc(m.brand)}</span><span class="hint" style="font-size:11px">發到 ${plats || '—'}</span></div>
+          <textarea id="sfBrandCap_${i}" rows="4" style="width:100%;border:1px solid var(--line);border-radius:8px;padding:8px;font-size:13px">${esc(m.caption)}</textarea>
+        </div>`
+      }).join('')
+      + `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:4px">
+          <button class="mini on" onclick="_socialMultiSubmit(false)">✓ 各品牌各存草稿</button>
+          ${canPub ? `<button class="mini" style="background:#3DBE6C;color:#fff;border-color:transparent" onclick="_socialMultiSubmit(true)">🚀 各品牌直接發送</button>` : ''}
+        </div>`
+  }
+  window._socialMultiSubmit = async function (publish) {
+    const items = ((document.getElementById('sfItems') || {}).value || '').split(',').map(s => s.trim()).filter(Boolean)
+    const tags = ((document.getElementById('sfTags') || {}).value || '').split(',').map(s => s.trim()).filter(Boolean)
+    const list = multiDraft.map((m, i) => ({ brand: m.brand, dests: m.dests, caption: (((document.getElementById('sfBrandCap_' + i) || {}).value) || m.caption).trim() })).filter(x => x.caption && x.dests.length)
+    if (!list.length) { alert('沒有可處理的品牌文案'); return }
+    if (publish && list.some(m => m.dests.some(d => d.startsWith('ig'))) && !editMedia.length) { alert('IG 必須附圖，請先在上方選至少一張圖再發送'); return }
+    if (publish && !confirm('確定直接發送？會把 ' + list.length + ' 個品牌各發一則出去（對外）。')) return
+    let done = 0; const fail = []
+    for (const m of list) {
+      try {
+        const sv = await sPost({ op: 'save', caption: m.caption, tags, relatedItems: items, dests: m.dests, media: editMedia, scheduledAt: null })
+        if (!sv.ok) { fail.push(m.brand + '（存失敗）'); continue }
+        if (publish) { const pj = await sPost({ op: 'publishnow', id: sv.id }); if (!pj.ok) { fail.push(m.brand + '（' + (pj.error || '發送失敗') + '）'); continue } }
+        done++
+      } catch (e) { fail.push(m.brand + '（連線問題）') }
+    }
+    multiDraft = []
+    alert((publish ? '已發送 ' : '已建草稿 ') + done + ' 個品牌' + (fail.length ? '\n⚠️ 失敗：' + fail.join('、') : ''))
+    socialLoad()
   }
 
   // ── 素材庫（可重複選用的圖片）──
