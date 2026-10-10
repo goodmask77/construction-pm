@@ -296,7 +296,7 @@ async function custFind(){
   const stLines = Object.values(d.stats||{}).map(c=>`<div style="font-weight:800;font-size:12.5px;color:#F2C94C">★ ${c.name}${c.phone?`（${c.phone}）`:''}：入座 ${c.stats.seated??0} 次・全部 ${c.stats.total??0}（官方客人檔）</div>`).join('')
   box.innerHTML = cCard(`🔍「${q}」共 ${cNum(d.total)} 筆`, stLines + `<div style="max-height:220px;overflow:auto;margin-top:4px">` + (d.rows||[]).map(r=>`<div style="font-size:12px;padding:2px 0;border-bottom:1px solid var(--line)">${r.d||'?'} ${r.t||''} <b>${r.name}</b> ${r.n}人・${ST9[r.st]||r.st}${r.phone?`・${r.phone}`:''}</div>`).join('') + `</div><div style="text-align:right;margin-top:4px"><button class="mini" onclick="document.getElementById('custFindBox').innerHTML=''">✕ 關閉</button></div>`)
 }
-const TAB_DEF = { prep:'銷售數據', rcp:'食譜', pricing:'菜單成本', sop:'SOP', task:'任務', lb:'排行榜', food:'盤點', pack:'包材', buy:'採購', meet:'會議', shift:'班表', inc:'異常通知', fb:'回饋', menu:'菜單', social:'行銷大師', cust:'inline', lib:'文件庫', hrm:'夥伴名冊', onb:'入職', waste:'耗損', costdash:'成本總覽' } // v4.33.0 去emoji；cust=inline顧客資料庫(v4.39.0 張良)；onb=入職流程(v4.56.5 張良「直接建按鈕進去」)；social=行銷大師(原「社群」v4.70.18 張良 2026-10-09 改名)；lib=通用文件庫(v4.70.0 張良 2026-10-08)
+const TAB_DEF = { prep:'銷售數據', rcp:'食譜', pricing:'菜單成本', sop:'SOP', task:'任務', lb:'排行榜', food:'盤點', pack:'包材', buy:'採購', meet:'會議', shift:'班表', inc:'異常通知', fb:'回饋', menu:'菜單', social:'行銷大師', cust:'inline', lib:'文件庫', chat:'聊天室', hrm:'夥伴名冊', onb:'入職', waste:'耗損', costdash:'成本總覽' } // v4.33.0 去emoji；cust=inline顧客資料庫(v4.39.0 張良)；onb=入職流程(v4.56.5 張良「直接建按鈕進去」)；social=行銷大師(原「社群」v4.70.18 張良 2026-10-09 改名)；lib=通用文件庫(v4.70.0 張良 2026-10-08)
 // ── 單色線條 icon（張良 2026-09-24：不要彩色 emoji——同 Beach Ops 的 stroke 線條圖）──
 const _I = (d) => `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex:0 0 auto;vertical-align:-3px">${d}</svg>`
 const TAB_ICONS = {
@@ -321,6 +321,7 @@ const TAB_ICONS = {
   onb: _I('<circle cx="9" cy="8" r="3.2"/><path d="M3.5 20c0-3.3 2.4-5.5 5.5-5.5s5.5 2.2 5.5 5.5"/><path d="M18 8v6M15 11h6"/>'), // 入職＝新人加入（user-plus）
   social: _I('<path d="M3 11v2a1 1 0 0 0 1 1h2l5 4V6L6 10H4a1 1 0 0 0-1 1Z"/><path d="M15.5 8.5a4 4 0 0 1 0 7"/>'), // 社群＝喇叭廣播（v4.68 張良 2026-10-08）
   lib: _I('<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>'), // 文件庫＝資料夾（v4.70.0 張良 2026-10-08）
+  chat: _I('<path d="M21 11.5a8.4 8.4 0 0 1-9 8.4 8.6 8.6 0 0 1-3.6-.8L3 21l1.9-4.6A8.4 8.4 0 0 1 3 11.5a8.4 8.4 0 0 1 9-8.4 8.4 8.4 0 0 1 9 8.4z"/>'), // 聊天室（v4.70.45）
   matlib: _I('<path d="M6 3h12v18l-3-2-3 2-3-2-3 2V3Z"/><path d="M9 8h6M9 12h5"/>'),
   pricing: _I('<path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/>'), // 菜單成本＝標籤（批次 5 v4.70.35）
   rcp: _I('<path d="M12 3a7 7 0 0 0-7 7v1h14v-1a7 7 0 0 0-7-7z"/><path d="M4 14h16v2a4 4 0 0 1-4 4H8a4 4 0 0 1-4-4v-2z"/><path d="M12 3V1"/>'), // 食譜＝鍋（批次 3 v4.70.34）

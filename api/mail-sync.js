@@ -4287,6 +4287,49 @@ export default async function handler(req, res) {
   // 資料存 KV sp_finance_pm_library，檔案一律進私有桶 ground-private（看檔＝5分鐘簽名網址）。
   // 權限模型：每個資料夾 acl={ roles:{角色:等級}, users:{rid:等級}, noExport }；等級 0=看不到 1=只能看/下載 2=可編輯（上傳/刪/改/排序）。
   // 管理者（approver／主管／prep admin）永遠 2，且唯一能「管理資料夾結構＋設權限」。個人覆蓋 > 角色預設 > 一般預設。
+  // 💬 聊天室（v4.70.45 溝通中樞項目 3a；規則在 api/_chat.js）：GET ?chat=<OPS_BOARD_KEY>&me=token&op=rooms|msgs（&room=&after=&read=1）；POST ?chat=<K> {token, op:'send'|'read'|'create'|'rename'|'members'|'delete', ...}
+  if (req.query?.chat) {
+    const okC = (process.env.OPS_BOARD_KEY || '').trim()
+    if (!okC || String(req.query.chat) !== okC) return res.status(403).json({ ok: false })
+    let bodyC = {}
+    if (req.method === 'POST') { try { bodyC = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {} }
+    const tkC = req.method === 'POST' ? bodyC.token : req.query.me
+    const [whoC, defC, pmC, rosC, bdC] = await Promise.all([sopWho(tkC), kvGet('sp_finance_pm_sop_def'), kvGet('sp_finance_pm_prep_perm'), kvGet('sp_crew_kb_roster'), kvGet('sp_finance_pm_prep_bind')])
+    if (!whoC) return res.status(403).json({ ok: false, error: '還沒登入——私訊 DD「登入碼」拿 4 位數，App 按右上「登入」填入' })
+    const { isMgr, listRooms, getMsgs, markRead, sendMsg, roomOp } = await import('./_chat.js')
+    const aprC = (((defC || {}).ground || {}).approvers || ['張良瑋'])
+    const mgrC = isMgr(whoC, aprC, pmC)
+    const idsByName = nm => { const s9 = new Set(); for (const v of Object.values((bdC || {}).tokens || {})) if (v && v.name === nm) { if (v.rid) s9.add(v.rid); if (v.uid) s9.add(v.uid) } return [...s9] }
+    whoC.ids = idsByName(whoC.name)
+    const alive = ((rosC || {}).people || []).filter(p => p && p.name && !p.endDate && (p.status || '在職') !== '離職')
+    const rosterC = alive.map(p => ({ rid: String(p.id), name: p.name, mgr: isMgr({ name: p.name, rid: String(p.id), role: p.gdRole || '' }, aprC, pmC) }))
+    const opC = String(req.method === 'POST' ? bodyC.op : req.query.op || 'rooms')
+    res.setHeader('Cache-Control', 'private, no-store')
+    try {
+      if (req.method !== 'POST') {
+        if (opC === 'rooms') return res.status(200).json({ ok: true, me: { rid: whoC.rid || whoC.uid, name: whoC.name, mgr: mgrC }, rooms: await listRooms({ who: whoC, mgr: mgrC, roster: rosterC }), people: rosterC.filter(p => p.name !== whoC.name) })
+        if (opC === 'msgs') return res.status(200).json(await getMsgs({ who: whoC, mgr: mgrC, room: String(req.query.room || ''), after: String(req.query.after || ''), markRead: String(req.query.read || '') === '1' }))
+        return res.status(400).json({ ok: false, error: '不認識的操作' })
+      }
+      if (opC === 'read') return res.status(200).json(await markRead({ who: whoC, room: String(bodyC.room || '') }))
+      if (opC === 'send') {
+        const notify = async (toRids, msg, extra) => {
+          try { const { wpPush } = await import('./_webpush.js'); const to9 = toRids ? [...new Set(toRids.flatMap(r9 => { const p9 = rosterC.find(x => x.rid === r9); return p9 ? [r9, ...idsByName(p9.name)] : [r9] }))] : null; await wpPush(to9, msg) } catch (_) {}
+          // 個人聊天室：夥伴發話→LINE 私訊審核人（通知鐵則：關鍵節點加 LINE；主管回話不另 LINE，鈴鐺就好）
+          if (extra && extra.personalFromCrew) {
+            try {
+              const tk9 = (process.env.LINE_CHANNEL_ACCESS_TOKEN || '').trim()
+              for (const an of aprC) { const ap = alive.find(p => p.name === an && p.lineUserId); if (tk9 && ap && ap.name !== extra.who.name) await fetch('https://api.line.me/v2/bot/message/push', { method: 'POST', headers: { 'content-type': 'application/json', Authorization: 'Bearer ' + tk9 }, body: JSON.stringify({ to: ap.lineUserId, messages: [{ type: 'text', text: `💬 ${extra.roomName}\n${extra.who.name}：${String(extra.text).slice(0, 300)}\n（到 /prep 聊天室回覆）` }] }) }) }
+            } catch (_) {}
+          }
+        }
+        let aiCallC = null; try { aiCallC = (await import('./_ai.js')).aiCall } catch (_) {}
+        return res.status(200).json(await sendMsg({ who: whoC, mgr: mgrC, room: String(bodyC.room || ''), text: bodyC.text, roster: rosterC, notify, aiCall: aiCallC }))
+      }
+      if (['create', 'rename', 'members', 'delete'].includes(opC)) return res.status(200).json(await roomOp({ who: whoC, mgr: mgrC, op: opC, room: String(bodyC.room || ''), name: bodyC.name, members: bodyC.members }))
+      return res.status(400).json({ ok: false, error: '不認識的操作' })
+    } catch (e) { return res.status(200).json({ ok: false, error: '聊天室暫時出錯：' + String(e?.message || e).slice(0, 80) }) }
+  }
   if (req.query?.libget || (req.method === 'POST' && (req.query?.libfold || req.query?.libup || req.query?.libfile)) || req.query?.liburl) {
     const okL = (process.env.OPS_BOARD_KEY || '').trim()
     const qkL = String(req.query.libget || req.query.libfold || req.query.libup || req.query.libfile || req.query.liburl || '')
