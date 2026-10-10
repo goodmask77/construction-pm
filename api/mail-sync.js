@@ -13,6 +13,7 @@ import { syncEatsLive, eatsDayRecord } from './_eats.js' // AB 今天即時營�
 import { awardPts, pointsRules } from './_points.js' // 🏦 積分中樞共用（行為分給分＋規則）
 import { buildTodo as costBuildTodo, applyDecision as costDecide, putSnapshot as costPutSnap } from './_cost.js'
 import { buildCards as mcBuild, applyCardOp as mcApply } from './_matcard.js' // 🗂 成本模組 批次2 物料卡（v4.70.33） // 🧾 產品與成本模組 批次1：偵錯與待處理中心（v4.70.31）
+import * as WASTE from './_waste.js' // 🧪 耗損紀錄 v1（批次 1b，v4.70.32） // 🧾 產品與成本模組 批次1：偵錯與待處理中心（v4.70.31）
 
 const clean = (v) => (v || '').trim().replace(/^["']|["']$/g, '').replace(/^[A-Za-z0-9_]+=/, '').trim()
 const SB_URL = clean(process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL)
@@ -4842,6 +4843,42 @@ export default async function handler(req, res) {
     }
     const slim = {}; for (const [k, v] of Object.entries(t.supplies || {})) { const { recs, convs, ...rest } = v; slim[k] = { ...rest, nConv: (convs || []).length } }
     return res.status(200).json({ ok: true, me: { name: meW.name, canEdit: canEditM }, ...t, supplies: slim, log: (t.log || []).slice(0, 20) })
+  }
+  // ── 🧪 耗損紀錄 v1（批次 1b）──（v4.70.32，規格 docs/COST_MODULE_SPEC.md「耗損紀錄(AI 拍照)」；規則在 api/_waste.js）
+  // GET  ?waste=<OPS_BOARD_KEY>&me=token[&months=3][&probe=<MENU_PROBE_KEY>]  → 紀錄（含舊備料板耗損）＋統計＋候選物料＋設定
+  // POST ?waste=<OPS_BOARD_KEY> {token, op:'ai'|'add'|'void'|'cfg', ...}      → AI 讀秤／入帳／沖銷／設定（限「耗損」分頁權限 permWho 'waste'）
+  // GET  ?wasteimg=<OPS_BOARD_KEY>&me=token&path=waste/…                      → 302 到 5 分鐘簽名網址（私有桶）
+  if (req.query?.waste || req.query?.wasteimg) {
+    const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
+    if (!ok2 || String(req.query.waste || req.query.wasteimg) !== ok2) return res.status(403).json({ ok: false })
+    let bW = {}
+    if (req.method === 'POST') { try { bW = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {} }
+    const tkW = String(req.method === 'POST' ? (bW.token || '') : (req.query.me || ''))
+    const mkW = (process.env.MENU_PROBE_KEY || '').trim()
+    const probeW = req.method !== 'POST' && mkW && String(req.query.probe || '') === mkW // 本機截圖驗證探針（唯讀）
+    const whoW = probeW ? { name: 'probe' } : await sopWho(tkW)
+    if (!whoW) return res.status(403).json({ ok: false, error: '耗損紀錄要先綁定身分（私訊 DD「登入碼」）' })
+    if (req.query?.wasteimg) {
+      const u = await WASTE.signPhoto(String(req.query.path || ''))
+      if (!u) return res.status(404).json({ ok: false })
+      return res.redirect(302, u)
+    }
+    const canW = !probeW && !!(await permWho(tkW, 'waste'))
+    if (req.method === 'POST') {
+      if (!canW) return res.status(403).json({ ok: false, error: '沒有「耗損」分頁的編輯權限' })
+      const opW = String(bW.op || '')
+      const fn = opW === 'ai' ? WASTE.aiRead : opW === 'add' ? WASTE.addWaste : opW === 'void' ? WASTE.voidWaste : opW === 'cfg' ? WASTE.cfgSave : null
+      if (!fn) return res.status(400).json({ ok: false, error: '不認得的操作' })
+      const r = await fn({ kvGet, kvPut, who: whoW, body: bW })
+      if (r.ok && opW !== 'ai') await announceChanged()
+      return res.status(r.ok ? 200 : 400).json(r)
+    }
+    const nM = Math.min(12, Math.max(1, Number(req.query.months) || 3))
+    const msW = (() => { const out = []; const d = new Date(Date.now() + 8 * 3600e3); d.setUTCDate(1); for (let i = 0; i < nM; i++) { out.push(d.toISOString().slice(0, 7)); d.setUTCMonth(d.getUTCMonth() - 1) } return out })()
+    const [rowsW, cfgW, prodsW, defW] = await Promise.all([WASTE.loadRows({ kvGet, months: msW }), WASTE.cfgGet(kvGet), WASTE.loadProducts(kvGet), kvGet('sp_finance_pm_sop_def')])
+    const stationsW = (((defW || {}).ground || {}).stations) || []
+    const { refs, pairs, hit, ...cfgPub } = cfgW
+    return res.status(200).json({ ok: true, me: { name: whoW.name, canEdit: canW }, months: msW, rows: rowsW, stats: WASTE.summarize(rowsW, cfgW), cfg: cfgPub, refsN: Object.fromEntries(Object.entries(refs || {}).map(([k, v]) => [k, v.length])), products: prodsW, stations: stationsW, reasons: cfgW.reasons, countUnits: WASTE.COUNT_UNITS })
   }
   // ── 🧾 產品與成本模組｜批次 1 偵錯與待處理中心（v4.70.31，規格 docs/COST_MODULE_SPEC.md）──
   // GET  ?costtodo=<OPS_BOARD_KEY>&me=token            → 待處理清單（價格異常/單位待確認/資料缺口/合併建議/已靜音）＋計數＋門檻設定
