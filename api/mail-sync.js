@@ -11,6 +11,7 @@ import { groundManualRecords } from './_ground-manual.js' // GROUN:D 喬亞POS�
 import { joyaLogin, joyaFetchDay, joyaBuildRecord, taipeiToday, taipeiAfterClose, joyaFetchTimeslots, timeslotSection, TIMESLOT_SHEET, joyaFetchSalesMethod, parseSalesMethod } from './_joya.js' // GROUN:D POS行動報表自動抓取（2026-08-26 起全自動）
 import { syncEatsLive, eatsDayRecord } from './_eats.js' // AB 今天即時營業額＋某天日結回填（Eats365 商家後台，2026-09-02）
 import { awardPts, pointsRules } from './_points.js' // 🏦 積分中樞共用（行為分給分＋規則）
+import { buildTodo as costBuildTodo, applyDecision as costDecide, putSnapshot as costPutSnap } from './_cost.js' // 🧾 產品與成本模組 批次1：偵錯與待處理中心（v4.70.31）
 
 const clean = (v) => (v || '').trim().replace(/^["']|["']$/g, '').replace(/^[A-Za-z0-9_]+=/, '').trim()
 const SB_URL = clean(process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL)
@@ -4688,6 +4689,43 @@ export default async function handler(req, res) {
   // 📄 物料庫-叫貨單檢視（張良 2026-10-10「有物料庫那應該找得到每張訂單」）：
   // 讀 boss 訂單單頭 ord_<YYYYMM> ＋ 明細 ordi_<YYYYMM>，用 order_id 組成「每張叫貨單＋其明細」。
   // 🔴 成本敏感 → me 身分守門，不走裸金鑰。
+  // ── 🧾 產品與成本模組｜批次 1 偵錯與待處理中心（v4.70.31，規格 docs/COST_MODULE_SPEC.md）──
+  // GET  ?costtodo=<OPS_BOARD_KEY>&me=token            → 待處理清單（價格異常/單位待確認/資料缺口/合併建議/已靜音）＋計數＋門檻設定
+  // GET  ?costtodo=<OPS_BOARD_KEY>&me=token&count=1    → 只回計數（導覽徽章用）
+  // POST ?costtodo=<OPS_BOARD_KEY> {token, op:'decide'|'undo'|'unmute'|'cfg', ...} → 寫決定／靜音／門檻（限採購權限 permWho 'buy'，全部留紀錄）
+  // POST ?costsnap=<MENU_PROBE_KEY|PARTNER_API_KEY> {sheet, rows, asOf}        → 灌 10/06 快照（驗收基準；本機 scripts/cost-snap-ingest.mjs）
+  if (req.query?.costtodo) {
+    const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
+    if (!ok2 || String(req.query.costtodo) !== ok2) return res.status(403).json({ ok: false })
+    let bC = {}
+    if (req.method === 'POST') { try { bC = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {} }
+    const meTk = String(req.method === 'POST' ? (bC.token || '') : (req.query.me || ''))
+    const mkP = (process.env.MENU_PROBE_KEY || '').trim()
+    const probeC = req.method !== 'POST' && mkP && String(req.query.probe || '') === mkP // 本機驗證探針（唯讀、不能決定）
+    const meW = probeC ? { name: 'probe' } : await sopWho(meTk)
+    if (!meW) return res.status(403).json({ ok: false, error: '成本資料屬內部資料，請先綁定身分（私訊 DD「登入碼」）' })
+    const canDecide = !probeC && !!(await permWho(meTk, 'buy'))
+    if (req.method === 'POST') {
+      if (!canDecide) return res.status(403).json({ ok: false, error: '沒有處理待處理的權限（採購權限）' })
+      const r = await costDecide({ kvGet, kvPut, who: meW, body: bC })
+      if (r.ok) await announceChanged()
+      return res.status(r.ok ? 200 : 400).json(r)
+    }
+    const todayC = new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10)
+    const mosC = (() => { const out = []; const d = new Date(todayC + 'T00:00:00Z'); for (let i = 0; i < 13; i++) { out.push(d.toISOString().slice(0, 7)); d.setUTCMonth(d.getUTCMonth() - 1) } return out })()
+    const t = await costBuildTodo({ kvGet, months: mosC })
+    if (req.query.count) return res.status(200).json({ ok: true, counts: t.counts })
+    return res.status(200).json({ ok: true, me: { name: meW.name, canDecide }, ...t })
+  }
+  if (req.method === 'POST' && req.query?.costsnap) {
+    const mkC = (process.env.MENU_PROBE_KEY || '').trim(), pkC = (process.env.PARTNER_API_KEY || '').trim()
+    const kC = String(req.query.costsnap)
+    if (!((mkC && kC === mkC) || (pkC && kC === pkC))) return res.status(403).json({ ok: false })
+    let bS = {}
+    try { bS = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
+    const r = await costPutSnap({ kvPut, sheet: String(bS.sheet || ''), rows: bS.rows, asOf: bS.asOf })
+    return res.status(r.ok ? 200 : 400).json(r)
+  }
   if (req.query?.matord) {
     const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
     if (!ok2 || String(req.query.matord) !== ok2) return res.status(403).json({ ok: false })
