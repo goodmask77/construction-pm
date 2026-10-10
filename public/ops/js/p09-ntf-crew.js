@@ -294,7 +294,7 @@ async function custFind(){
   const stLines = Object.values(d.stats||{}).map(c=>`<div style="font-weight:800;font-size:12.5px;color:#F2C94C">★ ${c.name}${c.phone?`（${c.phone}）`:''}：入座 ${c.stats.seated??0} 次・全部 ${c.stats.total??0}（官方客人檔）</div>`).join('')
   box.innerHTML = cCard(`🔍「${q}」共 ${cNum(d.total)} 筆`, stLines + `<div style="max-height:220px;overflow:auto;margin-top:4px">` + (d.rows||[]).map(r=>`<div style="font-size:12px;padding:2px 0;border-bottom:1px solid var(--line)">${r.d||'?'} ${r.t||''} <b>${r.name}</b> ${r.n}人・${ST9[r.st]||r.st}${r.phone?`・${r.phone}`:''}</div>`).join('') + `</div><div style="text-align:right;margin-top:4px"><button class="mini" onclick="document.getElementById('custFindBox').innerHTML=''">✕ 關閉</button></div>`)
 }
-const TAB_DEF = { prep:'銷售數據', sop:'SOP', task:'任務', lb:'排行榜', food:'盤點', pack:'包材', buy:'採購', meet:'會議', shift:'班表', inc:'異常通知', fb:'回饋', menu:'菜單', social:'行銷大師', cust:'inline', lib:'文件庫', hrm:'夥伴名冊', onb:'入職', waste:'耗損' } // v4.33.0 去emoji；cust=inline顧客資料庫(v4.39.0 張良)；onb=入職流程(v4.56.5 張良「直接建按鈕進去」)；social=行銷大師(原「社群」v4.70.18 張良 2026-10-09 改名)；lib=通用文件庫(v4.70.0 張良 2026-10-08)
+const TAB_DEF = { prep:'銷售數據', rcp:'食譜', sop:'SOP', task:'任務', lb:'排行榜', food:'盤點', pack:'包材', buy:'採購', meet:'會議', shift:'班表', inc:'異常通知', fb:'回饋', menu:'菜單', social:'行銷大師', cust:'inline', lib:'文件庫', hrm:'夥伴名冊', onb:'入職', waste:'耗損' } // v4.33.0 去emoji；cust=inline顧客資料庫(v4.39.0 張良)；onb=入職流程(v4.56.5 張良「直接建按鈕進去」)；social=行銷大師(原「社群」v4.70.18 張良 2026-10-09 改名)；lib=通用文件庫(v4.70.0 張良 2026-10-08)
 // ── 單色線條 icon（張良 2026-09-24：不要彩色 emoji——同 Beach Ops 的 stroke 線條圖）──
 const _I = (d) => `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex:0 0 auto;vertical-align:-3px">${d}</svg>`
 const TAB_ICONS = {
@@ -320,6 +320,7 @@ const TAB_ICONS = {
   social: _I('<path d="M3 11v2a1 1 0 0 0 1 1h2l5 4V6L6 10H4a1 1 0 0 0-1 1Z"/><path d="M15.5 8.5a4 4 0 0 1 0 7"/>'), // 社群＝喇叭廣播（v4.68 張良 2026-10-08）
   lib: _I('<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>'), // 文件庫＝資料夾（v4.70.0 張良 2026-10-08）
   matlib: _I('<path d="M6 3h12v18l-3-2-3 2-3-2-3 2V3Z"/><path d="M9 8h6M9 12h5"/>'),
+  rcp: _I('<path d="M12 3a7 7 0 0 0-7 7v1h14v-1a7 7 0 0 0-7-7z"/><path d="M4 14h16v2a4 4 0 0 1-4 4H8a4 4 0 0 1-4-4v-2z"/><path d="M12 3V1"/>'), // 食譜＝鍋（批次 3 v4.70.34）
   waste: _I('<path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/>'), // 耗損＝垃圾桶（批次 1b v4.70.32） // 🧾 物料庫＝叫貨收據（v4.70.19 張良 2026-10-10：九宮格缺圖補上）
 }
 const stripEmoji = (s) => String(s||'').replace(/[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE0F}\u{2B00}-\u{2BFF}\u{2190}-\u{21FF}⭐★☆✅✏️📌]/gu,'').trim()

@@ -12,6 +12,7 @@
 // cron：vercel.json 每小時 :07；手動 ?force=<MENU_PROBE_KEY>；只測金鑰 ?ping=1&force=<金鑰>
 // ?fillpos=<PARTNER_API_KEY>[&dry=1]：一次性把 4~6 月 AB 營收（revd+sett）補進營收頁 pos entries（7/1 起維持日結信為準）
 import { kvGet, kvPut, announceChanged, ingestPosRecords } from './mail-sync.js'
+import { snapshotRecipeCosts } from './_recipe.js' // 批次 3：每小時同步後，價格／換算／配方有變就寫食譜成本快照（永不改寫）
 
 const BASE = (process.env.BOSS_API_BASE_URL || '').trim().replace(/\/$/, '')
 const KEY = (process.env.BOSS_API_KEY || '').trim()
@@ -257,9 +258,15 @@ export default async function handler(req, res) {
       }
     } catch (_) {}
   }
+  let rcpSnap = null
+  try { // 成本快照（規格：價格、換算、配方任一變動 → 重算受影響對象、各寫一筆、永不改寫）；失敗不影響同步
+    const mos = (() => { const out = []; const d = new Date(today + 'T00:00:00Z'); for (let i = 0; i < 13; i++) { out.push(d.toISOString().slice(0, 7)); d.setUTCMonth(d.getUTCMonth() - 1) } return out })()
+    rcpSnap = await snapshotRecipeCosts({ kvGet, kvPut, months: mos })
+  } catch (e) { rcpSnap = { err: e.message } }
   state.lastRun = new Date().toISOString()
+  state.rcpSnap = rcpSnap
   await kvPut('sp_finance_pm_boss_state', state, 'boss同步狀態')
   await announceChanged()
   const pend = Object.fromEntries(EPS.filter(E => E.pend).map(E => [E.slug, (state.res[E.slug] || {}).ok ? 'live' : 'wait404']))
-  return res.status(200).json({ ok: !errs.length, requests: used, done, errs, justLive, pend, rot: state.rot, bf: state.bf })
+  return res.status(200).json({ ok: !errs.length, requests: used, done, errs, justLive, pend, rcpSnap, rot: state.rot, bf: state.bf })
 }

@@ -239,6 +239,7 @@ const EDIT_FN = {
   cellClick:'shift', dayClick:'shift', shiftForm:'shift', shiftSave:'shift', shiftDelFast:'shift', shiftPosEdit:'shift', posSave:'shift', shLeaveMenu:'shift', shLeaveSet:'shift', clearDay:'shift', clearWeek:'shift', copyDay:'shift', copyCell:'shift', copyWeekNext:'shift', undoClear:'shift', undoLastCopy:'shift', pasteOff:'shift', t24set:'shift', qkTrChange:'shift', shiftQuickGo:'shift', tplSave:'shift', tplApply:'shift', tplDel:'shift', shiftSkill:'shift', gdRoleModal:'shift', gdRoleSave:'shift', gdStaffAdd:'shift', gdStaffGo:'shift', gdStaffOp:'shift', odMove:'shift', odOff:'shift',
   lbNew:'shift', lbDel:'shift', lbRen:'shift', lbCopy:'shift', lbSnap:'shift', lbSwitch:'shift', lbUndo:'shift', lbVDel:'shift', lbVRen:'shift', lbVRestore:'shift', lbClearAll:'shift', lbRowClear:'shift', lbColClear:'shift', lbWageMenu:'shift', lbFinSet:'shift', lbAmtPick:'shift',
   invCount:'*', invEdit:'*', invSave:'*', invDel:'*',
+  rcpDraft:'rcp', rcpEdit:'rcp', rcpPublish:'rcp', rcpDiscard:'rcp', rcpMeta:'rcp', rcpPhoto:'rcp', rcpStepAdd:'rcp', rcpStepSave:'rcp',
   wasteShot:'waste', wasteManual:'waste', wasteSend:'waste', wasteVoid:'waste', wasteCfgSave:'waste', wasteAi:'waste',
   buyNew:'buy', buySend:'buy', buyOp:'buy', buyRecv:'buy', recvPick:'buy', recvSend:'buy', buyCat:'buy', buyPick:'buy',
 }

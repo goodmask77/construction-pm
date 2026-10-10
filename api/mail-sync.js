@@ -12,7 +12,8 @@ import { joyaLogin, joyaFetchDay, joyaBuildRecord, taipeiToday, taipeiAfterClose
 import { syncEatsLive, eatsDayRecord } from './_eats.js' // AB 今天即時營業額＋某天日結回填（Eats365 商家後台，2026-09-02）
 import { awardPts, pointsRules } from './_points.js' // 🏦 積分中樞共用（行為分給分＋規則）
 import { buildTodo as costBuildTodo, applyDecision as costDecide, putSnapshot as costPutSnap } from './_cost.js'
-import { buildCards as mcBuild, applyCardOp as mcApply } from './_matcard.js' // 🗂 成本模組 批次2 物料卡（v4.70.33） // 🧾 產品與成本模組 批次1：偵錯與待處理中心（v4.70.31）
+import { buildCards as mcBuild, applyCardOp as mcApply } from './_matcard.js' // 🗂 成本模組 批次2 物料卡（v4.70.33）
+import { buildRecipes as rcpBuild, applyRecipeOp as rcpApply } from './_recipe.js' // 🍳 成本模組 批次3 食譜庫（v4.70.34） // 🧾 產品與成本模組 批次1：偵錯與待處理中心（v4.70.31）
 import * as WASTE from './_waste.js' // 🧪 耗損紀錄 v1（批次 1b，v4.70.32） // 🧾 產品與成本模組 批次1：偵錯與待處理中心（v4.70.31）
 
 const clean = (v) => (v || '').trim().replace(/^["']|["']$/g, '').replace(/^[A-Za-z0-9_]+=/, '').trim()
@@ -4806,6 +4807,38 @@ export default async function handler(req, res) {
   // 📄 物料庫-叫貨單檢視（張良 2026-10-10「有物料庫那應該找得到每張訂單」）：
   // 讀 boss 訂單單頭 ord_<YYYYMM> ＋ 明細 ordi_<YYYYMM>，用 order_id 組成「每張叫貨單＋其明細」。
   // 🔴 成本敏感 → me 身分守門，不走裸金鑰。
+  // ── 🍳 產品與成本模組｜批次 3 食譜庫＋製作模式（v4.70.34，規格 §4）──
+  // GET  ?recipes=<OPS_BOARD_KEY>&me=token[&light=1]      → 備料食譜 190（阿桑即時）＋出餐食譜（在賣菜單，快照行）＋我們的版本／步驟／成本快照
+  // POST ?recipes=<OPS_BOARD_KEY> {token, key, op:meta|photo|media|draft|edit|discard|publish, ...} → 限「食譜」分頁權限 permWho 'rcp'
+  // GET  ?rcpimg=<OPS_BOARD_KEY>&me=token&path=recipe/…    → 私有桶簽名網址（302）
+  if (req.query?.recipes || req.query?.rcpimg) {
+    const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
+    if (!ok2 || String(req.query.recipes || req.query.rcpimg) !== ok2) return res.status(403).json({ ok: false })
+    let bR = {}
+    if (req.method === 'POST') { try { bR = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {} }
+    const meTk = String(req.method === 'POST' ? (bR.token || '') : (req.query.me || ''))
+    const mkP = (process.env.MENU_PROBE_KEY || '').trim()
+    const probeR = req.method !== 'POST' && mkP && String(req.query.probe || '') === mkP
+    const meW = probeR ? { name: 'probe' } : await sopWho(meTk)
+    if (!meW) return res.status(403).json({ ok: false, error: '食譜成本屬內部資料，請先綁定身分（私訊 DD「登入碼」）' })
+    if (req.query?.rcpimg) {
+      const pth = String(req.query.path || ''); if (!/^recipe\/[\w:|~-]+\/[a-z0-9]+\.jpg$/i.test(pth)) return res.status(400).json({ ok: false })
+      const { signedUrl } = await import('./_onboard.js'); const u = await signedUrl(pth, 600); if (!u) return res.status(502).json({ ok: false })
+      return res.redirect(302, u)
+    }
+    const todayR = new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10)
+    const mosR = (() => { const out = []; const d = new Date(todayR + 'T00:00:00Z'); for (let i = 0; i < 13; i++) { out.push(d.toISOString().slice(0, 7)); d.setUTCMonth(d.getUTCMonth() - 1) } return out })()
+    const canEditR = !probeR && !!(await permWho(meTk, 'rcp'))
+    if (req.method === 'POST') {
+      if (!canEditR) return res.status(403).json({ ok: false, error: '沒有編輯食譜的權限（食譜分頁權限）' })
+      const { uploadPrivate } = await import('./_onboard.js')
+      const r = await rcpApply({ kvGet, kvPut, who: meW, body: bR, uploadPrivate, months: mosR })
+      if (r.ok) await announceChanged()
+      return res.status(r.ok ? 200 : 400).json(r)
+    }
+    const t = await rcpBuild({ kvGet, months: mosR, light: !!req.query.light })
+    return res.status(200).json({ ok: true, me: { name: meW.name, canEdit: canEditR }, ...t })
+  }
   // ── 🗂 產品與成本模組｜批次 2 物料卡（v4.70.33，規格 §3）──
   // GET  ?matcard=<OPS_BOARD_KEY>&me=token                → 卡清單（供應品／價格紀錄／換算／被使用於）＋篩選面
   // POST ?matcard=<OPS_BOARD_KEY> {token, op:merge|unmerge|edit|conv|quote|split|unsplit|photo, ...} → 限採購權限，全部留紀錄
