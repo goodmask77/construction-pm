@@ -2134,9 +2134,22 @@ const triggered = (text) => /[?？]\s*$/.test(text) || TRIGGERS.some((k) => text
 export default async function handler(req, res) {
   if (req.query?.warm) return res.status(200).json({ ok: true }) // 保溫 ping（翻譯秒回用：函式常駐不冷啟）
   // 診斷探針（唯讀）：/api/line-webhook?probe=crew → 回 D 實際拿到的夥伴中心文字開頭
+  // v4.70.44 探針一律要金鑰（原 ?probe=crew 沒守門＝任何人打網址就看到夥伴資料頭 800 字）；?probe=sections 回每段資料字數＋開頭（正式站不經 LINE 驗 DD 資料載入）
+  const probeKeyOK = (() => { const a = (process.env.MENU_PROBE_KEY || '').trim(), k = String(req.query?.key || ''); return !!(a && k === a) })()
   if (req.method === 'GET' && req.query?.probe === 'crew') {
+    if (!probeKeyOK) return res.status(403).json({ ok: false })
     const t = (await loadCrewText()) + (await loadShiftText()) + (await loadHrText())
     return res.status(200).json({ len: t.length, head: t.slice(0, 800), shiftHead: t.includes('【排班系統') ? t.slice(t.indexOf('【排班系統'), t.indexOf('【排班系統') + 600) : '（無排班段落）' })
+  }
+  if (req.method === 'GET' && req.query?.probe === 'sections') {
+    if (!probeKeyOK) return res.status(403).json({ ok: false })
+    const t0 = Date.now()
+    const [snaps, accountsText, financeText, activityText, estimatesText, crewText, conclusionsText, tasksText, sheetText, posText, catalogText, supplyText, lineQuotaText, filelibText, groupChatText] = await Promise.all([loadSnapshots(), loadAccounts(), loadFinanceText(), loadActivityText(), loadEstimatesText(), Promise.all([loadCrewText(), loadShiftText(), loadPunchText(), loadHrText(), loadSalaryText()]).then(p => p.join('')), loadConclusionsText(), loadTasksText(), loadSheetText(), Promise.all([loadPosText(), loadBossText(), loadEmText()]).then(([a, b, c]) => a + b + c), loadCatalogText(), loadSupplyText(), loadLineQuotaText(), loadFilelibText(), loadGroupChatText()])
+    const SEC = { 規則: (BOT_AGENT_GUIDE + BOT_PERSONA + QUERY_GUIDE), 快照: snapshotsToContext(snaps, true), 任務: tasksText, 帳戶: accountsText, 內帳: financeText, 動態: activityText, 估價: estimatesText, 夥伴班表人資: crewText, 結論: conclusionsText, 試算表: sheetText, '營收/阿桑/EM': posText, 供應鏈: supplyText, LINE額度: lineQuotaText, 目錄: catalogText, 文件庫: filelibText, 群組訊息: groupChatText }
+    const out = {}; let total = 0
+    for (const [k, v] of Object.entries(SEC)) { const t = String(v || ''); total += t.length; out[k] = { len: t.length, lean: leanCut(k, t).length, head: t.slice(0, 160) } }
+    const hints = String(posText || '')
+    return res.status(200).json({ ok: true, ms: Date.now() - t0, total, lean: DD_LEAN, sections: out, checks: { GD叫貨摘要: hints.includes('GROUN:D 叫貨'), 阿桑其他資料: hints.includes('阿桑系統其他資料'), EM包場: /EM|包場/.test(hints), 自檢行: hints.includes('query_boss') } })
   }
   // 「轉給CC」收件匣（v4.41.3 張良 2026-10-04「C能幹最好,關鍵密碼就是轉給CC」）：讀口＋銷單口（CC 本機排程撿單用）
   const ccAuth = (v) => { const a = (process.env.MENU_PROBE_KEY || '').trim(), b = (process.env.CC_AGENT_KEY || '').trim(), s = String(v || ''); return !!((a && s === a) || (b && s === b)) } // v4.68.7 雲端代理用 CC_AGENT_KEY 也可
