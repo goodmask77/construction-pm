@@ -1658,6 +1658,18 @@ export default async function handler(req, res) {
       return res.status(200).json({ ok: true, ms: Date.now() - t0, model: r.model, text: r.text, usage: r.usage || null })
     } catch (e) { return res.status(200).json({ ok: false, ms: Date.now() - t0, error: e.message || '失敗' }) }
   }
+  // 🩺 DD 健康頁（v4.70.39 溝通中樞項目 1：近 N 天回應秒數分佈／失敗與原因／截斷／備援／驗簽失敗／重送去重；審核人限定）：GET ?ddhealth=<OPS_BOARD_KEY>&me=token&days=7
+  if (req.query?.ddhealth) {
+    const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
+    if (!ok2 || String(req.query.ddhealth) !== ok2) return res.status(403).json({ ok: false })
+    const [meH9, defH9] = await Promise.all([sopWho(req.query.me), kvGet('sp_finance_pm_sop_def')])
+    const aprH9 = (((defH9 || {}).ground || {}).approvers || ['張良瑋'])
+    if (!meH9 || !aprH9.includes(meH9.name)) return res.status(403).json({ ok: false, error: '只有審核人能看 DD 健康頁' })
+    const { ddHealthSummary } = await import('./_ddhealth.js')
+    const sH9 = await ddHealthSummary(Math.min(14, Math.max(1, Number(req.query.days) || 7)))
+    res.setHeader('Cache-Control', 'private, no-store')
+    return res.status(200).json({ ok: true, ...sH9, sigStrict: (process.env.LINE_SIG_STRICT || '').trim() === '1' })
+  }
   // 📢 DD 自動訊息設定（v4.53.0 張良「設定頁管理 DD 所有自動發送：發哪個群/話怎麼講/開關」）：GET ?ddmsg=<OPS_BOARD_KEY>&me=token
   if (req.query?.ddmsg) {
     const ok2 = (process.env.OPS_BOARD_KEY || '').trim()

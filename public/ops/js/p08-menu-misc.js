@@ -858,6 +858,7 @@ async function settingsLoad(){ // ⚙️ 設定頁（張良 2026-10-01：分頁�
       <button class="mini" style="padding:10px 16px" onclick="tabsEdit()">🗂 分頁名稱／排序</button>
       <button class="mini" style="padding:10px 16px" onclick="ddMsgEdit()">DD 自動訊息與群組（發哪個群／話怎麼講／每群回話模式）</button><!-- v4.70.38 舊「群組通知開關」已併入這個面板（張良 2026-10-10） -->
       <button class="mini" style="padding:10px 16px" onclick="aiCfgEdit()">AI 模型（ChatGPT／Claude／Gemini 各功能用哪家）</button>
+      <button class="mini" style="padding:10px 16px" onclick="ddHealthOpen()">DD 健康（回應秒數／失敗／截斷／備援）</button><!-- v4.70.39 溝通中樞項目 1 -->
     </div><div id="permBox" class="hint">權限資料載入中…</div></section>`
   let d; try{ const r = await fetch('/api/mail-sync?menu=' + encodeURIComponent(K) + (TK() ? '&me=' + encodeURIComponent(TK()) : '')); d = await r.json() }catch(e){}
   const box = document.getElementById('permBox'); if (!box) return
