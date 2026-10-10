@@ -69,6 +69,7 @@ export async function ddHealthSummary(days = 7) {
           const a = e.ai || null
           if (a) { T.aiCalls += a.calls || 0; T.aiFb += a.fb || 0; T.aiErr += a.err || 0; T.inCut += a.inCut || 0; T.outCut += a.outCut || 0; T.itSum += a.it || 0 }
           if (T === total && a && a.sec) { secN++; for (const [k, v] of Object.entries(a.sec)) secSum[k] = (secSum[k] || 0) + (+v || 0) }
+          if (a && a.sysLen) { T.sysLenSum = (T.sysLenSum || 0) + a.sysLen; T.sysLenN = (T.sysLenN || 0) + 1 }
         } else if (e.kind === 'error') T.errors++
         else if (e.kind === 'sigfail') T.sigfail++
         else if (e.kind === 'dup') T.dup++
@@ -90,6 +91,7 @@ function fin(T) {
   const ms = T.ms.slice().sort((a, b) => a - b)
   const pct = (p) => ms.length ? ms[Math.min(ms.length - 1, Math.floor(ms.length * p))] : 0
   const o = { ...T, avgMs: T.n ? Math.round(T.msSum / T.n) : 0, p50: pct(0.5), p90: pct(0.9), avgIt: T.aiCalls ? Math.round(T.itSum / T.aiCalls) : 0 }
+  o.avgSys = T.sysLenN ? Math.round(T.sysLenSum / T.sysLenN) : 0; delete o.sysLenSum; delete o.sysLenN
   delete o.ms; delete o.msSum; delete o.itSum
   return o
 }

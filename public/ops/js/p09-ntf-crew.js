@@ -1010,7 +1010,7 @@ async function ddHealthOpen(days){
     tile('改推播補送', T.pushFb||0, 'reply 逾時改 push（會計費）'),
     tile('AI 走備援', T.aiFb||0, `AI 呼叫 ${T.aiCalls||0} 次・失敗 ${T.aiErr||0}`),
     tile('被截斷', (T.inCut||0)+(T.outCut||0), `輸入中段略 ${T.inCut||0}・輸出撞上限 ${T.outCut||0}`),
-    tile('平均輸入 token', (T.avgIt||0).toLocaleString(), '每次 AI 呼叫塞進去的量（越大越慢越貴）'),
+    tile('平均輸入 token', (T.avgIt||0).toLocaleString(), `每次 AI 呼叫塞進去的量（越大越慢越貴）${T.avgSys?'・資料約 '+Math.round(T.avgSys/1000)+'k 字':''}・${d.lean?'瘦身模式：開':'瘦身模式：關'}`),
     tile('驗簽失敗', T.sigfail||0, d.sigStrict ? '嚴格模式：已拒絕' : '觀察模式：只記不擋'),
     tile('重送去重', `${T.dup||0}／${T.redeliv||0}`, '跳過重複／補處理成功'),
     tile('程式例外', T.errors||0, ''),
