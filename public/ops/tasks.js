@@ -1428,15 +1428,20 @@ function tnModal() {
   h += F('任務積分', (function () {
     const cur = Number(t.pts) || 0;
     const tr = tnTier(t.pts);
+    // v4.70.28 張良：任務積分只有我＋有開放權限的人(後台審核者 approver)能編輯；其他人看得到目前分數但點不動
+    const canPts = !!tnS.meApprover;
     const opts = [1, 2, 3, 5, 8, 10, 15, 20, 30, 50, 100];
     let hh = '<div style="display:flex;gap:6px;flex-wrap:wrap;padding-top:3px">'
       + opts.map(function (pv) {
         const pc = (tnTier(pv) || { color: '#9AA3AF' }).color; // v2.0 鈕色＝該分數級距色
         const on = cur === pv;
+        if (!canPts) // 無權限＝唯讀：只亮目前分數、其餘變灰，點了給小提示不改值
+          return '<button onclick="tnToastMini(\'任務積分僅開放權限者可編輯\')" title="僅開放權限者可編輯" style="min-width:42px;padding:7px 4px;border-radius:8px;border:1.5px solid ' + (on ? pc : tnC.line) + ';background:' + (on ? pc : 'transparent') + ';color:' + (on ? '#10151C' : tnC.faint) + ';font-family:' + tnMONO + ';font-size:13px;font-weight:800;cursor:default;opacity:' + (on ? '1' : '.45') + '">' + pv + '</button>';
         return '<button onclick="tnUpd(\'' + t.id + '\',{pts:' + (on ? 'undefined' : pv) + '})" title="' + (on ? '再點一下＝清除（不計分）' : pv + ' 分') + '" style="min-width:42px;padding:7px 4px;border-radius:8px;border:1.5px solid ' + pc + ';background:' + (on ? pc : 'transparent') + ';color:' + (on ? '#10151C' : pc) + ';font-family:' + tnMONO + ';font-size:13px;font-weight:800;cursor:pointer' + (on ? ';box-shadow:0 0 10px ' + pc + '66' : '') + '">' + pv + '</button>';
       }).join('') + '</div>';
     hh += '<div style="display:flex;align-items:center;gap:10px;margin-top:8px;flex-wrap:wrap">'
       + (tr ? '<span style="font-size:12px;font-weight:900;color:' + tr.color + '">' + cur + ' 分・' + tnEsc(tr.name) + '</span>' : '<span style="font-size:12px;color:' + tnC.faint + '">沒選＝不計分</span>')
+      + (canPts ? '' : '<span style="font-size:11px;color:' + tnC.faint + '">（僅開放權限者可編輯）</span>')
       + '<button onclick="tnPtsHelp()" style="display:inline-flex;align-items:center;gap:4px;border:1px solid ' + tnC.line + ';background:transparent;color:' + tnC.sub + ';border-radius:999px;padding:3px 10px;font-size:11.5px;cursor:pointer">' + tnI('star', 11) + '積分說明</button>'
       + '</div>';
     return hh;
