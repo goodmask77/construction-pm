@@ -1616,6 +1616,19 @@ export default async function handler(req, res) {
     try { const { aiCfgSet } = await import('./_ai.js'); await aiCfgSet(String(b.key || ''), b.provider ? { provider: String(b.provider), model: String(b.model || '') } : null, adm.name); return res.status(200).json({ ok: true }) }
     catch (e) { return res.status(400).json({ ok: false, error: e.message || '存檔失敗' }) }
   }
+  // 🤖 AI 設定維護口（v4.70.30 CC 代填儲值／單價／匯率／路由，金鑰同其他維護口）：POST ?aiadmin=<MENU_PROBE_KEY> body={op:'budget'|'price'|'rate'|'route', ...}
+  if (req.method === 'POST' && req.query?.aiadmin) {
+    const mk = (process.env.MENU_PROBE_KEY || '').trim()
+    if (!mk || String(req.query.aiadmin) !== mk) return res.status(403).json({ ok: false })
+    let b = {}; try { b = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
+    try {
+      const { aiBudgetSet, aiCfgSet, aiUsageSummary } = await import('./_ai.js')
+      if (b.op === 'route') await aiCfgSet(String(b.key || ''), b.provider ? { provider: String(b.provider), model: String(b.model || '') } : null, 'CC')
+      else await aiBudgetSet(String(b.op || ''), b, 'CC')
+      const us = await aiUsageSummary()
+      return res.status(200).json({ ok: true, providers: Object.fromEntries(Object.entries(us.providers).map(([k, v]) => [k, v.budget])) })
+    } catch (e) { return res.status(400).json({ ok: false, error: e.message || '失敗' }) }
+  }
   if (req.query?.aimodels) { // GET ?aimodels=<OPS_BOARD_KEY>&me=token&provider=openai&kind=text|image → 直接問該家現在有哪些模型
     const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
     if (!ok2 || String(req.query.aimodels) !== ok2) return res.status(403).json({ ok: false })
