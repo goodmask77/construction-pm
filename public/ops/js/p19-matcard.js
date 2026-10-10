@@ -192,12 +192,8 @@
   function chart (c, sups) {
     const lines = sups.map((s, i) => ({ s, pts: (s.recs || []).filter(r => r.src === 'order' || r.src === 'confirmed').map(r => ({ d: r.d, v: convFactor(s, c.baseUnit) ? r.p / convFactor(s, c.baseUnit) : null })).filter(p => p.v != null), col: [COL.b, COL.o, COL.p, COL.g, COL.y, COL.r][i % 6] })).filter(l => l.pts.length)
     if (!lines.length) return '<div class="hint">沒有可比的價格點（要有換算才能換成每基準單位）</div>'
-    const all = lines.flatMap(l => l.pts), ds = all.map(p => Date.parse(p.d)), vs = all.map(p => p.v)
-    const W = 640, H = 160, P = 28, x0 = Math.min(...ds), x1 = Math.max(...ds) || x0 + 1, mn = Math.min(...vs), mx = Math.max(...vs), rg = (mx - mn) || 1
-    const X = d => P + (x1 === x0 ? 0.5 : (Date.parse(d) - x0) / (x1 - x0)) * (W - P * 2), Y = v => H - P - (v - mn) / rg * (H - P * 2)
-    let svg = `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:170px">`
-    for (const l of lines) { const pts = l.pts.map(p => `${X(p.d).toFixed(1)},${Y(p.v).toFixed(1)}`).join(' '); svg += `<polyline points="${pts}" fill="none" stroke="${l.col}" stroke-width="2"/>` + l.pts.map(p => `<circle cx="${X(p.d).toFixed(1)}" cy="${Y(p.v).toFixed(1)}" r="3" fill="${l.col}"><title>${esc(l.s.code)} ${p.d}：${n4(p.v)}／${esc(c.baseUnit)}</title></circle>`).join('') }
-    svg += `<text x="${P}" y="12" font-size="10" fill="#8C98A8">最高 ${n4(mx)}</text><text x="${P}" y="${H - 6}" font-size="10" fill="#8C98A8">最低 ${n4(mn)}</text></svg>`
+    // v4.70.36：改走全站共用 lineChart（時序模式：Y 軸每基準單位價格刻度＋X 軸日期＋滑過同一天各廠商價格並列）
+    let svg = lineChart({ series: lines.map(l => ({ name: `${l.s.code}・${l.s.supplier || ''}`, color: l.col, pts: l.pts.map(p => ({ x: Date.parse(p.d), y: p.v })) })), xFmt: x => new Date(x).toISOString().slice(5, 10), tipX: x => new Date(x).toISOString().slice(0, 10), yFmt: v => n4(v), noFill: true, h: 170 })
     svg += `<div style="display:flex;gap:10px;flex-wrap:wrap" class="hint">` + lines.map(l => `<span><span style="display:inline-block;width:10px;height:10px;background:${l.col};border-radius:2px"></span> ${esc(l.s.code)}・${esc(l.s.supplier)}</span>`).join('') + `</div>`
     return svg
   }

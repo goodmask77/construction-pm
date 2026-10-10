@@ -175,9 +175,8 @@
     const sn = r.snaps || []
     let h = `<div class="hint" style="margin-bottom:6px">每小時同步後，價格／換算／配方有變就寫一筆成本快照（永不改寫），並標出是哪一行、因為什麼、變多少。</div>`
     if (!sn.length) return h + `<div class="hint">還沒有快照（第一次會在下一個整點同步後出現）。目前成本 ${nf(r.cost)} 元。</div>`
-    const vs = sn.map(s => s.cost || 0), mx = Math.max(...vs), mn = Math.min(...vs), rg = (mx - mn) || 1, W = 640, H = 140, P = 26
-    const X = i => P + (sn.length === 1 ? 0.5 : i / (sn.length - 1)) * (W - P * 2), Y = v => H - P - (v - mn) / rg * (H - P * 2)
-    h += `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:150px"><polyline points="${sn.map((s, i) => `${X(i).toFixed(1)},${Y(s.cost || 0).toFixed(1)}`).join(' ')}" fill="none" stroke="${COL.b}" stroke-width="2"/>${sn.map((s, i) => `<circle cx="${X(i).toFixed(1)}" cy="${Y(s.cost || 0).toFixed(1)}" r="4" fill="${s.ok ? COL.g : COL.o}"><title>${esc(s.at.slice(5, 16))} ${nf(s.cost)}</title></circle>`).join('')}<text x="${P}" y="12" font-size="10" fill="#8C98A8">最高 ${nf(mx)}</text><text x="${P}" y="${H - 6}" font-size="10" fill="#8C98A8">最低 ${nf(mn)}</text></svg>`
+    // v4.70.36：改走全站共用 lineChart（Y 軸成本刻度＋X 軸日期＋滑過看時間／成本；綠點=檢查通過、橘點=有問題）
+    h += lineChart({ labels: sn.map(s => String(s.at || '').slice(0, 16)), series: [{ name: '成本', vals: sn.map(s => s.cost || 0), color: COL.b, dotColors: sn.map(s => s.ok ? COL.g : COL.o) }], yFmt: v => nf(v), xFmt: l => l.slice(5, 10), tipX: l => l.slice(5).replace('T', ' '), h: 150 })
     h += `<div style="display:flex;flex-direction:column;gap:6px;margin-top:8px">` + sn.slice().reverse().slice(0, 20).map((s, i, arr) => { const prev = arr[i + 1]; const d = prev ? (s.cost || 0) - (prev.cost || 0) : 0; return `<div style="background:var(--soft);border-radius:8px;padding:6px 10px;font-size:13.5px"><b>${esc(s.at.slice(5, 16).replace('T', ' '))}</b> ${nf(s.cost)} 元 ${prev ? `<b style="color:${d > 0 ? COL.r : COL.g}">${d > 0 ? '+' : ''}${nf(d)}</b>` : '<span class="hint">起始</span>'} <span class="hint">v${s.v || 0}・${esc(s.status)}</span>${(s.diff || []).length ? `<div class="hint" style="margin-top:2px">${s.diff.map(x => `${esc(x.why)}（${nf(x.from)}→${nf(x.to)}）`).join('；')}</div>` : ''}</div>` }).join('') + `</div>`
     return h
   }

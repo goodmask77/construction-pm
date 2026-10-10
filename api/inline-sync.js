@@ -141,12 +141,13 @@ async function custBuild() {
         const ym = d.slice(0, 7), wd = (new Date(d + 'T00:00:00Z').getUTCDay() + 6) % 7
         const mm = M9(ym)
         let dayValid = false
+        const dv = (mm.dy = mm.dy || {})[d.slice(8)] = (mm.dy[d.slice(8)] || {}), inc = (k, n9 = 1) => { dv[k] = (dv[k] || 0) + n9 } // v4.70.36 逐日明細（只選一個月時前端畫逐日趨勢線；r組/g人次/c取消/k親子/bg大組人次/nw新/rt回/ld有建立日/d0當天訂/bd慶生）
         for (const r of arr) {
           const canceled = CANCELED_STATES.includes(r.st)
           // 候補(ty=4)＝沒進店的人：全部主統計排除、另計 wlN/wlG（張良 2026-10-04「候補要切出來」）
           if (r.ty === 4) { if (!canceled) { mm.wlN = (mm.wlN || 0) + 1; mm.wlG = (mm.wlG || 0) + (r.n || 0) } continue }
-          if (canceled) mm.cxl++
-          else { mm.resv++; mm.guests += r.n || 0; if (r.ty === 1 || r.ty === 3) { mm.wkN = (mm.wkN || 0) + 1; mm.wkG = (mm.wkG || 0) + (r.n || 0) } }
+          if (canceled) { mm.cxl++; inc('c') }
+          else { mm.resv++; mm.guests += r.n || 0; inc('r'); inc('g', r.n || 0); if (r.ty === 1 || r.ty === 3) { mm.wkN = (mm.wkN || 0) + 1; mm.wkG = (mm.wkG || 0) + (r.n || 0) } }
           const name = (r.name || '').trim()
           const key = r.cid || r.phone || (name ? 'n:' + name : '')
           if (key) {
@@ -166,7 +167,7 @@ async function custBuild() {
               if (d > c.l && d <= today) c.l = d
               // 新/回只算「可識別」客人（有客人檔或有效電話）——現場客代稱(外國人/王…)無法判斷新舊，算進去會灌水（張良 2026-10-04 抓包）
               if (r.cid || (r.phone || '').replace(/\D/g, '').length >= 8) {
-                isFirst ? mm.nw++ : mm.rt++
+                if (isFirst) { mm.nw++; inc('nw') } else { mm.rt++; inc('rt') }
                 if (ym >= NRD_FROM) { // 眼見為憑逐筆名單（近14個月；回頭附首次來店日+第幾筆）
                   const g9 = nrd[ym] = nrd[ym] || { nw: [], rt: [] }
                   const lst = isFirst ? g9.nw : g9.rt
@@ -177,15 +178,15 @@ async function custBuild() {
           }
           if (canceled) continue
           dayValid = true
-          if ((r.kc || 0) + (r.ks || 0) > 0) mm.kids++
-          if ((r.n || 0) >= 20) { mm.big++; mm.bigG += r.n; ins.bigList.push({ d, t: r.t || '', n: r.name || '', g: r.n }) }
+          if ((r.kc || 0) + (r.ks || 0) > 0) { mm.kids++; inc('k') }
+          if ((r.n || 0) >= 20) { mm.big++; mm.bigG += r.n; inc('bg', r.n); ins.bigList.push({ d, t: r.t || '', n: r.name || '', g: r.n }) }
           const sv = (r.ref || r.src || '其他').toLowerCase()
           const sk = /google/.test(sv) ? 'Google' : /fb|facebook|instagram|ig/.test(sv) ? 'FB/IG' : /opentable/.test(sv) ? 'OpenTable' : /host|ios|android/.test(sv) ? '店內/電話' : /web/.test(sv) ? '官網/線上' : '其他'
           mm.src[sk] = (mm.src[sk] || 0) + 1
-          if (r.created) { const ld = Math.max(0, Math.round((new Date(d) - new Date(r.created.slice(0, 10))) / 86400e3)); mm.lead[ld === 0 ? 'd0' : ld <= 3 ? 'd1_3' : ld <= 7 ? 'd4_7' : ld <= 30 ? 'd8_30' : 'd31']++ }
+          if (r.created) { const ld = Math.max(0, Math.round((new Date(d) - new Date(r.created.slice(0, 10))) / 86400e3)); mm.lead[ld === 0 ? 'd0' : ld <= 3 ? 'd1_3' : ld <= 7 ? 'd4_7' : ld <= 30 ? 'd8_30' : 'd31']++; inc('ld'); if (ld === 0) inc('d0') }
           const nt = String(r.note || '')
           const pk2 = /慶生|生日|birthday/i.test(nt) ? '慶生' : /約會|date/i.test(nt) ? '約會' : /家庭|親子|family/i.test(nt) ? '家庭' : /商務|公司|business/i.test(nt) ? '商務' : /一般/.test(nt) ? '一般' : nt ? '其他備註' : '未填'
-          mm.pp[pk2] = (mm.pp[pk2] || 0) + 1
+          mm.pp[pk2] = (mm.pp[pk2] || 0) + 1; if (pk2 === '慶生') inc('bd')
           if (r.t) { mm.hp[wd][slotIdx(r.t)] += r.n || 0; mm.hg[wd][slotIdx(r.t)]++ }
         }
         if (dayValid) mm.wdD[wd]++

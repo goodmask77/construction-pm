@@ -695,14 +695,9 @@
     for (const [l, f] of Object.entries(compF)) mkD('comp', l, `${l}最多的貼文`, `全部 ${l} 加總 ${nf(sumF(s.posts, f))}，以下依${l}排序`, [...s.posts].filter(p => p.metrics[f]).sort((a, b) => (b.metrics[f] || 0) - (a.metrics[f] || 0)))
     // 趨勢 SVG（每點數字＋可點＋滑過顯示）
     let trendHtml
-    if (trend.length < 2) trendHtml = '<div class="hint">多發幾篇就有趨勢線</div>'
-    else {
-      const W = 320, H = 100, PAD = 16, mx = Math.max(...trend), mn = Math.min(...trend), rg = (mx - mn) || 1
-      const X = i => PAD + i / (trend.length - 1) * (W - PAD * 2), Y = v => H - PAD - (v - mn) / rg * (H - PAD * 2 - 8)
-      const pts = trend.map((v, i) => `${X(i).toFixed(1)},${Y(v).toFixed(1)}`).join(' ')
-      const dots = trend.map((v, i) => `<text x="${X(i).toFixed(1)}" y="${(Y(v) - 9).toFixed(1)}" text-anchor="middle" font-size="10" fill="#C7D0DB" font-weight="700">${v}</text><circle cx="${X(i).toFixed(1)}" cy="${Y(v).toFixed(1)}" r="5" fill="${COL.b}" stroke="#0E1217" stroke-width="1.5" style="cursor:pointer" onclick="_socialDrillKey('trend','${months[i]}')"><title>${months[i]}：平均 ${v}（${byM[months[i]].length} 篇，點看明細）</title></circle>`).join('')
-      trendHtml = `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:118px"><polygon points="${PAD},${H - PAD} ${pts} ${W - PAD},${H - PAD}" fill="rgba(77,163,255,.14)"/><polyline points="${pts}" fill="none" stroke="${COL.b}" stroke-width="2"/>${dots}</svg><div class="hint" style="display:flex;justify-content:space-between"><span>${months[0]}</span><span>${months[months.length - 1]}</span></div>`
-    }
+    // v4.70.36：改走全站共用 lineChart（Y 軸刻度＋X 軸月份＋滑過浮窗；圓點可點進明細）
+    if (!trend.length) trendHtml = '<div class="hint">多發幾篇就有趨勢線</div>'
+    else trendHtml = lineChart({ labels: months, series: [{ name: '平均互動', vals: trend, color: COL.b }], zero: true, h: 140, tipX: m => `${m}・${(byM[m] || []).length} 篇（點圓點看明細）`, click: i => `_socialDrillKey('trend','${months[i]}')` })
     // 熱力圖（可點＋滑過顯示）
     let heatHtml = '<div class="scroll"><table class="tight" style="min-width:340px"><thead><tr><th></th>' + BK.map(b => `<th style="text-align:center">${b[0]}</th>`).join('') + '</tr></thead><tbody>'
     for (let w = 0; w < 7; w++) { heatHtml += `<tr><td style="font-weight:800;text-align:left">${WD[w]}</td>`; for (let b = 0; b < 4; b++) { const arr = grid[w + '_' + b], v = cellAvg(w, b), op = maxCell ? v / maxCell : 0; heatHtml += `<td ${arr ? `onclick="_socialDrillKey('heat','${w}_${b}')" title="週${WD[w]}・${BK[b][0]}：平均 ${v}（${arr.length} 篇，點看明細）"` : ''} style="text-align:center;background:rgba(61,190,108,${(0.08 + op * 0.82).toFixed(2)});color:${op > 0.55 ? '#0E1217' : 'var(--ink)'};font-weight:700;${arr ? 'cursor:pointer' : ''}">${v || '·'}</td>` } heatHtml += '</tr>' }

@@ -173,14 +173,9 @@
     const months = (d.months || []).filter(m => d.byMonth && d.byMonth[m] != null)
     const trend = months.map(m => Math.round(d.byMonth[m]))
     let trendHtml
-    if (trend.length < 2) trendHtml = '<div class="hint">累積兩個月以上就有趨勢線</div>'
-    else {
-      const W = 320, H = 110, PAD = 18, mx = Math.max(...trend), mn = Math.min(...trend), rg = (mx - mn) || 1
-      const X = i => PAD + i / (trend.length - 1) * (W - PAD * 2), Y = v => H - PAD - (v - mn) / rg * (H - PAD * 2 - 8)
-      const pts = trend.map((v, i) => `${X(i).toFixed(1)},${Y(v).toFixed(1)}`).join(' ')
-      const dots = trend.map((v, i) => `<circle cx="${X(i).toFixed(1)}" cy="${Y(v).toFixed(1)}" r="4" fill="${COL.b}" stroke="#0E1217" stroke-width="1.5"><title>${months[i]}：${money(v)}</title></circle>`).join('')
-      trendHtml = `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:124px"><polygon points="${PAD},${H - PAD} ${pts} ${W - PAD},${H - PAD}" fill="rgba(77,163,255,.14)"/><polyline points="${pts}" fill="none" stroke="${COL.b}" stroke-width="2"/>${dots}</svg><div class="hint" style="display:flex;justify-content:space-between"><span>${months[0]} · ${money(trend[0])}</span><span>${months[months.length - 1]} · ${money(trend[trend.length - 1])}</span></div>`
-    }
+    // v4.70.36：改走全站共用 lineChart（Y 軸金額刻度＋X 軸月份＋滑過浮窗）
+    if (!trend.length) trendHtml = '<div class="hint">還沒有叫貨資料</div>'
+    else trendHtml = lineChart({ labels: months, series: [{ name: '叫貨總額', vals: trend, color: COL.b }], yFmt: v => money(v), zero: true, h: 150 })
     // 廠商排行
     const vendBars = (d.vendors || []).slice(0, 10).map(v => ({ l: v.name, key: v.name, v: v.amt30, t: money(v.amt30) }))
     // 分類佔比
@@ -191,7 +186,7 @@
     const upRows = ups.slice(0, 6).map(o => pctRow(o)).join('')
     const dnRows = dns.slice(0, 6).map(o => pctRow(o)).join('')
     h += `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:14px;margin-top:14px">`
-      + card('📈', '每月叫貨總額', '近一年叫貨金額走勢（只計已核准）。滑過圓點看每月金額。', trendHtml)
+      + card('📈', '每月叫貨總額', '近一年叫貨金額走勢（只計已核准）。滑過看每月金額。', trendHtml)
       + card('🏭', '廠商叫貨排行', '近 30 天各廠商叫貨額。<b>點任一條看該廠商的物料與歷史叫貨</b>。', bars(vendBars, COL.b, '_mVendDetail'))
       + card('🏷', '分類佔比', '各物料分類近 30 天叫貨額。<b>點看分類</b>。', bars(catBars, COL.p, '_mCat'))
       + card('🔺', '近期漲價 Top', '最新進價比最早進價高的物料，點看細部。', upRows || '<div class="hint">沒有漲價物料</div>')
@@ -244,16 +239,8 @@
     const o = (MDATA.items || []).find(x => x.key === key); if (!o) return
     const ser = o.series || []
     // 趨勢 SVG（進價隨時間）
-    let chart = '<div class="hint">只有一筆報價，畫不出趨勢。</div>'
-    if (ser.length >= 2) {
-      const W = 420, H = 130, PAD = 24, ps = ser.map(s => s.p), mx = Math.max(...ps), mn = Math.min(...ps), rg = (mx - mn) || 1
-      const X = i => PAD + i / (ser.length - 1) * (W - PAD * 2), Y = v => H - PAD - (v - mn) / rg * (H - PAD * 2 - 6)
-      const pts = ser.map((s, i) => `${X(i).toFixed(1)},${Y(s.p).toFixed(1)}`).join(' ')
-      const dots = ser.map((s, i) => `<circle cx="${X(i).toFixed(1)}" cy="${Y(s.p).toFixed(1)}" r="3.5" fill="${COL.b}" stroke="#0E1217" stroke-width="1.2"><title>${s.d}　${s.p}　${esc(s.s)}</title></circle>`).join('')
-      chart = `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:150px"><polyline points="${pts}" fill="none" stroke="${COL.b}" stroke-width="2"/>${dots}`
-        + `<text x="${PAD}" y="12" font-size="10" fill="#8C98A8">最高 ${mx}</text><text x="${PAD}" y="${H - 4}" font-size="10" fill="#8C98A8">最低 ${mn}</text></svg>`
-        + `<div class="hint" style="display:flex;justify-content:space-between"><span>${ser[0].d}</span><span>${ser[ser.length - 1].d}</span></div>`
-    }
+    let chart = '<div class="hint">還沒有報價。</div>' // v4.70.36：改走全站共用 lineChart（Y 軸進價刻度＋X 軸日期＋滑過看日期／進價／廠商）
+    if (ser.length) chart = lineChart({ labels: ser.map(s => String(s.d || '')), series: [{ name: '進價', vals: ser.map(s => s.p), color: COL.b }], xFmt: d => d.slice(5), tipX: (d, i) => `${d}　${ser[i].s || ''}`, h: 150 })
     const stat = (l, v, c) => `<div style="text-align:center"><div style="font-size:19px;font-weight:800;color:${c || 'var(--ink)'};font-variant-numeric:tabular-nums">${v}</div><div class="hint" style="font-size:12px">${l}</div></div>`
     const up = o.pctChg != null && o.pctChg > 0
     const recRows = (o.recs || []).slice().reverse().map(r => {

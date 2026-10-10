@@ -51,16 +51,14 @@ function cAgg(mm, yms){
 }
 // 折線圖（SVG）：labels=月份、vals=數值
 function cLineSvg(labels, vals, color, fmt){
-  if (labels.length < 2) return '<div class="mut" style="font-size:12px">期間內資料點不足（選長一點的期間才有趨勢線）</div>'
-  const mx = Math.max(1,...vals), W = 940, H = 110
-  const px = i => Math.round(i/(labels.length-1)*W), py = v => Math.round(H - v/mx*(H-16))
-  const pts = vals.map((v,i)=>`${px(i)},${py(v)}`).join(' ')
-  const step = Math.max(1, Math.round(labels.length/10))
-  return `<svg viewBox="0 0 ${W} ${H+22}" style="width:100%;height:auto"><polyline points="${pts}" fill="none" stroke="${color}" stroke-width="2.5"/><polygon points="0,${H} ${pts} ${W},${H}" fill="${color}22" stroke="none"/>${labels.map((m,i)=> i%step===0?`<text x="${px(i)}" y="${H+16}" font-size="9.5" fill="#8A94A4" text-anchor="middle">${m.slice(2).replace('-','/')}</text>`:'').join('')}${vals.map((v,i)=> v===mx?`<text x="${Math.min(W-14,Math.max(14,px(i)))}" y="${py(v)-4}" font-size="10" font-weight="800" fill="${color}" text-anchor="middle">${fmt?fmt(v):cNum(v)}</text>`:'').join('')}</svg>`
+  // v4.70.36：改走全站共用 lineChart（Y 軸刻度＋X 軸標籤＋滑過浮窗；單點也畫）；labels 可為月份 YYYY-MM 或日期 YYYY-MM-DD
+  if (!labels.length) return '<div class="mut" style="font-size:12px">這段期間沒有資料</div>'
+  const day = String(labels[0]).length === 10, td = todayTpe()
+  return lineChart({ labels, series:[{ vals, color }], yFmt: fmt || cNum, zero:true, h:150, xFmt: l => day ? (+l.slice(8)) + '日' : l.slice(2).replace('-','/'), tipX: l => day ? l.replace(/-/g,'/') + (l > td ? '（未來已訂）' : '') : l.replace('-','/') })
 }
 async function custHome(){
   app.innerHTML = `<section>${custTopBar()}<div class="mut">載入中…</div></section>`
-  const d = await cFetch('custinsights=' + encodeURIComponent(K) + '&v=2', 'custins2') // v=2 破邊緣快取（舊shape在10分快取裡）
+  const d = await cFetch('custinsights=' + encodeURIComponent(K) + '&v=3', 'custins3') // v=2 破邊緣快取（舊shape在10分快取裡）
   if (!d || !d.ins || !d.ins.m) { app.innerHTML = `<section>${custTopBar()}<div class="err">洞察資料重算中（新版每天自動重建；稍等幾分鐘再進來）</div></section>`; return }
   if (curStore !== 'cust' || custV !== 'home') return
   window._custIns = d
@@ -164,7 +162,7 @@ async function custDetail(kind, keepFilter){
   custV = 'detail'
   if (!keepFilter) { custDK = kind || custDK; if (!kind) kind = custDK }
   kind = custDK
-  if (!window._custIns) { const d = await cFetch('custinsights=' + encodeURIComponent(K) + '&v=2', 'custins2'); window._custIns = d }
+  if (!window._custIns) { const d = await cFetch('custinsights=' + encodeURIComponent(K) + '&v=3', 'custins3'); window._custIns = d }
   const d = window._custIns
   if (!d || !d.ins || !d.ins.m) { app.innerHTML = `<section>${custTopBar()}<div class="err">洞察資料重算中，稍等再進來</div></section>`; return }
   const KD = CUST_KINDS[kind], ins = d.ins
@@ -172,7 +170,11 @@ async function custDetail(kind, keepFilter){
   const yms = cMsel(ins.m)
   const A = cAgg(ins.m, yms)
   const pct = (a,b) => b ? Math.round(a/b*100) : 0
-  const serie = fn => yms.map(ym=>fn(ins.m[ym]||{}))
+  // v4.70.36（張良 2026-10-10 抓包「只選 10 月沒有趨勢線」）：只選一個月→用該月「逐日」畫（後端洞察重算產出 dy；未來已訂的日子也畫、浮窗標註）
+  const one = yms.length === 1 && (ins.m[yms[0]]||{}).dy
+  const dayObj = v => ({ resv:v.r||0, guests:v.g||0, cxl:v.c||0, kids:v.k||0, bigG:v.bg||0, nw:v.nw||0, rt:v.rt||0, lead:{ d0:v.d0||0, d1_3:Math.max(0,(v.ld||0)-(v.d0||0)) }, pp:{ '慶生':v.bd||0 } })
+  const xs = one ? (()=>{ const ym = yms[0], td = todayTpe(), last = new Date(+ym.slice(0,4), +ym.slice(5,7), 0).getDate(), out = []; for (let i=1;i<=last;i++){ const dd = String(i).padStart(2,'0'); if (ym+'-'+dd <= td || one[dd]) out.push(ym+'-'+dd) } return out })() : yms
+  const serie = fn => one ? xs.map(x => fn(dayObj(one[x.slice(8)]||{}))) : yms.map(ym=>fn(ins.m[ym]||{}))
   // 篩選列
   const yChip = v => `<button class="mini" onclick="custDy='${v}';custDm='all';custDetail('${kind}',1)" style="padding:3px 11px;font-weight:800;${custDy===v?'background:var(--primary);color:#fff;border-color:var(--primary)':''}">${v==='12m'?'近12個月':v==='all'?'全史':v}</button>`
   const mChip = v => `<button class="mini" onclick="custDm='${v}';custDetail('${kind}',1)" style="padding:3px 9px;font-weight:800;${custDm===v?'background:var(--primary);color:#fff;border-color:var(--primary)':''}">${v==='all'?'全年':Number(v)+'月'}</button>`
@@ -204,7 +206,7 @@ async function custDetail(kind, keepFilter){
     if (!custDmet || !mets.some(([k])=>k===custDmet)) custDmet = 'guests'
     h += `<div style="margin-bottom:6px">${mets.map(([k,lb])=>`<button class="mini" onclick="custDmet='${k}';custDetail('trend',1)" style="padding:3px 11px;font-weight:800;${custDmet===k?'background:var(--primary);color:#fff;border-color:var(--primary)':''}">${lb}</button>`).join('')}</div>`
     const vals = custDmet==='avg' ? serie(m=>m.resv?+(m.guests/m.resv).toFixed(1):0) : serie(m=>m[custDmet]||0)
-    h += cCard(`📈 每月${mets.find(([k])=>k===custDmet)[1]}趨勢（${periodLb}）`, cLineSvg(yms, vals, KD.c))
+    h += cCard(`📈 ${one?'每日':'每月'}${mets.find(([k])=>k===custDmet)[1]}趨勢（${periodLb}）`, cLineSvg(xs, vals, KD.c))
     h += `<div style="height:8px"></div>` + cCard('月明細（含 POS 對帳）', `<div class="scroll" style="max-height:38vh;overflow:auto"><table style="width:100%;border-collapse:collapse;font-size:12px;white-space:nowrap"><tr>${['月份','訂位組數','訂位人次','平均每組','取消率','POS來客','POS營收','人均消費','訂位/來客'].map(x=>`<th style="position:sticky;top:0;background:var(--soft);padding:4px 8px">${x}</th>`).join('')}</tr>${[...yms].reverse().map(ym=>{const m=ins.m[ym];const cov=m.posG?pct(m.guests,m.posG):0;return `<tr>${[ym, cNum(m.resv), cNum(m.guests), m.resv?(m.guests/m.resv).toFixed(1):'—', pct(m.cxl,m.resv+m.cxl)+'%', m.posG?cNum(m.posG):'—', m.posRev?cNum(m.posRev):'—', m.posG?('NT$'+cNum(Math.round(m.posRev/m.posG))):'—', m.posG?`<b style="color:${cov>100?'#E8A657':'#6EB1FF'}">${cov}%</b>`:'—'].map(x=>`<td style="border-top:1px solid var(--line);padding:3px 8px">${x}</td>`).join('')}</tr>`}).join('')}</table></div><div class="hint" style="font-size:10.5px;margin-top:4px">POS 來客/營收＝日結真值（AB 2026-01 起才有）；訂位/來客 >100% ＝訂位有水分（沒到、沒調人數）。</div>`)
   }
   if (kind === 'heat'){
@@ -215,7 +217,7 @@ async function custDetail(kind, keepFilter){
     const grid = wdN9.map((_,w)=>slotN9.map((_,s)=>cell(w,s)))
     const gmax = Math.max(1,...grid.flat())
     h += cCard(`🔥 週幾 × 時段（${periodLb}・${mets.find(([k])=>k===custDmet)[1]}）`, `<table style="width:100%;border-collapse:collapse;font-size:12px"><tr><td></td>${slotN9.map(s=>`<td style="text-align:center;font-weight:800;padding:3px">${s}</td>`).join('')}<td style="text-align:center;font-weight:800;padding:3px;color:var(--muted)">全日</td></tr>${grid.map((row,w)=>`<tr><td style="font-weight:800;padding:3px">${wdN9[w]}</td>${row.map(v=>`<td style="text-align:center;padding:5px 3px;border-radius:5px;background:rgba(95,211,166,${(v/gmax*0.75).toFixed(2)});font-weight:800">${cNum(v)}</td>`).join('')}<td style="text-align:center;font-weight:800;color:var(--muted)">${custDmet==='avgg'?'—':cNum(+(row.reduce((t,v)=>t+v,0)).toFixed(1))}</td></tr>`).join('')}</table><div class="hint" style="font-size:10.5px;margin-top:5px">平均每日人次＝該星期有營業資料的天數平均（例：週日 12-13 平均 ${cNum(cell(6,0))} 人＝每個週日中午約要接這麼多人）。</div>`)
-    h += `<div style="height:8px"></div>` + cCard(`每月人次趨勢（${periodLb}）`, cLineSvg(yms, serie(m=>m.guests||0), KD.c))
+    h += `<div style="height:8px"></div>` + cCard(`${one?'每日':'每月'}人次趨勢（${periodLb}）`, cLineSvg(xs, serie(m=>m.guests||0), KD.c))
   }
   if (kind === 'src'){
     const E = Object.entries(A.src).sort((a,b)=>b[1]-a[1]); const T = E.reduce((t,[,v])=>t+v,0)
@@ -228,12 +230,12 @@ async function custDetail(kind, keepFilter){
     const ldE = [['當天','d0'],['1-3天前','d1_3'],['4-7天前','d4_7'],['8-30天前','d8_30'],['31天+','d31']]
     const T = ldE.reduce((t,[,k])=>t+(A.lead[k]||0),0)
     h += cCard(`⏰ 提前訂位分布（${periodLb}）`, ldE.map(([lb,k])=>cBar(lb, A.lead[k]||0, Math.max(1,...ldE.map(([,k2])=>A.lead[k2]||0)), KD.c, pct(A.lead[k]||0,T)+'%・'+cNum(A.lead[k]||0))).join(''))
-    h += `<div style="height:8px"></div>` + cCard('「當天才訂」比例逐月（高=臨時客多，要留機動桌）', cLineSvg(yms, serie(m=>{ const t=Object.values(m.lead||{}).reduce((a,b)=>a+b,0); return t?Math.round((m.lead||{}).d0/t*100):0 }), KD.c, v=>v+'%'))
+    h += `<div style="height:8px"></div>` + cCard('「當天才訂」比例逐月（高=臨時客多，要留機動桌）', cLineSvg(xs, serie(m=>{ const t=Object.values(m.lead||{}).reduce((a,b)=>a+b,0); return t?Math.round((m.lead||{}).d0/t*100):0 }), KD.c, v=>v+'%'))
   }
   if (kind === 'pp'){
     const E = Object.entries(A.pp).filter(([k])=>k!=='未填').sort((a,b)=>b[1]-a[1]); const T = E.reduce((t,[,v])=>t+v,0)
     h += cCard(`🎯 用餐目的分布（${periodLb}・有填備註者）`, E.map(([k,v])=>cBar(k, v, E[0]?.[1]||1, KD.c, pct(v,T)+'%・'+cNum(v))).join(''))
-    h += `<div style="height:8px"></div>` + cCard('慶生組數逐月（節日商品檔期依據）', cLineSvg(yms, serie(m=>(m.pp||{})['慶生']||0), KD.c))
+    h += `<div style="height:8px"></div>` + cCard('慶生組數逐月（節日商品檔期依據）', cLineSvg(xs, serie(m=>(m.pp||{})['慶生']||0), KD.c))
   }
   if (kind === 'nr'){
     h += cCard(`🆕 新客 vs 回頭（${periodLb}）`, (()=>{ const mx = Math.max(1,...yms.map(ym=>{const m=ins.m[ym];return (m.nw||0)+(m.rt||0)})); return [...yms].slice(-24).map(ym=>{ const m=ins.m[ym]||{}; const t=(m.nw||0)+(m.rt||0); return `<div onclick="custNrShow('${ym}')" title="點我看 ${ym} 逐筆名單（眼見為憑）" style="display:flex;align-items:center;gap:8px;margin:2.5px 0;cursor:pointer;border-radius:5px" onmouseover="this.style.background='var(--soft)'" onmouseout="this.style.background=''"><span style="width:56px;font-size:11px;font-weight:800">${ym.slice(2)}</span><div style="flex:1;display:flex;height:12px;border-radius:4px;overflow:hidden;background:var(--soft)"><div style="width:${(m.nw||0)/mx*100}%;background:#6EB1FF"></div><div style="width:${(m.rt||0)/mx*100}%;background:#5FD3A6"></div></div><span style="font-size:11px;min-width:126px;text-align:right">新${cNum(m.nw)}/回${cNum(m.rt)}（回頭${pct(m.rt,t)}%）<span style="color:var(--primary);font-weight:800"> ›</span></span></div>` }).join('') + `<div id="nrEvid"></div>` })() + `<div class="hint" style="font-size:10.5px;margin-top:4px">🔵新客 🟢回頭客（只計「可識別」顧客＝有電話或客人檔；現場客代稱無法判斷新舊不計入。以客人第一次訂位當新客，2021 年初大家都算新客屬正常冷啟動）</div>`)
@@ -242,15 +244,15 @@ async function custDetail(kind, keepFilter){
     h += `<div style="height:8px"></div>` + cCard('回頭客訂單比逐月（樣本<50單的月份不畫，例：疫情禁內用）', cLineSvg(ymsN, ymsN.map(ym=>{const m=ins.m[ym]||{};return pct(m.rt,(m.nw||0)+(m.rt||0))}), '#5FD3A6', v=>v+'%'))
   }
   if (kind === 'cxl'){
-    h += cCard('❌ 取消率逐月（紅線＝25% 警戒值以上要上訂金）', cLineSvg(yms, serie(m=>pct(m.cxl,(m.resv||0)+(m.cxl||0))), '#F07373', v=>v+'%'))
+    h += cCard('❌ 取消率逐月（紅線＝25% 警戒值以上要上訂金）', cLineSvg(xs, serie(m=>pct(m.cxl,(m.resv||0)+(m.cxl||0))), '#F07373', v=>v+'%'))
     h += `<div style="height:8px"></div>` + cCard('月明細', `<div class="scroll" style="max-height:38vh;overflow:auto"><table style="width:100%;border-collapse:collapse;font-size:12px"><tr>${['月份','有效訂位','取消','取消率'].map(x=>`<th style="position:sticky;top:0;background:var(--soft);padding:4px 8px">${x}</th>`).join('')}</tr>${[...yms].reverse().map(ym=>{const m=ins.m[ym];const r=pct(m.cxl,m.resv+m.cxl);return `<tr>${[ym, cNum(m.resv), cNum(m.cxl), `<b style="color:${r>25?'var(--red)':'#E8A657'}">${r}%</b>`].map(x=>`<td style="border-top:1px solid var(--line);padding:3px 8px">${x}</td>`).join('')}</tr>`}).join('')}</table></div>`)
   }
   if (kind === 'kids'){
-    h += cCard('🧒 親子組佔比逐月', cLineSvg(yms, serie(m=>pct(m.kids,m.resv)), KD.c, v=>v+'%'))
-    h += `<div style="height:8px"></div>` + cCard('親子組數逐月', cLineSvg(yms, serie(m=>m.kids||0), '#E8A657'))
+    h += cCard('🧒 親子組佔比逐月', cLineSvg(xs, serie(m=>pct(m.kids,m.resv)), KD.c, v=>v+'%'))
+    h += `<div style="height:8px"></div>` + cCard('親子組數逐月', cLineSvg(xs, serie(m=>m.kids||0), '#E8A657'))
   }
   if (kind === 'big'){
-    h += cCard('🎉 大組/包場人次逐月', cLineSvg(yms, serie(m=>m.bigG||0), KD.c))
+    h += cCard('🎉 大組/包場人次逐月', cLineSvg(xs, serie(m=>m.bigG||0), KD.c))
     const list = (ins.bigList||[]).filter(b=>yms.includes(b.d.slice(0,7)))
     h += `<div style="height:8px"></div>` + cCard(`場次清單（${periodLb}・共 ${cNum(list.length)} 場）`, `<div class="scroll" style="max-height:40vh;overflow:auto"><table style="width:100%;border-collapse:collapse;font-size:12px;white-space:nowrap"><tr>${['#','日期','時間','名稱','人數'].map(x=>`<th style="position:sticky;top:0;background:var(--soft);padding:4px 8px">${x}</th>`).join('')}</tr>${list.slice(0,300).map((b,i)=>`<tr>${[i+1, b.d, b.t||'—', `<b>${b.n||'—'}</b>`, `<b style="color:#C792EA">${b.g}</b>`].map(x=>`<td style="border-top:1px solid var(--line);padding:3px 8px">${x}</td>`).join('')}</tr>`).join('')}</table></div>`)
   }
