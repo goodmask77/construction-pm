@@ -97,6 +97,7 @@
       + `<button class="mini ${mSub === 'dash' ? 'on' : ''}" onclick="_mSub('dash')">📊 波動分析</button>`
       + `<button class="mini ${mSub === 'list' ? 'on' : ''}" onclick="_mSub('list')">📋 物料清單</button>`
       + `<button class="mini ${mSub === 'ord' ? 'on' : ''}" onclick="_mSub('ord')">📄 叫貨單</button>`
+      + `<button class="mini ${mSub === 'todo' ? 'on' : ''}" onclick="_mSub('todo')" style="display:inline-flex;align-items:center;gap:6px"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>待處理<b id="costSubCnt" style="background:#E5484D;color:#fff;border-radius:999px;padding:0 6px;font-size:12px;line-height:18px;${(window.costTodoOpenCount && costTodoOpenCount()) ? '' : 'display:none'}">${(window.costTodoOpenCount && costTodoOpenCount()) || ''}</b></button>` // v4.70.31 成本模組批次1：偵錯與待處理中心（p17-costtodo.js）
       + (d.me && d.me.canEdit ? `<button class="mini ${mCatMng ? 'on' : ''}" style="margin-left:auto" onclick="_mCatMngTog()">🏷 管理分類</button>` : '')
       + `</div>`
     if (d.me && d.me.canEdit && mCatMng) h += catMngCard()
@@ -106,11 +107,12 @@
   }
 
   window._mSub = function (t) { mSub = t; mBody() }
+  window._mSubIs = function (t) { return mSub === t && curStore === 'matlib' } // p17 待處理重畫前確認還在這個子分頁
   window._mCatMngTog = function () { mCatMng = !mCatMng; mRender() }
 
   function mBody () {
     const el = document.getElementById('matBody'); if (!el) return
-    el.innerHTML = (mSub === 'dash') ? dashView() : (mSub === 'ord' ? ordView() : listView())
+    el.innerHTML = (mSub === 'dash') ? dashView() : (mSub === 'ord' ? ordView() : (mSub === 'todo' ? (window.costTodoView ? costTodoView() : '<section><div class="hint">待處理模組沒載入</div></section>') : listView()))
   }
 
   // ── 篩選列（廠商／分類／搜尋）──
@@ -482,5 +484,5 @@
   }
 
   // 深層連結：DD 通知點 /prep#matlib → 自動開
-  try { if ((location.hash || '').replace(/^#/, '').toLowerCase().startsWith('matlib')) setTimeout(() => { try { matlibLoad() } catch (_) {} }, 300) } catch (_) {}
+  try { if ((location.hash || '').replace(/^#/, '').toLowerCase().startsWith('matlib')) { if (/todo/i.test(location.hash)) mSub = 'todo'; setTimeout(() => { try { matlibLoad() } catch (_) {} }, 300) } } catch (_) {}
 })()

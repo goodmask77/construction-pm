@@ -4588,7 +4588,7 @@ export default async function handler(req, res) {
         const date = String(r.ordered_at || r.created_at || '').slice(0, 10)
         if (date.length < 10) continue
         const key = normM(r.code) ? ('c:' + normM(r.code)) : ('n:' + normM(nm))
-        const price = (r.price == null || r.price === '') ? null : Number(r.price)
+        const price = (r.price == null || r.price === '' || !(Number(r.price) > 0)) ? null : Number(r.price) // v4.70.31 口徑統一：單價 0／空＝不知道價格（同規格與 _cost.js）
         const qty = Number(r.qty) || 0
         const amt = (r.amount == null || r.amount === '') ? (price != null ? price * qty : null) : Number(r.amount)
         const supplier = (r.supplier || '').trim() || '（未填廠商）'
@@ -4693,7 +4693,7 @@ export default async function handler(req, res) {
   // GET  ?costtodo=<OPS_BOARD_KEY>&me=token            → 待處理清單（價格異常/單位待確認/資料缺口/合併建議/已靜音）＋計數＋門檻設定
   // GET  ?costtodo=<OPS_BOARD_KEY>&me=token&count=1    → 只回計數（導覽徽章用）
   // POST ?costtodo=<OPS_BOARD_KEY> {token, op:'decide'|'undo'|'unmute'|'cfg', ...} → 寫決定／靜音／門檻（限採購權限 permWho 'buy'，全部留紀錄）
-  // POST ?costsnap=<MENU_PROBE_KEY|PARTNER_API_KEY> {sheet, rows, asOf}        → 灌 10/06 快照（驗收基準；本機 scripts/cost-snap-ingest.mjs）
+  // POST ?costsnap=<MENU_PROBE_KEY|PARTNER_API_KEY> {sheet, rows, asOf}        → 灌 10/06 快照（驗收基準；本機 scripts/cost-snap-ingest.py）
   if (req.query?.costtodo) {
     const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
     if (!ok2 || String(req.query.costtodo) !== ok2) return res.status(403).json({ ok: false })

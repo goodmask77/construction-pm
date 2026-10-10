@@ -95,7 +95,7 @@ function buildImpact (snap) {
       }
     }
     const list = Object.entries(menus).map(([menu, perServing]) => ({ menu, perServing: r2(perServing) })).sort((a, b) => Math.abs(b.perServing) - Math.abs(a.perServing))
-    return { menus: list, recipes: [...recipes], nMenus: list.length, perServing: r2(list.reduce((s, x) => s + Math.abs(x.perServing), 0)) }
+    return { menus: list.slice(0, 12), recipes: [...recipes].slice(0, 12), nMenus: list.length, perServing: list.length ? Math.abs(list[0].perServing) : 0, total: r2(list.reduce((s, x) => s + Math.abs(x.perServing), 0)) } // perServing=影響最大那一道的每份金額
   }
 }
 
@@ -145,17 +145,26 @@ function scanSeries (series, firstDay, cfg, catMap, impact) {
       const backToA = next && near(next.p, a, 0.1)
       const intK = Math.round(k >= 1 ? k : 1 / k)
       const isInt = intK >= 2 && intK <= 12 && near(k >= 1 ? k : 1 / k, intK, 0.03)
-      const isDigit = near(k, 10, 0.05) || near(k, 0.1, 0.05)
+      // 打錯一位數：跟前一點差 10 倍，或「這一點 ×10／÷10 剛好等於下一點」（140→12→120：12 才是錯的那個）
+      const isDigit = near(k, 10, 0.05) || near(k, 0.1, 0.05) || (next && (near(next.p, b * 10, 0.05) || near(next.p, b / 10, 0.05)) && chg >= 0.5)
       // 金額守恆：同單內 單價×N 且 數量÷N
       const conserve = (() => { const pa = pts.find(x => x.d === stats[i - 1].d), pb = pts.find(x => x.d === d); if (!pa || !pb) return false; return near(pa.p * pa.q, pb.p * pb.q, 0.02) && !near(pa.q, pb.q, 0.02) })()
       const sig = isDigit ? 'digit' : (conserve ? 'conserve' : (isInt ? 'intmul' : (backToA ? 'spike' : 'step')))
-      if (sig === 'digit') { push('price', 'digit', d, `${a} → ${b}${backToA ? ` → ${next.p}` : ''}，剛好差一位數`, `疑似少打／多打一個 0；序列：${seq(pts.slice(Math.max(0, i - 2), i + 3))}`, 0, { suggest: '更正金額（對送貨單）' }); continue }
+      if (sig === 'digit') { push('price', 'digit', d, `${a} → ${b}${next ? ` → ${next.p}` : ''}，剛好差一位數`, `疑似少打／多打一個 0；序列：${seq(pts.slice(Math.max(0, i - 2), i + 3))}`, 0, { suggest: '更正金額（對送貨單）', amtSuggest: next && (near(next.p, b * 10, 0.05) ? b * 10 : (near(next.p, b / 10, 0.05) ? b / 10 : null)) }); if (next && (near(next.p, b * 10, 0.05) || near(next.p, b / 10, 0.05))) i++; continue }
       if (sig === 'conserve') { push('unit', 'conserve', d, `單價 ×${intK || r2(k)}、數量 ÷${intK || r2(k)}，整行金額不變`, `單位混用，付的錢沒錯；序列：${seq(pts.slice(Math.max(0, i - 2), i + 3))}`, 0, { suggest: '登記換算或拆料號' }); continue }
-      if (sig === 'intmul') { push('unit', 'intmul', d, `${a} → ${b}，剛好 ${intK} 倍`, `整數倍跳動多半是單位混用（整箱／散裝）；序列：${seq(pts.slice(Math.max(0, i - 2), i + 3))}`, 0, { suggest: '查該行數量是否也差 ' + intK + ' 倍' }); continue }
+      if (sig === 'intmul') { push('unit', 'intmul', d, `${a} → ${b}${backToA ? ` → ${next.p}` : ''}，剛好 ${intK} 倍${backToA ? '、又跳回來' : ''}`, `整數倍跳動多半是單位混用（整箱／散裝）；序列：${seq(pts.slice(Math.max(0, i - 2), i + 3))}`, 0, { suggest: '查該行數量是否也差 ' + intK + ' 倍（例：0.5 箱）' }); if (backToA) i++; continue }
       if (sig === 'spike') { push('price', 'spike', d, `${a} → ${b} → ${next.p}，跳一次又回來`, `單點尖峰（A→B→A），多半是打錯或單位混用；超過門檻 ±${Math.round(thr * 100)}%`, k - 1, { suggest: '確認正確或更正金額', once: true }); i++; continue }
       // 階梯：沒回來
       const cross = crossMoved(s, d, dir)
       push('price', cross ? 'step-cross' : 'step', d, `${a} → ${b}（${dir > 0 ? '+' : ''}${Math.round((k - 1) * 100)}%）${cross ? '，其他廠商同期也變' : ''}`, `${cross ? '跨廠商同向變動 → 真的變價（資訊）' : '階梯式變價、之後沒回來 → 可能是真的變價'}；門檻 ±${Math.round(thr * 100)}%；序列：${seq(pts.slice(Math.max(0, i - 2), i + 3))}`, k - 1, { suggest: cross ? '確認正確' : '確認正確（真的變價）或更正', info: cross })
+    }
+    // 累計漂移：單段都沒過門檻，但 60 天內最低→最新 ≥ 門檻 或 高低差 ≥2 倍（資訊級，例：美生菜 125→250 慢慢爬）
+    const lastPt = pts[pts.length - 1]
+    const win = stats.filter(p => Date.parse(lastPt.d) - Date.parse(p.d) <= 60 * 864e5)
+    if (win.length >= 3) {
+      const lo = Math.min(...win.map(p => p.p)), hi = Math.max(...win.map(p => p.p))
+      const drift = lastPt.p / lo - 1
+      if ((drift >= thr || hi / lo >= 2) && !out.some(o => o.itemKey === s.key && o.tab === 'price' && !o.info)) push('price', 'drift', lastPt.d, `60 天內 ${lo} → ${lastPt.p}（累計 ${drift >= 0 ? '+' : ''}${Math.round(drift * 100)}%）`, `每一段都沒過門檻，但累計變動大${crossMoved(s, lastPt.d, 1) ? '；其他廠商同期也漲 → 真的變價' : ''}；序列：${seq(pts.slice(-6))}`, drift, { suggest: '確認正確（真的變價）', info: true })
     }
     if (openWeek) push('price', 'openweek', first.d, `首價 ${first.p} 只出現在開帳首週`, `之後都是 ${pts[1].p} 左右 → 疑似開帳初始價錯誤，建議從統計排除；序列：${seq(pts.slice(0, 4))}`, 0, { suggest: '排除這筆不進價格統計', info: true })
   }
@@ -166,14 +175,20 @@ function scanSeries (series, firstDay, cfg, catMap, impact) {
 function scanSnapshot (snap, impact) {
   const out = []
   const push = (tab, signal, key, title, basis, extra) => out.push({ id: hash([tab, signal, key].join('|')), tab, signal, date: snap.asOf || '', title, basis, fromSnap: true, ...extra })
-  const specG = s => { const m = String(s || '').match(/(\d+(?:\.\d+)?)\s*(kg|g|l|ml|公斤|公克|毫升|公升)/i); if (!m) return null; const v = Number(m[1]); const u = m[2].toLowerCase(); return { g: (u === 'kg' || u === '公斤') ? v * 1000 : (u === 'g' || u === '公克') ? v : null, ml: (u === 'l' || u === '公升') ? v * 1000 : (u === 'ml' || u === '毫升') ? v : null } }
+  const specG = s => { // 「1000g/罐」「1kg * 10塊/箱」「5K*4包/件」「200g*5盒」→ 總量（g 或 ml）
+    const t = String(s || '').replace(/，/g, ',').replace(/×/g, '*').replace(/[xX]\s*(\d)/g, '*$1')
+    const m = t.match(/(\d+(?:\.\d+)?)\s*(kg|k|g|l|ml|公斤|公克|毫升|公升)(?![a-z])/i); if (!m) return null
+    const v = Number(m[1]); const u = m[2].toLowerCase()
+    const mult = (t.slice(m.index + m[0].length).match(/^\s*\*\s*(\d+(?:\.\d+)?)/) || [])[1]
+    const f = mult ? Number(mult) : 1
+    return { g: (u === 'kg' || u === 'k' || u === '公斤') ? v * 1000 * f : (u === 'g' || u === '公克') ? v * f : null, ml: (u === 'l' || u === '公升') ? v * 1000 * f : (u === 'ml' || u === '毫升') ? v * f : null } }
   for (const p of snap.products) {
     const key = (p.sys || '') + '|' + (p.code || p.sku || p.name)
     const conv = String(p.conv || '')
     const base = { supplier: p.supplier || '', code: p.code || '', sku: p.sku || '', name: p.name || '', unit: p.unit || '', sys: p.sys || '', active: p.status === '啟用' }
     // 1:1 假設：換算同時有 g 與 ml 且數值相同
     const mg = conv.match(/g=(\d+(?:\.\d+)?)/), mml = conv.match(/ml=(\d+(?:\.\d+)?)/)
-    if (mg && mml && mg[1] === mml[1] && base.active) push('unit', 'gml11', key, `換算 g=${mg[1]}; ml=${mml[1]} 是 1:1 假設`, '決策 #14：g 與 ml 不可預設 1:1，要實測密度', { ...base, suggest: '手動輸入實測換算或確認密度 ≈1', impact: impact(p.code || p.sku, 0) })
+    if (mg && mml && mg[1] === mml[1] && base.active) push('unit', 'gml11', key, `換算 g=${mg[1]}; ml=${mml[1]} 是 1:1 假設`, '決策 #14：g 與 ml 不可預設 1:1，要實測密度（可批次確認「密度 ≈1」）', { ...base, suggest: '手動輸入實測換算或確認密度 ≈1', info: true, impact: impact(p.code || p.sku, 0) })
     // 規格文字 vs 換算不符（1000g/包 但 g=500）
     const sg = specG(p.spec)
     if (sg && base.active) { const g = sg.g != null ? sg.g : sg.ml; const mm = sg.g != null ? mg : mml; if (mm && g && !near(Number(mm[1]), g, 0.02)) push('unit', 'specmismatch', key, `規格「${p.spec}」但換算 ${sg.g != null ? 'g' : 'ml'}=${mm[1]}`, '規格文字解析出的量與登記換算不符', { ...base, suggest: `接受建議換算 ${sg.g != null ? 'g' : 'ml'}=${g}`, suggestConv: g, impact: impact(p.code || p.sku, 0) }) }
@@ -183,7 +198,9 @@ function scanSnapshot (snap, impact) {
   }
   // 資料品質清單（阿桑 7.x）→ 資料缺口／合併建議／單位待確認
   const mergeGroups = {}
+  const nameOf = {}; for (const p of snap.products) { if (p.code) nameOf[norm(p.code)] = p.name; if (p.sku && !nameOf[norm(p.sku)]) nameOf[norm(p.sku)] = p.name }
   for (const q of snap.quality) {
+    if (!q.name && (q.code || q.sku)) q.name = nameOf[norm(q.code || q.sku)] || q.code || q.sku
     const cat = String(q.cat || '')
     const k = (q.code || q.sku || q.name) + '|' + (q.supplier || '')
     const base = { supplier: q.supplier || '', code: q.code || '', sku: q.sku || '', name: q.name || '', status: q.status || '', note: q.note || '', srcCat: cat.slice(0, 60) }
@@ -218,6 +235,8 @@ export async function buildTodo ({ kvGet, months }) {
   const impact = buildImpact(snap)
   const items = [...scanSeries(ser.series, ser.firstDay, cfg, (catDoc || {}).map || {}, impact), ...scanSnapshot(snap, impact)]
   const today = new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10)
+  // 價格異常被判「是單位問題」→ 轉到單位待確認（新 id，原筆算已處理）
+  for (const it of items.slice()) { const d = todo.dec[it.id]; if (d && d.st === 'unit' && it.tab === 'price') items.push({ ...it, id: it.id + ':u', tab: 'unit', signal: 'fromprice', title: '（由價格異常轉入）' + it.title, suggest: '登記換算或拆料號', info: false }) }
   for (const it of items) {
     const d = todo.dec[it.id]
     it.decision = d || null
@@ -228,13 +247,15 @@ export async function buildTodo ({ kvGet, months }) {
     it.open = !d && !it.muted
   }
   // 排序：影響在賣菜的優先 → 每份影響金額 → 日期新
-  items.sort((a, b) => ((b.impact || {}).nMenus > 0) - ((a.impact || {}).nMenus > 0) || Math.abs((b.impact || {}).perServing || 0) - Math.abs((a.impact || {}).perServing || 0) || (b.date > a.date ? 1 : -1))
+  items.sort((a, b) => (!!a.info - !!b.info) || ((b.impact || {}).nMenus > 0) - ((a.impact || {}).nMenus > 0) || Math.abs((b.impact || {}).perServing || 0) - Math.abs((a.impact || {}).perServing || 0) || (b.date > a.date ? 1 : -1))
+  const mutes = []
+  for (const [mk, arr] of Object.entries(todo.mutes || {})) arr.forEach((m, idx) => { if (!m.off) mutes.push({ ...m, muteKey: mk, idx }) })
   const counts = {}
   for (const it of items) if (it.open) counts[it.tab] = (counts[it.tab] || 0) + 1
   counts.muted = Object.values(todo.mutes).reduce((s, arr) => s + arr.filter(m => !m.off).length, 0)
   counts.done = items.filter(it => it.decision).length
   counts.total = Object.values(counts).reduce((s, n) => s + n, 0) - counts.muted - counts.done
-  return { items, counts, cfg, snapAsOf: snap.asOf, seriesFrom: ser.firstDay, nSeries: ser.series.length, log: (todo.log || []).slice(-50).reverse(), hasSnap: snap.products.length > 0 }
+  return { items, counts, mutes, cfg, snapAsOf: snap.asOf, seriesFrom: ser.firstDay, nSeries: ser.series.length, log: (todo.log || []).slice(-50).reverse(), hasSnap: snap.products.length > 0 }
 }
 
 // ── 寫決定：POST {op:'decide'|'mute'|'unmute'|'cfg', ...} ──
