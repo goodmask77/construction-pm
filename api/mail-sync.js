@@ -4538,7 +4538,7 @@ export default async function handler(req, res) {
         const o = items[key] || (items[key] = { key, name: nm, code: r.code || '', unit: r.unit || '', suppliers: {}, recs: [], qty30: 0, amt30: 0, n30: 0 })
         o.name = nm; if (r.unit) o.unit = r.unit
         o.suppliers[supplier] = (o.suppliers[supplier] || 0) + 1
-        o.recs.push({ d: date, s: supplier, q: qty, u: r.unit || '', p: price, a: amt == null ? null : Math.round(amt), st: status })
+        o.recs.push({ d: date, s: supplier, q: qty, u: r.unit || '', p: price, a: amt == null ? null : Math.round(amt), st: status, oid: r.order_id || '' })
         if (date >= d30M && appr) { o.qty30 += qty; if (amt != null) o.amt30 += amt; o.n30++ }
         const v = vend[supplier] || (vend[supplier] = { name: supplier, amt30: 0, n30: 0, items: {}, last: '' })
         v.items[key] = 1; if (date > v.last) v.last = date
