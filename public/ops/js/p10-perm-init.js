@@ -411,7 +411,7 @@ function lbFinder(nm){
 // 開場：深層連結(#meet=/#sop=/#tab=)優先→重新整理留在原分頁→首頁（v4.16.0）
 (function(){
   let v = null; try { v = sessionStorage.getItem('prepView') } catch(_) {}
-  const R = { pricing: ()=>pricingLoad(), rcp: ()=>rcpLoad(), waste: ()=>wasteLoad(), lb: loadLB, buy: buyLoad, meet: meetLoad, shift: shiftLoad, fb: fbLoad, menu: menuLoad, errs: errsView, sop: sopPage, settings: settingsLoad, taskx: ()=>taskEmbed(), task: ()=>taskEmbed(), food: ()=>invLoad('food'), pack: ()=>invLoad('pack'), abeach: ()=>load('abeach'), hrm: hrmLoad, prep: ()=>prepPage(true), onb: ()=>onbPage() } // v4.45.6 備料分頁深層連結；v4.56.1 onb=入職流程(新人 #tab=onb 直達)
+  const R = { pricing: ()=>pricingLoad(), costdash: ()=>costdashLoad(), rcp: ()=>rcpLoad(), waste: ()=>wasteLoad(), lb: loadLB, buy: buyLoad, meet: meetLoad, shift: shiftLoad, fb: fbLoad, menu: menuLoad, errs: errsView, sop: sopPage, settings: settingsLoad, taskx: ()=>taskEmbed(), task: ()=>taskEmbed(), food: ()=>invLoad('food'), pack: ()=>invLoad('pack'), abeach: ()=>load('abeach'), hrm: hrmLoad, prep: ()=>prepPage(true), onb: ()=>onbPage() } // v4.45.6 備料分頁深層連結；v4.56.1 onb=入職流程(新人 #tab=onb 直達)
   const routeHash = () => { // v4.18.5：頁內點深層連結也要動（原本只在開頁時解析）
     const hs = location.hash || ''
     const mS2 = hs.match(/sop=([A-Za-z0-9_-]+)/), mM = hs.match(/meet=([A-Za-z0-9]+)/), mT = hs.match(/tab=([a-z]+)/), mV = hs.match(/vio=([^&]+)/)

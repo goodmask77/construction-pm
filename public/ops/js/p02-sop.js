@@ -242,6 +242,7 @@ const EDIT_FN = {
   prLink:'pricing', prSpecSave:'pricing', prPackSave:'pricing', prPackCopy:'pricing', prCbSave:'pricing',
   rcpDraft:'rcp', rcpEdit:'rcp', rcpPublish:'rcp', rcpDiscard:'rcp', rcpMeta:'rcp', rcpPhoto:'rcp', rcpStepAdd:'rcp', rcpStepSave:'rcp',
   wasteShot:'waste', wasteManual:'waste', wasteSend:'waste', wasteVoid:'waste', wasteCfgSave:'waste', wasteAi:'waste',
+  cdCapSave:'buy', cdReconSave:'buy', // 成本總覽：成本率上限／月帳對帳＝採購權限（批次 5a v4.70.34）
   buyNew:'buy', buySend:'buy', buyOp:'buy', buyRecv:'buy', recvPick:'buy', recvSend:'buy', buyCat:'buy', buyPick:'buy',
 }
 function permFnTab(el){
