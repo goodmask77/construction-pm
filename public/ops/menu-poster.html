@@ -282,8 +282,10 @@ async function downloadPoster(){
   try{
     if (document.fonts && document.fonts.ready) await document.fonts.ready;
     fit();
+    const wasEdit=document.body.classList.contains('edit'); if(wasEdit){ document.body.classList.remove('edit'); SELS=null; renderStk(); document.getElementById('mini').classList.remove('on'); } // 出圖不帶編輯提示條/選取框
     const node=document.getElementById('poster');
     const url=await htmlToImage.toPng(node,{ width:1080, height:1920, pixelRatio:2, backgroundColor:'#F5EADA', cacheBust:true });
+    if(wasEdit) document.body.classList.add('edit');
     const a=document.createElement('a'); a.href=url; a.download='GROUND菜單_直式_'+(new Date().toISOString().slice(0,10))+'.png'; a.click();
   }catch(e){ alert('出圖失敗，再試一次：'+e); }
   finally{ if(btn){ btn.textContent='⬇ 下載圖片'; btn.disabled=false; } }

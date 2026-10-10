@@ -17,7 +17,7 @@ const hash = s => { let h = 0; for (let i = 0; i < s.length; i++) h = (h * 31 + 
 const num = v => (v == null || v === '' ? null : (isNaN(Number(v)) ? null : Number(v)))
 
 export const snapKey = sheet => 'sp_finance_pm_cost_snap_' + sheet
-export { SNAP_SHEETS, TODO_KEY }
+export { SNAP_SHEETS, TODO_KEY, loadSnap, loadSeries, loadMaster, norm, num, tpeDay, hash, NOCOST_WHITELIST } // 批次 2 物料卡（_matcard.js）共用
 
 // ── 讀快照（全部一次撈；沒灌過就是空）──
 async function loadSnap (kvGet) {

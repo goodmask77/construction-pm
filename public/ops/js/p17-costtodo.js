@@ -234,6 +234,10 @@
     const reason = g('ctReason') || g('ctReason2')
     const body = { op: 'decide', id, st, amt: g('ctAmt') || null, note: g('ctNote'), reason, title: it.title, scope, days: Number(g('ctDays')) || cForm.days, muteKey: it.muteKey, signal: it.signal, name: it.name, supplier: it.supplier }
     if (cForm.st === 'mute' && scope === 'once') body.st = 'ok'
+    if (st === 'merge' && it.rows && window.matcardMergeCodes) { // 批次 2：合併建議 → 真的併進同一張物料卡
+      const okM = await matcardMergeCodes(it.sys, it.rows.map(r => r.code || r.sku), it.name); if (!okM) return
+      if (window.matcardRefresh) try { matcardRefresh() } catch (_) {}
+    }
     if (await post(body)) { cForm = null; await costTodoFetch() }
   }
   window._ctBatch = async function (st) {

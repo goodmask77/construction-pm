@@ -11,7 +11,8 @@ import { groundManualRecords } from './_ground-manual.js' // GROUN:D 喬亞POS�
 import { joyaLogin, joyaFetchDay, joyaBuildRecord, taipeiToday, taipeiAfterClose, joyaFetchTimeslots, timeslotSection, TIMESLOT_SHEET, joyaFetchSalesMethod, parseSalesMethod } from './_joya.js' // GROUN:D POS行動報表自動抓取（2026-08-26 起全自動）
 import { syncEatsLive, eatsDayRecord } from './_eats.js' // AB 今天即時營業額＋某天日結回填（Eats365 商家後台，2026-09-02）
 import { awardPts, pointsRules } from './_points.js' // 🏦 積分中樞共用（行為分給分＋規則）
-import { buildTodo as costBuildTodo, applyDecision as costDecide, putSnapshot as costPutSnap } from './_cost.js' // 🧾 產品與成本模組 批次1：偵錯與待處理中心（v4.70.31）
+import { buildTodo as costBuildTodo, applyDecision as costDecide, putSnapshot as costPutSnap } from './_cost.js'
+import { buildCards as mcBuild, applyCardOp as mcApply } from './_matcard.js' // 🗂 成本模組 批次2 物料卡（v4.70.33） // 🧾 產品與成本模組 批次1：偵錯與待處理中心（v4.70.31）
 
 const clean = (v) => (v || '').trim().replace(/^["']|["']$/g, '').replace(/^[A-Za-z0-9_]+=/, '').trim()
 const SB_URL = clean(process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL)
@@ -2048,13 +2049,15 @@ export default async function handler(req, res) {
       let brief_en = String(b.brief_en || '').slice(0, 2000), brief_zh = String(b.brief_zh || '').slice(0, 300)
       if (!brief_en) {
         const ask = kind === 'photo'
-          ? `你是餐廳菜單的食物攝影指令師。附圖是一張「被上下裁切」的餐點照片（來自我們的菜單）。請用英文寫一段給圖像生成模型的指令，要它「重新畫一份完整、未裁切、同一道餐點的產品照」：精確描述餐點內容（每個元素、數量、由左到右的擺放）、容器／盤子／紙盒、拍攝角度、光線與色調，要求跟原圖一致。不要寫背景要求（系統會自動加）。${hint ? '老闆補充要求：' + hint + '。' : ''}另外用繁體中文 60 字內摘要這段指令給老闆看。只回 JSON：{"en":"...","zh":"..."}`
-          : `你是品牌插畫美術指導。${imgs.length ? '附圖是老闆喜歡的風格參考，先分析它的風格（線條粗細、配色、質感、筆觸、時代感、是否有外框／貼紙白邊）。' : '沒有參考圖，請用溫暖活潑、手繪感的扁平插畫風。'}品牌：GROUN:D（海邊的披薩／漢堡／早午餐小店，品牌紅 #CE1611 配奶油色 #F5EADA）。${sub === 'logo' ? '任務：做「Logo 變化版」——以附上的官方 logo 為基礎做風格變化／加小元素，文字 GROUN:D 必須清楚可讀、拼字正確。' : sub === 'slogan' ? `任務：做一張「標語圖」——把文字「${slogan || hint}」原樣畫進圖裡（拼字、標點必須完全正確，不可多字少字），搭配風格化的裝飾。` : '任務：做一個「小插圖」（單一主體、可貼在菜單上的貼紙感）。'}老闆想要的概念／感覺：${hint || '活潑、生動、可愛'}。請用英文寫給圖像生成模型的指令：具體寫出風格、主體、配色、構圖（單一主體置中、四周留白、乾淨）。不要寫背景要求（系統會自動加）。另外用繁體中文 60 字內摘要給老闆看。只回 JSON：{"en":"...","zh":"..."}`
+          ? `你是餐廳菜單的食物攝影指令師。附圖是一張「被上下裁切」的餐點照片（來自我們的菜單）。請用英文寫一段給圖像生成模型的指令，要它「重新畫一份完整、未裁切、同一道餐點的產品照」：精確描述餐點內容（每個元素、數量、由左到右的擺放）、容器／盤子／紙盒、拍攝角度、光線與色調，要求跟原圖一致。不要寫背景要求（系統會自動加）。${hint ? '老闆補充要求：' + hint + '。' : ''}另外用繁體中文 60 字內摘要這段指令給老闆看。回覆格式固定兩段、不要其他文字：\n===EN===\n（英文指令）\n===ZH===\n（中文摘要）`
+          : `你是品牌插畫美術指導。${imgs.length ? '附圖是老闆喜歡的風格參考，先分析它的風格（線條粗細、配色、質感、筆觸、時代感、是否有外框／貼紙白邊）。' : '沒有參考圖，請用溫暖活潑、手繪感的扁平插畫風。'}品牌：GROUN:D（海邊的披薩／漢堡／早午餐小店，品牌紅 #CE1611 配奶油色 #F5EADA）。${sub === 'logo' ? '任務：做「Logo 變化版」——以附上的官方 logo 為基礎做風格變化／加小元素，文字 GROUN:D 必須清楚可讀、拼字正確。' : sub === 'slogan' ? `任務：做一張「標語圖」——把文字「${slogan || hint}」原樣畫進圖裡（拼字、標點必須完全正確，不可多字少字），搭配風格化的裝飾。` : '任務：做一個「小插圖」（單一主體、可貼在菜單上的貼紙感）。'}老闆想要的概念／感覺：${hint || '活潑、生動、可愛'}。請用英文寫給圖像生成模型的指令：具體寫出風格、主體、配色、構圖（單一主體置中、四周留白、乾淨）。不要寫背景要求（系統會自動加）。另外用繁體中文 60 字內摘要給老闆看。回覆格式固定兩段、不要其他文字：\n===EN===\n（英文指令）\n===ZH===\n（中文摘要）`
         const content = [...imgs.map(im => ({ type: 'image', media_type: im.media_type, data: im.data })), { type: 'text', text: ask }]
         const r1 = await aiCall('app', { messages: [{ role: 'user', content }], maxTokens: 900, timeoutMs: 60000 })
-        const mj = /\{[\s\S]*\}/.exec(r1.text || ''); let j = {}
-        try { j = JSON.parse(mj ? mj[0] : '{}') } catch (_) { j = { en: String(r1.text || '').slice(0, 1500), zh: '' } }
-        brief_en = String(j.en || '').slice(0, 2000); brief_zh = String(j.zh || '').slice(0, 300)
+        const tx = String(r1.text || '')
+        const mEn = /===\s*EN\s*===\s*([\s\S]*?)(?:===\s*ZH\s*===|$)/i.exec(tx), mZh = /===\s*ZH\s*===\s*([\s\S]*?)$/i.exec(tx)
+        let j = { en: mEn ? mEn[1].trim() : '', zh: mZh ? mZh[1].trim() : '' }
+        if (!j.en) { const mj = /\{[\s\S]*\}/.exec(tx); try { j = JSON.parse(mj ? mj[0] : '{}') } catch (_) { j = { en: tx.replace(/```[a-z]*/g, '').slice(0, 1500), zh: '' } } } // 備援：模型硬要回 JSON／純文字
+        brief_en = String(j.en || '').replace(/```[a-z]*/g, '').trim().slice(0, 2000); brief_zh = String(j.zh || '').replace(/```/g, '').trim().slice(0, 300)
         if (!brief_en) throw new Error('指令沒寫出來，再試一次')
       }
       // 第二段：畫圖（固定背景規格接在指令後面）
@@ -4802,6 +4805,38 @@ export default async function handler(req, res) {
   // 📄 物料庫-叫貨單檢視（張良 2026-10-10「有物料庫那應該找得到每張訂單」）：
   // 讀 boss 訂單單頭 ord_<YYYYMM> ＋ 明細 ordi_<YYYYMM>，用 order_id 組成「每張叫貨單＋其明細」。
   // 🔴 成本敏感 → me 身分守門，不走裸金鑰。
+  // ── 🗂 產品與成本模組｜批次 2 物料卡（v4.70.33，規格 §3）──
+  // GET  ?matcard=<OPS_BOARD_KEY>&me=token                → 卡清單（供應品／價格紀錄／換算／被使用於）＋篩選面
+  // POST ?matcard=<OPS_BOARD_KEY> {token, op:merge|unmerge|edit|conv|quote|split|unsplit|photo, ...} → 限採購權限，全部留紀錄
+  // GET  ?mcphoto=<OPS_BOARD_KEY>&me=token&path=matcard/… → 私有桶簽名網址（302）
+  if (req.query?.matcard || req.query?.mcphoto) {
+    const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
+    if (!ok2 || String(req.query.matcard || req.query.mcphoto) !== ok2) return res.status(403).json({ ok: false })
+    let bM = {}
+    if (req.method === 'POST') { try { bM = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {} }
+    const meTk = String(req.method === 'POST' ? (bM.token || '') : (req.query.me || ''))
+    const mkP = (process.env.MENU_PROBE_KEY || '').trim()
+    const probeM = req.method !== 'POST' && mkP && String(req.query.probe || '') === mkP
+    const meW = probeM ? { name: 'probe' } : await sopWho(meTk)
+    if (!meW) return res.status(403).json({ ok: false, error: '物料成本屬內部資料，請先綁定身分（私訊 DD「登入碼」）' })
+    if (req.query?.mcphoto) {
+      const pth = String(req.query.path || ''); if (!/^matcard\/[\w:|~-]+\/[a-z0-9]+\.jpg$/i.test(pth)) return res.status(400).json({ ok: false })
+      const { signedUrl } = await import('./_onboard.js'); const u = await signedUrl(pth, 600); if (!u) return res.status(502).json({ ok: false })
+      return res.redirect(302, u)
+    }
+    const canEditM = !probeM && !!(await permWho(meTk, 'buy'))
+    if (req.method === 'POST') {
+      if (!canEditM) return res.status(403).json({ ok: false, error: '沒有編輯物料卡的權限（採購權限）' })
+      const { uploadPrivate } = await import('./_onboard.js')
+      const r = await mcApply({ kvGet, kvPut, who: meW, body: bM, uploadPrivate })
+      if (r.ok) await announceChanged()
+      return res.status(r.ok ? 200 : 400).json(r)
+    }
+    const todayM2 = new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10)
+    const mosM2 = (() => { const out = []; const d = new Date(todayM2 + 'T00:00:00Z'); for (let i = 0; i < 13; i++) { out.push(d.toISOString().slice(0, 7)); d.setUTCMonth(d.getUTCMonth() - 1) } return out })()
+    const t = await mcBuild({ kvGet, months: mosM2 })
+    return res.status(200).json({ ok: true, me: { name: meW.name, canEdit: canEditM }, ...t })
+  }
   // ── 🧾 產品與成本模組｜批次 1 偵錯與待處理中心（v4.70.31，規格 docs/COST_MODULE_SPEC.md）──
   // GET  ?costtodo=<OPS_BOARD_KEY>&me=token            → 待處理清單（價格異常/單位待確認/資料缺口/合併建議/已靜音）＋計數＋門檻設定
   // GET  ?costtodo=<OPS_BOARD_KEY>&me=token&count=1    → 只回計數（導覽徽章用）
