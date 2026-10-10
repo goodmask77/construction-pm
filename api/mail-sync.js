@@ -594,7 +594,7 @@ export default async function handler(req, res) {
       const row = { id: nid, title: f.title, note: f.note || '', status: 'todo', catId: f.cat ? f.cat.id : '__inbox__', start: '', due: '', priority: f.priority || 'normal', tags: [], ord: mo, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }
       if (f.owner) row.owner = f.owner
       await kvPut('sp_team_pm_task_' + nid, row, '任務補建口')
-      made.push(`${f.title} → ${f.cat ? f.cat.name : '收件匣'}`)
+      made.push(`${f.title} → ${f.cat ? f.cat.name : '領養代替購買'}`)
     }
     if (!dry) await announceChanged()
     return res.status(200).json({ ok: true, dry, made, skipped, taskTotal: exist.length + (dry ? 0 : made.length) })
@@ -984,7 +984,7 @@ export default async function handler(req, res) {
     const newCats = []
     const catIdOf = (nm) => {
       const name = nm || '收件匣'
-      if (name === '收件匣') return '__inbox__'
+      if (name === '收件匣' || name === '領養代替購買') return '__inbox__'
       let c = catByName.get(name)
       if (!c) { c = { id: 'cat-gd-' + Math.random().toString(36).slice(2, 8), order: (data.length + newCats.length), name, budget: 0, status: 'pending', items: [] }; catByName.set(name, c); newCats.push(c) }
       return c.id
@@ -3265,7 +3265,7 @@ export default async function handler(req, res) {
         let t9 = null; try { t9 = JSON.parse(typeof row.data?.v === 'string' ? row.data.v : JSON.stringify(row.data?.v)) } catch (_) {}
         if (t9 && t9.status === 'done' && t9.owner && Number(t9.pts) > 0) {
           tpMap[t9.owner] = (tpMap[t9.owner] || 0) + Number(t9.pts)
-          ;(taskBreak[t9.owner] = taskBreak[t9.owner] || []).push({ title: String(t9.title || t9.name || '任務').slice(0, 60), pts: Number(t9.pts), date: String(t9.doneAt || t9.updatedAt || '').slice(0, 10), cat: (t9.catId && catMap[t9.catId]) || '收件匣' })
+          ;(taskBreak[t9.owner] = taskBreak[t9.owner] || []).push({ title: String(t9.title || t9.name || '任務').slice(0, 60), pts: Number(t9.pts), date: String(t9.doneAt || t9.updatedAt || '').slice(0, 10), cat: (t9.catId && catMap[t9.catId]) || '領養代替購買' })
         }
       }
       Object.keys(taskBreak).forEach(nm => taskBreak[nm].sort((a, b) => b.pts - a.pts))

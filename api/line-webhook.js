@@ -664,7 +664,7 @@ async function loadTasksText() {
     const worklog = Array.isArray(m['pm_worklog']) ? m['pm_worklog'] : []
     if (!tasks.length && !worklog.length) return ''
     const cats = Array.isArray(m['pm_data']) ? m['pm_data'] : []
-    const catName = (id) => (!id || id === '__inbox__') ? '收件匣' : ((cats.find(c => c.id === id) || {}).name || '收件匣')
+    const catName = (id) => (!id || id === '__inbox__') ? '領養代替購買' : ((cats.find(c => c.id === id) || {}).name || '領養代替購買')
     const SL = { todo: '待辦', doing: '進行中', done: '完成' }
     const lines = []
     // 工作日誌（add_log 記的）：DD 要讀得到自己記過什麼，被問「之前幫我記的在哪」答得出來

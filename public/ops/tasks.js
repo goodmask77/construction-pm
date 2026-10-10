@@ -471,11 +471,11 @@ function tnMoveCat(fromId, o) { // 拖大項＋tcol 欄記憶＋freeze（與 ops
   tnCatsWrite(arr.map((c, i) => Object.assign({}, c, { order: i })));
 }
 function tnGroups() {
-  return [{ id: tnINBOX, name: '收件匣' }].concat(
+  return [{ id: tnINBOX, name: '領養代替購買' }].concat(
     (tnS.cats || []).filter(c => !c.nonProject).slice().sort((a, b) => ((a.order != null ? a.order : 0)) - ((b.order != null ? b.order : 0)))
       .map(c => ({ id: c.id, name: c.name, color: c.color || '', tcol: c.tcol })));
 }
-function tnCatName(id) { return (id === tnINBOX || !id) ? '收件匣' : (((tnS.cats || []).find(c => c.id === id) || {}).name || '收件匣'); }
+function tnCatName(id) { return (id === tnINBOX || !id) ? '領養代替購買' : (((tnS.cats || []).find(c => c.id === id) || {}).name || '領養代替購買'); }
 function tnTasksOf(catId) { return (tnS.tasks || []).filter(t => (t.catId || tnINBOX) === catId); }
 function tnMatchQ(t) { const q = tnS.q.trim().toLowerCase(); return !q || (t.title + (t.note || '') + (t.tags || []).join('')).toLowerCase().includes(q); }
 
@@ -791,7 +791,7 @@ function tnRoot() {
     + '</div>'; // v1.6 第二行「積分級距」鈕退役＝級距編輯入口搬進「積分說明」彈窗（approver 才看得到）
   // 快速隨手記
   h += '<div style="display:flex;gap:8px;margin-bottom:' + (mb9 ? 10 : 16) + 'px">'
-    + '<input id="tnQuick" value="' + tnEsc(tnS.quick) + '" oninput="tnS.quick=this.value" onkeydown="if(event.key===\'Enter\'&&!event.isComposing&&event.keyCode!==229)tnAddQuick()" placeholder="隨手丟一句任務…（先進收件匣，之後再拖到大項整理）按 Enter 新增" style="' + tnInp + ';flex:1;font-size:13.5px;padding:10px 12px">'
+    + '<input id="tnQuick" value="' + tnEsc(tnS.quick) + '" oninput="tnS.quick=this.value" onkeydown="if(event.key===\'Enter\'&&!event.isComposing&&event.keyCode!==229)tnAddQuick()" placeholder="隨手丟一句任務…（先進「領養代替購買」，之後再拖到大項整理）按 Enter 新增" style="' + tnInp + ';flex:1;font-size:13.5px;padding:10px 12px">'
     + '<button onclick="tnAddQuick()" style="display:inline-flex;align-items:center;gap:6px;background:' + tnC.accent + ';color:#fff;border:none;border-radius:8px;padding:0 16px;font-size:13.5px;font-weight:600;cursor:pointer">' + tnI('plus', 15, '#fff') + '新增</button>'
     + '</div>';
   if (v === 'today') h += tnVToday();
@@ -1148,7 +1148,7 @@ function tnVOwner() {
       + '<span style="font-size:11.5px;color:' + tnC.faint + ';font-variant-numeric:tabular-nums">' + items.length + '</span></div>'
       + items.map(t => tnCard(t, {})).join('')
       + (items.length === 0 ? tnEmpty('users', g.nm ? '拖任務過來＝指派給他' : '沒有未指派的任務') : '')
-      + '<input onkeydown="if(event.key===\'Enter\'&&!event.isComposing&&event.keyCode!==229){tnAddToOwner(\'' + enc + '\',this.value);this.value=\'\'}" placeholder="' + (g.nm ? '＋ 直接指派給 ' + tnEsc(g.nm) + '…' : '＋ 直接新增到收件匣…') + '" style="width:100%;margin-top:6px;box-sizing:border-box;border:1px dashed ' + tnC.line + ';border-radius:8px;padding:6px 10px;font-size:12.5px;background:transparent;color:' + tnC.text + ';outline:none">'
+      + '<input onkeydown="if(event.key===\'Enter\'&&!event.isComposing&&event.keyCode!==229){tnAddToOwner(\'' + enc + '\',this.value);this.value=\'\'}" placeholder="' + (g.nm ? '＋ 直接指派給 ' + tnEsc(g.nm) + '…' : '＋ 直接新增到「領養代替購買」…') + '" style="width:100%;margin-top:6px;box-sizing:border-box;border:1px dashed ' + tnC.line + ';border-radius:8px;padding:6px 10px;font-size:12.5px;background:transparent;color:' + tnC.text + ';outline:none">'
       + '</div></div>';
   };
   // 桌機四欄瀑布：未指派先進第 0 欄，其餘照排序依最矮欄補位；手機一欄直疊
