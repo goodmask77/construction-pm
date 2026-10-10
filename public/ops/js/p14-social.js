@@ -730,15 +730,47 @@
       + `</div>`
     return h
   }
-  // 成長曲線（分平台 series：[{t,v,reach,saves,views}]）→ 互動隨時間 SVG；不足 2 點給累積提示
+  // 成長曲線（分平台 series：[{t,v,reach,saves,views}]）→ 互動隨時間 SVG：X 軸日期時間、Y 軸互動刻度、格線、資料點、滑鼠／手指移到任一點顯示浮標（張良 2026-10-10）；不足 2 點給累積提示
   function soSeriesSvg(ser) {
     if (!ser || ser.length < 2) return `<div class="hint" style="padding:12px;background:#1C222B;border-radius:10px;line-height:1.6">每 3 小時自動記一次，累積幾天後這裡會長出成長曲線（看互動何時爆、多久飽和）。目前 ${(ser || []).length} 個資料點。</div>`
-    const vals = ser.map(x => x.v), W = 380, H = 96, PAD = 16, mx = Math.max(...vals), mn = Math.min(...vals), rg = (mx - mn) || 1
-    const X = i => PAD + i / (ser.length - 1) * (W - PAD * 2), Y = v => H - PAD - (v - mn) / rg * (H - PAD * 2)
+    const vals = ser.map(x => x.v), W = 380, H = 150, PL = 34, PR = 12, PT = 12, PB = 26
+    const mn0 = Math.min(...vals), mx0 = Math.max(...vals)
+    // Y 刻度：整數、好看的步距（1/2/5×10^n），至少 3 格
+    const span = Math.max(mx0 - mn0, 2), raw = span / 3, pow = Math.pow(10, Math.floor(Math.log10(raw))), step = [1, 2, 5, 10].map(m => m * pow).find(v => v >= raw) || pow * 10
+    const mn = Math.floor(mn0 / step) * step, mx = Math.ceil(mx0 / step) * step || step, rg = (mx - mn) || 1
+    const X = i => PL + i / (ser.length - 1) * (W - PL - PR), Y = v => PT + (1 - (v - mn) / rg) * (H - PT - PB)
     const pts = ser.map((x, i) => `${X(i).toFixed(1)},${Y(x.v).toFixed(1)}`).join(' ')
-    const lbl = s => String(s).replace('T', ' ') + ':00'
-    return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:110px"><polygon points="${PAD},${H - PAD} ${pts} ${W - PAD},${H - PAD}" fill="rgba(77,163,255,.14)"/><polyline points="${pts}" fill="none" stroke="${COL.b}" stroke-width="2"/></svg><div class="hint" style="display:flex;justify-content:space-between"><span>${lbl(ser[0].t)}</span><span>最新互動 ${vals[vals.length - 1]}</span></div>`
+    const fmt = t => { const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2})/.exec(String(t)); return m ? `${+m[2]}/${+m[3]} ${m[4]}:00` : String(t) }
+    const fmtS = t => { const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2})/.exec(String(t)); return m ? `${+m[2]}/${+m[3]}` : String(t) }
+    const yT = []; for (let v = mn; v <= mx + 1e-9; v += step) yT.push(v)
+    const yAxis = yT.map(v => `<line x1="${PL}" x2="${W - PR}" y1="${Y(v).toFixed(1)}" y2="${Y(v).toFixed(1)}" stroke="#2A3340" stroke-width="1"/><text x="${PL - 6}" y="${(Y(v) + 3.5).toFixed(1)}" text-anchor="end" font-size="10" fill="#8A94A6">${nf(v)}</text>`).join('')
+    // X 刻度：最多 5 個，頭尾一定有；同一天只在第一個點標日期、其餘標時間
+    const n = ser.length, want = Math.min(5, n), idx = [...new Set(Array.from({ length: want }, (_, k) => Math.round(k * (n - 1) / (want - 1))))]
+    const xAxis = idx.map((i, k) => { const t = ser[i].t, prev = k ? ser[idx[k - 1]].t : '', sameDay = prev && String(prev).slice(0, 10) === String(t).slice(0, 10); const m = /T(\d{2})/.exec(String(t)); const lab = sameDay && m ? `${m[1]}:00` : fmtS(t); const anc = i === 0 ? 'start' : i === n - 1 ? 'end' : 'middle'; return `<line x1="${X(i).toFixed(1)}" x2="${X(i).toFixed(1)}" y1="${H - PB}" y2="${H - PB + 4}" stroke="#3A4452"/><text x="${X(i).toFixed(1)}" y="${H - PB + 15}" text-anchor="${anc}" font-size="10" fill="#8A94A6">${lab}</text>` }).join('')
+    const dots = ser.map((x, i) => `<circle cx="${X(i).toFixed(1)}" cy="${Y(x.v).toFixed(1)}" r="2.6" fill="#0F141B" stroke="${COL.b}" stroke-width="1.6"/>`).join('')
+    const data = esc(JSON.stringify(ser.map((x, i) => ({ x: +X(i).toFixed(1), y: +Y(x.v).toFixed(1), t: fmt(x.t), v: x.v, reach: x.reach || 0, saves: x.saves || 0, views: x.views || 0 }))))
+    return `<div style="position:relative" class="soSer"><svg viewBox="0 0 ${W} ${H}" style="width:100%;height:160px;display:block;touch-action:pan-y" data-ser="${data}" data-pl="${PL}" data-pr="${PR}" data-w="${W}" onmousemove="_soSerHover(event,this)" onmouseleave="_soSerLeave(this)" ontouchstart="_soSerHover(event,this)" ontouchmove="_soSerHover(event,this)" ontouchend="_soSerLeave(this)">
+      <line x1="${PL}" x2="${PL}" y1="${PT}" y2="${H - PB}" stroke="#3A4452"/><line x1="${PL}" x2="${W - PR}" y1="${H - PB}" y2="${H - PB}" stroke="#3A4452"/>${yAxis}${xAxis}
+      <polygon points="${PL},${H - PB} ${pts} ${X(n - 1).toFixed(1)},${H - PB}" fill="rgba(77,163,255,.14)"/><polyline points="${pts}" fill="none" stroke="${COL.b}" stroke-width="2" stroke-linejoin="round"/>${dots}
+      <g class="soCur" style="display:none;pointer-events:none"><line x1="0" x2="0" y1="${PT}" y2="${H - PB}" stroke="#9CC7F5" stroke-dasharray="3 3"/><circle r="4.5" fill="${COL.b}" stroke="#fff" stroke-width="1.5"/></g>
+    </svg><div class="soTip" style="display:none;position:absolute;top:6px;pointer-events:none;background:#0F141B;border:1px solid #3A4452;border-radius:8px;padding:6px 9px;font-size:12px;line-height:1.5;white-space:nowrap;box-shadow:0 4px 14px rgba(0,0,0,.4);z-index:2"></div>
+    <div class="hint" style="display:flex;justify-content:space-between;margin-top:4px"><span>${fmt(ser[0].t)} 起・${n} 個點</span><span>最新互動 ${nf(vals[vals.length - 1])}</span></div></div>`
   }
+  // 曲線浮標：找離滑鼠／手指最近的資料點，移動指標線＋圓點，浮窗顯示時間／互動／觸及／收藏／瀏覽
+  window._soSerHover = function (ev, svg) {
+    const ser = JSON.parse(svg.dataset.ser || '[]'); if (!ser.length) return
+    const r = svg.getBoundingClientRect(), cx = (ev.touches ? ev.touches[0].clientX : ev.clientX) - r.left, vx = cx / r.width * (+svg.dataset.w)
+    let best = 0; ser.forEach((p, i) => { if (Math.abs(p.x - vx) < Math.abs(ser[best].x - vx)) best = i })
+    const p = ser[best], g = svg.querySelector('.soCur'), ln = g.querySelector('line'), c = g.querySelector('circle')
+    g.style.display = ''; ln.setAttribute('x1', p.x); ln.setAttribute('x2', p.x); c.setAttribute('cx', p.x); c.setAttribute('cy', p.y)
+    const tip = svg.parentNode.querySelector('.soTip'); if (!tip) return
+    const extra = [p.reach ? `觸及 ${nf(p.reach)}` : '', p.saves ? `收藏 ${nf(p.saves)}` : '', p.views ? `瀏覽 ${nf(p.views)}` : ''].filter(Boolean).join('・')
+    tip.innerHTML = `<div class="hint" style="font-size:11px">${p.t}</div><div><b style="color:#9CC7F5">互動 ${nf(p.v)}</b></div>${extra ? `<div class="hint" style="font-size:11px">${extra}</div>` : ''}`
+    tip.style.display = 'block'
+    const px = p.x / (+svg.dataset.w) * r.width, half = r.width / 2
+    if (px > half) { tip.style.left = ''; tip.style.right = (r.width - px + 10) + 'px' } else { tip.style.right = ''; tip.style.left = (px + 10) + 'px' }
+  }
+  window._soSerLeave = function (svg) { const g = svg.querySelector('.soCur'); if (g) g.style.display = 'none'; const tip = svg.parentNode.querySelector('.soTip'); if (tip) tip.style.display = 'none' }
   window._soDetTab = function (btn, k) { const box = btn.closest('.soDet'); [...box.querySelectorAll('.soTab')].forEach(b => b.classList.remove('on')); btn.classList.add('on'); [...box.querySelectorAll('.soPane')].forEach(pane => { pane.style.display = pane.dataset.k === k ? 'block' : 'none' }) }
   window._socialDetail = function (id) {
     const p = (DATA.posts || []).find(x => x.id === id); if (!p) return
