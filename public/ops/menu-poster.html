@@ -2,6 +2,7 @@
 <html lang="zh-Hant">
 <head>
 <meta charset="UTF-8" />
+<meta name="viewport" content="width=1080" />
 <title>GROUN:D 菜單海報</title>
 <!--
   菜單海報 HTML 模板（張良 2026-10-10 v1.0 自建網頁模板出圖）
@@ -9,57 +10,59 @@
   資料來源：window.MENU_DATA（截圖腳本/App 注入）；無則用內建 sample（當前菜單含沙拉）。
   直式畫布 1080×1920。字體：Alfa Slab One（英文大標）/ Noto Sans TC（中文）/ Poppins（英文副標）。
 -->
-<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700;900&family=Alfa+Slab+One&family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700;900&family=Alfa+Slab+One&family=Poppins:wght@400;500;600;700&family=Lora:ital,wght@0,400;0,500;0,600;1,400&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/html-to-image@1.11.13/dist/html-to-image.js"></script>
 <style>
+  /* 官方 CIS 中文字型「寒蟬德黑體 ChillDINGothic」（SIL OFL 可商用，源於 DIN 工業字體，數字特別俐落）；單一字重 Regular */
+  @font-face{ font-family:'ChillDINGothic'; src:url('fonts/ChillDINGothic_Std.woff2') format('woff2'); font-weight:normal; font-display:swap }
   *{margin:0;padding:0;box-sizing:border-box}
   :root{ --cream:#F5EADA; --red:#CE1611; --eng:#C56B54; --dot:#D98A7A; }
   html,body{background:#555}
+  #dlbtn{ position:fixed; top:14px; right:14px; z-index:99; padding:12px 22px; background:#CE1611; color:#fff; border:none; border-radius:10px; font-size:16px; font-weight:700; cursor:pointer; box-shadow:0 4px 14px rgba(0,0,0,.35); font-family:system-ui,sans-serif }
+  #dlbtn:disabled{ opacity:.6 }
   /* 直式畫布 */
   #poster{
     width:1080px; height:1920px; background:var(--cream); position:relative;
-    font-family:"Noto Sans TC",system-ui,sans-serif; color:var(--red);
+    font-family:"Noto Sans TC","ChillDINGothic",system-ui,sans-serif; color:var(--red); letter-spacing:.04em;
     padding:28px 38px 0; display:flex; flex-direction:column;
   }
-  /* 品牌頭 */
-  .brand{ text-align:center; margin-bottom:10px; }
-  .brand .h{ font-family:"Poppins",sans-serif; font-weight:600; font-size:22px; letter-spacing:.42em; }
-  .brand .g{ font-family:"Alfa Slab One",serif; font-size:52px; line-height:1.05; letter-spacing:.01em; }
+  /* 品牌頭：用官方 logo 圖（brand_v13.png 無襯線粗黑體，照 CIS），不用字型拼 */
+  .brand{ margin:0 -38px 6px; }
+  .brand img{ width:1080px; display:block; }
   /* 欄頭 */
   .colhead{ display:flex; justify-content:space-between; align-items:baseline; font-size:19px; font-weight:700; padding:0 12px; margin-bottom:6px; }
-  /* 分類：左右兩欄各自獨立堆疊（非行對齊，官方版式） */
-  .cats{ flex:1; display:flex; gap:37px; align-items:flex-start; padding-bottom:78px; }
+  /* 分類：左右兩欄各自獨立堆疊（非行對齊，官方版式）；#cats 內容整體可被 JS 等比縮放塞進畫布 */
+  .cats{ flex:1; display:flex; gap:37px; align-items:flex-start; transform-origin:top center; }
   .col{ flex:1; min-width:0; display:flex; flex-direction:column; gap:13px; }
   .cat{ }
   .cat h2{ display:flex; align-items:baseline; gap:10px; margin-bottom:6px; padding-left:2px; }
   .cat h2 .en{ font-family:"Alfa Slab One",serif; font-size:30px; line-height:1; }
-  .cat h2 .zh{ font-size:25px; font-weight:900; }
+  .cat h2 .zh{ font-size:25px; font-weight:900; letter-spacing:.14em; }
   .cat h2 .pz{ font-size:14px; font-weight:700; line-height:1.1; }
   /* 品項框 */
   .box{ border:2px solid var(--red); border-radius:16px; padding:12px 16px 14px; }
   .item{ margin:0; }
   .item + .item{ margin-top:10px; }
   .item .row1{ display:flex; align-items:baseline; gap:8px; font-weight:700; }
-  .item .nm{ font-size:30px; font-weight:800; white-space:nowrap; line-height:1.15; }
+  .item .nm{ font-size:30px; font-weight:700; white-space:nowrap; line-height:1.15; letter-spacing:.05em; }
   .item .ih{ font-size:20px; font-weight:700; flex:0 0 auto; }
   .item .lead{ flex:1; border-bottom:4px dotted var(--dot); transform:translateY(-6px); min-width:14px; }
-  .item .pr{ font-size:30px; font-weight:900; flex:0 0 auto; font-variant-numeric:tabular-nums; }
+  .item .pr{ font-size:30px; font-weight:800; flex:0 0 auto; font-variant-numeric:tabular-nums; letter-spacing:0; }
   .item .tag{ flex:0 0 auto; font-size:22px; font-weight:800; }
   .item .tag.inc{ background:var(--red); color:var(--cream); border-radius:7px; padding:2px 10px; font-size:19px; }
-  .item .en{ font-family:"Poppins",sans-serif; color:var(--eng); font-size:17px; font-weight:500; margin-top:1px; }
+  .item .en{ font-family:"Lora",Georgia,serif; color:var(--eng); font-size:18px; font-weight:500; margin-top:2px; letter-spacing:.01em; }
   .item .en .decaf{ color:var(--red); font-weight:700; margin-left:8px; }
   /* 自動縮字：品名過長時整列縮放，不切字（JS 控制 nm font-size） */
   /* 底部紅條 */
   .footer{ position:absolute; left:0; right:0; bottom:0; height:70px; background:var(--red); color:var(--cream);
     display:flex; align-items:center; justify-content:center; font-size:23px; font-weight:700; letter-spacing:.01em; }
-  .footer b{ font-weight:900; }
+  .footer b{ font-weight:800; }
 </style>
 </head>
 <body>
+<button id="dlbtn" onclick="downloadPoster()">⬇ 下載圖片</button>
 <div id="poster">
-  <div class="brand">
-    <div class="h">HAPPINESS</div>
-    <div class="g">GROUN:D</div>
-  </div>
+  <div class="brand"><img src="menu/brand.png" alt="HAPPINESS GROUN:D"></div>
   <div class="colhead"><span>MENU 菜單</span><span>單點價／套餐</span></div>
   <div class="cats" id="cats"></div>
   <div class="footer" id="footer"></div>
@@ -182,23 +185,56 @@ function render(){
 
   document.getElementById('footer').innerHTML =
     `<b>主餐 +${D.setN} 升級套餐</b>　｜　副餐選 1＋飲品選 1　｜　肉品產地：${D.origins}`;
+  fit();
+}
 
-  // 自動縮字：品名超出可用寬度就縮，保證不切字
+// 縮字＋縮高（可重複呼叫；每次先重置再算）——字體載入完成後要再跑一次，否則用替補字體量到的高度偏矮會撐破
+function fit(){
   document.querySelectorAll('.item .row1').forEach(row=>{
     const nm=row.querySelector('.nm'); if(!nm) return;
-    let size=30;
-    // 可用寬 = row 寬 - 價格 - tag - ih - 間距
-    const avail = row.clientWidth - 10;
-    let guard=0;
-    while(nm.scrollWidth && (sumFixed(row) > avail) && size>20 && guard<20){ size--; nm.style.fontSize=size+'px'; guard++; }
+    nm.style.fontSize=''; let size=30;
+    const avail = row.clientWidth - 10; let guard=0;
+    while((sumFixed(row) > avail) && size>20 && guard<20){ size--; nm.style.fontSize=size+'px'; guard++; }
   });
+  const cats=document.getElementById('cats');
+  const footerTop = 1920 - 70 - 18, availH = footerTop - cats.offsetTop;
+  cats.style.transform='scale(1)';
+  const real = cats.scrollHeight;
+  cats.style.transform = real>availH ? 'scale('+(availH/real)+')' : 'scale(1)';
   window.__rendered = true;
 }
 function sumFixed(row){
   let w=0; row.childNodes.forEach(c=>{ if(c.classList && !c.classList.contains('lead')) w+=c.offsetWidth+8; });
   return w;
 }
-render();
+// 開機：先抓 App 的真實菜單（看板唯讀金鑰），抓不到(本機/離線)才用內建 sample
+async function boot(){
+  if (!window.MENU_DATA){
+    try{
+      const K=new URLSearchParams(location.search).get('k') || '7ea362bae1f0274372d4ec7b27c78852';
+      const r=await fetch('/api/mail-sync?menu='+K);
+      const d=await r.json();
+      if (d && d.ok && d.draft) window.MENU_DATA=d.draft;
+    }catch(e){}
+  }
+  render();
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(fit);
+  window.addEventListener('load', fit);
+}
+boot();
+
+// ⬇ 下載 PNG（前端出圖，html-to-image）：等字體載入→暫時放大到 1:1 截 1080×1920
+async function downloadPoster(){
+  const btn=document.getElementById('dlbtn'); if(btn){ btn.textContent='產生中…'; btn.disabled=true; }
+  try{
+    if (document.fonts && document.fonts.ready) await document.fonts.ready;
+    fit();
+    const node=document.getElementById('poster');
+    const url=await htmlToImage.toPng(node,{ width:1080, height:1920, pixelRatio:2, backgroundColor:'#F5EADA', cacheBust:true });
+    const a=document.createElement('a'); a.href=url; a.download='GROUND菜單_直式_'+(new Date().toISOString().slice(0,10))+'.png'; a.click();
+  }catch(e){ alert('出圖失敗，再試一次：'+e); }
+  finally{ if(btn){ btn.textContent='⬇ 下載圖片'; btn.disabled=false; } }
+}
 </script>
 </body>
 </html>

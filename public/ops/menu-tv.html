@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=1920" />
+<title>GROUN:D 電視菜單</title>
+<!--
+  電視橫式菜單 HTML 模板（張良 2026-10-10 v1.3）：一台電視=兩分類並排＋底部食物照片，共 4 張。
+  ?screen=0..3（0披薩/療癒碗 1漢堡/三明治 2麵/早午餐 3小點/飲品）。照片=從官方底圖截出的獨立檔 menu/photos/。
+  套餐欄(SNACKS/DRINKS,combo>0)=官方版式：紅圓角框＋表頭(品項/單點/套餐選擇)，兩框等高；項多(>6)自動緊湊。
+  左上 4 張切換＋「下載全部 4 張」；右上「調整照片」面板：每張照片 上下/左右/縮放 滑桿，區塊參數(邊距/欄距/標題/品名/英文/價格/間距)可選「只這一頁」或「四頁共用」，照片位移縮放每頁各自；存 localStorage gd_tvcfg {g,p}；分層=照片z0<文字/框線z1<底條z3，截圖不含面板。
+  字體版式同直式 menu-poster（Alfa Slab 英標／Noto 粗中文拉字距／Lora 襯線英副標／官方 logo 圖／#ce1611）。
+-->
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700;900&family=Alfa+Slab+One&family=Poppins:wght@400;500;600;700&family=Lora:ital,wght@0,400;0,500;0,600;1,400&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/html-to-image@1.11.13/dist/html-to-image.js"></script>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  :root{ --cream:#F5EADA; --red:#CE1611; --eng:#C56B54; --dot:#D98A7A; }
+  html,body{background:#555}
+  #dlbtn,#adjbtn{ position:fixed; top:14px; z-index:99; padding:12px 22px; background:#CE1611; color:#fff; border:none; border-radius:10px; font-size:16px; font-weight:700; cursor:pointer; box-shadow:0 4px 14px rgba(0,0,0,.35); font-family:system-ui,sans-serif }
+  #dlbtn{ right:14px } #adjbtn{ right:160px; background:#333 } #dlall{ position:fixed; top:14px; right:306px; z-index:99; padding:12px 18px; background:#7a0e0b; color:#fff; border:none; border-radius:10px; font-size:16px; font-weight:700; cursor:pointer; box-shadow:0 4px 14px rgba(0,0,0,.35); font-family:system-ui,sans-serif }
+  #sw{ position:fixed; top:14px; left:14px; z-index:99; display:flex; gap:6px; font-family:system-ui,sans-serif } #sw button{ padding:10px 14px; border:none; border-radius:10px; background:rgba(0,0,0,.55); color:#fff; font-size:14px; font-weight:700; cursor:pointer } #sw button.on{ background:#CE1611 }
+  #dlbtn:disabled{ opacity:.6 }
+  #adj{ position:fixed; right:14px; top:66px; z-index:99; background:rgba(20,20,20,.94); color:#eee; padding:14px 16px; border-radius:12px; width:300px; font:14px/1.5 system-ui,sans-serif; display:none; box-shadow:0 6px 20px rgba(0,0,0,.4) }
+  #adj.on{ display:block } #adj h4{ margin:6px 0 4px; font-size:14px; color:#F5EADA } #adj label{ display:flex; align-items:center; gap:8px; margin:3px 0 } #adj label span{ width:38px; font-size:12px; color:#bbb } #adj input[type=range]{ flex:1 } #adj .v{ width:44px; text-align:right; font-variant-numeric:tabular-nums; font-size:12px }
+  #adj .ops{ display:flex; gap:8px; margin-top:10px } #adj button{ flex:1; padding:7px; border:none; border-radius:8px; cursor:pointer; font-weight:700 } #adj .rst{ background:#555; color:#fff } #adj .ok{ background:#CE1611; color:#fff }
+  #tv{ --pad:70px; --gap:70px; --top:0px; --h2:60px; --nm:38px; --en:23px; --pr:40px; --ig:16px; --rule:14px; --cf:1;
+    width:1920px; height:1080px; background:var(--cream); position:relative; overflow:hidden;
+    font-family:"Noto Sans TC",system-ui,sans-serif; color:var(--red); letter-spacing:.04em; display:flex; flex-direction:column; }
+  .tvhead{ text-align:center; padding:22px 0 8px; flex:0 0 auto; position:relative; z-index:2; }
+  .tvhead img{ height:84px; }
+  .cols{ flex:1; display:flex; gap:var(--gap); padding:var(--top) var(--pad) 0; min-height:0; }
+  .col{ flex:1; min-width:0; display:flex; flex-direction:column; min-height:0; }
+  .cat{ display:flex; flex-direction:column; flex:1; min-height:0; position:relative; }
+  /* 分層：文字/表頭/框線 z=1 在照片(z=0)之上；底條 z=2 最上 */
+  .cat h2,.cat .rule,.cat .thead,.item{ position:relative; z-index:1; }
+  .cat h2{ display:flex; align-items:baseline; gap:16px; margin-bottom:10px; flex:0 0 auto; }
+  .cat h2 .en{ font-family:"Alfa Slab One",serif; font-size:var(--h2); line-height:1; letter-spacing:0; }
+  .cat h2 .zh{ font-size:calc(var(--h2) * .67); font-weight:900; letter-spacing:.12em; }
+  .cat h2 .pz{ font-size:18px; font-weight:700; line-height:1.1; letter-spacing:.02em; }
+  .cat .rule{ border-bottom:3px solid var(--red); margin-bottom:var(--rule); flex:0 0 auto; }
+  .item{ margin-bottom:calc(var(--ig) * var(--cf)); }
+  .item .row1{ display:flex; align-items:baseline; gap:12px; }
+  .item .nm{ font-size:calc(var(--nm) * var(--cf)); font-weight:700; white-space:nowrap; line-height:1.1; letter-spacing:.05em; }
+  .item .ih{ font-size:calc(var(--nm) * .63 * var(--cf)); font-weight:700; flex:0 0 auto; }
+  .item .lead{ flex:1; border-bottom:5px dotted var(--dot); transform:translateY(-8px); min-width:16px; }
+  .item .pr{ font-size:calc(var(--pr) * var(--cf)); font-weight:800; flex:0 0 auto; font-variant-numeric:tabular-nums; letter-spacing:0; }
+  .item .tag{ flex:0 0 auto; font-size:calc(var(--pr) * .65 * var(--cf)); font-weight:800; }
+  .item .tag.inc{ background:var(--red); color:var(--cream); border-radius:8px; padding:2px 12px; font-size:calc(var(--pr) * .6 * var(--cf)); }
+  .item .en{ font-family:"Lora",Georgia,serif; color:var(--eng); font-size:calc(var(--en) * var(--cf)); font-weight:500; margin-top:3px; letter-spacing:.01em; }
+  .item .en .decaf{ color:var(--red); font-weight:700; margin-left:10px; }
+  /* 套餐欄：紅框用 ::after 疊在最上(z=1)，照片可在框內自由移動不會蓋到框線 */
+  .cat.side .box{ position:relative; padding:14px 24px 18px; flex:1; display:flex; flex-direction:column; min-height:0; }
+  .cat.side .box::after{ content:''; position:absolute; inset:0; border:3px solid var(--red); border-radius:22px; pointer-events:none; z-index:1; }
+  .cat.side .thead{ display:flex; align-items:baseline; font-size:24px; font-weight:700; letter-spacing:.1em; border-bottom:2px solid var(--red); padding-bottom:8px; margin-bottom:var(--rule); }
+  .cat.side .thead .c1{ flex:1 } .cat.side .thead .c2,.cat.side .pr{ width:120px; text-align:right } .cat.side .thead .c3,.cat.side .tagc{ width:170px; text-align:right }
+  .cat.side .item .tagc{ flex:0 0 auto; display:flex; justify-content:flex-end }
+  .cat.side .item .pr{ flex:0 0 auto }
+  .cat.compact{ --cf:.78 } .cat.compact .item .lead{ border-bottom-width:4px; transform:translateY(-6px) }
+  /* 照片：最底層，推到欄底；位移/縮放自由、不被裁切 */
+  .photo{ margin-top:auto; position:relative; z-index:0; display:flex; justify-content:center; align-items:flex-end; min-height:0; }
+  .photo img{ width:100%; display:block; transform-origin:bottom center; transform:translate(var(--px,0px),var(--py,0px)) scale(var(--ps,1)); }
+  .footer{ height:60px; background:var(--red); color:var(--cream); display:flex; align-items:center; justify-content:center; font-size:26px; font-weight:800; letter-spacing:.02em; position:relative; z-index:3; flex:0 0 auto; }
+  /* 面板 */
+  #adj{ width:340px; max-height:88vh; overflow:auto }
+  #adj .scope{ display:flex; gap:6px; margin-bottom:8px } #adj .scope button{ flex:1; padding:7px; border:1px solid #666; background:#222; color:#ddd; border-radius:8px; cursor:pointer; font-weight:700 } #adj .scope button.on{ background:#CE1611; border-color:#CE1611; color:#fff }
+  #adj h4{ margin:10px 0 4px; font-size:13px; color:#F5EADA; border-top:1px solid #333; padding-top:8px }
+</style>
+</head>
+<body>
+<div id="sw"><button onclick="setScreen(0)">1 披薩・療癒碗</button><button onclick="setScreen(1)">2 漢堡・三明治</button><button onclick="setScreen(2)">3 義大利麵・早午餐</button><button onclick="setScreen(3)">4 小點・飲品</button></div>
+<button id="dlall" onclick="downloadAll()">⬇ 下載全部 4 張</button>
+<button id="adjbtn" onclick="document.getElementById('adj').classList.toggle('on')">⚙ 調整照片</button>
+<button id="dlbtn" onclick="downloadTV()">⬇ 下載圖片</button>
+<div id="adj"></div>
+<div id="tv">
+  <div class="tvhead"><img src="menu/brand.png" alt="HAPPINESS GROUN:D"></div>
+  <div class="cols" id="cols"></div>
+  <div class="footer" id="footer"></div>
+</div>
+
+<script>
+// 內建 sample（無法抓到 App 菜單時用；線上一律吃真實菜單）
+const SAMPLE = { note:'套餐 +89 元', origins:'牛肉 美國／豬肉 台灣／雞肉 美國、台灣', sections:[
+  {name:'PIZZA 披薩', items:[{name:'經典瑪格麗特',en:'Classic Margherita',price:330},{name:'煙燻BBQ雞肉',en:'Smoked BBQ Chicken',price:360},{name:'松露綜合野菇',en:'Black Truffle Mushroom',price:380},{name:'辣楓糖臘腸培根',en:'Spicy Maple Pepperoni & Bacon',price:390}]},
+  {name:'BOWLS 療癒碗', items:[{name:'紐約街頭雞上飯 / 沙拉',en:'NYC Chicken Over Rice / Salad',price:250},{name:'泰式椒麻炸雞飯 / 沙拉',en:'Thai Spicy Fried Chicken Rice / Salad',price:280},{name:'夏威夷BBQ烤豬飯 / 沙拉',en:'Hawaiian BBQ Pork Rice / Salad',price:280},{name:'24H爐烤牛肉飯 / 沙拉',en:'24H Slow-Roasted Beef Rice / Salad',price:320}]},
+  {name:'BURGERS 漢堡', items:[{name:'香煎去骨雞腿堡',en:'Pan-Seared Boneless Chicken Burger',price:180},{name:'美式牧場炸雞腿堡',en:'Ranch Fried Chicken Burger',price:180},{name:'4oz 100%純牛肉起司堡',en:'4oz 100% Beef Cheeseburger',price:200},{name:'8oz 雙層純牛肉起司堡',en:'8oz Double Beef Cheeseburger',price:260}]},
+  {name:'ROLLS 越法三明治', items:[{name:'生菜煎蛋越南三明治',en:'Lettuce and Fried Egg Bánh Mì',price:130},{name:'香料烤雞胸越南三明治',en:'Spiced Roast Chicken Bánh Mì',price:160},{name:'BBQ烤豬肉越南三明治',en:'BBQ Roast Pork Bánh Mì',price:180},{name:'爐烤牛排越南三明治',en:'Roast Steak Bánh Mì',price:250}]},
+  {name:'PASTA 義大利麵', items:[{name:'經典番茄肉醬義大利麵',en:'Classic Tomato Meat Sauce Pasta',price:160},{name:'松露綜合野菇義大利麵',en:'Truffle Mushroom Pasta',price:180},{name:'明太子溫泉蛋義大利麵',en:'Mentaiko Pasta with Onsen Egg',price:210}]},
+  {name:'BRUNCH 早午餐', items:[{name:'GROUN:D大早餐盤',en:'GD Ultimate Breakfast Plate',price:320},{name:'法式吐司早餐盤',en:'French Toast Breakfast Plate',price:280},{name:'美式鬆餅早餐盤',en:'Classic American Pancake Breakfast',price:280}]},
+  {name:'SNACKS 炸物與小點', combo:60, items:[{name:'薯條',en:'Fries',price:60},{name:'可愛沙拉杯',en:'Happy Little Salad',price:60},{name:'酸奶油香煎小洋芋',en:'Crispy Smashed Baby Potatoes',price:80},{name:'GD招牌脆雞 原味/川味麻辣',en:'GD Crispy Chicken – Original / Sichuan Mala',price:80}]},
+  {name:'DRINKS 飲品', combo:50, items:[{name:'可口可樂 原味 / ZERO',en:'Coca-Cola Original / Zero',price:50},{name:'四季桂花春烏龍',en:'Seasonal Osmanthus Spring Oolong',price:50},{name:'台灣高山青茶',en:'Taiwan Highland Green Tea',price:50},{name:'南非國寶茶',en:'Rooibos Tea',price:50,note:'無咖啡因'},{name:'國寶鮮奶茶 I/H',en:'Rooibos Milk Tea',price:65,note:'無咖啡因'},{name:'美式咖啡 I/H',en:'Americano',price:75},{name:'經典拿鐵 I/H',en:'Caffè Latte',price:90},{name:'抹茶 / 可可拿鐵 I/H',en:'Matcha / Cocoa Latte',price:90},{name:'番茄蔬菜湯',en:'Tomato & Vegetable Soup',price:60}]},
+]};
+const SCREENS=[
+  {keys:['PIZZA','BOWL'],  photos:['menu/photos/pizza.png','menu/photos/bowl.png']},
+  {keys:['BURGER','ROLL'], photos:['menu/photos/burger.png','menu/photos/roll.png']},
+  {keys:['PASTA','BRUNCH'],photos:['menu/photos/pasta.png','menu/photos/brunch.png']},
+  {keys:['SNACK','DRINK'], photos:['menu/photos/snack.png',null]},
+];
+const Q=new URLSearchParams(location.search);
+let screenIdx=Math.max(0,Math.min(3,parseInt(Q.get('screen')||'0',10)));
+const SCREEN_NAMES=['1 披薩・療癒碗','2 漢堡・三明治','3 義大利麵・早午餐','4 小點・飲品'];
+// 區塊參數（可編輯）：key→[標籤,最小,最大,預設,單位]
+const PARAMS={ pad:['欄左右邊距',0,160,70,'px'], gap:['兩欄間距',20,200,70,'px'], top:['上方留白',0,120,0,'px'],
+  h2:['分類標題大小',36,90,60,'px'], nm:['品名大小',24,56,38,'px'], en:['英文副標大小',14,34,23,'px'], pr:['價格大小',24,60,40,'px'],
+  ig:['項目間距',0,40,16,'px'], rule:['標題與品項距離',0,40,14,'px'] };
+const ALLKEY='gd_tvcfg';
+let CFG={g:{},p:{}}; let scope='page'; // 'page'=只這一頁 / 'all'=四頁共用
+function loadCfg(){ try{ const o=JSON.parse(localStorage.getItem(ALLKEY)||'null'); if(o&&o.p) CFG=o; }catch(e){} CFG.g=CFG.g||{}; CFG.p=CFG.p||{}; }
+function saveCfg(){ try{ localStorage.setItem(ALLKEY,JSON.stringify(CFG)); }catch(e){} }
+function pageCfg(){ return CFG.p[screenIdx]=CFG.p[screenIdx]||{}; }
+function eff(k){ const pc=CFG.p[screenIdx]||{}; return (k in pc)?pc[k]:((k in CFG.g)?CFG.g[k]:PARAMS[k][3]); }
+loadCfg();
+function setScreen(i){ screenIdx=i; render(); document.querySelectorAll('#sw button').forEach((b,j)=>b.classList.toggle('on',j===i)); history.replaceState(null,'',location.pathname+'?screen='+i+(Q.get('k')?'&k='+Q.get('k'):'')); }
+
+function comboTag(combo,price){ if(!combo) return null; const d=price-combo; return d===0?{t:'內含',inc:true}:{t:(d>0?'+':'')+d,inc:false}; }
+function splitIH(name){ let ih=false,nm=String(name||''); if(/\s+I\s*\/\s*H\s*$/i.test(nm)){ih=true;nm=nm.replace(/\s+I\s*\/\s*H\s*$/i,'').trim();} return {nm,ih}; }
+function splitName(nm){ nm=String(nm||'').trim(); const m=nm.match(/^([A-Za-z0-9&'.\- ]+?)\s*([一-鿿].*)?$/); const en=m&&m[1]?m[1].trim():''; const zh=m&&m[2]?m[2].trim():(en?'':nm); return {en:en.toUpperCase(),zh}; }
+function data(){ const d=window.MENU_DATA||SAMPLE; return { note:d.note, origins:d.origins, sections:(d.sections||[]).map(s=>({name:s.name,combo:Number(s.combo)||0,items:(s.items||[]).filter(it=>Number(it.price)>0).map(it=>({name:it.name,en:it.en,price:it.price,note:it.note}))})).filter(s=>s.items.length) }; }
+
+function itemHTML(sec,it,side){
+  const {nm,ih}=splitIH(it.name); const tag=comboTag(Number(sec.combo)||0,Number(it.price)||0); const decaf=/無咖啡因/.test(it.note||'')?'無咖啡因':'';
+  return `<div class="item"><div class="row1"><span class="nm">${nm}</span>`+(ih?`<span class="ih">冰 / 熱</span>`:``)
+    +`<span class="lead"></span><span class="pr">${it.price}</span>`
+    +(side?`<span class="tagc">${tag?`<span class="tag ${tag.inc?'inc':''}">${tag.t}</span>`:''}</span>`:(tag?`<span class="tag ${tag.inc?'inc':''}">${tag.t}</span>`:''))
+    +`</div>`+(it.en?`<div class="en">${it.en}${decaf?`<span class="decaf">${decaf}</span>`:''}</div>`:``)+`</div>`;
+}
+function render(){
+  const D=data(), sc=SCREENS[screenIdx], cols=document.getElementById('cols'); cols.innerHTML='';
+  sc.keys.forEach((key,i)=>{
+    const sec=D.sections.find(s=>String(s.name).toUpperCase().includes(key));
+    const col=document.createElement('div'); col.className='col';
+    if(sec){
+      const {en,zh}=splitName(sec.name); const side=(Number(sec.combo)||0)>0, compact=sec.items.length>6;
+      const ph=sc.photos[i]; const photo=ph?`<div class="photo" data-i="${i}"><img src="${ph}" alt=""></div>`:'';
+      let h=`<div class="cat ${side?'side':''} ${compact?'compact':''}"><h2><span class="en">${en}</span>${zh?`<span class="zh">${zh}</span>`:''}${en==='PIZZA'?`<span class="pz">400°C<br>12吋</span>`:''}</h2>`;
+      if(side){ h+=`<div class="box"><div class="thead"><span class="c1">品項</span><span class="c2">單點</span><span class="c3">套餐選擇</span></div>`; sec.items.forEach(it=>h+=itemHTML(sec,it,true)); h+=photo+`</div>`; }
+      else { h+=`<div class="rule"></div>`; sec.items.forEach(it=>h+=itemHTML(sec,it,false)); h+=photo; }
+      h+=`</div>`; col.innerHTML=h;
+    }
+    cols.appendChild(col);
+  });
+  const setN=(String(D.note||'').match(/(\d+)\s*元/)||[])[1]||'89';
+  document.getElementById('footer').innerHTML=`主餐 +${setN} 升級套餐　｜　副餐選 1＋飲品選 1　｜　肉品產地：${D.origins||SAMPLE.origins}`;
+  applyCfg(); buildAdj(); fitNames();
+}
+function fitNames(){
+  document.querySelectorAll('.item .row1').forEach(row=>{
+    const nm=row.querySelector('.nm'); if(!nm) return; nm.style.fontSize=''; let size=parseFloat(getComputedStyle(nm).fontSize)||38, guard=0;
+    const avail=row.clientWidth-10;
+    const sum=()=>{ let w=0; row.childNodes.forEach(c=>{ if(c.classList&&!c.classList.contains('lead')) w+=c.offsetWidth+12; }); return w; };
+    while(sum()>avail && size>20 && guard<28){ size--; nm.style.fontSize=size+'px'; guard++; }
+  });
+}
+// ── 套用設定：區塊參數→CSS 變數；照片→位移/縮放（照片永遠是每頁各自的） ──
+function applyCfg(){
+  const tv=document.getElementById('tv'); Object.keys(PARAMS).forEach(k=>tv.style.setProperty('--'+k, eff(k)+PARAMS[k][4]));
+  const ph=(CFG.p[screenIdx]||{}).ph||{};
+  document.querySelectorAll('.photo').forEach(p=>{ const c=ph[p.dataset.i]||{}; const im=p.querySelector('img'); im.style.setProperty('--px',(c.x||0)+'px'); im.style.setProperty('--py',(c.y||0)+'px'); im.style.setProperty('--ps',(c.s||100)/100); });
+}
+function buildAdj(){
+  const box=document.getElementById('adj'); let h=`<div class="scope"><button class="${scope==='page'?'on':''}" onclick="setScope('page')">只套用這一頁</button><button class="${scope==='all'?'on':''}" onclick="setScope('all')">四頁一起套用</button></div>`;
+  h+=`<h4>版面（${scope==='page'?'這一頁':'四頁共用'}）</h4>`;
+  Object.entries(PARAMS).forEach(([k,[lab,mn,mx,df,u]])=>{ const v=eff(k); const ov=(CFG.p[screenIdx]||{})[k]!==undefined;
+    h+=`<label><span title="${lab}">${lab}</span><input type="range" min="${mn}" max="${mx}" value="${v}" oninput="setParam('${k}',this.value)"><b class="v" id="v_${k}">${v}${ov&&scope==='all'?'*':''}</b></label>`; });
+  document.querySelectorAll('.photo').forEach(p=>{ const i=p.dataset.i, c=((CFG.p[screenIdx]||{}).ph||{})[i]||{}; const name=SCREENS[screenIdx].photos[i].split('/').pop().replace('.png','');
+    h+=`<h4>照片 ${+i+1}（${name}）— 只影響這一頁</h4>`
+      +`<label><span>上下</span><input type="range" min="-300" max="300" value="${c.y||0}" oninput="setPhoto(${i},'y',this.value)"><b class="v" id="pv_${i}_y">${c.y||0}</b></label>`
+      +`<label><span>左右</span><input type="range" min="-300" max="300" value="${c.x||0}" oninput="setPhoto(${i},'x',this.value)"><b class="v" id="pv_${i}_x">${c.x||0}</b></label>`
+      +`<label><span>縮放</span><input type="range" min="40" max="180" value="${c.s||100}" oninput="setPhoto(${i},'s',this.value)"><b class="v" id="pv_${i}_s">${c.s||100}%</b></label>`; });
+  h+=`<div class="ops"><button class="rst" onclick="resetCfg()">${scope==='page'?'這頁回預設':'四頁回預設'}</button><button class="ok" onclick="document.getElementById('adj').classList.remove('on')">完成</button></div><div style="font-size:12px;color:#999;margin-top:6px">調整即時生效並自動記住（這台裝置）。「*」=這頁有自己的設定、蓋過共用值。</div>`;
+  box.innerHTML=h;
+}
+function setScope(s){ scope=s; buildAdj(); }
+function setParam(k,v){ v=Number(v); if(scope==='all'){ CFG.g[k]=v; } else { pageCfg()[k]=v; } saveCfg(); applyCfg(); fitNames(); const e=document.getElementById('v_'+k); if(e) e.textContent=v; }
+function setPhoto(i,k,v){ const pc=pageCfg(); pc.ph=pc.ph||{}; pc.ph[i]=pc.ph[i]||{}; pc.ph[i][k]=Number(v); saveCfg(); applyCfg(); const e=document.getElementById('pv_'+i+'_'+k); if(e) e.textContent=v+(k==='s'?'%':''); }
+function resetCfg(){ if(scope==='all'){ CFG.g={}; } else { CFG.p[screenIdx]={}; } saveCfg(); applyCfg(); buildAdj(); fitNames(); }
+
+async function boot(){
+  if(!window.MENU_DATA){ try{ const K=Q.get('k')||'7ea362bae1f0274372d4ec7b27c78852'; const r=await fetch('/api/mail-sync?menu='+K); const d=await r.json(); if(d&&d.ok&&d.draft) window.MENU_DATA=d.draft; }catch(e){} }
+  render();
+  if(document.fonts&&document.fonts.ready) document.fonts.ready.then(fitNames);
+  window.addEventListener('load',fitNames);
+}
+boot();
+document.querySelectorAll('#sw button').forEach((b,j)=>b.classList.toggle('on',j===screenIdx));
+async function snapPng(){ if(document.fonts&&document.fonts.ready) await document.fonts.ready; fitNames(); await new Promise(r=>setTimeout(r,120)); return await htmlToImage.toPng(document.getElementById('tv'),{width:1920,height:1080,pixelRatio:2,backgroundColor:'#F5EADA',cacheBust:true}); }
+function dl(url,name){ const a=document.createElement('a'); a.href=url; a.download=name; a.click(); }
+const TODAY=()=>new Date().toISOString().slice(0,10);
+async function downloadAll(){ const btn=document.getElementById('dlall'); const keep=screenIdx; btn.textContent='產生中… 0/4'; btn.disabled=true;
+  try{ for(let i=0;i<4;i++){ setScreen(i); const u=await snapPng(); dl(u,'GROUND電視'+(i+1)+'_'+TODAY()+'.png'); btn.textContent='產生中… '+(i+1)+'/4'; await new Promise(r=>setTimeout(r,700)); } }
+  catch(e){ alert('出圖失敗：'+e); } finally{ setScreen(keep); btn.textContent='⬇ 下載全部 4 張'; btn.disabled=false; } }
+async function downloadTV(){
+  const btn=document.getElementById('dlbtn'); if(btn){btn.textContent='產生中…';btn.disabled=true;}
+  try{ const url=await snapPng(); dl(url,'GROUND電視'+(screenIdx+1)+'_'+TODAY()+'.png');
+  }catch(e){ alert('出圖失敗：'+e); } finally{ if(btn){btn.textContent='⬇ 下載圖片';btn.disabled=false;} }
+}
+</script>
+</body>
+</html>

@@ -420,9 +420,12 @@ function menuExport(kind){ // 匯出完整菜單（張良 2026-10-02）：txt=�
     return
   }
   // 🖼 匯出圖（張良 2026-10-08 v4.66.0）：img=直式整張(動態) / tv=四張電視橫式(官方定稿含照片)
-  if (kind === 'tv') { menuPosterTVDynamic(d, secs); return } // 動態橫式(跟著資料變)
+  // v4.70.8 四張電視圖改走網頁模板 menu-tv.html（同直式那套字體版式／官方照片截出獨立檔可調位置／一鍵下載 4 張）；舊 canvas 版 menuPosterTVDynamic 保留備用
+  if (kind === 'tv') { window.open('/ops/menu-tv.html?screen=0&k=' + encodeURIComponent(K), '_blank'); return }
   if (kind === 'tvphoto') { menuExportTV(); return } // 官方定稿橫式(含照片,靜態)
   if (kind === 'imgsec') { menuPosterSections(d, secs); return } // 舊：一分類一張(保留備用)
+  // v4.70.7 直式改走網頁模板出圖（CSS 排版／寒蟬德黑體＋Lora 襯線英標／官方 logo 圖／自動縮放不切字）＝menu-poster.html，舊 canvas 版 menuPosterCanva 保留備用
+  if (kind === 'img') { window.open('/ops/menu-poster.html?k=' + encodeURIComponent(K), '_blank'); return }
   menuPosterCanva(d, secs)
 }
 // 🖼 四張電視圖（張良 2026-10-08）：一區=一台電視=兩分類並排＋食物照片，共 4 張＝官方 v15 定稿橫式(靜態)
