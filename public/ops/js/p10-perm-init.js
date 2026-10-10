@@ -411,7 +411,7 @@ function lbFinder(nm){
 // 開場：深層連結(#meet=/#sop=/#tab=)優先→重新整理留在原分頁→首頁（v4.16.0）
 (function(){
   let v = null; try { v = sessionStorage.getItem('prepView') } catch(_) {}
-  const R = { pricing: ()=>pricingLoad(), costdash: ()=>costdashLoad(), rcp: ()=>rcpLoad(), waste: ()=>wasteLoad(), lb: loadLB, buy: buyLoad, meet: meetLoad, shift: shiftLoad, fb: fbLoad, menu: menuLoad, errs: errsView, sop: sopPage, settings: settingsLoad, taskx: ()=>taskEmbed(), task: ()=>taskEmbed(), food: ()=>invLoad('food'), pack: ()=>invLoad('pack'), abeach: ()=>load('abeach'), hrm: hrmLoad, prep: ()=>prepPage(true), onb: ()=>onbPage() } // v4.45.6 備料分頁深層連結；v4.56.1 onb=入職流程(新人 #tab=onb 直達)
+  const R = { chat: ()=>chatLoad(), pricing: ()=>pricingLoad(), costdash: ()=>costdashLoad(), rcp: ()=>rcpLoad(), waste: ()=>wasteLoad(), lb: loadLB, buy: buyLoad, meet: meetLoad, shift: shiftLoad, fb: fbLoad, menu: menuLoad, errs: errsView, sop: sopPage, settings: settingsLoad, taskx: ()=>taskEmbed(), task: ()=>taskEmbed(), food: ()=>invLoad('food'), pack: ()=>invLoad('pack'), abeach: ()=>load('abeach'), hrm: hrmLoad, prep: ()=>prepPage(true), onb: ()=>onbPage() } // v4.45.6 備料分頁深層連結；v4.56.1 onb=入職流程(新人 #tab=onb 直達)
   const routeHash = () => { // v4.18.5：頁內點深層連結也要動（原本只在開頁時解析）
     const hs = location.hash || ''
     const mS2 = hs.match(/sop=([A-Za-z0-9_-]+)/), mM = hs.match(/meet=([A-Za-z0-9]+)/), mT = hs.match(/tab=([a-z]+)/), mV = hs.match(/vio=([^&]+)/)
@@ -423,6 +423,8 @@ function lbFinder(nm){
       } catch(_) {}
       return true
     }
+    const mC9 = hs.match(/chat=([A-Za-z0-9_-]+)/) // v4.70.45 聊天室深層連結（通知點進來直接開那一室）
+    if (mC9) { chatLoad(mC9[1]); return true }
     const mK9 = hs.match(/task=([A-Za-z0-9_-]+)/) // v4.41.6 任務卡深層連結（張良「通知跟訊息直接帶過去看那張卡片閃金光」）
     if (mK9) { window.tnFocusId = mK9[1]; taskEmbed(); return true }
     if (mS2) { sopPage(); glowWait('sopit-' + mS2[1]); return true }
