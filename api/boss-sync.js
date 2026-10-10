@@ -107,7 +107,7 @@ export default async function handler(req, res) {
     const pk0 = (process.env.PARTNER_API_KEY || '').trim()
     if (!pk0 || String(req.query.bosspeek) !== pk0) return res.status(403).json({ ok: false })
     const slug0 = String(req.query.slug || 'staff')
-    const id0 = ['menu', 'staff', 'revm'].includes(slug0) ? `sp_finance_pm_boss_${slug0}` : `sp_finance_pm_boss_${slug0}_${String(req.query.ym || '').replace('-', '') || tpeToday().slice(0, 7).replace('-', '')}`
+    const id0 = (['menu', 'staff', 'revm'].includes(slug0) || EPS.some(E => E.slug === slug0 && E.snapshot)) ? `sp_finance_pm_boss_${slug0}` : /* v4.70.32 快照型（prod/sup/rcp/citem/gprod/gsup…）也走裸鍵（張良 2026-10-10 驗 8 新端點入庫） */ `sp_finance_pm_boss_${slug0}_${String(req.query.ym || '').replace('-', '') || tpeToday().slice(0, 7).replace('-', '')}`
     const doc0 = (await kvGet(id0)) || {}
     let rows0 = Object.values(doc0.rows || {})
     const q0 = String(req.query.q || '')
