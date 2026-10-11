@@ -229,6 +229,122 @@ async function custBuild() {
   return { identified: idd.length, insightsOk: !!(chk && chk.m), insSize: JSON.stringify(ins).length, segments: Object.fromEntries(Object.entries(idx.segments).map(([k, v]) => [k, v.total])) }
 }
 
+// ── 📅 近期展望（v4.70.63 張良 2026-10-12「首頁都是歷史數據，缺近期分析／國定假日訂位提醒／行動建議」）──
+// 回答三件事：①未來 14 天每天已訂多少、去年同一週同一天真實來客多少 ②下個連假倒數：現在已訂 vs 去年同期「同距離天數」已訂 vs 去年最終 ③要你做的事
+// 資料全現成：inline 月檔（未來訂位含 created 建立時間）＋ sp_finance_pm_pos（AB 日結來客）＋ 行事曆快取 sp_finance_pm_twhol_<年>
+const isCx = (r) => CANCELED_STATES.includes(r.st)
+const SEATS_AB = 90 // 座位參考值（算滿座率用；張良要改在這裡改）
+async function holYear(y) { // 行事曆：同 mail-sync ?twhol 的快取鍵（去年檔沒抓過就現抓一次存起來）
+  let doc = await kvGet('sp_finance_pm_twhol_' + y).catch(() => null)
+  if (!doc || !doc.ts || Date.now() - new Date(doc.ts).getTime() > 14 * 86400e3) {
+    try {
+      const r9 = await fetch('https://cdn.jsdelivr.net/gh/ruyut/TaiwanCalendar/data/' + y + '.json')
+      if (r9.ok) {
+        const arr = await r9.json(); const h9 = {}, w9 = {}
+        for (const x of arr) { if (!x.description) continue; const s8 = String(x.date); const dt = s8.includes('-') ? s8 : (s8.slice(0, 4) + '-' + s8.slice(4, 6) + '-' + s8.slice(6, 8)); if (x.isHoliday) h9[dt] = x.description; else w9[dt] = x.description }
+        doc = { ts: new Date().toISOString(), hol: h9, wk: w9 }
+        await kvPut('sp_finance_pm_twhol_' + y, doc, '行事曆快取')
+      }
+    } catch (_) {}
+  }
+  const fx = (o) => { const r = {}; for (const [k, v] of Object.entries(o || {})) r[k.includes('-') ? k : (k.slice(0, 4) + '-' + k.slice(4, 6) + '-' + k.slice(6, 8))] = v; return r }
+  return doc ? fx(doc.hol) : {}
+}
+// 連假分塊：連續的假日（含補假）合成一塊；名稱取最有意義的假名（跳過「補假」）
+function holBlocks(hol, from, to) {
+  const days = Object.keys(hol).filter((d) => d >= from && d <= to).sort()
+  const blocks = []
+  for (const d of days) {
+    const last = blocks[blocks.length - 1]
+    if (last && addDays(last.to, 1) === d) { last.to = d; last.days.push(d); if (last.name === '補假' && hol[d] !== '補假') last.name = hol[d] }
+    else blocks.push({ from: d, to: d, days: [d], name: hol[d] })
+  }
+  for (const b of blocks) b.name = b.name.replace(/臺灣光復暨金門古寧頭大捷紀念日/, '光復節').replace(/開國紀念日/, '元旦').replace(/農曆除夕/, '除夕')
+  return blocks
+}
+const dayStat = (arr) => { // 一天的訂位 → 統計（候補 ty=4 不算人次；待確認 st=3 另計）
+  const o = { r: 0, g: 0, l: 0, dn: 0, wl: 0, uc: 0, ucG: 0, big: 0 }
+  for (const r of arr || []) {
+    if (isCx(r)) continue
+    if (r.ty === 4) { o.wl++; continue }
+    o.r++; o.g += r.n || 0
+    if ((r.t || '') < '16:00') o.l += r.n || 0; else o.dn += r.n || 0
+    if (r.st === 3) { o.uc++; o.ucG += r.n || 0 }
+    if ((r.n || 0) >= 20) o.big++
+  }
+  return o
+}
+// 某日在「截止時間點」之前已建立的有效訂位人次（去年同期這時候已訂多少＝公平比較的基準）
+const bookedBy = (arr, cutoff) => (arr || []).reduce((t, r) => t + (!isCx(r) && r.ty !== 4 && (r.created || '').slice(0, 10) <= cutoff ? (r.n || 0) : 0), 0)
+async function custOutlook() {
+  const today = twToday(), y0 = +today.slice(0, 4)
+  const H14 = dateRange(today, addDays(today, 13))
+  const [holA, holB, holC] = await Promise.all([holYear(y0 - 1), holYear(y0), holYear(y0 + 1)])
+  const hol = { ...holB, ...holC }, holLY = holA
+  const blocks = holBlocks(hol, today, addDays(today, 120)).slice(0, 2) // 接下來兩個連假
+  // 要讀的月檔：未來 14 天＋連假日＋去年同期（同週同日＝ -364 天；去年同名假日）
+  const need = new Set()
+  const want = (d) => need.add(d.slice(0, 7))
+  for (const d of H14) { want(d); want(addDays(d, -364)) }
+  const lyBlocks = holBlocks(holLY, `${y0 - 1}-01-01`, `${y0}-12-31`)
+  for (const b of blocks) {
+    for (const d of b.days) want(d)
+    const key = b.name
+    let ly = lyBlocks.find((x) => x.name === key && x.days.length === b.days.length) || lyBlocks.find((x) => x.name === key)
+    if (!ly) { const ds = b.days.map((d) => addDays(d, -364)); ly = { from: ds[0], to: ds[ds.length - 1], days: ds, name: b.name, approx: true } } // 去年沒有同名假（新假）→ 用去年同一週同一天代替
+    b.ly = ly
+    for (const d of ly.days) want(d)
+  }
+  const docs = {}
+  await Promise.all([...need].map(async (m) => { docs[m] = (await kvGet('sp_finance_pm_inline_' + m)) || { days: {} } }))
+  const dayArr = (d) => (docs[d.slice(0, 7)] || { days: {} }).days[d] || []
+  // POS 真實來客（AB）
+  const pos = {}
+  try { for (const e of (((await kvGet('sp_finance_pm_pos')) || {}).entries || [])) { if (/groun/i.test(e.store || '') || !e.date) continue; pos[e.date] = { g: Number(e.guests) || 0, rev: Number(e.revenue) || 0 } } } catch (_) {}
+  // ① 未來 14 天
+  const strip = (r) => ({ t: r.t || '', nm: r.name || '', n: r.n || 0, st: r.st, ty: r.ty, kc: (r.kc || 0) + (r.ks || 0), note: (r.note || r.inote || '').slice(0, 40) })
+  const days = H14.map((d) => {
+    const ly = addDays(d, -364), s = dayStat(dayArr(d)), ls = dayStat(dayArr(ly))
+    return { d, hol: hol[d] || '', ...s, ly: { d: ly, g: ls.g, r: ls.r, pos: (pos[ly] || {}).g || 0, rev: (pos[ly] || {}).rev || 0 }, list: dayArr(d).filter((r) => !isCx(r)).sort((a, b) => (a.t || '').localeCompare(b.t || '')).slice(0, 60).map(strip) }
+  })
+  // ② 連假倒數
+  const hols = blocks.map((b) => {
+    const left = Math.round((new Date(b.from) - new Date(today)) / DAY)
+    let g = 0, r = 0, uc = 0
+    for (const d of b.days) { const s = dayStat(dayArr(d)); g += s.g; r += s.r; uc += s.ucG }
+    const ly = b.ly
+    const cutoff = addDays(ly.from, -left) // 去年同一個假、同樣剩 left 天的那一天
+    let lyThen = 0, lyFinal = 0, lyPos = 0, lyRev = 0
+    for (const d of ly.days) { const arr = dayArr(d); lyThen += bookedBy(arr, cutoff); lyFinal += dayStat(arr).g; lyPos += (pos[d] || {}).g || 0; lyRev += (pos[d] || {}).rev || 0 }
+    const ratio = lyThen ? Math.round(g / lyThen * 100) : null
+    const status = ratio == null ? 'na' : ratio < 70 ? 'behind' : ratio > 110 ? 'ahead' : 'ok'
+    return { name: b.name, from: b.from, to: b.to, days: b.days, left, g, r, uc, ly: { from: ly.from, to: ly.to, approx: !!ly.approx, then: lyThen, final: lyFinal, pos: lyPos, rev: lyRev }, ratio, status, gap: Math.max(0, lyFinal - g) }
+  })
+  return { today, seats: SEATS_AB, days, hols, builtAt: new Date().toISOString() }
+}
+// 連假落後提醒（cron 每小時進來、台灣時間 10 點那次才跑）：距連假 14／7／3 天時，已訂低於去年同期七成 → 私訊審核人；同一假同一天數只發一次
+async function holidayAlert() {
+  const h = new Date(Date.now() + 8 * 3600e3).getUTCHours()
+  if (h !== 10) return { skip: 'not10' }
+  const ol = await custOutlook()
+  const log = (await kvGet('sp_finance_pm_inline_alerts')) || {}
+  const sent = []
+  for (const x of ol.hols) {
+    if (![14, 7, 3].includes(x.left)) continue
+    const k = `${x.from}_${x.left}`
+    if (log[k]) continue
+    log[k] = new Date().toISOString()
+    if (x.status !== 'behind') continue
+    const { notifyOps } = await import('./_onboard.js')
+    const rng = x.from === x.to ? x.from.slice(5).replace('-', '/') : `${x.from.slice(5).replace('-', '/')}～${x.to.slice(5).replace('-', '/')}`
+    const txt = `📅 連假訂位落後提醒｜${x.name}（${rng}）倒數 ${x.left} 天\n目前已訂 ${x.g} 人（${x.r} 組）\n去年此時已訂 ${x.ly.then} 人 → 只有去年的 ${x.ratio}%\n去年最終 ${x.ly.final} 人訂位／POS 實際來客 ${x.ly.pos} 人\n建議：推給流失常客、社群發連假檔期（/prep → inline → 連假倒數卡有名單）`
+    await notifyOps(txt)
+    sent.push(k)
+  }
+  await kvPut('sp_finance_pm_inline_alerts', log, 'inline連假提醒')
+  return { alerts: sent }
+}
+
 export default async function handler(req, res) {
   const mk = (process.env.MENU_PROBE_KEY || '').trim()
   try {
@@ -253,6 +369,12 @@ export default async function handler(req, res) {
       const [ins, idx, sum2] = await Promise.all([kvGet('sp_finance_pm_inline_insights'), kvGet('sp_finance_pm_inline_custidx'), kvGet('sp_finance_pm_inline')])
       res.setHeader('Cache-Control', 's-maxage=600, stale-while-revalidate=3600')
       return res.status(200).json({ ok: true, ins: ins || null, idx: idx || null, months: (sum2 || {}).months || {}, farFuture: (sum2 || {}).farFuture || [], dayNotes: (sum2 || {}).dayNotes || {} })
+    }
+    if (req.query?.custoutlook) { // ?custoutlook=OPS → 近期展望（未來14天＋連假倒數；v4.70.63）
+      if (!ok9(req.query.custoutlook)) return res.status(403).json({ ok: false })
+      const ol = await custOutlook()
+      res.setHeader('Cache-Control', 's-maxage=600, stale-while-revalidate=3600')
+      return res.status(200).json({ ok: true, ...ol })
     }
     if (req.query?.custnr) { // ?custnr=OPS&ym=2026-10 → 該月新/回「逐筆名單」（眼見為憑，張良 2026-10-04）
       if (!ok9(req.query.custnr)) return res.status(403).json({ ok: false })
@@ -340,7 +462,9 @@ export default async function handler(req, res) {
       const idx = await kvGet('sp_finance_pm_inline_custidx')
       if (!idx?.builtAt || Date.now() - new Date(idx.builtAt).getTime() > 20 * 3600e3) cb = await custBuild()
     } catch (e) { cb = { custErr: e?.message } }
-    return res.status(200).json({ ok: true, ...out, ...far, ...cb })
+    let ha = {}
+    try { ha = await holidayAlert() } catch (e) { ha = { alertErr: e?.message } }
+    return res.status(200).json({ ok: true, ...out, ...far, ...cb, ...ha })
   } catch (e) {
     return res.status(500).json({ ok: false, error: e?.message || String(e) })
   }
