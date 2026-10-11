@@ -1,4 +1,4 @@
-// 📥 統一收件匣 v4.70.57（清單重排：帳號列／狀態列分段、狀態實色標籤；狀態改兩顆按鈕；舊版自動重新整理；提醒通知誰／LINE 群可選；視窗撐滿鎖頁、去多餘文字；回覆權限分開勾；圖片氣泡貼合圖片大小；+傳圖片／檔案、貼上截圖；修回過一次後永遠推播；+轉發：接到收件匣後原系統照收）（溝通中樞第三部：三個官方帳號的客人對話集中一頁；只收＋從 app 回覆；單色 stroke SVG）
+// 📥 統一收件匣 v4.70.59（側欄／常用列待處理數字徽章；清單重排：帳號列／狀態列分段、狀態實色標籤；狀態改兩顆按鈕；舊版自動重新整理；提醒通知誰／LINE 群可選；視窗撐滿鎖頁、去多餘文字；回覆權限分開勾；圖片氣泡貼合圖片大小；+傳圖片／檔案、貼上截圖；修回過一次後永遠推播；+轉發：接到收件匣後原系統照收）（溝通中樞第三部：三個官方帳號的客人對話集中一頁；只收＋從 app 回覆；單色 stroke SVG）
 // 版型同聊天室：桌機左右雙欄、手機兩層；對話每 6 秒輪詢、清單每 20 秒
 const IB_ICON = {
   back: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>',
@@ -72,6 +72,28 @@ async function inboxLoad(convId) {
   if (_ibCur) ibOpen(_ibCur, true)
 }
 function ibUnreadTotal() { return ((_ibD && _ibD.convs) || []).reduce((t, c) => t + (c.unread || 0), 0) }
+// 🔴 v4.70.59 側欄數字徽章（張良 10-11「如果有訊息這邊能顯示 123 這種通知在旁邊嗎」）：
+// 數字＝「待處理」對話數（跟頁內待處理分頁同一套算法：未完成 或 有未讀）；側欄按鈕＋手機常用列都掛；不在收件匣頁時每 60 秒背景問一次
+function ibTodoCount(d) { return (((d || _ibD) && (d || _ibD).convs) || []).filter(c => c.status !== 'done' || c.unread).length }
+function navBadgePaint(key, n) { // 共用：聊天室也用（key=分頁代號）
+  try {
+    const els = [document.getElementById('tab-' + key), document.querySelector('#favbar [data-fk="' + key + '"]')].filter(Boolean)
+    els.forEach(b => {
+      let d = b.querySelector('.navDot'); if (d) d.remove()
+      if (!(n > 0)) return
+      const fav = b.closest('#favbar')
+      d = document.createElement('span'); d.className = 'navDot'
+      d.style.cssText = fav ? 'position:absolute;top:-2px;right:8px;background:#E5484D;color:#fff;border-radius:999px;font-size:11px;font-weight:900;min-width:17px;height:17px;line-height:17px;text-align:center;padding:0 3px'
+        : 'margin-left:auto;background:#E5484D;color:#fff;border-radius:999px;font-size:11px;font-weight:900;min-width:18px;height:18px;line-height:18px;text-align:center;padding:0 5px;display:inline-block;flex:none'
+      if (fav) { b.style.position = 'relative'; b.style.overflow = 'visible' }
+      d.textContent = n > 99 ? '99+' : n; b.appendChild(d)
+    })
+  } catch (_) {}
+}
+function ibBadgePaint() { navBadgePaint('inbox', _ibD && _ibD.ok !== false ? ibTodoCount() : 0) }
+async function ibBadgeSync() { if (curStore === 'inbox') return; const b = document.getElementById('tab-inbox'); if (!b || b.style.display === 'none') return; const d = await ibGet('op=list'); if (d && d.ok) { _ibD = d; ibBadgePaint() } }
+setTimeout(ibBadgeSync, 2500); setInterval(() => { if (!document.hidden) ibBadgeSync() }, 60000)
+document.addEventListener('visibilitychange', () => { if (!document.hidden) ibBadgeSync() })
 function ibRender() {
   const mobile = window.innerWidth < 760
   app.innerHTML = `<section style="padding:0;overflow:hidden">
@@ -82,6 +104,7 @@ function ibRender() {
   paneFit('ibWrap'); ibRenderList(); ibRenderPane()
 }
 function ibRenderList() {
+  try { ibBadgePaint() } catch (_) {} // 在頁內也同步徽章（點開對話清未讀／標完成→數字立刻跟著變）
   const el = document.getElementById('ibList'); if (!el) return
   const d = _ibD || { accounts: [], convs: [] }
   if (!document.getElementById('ibCss')) document.head.insertAdjacentHTML('beforeend', IB_CSS)

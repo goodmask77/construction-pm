@@ -1,4 +1,4 @@
-// 💬 聊天室 v4.70.52（視窗撐滿鎖頁、去多餘文字；溝通中樞項目 3a「個人聊天室」：像 Google Chat——全體室／每人一間「與主管」／自建群；主管看得到全部；@DD 叫 AI）
+// 💬 聊天室 v4.70.59（側欄／常用列未讀數字徽章；視窗撐滿鎖頁、去多餘文字；溝通中樞項目 3a「個人聊天室」：像 Google Chat——全體室／每人一間「與主管」／自建群；主管看得到全部；@DD 叫 AI）
 // 這版先輪詢（開著的聊天室每 6 秒、清單每 25 秒）；UI 單色 stroke SVG（10-04 規則）；手機＝清單→聊天室兩層，桌機＝左右雙欄
 const CH_ICON = {
   back: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>',
@@ -29,6 +29,11 @@ async function chatLoad(roomId) {
   if (_chCur) chOpen(_chCur, true)
 }
 function chUnreadTotal() { return (_chRooms || []).reduce((t, r) => t + (r.unread || 0), 0) }
+// 🔴 v4.70.59 側欄數字徽章＝未讀訊息總數（跟 p24 收件匣共用 navBadgePaint；不在聊天室頁時每 60 秒背景問一次）
+function chBadgePaint() { if (typeof navBadgePaint === 'function') navBadgePaint('chat', chUnreadTotal()) }
+async function chBadgeSync() { if (curStore === 'chat') return; const b = document.getElementById('tab-chat'); if (!b || b.style.display === 'none') return; const d = await chGet('op=rooms'); if (d && d.ok) { _chRooms = d.rooms; chBadgePaint() } }
+setTimeout(chBadgeSync, 3500); setInterval(() => { if (!document.hidden) chBadgeSync() }, 60000)
+document.addEventListener('visibilitychange', () => { if (!document.hidden) chBadgeSync() })
 function chRender() {
   const mobile = window.innerWidth < 760
   app.innerHTML = `<section style="padding:0;overflow:hidden">
@@ -39,6 +44,7 @@ function chRender() {
   if (typeof paneFit === 'function') paneFit('chWrap'); chRenderList(); chRenderPane()
 }
 function chRenderList() {
+  try { chBadgePaint() } catch (_) {}
   const el = document.getElementById('chList'); if (!el) return
   const rooms = _chRooms || []
   const row = r => `<div onclick="chOpen('${chEsc(r.id)}')" style="display:flex;gap:10px;align-items:center;padding:11px 12px;border-bottom:1px solid var(--line);cursor:pointer;${_chCur === r.id ? 'background:var(--card)' : ''}">

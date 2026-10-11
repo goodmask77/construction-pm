@@ -369,6 +369,7 @@ function favRender(){
     + `<button id="favBell" onclick="ntfPage()" title="通知中心" style="flex:0 0 54px;position:relative;overflow:visible">${TAB_ICONS.bell}<span>通知</span></button>`
   favMark()
   try { ntfBadgeSync() } catch(_){} // 重畫後補紅點數
+  try { ibBadgePaint(); chBadgePaint() } catch(_){} // v4.70.59 常用列／側欄重畫後補收件匣、聊天室數字徽章（innerHTML 重寫會把徽章洗掉）
 }
 function favGo(k){ const b = document.getElementById(k==='home'?'tab-home':'tab-'+k); if (b) b.click(); try{ scrollTo({top:0}) }catch(_){} }
 function favMark(k){ if (k) window._favCur = k; const c = window._favCur
