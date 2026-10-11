@@ -35,6 +35,8 @@ export const AI_ROUTES = {
                def: { provider: 'anthropic', model: 'claude-sonnet-4-6' }, fb: { provider: 'anthropic', model: 'claude-opus-4-8' } },
   waste:     { label: '耗損 AI 讀秤', where: 'GD 耗損頁：看秤面讀重量＋從候選清單認物料（視覺，批次 1b v4.70.32）', kind: 'text',
                def: { provider: 'anthropic', model: 'claude-sonnet-4-6' }, fb: { provider: 'gemini', model: 'gemini-3.8-flash' } },
+  rcpimport: { label: '食譜 AI 匯入', where: 'GD 食譜庫「新增食譜」：截圖／試算表／連結讀成材料＋步驟（視覺，v4.70.66）', kind: 'text',
+               def: { provider: 'anthropic', model: 'claude-sonnet-4-6' }, fb: { provider: 'gemini', model: 'gemini-3.8-flash' } },
 }
 
 // ── 設定讀寫 ──
