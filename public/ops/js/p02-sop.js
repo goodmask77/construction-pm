@@ -246,6 +246,7 @@ const EDIT_FN = {
   rcpDraft:'rcp', rcpEdit:'rcp', rcpPublish:'rcp', rcpDiscard:'rcp', rcpMeta:'rcp', rcpPhoto:'rcp', rcpStepAdd:'rcp', rcpStepSave:'rcp',
   wasteShot:'waste', wasteManual:'waste', wasteSend:'waste', wasteVoid:'waste', wasteCfgSave:'waste', wasteAi:'waste',
   cdCapSave:'buy', cdReconSave:'buy', // 成本總覽：成本率上限／月帳對帳＝採購權限（批次 5a v4.70.34）
+  goCreate:'gorder', goCreateGo:'gorder', goSendLink:'gorder', goStatus:'gorder', goSave:'gorder', goParse:'gorder', goParseGo:'gorder', goCfg:'gorder', goCfgSave:'gorder', goRowSet:'gorder', goRowAdd:'gorder', goRowDel:'gorder', goPendFix:'gorder', goPendDrop:'gorder', goSharedSet:'gorder', goExtraAdd:'gorder', goExtraDel:'gorder', goHeadSet:'gorder', // 團體訂餐（v4.70.78）
   buyNew:'buy', buySend:'buy', buyOp:'buy', buyRecv:'buy', recvPick:'buy', recvSend:'buy', buyCat:'buy', buyPick:'buy',
 }
 function permFnTab(el){

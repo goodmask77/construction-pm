@@ -4404,6 +4404,62 @@ export default async function handler(req, res) {
   // 權限模型：每個資料夾 acl={ roles:{角色:等級}, users:{rid:等級}, noExport }；等級 0=看不到 1=只能看/下載 2=可編輯（上傳/刪/改/排序）。
   // 管理者（approver／主管／prep admin）永遠 2，且唯一能「管理資料夾結構＋設權限」。個人覆蓋 > 角色預設 > 一般預設。
   // 💬 聊天室（v4.70.45 溝通中樞項目 3a；規則在 api/_chat.js）：GET ?chat=<OPS_BOARD_KEY>&me=token&op=rooms|msgs（&room=&after=&read=1）；POST ?chat=<K> {token, op:'send'|'read'|'create'|'rename'|'members'|'delete', ...}
+  // 🧾 團體訂餐 v4.70.78 批次 1（規格 docs/GROUP_ORDER_SPEC.md；張良 2026-10-12）：
+  //   店家：GET ?grporder=K&me=token&op=list|get(&id)|cfg ／ POST ?grporder=K {token, op:create|save|status|sendlink|parse|cfg, …}（寫入要「團體訂餐」分頁編輯權限 permWho(tk,'gorder')）
+  //   客人：GET ?gorder=<連結碼>（免登入，連結碼即授權）／ POST ?gorder=<碼> {op:save|parse|submit|confirm, …}
+  if (req.query?.grporder) {
+    const okG = (process.env.OPS_BOARD_KEY || '').trim()
+    if (!okG || String(req.query.grporder) !== okG) return res.status(403).json({ ok: false })
+    let bG = {}; if (req.method === 'POST') { try { bG = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {} }
+    const tkG = req.method === 'POST' ? bG.token : req.query.me
+    const whoG = await sopWho(tkG)
+    if (!whoG) return res.status(403).json({ ok: false, error: '還沒登入——私訊 DD「登入碼」拿 4 位數，App 按右上「登入」填入' })
+    const canG = !!(await permWho(tkG, 'gorder'))
+    const GO = await import('./_grporder.js')
+    const opG = String(req.method === 'POST' ? bG.op : req.query.op || 'list')
+    res.setHeader('Cache-Control', 'private, no-store')
+    try {
+      if (req.method !== 'POST') {
+        if (opG === 'list') return res.status(200).json({ ok: true, ver: GO.GO_VER, me: { name: whoG.name, canEdit: canG }, list: await GO.listOrders(), cfg: await GO.loadCfg(), menu: await GO.loadMenu() })
+        if (opG === 'get') { const o = await GO.getOrder(String(req.query.id || '')); if (!o) return res.status(404).json({ ok: false, error: '找不到這張單' }); return res.status(200).json({ ok: true, order: o, menu: await GO.loadMenu(), cfg: await GO.loadCfg(), link: GO.linkOf(o.id), me: { name: whoG.name, canEdit: canG } }) }
+        if (opG === 'cfg') return res.status(200).json({ ok: true, cfg: await GO.loadCfg() })
+        return res.status(400).json({ ok: false, error: '不認識的操作' })
+      }
+      if (!canG) return res.status(403).json({ ok: false, error: '沒有「團體訂餐」的編輯權限（請主管在權限頁開）' })
+      if (opG === 'create') return res.status(200).json(await GO.createOrder({ who: whoG, ...bG }))
+      if (opG === 'save') return res.status(200).json(await GO.saveOrder({ who: whoG, id: String(bG.id || ''), patch: bG.patch || {} }))
+      if (opG === 'status') return res.status(200).json(await GO.setStatus({ who: whoG, id: String(bG.id || ''), status: String(bG.status || '') }))
+      if (opG === 'parse') return res.status(200).json(await GO.parseText({ text: bG.text }))
+      if (opG === 'cfg') return res.status(200).json(await GO.saveCfg(bG.cfg || {}, whoG))
+      if (opG === 'sendlink') {
+        const IB = await import('./_inbox.js')
+        const [defG, pmG] = await Promise.all([kvGet('sp_finance_pm_sop_def'), kvGet('sp_finance_pm_prep_perm')])
+        const mgrG = IB.isMgr(whoG, (((defG || {}).ground || {}).approvers || ['張良瑋']), pmG)
+        return res.status(200).json(await GO.sendLink({ who: whoG, mgr: mgrG, cfgIB: await IB.loadCfg(), IB, id: String(bG.id || '') }))
+      }
+      return res.status(400).json({ ok: false, error: '不認識的操作' })
+    } catch (e) { return res.status(200).json({ ok: false, error: '團體訂餐暫時出錯：' + String(e?.message || e).slice(0, 120) }) }
+  }
+  if (req.query?.gorder) {
+    const codeG = String(req.query.gorder || '').toLowerCase()
+    if (!/^[a-z0-9]{6,12}$/.test(codeG)) return res.status(404).json({ ok: false, error: '連結不對' })
+    const GO = await import('./_grporder.js')
+    res.setHeader('Cache-Control', 'private, no-store')
+    try {
+      if (req.method !== 'POST') {
+        const o = await GO.getOrder(codeG); if (!o || o.status === 'void') return res.status(404).json({ ok: false, error: '找不到這張點餐單，請跟店家確認連結' })
+        const [menuG, cfgG] = await Promise.all([GO.loadMenu(), GO.loadCfg()])
+        return res.status(200).json({ ...GO.publicView(o, menuG, cfgG), menu: menuG })
+      }
+      let bG = {}; try { bG = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
+      const opG = String(bG.op || '')
+      if (opG === 'save') return res.status(200).json(await GO.custSave({ code: codeG, body: bG }))
+      if (opG === 'submit') return res.status(200).json(await GO.custSubmit({ code: codeG }))
+      if (opG === 'confirm') return res.status(200).json(await GO.custConfirm({ code: codeG }))
+      if (opG === 'parse') { const o = await GO.getOrder(codeG); if (!o) return res.status(404).json({ ok: false, error: '找不到這張點餐單' }); return res.status(200).json(await GO.parseText({ text: bG.text })) }
+      return res.status(400).json({ ok: false, error: '不認識的操作' })
+    } catch (e) { return res.status(200).json({ ok: false, error: '點餐單暫時出錯：' + String(e?.message || e).slice(0, 120) }) }
+  }
   // 📥 統一收件匣 v4.70.47（溝通中樞第三部 項目 5＋6）：GET ?inbox=K&me=token&op=list|conv|settings ／ POST ?inbox=K {token, op:send|status|assign|note|rename|cfg|connect}
   if (req.query?.inbox) {
     const okI = (process.env.OPS_BOARD_KEY || '').trim()
