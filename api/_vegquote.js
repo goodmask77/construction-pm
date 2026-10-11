@@ -121,8 +121,9 @@ export function sheetToItems (csvText, now = new Date(Date.now() + 8 * 3600e3)) 
 }
 async function fetchSheetCsv (src) {
   const m = String(src || '').match(/docs\.google\.com\/spreadsheets\/d\/([A-Za-z0-9_-]+)/); if (!m) throw new Error('不是 Google 試算表連結')
-  const gid = (String(src).match(/[#&?]gid=(\d+)/) || [])[1]
-  const u = `https://docs.google.com/spreadsheets/d/${m[1]}/export?format=csv${gid ? '&gid=' + gid : ''}`
+  const gid = (String(src).match(/[#&?]gid=(\d+)/) || [])[1], sheet = (String(src).match(/[#&?]sheet=([^&#]+)/) || [])[1]
+  // 連結帶 sheet=分頁名稱 → 用 gviz 依名稱抓（分頁 gid 看不到時用這招；張良給的上展連結 gid 指到舊「不使用」分頁）；否則用 gid 匯出
+  const u = sheet ? `https://docs.google.com/spreadsheets/d/${m[1]}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(decodeURIComponent(sheet))}` : `https://docs.google.com/spreadsheets/d/${m[1]}/export?format=csv${gid ? '&gid=' + gid : ''}`
   const ctl = new AbortController(); const tm = setTimeout(() => ctl.abort(), 25000)
   try { const r = await fetch(u, { signal: ctl.signal, redirect: 'follow' }); if (!r.ok) throw new Error('試算表打不開（HTTP ' + r.status + '），分享要設「知道連結的人可檢視」'); if (/accounts\.google\.com/.test(r.url || '')) throw new Error('試算表要登入才看得到，分享要設「知道連結的人可檢視」'); return await r.text() } finally { clearTimeout(tm) }
 }
@@ -138,12 +139,14 @@ export async function syncFromSheets ({ kvGet, kvPut, who, vendors: only, srcOve
       const changes = [], added = []
       const next = JSON.parse(JSON.stringify(cur.items || {}))
       for (const [name, it] of Object.entries(items)) {
+        if (!Object.keys(it.m).length) continue // 表上有名字但沒半個價＝略過（不算新品項）
         const old = next[name]
         if (!old) { next[name] = it; added.push(name); for (const [ym, p] of Object.entries(it.m)) changes.push({ name, ym, from: null, to: p }); continue }
         for (const [ym, p] of Object.entries(it.m)) { if (old.m[ym] !== p) { changes.push({ name, ym, from: old.m[ym] == null ? null : old.m[ym], to: p }); old.m[ym] = p } }
         if (it.cat) old.cat = it.cat; if (it.spec) old.spec = it.spec; if (it.unit) old.unit = it.unit
       }
-      const missing = Object.keys(next).filter(n => !items[n] && Object.keys(next[n].m || {}).some(ym => months.includes(ym))) // 以前這幾個月有、這次表上沒有＝可能被刪或改名（不動資料，只提醒）
+      const recent = months.slice(-2) // 上一次最新兩個月還有價、這次表上沒有＝可能被刪或改名（不動資料，只提醒）；去年「不使用」分頁騰的歷史品項不算
+      const missing = Object.keys(next).filter(n => !items[n] && recent.some(ym => (next[n].m || {})[ym] != null))
       doc.vendors[v] = { ...cur, prev: changes.length ? { items: cur.items, importedAt: cur.importedAt } : cur.prev, items: next, src, importedAt: changes.length ? out.at : cur.importedAt, lastSync: out.at, lastSyncBy: who.name, n: Object.keys(next).length, lastChanges: changes.length }
       out.vendors.push({ vendor: v, ok: true, months, nRows, n: Object.keys(next).length, changes, added, missing: missing.slice(0, 30) })
     } catch (e) { doc.vendors[v] = { ...cur, lastSync: out.at, lastSyncErr: String(e.message || e).slice(0, 200) }; out.vendors.push({ vendor: v, ok: false, error: String(e.message || e).slice(0, 200) }) }
