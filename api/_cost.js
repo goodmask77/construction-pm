@@ -86,7 +86,7 @@ const near = (a, b, tol) => Math.abs(a - b) <= tol * Math.max(Math.abs(a), Math.
 const seq = pts => pts.map(x => x.d.slice(5) + ':' + x.p).join(' → ')
 
 // ── 影響面（快照）：代碼 → 直接用到的在賣菜單行、經半成品間接用到的菜單 ──
-function buildImpact (snap) {
+export function buildImpact (snap) { // v4.70.72 匯出給菜商比價「主要用在」用
   const byCode = {}, recipeByProduct = {}, recipeLinesByCode = {}, menuLinesByName = {}
   const prodBySku = {}, prodByCode = {}
   for (const p of snap.products) { if (p.sku) prodBySku[norm(p.sku)] = p; if (p.code) prodByCode[norm(p.code)] = p }

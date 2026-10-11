@@ -1,4 +1,4 @@
-// 🥬 /prep 第 21b 塊（v4.70.71，2026-10-12）：成本總覽 → 「菜商比價」子分頁
+// 🥬 /prep 第 21b 塊（v4.70.72，2026-10-12）：成本總覽 → 「菜商比價」子分頁
 //   張良 2026-10-12：上展／尚太每月報價騰上系統、兩家並排看差異、對照市場行情（台北一市批發月均）看歷史波動、
 //   核對偵錯中心價格異常（對上就一鍵確認不再出現，對不上留給他）、抓 ops 叫貨單價格沒更新。
 //   資料口 ?vegcmp（api/_vegquote.js）；曲線一律 lineChart（p01-core）；單色線條圖示、不用 prompt。
@@ -10,7 +10,12 @@
   const COL = { a: '#4DA3FF', b: '#E8A657', m: '#8C98A8', g: '#3DBE6C', r: '#F07373', p: '#B48CF2', y: '#E8C14E' }
   const VC = { 尚太: COL.a, 上展: COL.b }
   const TKf = () => (typeof TK === 'function' ? TK() : '')
-  let D = null, view = 'cmp', f = { cat: '營運', both: true, q: '', sort: 'pct', dir: 'desc' }, open = new Set(), busy = false, msg = '', pins = new Set()
+  let D = null, view = 'cmp', f = { cat: '營運', both: true, q: '', sort: 'pct', dir: 'desc', ym: 'l3' }, open = new Set(), busy = false, msg = '', pins = new Set()
+  // v4.70.72 欄寬：使用者拖表頭右緣調整、存本機（張良「欄位寬度直接調整」）；沒設的欄位平分剩餘寬度＝不會出現橫向捲軸（張良「旁邊都還有空白不要出現橫移卷軸」）
+  let colW = {}; try { colW = JSON.parse(localStorage.getItem('vegColW') || '{}') } catch (_) {}
+  const selYms = () => f.ym === 'l3' ? (D.ordMonths3 || []) : [f.ym]
+  const sumYm = (m, yms) => { if (!m) return 0; let t = 0; for (const ym of yms) t += (m[ym] || 0); return Math.round(t * 10) / 10 }
+  const ymLabel = ym => ym === 'l3' ? '近 3 個月' : (Number(ym.slice(5)) + ' 月')
 
   // v4.70.70 不要卡：①先用上次快取的畫面秒開，背景抓最新 ②核對那包（偵錯中心，慢 5 秒）分開載，進核對頁或背景補
   const CK = 'vegCmpCache'
@@ -65,7 +70,7 @@
   const SORTV = {
     name: r => r.name, ym: r => (r.latest || {}).ym || '', a: r => r.s.尚太 ? ((r.latest || {}).尚太 != null ? r.latest.尚太 : lastOf(r.s.尚太)) : null, b: r => r.s.上展 ? ((r.latest || {}).上展 != null ? r.latest.上展 : lastOf(r.s.上展)) : null,
     pct: r => (r.latest || {}).pct == null ? null : Math.abs(r.latest.pct), diff: r => (r.latest || {}).pct == null ? null : r.latest.pct, cheap: r => (r.latest || {}).cheaper || '',
-    recent: r => r.stat ? (r.stat.上展便宜 - r.stat.尚太便宜) : null, qa: r => (r.qty3 || {}).尚太 || 0, qb: r => (r.qty3 || {}).上展 || 0, save: r => (r.save || {}).total || 0,
+    recent: r => r.stat ? (r.stat.上展便宜 - r.stat.尚太便宜) : null, qa: r => sumYm((r.qty || {}).尚太, selYms()), qb: r => sumYm((r.qty || {}).上展, selYms()), aa: r => sumYm((r.amt || {}).尚太, selYms()), ab: r => sumYm((r.amt || {}).上展, selYms()), save: r => saveOf(r).total, uses: r => (r.uses && r.uses.menus[0]) ? r.uses.menus[0].cost3 : null,
     vola: r => (r.vol尚太 || {}).pct == null ? null : r.vol尚太.pct, volb: r => (r.vol上展 || {}).pct == null ? null : r.vol上展.pct, mkt: r => latestMkt(r), vol: r => Math.max((r.vol尚太 || {}).pct || 0, (r.vol上展 || {}).pct || 0)
   }
   function rows () {
@@ -80,13 +85,20 @@
     })
     return rs
   }
+  const saveOf = r => { const sv = r.save; if (!sv) return { total: 0, to: null }; const yms = selYms(); let t = 0; const c = { 尚太: 0, 上展: 0 }; for (const ym of yms) { if (sv.byYm[ym]) { t += sv.byYm[ym]; c[sv.toByYm[ym]]++ } } return { total: Math.round(t), to: t ? (c.上展 >= c.尚太 ? '上展' : '尚太') : null } }
   const th = (k, label, extra) => `<th ${extra || ''} onclick="_vgSort('${k}')" style="cursor:pointer;white-space:nowrap;${f.sort === k ? 'color:var(--ink)' : ''}">${label}${f.sort === k ? (f.dir === 'desc' ? ' ' + IC.dn : ' ' + IC.up) : ''}</th>`
   function filters () {
     const cnt = c => D.items.filter(r => (c === 'all' || catOf(r) === c) && (!f.both || r.both)).length
     return `<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:8px">` + [['all', '全部'], ...CATS.map(c => [c, c])].map(([v, l]) => `<button class="mini ${f.cat === v ? 'on' : ''}" onclick="_vgF('cat','${v}')">${l}<span style="margin-left:4px;font-size:11px;opacity:.8">${cnt(v)}</span></button>`).join('')
       + `<span style="width:1px;height:20px;background:var(--line)"></span><button class="mini ${f.both ? 'on' : ''}" onclick="_vgF('both')">只看兩家都有</button>`
       + (pins.size ? `<span class="hint" style="font-size:12px">${IC.pin} 已釘 ${pins.size} 項（置頂）</span>` : '')
+      + `</div><div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:8px"><span class="hint" style="font-size:12px">叫貨量／金額／可省 看哪個月：</span>` + ['l3', ...(D.ordMonths || []).filter(ym => D.totals && D.totals[ym])].map(ym => `<button class="mini ${f.ym === ym ? 'on' : ''}" onclick="_vgF('ym','${ym}')">${ymLabel(ym)}</button>`).join('') + totalsLine()
       + `<input value="${esc(f.q)}" oninput="_vgQ(this.value)" placeholder="搜尋品項…" style="flex:1;min-width:140px;border:1px solid var(--line);border-radius:8px;padding:6px 10px"></div>`
+  }
+  function totalsLine () { // 選的月份兩家總叫貨金額（含報價表沒有的品項；AB＋GD）
+    const yms = selYms(), T = D.totals || {}; const parts = []
+    for (const v of D.vendors) { let all = 0, ab = 0, gd = 0; for (const ym of yms) { const t = (T[ym] || {})[v]; if (t) { all += t.all; ab += t.AB; gd += t.GD } } parts.push(`<b style="color:${VC[v]}">${v}</b> NT$${all.toLocaleString()}${gd ? ` <span class="hint" style="font-size:11px">(A Beach ${ab.toLocaleString()}／GROUN:D ${gd.toLocaleString()})</span>` : ''}`) }
+    return `<span id="vgTot" style="margin-left:auto;font-size:13px">${ymLabel(f.ym)}總叫貨：${parts.join('　')}</span>`
   }
   const pctTag = (p, inv) => p == null ? '<span class="mut">—</span>' : `<b style="color:${Math.abs(p) < 3 ? COL.m : ((p > 0) !== !!inv ? COL.r : COL.g)}">${p > 0 ? '+' : ''}${nf(p)}%</b>`
   const cheapTag = c => c ? `<span style="color:${c === '一樣' ? COL.m : VC[c]};font-weight:800">${c}</span>` : '<span class="mut">—</span>'
@@ -95,21 +107,56 @@
   function cmp () {
     return `<section style="padding:12px 14px">${filters()}<div id="vgTbl">${table()}</div></section>`
   }
+  // v4.70.71 便宜的直接標：便宜那家綠底＋勾、貴的淡；一樣就兩邊普通
+  const priceCell = (v, r) => { const L = r.latest || {}; const val = r.s[v] ? (L[v] != null ? L[v] : lastOf(r.s[v])) : null; if (val == null) return '<td class="mut">—</td>'; const win = L.cheaper === v, lose = L.cheaper && L.cheaper !== '一樣' && L.cheaper !== v; return `<td style="color:${VC[v]};font-weight:800;white-space:nowrap;overflow:hidden;${win ? 'background:rgba(61,190,108,.22);box-shadow:inset 0 0 0 1px rgba(61,190,108,.6);border-radius:6px' : ''}${lose ? 'opacity:.55' : ''}">${win ? `<span style="color:${COL.g}">${IC.check}</span> ` : ''}${nf(val)}</td>` }
+  // 欄位定義：key／標題／預設寬（px，可拖）／對齊
+  const COLS = [['pin', '', 26], ['name', '品項', 140, 'left'], ['a', '尚太', 64], ['b', '上展', 64], ['diff', '差', 72], ['recent', '誰便宜', 72], ['qa', '叫貨 尚太', 88], ['qb', '叫貨 上展', 88], ['save', '可省', 86], ['uses', '主要用在', 210, 'left'], ['vola', '波動 尚太', 72], ['volb', '波動 上展', 72], ['mkt', '市場', 62]]
+  window._vgColStart = (ev, k) => { // 拖表頭右緣改欄寬
+    ev.preventDefault(); ev.stopPropagation()
+    const th9 = ev.target.closest('th'); const x0 = ev.clientX, w0 = th9.getBoundingClientRect().width
+    const mv = e => { const w = Math.max(40, Math.round(w0 + (e.clientX - x0))); colW[k] = w; const col = document.querySelector('#vgTbl col[data-k="' + k + '"]'); if (col) col.style.width = w + 'px' }
+    const up = () => { document.removeEventListener('mousemove', mv); document.removeEventListener('mouseup', up); try { localStorage.setItem('vegColW', JSON.stringify(colW)) } catch (_) {} }
+    document.addEventListener('mousemove', mv); document.addEventListener('mouseup', up)
+  }
+  window._vgColReset = () => { colW = {}; try { localStorage.removeItem('vegColW') } catch (_) {} paint() }
+  const usesCell = r => { const u = r.uses; if (!u || !u.menus.length) return `<span class="mut" style="font-size:12px">${u && u.recipes.length ? '半成品：' + esc(u.recipes.slice(0, 2).join('、')) : '—'}</span>`; return u.menus.slice(0, 2).map(m => `<div style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${esc(m.menu)}">${esc(m.menu)}<span class="hint" style="font-size:11px">${m.sold3 ? ' ×' + m.sold3 : ''}</span></div>`).join('') + (u.nMenus > 2 ? `<span class="hint" style="font-size:11px">+${u.nMenus - 2} 道</span>` : '') }
   function table () {
     const rs = rows(); if (!rs.length) return '<div class="hint" style="padding:16px;text-align:center">沒有符合的品項</div>'
-    const mos = D.months.slice(-12)
-    let h = `<div class="hint" style="margin-bottom:6px">${rs.length} 項・點欄位名稱排序（再點一次反向）・點 ${IC.pin} 釘選置頂・點品項展開逐月價格、叫貨量與走勢圖。「差」＝尚太 − 上展（紅＝尚太貴、綠＝尚太便宜）；叫貨量＝近 3 個月兩店合計；「叫便宜的可省」＝近 3 個月若都跟便宜那家叫，省多少。</div><div class="scroll"><table class="tight" style="min-width:1180px"><thead><tr><th style="width:26px;position:sticky;left:0;background:var(--card);z-index:2"></th>${th('name', '品項', 'style="text-align:left;position:sticky;left:26px;background:var(--card);z-index:2;min-width:110px"')}<th>規格</th>${th('ym', '最新月')}${th('a', '尚太', `style="color:${VC.尚太}"`)}${th('b', '上展', `style="color:${VC.上展}"`)}${th('diff', '差')}${th('cheap', '便宜')}${th('recent', '近期誰便宜')}${th('qa', '叫貨 尚太', `style="color:${VC.尚太}"`)}${th('qb', '叫貨 上展', `style="color:${VC.上展}"`)}${th('save', '叫便宜的可省')}${th('vola', '波動 尚太')}${th('volb', '波動 上展')}${th('mkt', '市場月均')}</tr></thead><tbody>`
+    const yms = selYms()
+    const topYm = D.months[D.months.length - 1]
+    let h = `<div class="hint" style="margin-bottom:6px;display:flex;gap:8px;flex-wrap:wrap;align-items:center"><span>${rs.length} 項・價格＝最新月 ${esc(topYm.slice(2).replace('-', '/'))} 報價（不是的在品名旁標月份）・綠底＝便宜那家・差＝尚太比上展貴幾 %・誰便宜＝近期尚太／上展各便宜幾個月・叫貨量／金額＝${ymLabel(f.ym)}兩店合計・可省＝若都跟便宜那家叫・主要用在＝用到這物料的餐點（×近 3 個月賣幾份）・波動＝近一年最低→最高漲幾 %。點欄名排序、拖表頭右緣改欄寬、點 ${IC.pin} 釘選置頂、點品項展開細節。</span>${Object.keys(colW).length ? `<span onclick="_vgColReset()" style="text-decoration:underline;cursor:pointer">欄寬還原</span>` : ''}</div>`
+    const sumDef = COLS.reduce((t, c) => t + c[2], 0) // 預設寬只當「比例」：沒拖過的欄位依比例分可用寬度（填滿、不出橫捲）；拖過的欄位用 px
+    h += `<div class="scroll" style="overflow-x:auto"><table class="tight" style="width:100%;table-layout:fixed;min-width:1040px"><colgroup>${COLS.map(c => `<col data-k="${c[0]}" style="width:${colW[c[0]] ? colW[c[0]] + 'px' : (Math.round(c[2] / sumDef * 1000) / 10) + '%'}">`).join('')}</colgroup><thead><tr>`
+    for (const c of COLS) {
+      const sticky = c[0] === 'pin' ? 'position:sticky;left:0;z-index:2;background:var(--card)' : c[0] === 'name' ? 'position:sticky;left:' + (colW.pin || 26) + 'px;z-index:2;background:var(--card)' : ''
+      const sortable = c[0] !== 'pin'
+      h += `<th style="position:relative;${sticky};text-align:${c[3] || 'right'};white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:${sortable ? 'pointer' : 'default'};${f.sort === c[0] ? 'color:var(--ink)' : ''}${c[0] === 'a' ? ';color:' + VC.尚太 : c[0] === 'b' ? ';color:' + VC.上展 : ''}" ${sortable ? `onclick="_vgSort('${c[0]}')"` : ''}>${c[1]}${f.sort === c[0] ? (f.dir === 'desc' ? ' ' + IC.dn : ' ' + IC.up) : ''}<span onmousedown="_vgColStart(event,'${c[0]}')" style="position:absolute;top:0;right:0;width:8px;height:100%;cursor:col-resize"></span></th>`
+    }
+    h += `</tr></thead><tbody>`
+    const cell = (inner, extra) => `<td style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;${extra || ''}">${inner}</td>`
     for (const r of rs) {
       const L = r.latest || {}, st = r.stat, mkv = latestMkt(r), mkYm = r.mkt ? Object.keys(r.mkt).sort().pop() : null
-      const o = open.has(r.key), pinned = pins.has(r.key), sv = r.save || {}
-      const stk = `position:sticky;background:${pinned ? 'var(--psoft)' : 'var(--card)'};z-index:1`
-      h += `<tr style="cursor:pointer${pinned ? ';background:var(--psoft)' : ''}" onclick="_vgOpen('${esc(r.key)}')"><td style="${stk};left:0"><span onclick="_vgPin('${esc(r.key)}',event)" title="${pinned ? '取消釘選' : '釘選置頂'}" style="color:${pinned ? COL.y : 'var(--muted)'};cursor:pointer">${pinned ? IC.pinOn : IC.pin}</span></td><td style="text-align:left;${stk};left:26px;min-width:110px"><b>${esc(r.name)}</b>${r.both ? '' : ` <span class="hint" style="font-size:11px">只有${r.s.尚太 ? '尚太' : '上展'}</span>`}${r.crop ? ` <span class="hint" style="font-size:11px">${IC.trend}</span>` : ''}</td><td class="mut">${esc(r.spec || '')} ${esc(r.unit || '')}</td><td>${L.ym ? esc(L.ym.slice(2).replace('-', '/')) : '—'}</td>${priceCell('尚太', r)}${priceCell('上展', r)}<td>${L.diff != null ? (L.diff > 0 ? '+' : '') + nf(L.diff) + ' ' + pctTag(L.pct) : '—'}</td><td>${cheapTag(L.cheaper)}</td><td class="hint" style="font-size:12px">${st ? `<span style="color:${VC.尚太}">尚太 ${st.尚太便宜}</span>／<span style="color:${VC.上展}">上展 ${st.上展便宜}</span>${st.一樣 ? '／同 ' + st.一樣 : ''} 月` : '—'}</td><td style="color:${VC.尚太}">${r.qty3 && r.qty3.尚太 ? nf(r.qty3.尚太) + ` <span class="hint" style="font-size:11px">${esc(r.qtyUnit)}</span>` : '<span class="mut">—</span>'}</td><td style="color:${VC.上展}">${r.qty3 && r.qty3.上展 ? nf(r.qty3.上展) + ` <span class="hint" style="font-size:11px">${esc(r.qtyUnit)}</span>` : '<span class="mut">—</span>'}</td><td>${sv.total ? `<b style="color:${COL.g}">${sv.total.toLocaleString()} 元</b> <span class="hint" style="font-size:11px">改叫${esc(sv.to)}</span>` : (r.both ? '<span class="mut">0</span>' : '<span class="mut">—</span>')}</td><td class="hint" style="font-size:12px">${volTag(r.vol尚太)}</td><td class="hint" style="font-size:12px">${volTag(r.vol上展)}</td><td>${mkv != null ? nf(mkv) + ` <span class="hint" style="font-size:11px">${mkYm.slice(5)}月</span>` : '<span class="mut">—</span>'}</td></tr>`
-      if (o) h += `<tr><td colspan="15" style="padding:8px 10px;background:var(--soft)">${detail(r)}</td></tr>`
+      const o = open.has(r.key), pinned = pins.has(r.key), sv = saveOf(r)
+      const bg = pinned ? 'var(--psoft)' : 'var(--card)'
+      const qa = sumYm((r.qty || {}).尚太, yms), qb = sumYm((r.qty || {}).上展, yms), aa = sumYm((r.amt || {}).尚太, yms), ab = sumYm((r.amt || {}).上展, yms)
+      const qcell = (q, amt, v) => q ? `<span style="color:${VC[v]}">${nf(q)} <span class="hint" style="font-size:11px">${esc(r.qtyUnit)}</span></span><div class="hint" style="font-size:11px">NT$${Math.round(amt).toLocaleString()}</div>` : '<span class="mut">—</span>'
+      h += `<tr style="cursor:pointer${pinned ? ';background:var(--psoft)' : ''}" onclick="_vgOpen('${esc(r.key)}')">`
+        + cell(`<span onclick="_vgPin('${esc(r.key)}',event)" title="${pinned ? '取消釘選' : '釘選置頂'}" style="color:${pinned ? COL.y : 'var(--muted)'};cursor:pointer">${pinned ? IC.pinOn : IC.pin}</span>`, `position:sticky;left:0;z-index:1;background:${bg}`)
+        + cell(`<b title="${esc(r.name)}">${esc(r.name)}</b> <span class="hint" style="font-size:11px">${r.unit && !/公斤|kg/i.test(r.unit) ? '／' + esc(r.unit) : ''}${L.ym && L.ym !== topYm ? ' ' + esc(L.ym.slice(2).replace('-', '/')) : ''}${r.both ? '' : '・只有' + (r.s.尚太 ? '尚太' : '上展')}</span>${r.crop ? ` <span class="hint" style="font-size:11px">${IC.trend}</span>` : ''}`, `text-align:left;position:sticky;left:${colW.pin || 26}px;z-index:1;background:${bg}`)
+        + priceCell('尚太', r) + priceCell('上展', r)
+        + cell(L.pct != null ? `<span title="尚太−上展 ${L.diff > 0 ? '+' : ''}${nf(L.diff)} 元">${pctTag(L.pct)}</span>` : '—')
+        + cell(st ? `<span title="近期尚太便宜 ${st.尚太便宜} 個月／上展便宜 ${st.上展便宜} 個月${st.一樣 ? '／一樣 ' + st.一樣 : ''}"><b style="color:${VC.尚太}">${st.尚太便宜}</b><span class="hint">／</span><b style="color:${VC.上展}">${st.上展便宜}</b></span>` : '—')
+        + cell(qcell(qa, aa, '尚太')) + cell(qcell(qb, ab, '上展'))
+        + cell(sv.total ? `<b style="color:${COL.g}">${sv.total.toLocaleString()} 元</b><div class="hint" style="font-size:11px">改叫${esc(sv.to)}</div>` : (r.both ? '<span class="mut">0</span>' : '<span class="mut">—</span>'))
+        + cell(usesCell(r), 'text-align:left;font-size:12px;white-space:normal;line-height:1.35;max-height:2.8em')
+        + cell(volPct(r.vol尚太)) + cell(volPct(r.vol上展))
+        + cell(mkv != null ? `<span title="台北一市 ${mkYm} 批發月均">${nf(mkv)}</span>` : '<span class="mut">—</span>')
+        + `</tr>`
+      if (o) h += `<tr><td colspan="${COLS.length}" style="padding:8px 10px;background:var(--soft);white-space:normal">${detail(r)}</td></tr>`
     }
     return h + '</tbody></table></div>'
   }
-  // v4.70.71 便宜的直接標（張良 2026-10-12）：便宜那家綠底＋勾、貴的淡；一樣就兩邊普通
-  const priceCell = (v, r) => { const L = r.latest || {}; const val = r.s[v] ? (L[v] != null ? L[v] : lastOf(r.s[v])) : null; if (val == null) return '<td class="mut">—</td>'; const win = L.cheaper === v, lose = L.cheaper && L.cheaper !== '一樣' && L.cheaper !== v; return `<td style="color:${VC[v]};font-weight:800;${win ? 'background:rgba(61,190,108,.22);box-shadow:inset 0 0 0 1px rgba(61,190,108,.6);border-radius:6px' : ''}${lose ? 'opacity:.55' : ''}">${win ? `<span style="color:${COL.g}">${IC.check}</span> ` : ''}${nf(val)}</td>` }
+  const volPct = v => v ? `<span title="${nf(v.min)}～${nf(v.max)} 元" style="color:${(v.pct || 0) >= 100 ? COL.r : (v.pct || 0) >= 50 ? COL.y : COL.m};font-weight:700">${v.pct == null ? '—' : v.pct + '%'}</span>` : '<span class="mut">—</span>'
   const volTag = v => v ? `${nf(v.min)}～${nf(v.max)} <b style="color:${(v.pct || 0) >= 100 ? COL.r : (v.pct || 0) >= 50 ? COL.y : COL.m}">${v.pct == null ? '' : v.pct + '%'}</b>` : '—'
   function detail (r) {
     const mos = D.months
@@ -122,9 +169,11 @@
     for (const v of D.vendors) if (r.s[v]) h += `<tr><td style="text-align:left;color:${VC[v]};font-weight:800">${v}</td>${mos.map(m => { const p = r.s[v][m]; if (p == null) return '<td><span class="mut">—</span></td>'; const o = r.both ? r.s[v === '尚太' ? '上展' : '尚太'][m] : null; const win = o != null && p < o, lose = o != null && p > o; return `<td style="${win ? 'background:rgba(61,190,108,.22);color:' + COL.g + ';font-weight:800' : ''}${lose ? 'opacity:.55' : ''}">${nf(p)}</td>` }).join('')}</tr>`
     if (r.both) h += `<tr><td style="text-align:left">差（尚太−上展）</td>${mos.map(m => { const a = r.s.尚太[m], b = r.s.上展[m]; if (a == null || b == null) return '<td class="mut">—</td>'; const d = a - b; return `<td style="color:${d > 0 ? COL.r : d < 0 ? COL.g : COL.m}">${d > 0 ? '+' : ''}${nf(d)}</td>` }).join('')}</tr>`
     if (r.mkt) h += `<tr><td style="text-align:left;color:${COL.m}">市場月均</td>${mos.map(m => `<td class="mut">${r.mkt[m] == null ? '—' : nf(r.mkt[m])}</td>`).join('')}</tr>`
-    for (const v of D.vendors) if (r.qty && r.qty[v]) h += `<tr><td style="text-align:left;color:${VC[v]}">叫貨量 ${v} <span class="hint" style="font-size:11px">${esc(r.qtyUnit)}</span></td>${mos.map(m => `<td>${r.qty[v][m] ? nf(r.qty[v][m]) : '<span class="mut">—</span>'}</td>`).join('')}</tr>`
+    for (const v of D.vendors) if (r.qty && r.qty[v]) h += `<tr><td style="text-align:left;color:${VC[v]}">叫貨量 ${v} <span class="hint" style="font-size:11px">${esc(r.qtyUnit)}</span></td>${mos.map(m => `<td>${r.qty[v][m] ? nf(r.qty[v][m]) : '<span class="mut">—</span>'}</td>`).join('')}</tr><tr><td style="text-align:left;color:${VC[v]}">叫貨金額 ${v}</td>${mos.map(m => `<td class="hint">${(r.amt[v] || {})[m] ? r.amt[v][m].toLocaleString() : '—'}</td>`).join('')}</tr>`
     if (r.save && r.save.total) h += `<tr><td style="text-align:left;color:${COL.g}">叫便宜的可省</td>${mos.map(m => `<td style="color:${COL.g}">${r.save.byYm[m] ? r.save.byYm[m].toLocaleString() : '<span class="mut">—</span>'}</td>`).join('')}</tr>`
-    h += `</tbody></table></div><div class="hint" style="font-size:12px">叫貨量＝A Beach＋GROUN:D 叫貨單合計（近 ${(D.orders || {}).months ? D.orders.months.length : 6} 個月）；可省＝那個月跟貴的那家叫的量 × 兩家價差。</div>${r.crop ? `<div class="hint" style="font-size:12px">市場對照作物：${esc(r.crop)}（台北一市批發月均，元／公斤）。對錯了跟 CC 說。</div>` : `<div class="hint" style="font-size:12px">這個品項還沒對到農業部作物名（市場行情只有生鮮蔬果有）。</div>`}</div>`
+    h += `</tbody></table></div><div class="hint" style="font-size:12px">叫貨量／金額＝A Beach＋GROUN:D 叫貨單合計（近 ${(D.orders || {}).months ? D.orders.months.length : 6} 個月）；可省＝那個月跟貴的那家叫的量 × 兩家價差。</div>`
+    if (r.uses && r.uses.menus.length) { const m3 = D.ordMonths3 || []; h += `<div style="margin-top:8px"><b>主要用在 ${r.uses.nMenus} 道餐點</b> <span class="hint" style="font-size:12px">每份成本＝這個物料在該餐點一份裡的成本（依 10-06 食譜行）；賣出＝POS 兩店近 3 個月；月成本＝每份成本 × 賣出</span><div class="scroll"><table class="tight" style="min-width:520px;margin-top:4px"><thead><tr><th style="text-align:left">餐點</th><th>每份成本</th>${m3.map(m => `<th>${m.slice(5)}月 賣出</th>`).join('')}<th>近 3 月賣出</th><th>近 3 月成本</th></tr></thead><tbody>` + r.uses.menus.map(m => `<tr><td style="text-align:left">${esc(m.menu)}</td><td>${nf(m.per)} 元</td>${m3.map(ym => `<td>${m.sold[ym] ? nf(m.sold[ym]) : '<span class="mut">—</span>'}</td>`).join('')}<td><b>${nf(m.sold3)}</b></td><td style="color:${COL.o}">${m.cost3 ? m.cost3.toLocaleString() + ' 元' : '—'}</td></tr>`).join('') + `</tbody></table></div>${r.uses.recipes.length ? `<div class="hint" style="font-size:12px;margin-top:4px">也用在半成品：${esc(r.uses.recipes.join('、'))}</div>` : ''}</div>` } else if (r.uses) { h += `<div class="hint" style="margin-top:8px;font-size:12px">食譜裡沒有直接用到這個物料的在賣餐點${r.uses.recipes.length ? '；用在半成品：' + esc(r.uses.recipes.join('、')) : ''}。</div>` } else { h += `<div class="hint" style="margin-top:8px;font-size:12px">阿桑主檔找不到這個品項名（對不到代碼），所以查不到用在哪。</div>` }
+    h += `${r.crop ? `<div class="hint" style="font-size:12px">市場對照作物：${esc(r.crop)}（台北一市批發月均，元／公斤）。對錯了跟 CC 說。</div>` : `<div class="hint" style="font-size:12px">這個品項還沒對到農業部作物名（市場行情只有生鮮蔬果有）。</div>`}</div>`
     return h
   }
 
