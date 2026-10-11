@@ -1,4 +1,4 @@
-// 📥 統一收件匣 v4.70.52（視窗撐滿鎖頁、去多餘文字；回覆權限分開勾；圖片氣泡貼合圖片大小；+傳圖片／檔案、貼上截圖；修回過一次後永遠推播；+轉發：接到收件匣後原系統照收）（溝通中樞第三部：三個官方帳號的客人對話集中一頁；只收＋從 app 回覆；單色 stroke SVG）
+// 📥 統一收件匣 v4.70.54（提醒通知誰／LINE 群可選；視窗撐滿鎖頁、去多餘文字；回覆權限分開勾；圖片氣泡貼合圖片大小；+傳圖片／檔案、貼上截圖；修回過一次後永遠推播；+轉發：接到收件匣後原系統照收）（溝通中樞第三部：三個官方帳號的客人對話集中一頁；只收＋從 app 回覆；單色 stroke SVG）
 // 版型同聊天室：桌機左右雙欄、手機兩層；對話每 6 秒輪詢、清單每 20 秒
 const IB_ICON = {
   back: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>',
@@ -287,7 +287,11 @@ function ibSetRender() {
     <h3 style="font-size:14px;margin:14px 0 0">帳號連線</h3>${acc}
     <h3 style="font-size:14px;margin:16px 0 0">誰看得到哪個帳號</h3>${permHtml}
     <h3 style="font-size:14px;margin:16px 0 0">常用回覆範本</h3>${tplHtml}
-    <h3 style="font-size:14px;margin:16px 0 0">沒人回覆提醒</h3><div style="display:flex;gap:8px;align-items:center;font-size:14px">超過 <input id="ibRemind" type="number" min="5" max="1440" value="${(d.cfg && d.cfg.remindMin) || 30}" style="width:70px;border:1px solid var(--line);border-radius:8px;padding:6px;background:var(--card);color:inherit"> 分鐘沒回 → 再推播一次＋LINE 私訊審核人（每小時檢查）</div>
+    <h3 style="font-size:14px;margin:16px 0 0">沒人回覆提醒</h3><div style="display:flex;gap:8px;align-items:center;font-size:14px;flex-wrap:wrap">超過 <input id="ibRemind" type="number" min="5" max="1440" value="${(d.cfg && d.cfg.remindMin) || 30}" style="width:70px;border:1px solid var(--line);border-radius:8px;padding:6px;background:var(--card);color:inherit"> 分鐘沒回 → 推播＋LINE 私訊下面勾的人（每小時檢查）</div>
+    ${(d.accounts || []).map(a => { const rc = ((d.cfg && d.cfg.remind) || {})[a.key] || {}; return `<div style="margin-top:10px;border:1px solid var(--line);border-radius:12px;padding:10px 12px"><b style="font-size:14px;color:${a.color}">${ibEsc(a.name)}</b>
+      <div style="margin-top:6px"><b style="font-size:13px">通知誰</b><span class="hint" style="font-size:11.5px">　沒勾＝可回覆的人＋審核人</span>${grid('ibRemind', a, rc.people || [])}</div>
+      <div style="margin-top:8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap"><b style="font-size:13px">LINE 群組</b><select class="ibRemindGrp" data-acct="${a.key}" style="border:1px solid var(--line);border-radius:8px;padding:6px;background:var(--card);color:inherit;font-size:13px;max-width:260px"><option value="">不發群組</option>${(d.groups || []).map(g => `<option value="${ibEsc(g.gid)}"${rc.group === g.gid ? ' selected' : ''}>${ibEsc(g.name)}</option>`).join('')}</select><span class="hint" style="font-size:11.5px">由 DD 發到群；群組推播按群內人數扣 DD 額度</span></div>
+    </div>` }).join('')}
     <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px"><button class="mini on" onclick="ibSetSave()">儲存設定</button></div>`
 }
 function ibTplRow(t, i) { return `<div class="ibTpl" style="display:flex;gap:6px;margin-top:6px;align-items:flex-start"><input class="ibTplTitle" value="${ibEsc(t.title || '')}" placeholder="標題" style="width:110px;border:1px solid var(--line);border-radius:8px;padding:7px;background:var(--card);color:inherit;font-size:13px"><textarea class="ibTplText" rows="2" placeholder="內容" style="flex:1;border:1px solid var(--line);border-radius:8px;padding:7px;background:var(--card);color:inherit;font-size:13px;font-family:inherit">${ibEsc(t.text || '')}</textarea><button class="mini" style="padding:5px 8px" onclick="this.parentNode.remove()">刪</button></div>` }
@@ -298,7 +302,8 @@ async function ibSetSave() {
   for (const a of (_ibSet.accounts || [])) { perm[a.key] = perm[a.key] || []; reply[a.key] = reply[a.key] || [] }
   const templates = [...document.querySelectorAll('#ibOv .ibTpl')].map(r => ({ title: r.querySelector('.ibTplTitle').value, text: r.querySelector('.ibTplText').value })).filter(t => t.text.trim())
   const remindMin = +((document.getElementById('ibRemind') || {}).value || 30)
-  const d = await ibPost({ op: 'cfg', cfg: { perm, reply, templates, remindMin } })
+  const remind = {}; for (const a of (_ibSet.accounts || [])) { remind[a.key] = { people: [...document.querySelectorAll(`#ibOv .ibRemind[data-acct="${a.key}"]:checked`)].map(x => x.value), group: ((document.querySelector(`#ibOv .ibRemindGrp[data-acct="${a.key}"]`) || {}).value) || '' } }
+  const d = await ibPost({ op: 'cfg', cfg: { perm, reply, remind, templates, remindMin } })
   if (!d || !d.ok) { libToast((d && d.error) || '沒存到', true); return }
   libToast('設定已儲存'); document.getElementById('ibOv').remove()
   const d2 = await ibGet('op=list'); if (d2 && d2.ok) { _ibD = d2; ibRenderList() }
