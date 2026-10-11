@@ -149,7 +149,7 @@ export async function ingestEvent(a, ev, destination) {
         if (dl && dl.buf.length) { const path = `inbox/${a.key}/${uid}/${t.toString(36)}.${extOf(dl.mime, m.fileName)}`; if (await uploadPrivate(path, dl.buf, dl.mime)) { msg.media = path; msg.mime = dl.mime; msg.size = dl.buf.length } }
       }
     } else { text = '（' + (m.type || '訊息') + '）' }
-    conv.replyToken = ev.replyToken || ''; conv.replyT = nowIso()
+    conv.replyToken = ev.replyToken || ''; conv.replyT = nowIso(); conv.replyUsed = false // 每則新訊息都有新的 replyToken（v4.70.49 修：之前回過一次後永遠走 push）
     conv.unread = (conv.unread || 0) + 1
     if (conv.status === 'done') conv.status = 'new'
     conv.lastInT = msg.t
@@ -216,6 +216,10 @@ export async function sendOut({ who, mgr, cfg, id, text, kind, extra }) {
   text = String(text || '').trim(); if (!text) return { ok: false, error: '沒有內容' }
   const ck = convKey(acct, uid); const conv = await kvGet(ck); if (!conv) return { ok: false, error: '找不到這個對話' }
   const messages = [{ type: 'text', text: text.slice(0, 4900) }]
+  return deliver({ a, acct, uid, ck, conv, who, messages, msgPatch: { type: 'text', text }, lastText: text })
+}
+// 送出（文字或媒體）：50 秒內有未用過的 replyToken → reply（免費），否則 push；存 out 訊息＋更新對話
+async function deliver({ a, acct, uid, ck, conv, who, messages, msgPatch, lastText }) {
   const fresh = conv.replyToken && conv.replyT && (Date.now() - new Date(conv.replyT).getTime()) < 50e3 && !conv.replyUsed
   let mode = fresh ? 'reply' : 'push', r
   if (fresh) {
@@ -224,12 +228,32 @@ export async function sendOut({ who, mgr, cfg, id, text, kind, extra }) {
   } else r = await lineApi(a, '/v2/bot/message/push', { method: 'POST', body: JSON.stringify({ to: uid, messages }) })
   if (!r.ok) return { ok: false, error: `LINE 不收（${r.status}）：${String(r.data?.message || '').slice(0, 80)}` }
   const t = Date.now(); const mk = msgKey(acct, uid, t)
-  const msg = { id: mk, convId: conv.id, t: new Date(t).toISOString(), dir: 'out', type: 'text', text, by: who.name, mode }
-  conv.replyUsed = true; conv.last = { text: text.slice(0, 80), t: msg.t, dir: 'out', by: who.name }; conv.lastT = msg.t; conv.lastOutT = msg.t; conv.unread = 0
+  const msg = { id: mk, convId: conv.id, t: new Date(t).toISOString(), dir: 'out', by: who.name, mode, ...msgPatch }
+  conv.replyUsed = true; conv.last = { text: String(lastText || '').slice(0, 80), t: msg.t, dir: 'out', by: who.name }; conv.lastT = msg.t; conv.lastOutT = msg.t; conv.unread = 0
   if (conv.status === 'new') conv.status = 'open'
   if (!conv.assignee) conv.assignee = who.name
   await Promise.all([kvInsert(mk, msg), kvSet(ck, conv)])
   return { ok: true, msg, mode, conv: { status: conv.status, assignee: conv.assignee } }
+}
+// 送圖片／檔案（v4.70.49 張良「能上傳檔案或截圖貼上嗎」）：圖片→LINE 圖片訊息（LINE 要抓得到的 https 網址＝私桶簽名一年）；其他檔案 LINE 沒有「檔案訊息」→ 用文字附連結
+export async function sendMedia({ who, mgr, cfg, id, dataUrl, name }) {
+  const [acct, uid] = splitId(id); const a = acctOf(acct)
+  if (!a || !uid) return { ok: false, error: '找不到這個對話' }
+  if (!canSeeAcct(cfg, who, mgr, acct)) return { ok: false, error: '你沒有這個帳號的收件匣權限' }
+  if (!configured(a)) return { ok: false, error: `${a.name} 還沒設金鑰，不能回覆` }
+  const m = /^data:([\w\/+.-]+);base64,(.+)$/.exec(String(dataUrl || '')); if (!m) return { ok: false, error: '檔案格式不對' }
+  const buf = Buffer.from(m[2], 'base64'); const mime = m[1]
+  if (!buf.length) return { ok: false, error: '檔案是空的' }
+  if (buf.length > 10 * 1024 * 1024) return { ok: false, error: '檔案太大（上限 10MB）' }
+  const ck = convKey(acct, uid); const conv = await kvGet(ck); if (!conv) return { ok: false, error: '找不到這個對話' }
+  const fileName = String(name || '').trim().slice(0, 80) || (mime.startsWith('image/') ? '圖片' : '檔案')
+  const isImg = /^image\/(jpeg|png)$/.test(mime) // LINE 圖片訊息只收 JPEG/PNG（前端已轉 JPEG）
+  const ts = Date.now(); const path = `inbox/${acct}/${uid}/out_${ts.toString(36)}.${extOf(mime, fileName)}`
+  if (!(await uploadPrivate(path, buf, mime))) return { ok: false, error: '上傳失敗' }
+  const url = await signedUrl(path, 365 * 86400); if (!url) return { ok: false, error: '產生網址失敗' }
+  const messages = isImg ? [{ type: 'image', originalContentUrl: url, previewImageUrl: url }] : [{ type: 'text', text: `📎 ${fileName}\n${url}` }]
+  const msgPatch = isImg ? { type: 'image', media: path, mime, fileName, size: buf.length } : { type: 'file', media: path, mime, fileName, size: buf.length, text: `📎 ${fileName}` }
+  return deliver({ a, acct, uid, ck, conv, who, messages, msgPatch, lastText: isImg ? '（圖片）' : `（檔案）${fileName}` })
 }
 
 // ── 狀態／指派／備註 ──
