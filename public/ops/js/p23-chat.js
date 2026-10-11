@@ -1,4 +1,4 @@
-// 💬 聊天室 v4.70.46（溝通中樞項目 3a「個人聊天室」：像 Google Chat——全體室／每人一間「與主管」／自建群；主管看得到全部；@DD 叫 AI）
+// 💬 聊天室 v4.70.52（視窗撐滿鎖頁、去多餘文字；溝通中樞項目 3a「個人聊天室」：像 Google Chat——全體室／每人一間「與主管」／自建群；主管看得到全部；@DD 叫 AI）
 // 這版先輪詢（開著的聊天室每 6 秒、清單每 25 秒）；UI 單色 stroke SVG（10-04 規則）；手機＝清單→聊天室兩層，桌機＝左右雙欄
 const CH_ICON = {
   back: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>',
@@ -32,11 +32,11 @@ function chUnreadTotal() { return (_chRooms || []).reduce((t, r) => t + (r.unrea
 function chRender() {
   const mobile = window.innerWidth < 760
   app.innerHTML = `<section style="padding:0;overflow:hidden">
-    <div id="chWrap" style="display:flex;height:calc(100vh - ${mobile ? 232 : 150}px);min-height:360px">
-      <div id="chList" style="width:${mobile ? '100%' : '280px'};flex:none;border-right:${mobile ? '0' : '1px solid var(--line)'};overflow:auto;${mobile && _chCur ? 'display:none' : ''}"></div>
+    <div id="chWrap" style="display:flex;height:60vh">
+      <div id="chList" style="width:${mobile ? '100%' : '280px'};flex:none;border-right:${mobile ? '0' : '1px solid var(--line)'};overflow:auto;overscroll-behavior:contain;${mobile && _chCur ? 'display:none' : ''}"></div>
       <div id="chPane" style="flex:1;display:${mobile && !_chCur ? 'none' : 'flex'};flex-direction:column;min-width:0"></div>
     </div></section>`
-  chRenderList(); chRenderPane()
+  if (typeof paneFit === 'function') paneFit('chWrap'); chRenderList(); chRenderPane()
 }
 function chRenderList() {
   const el = document.getElementById('chList'); if (!el) return
@@ -51,7 +51,7 @@ function chRenderList() {
 function chRenderPane() {
   const el = document.getElementById('chPane'); if (!el) return
   const r = (_chRooms || []).find(x => x.id === _chCur)
-  if (!r) { el.innerHTML = '<div class="hint" style="margin:auto;text-align:center;padding:30px">左邊選一個聊天室，或按「新聊天室」。<br>在訊息裡打 <b>@DD</b> 可以叫 AI 小幫手回答。</div>'; return }
+  if (!r) { el.innerHTML = '<div class="hint" style="margin:auto;text-align:center;padding:30px">選一個聊天室</div>'; return }
   const mobile = window.innerWidth < 760
   const canEdit = r.kind === 'group' && (_chMe.mgr || true)
   el.innerHTML = `<div style="display:flex;align-items:center;gap:8px;padding:10px 12px;border-bottom:1px solid var(--line)">
@@ -59,9 +59,9 @@ function chRenderPane() {
       <div style="flex:1;min-width:0"><b style="font-size:16px">${chEsc(r.name)}</b><div class="hint" style="font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${r.kind === 'all' ? '全部夥伴' : r.kind === 'personal' ? '只有本人與主管看得到' : CH_ICON.users + ' ' + chEsc((r.memberNames || []).join('、'))}</div></div>
       ${r.kind === 'group' ? `<button class="mini" style="padding:6px 8px" onclick="chRoomSettings('${chEsc(r.id)}')" title="聊天室設定">${CH_ICON.gear}</button>` : ''}
     </div>
-    <div id="chMsgs" style="flex:1;overflow:auto;padding:12px;display:flex;flex-direction:column;gap:8px"><div class="hint">讀取中…</div></div>
+    <div id="chMsgs" style="flex:1;overflow:auto;overscroll-behavior:contain;padding:12px;display:flex;flex-direction:column;gap:8px"><div class="hint">讀取中…</div></div>
     <div style="display:flex;gap:8px;padding:10px 12px;border-top:1px solid var(--line);align-items:flex-end">
-      <textarea id="chInput" rows="1" placeholder="輸入訊息… 打 @DD 叫 AI 回答（Enter 送出、Shift+Enter 換行）" style="flex:1;border:1px solid var(--line);border-radius:12px;padding:10px 12px;font-size:15px;font-family:inherit;resize:none;max-height:140px;background:var(--card);color:inherit" oninput="this.style.height='auto';this.style.height=Math.min(140,this.scrollHeight)+'px'" onkeydown="if(event.key==='Enter'&&!event.shiftKey&&!event.isComposing&&event.keyCode!==229){event.preventDefault();chSend()}"></textarea>
+      <textarea id="chInput" rows="1" placeholder="輸入訊息…（@DD 可叫 AI）" style="flex:1;border:1px solid var(--line);border-radius:12px;padding:10px 12px;font-size:15px;font-family:inherit;resize:none;max-height:140px;background:var(--card);color:inherit" oninput="this.style.height='auto';this.style.height=Math.min(140,this.scrollHeight)+'px'" onkeydown="if(event.key==='Enter'&&!event.shiftKey&&!event.isComposing&&event.keyCode!==229){event.preventDefault();chSend()}"></textarea>
       <button class="mini on" style="padding:10px 14px;display:flex;align-items:center;gap:4px" onclick="chSend()">${CH_ICON.send}</button>
     </div>`
 }

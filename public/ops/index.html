@@ -35,6 +35,7 @@
   /* v4.70.20 張良 2026-10-10「不管哪個介面打字畫面都不要放大」：iOS Safari 只要輸入框字體<16px，聚焦時就會自動放大整頁。全域鎖 16px(蓋過內聯小字)根治 focus auto-zoom；仍保留雙指手動縮放 */
   input,textarea,select{font-size:16px !important}
   html,body{overscroll-behavior-x:none} /* 擋瀏覽器橫滑返回上一頁（張良 2026-10-02） */
+  html.paneLock,html.paneLock body{overflow:hidden;height:100%;overscroll-behavior:none} html.paneLock .foot{display:none} html.paneLock body{padding-bottom:0} /* v4.70.52 對話視窗鎖頁：收件匣／聊天室撐滿、只有訊息區捲動 */
   body{background:var(--bg);color:var(--text);font-family:-apple-system,"PingFang TC","Noto Sans TC",system-ui,sans-serif;font-size:15px;line-height:1.7}
   .wrap{max-width:980px;margin:0 auto;padding:18px 14px 60px}
   /* v4.65.0 V3 SOP 桌面兩欄：左主流程、右收班彙整+交接；<1200 單欄（手機/平板） */
@@ -188,7 +189,7 @@ tr.rowGD td.hrmStick{background:#2A1C1D}
   <div class="foot">資料每天自動同步（打開即最新）・僅供內部參考與備料使用，請勿外傳連結</div>
 </div>
 <!-- v4.40.0 拆檔（張良「現在先拆好」）：原單一大 script 依原順序切 10 塊，共用全域、順序＝執行順序，新增功能寫新檔別再疊回大檔 -->
-<script src="/ops/js/p01-core.js?v=4741"></script><!-- v4.70.36 全站共用曲線圖 lineChart：XY 軸數字＋滑過浮窗（張良 2026-10-10） -->
+<script src="/ops/js/p01-core.js?v=4742"></script><!-- v4.70.36 全站共用曲線圖 lineChart：XY 軸數字＋滑過浮窗（張良 2026-10-10） -->
 <script src="/ops/js/p02-sop.js?v=4711"></script>
 <script src="/ops/js/p03-sopedit.js?v=4660"></script>
 <script src="/ops/js/p04-inv-meet.js?v=4560"></script>
@@ -204,8 +205,8 @@ tr.rowGD td.hrmStick{background:#2A1C1D}
 <script src="/ops/js/p14-social.js?v=4736"></script><!-- v4.70.32 成長曲線可切互動／觸及／收藏／瀏覽（張良 2026-10-10） --><!-- v4.70.31 成長曲線加 XY 軸刻度＋滑鼠浮標（張良 2026-10-10） --><!-- v4.70.29 AI 中樞：設定頁「AI 模型」三家各功能選用＋素材庫 AI 生圖（張良 2026-10-10） --><!-- 行銷大師（原「社群」）發文＋成效（張良 2026-10-09 v4.70.18 側邊欄＋頁面標題改名「社群」→「行銷大師」，真正生效處在 p09 TAB_DEF） -->
 <script src="/ops/js/p15-library.js?v=4702"></script><!-- 📁 通用文件庫（雲端硬碟：資料夾/上傳/權限/DD歸檔撈檔 張良 2026-10-08 v4.70.2：預覽改App內嵌不開分頁） -->
 <script src="/ops/js/p16-matlib.js?v=4737"></script><!-- v4.70.42 叫貨單兩店（GD 也列） -->
-<script src="/ops/js/p23-chat.js?v=4747"></script>
-<script src="/ops/js/p24-inbox.js?v=4751"></script><!-- 📥 統一收件匣 v4.70.47（三個官方帳號只收＋從 app 回覆） --><!-- v4.70.46 中文選字按 Enter 不送出（isComposing／keyCode 229） --><!-- 💬 聊天室 v4.70.45（溝通中樞項目 3a：全體／個人與主管／自建群／@DD） -->
+<script src="/ops/js/p23-chat.js?v=4748"></script>
+<script src="/ops/js/p24-inbox.js?v=4752"></script><!-- 📥 統一收件匣 v4.70.47（三個官方帳號只收＋從 app 回覆） --><!-- v4.70.46 中文選字按 Enter 不送出（isComposing／keyCode 229） --><!-- 💬 聊天室 v4.70.45（溝通中樞項目 3a：全體／個人與主管／自建群／@DD） -->
 <script src="/ops/js/p17-costtodo.js?v=4733"></script>
 <script src="/ops/js/p19-matcard.js?v=4736"></script>
 <script src="/ops/js/p20-recipe.js?v=4736"></script>
