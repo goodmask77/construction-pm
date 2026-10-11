@@ -1,4 +1,4 @@
-// 📥 統一收件匣 v4.70.47（溝通中樞 docs/COMMS_PLAN.md 第三部 項目 5「只收不回」＋項目 6「從 app 回覆」合一；張良 2026-10-11「你先建構所有需要的，最後剩官方帳號金鑰」）
+// 📥 統一收件匣 v4.70.53（帳號顯示名改 A Beach／GROUN:D／104招募；溝通中樞 docs/COMMS_PLAN.md 第三部 項目 5「只收不回」＋項目 6「從 app 回覆」合一；張良 2026-10-11「你先建構所有需要的，最後剩官方帳號金鑰」）
 // 設計：
 //  - 三個官方帳號（A Beach 客服／GROUN:D 客服／招募）共用一個接收端點 api/inbox-webhook.js；每個請求用「哪個帳號的 channel secret 驗得過」決定是哪個帳號（不用先知道 destination）
 //  - 金鑰只在環境變數：LINE_OA_<KEY>_SECRET／LINE_OA_<KEY>_TOKEN（KEY=AB／GD／HR）；前端永遠看不到
@@ -12,9 +12,9 @@ import { SB_URL, SB_KEY, uploadPrivate, signedUrl, linePush } from './_onboard.j
 
 const clean = (v) => (v || '').trim().replace(/^["']|["']$/g, '').replace(/^[A-Za-z0-9_]+=/, '').trim()
 export const ACCOUNTS = [
-  { key: 'ab', name: 'A Beach 客服', env: 'LINE_OA_AB', color: '#0ea5e9' },
-  { key: 'gd', name: 'GROUN:D 客服', env: 'LINE_OA_GD', color: '#ce1611' },
-  { key: 'hr', name: '招募', env: 'LINE_OA_HR', color: '#16a34a' },
+  { key: 'ab', name: 'A Beach', env: 'LINE_OA_AB', color: '#0ea5e9' },
+  { key: 'gd', name: 'GROUN:D', env: 'LINE_OA_GD', color: '#ce1611' },
+  { key: 'hr', name: '104招募', env: 'LINE_OA_HR', color: '#16a34a' }, // v4.70.53 名稱照張良 10-11：A Beach／GROUN:D／104招募
 ]
 export const acctOf = (key) => ACCOUNTS.find(a => a.key === key) || null
 export const creds = (a) => ({ secret: clean(process.env[a.env + '_SECRET']), token: clean(process.env[a.env + '_TOKEN']) })

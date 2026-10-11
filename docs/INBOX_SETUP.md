@@ -22,9 +22,9 @@
 
 | 帳號 | Channel secret | Channel access token |
 | --- | --- | --- |
-| A Beach 客服 | ✅ 已給（10-11） | ☐ 等小夏給現用 token |
-| GROUN:D 客服 | ✅ 已接通（10-11） | ✅ |
-| 招募 | ✅ 已接通（10-11） | ✅ |
+| A Beach | ✅ 已給（10-11） | ☐ 等小夏給現用 token |
+| GROUN:D | ✅ 已接通（10-11） | ✅ |
+| 104招募 | ✅ 已接通（10-11） | ✅ |
 
 拿到後直接貼給 CC 就好（CC 放進 Vercel 的環境變數，網頁上永遠看不到）。環境變數名稱：`LINE_OA_AB_SECRET`／`LINE_OA_AB_TOKEN`、`LINE_OA_GD_*`、`LINE_OA_HR_*`。
 
