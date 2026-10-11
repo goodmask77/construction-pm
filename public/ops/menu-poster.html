@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=1080" />
 <title>GROUN:D 菜單海報</title>
 <!--
-  菜單海報 HTML 模板（張良 2026-10-10 v1.2：10-11 編輯條加「退出」鈕＋Esc、加「💾 存版本」；v1.1：加 ✨AI 插圖／Logo 變化／標語貼紙層，可拖曳縮放、設定存雲端）
+  菜單海報 HTML 模板（張良 2026-10-10 v1.3：10-11 點選式編輯（Logo／分類標題／品項／底條字級與間距，存雲端）；v1.2：10-11 編輯條加「退出」鈕＋Esc、加「💾 存版本」；v1.1：加 ✨AI 插圖／Logo 變化／標語貼紙層，可拖曳縮放、設定存雲端）
   取代舊 canvas 手刻：用 CSS 排版 → puppeteer 截圖成 PNG。框線/對齊/換行全自動，不再切字。
   資料來源：window.MENU_DATA（截圖腳本/App 注入）；無則用內建 sample（當前菜單含沙拉）。
   直式畫布 1080×1920。字體：Alfa Slab One（英文大標）/ Noto Sans TC（中文）/ Poppins（英文副標）。
@@ -38,41 +38,45 @@
   #mini label{ display:flex; align-items:center; gap:8px; margin:4px 0 } #mini label span{ width:60px; font-size:12px; color:#bbb } #mini input[type=range]{ flex:1 } #mini .v{ width:44px; text-align:right; font-variant-numeric:tabular-nums; font-size:12px }
   #mini .foot{ display:flex; justify-content:space-between; align-items:center; margin-top:8px; font-size:12px; color:#999; gap:6px } #mini .foot a{ color:#9cf; cursor:pointer } #mini .foot button{ padding:5px 10px; border:none; border-radius:8px; background:#555; color:#fff; cursor:pointer; font-weight:700; font-size:12px }
   /* 直式畫布 */
-  #poster{
+  #poster{ --logo:1080px; --head:19px; --h2:30px; --nm:30px; --en:18px; --pr:30px; --ig:10px; --boxpad:12px; --catgap:13px; --colgap:37px; --pad:38px; --foot:23px; --footh:70px; --top:28px;
     width:1080px; height:1920px; background:var(--cream); position:relative;
     font-family:"Noto Sans TC","ChillDINGothic",system-ui,sans-serif; color:var(--red); letter-spacing:.04em;
-    padding:28px 38px 0; display:flex; flex-direction:column;
+    padding:var(--top) var(--pad) 0; display:flex; flex-direction:column;
   }
+  /* 點選式編輯（v1.3）：可點的元素虛線框、選中實線 */
+  body.edit [data-edit]{ cursor:pointer; outline:3px dashed transparent; outline-offset:4px; transition:outline-color .15s; border-radius:6px }
+  body.edit [data-edit]:hover{ outline-color:rgba(206,22,17,.55) }
+  body.edit [data-edit].sel{ outline:3px solid #1a7f37 }
   /* 品牌頭：用官方 logo 圖（brand_v13.png 無襯線粗黑體，照 CIS），不用字型拼 */
-  .brand{ margin:0 -38px 6px; }
-  .brand img{ width:1080px; display:block; }
+  .brand{ margin:0 calc(0px - var(--pad)) 6px; text-align:center; }
+  .brand img{ width:var(--logo); display:inline-block; }
   /* 欄頭 */
-  .colhead{ display:flex; justify-content:space-between; align-items:baseline; font-size:19px; font-weight:700; padding:0 12px; margin-bottom:6px; }
+  .colhead{ display:flex; justify-content:space-between; align-items:baseline; font-size:var(--head); font-weight:700; padding:0 12px; margin-bottom:6px; }
   /* 分類：左右兩欄各自獨立堆疊（非行對齊，官方版式）；#cats 內容整體可被 JS 等比縮放塞進畫布 */
-  .cats{ flex:1; display:flex; gap:37px; align-items:flex-start; transform-origin:top center; }
-  .col{ flex:1; min-width:0; display:flex; flex-direction:column; gap:13px; }
+  .cats{ flex:1; display:flex; gap:var(--colgap); align-items:flex-start; transform-origin:top center; }
+  .col{ flex:1; min-width:0; display:flex; flex-direction:column; gap:var(--catgap); }
   .cat{ }
   .cat h2{ display:flex; align-items:baseline; gap:10px; margin-bottom:6px; padding-left:2px; }
-  .cat h2 .en{ font-family:"Alfa Slab One",serif; font-size:30px; line-height:1; }
-  .cat h2 .zh{ font-size:25px; font-weight:900; letter-spacing:.14em; }
+  .cat h2 .en{ font-family:"Alfa Slab One",serif; font-size:var(--h2); line-height:1; }
+  .cat h2 .zh{ font-size:calc(var(--h2) * .83); font-weight:900; letter-spacing:.14em; }
   .cat h2 .pz{ font-size:14px; font-weight:700; line-height:1.1; }
   /* 品項框 */
-  .box{ border:2px solid var(--red); border-radius:16px; padding:12px 16px 14px; }
+  .box{ border:2px solid var(--red); border-radius:16px; padding:var(--boxpad) 16px calc(var(--boxpad) + 2px); }
   .item{ margin:0; }
-  .item + .item{ margin-top:10px; }
+  .item + .item{ margin-top:var(--ig); }
   .item .row1{ display:flex; align-items:baseline; gap:8px; font-weight:700; }
-  .item .nm{ font-size:30px; font-weight:700; white-space:nowrap; line-height:1.15; letter-spacing:.05em; }
+  .item .nm{ font-size:var(--nm); font-weight:700; white-space:nowrap; line-height:1.15; letter-spacing:.05em; }
   .item .ih{ font-size:20px; font-weight:700; flex:0 0 auto; }
   .item .lead{ flex:1; border-bottom:4px dotted var(--dot); transform:translateY(-6px); min-width:14px; }
-  .item .pr{ font-size:30px; font-weight:800; flex:0 0 auto; font-variant-numeric:tabular-nums; letter-spacing:0; }
+  .item .pr{ font-size:var(--pr); font-weight:800; flex:0 0 auto; font-variant-numeric:tabular-nums; letter-spacing:0; }
   .item .tag{ flex:0 0 auto; font-size:22px; font-weight:800; }
   .item .tag.inc{ background:var(--red); color:var(--cream); border-radius:7px; padding:2px 10px; font-size:19px; }
-  .item .en{ font-family:"Lora",Georgia,serif; color:var(--eng); font-size:18px; font-weight:500; margin-top:2px; letter-spacing:.01em; }
+  .item .en{ font-family:"Lora",Georgia,serif; color:var(--eng); font-size:var(--en); font-weight:500; margin-top:2px; letter-spacing:.01em; }
   .item .en .decaf{ color:var(--red); font-weight:700; margin-left:8px; }
   /* 自動縮字：品名過長時整列縮放，不切字（JS 控制 nm font-size） */
   /* 底部紅條 */
-  .footer{ position:absolute; left:0; right:0; bottom:0; z-index:6; height:70px; background:var(--red); color:var(--cream);
-    display:flex; align-items:center; justify-content:center; font-size:23px; font-weight:700; letter-spacing:.01em; }
+  .footer{ position:absolute; left:0; right:0; bottom:0; z-index:6; height:var(--footh); background:var(--red); color:var(--cream);
+    display:flex; align-items:center; justify-content:center; font-size:var(--foot); font-weight:700; letter-spacing:.01em; }
   .footer b{ font-weight:800; }
 </style>
 </head>
@@ -83,12 +87,12 @@
 <button id="dlbtn" onclick="downloadPoster()">⬇ 下載圖片</button>
 <div id="mini"></div>
 <div id="poster">
-<div id="editbar"><span>編輯中：拖曳插圖移動；點一下調大小／旋轉／移除</span><button onclick="toggleEdit()">✓ 完成，退出編輯</button><span style="font-size:14px;opacity:.85">（按 Esc 也可退出）</span></div>
-  <div class="brand"><img src="menu/brand.png" alt="HAPPINESS GROUN:D"></div>
-  <div class="colhead"><span>MENU 菜單</span><span>單點價／套餐</span></div>
+<div id="editbar"><span>編輯中：點 Logo／分類標題／品項／底條調大小與間距；拖曳插圖移動</span><button onclick="toggleEdit()">✓ 完成，退出編輯</button><span style="font-size:14px;opacity:.85">（按 Esc 也可退出）</span></div>
+  <div class="brand"><img src="menu/brand.png" alt="HAPPINESS GROUN:D" data-edit="logo"></div>
+  <div class="colhead" data-edit="head"><span>MENU 菜單</span><span>單點價／套餐</span></div>
   <div class="cats" id="cats"></div>
   <div id="stk"></div>
-  <div class="footer" id="footer"></div>
+  <div class="footer" id="footer" data-edit="footer"></div>
 </div>
 
 <script>
@@ -173,6 +177,7 @@ function splitName(nm){
 }
 
 function render(){
+  applyPcfg();
   const D = normalize(window.MENU_DATA);
   // 固定配對順序
   const rank=s=>{ const u=String(s.name||'').toUpperCase(); const i=ORDER.findIndex(k=>u.includes(k)); return i<0?99:i; };
@@ -185,14 +190,14 @@ function render(){
   secs.forEach((sec,ci)=>{
     const {en,zh}=splitName(sec.name);
     const cat=document.createElement('div'); cat.className='cat';
-    let h=`<h2><span class="en">${en}</span>${zh?`<span class="zh">${zh}</span>`:''}${sec.pz?`<span class="pz">${sec.pz.replace(' ','<br>')}</span>`:''}</h2><div class="box">`;
+    let h=`<h2 data-edit="cat"><span class="en">${en}</span>${zh?`<span class="zh">${zh}</span>`:''}${sec.pz?`<span class="pz">${sec.pz.replace(' ','<br>')}</span>`:''}</h2><div class="box">`;
     sec.items.forEach(it=>{
       const {nm,ih}=splitIH(it.name);
       const tag=comboTag(Number(sec.combo)||0, Number(it.price)||0);
       let note='', nmHtml=nm;
       // 無咖啡因 → 英文行末紅字
       const decaf = /無咖啡因/.test(it.note||'') ? '無咖啡因' : '';
-      h+=`<div class="item"><div class="row1">`
+      h+=`<div class="item" data-edit="items"><div class="row1">`
         +`<span class="nm">${nmHtml}</span>`
         +(ih?`<span class="ih">冰 / 熱</span>`:``)
         +`<span class="lead"></span>`
@@ -215,12 +220,12 @@ function render(){
 function fit(){
   document.querySelectorAll('.item .row1').forEach(row=>{
     const nm=row.querySelector('.nm'); if(!nm) return;
-    nm.style.fontSize=''; let size=30;
+    nm.style.fontSize=''; let size=peff('nm');
     const avail = row.clientWidth - 10; let guard=0;
     while((sumFixed(row) > avail) && size>20 && guard<20){ size--; nm.style.fontSize=size+'px'; guard++; }
   });
   const cats=document.getElementById('cats');
-  const footerTop = 1920 - 70 - 18, availH = footerTop - cats.offsetTop;
+  const footerTop = 1920 - peff('footh') - 18, availH = footerTop - cats.offsetTop;
   cats.style.transform='scale(1)';
   const real = cats.scrollHeight;
   cats.style.transform = real>availH ? 'scale('+(availH/real)+')' : 'scale(1)';
@@ -247,17 +252,40 @@ async function boot(){
 }
 boot();
 
+// ── ✎ 點選式編輯（v1.3）：Logo／欄頭／分類標題／品項／底條 → 字級與間距滑桿；設定存在 POSTER.cfg（跟插圖位置一起進雲端與版本） ──
+const PPARAMS={ logo:['Logo 大小',500,1080,1080,'px'], top:['上方留白',0,120,28,'px'], head:['欄頭字',14,30,19,'px'],
+  h2:['分類標題大小',20,48,30,'px'], catgap:['分類間距',0,40,13,'px'], colgap:['兩欄間距',10,80,37,'px'], pad:['左右邊距',16,80,38,'px'],
+  nm:['品名大小',20,42,30,'px'], en:['英文副標大小',12,28,18,'px'], pr:['價格大小',20,42,30,'px'], ig:['品項間距',0,30,10,'px'], boxpad:['框內留白',4,30,12,'px'],
+  foot:['底條字大小',16,34,23,'px'], footh:['底條高度',50,110,70,'px'] };
+const PMINI={ logo:{title:'Logo',keys:['logo','top']}, head:{title:'欄頭（MENU 菜單）',keys:['head']}, cat:{title:'分類標題',keys:['h2','catgap','colgap','pad']}, items:{title:'品項',keys:['nm','en','pr','ig','boxpad']}, footer:{title:'底條',keys:['foot','footh']} };
+function peff(k){ const c=(POSTER&&POSTER.cfg)||{}; return (k in c)?c[k]:PPARAMS[k][3]; }
+function applyPcfg(){ const el=document.getElementById('poster'); Object.keys(PPARAMS).forEach(k=>el.style.setProperty('--'+k, peff(k)+PPARAMS[k][4])); }
+let PSEL=null;
+function pSet(k,v){ POSTER.cfg=POSTER.cfg||{}; POSTER.cfg[k]=Number(v); applyPcfg(); fit(); savePoster(); const e=document.getElementById('pv_'+k); if(e) e.textContent=v; }
+function pReset(type){ const d=PMINI[type]; if(POSTER.cfg) d.keys.forEach(k=>delete POSTER.cfg[k]); applyPcfg(); fit(); savePoster(); openPmini(PSEL,type); }
+function closePmini(){ if(PSEL){ PSEL.classList.remove('sel'); PSEL=null; } document.getElementById('mini').classList.remove('on'); }
+function openPmini(el,type){
+  closeStk(); if(PSEL) PSEL.classList.remove('sel'); PSEL=el; el.classList.add('sel'); type=type||el.dataset.edit; const d=PMINI[type]||PMINI.items; const m=document.getElementById('mini');
+  let h=`<h4><b>${d.title}</b><span class="x" onclick="closePmini()">×</span></h4>`;
+  d.keys.forEach(k=>{ const [lab,mn,mx]=PPARAMS[k]; const v=peff(k); h+=`<label><span>${lab}</span><input type="range" min="${mn}" max="${mx}" value="${v}" oninput="pSet('${k}',this.value)"><b class="v" id="pv_${k}">${v}</b></label>`; });
+  h+=`<div class="foot"><span style="color:#999">改了會自動存（雲端）</span><span><a onclick="pReset('${type}')">回預設</a>　<button onclick="closePmini()">完成</button></span></div>`;
+  m.innerHTML=h; m.classList.add('on');
+  const r=el.getBoundingClientRect(); const W=300,H=m.offsetHeight||200; let x=r.right+14,y=r.top;
+  if(x+W>innerWidth-10) x=r.left-W-14; if(x<10) x=Math.min(innerWidth-W-10,r.left); if(y+H>innerHeight-10) y=Math.max(10,innerHeight-H-10); m.style.left=x+'px'; m.style.top=y+'px';
+}
+document.getElementById('poster').addEventListener('click',ev=>{ if(!EDIT) return; if(ev.target.closest('.stk')||ev.target.closest('#editbar')) return; const t=ev.target.closest('[data-edit]'); if(!t) return; ev.stopPropagation(); openPmini(t); });
 // ── ✨ 貼紙層（v1.1）：AI 插圖／Logo 變化／標語，可拖曳、縮放、旋轉、分層；位置存雲端（哪台開都一樣）＋本機備份 ──
 let POSTER={stickers:[]}, EDIT=false, SELS=null, pT=null;
-function loadPoster(){ const c=MAI.assets.poster; if(c&&Array.isArray(c.stickers)) POSTER=c; else { try{ const o=JSON.parse(localStorage.getItem('gd_poster')||'null'); if(o&&o.stickers) POSTER=o; }catch(e){} } }
+function loadPoster(){ const c=MAI.assets.poster; if(c&&Array.isArray(c.stickers)) POSTER=c; else { try{ const o=JSON.parse(localStorage.getItem('gd_poster')||'null'); if(o&&o.stickers) POSTER=o; }catch(e){} } POSTER.cfg=POSTER.cfg||{}; applyPcfg(); }
 function savePoster(){ try{ localStorage.setItem('gd_poster',JSON.stringify(POSTER)); }catch(e){} clearTimeout(pT); pT=setTimeout(()=>{ if(MAI.TK()) MAI.api('menuassetset',{poster:POSTER}).catch(()=>{}); },900); }
 function renderStk(){ const L=document.getElementById('stk'); L.innerHTML=POSTER.stickers.map((s,i)=>`<img class="stk ${SELS===i?'sel':''}" data-i="${i}" src="${s.url}" style="left:${s.x}px;top:${s.y}px;width:${s.w}px;--r:${s.r||0}deg;z-index:${i+1}" draggable="false" crossorigin="anonymous">`).join(''); }
-function toggleEdit(){ EDIT=!EDIT; document.body.classList.toggle('edit',EDIT); const b=document.getElementById('editbtn'); b.classList.toggle('on',EDIT); b.textContent=EDIT?'✓ 完成編輯':'✎ 編輯'; if(!EDIT) closeStk(); }
+function toggleEdit(){ EDIT=!EDIT; document.body.classList.toggle('edit',EDIT); const b=document.getElementById('editbtn'); b.classList.toggle('on',EDIT); b.textContent=EDIT?'✓ 完成編輯':'✎ 編輯'; if(!EDIT){ closeStk(); closePmini(); } }
 function closeStk(){ SELS=null; document.getElementById('mini').classList.remove('on'); renderStk(); }
 function stkSet(i,k,v){ const s=POSTER.stickers[i]; s[k]=Number(v); const el=document.querySelector(`.stk[data-i="${i}"]`); if(el){ if(k==='w') el.style.width=s.w+'px'; if(k==='r') el.style.setProperty('--r',s.r+'deg'); } const e=document.getElementById('sv_'+k); if(e) e.textContent=v+(k==='r'?'°':''); savePoster(); }
 function stkLayer(i,d){ const j=i+d; if(j<0||j>=POSTER.stickers.length) return; const a=POSTER.stickers; [a[i],a[j]]=[a[j],a[i]]; savePoster(); openStk(j); }
 function stkDel(i){ POSTER.stickers.splice(i,1); savePoster(); closeStk(); }
 function openStk(i){
+  if(PSEL){ PSEL.classList.remove('sel'); PSEL=null; }
   SELS=i; renderStk(); const s=POSTER.stickers[i]; if(!s) return; const m=document.getElementById('mini');
   m.innerHTML=`<h4><b>插圖</b><span class="x" onclick="closeStk()">×</span></h4>`
     +`<label><span>大小</span><input type="range" min="60" max="900" value="${s.w}" oninput="stkSet(${i},'w',this.value)"><b class="v" id="sv_w">${s.w}</b></label>`
@@ -291,8 +319,8 @@ async function snapPoster(){
   finally{ if(wasEdit) document.body.classList.add('edit'); }
 }
 // 💾 版本存檔（v1.2）：海報出一張 → 直傳 → 登記版本（含插圖位置）；回復=插圖位置套回那版
-function openVer(){ closeStk(); MAI.verOpen({ kind:'poster', defName:'直式菜單 '+MAI.now(), snap:async(p)=>{ if(p) p('出圖中…'); return [await snapPoster()]; }, cfg:()=>({poster:POSTER}), onApplied: async()=>{ loadPoster(); try{ localStorage.setItem('gd_poster',JSON.stringify(POSTER)); }catch(e){} renderStk(); } }); }
-MAI.onEsc=()=>{ if(document.getElementById('mini').classList.contains('on')) closeStk(); else if(EDIT) toggleEdit(); };
+function openVer(){ closeStk(); MAI.verOpen({ kind:'poster', defName:'直式菜單 '+MAI.now(), snap:async(p)=>{ if(p) p('出圖中…'); return [await snapPoster()]; }, cfg:()=>({poster:POSTER}), onApplied: async()=>{ loadPoster(); try{ localStorage.setItem('gd_poster',JSON.stringify(POSTER)); }catch(e){} renderStk(); fit(); } }); }
+MAI.onEsc=()=>{ if(document.getElementById('mini').classList.contains('on')){ closeStk(); closePmini(); } else if(EDIT) toggleEdit(); };
 // ⬇ 下載 PNG（前端出圖，html-to-image）
 async function downloadPoster(){
   const btn=document.getElementById('dlbtn'); if(btn){ btn.textContent='產生中…'; btn.disabled=true; }

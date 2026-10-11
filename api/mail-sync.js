@@ -2216,6 +2216,29 @@ export default async function handler(req, res) {
     if (whats.length) { menuAssetsLog(d, who.name, whats.join('、')); await kvPut(MENU_ASSETS_KEY, d, '菜單版面(' + who.name + ')') }
     return res.status(200).json({ ok: true, photos: d.photos, art: d.art, tvcfg: d.tvcfg, poster: d.poster, vers: d.vers })
   }
+  // 📷 拍菜單讓 AI 建檔 v4.70.56（張良 2026-10-11「上傳新照片 AI 刻起來、然後讓我可以編輯」）：POST ?menuocr=<K> {token, imgs:[dataURL≤4]}
+  //   → 文字模型（路由 app）看圖抄成 {note, sections:[{name,note,combo,items:[{name,en,price,note}]}]}；這裡只回結果不寫入，前端預覽後選「覆蓋／只補新品項」再走 ?menuset
+  if (req.method === 'POST' && req.query?.menuocr) {
+    const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
+    if (!ok2 || String(req.query.menuocr) !== ok2) return res.status(403).json({ ok: false })
+    let b = {}; try { b = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
+    const who = await permWho(b.token, 'menu'); if (!who) return res.status(403).json({ ok: false, error: permDeny() })
+    const imgs = (Array.isArray(b.imgs) ? b.imgs : []).slice(0, 4).map(u => { const m = /^data:(image\/[a-z+]+);base64,(.+)$/i.exec(String(u || '')); return m ? { type: 'image', media_type: m[1].toLowerCase(), data: m[2] } : null }).filter(Boolean)
+    if (!imgs.length) return res.status(400).json({ ok: false, error: '沒有圖片' })
+    const ask = `你是餐廳菜單抄寫員。把這${imgs.length > 1 ? imgs.length + ' 張' : '張'}菜單圖片「完整、逐項」抄成 JSON，格式固定：
+{"note":"套餐規則一句話（沒有就空字串）","sections":[{"name":"英文大寫 中文（例：PIZZA 披薩）","note":"分類小字備註","combo":套餐基準價數字（圖上沒有套餐就 0）,"items":[{"name":"中文品名","en":"英文品名（沒有留空字串）","price":單點價數字,"note":"備註（例：無咖啡因、冰/熱、週一限定；沒有留空）"}]}]}
+規則：照圖上順序；一個品項一筆、不要合併也不要漏；價格只取單點價的數字；中英文照圖上寫、不要自己翻譯或改名；看不清楚的字用「？」標示；只回 JSON，不要任何說明文字。`
+    try {
+      const r1 = await aiCall('app', { messages: [{ role: 'user', content: [...imgs, { type: 'text', text: ask }] }], maxTokens: 8000, timeoutMs: 150000 })
+      const tx = String(r1.text || ''); const a = tx.indexOf('{'), z = tx.lastIndexOf('}')
+      let j = null; try { j = JSON.parse(tx.slice(a, z + 1)) } catch (e) { return res.status(502).json({ ok: false, error: 'AI 回的不是可用格式，再拍清楚一點試一次', raw: tx.slice(0, 300) }) }
+      const num = v => { const n = Number(String(v ?? '').replace(/[^\d.]/g, '')); return isFinite(n) ? Math.round(n) : 0 }
+      const sections = (Array.isArray(j.sections) ? j.sections : []).slice(0, 20).map(s => ({ name: String(s.name || '').trim().slice(0, 80), note: String(s.note || '').trim().slice(0, 60), combo: num(s.combo),
+        items: (Array.isArray(s.items) ? s.items : []).slice(0, 60).map(i => ({ name: String(i.name || '').trim().slice(0, 80), en: String(i.en || '').trim().slice(0, 80), price: num(i.price), note: String(i.note || '').trim().slice(0, 40) })).filter(i => i.name) })).filter(s => s.name && s.items.length)
+      if (!sections.length) return res.status(502).json({ ok: false, error: 'AI 沒抄到任何品項，換張清楚的照片再試' })
+      return res.status(200).json({ ok: true, note: String(j.note || '').slice(0, 200), sections, model: r1.model || '', ms: r1.ms || 0 })
+    } catch (e) { return res.status(502).json({ ok: false, error: 'AI 讀圖失敗：' + (e.message || e) }) }
+  }
   // 菜單設計圖換圖（張良 2026-10-02：菜單頁頂四格圖，點看大圖、可各自換新圖）：POST ?menuimgset=<OPS_BOARD_KEY> {idx,url,token}
   if (req.method === 'POST' && req.query?.menuimgset) {
     const ok2 = (process.env.OPS_BOARD_KEY || '').trim()

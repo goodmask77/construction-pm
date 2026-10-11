@@ -280,24 +280,27 @@ function menuRender(){
   const meN = d.me ? d.me.name : null // 2026-10-02 全面修：只有菜單口有 canEdit 欄位，整檔替換誤傷各分頁→按鈕全滅；顯示層=綁定即可，真正權限由伺服器端守門
   const df = menuDiff()
   const seg = (lb,v) => `<button style="border:none;padding:6px 14px;font-size:14px;font-weight:800;cursor:pointer;${menuMode===v?'background:var(--primary);color:#fff':'background:var(--card);color:var(--primary)'}" onclick="menuMode='${v}';menuRender()">${lb}</button>`
+  const canE = !!(d.me && d.me.canEdit) // v4.70.56（張良 10-11 工具列重整）：編輯類按鈕只給有編輯權的人；一列「看／輸出」、一列「編輯工具」
   let h = `<section><h2>新菜單 <span class="hint">${meN?'直接在上面改，大家都看得到動了什麼':'看得到；要編輯先綁定——'+BIND_HINT}</span></h2>
   <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px">
     <span style="display:inline-flex;border:1.5px solid var(--primary);border-radius:9px;overflow:hidden">${seg('✏️ 新菜單','edit')}${seg('🆚 對照原菜單','cmp')}</span>
-    ${meN&&menuMode==='edit'?`<button class="mini" onclick="menuSecForm()">＋ 新增分類</button>`:''}
-    ${meN&&menuMode==='edit'?`<button class="mini" id="menuFillBtn" onclick="menuFillEnOfficial()" title="照你上傳的 4 張菜單圖，把所有品項(含已刪除)補上官方英文">照菜單圖補英文</button>`:''}
-    ${meN&&menuMode==='edit'?`<button class="mini" id="menuTransBtn" onclick="menuTransAll()" title="把所有缺英文的品項用 AI 自動翻成英文菜名，可再微調">自動翻譯英文</button>`:''}
-    ${meN&&menuMode==='edit'?`<button class="mini" onclick="menuApplyV15()" title="把分類與英文校正成官方 v15 定稿（BOWLS、Bánh Mì、Cocoa）">套用官方修正</button>`:''}
-    <button class="mini" onclick="menuExport('txt')">⬇️ 匯出文字</button>
-    <select class="mini" onchange="menuSetSpec(this.value)" title="匯出圖片尺寸（方向×畫質）" style="padding:4px 10px">${Object.entries(MENU_SPECS).map(([k,s])=>`<option value="${k}" ${k===menuOutKey?'selected':''}>${s.t}</option>`).join('')}</select>
+    <span style="flex:1"></span>
+    <span class="mut" style="font-size:12px">輸出</span>
     <button class="mini" onclick="menuExport('img')">🖼 直式菜單圖</button>
-    <button class="mini" onclick="menuExport('tv')" title="4 台電視各一張：官方食物照片不動，價格/品名跟著你改的自動變">🖼 四張電視圖</button>
-    ${d.me&&!d.me.canEdit?(d.me.pendingMe?`<span class="hint">🕐 編輯權審核中（已通知老闆）</span>`:`<button class="mini on" onclick="prepApply()">🙋 申請編輯權限</button>`):''}
-    ${!d.me?`<span class="hint">看得到；要編輯先綁定＋申請</span>`:''}
-  </div>`
+    <button class="mini" onclick="menuExport('tv')" title="4 台電視各一張：照片不動，價格/品名跟著你改的自動變">🖼 四張電視圖</button>
+    <button class="mini" onclick="menuExport('txt')">⬇️ 匯出文字</button>
+  </div>
+  ${canE&&menuMode==='edit'?`<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px;padding:8px 10px;background:var(--card);border:1.5px solid var(--line);border-radius:10px">
+    <span class="mut" style="font-size:12px">編輯</span>
+    <button class="mini" id="menuOcrBtn" onclick="menuOcr()" title="拍／上傳新菜單照片（最多 4 張），AI 逐項抄成菜單，預覽後可覆蓋或只補新品項，之後直接在下面改">📷 拍菜單 AI 建檔</button>
+    <button class="mini" onclick="menuSecForm()">＋ 新增分類</button>
+    <button class="mini" id="menuTransBtn" onclick="menuTransAll()" title="把所有缺英文的品項用 AI 自動翻成英文菜名，可再微調">自動翻譯英文</button>
+  </div>`:''}
+  ${d.me&&!d.me.canEdit?`<div style="margin-bottom:10px">${d.me.pendingMe?`<span class="hint">🕐 編輯權審核中（已通知老闆）</span>`:`<button class="mini on" onclick="prepApply()">🙋 申請編輯權限</button>`}</div>`:''}
+  ${!d.me?`<div class="hint" style="margin-bottom:10px">看得到；要編輯先綁定＋申請</div>`:''}`
 
   // 菜單設計圖四格（張良 2026-10-02：照順序、點看大圖、各格可換圖）
-  const imgs = d.imgs || []
-  const canE = !!(d.me && d.me.canEdit) // v4.70.53（張良 10-11）：換圖／復原鈕只給有編輯權的人，且要按「✎ 換圖」才出現
+  const imgs = d.imgs || [] // canE 見上：換圖／復原鈕只給有編輯權的人，且要按「✎ 換圖」才出現
   h += `<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:12px">` + [0,1,2,3].map(i=>{
     const u = imgs[i]
     return `<div style="position:relative;border:1.5px solid var(--line);border-radius:10px;overflow:hidden;background:#2E2512;aspect-ratio:16/9">
@@ -747,6 +750,54 @@ function menuPosterSectionOne(d, sec, idx){
   menuDownload(menuFitSpec(cv), 'GROUND菜單_'+String(idx+1).padStart(2,'0')+'_'+safe+'_'+todayTpe()+'.png')
 }
 // 圖片預覽（v4.70.51 張良 2026-10-11「打開預覽後可直接往右看下一張」）：四格＝一組，← → 鍵／點左右半邊／手機左右滑切換，點中間或 Esc 關閉
+// 📷 拍菜單 AI 建檔（v4.70.56 張良 2026-10-11）：選照片（≤4）→ 縮圖 → ?menuocr → 預覽（分類／品項數／前幾項）→ 覆蓋整份 或 只補目前沒有的品項 → menuSave
+function menuOcr(){
+  const inp=document.createElement('input'); inp.type='file'; inp.accept='image/*'; inp.multiple=true
+  inp.onchange=async()=>{
+    const fs=[...inp.files].slice(0,4); if(!fs.length) return
+    const btn=document.getElementById('menuOcrBtn'); const say=t=>{ if(btn){ btn.textContent=t; btn.disabled=true } }
+    try{
+      say('縮圖中…'); const imgs=[]
+      for(const f of fs){ const u=await new Promise(r=>{ const fr=new FileReader(); fr.onload=()=>r(fr.result); fr.readAsDataURL(f) }); const im=await menuLoadImg(u); if(!im){ continue }
+        const sc=Math.min(1,1800/Math.max(im.width,im.height)); const c=document.createElement('canvas'); c.width=Math.round(im.width*sc); c.height=Math.round(im.height*sc); c.getContext('2d').drawImage(im,0,0,c.width,c.height); imgs.push(c.toDataURL('image/jpeg',.88)) }
+      if(!imgs.length) throw new Error('讀不到圖片')
+      say('AI 抄菜單中（約 30～60 秒）…')
+      const r=await (await fetch('/api/mail-sync?menuocr='+encodeURIComponent(K),{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({imgs,token:TK()})})).json()
+      if(!r||!r.ok) throw new Error((r&&r.error)||'失敗')
+      menuOcrPreview(r)
+    }catch(e){ alert('拍菜單建檔失敗：'+(e.message||e)) }
+    finally{ if(btn){ btn.textContent='📷 拍菜單 AI 建檔'; btn.disabled=false } }
+  }
+  inp.click()
+}
+function menuOcrPreview(r){
+  const d=window._menuD; const nz=s=>String(s||'').toUpperCase().replace(/\s+/g,'').replace(/／/g,'/')
+  const have=new Set(); (d.draft.sections||[]).forEach(s=>(s.items||[]).forEach(it=>have.add(nz(it.name))))
+  const total=r.sections.reduce((a,s)=>a+s.items.length,0), fresh=r.sections.reduce((a,s)=>a+s.items.filter(it=>!have.has(nz(it.name))).length,0)
+  const ov=document.createElement('div'); ov.style.cssText='position:fixed;inset:0;background:rgba(10,16,28,.9);z-index:95;display:flex;align-items:center;justify-content:center;padding:12px'
+  let h=`<div style="background:var(--bg);color:var(--fg);border-radius:14px;max-width:720px;width:100%;max-height:92vh;overflow:auto;padding:16px 18px;font-size:14px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><b style="font-size:16px">📷 AI 抄到 ${r.sections.length} 個分類、${total} 個品項</b><span style="cursor:pointer;font-size:20px;color:var(--mute)" data-x="1">×</span></div>
+    <div class="mut" style="font-size:12px;margin-bottom:8px">先看有沒有抄錯；匯入後都可以在新菜單頁直接改。跟目前菜單比：<b>${fresh}</b> 個是目前沒有的品項。${r.note?`　套餐規則：${r.note.replace(/</g,'&lt;')}`:''}</div>
+    <table style="width:100%;border-collapse:collapse;font-size:13px">`
+  r.sections.forEach(s=>{ h+=`<tr><td colspan="3" style="padding:8px 4px 2px;font-weight:800;border-top:1px solid var(--line)">${String(s.name).replace(/</g,'&lt;')}${s.combo?`<span class="mut" style="font-weight:400">　套餐基準 ${s.combo}</span>`:''}${s.note?`<span class="mut" style="font-weight:400">　${String(s.note).replace(/</g,'&lt;')}</span>`:''}</td></tr>`
+    s.items.forEach(it=>{ const nw=!have.has(nz(it.name)); h+=`<tr style="${nw?'color:var(--up,#3fb950)':''}"><td style="padding:2px 4px">${nw?'＋ ':''}${String(it.name).replace(/</g,'&lt;')}${it.note?`<span class="mut"> ${String(it.note).replace(/</g,'&lt;')}</span>`:''}</td><td class="mut" style="padding:2px 4px">${String(it.en||'').replace(/</g,'&lt;')}</td><td style="padding:2px 4px;text-align:right;font-weight:700">${it.price}</td></tr>` }) })
+  h+=`</table><div style="display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap;margin-top:12px">
+    <button class="mini" data-x="1">取消</button>
+    <button class="mini" data-merge="1" ${fresh?'':'disabled'} title="只把目前沒有的 ${fresh} 個品項加進對應分類，其他不動">只補 ${fresh} 個新品項</button>
+    <button class="mini on" data-replace="1" title="整份換成 AI 抄的這份（原本的在編輯紀錄可追）">覆蓋成這份</button></div></div>`
+  ov.innerHTML=h
+  ov.onclick=async(e)=>{ const t=e.target.closest('[data-x],[data-merge],[data-replace]'); if(!t){ if(e.target===ov) ov.remove(); return }
+    if(t.dataset.x){ ov.remove(); return }
+    const mk=it=>({ id:'mn'+Date.now().toString(36)+Math.random().toString(36).slice(2,5), name:it.name, en:it.en||'', price:Number(it.price)||0, note:it.note||'' })
+    if(t.dataset.replace){ if(!confirm('整份菜單換成 AI 抄的這 '+total+' 個品項？（原本的會被取代，可從編輯紀錄追）')) return
+      d.draft.sections=r.sections.map(s=>({ name:s.name, note:s.note||'', combo:s.combo||'', items:s.items.map(mk) })); if(r.note) d.draft.note=r.note
+      ov.remove(); await menuSave('拍菜單 AI 建檔：覆蓋 '+total+' 項') }
+    else if(t.dataset.merge){ let n=0
+      r.sections.forEach(s=>{ let tgt=(d.draft.sections||[]).find(x=>nz(x.name)===nz(s.name)||nz(x.name).split(' ')[0]===nz(s.name).split(' ')[0]); if(!tgt){ tgt={ name:s.name, note:s.note||'', combo:s.combo||'', items:[] }; d.draft.sections.push(tgt) }
+        s.items.forEach(it=>{ if(!have.has(nz(it.name))){ tgt.items.push(mk(it)); have.add(nz(it.name)); n++ } }) })
+      ov.remove(); await menuSave('拍菜單 AI 建檔：補 '+n+' 項') } }
+  document.body.appendChild(ov)
+}
 function mnImgGrid(){ mnImgView(null,true) }
 // ⬇ 下載 6 張到相簿（v4.70.53 張良 2026-10-11）：四張電視圖＋四張合一(2×2)＋直式最新版；手機走系統分享(iOS「儲存影像」直接進相簿)，電腦逐張下載
 async function mnImgDownloadAll(){
