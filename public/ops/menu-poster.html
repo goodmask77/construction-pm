@@ -5,14 +5,14 @@
 <meta name="viewport" content="width=1080" />
 <title>GROUN:D 菜單海報</title>
 <!--
-  菜單海報 HTML 模板（張良 2026-10-10 v1.1：加 ✨AI 插圖／Logo 變化／標語貼紙層，可拖曳縮放、設定存雲端）
+  菜單海報 HTML 模板（張良 2026-10-10 v1.2：10-11 編輯條加「退出」鈕＋Esc、加「💾 存版本」；v1.1：加 ✨AI 插圖／Logo 變化／標語貼紙層，可拖曳縮放、設定存雲端）
   取代舊 canvas 手刻：用 CSS 排版 → puppeteer 截圖成 PNG。框線/對齊/換行全自動，不再切字。
   資料來源：window.MENU_DATA（截圖腳本/App 注入）；無則用內建 sample（當前菜單含沙拉）。
   直式畫布 1080×1920。字體：Alfa Slab One（英文大標）/ Noto Sans TC（中文）/ Poppins（英文副標）。
 -->
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700;900&family=Alfa+Slab+One&family=Poppins:wght@400;500;600;700&family=Lora:ital,wght@0,400;0,500;0,600;1,400&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/html-to-image@1.11.13/dist/html-to-image.js"></script>
-<script src="js/menu-ai.js?v=1"></script>
+<script src="js/menu-ai.js?v=2"></script>
 <style>
   /* 官方 CIS 中文字型「寒蟬德黑體 ChillDINGothic」（SIL OFL 可商用，源於 DIN 工業字體，數字特別俐落）；單一字重 Regular */
   @font-face{ font-family:'ChillDINGothic'; src:url('fonts/ChillDINGothic_Std.woff2') format('woff2'); font-weight:normal; font-display:swap }
@@ -22,13 +22,17 @@
   #dlbtn{ position:fixed; top:14px; right:14px; z-index:99; padding:12px 22px; background:#CE1611; color:#fff; border:none; border-radius:10px; font-size:16px; font-weight:700; cursor:pointer; box-shadow:0 4px 14px rgba(0,0,0,.35); font-family:system-ui,sans-serif }
   #dlbtn:disabled{ opacity:.6 }
   #artbtn,#editbtn{ position:fixed; top:14px; z-index:99; padding:12px 18px; border:none; border-radius:10px; font-size:16px; font-weight:700; cursor:pointer; box-shadow:0 4px 14px rgba(0,0,0,.35); font-family:system-ui,sans-serif; color:#fff }
-  #artbtn{ right:166px; background:#6d3df0 } #editbtn{ right:286px; background:#333 } #editbtn.on{ background:#1a7f37 }
+  #artbtn{ right:166px; background:#6d3df0 } #editbtn{ right:286px; background:#333 } #editbtn.on{ background:#fff; color:#1a7f37; border:2px solid #1a7f37 }
+  #verbtn{ position:fixed; top:14px; right:406px; z-index:99; padding:12px 18px; background:#1d4ed8; color:#fff; border:none; border-radius:10px; font-size:16px; font-weight:700; cursor:pointer; box-shadow:0 4px 14px rgba(0,0,0,.35); font-family:system-ui,sans-serif }
   /* 貼紙層（插圖／Logo 變化／標語）：在品項之上、底條之下；只有編輯模式可點可拖 */
   #stk{ position:absolute; inset:0; z-index:4; pointer-events:none; overflow:hidden }
   .stk{ position:absolute; pointer-events:none; transform:translate(-50%,-50%) rotate(var(--r,0deg)); user-select:none; -webkit-user-drag:none; touch-action:none }
   body.edit .stk{ pointer-events:auto; cursor:grab; outline:2px dashed rgba(26,127,55,.0) }
   body.edit .stk:hover{ outline-color:#1a7f37 } body.edit .stk.sel{ outline:3px solid #1a7f37 }
-  body.edit #poster::after{ content:'編輯中：拖曳插圖移動；點一下調大小／旋轉／移除'; position:absolute; left:0; right:0; top:0; z-index:7; background:#1a7f37; color:#fff; font:700 20px/1.6 system-ui; text-align:center; padding:4px }
+  /* 編輯中提示條（v1.2 改成真的元素＋退出鈕：原本退出鈕跟綠條同色、看不到） */
+  #editbar{ display:none; position:absolute; left:0; right:0; top:0; z-index:7; background:#1a7f37; color:#fff; font:700 20px/1.6 system-ui; align-items:center; justify-content:center; gap:22px; padding:8px 16px }
+  body.edit #editbar{ display:flex }
+  #editbar button{ padding:8px 18px; border:none; border-radius:10px; background:#fff; color:#1a7f37; font:800 20px system-ui; cursor:pointer }
   #mini{ position:fixed; z-index:120; background:rgba(20,20,20,.96); color:#eee; padding:12px 14px; border-radius:12px; width:300px; font:14px/1.5 system-ui,sans-serif; display:none; box-shadow:0 8px 24px rgba(0,0,0,.45) }
   #mini.on{ display:block } #mini h4{ margin:0 0 6px; font-size:14px; color:#F5EADA; display:flex; justify-content:space-between; align-items:center } #mini h4 .x{ cursor:pointer; color:#aaa; font-size:18px; padding:0 4px }
   #mini label{ display:flex; align-items:center; gap:8px; margin:4px 0 } #mini label span{ width:60px; font-size:12px; color:#bbb } #mini input[type=range]{ flex:1 } #mini .v{ width:44px; text-align:right; font-variant-numeric:tabular-nums; font-size:12px }
@@ -75,9 +79,11 @@
 <body>
 <button id="editbtn" onclick="toggleEdit()">✎ 編輯</button>
 <button id="artbtn" onclick="openArt()">✨ 插圖</button>
+<button id="verbtn" onclick="openVer()" title="把目前海報存成一個版本（日期＋名稱）；隨時可回復">💾 存版本</button>
 <button id="dlbtn" onclick="downloadPoster()">⬇ 下載圖片</button>
 <div id="mini"></div>
 <div id="poster">
+<div id="editbar"><span>編輯中：拖曳插圖移動；點一下調大小／旋轉／移除</span><button onclick="toggleEdit()">✓ 完成，退出編輯</button><span style="font-size:14px;opacity:.85">（按 Esc 也可退出）</span></div>
   <div class="brand"><img src="menu/brand.png" alt="HAPPINESS GROUN:D"></div>
   <div class="colhead"><span>MENU 菜單</span><span>單點價／套餐</span></div>
   <div class="cats" id="cats"></div>
@@ -276,16 +282,22 @@ function openArt(){
     onLibDel: (id)=>{ POSTER.stickers=POSTER.stickers.filter(s=>s.id!==id); savePoster(); renderStk(); } });
 }
 
-// ⬇ 下載 PNG（前端出圖，html-to-image）：等字體載入→暫時放大到 1:1 截 1080×1920
+// 出圖共用：等字體→1:1→暫時脫離編輯模式（不帶提示條/選取框）→ 1080×1920 @2x
+async function snapPoster(){
+  if (document.fonts && document.fonts.ready) await document.fonts.ready;
+  fit();
+  const wasEdit=document.body.classList.contains('edit'); if(wasEdit){ document.body.classList.remove('edit'); SELS=null; renderStk(); document.getElementById('mini').classList.remove('on'); }
+  try{ return await htmlToImage.toPng(document.getElementById('poster'),{ width:1080, height:1920, pixelRatio:2, backgroundColor:'#F5EADA', cacheBust:true }); }
+  finally{ if(wasEdit) document.body.classList.add('edit'); }
+}
+// 💾 版本存檔（v1.2）：海報出一張 → 直傳 → 登記版本（含插圖位置）；回復=插圖位置套回那版
+function openVer(){ closeStk(); MAI.verOpen({ kind:'poster', defName:'直式菜單 '+MAI.now(), snap:async(p)=>{ if(p) p('出圖中…'); return [await snapPoster()]; }, cfg:()=>({poster:POSTER}), onApplied: async()=>{ loadPoster(); try{ localStorage.setItem('gd_poster',JSON.stringify(POSTER)); }catch(e){} renderStk(); } }); }
+MAI.onEsc=()=>{ if(document.getElementById('mini').classList.contains('on')) closeStk(); else if(EDIT) toggleEdit(); };
+// ⬇ 下載 PNG（前端出圖，html-to-image）
 async function downloadPoster(){
   const btn=document.getElementById('dlbtn'); if(btn){ btn.textContent='產生中…'; btn.disabled=true; }
   try{
-    if (document.fonts && document.fonts.ready) await document.fonts.ready;
-    fit();
-    const wasEdit=document.body.classList.contains('edit'); if(wasEdit){ document.body.classList.remove('edit'); SELS=null; renderStk(); document.getElementById('mini').classList.remove('on'); } // 出圖不帶編輯提示條/選取框
-    const node=document.getElementById('poster');
-    const url=await htmlToImage.toPng(node,{ width:1080, height:1920, pixelRatio:2, backgroundColor:'#F5EADA', cacheBust:true });
-    if(wasEdit) document.body.classList.add('edit');
+    const url=await snapPoster();
     const a=document.createElement('a'); a.href=url; a.download='GROUND菜單_直式_'+(new Date().toISOString().slice(0,10))+'.png'; a.click();
   }catch(e){ alert('出圖失敗，再試一次：'+e); }
   finally{ if(btn){ btn.textContent='⬇ 下載圖片'; btn.disabled=false; } }

@@ -305,6 +305,8 @@ function menuRender(){
       ${meN&&((d.imgHist||{})[i]>0)?`<button class="mini" title="復原上一張" style="position:absolute;right:44px;bottom:4px;background:var(--card)" onclick="mnImgUndo(${i})">↩︎</button>`:''}
     </div>`
   }).join('') + `</div>`
+  // v4.70.50（張良 2026-10-11）：四格圖＝電視頁「💾 存版本」最新一版，這裡標出版本名稱＋日期；直式海報最新版也給連結
+  if (d.curVer || d.posterImg) h += `<div class="mut" style="margin:-6px 0 12px;font-size:13px;display:flex;gap:14px;flex-wrap:wrap">${d.curVer?`<span>🕘 電視圖目前版本：<b style="color:var(--fg)">${String(d.curVer.name).replace(/</g,'&lt;')}</b>・${d.curVer.date}・${d.curVer.by||''}</span>`:''}${d.posterImg?`<a style="cursor:pointer;color:var(--primary)" onclick="mnImgView('${d.posterImg.url}')">🖼 直式最新版：${String(d.posterImg.name).replace(/</g,'&lt;')}・${d.posterImg.date}</a>`:''}</div>`
   // 變更總覽（協作人員一眼看懂）
   if (df.add.length || df.del.length || df.chg.length) {
     h += `<div style="background:#2E2814;border:1.5px solid #E8D089;border-radius:12px;padding:10px 12px;margin-bottom:10px;font-size:14px">

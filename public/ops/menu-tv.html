@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>GROUN:D 電視菜單</title>
 <!--
-  電視橫式菜單 HTML 模板（張良 2026-10-10 v1.5）：一台電視=兩分類並排＋底部食物照片，共 4 張。
+  電視橫式菜單 HTML 模板（張良 2026-10-10 v1.6：10-11 加「💾 存版本」＋Esc 退出編輯）：一台電視=兩分類並排＋底部食物照片，共 4 張。
   ?screen=0..3（0披薩/療癒碗 1漢堡/三明治 2麵/早午餐 3小點/飲品）。照片=從官方底圖截出的獨立檔 menu/photos/。
   套餐欄(SNACKS/DRINKS,combo>0)=官方版式：紅圓角框＋表頭(品項/單點/套餐選擇)，兩框等高；項多(>6)自動緊湊。
   左上 4 張切換＋「下載全部 4 張」；「✎ 編輯」=點選式：點 logo/分類標題/品項/照片/底條→旁邊只出該元素滑桿；整張用 #stage scale 縮進視窗不滑動（出圖仍截 #tv 原尺寸）；照片底部淡出 --pf：每張照片 上下/左右/縮放 滑桿，區塊參數(邊距/欄距/標題/品名/英文/價格/間距)可選「只這一頁」或「四頁共用」，照片位移縮放每頁各自；存 localStorage gd_tvcfg {g,p}；分層=照片z0<文字/框線z1<底條z3，截圖不含面板。
@@ -13,14 +13,15 @@
 -->
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700;900&family=Alfa+Slab+One&family=Poppins:wght@400;500;600;700&family=Lora:ital,wght@0,400;0,500;0,600;1,400&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/html-to-image@1.11.13/dist/html-to-image.js"></script>
-<script src="js/menu-ai.js?v=1"></script>
+<script src="js/menu-ai.js?v=2"></script>
 <style>
   *{margin:0;padding:0;box-sizing:border-box}
   :root{ --cream:#F5EADA; --red:#CE1611; --eng:#C56B54; --dot:#D98A7A; }
   html,body{background:#555; height:100%; overflow:hidden}
   #stage{ position:fixed; left:0; top:0; width:1920px; height:1080px; transform-origin:top left; }
   #editbtn{ position:fixed; top:14px; right:160px; z-index:99; padding:12px 22px; background:#333; color:#fff; border:none; border-radius:10px; font-size:16px; font-weight:700; cursor:pointer; box-shadow:0 4px 14px rgba(0,0,0,.35); font-family:system-ui,sans-serif }
-  #editbtn.on{ background:#1a7f37 }
+  #editbtn.on{ background:#fff; color:#1a7f37; border:2px solid #1a7f37 }
+  #verbtn{ position:fixed; top:14px; right:462px; z-index:99; padding:12px 18px; background:#1d4ed8; color:#fff; border:none; border-radius:10px; font-size:16px; font-weight:700; cursor:pointer; box-shadow:0 4px 14px rgba(0,0,0,.35); font-family:system-ui,sans-serif }
   body.edit [data-edit]{ cursor:pointer; outline:3px dashed transparent; outline-offset:6px; transition:outline-color .15s; border-radius:6px }
   body.edit [data-edit]:hover{ outline-color:rgba(206,22,17,.55) }
   body.edit [data-edit].sel{ outline:3px solid #1a7f37 }
@@ -83,6 +84,7 @@
 </head>
 <body>
 <div id="sw"><button onclick="setScreen(0)">1 披薩・療癒碗</button><button onclick="setScreen(1)">2 漢堡・三明治</button><button onclick="setScreen(2)">3 義大利麵・早午餐</button><button onclick="setScreen(3)">4 小點・飲品</button></div>
+<button id="verbtn" onclick="openVer()" title="把目前四張存成一個版本（日期＋名稱），/prep 新菜單頁四格直接更新；隨時可回復">💾 存版本</button>
 <button id="dlall" onclick="downloadAll()">⬇ 下載全部 4 張</button>
 <button id="editbtn" onclick="toggleEdit()">✎ 編輯</button>
 <button id="dlbtn" onclick="downloadTV()">⬇ 下載圖片</button>
@@ -256,6 +258,12 @@ const TODAY=()=>new Date().toISOString().slice(0,10);
 async function downloadAll(){ const btn=document.getElementById('dlall'); const keep=screenIdx; btn.textContent='產生中… 0/4'; btn.disabled=true;
   try{ for(let i=0;i<4;i++){ setScreen(i); const u=await snapPng(); dl(u,'GROUND電視'+(i+1)+'_'+TODAY()+'.png'); btn.textContent='產生中… '+(i+1)+'/4'; await new Promise(r=>setTimeout(r,700)); } }
   catch(e){ alert('出圖失敗：'+e); } finally{ setScreen(keep); btn.textContent='⬇ 下載全部 4 張'; btn.disabled=false; } }
+// 💾 版本存檔（v1.6）：四頁各出一張 → 直傳 → 登記版本（名稱＋日期＋誰存的）→ /prep 新菜單頁四格同步換成這版；回復=套回那版的版面設定＋照片
+async function snapAll(prog){ const keep=screenIdx, out=[]; try{ for(let i=0;i<4;i++){ setScreen(i); if(prog) prog('出圖中 '+(i+1)+'/4…'); out.push(await snapPng()); } } finally{ setScreen(keep); } return out; }
+function openVer(){ if(EDIT) toggleEdit(); document.getElementById('adj').classList.remove('on');
+  MAI.verOpen({ kind:'tv', defName:'電視菜單 '+MAI.now(), snap:snapAll, cfg:()=>({tvcfg:CFG, photos:MAI.assets.photos||{}}),
+    onApplied: async()=>{ const c=MAI.assets.tvcfg; CFG=(c&&c.p)?c:{g:{},p:{}}; CFG.g=CFG.g||{}; CFG.p=CFG.p||{}; try{ localStorage.setItem(ALLKEY,JSON.stringify(CFG)); }catch(e){} render(); } }); }
+MAI.onEsc=()=>{ if(document.getElementById('mini').classList.contains('on')) closeMini(); else if(document.getElementById('adj').classList.contains('on')) document.getElementById('adj').classList.remove('on'); else if(EDIT) toggleEdit(); };
 async function downloadTV(){
   const btn=document.getElementById('dlbtn'); if(btn){btn.textContent='產生中…';btn.disabled=true;}
   try{ const url=await snapPng(); dl(url,'GROUND電視'+(screenIdx+1)+'_'+TODAY()+'.png');

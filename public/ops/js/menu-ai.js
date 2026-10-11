@@ -1,4 +1,4 @@
-// ✨ 菜單 AI 圖庫前端共用模組 v1.0（2026-10-10；menu-tv.html 電視圖「AI 重畫」＋ menu-poster.html 直式「插圖／Logo 變化／標語」共用）
+// ✨ 菜單 AI 圖庫前端共用模組 v1.1（2026-10-10；v1.1 10-11 加「版本存檔」面板＋Esc 關閉；menu-tv.html 電視圖「AI 重畫」＋ menu-poster.html 直式「插圖／Logo 變化／標語」共用）
 // 流程：open() 開面板 → 參考圖(截圖貼上/檔案/現有照片)＋老闆的話 → ?menuai 兩段式(Claude 寫指令→Gemini 畫) → 挑一張 → 後製(去影子/校色或去背)
 //       → 簽名直傳 Supabase → ?menuaisave 登記。圖庫＋版面設定走 ?menuassets（跨裝置）。
 window.MAI = (() => {
@@ -6,7 +6,7 @@ window.MAI = (() => {
   const K = Q.get('k') || '7ea362bae1f0274372d4ec7b27c78852'
   const TK = () => Q.get('me') || (() => { try { return localStorage.getItem('prepToken') || '' } catch (e) { return '' } })()
   const api = (ep, body) => fetch('/api/mail-sync?' + ep + '=' + encodeURIComponent(K), { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ...body, token: TK() }) }).then(r => r.json())
-  let assets = { photos: {}, art: [], tvcfg: null, poster: {} }
+  let assets = { photos: {}, art: [], tvcfg: null, poster: {}, vers: [] }
   async function load() { try { const r = await fetch('/api/mail-sync?menuassets=' + K + '&_=' + Date.now()); const d = await r.json(); if (d && d.ok) assets = d } catch (e) {} return assets }
   const CR = [245, 234, 218]
   function loadImg(src) { return new Promise((res, rej) => { const im = new Image(); im.crossOrigin = 'anonymous'; im.onload = () => res(im); im.onerror = () => rej(new Error('圖片載入失敗')); im.src = src.startsWith('data:') ? src : src + (src.includes('?') ? '&' : '?') + 'cb=' + Date.now() }) }
@@ -44,42 +44,56 @@ window.MAI = (() => {
   }
   // ── 面板 ──
   const CSS = `
-  #maiMod{position:fixed;inset:0;z-index:300;background:rgba(0,0,0,.55);display:none;align-items:center;justify-content:center;font:14px/1.5 system-ui,-apple-system,sans-serif;color:#eee}
-  #maiMod.on{display:flex}
-  #maiMod .pan{background:#1b1b1b;border-radius:14px;width:min(760px,96vw);max-height:94vh;overflow:auto;padding:16px 18px;box-shadow:0 12px 40px rgba(0,0,0,.6)}
-  #maiMod h3{margin:0 0 10px;font-size:16px;color:#F5EADA;display:flex;justify-content:space-between;align-items:center}
-  #maiMod h3 .x{cursor:pointer;color:#aaa;font-size:22px;padding:0 6px}
-  #maiMod .row{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-start;margin:8px 0}
-  #maiMod .ref{width:150px;height:110px;border:2px dashed #666;border-radius:10px;display:flex;align-items:center;justify-content:center;text-align:center;font-size:12px;color:#aaa;cursor:pointer;overflow:hidden;background:#F5EADA;position:relative;flex:0 0 auto}
-  #maiMod .ref img{max-width:100%;max-height:100%;display:block}
-  #maiMod .ref.on{border-style:solid;border-color:#1a7f37}
-  #maiMod .ref .del{position:absolute;top:2px;right:4px;color:#fff;background:#000a;border-radius:10px;padding:0 6px;font-size:12px}
-  #maiMod textarea,#maiMod input[type=text]{width:100%;background:#111;color:#eee;border:1px solid #444;border-radius:8px;padding:8px;font:14px system-ui;box-sizing:border-box}
-  #maiMod textarea{min-height:64px;resize:vertical}
-  #maiMod .opts{flex:1;min-width:240px}
-  #maiMod .seg{display:inline-flex;border:1px solid #555;border-radius:8px;overflow:hidden;margin:0 6px 6px 0}
-  #maiMod .seg button{background:#222;color:#ddd;border:none;padding:6px 10px;cursor:pointer;font-weight:700;font-size:13px}
-  #maiMod .seg button.on{background:#CE1611;color:#fff}
-  #maiMod .go{background:#CE1611;color:#fff;border:none;border-radius:10px;padding:10px 18px;font-weight:800;font-size:15px;cursor:pointer}
-  #maiMod .go:disabled{opacity:.5}
-  #maiMod .st{font-size:13px;color:#9cf;min-height:20px}
-  #maiMod .brief{background:#262626;border-left:3px solid #CE1611;padding:8px 10px;border-radius:6px;font-size:13px;color:#ddd;margin:8px 0}
-  #maiMod .brief b{color:#F5EADA}
-  #maiMod .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px;margin:8px 0}
-  #maiMod .grid .it{border:3px solid transparent;border-radius:10px;overflow:hidden;cursor:pointer;background:#F5EADA;position:relative;aspect-ratio:1;display:flex;align-items:center;justify-content:center}
-  #maiMod .grid .it img{max-width:100%;max-height:100%;display:block}
-  #maiMod .grid .it.on{border-color:#1a7f37}
-  #maiMod .grid .it .del{position:absolute;top:4px;right:6px;color:#fff;background:#000a;border-radius:10px;padding:0 7px;font-size:12px;cursor:pointer}
-  #maiMod .act{display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap;margin-top:6px}
-  #maiMod .act button{background:#444;color:#fff;border:none;border-radius:8px;padding:8px 14px;font-weight:700;cursor:pointer}
-  #maiMod .act button.ok{background:#1a7f37}
-  #maiMod .tip{font-size:12px;color:#999}
-  #maiMod h4{margin:12px 0 4px;font-size:13px;color:#F5EADA;border-top:1px solid #333;padding-top:10px}`
+  .maiM{position:fixed;inset:0;z-index:300;background:rgba(0,0,0,.55);display:none;align-items:center;justify-content:center;font:14px/1.5 system-ui,-apple-system,sans-serif;color:#eee}
+  .maiM.on{display:flex}
+  .maiM .pan{background:#1b1b1b;border-radius:14px;width:min(760px,96vw);max-height:94vh;overflow:auto;padding:16px 18px;box-shadow:0 12px 40px rgba(0,0,0,.6)}
+  .maiM h3{margin:0 0 10px;font-size:16px;color:#F5EADA;display:flex;justify-content:space-between;align-items:center}
+  .maiM h3 .x{cursor:pointer;color:#aaa;font-size:22px;padding:0 6px}
+  .maiM .row{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-start;margin:8px 0}
+  .maiM .ref{width:150px;height:110px;border:2px dashed #666;border-radius:10px;display:flex;align-items:center;justify-content:center;text-align:center;font-size:12px;color:#aaa;cursor:pointer;overflow:hidden;background:#F5EADA;position:relative;flex:0 0 auto}
+  .maiM .ref img{max-width:100%;max-height:100%;display:block}
+  .maiM .ref.on{border-style:solid;border-color:#1a7f37}
+  .maiM .ref .del{position:absolute;top:2px;right:4px;color:#fff;background:#000a;border-radius:10px;padding:0 6px;font-size:12px}
+  .maiM textarea,.maiM input[type=text]{width:100%;background:#111;color:#eee;border:1px solid #444;border-radius:8px;padding:8px;font:14px system-ui;box-sizing:border-box}
+  .maiM textarea{min-height:64px;resize:vertical}
+  .maiM .opts{flex:1;min-width:240px}
+  .maiM .seg{display:inline-flex;border:1px solid #555;border-radius:8px;overflow:hidden;margin:0 6px 6px 0}
+  .maiM .seg button{background:#222;color:#ddd;border:none;padding:6px 10px;cursor:pointer;font-weight:700;font-size:13px}
+  .maiM .seg button.on{background:#CE1611;color:#fff}
+  .maiM .go{background:#CE1611;color:#fff;border:none;border-radius:10px;padding:10px 18px;font-weight:800;font-size:15px;cursor:pointer}
+  .maiM .go:disabled{opacity:.5}
+  .maiM .st{font-size:13px;color:#9cf;min-height:20px}
+  .maiM .brief{background:#262626;border-left:3px solid #CE1611;padding:8px 10px;border-radius:6px;font-size:13px;color:#ddd;margin:8px 0}
+  .maiM .brief b{color:#F5EADA}
+  .maiM .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px;margin:8px 0}
+  .maiM .grid .it{border:3px solid transparent;border-radius:10px;overflow:hidden;cursor:pointer;background:#F5EADA;position:relative;aspect-ratio:1;display:flex;align-items:center;justify-content:center}
+  .maiM .grid .it img{max-width:100%;max-height:100%;display:block}
+  .maiM .grid .it.on{border-color:#1a7f37}
+  .maiM .grid .it .del{position:absolute;top:4px;right:6px;color:#fff;background:#000a;border-radius:10px;padding:0 7px;font-size:12px;cursor:pointer}
+  .maiM .act{display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap;margin-top:6px}
+  .maiM .act button{background:#444;color:#fff;border:none;border-radius:8px;padding:8px 14px;font-weight:700;cursor:pointer}
+  .maiM .act button.ok{background:#1a7f37}
+  .maiM .tip{font-size:12px;color:#999}
+  .maiM .vrow{display:flex;gap:12px;align-items:center;padding:8px 0;border-bottom:1px solid #2c2c2c}
+  .maiM .vrow .th{display:flex;gap:4px;flex:0 0 auto}
+  .maiM .vrow .th img{height:46px;width:auto;border-radius:4px;background:#F5EADA}
+  .maiM .vrow .nm{flex:1;min-width:0}
+  .maiM .vrow .nm b{color:#F5EADA;display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .maiM .vrow.cur{background:#1f2a1f;border-radius:8px;padding-left:8px}
+  .maiM .vrow button{background:#444;color:#fff;border:none;border-radius:8px;padding:6px 10px;font-weight:700;cursor:pointer;font-size:12px}
+  .maiM .vrow button.ok{background:#1a7f37}
+  .maiM h4{margin:12px 0 4px;font-size:13px;color:#F5EADA;border-top:1px solid #333;padding-top:10px}`
   let ST = null
+  // Esc：先關開著的面板，都沒開就交給頁面（退出編輯模式）— 張良 10-11「到編輯畫面沒有退出選項」。掛在模組載入時（面板可能還沒建）
+  document.addEventListener('keydown', ev => { if (ev.key !== 'Escape') return; const v = document.getElementById('maiVer'), d = document.getElementById('maiMod')
+    if (v && v.classList.contains('on')) { if (!(VS && VS.busy)) verClose() } else if (d && d.classList.contains('on')) close(); else if (typeof window.MAI.onEsc === 'function') window.MAI.onEsc() })
   function ensure() {
     if (document.getElementById('maiMod')) return
     const s = document.createElement('style'); s.textContent = CSS; document.head.appendChild(s)
-    const d = document.createElement('div'); d.id = 'maiMod'; d.innerHTML = '<div class="pan" id="maiPan"></div>'; document.body.appendChild(d)
+    const d = document.createElement('div'); d.id = 'maiMod'; d.className = 'maiM'; d.innerHTML = '<div class="pan" id="maiPan"></div>'; document.body.appendChild(d)
+    const v = document.createElement('div'); v.id = 'maiVer'; v.className = 'maiM'; v.innerHTML = '<div class="pan" id="maiVPan"></div>'; document.body.appendChild(v)
+    v.addEventListener('click', ev => { if (ev.target === v) verClose() })
+
     d.addEventListener('click', ev => { if (ev.target === d) close() })
     document.addEventListener('paste', ev => { if (!ST || !document.getElementById('maiMod').classList.contains('on')) return; const its = (ev.clipboardData || {}).items || []; for (const it of its) { if (it.type && it.type.startsWith('image/')) { const f = it.getAsFile(); if (f) { ev.preventDefault(); fileToRef(f) } } } })
   }
@@ -132,5 +146,51 @@ window.MAI = (() => {
   async function use() { const s = ST; if (s.pick == null) return; s.busy = true; draw(); st('後製＋存檔中…'); try { await s.onPick(s.urls[s.pick], { sub: s.sub, brief_zh: s.brief_zh }); close() } catch (e) { s.busy = false; draw(); st('❌ ' + (e.message || e)) } }
   async function useLib(id) { const a = (assets.art || []).find(x => x.id === id); if (a && ST && ST.onLib) { await ST.onLib(a); close() } }
   async function delLib(id) { const r = await api('menuassetset', { artDel: id }); if (!r.ok) { alert(r.error || '刪除失敗'); return } assets.art = r.art; assets.poster = r.poster; draw(); if (ST && ST.onLibDel) ST.onLibDel(id) }
-  return { K, TK, api, load, get assets() { return assets }, toDataURL, cleanPhoto, cutout, upload, open, close, setSub, setN, pickFile, clearRef, go, pick, use, useLib, delLib }
+  // ── 🕘 版本存檔（v1.1 張良 2026-10-11「每次編輯完給我版本存檔，顯示日期、版本名稱，也直接更新在 /prep 新菜單頁」）──
+  // verOpen({kind:'tv'|'poster', defName, snap:async(progress)=>[dataURL…], cfg:()=>物件, onApplied:async()=>{}})：存=出圖→直傳→?menuassetset verSave；回復=verApply 後頁面重畫
+  const now = () => new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 16).replace('T', ' ')
+  let VS = null
+  function verOpen(opts) { ensure(); VS = { kind: opts.kind || 'tv', defName: opts.defName || '', snap: opts.snap, cfg: opts.cfg, onApplied: opts.onApplied, msg: '', busy: false }; vdraw(); document.getElementById('maiVer').classList.add('on') }
+  function verClose() { const m = document.getElementById('maiVer'); if (m) m.classList.remove('on'); VS = null }
+  function vst(t) { if (VS) VS.msg = t; const e = document.getElementById('maiVSt'); if (e) e.textContent = t }
+  function vdraw() {
+    const p = document.getElementById('maiVPan'), s = VS; if (!p || !s) return
+    const tv = s.kind === 'tv', list = (assets.vers || []).filter(v => v.kind === s.kind)
+    const nmEl = document.getElementById('maiVn'); const keepName = nmEl ? nmEl.value : s.defName
+    let h = `<h3><b>🕘 版本存檔（${tv ? '四張電視圖' : '直式菜單'}）</b><span class="x" onclick="MAI.verClose()">×</span></h3>`
+    h += `<div class="brief"><b>存成新版本</b><div class="row" style="align-items:center"><input type="text" id="maiVn" value="${String(keepName).replace(/"/g, '&quot;')}" placeholder="版本名稱" style="flex:1;min-width:200px"><button class="go" onclick="MAI.verSave()" ${s.busy ? 'disabled' : ''}>💾 存檔</button></div>`
+      + `<div class="tip">${tv ? '把目前四頁各出一張圖存起來，/prep「新菜單」頁最上面四格會直接換成這版。' : '把目前海報出一張圖存起來（含插圖位置），/prep「新菜單」頁會顯示最新直式版。'}之後隨時可回復。</div></div>`
+    h += `<div class="st" id="maiVSt">${s.msg || ''}</div>`
+    h += `<h4>歷史版本（${list.length}）</h4>`
+    if (!list.length) h += `<div class="tip">還沒有存過版本。</div>`
+    list.forEach((v, i) => { h += `<div class="vrow ${i === 0 ? 'cur' : ''}"><div class="th">${v.urls.map(u => `<img src="${u}" loading="lazy" onclick="window.open('${u}','_blank')" style="cursor:zoom-in">`).join('')}</div>`
+      + `<div class="nm"><b>${String(v.name).replace(/</g, '&lt;')}${i === 0 ? '　<span class="tip" style="color:#8f8">最新</span>' : ''}</b><span class="tip">${v.date}　${v.by || ''}</span></div>`
+      + `<div><button class="ok" onclick="MAI.verApply('${v.id}')" ${s.busy ? 'disabled' : ''}>回復這版</button> <button onclick="MAI.verDel('${v.id}')" ${s.busy ? 'disabled' : ''}>刪除</button></div></div>` })
+    p.innerHTML = h
+  }
+  async function verSave() {
+    const s = VS; if (!s || s.busy) return
+    if (!TK()) { vst('還沒登入——請從已登入的 App 開這一頁再存。'); return }
+    const name = (document.getElementById('maiVn') || {}).value || s.defName
+    s.busy = true; vdraw(); vst('出圖中…')
+    try {
+      const shots = await s.snap(t => vst(t)); const urls = []
+      for (let i = 0; i < shots.length; i++) { vst('上傳中 ' + (i + 1) + '/' + shots.length + '…'); urls.push(await upload(shots[i], 'ver')) }
+      vst('登記中…'); const r = await api('menuassetset', { verSave: { kind: s.kind, name, urls, cfg: s.cfg ? s.cfg() : {} } })
+      if (!r.ok) throw new Error(r.error || '存檔失敗')
+      assets.vers = r.vers || assets.vers; s.busy = false; s.defName = name; vdraw(); vst('✓ 已存成「' + name + '」' + (s.kind === 'tv' ? '，/prep 新菜單頁四張圖已更新。' : '，/prep 新菜單頁已記成最新直式版。'))
+    } catch (e) { s.busy = false; vdraw(); vst('❌ ' + (e.message || e)) }
+  }
+  async function verApply(id) {
+    const s = VS; if (!s || s.busy) return; const v = (assets.vers || []).find(x => x.id === id); if (!v) return
+    if (!confirm('回復到「' + v.name + '」（' + v.date + '）？目前畫面的設定會被蓋掉（建議先存一版）。')) return
+    s.busy = true; vdraw(); vst('回復中…')
+    try { const r = await api('menuassetset', { verApply: id }); if (!r.ok) throw new Error(r.error || '回復失敗'); Object.assign(assets, { photos: r.photos, art: r.art, tvcfg: r.tvcfg, poster: r.poster, vers: r.vers }); if (s.onApplied) await s.onApplied(v); s.busy = false; vdraw(); vst('✓ 已回復「' + v.name + '」') }
+    catch (e) { s.busy = false; vdraw(); vst('❌ ' + (e.message || e)) }
+  }
+  async function verDel(id) {
+    const v = (assets.vers || []).find(x => x.id === id); if (!v || !confirm('刪除版本「' + v.name + '」？')) return
+    const r = await api('menuassetset', { verDel: id }); if (!r.ok) { alert(r.error || '刪除失敗'); return } assets.vers = r.vers || []; vdraw()
+  }
+  return { K, TK, api, load, now, get assets() { return assets }, toDataURL, cleanPhoto, cutout, upload, open, close, setSub, setN, pickFile, clearRef, go, pick, use, useLib, delLib, verOpen, verClose, verSave, verApply, verDel }
 })()
