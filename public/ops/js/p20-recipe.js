@@ -91,7 +91,7 @@
   function detail (r) {
     let ov = document.getElementById('rcpOv')
     if (!ov) { ov = document.createElement('div'); ov.id = 'rcpOv'; ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.62);z-index:80;display:flex;align-items:center;justify-content:center;padding:14px'; ov.onclick = () => { ov.remove(); openKey = null }; document.body.appendChild(ov) }
-    const tabs = [['items', `材料 ${(r.items || []).length}`], ['steps', `步驟 ${(editing ? editing.steps : r.steps || []).length}`], ['cost', '成本'], ['versions', `版本 ${r.nVersions || 0}`]]
+    const tabs = [['items', `材料 ${(r.items || []).length}`], ['steps', `步驟 ${(editing ? editing.steps : r.steps || []).length}${r.stepsDraft && !editing ? '（草稿）' : ''}`], ['cost', '成本'], ['versions', `版本 ${r.nVersions || 0}`]]
     let h = `<div onclick="event.stopPropagation()" style="background:var(--card);border:1px solid var(--line);border-radius:16px;max-width:860px;width:100%;max-height:92vh;overflow:auto;padding:14px 16px">`
     h += `<div style="display:flex;gap:12px;align-items:flex-start"><div style="width:72px;height:72px;border-radius:12px;background:#0E1217;display:flex;align-items:center;justify-content:center;color:var(--muted);overflow:hidden;flex:0 0 auto;position:relative">${r.photo ? `<img src="${imgUrl(r.photo)}" style="width:100%;height:100%;object-fit:cover">` : IC.img}${can() ? `<label style="position:absolute;inset:0;cursor:pointer"><input type="file" accept="image/*" style="display:none" onchange="_rcpPhoto('${esc(r.key)}',this)"></label>` : ''}</div>`
       + `<div style="flex:1;min-width:0"><div style="font-size:19px;font-weight:800;color:var(--ink)">${esc(r.name)} <span class="hint" style="font-size:13px;font-weight:600">${esc(r.code || '')}</span></div>`
