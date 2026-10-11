@@ -1,4 +1,4 @@
-// 📥 統一收件匣 v4.70.54（提醒通知誰／LINE 群可選；視窗撐滿鎖頁、去多餘文字；回覆權限分開勾；圖片氣泡貼合圖片大小；+傳圖片／檔案、貼上截圖；修回過一次後永遠推播；+轉發：接到收件匣後原系統照收）（溝通中樞第三部：三個官方帳號的客人對話集中一頁；只收＋從 app 回覆；單色 stroke SVG）
+// 📥 統一收件匣 v4.70.55（舊版自動重新整理；提醒通知誰／LINE 群可選；視窗撐滿鎖頁、去多餘文字；回覆權限分開勾；圖片氣泡貼合圖片大小；+傳圖片／檔案、貼上截圖；修回過一次後永遠推播；+轉發：接到收件匣後原系統照收）（溝通中樞第三部：三個官方帳號的客人對話集中一頁；只收＋從 app 回覆；單色 stroke SVG）
 // 版型同聊天室：桌機左右雙欄、手機兩層；對話每 6 秒輪詢、清單每 20 秒
 const IB_ICON = {
   back: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>',
@@ -9,6 +9,8 @@ const IB_ICON = {
   clip: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.4 11.1l-9.2 9.2a6 6 0 0 1-8.5-8.5l9.2-9.2a4 4 0 0 1 5.7 5.7l-9.2 9.2a2 2 0 0 1-2.8-2.8l8.5-8.5"/></svg>',
   pin: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13S3 17 3 10a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>',
 }
+const IB_VER = '4755' // 跟後端 INBOX_VER 一致；後端回的 ver 不同＝正式站已更新而這台還是舊 JS → 自動重新整理一次
+function ibVerCheck(d) { try { if (d && d.ver && d.ver !== IB_VER && !sessionStorage.getItem('ibReloaded_' + d.ver)) { sessionStorage.setItem('ibReloaded_' + d.ver, '1'); location.reload() } } catch (_) {} }
 const IB_ST = { new: '新', open: '處理中', done: '已完成' }
 // 對話視窗撐滿（收件匣／聊天室共用，v4.70.52）：頁面鎖住不捲，視窗高＝螢幕高－視窗頂－手機底部捷徑列；只有訊息區會捲
 function paneFit(id) {
@@ -34,11 +36,12 @@ async function inboxLoad(convId) {
   document.getElementById('upd').textContent = '收件匣'
   if (!_ibD) app.innerHTML = '<section><h2>收件匣</h2><div class="hint">讀取中…</div></section>'
   const d = await ibGet('op=list')
+  ibVerCheck(d)
   if (!d || !d.ok) { app.innerHTML = '<section><h2>收件匣</h2><div style="background:var(--card);border:1.5px solid var(--line);border-radius:12px;padding:18px;font-size:15px">' + ibEsc((d && d.error) || '讀不到收件匣') + '</div></section>'; return }
   _ibD = d
   if (convId) _ibCur = convId
   ibRender()
-  _ibListTimer = setInterval(async () => { if (curStore !== 'inbox') return ibStop(); const d2 = await ibGet('op=list'); if (d2 && d2.ok) { _ibD = d2; ibRenderList() } }, 20000)
+  _ibListTimer = setInterval(async () => { if (curStore !== 'inbox') return ibStop(); const d2 = await ibGet('op=list'); ibVerCheck(d2); if (d2 && d2.ok) { _ibD = d2; ibRenderList() } }, 20000)
   if (_ibCur) ibOpen(_ibCur, true)
 }
 function ibUnreadTotal() { return ((_ibD && _ibD.convs) || []).reduce((t, c) => t + (c.unread || 0), 0) }
@@ -150,7 +153,7 @@ async function ibPoll() {
   if (_ibConv) { _ibConv.quota = d.quota; _ibConv.status = d.conv.status; _ibConv.assignee = d.conv.assignee }
   ibModeLine()
 }
-function ibBack() { _ibCur = null; _ibConv = null; ibStop(); _ibListTimer = setInterval(async () => { if (curStore !== 'inbox') return ibStop(); const d2 = await ibGet('op=list'); if (d2 && d2.ok) { _ibD = d2; ibRenderList() } }, 20000); ibRender(); try { history.replaceState(null, '', '#inbox') } catch (_) {} }
+function ibBack() { _ibCur = null; _ibConv = null; ibStop(); _ibListTimer = setInterval(async () => { if (curStore !== 'inbox') return ibStop(); const d2 = await ibGet('op=list'); ibVerCheck(d2); if (d2 && d2.ok) { _ibD = d2; ibRenderList() } }, 20000); ibRender(); try { history.replaceState(null, '', '#inbox') } catch (_) {} }
 async function ibSend() {
   const ta = document.getElementById('ibInput'); if (!ta || _ibBusy) return
   const text = ta.value.trim(); if (!text) return
