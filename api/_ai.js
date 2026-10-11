@@ -99,7 +99,11 @@ function toGemini(system, messages) {
 }
 
 // ── 三家文字呼叫（單次，不含備援） ──
-async function callOnce({ provider, model }, { system, messages, maxTokens, cache, timeoutMs, effort }) { // effort='low'|'medium'|'high'（v4.70.77 推理深度；省時省錢的功能給 low）
+// v4.70.78 張良 2026-10-12「要知道是什麼版本」：每次呼叫都在提示詞最前面告訴模型它現在是哪家哪版（換模型自動跟著變；放最前面＝固定前綴，不影響快取）
+const PROV_CO = { anthropic: 'Anthropic 的 Claude', openai: 'OpenAI 的 ChatGPT', gemini: 'Google 的 Gemini' }
+export function identityLine(provider, model) { return `【你的身分】你現在由 ${PROV_CO[provider] || provider} 系列的「${model}」模型驅動（App 設定頁「AI 模型」可切換）。有人問你是什麼模型／哪一版／哪家 AI，就照這行如實回答，不要說無法確認。\n\n` }
+async function callOnce({ provider, model }, { system, messages, maxTokens, cache, timeoutMs, effort, identify }) {
+  if (identify !== false) system = identityLine(provider, model) + sysText(system) // effort='low'|'medium'|'high'（v4.70.77 推理深度；省時省錢的功能給 low）
   const key = keyOf(provider); if (!key) throw Object.assign(new Error(AI_PROVIDERS[provider].label + ' 尚未設定金鑰（' + AI_PROVIDERS[provider].env + '）'), { nokey: true })
   const ctl = new AbortController(); const tm = setTimeout(() => ctl.abort(), timeoutMs || 120000)
   try {
