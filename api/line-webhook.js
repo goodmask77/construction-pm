@@ -512,7 +512,7 @@ async function loadCrewText(secretOK = false) {
       // 但機密欄位（薪資/身分證/保險/銀行）只在老闆（張良）的私訊裡回答，群組一律只回公開資訊（姓名/部門/到職/生日）。
       const rosterFieldsAll = (roster && Array.isArray(roster.fields) && roster.fields.length) ? roster.fields : null
       const rosterFields = rosterFieldsAll && !secretOK ? rosterFieldsAll.filter(f => !SECRET_FIELD_RE.test(String(f.label || '')) && !/^(nid|idNo|bank|salary|insur|workPermit|special)/i.test(String(f.key || ''))) : rosterFieldsAll
-      out.push(`【夥伴名冊（共 ${people.length} 人；生日格式 西元年-月-日，問「誰快生日」看月-日。⚠️年資已由系統算好標在到職日後——回答滿幾年/年資問題「直接引用」，禁止自己心算日期差。${secretOK ? '含機密欄位：薪資/保險/證件/銀行——只在這個私訊回老闆/審核人，群組不透露' : '⚠️機密欄位（身分證/銀行/薪資/保險）系統已拔掉沒給你：有人問一律回「這是個資，請本人私訊張哥或到 /prep 名冊看」，不要猜、不要說「我手上有」'}）】`)
+      out.push(`【夥伴名冊（共 ${people.length} 人；生日格式 西元年-月-日，問「誰快生日」看月-日。⚠️年資已由系統算好標在到職日後——回答滿幾年/年資問題「直接引用」，禁止自己心算日期差。${secretOK ? '含機密欄位：薪資/保險/證件/銀行——只在這個私訊回老闆/審核人，群組不透露' : '⚠️機密欄位（身分證/銀行/薪資/保險）系統已拔掉沒給你：有人問一律回「這是個資，請本人私訊張良或到 /prep 名冊看」，不要猜、不要說「我手上有」'}）】`)
       people.forEach(p => {
         const ten = tenureOf(p.startDate)
         let line = `  - ${p.name}${p.nick ? '（' + p.nick + '）' : ''}｜生日:${p.bday || '?'}｜到職:${p.startDate || '?'}${ten ? `（年資${ten}）` : ''}${p.dept ? '｜部門:' + p.dept : ''}｜${p.status || '在職'}`
@@ -1298,12 +1298,12 @@ async function loadFilelibText() {
 
 async function answer(question, snaps, accountsText, financeText, activityText, estimatesText, crewText, canAct, history, memoryText, conclusionsText, tasksText, sheetText, posText, catalogText, supplyText, lineQuotaText, filelibText, groupChatText, moneyOK = true) {
   // 外部群（moneyOK=false）：不給任何金額/財務資料，並下鐵令禁止透露
-  const moneyGuard = moneyOK ? '' : '\n\n⚠️【外部群鐵律】這個群是「外部群」，你**絕對禁止**透露任何：金額、預估/已付/未付、單價、報價、成本、營業額、銀行/帳戶餘額、零用金、財務數字、薪資。被問到金額類一律回「這部分金額不方便在這裡提供，我私下跟張哥確認 🙏」，不要旁敲側擊地洩漏。你可以講進度、工序、一般事務、用 web_search 查一般問題。'
+  const moneyGuard = moneyOK ? '' : '\n\n⚠️【外部群鐵律】這個群是「外部群」，你**絕對禁止**透露任何：金額、預估/已付/未付、單價、報價、成本、營業額、銀行/帳戶餘額、零用金、財務數字、薪資。被問到金額類一律回「這部分金額不方便在這裡提供，我私下跟張良確認 🙏」，不要旁敲側擊地洩漏。你可以講進度、工序、一般事務、用 web_search 查一般問題。'
   // v2.5.9 唯讀鐵令（2026-09-16 翻車：群組叫 DD 建 7 件任務，DD 沒有寫入權卻回了整篇「都建好了」）：
   // 沒有動作指南＝這輪根本執行不了任何寫入 → 必須明講，禁止 AI 用人設「演」出已完成
   const readonlyGuard = canAct ? '' : ('\n\n⚠️【唯讀鐵令】這一輪你「沒有」任何寫入能力：不能建任務/大項、不能記帳、不能記日誌、不能改資料——系統不會執行任何指令。被要求「記下來/建任務/整理成任務」時，你**絕對禁止**說「已建好/已記好/都建好了/開好了」這類完成話術（說了＝說謊，系統會抓包標警語）。正確回法：先把內容條列整理好，然後明講「我在這裡沒有寫入權限，請張良（操作者）在群組直接下指令、或私訊我一句『照上面建』，我就真的建進去」。'
     + '\n\n【你可以查 A Beach 訂位檔期（唯讀，不用確認）】有人問某天「有沒有訂位/有沒有檔期/空不空/那天能不能辦/包場」時，輸出一行 JSON 指令讓系統代查：\n```json\n{"type":"query_resv","date":"2027-06-18"}\n```\ndate 用 YYYY-MM-DD（單日）或 YYYY-MM（整月）；要查一段期間加 "to":"YYYY-MM-DD"。系統會把「檔期狀況」查好回填給你，你再據此回答——你沒有「稍後再傳」的能力，要查就必須在這一則同時輸出這段 JSON（只說要查卻沒帶 JSON＝永遠不會查）。'
-    + (moneyOK ? '' : '\n\n⚠️這個群只能查「檔期狀況」（某天空檔／已有幾組幾人／可能包場），系統查回來的資料本來就不含客人姓名、電話、備註內容——這些是客人個資，對外一律不提供。有人問「誰訂的／客人電話／某客人來過幾次」時，回「客人資料這邊不方便提供，要查請私訊張哥 🙏」，不要用 query_resv 的 name/top。'))
+    + (moneyOK ? '' : '\n\n⚠️這個群只能查「檔期狀況」（某天空檔／已有幾組幾人／可能包場），系統查回來的資料本來就不含客人姓名、電話、備註內容——這些是客人個資，對外一律不提供。有人問「誰訂的／客人電話／某客人來過幾次」時，回「客人資料這邊不方便提供，要查請私訊張良 🙏」，不要用 query_resv 的 name/top。'))
   // v4.70.42 批次 1b 量測：每段資料各佔多少字（健康頁「資料段落佔比」；要瘦身先看哪段最肥）
   const SEC = { 規則: (canAct ? BOT_AGENT_GUIDE : '') + BOT_PERSONA + readonlyGuard + moneyGuard, 記憶: memoryText || '', 快照: snapshotsToContext(snaps, moneyOK), 任務: tasksText || '', 帳戶: moneyOK ? (accountsText || '') : '', 內帳: moneyOK ? (financeText || '') : '', 動態: activityText || '', 估價: moneyOK ? (estimatesText || '') : '', 夥伴班表人資: crewText || '', 結論: conclusionsText || '', 試算表: sheetText || '', '營收/阿桑/EM': moneyOK ? (posText || '') : '', 供應鏈: moneyOK ? (supplyText || '') : '', LINE額度: lineQuotaText || '', 目錄: catalogText || '', 文件庫: filelibText || '', 群組訊息: moneyOK ? (groupChatText || '') : '', 對話歷史: (Array.isArray(history) ? history : []).map(h => String(h.content || '')).join('') }
   if (_aiAgg) { _aiAgg.sec = {}; for (const [k, v] of Object.entries(SEC)) _aiAgg.sec[k] = String(v).length; _aiAgg.lean = DD_LEAN }
