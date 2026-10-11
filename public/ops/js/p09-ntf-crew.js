@@ -975,7 +975,7 @@ async function aiCfgEdit(){
     <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">${pills}</div>
     ${aiUsageHtml(d)}
     <div class="hint" style="margin-bottom:12px">每個功能各自選用哪家＋哪個模型。沒選＝走預設；選的那家壞了（額度／模型下架）會自動退回預設，不會卡住。${d.canEdit?'改完按該功能的「儲存」，「測試」會真的打一次給你看回覆與秒數。':'（只有審核人能改，目前唯讀）'}<br>金鑰只放伺服器端：要加／換金鑰跟 CC 說。</div>
-    ${(d.routes||[]).map(card).join('')}</div>`
+    ${(d.routes||[]).map(card).join('')}${aiAbHtml(d)}</div>`
   if (!d.canEdit) setTimeout(()=>{ ov.querySelectorAll('input,select,button.on,button').forEach(e=>{ if(!/✕/.test(e.textContent||'')) e.disabled=true }) },0)
   ov.onclick = () => ov.remove()
   document.body.appendChild(ov)
@@ -984,7 +984,7 @@ async function aiCfgEdit(){
 async function aiProvChange(sel, init){
   const card = sel.closest('[data-k]'); const prov = sel.value; const kind = card.dataset.kind
   const mSel = card.querySelector('.aiModel'); const cu = card.querySelector('.aiModelCustom')
-  const r = (_aiD.routes||[]).find(x=>x.key===card.dataset.k) || {}; const want = init && r.cur ? (r.cur.model||'') : ''
+  const r = (_aiD.routes||[]).find(x=>x.key===card.dataset.k) || (card.dataset.k==='__ab' ? { cur: ((_aiD.ab||{}).dd)||{} } : {}); const want = init && r.cur ? (r.cur.model||'') : '' // v4.70.77 __ab=雙答比對卡
   if (!prov) { mSel.disabled = true; mSel.innerHTML = '<option value="">（先選左邊）</option>'; cu.style.display='none'; return }
   mSel.disabled = false; mSel.innerHTML = '<option value="">載入模型清單…</option>'
   const ck = prov + ':' + kind
@@ -1020,6 +1020,79 @@ async function aiCfgSave(btn, reset){
   btn.disabled = false; btn.textContent = t
   if (d && d.ok) { btn.textContent = '已儲存 ✓'; setTimeout(()=>{ btn.textContent = t; const o=document.getElementById('aiOv'); if(o){ o.remove(); aiCfgEdit() } }, 900) }
   else alert((d&&d.error)||'儲存失敗')
+}
+
+// ── D哥雙答比對（v4.70.77 張良 2026-10-12「測試群用 sol、正式群留 opus，一週後比哪邊答錯少」）──
+// 勾選的群裡同一句話「正式設定(A)」和「比對模型(B)」各答一次，兩邊都記下來；紀錄頁按 A較好／B較好／差不多，上面統計給張良拍板
+function aiAbHtml(d){
+  const esc = s => String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')
+  const P = d.providers||{}; const ab = (d.ab||{}).dd || {}; const on = !!ab.on
+  const gs = [{ gid:'dm', name:'操作者私訊（你私訊 D哥）' }, ...(d.abGroups||[]).filter(g=>!g.hide || (ab.gids||[]).includes(g.gid)).map(g=>({ gid:g.gid, name:(g.name||g.gid)+(g.key?'（常用群）':'') }))]
+  const gidSel = new Set(ab.gids||[])
+  const provOpts = `<option value="">（選比對模型是哪一家）</option>` + Object.entries(P).map(([k,p])=>`<option value="${k}" ${k===ab.provider?'selected':''} ${p.hasKey?'':'disabled'}>${esc(p.label)}${p.hasKey?'':'（未設金鑰）'}</option>`).join('')
+  const st = 'background:var(--soft);border:1px solid var(--line);border-radius:8px;padding:7px 8px;color:var(--ink);font-size:13px;min-width:0'
+  return `<div data-k="__ab" data-kind="text" style="border:1px dashed var(--line);border-radius:12px;padding:12px;margin-top:4px;background:var(--card)">
+    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:2px"><b style="font-size:15px">D哥雙答比對</b><span class="hint" style="font-size:11px">測試用：勾選的地方，同一句話「正式設定 A」和「比對模型 B」各答一次，兩邊都記下來給你評；一週後看哪邊答錯少再決定 D哥用哪家</span></div>
+    <div class="hint" style="font-size:11.5px;margin-bottom:8px">目前：${on?`<b>開啟</b>・B＝${esc(P[ab.provider]?P[ab.provider].label:ab.provider)} ${esc(ab.model||'（該家預設）')}・${(ab.gids||[]).length} 個地方・實際回話用 ${ab.reply==='a'?'A':'B'}`:'關閉'}${ab.by?`　<span>${esc(ab.by)} ${esc(String(ab.at||'').slice(0,10))} 設定</span>`:''}</div>
+    <label style="display:flex;align-items:center;gap:6px;margin:4px 0 8px;font-size:13px"><input type="checkbox" id="aiAbOn" ${on?'checked':''}> 開啟比對</label>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:7px;align-items:center">
+      <select class="aiProv" onchange="aiProvChange(this)" style="${st}">${provOpts}</select>
+      <select class="aiModel" style="${st}" ${ab.provider?'':'disabled'}><option value="">${ab.provider?'載入模型清單…':'（先選左邊）'}</option></select>
+      <input class="aiModelCustom" placeholder="或手動輸入模型代號" value="${esc(ab.model||'')}" style="grid-column:1/-1;display:none;${st}">
+    </div>
+    <div style="margin-top:8px"><span class="hint" style="font-size:12px">在哪些地方比對（只影響勾的）：</span><div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:4px">${gs.map(g=>`<label style="display:inline-flex;align-items:center;gap:4px;padding:3px 9px;border:1px solid var(--line);border-radius:999px;font-size:12px;background:var(--soft)"><input type="checkbox" class="aiAbGid" value="${esc(g.gid)}" ${gidSel.has(g.gid)?'checked':''}>${esc(g.name)}</label>`).join('')}</div></div>
+    <div style="margin-top:8px;display:flex;gap:12px;flex-wrap:wrap;align-items:center;font-size:13px"><span class="hint" style="font-size:12px">這些地方實際回話用：</span><label style="display:inline-flex;align-items:center;gap:4px"><input type="radio" name="aiAbReply" value="b" ${ab.reply!=='a'?'checked':''}> B 比對模型</label><label style="display:inline-flex;align-items:center;gap:4px"><input type="radio" name="aiAbReply" value="a" ${ab.reply==='a'?'checked':''}> A 正式設定</label></div>
+    <div style="display:flex;gap:6px;justify-content:flex-end;margin-top:8px;flex-wrap:wrap"><button class="mini" style="padding:6px 12px" onclick="aiAbOpen()">看比對紀錄</button><button class="mini on" style="padding:6px 16px" onclick="aiAbSave(this)">儲存</button></div>
+  </div>`
+}
+async function aiAbSave(btn){
+  const card = btn.closest('[data-k]'); const sel = aiPick(card)
+  const on = document.getElementById('aiAbOn').checked
+  const gids = [...card.querySelectorAll('.aiAbGid:checked')].map(i=>i.value)
+  if (on && !sel.provider) { alert('請選比對模型是哪一家'); return }
+  if (on && !gids.length) { alert('請至少勾一個地方'); return }
+  const reply = (card.querySelector('input[name=aiAbReply]:checked')||{}).value || 'b'
+  btn.disabled = true; const t = btn.textContent; btn.textContent = '儲存中…'
+  const r = await fetch('/api/mail-sync?aicfgset=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ op:'ab', key:'dd', ab:{ on, provider: sel.provider, model: sel.model, gids, reply }, token: TK() }) })
+  const d = await r.json().catch(()=>null)
+  btn.disabled = false; btn.textContent = t
+  if (d && d.ok) { btn.textContent = '已儲存 ✓'; setTimeout(()=>{ const o=document.getElementById('aiOv'); if(o){ o.remove(); aiCfgEdit() } }, 800) }
+  else alert((d&&d.error)||'儲存失敗')
+}
+async function aiAbOpen(){
+  let d; try { const r = await fetch('/api/mail-sync?aiab=' + encodeURIComponent(K) + '&me=' + encodeURIComponent(TK()||'') + '&route=dd'); d = await r.json() } catch(e){}
+  if (!d || !d.ok) { alert((d&&d.error)||'讀不到比對紀錄'); return }
+  const esc = s => String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')
+  const L = d.list||[]
+  const cnt = { a:0, b:0, tie:0, none:0 }; L.forEach(x=>{ cnt[x.v||'none'] = (cnt[x.v||'none']||0)+1 })
+  const okOf = k => L.filter(x=>x[k]&&!x[k].err)
+  const avg = k => { const xs = okOf(k); return xs.length ? (xs.reduce((s,x)=>s+(x[k].ms||0),0)/xs.length/1000).toFixed(1)+' 秒' : '—' }
+  const errs = k => L.filter(x=>x[k]&&x[k].err).length
+  const nm = k => { const x = okOf(k)[0]; return x ? x[k].model : (k==='a'?'（正式設定）':'（比對模型）') }
+  const rows = L.map(x=>`<div style="border:1px solid var(--line);border-radius:10px;padding:10px;margin-bottom:8px;background:var(--card)">
+    <div class="hint" style="font-size:11px;margin-bottom:4px">${esc(String(x.t||'').replace('T',' ').slice(5,16))}・${esc(x.gname||x.gid)}${x.round>1?'・第 '+x.round+' 輪':''}・實際回的是 <b>${x.replied==='a'?'A':'B'}</b></div>
+    <div style="font-size:13px;margin-bottom:6px;white-space:pre-wrap"><b>問：</b>${esc(x.q)}</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">${['a','b'].map(k=>{ const r=x[k]||{}; return `<div style="border:1px solid var(--line);border-radius:8px;padding:8px;font-size:12.5px;background:${x.v===k?'rgba(61,190,108,.14)':'var(--soft)'}"><div class="hint" style="font-size:11px;margin-bottom:3px"><b>${k.toUpperCase()}</b> ${esc(r.model||'')}${r.ms?'・'+(r.ms/1000).toFixed(1)+' 秒':''}${r.fb?'・退了備援':''}</div><div style="white-space:pre-wrap;max-height:260px;overflow:auto;line-height:1.5">${r.err?'<span style="color:#F07373">✗ '+esc(r.err)+'</span>':esc(r.text||'（空）')}</div></div>` }).join('')}</div>
+    <div style="display:flex;gap:6px;justify-content:flex-end;margin-top:6px">${[['a','A 較好'],['b','B 較好'],['tie','差不多']].map(([v,t])=>`<button class="mini ${x.v===v?'on':''}" style="padding:4px 10px;font-size:12px" onclick="aiAbVerdict('${esc(x.id)}','${v}')">${t}</button>`).join('')}</div>
+  </div>`).join('')
+  const ov = document.createElement('div'); ov.id='aiAbOv'
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(10,14,22,.65);z-index:75;display:flex;align-items:flex-start;justify-content:center;padding:14px;overflow:auto'
+  ov.innerHTML = `<div style="background:var(--bg);border:1px solid var(--line);border-radius:16px;width:100%;max-width:760px;padding:16px" onclick="event.stopPropagation()">
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px"><b style="font-size:17px">D哥雙答比對紀錄</b><span class="hint" style="font-size:11px">${L.length} 筆（留最近 150）</span><button class="mini" style="margin-left:auto;padding:6px 12px" onclick="document.getElementById('aiAbOv').remove()">✕</button></div>
+    <div style="overflow-x:auto;margin-bottom:10px;border:1px solid var(--line);border-radius:10px;padding:8px;background:var(--card)"><table style="width:100%;border-collapse:collapse;font-size:12.5px"><thead><tr class="hint" style="font-size:11px"><th style="text-align:left;padding:2px 4px"></th><th style="text-align:left;padding:2px 4px">A 正式設定</th><th style="text-align:left;padding:2px 4px">B 比對模型</th></tr></thead><tbody>
+      <tr style="border-top:1px solid var(--line)"><td style="padding:4px">模型</td><td style="padding:4px">${esc(nm('a'))}</td><td style="padding:4px">${esc(nm('b'))}</td></tr>
+      <tr style="border-top:1px solid var(--line)"><td style="padding:4px">你評較好</td><td style="padding:4px"><b>${cnt.a}</b> 次</td><td style="padding:4px"><b>${cnt.b}</b> 次</td></tr>
+      <tr style="border-top:1px solid var(--line)"><td style="padding:4px">平均秒數</td><td style="padding:4px">${avg('a')}</td><td style="padding:4px">${avg('b')}</td></tr>
+      <tr style="border-top:1px solid var(--line)"><td style="padding:4px">失敗次數</td><td style="padding:4px">${errs('a')}</td><td style="padding:4px">${errs('b')}</td></tr>
+    </tbody></table><div class="hint" style="font-size:11px;margin-top:4px">差不多 ${cnt.tie} 次・還沒評 ${cnt.none} 筆。每筆下面按「A 較好／B 較好／差不多」，這張表就會累計。</div></div>
+    ${rows || '<div class="hint">還沒有紀錄：先在設定頁開啟比對、勾地方，然後在那個群問 D哥幾句。</div>'}
+  </div>`
+  ov.onclick = () => ov.remove(); document.body.appendChild(ov)
+}
+async function aiAbVerdict(id, v){
+  const r = await fetch('/api/mail-sync?aicfgset=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ op:'abverdict', key:'dd', id, v, token: TK() }) })
+  const d = await r.json().catch(()=>null)
+  if (d && d.ok) { const o=document.getElementById('aiAbOv'); if(o) o.remove(); aiAbOpen() } else alert((d&&d.error)||'存不了')
 }
 
 // ── 用量儀表板（v4.70.30 張良「每個 AI API 能不能顯示即時用量與額度」：各家官方沒有剩餘額度 API → 自己記 token 估金額＋張良填儲值→估剩／撐幾天）──

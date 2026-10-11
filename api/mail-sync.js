@@ -1663,6 +1663,10 @@ export default async function handler(req, res) {
     if (!ok2 || String(req.query.aicfgset) !== ok2) return res.status(403).json({ ok: false })
     let b = {}; try { b = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
     const adm = await aiAdminOK(b.token); if (!adm) return res.status(403).json({ ok: false, error: '只有審核人能改 AI 模型設定' })
+    if (b.op === 'ab' || b.op === 'abverdict') { // v4.70.77 雙答比對：設定（on/provider/model/gids/reply）／評哪邊較好
+      try { const { aiAbSet, aiAbVerdict } = await import('./_ai.js'); const out = b.op === 'ab' ? await aiAbSet(String(b.key || 'dd'), b.ab || null, adm.name) : await aiAbVerdict(String(b.key || 'dd'), String(b.id || ''), String(b.v || ''), adm.name); return res.status(200).json({ ok: true, ab: out }) }
+      catch (e) { return res.status(400).json({ ok: false, error: e.message || '存檔失敗' }) }
+    }
     if (b.op === 'budget' || b.op === 'price' || b.op === 'rate') { // v4.70.30 儲值／單價／匯率
       try { const { aiBudgetSet } = await import('./_ai.js'); await aiBudgetSet(b.op, b, adm.name); return res.status(200).json({ ok: true }) }
       catch (e) { return res.status(400).json({ ok: false, error: e.message || '存檔失敗' }) }
@@ -1690,6 +1694,15 @@ export default async function handler(req, res) {
     const { aiListModels } = await import('./_ai.js')
     res.setHeader('Cache-Control', 'private, no-store')
     return res.status(200).json(await aiListModels(String(req.query.provider || ''), req.query.kind === 'image' ? 'image' : 'text'))
+  }
+  if (req.query?.aiab) { // GET ?aiab=<OPS_BOARD_KEY>&me=token&route=dd → v4.70.77 雙答比對紀錄（審核人限定）
+    const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
+    if (!ok2 || String(req.query.aiab) !== ok2) return res.status(403).json({ ok: false })
+    const adm = await aiAdminOK(req.query.me); if (!adm) return res.status(403).json({ ok: false, error: '審核人限定' })
+    const { aiAbList, aiCfgGet } = await import('./_ai.js'); const route = String(req.query.route || 'dd')
+    const cfgAb = await aiCfgGet()
+    res.setHeader('Cache-Control', 'private, no-store')
+    return res.status(200).json({ ok: true, route, cfg: (cfgAb.ab || {})[route] || null, list: await aiAbList(route) })
   }
   if (req.method === 'POST' && req.query?.aitest) { // POST body={provider, model, kind, prompt, token} → 用指定那家跑一句，回文字／圖＋耗時（不退備援，壞就直接報錯）
     const ok2 = (process.env.OPS_BOARD_KEY || '').trim()

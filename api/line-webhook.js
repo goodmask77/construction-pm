@@ -1318,8 +1318,10 @@ async function answer(question, snaps, accountsText, financeText, activityText, 
   // v4.70.29 走 AI 中樞 route=dd（設定頁可選 ChatGPT／Claude／Gemini；cache=system 可快取→Claude 連續對話輸入成本大降）；選的那家壞了自動退備援，D哥不會啞掉
   const tAi = Date.now()
   try {
-    const { aiCall } = await import('./_ai.js')
-    const r = await aiCall('dd', { system, messages, maxTokens: 3000, cache: true })
+    const { aiCallAB } = await import('./_ai.js')
+    if (_abCtx) _abCtx.round = (_abCtx.round || 0) + 1
+    // v4.70.77 雙答比對：這句話來自設定頁勾選的群 → 正式設定＋比對模型並行各答一次（兩邊都記），不在名單＝照常；effort:'low'＝推理款求快（D哥要秒回）
+    const r = await aiCallAB('dd', { system, messages, maxTokens: 3000, cache: true, effort: 'low' }, _abCtx ? { ..._abCtx, q: question } : null)
     if (r.tried && r.tried.length) console.log('dd primary failed → used', r.provider, r.model, r.tried)
     aiAggAdd(r, system, tAi) // v4.70.39 健康紀錄：這輪用哪家、備援、token、是否截斷
     return r.text || '（沒有內容）'
@@ -1331,6 +1333,8 @@ async function answer(question, snaps, accountsText, financeText, activityText, 
 }
 // v4.70.39 一個事件內所有 AI 呼叫的彙總（代查迴圈一題可能打 2–4 次）：calls／fb 備援次數／err／it 輸入 token／inCut 輸入被「中段略」截斷／outCut 輸出撞到 3000 上限
 let _aiAgg = null
+// v4.70.77 雙答比對範圍：每則事件問 AI 前設 { gid: LINE群id 或 'dm'(操作者私訊) 或 ''(不比), round }
+let _abCtx = null
 // v4.70.43 批次 1b：本輪各資料段落「完整版」（query_section 代查用；每事件開頭由 answer() 重設）
 let _secFull = null
 const LEAN_CAP = { 快照: 6000, 任務: 5000, 內帳: 2500, 動態: 2500, 估價: 2000, 夥伴班表人資: 7000, 結論: 2500, 試算表: 2500, '營收/阿桑/EM': 9000, 供應鏈: 3000, 目錄: 2500, 文件庫: 2500, 群組訊息: 3000 }
@@ -1978,7 +1982,7 @@ async function ddTranslate(text, mode) {
   // v4.70.29 走 AI 中樞 route=translate（預設 Haiku 便宜快，設定頁可換家）
   try {
     const { aiCall } = await import('./_ai.js')
-    const r = await aiCall('translate', { system: `即時口譯：把訊息${dir}。只輸出譯文，不解釋不加引號。保留語氣敬語；人名品牌保留原文。`, messages: [{ role: 'user', content: text }], maxTokens: Math.min(500, Math.max(80, text.length * 3)) })
+    const r = await aiCall('translate', { effort: 'low', system: `即時口譯：把訊息${dir}。只輸出譯文，不解釋不加引號。保留語氣敬語；人名品牌保留原文。`, messages: [{ role: 'user', content: text }], maxTokens: Math.min(500, Math.max(80, text.length * 3)) })
     return r.text || '（翻譯暫時失敗，再說一次）'
   } catch (_) { return '（翻譯暫時失敗，再說一次）' }
 }
@@ -2020,7 +2024,7 @@ async function summarizeOverflow(oldSummary, dropped) {
   const prompt = `你在維護一份 LINE 對話的「長期摘要」。把【既有摘要】和【即將被移出逐字記憶的舊對話】合併成更新版摘要：保留仍重要的事實、決定、數字、金額、日期、待辦、使用者偏好與習慣；閒聊丟掉。600字內、條列。只輸出摘要本身，不要開場白。\n\n【既有摘要】\n${oldSummary || '（無）'}\n\n【舊對話】\n${convo}`
   try { // v4.70.29 走 AI 中樞 route=summary（預設 Haiku）
     const { aiCall } = await import('./_ai.js')
-    const r = await aiCall('summary', { messages: [{ role: 'user', content: prompt }], maxTokens: 900 })
+    const r = await aiCall('summary', { messages: [{ role: 'user', content: prompt }], maxTokens: 900, effort: 'low' })
     return r.text || oldSummary || ''
   } catch (_) { return oldSummary || '' }
 }
@@ -2922,6 +2926,7 @@ export default async function handler(req, res) {
       // 3) 一般流程：載入資料＋對話記憶＋長期記事本 → 問 AI（操作者才開放下指令）
       const [snaps, accountsText, financeText, activityText, estimatesText, crewText, history, memList, conclusionsText, tasksText, sheetText, posText, catalogText, supplyText, lineQuotaText, filelibText, groupChatText] = await Promise.all([loadSnapshots(), loadAccounts(), loadFinanceText(), loadActivityText(), loadEstimatesText(), Promise.all([loadCrewText(secretOK), loadShiftText(), loadPunchText(), loadHrText(), secretOK ? loadSalaryText() : Promise.resolve('')]).then(parts => parts.join('')), getChatHistory(convId), getMemory(), loadConclusionsText(), loadTasksText(), loadSheetText(), Promise.all([loadPosText(), loadBossText(), loadEmText()]).then(([a, b, c]) => a + b + c), loadCatalogText(), loadSupplyText(), loadLineQuotaText(), loadFilelibText(), loadGroupChatText().then(async g => g + await loadPushLogText(convId))])
       if (isDM && TOKEN) fetch('https://api.line.me/v2/bot/chat/loading/start', { method: 'POST', headers: { 'content-type': 'application/json', Authorization: 'Bearer ' + TOKEN }, body: JSON.stringify({ chatId: userId, loadingSeconds: 60 }) }).catch(() => {}) // v4.70.43 1b：私訊顯示「輸入中」動畫（免費、不耗 reply token；群組沒有這功能）
+      _abCtx = { gid: isDM ? (op ? 'dm' : '') : gid, round: 0 } // v4.70.77 雙答比對：群組用 gid、操作者私訊用 'dm'，其他私訊不比
       let rawReply = await answer(text, snaps, accountsText, financeText, activityText, estimatesText, crewText, canAct, history, memoryToText(memList), conclusionsText, tasksText, sheetText, posText, catalogText, supplyText, lineQuotaText, filelibText, groupChatText, moneyOK)
       // 🔎 資料代查迴圈（張良 2026-09-27 根除）：AI 輸出 query_pos_day → 系統查庫 → 資料回填再答一輪（唯讀自動執行,不經確認）
       // v4.38.1 假代查抓包（張良 2026-10-04「dd到底查不查得到」：DD 答應查九月婚禮包場說「稍等一下」卻沒輸出指令,使用者空等）：
