@@ -4454,6 +4454,8 @@ export default async function handler(req, res) {
       let bG = {}; try { bG = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {}
       const opG = String(bG.op || '')
       if (opG === 'save') return res.status(200).json(await GO.custSave({ code: codeG, body: bG }))
+      if (opG === 'who') return res.status(200).json(await GO.custWho({ code: codeG, at: bG.at }))
+      if (opG === 'mine') return res.status(200).json(await GO.custMine({ code: codeG, body: bG }))
       if (opG === 'submit') return res.status(200).json(await GO.custSubmit({ code: codeG }))
       if (opG === 'confirm') return res.status(200).json(await GO.custConfirm({ code: codeG }))
       if (opG === 'parse') { const o = await GO.getOrder(codeG); if (!o) return res.status(404).json({ ok: false, error: '找不到這張點餐單' }); return res.status(200).json(await GO.parseText({ text: bG.text })) }

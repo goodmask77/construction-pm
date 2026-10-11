@@ -8,35 +8,49 @@
 <title>GROUN:D 團體訂餐</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700;900&family=Lora:wght@600;700&display=swap">
 <style>
-/* 🧾 團體訂餐 客人頁 v4.70.78（/order/<連結碼>；免登入，連結碼即授權；菜單即時讀最新菜單；計價＝/ops/js/grporder-calc.js 同一支） */
+/* 🧾 團體訂餐 客人頁 v4.70.78 批次 1b（/order/<連結碼>；每人自己點，像 UberEats／肯德基點餐機；LINE 內開自動帶名字；計價＝/ops/js/grporder-calc.js 同一支） */
 :root{--bg:#f5efe4;--paper:#fffaf2;--ink:#2b1d18;--mute:#7a6a62;--line:#d8c9b6;--red:#ce1611;--soft:#f3e4dd;--ok:#2f7a4a;--warn:#b4581a;--warnbg:#fdeedd;--num:'Lora','Noto Sans TC',serif}
-*{box-sizing:border-box}html,body{margin:0}body{background:var(--bg);color:var(--ink);font:14.5px/1.5 'Noto Sans TC',system-ui,sans-serif;padding-bottom:calc(84px + env(safe-area-inset-bottom,0px))}
-.wrap{max-width:560px;margin:0 auto;padding:12px 14px}
-.brand{text-align:center;padding:8px 0 4px}.brand b{display:block;color:var(--red);font-size:20px;font-weight:900;letter-spacing:.06em}.brand small{color:var(--mute);font-size:12px;letter-spacing:.18em}
-.card{background:var(--paper);border:1px solid var(--line);border-radius:14px;padding:14px;margin-top:12px}
-h2{font-size:17px;margin:0 0 4px;font-weight:900}h3{font-size:13px;margin:0 0 8px;font-weight:700;color:var(--mute);letter-spacing:.06em}
+*{box-sizing:border-box}html,body{margin:0}body{background:var(--bg);color:var(--ink);font:14.5px/1.5 'Noto Sans TC',system-ui,sans-serif;padding-bottom:calc(92px + env(safe-area-inset-bottom,0px))}
+.wrap{max-width:560px;margin:0 auto;padding:10px 14px}
+.brand{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:6px 0}.brand b{color:var(--red);font-size:19px;font-weight:900;letter-spacing:.06em}.brand small{display:block;color:var(--mute);font-size:11.5px;letter-spacing:.16em}
+.card{background:var(--paper);border:1px solid var(--line);border-radius:14px;padding:12px 14px;margin-top:10px}
+h2{font-size:17px;margin:0 0 2px;font-weight:900}h3{font-size:13px;margin:0 0 8px;font-weight:700;color:var(--mute);letter-spacing:.06em}
 .sub{font-size:12.5px;color:var(--mute)}
-input,select,textarea{font:inherit;color:inherit;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:7px 9px;min-width:0;max-width:100%}
+input,select,textarea{font:inherit;color:inherit;background:var(--bg);border:1px solid var(--line);border-radius:9px;padding:8px 10px;min-width:0;max-width:100%}
 input:focus,select:focus,textarea:focus,button:focus-visible{outline:2px solid var(--red);outline-offset:1px}
-.btn{border:1px solid var(--line);background:var(--paper);color:var(--ink);border-radius:9px;padding:9px 14px;font:700 13.5px 'Noto Sans TC',sans-serif;cursor:pointer}
-.btn.red{background:var(--red);color:#fff;border-color:var(--red)}.btn.sm{padding:4px 9px;font-size:12px}.btn[disabled]{opacity:.45;cursor:not-allowed}
+.btn{border:1px solid var(--line);background:var(--paper);color:var(--ink);border-radius:10px;padding:9px 14px;font:700 13.5px 'Noto Sans TC',sans-serif;cursor:pointer}
+.btn.red{background:var(--red);color:#fff;border-color:var(--red)}.btn.sm{padding:4px 9px;font-size:12px}.btn[disabled]{opacity:.45;cursor:not-allowed}.btn.line{background:#06c755;border-color:#06c755;color:#fff}
 .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 .pill{display:inline-block;border-radius:999px;padding:2px 9px;font-size:11.5px;font-weight:700;background:var(--soft);color:var(--red)}.pill.ok{background:#dff3e5;color:var(--ok)}.pill.warn{background:var(--warnbg);color:var(--warn)}.pill.grey{background:var(--line);color:var(--ink)}
-.person{border:1px solid var(--line);border-radius:12px;padding:12px;background:var(--paper);display:grid;gap:8px;margin-top:10px}.person.pend{border-color:var(--warn);background:var(--warnbg)}
-.person .hd{display:flex;justify-content:space-between;align-items:center;gap:8px}.person .hd input{font-weight:700;width:130px}
-.tot{font-family:var(--num);font-size:19px;font-weight:700;color:var(--red);font-variant-numeric:tabular-nums}
-.fld{display:grid;grid-template-columns:58px 1fr;gap:6px;align-items:center;font-size:13px}.fld label{color:var(--mute);font-weight:500}.fld .in{display:flex;gap:6px;flex-wrap:wrap;align-items:center}.fld select{flex:1 1 140px}.fld input.q{width:50px;text-align:center}.fld input.nt{width:84px}
-.sug{display:flex;gap:6px;flex-wrap:wrap;align-items:center;font-size:12.5px}.sug .btn{border-color:var(--warn);color:var(--warn)}
+.seg{display:flex;background:var(--soft);border-radius:12px;padding:3px;margin-top:10px}.seg button{flex:1;border:0;background:transparent;border-radius:10px;padding:8px 4px;font:800 13.5px 'Noto Sans TC',sans-serif;color:var(--mute)}.seg button.on{background:var(--paper);color:var(--red);box-shadow:0 1px 4px rgba(0,0,0,.08)}
+.cats{position:sticky;top:0;z-index:4;background:var(--bg);display:flex;gap:6px;overflow-x:auto;padding:8px 0;scrollbar-width:none;margin-top:4px}.cats button{flex:0 0 auto;border:1px solid var(--line);background:var(--paper);border-radius:999px;padding:6px 12px;font:700 13px 'Noto Sans TC',sans-serif;color:var(--ink)}.cats button.on{background:var(--red);border-color:var(--red);color:#fff}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:8px}
+.item{background:var(--paper);border:1px solid var(--line);border-radius:14px;overflow:hidden;cursor:pointer;display:flex;flex-direction:column}.item.soon{opacity:.55;cursor:not-allowed}
+.item .ph{aspect-ratio:4/3;background:var(--soft) center/cover no-repeat;display:grid;place-items:center;color:var(--red);font-weight:900;font-size:22px;font-family:var(--num)}
+.item .bd{padding:8px 10px 10px;display:grid;gap:2px}.item .nm{font-weight:800;font-size:14px;line-height:1.3}.item .en{font-size:11px;color:var(--mute);line-height:1.2}.item .pr{font-family:var(--num);font-weight:700;color:var(--red);font-size:16px;margin-top:4px;display:flex;justify-content:space-between;align-items:center}.item .pr small{font:700 10.5px 'Noto Sans TC',sans-serif;background:var(--soft);border-radius:6px;padding:2px 6px;color:var(--red)}
+.secTitle{font-weight:900;font-size:15px;margin:14px 0 2px;display:flex;align-items:baseline;gap:8px}.secTitle .sub{font-weight:500}
+/* 底部抽屜（餐點客製） */
+.ov{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:20;display:flex;align-items:flex-end;justify-content:center}
+.sheet{background:var(--paper);width:100%;max-width:560px;max-height:92vh;overflow:auto;border-radius:18px 18px 0 0;padding:14px 14px calc(14px + env(safe-area-inset-bottom,0px));box-shadow:0 -10px 40px rgba(0,0,0,.25)}
+.sheet .hd{display:flex;gap:12px;align-items:center}.sheet .hd .ph{width:84px;height:64px;border-radius:12px;background:var(--soft) center/cover;flex:0 0 auto}
+.choice{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px}.choice button{border:2px solid var(--line);background:var(--bg);border-radius:12px;padding:10px;text-align:left;font:inherit;color:inherit;cursor:pointer}.choice button.on{border-color:var(--red);background:#fff}.choice b{display:block;font-size:14px}.choice .pr{color:var(--red);font-family:var(--num);font-weight:700;font-size:16px}.choice .sub{font-size:11.5px}
+.grp{margin-top:12px}.grp .ttl{font-weight:800;font-size:13.5px;display:flex;justify-content:space-between;align-items:center}.grp .ttl .sub{font-weight:500}
+.chips{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}.chips button{border:1.5px solid var(--line);background:var(--bg);border-radius:999px;padding:6px 11px;font:700 12.5px 'Noto Sans TC',sans-serif;color:var(--ink);cursor:pointer}.chips button.on{border-color:var(--red);background:var(--red);color:#fff}.chips button small{font-weight:700;opacity:.8;margin-left:3px}
+.qty{display:inline-flex;align-items:center;gap:10px}.qty button{width:32px;height:32px;border-radius:50%;border:1.5px solid var(--line);background:var(--paper);font-size:18px;font-weight:700;color:var(--ink);cursor:pointer}.qty b{min-width:20px;text-align:center;font-size:16px}
 .sticky{position:fixed;left:0;right:0;bottom:0;background:var(--paper);border-top:2px solid var(--red);padding:10px 14px calc(10px + env(safe-area-inset-bottom,0px));display:flex;justify-content:space-between;align-items:center;gap:10px;z-index:5}
-.sticky .big{font-family:var(--num);font-size:24px;font-weight:700;color:var(--red);font-variant-numeric:tabular-nums}
-.banner{border-radius:12px;padding:12px 14px;font-weight:700;margin-top:12px}.banner.ok{background:#dff3e5;color:var(--ok)}.banner.warn{background:var(--warnbg);color:var(--warn)}.banner.info{background:var(--soft);color:var(--red)}
-.toast{position:fixed;left:50%;bottom:96px;transform:translateX(-50%);background:#166534;color:#fff;padding:8px 14px;border-radius:10px;font-weight:800;font-size:13.5px;opacity:0;transition:opacity .3s;z-index:9;pointer-events:none}.toast.bad{background:#b91c1c}
-.menuList{display:grid;gap:4px;font-size:13px;columns:2}.menuList b{display:block;margin-top:6px}
-@media(max-width:380px){.fld{grid-template-columns:1fr}}
+.sticky .big{font-family:var(--num);font-size:22px;font-weight:700;color:var(--red);font-variant-numeric:tabular-nums}
+.banner{border-radius:12px;padding:10px 12px;font-weight:700;margin-top:10px;font-size:13.5px}.banner.ok{background:#dff3e5;color:var(--ok)}.banner.warn{background:var(--warnbg);color:var(--warn)}.banner.info{background:var(--soft);color:var(--red)}
+.toast{position:fixed;left:50%;bottom:100px;transform:translateX(-50%);background:#166534;color:#fff;padding:8px 14px;border-radius:10px;font-weight:800;font-size:13.5px;opacity:0;transition:opacity .3s;z-index:30;pointer-events:none}.toast.bad{background:#b91c1c}
+.me{display:flex;align-items:center;gap:10px}.me img,.me .av{width:38px;height:38px;border-radius:50%;background:var(--soft);display:grid;place-items:center;font-weight:900;color:var(--red);object-fit:cover}
+.lineRow{display:flex;justify-content:space-between;gap:8px;padding:8px 0;border-bottom:1px dashed var(--line);align-items:flex-start}.lineRow .t{font-weight:800}.lineRow .d{font-size:12.5px;color:var(--mute)}.lineRow .p{font-family:var(--num);font-weight:700;color:var(--red);white-space:nowrap}
+.person{display:flex;gap:10px;padding:8px 0;border-bottom:1px dashed var(--line);align-items:flex-start}.person .av{width:34px;height:34px;border-radius:50%;background:var(--soft);display:grid;place-items:center;font-weight:900;color:var(--red);flex:0 0 auto;object-fit:cover}
+.sug{display:flex;gap:6px;flex-wrap:wrap;align-items:center;font-size:12.5px;margin-top:4px}.sug .btn{border-color:var(--warn);color:var(--warn)}
+details summary{cursor:pointer;font-weight:700;font-size:13.5px}
+@media (prefers-reduced-motion:no-preference){.sheet{animation:up .22s ease-out}@keyframes up{from{transform:translateY(30px);opacity:.6}to{transform:none;opacity:1}}}
 </style>
 </head>
 <body>
-<div class="wrap" id="root"><div class="brand"><b>GROUN:D</b><small>團體訂餐</small></div><div class="card sub" id="loading">讀取中…</div></div>
+<div class="wrap" id="root"><div class="brand"><div><b>GROUN:D</b><small>團體訂餐</small></div></div><div class="card sub" id="loading">讀取中…</div></div>
 <div class="sticky" id="sticky" hidden><div><div class="sub" id="totSub"></div><div class="big" id="tot"></div></div><button class="btn red" id="mainBtn"></button></div>
 <div class="toast" id="toast"></div>
 <script type="module">
@@ -44,97 +58,180 @@ import GC from '/ops/js/grporder-calc.js?v=4778'
 const code = (location.pathname.match(/\/order\/([a-z0-9]+)/i) || [])[1] || new URLSearchParams(location.search).get('c') || ''
 const $ = id => document.getElementById(id), esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]))
 const fmt = n => Math.round(Number(n) || 0).toLocaleString('zh-TW')
-let D = null, MENU = null, saveT = null, dirty = false
+const LS = { get: k => { try { return JSON.parse(localStorage.getItem(k)) } catch (_) { return null } }, set: (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)) } catch (_) {} } }
+let D = null, MENU = null, ME = null, MINE = { lines: [], pend: [], done: false }, view = 'menu', cat = 0, saveT = null, dirty = false, sheet = null, liffReady = false
 const api = async (body) => { try { const r = await fetch('/api/mail-sync?gorder=' + encodeURIComponent(code) + (body ? '' : '&r=' + Date.now()), body ? { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) } : {}); return await r.json() } catch (_) { return { ok: false, error: '連線失敗，請再試一次' } } }
 function toast (t, bad) { const el = $('toast'); el.textContent = t; el.className = 'toast' + (bad ? ' bad' : ''); el.style.opacity = '1'; clearTimeout(el._t); el._t = setTimeout(() => { el.style.opacity = '0' }, 2200) }
+const photoOf = it => it.img || (it.photo ? '/ops/menu/photos/' + it.photo + '.webp' : '')
+const initials = it => it.name.replace(/[^一-鿿A-Za-z0-9]/g, '').slice(0, 2)
+const canEditMine = () => D && D.editable && !D.closed && ME
+// ── 載入 ──
 async function load () {
   if (!code) { $('loading').textContent = '連結不完整，請跟店家要一次點餐連結。'; return }
   const d = await api()
   if (!d || !d.ok) { $('loading').textContent = (d && d.error) || '找不到這張點餐單'; return }
-  D = d; MENU = d.menu; render()
+  D = d; MENU = d.menu
+  await identify()
+  render()
 }
-const label = pk => GC.labelOf(MENU, pk)
-function opt (kind, sel) { const items = GC.flatItems(MENU).filter(i => kind === 'main' ? i.kind !== 'pizza' && i.kind !== 'drink' : i.kind === kind); return `<option value="">—</option>` + items.map(i => `<option value="${i.id}" ${sel === i.id ? 'selected' : ''} ${i.soon ? 'disabled' : ''}>${esc(i.name)}${i.soon ? '（即將上線）' : ' ' + i.price}</option>`).join('') }
+// ── 身分：LINE（LIFF）優先，其次上次記住的，再來手打名字 ──
+async function identify () {
+  const saved = LS.get('go_me_' + code) || LS.get('go_me')
+  if (saved && saved.uid) { ME = saved; pullMine(); }
+  if (D.liff && !(ME && ME.src === 'line')) {
+    try {
+      await new Promise((res, rej) => { if (window.liff) return res(); const s = document.createElement('script'); s.src = 'https://static.line-scdn.net/liff/edge/2/sdk.js'; s.onload = res; s.onerror = rej; document.head.appendChild(s) })
+      await window.liff.init({ liffId: D.liff }); liffReady = true
+      if (window.liff.isLoggedIn()) {
+        const w = await api({ op: 'who', at: window.liff.getAccessToken() })
+        if (w && w.ok) { ME = { uid: w.uid, name: w.name, pic: w.pic, pt: w.pt, src: 'line' }; LS.set('go_me_' + code, ME); LS.set('go_me', ME); pullMine() }
+      }
+    } catch (_) { liffReady = false }
+  }
+}
+function pullMine () { const r = (D.rows || []).find(x => x.uid === ME.uid); MINE = r ? { lines: JSON.parse(JSON.stringify(r.lines || [])), pend: JSON.parse(JSON.stringify(r.pend || [])), done: !!r.done } : { lines: [], pend: [], done: false }; if (r && r.name && ME.src !== 'line') ME.name = r.name }
+function lineLogin () { if (!liffReady) return toast('LINE 登入還沒準備好，先打名字也可以', true); window.liff.login({ redirectUri: location.href }) }
+function manualStart () { const n = ($('meName') || {}).value || ''; if (!n.trim()) return toast('請填名字', true); let anon = LS.get('go_anon'); if (!anon) { anon = Math.random().toString(36).slice(2, 12) + Math.random().toString(36).slice(2, 8); LS.set('go_anon', anon) }; ME = { uid: 'anon:' + anon, anon, name: n.trim().slice(0, 30), src: 'manual' }; LS.set('go_me_' + code, ME); pullMine(); render() }
+function switchUser () { ME = null; MINE = { lines: [], pend: [], done: false }; try { localStorage.removeItem('go_me_' + code) } catch (_) {}; render() }
+// ── 畫面 ──
 function render () {
-  const ed = D.editable, t = GC.totals(MENU, D), L = GC.STATUS_LABEL
-  const stBanner = D.status === 'submitted' ? `<div class="banner info">已送出給店家，店家核價中。要改還來得及，改了會自動回到待核價。</div>`
-    : D.status === 'priced' ? `<div class="banner ok">店家核價完成：全單 ${fmt(t.total)} 元${t.disc ? '（含折扣 −' + fmt(t.disc) + '）' : ''}。沒問題請按下方「確認無誤」。</div>`
-    : D.status === 'confirmed' ? `<div class="banner ok">您已確認，等店家鎖單。取餐 ${esc(D.when || '待定')}。</div>`
-    : ['locked', 'done'].includes(D.status) ? `<div class="banner ok">訂單已成立${D.priceAt ? '（' + String(D.priceAt.at).slice(0, 10) + ' 價格）' : ''}。全單 ${fmt(t.total)} 元，取餐 ${esc(D.when || '待定')}。</div>`
+  const L = GC.STATUS_LABEL, t = GC.totals(MENU, D)
+  const stBanner = D.closed && D.editable ? `<div class="banner warn">已過截單時間（${esc(D.deadline)}），要加點請找主辦人或店家。</div>`
+    : D.status === 'submitted' ? `<div class="banner info">已送出給店家，店家核價中。</div>`
+    : D.status === 'priced' ? `<div class="banner ok">店家核價完成：全單 ${fmt(t.total)} 元${t.disc ? '（含折扣 −' + fmt(t.disc) + '）' : ''}。沒問題請主辦人按「確認無誤」。</div>`
+    : D.status === 'confirmed' ? `<div class="banner ok">已確認，等店家鎖單。取餐 ${esc(D.when || '待定')}。</div>`
+    : ['locked', 'done'].includes(D.status) ? `<div class="banner ok">訂單已成立。全單 ${fmt(t.total)} 元，取餐 ${esc(D.when || '待定')}。</div>`
     : D.expired ? `<div class="banner warn">這條連結已過期，請跟店家再要一次。</div>` : ''
-  const people = (D.rows || []).map((r, i) => {
-    const p = GC.priceRow(MENU, r, D.frozen), bad = p.pend || p.missing
-    const fld = (lab, k, kind) => { const e = r[k]; return `<div class="fld"><label>${lab}</label><div class="in">${ed ? `<select data-i="${i}" data-k="${k}" data-f="id">${opt(kind, e && e.id)}</select>` : `<span>${e ? esc(label(e)) : '—'}</span>`}${ed && e ? `<input class="q" type="number" min="1" value="${e.q || 1}" data-i="${i}" data-k="${k}" data-f="q"><input class="nt" placeholder="${kind === 'drink' ? '冰／糖' : '口味'}" value="${esc(e.note || '')}" data-i="${i}" data-k="${k}" data-f="note">` : ''}</div></div>` }
-    const extras = (r.extras || []).map((e, j) => `<span class="pill grey">${esc(label(e))} ${GC.pickPrice(MENU, e, D.frozen).price * (e.q || 1)}${ed ? `<button class="btn sm" data-del="${i}:${j}" style="margin-left:4px;padding:0 5px">×</button>` : ''}</span>`).join(' ')
-    const pend = (r.pend || []).map((pd, j) => `<div class="sug"><span class="pill warn">待確認：${esc(pd.text)}${pd.q > 1 ? ' ×' + pd.q : ''}</span>${ed ? `<span class="sub">最新菜單沒有這項，換成：</span>${(pd.sug || []).map(sid => { const it = GC.itemOf(MENU, sid); return it ? `<button class="btn sm" data-fix="${i}:${j}:${sid}">${esc(it.name)} ${it.price}</button>` : '' }).join('')}<button class="btn sm" data-drop="${i}:${j}">不要了</button>` : ''}</div>`).join('')
-    return `<div class="person ${bad ? 'pend' : ''}"><div class="hd"><div class="row"><span class="pill">${String(i + 1).padStart(2, '0')}</span>${ed ? `<input data-i="${i}" data-f="name" value="${esc(r.name)}" placeholder="姓名">` : `<b>${esc(r.name || '（沒寫名字）')}</b>`}</div><div class="row">${r.main ? `<label class="sub"><input type="checkbox" data-i="${i}" data-f="combo" ${r.combo ? 'checked' : ''} ${ed ? '' : 'disabled'}> 套餐 +${MENU.setN}</label>` : ''}<span class="tot">${bad ? (p.missing ? '已下架' : '待確認') : '$' + fmt(p.total)}</span>${ed ? `<button class="btn sm" data-rm="${i}" title="刪除這一人">刪</button>` : ''}</div></div>
-      ${fld('主餐', 'main', 'main')}${fld('副餐', 'side', 'snack')}${fld('飲品', 'drink', 'drink')}
-      <div class="fld"><label>額外單點</label><div class="in">${extras || (ed ? '' : '<span class="sub">—</span>')}${ed ? `<select data-i="${i}" data-f="addx"><option value="">＋ 加單點</option>${GC.flatItems(MENU).filter(x => !x.soon && x.kind !== 'pizza').map(x => `<option value="${x.id}">${esc(x.name)} ${x.price}</option>`).join('')}</select>` : ''}</div></div>
-      ${pend}
-      <div class="sub">主餐 ${p.main}${p.set ? ' ＋ 套餐 ' + p.set : ''}${p.diff ? ' ＋ 補差 ' + p.diff : ''}${p.ala ? ' ＋ 單點 ' + p.ala : ''}${bad ? '（待確認的還沒算）' : ''}</div></div>`
-  }).join('')
-  const shared = (D.shared || []).map((s, j) => `<div class="row" style="justify-content:space-between;padding:4px 0;border-bottom:1px dashed var(--line)"><span>${esc(label({ ...s, q: 1 }))} <span class="sub">${GC.pickPrice(MENU, s, D.frozen).price}</span></span><span class="row">${ed ? `<button class="btn sm" data-sq="${j}:-1">−</button>` : ''}<b>${s.q}</b>${ed ? `<button class="btn sm" data-sq="${j}:1">＋</button>` : ''}<b style="font-family:var(--num);color:var(--red);min-width:50px;text-align:right">${fmt(GC.pickPrice(MENU, s, D.frozen).price * s.q)}</b></span></div>`).join('')
-  $('root').innerHTML = `<div class="brand"><b>GROUN:D</b><small>團體訂餐</small></div>
-    <div class="card"><div class="row" style="justify-content:space-between"><div><h2>${esc(D.company || D.custName || '團體訂餐')}</h2><div class="sub">取餐 ${esc(D.when || '待定')}・${esc(D.mode || '')}${D.taxId ? '・統編 ' + esc(D.taxId) : ''}</div></div><span class="pill">${esc(L[D.status] || D.status)}</span></div>${stBanner}</div>
-    ${ed ? `<div class="card"><h3>把大家的訂餐文字貼進來，自動拆成每人一列</h3><textarea id="paste" rows="5" style="width:100%" placeholder="一行一人，例如：&#10;小美：雙層牛肉起司堡＋薯條＋四季烏龍 去冰無糖&#10;阿明：爐烤牛排越南三明治套餐（薯條＋美式咖啡 冰）"></textarea><div class="row" style="margin-top:8px"><button class="btn red" id="btnParse">自動拆成每人一列</button><label class="sub"><input type="checkbox" id="parseAppend" checked> 加在現有名單後面</label></div><div class="sub" style="margin-top:4px">對不到最新菜單的會標「待確認」，點一下建議品項就能換；也可以直接用下面的下拉選。</div></div>` : ''}
-    <div class="card"><div class="row" style="justify-content:space-between"><h3 style="margin:0">每人一列（${(D.rows || []).length} 人）</h3>${ed ? `<button class="btn sm" id="btnAdd">＋ 加一人</button>` : ''}</div>${people || '<div class="sub" style="margin-top:8px">還沒有人。貼文字或按「＋ 加一人」。</div>'}</div>
-    <div class="card"><h3>大家共用（披薩等，不分攤到個人）</h3>${shared || '<div class="sub">沒有共用品項</div>'}${ed ? `<div class="row" style="margin-top:8px"><select id="sharedPick">${GC.flatItems(MENU).filter(i => !i.soon).map(i => `<option value="${i.id}">${esc(i.name)} ${i.price}</option>`).join('')}</select><button class="btn sm" id="btnShared">＋ 加入共用</button></div>` : ''}</div>
-    <div class="card"><h3>菜單（最新）</h3><div class="menuList">${MENU.sections.map(s => `<div style="break-inside:avoid"><b>${esc(s.name)}${s.combo ? ` <span class="pill">套餐折抵 ${s.combo}</span>` : ''}</b>${s.items.map(i => `<div style="display:flex;justify-content:space-between;gap:6px;${i.soon ? 'opacity:.5' : ''}"><span>${esc(i.name)}</span><span>${i.soon ? '即將上線' : i.price}</span></div>`).join('')}</div>`).join('')}</div><div class="sub" style="margin-top:6px">主餐 +${MENU.setN} 升級套餐＝副餐選 1＋飲品選 1；超過折抵的差額補差價。</div></div>
-    <div class="sub" style="text-align:center;margin-top:14px">${D.custSavedAt ? '最後儲存 ' + esc(String(D.custSavedAt).slice(11, 16)) + '（UTC）' : ''}</div>`
+  const head = `<div class="brand"><div><b>GROUN:D</b><small>團體訂餐</small></div><span class="pill">${esc(L[D.status] || D.status)}</span></div>
+    <div class="card"><h2>${esc(D.company || D.custName || '團體訂餐')}</h2><div class="sub">取餐 ${esc(D.when || '待定')}・${esc(D.mode || '')}${D.deadline ? '・截單 ' + esc(D.deadline) : ''}</div>${stBanner}</div>`
+  const idCard = ME ? `<div class="card me">${ME.pic ? `<img src="${esc(ME.pic)}" alt="">` : `<div class="av">${esc(ME.name.slice(0, 1))}</div>`}<div style="flex:1"><b>${esc(ME.name)}</b><div class="sub">${ME.src === 'line' ? 'LINE 帳號' : '手打名字'}・${MINE.done ? '<span style="color:var(--ok);font-weight:800">已點好</span>' : MINE.lines.length ? '還沒按「我點好了」' : '還沒點'}</div></div><button class="btn sm" id="btnSwitch">不是你？</button></div>`
+    : `<div class="card"><h3>先告訴我們你是誰</h3>${D.liff ? `<button class="btn line" id="btnLine" style="width:100%;margin-bottom:8px">用 LINE 登入（自動帶名字）</button><div class="sub" style="text-align:center;margin-bottom:6px">或</div>` : ''}<div class="row"><input id="meName" placeholder="你的名字" style="flex:1"><button class="btn red" id="btnManual">開始點餐</button></div></div>`
+  const seg = `<div class="seg"><button class="${view === 'menu' ? 'on' : ''}" data-v="menu">點餐</button><button class="${view === 'mine' ? 'on' : ''}" data-v="mine">我的餐點${MINE.lines.length ? ' ' + MINE.lines.reduce((n, l) => n + (l.q || 1), 0) : ''}</button><button class="${view === 'all' ? 'on' : ''}" data-v="all">大家的 ${t.n}</button></div>`
+  let body = ''
+  if (view === 'menu') {
+    const secs = MENU.sections
+    body = `<div class="cats">${secs.map((s, i) => `<button class="${cat === i ? 'on' : ''}" data-cat="${i}">${esc(s.name.replace(/^[A-Z:&' ]+\s/, ''))}</button>`).join('')}</div>` + secs.map((s, i) => `<div id="sec${i}"><div class="secTitle">${esc(s.name)}${s.combo ? `<span class="sub">套餐折抵 ${s.combo}</span>` : s.kind === 'main' ? `<span class="sub">+${MENU.setN} 升級套餐</span>` : ''}</div><div class="grid">${s.items.map(it => { const I = { ...it, kind: s.kind, photo: s.photo }; const ph = photoOf(I); return `<div class="item ${it.soon ? 'soon' : ''}" data-item="${it.id}"><div class="ph" style="${ph ? `background-image:url('${ph}')` : ''}">${ph ? '' : esc(initials(it))}</div><div class="bd"><div class="nm">${esc(it.name)}</div>${it.en ? `<div class="en">${esc(it.en)}</div>` : ''}<div class="pr">${it.soon ? '<span style="font-size:12px;font-family:inherit">即將上線</span>' : '$' + it.price}${!it.soon && s.kind === 'main' ? '<small>可升級套餐</small>' : ''}${!it.soon && s.combo && it.price > s.combo ? `<small>套餐 +${it.price - s.combo}</small>` : !it.soon && s.combo ? '<small>套餐內含</small>' : ''}</div></div></div>` }).join('')}</div></div>`).join('')
+  } else if (view === 'mine') {
+    const lines = MINE.lines.map((l, j) => { const p = GC.priceLine(MENU, l, D.frozen); const it = GC.itemOf(MENU, l.id) || { name: '（已下架）' }; return `<div class="lineRow"><div style="flex:1"><div class="t">${esc(it.name)}${l.note ? '・' + esc(l.note) : ''} ${l.q > 1 ? '×' + l.q : ''}</div><div class="d">${l.set ? '套餐：' + (l.side ? esc(GC.labelOf(MENU, l.side)) : '副餐未選') + '＋' + (l.drink ? esc(GC.labelOf(MENU, l.drink)) : '飲品未選') : '單點'}</div>${canEditMine() ? `<div class="row" style="margin-top:4px"><button class="btn sm" data-edit="${j}">修改</button><button class="btn sm" data-del="${j}">刪除</button></div>` : ''}</div><div class="p">$${fmt(p.total)}</div></div>` }).join('')
+    const pend = MINE.pend.map((pd, j) => `<div class="sug"><span class="pill warn">待確認：${esc(pd.text)}</span>${canEditMine() ? `${(pd.sug || []).map(sid => { const it = GC.itemOf(MENU, sid); return it ? `<button class="btn sm" data-fix="${j}:${sid}">${esc(it.name)} ${it.price}</button>` : '' }).join('')}<button class="btn sm" data-drop="${j}">不要了</button>` : ''}</div>`).join('')
+    const myTotal = GC.priceRow(MENU, { lines: MINE.lines, pend: MINE.pend }, D.frozen)
+    body = `<div class="card"><h3>我的餐點</h3>${lines || '<div class="sub">還沒點，到「點餐」挑餐點。</div>'}${pend}<div class="row" style="justify-content:space-between;margin-top:10px"><b>我的小計</b><b class="p" style="font-family:var(--num);color:var(--red);font-size:18px">$${fmt(myTotal.total)}</b></div>
+      ${canEditMine() ? `<div class="row" style="margin-top:10px"><button class="btn red" id="btnDone" ${MINE.lines.length ? '' : 'disabled'}>${MINE.done ? '✓ 已點好（再改會自動存）' : '我點好了'}</button><button class="btn" data-v="menu">繼續加點</button></div>` : ''}</div>`
+  } else {
+    const rows = (D.rows || []).map(r => { const p = GC.priceRow(MENU, r, D.frozen); return `<div class="person">${r.pic ? `<img class="av" src="${esc(r.pic)}" alt="">` : `<div class="av">${esc((r.name || '?').slice(0, 1))}</div>`}<div style="flex:1;min-width:0"><div class="row" style="justify-content:space-between"><b>${esc(r.name || '（沒寫名字）')}${ME && r.uid === ME.uid ? ' <span class="pill">我</span>' : ''}</b><span class="row">${r.done ? '<span class="pill ok">已點好</span>' : '<span class="pill grey">還在點</span>'}<b style="font-family:var(--num);color:var(--red)">$${fmt(p.total)}</b></span></div><div class="sub">${(r.lines || []).map(l => esc(GC.lineLabel(MENU, l))).join('；') || '—'}${(r.pend || []).length ? `；<span style="color:var(--warn)">待確認 ${r.pend.length} 項</span>` : ''}</div></div></div>` }).join('')
+    const shared = (D.shared || []).map((s, j) => `<div class="row" style="justify-content:space-between;padding:4px 0;border-bottom:1px dashed var(--line)"><span>${esc(GC.labelOf(MENU, { ...s, q: 1 }))} <span class="sub">${GC.pickPrice(MENU, s, D.frozen).price}</span></span><span class="row">${D.editable && !D.closed ? `<button class="btn sm" data-sq="${j}:-1">−</button>` : ''}<b>${s.q}</b>${D.editable && !D.closed ? `<button class="btn sm" data-sq="${j}:1">＋</button>` : ''}<b style="font-family:var(--num);color:var(--red);min-width:50px;text-align:right">${fmt(GC.pickPrice(MENU, s, D.frozen).price * s.q)}</b></span></div>`).join('')
+    body = `<div class="card"><div class="row" style="justify-content:space-between"><h3 style="margin:0">大家的餐點（${t.n} 人，${t.nDone} 人點好）</h3><button class="btn sm" id="btnShare">分享連結給大家</button></div>${rows || '<div class="sub" style="margin-top:8px">還沒有人點。把這條連結分享到群組，每個人點開自己點。</div>'}</div>
+      <div class="card"><h3>大家共用（披薩等，不分攤到個人）</h3>${shared || '<div class="sub">沒有共用品項</div>'}${D.editable && !D.closed ? `<div class="row" style="margin-top:8px"><select id="sharedPick">${GC.flatItems(MENU).filter(i => !i.soon).map(i => `<option value="${i.id}">${esc(i.name)} ${i.price}</option>`).join('')}</select><button class="btn sm" id="btnShared">＋ 加入共用</button></div>` : ''}</div>
+      ${D.editable ? `<details class="card"><summary>主辦人工具：貼大家傳的文字自動拆成每人一列</summary><div class="sub" style="margin:6px 0">一行一人（姓名：餐點）。對不到最新菜單的會標「待確認」。</div><textarea id="paste" rows="5" style="width:100%"></textarea><div class="row" style="margin-top:8px"><button class="btn red" id="btnParse">自動拆成每人一列</button></div></details>` : ''}
+      <div class="card"><div class="row" style="justify-content:space-between"><span>個人餐點</span><b>$${fmt(t.people)}</b></div><div class="row" style="justify-content:space-between"><span>共用</span><b>$${fmt(t.shared)}</b></div>${t.disc ? `<div class="row" style="justify-content:space-between"><span>折扣</span><b>−$${fmt(t.disc)}</b></div>` : ''}<div class="row" style="justify-content:space-between;margin-top:6px;font-size:17px"><b>全單總額</b><b style="font-family:var(--num);color:var(--red);font-size:22px">$${fmt(t.total)}</b></div>${t.pend ? `<div class="sub" style="color:var(--warn)">還有 ${t.pend} 項待確認沒算進去</div>` : ''}</div>`
+  }
+  $('root').innerHTML = head + idCard + seg + body
   // 底部
   const st = $('sticky'); st.hidden = false
-  $('tot').textContent = '$' + fmt(t.total); $('totSub').textContent = `${(D.rows || []).length} 人＋共用 ${(D.shared || []).reduce((n, s) => n + s.q, 0)} 項${t.pend ? '・' + t.pend + ' 項待確認' : ''}${t.disc ? '・已含折扣' : ''}`
+  $('tot').textContent = '$' + fmt(t.total); $('totSub').textContent = `全單 ${t.n} 人・共用 ${(D.shared || []).reduce((n, s) => n + s.q, 0)} 項${t.pend ? '・' + t.pend + ' 待確認' : ''}`
   const mb = $('mainBtn')
   if (D.status === 'priced') { mb.textContent = '確認無誤'; mb.disabled = false; mb.onclick = confirmGo }
-  else if (ed) { mb.textContent = D.status === 'submitted' ? '再次送出' : '送出給店家'; mb.disabled = !((D.rows || []).length || (D.shared || []).length); mb.onclick = submitGo }
+  else if (D.editable) { mb.textContent = D.status === 'submitted' ? '再次送出給店家' : '大家點好了，送出給店家'; mb.disabled = !((D.rows || []).length || (D.shared || []).length); mb.onclick = submitGo }
   else { mb.textContent = L[D.status] || '已鎖定'; mb.disabled = true; mb.onclick = null }
   bind()
 }
 function bind () {
-  if (!D.editable) return
-  document.querySelectorAll('[data-f]').forEach(el => { el.onchange = () => {
-    const i = +el.dataset.i, r = D.rows[i], f = el.dataset.f, k = el.dataset.k
-    if (f === 'name') r.name = el.value
-    else if (f === 'combo') r.combo = el.checked
-    else if (f === 'addx') { if (el.value) r.extras.push({ id: el.value, q: 1, note: '' }) }
-    else if (f === 'id') { r[k] = el.value ? { id: el.value, q: 1, note: '' } : null; if (!r.main) r.combo = false; else if (k !== 'main' && r.main && r.side && r.drink && !r.combo) r.combo = true }
-    else if (f === 'q') r[k].q = Math.max(1, +el.value || 1)
-    else if (f === 'note') r[k].note = el.value
-    changed()
-  } })
-  document.querySelectorAll('[data-fix]').forEach(b => b.onclick = () => { const [i, j, id] = b.dataset.fix.split(':'); const r = D.rows[+i], pd = r.pend.splice(+j, 1)[0], it = GC.itemOf(MENU, id); if (!it) return; const ent = { id, q: pd.q || 1, note: pd.note || '' }
-    if (it.kind === 'snack' && !r.side && ent.q === 1) r.side = ent; else if (it.kind === 'drink' && !r.drink) r.drink = ent; else if ((it.kind === 'main' || it.kind === 'snack') && !r.main) r.main = ent; else r.extras.push(ent)
-    if (!r.pend.length && r.main && r.side && r.drink) r.combo = true; changed() })
-  document.querySelectorAll('[data-drop]').forEach(b => b.onclick = () => { const [i, j] = b.dataset.drop.split(':'); D.rows[+i].pend.splice(+j, 1); changed() })
-  document.querySelectorAll('[data-del]').forEach(b => b.onclick = () => { const [i, j] = b.dataset.del.split(':'); D.rows[+i].extras.splice(+j, 1); changed() })
-  document.querySelectorAll('[data-rm]').forEach(b => b.onclick = () => { D.rows.splice(+b.dataset.rm, 1); changed() })
-  document.querySelectorAll('[data-sq]').forEach(b => b.onclick = () => { const [j, d] = b.dataset.sq.split(':'); D.shared[+j].q += +d; if (D.shared[+j].q <= 0) D.shared.splice(+j, 1); changed() })
-  const add = $('btnAdd'); if (add) add.onclick = () => { D.rows.push({ name: '', main: null, side: null, drink: null, extras: [], combo: false, pend: [] }); changed(); setTimeout(() => { const ins = document.querySelectorAll('[data-f="name"]'); const last = ins[ins.length - 1]; if (last) last.focus() }, 50) }
-  const sh = $('btnShared'); if (sh) sh.onclick = () => { const id = $('sharedPick').value; const ex = D.shared.find(s => s.id === id); if (ex) ex.q++; else D.shared.push({ id, q: 1, note: '' }); changed() }
+  document.querySelectorAll('[data-v]').forEach(b => b.onclick = () => { view = b.dataset.v; render(); window.scrollTo(0, 0) })
+  document.querySelectorAll('[data-cat]').forEach(b => b.onclick = () => { cat = +b.dataset.cat; document.querySelectorAll('[data-cat]').forEach(x => x.classList.toggle('on', x === b)); const el = $('sec' + cat); if (el) window.scrollTo({ top: el.getBoundingClientRect().top + window.scrollY - 54, behavior: 'smooth' }) })
+  document.querySelectorAll('[data-item]').forEach(el => el.onclick = () => { const it = GC.itemOf(MENU, el.dataset.item); if (!it || it.soon) return; if (!ME) { toast('先填名字或用 LINE 登入', true); window.scrollTo({ top: 0, behavior: 'smooth' }); return } if (!canEditMine()) return toast(D.closed ? '已過截單時間' : '這張單已經不能改了', true); openSheet(it, null) })
+  document.querySelectorAll('[data-edit]').forEach(b => b.onclick = () => { const j = +b.dataset.edit; openSheet(GC.itemOf(MENU, MINE.lines[j].id), j) })
+  document.querySelectorAll('[data-del]').forEach(b => b.onclick = () => { MINE.lines.splice(+b.dataset.del, 1); mineChanged() })
+  document.querySelectorAll('[data-fix]').forEach(b => b.onclick = () => { const [j, id] = b.dataset.fix.split(':'); const pd = MINE.pend.splice(+j, 1)[0]; const it = GC.itemOf(MENU, id); if (it) MINE.lines.push({ id, q: pd.q || 1, set: false, side: null, drink: null, note: pd.note || '' }); mineChanged() })
+  document.querySelectorAll('[data-drop]').forEach(b => b.onclick = () => { MINE.pend.splice(+b.dataset.drop, 1); mineChanged() })
+  document.querySelectorAll('[data-sq]').forEach(b => b.onclick = () => { const [j, d] = b.dataset.sq.split(':'); D.shared[+j].q += +d; if (D.shared[+j].q <= 0) D.shared.splice(+j, 1); sharedChanged() })
+  const sh = $('btnShared'); if (sh) sh.onclick = () => { const id = $('sharedPick').value; const ex = D.shared.find(s => s.id === id); if (ex) ex.q++; else D.shared.push({ id, q: 1, note: '' }); sharedChanged() }
+  const bl = $('btnLine'); if (bl) bl.onclick = lineLogin
+  const bm = $('btnManual'); if (bm) bm.onclick = manualStart
+  const mn = $('meName'); if (mn) mn.onkeydown = e => { if (e.key === 'Enter') manualStart() }
+  const sw = $('btnSwitch'); if (sw) sw.onclick = switchUser
+  const bd = $('btnDone'); if (bd) bd.onclick = () => { MINE.done = true; mineChanged(true); toast('已點好，謝謝！'); view = 'all'; render() }
+  const bs = $('btnShare'); if (bs) bs.onclick = shareGo
   const bp = $('btnParse'); if (bp) bp.onclick = parseGo
 }
-function changed () { dirty = true; render(); clearTimeout(saveT); saveT = setTimeout(save, 800) }
-async function save () {
-  if (!dirty) return; dirty = false
-  const d = await api({ op: 'save', rows: D.rows, shared: D.shared })
-  if (!d || !d.ok) { toast((d && d.error) || '儲存失敗', true); dirty = true; return }
-  const keep = { rows: D.rows, shared: D.shared }; D = { ...d, menu: MENU, ...(dirty ? keep : {}) }
-  if (!dirty) render(); toast('已儲存')
+// ── 餐點客製抽屜 ──
+function openSheet (it, editIdx) {
+  const old = editIdx != null ? MINE.lines[editIdx] : null
+  const cs = GC.canSet(it)
+  sheet = { it, editIdx, line: old ? JSON.parse(JSON.stringify(old)) : { id: it.id, q: 1, set: false, side: null, drink: null, note: '' } }
+  const vars = GC.variantsOf(it)
+  if (vars.length && !sheet.line.note) sheet.line.note = vars[0]
+  drawSheet()
 }
+function drawSheet () {
+  const { it, line } = sheet; const cs = GC.canSet(it)
+  const p = GC.priceLine(MENU, line, false)
+  const vars = GC.variantsOf(it)
+  const sides = GC.flatItems(MENU).filter(x => x.kind === 'snack' && !x.soon), drinks = GC.flatItems(MENU).filter(x => x.kind === 'drink' && !x.soon)
+  const chip = (on, label, extra, data) => `<button class="${on ? 'on' : ''}" ${data}>${esc(label)}${extra ? `<small>${extra}</small>` : ''}</button>`
+  const dk = line.drink ? GC.itemOf(MENU, line.drink.id) : null, cu = GC.customOf(dk), dv = dk ? GC.variantsOf(dk) : []
+  const noteHas = (pk, w) => (pk.note || '').split('／').includes(w)
+  let h = `<div class="hd"><div class="ph" style="${photoOf(it) ? `background-image:url('${photoOf(it)}')` : ''}"></div><div style="flex:1"><b style="font-size:16px">${esc(it.name)}</b><div class="sub">${esc(it.en || '')}</div><div style="font-family:var(--num);color:var(--red);font-weight:700;font-size:17px">$${it.price}</div></div><button class="btn sm" id="shClose">✕</button></div>`
+  if (vars.length) h += `<div class="grp"><div class="ttl">口味</div><div class="chips">${vars.map(v => chip(line.note === v, v, '', `data-var="${esc(v)}"`)).join('')}</div></div>`
+  if (cs) h += `<div class="choice"><button class="${!line.set ? 'on' : ''}" data-set="0"><b>單點</b><span class="pr">$${it.price}</span><span class="sub">只有這一份</span></button><button class="${line.set ? 'on' : ''}" data-set="1"><b>套餐 +${MENU.setN}</b><span class="pr">$${it.price + MENU.setN} 起</span><span class="sub">副餐選 1＋飲品選 1</span></button></div>`
+  if (cs && line.set) {
+    h += `<div class="grp"><div class="ttl">副餐 <span class="sub">選 1（折抵 ${MENU.sideOff}，超過補差）</span></div><div class="chips">${sides.map(s => chip(line.side && line.side.id === s.id, s.name, s.price > MENU.sideOff ? '+' + (s.price - MENU.sideOff) : '', `data-side="${s.id}"`)).join('')}</div>${line.side && GC.variantsOf(GC.itemOf(MENU, line.side.id)).length ? `<div class="chips">${GC.variantsOf(GC.itemOf(MENU, line.side.id)).map(v => chip(line.side.note === v, v, '', `data-sidevar="${esc(v)}"`)).join('')}</div>` : ''}</div>`
+    h += `<div class="grp"><div class="ttl">飲品 <span class="sub">選 1（折抵 ${MENU.drinkOff}，超過補差）</span></div><div class="chips">${drinks.map(s => chip(line.drink && line.drink.id === s.id, s.name, s.price > MENU.drinkOff ? '+' + (s.price - MENU.drinkOff) : '', `data-drink="${s.id}"`)).join('')}</div>`
+    if (dk) { const parts = []; if (dv.length) parts.push(dv.map(v => chip(noteHas(line.drink, v), v, '', `data-dnote="v:${esc(v)}"`)).join('')); if (cu.ice.length && !noteHas(line.drink, '熱')) parts.push(cu.ice.map(v => chip(noteHas(line.drink, v), v, '', `data-dnote="i:${esc(v)}"`)).join('')); if (cu.sugar.length) parts.push(cu.sugar.map(v => chip(noteHas(line.drink, v), v, '', `data-dnote="s:${esc(v)}"`)).join('')); if (parts.length) h += `<div class="ttl" style="margin-top:8px">飲品客製</div>` + parts.map(x => `<div class="chips">${x}</div>`).join('') }
+    h += `</div>`
+  }
+  if (!cs && it.kind === 'drink') { const c2 = GC.customOf(it); const parts = []; if (c2.ice.length && line.note !== '熱') parts.push(c2.ice.map(v => chip((line.note || '').split('／').includes(v), v, '', `data-lnote="i:${esc(v)}"`)).join('')); if (c2.sugar.length) parts.push(c2.sugar.map(v => chip((line.note || '').split('／').includes(v), v, '', `data-lnote="s:${esc(v)}"`)).join('')); if (parts.length) h += `<div class="grp"><div class="ttl">客製</div>${parts.map(x => `<div class="chips">${x}</div>`).join('')}</div>` }
+  h += `<div class="grp row" style="justify-content:space-between"><div class="ttl">數量</div><div class="qty"><button id="qm">−</button><b>${line.q}</b><button id="qp">＋</button></div></div>`
+  h += `<div class="grp"><input id="shNote" placeholder="備註（例：醬分開、不要洋蔥）" value="${esc((line.memo || ''))}" style="width:100%"></div>`
+  const ok = !line.set || (line.side && line.drink)
+  h += `<button class="btn red" id="shAdd" style="width:100%;margin-top:14px;padding:13px;font-size:15px" ${ok ? '' : 'disabled'}>${sheet.editIdx != null ? '更新' : '加入我的餐點'}　$${fmt(p.total)}${!ok ? '（副餐和飲品都要選）' : ''}</button>`
+  let ov = $('shOv'); if (!ov) { ov = document.createElement('div'); ov.id = 'shOv'; ov.className = 'ov'; ov.onclick = e => { if (e.target === ov) closeSheet() }; document.body.appendChild(ov) }
+  ov.innerHTML = `<div class="sheet">${h}</div>`
+  const setNote = (pk, kind, v) => { const parts = (pk.note || '').split('／').filter(Boolean); const groups = { v: GC.variantsOf(GC.itemOf(MENU, pk.id)), i: ['正常冰', '少冰', '去冰'], s: ['正常甜', '半糖', '無糖'] }; const rest = parts.filter(x => !groups[kind].includes(x)); pk.note = [...rest, v].filter(Boolean).join('／') }
+  ov.querySelectorAll('[data-var]').forEach(b => b.onclick = () => { line.note = b.dataset.var; drawSheet() })
+  ov.querySelectorAll('[data-set]').forEach(b => b.onclick = () => { line.set = b.dataset.set === '1'; if (!line.set) { line.side = null; line.drink = null }; drawSheet() })
+  ov.querySelectorAll('[data-side]').forEach(b => b.onclick = () => { line.side = { id: b.dataset.side, note: '' }; drawSheet() })
+  ov.querySelectorAll('[data-sidevar]').forEach(b => b.onclick = () => { line.side.note = b.dataset.sidevar; drawSheet() })
+  ov.querySelectorAll('[data-drink]').forEach(b => b.onclick = () => { const d2 = GC.itemOf(MENU, b.dataset.drink); const dv2 = GC.variantsOf(d2); line.drink = { id: b.dataset.drink, note: dv2.length ? dv2[0] : '' }; drawSheet() })
+  ov.querySelectorAll('[data-dnote]').forEach(b => b.onclick = () => { const [k, v] = b.dataset.dnote.split(':'); setNote(line.drink, k, v); if (k === 'v' && v === '熱') line.drink.note = line.drink.note.split('／').filter(x => !['正常冰', '少冰', '去冰'].includes(x)).join('／'); drawSheet() })
+  ov.querySelectorAll('[data-lnote]').forEach(b => b.onclick = () => { const [k, v] = b.dataset.lnote.split(':'); setNote(line, k, v); drawSheet() })
+  $('qm').onclick = () => { line.q = Math.max(1, line.q - 1); drawSheet() }; $('qp').onclick = () => { line.q = Math.min(20, line.q + 1); drawSheet() }
+  $('shNote').onchange = e => { line.memo = e.target.value }
+  $('shClose').onclick = closeSheet
+  $('shAdd').onclick = () => { line.memo = ($('shNote').value || '').trim(); if (line.memo) line.note = [line.note, line.memo].filter(Boolean).join('／').slice(0, 60); delete line.memo; if (sheet.editIdx != null) MINE.lines[sheet.editIdx] = line; else MINE.lines.push(line); closeSheet(); mineChanged(); toast(sheet.editIdx != null ? '已更新' : '已加入我的餐點') }
+}
+function closeSheet () { const ov = $('shOv'); if (ov) ov.remove(); sheet = null }
+// ── 存我這一份 ──
+function mineChanged (now) { dirty = true; render(); clearTimeout(saveT); saveT = setTimeout(saveMine, now ? 0 : 700) }
+async function saveMine () {
+  if (!dirty || !ME) return; dirty = false
+  const body = { op: 'mine', name: ME.name, lines: MINE.lines, pend: MINE.pend, done: MINE.done, remove: !MINE.lines.length && !MINE.pend.length, pic: ME.pic || '' }
+  if (ME.src === 'line') { body.uid = ME.uid; body.pt = ME.pt } else body.anon = ME.anon
+  const d = await api(body)
+  if (!d || !d.ok) { toast((d && d.error) || '儲存失敗', true); dirty = true; if (d && d.closed) { D.closed = true; render() }; return }
+  const keepMine = dirty; D = { ...d, menu: MENU }; if (!keepMine) { pullMine(); render() }
+}
+function sharedChanged () { render(); clearTimeout(saveT); saveT = setTimeout(async () => { const d = await api({ op: 'save', rows: D.rows, shared: D.shared }); if (!d || !d.ok) return toast((d && d.error) || '儲存失敗', true); D = { ...d, menu: MENU }; render() }, 600) }
 async function parseGo () {
   const ta = $('paste'), b = $('btnParse'); if (!ta.value.trim()) return toast('先貼文字', true)
   b.disabled = true; b.textContent = 'AI 讀取中…'
   const d = await api({ op: 'parse', text: ta.value })
   if (!d || !d.ok) { b.disabled = false; b.textContent = '自動拆成每人一列'; return toast((d && d.error) || 'AI 讀不出來', true) }
-  const append = $('parseAppend').checked
-  D.rows = append ? [...D.rows, ...d.rows] : d.rows
-  for (const s of d.shared) { const ex = D.shared.find(x => x.id === s.id); if (ex && append) ex.q += s.q; else if (!ex) D.shared.push(s) }
-  changed(); toast(`拆出 ${d.rows.length} 人${d.shared.length ? '＋共用 ' + d.shared.length + ' 項' : ''}`)
+  const rows = [...D.rows, ...d.rows.map(r => ({ ...r, uid: 'anon:' + r.pid, src: 'manual' }))]
+  const shared = [...D.shared]; for (const s of d.shared) { const ex = shared.find(x => x.id === s.id); if (ex) ex.q += s.q; else shared.push(s) }
+  const d2 = await api({ op: 'save', rows, shared }); if (!d2 || !d2.ok) return toast((d2 && d2.error) || '儲存失敗', true)
+  D = { ...d2, menu: MENU }; render(); toast(`拆出 ${d.rows.length} 人${d.shared.length ? '＋共用 ' + d.shared.length + ' 項' : ''}`)
+}
+async function shareGo () {
+  const url = location.origin + '/order/' + code, text = `GROUN:D 團體訂餐｜${D.company || ''}\n點開連結自己選餐點${D.deadline ? '，' + D.deadline + ' 前點好' : ''}：\n${url}`
+  if (liffReady && window.liff.isApiAvailable && window.liff.isApiAvailable('shareTargetPicker')) { try { await window.liff.shareTargetPicker([{ type: 'text', text }]); return toast('已分享') } catch (_) {} }
+  if (navigator.share) { try { await navigator.share({ text }); return } catch (_) {} }
+  try { await navigator.clipboard.writeText(text); toast('已複製，貼到群組就好') } catch (_) { window.prompt('複製這段貼到群組', text) }
 }
 async function submitGo () {
   const t = GC.totals(MENU, D)
   if (t.pend && !window.confirm(`還有 ${t.pend} 項待確認（最新菜單沒有的品項），先送出讓店家處理嗎？`)) return
-  clearTimeout(saveT); if (dirty) await save()
+  if (t.n > t.nDone && !window.confirm(`還有 ${t.n - t.nDone} 人沒按「我點好了」，確定送出？`)) return
+  clearTimeout(saveT); if (dirty) await saveMine()
   const d = await api({ op: 'submit' }); if (!d || !d.ok) return toast((d && d.error) || '送出失敗', true)
   D = { ...d, menu: MENU }; render(); toast('已送出給店家'); window.scrollTo({ top: 0, behavior: 'smooth' })
 }
@@ -142,8 +239,8 @@ async function confirmGo () {
   const d = await api({ op: 'confirm' }); if (!d || !d.ok) return toast((d && d.error) || '確認失敗', true)
   D = { ...d, menu: MENU }; render(); toast('已確認，謝謝！')
 }
-// 不在編輯時每 30 秒看一次狀態（店家核價完成會自動出現「確認無誤」）
-setInterval(async () => { if (!D || dirty || document.hidden) return; const d = await api(); if (d && d.ok && (d.status !== D.status || JSON.stringify(d.totals) !== JSON.stringify(D.totals))) { D = d; MENU = d.menu; render() } }, 30000)
+// 不在編輯時每 20 秒看一次（別人點了會自動出現；店家核價完成會出現「確認無誤」）
+setInterval(async () => { if (!D || dirty || sheet || document.hidden) return; const d = await api(); if (d && d.ok && (d.status !== D.status || JSON.stringify(d.rows) !== JSON.stringify(D.rows) || JSON.stringify(d.shared) !== JSON.stringify(D.shared))) { D = { ...d }; MENU = d.menu; if (ME) pullMine(); render() } }, 20000)
 load()
 </script>
 </body>

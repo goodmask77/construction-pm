@@ -58,19 +58,21 @@ function goRenderDetail () {
   const dis = lock ? 'disabled' : ''
   const inp = (k, v, extra) => `<input ${dis} value="${goEsc(v)}" onchange="goHeadSet('${k}',this.value)" style="border:1px solid var(--line);border-radius:8px;padding:7px 9px;background:var(--card);color:inherit;font-size:14px;${extra || ''}">`
   const pipe = C9.STATUS.map(s => `<span style="font-size:12px;padding:3px 9px;border-radius:999px;border:1px solid var(--line);${s === o.status ? 'background:' + (GO_ST_COLOR[s] || '#555') + ';color:#fff;border-color:transparent;font-weight:800' : C9.STATUS.indexOf(s) < C9.STATUS.indexOf(o.status) ? 'background:var(--line)' : 'color:var(--muted)'}">${L[s]}</span>`).join('')
+  // 1b：一人多道（像 UberEats 每人自己點）；每道＝品項×量＋單點／套餐（副餐＋飲品）
+  const sel = (kind, cur, attr) => `<select ${dis} ${attr} style="max-width:170px;border:1px solid var(--line);border-radius:7px;padding:4px;background:var(--card);color:inherit;font-size:12.5px">${goOpt(kind, cur, menu)}</select>`
   const rows = (o.rows || []).map((r, i) => {
-    const p = C9.priceRow(menu, r, o.frozen)
-    const pk = (k, kind) => { const e = r[k]; return `<div style="display:flex;gap:4px;align-items:center;flex-wrap:wrap"><select ${dis} onchange="goRowSet(${i},'${k}','id',this.value)" style="max-width:190px;border:1px solid var(--line);border-radius:7px;padding:5px;background:var(--card);color:inherit;font-size:13px">${goOpt(kind, e && e.id, menu)}</select>${e ? `<input ${dis} type="number" min="1" value="${e.q || 1}" onchange="goRowSet(${i},'${k}','q',this.value)" style="width:48px;border:1px solid var(--line);border-radius:7px;padding:5px;background:var(--card);color:inherit;text-align:center"><input ${dis} value="${goEsc(e.note || '')}" placeholder="${kind === 'drink' ? '冰／糖' : '口味'}" onchange="goRowSet(${i},'${k}','note',this.value)" style="width:78px;border:1px solid var(--line);border-radius:7px;padding:5px;background:var(--card);color:inherit;font-size:12.5px">` : ''}</div>` }
-    const extras = (r.extras || []).map((e, j) => `<span style="display:inline-flex;align-items:center;gap:3px;background:var(--line);border-radius:999px;padding:2px 8px;font-size:12.5px">${goEsc(C9.labelOf(menu, e))} ${C9.pickPrice(menu, e, o.frozen).price * (e.q || 1)}${lock ? '' : `<button class="mini" style="padding:0 5px" onclick="goExtraDel(${i},${j})">×</button>`}</span>`).join(' ')
+    const p = C9.priceRow(menu, r, o.frozen), bad = p.pend || p.missing
+    const lines = (r.lines || []).map((l, j) => { const it = C9.itemOf(menu, l.id); const lp = C9.priceLine(menu, l, o.frozen); const cs = C9.canSet(it)
+      return `<div style="display:flex;gap:4px;align-items:center;flex-wrap:wrap;padding:3px 0;border-bottom:1px dashed var(--line)">
+        ${sel('main', l.id, `onchange="goLineSet(${i},${j},'id',this.value)"`)}<input ${dis} type="number" min="1" value="${l.q || 1}" onchange="goLineSet(${i},${j},'q',this.value)" style="width:44px;border:1px solid var(--line);border-radius:7px;padding:4px;background:var(--card);color:inherit;text-align:center">
+        ${cs ? `<label style="display:flex;align-items:center;gap:3px;font-size:12.5px;white-space:nowrap"><input ${dis} type="checkbox" ${l.set ? 'checked' : ''} onchange="goLineSet(${i},${j},'set',this.checked)">套餐</label>` : ''}
+        ${l.set ? `<span class="hint" style="font-size:12px">副餐</span>${sel('snack', l.side && l.side.id, `onchange="goLineSet(${i},${j},'side',this.value)"`)}<span class="hint" style="font-size:12px">飲品</span>${sel('drink', l.drink && l.drink.id, `onchange="goLineSet(${i},${j},'drink',this.value)"`)}<input ${dis} value="${goEsc((l.drink || {}).note || '')}" placeholder="冰／糖" onchange="goLineSet(${i},${j},'dnote',this.value)" style="width:70px;border:1px solid var(--line);border-radius:7px;padding:4px;background:var(--card);color:inherit;font-size:12px">` : ''}
+        <input ${dis} value="${goEsc(l.note || '')}" placeholder="口味／備註" onchange="goLineSet(${i},${j},'note',this.value)" style="width:90px;border:1px solid var(--line);border-radius:7px;padding:4px;background:var(--card);color:inherit;font-size:12px">
+        <b style="margin-left:auto;font-family:var(--num,inherit);color:${lp.missing ? '#d97706' : 'inherit'}">${lp.missing ? '已下架' : goN(lp.total)}</b>${lock ? '' : `<button class="mini" style="padding:1px 6px;color:var(--red)" onclick="goLineDel(${i},${j})">×</button>`}</div>` }).join('')
     const pend = (r.pend || []).map((pd, j) => `<div style="display:flex;gap:5px;flex-wrap:wrap;align-items:center;margin-top:4px;font-size:12.5px"><span style="background:#fde68a;color:#7c2d12;border-radius:999px;padding:2px 8px;font-weight:800">待確認：${goEsc(pd.text)}${pd.q > 1 ? ' ×' + pd.q : ''}</span>${lock ? '' : `<span class="hint">換成：</span>${(pd.sug || []).map(sid => { const it = C9.itemOf(menu, sid); return it ? `<button class="mini" style="padding:3px 8px;font-size:12px" onclick="goPendFix(${i},${j},'${sid}')">${goEsc(it.name)} ${it.price}</button>` : '' }).join('')}<button class="mini" style="padding:3px 8px;font-size:12px" onclick="goPendDrop(${i},${j})">不要了</button>`}</div>`).join('')
-    const bad = p.pend || p.missing
     return `<tr style="${bad ? 'background:rgba(217,119,6,.12)' : ''}"><td style="padding:6px;border:1px solid var(--line);white-space:nowrap">${i + 1}</td>
-      <td style="padding:6px;border:1px solid var(--line)"><input ${dis} value="${goEsc(r.name)}" placeholder="姓名" onchange="goRowSet(${i},'name',null,this.value)" style="width:96px;border:1px solid var(--line);border-radius:7px;padding:5px;background:var(--card);color:inherit;font-weight:800"></td>
-      <td style="padding:6px;border:1px solid var(--line)">${pk('main', 'main')}${pend}</td>
-      <td style="padding:6px;border:1px solid var(--line);white-space:nowrap"><label style="display:flex;align-items:center;gap:4px;font-size:13px"><input ${dis} type="checkbox" ${r.combo ? 'checked' : ''} onchange="goRowSet(${i},'combo',null,this.checked)">+${menu.setN}</label></td>
-      <td style="padding:6px;border:1px solid var(--line)">${pk('side', 'snack')}</td>
-      <td style="padding:6px;border:1px solid var(--line)">${pk('drink', 'drink')}</td>
-      <td style="padding:6px;border:1px solid var(--line)">${extras}${lock ? '' : ` <select onchange="goExtraAdd(${i},this.value)" style="max-width:150px;border:1px solid var(--line);border-radius:7px;padding:4px;background:var(--card);color:inherit;font-size:12.5px"><option value="">＋單點</option>${C9.flatItems(menu).filter(x => !x.soon && x.kind !== 'pizza').map(x => `<option value="${x.id}">${goEsc(x.name)} ${x.price}</option>`).join('')}</select>`}</td>
+      <td style="padding:6px;border:1px solid var(--line)"><input ${dis} value="${goEsc(r.name)}" placeholder="姓名" onchange="goRowSet(${i},'name',this.value)" style="width:92px;border:1px solid var(--line);border-radius:7px;padding:5px;background:var(--card);color:inherit;font-weight:800"><div class="hint" style="font-size:11px">${r.src === 'line' ? 'LINE' : '手打'}${r.done ? '・已點好' : ''}</div></td>
+      <td style="padding:6px;border:1px solid var(--line);min-width:320px">${lines}${pend}${lock ? '' : `<select onchange="goLineAdd(${i},this.value);this.value=''" style="margin-top:4px;max-width:170px;border:1px solid var(--line);border-radius:7px;padding:4px;background:var(--card);color:inherit;font-size:12.5px"><option value="">＋ 加一道</option>${C9.flatItems(menu).filter(x => !x.soon && x.kind !== 'pizza').map(x => `<option value="${x.id}">${goEsc(x.name)} ${x.price}</option>`).join('')}</select>`}</td>
       <td style="padding:6px;border:1px solid var(--line);text-align:right">${p.main}</td><td style="padding:6px;border:1px solid var(--line);text-align:right">${p.set}</td><td style="padding:6px;border:1px solid var(--line);text-align:right">${p.diff}</td><td style="padding:6px;border:1px solid var(--line);text-align:right">${p.ala}</td>
       <td style="padding:6px;border:1px solid var(--line);text-align:right;font-weight:900;color:${bad ? '#d97706' : 'var(--red)'}">${bad ? (p.missing ? '已下架' : '待確認') : goN(p.total)}</td>
       <td style="padding:6px;border:1px solid var(--line)">${lock ? '' : `<button class="mini" style="padding:3px 7px;color:var(--red)" onclick="goRowDel(${i})">刪</button>`}</td></tr>`
@@ -95,14 +97,15 @@ function goRenderDetail () {
           <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;font-size:13px">
             <label>客戶名稱${inp('company', o.company, 'width:100%')}</label><label>統編${inp('taxId', o.taxId, 'width:100%')}</label><label>聯絡人${inp('contact', o.contact, 'width:100%')}</label><label>電話${inp('phone', o.phone, 'width:100%')}</label>
             <label>取餐時間<input ${dis} type="datetime-local" value="${goEsc((o.when || '').replace(' ', 'T'))}" onchange="goHeadSet('when',this.value.replace('T',' '))" style="width:100%;border:1px solid var(--line);border-radius:8px;padding:7px 9px;background:var(--card);color:inherit;font-size:14px"></label>
+            <label>截單時間<input ${dis} type="datetime-local" value="${goEsc((o.deadline || '').replace(' ', 'T'))}" onchange="goHeadSet('deadline',this.value.replace('T',' '))" style="width:100%;border:1px solid var(--line);border-radius:8px;padding:7px 9px;background:var(--card);color:inherit;font-size:14px"></label>
             <label>方式<select ${dis} onchange="goHeadSet('mode',this.value)" style="width:100%;border:1px solid var(--line);border-radius:8px;padding:7px 9px;background:var(--card);color:inherit;font-size:14px">${['外帶自取', '外送', '內用'].map(m => `<option ${o.mode === m ? 'selected' : ''}>${m}</option>`).join('')}</select></label>
             <label>負責人${inp('assignee', o.assignee || '', 'width:100%')}</label>
           </div>
           <label style="display:block;margin-top:8px;font-size:13px">內部備註（客人看不到）<input ${dis} value="${goEsc(o.note || '')}" onchange="goHeadSet('note',this.value)" style="width:100%;border:1px solid var(--line);border-radius:8px;padding:7px 9px;background:var(--card);color:inherit;font-size:14px"></label>
         </div>
         <div style="background:var(--card);border:1.5px solid var(--line);border-radius:12px;padding:12px;min-width:0">
-          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px"><b>每人一列</b><span class="hint">${(o.rows || []).length} 人・套餐 ${t.sets} 組${t.pend ? `・<span style="color:#d97706;font-weight:800">${t.pend} 項待確認</span>` : ''}${t.missing ? `・<span style="color:#d97706;font-weight:800">${t.missing} 項已下架要換</span>` : ''}</span><span style="flex:1"></span>${lock ? '' : `<button class="mini" onclick="goParse()">貼文字自動拆列</button><button class="mini" onclick="goRowAdd()">＋ 加一人</button>`}</div>
-          <div style="overflow:auto"><table style="border-collapse:collapse;width:100%;font-size:13px"><thead><tr style="text-align:left"><th style="padding:6px;border:1px solid var(--line)">#</th><th style="padding:6px;border:1px solid var(--line)">姓名</th><th style="padding:6px;border:1px solid var(--line)">主餐</th><th style="padding:6px;border:1px solid var(--line)">套餐</th><th style="padding:6px;border:1px solid var(--line)">副餐</th><th style="padding:6px;border:1px solid var(--line)">飲品</th><th style="padding:6px;border:1px solid var(--line)">額外單點</th><th style="padding:6px;border:1px solid var(--line);text-align:right">主餐</th><th style="padding:6px;border:1px solid var(--line);text-align:right">套餐</th><th style="padding:6px;border:1px solid var(--line);text-align:right">補差</th><th style="padding:6px;border:1px solid var(--line);text-align:right">單點</th><th style="padding:6px;border:1px solid var(--line);text-align:right">總額</th><th style="padding:6px;border:1px solid var(--line)"></th></tr></thead><tbody>${rows || `<tr><td colspan="13" class="hint" style="padding:14px;text-align:center">還沒有人。客人會自己填；也可以按「貼文字自動拆列」把客人傳的整段貼進來。</td></tr>`}</tbody></table></div>
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px"><b>每人一列</b><span class="hint">${(o.rows || []).length} 人（${t.nDone} 人按了點好）・套餐 ${t.sets} 組${t.pend ? `・<span style="color:#d97706;font-weight:800">${t.pend} 項待確認</span>` : ''}${t.missing ? `・<span style="color:#d97706;font-weight:800">${t.missing} 項已下架要換</span>` : ''}</span><span style="flex:1"></span>${lock ? '' : `<button class="mini" onclick="goParse()">貼文字自動拆列</button><button class="mini" onclick="goRowAdd()">＋ 加一人</button>`}</div>
+          <div style="overflow:auto"><table style="border-collapse:collapse;width:100%;font-size:13px"><thead><tr style="text-align:left"><th style="padding:6px;border:1px solid var(--line)">#</th><th style="padding:6px;border:1px solid var(--line)">姓名</th><th style="padding:6px;border:1px solid var(--line)">餐點（一人可多道；套餐＝副餐＋飲品）</th><th style="padding:6px;border:1px solid var(--line);text-align:right">主餐</th><th style="padding:6px;border:1px solid var(--line);text-align:right">套餐</th><th style="padding:6px;border:1px solid var(--line);text-align:right">補差</th><th style="padding:6px;border:1px solid var(--line);text-align:right">單點</th><th style="padding:6px;border:1px solid var(--line);text-align:right">總額</th><th style="padding:6px;border:1px solid var(--line)"></th></tr></thead><tbody>${rows || `<tr><td colspan="9" class="hint" style="padding:14px;text-align:center">還沒有人。客人會自己填；也可以按「貼文字自動拆列」把客人傳的整段貼進來。</td></tr>`}</tbody></table></div>
           <div class="hint" style="font-size:12px;margin-top:6px">每列＝主餐＋套餐 ${menu.setN}（含副餐折抵 ${menu.sideOff}、飲品折抵 ${menu.drinkOff}）＋補差＋單點。價格只從最新菜單來${o.frozen ? '（這張單已鎖，用的是鎖單當時的價）' : ''}。</div>
         </div>
         <div style="background:var(--card);border:1.5px solid var(--line);border-radius:12px;padding:12px">
@@ -147,24 +150,25 @@ function goHeadSet (k, v) {
   o[k] = v; goSaveSoon({ [k]: v }); if (k === 'disc' || k === 'dep') goRenderDetail()
 }
 function goRowsPatch () { goRenderDetail(); goSaveSoon({ rows: _goCur.order.rows, shared: _goCur.order.shared }) }
-function goRowSet (i, k, f, v) {
-  const r = _goCur.order.rows[i]; if (!r) return
-  if (k === 'name') r.name = v
-  else if (k === 'combo') r.combo = !!v
-  else if (f === 'id') { r[k] = v ? { id: v, q: 1, note: '' } : null; if (!r.main) r.combo = false }
-  else if (f === 'q') r[k].q = Math.max(1, Number(v) || 1)
-  else if (f === 'note') r[k].note = v
+function goRowSet (i, k, v) { const r = _goCur.order.rows[i]; if (!r) return; if (k === 'name') r.name = v; goRowsPatch() }
+function goLineSet (i, j, f, v) {
+  const l = _goCur.order.rows[i].lines[j]; if (!l) return; const C9 = GC(), menu = _goCur.menu
+  if (f === 'id') { if (!v) return goLineDel(i, j); l.id = v; if (!C9.canSet(C9.itemOf(menu, v))) { l.set = false; l.side = null; l.drink = null } }
+  else if (f === 'q') l.q = Math.max(1, Number(v) || 1)
+  else if (f === 'set') { l.set = !!v; if (!l.set) { l.side = null; l.drink = null } }
+  else if (f === 'side') l.side = v ? { id: v, note: '' } : null
+  else if (f === 'drink') l.drink = v ? { id: v, note: (l.drink || {}).note || '' } : null
+  else if (f === 'dnote') { if (l.drink) l.drink.note = v }
+  else if (f === 'note') l.note = v
   goRowsPatch()
 }
-function goRowAdd () { _goCur.order.rows.push({ name: '', main: null, side: null, drink: null, extras: [], combo: false, pend: [] }); goRowsPatch() }
+function goLineAdd (i, id) { if (!id) return; _goCur.order.rows[i].lines.push({ id, q: 1, set: false, side: null, drink: null, note: '' }); goRowsPatch() }
+function goLineDel (i, j) { _goCur.order.rows[i].lines.splice(j, 1); goRowsPatch() }
+function goRowAdd () { _goCur.order.rows.push({ name: '', src: 'manual', lines: [], pend: [] }); goRowsPatch() }
 function goRowDel (i) { _goCur.order.rows.splice(i, 1); goRowsPatch() }
-function goExtraAdd (i, id) { if (!id) return; _goCur.order.rows[i].extras.push({ id, q: 1, note: '' }); goRowsPatch() }
-function goExtraDel (i, j) { _goCur.order.rows[i].extras.splice(j, 1); goRowsPatch() }
 function goPendFix (i, j, id) {
   const r = _goCur.order.rows[i], pd = r.pend.splice(j, 1)[0], it = GC().itemOf(_goCur.menu, id); if (!it) return
-  const ent = { id, q: pd.q || 1, note: pd.note || '' }
-  if (it.kind === 'snack' && !r.side && ent.q === 1) r.side = ent; else if (it.kind === 'drink' && !r.drink) r.drink = ent; else if ((it.kind === 'main' || it.kind === 'snack') && !r.main) r.main = ent; else r.extras.push(ent)
-  if (!r.pend.length && r.main && r.side && r.drink) r.combo = true
+  r.lines.push({ id, q: pd.q || 1, set: false, side: null, drink: null, note: pd.note || '' })
   goRowsPatch()
 }
 function goPendDrop (i, j) { _goCur.order.rows[i].pend.splice(j, 1); goRowsPatch() }
@@ -212,12 +216,13 @@ async function goFromInbox () {
   const mine = (d.list || []).filter(x => x.convId === cv.id && x.status !== 'void')
   const tmr = new Date(Date.now() + 8 * 3600e3 + 86400e3).toISOString().slice(0, 10) + 'T12:00'
   const name = cv.alias || cv.name || '客人'
-  goModal(`<h3 style="margin:0 0 6px">建立點餐單｜${goEsc(name)}</h3><div class="hint" style="margin-bottom:10px">建好會綁在這個客人身上，連結傳給他自己填（可一人代填全部）。</div>
+  goModal(`<h3 style="margin:0 0 6px">建立點餐單｜${goEsc(name)}</h3><div class="hint" style="margin-bottom:10px">建好會綁在這個客人身上。連結傳給他，他轉到群組，每個人點開自己點（像 UberEats）；截單時間前都能改。</div>
     ${mine.length ? `<div style="margin-bottom:10px;font-size:13.5px"><b>這個客人已有：</b>${mine.map(x => `<div style="display:flex;gap:8px;align-items:center;padding:4px 0"><span>${goEsc(x.company || name)}・${goEsc(x.when || '待定')}</span>${goPill(x.status)}<span style="flex:1"></span><button class="mini" onclick="goClose();gorderLoad('${x.id}')">打開</button>${['draft', 'sent'].includes(x.status) ? `<button class="mini" onclick="goSendLink('${x.id}')">傳連結</button>` : ''}</div>`).join('')}</div><hr style="border:0;border-top:1px solid var(--line);margin:8px 0">` : ''}
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:13px">
       <label>客戶名稱<input id="goC_company" value="${goEsc(name)}" style="width:100%;border:1px solid var(--line);border-radius:8px;padding:7px 9px;background:var(--card);color:inherit"></label>
       <label>統編<input id="goC_tax" inputmode="numeric" placeholder="8 碼（選填）" style="width:100%;border:1px solid var(--line);border-radius:8px;padding:7px 9px;background:var(--card);color:inherit"></label>
       <label>取餐時間<input id="goC_when" type="datetime-local" value="${tmr}" style="width:100%;border:1px solid var(--line);border-radius:8px;padding:7px 9px;background:var(--card);color:inherit"></label>
+      <label>截單時間<input id="goC_deadline" type="datetime-local" value="${tmr.slice(0, 10) + 'T10:00'}" style="width:100%;border:1px solid var(--line);border-radius:8px;padding:7px 9px;background:var(--card);color:inherit"></label>
       <label>方式<select id="goC_mode" style="width:100%;border:1px solid var(--line);border-radius:8px;padding:7px 9px;background:var(--card);color:inherit"><option>外帶自取</option><option>外送</option><option>內用</option></select></label>
       <label>聯絡人<input id="goC_contact" value="${goEsc(cv.name || '')}" style="width:100%;border:1px solid var(--line);border-radius:8px;padding:7px 9px;background:var(--card);color:inherit"></label>
       <label>電話<input id="goC_phone" placeholder="選填" style="width:100%;border:1px solid var(--line);border-radius:8px;padding:7px 9px;background:var(--card);color:inherit"></label>
@@ -229,7 +234,7 @@ async function goCreateGo (send) {
   const cv = window._goInboxConv; if (!cv) return
   const g = id => (document.getElementById(id) || {}).value || ''
   const b1 = document.getElementById('goC_btn1'), b2 = document.getElementById('goC_btn2'); if (b1) b1.disabled = true; if (b2) { b2.disabled = true; b2.textContent = '建立中…' }
-  const d = await goPost({ op: 'create', acct: cv.acct, convId: cv.id, uid: cv.uid || '', custName: cv.alias || cv.name || '', company: g('goC_company'), taxId: g('goC_tax'), when: g('goC_when').replace('T', ' '), mode: g('goC_mode'), contact: g('goC_contact'), phone: g('goC_phone') })
+  const d = await goPost({ op: 'create', acct: cv.acct, convId: cv.id, uid: cv.uid || '', custName: cv.alias || cv.name || '', company: g('goC_company'), taxId: g('goC_tax'), when: g('goC_when').replace('T', ' '), mode: g('goC_mode'), deadline: g('goC_deadline').replace('T', ' '), contact: g('goC_contact'), phone: g('goC_phone') })
   if (!d || !d.ok) { if (b1) b1.disabled = false; if (b2) { b2.disabled = false; b2.textContent = '建單並傳連結給客人' }; return goToast((d && d.error) || '建單失敗', true) }
   let sent = null
   if (send) sent = await goSendLink(d.id)
