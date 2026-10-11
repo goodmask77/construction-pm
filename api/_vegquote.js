@@ -349,12 +349,12 @@ export async function mealStats ({ kvGet, months }) {
     const attKeys = new Set()
     for (const [d, users] of Object.entries(((atts[i] || {}).days) || {})) { if (!d.startsWith(ym)) continue; for (const r of Object.values(users || {})) { if (!/AB/.test(r.dept || '')) continue; const h = (Number(r.durmin) || 0) / 60 || (((r.on || []).length && (r.off || []).length) ? 1 : 0); if (h > 0) attKeys.add(d + '|' + String(r.name || '').replace(/\s+[A-Za-z].*$/, '')) } }
     // 員餐叫貨
-    let total = 0, lastDay = ''; const byItem = {}, byCat = {}, byDay = {}
+    let total = 0, lastDay = '', firstDay = ''; const byItem = {}, byCat = {}, byDay = {}
     for (const r of Object.values(((ordis[i] || {}).rows) || {})) {
       if (!/員餐/.test(r.supplier || '')) continue; if (r.is_backfill || /reject|cancel|退回|取消/i.test(r.order_status || '')) continue
       const d = tpe(r.ordered_at); if (!d.startsWith(ym)) continue
       const amt = (Number(r.price) || 0) * (Number(r.qty) || 0); if (!amt) continue
-      total += amt; if (d > lastDay) lastDay = d; byDay[d] = (byDay[d] || 0) + amt
+      total += amt; if (d > lastDay) lastDay = d; if (!firstDay || d < firstDay) firstDay = d; byDay[d] = (byDay[d] || 0) + amt
       const nm = r.name || r.item || '?'; const it = byItem[nm] = byItem[nm] || { name: nm, amt: 0, qty: 0, unit: r.unit || '', sup: String(r.supplier).replace(/[＿_]?員餐$/, ''), n: 0 }; it.amt += amt; it.qty += Number(r.qty) || 0; it.n++
       const c = mealCat(nm); byCat[c] = (byCat[c] || 0) + amt
     }
@@ -362,7 +362,8 @@ export async function mealStats ({ kvGet, months }) {
     const cut = lastDay || ym + '-31'
     const shiftsCut = [...shiftKeys].filter(k => k.slice(0, 10) <= cut).length, mealsCut = [...mealKeys.entries()].filter(([k]) => k.slice(0, 10) <= cut).reduce((t, [, v]) => t + v, 0), attCut = [...attKeys].filter(k => k.slice(0, 10) <= cut).length, daysCut = [...days].filter(d => d <= cut).length
     total = Math.round(total)
-    out.push({ ym, shifts: shiftKeys.size, meals: [...mealKeys.values()].reduce((a, b) => a + b, 0), att: attKeys.size, people: people.size, pt: ptKeys.size, dept, days: days.size, avgPeople: days.size ? Math.round(shiftKeys.size / days.size * 10) / 10 : 0,
+    if (!total || firstDay > ym + '-20') return // 沒員餐單、或資料從月底才開始（例：7 月只有 7/29 起 3 天）→ 不列，平均會失真
+    out.push({ ym, firstDay, shifts: shiftKeys.size, meals: [...mealKeys.values()].reduce((a, b) => a + b, 0), att: attKeys.size, people: people.size, pt: ptKeys.size, dept, days: days.size, avgPeople: days.size ? Math.round(shiftKeys.size / days.size * 10) / 10 : 0,
       total, lastDay, cut: { shifts: shiftsCut, meals: mealsCut, att: attCut, days: daysCut },
       perShift: shiftsCut ? Math.round(total / shiftsCut) : null, perMeal: mealsCut ? Math.round(total / mealsCut) : null, perAtt: attCut ? Math.round(total / attCut) : null, perDay: daysCut ? Math.round(total / daysCut) : null,
       cats: Object.entries(byCat).map(([c, a]) => ({ cat: c, amt: Math.round(a), pct: total ? Math.round(a / total * 100) : 0 })).sort((x, y) => y.amt - x.amt),
