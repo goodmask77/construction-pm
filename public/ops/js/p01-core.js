@@ -399,11 +399,13 @@ function renderBoard(d, store, view){
         hh += cols.map(dt=>{ const rv=revByDate[dt]||0; return `<td style="text-align:right;padding:6px 8px;font-variant-numeric:tabular-nums;font-weight:800" title="${dt.slice(5)} 全日營收（與每日數據核對）">${rv?rv.toLocaleString():'—'}</td>` }).join('')
         hh += `</tr>`
         if (d.hourUber) { // v4.70.66 Uber 日合計列（各時段 Uber 加總；已含在日營收內）
-          const ubByDate = {}; cols.forEach(dt=>{ ubByDate[dt] = Object.values((d.hourUber||{})[dt]||{}).reduce((a,b)=>a+(Number(b)||0),0) })
+          // v4.70.68 合計列＝每日數據 Uber 欄同一個數（付款別實收，退款已扣）；沒有正式筆的日子（今天盤中）才用各時段加總（來源別毛額，退款不扣）
+          const ubEntry = {}; (d.days||[]).forEach(e=>{ if (Number(e.uber)>0) ubEntry[e.date] = Number(e.uber) })
+          const ubByDate = {}; cols.forEach(dt=>{ ubByDate[dt] = ubEntry[dt] || Object.values((d.hourUber||{})[dt]||{}).reduce((a,b)=>a+(Number(b)||0),0) })
           const ubDays = cols.map(dt=>ubByDate[dt]).filter(v=>v>0)
           const avgUb = ubDays.length ? Math.round(ubDays.reduce((a,b)=>a+b,0)/ubDays.length) : 0
           hh += `<tr style="color:#B9A3F5"><td style="position:sticky;left:0;z-index:1;background:var(--soft);font-weight:700;white-space:nowrap">其中 Uber</td><td style="text-align:right;padding:6px 8px;background:var(--psoft,var(--soft));font-weight:700" title="有 Uber 那幾天的平均">${avgUb?avgUb.toLocaleString():'—'}</td>`
-          hh += cols.map(dt=>`<td style="text-align:right;padding:6px 8px;font-variant-numeric:tabular-nums" title="${dt.slice(5)} Uber 全日合計（已含在日營收內）">${ubByDate[dt]?ubByDate[dt].toLocaleString():'—'}</td>`).join('')
+          hh += cols.map(dt=>`<td style="text-align:right;padding:6px 8px;font-variant-numeric:tabular-nums" title="${dt.slice(5)} Uber 全日實收（與每日數據 Uber 欄同數；時段格是訂單毛額，有退款時會比合計多）">${ubByDate[dt]?ubByDate[dt].toLocaleString():'—'}</td>`).join('')
           hh += `</tr>`
         }
       }
