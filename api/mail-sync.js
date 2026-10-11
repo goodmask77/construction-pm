@@ -544,8 +544,21 @@ export default async function handler(req, res) {
     const ingestRecs = good.map(({ _payRaw, ...rest }) => rest)
     const out = ingestRecs.length ? await ingestPosRecords(ingestRecs, 'AB日結後台回填') : { added: 0 }
     const hhSaved = await saveAbHourly(good) // 熱力圖每小時：即使日結去重沒加，每小時照存（補歷史熱力圖）
+    // &fixpay=1（2026-10-12）：已入庫的「後台回填」日子付款別曾因讀錯欄位變成 信用卡/Uber=0 → 只覆寫既有正式筆的付款別＋人數（營收不動；Gmail 日結信那幾天也同源可覆寫）
+    let payFixed = []
+    if (String(req.query.fixpay || '') === '1') {
+      const posF = (await kvGet('sp_finance_pm_pos')) || { entries: [] }
+      for (const r of good) {
+        const e = (posF.entries || []).find(x => x.date === r.date && /beach/i.test(x.store || '') && !x.intraday)
+        if (!e) continue
+        e.cash = r.cash; e.card = r.card; e.linepay = r.linepay; e.uber = r.uber; e.payOther = r.payOther
+        if (r.guests) e.guests = r.guests; if (r.dineTx) e.dineTx = r.dineTx; if (r.takeTx) e.takeTx = r.takeTx
+        payFixed.push({ date: r.date, cash: r.cash, card: r.card, uber: r.uber, other: r.payOther })
+      }
+      if (payFixed.length) { posF.updatedAt = new Date().toISOString(); await kvPut('sp_finance_pm_pos', posF, 'AB付款別修正') }
+    }
     await announceChanged()
-    return res.status(200).json({ ok: true, ingested: out, hourlySaved: hhSaved, dates, revenues: good.map(r => ({ date: r.date, revenue: r.revenue, txCount: r.txCount, hours: r.hourly ? Object.keys(r.hourly).length : 0 })) })
+    return res.status(200).json({ ok: true, ingested: out, hourlySaved: hhSaved, payFixed, dates, revenues: good.map(r => ({ date: r.date, revenue: r.revenue, txCount: r.txCount, hours: r.hourly ? Object.keys(r.hourly).length : 0 })) })
   }
   // 任務搬移口（同金鑰，張良 2026-09-01：D哥把 14 筆記到工程空間，要搬到團隊工作）：
   // ?taskmove=<key>&from=ISO&to=ISO[&dry=1] → 把工程空間收件匣、createdAt 落在 [from,to] 的任務
