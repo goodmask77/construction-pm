@@ -1,4 +1,4 @@
-// 🥬 /prep 第 21b 塊（v4.70.67，2026-10-12）：成本總覽 → 「菜商比價」子分頁
+// 🥬 /prep 第 21b 塊（v4.70.69，2026-10-12）：成本總覽 → 「菜商比價」子分頁
 //   張良 2026-10-12：上展／尚太每月報價騰上系統、兩家並排看差異、對照市場行情（台北一市批發月均）看歷史波動、
 //   核對偵錯中心價格異常（對上就一鍵確認不再出現，對不上留給他）、抓 ops 叫貨單價格沒更新。
 //   資料口 ?vegcmp（api/_vegquote.js）；曲線一律 lineChart（p01-core）；單色線條圖示、不用 prompt。
@@ -6,17 +6,20 @@
   const esc = s => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
   const nf = n => (n == null || isNaN(n)) ? '—' : (Math.round(n * 10) / 10).toLocaleString()
   const I = d => `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-3px;flex:0 0 auto">${d}</svg>`
-  const IC = { leaf: I('<path d="M11 20A7 7 0 0 1 9.8 6.1C15.5 5 17 4.48 19 2c1 2 2 4.18 2 8 0 5.5-4.78 10-10 10z"/><path d="M2 21c0-3 1.85-5.36 5.08-6"/>'), check: I('<polyline points="20 6 9 17 4 12"/>'), x: I('<line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>'), warn: I('<path d="M10.3 3.9L1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>'), undo: I('<polyline points="1 4 1 10 7 10"/><path d="M3.5 15a9 9 0 1 0 2.1-9.4L1 10"/>'), dn: I('<polyline points="6 9 12 15 18 9"/>'), up: I('<polyline points="18 15 12 9 6 15"/>'), trend: I('<polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/>') }
+  const IC = { leaf: I('<path d="M11 20A7 7 0 0 1 9.8 6.1C15.5 5 17 4.48 19 2c1 2 2 4.18 2 8 0 5.5-4.78 10-10 10z"/><path d="M2 21c0-3 1.85-5.36 5.08-6"/>'), check: I('<polyline points="20 6 9 17 4 12"/>'), x: I('<line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>'), warn: I('<path d="M10.3 3.9L1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>'), undo: I('<polyline points="1 4 1 10 7 10"/><path d="M3.5 15a9 9 0 1 0 2.1-9.4L1 10"/>'), dn: I('<polyline points="6 9 12 15 18 9"/>'), up: I('<polyline points="18 15 12 9 6 15"/>'), trend: I('<polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/>'), pin: I('<path d="M12 17v5"/><path d="M9 10.8V5h6v5.8l2 2.2H7z"/>'), pinOn: I('<path d="M12 17v5"/><path d="M9 10.8V5h6v5.8l2 2.2H7z" fill="currentColor"/>') }
   const COL = { a: '#4DA3FF', b: '#E8A657', m: '#8C98A8', g: '#3DBE6C', r: '#F07373', p: '#B48CF2', y: '#E8C14E' }
   const VC = { 尚太: COL.a, 上展: COL.b }
   const TKf = () => (typeof TK === 'function' ? TK() : '')
-  let D = null, view = 'cmp', f = { cat: '營運', both: true, q: '', sort: 'pct' }, open = new Set(), busy = false, msg = ''
+  let D = null, view = 'cmp', f = { cat: '營運', both: true, q: '', sort: 'pct', dir: 'desc' }, open = new Set(), busy = false, msg = '', pins = new Set()
 
   async function load (force) {
     if (D && !force) return D
     try { const r = await fetch('/api/mail-sync?vegcmp=' + encodeURIComponent(K) + (TKf() ? '&me=' + encodeURIComponent(TKf()) : '') + '&r=' + Date.now()); D = await r.json() } catch (_) { D = { ok: false, error: '連線問題' } }
+    if (D && D.ok) { pins = new Set(D.pins || []); try { if (!(D.me && D.me.canDecide)) pins = new Set(JSON.parse(localStorage.getItem('vegPins') || '[]')) } catch (_) {} } // 有採購權限＝共用釘選；沒有＝存自己這台
     return D
   }
+  window._vgPin = async (k, ev) => { if (ev) ev.stopPropagation(); const on = !pins.has(k); if (on) pins.add(k); else pins.delete(k); paint(); if (D.me && D.me.canDecide) { const j = await post({ op: 'pin', key: k, on }); if (j.ok) pins = new Set(j.pins) } else { try { localStorage.setItem('vegPins', JSON.stringify([...pins])) } catch (_) {} } }
+  window._vgSort = k => { if (f.sort === k) f.dir = f.dir === 'desc' ? 'asc' : 'desc'; else { f.sort = k; f.dir = k === 'name' ? 'asc' : 'desc' } paint() }
   async function post (body) { const r = await fetch('/api/mail-sync?vegcmp=' + encodeURIComponent(K), { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ...body, token: TKf() }) }); return r.json().catch(() => ({ ok: false, error: '連線問題' })) }
   const paint = () => { const el = document.getElementById('cdBody'); if (el) el.innerHTML = render() }
 
@@ -46,18 +49,33 @@
   // ── 篩選 ──
   const CATS = ['營運', '員餐', '其他']
   const catOf = r => r.cat === '營運' ? '營運' : r.cat === '員餐' ? '員餐' : '其他'
+  const lastOf = m => { const ks = Object.keys(m || {}).sort(); return ks.length ? m[ks[ks.length - 1]] : null }
+  const latestMkt = r => { if (!r.mkt) return null; const ks = Object.keys(r.mkt).sort(); return ks.length ? r.mkt[ks[ks.length - 1]] : null }
+  // 可排序欄位：key → 取值（null 一律排最後）
+  const SORTV = {
+    name: r => r.name, ym: r => (r.latest || {}).ym || '', a: r => r.s.尚太 ? ((r.latest || {}).尚太 != null ? r.latest.尚太 : lastOf(r.s.尚太)) : null, b: r => r.s.上展 ? ((r.latest || {}).上展 != null ? r.latest.上展 : lastOf(r.s.上展)) : null,
+    pct: r => (r.latest || {}).pct == null ? null : Math.abs(r.latest.pct), diff: r => (r.latest || {}).pct == null ? null : r.latest.pct, cheap: r => (r.latest || {}).cheaper || '',
+    recent: r => r.stat ? (r.stat.上展便宜 - r.stat.尚太便宜) : null, qa: r => (r.qty3 || {}).尚太 || 0, qb: r => (r.qty3 || {}).上展 || 0, save: r => (r.save || {}).total || 0,
+    vola: r => (r.vol尚太 || {}).pct == null ? null : r.vol尚太.pct, volb: r => (r.vol上展 || {}).pct == null ? null : r.vol上展.pct, mkt: r => latestMkt(r), vol: r => Math.max((r.vol尚太 || {}).pct || 0, (r.vol上展 || {}).pct || 0)
+  }
   function rows () {
     const q = f.q.trim().toLowerCase()
-    let rs = D.items.filter(r => (f.cat === 'all' || catOf(r) === f.cat) && (!f.both || r.both) && (!q || r.name.toLowerCase().includes(q)))
-    const key = f.sort
-    rs.sort((a, b) => key === 'name' ? a.name.localeCompare(b.name, 'zh-Hant') : key === 'vol' ? ((Math.max((b.vol尚太 || {}).pct || 0, (b.vol上展 || {}).pct || 0)) - (Math.max((a.vol尚太 || {}).pct || 0, (a.vol上展 || {}).pct || 0))) : (Math.abs((b.latest || {}).pct || 0) - Math.abs((a.latest || {}).pct || 0)))
+    const rs = D.items.filter(r => (f.cat === 'all' || catOf(r) === f.cat) && (!f.both || r.both) && (!q || r.name.toLowerCase().includes(q)))
+    const g = SORTV[f.sort] || SORTV.pct, dir = f.dir === 'asc' ? 1 : -1
+    rs.sort((a, b) => {
+      const pa = pins.has(a.key) ? 0 : 1, pb = pins.has(b.key) ? 0 : 1; if (pa !== pb) return pa - pb
+      const va = g(a), vb = g(b); if (va == null && vb == null) return 0; if (va == null) return 1; if (vb == null) return -1
+      if (typeof va === 'string' || typeof vb === 'string') return String(va).localeCompare(String(vb), 'zh-Hant') * dir
+      return (va - vb) * dir
+    })
     return rs
   }
+  const th = (k, label, extra) => `<th ${extra || ''} onclick="_vgSort('${k}')" style="cursor:pointer;white-space:nowrap;${f.sort === k ? 'color:var(--ink)' : ''}">${label}${f.sort === k ? (f.dir === 'desc' ? ' ' + IC.dn : ' ' + IC.up) : ''}</th>`
   function filters () {
     const cnt = c => D.items.filter(r => (c === 'all' || catOf(r) === c) && (!f.both || r.both)).length
     return `<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:8px">` + [['all', '全部'], ...CATS.map(c => [c, c])].map(([v, l]) => `<button class="mini ${f.cat === v ? 'on' : ''}" onclick="_vgF('cat','${v}')">${l}<span style="margin-left:4px;font-size:11px;opacity:.8">${cnt(v)}</span></button>`).join('')
       + `<span style="width:1px;height:20px;background:var(--line)"></span><button class="mini ${f.both ? 'on' : ''}" onclick="_vgF('both')">只看兩家都有</button>`
-      + `<select onchange="_vgF('sort',this.value)" style="border:1px solid var(--line);border-radius:8px;padding:5px 8px;background:var(--card);color:var(--ink)"><option value="pct" ${f.sort === 'pct' ? 'selected' : ''}>排序：最新月價差大→小</option><option value="vol" ${f.sort === 'vol' ? 'selected' : ''}>排序：波動大→小</option><option value="name" ${f.sort === 'name' ? 'selected' : ''}>排序：名稱</option></select>`
+      + (pins.size ? `<span class="hint" style="font-size:12px">${IC.pin} 已釘 ${pins.size} 項（置頂）</span>` : '')
       + `<input value="${esc(f.q)}" oninput="_vgQ(this.value)" placeholder="搜尋品項…" style="flex:1;min-width:140px;border:1px solid var(--line);border-radius:8px;padding:6px 10px"></div>`
   }
   const pctTag = (p, inv) => p == null ? '<span class="mut">—</span>' : `<b style="color:${Math.abs(p) < 3 ? COL.m : ((p > 0) !== !!inv ? COL.r : COL.g)}">${p > 0 ? '+' : ''}${nf(p)}%</b>`
@@ -70,16 +88,15 @@
   function table () {
     const rs = rows(); if (!rs.length) return '<div class="hint" style="padding:16px;text-align:center">沒有符合的品項</div>'
     const mos = D.months.slice(-12)
-    let h = `<div class="hint" style="margin-bottom:6px">${rs.length} 項・點品項展開逐月價格與走勢圖。「差」＝尚太 − 上展（紅＝尚太貴、綠＝尚太便宜）。</div><div class="scroll"><table class="tight" style="min-width:900px"><thead><tr><th style="text-align:left">品項</th><th>規格</th><th>最新月</th><th style="color:${VC.尚太}">尚太</th><th style="color:${VC.上展}">上展</th><th>差</th><th>便宜</th><th>近期誰便宜</th><th>波動 尚太</th><th>波動 上展</th><th>市場月均</th></tr></thead><tbody>`
+    let h = `<div class="hint" style="margin-bottom:6px">${rs.length} 項・點欄位名稱排序（再點一次反向）・點 ${IC.pin} 釘選置頂・點品項展開逐月價格、叫貨量與走勢圖。「差」＝尚太 − 上展（紅＝尚太貴、綠＝尚太便宜）；叫貨量＝近 3 個月兩店合計；「叫便宜的可省」＝近 3 個月若都跟便宜那家叫，省多少。</div><div class="scroll"><table class="tight" style="min-width:1180px"><thead><tr><th style="width:26px"></th>${th('name', '品項', 'style="text-align:left"')}<th>規格</th>${th('ym', '最新月')}${th('a', '尚太', `style="color:${VC.尚太}"`)}${th('b', '上展', `style="color:${VC.上展}"`)}${th('diff', '差')}${th('cheap', '便宜')}${th('recent', '近期誰便宜')}${th('qa', '叫貨 尚太', `style="color:${VC.尚太}"`)}${th('qb', '叫貨 上展', `style="color:${VC.上展}"`)}${th('save', '叫便宜的可省')}${th('vola', '波動 尚太')}${th('volb', '波動 上展')}${th('mkt', '市場月均')}</tr></thead><tbody>`
     for (const r of rs) {
-      const L = r.latest || {}, st = r.stat, mk = r.mkt ? mos.slice().reverse().find(m => r.mkt[m] != null) : null
-      const o = open.has(r.key)
-      h += `<tr style="cursor:pointer" onclick="_vgOpen('${esc(r.key)}')"><td style="text-align:left"><b>${esc(r.name)}</b>${r.both ? '' : ` <span class="hint" style="font-size:11px">只有${r.s.尚太 ? '尚太' : '上展'}</span>`}${r.crop ? ` <span class="hint" style="font-size:11px">${IC.trend}</span>` : ''}</td><td class="mut">${esc(r.spec || '')} ${esc(r.unit || '')}</td><td>${L.ym ? esc(L.ym.slice(2).replace('-', '/')) : '—'}</td><td style="color:${VC.尚太};font-weight:800">${r.s.尚太 ? nf(L.尚太 != null ? L.尚太 : lastOf(r.s.尚太)) : '—'}</td><td style="color:${VC.上展};font-weight:800">${r.s.上展 ? nf(L.上展 != null ? L.上展 : lastOf(r.s.上展)) : '—'}</td><td>${L.diff != null ? (L.diff > 0 ? '+' : '') + nf(L.diff) + ' ' + pctTag(L.pct) : '—'}</td><td>${cheapTag(L.cheaper)}</td><td class="hint" style="font-size:12px">${st ? `<span style="color:${VC.尚太}">尚太 ${st.尚太便宜}</span>／<span style="color:${VC.上展}">上展 ${st.上展便宜}</span>${st.一樣 ? '／同 ' + st.一樣 : ''} 月` : '—'}</td><td class="hint" style="font-size:12px">${volTag(r.vol尚太)}</td><td class="hint" style="font-size:12px">${volTag(r.vol上展)}</td><td>${mk ? nf(r.mkt[mk]) + ` <span class="hint" style="font-size:11px">${mk.slice(5)}月</span>` : '<span class="mut">—</span>'}</td></tr>`
-      if (o) h += `<tr><td colspan="11" style="padding:8px 10px;background:var(--soft)">${detail(r)}</td></tr>`
+      const L = r.latest || {}, st = r.stat, mkv = latestMkt(r), mkYm = r.mkt ? Object.keys(r.mkt).sort().pop() : null
+      const o = open.has(r.key), pinned = pins.has(r.key), sv = r.save || {}
+      h += `<tr style="cursor:pointer${pinned ? ';background:var(--psoft)' : ''}" onclick="_vgOpen('${esc(r.key)}')"><td><span onclick="_vgPin('${esc(r.key)}',event)" title="${pinned ? '取消釘選' : '釘選置頂'}" style="color:${pinned ? COL.y : 'var(--muted)'};cursor:pointer">${pinned ? IC.pinOn : IC.pin}</span></td><td style="text-align:left"><b>${esc(r.name)}</b>${r.both ? '' : ` <span class="hint" style="font-size:11px">只有${r.s.尚太 ? '尚太' : '上展'}</span>`}${r.crop ? ` <span class="hint" style="font-size:11px">${IC.trend}</span>` : ''}</td><td class="mut">${esc(r.spec || '')} ${esc(r.unit || '')}</td><td>${L.ym ? esc(L.ym.slice(2).replace('-', '/')) : '—'}</td><td style="color:${VC.尚太};font-weight:800">${r.s.尚太 ? nf(L.尚太 != null ? L.尚太 : lastOf(r.s.尚太)) : '—'}</td><td style="color:${VC.上展};font-weight:800">${r.s.上展 ? nf(L.上展 != null ? L.上展 : lastOf(r.s.上展)) : '—'}</td><td>${L.diff != null ? (L.diff > 0 ? '+' : '') + nf(L.diff) + ' ' + pctTag(L.pct) : '—'}</td><td>${cheapTag(L.cheaper)}</td><td class="hint" style="font-size:12px">${st ? `<span style="color:${VC.尚太}">尚太 ${st.尚太便宜}</span>／<span style="color:${VC.上展}">上展 ${st.上展便宜}</span>${st.一樣 ? '／同 ' + st.一樣 : ''} 月` : '—'}</td><td style="color:${VC.尚太}">${r.qty3 && r.qty3.尚太 ? nf(r.qty3.尚太) + ` <span class="hint" style="font-size:11px">${esc(r.qtyUnit)}</span>` : '<span class="mut">—</span>'}</td><td style="color:${VC.上展}">${r.qty3 && r.qty3.上展 ? nf(r.qty3.上展) + ` <span class="hint" style="font-size:11px">${esc(r.qtyUnit)}</span>` : '<span class="mut">—</span>'}</td><td>${sv.total ? `<b style="color:${COL.g}">${sv.total.toLocaleString()} 元</b> <span class="hint" style="font-size:11px">改叫${esc(sv.to)}</span>` : (r.both ? '<span class="mut">0</span>' : '<span class="mut">—</span>')}</td><td class="hint" style="font-size:12px">${volTag(r.vol尚太)}</td><td class="hint" style="font-size:12px">${volTag(r.vol上展)}</td><td>${mkv != null ? nf(mkv) + ` <span class="hint" style="font-size:11px">${mkYm.slice(5)}月</span>` : '<span class="mut">—</span>'}</td></tr>`
+      if (o) h += `<tr><td colspan="15" style="padding:8px 10px;background:var(--soft)">${detail(r)}</td></tr>`
     }
     return h + '</tbody></table></div>'
   }
-  const lastOf = m => { const ks = Object.keys(m || {}).sort(); return ks.length ? m[ks[ks.length - 1]] : null }
   const volTag = v => v ? `${nf(v.min)}～${nf(v.max)} <b style="color:${(v.pct || 0) >= 100 ? COL.r : (v.pct || 0) >= 50 ? COL.y : COL.m}">${v.pct == null ? '' : v.pct + '%'}</b>` : '—'
   function detail (r) {
     const mos = D.months
@@ -92,7 +109,9 @@
     for (const v of D.vendors) if (r.s[v]) h += `<tr><td style="text-align:left;color:${VC[v]};font-weight:800">${v}</td>${mos.map(m => `<td>${r.s[v][m] == null ? '<span class="mut">—</span>' : nf(r.s[v][m])}</td>`).join('')}</tr>`
     if (r.both) h += `<tr><td style="text-align:left">差（尚太−上展）</td>${mos.map(m => { const a = r.s.尚太[m], b = r.s.上展[m]; if (a == null || b == null) return '<td class="mut">—</td>'; const d = a - b; return `<td style="color:${d > 0 ? COL.r : d < 0 ? COL.g : COL.m}">${d > 0 ? '+' : ''}${nf(d)}</td>` }).join('')}</tr>`
     if (r.mkt) h += `<tr><td style="text-align:left;color:${COL.m}">市場月均</td>${mos.map(m => `<td class="mut">${r.mkt[m] == null ? '—' : nf(r.mkt[m])}</td>`).join('')}</tr>`
-    h += `</tbody></table></div>${r.crop ? `<div class="hint" style="font-size:12px">市場對照作物：${esc(r.crop)}（台北一市批發月均，元／公斤）。對錯了跟 CC 說。</div>` : `<div class="hint" style="font-size:12px">這個品項還沒對到農業部作物名（市場行情只有生鮮蔬果有）。</div>`}</div>`
+    for (const v of D.vendors) if (r.qty && r.qty[v]) h += `<tr><td style="text-align:left;color:${VC[v]}">叫貨量 ${v} <span class="hint" style="font-size:11px">${esc(r.qtyUnit)}</span></td>${mos.map(m => `<td>${r.qty[v][m] ? nf(r.qty[v][m]) : '<span class="mut">—</span>'}</td>`).join('')}</tr>`
+    if (r.save && r.save.total) h += `<tr><td style="text-align:left;color:${COL.g}">叫便宜的可省</td>${mos.map(m => `<td style="color:${COL.g}">${r.save.byYm[m] ? r.save.byYm[m].toLocaleString() : '<span class="mut">—</span>'}</td>`).join('')}</tr>`
+    h += `</tbody></table></div><div class="hint" style="font-size:12px">叫貨量＝A Beach＋GROUN:D 叫貨單合計（近 ${(D.orders || {}).months ? D.orders.months.length : 6} 個月）；可省＝那個月跟貴的那家叫的量 × 兩家價差。</div>${r.crop ? `<div class="hint" style="font-size:12px">市場對照作物：${esc(r.crop)}（台北一市批發月均，元／公斤）。對錯了跟 CC 說。</div>` : `<div class="hint" style="font-size:12px">這個品項還沒對到農業部作物名（市場行情只有生鮮蔬果有）。</div>`}</div>`
     return h
   }
 
@@ -109,8 +128,10 @@
     const under = trend.filter(x => x.mk - Math.min(x.a == null ? 999 : x.a, x.b == null ? 999 : x.b) >= 20)
     const vol = D.items.filter(r => r.vol尚太 || r.vol上展).map(r => ({ r, p: Math.max((r.vol尚太 || {}).pct || 0, (r.vol上展 || {}).pct || 0) })).sort((x, y) => y.p - x.p).slice(0, 12)
     const k = (v, l, c, s) => `<div class="kpi" style="text-align:left"><div class="v" style="color:${c};font-size:24px">${v}</div><div class="l" style="font-size:13px">${l}</div><div class="sub2">${s || ''}</div></div>`
+    const saveRows = D.items.filter(r => r.save && r.save.total > 0).sort((a, b) => b.save.total - a.save.total); const saveTot = saveRows.reduce((s9, r) => s9 + r.save.total, 0)
     let h = `<section style="padding:12px 14px"><div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px">`
-      + k(both.length, '兩家都報價的品項', COL.p, `營運用 ${ops.length} 項`) + k(cheaper('尚太'), '最新月 尚太較便宜', VC.尚太, '項') + k(cheaper('上展'), '最新月 上展較便宜', VC.上展, '項') + k(avgPct == null ? '—' : (avgPct > 0 ? '+' : '') + avgPct + '%', '平均價差（尚太 vs 上展）', avgPct > 0 ? COL.r : COL.g, '正＝尚太整體較貴') + `</div>`
+      + k(both.length, '兩家都報價的品項', COL.p, `營運用 ${ops.length} 項`) + k(cheaper('尚太'), '最新月 尚太較便宜', VC.尚太, '項') + k(cheaper('上展'), '最新月 上展較便宜', VC.上展, '項') + k(avgPct == null ? '—' : (avgPct > 0 ? '+' : '') + avgPct + '%', '平均價差（尚太 vs 上展）', avgPct > 0 ? COL.r : COL.g, '正＝尚太整體較貴') + k(saveTot ? saveTot.toLocaleString() + ' 元' : '0', '近 3 個月若都叫便宜那家可省', COL.g, `${saveRows.length} 個品項有差`) + `</div>`
+    if (saveRows.length) h += `<div style="margin-top:10px"><b>可省最多的品項</b><div class="scroll"><table class="tight" style="min-width:520px;margin-top:4px"><thead><tr><th style="text-align:left">品項</th><th>可省</th><th>改叫</th><th style="color:${VC.尚太}">叫貨 尚太</th><th style="color:${VC.上展}">叫貨 上展</th></tr></thead><tbody>` + saveRows.slice(0, 12).map(r => `<tr style="cursor:pointer" onclick="_vgGo('${esc(r.key)}')"><td style="text-align:left"><b>${esc(r.name)}</b></td><td style="color:${COL.g};font-weight:800">${r.save.total.toLocaleString()} 元</td><td style="color:${VC[r.save.to]}">${esc(r.save.to)}</td><td>${nf(r.qty3.尚太)} ${esc(r.qtyUnit)}</td><td>${nf(r.qty3.上展)} ${esc(r.qtyUnit)}</td></tr>`).join('') + `</tbody></table></div></div>`
     h += `<div class="hint" style="margin-top:8px;line-height:1.7">怎麼看：同一品項兩家價差常態在 ±10% 內；單一品項長期一邊便宜很多，可以拿報價去跟另一家談。市場行情是批發價，菜商報價會高一截是正常（運費、損耗、利潤），重點看<b>漲跌方向與幅度是否一致</b>：市場跌了菜商沒跟著降，就是議價點。</div></section>`
     // 菜商漲幅 > 市場
     h += `<section style="padding:12px 14px"><h2 style="margin:0 0 6px;font-size:16px">近 3 個月：菜商漲幅明顯高於市場（≥20 個百分點）${over.length ? ` <span style="color:${COL.r}">${over.length} 項</span>` : ''}</h2><div class="hint" style="margin-bottom:6px">${m3[0].slice(2).replace('-', '/')} → ${m3[m3.length - 1].slice(2).replace('-', '/')} 的變化；這些是優先議價對象。</div>`
