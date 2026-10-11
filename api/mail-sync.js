@@ -2336,7 +2336,7 @@ export default async function handler(req, res) {
       combo: Number(s2.combo) > 0 ? Math.min(9999, Math.round(Number(s2.combo))) : '', // v4.58.0 套餐基準價（每類設一次；0/空=不開套餐）
       items: (Array.isArray(s2.items) ? s2.items : []).slice(0, 60).map(i2 => ({
         id: String(i2.id || ('mn' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5))).slice(0, 20),
-        name: String(i2.name || '').slice(0, 80), en: (i2.en !== undefined ? String(i2.en) : (oldEn[i2.id] || '')).slice(0, 80), np: Number(i2.np) > 0 ? Math.min(9999, Math.round(Number(i2.np))) : '', price: Math.max(0, Math.min(9999, Math.round(Number(i2.price) || 0))), note: String(i2.note || '').slice(0, 40), ...(i2.noCombo ? { noCombo: 1 } : {}), // v4.52.5 英文防蓋修正（張良「刪掉英文會自動跑回來」）：只有「根本沒送 en 欄位」(undefined=舊版整份存檔)才 fallback 舊值；明確送空字串=故意刪→存空。v4.58.0 noCombo=這品項不給套餐
+        name: String(i2.name || '').slice(0, 80), en: (i2.en !== undefined ? String(i2.en) : (oldEn[i2.id] || '')).slice(0, 80), np: Number(i2.np) > 0 ? Math.min(9999, Math.round(Number(i2.np))) : '', price: Math.max(0, Math.min(9999, Math.round(Number(i2.price) || 0))), note: String(i2.note || '').slice(0, 40), ...(i2.noCombo ? { noCombo: 1 } : {}), ...(i2.soon ? { soon: 1 } : {}), // v4.70.76 soon=即將上線（還沒上，菜單圖反灰＋標「即將上線」）；v4.52.5 英文防蓋修正（張良「刪掉英文會自動跑回來」）：只有「根本沒送 en 欄位」(undefined=舊版整份存檔)才 fallback 舊值；明確送空字串=故意刪→存空。v4.58.0 noCombo=這品項不給套餐
       })).filter(i2 => i2.name),
     })).filter(s2 => s2.name) }
     if (Array.isArray(mb2.purge) && mb2.purge.length) { // 永久刪除（張良 2026-10-01：不留在菜單上）

@@ -73,6 +73,11 @@
   .item .tag.inc{ background:var(--red); color:var(--cream); border-radius:7px; padding:2px 10px; font-size:19px; }
   .item .en{ font-family:"Lora",Georgia,serif; color:var(--eng); font-size:var(--en); font-weight:500; margin-top:2px; letter-spacing:.01em; }
   .item .en .decaf{ color:var(--red); font-weight:700; margin-left:8px; }
+  /* v4.70.76 即將上線：整列反灰（名稱／價格／英文都淡）＋名稱後灰底白字「即將上線」 */
+  .item.soon .nm,.item.soon .ih,.item.soon .pr,.item.soon .tag,.item.soon .en{ color:#9a9a9a; opacity:.75; }
+  .item.soon .tag.inc{ background:#b5b5b5; color:#fff; }
+  .item.soon .lead{ border-bottom-color:#bbb; }
+  .item .soonb{ flex:0 0 auto; background:#8a8a8a; color:#fff; border-radius:7px; padding:2px 10px; font-size:19px; font-weight:800; letter-spacing:.08em; line-height:1.3; }
   /* 自動縮字：品名過長時整列縮放，不切字（JS 控制 nm font-size） */
   /* 底部紅條 */
   .footer{ position:absolute; left:0; right:0; bottom:0; z-index:6; height:var(--footh); background:var(--red); color:var(--cream);
@@ -152,7 +157,7 @@ function normalize(data){
   const setN = (String(data.note||'').match(/(\d+)\s*元/)||[])[1] || '89';
   const sections = (data.sections||[]).map(s=>({
     name:s.name, combo:Number(s.combo)||0,
-    items:(s.items||[]).filter(it=>Number(it.price)>0).map(it=>({name:it.name,en:it.en,price:it.price,note:it.note}))
+    items:(s.items||[]).filter(it=>Number(it.price)>0||it.soon).map(it=>({name:it.name,en:it.en,price:it.price,note:it.note,soon:!!it.soon})) // v4.70.76 即將上線的照印（反灰＋標籤），其他 0 元不印
   })).filter(s=>s.items.length);
   return { setN, origins:data.origins||SAMPLE.origins, sections };
 }
@@ -197,12 +202,14 @@ function render(){
       let note='', nmHtml=nm;
       // 無咖啡因 → 英文行末紅字
       const decaf = /無咖啡因/.test(it.note||'') ? '無咖啡因' : '';
-      h+=`<div class="item" data-edit="items"><div class="row1">`
+      const hasPr = Number(it.price)>0;
+      h+=`<div class="item${it.soon?' soon':''}" data-edit="items"><div class="row1">`
         +`<span class="nm">${nmHtml}</span>`
+        +(it.soon?`<span class="soonb">即將上線</span>`:``)
         +(ih?`<span class="ih">冰 / 熱</span>`:``)
         +`<span class="lead"></span>`
-        +`<span class="pr">${it.price}</span>`
-        +(tag?`<span class="tag ${tag.inc?'inc':''}">${tag.t}</span>`:``)
+        +(hasPr?`<span class="pr">${it.price}</span>`:``)
+        +(tag&&hasPr?`<span class="tag ${tag.inc?'inc':''}">${tag.t}</span>`:``)
         +`</div>`
         +(it.en?`<div class="en">${it.en}${decaf?`<span class="decaf">${decaf}</span>`:''}</div>`:``)
         +`</div>`;
