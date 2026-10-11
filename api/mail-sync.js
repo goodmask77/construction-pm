@@ -5246,7 +5246,7 @@ export default async function handler(req, res) {
   // POST ?vegcmp=<OPS_BOARD_KEY> {token, op:'confirm'(ids?)|'refreshMarket'} → 限採購權限；confirm 走偵錯中心同一條決定流程逐筆留紀錄
   // POST ?vegimport=<MENU_PROBE_KEY|PARTNER_API_KEY> {vendors:{尚太:{src,items},上展:{…}}} | {op:'confirm'} → CC 本機匯入／維護口
   if (req.query?.vegcmp || (req.method === 'POST' && req.query?.vegimport)) {
-    const { buildVegCmp, importQuotes, confirmMatched, marketSeries, syncFromSheets, togglePin } = await import('./_vegquote.js')
+    const { buildVegCmp, importQuotes, confirmMatched, marketSeries, syncFromSheets, togglePin, mealStats } = await import('./_vegquote.js')
     const todayV = new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10)
     const mosV = (() => { const out = []; const d = new Date(todayV + 'T00:00:00Z'); for (let i = 0; i < 13; i++) { out.push(d.toISOString().slice(0, 7)); d.setUTCMonth(d.getUTCMonth() - 1) } return out })()
     let bV = {}
@@ -5278,6 +5278,7 @@ export default async function handler(req, res) {
         if (bV.op === 'refreshMarket') { const m = await marketSeries({ kvGet, kvPut, force: true }); return res.status(200).json({ ok: true, fetchedAt: m.fetchedAt, nCrops: Object.keys(m.crops || {}).length, errs: m.errs }) }
         return res.status(400).json({ ok: false, error: '不認得的操作' })
       }
+      if (req.query.view === 'meal') return res.status(200).json({ ...(await mealStats({ kvGet, months: mosV })), me: { name: meW.name, canDecide: canV } }) // v4.70.75 員餐分析
       if (req.query.market === 'refresh' && (probeV || canV)) { const m = await marketSeries({ kvGet, kvPut, force: req.query.all ? 'all' : true }); return res.status(200).json({ ok: true, fetchedAt: m.fetchedAt, nCrops: Object.keys(m.crops || {}).length, nDone: m.nDone, nSkip: m.nSkip, ms: m.ms, errs: m.errs }) }
       const t = await buildVegCmp({ kvGet, kvPut, months: mosV, withChk: req.query.chk === '1' }) // v4.70.70 預設不算偵錯那包（快），核對頁帶 chk=1
       return res.status(200).json({ ...t, me: { name: meW.name, canDecide: canV } })

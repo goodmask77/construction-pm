@@ -1,4 +1,4 @@
-// 🥬 /prep 第 21b 塊（v4.70.74，2026-10-12）：成本總覽 → 「菜商比價」子分頁
+// 🥬 /prep 第 21b 塊（v4.70.75，2026-10-12）：成本總覽 → 「菜商比價」子分頁
 //   張良 2026-10-12：上展／尚太每月報價騰上系統、兩家並排看差異、對照市場行情（台北一市批發月均）看歷史波動、
 //   核對偵錯中心價格異常（對上就一鍵確認不再出現，對不上留給他）、抓 ops 叫貨單價格沒更新。
 //   資料口 ?vegcmp（api/_vegquote.js）；曲線一律 lineChart（p01-core）；單色線條圖示、不用 prompt。
@@ -53,11 +53,11 @@
     if (!D.ok) return `<section><div class="err">${esc(D.error || '讀不到菜商報價')}</div></section>`
     const imp = D.imported || {}
     let h = `<section style="padding:12px 14px"><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><b style="font-size:16px">${IC.leaf} 菜商比價</b>`
-      + ['cmp', '比價表', 'ana', '走勢分析', 'chk', '核對'].reduce((s, v, i, a) => i % 2 ? s : s + `<button class="mini ${view === v ? 'on' : ''}" onclick="_vgView('${v}')">${a[i + 1]}${v === 'chk' && D.chkLoaded && (D.anomSummary || {}).hit ? ` <span style="background:${COL.g};color:#000;border-radius:8px;padding:0 6px;font-size:11px">${D.anomSummary.hit}</span>` : ''}</button>`, '')
+      + ['cmp', '比價表', 'ana', '走勢分析', 'meal', '員餐', 'chk', '核對'].reduce((s, v, i, a) => i % 2 ? s : s + `<button class="mini ${view === v ? 'on' : ''}" onclick="_vgView('${v}')">${a[i + 1]}${v === 'chk' && D.chkLoaded && (D.anomSummary || {}).hit ? ` <span style="background:${COL.g};color:#000;border-radius:8px;padding:0 6px;font-size:11px">${D.anomSummary.hit}</span>` : ''}</button>`, '')
       + `<span style="margin-left:auto"></span><button class="mini" onclick="_vgReload()">${IC.undo}</button></div>`
     h += `<div class="hint" style="margin-top:6px;line-height:1.7">報價：${D.vendors.map(v => `<b style="color:${VC[v]}">${v}</b> ${imp[v] && imp[v].n ? imp[v].n + ` 項（${esc(String(imp[v].at || '').slice(0, 10))} 匯入）` : '<span style="color:' + COL.r + '">尚未匯入</span>'}`).join('・')}；市場行情＝農業部「${esc(D.market.market)}」批發月均（${D.market.fetchedAt ? esc(String(D.market.fetchedAt).slice(0, 16).replace('T', ' ')) : '未抓'}，${D.market.nCrops} 種作物）${D.me && D.me.canDecide ? ` <span onclick="_vgMarket()" style="text-decoration:underline;cursor:pointer">重抓行情</span>` : ''}。單位都是元／公斤（報價＝到店價、行情＝批發價，看走勢不比絕對值）。<br>報價來源＝兩家的 Google 試算表，每天早上 8 點自動讀一次，有變動 DD 私訊你${D.sync ? `（上次讀取 ${esc(String(D.sync.at).slice(0, 16).replace('T', ' '))}：${esc((D.sync.summary || []).join('、'))}）` : ''}${D.me && D.me.canDecide ? ` <button class="mini" ${busy ? 'disabled' : ''} onclick="_vgSync()">${IC.undo} 現在重新讀取報價單</button>` : ''}${msg ? `<div style="color:${COL.y}">${esc(msg)}</div>` : ''}</div></section>`
     if (D._stale) h += `<div class="hint" style="padding:0 14px 6px;font-size:12px">⚡ 先顯示上次的畫面，最新資料背景更新中…</div>`
-    h += view === 'cmp' ? cmp() : view === 'ana' ? ana() : chk()
+    h += view === 'cmp' ? cmp() : view === 'ana' ? ana() : view === 'meal' ? meal() : chk()
     return h
   }
 
@@ -212,6 +212,34 @@
   }
   window._vgGo = k => { view = 'cmp'; f.cat = 'all'; f.both = false; f.q = ''; open = new Set([k]); paint(); setTimeout(() => { const el = document.querySelector('#vgTbl tr[onclick*="' + k.replace(/"/g, '') + '"]'); if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' }) }, 50) }
 
+  // ── 員餐分析（v4.70.75）──
+  let M = null, mealLoading = false, mealYm = null
+  async function loadMeal () { if (mealLoading) return; mealLoading = true; try { const r = await fetch('/api/mail-sync?vegcmp=' + encodeURIComponent(K) + (TKf() ? '&me=' + encodeURIComponent(TKf()) : '') + '&view=meal&r=' + Date.now()); M = await r.json() } catch (_) { M = { ok: false, error: '連線問題' } } mealLoading = false; paint() }
+  window._vgMealYm = ym => { mealYm = ym; paint() }
+  function meal () {
+    if (!M) { loadMeal(); return '<section><div class="hint" style="padding:22px">算員餐中（班表×叫貨單）…</div></section>' }
+    if (!M.ok) return `<section><div class="err">${esc(M.error || '讀不到')}</div></section>`
+    const ms = M.months || []; if (!ms.length) return '<section><div class="hint" style="padding:22px">沒有員餐叫貨資料</div></section>'
+    const cur = ms.find(m => m.ym === mealYm) || ms[0]; const B = M.bench
+    const k = (v, l, c, s2) => `<div class="kpi" style="text-align:left"><div class="v" style="color:${c};font-size:24px">${v}</div><div class="l" style="font-size:13px">${l}</div><div class="sub2">${s2 || ''}</div></div>`
+    const judge = cur.perMeal == null ? '' : cur.perMeal > B.high ? `<b style="color:${COL.r}">偏高</b>（基準 ${B.low}～${B.high} 元／餐）` : cur.perMeal >= B.low ? `<b style="color:${COL.y}">基準上緣</b>（${B.low}～${B.high}）` : `<b style="color:${COL.g}">合理</b>（${B.low}～${B.high}）`
+    let h = `<section style="padding:12px 14px"><div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center"><b>員餐分析</b><span class="hint" style="font-size:12px">A Beach・員餐＝「上展＿員餐」「尚太＿員餐」叫貨單（不含退回、補單）；人次＝NUEiP 班表有班的（日期×人）；餐次＝全天班算 2 餐；出勤＝實際打卡</span><span style="margin-left:auto"></span>` + ms.map(m => `<button class="mini ${cur.ym === m.ym ? 'on' : ''}" onclick="_vgMealYm('${m.ym}')">${Number(m.ym.slice(5))} 月</button>`).join('') + `</div>`
+    h += `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-top:10px">`
+      + k('NT$' + cur.total.toLocaleString(), `${Number(cur.ym.slice(5))} 月員餐叫貨`, COL.p, cur.lastDay && cur.lastDay.slice(0, 7) === cur.ym && cur.cut.days < cur.days ? `到 ${cur.lastDay.slice(5)} 為止` : `${cur.days} 天`)
+      + k(cur.cut.shifts, '上班人次', COL.b, `${cur.people} 人・每天 ${cur.avgPeople} 人・PT ${cur.pt}`) + k(cur.cut.meals, '餐次（全天班 2 餐）', COL.b, `出勤打卡 ${cur.cut.att} 人次`)
+      + k(cur.perMeal == null ? '—' : cur.perMeal + ' 元', '每餐食材', cur.perMeal > B.high ? COL.r : COL.y, judge) + k(cur.perShift == null ? '—' : cur.perShift + ' 元', '每人次（每班）', COL.m, `出勤口徑 ${cur.perAtt == null ? '—' : cur.perAtt + ' 元'}`) + k(cur.perDay == null ? '—' : cur.perDay + ' 元', '每天員餐', COL.m, '') + `</div>`
+    if (cur.perMeal != null) { const over = cur.total - cur.bench.high; h += `<div class="hint" style="margin-top:8px;line-height:1.7">以 ${B.high} 元／餐上緣算，${Number(cur.ym.slice(5))} 月 ${cur.cut.meals} 餐應該花 <b>NT$${cur.bench.high.toLocaleString()}</b>，實際 <b>NT$${cur.total.toLocaleString()}</b>${over > 0 ? `，多 <b style="color:${COL.r}">NT$${over.toLocaleString()}</b>（${Math.round(over / cur.bench.high * 100)}%）` : '，在範圍內'}。食材 ×3 ＝售價的話，每餐 ${cur.perMeal} 元食材等於 ${cur.perMeal * 3} 元的便當。常見原因：①員餐帳號夾了營運用料（看下面品項，像蘆筍、羊肉爐、肥腸這類）②煮太多倒掉（耗損）③員餐被帶走／非上班時段也吃④PT 短班也算一餐（已只算 1 餐）。</div>` }
+    h += `</section>`
+    // 月趨勢
+    h += `<section style="padding:12px 14px"><h2 style="margin:0 0 6px;font-size:16px">月趨勢</h2><div class="scroll"><table class="tight" style="min-width:720px"><thead><tr><th>月份</th><th>員餐叫貨</th><th>上班人次</th><th>餐次</th><th>出勤人次</th><th>每餐</th><th>每人次</th><th>每天</th><th>人數／天均</th></tr></thead><tbody>` + ms.slice().reverse().map(m => `<tr style="cursor:pointer" onclick="_vgMealYm('${m.ym}')"><td><b>${Number(m.ym.slice(5))} 月</b>${m.lastDay && m.cut.days < m.days ? ` <span class="hint" style="font-size:11px">到 ${m.lastDay.slice(5)}</span>` : ''}</td><td>NT$${m.total.toLocaleString()}</td><td>${m.cut.shifts}</td><td>${m.cut.meals}</td><td>${m.cut.att}</td><td style="color:${m.perMeal > B.high ? COL.r : m.perMeal >= B.low ? COL.y : COL.g};font-weight:800">${m.perMeal == null ? '—' : m.perMeal}</td><td>${m.perShift == null ? '—' : m.perShift}</td><td>${m.perDay == null ? '—' : m.perDay.toLocaleString()}</td><td class="hint">${m.people} 人／${m.avgPeople}</td></tr>`).join('') + `</tbody></table></div>`
+    const lab = ms.slice().reverse().map(m => Number(m.ym.slice(5)) + '月')
+    if (typeof lineChart === 'function' && ms.length >= 2) h += `<div style="margin-top:8px">${lineChart({ labels: lab, series: [{ name: '每餐食材', vals: ms.slice().reverse().map(m => m.perMeal), color: COL.r }, { name: '每人次', vals: ms.slice().reverse().map(m => m.perShift), color: COL.b }, { name: '基準上緣 ' + B.high, vals: lab.map(() => B.high), color: COL.m }], yFmt: v => nf(v) + ' 元', zero: true, h: 160 })}</div>`
+    h += `</section>`
+    // 花在哪
+    h += `<section style="padding:12px 14px"><h2 style="margin:0 0 6px;font-size:16px">${Number(cur.ym.slice(5))} 月花在哪</h2><div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">` + cur.cats.map(c => `<span style="border:1px solid var(--line);border-radius:8px;padding:3px 10px;font-size:13px"><b>${esc(c.cat)}</b> ${c.pct}% <span class="hint">NT$${c.amt.toLocaleString()}</span></span>`).join('') + `</div>`
+    h += `<div class="scroll"><table class="tight" style="min-width:640px"><thead><tr><th style="text-align:left">品項</th><th>分類</th><th>菜商</th><th>數量</th><th>金額</th><th>佔比</th><th>叫幾次</th></tr></thead><tbody>` + cur.items.slice(0, 25).map(x => `<tr><td style="text-align:left"><b>${esc(x.name)}</b></td><td class="hint">${esc(x.cat)}</td><td style="color:${VC[x.sup] || 'inherit'}">${esc(x.sup)}</td><td>${nf(x.qty)} ${esc(x.unit)}</td><td>NT$${x.amt.toLocaleString()}</td><td>${x.pct}%</td><td>${x.n}</td></tr>`).join('') + `</tbody></table></div><div class="hint" style="margin-top:6px;font-size:12px">只算菜商員餐帳號；米、飲料等其他廠商沒含。看到不像員餐的品項（營運用料記到員餐帳號）跟我說，可以請阿桑那邊改帳號。</div></section>`
+    return h
+  }
   // ── 核對 ──
   function chk () {
     if (!D.chkLoaded) { loadChk(); return '<section><div class="hint" style="padding:22px">核對資料計算中（偵錯中心那包比較慢，約 5 秒）…</div></section>' }
