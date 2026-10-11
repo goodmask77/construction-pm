@@ -62,7 +62,7 @@
     S.busy = false
     if (!j.ok) { S.err = j.error || 'AI 沒讀成功'; paint(); return }
     S.res = j; S.choice = {}; S.meta = { name: j.parsed.name, brand: (document.getElementById('rcpNBrand') || {}).value || 'GROUN:D', type: j.parsed.type, station: j.parsed.station || (document.getElementById('rcpNSt') || {}).value || '', yieldQty: j.parsed.yieldQty == null ? (j.parsed.type === 'dish' ? 1 : '') : j.parsed.yieldQty, yieldUnit: j.parsed.yieldUnit || (j.parsed.type === 'dish' ? '份' : 'g') }
-    j.parsed.items.forEach((it, i) => { S.choice[i] = it.match ? it.match.code : '' })
+    S.touched = {}; j.parsed.items.forEach((it, i) => { S.choice[i] = it.match ? it.match.code : ((it.candidates || [])[0] ? it.candidates[0].code : '') }) // 沒自動對到但有候選＝先帶最像的那個，標「AI 猜的請確認」，少點幾下
     S.steps = j.parsed.steps.map(s => ({ on: true, ...s }))
     paint()
   }
@@ -86,7 +86,8 @@
     P.items.forEach((it, i) => {
       const ch = S.choice[i], cands = it.candidates || []
       const sel = `<select style="width:100%;${inp}" onchange="_rcpImpPick(${i},this.value)">` + cands.map(c => `<option value="${esc(c.code)}" ${ch === c.code ? 'selected' : ''}>${esc(optLabel(c))}</option>`).join('') + `<option value="" ${ch === '' ? 'selected' : ''}>— 待補（先不對應）—</option><option value="__new" ${ch === '__new' ? 'selected' : ''}>＋ 新增為半成品「${esc(it.name)}」</option></select>`
-      const badge = ch === '__new' ? `<span style="color:${COL.p};font-size:12px;white-space:nowrap">${IC.plus} 會新建半成品</span>` : ch ? (it.match && it.match.code === ch ? `<span style="color:${COL.g};font-size:12px;white-space:nowrap">${IC.check} 自動對到</span>` : `<span style="color:${COL.g};font-size:12px;white-space:nowrap">${IC.check} 已選</span>`) : (cands.length ? `<span style="color:${COL.o};font-size:12px;white-space:nowrap">${IC.warn} 請選一個</span>` : `<span style="color:${COL.r};font-size:12px;white-space:nowrap">${IC.x} 待補</span>`)
+      const guessed = !it.match && cands[0] && ch === cands[0].code && !S.touched[i]
+      const badge = ch === '__new' ? `<span style="color:${COL.p};font-size:12px;white-space:nowrap">${IC.plus} 會新建半成品</span>` : ch ? (it.match && it.match.code === ch ? `<span style="color:${COL.g};font-size:12px;white-space:nowrap">${IC.check} 自動對到</span>` : guessed ? `<span style="color:${COL.o};font-size:12px;white-space:nowrap">${IC.warn} AI 猜的，請確認</span>` : `<span style="color:${COL.g};font-size:12px;white-space:nowrap">${IC.check} 已選</span>`) : (cands.length ? `<span style="color:${COL.o};font-size:12px;white-space:nowrap">${IC.warn} 請選一個</span>` : `<span style="color:${COL.r};font-size:12px;white-space:nowrap">${IC.x} 待補</span>`)
       h += `<tr style="border-top:1px solid var(--line)"><td style="padding:5px 6px">${it.name ? `<b>${esc(it.name)}</b>` : `<input placeholder="材料名稱" onchange="_rcpImpName(${i},this.value)" style="width:140px;${inp}">`}${it.costHint != null ? `<div class="hint" style="font-size:11.5px">表上成本 ${it.costHint} 元（參考，系統會自己算）</div>` : ''}</td><td style="padding:5px 6px;text-align:right"><input type="number" step="any" value="${it.qty}" onchange="_rcpImpQty(${i},this.value)" style="width:76px;text-align:right;${inp}"></td><td style="padding:5px 6px"><input value="${esc(it.unit)}" onchange="_rcpImpUnit(${i},this.value)" style="width:60px;${inp}"></td><td style="padding:5px 6px">${sel}</td><td style="padding:5px 6px">${badge} <button class="mini" style="padding:2px 6px" onclick="_rcpImpDelItem(${i})" title="刪掉這行">${IC.trash}</button></td></tr>`
     })
     h += `</tbody></table></div><button class="mini" style="margin-top:6px" onclick="_rcpImpAddItem()">${IC.plus} 加一行材料</button>`
@@ -99,7 +100,7 @@
     return h
   }
   window._rcpImpBack = () => { S.res = null; S.err = ''; paint() }
-  window._rcpImpPick = (i, v) => { S.choice[i] = v; syncMeta(); paint() }
+  window._rcpImpPick = (i, v) => { S.choice[i] = v; S.touched[i] = true; syncMeta(); paint() }
   window._rcpImpQty = (i, v) => { S.res.parsed.items[i].qty = Number(v) || 0 }
   window._rcpImpUnit = (i, v) => { S.res.parsed.items[i].unit = String(v).slice(0, 10) }
   window._rcpImpDelItem = i => { syncMeta(); S.res.parsed.items.splice(i, 1); const c = {}; Object.keys(S.choice).map(Number).sort((a, b) => a - b).forEach(k => { if (k < i) c[k] = S.choice[k]; else if (k > i) c[k - 1] = S.choice[k] }); S.choice = c; paint() }
@@ -113,8 +114,8 @@
     syncMeta(); const M = S.meta, P = S.res.parsed
     const name = String(M.name || '').trim(); if (!name) { S.err = '名稱不能空'; paint(); return }
     const items = P.items.filter(it => String(it.name || '').trim())
-    const pending = items.filter((it, i) => S.choice[P.items.indexOf(it)] === '' && (it.candidates || []).length)
-    if (pending.length && !confirm(`有 ${pending.length} 行材料有候選但你還沒選（${pending.map(p => p.name).slice(0, 4).join('、')}…），先用「待補」建立？`)) return
+    const guessed = items.filter(it => { const i = P.items.indexOf(it); const c0 = (it.candidates || [])[0]; return !it.match && c0 && S.choice[i] === c0.code && !S.touched[i] })
+    if (guessed.length && !confirm(`有 ${guessed.length} 行對應是 AI 猜的、你還沒確認：\n` + guessed.map(g => '・' + g.name + ' → ' + g.candidates[0].label).slice(0, 8).join('\n') + (guessed.length > 8 ? '\n…' : '') + '\n\n就照這樣建立草稿？（之後在食譜「版本」還能改）')) return
     S.busy = true; S.err = ''; paint()
     try {
       const ts = Date.now().toString(36); let n = 0
