@@ -1062,7 +1062,18 @@ export default async function handler(req, res) {
     return res.status(400).json({ ok: false, error: '未知 op' })
   }
   // 🛠 任務通知口（v4.41.0 張良：指派完選「發群/私訊/不通知」；完成送審通知建立者；審核結果回報本人）
-  // POST ?tasknotify=<OPS_BOARD_KEY> body={token, kind:'assign'|'review'|'approve'|'reject', mode:'group'|'dm'|'none', title, due, owner, creator, doer}
+  // v4.70.70 任務通知可選群（張良 2026-10-12「指派任務發什麼群 都要 我要能選」）：GET ?tngroups=<OPS_BOARD_KEY>&me=token → DD 在的群清單（真名，與 DD 設定頁「發到」同一份）
+  if (req.method === 'GET' && req.query?.tngroups) {
+    const okG = (process.env.OPS_BOARD_KEY || '').trim()
+    if (!okG || String(req.query.tngroups) !== okG) return res.status(403).json({ ok: false })
+    const whoG = await sopWho(req.query.me)
+    if (!whoG) return res.status(403).json({ ok: false, error: permDeny() })
+    let gl = []; try { const { ddAll } = await import('./_ddmsg.js'); gl = (await ddAll()).groups } catch (_) {}
+    res.setHeader('cache-control', 'private, max-age=300')
+    return res.status(200).json({ ok: true, groups: gl.map(g => ({ gid: g.gid, label: g.label, tag: g.tag || '', preset: !!g.preset })), def: 'Cf7940efc6517b0c084ad2ad496b45f30' })
+  }
+  // POST ?tasknotify=<OPS_BOARD_KEY> body={token, kind:'assign'|'review'|'approve'|'reject', mode:'group'|'dm'|'none', gid?, title, due, owner, creator, doer}
+  // v4.70.70 mode=group 可帶 gid（限 DD 群清單裡的群，防亂推）；沒帶＝舊預設 HAPPY337
   if (req.method === 'POST' && req.query?.tasknotify) {
     const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
     if (!ok2 || String(req.query.tasknotify) !== ok2) return res.status(403).json({ ok: false })
@@ -1081,6 +1092,13 @@ export default async function handler(req, res) {
     const push9 = (to, text) => tkL9 ? fetch('https://api.line.me/v2/bot/message/push', { method: 'POST', headers: { 'content-type': 'application/json', Authorization: 'Bearer ' + tkL9 }, body: JSON.stringify({ to, messages: [{ type: 'text', text }] }) }).catch(() => {}) : null
     let sent9 = 0
     const kind9 = String(tb.kind || 'assign'), mode9 = String(tb.mode || 'none')
+    let grpTo9 = 'Cf7940efc6517b0c084ad2ad496b45f30'
+    if (mode9 === 'group' && tb.gid) {
+      const gidQ = String(tb.gid || '').replace(/[^A-Za-z0-9]/g, '')
+      let okG9 = false; try { const { ddAll } = await import('./_ddmsg.js'); okG9 = (await ddAll()).groups.some(g => g.gid === gidQ) } catch (_) {}
+      if (!okG9) return res.status(200).json({ ok: false, error: '這個群不在 DD 的群組清單裡，發不出去——重新整理再選一次' })
+      grpTo9 = gidQ
+    }
     const due9 = tb.due ? `\n截止：${String(tb.due).slice(0, 10)}` : ''
     // v4.41.6 深層連結（張良「通知跟訊息一樣定位 直接帶過去看那張卡片閃金光」）：帶任務 id → 連結直達該卡
     const tid9 = String(tb.id || '').replace(/[^A-Za-z0-9_-]/g, '')
@@ -1088,7 +1106,7 @@ export default async function handler(req, res) {
     const url9 = tid9 ? '/prep#task=' + tid9 : '/prep'
     if (kind9 === 'assign' && mode9 !== 'none') {
       const txt9 = `🛠 任務指派｜${title9}\n負責人：${tb.owner || '（未定）'}${due9}\n— ${actor9} 指派\n點開直達這張卡 👇\n${lnk9}`
-      if (mode9 === 'group') { await push9('Cf7940efc6517b0c084ad2ad496b45f30', txt9); sent9++ }
+      if (mode9 === 'group') { await push9(grpTo9, txt9); sent9++ }
       else if (mode9 === 'dm') {
         const u9 = uidByName9(String(tb.owner || ''))
         if (!u9) return res.status(200).json({ ok: false, error: `${tb.owner || '負責人'} 還沒綁定 GD，私訊不到——改發群組或請他先綁定` })
@@ -1098,7 +1116,7 @@ export default async function handler(req, res) {
     }
     if (kind9 === 'manual' && mode9 !== 'none') { // v4.41.4 卡片內🔔隨時補通知（張良「一開始不通知後來要通知」）：措辭=提醒不是指派
       const txtM = `🛠 任務提醒｜${title9}${tb.owner ? `\n負責人：${tb.owner}` : ''}${due9}\n— ${actor9} 提醒\n點開直達這張卡 👇\n${lnk9}`
-      if (mode9 === 'group') { await push9('Cf7940efc6517b0c084ad2ad496b45f30', txtM); sent9++ }
+      if (mode9 === 'group') { await push9(grpTo9, txtM); sent9++ }
       else if (mode9 === 'dm') {
         const uM = uidByName9(String(tb.owner || ''))
         if (!uM) return res.status(200).json({ ok: false, error: `${tb.owner || '負責人'} 還沒綁定 GD，私訊不到——改發群組或請他先綁定` })

@@ -486,7 +486,11 @@ export function tenureOf(d, nowMs) {
   return y ? `${y}年${m ? m + '個月' : ''}` : `${m}個月`
 }
 
-async function loadCrewText() {
+// v4.70.70 個資守門改伺服器端（張良 2026-10-12 抓包：陸泫名還沒綁定、私訊 DD 一句「GD陸泫名」就拿到身分證字號）：
+// 原本整份名冊（含身分證／銀行／薪資／保險）都餵給 AI，只靠提示詞「只私訊回老闆」擋——AI 根本不知道發話的是誰。
+// 現在 secretOK=false（非操作者／非審核人／不在身分證名單）＝這些欄位在這裡就拔掉，AI 手上沒有就不可能說出去。
+const SECRET_FIELD_RE = /身分證|銀行|薪轉|保險|投保|勞保|健保|團保|生日碼|本薪|薪資|補助|津貼|帳號|存摺|工作證|特殊身份/ // 與 partner-api／rosterprobe 同一套黑名單
+async function loadCrewText(secretOK = false) {
   try {
     const bases = ['kb_360', 'kb_roster', 'kb_feedback', 'kb_quests', 'kb_shop', 'kb_docs', 'kb_polls', 'kb_journal']
     const keys = []
@@ -506,8 +510,9 @@ async function loadCrewText() {
       any = true
       // 【100%資料鐵則】名冊全欄位（含薪資/保險/證件等機密）都要掌握；
       // 但機密欄位（薪資/身分證/保險/銀行）只在老闆（張良）的私訊裡回答，群組一律只回公開資訊（姓名/部門/到職/生日）。
-      const rosterFields = (roster && Array.isArray(roster.fields) && roster.fields.length) ? roster.fields : null
-      out.push(`【夥伴名冊（共 ${people.length} 人；生日格式 西元年-月-日，問「誰快生日」看月-日。⚠️年資已由系統算好標在到職日後——回答滿幾年/年資問題「直接引用」，禁止自己心算日期差。含機密欄位：薪資/保險/證件/銀行——只私訊回老闆，群組不透露）】`)
+      const rosterFieldsAll = (roster && Array.isArray(roster.fields) && roster.fields.length) ? roster.fields : null
+      const rosterFields = rosterFieldsAll && !secretOK ? rosterFieldsAll.filter(f => !SECRET_FIELD_RE.test(String(f.label || '')) && !/^(nid|idNo|bank|salary|insur|workPermit|special)/i.test(String(f.key || ''))) : rosterFieldsAll
+      out.push(`【夥伴名冊（共 ${people.length} 人；生日格式 西元年-月-日，問「誰快生日」看月-日。⚠️年資已由系統算好標在到職日後——回答滿幾年/年資問題「直接引用」，禁止自己心算日期差。${secretOK ? '含機密欄位：薪資/保險/證件/銀行——只在這個私訊回老闆/審核人，群組不透露' : '⚠️機密欄位（身分證/銀行/薪資/保險）系統已拔掉沒給你：有人問一律回「這是個資，請本人私訊張良或到 /prep 名冊看」，不要猜、不要說「我手上有」'}）】`)
       people.forEach(p => {
         const ten = tenureOf(p.startDate)
         let line = `  - ${p.name}${p.nick ? '（' + p.nick + '）' : ''}｜生日:${p.bday || '?'}｜到職:${p.startDate || '?'}${ten ? `（年資${ten}）` : ''}${p.dept ? '｜部門:' + p.dept : ''}｜${p.status || '在職'}`
@@ -1293,12 +1298,12 @@ async function loadFilelibText() {
 
 async function answer(question, snaps, accountsText, financeText, activityText, estimatesText, crewText, canAct, history, memoryText, conclusionsText, tasksText, sheetText, posText, catalogText, supplyText, lineQuotaText, filelibText, groupChatText, moneyOK = true) {
   // 外部群（moneyOK=false）：不給任何金額/財務資料，並下鐵令禁止透露
-  const moneyGuard = moneyOK ? '' : '\n\n⚠️【外部群鐵律】這個群是「外部群」，你**絕對禁止**透露任何：金額、預估/已付/未付、單價、報價、成本、營業額、銀行/帳戶餘額、零用金、財務數字、薪資。被問到金額類一律回「這部分金額不方便在這裡提供，我私下跟張哥確認 🙏」，不要旁敲側擊地洩漏。你可以講進度、工序、一般事務、用 web_search 查一般問題。'
+  const moneyGuard = moneyOK ? '' : '\n\n⚠️【外部群鐵律】這個群是「外部群」，你**絕對禁止**透露任何：金額、預估/已付/未付、單價、報價、成本、營業額、銀行/帳戶餘額、零用金、財務數字、薪資。被問到金額類一律回「這部分金額不方便在這裡提供，我私下跟張良確認 🙏」，不要旁敲側擊地洩漏。你可以講進度、工序、一般事務、用 web_search 查一般問題。'
   // v2.5.9 唯讀鐵令（2026-09-16 翻車：群組叫 DD 建 7 件任務，DD 沒有寫入權卻回了整篇「都建好了」）：
   // 沒有動作指南＝這輪根本執行不了任何寫入 → 必須明講，禁止 AI 用人設「演」出已完成
   const readonlyGuard = canAct ? '' : ('\n\n⚠️【唯讀鐵令】這一輪你「沒有」任何寫入能力：不能建任務/大項、不能記帳、不能記日誌、不能改資料——系統不會執行任何指令。被要求「記下來/建任務/整理成任務」時，你**絕對禁止**說「已建好/已記好/都建好了/開好了」這類完成話術（說了＝說謊，系統會抓包標警語）。正確回法：先把內容條列整理好，然後明講「我在這裡沒有寫入權限，請張良（操作者）在群組直接下指令、或私訊我一句『照上面建』，我就真的建進去」。'
     + '\n\n【你可以查 A Beach 訂位檔期（唯讀，不用確認）】有人問某天「有沒有訂位/有沒有檔期/空不空/那天能不能辦/包場」時，輸出一行 JSON 指令讓系統代查：\n```json\n{"type":"query_resv","date":"2027-06-18"}\n```\ndate 用 YYYY-MM-DD（單日）或 YYYY-MM（整月）；要查一段期間加 "to":"YYYY-MM-DD"。系統會把「檔期狀況」查好回填給你，你再據此回答——你沒有「稍後再傳」的能力，要查就必須在這一則同時輸出這段 JSON（只說要查卻沒帶 JSON＝永遠不會查）。'
-    + (moneyOK ? '' : '\n\n⚠️這個群只能查「檔期狀況」（某天空檔／已有幾組幾人／可能包場），系統查回來的資料本來就不含客人姓名、電話、備註內容——這些是客人個資，對外一律不提供。有人問「誰訂的／客人電話／某客人來過幾次」時，回「客人資料這邊不方便提供，要查請私訊張哥 🙏」，不要用 query_resv 的 name/top。'))
+    + (moneyOK ? '' : '\n\n⚠️這個群只能查「檔期狀況」（某天空檔／已有幾組幾人／可能包場），系統查回來的資料本來就不含客人姓名、電話、備註內容——這些是客人個資，對外一律不提供。有人問「誰訂的／客人電話／某客人來過幾次」時，回「客人資料這邊不方便提供，要查請私訊張良 🙏」，不要用 query_resv 的 name/top。'))
   // v4.70.42 批次 1b 量測：每段資料各佔多少字（健康頁「資料段落佔比」；要瘦身先看哪段最肥）
   const SEC = { 規則: (canAct ? BOT_AGENT_GUIDE : '') + BOT_PERSONA + readonlyGuard + moneyGuard, 記憶: memoryText || '', 快照: snapshotsToContext(snaps, moneyOK), 任務: tasksText || '', 帳戶: moneyOK ? (accountsText || '') : '', 內帳: moneyOK ? (financeText || '') : '', 動態: activityText || '', 估價: moneyOK ? (estimatesText || '') : '', 夥伴班表人資: crewText || '', 結論: conclusionsText || '', 試算表: sheetText || '', '營收/阿桑/EM': moneyOK ? (posText || '') : '', 供應鏈: moneyOK ? (supplyText || '') : '', LINE額度: lineQuotaText || '', 目錄: catalogText || '', 文件庫: filelibText || '', 群組訊息: moneyOK ? (groupChatText || '') : '', 對話歷史: (Array.isArray(history) ? history : []).map(h => String(h.content || '')).join('') }
   if (_aiAgg) { _aiAgg.sec = {}; for (const [k, v] of Object.entries(SEC)) _aiAgg.sec[k] = String(v).length; _aiAgg.lean = DD_LEAN }
@@ -2142,13 +2147,14 @@ export default async function handler(req, res) {
   const probeKeyOK = (() => { const a = (process.env.MENU_PROBE_KEY || '').trim(), k = String(req.query?.key || ''); return !!(a && k === a) })()
   if (req.method === 'GET' && req.query?.probe === 'crew') {
     if (!probeKeyOK) return res.status(403).json({ ok: false })
-    const t = (await loadCrewText()) + (await loadShiftText()) + (await loadHrText())
+    const t = (await loadCrewText(true)) + (await loadShiftText()) + (await loadHrText())
     return res.status(200).json({ len: t.length, head: t.slice(0, 800), shiftHead: t.includes('【排班系統') ? t.slice(t.indexOf('【排班系統'), t.indexOf('【排班系統') + 600) : '（無排班段落）' })
   }
   if (req.method === 'GET' && req.query?.probe === 'sections') {
     if (!probeKeyOK) return res.status(403).json({ ok: false })
     const t0 = Date.now()
-    const [snaps, accountsText, financeText, activityText, estimatesText, crewText, conclusionsText, tasksText, sheetText, posText, catalogText, supplyText, lineQuotaText, filelibText, groupChatText] = await Promise.all([loadSnapshots(), loadAccounts(), loadFinanceText(), loadActivityText(), loadEstimatesText(), Promise.all([loadCrewText(), loadShiftText(), loadPunchText(), loadHrText(), loadSalaryText()]).then(p => p.join('')), loadConclusionsText(), loadTasksText(), loadSheetText(), Promise.all([loadPosText(), loadBossText(), loadEmText()]).then(([a, b, c]) => a + b + c), loadCatalogText(), loadSupplyText(), loadLineQuotaText(), loadFilelibText(), loadGroupChatText()])
+    const secretP = String(req.query.secret || '') !== '0' // v4.70.70 &secret=0 ＝模擬「一般夥伴私訊」視角（機密欄拔掉），驗證個資守門用
+    const [snaps, accountsText, financeText, activityText, estimatesText, crewText, conclusionsText, tasksText, sheetText, posText, catalogText, supplyText, lineQuotaText, filelibText, groupChatText] = await Promise.all([loadSnapshots(), loadAccounts(), loadFinanceText(), loadActivityText(), loadEstimatesText(), Promise.all([loadCrewText(secretP), loadShiftText(), loadPunchText(), loadHrText(), secretP ? loadSalaryText() : Promise.resolve('')]).then(p => p.join('')), loadConclusionsText(), loadTasksText(), loadSheetText(), Promise.all([loadPosText(), loadBossText(), loadEmText()]).then(([a, b, c]) => a + b + c), loadCatalogText(), loadSupplyText(), loadLineQuotaText(), loadFilelibText(), loadGroupChatText()])
     const SEC = { 規則: (BOT_AGENT_GUIDE + BOT_PERSONA + QUERY_GUIDE), 快照: snapshotsToContext(snaps, true), 任務: tasksText, 帳戶: accountsText, 內帳: financeText, 動態: activityText, 估價: estimatesText, 夥伴班表人資: crewText, 結論: conclusionsText, 試算表: sheetText, '營收/阿桑/EM': posText, 供應鏈: supplyText, LINE額度: lineQuotaText, 目錄: catalogText, 文件庫: filelibText, 群組訊息: groupChatText }
     const out = {}; let total = 0
     for (const [k, v] of Object.entries(SEC)) { const t = String(v || ''); total += t.length; out[k] = { len: t.length, lean: leanCut(k, t).length, head: t.slice(0, 160) } }
@@ -2321,7 +2327,22 @@ export default async function handler(req, res) {
             } else {
               delete pmB.pending[bdRid]
               await kvSet('sp_finance_pm_prep_perm', pmB)
-              await repB(`❌ 已拒絕 ${pd.name} 的編輯權限申請（沒有通知他）。`)
+              // v4.70.70 拒絕＝連綁定一起解除（張良 2026-10-12：原本只取消編輯權，連結跟綁定還在，他照樣能用連結看 /prep）
+              let unb = ''
+              try {
+                const bdDoc = kvB['sp_finance_pm_prep_bind'] || { byUid: {}, tokens: {} }
+                const uidR = pd.uid || (Object.values(bdDoc.tokens || {}).find(t2 => t2.rid === bdRid || t2.uid === bdRid) || {}).uid
+                if (uidR) {
+                  for (const [tk2, v2] of Object.entries(bdDoc.tokens || {})) if (v2 && (v2.uid === uidR || v2.rid === bdRid)) delete bdDoc.tokens[tk2]
+                  delete (bdDoc.byUid || {})[uidR]
+                  await kvSet('sp_finance_pm_prep_bind', bdDoc)
+                  const rosR = kvB['sp_crew_kb_roster'] || { people: [] }
+                  const pR = (rosR.people || []).find(p2 => p2.id === bdRid || p2.lineUserId === uidR)
+                  if (pR && pR.lineUserId === uidR) { delete pR.lineUserId; await kvSet('sp_crew_kb_roster', rosR) }
+                  unb = '，並解除綁定、連結已作廢（他要重新綁定得再私訊我，你會再收到審核卡）'
+                }
+              } catch (_) {}
+              await repB(`❌ 已拒絕 ${pd.name} 的申請${unb}。沒有通知他。`)
             }
           } catch (e) { console.log('bind approve postback error', e?.message); await repB('⚠️ 處理出錯，再按一次，或到 /prep → 設定 → 🔐權限設定 操作。') }
           continue
@@ -2559,7 +2580,7 @@ export default async function handler(req, res) {
               permB.pending = permB.pending || {}
               permB.pending[pKey] = { name: rp.name, uid: userId, ts: new Date(Date.now() + 8 * 3600e3).toISOString().slice(5, 16).replace('T', ' ') }
               await kvSet('sp_finance_pm_prep_perm', permB)
-              pendTxt = '\n已自動幫你申請編輯權限，核准後我會通知你。'
+              pendTxt = '\n已自動幫你申請編輯權限，核准前只能瀏覽、不能編輯；核准後我會通知你。'
             }
           } catch (_) {}
           await send(`✅ ${rp.name} 綁定完成！點一下啟用👇\n${BIND_APPS[appKey]}?me=${tk2}${rp.onboarding ? '#tab=onb' : ''}${pendTxt}${note2}`)
@@ -2879,12 +2900,27 @@ export default async function handler(req, res) {
 
       // 金額/財務權限：私訊(操作者)可看；群組只有「內部群(預設群) 或 設定 money:true」才可看金額，外部群一律擋
       let moneyOK = true
+      // v4.70.70 個資（身分證/銀行/薪資/保險）另一道門 secretOK：只有「私訊」且發話者是操作者／審核人／身分證名單上的人才給；
+      // 其他人（含內部群）名冊機密欄＋薪資段落在 loadCrewText/loadSalaryText 就拔掉，不再靠提示詞叫 AI 自己守。
+      let secretOK = false
+      if (isDM) {
+        if (op) secretOK = true
+        else {
+          try {
+            const kvS = await kvGetMany(['sp_crew_kb_roster', 'sp_finance_pm_sop_def', 'sp_finance_pm_hr_idlock'])
+            const meS = (((kvS['sp_crew_kb_roster'] || {}).people) || []).find(p => p.lineUserId === userId)
+            const aprS = (((kvS['sp_finance_pm_sop_def'] || {}).ground || {}).approvers || ['張良瑋'])
+            const lockS = ((kvS['sp_finance_pm_hr_idlock'] || {}).rids) || []
+            secretOK = !!(meS && (aprS.includes(meS.name) || lockS.includes(meS.id)))
+          } catch (_) { secretOK = false }
+        }
+      }
       if (!isDM) {
         const gcfg = asObj((await kvGetMany(['pm_bot_groups']))['pm_bot_groups'])
         moneyOK = (gid === 'Cf7940efc6517b0c084ad2ad496b45f30') || (gcfg[gid] && gcfg[gid].money === true)
       }
       // 3) 一般流程：載入資料＋對話記憶＋長期記事本 → 問 AI（操作者才開放下指令）
-      const [snaps, accountsText, financeText, activityText, estimatesText, crewText, history, memList, conclusionsText, tasksText, sheetText, posText, catalogText, supplyText, lineQuotaText, filelibText, groupChatText] = await Promise.all([loadSnapshots(), loadAccounts(), loadFinanceText(), loadActivityText(), loadEstimatesText(), Promise.all([loadCrewText(), loadShiftText(), loadPunchText(), loadHrText(), moneyOK ? loadSalaryText() : Promise.resolve('')]).then(parts => parts.join('')), getChatHistory(convId), getMemory(), loadConclusionsText(), loadTasksText(), loadSheetText(), Promise.all([loadPosText(), loadBossText(), loadEmText()]).then(([a, b, c]) => a + b + c), loadCatalogText(), loadSupplyText(), loadLineQuotaText(), loadFilelibText(), loadGroupChatText().then(async g => g + await loadPushLogText(convId))])
+      const [snaps, accountsText, financeText, activityText, estimatesText, crewText, history, memList, conclusionsText, tasksText, sheetText, posText, catalogText, supplyText, lineQuotaText, filelibText, groupChatText] = await Promise.all([loadSnapshots(), loadAccounts(), loadFinanceText(), loadActivityText(), loadEstimatesText(), Promise.all([loadCrewText(secretOK), loadShiftText(), loadPunchText(), loadHrText(), secretOK ? loadSalaryText() : Promise.resolve('')]).then(parts => parts.join('')), getChatHistory(convId), getMemory(), loadConclusionsText(), loadTasksText(), loadSheetText(), Promise.all([loadPosText(), loadBossText(), loadEmText()]).then(([a, b, c]) => a + b + c), loadCatalogText(), loadSupplyText(), loadLineQuotaText(), loadFilelibText(), loadGroupChatText().then(async g => g + await loadPushLogText(convId))])
       if (isDM && TOKEN) fetch('https://api.line.me/v2/bot/chat/loading/start', { method: 'POST', headers: { 'content-type': 'application/json', Authorization: 'Bearer ' + TOKEN }, body: JSON.stringify({ chatId: userId, loadingSeconds: 60 }) }).catch(() => {}) // v4.70.43 1b：私訊顯示「輸入中」動畫（免費、不耗 reply token；群組沒有這功能）
       let rawReply = await answer(text, snaps, accountsText, financeText, activityText, estimatesText, crewText, canAct, history, memoryToText(memList), conclusionsText, tasksText, sheetText, posText, catalogText, supplyText, lineQuotaText, filelibText, groupChatText, moneyOK)
       // 🔎 資料代查迴圈（張良 2026-09-27 根除）：AI 輸出 query_pos_day → 系統查庫 → 資料回填再答一輪（唯讀自動執行,不經確認）

@@ -1,4 +1,5 @@
-/* ── /prep 原生任務中心 tasks.js（v1.8 2026-10-08）────────────────────────────
+/* ── /prep 原生任務中心 tasks.js（v1.9 2026-10-12）────────────────────────────
+   v1.9（張良「指派任務發什麼群 都要 我要能選」）：通知彈窗群組改成 DD 群清單自己選（?tngroups 真名）、記上次選的群；後端 tasknotify 帶 gid。
    v1.8（張良「點 LINE 任務指派連結，電腦跟手機都沒有定位卡片」）：深層連結 #task=<id> 定位治本。
    真因＝無日期/未開始的新指派卡在預設「今日」視圖一類都不落→卡片沒渲染→tnFocusFlash 找不到 [data-tid]、
    金光不出現，12 秒後才一個小提示＝體感「點了沒反應」。治本＝tnFocusTry 定位前先確認卡在畫面上，
@@ -1492,21 +1493,45 @@ function tnAssignMenu() {
     + '<div style="background:' + tnMOD + ';border:1px solid ' + tnC.line + ';border-radius:12px;padding:18px;width:min(320px,94vw);display:flex;flex-direction:column;gap:8px">'
     + '<div style="font-size:14px;font-weight:700;color:' + tnC.text + '">' + (a.manual ? '通知誰？' : '已指派給 ' + tnEsc(a.owner)) + '</div>'
     + '<div style="font-size:12px;color:' + tnC.faint + ';margin-bottom:4px">' + (a.manual ? '把這張任務卡提醒發出去' : '要不要通知他？') + '</div>'
-    + btn('users', '發到 GROUN:D Family 群', 'group', true)
+    + tnGroupBtns()
     + (a.owner ? btn('send', '私訊負責人（' + tnEsc(a.owner) + '）', 'dm', false) : '')
     + btn('belloff', a.manual ? '取消' : '不通知', 'none', false)
     + '</div></div>';
+}
+/* ── v1.9 群組自己選（張良 2026-10-12「指派任務發什麼群 都要 我要能選」）：
+   原本寫死「發到 GROUN:D Family 群」且實際發的是 HAPPY337＝名字舊又發錯群。
+   現在清單＝?tngroups（DD 在的群，真名，與 DD 設定頁同一份）；上次選過的群記 localStorage 排最前面亮色。 ── */
+let tnGrpList = null; // null=還沒抓（或抓失敗）；[]=抓過沒有
+let tnGrpState = ''; // ''|'loading'|'done'|'fail'
+function tnGroupsLoad() {
+  if (tnGrpState === 'loading' || tnGrpState === 'done') return;
+  tnGrpState = 'loading';
+  fetch('/api/mail-sync?tngroups=' + encodeURIComponent(typeof K !== 'undefined' ? K : '') + '&me=' + encodeURIComponent(typeof TK === 'function' ? TK() : ''))
+    .then(r => r.json()).then(j => { tnGrpList = (j && j.ok && Array.isArray(j.groups)) ? j.groups : null; tnGrpState = tnGrpList ? 'done' : 'fail'; if (tnS.assignAsk) tnRender(); })
+    .catch(() => { tnGrpList = null; tnGrpState = 'fail'; if (tnS.assignAsk) tnRender(); });
+}
+function tnGroupBtns() {
+  tnGroupsLoad();
+  let last = ''; try { last = localStorage.getItem('tn_lastGid') || ''; } catch (_) {}
+  const gb = (g, hot) => '<button onclick="tnAssignGo(\'group\',\'' + tnEsc(g.gid) + '\')" style="display:flex;align-items:center;gap:9px;width:100%;text-align:left;border:1px solid ' + (hot ? tnC.accent : tnC.line) + ';background:' + (hot ? tnC.accentSoft : tnWHT) + ';color:' + (hot ? tnC.accent : tnC.sub) + ';border-radius:8px;padding:10px 12px;font-size:13px;font-weight:600;cursor:pointer">' + tnI('users', 15) + '發到 ' + tnEsc(g.label) + ' 群</button>';
+  if (tnGrpState !== 'done') return '<div style="font-size:12px;color:' + tnC.faint + ';padding:6px 2px">' + (tnGrpState === 'fail' ? '抓不到 DD 的群組清單，先用私訊或稍後再試' : '群組清單載入中…') + '</div>';
+  if (!tnGrpList.length) return '<div style="font-size:12px;color:' + tnC.faint + ';padding:6px 2px">DD 目前沒有可發的群（到設定頁「DD 自動訊息」把群打開）</div>';
+  const list = tnGrpList.slice().sort((a, b) => (b.gid === last) - (a.gid === last));
+  const hotGid = last && list.some(g => g.gid === last) ? last : list[0].gid;
+  return '<div style="font-size:11px;color:' + tnC.faint + ';margin-top:2px">發到群組（點一個就發）</div>'
+    + '<div style="display:flex;flex-direction:column;gap:6px;max-height:40vh;overflow:auto">' + list.map(g => gb(g, g.gid === hotGid)).join('') + '</div>';
 }
 function tnNotifyAsk(id) { // v4.41.4 卡片內隨時補通知（不限指派當下）
   const t = (tnS.tasks || []).find(x => x.id === id); if (!t) return;
   tnS.assignAsk = { id: id, owner: t.owner || '', manual: 1 };
   tnRender();
 }
-function tnAssignGo(mode) {
+function tnAssignGo(mode, gid) {
   const a = tnS.assignAsk; tnS.assignAsk = null;
   if (a && mode !== 'none') {
     const t = (tnS.tasks || []).find(x => x.id === a.id);
-    tnNotify({ kind: a.manual ? 'manual' : 'assign', id: a.id, mode: mode, title: (t && t.title) || '', due: (t && t.due) || '', owner: a.owner, creator: (t && t.createdBy) || tnS.me || '', doer: tnS.me || '' });
+    if (mode === 'group' && gid) { try { localStorage.setItem('tn_lastGid', gid); } catch (_) {} }
+    tnNotify({ kind: a.manual ? 'manual' : 'assign', id: a.id, mode: mode, gid: mode === 'group' ? (gid || '') : '', title: (t && t.title) || '', due: (t && t.due) || '', owner: a.owner, creator: (t && t.createdBy) || tnS.me || '', doer: tnS.me || '' });
   }
   tnRender();
 }
