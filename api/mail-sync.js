@@ -5190,6 +5190,44 @@ export default async function handler(req, res) {
     if (req.query.count) return res.status(200).json({ ok: true, counts: t.counts })
     return res.status(200).json({ ok: true, me: { name: meW.name, canDecide }, ...t })
   }
+  // ── 🥬 菜商報價比價（v4.70.67，api/_vegquote.js）──
+  // GET  ?vegcmp=<OPS_BOARD_KEY>&me=token|probe=<MENU_PROBE_KEY>   → 兩家逐月報價＋市場行情＋叫貨單核對＋價格異常核對
+  // POST ?vegcmp=<OPS_BOARD_KEY> {token, op:'confirm'(ids?)|'refreshMarket'} → 限採購權限；confirm 走偵錯中心同一條決定流程逐筆留紀錄
+  // POST ?vegimport=<MENU_PROBE_KEY|PARTNER_API_KEY> {vendors:{尚太:{src,items},上展:{…}}} | {op:'confirm'} → CC 本機匯入／維護口
+  if (req.query?.vegcmp || (req.method === 'POST' && req.query?.vegimport)) {
+    const { buildVegCmp, importQuotes, confirmMatched, marketSeries } = await import('./_vegquote.js')
+    const todayV = new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10)
+    const mosV = (() => { const out = []; const d = new Date(todayV + 'T00:00:00Z'); for (let i = 0; i < 13; i++) { out.push(d.toISOString().slice(0, 7)); d.setUTCMonth(d.getUTCMonth() - 1) } return out })()
+    let bV = {}
+    if (req.method === 'POST') { try { bV = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}) } catch (_) {} }
+    if (req.query?.vegimport) {
+      const mkV = (process.env.MENU_PROBE_KEY || '').trim(), pkV = (process.env.PARTNER_API_KEY || '').trim(), kV = String(req.query.vegimport)
+      if (!((mkV && kV === mkV) || (pkV && kV === pkV))) return res.status(403).json({ ok: false })
+      const whoV = { name: 'CC（菜商報價）' }
+      try {
+        if (bV.op === 'confirm') { const r = await confirmMatched({ kvGet, kvPut, who: whoV, months: mosV, ids: bV.ids, applyDecision: costDecide }); if (r.done.length) await announceChanged(); return res.status(200).json(r) }
+        const r = await importQuotes({ kvGet, kvPut, body: bV, who: whoV }); return res.status(r.ok ? 200 : 400).json(r)
+      } catch (e) { return res.status(500).json({ ok: false, error: String(e.message || e).slice(0, 300) }) }
+    }
+    const ok2 = (process.env.OPS_BOARD_KEY || '').trim()
+    if (!ok2 || String(req.query.vegcmp) !== ok2) return res.status(403).json({ ok: false })
+    const meTk = String(req.method === 'POST' ? (bV.token || '') : (req.query.me || ''))
+    const mkP = (process.env.MENU_PROBE_KEY || '').trim()
+    const probeV = req.method !== 'POST' && mkP && String(req.query.probe || '') === mkP
+    const meW = probeV ? { name: 'probe' } : await sopWho(meTk)
+    if (!meW) return res.status(403).json({ ok: false, error: '菜商報價屬內部成本資料，請先綁定身分（私訊 DD「登入碼」）' })
+    const canV = !probeV && !!(await permWho(meTk, 'buy'))
+    try {
+      if (req.method === 'POST') {
+        if (!canV) return res.status(403).json({ ok: false, error: '沒有採購權限' })
+        if (bV.op === 'confirm') { const r = await confirmMatched({ kvGet, kvPut, who: meW, months: mosV, ids: bV.ids, applyDecision: costDecide }); if (r.done.length) await announceChanged(); return res.status(200).json(r) }
+        if (bV.op === 'refreshMarket') { const m = await marketSeries({ kvGet, kvPut, force: true }); return res.status(200).json({ ok: true, fetchedAt: m.fetchedAt, nCrops: Object.keys(m.crops || {}).length, errs: m.errs }) }
+        return res.status(400).json({ ok: false, error: '不認得的操作' })
+      }
+      const t = await buildVegCmp({ kvGet, kvPut, months: mosV })
+      return res.status(200).json({ ...t, me: { name: meW.name, canDecide: canV } })
+    } catch (e) { return res.status(500).json({ ok: false, error: String(e.message || e).slice(0, 300) }) }
+  }
   if (req.method === 'POST' && req.query?.costsnap) {
     const mkC = (process.env.MENU_PROBE_KEY || '').trim(), pkC = (process.env.PARTNER_API_KEY || '').trim()
     const kC = String(req.query.costsnap)
