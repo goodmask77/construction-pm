@@ -745,11 +745,19 @@ function menuPosterSectionOne(d, sec, idx){
   const safe=String(sec.name||('區'+(idx+1))).replace(/[\/\\:*?"<>|]/g,'').trim().slice(0,22)
   menuDownload(menuFitSpec(cv), 'GROUND菜單_'+String(idx+1).padStart(2,'0')+'_'+safe+'_'+todayTpe()+'.png')
 }
+// 圖片預覽（v4.70.51 張良 2026-10-11「打開預覽後可直接往右看下一張」）：四格＝一組，← → 鍵／點左右半邊／手機左右滑切換，點中間或 Esc 關閉
 function mnImgView(u){
+  const list=((window._menuD||{}).imgs||[]).filter(Boolean); let i=Math.max(0,list.indexOf(u)); if(!list.length) list.push(u)
   const ov=document.createElement('div')
-  ov.style.cssText='position:fixed;inset:0;background:rgba(10,16,28,.88);z-index:90;display:flex;align-items:center;justify-content:center;padding:12px;cursor:zoom-out'
-  ov.innerHTML=`<img src="${u}" style="max-width:98vw;max-height:96vh;border-radius:10px">`
-  ov.onclick=()=>ov.remove(); document.body.appendChild(ov)
+  ov.style.cssText='position:fixed;inset:0;background:rgba(10,16,28,.9);z-index:90;display:flex;align-items:center;justify-content:center;padding:12px;user-select:none;touch-action:pan-y'
+  const nav=(side)=>`<div data-nav="${side}" style="position:absolute;top:0;bottom:0;${side<0?'left:0':'right:0'};width:18%;display:flex;align-items:center;justify-content:${side<0?'flex-start':'flex-end'};padding:0 14px;cursor:pointer;font-size:44px;color:#fff;opacity:.75;text-shadow:0 2px 8px #000">${side<0?'‹':'›'}</div>`
+  const draw=()=>{ ov.innerHTML=`<img src="${list[i]}" style="max-width:96vw;max-height:94vh;border-radius:10px;box-shadow:0 10px 40px #000">`+(list.length>1?nav(-1)+nav(1)+`<div style="position:absolute;bottom:14px;left:0;right:0;text-align:center;color:#fff;font-size:14px;font-weight:700;text-shadow:0 1px 4px #000">${i+1} / ${list.length}　← → 切換・點中間關閉</div>`:'') }
+  const go=(d)=>{ i=(i+d+list.length)%list.length; draw() }
+  const close=()=>{ ov.remove(); document.removeEventListener('keydown',key) }
+  const key=(e)=>{ if(e.key==='ArrowRight') go(1); else if(e.key==='ArrowLeft') go(-1); else if(e.key==='Escape') close() }
+  ov.onclick=(e)=>{ const n=e.target.closest('[data-nav]'); if(n) go(+n.dataset.nav); else close() }
+  let sx=null; ov.addEventListener('touchstart',e=>{ sx=e.touches[0].clientX },{passive:true}); ov.addEventListener('touchend',e=>{ if(sx==null) return; const dx=e.changedTouches[0].clientX-sx; sx=null; if(Math.abs(dx)>50) go(dx<0?1:-1) })
+  document.addEventListener('keydown',key); draw(); document.body.appendChild(ov)
 }
 async function mnImgUndo(i){
   if (!confirm('把第 ' + (i+1) + ' 格復原成上一張圖？')) return
