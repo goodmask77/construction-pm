@@ -293,6 +293,9 @@ async function saveAbHourly(recs) {
     const doc = (await kvGet(id)) || { days: {} }
     doc.days = doc.days || {}
     for (const [dt, hm] of Object.entries(days)) { doc.days[dt] = hm; saved++ }
+    // 每小時 Uber（張良 2026-10-12）：doc.uber[date]={時:Uber金額}，舊檔沒有這欄照常
+    doc.uber = doc.uber || {}
+    for (const r of recs) { if (r && r.date && r.date.slice(0, 7) === mo && r.hourlyUber && Object.keys(r.hourlyUber).length) doc.uber[r.date] = r.hourlyUber }
     await kvPut(id, doc, 'AB每小時營收回補')
   }
   return saved
@@ -537,7 +540,7 @@ export default async function handler(req, res) {
     const recs = []
     for (const dt of dates) { try { const r = await eatsDayRecord(dt, kvGet); if (r) recs.push(r); else recs.push({ date: dt, error: '未設 EATS_* 或抓不到' }) } catch (e) { recs.push({ date: dt, error: e?.message || String(e) }) } }
     const good = recs.filter(r => typeof r.revenue === 'number')
-    if (!go) return res.status(200).json({ ok: true, dryRun: true, hint: '數字對就加 &go=1 真的入庫', preview: recs.map(r => ({ date: r.date, revenue: r.revenue, txCount: r.txCount, guests: r.guests, dineTx: r.dineTx, takeTx: r.takeTx, cash: r.cash, card: r.card, linepay: r.linepay, uber: r.uber, payOther: r.payOther, paySum: typeof r.revenue === 'number' ? (r.cash + r.card + r.linepay + r.uber + r.payOther) : null, payRaw: r._payRaw, hourRaw: r._hourRaw, err: r.error })) })
+    if (!go) return res.status(200).json({ ok: true, dryRun: true, hint: '數字對就加 &go=1 真的入庫', preview: recs.map(r => ({ date: r.date, revenue: r.revenue, txCount: r.txCount, guests: r.guests, dineTx: r.dineTx, takeTx: r.takeTx, cash: r.cash, card: r.card, linepay: r.linepay, uber: r.uber, payOther: r.payOther, paySum: typeof r.revenue === 'number' ? (r.cash + r.card + r.linepay + r.uber + r.payOther) : null, payRaw: r._payRaw, hourRaw: r._hourRaw, uberSrc: r.uberSrc, uberHours: r.hourlyUber, err: r.error })) })
     const ingestRecs = good.map(({ _payRaw, ...rest }) => rest)
     const out = ingestRecs.length ? await ingestPosRecords(ingestRecs, 'AB日結後台回填') : { added: 0 }
     const hhSaved = await saveAbHourly(good) // 熱力圖每小時：即使日結去重沒加，每小時照存（補歷史熱力圖）
@@ -1397,6 +1400,7 @@ export default async function handler(req, res) {
     // 🔥 時段營收熱力圖（張良 2026-10-05「之前的營收時間熱力圖放每日數據下面」）：{date:{hour:rev}}；近120天有日結時段表的日子；GD/AB 都給
     // 口徑＝時段表最後一欄＝營收（與 App 熱力圖同一份：det.sheets['時段分析(每小時)']）
     const hourDays = {}
+    const hourUber = {} // AB 每小時 Uber {date:{hour:uber}}（張良 2026-10-12 熱力圖顯示 Uber）
     const fromHD = dOf(anchor, -120)
     for (const e of entries) {
       if (e.date < fromHD) continue
@@ -1419,9 +1423,21 @@ export default async function handler(req, res) {
           if (date < fromHD || slotEx.has(date)) continue
           const hm2 = {}; for (const [h, v] of Object.entries(hm || {})) { const hh = parseInt(h); if (!isNaN(hh) && Number(v) > 0) hm2[hh] = Number(v) }
           if (Object.keys(hm2).length) hourDays[date] = hm2
+          const um = (rvDoc.uber || {})[date]; if (um) { const u2 = {}; for (const [h, v] of Object.entries(um)) { const hh = parseInt(h); if (!isNaN(hh) && Number(v) > 0) u2[hh] = Number(v) } if (Object.keys(u2).length) hourUber[date] = u2 }
         }
       }
-      for (const mo of mos) { // ② 盤中快照補 hhrev 還沒回補到的日子（今天進行中）
+      // ② 今天進行中：吃 sp_finance_pm_ablive.hourly（syncEatsLive 每次盤中存的後台同一張每小時表＝「開單時間」口徑，跟歷史列一致；
+      //    張良 2026-10-12 拍板「A 開單時間」。之前用快照相減＝結帳時間口徑，隔天回補後整列會變＝不一致）
+      try {
+        const live = await kvGet('sp_finance_pm_ablive')
+        if (live && live.date && live.date >= fromHD && !slotEx.has(live.date) && !hourDays[live.date] && Array.isArray(live.hourly)) {
+          const hm2 = {}; for (const a of live.hourly) { const hh = Number(a[0]), v = Math.round(Number(a[1]) || 0); if (!isNaN(hh) && v > 0) hm2[hh] = v }
+          if (Object.keys(hm2).length) hourDays[live.date] = hm2
+          const u2 = {}; for (const [h, v] of Object.entries(live.hourlyUber || {})) { const hh = parseInt(h); if (!isNaN(hh) && Number(v) > 0) u2[hh] = Number(v) }
+          if (Object.keys(u2).length) hourUber[live.date] = u2
+        }
+      } catch (_) {}
+      for (const mo of mos) { // ③ 盤中快照補前兩步都沒有的日子（結帳時間口徑，只當最後備援）
         const hhDoc = await kvGet('sp_finance_pm_ab_hh_' + mo)
         if (!hhDoc || !hhDoc.days) continue
         for (const [date, arr] of Object.entries(hhDoc.days)) {
@@ -1513,6 +1529,7 @@ export default async function handler(req, res) {
       kpi: { rev30, days30: w30.length, avgRev: w30.length ? Math.round(rev30 / w30.length) : 0, tx30: w30.reduce((t, e) => t + (Number(e.txCount) || 0), 0) },
       n30, prep, prepAct: Object.fromEntries(Object.entries((actDoc.days || {})[todayAct] || {}).filter(([, v]) => v.q != null).map(([k, v]) => [k, v.q])), prepS86: Object.fromEntries(Object.entries((actDoc.days || {})[todayAct] || {}).filter(([, v]) => v.s86 && v.s86.on).map(([k]) => [k, 1])), prepActDate: todayAct, share14, rhythm, soldout, days: days2.reverse(), setPcts: setDays.reverse(), dates: datesAll, cats: cats2, hidden: Object.values(itemsH2).map(o => ({ n: o.n, k: o.k, cat: o.cat, cum30: o.q30 })), slots: (slots2.wk.length || slots2.we.length) ? slots2 : null,
       hourDays: Object.keys(hourDays).length ? hourDays : null,
+      hourUber: Object.keys(hourUber).length ? hourUber : null, // AB 每小時 Uber（張良 2026-10-12）
       slotEx: [...slotEx], // 包場/異常大單日（張良 2026-10-10：10/4 隱藏不入每日列、計入總營收、不拉平均）：每日數據表用它排除平均並隱藏該列
       heatHide: ((await kvGet('sp_finance_pm_heat_hide')) || {})[storeQ] || {}, // v4.70.1 熱力圖隱藏時段（全店一致、限有權限者改）：{時段:1}
     })

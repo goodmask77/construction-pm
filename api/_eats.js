@@ -61,6 +61,30 @@ async function eatsFetchDay(sess, date) {
   return await r.json()
 }
 
+// 每小時 Uber Eats 金額（張良 2026-10-12「熱力圖也要顯示 UberEats 時段訂單金額」）：
+//   dashboard/shop 吃任意時間區段（實測 start 12:00 / end 12:59 回的 totalNetSales＝整天 hourlySalesRecordMap 的 12 時，口徑同＝開單時間），
+//   回應 salesBySourceMap.UBEREATS＝該區段 Uber 單金額（＝日結付款別「點餐平台 (UBEREATS) - API」同數）。
+//   只打「有單的小時」（整天表 count>0）省呼叫；回 {時: Uber金額}。
+async function eatsHourlyUber(sess, date, hoursWithOrders) {
+  const out = {}
+  for (const hr of hoursWithOrders) {
+    const hh = String(hr).padStart(2, '0')
+    try {
+      const r = await fetch(BASE + '/report/dashboard/shop', {
+        method: 'POST',
+        headers: { 'User-Agent': UA, Cookie: sess.J.cookieStr(), 'X-XSRF-TOKEN': sess.tok, 'X-XSRF-SESSION': sess.csid, 'EATS365-RESTAURANT-CODE': CTX.rcode, 'EATS365-BRAND-ID': CTX.brand, 'EATS365-ORGANIZATION-ID': CTX.org, 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify({ start: date + ' ' + hh + ':00', end: date + ' ' + hh + ':59', isCompared: false, compareStart: '', compareEnd: '', rCode: CTX.rcode, groupByType: 1 }),
+      })
+      if (!r.ok) continue
+      const d = await r.json()
+      const u = Math.round(Number((d.salesBySourceMap || {}).UBEREATS) || 0)
+      if (u > 0) out[hr] = u
+    } catch (_) {}
+  }
+  return out
+}
+const uberOfDay = (d) => Math.round(Number((d.salesBySourceMap || {}).UBEREATS) || 0) // 整天 Uber（salesBySourceMap 來源別）
+
 // 完整品項即時（張良 2026-09-05：「後台不可能只給Top10，找到路徑就能抓全部」——對，找到了）
 // POST /report/dailyReport {startDate,endDate,rCode}＝日結報表同源、盤中就能打：
 //   categorizedOrderSKU＝分類→品項含「sales 金額＋quantity 份數」（驗證：溫泉蛋燉飯 6,720 與後台「銷售報告(商品)」頁一致；總份數=儀表板 totalItemQuantitySold）
@@ -106,7 +130,10 @@ export async function syncEatsLive(kvGet, kvPut) {
     hourly: Object.values(d.hourlySalesRecordMap || {}).filter((h) => h && (h.netSales > 0 || h.count > 0)).map((h) => [Number(h.hour), Math.round(Number(h.netSales) || 0), Number(h.count) || 0]).sort((a, b) => a[0] - b[0]), // [[時, 營業額, 單數]]
     dineIn: { tx: Number(d.dineInTransaction) || 0, sales: Math.round(Number(d.dineInNetSales) || 0) },
     takeout: { tx: Number(d.takeoutTransaction) || 0, sales: Math.round(Number(d.takeoutNetSales) || 0) },
+    uber: uberOfDay(d), // 今天 Uber 整天金額
   }
+  // 今天每小時 Uber（張良 2026-10-12 熱力圖顯示 Uber）：只打有單的小時；失敗不影響主流程
+  try { doc.hourlyUber = doc.uber > 0 ? await eatsHourlyUber(sess, date, doc.hourly.filter((a) => a[2] > 0 || a[1] > 0).map((a) => a[0])) : {} } catch (_) { doc.hourlyUber = {} }
   await kvPut('sp_finance_pm_ablive', doc, 'AB即時')
   return { revenue: doc.revenue, tx: doc.tx }
 }
@@ -138,14 +165,16 @@ export async function eatsDayRecord(date, kvGet) {
   }
   for (const p of (dr.paymentType || [])) {
     // 名稱可能沒設顯示名、只有內部代碼（如 NON_INTEGRATED_CASH / NON_INTEGRATED_CREDIT）→ 連代碼欄位一起抓，代碼也能 regex 分類
-    const n = pickName(p?.paymentMethodName) || pickName(p?.name) || pickName(p?.paymentMethod) || pickName(p?.paymentMethodCode) || pickName(p?.code) || pickName(p?.paymentCode) || pickName(p?.methodCode) || pickName(p?.paymentMethodType) || pickName(p?.type) || ''
+    // 2026-10-12 實測真結構＝p.paymentMethod.displayNameMap（多語系，tc=「信用卡」「點餐平台 (UBEREATS) - API」「現金」）＋platformCode（NON_INTEGRATED_CASH）→ 先讀這兩個；之前只讀外層所以信用卡/Uber 全空白擠進「其他」
+    const pm = p?.paymentMethod || {}
+    const n = pickName(pm.displayNameMap) || pickName(pm.platformCode) || pickName(p?.paymentMethodName) || pickName(p?.name) || pickName(p?.paymentMethod) || pickName(p?.paymentMethodCode) || pickName(p?.code) || pickName(p?.paymentCode) || pickName(p?.methodCode) || pickName(p?.paymentMethodType) || pickName(p?.type) || ''
     const amt = Math.round(Number(p?.netSales ?? p?.amount ?? p?.sales ?? p?.total ?? p?.value ?? 0) || 0)
     payRaw.push({ n: String(n), amt, _k: Object.keys(p || {}) })
     if (!amt) continue
     if (/現金|cash/i.test(n)) pay.cash += amt
     else if (/line\s*pay/i.test(n)) pay.linepay += amt
     else if (/uber/i.test(n)) pay.uber += amt
-    else if (/信用卡|刷卡|卡|credit|card|visa|master/i.test(n)) pay.card += amt
+    else if (/信用卡|刷卡|卡|credit|card|visa|master|運通|amex|american|\bAE\b/i.test(n)) pay.card += amt // 美國運通AE 也算刷卡（2026-10-12 實測 10-10 有 3,883）
     else pay.payOther += amt
   }
   // 每小時營收（熱力圖用）：後台 dashboard/shop 現成給 hourlySalesRecordMap → {時:營收}，可回補任意歷史日（張良 2026-10-10 AB 熱力圖）
@@ -155,13 +184,19 @@ export async function eatsDayRecord(date, kvGet) {
     _hourRaw.push({ k, hour: h?.hour, netSales: h?.netSales, count: h?.count })
     const hr = Number(h?.hour); const rev = Math.round(Number(h?.netSales) || 0); if (!isNaN(hr) && rev > 0) hourly[hr] = (hourly[hr] || 0) + rev
   }
+  // Uber 整天：付款別拆不出時用來源別 salesBySourceMap.UBEREATS 兜底（兩者同數，2026-10-12 實測 10-11 都是 4,220）
+  const uberSrc = uberOfDay(d)
+  if (!pay.uber && uberSrc > 0) { pay.uber = uberSrc; pay.payOther = Math.max(0, pay.payOther - uberSrc) }
+  // 每小時 Uber（熱力圖）：只打有單的小時
+  let hourlyUber = {}
+  try { hourlyUber = uberSrc > 0 ? await eatsHourlyUber(sess, date, _hourRaw.filter((h) => (Number(h.count) || 0) > 0 || (Number(h.netSales) || 0) > 0).map((h) => Number(h.hour)).filter((x) => !isNaN(x))) : {} } catch (_) {}
   return {
     _hourRaw, // 每時段 [{hour,netSales,count}]＝dry-run 核對用（count=該時段交易筆數）
     date, store: 'A Beach 101&Pizza', subject: 'A Beach Eats365 後台回填', period: date + '（Eats365 後台回填）',
     revenue: Math.round(Number(d.totalNetSales) || 0), txCount: Number(d.totalTransaction) || 0, guests: Number(d.totalCustomer) || 0,
     dineTx: Number(d.dineInTransaction) || 0, takeTx: Number(d.takeoutTransaction) || 0,
     cash: pay.cash, card: pay.card, linepay: pay.linepay, uber: pay.uber, payOther: pay.payOther,
-    hourly, _payRaw: payRaw,
+    hourly, hourlyUber, uberSrc, _payRaw: payRaw,
   }
 }
 
