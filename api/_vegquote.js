@@ -192,7 +192,7 @@ function matchVerdict (it, quoteOf, curPrice) { // it＝偵錯中心 price 項�
   return { verdict: ok ? 'hit' : (ok === null ? 'noquote' : 'miss'), detail }
 }
 
-export async function buildVegCmp ({ kvGet, kvPut, months, withMarket = true }) {
+export async function buildVegCmp ({ kvGet, kvPut, months, withMarket = true, withChk = true }) { // withChk=false：不算偵錯中心那包（慢 5 秒），頁面先秀比價表，核對頁另外載
   const doc = (await kvGet(VQ_KEY)) || { vendors: {} }
   const V = {}; for (const v of VENDORS) V[v] = (doc.vendors[v] || {}).items || {}
   const idx = {}; for (const v of VENDORS) { idx[v] = {}; for (const [n, it] of Object.entries(V[v])) idx[v][nk(n)] = { name: n, ...it } }
@@ -262,17 +262,17 @@ export async function buildVegCmp ({ kvGet, kvPut, months, withMarket = true }) 
   const ordIssues = Object.values(byItem).sort((a, b) => b.n - a.n)
 
   // ── 偵錯中心價格異常 vs 報價 ──
-  const todo = await buildTodo({ kvGet, months })
-  const cards = await buildCards({ kvGet, months }); const curBy = {}; for (const s of Object.values(cards.supplies || {})) if (s.code && !curBy[s.code]) curBy[s.code] = Number(s.price) || 0
+  const [todo, cards] = withChk ? await Promise.all([buildTodo({ kvGet, months }), buildCards({ kvGet, months })]) : [{ items: [] }, { supplies: {} }]
+  const curBy = {}; for (const s of Object.values(cards.supplies || {})) if (s.code && !curBy[s.code]) curBy[s.code] = Number(s.price) || 0
   const anomalies = (todo.items || []).filter(i => i.tab === 'price' && VENDORS.includes(baseVendor(i.supplier))).map(i => { const m = matchVerdict(i, quoteOf, c => curBy[c]); return { id: i.id, supplier: i.supplier, code: i.code, name: i.name, signal: i.signal, date: i.date, title: i.title, decided: !!i.decision, verdict: m.verdict, detail: m.detail, impact: i.impact ? { nMenus: i.impact.nMenus, perServing: i.impact.perServing } : null } })
   const anomSummary = { hit: anomalies.filter(a => a.verdict === 'hit' && !a.decided).length, miss: anomalies.filter(a => a.verdict === 'miss' && !a.decided).length, noquote: anomalies.filter(a => a.verdict === 'noquote' && !a.decided).length, decided: anomalies.filter(a => a.decided).length, total: anomalies.length, allPrice: (todo.items || []).filter(i => i.tab === 'price').length }
 
-  return { ok: true, months: allYm, vendors: VENDORS, sync: doc.sync || null, pins: doc.pins || [], ordMonths3: last3, imported: Object.fromEntries(VENDORS.map(v => [v, { at: (doc.vendors[v] || {}).importedAt || null, n: (doc.vendors[v] || {}).n || 0, src: (doc.vendors[v] || {}).src || '', lastSync: (doc.vendors[v] || {}).lastSync || null, lastSyncErr: (doc.vendors[v] || {}).lastSyncErr || null, lastChanges: (doc.vendors[v] || {}).lastChanges || 0 }])), items, market: { fetchedAt: market.fetchedAt || null, market: '台北一', nCrops: Object.keys(market.crops || {}).length, nMapped: [...new Set(Object.values(MARKET_MAP))].length, errs: market.errs || [] }, orders: { months: mos, summary: Object.values(ordSummary), issues: ordIssues, nLines: lines.length }, anomalies, anomSummary }
+  return { ok: true, months: allYm, vendors: VENDORS, sync: doc.sync || null, pins: doc.pins || [], ordMonths3: last3, chkLoaded: !!withChk, imported: Object.fromEntries(VENDORS.map(v => [v, { at: (doc.vendors[v] || {}).importedAt || null, n: (doc.vendors[v] || {}).n || 0, src: (doc.vendors[v] || {}).src || '', lastSync: (doc.vendors[v] || {}).lastSync || null, lastSyncErr: (doc.vendors[v] || {}).lastSyncErr || null, lastChanges: (doc.vendors[v] || {}).lastChanges || 0 }])), items, market: { fetchedAt: market.fetchedAt || null, market: '台北一', nCrops: Object.keys(market.crops || {}).length, nMapped: [...new Set(Object.values(MARKET_MAP))].length, errs: market.errs || [] }, orders: { months: mos, summary: Object.values(ordSummary), issues: ordIssues, nLines: lines.length }, anomalies, anomSummary }
 }
 
 // ── 一鍵確認「對上」的異常（走偵錯中心同一條決定流程，逐筆留紀錄，可 undo）──
 export async function confirmMatched ({ kvGet, kvPut, who, months, ids, applyDecision }) {
-  const cmp = await buildVegCmp({ kvGet, kvPut, months, withMarket: false })
+  const cmp = await buildVegCmp({ kvGet, kvPut, months, withMarket: false, withChk: true })
   const want = new Set(Array.isArray(ids) && ids.length ? ids : cmp.anomalies.filter(a => a.verdict === 'hit' && !a.decided).map(a => a.id))
   const done = [], skipped = []
   for (const a of cmp.anomalies) {

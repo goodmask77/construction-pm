@@ -5279,7 +5279,7 @@ export default async function handler(req, res) {
         return res.status(400).json({ ok: false, error: '不認得的操作' })
       }
       if (req.query.market === 'refresh' && (probeV || canV)) { const m = await marketSeries({ kvGet, kvPut, force: req.query.all ? 'all' : true }); return res.status(200).json({ ok: true, fetchedAt: m.fetchedAt, nCrops: Object.keys(m.crops || {}).length, nDone: m.nDone, nSkip: m.nSkip, ms: m.ms, errs: m.errs }) }
-      const t = await buildVegCmp({ kvGet, kvPut, months: mosV })
+      const t = await buildVegCmp({ kvGet, kvPut, months: mosV, withChk: req.query.chk === '1' }) // v4.70.70 預設不算偵錯那包（快），核對頁帶 chk=1
       return res.status(200).json({ ...t, me: { name: meW.name, canDecide: canV } })
     } catch (e) { return res.status(500).json({ ok: false, error: String(e.message || e).slice(0, 300) }) }
   }
