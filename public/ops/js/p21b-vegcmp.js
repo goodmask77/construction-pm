@@ -98,7 +98,7 @@
   function totalsLine () { // 選的月份兩家總叫貨金額（含報價表沒有的品項；AB＋GD）
     const yms = selYms(), T = D.totals || {}; const parts = []
     for (const v of D.vendors) { let all = 0, ab = 0, gd = 0; for (const ym of yms) { const t = (T[ym] || {})[v]; if (t) { all += t.all; ab += t.AB; gd += t.GD } } parts.push(`<b style="color:${VC[v]}">${v}</b> NT$${all.toLocaleString()}${gd ? ` <span class="hint" style="font-size:11px">(A Beach ${ab.toLocaleString()}／GROUN:D ${gd.toLocaleString()})</span>` : ''}`) }
-    return `<span style="margin-left:auto;font-size:13px">${ymLabel(f.ym)}總叫貨：${parts.join('　')}</span>`
+    return `<span id="vgTot" style="margin-left:auto;font-size:13px">${ymLabel(f.ym)}總叫貨：${parts.join('　')}</span>`
   }
   const pctTag = (p, inv) => p == null ? '<span class="mut">—</span>' : `<b style="color:${Math.abs(p) < 3 ? COL.m : ((p > 0) !== !!inv ? COL.r : COL.g)}">${p > 0 ? '+' : ''}${nf(p)}%</b>`
   const cheapTag = c => c ? `<span style="color:${c === '一樣' ? COL.m : VC[c]};font-weight:800">${c}</span>` : '<span class="mut">—</span>'
@@ -124,7 +124,8 @@
     const rs = rows(); if (!rs.length) return '<div class="hint" style="padding:16px;text-align:center">沒有符合的品項</div>'
     const yms = selYms()
     let h = `<div class="hint" style="margin-bottom:6px;display:flex;gap:8px;flex-wrap:wrap;align-items:center"><span>${rs.length} 項・點欄位名稱排序（再點反向）・拖表頭右緣改欄寬・點 ${IC.pin} 釘選置頂・點品項展開逐月價格、叫貨量、用在哪些餐點與走勢圖。綠底＝便宜那家；叫貨量／金額＝${ymLabel(f.ym)}兩店合計；主要用在＝用到這個物料的餐點（×＝近 3 個月賣幾份）。</span>${Object.keys(colW).length ? `<span onclick="_vgColReset()" style="text-decoration:underline;cursor:pointer">欄寬還原</span>` : ''}</div>`
-    h += `<div class="scroll" style="overflow-x:auto"><table class="tight" style="width:100%;table-layout:fixed;min-width:0"><colgroup>${COLS.map(c => `<col data-k="${c[0]}" style="width:${colW[c[0]] || c[2]}px">`).join('')}</colgroup><thead><tr>`
+    const sumDef = COLS.reduce((t, c) => t + c[2], 0) // 預設寬只當「比例」：沒拖過的欄位依比例分可用寬度（填滿、不出橫捲）；拖過的欄位用 px
+    h += `<div class="scroll" style="overflow-x:auto"><table class="tight" style="width:100%;table-layout:fixed;min-width:900px"><colgroup>${COLS.map(c => `<col data-k="${c[0]}" style="width:${colW[c[0]] ? colW[c[0]] + 'px' : (Math.round(c[2] / sumDef * 1000) / 10) + '%'}">`).join('')}</colgroup><thead><tr>`
     for (const c of COLS) {
       const sticky = c[0] === 'pin' ? 'position:sticky;left:0;z-index:2;background:var(--card)' : c[0] === 'name' ? 'position:sticky;left:' + (colW.pin || 26) + 'px;z-index:2;background:var(--card)' : ''
       const sortable = c[0] !== 'pin'
