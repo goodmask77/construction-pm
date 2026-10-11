@@ -10,9 +10,24 @@ const FALLBACK_GID = 'Cf7940efc6517b0c084ad2ad496b45f30' // 內部預設群（PO
 // 真名一律由 ddGroupName 即時抓顯示，下面 label 只是抓不到時的退路。
 // v4.55.2 張良「只留 海灘叢林team / HAPPY337 / GROUN:D Family 這3個 DD 有在的群」：預設群固定這三個，真名由 ddGroupName 即時抓
 export const DD_GROUPS = {
-  family:   { label: 'GROUN:D Family', match: /ground.*family|family/i, fallback: FALLBACK_GID },
+  // v4.70.54 張良 2026-10-11 群改名（GROUN:D Family→GDTeam、海灘叢林 Team→ABTeam）：照名字猜只當「第一次對上」用，對上就釘住 gid（sp_finance_pm_ddgrp._preset），之後改名不影響
+  family:   { label: 'GDTeam', match: /ground.*family|family|^gd ?team$/i, fallback: FALLBACK_GID },
   internal: { label: 'HAPPY337', env: 'LINE_DEFAULT_GROUP', match: /happy ?337|337/i, fallback: FALLBACK_GID },
-  abteam:   { label: '海灘叢林 Team', match: /海灘叢林.*team|beach.*team/i, fallback: '' },
+  abteam:   { label: 'ABTeam', match: /海灘叢林.*team|beach.*team|^ab ?team$/i, fallback: '' },
+}
+// 常用群 gid 解析（env → 釘住的 gid → 登記表照名字對（對上就釘住）→ 寫死退路）；seen/cfgAll 可傳入省 KV 來回
+async function presetResolve(key, seen, cfgAll) {
+  const g = DD_GROUPS[key]; if (!g) return ''
+  if (g.env && (process.env[g.env] || '').trim()) return (process.env[g.env]).trim()
+  const cfg = cfgAll || await ddGroupCfgAll()
+  const pin = ((cfg._preset || {})[key] || '').trim()
+  if (pin) return pin
+  const sn = seen || (await _kvGet('pm_group_seen')) || {}
+  if (g.match) for (const [gid, gg] of Object.entries(sn)) if (g.match.test(gg?.name || '')) {
+    try { const doc = cfgAll ? cfg : ((await _kvGet(GRP_KEY)) || {}); doc._preset = { ...(doc._preset || {}), [key]: gid }; await _kvPut(GRP_KEY, doc, '常用群釘住 ' + key); if (cfgAll) cfgAll._preset = doc._preset } catch (_) {}
+    return gid
+  }
+  return g.fallback || FALLBACK_GID
 }
 
 // 自動訊息登記表：label=人看的名稱、group=預設群、on=預設開關、text=可編輯文字(含 {變數})、vars=變數說明、where=發生情境
@@ -61,7 +76,7 @@ export const DDGRP_CFG_KEY = GRP_KEY
 export async function ddGroupCfgAll() { try { return (await _kvGet(GRP_KEY)) || {} } catch (_) { return {} } }
 export async function ddGroupCfg(gid, doc) {
   const d = doc || await ddGroupCfgAll()
-  const c = { ...DD_GRP_DEF, ...((gid && d[gid]) || {}) }
+  const c = { ...DD_GRP_DEF, ...((gid && gid !== '_preset' && d[gid]) || {}) }
   if (!['normal', 'quiet', 'off'].includes(c.mode)) c.mode = 'normal'
   return c
 }
@@ -74,11 +89,7 @@ export async function ddGroupList({ refresh } = {}) {
   const cfgAll = await ddGroupCfgAll()
   // 三個常用群的 gid：跟 ddGroupGid 同一套規則（env → 登記表照名字 → 寫死退路），但直接用上面已讀的 seen，省 3 次 KV 來回（端點 3.8s → 更快）
   const presetGid = {}
-  for (const [k, g] of Object.entries(DD_GROUPS)) {
-    let gid = (g.env && (process.env[g.env] || '').trim()) || ''
-    if (!gid && g.match) for (const [g2, gg] of Object.entries(seen)) if (g.match.test(gg?.name || '')) { gid = g2; break }
-    presetGid[k] = gid || g.fallback || FALLBACK_GID
-  }
+  for (const k of Object.keys(DD_GROUPS)) presetGid[k] = await presetResolve(k, seen, cfgAll)
   const tk = (process.env.LINE_CHANNEL_ACCESS_TOKEN || '').trim()
   const gids = Object.keys(seen).filter(g => /^[CR]/.test(g)) // C=group R=room；私訊 U 不算群
   if (refresh && tk) {
@@ -117,9 +128,7 @@ async function _kvGet(id) { try { const m = await import('./mail-sync.js'); retu
 export async function ddGroupGid(groupVal) {
   const g = DD_GROUPS[groupVal]
   if (!g) return String(groupVal || '').trim() || FALLBACK_GID // 不是預設 key＝當作原始 gid
-  if (g.env && (process.env[g.env] || '').trim()) return (process.env[g.env]).trim()
-  if (g.match) { const seen = (await _kvGet('pm_group_seen')) || {}; for (const [gid, gg] of Object.entries(seen)) if (g.match.test(gg?.name || '')) return gid }
-  return g.fallback || FALLBACK_GID
+  return await presetResolve(groupVal)
 }
 
 // 取某則訊息的「生效設定」＝預設 merge 覆蓋（任何錯→回預設）

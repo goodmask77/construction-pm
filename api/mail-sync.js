@@ -1702,6 +1702,8 @@ export default async function handler(req, res) {
       for (const k of ['journal', 'translate', 'target', 'hide']) if (c9[k] != null) out9[k] = c9[k] ? 1 : 0
       if (c9.tag != null) out9.tag = ['internal', 'external', ''].includes(c9.tag) ? c9.tag : ''
       if (c9.alias != null) out9.alias = String(c9.alias).trim().slice(0, 30)
+      // v4.70.54 常用代號（family/internal/abteam）手動指定＝釘住 gid，群改名也不會跑掉；同一代號只能一個群
+      if (c9.preset != null) { const pk = String(c9.preset); const pre = { ...(docG9._preset || {}) }; for (const k of Object.keys(pre)) if (pre[k] === gid9) delete pre[k]; if (['family', 'internal', 'abteam'].includes(pk)) pre[pk] = gid9; docG9._preset = pre }
       docG9[gid9] = out9; nG9++
     }
     await kvPut(DDGRP_CFG_KEY, docG9, 'DD群組設定×' + nG9 + '(' + whoG9.name + ')')

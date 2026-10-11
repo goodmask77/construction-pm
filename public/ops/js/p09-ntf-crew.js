@@ -744,9 +744,10 @@ function ddRenderGrps(box){
         <label style="display:flex;gap:5px;align-items:center"><input type="checkbox" class="gTranslate" ${c.translate!==0?'checked':''} style="width:16px;height:16px"> 可開翻譯模式</label>
         <label style="display:flex;gap:5px;align-items:center"><input type="checkbox" class="gTarget" ${c.target!==0?'checked':''} style="width:16px;height:16px"> 可發自動訊息</label>
         <label style="display:flex;gap:5px;align-items:center"><input type="checkbox" class="gHide" ${c.hide?'checked':''} style="width:16px;height:16px"> 隱藏（不列在清單）</label>
+        <label style="display:flex;gap:4px;align-items:center;grid-column:1/-1"><span class="hint" style="font-size:11px;white-space:nowrap">常用代號</span><select class="gPreset" style="flex:1;background:var(--soft);border:1px solid var(--line);border-radius:7px;padding:4px 6px;color:var(--ink);font-size:13px"><option value=""${!g.key?' selected':''}>無</option><option value="family"${g.key==='family'?' selected':''}>GD 團隊群（會議宣達／備料量預設發這裡）</option><option value="internal"${g.key==='internal'?' selected':''}>內部群（採購／問題／停售預設發這裡）</option><option value="abteam"${g.key==='abteam'?' selected':''}>AB 團隊群</option></select></label>
       </div></div>` }
   const live = _ddGrps.filter(g=>!g.cfg.hide), hid = _ddGrps.filter(g=>g.cfg.hide)
-  box.innerHTML = `<div class="hint" style="margin-bottom:10px">DD 看過訊息的群都在這（共 ${_ddGrps.length} 個）。每群可設：回話模式、收不收日誌、能不能開翻譯、能不能被選為自動訊息的「發到」。廠商／外部群建議設「安靜」＝只有 @DD 才回，別人聊天提到 D哥 不插嘴。</div>
+  box.innerHTML = `<div class="hint" style="margin-bottom:10px">DD 看過訊息的群都在這（共 ${_ddGrps.length} 個）。每群可設：回話模式、收不收日誌、能不能開翻譯、能不能被選為自動訊息的「發到」。群名跟 LINE 同步（最多慢 6 小時，急的按「重新確認群名」）；「常用代號」是釘在群本身，群改名不會跑掉。廠商／外部群建議設「安靜」＝只有 @DD 才回，別人聊天提到 D哥 不插嘴。</div>
     <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">
       <button class="mini on" style="padding:8px 14px" onclick="ddGrpSaveAll(this)">儲存全部群組設定</button>
       <button class="mini" style="padding:8px 14px" onclick="ddGrpQuietExt()">外部群一鍵安靜</button>
@@ -761,7 +762,7 @@ function ddGrpQuietExt(){
   alert(n ? `已把 ${n} 個外部群改成「安靜」，記得按「儲存全部群組設定」。` : '沒有分類為「外部群」的群，先把廠商群的分類選成外部群。')
 }
 async function ddGrpSaveAll(btn){
-  const items = [...document.querySelectorAll('#ddBody .ddGRow')].map(r=>({ gid: r.dataset.gid, cfg: { alias: r.querySelector('.gAlias').value, tag: r.querySelector('.gTag').value, mode: r.querySelector('.gMode').value, journal: r.querySelector('.gJournal').checked?1:0, translate: r.querySelector('.gTranslate').checked?1:0, target: r.querySelector('.gTarget').checked?1:0, hide: r.querySelector('.gHide').checked?1:0 } }))
+  const items = [...document.querySelectorAll('#ddBody .ddGRow')].map(r=>({ gid: r.dataset.gid, cfg: { alias: r.querySelector('.gAlias').value, tag: r.querySelector('.gTag').value, mode: r.querySelector('.gMode').value, journal: r.querySelector('.gJournal').checked?1:0, translate: r.querySelector('.gTranslate').checked?1:0, target: r.querySelector('.gTarget').checked?1:0, hide: r.querySelector('.gHide').checked?1:0, preset: r.querySelector('.gPreset').value } }))
   btn.textContent = '儲存中…'; btn.disabled = true
   const r = await fetch('/api/mail-sync?ddgrpset=' + encodeURIComponent(K), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ items, token: TK() }) })
   const d = await r.json().catch(()=>null)
