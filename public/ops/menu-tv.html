@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>GROUN:D 電視菜單</title>
+<title>GROUN:D 電視菜單</title><!-- v1.4 2026-10-12 Logo 上下間距可負值／品名縮字下限／幾項以上整類縮小可調（張良） -->
 <!--
   電視橫式菜單 HTML 模板（張良 2026-10-10 v1.7：10-11 「⊞ 四頁同看」2×2 同時看四頁即時改＋「四頁一起套用」改成真的蓋掉每頁各自設定＋照片縮放上限 300%；v1.6：10-11 加「💾 存版本」＋Esc 退出編輯）：一台電視=兩分類並排＋底部食物照片，共 4 張。
   ?screen=0..3（0披薩/療癒碗 1漢堡/三明治 2麵/早午餐 3小點/飲品）。照片=從官方底圖截出的獨立檔 menu/photos/。
@@ -38,12 +38,12 @@
   #adj{ position:fixed; right:14px; top:66px; z-index:99; background:rgba(20,20,20,.94); color:#eee; padding:14px 16px; border-radius:12px; width:300px; font:14px/1.5 system-ui,sans-serif; display:none; box-shadow:0 6px 20px rgba(0,0,0,.4) }
   #adj.on{ display:block } #adj h4{ margin:6px 0 4px; font-size:14px; color:#F5EADA } #adj label{ display:flex; align-items:center; gap:8px; margin:3px 0 } #adj label span{ width:38px; font-size:12px; color:#bbb } #adj input[type=range]{ flex:1 } #adj .v{ width:44px; text-align:right; font-variant-numeric:tabular-nums; font-size:12px }
   #adj .ops{ display:flex; gap:8px; margin-top:10px } #adj button{ flex:1; padding:7px; border:none; border-radius:8px; cursor:pointer; font-weight:700 } #adj .rst{ background:#555; color:#fff } #adj .ok{ background:#CE1611; color:#fff }
-  .tv{ --pad:70px; --gap:70px; --top:0px; --h2:60px; --nm:38px; --en:23px; --pr:40px; --ig:16px; --rule:14px; --logo:84px; --foot:26px; --footh:60px; --cf:1;
+  .tv{ --pad:70px; --gap:70px; --top:0px; --h2:60px; --nm:38px; --en:23px; --pr:40px; --ig:16px; --rule:14px; --logo:84px; --logotop:22px; --logogap:8px; --nmmin:24px; --foot:26px; --footh:60px; --cf:1;
     width:1920px; height:1080px; background:var(--cream); position:relative; overflow:hidden;
     font-family:"Noto Sans TC",system-ui,sans-serif; color:var(--red); letter-spacing:.04em; display:flex; flex-direction:column; }
-  .tvhead{ text-align:center; padding:22px 0 8px; flex:0 0 auto; position:relative; z-index:2; }
+  .tvhead{ text-align:center; padding:0; margin:var(--logotop) 0 var(--logogap); flex:0 0 auto; position:relative; z-index:2; } /* v1.4 Logo 上下間距可負值往上拉（張良 2026-10-12「logo 那邊還是無法」） */
   .tvhead img{ height:var(--logo); }
-  .cols{ flex:1; display:flex; gap:var(--gap); padding:var(--top) var(--pad) 0; min-height:0; }
+  .cols{ flex:1; display:flex; gap:var(--gap); padding:0 var(--pad) 0; margin-top:var(--top); min-height:0; } /* v1.4 上方留白改 margin，可負值 */
   .col{ flex:1; min-width:0; display:flex; flex-direction:column; min-height:0; }
   .cat{ display:flex; flex-direction:column; flex:1; min-height:0; position:relative; }
   /* 分層：文字/表頭/框線 z=1 在照片(z=0)之上；底條 z=2 最上 */
@@ -135,9 +135,9 @@ function photoSrc(path){ if(!path) return null; const a=(MAI.assets.photos||{})[
 let screenIdx=Math.max(0,Math.min(3,parseInt(Q.get('screen')||'0',10)));
 const SCREEN_NAMES=['1 披薩・療癒碗','2 漢堡・三明治','3 義大利麵・早午餐','4 小點・飲品'];
 // 區塊參數（可編輯）：key→[標籤,最小,最大,預設,單位]
-const PARAMS={ pad:['欄左右邊距',0,160,70,'px'], gap:['兩欄間距',20,200,70,'px'], top:['上方留白',0,120,0,'px'],
+const PARAMS={ pad:['欄左右邊距',0,160,70,'px'], gap:['兩欄間距',20,200,70,'px'], top:['內容上方留白',-80,120,0,'px'], logotop:['Logo 上方',-60,80,22,'px'], logogap:['Logo 下方',-80,80,8,'px'], nmmin:['品名縮字下限',16,42,24,'px'], cmax:['幾項以上整類縮小',4,14,6,''],
   h2:['分類標題大小',36,90,60,'px'], nm:['品名大小',24,56,38,'px'], en:['英文副標大小',14,34,23,'px'], pr:['價格大小',24,60,40,'px'],
-  ig:['項目間距',0,40,16,'px'], rule:['標題與品項距離',0,40,14,'px'], logo:['Logo 大小',50,140,84,'px'], foot:['底條字大小',18,36,26,'px'], footh:['底條高度',40,90,60,'px'] };
+  ig:['項目間距',0,40,16,'px'], rule:['標題與品項距離',0,40,14,'px'], logo:['Logo 大小',50,240,84,'px'], foot:['底條字大小',18,36,26,'px'], footh:['底條高度',40,90,60,'px'] };
 const ALLKEY='gd_tvcfg';
 let CFG={g:{},p:{}}; let scope='page'; // 'page'=只這一頁 / 'all'=四頁共用
 function loadCfg(){ try{ const o=JSON.parse(localStorage.getItem(ALLKEY)||'null'); if(o&&o.p) CFG=o; }catch(e){} CFG.g=CFG.g||{}; CFG.p=CFG.p||{}; }
@@ -157,7 +157,7 @@ function data(){ const d=window.MENU_DATA||SAMPLE; return { note:d.note, origins
 function itemHTML(sec,it,side){
   const {nm,ih}=splitIH(it.name); const tag=comboTag(Number(sec.combo)||0,Number(it.price)||0); const decaf=/無咖啡因/.test(it.note||'')?'無咖啡因':'';
   const hasPr=Number(it.price)>0, tagH=(tag&&hasPr)?`<span class="tag ${tag.inc?'inc':''}">${tag.t}</span>`:''; // v4.70.76 即將上線：反灰＋標籤；沒定價就不印價格
-  return `<div class="item${it.soon?' soon':''}" data-edit="items"><div class="row1"><span class="nm">${nm}</span>`+(it.soon?`<span class="soonb">即將上線</span>`:``)+(ih?`<span class="ih">冰 / 熱</span>`:``)
+  return `<div class="item${it.soon?' soon':''}" data-edit="items"><div class="row1"><span class="nm">${nm.replace(/｜/g,'｜<wbr>')}</span>`+(it.soon?`<span class="soonb">即將上線</span>`:``)+(ih?`<span class="ih">冰 / 熱</span>`:``)
     +`<span class="lead"></span>`+(hasPr?`<span class="pr">${it.price}</span>`:``)
     +(side?`<span class="tagc">${tagH}</span>`:tagH)
     +`</div>`+(it.en?`<div class="en">${it.en}${decaf?`<span class="decaf">${decaf}</span>`:''}</div>`:``)+`</div>`;
@@ -179,7 +179,7 @@ function renderTo(root, idx){
     const sec=D.sections.find(s=>String(s.name).toUpperCase().includes(key));
     const col=document.createElement('div'); col.className='col';
     if(sec){
-      const {en,zh}=splitName(sec.name); const side=(Number(sec.combo)||0)>0, compact=sec.items.length>6;
+      const {en,zh}=splitName(sec.name); const side=(Number(sec.combo)||0)>0, compact=sec.items.length>(Number(effAt(idx,'cmax'))||6); // v1.4 幾項以上整類縮小改可調（預設 6）
       const ph=photoSrc(sc.photos[i]); const photo=ph?`<div class="photo" data-i="${i}" data-edit="photo"><img src="${ph}" alt=""></div>`:'';
       let h=`<div class="cat ${side?'side':''} ${compact?'compact':''}"><h2 data-edit="cat"><span class="en">${en}</span>${zh?`<span class="zh">${zh}</span>`:''}${en==='PIZZA'?`<span class="pz">400°C<br>12吋</span>`:''}</h2>`;
       if(side){ h+=`<div class="box"><div class="thead"><span class="c1">品項</span><span class="c2">單點</span><span class="c3">套餐選擇</span></div>`; sec.items.forEach(it=>h+=itemHTML(sec,it,true)); h+=photo+`</div>`; }
@@ -193,12 +193,16 @@ function renderTo(root, idx){
   applyCfgTo(root, idx); fitNamesIn(root);
 }
 function fitNames(){ roots().forEach(fitNamesIn); }
-function fitNamesIn(root){
+function fitNamesIn(root){ // v1.4 品名縮字三段（張良 2026-10-12「炸雞字體比較小」）：①先收字距 ②縮字不低於「品名縮字下限」 ③還塞不下才換行（優先斷在空格／｜）
+  const idx=QUAD?+root.dataset.idx:screenIdx; const min=Number(effAt(idx,'nmmin'))||24;
   root.querySelectorAll('.item .row1').forEach(row=>{
-    const nm=row.querySelector('.nm'); if(!nm) return; nm.style.fontSize=''; let size=parseFloat(getComputedStyle(nm).fontSize)||38, guard=0;
+    const nm=row.querySelector('.nm'); if(!nm) return; nm.style.fontSize=''; nm.style.letterSpacing=''; nm.style.whiteSpace=''; nm.style.flex=''; nm.style.minWidth=''; nm.style.wordBreak='';
+    let size=parseFloat(getComputedStyle(nm).fontSize)||38, guard=0; const floor=Math.min(size,min);
     const avail=row.clientWidth-10;
     const sum=()=>{ let w=0; row.childNodes.forEach(c=>{ if(c.classList&&!c.classList.contains('lead')) w+=c.offsetWidth+12; }); return w; };
-    while(sum()>avail && size>20 && guard<28){ size--; nm.style.fontSize=size+'px'; guard++; }
+    if(sum()>avail) nm.style.letterSpacing='0';
+    while(sum()>avail && size>floor && guard<28){ size--; nm.style.fontSize=size+'px'; guard++; }
+    if(sum()>avail){ nm.style.whiteSpace='normal'; nm.style.flex='0 1 auto'; nm.style.minWidth='0'; nm.style.wordBreak='keep-all'; if(nm.scrollWidth>nm.clientWidth+2) nm.style.wordBreak='normal'; }
   });
 }
 // ── 套用設定：區塊參數→CSS 變數；照片→位移/縮放（照片永遠是每頁各自的） ──
@@ -243,7 +247,7 @@ let EDIT=false, SEL=null;
 function toggleEdit(){ EDIT=!EDIT; document.body.classList.toggle('edit',EDIT); document.getElementById('editbtn').classList.toggle('on',EDIT); document.getElementById('editbtn').textContent=EDIT?'✓ 完成編輯':'✎ 編輯'; if(!EDIT) closeMini(); }
 function closeMini(){ document.getElementById('mini').classList.remove('on'); if(SEL){ SEL.classList.remove('sel'); SEL=null; } }
 document.getElementById('stage').addEventListener('click',ev=>{ if(!EDIT) return; const t=ev.target.closest('[data-edit]'); if(!t) return; ev.stopPropagation(); const r=t.closest('.tv'); if(QUAD&&r&&r.dataset.idx!==undefined&&+r.dataset.idx!==screenIdx){ setScreen(+r.dataset.idx); } openMini(t); });
-const MINI_DEF={ logo:{title:'Logo',keys:['logo','top']}, cat:{title:'分類標題',keys:['h2','rule']}, items:{title:'品項',keys:['nm','en','pr','ig']}, footer:{title:'底條',keys:['foot','footh']}, layout:{title:'整體版面',keys:['pad','gap','top']} };
+const MINI_DEF={ logo:{title:'Logo',keys:['logo','logotop','logogap','top']}, cat:{title:'分類標題',keys:['h2','rule']}, items:{title:'品項',keys:['nm','nmmin','cmax','en','pr','ig']}, footer:{title:'底條',keys:['foot','footh']}, layout:{title:'整體版面',keys:['pad','gap','top']} };
 function openMini(el,type){
   if(SEL) SEL.classList.remove('sel'); SEL=el; el.classList.add('sel');
   type=type||el.dataset.edit; const m=document.getElementById('mini'); let h='';
