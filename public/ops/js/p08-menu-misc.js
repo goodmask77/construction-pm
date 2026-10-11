@@ -297,16 +297,17 @@ function menuRender(){
 
   // 菜單設計圖四格（張良 2026-10-02：照順序、點看大圖、各格可換圖）
   const imgs = d.imgs || []
+  const canE = !!(d.me && d.me.canEdit) // v4.70.53（張良 10-11）：換圖／復原鈕只給有編輯權的人，且要按「✎ 換圖」才出現
   h += `<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:12px">` + [0,1,2,3].map(i=>{
     const u = imgs[i]
     return `<div style="position:relative;border:1.5px solid var(--line);border-radius:10px;overflow:hidden;background:#2E2512;aspect-ratio:16/9">
       ${u?`<img src="${u}" onclick="mnImgView('${u}')" style="width:100%;height:100%;object-fit:cover;cursor:zoom-in">`:`<div class="mut" style="display:flex;align-items:center;justify-content:center;height:100%">第 ${i+1} 格</div>`}
-      ${meN?`<button class="mini" style="position:absolute;right:4px;bottom:4px;background:var(--card)" onclick="mnImgPick(${i})">📷</button>`:''}
-      ${meN&&((d.imgHist||{})[i]>0)?`<button class="mini" title="復原上一張" style="position:absolute;right:44px;bottom:4px;background:var(--card)" onclick="mnImgUndo(${i})">↩︎</button>`:''}
+      ${canE&&window._mnImgEdit?`<button class="mini" style="position:absolute;right:4px;bottom:4px;background:var(--card)" onclick="mnImgPick(${i})">📷</button>`:''}
+      ${canE&&window._mnImgEdit&&((d.imgHist||{})[i]>0)?`<button class="mini" title="復原上一張" style="position:absolute;right:44px;bottom:4px;background:var(--card)" onclick="mnImgUndo(${i})">↩︎</button>`:''}
     </div>`
   }).join('') + `</div>`
   // v4.70.50（張良 2026-10-11）：四格圖＝電視頁「💾 存版本」最新一版，這裡標出版本名稱＋日期；直式海報最新版也給連結
-  if (d.curVer || d.posterImg || imgs.filter(Boolean).length>1) h += `<div class="mut" style="margin:-6px 0 12px;font-size:13px;display:flex;gap:14px;flex-wrap:wrap;align-items:center">${imgs.filter(Boolean).length>1?`<button class="mini" onclick="mnImgGrid()" title="四張電視圖 2×2 一起預覽">⊞ 四張一起看</button>`:''}${d.curVer?`<span>🕘 電視圖目前版本：<b style="color:var(--fg)">${String(d.curVer.name).replace(/</g,'&lt;')}</b>・${d.curVer.date}・${d.curVer.by||''}</span>`:''}${d.posterImg?`<a style="cursor:pointer;color:var(--primary)" onclick="mnImgView('${d.posterImg.url}')">🖼 直式最新版：${String(d.posterImg.name).replace(/</g,'&lt;')}・${d.posterImg.date}</a>`:''}</div>`
+  if (d.curVer || d.posterImg || imgs.filter(Boolean).length>1) h += `<div class="mut" style="margin:-6px 0 12px;font-size:13px;display:flex;gap:14px;flex-wrap:wrap;align-items:center">${imgs.filter(Boolean).length>1?`<button class="mini" onclick="mnImgGrid()" title="四張電視圖 2×2 一起預覽">⊞ 四張一起看</button><button class="mini" id="mnDlAll" onclick="mnImgDownloadAll()" title="四張電視圖＋四張合一＋直式海報，手機可直接存到相簿">⬇ 下載 6 張到相簿</button>`:''}${canE?`<button class="mini ${window._mnImgEdit?'on':''}" onclick="window._mnImgEdit=!window._mnImgEdit;menuRender()" title="開啟後每格出現 📷 換圖／↩︎ 復原">${window._mnImgEdit?'✓ 完成換圖':'✎ 換圖'}</button>`:''}${d.curVer?`<span>🕘 電視圖目前版本：<b style="color:var(--fg)">${String(d.curVer.name).replace(/</g,'&lt;')}</b>・${d.curVer.date}・${d.curVer.by||''}</span>`:''}${d.posterImg?`<a style="cursor:pointer;color:var(--primary)" onclick="mnImgView('${d.posterImg.url}')">🖼 直式最新版：${String(d.posterImg.name).replace(/</g,'&lt;')}・${d.posterImg.date}</a>`:''}</div>`
   // 變更總覽（協作人員一眼看懂）
   if (df.add.length || df.del.length || df.chg.length) {
     h += `<div style="background:#2E2814;border:1.5px solid #E8D089;border-radius:12px;padding:10px 12px;margin-bottom:10px;font-size:14px">
@@ -747,6 +748,24 @@ function menuPosterSectionOne(d, sec, idx){
 }
 // 圖片預覽（v4.70.51 張良 2026-10-11「打開預覽後可直接往右看下一張」）：四格＝一組，← → 鍵／點左右半邊／手機左右滑切換，點中間或 Esc 關閉
 function mnImgGrid(){ mnImgView(null,true) }
+// ⬇ 下載 6 張到相簿（v4.70.53 張良 2026-10-11）：四張電視圖＋四張合一(2×2)＋直式最新版；手機走系統分享(iOS「儲存影像」直接進相簿)，電腦逐張下載
+async function mnImgDownloadAll(){
+  const d=window._menuD||{}, tv=(d.imgs||[]).filter(Boolean), btn=document.getElementById('mnDlAll'); if(!tv.length) return
+  const say=t=>{ if(btn){ btn.textContent=t; btn.disabled=true } }
+  try{
+    const day=todayTpe(), files=[]
+    const fetchBlob=async(u)=>{ const r=await fetch(u,{cache:'force-cache'}); if(!r.ok) throw new Error('下載失敗 '+r.status); return await r.blob() }
+    for(let i=0;i<tv.length;i++){ say('準備中 '+(i+1)+'/6…'); files.push(new File([await fetchBlob(tv[i])],`GROUND電視${i+1}_${day}.png`,{type:'image/png'})) }
+    if(tv.length===4){ say('合成四張一起看…'); const ims=await Promise.all(tv.map(u=>new Promise((res,rej)=>{ const im=new Image(); im.crossOrigin='anonymous'; im.onload=()=>res(im); im.onerror=()=>rej(new Error('合圖載入失敗')); im.src=u })))
+      const W=1920,H=1080,g=24, c=document.createElement('canvas'); c.width=W*2+g; c.height=H*2+g; const x=c.getContext('2d'); x.fillStyle='#111'; x.fillRect(0,0,c.width,c.height)
+      ims.forEach((im,k)=>x.drawImage(im,(k%2)*(W+g),Math.floor(k/2)*(H+g),W,H))
+      const bl=await new Promise(r=>c.toBlob(r,'image/jpeg',.92)); files.push(new File([bl],`GROUND電視_四張合一_${day}.jpg`,{type:'image/jpeg'})) }
+    if(d.posterImg&&d.posterImg.url){ say('準備直式…'); files.push(new File([await fetchBlob(d.posterImg.url)],`GROUND菜單_直式_${day}.png`,{type:'image/png'})) }
+    if(navigator.canShare&&navigator.canShare({files})){ say('開啟分享…'); try{ await navigator.share({files,title:'GROUN:D 菜單圖'}) }catch(e){ if(e&&e.name!=='AbortError') throw e } }
+    else { for(let i=0;i<files.length;i++){ say('下載中 '+(i+1)+'/'+files.length+'…'); const a=document.createElement('a'); a.href=URL.createObjectURL(files[i]); a.download=files[i].name; document.body.appendChild(a); a.click(); a.remove(); await new Promise(r=>setTimeout(r,600)); URL.revokeObjectURL(a.href) } }
+  }catch(e){ alert('下載失敗，再試一次：'+(e.message||e)) }
+  finally{ if(btn){ btn.textContent='⬇ 下載 6 張到相簿'; btn.disabled=false } }
+}
 function mnImgView(u,grid){
   const list=((window._menuD||{}).imgs||[]).filter(Boolean); let i=Math.max(0,list.indexOf(u)); if(!list.length) list.push(u); let G=!!grid // G=四張一起看（2×2，電視牆實際擺法）
   const ov=document.createElement('div')
