@@ -249,7 +249,7 @@ export async function buildVegCmp ({ kvGet, kvPut, months, withMarket = true, wi
     const k = nk(l.name), amt = (l.price > 0 ? l.price * (l.qty || 0) : 0)
     const o = qtyBy[k] = qtyBy[k] || {}; const v = o[l.sup] = o[l.sup] || {}; v[l.ym] = r1((v[l.ym] || 0) + (l.qty || 0)); o._unit = o._unit || l.unit
     const a = amtBy[k] = amtBy[k] || {}; const av = a[l.sup] = a[l.sup] || {}; av[l.ym] = Math.round((av[l.ym] || 0) + amt)
-    const t = (totals[l.ym] = totals[l.ym] || {}); const ts = (t[l.sup] = t[l.sup] || { AB: 0, GD: 0, all: 0, lines: 0 }); ts[l.store] = Math.round(ts[l.store] + amt); ts.all = Math.round(ts.all + amt); ts.lines++
+    const t = (totals[l.ym] = totals[l.ym] || {}); const ts = (t[l.sup] = t[l.sup] || { AB: 0, GD: 0, all: 0, meal: 0, ops: 0, lines: 0 }); ts[l.store] = Math.round(ts[l.store] + amt); ts.all = Math.round(ts.all + amt); ts[l.meal ? 'meal' : 'ops'] = Math.round(ts[l.meal ? 'meal' : 'ops'] + amt); ts.lines++ // v4.70.74 員餐＝叫貨單帳號「＿員餐」
   }
   const last3 = mos.slice(0, 3)
   for (const row of items) {

@@ -1,4 +1,4 @@
-// 🥬 /prep 第 21b 塊（v4.70.72，2026-10-12）：成本總覽 → 「菜商比價」子分頁
+// 🥬 /prep 第 21b 塊（v4.70.74，2026-10-12）：成本總覽 → 「菜商比價」子分頁
 //   張良 2026-10-12：上展／尚太每月報價騰上系統、兩家並排看差異、對照市場行情（台北一市批發月均）看歷史波動、
 //   核對偵錯中心價格異常（對上就一鍵確認不再出現，對不上留給他）、抓 ops 叫貨單價格沒更新。
 //   資料口 ?vegcmp（api/_vegquote.js）；曲線一律 lineChart（p01-core）；單色線條圖示、不用 prompt。
@@ -95,10 +95,16 @@
       + `</div><div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:8px"><span class="hint" style="font-size:12px">叫貨量／金額／可省 看哪個月：</span>` + ['l3', ...(D.ordMonths || []).filter(ym => D.totals && D.totals[ym])].map(ym => `<button class="mini ${f.ym === ym ? 'on' : ''}" onclick="_vgF('ym','${ym}')">${ymLabel(ym)}</button>`).join('') + totalsLine()
       + `<input value="${esc(f.q)}" oninput="_vgQ(this.value)" placeholder="搜尋品項…" style="flex:1;min-width:140px;border:1px solid var(--line);border-radius:8px;padding:6px 10px"></div>`
   }
-  function totalsLine () { // 選的月份兩家總叫貨金額（含報價表沒有的品項；AB＋GD）
+  function totalsLine () { // 選的月份兩家總叫貨金額（含報價表沒有的品項；AB＋GD）；v4.70.74 切「營運／員餐」時顯示對應帳號的金額（員餐＝叫貨單帳號「上展＿員餐」「尚太＿員餐」）
     const yms = selYms(), T = D.totals || {}; const parts = []
-    for (const v of D.vendors) { let all = 0, ab = 0, gd = 0; for (const ym of yms) { const t = (T[ym] || {})[v]; if (t) { all += t.all; ab += t.AB; gd += t.GD } } parts.push(`<b style="color:${VC[v]}">${v}</b> NT$${all.toLocaleString()}${gd ? ` <span class="hint" style="font-size:11px">(A Beach ${ab.toLocaleString()}／GROUN:D ${gd.toLocaleString()})</span>` : ''}`) }
-    return `<span id="vgTot" style="margin-left:auto;font-size:13px">${ymLabel(f.ym)}總叫貨：${parts.join('　')}</span>`
+    const field = f.cat === '員餐' ? 'meal' : f.cat === '營運' ? 'ops' : 'all'
+    for (const v of D.vendors) { const sum = { all: 0, AB: 0, GD: 0, meal: 0, ops: 0 }; for (const ym of yms) { const t = (T[ym] || {})[v]; if (t) for (const k of Object.keys(sum)) sum[k] += (t[k] || 0) } const main = sum[field]; parts.push(`<b style="color:${VC[v]}">${v}</b> NT$${main.toLocaleString()}` + (field === 'all' ? ` <span class="hint" style="font-size:11px">(營運 ${sum.ops.toLocaleString()}／員餐 ${sum.meal.toLocaleString()}${sum.GD ? '・GROUN:D ' + sum.GD.toLocaleString() : ''})</span>` : ` <span class="hint" style="font-size:11px">(全部 ${sum.all.toLocaleString()})</span>`)) }
+    return `<span id="vgTot" style="margin-left:auto;font-size:13px">${ymLabel(f.ym)}${field === 'meal' ? '員餐帳號' : field === 'ops' ? '營運帳號' : ''}總叫貨：${parts.join('　')}</span>`
+  }
+  function rowsTotal (rs) { // 目前篩出來的品項，選的月份兩家叫貨金額合計（切分類／搜尋就跟著變）
+    const yms = selYms(); const t = { 尚太: 0, 上展: 0 }
+    for (const r of rs) for (const v of D.vendors) t[v] += sumYm((r.amt || {})[v], yms)
+    return `<span style="font-size:13px">表上這 ${rs.length} 項 ${ymLabel(f.ym)}叫貨合計：${D.vendors.map(v => `<b style="color:${VC[v]}">${v}</b> NT$${Math.round(t[v]).toLocaleString()}`).join('　')}</span>`
   }
   const pctTag = (p, inv) => p == null ? '<span class="mut">—</span>' : `<b style="color:${Math.abs(p) < 3 ? COL.m : ((p > 0) !== !!inv ? COL.r : COL.g)}">${p > 0 ? '+' : ''}${nf(p)}%</b>`
   const cheapTag = c => c ? `<span style="color:${c === '一樣' ? COL.m : VC[c]};font-weight:800">${c}</span>` : '<span class="mut">—</span>'
@@ -124,7 +130,8 @@
     const rs = rows(); if (!rs.length) return '<div class="hint" style="padding:16px;text-align:center">沒有符合的品項</div>'
     const yms = selYms()
     const topYm = D.months[D.months.length - 1]
-    let h = `<div class="hint" style="margin-bottom:6px;display:flex;gap:8px;flex-wrap:wrap;align-items:center"><span>${rs.length} 項・價格＝最新月 ${esc(topYm.slice(2).replace('-', '/'))} 報價（不是的在品名旁標月份）・綠底＝便宜那家・差＝尚太比上展貴幾 %・誰便宜＝近期尚太／上展各便宜幾個月・叫貨量／金額＝${ymLabel(f.ym)}兩店合計・可省＝若都跟便宜那家叫・主要用在＝用到這物料的餐點（×近 3 個月賣幾份）・波動＝近一年最低→最高漲幾 %。點欄名排序、拖表頭右緣改欄寬、點 ${IC.pin} 釘選置頂、點品項展開細節。</span>${Object.keys(colW).length ? `<span onclick="_vgColReset()" style="text-decoration:underline;cursor:pointer">欄寬還原</span>` : ''}</div>`
+    let h = `<div style="margin-bottom:6px;display:flex;gap:12px;flex-wrap:wrap;align-items:center;padding:6px 10px;background:var(--soft);border-radius:10px">${rowsTotal(rs)}<span class="hint" style="font-size:12px">（上面「總叫貨」＝叫貨單帳號全部品項；這裡＝表上列出的品項）</span></div>`
+    h += `<div class="hint" style="margin-bottom:6px;display:flex;gap:8px;flex-wrap:wrap;align-items:center"><span>${rs.length} 項・價格＝最新月 ${esc(topYm.slice(2).replace('-', '/'))} 報價（不是的在品名旁標月份）・綠底＝便宜那家・差＝尚太比上展貴幾 %・誰便宜＝近期尚太／上展各便宜幾個月・叫貨量／金額＝${ymLabel(f.ym)}兩店合計・可省＝若都跟便宜那家叫・主要用在＝用到這物料的餐點（×近 3 個月賣幾份）・波動＝近一年最低→最高漲幾 %。點欄名排序、拖表頭右緣改欄寬、點 ${IC.pin} 釘選置頂、點品項展開細節。</span>${Object.keys(colW).length ? `<span onclick="_vgColReset()" style="text-decoration:underline;cursor:pointer">欄寬還原</span>` : ''}</div>`
     const sumDef = COLS.reduce((t, c) => t + c[2], 0) // 預設寬只當「比例」：沒拖過的欄位依比例分可用寬度（填滿、不出橫捲）；拖過的欄位用 px
     h += `<div class="scroll" style="overflow-x:auto"><table class="tight" style="width:100%;table-layout:fixed;min-width:1040px"><colgroup>${COLS.map(c => `<col data-k="${c[0]}" style="width:${colW[c[0]] ? colW[c[0]] + 'px' : (Math.round(c[2] / sumDef * 1000) / 10) + '%'}">`).join('')}</colgroup><thead><tr>`
     for (const c of COLS) {
