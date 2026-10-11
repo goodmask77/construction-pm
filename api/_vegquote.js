@@ -4,7 +4,7 @@
 //   比價：同一品項兩家逐月並排、差額％、誰便宜；市場行情同圖對照（批發價是「行情」不是「到店價」，看走勢與漲跌幅，不比絕對值）
 //   核對：①偵錯中心「價格異常」每筆拿變價後的價 vs 該廠商那個月報價（±1% 或 ±1 元；月初 5 號前也認前月價）→ 對上＝可一鍵確認正確
 //         ②ops 叫貨單每行單價 vs 該月報價 → 不一致／該月沒報價／報價表沒品項／GD 無單價，列給人看
-import { buildTodo } from './_cost.js'
+import { buildTodo, buildImpact, loadSnap, loadMaster } from './_cost.js'
 import { buildCards } from './_matcard.js'
 
 export const VQ_KEY = 'sp_finance_pm_veg_quotes'
@@ -243,20 +243,43 @@ export async function buildVegCmp ({ kvGet, kvPut, months, withMarket = true, wi
     lines.push({ store, date, ym, supplier: r.supplier, sup, meal: /員餐/.test(r.supplier || ''), name, code: r.code || '', qty: Number(r.qty) || 0, unit: r.unit || '', st: r.order_status || '', price, q: q == null ? null : q, qp: qp == null ? null : qp, kind, pct: (kind === 'diff' && q) ? Math.round((price - q) / q * 1000) / 10 : null, oid: r.order_id || '' })
   }
   // v4.70.69 兩家各品項叫貨量（依月，AB＋GD 合計；取消／退回的單不算）＋「若叫便宜那家可省多少」
-  const qtyBy = {}
-  for (const l of lines) { if (/cancel|取消|reject|退回|void/i.test(l.st || '')) continue; const k = nk(l.name); const o = qtyBy[k] = qtyBy[k] || {}; const v = o[l.sup] = o[l.sup] || {}; v[l.ym] = r1((v[l.ym] || 0) + (l.qty || 0)); o._unit = o._unit || l.unit }
+  const qtyBy = {}, amtBy = {}, totals = {} // totals[ym][sup] = { AB, GD, all }：該廠商全部叫貨金額（含報價表沒有的品項）
+  for (const l of lines) {
+    if (/cancel|取消|reject|退回|void/i.test(l.st || '')) continue
+    const k = nk(l.name), amt = (l.price > 0 ? l.price * (l.qty || 0) : 0)
+    const o = qtyBy[k] = qtyBy[k] || {}; const v = o[l.sup] = o[l.sup] || {}; v[l.ym] = r1((v[l.ym] || 0) + (l.qty || 0)); o._unit = o._unit || l.unit
+    const a = amtBy[k] = amtBy[k] || {}; const av = a[l.sup] = a[l.sup] || {}; av[l.ym] = Math.round((av[l.ym] || 0) + amt)
+    const t = (totals[l.ym] = totals[l.ym] || {}); const ts = (t[l.sup] = t[l.sup] || { AB: 0, GD: 0, all: 0, lines: 0 }); ts[l.store] = Math.round(ts[l.store] + amt); ts.all = Math.round(ts.all + amt); ts.lines++
+  }
   const last3 = mos.slice(0, 3)
   for (const row of items) {
-    const q = qtyBy[row.key] || {}; row.qty = {}; row.qty3 = {}; row.qtyUnit = q._unit || ''
-    for (const v of VENDORS) { row.qty[v] = q[v] || null; row.qty3[v] = q[v] ? r1(last3.reduce((s, ym) => s + (q[v][ym] || 0), 0)) : 0 }
-    // 可省＝每月「跟貴的那家買的量 × 兩家價差」；只算兩家該月都有報價
+    const q = qtyBy[row.key] || {}, a = amtBy[row.key] || {}; row.qty = {}; row.amt = {}; row.qty3 = {}; row.qtyUnit = q._unit || ''
+    for (const v of VENDORS) { row.qty[v] = q[v] || null; row.amt[v] = a[v] || null; row.qty3[v] = q[v] ? r1(last3.reduce((s, ym) => s + (q[v][ym] || 0), 0)) : 0 }
+    // 可省＝每月「跟貴的那家買的量 × 兩家價差」（兩家該月都有報價才算）；逐月給前端，前端依選的月份加總
     if (row.both) {
-      const sv = { total: 0, byYm: {}, to: null }; const cnt = { 尚太: 0, 上展: 0 }
-      for (const ym of last3) { const pa = row.s.尚太[ym], pb = row.s.上展[ym]; if (pa == null || pb == null || pa === pb) continue; const qa = (q.尚太 || {})[ym] || 0, qb = (q.上展 || {})[ym] || 0; let m = 0; if (pa > pb && qa) { m += qa * (pa - pb); cnt.上展++ } if (pb > pa && qb) { m += qb * (pb - pa); cnt.尚太++ } if (m) { sv.byYm[ym] = Math.round(m); sv.total += m } }
+      const sv = { total: 0, byYm: {}, toByYm: {}, to: null }; const cnt = { 尚太: 0, 上展: 0 }
+      for (const ym of mos) { const pa = row.s.尚太[ym], pb = row.s.上展[ym]; if (pa == null || pb == null || pa === pb) continue; const qa = (q.尚太 || {})[ym] || 0, qb = (q.上展 || {})[ym] || 0; let m = 0; if (pa > pb && qa) m += qa * (pa - pb); if (pb > pa && qb) m += qb * (pb - pa); if (m) { sv.byYm[ym] = Math.round(m); sv.toByYm[ym] = pa > pb ? '上展' : '尚太'; if (last3.includes(ym)) { sv.total += m; cnt[sv.toByYm[ym]]++ } } }
       sv.total = Math.round(sv.total); sv.to = sv.total ? (cnt.上展 >= cnt.尚太 ? '上展' : '尚太') : null
       row.save = sv
     }
   }
+  // ── 主要用在哪些產品（v4.70.72）：物料代碼 → 食譜／菜單行（_cost buildImpact，ratio=1 ＝ 這個物料在該餐點每份的成本）＋ POS 兩店月銷量 ──
+  try {
+    const snap = await loadSnap(kvGet); const master = await loadMaster(kvGet, snap); const impact = buildImpact(snap)
+    const prodBy = {}; for (const p of master.products || []) { if (!VENDORS.includes(baseVendor(p.supplier))) continue; const k = nk(p.name); (prodBy[k] = prodBy[k] || []).push(p) }
+    // 月銷量：pos_d_ 近 3 個月兩店；key＝正規化菜名（去 emoji／空白）
+    const mn = s => String(s || '').replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE0F}]/gu, '').replace(/[\s\-_()（）/／·・]/g, '').toLowerCase()
+    const sold = {} // mn(menu) → { ym: qty }
+    const posDocs = await Promise.all(last3.map(m => kvGet('sp_finance_pm_pos_d_' + m)))
+    for (const d of posDocs) for (const [dk, day] of Object.entries((d || {}).days || {})) { const secs = (day.sheets || {})['總銷售額 (以類別分類)']; if (!Array.isArray(secs)) continue; const ym = (day.date || dk).slice(0, 7); for (const sec of secs) { if (sec.title === '總結' || sec.title === '套餐') continue; for (const row of (sec.rows || [])) { if (!Array.isArray(row) || typeof row[0] !== 'string') continue; const k = mn(row[0]); if (!k) continue; const o = sold[k] = sold[k] || {}; o[ym] = (o[ym] || 0) + (Number(row[1]) || 0) } } }
+    for (const row of items) {
+      const prods = prodBy[row.key] || []; if (!prods.length) { row.uses = null; continue }
+      const menus = {}, recs = new Set()
+      for (const p of prods) for (const code of [p.code, p.sku].filter(Boolean)) { const im = impact(code, 1); for (const m of im.menus) menus[m.menu] = Math.max(menus[m.menu] || 0, m.perServing); for (const r of im.recipes) recs.add(r) }
+      const list = Object.entries(menus).map(([menu, per]) => { const sd = sold[mn(menu)] || {}; const s3 = last3.reduce((s, ym) => s + (sd[ym] || 0), 0); return { menu, per: Math.round(per * 100) / 100, sold: sd, sold3: s3, cost3: Math.round(per * s3) } }).sort((x, y) => (y.cost3 - x.cost3) || (y.per - x.per))
+      row.uses = { menus: list.slice(0, 12), nMenus: list.length, recipes: [...recs].slice(0, 8), codes: prods.map(p => p.code).filter(Boolean).slice(0, 4) }
+    }
+  } catch (e) { for (const row of items) row.uses = row.uses || null; console.log('[veg] uses err', String(e.message || e).slice(0, 120)) }
   const ordSummary = {}; for (const l of lines) { const k = l.sup + '|' + l.store; ordSummary[k] = ordSummary[k] || { sup: l.sup, store: l.store, ok: 0, diff: 0, prev: 0, nomonth: 0, noitem: 0, unpriced: 0, n: 0 }; ordSummary[k][l.kind]++; ordSummary[k].n++ }
   const byItem = {}; for (const l of lines) { if (l.kind !== 'diff' && l.kind !== 'unpriced' && l.kind !== 'noitem') continue; const k = l.sup + '|' + l.store + '|' + l.kind + '|' + nk(l.name); const o = byItem[k] = byItem[k] || { sup: l.sup, store: l.store, kind: l.kind, name: l.name, n: 0, last: '', sample: [] }; o.n++; if (l.date > o.last) o.last = l.date; if (o.sample.length < 6) o.sample.push({ date: l.date, price: l.price, q: l.q, qty: l.qty, unit: l.unit }) }
   const ordIssues = Object.values(byItem).sort((a, b) => b.n - a.n)
@@ -267,7 +290,7 @@ export async function buildVegCmp ({ kvGet, kvPut, months, withMarket = true, wi
   const anomalies = (todo.items || []).filter(i => i.tab === 'price' && VENDORS.includes(baseVendor(i.supplier))).map(i => { const m = matchVerdict(i, quoteOf, c => curBy[c]); return { id: i.id, supplier: i.supplier, code: i.code, name: i.name, signal: i.signal, date: i.date, title: i.title, decided: !!i.decision, verdict: m.verdict, detail: m.detail, impact: i.impact ? { nMenus: i.impact.nMenus, perServing: i.impact.perServing } : null } })
   const anomSummary = { hit: anomalies.filter(a => a.verdict === 'hit' && !a.decided).length, miss: anomalies.filter(a => a.verdict === 'miss' && !a.decided).length, noquote: anomalies.filter(a => a.verdict === 'noquote' && !a.decided).length, decided: anomalies.filter(a => a.decided).length, total: anomalies.length, allPrice: (todo.items || []).filter(i => i.tab === 'price').length }
 
-  return { ok: true, months: allYm, vendors: VENDORS, sync: doc.sync || null, pins: doc.pins || [], ordMonths3: last3, chkLoaded: !!withChk, imported: Object.fromEntries(VENDORS.map(v => [v, { at: (doc.vendors[v] || {}).importedAt || null, n: (doc.vendors[v] || {}).n || 0, src: (doc.vendors[v] || {}).src || '', lastSync: (doc.vendors[v] || {}).lastSync || null, lastSyncErr: (doc.vendors[v] || {}).lastSyncErr || null, lastChanges: (doc.vendors[v] || {}).lastChanges || 0 }])), items, market: { fetchedAt: market.fetchedAt || null, market: '台北一', nCrops: Object.keys(market.crops || {}).length, nMapped: [...new Set(Object.values(MARKET_MAP))].length, errs: market.errs || [] }, orders: { months: mos, summary: Object.values(ordSummary), issues: ordIssues, nLines: lines.length }, anomalies, anomSummary }
+  return { ok: true, months: allYm, vendors: VENDORS, sync: doc.sync || null, pins: doc.pins || [], ordMonths3: last3, ordMonths: mos, totals, chkLoaded: !!withChk, imported: Object.fromEntries(VENDORS.map(v => [v, { at: (doc.vendors[v] || {}).importedAt || null, n: (doc.vendors[v] || {}).n || 0, src: (doc.vendors[v] || {}).src || '', lastSync: (doc.vendors[v] || {}).lastSync || null, lastSyncErr: (doc.vendors[v] || {}).lastSyncErr || null, lastChanges: (doc.vendors[v] || {}).lastChanges || 0 }])), items, market: { fetchedAt: market.fetchedAt || null, market: '台北一', nCrops: Object.keys(market.crops || {}).length, nMapped: [...new Set(Object.values(MARKET_MAP))].length, errs: market.errs || [] }, orders: { months: mos, summary: Object.values(ordSummary), issues: ordIssues, nLines: lines.length }, anomalies, anomSummary }
 }
 
 // ── 一鍵確認「對上」的異常（走偵錯中心同一條決定流程，逐筆留紀錄，可 undo）──
