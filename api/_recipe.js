@@ -53,7 +53,7 @@ export async function buildRecipes ({ kvGet, months, light }) {
     const eff = pub && pub.items ? pub : null // 發布版可覆寫材料／產量；沒有＝用阿桑的
     recipes[key] = { key, id: r.id, code: r.code, name: r.name, type: 'prep', src: 'live', station: mine.station || '', photo: mine.photo || '', minutes: r.minutes,
       yieldQty: eff && eff.yieldQty ? eff.yieldQty : r.yieldQty, yieldUnit: eff && eff.yieldUnit ? eff.yieldUnit : r.yieldUnit,
-      items: (eff ? eff.items : r.items).map(i => ({ ...i })), steps: (pub && pub.steps) || [], draft, pubV: pub ? pub.v : 0, nVersions: vers.length, updatedAt: r.updatedAt, liveItems: r.items, liveYield: { qty: r.yieldQty, unit: r.yieldUnit } }
+      items: (eff ? eff.items : r.items).map(i => ({ ...i })), steps: (pub && pub.steps) || (draft && draft.steps) || [], stepsDraft: !(pub && (pub.steps || []).length) && !!(draft && (draft.steps || []).length), draft, pubV: pub ? pub.v : 0, nVersions: vers.length, updatedAt: r.updatedAt, liveItems: r.items, liveYield: { qty: r.yieldQty, unit: r.yieldUnit } }
   }
   for (const [key, mine] of Object.entries(rb.r)) { // 我們自建的食譜（阿桑系統沒有；GD 五款代表餐點／新品）
     if (!mine.own || recipes[key]) continue
@@ -62,7 +62,7 @@ export async function buildRecipes ({ kvGet, months, light }) {
     const draft = vers.find(v => v.status === 'draft') || null
     const eff = pub || draft || { items: [], yieldQty: 0, yieldUnit: '' }
     recipes[key] = { key, id: null, code: mine.own.code || key, name: mine.own.name, brand: mine.own.brand || 'GROUN:D', type: mine.own.type === 'dish' ? 'dish' : 'prep', src: 'own', station: mine.station || mine.own.station || '', photo: mine.photo || '', minutes: null,
-      yieldQty: eff.yieldQty, yieldUnit: eff.yieldUnit, items: (eff.items || []).map(i => ({ ...i })), steps: (pub && pub.steps) || [], draft, pubV: pub ? pub.v : 0, nVersions: vers.length, updatedAt: mine.own.at || '', liveItems: [], liveYield: null, pendingContent: !pub || !(pub.items || []).length }
+      yieldQty: eff.yieldQty, yieldUnit: eff.yieldUnit, items: (eff.items || []).map(i => ({ ...i })), steps: (pub && pub.steps) || (draft && draft.steps) || [], stepsDraft: !(pub && (pub.steps || []).length) && !!(draft && (draft.steps || []).length), draft, pubV: pub ? pub.v : 0, nVersions: vers.length, updatedAt: mine.own.at || '', liveItems: [], liveYield: null, pendingContent: !pub || !(pub.items || []).length }
   }
   for (const rc of Object.values(recipes)) if (!rc.brand) rc.brand = 'A Beach'
   const byCode = {}; for (const rc of Object.values(recipes)) if (rc.code) byCode[norm(rc.code)] = rc
@@ -137,7 +137,7 @@ export async function buildRecipes ({ kvGet, months, light }) {
     const fake = { key: d.key, name: d.name, items: d.lines.map(l => ({ seq: num(l.idx) || 0, code: l.code || '', name: l.name, qty: num(l.qty), unit: l.unit, match: l.match === 'nonstock' ? 'nonstock' : (l.code ? 'matched' : 'unmatched') })), yieldQty: 1, yieldUnit: '份' }
     const c = costOf(fake, [])
     const sn = (snaps[d.key] || [])
-    dishList.push({ key: d.key, name: d.name, type: 'dish', src: 'snapshot', category: d.category || (m && m.category) || '', price: (m && num(m.price)) || d.price, abCost: m ? num(m.cost) : num(d.lines[0] && d.lines[0].cost), abComplete: m ? !!m.cost_complete : null, station: mine.station || '', photo: mine.photo || '', items: fake.items, steps: (pub && pub.steps) || [], draft, pubV: pub ? pub.v : 0, nVersions: (mine.versions || []).length,
+    dishList.push({ key: d.key, name: d.name, type: 'dish', src: 'snapshot', category: d.category || (m && m.category) || '', price: (m && num(m.price)) || d.price, abCost: m ? num(m.cost) : num(d.lines[0] && d.lines[0].cost), abComplete: m ? !!m.cost_complete : null, station: mine.station || '', photo: mine.photo || '', items: fake.items, steps: (pub && pub.steps) || (draft && draft.steps) || [], stepsDraft: !(pub && (pub.steps || []).length) && !!(draft && (draft.steps || []).length), draft, pubV: pub ? pub.v : 0, nVersions: (mine.versions || []).length,
       cost: c.total, perUnit: c.total, status: c.status === 'ok' ? '完整' : (c.gaps[0] || '不完整'), ok: c.status === 'ok', gaps: c.gaps.slice(0, 6), lines: light ? undefined : c.lines, yieldQty: 1, yieldUnit: '份',
       margin: (c.status === 'ok' && (m && num(m.price) > 0)) ? r4((m.price - c.total) / m.price) : null, content: { items: fake.items.length > 0, steps: (pub && pub.steps || []).length > 0, photo: !!mine.photo }, snaps: light ? undefined : sn.slice(-40), lastSnap: sn.length ? sn[sn.length - 1] : null })
   }
