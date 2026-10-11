@@ -1,4 +1,4 @@
-// 📥 統一收件匣 v4.70.56（狀態改兩顆按鈕；舊版自動重新整理；提醒通知誰／LINE 群可選；視窗撐滿鎖頁、去多餘文字；回覆權限分開勾；圖片氣泡貼合圖片大小；+傳圖片／檔案、貼上截圖；修回過一次後永遠推播；+轉發：接到收件匣後原系統照收）（溝通中樞第三部：三個官方帳號的客人對話集中一頁；只收＋從 app 回覆；單色 stroke SVG）
+// 📥 統一收件匣 v4.70.57（清單重排：帳號列／狀態列分段、狀態實色標籤；狀態改兩顆按鈕；舊版自動重新整理；提醒通知誰／LINE 群可選；視窗撐滿鎖頁、去多餘文字；回覆權限分開勾；圖片氣泡貼合圖片大小；+傳圖片／檔案、貼上截圖；修回過一次後永遠推播；+轉發：接到收件匣後原系統照收）（溝通中樞第三部：三個官方帳號的客人對話集中一頁；只收＋從 app 回覆；單色 stroke SVG）
 // 版型同聊天室：桌機左右雙欄、手機兩層；對話每 6 秒輪詢、清單每 20 秒
 const IB_ICON = {
   back: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>',
@@ -9,9 +9,35 @@ const IB_ICON = {
   clip: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.4 11.1l-9.2 9.2a6 6 0 0 1-8.5-8.5l9.2-9.2a4 4 0 0 1 5.7 5.7l-9.2 9.2a2 2 0 0 1-2.8-2.8l8.5-8.5"/></svg>',
   pin: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13S3 17 3 10a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>',
 }
-const IB_VER = '4756' // 跟後端 INBOX_VER 一致；後端回的 ver 不同＝正式站已更新而這台還是舊 JS → 自動重新整理一次
+const IB_VER = '4757' // 跟後端 INBOX_VER 一致；後端回的 ver 不同＝正式站已更新而這台還是舊 JS → 自動重新整理一次
 function ibVerCheck(d) { try { if (d && d.ver && d.ver !== IB_VER && !sessionStorage.getItem('ibReloaded_' + d.ver)) { sessionStorage.setItem('ibReloaded_' + d.ver, '1'); location.reload() } } catch (_) {} }
 const IB_ST = { new: '新', open: '處理中', done: '已完成' }
+const IB_STC = { new: '#2563eb', open: '#d97706', done: '#16a34a' } // 狀態色：新＝藍、處理中＝橘、已完成＝綠（張良 10-11「底色標籤直覺辨識」）
+const ibStBadge = (st) => `<span style="background:${IB_STC[st] || IB_STC.new};color:#fff;border-radius:6px;font-size:11px;font-weight:700;padding:2px 7px;line-height:16px;white-space:nowrap">${IB_ST[st] || '新'}</span>`
+const IB_CSS = `<style id="ibCss">
+.ibSeg{display:flex;gap:4px;overflow-x:auto;scrollbar-width:none;padding:3px;background:var(--card);border:1px solid var(--line);border-radius:12px}
+.ibSeg::-webkit-scrollbar{display:none}
+.ibSeg button{flex:0 0 auto;border:0;background:transparent;color:#C3CEDC;font-size:13px;font-weight:700;padding:6px 11px;border-radius:9px;cursor:pointer;display:flex;align-items:center;gap:6px;white-space:nowrap;font-family:inherit}
+.ibSeg button.on{background:var(--grad);color:#fff;box-shadow:0 2px 8px rgba(18,102,200,.3)}
+.ibSeg button.on[data-c]{background:var(--c);box-shadow:none}
+.ibSeg button .dot{width:8px;height:8px;border-radius:50%;background:var(--c);flex:none}
+.ibSeg button.on .dot{background:#fff}
+.ibSeg button .n{background:rgba(255,255,255,.18);border-radius:999px;font-size:11px;padding:0 6px;line-height:16px}
+.ibSeg button:not(.on) .n{background:#2563eb;color:#fff}
+.ibRow{display:flex;gap:10px;align-items:flex-start;padding:11px 12px;border-bottom:1px solid var(--line);cursor:pointer}
+.ibRow.cur{background:var(--card)}
+.ibRow.done{opacity:.72}
+.ibRow .av{width:42px;height:42px;border-radius:50%;background:var(--card) center/cover;border:1px solid var(--line);display:flex;align-items:center;justify-content:center;font-weight:800;flex:none;margin-top:2px}
+.ibRow .l1{display:flex;justify-content:space-between;gap:6px;align-items:center}
+.ibRow .l1 b{font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ibRow .l2{display:flex;justify-content:space-between;gap:6px;align-items:center;margin-top:1px}
+.ibRow .l2 span.t{font-size:12.5px;color:#8A97A8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ibRow .l3{display:flex;gap:6px;align-items:center;margin-top:5px;flex-wrap:wrap}
+.ibRow .acct{display:inline-flex;align-items:center;gap:5px;font-size:11.5px;color:#C3CEDC}
+.ibRow .acct i{width:7px;height:7px;border-radius:50%;display:inline-block}
+.ibRow .who{font-size:11.5px;color:#8A97A8}
+.ibRow .un{background:#2563eb;color:#fff;border-radius:999px;font-size:11px;font-weight:700;padding:0 7px;line-height:18px;flex:none}
+</style>`
 // 對話視窗撐滿（收件匣／聊天室共用，v4.70.52）：頁面鎖住不捲，視窗高＝螢幕高－視窗頂－手機底部捷徑列；只有訊息區會捲
 function paneFit(id) {
   const w = document.getElementById(id); if (!w) return
@@ -27,7 +53,7 @@ async function ibGet(q) { try { const r = await fetch('/api/mail-sync?inbox=' + 
 async function ibPost(body) { try { const r = await fetch('/api/mail-sync?inbox=' + encodeURIComponent(K), { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ...body, token: TK() }) }); return await r.json() } catch (e) { return null } }
 function ibStop() { [_ibTimer, _ibListTimer, _ibTick].forEach(t => t && clearInterval(t)); _ibTimer = _ibListTimer = _ibTick = null }
 const ibAcct = k => ((_ibD && _ibD.accounts) || []).find(a => a.key === k) || { name: k, color: '#888' }
-const ibTag = k => { const a = ibAcct(k); return `<span style="font-size:10.5px;padding:1px 6px;border-radius:999px;border:1px solid ${a.color};color:${a.color};white-space:nowrap">${ibEsc(a.name)}</span>` }
+const ibTag = k => { const a = ibAcct(k); return `<span style="display:inline-flex;align-items:center;gap:5px;font-size:11.5px;color:#C3CEDC;white-space:nowrap"><i style="width:7px;height:7px;border-radius:50%;background:${a.color};display:inline-block"></i>${ibEsc(a.name)}</span>` }
 
 async function inboxLoad(convId) {
   ibStop()
@@ -57,21 +83,23 @@ function ibRender() {
 function ibRenderList() {
   const el = document.getElementById('ibList'); if (!el) return
   const d = _ibD || { accounts: [], convs: [] }
-  const convs = (d.convs || []).filter(c => (!_ibAcct || c.acct === _ibAcct) && (_ibFilter === 'all' || c.status !== 'done' || c.unread))
-  const chip = (k, label, on) => `<button class="mini${on ? ' on' : ''}" style="padding:4px 9px;font-size:12px" onclick="${k}">${label}</button>`
-  const chips = `<div style="display:flex;gap:6px;flex-wrap:wrap;padding:8px 12px;border-bottom:1px solid var(--line)">${chip("_ibAcct='';ibRenderList()", '全部', !_ibAcct)}${(d.accounts || []).map(a => chip(`_ibAcct='${a.key}';ibRenderList()`, ibEsc(a.name) + (a.configured ? '' : ' ·未接'), _ibAcct === a.key)).join('')}
-    <span style="flex:1"></span>${chip("_ibFilter='todo';ibRenderList()", '待處理', _ibFilter === 'todo')}${chip("_ibFilter='all';ibRenderList()", '含已完成', _ibFilter === 'all')}</div>`
-  const row = c => `<div onclick="ibOpen('${ibEsc(c.id)}')" style="display:flex;gap:10px;align-items:center;padding:10px 12px;border-bottom:1px solid var(--line);cursor:pointer;${_ibCur === c.id ? 'background:var(--card)' : ''}">
-      <div style="width:40px;height:40px;border-radius:50%;background:var(--card) center/cover;border:1px solid var(--line);display:flex;align-items:center;justify-content:center;font-weight:800;flex:none;${c.pic ? `background-image:url('${ibEsc(c.pic)}')` : ''}">${c.pic ? '' : ibEsc((c.name || '?').slice(0, 1))}</div>
+  if (!document.getElementById('ibCss')) document.head.insertAdjacentHTML('beforeend', IB_CSS)
+  const byAcct = (d.convs || []).filter(c => !_ibAcct || c.acct === _ibAcct)
+  const nTodo = byAcct.filter(c => c.status !== 'done' || c.unread).length, nDone = byAcct.filter(c => c.status === 'done' && !c.unread).length
+  const convs = byAcct.filter(c => _ibFilter === 'all' ? true : _ibFilter === 'done' ? (c.status === 'done' && !c.unread) : (c.status !== 'done' || c.unread))
+  const acctSeg = `<div class="ibSeg"><button class="${!_ibAcct ? 'on' : ''}" onclick="_ibAcct='';ibRenderList()">全部</button>${(d.accounts || []).map(a => `<button class="${_ibAcct === a.key ? 'on' : ''}" data-c="1" style="--c:${a.color};${a.configured ? '' : 'opacity:.55'}" onclick="_ibAcct='${a.key}';ibRenderList()"><i class="dot"></i>${ibEsc(a.name)}${a.configured ? '' : ' <span style="font-size:10px;font-weight:400">未接</span>'}</button>`).join('')}</div>`
+  const stSeg = `<div class="ibSeg"><button class="${_ibFilter === 'todo' ? 'on' : ''}" onclick="_ibFilter='todo';ibRenderList()">待處理${nTodo ? ` <span class="n">${nTodo}</span>` : ''}</button><button class="${_ibFilter === 'done' ? 'on' : ''}" onclick="_ibFilter='done';ibRenderList()">已完成${nDone ? ` <span class="n" style="background:rgba(255,255,255,.12);color:#C3CEDC">${nDone}</span>` : ''}</button><button class="${_ibFilter === 'all' ? 'on' : ''}" onclick="_ibFilter='all';ibRenderList()">全部</button></div>`
+  const row = c => { const a = ibAcct(c.acct); return `<div class="ibRow${_ibCur === c.id ? ' cur' : ''}${c.status === 'done' && !c.unread ? ' done' : ''}" onclick="ibOpen('${ibEsc(c.id)}')">
+      <div class="av" style="${c.pic ? `background-image:url('${ibEsc(c.pic)}')` : ''}">${c.pic ? '' : ibEsc((c.name || '?').slice(0, 1))}</div>
       <div style="flex:1;min-width:0">
-        <div style="display:flex;justify-content:space-between;gap:6px;align-items:center"><b style="font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${ibEsc(c.name || '客人')}</b><span class="hint" style="font-size:11px;flex:none">${c.lastT ? ibT(c.lastT) : ''}</span></div>
-        <div style="display:flex;justify-content:space-between;gap:6px;align-items:center"><span class="hint" style="font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${c.last ? ibEsc((c.last.dir === 'out' ? '↩ ' : '') + c.last.text) : ''}</span>${c.unread ? `<span style="background:#2563eb;color:#fff;border-radius:999px;font-size:11px;padding:0 7px;line-height:18px;flex:none">${c.unread}</span>` : ''}</div>
-        <div style="display:flex;gap:6px;align-items:center;margin-top:3px;flex-wrap:wrap">${ibTag(c.acct)}<span class="hint" style="font-size:11px">${IB_ST[c.status] || ''}${c.assignee ? ' · ' + ibEsc(c.assignee) : ''}${c.follow === false ? ' · 已封鎖' : ''}</span></div>
-      </div></div>`
+        <div class="l1"><b>${ibEsc(c.alias || c.name || '客人')}</b><span class="hint" style="font-size:11px;flex:none">${c.lastT ? ibT(c.lastT) : ''}</span></div>
+        <div class="l2"><span class="t">${c.last ? ibEsc((c.last.dir === 'out' ? '↩ ' : '') + c.last.text) : ''}</span>${c.unread ? `<span class="un">${c.unread}</span>` : ''}</div>
+        <div class="l3">${ibStBadge(c.status)}<span class="acct"><i style="background:${a.color}"></i>${ibEsc(a.name)}</span>${c.assignee ? `<span class="who">${ibEsc(c.assignee)}</span>` : ''}${c.follow === false ? '<span class="who">已封鎖</span>' : ''}</div>
+      </div></div>` }
   const notCfg = (d.accounts || []).filter(a => !a.configured)
   el.innerHTML = `<div style="display:flex;align-items:center;gap:8px;padding:10px 12px;border-bottom:1px solid var(--line)"><b style="font-size:16px;flex:1">收件匣</b>${d.me && d.me.mgr ? `<button class="mini" style="padding:6px 8px" title="收件匣設定：帳號連線／權限／範本" onclick="ibSettings()">${IB_ICON.gear}</button>` : ''}</div>
-    ${chips}
-    ${convs.length ? convs.map(row).join('') : `<div class="hint" style="padding:22px 14px;text-align:center;font-size:13.5px">${(d.accounts || []).length === 0 ? '你沒有任何官方帳號的收件匣權限，請主管在設定裡加你。' : notCfg.length === (d.accounts || []).length ? '官方帳號還沒接上。主管按右上齒輪看要怎麼接。' : _ibFilter === 'todo' ? '沒有待處理的對話' : '還沒有對話'}</div>`}`
+    <div style="display:flex;flex-direction:column;gap:6px;padding:8px 10px;border-bottom:1px solid var(--line)">${acctSeg}${stSeg}</div>
+    ${convs.length ? convs.map(row).join('') : `<div class="hint" style="padding:22px 14px;text-align:center;font-size:13.5px">${(d.accounts || []).length === 0 ? '你沒有任何官方帳號的收件匣權限，請主管在設定裡加你。' : notCfg.length === (d.accounts || []).length ? '官方帳號還沒接上。主管按右上齒輪看要怎麼接。' : _ibFilter === 'todo' ? '沒有待處理的對話' : _ibFilter === 'done' ? '沒有已完成的對話' : '還沒有對話'}</div>`}`
   const tb = document.getElementById('tab-inbox'); if (tb) { const n = ibUnreadTotal(); let bd = tb.querySelector('.chBadge'); if (n) { if (!bd) { bd = document.createElement('span'); bd.className = 'chBadge'; bd.style.cssText = 'background:#2563eb;color:#fff;border-radius:999px;font-size:11px;padding:0 6px;margin-left:6px;line-height:16px;display:inline-block'; tb.appendChild(bd) } bd.textContent = n } else if (bd) bd.remove() }
 }
 function ibRenderPane() {
@@ -171,7 +199,7 @@ async function ibSend() {
   ta.focus()
 }
 // 狀態用兩顆按鈕直接按（張良 10-11「不用選單，不然忘記按我就會收到通知」）：亮的＝目前狀態；都不亮＝新
-function ibStBtns(st) { return ['open', 'done'].map(k => `<button class="mini${st === k ? ' on' : ''}" style="padding:5px 10px;font-size:12.5px" onclick="ibOp('status','${k}')">${IB_ST[k]}</button>`).join('') }
+function ibStBtns(st) { return ['open', 'done'].map(k => `<button class="mini" style="padding:5px 10px;font-size:12.5px;font-weight:700;${st === k ? `background:${IB_STC[k]};border-color:${IB_STC[k]};color:#fff` : ''}" onclick="ibOp('status','${k}')">${IB_ST[k]}</button>`).join('') }
 function ibApplyConv(c) { // 回覆後對話狀態變了→表頭的下拉與清單一起更新（v4.70.49 修：之前表頭還停在「新」）
   if (!c) return
   if (_ibConv) { _ibConv.status = c.status; _ibConv.assignee = c.assignee }
