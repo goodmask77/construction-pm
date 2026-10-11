@@ -303,11 +303,13 @@ async function registerGroup(gid, src) {
   const cur = (await kvGetMany(['pm_group_seen']))['pm_group_seen'] || {}
   const g = cur[gid] || {}
   // 群名沒記過就跟 LINE 要一次（群組訊息流/回收通知都要靠它顯示人看得懂的群名）
+  // v4.70.54 群改名要跟上（張良 2026-10-11 GROUN:D Family→GDTeam）：LINE 沒有「改名」事件，所以每 6 小時趁有訊息時重問一次群名
   let name = g.name || ''
-  if (!name) {
-    try { const r = await fetch(`https://api.line.me/v2/bot/group/${gid}/summary`, { headers: { authorization: `Bearer ${TOKEN}` } }); if (r.ok) name = (await r.json()).groupName || '' } catch (_) {}
+  let nameAt = g.nameAt || ''
+  if (!name || !nameAt || Date.now() - new Date(nameAt).getTime() > 6 * 3600e3) {
+    try { const r = await fetch(`https://api.line.me/v2/bot/group/${gid}/summary`, { headers: { authorization: `Bearer ${TOKEN}` }, signal: AbortSignal.timeout(3000) }); if (r.ok) { const nm = (await r.json()).groupName || ''; if (nm) name = nm; nameAt = new Date().toISOString() } } catch (_) {}
   }
-  cur[gid] = { ...g, ...(name ? { name } : {}), lastActive: new Date().toISOString(), count: (g.count || 0) + 1, src: src || g.src }
+  cur[gid] = { ...g, ...(name ? { name } : {}), ...(nameAt ? { nameAt } : {}), lastActive: new Date().toISOString(), count: (g.count || 0) + 1, src: src || g.src }
   delete cur[gid].gone // 有訊息進來＝DD 還在這個群（v4.70.38）
   await kvSet('pm_group_seen', cur)
 }
