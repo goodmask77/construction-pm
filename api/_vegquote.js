@@ -85,6 +85,91 @@ export async function marketSeries ({ kvGet, kvPut, force, budgetMs = 200000 }) 
   return next
 }
 
+
+// ── 直接讀 Google 試算表更新（v4.70.68；張良 2026-10-12「他們每個月會在試算表更新報價」）──
+//   每家存的 src 連結帶 gid → 抓 export?format=csv&gid= → 表頭「N月單價」→ 月份換年：N ≤ 現在月份＝今年、N > 現在月份＝去年
+//   只更新試算表上有的月份，歷史月份（去年「不使用」分頁騰的）保留；逐筆記錄 舊→新，給 LINE 摘要與頁面看
+function parseCsv (txt) {
+  const rows = []; let row = [], cell = '', q = false
+  for (let i = 0; i < txt.length; i++) {
+    const c = txt[i]
+    if (q) { if (c === '"') { if (txt[i + 1] === '"') { cell += '"'; i++ } else q = false } else cell += c }
+    else if (c === '"') q = true
+    else if (c === ',') { row.push(cell); cell = '' }
+    else if (c === '\n' || c === '\r') { if (c === '\r' && txt[i + 1] === '\n') i++; row.push(cell); rows.push(row); row = []; cell = '' }
+    else cell += c
+  }
+  if (cell || row.length) { row.push(cell); rows.push(row) }
+  return rows.filter(r => r.some(v => String(v).trim()))
+}
+export function sheetToItems (csvText, now = new Date(Date.now() + 8 * 3600e3)) {
+  const rows = parseCsv(csvText); if (rows.length < 2) throw new Error('試算表讀不到資料列')
+  const hdr = rows[0].map(h => String(h || '').trim())
+  const iCat = hdr.indexOf('分類'), iName = hdr.findIndex(h => h === '品項' || h === '叫貨名稱' || h === '名稱'), iSpec = hdr.indexOf('規格'), iUnit = hdr.indexOf('單位')
+  if (iName < 0) throw new Error('表頭找不到「品項」或「叫貨名稱」欄')
+  const Y = now.getUTCFullYear(), M = now.getUTCMonth() + 1
+  const cols = hdr.map((h, i) => { const m = h.match(/^(\d{1,2})月單價$/); if (!m) return null; const mo = Number(m[1]); return { i, ym: `${mo <= M ? Y : Y - 1}-${String(mo).padStart(2, '0')}` } }).filter(Boolean)
+  if (!cols.length) throw new Error('表頭找不到「N月單價」欄')
+  const items = {}
+  for (const r of rows.slice(1)) {
+    const name = String(r[iName] || '').trim(); if (!name || name === hdr[iName]) continue
+    const m = {}; for (const c of cols) { const v = String(r[c.i] || '').replace(/[,\s元$NT]/g, ''); const n = Number(v); if (v && isFinite(n) && n > 0) m[c.ym] = n }
+    const cur = items[name] || (items[name] = { cat: iCat >= 0 ? String(r[iCat] || '').trim() : '', spec: iSpec >= 0 ? String(r[iSpec] || '').trim() : '', unit: iUnit >= 0 ? String(r[iUnit] || '').trim() : '', m: {} })
+    Object.assign(cur.m, m); if (!cur.cat && iCat >= 0) cur.cat = String(r[iCat] || '').trim()
+  }
+  return { items, months: [...new Set(cols.map(c => c.ym))].sort(), nRows: rows.length - 1 }
+}
+async function fetchSheetCsv (src) {
+  const m = String(src || '').match(/docs\.google\.com\/spreadsheets\/d\/([A-Za-z0-9_-]+)/); if (!m) throw new Error('不是 Google 試算表連結')
+  const gid = (String(src).match(/[#&?]gid=(\d+)/) || [])[1]
+  const u = `https://docs.google.com/spreadsheets/d/${m[1]}/export?format=csv${gid ? '&gid=' + gid : ''}`
+  const ctl = new AbortController(); const tm = setTimeout(() => ctl.abort(), 25000)
+  try { const r = await fetch(u, { signal: ctl.signal, redirect: 'follow' }); if (!r.ok) throw new Error('試算表打不開（HTTP ' + r.status + '），分享要設「知道連結的人可檢視」'); if (/accounts\.google\.com/.test(r.url || '')) throw new Error('試算表要登入才看得到，分享要設「知道連結的人可檢視」'); return await r.text() } finally { clearTimeout(tm) }
+}
+export async function syncFromSheets ({ kvGet, kvPut, who, vendors: only, srcOverride }) {
+  const doc = (await kvGet(VQ_KEY)) || { vendors: {}, log: [] }
+  const out = { ok: true, at: new Date().toISOString(), vendors: [] }
+  for (const v of VENDORS) {
+    if (only && only.length && !only.includes(v)) continue
+    const cur = doc.vendors[v] || { items: {} }
+    const src = (srcOverride && srcOverride[v]) || cur.src; if (!src) { out.vendors.push({ vendor: v, ok: false, error: '沒有試算表連結' }); continue }
+    try {
+      const { items, months, nRows } = sheetToItems(await fetchSheetCsv(src))
+      const changes = [], added = []
+      const next = JSON.parse(JSON.stringify(cur.items || {}))
+      for (const [name, it] of Object.entries(items)) {
+        const old = next[name]
+        if (!old) { next[name] = it; added.push(name); for (const [ym, p] of Object.entries(it.m)) changes.push({ name, ym, from: null, to: p }); continue }
+        for (const [ym, p] of Object.entries(it.m)) { if (old.m[ym] !== p) { changes.push({ name, ym, from: old.m[ym] == null ? null : old.m[ym], to: p }); old.m[ym] = p } }
+        if (it.cat) old.cat = it.cat; if (it.spec) old.spec = it.spec; if (it.unit) old.unit = it.unit
+      }
+      const missing = Object.keys(next).filter(n => !items[n] && Object.keys(next[n].m || {}).some(ym => months.includes(ym))) // 以前這幾個月有、這次表上沒有＝可能被刪或改名（不動資料，只提醒）
+      doc.vendors[v] = { ...cur, prev: changes.length ? { items: cur.items, importedAt: cur.importedAt } : cur.prev, items: next, src, importedAt: changes.length ? out.at : cur.importedAt, lastSync: out.at, lastSyncBy: who.name, n: Object.keys(next).length, lastChanges: changes.length }
+      out.vendors.push({ vendor: v, ok: true, months, nRows, n: Object.keys(next).length, changes, added, missing: missing.slice(0, 30) })
+    } catch (e) { doc.vendors[v] = { ...cur, lastSync: out.at, lastSyncErr: String(e.message || e).slice(0, 200) }; out.vendors.push({ vendor: v, ok: false, error: String(e.message || e).slice(0, 200) }) }
+  }
+  doc.sync = { at: out.at, by: who.name, summary: out.vendors.map(x => x.ok ? `${x.vendor} ${x.changes.length} 筆變動` : `${x.vendor} 失敗：${x.error}`) }
+  doc.log = [...(doc.log || []), { at: out.at, by: who.name, sync: doc.sync.summary }].slice(-50)
+  await kvPut(VQ_KEY, doc, '菜商報價同步(' + who.name + ')')
+  return out
+}
+// LINE 摘要文字（有變動才發）
+export function syncSummaryText (r) {
+  const lines = []
+  for (const x of r.vendors) {
+    if (!x.ok) { lines.push(`❌ ${x.vendor}：${x.error}`); continue }
+    if (!x.changes.length) continue
+    const byYm = {}; for (const c of x.changes) (byYm[c.ym] = byYm[c.ym] || []).push(c)
+    for (const [ym, cs] of Object.entries(byYm).sort()) {
+      const ups = cs.filter(c => c.from != null && c.to > c.from).sort((a, b) => (b.to / b.from) - (a.to / a.from)), downs = cs.filter(c => c.from != null && c.to < c.from).sort((a, b) => (a.to / a.from) - (b.to / b.from)), news = cs.filter(c => c.from == null)
+      lines.push(`🥬 ${x.vendor} ${ym.slice(5)} 月報價更新：${news.length} 項新報價、漲 ${ups.length}、跌 ${downs.length}` + (ups.length ? `\n　漲最多：${ups.slice(0, 4).map(c => `${c.name} ${c.from}→${c.to}`).join('、')}` : '') + (downs.length ? `\n　跌最多：${downs.slice(0, 4).map(c => `${c.name} ${c.from}→${c.to}`).join('、')}` : ''))
+    }
+    if (x.added.length) lines.push(`　新品項：${x.added.slice(0, 8).join('、')}${x.added.length > 8 ? '…' : ''}`)
+    if (x.missing.length) lines.push(`　表上不見了（可能改名）：${x.missing.slice(0, 6).join('、')}${x.missing.length > 6 ? '…' : ''}`)
+  }
+  return lines.length ? lines.join('\n') + '\n\n看比價：GD → 成本總覽 → 菜商比價' : ''
+}
+
 // ── 比價＋核對 ──
 function matchVerdict (it, quoteOf, curPrice) { // it＝偵錯中心 price 項目
   const sup = baseVendor(it.supplier); const flagged = []
@@ -164,7 +249,7 @@ export async function buildVegCmp ({ kvGet, kvPut, months, withMarket = true }) 
   const anomalies = (todo.items || []).filter(i => i.tab === 'price' && VENDORS.includes(baseVendor(i.supplier))).map(i => { const m = matchVerdict(i, quoteOf, c => curBy[c]); return { id: i.id, supplier: i.supplier, code: i.code, name: i.name, signal: i.signal, date: i.date, title: i.title, decided: !!i.decision, verdict: m.verdict, detail: m.detail, impact: i.impact ? { nMenus: i.impact.nMenus, perServing: i.impact.perServing } : null } })
   const anomSummary = { hit: anomalies.filter(a => a.verdict === 'hit' && !a.decided).length, miss: anomalies.filter(a => a.verdict === 'miss' && !a.decided).length, noquote: anomalies.filter(a => a.verdict === 'noquote' && !a.decided).length, decided: anomalies.filter(a => a.decided).length, total: anomalies.length, allPrice: (todo.items || []).filter(i => i.tab === 'price').length }
 
-  return { ok: true, months: allYm, vendors: VENDORS, imported: Object.fromEntries(VENDORS.map(v => [v, { at: (doc.vendors[v] || {}).importedAt || null, n: (doc.vendors[v] || {}).n || 0, src: (doc.vendors[v] || {}).src || '' }])), items, market: { fetchedAt: market.fetchedAt || null, market: '台北一', nCrops: Object.keys(market.crops || {}).length, nMapped: [...new Set(Object.values(MARKET_MAP))].length, errs: market.errs || [] }, orders: { months: mos, summary: Object.values(ordSummary), issues: ordIssues, nLines: lines.length }, anomalies, anomSummary }
+  return { ok: true, months: allYm, vendors: VENDORS, sync: doc.sync || null, imported: Object.fromEntries(VENDORS.map(v => [v, { at: (doc.vendors[v] || {}).importedAt || null, n: (doc.vendors[v] || {}).n || 0, src: (doc.vendors[v] || {}).src || '', lastSync: (doc.vendors[v] || {}).lastSync || null, lastSyncErr: (doc.vendors[v] || {}).lastSyncErr || null, lastChanges: (doc.vendors[v] || {}).lastChanges || 0 }])), items, market: { fetchedAt: market.fetchedAt || null, market: '台北一', nCrops: Object.keys(market.crops || {}).length, nMapped: [...new Set(Object.values(MARKET_MAP))].length, errs: market.errs || [] }, orders: { months: mos, summary: Object.values(ordSummary), issues: ordIssues, nLines: lines.length }, anomalies, anomSummary }
 }
 
 // ── 一鍵確認「對上」的異常（走偵錯中心同一條決定流程，逐筆留紀錄，可 undo）──

@@ -5195,7 +5195,7 @@ export default async function handler(req, res) {
   // POST ?vegcmp=<OPS_BOARD_KEY> {token, op:'confirm'(ids?)|'refreshMarket'} → 限採購權限；confirm 走偵錯中心同一條決定流程逐筆留紀錄
   // POST ?vegimport=<MENU_PROBE_KEY|PARTNER_API_KEY> {vendors:{尚太:{src,items},上展:{…}}} | {op:'confirm'} → CC 本機匯入／維護口
   if (req.query?.vegcmp || (req.method === 'POST' && req.query?.vegimport)) {
-    const { buildVegCmp, importQuotes, confirmMatched, marketSeries } = await import('./_vegquote.js')
+    const { buildVegCmp, importQuotes, confirmMatched, marketSeries, syncFromSheets } = await import('./_vegquote.js')
     const todayV = new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10)
     const mosV = (() => { const out = []; const d = new Date(todayV + 'T00:00:00Z'); for (let i = 0; i < 13; i++) { out.push(d.toISOString().slice(0, 7)); d.setUTCMonth(d.getUTCMonth() - 1) } return out })()
     let bV = {}
@@ -5206,6 +5206,7 @@ export default async function handler(req, res) {
       const whoV = { name: 'CC（菜商報價）' }
       try {
         if (bV.op === 'confirm') { const r = await confirmMatched({ kvGet, kvPut, who: whoV, months: mosV, ids: bV.ids, applyDecision: costDecide }); if (r.done.length) await announceChanged(); return res.status(200).json(r) }
+        if (bV.op === 'sync') return res.status(200).json(await syncFromSheets({ kvGet, kvPut, who: whoV, vendors: bV.vendors, srcOverride: bV.src }))
         const r = await importQuotes({ kvGet, kvPut, body: bV, who: whoV }); return res.status(r.ok ? 200 : 400).json(r)
       } catch (e) { return res.status(500).json({ ok: false, error: String(e.message || e).slice(0, 300) }) }
     }
@@ -5221,6 +5222,7 @@ export default async function handler(req, res) {
       if (req.method === 'POST') {
         if (!canV) return res.status(403).json({ ok: false, error: '沒有採購權限' })
         if (bV.op === 'confirm') { const r = await confirmMatched({ kvGet, kvPut, who: meW, months: mosV, ids: bV.ids, applyDecision: costDecide }); if (r.done.length) await announceChanged(); return res.status(200).json(r) }
+        if (bV.op === 'sync') { const r = await syncFromSheets({ kvGet, kvPut, who: meW, vendors: bV.vendors, srcOverride: bV.src }); return res.status(200).json(r) } // v4.70.68 直接讀試算表更新
         if (bV.op === 'refreshMarket') { const m = await marketSeries({ kvGet, kvPut, force: true }); return res.status(200).json({ ok: true, fetchedAt: m.fetchedAt, nCrops: Object.keys(m.crops || {}).length, errs: m.errs }) }
         return res.status(400).json({ ok: false, error: '不認得的操作' })
       }
