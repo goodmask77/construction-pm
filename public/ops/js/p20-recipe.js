@@ -1,4 +1,4 @@
-// 🍳 /prep 第 20 塊（v4.70.34，2026-10-10）：產品與成本模組｜批次 3「食譜庫＋食譜詳情＋製作模式」
+// 🍳 /prep 第 20 塊（v4.70.63，2026-10-12）：產品與成本模組｜批次 3「食譜庫＋食譜詳情＋製作模式」
 // 規格 §4：列表照片為主（工作站／半成品或餐點／版本／產量／每單位成本／完整狀態／內容完整度 材料✓步驟✗照片✗）；
 //   詳情：材料（每行完整換算鏈、半成品可展開樹）／步驟（順序、標題、說明、相關材料、照片、計時，可拖曳）／成本（走勢＋差異標記）／版本（草稿→發布，不可覆寫）；
 //   製作模式：桌面左材料右步驟、手機上步驟＋材料抽屜＋上一步/下一步/計時；倍率只影響顯示；計時切頁後恢復。
@@ -110,7 +110,12 @@
   }
   const expanded = new Set()
   window._rcpToggle = function (k) { if (expanded.has(k)) expanded.delete(k); else expanded.add(k); _rcpTab('items') }
-  window._rcpCard = function (id) { if (window._mcOpen) { try { if (!window.matcardView) return; } catch (_) {} } alert('物料卡在「物料庫 → 物料卡」分頁，卡 ID：' + id) }
+  // v4.70.63：點「物料卡」直接在食譜上疊開那張卡（張良 2026-10-12「沒有辦法直接過去或者打開物料卡內容嗎」）；開不到才提示
+  window._rcpCard = function (id) {
+    const tip = () => alert('找不到這張物料卡（ID：' + id + '），請到「物料庫 → 物料卡」分頁查看')
+    if (!window._mcOpen) return tip()
+    Promise.resolve(_mcOpen(id)).then(ok => { if (ok === false) tip() }).catch(tip)
+  }
   function itemsTab (r) {
     const lines = r.lines || []
     let h = `<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:6px"><span class="hint">份量倍率（只影響顯示，不改食譜）</span>` + [0.5, 1, 2, 3].map(m => `<button class="mini ${mult === m ? 'on' : ''}" onclick="_rcpMult(${m})">×${m}</button>`).join('') + `<input type="number" step="0.1" min="0.1" value="${mult}" onchange="_rcpMult(this.value)" style="width:70px;border:1px solid var(--line);border-radius:8px;padding:5px 8px">`
